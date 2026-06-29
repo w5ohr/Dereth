@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""End-to-end test harness for dereth_server.py (stdlib only).
+Spins up two WebSocket clients and asserts auth, persistence, chat, and presence.
+Usage: python3 server/test_client.py [host] [port]   (server must already be running)
+"""
+import asyncio, base64, hashlib, json, os, secrets, struct, sys, time
+
+HOST = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
+PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8787
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+class WS:
+    def __init__(self, reader, writer):
+        self.r = reader; self.w = writer
+    @classmethod
+    async def connect(cls):
+        r, w = await asyncio.open_connection(HOST, PORT)
+        key = base64.b64encode(secrets.token_bytes(16)).decode()
+        w.write((f"GET / HTTP/1.1\r\nHost: {HOST}:{PORT}\r\nUpgrade: websocket\r\n"
+                 f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
+                 "Sec-WebSocket-Version: 13\r\n\r\n").encode())
+        await w.drain()
+        # read until end of headers
+        while True:
+            line = await r.readline()
+            if line in (b"\r\n", b"\n", b""):
+                break
+        return cls(r, w)
+    async def send(self, obj):
+        payload = json.dumps(obj).encode()
+        mask = secrets.token_bytes(4)
+        masked = bytes(b ^ mask[i & 3] for i, b in enumerate(payload))
+        n = len(payload); out = bytearray([0x81])
+        if n < 126: out.append(0x80 | n)
+        elif n < (1 << 16): out.append(0x80 | 126); out += struct.pack(">H", n)
+        else: out.append(0x80 | 127); out += struct.pack(">Q", n)
+        out += mask + masked
+        self.w.write(bytes(out)); await self.w.drain()
+    async def _frame(self):
+        hdr = await self.r.readexactly(2)
+        ln = hdr[1] & 0x7F
+        if ln == 126: ln = struct.unpack(">H", await self.r.readexactly(2))[0]
+        elif ln == 127: ln = struct.unpack(">Q", await self.r.readexactly(8))[0]
+        return json.loads((await self.r.readexactly(ln)).decode())
+    async def recv_until(self, pred, timeout=3.0):
+        """Return the first message matching pred(msg); ignores snapshots/others."""
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                msg = await asyncio.wait_for(self._frame(), timeout=end - time.time())
+            except asyncio.TimeoutError:
+                return None
+            if pred(msg):
+                return msg
+        return None
+    async def close(self):
+        self.w.close()
+
+PASS = 0; FAIL = 0
+def check(name, ok):
+    global PASS, FAIL
+    print(("  PASS " if ok else "  FAIL ") + name)
+    if ok: PASS += 1
+    else: FAIL += 1
+
+async def main():
+    uniq = secrets.token_hex(3)
+    alice, bob = f"alice_{uniq}", f"bob_{uniq}"
+    print(f"Testing {HOST}:{PORT} with {alice}/{bob}")
+
+    a = await WS.connect()
+    await a.send({"t": "register", "user": alice, "pass": "secret1"})
+    m = await a.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
+    check("register alice -> auth_ok", m and m["t"] == "auth_ok")
+    token = m.get("token") if m else None
+    check("auth_ok includes session token", bool(token))
+    check("new account has null char", m and m.get("char") is None)
+
+    # persist a character, then verify it survives re-login
+    await a.send({"t": "save", "char": {"level": 7, "kills": 42, "heritage": "sho"}})
+    await a.send({"t": "ping"})
+    check("ping -> pong", bool(await a.recv_until(lambda x: x["t"] == "pong")))
+
+    # second player joins -> alice should see a join system message
+    b = await WS.connect()
+    await b.send({"t": "register", "user": bob, "pass": "secret2"})
+    mb = await b.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
+    check("register bob -> auth_ok", mb and mb["t"] == "auth_ok")
+    check("alice sees bob join", bool(await a.recv_until(lambda x: x["t"] == "system" and bob in x.get("msg", ""))))
+
+    # movement input -> snapshot reflects both players
+    await a.send({"t": "input", "x": 100, "z": 200, "yaw": 1.5, "hp": 90, "level": 7})
+    await b.send({"t": "input", "x": -50, "z": 50, "yaw": 0.2, "hp": 80, "level": 3})
+    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and len(x.get("players", [])) >= 2)
+    ids = {p["id"]: p for p in (snap["players"] if snap else [])}
+    check("snapshot lists both players", alice in ids and bob in ids)
+    check("snapshot carries alice position", snap and abs(ids.get(alice, {}).get("x", 0) - 100) < 1)
+
+    # chat from bob reaches alice
+    await b.send({"t": "chat", "msg": "hail, adventurer!"})
+    cm = await a.recv_until(lambda x: x["t"] == "chat")
+    check("chat relays bob -> alice", cm and cm.get("from") == bob and "hail" in cm.get("msg", ""))
+
+    # bob leaves -> alice sees leave message
+    await b.close()
+    check("alice sees bob leave", bool(await a.recv_until(lambda x: x["t"] == "system" and "left" in x.get("msg", ""))))
+
+    # reconnect: wrong password rejected, right password restores persisted char
+    await a.close()
+    c = await WS.connect()
+    await c.send({"t": "login", "user": alice, "pass": "WRONG"})
+    me = await c.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
+    check("login wrong password -> auth_err", me and me["t"] == "auth_err")
+    await c.send({"t": "login", "user": alice, "pass": "secret1"})
+    mo = await c.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
+    check("login correct password -> auth_ok", mo and mo["t"] == "auth_ok")
+    check("persisted character restored (level 7)", mo and mo.get("char", {}).get("level") == 7)
+    await c.close()
+
+    print(f"\n{PASS} passed, {FAIL} failed")
+    sys.exit(1 if FAIL else 0)
+
+if __name__ == "__main__":
+    asyncio.run(main())
