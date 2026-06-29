@@ -642,6 +642,18 @@ async def party_notify(pid, msg):
         if c:
             await c.send({"t": "system", "msg": msg})
 
+async def party_sync(pid):
+    """Push the structured member roster to every member (for map highlight / HUD)."""
+    p = PARTIES.get(pid)
+    if not p:
+        return
+    names = [CLIENTS[a].charname for a in p["members"] if a in CLIENTS and CLIENTS[a].charname]
+    leader = CLIENTS[p["leader"]].charname if p["leader"] in CLIENTS else None
+    for acc in list(p["members"]):
+        c = CLIENTS.get(acc)
+        if c:
+            await c.send({"t": "pmembers", "names": names, "leader": leader})
+
 async def party_leave(cl, quiet=False):
     pid = cl.party
     cl.party = None
@@ -655,12 +667,15 @@ async def party_leave(cl, quiet=False):
         p["members"].remove(cl.username)
     if p["members"]:                            # tell whoever remains that this member left
         await party_notify(pid, f"{who} has left the party.")
+    if not quiet:
+        await cl.send({"t": "pmembers", "names": [], "leader": None})   # clear the leaver's roster
     if len(p["members"]) <= 1:                 # a party of one disbands
         for acc in p["members"]:
             c = CLIENTS.get(acc)
             if c:
                 c.party = None
                 await c.send({"t": "system", "msg": "The party has disbanded."})
+                await c.send({"t": "pmembers", "names": [], "leader": None})
         PARTIES.pop(pid, None)
         if not quiet:
             await cl.send({"t": "system", "msg": "You left the party."})
@@ -670,6 +685,7 @@ async def party_leave(cl, quiet=False):
         if not quiet:
             await cl.send({"t": "system", "msg": "You left the party."})
         await party_notify(pid, f"{who} has left the party.")
+        await party_sync(pid)
 
 async def handle_party(cl, msg):
     global _party_seq
@@ -702,6 +718,7 @@ async def handle_party(cl, msg):
             return await cl.send({"t": "system", "msg": "That party is full."})
         PARTIES[pid]["members"].append(cl.username); cl.party = pid
         await party_notify(pid, f"{cl.charname} has joined the party. Members: {', '.join(party_names(pid))}")
+        await party_sync(pid)
     elif act == "leave":
         await party_leave(cl)
     else:  # list

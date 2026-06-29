@@ -129,6 +129,8 @@ async def main():
     await b.send({"t": "party", "act": "accept"})
     joined = await a.recv_until(lambda x: x["t"] == "system" and "joined the party" in x.get("msg", ""))
     check("party accept notifies members", bool(joined))
+    pm = await a.recv_until(lambda x: x["t"] == "pmembers")
+    check("party roster (pmembers) synced", bool(pm) and f"{alice}7" in pm.get("names", []) and f"{bob}0" in pm.get("names", []))
     await a.send({"t": "pchat", "msg": "group up"})
     pc = await b.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "party")
     check("party chat reaches members", bool(pc) and "group up" in pc.get("msg", "") and pc.get("from") == f"{alice}7")
