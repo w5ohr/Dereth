@@ -65,10 +65,10 @@
     color:var(--gold);background:rgba(8,6,3,.7);padding:8px 16px;border-radius:8px;border:1px solid var(--border);
     font-size:14px;pointer-events:none;display:none}
 
-  #sheet,#tinker,#shop,#settings,#worldmap,#codex{position:absolute;inset:0;background:rgba(4,3,1,.82);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:30}
-  #sheet .card,#tinker .card,#shop .card,#settings .card,#worldmap .card,#codex .card{width:560px;max-width:92vw;background:linear-gradient(180deg,#1b1509,#0e0a05);
+  #sheet,#tinker,#shop,#settings,#worldmap,#codex,#spellbook{position:absolute;inset:0;background:rgba(4,3,1,.82);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:30}
+  #sheet .card,#tinker .card,#shop .card,#settings .card,#worldmap .card,#codex .card,#spellbook .card{width:560px;max-width:92vw;background:linear-gradient(180deg,#1b1509,#0e0a05);
     border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 20px 60px #000;max-height:92vh;overflow:auto}
-  #sheet h2,#tinker h2,#shop h2,#settings h2,#worldmap h2,#codex h2{margin:0 0 2px;color:var(--gold)}#sheet .sub,#tinker .sub,#shop .sub,#settings .sub,#worldmap .sub,#codex .sub{color:var(--dim);font-size:12px;margin-bottom:14px}
+  #sheet h2,#tinker h2,#shop h2,#settings h2,#worldmap h2,#codex h2,#spellbook h2{margin:0 0 2px;color:var(--gold)}#sheet .sub,#tinker .sub,#shop .sub,#settings .sub,#worldmap .sub,#codex .sub,#spellbook .sub{color:var(--dim);font-size:12px;margin-bottom:14px}
   .srow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #241c0e}
   .srow input[type=range]{flex:1;accent-color:var(--gold)}.srow span{min-width:46px;text-align:right;color:#fff;font-weight:bold}
   #potions{bottom:14px;left:calc(50% + 285px);display:flex;gap:8px;padding:8px;font-size:11px}
@@ -219,6 +219,13 @@
   <div class="sub">Creatures of Dereth — the volcanic isle of the world Auberean — and their elemental natures.</div>
   <div id="codexRows"></div>
   <button id="closeCodex">Return to Dereth  (B)</button>
+</div></div>
+
+<div id="spellbook"><div class="card">
+  <h2>Spellbook</h2>
+  <div class="sub">Your learned spells. Assign any known spell to a hotbar slot (1–8, z, x). Scribe scrolls (T) to learn more; higher spell levels need a higher skill in that school.</div>
+  <div id="sbRows"></div>
+  <button id="closeSpellbook">Return to Dereth  (K)</button>
 </div></div>
 
 <div id="worldmap"><div class="card">
@@ -2381,6 +2388,7 @@ window.addEventListener('keydown',e=>{
   if(k==="c"){ if(sheet.style.display==="flex") closeSheet(); else openSheet(); }
   if(k==="t"){ if(document.getElementById('tinker').style.display==="flex") closeTinker(); else openTinker(); }
   if(k==="b"){ if(document.getElementById('codex').style.display==="flex") closeCodex(); else openCodex(); }
+  if(k==="k"){ if(document.getElementById('spellbook').style.display==="flex") closeSpellbook(); else openSpellbook(); }
   if(k==="r") drinkPotion("potHealth",60,"hp");
   if(k==="g") drinkPotion("potGreat",150,"hp");
   if(k==="f") drinkPotion("potMana",60,"mn");
@@ -3329,6 +3337,43 @@ function useElixir(field,buff,sec,label,color){
   floater(player.x,EYE+0.5,player.z,label,color);log(`You quaff an <b>${label}</b>.`,"heal");SFX.quest();updateHUD();
 }
 document.getElementById('closeShop').onclick=closeShop;
+
+// ---- Spellbook (view known spells, assign to hotbar) ----
+function openSpellbook(){ buildSpellbook(); document.getElementById('spellbook').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+function closeSpellbook(){ document.getElementById('spellbook').style.display="none"; paused=false; }
+function assignHotbar(slot,id){
+  for(let i=0;i<player.hotbar.length;i++) if(player.hotbar[i]===id) player.hotbar[i]=null; // a spell lives in one slot
+  if(slot>=0 && slot<HOTKEYS.length) player.hotbar[slot]=id;
+  buildSpellbar(); buildSpellbook(); saveGame();
+}
+function buildSpellbook(){
+  const root=document.getElementById('sbRows'); if(!root) return; root.innerHTML="";
+  const groups={};
+  for(const s of SPELLBOOK_LIST){ const g=SCHOOLS[s.school]||"Magic"; (groups[g]=groups[g]||[]).push(s); }
+  for(const gname of Object.keys(groups)){
+    const h=document.createElement('div'); h.style.cssText="color:var(--gold);font-weight:bold;font-size:13px;margin:10px 0 4px"; h.textContent=gname; root.appendChild(h);
+    groups[gname].sort((a,b)=>a.lvl-b.lvl||a.name.localeCompare(b.name));
+    for(const s of groups[gname]){
+      const known=player.knownSpells.indexOf(s.id)>=0, mk=MAGIC_SCHOOLS[s.school];
+      const sv=mk?skillValue(mk):0, trained=mk?skillTier(mk)>0:true;
+      const slot=player.hotbar.indexOf(s.id);
+      let status;
+      if(!known) status=`<span style="color:#9a8a66">unknown — find or buy its scroll</span>`;
+      else if(!trained) status=`<span style="color:#ff8f6b">train ${SKILL_BY_KEY[mk].n} (C)</span>`;
+      else if(s.req&&sv<s.req) status=`<span style="color:#ffd23b">needs ${SKILL_BY_KEY[mk].n} ${s.req} (you ${sv})</span>`;
+      else status=`<span style="color:#7fe6a0">ready</span>`;
+      let ctl="";
+      if(known){ let opts=`<option value="-1"${slot<0?" selected":""}>—</option>`;
+        for(let i=0;i<HOTKEYS.length;i++) opts+=`<option value="${i}"${slot===i?" selected":""}>slot ${HOTKEYS[i]}</option>`;
+        ctl=`<select class="sbslot" data-id="${s.id}" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:12px">${opts}</select>`; }
+      const row=document.createElement('div'); row.className="row";
+      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana · ${status}</span></div><div class="ctl">${ctl}</div>`;
+      root.appendChild(row);
+    }
+  }
+  root.querySelectorAll('.sbslot').forEach(sel=>sel.onchange=()=>assignHotbar(+sel.value, sel.dataset.id));
+}
+document.getElementById('closeSpellbook').onclick=closeSpellbook;
 
 // ---- Settings menu ----
 function openSettings(){
