@@ -3793,6 +3793,29 @@ function assignHotbar(slot,id){
   if(slot>=0 && slot<HOTKEYS.length) player.hotbar[slot]=id;
   buildSpellbar(); buildSpellbook(); saveGame();
 }
+// a short, live effect readout for a spell at the player's current stats (shown in the Spellbook)
+function spellEffectText(s){ try{
+  if(s.heal) return `+${Math.round(s.heal())} heal`;
+  if(s.dps) return `${Math.round(s.dps())}/s dmg`;
+  if(s.special==="revitalize") return `+${Math.round(s.amt+player.attr.Self*s.foc)} stam`;
+  if(s.special==="regen") return `+${s.rate}/s ${({hp:"health",st:"stam",mn:"mana"})[s.pool]}`;
+  if(s.special==="dispel") return `cleanse · ${s.immune}s immune`;
+  if(s.special==="recall") return "teleport home";
+  if(s.special==="stam2mana") return "stam→mana";
+  if(s.special==="summon") return "summon pet";
+  if(s.make){ const mk=s.make(); let t=`${Math.round(mk.dmg)} dmg`; if(mk.splash)t+=" splash"; if(mk.drain)t+=`, ${Math.round(mk.drain*100)}% leech`; return t; }
+  if(s.school==="aoe"&&s.dmg) return `${Math.round(s.dmg())} dmg AoE`;
+  if(s.vuln) return s.vulnElem?`+${Math.round((s.vuln-1)*100)}% ${s.vulnElem} taken`:`+${Math.round((s.vuln-1)*100)}% dmg taken`;
+  if(s.buff==="prot") return `-${Math.round(s.mag*100)}% dmg taken`;
+  if(s.buff==="attr") return `+${s.mag} ${s.attr}`;
+  if(s.buff==="skill") return `+${s.mag} ${SKILL_BY_KEY[s.skillKey]?SKILL_BY_KEY[s.skillKey].n:s.skillKey}`;
+  if(s.buff==="item") return `+${s.stat==="armor"?s.mag:Math.round(s.mag*100)+"%"} ${({dmg:"dmg",crit:"crit",armor:"armor",haste:"haste"})[s.stat]||s.stat}`;
+  if(s.buff==="might") return "+50% dmg";
+  if(s.buff==="swift") return "+speed";
+  if(s.debuff==="spd") return `slow foe ${Math.round((1-s.dmag)*100)}%`;
+  if(s.debuff==="dmg") return `-${Math.round((1-s.dmag)*100)}% foe dmg`;
+  return "";
+}catch(e){ return ""; } }
 function buildSpellbook(){
   const root=document.getElementById('sbRows'); if(!root) return; root.innerHTML="";
   // read the filter bar (school "aoe" rolls into War)
@@ -3833,7 +3856,8 @@ function buildSpellbook(){
         for(let i=0;i<HOTKEYS.length;i++) opts+=`<option value="${i}"${slot===i?" selected":""}>slot ${HOTKEYS[i]}</option>`;
         ctl=`<select class="sbslot" data-id="${s.id}" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:12px">${opts}</select>`; }
       const row=document.createElement('div'); row.className="row";
-      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${s.dur?` · ${s.dur}s`:""}${s.req?` · req ${s.req}`:""} · ${status}</span></div><div class="ctl">${ctl}</div>`;
+      const eff=spellEffectText(s);
+      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur}s`:""}${s.req?` · req ${s.req}`:""} · ${status}</span></div><div class="ctl">${ctl}</div>`;
       root.appendChild(row);
     }
   }
