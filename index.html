@@ -396,7 +396,9 @@ function skillRank(key){ const st=skillState(key); return st.t>0?skillRankFromXP
 function skillBase(key){ const s=SKILL_BY_KEY[key]; if(!s.d)return 0; let sum=0; for(const a of s.a)sum+=player.attr[a]; return Math.floor(sum/s.d); }
 // effective skill value: untrained = attribute base only (can't be raised); trained = base+ranks;
 // specialized = +10 bonus. (Faithful: untrained skills work at base; magic just can't be cast untrained.)
-function skillValue(key){ const st=skillState(key),base=skillBase(key); return base+(st.t>0?skillRank(key):0)+(st.t===2?10:0); }
+function skillValue(key){ const st=skillState(key),base=skillBase(key);
+  const sb=(player.skillBuffs&&player.skillBuffs[key])?player.skillBuffs[key].v:0;   // Creature skill "Aptitude" buff
+  return base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb; }
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
 function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_WEAPON_KEYS){ const e=skillEff(key,k); if(e>best)best=e; } return best; } // best of all melee weapon skills
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
@@ -431,6 +433,8 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   knownSpells:[],hotbar:[],   // initialised from freshSpells() once the SPELLBOOK is defined
   spellBuffs:{},              // active Creature-Enchantment attribute buffs: attr -> {v,t}
+  skillBuffs:{},              // active Creature-Enchantment skill "Aptitude" buffs: skillKey -> {v,t}; fall on death
+  hots:{},                    // active Life regeneration over time: pool (hp/st/mn) -> {rate,t}; fall on death
   itemBuffs:{},               // active Item-Enchantment buffs: dmg/crit/armor/haste -> {v,t}
   lifeBuffs:{},               // active Life buffs (e.g. damage-reduction Protection) -> {v,t}; fall on death
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
@@ -559,6 +563,29 @@ for(const t of VOID_TIERS){
     cost:Math.round(34*(1+(t.lvl-1)*0.45)),cd:1100,geom:"blast",
     make:()=>({dmg:(24+player.attr.Focus*1.6)*t.mult*0.7,speed:46,color:0x9b30ff,r:0.32,burn:true,element:"nether",drain:0.35})});
 }
+// ── Creature Enchantment: skill "Aptitude" Self buffs (I–VIII) — raise a skill's value for a
+//    duration. Wired into skillValue(), so they really boost spell damage / healing / mana cost /
+//    weapon damage etc. (AC has no researchable Creature *Other* skill buffs, so these are Self-only.)
+const CE_SKILLS=[
+  ["war","War Magic","🔥"],["life","Life Magic","✨"],["creature","Creature Mastery","🦂"],["item","Item Mastery","💍"],
+  ["void","Void Mastery","🌑"],["mana","Mana Conversion","🔷"],["heavy","Heavy Weapon","⚔️"],["light","Light Weapon","🗡"],
+  ["finesse","Finesse Weapon","🤺"],["twohand","Two Handed","🪓"],["missile","Missile Weapon","🏹"],["meleed","Invulnerability","🛡"],
+  ["missiled","Impregnability","🪶"],["magicd","Magic Resistance","🔯"],["healing","Healing","💉"],["arcane","Arcane Enlightenment","📜"],
+  ["run","Sprint","🏃"],["summon","Summoning","🔮"]];
+for(const [key,disp,ico] of CE_SKILLS) for(const t of CE_TIERS) SPELLBOOK_LIST.push({
+  id:`creature_apt_${key}_${t.lvl}`,name:`${disp} Aptitude ${ROMAN[t.lvl]}`,ico,school:"creature",lvl:t.lvl,req:t.req,
+  cost:t.cost,cd:9000,buff:"skill",skillKey:key,mag:t.mag,dur:t.dur});
+// ── Life Magic: over-time renewal — Regeneration (health), Rejuvenation (stamina), Mana Renewal (I–VIII) ──
+const LIFE_RENEW=[
+  {pool:"hp",name:"Regeneration", ico:"💗",rate:[1.6,2.6,4.0,6.0,8.5,11.5,15,20]},
+  {pool:"st",name:"Rejuvenation", ico:"🌿",rate:[2.0,3.2,5.0,7.5,10.5,14,18,24]},
+  {pool:"mn",name:"Mana Renewal", ico:"🔹",rate:[1.4,2.3,3.6,5.4,7.6,10.4,13.6,18]},
+];
+const RENEW_TIERS=[{lvl:1,cost:22,req:0,dur:24},{lvl:2,cost:32,req:30,dur:26},{lvl:3,cost:46,req:60,dur:28},{lvl:4,cost:62,req:95,dur:30},
+  {lvl:5,cost:82,req:135,dur:32},{lvl:6,cost:106,req:180,dur:34},{lvl:7,cost:136,req:240,dur:36},{lvl:8,cost:172,req:300,dur:40}];
+for(const r of LIFE_RENEW) for(const t of RENEW_TIERS) SPELLBOOK_LIST.push({
+  id:`life_renew_${r.pool}_${t.lvl}`,name:`${r.name} ${ROMAN[t.lvl]}`,ico:r.ico,school:"life",lvl:t.lvl,req:t.req,
+  cost:t.cost,cd:5000,special:"regen",pool:r.pool,rate:r.rate[t.lvl-1],dur:t.dur});
 // ── Life Magic: Harm Other I–VI (pure damage bolt — no lifesteal, distinct from Drain) ──
 // ── Life Magic: Protection Self (reduce incoming damage) + Vulnerability Other (foe takes more) ──
 const LIFE_PROT=[{lvl:1,v:0.12,cost:24,req:0,dur:90},{lvl:2,v:0.20,cost:34,req:35,dur:120},{lvl:3,v:0.30,cost:48,req:70,dur:150},{lvl:4,v:0.40,cost:64,req:110,dur:180},
@@ -2310,7 +2337,8 @@ function playerHurt(dmg,sx,sz){
 }
 function die(){
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
-  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.lifeBuffs={};
+  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};
+  if(player.skillBuffs&&Object.keys(player.skillBuffs).length){player.skillBuffs={};derive();}
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
   document.getElementById('deathmsg').style.display="flex";
@@ -2418,6 +2446,12 @@ function castSpellById(id){
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
   }
+  if(s.special==="regen"){   // Life over-time renewal: trickle the chosen pool back up for a duration
+    player.hots=player.hots||{}; player.hots[s.pool]={rate:s.rate,t:s.dur};
+    const lbl={hp:"health",st:"stamina",mn:"mana"}[s.pool];
+    floater(player.x,EYE+0.5,player.z,"renewing "+lbl,"#7fe6a0");
+    castFlash(0x7fe6a0);SFX.heal();log(`You invoke <b>${s.name}</b> — ${lbl} renews for ${s.dur}s.`,"heal");return;
+  }
   if(s.buff){
     const dur=s.dur||25, mag=s.mag;
     if(s.buff==="might"){player.buffMightT=dur;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
@@ -2425,6 +2459,7 @@ function castSpellById(id){
     else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
     else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};player.itemBuffs[s.stat]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
     else if(s.buff==="prot"){player.lifeBuffs=player.lifeBuffs||{};player.lifeBuffs.prot={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% dmg taken`,"#7fe6a0");}
+    else if(s.buff==="skill"&&mag){player.skillBuffs=player.skillBuffs||{};player.skillBuffs[s.skillKey]={v:mag,t:dur};derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${SKILL_BY_KEY[s.skillKey]?SKILL_BY_KEY[s.skillKey].n:s.skillKey}`,"#bfe0ff");}
     castFlash(0x9af0ff);SFX.quest();log(`You invoke <b>${s.name}</b>.`,"heal");return;
   }
   if(s.school==="aoe"){
@@ -2980,6 +3015,12 @@ function update(dt){
     if(b.t<=0){ player.attr[a]-=b.v; delete player.spellBuffs[a]; floater(player.x,EYE+0.6,player.z,a+" fades","#9fb0c0"); derive(); } } }
   if(player.itemBuffs){ for(const k of Object.keys(player.itemBuffs)){ const b=player.itemBuffs[k]; b.t-=dt; if(b.t<=0) delete player.itemBuffs[k]; } }
   if(player.lifeBuffs){ for(const k of Object.keys(player.lifeBuffs)){ const b=player.lifeBuffs[k]; b.t-=dt; if(b.t<=0) delete player.lifeBuffs[k]; } }
+  if(player.skillBuffs){ for(const k of Object.keys(player.skillBuffs)){ const b=player.skillBuffs[k]; b.t-=dt;
+    if(b.t<=0){ delete player.skillBuffs[k]; floater(player.x,EYE+0.6,player.z,(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k)+" fades","#9fb0c0"); derive(); } } }
+  if(player.hots){ for(const k of Object.keys(player.hots)){ const b=player.hots[k]; b.t-=dt;
+    const mx=k==="hp"?player.mhp:k==="st"?player.mst:player.mmn;
+    player[k]=Math.min(mx,player[k]+b.rate*dt);
+    if(b.t<=0) delete player.hots[k]; } }
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
@@ -3133,6 +3174,9 @@ function updateHUD(){
   const bf=[];if(player.buffMightT>0)bf.push("Might "+Math.ceil(player.buffMightT)+"s");if(player.buffSwiftT>0)bf.push("Swift "+Math.ceil(player.buffSwiftT)+"s");
   if(player.spellBuffs) for(const a in player.spellBuffs) bf.push(`+${player.spellBuffs[a].v} ${a}`);
   if(player.itemBuffs){ const IB={dmg:"+dmg",crit:"+crit",armor:"+armor",haste:"+haste"}; for(const k in player.itemBuffs) bf.push(IB[k]||k); }
+  if(player.skillBuffs) for(const k in player.skillBuffs) bf.push(`+${player.skillBuffs[k].v} ${SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k}`);
+  if(player.hots){ const HP={hp:"♥ regen",st:"⚡ regen",mn:"✦ regen"}; for(const k in player.hots) bf.push(HP[k]||k); }
+  if(player.lifeBuffs&&player.lifeBuffs.prot) bf.push(`-${Math.round(player.lifeBuffs.prot.v*100)}% dmg`);
   document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
   let threats=0;for(const m of monsters){if(!!m.isDungeon===inDungeon&&m.state==="chase"&&Math.hypot(m.x-player.x,m.z-player.z)<50)threats++;}
   const te=document.getElementById("sThreat");te.textContent=threats;te.style.color=threats>0?"#ff6b6b":"#fff";
@@ -4441,7 +4485,7 @@ let pendingServerChar=null;
 function startGame(loadSaved,preset){
   document.getElementById('overlay').style.display="none";
   initAudio();
-  player.spellBuffs={}; player.lifeBuffs={};   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
+  player.spellBuffs={}; player.lifeBuffs={}; player.skillBuffs={}; player.hots={};   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
   if(!loadSaved) player.itemBuffs={};   // fresh character: no item buffs (a loaded one restores them via applySaveObj)
   if(!loadSaved&&preset&&PRESETS[preset]){const p=PRESETS[preset];
     for(const a in p.attr) player.attr[a]+=p.attr[a];

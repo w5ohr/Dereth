@@ -466,6 +466,10 @@ SCROLL_SPELLS = [s for s in (
     + [f"life_vuln_{l}" for l in range(1, 9)]
     + [f"void_{c}_{l}" for c in ("nether", "streak", "blast") for l in range(1, 9)]
     + [f"item_{c}_{l}" for c in ("blood", "heart", "impen", "swift") for l in range(1, 9)]
+    + [f"creature_apt_{k}_{l}" for k in ("war", "life", "creature", "item", "void", "mana",
+        "heavy", "light", "finesse", "twohand", "missile", "meleed", "missiled", "magicd",
+        "healing", "arcane", "run", "summon") for l in range(1, 9)]
+    + [f"life_renew_{p}_{l}" for p in ("hp", "st", "mn") for l in range(1, 9)]
 ) if s not in _STARTERS]
 
 def roll_item(rare=False, tier=1):
