@@ -456,7 +456,7 @@ SCROLL_SPELLS = [s for s in (
     [f"creature_{c}_{l}" for c in ("str", "end", "coord", "quick", "focus", "will") for l in range(1, 9)]
     + [f"creature_{c}_{l}" for c in ("weak", "slow") for l in range(1, 9)]
     + [f"war_{c}_{l}" for c in WAR_ELEMENTS for l in range(1, 9)]
-    + [f"war_{c}_{g}_{l}" for c in WAR_ELEMENTS for g in ("blast", "volley", "ring", "streak") for l in range(1, 9)]
+    + [f"war_{c}_{g}_{l}" for c in WAR_ELEMENTS for g in ("blast", "volley", "ring", "streak", "arc") for l in range(1, 9)]
     + [f"war_storm_{l}" for l in range(1, 9)]
     + [f"life_heal_{l}" for l in range(1, 9)]
     + [f"life_revit_{l}" for l in range(1, 9)]

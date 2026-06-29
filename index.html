@@ -651,6 +651,11 @@ for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_streak_${t.lvl}`,name:`${WAR_ROOT[b.code]} Streak ${ROMAN[t.lvl]}`,ico:"✴️",school:"war",lvl:t.lvl,req:t.req,
   cost:Math.round(b.cost*0.75*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*0.7),
   make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult*0.68,speed:b.speed*1.5,color:b.color,r:b.r*0.8,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
+// ── War Magic Arc: a slow, heavy projectile that detonates with a splash radius on impact (I–VIII) ──
+for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
+  id:`war_${b.code}_arc_${t.lvl}`,name:`${WAR_ROOT[b.code]} Arc ${ROMAN[t.lvl]}`,ico:"☄️",school:"war",lvl:t.lvl,req:t.req,
+  cost:Math.round(b.cost*1.5*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*1.4),geom:"arc",
+  make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult*0.85,speed:b.speed*0.7,color:b.color,r:b.r*1.5,splash:4.2,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
 // AC's level-VIII spells are "Incantations" — rename every level-8 entry (e.g. "Flame Bolt VIII" → "Incantation of Flame Bolt").
 for(const s of SPELLBOOK_LIST){ if(s.lvl===8 && / VIII$/.test(s.name)) s.name="Incantation of "+s.name.slice(0,-5); }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
@@ -2569,7 +2574,7 @@ function castSpellById(id){
     mesh.position.set(ox,oy,oz);
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
     pProj.push({mesh,x:ox,y:oy,z:oz,vx:dx*sp.speed,vy:dir.y*sp.speed,vz:dz*sp.speed,
-      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,life:2.2});
+      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:2.2});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
@@ -2957,6 +2962,7 @@ function update(dt){
     if(!gone) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
       if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
+        if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
         if(p.slow)m.slow=Math.max(m.slow,p.slow);
         const em=elemMult(m.kind,p.element);
         if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");
@@ -2969,6 +2975,21 @@ function update(dt){
         const ifl=new THREE.PointLight(p.color,2.2,7);ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
         gone=true;break;
       }
+    }
+    if(gone && p.splash && !p._done){ p._done=true;   // Arc detonation: splash every foe in radius
+      const ix=p.x,iz=p.z,iy=Math.max(0.5,Math.min(p.y,2));
+      burst(ix,iy,iz,p.color,26);
+      const fl=new THREE.PointLight(p.color,3,16);fl.position.set(ix,iy,iz);scene.add(fl);setTimeout(()=>scene.remove(fl),200);
+      for(const m of monsters){ if(!!m.isDungeon!==inDungeon) continue;
+        if(Math.hypot(ix-m.x,iz-m.z)<p.splash){
+          const em=elemMult(m.kind,p.element);
+          if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");
+          if(p.slow)m.slow=Math.max(m.slow,p.slow);
+          if(p.burn){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
+          applyHit(m,p.dmg*em);
+        }
+      }
+      shake(0.16);
     }
     if(gone){scene.remove(p.mesh);pProj.splice(i,1);}
   }
