@@ -613,6 +613,12 @@ for(const b of WAR_BOLTS) for(const g of WAR_GEOMS) for(const t of GEOM_TIERS) S
   id:`war_${b.code}_${g.geom}_${t.lvl}`,name:`${WAR_ROOT[b.code]} ${g.gname} ${ROMAN[t.lvl]}`,ico:g.ico,
   school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*g.costMul*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*g.cdMul),geom:g.geom,
   make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.m*g.dmgMul,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
+// ── War Magic Streak: the fastest, cheapest single-target line per element (I–VIII) — low damage,
+//    snappy cooldown, near-instant travel. Reuses the bolt projectile with streak-tuned stats. ──
+for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
+  id:`war_${b.code}_streak_${t.lvl}`,name:`${WAR_ROOT[b.code]} Streak ${ROMAN[t.lvl]}`,ico:"✴️",school:"war",lvl:t.lvl,req:t.req,
+  cost:Math.round(b.cost*0.75*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*0.7),
+  make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult*0.68,speed:b.speed*1.5,color:b.color,r:b.r*0.8,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
 // AC's level-VIII spells are "Incantations" — rename every level-8 entry (e.g. "Flame Bolt VIII" → "Incantation of Flame Bolt").
 for(const s of SPELLBOOK_LIST){ if(s.lvl===8 && / VIII$/.test(s.name)) s.name="Incantation of "+s.name.slice(0,-5); }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
