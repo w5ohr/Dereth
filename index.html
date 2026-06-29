@@ -160,6 +160,8 @@
     <div id="questProg" style="color:var(--gold);margin-top:4px;font-weight:bold"></div>
   </div>
   <div id="log"><div class="panel2" id="logInner"></div></div>
+  <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say… (Enter send · Esc cancel · /who · /p · /party)"
+    style="position:absolute;left:12px;bottom:54px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
   <div id="spellbar" class="panel"></div>
   <div id="potions" class="panel">
     <div class="pot"><span class="k">R</span>❤<b id="pHealth">0</b></div>
@@ -2330,10 +2332,13 @@ document.addEventListener('mousemove',e=>{
   player.pitch=clamp(player.pitch-e.movementY*0.0022*settings.sens,-1.2,1.2);
 });
 window.addEventListener('keydown',e=>{
+  const ce=document.getElementById('chatInput');
+  if(ce && ce.style.display!=="none") return; // typing in chat — the input owns the keyboard
   const k=e.key.toLowerCase();
   if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k)) e.preventDefault();
   keys[k]=true;
   if(!running) return;
+  if(k==="enter"){ if(isOnline) openChat(); return; } // Enter opens chat (online only)
   { const si=SPELLS.findIndex(sp=>sp.key===k); if(si>=0) castSpell(si); }
   if(k===" ") dodge();
   if(k==="e") interact();
@@ -3674,6 +3679,7 @@ function netHandle(m){
   if(m.t==="roster") return onRoster(m);
   if(m.t==="play_ok") return onPlayOk(m);
   if(m.t==="play_err") return onPlayErr(m);
+  if(m.t==="who") return onWho(m);
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){ log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat"); return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
@@ -3903,6 +3909,43 @@ function onPlayErr(m){
   creatingChar=false;
   const msg=document.getElementById('csCreateMsg'); if(msg) msg.textContent=m.msg||"Could not start that character.";
 }
+// ---- chat input + slash commands (/who, /p, /party) ----
+function openChat(){
+  const ce=document.getElementById('chatInput'); if(!ce) return;
+  ce.style.display="block"; ce.value="";
+  if(document.pointerLockElement) document.exitPointerLock();
+  setTimeout(()=>ce.focus(),0);
+}
+function closeChat(relock){
+  const ce=document.getElementById('chatInput'); if(!ce) return;
+  ce.style.display="none"; ce.blur();
+  for(const kk in keys) keys[kk]=false;        // drop any keys captured while typing
+  if(relock && cEl && running) cEl.requestPointerLock();
+}
+function sendChatLine(text){
+  text=(text||"").trim(); if(!text) return;
+  if(text[0]==="/"){ handleSlash(text); return; }
+  netSend({t:"chat",msg:text});
+}
+function onWho(m){
+  const ps=m.players||[];
+  log(`<b>Online (${ps.length}):</b> `+(ps.length?ps.map(p=>`${esc(p.name)} <span style="color:var(--dim)">L${p.level||1}</span>`).join(", "):"just you"),"sys");
+}
+function handleSlash(text){
+  const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
+  const after=text.slice(text.indexOf(" ")+1);
+  if(cmd==="who"){ netSend({t:"who"}); }
+  else if(cmd==="p"){ const msg=(text.indexOf(" ")>=0?after:"").trim(); if(msg) netSend({t:"pchat",msg}); else log("Usage: /p &lt;message&gt;","warn"); }
+  else if(cmd==="party"||cmd==="f"){
+    const sub=(parts[1]||"").toLowerCase();
+    if(sub==="invite"&&parts[2]) netSend({t:"party",act:"invite",name:parts[2]});
+    else if(sub==="accept") netSend({t:"party",act:"accept"});
+    else if(sub==="leave") netSend({t:"party",act:"leave"});
+    else if(sub==="list"||!sub) netSend({t:"party",act:"list"});
+    else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
+  }
+  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /p, /party","warn");
+}
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
   const msg=document.getElementById('authMsg'), st=document.getElementById('authStatus');
@@ -4007,6 +4050,12 @@ document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{   // offli
 // online character creation (within the character-select screen)
 document.querySelectorAll('#csPaths button').forEach(b=>b.onclick=()=>createChar(b.dataset.path));
 document.getElementById('csCancel').onclick=()=>{ document.getElementById('csCreate').style.display="none"; };
+// chat input: Enter sends (or runs a slash command), Esc cancels
+document.getElementById('chatInput').addEventListener('keydown',e=>{
+  e.stopPropagation();
+  if(e.key==="Enter"){ const v=e.target.value; closeChat(true); sendChatLine(v); }
+  else if(e.key==="Escape"){ closeChat(true); }
+});
 // online auth
 document.getElementById('loginBtn').onclick=()=>authAction('login');
 document.getElementById('registerBtn').onclick=()=>authAction('register');

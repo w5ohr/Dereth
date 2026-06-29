@@ -116,6 +116,12 @@ async def main():
     cm = await a.recv_until(lambda x: x["t"] == "chat")
     check("chat relays bob -> alice", cm and cm.get("from") == f"{bob}0" and "hail" in cm.get("msg", ""))
 
+    # /who lists online in-world characters by name
+    await a.send({"t": "who"})
+    wh = await a.recv_until(lambda x: x["t"] == "who")
+    names = {p["name"] for p in (wh.get("players", []) if wh else [])}
+    check("/who lists online characters", bool(wh) and f"{bob}0" in names and len(names) >= 2)
+
     # --- M3: server-authoritative shared monsters ---
     snap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"))
     mobs = snap.get("mobs", []) if snap else []

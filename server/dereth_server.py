@@ -720,6 +720,9 @@ async def dispatch(cl, msg):
         char = msg.get("char")
         if isinstance(char, dict) and cl.slot is not None:
             save_char_slot(cl.username, cl.slot, char)
+    elif t == "who":
+        players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
+        await cl.send({"t": "who", "players": players})
     elif t == "ping":
         await cl.send({"t": "pong"})
 
