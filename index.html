@@ -463,15 +463,8 @@ const PRESETS={
 // Players learn spells (from scrolls / starting set) into player.knownSpells and
 // place known spells on a 10-slot hotbar (player.hotbar, keyed by HOTKEYS).
 const SPELLBOOK_LIST=[
-  {id:"war_flame_1",name:"Flame Bolt",ico:"🔥",cost:14,cd:520,school:"war",lvl:1,req:0,
-   make:()=>({dmg:18+player.attr.Focus*1.4,speed:55,color:0xff7a2a,r:0.28,burn:true,element:"fire"})},
-  {id:"war_frost_1",name:"Frost Bolt",ico:"❄️",cost:18,cd:760,school:"war",lvl:1,req:0,
-   make:()=>({dmg:24+player.attr.Focus*1.7,speed:46,color:0x7ec8ff,r:0.32,slow:.45,element:"ice"})},
   {id:"life_heal_1",name:"Heal Self",ico:"✨",cost:26,cd:1500,school:"life",lvl:1,req:0,heal:()=>34+player.attr.Self*2.2},
   {id:"life_stam2mana",name:"Stam→Mana",ico:"🔷",cost:0,cd:900,school:"life",lvl:1,req:0,special:"stam2mana"},
-  {id:"war_light_1",name:"Lightning",ico:"⚡",cost:20,cd:600,school:"war",lvl:1,req:0,
-   make:()=>({dmg:30+player.attr.Focus*1.8,speed:120,color:0xfff060,r:0.2,stun:true,element:"shock"})},
-  {id:"war_storm_1",name:"Flame Storm",ico:"🌋",cost:40,cd:3200,school:"aoe",lvl:1,req:0,dmg:()=>26+player.attr.Focus*1.3,element:"fire"},
   {id:"item_might_1",name:"Blade Lure",ico:"⚔️",cost:20,cd:11000,school:"item",lvl:1,req:0,buff:"might"},
   {id:"creature_swift_1",name:"Quickening",ico:"💨",cost:20,cd:11000,school:"creature",lvl:1,req:0,buff:"swift"},
   {id:"void_nether_1",name:"Nether Bolt",ico:"🟣",cost:24,cd:900,school:"void",lvl:1,req:0,
@@ -487,6 +480,21 @@ for(const [attr,code,ico] of CE_ATTRS){ const disp=attr==="Self"?"Willpower":att
   for(const t of CE_TIERS) SPELLBOOK_LIST.push({id:`creature_${code}_${t.lvl}`,name:`${disp} Self ${ROMAN[t.lvl]}`,
     ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:60});
 }
+// ── War Magic: elemental bolt lines (I–IV) + Flame Storm (I–III), scaling damage/cost/req ──
+const WAR_BOLTS=[
+  {code:"flame",name:"Flame Bolt",ico:"🔥",color:0xff7a2a,r:0.28,element:"fire", burn:true, base:18,foc:1.4,speed:55, cost:14,cd:520},
+  {code:"frost",name:"Frost Bolt",ico:"❄️",color:0x7ec8ff,r:0.32,element:"ice", slow:.45, base:24,foc:1.7,speed:46, cost:18,cd:760},
+  {code:"light",name:"Lightning",ico:"⚡",color:0xfff060,r:0.2, element:"shock",stun:true,base:30,foc:1.8,speed:120,cost:20,cd:600},
+];
+const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:25},{lvl:3,mult:2.4,req:55},{lvl:4,mult:3.4,req:90}];
+for(const b of WAR_BOLTS) for(const t of WAR_TIERS){
+  SPELLBOOK_LIST.push({id:`war_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"war",lvl:t.lvl,req:t.req,
+    cost:Math.round(b.cost*(1+(t.lvl-1)*0.5)),cd:b.cd,
+    make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
+}
+const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:75}];
+for(const t of WAR_STORM) SPELLBOOK_LIST.push({id:`war_storm_${t.lvl}`,name:`Flame Storm ${ROMAN[t.lvl]}`,ico:"🌋",
+  school:"aoe",lvl:t.lvl,req:t.req,cost:t.cost,cd:3200,element:"fire",color:0xff7a2a,dmg:()=>t.base+player.attr.Focus*t.foc});
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
 const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
