@@ -432,6 +432,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   knownSpells:[],hotbar:[],   // initialised from freshSpells() once the SPELLBOOK is defined
   spellBuffs:{},              // active Creature-Enchantment attribute buffs: attr -> {v,t}
   itemBuffs:{},               // active Item-Enchantment buffs: dmg/crit/armor/haste -> {v,t}
+  lifeBuffs:{},               // active Life buffs (e.g. damage-reduction Protection) -> {v,t}; fall on death
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
   meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
 
@@ -546,6 +547,13 @@ for(const b of WAR_BOLTS2) for(const t of WAR2_TIERS) SPELLBOOK_LIST.push({id:`w
   ico:b.ico,school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*(1+(t.lvl-1)*0.45)),cd:b.cd,
   make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,element:b.element})});
 // ── Life Magic: Harm Other I–VI (pure damage bolt — no lifesteal, distinct from Drain) ──
+// ── Life Magic: Protection Self (reduce incoming damage) + Vulnerability Other (foe takes more) ──
+const LIFE_PROT=[{lvl:1,v:0.12,cost:24,req:0,dur:90},{lvl:2,v:0.20,cost:34,req:35,dur:120},{lvl:3,v:0.30,cost:48,req:70,dur:150},{lvl:4,v:0.40,cost:64,req:110,dur:180}];
+for(const t of LIFE_PROT) SPELLBOOK_LIST.push({id:`life_prot_${t.lvl}`,name:`Protection Self ${ROMAN[t.lvl]}`,ico:"🛡️",
+  school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"prot",mag:t.v,dur:t.dur});
+const LIFE_VULN=[{lvl:1,v:1.12,cost:20,req:0,dur:20},{lvl:2,v:1.20,cost:28,req:35,dur:25},{lvl:3,v:1.32,cost:38,req:70,dur:30},{lvl:4,v:1.45,cost:50,req:110,dur:35}];
+for(const t of LIFE_VULN) SPELLBOOK_LIST.push({id:`life_vuln_${t.lvl}`,name:`Vulnerability Other ${ROMAN[t.lvl]}`,ico:"🎯",
+  school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,vuln:t.v,dur:t.dur});
 const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,cost:36,req:30},{lvl:3,base:78,foc:2.4,cost:52,req:60},{lvl:4,base:112,foc:2.8,cost:72,req:95},{lvl:5,base:155,foc:3.2,cost:96,req:135},{lvl:6,base:208,foc:3.6,cost:124,req:180}];
 for(const t of LIFE_HARM) SPELLBOOK_LIST.push({id:`life_harm_${t.lvl}`,name:`Harm Other ${ROMAN[t.lvl]}`,ico:"💀",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
@@ -1881,6 +1889,7 @@ function wornArmorV(){ const a=player.armorItem; if(!a) return 0; const at=ARMOR
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
+  if(m.vulnUntil>now()) base*=m.vulnV;   // Life Vulnerability — foe takes more damage
   let dmg=base+(opts.brandDmg||0);
   if(opts.element){ const em=elemMult(m.kind,opts.element); dmg*=em;
     if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0"); else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
@@ -2263,6 +2272,7 @@ function playerHurt(dmg,sx,sz){
   const armT=(player.armor+wornArmorV()+itemBuff("armor"))*skillEff("meleed",0.02)*skillEff("shield",0.01);  // Impenetrability
   const reduce=armT/(armT+60);
   dmg=Math.max(1,dmg*(1-reduce));
+  if(player.lifeBuffs&&player.lifeBuffs.prot) dmg=Math.max(1,dmg*(1-player.lifeBuffs.prot.v));  // Life Protection
   // active shield block: cut frontal damage (scales with Shield skill), costs stamina
   if(blocking&&player.st>4&&sx!==undefined){
     const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),ax=sx-player.x,az=sz-player.z,al=Math.hypot(ax,az)||1;
@@ -2282,7 +2292,7 @@ function playerHurt(dmg,sx,sz){
 }
 function die(){
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
-  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();
+  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.lifeBuffs={};
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
   document.getElementById('deathmsg').style.display="flex";
@@ -2357,6 +2367,12 @@ function castSpellById(id){
   if(player.mn<cost){log(`Not enough mana for ${s.name}.`,"warn");return;}
   player.mn-=cost;spellCd[id]=now()+s.cd;
   castShow=0.55; if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
+  if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
+    const m=pickMonsterTarget(28);
+    if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
+    m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000;
+    floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
+  }
   if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
     const m=pickMonsterTarget(28);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
@@ -2390,6 +2406,7 @@ function castSpellById(id){
     else if(s.buff==="swift"){player.buffSwiftT=dur;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
     else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
     else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};player.itemBuffs[s.stat]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
+    else if(s.buff==="prot"){player.lifeBuffs=player.lifeBuffs||{};player.lifeBuffs.prot={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% dmg taken`,"#7fe6a0");}
     castFlash(0x9af0ff);SFX.quest();log(`You invoke <b>${s.name}</b>.`,"heal");return;
   }
   if(s.school==="aoe"){
@@ -2944,6 +2961,7 @@ function update(dt){
   if(player.spellBuffs){ for(const a of Object.keys(player.spellBuffs)){ const b=player.spellBuffs[a]; b.t-=dt;
     if(b.t<=0){ player.attr[a]-=b.v; delete player.spellBuffs[a]; floater(player.x,EYE+0.6,player.z,a+" fades","#9fb0c0"); derive(); } } }
   if(player.itemBuffs){ for(const k of Object.keys(player.itemBuffs)){ const b=player.itemBuffs[k]; b.t-=dt; if(b.t<=0) delete player.itemBuffs[k]; } }
+  if(player.lifeBuffs){ for(const k of Object.keys(player.lifeBuffs)){ const b=player.lifeBuffs[k]; b.t-=dt; if(b.t<=0) delete player.lifeBuffs[k]; } }
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
@@ -4405,7 +4423,7 @@ let pendingServerChar=null;
 function startGame(loadSaved,preset){
   document.getElementById('overlay').style.display="none";
   initAudio();
-  player.spellBuffs={};   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
+  player.spellBuffs={}; player.lifeBuffs={};   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
   if(!loadSaved) player.itemBuffs={};   // fresh character: no item buffs (a loaded one restores them via applySaveObj)
   if(!loadSaved&&preset&&PRESETS[preset]){const p=PRESETS[preset];
     for(const a in p.attr) player.attr[a]+=p.attr[a];
