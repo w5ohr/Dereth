@@ -612,6 +612,17 @@ const LIFE_VULN=[{lvl:1,v:1.12,cost:20,req:0,dur:20},{lvl:2,v:1.20,cost:28,req:3
   {lvl:5,v:1.58,cost:64,req:150,dur:40},{lvl:6,v:1.72,cost:80,req:195,dur:45},{lvl:7,v:1.88,cost:100,req:250,dur:50},{lvl:8,v:2.05,cost:124,req:300,dur:55}];
 for(const t of LIFE_VULN) SPELLBOOK_LIST.push({id:`life_vuln_${t.lvl}`,name:`Vulnerability Other ${ROMAN[t.lvl]}`,ico:"🎯",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,vuln:t.v,dur:t.dur});
+// per-element Vulnerability Other (I–VIII): boosts only matching-element damage, so it stacks with the
+// creature's elemental weakness — curse a foe to your bolt's element for a burst. Stronger than the
+// generic line (narrower), reusing its tier ladder for cost/req/dur.
+const LIFE_VULN_EL=[
+  {el:"fire",   name:"Fire Vulnerability",       ico:"🔥"},{el:"ice",     name:"Cold Vulnerability",       ico:"❄️"},
+  {el:"shock",  name:"Lightning Vulnerability",  ico:"⚡"},{el:"acid",    name:"Acid Vulnerability",       ico:"🟢"},
+  {el:"bludgeon",name:"Bludgeoning Vulnerability",ico:"⚪"},{el:"slash",  name:"Slashing Vulnerability",    ico:"🗡"},
+  {el:"pierce", name:"Piercing Vulnerability",   ico:"🏹"}];
+for(const b of LIFE_VULN_EL) for(const t of LIFE_VULN) SPELLBOOK_LIST.push({
+  id:`life_vuln_${b.el}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"life",lvl:t.lvl,req:t.req,
+  cost:Math.round(t.cost*0.9),cd:7000,vuln:1+(t.v-1)*1.4,vulnElem:b.el,dur:t.dur});
 const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,cost:36,req:30},{lvl:3,base:78,foc:2.4,cost:52,req:60},{lvl:4,base:112,foc:2.8,cost:72,req:95},{lvl:5,base:155,foc:3.2,cost:96,req:135},{lvl:6,base:208,foc:3.6,cost:124,req:180},{lvl:7,base:272,foc:4.0,cost:158,req:240},{lvl:8,base:352,foc:4.4,cost:196,req:300}];
 for(const t of LIFE_HARM) SPELLBOOK_LIST.push({id:`life_harm_${t.lvl}`,name:`Harm Other ${ROMAN[t.lvl]}`,ico:"💀",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
@@ -1956,7 +1967,8 @@ function wornArmorV(){ const a=player.armorItem; if(!a) return 0; const at=ARMOR
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
-  if(m.vulnUntil>now()) base*=m.vulnV;   // Life Vulnerability — foe takes more damage
+  if(m.vulnUntil>now()) base*=m.vulnV;   // Life Vulnerability — foe takes more damage (any source)
+  if(m.vulnElemUntil>now()&&opts.element&&opts.element===m.vulnElem) base*=m.vulnElemV;  // element-specific Vulnerability
   let dmg=base+(opts.brandDmg||0);
   if(opts.element){ const em=elemMult(m.kind,opts.element); dmg*=em;
     if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0"); else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
@@ -2446,8 +2458,9 @@ function castSpellById(id){
   if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
     const m=pickMonsterTarget(28);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
-    m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000;
-    floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
+    if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
+    else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
+    castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
   }
   if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
     const m=pickMonsterTarget(28);

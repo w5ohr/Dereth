@@ -471,6 +471,7 @@ SCROLL_SPELLS = [s for s in (
         "healing", "arcane", "run", "summon") for l in range(1, 9)]
     + [f"life_renew_{p}_{l}" for p in ("hp", "st", "mn") for l in range(1, 9)]
     + [f"life_dispel_{l}" for l in range(1, 5)]
+    + [f"life_vuln_{el}_{l}" for el in ("fire", "ice", "shock", "acid", "bludgeon", "slash", "pierce") for l in range(1, 9)]
 ) if s not in _STARTERS]
 
 def roll_item(rare=False, tier=1):
