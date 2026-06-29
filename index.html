@@ -428,6 +428,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   knownSpells:[],hotbar:[],   // initialised from freshSpells() once the SPELLBOOK is defined
+  spellBuffs:{},              // active Creature-Enchantment attribute buffs: attr -> {v,t}
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
   meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
 
@@ -477,6 +478,15 @@ const SPELLBOOK_LIST=[
    make:()=>({dmg:28+player.attr.Focus*1.8,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})},
   {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
+// ── Creature Enchantment: self attribute buffs at three levels (raise an attribute for 60s) ──
+const CE_ATTRS=[["Strength","str","💪"],["Endurance","end","🛡️"],["Coordination","coord","🎯"],
+  ["Quickness","quick","🌀"],["Focus","focus","🔆"],["Self","will","✦"]];
+const CE_TIERS=[{lvl:1,mag:5,cost:16,req:0},{lvl:2,mag:9,cost:24,req:30},{lvl:3,mag:14,cost:34,req:55}];
+const ROMAN=["","I","II","III","IV","V","VI"];
+for(const [attr,code,ico] of CE_ATTRS){ const disp=attr==="Self"?"Willpower":attr;
+  for(const t of CE_TIERS) SPELLBOOK_LIST.push({id:`creature_${code}_${t.lvl}`,name:`${disp} Self ${ROMAN[t.lvl]}`,
+    ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:60});
+}
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
 const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
@@ -2171,7 +2181,7 @@ function playerHurt(dmg,sx,sz){
   if(player.hp<=0) die();
 }
 function die(){
-  player.alive=false;player.hp=0;despawnPets();
+  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
   document.getElementById('deathmsg').style.display="flex";
@@ -2189,6 +2199,18 @@ function die(){
 }
 
 // ---------- casting & melee ----------
+// Creature-Enchantment attribute buff: raise an attribute for a duration (refreshes, never stacks).
+function applyAttrBuff(attr,v,dur){
+  player.spellBuffs=player.spellBuffs||{};
+  const cur=player.spellBuffs[attr]; if(cur) player.attr[attr]-=cur.v;   // drop the old stack before re-applying
+  player.attr[attr]+=v; player.spellBuffs[attr]={v,t:dur};
+  derive();
+}
+function clearAttrBuffs(){ // strip active buffs back to base attributes (on death/char switch)
+  if(!player.spellBuffs) { player.spellBuffs={}; return; }
+  for(const a in player.spellBuffs){ player.attr[a]-=player.spellBuffs[a].v; }
+  player.spellBuffs={}; derive();
+}
 function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
 function castSpellById(id){
   if(!player.alive||paused) return;
@@ -2216,7 +2238,7 @@ function castSpellById(id){
     const dur=s.dur||25, mag=s.mag;
     if(s.buff==="might"){player.buffMightT=dur;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
     else if(s.buff==="swift"){player.buffSwiftT=dur;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
-    else if(s.buff==="attr"&&mag){player.spellBuffs=player.spellBuffs||{};player.spellBuffs[s.attr]={v:mag,t:dur};derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
+    else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
     castFlash(0x9af0ff);SFX.quest();log(`You invoke <b>${s.name}</b>.`,"heal");return;
   }
   if(s.school==="aoe"){
@@ -2752,6 +2774,8 @@ function update(dt){
   player.drinkCd=Math.max(0,player.drinkCd-dt);
   player.buffMightT=Math.max(0,player.buffMightT-dt);
   player.buffSwiftT=Math.max(0,player.buffSwiftT-dt);
+  if(player.spellBuffs){ for(const a of Object.keys(player.spellBuffs)){ const b=player.spellBuffs[a]; b.t-=dt;
+    if(b.t<=0){ player.attr[a]-=b.v; delete player.spellBuffs[a]; floater(player.x,EYE+0.6,player.z,a+" fades","#9fb0c0"); derive(); } } }
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
@@ -3727,7 +3751,8 @@ document.getElementById('closeTink').onclick=closeTinker;
 const SAVE_KEY="dereth_save_v1";
 function saveGame(){
   try{
-    const s={attr:player.attr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
+    const baseAttr={}; for(const a in player.attr) baseAttr[a]=player.attr[a]-((player.spellBuffs&&player.spellBuffs[a])?player.spellBuffs[a].v:0);
+    const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
       weapon:player.weapon,armorItem:player.armorItem,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
@@ -4148,6 +4173,7 @@ let pendingServerChar=null;
 function startGame(loadSaved,preset){
   document.getElementById('overlay').style.display="none";
   initAudio();
+  player.spellBuffs={};   // no stale Creature buffs carried into a new/loaded character
   if(!loadSaved&&preset&&PRESETS[preset]){const p=PRESETS[preset];
     for(const a in p.attr) player.attr[a]+=p.attr[a];
     player.armor+=p.armor||0;player.potHealth+=p.pot||0;player.potMana+=p.mana||0;player.title=p.title||"";player.heritage=preset;}
