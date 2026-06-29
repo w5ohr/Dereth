@@ -101,6 +101,34 @@ async def main():
     cm = await a.recv_until(lambda x: x["t"] == "chat")
     check("chat relays bob -> alice", cm and cm.get("from") == bob and "hail" in cm.get("msg", ""))
 
+    # --- M3: server-authoritative shared monsters ---
+    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"))
+    mobs = snap.get("mobs", []) if snap else []
+    check("snapshot carries shared mobs", len(mobs) > 0)
+    check("mob has id/kind/hp fields", bool(mobs) and all(k in mobs[0] for k in ("id", "kind", "hp", "mhp")))
+
+    if mobs:
+        # teleport alice onto a mob so the attack passes the server range check
+        target = mobs[0]
+        await a.send({"t": "input", "x": target["x"], "z": target["z"], "yaw": 0, "hp": 100})
+        await asyncio.sleep(0.25)
+        # an out-of-range attack must be ignored (no mob_hit)
+        await a.send({"t": "input", "x": target["x"] + 9000, "z": target["z"], "yaw": 0, "hp": 100})
+        await asyncio.sleep(0.25)
+        await a.send({"t": "attack", "id": target["id"], "dmg": 5})
+        far = await a.recv_until(lambda x: x["t"] == "mob_hit" and x.get("id") == target["id"], timeout=1.0)
+        check("out-of-range attack rejected", far is None)
+        # back in range: a big hit should kill it and yield a reward + mob_die broadcast
+        await a.send({"t": "input", "x": target["x"], "z": target["z"], "yaw": 0, "hp": 100})
+        await asyncio.sleep(0.25)
+        await a.send({"t": "attack", "id": target["id"], "dmg": 99999})
+        hit = await a.recv_until(lambda x: x["t"] == "mob_hit" and x.get("id") == target["id"])
+        check("in-range attack -> mob_hit", bool(hit))
+        die = await a.recv_until(lambda x: x["t"] == "mob_die" and x.get("id") == target["id"])
+        check("lethal attack -> mob_die", bool(die) and die.get("by") == alice)
+        rew = await a.recv_until(lambda x: x["t"] == "reward")
+        check("kill -> reward with xp+gold", bool(rew) and rew.get("xp", 0) > 0 and rew.get("gold", 0) > 0)
+
     # bob leaves -> alice sees leave message
     await b.close()
     check("alice sees bob leave", bool(await a.recv_until(lambda x: x["t"] == "system" and "left" in x.get("msg", ""))))

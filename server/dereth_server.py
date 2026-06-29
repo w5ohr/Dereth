@@ -12,7 +12,7 @@ Env:   DERETH_HOST, DERETH_PORT, DERETH_DB         (override defaults)
 
 This is Phase M1 (foundation). Monsters/combat become server-authoritative in M3.
 """
-import asyncio, base64, hashlib, hmac, json, os, secrets, sqlite3, struct, time
+import asyncio, base64, hashlib, hmac, json, math, os, random, secrets, sqlite3, struct, time
 
 HOST = os.environ.get("DERETH_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DERETH_PORT", "8787"))
@@ -177,7 +177,135 @@ def snapshot():
     return {"t": "snapshot", "players": [
         {"id": u, "name": u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
          "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title}
-        for u, cl in CLIENTS.items()]}
+        for u, cl in CLIENTS.items()],
+        "mobs": [
+        {"id": m["id"], "kind": m["kind"], "x": round(m["x"], 2), "z": round(m["z"], 2),
+         "yaw": round(m["yaw"], 3), "hp": round(m["hp"], 1), "mhp": m["mhp"], "st": m["state"]}
+        for m in MOBS.values() if m["hp"] > 0]}
+
+# ---------------------------------------------------------------- world: shared monsters
+# Server-authoritative monster sim (M3). Stats mirror the client BESTIARY subset so the
+# browser can render the same creature by `kind`. Positions, HP, AI and combat are owned
+# here so every player shares one world (and damage can't be faked by a client).
+DT = 1.0 / TICK_HZ
+MOB_BESTIARY = {
+    "drudge":    {"hp": 34,  "dmg": 7,  "spd": 5.0, "xp": 120, "gold": (2, 9),   "size": 0.9, "sense": 34, "atk": 1.3},
+    "mosswart":  {"hp": 52,  "dmg": 11, "spd": 4.3, "xp": 200, "gold": (4, 14),  "size": 1.0, "sense": 36, "atk": 1.4},
+    "reedshark": {"hp": 70,  "dmg": 14, "spd": 8.0, "xp": 300, "gold": (6, 18),  "size": 1.1, "sense": 42, "atk": 1.2},
+    "banderling":{"hp": 120, "dmg": 20, "spd": 6.0, "xp": 520, "gold": (12, 32), "size": 1.3, "sense": 44, "atk": 1.5},
+    "skeleton":  {"hp": 80,  "dmg": 16, "spd": 6.0, "xp": 360, "gold": (6, 18),  "size": 1.0, "sense": 44, "atk": 1.4},
+    "tusker":    {"hp": 160, "dmg": 24, "spd": 5.0, "xp": 620, "gold": (14, 40), "size": 1.7, "sense": 43, "atk": 1.6},
+}
+# Monsters cluster near these overworld anchors (players spawn around origin).
+MOB_CLUSTERS = [(0, 0), (320, 220), (-260, 180), (180, -300), (-300, -240), (260, 320)]
+MOBS = {}              # id -> mob dict
+_mob_seq = 0
+WORLD_LIMIT = 7000     # keep mobs inside the playfield
+ATTACK_RANGE = 16.0    # max client→mob distance accepted for an attack intent (melee+ranged+latency)
+
+def spawn_mob(kind=None, near=None):
+    global _mob_seq
+    _mob_seq += 1
+    if kind is None:
+        kind = random.choice(list(MOB_BESTIARY))
+    b = MOB_BESTIARY[kind]
+    cx, cz = near if near else random.choice(MOB_CLUSTERS)
+    a, rr = random.uniform(0, 6.28), random.uniform(20, 140)
+    x = max(-WORLD_LIMIT, min(WORLD_LIMIT, cx + math.cos(a) * rr))
+    z = max(-WORLD_LIMIT, min(WORLD_LIMIT, cz + math.sin(a) * rr))
+    mid = "m%d" % _mob_seq
+    MOBS[mid] = {
+        "id": mid, "kind": kind, "x": x, "z": z, "hx": cx, "hz": cz, "yaw": a,
+        "hp": float(b["hp"]), "mhp": b["hp"], "dmg": b["dmg"], "spd": b["spd"], "xp": b["xp"],
+        "gold": b["gold"], "r": b["size"] * 0.8, "sense": b["sense"], "atkcd_max": b["atk"],
+        "state": "wander", "target": None, "atkcd": 0.0, "wt": 0.0, "respawn_at": 0.0}
+    return MOBS[mid]
+
+def populate_world():
+    if MOBS:
+        return
+    for c in MOB_CLUSTERS:
+        for _ in range(6):
+            spawn_mob(near=c)
+
+def nearest_player(x, z, maxd):
+    best, bd = None, maxd
+    for u, cl in CLIENTS.items():
+        if cl.hp <= 0:
+            continue
+        d = math.hypot(cl.x - x, cl.z - z)
+        if d < bd:
+            best, bd = cl, d
+    return best, bd
+
+async def world_step():
+    """One AI tick: wander/chase, melee players (sends each victim a `dmg` event), respawn dead."""
+    now = time.time()
+    hits = []   # (username, amount, mob_kind) damage dealt to players this tick
+    for m in list(MOBS.values()):
+        if m["hp"] <= 0:
+            if now >= m["respawn_at"]:
+                # respawn as a fresh (possibly different) creature at the same anchor
+                MOBS.pop(m["id"], None)
+                spawn_mob(near=(m["hx"], m["hz"]))
+            continue
+        if m["atkcd"] > 0:
+            m["atkcd"] = max(0.0, m["atkcd"] - DT)
+        pl, pd = nearest_player(m["x"], m["z"], m["sense"]) if CLIENTS else (None, 0)
+        # leash: stop chasing if dragged too far from home anchor
+        if pl and math.hypot(m["x"] - m["hx"], m["z"] - m["hz"]) > 600:
+            pl = None
+        if pl:
+            m["state"] = "chase"; m["target"] = pl.username
+            dx, dz = pl.x - m["x"], pl.z - m["z"]
+            dist = math.hypot(dx, dz) or 1e-6
+            m["yaw"] = math.atan2(dx, dz)
+            reach = m["r"] + 1.6
+            if dist > reach:
+                step = min(m["spd"] * DT, dist - reach)
+                m["x"] += dx / dist * step; m["z"] += dz / dist * step
+            elif m["atkcd"] <= 0:
+                m["atkcd"] = m["atkcd_max"]
+                hits.append((pl.username, m["dmg"], m["kind"], m["x"], m["z"]))
+        else:
+            m["state"] = "wander"; m["target"] = None
+            m["wt"] -= DT
+            if m["wt"] <= 0:
+                m["wt"] = random.uniform(1.5, 4.0); m["yaw"] = random.uniform(0, 6.28)
+            sp = m["spd"] * 0.3
+            m["x"] += math.sin(m["yaw"]) * sp * DT; m["z"] += math.cos(m["yaw"]) * sp * DT
+        m["x"] = max(-WORLD_LIMIT, min(WORLD_LIMIT, m["x"]))
+        m["z"] = max(-WORLD_LIMIT, min(WORLD_LIMIT, m["z"]))
+    # deliver monster melee damage to each victim (client applies it to player.hp)
+    for username, amt, kind, mx, mz in hits:
+        cl = CLIENTS.get(username)
+        if cl:
+            await cl.send({"t": "dmg", "amt": amt, "kind": kind, "x": round(mx, 2), "z": round(mz, 2)})
+
+async def resolve_attack(cl, mid, dmg):
+    """A client claims it hit mob `mid` for `dmg`. Validate range, apply authoritatively."""
+    m = MOBS.get(mid)
+    if not m or m["hp"] <= 0:
+        return
+    if math.hypot(cl.x - m["x"], cl.z - m["z"]) > ATTACK_RANGE:
+        return
+    dmg = max(0.0, min(float(dmg), m["mhp"] * 1.5))  # clamp absurd claims
+    m["hp"] -= dmg
+    dealt = m.setdefault("dealt", {})
+    dealt[cl.username] = dealt.get(cl.username, 0) + dmg
+    await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.username})
+    if m["hp"] <= 0:
+        m["hp"] = 0.0
+        m["respawn_at"] = time.time() + 8.0
+        b = MOB_BESTIARY[m["kind"]]
+        gold = random.randint(b["gold"][0], b["gold"][1])
+        await broadcast({"t": "mob_die", "id": mid, "by": cl.username, "kind": m["kind"], "x": round(m["x"], 2), "z": round(m["z"], 2)})
+        # shared reward: every player who damaged it earns full XP; gold goes to the slayer
+        dealt = m.get("dealt", {cl.username: dmg})
+        for u in dealt:
+            c = CLIENTS.get(u)
+            if c:
+                await c.send({"t": "reward", "xp": m["xp"], "gold": gold if u == cl.username else 0, "kind": m["kind"]})
 
 # ---------------------------------------------------------------- auth + dispatch
 def valid_name(u):
@@ -234,6 +362,10 @@ async def dispatch(cl, msg):
         text = str(msg.get("msg", ""))[:240].strip()
         if text:
             await broadcast({"t": "chat", "from": cl.username, "msg": text, "ts": int(time.time())})
+    elif t == "attack":
+        mid = msg.get("id")
+        if isinstance(mid, str):
+            await resolve_attack(cl, mid, msg.get("dmg", 0))
     elif t == "save":
         char = msg.get("char")
         if isinstance(char, dict):
@@ -284,10 +416,12 @@ async def tick_loop():
     while True:
         await asyncio.sleep(interval)
         if CLIENTS:
+            await world_step()
             await broadcast(snapshot())
 
 async def main():
     db().close()  # ensure schema exists
+    populate_world()
     server = await asyncio.start_server(handle, HOST, PORT)
     asyncio.create_task(tick_loop())
     addr = ", ".join(str(s.getsockname()) for s in server.sockets)

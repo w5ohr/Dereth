@@ -1479,8 +1479,11 @@ function buildWorld(){
   if(sz.r>0){const pool=new THREE.Mesh(new THREE.CircleGeometry(300,32),new THREE.MeshPhongMaterial({color:0x2c3a26,specular:0x4a5a3a,shininess:40,transparent:true,opacity:0.82}));
     pool.rotation.x=-Math.PI/2;pool.position.set(sz.x,0,sz.z);pool.userData.float=0.3;pool.receiveShadow=true;scene.add(pool);scenery.push(pool);}
   settleY();
-  // monsters roam the realm (clustered near hubs)
-  for(let i=0;i<300;i++) spawnSomewhere();
+  // monsters roam the realm (clustered near hubs).
+  // Online, the overworld monsters are server-authoritative & shared — they arrive via
+  // snapshots (reconcileMobs), so the client does not spawn its own local population.
+  if(typeof NET!=="undefined") NET.mobs={};
+  if(!isOnline) for(let i=0;i<300;i++) spawnSomewhere();
   spawnBoss();spawnApex();spawnShadowGenerals();
   if(worldEvent){if(worldEvent.beam)scene.remove(worldEvent.beam);if(worldEvent.beacon)scene.remove(worldEvent.beacon);}
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
@@ -1659,7 +1662,7 @@ function pickKind(d,x,z){ // by region & distance from the nearest capital (lore
   return ["gromnie","drudge","auroch","tusker","lugian"][irnd(0,4)];                          // Gharu'ndim
 }
 function spawnSomewhere(){
-  if(inDungeon||inNetwork) return;
+  if(inDungeon||inNetwork||isOnline) return; // online overworld monsters are server-authoritative
   let x,z,d,t=0;
   do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75,470);
     x=clamp(h.x+Math.cos(a)*rr,-HALF+6,HALF-6);z=clamp(h.z+Math.sin(a)*rr,-HALF+6,HALF-6);
@@ -1732,6 +1735,14 @@ function applyHit(m,base,opts){ opts=opts||{};
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
 function damageMonster(m,dmg,crit){
+  if(m.shared){ // server-authoritative: claim the hit, let the server apply HP/death/XP
+    m.flash=.12; crit?SFX.crit():SFX.hit();
+    if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
+    floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
+    if(crit) shake(0.16);
+    netSend({t:"attack",id:m.id,dmg:Math.round(dmg)});
+    return;
+  }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
   m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
@@ -2578,6 +2589,7 @@ function update(dt){
   const burned=[];
   for(const m of monsters){
     if(inNetwork) break; // no creatures in the Town Network hub
+    if(m.shared) continue; // shared mobs are server-driven (see updateSharedMobs)
     if(!!m.isDungeon!==inDungeon) continue; // only the active instance's creatures act
     const b=BESTIARY[m.kind];
     m.flash=Math.max(0,m.flash-dt);m.atkCd=Math.max(0,m.atkCd-dt);m.t+=dt;
@@ -2668,7 +2680,7 @@ function update(dt){
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
   updateEvents(dt);
-  sendInput(dt); updateRemotes(dt);   // multiplayer: push our state, lerp others
+  sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
   updateWeather(dt);
   syncCamera(dt);
@@ -3617,7 +3629,7 @@ function serverUrl(loc){ loc=loc||location;
 }
 const SERVER_URL = serverUrl();
 let isOnline=false, creatingOnline=false, netInputT=0;
-const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{} };
+const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{} };
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function netConnect(onOpen,onFail){
   try{ NET.ws=new WebSocket(SERVER_URL); }catch(e){ onFail&&onFail(); return; }
@@ -3630,9 +3642,81 @@ function netSend(o){ if(NET.ws&&NET.open){ try{ NET.ws.send(JSON.stringify(o)); 
 function netHandle(m){
   if(m.t==="auth_ok") return onAuthOk(m);
   if(m.t==="auth_err"){ const e=document.getElementById('authMsg'); if(e)e.textContent=m.msg||"Authentication failed."; return; }
-  if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); return; }
+  if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); return; }
   if(m.t==="chat"){ log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat"); return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
+  if(m.t==="mob_hit") return onMobHit(m);
+  if(m.t==="mob_die") return onMobDie(m);
+  if(m.t==="dmg")     return onMobDmg(m);
+  if(m.t==="reward")  return onReward(m);
+}
+// ---- shared, server-authoritative monsters (M3) ----
+// Server mobs live in the same monsters[] array (so all combat/targeting/visuals reuse the
+// single-player code) but are flagged shared:true; their position/HP/death/XP are owned by
+// the server. The main monster-AI loop skips shared mobs; updateSharedMobs lerps them.
+function spawnSharedMob(sm){
+  const b=BESTIARY[sm.kind]||BESTIARY.drudge;
+  const mesh=buildCreature(sm.kind); mesh.position.set(sm.x,0,sm.z); scene.add(mesh);
+  const m={shared:true,id:sm.id,kind:sm.kind,x:sm.x,z:sm.z,tx:sm.x,tz:sm.z,yaw:sm.yaw||0,
+    r:b.size*0.8,hp:sm.hp,mhp:sm.mhp,dmg:b.dmg,xp:b.xp,ang:sm.yaw||0,state:sm.st||"wander",
+    mesh,headY:mesh.userData.headY,isDungeon:false,baseScale:1,flash:0,slow:0,burnT:0,t:0,atkCd:0};
+  monsters.push(m); NET.mobs[sm.id]=m; return m;
+}
+function removeSharedMob(id){
+  const m=NET.mobs[id]; if(!m) return;
+  const i=monsters.indexOf(m); if(i>=0) monsters.splice(i,1);
+  scene.remove(m.mesh); delete NET.mobs[id];
+}
+function reconcileMobs(serverMobs){
+  if(!isOnline) return;
+  const seen={};
+  for(const sm of serverMobs){
+    seen[sm.id]=1;
+    let m=NET.mobs[sm.id]||spawnSharedMob(sm);
+    m.tx=sm.x; m.tz=sm.z; m.yaw=sm.yaw; m.hp=sm.hp; m.mhp=sm.mhp; m.state=sm.st;
+  }
+  for(const id in NET.mobs){ if(!seen[id]) removeSharedMob(id); }
+}
+function updateSharedMobs(dt){
+  const hide=inDungeon||inNetwork; const k=1-Math.exp(-10*dt);
+  for(const id in NET.mobs){
+    const m=NET.mobs[id]; if(!m.mesh) continue;
+    m.mesh.visible=!hide; if(hide) continue;
+    m.flash=Math.max(0,m.flash-dt);
+    m.x+=(m.tx-m.x)*k; m.z+=(m.tz-m.z)*k;
+    const by=Math.abs(Math.sin(now()/140+m.x))*(m.state==="chase"?0.18:0.05);
+    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.y=m.yaw||0;
+    m.mesh.scale.setScalar(m.flash>0?1.08:1);
+    const hb=m.mesh.userData.hb;
+    if(hb){ if(m.hp<m.mhp){ hb.visible=true; hb.quaternion.copy(cam.quaternion);
+        const fill=m.mesh.userData.fill,r=Math.max(0,m.hp/m.mhp); fill.scale.x=r; fill.position.x=-(1-r)*0.7; }
+      else hb.visible=false; }
+  }
+}
+function onMobHit(msg){
+  const m=NET.mobs[msg.id]; if(!m) return;
+  m.hp=msg.hp; // authoritative
+  if(msg.by!==NET.me){ m.flash=.12; floater(m.x,(m.headY||1.6)+1.6,m.z,Math.round(msg.dmg),"#ffd86b"); }
+}
+function onMobDie(msg){
+  const b=BESTIARY[msg.kind];
+  burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death();
+  removeSharedMobAsDying(msg.id);
+}
+function removeSharedMobAsDying(id){
+  const m=NET.mobs[id]; if(!m){ return; }
+  const i=monsters.indexOf(m); if(i>=0) monsters.splice(i,1);
+  retire(m); delete NET.mobs[id]; // retire plays the shrink-out animation, then frees the mesh
+}
+function onMobDmg(msg){ playerHurt(msg.amt, msg.x, msg.z); }
+function onReward(msg){
+  if(msg.xp) gainXP(msg.xp);
+  if(msg.gold){ player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); SFX.gold(); }
+  player.kills++;
+  const b=BESTIARY[msg.kind];
+  if(b && player.bestiary.indexOf(msg.kind)<0){ player.bestiary.push(msg.kind);
+    log(`<b>Bestiary:</b> you have learned the nature of the ${b.name}.`,"loot"); toast("NEW BESTIARY ENTRY"); SFX.quest(); }
+  if(typeof checkAchievements==="function") checkAchievements();
 }
 function onAuthOk(m){
   NET.me=m.id; NET.token=m.token||null; isOnline=true;
