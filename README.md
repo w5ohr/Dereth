@@ -53,6 +53,7 @@ It now plays two ways:
 | Blade Lure / Quickening (self-buffs) | `7` / `8` |
 | Elixirs of Might / Swiftness | `9` / `0` |
 | Bestiary codex | `B` |
+| Spellbook (assign spells to the bar) | `K` |
 | World map | `Tab` |
 | Settings (sensitivity / volume / FOV) | `O` |
 | Character sheet (spend points) | `C` |
@@ -87,9 +88,10 @@ and **`/r`** to reply, **`/party invite|accept|leave|list`** + **`/p <msg>`** fo
   synthesized combat/spell/level-up effects — all generated in-browser, no audio files.
 - **Weather** — the sky cycles through clear, overcast, and rain. Storms bring falling rain, thick
   fog banks that cut your sight, and the hiss of rainfall.
-- **Vendor & potions** — a shopkeeper in Holtburg sells Health, Greater Health, and Mana potions for
-  pyreals (and buys your spare loot). Quaff them in the field with `R` / `G` / `F`; counts show next
-  to the spell bar.
+- **Vendors in every town** — each settlement has shopkeepers by trade: a **Provisioner** (potions &
+  elixirs, plus an attribute respec), a **Weaponsmith** (weapons), an **Armorer** (armour), and a
+  **Scrivener** (spell scrolls). Capitals host a full market of all four. They buy your spare loot too.
+  Quaff potions in the field with `R` / `G` / `F`; counts show next to the spell bar.
 - **Buff elixirs** — the vendor also stocks the **Elixir of Might** (`7`, +50% damage for 30s) and
   **Elixir of Swiftness** (`8`, +40% move speed for 30s); active buffs and timers show in the status panel.
   The vendor also offers an **attribute respec** for 100 pyreals — refunds all your allocated points
@@ -133,9 +135,12 @@ and **`/r`** to reply, **`/party invite|accept|leave|list`** + **`/p <msg>`** fo
   damage-direction indicator showing where you're being hit, monster lunges and death animations,
   ranged casters that telegraph a wind-up you can dodge, and a **kill-streak** XP bonus for chaining
   kills quickly.
-- **Eight spells across four schools** — *War* (Flame Bolt, Frost Bolt, Lightning, Flame Storm),
-  *Life* (Heal, Stamina→Mana), *Item Enchantment* (**Blade Lure**, +damage), and *Creature
-  Enchantment* (**Quickening**, +speed).
+- **A full spellbook of leveled spells** — ~48 spells across the schools, each at multiple levels
+  with rising skill requirements: **Creature Enchantment** self attribute-buffs (Strength/Coordination/
+  Quickness/Focus/Endurance/Willpower Self I–III), **War Magic** elemental bolts (Flame/Frost/Lightning
+  I–IV) and Flame Storm I–III, and **Life Magic** (Heal Self I–IV, Revitalize, Drain Health). You start
+  knowing a handful and **learn the rest from scrolls** — found as loot or bought from a **Scrivener** —
+  by scribing them (T). Open the **Spellbook** (`K`) to assign any known spell to a hotbar slot (1–8, z, x).
 - **Equipment & skills** — loot/buy and **equip weapons and armour** (`T` to manage your satchel);
   train five **skills** (Melee, Missile, War, Life, Defense) on the character sheet (`C`), and once
   you reach level 5 you may **swear an Allegiance** to a patron for +15% XP.
