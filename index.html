@@ -541,6 +541,18 @@ const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,co
 for(const t of LIFE_HARM) SPELLBOOK_LIST.push({id:`life_harm_${t.lvl}`,name:`Harm Other ${ROMAN[t.lvl]}`,ico:"💀",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:50,color:0x6a1a3a,r:0.3,element:null})});
+// ── War Magic geometries: Blast (cone), Volley (stream), Ring (point-blank) per element, I–IV ──
+const WAR_ROOT={flame:"Flame",frost:"Frost",light:"Lightning"};
+const WAR_GEOMS=[
+  {geom:"blast", gname:"Blast", ico:"🔆",dmgMul:0.7,costMul:1.4,cdMul:1.0},
+  {geom:"volley",gname:"Volley",ico:"🎇",dmgMul:0.6,costMul:1.3,cdMul:1.1},
+  {geom:"ring",  gname:"Ring",  ico:"💥",dmgMul:0.8,costMul:1.7,cdMul:1.5},
+];
+const GEOM_TIERS=[{lvl:1,m:1,req:0},{lvl:2,m:1.6,req:35},{lvl:3,m:2.4,req:70},{lvl:4,m:3.4,req:110}];
+for(const b of WAR_BOLTS) for(const g of WAR_GEOMS) for(const t of GEOM_TIERS) SPELLBOOK_LIST.push({
+  id:`war_${b.code}_${g.geom}_${t.lvl}`,name:`${WAR_ROOT[b.code]} ${g.gname} ${ROMAN[t.lvl]}`,ico:g.ico,
+  school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*g.costMul*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*g.cdMul),geom:g.geom,
+  make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.m*g.dmgMul,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
 const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
@@ -2375,17 +2387,31 @@ function castSpellById(id){
     castFlash(0x9b30ff);SFX.quest();log(`You conjure a <b>spectral wisp</b> to fight beside you.`,"heal");
     return;
   }
-  // projectile (war / void / life-drain bolts) along view direction
+  // war/void/life projectiles — geometry (bolt/streak/blast/volley/wave/ring) sets the shape
   const pow=consumeTaper();
   const sp=s.make();
+  const dmg=sp.dmg*skillEff(MAGIC_SCHOOLS[s.school]||"war",0.02)*pow;
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
-  const ox=player.x+dir.x*0.8, oz=player.z+dir.z*0.8, oy=EYE-0.15;
-  const mesh=new THREE.Mesh(new THREE.SphereGeometry(sp.r,10,8),
-    new THREE.MeshBasicMaterial({color:sp.color}));
-  mesh.position.set(ox,oy,oz);
-  const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
-  pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*sp.speed,vy:dir.y*sp.speed,vz:dir.z*sp.speed,
-    dmg:sp.dmg*skillEff(MAGIC_SCHOOLS[s.school]||"war",0.02)*pow,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,life:2.2});
+  const geom=s.geom||"bolt";
+  if(geom==="ring"){   // point-blank ring: strike every nearby foe around you
+    const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<7.5);
+    burst(player.x,1,player.z,sp.color,30);
+    for(const m of targets){ if(sp.element){const em=elemMult(m.kind,sp.element); if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");} applyHit(m,dmg,{element:sp.element}); }
+    castFlash(sp.color);SFX.flame();shake(0.2);
+    if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
+    return;
+  }
+  // spread angles per geometry: single, fan (blast/wave), tight stream (volley)
+  const spread=geom==="blast"?[-0.26,0,0.26]:geom==="wave"?[-0.45,-0.22,0,0.22,0.45]:geom==="volley"?[-0.07,0,0.07]:[0];
+  for(const off of spread){
+    const ca=Math.cos(off),sa=Math.sin(off), dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca;
+    const ox=player.x+dx*0.8, oz=player.z+dz*0.8, oy=EYE-0.15;
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(sp.r,10,8),new THREE.MeshBasicMaterial({color:sp.color}));
+    mesh.position.set(ox,oy,oz);
+    const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
+    pProj.push({mesh,x:ox,y:oy,z:oz,vx:dx*sp.speed,vy:dir.y*sp.speed,vz:dz*sp.speed,
+      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,life:2.2});
+  }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
 }
