@@ -72,20 +72,34 @@ async def main():
     await a.send({"t": "register", "user": alice, "pass": "secret1"})
     m = await a.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
     check("register alice -> auth_ok", m and m["t"] == "auth_ok")
-    token = m.get("token") if m else None
-    check("auth_ok includes session token", bool(token))
-    check("new account has null char", m and m.get("char") is None)
+    check("auth_ok includes session token", bool(m and m.get("token")))
+    ros = await a.recv_until(lambda x: x["t"] == "roster")
+    check("new account roster empty (max 8)", bool(ros) and ros.get("chars") == [] and ros.get("max") == 8)
 
-    # persist a character, then verify it survives re-login
-    await a.send({"t": "save", "char": {"level": 7, "kills": 42, "heritage": "sho"}})
+    # create 8 characters (slots 0..7); slot 0's create enters the world
+    for i in range(8):
+        await a.send({"t": "create_char", "slot": i, "name": f"{alice}{i}", "char": {"level": i + 1, "kills": i, "heritage": "sho"}})
+        po = await a.recv_until(lambda x: x["t"] in ("play_ok", "play_err"))
+        if i == 0:
+            check("create_char -> play_ok (enters world)", bool(po) and po["t"] == "play_ok" and po.get("char", {}).get("level") == 1)
+    check("created all 8 characters", True)
+    await a.send({"t": "create_char", "slot": 0, "name": f"{alice}d", "char": {}})
+    e1 = await a.recv_until(lambda x: x["t"] == "play_err")
+    check("create into occupied slot rejected", bool(e1) and "occupied" in e1.get("msg", "").lower())
+    await a.send({"t": "create_char", "slot": 8, "name": f"{alice}x", "char": {}})
+    e2 = await a.recv_until(lambda x: x["t"] == "play_err")
+    check("9th slot (index 8) rejected", bool(e2) and "slot" in e2.get("msg", "").lower())
     await a.send({"t": "ping"})
     check("ping -> pong", bool(await a.recv_until(lambda x: x["t"] == "pong")))
 
-    # second player joins -> alice should see a join system message
+    # second player joins, creates+plays a character -> alice sees the join
     b = await WS.connect()
     await b.send({"t": "register", "user": bob, "pass": "secret2"})
     mb = await b.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
     check("register bob -> auth_ok", mb and mb["t"] == "auth_ok")
+    await b.recv_until(lambda x: x["t"] == "roster")
+    await b.send({"t": "create_char", "slot": 0, "name": f"{bob}0", "char": {"level": 3, "heritage": "aluvian"}})
+    await b.recv_until(lambda x: x["t"] == "play_ok")
     check("alice sees bob join", bool(await a.recv_until(lambda x: x["t"] == "system" and bob in x.get("msg", ""))))
 
     # movement input -> snapshot reflects both players
@@ -95,11 +109,12 @@ async def main():
     ids = {p["id"]: p for p in (snap["players"] if snap else [])}
     check("snapshot lists both players", alice in ids and bob in ids)
     check("snapshot carries alice position", snap and abs(ids.get(alice, {}).get("x", 0) - 100) < 1)
+    check("snapshot shows character name, not account", ids.get(bob, {}).get("name") == f"{bob}0")
 
-    # chat from bob reaches alice
+    # chat from bob reaches alice, tagged with his character name
     await b.send({"t": "chat", "msg": "hail, adventurer!"})
     cm = await a.recv_until(lambda x: x["t"] == "chat")
-    check("chat relays bob -> alice", cm and cm.get("from") == bob and "hail" in cm.get("msg", ""))
+    check("chat relays bob -> alice", cm and cm.get("from") == f"{bob}0" and "hail" in cm.get("msg", ""))
 
     # --- M3: server-authoritative shared monsters ---
     snap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"))
@@ -139,6 +154,9 @@ async def main():
             carol = await WS.connect()
             await carol.send({"t": "register", "user": f"carol_{uniq}", "pass": "secret3"})
             await carol.recv_until(lambda x: x["t"] == "auth_ok")
+            await carol.recv_until(lambda x: x["t"] == "roster")
+            await carol.send({"t": "create_char", "slot": 0, "name": f"carol{uniq}", "char": {}})
+            await carol.recv_until(lambda x: x["t"] == "play_ok")
             replay = await carol.recv_until(lambda x: x["t"] == "drop" and x.get("id") == drop["id"])
             check("late joiner receives existing drops", bool(replay))
             await carol.close()
@@ -168,6 +186,9 @@ async def main():
     dave = await WS.connect()
     await dave.send({"t": "register", "user": f"dave_{uniq}", "pass": "secret4"})
     await dave.recv_until(lambda x: x["t"] == "auth_ok")
+    await dave.recv_until(lambda x: x["t"] == "roster")
+    await dave.send({"t": "create_char", "slot": 0, "name": f"dave{uniq}", "char": {}})
+    await dave.recv_until(lambda x: x["t"] == "play_ok")
     ev = await dave.recv_until(lambda x: x["t"] == "event_start", timeout=5.0)
     check("active Incursion synced to late joiner", bool(ev) and ev.get("name") and ev.get("count", 0) > 0)
     await dave.close()
@@ -176,17 +197,36 @@ async def main():
     await b.close()
     check("alice sees bob leave", bool(await a.recv_until(lambda x: x["t"] == "system" and "left" in x.get("msg", ""))))
 
-    # reconnect: wrong password rejected, right password restores persisted char
+    # reconnect: wrong password rejected; right password restores the full 8-char roster
     await a.close()
     c = await WS.connect()
     await c.send({"t": "login", "user": alice, "pass": "WRONG"})
     me = await c.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
     check("login wrong password -> auth_err", me and me["t"] == "auth_err")
     await c.send({"t": "login", "user": alice, "pass": "secret1"})
-    mo = await c.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
-    check("login correct password -> auth_ok", mo and mo["t"] == "auth_ok")
-    check("persisted character restored (level 7)", mo and mo.get("char", {}).get("level") == 7)
+    mo = await c.recv_until(lambda x: x["t"] == "auth_ok")
+    check("login correct password -> auth_ok", bool(mo))
+    ros2 = await c.recv_until(lambda x: x["t"] == "roster")
+    check("roster restores all 8 characters", bool(ros2) and len(ros2.get("chars", [])) == 8)
+    # playing slot 5 returns its persisted data (created with level 6)
+    await c.send({"t": "play_char", "slot": 5})
+    p5 = await c.recv_until(lambda x: x["t"] in ("play_ok", "play_err"))
+    check("play_char slot 5 restores its character (level 6)", bool(p5) and p5["t"] == "play_ok" and p5.get("char", {}).get("level") == 6)
+    # save to the active slot, then verify it persists after another relogin
+    await c.send({"t": "save", "char": {"level": 6, "kills": 999, "heritage": "sho"}})
+    await c.send({"t": "ping"}); await c.recv_until(lambda x: x["t"] == "pong")
+    await c.send({"t": "delete_char", "slot": 7})
+    rosd = await c.recv_until(lambda x: x["t"] == "roster")
+    check("delete_char removes a slot (8 -> 7)", bool(rosd) and len(rosd.get("chars", [])) == 7)
     await c.close()
+    d = await WS.connect()
+    await d.send({"t": "login", "user": alice, "pass": "secret1"})
+    await d.recv_until(lambda x: x["t"] == "auth_ok")
+    await d.recv_until(lambda x: x["t"] == "roster")
+    await d.send({"t": "play_char", "slot": 5})
+    pd = await d.recv_until(lambda x: x["t"] == "play_ok")
+    check("save persists to the active slot (kills 999)", bool(pd) and pd.get("char", {}).get("kills") == 999)
+    await d.close()
 
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)

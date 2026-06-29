@@ -21,14 +21,23 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 TICK_HZ = 10
 MAX_MSG = 1 << 20  # 1 MiB per message cap (character saves can be sizable)
 SCRYPT = dict(n=16384, r=8, p=1, dklen=32)
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2   # v2: accounts own up to 8 character slots (roster/play_char/create_char)
 
 # ---------------------------------------------------------------- persistence
+# An *account* (users row: username+password) owns up to MAX_CHARS *characters*
+# (characters rows, keyed by account+slot). The login name is the account; each
+# character has its own in-world name and save blob.
+MAX_CHARS = 8
+
 def db():
     c = sqlite3.connect(DB_PATH)
     c.execute("""CREATE TABLE IF NOT EXISTS users(
         username TEXT PRIMARY KEY, salt TEXT NOT NULL, pw TEXT NOT NULL,
         char TEXT, created INTEGER, seen INTEGER)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS characters(
+        account TEXT NOT NULL, slot INTEGER NOT NULL, name TEXT,
+        data TEXT, created INTEGER, seen INTEGER,
+        PRIMARY KEY(account, slot))""")
     return c
 
 def hash_pw(password: str, salt: bytes) -> str:
@@ -52,20 +61,61 @@ def verify_user(username, password):
     salt_hex, pw_hex = row
     return hmac.compare_digest(hash_pw(password, bytes.fromhex(salt_hex)), pw_hex)
 
-def load_char(username):
+def migrate_legacy(account):
+    """Seed slot 0 from a pre-multichar users.char blob (once), so old saves survive."""
     with db() as c:
-        row = c.execute("SELECT char FROM users WHERE username=?", (username,)).fetchone()
-    if row and row[0]:
-        try:
-            return json.loads(row[0])
-        except Exception:
-            return None
-    return None
+        if c.execute("SELECT COUNT(*) FROM characters WHERE account=?", (account,)).fetchone()[0]:
+            return
+        row = c.execute("SELECT char FROM users WHERE username=?", (account,)).fetchone()
+        if row and row[0]:
+            c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
+                      (account, 0, account, row[0], int(time.time()), int(time.time())))
 
-def save_char(username, char_obj):
+def _char_summary(name, data_str):
+    try:
+        d = json.loads(data_str) if data_str else {}
+    except Exception:
+        d = {}
+    return {"name": name, "level": d.get("level", 1), "title": d.get("title", ""),
+            "heritage": d.get("heritage", "aluvian"), "kills": d.get("kills", 0)}
+
+def roster(account):
+    migrate_legacy(account)
     with db() as c:
-        c.execute("UPDATE users SET char=?, seen=? WHERE username=?",
-                  (json.dumps(char_obj), int(time.time()), username))
+        rows = c.execute("SELECT slot,name,data FROM characters WHERE account=? ORDER BY slot", (account,)).fetchall()
+    return [dict(slot=r[0], **_char_summary(r[1], r[2])) for r in rows]
+
+def load_char_slot(account, slot):
+    with db() as c:
+        row = c.execute("SELECT name,data FROM characters WHERE account=? AND slot=?", (account, slot)).fetchone()
+    if not row:
+        return None
+    try:
+        data = json.loads(row[1]) if row[1] else None
+    except Exception:
+        data = None
+    return {"name": row[0], "data": data}
+
+def create_char_slot(account, slot, name, data):
+    if not isinstance(slot, int) or slot < 0 or slot >= MAX_CHARS:
+        return False, "Invalid character slot."
+    with db() as c:
+        if c.execute("SELECT 1 FROM characters WHERE account=? AND slot=?", (account, slot)).fetchone():
+            return False, "That slot is already occupied."
+        if c.execute("SELECT 1 FROM characters WHERE account=? AND name=?", (account, name)).fetchone():
+            return False, "You already have a character with that name."
+        c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
+                  (account, slot, name, json.dumps(data) if data is not None else None, int(time.time()), int(time.time())))
+    return True, None
+
+def save_char_slot(account, slot, data):
+    with db() as c:
+        c.execute("UPDATE characters SET data=?, seen=? WHERE account=? AND slot=?",
+                  (json.dumps(data), int(time.time()), account, slot))
+
+def delete_char_slot(account, slot):
+    with db() as c:
+        c.execute("DELETE FROM characters WHERE account=? AND slot=?", (account, slot))
 
 # ---------------------------------------------------------------- websocket
 async def ws_handshake(reader, writer) -> bool:
@@ -146,9 +196,12 @@ class Client:
     def __init__(self, reader, writer):
         self.reader = reader
         self.writer = writer
-        self.username = None
+        self.username = None    # account (login) name
         self.token = None
         self.alive = True
+        self.charname = None    # active character's in-world name
+        self.slot = None        # active character slot (0..MAX_CHARS-1)
+        self.in_world = False    # True once a character is selected/created (else: at char-select)
         # presence state (last reported by the client; M3 will make this authoritative)
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self.level = 1; self.heritage = "aluvian"; self.title = ""
@@ -163,9 +216,11 @@ class Client:
             self.alive = False
 
 async def broadcast(obj, exclude=None):
+    # only players who have entered the world (picked a character) get world traffic;
+    # accounts sitting at the character-select screen are skipped.
     dead = []
     for u, cl in list(CLIENTS.items()):
-        if cl is exclude:
+        if cl is exclude or not cl.in_world:
             continue
         await cl.send(obj)
         if not cl.alive:
@@ -186,9 +241,9 @@ def mob_pub(m):
 
 def snapshot():
     snap = {"t": "snapshot", "players": [
-        {"id": u, "name": u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
+        {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
          "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title}
-        for u, cl in CLIENTS.items()],
+        for u, cl in CLIENTS.items() if cl.in_world],
         "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
     if EVENT.get("active"):
         snap["event"] = {"id": EVENT["id"], "name": EVENT["name"], "x": EVENT["x"], "z": EVENT["z"],
@@ -326,7 +381,8 @@ async def end_event(success):
         xp = 900; gold = 220
         await broadcast({"t": "system", "msg": f"The {name} has been repelled! Defenders share a bounty of {xp} XP."})
         for cl in list(CLIENTS.values()):
-            await cl.send({"t": "event_reward", "xp": xp, "gold": gold, "name": name})
+            if cl.in_world:
+                await cl.send({"t": "event_reward", "xp": xp, "gold": gold, "name": name})
         # spoils on the ground at the breach
         for d in (make_drop(ex, ez, "gold", amt=gold),
                   make_drop(ex + 2, ez, "item", item=roll_item(True, 5)),
@@ -457,7 +513,7 @@ async def do_pickup(cl, did):
 def nearest_player(x, z, maxd):
     best, bd = None, maxd
     for u, cl in CLIENTS.items():
-        if cl.hp <= 0:
+        if not cl.in_world or cl.hp <= 0:
             continue
         d = math.hypot(cl.x - x, cl.z - z)
         if d < bd:
@@ -552,7 +608,7 @@ async def resolve_attack(cl, mid, dmg):
             die_msg["boss"] = True; die_msg["name"] = m["name"]
         await broadcast(die_msg)
         if is_boss:
-            await broadcast({"t": "system", "msg": f"{cl.username} has slain {m['name']}! Glory echoes across Dereth."})
+            await broadcast({"t": "system", "msg": f"{cl.charname or cl.username} has slain {m['name']}! Glory echoes across Dereth."})
         # shared XP: every player who damaged it earns full XP
         dealt = m.get("dealt", {cl.username: dmg})
         for u in dealt:
@@ -577,16 +633,23 @@ async def do_auth_success(cl, username):
             pass
     cl.username = username
     cl.token = secrets.token_hex(24)
+    cl.in_world = False; cl.charname = None; cl.slot = None
     TOKENS[cl.token] = username
     CLIENTS[username] = cl
-    await cl.send({"t": "auth_ok", "id": username, "name": username,
-                   "token": cl.token, "char": load_char(username), "pv": PROTOCOL_VERSION})
-    # replay current ground loot + any active Incursion so a late joiner is in sync
+    # Auth lands the player at the character-select screen, not the world.
+    await cl.send({"t": "auth_ok", "id": username, "token": cl.token, "pv": PROTOCOL_VERSION})
+    await cl.send({"t": "roster", "chars": roster(username), "max": MAX_CHARS})
+
+async def enter_world(cl, slot, name, data):
+    """Bring a selected/created character into the shared world."""
+    cl.slot = slot; cl.charname = name; cl.in_world = True
+    await cl.send({"t": "play_ok", "slot": slot, "name": name, "char": data})
+    # sync current ground loot + any active Incursion to the entering player
     for d in list(DROPS.values()):
         await cl.send(drop_pub(d))
     if EVENT.get("active"):
         await cl.send(event_pub())
-    await broadcast({"t": "system", "msg": f"{username} has entered Dereth."}, exclude=cl)
+    await broadcast({"t": "system", "msg": f"{name} has entered Dereth."}, exclude=cl)
 
 async def dispatch(cl, msg):
     t = msg.get("t")
@@ -612,6 +675,29 @@ async def dispatch(cl, msg):
     # everything below requires auth
     if not cl.username:
         return
+    if t == "play_char":
+        slot = msg.get("slot")
+        if not isinstance(slot, int):
+            return
+        ch = load_char_slot(cl.username, slot)
+        if not ch:
+            return await cl.send({"t": "play_err", "msg": "No character in that slot."})
+        return await enter_world(cl, slot, ch["name"], ch["data"])
+    if t == "create_char":
+        slot, name, char = msg.get("slot"), msg.get("name", ""), msg.get("char")
+        if not valid_name(name):
+            return await cl.send({"t": "play_err", "msg": "Name: 3-16 letters/numbers/_-."})
+        ok, err = create_char_slot(cl.username, slot, name, char if isinstance(char, dict) else None)
+        if not ok:
+            return await cl.send({"t": "play_err", "msg": err})
+        await cl.send({"t": "roster", "chars": roster(cl.username), "max": MAX_CHARS})
+        return await enter_world(cl, slot, name, char if isinstance(char, dict) else None)
+    if t == "delete_char":
+        slot = msg.get("slot")
+        if isinstance(slot, int) and not (cl.in_world and cl.slot == slot):
+            delete_char_slot(cl.username, slot)
+            await cl.send({"t": "roster", "chars": roster(cl.username), "max": MAX_CHARS})
+        return
     if t == "input":
         cl.x = float(msg.get("x", cl.x)); cl.z = float(msg.get("z", cl.z))
         cl.yaw = float(msg.get("yaw", cl.yaw)); cl.hp = int(msg.get("hp", cl.hp))
@@ -620,20 +706,20 @@ async def dispatch(cl, msg):
         cl.title = str(msg.get("title", cl.title))[:40]
     elif t == "chat":
         text = str(msg.get("msg", ""))[:240].strip()
-        if text:
-            await broadcast({"t": "chat", "from": cl.username, "msg": text, "ts": int(time.time())})
+        if text and cl.in_world:
+            await broadcast({"t": "chat", "from": cl.charname or cl.username, "msg": text, "ts": int(time.time())})
     elif t == "attack":
         mid = msg.get("id")
-        if isinstance(mid, str):
+        if isinstance(mid, str) and cl.in_world:
             await resolve_attack(cl, mid, msg.get("dmg", 0))
     elif t == "pickup":
         did = msg.get("id")
-        if isinstance(did, str):
+        if isinstance(did, str) and cl.in_world:
             await do_pickup(cl, did)
     elif t == "save":
         char = msg.get("char")
-        if isinstance(char, dict):
-            save_char(cl.username, char)
+        if isinstance(char, dict) and cl.slot is not None:
+            save_char_slot(cl.username, cl.slot, char)
     elif t == "ping":
         await cl.send({"t": "pong"})
 
@@ -668,8 +754,12 @@ async def handle(reader, writer):
     finally:
         cl.alive = False
         if cl.username and CLIENTS.get(cl.username) is cl:
+            was_in_world = cl.in_world
+            who = cl.charname or cl.username
+            cl.in_world = False
             CLIENTS.pop(cl.username, None)
-            await broadcast({"t": "system", "msg": f"{cl.username} has left Dereth."})
+            if was_in_world:
+                await broadcast({"t": "system", "msg": f"{who} has left Dereth."})
         try:
             writer.close()
         except Exception:
