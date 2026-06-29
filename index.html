@@ -149,6 +149,7 @@
     <div class="attr"><span>Kills</span><b id="sKills">0</b></div>
     <div class="attr"><span>Pyreals</span><b id="sGold">0</b></div>
     <div class="attr"><span>Materials</span><b id="sMats">0</b></div>
+    <div class="attr"><span>Tapers</span><b id="sTapers">0</b></div>
     <div class="attr"><span>Buffs</span><b id="sBuffs">—</b></div>
     <div class="attr"><span>Threats</span><b id="sThreat">0</b></div>
     <div class="attr"><span>Delves</span><b id="sDelves">0/50</b></div>
@@ -425,6 +426,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
   level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorItem:null,
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,
+  tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   knownSpells:[],hotbar:[],   // initialised from freshSpells() once the SPELLBOOK is defined
@@ -2254,6 +2256,13 @@ function clearAttrBuffs(){ // strip active buffs back to base attributes (on dea
   for(const a in player.spellBuffs){ player.attr[a]-=player.spellBuffs[a].v; }
   player.spellBuffs={}; derive();
 }
+// spell components: consume a taper to empower a cast (Prismatic strongest). Returns the
+// power multiplier; 1 (no boost) if you have none — tapers never block a cast.
+function consumeTaper(){
+  if(player.prismTapers>0){ player.prismTapers--; return 1.25; }
+  if(player.tapers>0){ player.tapers--; return 1.10; }
+  return 1;
+}
 function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
 function castSpellById(id){
   if(!player.alive||paused) return;
@@ -2273,12 +2282,13 @@ function castSpellById(id){
   player.mn-=cost;spellCd[id]=now()+s.cd;
   castShow=0.55; if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
   if(s.school==="life"&&s.heal){
-    const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01);player.hp=Math.min(player.mhp,player.hp+h);
-    floater(player.x,EYE+0.5,player.z,"+"+Math.round(h),"#7fe6a0");
+    const pow=consumeTaper();
+    const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01)*pow;player.hp=Math.min(player.mhp,player.hp+h);
+    floater(player.x,EYE+0.5,player.z,"+"+Math.round(h)+(pow>1?" ✦":""),"#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, healing ${Math.round(h)}.`,"heal");return;
   }
   if(s.special==="revitalize"){
-    const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02);player.st=Math.min(player.mst,player.st+v);
+    const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02)*consumeTaper();player.st=Math.min(player.mst,player.st+v);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
   }
@@ -2296,7 +2306,7 @@ function castSpellById(id){
     burst(cx,0.6,cz,col,42);
     const fl=new THREE.PointLight(col,3.5,22);fl.position.set(cx,2.5,cz);scene.add(fl);
     setTimeout(()=>scene.remove(fl),350);
-    const dmg=s.dmg()*skillEff("war",0.02);
+    const dmg=s.dmg()*skillEff("war",0.02)*consumeTaper();
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
     for(const m of targets){const em=elemMult(m.kind,el);if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");else if(em<1)floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el});}
     SFX.flame();castFlash(col);shake(0.22);
@@ -2311,6 +2321,7 @@ function castSpellById(id){
     return;
   }
   // projectile (war / void / life-drain bolts) along view direction
+  const pow=consumeTaper();
   const sp=s.make();
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
   const ox=player.x+dir.x*0.8, oz=player.z+dir.z*0.8, oy=EYE-0.15;
@@ -2319,7 +2330,8 @@ function castSpellById(id){
   mesh.position.set(ox,oy,oz);
   const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
   pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*sp.speed,vy:dir.y*sp.speed,vz:dir.z*sp.speed,
-    dmg:sp.dmg*skillEff(MAGIC_SCHOOLS[s.school]||"war",0.02),r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,life:2.2});
+    dmg:sp.dmg*skillEff(MAGIC_SCHOOLS[s.school]||"war",0.02)*pow,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,life:2.2});
+  if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
 }
 function castFlash(color){weaponLight.color.setHex(color);weaponLight.intensity=2.5;}
@@ -2968,6 +2980,7 @@ function updateHUD(){
   document.getElementById("sKills").textContent=player.kills;
   document.getElementById("sGold").textContent=player.gold;
   document.getElementById("sMats").textContent=player.materials;
+  { const tp=document.getElementById("sTapers"); if(tp) tp.textContent=player.prismTapers?`${player.tapers} (+${player.prismTapers}✦)`:player.tapers; }
   document.getElementById("pHealth").textContent=player.potHealth;
   document.getElementById("pGreat").textContent=player.potGreat;
   document.getElementById("pMana").textContent=player.potMana;
@@ -3335,6 +3348,15 @@ function checkAchievements(){
 const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2","creature_focus_2","creature_end_2",
   "war_flame_2","war_frost_2","war_light_2","war_storm_2","life_heal_2","life_heal_3","life_revit_1","life_drain_1"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
+// spell-component tapers (AC): colored tapers empower a cast a little; the universal
+// Prismatic Taper empowers it more. Bought in bundles; consumed when you cast offensive/healing magic.
+const TAPER_STOCK=[
+  {name:"Red Taper (×10)",   field:"tapers",amt:10,cost:40, ico:"🕯️",desc:"spell component — empowers a cast (+10%)"},
+  {name:"Blue Taper (×10)",  field:"tapers",amt:10,cost:40, ico:"🕯️",desc:"spell component — empowers a cast (+10%)"},
+  {name:"Green Taper (×10)", field:"tapers",amt:10,cost:40, ico:"🕯️",desc:"spell component — empowers a cast (+10%)"},
+  {name:"White Taper (×10)", field:"tapers",amt:10,cost:40, ico:"🕯️",desc:"spell component — empowers a cast (+10%)"},
+  {name:"Prismatic Taper (×10)",field:"prismTapers",amt:10,cost:160,ico:"🌈",desc:"universal component — empowers a cast (+25%)"},
+];
 function scrollStock(){ return SCRIVENER_SCROLLS.filter(id=>SPELLBOOK[id]).map(id=>{ const sp=SPELLBOOK[id];
   return {name:"Scroll: "+sp.name, scroll:true, spellId:id, cost:scrollPrice(id), ico:"📜",
     desc:`learn ${(SCHOOLS[sp.school]||"Magic").split(" · ")[0]} L${sp.lvl} (T to scribe)`}; }); }
@@ -3356,7 +3378,7 @@ const VENDOR_TYPES={
     {name:"Leather Jerkin",cost:100,desc:"Light, agile armour.",ico:"🛡",gear:{name:"Leather Jerkin",stat:"worn",at:"light",v:12}},
     {name:"Chainmail",cost:150,desc:"Balanced worn armour.",ico:"🛡",gear:{name:"Chainmail",stat:"worn",at:"medium",v:18}},
     {name:"Plate Hauberk",cost:220,desc:"Heavy, strong armour.",ico:"🛡",gear:{name:"Plate Hauberk",stat:"worn",at:"heavy",v:26}}]},
-  scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>scrollStock()},
+  scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>TAPER_STOCK.concat(scrollStock())},
 };
 let activeShop=null;
 function buildMerchant(vt){
@@ -3399,7 +3421,7 @@ function buildShop(){
     if(player.gold<it.cost) return;
     if(it.gear){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push(Object.assign({},it.gear)); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot"); }
     else if(it.scroll){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name}); log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
-    else { player.gold-=it.cost; player[it.field]++; }
+    else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
     SFX.gold();buildShop();updateHUD();saveGame();});
   // respec service (provisioners/apothecaries only)
   const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0),rcost=100;
@@ -3843,6 +3865,7 @@ function saveGame(){
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
       weapon:player.weapon,armorItem:player.armorItem,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,
+      tapers:player.tapers,prismTapers:player.prismTapers,
       elixMight:player.elixMight,elixSwift:player.elixSwift,
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
@@ -3864,6 +3887,7 @@ function applySaveObj(s){
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,
+    tapers:s.tapers||0,prismTapers:s.prismTapers||0,
     elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
     achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],

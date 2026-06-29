@@ -90,7 +90,9 @@ and **`/r`** to reply, **`/party invite|accept|leave|list`** + **`/p <msg>`** fo
   fog banks that cut your sight, and the hiss of rainfall.
 - **Vendors in every town** — each settlement has shopkeepers by trade: a **Provisioner** (potions &
   elixirs, plus an attribute respec), a **Weaponsmith** (weapons), an **Armorer** (armour), and a
-  **Scrivener** (spell scrolls). Capitals host a full market of all four. They buy your spare loot too.
+  **Scrivener** (spell scrolls **and tapers** — colored spell components plus the universal
+  **Prismatic Taper**, which you spend to empower a cast). Capitals host a full market of all four.
+  They buy your spare loot too.
   Quaff potions in the field with `R` / `G` / `F`; counts show next to the spell bar.
 - **Buff elixirs** — the vendor also stocks the **Elixir of Might** (`7`, +50% damage for 30s) and
   **Elixir of Swiftness** (`8`, +40% move speed for 30s); active buffs and timers show in the status panel.
