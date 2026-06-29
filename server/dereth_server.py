@@ -250,6 +250,107 @@ def spawn_boss():
         "boss": True, "name": b["name"], "scale": b["scale"]}
     return MOBS["boss"]
 
+# ---------------------------------------------------------------- loot (server-authoritative)
+# Items are plain JSON matching the client schema {name,stat,v,work,mat,tier,wt?,at?,affix?},
+# so the browser renders/equips/salvages them unchanged. roll_item mirrors index.html's rollItem.
+ITEM_PREFIX = ["Rusty", "Sturdy", "Keen", "Blessed", "Singularity", "Olthoi", "Acid-Etched", "Royal"]
+ITEM_BASE = [
+    {"n": "Buckler", "stat": "armor", "v": [3, 9]},
+    {"n": "Health Kit", "stat": "hp", "v": [30, 70]}, {"n": "Mana Stone", "stat": "mn", "v": [30, 70]},
+    {"n": "Coordination Gem", "stat": "Coordination", "v": [1, 1]}, {"n": "Focusing Stone", "stat": "Focus", "v": [1, 1]},
+    {"n": "Dagger", "stat": "weapon", "wt": "dagger", "v": [4, 10]}, {"n": "Sword", "stat": "weapon", "wt": "sword", "v": [5, 13]},
+    {"n": "Spear", "stat": "weapon", "wt": "spear", "v": [6, 14]}, {"n": "Axe", "stat": "weapon", "wt": "axe", "v": [7, 16]},
+    {"n": "War Mace", "stat": "weapon", "wt": "mace", "v": [8, 18]}, {"n": "Long Bow", "stat": "weapon", "wt": "bow", "v": [5, 13]},
+    {"n": "Crossbow", "stat": "weapon", "wt": "crossbow", "v": [8, 18]},
+    {"n": "Leather Jerkin", "stat": "worn", "at": "light", "v": [6, 15]}, {"n": "Quilted Robe", "stat": "worn", "at": "light", "v": [4, 12]},
+    {"n": "Chainmail", "stat": "worn", "at": "medium", "v": [8, 22]}, {"n": "Scale Mail", "stat": "worn", "at": "medium", "v": [10, 24]},
+    {"n": "Plate Hauberk", "stat": "worn", "at": "heavy", "v": [14, 34]}]
+ITEM_MATERIALS = {"weapon": ["Iron", "Pyreal", "Jet", "Diamond"], "armor": ["Bronze", "Granite", "Leather", "Steel"], "other": ["Amber", "Quartz", "Marble"]}
+WORK_TIER = [None, [1, 4], [2, 6], [3, 7], [3, 9], [4, 10]]
+WEAPON_AFFIXES = [
+    {"k": "brand", "element": "fire", "suffix": "of Flame", "desc": "fire damage + burn"},
+    {"k": "brand", "element": "frost", "suffix": "of Frost", "desc": "frost damage + chill"},
+    {"k": "brand", "element": "shock", "suffix": "of Storms", "desc": "shock damage + stun"},
+    {"k": "brand", "element": "nether", "suffix": "of the Void", "desc": "nether damage + drain"},
+    {"k": "crit", "v": 0.12, "suffix": "of Precision", "desc": "+12% critical chance"},
+    {"k": "lifesteal", "v": 0.22, "suffix": "of the Leech", "desc": "22% life steal"}]
+WORN_AFFIXES = [
+    {"k": "vital", "stat": "mhp", "v": 28, "suffix": "of Vigor", "desc": "+28 max health"},
+    {"k": "vital", "stat": "mst", "v": 34, "suffix": "of Endurance", "desc": "+34 max stamina"},
+    {"k": "vital", "stat": "mmn", "v": 28, "suffix": "of the Magus", "desc": "+28 max mana"},
+    {"k": "armorbonus", "v": 9, "suffix": "of Warding", "desc": "+9 armor"}]
+
+def _mat_class(stat):
+    return "weapon" if stat == "weapon" else ("armor" if stat in ("worn", "armor") else "other")
+
+def roll_item(rare=False, tier=1):
+    base = random.choice(ITEM_BASE)
+    tier = max(1, min(5, int(tier) or (3 if rare else 1)))
+    if rare:
+        tier = max(1, min(5, tier + 2))
+    v = random.randint(base["v"][0], base["v"][1])
+    if rare:
+        v = math.ceil(v * 2.2)
+    pool = ITEM_MATERIALS[_mat_class(base["stat"])]
+    r = WORK_TIER[tier]
+    it = {"name": "", "stat": base["stat"], "v": v, "work": random.randint(r[0], r[1]),
+          "mat": random.choice(pool), "tier": tier}
+    pre = (random.choice(ITEM_PREFIX[-3:]) + " ") if rare else ""
+    it["name"] = f"{pre}{it['mat']} {base['n']}"
+    if "wt" in base:
+        it["wt"] = base["wt"]
+    if "at" in base:
+        it["at"] = base["at"]
+    affixable = base["stat"] in ("weapon", "worn", "armor")
+    if affixable and (rare or tier >= 4) and random.random() < (0.85 if rare else 0.4):
+        it["affix"] = dict(random.choice(WEAPON_AFFIXES if base["stat"] == "weapon" else WORN_AFFIXES))
+        it["name"] += " " + it["affix"]["suffix"]
+    return it
+
+DROPS = {}             # id -> drop dict; shared ground loot, first-come pickup
+_drop_seq = 0
+DROP_TTL = 90.0        # seconds a drop lingers before it decays
+PICKUP_RANGE = 6.0
+
+def make_drop(x, z, dtype, amt=0, item=None):
+    global _drop_seq
+    _drop_seq += 1
+    did = "d%d" % _drop_seq
+    DROPS[did] = {"id": did, "x": x, "z": z, "type": dtype, "amt": amt, "item": item, "expire": time.time() + DROP_TTL}
+    return DROPS[did]
+
+def drop_pub(d):
+    o = {"t": "drop", "id": d["id"], "x": round(d["x"], 2), "z": round(d["z"], 2), "type": d["type"]}
+    if d["type"] == "gold":
+        o["amt"] = d["amt"]
+    else:
+        o["item"] = d["item"]
+    return o
+
+async def spawn_loot(m, is_boss):
+    """Roll a corpse's shared ground loot and broadcast it to everyone."""
+    out = [make_drop(m["x"], m["z"], "gold", amt=random.randint(m["gold"][0], m["gold"][1]))]
+    if is_boss:
+        for _ in range(3):
+            out.append(make_drop(m["x"] + random.uniform(-2, 2), m["z"] + random.uniform(-2, 2), "item", item=roll_item(True, 5)))
+    elif random.random() < 0.22:
+        out.append(make_drop(m["x"] + random.uniform(-1, 1), m["z"] + random.uniform(-1, 1), "item", item=roll_item(False, 1)))
+    for d in out:
+        await broadcast(drop_pub(d))
+
+async def do_pickup(cl, did):
+    d = DROPS.get(did)
+    if not d:
+        return
+    if math.hypot(cl.x - d["x"], cl.z - d["z"]) > PICKUP_RANGE:
+        return
+    DROPS.pop(did, None)
+    await broadcast({"t": "drop_gone", "id": did, "by": cl.username})
+    if d["type"] == "gold":
+        await cl.send({"t": "loot", "type": "gold", "amt": d["amt"]})
+    else:
+        await cl.send({"t": "loot", "type": "item", "item": d["item"]})
+
 def nearest_player(x, z, maxd):
     best, bd = None, maxd
     for u, cl in CLIENTS.items():
@@ -308,6 +409,10 @@ async def world_step():
         cl = CLIENTS.get(username)
         if cl:
             await cl.send({"t": "dmg", "amt": amt, "kind": kind, "x": round(mx, 2), "z": round(mz, 2)})
+    # decay expired ground loot
+    for did in [d for d, v in DROPS.items() if now >= v["expire"]]:
+        DROPS.pop(did, None)
+        await broadcast({"t": "drop_gone", "id": did})
 
 async def resolve_attack(cl, mid, dmg):
     """A client claims it hit mob `mid` for `dmg`. Validate range, apply authoritatively."""
@@ -325,7 +430,6 @@ async def resolve_attack(cl, mid, dmg):
         m["hp"] = 0.0
         is_boss = bool(m.get("boss"))
         m["respawn_at"] = time.time() + (BOSS_RESPAWN if is_boss else 8.0)
-        gold = random.randint(m["gold"][0], m["gold"][1])
         die_msg = {"t": "mob_die", "id": mid, "by": cl.username, "kind": m["kind"],
                    "x": round(m["x"], 2), "z": round(m["z"], 2)}
         if is_boss:
@@ -333,13 +437,14 @@ async def resolve_attack(cl, mid, dmg):
         await broadcast(die_msg)
         if is_boss:
             await broadcast({"t": "system", "msg": f"{cl.username} has slain {m['name']}! Glory echoes across Dereth."})
-        # shared reward: every player who damaged it earns full XP; gold goes to the slayer
+        # shared XP: every player who damaged it earns full XP
         dealt = m.get("dealt", {cl.username: dmg})
         for u in dealt:
             c = CLIENTS.get(u)
             if c:
-                await c.send({"t": "reward", "xp": m["xp"], "gold": gold if u == cl.username else 0,
-                              "kind": m["kind"], "boss": is_boss})
+                await c.send({"t": "reward", "xp": m["xp"], "kind": m["kind"], "boss": is_boss})
+        # gold + items drop on the ground as shared, first-come loot
+        await spawn_loot(m, is_boss)
 
 # ---------------------------------------------------------------- auth + dispatch
 def valid_name(u):
@@ -400,6 +505,10 @@ async def dispatch(cl, msg):
         mid = msg.get("id")
         if isinstance(mid, str):
             await resolve_attack(cl, mid, msg.get("dmg", 0))
+    elif t == "pickup":
+        did = msg.get("id")
+        if isinstance(did, str):
+            await do_pickup(cl, did)
     elif t == "save":
         char = msg.get("char")
         if isinstance(char, dict):

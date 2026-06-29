@@ -1482,7 +1482,7 @@ function buildWorld(){
   // monsters roam the realm (clustered near hubs).
   // Online, the overworld monsters are server-authoritative & shared — they arrive via
   // snapshots (reconcileMobs), so the client does not spawn its own local population.
-  if(typeof NET!=="undefined") NET.mobs={};
+  if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; }
   if(!isOnline) for(let i=0;i<300;i++) spawnSomewhere();
   // Online, world bosses are server-authoritative & shared (the Olthoi Queen arrives via
   // snapshots). The local per-client bosses only spawn in the offline solo game.
@@ -1940,6 +1940,7 @@ function addDrop(x,z,data){
   const gy=groundY(x,z);
   mesh.position.set(x,gy+0.6,z);mesh.castShadow=true;scene.add(mesh);
   drops.push(Object.assign({x,z,t:0,mesh,baseY:gy},data));
+  return drops[drops.length-1];
 }
 
 const ITEM_PREFIX=["Rusty","Sturdy","Keen","Blessed","Singularity","Olthoi","Acid-Etched","Royal"];
@@ -2383,7 +2384,12 @@ function portalTouch(){
 function interact(){
   let best=null,bd=4;
   for(const d of drops) if(d.type==="item"){const dd=Math.hypot(d.x-player.x,d.z-player.z);if(dd<bd){bd=dd;best=d;}}
-  if(best){lootItem(best.item);scene.remove(best.mesh);drops.splice(drops.indexOf(best),1);return;}
+  if(best){
+    if(best.shared){ // server-validated pickup; the server grants it and broadcasts drop_gone
+      if(player.inv.length>=12){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
+      netSend({t:"pickup",id:best.id}); return;
+    }
+    lootItem(best.item);scene.remove(best.mesh);drops.splice(drops.indexOf(best),1);return;}
   if(inNetwork){
     for(const np of netPortals){if(Math.hypot(np.x-player.x,np.z-player.z)<3){exitNetwork({x:np.town.x,z:np.town.z});toast(np.town.name.toUpperCase());log(`You travel to <b>${np.town.name}</b>.`,"sys");SFX.portal();return;}}
     if(Math.hypot(netExit.x-player.x,netExit.z-player.z)<3){exitNetwork(netReturn);log("You leave the Town Network.","sys");SFX.portal();}
@@ -2652,9 +2658,11 @@ function update(dt){
     const dp=drops[i];dp.t+=dt;dp.mesh.rotation.y+=dt*2;
     dp.mesh.position.y=(dp.baseY||0)+0.55+Math.sin(now()/250+dp.x)*0.12;
     const dd=Math.hypot(dp.x-player.x,dp.z-player.z);
-    if(dp.type==="gold"&&dd<2){player.gold+=dp.amt;floater(player.x,EYE+0.4,player.z,"+"+dp.amt+" p","#ffd86b");
+    if(dp.type==="gold"&&dd<2){
+      if(dp.shared){ if(!dp.req){ dp.req=true; netSend({t:"pickup",id:dp.id}); } continue; } // server-validated; server removes it
+      player.gold+=dp.amt;floater(player.x,EYE+0.4,player.z,"+"+dp.amt+" p","#ffd86b");
       SFX.gold();scene.remove(dp.mesh);drops.splice(i,1);continue;}
-    if(dp.type==="item"&&dp.t>45){scene.remove(dp.mesh);drops.splice(i,1);}
+    if(dp.type==="item"&&!dp.shared&&dp.t>45){scene.remove(dp.mesh);drops.splice(i,1);} // shared drops expire server-side
   }
   // floaters & bursts
   for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.sp.position.y+=f.vy*dt;f.t-=dt;
@@ -3631,7 +3639,7 @@ function serverUrl(loc){ loc=loc||location;
 }
 const SERVER_URL = serverUrl();
 let isOnline=false, creatingOnline=false, netInputT=0;
-const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{} };
+const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{} };
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function netConnect(onOpen,onFail){
   try{ NET.ws=new WebSocket(SERVER_URL); }catch(e){ onFail&&onFail(); return; }
@@ -3651,6 +3659,26 @@ function netHandle(m){
   if(m.t==="mob_die") return onMobDie(m);
   if(m.t==="dmg")     return onMobDmg(m);
   if(m.t==="reward")  return onReward(m);
+  if(m.t==="drop")      return onDrop(m);
+  if(m.t==="drop_gone") return onDropGone(m);
+  if(m.t==="loot")      return onLoot(m);
+}
+// ---- shared ground loot (M3c): server owns drops; pickups are first-come, server-validated ----
+function onDrop(msg){
+  if(!isOnline||NET.drops[msg.id]) return;
+  const data=msg.type==="gold"?{type:"gold",amt:msg.amt}:{type:"item",item:msg.item};
+  data.id=msg.id; data.shared=true;
+  NET.drops[msg.id]=addDrop(msg.x,msg.z,data);
+}
+function onDropGone(msg){
+  const d=NET.drops[msg.id]; if(!d) return;
+  const i=drops.indexOf(d); if(i>=0) drops.splice(i,1);
+  if(d.mesh){ burst(d.x,0.8,d.z,d.type==="gold"?0xffd23b:0xcaa14a,6); scene.remove(d.mesh); }
+  delete NET.drops[msg.id];
+}
+function onLoot(msg){
+  if(msg.type==="gold"){ player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); SFX.gold(); if(typeof updateHUD==="function") updateHUD(); }
+  else if(msg.type==="item"&&msg.item){ lootItem(msg.item); }
 }
 // ---- shared, server-authoritative monsters (M3) ----
 // Server mobs live in the same monsters[] array (so all combat/targeting/visuals reuse the

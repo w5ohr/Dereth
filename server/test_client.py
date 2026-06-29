@@ -129,7 +129,29 @@ async def main():
         die = await a.recv_until(lambda x: x["t"] == "mob_die" and x.get("id") == target["id"])
         check("lethal attack -> mob_die", bool(die) and die.get("by") == alice)
         rew = await a.recv_until(lambda x: x["t"] == "reward")
-        check("kill -> reward with xp+gold", bool(rew) and rew.get("xp", 0) > 0 and rew.get("gold", 0) > 0)
+        check("kill -> reward with shared xp", bool(rew) and rew.get("xp", 0) > 0)
+
+        # the kill drops shared ground loot (gold pile, first-come)
+        drop = await a.recv_until(lambda x: x["t"] == "drop" and x.get("type") == "gold")
+        check("kill -> gold drop broadcast", bool(drop) and drop.get("amt", 0) > 0 and "id" in drop)
+        if drop:
+            # out-of-range pickup is rejected; in-range yields a loot grant + drop_gone
+            await a.send({"t": "input", "x": drop["x"] + 9000, "z": drop["z"], "yaw": 0, "hp": 100})
+            await asyncio.sleep(0.2)
+            await a.send({"t": "pickup", "id": drop["id"]})
+            far = await a.recv_until(lambda x: x["t"] == "loot", timeout=1.0)
+            check("out-of-range pickup rejected", far is None)
+            await a.send({"t": "input", "x": drop["x"], "z": drop["z"], "yaw": 0, "hp": 100})
+            await asyncio.sleep(0.2)
+            await a.send({"t": "pickup", "id": drop["id"]})
+            # drop_gone is broadcast before the direct loot grant, so look for it first
+            gone = await a.recv_until(lambda x: x["t"] == "drop_gone" and x.get("id") == drop["id"])
+            check("picked-up drop -> drop_gone", bool(gone))
+            loot = await a.recv_until(lambda x: x["t"] == "loot")
+            check("in-range pickup -> loot grant", bool(loot) and loot.get("type") == "gold" and loot.get("amt", 0) > 0)
+            await a.send({"t": "pickup", "id": drop["id"]})  # second pickup must yield nothing
+            again = await a.recv_until(lambda x: x["t"] == "loot", timeout=1.0)
+            check("double pickup yields no second loot", again is None)
 
     # bob leaves -> alice sees leave message
     await b.close()
