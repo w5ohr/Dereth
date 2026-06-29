@@ -225,7 +225,18 @@
 <div id="spellbook"><div class="card">
   <h2>Spellbook</h2>
   <div class="sub">Your learned spells. Assign any known spell to a hotbar slot (1–8, z, x). Scribe scrolls (T) to learn more; higher spell levels need a higher skill in that school.</div>
-  <div id="sbRows"></div>
+  <div id="sbFilters" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
+    <input id="sbSearch" placeholder="search spells…" style="flex:1;min-width:120px;background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px">
+    <select id="sbSchool" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-size:12px">
+      <option value="all">All schools</option><option value="war">War</option><option value="life">Life</option>
+      <option value="creature">Creature</option><option value="item">Item</option><option value="void">Void</option><option value="summon">Summon</option></select>
+    <select id="sbLevel" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-size:12px">
+      <option value="0">All levels</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
+    <label style="font-size:12px;color:var(--dim);white-space:nowrap"><input type="checkbox" id="sbKnown" style="vertical-align:middle"> known</label>
+    <label style="font-size:12px;color:var(--dim);white-space:nowrap"><input type="checkbox" id="sbReady" style="vertical-align:middle"> castable</label>
+    <span id="sbCount" style="font-size:12px;color:var(--dim)"></span>
+  </div>
+  <div id="sbRows" style="max-height:60vh;overflow-y:auto"></div>
   <button id="closeSpellbook">Return to Dereth  (K)</button>
 </div></div>
 
@@ -3669,6 +3680,8 @@ document.getElementById('closeShop').onclick=closeShop;
 
 // ---- Spellbook (view known spells, assign to hotbar) ----
 function openSpellbook(){ buildSpellbook(); document.getElementById('spellbook').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+// rebuild the list as any filter changes (wired once)
+for(const id of ["sbSearch","sbSchool","sbLevel","sbKnown","sbReady"]){ const el=document.getElementById(id); if(el) el[id==="sbSearch"?"oninput":"onchange"]=()=>buildSpellbook(); }
 function closeSpellbook(){ document.getElementById('spellbook').style.display="none"; paused=false; }
 function assignHotbar(slot,id){
   for(let i=0;i<player.hotbar.length;i++) if(player.hotbar[i]===id) player.hotbar[i]=null; // a spell lives in one slot
@@ -3677,8 +3690,27 @@ function assignHotbar(slot,id){
 }
 function buildSpellbook(){
   const root=document.getElementById('sbRows'); if(!root) return; root.innerHTML="";
+  // read the filter bar (school "aoe" rolls into War)
+  const q=(document.getElementById('sbSearch')?.value||"").trim().toLowerCase();
+  const fSchool=document.getElementById('sbSchool')?.value||"all";
+  const fLevel=+(document.getElementById('sbLevel')?.value||0);
+  const fKnown=!!document.getElementById('sbKnown')?.checked;
+  const fReady=!!document.getElementById('sbReady')?.checked;
+  const schoolKey=s=>s.school==="aoe"?"war":s.school;
+  let shown=0, total=0;
   const groups={};
-  for(const s of SPELLBOOK_LIST){ const g=SCHOOLS[s.school]||"Magic"; (groups[g]=groups[g]||[]).push(s); }
+  for(const s of SPELLBOOK_LIST){ total++;
+    const known=player.knownSpells.indexOf(s.id)>=0, mk=MAGIC_SCHOOLS[s.school];
+    const trained=mk?skillTier(mk)>0:true, castable=known&&trained&&(!s.req||(mk?skillValue(mk):0)>=s.req);
+    if(q && s.name.toLowerCase().indexOf(q)<0) continue;
+    if(fSchool!=="all" && schoolKey(s)!==fSchool) continue;
+    if(fLevel && s.lvl!==fLevel) continue;
+    if(fKnown && !known) continue;
+    if(fReady && !castable) continue;
+    const g=SCHOOLS[s.school]||"Magic"; (groups[g]=groups[g]||[]).push(s); shown++;
+  }
+  const cnt=document.getElementById('sbCount'); if(cnt) cnt.textContent=`${shown} / ${total}`;
+  if(!shown){ root.innerHTML=`<div style="color:var(--dim);padding:14px 0">No spells match your filters.</div>`; return; }
   for(const gname of Object.keys(groups)){
     const h=document.createElement('div'); h.style.cssText="color:var(--gold);font-weight:bold;font-size:13px;margin:10px 0 4px"; h.textContent=gname; root.appendChild(h);
     groups[gname].sort((a,b)=>a.lvl-b.lvl||a.name.localeCompare(b.name));
