@@ -1,16 +1,30 @@
 # Dereth — A First-Person Asheron's Call Homage
 
-A playable **first-person 3D** action-RPG inspired by **Asheron's Call** (Turbine, 1999).
-Built on Three.js (bundled locally), it runs natively in the browser on Apple Silicon
-Macs with **zero install and fully offline** — no toolchain, no compilation, no Rosetta,
-no internet required at runtime.
+A playable **first-person 3D** action-RPG inspired by **Asheron's Call** (Turbine, 1999),
+built on Three.js (bundled locally).
+
+It now plays two ways:
+
+- **Online — the Dereth MMO.** Register an account, roll **up to 8 characters**, and enter a
+  **shared, server-authoritative world** alongside other players: shared monsters, world bosses,
+  ground loot, Incursions, parties, and chat. The server is a **dependency-free Python 3 program**
+  (stdlib only — see `server/`) that runs anywhere and deploys to a small cloud box (`deploy/`).
+- **Offline — solo.** The original **zero-install, fully offline** single-player game still works
+  unchanged: open `index.html`, pick a heritage, and play with a local browser save. No toolchain,
+  no compilation, no Rosetta, no internet required at runtime.
 
 ## How to play
 
 - **Double-click `Play Dereth.command`** (or open `index.html` in Safari/Chrome).
-- Choose a **heritage** — **Aluvian** (Holtburg), **Sho** (Shoushi), or **Gharu'ndim** (Yaraq) — and you
-  begin in that culture's capital with fitting attribute leanings (or pick Wanderer for a balanced
-  start). Or **Continue Your Saga** if you have a save. Then **click the screen to capture the mouse**.
+- **Play online (the MMO):** in the title screen's **Log In / Register** panel, create an account
+  (account name + password), then you land on the **character-select screen** — up to **8 character
+  slots**. Create a character (name + heritage) or **Play** an existing one to enter the shared world.
+  *(Online requires a running server — see [Multiplayer](#multiplayer--the-dereth-mmo) below. The
+  client auto-connects to the same host it's served from.)*
+- **Play offline (solo):** below the online panel, choose a **heritage** — **Aluvian** (Holtburg),
+  **Sho** (Shoushi), or **Gharu'ndim** (Yaraq) — to begin in that culture's capital (or **Wanderer**
+  for a balanced start), or **Continue Your Saga** from a local save.
+- Then **click the screen to capture the mouse**.
 - Your heritage shapes how you look in first person: the **Aluvian** wields a steel **gauntlet & sword**
   (knight), the **Sho** a dark leather glove and **bow** (thief), and the **Gharu'ndim** a **robe sleeve**
   and **wand** that flares with the spell's colour when you cast (mage).
@@ -44,8 +58,13 @@ no internet required at runtime.
 | Character sheet (spend points) | `C` |
 | Inventory / tinkering | `T` |
 | Loot / bind / portal / talk / delve / open chest | `E` |
+| Chat (online) — open the chat bar | `Enter` (then type, `Esc` to cancel) |
 | Mute sound | `M` |
 | Pause | `P` |
+
+Online chat also takes slash commands: **`/who`** (who's online), **`/tell <name> <msg>`** (or `/w`)
+and **`/r`** to reply, **`/party invite|accept|leave|list`** + **`/p <msg>`** for party chat, and
+**emotes** like `/wave`, `/cheer`, `/dance`, `/bow`, `/me <action>`.
 
 ### World & atmosphere
 
@@ -56,10 +75,11 @@ no internet required at runtime.
   tinker, and bind in peace.
 - **Critical hits** — every strike (melee, arrow, or bolt) can crit for double damage, with a flash,
   a louder ring, and a screen shake. Crit chance scales with **Coordination**.
-- **World boss** — *Gnawvil, the Olthoi Queen* roams the far reaches with a name-plated health bar.
-  Felling her grants huge XP, a pile of pyreals, and guaranteed rare loot; a new threat rises a
-  while later. Deeper still, the apex terror **Bael'Zharon, the Hopeslayer** stalks the central
-  **Direlands** — a colossal foe with the realm's richest bounty.
+- **World bosses** — named, name-plated giants roam the wilds: *Gnawvil, the Olthoi Queen*, the apex
+  terror **Bael'Zharon, the Hopeslayer**, and the three **Shadow Generals** (Ler Rhan, Black Ferah,
+  Isin Dule). Felling one grants huge XP, a pile of pyreals, and rare loot, then it rises again a
+  while later. *(Online these are **shared** — every player fights the same boss, and a global
+  announcement heralds each spawn and slaying.)*
 - **Vitae** — dying weakens you (a damage penalty shown in the status panel) that you recover by
   earning XP — Dereth's price for death.
 - **Music & sound** — a soft, procedurally-generated ambient score plays under the action (toggle
@@ -88,8 +108,9 @@ no internet required at runtime.
 - **Sound.** Ambient wind plus synthesized combat, spell, level-up, and portal effects (generated
   in-browser via WebAudio — no audio files, still fully offline).
 - **Auto-save.** Your character (attributes, level, XP, gold, gear, materials, bound Lifestone,
-  quest progress) saves to the browser automatically. The title screen offers **Continue Your Saga**
-  or **Begin Anew**.
+  position, quest progress) saves automatically — to the **server** when playing online, or to the
+  **browser** offline. Offline, the title screen offers **Continue Your Saga** or **Begin Anew**;
+  online, your characters wait on the character-select screen.
 
 ### Foes & combat depth
 
@@ -194,23 +215,57 @@ across the hall.
 
 ### Roads
 
-A **cobblestone road network** links every city to its regional capital, and the capitals to each
-other. The roads are laid as ribbons that **follow the contours of the land** (no floating), with a
-procedural cobblestone texture. Travel **+50% faster** while on a road. Roads show on both maps, and
-the capitals are also linked by **portals**.
+**Cobblestone highways link the three great cities** (the capitals — Holtburg, Shoushi, Yaraq) to
+one another; smaller towns have only their own **internal streets**. The roads are laid as ribbons
+that **follow the contours of the land** (no floating), with a procedural cobblestone texture, and
+you travel **+50% faster** on one. **Signposts** line the highways — a wooden post and arrow
+pointing to the nearer town, labelled with its name. The major roads show on both maps, and the
+capitals are also linked by **portals**.
 
-### Towns & portals
+## Multiplayer — the Dereth MMO
 
-Three towns ring the world — **Holtburg** (center), **Cragstone** (SW), and **Yaraq** (NE) —
-each with a Lifestone and a glowing **portal**. Step onto a portal and press `E` to travel
-the loop (Holtburg → Cragstone → Yaraq → Holtburg). Difficulty rises with distance from the
-center, so the outer towns sit in deadlier country.
+Online, Dereth is a **shared, server-authoritative world**. The server owns the truth so the world
+stays consistent and can't be faked by a client:
+
+- **Accounts & characters** — one account (login) holds **up to 8 characters**, each with its own
+  name, heritage, and save. Characters persist server-side (sqlite), and you log back in **right
+  where you left off**.
+- **Shared world** — monsters, the five world bosses, ground loot, and **Incursions** (timed horde
+  events that besiege a town with a beacon) are all simulated on the server and shared by everyone.
+  Monsters cluster near the real towns; capital cores stay safe.
+- **Cooperative loot & XP** — kills drop **first-come ground loot** anyone can grab; XP is shared
+  among everyone who fought a monster, and **party members nearby share the kill** even if they
+  didn't strike it (fellowship).
+- **Social** — in-game **chat** (`Enter`), **`/who`**, private **whispers** (`/tell`, `/r`),
+  **parties** of up to 6 (`/party …`, party chat `/p`), and **emotes**. Other players and the world
+  bosses show on the minimap and world map; party members are highlighted and listed in a party HUD.
+
+### Running a server
+
+The server is pure **Python 3 standard library** — no pip installs, no Node. With Python 3 present:
+
+```
+python3 server/dereth_server.py        # listens on 0.0.0.0:8787
+```
+
+Serve `index.html` from the same host (any static server) and it connects automatically. To verify
+the server, run the bundled end-to-end harness while it's running:
+
+```
+python3 server/test_client.py
+```
+
+`deploy/` has everything to host it on a small cloud box (DigitalOcean / Ubuntu 24.04): a hardened
+`systemd` service, an `nginx` site that serves the client and proxies the WebSocket, a step-by-step
+`DEPLOY.md` runbook (TLS via certbot, firewall, backups), and an `update.sh`.
 
 ### Files
 
-- `index.html` — the entire game.
+- `index.html` — the entire game client.
 - `three.min.js` — the 3D engine (bundled locally for offline use).
-- `Play Dereth.command` — double-click launcher.
+- `Play Dereth.command` — double-click launcher (offline solo).
+- `server/` — the authoritative MMO server (`dereth_server.py`) + e2e test harness (`test_client.py`).
+- `deploy/` — cloud deployment artifacts (systemd unit, nginx config, `DEPLOY.md`, `update.sh`).
 
 ## What it captures from Asheron's Call
 
@@ -224,10 +279,16 @@ center, so the outer towns sit in deadlier country.
   and the dreaded Olthoi, scaled by distance from town.
 - **Loot & XP economy** — Pyreals (gold), attribute-boosting drops, and an XP→skill-point
   leveling loop.
+- **A shared world** — the online mode brings AC's defining feature: many players in one persistent
+  world, fighting shared monsters and bosses, grouping into fellowships, and chatting across Dereth.
 
 ## Scope note
 
-The original Asheron's Call was a massive 3D MMORPG built by a studio over years. This
-is a faithful **single-player homage** to its signature systems — not a network-accurate
-recreation of the full world of Dereth. It's a complete, self-contained game in one file
-(`index.html`, ~700 lines) you can read, tweak, and extend.
+The original Asheron's Call was a massive 3D MMORPG built by a studio over years. This is a faithful
+**homage** to its signature systems — now both a complete **offline solo** game and a **shared-world
+MMO** with its own small authoritative server, not a network-accurate recreation of the full world of
+Dereth. The client is one self-contained file (`index.html`) and the server one dependency-free
+Python file (`server/dereth_server.py`) — both readable, tweakable, and extensible.
+
+The client deliberately keeps player **health/respawn** on the client side; the server owns the
+shared, cheat-sensitive truth (monster positions/HP, combat resolution, loot, XP, world events).
