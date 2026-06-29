@@ -431,6 +431,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   knownSpells:[],hotbar:[],   // initialised from freshSpells() once the SPELLBOOK is defined
   spellBuffs:{},              // active Creature-Enchantment attribute buffs: attr -> {v,t}
+  itemBuffs:{},               // active Item-Enchantment buffs: dmg/crit/armor/haste -> {v,t}
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
   meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
 
@@ -506,6 +507,18 @@ for(const t of LIFE_HEAL) SPELLBOOK_LIST.push({id:`life_heal_${t.lvl}`,name:`Hea
 const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60},{lvl:4,base:130,foc:3.8,cost:62,req:100}];
 for(const t of LIFE_REVIT) SPELLBOOK_LIST.push({id:`life_revit_${t.lvl}`,name:`Revitalize Self ${ROMAN[t.lvl]}`,ico:"💚",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1400,special:"revitalize",amt:t.base,foc:t.foc});
+// ── Item Enchantment: classic AC weapon/armour self-buffs (Blood Drinker, Heart Seeker,
+//    Impenetrability, Swift Killer) at three levels — empower your gear for a duration ──
+const ITEM_BUFFS=[
+  {code:"blood",name:"Blood Drinker", ico:"🗡",stat:"dmg",  mags:[0.12,0.20,0.30], desc:"weapon & spell damage"},
+  {code:"heart",name:"Heart Seeker",  ico:"🎯",stat:"crit", mags:[0.06,0.10,0.15], desc:"critical chance"},
+  {code:"impen",name:"Impenetrability",ico:"🛡",stat:"armor",mags:[15,30,50],       desc:"armour"},
+  {code:"swift",name:"Swift Killer",  ico:"💨",stat:"haste",mags:[0.10,0.18,0.28], desc:"attack speed"},
+];
+const ITEM_TIERS=[{lvl:1,cost:20,req:0,dur:90},{lvl:2,cost:30,req:40,dur:120},{lvl:3,cost:44,req:80,dur:150}];
+for(const b of ITEM_BUFFS) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
+  id:`item_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
+  cost:t.cost,cd:8000,buff:"item",stat:b.stat,mag:b.mags[t.lvl-1],dur:t.dur});
 const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115}];
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
@@ -1828,14 +1841,14 @@ function wornArmorV(){ const a=player.armorItem; if(!a) return 0; const at=ARMOR
   const base=a.v+((a.affix&&a.affix.k==="armorbonus")?a.affix.v:0); return Math.round(base*(at?at.armorMul:1)); }
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
-  if(player.buffMightT>0)base*=1.5; base*=(1-player.vitae);
+  if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
   let dmg=base+(opts.brandDmg||0);
   if(opts.element){ const em=elemMult(m.kind,opts.element); dmg*=em;
     if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0"); else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
     if(opts.element==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
     else if(opts.element==="frost"){m.slow=Math.max(m.slow,0.4);}
     else if(opts.element==="shock"&&Math.random()<0.35){m.atkCd=Math.max(m.atkCd,1.0);} }
-  const crit=Math.random()<clamp(0.07+player.attr.Coordination*0.004+(opts.crit||0),0,0.6); if(crit)dmg*=2;
+  const crit=Math.random()<clamp(0.07+player.attr.Coordination*0.004+(opts.crit||0)+itemBuff("crit"),0,0.6); if(crit)dmg*=2;  // Heart Seeker
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -2208,7 +2221,7 @@ function gainXP(amt){
 }
 function playerHurt(dmg,sx,sz){
   if(player.invuln>0||!player.alive||inNetwork) return;
-  const armT=(player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01);
+  const armT=(player.armor+wornArmorV()+itemBuff("armor"))*skillEff("meleed",0.02)*skillEff("shield",0.01);  // Impenetrability
   const reduce=armT/(armT+60);
   dmg=Math.max(1,dmg*(1-reduce));
   // active shield block: cut frontal damage (scales with Shield skill), costs stamina
@@ -2229,7 +2242,7 @@ function playerHurt(dmg,sx,sz){
   if(player.hp<=0) die();
 }
 function die(){
-  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();
+  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.itemBuffs={};
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
   document.getElementById('deathmsg').style.display="flex";
@@ -2266,6 +2279,7 @@ function consumeTaper(){
   if(player.tapers>0){ player.tapers--; return 1.10; }
   return 1;
 }
+function itemBuff(stat){ const b=player.itemBuffs&&player.itemBuffs[stat]; return b?b.v:0; }   // Item-Enchantment combat bonus
 function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
 function castSpellById(id){
   if(!player.alive||paused) return;
@@ -2300,6 +2314,7 @@ function castSpellById(id){
     if(s.buff==="might"){player.buffMightT=dur;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
     else if(s.buff==="swift"){player.buffSwiftT=dur;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
     else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
+    else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};player.itemBuffs[s.stat]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
     castFlash(0x9af0ff);SFX.quest();log(`You invoke <b>${s.name}</b>.`,"heal");return;
   }
   if(s.school==="aoe"){
@@ -2393,7 +2408,7 @@ function fireArrow(){
   if(player.st<prof.stam){ log("Too tired to draw.","warn"); return; }
   player.st-=prof.stam;
   const cdScale=Math.max(.4,1-player.attr.Coordination*0.02);
-  player.meleeCd=0.55*prof.cd*cdScale; player.bowDraw=1; SFX.arrow(); fovKick=Math.min(fovKick+3,4); // recoil punch on loose
+  player.meleeCd=0.55*prof.cd*cdScale*(1-itemBuff("haste")); player.bowDraw=1; SFX.arrow(); fovKick=Math.min(fovKick+3,4); // recoil punch on loose (Swift Killer hastens)
   let dmg=(12+player.attr.Coordination*1.6+player.weaponTink+(ranged?player.weapon.v:0))*skillEff("missile",0.02)*prof.dmg;
   // brand affixes ride the existing projectile element/status/drain channels
   const af=ranged?player.weapon.affix:null; let element,burn=false,pslow=0,stun=false,drain=0,col=0xffe6b0;
@@ -2414,7 +2429,7 @@ function meleeAttack(){
   if(!player.alive||player.meleeCd>0||paused) return;
   const wp=weaponProfile(),melee=wp&&wp.mode==="melee",prof=melee?wp:WEAPON_TYPES.sword; // equipped melee weapon or bare fists
   const cdScale=Math.max(.35,1-player.attr.Coordination*0.02);
-  player.meleeCd=0.42*prof.cd*cdScale;player.swing=1;SFX.swing();
+  player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"));player.swing=1;SFX.swing();  // Swift Killer hastens
   if(player.st>=prof.stam) player.st-=prof.stam;
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg;
   const af=melee?player.weapon.affix:null, meleeOpts={};
@@ -2839,6 +2854,7 @@ function update(dt){
   player.buffSwiftT=Math.max(0,player.buffSwiftT-dt);
   if(player.spellBuffs){ for(const a of Object.keys(player.spellBuffs)){ const b=player.spellBuffs[a]; b.t-=dt;
     if(b.t<=0){ player.attr[a]-=b.v; delete player.spellBuffs[a]; floater(player.x,EYE+0.6,player.z,a+" fades","#9fb0c0"); derive(); } } }
+  if(player.itemBuffs){ for(const k of Object.keys(player.itemBuffs)){ const b=player.itemBuffs[k]; b.t-=dt; if(b.t<=0) delete player.itemBuffs[k]; } }
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
@@ -2990,6 +3006,8 @@ function updateHUD(){
   document.getElementById("pMight").textContent=player.elixMight;
   document.getElementById("pSwift").textContent=player.elixSwift;
   const bf=[];if(player.buffMightT>0)bf.push("Might "+Math.ceil(player.buffMightT)+"s");if(player.buffSwiftT>0)bf.push("Swift "+Math.ceil(player.buffSwiftT)+"s");
+  if(player.spellBuffs) for(const a in player.spellBuffs) bf.push(`+${player.spellBuffs[a].v} ${a}`);
+  if(player.itemBuffs){ const IB={dmg:"+dmg",crit:"+crit",armor:"+armor",haste:"+haste"}; for(const k in player.itemBuffs) bf.push(IB[k]||k); }
   document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
   let threats=0;for(const m of monsters){if(!!m.isDungeon===inDungeon&&m.state==="chase"&&Math.hypot(m.x-player.x,m.z-player.z)<50)threats++;}
   const te=document.getElementById("sThreat");te.textContent=threats;te.style.color=threats>0?"#ff6b6b":"#fff";
@@ -3349,7 +3367,8 @@ function checkAchievements(){
 // ============================================================================
 // scrivener (mage vendor) sells a spread of leveled scrolls; price rises with spell level
 const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2","creature_focus_2","creature_end_2",
-  "war_flame_2","war_frost_2","war_light_2","war_storm_2","life_heal_2","life_heal_3","life_revit_1","life_drain_1"];
+  "war_flame_2","war_frost_2","war_light_2","war_storm_2","life_heal_2","life_heal_3","life_revit_1","life_drain_1",
+  "item_blood_1","item_heart_1","item_impen_1","item_swift_1","item_blood_2","item_impen_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // spell-component tapers (AC): colored tapers empower a cast a little; the universal
 // Prismatic Taper empowers it more. Bought in bundles; consumed when you cast offensive/healing magic.
@@ -4286,7 +4305,7 @@ let pendingServerChar=null;
 function startGame(loadSaved,preset){
   document.getElementById('overlay').style.display="none";
   initAudio();
-  player.spellBuffs={};   // no stale Creature buffs carried into a new/loaded character
+  player.spellBuffs={}; player.itemBuffs={};   // no stale enchantments carried into a new/loaded character
   if(!loadSaved&&preset&&PRESETS[preset]){const p=PRESETS[preset];
     for(const a in p.attr) player.attr[a]+=p.attr[a];
     player.armor+=p.armor||0;player.potHealth+=p.pot||0;player.potMana+=p.mana||0;player.title=p.title||"";player.heritage=preset;}

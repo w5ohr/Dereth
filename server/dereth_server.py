@@ -454,6 +454,7 @@ SCROLL_SPELLS = (
     + [f"life_heal_{l}" for l in range(2, 7)]
     + [f"life_revit_{l}" for l in range(1, 5)]
     + [f"life_drain_{l}" for l in range(1, 5)]
+    + [f"item_{c}_{l}" for c in ("blood", "heart", "impen", "swift") for l in range(1, 4)]
 )
 
 def roll_item(rare=False, tier=1):
