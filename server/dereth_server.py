@@ -621,6 +621,9 @@ async def resolve_attack(cl, mid, dmg):
         await spawn_loot(m, is_boss)
 
 # ---------------------------------------------------------------- parties (fellowships)
+EMOTES = {"wave": "waves.", "cheer": "cheers!", "dance": "breaks into a dance.", "bow": "bows solemnly.",
+          "laugh": "laughs.", "point": "points.", "salute": "salutes.", "flex": "flexes.",
+          "kneel": "kneels.", "clap": "applauds."}
 PARTIES = {}           # pid -> {"leader": account, "members": [accounts]}
 _party_seq = 0
 PARTY_MAX = 6
@@ -832,6 +835,17 @@ async def dispatch(cl, msg):
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
         await cl.send({"t": "who", "players": players})
+    elif t == "emote":
+        if cl.in_world:
+            act = str(msg.get("act", ""))
+            if act == "me":
+                text = str(msg.get("text", ""))[:80].strip()
+                line = f"{cl.charname} {text}" if text else None
+            else:
+                verb = EMOTES.get(act)
+                line = f"{cl.charname} {verb}" if verb else None
+            if line:
+                await broadcast({"t": "emote", "id": cl.username, "from": cl.charname, "act": act, "msg": line})
     elif t == "tell":
         name = str(msg.get("name", ""))
         text = str(msg.get("msg", ""))[:240].strip()

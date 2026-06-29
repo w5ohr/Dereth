@@ -122,6 +122,11 @@ async def main():
     names = {p["name"] for p in (wh.get("players", []) if wh else [])}
     check("/who lists online characters", bool(wh) and f"{bob}0" in names and len(names) >= 2)
 
+    # emote: broadcast to other in-world players
+    await b.send({"t": "emote", "act": "wave"})
+    em = await a.recv_until(lambda x: x["t"] == "emote")
+    check("emote broadcasts to others", bool(em) and em.get("from") == f"{bob}0" and "waves" in em.get("msg", ""))
+
     # whisper: /tell delivers privately to the named character + echoes to sender
     await a.send({"t": "tell", "name": f"{bob}0", "msg": "meet me at the lifestone"})
     tw = await b.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "tell")

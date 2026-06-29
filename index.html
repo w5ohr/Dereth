@@ -3699,6 +3699,7 @@ function netHandle(m){
   if(m.t==="play_ok") return onPlayOk(m);
   if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="who") return onWho(m);
+  if(m.t==="emote") return onEmote(m);
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){
@@ -3959,6 +3960,14 @@ function updatePartyHUD(){
   el.innerHTML=`<div style="color:var(--gold);font-weight:bold;margin-bottom:3px">Party (${NET.partyNames.size})</div>${rows}`;
   el.style.display="";
 }
+const EMOTE_CMDS={wave:1,cheer:1,dance:1,bow:1,laugh:1,point:1,salute:1,flex:1,kneel:1,clap:1};
+function onEmote(m){
+  log(`<span style="color:#d6c79b"><i>${esc(m.msg)}</i></span>`,"sys");
+  let x=null,z=null;
+  if(m.id===NET.me){ x=player.x; z=player.z; }
+  else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz); } }
+  if(x!=null && m.act!=="me") floater(x,EYE+1.4,z,m.act,"#ffe9b0",1.1);
+}
 function onWho(m){
   const ps=m.players||[];
   log(`<b>Online (${ps.length}):</b> `+(ps.length?ps.map(p=>`${esc(p.name)} <span style="color:var(--dim)">L${p.level||1}</span>`).join(", "):"just you"),"sys");
@@ -3981,7 +3990,9 @@ function handleSlash(text){
     else if(sub==="list"||!sub) netSend({t:"party",act:"list"});
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
-  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /p, /party","warn");
+  else if(EMOTE_CMDS[cmd]){ netSend({t:"emote",act:cmd}); }
+  else if(cmd==="me"){ const text=parts.slice(1).join(" ").trim(); if(text) netSend({t:"emote",act:"me",text}); else log("Usage: /me &lt;action&gt;","warn"); }
+  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /party, /wave","warn");
 }
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
