@@ -448,12 +448,12 @@ def _mat_class(stat):
 # Spell-scroll ids must match the client's generated SPELLBOOK ids exactly. The client
 # resolves the spell's display name from the id, so the server only needs the id.
 SCROLL_SPELLS = (
-    [f"creature_{c}_{l}" for c in ("str", "end", "coord", "quick", "focus", "will") for l in (1, 2, 3)]
-    + [f"war_{c}_{l}" for c in ("flame", "frost", "light") for l in (2, 3, 4)]
-    + [f"war_storm_{l}" for l in (2, 3)]
-    + [f"life_heal_{l}" for l in (2, 3, 4)]
-    + [f"life_revit_{l}" for l in (1, 2, 3)]
-    + [f"life_drain_{l}" for l in (1, 2, 3)]
+    [f"creature_{c}_{l}" for c in ("str", "end", "coord", "quick", "focus", "will") for l in range(1, 7)]
+    + [f"war_{c}_{l}" for c in ("flame", "frost", "light") for l in range(2, 7)]
+    + [f"war_storm_{l}" for l in range(2, 5)]
+    + [f"life_heal_{l}" for l in range(2, 7)]
+    + [f"life_revit_{l}" for l in range(1, 5)]
+    + [f"life_drain_{l}" for l in range(1, 5)]
 )
 
 def roll_item(rare=False, tier=1):

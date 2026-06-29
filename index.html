@@ -472,38 +472,41 @@ const SPELLBOOK_LIST=[
    make:()=>({dmg:28+player.attr.Focus*1.8,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})},
   {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
-// ── Creature Enchantment: self attribute buffs at three levels (raise an attribute for 60s) ──
+const ROMAN=["","I","II","III","IV","V","VI","VII","VIII"];
+// AC has 8 spell levels with rising skill requirements; we scale to 6 here. Buffs last
+// a level-scaled duration (AC's 30-min buffs are shortened for our minutes-long sessions).
+// ── Creature Enchantment: self attribute buffs (Strength/Endurance/… Self I–VI) ──
 const CE_ATTRS=[["Strength","str","💪"],["Endurance","end","🛡️"],["Coordination","coord","🎯"],
   ["Quickness","quick","🌀"],["Focus","focus","🔆"],["Self","will","✦"]];
-const CE_TIERS=[{lvl:1,mag:5,cost:16,req:0},{lvl:2,mag:9,cost:24,req:30},{lvl:3,mag:14,cost:34,req:55}];
-const ROMAN=["","I","II","III","IV","V","VI"];
+const CE_TIERS=[{lvl:1,mag:5,cost:16,req:0,dur:60},{lvl:2,mag:9,cost:24,req:30,dur:75},{lvl:3,mag:14,cost:34,req:60,dur:90},
+  {lvl:4,mag:20,cost:46,req:95,dur:105},{lvl:5,mag:27,cost:60,req:135,dur:120},{lvl:6,mag:35,cost:78,req:180,dur:150}];
 for(const [attr,code,ico] of CE_ATTRS){ const disp=attr==="Self"?"Willpower":attr;
   for(const t of CE_TIERS) SPELLBOOK_LIST.push({id:`creature_${code}_${t.lvl}`,name:`${disp} Self ${ROMAN[t.lvl]}`,
-    ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:60});
+    ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:t.dur});
 }
-// ── War Magic: elemental bolt lines (I–IV) + Flame Storm (I–III), scaling damage/cost/req ──
+// ── War Magic: elemental bolt lines (I–VI) + Flame Storm (I–IV), scaling damage/cost/req ──
 const WAR_BOLTS=[
   {code:"flame",name:"Flame Bolt",ico:"🔥",color:0xff7a2a,r:0.28,element:"fire", burn:true, base:18,foc:1.4,speed:55, cost:14,cd:520},
   {code:"frost",name:"Frost Bolt",ico:"❄️",color:0x7ec8ff,r:0.32,element:"ice", slow:.45, base:24,foc:1.7,speed:46, cost:18,cd:760},
   {code:"light",name:"Lightning",ico:"⚡",color:0xfff060,r:0.2, element:"shock",stun:true,base:30,foc:1.8,speed:120,cost:20,cd:600},
 ];
-const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:25},{lvl:3,mult:2.4,req:55},{lvl:4,mult:3.4,req:90}];
+const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},{lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180}];
 for(const b of WAR_BOLTS) for(const t of WAR_TIERS){
   SPELLBOOK_LIST.push({id:`war_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"war",lvl:t.lvl,req:t.req,
-    cost:Math.round(b.cost*(1+(t.lvl-1)*0.5)),cd:b.cd,
+    cost:Math.round(b.cost*(1+(t.lvl-1)*0.45)),cd:b.cd,
     make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
 }
-const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:75}];
+const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:80},{lvl:4,base:84,foc:2.6,cost:112,req:130}];
 for(const t of WAR_STORM) SPELLBOOK_LIST.push({id:`war_storm_${t.lvl}`,name:`Flame Storm ${ROMAN[t.lvl]}`,ico:"🌋",
   school:"aoe",lvl:t.lvl,req:t.req,cost:t.cost,cd:3200,element:"fire",color:0xff7a2a,dmg:()=>t.base+player.attr.Focus*t.foc});
-// ── Life Magic: Heal Self (I–IV), Revitalize stamina (I–III), Drain Health bolt (I–III) ──
-const LIFE_HEAL=[{lvl:1,base:34,foc:2.2,cost:26,cd:1500,req:0},{lvl:2,base:60,foc:2.8,cost:38,cd:1500,req:25},{lvl:3,base:95,foc:3.4,cost:54,cd:1600,req:55},{lvl:4,base:140,foc:4.0,cost:74,cd:1700,req:90}];
+// ── Life Magic: Heal Self (I–VI), Revitalize stamina (I–IV), Drain Health bolt (I–IV) ──
+const LIFE_HEAL=[{lvl:1,base:34,foc:2.2,cost:26,cd:1500,req:0},{lvl:2,base:60,foc:2.8,cost:38,cd:1500,req:30},{lvl:3,base:95,foc:3.4,cost:54,cd:1600,req:60},{lvl:4,base:140,foc:4.0,cost:74,cd:1700,req:95},{lvl:5,base:195,foc:4.6,cost:98,cd:1800,req:135},{lvl:6,base:260,foc:5.2,cost:126,cd:1900,req:180}];
 for(const t of LIFE_HEAL) SPELLBOOK_LIST.push({id:`life_heal_${t.lvl}`,name:`Heal Self ${ROMAN[t.lvl]}`,ico:"✨",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:t.cd,heal:()=>t.base+player.attr.Self*t.foc});
-const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60}];
+const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60},{lvl:4,base:130,foc:3.8,cost:62,req:100}];
 for(const t of LIFE_REVIT) SPELLBOOK_LIST.push({id:`life_revit_${t.lvl}`,name:`Revitalize Self ${ROMAN[t.lvl]}`,ico:"💚",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1400,special:"revitalize",amt:t.base,foc:t.foc});
-const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70}];
+const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115}];
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:48,color:0xc0306a,r:0.3,drain:t.drain,element:null})});
@@ -3490,7 +3493,7 @@ function buildSpellbook(){
         for(let i=0;i<HOTKEYS.length;i++) opts+=`<option value="${i}"${slot===i?" selected":""}>slot ${HOTKEYS[i]}</option>`;
         ctl=`<select class="sbslot" data-id="${s.id}" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:12px">${opts}</select>`; }
       const row=document.createElement('div'); row.className="row";
-      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana · ${status}</span></div><div class="ctl">${ctl}</div>`;
+      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${s.dur?` · ${s.dur}s`:""}${s.req?` · req ${s.req}`:""} · ${status}</span></div><div class="ctl">${ctl}</div>`;
       root.appendChild(row);
     }
   }
