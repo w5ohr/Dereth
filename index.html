@@ -1482,7 +1482,7 @@ function buildWorld(){
   // monsters roam the realm (clustered near hubs).
   // Online, the overworld monsters are server-authoritative & shared — they arrive via
   // snapshots (reconcileMobs), so the client does not spawn its own local population.
-  if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; }
+  if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; clearNetEvent(); }
   if(!isOnline) for(let i=0;i<300;i++) spawnSomewhere();
   // Online, world bosses are server-authoritative & shared (the Olthoi Queen arrives via
   // snapshots). The local per-client bosses only spawn in the offline solo game.
@@ -1914,6 +1914,7 @@ function eventFail(){
   endEvent(true);
 }
 function updateEvents(dt){
+  if(isOnline) return; // online Incursions are server-driven (see onEventStart/updateSharedMobs)
   if(inDungeon||inNetwork) return; // events pause inside instances
   if(worldEvent&&worldEvent.active){
     worldEvent.t-=dt;
@@ -2843,6 +2844,7 @@ function updateHUD(){
   const ve=document.getElementById("sVitae");if(player.vitae>0.001){ve.textContent="-"+Math.round(player.vitae*100)+"%";ve.style.color="#ff6b6b";}else{ve.textContent="—";ve.style.color="#fff";}
   const evr=document.getElementById("evRow");
   if(worldEvent&&worldEvent.active){evr.style.display="";document.getElementById("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
+  else if(isOnline&&NET.event){ evr.style.display=""; const a=netEventAlive(); document.getElementById("sEvent").textContent=`${NET.event.name} · ${NET.event.total-a}/${NET.event.total} cleared`; }
   else evr.style.display="none";
   document.querySelectorAll(".slot").forEach((el,i)=>{
     const cd=(spellCd[SPELLS[i].key]||0)-now();
@@ -3652,7 +3654,7 @@ function netSend(o){ if(NET.ws&&NET.open){ try{ NET.ws.send(JSON.stringify(o)); 
 function netHandle(m){
   if(m.t==="auth_ok") return onAuthOk(m);
   if(m.t==="auth_err"){ const e=document.getElementById('authMsg'); if(e)e.textContent=m.msg||"Authentication failed."; return; }
-  if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); return; }
+  if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){ log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat"); return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
   if(m.t==="mob_hit") return onMobHit(m);
@@ -3662,6 +3664,48 @@ function netHandle(m){
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
   if(m.t==="loot")      return onLoot(m);
+  if(m.t==="event_start")  return onEventStart(m);
+  if(m.t==="event_end")    return onEventEnd(m);
+  if(m.t==="event_reward") return onEventReward(m);
+}
+// ---- shared world events / Incursions (M3d): server-driven, beacon + shared bounty ----
+function buildEventBeacon(x,z,col){
+  const gy=groundY(x,z);
+  const beam=new THREE.Mesh(new THREE.CylinderGeometry(4,9,220,16,1,true),
+    new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.3,depthWrite:false,fog:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending}));
+  beam.position.set(x,gy+110,z);beam.renderOrder=2;scene.add(beam);
+  const light=new THREE.PointLight(col,2.8,220);light.position.set(x,gy+12,z);scene.add(light);
+  return {beam,light};
+}
+function clearNetEvent(){ if(NET.event){ if(NET.event.beam)scene.remove(NET.event.beam); if(NET.event.light)scene.remove(NET.event.light); NET.event=null; } }
+function netEventAlive(){ if(!NET.event) return 0; let n=0; for(const id in NET.mobs) if(NET.mobs[id].eventId===NET.event.id) n++; return n; }
+// The beacon is owned by the snapshot (reconcileEvent), so it self-heals across buildWorld /
+// dungeon trips / late joins. event_start only plays the announcement.
+function reconcileEvent(ev){
+  if(!isOnline) return;
+  if(!ev){ return; } // event_end clears the beacon; absence alone never removes it mid-fight
+  if(!NET.event || NET.event.id!==ev.id){
+    clearNetEvent();
+    const bc=buildEventBeacon(ev.x,ev.z,ev.col);
+    NET.event={id:ev.id,x:ev.x,z:ev.z,col:ev.col,name:ev.name,total:ev.total||0,beam:bc.beam,light:bc.light};
+  }
+}
+function onEventStart(msg){
+  if(!isOnline) return;
+  log(`<b>Incursion!</b> ${esc(msg.blurb||msg.name||"A horde gathers")}. Repel it before the beacon fades!`,"warn");
+  toast("INCURSION — "+String(msg.name||"").toUpperCase());
+  if(SFX.quest)SFX.quest(); if(SFX.growl)SFX.growl();
+}
+function onEventEnd(msg){
+  clearNetEvent();
+  if(msg.success){ burst(msg.x,2,msg.z,0xffd86b,40); log(`The <b>${esc(msg.name||"Incursion")}</b> is broken!`,"sys"); toast("INCURSION REPELLED"); if(SFX.level)SFX.level(); }
+  else { log(`The <b>${esc(msg.name||"Incursion")}</b> faded back into the wilds.`,"warn"); toast("INCURSION FADES"); }
+}
+function onEventReward(msg){
+  if(msg.xp) gainXP(msg.xp);
+  if(msg.gold){ player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); if(SFX.gold)SFX.gold(); }
+  player.incursions=(player.incursions||0)+1;
+  if(typeof checkAchievements==="function") checkAchievements();
 }
 // ---- shared ground loot (M3c): server owns drops; pickups are first-come, server-validated ----
 function onDrop(msg){
@@ -3711,12 +3755,15 @@ function reconcileMobs(serverMobs){
   for(const sm of serverMobs){
     seen[sm.id]=1;
     let m=NET.mobs[sm.id]||spawnSharedMob(sm);
-    m.tx=sm.x; m.tz=sm.z; m.yaw=sm.yaw; m.hp=sm.hp; m.mhp=sm.mhp; m.state=sm.st;
+    m.tx=sm.x; m.tz=sm.z; m.yaw=sm.yaw; m.hp=sm.hp; m.mhp=sm.mhp; m.state=sm.st; m.eventId=sm.event||null;
   }
   for(const id in NET.mobs){ if(!seen[id]) removeSharedMob(id); }
 }
 function updateSharedMobs(dt){
   const hide=inDungeon||inNetwork; const k=1-Math.exp(-10*dt);
+  if(NET.event){ const e=NET.event; // pulse + rotate the Incursion beacon (hidden inside instances)
+    if(e.light){ e.light.visible=!hide; e.light.intensity=2+1.3*Math.sin(now()/180); }
+    if(e.beam){ e.beam.visible=!hide; e.beam.rotation.y+=dt*0.4; } }
   for(const id in NET.mobs){
     const m=NET.mobs[id]; if(!m.mesh) continue;
     m.mesh.visible=!hide; if(hide) continue;

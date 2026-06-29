@@ -161,6 +161,17 @@ async def main():
             again = await a.recv_until(lambda x: x["t"] == "loot", timeout=1.0)
             check("double pickup yields no second loot", again is None)
 
+    # --- M3d: shared world event (Incursion) ---
+    # the test server is started with a short DERETH_EVENT_CD, so an Incursion is active by
+    # now; a freshly-joined player should be synced the active event, and alice should have
+    # seen the event_start broadcast.
+    dave = await WS.connect()
+    await dave.send({"t": "register", "user": f"dave_{uniq}", "pass": "secret4"})
+    await dave.recv_until(lambda x: x["t"] == "auth_ok")
+    ev = await dave.recv_until(lambda x: x["t"] == "event_start", timeout=5.0)
+    check("active Incursion synced to late joiner", bool(ev) and ev.get("name") and ev.get("count", 0) > 0)
+    await dave.close()
+
     # bob leaves -> alice sees leave message
     await b.close()
     check("alice sees bob leave", bool(await a.recv_until(lambda x: x["t"] == "system" and "left" in x.get("msg", ""))))

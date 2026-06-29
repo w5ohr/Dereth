@@ -178,14 +178,20 @@ def mob_pub(m):
          "yaw": round(m["yaw"], 3), "hp": round(m["hp"], 1), "mhp": m["mhp"], "st": m["state"]}
     if m.get("boss"):
         d["boss"] = True; d["name"] = m["name"]; d["scale"] = m["scale"]
+    if m.get("event"):
+        d["event"] = m["event"]
     return d
 
 def snapshot():
-    return {"t": "snapshot", "players": [
+    snap = {"t": "snapshot", "players": [
         {"id": u, "name": u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
          "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title}
         for u, cl in CLIENTS.items()],
         "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
+    if EVENT.get("active"):
+        snap["event"] = {"id": EVENT["id"], "name": EVENT["name"], "x": EVENT["x"], "z": EVENT["z"],
+                         "col": EVENT["col"], "total": EVENT["total"]}
+    return snap
 
 # ---------------------------------------------------------------- world: shared monsters
 # Server-authoritative monster sim (M3). Stats mirror the client BESTIARY subset so the
@@ -249,6 +255,79 @@ def spawn_boss():
         "state": "wander", "target": None, "atkcd": 0.0, "wt": 0.0, "respawn_at": 0.0,
         "boss": True, "name": b["name"], "scale": b["scale"]}
     return MOBS["boss"]
+
+# Shared world events (Incursions): a finite horde besieges a location; every online
+# player races to clear it before the beacon fades for a shared bounty.
+EVENT_TYPES = [
+    {"name": "Shadow Incursion", "kinds": ["skeleton", "mosswart"], "col": 0x9b30ff, "blurb": "Shadows pour from a tear in the world above"},
+    {"name": "Olthoi Swarm", "kinds": ["reedshark", "tusker"], "col": 0xff5a2a, "blurb": "An Olthoi hive boils over"},
+    {"name": "Banderling Raid", "kinds": ["banderling", "drudge"], "col": 0xffc14a, "blurb": "A savage warband descends"},
+]
+EVENT_ANCHORS = [(900, -200), (-700, 400), (300, 900), (-900, -600), (700, 700)]
+EVENT_TTL = 240.0          # seconds to clear before the Incursion fades
+EVENT_COUNT = 8
+EVENT = {"active": False}
+_event_seq = 0
+event_cd = float(os.environ.get("DERETH_EVENT_CD", "60"))   # seconds until the first Incursion once players are present
+
+def event_pub():
+    return {"t": "event_start", "id": EVENT["id"], "name": EVENT["name"], "x": EVENT["x"], "z": EVENT["z"],
+            "col": EVENT["col"], "blurb": EVENT["blurb"], "count": EVENT["total"],
+            "ttl": max(0, round(EVENT["deadline"] - time.time()))}
+
+def start_event():
+    global _event_seq
+    _event_seq += 1
+    et = random.choice(EVENT_TYPES)
+    ax, az = random.choice(EVENT_ANCHORS)
+    EVENT.clear()
+    EVENT.update({"active": True, "id": "e%d" % _event_seq, "name": et["name"], "x": ax, "z": az,
+                  "col": et["col"], "blurb": et["blurb"], "deadline": time.time() + EVENT_TTL, "total": EVENT_COUNT})
+    for _ in range(EVENT_COUNT):
+        m = spawn_mob(kind=random.choice(et["kinds"]), near=(ax, az))
+        m["event"] = EVENT["id"]
+        m["mhp"] = int(m["mhp"] * 1.5); m["hp"] = float(m["mhp"]); m["xp"] = int(m["xp"] * 1.4)
+    return EVENT
+
+def event_alive():
+    eid = EVENT.get("id")
+    return sum(1 for m in MOBS.values() if m.get("event") == eid and m["hp"] > 0)
+
+async def end_event(success):
+    if not EVENT.get("active"):
+        return
+    eid = EVENT["id"]; ex, ez = EVENT["x"], EVENT["z"]; name = EVENT["name"]
+    await broadcast({"t": "event_end", "id": eid, "success": success, "x": ex, "z": ez, "name": name})
+    if success:
+        xp = 900; gold = 220
+        await broadcast({"t": "system", "msg": f"The {name} has been repelled! Defenders share a bounty of {xp} XP."})
+        for cl in list(CLIENTS.values()):
+            await cl.send({"t": "event_reward", "xp": xp, "gold": gold, "name": name})
+        # spoils on the ground at the breach
+        for d in (make_drop(ex, ez, "gold", amt=gold),
+                  make_drop(ex + 2, ez, "item", item=roll_item(True, 5)),
+                  make_drop(ex - 2, ez, "item", item=roll_item(True, 5))):
+            await broadcast(drop_pub(d))
+    else:
+        await broadcast({"t": "system", "msg": f"The {name} faded back into the wilds before it could be stopped."})
+        for m in [x for x in MOBS.values() if x.get("event") == eid]:
+            MOBS.pop(m["id"], None)
+    EVENT.clear(); EVENT["active"] = False
+
+async def step_events():
+    global event_cd
+    if EVENT.get("active"):
+        if event_alive() <= 0:
+            await end_event(True)
+        elif time.time() >= EVENT["deadline"]:
+            await end_event(False)
+    elif CLIENTS:
+        event_cd -= DT
+        if event_cd <= 0:
+            event_cd = random.uniform(170, 280)
+            start_event()
+            await broadcast(event_pub())
+            await broadcast({"t": "system", "msg": f"Incursion! {EVENT['blurb']}. Repel it before the beacon fades!"})
 
 # ---------------------------------------------------------------- loot (server-authoritative)
 # Items are plain JSON matching the client schema {name,stat,v,work,mat,tier,wt?,at?,affix?},
@@ -367,6 +446,9 @@ async def world_step():
     hits = []   # (username, amount, mob_kind) damage dealt to players this tick
     for m in list(MOBS.values()):
         if m["hp"] <= 0:
+            if m.get("event"):
+                MOBS.pop(m["id"], None)   # Incursion wave mobs are finite — no respawn
+                continue
             if now >= m["respawn_at"]:
                 if m.get("boss"):
                     MOBS.pop(m["id"], None)
@@ -413,6 +495,7 @@ async def world_step():
     for did in [d for d, v in DROPS.items() if now >= v["expire"]]:
         DROPS.pop(did, None)
         await broadcast({"t": "drop_gone", "id": did})
+    await step_events()
 
 async def resolve_attack(cl, mid, dmg):
     """A client claims it hit mob `mid` for `dmg`. Validate range, apply authoritatively."""
@@ -465,9 +548,11 @@ async def do_auth_success(cl, username):
     CLIENTS[username] = cl
     await cl.send({"t": "auth_ok", "id": username, "name": username,
                    "token": cl.token, "char": load_char(username), "pv": PROTOCOL_VERSION})
-    # replay current ground loot so a late joiner sees drops from kills before they arrived
+    # replay current ground loot + any active Incursion so a late joiner is in sync
     for d in list(DROPS.values()):
         await cl.send(drop_pub(d))
+    if EVENT.get("active"):
+        await cl.send(event_pub())
     await broadcast({"t": "system", "msg": f"{username} has entered Dereth."}, exclude=cl)
 
 async def dispatch(cl, msg):
