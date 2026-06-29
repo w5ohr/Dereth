@@ -3608,9 +3608,14 @@ function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 // ============================================================================
 //  MULTIPLAYER — network layer (connects to the Dereth MMO server; offline fallback)
 // ============================================================================
-const SERVER_URL = (location.protocol==='https:')
-  ? 'wss://'+location.host                                  // cloud: same-origin reverse proxy → game server
-  : 'ws://'+(location.hostname||'127.0.0.1')+':8787';       // dev: local server on :8787
+// Resolve the game-server WebSocket URL. Cloud (https): wss://<host>/ws — nginx on the droplet proxies
+// /ws to the Python server. Dev/LAN (http): ws://<host>:8787 direct. (Pure fn so it's unit-testable.)
+function serverUrl(loc){ loc=loc||location;
+  if(loc.protocol==='https:') return 'wss://'+loc.host+'/ws';
+  if(loc.hostname && loc.hostname!=='localhost' && loc.hostname!=='127.0.0.1') return 'ws://'+loc.hostname+':8787';
+  return 'ws://127.0.0.1:8787';
+}
+const SERVER_URL = serverUrl();
 let isOnline=false, creatingOnline=false, netInputT=0;
 const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{} };
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));

@@ -1,0 +1,25 @@
+[Unit]
+Description=Dereth MMO server
+After=network.target
+
+[Service]
+Type=simple
+User=dereth
+WorkingDirectory=/opt/dereth
+# Bind to localhost only — nginx terminates TLS and proxies /ws to us.
+Environment=DERETH_HOST=127.0.0.1
+Environment=DERETH_PORT=8787
+Environment=DERETH_DB=/var/lib/dereth/dereth.db
+ExecStart=/usr/bin/python3 /opt/dereth/server/dereth_server.py
+Restart=always
+RestartSec=2
+
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dereth
+
+[Install]
+WantedBy=multi-user.target

@@ -174,7 +174,13 @@ anywhere.
   visible/positioned/named) and its join/leave shows in the client log.
 - ☐ **M3. Server-authoritative world** — monsters/AI/combat/world-events move server-side; shared loot/XP;
   anti-cheat (server owns positions & damage). Currently positions are client-reported (trusted) for MVP.
-- ☐ **M4. Cloud deploy** — Dockerfile, host (Fly.io/Render/VPS), `wss://` TLS, persistent DB volume.
+- ✅ **M4. Cloud deploy (DigitalOcean droplet, Ubuntu 24.04)** — target chosen by user. No Docker/runtime
+  needed (Ubuntu 24.04 ships Python 3.12). `deploy/`: `dereth.service` (systemd, binds 127.0.0.1:8787, DB at
+  /var/lib/dereth, hardened), `nginx-dereth.conf` (serves the static client + proxies `/ws`→game server,
+  denies source dirs), `DEPLOY.md` (full Ubuntu 24.04 runbook: apt, service user, clone, systemd, nginx,
+  certbot TLS, ufw, updates, backups), `update.sh`. Client `serverUrl()` now picks `wss://<host>/ws` on
+  https (matches the nginx proxy) and `ws://<host>:8787` for dev/LAN — unit-tested for cloud/dev/LAN cases.
+  *(Live deploy is the user's step on the droplet via DEPLOY.md; artifacts + client wiring done & verified.)*
 
 ## MILESTONE G — Combat depth  ◑
 - ✅ **G1. Active shield block** (jsc + preview verified, 0 console errors). Hold **right-mouse** to raise
