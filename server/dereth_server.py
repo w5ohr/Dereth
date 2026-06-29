@@ -454,6 +454,9 @@ SCROLL_SPELLS = (
     + [f"life_heal_{l}" for l in range(2, 7)]
     + [f"life_revit_{l}" for l in range(1, 5)]
     + [f"life_drain_{l}" for l in range(1, 5)]
+    + [f"life_harm_{l}" for l in range(1, 7)]
+    + [f"void_nether_{l}" for l in range(2, 7)]
+    + [f"war_{c}_{l}" for c in ("acid", "force", "blade") for l in range(1, 5)]
     + [f"item_{c}_{l}" for c in ("blood", "heart", "impen", "swift") for l in range(1, 4)]
 )
 

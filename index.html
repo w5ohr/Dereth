@@ -469,8 +469,6 @@ const SPELLBOOK_LIST=[
   {id:"life_stam2mana",name:"Stam→Mana",ico:"🔷",cost:0,cd:900,school:"life",lvl:1,req:0,special:"stam2mana"},
   {id:"item_might_1",name:"Blade Lure",ico:"⚔️",cost:20,cd:11000,school:"item",lvl:1,req:0,buff:"might"},
   {id:"creature_swift_1",name:"Quickening",ico:"💨",cost:20,cd:11000,school:"creature",lvl:1,req:0,buff:"swift"},
-  {id:"void_nether_1",name:"Nether Bolt",ico:"🟣",cost:24,cd:900,school:"void",lvl:1,req:0,
-   make:()=>({dmg:28+player.attr.Focus*1.8,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})},
   {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
 const ROMAN=["","I","II","III","IV","V","VI","VII","VIII"];
@@ -523,6 +521,26 @@ const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:3
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:48,color:0xc0306a,r:0.3,drain:t.drain,element:null})});
+// ── Void Magic: Nether Bolt I–VI (corruption bolt that drains + burns) ──
+const VOID_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},{lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180}];
+for(const t of VOID_TIERS) SPELLBOOK_LIST.push({id:`void_nether_${t.lvl}`,name:`Nether Bolt ${ROMAN[t.lvl]}`,ico:"🟣",
+  school:"void",lvl:t.lvl,req:t.req,cost:Math.round(24*(1+(t.lvl-1)*0.45)),cd:900,
+  make:()=>({dmg:(28+player.attr.Focus*1.8)*t.mult,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})});
+// ── War Magic, more damage types (Acid/Bludgeon/Slash bolt lines I–IV) ──
+const WAR_BOLTS2=[
+  {code:"acid", name:"Acid Stream",  ico:"🟢",color:0x8ad04a,r:0.26,element:"acid",  base:20,foc:1.5,speed:52,cost:16,cd:560},
+  {code:"force",name:"Force Bolt",   ico:"⚪",color:0xd8d8e0,r:0.3, element:"bludgeon",base:22,foc:1.5,speed:60,cost:16,cd:560},
+  {code:"blade",name:"Whirling Blade",ico:"🌀",color:0xc0c8d0,r:0.28,element:"slash", base:21,foc:1.5,speed:58,cost:16,cd:560},
+];
+const WAR2_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95}];
+for(const b of WAR_BOLTS2) for(const t of WAR2_TIERS) SPELLBOOK_LIST.push({id:`war_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,
+  ico:b.ico,school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*(1+(t.lvl-1)*0.45)),cd:b.cd,
+  make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,element:b.element})});
+// ── Life Magic: Harm Other I–VI (pure damage bolt — no lifesteal, distinct from Drain) ──
+const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,cost:36,req:30},{lvl:3,base:78,foc:2.4,cost:52,req:60},{lvl:4,base:112,foc:2.8,cost:72,req:95},{lvl:5,base:155,foc:3.2,cost:96,req:135},{lvl:6,base:208,foc:3.6,cost:124,req:180}];
+for(const t of LIFE_HARM) SPELLBOOK_LIST.push({id:`life_harm_${t.lvl}`,name:`Harm Other ${ROMAN[t.lvl]}`,ico:"💀",
+  school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
+  make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:50,color:0x6a1a3a,r:0.3,element:null})});
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
 const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
@@ -3387,7 +3405,8 @@ function checkAchievements(){
 // scrivener (mage vendor) sells a spread of leveled scrolls; price rises with spell level
 const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2","creature_focus_2","creature_end_2",
   "war_flame_2","war_frost_2","war_light_2","war_storm_2","life_heal_2","life_heal_3","life_revit_1","life_drain_1",
-  "item_blood_1","item_heart_1","item_impen_1","item_swift_1","item_blood_2","item_impen_2"];
+  "item_blood_1","item_heart_1","item_impen_1","item_swift_1","item_blood_2","item_impen_2",
+  "void_nether_2","void_nether_3","war_acid_1","war_force_1","war_blade_1","life_harm_1","life_harm_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // spell-component tapers (AC): colored tapers empower a cast a little; the universal
 // Prismatic Taper empowers it more. Bought in bundles; consumed when you cast offensive/healing magic.
