@@ -223,6 +223,9 @@ MOB_CLUSTERS = [
 MOBS = {}              # id -> mob dict
 _mob_seq = 0
 WORLD_LIMIT = 7000     # keep mobs inside the playfield
+# capitals are safe havens — creatures are pushed out of the town core (mirrors the client)
+CAPITALS = [(2640, -3488), (4744, -880), (3704, 968)]   # Holtburg, Shoushi, Yaraq
+TOWN_SAFE = 60.0
 ATTACK_RANGE = 16.0    # max client→mob distance accepted for an attack intent (melee+ranged+latency)
 
 def spawn_mob(kind=None, near=None):
@@ -508,6 +511,14 @@ async def world_step():
             m["x"] += math.sin(m["yaw"]) * sp * DT; m["z"] += math.cos(m["yaw"]) * sp * DT
         m["x"] = max(-WORLD_LIMIT, min(WORLD_LIMIT, m["x"]))
         m["z"] = max(-WORLD_LIMIT, min(WORLD_LIMIT, m["z"]))
+        if not m.get("boss"):   # keep creatures out of the capital safe zones
+            for cx, cz in CAPITALS:
+                dx, dz = m["x"] - cx, m["z"] - cz
+                dc = math.hypot(dx, dz)
+                if 0.01 < dc < TOWN_SAFE:
+                    m["x"] = cx + dx / dc * TOWN_SAFE
+                    m["z"] = cz + dz / dc * TOWN_SAFE
+                    break
     # deliver monster melee damage to each victim (client applies it to player.hp)
     for username, amt, kind, mx, mz in hits:
         cl = CLIENTS.get(username)
