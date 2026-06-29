@@ -448,6 +448,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   hots:{},                    // active Life regeneration over time: pool (hp/st/mn) -> {rate,t}; fall on death
   itemBuffs:{},               // active Item-Enchantment buffs: dmg/crit/armor/haste -> {v,t}
   lifeBuffs:{},               // active Life buffs (e.g. damage-reduction Protection) -> {v,t}; fall on death
+  debuffs:{},                 // hostile curses on you (slow/vuln) -> {v,t}; cleansed by Dispel, clear on death
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
   meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
 
@@ -597,6 +598,10 @@ const RENEW_TIERS=[{lvl:1,cost:22,req:0,dur:24},{lvl:2,cost:32,req:30,dur:26},{l
 for(const r of LIFE_RENEW) for(const t of RENEW_TIERS) SPELLBOOK_LIST.push({
   id:`life_renew_${r.pool}_${t.lvl}`,name:`${r.name} ${ROMAN[t.lvl]}`,ico:r.ico,school:"life",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:5000,special:"regen",pool:r.pool,rate:r.rate[t.lvl-1],dur:t.dur});
+// ── Life Magic: Dispel Self — strip hostile curses (Slow/Imperil) off yourself + brief immunity ──
+const LIFE_DISPEL=[{lvl:1,cost:24,req:0,immune:1.5},{lvl:2,cost:34,req:40,immune:3},{lvl:3,cost:48,req:80,immune:5},{lvl:4,cost:64,req:120,immune:8}];
+for(const t of LIFE_DISPEL) SPELLBOOK_LIST.push({id:`life_dispel_${t.lvl}`,name:`Dispel Self ${ROMAN[t.lvl]}`,ico:"🧿",
+  school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:6000,special:"dispel",immune:t.immune});
 // ── Life Magic: Harm Other I–VI (pure damage bolt — no lifesteal, distinct from Drain) ──
 // ── Life Magic: Protection Self (reduce incoming damage) + Vulnerability Other (foe takes more) ──
 const LIFE_PROT=[{lvl:1,v:0.12,cost:24,req:0,dur:90},{lvl:2,v:0.20,cost:34,req:35,dur:120},{lvl:3,v:0.30,cost:48,req:70,dur:150},{lvl:4,v:0.40,cost:64,req:110,dur:180},
@@ -2342,6 +2347,7 @@ function playerHurt(dmg,sx,sz,type){
   const defKey=type==="magic"?"magicd":armScale, dv=skillValue(defKey), denom=type==="magic"?120:200;
   dmg=Math.max(1,dmg*(1-dv/(dv+denom)));
   if(player.lifeBuffs&&player.lifeBuffs.prot) dmg=Math.max(1,dmg*(1-player.lifeBuffs.prot.v));  // Life Protection
+  if(player.debuffs&&player.debuffs.vuln) dmg*=player.debuffs.vuln.v;   // enemy Imperil curse — you take more
   // active shield block: cut frontal damage (scales with Shield skill), costs stamina — physical attacks only
   if(blocking&&player.st>4&&sx!==undefined&&type!=="magic"){
     const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),ax=sx-player.x,az=sz-player.z,al=Math.hypot(ax,az)||1;
@@ -2361,7 +2367,7 @@ function playerHurt(dmg,sx,sz,type){
 }
 function die(){
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
-  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};
+  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};player.debuffs={};
   if(player.skillBuffs&&Object.keys(player.skillBuffs).length){player.skillBuffs={};derive();}
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
@@ -2469,6 +2475,12 @@ function castSpellById(id){
     const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02)*consumeTaper();player.st=Math.min(player.mst,player.st+v);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
+  }
+  if(s.special==="dispel"){   // cleanse hostile curses on you, then brief immunity to re-application
+    const n=player.debuffs?Object.keys(player.debuffs).length:0;
+    player.debuffs={}; player.dispelImmune=Math.max(player.dispelImmune||0,s.immune||0);
+    floater(player.x,EYE+0.5,player.z,n?"cleansed!":"no curse","#7fe6a0");
+    castFlash(0x7fe6a0);SFX.quest&&SFX.quest();log(`You cast <b>${s.name}</b>${n?`, cleansing ${n} curse(s)`:" — nothing to cleanse"}.`,"heal");return;
   }
   if(s.special==="regen"){   // Life over-time renewal: trickle the chosen pool back up for a duration
     player.hots=player.hots||{}; player.hots[s.pool]={rate:s.rate,t:s.dur};
@@ -2876,7 +2888,8 @@ function update(dt){
     let dx=fx*f+rx*s, dz=fz*f+rz*s;
     const l=Math.hypot(dx,dz);dx/=l;dz/=l;
     const roadBoost=onRoad(player.x,player.z)?ROAD_SPEED:1;
-    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*dt;
+    const slowD=(player.debuffs&&player.debuffs.slow)?(1-player.debuffs.slow.v):1;  // enemy Slow curse
+    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*dt;
     const [nx,nz]=collide(player.x+dx*sp,player.z+dz*sp);
     player.x=nx;player.z=nz;
     player.bob+=dt*sp*1.1;
@@ -2939,6 +2952,8 @@ function update(dt){
     let gone=p.life<=0;
     if(Math.hypot(p.x-player.x,p.z-player.z)<player.r+p.r && Math.abs(p.y-EYE)<1.4){
       playerHurt(p.dmg,p.x,p.z,p.type||"magic");burst(p.x,p.y,p.z,0xb266e0,8);gone=true;
+      if(p.curse&&player.alive&&!(player.dispelImmune>0)){ player.debuffs[p.curse.type]={v:p.curse.v,t:p.curse.dur};
+        floater(player.x,EYE+0.6,player.z,p.curse.type==="slow"?"Slowed!":"Imperiled!","#ff8f6b"); }
     }
     if(gone){scene.remove(p.mesh);eProj.splice(i,1);}
   }
@@ -2977,7 +2992,10 @@ function update(dt){
             const lt=new THREE.PointLight(col,1.2,6);mesh.add(lt);
             mesh.position.set(ox,oy,oz);scene.add(mesh);
             const atkType=(m.kind==="gromnie"||m.kind==="olthoisoldier")?"missile":"magic";  // beasts spit (missile), casters hurl spells (magic)
-            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5,type:atkType});
+            // casters sometimes weave a curse into the bolt: Shadow Casters Imperil (you take more), Virindi Slow you
+            let curse=null;
+            if(atkType==="magic"&&Math.random()<0.5) curse=(m.kind==="virindi")?{type:"slow",v:0.4,dur:4}:{type:"vuln",v:1.3,dur:5};
+            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5,type:atkType,curse});
             m.atkCd=1.6;m.charging=0;
           }
         } else if(m.atkCd<=0&&d<b.range){ m.charging=0.45; }
@@ -3046,6 +3064,8 @@ function update(dt){
     const mx=k==="hp"?player.mhp:k==="st"?player.mst:player.mmn;
     player[k]=Math.min(mx,player[k]+b.rate*dt);
     if(b.t<=0) delete player.hots[k]; } }
+  if(player.debuffs){ for(const k of Object.keys(player.debuffs)){ const b=player.debuffs[k]; b.t-=dt; if(b.t<=0) delete player.debuffs[k]; } }
+  if(player.dispelImmune>0) player.dispelImmune-=dt;
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
@@ -3202,6 +3222,7 @@ function updateHUD(){
   if(player.skillBuffs) for(const k in player.skillBuffs) bf.push(`+${player.skillBuffs[k].v} ${SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k}`);
   if(player.hots){ const HP={hp:"♥ regen",st:"⚡ regen",mn:"✦ regen"}; for(const k in player.hots) bf.push(HP[k]||k); }
   if(player.lifeBuffs&&player.lifeBuffs.prot) bf.push(`-${Math.round(player.lifeBuffs.prot.v*100)}% dmg`);
+  if(player.debuffs) for(const k in player.debuffs) bf.push(k==="slow"?"⊘ slowed":"▲ imperiled");
   document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
   let threats=0;for(const m of monsters){if(!!m.isDungeon===inDungeon&&m.state==="chase"&&Math.hypot(m.x-player.x,m.z-player.z)<50)threats++;}
   const te=document.getElementById("sThreat");te.textContent=threats;te.style.color=threats>0?"#ff6b6b":"#fff";
