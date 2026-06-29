@@ -106,6 +106,8 @@ async def main():
     mobs = snap.get("mobs", []) if snap else []
     check("snapshot carries shared mobs", len(mobs) > 0)
     check("mob has id/kind/hp fields", bool(mobs) and all(k in mobs[0] for k in ("id", "kind", "hp", "mhp")))
+    boss = next((x for x in mobs if x.get("boss")), None)
+    check("snapshot carries a shared world boss", bool(boss) and boss.get("name") and boss.get("mhp", 0) >= 1000)
 
     if mobs:
         # teleport alice onto a mob so the attack passes the server range check

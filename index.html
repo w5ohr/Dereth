@@ -1484,7 +1484,9 @@ function buildWorld(){
   // snapshots (reconcileMobs), so the client does not spawn its own local population.
   if(typeof NET!=="undefined") NET.mobs={};
   if(!isOnline) for(let i=0;i<300;i++) spawnSomewhere();
-  spawnBoss();spawnApex();spawnShadowGenerals();
+  // Online, world bosses are server-authoritative & shared (the Olthoi Queen arrives via
+  // snapshots). The local per-client bosses only spawn in the offline solo game.
+  if(!isOnline){ spawnBoss();spawnApex();spawnShadowGenerals(); }
   if(worldEvent){if(worldEvent.beam)scene.remove(worldEvent.beam);if(worldEvent.beacon)scene.remove(worldEvent.beacon);}
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
 }
@@ -3656,10 +3658,18 @@ function netHandle(m){
 // the server. The main monster-AI loop skips shared mobs; updateSharedMobs lerps them.
 function spawnSharedMob(sm){
   const b=BESTIARY[sm.kind]||BESTIARY.drudge;
-  const mesh=buildCreature(sm.kind); mesh.position.set(sm.x,0,sm.z); scene.add(mesh);
+  const mesh=buildCreature(sm.kind); mesh.position.set(sm.x,0,sm.z);
+  const scale=sm.boss?(sm.scale||2.2):1;
+  if(scale!==1) mesh.scale.setScalar(scale);
+  if(sm.boss){ // shared world boss — nameplate + menacing aura, like the local boss look
+    const aura=new THREE.PointLight(0xff5a5a,1.6,16); aura.position.y=2; mesh.add(aura);
+    const lbl=labelSprite(sm.name||"World Boss"); lbl.scale.set(9,2.2,1); lbl.position.y=mesh.userData.headY+1.7; mesh.add(lbl);
+  }
+  scene.add(mesh);
   const m={shared:true,id:sm.id,kind:sm.kind,x:sm.x,z:sm.z,tx:sm.x,tz:sm.z,yaw:sm.yaw||0,
-    r:b.size*0.8,hp:sm.hp,mhp:sm.mhp,dmg:b.dmg,xp:b.xp,ang:sm.yaw||0,state:sm.st||"wander",
-    mesh,headY:mesh.userData.headY,isDungeon:false,baseScale:1,flash:0,slow:0,burnT:0,t:0,atkCd:0};
+    r:b.size*0.8*scale,hp:sm.hp,mhp:sm.mhp,dmg:b.dmg,xp:b.xp,ang:sm.yaw||0,state:sm.st||"wander",
+    mesh,headY:mesh.userData.headY*scale,isDungeon:false,baseScale:scale,flash:0,slow:0,burnT:0,t:0,atkCd:0,
+    isBoss:!!sm.boss,name:sm.name};
   monsters.push(m); NET.mobs[sm.id]=m; return m;
 }
 function removeSharedMob(id){
@@ -3686,7 +3696,7 @@ function updateSharedMobs(dt){
     m.x+=(m.tx-m.x)*k; m.z+=(m.tz-m.z)*k;
     const by=Math.abs(Math.sin(now()/140+m.x))*(m.state==="chase"?0.18:0.05);
     m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.y=m.yaw||0;
-    m.mesh.scale.setScalar(m.flash>0?1.08:1);
+    m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb){ if(m.hp<m.mhp){ hb.visible=true; hb.quaternion.copy(cam.quaternion);
         const fill=m.mesh.userData.fill,r=Math.max(0,m.hp/m.mhp); fill.scale.x=r; fill.position.x=-(1-r)*0.7; }
@@ -3700,7 +3710,8 @@ function onMobHit(msg){
 }
 function onMobDie(msg){
   const b=BESTIARY[msg.kind];
-  burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death();
+  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
+  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(); }
   removeSharedMobAsDying(msg.id);
 }
 function removeSharedMobAsDying(id){
@@ -3713,6 +3724,7 @@ function onReward(msg){
   if(msg.xp) gainXP(msg.xp);
   if(msg.gold){ player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); SFX.gold(); }
   player.kills++;
+  if(msg.boss){ player.bossKills=(player.bossKills||0)+1; if(typeof questEvent==="function") questEvent("boss"); }
   const b=BESTIARY[msg.kind];
   if(b && player.bestiary.indexOf(msg.kind)<0){ player.bestiary.push(msg.kind);
     log(`<b>Bestiary:</b> you have learned the nature of the ${b.name}.`,"loot"); toast("NEW BESTIARY ENTRY"); SFX.quest(); }

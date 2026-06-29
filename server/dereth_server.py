@@ -173,15 +173,19 @@ async def broadcast(obj, exclude=None):
     for u in dead:
         CLIENTS.pop(u, None)
 
+def mob_pub(m):
+    d = {"id": m["id"], "kind": m["kind"], "x": round(m["x"], 2), "z": round(m["z"], 2),
+         "yaw": round(m["yaw"], 3), "hp": round(m["hp"], 1), "mhp": m["mhp"], "st": m["state"]}
+    if m.get("boss"):
+        d["boss"] = True; d["name"] = m["name"]; d["scale"] = m["scale"]
+    return d
+
 def snapshot():
     return {"t": "snapshot", "players": [
         {"id": u, "name": u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
          "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title}
         for u, cl in CLIENTS.items()],
-        "mobs": [
-        {"id": m["id"], "kind": m["kind"], "x": round(m["x"], 2), "z": round(m["z"], 2),
-         "yaw": round(m["yaw"], 3), "hp": round(m["hp"], 1), "mhp": m["mhp"], "st": m["state"]}
-        for m in MOBS.values() if m["hp"] > 0]}
+        "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
 
 # ---------------------------------------------------------------- world: shared monsters
 # Server-authoritative monster sim (M3). Stats mirror the client BESTIARY subset so the
@@ -227,6 +231,24 @@ def populate_world():
     for c in MOB_CLUSTERS:
         for _ in range(6):
             spawn_mob(near=c)
+    spawn_boss()
+
+# A single shared world boss — every online player fights the same Olthoi Queen.
+BOSS_DEF = {"kind": "olthoi", "name": "Gnawvil, the Olthoi Queen", "hp": 4000, "dmg": 45,
+            "spd": 5.6, "xp": 4000, "gold": (140, 300), "size": 2.0, "sense": 80, "atk": 1.4, "scale": 2.2}
+BOSS_HOME = (560, 560)       # her lair, out in the wilds away from the spawn clusters
+BOSS_RESPAWN = 90.0
+
+def spawn_boss():
+    b = BOSS_DEF
+    cx, cz = BOSS_HOME
+    MOBS["boss"] = {
+        "id": "boss", "kind": b["kind"], "x": cx, "z": cz, "hx": cx, "hz": cz, "yaw": 0.0,
+        "hp": float(b["hp"]), "mhp": b["hp"], "dmg": b["dmg"], "spd": b["spd"], "xp": b["xp"],
+        "gold": b["gold"], "r": b["size"] * 0.8 * b["scale"], "sense": b["sense"], "atkcd_max": b["atk"],
+        "state": "wander", "target": None, "atkcd": 0.0, "wt": 0.0, "respawn_at": 0.0,
+        "boss": True, "name": b["name"], "scale": b["scale"]}
+    return MOBS["boss"]
 
 def nearest_player(x, z, maxd):
     best, bd = None, maxd
@@ -245,9 +267,14 @@ async def world_step():
     for m in list(MOBS.values()):
         if m["hp"] <= 0:
             if now >= m["respawn_at"]:
-                # respawn as a fresh (possibly different) creature at the same anchor
-                MOBS.pop(m["id"], None)
-                spawn_mob(near=(m["hx"], m["hz"]))
+                if m.get("boss"):
+                    MOBS.pop(m["id"], None)
+                    spawn_boss()
+                    await broadcast({"t": "system", "msg": "A chittering roar shakes Dereth — the Olthoi Queen has risen anew."})
+                else:
+                    # respawn as a fresh (possibly different) creature at the same anchor
+                    MOBS.pop(m["id"], None)
+                    spawn_mob(near=(m["hx"], m["hz"]))
             continue
         if m["atkcd"] > 0:
             m["atkcd"] = max(0.0, m["atkcd"] - DT)
@@ -296,16 +323,23 @@ async def resolve_attack(cl, mid, dmg):
     await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.username})
     if m["hp"] <= 0:
         m["hp"] = 0.0
-        m["respawn_at"] = time.time() + 8.0
-        b = MOB_BESTIARY[m["kind"]]
-        gold = random.randint(b["gold"][0], b["gold"][1])
-        await broadcast({"t": "mob_die", "id": mid, "by": cl.username, "kind": m["kind"], "x": round(m["x"], 2), "z": round(m["z"], 2)})
+        is_boss = bool(m.get("boss"))
+        m["respawn_at"] = time.time() + (BOSS_RESPAWN if is_boss else 8.0)
+        gold = random.randint(m["gold"][0], m["gold"][1])
+        die_msg = {"t": "mob_die", "id": mid, "by": cl.username, "kind": m["kind"],
+                   "x": round(m["x"], 2), "z": round(m["z"], 2)}
+        if is_boss:
+            die_msg["boss"] = True; die_msg["name"] = m["name"]
+        await broadcast(die_msg)
+        if is_boss:
+            await broadcast({"t": "system", "msg": f"{cl.username} has slain {m['name']}! Glory echoes across Dereth."})
         # shared reward: every player who damaged it earns full XP; gold goes to the slayer
         dealt = m.get("dealt", {cl.username: dmg})
         for u in dealt:
             c = CLIENTS.get(u)
             if c:
-                await c.send({"t": "reward", "xp": m["xp"], "gold": gold if u == cl.username else 0, "kind": m["kind"]})
+                await c.send({"t": "reward", "xp": m["xp"], "gold": gold if u == cl.username else 0,
+                              "kind": m["kind"], "boss": is_boss})
 
 # ---------------------------------------------------------------- auth + dispatch
 def valid_name(u):
