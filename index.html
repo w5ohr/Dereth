@@ -35,9 +35,11 @@
     align-items:center;justify-content:center;position:relative;cursor:pointer;pointer-events:auto}
   .slot .key{position:absolute;top:2px;left:4px;font-size:10px;color:var(--gold)}
   .slot .ico{font-size:22px;line-height:1}.slot .nm{font-size:8.5px;color:var(--dim);margin-top:2px}
-  .slot.cool{opacity:.45}.slot .cd{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
-    background:rgba(0,0,0,.5);border-radius:6px;font-size:14px;color:#fff;font-weight:bold}
+  .slot.cool{opacity:.55}.slot .cd{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    font-size:14px;color:#fff;font-weight:bold;text-shadow:0 1px 2px #000;z-index:1}
   .slot.cool .cd{display:flex}
+  .slot .cdsweep{position:absolute;inset:0;border-radius:6px;pointer-events:none;display:none}
+  .slot.cool .cdsweep{display:block}
 
   #log{position:absolute;left:12px;bottom:80px;width:340px;font-size:12px;line-height:1.45;pointer-events:none}
   #log .panel2{background:linear-gradient(0deg,rgba(8,6,3,.8),rgba(8,6,3,.15));padding:6px 9px;border-radius:6px}
@@ -2867,7 +2869,7 @@ function buildSpellbar(){
     const id=player.hotbar[i], s=id&&SPELLBOOK[id];
     const d=document.createElement('div');d.className="slot";
     d.title=s?`${s.name} — ${SCHOOLS[s.school]||"Magic"}`:"empty — assign in the Spellbook (K)";
-    d.innerHTML=`<span class="key">${HOTKEYS[i]}</span><span class="ico">${s?s.ico:""}</span><span class="nm">${s?s.name:"—"}</span><span class="cd"></span>`;
+    d.innerHTML=`<span class="cdsweep"></span><span class="key">${HOTKEYS[i]}</span><span class="ico">${s?s.ico:""}</span><span class="nm">${s?s.name:"—"}</span><span class="cd"></span>`;
     d.onclick=()=>castSlot(i);spellbar.appendChild(d);
   }
 }
@@ -3246,8 +3248,10 @@ function updateHUD(){
   else if(isOnline&&NET.event){ evr.style.display=""; const a=netEventAlive(); document.getElementById("sEvent").textContent=`${NET.event.name} · ${NET.event.total-a}/${NET.event.total} cleared`; }
   else evr.style.display="none";
   spellbar.querySelectorAll(".slot").forEach((el,i)=>{
-    const id=player.hotbar[i], cd=id?((spellCd[id]||0)-now()):0;
-    if(cd>0){el.classList.add("cool");el.querySelector(".cd").textContent=(cd/1000).toFixed(1);}
+    const id=player.hotbar[i], s=id&&SPELLBOOK[id], cd=id?((spellCd[id]||0)-now()):0;
+    if(cd>0){el.classList.add("cool");el.querySelector(".cd").textContent=(cd/1000).toFixed(1);
+      const frac=s&&s.cd?clamp(cd/s.cd,0,1):0, deg=Math.round(frac*360);   // radial sweep depletes clockwise as it recharges
+      const sw=el.querySelector(".cdsweep"); if(sw) sw.style.background=`conic-gradient(rgba(6,4,1,.62) ${deg}deg, transparent ${deg}deg)`;}
     else { el.classList.remove("cool"); const c=el.querySelector(".cd"); if(c)c.textContent=""; }
   });
   document.getElementById('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
