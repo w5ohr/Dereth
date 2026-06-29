@@ -449,6 +449,7 @@ def _mat_class(stat):
 # resolves the spell's display name from the id, so the server only needs the id.
 SCROLL_SPELLS = (
     [f"creature_{c}_{l}" for c in ("str", "end", "coord", "quick", "focus", "will") for l in range(1, 7)]
+    + [f"creature_{c}_{l}" for c in ("weak", "slow") for l in range(1, 5)]
     + [f"war_{c}_{l}" for c in ("flame", "frost", "light") for l in range(2, 7)]
     + [f"war_storm_{l}" for l in range(2, 5)]
     + [f"life_heal_{l}" for l in range(2, 7)]
@@ -563,6 +564,9 @@ async def world_step():
             continue
         if m["atkcd"] > 0:
             m["atkcd"] = max(0.0, m["atkcd"] - DT)
+        # Creature-Enchantment debuffs (Slowness/Weakness) lower this mob's speed/damage while active
+        spdmul = m["debSpd"] if now < m.get("debSpdUntil", 0) else 1.0
+        dmgmul = m["debDmg"] if now < m.get("debDmgUntil", 0) else 1.0
         pl, pd = nearest_player(m["x"], m["z"], m["sense"]) if CLIENTS else (None, 0)
         # leash: stop chasing if dragged too far from home anchor
         if pl and math.hypot(m["x"] - m["hx"], m["z"] - m["hz"]) > 600:
@@ -574,17 +578,17 @@ async def world_step():
             m["yaw"] = math.atan2(dx, dz)
             reach = m["r"] + 1.6
             if dist > reach:
-                step = min(m["spd"] * DT, dist - reach)
+                step = min(m["spd"] * spdmul * DT, dist - reach)
                 m["x"] += dx / dist * step; m["z"] += dz / dist * step
             elif m["atkcd"] <= 0:
                 m["atkcd"] = m["atkcd_max"]
-                hits.append((pl.username, m["dmg"], m["kind"], m["x"], m["z"]))
+                hits.append((pl.username, round(m["dmg"] * dmgmul, 1), m["kind"], m["x"], m["z"]))
         else:
             m["state"] = "wander"; m["target"] = None
             m["wt"] -= DT
             if m["wt"] <= 0:
                 m["wt"] = random.uniform(1.5, 4.0); m["yaw"] = random.uniform(0, 6.28)
-            sp = m["spd"] * 0.3
+            sp = m["spd"] * spdmul * 0.3
             m["x"] += math.sin(m["yaw"]) * sp * DT; m["z"] += math.cos(m["yaw"]) * sp * DT
         m["x"] = max(-WORLD_LIMIT, min(WORLD_LIMIT, m["x"]))
         m["z"] = max(-WORLD_LIMIT, min(WORLD_LIMIT, m["z"]))
@@ -853,6 +857,20 @@ async def dispatch(cl, msg):
         did = msg.get("id")
         if isinstance(did, str) and cl.in_world:
             await do_pickup(cl, did)
+    elif t == "debuff":
+        if cl.in_world:
+            m = MOBS.get(msg.get("id")); eff = msg.get("eff")
+            try:
+                v = float(msg.get("v", 1)); dur = float(msg.get("dur", 10))
+            except Exception:
+                v, dur = 1.0, 0.0
+            if m and m["hp"] > 0 and eff in ("dmg", "spd") and 0.1 <= v <= 1 and math.hypot(cl.x - m["x"], cl.z - m["z"]) <= ATTACK_RANGE + 6:
+                until = time.time() + min(dur, 60)
+                if eff == "dmg":
+                    m["debDmg"] = v; m["debDmgUntil"] = until
+                else:
+                    m["debSpd"] = v; m["debSpdUntil"] = until
+                await broadcast({"t": "mob_deb", "id": m["id"], "eff": eff})
     elif t == "save":
         char = msg.get("char")
         if isinstance(char, dict) and cl.slot is not None:

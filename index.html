@@ -483,6 +483,15 @@ for(const [attr,code,ico] of CE_ATTRS){ const disp=attr==="Self"?"Willpower":att
   for(const t of CE_TIERS) SPELLBOOK_LIST.push({id:`creature_${code}_${t.lvl}`,name:`${disp} Self ${ROMAN[t.lvl]}`,
     ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:t.dur});
 }
+// ── Creature Enchantment debuffs: cast on an enemy to weaken/slow it (I–IV) ──
+const CE_DEBUFFS=[
+  {code:"weak",name:"Weakness",ico:"💢",eff:"dmg"},   // lowers the foe's attack damage
+  {code:"slow",name:"Slowness",ico:"🐌",eff:"spd"},   // lowers the foe's movement speed
+];
+const DEBUFF_TIERS=[{lvl:1,v:0.85,cost:18,req:0,dur:20},{lvl:2,v:0.72,cost:26,req:35,dur:25},{lvl:3,v:0.58,cost:36,req:70,dur:30},{lvl:4,v:0.45,cost:48,req:110,dur:35}];
+for(const b of CE_DEBUFFS) for(const t of DEBUFF_TIERS) SPELLBOOK_LIST.push({id:`creature_${b.code}_${t.lvl}`,
+  name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,
+  debuff:b.eff,dmag:t.v,dur:t.dur});
 // ── War Magic: elemental bolt lines (I–VI) + Flame Storm (I–IV), scaling damage/cost/req ──
 const WAR_BOLTS=[
   {code:"flame",name:"Flame Bolt",ico:"🔥",color:0xff7a2a,r:0.28,element:"fire", burn:true, base:18,foc:1.4,speed:55, cost:14,cd:520},
@@ -2322,6 +2331,14 @@ function pickAllyTarget(range){
     if(dot>bd){ bd=dot; best={id:aid,name:r.name||aid}; } }
   return best;
 }
+// the monster under your crosshair within range, for enemy-targeted Creature/Life magic
+function pickMonsterTarget(range){
+  const dir=new THREE.Vector3();cam.getWorldDirection(dir); const fl=Math.hypot(dir.x,dir.z)||1;
+  let best=null,bd=0.93;
+  for(const m of monsters){ if(!!m.isDungeon!==inDungeon) continue; const dx=m.x-player.x,dz=m.z-player.z,d=Math.hypot(dx,dz);
+    if(d<0.1||d>range) continue; const dot=(dx*dir.x+dz*dir.z)/(d*fl); if(dot>bd){bd=dot;best=m;} }
+  return best;
+}
 function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
 function castSpellById(id){
   if(!player.alive||paused) return;
@@ -2340,6 +2357,15 @@ function castSpellById(id){
   if(player.mn<cost){log(`Not enough mana for ${s.name}.`,"warn");return;}
   player.mn-=cost;spellCd[id]=now()+s.cd;
   castShow=0.55; if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
+  if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
+    const m=pickMonsterTarget(28);
+    if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
+    if(m.shared) netSend({t:"debuff",id:m.id,eff:s.debuff,v:s.dmag,dur:s.dur});
+    else if(s.debuff==="spd") m.slow=Math.max(m.slow||0,1-s.dmag);
+    else { m.weakV=s.dmag; m.weakUntil=now()+s.dur*1000; }
+    floater(m.x,(m.headY||1.6)+2,m.z,s.debuff==="spd"?"Slowed":"Weakened","#c9a6ff");
+    castFlash(0x9b30ff); if(SFX.frost)SFX.frost(); log(`You afflict a foe with <b>${s.name}</b>.`,"heal"); return;
+  }
   // Creature/Life heals & buffs may be cast on an ally under the crosshair (online); else self.
   // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
   if((s.buff==="attr")||(s.school==="life"&&s.heal)){
@@ -2860,7 +2886,7 @@ function update(dt){
             m.atkCd=1.6;m.charging=0;
           }
         } else if(m.atkCd<=0&&d<b.range){ m.charging=0.45; }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;playerHurt(m.dmg*(m.enraged?1.4:1),m.x,m.z);}
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z);}
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
       if(Math.hypot(m.x-m.wx,m.z-m.wz)>20) m.ang=Math.atan2(m.wx-m.x,m.wz-m.z);
@@ -4043,6 +4069,7 @@ function netHandle(m){
     return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
   if(m.t==="mob_hit") return onMobHit(m);
+  if(m.t==="mob_deb"){ const mob=NET.mobs[m.id]; if(mob) floater(mob.x,(mob.headY||1.6)+2,mob.z,m.eff==="spd"?"Slowed":"Weakened","#c9a6ff"); return; }
   if(m.t==="mob_die") return onMobDie(m);
   if(m.t==="dmg")     return onMobDmg(m);
   if(m.t==="reward")  return onReward(m);
