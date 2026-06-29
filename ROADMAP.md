@@ -154,6 +154,28 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   tree** (player as patron receiving pass-up income). Current Loyalty-tier XP bonus in `gainXP` stays as the
   flavor stand-in.
 
+## MILESTONE MMO — Multiplayer pivot  ◑ (user chose: public cloud server + full MMO systems first)
+Decision (2026-06-29): going from single-player offline to a real shared-world MMORPG. This intentionally
+waives the original "fully offline, zero-install" constraint for hosting (the client keeps an **offline
+solo fallback**). Stack: a **dependency-free Python 3 authoritative server** (stdlib asyncio + hand-rolled
+WebSocket + sqlite3) — chosen over Node because it's testable/runnable here (no Node installed) and deploys
+anywhere.
+- ✅ **M1. Server foundation** (`server/dereth_server.py`, +`test_client.py` harness, +README; 13/13 e2e
+  checks pass). Accounts (scrypt + sqlite3), resumable session tokens, per-account persistent character
+  JSON blob, chat relay, presence (join/leave), 10 Hz world snapshots. Runs with just `python3`.
+- ✅ **M2. Client netcode + auth UI + remote players** (jsc + live-server browser-integration verified, 0
+  console errors). Title screen gained an online **Log In / Register** panel (offline solo path preserved).
+  `NET` module: WebSocket connect, `auth_ok`/`auth_err`/`snapshot`/`chat`/`system` handling, 10 Hz `input`
+  send, server-side `save` (replaces localStorage when online). New accounts pick a heritage to create
+  their character server-side; existing characters load from the server. **Remote players** render as
+  name-tagged avatars built from snapshots (`reconcileRemotes`/`updateRemotes`: build, ground-plant, lerp,
+  cull on leave; hidden inside dungeon/network instances until M3). Verified in a real browser against the
+  live server: register→enter world, a simulated 2nd player appears as a remote avatar (eval-confirmed
+  visible/positioned/named) and its join/leave shows in the client log.
+- ☐ **M3. Server-authoritative world** — monsters/AI/combat/world-events move server-side; shared loot/XP;
+  anti-cheat (server owns positions & damage). Currently positions are client-reported (trusted) for MVP.
+- ☐ **M4. Cloud deploy** — Dockerfile, host (Fly.io/Render/VPS), `wss://` TLS, persistent DB volume.
+
 ## MILESTONE G — Combat depth  ◑
 - ✅ **G1. Active shield block** (jsc + preview verified, 0 console errors). Hold **right-mouse** to raise
   the shield: cuts **frontal** incoming damage (45% base, +15% with Shield trained, scaling with the

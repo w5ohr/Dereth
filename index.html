@@ -256,6 +256,19 @@
     <kbd>R</kbd>/<kbd>G</kbd> health &nbsp; <kbd>F</kbd> mana &nbsp; <kbd>9</kbd>/<kbd>0</kbd> elixirs &nbsp; <kbd>Tab</kbd> map (click to travel) &nbsp; <kbd>O</kbd> settings &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>P</kbd> pause<br>
     a day/night cycle &amp; changing weather sweep over Dereth, and a world boss roams the far reaches
   </div>
+  <div id="authBox" style="margin:6px auto 4px;max-width:360px">
+    <div class="plabel">⚔ PLAY ONLINE — DERETH MMO</div>
+    <div style="display:flex;flex-direction:column;gap:6px;align-items:center">
+      <input id="authUser" placeholder="character name (3-16)" maxlength="16" autocomplete="username"
+        style="width:240px;padding:7px 10px;background:#0c0e08;border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:13px">
+      <input id="authPass" type="password" placeholder="password" maxlength="64" autocomplete="current-password"
+        style="width:240px;padding:7px 10px;background:#0c0e08;border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:13px">
+      <div style="display:flex;gap:8px"><button id="loginBtn">Log In</button><button id="registerBtn">Register</button></div>
+      <div id="authMsg" style="min-height:15px;font-size:12px;color:#ff8f6b"></div>
+      <div id="authStatus" style="font-size:11px;color:var(--dim)"></div>
+    </div>
+  </div>
+  <div class="plabel" style="opacity:.7">— or play offline (solo) —</div>
   <button id="continueBtn" style="display:none">Continue Your Saga</button>
   <div class="plabel">CHOOSE YOUR PATH</div>
   <div id="paths">
@@ -2655,6 +2668,7 @@ function update(dt){
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
   updateEvents(dt);
+  sendInput(dt); updateRemotes(dt);   // multiplayer: push our state, lerp others
   updateDayNight(dt);
   updateWeather(dt);
   syncCamera(dt);
@@ -3558,12 +3572,16 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive};
-    localStorage.setItem(SAVE_KEY,JSON.stringify(s));
+    if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
+    else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
   }catch(e){}
 }
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 function applySave(){
   let s; try{ s=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ return false; }
+  return applySaveObj(s);
+}
+function applySaveObj(s){
   if(!s) return false;
   Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
@@ -3587,8 +3605,81 @@ function applySave(){
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 
+// ============================================================================
+//  MULTIPLAYER — network layer (connects to the Dereth MMO server; offline fallback)
+// ============================================================================
+const SERVER_URL = (location.protocol==='https:')
+  ? 'wss://'+location.host                                  // cloud: same-origin reverse proxy → game server
+  : 'ws://'+(location.hostname||'127.0.0.1')+':8787';       // dev: local server on :8787
+let isOnline=false, creatingOnline=false, netInputT=0;
+const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{} };
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function netConnect(onOpen,onFail){
+  try{ NET.ws=new WebSocket(SERVER_URL); }catch(e){ onFail&&onFail(); return; }
+  NET.ws.onopen=()=>{ NET.open=true; onOpen&&onOpen(); };
+  NET.ws.onclose=()=>{ NET.open=false; if(running&&isOnline) log("Disconnected from the server.","warn"); };
+  NET.ws.onerror=()=>{ if(!NET.open) onFail&&onFail(); };
+  NET.ws.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch(e){return;} netHandle(m); };
+}
+function netSend(o){ if(NET.ws&&NET.open){ try{ NET.ws.send(JSON.stringify(o)); }catch(e){} } }
+function netHandle(m){
+  if(m.t==="auth_ok") return onAuthOk(m);
+  if(m.t==="auth_err"){ const e=document.getElementById('authMsg'); if(e)e.textContent=m.msg||"Authentication failed."; return; }
+  if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); return; }
+  if(m.t==="chat"){ log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat"); return; }
+  if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
+}
+function onAuthOk(m){
+  NET.me=m.id; NET.token=m.token||null; isOnline=true;
+  try{ localStorage.setItem("dereth_token", NET.token||""); localStorage.setItem("dereth_user", m.id); }catch(e){}
+  const am=document.getElementById('authMsg'); if(am)am.textContent="";
+  if(m.char){ pendingServerChar=m.char; startGame(true); }       // existing character → enter world
+  else { creatingOnline=true;                                    // new account → choose a heritage to create
+    const st=document.getElementById('authStatus'); if(st)st.textContent="Logged in as "+m.id+" — choose a heritage below to create your character.";
+  }
+}
+function authAction(kind){
+  const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
+  const msg=document.getElementById('authMsg'), st=document.getElementById('authStatus');
+  if(!u||!p){ msg.textContent="Enter a name and password."; return; }
+  msg.textContent=""; st.textContent="Connecting…";
+  const go=()=>{ st.textContent="Connected."; netSend({t:kind,user:u,pass:p}); };
+  if(NET.ws&&NET.open) go();
+  else netConnect(go, ()=>{ st.textContent=""; msg.textContent="Could not reach the server. You can still play offline below."; });
+}
+// remote players: build/lerp/cull simple avatars from server snapshots
+function reconcileRemotes(players){
+  const seen={};
+  for(const p of players){
+    if(p.id===NET.me) continue;
+    seen[p.id]=1;
+    let r=NET.players[p.id];
+    if(!r){ const mesh=buildAvatar(); const tag=labelSprite(p.name||p.id); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
+      scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
+    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp;
+  }
+  for(const id in NET.players){ if(!seen[id]){ scene.remove(NET.meshes[id]); delete NET.meshes[id]; delete NET.players[id]; } }
+}
+function updateRemotes(dt){
+  const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
+  for(const id in NET.players){
+    const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
+    mesh.visible=!hide; if(hide) continue;
+    if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
+    const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
+    mesh.position.set(r.x, groundY(r.x,r.z), r.z); mesh.rotation.y=r.yaw||0;
+  }
+}
+function sendInput(dt){
+  if(!isOnline||!NET.open) return;
+  netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
+  netSend({t:"input",x:player.x,z:player.z,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
+    level:player.level,heritage:player.heritage,title:player.title});
+}
+
 // ---------- boot ----------
 let autosaveTimer=null;
+let pendingServerChar=null;
 function startGame(loadSaved,preset){
   document.getElementById('overlay').style.display="none";
   initAudio();
@@ -3603,9 +3694,10 @@ function startGame(loadSaved,preset){
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   buildWorld();
   if(loadSaved){
-    applySave();
-    log("Your saga continues in <b>Dereth</b>.","sys");
-    toast("WELCOME BACK");
+    if(isOnline&&pendingServerChar){ applySaveObj(pendingServerChar); pendingServerChar=null; }
+    else applySave();
+    log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(NET.me)}.`:"Your saga continues in <b>Dereth</b>.","sys");
+    toast(isOnline?"ENTERING DERETH ONLINE":"WELCOME BACK");
   } else {
     const homeName=(preset&&PRESETS[preset]&&PRESETS[preset].town)||"Holtburg";
     const home=CAPITALS.find(c=>c.name===homeName)||CAPITALS[0];
@@ -3642,9 +3734,18 @@ if(hasSave()){ continueBtn.style.display="block";
   try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));
     if(s) continueBtn.textContent=`Continue — Level ${s.level||1} · ${s.kills||0} kills${s.title?" · "+s.title:""}`;}catch(e){}
 }
-startBtn.onclick=()=>{ wipeSave(); startGame(false); };
-continueBtn.onclick=()=>startGame(true);
-document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{ wipeSave(); startGame(false,b.dataset.path); });
+startBtn.onclick=()=>{ isOnline=false; wipeSave(); startGame(false); };
+continueBtn.onclick=()=>{ isOnline=false; startGame(true); };
+document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{
+  if(creatingOnline){ startGame(false,b.dataset.path); saveGame(); }   // create the character on the server
+  else { isOnline=false; wipeSave(); startGame(false,b.dataset.path); }
+});
+// online auth
+document.getElementById('loginBtn').onclick=()=>authAction('login');
+document.getElementById('registerBtn').onclick=()=>authAction('register');
+document.getElementById('authPass').addEventListener('keydown',e=>{ if(e.key==='Enter')authAction('login'); });
+// prefill last username for convenience
+try{ const lu=localStorage.getItem('dereth_user'); if(lu) document.getElementById('authUser').value=lu; }catch(e){}
 </script>
 </body>
 </html>
