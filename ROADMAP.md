@@ -166,6 +166,11 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   "ENRAGED" floater. Triggered in `damageMonster` (`m.enraged`), multipliers applied at the AI chase/melee/
   projectile sites. Bosses exempt. Verified: no enrage at 50%, enrages at 28%, glow applied, fires once,
   bosses never enrage.
+- ✅ **G3. Dodge dash** (jsc + preview verified, 0 console errors). Tap **Space** for a quick burst (~0.18s
+  at 46u/s) in the movement direction, or backward with no input; grants 0.32s i-frames, costs 16 stamina,
+  ~1.1s cooldown. `player.dashT/dashCd/dashX/dashZ`; `dodge()` bound to Space; dash displacement (collision-
+  aware) + i-frames applied in `update`. Verified: i-frames set, ~8.8u travel, backward default, stamina
+  cost, low-stamina & cooldown gating.
 
 ## MILESTONE F — Optional later-era / stretch content  ◇
 - ✅ **F1. Void magic** — "Nether Bolt" spell (key Z, school `void`, requires Void Magic trained):

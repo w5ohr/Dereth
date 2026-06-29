@@ -388,7 +388,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
-  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0};
+  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
 
 function derive(){
   const a=player.attr;
@@ -2206,6 +2206,18 @@ function updatePets(dt){
   }
 }
 function primaryAttack(){ if(weaponMode==="bow") fireArrow(); else meleeAttack(); }
+// dodge dash (Space): quick burst in the movement direction (or backward) with brief i-frames
+function dodge(){
+  if(!player.alive||paused||player.dashT>0||player.dashCd>0||player.st<16) return;
+  const yaw=player.yaw,fx=-Math.sin(yaw),fz=-Math.cos(yaw),rx=-fz,rz=fx;
+  let f=0,s=0;
+  if(keys["w"]||keys["arrowup"])f+=1; if(keys["s"]||keys["arrowdown"])f-=1;
+  if(keys["d"]||keys["arrowright"])s+=1; if(keys["a"]||keys["arrowleft"])s-=1;
+  let dx,dz; if(f||s){dx=fx*f+rx*s;dz=fz*f+rz*s;} else {dx=-fx;dz=-fz;} // no input → dodge backward
+  const l=Math.hypot(dx,dz)||1; player.dashX=dx/l; player.dashZ=dz/l;
+  player.dashT=0.18; player.dashCd=1.1; player.invuln=Math.max(player.invuln,0.32); player.st-=16;
+  SFX.swing(); burst(player.x,EYE*0.6,player.z,0xdfe8ff,8);
+}
 function fireArrow(){
   if(!player.alive||player.meleeCd>0||paused) return;
   const wp=weaponProfile(),ranged=wp&&wp.mode==="missile",prof=ranged?wp:WEAPON_TYPES.bow; // equipped ranged weapon or a plain bow
@@ -2278,6 +2290,7 @@ window.addEventListener('keydown',e=>{
   keys[k]=true;
   if(!running) return;
   { const si=SPELLS.findIndex(sp=>sp.key===k); if(si>=0) castSpell(si); }
+  if(k===" ") dodge();
   if(k==="e") interact();
   if(k==="q"){
     weaponMode=weaponMode==="sword"?"bow":"sword";
@@ -2489,8 +2502,16 @@ function update(dt){
     stepAcc+=sp; if(stepAcc>2.4){stepAcc=0;SFX.step();}
     if(sprint>1) player.st=Math.max(0,player.st-dt*14);
   }
+  // dodge dash: brief high-speed burst (with i-frames) along the dash vector
+  if(player.dashT>0&&player.alive){
+    const dd=46*dt;
+    const [nx,nz]=collide(player.x+player.dashX*dd,player.z+player.dashZ*dd);
+    player.x=nx;player.z=nz;
+    if(Math.random()<0.7) burst(player.x,EYE*0.5,player.z,0xdfe8ff,1);
+  }
   // timers/regen
   player.meleeCd=Math.max(0,player.meleeCd-dt);
+  player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
   player.invuln=Math.max(0,player.invuln-dt);
   player.swing=Math.max(0,player.swing-dt*3.2);
   player.bowDraw=Math.max(0,player.bowDraw-dt*4);
@@ -3597,6 +3618,7 @@ function startGame(loadSaved,preset){
     setTimeout(()=>{if(running)log("Tip: visit Asheron's Emissary (gold !) for a bounty, and the Vendor (green $) to trade.","sys");},14000);
     setTimeout(()=>{if(running)log("Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);
     setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). Q swaps weapon.","sys");},28000);
+    setTimeout(()=>{if(running)log("Tip: tap <b>Space</b> to dodge — a quick dash with brief invulnerability (costs stamina).","sys");},35000);
   }
   applyHeritageLook(player.heritage);
   markSceneSRGB();
