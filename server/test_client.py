@@ -146,6 +146,17 @@ async def main():
     await a.send({"t": "pchat", "msg": "group up"})
     pc = await b.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "party")
     check("party chat reaches members", bool(pc) and "group up" in pc.get("msg", "") and pc.get("from") == f"{alice}7")
+    # fellowship XP: a partied member near a kill shares its XP without tagging the mob
+    fsnap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"))
+    fmob = next((mm for mm in fsnap["mobs"] if not mm.get("boss")), None)
+    if fmob:
+        await a.send({"t": "input", "x": fmob["x"], "z": fmob["z"], "yaw": 0, "hp": 100})
+        await b.send({"t": "input", "x": fmob["x"] + 4, "z": fmob["z"], "yaw": 0, "hp": 100})  # bob doesn't attack
+        await asyncio.sleep(0.25)
+        await a.send({"t": "attack", "id": fmob["id"], "dmg": 99999})
+        brew = await b.recv_until(lambda x: x["t"] == "reward")
+        check("party member shares kill XP (fellowship)", bool(brew) and brew.get("xp", 0) > 0)
+
     await b.send({"t": "party", "act": "leave"})
     left = await a.recv_until(lambda x: x["t"] == "system" and "left the party" in x.get("msg", ""))
     check("party leave notifies members", bool(left))

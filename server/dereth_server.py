@@ -284,6 +284,7 @@ WORLD_LIMIT = 7000     # keep mobs inside the playfield
 CAPITALS = [(2640, -3488), (4744, -880), (3704, 968)]   # Holtburg, Shoushi, Yaraq
 TOWN_SAFE = 60.0
 ATTACK_RANGE = 16.0    # max client→mob distance accepted for an attack intent (melee+ranged+latency)
+FELLOW_RANGE = 150.0   # party members within this range of a kill share its XP
 
 def spawn_mob(kind=None, near=None):
     global _mob_seq
@@ -611,9 +612,15 @@ async def resolve_attack(cl, mid, dmg):
         await broadcast(die_msg)
         if is_boss:
             await broadcast({"t": "system", "msg": f"{cl.charname or cl.username} has slain {m['name']}! Glory echoes across Dereth."})
-        # shared XP: every player who damaged it earns full XP
-        dealt = m.get("dealt", {cl.username: dmg})
-        for u in dealt:
+        # shared XP: everyone who damaged it earns full XP; the killer's nearby
+        # party members share it too (fellowship), even without tagging the mob.
+        recipients = set(m.get("dealt", {cl.username: dmg}).keys())
+        if cl.party in PARTIES:
+            for acc in PARTIES[cl.party]["members"]:
+                c = CLIENTS.get(acc)
+                if c and c.in_world and math.hypot(c.x - m["x"], c.z - m["z"]) <= FELLOW_RANGE:
+                    recipients.add(acc)
+        for u in recipients:
             c = CLIENTS.get(u)
             if c:
                 await c.send({"t": "reward", "xp": m["xp"], "kind": m["kind"], "boss": is_boss})
