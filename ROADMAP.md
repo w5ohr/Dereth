@@ -161,6 +161,11 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   while raised. Blocks only within the front arc (rear attacks land full). `blocking` global; mousedown/up
   (button 2) + contextmenu-prevented; cleared on pointer-lock loss. Verified: 40→22 dmg blocking, 40→16
   trained, rear hit unblocked, stamina drains.
+- ✅ **G2. Enemy enrage** (jsc + preview verified, 0 console errors). A non-boss creature that drops below
+  30% HP enrages once: +35% move speed, +40% attack damage (melee & ranged), and a red emissive glow +
+  "ENRAGED" floater. Triggered in `damageMonster` (`m.enraged`), multipliers applied at the AI chase/melee/
+  projectile sites. Bosses exempt. Verified: no enrage at 50%, enrages at 28%, glow applied, fires once,
+  bosses never enrage.
 
 ## MILESTONE F — Optional later-era / stretch content  ◇
 - ✅ **F1. Void magic** — "Nether Bolt" spell (key Z, school `void`, requires Void Magic trained):
