@@ -558,6 +558,9 @@ const ITEM_TIERS=[{lvl:1,cost:20,req:0,dur:90},{lvl:2,cost:30,req:40,dur:120},{l
 for(const b of ITEM_BUFFS) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
   id:`item_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:8000,buff:"item",stat:b.stat,mag:b.mags[t.lvl-1],dur:t.dur});
+// ── Item Enchantment: recall spells (AC's portal magic) — teleport home (overworld only) ──
+SPELLBOOK_LIST.push({id:"item_recall_lifestone",name:"Lifestone Recall",ico:"🔵",school:"item",lvl:2,req:30,cost:30,cd:20000,special:"recall",dest:"lifestone"});
+SPELLBOOK_LIST.push({id:"item_recall_sanctuary",name:"Sanctuary Recall",ico:"🏛️",school:"item",lvl:3,req:60,cost:40,cd:30000,special:"recall",dest:"sanctuary"});
 const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115},
   {lvl:5,base:112,foc:2.8,drain:0.62,cost:100,req:155},{lvl:6,base:150,foc:3.2,drain:0.65,cost:130,req:200},{lvl:7,base:198,foc:3.6,drain:0.68,cost:166,req:255},{lvl:8,base:258,foc:4.0,drain:0.72,cost:208,req:305}];
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
@@ -2490,6 +2493,15 @@ function castSpellById(id){
     const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02)*consumeTaper();player.st=Math.min(player.mst,player.st+v);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
+  }
+  if(s.special==="recall"){   // teleport to your bound Lifestone, or to the Holtburg sanctuary
+    if(inDungeon||inNetwork){ player.mn+=cost; spellCd[id]=0; log("You cannot recall from here.","warn"); return; }
+    let dest;
+    if(s.dest==="sanctuary") dest=lifestones.find(l=>l.name==="Holtburg")||lifestones[0];
+    else dest=lifestones.find(l=>l.bound)||lifestones[0];
+    if(!dest){ player.mn+=cost; spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
+    teleportFX(player.x,player.z); player.x=dest.x; player.z=dest.z+3; player.invuln=2; teleportFX(player.x,player.z);
+    SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to the <b>${dest.name}</b> Lifestone.`,"heal"); return;
   }
   if(s.special==="dispel"){   // cleanse hostile curses on you, then brief immunity to re-application
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
