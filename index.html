@@ -2318,14 +2318,21 @@ function gainXP(amt){
     toast("LEVEL "+player.level);SFX.level();burst(player.x,EYE,player.z,0xffd23b,28);saveGame();need=xpForLevel(player.level);
   }
 }
-function playerHurt(dmg,sx,sz){
+function playerHurt(dmg,sx,sz,type){
   if(player.invuln>0||!player.alive||inNetwork) return;
-  const armT=(player.armor+wornArmorV()+itemBuff("armor"))*skillEff("meleed",0.02)*skillEff("shield",0.01);  // Impenetrability
-  const reduce=armT/(armT+60);
-  dmg=Math.max(1,dmg*(1-reduce));
+  type=type||"melee";   // "melee" | "missile" | "magic" — selects which Defense skill mitigates
+  // Armour blunts physical hits, scaled by the matching Defense skill; it only half-applies to spells.
+  const armScale=type==="missile"?"missiled":"meleed";
+  let armT=(player.armor+wornArmorV()+itemBuff("armor"))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense
+  if(type==="magic") armT*=0.5;
+  dmg=Math.max(1,dmg*(1-armT/(armT+60)));
+  // Each Defense skill also grants a flat avoidance, so it matters even with light armour
+  // (Invulnerability/Impregnability/Magic Resistance aptitude buffs raise these skills).
+  const defKey=type==="magic"?"magicd":armScale, dv=skillValue(defKey), denom=type==="magic"?120:200;
+  dmg=Math.max(1,dmg*(1-dv/(dv+denom)));
   if(player.lifeBuffs&&player.lifeBuffs.prot) dmg=Math.max(1,dmg*(1-player.lifeBuffs.prot.v));  // Life Protection
-  // active shield block: cut frontal damage (scales with Shield skill), costs stamina
-  if(blocking&&player.st>4&&sx!==undefined){
+  // active shield block: cut frontal damage (scales with Shield skill), costs stamina — physical attacks only
+  if(blocking&&player.st>4&&sx!==undefined&&type!=="magic"){
     const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),ax=sx-player.x,az=sz-player.z,al=Math.hypot(ax,az)||1;
     if((fx*ax+fz*az)/al>-0.25){ // attacker within the frontal arc
       const bf=clamp(0.45+(skillTier("shield")>0?0.15:0)+(skillValue("shield")-skillBase("shield"))*0.006,0,0.8);
@@ -2920,7 +2927,7 @@ function update(dt){
     p.mesh.position.set(p.x,p.y,p.z);
     let gone=p.life<=0;
     if(Math.hypot(p.x-player.x,p.z-player.z)<player.r+p.r && Math.abs(p.y-EYE)<1.4){
-      playerHurt(p.dmg,p.x,p.z);burst(p.x,p.y,p.z,0xb266e0,8);gone=true;
+      playerHurt(p.dmg,p.x,p.z,p.type||"magic");burst(p.x,p.y,p.z,0xb266e0,8);gone=true;
     }
     if(gone){scene.remove(p.mesh);eProj.splice(i,1);}
   }
@@ -2958,7 +2965,8 @@ function update(dt){
             const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),new THREE.MeshBasicMaterial({color:col}));
             const lt=new THREE.PointLight(col,1.2,6);mesh.add(lt);
             mesh.position.set(ox,oy,oz);scene.add(mesh);
-            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5});
+            const atkType=(m.kind==="gromnie"||m.kind==="olthoisoldier")?"missile":"magic";  // beasts spit (missile), casters hurl spells (magic)
+            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5,type:atkType});
             m.atkCd=1.6;m.charging=0;
           }
         } else if(m.atkCd<=0&&d<b.range){ m.charging=0.45; }
