@@ -2242,7 +2242,8 @@ function playerHurt(dmg,sx,sz){
   if(player.hp<=0) die();
 }
 function die(){
-  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.itemBuffs={};
+  // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
+  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
   document.getElementById('deathmsg').style.display="flex";
@@ -3892,8 +3893,8 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive,
-      knownSpells:player.knownSpells,hotbar:player.hotbar,
-      px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off
+      knownSpells:player.knownSpells,hotbar:player.hotbar,itemBuffs:player.itemBuffs,
+      px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
   }catch(e){}
@@ -3920,6 +3921,8 @@ function applySaveObj(s){
   player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,HOTKEYS.length):DEFAULT_HOTBAR.slice()).map(id=>SPELLBOOK[id]?id:null);
   while(player.hotbar.length<HOTKEYS.length) player.hotbar.push(null);
   buildSpellbar();
+  // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
+  player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
   questIdx=s.questIdx||0;questProg=s.questProg||0;questActive=!!s.questActive;
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   // restore bound lifestone + spawn there
@@ -4305,7 +4308,8 @@ let pendingServerChar=null;
 function startGame(loadSaved,preset){
   document.getElementById('overlay').style.display="none";
   initAudio();
-  player.spellBuffs={}; player.itemBuffs={};   // no stale enchantments carried into a new/loaded character
+  player.spellBuffs={};   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
+  if(!loadSaved) player.itemBuffs={};   // fresh character: no item buffs (a loaded one restores them via applySaveObj)
   if(!loadSaved&&preset&&PRESETS[preset]){const p=PRESETS[preset];
     for(const a in p.attr) player.attr[a]+=p.attr[a];
     player.armor+=p.armor||0;player.potHealth+=p.pot||0;player.potMana+=p.mana||0;player.title=p.title||"";player.heritage=preset;}
