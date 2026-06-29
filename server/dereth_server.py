@@ -832,6 +832,16 @@ async def dispatch(cl, msg):
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
         await cl.send({"t": "who", "players": players})
+    elif t == "tell":
+        name = str(msg.get("name", ""))
+        text = str(msg.get("msg", ""))[:240].strip()
+        if cl.in_world and text:
+            target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
+            if not target or target is cl:
+                await cl.send({"t": "system", "msg": f"No online character named '{name}'."})
+            else:
+                await target.send({"t": "chat", "from": cl.charname, "msg": text, "channel": "tell", "ts": int(time.time())})
+                await cl.send({"t": "chat", "from": name, "msg": text, "channel": "tell_out", "ts": int(time.time())})
     elif t == "party":
         if cl.in_world:
             await handle_party(cl, msg)

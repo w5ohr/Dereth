@@ -161,7 +161,7 @@
     <div id="questProg" style="color:var(--gold);margin-top:4px;font-weight:bold"></div>
   </div>
   <div id="log"><div class="panel2" id="logInner"></div></div>
-  <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say… (Enter send · Esc cancel · /who · /p · /party)"
+  <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say… (Enter · Esc · /who /tell /r /p /party)"
     style="position:absolute;left:12px;bottom:54px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
   <div id="spellbar" class="panel"></div>
   <div id="potions" class="panel">
@@ -3682,7 +3682,7 @@ function serverUrl(loc){ loc=loc||location;
 }
 const SERVER_URL = serverUrl();
 let isOnline=false, creatingOnline=false, netInputT=0;
-const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{}, partyNames:new Set(), partyLeader:null };
+const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{}, partyNames:new Set(), partyLeader:null, lastWhisperFrom:null };
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function netConnect(onOpen,onFail){
   try{ NET.ws=new WebSocket(SERVER_URL); }catch(e){ onFail&&onFail(); return; }
@@ -3703,6 +3703,8 @@ function netHandle(m){
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){
     if(m.channel==="party") log(`<span style="color:#b6f0c0">[Party] <b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat");
+    else if(m.channel==="tell"){ NET.lastWhisperFrom=m.from; log(`<span style="color:#e0a6ff">[${esc(m.from)} whispers] ${esc(m.msg)}</span>`,"chat"); }
+    else if(m.channel==="tell_out") log(`<span style="color:#c79bd6">[to ${esc(m.from)}] ${esc(m.msg)}</span>`,"chat");
     else log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat");
     return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
@@ -3965,6 +3967,11 @@ function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
   if(cmd==="who"){ netSend({t:"who"}); }
+  else if(cmd==="tell"||cmd==="w"){ const name=parts[1], msg=parts.slice(2).join(" ").trim();
+    if(name&&msg) netSend({t:"tell",name,msg}); else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
+  else if(cmd==="r"){ const msg=parts.slice(1).join(" ").trim();
+    if(NET.lastWhisperFrom&&msg) netSend({t:"tell",name:NET.lastWhisperFrom,msg});
+    else log(NET.lastWhisperFrom?"Usage: /r &lt;message&gt;":"No one has whispered you yet.","warn"); }
   else if(cmd==="p"){ const msg=(text.indexOf(" ")>=0?after:"").trim(); if(msg) netSend({t:"pchat",msg}); else log("Usage: /p &lt;message&gt;","warn"); }
   else if(cmd==="party"||cmd==="f"){
     const sub=(parts[1]||"").toLowerCase();

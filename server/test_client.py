@@ -122,6 +122,13 @@ async def main():
     names = {p["name"] for p in (wh.get("players", []) if wh else [])}
     check("/who lists online characters", bool(wh) and f"{bob}0" in names and len(names) >= 2)
 
+    # whisper: /tell delivers privately to the named character + echoes to sender
+    await a.send({"t": "tell", "name": f"{bob}0", "msg": "meet me at the lifestone"})
+    tw = await b.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "tell")
+    check("whisper delivered to target", bool(tw) and tw.get("from") == f"{alice}7" and "meet me" in tw.get("msg", ""))
+    echo = await a.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "tell_out")
+    check("whisper echoes to sender", bool(echo) and echo.get("from") == f"{bob}0")
+
     # --- party: invite / accept / party chat / leave ---
     await a.send({"t": "party", "act": "invite", "name": f"{bob}0"})
     inv = await b.recv_until(lambda x: x["t"] == "system" and "invites you" in x.get("msg", ""))
