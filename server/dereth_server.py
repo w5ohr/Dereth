@@ -447,22 +447,26 @@ def _mat_class(stat):
 
 # Spell-scroll ids must match the client's generated SPELLBOOK ids exactly. The client
 # resolves the spell's display name from the id, so the server only needs the id.
-SCROLL_SPELLS = (
-    [f"creature_{c}_{l}" for c in ("str", "end", "coord", "quick", "focus", "will") for l in range(1, 7)]
-    + [f"creature_{c}_{l}" for c in ("weak", "slow") for l in range(1, 5)]
-    + [f"war_{c}_{l}" for c in ("flame", "frost", "light") for l in range(2, 7)]
-    + [f"war_storm_{l}" for l in range(2, 5)]
-    + [f"life_heal_{l}" for l in range(2, 7)]
-    + [f"life_revit_{l}" for l in range(1, 5)]
-    + [f"life_drain_{l}" for l in range(1, 5)]
-    + [f"life_harm_{l}" for l in range(1, 7)]
-    + [f"life_prot_{l}" for l in range(1, 5)]
-    + [f"life_vuln_{l}" for l in range(1, 5)]
-    + [f"void_nether_{l}" for l in range(2, 7)]
-    + [f"war_{c}_{l}" for c in ("acid", "force", "blade") for l in range(1, 5)]
-    + [f"war_{c}_{g}_{l}" for c in ("flame", "frost", "light") for g in ("blast", "volley", "ring") for l in range(1, 5)]
-    + [f"item_{c}_{l}" for c in ("blood", "heart", "impen", "swift") for l in range(1, 4)]
-)
+# AC has 8 spell levels; the client generates every line I..VIII. Mirror that here,
+# then drop the starter spells the player already knows (client's DEFAULT_KNOWN / SCROLL_POOL).
+WAR_ELEMENTS = ("flame", "frost", "light", "acid", "force", "blade", "pierce")
+_STARTERS = {"war_flame_1", "war_frost_1", "war_light_1", "war_storm_1", "life_heal_1",
+             "life_stam2mana", "item_might_1", "creature_swift_1", "void_nether_1", "summon_wisp"}
+SCROLL_SPELLS = [s for s in (
+    [f"creature_{c}_{l}" for c in ("str", "end", "coord", "quick", "focus", "will") for l in range(1, 9)]
+    + [f"creature_{c}_{l}" for c in ("weak", "slow") for l in range(1, 9)]
+    + [f"war_{c}_{l}" for c in WAR_ELEMENTS for l in range(1, 9)]
+    + [f"war_{c}_{g}_{l}" for c in WAR_ELEMENTS for g in ("blast", "volley", "ring") for l in range(1, 9)]
+    + [f"war_storm_{l}" for l in range(1, 9)]
+    + [f"life_heal_{l}" for l in range(1, 9)]
+    + [f"life_revit_{l}" for l in range(1, 9)]
+    + [f"life_drain_{l}" for l in range(1, 9)]
+    + [f"life_harm_{l}" for l in range(1, 9)]
+    + [f"life_prot_{l}" for l in range(1, 9)]
+    + [f"life_vuln_{l}" for l in range(1, 9)]
+    + [f"void_{c}_{l}" for c in ("nether", "streak", "blast") for l in range(1, 9)]
+    + [f"item_{c}_{l}" for c in ("blood", "heart", "impen", "swift") for l in range(1, 9)]
+) if s not in _STARTERS]
 
 def roll_item(rare=False, tier=1):
     if SCROLL_SPELLS and random.random() < (0.16 if rare else 0.10):   # sometimes a spell scroll
