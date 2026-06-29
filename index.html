@@ -566,8 +566,16 @@ function regionTint(x,z){const r=regionOf(x,z);return r<0?DIRELANDS_TINT:REGIONS
 let ROADS=[];
 function genRoads(){
   ROADS=[];
-  for(let i=0;i<CAPITALS.length-1;i++){const a=CAPITALS[i],b=CAPITALS[i+1];ROADS.push({ax:a.x,az:a.z,bx:b.x,bz:b.z,w:9});}
-  for(const c of CITIES){ if(c.capital) continue; const cap=CAPITALS.find(k=>k.region===c.region); ROADS.push({ax:cap.x,az:cap.z,bx:c.x,bz:c.z,w:6}); }
+  // major highways link the great cities (capitals) to one another — every pair
+  for(let i=0;i<CAPITALS.length;i++) for(let j=i+1;j<CAPITALS.length;j++){
+    const a=CAPITALS[i],b=CAPITALS[j];
+    ROADS.push({ax:a.x,az:a.z,bx:b.x,bz:b.z,w:9,major:true,aname:a.name,bname:b.name});
+  }
+  // smaller towns get only their own internal streets (a short cross), no inter-city road
+  for(const c of CITIES){ if(c.capital) continue; const L=22;
+    ROADS.push({ax:c.x-L,az:c.z,bx:c.x+L,bz:c.z,w:4});
+    ROADS.push({ax:c.x,az:c.z-L,bx:c.x,bz:c.z+L,w:4});
+  }
 }
 
 // ---- 50 dungeons: themed environments scattered across Dereth ----
@@ -2930,7 +2938,7 @@ function drawMinimap(){
   for(const m of monsters){if(m.isBoss||!!m.isDungeon!==inDungeon)continue;g.fillStyle="#b03a3a";g.fillRect(cx(m.x)-1,cx(m.z)-1,2,2);}
   if(!inDungeon){
     g.strokeStyle="rgba(150,140,120,0.6)";g.lineWidth=2;
-    for(const r of ROADS){g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
+    for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
     for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1,cx(n.z)-1,2,2);}
     for(const pt of portals){g.fillStyle="#bf9bff";g.fillRect(cx(pt.x)-1.5,cx(pt.z)-1.5,3,3);}
     for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");g.fillRect(cx(ls.x)-rr,cx(ls.z)-rr,rr*2,rr*2);}
@@ -2962,7 +2970,7 @@ function drawBigMap(){
   }
   g.fillStyle="rgba(216,177,74,0.10)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
   g.strokeStyle="rgba(160,150,128,0.7)";g.lineWidth=4;
-  for(const r of ROADS){g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
+  for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
   for(const m of monsters){if(m.isBoss||m.isDungeon)continue;g.fillStyle="rgba(176,58,58,0.55)";g.fillRect(cx(m.x)-1,cx(m.z)-1,2,2);}
   for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1.5,cx(n.z)-1.5,3,3);}
   g.textAlign="center";
@@ -3348,6 +3356,30 @@ function buildRoads(){
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     geo.setIndex(idx);geo.computeVertexNormals();
     const mesh=new THREE.Mesh(geo,roadMat);mesh.receiveShadow=true;scene.add(mesh);roadMeshes.push(mesh);
+    if(r.major) placeSignposts(r);
+  }
+}
+// a wooden signpost: post + arm/arrow pointing toward a town, with the town's name above
+function buildSignpost(name,yaw){
+  const wood=new THREE.MeshLambertMaterial({color:0x6b4a2a}),plank=new THREE.MeshLambertMaterial({color:0x8a6a3a});
+  const g=new THREE.Group();
+  const post=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.18,3.0,7),wood);post.position.y=1.5;post.castShadow=true;g.add(post);
+  const board=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.7,0.12),plank);board.position.set(1.05,2.5,0);board.castShadow=true;g.add(board);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(0.42,0.7,4),plank);tip.rotation.z=-Math.PI/2;tip.position.set(2.3,2.5,0);g.add(tip);
+  const lbl=labelSprite(name);lbl.scale.set(6,1.5,1);lbl.position.set(1.05,3.45,0);g.add(lbl);
+  g.rotation.y=yaw;return g;
+}
+function placeSignposts(r){
+  const dx=r.bx-r.ax,dz=r.bz-r.az,len=Math.hypot(dx,dz),ux=dx/len,uz=dz/len,pxn=-uz,pzn=ux;
+  const step=360,off=r.w/2+2;
+  for(let d=step; d<len-80; d+=step){
+    const t=d/len,px=r.ax+dx*t,pz=r.az+dz*t;
+    const nearA=t<0.5, tn=nearA?r.aname:r.bname, tx=nearA?r.ax:r.bx, tz=nearA?r.az:r.bz; // name+arrow → the closer town
+    const sx=px+pxn*off, sz=pz+pzn*off;
+    if(terrainH(sx,sz)<0.2) continue;                 // not in water
+    const yaw=Math.atan2(-(tz-pz),(tx-px));
+    const sp=buildSignpost(tn,yaw);sp.position.set(sx,terrainH(sx,sz),sz);scene.add(sp);scenery.push(sp);
+    obstacles.push({x:sx,z:sz,r:0.5});
   }
 }
 function onRoad(x,z){
