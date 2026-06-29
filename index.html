@@ -656,6 +656,11 @@ for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_arc_${t.lvl}`,name:`${WAR_ROOT[b.code]} Arc ${ROMAN[t.lvl]}`,ico:"☄️",school:"war",lvl:t.lvl,req:t.req,
   cost:Math.round(b.cost*1.5*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*1.4),geom:"arc",
   make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult*0.85,speed:b.speed*0.7,color:b.color,r:b.r*1.5,splash:4.2,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
+// ── War Magic Wall: a persistent ground zone that damages foes standing in it for a few seconds (I–VIII) ──
+for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
+  id:`war_${b.code}_wall_${t.lvl}`,name:`${WAR_ROOT[b.code]} Wall ${ROMAN[t.lvl]}`,ico:"🧱",school:"war",lvl:t.lvl,req:t.req,
+  cost:Math.round(b.cost*1.8*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*3.2),special:"wall",element:b.element,color:b.color,r:3.5,dur:6,
+  dps:()=>(b.base*0.42+player.attr.Focus*0.5)*t.mult});
 // AC's level-VIII spells are "Incantations" — rename every level-8 entry (e.g. "Flame Bolt VIII" → "Incantation of Flame Bolt").
 for(const s of SPELLBOOK_LIST){ if(s.lvl===8 && / VIII$/.test(s.name)) s.name="Incantation of "+s.name.slice(0,-5); }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
@@ -854,7 +859,7 @@ let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
 const obstacles=[]; // {x,z,r}
-let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[];
+let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[];
 
 function texGround(){
   const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
@@ -2530,6 +2535,18 @@ function castSpellById(id){
     else if(s.buff==="skill"&&mag){player.skillBuffs=player.skillBuffs||{};player.skillBuffs[s.skillKey]={v:mag,t:dur};derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${SKILL_BY_KEY[s.skillKey]?SKILL_BY_KEY[s.skillKey].n:s.skillKey}`,"#bfe0ff");}
     castFlash(0x9af0ff);SFX.quest();log(`You invoke <b>${s.name}</b>.`,"heal");return;
   }
+  if(s.special==="wall"){   // lay a persistent damage zone on the ground ahead of you
+    const dir=new THREE.Vector3();cam.getWorldDirection(dir);
+    const cx=clamp(player.x+dir.x*7,-HALF+2,HALF-2),cz=clamp(player.z+dir.z*7,-HALF+2,HALF-2);
+    const col=s.color||0xff7a2a, el=s.element||"fire", dps=s.dps()*skillEff("war",0.02)*consumeTaper();
+    const disc=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,opacity:0.5,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
+    disc.scale.set(s.r*2,s.r*2,s.r*2); disc.position.set(cx,0.4,cz);
+    const lt=new THREE.PointLight(col,2.6,s.r*5); lt.position.set(cx,1.4,cz);
+    const g=new THREE.Group(); g.add(disc); g.add(lt); scene.add(g);
+    walls.push({x:cx,z:cz,r:s.r,dps,element:el,color:col,burn:el==="fire",slow:el==="ice"?0.4:0,t:s.dur,acc:0,isDungeon:!!inDungeon,mesh:g,disc});
+    burst(cx,0.5,cz,col,20); SFX.flame&&SFX.flame(); castFlash(col); shake(0.18);
+    log(`You raise a <b>${s.name}</b> — foes within it burn for ${s.dur}s.`,"heal"); return;
+  }
   if(s.school==="aoe"){
     const dir=new THREE.Vector3();cam.getWorldDirection(dir);
     const cx=clamp(player.x+dir.x*12,-HALF+2,HALF-2),cz=clamp(player.z+dir.z*12,-HALF+2,HALF-2);
@@ -2992,6 +3009,23 @@ function update(dt){
       shake(0.16);
     }
     if(gone){scene.remove(p.mesh);pProj.splice(i,1);}
+  }
+  // persistent War "Wall" zones — tick damage to foes standing inside, then expire
+  for(let i=walls.length-1;i>=0;i--){
+    const w=walls[i]; w.t-=dt; w.acc+=dt;
+    if(w.disc) w.disc.material.opacity=0.32+0.18*Math.abs(Math.sin(now()/180));
+    if(w.acc>=0.4){   // damage pulse roughly 2-3x/sec
+      const tick=w.dps*w.acc; w.acc=0;
+      for(const m of monsters){ if(!!m.isDungeon!==w.isDungeon||!!w.isDungeon!==inDungeon) continue;
+        if(Math.hypot(m.x-w.x,m.z-w.z)<w.r+m.r){
+          const em=elemMult(m.kind,w.element);
+          if(w.burn){m.burnT=2;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
+          if(w.slow)m.slow=Math.max(m.slow,w.slow);
+          applyHit(m,tick*em);
+        }
+      }
+    }
+    if(w.t<=0){ scene.remove(w.mesh); walls.splice(i,1); }
   }
   // enemy projectiles
   for(let i=eProj.length-1;i>=0;i--){
@@ -3953,7 +3987,7 @@ function hideOverworld(v){
   if(grassMesh) grassMesh.visible=v;
 }
 function clearDrops(){ for(const d of drops) scene.remove(d.mesh); drops=[]; }
-function clearProjectiles(){ for(const p of pProj) scene.remove(p.mesh); for(const p of eProj) scene.remove(p.mesh); pProj=[];eProj=[]; }
+function clearProjectiles(){ for(const p of pProj) scene.remove(p.mesh); for(const p of eProj) scene.remove(p.mesh); for(const w of walls) scene.remove(w.mesh); pProj=[];eProj=[];walls=[]; }
 function spawnDungeonMonster(kind,x,z,elite,hpMul){
   hpMul=hpMul||1;
   const b=BESTIARY[kind];
