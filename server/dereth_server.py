@@ -208,8 +208,18 @@ MOB_BESTIARY = {
     "skeleton":  {"hp": 80,  "dmg": 16, "spd": 6.0, "xp": 360, "gold": (6, 18),  "size": 1.0, "sense": 44, "atk": 1.4},
     "tusker":    {"hp": 160, "dmg": 24, "spd": 5.0, "xp": 620, "gold": (14, 40), "size": 1.7, "sense": 43, "atk": 1.6},
 }
-# Monsters cluster near these overworld anchors (players spawn around origin).
-MOB_CLUSTERS = [(0, 0), (320, 220), (-260, 180), (180, -300), (-300, -240), (260, 320)]
+# Monsters cluster near real Dereth towns (world coords = lon*80, -lat*80) so the shared
+# population is where players actually spawn/travel — not out at the empty origin.
+MOB_CLUSTERS = [
+    (2640, -3488),  # Holtburg (Aluvian capital — common spawn)
+    (3768, -2072),  # Cragstone
+    (2048, -2424),  # Glenden Wood
+    (5136, -1528),  # Eastham
+    (4744, -880),   # Shoushi (Sho capital)
+    (3704, 968),    # Yaraq (Gharu'ndim capital)
+    (1472, 128),    # Samsur
+    (4824, 2296),   # Sawato
+]
 MOBS = {}              # id -> mob dict
 _mob_seq = 0
 WORLD_LIMIT = 7000     # keep mobs inside the playfield
@@ -222,7 +232,7 @@ def spawn_mob(kind=None, near=None):
         kind = random.choice(list(MOB_BESTIARY))
     b = MOB_BESTIARY[kind]
     cx, cz = near if near else random.choice(MOB_CLUSTERS)
-    a, rr = random.uniform(0, 6.28), random.uniform(20, 140)
+    a, rr = random.uniform(0, 6.28), random.uniform(90, 440)   # ring around the hub, clear of the town core
     x = max(-WORLD_LIMIT, min(WORLD_LIMIT, cx + math.cos(a) * rr))
     z = max(-WORLD_LIMIT, min(WORLD_LIMIT, cz + math.sin(a) * rr))
     mid = "m%d" % _mob_seq
@@ -246,11 +256,12 @@ def populate_world():
 # renders any boss generically from the snapshot (boss/name/scale/tint), so adding bosses
 # here is purely server content. `kind` only needs to exist in the client BESTIARY.
 BOSS_DEFS = {
-    "queen":   {"name": "Gnawvil, the Olthoi Queen",   "kind": "olthoi", "hp": 4000, "dmg": 45, "spd": 5.6, "xp": 4000,  "gold": (140, 300),  "size": 2.0, "sense": 80, "atk": 1.4, "scale": 2.2, "home": (560, 560),     "respawn": 90.0},
-    "apex":    {"name": "Bael'Zharon, the Hopeslayer",  "kind": "shadow", "hp": 9000, "dmg": 70, "spd": 5.0, "xp": 30000, "gold": (800, 1500), "size": 1.0, "sense": 90, "atk": 1.5, "scale": 3.6, "home": (-1200, -1200), "respawn": 150.0, "tint": 0x7a4fae},
-    "genLer":  {"name": "Ler Rhan, Shadow General",     "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (1100, -900),   "respawn": 120.0, "tint": 0x8a5fc8},
-    "genFerah":{"name": "Black Ferah, Shadow General",  "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (-1000, 1100),  "respawn": 120.0, "tint": 0x4a3a6a},
-    "genIsin": {"name": "Isin Dule, Shadow General",    "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (1300, 1300),   "respawn": 120.0, "tint": 0xc05fae},
+    # lairs sit out in the wilds between towns (reachable, away from the safe town cores)
+    "queen":   {"name": "Gnawvil, the Olthoi Queen",   "kind": "olthoi", "hp": 4000, "dmg": 45, "spd": 5.6, "xp": 4000,  "gold": (140, 300),  "size": 2.0, "sense": 80, "atk": 1.4, "scale": 2.2, "home": (4200, -1400), "respawn": 90.0},
+    "apex":    {"name": "Bael'Zharon, the Hopeslayer",  "kind": "shadow", "hp": 9000, "dmg": 70, "spd": 5.0, "xp": 30000, "gold": (800, 1500), "size": 1.0, "sense": 90, "atk": 1.5, "scale": 3.6, "home": (3200, 3200),  "respawn": 150.0, "tint": 0x7a4fae},
+    "genLer":  {"name": "Ler Rhan, Shadow General",     "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (1800, -1200), "respawn": 120.0, "tint": 0x8a5fc8},
+    "genFerah":{"name": "Black Ferah, Shadow General",  "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (5200, 600),   "respawn": 120.0, "tint": 0x4a3a6a},
+    "genIsin": {"name": "Isin Dule, Shadow General",    "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (2800, 1800),  "respawn": 120.0, "tint": 0xc05fae},
 }
 
 def spawn_boss(key):
@@ -273,7 +284,7 @@ EVENT_TYPES = [
     {"name": "Olthoi Swarm", "kinds": ["reedshark", "tusker"], "col": 0xff5a2a, "blurb": "An Olthoi hive boils over"},
     {"name": "Banderling Raid", "kinds": ["banderling", "drudge"], "col": 0xffc14a, "blurb": "A savage warband descends"},
 ]
-EVENT_ANCHORS = [(900, -200), (-700, 400), (300, 900), (-900, -600), (700, 700)]
+EVENT_ANCHORS = [(2640, -3488), (3768, -2072), (4744, -880), (3704, 968), (2048, -2424), (5136, -1528)]  # Incursions besiege towns
 EVENT_TTL = 240.0          # seconds to clear before the Incursion fades
 EVENT_COUNT = 8
 EVENT = {"active": False}
