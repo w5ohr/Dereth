@@ -127,6 +127,20 @@ async def main():
     em = await a.recv_until(lambda x: x["t"] == "emote")
     check("emote broadcasts to others", bool(em) and em.get("from") == f"{bob}0" and "waves" in em.get("msg", ""))
 
+    # cast a Creature/Life spell on another player -> they receive an rbuff (in range)
+    await a.send({"t": "input", "x": 100, "z": 200, "yaw": 0, "hp": 100})
+    await b.send({"t": "input", "x": 102, "z": 200, "yaw": 0, "hp": 100})
+    await asyncio.sleep(0.2)
+    await a.send({"t": "cast", "target": bob, "spell": "life_heal_1"})
+    rb = await b.recv_until(lambda x: x["t"] == "rbuff")
+    check("cast on ally relays an rbuff", bool(rb) and rb.get("spell") == "life_heal_1" and rb.get("from") == f"{alice}7")
+    # out of range -> no relay
+    await a.send({"t": "input", "x": 9000, "z": 200, "yaw": 0, "hp": 100})
+    await asyncio.sleep(0.2)
+    await a.send({"t": "cast", "target": bob, "spell": "life_heal_1"})
+    rb2 = await b.recv_until(lambda x: x["t"] == "rbuff", timeout=1.0)
+    check("out-of-range ally cast is rejected", rb2 is None)
+
     # whisper: /tell delivers privately to the named character + echoes to sender
     await a.send({"t": "tell", "name": f"{bob}0", "msg": "meet me at the lifestone"})
     tw = await b.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "tell")

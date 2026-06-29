@@ -2281,6 +2281,17 @@ function consumeTaper(){
   return 1;
 }
 function itemBuff(stat){ const b=player.itemBuffs&&player.itemBuffs[stat]; return b?b.v:0; }   // Item-Enchantment combat bonus
+// the ally (remote player) under your crosshair within range, for casting Creature/Life on others
+function pickAllyTarget(range){
+  if(!isOnline||typeof NET==="undefined") return null;
+  const dir=new THREE.Vector3(); cam.getWorldDirection(dir);
+  const fl=Math.hypot(dir.x,dir.z)||1; let best=null,bd=0.985;
+  for(const aid in NET.players){ const r=NET.players[aid]; const rx=(r.x!=null?r.x:r.tx), rz=(r.z!=null?r.z:r.tz);
+    if(rx==null) continue; const dx=rx-player.x, dz=rz-player.z, d=Math.hypot(dx,dz);
+    if(d<0.1||d>range) continue; const dot=(dx*dir.x+dz*dir.z)/(d*fl);
+    if(dot>bd){ bd=dot; best={id:aid,name:r.name||aid}; } }
+  return best;
+}
 function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
 function castSpellById(id){
   if(!player.alive||paused) return;
@@ -2299,6 +2310,13 @@ function castSpellById(id){
   if(player.mn<cost){log(`Not enough mana for ${s.name}.`,"warn");return;}
   player.mn-=cost;spellCd[id]=now()+s.cd;
   castShow=0.55; if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
+  // Creature/Life heals & buffs may be cast on an ally under the crosshair (online); else self.
+  // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
+  if((s.buff==="attr")||(s.school==="life"&&s.heal)){
+    const ally=pickAllyTarget(40);
+    if(ally){ netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+      floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
+  }
   if(s.school==="life"&&s.heal){
     const pow=consumeTaper();
     const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01)*pow;player.hp=Math.min(player.mhp,player.hp+h);
@@ -2732,7 +2750,7 @@ function update(dt){
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});}
     let gone=p.life<=0||p.y<0.1||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
-    if(!gone) for(const m of monsters){
+    if(!gone) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
       if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
         if(p.slow)m.slow=Math.max(m.slow,p.slow);
@@ -3969,6 +3987,7 @@ function netHandle(m){
   if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="who") return onWho(m);
   if(m.t==="emote") return onEmote(m);
+  if(m.t==="rbuff") return onRemoteBuff(m);
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){
@@ -4236,6 +4255,12 @@ function onEmote(m){
   if(m.id===NET.me){ x=player.x; z=player.z; }
   else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz); } }
   if(x!=null && m.act!=="me") floater(x,EYE+1.4,z,m.act,"#ffe9b0",1.1);
+}
+function onRemoteBuff(m){   // a Creature/Life spell another player cast on you
+  const sp=SPELLBOOK[m.spell]; if(!sp||!player.alive||!running) return;
+  if(sp.heal){ const h=sp.heal(); player.hp=Math.min(player.mhp,player.hp+h); floater(player.x,EYE+0.5,player.z,"+"+Math.round(h),"#7fe6a0"); if(SFX.heal)SFX.heal(); }
+  else if(sp.buff==="attr"){ applyAttrBuff(sp.attr,sp.mag,sp.dur); floater(player.x,EYE+0.5,player.z,`+${sp.mag} ${sp.attr}`,"#bfe0ff"); }
+  log(`<b>${esc(m.from)}</b> casts <b>${sp.name}</b> on you.`,"heal");
 }
 function onWho(m){
   const ps=m.players||[];

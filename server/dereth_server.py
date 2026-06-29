@@ -867,6 +867,13 @@ async def dispatch(cl, msg):
                 line = f"{cl.charname} {verb}" if verb else None
             if line:
                 await broadcast({"t": "emote", "id": cl.username, "from": cl.charname, "act": act, "msg": line})
+    elif t == "cast":
+        # relay a Creature/Life heal or buff to another in-world player near the caster
+        if cl.in_world:
+            tgt = CLIENTS.get(msg.get("target"))
+            spell = msg.get("spell")
+            if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
+                await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "tell":
         name = str(msg.get("name", ""))
         text = str(msg.get("msg", ""))[:240].strip()
