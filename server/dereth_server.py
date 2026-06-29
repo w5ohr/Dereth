@@ -202,6 +202,8 @@ class Client:
         self.charname = None    # active character's in-world name
         self.slot = None        # active character slot (0..MAX_CHARS-1)
         self.in_world = False    # True once a character is selected/created (else: at char-select)
+        self.party = None       # party id (or None)
+        self.invite_from = None  # pending party invite (inviter account)
         # presence state (last reported by the client; M3 will make this authoritative)
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self.level = 1; self.heritage = "aluvian"; self.title = ""
@@ -618,6 +620,96 @@ async def resolve_attack(cl, mid, dmg):
         # gold + items drop on the ground as shared, first-come loot
         await spawn_loot(m, is_boss)
 
+# ---------------------------------------------------------------- parties (fellowships)
+PARTIES = {}           # pid -> {"leader": account, "members": [accounts]}
+_party_seq = 0
+PARTY_MAX = 6
+
+def party_names(pid):
+    p = PARTIES.get(pid)
+    if not p:
+        return []
+    out = []
+    for acc in p["members"]:
+        c = CLIENTS.get(acc)
+        nm = (c.charname if c and c.charname else acc)
+        out.append(nm + (" (leader)" if acc == p["leader"] else ""))
+    return out
+
+async def party_notify(pid, msg):
+    for acc in list(PARTIES.get(pid, {}).get("members", [])):
+        c = CLIENTS.get(acc)
+        if c:
+            await c.send({"t": "system", "msg": msg})
+
+async def party_leave(cl, quiet=False):
+    pid = cl.party
+    cl.party = None
+    p = PARTIES.get(pid)
+    if not p:
+        if not quiet:
+            await cl.send({"t": "system", "msg": "You are not in a party."})
+        return
+    who = cl.charname or cl.username
+    if cl.username in p["members"]:
+        p["members"].remove(cl.username)
+    if p["members"]:                            # tell whoever remains that this member left
+        await party_notify(pid, f"{who} has left the party.")
+    if len(p["members"]) <= 1:                 # a party of one disbands
+        for acc in p["members"]:
+            c = CLIENTS.get(acc)
+            if c:
+                c.party = None
+                await c.send({"t": "system", "msg": "The party has disbanded."})
+        PARTIES.pop(pid, None)
+        if not quiet:
+            await cl.send({"t": "system", "msg": "You left the party."})
+    else:
+        if p["leader"] == cl.username:
+            p["leader"] = p["members"][0]
+        if not quiet:
+            await cl.send({"t": "system", "msg": "You left the party."})
+        await party_notify(pid, f"{who} has left the party.")
+
+async def handle_party(cl, msg):
+    global _party_seq
+    act = msg.get("act")
+    if act == "invite":
+        name = str(msg.get("name", ""))
+        target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
+        if not target or target is cl:
+            return await cl.send({"t": "system", "msg": f"No online character named '{name}'."})
+        if cl.party and target.party == cl.party:
+            return await cl.send({"t": "system", "msg": f"{name} is already in your party."})
+        if target.party:
+            return await cl.send({"t": "system", "msg": f"{name} is already in a party."})
+        target.invite_from = cl.username
+        await cl.send({"t": "system", "msg": f"You invite {name} to your party."})
+        await target.send({"t": "system", "msg": f"{cl.charname} invites you to a party — type /party accept."})
+    elif act == "accept":
+        inviter = CLIENTS.get(cl.invite_from) if cl.invite_from else None
+        cl.invite_from = None
+        if not inviter or not inviter.in_world:
+            return await cl.send({"t": "system", "msg": "You have no pending party invite."})
+        if cl.party:
+            return await cl.send({"t": "system", "msg": "Leave your current party first (/party leave)."})
+        pid = inviter.party
+        if not pid or pid not in PARTIES:
+            _party_seq += 1; pid = "g%d" % _party_seq
+            PARTIES[pid] = {"leader": inviter.username, "members": [inviter.username]}
+            inviter.party = pid
+        if len(PARTIES[pid]["members"]) >= PARTY_MAX:
+            return await cl.send({"t": "system", "msg": "That party is full."})
+        PARTIES[pid]["members"].append(cl.username); cl.party = pid
+        await party_notify(pid, f"{cl.charname} has joined the party. Members: {', '.join(party_names(pid))}")
+    elif act == "leave":
+        await party_leave(cl)
+    else:  # list
+        if cl.party and cl.party in PARTIES:
+            await cl.send({"t": "system", "msg": f"Party ({len(PARTIES[cl.party]['members'])}): {', '.join(party_names(cl.party))}"})
+        else:
+            await cl.send({"t": "system", "msg": "You are not in a party. /party invite <name> to form one."})
+
 # ---------------------------------------------------------------- auth + dispatch
 def valid_name(u):
     return isinstance(u, str) and 3 <= len(u) <= 16 and all(ch.isalnum() or ch in "_-" for ch in u)
@@ -723,6 +815,18 @@ async def dispatch(cl, msg):
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
         await cl.send({"t": "who", "players": players})
+    elif t == "party":
+        if cl.in_world:
+            await handle_party(cl, msg)
+    elif t == "pchat":
+        text = str(msg.get("msg", ""))[:240].strip()
+        if cl.in_world and cl.party in PARTIES and text:
+            for acc in PARTIES[cl.party]["members"]:
+                c = CLIENTS.get(acc)
+                if c:
+                    await c.send({"t": "chat", "from": cl.charname, "msg": text, "channel": "party", "ts": int(time.time())})
+        elif cl.in_world:
+            await cl.send({"t": "system", "msg": "You are not in a party (/party invite <name>)."})
     elif t == "ping":
         await cl.send({"t": "pong"})
 
@@ -760,6 +864,8 @@ async def handle(reader, writer):
             was_in_world = cl.in_world
             who = cl.charname or cl.username
             cl.in_world = False
+            if cl.party:
+                await party_leave(cl, quiet=True)
             CLIENTS.pop(cl.username, None)
             if was_in_world:
                 await broadcast({"t": "system", "msg": f"{who} has left Dereth."})

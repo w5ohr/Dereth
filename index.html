@@ -3685,7 +3685,10 @@ function netHandle(m){
   if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="who") return onWho(m);
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
-  if(m.t==="chat"){ log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat"); return; }
+  if(m.t==="chat"){
+    if(m.channel==="party") log(`<span style="color:#b6f0c0">[Party] <b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat");
+    else log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat");
+    return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
   if(m.t==="mob_hit") return onMobHit(m);
   if(m.t==="mob_die") return onMobDie(m);

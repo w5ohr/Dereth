@@ -122,6 +122,20 @@ async def main():
     names = {p["name"] for p in (wh.get("players", []) if wh else [])}
     check("/who lists online characters", bool(wh) and f"{bob}0" in names and len(names) >= 2)
 
+    # --- party: invite / accept / party chat / leave ---
+    await a.send({"t": "party", "act": "invite", "name": f"{bob}0"})
+    inv = await b.recv_until(lambda x: x["t"] == "system" and "invites you" in x.get("msg", ""))
+    check("party invite reaches target", bool(inv))
+    await b.send({"t": "party", "act": "accept"})
+    joined = await a.recv_until(lambda x: x["t"] == "system" and "joined the party" in x.get("msg", ""))
+    check("party accept notifies members", bool(joined))
+    await a.send({"t": "pchat", "msg": "group up"})
+    pc = await b.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "party")
+    check("party chat reaches members", bool(pc) and "group up" in pc.get("msg", "") and pc.get("from") == f"{alice}7")
+    await b.send({"t": "party", "act": "leave"})
+    left = await a.recv_until(lambda x: x["t"] == "system" and "left the party" in x.get("msg", ""))
+    check("party leave notifies members", bool(left))
+
     # --- M3: server-authoritative shared monsters ---
     snap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"))
     mobs = snap.get("mobs", []) if snap else []
