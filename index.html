@@ -259,13 +259,30 @@
   <div id="authBox" style="margin:6px auto 4px;max-width:360px">
     <div class="plabel">⚔ PLAY ONLINE — DERETH MMO</div>
     <div style="display:flex;flex-direction:column;gap:6px;align-items:center">
-      <input id="authUser" placeholder="character name (3-16)" maxlength="16" autocomplete="username"
+      <input id="authUser" placeholder="account name (3-16)" maxlength="16" autocomplete="username"
         style="width:240px;padding:7px 10px;background:#0c0e08;border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:13px">
       <input id="authPass" type="password" placeholder="password" maxlength="64" autocomplete="current-password"
         style="width:240px;padding:7px 10px;background:#0c0e08;border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:13px">
       <div style="display:flex;gap:8px"><button id="loginBtn">Log In</button><button id="registerBtn">Register</button></div>
       <div id="authMsg" style="min-height:15px;font-size:12px;color:#ff8f6b"></div>
       <div id="authStatus" style="font-size:11px;color:var(--dim)"></div>
+    </div>
+  </div>
+  <div id="charSelect" style="display:none;max-width:560px;margin:6px auto">
+    <div class="plabel">⚔ YOUR CHARACTERS <span id="csCount" style="opacity:.7;font-weight:normal"></span></div>
+    <div id="csSlots" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0"></div>
+    <div id="csCreate" style="display:none;flex-direction:column;gap:8px;align-items:center;border-top:1px solid var(--border);padding-top:10px">
+      <input id="csName" placeholder="character name (3-16)" maxlength="16"
+        style="width:240px;padding:7px 10px;background:#0c0e08;border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:13px">
+      <div style="font-size:11px;color:var(--dim)">choose a heritage</div>
+      <div id="csPaths" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <button data-path="aluvian">⚔ Aluvian</button>
+        <button data-path="sho">🏹 Sho</button>
+        <button data-path="gharundim">✨ Gharu'ndim</button>
+        <button data-path="">Wanderer (balanced)</button>
+      </div>
+      <div id="csCreateMsg" style="min-height:14px;font-size:12px;color:#ff8f6b"></div>
+      <button id="csCancel" style="font-size:12px">Cancel</button>
     </div>
   </div>
   <div class="plabel" style="opacity:.7">— or play offline (solo) —</div>
@@ -3654,6 +3671,9 @@ function netSend(o){ if(NET.ws&&NET.open){ try{ NET.ws.send(JSON.stringify(o)); 
 function netHandle(m){
   if(m.t==="auth_ok") return onAuthOk(m);
   if(m.t==="auth_err"){ const e=document.getElementById('authMsg'); if(e)e.textContent=m.msg||"Authentication failed."; return; }
+  if(m.t==="roster") return onRoster(m);
+  if(m.t==="play_ok") return onPlayOk(m);
+  if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){ log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat"); return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
@@ -3807,13 +3827,81 @@ function onReward(msg){
   if(typeof checkAchievements==="function") checkAchievements();
 }
 function onAuthOk(m){
-  NET.me=m.id; NET.token=m.token||null; isOnline=true;
+  NET.me=m.id; NET.token=m.token||null; isOnline=true;       // m.id = account; world identity is the chosen character
   try{ localStorage.setItem("dereth_token", NET.token||""); localStorage.setItem("dereth_user", m.id); }catch(e){}
   const am=document.getElementById('authMsg'); if(am)am.textContent="";
-  if(m.char){ pendingServerChar=m.char; startGame(true); }       // existing character → enter world
-  else { creatingOnline=true;                                    // new account → choose a heritage to create
-    const st=document.getElementById('authStatus'); if(st)st.textContent="Logged in as "+m.id+" — choose a heritage below to create your character.";
+  const st=document.getElementById('authStatus'); if(st)st.textContent="Logged in as "+m.id+".";
+  // the world is entered after picking a character (roster arrives next)
+}
+// ---- character select (up to 8 slots per account) ----
+const HERITAGE_LABEL={aluvian:"Aluvian",sho:"Sho",gharundim:"Gharu'ndim"};
+function hideTitleSections(){ // collapse the title's offline/auth UI while choosing a character
+  ['authBox'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display="none";});
+  document.querySelectorAll('#overlay .plabel').forEach(e=>{ if(!e.closest('#charSelect')) e.style.display="none"; });
+  ['continueBtn','paths','startBtn'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display="none";});
+}
+function onRoster(m){
+  NET.roster=m.chars||[]; NET.maxChars=m.max||8;
+  hideTitleSections();
+  document.getElementById('charSelect').style.display="";
+  renderCharSelect();
+}
+function renderCharSelect(){
+  const slots=document.getElementById('csSlots'); const max=NET.maxChars||8;
+  document.getElementById('csCount').textContent=`(${NET.roster.length}/${max})`;
+  const bySlot={}; for(const c of NET.roster) bySlot[c.slot]=c;
+  let html="";
+  for(let i=0;i<max;i++){
+    const c=bySlot[i];
+    if(c){
+      const her=HERITAGE_LABEL[c.heritage]||c.heritage||"";
+      html+=`<div class="csCard" style="border:1px solid var(--border);border-radius:7px;padding:8px 10px;background:#0c0e08;text-align:left">
+        <div style="font-weight:bold;color:#e8dcc0">${esc(c.name)}</div>
+        <div style="font-size:11px;color:var(--dim)">Lv ${c.level||1} · ${esc(her)}${c.title?" · "+esc(c.title):""} · ${c.kills||0} kills</div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button data-play="${i}" style="flex:1">Play</button>
+          <button data-del="${i}" title="Delete" style="background:#3a1414;border-color:#5a2020">✕</button>
+        </div></div>`;
+    } else {
+      html+=`<div class="csCard" style="border:1px dashed var(--border);border-radius:7px;padding:8px 10px;background:transparent;text-align:center;color:var(--dim)">
+        <div style="font-size:11px;margin-bottom:6px">Empty Slot ${i+1}</div>
+        <button data-new="${i}">+ Create</button></div>`;
+    }
   }
+  slots.innerHTML=html;
+  slots.querySelectorAll('[data-play]').forEach(b=>b.onclick=()=>playChar(+b.dataset.play));
+  slots.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deleteChar(+b.dataset.del));
+  slots.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>openCreate(+b.dataset.new));
+}
+let pendingSlot=null,pendingPreset=null,creatingChar=false;
+function openCreate(slot){
+  pendingSlot=slot;
+  const cc=document.getElementById('csCreate'); cc.style.display="flex";
+  document.getElementById('csCreateMsg').textContent="";
+  const ni=document.getElementById('csName'); ni.value=""; ni.focus();
+}
+function playChar(slot){ creatingChar=false; netSend({t:"play_char",slot}); }
+function deleteChar(slot){
+  const c=NET.roster.find(x=>x.slot===slot); if(!c) return;
+  if(!confirm(`Delete ${c.name} (Lv ${c.level||1})? This cannot be undone.`)) return;
+  netSend({t:"delete_char",slot});   // server replies with a fresh roster
+}
+function createChar(preset){
+  const name=document.getElementById('csName').value.trim();
+  const msg=document.getElementById('csCreateMsg');
+  if(!/^[A-Za-z0-9_-]{3,16}$/.test(name)){ msg.textContent="Name: 3-16 letters/numbers/_-."; return; }
+  creatingChar=true; pendingPreset=preset||null;
+  netSend({t:"create_char",slot:pendingSlot,name,char:null});   // wait for play_ok before entering
+}
+function onPlayOk(m){
+  document.getElementById('charSelect').style.display="none";
+  if(creatingChar){ creatingChar=false; const preset=pendingPreset; pendingPreset=null;
+    startGame(false, preset||undefined); saveGame();   // persist the fresh character to its slot
+  } else { pendingServerChar=m.char; startGame(true); }
+}
+function onPlayErr(m){
+  creatingChar=false;
+  const msg=document.getElementById('csCreateMsg'); if(msg) msg.textContent=m.msg||"Could not start that character.";
 }
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
@@ -3913,10 +4001,12 @@ if(hasSave()){ continueBtn.style.display="block";
 }
 startBtn.onclick=()=>{ isOnline=false; wipeSave(); startGame(false); };
 continueBtn.onclick=()=>{ isOnline=false; startGame(true); };
-document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{
-  if(creatingOnline){ startGame(false,b.dataset.path); saveGame(); }   // create the character on the server
-  else { isOnline=false; wipeSave(); startGame(false,b.dataset.path); }
+document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{   // offline solo heritage paths
+  isOnline=false; wipeSave(); startGame(false,b.dataset.path);
 });
+// online character creation (within the character-select screen)
+document.querySelectorAll('#csPaths button').forEach(b=>b.onclick=()=>createChar(b.dataset.path));
+document.getElementById('csCancel').onclick=()=>{ document.getElementById('csCreate').style.display="none"; };
 // online auth
 document.getElementById('loginBtn').onclick=()=>authAction('login');
 document.getElementById('registerBtn').onclick=()=>authAction('register');
