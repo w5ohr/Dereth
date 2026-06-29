@@ -594,6 +594,7 @@ function terrainH(x,z){
 function groundY(x,z){ return (inDungeon||inNetwork)?0:terrainH(x,z); } // instances are flat at y=0
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
+let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0;
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[];
@@ -2068,6 +2069,15 @@ function playerHurt(dmg,sx,sz){
   const armT=(player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01);
   const reduce=armT/(armT+60);
   dmg=Math.max(1,dmg*(1-reduce));
+  // active shield block: cut frontal damage (scales with Shield skill), costs stamina
+  if(blocking&&player.st>4&&sx!==undefined){
+    const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),ax=sx-player.x,az=sz-player.z,al=Math.hypot(ax,az)||1;
+    if((fx*ax+fz*az)/al>-0.25){ // attacker within the frontal arc
+      const bf=clamp(0.45+(skillTier("shield")>0?0.15:0)+(skillValue("shield")-skillBase("shield"))*0.006,0,0.8);
+      dmg*=(1-bf); player.st=Math.max(0,player.st-(6+dmg*0.3));
+      floater(player.x,EYE+0.5,player.z,"block","#bfe6ff"); SFX.hit();
+    }
+  }
   player.hp-=dmg;player.invuln=0.25;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4));
   const v=document.getElementById('dmgvig');v.style.opacity=clamp(dmg/35,.25,.9);
   setTimeout(()=>v.style.opacity=0,140);
@@ -2242,12 +2252,14 @@ function meleeAttack(){
 const keys={};let locked=false,paused=false,running=false;
 const cEl=document.getElementById('c');
 document.addEventListener('pointerlockchange',()=>{
-  locked=document.pointerLockElement===cEl;
+  locked=document.pointerLockElement===cEl; if(!locked) blocking=false;
   document.getElementById('hint').style.display=(running&&!locked&&player.alive&&sheet.style.display!=="flex")?"block":"none";
   if(running&&!locked&&sheet.style.display!=="flex") document.getElementById('hint').textContent="Click to look around";
 });
 cEl.addEventListener('click',()=>{ if(running&&!locked&&sheet.style.display!=="flex") cEl.requestPointerLock(); });
-cEl.addEventListener('mousedown',e=>{ if(locked&&e.button===0) primaryAttack(); });
+cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0) primaryAttack(); else if(e.button===2) blocking=true; });
+cEl.addEventListener('mouseup',e=>{ if(e.button===2) blocking=false; });
+cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse raises the shield, no menu
 document.addEventListener('mousemove',e=>{
   if(!locked) return;
   player.yaw-=e.movementX*0.0022*settings.sens;
@@ -2453,7 +2465,7 @@ function update(dt){
   if(keys["s"]||keys["arrowdown"]) f-=1;
   if(keys["d"]||keys["arrowright"]) s+=1;
   if(keys["a"]||keys["arrowleft"]) s-=1;
-  const sprint=(keys["shift"]&&player.st>0)?1.6:1;
+  const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
   if((f||s)&&player.alive){
@@ -2463,7 +2475,7 @@ function update(dt){
     let dx=fx*f+rx*s, dz=fz*f+rz*s;
     const l=Math.hypot(dx,dz);dx/=l;dz/=l;
     const roadBoost=onRoad(player.x,player.z)?ROAD_SPEED:1;
-    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*dt;
+    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*dt;
     const [nx,nz]=collide(player.x+dx*sp,player.z+dz*sp);
     player.x=nx;player.z=nz;
     player.bob+=dt*sp*1.1;
@@ -3577,6 +3589,7 @@ function startGame(loadSaved,preset){
     setTimeout(()=>{if(running)log("Tip: bind to the blue Lifestone (E) — death returns you there.","sys");},7000);
     setTimeout(()=>{if(running)log("Tip: visit Asheron's Emissary (gold !) for a bounty, and the Vendor (green $) to trade.","sys");},14000);
     setTimeout(()=>{if(running)log("Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);
+    setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). Q swaps weapon.","sys");},28000);
   }
   applyHeritageLook(player.heritage);
   markSceneSRGB();

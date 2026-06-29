@@ -154,6 +154,14 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   tree** (player as patron receiving pass-up income). Current Loyalty-tier XP bonus in `gainXP` stays as the
   flavor stand-in.
 
+## MILESTONE G — Combat depth  ◑
+- ✅ **G1. Active shield block** (jsc + preview verified, 0 console errors). Hold **right-mouse** to raise
+  the shield: cuts **frontal** incoming damage (45% base, +15% with Shield trained, scaling with the
+  Shield skill value, cap ~80%), drains stamina per blocked blow, and halves move speed + disables sprint
+  while raised. Blocks only within the front arc (rear attacks land full). `blocking` global; mousedown/up
+  (button 2) + contextmenu-prevented; cleared on pointer-lock loss. Verified: 40→22 dmg blocking, 40→16
+  trained, rear hit unblocked, stamina drains.
+
 ## MILESTONE F — Optional later-era / stretch content  ◇
 - ✅ **F1. Void magic** — "Nether Bolt" spell (key Z, school `void`, requires Void Magic trained):
   corruption projectile, burn DoT + 35% life-drain, scales with the Void skill. Also shipped the
