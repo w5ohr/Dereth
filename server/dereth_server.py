@@ -178,6 +178,8 @@ def mob_pub(m):
          "yaw": round(m["yaw"], 3), "hp": round(m["hp"], 1), "mhp": m["mhp"], "st": m["state"]}
     if m.get("boss"):
         d["boss"] = True; d["name"] = m["name"]; d["scale"] = m["scale"]
+        if m.get("tint") is not None:
+            d["tint"] = m["tint"]
     if m.get("event"):
         d["event"] = m["event"]
     return d
@@ -237,24 +239,32 @@ def populate_world():
     for c in MOB_CLUSTERS:
         for _ in range(6):
             spawn_mob(near=c)
-    spawn_boss()
+    for key in BOSS_DEFS:
+        spawn_boss(key)
 
-# A single shared world boss — every online player fights the same Olthoi Queen.
-BOSS_DEF = {"kind": "olthoi", "name": "Gnawvil, the Olthoi Queen", "hp": 4000, "dmg": 45,
-            "spd": 5.6, "xp": 4000, "gold": (140, 300), "size": 2.0, "sense": 80, "atk": 1.4, "scale": 2.2}
-BOSS_HOME = (560, 560)       # her lair, out in the wilds away from the spawn clusters
-BOSS_RESPAWN = 90.0
+# Shared world bosses — every online player fights the same named bosses. The browser
+# renders any boss generically from the snapshot (boss/name/scale/tint), so adding bosses
+# here is purely server content. `kind` only needs to exist in the client BESTIARY.
+BOSS_DEFS = {
+    "queen":   {"name": "Gnawvil, the Olthoi Queen",   "kind": "olthoi", "hp": 4000, "dmg": 45, "spd": 5.6, "xp": 4000,  "gold": (140, 300),  "size": 2.0, "sense": 80, "atk": 1.4, "scale": 2.2, "home": (560, 560),     "respawn": 90.0},
+    "apex":    {"name": "Bael'Zharon, the Hopeslayer",  "kind": "shadow", "hp": 9000, "dmg": 70, "spd": 5.0, "xp": 30000, "gold": (800, 1500), "size": 1.0, "sense": 90, "atk": 1.5, "scale": 3.6, "home": (-1200, -1200), "respawn": 150.0, "tint": 0x7a4fae},
+    "genLer":  {"name": "Ler Rhan, Shadow General",     "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (1100, -900),   "respawn": 120.0, "tint": 0x8a5fc8},
+    "genFerah":{"name": "Black Ferah, Shadow General",  "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (-1000, 1100),  "respawn": 120.0, "tint": 0x4a3a6a},
+    "genIsin": {"name": "Isin Dule, Shadow General",    "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (1300, 1300),   "respawn": 120.0, "tint": 0xc05fae},
+}
 
-def spawn_boss():
-    b = BOSS_DEF
-    cx, cz = BOSS_HOME
-    MOBS["boss"] = {
-        "id": "boss", "kind": b["kind"], "x": cx, "z": cz, "hx": cx, "hz": cz, "yaw": 0.0,
+def spawn_boss(key):
+    b = BOSS_DEFS[key]
+    cx, cz = b["home"]
+    MOBS[key] = {
+        "id": key, "kind": b["kind"], "x": cx, "z": cz, "hx": cx, "hz": cz, "yaw": 0.0,
         "hp": float(b["hp"]), "mhp": b["hp"], "dmg": b["dmg"], "spd": b["spd"], "xp": b["xp"],
         "gold": b["gold"], "r": b["size"] * 0.8 * b["scale"], "sense": b["sense"], "atkcd_max": b["atk"],
         "state": "wander", "target": None, "atkcd": 0.0, "wt": 0.0, "respawn_at": 0.0,
-        "boss": True, "name": b["name"], "scale": b["scale"]}
-    return MOBS["boss"]
+        "boss": True, "bosskey": key, "name": b["name"], "scale": b["scale"]}
+    if "tint" in b:
+        MOBS[key]["tint"] = b["tint"]
+    return MOBS[key]
 
 # Shared world events (Incursions): a finite horde besieges a location; every online
 # player races to clear it before the beacon fades for a shared bounty.
@@ -451,9 +461,10 @@ async def world_step():
                 continue
             if now >= m["respawn_at"]:
                 if m.get("boss"):
+                    key = m["bosskey"]; name = m["name"]
                     MOBS.pop(m["id"], None)
-                    spawn_boss()
-                    await broadcast({"t": "system", "msg": "A chittering roar shakes Dereth — the Olthoi Queen has risen anew."})
+                    spawn_boss(key)
+                    await broadcast({"t": "system", "msg": f"A dark omen shakes Dereth — {name} has risen anew."})
                 else:
                     # respawn as a fresh (possibly different) creature at the same anchor
                     MOBS.pop(m["id"], None)
@@ -512,7 +523,7 @@ async def resolve_attack(cl, mid, dmg):
     if m["hp"] <= 0:
         m["hp"] = 0.0
         is_boss = bool(m.get("boss"))
-        m["respawn_at"] = time.time() + (BOSS_RESPAWN if is_boss else 8.0)
+        m["respawn_at"] = time.time() + (BOSS_DEFS[m["bosskey"]]["respawn"] if is_boss else 8.0)
         die_msg = {"t": "mob_die", "id": mid, "by": cl.username, "kind": m["kind"],
                    "x": round(m["x"], 2), "z": round(m["z"], 2)}
         if is_boss:

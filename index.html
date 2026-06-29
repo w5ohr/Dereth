@@ -3734,7 +3734,8 @@ function spawnSharedMob(sm){
   const scale=sm.boss?(sm.scale||2.2):1;
   if(scale!==1) mesh.scale.setScalar(scale);
   if(sm.boss){ // shared world boss — nameplate + menacing aura, like the local boss look
-    const aura=new THREE.PointLight(0xff5a5a,1.6,16); aura.position.y=2; mesh.add(aura);
+    if(sm.tint!==undefined) mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.color){ o.material=o.material.clone(); o.material.color.setHex(sm.tint); } });
+    const aura=new THREE.PointLight(sm.tint!==undefined?sm.tint:0xff5a5a,1.6,16); aura.position.y=2; mesh.add(aura);
     const lbl=labelSprite(sm.name||"World Boss"); lbl.scale.set(9,2.2,1); lbl.position.y=mesh.userData.headY+1.7; mesh.add(lbl);
   }
   scene.add(mesh);
