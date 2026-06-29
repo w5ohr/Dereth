@@ -463,7 +463,6 @@ const PRESETS={
 // Players learn spells (from scrolls / starting set) into player.knownSpells and
 // place known spells on a 10-slot hotbar (player.hotbar, keyed by HOTKEYS).
 const SPELLBOOK_LIST=[
-  {id:"life_heal_1",name:"Heal Self",ico:"✨",cost:26,cd:1500,school:"life",lvl:1,req:0,heal:()=>34+player.attr.Self*2.2},
   {id:"life_stam2mana",name:"Stam→Mana",ico:"🔷",cost:0,cd:900,school:"life",lvl:1,req:0,special:"stam2mana"},
   {id:"item_might_1",name:"Blade Lure",ico:"⚔️",cost:20,cd:11000,school:"item",lvl:1,req:0,buff:"might"},
   {id:"creature_swift_1",name:"Quickening",ico:"💨",cost:20,cd:11000,school:"creature",lvl:1,req:0,buff:"swift"},
@@ -495,6 +494,17 @@ for(const b of WAR_BOLTS) for(const t of WAR_TIERS){
 const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:75}];
 for(const t of WAR_STORM) SPELLBOOK_LIST.push({id:`war_storm_${t.lvl}`,name:`Flame Storm ${ROMAN[t.lvl]}`,ico:"🌋",
   school:"aoe",lvl:t.lvl,req:t.req,cost:t.cost,cd:3200,element:"fire",color:0xff7a2a,dmg:()=>t.base+player.attr.Focus*t.foc});
+// ── Life Magic: Heal Self (I–IV), Revitalize stamina (I–III), Drain Health bolt (I–III) ──
+const LIFE_HEAL=[{lvl:1,base:34,foc:2.2,cost:26,cd:1500,req:0},{lvl:2,base:60,foc:2.8,cost:38,cd:1500,req:25},{lvl:3,base:95,foc:3.4,cost:54,cd:1600,req:55},{lvl:4,base:140,foc:4.0,cost:74,cd:1700,req:90}];
+for(const t of LIFE_HEAL) SPELLBOOK_LIST.push({id:`life_heal_${t.lvl}`,name:`Heal Self ${ROMAN[t.lvl]}`,ico:"✨",
+  school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:t.cd,heal:()=>t.base+player.attr.Self*t.foc});
+const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60}];
+for(const t of LIFE_REVIT) SPELLBOOK_LIST.push({id:`life_revit_${t.lvl}`,name:`Revitalize Self ${ROMAN[t.lvl]}`,ico:"💚",
+  school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1400,special:"revitalize",amt:t.base,foc:t.foc});
+const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70}];
+for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
+  school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
+  make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:48,color:0xc0306a,r:0.3,drain:t.drain,element:null})});
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
 const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
@@ -2241,6 +2251,11 @@ function castSpellById(id){
     const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01);player.hp=Math.min(player.mhp,player.hp+h);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(h),"#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, healing ${Math.round(h)}.`,"heal");return;
+  }
+  if(s.special==="revitalize"){
+    const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02);player.st=Math.min(player.mst,player.st+v);
+    floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
+    castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
   }
   if(s.buff){
     const dur=s.dur||25, mag=s.mag;
