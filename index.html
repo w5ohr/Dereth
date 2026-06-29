@@ -2469,6 +2469,13 @@ function castSpellById(id){
   const cost=Math.round(s.cost*clamp(1-(skillValue("mana")-SKILL_BY_KEY.mana.base0)*0.005,0.55,1)); // Mana Conversion lowers cost
   if(player.mn<cost){log(`Not enough mana for ${s.name}.`,"warn");return;}
   player.mn-=cost;spellCd[id]=now()+s.cd;
+  // Fizzle: an under-trained caster sometimes flubs the spell — chance falls to 0 as skill outgrows
+  // the requirement (Arcane Lore steadies your hand too). Half the mana is wasted; quick retry.
+  { const mk2=MAGIC_SCHOOLS[s.school]; const margin=mk2?skillValue(mk2)-(s.req||0):999;
+    const fz=clamp(0.25-margin*0.012-skillValue("arcane")*0.002,0,0.25);
+    if(Math.random()<fz){ player.mn+=Math.round(cost*0.5); spellCd[id]=now()+600;
+      floater(player.x,EYE+0.5,player.z,"fizzle!","#c9a6ff"); if(SFX.hit)SFX.hit();
+      log(`Your <b>${s.name}</b> fizzles — the weave slips.`,"warn"); castShow=0.3; return; } }
   castShow=0.55; if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
   if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
     const m=pickMonsterTarget(28);
@@ -3850,7 +3857,8 @@ function buildSpellbook(){
       if(!known) status=`<span style="color:#9a8a66">unknown — find or buy its scroll</span>`;
       else if(!trained) status=`<span style="color:#ff8f6b">train ${SKILL_BY_KEY[mk].n} (C)</span>`;
       else if(s.req&&sv<s.req) status=`<span style="color:#ffd23b">needs ${SKILL_BY_KEY[mk].n} ${s.req} (you ${sv})</span>`;
-      else status=`<span style="color:#7fe6a0">ready</span>`;
+      else { const fz=mk?clamp(0.25-(sv-(s.req||0))*0.012-skillValue("arcane")*0.002,0,0.25):0;
+        status=fz>0.01?`<span style="color:#7fe6a0">ready</span> <span style="color:#c9a6ff">· ${Math.round(fz*100)}% fizzle</span>`:`<span style="color:#7fe6a0">ready</span>`; }
       let ctl="";
       if(known){ let opts=`<option value="-1"${slot<0?" selected":""}>—</option>`;
         for(let i=0;i<HOTKEYS.length;i++) opts+=`<option value="${i}"${slot===i?" selected":""}>slot ${HOTKEYS[i]}</option>`;
