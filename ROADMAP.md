@@ -154,7 +154,7 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   tree** (player as patron receiving pass-up income). Current Loyalty-tier XP bonus in `gainXP` stays as the
   flavor stand-in.
 
-## MILESTONE MMO — Multiplayer pivot  ◑ (user chose: public cloud server + full MMO systems first)
+## MILESTONE MMO — Multiplayer pivot  ✅ (M1–M5 done; shared world live, deploy is the user's step)
 Decision (2026-06-29): going from single-player offline to a real shared-world MMORPG. This intentionally
 waives the original "fully offline, zero-install" constraint for hosting (the client keeps an **offline
 solo fallback**). Stack: a **dependency-free Python 3 authoritative server** (stdlib asyncio + hand-rolled
@@ -172,8 +172,31 @@ anywhere.
   cull on leave; hidden inside dungeon/network instances until M3). Verified in a real browser against the
   live server: register→enter world, a simulated 2nd player appears as a remote avatar (eval-confirmed
   visible/positioned/named) and its join/leave shows in the client log.
-- ☐ **M3. Server-authoritative world** — monsters/AI/combat/world-events move server-side; shared loot/XP;
-  anti-cheat (server owns positions & damage). Currently positions are client-reported (trusted) for MVP.
+- ✅ **M3. Server-authoritative shared world** — the overworld is now one shared, server-owned sim
+  (test_client 40/40 + browser-verified, 0 console errors). Slices:
+  - **M3a** shared monsters: server pool clustered at real towns, 10 Hz wander/chase AI w/ leash + capital
+    safe-zones, monster melee → `dmg` events, range-checked `attack` intent (server owns mob HP/death),
+    shared XP to all damagers, 8 s respawn, mobs in the snapshot. Client renders them in `monsters[]`
+    (`shared:true`) so all SP combat/visuals reuse; `damageMonster` routes hits to the server.
+  - **M3b/M3e** shared world bosses via a `BOSS_DEFS` table: Olthoi Queen + Bael'Zharon (apex) + 3 tinted
+    Shadow Generals, global slay/respawn announcements; client renders any boss generically (scale/
+    nameplate/tint). Local per-client bosses now spawn only offline.
+  - **M3c** shared FFA ground loot: `roll_item` ported to Python (client item schema), kills drop gold +
+    items, range-checked first-come `pickup` → `loot` grant + `drop_gone`; 90 s decay; replayed to late
+    joiners.
+  - **M3d** shared Incursions/world events: finite boosted wave at a town anchor with a beacon (carried in
+    the snapshot so it self-heals), cleared → shared `event_reward` + spoils; timeout → fade.
+- ✅ **M5. Accounts own up to 8 characters** (test_client incl. 8-slot/occupied/invalid checks +
+  migration; browser-verified). New `characters` table (account/slot/name/data); login → character-select
+  screen (8 slots: Play/Delete/Create, name + heritage); world identity is the active character; legacy
+  single-char saves migrate to slot 0. **Position persists across relogin** (x/z/yaw saved; fresh chars
+  spawn at their heritage capital).
+- ✅ **Social: chat + /who + parties.** Added an in-game chat input (the client could receive but not send).
+  `/who` lists online characters; **parties** (fellowships ≤6) via `/party invite|accept|leave|list` with
+  party chat `/p` (server-routed to members; green `[Party]` styling).
+- ◇ **M3 deferred (by design): server-authoritative player HP/death.** Would require porting the client's
+  derive()/armor/heal/regen/vitae math to Python — large/risky for negligible benefit in a friendly
+  homage; the server already owns mob HP/positions/combat, damage dealt to players, loot, XP, and events.
 - ✅ **M4. Cloud deploy (DigitalOcean droplet, Ubuntu 24.04)** — target chosen by user. No Docker/runtime
   needed (Ubuntu 24.04 ships Python 3.12). `deploy/`: `dereth.service` (systemd, binds 127.0.0.1:8787, DB at
   /var/lib/dereth, hardened), `nginx-dereth.conf` (serves the static client + proxies `/ws`→game server,
