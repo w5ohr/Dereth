@@ -3617,7 +3617,8 @@ function saveGame(){
       elixMight:player.elixMight,elixSwift:player.elixSwift,
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
-      boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive};
+      boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive,
+      px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
   }catch(e){}
@@ -3646,6 +3647,9 @@ function applySaveObj(s){
     const ls=lifestones[s.boundLS];ls.bound=true;recolorLifestone(ls);
     player.x=ls.x;player.z=ls.z+3;
   }
+  // restore exact last position (takes precedence over the bind point); fresh chars saved
+  // their heritage-capital spawn, so this also fixes "reappear at the wrong town".
+  if(typeof s.px==="number" && typeof s.pz==="number"){ player.x=s.px; player.z=s.pz; if(typeof s.pyaw==="number") player.yaw=s.pyaw; }
   updateNPCMarker();updateQuestHUD();
   return true;
 }
