@@ -465,6 +465,9 @@ async def do_auth_success(cl, username):
     CLIENTS[username] = cl
     await cl.send({"t": "auth_ok", "id": username, "name": username,
                    "token": cl.token, "char": load_char(username), "pv": PROTOCOL_VERSION})
+    # replay current ground loot so a late joiner sees drops from kills before they arrived
+    for d in list(DROPS.values()):
+        await cl.send(drop_pub(d))
     await broadcast({"t": "system", "msg": f"{username} has entered Dereth."}, exclude=cl)
 
 async def dispatch(cl, msg):

@@ -135,6 +135,14 @@ async def main():
         drop = await a.recv_until(lambda x: x["t"] == "drop" and x.get("type") == "gold")
         check("kill -> gold drop broadcast", bool(drop) and drop.get("amt", 0) > 0 and "id" in drop)
         if drop:
+            # a player who joins AFTER the kill should be sent the still-on-ground loot
+            carol = await WS.connect()
+            await carol.send({"t": "register", "user": f"carol_{uniq}", "pass": "secret3"})
+            await carol.recv_until(lambda x: x["t"] == "auth_ok")
+            replay = await carol.recv_until(lambda x: x["t"] == "drop" and x.get("id") == drop["id"])
+            check("late joiner receives existing drops", bool(replay))
+            await carol.close()
+        if drop:
             # out-of-range pickup is rejected; in-range yields a loot grant + drop_gone
             await a.send({"t": "input", "x": drop["x"] + 9000, "z": drop["z"], "yaw": 0, "hp": 100})
             await asyncio.sleep(0.2)
