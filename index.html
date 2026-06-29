@@ -512,6 +512,16 @@ const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana"
 const DEFAULT_KNOWN=DEFAULT_HOTBAR.slice();
 function freshSpells(){ return {known:DEFAULT_KNOWN.slice(), hotbar:DEFAULT_HOTBAR.slice()}; }
 { const fs=freshSpells(); player.knownSpells=fs.known; player.hotbar=fs.hotbar; }   // seed defaults
+// spells you can find/buy as scrolls (everything not in the starting set)
+const SCROLL_POOL=SPELLBOOK_LIST.filter(s=>DEFAULT_KNOWN.indexOf(s.id)<0).map(s=>s.id);
+function learnSpell(id){
+  const sp=SPELLBOOK[id];
+  if(!sp){ log("The scroll's text is unreadable.","warn"); return false; }
+  if(player.knownSpells.indexOf(id)>=0){ log(`You already know <b>${sp.name}</b>.`,"warn"); return false; }
+  player.knownSpells.push(id);
+  log(`You scribe <b>${sp.name}</b> into your spellbook! Open the Spellbook (K) to assign it.`,"loot");
+  toast("SPELL LEARNED"); if(SFX.quest)SFX.quest(); saveGame(); return true;
+}
 // the schools of magic (AC naming), used for spell tooltips & sheet grouping
 const SCHOOLS={war:"War Magic · School of the Arm",aoe:"War Magic · School of the Arm",
   life:"Life Magic · School of the Heart",creature:"Creature Enchantment · School of the Left Hand",
@@ -2078,6 +2088,10 @@ const WORN_AFFIXES=[
   {k:"armorbonus",v:9, suffix:"of Warding",          desc:"+9 armor"},
 ];
 function rollItem(rare,tier){
+  if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
+    const id=SCROLL_POOL[irnd(0,SCROLL_POOL.length-1)];
+    return {scroll:true,spellId:id,name:"Scroll: "+SPELLBOOK[id].name};
+  }
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
   tier=clamp((tier|0)||(rare?3:1),1,5); if(rare) tier=clamp(tier+2,1,5);
   let v=irnd(base.v[0],base.v[1]); if(rare) v=Math.ceil(v*2.2);
@@ -3359,6 +3373,7 @@ function buildShop(){
   if(!player.inv.length){ sell.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Nothing to sell.</div>`; return; }
   sell.innerHTML="";
   player.inv.forEach((it,i)=>{
+    if(it.scroll) return;   // scrolls are scribed (T), not sold
     const price=salvageValue(it)*3;
     const desc=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const row=document.createElement('div');row.className="row";
@@ -3712,10 +3727,11 @@ function openChest(){
 // ============================================================================
 function lootItem(it){
   if(player.inv.length>=12){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
+  if(it.scroll&&!it.name) it.name="Scroll: "+((SPELLBOOK[it.spellId]||{}).name||"Spell");
   player.inv.push(it); SFX.gold();
-  log(`You pick up a <b>${it.name}</b>. (T to equip or salvage)`,"loot");
+  log(it.scroll?`You find a <b>${it.name}</b>. (T to scribe it)`:`You pick up a <b>${it.name}</b>. (T to equip or salvage)`,"loot");
 }
-function salvageValue(it){ return Math.max(3,Math.round(it.v*(it.stat==="armor"?1.0:0.8))); }
+function salvageValue(it){ if(it.scroll) return 20; return Math.max(3,Math.round(it.v*(it.stat==="armor"?1.0:0.8))); }
 function openTinker(){ buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
 function buildTinker(){
@@ -3756,15 +3772,23 @@ function buildTinker(){
   if(!player.inv.length){ rows.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Empty — slay creatures and press E to gather loot.</div>`; return; }
   rows.innerHTML="";
   player.inv.forEach((it,i)=>{
+    const row=document.createElement('div');row.className="row";
+    if(it.scroll){
+      const sp=SPELLBOOK[it.spellId], known=sp&&player.knownSpells.indexOf(it.spellId)>=0;
+      const sch=sp?(SCHOOLS[sp.school]||"Magic").split(" · ")[0]+" L"+sp.lvl:"unreadable";
+      row.innerHTML=`<div><span class="lab">📜 ${sp?sp.name:"Spell Scroll"}</span> <span class="desc">— scroll · ${sch}${known?` · <span style="color:#9a8a66">already known</span>`:""}</span></div>
+        <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
+      rows.appendChild(row); return;
+    }
     const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
-    const row=document.createElement('div');row.className="row";
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
       <div class="ctl"><button class="tbtn" data-eq="${i}">Equip</button><button class="tbtn" data-sv="${i}">Salvage</button></div>`;
     rows.appendChild(row);
   });
   rows.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>{const i=+b.dataset.eq;applyItem(player.inv[i]);player.inv.splice(i,1);buildTinker();updateHUD();saveGame();});
   rows.querySelectorAll('[data-sv]').forEach(b=>b.onclick=()=>{salvageItem(+b.dataset.sv);buildTinker();updateHUD();saveGame();});
+  rows.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sc;if(learnSpell(player.inv[i].spellId)){player.inv.splice(i,1);buildTinker();updateHUD();}});
 }
 document.getElementById('closeTink').onclick=closeTinker;
 

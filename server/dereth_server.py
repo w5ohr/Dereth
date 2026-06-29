@@ -445,7 +445,20 @@ WORN_AFFIXES = [
 def _mat_class(stat):
     return "weapon" if stat == "weapon" else ("armor" if stat in ("worn", "armor") else "other")
 
+# Spell-scroll ids must match the client's generated SPELLBOOK ids exactly. The client
+# resolves the spell's display name from the id, so the server only needs the id.
+SCROLL_SPELLS = (
+    [f"creature_{c}_{l}" for c in ("str", "end", "coord", "quick", "focus", "will") for l in (1, 2, 3)]
+    + [f"war_{c}_{l}" for c in ("flame", "frost", "light") for l in (2, 3, 4)]
+    + [f"war_storm_{l}" for l in (2, 3)]
+    + [f"life_heal_{l}" for l in (2, 3, 4)]
+    + [f"life_revit_{l}" for l in (1, 2, 3)]
+    + [f"life_drain_{l}" for l in (1, 2, 3)]
+)
+
 def roll_item(rare=False, tier=1):
+    if SCROLL_SPELLS and random.random() < (0.16 if rare else 0.10):   # sometimes a spell scroll
+        return {"scroll": True, "spellId": random.choice(SCROLL_SPELLS), "name": "Spell Scroll"}
     base = random.choice(ITEM_BASE)
     tier = max(1, min(5, int(tier) or (3 if rare else 1)))
     if rare:
