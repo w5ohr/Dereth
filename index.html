@@ -479,7 +479,8 @@ const ROMAN=["","I","II","III","IV","V","VI","VII","VIII"];
 const CE_ATTRS=[["Strength","str","💪"],["Endurance","end","🛡️"],["Coordination","coord","🎯"],
   ["Quickness","quick","🌀"],["Focus","focus","🔆"],["Self","will","✦"]];
 const CE_TIERS=[{lvl:1,mag:5,cost:16,req:0,dur:60},{lvl:2,mag:9,cost:24,req:30,dur:75},{lvl:3,mag:14,cost:34,req:60,dur:90},
-  {lvl:4,mag:20,cost:46,req:95,dur:105},{lvl:5,mag:27,cost:60,req:135,dur:120},{lvl:6,mag:35,cost:78,req:180,dur:150}];
+  {lvl:4,mag:20,cost:46,req:95,dur:105},{lvl:5,mag:27,cost:60,req:135,dur:120},{lvl:6,mag:35,cost:78,req:180,dur:150},
+  {lvl:7,mag:45,cost:100,req:240,dur:180},{lvl:8,mag:58,cost:128,req:300,dur:210}];
 for(const [attr,code,ico] of CE_ATTRS){ const disp=attr==="Self"?"Willpower":attr;
   for(const t of CE_TIERS) SPELLBOOK_LIST.push({id:`creature_${code}_${t.lvl}`,name:`${disp} Self ${ROMAN[t.lvl]}`,
     ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:t.dur});
@@ -489,87 +490,104 @@ const CE_DEBUFFS=[
   {code:"weak",name:"Weakness",ico:"💢",eff:"dmg"},   // lowers the foe's attack damage
   {code:"slow",name:"Slowness",ico:"🐌",eff:"spd"},   // lowers the foe's movement speed
 ];
-const DEBUFF_TIERS=[{lvl:1,v:0.85,cost:18,req:0,dur:20},{lvl:2,v:0.72,cost:26,req:35,dur:25},{lvl:3,v:0.58,cost:36,req:70,dur:30},{lvl:4,v:0.45,cost:48,req:110,dur:35}];
+const DEBUFF_TIERS=[{lvl:1,v:0.85,cost:18,req:0,dur:20},{lvl:2,v:0.72,cost:26,req:35,dur:25},{lvl:3,v:0.58,cost:36,req:70,dur:30},{lvl:4,v:0.45,cost:48,req:110,dur:35},
+  {lvl:5,v:0.34,cost:62,req:150,dur:40},{lvl:6,v:0.25,cost:78,req:195,dur:45},{lvl:7,v:0.18,cost:96,req:250,dur:50},{lvl:8,v:0.12,cost:116,req:300,dur:55}];
 for(const b of CE_DEBUFFS) for(const t of DEBUFF_TIERS) SPELLBOOK_LIST.push({id:`creature_${b.code}_${t.lvl}`,
   name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,
   debuff:b.eff,dmag:t.v,dur:t.dur});
-// ── War Magic: elemental bolt lines (I–VI) + Flame Storm (I–IV), scaling damage/cost/req ──
+// ── War Magic: all 7 damage elements as bolt lines (I–VIII) + Flame Storm (I–VIII) ──
+// AC has 8 spell levels: I–VI are numbered, VII keeps the numeral, VIII becomes an
+// "Incantation of …" (applied in a post-pass below). Skill requirements climb steeply.
 const WAR_BOLTS=[
-  {code:"flame",name:"Flame Bolt",ico:"🔥",color:0xff7a2a,r:0.28,element:"fire", burn:true, base:18,foc:1.4,speed:55, cost:14,cd:520},
-  {code:"frost",name:"Frost Bolt",ico:"❄️",color:0x7ec8ff,r:0.32,element:"ice", slow:.45, base:24,foc:1.7,speed:46, cost:18,cd:760},
-  {code:"light",name:"Lightning",ico:"⚡",color:0xfff060,r:0.2, element:"shock",stun:true,base:30,foc:1.8,speed:120,cost:20,cd:600},
+  {code:"flame",name:"Flame Bolt",   ico:"🔥",color:0xff7a2a,r:0.28,element:"fire",    burn:true, base:18,foc:1.4,speed:55, cost:14,cd:520},
+  {code:"frost",name:"Frost Bolt",   ico:"❄️",color:0x7ec8ff,r:0.32,element:"ice",     slow:.45,  base:24,foc:1.7,speed:46, cost:18,cd:760},
+  {code:"light",name:"Lightning Bolt",ico:"⚡",color:0xfff060,r:0.2, element:"shock",   stun:true, base:30,foc:1.8,speed:120,cost:20,cd:600},
+  {code:"acid", name:"Acid Stream",  ico:"🟢",color:0x8ad04a,r:0.26,element:"acid",                base:20,foc:1.5,speed:52, cost:16,cd:560},
+  {code:"force",name:"Force Bolt",   ico:"⚪",color:0xd8d8e0,r:0.3, element:"bludgeon",            base:22,foc:1.5,speed:60, cost:16,cd:560},
+  {code:"blade",name:"Whirling Blade",ico:"🌀",color:0xc0c8d0,r:0.28,element:"slash",              base:21,foc:1.5,speed:58, cost:16,cd:560},
+  {code:"pierce",name:"Force Arrow", ico:"🏹",color:0xb0e0ff,r:0.18,element:"pierce",             base:23,foc:1.6,speed:72, cost:16,cd:540},
 ];
-const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},{lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180}];
+const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},
+  {lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180},{lvl:7,mult:7.6,req:240},{lvl:8,mult:9.6,req:300}];
 for(const b of WAR_BOLTS) for(const t of WAR_TIERS){
   SPELLBOOK_LIST.push({id:`war_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"war",lvl:t.lvl,req:t.req,
     cost:Math.round(b.cost*(1+(t.lvl-1)*0.45)),cd:b.cd,
     make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
 }
-const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:80},{lvl:4,base:84,foc:2.6,cost:112,req:130}];
+const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:80},
+  {lvl:4,base:84,foc:2.6,cost:112,req:130},{lvl:5,base:114,foc:3.0,cost:148,req:175},{lvl:6,base:150,foc:3.4,cost:188,req:215},
+  {lvl:7,base:196,foc:3.8,cost:236,req:260},{lvl:8,base:256,foc:4.2,cost:300,req:310}];
 for(const t of WAR_STORM) SPELLBOOK_LIST.push({id:`war_storm_${t.lvl}`,name:`Flame Storm ${ROMAN[t.lvl]}`,ico:"🌋",
   school:"aoe",lvl:t.lvl,req:t.req,cost:t.cost,cd:3200,element:"fire",color:0xff7a2a,dmg:()=>t.base+player.attr.Focus*t.foc});
 // ── Life Magic: Heal Self (I–VI), Revitalize stamina (I–IV), Drain Health bolt (I–IV) ──
-const LIFE_HEAL=[{lvl:1,base:34,foc:2.2,cost:26,cd:1500,req:0},{lvl:2,base:60,foc:2.8,cost:38,cd:1500,req:30},{lvl:3,base:95,foc:3.4,cost:54,cd:1600,req:60},{lvl:4,base:140,foc:4.0,cost:74,cd:1700,req:95},{lvl:5,base:195,foc:4.6,cost:98,cd:1800,req:135},{lvl:6,base:260,foc:5.2,cost:126,cd:1900,req:180}];
+const LIFE_HEAL=[{lvl:1,base:34,foc:2.2,cost:26,cd:1500,req:0},{lvl:2,base:60,foc:2.8,cost:38,cd:1500,req:30},{lvl:3,base:95,foc:3.4,cost:54,cd:1600,req:60},{lvl:4,base:140,foc:4.0,cost:74,cd:1700,req:95},{lvl:5,base:195,foc:4.6,cost:98,cd:1800,req:135},{lvl:6,base:260,foc:5.2,cost:126,cd:1900,req:180},{lvl:7,base:340,foc:5.8,cost:158,cd:2000,req:240},{lvl:8,base:440,foc:6.4,cost:196,cd:2100,req:300}];
 for(const t of LIFE_HEAL) SPELLBOOK_LIST.push({id:`life_heal_${t.lvl}`,name:`Heal Self ${ROMAN[t.lvl]}`,ico:"✨",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:t.cd,heal:()=>t.base+player.attr.Self*t.foc});
-const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60},{lvl:4,base:130,foc:3.8,cost:62,req:100}];
+const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60},{lvl:4,base:130,foc:3.8,cost:62,req:100},
+  {lvl:5,base:178,foc:4.2,cost:82,req:140},{lvl:6,base:236,foc:4.8,cost:106,req:185},{lvl:7,base:308,foc:5.4,cost:136,req:245},{lvl:8,base:396,foc:6.0,cost:172,req:305}];
 for(const t of LIFE_REVIT) SPELLBOOK_LIST.push({id:`life_revit_${t.lvl}`,name:`Revitalize Self ${ROMAN[t.lvl]}`,ico:"💚",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1400,special:"revitalize",amt:t.base,foc:t.foc});
 // ── Item Enchantment: classic AC weapon/armour self-buffs (Blood Drinker, Heart Seeker,
 //    Impenetrability, Swift Killer) at three levels — empower your gear for a duration ──
 const ITEM_BUFFS=[
-  {code:"blood",name:"Blood Drinker", ico:"🗡",stat:"dmg",  mags:[0.12,0.20,0.30], desc:"weapon & spell damage"},
-  {code:"heart",name:"Heart Seeker",  ico:"🎯",stat:"crit", mags:[0.06,0.10,0.15], desc:"critical chance"},
-  {code:"impen",name:"Impenetrability",ico:"🛡",stat:"armor",mags:[15,30,50],       desc:"armour"},
-  {code:"swift",name:"Swift Killer",  ico:"💨",stat:"haste",mags:[0.10,0.18,0.28], desc:"attack speed"},
+  {code:"blood",name:"Blood Drinker", ico:"🗡",stat:"dmg",  mags:[0.10,0.16,0.22,0.30,0.40,0.52,0.66,0.82], desc:"weapon & spell damage"},
+  {code:"heart",name:"Heart Seeker",  ico:"🎯",stat:"crit", mags:[0.05,0.08,0.11,0.15,0.20,0.26,0.33,0.41], desc:"critical chance"},
+  {code:"impen",name:"Impenetrability",ico:"🛡",stat:"armor",mags:[12,22,34,50,70,95,125,160],            desc:"armour"},
+  {code:"swift",name:"Swift Killer",  ico:"💨",stat:"haste",mags:[0.08,0.14,0.20,0.28,0.38,0.50,0.64,0.80], desc:"attack speed"},
 ];
-const ITEM_TIERS=[{lvl:1,cost:20,req:0,dur:90},{lvl:2,cost:30,req:40,dur:120},{lvl:3,cost:44,req:80,dur:150}];
+const ITEM_TIERS=[{lvl:1,cost:20,req:0,dur:90},{lvl:2,cost:30,req:40,dur:120},{lvl:3,cost:44,req:80,dur:150},
+  {lvl:4,cost:60,req:120,dur:180},{lvl:5,cost:80,req:160,dur:210},{lvl:6,cost:104,req:205,dur:240},{lvl:7,cost:134,req:255,dur:270},{lvl:8,cost:170,req:300,dur:300}];
 for(const b of ITEM_BUFFS) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
   id:`item_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:8000,buff:"item",stat:b.stat,mag:b.mags[t.lvl-1],dur:t.dur});
-const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115}];
+const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115},
+  {lvl:5,base:112,foc:2.8,drain:0.62,cost:100,req:155},{lvl:6,base:150,foc:3.2,drain:0.65,cost:130,req:200},{lvl:7,base:198,foc:3.6,drain:0.68,cost:166,req:255},{lvl:8,base:258,foc:4.0,drain:0.72,cost:208,req:305}];
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:48,color:0xc0306a,r:0.3,drain:t.drain,element:null})});
 // ── Void Magic: Nether Bolt I–VI (corruption bolt that drains + burns) ──
-const VOID_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},{lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180}];
+const VOID_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},{lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180},{lvl:7,mult:7.6,req:240},{lvl:8,mult:9.6,req:300}];
 for(const t of VOID_TIERS) SPELLBOOK_LIST.push({id:`void_nether_${t.lvl}`,name:`Nether Bolt ${ROMAN[t.lvl]}`,ico:"🟣",
   school:"void",lvl:t.lvl,req:t.req,cost:Math.round(24*(1+(t.lvl-1)*0.45)),cd:900,
   make:()=>({dmg:(28+player.attr.Focus*1.8)*t.mult,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})});
-// ── War Magic, more damage types (Acid/Bludgeon/Slash bolt lines I–IV) ──
-const WAR_BOLTS2=[
-  {code:"acid", name:"Acid Stream",  ico:"🟢",color:0x8ad04a,r:0.26,element:"acid",  base:20,foc:1.5,speed:52,cost:16,cd:560},
-  {code:"force",name:"Force Bolt",   ico:"⚪",color:0xd8d8e0,r:0.3, element:"bludgeon",base:22,foc:1.5,speed:60,cost:16,cd:560},
-  {code:"blade",name:"Whirling Blade",ico:"🌀",color:0xc0c8d0,r:0.28,element:"slash", base:21,foc:1.5,speed:58,cost:16,cd:560},
-];
-const WAR2_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95}];
-for(const b of WAR_BOLTS2) for(const t of WAR2_TIERS) SPELLBOOK_LIST.push({id:`war_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,
-  ico:b.ico,school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*(1+(t.lvl-1)*0.45)),cd:b.cd,
-  make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,element:b.element})});
+// ── Void Magic, more shapes: Nether Streak (fast/weak I–VIII) + Nether Blast cone (I–VIII) ──
+for(const t of VOID_TIERS){
+  SPELLBOOK_LIST.push({id:`void_streak_${t.lvl}`,name:`Nether Streak ${ROMAN[t.lvl]}`,ico:"🌑",school:"void",lvl:t.lvl,req:t.req,
+    cost:Math.round(18*(1+(t.lvl-1)*0.45)),cd:640,
+    make:()=>({dmg:(20+player.attr.Focus*1.5)*t.mult,speed:78,color:0x7a30c0,r:0.22,burn:true,element:"nether",drain:0.3})});
+  SPELLBOOK_LIST.push({id:`void_blast_${t.lvl}`,name:`Nether Blast ${ROMAN[t.lvl]}`,ico:"🟣",school:"void",lvl:t.lvl,req:t.req,
+    cost:Math.round(34*(1+(t.lvl-1)*0.45)),cd:1100,geom:"blast",
+    make:()=>({dmg:(24+player.attr.Focus*1.6)*t.mult*0.7,speed:46,color:0x9b30ff,r:0.32,burn:true,element:"nether",drain:0.35})});
+}
 // ── Life Magic: Harm Other I–VI (pure damage bolt — no lifesteal, distinct from Drain) ──
 // ── Life Magic: Protection Self (reduce incoming damage) + Vulnerability Other (foe takes more) ──
-const LIFE_PROT=[{lvl:1,v:0.12,cost:24,req:0,dur:90},{lvl:2,v:0.20,cost:34,req:35,dur:120},{lvl:3,v:0.30,cost:48,req:70,dur:150},{lvl:4,v:0.40,cost:64,req:110,dur:180}];
+const LIFE_PROT=[{lvl:1,v:0.12,cost:24,req:0,dur:90},{lvl:2,v:0.20,cost:34,req:35,dur:120},{lvl:3,v:0.30,cost:48,req:70,dur:150},{lvl:4,v:0.40,cost:64,req:110,dur:180},
+  {lvl:5,v:0.48,cost:84,req:150,dur:210},{lvl:6,v:0.55,cost:108,req:195,dur:240},{lvl:7,v:0.62,cost:138,req:250,dur:270},{lvl:8,v:0.70,cost:174,req:300,dur:300}];
 for(const t of LIFE_PROT) SPELLBOOK_LIST.push({id:`life_prot_${t.lvl}`,name:`Protection Self ${ROMAN[t.lvl]}`,ico:"🛡️",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"prot",mag:t.v,dur:t.dur});
-const LIFE_VULN=[{lvl:1,v:1.12,cost:20,req:0,dur:20},{lvl:2,v:1.20,cost:28,req:35,dur:25},{lvl:3,v:1.32,cost:38,req:70,dur:30},{lvl:4,v:1.45,cost:50,req:110,dur:35}];
+const LIFE_VULN=[{lvl:1,v:1.12,cost:20,req:0,dur:20},{lvl:2,v:1.20,cost:28,req:35,dur:25},{lvl:3,v:1.32,cost:38,req:70,dur:30},{lvl:4,v:1.45,cost:50,req:110,dur:35},
+  {lvl:5,v:1.58,cost:64,req:150,dur:40},{lvl:6,v:1.72,cost:80,req:195,dur:45},{lvl:7,v:1.88,cost:100,req:250,dur:50},{lvl:8,v:2.05,cost:124,req:300,dur:55}];
 for(const t of LIFE_VULN) SPELLBOOK_LIST.push({id:`life_vuln_${t.lvl}`,name:`Vulnerability Other ${ROMAN[t.lvl]}`,ico:"🎯",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,vuln:t.v,dur:t.dur});
-const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,cost:36,req:30},{lvl:3,base:78,foc:2.4,cost:52,req:60},{lvl:4,base:112,foc:2.8,cost:72,req:95},{lvl:5,base:155,foc:3.2,cost:96,req:135},{lvl:6,base:208,foc:3.6,cost:124,req:180}];
+const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,cost:36,req:30},{lvl:3,base:78,foc:2.4,cost:52,req:60},{lvl:4,base:112,foc:2.8,cost:72,req:95},{lvl:5,base:155,foc:3.2,cost:96,req:135},{lvl:6,base:208,foc:3.6,cost:124,req:180},{lvl:7,base:272,foc:4.0,cost:158,req:240},{lvl:8,base:352,foc:4.4,cost:196,req:300}];
 for(const t of LIFE_HARM) SPELLBOOK_LIST.push({id:`life_harm_${t.lvl}`,name:`Harm Other ${ROMAN[t.lvl]}`,ico:"💀",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:50,color:0x6a1a3a,r:0.3,element:null})});
 // ── War Magic geometries: Blast (cone), Volley (stream), Ring (point-blank) per element, I–IV ──
-const WAR_ROOT={flame:"Flame",frost:"Frost",light:"Lightning"};
+const WAR_ROOT={flame:"Flame",frost:"Frost",light:"Lightning",acid:"Acid",force:"Bludgeoning",blade:"Blade",pierce:"Force"};
 const WAR_GEOMS=[
   {geom:"blast", gname:"Blast", ico:"🔆",dmgMul:0.7,costMul:1.4,cdMul:1.0},
   {geom:"volley",gname:"Volley",ico:"🎇",dmgMul:0.6,costMul:1.3,cdMul:1.1},
   {geom:"ring",  gname:"Ring",  ico:"💥",dmgMul:0.8,costMul:1.7,cdMul:1.5},
 ];
-const GEOM_TIERS=[{lvl:1,m:1,req:0},{lvl:2,m:1.6,req:35},{lvl:3,m:2.4,req:70},{lvl:4,m:3.4,req:110}];
+const GEOM_TIERS=[{lvl:1,m:1,req:0},{lvl:2,m:1.6,req:35},{lvl:3,m:2.4,req:70},{lvl:4,m:3.4,req:110},
+  {lvl:5,m:4.6,req:150},{lvl:6,m:6.0,req:195},{lvl:7,m:7.6,req:250},{lvl:8,m:9.6,req:300}];
 for(const b of WAR_BOLTS) for(const g of WAR_GEOMS) for(const t of GEOM_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_${g.geom}_${t.lvl}`,name:`${WAR_ROOT[b.code]} ${g.gname} ${ROMAN[t.lvl]}`,ico:g.ico,
   school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*g.costMul*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*g.cdMul),geom:g.geom,
   make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.m*g.dmgMul,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
+// AC's level-VIII spells are "Incantations" — rename every level-8 entry (e.g. "Flame Bolt VIII" → "Incantation of Flame Bolt").
+for(const s of SPELLBOOK_LIST){ if(s.lvl===8 && / VIII$/.test(s.name)) s.name="Incantation of "+s.name.slice(0,-5); }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
 const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
