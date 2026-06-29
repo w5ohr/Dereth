@@ -420,6 +420,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
+  knownSpells:[],hotbar:[],   // initialised from freshSpells() once the SPELLBOOK is defined
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
   meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
 
@@ -448,27 +449,40 @@ const PRESETS={
 };
 
 // ---------- spells ----------
-const SPELLS=[
-  {key:"1",name:"Flame Bolt",ico:"🔥",cost:14,cd:520,school:"war",
+// ── SPELLBOOK ─────────────────────────────────────────────────────────────────
+// The master catalogue of every spell. Each spell has an id, school, level, mana
+// cost, cooldown, and a skill requirement (min skillValue of its school to cast).
+// Players learn spells (from scrolls / starting set) into player.knownSpells and
+// place known spells on a 10-slot hotbar (player.hotbar, keyed by HOTKEYS).
+const SPELLBOOK_LIST=[
+  {id:"war_flame_1",name:"Flame Bolt",ico:"🔥",cost:14,cd:520,school:"war",lvl:1,req:0,
    make:()=>({dmg:18+player.attr.Focus*1.4,speed:55,color:0xff7a2a,r:0.28,burn:true,element:"fire"})},
-  {key:"2",name:"Frost Bolt",ico:"❄️",cost:18,cd:760,school:"war",
+  {id:"war_frost_1",name:"Frost Bolt",ico:"❄️",cost:18,cd:760,school:"war",lvl:1,req:0,
    make:()=>({dmg:24+player.attr.Focus*1.7,speed:46,color:0x7ec8ff,r:0.32,slow:.45,element:"ice"})},
-  {key:"3",name:"Heal Self",ico:"✨",cost:26,cd:1500,school:"life",heal:()=>34+player.attr.Self*2.2},
-  {key:"4",name:"Stam→Mana",ico:"🔷",cost:0,cd:900,school:"life"},
-  {key:"5",name:"Lightning",ico:"⚡",cost:20,cd:600,school:"war",
+  {id:"life_heal_1",name:"Heal Self",ico:"✨",cost:26,cd:1500,school:"life",lvl:1,req:0,heal:()=>34+player.attr.Self*2.2},
+  {id:"life_stam2mana",name:"Stam→Mana",ico:"🔷",cost:0,cd:900,school:"life",lvl:1,req:0,special:"stam2mana"},
+  {id:"war_light_1",name:"Lightning",ico:"⚡",cost:20,cd:600,school:"war",lvl:1,req:0,
    make:()=>({dmg:30+player.attr.Focus*1.8,speed:120,color:0xfff060,r:0.2,stun:true,element:"shock"})},
-  {key:"6",name:"Flame Storm",ico:"🌋",cost:40,cd:3200,school:"aoe",dmg:()=>26+player.attr.Focus*1.3},
-  {key:"7",name:"Blade Lure",ico:"⚔️",cost:20,cd:11000,school:"item",buff:"might"},
-  {key:"8",name:"Quickening",ico:"💨",cost:20,cd:11000,school:"creature",buff:"swift"},
-  {key:"z",name:"Nether Bolt",ico:"🟣",cost:24,cd:900,school:"void",
+  {id:"war_storm_1",name:"Flame Storm",ico:"🌋",cost:40,cd:3200,school:"aoe",lvl:1,req:0,dmg:()=>26+player.attr.Focus*1.3,element:"fire"},
+  {id:"item_might_1",name:"Blade Lure",ico:"⚔️",cost:20,cd:11000,school:"item",lvl:1,req:0,buff:"might"},
+  {id:"creature_swift_1",name:"Quickening",ico:"💨",cost:20,cd:11000,school:"creature",lvl:1,req:0,buff:"swift"},
+  {id:"void_nether_1",name:"Nether Bolt",ico:"🟣",cost:24,cd:900,school:"void",lvl:1,req:0,
    make:()=>({dmg:28+player.attr.Focus*1.8,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})},
-  {key:"x",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon"},
+  {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
-// the four schools of magic (AC naming), used for spell tooltips & sheet grouping
+const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
+const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
+const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
+  "war_storm_1","item_might_1","creature_swift_1","void_nether_1","summon_wisp"];
+const DEFAULT_KNOWN=DEFAULT_HOTBAR.slice();
+function freshSpells(){ return {known:DEFAULT_KNOWN.slice(), hotbar:DEFAULT_HOTBAR.slice()}; }
+{ const fs=freshSpells(); player.knownSpells=fs.known; player.hotbar=fs.hotbar; }   // seed defaults
+// the schools of magic (AC naming), used for spell tooltips & sheet grouping
 const SCHOOLS={war:"War Magic · School of the Arm",aoe:"War Magic · School of the Arm",
   life:"Life Magic · School of the Heart",creature:"Creature Enchantment · School of the Left Hand",
-  item:"Item Enchantment · School of the Right Hand",void:"Void Magic · School of the Shadow"};
-const spellCd={};
+  item:"Item Enchantment · School of the Right Hand",void:"Void Magic · School of the Shadow",
+  summon:"Summoning"};
+const spellCd={};   // keyed by spell id
 
 // ---------- bestiary (creatures of Dereth) ----------
 const BESTIARY={
@@ -2168,51 +2182,58 @@ function die(){
 }
 
 // ---------- casting & melee ----------
-function castSpell(i){
+function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
+function castSpellById(id){
   if(!player.alive||paused) return;
-  const s=SPELLS[i];if(!s) return;
-  if((spellCd[s.key]||0)>now()) return;
-  if(s.name==="Stam→Mana"){
+  const s=SPELLBOOK[id];if(!s) return;
+  if(player.knownSpells.indexOf(id)<0){ log(`You have not learned <b>${s.name}</b> — scribe its scroll first.`,"warn"); return; }
+  if((spellCd[id]||0)>now()) return;
+  if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
+  const mk=MAGIC_SCHOOLS[s.school];
+  if(s.req>0 && mk && skillValue(mk)<s.req){ log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).`,"warn"); SFX.hit&&SFX.hit(); return; }
+  if(s.special==="stam2mana"){
     if(player.st<25){log("Not enough stamina.","warn");return;}
     player.st-=25;player.mn=Math.min(player.mmn,player.mn+22);
-    floater(player.x,EYE+0.5,player.z,"+22 mana","#5aa8ff");spellCd[s.key]=now()+s.cd;return;
+    floater(player.x,EYE+0.5,player.z,"+22 mana","#5aa8ff");spellCd[id]=now()+s.cd;return;
   }
-  if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const cost=Math.round(s.cost*clamp(1-(skillValue("mana")-SKILL_BY_KEY.mana.base0)*0.005,0.55,1)); // Mana Conversion lowers cost
   if(player.mn<cost){log(`Not enough mana for ${s.name}.`,"warn");return;}
-  player.mn-=cost;spellCd[s.key]=now()+s.cd;
+  player.mn-=cost;spellCd[id]=now()+s.cd;
   castShow=0.55; if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
-  if(s.school==="life"){
+  if(s.school==="life"&&s.heal){
     const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01);player.hp=Math.min(player.mhp,player.hp+h);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(h),"#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, healing ${Math.round(h)}.`,"heal");return;
   }
   if(s.buff){
-    if(s.buff==="might"){player.buffMightT=25;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
-    else{player.buffSwiftT=25;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
+    const dur=s.dur||25, mag=s.mag;
+    if(s.buff==="might"){player.buffMightT=dur;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
+    else if(s.buff==="swift"){player.buffSwiftT=dur;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
+    else if(s.buff==="attr"&&mag){player.spellBuffs=player.spellBuffs||{};player.spellBuffs[s.attr]={v:mag,t:dur};derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
     castFlash(0x9af0ff);SFX.quest();log(`You invoke <b>${s.name}</b>.`,"heal");return;
   }
   if(s.school==="aoe"){
     const dir=new THREE.Vector3();cam.getWorldDirection(dir);
     const cx=clamp(player.x+dir.x*12,-HALF+2,HALF-2),cz=clamp(player.z+dir.z*12,-HALF+2,HALF-2);
-    burst(cx,0.6,cz,0xff7a2a,42);
-    const fl=new THREE.PointLight(0xff7a2a,3.5,22);fl.position.set(cx,2.5,cz);scene.add(fl);
+    const col=s.color||0xff7a2a, el=s.element||"fire";
+    burst(cx,0.6,cz,col,42);
+    const fl=new THREE.PointLight(col,3.5,22);fl.position.set(cx,2.5,cz);scene.add(fl);
     setTimeout(()=>scene.remove(fl),350);
     const dmg=s.dmg()*skillEff("war",0.02);
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
-    for(const m of targets){const em=elemMult(m.kind,"fire");if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");else if(em<1)floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);applyHit(m,dmg*em);}
-    SFX.flame();castFlash(0xff7a2a);shake(0.22);
-    log(`You unleash a <b>Flame Storm</b>, scorching ${targets.length} foe(s).`,"heal");
+    for(const m of targets){const em=elemMult(m.kind,el);if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");else if(em<1)floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el});}
+    SFX.flame();castFlash(col);shake(0.22);
+    log(`You unleash <b>${s.name}</b>, scorching ${targets.length} foe(s).`,"heal");
     return;
   }
-  if(s.school==="summon"){
-    if(skillTier("summon")===0){ player.mn+=cost; log("You are untrained in <b>Summoning</b> — train it on the character sheet (C).","warn"); spellCd[s.key]=0; return; }
+  if(s.special==="summon"){
+    if(skillTier("summon")===0){ player.mn+=cost; log("You are untrained in <b>Summoning</b> — train it on the character sheet (C).","warn"); spellCd[id]=0; return; }
     if(pets.length>=2){ const old=pets.shift(); scene.remove(old.mesh); } // cap at 2; replace oldest
     spawnPet();
     castFlash(0x9b30ff);SFX.quest();log(`You conjure a <b>spectral wisp</b> to fight beside you.`,"heal");
     return;
   }
-  // war magic projectile along view direction
+  // projectile (war / void / life-drain bolts) along view direction
   const sp=s.make();
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
   const ox=player.x+dir.x*0.8, oz=player.z+dir.z*0.8, oy=EYE-0.15;
@@ -2222,7 +2243,7 @@ function castSpell(i){
   const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
   pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*sp.speed,vy:dir.y*sp.speed,vz:dir.z*sp.speed,
     dmg:sp.dmg*skillEff(MAGIC_SCHOOLS[s.school]||"war",0.02),r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,life:2.2});
-  castFlash(sp.color);(s.school==="void"?SFX.frost:i===1?SFX.frost:SFX.flame)();
+  castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
 }
 function castFlash(color){weaponLight.color.setHex(color);weaponLight.intensity=2.5;}
 // ---------- summoned pets (Summoning skill) ----------
@@ -2348,7 +2369,7 @@ window.addEventListener('keydown',e=>{
   keys[k]=true;
   if(!running) return;
   if(k==="enter"){ if(isOnline) openChat(); return; } // Enter opens chat (online only)
-  { const si=SPELLS.findIndex(sp=>sp.key===k); if(si>=0) castSpell(si); }
+  { const si=HOTKEYS.indexOf(k); if(si>=0) castSlot(si); }
   if(k===" ") dodge();
   if(k==="e") interact();
   if(k==="q"){
@@ -2522,14 +2543,19 @@ function openSheet(){buildSheet();sheet.style.display="flex";paused=true;if(lock
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
 
-// ---------- spell bar ----------
+// ---------- spell bar (built from the player's hotbar) ----------
 const spellbar=document.getElementById('spellbar');
-SPELLS.forEach((s,i)=>{
-  const d=document.createElement('div');d.className="slot";
-  d.title=`${s.name} — ${SCHOOLS[s.school]||"Magic"}`;
-  d.innerHTML=`<span class="key">${s.key}</span><span class="ico">${s.ico}</span><span class="nm">${s.name}</span><span class="cd"></span>`;
-  d.onclick=()=>castSpell(i);spellbar.appendChild(d);
-});
+function buildSpellbar(){
+  spellbar.innerHTML="";
+  for(let i=0;i<HOTKEYS.length;i++){
+    const id=player.hotbar[i], s=id&&SPELLBOOK[id];
+    const d=document.createElement('div');d.className="slot";
+    d.title=s?`${s.name} — ${SCHOOLS[s.school]||"Magic"}`:"empty — assign in the Spellbook (K)";
+    d.innerHTML=`<span class="key">${HOTKEYS[i]}</span><span class="ico">${s?s.ico:""}</span><span class="nm">${s?s.name:"—"}</span><span class="cd"></span>`;
+    d.onclick=()=>castSlot(i);spellbar.appendChild(d);
+  }
+}
+buildSpellbar();
 
 // ---------- update ----------
 function collide(nx,nz){
@@ -2877,10 +2903,10 @@ function updateHUD(){
   if(worldEvent&&worldEvent.active){evr.style.display="";document.getElementById("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
   else if(isOnline&&NET.event){ evr.style.display=""; const a=netEventAlive(); document.getElementById("sEvent").textContent=`${NET.event.name} · ${NET.event.total-a}/${NET.event.total} cleared`; }
   else evr.style.display="none";
-  document.querySelectorAll(".slot").forEach((el,i)=>{
-    const cd=(spellCd[SPELLS[i].key]||0)-now();
+  spellbar.querySelectorAll(".slot").forEach((el,i)=>{
+    const id=player.hotbar[i], cd=id?((spellCd[id]||0)-now()):0;
     if(cd>0){el.classList.add("cool");el.querySelector(".cd").textContent=(cd/1000).toFixed(1);}
-    else el.classList.remove("cool");
+    else { el.classList.remove("cool"); const c=el.querySelector(".cd"); if(c)c.textContent=""; }
   });
   document.getElementById('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
   const dv=document.getElementById('dmgvig');
@@ -3665,6 +3691,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive,
+      knownSpells:player.knownSpells,hotbar:player.hotbar,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
@@ -3686,6 +3713,11 @@ function applySaveObj(s){
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
     weapon:s.weapon||null,armorItem:s.armorItem||null,
     skills:migrateSkills(s.skills),patron:!!s.patron,vitae:s.vitae||0,heritage:s.heritage||"aluvian"});
+  // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
+  player.knownSpells=(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
+  player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,HOTKEYS.length):DEFAULT_HOTBAR.slice()).map(id=>SPELLBOOK[id]?id:null);
+  while(player.hotbar.length<HOTKEYS.length) player.hotbar.push(null);
+  buildSpellbar();
   questIdx=s.questIdx||0;questProg=s.questProg||0;questActive=!!s.questActive;
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   // restore bound lifestone + spawn there
@@ -4078,6 +4110,7 @@ function startGame(loadSaved,preset){
     player.skills=freshSkills();
     const load={aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],gharundim:["war","life","creature"]}[preset]||["heavy","meleed"];
     for(const k of load) skillState(k).t=1;
+    const fs=freshSpells();player.knownSpells=fs.known;player.hotbar=fs.hotbar;buildSpellbar();
   }
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   buildWorld();
