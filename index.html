@@ -2708,7 +2708,8 @@ function killMonster(m){
       if(dungeonChest){dungeonChest.light.intensity=1.4;}
       log("The guardians lie slain — the hoard is unsealed!","sys");toast("HOARD UNSEALED");
     }
-  } else questEvent("slay",m.kind);
+  }
+  questEvent("slay",m.kind);   // both overworld AND dungeon kills count toward slay quests (themed delves are where many creatures live)
   if(m.isElite) player.championKills++;
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
@@ -4856,6 +4857,11 @@ const QUESTS=[
     obj:[{type:"boss",count:1,label:"Slay Gnawvil, the Olthoi Queen"}],
     xp:5000, gold:400, item:{name:"Covenant Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"covenant",v:40} },
 ];
+// recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
+const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4,
+  skel_task:5, mattekar_task:5, aerbax_mosswart:5, lou_ei:6, virindi_incursion:7, brogord:8, aljalima:8,
+  tuskers:9, gromnie_task:9, nymph_task:10, tusker_tusk:10, auroch_hunt:11, aerbax_lugian:15, zaikhal:18, gnawvil:20 };
+function questLvl(id){ return QUEST_LVL[id]||1; }
 // ── multi-quest journal: many bounties can be active at once. activeQuests = [{id, prog:[...]}, …] ──
 let activeQuests=[],questDone=[],tracked=null,npcs=[];
 function questById(id){ return QUESTS.find(q=>q.id===id); }
@@ -5059,9 +5065,11 @@ function talkQuestGiver(n){
   } else if(isDone(id)){                                  // ── already done: post-quest greeting ──
     log(`<b>${name}:</b> ${gv.post||"My thanks again, friend."}`,"sys");
   } else {                                                // ── offer + accept (any number can be active) ──
+    const rl=questLvl(id);
     activeQuests.push({id, prog:q.obj.map(()=>0)}); tracked=id;
     log(`<b>${name}:</b> ${q.intro}`,"sys");
-    log(`<b>Quest accepted — ${q.name}:</b> ${q.obj.map(o=>o.label+" (0/"+o.count+")").join("; ")} <span style="color:var(--dim)">(${activeQuests.length} active · J: journal)</span>`,"sys");
+    log(`<b>Quest accepted — ${q.name}</b> <span style="color:var(--dim)">(recommended level ${rl}):</span> ${q.obj.map(o=>o.label+" (0/"+o.count+")").join("; ")} <span style="color:var(--dim)">(${activeQuests.length} active · J: journal)</span>`,"sys");
+    if(player.level<rl-1) log(`<span style="color:#e0a070">${name}: I'll not stop you — but this is grim work for one so green. It is meant for an adventurer of about level ${rl}; you are level ${player.level}.</span>`,"warn");
     SFX.quest(); toast("QUEST ACCEPTED");
   }
   updateNPCMarker(); updateQuestHUD(); renderQuestLog();
@@ -5139,7 +5147,7 @@ function renderQuestLog(){
     h+=activeQuests.map(a=>{ const q=questById(a.id), done=questCompleteId(a.id), isTrk=a.id===tid;
       return `<div style="margin-bottom:8px;padding:8px;background:${isTrk?'rgba(255,210,59,.10)':'rgba(255,255,255,.03)'};border:1px solid ${isTrk?'var(--gold)':'var(--border)'};border-radius:6px">
         <div style="display:flex;justify-content:space-between;gap:8px">
-          <div style="color:var(--gold);font-weight:bold">${isTrk?'▸ ':''}${q.name} <span style="color:var(--dim);font-weight:normal">— ${giverLabel(q)}</span></div>
+          <div style="color:var(--gold);font-weight:bold">${isTrk?'▸ ':''}${q.name} <span style="color:#9fd0ff;font-weight:normal">· Lv ${questLvl(a.id)}</span> <span style="color:var(--dim);font-weight:normal">— ${giverLabel(q)}</span></div>
           <button class="qtrack" data-track="${a.id}" title="Track with the compass" style="background:none;border:1px solid var(--border);border-radius:4px;color:${isTrk?'var(--gold)':'var(--dim)'};cursor:pointer;font-size:12px;padding:1px 6px">${isTrk?'★ tracking':'☆ track'}</button>
         </div>
         <div style="color:#bcae8a;font-style:italic;margin:4px 0">“${q.intro}”</div>
@@ -5150,10 +5158,10 @@ function renderQuestLog(){
   } else {
     h+=`<div style="color:var(--dim);margin-bottom:10px">None yet. Quest-givers (gold !) stand in towns across Dereth — visit any of them to take up a task. You can carry as many bounties at once as you like.</div>`;
   }
-  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:8px 0 4px">All Bounties — found at their giver's town</div>`;
-  h+=QUESTS.map(q=>{
+  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:8px 0 4px">All Bounties — by recommended level · found at their giver's town</div>`;
+  h+=QUESTS.slice().sort((a,b)=>questLvl(a.id)-questLvl(b.id)).map(q=>{
     const tag=isActive(q.id)?`<span style="color:var(--gold)">● active</span>`:isDone(q.id)?`<span style="color:#7fe6a0">✓ complete</span>`:`<span style="color:var(--dim)">○ available</span>`;
-    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span><span style="color:#9fd0ff">Lv ${questLvl(q.id)}</span> ${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
   }).join("");
   body.innerHTML=h;
   body.querySelectorAll('[data-track]').forEach(b=>b.onclick=()=>{ tracked=b.dataset.track; renderQuestLog(); updateQuestHUD(); SFX.click&&SFX.click(); });
