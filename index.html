@@ -1310,8 +1310,11 @@ function buildWeapon(){
   const trailMat=new THREE.MeshBasicMaterial({color:0xcfe8ff,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
   const trail=new THREE.Mesh(new THREE.RingGeometry(0.65,1.65,22,1,-Math.PI*0.45,Math.PI*0.9),trailMat);
   trail.rotation.y=Math.PI/2; trail.position.set(0,0.04,0); trail.visible=false; weaponHand.add(trail);
+  // weapon-type heads (shown only for maces/axes), reshaped/positioned by shapeWeaponModel()
+  const headBall=new THREE.Mesh(new THREE.SphereGeometry(0.12,10,8),steel); headBall.position.set(0,0.06,-1.5); headBall.visible=false; weaponHand.add(headBall);
+  const headAxe=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.24,0.09),steel); headAxe.position.set(0.0,0.06,-1.4); headAxe.visible=false; weaponHand.add(headAxe);
   weapon.userData.trail=trail;
-  weaponHand.userData.blade=blade;   // recoloured to the equipped weapon's material/brand by styleWeaponModel()
+  weaponHand.userData.blade=blade; weaponHand.userData.tip=tip; weaponHand.userData.headBall=headBall; weaponHand.userData.headAxe=headAxe;   // styleWeaponModel/shapeWeaponModel adjust these
   weaponHand.position.set(0.42,-0.42,-0.7);
   weaponHand.rotation.set(0.1,-0.15,0.05);
   weapon.add(weaponHand);
@@ -2472,6 +2475,30 @@ function styleWeaponModel(){
   blade.material.color.setHex((w&&MAT_TINT[w.mat])||0xc0c8d2);
   const el=(w&&w.affix&&w.affix.k==="brand")?w.affix.element:null;
   blade.material.emissive.setHex((el&&BRAND_GLOW[el])||0x000000);
+  shapeWeaponModel();
+}
+// the held melee model takes the silhouette of the equipped weapon type (length/width + head)
+const WEAPON_SHAPE={
+  dagger: {len:0.5, wide:1.0, tip:1, head:null},
+  sword:  {len:1.0, wide:1.0, tip:1, head:null},
+  spear:  {len:1.7, wide:0.55,tip:1, head:null},
+  axe:    {len:0.8, wide:1.0, tip:0, head:"axe"},
+  mace:   {len:0.5, wide:0.85,tip:0, head:"mace"},
+  staff:  {len:1.55,wide:1.5, tip:0, head:null},
+  twohand:{len:1.6, wide:1.45,tip:1, head:null},
+};
+function shapeWeaponModel(){
+  const u=weaponHand&&weaponHand.userData; if(!u||!u.blade) return;
+  const wt=player.weapon&&player.weapon.wt, prof=wt&&WEAPON_TYPES[wt];
+  const melee=prof&&prof.mode==="melee";
+  if(!melee){ u.blade.visible=false; if(u.tip)u.tip.visible=false; if(u.headBall)u.headBall.visible=false; if(u.headAxe)u.headAxe.visible=false; return; } // bare fists / ranged → no blade
+  u.blade.visible=true;
+  const s=WEAPON_SHAPE[wt]||WEAPON_SHAPE.sword;
+  const baseZ=-0.5, L=s.len;                              // hilt fixed at the guard; blade grows outward
+  u.blade.scale.set(s.wide,1,s.len); u.blade.position.set(0,0.06,baseZ-L/2);
+  if(u.tip){ u.tip.visible=!!s.tip; u.tip.position.set(0,0.06,baseZ-L-0.05); }
+  if(u.headBall){ u.headBall.visible=s.head==="mace"; if(u.headBall.visible) u.headBall.position.set(0,0.06,baseZ-L-0.06); }
+  if(u.headAxe){ u.headAxe.visible=s.head==="axe"; if(u.headAxe.visible) u.headAxe.position.set(0,0.06,baseZ-L+0.02); }
 }
 // rarity grade (from loot tier + affix) → name colour, so deepened itemization reads at a glance
 function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tier||1; const magical=it.affix||it.bonus;
