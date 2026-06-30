@@ -1641,55 +1641,67 @@ function buildAvatar(){
 // ---- a proper humanoid townsperson (head/face/hair, torso, arms+hands, legs+boots or robe) ----
 const SKIN_TONES=[0xe8b890,0xdba56e,0xc68642,0x9c6b3f,0x7a4a28,0xf0cba0];
 const HAIR_TONES=[0x241810,0x4a3320,0x6a4a2a,0x141010,0x9a9a9a,0xb88040,0x5a2a14];
+const _PERSON_FACES=["oval","square","round","long","angular","heart"];
+const _PERSON_HAIRS=["short","long","ponytail","topknot","braids","short"];
 function buildPerson(o){
-  o=o||{}; const g=new THREE.Group(), sd=o.seed||0;
+  o=o||{}; const g=new THREE.Group(), sd=Math.abs(o.seed|0);
   const robeCol=o.robe!=null?o.robe:0x6a4a2a, accent=o.accent!=null?o.accent:0x4a3320;
-  const skin=new THREE.MeshLambertMaterial({color:o.skin||SKIN_TONES[Math.abs(sd)%SKIN_TONES.length]});
+  const skinCol=o.skin!=null?o.skin:SKIN_TONES[sd%SKIN_TONES.length];
+  const hairCol=o.hair!=null?o.hair:HAIR_TONES[(sd*7+1)%HAIR_TONES.length];
   const cloth=new THREE.MeshLambertMaterial({color:robeCol}), cloth2=new THREE.MeshLambertMaterial({color:accent});
-  const boot=new THREE.MeshLambertMaterial({color:0x2a1d12}), hairCol=o.hair!=null?o.hair:HAIR_TONES[Math.abs(sd*7+1)%HAIR_TONES.length];
+  const skinM=new THREE.MeshLambertMaterial({color:skinCol}), boot=new THREE.MeshLambertMaterial({color:0x2a1d12});
   const robed=!!o.robed;
+  const app={skin:skinCol,face:_PERSON_FACES[(sd*3)%6],hair:o.hood?"bald":_PERSON_HAIRS[(sd*5)%6],
+    hairColor:hairCol,beard:o.beard?["full","goatee","mustache","stubble"][sd%4]:"none",tattoo:"none",eye:[0x4a6a3a,0x3a5a8a,0x5a3a1a,0x6a6a6a][sd%4]};
+  const hipY=robed?1.02:0.94;
+  // ---- legs (articulated groups, pivot at hip) or a robe skirt ----
+  let lLeg=null,rLeg=null;
   if(robed){
-    const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.54,1.30,14),cloth);robe.position.y=0.70;robe.castShadow=true;g.add(robe);
-    const hem=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.07,14),cloth2);hem.position.y=0.07;g.add(hem);
-    for(const sx of[-1,1]){const b=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,0.26),boot);b.position.set(sx*0.12,0.08,0.04);b.castShadow=true;g.add(b);}
+    const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.5,1.14,16),cloth);robe.position.y=hipY-0.34;robe.castShadow=true;g.add(robe);
+    const hem=new THREE.Mesh(new THREE.CylinderGeometry(0.51,0.51,0.06,16),cloth2);hem.position.y=0.05;g.add(hem);
+    for(const sx of[-1,1]){const b=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.16,0.27),boot);b.position.set(sx*0.11,0.08,0.05);b.castShadow=true;g.add(b);}
   } else {
+    const legs=[];
     for(const sx of[-1,1]){
-      const up=new THREE.Mesh(new THREE.CylinderGeometry(0.105,0.09,0.46,8),cloth2);up.position.set(sx*0.13,0.66,0);up.castShadow=true;g.add(up);
-      const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.07,0.44,8),cloth2);lo.position.set(sx*0.13,0.24,0.012);lo.castShadow=true;g.add(lo);
-      const ft=new THREE.Mesh(new THREE.BoxGeometry(0.17,0.16,0.31),boot);ft.position.set(sx*0.13,0.085,0.06);ft.castShadow=true;g.add(ft);
+      const leg=new THREE.Group();leg.position.set(sx*0.12,hipY,0);g.add(leg);
+      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.082,0.48,10),cloth2);thigh.position.y=-0.24;thigh.castShadow=true;leg.add(thigh);
+      const knee=new THREE.Mesh(new THREE.SphereGeometry(0.078,8,7),cloth2);knee.position.y=-0.47;leg.add(knee);
+      const shin=new THREE.Mesh(new THREE.CylinderGeometry(0.072,0.055,0.46,10),cloth2);shin.position.set(0,-0.70,0.012);shin.castShadow=true;leg.add(shin);
+      const ft=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.12,0.30),boot);ft.position.set(0,-0.94,0.07);ft.castShadow=true;leg.add(ft);
+      legs.push(leg);
     }
+    lLeg=legs[0];rLeg=legs[1];
   }
-  const hipY=robed?1.02:0.95;
-  const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.275,0.235,0.62,14),cloth);torso.scale.z=0.78;torso.position.y=hipY+0.33;torso.castShadow=true;g.add(torso);
-  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.25,0.1,14),cloth2);belt.scale.z=0.8;belt.position.y=hipY+0.03;g.add(belt);
-  if(o.apron){const ap=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.62,0.04),new THREE.MeshLambertMaterial({color:0xc2ac82}));ap.position.set(0,hipY+0.28,0.20);g.add(ap);}
-  if(o.cape){const cp=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.4,0.95,12,1,true,0,Math.PI),cloth2);cp.position.set(0,hipY+0.36,0.04);cp.rotation.y=Math.PI;g.add(cp);}
-  const shY=hipY+0.64;
-  const yoke=new THREE.Mesh(new THREE.CylinderGeometry(0.115,0.115,0.52,10),cloth);yoke.rotation.z=Math.PI/2;yoke.scale.z=0.78;yoke.position.y=shY+0.02;g.add(yoke);
+  // ---- torso: a lathe silhouette (waist → chest → shoulders), flattened in depth ----
+  const prof=[new THREE.Vector2(0.001,0),new THREE.Vector2(0.185,0.02),new THREE.Vector2(0.205,0.17),new THREE.Vector2(0.252,0.36),new THREE.Vector2(0.275,0.52),new THREE.Vector2(0.225,0.62),new THREE.Vector2(0.12,0.67),new THREE.Vector2(0.001,0.68)];
+  const torso=new THREE.Mesh(new THREE.LatheGeometry(prof,20),cloth);torso.scale.z=0.64;torso.position.y=hipY;torso.castShadow=true;g.add(torso);
+  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.19,0.08,16),cloth2);belt.scale.z=0.68;belt.position.y=hipY+0.04;g.add(belt);
+  if(o.apron){const ap=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.56,0.04),new THREE.MeshLambertMaterial({color:0xc2ac82}));ap.position.set(0,hipY+0.3,0.16);g.add(ap);}
+  if(o.cape){const cp=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.4,0.94,12,1,true,0,Math.PI),cloth2);cp.position.set(0,hipY+0.34,0.05);cp.rotation.y=Math.PI;cp.castShadow=true;g.add(cp);}
+  const shY=hipY+0.6;
+  const yoke=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,9),cloth);yoke.scale.set(1.75,0.66,0.66);yoke.position.y=shY+0.05;yoke.castShadow=true;g.add(yoke);
+  // ---- arms (articulated groups, slight outward splay) ----
+  const arms=[];
   for(const sx of[-1,1]){
-    const arm=new THREE.Group();arm.position.set(sx*0.30,shY,0);arm.rotation.z=sx*0.06;g.add(arm);
-    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.075,0.42,8),cloth);up.position.y=-0.21;up.castShadow=true;arm.add(up);
-    const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.068,0.058,0.4,8),robed?cloth:skin);lo.position.y=-0.6;lo.castShadow=true;arm.add(lo);
-    const hand=new THREE.Mesh(new THREE.SphereGeometry(0.072,8,7),skin);hand.position.y=-0.82;hand.scale.set(1,1.1,0.85);arm.add(hand);
+    const arm=new THREE.Group();arm.position.set(sx*0.265,shY+0.03,0);arm.rotation.z=sx*0.09;g.add(arm);
+    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.072,0.06,0.4,9),cloth);up.position.y=-0.2;up.castShadow=true;arm.add(up);
+    const elb=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,7),robed?cloth:skinM);elb.position.y=-0.4;arm.add(elb);
+    const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.046,0.38,9),robed?cloth:skinM);lo.position.y=-0.58;lo.castShadow=true;arm.add(lo);
+    const hand=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,7),skinM);hand.position.y=-0.79;hand.scale.set(1,1.2,0.78);arm.add(hand);
+    arms.push(arm);
   }
-  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.085,0.12,8),skin);neck.position.y=shY+0.12;g.add(neck);
-  const headY=shY+0.31;
-  const head=new THREE.Mesh(new THREE.SphereGeometry(0.165,16,14),skin);head.scale.set(0.92,1.06,0.96);head.position.y=headY;head.castShadow=true;g.add(head);
-  const nose=new THREE.Mesh(new THREE.ConeGeometry(0.028,0.075,6),skin);nose.position.set(0,headY-0.01,-0.16);nose.rotation.x=-Math.PI/2;g.add(nose);
-  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.025,0.04),new THREE.MeshLambertMaterial({color:hairCol}));brow.position.set(0,headY+0.06,-0.15);g.add(brow);
-  addEye(g,0.024,0x1a120a,-0.062,headY+0.02,-0.152);addEye(g,0.024,0x1a120a,0.062,headY+0.02,-0.152);
-  if(!o.hood){
-    const hair=new THREE.Mesh(new THREE.SphereGeometry(0.178,14,12,0,6.28,0,Math.PI*0.6),new THREE.MeshLambertMaterial({color:hairCol}));hair.position.set(0,headY+0.04,0.015);g.add(hair);
-    if(o.beard){const bd=new THREE.Mesh(new THREE.SphereGeometry(0.14,12,10,0,6.28,Math.PI*0.62,Math.PI*0.38),new THREE.MeshLambertMaterial({color:hairCol}));bd.position.set(0,headY-0.03,-0.05);bd.rotation.x=Math.PI;g.add(bd);}
-  } else {
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.075,0.1,8),skinM);neck.position.y=shY+0.16;g.add(neck);
+  const headY=shY+0.36;
+  const head=buildFaceGroup(app);head.position.y=headY;head.scale.set(0.92,0.96,0.92);g.add(head);
+  if(o.hood){
     const cowl=new THREE.Mesh(new THREE.SphereGeometry(0.215,14,12,0,6.28,0,Math.PI*0.72),cloth2);cowl.position.set(0,headY+0.015,0.02);g.add(cowl);
-    const drape=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.27,0.42,12),cloth2);drape.position.set(0,headY-0.2,0.05);g.add(drape);
+    const drape=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.27,0.42,12),cloth2);drape.position.set(0,headY-0.2,0.05);g.add(drape);
   }
-  if(o.hat==='cone'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.36,12),cloth2);h.position.y=headY+0.27;g.add(h);const br=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.035,12),cloth2);br.position.y=headY+0.12;g.add(br);}
-  if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.18,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=headY+0.07;g.add(h);}
-  if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.19,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=headY+0.03;h.castShadow=true;g.add(h);
-    const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.14,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,headY-0.02,-0.17);g.add(nz);}
-  g.userData.headY=headY;
+  if(o.hat==='cone'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.36,12),cloth2);h.position.y=headY+0.28;g.add(h);const br=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.27,0.035,12),cloth2);br.position.y=headY+0.13;g.add(br);}
+  if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.185,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=headY+0.1;g.add(h);const br=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.03,0.16),cloth2);br.position.set(0,headY+0.06,-0.14);g.add(br);}
+  if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.195,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=headY+0.05;h.castShadow=true;g.add(h);
+    const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,headY-0.02,-0.19);g.add(nz);}
+  g.userData={headY,torsoY:torso.position.y,headBaseY:head.position.y,lArm:arms[0],rArm:arms[1],lLeg,rLeg,torso,head,robed};
   return g;
 }
 // ============================================================================
@@ -2055,6 +2067,10 @@ function buildWorld(){
   for(const c of CITIES){
     addNPC(c.x-6,c.z+9,{role:"crier",town:c.name});
     addNPC(c.x+6,c.z+9,{role:"barkeep",town:c.name,name:c.name==="Cragstone"?"Barkeeper Wilomine":"Barkeeper"});
+    // strolling townsfolk that wander the plaza (more in capitals)
+    const tf=c.capital?5:3, rad=c.capital?14:9;
+    for(let i=0;i<tf;i++){ const a=i/tf*6.283+c.region, tx=c.x+Math.cos(a)*rad*0.6, tz=c.z+Math.sin(a)*rad*0.6;
+      addNPC(tx,tz,{role:"townsfolk",town:c.name,stroll:true,range:rad*0.55}); }
   }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*80-3,-21.2*80,{role:"reset_attr",name:"Chafulumisa"});
@@ -2237,6 +2253,28 @@ function addSign(g,W,D,mcol){
   const emb=new THREE.Mesh(new THREE.CircleGeometry(0.2,16),new THREE.MeshBasicMaterial({color:mcol||0xffcf6b}));emb.position.set(W/2-1.1,2.85,D/2+0.96);g.add(emb);
   for(const sx of[-1,1]){const ch=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.42,4),solid(0x2a2620));ch.position.set(W/2-1.1+sx*0.38,3.06,D/2+0.92);g.add(ch);}
 }
+// exterior dressing: a glowing door lantern, barrels/crates, a window flower-box, and a hall banner
+function addBuildingProps(g,W,D,kind){
+  const wood=texMat(woodTex,0x5a3f24),wood2=texMat(woodTex,0x3a2616),iron=solid(0x2a2620);
+  // wall lantern beside the door (emissive so it glows day & night)
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.46),iron);arm.position.set(W*0.34,2.7,D/2+0.22);g.add(arm);
+  const lant=new THREE.Group();lant.position.set(W*0.34,2.45,D/2+0.46);
+  lant.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.12,0.26,4),new THREE.MeshLambertMaterial({color:0x3a2e1a,emissive:0xffb050,emissiveIntensity:0.7})));
+  const cap=new THREE.Mesh(new THREE.ConeGeometry(0.15,0.1,4),iron);cap.position.y=0.18;lant.add(cap);g.add(lant);
+  // barrels + crate at a front corner
+  const bx=-W*0.36,bz=D*0.34;
+  for(let i=0;i<2;i++){const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.2,0.52,12),wood);bar.position.set(bx+i*0.5,0.26,bz);bar.castShadow=true;g.add(bar);
+    for(const by of[0.12,0.4]){const hp=new THREE.Mesh(new THREE.TorusGeometry(0.225,0.018,6,14),iron);hp.rotation.x=Math.PI/2;hp.position.set(bx+i*0.5,by,bz);g.add(hp);}}
+  const crate=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.42,0.42),wood2);crate.position.set(bx+0.25,0.21,bz-0.6);crate.rotation.y=0.4;crate.castShadow=true;g.add(crate);
+  // window flower-box on the front
+  const fb=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.16,0.22),wood2);fb.position.set(0,H1F*0.55-0.86,D/2+0.13);fb.castShadow=true;g.add(fb);
+  const FC=[0xd03050,0xe0c040,0xe080c0,0x70b0e0,0xe06030];
+  for(let i=0;i<6;i++){const f=new THREE.Mesh(new THREE.SphereGeometry(0.05,6,5),new THREE.MeshLambertMaterial({color:FC[i%5]}));f.position.set(-0.55+i*0.22,H1F*0.55-0.74,D/2+0.13);g.add(f);}
+  // banner for halls
+  if(kind==="hall"){const pole=new THREE.Mesh(new THREE.BoxGeometry(0.05,1.7,0.05),iron);pole.position.set(-W*0.3,H1F+0.5,D/2+0.1);g.add(pole);
+    const ban=new THREE.Mesh(new THREE.BoxGeometry(0.55,1.25,0.04),new THREE.MeshLambertMaterial({color:0x8a2030}));ban.position.set(-W*0.3,H1F+0.45,D/2+0.16);ban.castShadow=true;g.add(ban);
+    const tip=new THREE.Mesh(new THREE.ConeGeometry(0.28,0.3,3),new THREE.MeshLambertMaterial({color:0x8a2030}));tip.rotation.x=Math.PI;tip.position.set(-W*0.3,H1F-0.18,D/2+0.16);g.add(tip);}
+}
 // dress a hollow shell's interior (human-scale, no collision so it stays passable; door is on +z)
 function addFurniture(g,W,D,kind){
   const wood=texMat(woodTex,0x6a4a2a),wood2=texMat(woodTex,0x4a3318),stone=solid(0x6a655c,true);
@@ -2278,6 +2316,7 @@ function bAluvian(s,kind){
   const ch=new THREE.Mesh(new THREE.BoxGeometry(0.7,2.2,0.7),solid(0x7a5040));ch.position.set(W*0.32,top+1.7,-D*0.22);ch.castShadow=true;g.add(ch);
   const cap=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.2,0.85),solid(0x4a3a30));cap.position.set(W*0.32,top+2.85,-D*0.22);g.add(cap);
   if(kind==="shop") addSign(g,W,D,0xffcf6b);
+  addBuildingProps(g,W,D,kind);
   g.userData.surfaces=surf; return g;
 }
 // --- Gharu'ndim: sandstone block, parapet, dome ---
@@ -2292,6 +2331,7 @@ function bGharu(s,kind){
   if(kind==="hall"){const tw=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,top+3,12),solid(0xcaa56a));tw.position.set(W*0.42,(top+3)/2,-D*0.32);tw.castShadow=true;g.add(tw);
     const td=new THREE.Mesh(new THREE.SphereGeometry(0.95,12,8,0,6.28,0,Math.PI/2),solid(0xe0bc70));td.position.set(W*0.42,top+3,-D*0.32);g.add(td);}
   if(kind==="shop") addSign(g,W,D,0xe0bc70);
+  addBuildingProps(g,W,D,kind);
   g.userData.surfaces=surf; return g;
 }
 // --- Sho: timber-framed with a tiered pagoda roof ---
@@ -2307,6 +2347,7 @@ function bSho(s,kind){
     const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),texMat(woodTex,t%2?0x9a8260:0x9a4030));body.position.y=y+h/2;body.castShadow=true;g.add(body);
     const rr=roofRect(w*1.5,w*1.5,1.3,0x46604a);rr.position.y=y+h+0.5;g.add(rr); y+=h+0.6;w*=0.82;}
   if(kind==="shop") addSign(g,W,D,0x9a4030);
+  addBuildingProps(g,W,D,kind);
   g.userData.surfaces=surf; return g;
 }
 const CULTURE_BUILDERS=[bAluvian,bSho,bGharu]; // region index 0 Aluvia, 1 Sho, 2 Gharu'ndim
@@ -3499,6 +3540,7 @@ function currentPrompt(){
     if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
     if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
     if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
+    if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
     const q=QUESTS[questIdx];return questActive?(questProg>=q.count?"Turn in quest (E)":"Speak to the Emissary (E)"):"Accept a bounty (E)";}}
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8) return "Trade with the "+(sh.o.title||"Vendor")+" (E)";}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4) return "Descend into "+ne.e.def.name+" (E)";}
@@ -3944,6 +3986,7 @@ function update(dt){
   updateDayNight(dt);
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
+  updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
   syncCamera(dt);
   updateHUD();
 }
@@ -3979,6 +4022,41 @@ function animateAvatar(dt){
     u.lFoot.position.y=-0.84+clamp(groundY(player.x+rxw,player.z+rzw)-baseGy,-0.18,0.18);
     u.rFoot.position.y=-0.84+clamp(groundY(player.x-rxw,player.z-rzw)-baseGy,-0.18,0.18);
   } else { u.lFoot.position.y=-0.84; u.rFoot.position.y=-0.84; }
+}
+// ---- townsfolk life: idle breathing/glancing for everyone, plus a gentle stroll for wanderers ----
+function animateOnePerson(p,dt){
+  const u=p.mesh&&p.mesh.userData; if(!u||!u.torso) return;
+  if(p._ph==null){ p._ph=(p.x*0.7+p.z*0.31)%6.283; p._pt=Math.abs(p._ph); p._face=p.mesh.rotation.y||0; }
+  p._pt+=dt; const t=p._pt;
+  let moving=false;
+  if(p.stroll){   // wander near home: seek a target, pause, repeat
+    if(!p._tgt){ p._wait=(p._wait||0)-dt; if(p._wait<=0){ const a=Math.random()*6.283,r=1.2+Math.random()*(p.range||3); p._tgt={x:p.home.x+Math.cos(a)*r,z:p.home.z+Math.sin(a)*r}; } }
+    if(p._tgt){ const dx=p._tgt.x-p.x,dz=p._tgt.z-p.z,d=Math.hypot(dx,dz);
+      if(d<0.5){ p._tgt=null; p._wait=2.5+Math.random()*5; }
+      else { const sp=Math.min(d,1.15*dt); p.x+=dx/d*sp; p.z+=dz/d*sp; moving=true; p._wp=(p._wp||0)+dt*7.5;
+        p._face=Math.atan2(dx,dz); p.mesh.position.set(p.x,terrainH(p.x,p.z),p.z); } }
+  }
+  // smooth body facing
+  let fy=p.mesh.rotation.y; const df=((p._face-fy+Math.PI*3)%(Math.PI*2))-Math.PI; p.mesh.rotation.y=fy+df*Math.min(1,dt*6);
+  const breath=Math.sin(t*1.6+p._ph);
+  if(moving){
+    const s=Math.sin(p._wp)*0.55;
+    if(u.lLeg)u.lLeg.rotation.x=s; if(u.rLeg)u.rLeg.rotation.x=-s;
+    if(u.lArm)u.lArm.rotation.x=-s*0.7; if(u.rArm)u.rArm.rotation.x=s*0.7;
+    u.torso.position.y=u.torsoY+Math.abs(Math.sin(p._wp))*0.02; u.torso.rotation.z=0;
+    if(u.head) u.head.position.y=u.headBaseY+Math.abs(Math.sin(p._wp))*0.02;
+  } else {
+    const sw=Math.sin(t*1.1+p._ph)*0.05;
+    if(u.lArm)u.lArm.rotation.x=sw; if(u.rArm)u.rArm.rotation.x=-sw;
+    if(u.lLeg)u.lLeg.rotation.x=0; if(u.rLeg)u.rLeg.rotation.x=0;
+    u.torso.position.y=u.torsoY+breath*0.006; u.torso.rotation.z=Math.sin(t*0.8+p._ph)*0.015;
+    if(u.head){ u.head.position.y=u.headBaseY+breath*0.008; u.head.rotation.y=Math.sin(t*0.45+p._ph)*0.3; }  // glance about
+  }
+}
+function updatePeople(dt){
+  if(inDungeon||inNetwork) return;
+  for(const n of npcs) animateOnePerson(n,dt);
+  for(const s of shops) animateOnePerson(s,dt);
 }
 // how far the 3rd-person camera can sit behind the pivot before terrain/walls block it
 function camClampDist(tx,ty,tz,bx,by,bz,maxD){
@@ -4194,7 +4272,7 @@ function drawMinimap(){
   for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1,cx(n.z)-1,2,2);}
   for(const pt of portals){g.fillStyle="#bf9bff";g.fillRect(cx(pt.x)-1.5,cx(pt.z)-1.5,3,3);}
   for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");g.fillRect(cx(ls.x)-rr,cx(ls.z)-rr,rr*2,rr*2);}
-  for(const n of npcs){g.fillStyle="#ffd23b";g.fillRect(cx(n.x)-2,cx(n.z)-2,4,4);}
+  for(const n of npcs){if(n.role==="townsfolk")continue;g.fillStyle="#ffd23b";g.fillRect(cx(n.x)-2,cx(n.z)-2,4,4);}
   for(const sh of shops){g.fillStyle="#7fe6a0";g.fillRect(cx(sh.x)-2,cx(sh.z)-2,4,4);}
   for(const e of dungeonEntrances){g.fillStyle=player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff";g.fillRect(cx(e.x)-1.5,cx(e.z)-1.5,3,3);}
   if(boss){g.fillStyle="#ff3030";g.beginPath();g.arc(cx(boss.x),cx(boss.z),3.5,0,6.28);g.fill();}
@@ -4233,7 +4311,7 @@ function drawBigMap(){
     g.beginPath();g.arc(cx(ls.x),cx(ls.z),cap?7:3.5,0,6.28);g.fill();
     if(cap){g.fillStyle="#ffe9b0";g.fillText("★ "+ls.name,cx(ls.x),cx(ls.z)-10);}}
   for(const pt of portals){g.fillStyle="#bf9bff";g.fillRect(cx(pt.x)-3,cx(pt.z)-3,6,6);}
-  for(const n of npcs){g.fillStyle="#ffd23b";g.fillRect(cx(n.x)-3,cx(n.z)-3,6,6);}
+  for(const n of npcs){if(n.role==="townsfolk")continue;g.fillStyle="#ffd23b";g.fillRect(cx(n.x)-3,cx(n.z)-3,6,6);}
   for(const sh of shops){g.fillStyle="#7fe6a0";g.fillRect(cx(sh.x)-3,cx(sh.z)-3,6,6);}
   for(const e of dungeonEntrances){g.fillStyle=player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff";g.fillRect(cx(e.x)-2,cx(e.z)-2,4,4);}
   if(boss){g.fillStyle="#ff3030";g.beginPath();g.arc(cx(boss.x),cx(boss.z),6,0,6.28);g.fill();
@@ -4394,7 +4472,9 @@ const NPC_ROLES={
   gatekeep:   {robe:0x556070,hood:0x3c4450,mark:"⚷",mcol:"#cfd6e0",label:"Gate Keeper"},
   reset_attr: {robe:0x6a2250,hood:0x4d1839,mark:"⟳",mcol:"#ff9adf",label:"Chafulumisa"},
   reset_skill:{robe:0x225a55,hood:0x18413d,mark:"⟳",mcol:"#9affe0",label:"Fianhe"},
+  townsfolk:  {robe:0x6a5a3a,hood:0x4a3a26,mark:"",mcol:"#cfc0a0",label:"Townsperson"},
 };
+const TOWNSFOLK_ROBES=[0x6a5a3a,0x4a5a6a,0x6a3a3a,0x3a5a4a,0x5a4a6a,0x7a6a4a,0x4a4a52,0x8a6a4a]; // varied commoner clothing
 const RUMORS=[
   "They say the Olthoi Queen stirs again in the deep places of the world.",
   "Bind to a lifestone, friend — in Dereth, death is rarely the end.",
@@ -4410,27 +4490,36 @@ const RUMORS=[
 const NPC_FLAVOR={
   gatekeep:["None pass the gate of Timaru without the Aun's leave. State your purpose.",
             "The Tumeroks beyond these walls do not parley. Tread carefully."],
+  townsfolk:["Well met, traveller. The roads have been dangerous of late.",
+             "A fine day in Dereth — Olthoi willing.",
+             "Mind the wilds beyond the walls, friend.",
+             "They say a new portal opened near the old ruins.",
+             "Spare a thought for the militia — they hold the frontier.",
+             "Welcome, stranger. Trade's good when the drudges keep their distance."],
 };
-function buildNPC(role,name){
+function buildNPC(role,name,seedX){
   const R=NPC_ROLES[role]||NPC_ROLES.emissary;
-  const seed=(name||role||"x").length+role.length;
+  const seed=((name||role||"x").length+role.length+(seedX|0))|0;
   const o={robe:R.robe,accent:R.hood,seed};
   if(role==="emissary"||role==="reset_attr"||role==="reset_skill"){ o.robed=true; o.hood=true; o.cape=(role==="emissary"); }
   else if(role==="barkeep"){ o.apron=true; o.hat="cap"; o.beard=(seed%2===0); }
   else if(role==="crier"){ o.hat="cone"; o.beard=(seed%3===0); }
   else if(role==="gatekeep"){ o.helm=true; }
+  else if(role==="townsfolk"){ o.robe=TOWNSFOLK_ROBES[Math.abs(seed)%TOWNSFOLK_ROBES.length]; o.accent=0x3a2e1e; o.beard=(seed%3===0); if(seed%4===0)o.hat="cap"; }
   else { o.beard=(seed%2===0); }
   const g=buildPerson(o);
-  const lbl=labelSprite(name||R.label);lbl.position.y=2.5;g.add(lbl);
-  const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
-  g.userData.marker=marker;
+  const lbl=labelSprite(name||R.label);lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
+  if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
   return g;
 }
 function addNPC(x,z,opts){
   opts=opts||{}; const role=opts.role||"emissary";
   const name=opts.name||(NPC_ROLES[role]||NPC_ROLES.emissary).label;
-  const mesh=buildNPC(role,name);mesh.position.set(x,0,z);scene.add(mesh);
-  npcs.push({x,z,mesh,role,name,town:opts.town||null,_line:0});obstacles.push({x,z,r:0.8});
+  const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29));mesh.position.set(x,0,z);scene.add(mesh);
+  const rec={x,z,mesh,role,name,town:opts.town||null,_line:0};
+  if(opts.stroll){ rec.stroll=true; rec.home={x,z}; rec.range=opts.range||3; }
+  else obstacles.push({x,z,r:0.8});   // strollers move, so they aren't fixed obstacles
+  npcs.push(rec);
   updateNPCMarker();
 }
 function updateNPCMarker(){ // only the Emissaries reflect quest state
