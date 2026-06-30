@@ -890,6 +890,17 @@ function buildDungeonList(){
   });
 }
 const DUNGEONS=buildDungeonList();
+// Facility Hub (AC landblock 8A02): a level-gated hall of dungeon portals. [dungeonName, levelReq]
+// — canonical entries that map to a real delve in DUNGEONS above.
+const FACILITY_LIST=[
+  ["Mosswart Camp",10],["Green Mire Grave",15],["Halls of the Helm",15],["Tusker Temple",15],
+  ["Dangerous Cave",20],["Hunter's Leap",20],["Trothyr's Rest",20],
+  ["Banderling Conquest Dungeon",25],["Catacombs of the Forgotten",25],
+  ["Crumbling Empyrean Mansion",30],["Haunted Mansion",30],["Mite Maze",30],
+  ["Skeleton Fort",35],["Suntik Village",35],
+  ["Castle of Baron Nuvillus",40],["Tusker Emporium",40],["Blackmire Temple",45],
+];
+const FACILITY_PORTALS=FACILITY_LIST.map(([name,req])=>{const def=DUNGEONS.find(d=>d.name===name);return def&&{def,req};}).filter(Boolean);
 const HUBS=CITIES.concat(DUNGEONS); // content (scenery, monsters) clusters around these
 // ---- terrain: mountains, valleys, hills, lakes, and an ocean rim ----
 function terrainBase(x,z){
@@ -916,7 +927,7 @@ let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds u
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0;
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
-let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[];
+let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
 const obstacles=[]; // {x,z,r}
@@ -1796,6 +1807,15 @@ function buildWorld(){
   for(const fl of FOUNDRY_LINES){ const d=CITIES.find(c=>c.name===fl.dest); if(!d) continue;
     for(const fn of fl.from){ const o=CITIES.find(c=>c.name===fn); if(!o) continue;
       addPortal(o.x+13,o.z+5,{x:d.x-13,z:d.z+5,name:fl.label+" → "+d.name}); } }
+  // Residential Hall portal lines (player-housing wings) — each routes its towns to one hall hub.
+  const RESIDENTIAL_LINES=[
+    {label:"Victory Residential Halls",dest:"Khayyaban",from:["Samsur","Lin"]},
+    {label:"Oriel Residential Halls",dest:"Khayyaban",from:["Mayoi","Plateau Village"]},
+    {label:"Haven Residential Halls",dest:"Tou-Tou",from:["Uziz","Lytelthorpe"]},
+  ];
+  for(const rl of RESIDENTIAL_LINES){ const d=CITIES.find(c=>c.name===rl.dest); if(!d) continue;
+    for(const fn of rl.from){ const o=CITIES.find(c=>c.name===fn); if(!o) continue;
+      addPortal(o.x-13,o.z+5,{x:d.x+13,z:d.z-5,name:rl.label}); } }
   // roads linking every city to its capital, and the capitals to each other
   genRoads();buildRoads();
   // gathering nodes scattered across the wilds
@@ -3096,8 +3116,12 @@ function currentPrompt(){
   const nr=(x,z)=>Math.hypot(x-player.x,z-player.z);
   for(const d of drops) if(d.type==="item"&&nr(d.x,d.z)<3.5) return "Take "+d.item.name+" (E)";
   if(inNetwork){
-    for(const np of netPortals) if(nr(np.x,np.z)<3) return "Travel to "+np.town.name+" (E)";
-    if(nr(netExit.x,netExit.z)<3) return "Leave the Town Network (E)";
+    for(const np of netPortals) if(nr(np.x,np.z)<3){
+      if(np.kind==="switch") return "Enter the "+np.name+" (E)";
+      if(np.kind==="facility") return player.level>=np.req?("Descend into "+np.name+" (E)"):(np.name+" — requires level "+np.req);
+      return "Travel to "+np.name+" (E)";
+    }
+    if(nr(netExit.x,netExit.z)<3) return "Leave the "+netHallName()+" (E)";
     return "";
   }
   if(inDungeon){
@@ -3125,8 +3149,9 @@ function portalTouch(){
   if(portalCd>0||!player.alive||inDungeon) return;
   const near=(x,z,r)=>Math.hypot(x-player.x,z-player.z)<r;
   if(inNetwork){
-    for(const np of netPortals){ if(near(np.x,np.z,2.4)){ portalCd=1.5;exitNetwork({x:np.town.x,z:np.town.z});toast(np.town.name.toUpperCase());log(`You travel to <b>${np.town.name}</b>.`,"sys");return; } }
-    if(near(netExit.x,netExit.z,2.4)){ portalCd=1.5;exitNetwork(netReturn);log("You leave the Town Network.","sys"); }
+    // auto-travel only on town portals; switching halls or entering a delve needs a deliberate E
+    for(const np of netPortals){ if(np.kind==="town"&&near(np.x,np.z,2.4)){ portalCd=1.5;activateNetPortal(np);return; } }
+    if(near(netExit.x,netExit.z,2.4)){ portalCd=1.5;exitNetwork(netReturn);log("You leave the "+netHallName()+".","sys"); }
     return;
   }
   for(const tp of tnPortals){ if(near(tp.x,tp.z,2.4)){ portalCd=1.5;enterNetwork(player.x,player.z);return; } }
@@ -3148,8 +3173,8 @@ function interact(){
     }
     lootItem(best.item);scene.remove(best.mesh);drops.splice(drops.indexOf(best),1);return;}
   if(inNetwork){
-    for(const np of netPortals){if(Math.hypot(np.x-player.x,np.z-player.z)<3){exitNetwork({x:np.town.x,z:np.town.z});toast(np.town.name.toUpperCase());log(`You travel to <b>${np.town.name}</b>.`,"sys");SFX.portal();return;}}
-    if(Math.hypot(netExit.x-player.x,netExit.z-player.z)<3){exitNetwork(netReturn);log("You leave the Town Network.","sys");SFX.portal();}
+    for(const np of netPortals){if(Math.hypot(np.x-player.x,np.z-player.z)<3){activateNetPortal(np);return;}}
+    if(Math.hypot(netExit.x-player.x,netExit.z-player.z)<3){exitNetwork(netReturn);log("You leave the "+netHallName()+".","sys");SFX.portal();}
     return;
   }
   if(inDungeon){
@@ -4644,33 +4669,60 @@ function exitDungeon(toEntrance){
   hideOverworld(true);
   if(toEntrance){player.x=dungeonReturn.x;player.z=dungeonReturn.z;player.invuln=2;}
 }
-// ---- The Town Network: a portal hub linking every town ----
+// ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
 function buildNetwork(){
   netObjs=[];netPortals=[];const R=48;   // wide hall so all ~56 town portals + labels spread out
-  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,44),new THREE.MeshStandardMaterial({color:0x2a2640,metalness:0.4,roughness:0.5}));
+  const fac=netMode==="facility";
+  const floorCol=fac?0x202a33:0x2a2640,ringCol=fac?0x3a8a9a:0x6a5aa0,ringEm=fac?0x1a4a5a:0x3a2a6a,liteCol=fac?0x5ad0ff:0x9b6bff,orbCol=fac?0x40e0ff:0xc060ff;
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,44),new THREE.MeshStandardMaterial({color:floorCol,metalness:0.4,roughness:0.5}));
   floor.rotation.x=-Math.PI/2;floor.position.set(DCEN.x,0.04,DCEN.z);floor.receiveShadow=true;scene.add(floor);netObjs.push(floor);
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(R*0.9,0.4,8,48),new THREE.MeshStandardMaterial({color:0x6a5aa0,emissive:0x3a2a6a,emissiveIntensity:0.7}));
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(R*0.9,0.4,8,48),new THREE.MeshStandardMaterial({color:ringCol,emissive:ringEm,emissiveIntensity:0.7}));
   ring.rotation.x=-Math.PI/2;ring.position.set(DCEN.x,0.3,DCEN.z);scene.add(ring);netObjs.push(ring);
-  const l1=new THREE.PointLight(0x9b6bff,1.8,120);l1.position.set(DCEN.x,22,DCEN.z);scene.add(l1);netObjs.push(l1);
+  const l1=new THREE.PointLight(liteCol,1.8,120);l1.position.set(DCEN.x,22,DCEN.z);scene.add(l1);netObjs.push(l1);
   const ped=new THREE.Mesh(new THREE.CylinderGeometry(2,2.5,1.3,12),new THREE.MeshStandardMaterial({color:0x3a3656,metalness:0.5,roughness:0.4}));
   ped.position.set(DCEN.x,0.65,DCEN.z);ped.castShadow=true;scene.add(ped);netObjs.push(ped);
-  const orb=new THREE.Mesh(new THREE.SphereGeometry(1.1,16,12),new THREE.MeshBasicMaterial({color:0xc060ff}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
-  CITIES.forEach((c,i)=>{const a=i/CITIES.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
-    const m=buildPortal(c.name);m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
-    m.traverse(o=>{if(o.isSprite){o.scale.set(6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so 56 don't collide
-    scene.add(m);netObjs.push(m);netPortals.push({x:px,z:pz,town:c});});
+  const orb=new THREE.Mesh(new THREE.SphereGeometry(1.1,16,12),new THREE.MeshBasicMaterial({color:orbCol}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
+  const list=fac?FACILITY_PORTALS:CITIES;
+  list.forEach((c,i)=>{const a=i/list.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
+    const np=fac?{x:px,z:pz,kind:"facility",dungeon:c.def,req:c.req,name:c.def.name}:{x:px,z:pz,kind:"town",town:c,name:c.name};
+    const m=buildPortal(fac?`${c.def.name} · Lv${c.req}`:c.name);m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
+    m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
+    scene.add(m);netObjs.push(m);netPortals.push(np);});
   netExit={x:DCEN.x,z:DCEN.z+7};
   const ex=buildPortal("Leave");ex.position.set(netExit.x,0,netExit.z);scene.add(ex);netObjs.push(ex);
+  // a portal toggling between the Town Network and the Facility Hub
+  const sw={x:DCEN.x,z:DCEN.z-7},swName=fac?"Town Network":"Facility Hub";
+  const swm=buildPortal(swName);swm.position.set(sw.x,0,sw.z);scene.add(swm);netObjs.push(swm);
+  netPortals.push({x:sw.x,z:sw.z,kind:"switch",to:fac?"towns":"facility",name:swName});
 }
+function netHallName(){ return netMode==="facility"?"Facility Hub":"Town Network"; }
 function enterNetwork(ex,ez){
   if(inNetwork||inDungeon) return;
-  inNetwork=true;netReturn={x:ex,z:ez};
+  inNetwork=true;netMode="towns";netReturn={x:ex,z:ez};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
   buildNetwork();markSceneSRGB();
   player.x=DCEN.x;player.z=DCEN.z-2;player.invuln=2;
   teleportFX(player.x,player.z);
-  toast("THE TOWN NETWORK");log("You enter the <b>Town Network</b> — portals to every town ring the hall (E on one to travel).","sys");
+  toast("THE TOWN NETWORK");log("You enter the <b>Town Network</b> — portals to every town ring the hall (E to travel). Step to the <b>Facility Hub</b> portal for level-gated delves.","sys");
+}
+function switchHub(mode){
+  for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];
+  netMode=mode;buildNetwork();markSceneSRGB();
+  player.x=DCEN.x;player.z=DCEN.z-2;player.invuln=1;teleportFX(player.x,player.z);
+}
+function netToDungeon(def){
+  for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];inNetwork=false;
+  enterDungeon(def,netReturn.x,netReturn.z);
+}
+function activateNetPortal(np){
+  if(np.kind==="town"){ exitNetwork({x:np.town.x,z:np.town.z});toast(np.town.name.toUpperCase());log(`You travel to <b>${np.town.name}</b>.`,"sys");SFX.portal();return; }
+  if(np.kind==="switch"){ switchHub(np.to);toast(np.to==="facility"?"FACILITY HUB":"THE TOWN NETWORK");
+    log(np.to==="facility"?"You enter the <b>Facility Hub</b> — portals here lead to dungeons, gated by your level.":"You return to the <b>Town Network</b>.","sys");SFX.portal();return; }
+  if(np.kind==="facility"){
+    if(player.level<np.req){ log(`The <b>${np.name}</b> portal flares and rejects you — requires level <b>${np.req}</b>.`,"warn");SFX.deny&&SFX.deny();return; }
+    toast(np.name.toUpperCase());log(`You step through the Facility Hub into the <b>${np.name}</b>.`,"sys");SFX.portal();netToDungeon(np.dungeon);
+  }
 }
 function exitNetwork(dest){
   for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];
