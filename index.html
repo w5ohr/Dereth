@@ -5054,6 +5054,8 @@ function questLvl(id){ return QUEST_LVL[id]||1; }
 // ── quest chains: some bounties only open once their prerequisite is complete ──
 function questReq(id){ const q=questById(id); return (q&&q.req)||null; }
 function questUnlocked(id){ const r=questReq(id); return !r || isDone(r); }
+function questSoc(id){ const q=questById(id); return (q&&q.soc)||null; }   // society this bounty is sworn to (if any)
+function socOk(id){ const s=questSoc(id); return !s || player.society===s; }   // eligible only if pledged to that order
 function giverWhere(id){ const q=questById(id); if(!q) return "a quest-giver"; if(id==="gnawvil") return "Asheron's Emissary in any capital";
   const gv=QUEST_GIVERS[id]||{}; return `${gv.name||q.giver}${gv.town?" in "+gv.town:""}`; }
 // ── repeatable bounties: standing hunter kill-tasks that reset on turn-in instead of completing for good ──
@@ -6090,6 +6092,22 @@ Object.assign(QUEST_GIVERS,{
   "ashen_halls":{"name": "Cinderwarden Tahl", "town": "Al-Arqas", "look": "scholar", "prog": "The hall-fire still burns and the cinder-dead still walk. Four, five, and the fire quenched, warden.", "turn": "The hall-fire is quenched and the cinder-dead rest in cool ash at last! Bear this censer — it swung in the flame and never melted; nor will it fail you.", "post": "The Ashen Halls stand cold and dark, their fire dead and their dead at peace. Al-Arqas breathes clean air, thanks to you."},
   "worlds_end":{"name": "Edgewarden Vorre", "town": "Ahurenga", "look": "captain", "prog": "World's End is still unclaimed — every horror of Dereth between you and the edge. Three of each, and the marker planted.", "turn": "You stood at World's End and planted the marker where the map runs out! No one has gone further and returned. Bear Worldedge — forged at the edge of everything; it cuts where the world itself ends.", "post": "The marker stands at World's End, and your name with it — the furthest any hero of Dereth has ever walked. There is nothing beyond but the edge, and you have seen it."}
 });
+// ── Society bounties: order-sworn quests (3, society-gated) ──
+QUESTS.push(
+    {"id": "soc_celhand", "name": "The Celestial Hand: The Lost Codex", "giver": "Hand-Adept Verel (Holtburg)", "soc": "celhand", "intro": "Sworn of the Celestial Hand — a codex of lost Empyrean working lies in a shade-warded vault, and only the Hand may safely bear it. Scatter five shades, recover three codex-leaves, and delve to the vault.", "obj": [{"type": "slay", "kind": "shadow", "count": 5, "label": "Scatter the vault shades"}, {"type": "gather", "count": 3, "label": "Recover the codex-leaves"}, {"type": "delve", "count": 1, "label": "Reach the Empyrean vault"}], "xp": 3600, "gold": 260, "item": {"name": "Sigil of the Celestial Hand", "stat": "Focus", "v": 2}},
+    {"id": "soc_eldweb", "name": "The Eldrytch Web: The Rift Key", "giver": "Web-Adept Sahir (Yaraq)", "soc": "eldweb", "intro": "Sworn of the Eldrytch Web — the Virindi guard a Rift Key the Web has long sought, the means to master a rift rather than fear it. Banish six masks and storm the rift-shrine to take the Key for the order.", "obj": [{"type": "slay", "kind": "virindi", "count": 6, "label": "Banish the rift-shrine masks"}, {"type": "delve", "count": 1, "label": "Storm the rift-shrine for the Key"}], "xp": 3700, "gold": 270, "item": {"name": "Sigil of the Eldrytch Web", "stat": "Self", "v": 2}},
+    {"id": "soc_radblood", "name": "The Radiant Blood: Trial by Blood", "giver": "Blood-Knight Doran (Cragstone)", "soc": "radblood", "intro": "Sworn of the Radiant Blood — prove your blood-oath against the order's two great foes. Best four Olthoi and three Lugians in the trial-pits, and the order will name you proven in blood.", "obj": [{"type": "slay", "kind": "olthoi", "count": 4, "label": "Best the trial Olthoi"}, {"type": "slay", "kind": "lugian", "count": 3, "label": "Best the trial Lugians"}], "xp": 3700, "gold": 270, "item": {"name": "Sigil of the Radiant Blood", "stat": "Strength", "v": 2}}
+);
+Object.assign(QUEST_LVL,{
+  soc_celhand:14,
+  soc_eldweb:15,
+  soc_radblood:15
+});
+Object.assign(QUEST_GIVERS,{
+  "soc_celhand":{"name": "Hand-Adept Verel", "town": "Holtburg", "look": "scholar", "prog": "The codex still lies warded in the vault, Hand-sworn. Five scattered, three leaves, the vault reached.", "turn": "The Lost Codex is recovered for the Hand! Its working will light our halls for an age. Bear the Hand's Sigil — focus enough to read what the Empyrean wrote.", "post": "The Lost Codex is studied openly in the Hand's halls now. You did the order a service it will long remember, Sworn."},
+  "soc_eldweb":{"name": "Web-Adept Sahir", "town": "Yaraq", "look": "scholar", "prog": "The Key still lies in Virindi hands, Web-sworn. Six banished and the rift-shrine stormed.", "turn": "The Rift Key is the Web's at last! With it the order will bend a rift to its will, not flee it. Bear the Web's Sigil — will enough to hold a rift open and live.", "post": "The Rift Key turns in the Web's vaults now, and the order's masters whisper your name with respect, Sworn."},
+  "soc_radblood":{"name": "Blood-Knight Doran", "town": "Cragstone", "look": "captain", "prog": "The trial-pits still wait, Blood-sworn — Olthoi and Lugian both. Four and three bested, and you are proven.", "turn": "Proven in blood, before the whole order! The Radiant Blood names you kin. Bear the Blood's Sigil — strength enough to hold the line where the order stands.", "post": "Your name is carved among the proven in the Radiant Blood's hall, Sworn. The order stands the stronger for your oath."}
+});
 // look → buildNPC visual options for a quest-giver
 const GIVER_LOOK={ farmer:{apron:true,beard:true}, scholar:{robed:true}, captain:{helm:true},
   daughter:{robed:true,cape:true}, villager:{}, merchant:{apron:true}, hunter:{hat:"cap",beard:true}, shaman:{hood:true,robed:true} };
@@ -6159,6 +6177,7 @@ function questNpcMarkerColor(qid){
   if(isActive(qid)) return questCompleteId(qid)?0x7fe6a0:0x9a9a9a; // active: green = ready to turn in, grey = in progress
   if(isDone(qid)) return 0x59697a;                                 // already completed — dim
   if(!questUnlocked(qid)) return 0x5a6a9a;                         // locked behind a prerequisite — muted blue
+  if(!socOk(qid)) return 0x6a5a8a;                                 // society-sworn, wrong allegiance — muted violet
   if(isRepeatable(qid) && onCooldown(qid)) return 0x8a7a4a;        // standing bounty cooling down — dim gold
   return 0xffd23b;                                                 // available to accept — gold
 }
@@ -6208,6 +6227,10 @@ function talkQuestGiver(n){
     if(SFX.quest)SFX.quest();
   } else if(isRepeatable(id) && onCooldown(id)){          // ── standing bounty still on its timer ──
     log(`<b>${name}:</b> You've cleared this for me recently — give the foes time to gather again. Come back in <b>${fmtCd(cdRemaining(id))}</b>.`,"sys");
+    if(SFX.quest)SFX.quest();
+  } else if(!socOk(id)){                                   // ── society-sworn bounty, wrong/no allegiance ──
+    const so=societyById(questSoc(id));
+    log(`<b>${name}:</b> ${player.society?`This charge is sworn to the <b>${so.name}</b> — and you wear another order's colours. I cannot give it to you.`:`This charge is sworn only to the <b>${so.name}</b>. Pledge yourself to the order, then return to me.`}`,"sys");
     if(SFX.quest)SFX.quest();
   } else {                                                // ── offer + accept (any number can be active) ──
     const rl=questLvl(id);
@@ -6367,7 +6390,7 @@ function renderQuestLog(){
 function questStatus(id){ // status bucket used by the journal filter
   if(isActive(id)) return "active";
   if(isDone(id)) return "complete";
-  if(!questUnlocked(id)) return "locked";
+  if(!questUnlocked(id) || !socOk(id)) return "locked";   // prereq- or society-gated
   if(isRepeatable(id)) return "repeatable";
   return "available";
 }
@@ -6385,8 +6408,10 @@ function renderBountyList(){
   const cnt=document.getElementById('qfCount'); if(cnt) cnt.textContent=`showing ${list.length} of ${QUESTS.length}`;
   if(!list.length){ el.innerHTML=`<div style="color:var(--dim);padding:8px 0">No bounties match your filter.</div>`; return; }
   el.innerHTML=list.map(q=>{
-    const s=questStatus(q.id), rq=s==="locked"?questById(questReq(q.id)):null;
+    const s=questStatus(q.id), rq=(s==="locked"&&questReq(q.id))?questById(questReq(q.id)):null;
+    const socGate=(s==="locked"&&!socOk(q.id))?societyById(questSoc(q.id)):null;
     const tag=s==="active"?`<span style="color:var(--gold)">● active</span>`:s==="complete"?`<span style="color:#7fe6a0">✓ complete</span>`
+      :socGate?`<span style="color:${socGate.col}" title="Sworn to a society">⚜ ${socGate.name} only</span>`
       :s==="locked"?`<span style="color:#7e8ab0" title="Complete the prerequisite first">🔒 after ${rq?rq.name:"…"}</span>`
       :s==="repeatable"?(onCooldown(q.id)
         ?`<span style="color:#8a7a4a" title="Standing bounty — cooling down">↻ ready in ${fmtCd(cdRemaining(q.id))}</span>`
