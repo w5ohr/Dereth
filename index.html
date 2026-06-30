@@ -768,16 +768,26 @@ const REGIONS=[
 ];
 const DIRELANDS_TINT=[0.40,0.36,0.46];
 // Real Dereth towns placed by their actual in-game coordinates: [name, lat(N+/S-), lon(E+/W-), region, capital]
+// Canonical Asheron's Call town coordinates (Drunkapedia; see docs/asherons-call-world-reference.md).
+// Region 0 Aluvia (north), 1 Sho (south-east), 2 Gharu'ndim (west). New Viamont & Direlands frontier
+// towns are wired in a second pass (they need their own builder/region). [name, lat(N+/S-), lon(E+/W-), region, capital]
 const TOWN_DATA=[
-  ["Holtburg",43.6,33.0,0,true],["Cragstone",25.9,47.1,0,false],["Glenden Wood",30.3,25.6,0,false],
-  ["Arwic",33.0,55.8,0,false],["Eastham",19.1,64.2,0,false],["Rithwic",10.1,57.4,0,false],
-  ["Lytelthorpe",9.5,59.9,0,false],["Tou-Tou",33.8,56.4,0,false],
-  ["Shoushi",11.0,59.3,1,true],["Yanshi",-14.7,46.6,1,false],["Sawato",-28.7,60.3,1,false],
-  ["Nanto",-32.3,71.7,1,false],["Baishi",-49.7,61.9,1,false],["Lin",-54.8,73.2,1,false],
-  ["Mayoi",-61.6,83.4,1,false],["Hebian-To",-39.4,81.3,1,false],
-  ["Yaraq",-12.1,46.3,2,true],["Samsur",-1.6,18.4,2,false],["Zaikhal",-13.4,0.7,2,false],
-  ["Al-Arqas",-31.9,14.3,2,false],["Uziz",-25.7,30.0,2,false],["Khayyaban",-47.6,26.4,2,false],
-  ["Qalaba'r",-74.6,20.6,2,false],["Al-Jalima",7.5,5.7,2,false],
+  // — Aluvia —
+  ["Holtburg",42.3,33.3,0,true],["Cragstone",25.6,49.2,0,false],["Arwic",33.5,56.8,0,false],
+  ["Eastham",17.7,63.4,0,false],["Glenden Wood",29.7,27.4,0,false],["Rithwic",10.5,58.3,0,false],
+  ["Lytelthorpe",0.7,51.4,0,false],["Dryreach",-7.9,73.0,0,false],["Fort Tethana",1.6,-71.8,0,false],
+  ["Plateau Village",44.2,-43.5,0,false],["Stonehold",68.7,-21.7,0,false],["Underground City",21.3,53.9,0,false],
+  // — Sho —
+  ["Shoushi",-33.6,72.7,1,true],["Yanshi",-12.1,42.6,1,false],["Sawato",-28.7,59.4,1,false],
+  ["Baishi",-49.4,62.5,1,false],["Hebian-To",-39.2,83.1,1,false],["Nanto",-52.7,82.3,1,false],
+  ["Lin",-54.5,73.2,1,false],["Wai Jhou",-62.0,-51.4,1,false],["Mayoi",-61.8,82.1,1,false],
+  ["Kryst",-74.3,84.4,1,false],["MacNiall's Freehold",-74.0,92.2,1,false],["Kara",-83.3,47.1,1,false],
+  ["Tou-Tou",-30.3,94.8,1,false],
+  // — Gharu'ndim —
+  ["Yaraq",-21.5,-1.5,2,true],["Zaikhal",13.6,0.6,2,false],["Al-Jalima",7.4,4.8,2,false],
+  ["Tufa",-14.9,5.8,2,false],["Samsur",-2.9,19.4,2,false],["Mar'uun",-10.6,17.1,2,false],
+  ["Al-Arqas",-31.2,13.9,2,false],["Uziz",-25.1,28.2,2,false],["Xarabydun",-41.9,15.8,2,false],
+  ["Khayyaban",-47.6,24.7,2,false],["Qalaba'r",-74.3,19.2,2,false],["Ayan Baqur",-59.9,-87.9,2,false],
 ];
 function buildCityList(){
   return TOWN_DATA.map(t=>({name:t[0],x:t[2]*COORD,z:-t[1]*COORD,region:t[3],capital:t[4]}));
