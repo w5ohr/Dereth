@@ -8,3 +8,7 @@
 server/*.db
 __pycache__/
 *.pyc
+
+# external avatar models (user-supplied; see assets/README.md)
+assets/*.glb
+assets/*.gltf

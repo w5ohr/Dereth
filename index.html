@@ -384,6 +384,7 @@
 </div></div>
 
 <script src="three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>   <!-- optional: enables an external rigged glTF avatar; absent/failed load → procedural avatar -->
 <script>
 "use strict";
 /* ============================================================================
@@ -821,6 +822,23 @@ let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,qua
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
 let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[];  // self-cast (crouch→raise) vs forward cast
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
+// ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
+let USE_GLTF_AVATAR=false;                      // EXPERIMENTAL: set true (and drop a rigged .glb at GLTF_AVATAR_URL) for a realistic avatar; off = procedural avatar (offline default)
+const GLTF_AVATAR_URL="assets/avatar.glb";      // drop a rigged .glb here (Ready Player Me / Mixamo / Character Creator export)
+let gltfAvatar=null,gltfMixer=null,gltfReady=false,gltfTried=false;
+function tryLoadGltfAvatar(){
+  if(gltfTried||!USE_GLTF_AVATAR||typeof THREE.GLTFLoader==="undefined") return; gltfTried=true;
+  new THREE.GLTFLoader().load(GLTF_AVATAR_URL, gltf=>{
+    const root=gltf.scene;
+    let box=new THREE.Box3().setFromObject(root); const h=(box.max.y-box.min.y)||1; root.scale.setScalar(1.85/h);   // normalise to ~1.85u tall
+    box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;                                            // feet to y=0
+    root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
+    gltfAvatar=new THREE.Group(); gltfAvatar.add(root); gltfAvatar.visible=false; scene.add(gltfAvatar);
+    if(gltf.animations&&gltf.animations.length){ gltfMixer=new THREE.AnimationMixer(root);
+      const idle=gltf.animations.find(a=>/idle/i.test(a.name))||gltf.animations[0]; gltfMixer.clipAction(idle).play(); }
+    gltfReady=true; log("External avatar model loaded (glTF).","sys");
+  }, undefined, err=>{ console.log("glTF avatar not loaded ("+GLTF_AVATAR_URL+") — using the procedural avatar.", (err&&err.message)||""); });
+}
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
@@ -1428,6 +1446,7 @@ function initThree(){
   cam.add(weapon);
   scene.add(cam);
   playerAvatar=buildAvatar();scene.add(playerAvatar);
+  tryLoadGltfAvatar();   // async; swaps in the rigged glTF model if present, else keeps the procedural avatar
   // ACES filmic tone-mapping + correct sRGB output for a richer, less-washed image
   renderer.outputEncoding=THREE.sRGBEncoding;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -4629,13 +4648,20 @@ function syncCamera(dt){
     else { const k=1-Math.exp(-12*dt); camCur.x+=(desX-camCur.x)*k; camCur.y+=(desY-camCur.y)*k; camCur.z+=(desZ-camCur.z)*k; }
     cam.position.copy(camCur);
     cam.rotation.set(pitch,yaw,0);
-    weapon.visible=false; playerAvatar.visible=player.alive;
-    playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
-    animateAvatar(dt);
+    weapon.visible=false;
+    if(gltfReady&&gltfAvatar){   // external rigged model
+      playerAvatar.visible=false; gltfAvatar.visible=player.alive;
+      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=yaw+Math.PI;   // glTF faces +z; our forward is -z
+      if(gltfMixer) gltfMixer.update(dt);
+    } else {                     // procedural avatar
+      playerAvatar.visible=player.alive;
+      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
+      animateAvatar(dt);
+    }
   } else {
     cam.position.set(player.x, gy+EYE+Math.sin(player.bob)*0.06, player.z);
     cam.rotation.set(player.pitch, player.yaw, 0);
-    weapon.visible=true; playerAvatar.visible=false; camInit=false;
+    weapon.visible=true; playerAvatar.visible=false; if(gltfAvatar)gltfAvatar.visible=false; camInit=false;
   }
   if(shakeT>0){
     shakeT-=dt; const m=shakeMag*clamp(shakeT/0.32,0,1);
