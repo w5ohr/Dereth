@@ -243,7 +243,8 @@
     <label style="font-size:12px;color:var(--dim);white-space:nowrap"><input type="checkbox" id="sbReady" style="vertical-align:middle"> castable</label>
     <span id="sbCount" style="font-size:12px;color:var(--dim)"></span>
   </div>
-  <div id="sbRows" style="max-height:60vh;overflow-y:auto"></div>
+  <div id="sbLoadouts" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"></div>
+  <div id="sbRows" style="max-height:56vh;overflow-y:auto"></div>
   <button id="closeSpellbook">Return to Dereth  (K)</button>
 </div></div>
 
@@ -449,7 +450,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
-  knownSpells:[],hotbar:[],   // initialised from freshSpells() once the SPELLBOOK is defined
+  knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
   spellBuffs:{},              // active Creature-Enchantment attribute buffs: attr -> {v,t}
   skillBuffs:{},              // active Creature-Enchantment skill "Aptitude" buffs: skillKey -> {v,t}; fall on death
   hots:{},                    // active Life regeneration over time: pool (hp/st/mn) -> {rate,t}; fall on death
@@ -2779,6 +2780,7 @@ window.addEventListener('keydown',e=>{
   if(k==="t"){ if(document.getElementById('tinker').style.display==="flex") closeTinker(); else openTinker(); }
   if(k==="b"){ if(document.getElementById('codex').style.display==="flex") closeCodex(); else openCodex(); }
   if(k==="k"){ if(document.getElementById('spellbook').style.display==="flex") closeSpellbook(); else openSpellbook(); }
+  if(k==="\\") cycleLoadout();   // quick-swap to the next saved spell loadout
   if(k==="r") drinkPotion("potHealth",60,"hp");
   if(k==="g") drinkPotion("potGreat",150,"hp");
   if(k==="f") drinkPotion("potMana",60,"mn");
@@ -3854,6 +3856,44 @@ function assignHotbar(slot,id){
   if(slot>=0 && slot<HOTKEYS.length) player.hotbar[slot]=id;
   buildSpellbar(); buildSpellbook(); saveGame();
 }
+// ---- hotbar loadouts: save/swap named spell sets (the bar holds 10 of 800+ spells) ----
+function saveLoadout(name){
+  name=(name||"").trim().slice(0,24); if(!name) return;
+  player.loadouts=player.loadouts||[];
+  const ex=player.loadouts.find(l=>l.name.toLowerCase()===name.toLowerCase());
+  if(ex){ ex.bar=player.hotbar.slice(); } else { if(player.loadouts.length>=8){ log("You can keep at most 8 loadouts.","warn"); return; } player.loadouts.push({name,bar:player.hotbar.slice()}); }
+  log(`Loadout <b>${esc(name)}</b> saved.`,"sys"); buildSpellbook(); saveGame();
+}
+function loadLoadout(i){
+  const l=player.loadouts&&player.loadouts[i]; if(!l) return;
+  player._loIdx=i;   // keep the \-cycle in sync with manual picks
+  player.hotbar=l.bar.slice(0,HOTKEYS.length).map(id=>SPELLBOOK[id]&&player.knownSpells.indexOf(id)>=0?id:null);
+  buildSpellbar(); buildSpellbook(); toast("LOADOUT: "+l.name.toUpperCase()); if(SFX.quest)SFX.quest(); saveGame();
+}
+function deleteLoadout(i){ if(player.loadouts&&player.loadouts[i]){ player.loadouts.splice(i,1); buildSpellbook(); saveGame(); } }
+function renderLoadouts(){
+  const el=document.getElementById('sbLoadouts'); if(!el) return; el.innerHTML="";
+  const lbl=document.createElement('span'); lbl.textContent="Loadouts:"; lbl.style.cssText="color:var(--dim);font-size:12px"; el.appendChild(lbl);
+  (player.loadouts||[]).forEach((l,i)=>{
+    const b=document.createElement('button'); b.textContent=l.name; b.title="Equip this set (press \\ in-world to cycle)";
+    b.style.cssText="background:#16210e;color:#cfe6b0;border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:12px;cursor:pointer";
+    b.onclick=()=>loadLoadout(i); el.appendChild(b);
+    const x=document.createElement('button'); x.textContent="✕"; x.title="Delete loadout";
+    x.style.cssText="background:#241010;color:#e6a0a0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:11px;cursor:pointer";
+    x.onclick=()=>deleteLoadout(i); el.appendChild(x);
+  });
+  const inp=document.createElement('input'); inp.id="sbLoName"; inp.placeholder="name…"; inp.maxLength=24;
+  inp.style.cssText="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:12px;width:84px";
+  const save=document.createElement('button'); save.textContent="Save current";
+  save.style.cssText="background:#241a0c;color:#ffd86b;border:1px solid var(--gold);border-radius:5px;padding:3px 8px;font-size:12px;cursor:pointer";
+  save.onclick=()=>{ saveLoadout(inp.value); };
+  el.appendChild(inp); el.appendChild(save);
+}
+function cycleLoadout(){ // quick in-world swap (key \): rotate to the next saved loadout
+  if(!player.loadouts||!player.loadouts.length){ log("No saved loadouts — make one in the Spellbook (K).","warn"); return; }
+  player._loIdx=((player._loIdx==null?-1:player._loIdx)+1)%player.loadouts.length;
+  loadLoadout(player._loIdx);
+}
 // a short, live effect readout for a spell at the player's current stats (shown in the Spellbook)
 function spellEffectText(s){ try{
   if(s.heal) return `+${Math.round(s.heal())} heal`;
@@ -3878,7 +3918,7 @@ function spellEffectText(s){ try{
   return "";
 }catch(e){ return ""; } }
 function buildSpellbook(){
-  const root=document.getElementById('sbRows'); if(!root) return; root.innerHTML="";
+  const root=document.getElementById('sbRows'); if(!root) return; root.innerHTML=""; renderLoadouts();
   // read the filter bar (school "aoe" rolls into War)
   const q=(document.getElementById('sbSearch')?.value||"").trim().toLowerCase();
   const fSchool=document.getElementById('sbSchool')?.value||"all";
@@ -4299,7 +4339,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive,
-      knownSpells:player.knownSpells,hotbar:player.hotbar,itemBuffs:player.itemBuffs,
+      knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
@@ -4325,6 +4365,7 @@ function applySaveObj(s){
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
   player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,HOTKEYS.length):DEFAULT_HOTBAR.slice()).map(id=>SPELLBOOK[id]?id:null);
+  player.loadouts=Array.isArray(s.loadouts)?s.loadouts.filter(l=>l&&l.name&&Array.isArray(l.bar)).slice(0,8):[];
   while(player.hotbar.length<HOTKEYS.length) player.hotbar.push(null);
   buildSpellbar();
   // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
