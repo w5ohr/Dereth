@@ -846,22 +846,48 @@ const DUNGEON_THEMES=[
   {env:"The Deep",      floor:0x141420,wall:0x222236,prop:"crystal", light:0x6a8aff,kinds:["olthoi","shadow","gromnie"],     warden:"olthoi"},
 ];
 const DUNGEON_ADJ=["Forgotten","Sunken","Cursed","Ancient","Howling","Blighted","Shattered","Wailing","Crimson","Hollow","Drowned","Buried","Fell","Withered","Gloomed","Frozen","Scorched","Tangled","Whispering","Ruined"];
+// Canonical Asheron's Call dungeons at their real coordinates (docs/asherons-call-world-reference.md).
+// [name, lat(N+/S-), lon(E+/W-), themeIndex, tier]. themeIndex → DUNGEON_THEMES (interior set).
+const CANON_DUNGEONS=[
+  // — Aluvia (low tier) —
+  ["Holtburg Dungeon",43.6,33.0,4,1],["Arwic Mines",33.7,56.7,5,1],["Armoredillo Cave",11.0,21.1,2,1],
+  ["Catacombs of the Forgotten",17.4,32.8,4,2],["Hunter's Leap",35.8,33.5,10,2],["Haunted Mansion",6.0,43.7,7,3],
+  ["Dangerous Cave",24.3,43.2,2,2],["Mite Maze",41.1,57.0,3,3],["Trothyr's Rest",13.6,50.7,8,2],
+  ["Dungeon Maggreth",3.7,52.6,4,2],["Mannikin Foundry",0.7,51.4,1,3],["Olthoi Chasm",0.7,44.7,3,3],
+  // — Sho —
+  ["Hebian-To Sewers",-38.8,83.8,2,2],["A Drudge Nest",-40.6,83.6,8,1],["Green Mire Grave",-27.8,71.6,10,2],
+  ["Banderling Conquest Dungeon",-29.1,50.6,8,3],["Blackmire Temple",-21.8,48.0,7,4],["Castle of Baron Nuvillus",-24.5,76.7,4,4],
+  ["Mosswart Camp",-27.5,70.6,2,1],["Shreth Hive",-32.4,71.0,3,2],["Rat King's Cave",-32.9,70.5,2,1],
+  ["Stone Cathedral",-34.5,70.4,4,2],["Yanshi Tunnels",-12.2,45.5,5,1],["Colosseum",-11.3,37.6,6,2],
+  ["Swamp Temple",-23.4,47.9,10,2],["Web Maze",-49.4,65.4,3,3],["Golem Burial Ground",-50.9,67.3,11,4],
+  ["Matron Hive East",-49.8,62.0,3,4],["Hills Citadel",-56.6,66.9,4,4],["Firebird's Splendor",-53.6,66.7,1,4],
+  ["Water Temple",-52.1,80.3,9,3],["Empyrean Garrison",-54.2,81.8,11,4],["Moarsman Tunnels",-60.7,83.0,9,4],
+  ["Umbral Hall",-75.8,83.1,7,5],["Dragon's Power",-82.3,41.4,1,5],["Skeleton Fort",32.3,66.3,4,4],
+  // — Gharu'ndim —
+  ["Sea Temple Catacombs",-20.2,-4.4,4,1],["Yaraq Tunnels",-24.8,-1.4,5,1],["Gold Legion Keep",13.8,2.0,6,3],
+  ["Lair of the Ancient Queen",13.2,0.8,3,4],["Halls of the Helm",18.7,1.6,6,2],["Musansayn's Vaults",-1.0,18.7,6,3],
+  ["Desert Mine",-4.5,26.6,5,2],["Bone Lair",-29.4,7.0,4,2],["Unfinished Temple",-30.1,9.1,6,2],
+  ["Matron Hive West",-24.9,28.2,3,4],["Thasali",-29.3,24.6,6,3],["Khayyaban Crystal Mine",-49.3,17.9,5,4],
+  ["Enkindled Souls",-49.4,26.9,1,4],["Mountain Fortress",-82.4,19.9,9,5],["Lugian Outpost",-80.6,18.1,11,5],
+  ["Suntik Village",16.5,3.9,6,4],
+  // — Northern reaches / Halaetan Isles (high tier) —
+  ["Gelidite Library",69.2,-17.2,9,5],["Dericost Vault",74.7,-24.6,11,5],["The Pit",64.3,-23.4,7,5],
+  ["Mage Academy",74.7,18.5,5,4],["Virindi Complex",73.8,25.0,7,5],["Beacon Tower",71.7,-61.0,9,4],
+  ["Rossu Morta Chapterhouse",69.7,-62.3,7,5],["Viamontian Royal Prison",92.0,-41.6,4,5],["Abayar's Laboratory",92.1,-46.4,5,5],
+  ["Frozen Library",90.7,-56.4,9,5],["Lugian Ice Tunnels",93.3,-50.1,0,5],["Crumbling Empyrean Mansion",46.8,-67.8,11,4],
+  ["Palenqual's Cavern",48.9,-72.5,5,4],["Bandit Castle Prison",66.5,49.9,4,4],
+  // — Direlands & far reaches (deadliest) —
+  ["Tombs of the Sand Kings",-87.7,-65.6,6,5],["The Pit of Heretics",-88.0,-55.0,7,5],["Panopticon",-59.1,-84.1,11,5],
+  ["Halls of Metos",-56.0,-89.2,4,5],["Secret Chamber of Kresovus",-77.6,28.0,11,5],["Colton Reeyan's Sanctuary",22.9,-37.0,11,5],
+  ["Fort Morntide",35.1,-17.8,4,4],["Monouga Feeding Pits",-9.8,-81.0,2,4],["Tusker Temple",-10.5,65.6,0,3],
+  ["Tusker Emporium",4.3,95.8,0,3],
+];
 function buildDungeonList(){
-  const arr=[];
-  for(let i=0;i<50;i++){
-    const th=DUNGEON_THEMES[i%DUNGEON_THEMES.length],adj=DUNGEON_ADJ[(i*7)%DUNGEON_ADJ.length];
-    const ang=i*2.39996; let x,z;
-    if(i>=40){ // the deadliest delves lie in the central Direlands
-      const r=400+(i-40)*150; x=clamp(Math.cos(ang)*r,-HALF+80,HALF-80); z=clamp(Math.sin(ang)*r,-HALF+80,HALF-80);
-    } else {     // the rest cluster near a town so they're reachable from a fast-travel hub
-      const city=CITIES[i%CITIES.length],r=170+(i%4)*90;
-      x=clamp(city.x+Math.cos(ang)*r,-HALF+80,HALF-80); z=clamp(city.z+Math.sin(ang)*r,-HALF+80,HALF-80);
-    }
-    if(nearestCapitalDist(x,z)<TOWN_SAFE+30) x+=150;
-    const tier=i>=40?5:1+Math.floor(i/10);
-    arr.push({id:i,name:adj+" "+th.env,x,z,theme:th,tier});
-  }
-  return arr;
+  return CANON_DUNGEONS.map((d,i)=>{
+    let x=clamp(d[2]*COORD,-HALF+80,HALF-80), z=clamp(-d[1]*COORD,-HALF+80,HALF-80);
+    if(nearestCapitalDist(x,z)<TOWN_SAFE+30) x+=150;   // keep entrances out of the capital safe core
+    return {id:i,name:d[0],x,z,theme:DUNGEON_THEMES[d[3]]||DUNGEON_THEMES[0],tier:d[4]};
+  });
 }
 const DUNGEONS=buildDungeonList();
 const HUBS=CITIES.concat(DUNGEONS); // content (scenery, monsters) clusters around these
@@ -4396,13 +4422,13 @@ function gatherNode(n){
 function addEntrance(def){
   const g=new THREE.Group(),col=def.theme.light;
   const arch=new THREE.Mesh(new THREE.TorusGeometry(1.8,0.35,8,18,Math.PI),
-    new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.5,metalness:0.3,roughness:0.4}));
+    new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.95,metalness:0.3,roughness:0.4}));
   arch.position.y=0.2;arch.castShadow=true;g.add(arch);
   const mouth=new THREE.Mesh(new THREE.CircleGeometry(1.7,20),new THREE.MeshBasicMaterial({color:0x05030a}));
   mouth.position.set(0,1.8,0.06);g.add(mouth);
   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(2.6,0),new THREE.MeshLambertMaterial({color:0x4a4640,flatShading:true}));
   rock.position.set(0,1,-1.6);rock.castShadow=true;g.add(rock);
-  const glow=new THREE.PointLight(col,1.0,12);glow.position.set(0,1.8,0);g.add(glow);
+  // (no per-entrance PointLight: the emissive arch carries the glow; 70+ lights would blow the GPU shader uniform cap)
   const lbl=labelSprite(def.name+" — E to delve");lbl.scale.set(8,1.8,1);lbl.position.y=4.2;g.add(lbl);
   g.position.set(def.x,0,def.z);scene.add(g);
   dungeonEntrances.push({x:def.x,z:def.z,mesh:g,def});obstacles.push({x:def.x,z:def.z-1.6,r:1.6});
