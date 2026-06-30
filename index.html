@@ -508,6 +508,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
+  arcsDone:[],                 // story arcs whose capstone reward has been granted
   name:"Adventurer",
   appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
@@ -5092,6 +5093,63 @@ function pledgeSociety(id){ const so=societyById(id); if(!so||player.society) re
   log(`<span style="color:${so.col}">You pledge yourself to the <b>${so.name}</b>. ${so.blurb} You rise as an <b>Adherent</b> — complete bounties to earn your standing.</span>`,"sys");
   if(SFX.quest)SFX.quest(); if(typeof checkAchievements==="function") checkAchievements(); saveGame(); renderQuestLog(); updateQuestHUD();
 }
+// ── Story Arcs: curated multi-quest storylines. Finishing every quest in an arc grants a title + capstone reward. ──
+// (A meta layer over the bounties — it does not gate the open world; quests stay free to do in any order.)
+const QUEST_ARCS=[
+  {id:"aerbax", name:"Aerbax's Conspiracy", col:"#c79bff", title:"Aerbax's Bane",
+   blurb:"The sorcerer Aerbax has bent drudge, banderling, shadow, and Lugian to his will. Break each of his Prodigal thralls and end the conspiracy.",
+   steps:["aerbax_mosswart","aerbax_banderling","aerbax_shadow","aerbax_lugian"],
+   xp:5000, gold:400, reward:{name:"Aerbax's Undoing",stat:"weapon",wt:"staff",mat:"Ebony",v:26}},
+  {id:"dericost", name:"The Fall of the Dericost", col:"#b060ff", title:"the Lichbane",
+   blurb:"The Dericost necromancers cheat death across Dereth. Burn out their towers, their heretics, and the lich Gaerlan himself.",
+   steps:["dericost_tower","gaerlan_citadel","heretic_tower","the_apostate"],
+   xp:5000, gold:400, reward:{name:"Lichbane Blade",stat:"weapon",wt:"sword",mat:"Jet",v:26}},
+  {id:"undying_court", name:"The Undying Court", col:"#9fd0ff", title:"the Court-Breaker",
+   blurb:"The Empyrean dead refuse to lie down — Lady Jaera, Lady Aerfalle, and their risen courts. Lay the Undying Court to rest.",
+   steps:["mage_academy","mage_jaera","aerfalle","aerlinthe_isle"],
+   xp:5000, gold:400, reward:{name:"Court-Breaker's Plate",stat:"worn",at:"heavy",aslot:"chest",v:28}},
+  {id:"olthoi_war", name:"The Olthoi War", col:"#ff8a3a", title:"Scourge of the Hive",
+   blurb:"From the Westwatch line to the deepest nest, the Olthoi swarm rises. Hold every front and slay the Queen Gnawvil herself.",
+   steps:["olthoi_shield","olthoi_weapons","kara_hive","ayan_olthoi","olthoi_north","olthoi_tunnels","olthoi_eater","olthoi_matron","olthoi_prime","zaikhal","gnawvil"],
+   xp:8000, gold:600, reward:{name:"Hivescourge Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"olthoi",v:42}},
+  {id:"hopeslayer", name:"The Shadow of the Hopeslayer", col:"#7e8ab0", title:"the Hope-Keeper",
+   blurb:"Bael'Zharon the Hopeslayer stirs, and his shadows spread despair. Cast down his heralds and hold the seals against the Time of Chaos.",
+   steps:["caul_darkness","curator","shadow_spire","shadow_general","time_of_chaos"],
+   xp:6000, gold:480, reward:{name:"Hope-Keeper's Edge",stat:"weapon",wt:"twohand",mat:"Ebony",v:27}},
+  {id:"tumerok_wars", name:"The Tumerok Wars", col:"#ff9a3a", title:"the Warbreaker",
+   blurb:"The Tumerok war-clans muster from every pass and grove. Break their chiefs, shamans, and warlords — or broker the peace Ralirea dreams of.",
+   steps:["aun_tumerok","tumerok_shaman","hoshino","wai_jhou_tumerok","tumerok_warlord","hieromancer","bur_tumeroks","burun_warband","aun_ralirea"],
+   xp:6000, gold:480, reward:{name:"Warbreaker's Atlatl",stat:"weapon",wt:"atlatl",mat:"Diamond",v:26}},
+  {id:"tusker_terror", name:"The Reign of Terror", col:"#e0a070", title:"the Tusker-Bane",
+   blurb:"Tuskers rampage from the highlands to the crystal caves, the Tusker King at their head. End the Reign of Terror for good.",
+   steps:["tusker_tusk","tuskers","tusker_guard","tusker_king","crystalline_tusker","tusker_lodge","tusker_paw"],
+   xp:5000, gold:400, reward:{name:"Tusker-Bane Maul",stat:"weapon",wt:"twohand",mat:"Diamond",v:26}},
+  {id:"five_trials", name:"The Five Trials", col:"#ffd23b", title:"the Proven",
+   blurb:"The old augmentation trials test every fiber of a hero — Might, Coordination, Endurance, Self, and Quickness. Pass them all and stand Proven.",
+   steps:["augment_might","trial_coordination","trial_endurance","trial_self","trial_quickness"],
+   xp:6000, gold:480, reward:{name:"Gem of the Proven",stat:"Endurance",v:2}},
+  {id:"empyrean_legacy", name:"The Empyrean Legacy", col:"#6a8aff", title:"the Antiquarian",
+   blurb:"The vanished Empyrean left vaults, forges, libraries, and wonders across Dereth. Recover the legacy of the age before the Sundering.",
+   steps:["empyrean_bracers","empyrean_library","empyrean_foundry","empyrean_trinket","empyrean_sceptre","silyun_relics","test_of_lethe","asheron_vault","channeled_wall","mana_forge","caulnalon"],
+   xp:7000, gold:560, reward:{name:"Antiquarian's Circlet",stat:"worn",at:"medium",aslot:"head",v:26}},
+];
+function arcById(id){ return QUEST_ARCS.find(a=>a.id===id)||null; }
+function questCleared(id){ return isDone(id) || (isRepeatable(id) && repCount(id)>0); }   // a step counts done if completed at least once
+function arcProgress(arc){ const done=arc.steps.filter(questCleared).length; return {done, total:arc.steps.length, complete:done===arc.steps.length}; }
+function arcNextStep(arc){ for(const id of arc.steps) if(!questCleared(id)) return id; return null; }
+function checkArcs(){   // grant the capstone for any arc whose every quest is now cleared (once)
+  for(const arc of QUEST_ARCS){
+    if(player.arcsDone.indexOf(arc.id)>=0) continue;
+    if(!arcProgress(arc).complete) continue;
+    player.arcsDone.push(arc.id);
+    if(arc.xp) gainXP(arc.xp);
+    if(arc.gold) player.gold+=arc.gold;
+    if(arc.reward) player.inv.push(Object.assign({},arc.reward));
+    if(arc.title) player.title=arc.title;
+    toast("STORYLINE COMPLETE"); if(SFX.level)SFX.level();
+    log(`<span style="color:${arc.col}"><b>Storyline complete — ${arc.name}!</b> You are honoured as <b>${arc.title}</b>${arc.reward?`, and receive <b>${arc.reward.name}</b>`:""}. <span style="color:var(--dim)">(+${arc.xp||0} XP · +${arc.gold||0} pyreals)</span></span>`,"sys");
+  }
+}
 // ── multi-quest journal: many bounties can be active at once. activeQuests = [{id, prog:[...]}, …] ──
 let activeQuests=[],questDone=[],tracked=null,npcs=[],taskReps={};  // taskReps: id→times a repeatable bounty has been turned in
 let questFilter={q:"",status:"all",sort:"level"};  // journal "All Bounties" search/filter/sort state (session-only)
@@ -5998,6 +6056,7 @@ function talkQuestGiver(n){
       QUESTS.forEach(nq=>{ if(nq.req===id && !isDone(nq.id) && !isActive(nq.id))
         log(`<span style="color:var(--gold)">A new bounty opens: <b>${nq.name}</b> (Lv ${questLvl(nq.id)}) — seek ${giverWhere(nq.id)}.</span>`,"sys"); });
       if(repGain) grantSocietyRep(repGain);
+      checkArcs();   // a turn-in may complete a story arc → capstone title + reward
       SFX.quest(); toast("QUEST COMPLETE");
       saveGame();
     } else {                                              // ── in progress: nudge + objective tally ──
@@ -6106,10 +6165,27 @@ function societyPanelHTML(){
   }
   return h;
 }
+function arcsPanelHTML(){
+  const doneCount=QUEST_ARCS.filter(a=>arcProgress(a).complete).length;
+  let h=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:10px 0 4px">Storylines <span style="color:var(--dim);text-transform:none;letter-spacing:0">— ${doneCount}/${QUEST_ARCS.length} complete · curated quest arcs across Dereth</span></div>`;
+  h+=QUEST_ARCS.map(arc=>{ const p=arcProgress(arc), pct=Math.round(p.done/p.total*100);
+    const nextId=arcNextStep(arc), nq=nextId?questById(nextId):null;
+    const nextLine=p.complete?`<span style="color:${arc.col}">✓ complete — you are <b>${arc.title}</b></span>`
+      :`<span style="color:var(--dim)">Next: <span style="color:#e8dcc0">${nq?nq.name:"…"}</span> — ${nextId?giverWhere(nextId):""}</span>`;
+    return `<div style="margin-bottom:6px;padding:6px 8px;background:rgba(255,255,255,.03);border:1px solid ${p.complete?arc.col:'var(--border)'};border-radius:6px">
+      <div style="display:flex;justify-content:space-between;gap:8px"><div style="color:${arc.col};font-weight:bold">${arc.name}</div><div style="color:var(--dim)">${p.done}/${p.total}</div></div>
+      <div style="color:#bcae8a;font-style:italic;font-size:11px;margin:2px 0">${arc.blurb}</div>
+      <div style="height:6px;background:rgba(0,0,0,.4);border-radius:3px;overflow:hidden;margin:3px 0"><div style="height:100%;width:${pct}%;background:${arc.col}"></div></div>
+      <div style="font-size:11px">${nextLine}</div>
+    </div>`;
+  }).join("");
+  return h;
+}
 function renderQuestLog(){
   const body=document.getElementById('questlogBody'); if(!body) return;
   const tid=trackedId();
   let h=societyPanelHTML();
+  h+=arcsPanelHTML();
   h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:0 0 4px">Active — ${activeQuests.length}${activeQuests.length?" · click ☆ to track for the compass":""}</div>`;
   if(activeQuests.length){
     h+=activeQuests.map(a=>{ const q=questById(a.id), done=questCompleteId(a.id), isTrk=a.id===tid;
@@ -7036,7 +7112,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,
+      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -7075,6 +7151,7 @@ function applySaveObj(s){
   taskReps=(s.taskReps&&typeof s.taskReps==="object")?Object.assign({},s.taskReps):{};
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
+  player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       return {id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)}; });
