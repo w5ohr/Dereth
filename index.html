@@ -2633,7 +2633,9 @@ function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix
 // each armour material wards one damage element; worn pieces of that material stack a resistance (capped)
 const MAT_RESIST={Steel:"slash",Iron:"pierce",Bronze:"bludgeon",Brass:"slash",Copper:"acid",Granite:"bludgeon",Marble:"bludgeon",
   Alabaster:"pierce",Ceramic:"fire",Leather:"slash",Hide:"pierce",Linen:"acid",Wool:"frost",Silk:"fire",Velvet:"nether",Satin:"shock"};
-function resistVs(el){ if(!el) return 0; let n=0; for(const p of wornPieces()){ if(MAT_RESIST[p.mat]===el) n+=0.16; } return Math.min(0.6,n); }
+function resistVs(el){ if(!el) return 0; let n=0; for(const p of wornPieces()){ if(MAT_RESIST[p.mat]===el) n+=0.16; }
+  if(typeof jewelryBonus==="function") n+=jewelryBonus("protect",el)/100;   // elemental Protection jewelry stacks with armour material wards
+  return Math.min(0.7,n); }
 // Item-set bonus (AC Item Sets): the dominant matching set among equipped pieces grants tiered boons.
 // 3 pieces → +armour & +max-health; 5 pieces → bigger, plus the set's themed skill (folded into gearSkill).
 function dominantSet(){ const c={}; let best=null,bn=0; for(const p of wornPieces()){ if(!p.aset)continue; c[p.aset]=(c[p.aset]||0)+1; if(c[p.aset]>bn){bn=c[p.aset];best=p.aset;} } return {set:best,count:bn}; }
@@ -3188,9 +3190,15 @@ const JEWELRY_BONUS=[
   {kind:"skill",key:"mana",    suf:"of Mana Flow"},       {kind:"skill",key:"arcane",  suf:"of Arcane Lore"},
   {kind:"vital",vs:"mhp",      suf:"of Vigor"},           {kind:"vital",vs:"mmn",      suf:"of the Magus"},
   {kind:"vital",vs:"mst",      suf:"of Stamina"},         {kind:"armor",               suf:"of Warding"},
+  // per-element Protection (AC's elemental protection jewelry) — adds resistance vs one damage type
+  {kind:"protect",el:"fire",  suf:"of Flame Ward"},      {kind:"protect",el:"frost", suf:"of Frost Ward"},
+  {kind:"protect",el:"shock", suf:"of Storm Ward"},      {kind:"protect",el:"acid",  suf:"of Acid Ward"},
+  {kind:"protect",el:"nether",suf:"of Void Ward"},       {kind:"protect",el:"slash", suf:"of Blade Turning"},
+  {kind:"protect",el:"pierce",suf:"of Bodkin Turning"},  {kind:"protect",el:"bludgeon",suf:"of Bludgeon Turning"},
 ];
 function rollJewelryBonus(tier){
   const b=JEWELRY_BONUS[irnd(0,JEWELRY_BONUS.length-1)], t=clamp(tier|0,1,5);
+  if(b.kind==="protect"){ return {kind:"protect",el:b.el,v:irnd(6+t*2,10+t*3),suf:b.suf}; }   // v = % resistance vs that element
   const v=b.kind==="vital"?irnd(14+t*4,22+t*7):b.kind==="armor"?irnd(5+t,9+t*2):irnd(4+t,7+t*2); // skill pts / armour / max-vital
   return {kind:b.kind,key:b.key,vs:b.vs,v,suf:b.suf};
 }
@@ -3206,7 +3214,7 @@ function jewelrySlotFor(it){ const j=player.jewelry||{};
 // sum a bonus kind across all equipped jewelry
 function jewelryBonus(kind,arg){ let n=0;
   for(const it of jewelryItems()){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
-    if(kind==="vital"){ if(bj.vs===arg) n+=bj.v; } else if(kind==="skill"){ if(bj.key===arg) n+=bj.v; } else n+=bj.v; }
+    if(kind==="vital"){ if(bj.vs===arg) n+=bj.v; } else if(kind==="skill"){ if(bj.key===arg) n+=bj.v; } else if(kind==="protect"){ if(bj.el===arg) n+=bj.v; } else n+=bj.v; }
   return n;
 }
 function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ const bj=it&&it.bonus;
@@ -3308,6 +3316,7 @@ function equipItem(it){
 function jewelryDesc(it){ const b=it.bonus; if(!b) return "trinket";
   if(b.kind==="skill") return `+${b.v} ${SKILL_BY_KEY[b.key]?SKILL_BY_KEY[b.key].n:b.key}`;
   if(b.kind==="vital") return `+${b.v} max ${({mhp:"health",mst:"stamina",mmn:"mana"})[b.vs]}`;
+  if(b.kind==="protect") return `+${b.v}% ${b.el} protection`;
   return `+${b.v} armor`; }
 function applyItem(it){
   if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ equipItem(it); return; }
