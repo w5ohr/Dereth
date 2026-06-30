@@ -457,7 +457,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},jewelry:{},gearSkill:{},
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
-  achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
+  achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
   spellBuffs:{},              // active Creature-Enchantment attribute buffs: attr -> {v,t}
@@ -844,6 +844,12 @@ const DUNGEON_THEMES=[
   {env:"Frozen Tomb",   floor:0x2c3848,wall:0x46607a,prop:"ice",     light:0xbfe0ff,kinds:["reedshark","tusker","shadow"],   warden:"olthoi"},
   {env:"Overgrown Ruin",floor:0x24301e,wall:0x3a4a2e,prop:"mushroom",light:0x9af06a,kinds:["mosswart","reedshark","auroch"], warden:"tusker"},
   {env:"The Deep",      floor:0x141420,wall:0x222236,prop:"crystal", light:0x6a8aff,kinds:["olthoi","shadow","gromnie"],     warden:"olthoi"},
+  {env:"Undead Crypt",  floor:0x18161e,wall:0x2a2630,prop:"brazier", light:0xb060ff,kinds:["skeleton","skeleton","shadow"], warden:"skeleton"},
+  {env:"Empyrean Ruins",floor:0x1c2230,wall:0x33405a,prop:"crystal", light:0x6a8aff,kinds:["virindi","shadow","skeleton"],  warden:"virindi"},
+  {env:"Moarsman Cave", floor:0x16242a,wall:0x244650,prop:"ice",     light:0x5ad0d0,kinds:["reedshark","gromnie","mosswart"],warden:"gromnie"},
+  {env:"Lugian Quarry", floor:0x2a2620,wall:0x4a4438,prop:"crystal", light:0x9ab0c0,kinds:["lugian","olthoiworker","olthoi"],warden:"lugian"},
+  {env:"Tumerok Camp",  floor:0x1e2818,wall:0x35471f,prop:"torch",   light:0xff9a3a,kinds:["tumerok","banderling","mattekar"],warden:"tumerok"},
+  {env:"Mattekar Den",  floor:0x222630,wall:0x3a4250,prop:"ice",     light:0xbfe0ff,kinds:["mattekar","reedshark","tusker"], warden:"mattekar"},
 ];
 const DUNGEON_ADJ=["Forgotten","Sunken","Cursed","Ancient","Howling","Blighted","Shattered","Wailing","Crimson","Hollow","Drowned","Buried","Fell","Withered","Gloomed","Frozen","Scorched","Tangled","Whispering","Ruined"];
 // Canonical Asheron's Call dungeons at their real coordinates (docs/asherons-call-world-reference.md).
@@ -881,6 +887,12 @@ const CANON_DUNGEONS=[
   ["Halls of Metos",-56.0,-89.2,4,5],["Secret Chamber of Kresovus",-77.6,28.0,11,5],["Colton Reeyan's Sanctuary",22.9,-37.0,11,5],
   ["Fort Morntide",35.1,-17.8,4,4],["Monouga Feeding Pits",-9.8,-81.0,2,4],["Tusker Temple",-10.5,65.6,0,3],
   ["Tusker Emporium",4.3,95.8,0,3],
+  // — additional canonical themes (undead/Empyrean/Moarsman/Lugian/Tumerok/Mattekar) —
+  ["Undead Temple",-22.0,49.5,12,4],["Crypt of Ashen Tears",18.9,33.4,12,3],["Mausoleum of the Fallen",27.0,64.0,12,3],
+  ["Empyrean Foundry",-25.2,54.2,13,4],["Ancient Empyrean Grotto",52.6,-73.1,13,5],["Halls of Lost Light",-55.0,67.0,13,5],
+  ["Moarsman Trench",-58.0,80.0,14,4],["Sand Shallows Cave",-6.0,40.0,14,2],["Mossy Cave",30.2,28.1,2,1],
+  ["Lugian Quarry",-79.5,17.0,15,5],["Crater Caves",64.9,13.5,5,4],
+  ["Tumerok Stronghold",46.0,-88.0,16,4],["Mattekar Warren",80.0,-55.0,17,4],
 ];
 function buildDungeonList(){
   return CANON_DUNGEONS.map((d,i)=>{
@@ -1158,6 +1170,30 @@ function updateDayNight(dt){
     const nm=waterMesh.material.normalMap; if(nm){const t=now()/1000;nm.offset.set((t*0.018)%1,(t*0.012)%1);} }
   if(waterGlint){waterGlint.position.set(player.x+sky.x*42,0.5,player.z+sky.z*42);
     waterGlint.material.opacity=clamp(sunY*2,0,1)*0.7;waterGlint.material.color.copy(sunSprite?sunSprite.material.color:_sunNoon);}
+}
+
+// ---- carried light: dungeons are pitch dark; the player needs a light source ----
+// a fire-imbued weapon flames, any magical weapon glows, otherwise a plain torch; nothing → near-blind.
+let playerLight=null;
+const _LSRC={fire:0xff7a2a,frost:0x8fd0ff,shock:0xfff0a0,nether:0xb060ff,acid:0x9af06a};
+function playerLightSource(){
+  const w=player.weapon, af=w&&w.affix;
+  if(af&&af.k==="brand"){ const el=af.element;
+    return {color:_LSRC[el]||0xffe0a0,intensity:2.7,dist:27,flicker:el==="fire",src:el==="fire"?"flaming blade":"glowing blade"}; }
+  if(w&&(w.affix||w.legendary||(w.tier|0)>=4)) return {color:0xbfe0ff,intensity:2.1,dist:22,flicker:false,src:"glowing blade"};
+  if(player.hasTorch!==false) return {color:0xffb050,intensity:1.7,dist:18,flicker:true,src:"torch"};
+  return {color:0x6a6a82,intensity:0.32,dist:6,flicker:false,src:"none"};
+}
+function updateInstanceLight(){
+  if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); scene.add(playerLight); }
+  if(inDungeon){
+    hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;        // kill daylight inside
+    scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
+    const ls=playerLightSource(); let inten=ls.intensity;
+    if(ls.flicker) inten*=0.84+0.16*Math.sin(now()/60)+0.06*Math.sin(now()/29); // torch/flame flicker
+    playerLight.color.setHex(ls.color); playerLight.intensity=inten; playerLight.distance=ls.dist;
+    playerLight.position.set(player.x,EYE+0.1,player.z); playerLight.visible=true;
+  } else if(playerLight.visible){ playerLight.visible=false; playerLight.intensity=0; scene.fog.near=40; }
 }
 
 // procedural creature skin: mottled / scaled / spotted texture tinted to base color
@@ -3568,6 +3604,7 @@ function update(dt){
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
   updateWeather(dt);
+  updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   syncCamera(dt);
   updateHUD();
 }
@@ -4685,15 +4722,18 @@ function buildDungeon(def){
   dungeonObjs=[];dungeonMobs=0;dungeonRects=[];const th=def.theme;
   const L=genDungeonLayout(def),wallMat=new THREE.MeshLambertMaterial({color:th.wall,flatShading:true});
   const floorMat=new THREE.MeshLambertMaterial({color:th.floor}),WH=7,Tw=1.0,wy=WH/2,gap=3.2;
+  const ceilMat=new THREE.MeshLambertMaterial({color:new THREE.Color(th.wall).multiplyScalar(0.42).getHex()}); // low, dark vaulted ceiling
   // walkable cells (collision) — rooms + corridors (corridor rects overlap into rooms so the union stays connected)
   for(const r of L.rooms) dungeonRects.push(r.round?{round:true,cx:r.cx,cz:r.cz,rad:r.rad}:{x0:r.cx-r.hx,z0:r.cz-r.hz,x1:r.cx+r.hx,z1:r.cz+r.hz});
   for(const c of L.corridors) dungeonRects.push({x0:c.x0,z0:c.z0,x1:c.x1,z1:c.z1});
   function wallBox(x,z,sx,sz){const w=new THREE.Mesh(new THREE.BoxGeometry(sx,WH,sz),wallMat);w.position.set(x,wy,z);w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);}
   function floorTile(x,z,sx,sz,y){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),floorMat);f.rotation.x=-Math.PI/2;f.position.set(x,y,z);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);}
-  // floors
-  for(const r of L.rooms){ if(r.round){const f=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),floorMat);f.rotation.x=-Math.PI/2;f.position.set(r.cx,0.05,r.cz);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);}
-    else floorTile(r.cx,r.cz,r.hx*2,r.hz*2,0.05); }
-  for(const c of L.corridors) floorTile((c.x0+c.x1)/2,(c.z0+c.z1)/2,c.x1-c.x0,c.z1-c.z0,0.04);
+  function ceilTile(x,z,sx,sz){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),ceilMat);f.rotation.x=Math.PI/2;f.position.set(x,WH,z);scene.add(f);dungeonObjs.push(f);}
+  // floors + matching ceilings (dungeons are enclosed and dark — you need a light source)
+  for(const r of L.rooms){ if(r.round){const f=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),floorMat);f.rotation.x=-Math.PI/2;f.position.set(r.cx,0.05,r.cz);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);
+      const cl=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),ceilMat);cl.rotation.x=Math.PI/2;cl.position.set(r.cx,WH,r.cz);scene.add(cl);dungeonObjs.push(cl);}
+    else { floorTile(r.cx,r.cz,r.hx*2,r.hz*2,0.05); ceilTile(r.cx,r.cz,r.hx*2,r.hz*2); } }
+  for(const c of L.corridors){ floorTile((c.x0+c.x1)/2,(c.z0+c.z1)/2,c.x1-c.x0,c.z1-c.z0,0.04); ceilTile((c.x0+c.x1)/2,(c.z0+c.z1)/2,c.x1-c.x0,c.z1-c.z0); }
   // room walls (centered door gaps where corridors connect)
   for(const r of L.rooms){
     if(r.round){ const seg=24,da=[]; if(r.doors.N)da.push(-Math.PI/2); if(r.doors.S)da.push(Math.PI/2); if(r.doors.E)da.push(0); if(r.doors.W)da.push(Math.PI);
@@ -4755,6 +4795,11 @@ function enterDungeon(def,ex,ez){
   player.x=dungeonSpawn.x;player.z=dungeonSpawn.z;player.invuln=2.5;
   toast(def.name.toUpperCase());
   log(`You descend into the <b>${def.name}</b> (tier ${def.tier}). Slay the guardians, then claim the hoard.`,"sys");
+  const ls=playerLightSource();
+  log(ls.src==="flaming blade"?"Your <b>flaming blade</b> throws a flickering orange light across the dark.":
+      ls.src==="glowing blade"?"Your <b>glowing blade</b> lights the way through the dark.":
+      ls.src==="torch"?"It is pitch dark. You raise a <b>torch</b> against the gloom.":
+      "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
   for(const o of dungeonObjs) scene.remove(o);
