@@ -1311,6 +1311,7 @@ function buildWeapon(){
   const trail=new THREE.Mesh(new THREE.RingGeometry(0.65,1.65,22,1,-Math.PI*0.45,Math.PI*0.9),trailMat);
   trail.rotation.y=Math.PI/2; trail.position.set(0,0.04,0); trail.visible=false; weaponHand.add(trail);
   weapon.userData.trail=trail;
+  weaponHand.userData.blade=blade;   // recoloured to the equipped weapon's material/brand by styleWeaponModel()
   weaponHand.position.set(0.42,-0.42,-0.7);
   weaponHand.rotation.set(0.1,-0.15,0.05);
   weapon.add(weaponHand);
@@ -2461,6 +2462,17 @@ function rollItem(rare,tier){
   return it;
 }
 function weaponProfile(){ const w=player.weapon; return (w&&w.wt&&WEAPON_TYPES[w.wt])||null; }
+// the held weapon's blade takes its colour from the equipped weapon's material, and glows with its brand
+const MAT_TINT={Iron:0x9aa0a8,Steel:0xc0c8d2,Bronze:0xb5793a,Brass:0xc9a43a,Copper:0xb0703a,Silver:0xd8dde4,Gold:0xffd23b,Pyreal:0xffe06a,Platinum:0xd0e0ee,
+  Oak:0x8a6a3a,Mahogany:0x6a3a2a,Teak:0x9a7a4a,Ebony:0x2a2620,Pine:0xb89a6a,Diamond:0xdff0ff,Ruby:0xff5a6a,Sapphire:0x5a8aff,Emerald:0x4ad07a,Jet:0x2a2630,Onyx:0x3a3640};
+const BRAND_GLOW={fire:0xff6a1a,frost:0x6ad0ff,shock:0xfff060,nether:0x9b30ff,acid:0x8ad04a};
+function styleWeaponModel(){
+  if(typeof weaponHand==="undefined"||!weaponHand||!weaponHand.userData.blade) return;
+  const w=player.weapon, blade=weaponHand.userData.blade;
+  blade.material.color.setHex((w&&MAT_TINT[w.mat])||0xc0c8d2);
+  const el=(w&&w.affix&&w.affix.k==="brand")?w.affix.element:null;
+  blade.material.emissive.setHex((el&&BRAND_GLOW[el])||0x000000);
+}
 // rarity grade (from loot tier + affix) → name colour, so deepened itemization reads at a glance
 function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tier||1; const magical=it.affix||it.bonus;
   if(it.legendary) return {n:"legendary",c:"#ff5a5a"};
@@ -2476,6 +2488,7 @@ function equipItem(it){
   if(isWeapon){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
     const wp=WEAPON_TYPES[it.wt]; weaponMode=(wp&&wp.mode==="missile")?"bow":"sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=weaponMode==="sword";bowModel.visible=weaponMode==="bow";}
+    styleWeaponModel();
   } else { recomputeGearSkill(); derive(); } // refresh max-vitals + gear skill bonuses for armour/jewelry
   if(it.stat==="jewelry"){ log(`Equipped <b>${it.name}</b> (${jewelryDesc(it)}).`,"loot"); return; }
   if(it.stat==="worn"){ const sd=ARMOR_SLOT_DEFS.find(d=>d.slot===(it.aslot||"chest")); const at=ARMOR_TYPES[it.at];
@@ -4516,7 +4529,7 @@ function unequipTile(kind,slot){
   if(player.inv.length>=12){ log("Your satchel is full — salvage or sell something first.","warn"); SFX.hit&&SFX.hit(); return; }
   let it=null;
   if(kind==="weapon"){ it=player.weapon; if(!it)return; player.weapon=null; weaponMode="sword";
-    if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=true;bowModel.visible=false;} }
+    if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=true;bowModel.visible=false;} styleWeaponModel(); }
   else if(kind==="armor"){ it=player.armorSlots&&player.armorSlots[slot]; if(!it)return; delete player.armorSlots[slot]; }
   else { it=player.jewelry&&player.jewelry[slot]; if(!it)return; delete player.jewelry[slot]; }
   player.inv.push(it);
@@ -4635,6 +4648,7 @@ function applySaveObj(s){
   player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
   questIdx=s.questIdx||0;questProg=s.questProg||0;questActive=!!s.questActive;
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
+  if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   // restore bound lifestone + spawn there
   if(s.boundLS>=0 && lifestones[s.boundLS]){
