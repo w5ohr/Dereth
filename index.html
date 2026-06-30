@@ -510,7 +510,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
   arcsDone:[],                 // story arcs whose capstone reward has been granted
-  augment:{hp:0,st:0,mn:0},    // permanent boosts absorbed from augmentation gems
+  augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0},    // permanent boosts: augmentation gems + Aetheria sigils
   name:"Adventurer",
   appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
@@ -2638,6 +2638,7 @@ const MAT_RESIST={Steel:"slash",Iron:"pierce",Bronze:"bludgeon",Brass:"slash",Co
   Alabaster:"pierce",Ceramic:"fire",Leather:"slash",Hide:"pierce",Linen:"acid",Wool:"frost",Silk:"fire",Velvet:"nether",Satin:"shock"};
 function resistVs(el){ if(!el) return 0; let n=0; for(const p of wornPieces()){ if(MAT_RESIST[p.mat]===el) n+=0.16; }
   if(typeof jewelryBonus==="function") n+=jewelryBonus("protect",el)/100;   // elemental Protection jewelry stacks with armour material wards
+  if(player.augment&&player.augment.resist) n+=player.augment.resist;        // Blue Aetheria: permanent all-element resistance
   return Math.min(0.7,n); }
 // Item-set bonus (AC Item Sets): the dominant matching set among equipped pieces grants tiered boons.
 // 3 pieces → +armour & +max-health; 5 pieces → bigger, plus the set's themed skill (folded into gearSkill).
@@ -2658,7 +2659,7 @@ function applyHit(m,base,opts){ opts=opts||{};
     if(opts.element==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
     else if(opts.element==="frost"){m.slow=Math.max(m.slow,0.4);}
     else if(opts.element==="shock"&&Math.random()<0.35){m.atkCd=Math.max(m.atkCd,1.0);} }
-  const crit=Math.random()<clamp(0.07+player.attr.Coordination*0.004+(opts.crit||0)+itemBuff("crit"),0,0.6); if(crit)dmg*=2;  // Heart Seeker
+  const crit=Math.random()<clamp(0.07+player.attr.Coordination*0.004+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2;  // Heart Seeker + Yellow Aetheria
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -3169,8 +3170,12 @@ const AUGMENT_ITEMS=[
   {name:"Gem of Perseverance",    aug:{st:25}, desc:"+25 max stamina, forever"},
   {name:"Gem of the Magus",       aug:{mn:25}, desc:"+25 max mana, forever"},
   {name:"Gem of Enlightenment",   aug:{skillpts:1}, desc:"+1 skill credit, forever"},
+  // Aetheria sigils (AC's permanent power growth) — three colours, bound forever when absorbed
+  {name:"Blue Aetheria",  aug:{resist:0.06}, desc:"+6% resistance to every element, forever", aetheria:true},
+  {name:"Red Aetheria",   aug:{magic:3},     desc:"+3 to every school of magic, forever",     aetheria:true},
+  {name:"Yellow Aetheria",aug:{crit:0.04},   desc:"+4% critical hit chance, forever",          aetheria:true},
 ];
-function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,tier:5,legendary:true}; }
+function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,tier:5,legendary:true}; }
 function rollNamedItem(){
   const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
   const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
@@ -3233,6 +3238,7 @@ function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ cons
   const sb=(typeof setBonus==="function")?setBonus():null; if(sb&&sb.skill) g[sb.skill]=(g[sb.skill]||0)+sb.skillV;   // full-set skill boon
   const w=player.weapon;   // an equipped casting focus lends its bonus to every magic school (+ mana & arcane)
   if(w&&w.wt==="focus"&&w.foc){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+w.foc; const h=Math.round(w.foc*0.5); g.mana=(g.mana||0)+h; g.arcane=(g.arcane||0)+h; }
+  if(player.augment&&player.augment.magic){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+player.augment.magic; }   // Red Aetheria: permanent +all magic schools
   player.gearSkill=g; }
 function rollItem(rare,tier){
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
@@ -3339,9 +3345,11 @@ function applyItem(it){
   else if(it.stat==="st"){player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
-  else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0};
+  else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
     player.augment.hp+=a.hp||0; player.augment.st+=a.st||0; player.augment.mn+=a.mn||0; if(a.skillpts) player.skillPts+=a.skillpts;
-    derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.`,"loot"); if(SFX.level)SFX.level(); toast("AUGMENTED"); }
+    player.augment.resist=(player.augment.resist||0)+(a.resist||0); player.augment.magic=(player.augment.magic||0)+(a.magic||0); player.augment.crit=(player.augment.crit||0)+(a.crit||0);
+    if(typeof recomputeGearSkill==="function") recomputeGearSkill();
+    derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
   else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor.`,"sys"); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
   else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
@@ -7586,7 +7594,7 @@ function applySaveObj(s){
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
-  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0}:{hp:0,st:0,mn:0};
+  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
