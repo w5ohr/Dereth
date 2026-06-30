@@ -842,16 +842,21 @@ function tryLoadGltfAvatar(){
 }
 // ---- real rigged "people" pulled from public CDNs, randomly assigned to strolling townsfolk ----
 // (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
-let USE_GLTF_NPCS=true;            // set false to keep all-procedural townsfolk
-const MAX_GLTF_NPCS=18;            // cap skinned NPCs for performance; the rest stay procedural
-// public-CDN rigged human/character models (all verified loadable & CORS-friendly for in-browser fetch).
+let USE_GLTF_NPCS=true;            // online-required (offline support dropped); false = all-procedural townsfolk
+const MAX_GLTF_NPCS=40;            // cap skinned NPCs for performance; the rest stay procedural
+// public-CDN rigged human/character models — every URL verified to return valid glTF & load in-browser.
 const GLTF_PEOPLE=[
-  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb",          // man (idle/walk/run)
-  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Xbot.glb",             // man (idle/walk/run)
-  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb", // man (walk)
-  "https://cdn.jsdelivr.net/gh/BabylonJS/Assets@master/meshes/HVGirl.glb",                       // woman (idle/walk/run)
-  "https://modelviewer.dev/shared-assets/models/Astronaut.glb",                                  // astronaut (person)
-  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb", // robot character
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb",            // man (idle/walk/run)
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Xbot.glb",               // man (idle/walk/run)
+  "https://cdn.jsdelivr.net/gh/BabylonJS/Assets@master/meshes/Xbot.glb",                          // man (variant)
+  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb",      // man (walk)
+  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/RiggedFigure/glTF-Binary/RiggedFigure.glb",// humanoid
+  "https://cdn.jsdelivr.net/gh/BabylonJS/Assets@master/meshes/HVGirl.glb",                        // woman (idle/walk/run)
+  "https://modelviewer.dev/shared-assets/models/Astronaut.glb",                                   // astronaut (person)
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb",       // robot character
+  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/BrainStem/glTF-Binary/BrainStem.glb",      // robot
+  // Ready Player Me gives unlimited distinct men/women — paste full-body URLs here to reach 25+:
+  // "https://models.readyplayer.me/<id>.glb",
 ];
 let gltfPeople=[], gltfPeopleStarted=false;
 function loadGltfPeople(){

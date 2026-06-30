@@ -43,8 +43,14 @@ humans pulled from public CDNs and assigned at random:
   **`THREE.SkeletonUtils.clone`** (skinned meshes need this, not plain `.clone()`), assigns a
   random model to up to `MAX_GLTF_NPCS` (18) townsfolk, and plays idle/walk via a per-NPC
   `AnimationMixer`. Flag: `USE_GLTF_NPCS` (default **true**).
-- **Needs internet** for the CDN fetch. Offline (or any failure) → those NPCs stay
-  **procedural**. Set `USE_GLTF_NPCS=false` to force all-procedural townsfolk.
+- **Online-required** (offline support dropped). A failed fetch still falls back to procedural
+  for that NPC. Set `USE_GLTF_NPCS=false` to force all-procedural townsfolk.
+- The pool is **9 verified-loadable models** (Soldier, Xbot ×2 variants, CesiumMan,
+  RiggedFigure, HVGirl=woman, Astronaut, RobotExpressive, BrainStem), cap `MAX_GLTF_NPCS=40`.
+  Note: free hot-linkable *rigged human* glTFs are scarce — to reach ~25 distinct men/women,
+  paste **Ready Player Me** full-body URLs (`https://models.readyplayer.me/<id>.glb`) into
+  `GLTF_PEOPLE`; RPM's CDN works in a normal browser (it was just blocked from the dev sandbox).
+  Avoid Draco-compressed models (e.g. Babylon YetiSmall) unless you also vendor a DRACOLoader.
 - Quest-givers/vendors/criers stay procedural (they keep their markers, labels, and looks).
 - `vendor/SkeletonUtils.js` (r128 global build) is required and loaded after the GLTFLoader.
 
