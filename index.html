@@ -844,11 +844,14 @@ function tryLoadGltfAvatar(){
 // (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
 let USE_GLTF_NPCS=true;            // set false to keep all-procedural townsfolk
 const MAX_GLTF_NPCS=18;            // cap skinned NPCs for performance; the rest stay procedural
+// public-CDN rigged human/character models (all verified loadable & CORS-friendly for in-browser fetch).
 const GLTF_PEOPLE=[
-  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb",
-  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Xbot.glb",
-  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb",
-  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb",
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb",          // man (idle/walk/run)
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Xbot.glb",             // man (idle/walk/run)
+  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb", // man (walk)
+  "https://cdn.jsdelivr.net/gh/BabylonJS/Assets@master/meshes/HVGirl.glb",                       // woman (idle/walk/run)
+  "https://modelviewer.dev/shared-assets/models/Astronaut.glb",                                  // astronaut (person)
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb", // robot character
 ];
 let gltfPeople=[], gltfPeopleStarted=false;
 function loadGltfPeople(){

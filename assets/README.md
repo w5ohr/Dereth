@@ -30,9 +30,15 @@ without changing engines (see `docs/` discussion).
 ## CDN "people" for NPCs (experimental, ON by default)
 Beyond the single player avatar, strolling **townsfolk** can be populated with real rigged
 humans pulled from public CDNs and assigned at random:
-- `GLTF_PEOPLE` (in `index.html`) lists CDN `.glb` URLs — currently three.js's **Soldier**
-  & **Xbot**, Khronos **CesiumMan** (rigged humans), and three.js **RobotExpressive**
-  (rigged character). All verified loadable from jsDelivr.
+- `GLTF_PEOPLE` (in `index.html`) lists CDN `.glb` URLs of rigged men & women, all verified
+  loadable & CORS-friendly for in-browser fetch:
+  - **Soldier**, **Xbot** (men) — three.js examples
+  - **CesiumMan** (man) — Khronos sample models
+  - **HVGirl** (woman) — Babylon.js Assets
+  - **Astronaut** (person) — Google model-viewer shared assets
+  - **RobotExpressive** (character) — three.js examples
+  (Ready Player Me men/women avatars work too — add `https://models.readyplayer.me/<id>.glb`
+  — but their CDN was unreachable from this build's network, so they're not in the default list.)
 - `loadGltfPeople()` downloads them once; `assignGltfNpcs()` clones each via
   **`THREE.SkeletonUtils.clone`** (skinned meshes need this, not plain `.clone()`), assigns a
   random model to up to `MAX_GLTF_NPCS` (18) townsfolk, and plays idle/walk via a per-NPC
