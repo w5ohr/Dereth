@@ -1762,19 +1762,31 @@ function buildWorld(){
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8);
   // vendors in every town: capitals host a full market (one of each trade), smaller
   // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener)
-  const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter"];
+  const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
   CITIES.forEach((c,i)=>{
-    if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter"];
-      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; addMerchant(c.x+Math.cos(a)*12,c.z+Math.sin(a)*12,vt); });
+    if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
+      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; addMerchant(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
     } else {
       addMerchant(c.x-9,c.z-7,"provisioner");
       addMerchant(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
+      addMerchant(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
     }
   });
   for(const d of DUNGEONS) addEntrance(d);
   // capital portal network (step between the three capitals)
   for(let i=0;i<CAPITALS.length;i++){const a=CAPITALS[i],b=CAPITALS[(i+1)%CAPITALS.length];
     addPortal(a.x+11,a.z-3,{x:b.x,z:b.z+6,name:b.name});}
+  // recurring inter-town "Foundry" portal lines (canonical AC) — clusters of towns each route
+  // to one destination; we stand a Foundry portal beside every origin town that leads there.
+  const FOUNDRY_LINES=[
+    {label:"Effigy Foundry",dest:"Cragstone",from:["Zaikhal","Al-Jalima","Uziz","Khayyaban","Hebian-To","Lin","Kryst"]},
+    {label:"Mammet Foundry",dest:"Baishi",from:["Plateau Village","Stonehold","Sawato","Tufa","MacNiall's Freehold"]},
+    {label:"Mannikin Foundry",dest:"Nanto",from:["Al-Arqas","Samsur","Shoushi","Yaraq","Holtburg","Lytelthorpe","Rithwic"]},
+    {label:"Colossus Foundry",dest:"Fort Tethana",from:["Kara","Ayan Baqur","Wai Jhou"]},
+  ];
+  for(const fl of FOUNDRY_LINES){ const d=CITIES.find(c=>c.name===fl.dest); if(!d) continue;
+    for(const fn of fl.from){ const o=CITIES.find(c=>c.name===fn); if(!o) continue;
+      addPortal(o.x+13,o.z+5,{x:d.x-13,z:d.z+5,name:fl.label+" → "+d.name}); } }
   // roads linking every city to its capital, and the capitals to each other
   genRoads();buildRoads();
   // gathering nodes scattered across the wilds
@@ -4043,6 +4055,15 @@ function genGearStock(){ const out=[]; for(const t of [1,2,2,3,3,4,5]){
   let it=null; for(let k=0;k<8;k++){ const r=rollItem(t>=4,t); if(!r.scroll){it=r;break;} } if(!it) continue;
   out.push({name:rarityName(it),desc:gearDesc(it),cost:gearPrice(it),ico:gearIco(it),gear:it}); } return out; }
 function gearVendorStock(){ if(activeShop){ if(!activeShop._stock||!activeShop._stock.length) activeShop._stock=genGearStock(); return activeShop._stock; } return genGearStock(); }
+// ---- Jeweler: rolls finished jewelry (ring/bracelet/necklace), each bearing a cantrip bonus ----
+function rollJewelryItem(tier){
+  const bases=[["Ring","finger"],["Band","finger"],["Bracelet","wrist"],["Bangle","wrist"],["Amulet","neck"],["Pendant","neck"]];
+  const b=bases[irnd(0,bases.length-1)], bonus=rollJewelryBonus(tier), pool=MATERIALS.other, mat=pool[irnd(0,pool.length-1)];
+  return {name:`${mat} ${b[0]} ${bonus.suf}`,stat:"jewelry",jtype:b[1],bonus,tier:clamp(tier|0,1,5),v:0};
+}
+function genJewelryStock(){ const out=[]; for(const t of [1,2,2,3,3,4]){ const it=rollJewelryItem(t);
+  out.push({name:rarityName(it),desc:gearDesc(it),cost:gearPrice(it),ico:gearIco(it),gear:it}); } return out; }
+function jewelerStock(){ if(activeShop){ if(!activeShop._stock||!activeShop._stock.length) activeShop._stock=genJewelryStock(); return activeShop._stock; } return genJewelryStock(); }
 // spell-component tapers (AC): colored tapers empower a cast a little; the universal
 // Prismatic Taper empowers it more. Bought in bundles; consumed when you cast offensive/healing magic.
 const TAPER_STOCK=[
@@ -4077,6 +4098,11 @@ const VENDOR_TYPES={
     {name:"Plate Greaves",cost:160,desc:"Heavy leg armour.",ico:"🦵",gear:{name:"Plate Greaves",stat:"worn",at:"heavy",aslot:"legs",v:20}}]},
   scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>TAPER_STOCK.concat(scrollStock())},
   outfitter:{title:"Outfitter",marker:"💰",mcol:"#ffcf6b",robe:0x7a5a2a,stock:gearVendorStock},
+  healer:{title:"Healer",marker:"✚",mcol:"#ff8aa0",robe:0x8a2236,heal:true,stock:()=>[
+    {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
+    {name:"Greater Health Potion",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
+    {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"}]},
+  jeweler:{title:"Jeweler",marker:"💍",mcol:"#9af0ff",robe:0x2a5a6a,stock:jewelerStock},
 };
 let activeShop=null;
 function buildMerchant(vt){
@@ -4122,13 +4148,19 @@ function buildShop(){
     else if(it.scroll){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name}); log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
     else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
     SFX.gold();buildShop();updateHUD();saveGame();});
-  // respec service (provisioners/apothecaries only)
+  // services: respec (provisioners) and full healing (healers)
   const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0),rcost=100;
   const rwrap=document.getElementById('shopRespec');
-  if(def.respec){ rwrap.innerHTML=`<div class="row"><div><span class="lab">⟳ Respec Attributes</span> <span class="desc">— refund ${allocated} allocated points to reallocate</span></div><div class="ctl"><button class="tbtn" id="respecBtn" ${(allocated<=0||player.gold<rcost)?"disabled":""}>Respec — ${rcost}p</button></div></div>`;
-    const rb=document.getElementById('respecBtn');
-    if(rb) rb.onclick=()=>{ if(player.gold>=rcost&&allocated>0){player.gold-=rcost;ATTRS.forEach(a=>{player.skillPts+=(player.attr[a]-10);player.attr[a]=10;});derive();SFX.quest();buildShop();updateHUD();saveGame();log("Your attributes are unmade — reallocate via the character sheet (C).","sys");} };
-  } else rwrap.innerHTML="";
+  let svc="";
+  if(def.respec) svc+=`<div class="row"><div><span class="lab">⟳ Respec Attributes</span> <span class="desc">— refund ${allocated} allocated points to reallocate</span></div><div class="ctl"><button class="tbtn" id="respecBtn" ${(allocated<=0||player.gold<rcost)?"disabled":""}>Respec — ${rcost}p</button></div></div>`;
+  if(def.heal){ const need=Math.max(0,Math.round(player.mhp-player.hp)+Math.round(player.mmn-player.mn)+Math.round(player.mst-player.st)), hcost=Math.max(10,Math.ceil(need*0.25));
+    svc+=`<div class="row"><div><span class="lab">✚ Mend Wounds</span> <span class="desc">— restore health, stamina &amp; mana to full</span></div><div class="ctl"><button class="tbtn" id="healBtn" ${(need<=0||player.gold<hcost)?"disabled":""}>Heal — ${hcost}p</button></div></div>`; }
+  rwrap.innerHTML=svc;
+  const rb=document.getElementById('respecBtn');
+  if(rb) rb.onclick=()=>{ if(player.gold>=rcost&&allocated>0){player.gold-=rcost;ATTRS.forEach(a=>{player.skillPts+=(player.attr[a]-10);player.attr[a]=10;});derive();SFX.quest();buildShop();updateHUD();saveGame();log("Your attributes are unmade — reallocate via the character sheet (C).","sys");} };
+  const hb=document.getElementById('healBtn');
+  if(hb) hb.onclick=()=>{ const need=Math.max(0,Math.round(player.mhp-player.hp)+Math.round(player.mmn-player.mn)+Math.round(player.mst-player.st)),hcost=Math.max(10,Math.ceil(need*0.25));
+    if(need>0&&player.gold>=hcost){player.gold-=hcost;player.hp=player.mhp;player.mn=player.mmn;player.st=player.mst;floater(player.x,EYE+0.5,player.z,"Mended","#ff8aa0");SFX.heal();buildShop();updateHUD();saveGame();log("The Healer mends your wounds — you are restored to full.","heal");} };
   const sell=document.getElementById('shopSell');
   if(!player.inv.length){ sell.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Nothing to sell.</div>`; return; }
   sell.innerHTML="";
