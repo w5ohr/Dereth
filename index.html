@@ -446,7 +446,7 @@ const ATTR_DESC={Strength:"Melee damage",Endurance:"Health & stamina",Coordinati
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   attr:{Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10},
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
-  level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},ringItem:null,neckItem:null,gearSkill:{},
+  level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},jewelry:{},gearSkill:{},
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
@@ -2004,8 +2004,8 @@ function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix
 // 3 pieces → +armour & +max-health; 5 pieces → bigger, plus the set's themed skill (folded into gearSkill).
 function dominantSet(){ const c={}; let best=null,bn=0; for(const p of wornPieces()){ if(!p.aset)continue; c[p.aset]=(c[p.aset]||0)+1; if(c[p.aset]>bn){bn=c[p.aset];best=p.aset;} } return {set:best,count:bn}; }
 function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,set:d.set,armor:0,mhp:0,skill:null,skillV:0};
-  const armor=d.count>=5?22:d.count>=4?12:6, mhp=d.count*10, skill=d.count>=5?ARMOR_SET_SKILL[d.set]:null;
-  return {count:d.count,set:d.set,armor,mhp,skill,skillV:skill?10:0}; }
+  const armor=d.count>=7?28:d.count>=5?16:d.count>=4?10:6, mhp=d.count*9, skill=d.count>=7?ARMOR_SET_SKILL[d.set]:null;
+  return {count:d.count,set:d.set,armor,mhp,skill,skillV:skill?12:0}; }
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
@@ -2290,19 +2290,22 @@ const ITEM_BASE=[
   {n:"Atlatl",stat:"weapon",wt:"atlatl",v:[5,12]},{n:"Amuli Atlatl",stat:"weapon",wt:"atlatl",v:[6,13]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
-  {n:"Ring",stat:"jewelry",jslot:"ring",v:[0,0]},{n:"Band",stat:"jewelry",jslot:"ring",v:[0,0]},
-  {n:"Signet",stat:"jewelry",jslot:"ring",v:[0,0]},{n:"Bracelet",stat:"jewelry",jslot:"ring",v:[0,0]},
-  {n:"Amulet",stat:"jewelry",jslot:"neck",v:[0,0]},{n:"Necklace",stat:"jewelry",jslot:"neck",v:[0,0]},
-  {n:"Pendant",stat:"jewelry",jslot:"neck",v:[0,0]}];
+  {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
+  {n:"Signet",stat:"jewelry",jtype:"finger",v:[0,0]},
+  {n:"Bracelet",stat:"jewelry",jtype:"wrist",v:[0,0]},{n:"Bangle",stat:"jewelry",jtype:"wrist",v:[0,0]},
+  {n:"Amulet",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Necklace",stat:"jewelry",jtype:"neck",v:[0,0]},
+  {n:"Pendant",stat:"jewelry",jtype:"neck",v:[0,0]}];
 // ── Multi-slot armour (AC-style): five worn slots, each its own piece. Loot generates a piece per
 //    armour set × slot, e.g. "Steel Chainmail Greaves", "Diamond Amuli Gauntlets". ──
-const ARMOR_SLOTS=["head","chest","hands","legs","feet"];
+const ARMOR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet"];
 const ARMOR_SLOT_DEFS=[
-  {slot:"head", suf:"Helm",       ico:"⛑", vMul:0.6},
-  {slot:"chest",suf:"Breastplate",ico:"🛡", vMul:1.0},
-  {slot:"hands",suf:"Gauntlets",  ico:"🧤", vMul:0.5},
-  {slot:"legs", suf:"Greaves",    ico:"🦵", vMul:0.8},
-  {slot:"feet", suf:"Boots",      ico:"🥾", vMul:0.5},
+  {slot:"head",    suf:"Helm",       ico:"⛑", vMul:0.55},
+  {slot:"chest",   suf:"Breastplate",ico:"🛡", vMul:1.0},
+  {slot:"upperarm",suf:"Pauldrons",  ico:"💪", vMul:0.55},
+  {slot:"lowerarm",suf:"Vambraces",  ico:"🦾", vMul:0.45},
+  {slot:"hands",   suf:"Gauntlets",  ico:"🧤", vMul:0.40},
+  {slot:"legs",    suf:"Greaves",    ico:"🦵", vMul:0.80},
+  {slot:"feet",    suf:"Boots",      ico:"🥾", vMul:0.45},
 ];
 const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slots scale off this), full-set skill boon
   {n:"Brigandine",at:"light", base:13,skill:"missiled"},{n:"Chiran",at:"light", base:12,skill:"healing"},{n:"Amuli",at:"light", base:14,skill:"war"},
@@ -2403,13 +2406,22 @@ function rollJewelryBonus(tier){
   const v=b.kind==="vital"?irnd(14+t*4,22+t*7):b.kind==="armor"?irnd(5+t,9+t*2):irnd(4+t,7+t*2); // skill pts / armour / max-vital
   return {kind:b.kind,key:b.key,vs:b.vs,v,suf:b.suf};
 }
-// sum a bonus kind across both equipped jewelry slots (+ worn-armour affix for armour/vital)
+// five jewelry slots: a ring on each hand, a bracelet on each wrist, and a necklace
+const JEWELRY_SLOTS=["lfinger","rfinger","lwrist","rwrist","neck"];
+function jewelryItems(){ const j=player.jewelry||{}; const r=[]; for(const s of JEWELRY_SLOTS){ if(j[s]) r.push(j[s]); } return r; }
+// which slot a piece goes in: necklaces → neck; rings → an open finger (else left); bracelets → an open wrist (else left)
+function jewelrySlotFor(it){ const j=player.jewelry||{};
+  if(it.jtype==="neck") return "neck";
+  const pair=it.jtype==="wrist"?["lwrist","rwrist"]:["lfinger","rfinger"];
+  return (!j[pair[0]])?pair[0]:(!j[pair[1]])?pair[1]:pair[0];
+}
+// sum a bonus kind across all equipped jewelry
 function jewelryBonus(kind,arg){ let n=0;
-  for(const it of [player.ringItem,player.neckItem]){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
+  for(const it of jewelryItems()){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
     if(kind==="vital"){ if(bj.vs===arg) n+=bj.v; } else if(kind==="skill"){ if(bj.key===arg) n+=bj.v; } else n+=bj.v; }
   return n;
 }
-function recomputeGearSkill(){ const g={}; for(const it of [player.ringItem,player.neckItem]){ const bj=it&&it.bonus;
+function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ const bj=it&&it.bonus;
   if(bj&&bj.kind==="skill") g[bj.key]=(g[bj.key]||0)+bj.v; }
   const sb=(typeof setBonus==="function")?setBonus():null; if(sb&&sb.skill) g[sb.skill]=(g[sb.skill]||0)+sb.skillV;   // full-set skill boon
   player.gearSkill=g; }
@@ -2431,7 +2443,7 @@ function rollItem(rare,tier){
   if(base.at) it.at=base.at;
   if(base.aslot) it.aslot=base.aslot;
   if(base.aset) it.aset=base.aset;
-  if(base.jslot){ it.jslot=base.jslot; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; return it; } // jewelry always bears a cantrip
+  if(base.jtype){ it.jtype=base.jtype; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; return it; } // jewelry always bears a cantrip
   // affix roll: only gear (weapon/worn/armor), favouring rares & deep delves
   const affixable=base.stat==="weapon"||base.stat==="worn"||base.stat==="armor";
   if(affixable&&(rare||tier>=4)&&Math.random()<(rare?0.85:0.4)){
@@ -2449,7 +2461,7 @@ function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tie
 function rarityName(it){ const r=itemRarity(it); return `<span style="color:${r.c}">${it.name}</span>`; }
 function equipItem(it){
   let prev, isWeapon=it.stat==="weapon";
-  if(it.stat==="jewelry"){ const slot=it.jslot==="neck"?"neckItem":"ringItem"; prev=player[slot]; player[slot]=it; }
+  if(it.stat==="jewelry"){ player.jewelry=player.jewelry||{}; const slot=jewelrySlotFor(it); prev=player.jewelry[slot]; player.jewelry[slot]=it; }
   else if(it.stat==="worn"){ const asl=ARMOR_SLOTS.indexOf(it.aslot)>=0?it.aslot:"chest"; player.armorSlots=player.armorSlots||{}; prev=player.armorSlots[asl]; player.armorSlots[asl]=it; }
   else { prev=player.weapon; player.weapon=it; }
   if(prev) player.inv.push(prev);
@@ -4488,9 +4500,9 @@ function buildTinker(){
       <div style="font-size:11px;margin-top:4px">⚔ ${player.weapon?rarityName(player.weapon)+" (+"+player.weapon.v+")"+(WEAPON_TYPES[player.weapon.wt]?" · "+WEAPON_TYPES[player.weapon.wt].blurb:""):"<span style='color:var(--dim)'>bare fists</span>"}</div>
       <div style="font-size:11px">🛡 Armor <b>+${wornArmorV()}</b> ${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return `<span style="color:var(--dim)">${d.ico}</span>`+(p?rarityName(p):"<span style='color:#5a5346'>·</span>");}).join(" ")}</div>
       <div style="font-size:10px;color:var(--dim);margin-top:1px">${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return p?`${d.slot}: ${esc(p.name)} (+${p.v})`:"";}).filter(Boolean).join(" &nbsp;·&nbsp; ")||"no armor worn"}</div>
-      ${(()=>{const sb=setBonus();return sb.count>=3?`<div style="font-size:11px;color:#9be08a;margin-top:2px">✦ ${esc(sb.set)} Set (${sb.count}/5): +${sb.armor} armor · +${sb.mhp} max health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>`:"";})()}
-      <div style="font-size:11px">💍 ${player.ringItem?rarityName(player.ringItem)+" · "+jewelryDesc(player.ringItem):"<span style='color:var(--dim)'>no ring</span>"}</div>
-      <div style="font-size:11px">📿 ${player.neckItem?rarityName(player.neckItem)+" · "+jewelryDesc(player.neckItem):"<span style='color:var(--dim)'>no necklace</span>"}</div>
+      ${(()=>{const sb=setBonus();return sb.count>=3?`<div style="font-size:11px;color:#9be08a;margin-top:2px">✦ ${esc(sb.set)} Set (${sb.count}/7): +${sb.armor} armor · +${sb.mhp} max health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>`:"";})()}
+      <div style="font-size:11px;margin-top:2px">${[["lfinger","💍"],["rfinger","💍"],["lwrist","⌚"],["rwrist","⌚"],["neck","📿"]].map(([s,ic])=>{const p=player.jewelry&&player.jewelry[s];return `<span style="color:var(--dim)">${ic}</span>`+(p?rarityName(p):"<span style='color:#5a5346'>·</span>");}).join(" ")}</div>
+      <div style="font-size:10px;color:var(--dim);margin-top:1px">${JEWELRY_SLOTS.map(s=>{const p=player.jewelry&&player.jewelry[s];return p?`${({lfinger:"L finger",rfinger:"R finger",lwrist:"L wrist",rwrist:"R wrist",neck:"neck"})[s]}: ${esc(p.name)} (${jewelryDesc(p)})`:"";}).filter(Boolean).join(" &nbsp;·&nbsp; ")||"no jewelry"}</div>
     </div>`;
   document.getElementById('tinkW').onclick=()=>{ if(player.materials>=wCost){player.materials-=wCost;player.weaponTink+=2;SFX.quest();buildTinker();updateHUD();saveGame();} };
   document.getElementById('tinkA').onclick=()=>{ if(player.materials>=aCost){player.materials-=aCost;player.armorTink+=3;player.armor+=3;SFX.quest();buildTinker();updateHUD();saveGame();} };
@@ -4519,7 +4531,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot||"chest"}`:it.stat==="jewelry"?`${it.jslot==="neck"?"necklace":"ring"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot||"chest"}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
       <div class="ctl"><button class="tbtn" data-eq="${i}">Equip</button><button class="tbtn" data-sv="${i}">Salvage</button></div>`;
@@ -4541,7 +4553,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,ringItem:player.ringItem,neckItem:player.neckItem,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,
       tapers:player.tapers,prismTapers:player.prismTapers,
       elixMight:player.elixMight,elixSwift:player.elixSwift,
@@ -4569,7 +4581,8 @@ function applySaveObj(s){
     elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
     achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
-    weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),ringItem:s.ringItem||null,neckItem:s.neckItem||null,gearSkill:{},
+    weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
+    jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
     skills:migrateSkills(s.skills),patron:!!s.patron,vitae:s.vitae||0,heritage:s.heritage||"aluvian"});
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
