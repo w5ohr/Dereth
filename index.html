@@ -168,10 +168,15 @@
     <div class="attr"><span>Vitae</span><b id="sVitae">—</b></div>
     <div class="attr" id="evRow" style="display:none"><span style="color:#ffb347">Incursion</span><b id="sEvent" style="color:#ffb347">—</b></div>
   </div>
-  <div id="quest" class="panel" style="top:372px;right:12px;width:150px;font-size:11px;display:none">
+  <div id="quest" class="panel" style="top:372px;right:12px;width:182px;font-size:11px;display:none">
     <h4 style="margin:0 0 4px;color:var(--gold);font-size:11px;letter-spacing:.5px;text-transform:uppercase">Quest</h4>
     <div id="questText" style="line-height:1.4">—</div>
-    <div id="questProg" style="color:var(--gold);margin-top:4px;font-weight:bold"></div>
+    <div id="questProg" style="color:var(--gold);margin-top:4px;line-height:1.45"></div>
+  </div>
+  <div id="questlog" class="panel" style="display:none;left:50%;top:50%;transform:translate(-50%,-50%);width:470px;max-height:76vh;overflow:auto;z-index:25;pointer-events:auto;flex-direction:column">
+    <h3 style="margin:0 0 8px;color:var(--gold)">Quest Log</h3>
+    <div id="questlogBody" style="font-size:12px;line-height:1.5"></div>
+    <div style="color:var(--dim);font-size:11px;margin-top:10px">Press J or Esc to close · accept &amp; turn in bounties at Asheron's Emissary (gold !)</div>
   </div>
   <div id="log"><div class="panel2" id="logInner"></div></div>
   <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say… (Enter · Esc · /who /tell /r /p /party)"
@@ -3638,6 +3643,8 @@ window.addEventListener('keydown',e=>{
   if(k==="t"){ if(document.getElementById('tinker').style.display==="flex") closeTinker(); else openTinker(); }
   if(k==="b"){ if(document.getElementById('codex').style.display==="flex") closeCodex(); else openCodex(); }
   if(k==="k"){ if(document.getElementById('spellbook').style.display==="flex") closeSpellbook(); else openSpellbook(); }
+  if(k==="j"){ if(document.getElementById('questlog').style.display==="flex") closeQuestLog(); else openQuestLog(); }
+  if(k==="escape" && document.getElementById('questlog').style.display==="flex") closeQuestLog();
   if(k==="\\") cycleLoadout();   // quick-swap to the next saved spell loadout
   if(k==="r") drinkPotion("potHealth",60,"hp");
   if(k==="g") drinkPotion("potGreat",150,"hp");
@@ -3676,7 +3683,7 @@ function currentPrompt(){
     if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
     if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
     if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
-    const q=QUESTS[questIdx];return questActive?(questProg>=q.count?"Turn in quest (E)":"Speak to the Emissary (E)"):"Accept a bounty (E)";}}
+    return questActive?(questComplete()?"Turn in quest (E)":"Speak to the Emissary (E)"):"Accept a bounty (E)";}}
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8) return "Trade with the "+(sh.o.title||"Vendor")+" (E)";}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4) return "Descend into "+ne.e.def.name+" (E)";}
   for(const tp of tnPortals) if(nr(tp.x,tp.z)<3.2) return "Enter the Town Network (E)";
@@ -4434,11 +4441,11 @@ function drawCompass(){
   } else marker(dungeonExit.x,dungeonExit.z,"#6aa0ff");
   // quest objective: gold diamond toward the target
   if(questActive&&!inDungeon){
-    const q=QUESTS[questIdx];let tx,tz,bd=Infinity;
-    if(q.type==="slay"){for(const mm of monsters){if(mm.kind===q.kind&&!mm.isDungeon&&!mm.isBoss){const d=Math.hypot(mm.x-player.x,mm.z-player.z);if(d<bd){bd=d;tx=mm.x;tz=mm.z;}}}}
-    else if(q.type==="gather"){for(const n of nodes){if(!n.depleted){const d=Math.hypot(n.x-player.x,n.z-player.z);if(d<bd){bd=d;tx=n.x;tz=n.z;}}}}
-    else if(q.type==="delve"){const ne=nearestEntrance(player.x,player.z);if(ne){tx=ne.e.x;tz=ne.e.z;}}
-    else if(q.type==="boss"&&boss){tx=boss.x;tz=boss.z;}
+    const o=currentObjective();let tx,tz,bd=Infinity;
+    if(o&&o.type==="slay"){for(const mm of monsters){if(mm.kind===o.kind&&!mm.isDungeon&&!mm.isBoss){const d=Math.hypot(mm.x-player.x,mm.z-player.z);if(d<bd){bd=d;tx=mm.x;tz=mm.z;}}}}
+    else if(o&&o.type==="gather"){for(const n of nodes){if(!n.depleted){const d=Math.hypot(n.x-player.x,n.z-player.z);if(d<bd){bd=d;tx=n.x;tz=n.z;}}}}
+    else if(o&&o.type==="delve"){const ne=nearestEntrance(player.x,player.z);if(ne){tx=ne.e.x;tz=ne.e.z;}}
+    else if(o&&o.type==="boss"&&boss){tx=boss.x;tz=boss.z;}
     if(tx!==undefined){const bb=Math.atan2(tx-player.x,-(tz-player.z))*180/Math.PI,rel=norm(bb-B0);
       if(Math.abs(rel)<=halfFov){const x=place(bb);g.fillStyle="#ffd23b";g.beginPath();g.moveTo(x,H2-23);g.lineTo(x+4,H2-17);g.lineTo(x,H2-11);g.lineTo(x-4,H2-17);g.closePath();g.fill();}}
   }
@@ -4655,15 +4662,46 @@ let stepAcc=0,lastGrowl=0;
 // ============================================================================
 //  NPC QUEST-GIVER
 // ============================================================================
+// Quests recreated from real Asheron's Call bounties — named givers, multi-step objectives, item rewards.
+// Slay objectives use creature kinds that exist in this world; gather/delve/boss hook the same world events.
 const QUESTS=[
-  {type:"slay",kind:"drudge",count:5,text:"Cull 5 Drudge Skulkers for the militia.",xp:600,gold:40},
-  {type:"gather",count:8,text:"Gather 8 resources from the wilds (ore or herbs).",xp:700,gold:50},
-  {type:"slay",kind:"reedshark",count:3,text:"Hunt 3 Reedsharks along the banks.",xp:1400,gold:90},
-  {type:"delve",count:1,text:"Claim a hoard from the Mines of Dereth.",xp:2000,gold:140},
-  {type:"slay",kind:"tusker",count:2,text:"Fell 2 Tuskers in the highlands.",xp:2200,gold:160},
-  {type:"boss",count:1,text:"Slay Gnawvil, the Olthoi Queen.",xp:5000,gold:350},
+  { id:"alfrin", name:"Alfrin's Stolen Supplies", giver:"Alfrin the farmer (Holtburg tavern)",
+    intro:"Drudges keep raiding my farm and making off with my seed. Recover my three stolen seed-bags, then slay the Drudge Robber Baron who leads the thieves.",
+    obj:[{type:"gather",count:3,label:"Recover Alfrin's stolen seed-bags"},
+         {type:"slay",kind:"drudge",count:1,label:"Slay the Drudge Robber Baron"}],
+    xp:1200, gold:90, item:{name:"Buckler",stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9} },
+  { id:"worcer", name:"Worcer's Missing Heirlooms", giver:"Worcer, curator at the Helm & Shield (Holtburg)",
+    intro:"I am raising a memorial to those the Tumeroks slaughtered in Portal Year 6. Recover eight lost heirlooms from the Holtburg Redoubt.",
+    obj:[{type:"gather",count:8,label:"Recover lost heirlooms from the Redoubt"}],
+    xp:1700, gold:130, item:null },
+  { id:"reedbanks", name:"The Banks Run Red", giver:"the Holtburg militia",
+    intro:"Reedsharks have made the riverbanks a slaughter. Thin their numbers before another farmer is dragged under.",
+    obj:[{type:"slay",kind:"reedshark",count:4,label:"Hunt Reedsharks along the banks"}],
+    xp:1400, gold:90, item:null },
+  { id:"brogord", name:"Brogord's Demise", giver:"Flinrala Ryndmad, Brogord's daughter",
+    intro:"My father Brogord fell in the Cave of Alabree holding back the Tumeroks. Avenge him, and bring back his axe and the last letter he wrote to my mother.",
+    obj:[{type:"slay",kind:"tumerok",count:4,label:"Cut down the Tumeroks of the Cave of Alabree"},
+         {type:"delve",count:1,label:"Recover Brogord's axe & letter from the depths"}],
+    xp:2400, gold:170, item:{name:"Kite Shield",stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:18} },
+  { id:"tuskers", name:"Tuskers in the Highlands", giver:"a Cragstone hunter",
+    intro:"Tuskers have come down into the highland pastures and trample all they meet. Fell two of the great beasts.",
+    obj:[{type:"slay",kind:"tusker",count:2,label:"Fell Tuskers in the highlands"}],
+    xp:2200, gold:150, item:null },
+  { id:"mitemaze", name:"The Mite Maze", giver:"the Warden of the Mite Maze",
+    intro:"Navigate the Mite Maze, clear the swarming vermin, and recover the artifacts of the pyromancer Branith from its heart.",
+    obj:[{type:"slay",kind:"drudge",count:6,label:"Clear the maze's skittering mites"},
+         {type:"delve",count:1,label:"Claim Branith's artifacts from the maze's heart"}],
+    xp:3000, gold:220, item:{name:"Large Kite Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"kite",v:28} },
+  { id:"gnawvil", name:"Gnawvil's Brood", giver:"Asheron's Emissary",
+    intro:"The Olthoi Queen Gnawvil stirs in the deep places of the world. Few who seek her return — but a hero's reward awaits the one who fells her.",
+    obj:[{type:"boss",count:1,label:"Slay Gnawvil, the Olthoi Queen"}],
+    xp:5000, gold:400, item:{name:"Covenant Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"covenant",v:40} },
 ];
-let questIdx=0,questProg=0,questActive=false,npcs=[];
+let questIdx=0,questActive=false,questProg=[],questDone=[],npcs=[];
+function curQuest(){ return QUESTS[questIdx]; }
+function ensureProg(){ const q=curQuest(); if(!Array.isArray(questProg)||questProg.length!==q.obj.length) questProg=q.obj.map(()=>0); }
+function questComplete(){ const q=curQuest(); ensureProg(); return q.obj.every((o,i)=>questProg[i]>=o.count); }
+function currentObjective(){ const q=curQuest(); ensureProg(); for(let i=0;i<q.obj.length;i++) if(questProg[i]<q.obj[i].count) return q.obj[i]; return null; }
 // ---- NPC roles: every town fields a Town Crier (directions) and a Barkeeper (rumors);
 //      capitals add Asheron's Emissary (bounties); Asheron's Castle holds the reset masters. ----
 const NPC_ROLES={
@@ -4724,7 +4762,7 @@ function addNPC(x,z,opts){
   updateNPCMarker();
 }
 function updateNPCMarker(){ // only the Emissaries reflect quest state
-  const ready=questActive&&questProg>=QUESTS[questIdx].count;
+  const ready=questActive&&questComplete();
   const col=ready?0x7fe6a0:(questActive?0x888888:0xffd23b);
   for(const n of npcs) if(n.role==="emissary") n.mesh.userData.marker.material.color.setHex(col);
 }
@@ -4733,21 +4771,26 @@ function compassTo(dx,dz){ // world: +x=East, +z=South
   return dirs[((Math.round(Math.atan2(-dz,dx)/(Math.PI/4))%8)+8)%8];
 }
 function talkEmissary(){
-  const q=QUESTS[questIdx];
+  const q=curQuest(); ensureProg();
   if(!questActive){
-    questActive=true;questProg=0;
-    log(`<b>Emissary:</b> ${q.text} (0/${q.count})`,"sys");
+    questActive=true; questProg=q.obj.map(()=>0);
+    log(`<b>${q.giver}:</b> ${q.intro}`,"sys");
+    log(`<b>Quest accepted — ${q.name}:</b> ${q.obj.map(o=>o.label+" (0/"+o.count+")").join("; ")}`,"sys");
     SFX.quest();toast("QUEST ACCEPTED");
-  } else if(questProg>=q.count){
-    gainXP(q.xp);player.gold+=q.gold;
-    log(`<b>Emissary:</b> Well done! +${q.xp} XP, +${q.gold} pyreals.`,"sys");
+  } else if(questComplete()){
+    gainXP(q.xp); player.gold+=q.gold;
+    let rw=`+${q.xp} XP, +${q.gold} pyreals`;
+    if(q.item){ player.inv.push(Object.assign({},q.item)); rw+=`, and a <b>${q.item.name}</b>`; }
+    if(questDone.indexOf(q.id)<0) questDone.push(q.id);
+    log(`<b>${q.giver}:</b> Well done! Your reward: ${rw}.`,"sys");
     SFX.quest();toast("QUEST COMPLETE");
-    questIdx=(questIdx+1)%QUESTS.length;questActive=false;questProg=0;
+    questIdx=(questIdx+1)%QUESTS.length; questActive=false; questProg=[];
     saveGame();
   } else {
-    log(`<b>Emissary:</b> ${q.text} (${questProg}/${q.count})`,"sys");
+    const prog=q.obj.map((o,i)=>`${o.label} (${Math.min(questProg[i],o.count)}/${o.count})`).join("; ");
+    log(`<b>${q.giver}:</b> Not yet — ${prog}.`,"sys");
   }
-  updateNPCMarker();updateQuestHUD();
+  updateNPCMarker();updateQuestHUD();renderQuestLog();
 }
 function talkToNPC(n){
   if(!n||n.role==="emissary"){ talkEmissary(); return; }
@@ -4776,25 +4819,55 @@ function talkToNPC(n){
 }
 function questEvent(type,kind){
   if(!questActive) return;
-  const q=QUESTS[questIdx];
-  if(q.type!==type) return;
-  if(type==="slay" && kind!==q.kind) return;
-  if(questProg<q.count){
-    questProg++;
-    if(questProg>=q.count) log("Quest objective complete — return to the Emissary in Holtburg.","sys");
-    updateNPCMarker();updateQuestHUD();
+  const q=curQuest(); ensureProg();
+  for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
+    if(o.type!==type) continue;
+    if(type==="slay" && kind!==o.kind) continue;
+    if(questProg[i]<o.count){
+      questProg[i]++;
+      if(questProg[i]>=o.count) log(`Objective complete: <b>${o.label}</b>.`,"sys");
+      if(questComplete()) log("Quest ready to turn in — return to the quest-giver (gold !).","sys");
+      updateNPCMarker();updateQuestHUD();renderQuestLog();
+      return;   // one world event advances a single objective
+    }
   }
 }
 function updateQuestHUD(){
   const panel=document.getElementById('quest');
   if(!questActive){panel.style.display="block";
-    document.getElementById('questText').textContent="No active bounty — seek Asheron's Emissary in Holtburg.";
+    document.getElementById('questText').innerHTML="No active bounty — seek Asheron's Emissary in Holtburg. <span style='color:var(--dim)'>(J: quest log)</span>";
     document.getElementById('questProg').textContent="";return;}
-  const q=QUESTS[questIdx];panel.style.display="block";
-  document.getElementById('questText').textContent=q.text;
-  document.getElementById('questProg').textContent=`${Math.min(questProg,q.count)} / ${q.count}`
-    +(questProg>=q.count?"  ✓ turn in":"");
+  const q=curQuest(); ensureProg(); panel.style.display="block";
+  document.getElementById('questText').innerHTML=`<b>${q.name}</b>`;
+  document.getElementById('questProg').innerHTML=q.obj.map((o,i)=>{
+    const done=questProg[i]>=o.count;
+    return `<span style="color:${done?'#7fe6a0':'#cdbf9a'}">${done?'✓':'•'} ${o.label} — ${Math.min(questProg[i],o.count)}/${o.count}</span>`;
+  }).join("<br>")+(questComplete()?"<br><span style='color:#7fe6a0;font-weight:bold'>✓ Turn in at the Emissary</span>":"");
 }
+// quest log modal (J)
+function renderQuestLog(){
+  const body=document.getElementById('questlogBody'); if(!body) return;
+  let h="";
+  if(questActive){ const q=curQuest(); ensureProg();
+    h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,210,59,.08);border:1px solid var(--border);border-radius:6px">
+      <div style="color:var(--gold);font-weight:bold">▸ ${q.name} <span style="color:var(--dim);font-weight:normal">— ${q.giver}</span></div>
+      <div style="color:#bcae8a;font-style:italic;margin:4px 0">“${q.intro}”</div>
+      ${q.obj.map((o,i)=>{const d=questProg[i]>=o.count;return `<div style="color:${d?'#7fe6a0':'#cdbf9a'}">${d?'✓':'☐'} ${o.label} — ${Math.min(questProg[i],o.count)}/${o.count}</div>`;}).join("")}
+      <div style="margin-top:4px;color:var(--gold)">Reward: +${q.xp} XP · +${q.gold} pyreals${q.item?` · ${q.item.name}`:""}${questComplete()?` &nbsp;<span style="color:#7fe6a0">✓ ready to turn in</span>`:""}</div>
+    </div>`;
+  } else {
+    h+=`<div style="color:var(--dim);margin-bottom:10px">No active bounty. Seek Asheron's Emissary (gold !) in a capital to take one up.</div>`;
+  }
+  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:6px 0 4px">All Bounties</div>`;
+  h+=QUESTS.map((q,i)=>{
+    const done=questDone.indexOf(q.id)>=0, active=questActive&&i===questIdx;
+    const tag=active?`<span style="color:var(--gold)">● active</span>`:done?`<span style="color:#7fe6a0">✓ complete</span>`:`<span style="color:var(--dim)">○ available</span>`;
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>${q.name} <span style="color:var(--dim)">— ${q.giver}</span></span>${tag}</div>`;
+  }).join("");
+  body.innerHTML=h;
+}
+function openQuestLog(){ renderQuestLog(); document.getElementById('questlog').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+function closeQuestLog(){ document.getElementById('questlog').style.display="none"; paused=false; }
 
 // ============================================================================
 //  ACHIEVEMENTS & TITLES
@@ -5650,7 +5723,7 @@ function saveGame(){
       elixMight:player.elixMight,elixSwift:player.elixSwift,
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
-      boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive,
+      boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive,questDone,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
@@ -5684,7 +5757,9 @@ function applySaveObj(s){
   buildSpellbar();
   // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
   player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
-  questIdx=s.questIdx||0;questProg=s.questProg||0;questActive=!!s.questActive;
+  questIdx=(s.questIdx|0)%QUESTS.length;questActive=!!s.questActive;
+  questProg=Array.isArray(s.questProg)?s.questProg.slice():[];questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
+  ensureProg();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
   if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
