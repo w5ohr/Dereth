@@ -27,6 +27,21 @@ without changing engines (see `docs/` discussion).
 - **Blender + Human Generator / MB-Lab** — full control; export glTF.
 - Three.js sample `Soldier.glb` (~2.1 MB, rigged with idle/walk/run) is handy for testing.
 
+## CDN "people" for NPCs (experimental, ON by default)
+Beyond the single player avatar, strolling **townsfolk** can be populated with real rigged
+humans pulled from public CDNs and assigned at random:
+- `GLTF_PEOPLE` (in `index.html`) lists CDN `.glb` URLs — currently three.js's **Soldier**
+  & **Xbot**, Khronos **CesiumMan** (rigged humans), and three.js **RobotExpressive**
+  (rigged character). All verified loadable from jsDelivr.
+- `loadGltfPeople()` downloads them once; `assignGltfNpcs()` clones each via
+  **`THREE.SkeletonUtils.clone`** (skinned meshes need this, not plain `.clone()`), assigns a
+  random model to up to `MAX_GLTF_NPCS` (18) townsfolk, and plays idle/walk via a per-NPC
+  `AnimationMixer`. Flag: `USE_GLTF_NPCS` (default **true**).
+- **Needs internet** for the CDN fetch. Offline (or any failure) → those NPCs stay
+  **procedural**. Set `USE_GLTF_NPCS=false` to force all-procedural townsfolk.
+- Quest-givers/vendors/criers stay procedural (they keep their markers, labels, and looks).
+- `vendor/SkeletonUtils.js` (r128 global build) is required and loaded after the GLTFLoader.
+
 ## Notes / trade-offs
 - Model files are **git-ignored** (`.gitignore`) — they're multi-MB binaries and not part of
   the self-contained game. The pipeline (loader + code) **is** committed.

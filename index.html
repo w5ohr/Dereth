@@ -385,6 +385,7 @@
 
 <script src="three.min.js"></script>
 <script src="vendor/GLTFLoader.js"></script>   <!-- optional: enables an external rigged glTF avatar; absent/failed load → procedural avatar -->
+<script src="vendor/SkeletonUtils.js"></script> <!-- optional: clones rigged skinned meshes so CDN "people" models can populate NPCs -->
 <script>
 "use strict";
 /* ============================================================================
@@ -838,6 +839,47 @@ function tryLoadGltfAvatar(){
       const idle=gltf.animations.find(a=>/idle/i.test(a.name))||gltf.animations[0]; gltfMixer.clipAction(idle).play(); }
     gltfReady=true; log("External avatar model loaded (glTF).","sys");
   }, undefined, err=>{ console.log("glTF avatar not loaded ("+GLTF_AVATAR_URL+") — using the procedural avatar.", (err&&err.message)||""); });
+}
+// ---- real rigged "people" pulled from public CDNs, randomly assigned to strolling townsfolk ----
+// (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
+let USE_GLTF_NPCS=true;            // set false to keep all-procedural townsfolk
+const MAX_GLTF_NPCS=18;            // cap skinned NPCs for performance; the rest stay procedural
+const GLTF_PEOPLE=[
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb",
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Xbot.glb",
+  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb",
+  "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb",
+];
+let gltfPeople=[], gltfPeopleStarted=false;
+function loadGltfPeople(){
+  if(gltfPeopleStarted||!USE_GLTF_NPCS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
+  gltfPeopleStarted=true; const L=new THREE.GLTFLoader();
+  for(const url of GLTF_PEOPLE){ L.load(url, gltf=>{
+      const box=new THREE.Box3().setFromObject(gltf.scene), h=(box.max.y-box.min.y)||1;
+      gltfPeople.push({scene:gltf.scene, anims:gltf.animations||[], scale:1.8/h});
+      log("Loaded a CDN person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
+    }, undefined, err=>console.log("CDN person model failed:",url,(err&&err.message)||"")); }
+}
+function assignGltfNpcs(){
+  if(!USE_GLTF_NPCS||!gltfPeople.length||typeof THREE.SkeletonUtils==="undefined") return;
+  let count=npcs.filter(n=>n.gltf).length;
+  for(const n of npcs){
+    if(count>=MAX_GLTF_NPCS) break;
+    if(n.gltf||n.role!=="townsfolk"||!n.mesh) continue;
+    const m=gltfPeople[irnd(0,gltfPeople.length-1)]; let clone;
+    try{ clone=THREE.SkeletonUtils.clone(m.scene); }catch(e){ continue; }
+    clone.scale.setScalar(m.scale);
+    const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y;   // feet to 0
+    clone.rotation.y=Math.PI;                                                       // models face +z; procedural faces -z
+    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
+    for(const ch of n.mesh.children) ch.visible=false;                              // hide the procedural body
+    n.mesh.add(clone); n.gltf=clone;
+    if(m.anims.length){ n.gltfMixer=new THREE.AnimationMixer(clone);
+      n.gltfIdle=n.gltfMixer.clipAction(m.anims.find(a=>/idle/i.test(a.name))||m.anims[0]);
+      const w=m.anims.find(a=>/walk/i.test(a.name)); n.gltfWalk=w?n.gltfMixer.clipAction(w):null;
+      n.gltfIdle.play(); }
+    count++;
+  }
 }
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
@@ -2331,6 +2373,7 @@ function buildWorld(){
   if(!isOnline){ spawnBoss();spawnApex();spawnShadowGenerals(); }
   if(worldEvent){if(worldEvent.beam)scene.remove(worldEvent.beam);if(worldEvent.beacon)scene.remove(worldEvent.beacon);}
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
+  loadGltfPeople(); assignGltfNpcs();   // populate some townsfolk with real CDN people models (async; procedural fallback)
 }
 function settleY(){ // drop every placed object onto the terrain surface
   for(const s of scenery) s.position.y=terrainH(s.position.x,s.position.z)+(s.userData.float||0);
@@ -4600,6 +4643,8 @@ function animateOnePerson(p,dt){
   }
   // smooth body facing
   let fy=p.mesh.rotation.y; const df=((p._face-fy+Math.PI*3)%(Math.PI*2))-Math.PI; p.mesh.rotation.y=fy+df*Math.min(1,dt*6);
+  if(p.gltfMixer){ p.gltfMixer.update(dt);                                  // drive the rigged CDN model
+    if(p.gltfWalk && p._gw!==moving){ p._gw=moving; p.gltfIdle.stop(); p.gltfWalk.stop(); (moving?p.gltfWalk:p.gltfIdle).play(); } }
   const breath=Math.sin(t*1.6+p._ph);
   if(moving){
     const s=Math.sin(p._wp)*0.55;
