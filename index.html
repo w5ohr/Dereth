@@ -1615,8 +1615,12 @@ function buildAvatarJointed(){
     knee.add(M(new THREE.SphereGeometry(0.07,10,8),bodyMat,0,0,0.01));
     bone(knee,AV_SHIN,0.064,0.05,bodyMat);
     const ankle=joint(knee,-AV_SHIN);
-    const foot=M(new THREE.BoxGeometry(0.12,0.085,0.25),dark,0,-0.05,-0.07,true);ankle.add(foot);
-    foot.add(M(new THREE.BoxGeometry(0.1,0.07,0.09),bodyMat,0,0,-0.155));
+    const foot=new THREE.Group();ankle.add(foot);                                            // plated sabaton (Group so the ankle can roll it)
+    foot.add(M(new THREE.CylinderGeometry(0.06,0.052,0.07,12),bodyMat,0,-0.012,0,true));      // ankle cuff
+    foot.add(M(new THREE.BoxGeometry(0.105,0.07,0.18),dark,0,-0.058,-0.045,true));            // boot body
+    foot.add(M(new THREE.BoxGeometry(0.118,0.052,0.075),bodyMat,0,-0.062,-0.15,true));         // plated toe cap
+    foot.add(M(new THREE.BoxGeometry(0.09,0.034,0.05),bodyMat,0,-0.04,0.045,true));            // heel plate
+    foot.add(M(new THREE.BoxGeometry(0.122,0.022,0.26),new THREE.MeshLambertMaterial({color:0x14100a}),0,-0.092,-0.05)); // sole
     legs.push({hip,knee,ankle});feet.push(foot);
   }
   // ---- spine (upper-body root, bends at the waist) ----
@@ -1629,6 +1633,16 @@ function buildAvatarJointed(){
   spine.add(M(new THREE.BoxGeometry(0.2,0.52,0.025),accent,0,-0.18,-0.13));          // tabard over the hips
   const gorget=M(new THREE.TorusGeometry(0.085,0.035,8,18),bodyMat,0,0.52,0);gorget.rotation.x=Math.PI/2;spine.add(gorget);
   // ---- arms: shoulder → elbow → wrist (children of spine, so the back-bend carries them) ----
+  // a plated gauntlet: wrist cuff + back-of-hand, a gold knuckle ridge, four curled fingers + an opposed thumb
+  const mkHand=(wr,sx)=>{
+    const h=new THREE.Group();h.position.y=-0.02;wr.add(h);
+    h.add(M(new THREE.CylinderGeometry(0.05,0.042,0.055,10),bodyMat,0,0,0,true));            // wrist cuff
+    h.add(M(new THREE.BoxGeometry(0.07,0.085,0.052),bodyMat,0,-0.06,0,true));                // back of hand / metacarpals
+    h.add(M(new THREE.BoxGeometry(0.072,0.022,0.054),gold,0,-0.1,0));                         // knuckle ridge
+    for(let i=0;i<4;i++){const f=M(new THREE.BoxGeometry(0.014,0.058,0.018),bodyMat,(i-1.5)*0.018,-0.132,-0.006,true);f.rotation.x=0.55;h.add(f);}  // fingers curl forward
+    const th=M(new THREE.BoxGeometry(0.017,0.05,0.019),bodyMat,sx*-0.034,-0.088,0.008,true);th.rotation.z=sx*0.7;th.rotation.x=0.3;h.add(th);        // thumb, opposed
+    return h;
+  };
   const arms=[];
   for(const sx of[-1,1]){
     const sh=joint(spine,AV_SH_LOCAL,sx*0.215);
@@ -1637,7 +1651,7 @@ function buildAvatarJointed(){
     el.add(M(new THREE.SphereGeometry(0.05,10,8),bodyMat,0,0,0));
     bone(el,AV_FOREARM,0.046,0.036,bodyMat);
     const wr=joint(el,-AV_FOREARM);
-    wr.add(M(new THREE.BoxGeometry(0.08,0.12,0.06),dark,0,-0.06,0,true));
+    mkHand(wr,sx);
     arms.push({sh,el,wr});
   }
   // pauldrons (on spine, over the shoulders)
