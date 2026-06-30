@@ -465,6 +465,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   hots:{},                    // active Life regeneration over time: pool (hp/st/mn) -> {rate,t}; fall on death
   itemBuffs:{},               // active Item-Enchantment buffs: dmg/crit/armor/haste -> {v,t}
   lifeBuffs:{},               // active Life buffs (e.g. damage-reduction Protection) -> {v,t}; fall on death
+  lightBuff:null,             // active conjured light (Enlightenment/Foxfire) -> {t,intensity,dist,color}; falls on death
   debuffs:{},                 // hostile curses on you (slow/vuln) -> {v,t}; cleansed by Dispel, clear on death
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
   meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
@@ -677,6 +678,19 @@ for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_wall_${t.lvl}`,name:`${WAR_ROOT[b.code]} Wall ${ROMAN[t.lvl]}`,ico:"🧱",school:"war",lvl:t.lvl,req:t.req,
   cost:Math.round(b.cost*1.8*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*3.2),special:"wall",element:b.element,color:b.color,r:3.5,dur:6,
   dps:()=>(b.base*0.42+player.attr.Focus*0.5)*t.mult});
+// ── Light spells (Life & Creature): conjure a glow for the dark places of Dereth. Higher tiers
+//    burn longer and brighter. Life's "Enlightenment" is a warm holy radiance; Creature's
+//    "Foxfire" is an eldritch bioluminescent glow. (buff:"light" → player.lightBuff) ──
+const LIGHT_TIERS=[{lvl:1,dur:90, intensity:1.9,dist:17,cost:14,req:0},
+                   {lvl:2,dur:180,intensity:2.5,dist:21,cost:22,req:30},
+                   {lvl:3,dur:360,intensity:3.1,dist:26,cost:32,req:65},
+                   {lvl:4,dur:600,intensity:3.9,dist:32,cost:46,req:110}];
+const LIGHT_SPELLS=[{school:"life",code:"enlighten",name:"Enlightenment",ico:"🔆",color:0xfff2cf},
+                    {school:"creature",code:"foxfire",name:"Foxfire",ico:"🦊",color:0x9affc0}];
+for(const sp of LIGHT_SPELLS) for(const t of LIGHT_TIERS) SPELLBOOK_LIST.push({
+  id:`${sp.school}_${sp.code}_${t.lvl}`,name:`${sp.name} ${ROMAN[t.lvl]}`,ico:sp.ico,
+  school:sp.school,lvl:t.lvl,req:t.req,cost:t.cost,cd:5000,buff:"light",
+  lightColor:sp.color,intensity:t.intensity,dist:t.dist,dur:t.dur});
 // AC's level-VIII spells are "Incantations" — rename every level-8 entry (e.g. "Flame Bolt VIII" → "Incantation of Flame Bolt").
 for(const s of SPELLBOOK_LIST){ if(s.lvl===8 && / VIII$/.test(s.name)) s.name="Incantation of "+s.name.slice(0,-5); }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
@@ -1178,11 +1192,17 @@ let playerLight=null;
 const _LSRC={fire:0xff7a2a,frost:0x8fd0ff,shock:0xfff0a0,nether:0xb060ff,acid:0x9af06a};
 function playerLightSource(){
   const w=player.weapon, af=w&&w.affix;
+  let base;
   if(af&&af.k==="brand"){ const el=af.element;
-    return {color:_LSRC[el]||0xffe0a0,intensity:2.7,dist:27,flicker:el==="fire",src:el==="fire"?"flaming blade":"glowing blade"}; }
-  if(w&&(w.affix||w.legendary||(w.tier|0)>=4)) return {color:0xbfe0ff,intensity:2.1,dist:22,flicker:false,src:"glowing blade"};
-  if(player.hasTorch!==false) return {color:0xffb050,intensity:1.7,dist:18,flicker:true,src:"torch"};
-  return {color:0x6a6a82,intensity:0.32,dist:6,flicker:false,src:"none"};
+    base={color:_LSRC[el]||0xffe0a0,intensity:2.7,dist:27,flicker:el==="fire",src:el==="fire"?"flaming blade":"glowing blade"}; }
+  else if(w&&(w.affix||w.legendary||(w.tier|0)>=4)) base={color:0xbfe0ff,intensity:2.1,dist:22,flicker:false,src:"glowing blade"};
+  else if(player.hasTorch!==false) base={color:0xffb050,intensity:1.7,dist:18,flicker:true,src:"torch"};
+  else base={color:0x6a6a82,intensity:0.32,dist:6,flicker:false,src:"none"};
+  // a conjured light spell (Enlightenment/Foxfire) — take it when it outshines what you carry
+  const lb=player.lightBuff;
+  if(lb){ const spellSrc={color:lb.color,intensity:lb.intensity,dist:lb.dist,flicker:false,src:"conjured light"};
+    if(spellSrc.dist>=base.dist) return spellSrc; }
+  return base;
 }
 function updateInstanceLight(){
   if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); scene.add(playerLight); }
@@ -1193,7 +1213,13 @@ function updateInstanceLight(){
     if(ls.flicker) inten*=0.84+0.16*Math.sin(now()/60)+0.06*Math.sin(now()/29); // torch/flame flicker
     playerLight.color.setHex(ls.color); playerLight.intensity=inten; playerLight.distance=ls.dist;
     playerLight.position.set(player.x,EYE+0.1,player.z); playerLight.visible=true;
-  } else if(playerLight.visible){ playerLight.visible=false; playerLight.intensity=0; scene.fog.near=40; }
+  } else {
+    if(scene.fog.near!==40) scene.fog.near=40;       // restore overworld fog on exit
+    if(player.lightBuff){ const ls=playerLightSource();  // conjured light still shines outdoors (handy at night)
+      playerLight.color.setHex(ls.color); playerLight.intensity=ls.intensity*0.85; playerLight.distance=ls.dist;
+      playerLight.position.set(player.x,EYE+0.1,player.z); playerLight.visible=true;
+    } else if(playerLight.visible){ playerLight.visible=false; playerLight.intensity=0; }
+  }
 }
 
 // procedural creature skin: mottled / scaled / spotted texture tinted to base color
@@ -2761,7 +2787,7 @@ function playerHurt(dmg,sx,sz,type,element){
 }
 function die(){
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
-  player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};player.debuffs={};
+  player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};player.debuffs={};player.lightBuff=null;
   if(player.skillBuffs&&Object.keys(player.skillBuffs).length){player.skillBuffs={};derive();}
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
@@ -2930,6 +2956,10 @@ function executeSpell(id){
     else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};player.itemBuffs[s.stat]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
     else if(s.buff==="prot"){player.lifeBuffs=player.lifeBuffs||{};player.lifeBuffs.prot={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% dmg taken`,"#7fe6a0");}
     else if(s.buff==="skill"&&mag){player.skillBuffs=player.skillBuffs||{};player.skillBuffs[s.skillKey]={v:mag,t:dur};derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${SKILL_BY_KEY[s.skillKey]?SKILL_BY_KEY[s.skillKey].n:s.skillKey}`,"#bfe0ff");}
+    else if(s.buff==="light"){player.lightBuff={t:dur,intensity:s.intensity,dist:s.dist,color:s.lightColor};
+      const cs='#'+(s.lightColor||0xffffff).toString(16).padStart(6,'0');
+      floater(player.x,EYE+0.5,player.z,"✦ light","#fff2cf");castFlash(s.lightColor||0xfff2cf);SFX.quest();
+      log(`You conjure <b>${s.name}</b> — a light kindles to ward off the dark for ${Math.round(dur)}s.`,"heal");return;}
     castFlash(0x9af0ff);SFX.quest();log(`You invoke <b>${s.name}</b>.`,"heal");return;
   }
   if(s.special==="wall"){   // lay a persistent damage zone on the ground ahead of you
@@ -3589,6 +3619,7 @@ function update(dt){
     if(b.t<=0){ player.attr[a]-=b.v; delete player.spellBuffs[a]; floater(player.x,EYE+0.6,player.z,a+" fades","#9fb0c0"); derive(); } } }
   if(player.itemBuffs){ for(const k of Object.keys(player.itemBuffs)){ const b=player.itemBuffs[k]; b.t-=dt; if(b.t<=0) delete player.itemBuffs[k]; } }
   if(player.lifeBuffs){ for(const k of Object.keys(player.lifeBuffs)){ const b=player.lifeBuffs[k]; b.t-=dt; if(b.t<=0) delete player.lifeBuffs[k]; } }
+  if(player.lightBuff){ player.lightBuff.t-=dt; if(player.lightBuff.t<=0){ player.lightBuff=null; floater(player.x,EYE+0.6,player.z,"light fades","#9fb0c0"); } }
   if(player.skillBuffs){ for(const k of Object.keys(player.skillBuffs)){ const b=player.skillBuffs[k]; b.t-=dt;
     if(b.t<=0){ delete player.skillBuffs[k]; floater(player.x,EYE+0.6,player.z,(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k)+" fades","#9fb0c0"); derive(); } } }
   if(player.hots){ for(const k of Object.keys(player.hots)){ const b=player.hots[k]; b.t-=dt;
@@ -3754,6 +3785,7 @@ function updateHUD(){
   if(player.skillBuffs) for(const k in player.skillBuffs) bf.push(`+${player.skillBuffs[k].v} ${SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k}`);
   if(player.hots){ const HP={hp:"♥ regen",st:"⚡ regen",mn:"✦ regen"}; for(const k in player.hots) bf.push(HP[k]||k); }
   if(player.lifeBuffs&&player.lifeBuffs.prot) bf.push(`-${Math.round(player.lifeBuffs.prot.v*100)}% dmg`);
+  if(player.lightBuff) bf.push(`🔆 light ${Math.ceil(player.lightBuff.t)}s`);
   if(player.debuffs) for(const k in player.debuffs) bf.push(k==="slow"?"⊘ slowed":"▲ imperiled");
   document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
   let threats=0;for(const m of monsters){if(!!m.isDungeon===inDungeon&&m.state==="chase"&&Math.hypot(m.x-player.x,m.z-player.z)<50)threats++;}
@@ -4198,7 +4230,8 @@ function checkAchievements(){
 const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2","creature_focus_2","creature_end_2",
   "war_flame_2","war_frost_2","war_light_2","war_storm_2","life_heal_2","life_heal_3","life_revit_1","life_drain_1",
   "item_blood_1","item_heart_1","item_impen_1","item_swift_1","item_blood_2","item_impen_2",
-  "void_nether_2","void_nether_3","war_acid_1","war_force_1","war_blade_1","life_harm_1","life_harm_2"];
+  "void_nether_2","void_nether_3","war_acid_1","war_force_1","war_blade_1","life_harm_1","life_harm_2",
+  "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
 function gearIco(it){ return it.stat==="weapon"?"⚔️":it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":"📦"; }
