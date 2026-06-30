@@ -1616,7 +1616,9 @@ function buildAvatarJointed(){
   const app=player.appearance||{}, skinM=new THREE.MeshLambertMaterial({color:app.skin!=null?app.skin:0xe0b088});
   const M=(geo,mat,x,y,z,sh)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x||0,y||0,z||0);if(sh)m.castShadow=true;return m;};
   const joint=(parent,y,x)=>{const j=new THREE.Group();j.position.set(x||0,y,0);parent.add(j);return j;};
-  const bone=(parent,len,r0,r1,mat)=>{const m=M(new THREE.CylinderGeometry(r0,r1,len*0.96,10),mat,0,-len/2,0,true);parent.add(m);return m;};
+  const bone=(parent,len,r0,r1,mat)=>{const m=M(new THREE.CylinderGeometry(r0*0.92,r1,len*0.96,14),mat,0,-len/2,0,true);parent.add(m);
+    parent.add(M(new THREE.SphereGeometry(r0,14,10),mat,0,0,0,true));   // rounded top cap blends the segment into the joint above (no cut-tube ends)
+    return m;};
   // ---- pelvis (lower-body root) ----
   const pelvisG=new THREE.Group();pelvisG.position.y=AV_HIP;g.add(pelvisG);
   const pelvis=M(new THREE.CylinderGeometry(0.16,0.14,0.2,14),bodyMat,0,-0.02,0,true);pelvis.scale.z=0.72;pelvisG.add(pelvis);
