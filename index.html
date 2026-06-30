@@ -698,7 +698,7 @@ const BESTIARY={
   mosswart: {name:"Mosswart",      c:0x3f7d6a,size:1.0,hp:52, dmg:11,spd:4.3,xp:200, gold:[4,14], range:0,  sense:36,tall:1.0,shape:"blob"},
   reedshark:{name:"Reedshark",     c:0x9a6b3f,size:1.1,hp:70, dmg:14,spd:8.0,xp:300, gold:[6,18], range:0,  sense:42,tall:0.8,shape:"beast"},
   tusker:   {name:"Tusker",        c:0xcaa56b,size:1.7,hp:160,dmg:24,spd:5.0,xp:620, gold:[14,40],range:0,  sense:43,tall:1.2,shape:"tusker"},
-  shadow:   {name:"Shadow Caster", c:0x7a4fae,size:1.0,hp:64, dmg:16,spd:3.8,xp:420, gold:[10,26],range:30, sense:47,tall:1.6,shape:"caster"},
+  shadow:   {name:"Shadow Caster", c:0x7a4fae,size:1.0,hp:64, dmg:16,spd:3.8,xp:420, gold:[10,26],range:30, sense:47,tall:1.6,shape:"caster",mres:0.35},
   olthoi:   {name:"Olthoi Warrior",c:0xb03a3a,size:2.0,hp:300,dmg:34,spd:6.2,xp:1400,gold:[40,90],range:0,  sense:52,tall:1.1,shape:"insect"},
   banderling:{name:"Banderling",   c:0x7a6b3a,size:1.3,hp:120,dmg:20,spd:6.0,xp:520, gold:[12,32],range:0,  sense:44,tall:1.5,shape:"humanoid"},
   auroch:   {name:"Auroch",        c:0x8a6a4a,size:1.6,hp:200,dmg:26,spd:7.6,xp:760, gold:[16,44],range:0,  sense:46,tall:1.1,shape:"horns"},
@@ -707,7 +707,7 @@ const BESTIARY={
   tumerok:  {name:"Tumerok",       c:0x4a7a5a,size:1.1,hp:110,dmg:18,spd:7.0,xp:480, gold:[10,28],range:0,  sense:44,tall:1.5,shape:"tumerok"},
   mattekar: {name:"Mattekar",      c:0xbfc6cf,size:1.2,hp:90, dmg:16,spd:8.5,xp:420, gold:[8,22], range:0,  sense:42,tall:0.9,shape:"mattekar"},
   skeleton: {name:"Skeleton",      c:0xe8e4d8,size:1.0,hp:80, dmg:16,spd:6.0,xp:360, gold:[6,18], range:0,  sense:44,tall:1.5,shape:"skeleton"},
-  virindi:  {name:"Virindi",       c:0x6a4a8a,size:1.1,hp:100,dmg:20,spd:4.0,xp:520, gold:[10,30],range:30, sense:48,tall:1.6,shape:"virindi"},
+  virindi:  {name:"Virindi",       c:0x6a4a8a,size:1.1,hp:100,dmg:20,spd:4.0,xp:520, gold:[10,30],range:30, sense:48,tall:1.6,shape:"virindi",mres:0.45},
   olthoiworker:{name:"Olthoi Worker",c:0x9a7a3a,size:1.5,hp:160,dmg:20,spd:6.6,xp:700, gold:[18,40],range:0,  sense:48,tall:1.0,shape:"insect"},
   olthoisoldier:{name:"Olthoi Soldier",c:0xc0532a,size:1.8,hp:240,dmg:28,spd:6.0,xp:1000,gold:[30,70],range:26,sense:50,tall:1.1,shape:"insect"},
 };
@@ -1987,6 +1987,8 @@ function wornArmorV(){ const a=player.armorItem; if(!a) return 0; const at=ARMOR
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
+  // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
+  if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
   if(m.vulnUntil>now()) base*=m.vulnV;   // Life Vulnerability — foe takes more damage (any source)
   if(m.vulnElemUntil>now()&&opts.element&&opts.element===m.vulnElem) base*=m.vulnElemV;  // element-specific Vulnerability
   let dmg=base+(opts.brandDmg||0);
@@ -2596,7 +2598,7 @@ function executeSpell(id){
     setTimeout(()=>scene.remove(fl),350);
     const dmg=s.dmg()*skillEff("war",0.02)*consumeTaper();
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
-    for(const m of targets){const em=elemMult(m.kind,el);if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");else if(em<1)floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el});}
+    for(const m of targets){const em=elemMult(m.kind,el);if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");else if(em<1)floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el,spell:true});}
     SFX.flame();castFlash(col);shake(0.22);
     netSpellFx("aoe",cx,cz,0,0,col,8,0);
     log(`You unleash <b>${s.name}</b>, scorching ${targets.length} foe(s).`,"heal");
@@ -2618,7 +2620,7 @@ function executeSpell(id){
   if(geom==="ring"){   // point-blank ring: strike every nearby foe around you
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<7.5);
     burst(player.x,1,player.z,sp.color,30);
-    for(const m of targets){ if(sp.element){const em=elemMult(m.kind,sp.element); if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");} applyHit(m,dmg,{element:sp.element}); }
+    for(const m of targets){ if(sp.element){const em=elemMult(m.kind,sp.element); if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");} applyHit(m,dmg,{element:sp.element,spell:true}); }
     castFlash(sp.color);SFX.flame();shake(0.2);
     if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
     netSpellFx("ring",player.x,player.z,0,0,sp.color,7.5,0);
@@ -3034,7 +3036,7 @@ function update(dt){
         else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
         if(p.burn){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
         if(p.stun){m.atkCd=Math.max(m.atkCd,1.2);}
-        applyHit(m,p.dmg*em);
+        applyHit(m,p.dmg*em,{spell:true});
         if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
         burst(p.x,p.y,p.z,p.color,8);
         const ifl=new THREE.PointLight(p.color,2.2,7);ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
@@ -3051,7 +3053,7 @@ function update(dt){
           if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");
           if(p.slow)m.slow=Math.max(m.slow,p.slow);
           if(p.burn){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
-          applyHit(m,p.dmg*em);
+          applyHit(m,p.dmg*em,{spell:true});
         }
       }
       shake(0.16);
@@ -3069,7 +3071,7 @@ function update(dt){
           const em=elemMult(m.kind,w.element);
           if(w.burn){m.burnT=2;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
           if(w.slow)m.slow=Math.max(m.slow,w.slow);
-          applyHit(m,tick*em);
+          applyHit(m,tick*em,{spell:true});
         }
       }
     }
@@ -3128,7 +3130,13 @@ function update(dt){
             eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5,type:atkType,curse});
             m.atkCd=1.6;m.charging=0;
           }
-        } else if(m.atkCd<=0&&d<b.range){ m.charging=0.45; }
+        } else if(m.atkCd<=0&&d<b.range){
+          // wounded casters mend themselves instead of attacking (Shadow Casters & Virindi)
+          if((m.kind==="shadow"||m.kind==="virindi")&&m.hp<m.mhp*0.5&&Math.random()<0.3){
+            const heal=Math.round(m.mhp*0.18); m.hp=Math.min(m.mhp,m.hp+heal); m.atkCd=2.6;
+            floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
+          } else m.charging=0.45;
+        }
       } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z);}
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
