@@ -1721,7 +1721,10 @@ function buildPerson(o){
       const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.082,0.48,10),cloth2);thigh.position.y=-0.24;thigh.castShadow=true;leg.add(thigh);
       const knee=new THREE.Mesh(new THREE.SphereGeometry(0.078,8,7),cloth2);knee.position.y=-0.47;leg.add(knee);
       const shin=new THREE.Mesh(new THREE.CylinderGeometry(0.072,0.055,0.46,10),cloth2);shin.position.set(0,-0.70,0.012);shin.castShadow=true;leg.add(shin);
-      const ft=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.12,0.30),boot);ft.position.set(0,-0.94,0.07);ft.castShadow=true;leg.add(ft);
+      const ft=new THREE.Group();ft.position.set(0,-0.94,0.0);leg.add(ft);                   // shaped shoe: body + toe cap + sole
+      const fb=new THREE.Mesh(new THREE.BoxGeometry(0.135,0.1,0.2),boot);fb.position.set(0,0.005,0.045);fb.castShadow=true;ft.add(fb);
+      const toe=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.07,0.085),boot);toe.position.set(0,-0.012,0.175);toe.castShadow=true;ft.add(toe);
+      ft.add(new THREE.Mesh(new THREE.BoxGeometry(0.145,0.03,0.30),new THREE.MeshLambertMaterial({color:0x17100a}))).position.set(0,-0.058,0.06);
       legs.push(leg);
     }
     lLeg=legs[0];rLeg=legs[1];
@@ -1741,7 +1744,10 @@ function buildPerson(o){
     const up=new THREE.Mesh(new THREE.CylinderGeometry(0.072,0.06,0.4,9),cloth);up.position.y=-0.2;up.castShadow=true;arm.add(up);
     const elb=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,7),robed?cloth:skinM);elb.position.y=-0.4;arm.add(elb);
     const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.046,0.38,9),robed?cloth:skinM);lo.position.y=-0.58;lo.castShadow=true;arm.add(lo);
-    const hand=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,7),skinM);hand.position.y=-0.79;hand.scale.set(1,1.2,0.78);arm.add(hand);
+    const hand=new THREE.Group();hand.position.y=-0.79;arm.add(hand);                       // palm + fingers + thumb (a hint of a real hand)
+    const palm=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,7),skinM);palm.scale.set(1,0.95,0.7);hand.add(palm);
+    const fng=new THREE.Mesh(new THREE.BoxGeometry(0.066,0.06,0.04),skinM);fng.position.y=-0.06;fng.castShadow=true;hand.add(fng);
+    const thb=new THREE.Mesh(new THREE.BoxGeometry(0.022,0.05,0.03),skinM);thb.position.set(sx*-0.04,-0.01,0.012);thb.rotation.z=sx*0.7;hand.add(thb);
     arms.push(arm);
   }
   const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.075,0.1,8),skinM);neck.position.y=shY+0.16;g.add(neck);
