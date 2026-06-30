@@ -1544,22 +1544,38 @@ function buildWand(){
 // third-person body — a humanoid built facing -z, textured per heritage by applyHeritageLook
 function buildAvatar(){
   const g=new THREE.Group();
-  const bodyMat=texMat(metalTex),skin=new THREE.MeshLambertMaterial({color:0xcaa06a});
-  const torso=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.78,0.34),bodyMat);torso.position.y=1.28;torso.castShadow=true;g.add(torso);
-  const pelvis=new THREE.Mesh(new THREE.BoxGeometry(0.54,0.32,0.32),bodyMat);pelvis.position.y=0.88;pelvis.castShadow=true;g.add(pelvis);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(0.21,12,10),skin);head.position.y=1.9;head.castShadow=true;g.add(head);
-  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.225,12,8,0,6.28,0,Math.PI*0.62),bodyMat);cap.position.y=1.92;g.add(cap);
-  addEye(g,0.035,0x20140a,-0.08,1.9,-0.19);addEye(g,0.035,0x20140a,0.08,1.9,-0.19);
-  const limb=(w,h,d,mat,px,py)=>{const grp=new THREE.Group();const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.y=-h/2;m.castShadow=true;grp.add(m);grp.position.set(px,py,0);g.add(grp);return grp;};
-  const rArm=limb(0.17,0.72,0.17,bodyMat,-0.4,1.6);
-  const lArm=limb(0.17,0.72,0.17,bodyMat, 0.4,1.6);
-  const rLeg=limb(0.19,0.86,0.19,bodyMat,-0.15,0.86);
-  const lLeg=limb(0.19,0.86,0.19,bodyMat, 0.15,0.86);
-  // hands (gloves) at arm ends, feet (boots) at leg ends, shoulder pauldrons
+  const bodyMat=texMat(metalTex),skin=new THREE.MeshLambertMaterial({color:0xe0b088});
+  const accent=new THREE.MeshLambertMaterial({color:0x3a4a6a}),dark=new THREE.MeshLambertMaterial({color:0x2a1d12});
+  // torso (animated node): tapered chest + surcoat + collar
+  const torso=new THREE.Group();torso.position.y=1.28;g.add(torso);
+  const chest=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.25,0.78,14),bodyMat);chest.scale.z=0.66;chest.castShadow=true;torso.add(chest);
+  const surcoat=new THREE.Mesh(new THREE.CylinderGeometry(0.31,0.305,0.42,14),accent);surcoat.scale.z=0.7;surcoat.position.y=-0.22;torso.add(surcoat);
+  const collar=new THREE.Mesh(new THREE.TorusGeometry(0.12,0.04,8,16),accent);collar.rotation.x=Math.PI/2;collar.position.y=0.37;torso.add(collar);
+  const pelvis=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.22,0.3,14),bodyMat);pelvis.scale.z=0.7;pelvis.position.y=0.9;pelvis.castShadow=true;g.add(pelvis);
+  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.265,0.25,0.1,14),dark);belt.scale.z=0.72;belt.position.y=1.03;g.add(belt);
+  const buckle=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.08,0.04),texMat(metalTex,0xb8902a));buckle.position.set(0,1.03,-0.2);g.add(buckle);
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.09,0.12,8),skin);neck.position.y=1.74;g.add(neck);
+  // head (animated node): skull + face + hair, grouped so the tilt carries the face
+  const head=new THREE.Group();head.position.y=1.9;g.add(head);
+  const skull=new THREE.Mesh(new THREE.SphereGeometry(0.2,16,14),skin);skull.scale.set(0.94,1.06,0.97);skull.castShadow=true;head.add(skull);
+  const nose=new THREE.Mesh(new THREE.ConeGeometry(0.032,0.085,6),skin);nose.position.set(0,-0.01,-0.19);nose.rotation.x=-Math.PI/2;head.add(nose);
+  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.03,0.04),new THREE.MeshLambertMaterial({color:0x3a2416}));brow.position.set(0,0.07,-0.17);head.add(brow);
+  addEye(head,0.03,0x20140a,-0.07,0.02,-0.18);addEye(head,0.03,0x20140a,0.07,0.02,-0.18);
+  const hair=new THREE.Mesh(new THREE.SphereGeometry(0.215,16,12,0,6.28,0,Math.PI*0.6),new THREE.MeshLambertMaterial({color:0x3a2416}));hair.position.set(0,0.04,0.02);head.add(hair);
+  // limbs: groups pivot at shoulder/hip, two tapered segments hang down
+  const limb=(px,py,upR,loR,len,mat)=>{const grp=new THREE.Group();grp.position.set(px,py,0);
+    const up=new THREE.Mesh(new THREE.CylinderGeometry(upR,(upR+loR)/2,len*0.52,8),mat);up.position.y=-len*0.25;up.castShadow=true;grp.add(up);
+    const lo=new THREE.Mesh(new THREE.CylinderGeometry((upR+loR)/2,loR,len*0.52,8),mat);lo.position.y=-len*0.72;lo.castShadow=true;grp.add(lo);
+    g.add(grp);return grp;};
+  const rArm=limb(-0.4,1.6,0.12,0.085,0.72,bodyMat);
+  const lArm=limb(0.4,1.6,0.12,0.085,0.72,bodyMat);
+  const rLeg=limb(-0.15,0.86,0.145,0.10,0.86,bodyMat);
+  const lLeg=limb(0.15,0.86,0.145,0.10,0.86,bodyMat);
+  // hands (gloves), feet (boots), shoulder pauldrons
   const hMat=texMat(leatherTex,0x6a4d33);
-  for(const arm of [rArm,lArm]){const hd=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,0.18),hMat);hd.position.y=-0.74;hd.castShadow=true;arm.add(hd);}
-  const feet=[];for(const leg of [rLeg,lLeg]){const ft=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.16,0.32),new THREE.MeshLambertMaterial({color:0x2a1d12}));ft.position.set(0,-0.84,-0.06);ft.castShadow=true;leg.add(ft);feet.push(ft);}
-  for(const sx of[-1,1]){const pa=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8,0,6.28,0,Math.PI*0.6),bodyMat);pa.position.set(sx*0.4,1.62,0);pa.castShadow=true;g.add(pa);}
+  for(const arm of [rArm,lArm]){const hd=new THREE.Mesh(new THREE.SphereGeometry(0.085,10,8),hMat);hd.position.y=-0.74;hd.scale.set(1,1.12,0.85);hd.castShadow=true;arm.add(hd);}
+  const feet=[];for(const leg of [rLeg,lLeg]){const ft=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.16,0.34),dark);ft.position.set(0,-0.84,-0.07);ft.castShadow=true;leg.add(ft);feet.push(ft);}
+  for(const sx of[-1,1]){const pa=new THREE.Mesh(new THREE.SphereGeometry(0.16,12,10,0,6.28,0,Math.PI*0.6),bodyMat);pa.position.set(sx*0.4,1.62,0);pa.castShadow=true;g.add(pa);}
   // mage cape (Gharu'ndim) — tapered cloth down the back
   const cape=new THREE.Mesh(new THREE.BoxGeometry(0.56,0.95,0.05),texMat(clothTex));cape.position.set(0,1.2,0.2);cape.rotation.x=0.12;cape.visible=false;g.add(cape);
   // thief quiver (Sho) — on the back with arrow tips
@@ -1580,6 +1596,60 @@ function buildAvatar(){
   aWand.rotation.x=-Math.PI/2.2;aWand.position.set(0,-0.2,-0.1);aWand.visible=false;hand.add(aWand);
   g.userData={bodyMat,rArm,lArm,rLeg,lLeg,head,torso,pelvis,rFoot:feet[0],lFoot:feet[1],aSword,aBow,aWand,cape,quiver};
   g.visible=false;
+  return g;
+}
+// ---- a proper humanoid townsperson (head/face/hair, torso, arms+hands, legs+boots or robe) ----
+const SKIN_TONES=[0xe8b890,0xdba56e,0xc68642,0x9c6b3f,0x7a4a28,0xf0cba0];
+const HAIR_TONES=[0x241810,0x4a3320,0x6a4a2a,0x141010,0x9a9a9a,0xb88040,0x5a2a14];
+function buildPerson(o){
+  o=o||{}; const g=new THREE.Group(), sd=o.seed||0;
+  const robeCol=o.robe!=null?o.robe:0x6a4a2a, accent=o.accent!=null?o.accent:0x4a3320;
+  const skin=new THREE.MeshLambertMaterial({color:o.skin||SKIN_TONES[Math.abs(sd)%SKIN_TONES.length]});
+  const cloth=new THREE.MeshLambertMaterial({color:robeCol}), cloth2=new THREE.MeshLambertMaterial({color:accent});
+  const boot=new THREE.MeshLambertMaterial({color:0x2a1d12}), hairCol=o.hair!=null?o.hair:HAIR_TONES[Math.abs(sd*7+1)%HAIR_TONES.length];
+  const robed=!!o.robed;
+  if(robed){
+    const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.54,1.30,14),cloth);robe.position.y=0.70;robe.castShadow=true;g.add(robe);
+    const hem=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.07,14),cloth2);hem.position.y=0.07;g.add(hem);
+    for(const sx of[-1,1]){const b=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,0.26),boot);b.position.set(sx*0.12,0.08,0.04);b.castShadow=true;g.add(b);}
+  } else {
+    for(const sx of[-1,1]){
+      const up=new THREE.Mesh(new THREE.CylinderGeometry(0.105,0.09,0.46,8),cloth2);up.position.set(sx*0.13,0.66,0);up.castShadow=true;g.add(up);
+      const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.07,0.44,8),cloth2);lo.position.set(sx*0.13,0.24,0.012);lo.castShadow=true;g.add(lo);
+      const ft=new THREE.Mesh(new THREE.BoxGeometry(0.17,0.16,0.31),boot);ft.position.set(sx*0.13,0.085,0.06);ft.castShadow=true;g.add(ft);
+    }
+  }
+  const hipY=robed?1.02:0.95;
+  const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.275,0.235,0.62,14),cloth);torso.scale.z=0.78;torso.position.y=hipY+0.33;torso.castShadow=true;g.add(torso);
+  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.25,0.1,14),cloth2);belt.scale.z=0.8;belt.position.y=hipY+0.03;g.add(belt);
+  if(o.apron){const ap=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.62,0.04),new THREE.MeshLambertMaterial({color:0xc2ac82}));ap.position.set(0,hipY+0.28,0.20);g.add(ap);}
+  if(o.cape){const cp=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.4,0.95,12,1,true,0,Math.PI),cloth2);cp.position.set(0,hipY+0.36,0.04);cp.rotation.y=Math.PI;g.add(cp);}
+  const shY=hipY+0.64;
+  const yoke=new THREE.Mesh(new THREE.CylinderGeometry(0.115,0.115,0.52,10),cloth);yoke.rotation.z=Math.PI/2;yoke.scale.z=0.78;yoke.position.y=shY+0.02;g.add(yoke);
+  for(const sx of[-1,1]){
+    const arm=new THREE.Group();arm.position.set(sx*0.30,shY,0);arm.rotation.z=sx*0.06;g.add(arm);
+    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.075,0.42,8),cloth);up.position.y=-0.21;up.castShadow=true;arm.add(up);
+    const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.068,0.058,0.4,8),robed?cloth:skin);lo.position.y=-0.6;lo.castShadow=true;arm.add(lo);
+    const hand=new THREE.Mesh(new THREE.SphereGeometry(0.072,8,7),skin);hand.position.y=-0.82;hand.scale.set(1,1.1,0.85);arm.add(hand);
+  }
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.085,0.12,8),skin);neck.position.y=shY+0.12;g.add(neck);
+  const headY=shY+0.31;
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.165,16,14),skin);head.scale.set(0.92,1.06,0.96);head.position.y=headY;head.castShadow=true;g.add(head);
+  const nose=new THREE.Mesh(new THREE.ConeGeometry(0.028,0.075,6),skin);nose.position.set(0,headY-0.01,-0.16);nose.rotation.x=-Math.PI/2;g.add(nose);
+  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.025,0.04),new THREE.MeshLambertMaterial({color:hairCol}));brow.position.set(0,headY+0.06,-0.15);g.add(brow);
+  addEye(g,0.024,0x1a120a,-0.062,headY+0.02,-0.152);addEye(g,0.024,0x1a120a,0.062,headY+0.02,-0.152);
+  if(!o.hood){
+    const hair=new THREE.Mesh(new THREE.SphereGeometry(0.178,14,12,0,6.28,0,Math.PI*0.6),new THREE.MeshLambertMaterial({color:hairCol}));hair.position.set(0,headY+0.04,0.015);g.add(hair);
+    if(o.beard){const bd=new THREE.Mesh(new THREE.SphereGeometry(0.14,12,10,0,6.28,Math.PI*0.62,Math.PI*0.38),new THREE.MeshLambertMaterial({color:hairCol}));bd.position.set(0,headY-0.03,-0.05);bd.rotation.x=Math.PI;g.add(bd);}
+  } else {
+    const cowl=new THREE.Mesh(new THREE.SphereGeometry(0.215,14,12,0,6.28,0,Math.PI*0.72),cloth2);cowl.position.set(0,headY+0.015,0.02);g.add(cowl);
+    const drape=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.27,0.42,12),cloth2);drape.position.set(0,headY-0.2,0.05);g.add(drape);
+  }
+  if(o.hat==='cone'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.36,12),cloth2);h.position.y=headY+0.27;g.add(h);const br=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.035,12),cloth2);br.position.y=headY+0.12;g.add(br);}
+  if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.18,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=headY+0.07;g.add(h);}
+  if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.19,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=headY+0.03;h.castShadow=true;g.add(h);
+    const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.14,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,headY-0.02,-0.17);g.add(nz);}
+  g.userData.headY=headY;
   return g;
 }
 function buildPortal(name){
@@ -1987,15 +2057,22 @@ function roofPyramid(w,h,color){const r=new THREE.Mesh(new THREE.ConeGeometry(w,
 //    surface (g.userData.surfaces) so players can climb the ramp and stand upstairs. ──
 const _BWIN=new THREE.MeshLambertMaterial({color:0x1a1810,emissive:0xffcf6b,emissiveIntensity:0.5}); // warm window glow
 function addWindows(g,face,W,D,y,ww,wh){
-  const frameMat=solid(0x33271a);
+  const frameMat=solid(0x33271a), shutMat=solid(0x5a3f24);
   const along=(face==='-z'||face==='+z')?W:D, n=clamp(Math.floor(along/4.4),1,2);
-  for(let i=0;i<n;i++){ const c=-along/2+along*(i+0.5)/n; let x,z,fry=0,pry=0;
-    if(face==='-z'){x=c;z=-D/2-0.06;pry=Math.PI;}
-    else if(face==='+z'){x=c;z=D/2+0.06;pry=0;}
-    else if(face==='-x'){x=-W/2-0.06;z=c;fry=Math.PI/2;pry=-Math.PI/2;}
-    else {x=W/2+0.06;z=c;fry=Math.PI/2;pry=Math.PI/2;}
-    const fr=new THREE.Mesh(new THREE.BoxGeometry(ww+0.28,wh+0.28,0.14),frameMat);fr.position.set(x,y,z);fr.rotation.y=fry;g.add(fr);
+  for(let i=0;i<n;i++){ const c=-along/2+along*(i+0.5)/n; let x,z,fry=0,pry=0,nx=0,nz=0;
+    if(face==='-z'){x=c;z=-D/2-0.06;pry=Math.PI;nz=-1;}
+    else if(face==='+z'){x=c;z=D/2+0.06;pry=0;nz=1;}
+    else if(face==='-x'){x=-W/2-0.06;z=c;fry=Math.PI/2;pry=-Math.PI/2;nx=-1;}
+    else {x=W/2+0.06;z=c;fry=Math.PI/2;pry=Math.PI/2;nx=1;}
+    const fr=new THREE.Mesh(new THREE.BoxGeometry(ww+0.3,wh+0.3,0.16),frameMat);fr.position.set(x,y,z);fr.rotation.y=fry;g.add(fr);
     const pn=new THREE.Mesh(new THREE.PlaneGeometry(ww,wh),_BWIN);pn.position.set(x,y,z);pn.rotation.y=pry;g.add(pn);
+    // mullion cross (two thin bars over the glass)
+    const tang=fry===0?'x':'z';   // bar runs along the wall face
+    const vbar=new THREE.Mesh(new THREE.BoxGeometry(tang==='x'?0.05:0.12,wh,tang==='x'?0.12:0.05),frameMat);vbar.position.set(x+nx*0.04,y,z+nz*0.04);g.add(vbar);
+    const hbar=new THREE.Mesh(new THREE.BoxGeometry(tang==='x'?ww:0.12,0.05,tang==='x'?0.12:ww),frameMat);hbar.position.set(x+nx*0.04,y,z+nz*0.04);g.add(hbar);
+    // open shutters either side
+    for(const s of[-1,1]){const sh=new THREE.Mesh(new THREE.BoxGeometry(tang==='x'?ww*0.55:0.1,wh+0.2,tang==='x'?0.1:ww*0.55),shutMat);
+      const off=(ww*0.62)*s; sh.position.set(x+(tang==='x'?off:nx*0.05), y, z+(tang==='z'?off:nz*0.05)); g.add(sh);}
   }
 }
 function addShell(g,W,H,D,wallMat,floorMat,trim){
@@ -2011,6 +2088,13 @@ function addShell(g,W,H,D,wallMat,floorMat,trim){
   // door frame + corner posts
   mk(dg+0.5,0.3,t+0.14,0,dh,D/2,tm); mk(0.3,dh,t+0.14,-(dg/2+0.15),dh/2,D/2,tm); mk(0.3,dh,t+0.14,(dg/2+0.15),dh/2,D/2,tm);
   for(const sx of[-1,1])for(const sz of[-1,1]) mk(0.34,H,0.34,sx*(W/2-0.05),H/2,sz*(D/2-0.05),tm);
+  // a planked wooden door, hinged ajar so the doorway reads as an entrance
+  { const door=new THREE.Group(),dw=dg-0.12,dhh=dh-0.2,plank=solid(0x5a3f24),iron=solid(0x2a2620);
+    const slab=new THREE.Mesh(new THREE.BoxGeometry(dw,dhh,0.1),plank);slab.position.x=dw/2;slab.castShadow=true;door.add(slab);
+    for(let p=0;p<3;p++){const pl=new THREE.Mesh(new THREE.BoxGeometry(0.05,dhh-0.1,0.12),solid(0x3a2616));pl.position.set(dw*(p+0.5)/3,0,0);door.add(pl);}
+    for(const by of[-dhh*0.32,dhh*0.32]){const bd=new THREE.Mesh(new THREE.BoxGeometry(dw,0.08,0.13),iron);bd.position.set(dw/2,by,0);door.add(bd);}
+    const knob=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,6),texMat(metalTex,0xb8902a));knob.position.set(dw-0.15,0,0.08);door.add(knob);
+    door.position.set(-dg/2+0.06,dh/2,D/2-0.02);door.rotation.y=-0.55;g.add(door); }
   addWindows(g,'-z',W,D,H*0.55,1.3,1.5); addWindows(g,'-x',W,D,H*0.55,1.3,1.5); addWindows(g,'+x',W,D,H*0.55,1.3,1.5);
   const col=[],step=1.0;
   for(let x=-W/2+0.5;x<=W/2-0.5;x+=step) col.push({x,z:-D/2,r:0.7});
@@ -2040,6 +2124,22 @@ function addUpperWalls(g,W,H1,H2,D,wallMat,trim){
   addWindows(g,'-z',W,D,wy,1.3,1.4); addWindows(g,'+z',W,D,wy,1.3,1.4); addWindows(g,'-x',W,D,wy,1.3,1.4); addWindows(g,'+x',W,D,wy,1.3,1.4);
 }
 function roofRect(W,D,h,col){ const R=Math.max(W,D)*0.64,r=roofPyramid(R,h,col); r.scale.set(W/Math.max(W,D),1,D/Math.max(W,D)); return r; }
+// half-timbered dark beams over plaster (Tudor look)
+function addTimber(g,W,H,D){
+  const fb=solid(0x3a2616),tT=0.16;
+  for(const sz of[-1,1]){
+    for(const hy of[H*0.42,H-0.35]){const b=new THREE.Mesh(new THREE.BoxGeometry(W,tT,tT),fb);b.position.set(0,hy,sz*(D/2+0.02));g.add(b);}
+    for(const sx of[-1,1]){const br=new THREE.Mesh(new THREE.BoxGeometry(0.16,H*0.5,0.16),fb);br.position.set(sx*(W/2-1.1),H*0.42,sz*(D/2+0.02));br.rotation.z=sx*0.55;br.castShadow=true;g.add(br);}
+  }
+  for(const sx of[-1,1])for(const hy of[H*0.42,H-0.35]){const b=new THREE.Mesh(new THREE.BoxGeometry(tT,tT,D),fb);b.position.set(sx*(W/2+0.02),hy,0);g.add(b);}
+}
+// hanging shop signboard beside the door
+function addSign(g,W,D,mcol){
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.95),solid(0x3a2616));arm.position.set(W/2-1.1,3.3,D/2+0.5);g.add(arm);
+  const board=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.66,0.07),texMat(woodTex,0x6a4a2a));board.position.set(W/2-1.1,2.85,D/2+0.92);board.castShadow=true;g.add(board);
+  const emb=new THREE.Mesh(new THREE.CircleGeometry(0.2,16),new THREE.MeshBasicMaterial({color:mcol||0xffcf6b}));emb.position.set(W/2-1.1,2.85,D/2+0.96);g.add(emb);
+  for(const sx of[-1,1]){const ch=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.42,4),solid(0x2a2620));ch.position.set(W/2-1.1+sx*0.38,3.06,D/2+0.92);g.add(ch);}
+}
 // dress a hollow shell's interior (human-scale, no collision so it stays passable; door is on +z)
 function addFurniture(g,W,D,kind){
   const wood=texMat(woodTex,0x6a4a2a),wood2=texMat(woodTex,0x4a3318),stone=solid(0x6a655c,true);
@@ -2075,8 +2175,12 @@ function bAluvian(s,kind){
   // exposed corner timbers
   for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.3,(two?H1F+H2F:H1F),0.3),tm);p.position.set(sx*(W/2-0.02),(two?H1F+H2F:H1F)/2,sz*(D/2-0.02));g.add(p);}
   const top=two?H1F+H2F:H1F;
-  const roof=roofRect(W*1.12,D*1.12,3.2,0x7a3a2c);roof.position.y=top+1.5;g.add(roof);
+  addTimber(g,W,top,D);
+  const roof=roofRect(W*1.16,D*1.16,3.4,0x7a3a2c);roof.position.y=top+1.6;g.add(roof);
+  const eave=new THREE.Mesh(new THREE.BoxGeometry(W*1.16,0.2,D*1.16),solid(0x3a2616));eave.position.y=top+0.1;g.add(eave); // overhanging eave
   const ch=new THREE.Mesh(new THREE.BoxGeometry(0.7,2.2,0.7),solid(0x7a5040));ch.position.set(W*0.32,top+1.7,-D*0.22);ch.castShadow=true;g.add(ch);
+  const cap=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.2,0.85),solid(0x4a3a30));cap.position.set(W*0.32,top+2.85,-D*0.22);g.add(cap);
+  if(kind==="shop") addSign(g,W,D,0xffcf6b);
   g.userData.surfaces=surf; return g;
 }
 // --- Gharu'ndim: sandstone block, parapet, dome ---
@@ -2090,6 +2194,7 @@ function bGharu(s,kind){
   const dome=new THREE.Mesh(new THREE.SphereGeometry(W*0.34,16,10,0,6.28,0,Math.PI/2),solid(0xd8b46a));dome.position.y=top+0.5;dome.castShadow=true;g.add(dome);
   if(kind==="hall"){const tw=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,top+3,12),solid(0xcaa56a));tw.position.set(W*0.42,(top+3)/2,-D*0.32);tw.castShadow=true;g.add(tw);
     const td=new THREE.Mesh(new THREE.SphereGeometry(0.95,12,8,0,6.28,0,Math.PI/2),solid(0xe0bc70));td.position.set(W*0.42,top+3,-D*0.32);g.add(td);}
+  if(kind==="shop") addSign(g,W,D,0xe0bc70);
   g.userData.surfaces=surf; return g;
 }
 // --- Sho: timber-framed with a tiered pagoda roof ---
@@ -2104,6 +2209,7 @@ function bSho(s,kind){
   for(let t=0;t<tiers;t++){const h=1.8;
     const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),texMat(woodTex,t%2?0x9a8260:0x9a4030));body.position.y=y+h/2;body.castShadow=true;g.add(body);
     const rr=roofRect(w*1.5,w*1.5,1.3,0x46604a);rr.position.y=y+h+0.5;g.add(rr); y+=h+0.6;w*=0.82;}
+  if(kind==="shop") addSign(g,W,D,0x9a4030);
   g.userData.surfaces=surf; return g;
 }
 const CULTURE_BUILDERS=[bAluvian,bSho,bGharu]; // region index 0 Aluvia, 1 Sho, 2 Gharu'ndim
@@ -4210,15 +4316,16 @@ const NPC_FLAVOR={
 };
 function buildNPC(role,name){
   const R=NPC_ROLES[role]||NPC_ROLES.emissary;
-  const g=new THREE.Group();
-  const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.6,1.6,10),new THREE.MeshLambertMaterial({color:R.robe}));
-  robe.position.y=0.8;robe.castShadow=true;g.add(robe);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),new THREE.MeshLambertMaterial({color:0xcaa06a}));
-  head.position.y=1.85;head.castShadow=true;g.add(head);
-  const hood=new THREE.Mesh(new THREE.ConeGeometry(0.42,0.5,10),new THREE.MeshLambertMaterial({color:R.hood}));
-  hood.position.y=2.15;g.add(hood);
-  const lbl=labelSprite(name||R.label);lbl.position.y=2.9;g.add(lbl);
-  const marker=textSprite(R.mark,R.mcol);marker.position.y=2.55;marker.scale.set(1,1,1);g.add(marker);
+  const seed=(name||role||"x").length+role.length;
+  const o={robe:R.robe,accent:R.hood,seed};
+  if(role==="emissary"||role==="reset_attr"||role==="reset_skill"){ o.robed=true; o.hood=true; o.cape=(role==="emissary"); }
+  else if(role==="barkeep"){ o.apron=true; o.hat="cap"; o.beard=(seed%2===0); }
+  else if(role==="crier"){ o.hat="cone"; o.beard=(seed%3===0); }
+  else if(role==="gatekeep"){ o.helm=true; }
+  else { o.beard=(seed%2===0); }
+  const g=buildPerson(o);
+  const lbl=labelSprite(name||R.label);lbl.position.y=2.5;g.add(lbl);
+  const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
   g.userData.marker=marker;
   return g;
 }
@@ -4406,17 +4513,19 @@ const VENDOR_TYPES={
 let activeShop=null;
 function buildMerchant(vt){
   const def=VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner;
-  const g=new THREE.Group();
-  const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.55,1.5,10),new THREE.MeshLambertMaterial({color:def.robe}));
-  robe.position.y=0.75;robe.castShadow=true;g.add(robe);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),new THREE.MeshLambertMaterial({color:0xcaa06a}));
-  head.position.y=1.78;head.castShadow=true;g.add(head);
-  const hat=new THREE.Mesh(new THREE.ConeGeometry(0.4,0.45,10),new THREE.MeshLambertMaterial({color:def.robe}));
-  hat.position.y=2.08;g.add(hat);
-  const cart=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,0.9),new THREE.MeshLambertMaterial({color:0x6b4a22}));
-  cart.position.set(1.3,0.6,0);cart.castShadow=true;g.add(cart);
-  const lbl=labelSprite(def.title+" — E to trade");lbl.position.y=2.8;g.add(lbl);
-  const marker=textSprite(def.marker,def.mcol);marker.position.y=2.5;marker.scale.set(1,1,1);g.add(marker);
+  const seed=def.title.length;
+  const g=buildPerson({robe:def.robe,accent:0x3a2a1a,apron:true,hat:(vt==="scrivener"||vt==="provisioner")?"cap":null,beard:(seed%2===0),seed:seed*3});
+  // market stall beside the shopkeeper: counter, canopy on posts, a few wares
+  const stall=new THREE.Group();stall.position.set(1.45,0,0);g.add(stall);
+  const wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318);
+  const counter=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.85,0.9),wood);counter.position.set(0,0.45,0);counter.castShadow=true;stall.add(counter);
+  const top=new THREE.Mesh(new THREE.BoxGeometry(1.62,0.1,1.0),wood2);top.position.set(0,0.92,0);stall.add(top);
+  for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.08,2.0,0.08),wood2);p.position.set(sx*0.72,1.0,sz*0.44);stall.add(p);}
+  const canopy=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.12,1.2),new THREE.MeshLambertMaterial({color:def.mcol||0xb04030}));canopy.position.set(0,2.05,0);canopy.castShadow=true;stall.add(canopy);
+  const stripe=new THREE.Mesh(new THREE.BoxGeometry(1.84,0.13,0.3),new THREE.MeshLambertMaterial({color:0xe8e0c8}));stripe.position.set(0,2.04,0);stall.add(stripe);
+  for(let i=0;i<3;i++){const w=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2),i%2?wood2:new THREE.MeshLambertMaterial({color:def.robe}));w.position.set(-0.45+i*0.45,1.04,0.1);stall.add(w);}
+  const lbl=labelSprite(def.title+" — E to trade");lbl.position.y=2.5;g.add(lbl);
+  const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
   return g;
 }
 function addMerchant(x,z,vt){
