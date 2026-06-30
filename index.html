@@ -1747,9 +1747,10 @@ function buildPerson(o){
     const legs=[];
     for(const sx of[-1,1]){
       const leg=new THREE.Group();leg.position.set(sx*0.12,hipY,0);g.add(leg);
-      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.082,0.48,10),cloth2);thigh.position.y=-0.24;thigh.castShadow=true;leg.add(thigh);
-      const knee=new THREE.Mesh(new THREE.SphereGeometry(0.078,8,7),cloth2);knee.position.y=-0.47;leg.add(knee);
-      const shin=new THREE.Mesh(new THREE.CylinderGeometry(0.072,0.055,0.46,10),cloth2);shin.position.set(0,-0.70,0.012);shin.castShadow=true;leg.add(shin);
+      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.125,0.095,0.48,12),cloth2);thigh.position.y=-0.24;thigh.castShadow=true;leg.add(thigh);
+      const knee=new THREE.Mesh(new THREE.SphereGeometry(0.088,10,8),cloth2);knee.position.y=-0.47;leg.add(knee);
+      const shin=new THREE.Mesh(new THREE.CylinderGeometry(0.088,0.06,0.46,12),cloth2);shin.position.set(0,-0.70,0.012);shin.castShadow=true;leg.add(shin);
+      const calf=new THREE.Mesh(new THREE.SphereGeometry(0.07,10,8),cloth2);calf.scale.set(1,1.5,1.2);calf.position.set(0,-0.62,-0.02);leg.add(calf);   // calf muscle
       const ft=new THREE.Group();ft.position.set(0,-0.94,0.0);leg.add(ft);                   // shaped shoe: body + toe cap + sole
       const fb=new THREE.Mesh(new THREE.BoxGeometry(0.135,0.1,0.2),boot);fb.position.set(0,0.005,0.045);fb.castShadow=true;ft.add(fb);
       const toe=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.07,0.085),boot);toe.position.set(0,-0.012,0.175);toe.castShadow=true;ft.add(toe);
@@ -1770,9 +1771,10 @@ function buildPerson(o){
   const arms=[];
   for(const sx of[-1,1]){
     const arm=new THREE.Group();arm.position.set(sx*0.265,shY+0.03,0);arm.rotation.z=sx*0.09;g.add(arm);
-    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.072,0.06,0.4,9),cloth);up.position.y=-0.2;up.castShadow=true;arm.add(up);
-    const elb=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,7),robed?cloth:skinM);elb.position.y=-0.4;arm.add(elb);
-    const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.046,0.38,9),robed?cloth:skinM);lo.position.y=-0.58;lo.castShadow=true;arm.add(lo);
+    const delt=new THREE.Mesh(new THREE.SphereGeometry(0.092,12,10),cloth);delt.scale.set(1,0.95,1);delt.position.y=-0.04;arm.add(delt);   // deltoid/shoulder cap
+    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.088,0.066,0.4,11),cloth);up.position.y=-0.22;up.castShadow=true;arm.add(up);   // biceps taper
+    const elb=new THREE.Mesh(new THREE.SphereGeometry(0.064,10,8),robed?cloth:skinM);elb.position.y=-0.42;arm.add(elb);
+    const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.05,0.38,11),robed?cloth:skinM);lo.position.y=-0.6;lo.castShadow=true;arm.add(lo);
     const hand=new THREE.Group();hand.position.y=-0.79;arm.add(hand);                       // palm + fingers + thumb (a hint of a real hand)
     const palm=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,7),skinM);palm.scale.set(1,0.95,0.7);hand.add(palm);
     const fng=new THREE.Mesh(new THREE.BoxGeometry(0.066,0.06,0.04),skinM);fng.position.y=-0.06;fng.castShadow=true;hand.add(fng);
