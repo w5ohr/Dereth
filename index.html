@@ -2228,8 +2228,11 @@ const WEAPON_TYPES={
   spear:   {mode:"melee",  cd:1.12, reach:1.55, dmg:1.05, stam:9,  blurb:"long reach"},
   axe:     {mode:"melee",  cd:1.20, reach:0.95, dmg:1.28, stam:10, blurb:"heavy, slow"},
   mace:    {mode:"melee",  cd:1.36, reach:0.95, dmg:1.42, stam:11, blurb:"crushing, slow"},
+  staff:   {mode:"melee",  cd:1.05, reach:1.30, dmg:0.96, stam:8,  blurb:"staff — reach, steady"},
+  twohand: {mode:"melee",  cd:1.45, reach:1.45, dmg:1.62, stam:14, blurb:"two-handed — devastating, slow"},
   bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, blurb:"ranged"},
   crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, blurb:"ranged, hard-hitting"},
+  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  blurb:"thrown darts — fast"},
 };
 // armor classes: protection vs mobility tradeoff (heavy guards more but slows you & drains stamina regen).
 const ARMOR_TYPES={
@@ -2237,27 +2240,68 @@ const ARMOR_TYPES={
   medium:{armorMul:1.00, speedMul:1.00, stamMul:1.00, blurb:"medium — balanced"},
   heavy: {armorMul:1.38, speedMul:0.90, stamMul:0.72, blurb:"heavy — strong, slows you"},
 };
-const ITEM_BASE=[{n:"Buckler",stat:"armor",v:[3,9]},
+// base loot shapes, named after real Asheron's Call weapons & armour. The material (first word) is
+// prepended at roll time, e.g. "Pyreal Shamshir", "Olthoi Koujia Breastplate".
+const ITEM_BASE=[
+  {n:"Buckler",stat:"armor",v:[3,9]},
+  // consumables & attribute attunements (AC mana stones / health kits / spirit gems)
   {n:"Health Kit",stat:"hp",v:[30,70]},{n:"Mana Stone",stat:"mn",v:[30,70]},
-  {n:"Coordination Gem",stat:"Coordination",v:[1,1]},{n:"Focusing Stone",stat:"Focus",v:[1,1]},
-  {n:"Dagger",stat:"weapon",wt:"dagger",v:[4,10]},{n:"Sword",stat:"weapon",wt:"sword",v:[5,13]},
-  {n:"Spear",stat:"weapon",wt:"spear",v:[6,14]},{n:"Axe",stat:"weapon",wt:"axe",v:[7,16]},
-  {n:"War Mace",stat:"weapon",wt:"mace",v:[8,18]},{n:"Long Bow",stat:"weapon",wt:"bow",v:[5,13]},
-  {n:"Crossbow",stat:"weapon",wt:"crossbow",v:[8,18]},
-  {n:"Leather Jerkin",stat:"worn",at:"light",v:[6,15]},{n:"Quilted Robe",stat:"worn",at:"light",v:[4,12]},
-  {n:"Chainmail",stat:"worn",at:"medium",v:[8,22]},{n:"Scale Mail",stat:"worn",at:"medium",v:[10,24]},
-  {n:"Plate Hauberk",stat:"worn",at:"heavy",v:[14,34]}];
+  {n:"Strength Gem",stat:"Strength",v:[1,1]},{n:"Endurance Gem",stat:"Endurance",v:[1,1]},
+  {n:"Coordination Gem",stat:"Coordination",v:[1,1]},{n:"Quickness Gem",stat:"Quickness",v:[1,1]},
+  {n:"Focusing Stone",stat:"Focus",v:[1,1]},{n:"Willpower Gem",stat:"Self",v:[1,1]},
+  // daggers (light, fast)
+  {n:"Dagger",stat:"weapon",wt:"dagger",v:[4,10]},{n:"Stiletto",stat:"weapon",wt:"dagger",v:[4,10]},
+  {n:"Jambiya",stat:"weapon",wt:"dagger",v:[4,11]},{n:"Khanjar",stat:"weapon",wt:"dagger",v:[5,11]},
+  // swords
+  {n:"Sword",stat:"weapon",wt:"sword",v:[5,13]},{n:"Shamshir",stat:"weapon",wt:"sword",v:[5,13]},
+  {n:"Tachi",stat:"weapon",wt:"sword",v:[6,14]},{n:"Schlager",stat:"weapon",wt:"sword",v:[5,12]},
+  // spears / polearms
+  {n:"Spear",stat:"weapon",wt:"spear",v:[6,14]},{n:"Yari",stat:"weapon",wt:"spear",v:[6,15]},
+  {n:"Naginata",stat:"weapon",wt:"spear",v:[7,15]},{n:"Trident",stat:"weapon",wt:"spear",v:[6,14]},
+  // axes
+  {n:"Axe",stat:"weapon",wt:"axe",v:[7,16]},{n:"Battle Axe",stat:"weapon",wt:"axe",v:[8,17]},
+  {n:"War Hatchet",stat:"weapon",wt:"axe",v:[7,15]},{n:"Ono",stat:"weapon",wt:"axe",v:[8,17]},
+  // maces
+  {n:"War Mace",stat:"weapon",wt:"mace",v:[8,18]},{n:"Morning Star",stat:"weapon",wt:"mace",v:[8,19]},
+  {n:"Tetsubo",stat:"weapon",wt:"mace",v:[9,19]},{n:"Spiked Club",stat:"weapon",wt:"mace",v:[7,17]},
+  // staves
+  {n:"Quarterstaff",stat:"weapon",wt:"staff",v:[5,13]},{n:"Nabut",stat:"weapon",wt:"staff",v:[5,13]},
+  {n:"War Staff",stat:"weapon",wt:"staff",v:[6,14]},
+  // two-handed
+  {n:"Greatsword",stat:"weapon",wt:"twohand",v:[9,20]},{n:"Spadone",stat:"weapon",wt:"twohand",v:[9,21]},
+  {n:"War Maul",stat:"weapon",wt:"twohand",v:[10,22]},{n:"Glaive",stat:"weapon",wt:"twohand",v:[9,20]},
+  // bows / crossbows / atlatls
+  {n:"Long Bow",stat:"weapon",wt:"bow",v:[5,13]},{n:"Short Bow",stat:"weapon",wt:"bow",v:[4,11]},
+  {n:"Yumi",stat:"weapon",wt:"bow",v:[6,14]},{n:"Composite Bow",stat:"weapon",wt:"bow",v:[6,15]},
+  {n:"Crossbow",stat:"weapon",wt:"crossbow",v:[8,18]},{n:"Arbalest",stat:"weapon",wt:"crossbow",v:[9,19]},
+  {n:"Heavy Crossbow",stat:"weapon",wt:"crossbow",v:[9,20]},
+  {n:"Atlatl",stat:"weapon",wt:"atlatl",v:[5,12]},{n:"Amuli Atlatl",stat:"weapon",wt:"atlatl",v:[6,13]},
+  // light armour (material prepends, AC-style: "Leather Brigandine", "Velvet Robe")
+  {n:"Jerkin",stat:"worn",at:"light",v:[6,15]},{n:"Brigandine",stat:"worn",at:"light",v:[7,16]},
+  {n:"Robe",stat:"worn",at:"light",v:[4,12]},{n:"Chiran",stat:"worn",at:"light",v:[6,15]},
+  {n:"Amuli Coat",stat:"worn",at:"light",v:[7,17]},
+  // medium armour
+  {n:"Chainmail",stat:"worn",at:"medium",v:[8,22]},{n:"Scalemail",stat:"worn",at:"medium",v:[10,24]},
+  {n:"Celdon Breastplate",stat:"worn",at:"medium",v:[10,23]},{n:"Koujia Breastplate",stat:"worn",at:"medium",v:[10,24]},
+  // heavy armour
+  {n:"Platemail",stat:"worn",at:"heavy",v:[14,34]},{n:"Lorica Breastplate",stat:"worn",at:"heavy",v:[14,33]},
+  {n:"Yoroi Cuirass",stat:"worn",at:"heavy",v:[15,35]},{n:"Olthoi Cuirass",stat:"worn",at:"heavy",v:[16,38]}];
 // AC-authentic itemization (research Phase 6.8): every loot item has a workmanship (1-10, rolled within a
 // range set by its loot tier) and a material (the first word of its name). Material → tinker target;
 // workmanship (+ Salvaging skill) → how many salvage units it yields. 100 units of one material = 1 tink.
 const WORK_TIER=[null,[1,4],[2,6],[3,7],[3,9],[4,10]]; // loot tier 1..5 → [minWork,maxWork]
-const MATERIALS={ weapon:["Iron","Pyreal","Jet","Diamond"], armor:["Bronze","Granite","Leather","Steel"], other:["Amber","Quartz","Marble"] };
+// AC's real salvage materials — metals/woods make weapons, metals/leather/cloth/stone make armour,
+// gems are the "other" class (imbue weapons / theme consumables). The first word of a loot name is its material.
+const MATERIALS={
+  weapon:["Iron","Steel","Bronze","Brass","Copper","Silver","Gold","Pyreal","Platinum","Oak","Mahogany","Teak","Ebony","Pine"],
+  armor:["Bronze","Steel","Iron","Brass","Copper","Granite","Marble","Alabaster","Ceramic","Leather","Hide","Linen","Wool","Silk","Velvet","Satin"],
+  other:["Amber","Quartz","Diamond","Ruby","Sapphire","Emerald","Jet","Onyx","Opal","Agate","Carnelian","Citrine","Peridot","Topaz","Zircon","Lapis Lazuli","Malachite","Hematite","Bloodstone","Moonstone","Tourmaline","Aquamarine","Imperial Topaz","Black Garnet"] };
 const MAT_APPLY={}; // material → which equipped slot a tink improves ("weapon" boosts damage, "armor" boosts defence)
 for(const m of MATERIALS.weapon) MAT_APPLY[m]="weapon";
 for(const m of MATERIALS.other ) MAT_APPLY[m]="weapon"; // imbue-type gems channel into weapon power here
 for(const m of MATERIALS.armor ) MAT_APPLY[m]="armor";
 // imbue materials brand the equipped weapon with an element instead of adding flat damage (ties salvage→affixes)
-const IMBUE_MAT={Jet:"nether",Amber:"fire",Diamond:"shock"};
+const IMBUE_MAT={Amber:"fire",Ruby:"fire",Sapphire:"frost",Aquamarine:"frost",Diamond:"shock",Citrine:"shock",Jet:"nether",Onyx:"nether",Emerald:"acid",Peridot:"acid"};
 function matClass(stat){ return stat==="weapon"?"weapon":(stat==="worn"||stat==="armor")?"armor":"other"; }
 function rollWork(tier){ const r=WORK_TIER[clamp(tier|0,1,5)]; return irnd(r[0],r[1]); }
 // rare/high-tier affixes — weapons get magical brands (element + status), gear gets vital/armor boons.
@@ -2266,6 +2310,7 @@ const WEAPON_AFFIXES=[
   {k:"brand",element:"frost", suffix:"of Frost",   desc:"frost damage + chill"},
   {k:"brand",element:"shock", suffix:"of Storms",  desc:"shock damage + stun"},
   {k:"brand",element:"nether",suffix:"of the Void",desc:"nether damage + drain"},
+  {k:"brand",element:"acid",  suffix:"of Corrosion",desc:"acid damage + sunder"},
   {k:"crit",     v:0.12, suffix:"of Precision", desc:"+12% critical chance"},
   {k:"lifesteal",v:0.22, suffix:"of the Leech", desc:"22% life steal"},
 ];
