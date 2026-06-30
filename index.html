@@ -2940,7 +2940,9 @@ const WEAPON_TYPES={
   bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, blurb:"ranged"},
   crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, blurb:"ranged, hard-hitting"},
   atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  blurb:"thrown darts — fast"},
+  focus:   {mode:"focus",   cd:1.00, reach:0.00, dmg:0.0,  stam:0,  blurb:"casting focus — empowers every school of magic"},
 };
+const FOCUS_SCHOOLS=["war","life","creature","item","void"];   // a focus lends skill to all spell schools
 // armor classes: protection vs mobility tradeoff (heavy guards more but slows you & drains stamina regen).
 const ARMOR_TYPES={
   light: {armorMul:0.80, speedMul:1.06, stamMul:1.25, blurb:"light — agile, +stamina"},
@@ -2992,6 +2994,10 @@ const ITEM_BASE=[
   {n:"Crossbow",stat:"weapon",wt:"crossbow",v:[8,18]},{n:"Arbalest",stat:"weapon",wt:"crossbow",v:[9,19]},
   {n:"Heavy Crossbow",stat:"weapon",wt:"crossbow",v:[9,20]},
   {n:"Atlatl",stat:"weapon",wt:"atlatl",v:[5,12]},{n:"Amuli Atlatl",stat:"weapon",wt:"atlatl",v:[6,13]},
+  // casting foci (AC magic implements): no melee — equip in the weapon hand to empower spellcraft (rolls a magic-skill bonus)
+  {n:"Wand",stat:"weapon",wt:"focus",foc:true,v:[5,13]},{n:"Sceptre",stat:"weapon",wt:"focus",foc:true,v:[6,14]},
+  {n:"Orb",stat:"weapon",wt:"focus",foc:true,v:[6,15]},{n:"Baton",stat:"weapon",wt:"focus",foc:true,v:[5,13]},
+  {n:"Casting Staff",stat:"weapon",wt:"focus",foc:true,v:[7,16]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3077,11 +3083,14 @@ const NAMED_ITEMS=[
   {name:"Singularity Caul",    stat:"worn",  at:"light",  aslot:"head", mat:"Velvet",  v:[30,42],affix:()=>_oaff("of the Magus")},
   {name:"Empyrean Platemail",  stat:"worn",  at:"heavy",  aslot:"chest",mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
   {name:"Olthoi Helm",         stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
+  {name:"Hoeshala's Wand",     stat:"weapon",wt:"focus",  mat:"Ebony",   v:[20,28]},   // legendary casting foci (no brand — they empower all magic)
+  {name:"Sceptre of the Arcanum",stat:"weapon",wt:"focus",mat:"Diamond", v:[22,30]},
 ];
 function rollNamedItem(){
   const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
-  const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix()};
+  const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
   if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at; if(t.aslot) it.aslot=t.aslot;
+  if(t.wt==="focus") it.foc=it.v;   // a legendary focus's value is its all-school magic bonus
   return it;
 }
 // ---- Food & drink: consumables that grant a timed attribute buff (AC's cooking fare). Cooking skill
@@ -3130,6 +3139,8 @@ function jewelryBonus(kind,arg){ let n=0;
 function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ const bj=it&&it.bonus;
   if(bj&&bj.kind==="skill") g[bj.key]=(g[bj.key]||0)+bj.v; }
   const sb=(typeof setBonus==="function")?setBonus():null; if(sb&&sb.skill) g[sb.skill]=(g[sb.skill]||0)+sb.skillV;   // full-set skill boon
+  const w=player.weapon;   // an equipped casting focus lends its bonus to every magic school (+ mana & arcane)
+  if(w&&w.wt==="focus"&&w.foc){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+w.foc; const h=Math.round(w.foc*0.5); g.mana=(g.mana||0)+h; g.arcane=(g.arcane||0)+h; }
   player.gearSkill=g; }
 function rollItem(rare,tier){
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
@@ -3152,6 +3163,7 @@ function rollItem(rare,tier){
   if(base.shield) it.shield=base.shield;
   if(base.magicAbsorb) it.magicAbsorb=base.magicAbsorb;
   if(base.jtype){ it.jtype=base.jtype; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; return it; } // jewelry always bears a cantrip
+  if(base.foc){ it.foc=it.v; return it; }   // casting focus: its value IS the magic-skill bonus (no brand affix)
   // affix roll: only gear (weapon/worn/armor), favouring rares & deep delves
   const affixable=base.stat==="weapon"||base.stat==="worn"||base.stat==="armor";
   if(affixable&&(rare||tier>=4)&&Math.random()<(rare?0.85:0.4)){
@@ -3211,11 +3223,12 @@ function equipItem(it){
   if(isWeapon){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
     const wp=WEAPON_TYPES[it.wt]; weaponMode=(wp&&wp.mode==="missile")?"bow":"sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=weaponMode==="sword";bowModel.visible=weaponMode==="bow";}
-    styleWeaponModel();
+    styleWeaponModel(); recomputeGearSkill(); derive();   // a focus lends magic-skill; refresh on any weapon swap
   } else { recomputeGearSkill(); derive(); } // refresh max-vitals + gear skill bonuses for armour/jewelry
   if(it.stat==="jewelry"){ log(`Equipped <b>${it.name}</b> (${jewelryDesc(it)}).`,"loot"); return; }
   if(it.stat==="worn"){ const sd=ARMOR_SLOT_DEFS.find(d=>d.slot===(it.aslot||"chest")); const at=ARMOR_TYPES[it.at];
     log(`Equipped <b>${it.name}</b> (+${it.v} armor · ${sd?sd.slot:"chest"}${at?" · "+at.blurb.split(" — ")[0]:""}${it.affix?" · "+it.affix.desc:""}).`,"loot"); return; }
+  if(it.wt==="focus"){ log(`Equipped <b>${it.name}</b> (+${it.foc||it.v} to every magic school · casting focus).`,"loot"); return; }
   const tag=WEAPON_TYPES[it.wt]?` · ${WEAPON_TYPES[it.wt].blurb}`:"";
   log(`Equipped <b>${it.name}</b> (+${it.v} damage${tag}).`,"loot");
 }
@@ -7303,7 +7316,7 @@ function unequipTile(kind,slot){
   else if(kind==="armor"){ it=player.armorSlots&&player.armorSlots[slot]; if(!it)return; delete player.armorSlots[slot]; }
   else { it=player.jewelry&&player.jewelry[slot]; if(!it)return; delete player.jewelry[slot]; }
   player.inv.push(it);
-  if(kind!=="weapon"){ recomputeGearSkill(); derive(); }
+  recomputeGearSkill(); derive();   // weapon too: removing a casting focus must drop its magic-skill bonus
   log(`Unequipped <b>${esc(it.name)}</b>.`,"loot"); SFX.click&&SFX.click();
   buildTinker(); updateHUD(); saveGame();
 }
