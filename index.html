@@ -1981,6 +1981,15 @@ function teleportFX(x,z){
 }
 
 // ---------- combat ----------
+// distinct projectile silhouettes per element: blades are spinning shards, bolts/orbs are spheres,
+// piercing shots are slim darts, bludgeon a fat orb — small touch that reads at a glance
+function projGeom(sp){
+  const r=sp.r||0.28, el=sp.element;
+  if(el==="slash") return new THREE.BoxGeometry(r*2.4,r*0.5,r*0.5);
+  if(el==="pierce") return new THREE.ConeGeometry(r*0.7,r*3,8);
+  if(el==="bludgeon") return new THREE.SphereGeometry(r*1.25,10,8);
+  return new THREE.SphereGeometry(r,10,8);
+}
 function rollCrit(){ return Math.random() < clamp(0.07+player.attr.Coordination*0.004,0,0.45); }
 function armorTypeOf(){ const a=player.armorItem; return (a&&a.at&&ARMOR_TYPES[a.at])||null; }
 function wornArmorV(){ const a=player.armorItem; if(!a) return 0; const at=ARMOR_TYPES[a.at];
@@ -2632,10 +2641,10 @@ function executeSpell(id){
   for(const off of spread){
     const ca=Math.cos(off),sa=Math.sin(off), dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca;
     const ox=player.x+dx*0.8, oz=player.z+dz*0.8, oy=EYE-0.15;
-    const mesh=new THREE.Mesh(new THREE.SphereGeometry(sp.r,10,8),new THREE.MeshBasicMaterial({color:sp.color}));
+    const mesh=new THREE.Mesh(projGeom(sp),new THREE.MeshBasicMaterial({color:sp.color}));
     mesh.position.set(ox,oy,oz);
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
-    pProj.push({mesh,x:ox,y:oy,z:oz,vx:dx*sp.speed,vy:dir.y*sp.speed,vz:dz*sp.speed,
+    pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:oy,z:oz,vx:dx*sp.speed,vy:dir.y*sp.speed,vz:dz*sp.speed,
       dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:2.2});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
@@ -2967,11 +2976,26 @@ function collide(nx,nz){
   if(!inDungeon&&terrainH(nx,nz)<-2) return [player.x,player.z]; // can't wade into deep water
   return [nx,nz];
 }
+let castReticle=null;
+function showCastReticle(x,z,r,col){
+  if(!castReticle){ castReticle=new THREE.Mesh(new THREE.RingGeometry(0.88,1,30),
+    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.55,side:THREE.DoubleSide,depthWrite:false,fog:false}));
+    castReticle.rotation.x=-Math.PI/2; scene.add(castReticle); }
+  castReticle.visible=true; castReticle.material.color.setHex(col);
+  castReticle.position.set(x,(typeof groundY==="function"?groundY(x,z):0)+0.08,z); castReticle.scale.set(r,r,r);
+}
+function hideCastReticle(){ if(castReticle) castReticle.visible=false; }
 function update(dt){
   if(paused||!running) return;
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
+  // ground-target reticle: while winding up an AoE/Wall, show where it will land
+  { const cs=player.casting&&SPELLBOOK[player.casting.id];
+    if(cs&&(cs.special==="wall"||cs.school==="aoe")){ const d=new THREE.Vector3();cam.getWorldDirection(d);
+      const reach=cs.special==="wall"?7:12, rx=clamp(player.x+d.x*reach,-HALF+2,HALF-2), rz=clamp(player.z+d.z*reach,-HALF+2,HALF-2);
+      showCastReticle(rx,rz, cs.special==="wall"?(cs.r||3.5):8, cs.color||0xff7a2a); }
+    else hideCastReticle(); }
   // movement
   let f=0,s=0;
   if(keys["w"]||keys["arrowup"]) f+=1;
@@ -3025,6 +3049,7 @@ function update(dt){
   for(let i=pProj.length-1;i>=0;i--){
     const p=pProj[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
+    if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});}
     let gone=p.life<=0||p.y<0.1||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
