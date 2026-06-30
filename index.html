@@ -1586,6 +1586,8 @@ function buildWand(){
   return g;
 }
 // third-person body — a humanoid built facing -z, textured per heritage by applyHeritageLook
+// avatar proportional anchors (feet ≈ 0, ~1.84 tall → ~7-head human, not a stocky toy)
+const AV_FOOT=-0.9, AV_HIP=0.94, AV_TORSO=1.32, AV_ARM=1.52, AV_NECK=1.58, AV_HEAD=1.72, AV_HEADSCALE=0.62;
 function buildAvatar(){
   const g=new THREE.Group();
   const bodyMat=texMat(metalTex);                                   // main armour (retinted per heritage)
@@ -1595,80 +1597,78 @@ function buildAvatar(){
   const app=player.appearance||{};
   const skinM=new THREE.MeshLambertMaterial({color:app.skin!=null?app.skin:0xe0b088});
   const M=(geo,mat,x,y,z,sh)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x||0,y||0,z||0);if(sh)m.castShadow=true;return m;};
-  // ---- torso (animated node): a sculpted cuirass + chest plate + tabard ----
-  const torso=new THREE.Group();torso.position.y=1.28;g.add(torso);
-  const prof=[[0.205,-0.42],[0.255,-0.3],[0.31,-0.08],[0.315,0.12],[0.265,0.3],[0.16,0.4],[0.001,0.42]].map(p=>new THREE.Vector2(p[0],p[1]));
+  // ---- torso (animated node): a slim fitted cuirass (waist→chest→shoulders) ----
+  const torso=new THREE.Group();torso.position.y=AV_TORSO;g.add(torso);
+  const prof=[[0.155,-0.38],[0.185,-0.26],[0.225,-0.06],[0.235,0.12],[0.205,0.26],[0.13,0.36],[0.001,0.38]].map(p=>new THREE.Vector2(p[0],p[1]));
   const cuirass=M(new THREE.LatheGeometry(prof,24),bodyMat,0,0,0,true);cuirass.scale.z=0.62;torso.add(cuirass);
-  const plate=M(new THREE.SphereGeometry(0.28,18,14,0,6.28,0,Math.PI*0.56),bodyMat,0,0.02,-0.11);plate.scale.set(1.02,0.72,0.5);torso.add(plate);           // raised breastplate
-  torso.add(M(new THREE.BoxGeometry(0.03,0.42,0.04),gold,0,0,-0.215));                          // sternum ridge
-  torso.add(M(new THREE.CircleGeometry(0.07,5),gold,0,0.17,-0.225));                              // chest emblem
-  for(let i=0;i<2;i++) torso.add(M(new THREE.BoxGeometry(0.32-i*0.04,0.05,0.04),bodyMat,0,-0.16-i*0.11,-0.185)); // ab plates
-  const collar=M(new THREE.TorusGeometry(0.115,0.05,8,18),bodyMat,0,0.36,0);collar.rotation.x=Math.PI/2;torso.add(collar);                                   // gorget
-  torso.add(M(new THREE.BoxGeometry(0.24,0.66,0.03),accent,0,-0.6,-0.2));                         // tabard hanging front
+  const plate=M(new THREE.SphereGeometry(0.21,18,14,0,6.28,0,Math.PI*0.52),bodyMat,0,0.04,-0.08);plate.scale.set(1.0,0.78,0.5);torso.add(plate);   // subtle chest plate
+  torso.add(M(new THREE.BoxGeometry(0.025,0.36,0.035),gold,0,0,-0.16));                            // sternum ridge
+  torso.add(M(new THREE.CircleGeometry(0.055,5),gold,0,0.16,-0.17));                                // chest emblem
+  for(let i=0;i<2;i++) torso.add(M(new THREE.BoxGeometry(0.24-i*0.04,0.04,0.03),bodyMat,0,-0.14-i*0.1,-0.135)); // ab plates
+  const collar=M(new THREE.TorusGeometry(0.092,0.04,8,18),bodyMat,0,0.32,0);collar.rotation.x=Math.PI/2;torso.add(collar);                          // gorget
+  torso.add(M(new THREE.BoxGeometry(0.2,0.62,0.025),accent,0,-0.56,-0.15));                         // tabard hanging front
   // ---- pelvis + belt + faulds ----
-  const pelvis=M(new THREE.CylinderGeometry(0.24,0.21,0.3,16),bodyMat,0,0.9,0,true);pelvis.scale.z=0.66;g.add(pelvis);
-  const belt=M(new THREE.CylinderGeometry(0.27,0.255,0.1,16),dark,0,1.02,0);belt.scale.z=0.66;g.add(belt);
-  g.add(M(new THREE.BoxGeometry(0.11,0.08,0.04),gold,0,1.02,-0.18));                              // buckle
-  g.add(M(new THREE.BoxGeometry(0.12,0.15,0.09),dark,0.25,0.96,-0.01,true));                       // belt pouch
-  for(let i=-2;i<=2;i++){const f=M(new THREE.BoxGeometry(0.11,0.2,0.05),bodyMat,i*0.105,0.84,-0.15,true);f.rotation.x=0.12;g.add(f);} // faulds (skirt plates)
+  const pelvis=M(new THREE.CylinderGeometry(0.185,0.165,0.26,16),bodyMat,0,AV_HIP,0,true);pelvis.scale.z=0.66;g.add(pelvis);
+  const belt=M(new THREE.CylinderGeometry(0.2,0.19,0.085,16),dark,0,AV_HIP+0.07,0);belt.scale.z=0.66;g.add(belt);
+  g.add(M(new THREE.BoxGeometry(0.09,0.07,0.035),gold,0,AV_HIP+0.07,-0.135));                       // buckle
+  g.add(M(new THREE.BoxGeometry(0.1,0.13,0.08),dark,0.19,AV_HIP+0.01,-0.01,true));                  // belt pouch
+  for(let i=-2;i<=2;i++){const f=M(new THREE.BoxGeometry(0.085,0.18,0.04),bodyMat,i*0.082,AV_HIP-0.08,-0.11,true);f.rotation.x=0.12;g.add(f);} // faulds
   // ---- head (animated node) + neck ----
-  const neck=M(new THREE.CylinderGeometry(0.08,0.095,0.13,10),skinM,0,1.74,0);g.add(neck);
-  const head=buildFaceGroup(app);head.position.y=1.9;g.add(head);
-  // ---- arms: armoured upper + elbow + forearm + gauntlet (pivot groups) ----
+  const neck=M(new THREE.CylinderGeometry(0.062,0.078,0.12,10),skinM,0,AV_NECK,0);g.add(neck);
+  const head=buildFaceGroup(app);head.position.y=AV_HEAD;head.scale.setScalar(AV_HEADSCALE);g.add(head);
+  // ---- arms: slim armoured upper + elbow + forearm + gauntlet (pivot groups) ----
   const arms=[];
   for(const sx of[-1,1]){
-    const arm=new THREE.Group();arm.position.set(sx*0.4,1.6,0);g.add(arm);
-    arm.add(M(new THREE.CylinderGeometry(0.105,0.082,0.36,10),bodyMat,0,-0.18,0,true));           // upper arm
-    arm.add(M(new THREE.SphereGeometry(0.083,10,8),bodyMat,0,-0.38,0));                            // elbow cop
-    arm.add(M(new THREE.CylinderGeometry(0.078,0.062,0.34,10),bodyMat,0,-0.56,0,true));            // vambrace
-    const hand=M(new THREE.BoxGeometry(0.12,0.15,0.1),dark,0,-0.745,0,true);hand.scale.z=0.85;arm.add(hand);     // gauntlet
-    arm.add(M(new THREE.BoxGeometry(0.125,0.05,0.105),bodyMat,0,-0.7,0));                          // knuckle plate
+    const arm=new THREE.Group();arm.position.set(sx*0.3,AV_ARM,0);g.add(arm);
+    arm.add(M(new THREE.CylinderGeometry(0.066,0.052,0.38,10),bodyMat,0,-0.19,0,true));             // upper arm
+    arm.add(M(new THREE.SphereGeometry(0.055,10,8),bodyMat,0,-0.39,0));                              // elbow
+    arm.add(M(new THREE.CylinderGeometry(0.05,0.04,0.36,10),bodyMat,0,-0.57,0,true));                // forearm
+    const hand=M(new THREE.BoxGeometry(0.09,0.13,0.07),dark,0,-0.77,0,true);arm.add(hand);            // gauntlet
+    arm.add(M(new THREE.BoxGeometry(0.095,0.04,0.075),bodyMat,0,-0.72,0));                            // knuckle plate
     arms.push(arm);
   }
   const rArm=arms[0],lArm=arms[1];
-  // ---- legs: thigh + knee + greave + sabaton ----
+  // ---- legs: slim thigh + knee + greave + sabaton ----
   const legs=[],feet=[];
   for(const sx of[-1,1]){
-    const leg=new THREE.Group();leg.position.set(sx*0.15,0.86,0);g.add(leg);
-    leg.add(M(new THREE.CylinderGeometry(0.135,0.10,0.46,10),bodyMat,0,-0.23,0,true));             // thigh (cuisse)
-    leg.add(M(new THREE.SphereGeometry(0.1,10,8),bodyMat,0,-0.46,0.01));                            // knee (poleyn)
-    leg.add(M(new THREE.CylinderGeometry(0.092,0.072,0.44,10),bodyMat,0,-0.68,0.01,true));          // shin (greave)
-    const ft=M(new THREE.BoxGeometry(0.18,0.13,0.32),dark,0,-0.84,-0.05,true);                      // sabaton (animated foot)
-    ft.add(M(new THREE.BoxGeometry(0.16,0.1,0.12),bodyMat,0,0,-0.2));                               // toe cap (child → moves with foot)
+    const leg=new THREE.Group();leg.position.set(sx*0.115,AV_HIP-0.02,0);g.add(leg);
+    leg.add(M(new THREE.CylinderGeometry(0.095,0.072,0.46,10),bodyMat,0,-0.24,0,true));             // thigh
+    leg.add(M(new THREE.SphereGeometry(0.072,10,8),bodyMat,0,-0.47,0.01));                           // knee
+    leg.add(M(new THREE.CylinderGeometry(0.068,0.05,0.46,10),bodyMat,0,-0.7,0.01,true));             // shin
+    const ft=M(new THREE.BoxGeometry(0.15,0.11,0.30),dark,0,AV_FOOT,-0.05,true);                      // sabaton (animated foot)
+    ft.add(M(new THREE.BoxGeometry(0.13,0.085,0.1),bodyMat,0,0,-0.18));                               // toe cap
     leg.add(ft); legs.push(leg); feet.push(ft);
   }
   const rLeg=legs[0],lLeg=legs[1];
-  // ---- layered pauldrons (parented to body, not the swinging arm) ----
+  // ---- slim layered pauldrons (parented to body, not the swinging arm) ----
   for(const sx of[-1,1]){
-    const pa=new THREE.Group();pa.position.set(sx*0.4,1.63,0);g.add(pa);
-    const p1=M(new THREE.SphereGeometry(0.17,16,12,0,6.28,0,Math.PI*0.6),bodyMat,0,0,0,true);p1.scale.set(1.05,0.9,1.05);pa.add(p1);
-    const p2=M(new THREE.SphereGeometry(0.155,16,12,0,6.28,0,Math.PI*0.5),bodyMat,0,-0.08,0);p2.scale.set(1.1,0.55,1.1);pa.add(p2);
-    const tr=M(new THREE.TorusGeometry(0.16,0.02,6,16),gold,0,-0.03,0);tr.rotation.x=Math.PI/2;pa.add(tr);
-    const spike=M(new THREE.ConeGeometry(0.04,0.12,6),gold,sx*0.13,0.04,0);spike.rotation.z=sx*-0.5;pa.add(spike);
+    const pa=new THREE.Group();pa.position.set(sx*0.3,AV_ARM+0.04,0);g.add(pa);
+    const p1=M(new THREE.SphereGeometry(0.12,16,12,0,6.28,0,Math.PI*0.62),bodyMat,0,0,0,true);p1.scale.set(1.05,0.78,1.05);pa.add(p1);
+    const tr=M(new THREE.TorusGeometry(0.115,0.016,6,16),gold,0,-0.03,0);tr.rotation.x=Math.PI/2;pa.add(tr);
   }
   // ---- flowing cape (Gharu'ndim) — clasped at the shoulders, flaring down the back ----
   const cape=new THREE.Group();
   const clm=texMat(clothTex,0x4a3a7a);
-  cape.add(M(new THREE.BoxGeometry(0.5,0.5,0.04),clm,0,-0.12,0,true));
-  const cflare=M(new THREE.BoxGeometry(0.64,0.62,0.04),clm,0,-0.66,0.03,true);cflare.rotation.x=-0.06;cape.add(cflare);
-  cape.add(M(new THREE.CylinderGeometry(0.06,0.06,0.42,8),gold,0,0.16,-0.02));                      // clasp chain across the chest
-  cape.position.set(0,1.6,0.16);cape.rotation.x=0.12;cape.visible=false;g.add(cape);
+  cape.add(M(new THREE.BoxGeometry(0.42,0.5,0.03),clm,0,-0.12,0,true));
+  const cflare=M(new THREE.BoxGeometry(0.56,0.66,0.03),clm,0,-0.68,0.03,true);cflare.rotation.x=-0.06;cape.add(cflare);
+  cape.add(M(new THREE.CylinderGeometry(0.05,0.05,0.36,8),gold,0,0.15,-0.02));                       // clasp chain
+  cape.position.set(0,AV_ARM+0.04,0.14);cape.rotation.x=0.12;cape.visible=false;g.add(cape);
   // ---- quiver (Sho) ----
   const quiver=new THREE.Group();
-  quiver.add(M(new THREE.CylinderGeometry(0.07,0.08,0.5,8),dark,0,0,0));quiver.children[0].rotation.x=0.4;
-  for(const ax of[-0.03,0,0.03]){const sh=M(new THREE.CylinderGeometry(0.008,0.008,0.3,4),new THREE.MeshLambertMaterial({color:0x8a6a3a}),ax,0.32,-0.08);sh.rotation.x=0.4;quiver.add(sh);
-    quiver.add(M(new THREE.ConeGeometry(0.03,0.06,4),new THREE.MeshBasicMaterial({color:0xe8e0c8}),ax,0.46,-0.11));}
-  quiver.position.set(0.12,1.35,0.18);quiver.visible=false;g.add(quiver);
+  quiver.add(M(new THREE.CylinderGeometry(0.06,0.07,0.46,8),dark,0,0,0));quiver.children[0].rotation.x=0.4;
+  for(const ax of[-0.03,0,0.03]){const sh=M(new THREE.CylinderGeometry(0.008,0.008,0.28,4),new THREE.MeshLambertMaterial({color:0x8a6a3a}),ax,0.3,-0.08);sh.rotation.x=0.4;quiver.add(sh);
+    quiver.add(M(new THREE.ConeGeometry(0.026,0.05,4),new THREE.MeshBasicMaterial({color:0xe8e0c8}),ax,0.42,-0.11));}
+  quiver.position.set(0.11,AV_ARM-0.2,0.16);quiver.visible=false;g.add(quiver);
   // ---- held weapon in the right hand (toggled by weaponMode) ----
-  const hand=new THREE.Group();hand.position.set(0,-0.7,0);rArm.add(hand);
+  const hand=new THREE.Group();hand.position.set(0,-0.74,0);rArm.add(hand);
   const aSword=new THREE.Group();
-  aSword.add(M(new THREE.BoxGeometry(0.06,0.02,0.78),texMat(bladeTex),0,0,-0.42));
-  aSword.add(M(new THREE.BoxGeometry(0.2,0.05,0.06),gold,0,0,0));
-  aSword.add(M(new THREE.SphereGeometry(0.04,8,6),gold,0,0,0.12));
-  aSword.position.set(0,-0.04,0);aSword.rotation.x=-Math.PI/2;hand.add(aSword);
-  const aBow=M(new THREE.TorusGeometry(0.34,0.03,6,16,Math.PI*1.3),new THREE.MeshLambertMaterial({color:0x6b4a22}),0,-0.1,0);
+  aSword.add(M(new THREE.BoxGeometry(0.05,0.018,0.74),texMat(bladeTex),0,0,-0.4));
+  aSword.add(M(new THREE.BoxGeometry(0.18,0.045,0.055),gold,0,0,0));
+  aSword.add(M(new THREE.SphereGeometry(0.035,8,6),gold,0,0,0.11));
+  aSword.position.set(0,-0.02,0);aSword.rotation.x=-Math.PI/2;hand.add(aSword);
+  const aBow=M(new THREE.TorusGeometry(0.32,0.026,6,16,Math.PI*1.3),new THREE.MeshLambertMaterial({color:0x6b4a22}),0,-0.08,0);
   aBow.rotation.y=Math.PI/2;aBow.visible=false;hand.add(aBow);
-  const aWand=M(new THREE.CylinderGeometry(0.02,0.03,0.5,6),texMat(woodTex,0x4a3220),0,-0.2,-0.1);
+  const aWand=M(new THREE.CylinderGeometry(0.018,0.026,0.46,6),texMat(woodTex,0x4a3220),0,-0.18,-0.1);
   aWand.rotation.x=-Math.PI/2.2;aWand.visible=false;hand.add(aWand);
   g.userData={bodyMat,rArm,lArm,rLeg,lLeg,head,neck,torso,pelvis,rFoot:feet[0],lFoot:feet[1],aSword,aBow,aWand,cape,quiver};
   g.visible=false;
@@ -4041,7 +4041,7 @@ function animateAvatar(dt){
   u.lArm.rotation.x=-stride*0.7; u.lArm.rotation.z=0.05;
   // D2: idle breathing & subtle weight-shift sway when standing still
   const breath=idle?Math.sin(idleT*1.6):0;
-  u.torso.position.y=1.28+breath*0.013; u.head.position.y=1.9+breath*0.016;
+  u.torso.position.y=AV_TORSO+breath*0.013; u.head.position.y=AV_HEAD+breath*0.016;
   u.torso.rotation.z=idle?Math.sin(idleT*0.8)*0.018:0;
   u.head.rotation.z=idle?Math.sin(idleT*0.8+0.6)*0.03:0;
   u.aSword.visible=weaponMode==="sword"; u.aBow.visible=weaponMode==="bow"; u.aWand.visible=false;
@@ -4055,9 +4055,9 @@ function animateAvatar(dt){
   // D3: light foot plant — lift each foot to the terrain under it when standing on a slope
   if(idle&&!inDungeon&&!inNetwork){
     const baseGy=groundY(player.x,player.z), rxw=-Math.cos(player.yaw)*0.16, rzw=Math.sin(player.yaw)*0.16;
-    u.lFoot.position.y=-0.84+clamp(groundY(player.x+rxw,player.z+rzw)-baseGy,-0.18,0.18);
-    u.rFoot.position.y=-0.84+clamp(groundY(player.x-rxw,player.z-rzw)-baseGy,-0.18,0.18);
-  } else { u.lFoot.position.y=-0.84; u.rFoot.position.y=-0.84; }
+    u.lFoot.position.y=AV_FOOT+clamp(groundY(player.x+rxw,player.z+rzw)-baseGy,-0.18,0.18);
+    u.rFoot.position.y=AV_FOOT+clamp(groundY(player.x-rxw,player.z-rzw)-baseGy,-0.18,0.18);
+  } else { u.lFoot.position.y=AV_FOOT; u.rFoot.position.y=AV_FOOT; }
 }
 // ---- townsfolk life: idle breathing/glancing for everyone, plus a gentle stroll for wanderers ----
 function animateOnePerson(p,dt){
@@ -6062,7 +6062,7 @@ function refreshAvatarAppearance(){
   if(!playerAvatar||!playerAvatar.userData.head) return;
   const u=playerAvatar.userData, app=player.appearance||{};
   playerAvatar.remove(u.head);
-  const head=buildFaceGroup(app); head.position.y=1.9; playerAvatar.add(head); u.head=head;
+  const head=buildFaceGroup(app); head.position.y=AV_HEAD; head.scale.setScalar(AV_HEADSCALE); playerAvatar.add(head); u.head=head;
   if(u.neck&&u.neck.material) u.neck.material.color.setHex(app.skin!=null?app.skin:0xe0b088);
 }
 
