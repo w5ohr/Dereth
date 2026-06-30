@@ -3693,9 +3693,8 @@ function currentPrompt(){
     if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
     // quest-giver (named NPC or the Emissary): the hint reflects THIS giver's quest state
     if(o.questId){ const id=o.questId, gn=o.name||"the Emissary";
-      if(questActive && curQuest().id===id) return (questComplete()?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
-      if(questDone.indexOf(id)>=0) return "Speak to "+gn+" (E)";
-      if(questActive) return "Speak to "+gn+" (E)";
+      if(isActive(id)) return (questCompleteId(id)?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
+      if(isDone(id)) return "Speak to "+gn+" (E)";
       return "Accept a quest from "+gn+" (E)"; }
     return "Speak (E)";}}
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8) return "Trade with the "+(sh.o.title||"Vendor")+" (E)";}
@@ -4454,8 +4453,8 @@ function drawCompass(){
     if(worldEvent&&worldEvent.active) marker(worldEvent.town.x,worldEvent.town.z,"#ffb347");
   } else marker(dungeonExit.x,dungeonExit.z,"#6aa0ff");
   // quest objective: gold diamond toward the target
-  if(questActive&&!inDungeon){
-    const o=currentObjective();let tx,tz,bd=Infinity;
+  if(activeQuests.length&&!inDungeon){
+    const tid=trackedId(), fi=tid?firstObjIndex(tid):-1, o=(tid&&fi>=0)?questById(tid).obj[fi]:null; let tx,tz,bd=Infinity;
     if(o&&o.type==="slay"){for(const mm of monsters){if(mm.kind===o.kind&&!mm.isDungeon&&!mm.isBoss){const d=Math.hypot(mm.x-player.x,mm.z-player.z);if(d<bd){bd=d;tx=mm.x;tz=mm.z;}}}}
     else if(o&&o.type==="gather"){for(const n of nodes){if(!n.depleted){const d=Math.hypot(n.x-player.x,n.z-player.z);if(d<bd){bd=d;tx=n.x;tz=n.z;}}}}
     else if(o&&o.type==="delve"){const ne=nearestEntrance(player.x,player.z);if(ne){tx=ne.e.x;tz=ne.e.z;}}
@@ -4788,12 +4787,15 @@ const QUESTS=[
     obj:[{type:"boss",count:1,label:"Slay Gnawvil, the Olthoi Queen"}],
     xp:5000, gold:400, item:{name:"Covenant Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"covenant",v:40} },
 ];
-let questIdx=0,questActive=false,questProg=[],questDone=[],npcs=[];
-function curQuest(){ return QUESTS[questIdx]; }
+// ── multi-quest journal: many bounties can be active at once. activeQuests = [{id, prog:[...]}, …] ──
+let activeQuests=[],questDone=[],tracked=null,npcs=[];
 function questById(id){ return QUESTS.find(q=>q.id===id); }
-function ensureProg(){ const q=curQuest(); if(!Array.isArray(questProg)||questProg.length!==q.obj.length) questProg=q.obj.map(()=>0); }
-function questComplete(){ const q=curQuest(); ensureProg(); return q.obj.every((o,i)=>questProg[i]>=o.count); }
-function currentObjective(){ const q=curQuest(); ensureProg(); for(let i=0;i<q.obj.length;i++) if(questProg[i]<q.obj[i].count) return q.obj[i]; return null; }
+function activeEntry(id){ return activeQuests.find(a=>a.id===id); }
+function isActive(id){ return !!activeEntry(id); }
+function isDone(id){ return questDone.indexOf(id)>=0; }
+function questCompleteId(id){ const a=activeEntry(id); if(!a) return false; const q=questById(id); return q.obj.every((o,i)=>a.prog[i]>=o.count); }
+function firstObjIndex(id){ const a=activeEntry(id); if(!a) return -1; const q=questById(id); for(let i=0;i<q.obj.length;i++) if(a.prog[i]<q.obj[i].count) return i; return -1; }
+function trackedId(){ if(tracked&&isActive(tracked)) return tracked; return activeQuests.length?activeQuests[0].id:null; }   // quest the compass/HUD focus on
 // ── named quest-givers: each quest is offered by a specific NPC standing in a real AC town,
 //    with its own conversation (greet/offer · accept · in-progress nudge · turn-in · post-completion). ──
 const QUEST_GIVERS={
@@ -4950,12 +4952,11 @@ function addNPC(x,z,opts){
   npcs.push(rec);
   updateNPCMarker();
 }
-// a quest-bound NPC's marker colour reflects ITS quest: gold=offer, grey=in progress, green=turn in, dim=busy/done
+// a quest-bound NPC's marker colour reflects ITS quest: gold=offer, grey=in progress, green=turn in, dim=done
 function questNpcMarkerColor(qid){
-  if(questDone.indexOf(qid)>=0) return 0x59697a;                                   // already completed — dim
-  if(questActive && curQuest().id===qid) return questComplete()?0x7fe6a0:0x9a9a9a; // active: green = ready, grey = in progress
-  if(questActive) return 0x6a6256;                                                  // busy on another quest — dim offer
-  return 0xffd23b;                                                                  // available to accept — gold
+  if(isActive(qid)) return questCompleteId(qid)?0x7fe6a0:0x9a9a9a; // active: green = ready to turn in, grey = in progress
+  if(isDone(qid)) return 0x59697a;                                 // already completed — dim
+  return 0xffd23b;                                                 // available to accept — gold
 }
 function updateNPCMarker(){ // every quest-bound NPC (Emissary + named givers) shows its own quest state
   for(const n of npcs){ if(!n.questId) continue; const mk=n.mesh.userData&&n.mesh.userData.marker;
@@ -4969,30 +4970,29 @@ function compassTo(dx,dz){ // world: +x=East, +z=South
 function talkQuestGiver(n){
   const id=n&&n.questId; const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
   const gv=QUEST_GIVERS[id]||{}; const name=(n&&n.name)||gv.name||q.giver;
-  const isActive=questActive && curQuest().id===id;
-  if(isActive){
-    ensureProg();
-    if(questComplete()){                                  // ── turn in: pay out + flavour ──
+  if(isActive(id)){
+    const a=activeEntry(id);
+    if(questCompleteId(id)){                              // ── turn in: pay out + flavour ──
       gainXP(q.xp); player.gold+=q.gold;
       let rw=`+${q.xp} XP, +${q.gold} pyreals`;
       if(q.item){ player.inv.push(Object.assign({},q.item)); rw+=`, and a <b>${q.item.name}</b>`; }
       if(questDone.indexOf(id)<0) questDone.push(id);
+      activeQuests.splice(activeQuests.indexOf(a),1);     // drop from the journal
+      if(tracked===id) tracked=trackedId();
       log(`<b>${name}:</b> ${gv.turn||"Well done — take your reward, and my thanks."}`,"sys");
       log(`<b>Quest complete — ${q.name}:</b> ${rw}.`,"sys");
       SFX.quest(); toast("QUEST COMPLETE");
-      questActive=false; questProg=[]; saveGame();
+      saveGame();
     } else {                                              // ── in progress: nudge + objective tally ──
-      const prog=q.obj.map((o,i)=>`${o.label} (${Math.min(questProg[i],o.count)}/${o.count})`).join("; ");
+      const prog=q.obj.map((o,i)=>`${o.label} (${Math.min(a.prog[i],o.count)}/${o.count})`).join("; ");
       log(`<b>${name}:</b> ${gv.prog||"Not finished yet — best be about it."} <span style="color:var(--dim)">[${prog}]</span>`,"sys");
     }
-  } else if(questDone.indexOf(id)>=0){                    // ── already done: post-quest greeting ──
+  } else if(isDone(id)){                                  // ── already done: post-quest greeting ──
     log(`<b>${name}:</b> ${gv.post||"My thanks again, friend."}`,"sys");
-  } else if(questActive){                                 // ── busy elsewhere ──
-    log(`<b>${name}:</b> You've a task in hand already — see it through, then come back to me.`,"sys");
-  } else {                                                // ── offer + accept ──
-    questIdx=QUESTS.findIndex(x=>x.id===id); questActive=true; questProg=q.obj.map(()=>0);
+  } else {                                                // ── offer + accept (any number can be active) ──
+    activeQuests.push({id, prog:q.obj.map(()=>0)}); tracked=id;
     log(`<b>${name}:</b> ${q.intro}`,"sys");
-    log(`<b>Quest accepted — ${q.name}:</b> ${q.obj.map(o=>o.label+" (0/"+o.count+")").join("; ")}`,"sys");
+    log(`<b>Quest accepted — ${q.name}:</b> ${q.obj.map(o=>o.label+" (0/"+o.count+")").join("; ")} <span style="color:var(--dim)">(${activeQuests.length} active · J: journal)</span>`,"sys");
     SFX.quest(); toast("QUEST ACCEPTED");
   }
   updateNPCMarker(); updateQuestHUD(); renderQuestLog();
@@ -5024,55 +5024,68 @@ function talkToNPC(n){
   const lines=NPC_FLAVOR[n.role]||["Well met, traveller."];
   log(`<b>${n.name}:</b> ${lines[(n._line++)%lines.length]}`,"sys");
 }
-function questEvent(type,kind){
-  if(!questActive) return;
-  const q=curQuest(); ensureProg();
-  for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
-    if(o.type!==type) continue;
-    if(type==="slay" && kind!==o.kind) continue;
-    if(questProg[i]<o.count){
-      questProg[i]++;
-      if(questProg[i]>=o.count) log(`Objective complete: <b>${o.label}</b>.`,"sys");
-      if(questComplete()) log("Quest ready to turn in — return to the quest-giver (gold !).","sys");
-      updateNPCMarker();updateQuestHUD();renderQuestLog();
-      return;   // one world event advances a single objective
+function questEvent(type,kind){   // a world event advances the matching objective in EVERY active quest that needs it
+  let any=false;
+  for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
+    for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
+      if(o.type!==type) continue;
+      if(type==="slay" && kind!==o.kind) continue;
+      if(a.prog[i]<o.count){
+        a.prog[i]++; any=true;
+        if(a.prog[i]>=o.count) log(`Objective complete: <b>${o.label}</b> <span style="color:var(--dim)">(${q.name})</span>.`,"sys");
+        if(questCompleteId(a.id)) log(`<b>${q.name}</b> ready to turn in — return to ${(QUEST_GIVERS[a.id]||{}).name||"the giver"}.`,"sys");
+        break;   // one objective per quest per event
+      }
     }
   }
+  if(any){ updateNPCMarker(); updateQuestHUD(); renderQuestLog(); }
 }
 function updateQuestHUD(){
-  const panel=document.getElementById('quest');
-  if(!questActive){panel.style.display="block";
-    document.getElementById('questText').innerHTML="No active bounty — seek a quest-giver (gold !) in a town. <span style='color:var(--dim)'>(J: quest log)</span>";
-    document.getElementById('questProg').textContent="";return;}
-  const q=curQuest(); ensureProg(); panel.style.display="block";
-  document.getElementById('questText').innerHTML=`<b>${q.name}</b>`;
-  document.getElementById('questProg').innerHTML=q.obj.map((o,i)=>{
-    const done=questProg[i]>=o.count;
-    return `<span style="color:${done?'#7fe6a0':'#cdbf9a'}">${done?'✓':'•'} ${o.label} — ${Math.min(questProg[i],o.count)}/${o.count}</span>`;
-  }).join("<br>")+(questComplete()?"<br><span style='color:#7fe6a0;font-weight:bold'>✓ Turn in at the Emissary</span>":"");
+  const panel=document.getElementById('quest'); panel.style.display="block";
+  const tx=document.getElementById('questText'), pr=document.getElementById('questProg');
+  if(!activeQuests.length){
+    tx.innerHTML="No active bounties — seek a quest-giver (gold !) in a town. <span style='color:var(--dim)'>(J: journal)</span>";
+    pr.textContent=""; return;
+  }
+  const tid=trackedId();
+  tx.innerHTML=`Bounties <span style="color:var(--dim)">(${activeQuests.length} active · J)</span>`;
+  const rows=activeQuests.slice(0,6).map(a=>{ const q=questById(a.id), done=questCompleteId(a.id), fi=firstObjIndex(a.id);
+    const head=(a.id===tid?'▸ ':'• ')+q.name;
+    if(done) return `<div style="color:#7fe6a0">✓ ${q.name} — turn in</div>`;
+    const o=fi>=0?q.obj[fi]:null;
+    return `<div style="color:${a.id===tid?'#ffe9a8':'#cdbf9a'}">${head}<span style="color:var(--dim)"> — ${o?o.label+" "+Math.min(a.prog[fi],o.count)+"/"+o.count:""}</span></div>`;
+  }).join("");
+  pr.innerHTML=rows+(activeQuests.length>6?`<div style="color:var(--dim)">…and ${activeQuests.length-6} more (J)</div>`:"");
 }
 // quest log modal (J)
 function giverLabel(q){ const gv=QUEST_GIVERS[q.id]; return gv?`${gv.name} · ${gv.town}`:(q.id==="gnawvil"?"Asheron's Emissary · any capital":q.giver); }
 function renderQuestLog(){
   const body=document.getElementById('questlogBody'); if(!body) return;
+  const tid=trackedId();
   let h="";
-  if(questActive){ const q=curQuest(); ensureProg();
-    h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,210,59,.08);border:1px solid var(--border);border-radius:6px">
-      <div style="color:var(--gold);font-weight:bold">▸ ${q.name} <span style="color:var(--dim);font-weight:normal">— ${giverLabel(q)}</span></div>
-      <div style="color:#bcae8a;font-style:italic;margin:4px 0">“${q.intro}”</div>
-      ${q.obj.map((o,i)=>{const d=questProg[i]>=o.count;return `<div style="color:${d?'#7fe6a0':'#cdbf9a'}">${d?'✓':'☐'} ${o.label} — ${Math.min(questProg[i],o.count)}/${o.count}</div>`;}).join("")}
-      <div style="margin-top:4px;color:var(--gold)">Reward: +${q.xp} XP · +${q.gold} pyreals${q.item?` · ${q.item.name}`:""}${questComplete()?` &nbsp;<span style="color:#7fe6a0">✓ return to ${(QUEST_GIVERS[q.id]||{}).name||"the Emissary"}</span>`:""}</div>
-    </div>`;
+  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:0 0 4px">Active — ${activeQuests.length}${activeQuests.length?" · click ☆ to track for the compass":""}</div>`;
+  if(activeQuests.length){
+    h+=activeQuests.map(a=>{ const q=questById(a.id), done=questCompleteId(a.id), isTrk=a.id===tid;
+      return `<div style="margin-bottom:8px;padding:8px;background:${isTrk?'rgba(255,210,59,.10)':'rgba(255,255,255,.03)'};border:1px solid ${isTrk?'var(--gold)':'var(--border)'};border-radius:6px">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <div style="color:var(--gold);font-weight:bold">${isTrk?'▸ ':''}${q.name} <span style="color:var(--dim);font-weight:normal">— ${giverLabel(q)}</span></div>
+          <button class="qtrack" data-track="${a.id}" title="Track with the compass" style="background:none;border:1px solid var(--border);border-radius:4px;color:${isTrk?'var(--gold)':'var(--dim)'};cursor:pointer;font-size:12px;padding:1px 6px">${isTrk?'★ tracking':'☆ track'}</button>
+        </div>
+        <div style="color:#bcae8a;font-style:italic;margin:4px 0">“${q.intro}”</div>
+        ${q.obj.map((o,i)=>{const d=a.prog[i]>=o.count;return `<div style="color:${d?'#7fe6a0':'#cdbf9a'}">${d?'✓':'☐'} ${o.label} — ${Math.min(a.prog[i],o.count)}/${o.count}</div>`;}).join("")}
+        <div style="margin-top:4px;color:var(--gold)">Reward: +${q.xp} XP · +${q.gold} pyreals${q.item?` · ${q.item.name}`:""}${done?` &nbsp;<span style="color:#7fe6a0">✓ return to ${(QUEST_GIVERS[a.id]||{}).name||"the Emissary"}</span>`:""}</div>
+      </div>`;
+    }).join("");
   } else {
-    h+=`<div style="color:var(--dim);margin-bottom:10px">No active bounty. Quest-givers (gold !) stand in towns across Dereth — visit one to take up their task.</div>`;
+    h+=`<div style="color:var(--dim);margin-bottom:10px">None yet. Quest-givers (gold !) stand in towns across Dereth — visit any of them to take up a task. You can carry as many bounties at once as you like.</div>`;
   }
-  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:6px 0 4px">All Bounties — found at their giver's town</div>`;
-  h+=QUESTS.map((q,i)=>{
-    const done=questDone.indexOf(q.id)>=0, active=questActive&&i===questIdx;
-    const tag=active?`<span style="color:var(--gold)">● active</span>`:done?`<span style="color:#7fe6a0">✓ complete</span>`:`<span style="color:var(--dim)">○ available</span>`;
+  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:8px 0 4px">All Bounties — found at their giver's town</div>`;
+  h+=QUESTS.map(q=>{
+    const tag=isActive(q.id)?`<span style="color:var(--gold)">● active</span>`:isDone(q.id)?`<span style="color:#7fe6a0">✓ complete</span>`:`<span style="color:var(--dim)">○ available</span>`;
     return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
   }).join("");
   body.innerHTML=h;
+  body.querySelectorAll('[data-track]').forEach(b=>b.onclick=()=>{ tracked=b.dataset.track; renderQuestLog(); updateQuestHUD(); SFX.click&&SFX.click(); });
 }
 function openQuestLog(){ renderQuestLog(); document.getElementById('questlog').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeQuestLog(){ document.getElementById('questlog').style.display="none"; paused=false; }
@@ -5931,7 +5944,7 @@ function saveGame(){
       elixMight:player.elixMight,elixSwift:player.elixSwift,
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
-      boundLS:lifestones.findIndex(l=>l.bound),questIdx,questProg,questActive,questDone,
+      boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
@@ -5965,9 +5978,15 @@ function applySaveObj(s){
   buildSpellbar();
   // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
   player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
-  questIdx=(s.questIdx|0)%QUESTS.length;questActive=!!s.questActive;
-  questProg=Array.isArray(s.questProg)?s.questProg.slice():[];questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
-  ensureProg();
+  questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
+  if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
+    activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
+      return {id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)}; });
+  } else if(s.questActive && s.questIdx!=null && QUESTS[s.questIdx|0]){   // migrate old single-active save
+    const q=QUESTS[s.questIdx|0];
+    activeQuests=[{id:q.id, prog:(Array.isArray(s.questProg)&&s.questProg.length===q.obj.length)?s.questProg.slice():q.obj.map(()=>0)}];
+  } else activeQuests=[];
+  tracked=(s.tracked&&isActive(s.tracked))?s.tracked:trackedId();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
   if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
