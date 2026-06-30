@@ -507,6 +507,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
+  society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
   name:"Adventurer",
   appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
@@ -5057,6 +5058,40 @@ function giverWhere(id){ const q=questById(id); if(!q) return "a quest-giver"; i
 // ── repeatable bounties: standing hunter kill-tasks that reset on turn-in instead of completing for good ──
 function isRepeatable(id){ const q=questById(id); return !!(q&&q.repeatable); }
 function repCount(id){ return taskReps[id]|0; }
+// ── AC societies: pledge to one of the three orders, earn standing by completing bounties ──
+const SOCIETIES=[
+  {id:"celhand", name:"Celestial Hand", col:"#7fd0ff",
+   blurb:"Seekers of the old Empyrean knowledge, sworn to rebuild what the Sundering broke."},
+  {id:"eldweb",  name:"Eldrytch Web",   col:"#c79bff",
+   blurb:"Keepers of hidden power, who would master the rifts rather than fear them."},
+  {id:"radblood", name:"Radiant Blood", col:"#ff8a6b",
+   blurb:"A martial order pledged in blood to hold the Olthoi and the Virindi at bay."},
+];
+const SOCIETY_RANKS=[  // rep thresholds → rank title (prefixes the society name)
+  {min:0,title:"Adherent"},{min:600,title:"Sworn"},{min:1800,title:"Knight"},
+  {min:4200,title:"Lord"},{min:9000,title:"Master"},
+];
+function societyById(id){ return SOCIETIES.find(s=>s.id===id)||null; }
+function societyRankInfo(rep){ let idx=0; for(let i=0;i<SOCIETY_RANKS.length;i++) if(rep>=SOCIETY_RANKS[i].min) idx=i;
+  const r=SOCIETY_RANKS[idx], next=SOCIETY_RANKS[idx+1]||null;
+  return {tier:idx+1,title:r.title,cur:rep-r.min,span:next?next.min-r.min:0,next}; }
+function societyTitle(){ if(!player.society) return null; const so=societyById(player.society); if(!so) return null;
+  return `${societyRankInfo(player.societyRep).title} of the ${so.name}`; }
+function questRepValue(id){ const q=questById(id); return q?Math.max(5,Math.round(q.xp/15)):0; }  // standing earned per turn-in
+function grantSocietyRep(n){ if(!player.society||n<=0) return;
+  const beforeTitle=societyRankInfo(player.societyRep).title;
+  player.societyRep+=n;
+  const after=societyRankInfo(player.societyRep);
+  if(after.title!==beforeTitle){ toast("SOCIETY RANK"); if(SFX.level)SFX.level();
+    log(`<span style="color:${societyById(player.society).col}">Your standing rises — you are now <b>${after.title} of the ${societyById(player.society).name}</b>.</span>`,"sys"); }
+  if(typeof checkAchievements==="function") checkAchievements();
+}
+function pledgeSociety(id){ const so=societyById(id); if(!so||player.society) return;
+  player.society=id; player.societyRep=0;
+  toast("SOCIETY PLEDGE");
+  log(`<span style="color:${so.col}">You pledge yourself to the <b>${so.name}</b>. ${so.blurb} You rise as an <b>Adherent</b> — complete bounties to earn your standing.</span>`,"sys");
+  if(SFX.quest)SFX.quest(); if(typeof checkAchievements==="function") checkAchievements(); saveGame(); renderQuestLog(); updateQuestHUD();
+}
 // ── multi-quest journal: many bounties can be active at once. activeQuests = [{id, prog:[...]}, …] ──
 let activeQuests=[],questDone=[],tracked=null,npcs=[],taskReps={};  // taskReps: id→times a repeatable bounty has been turned in
 function questById(id){ return QUESTS.find(q=>q.id===id); }
@@ -5390,6 +5425,8 @@ function talkQuestGiver(n){
       gainXP(q.xp); player.gold+=q.gold;
       let rw=`+${q.xp} XP, +${q.gold} pyreals`;
       if(q.item){ player.inv.push(Object.assign({},q.item)); rw+=`, and a <b>${q.item.name}</b>`; }
+      const repGain=player.society?questRepValue(id):0;   // society standing for the order you've pledged to
+      if(repGain) rw+=`, +${repGain} ${societyById(player.society).name} standing`;
       if(q.repeatable) taskReps[id]=(taskReps[id]|0)+1;   // standing bounty: tally the turn-in, stays available
       else if(questDone.indexOf(id)<0) questDone.push(id);
       activeQuests.splice(activeQuests.indexOf(a),1);     // drop from the journal
@@ -5400,6 +5437,7 @@ function talkQuestGiver(n){
       // chain: announce any bounty this completion has just unlocked
       QUESTS.forEach(nq=>{ if(nq.req===id && !isDone(nq.id) && !isActive(nq.id))
         log(`<span style="color:var(--gold)">A new bounty opens: <b>${nq.name}</b> (Lv ${questLvl(nq.id)}) — seek ${giverWhere(nq.id)}.</span>`,"sys"); });
+      if(repGain) grantSocietyRep(repGain);
       SFX.quest(); toast("QUEST COMPLETE");
       saveGame();
     } else {                                              // ── in progress: nudge + objective tally ──
@@ -5487,10 +5525,31 @@ function updateQuestHUD(){
 }
 // quest log modal (J)
 function giverLabel(q){ const gv=QUEST_GIVERS[q.id]; return gv?`${gv.name} · ${gv.town}`:(q.id==="gnawvil"?"Asheron's Emissary · any capital":q.giver); }
+function societyPanelHTML(){
+  let h=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:0 0 4px">Society</div>`;
+  if(!player.society){
+    h+=`<div style="color:var(--dim);margin-bottom:6px">Pledge to one of Dereth's three societies. Every bounty you complete earns standing toward its ranks — but you may swear to only one, for good.</div>`;
+    h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">`+SOCIETIES.map(s=>
+      `<button class="qpledge" data-pledge="${s.id}" style="flex:1;min-width:150px;text-align:left;background:rgba(255,255,255,.03);border:1px solid ${s.col};border-radius:6px;color:${s.col};cursor:pointer;padding:6px 8px">
+        <div style="font-weight:bold">${s.name}</div><div style="color:#bcae8a;font-size:11px;font-style:italic;margin-top:2px">${s.blurb}</div>
+        <div style="color:var(--gold);font-size:11px;margin-top:4px">Pledge ▸</div></button>`).join("")+`</div>`;
+  } else {
+    const so=societyById(player.society), ri=societyRankInfo(player.societyRep);
+    const pct=ri.span?Math.min(100,Math.round(ri.cur/ri.span*100)):100;
+    const dots=SOCIETY_RANKS.map((r,i)=>`<span style="color:${i<ri.tier?so.col:'#3a3a44'}">●</span>`).join(" ");
+    h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,255,255,.03);border:1px solid ${so.col};border-radius:6px">
+      <div style="display:flex;justify-content:space-between;gap:8px"><div style="color:${so.col};font-weight:bold">${so.name}</div><div style="color:#bcae8a">${dots}</div></div>
+      <div style="color:var(--gold);margin:3px 0">${societyTitle()} <span style="color:var(--dim)">· ${player.societyRep} total standing</span></div>
+      <div style="height:8px;background:rgba(0,0,0,.4);border-radius:4px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${pct}%;background:${so.col}"></div></div>
+      <div style="color:var(--dim);font-size:11px;margin-top:3px">${ri.next?`${ri.cur}/${ri.span} toward <b style="color:${so.col}">${ri.next.title}</b>`:`Highest rank attained — ${ri.title} of the ${so.name}.`}</div>
+    </div>`;
+  }
+  return h;
+}
 function renderQuestLog(){
   const body=document.getElementById('questlogBody'); if(!body) return;
   const tid=trackedId();
-  let h="";
+  let h=societyPanelHTML();
   h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:0 0 4px">Active — ${activeQuests.length}${activeQuests.length?" · click ☆ to track for the compass":""}</div>`;
   if(activeQuests.length){
     h+=activeQuests.map(a=>{ const q=questById(a.id), done=questCompleteId(a.id), isTrk=a.id===tid;
@@ -5518,6 +5577,8 @@ function renderQuestLog(){
   }).join("");
   body.innerHTML=h;
   body.querySelectorAll('[data-track]').forEach(b=>b.onclick=()=>{ tracked=b.dataset.track; renderQuestLog(); updateQuestHUD(); SFX.click&&SFX.click(); });
+  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
+    if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
 }
 function openQuestLog(){ renderQuestLog(); document.getElementById('questlog').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeQuestLog(){ document.getElementById('questlog').style.display="none"; paused=false; }
@@ -5537,6 +5598,8 @@ const ACHIEVEMENTS=[
   {id:"wealthy",name:"Pyreal Magnate",desc:"Amass 1000 pyreals.",title:"the Wealthy",check:()=>player.gold>=1000},
   {id:"veteran",name:"Veteran",desc:"Reach level 10.",title:"the Veteran",check:()=>player.level>=10},
   {id:"archmage",name:"Archmage",desc:"Raise Focus to 25.",title:"the Archmage",check:()=>player.attr.Focus>=25},
+  {id:"sworn",name:"Sworn",desc:"Pledge to a society.",title:"the Sworn",check:()=>!!player.society},
+  {id:"society_master",name:"Society Master",desc:"Reach the rank of Master in your society.",title:"the Exalted",check:()=>!!player.society&&player.societyRep>=9000},
 ];
 function checkAchievements(){
   for(const a of ACHIEVEMENTS){
@@ -6377,6 +6440,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
+      society:player.society,societyRep:player.societyRep,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -6413,6 +6477,8 @@ function applySaveObj(s){
   player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
   questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
   taskReps=(s.taskReps&&typeof s.taskReps==="object")?Object.assign({},s.taskReps):{};
+  player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
+  player.societyRep=s.societyRep|0;
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       return {id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)}; });
