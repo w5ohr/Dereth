@@ -288,7 +288,7 @@
     to a <b>Lifestone</b> so death is never the end, then hunt the drudges and mosswarts of the wilds.
   </div>
   <div class="keys">
-    <kbd>W A S D</kbd> move &nbsp;·&nbsp; <kbd>Mouse</kbd> look &nbsp;·&nbsp; <kbd>Click</kbd> attack &nbsp;·&nbsp; <kbd>Shift</kbd> sprint &nbsp;·&nbsp; <kbd>Q</kbd> swap sword/bow<br>
+    <kbd>W A S D</kbd> move &nbsp;·&nbsp; <kbd>Mouse</kbd> look &nbsp;·&nbsp; <kbd>Click</kbd> attack &nbsp;·&nbsp; <kbd>Shift</kbd> sprint &nbsp;·&nbsp; <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>Shift</kbd>+<kbd>Space</kbd> dodge &nbsp;·&nbsp; <kbd>Q</kbd> swap sword/bow<br>
     <kbd>1</kbd> Flame &nbsp; <kbd>2</kbd> Frost &nbsp; <kbd>3</kbd> Heal &nbsp; <kbd>4</kbd> Stam→Mana &nbsp; <kbd>5</kbd> Lightning &nbsp; <kbd>6</kbd> Flame Storm &nbsp; <kbd>7</kbd> Blade Lure &nbsp; <kbd>8</kbd> Quickening<br>
     <kbd>C</kbd> sheet &nbsp; <kbd>T</kbd> inventory/tinker &nbsp; <kbd>B</kbd> bestiary &nbsp; <kbd>E</kbd> loot / bind / portal / talk / gather<br>
     <kbd>R</kbd>/<kbd>G</kbd> health &nbsp; <kbd>F</kbd> mana &nbsp; <kbd>9</kbd>/<kbd>0</kbd> elixirs &nbsp; <kbd>Tab</kbd> map (click to travel) &nbsp; <kbd>O</kbd> settings &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>P</kbd> pause<br>
@@ -468,7 +468,8 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   lightBuff:null,             // active conjured light (Enlightenment/Foxfire) -> {t,intensity,dist,color}; falls on death
   debuffs:{},                 // hostile curses on you (slow/vuln) -> {v,t}; cleansed by Dispel, clear on death
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
-  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0};
+  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0,
+  y:0,vy:0,grounded:true};   // vertical physics: feet height, vertical velocity, on-ground flag (for jumping & upper floors)
 
 function derive(){
   const a=player.attr;
@@ -948,6 +949,55 @@ function terrainH(x,z){
   return h;
 }
 function groundY(x,z){ return (inDungeon||inNetwork)?0:terrainH(x,z); } // instances are flat at y=0
+// ── walkable structures: buildings register upper-floor platforms + ramps (local coords + world transform)
+//    so the player can climb to a second story and stand on it. ──
+let structures=[];
+const STEP_UP=0.62, STICK=1.5;   // max ledge you walk straight up; max drop you stay glued to (else you fall)
+function registerStructure(bx,bz,th,baseY,surf){
+  if(!surf||(!surf.platforms&&!surf.ramps)) return;
+  let r2=0; const acc=p=>{const m=Math.max(Math.abs(p.x0),Math.abs(p.x1))+Math.max(Math.abs(p.z0),Math.abs(p.z1));r2=Math.max(r2,m*m);};
+  (surf.platforms||[]).forEach(acc); (surf.ramps||[]).forEach(acc);
+  structures.push({bx,bz,baseY:baseY||0,cos:Math.cos(th),sin:Math.sin(th),r2:r2+4,platforms:surf.platforms||[],ramps:surf.ramps||[]});
+}
+// highest surface at (wx,wz) at or just below the feet (terrain is always available; floors/ramps add on top)
+function supportAt(wx,wz,feetY){
+  let best=groundY(wx,wz);
+  if(inDungeon||inNetwork) return best;
+  for(const st of structures){
+    const ddx=wx-st.bx,ddz=wz-st.bz; if(ddx*ddx+ddz*ddz>st.r2) continue;
+    const lx=ddx*st.cos-ddz*st.sin, lz=ddx*st.sin+ddz*st.cos;   // world → building-local
+    for(const p of st.platforms){ const py=st.baseY+p.y; if(lx>=p.x0&&lx<=p.x1&&lz>=p.z0&&lz<=p.z1&&py<=feetY+STEP_UP&&py>best) best=py; }
+    for(const r of st.ramps){ if(lx>=r.x0&&lx<=r.x1&&lz>=r.z0&&lz<=r.z1){
+      const t=r.axis==="z"?(lz-r.z0)/(r.z1-r.z0):(lx-r.x0)/(r.x1-r.x0);
+      const h=st.baseY+r.yLo+(r.yHi-r.yLo)*(r.dir<0?1-t:t);
+      if(h<=feetY+STEP_UP&&h>best) best=h; } }
+  }
+  return best;
+}
+// encumbrance: carried burden vs a Strength/Endurance capacity → ratio 0 (empty) … >1 (overloaded)
+function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
+  if(it.stat==="weapon") return 90; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
+  if(it.stat==="worn") return ({head:55,chest:170,hands:40,legs:130,feet:50})[it.aslot]||110;
+  return 22; }
+function encumbrance(){
+  let load=0; for(const it of player.inv) load+=itemBurden(it);
+  load+=itemBurden(player.weapon);
+  const as=player.armorSlots||{}; for(const k in as) load+=itemBurden(as[k]);
+  const jw=player.jewelry||{}; for(const k in jw) load+=itemBurden(jw[k]);
+  const cap=200+player.attr.Strength*18+player.attr.Endurance*6;
+  return {load,cap,ratio:clamp(load/cap,0,1.8)};
+}
+const GRAV=22;
+function jumpVelocity(){
+  const jv=skillValue("jump");                                   // trained & raised Jump → higher leaps
+  const skF=clamp(1+jv*0.010,1.0,1.45), encF=clamp(1.15-encumbrance().ratio*0.5,0.55,1.15);
+  return 7.6*skF*encF;                                           // height ≈ v²/2g (≈0.4 overloaded … ≈3.5 light & skilled)
+}
+function tryJump(){
+  if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
+  if(player.st<8){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
+  player.vy=jumpVelocity(); player.grounded=false; player.st=Math.max(0,player.st-8); if(SFX.step)SFX.step();
+}
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
@@ -1827,7 +1877,7 @@ function buildWorld(){
   monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];obstacles.length=0;
   for(const d of dying) scene.remove(d.mesh); dying=[];
   for(const o of netObjs) scene.remove(o);
-  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonMobs=0;curDungeon=null;
+  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonMobs=0;curDungeon=null;structures=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
 
   // the 25 cities of Dereth (each a bindable settlement; capitals are hubs)
@@ -1932,27 +1982,64 @@ function addLifestone(x,z,bound,name,capital,region){
 }
 function roofPyramid(w,h,color){const r=new THREE.Mesh(new THREE.ConeGeometry(w,h,4),solid(color,true));r.rotation.y=Math.PI/4;r.castShadow=true;return r;}
 // --- Aluvian: timber-frame, steep gabled roof, chimney ---
-// hollow shell: 4 walls + floor + roof opening (doorway on +z front) + interior light.
-// stores local-space wall colliders in g.userData.colliders so the player can walk inside.
-function addShell(g,W,H,D,wallMat,floorMat){
-  const t=Math.min(W,D)*0.06+0.18; // wall thickness
-  const floor=new THREE.Mesh(new THREE.BoxGeometry(W,0.14,D),floorMat||wallMat);floor.position.y=0.07;floor.receiveShadow=true;g.add(floor);
-  const mk=(bw,bh,bd,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),wallMat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m;};
-  mk(W,H,t,0,H/2,-D/2);            // back
-  mk(t,H,D,-W/2,H/2,0);            // left
-  mk(t,H,D, W/2,H/2,0);            // right
-  const dg=2.3,side=(W-dg)/2,dh=2.7;       // door gap + lintel height
-  mk(side,H,t,-(dg/2+side/2),H/2,D/2);     // front-left of door
-  mk(side,H,t, (dg/2+side/2),H/2,D/2);     // front-right of door
-  if(H>dh) mk(dg,H-dh,t,0,dh+(H-dh)/2,D/2);// lintel above door
-  // interior glow via emissive floor (cheap — avoids a PointLight per building)
-  if(floor.material&&floor.material.emissive){floor.material.emissive.setHex(0x2a2418);}
+// ── Buildings: bigger (≈2×) 2-storey-capable shells. Ground walls (door + windows) give colliders;
+//    two-storey kinds add a back balcony at H1 reached by an interior ramp, registered as a walkable
+//    surface (g.userData.surfaces) so players can climb the ramp and stand upstairs. ──
+const _BWIN=new THREE.MeshLambertMaterial({color:0x1a1810,emissive:0xffcf6b,emissiveIntensity:0.5}); // warm window glow
+function addWindows(g,face,W,D,y,ww,wh){
+  const frameMat=solid(0x33271a);
+  const along=(face==='-z'||face==='+z')?W:D, n=clamp(Math.floor(along/4.4),1,2);
+  for(let i=0;i<n;i++){ const c=-along/2+along*(i+0.5)/n; let x,z,fry=0,pry=0;
+    if(face==='-z'){x=c;z=-D/2-0.06;pry=Math.PI;}
+    else if(face==='+z'){x=c;z=D/2+0.06;pry=0;}
+    else if(face==='-x'){x=-W/2-0.06;z=c;fry=Math.PI/2;pry=-Math.PI/2;}
+    else {x=W/2+0.06;z=c;fry=Math.PI/2;pry=Math.PI/2;}
+    const fr=new THREE.Mesh(new THREE.BoxGeometry(ww+0.28,wh+0.28,0.14),frameMat);fr.position.set(x,y,z);fr.rotation.y=fry;g.add(fr);
+    const pn=new THREE.Mesh(new THREE.PlaneGeometry(ww,wh),_BWIN);pn.position.set(x,y,z);pn.rotation.y=pry;g.add(pn);
+  }
+}
+function addShell(g,W,H,D,wallMat,floorMat,trim){
+  trim=trim||0x4a3220; const t=Math.min(W,D)*0.05+0.24, tm=solid(trim);
+  const floor=new THREE.Mesh(new THREE.BoxGeometry(W,0.18,D),floorMat||wallMat);floor.position.y=0.09;floor.receiveShadow=true;g.add(floor);
+  if(floor.material&&floor.material.emissive) floor.material.emissive.setHex(0x241f14);
+  const found=new THREE.Mesh(new THREE.BoxGeometry(W+0.5,0.6,D+0.5),solid(0x6a6258,true));found.position.y=0.3;found.castShadow=true;found.receiveShadow=true;g.add(found); // stone foundation course
+  const mk=(bw,bh,bd,x,y,z,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),mat||wallMat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m;};
+  mk(W,H,t,0,H/2,-D/2); mk(t,H,D,-W/2,H/2,0); mk(t,H,D,W/2,H/2,0);   // back, left, right
+  const dg=2.6,side=(W-dg)/2,dh=3.0;
+  mk(side,H,t,-(dg/2+side/2),H/2,D/2); mk(side,H,t,(dg/2+side/2),H/2,D/2);  // front, split for the door
+  if(H>dh) mk(dg,H-dh,t,0,dh+(H-dh)/2,D/2);
+  // door frame + corner posts
+  mk(dg+0.5,0.3,t+0.14,0,dh,D/2,tm); mk(0.3,dh,t+0.14,-(dg/2+0.15),dh/2,D/2,tm); mk(0.3,dh,t+0.14,(dg/2+0.15),dh/2,D/2,tm);
+  for(const sx of[-1,1])for(const sz of[-1,1]) mk(0.34,H,0.34,sx*(W/2-0.05),H/2,sz*(D/2-0.05),tm);
+  addWindows(g,'-z',W,D,H*0.55,1.3,1.5); addWindows(g,'-x',W,D,H*0.55,1.3,1.5); addWindows(g,'+x',W,D,H*0.55,1.3,1.5);
   const col=[],step=1.0;
   for(let x=-W/2+0.5;x<=W/2-0.5;x+=step) col.push({x,z:-D/2,r:0.7});
   for(let z=-D/2+0.5;z<=D/2-0.5;z+=step){col.push({x:-W/2,z,r:0.7});col.push({x:W/2,z,r:0.7});}
-  for(let x=-W/2+0.5;x<=W/2-0.5;x+=step){ if(Math.abs(x)<dg/2+0.35) continue; col.push({x,z:D/2,r:0.7}); }
+  for(let x=-W/2+0.5;x<=W/2-0.5;x+=step){ if(Math.abs(x)<dg/2+0.4) continue; col.push({x,z:D/2,r:0.7}); }
   g.userData.colliders=col;
 }
+// back balcony (loft) at H1 + an interior ramp up the left side; returns walkable surfaces in local coords
+function addBalcony(g,W,H1,D,floorMat,trim){
+  const tm=solid(trim||0x4a3220), slab=floorMat||solid(0x5a4632);
+  const bx0=-W/2+0.3,bx1=W/2-0.3,bz0=-D/2+0.3,bz1=-D*0.06;            // loft covers the back portion
+  const loft=new THREE.Mesh(new THREE.BoxGeometry(bx1-bx0,0.2,bz1-bz0),slab);loft.position.set((bx0+bx1)/2,H1-0.1,(bz0+bz1)/2);loft.castShadow=true;loft.receiveShadow=true;g.add(loft);
+  const rx0=-W/2+0.4,rx1=-W/2+2.8,rzLo=D/2-0.5,rzHi=bz1;             // ramp: front(low) → loft edge(high)
+  const run=rzLo-rzHi,L=Math.hypot(run,H1),ang=Math.atan2(H1,run);
+  const ramp=new THREE.Mesh(new THREE.BoxGeometry(rx1-rx0,0.22,L),slab);ramp.position.set((rx0+rx1)/2,H1/2,(rzLo+rzHi)/2);ramp.rotation.x=ang;ramp.castShadow=true;ramp.receiveShadow=true;g.add(ramp);
+  for(let x=bx0+0.4;x<=bx1-0.4;x+=1.2){ if(x>rx0-0.3&&x<rx1+0.3) continue; const p=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.0,0.12),tm);p.position.set(x,H1+0.5,bz1);g.add(p); }
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(bx1-bx0,0.12,0.12),tm);rail.position.set((bx0+bx1)/2,H1+1.0,bz1);g.add(rail);
+  return {platforms:[{x0:bx0,z0:bz0,x1:bx1,z1:bz1,y:H1}],
+          ramps:[{x0:rx0,z0:rzHi,x1:rx1,z1:rzLo,yLo:0,yHi:H1,axis:'z',dir:-1}]};
+}
+function addUpperWalls(g,W,H1,H2,D,wallMat,trim){
+  const t=Math.min(W,D)*0.05+0.24, tm=solid(trim||0x4a3220), yc=H1+H2/2;
+  const mk=(bw,bh,bd,x,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),wallMat);m.position.set(x,yc,z);m.castShadow=true;m.receiveShadow=true;g.add(m);};
+  mk(W,H2,t,0,-D/2); mk(W,H2,t,0,D/2); mk(t,H2,D,-W/2,0); mk(t,H2,D,W/2,0);
+  const band=new THREE.Mesh(new THREE.BoxGeometry(W+0.3,0.32,D+0.3),tm);band.position.y=H1;g.add(band);     // mid-floor beam line
+  const wy=H1+H2*0.5;
+  addWindows(g,'-z',W,D,wy,1.3,1.4); addWindows(g,'+z',W,D,wy,1.3,1.4); addWindows(g,'-x',W,D,wy,1.3,1.4); addWindows(g,'+x',W,D,wy,1.3,1.4);
+}
+function roofRect(W,D,h,col){ const R=Math.max(W,D)*0.64,r=roofPyramid(R,h,col); r.scale.set(W/Math.max(W,D),1,D/Math.max(W,D)); return r; }
 // dress a hollow shell's interior (human-scale, no collision so it stays passable; door is on +z)
 function addFurniture(g,W,D,kind){
   const wood=texMat(woodTex,0x6a4a2a),wood2=texMat(woodTex,0x4a3318),stone=solid(0x6a655c,true);
@@ -1978,40 +2065,46 @@ function addFurniture(g,W,D,kind){
   if(kind==="shop") put(new THREE.BoxGeometry(1.8,1.0,0.7),wood,hw-1.2,0.5,0.4,true);
   put(new THREE.BoxGeometry(0.7,0.7,0.7),wood2,hw-0.6,0.42,0.9,true);
 }
+const H1F=4.4, H2F=3.0;   // ground-floor & upper-floor heights (kept constant so ramps/jumps stay meaningful)
+// --- Aluvian: half-timbered plaster, steep tiled roof, brick chimney ---
 function bAluvian(s,kind){
-  const g=new THREE.Group(),W=4.8*s,H=(kind==="hall"?5.0:3.6)*s,D=4.8*s,tm=texMat(woodTex);
-  addShell(g,W,H,D,texMat(plasterTex),texMat(woodTex,0x5a4632));
+  const g=new THREE.Group(),W=8.4*s,D=9.0*s,two=(kind!=="house"),wall=texMat(plasterTex,0xded1b6),tm=texMat(woodTex,0x4a3220);
+  addShell(g,W,H1F,D,wall,texMat(woodTex,0x5a4632),0x4a3220);
+  let surf=null; if(two){ surf=addBalcony(g,W,H1F,D,texMat(woodTex,0x5a4632),0x4a3220); addUpperWalls(g,W,H1F,H2F,D,wall,0x4a3220); }
   addFurniture(g,W,D,kind);
-  for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.26*s,H,0.26*s),tm);p.position.set(sx*W/2,H/2,sz*D/2);g.add(p);}
-  const beam=new THREE.Mesh(new THREE.BoxGeometry(W,0.24*s,D),tm);beam.position.y=H;g.add(beam);
-  const roof=roofPyramid(W*1.06,H*0.72,0x7a3a2c);roof.position.y=H+H*0.34;g.add(roof);
-  const ch=new THREE.Mesh(new THREE.BoxGeometry(0.5*s,1.3*s,0.5*s),solid(0x6a5a4a));ch.position.set(W*0.3,H+0.8*s,0);ch.castShadow=true;g.add(ch);
-  const frame=new THREE.Mesh(new THREE.BoxGeometry(2.7,0.22*s,0.34),tm);frame.position.set(0,2.7,D/2);g.add(frame); // door lintel trim
-  return g;
+  // exposed corner timbers
+  for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.3,(two?H1F+H2F:H1F),0.3),tm);p.position.set(sx*(W/2-0.02),(two?H1F+H2F:H1F)/2,sz*(D/2-0.02));g.add(p);}
+  const top=two?H1F+H2F:H1F;
+  const roof=roofRect(W*1.12,D*1.12,3.2,0x7a3a2c);roof.position.y=top+1.5;g.add(roof);
+  const ch=new THREE.Mesh(new THREE.BoxGeometry(0.7,2.2,0.7),solid(0x7a5040));ch.position.set(W*0.32,top+1.7,-D*0.22);ch.castShadow=true;g.add(ch);
+  g.userData.surfaces=surf; return g;
 }
-// --- Gharu'ndim: sandstone, flat parapet, dome, arched door ---
+// --- Gharu'ndim: sandstone block, parapet, dome ---
 function bGharu(s,kind){
-  const g=new THREE.Group(),W=5.2*s,H=(kind==="hall"?5.2:3.8)*s,D=5.2*s;
-  addShell(g,W,H,D,texMat(sandTex),solid(0xb89a5e));
+  const g=new THREE.Group(),W=8.8*s,D=9.2*s,two=(kind!=="house"),wall=texMat(sandTex,0xd8b46a);
+  addShell(g,W,H1F,D,wall,solid(0xb89a5e),0x9a7a3a);
+  let surf=null; if(two){ surf=addBalcony(g,W,H1F,D,solid(0xb89a5e),0x9a7a3a); addUpperWalls(g,W,H1F,H2F,D,wall,0x9a7a3a); }
   addFurniture(g,W,D,kind);
-  const para=new THREE.Mesh(new THREE.BoxGeometry(W*1.06,0.45*s,D*1.06),solid(0xab8a4e));para.position.y=H;g.add(para);
-  const dome=new THREE.Mesh(new THREE.SphereGeometry(W*0.4,14,9,0,6.28,0,Math.PI/2),solid(0xd8b46a));dome.position.y=H+0.22*s;dome.castShadow=true;g.add(dome);
-  if(kind==="hall"){const tw=new THREE.Mesh(new THREE.CylinderGeometry(0.75*s,0.85*s,H*1.5,12),solid(0xcaa56a));tw.position.set(W*0.5,H*0.95,D*0.5);tw.castShadow=true;g.add(tw);
-    const td=new THREE.Mesh(new THREE.SphereGeometry(0.78*s,12,7,0,6.28,0,Math.PI/2),solid(0xe0bc70));td.position.set(W*0.5,H*1.7,D*0.5);g.add(td);}
-  return g;
+  const top=two?H1F+H2F:H1F;
+  const para=new THREE.Mesh(new THREE.BoxGeometry(W+0.6,0.7,D+0.6),solid(0xab8a4e));para.position.y=top+0.3;para.castShadow=true;g.add(para);
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(W*0.34,16,10,0,6.28,0,Math.PI/2),solid(0xd8b46a));dome.position.y=top+0.5;dome.castShadow=true;g.add(dome);
+  if(kind==="hall"){const tw=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,top+3,12),solid(0xcaa56a));tw.position.set(W*0.42,(top+3)/2,-D*0.32);tw.castShadow=true;g.add(tw);
+    const td=new THREE.Mesh(new THREE.SphereGeometry(0.95,12,8,0,6.28,0,Math.PI/2),solid(0xe0bc70));td.position.set(W*0.42,top+3,-D*0.32);g.add(td);}
+  g.userData.surfaces=surf; return g;
 }
-// --- Sho: tiered pagoda — hollow ground floor, decorative tiers above ---
+// --- Sho: timber-framed with a tiered pagoda roof ---
 function bSho(s,kind){
-  const g=new THREE.Group(),W=4.8*s,H=3.0*s;
-  addShell(g,W,H,W,texMat(woodTex,0x9a4030),texMat(woodTex,0x3a2a20));
-  addFurniture(g,W,W,kind);
-  const roof0=roofPyramid(W*1.3,1.25*s,0x46604a);roof0.position.y=H+0.52*s;g.add(roof0);
-  let y=H+0.95*s,w=W*0.82;const tiers=kind==="hall"?2:1;
-  for(let t=0;t<tiers;t++){const h=2.0*s;
+  const g=new THREE.Group(),W=8.4*s,D=8.4*s,two=(kind!=="house"),wall=texMat(woodTex,0x9a4030);
+  addShell(g,W,H1F,D,wall,texMat(woodTex,0x3a2a20),0x2a1a14);
+  let surf=null; if(two){ surf=addBalcony(g,W,H1F,D,texMat(woodTex,0x3a2a20),0x2a1a14); addUpperWalls(g,W,H1F,H2F,D,wall,0x2a1a14); }
+  addFurniture(g,W,D,kind);
+  let top=two?H1F+H2F:H1F;
+  const r0=roofRect(W*1.42,D*1.42,1.5,0x46604a);r0.position.y=top+0.6;g.add(r0);
+  let y=top+1.1,w=W*0.7;const tiers=kind==="hall"?2:1;
+  for(let t=0;t<tiers;t++){const h=1.8;
     const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),texMat(woodTex,t%2?0x9a8260:0x9a4030));body.position.y=y+h/2;body.castShadow=true;g.add(body);
-    const roof=roofPyramid(w*1.3,1.1*s,0x46604a);roof.position.y=y+h+0.46*s;g.add(roof);
-    y+=h+0.52*s;w*=0.84;}
-  return g;
+    const rr=roofRect(w*1.5,w*1.5,1.3,0x46604a);rr.position.y=y+h+0.5;g.add(rr); y+=h+0.6;w*=0.82;}
+  g.userData.surfaces=surf; return g;
 }
 const CULTURE_BUILDERS=[bAluvian,bSho,bGharu]; // region index 0 Aluvia, 1 Sho, 2 Gharu'ndim
 function buildBuilding(region,kind,s){ return (CULTURE_BUILDERS[region]||bAluvian)(s,kind); }
@@ -2045,15 +2138,16 @@ function addCity(c){
   // a Town Network portal stands in every town
   const tpx=c.x,tpz=c.z-9,tp=buildPortal("Town Network");tp.position.set(tpx,0,tpz);scene.add(tp);scenery.push(tp);
   tnPortals.push({x:tpx,z:tpz});obstacles.push({x:tpx,z:tpz,r:1.2});
-  const cnt=c.capital?9:5,ring=c.capital?28:18,sc=c.capital?1.6:1.2;
+  const cnt=c.capital?9:5,ring=c.capital?40:24,sc=c.capital?1.4:1.0;  // wider ring for the larger (≈2×) buildings
   for(let i=0;i<cnt;i++){
     const a=i/cnt*6.28+c.region*0.7,hx=c.x+Math.cos(a)*ring,hz=c.z+Math.sin(a)*ring;
     const kind=i===0?"hall":(i%3===0?"shop":"house");
-    const b=buildBuilding(c.region,kind,sc*(kind==="hall"?1.25:1));
+    const b=buildBuilding(c.region,kind,sc*(kind==="hall"?1.2:1));
     const th=Math.atan2(c.x-hx,c.z-hz); // door (+z) faces the plaza centre
     b.position.set(hx,0,hz);b.rotation.y=th;scene.add(b);scenery.push(b);
     const cols=b.userData.colliders||[],ct=Math.cos(th),st=Math.sin(th);
     for(const cc of cols){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
+    if(b.userData.surfaces) registerStructure(hx,hz,th,terrainH(hx,hz),b.userData.surfaces);   // ramp + upstairs become walkable (base = terrain the building sits on)
   }
   // paved plaza
   const plaza=new THREE.Mesh(new THREE.CircleGeometry(ring*0.74,28),solid(0x8f8a7e));
@@ -3153,7 +3247,7 @@ window.addEventListener('keydown',e=>{
   if(!running) return;
   if(k==="enter"){ if(isOnline) openChat(); return; } // Enter opens chat (online only)
   { const si=HOTKEYS.indexOf(k); if(si>=0) castSlot(si); }
-  if(k===" ") dodge();
+  if(k===" "){ if(keys["shift"]) dodge(); else tryJump(); }
   if(k==="e") interact();
   if(k==="q"){
     weaponMode=weaponMode==="sword"?"bow":"sword";
@@ -3418,6 +3512,17 @@ function update(dt){
     const [nx,nz]=collide(player.x+player.dashX*dd,player.z+player.dashZ*dd);
     player.x=nx;player.z=nz;
     if(Math.random()<0.7) burst(player.x,EYE*0.5,player.z,0xdfe8ff,1);
+  }
+  // vertical physics: gravity + landing on terrain / building floors / ramps (jump leaves the ground)
+  {
+    const support=supportAt(player.x,player.z,player.y);
+    if(player.grounded){
+      if(support>=player.y-STICK){ player.y=support; player.vy=0; }   // glue to slopes/ramps (up via STEP_UP, down via STICK)
+      else { player.grounded=false; player.vy=0; }                    // walked off a real ledge → fall
+    } else {
+      player.vy-=GRAV*dt; player.y+=player.vy*dt;
+      if(player.vy<=0 && player.y<=support){ player.y=support; player.vy=0; player.grounded=true; } // land
+    }
   }
   // timers/regen
   player.meleeCd=Math.max(0,player.meleeCd-dt);
@@ -3685,7 +3790,7 @@ function camClampDist(tx,ty,tz,bx,by,bz,maxD){
   return Math.max(0.7,d);
 }
 function syncCamera(dt){
-  const gy=groundY(player.x,player.z);
+  const gy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;   // feet height (terrain, floor, ramp, or mid-jump)
   if(thirdPerson){
     // orbit camera behind the look direction, pulled in past walls/terrain, eased smoothly
     const yaw=player.yaw,pitch=player.pitch;
@@ -5526,7 +5631,7 @@ function startGame(loadSaved,preset){
     setTimeout(()=>{if(running)log("Tip: visit Asheron's Emissary (gold !) for a bounty, and the Vendor (green $) to trade.","sys");},14000);
     setTimeout(()=>{if(running)log("Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);
     setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). Q swaps weapon.","sys");},28000);
-    setTimeout(()=>{if(running)log("Tip: tap <b>Space</b> to dodge — a quick dash with brief invulnerability (costs stamina).","sys");},35000);
+    setTimeout(()=>{if(running)log("Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);
   }
   applyHeritageLook(player.heritage);
   markSceneSRGB();
