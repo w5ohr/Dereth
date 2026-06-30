@@ -4039,43 +4039,55 @@ function animateAvatar(dt){
   const moving=!!(keys["w"]||keys["a"]||keys["s"]||keys["d"]||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"])&&player.alive;
   const sw=player.swing, acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow");
   const idle=!moving&&!acting;
-  // smooth the walk weight in/out so joints ease between idle and stride
+  // movement intensity: walk vs run (sprint amplifies the whole gait)
+  const running = moving && !!keys["shift"] && player.st>0 && !blocking;
   u._w=(u._w==null?0:u._w)+((moving?1:0)-(u._w||0))*Math.min(1,dt*9); const w=u._w;
+  u._r=(u._r==null?0:u._r)+((running?1:0)-(u._r||0))*Math.min(1,dt*6); const rN=u._r;
+  const amp=1+rN*0.8;                                         // longer strides / bigger arm swing when running
   const p=player.bob*3, sP=Math.sin(p), sQ=Math.sin(p+Math.PI);
   const breath=Math.sin(idleT*1.6);
-  // ---- spine: bob + a slight forward lean while walking + idle sway ----
-  u.spine.position.y=AV_WAIST + w*Math.abs(Math.sin(p*1+0.4))*0.03 + (1-w)*breath*0.012;
-  u.spine.rotation.x=w*0.12;                                  // lean into the stride
-  u.spine.rotation.y=w*sP*0.06;                               // torso counter-twist
-  u.spine.rotation.z=(1-w)*Math.sin(idleT*0.8)*0.02;          // idle weight shift
-  // ---- legs: hip swing + knee flex (swing leg bends) + ankle roll ----
+  // ---- spine: bob + forward lean (deeper when running) + idle sway ----
+  u.spine.position.y=AV_WAIST + w*Math.abs(Math.sin(p+0.4))*0.03*amp + (1-w)*breath*0.012;
+  const lean=w*(0.12+rN*0.24); u.spine.rotation.x=lean;
+  u.spine.rotation.z=(1-w)*Math.sin(idleT*0.8)*0.02;
+  // ---- legs: hip swing + knee flex (swing leg bends, more on a run) + ankle roll ----
   const legPose=(hip,knee,ankle,s)=>{
-    const swing=s; hip.rotation.x = w*swing*0.55;
-    const flex = Math.max(0,-s)*1.15;                         // knee flexes as the leg lifts behind
-    knee.rotation.x = -(w*(0.08+flex)) ;                      // never hyper-extends (always ≤0)
-    ankle.rotation.x = w*(-swing*0.25 + flex*0.3) + (1-w)*0.0;
+    hip.rotation.x=w*s*0.55*amp;
+    const flex=Math.max(0,-s)*(1.15+rN*0.55);
+    knee.rotation.x=-(w*(0.08+flex));
+    ankle.rotation.x=w*(-s*0.25+flex*0.3);
   };
   legPose(u.hipR,u.knR,u.anR,sP);
   legPose(u.hipL,u.knL,u.anL,sQ);
-  // ---- left arm: swings opposite its leg, with a living elbow bend ----
-  u.shL.rotation.x = w*(-sQ*0.4) + (1-w)*(0.04+breath*0.02);
-  u.shL.rotation.z = 0.04;
-  u.elL.rotation.x = -(0.2 + w*Math.max(0,-sQ)*0.5) - (1-w)*0.18;   // elbow always slightly bent (humans don't lock arms straight)
-  // ---- neck/head: settle level while walking, glance about while idle ----
-  u.neck.rotation.x = -u.spine.rotation.x*0.7;                // keep the head upright as the back leans
-  u.neck.rotation.y = (1-w)*Math.sin(idleT*0.45)*0.32;
-  u.neck.rotation.z = (1-w)*Math.sin(idleT*0.8+0.6)*0.025;
-  // ---- right arm: action poses (attack/cast/bow) else walk swing ----
+  // ---- neck/head: level while moving, glance about while idle ----
+  u.neck.rotation.x=-lean*0.7;
+  u.neck.rotation.y=(1-w)*Math.sin(idleT*0.45)*0.32;
+  u.neck.rotation.z=(1-w)*Math.sin(idleT*0.8+0.6)*0.025;
+  // ---- arms: action poses (attack/cast/bow) override the walk swing ----
+  const twoH=!!(player.weapon&&player.weapon.wt==="twohand")&&weaponMode==="sword";
   u.aSword.visible=weaponMode==="sword"; u.aBow.visible=weaponMode==="bow"; u.aWand.visible=false;
-  let sX,sZ,eX;
+  u.aSword.scale.z=twoH?1.5:1;                                // greatswords carry a longer blade
+  // left arm defaults to the opposite-leg walk swing; attacks may grip it onto the weapon
+  let lX=w*(-sQ*0.4*amp)+(1-w)*(0.04+breath*0.02), lZ=0.04, lE=-(0.2+w*Math.max(0,-sQ)*0.5*amp)-(1-w)*0.18;
+  let sX,sZ,eX, twist=w*sP*0.06*amp;
   if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
-    sX=-0.3 - raise*1.7 + slash*2.7; sZ=-0.1 - slash*0.5; eX=-(0.4 + raise*0.9 - slash*0.7); }
+    if(twoH){ // two-handed overhead chop — both hands grip, torso rotates through the swing
+      sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
+      lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2;
+    } else {  // single-handed diagonal slash
+      sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2;
+    }
+  }
   else if(castShow>0){ const cp=1-castShow/0.55, back=Math.sin(clamp(cp,0,0.3)/0.3*Math.PI), thrust=cp>=0.3?Math.sin((cp-0.3)/0.7*Math.PI):0;
     u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true;
-    sX=-0.7 - back*0.6 + thrust*1.7; sZ=-0.1; eX=-(0.9 - thrust*0.7); }
-  else if(player.bowDraw>0&&weaponMode==="bow"){ sX=-1.4; sZ=-0.1; eX=-1.1; }
-  else { sX=w*(-sP*0.4) + (1-w)*(0.04+breath*0.02); sZ=-0.05; eX=-(0.2 + w*Math.max(0,-sP)*0.5) - (1-w)*0.18; }
+    sX=-0.7-back*0.6+thrust*1.7; sZ=-0.1; eX=-(0.9-thrust*0.7); twist=thrust*0.12;
+    lX=-0.3+back*0.4; lZ=0.2; lE=-0.6;                        // off-hand gestures with the cast
+  }
+  else if(player.bowDraw>0&&weaponMode==="bow"){ sX=-1.4; sZ=-0.1; eX=-1.1; lX=-1.3; lZ=0.15; lE=-0.25; }
+  else { sX=w*(-sP*0.4*amp)+(1-w)*(0.04+breath*0.02); sZ=-0.05; eX=-(0.2+w*Math.max(0,-sP)*0.5*amp)-(1-w)*0.18; }
+  u.spine.rotation.y=twist;
   u.shR.rotation.x=sX; u.shR.rotation.z=sZ; u.elR.rotation.x=eX;
+  u.shL.rotation.x=lX; u.shL.rotation.z=lZ; u.elL.rotation.x=lE;
 }
 // ---- townsfolk life: idle breathing/glancing for everyone, plus a gentle stroll for wanderers ----
 function animateOnePerson(p,dt){
