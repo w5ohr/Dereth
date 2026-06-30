@@ -1057,7 +1057,7 @@ function tryJump(){
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
-let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0,dungeonLock=null;
+let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0,dungeonLock=null,dungeonVault=null;
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
@@ -2145,7 +2145,7 @@ function buildWorld(){
   monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];obstacles.length=0;
   for(const d of dying) scene.remove(d.mesh); dying=[];
   for(const o of netObjs) scene.remove(o);
-  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonMobs=0;curDungeon=null;structures=[];
+  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
 
   // the 25 cities of Dereth (each a bindable settlement; capitals are hubs)
@@ -2695,6 +2695,15 @@ const TROPHY_BY_KIND={
   olthoisoldier:{name:"Olthoi Carapace",v:22},
 };
 function rollTrophy(kind){ const t=TROPHY_BY_KIND[kind]; return t?{name:t.name,stat:"trophy",v:t.v,kind}:null; }
+// trade notes (AC): portable pyreal certificates — redeem for their face value
+function rollTradeNote(){ const v=[50,100,250,500][irnd(0,3)]; return {name:`Trade Note (${v}p)`,stat:"note",v}; }
+// spell components (AC scarabs / herbs) — sellable trade-goods; the Mana Scarab is the one you can use (restores mana)
+const SPELL_COMPONENTS=[
+  {name:"Lead Scarab",v:8},{name:"Iron Scarab",v:14},{name:"Copper Scarab",v:22},{name:"Silver Scarab",v:34},{name:"Gold Scarab",v:55},{name:"Pyreal Scarab",v:85},
+  {name:"Hyssop",v:6},{name:"Mandrake Root",v:9},{name:"Frankincense",v:11},{name:"Saffron",v:13},{name:"Henbane",v:8},{name:"Eyebright",v:7},
+];
+function rollComponent(){ if(Math.random()<0.15) return {name:"Mana Scarab",stat:"mn",v:50};   // the usable component
+  const c=SPELL_COMPONENTS[irnd(0,SPELL_COMPONENTS.length-1)]; return {name:c.name,stat:"comp",v:c.v}; }
 function killMonster(m){
   const b=BESTIARY[m.kind];
   player.kills++;
@@ -2735,6 +2744,8 @@ function killMonster(m){
   if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollItem(m.isElite||m.isDungeon, m.isDungeon&&curDungeon?curDungeon.tier:(m.isElite?3:1))});
   if(Math.random()<0.20){ const tr=rollTrophy(m.kind); if(tr) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:tr}); }   // creature trophy
   if(Math.random()<0.05){ const k=Math.random()<0.7?{name:"Lockpick",stat:"pick",v:1}:{name:"Brass Key",stat:"key",v:1}; addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:k}); }   // lockpick / key
+  if(Math.random()<0.04) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollTradeNote()});   // trade note
+  if(Math.random()<((m.kind==="shadow"||m.kind==="virindi"||m.kind==="skeleton")?0.10:0.03)) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollComponent()});   // spell component (casters drop more)
   log(`You have slain ${m.isElite?"<b>Champion "+b.name+"</b>":"a <b>"+b.name+"</b>"}.`,"die");
   retire(m);
   monsters.splice(monsters.indexOf(m),1);
@@ -3351,6 +3362,8 @@ function applyItem(it){
     if(typeof recomputeGearSkill==="function") recomputeGearSkill();
     derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
   else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor.`,"sys"); }
+  else if(it.stat==="comp"){ log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
+  else if(it.stat==="note"){ player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
   else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
   else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
@@ -3877,6 +3890,7 @@ function currentPrompt(){
   if(inDungeon){
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&nr(dungeonChest.x,dungeonChest.z)<3.5) return "Open the hoard (E)";
     if(dungeonLock&&!dungeonLock.opened&&nr(dungeonLock.x,dungeonLock.z)<3.2) return hasLockOpener()?"Pick the locked cache (E)":"Locked — need a Lockpick or Key";
+    if(dungeonVault&&!dungeonVault.opened&&nr(dungeonVault.x,dungeonVault.z)<3.2) return hasKey()?"Unlock the vault (E)":"Sealed Vault — needs a Key";
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return "Leave the delve (E)";
     return "";
   }
@@ -3921,6 +3935,19 @@ function portalTouch(){
   } }
 }
 function hasLockOpener(){ return player.inv.some(it=>it.stat==="pick"||it.stat==="key"); }
+function hasKey(){ return player.inv.some(it=>it.stat==="key"); }
+function openVault(){
+  const i=player.inv.findIndex(it=>it.stat==="key");
+  if(i<0){ log("The vault is sealed. Only a <b>Key</b> will open it — a lockpick won't.","warn"); if(SFX.hit)SFX.hit(); return; }
+  const key=player.inv.splice(i,1)[0]; dungeonVault.opened=true;
+  if(dungeonVault.mesh) dungeonVault.mesh.rotation.y=-0.6;   // door swings open
+  const tier=curDungeon?curDungeon.tier:4;
+  for(let k=0;k<4;k++) addDrop(dungeonVault.x+rnd(-2,2),dungeonVault.z+rnd(-1,2),{type:"item",item:rollItem(true,Math.min(5,tier+1))});
+  if(Math.random()<0.5) addDrop(dungeonVault.x,dungeonVault.z+1,{type:"item",item:Math.random()<0.5?rollNamedItem():rollAugment()});   // vaults hide the best
+  addDrop(dungeonVault.x,dungeonVault.z,{type:"gold",amt:irnd(150,350)});
+  log(`Your <b>${key.name}</b> turns the vault lock — the Sealed Vault swings wide on a king's ransom!`,"loot");
+  if(SFX.quest)SFX.quest(); toast("VAULT OPENED");
+}
 function openLockedCache(){
   const i=player.inv.findIndex(it=>it.stat==="pick"||it.stat==="key");
   if(i<0){ log("The cache is locked. You need a <b>Lockpick</b> or a <b>Key</b>.","warn"); if(SFX.hit)SFX.hit(); return; }
@@ -3949,6 +3976,7 @@ function interact(){
   if(inDungeon){
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&Math.hypot(dungeonChest.x-player.x,dungeonChest.z-player.z)<3.5){ openChest(); return; }
     if(dungeonLock&&!dungeonLock.opened&&Math.hypot(dungeonLock.x-player.x,dungeonLock.z-player.z)<3.2){ openLockedCache(); return; }
+    if(dungeonVault&&!dungeonVault.opened&&Math.hypot(dungeonVault.x-player.x,dungeonVault.z-player.z)<3.2){ openVault(); return; }
     if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.5){ exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
@@ -6707,13 +6735,15 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
-function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
 function gearDesc(it){
   if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
+  if(it.stat==="note") return `trade note · worth ${it.v}p`;
+  if(it.stat==="comp") return `spell component · worth ${it.v}p`;
   if(it.wt==="focus") return `+${it.foc||it.v} all magic · casting focus`;
   if(it.stat==="weapon") return `+${it.v} dmg · ${it.wt}`+(it.affix?` · ${it.affix.desc}`:"");
   if(it.stat==="worn") return `+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`+(it.magicAbsorb?` · −${Math.round(it.magicAbsorb*100)}% magic`:"")+(it.affix?` · ${it.affix.desc}`:"");
@@ -7309,6 +7339,19 @@ function buildDungeon(def){
     const llbl=labelSprite("Locked Cache");llbl.position.set(lx,2.0,lz);scene.add(llbl);dungeonObjs.push(llbl);
     dungeonLock={x:lx,z:lz,mesh:lg,opened:false};
   }
+  // a Sealed Vault (AC): KEY-only (a pick won't do), richer reward — rarer, ~25% of delves, near the boss room
+  dungeonVault=null;
+  if(Math.random()<0.25){
+    const vx=boss.cx+(boss.round?-(boss.rad-2.5):-(boss.hx-2.5)), vz=boss.cz;
+    const vg=new THREE.Group();
+    const vd=new THREE.Mesh(new THREE.BoxGeometry(1.5,2.0,0.4),new THREE.MeshStandardMaterial({color:0x2a3550,metalness:0.7,roughness:0.35,emissive:0x101830,emissiveIntensity:0.5}));
+    vd.position.y=1.0;vd.castShadow=true;vg.add(vd);
+    const vk=new THREE.Mesh(new THREE.TorusGeometry(0.18,0.05,8,16),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x3a6abf,emissiveIntensity:0.9}));
+    vk.position.set(0.45,1.0,0.22);vg.add(vk);
+    vg.position.set(vx,0,vz);scene.add(vg);dungeonObjs.push(vg);
+    const vlbl=labelSprite("Sealed Vault");vlbl.position.set(vx,2.7,vz);scene.add(vlbl);dungeonObjs.push(vlbl);
+    dungeonVault={x:vx,z:vz,mesh:vg,opened:false};
+  }
   // guardians spread across the rooms; the warden guards the hoard
   const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
   function spawnIn(room,kind,elite){ let x,z,t=0;
@@ -7518,12 +7561,13 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
-    const ctl=(it.stat==="trophy")?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
+    const ctl=(it.stat==="trophy"||it.stat==="comp")?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
       :(it.stat==="pick"||it.stat==="key")?`<span style="color:var(--dim);font-size:11px">use on a locked cache</span>`
       :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
+      :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span>${cmpHTML}</div>
       <div class="ctl">${ctl}</div>`;
