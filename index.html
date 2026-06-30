@@ -30,6 +30,10 @@
   #lvline{font-size:11px;color:var(--dim);margin-top:2px}
 
   #spellbar{bottom:14px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;max-width:96vw;gap:8px;padding:8px}
+  #castbar{position:absolute;bottom:92px;left:50%;transform:translateX(-50%);width:220px;height:14px;border:1px solid var(--gold);
+    border-radius:7px;background:rgba(8,6,3,.85);display:none;overflow:hidden;z-index:20}
+  #castfill{height:100%;width:0%;background:linear-gradient(90deg,#7ec8ff,#9af0ff);transition:width .04s linear}
+  #castlabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;text-shadow:0 1px 2px #000}
   .slot{width:54px;height:54px;border:1px solid var(--border);border-radius:6px;
     background:radial-gradient(circle at 50% 35%,#241a0c,#0c0905);display:flex;flex-direction:column;
     align-items:center;justify-content:center;position:relative;cursor:pointer;pointer-events:auto}
@@ -166,6 +170,7 @@
   <div id="log"><div class="panel2" id="logInner"></div></div>
   <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say… (Enter · Esc · /who /tell /r /p /party)"
     style="position:absolute;left:12px;bottom:54px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
+  <div id="castbar"><div id="castfill"></div><span id="castlabel"></span></div>
   <div id="spellbar" class="panel"></div>
   <div id="potions" class="panel">
     <div class="pot"><span class="k">R</span>❤<b id="pHealth">0</b></div>
@@ -2385,6 +2390,10 @@ function playerHurt(dmg,sx,sz,type){
     }
   }
   player.hp-=dmg;player.invuln=0.25;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4));
+  // a solid hit can shatter a spell you're mid-cast on — high Focus steadies your concentration
+  if(player.casting){ const ic=clamp(0.55-player.attr.Focus*0.004,0.18,0.6);
+    if(Math.random()<ic){ const nm=SPELLBOOK[player.casting.id]; player.casting=null; spellCd[nm.id]=now()+500;
+      floater(player.x,EYE+0.6,player.z,"interrupted!","#ff8f6b"); log(`Your <b>${nm.name}</b> is interrupted!`,"warn"); } }
   const v=document.getElementById('dmgvig');v.style.opacity=clamp(dmg/35,.25,.9);
   setTimeout(()=>v.style.opacity=0,140);
   if(sx!==undefined){const rel=Math.atan2(sx-player.x,-(sz-player.z))+player.yaw;
@@ -2394,7 +2403,7 @@ function playerHurt(dmg,sx,sz,type){
 }
 function die(){
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
-  player.alive=false;player.hp=0;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};player.debuffs={};
+  player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};player.debuffs={};
   if(player.skillBuffs&&Object.keys(player.skillBuffs).length){player.skillBuffs={};derive();}
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
@@ -2453,7 +2462,30 @@ function pickMonsterTarget(range){
   return best;
 }
 function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
+// how long a spell winds up before it fires — scales with spell level, eased by high school skill
+function castTimeFor(s){
+  if(!s||s.special==="stam2mana") return 0;
+  let t=0.3+(s.lvl||1)*0.11;                       // ~0.41s (L1) … ~1.18s (L8)
+  const mk=MAGIC_SCHOOLS[s.school]; if(mk){ const margin=skillValue(mk)-(s.req||0); t*=clamp(1-margin*0.0025,0.55,1); }
+  return t;
+}
+// begin a cast: gate it, then wind up over castTime (you're committed & slowed; a hit can break it).
 function castSpellById(id){
+  if(!player.alive||paused) return;
+  const s=SPELLBOOK[id];if(!s) return;
+  if(player.casting) return;                        // already mid-cast — ignore
+  if(player.knownSpells.indexOf(id)<0){ log(`You have not learned <b>${s.name}</b> — scribe its scroll first.`,"warn"); return; }
+  if((spellCd[id]||0)>now()) return;
+  if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
+  const mkc=MAGIC_SCHOOLS[s.school];
+  if(s.req>0 && mkc && skillValue(mkc)<s.req){ log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).`,"warn"); SFX.hit&&SFX.hit(); return; }
+  const ct=castTimeFor(s);
+  if(ct<=0){ executeSpell(id); return; }            // instant utility (Stam→Mana) skips the cast bar
+  player.casting={id,t:ct,total:ct};
+  castShow=0.4; if(SFX.cast)SFX.cast();
+}
+// fire the spell's actual effect (called when a cast completes; re-checks live mana/cooldown)
+function executeSpell(id){
   if(!player.alive||paused) return;
   const s=SPELLBOOK[id];if(!s) return;
   if(player.knownSpells.indexOf(id)<0){ log(`You have not learned <b>${s.name}</b> — scribe its scroll first.`,"warn"); return; }
@@ -2644,6 +2676,7 @@ function primaryAttack(){ if(weaponMode==="bow") fireArrow(); else meleeAttack()
 // dodge dash (Space): quick burst in the movement direction (or backward) with brief i-frames
 function dodge(){
   if(!player.alive||paused||player.dashT>0||player.dashCd>0||player.st<16) return;
+  if(player.casting) player.casting=null;   // dodging breaks your own cast
   const yaw=player.yaw,fx=-Math.sin(yaw),fz=-Math.cos(yaw),rx=-fz,rz=fx;
   let f=0,s=0;
   if(keys["w"]||keys["arrowup"])f+=1; if(keys["s"]||keys["arrowdown"])f-=1;
@@ -2928,6 +2961,9 @@ function collide(nx,nz){
 }
 function update(dt){
   if(paused||!running) return;
+  // spell cast wind-up: fire the effect when the bar fills
+  if(player.casting){ player.casting.t-=dt;
+    if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
   // movement
   let f=0,s=0;
   if(keys["w"]||keys["arrowup"]) f+=1;
@@ -2945,7 +2981,8 @@ function update(dt){
     const l=Math.hypot(dx,dz);dx/=l;dz/=l;
     const roadBoost=onRoad(player.x,player.z)?ROAD_SPEED:1;
     const slowD=(player.debuffs&&player.debuffs.slow)?(1-player.debuffs.slow.v):1;  // enemy Slow curse
-    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*dt;
+    const castD=player.casting?0.5:1;   // committed mid-cast — you move at half pace
+    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD*dt;
     const [nx,nz]=collide(player.x+dx*sp,player.z+dz*sp);
     player.x=nx;player.z=nz;
     player.bob+=dt*sp*1.1;
@@ -3328,6 +3365,11 @@ function updateHUD(){
       const sw=el.querySelector(".cdsweep"); if(sw) sw.style.background=`conic-gradient(rgba(6,4,1,.62) ${deg}deg, transparent ${deg}deg)`;}
     else { el.classList.remove("cool"); const c=el.querySelector(".cd"); if(c)c.textContent=""; }
   });
+  const cb=document.getElementById('castbar');
+  if(player.casting){ const c=player.casting, frac=clamp(1-c.t/c.total,0,1);
+    cb.style.display="block"; document.getElementById('castfill').style.width=Math.round(frac*100)+"%";
+    document.getElementById('castlabel').textContent=(SPELLBOOK[c.id]||{}).name||""; }
+  else cb.style.display="none";
   document.getElementById('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
   const dv=document.getElementById('dmgvig');
   if(player.alive&&player.hp/player.mhp<0.25){dv.style.opacity=0.22+0.22*Math.abs(Math.sin(now()/240));dv.dataset.low="1";}
@@ -4668,7 +4710,7 @@ let pendingServerChar=null;
 function startGame(loadSaved,preset){
   document.getElementById('overlay').style.display="none";
   initAudio();
-  player.spellBuffs={}; player.lifeBuffs={}; player.skillBuffs={}; player.hots={};   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
+  player.spellBuffs={}; player.lifeBuffs={}; player.skillBuffs={}; player.hots={}; player.casting=null;   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
   if(!loadSaved) player.itemBuffs={};   // fresh character: no item buffs (a loaded one restores them via applySaveObj)
   if(!loadSaved&&preset&&PRESETS[preset]){const p=PRESETS[preset];
     for(const a in p.attr) player.attr[a]+=p.attr[a];
