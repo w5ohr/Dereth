@@ -808,6 +808,7 @@ let scene,cam,renderer,sun;
 // cinematic post-processing pipeline (bloom + filmic tonemap + vignette), built inline (no extra files)
 let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,quad:null,bright:null,blur:null,comp:null};
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
+let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[];  // self-cast (crouch→raise) vs forward cast
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
@@ -2507,6 +2508,31 @@ function burst(x,y,z,color,n=10){
     bursts.push({sp,vx:Math.cos(a)*sp2,vy:Math.abs(el)*sp2*0.6+1,vz:Math.sin(a)*sp2,t:rnd(.3,.6)});
   }
 }
+// self-cast aura: motes swirl up around the caster and gather above the head as the spell takes hold
+function selfCastFX(x,z,color){
+  const g=new THREE.Group(); g.position.set(x,0,z); scene.add(g);
+  const parts=[];
+  const bright=new THREE.Color(color).lerp(new THREE.Color(0xffffff),0.45).getHex();   // brighten so it reads against daylight
+  for(let i=0;i<32;i++){
+    const m=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:bright,transparent:true,opacity:1,depthWrite:false,depthTest:false,fog:false}));
+    const s=rnd(0.16,0.32); m.scale.set(s,s,s); g.add(m);
+    parts.push({m,a:rnd(0,6.28),r:rnd(0.7,1.0),y:rnd(0,0.7),spd:rnd(6,9),rise:rnd(2.4,3.2),s,ph:rnd(0,6.28)});
+  }
+  castSwirls.push({g,t:0,dur:1.05,parts});
+}
+function updateCastSwirls(dt){
+  for(let i=castSwirls.length-1;i>=0;i--){ const c=castSwirls[i]; c.t+=dt; const k=Math.min(1,c.t/c.dur);
+    for(const p of c.parts){
+      p.a+=p.spd*dt*(1+k*0.9);                          // swirl faster as it rises
+      p.r*=(1-dt*(0.4+k*1.4));                           // orbit the body, then spiral inward near the top
+      p.y+=p.rise*dt*(0.55+k*1.5);                       // rise up toward / above the head
+      p.m.position.set(Math.cos(p.a)*p.r, p.y+0.05, Math.sin(p.a)*p.r);
+      p.m.material.opacity=clamp((1-k)*1.6,0,1)*(0.78+0.22*Math.sin(c.t*16+p.ph));
+      p.m.scale.setScalar(p.s*(1+k*0.6));
+    }
+    if(c.t>=c.dur){ scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); castSwirls.splice(i,1); }
+  }
+}
 // portal-travel effect: a swirling column of motes + a flash of light + a whoosh
 function teleportFX(x,z){
   const gy=groundY(x,z),col=0x9b6bff;
@@ -3243,7 +3269,10 @@ function castSpellById(id){
   const ct=castTimeFor(s);
   if(ct<=0){ executeSpell(id); return; }            // instant utility (Stam→Mana) skips the cast bar
   player.casting={id,t:ct,total:ct};
-  castShow=0.4; if(SFX.cast)SFX.cast();
+  // mark self-cast up front so the wind-up already eases into the crouch (executeSpell refines it)
+  castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
+    ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light";
+  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
 }
 // fire the spell's actual effect (called when a cast completes; re-checks live mana/cooldown)
 function executeSpell(id){
@@ -3269,7 +3298,13 @@ function executeSpell(id){
     if(Math.random()<fz){ player.mn+=Math.round(cost*0.5); spellCd[id]=now()+600;
       floater(player.x,EYE+0.5,player.z,"fizzle!","#c9a6ff"); if(SFX.hit)SFX.hit();
       log(`Your <b>${s.name}</b> fizzles — the weave slips.`,"warn"); castShow=0.3; return; } }
-  castShow=0.55; if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
+  // spells cast on your own body use a crouch→rise gesture + a swirling aura; targeted/forward spells thrust
+  castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
+    ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light";
+  castDur=castSelf?0.78:0.55; castShow=castDur;
+  castColor=s.buff==="light"?(s.lightColor||0xfff2cf):(s.buff==="attr"||s.buff==="skill")?0xbfe0ff
+    :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
+  if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
   if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
     const m=pickMonsterTarget(28);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
@@ -3290,7 +3325,7 @@ function executeSpell(id){
   // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
   if((s.buff==="attr")||(s.school==="life"&&s.heal)){
     const ally=pickAllyTarget(40);
-    if(ally){ netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+    if(ally){ castSelf=false; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
   }
   if(s.school==="life"&&s.heal){
@@ -3815,7 +3850,10 @@ function update(dt){
   player.swing=Math.max(0,player.swing-dt*3.2);
   player.bowDraw=Math.max(0,player.bowDraw-dt*4);
   portalCd=Math.max(0,portalCd-dt); portalTouch();
+  if(castSelf&&castShow>0&&!castSwirlActive){ selfCastFX(player.x,player.z,castColor); castSwirlActive=true; }  // one swirl per self-cast
+  if(castShow<=0) castSwirlActive=false;
   castShow=Math.max(0,castShow-dt);
+  if(castSwirls.length) updateCastSwirls(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
@@ -4078,7 +4116,20 @@ function animateAvatar(dt){
       sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2;
     }
   }
-  else if(castShow>0){ const cp=1-castShow/0.55, back=Math.sin(clamp(cp,0,0.3)/0.3*Math.PI), thrust=cp>=0.3?Math.sin((cp-0.3)/0.7*Math.PI):0;
+  else if(castShow>0&&castSelf){   // SELF-cast: dip into a slight crouch, then rise tall sweeping both arms overhead
+    const cp=clamp(1-castShow/castDur,0,1), down=clamp(cp/0.42,0,1), up=clamp((cp-0.42)/0.58,0,1), crouch=down*(1-up);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false;   // hands free for the gesture
+    u.spine.position.y=AV_WAIST - crouch*0.15 + up*0.03;
+    u.spine.rotation.x=crouch*0.18 - up*0.13;                 // hunch down, then arch back looking up
+    const kb=-(crouch*0.75);
+    u.hipR.rotation.x=crouch*0.4; u.hipL.rotation.x=crouch*0.4; u.knR.rotation.x=kb; u.knL.rotation.x=kb;
+    u.anR.rotation.x=crouch*0.34; u.anL.rotation.x=crouch*0.34;
+    u.neck.rotation.x=-up*0.38; u.neck.rotation.y=0;          // gaze rises as the spell releases
+    sX=0.55*crouch - up*3.1; sZ=-0.2*up; eX=-(0.55*(1-up)+0.05);   // arms low → swept up into an overhead V
+    lX=sX; lZ=0.2*up; lE=eX; twist=0;
+  }
+  else if(castShow>0){            // forward/targeted cast: thrust the wand toward the target
+    const cp=1-castShow/castDur, back=Math.sin(clamp(cp,0,0.3)/0.3*Math.PI), thrust=cp>=0.3?Math.sin((cp-0.3)/0.7*Math.PI):0;
     u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true;
     sX=-0.7-back*0.6+thrust*1.7; sZ=-0.1; eX=-(0.9-thrust*0.7); twist=thrust*0.12;
     lX=-0.3+back*0.4; lZ=0.2; lE=-0.6;                        // off-hand gestures with the cast
