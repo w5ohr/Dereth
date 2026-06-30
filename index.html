@@ -4541,7 +4541,7 @@ function exitDungeon(toEntrance){
 }
 // ---- The Town Network: a portal hub linking every town ----
 function buildNetwork(){
-  netObjs=[];netPortals=[];const R=34;
+  netObjs=[];netPortals=[];const R=48;   // wide hall so all ~56 town portals + labels spread out
   const floor=new THREE.Mesh(new THREE.CircleGeometry(R,44),new THREE.MeshStandardMaterial({color:0x2a2640,metalness:0.4,roughness:0.5}));
   floor.rotation.x=-Math.PI/2;floor.position.set(DCEN.x,0.04,DCEN.z);floor.receiveShadow=true;scene.add(floor);netObjs.push(floor);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(R*0.9,0.4,8,48),new THREE.MeshStandardMaterial({color:0x6a5aa0,emissive:0x3a2a6a,emissiveIntensity:0.7}));
@@ -4552,7 +4552,7 @@ function buildNetwork(){
   const orb=new THREE.Mesh(new THREE.SphereGeometry(1.1,16,12),new THREE.MeshBasicMaterial({color:0xc060ff}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
   CITIES.forEach((c,i)=>{const a=i/CITIES.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
     const m=buildPortal(c.name);m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
-    m.traverse(o=>{if(o.isSprite){o.scale.set(11,2.8,1);o.position.y=4.6;o.material.depthTest=false;}}); // big readable label across the hall
+    m.traverse(o=>{if(o.isSprite){o.scale.set(6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so 56 don't collide
     scene.add(m);netObjs.push(m);netPortals.push({x:px,z:pz,town:c});});
   netExit={x:DCEN.x,z:DCEN.z+7};
   const ex=buildPortal("Leave");ex.position.set(netExit.x,0,netExit.z);scene.add(ex);netObjs.push(ex);
