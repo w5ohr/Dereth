@@ -1808,14 +1808,25 @@ const APPEARANCE={
 };
 const _find=(cat,k)=>APPEARANCE[cat].find(o=>o.k===k)||APPEARANCE[cat][0];
 function addHair(g,style,col,fs){
-  if(style==="bald") return; const mat=new THREE.MeshLambertMaterial({color:col});
-  // crown cap: top of the head down to just above the eyes (full wrap), leaving the face clear
-  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.224,20,16,0,6.28,0,Math.PI*0.47),mat);cap.scale.set(fs.sx,fs.sy,fs.sz);cap.position.set(0,0.012,0.012);cap.castShadow=true;g.add(cap);
-  if(style==="long"){const back=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.13,0.46,12),mat);back.position.set(0,-0.16,0.14);back.scale.z=0.62;back.castShadow=true;g.add(back);}
-  else if(style==="ponytail"){const t=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.03,0.42,8),mat);t.position.set(0,-0.04,0.22);t.rotation.x=0.5;g.add(t);}
-  else if(style==="topknot"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.075,12,10),mat);b.position.set(0,0.24,0.04);g.add(b);}
-  else if(style==="mohawk"){const cr=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.14,0.34),mat);cr.position.set(0,0.22,0.02);cr.castShadow=true;g.add(cr);}
-  else if(style==="braids"){for(const sx of[-1,1]){const br=new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.025,0.4,6),mat);br.position.set(sx*0.18,-0.1,0.06);g.add(br);}}
+  if(style==="bald") return;
+  const tex=hairTex(col); const mat=new THREE.MeshLambertMaterial({color:0xffffff,map:tex});
+  // crown shell — caps the top of the skull, hairline sitting just above the brows (not over the face)
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.208,24,18,0,6.28,0,Math.PI*0.46),mat);
+  cap.scale.set(fs.sx*1.05,fs.sy*1.04,fs.sz*1.05);cap.position.set(0,0.05,0.012);cap.castShadow=true;g.add(cap);
+  // back-of-head fill so the scalp is covered round to the nape (back only, doesn't reach the face)
+  const backFill=new THREE.Mesh(new THREE.SphereGeometry(0.205,18,16,0,6.28,Math.PI*0.36,Math.PI*0.46),mat);backFill.scale.set(fs.sx*1.02,fs.sy,fs.sz*1.02);backFill.position.set(0,0.01,0.05);g.add(backFill);
+  // volume tufts across the crown so it isn't a smooth shell
+  for(let i=0;i<7;i++){ const a=(i/7)*6.283; const tuft=new THREE.Mesh(new THREE.SphereGeometry(0.05+Math.random()*0.02,8,7),mat);
+    tuft.scale.set(1,0.7,1);tuft.position.set(Math.cos(a)*0.13*fs.sx,0.15-Math.random()*0.03,Math.sin(a)*0.13*fs.sz+0.02);g.add(tuft); }
+  // fringe clumps along the front hairline (above the brows, not covering them)
+  for(const fx of[-0.1,-0.04,0.03,0.09]){ const fr=new THREE.Mesh(new THREE.SphereGeometry(0.035,8,6),mat);fr.scale.set(0.95,0.7,0.7);fr.position.set(fx*fs.sx,0.122,-0.15*fs.sz);g.add(fr); }
+  if(style==="long"){const back=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.14,0.5,14),mat);back.position.set(0,-0.18,0.15);back.scale.z=0.62;back.castShadow=true;g.add(back);
+    for(const sx of[-1,1]){const sd=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.04,0.34,8),mat);sd.position.set(sx*0.16,-0.12,-0.02);g.add(sd);}}
+  else if(style==="ponytail"){const band=new THREE.Mesh(new THREE.SphereGeometry(0.05,10,8),mat);band.position.set(0,0.02,0.2);g.add(band);
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.025,0.46,10),mat);t.position.set(0,-0.08,0.24);t.rotation.x=0.55;t.castShadow=true;g.add(t);}
+  else if(style==="topknot"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.072,14,12),mat);b.position.set(0,0.26,0.05);b.castShadow=true;g.add(b);}
+  else if(style==="mohawk"){for(let i=0;i<5;i++){const cr=new THREE.Mesh(new THREE.ConeGeometry(0.04,0.16-i*0.012,6),mat);cr.position.set(0,0.24,0.08-i*0.04);g.add(cr);}}
+  else if(style==="braids"){for(const sx of[-1,1]){for(let k=0;k<3;k++){const br=new THREE.Mesh(new THREE.SphereGeometry(0.03,8,6),mat);br.position.set(sx*0.18,-0.04-k*0.1,0.05);g.add(br);}}}
 }
 function addBeard(g,style,col,fs){
   if(!style||style==="none") return; const mat=new THREE.MeshLambertMaterial({color:col}), zf=-0.19*fs.sz;
@@ -1834,19 +1845,64 @@ function addTattoo(g,style,fs){
     const fr=new THREE.Mesh(new THREE.PlaneGeometry(0.16,0.025,3,1),mat);fr.position.set(0,0.11,z);g.add(fr);
   } else { for(const sx of[-1,1]) for(let i=0;i<3;i++){const m=new THREE.Mesh(new THREE.PlaneGeometry(0.02,0.05),mat);m.position.set(sx*0.105,-0.04-i*0.045,z);m.rotation.y=sx*0.32;g.add(m);} }
 }
+// deform a sphere into a real head silhouette: cranium up top, cheeks, a tapering jaw to a chin (face faces -z)
+function headGeometry(fs){
+  const geo=new THREE.SphereGeometry(0.2,32,26); const p=geo.attributes.position, v=new THREE.Vector3();
+  for(let i=0;i<p.count;i++){ v.fromBufferAttribute(p,i); const ny=v.y/0.2;   // -1 (chin) .. 1 (crown)
+    let w=1;
+    if(ny<0){ w=1+ny*0.34; w=Math.max(0.5,w); }          // narrow toward the jaw/chin
+    else { w=1-ny*0.05; }                                 // taper the crown a touch
+    if(ny<-0.5) w*=1+(ny+0.5)*0.3;                        // gently round the very bottom into a chin
+    v.x*=Math.max(0.5,w); v.z*=Math.max(0.5,w);
+    if(v.z>0) v.z*=0.9;                                   // flatten the back of the skull
+    if(ny<-0.3 && v.z<0) v.z*=1.0-(ny+0.3)*0.12;          // chin/jaw a touch forward (subtle)
+    if(ny>0.1 && v.z<0) v.z*=1.03;                        // brow/forehead a little fuller
+    p.setXYZ(i,v.x,v.y,v.z);
+  }
+  geo.computeVertexNormals(); geo.scale(fs.sx,fs.sy,fs.sz); return geo;
+}
+function _shade(hex,f){ const c=new THREE.Color(hex); c.offsetHSL(0,0,f); return c.getHex(); }
+// canvas hair texture: fine vertical strands of varied tone so hair reads as hair, not a smooth shell
+const _hairTexCache={};
+function hairTex(col){ if(_hairTexCache[col]) return _hairTexCache[col];
+  const c=document.createElement('canvas'); c.width=64; c.height=64; const x=c.getContext('2d');
+  const base=new THREE.Color(col); x.fillStyle="#"+base.getHexString(); x.fillRect(0,0,64,64);
+  for(let i=0;i<150;i++){ const lx=Math.random()*64, lh=8+Math.random()*40, ly=Math.random()*64;
+    const sh=(Math.random()-0.5)*0.34; const cc=base.clone(); cc.offsetHSL(0,0,sh);
+    x.strokeStyle="#"+cc.getHexString(); x.lineWidth=0.6+Math.random()*1.1; x.globalAlpha=0.55+Math.random()*0.45;
+    x.beginPath(); x.moveTo(lx,ly); x.lineTo(lx+(Math.random()-0.5)*4,ly+lh); x.stroke(); }
+  x.globalAlpha=1; const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(2,2);
+  _hairTexCache[col]=t; return t;
+}
 // a head group built from an appearance object (skull, face, hair, beard, tattoos) — used by creator + avatar
 function buildFaceGroup(app){
   app=app||{}; const g=new THREE.Group();
   const fs=_find("face",app.face), skinCol=app.skin!=null?app.skin:0xe8b890, hairCol=app.hairColor!=null?app.hairColor:0x3a2416;
   const skin=new THREE.MeshLambertMaterial({color:skinCol});
-  const skull=new THREE.Mesh(new THREE.SphereGeometry(0.2,22,18),skin);skull.scale.set(fs.sx,fs.sy,fs.sz);skull.castShadow=true;g.add(skull);
-  for(const sx of[-1,1]){const ear=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),skin);ear.scale.set(0.55,1,0.6);ear.position.set(sx*0.19*fs.sx,-0.01,0);g.add(ear);}
-  const nose=new THREE.Mesh(new THREE.ConeGeometry(0.034,0.09,7),skin);nose.position.set(0,-0.01,-0.2*fs.sz);nose.rotation.x=-Math.PI/2;g.add(nose);
-  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.21,0.026,0.04),new THREE.MeshLambertMaterial({color:hairCol}));brow.position.set(0,0.07,-0.18*fs.sz);g.add(brow);
+  const z=0.2*fs.sz;   // face plane (front, -z)
+  const skull=new THREE.Mesh(headGeometry(fs),skin);skull.castShadow=true;g.add(skull);
+  // ears, set back along the jaw line
+  for(const sx of[-1,1]){const ear=new THREE.Mesh(new THREE.SphereGeometry(0.04,10,8),skin);ear.scale.set(0.5,1.1,0.62);ear.position.set(sx*0.185*fs.sx,-0.015,0.012);g.add(ear);}
+  // ---- nose: a short rounded bridge + tip + small nostril wings (not a flat cone) ----
+  const bridge=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.026,0.085,8),skin);bridge.position.set(0,-0.012,-z*0.92);bridge.rotation.x=0.12;g.add(bridge);
+  const tip=new THREE.Mesh(new THREE.SphereGeometry(0.022,10,8),skin);tip.scale.set(1.0,0.85,0.95);tip.position.set(0,-0.058,-z-0.004);g.add(tip);
+  for(const sx of[-1,1]){const nw=new THREE.Mesh(new THREE.SphereGeometry(0.011,8,6),skin);nw.position.set(sx*0.022,-0.06,-z+0.008);g.add(nw);}
+  // ---- brows: two short angled bars ----
+  for(const sx of[-1,1]){const br=new THREE.Mesh(new THREE.BoxGeometry(0.085,0.02,0.03),new THREE.MeshLambertMaterial({color:_shade(hairCol,-0.05)}));br.position.set(sx*0.072,0.072,-z*0.96);br.rotation.z=sx*0.12;g.add(br);}
+  // ---- eyes: almond white set in a shallow socket, iris, and an upper lid ----
   for(const sx of[-1,1]){
-    const w=new THREE.Mesh(new THREE.SphereGeometry(0.032,10,8),new THREE.MeshLambertMaterial({color:0xf2eee2}));w.scale.set(1,0.82,0.6);w.position.set(sx*0.07,0.02,-0.18*fs.sz);g.add(w);
-    const iris=new THREE.Mesh(new THREE.SphereGeometry(0.016,8,8),new THREE.MeshBasicMaterial({color:app.eye!=null?app.eye:0x4a6a3a}));iris.position.set(sx*0.07,0.02,-0.205*fs.sz);g.add(iris);
+    const sock=new THREE.Mesh(new THREE.SphereGeometry(0.04,10,8),new THREE.MeshLambertMaterial({color:_shade(skinCol,-0.08)}));sock.scale.set(1.1,0.66,0.4);sock.position.set(sx*0.072,0.028,-z*0.9);g.add(sock);
+    const w=new THREE.Mesh(new THREE.SphereGeometry(0.025,12,10),new THREE.MeshLambertMaterial({color:0xf4f0e6}));w.scale.set(1.2,0.6,0.5);w.position.set(sx*0.07,0.03,-z*0.95);g.add(w);
+    const iris=new THREE.Mesh(new THREE.SphereGeometry(0.012,10,8),new THREE.MeshBasicMaterial({color:app.eye!=null?app.eye:0x4a6a3a}));iris.position.set(sx*0.072,0.03,-z-0.008);g.add(iris);
+    const pup=new THREE.Mesh(new THREE.SphereGeometry(0.0055,6,6),new THREE.MeshBasicMaterial({color:0x100808}));pup.position.set(sx*0.072,0.03,-z-0.016);g.add(pup);
+    const lid=new THREE.Mesh(new THREE.SphereGeometry(0.03,12,8,0,6.28,0,Math.PI*0.42),skin);lid.scale.set(1.05,0.4,0.45);lid.position.set(sx*0.072,0.046,-z*0.95);g.add(lid);
   }
+  // ---- mouth: upper + lower lip (a hint of expression) ----
+  const lipMat=new THREE.MeshLambertMaterial({color:_shade(skinCol,-0.12)});
+  const ul=new THREE.Mesh(new THREE.BoxGeometry(0.072,0.016,0.03),lipMat);ul.position.set(0,-0.108,-z*0.93);ul.rotation.z=0;g.add(ul);
+  const ll=new THREE.Mesh(new THREE.BoxGeometry(0.066,0.018,0.03),lipMat);ll.position.set(0,-0.126,-z*0.92);g.add(ll);
+  // subtle cheekbones
+  for(const sx of[-1,1]){const ch=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,7),skin);ch.scale.set(0.8,0.7,0.5);ch.position.set(sx*0.092,-0.03,-z*0.66);g.add(ch);}
   addHair(g,app.hair,hairCol,fs); addBeard(g,app.beard,hairCol,fs); addTattoo(g,app.tattoo,fs);
   return g;
 }
