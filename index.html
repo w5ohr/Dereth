@@ -166,6 +166,7 @@
     <div class="attr"><span>Threats</span><b id="sThreat">0</b></div>
     <div class="attr"><span>Delves</span><b id="sDelves">0/50</b></div>
     <div class="attr"><span>Vitae</span><b id="sVitae">—</b></div>
+    <div class="attr"><span style="color:#9fd0ff">Season</span><b id="sSeason" style="color:#cfe0ee">—</b></div>
     <div class="attr" id="evRow" style="display:none"><span style="color:#ffb347">Incursion</span><b id="sEvent" style="color:#ffb347">—</b></div>
   </div>
   <div id="quest" class="panel" style="top:372px;right:12px;width:182px;font-size:11px;display:none">
@@ -1263,6 +1264,13 @@ function updateDayNight(dt){
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
   scene.fog.color.copy(_cNight).lerp(_cDay,daylight).lerp(_cWarm,warm*0.5);
   skyMat.color.copy(_skyNight).lerp(_skyDay,daylight).lerp(_cWarm,warm*0.45);
+  // seasonal reskin (smoothly blended): the calendar season tints the ground, fog and sky
+  if(groundMat && !inDungeon && !inNetwork && typeof currentSeason==="function"){
+    const S=currentSeason(), k=Math.min(1,dt*0.5);
+    seasonCur.ground.lerp(_tmp.setHex(S.ground),k); groundMat.color.copy(seasonCur.ground);
+    seasonCur.fog.lerp(_tmp.setHex(S.fog),k);       scene.fog.color.lerp(seasonCur.fog,0.30);
+    seasonCur.sky.lerp(_tmp.setHex(S.sky),k);       skyMat.color.lerp(seasonCur.sky,0.25);
+  }
   if(starMat) starMat.opacity=clamp(1-daylight*1.6,0,1)*(0.85+0.15*Math.sin(now()/350)); // twinkle
   if(starField) starField.position.set(player.x,0,player.z); // dome follows player
   // visible sun & moon discs ride the sky along the light's arc
@@ -2770,12 +2778,66 @@ const EVENT_TYPES=[
   {name:"Undead Rising",    kinds:["skeleton","shadow"],              col:0xbfe0ff, blurb:"The restless dead claw up from the barrows"},
   {name:"Banderling Raid",  kinds:["banderling","drudge","mosswart"], col:0xffc14a, blurb:"A savage warband descends"},
 ];
+// ---------- monthly event calendar: seasons + a rotating story event (see docs/asherons-call-events-reference.md) ----------
+// The world cycles through seasons; each "month" features a story beat whose rumour the Town Criers broadcast and
+// whose Incursion type fires. Repelling a featured Incursion grants its one-time title. A full arc loops.
+const SEASONS={
+  frost:  {name:"Frostfell",   ground:0xcdd9e6, fog:0xc2cedd, sky:0xaebfd2, blurb:"deep winter — snow lies on the land"},
+  thaw:   {name:"Morningthaw", ground:0xc6e3ad, fog:0xcfe0d2, sky:0x9fc4e2, blurb:"the thaw — green returns to Dereth"},
+  growth: {name:"Verdantine",  ground:0xeef4dc, fog:0xccd6b4, sky:0x90b8e6, blurb:"high summer — the land is lush"},
+  harvest:{name:"Harvestgain", ground:0xe8c98a, fog:0xdcc492, sky:0xbcb6cc, blurb:"autumn — the harvest comes in"},
+};
+const EVENT_CALENDAR=[   // sample arc: "The Fifth Sending of Darkness" — each entry is one in-world month
+  {id:"frostfell", season:"frost",  name:"Sudden Frost",        incursion:2, title:"Frostbitten",
+   rumor:"An expedition into the northern peaks is long overdue, and an unnatural cold has come early.",
+   clue:"Seek the lost amid the frozen delves — the dead walk where they fell."},
+  {id:"whispers",  season:"frost",  name:"Whispers in the Cold",incursion:0, title:null,
+   rumor:"The Shadows gather thicker each night. Something stirs beneath the ice.",
+   clue:"The nearest capital will feel the Shadow's reach first."},
+  {id:"thaw",      season:"thaw",   name:"The Thaw",            incursion:3, title:null,
+   rumor:"The snows retreat at last, and green creeps back over Dereth.",
+   clue:"Open roads embolden the banderling warbands — guard the towns."},
+  {id:"hive",      season:"thaw",   name:"Hive Stirrings",      incursion:1, title:"Hive-Breaker",
+   rumor:"Olthoi scouts range farther than ever; the deep hive is waking.",
+   clue:"The Olthoi will boil over against the settlements."},
+  {id:"verdant",   season:"growth", name:"The Long Days",       incursion:0, title:null,
+   rumor:"High summer lies bright on the land — yet the Shadows do not rest.",
+   clue:"Shadow incursions test the borders of every realm."},
+  {id:"harvest",   season:"harvest",name:"Harvestgain Feast",   incursion:2, title:"Harvest Warden",
+   rumor:"The harvest comes in gold and red and folk feast — but the restless dead envy the living.",
+   clue:"The dead rise thick beneath the harvest moons."},
+  {id:"heralds",   season:"harvest",name:"The Hopeslayer Stirs",incursion:0, title:null,
+   rumor:"Bael'Zharon's heralds walk openly; his Shadow Generals roam the Direlands.",
+   clue:"His Shadows muster in force against the capitals."},
+  {id:"reign",     season:"frost",  name:"Reign of Shadow",     incursion:0, title:"Hopeslayer's Bane", boss:true,
+   rumor:"The sky darkens — Bael'Zharon, the Hopeslayer, has broken his crystal prison.",
+   clue:"The Hopeslayer himself walks Dereth. Fell him, if any can."},
+];
+let gameMonth=0, eventClock=0, calendarDone={};
+const MONTH_SECS=210;                       // real seconds of play per in-world month
+const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
+function currentCalEvent(){ const n=EVENT_CALENDAR.length; return EVENT_CALENDAR[((gameMonth%n)+n)%n]; }
+function currentSeason(){ return SEASONS[currentCalEvent().season]||SEASONS.growth; }
+function updateSeasonHUD(){ const el=document.getElementById('sSeason'); if(el){ const S=currentSeason(),ce=currentCalEvent(); el.innerHTML=`${S.name} <span style="color:var(--dim)">· ${ce.name}</span>`; } }
+function advanceMonth(){
+  gameMonth++;
+  const ce=currentCalEvent(), S=currentSeason();
+  log(`<b>The season turns to ${S.name}.</b> <b>${ce.name}</b> — ${ce.rumor}`,"warn");
+  toast(S.name+" — "+ce.name);
+  updateSeasonHUD();
+  eventCd=Math.min(eventCd,18);             // an Incursion tied to the new event arrives shortly
+}
+function updateCalendar(dt){
+  eventClock+=dt;
+  if(eventClock>=MONTH_SECS){ eventClock-=MONTH_SECS; advanceMonth(); }
+}
 function startEvent(){
   if(inDungeon||inNetwork||worldEvent) return;
   // pick one of the towns nearest the player (skip the one they're standing in) so it's reachable
   const sorted=CITIES.slice().sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
   const town=sorted[irnd(1,Math.min(5,sorted.length-1))];
-  const et=EVENT_TYPES[irnd(0,EVENT_TYPES.length-1)];
+  const ce=currentCalEvent();                                  // the live month dictates which horde marches
+  const et=EVENT_TYPES[(ce&&ce.incursion!=null)?ce.incursion:irnd(0,EVENT_TYPES.length-1)];
   const count=clamp(6+Math.floor(player.level/3),6,14);
   const hpMul=1+Math.min(player.level,40)*0.03;
   worldEvent={type:et,town,name:et.name,t:240,total:count,alive:count,active:true,mobs:[],beam:null,beacon:null};
@@ -2815,7 +2877,13 @@ function eventSuccess(){
   addDrop(t.x,t.z,{type:"gold",amt:gold});
   player.incursions=(player.incursions||0)+1;
   log(`The Incursion upon <b>${t.name}</b> is broken! Bounty: ${gold} pyreals + ${xp} XP.`,"sys");
-  toast("INCURSION REPELLED");SFX.level();SFX.quest();checkAchievements();
+  toast("INCURSION REPELLED");SFX.level();SFX.quest();
+  // featured-event reward: the month's one-time title for breaking its Incursion
+  const ce=currentCalEvent();
+  if(ce&&ce.title&&!calendarDone[ce.id]){ calendarDone[ce.id]=true;
+    player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf(ce.title)<0) player.eventTitles.push(ce.title);
+    log(`For breaking the <b>${ce.name}</b>, you earn the title <b>${ce.title}</b>!`,"sys"); toast("TITLE — "+ce.title.toUpperCase()); }
+  checkAchievements();
   endEvent(false);saveGame();
 }
 function eventFail(){
@@ -4142,6 +4210,7 @@ function update(dt){
   updateEvents(dt);
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
+  updateCalendar(dt);
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
@@ -5005,7 +5074,9 @@ function talkToNPC(n){
     const here=n.town?`<b>${n.town}</b>`:"the open road";
     const near=CITIES.filter(c=>c.name!==n.town).map(c=>({c,d:Math.hypot(c.x-n.x,c.z-n.z)})).sort((a,b)=>a.d-b.d).slice(0,3);
     const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/120))} leagues)`).join(" · ");
-    log(`<b>Town Crier:</b> Hear ye! You stand in ${here}. Nearest lie ${dirs}.`,"sys"); if(SFX.quest)SFX.quest();
+    const ce=currentCalEvent(), S=currentSeason();
+    log(`<b>Town Crier:</b> Hear ye! It is <b>${S.name}</b>. <b>${ce.name}</b> — ${ce.rumor} ${ce.clue}`,"sys");
+    log(`<b>Town Crier:</b> You stand in ${here}. Nearest lie ${dirs}.`,"sys"); if(SFX.quest)SFX.quest();
     return;
   }
   if(n.role==="barkeep"){ log(`<b>${n.name}:</b> ${RUMORS[(n._line++)%RUMORS.length]}`,"sys"); return; }
@@ -5945,6 +6016,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,
+      gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
@@ -5987,6 +6059,8 @@ function applySaveObj(s){
     activeQuests=[{id:q.id, prog:(Array.isArray(s.questProg)&&s.questProg.length===q.obj.length)?s.questProg.slice():q.obj.map(()=>0)}];
   } else activeQuests=[];
   tracked=(s.tracked&&isActive(s.tracked))?s.tracked:trackedId();
+  gameMonth=s.gameMonth|0; eventClock=0; calendarDone=(s.calendarDone&&typeof s.calendarDone==="object")?s.calendarDone:{};
+  player.eventTitles=Array.isArray(s.eventTitles)?s.eventTitles.slice():[]; updateSeasonHUD();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
   if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
@@ -6442,7 +6516,7 @@ function startGame(loadSaved,preset){
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
-  running=true;paused=false;lastTs=0;updateQuestHUD();
+  running=true;paused=false;lastTs=0;updateQuestHUD();updateSeasonHUD();
   if(autosaveTimer) clearInterval(autosaveTimer);
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
