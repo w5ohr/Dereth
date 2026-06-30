@@ -2584,6 +2584,7 @@ function executeSpell(id){
     const g=new THREE.Group(); g.add(disc); g.add(lt); scene.add(g);
     walls.push({x:cx,z:cz,r:s.r,dps,element:el,color:col,burn:el==="fire",slow:el==="ice"?0.4:0,t:s.dur,acc:0,isDungeon:!!inDungeon,mesh:g,disc});
     burst(cx,0.5,cz,col,20); SFX.flame&&SFX.flame(); castFlash(col); shake(0.18);
+    netSpellFx("wall",cx,cz,0,0,col,s.r,0);
     log(`You raise a <b>${s.name}</b> — foes within it burn for ${s.dur}s.`,"heal"); return;
   }
   if(s.school==="aoe"){
@@ -2597,6 +2598,7 @@ function executeSpell(id){
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
     for(const m of targets){const em=elemMult(m.kind,el);if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");else if(em<1)floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el});}
     SFX.flame();castFlash(col);shake(0.22);
+    netSpellFx("aoe",cx,cz,0,0,col,8,0);
     log(`You unleash <b>${s.name}</b>, scorching ${targets.length} foe(s).`,"heal");
     return;
   }
@@ -2619,6 +2621,7 @@ function executeSpell(id){
     for(const m of targets){ if(sp.element){const em=elemMult(m.kind,sp.element); if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");} applyHit(m,dmg,{element:sp.element}); }
     castFlash(sp.color);SFX.flame();shake(0.2);
     if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
+    netSpellFx("ring",player.x,player.z,0,0,sp.color,7.5,0);
     return;
   }
   // spread angles per geometry: single, fan (blast/wave), tight stream (volley)
@@ -2634,6 +2637,7 @@ function executeSpell(id){
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
+  netSpellFx("proj",player.x,player.z,dir.x,dir.z,sp.color,sp.r,sp.speed);
 }
 function castFlash(color){weaponLight.color.setHex(color);weaponLight.intensity=2.5;}
 // ---------- summoned pets (Summoning skill) ----------
@@ -3020,7 +3024,7 @@ function update(dt){
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});}
     let gone=p.life<=0||p.y<0.1||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
-    if(!gone) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
+    if(!gone && !p.cosmetic) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
       if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
@@ -3058,7 +3062,7 @@ function update(dt){
   for(let i=walls.length-1;i>=0;i--){
     const w=walls[i]; w.t-=dt; w.acc+=dt;
     if(w.disc) w.disc.material.opacity=0.32+0.18*Math.abs(Math.sin(now()/180));
-    if(w.acc>=0.4){   // damage pulse roughly 2-3x/sec
+    if(!w.cosmetic && w.acc>=0.4){   // damage pulse roughly 2-3x/sec
       const tick=w.dps*w.acc; w.acc=0;
       for(const m of monsters){ if(!!m.isDungeon!==w.isDungeon||!!w.isDungeon!==inDungeon) continue;
         if(Math.hypot(m.x-w.x,m.z-w.z)<w.r+m.r){
@@ -4355,7 +4359,32 @@ function netConnect(onOpen,onFail){
   NET.ws.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch(e){return;} netHandle(m); };
 }
 function netSend(o){ if(NET.ws&&NET.open){ try{ NET.ws.send(JSON.stringify(o)); }catch(e){} } }
+// broadcast a cosmetic spell effect so nearby players SEE your magic (the server relays it on)
+function netSpellFx(cat,x,z,dx,dz,color,r,speed){ if(isOnline&&!inNetwork)
+  netSend({t:"spellfx",cat,x:+x.toFixed(2),z:+z.toFixed(2),dx:+(dx||0).toFixed(3),dz:+(dz||0).toFixed(3),c:color|0,r:+(r||0.3).toFixed(2),sp:speed|0}); }
+// render another player's spell (cosmetic only — damage stays server-authoritative via the attack path)
+function onSpellFx(m){
+  if(!running||inNetwork||typeof scene==="undefined") return;
+  const col=(typeof m.c==="number")?m.c:0x9af0ff, x=+m.x||0, z=+m.z||0, gy=(typeof groundY==="function")?groundY(x,z):0;
+  if(m.cat==="proj"){
+    const r=clamp(+m.r||0.3,0.1,0.6), spd=clamp(+m.sp||50,10,150), dx=+m.dx||0, dz=+m.dz||0, oy=gy+EYE-0.15;
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),new THREE.MeshBasicMaterial({color:col}));
+    mesh.position.set(x,oy,z); mesh.add(new THREE.PointLight(col,1.2,7)); scene.add(mesh);
+    pProj.push({mesh,x,y:oy,z,vx:dx*spd,vy:0,vz:dz*spd,dmg:0,r,color:col,slow:0,burn:false,stun:false,element:null,drain:0,splash:0,life:1.6,cosmetic:true});
+  } else if(m.cat==="wall"){
+    const r=clamp(+m.r||3.5,1,6);
+    const disc=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,opacity:0.45,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
+    disc.scale.set(r*2,r*2,r*2); disc.position.set(x,gy+0.4,z);
+    const lt=new THREE.PointLight(col,2.4,r*5); lt.position.set(x,gy+1.4,z);
+    const g=new THREE.Group(); g.add(disc); g.add(lt); scene.add(g);
+    walls.push({x,z,r,dps:0,element:null,color:col,burn:false,slow:0,t:6,acc:0,isDungeon:!!inDungeon,mesh:g,disc,cosmetic:true});
+  } else { // aoe / ring / blast burst
+    if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
+    const fl=new THREE.PointLight(col,3,18); fl.position.set(x,gy+1.5,z); scene.add(fl); setTimeout(()=>scene.remove(fl),300);
+  }
+}
 function netHandle(m){
+  if(m.t==="spellfx") return onSpellFx(m);
   if(m.t==="auth_ok") return onAuthOk(m);
   if(m.t==="auth_err"){ const e=document.getElementById('authMsg'); if(e)e.textContent=m.msg||"Authentication failed."; return; }
   if(m.t==="roster") return onRoster(m);

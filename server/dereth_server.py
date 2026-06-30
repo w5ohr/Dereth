@@ -909,6 +909,19 @@ async def dispatch(cl, msg):
             spell = msg.get("spell")
             if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
+    elif t == "spellfx":
+        # relay a cosmetic spell visual to other in-world players (no damage authority here)
+        if cl.in_world and str(msg.get("cat", "")) in ("proj", "ring", "aoe", "wall"):
+            try:
+                fx = {"t": "spellfx", "cat": str(msg["cat"]),
+                      "x": float(msg.get("x", cl.x)), "z": float(msg.get("z", cl.z)),
+                      "dx": float(msg.get("dx", 0)), "dz": float(msg.get("dz", 0)),
+                      "c": int(msg.get("c", 0)) & 0xFFFFFF,
+                      "r": max(0.1, min(8.0, float(msg.get("r", 0.3)))),
+                      "sp": max(0, min(160, int(msg.get("sp", 0))))}
+            except (TypeError, ValueError):
+                return
+            await broadcast(fx, exclude=cl)
     elif t == "tell":
         name = str(msg.get("name", ""))
         text = str(msg.get("msg", ""))[:240].strip()
