@@ -4783,7 +4783,7 @@ const QUESTS=[
     obj:[{type:"gather",count:1,label:"Recover Lou Ei's bracelet"},
          {type:"slay",kind:"banderling",count:3,label:"Rout the Banderling raiders"}],
     xp:1700, gold:110, item:null },
-  { id:"jojii", name:"The Four Stones of Jojii", giver:"Oi-Tong Ye (Shoushi)",
+  { id:"jojii", name:"The Four Stones of Jojii", giver:"Oi-Tong Ye (Shoushi)", req:"nen_ai",
     intro:"The four Stones of Jojii — Discipline, Detachment, Compassion, and Humility — lie within the Shreth Hive. Recover them and return the wisdom of the Jojiist principles to Shoushi.",
     obj:[{type:"delve",count:1,label:"Descend into the Shreth Hive"},
          {type:"gather",count:4,label:"Recover the four Stones of Jojii"}],
@@ -4842,7 +4842,7 @@ const QUESTS=[
     obj:[{type:"slay",kind:"skeleton",count:6,label:"Destroy the besieging skeletons"},
          {type:"slay",kind:"virindi",count:2,label:"Slay the Virindi conjurers"}],
     xp:3000, gold:210, item:null },
-  { id:"aerbax_lugian", name:"Aerbax's Prodigal Lugian", giver:"a Lugian outcast",
+  { id:"aerbax_lugian", name:"Aerbax's Prodigal Lugian", giver:"a Lugian outcast", req:"aerbax_shadow",
     intro:"Aerbax has bent two Lugian champions to his will in the quarry depths. Lay the giants low and end his hold there.",
     obj:[{type:"slay",kind:"lugian",count:2,label:"Lay low Aerbax's Lugian champions"},
          {type:"delve",count:1,label:"Storm the quarry depths"}],
@@ -4852,7 +4852,7 @@ const QUESTS=[
     obj:[{type:"slay",kind:"olthoi",count:3,label:"Destroy the Olthoi assailing Zaikhal"}],
     xp:3800, gold:280, item:{name:"Olthoi Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"olthoi",v:38} },
   // ── apex bounty ──
-  { id:"gnawvil", name:"Gnawvil's Brood", giver:"Asheron's Emissary",
+  { id:"gnawvil", name:"Gnawvil's Brood", giver:"Asheron's Emissary", req:"zaikhal",
     intro:"The Olthoi Queen Gnawvil stirs in the deep places of the world. Few who seek her return — but a hero's reward awaits the one who fells her.",
     obj:[{type:"boss",count:1,label:"Slay Gnawvil, the Olthoi Queen"}],
     xp:5000, gold:400, item:{name:"Covenant Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"covenant",v:40} },
@@ -4883,12 +4883,12 @@ const QUESTS=[
     intro:"Dire mattekar stalk the northern trails and savage our scouts. Cull ten of the white hunters.",
     obj:[{type:"slay",kind:"mattekar",count:10,label:"Cull the Dire Mattekar"}],
     xp:2000, gold:130, item:null },
-  { id:"aerbax_banderling", name:"Aerbax's Prodigal Banderling", giver:"a banderling exile (Arwic)",
+  { id:"aerbax_banderling", name:"Aerbax's Prodigal Banderling", giver:"a banderling exile (Arwic)", req:"aerbax_mosswart",
     intro:"Aerbax has bent my clan to his will in their warren. Break six of his thralls and free my people.",
     obj:[{type:"slay",kind:"banderling",count:6,label:"Break Aerbax's banderling thralls"},
          {type:"delve",count:1,label:"Raid the banderling warren"}],
     xp:2600, gold:180, item:{name:"Large Round Shield",stat:"worn",at:"medium",aslot:"offhand",shield:"round",v:18} },
-  { id:"aerbax_shadow", name:"Aerbax's Prodigal Shadow", giver:"a haunted villager (Glenden Wood)",
+  { id:"aerbax_shadow", name:"Aerbax's Prodigal Shadow", giver:"a haunted villager (Glenden Wood)", req:"aerbax_banderling",
     intro:"Shadows seep from a rift Aerbax tore open. Banish six and seal the breach in the deep.",
     obj:[{type:"slay",kind:"shadow",count:6,label:"Banish Aerbax's shadows"},
          {type:"delve",count:1,label:"Seal the shadow rift below"}],
@@ -4898,7 +4898,7 @@ const QUESTS=[
     obj:[{type:"slay",kind:"skeleton",count:6,label:"Destroy the Gelidite undead"},
          {type:"delve",count:1,label:"Reach the frozen library"}],
     xp:2800, gold:190, item:{name:"Mana Stone",stat:"mn",v:70} },
-  { id:"frore", name:"The Frozen City of Frore", giver:"a survivor of Tremblant's expedition (Sanamar)",
+  { id:"frore", name:"The Frozen City of Frore", giver:"a survivor of Tremblant's expedition (Sanamar)", req:"gelidite",
     intro:"Sir Joffre Tremblant's expedition was lost in the ice-city of Frore — and raised as Gelidite undead. Lay them to rest and recover the master's staff.",
     obj:[{type:"slay",kind:"skeleton",count:8,label:"Lay the Frore expedition to rest"},
          {type:"delve",count:1,label:"Reach the heart of Frore"}],
@@ -4952,7 +4952,7 @@ const QUESTS=[
     obj:[{type:"slay",kind:"olthoisoldier",count:3,label:"Slay Olthoi Soldiers"},
          {type:"gather",count:2,label:"Recover Olthoi abdomen fragments"}],
     xp:3800, gold:260, item:{name:"Olthoi Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"olthoi",v:38} },
-  { id:"olthoi_weapons", name:"Olthoi Weapons", giver:"Olthoi-Hunter Rishan (Samsur)",
+  { id:"olthoi_weapons", name:"Olthoi Weapons", giver:"Olthoi-Hunter Rishan (Samsur)", req:"olthoi_shield",
     intro:"Reach the Olthoi resistance camp in the deep, cull the warriors, and bring back their trophies — I will craft you an Olthoi blade.",
     obj:[{type:"delve",count:1,label:"Reach the Olthoi resistance camp"},
          {type:"slay",kind:"olthoi",count:4,label:"Cull the Olthoi warriors"},
@@ -5026,12 +5026,12 @@ const QUESTS=[
     obj:[{type:"slay",kind:"olthoi",count:6,label:"Cut down the Ayan Baqur swarm"},
          {type:"delve",count:1,label:"Breach the Olthoi nest"}],
     xp:3900, gold:270, item:{name:"Olthoi Koujia Breastplate",stat:"worn",at:"heavy",aslot:"chest",v:26} },
-  { id:"tusker_king", name:"The Reign of Terror", giver:"Ranger Dmost (Danby's Outpost)",
+  { id:"tusker_king", name:"The Reign of Terror", giver:"Ranger Dmost (Danby's Outpost)", req:"tusker_tusk",
     intro:"The Tusker King and his brood have laid waste to the frontier — the Reign of Terror, the survivors call it. Fell six of his bull-guard and storm his lair to end the great beast's rampage.",
     obj:[{type:"slay",kind:"tusker",count:6,label:"Fell the Tusker King's bull-guard"},
          {type:"delve",count:1,label:"Storm the Tusker King's lair"}],
     xp:4400, gold:320, item:{name:"Tusker King's Tusk-Spear",stat:"weapon",wt:"spear",mat:"Diamond",v:25} },
-  { id:"hoshino", name:"The Hoshino Tower", giver:"Tumerok seer Itzicatl (Ahurenga)",
+  { id:"hoshino", name:"The Hoshino Tower", giver:"Tumerok seer Itzicatl (Ahurenga)", req:"aun_tumerok",
     intro:"The Hoshino Tower in the Direlands burns with Virindi sorcery and the shades it summons. Scatter its shadows, banish its masks, and climb to silence the tower's heart.",
     obj:[{type:"slay",kind:"shadow",count:6,label:"Scatter the Hoshino shades"},
          {type:"slay",kind:"virindi",count:3,label:"Banish the Hoshino masks"},
@@ -5049,6 +5049,11 @@ const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan
   tou_drudge:3, sawato_fort:4, coral_caverns:8, ulgrim:11, smid:6, lost_garden:13, aun_tumerok:14,
   caul_darkness:15, lugian_forge:16, ayan_olthoi:17, tusker_king:18, hoshino:19 };
 function questLvl(id){ return QUEST_LVL[id]||1; }
+// ── quest chains: some bounties only open once their prerequisite is complete ──
+function questReq(id){ const q=questById(id); return (q&&q.req)||null; }
+function questUnlocked(id){ const r=questReq(id); return !r || isDone(r); }
+function giverWhere(id){ const q=questById(id); if(!q) return "a quest-giver"; if(id==="gnawvil") return "Asheron's Emissary in any capital";
+  const gv=QUEST_GIVERS[id]||{}; return `${gv.name||q.giver}${gv.town?" in "+gv.town:""}`; }
 // ── multi-quest journal: many bounties can be active at once. activeQuests = [{id, prog:[...]}, …] ──
 let activeQuests=[],questDone=[],tracked=null,npcs=[];
 function questById(id){ return QUESTS.find(q=>q.id===id); }
@@ -5361,6 +5366,7 @@ function addNPC(x,z,opts){
 function questNpcMarkerColor(qid){
   if(isActive(qid)) return questCompleteId(qid)?0x7fe6a0:0x9a9a9a; // active: green = ready to turn in, grey = in progress
   if(isDone(qid)) return 0x59697a;                                 // already completed — dim
+  if(!questUnlocked(qid)) return 0x5a6a9a;                         // locked behind a prerequisite — muted blue
   return 0xffd23b;                                                 // available to accept — gold
 }
 function updateNPCMarker(){ // every quest-bound NPC (Emissary + named givers) shows its own quest state
@@ -5386,6 +5392,9 @@ function talkQuestGiver(n){
       if(tracked===id) tracked=trackedId();
       log(`<b>${name}:</b> ${gv.turn||"Well done — take your reward, and my thanks."}`,"sys");
       log(`<b>Quest complete — ${q.name}:</b> ${rw}.`,"sys");
+      // chain: announce any bounty this completion has just unlocked
+      QUESTS.forEach(nq=>{ if(nq.req===id && !isDone(nq.id) && !isActive(nq.id))
+        log(`<span style="color:var(--gold)">A new bounty opens: <b>${nq.name}</b> (Lv ${questLvl(nq.id)}) — seek ${giverWhere(nq.id)}.</span>`,"sys"); });
       SFX.quest(); toast("QUEST COMPLETE");
       saveGame();
     } else {                                              // ── in progress: nudge + objective tally ──
@@ -5394,6 +5403,10 @@ function talkQuestGiver(n){
     }
   } else if(isDone(id)){                                  // ── already done: post-quest greeting ──
     log(`<b>${name}:</b> ${gv.post||"My thanks again, friend."}`,"sys");
+  } else if(!questUnlocked(id)){                          // ── locked behind a prerequisite quest ──
+    const rid=questReq(id), rq=questById(rid);
+    log(`<b>${name}:</b> ${gv.gate||`This is no task for the untested. First see <b>${rq?rq.name:"an earlier task"}</b> done — speak to ${giverWhere(rid)} — then return to me.`}`,"sys");
+    if(SFX.quest)SFX.quest();
   } else {                                                // ── offer + accept (any number can be active) ──
     const rl=questLvl(id);
     activeQuests.push({id, prog:q.obj.map(()=>0)}); tracked=id;
@@ -5490,7 +5503,10 @@ function renderQuestLog(){
   }
   h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:8px 0 4px">All Bounties — by recommended level · found at their giver's town</div>`;
   h+=QUESTS.slice().sort((a,b)=>questLvl(a.id)-questLvl(b.id)).map(q=>{
-    const tag=isActive(q.id)?`<span style="color:var(--gold)">● active</span>`:isDone(q.id)?`<span style="color:#7fe6a0">✓ complete</span>`:`<span style="color:var(--dim)">○ available</span>`;
+    const locked=!isActive(q.id)&&!isDone(q.id)&&!questUnlocked(q.id);
+    const rq=locked?questById(questReq(q.id)):null;
+    const tag=isActive(q.id)?`<span style="color:var(--gold)">● active</span>`:isDone(q.id)?`<span style="color:#7fe6a0">✓ complete</span>`
+      :locked?`<span style="color:#7e8ab0" title="Complete the prerequisite first">🔒 after ${rq?rq.name:"…"}</span>`:`<span style="color:var(--dim)">○ available</span>`;
     return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span><span style="color:#9fd0ff">Lv ${questLvl(q.id)}</span> ${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
   }).join("");
   body.innerHTML=h;
