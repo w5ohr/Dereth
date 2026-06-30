@@ -5059,6 +5059,13 @@ function giverWhere(id){ const q=questById(id); if(!q) return "a quest-giver"; i
 // ── repeatable bounties: standing hunter kill-tasks that reset on turn-in instead of completing for good ──
 function isRepeatable(id){ const q=questById(id); return !!(q&&q.repeatable); }
 function repCount(id){ return taskReps[id]|0; }
+// ── quest timers: after a repeatable is turned in, the giver makes you wait before it can be taken again (AC-style) ──
+function questCdMs(id){ const q=questById(id); if(!q||!q.repeatable) return 0;
+  if(q.cd) return q.cd*1000;                                       // explicit per-quest cooldown (seconds)
+  return Math.min(600, Math.max(120, questLvl(id)*30))*1000; }     // default: 2–10 min, scaled by level
+function cdRemaining(id){ const t=taskCooldown[id]; return t?Math.max(0, t-Date.now()):0; }
+function onCooldown(id){ return cdRemaining(id)>0; }
+function fmtCd(ms){ const s=Math.ceil(ms/1000), m=Math.floor(s/60); return m>0?`${m}m ${s%60}s`:`${s}s`; }
 // ── AC societies: pledge to one of the three orders, earn standing by completing bounties ──
 const SOCIETIES=[
   {id:"celhand", name:"Celestial Hand", col:"#7fd0ff",
@@ -5151,7 +5158,7 @@ function checkArcs(){   // grant the capstone for any arc whose every quest is n
   }
 }
 // ── multi-quest journal: many bounties can be active at once. activeQuests = [{id, prog:[...]}, …] ──
-let activeQuests=[],questDone=[],tracked=null,npcs=[],taskReps={};  // taskReps: id→times a repeatable bounty has been turned in
+let activeQuests=[],questDone=[],tracked=null,npcs=[],taskReps={},taskCooldown={};  // taskReps: id→times turned in; taskCooldown: id→epoch ms when takeable again
 let questFilter={q:"",status:"all",sort:"level"};  // journal "All Bounties" search/filter/sort state (session-only)
 function questById(id){ return QUESTS.find(q=>q.id===id); }
 function activeEntry(id){ return activeQuests.find(a=>a.id===id); }
@@ -6152,6 +6159,7 @@ function questNpcMarkerColor(qid){
   if(isActive(qid)) return questCompleteId(qid)?0x7fe6a0:0x9a9a9a; // active: green = ready to turn in, grey = in progress
   if(isDone(qid)) return 0x59697a;                                 // already completed — dim
   if(!questUnlocked(qid)) return 0x5a6a9a;                         // locked behind a prerequisite — muted blue
+  if(isRepeatable(qid) && onCooldown(qid)) return 0x8a7a4a;        // standing bounty cooling down — dim gold
   return 0xffd23b;                                                 // available to accept — gold
 }
 function updateNPCMarker(){ // every quest-bound NPC (Emissary + named givers) shows its own quest state
@@ -6174,12 +6182,12 @@ function talkQuestGiver(n){
       if(q.item){ player.inv.push(Object.assign({},q.item)); rw+=`, and a <b>${q.item.name}</b>`; }
       const repGain=player.society?questRepValue(id):0;   // society standing for the order you've pledged to
       if(repGain) rw+=`, +${repGain} ${societyById(player.society).name} standing`;
-      if(q.repeatable) taskReps[id]=(taskReps[id]|0)+1;   // standing bounty: tally the turn-in, stays available
+      if(q.repeatable){ taskReps[id]=(taskReps[id]|0)+1; taskCooldown[id]=Date.now()+questCdMs(id); }  // tally + start the timer
       else if(questDone.indexOf(id)<0) questDone.push(id);
       activeQuests.splice(activeQuests.indexOf(a),1);     // drop from the journal
       if(tracked===id) tracked=trackedId();
       log(`<b>${name}:</b> ${gv.turn||"Well done — take your reward, and my thanks."}`,"sys");
-      const repNote=q.repeatable?` <span style="color:var(--dim)">(standing bounty — completed ${repCount(id)}× · take it again whenever you like)</span>`:"";
+      const repNote=q.repeatable?` <span style="color:var(--dim)">(standing bounty — completed ${repCount(id)}× · available again in ${fmtCd(questCdMs(id))})</span>`:"";
       log(`<b>Quest complete — ${q.name}:</b> ${rw}.${repNote}`,"sys");
       // chain: announce any bounty this completion has just unlocked
       QUESTS.forEach(nq=>{ if(nq.req===id && !isDone(nq.id) && !isActive(nq.id))
@@ -6197,6 +6205,9 @@ function talkQuestGiver(n){
   } else if(!questUnlocked(id)){                          // ── locked behind a prerequisite quest ──
     const rid=questReq(id), rq=questById(rid);
     log(`<b>${name}:</b> ${gv.gate||`This is no task for the untested. First see <b>${rq?rq.name:"an earlier task"}</b> done — speak to ${giverWhere(rid)} — then return to me.`}`,"sys");
+    if(SFX.quest)SFX.quest();
+  } else if(isRepeatable(id) && onCooldown(id)){          // ── standing bounty still on its timer ──
+    log(`<b>${name}:</b> You've cleared this for me recently — give the foes time to gather again. Come back in <b>${fmtCd(cdRemaining(id))}</b>.`,"sys");
     if(SFX.quest)SFX.quest();
   } else {                                                // ── offer + accept (any number can be active) ──
     const rl=questLvl(id);
@@ -6377,7 +6388,9 @@ function renderBountyList(){
     const s=questStatus(q.id), rq=s==="locked"?questById(questReq(q.id)):null;
     const tag=s==="active"?`<span style="color:var(--gold)">● active</span>`:s==="complete"?`<span style="color:#7fe6a0">✓ complete</span>`
       :s==="locked"?`<span style="color:#7e8ab0" title="Complete the prerequisite first">🔒 after ${rq?rq.name:"…"}</span>`
-      :s==="repeatable"?`<span style="color:#9fd0ff" title="A standing bounty — repeat any time">↻ repeatable${repCount(q.id)?` · ${repCount(q.id)}×`:""}</span>`:`<span style="color:var(--dim)">○ available</span>`;
+      :s==="repeatable"?(onCooldown(q.id)
+        ?`<span style="color:#8a7a4a" title="Standing bounty — cooling down">↻ ready in ${fmtCd(cdRemaining(q.id))}</span>`
+        :`<span style="color:#9fd0ff" title="A standing bounty — repeat any time">↻ repeatable${repCount(q.id)?` · ${repCount(q.id)}×`:""}</span>`):`<span style="color:var(--dim)">○ available</span>`;
     return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span><span style="color:#9fd0ff">Lv ${questLvl(q.id)}</span> ${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
   }).join("");
 }
@@ -7241,7 +7254,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,
+      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -7278,6 +7291,7 @@ function applySaveObj(s){
   player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
   questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
   taskReps=(s.taskReps&&typeof s.taskReps==="object")?Object.assign({},s.taskReps):{};
+  taskCooldown=(s.taskCooldown&&typeof s.taskCooldown==="object")?Object.assign({},s.taskCooldown):{};
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
