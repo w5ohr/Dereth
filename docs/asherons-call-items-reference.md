@@ -132,11 +132,11 @@ AC has dozens more drop-able legendaries — **expandable** (e.g. Hoeshala's Cra
 
 ---
 
-## Prioritised gaps to close
-1. **Casting implements** (Wand/Staff/Sceptre/Orb/Baton) — equip-able magic foci that boost spell damage/mana. *(biggest, given the magic system)*
-2. **Creature trophies** — per-creature drop, sellable, some quest-relevant.
-3. **Tiered healing/stamina/mana consumables** — Crude→Gold kits, a stamina restorative.
-4. **More armour sets** — Studded Leather, Leather, Nariv, Covenant armour, Academy/Diforsa/Empyrean heritage sets.
-5. **Fuller salvage list** — add the missing ~25 gems/woods/hides/stones for AC fidelity.
-6. **More named legendaries** — expand the artifact pool.
-7. Minor: unarmed weapons, per-element protection jewelry, lockpicks, scarabs/herbs components, Aetheria.
+## Prioritised gaps — progress
+1. ✅ **Casting implements** (Wand/Sceptre/Orb/Baton/Casting Staff) — `d…`/`06b6d51`: equip in weapon hand, no melee, +bonus to every magic school via gearSkill. 2 legendaries.
+2. ✅ **Creature trophies** — `2981c54`: 16 kinds, ~20% drop, sellable (🦴), can't be mis-equipped.
+3. ❌ **Tiered healing/stamina/mana consumables** — Crude→Gold kits, a stamina restorative. *(still open)*
+4. ✅ **More armour sets** — `d4ced33`: +Leather, Studded Leather, Academy, Nariv, Diforsa, Covenant, Empyrean (11 → 18 sets).
+5. ✅ **Fuller salvage list** — `d4ced33`: 53 → 83 materials.
+6. ❌ **More named legendaries** — expand the artifact pool. *(still open)*
+7. Minor (open): unarmed weapons, per-element protection jewelry, lockpicks, scarabs/herbs components, Aetheria.
