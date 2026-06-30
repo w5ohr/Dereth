@@ -146,8 +146,10 @@ AC has dozens more drop-able legendaries — **expandable** (e.g. Hoeshala's Cra
 10. ✅ **Augmentation gems** — Reinforcement/Perseverance/Magus (+25 max vital) + Enlightenment (+1 skill credit), absorbed permanently (`player.augment`).
 11. ✅ **Stamina Potion** — buyable (Provisioner/Healer), H key, HUD counter — completes the health/mana/stamina potion trio.
 
-### Truly remaining (minor / optional, low gameplay value)
-- scarab/herb spell components — redundant with the taper empowerment system already in game
-- Aetheria sigils — would be a reskin of jewelry/augment with no new system
-- trade notes — cosmetic currency denominations (gold already works)
-- locked *doors* (vs the locked caches already added) and quest-specific keys
+12. ✅ **Aetheria sigils** — Blue (+6% all-element resist) / Red (+3 all magic) / Yellow (+4% crit), bound forever (absorb), folded into resistVs / recomputeGearSkill / applyHit crit.
+13. ✅ **Trade notes** — portable pyreal certificates (50/100/250/500p), redeemable.
+14. ✅ **Spell components** — scarabs (Lead→Pyreal) + herbs (Hyssop/Mandrake/Frankincense/Saffron/Henbane/Eyebright), sellable; Mana Scarab usable; casters drop more.
+15. ✅ **Sealed Vaults** — key-only locked doors (~25% of delves) with premium loot; Keys now outrank Lockpicks.
+
+### COVERAGE COMPLETE
+Every AC item category — common through legendary, weapons/armour/shields/jewelry/foci, consumables, materials, trophies, keys/picks/vaults, augmentations, Aetheria, trade notes, spell components — is now represented and functional in the game.
