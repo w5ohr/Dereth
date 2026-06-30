@@ -446,7 +446,7 @@ const ATTR_DESC={Strength:"Melee damage",Endurance:"Health & stamina",Coordinati
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   attr:{Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10},
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
-  level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorItem:null,ringItem:null,neckItem:null,gearSkill:{},
+  level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},ringItem:null,neckItem:null,gearSkill:{},
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
@@ -468,9 +468,8 @@ function derive(){
   player.mst=50+a.Endurance*4;
   player.mmn=40+a.Self*6+player.level*2;
   player.speed=(14+a.Quickness*0.32)*(player.skills?skillEff("run",0.012):1); // Run skill quickens travel
-  { const at=armorTypeOf(); if(at) player.speed*=at.speedMul; } // heavy armour slows you, light quickens
-  const wa=player.armorItem&&player.armorItem.affix; // worn vital affixes (of Vigor / Endurance / Magus)
-  if(wa&&wa.k==="vital"&&player[wa.stat]!==undefined) player[wa.stat]+=wa.v;
+  if(typeof armorMove==="function") player.speed*=armorMove().speed; // heavier loadout slows you, lighter quickens
+  if(typeof wornVital==="function"){ player.mhp+=wornVital("mhp"); player.mst+=wornVital("mst"); player.mmn+=wornVital("mmn"); }  // "of Vigor/Endurance/Magus" pieces
   if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
   player.hp=Math.min(player.hp,player.mhp);
   player.st=Math.min(player.st,player.mst);
@@ -1993,9 +1992,13 @@ function projGeom(sp){
   return new THREE.SphereGeometry(r,10,8);
 }
 function rollCrit(){ return Math.random() < clamp(0.07+player.attr.Coordination*0.004,0,0.45); }
-function armorTypeOf(){ const a=player.armorItem; return (a&&a.at&&ARMOR_TYPES[a.at])||null; }
-function wornArmorV(){ const a=player.armorItem; if(!a) return 0; const at=ARMOR_TYPES[a.at];
-  const base=a.v+((a.affix&&a.affix.k==="armorbonus")?a.affix.v:0); return Math.round(base*(at?at.armorMul:1)); }
+function wornPieces(){ const o=player.armorSlots||{}; const r=[]; for(const s of ARMOR_SLOTS){ if(o[s]) r.push(o[s]); } return r; }
+function armorTypeOf(){ const a=player.armorSlots&&player.armorSlots.chest; return (a&&a.at&&ARMOR_TYPES[a.at])||null; } // chest = overall "look"
+// total worn armour = sum of each equipped piece (its value + armour affix, scaled by class)
+function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); n+=Math.round(base*(at?at.armorMul:1)); } return n; }
+// movement/stamina multipliers, averaged across all 5 slots (empty slot = no penalty) — partial armour = partial cost
+function armorMove(){ let sp=0,stm=0; for(const s of ARMOR_SLOTS){ const p=player.armorSlots&&player.armorSlots[s], at=p&&ARMOR_TYPES[p.at]; sp+=at?at.speedMul:1; stm+=at?at.stamMul:1; } const n=ARMOR_SLOTS.length; return {speed:sp/n, stam:stm/n}; }
+function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix; if(a&&a.k==="vital"&&a.stat===stat) n+=a.v; } return n; }
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
@@ -2278,21 +2281,31 @@ const ITEM_BASE=[
   {n:"Crossbow",stat:"weapon",wt:"crossbow",v:[8,18]},{n:"Arbalest",stat:"weapon",wt:"crossbow",v:[9,19]},
   {n:"Heavy Crossbow",stat:"weapon",wt:"crossbow",v:[9,20]},
   {n:"Atlatl",stat:"weapon",wt:"atlatl",v:[5,12]},{n:"Amuli Atlatl",stat:"weapon",wt:"atlatl",v:[6,13]},
-  // light armour (material prepends, AC-style: "Leather Brigandine", "Velvet Robe")
-  {n:"Jerkin",stat:"worn",at:"light",v:[6,15]},{n:"Brigandine",stat:"worn",at:"light",v:[7,16]},
-  {n:"Robe",stat:"worn",at:"light",v:[4,12]},{n:"Chiran",stat:"worn",at:"light",v:[6,15]},
-  {n:"Amuli Coat",stat:"worn",at:"light",v:[7,17]},
-  // medium armour
-  {n:"Chainmail",stat:"worn",at:"medium",v:[8,22]},{n:"Scalemail",stat:"worn",at:"medium",v:[10,24]},
-  {n:"Celdon Breastplate",stat:"worn",at:"medium",v:[10,23]},{n:"Koujia Breastplate",stat:"worn",at:"medium",v:[10,24]},
-  // heavy armour
-  {n:"Platemail",stat:"worn",at:"heavy",v:[14,34]},{n:"Lorica Breastplate",stat:"worn",at:"heavy",v:[14,33]},
-  {n:"Yoroi Cuirass",stat:"worn",at:"heavy",v:[15,35]},{n:"Olthoi Cuirass",stat:"worn",at:"heavy",v:[16,38]},
+  // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jslot:"ring",v:[0,0]},{n:"Band",stat:"jewelry",jslot:"ring",v:[0,0]},
   {n:"Signet",stat:"jewelry",jslot:"ring",v:[0,0]},{n:"Bracelet",stat:"jewelry",jslot:"ring",v:[0,0]},
   {n:"Amulet",stat:"jewelry",jslot:"neck",v:[0,0]},{n:"Necklace",stat:"jewelry",jslot:"neck",v:[0,0]},
   {n:"Pendant",stat:"jewelry",jslot:"neck",v:[0,0]}];
+// ── Multi-slot armour (AC-style): five worn slots, each its own piece. Loot generates a piece per
+//    armour set × slot, e.g. "Steel Chainmail Greaves", "Diamond Amuli Gauntlets". ──
+const ARMOR_SLOTS=["head","chest","hands","legs","feet"];
+const ARMOR_SLOT_DEFS=[
+  {slot:"head", suf:"Helm",       ico:"⛑", vMul:0.6},
+  {slot:"chest",suf:"Breastplate",ico:"🛡", vMul:1.0},
+  {slot:"hands",suf:"Gauntlets",  ico:"🧤", vMul:0.5},
+  {slot:"legs", suf:"Greaves",    ico:"🦵", vMul:0.8},
+  {slot:"feet", suf:"Boots",      ico:"🥾", vMul:0.5},
+];
+const ARMOR_SETS=[  // cultural set name → armour class + a base chest-value (slots scale off this)
+  {n:"Brigandine",at:"light", base:13},{n:"Chiran",at:"light", base:12},{n:"Amuli",at:"light", base:14},
+  {n:"Chainmail", at:"medium",base:17},{n:"Scalemail",at:"medium",base:18},{n:"Celdon",at:"medium",base:18},{n:"Koujia",at:"medium",base:19},
+  {n:"Platemail", at:"heavy", base:24},{n:"Lorica",at:"heavy", base:24},{n:"Yoroi",at:"heavy", base:25},{n:"Olthoi",at:"heavy", base:27},
+];
+for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
+  const lo=Math.max(2,Math.round(set.base*sd.vMul*0.65)), hi=Math.round(set.base*sd.vMul*1.3);
+  ITEM_BASE.push({n:`${set.n} ${sd.suf}`,stat:"worn",at:set.at,aslot:sd.slot,v:[lo,hi]});
+}
 // AC-authentic itemization (research Phase 6.8): every loot item has a workmanship (1-10, rolled within a
 // range set by its loot tier) and a material (the first word of its name). Material → tinker target;
 // workmanship (+ Salvaging skill) → how many salvage units it yields. 100 units of one material = 1 tink.
@@ -2344,14 +2357,14 @@ const NAMED_ITEMS=[
   {name:"Isparian Bow",        stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
   {name:"Singularity Edge",    stat:"weapon",wt:"twohand",mat:"Platinum",v:[40,54],affix:()=>_wbrand("nether")},
   {name:"Dericost Brand",      stat:"weapon",wt:"sword",  mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("fire")},
-  {name:"Singularity Caul",    stat:"worn",  at:"light",  mat:"Velvet",  v:[30,42],affix:()=>_oaff("of the Magus")},
-  {name:"Empyrean Platemail",  stat:"worn",  at:"heavy",  mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
-  {name:"Olthoi Helm",         stat:"worn",  at:"heavy",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
+  {name:"Singularity Caul",    stat:"worn",  at:"light",  aslot:"head", mat:"Velvet",  v:[30,42],affix:()=>_oaff("of the Magus")},
+  {name:"Empyrean Platemail",  stat:"worn",  at:"heavy",  aslot:"chest",mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
+  {name:"Olthoi Helm",         stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
 ];
 function rollNamedItem(){
   const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
   const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix()};
-  if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at;
+  if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at; if(t.aslot) it.aslot=t.aslot;
   return it;
 }
 // ---- Food & drink: consumables that grant a timed attribute buff (AC's cooking fare). Cooking skill
@@ -2406,6 +2419,7 @@ function rollItem(rare,tier){
   const it={name:`${pre}${mat} ${base.n}`,stat:base.stat,v,work,mat,tier};   // material is the first word (AC convention)
   if(base.wt) it.wt=base.wt;
   if(base.at) it.at=base.at;
+  if(base.aslot) it.aslot=base.aslot;
   if(base.jslot){ it.jslot=base.jslot; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; return it; } // jewelry always bears a cantrip
   // affix roll: only gear (weapon/worn/armor), favouring rares & deep delves
   const affixable=base.stat==="weapon"||base.stat==="worn"||base.stat==="armor";
@@ -2423,15 +2437,20 @@ function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tie
   if(t>=4) return {n:"fine",c:"#5aa8ff"}; if(t>=2) return {n:"uncommon",c:"#7fe6a0"}; return {n:"common",c:"#d7d0c2"}; }
 function rarityName(it){ const r=itemRarity(it); return `<span style="color:${r.c}">${it.name}</span>`; }
 function equipItem(it){
-  const slot=it.stat==="jewelry"?(it.jslot==="neck"?"neckItem":"ringItem"):(it.stat==="weapon"?"weapon":"armorItem"),prev=player[slot];
-  player[slot]=it; if(prev) player.inv.push(prev);
-  if(slot==="weapon"){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
+  let prev, isWeapon=it.stat==="weapon";
+  if(it.stat==="jewelry"){ const slot=it.jslot==="neck"?"neckItem":"ringItem"; prev=player[slot]; player[slot]=it; }
+  else if(it.stat==="worn"){ const asl=ARMOR_SLOTS.indexOf(it.aslot)>=0?it.aslot:"chest"; player.armorSlots=player.armorSlots||{}; prev=player.armorSlots[asl]; player.armorSlots[asl]=it; }
+  else { prev=player.weapon; player.weapon=it; }
+  if(prev) player.inv.push(prev);
+  if(isWeapon){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
     const wp=WEAPON_TYPES[it.wt]; weaponMode=(wp&&wp.mode==="missile")?"bow":"sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=weaponMode==="sword";bowModel.visible=weaponMode==="bow";}
   } else { recomputeGearSkill(); derive(); } // refresh max-vitals + gear skill bonuses for armour/jewelry
   if(it.stat==="jewelry"){ log(`Equipped <b>${it.name}</b> (${jewelryDesc(it)}).`,"loot"); return; }
-  const tag=it.stat==="weapon"&&WEAPON_TYPES[it.wt]?` · ${WEAPON_TYPES[it.wt].blurb}`:"";
-  log(`Equipped <b>${it.name}</b> (+${it.v} ${it.stat==="weapon"?"damage":"armor"}${tag}).`,"loot");
+  if(it.stat==="worn"){ const sd=ARMOR_SLOT_DEFS.find(d=>d.slot===(it.aslot||"chest")); const at=ARMOR_TYPES[it.at];
+    log(`Equipped <b>${it.name}</b> (+${it.v} armor · ${sd?sd.slot:"chest"}${at?" · "+at.blurb.split(" — ")[0]:""}${it.affix?" · "+it.affix.desc:""}).`,"loot"); return; }
+  const tag=WEAPON_TYPES[it.wt]?` · ${WEAPON_TYPES[it.wt].blurb}`:"";
+  log(`Equipped <b>${it.name}</b> (+${it.v} damage${tag}).`,"loot");
 }
 function jewelryDesc(it){ const b=it.bonus; if(!b) return "trinket";
   if(b.kind==="skill") return `+${b.v} ${SKILL_BY_KEY[b.key]?SKILL_BY_KEY[b.key].n:b.key}`;
@@ -3167,7 +3186,7 @@ function update(dt){
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
     player.regenT=0;checkAchievements();
-    { const at=armorTypeOf(); player.st=Math.min(player.mst,player.st+(1.5+player.attr.Endurance*0.05)*(at?at.stamMul:1)); }
+    { player.st=Math.min(player.mst,player.st+(1.5+player.attr.Endurance*0.05)*armorMove().stam); }
     player.mn=Math.min(player.mmn,player.mn+0.8+player.attr.Self*0.04);
     if(player.hp<player.mhp) player.hp=Math.min(player.mhp,player.hp+0.6+player.attr.Endurance*0.03);
   }
@@ -3912,9 +3931,11 @@ const VENDOR_TYPES={
     {name:"Long Bow",cost:130,desc:"Ranged attacks.",ico:"🏹",gear:{name:"Long Bow",stat:"weapon",wt:"bow",v:10}},
     {name:"Crossbow",cost:180,desc:"Hard-hitting ranged.",ico:"🎯",gear:{name:"Crossbow",stat:"weapon",wt:"crossbow",v:16}}]},
   armorer:{title:"Armorer",marker:"🛡",mcol:"#9fd0ff",robe:0x44506a,stock:()=>[
-    {name:"Leather Jerkin",cost:100,desc:"Light, agile armour.",ico:"🛡",gear:{name:"Leather Jerkin",stat:"worn",at:"light",v:12}},
-    {name:"Chainmail",cost:150,desc:"Balanced worn armour.",ico:"🛡",gear:{name:"Chainmail",stat:"worn",at:"medium",v:18}},
-    {name:"Plate Hauberk",cost:220,desc:"Heavy, strong armour.",ico:"🛡",gear:{name:"Plate Hauberk",stat:"worn",at:"heavy",v:26}}]},
+    {name:"Leather Breastplate",cost:100,desc:"Light chest armour.",ico:"🛡",gear:{name:"Leather Breastplate",stat:"worn",at:"light",aslot:"chest",v:12}},
+    {name:"Chainmail Breastplate",cost:150,desc:"Balanced chest armour.",ico:"🛡",gear:{name:"Chainmail Breastplate",stat:"worn",at:"medium",aslot:"chest",v:18}},
+    {name:"Plate Helm",cost:120,desc:"Heavy head armour.",ico:"⛑",gear:{name:"Plate Helm",stat:"worn",at:"heavy",aslot:"head",v:16}},
+    {name:"Plate Breastplate",cost:220,desc:"Heavy chest armour.",ico:"🛡",gear:{name:"Plate Breastplate",stat:"worn",at:"heavy",aslot:"chest",v:26}},
+    {name:"Plate Greaves",cost:160,desc:"Heavy leg armour.",ico:"🦵",gear:{name:"Plate Greaves",stat:"worn",at:"heavy",aslot:"legs",v:20}}]},
   scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>TAPER_STOCK.concat(scrollStock())},
 };
 let activeShop=null;
@@ -4454,7 +4475,8 @@ function buildTinker(){
     <div class="panel" style="position:static;width:150px">
       <div style="color:var(--dim);font-size:11px">Materials: <span style="color:var(--gold);font-weight:bold">${player.materials}</span></div>
       <div style="font-size:11px;margin-top:4px">⚔ ${player.weapon?rarityName(player.weapon)+" (+"+player.weapon.v+")"+(WEAPON_TYPES[player.weapon.wt]?" · "+WEAPON_TYPES[player.weapon.wt].blurb:""):"<span style='color:var(--dim)'>bare fists</span>"}</div>
-      <div style="font-size:11px">🛡 ${player.armorItem?rarityName(player.armorItem)+" (+"+player.armorItem.v+")"+(ARMOR_TYPES[player.armorItem.at]?" · "+ARMOR_TYPES[player.armorItem.at].blurb:"")+(player.armorItem.affix?" · "+player.armorItem.affix.desc:""):"<span style='color:var(--dim)'>no armor worn</span>"}</div>
+      <div style="font-size:11px">🛡 Armor <b>+${wornArmorV()}</b> ${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return `<span style="color:var(--dim)">${d.ico}</span>`+(p?rarityName(p):"<span style='color:#5a5346'>·</span>");}).join(" ")}</div>
+      <div style="font-size:10px;color:var(--dim);margin-top:1px">${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return p?`${d.slot}: ${esc(p.name)} (+${p.v})`:"";}).filter(Boolean).join(" &nbsp;·&nbsp; ")||"no armor worn"}</div>
       <div style="font-size:11px">💍 ${player.ringItem?rarityName(player.ringItem)+" · "+jewelryDesc(player.ringItem):"<span style='color:var(--dim)'>no ring</span>"}</div>
       <div style="font-size:11px">📿 ${player.neckItem?rarityName(player.neckItem)+" · "+jewelryDesc(player.neckItem):"<span style='color:var(--dim)'>no necklace</span>"}</div>
     </div>`;
@@ -4485,7 +4507,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="jewelry"?`${it.jslot==="neck"?"necklace":"ring"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot||"chest"}`:it.stat==="jewelry"?`${it.jslot==="neck"?"necklace":"ring"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
       <div class="ctl"><button class="tbtn" data-eq="${i}">Equip</button><button class="tbtn" data-sv="${i}">Salvage</button></div>`;
@@ -4507,7 +4529,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorItem:player.armorItem,ringItem:player.ringItem,neckItem:player.neckItem,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
+      weapon:player.weapon,armorSlots:player.armorSlots,ringItem:player.ringItem,neckItem:player.neckItem,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,
       tapers:player.tapers,prismTapers:player.prismTapers,
       elixMight:player.elixMight,elixSwift:player.elixSwift,
@@ -4535,7 +4557,7 @@ function applySaveObj(s){
     elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
     achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
-    weapon:s.weapon||null,armorItem:s.armorItem||null,ringItem:s.ringItem||null,neckItem:s.neckItem||null,gearSkill:{},
+    weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),ringItem:s.ringItem||null,neckItem:s.neckItem||null,gearSkill:{},
     skills:migrateSkills(s.skills),patron:!!s.patron,vitae:s.vitae||0,heritage:s.heritage||"aluvian"});
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
