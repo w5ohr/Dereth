@@ -2319,12 +2319,41 @@ const WORN_AFFIXES=[
   {k:"vital",stat:"mst",v:34, suffix:"of Endurance", desc:"+34 max stamina"},
   {k:"vital",stat:"mmn",v:28, suffix:"of the Magus", desc:"+28 max mana"},
   {k:"armorbonus",v:9, suffix:"of Warding",          desc:"+9 armor"},
+  {k:"armorbonus",v:16,suffix:"of Impregnability",   desc:"+16 armor"},
 ];
+// Iconic named/legendary items of Dereth — quest weapons & artifacts that drop rarely (boss/deep-loot).
+// Each has a fixed name, a signature affix, a thematic material, and top-tier stats.
+const _wbrand=el=>WEAPON_AFFIXES.find(a=>a.k==="brand"&&a.element===el);
+const _waff=k=>WEAPON_AFFIXES.find(a=>a.k===k);
+const _oaff=suf=>WORN_AFFIXES.find(a=>a.suffix===suf);
+const NAMED_ITEMS=[
+  {name:"Atlan Sword",         stat:"weapon",wt:"sword",  mat:"Pyreal",  v:[26,34],affix:()=>_wbrand("fire")},
+  {name:"Atlan Dagger",        stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[22,30],affix:()=>_waff("crit")},
+  {name:"Atlan War Mace",      stat:"weapon",wt:"mace",   mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("shock")},
+  {name:"Sword of Lost Light", stat:"weapon",wt:"sword",  mat:"Gold",    v:[30,42],affix:()=>_wbrand("shock")},
+  {name:"Frostreaver",         stat:"weapon",wt:"axe",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
+  {name:"Shadowfire",          stat:"weapon",wt:"sword",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
+  {name:"Ace of Eyes",         stat:"weapon",wt:"dagger", mat:"Onyx",    v:[24,32],affix:()=>_waff("lifesteal")},
+  {name:"Isparian Bow",        stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
+  {name:"Singularity Edge",    stat:"weapon",wt:"twohand",mat:"Platinum",v:[40,54],affix:()=>_wbrand("nether")},
+  {name:"Dericost Brand",      stat:"weapon",wt:"sword",  mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("fire")},
+  {name:"Singularity Caul",    stat:"worn",  at:"light",  mat:"Velvet",  v:[30,42],affix:()=>_oaff("of the Magus")},
+  {name:"Empyrean Platemail",  stat:"worn",  at:"heavy",  mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
+  {name:"Olthoi Helm",         stat:"worn",  at:"heavy",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
+];
+function rollNamedItem(){
+  const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
+  const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix()};
+  if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at;
+  return it;
+}
 function rollItem(rare,tier){
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
     const id=SCROLL_POOL[irnd(0,SCROLL_POOL.length-1)];
     return {scroll:true,spellId:id,name:"Scroll: "+SPELLBOOK[id].name};
   }
+  // rare chance at a named artifact (more likely on rich/deep loot)
+  if(Math.random()<((rare?0.05:0)+((tier|0)>=5?0.03:0))) return rollNamedItem();
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
   tier=clamp((tier|0)||(rare?3:1),1,5); if(rare) tier=clamp(tier+2,1,5);
   let v=irnd(base.v[0],base.v[1]); if(rare) v=Math.ceil(v*2.2);
@@ -2344,6 +2373,7 @@ function rollItem(rare,tier){
 function weaponProfile(){ const w=player.weapon; return (w&&w.wt&&WEAPON_TYPES[w.wt])||null; }
 // rarity grade (from loot tier + affix) → name colour, so deepened itemization reads at a glance
 function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tier||1;
+  if(it.legendary) return {n:"legendary",c:"#ff5a5a"};
   if(it.affix&&t>=5) return {n:"epic",c:"#ffb347"}; if(it.affix) return {n:"rare",c:"#c9a6ff"};
   if(t>=4) return {n:"fine",c:"#5aa8ff"}; if(t>=2) return {n:"uncommon",c:"#7fe6a0"}; return {n:"common",c:"#d7d0c2"}; }
 function rarityName(it){ const r=itemRarity(it); return `<span style="color:${r.c}">${it.name}</span>`; }
