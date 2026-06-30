@@ -4489,6 +4489,14 @@ function lootItem(it){
 function salvageValue(it){ if(it.scroll) return 20; return Math.max(3,Math.round(it.v*(it.stat==="armor"?1.0:0.8))); }
 function openTinker(){ buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
+// armour rating a single piece contributes (value + armour affix, scaled by its class)
+function pieceArmorV(p){ if(!p) return 0; const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); return Math.round(base*(at?at.armorMul:1)); }
+// is a satchel item an upgrade over what's equipped in its slot? → {up,txt} or null (jewelry not compared)
+function itemCompare(it){
+  if(it.stat==="weapon"){ const d=it.v-(player.weapon?player.weapon.v:0); return d?{up:d>0,txt:(d>0?"▲ +":"▼ ")+d+" dmg vs worn"}:null; }
+  if(it.stat==="worn"){ const d=pieceArmorV(it)-pieceArmorV(player.armorSlots&&player.armorSlots[it.aslot||"chest"]); return d?{up:d>0,txt:(d>0?"▲ +":"▼ ")+d+" armor vs "+(it.aslot||"chest")}:null; }
+  return null;
+}
 // ---- equipment paper-doll: every worn slot as a tile; click a filled tile to unequip ----
 function slotTile(label,ico,item,kind,slot){
   const filled=!!item, col=filled?itemRarity(item).c:"#5a5346";
@@ -4565,7 +4573,8 @@ function buildTinker(){
     }
     const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot||"chest"}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
-    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
+    const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
+    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span>${cmpHTML}</div>
       <div class="ctl"><button class="tbtn" data-eq="${i}">Equip</button><button class="tbtn" data-sv="${i}">Salvage</button></div>`;
     rows.appendChild(row);
   });
