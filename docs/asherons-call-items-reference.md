@@ -142,8 +142,12 @@ AC has dozens more drop-able legendaries — **expandable** (e.g. Hoeshala's Cra
 7. ✅ **Weapon roster** — 53 → 93 bases across 12 types incl. NEW unarmed skill.
 8. ✅ **Keys & lockpicks** — `pick`/`key` items + Locked Caches in ~55% of delves (bonus loot).
 
-### Truly remaining (minor / optional)
-- per-element Protection jewelry (we have generic "of Warding")
-- scarab/herb spell components (tapers cover empowerment)
-- Aetheria sigils (late-expansion cosmetic-ish system)
-- locked *doors* (vs caches) and quest-specific keys
+9. ✅ **Per-element Protection jewelry** — Flame/Frost/Storm/Acid/Void Ward + Blade/Bodkin/Bludgeon Turning (% resist vs one type, stacks into resistVs).
+10. ✅ **Augmentation gems** — Reinforcement/Perseverance/Magus (+25 max vital) + Enlightenment (+1 skill credit), absorbed permanently (`player.augment`).
+11. ✅ **Stamina Potion** — buyable (Provisioner/Healer), H key, HUD counter — completes the health/mana/stamina potion trio.
+
+### Truly remaining (minor / optional, low gameplay value)
+- scarab/herb spell components — redundant with the taper empowerment system already in game
+- Aetheria sigils — would be a reskin of jewelry/augment with no new system
+- trade notes — cosmetic currency denominations (gold already works)
+- locked *doors* (vs the locked caches already added) and quest-specific keys
