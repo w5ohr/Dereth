@@ -5094,6 +5094,7 @@ function pledgeSociety(id){ const so=societyById(id); if(!so||player.society) re
 }
 // ── multi-quest journal: many bounties can be active at once. activeQuests = [{id, prog:[...]}, …] ──
 let activeQuests=[],questDone=[],tracked=null,npcs=[],taskReps={};  // taskReps: id→times a repeatable bounty has been turned in
+let questFilter={q:"",status:"all",sort:"level"};  // journal "All Bounties" search/filter/sort state (session-only)
 function questById(id){ return QUESTS.find(q=>q.id===id); }
 function activeEntry(id){ return activeQuests.find(a=>a.id===id); }
 function isActive(id){ return !!activeEntry(id); }
@@ -5910,19 +5911,55 @@ function renderQuestLog(){
   } else {
     h+=`<div style="color:var(--dim);margin-bottom:10px">None yet. Quest-givers (gold !) stand in towns across Dereth — visit any of them to take up a task. You can carry as many bounties at once as you like.</div>`;
   }
-  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:8px 0 4px">All Bounties — by recommended level · found at their giver's town</div>`;
-  h+=QUESTS.slice().sort((a,b)=>questLvl(a.id)-questLvl(b.id)).map(q=>{
-    const locked=!isActive(q.id)&&!isDone(q.id)&&!questUnlocked(q.id);
-    const rq=locked?questById(questReq(q.id)):null;
-    const tag=isActive(q.id)?`<span style="color:var(--gold)">● active</span>`:isDone(q.id)?`<span style="color:#7fe6a0">✓ complete</span>`
-      :locked?`<span style="color:#7e8ab0" title="Complete the prerequisite first">🔒 after ${rq?rq.name:"…"}</span>`
-      :isRepeatable(q.id)?`<span style="color:#9fd0ff" title="A standing bounty — repeat any time">↻ repeatable${repCount(q.id)?` · ${repCount(q.id)}×`:""}</span>`:`<span style="color:var(--dim)">○ available</span>`;
-    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span><span style="color:#9fd0ff">Lv ${questLvl(q.id)}</span> ${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
-  }).join("");
+  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:8px 0 4px">All Bounties <span style="color:var(--dim);text-transform:none;letter-spacing:0">— <span id="qfCount"></span></span></div>`;
+  const fStyle="background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:4px;color:#e8dcc0;font-size:12px;padding:3px 6px";
+  h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:center">
+    <input id="qfSearch" type="text" placeholder="search name, giver or town…" autocomplete="off" style="${fStyle};flex:1;min-width:140px">
+    <select id="qfStatus" style="${fStyle}">
+      <option value="all">All statuses</option><option value="available">Available</option><option value="active">Active</option>
+      <option value="complete">Complete</option><option value="repeatable">Repeatable</option><option value="locked">Locked</option></select>
+    <select id="qfSort" style="${fStyle}">
+      <option value="level">Sort: level</option><option value="name">Sort: name</option><option value="town">Sort: giver/town</option></select>
+  </div>`;
+  h+=`<div id="bountyList"></div>`;
   body.innerHTML=h;
+  // restore filter controls' state, wire them to re-render ONLY the list (so the search box keeps focus while typing)
+  const se=document.getElementById('qfSearch'), st=document.getElementById('qfStatus'), so=document.getElementById('qfSort');
+  if(se){ se.value=questFilter.q; se.oninput=()=>{ questFilter.q=se.value; renderBountyList(); }; }
+  if(st){ st.value=questFilter.status; st.onchange=()=>{ questFilter.status=st.value; renderBountyList(); }; }
+  if(so){ so.value=questFilter.sort; so.onchange=()=>{ questFilter.sort=so.value; renderBountyList(); }; }
+  renderBountyList();
   body.querySelectorAll('[data-track]').forEach(b=>b.onclick=()=>{ tracked=b.dataset.track; renderQuestLog(); updateQuestHUD(); SFX.click&&SFX.click(); });
   body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
     if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+}
+function questStatus(id){ // status bucket used by the journal filter
+  if(isActive(id)) return "active";
+  if(isDone(id)) return "complete";
+  if(!questUnlocked(id)) return "locked";
+  if(isRepeatable(id)) return "repeatable";
+  return "available";
+}
+function renderBountyList(){
+  const el=document.getElementById('bountyList'); if(!el) return;
+  const f=questFilter, term=(f.q||"").trim().toLowerCase();
+  let list=QUESTS.filter(q=>{
+    if(f.status!=="all" && questStatus(q.id)!==f.status) return false;
+    if(term && (q.name+" "+giverLabel(q)).toLowerCase().indexOf(term)<0) return false;
+    return true;
+  });
+  if(f.sort==="name") list.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(f.sort==="town") list.sort((a,b)=>giverLabel(a).localeCompare(giverLabel(b)));
+  else list.sort((a,b)=>questLvl(a.id)-questLvl(b.id));
+  const cnt=document.getElementById('qfCount'); if(cnt) cnt.textContent=`showing ${list.length} of ${QUESTS.length}`;
+  if(!list.length){ el.innerHTML=`<div style="color:var(--dim);padding:8px 0">No bounties match your filter.</div>`; return; }
+  el.innerHTML=list.map(q=>{
+    const s=questStatus(q.id), rq=s==="locked"?questById(questReq(q.id)):null;
+    const tag=s==="active"?`<span style="color:var(--gold)">● active</span>`:s==="complete"?`<span style="color:#7fe6a0">✓ complete</span>`
+      :s==="locked"?`<span style="color:#7e8ab0" title="Complete the prerequisite first">🔒 after ${rq?rq.name:"…"}</span>`
+      :s==="repeatable"?`<span style="color:#9fd0ff" title="A standing bounty — repeat any time">↻ repeatable${repCount(q.id)?` · ${repCount(q.id)}×`:""}</span>`:`<span style="color:var(--dim)">○ available</span>`;
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span><span style="color:#9fd0ff">Lv ${questLvl(q.id)}</span> ${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
+  }).join("");
 }
 function openQuestLog(){ renderQuestLog(); document.getElementById('questlog').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeQuestLog(){ document.getElementById('questlog').style.display="none"; paused=false; }
