@@ -470,6 +470,7 @@ function derive(){
   player.speed=(14+a.Quickness*0.32)*(player.skills?skillEff("run",0.012):1); // Run skill quickens travel
   if(typeof armorMove==="function") player.speed*=armorMove().speed; // heavier loadout slows you, lighter quickens
   if(typeof wornVital==="function"){ player.mhp+=wornVital("mhp"); player.mst+=wornVital("mst"); player.mmn+=wornVital("mmn"); }  // "of Vigor/Endurance/Magus" pieces
+  if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
   if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
   player.hp=Math.min(player.hp,player.mhp);
   player.st=Math.min(player.st,player.mst);
@@ -1995,10 +1996,16 @@ function rollCrit(){ return Math.random() < clamp(0.07+player.attr.Coordination*
 function wornPieces(){ const o=player.armorSlots||{}; const r=[]; for(const s of ARMOR_SLOTS){ if(o[s]) r.push(o[s]); } return r; }
 function armorTypeOf(){ const a=player.armorSlots&&player.armorSlots.chest; return (a&&a.at&&ARMOR_TYPES[a.at])||null; } // chest = overall "look"
 // total worn armour = sum of each equipped piece (its value + armour affix, scaled by class)
-function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); n+=Math.round(base*(at?at.armorMul:1)); } return n; }
+function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); n+=Math.round(base*(at?at.armorMul:1)); } return n+setBonus().armor; }
 // movement/stamina multipliers, averaged across all 5 slots (empty slot = no penalty) — partial armour = partial cost
 function armorMove(){ let sp=0,stm=0; for(const s of ARMOR_SLOTS){ const p=player.armorSlots&&player.armorSlots[s], at=p&&ARMOR_TYPES[p.at]; sp+=at?at.speedMul:1; stm+=at?at.stamMul:1; } const n=ARMOR_SLOTS.length; return {speed:sp/n, stam:stm/n}; }
 function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix; if(a&&a.k==="vital"&&a.stat===stat) n+=a.v; } return n; }
+// Item-set bonus (AC Item Sets): the dominant matching set among equipped pieces grants tiered boons.
+// 3 pieces → +armour & +max-health; 5 pieces → bigger, plus the set's themed skill (folded into gearSkill).
+function dominantSet(){ const c={}; let best=null,bn=0; for(const p of wornPieces()){ if(!p.aset)continue; c[p.aset]=(c[p.aset]||0)+1; if(c[p.aset]>bn){bn=c[p.aset];best=p.aset;} } return {set:best,count:bn}; }
+function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,set:d.set,armor:0,mhp:0,skill:null,skillV:0};
+  const armor=d.count>=5?22:d.count>=4?12:6, mhp=d.count*10, skill=d.count>=5?ARMOR_SET_SKILL[d.set]:null;
+  return {count:d.count,set:d.set,armor,mhp,skill,skillV:skill?10:0}; }
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
@@ -2297,14 +2304,15 @@ const ARMOR_SLOT_DEFS=[
   {slot:"legs", suf:"Greaves",    ico:"🦵", vMul:0.8},
   {slot:"feet", suf:"Boots",      ico:"🥾", vMul:0.5},
 ];
-const ARMOR_SETS=[  // cultural set name → armour class + a base chest-value (slots scale off this)
-  {n:"Brigandine",at:"light", base:13},{n:"Chiran",at:"light", base:12},{n:"Amuli",at:"light", base:14},
-  {n:"Chainmail", at:"medium",base:17},{n:"Scalemail",at:"medium",base:18},{n:"Celdon",at:"medium",base:18},{n:"Koujia",at:"medium",base:19},
-  {n:"Platemail", at:"heavy", base:24},{n:"Lorica",at:"heavy", base:24},{n:"Yoroi",at:"heavy", base:25},{n:"Olthoi",at:"heavy", base:27},
+const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slots scale off this), full-set skill boon
+  {n:"Brigandine",at:"light", base:13,skill:"missiled"},{n:"Chiran",at:"light", base:12,skill:"healing"},{n:"Amuli",at:"light", base:14,skill:"war"},
+  {n:"Chainmail", at:"medium",base:17,skill:"meleed"},{n:"Scalemail",at:"medium",base:18,skill:"heavy"},{n:"Celdon",at:"medium",base:18,skill:"life"},{n:"Koujia",at:"medium",base:19,skill:"creature"},
+  {n:"Platemail", at:"heavy", base:24,skill:"meleed"},{n:"Lorica",at:"heavy", base:24,skill:"heavy"},{n:"Yoroi",at:"heavy", base:25,skill:"magicd"},{n:"Olthoi",at:"heavy", base:27,skill:"meleed"},
 ];
+const ARMOR_SET_SKILL={}; for(const s of ARMOR_SETS) ARMOR_SET_SKILL[s.n]=s.skill;
 for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
   const lo=Math.max(2,Math.round(set.base*sd.vMul*0.65)), hi=Math.round(set.base*sd.vMul*1.3);
-  ITEM_BASE.push({n:`${set.n} ${sd.suf}`,stat:"worn",at:set.at,aslot:sd.slot,v:[lo,hi]});
+  ITEM_BASE.push({n:`${set.n} ${sd.suf}`,stat:"worn",at:set.at,aslot:sd.slot,aset:set.n,v:[lo,hi]});
 }
 // AC-authentic itemization (research Phase 6.8): every loot item has a workmanship (1-10, rolled within a
 // range set by its loot tier) and a material (the first word of its name). Material → tinker target;
@@ -2402,7 +2410,9 @@ function jewelryBonus(kind,arg){ let n=0;
   return n;
 }
 function recomputeGearSkill(){ const g={}; for(const it of [player.ringItem,player.neckItem]){ const bj=it&&it.bonus;
-  if(bj&&bj.kind==="skill") g[bj.key]=(g[bj.key]||0)+bj.v; } player.gearSkill=g; }
+  if(bj&&bj.kind==="skill") g[bj.key]=(g[bj.key]||0)+bj.v; }
+  const sb=(typeof setBonus==="function")?setBonus():null; if(sb&&sb.skill) g[sb.skill]=(g[sb.skill]||0)+sb.skillV;   // full-set skill boon
+  player.gearSkill=g; }
 function rollItem(rare,tier){
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
     const id=SCROLL_POOL[irnd(0,SCROLL_POOL.length-1)];
@@ -2420,6 +2430,7 @@ function rollItem(rare,tier){
   if(base.wt) it.wt=base.wt;
   if(base.at) it.at=base.at;
   if(base.aslot) it.aslot=base.aslot;
+  if(base.aset) it.aset=base.aset;
   if(base.jslot){ it.jslot=base.jslot; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; return it; } // jewelry always bears a cantrip
   // affix roll: only gear (weapon/worn/armor), favouring rares & deep delves
   const affixable=base.stat==="weapon"||base.stat==="worn"||base.stat==="armor";
@@ -4477,6 +4488,7 @@ function buildTinker(){
       <div style="font-size:11px;margin-top:4px">⚔ ${player.weapon?rarityName(player.weapon)+" (+"+player.weapon.v+")"+(WEAPON_TYPES[player.weapon.wt]?" · "+WEAPON_TYPES[player.weapon.wt].blurb:""):"<span style='color:var(--dim)'>bare fists</span>"}</div>
       <div style="font-size:11px">🛡 Armor <b>+${wornArmorV()}</b> ${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return `<span style="color:var(--dim)">${d.ico}</span>`+(p?rarityName(p):"<span style='color:#5a5346'>·</span>");}).join(" ")}</div>
       <div style="font-size:10px;color:var(--dim);margin-top:1px">${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return p?`${d.slot}: ${esc(p.name)} (+${p.v})`:"";}).filter(Boolean).join(" &nbsp;·&nbsp; ")||"no armor worn"}</div>
+      ${(()=>{const sb=setBonus();return sb.count>=3?`<div style="font-size:11px;color:#9be08a;margin-top:2px">✦ ${esc(sb.set)} Set (${sb.count}/5): +${sb.armor} armor · +${sb.mhp} max health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>`:"";})()}
       <div style="font-size:11px">💍 ${player.ringItem?rarityName(player.ringItem)+" · "+jewelryDesc(player.ringItem):"<span style='color:var(--dim)'>no ring</span>"}</div>
       <div style="font-size:11px">📿 ${player.neckItem?rarityName(player.neckItem)+" · "+jewelryDesc(player.neckItem):"<span style='color:var(--dim)'>no necklace</span>"}</div>
     </div>`;
