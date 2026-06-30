@@ -823,6 +823,9 @@ let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,qua
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
 let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[];  // self-cast (crouch→raise) vs forward cast
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
+// world activity/visibility culling: only the area around the player is simulated & drawn (perf).
+// SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
+const SIM_RADIUS=95, VIS_RADIUS=160, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;
 // ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
 let USE_GLTF_AVATAR=false;                      // EXPERIMENTAL: set true (and drop a rigged .glb at GLTF_AVATAR_URL) for a realistic avatar; off = procedural avatar (offline default)
 const GLTF_AVATAR_URL="assets/avatar.glb";      // drop a rigged .glb here (Ready Player Me / Mixamo / Character Creator export)
@@ -4425,6 +4428,8 @@ function update(dt){
     const slowF=m.slow>0?(1-m.slow):1;
     const ox=m.x,oz=m.z; // pre-move (for dungeon wall-sliding)
     const dx=player.x-m.x,dz=player.z-m.z,d=Math.hypot(dx,dz);
+    // freeze AI for far, non-chasing overworld creatures (cullWorld removes their mesh from the scene)
+    if(!inDungeon && d>SIM_RADIUS && m.state!=="chase") continue;
     // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
     const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
     if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now();SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
@@ -4537,6 +4542,7 @@ function update(dt){
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
+  cullWorld(dt);         // stream nearby objects in / far objects out of the scene graph
   syncCamera(dt);
   updateHUD();
 }
@@ -4670,8 +4676,24 @@ function animateOnePerson(p,dt){
 }
 function updatePeople(dt){
   if(inDungeon||inNetwork) return;
-  for(const n of npcs) animateOnePerson(n,dt);
-  for(const s of shops) animateOnePerson(s,dt);
+  const px=player.x,pz=player.z;
+  for(const n of npcs){ if(((n.x-px)*(n.x-px)+(n.z-pz)*(n.z-pz))<SIM_R2) animateOnePerson(n,dt); }  // tick AI/anim only up close
+  for(const s of shops){ if(((s.x-px)*(s.x-px)+(s.z-pz)*(s.z-pz))<SIM_R2) animateOnePerson(s,dt); }
+}
+// region streaming: keep only nearby objects IN the scene graph so the renderer doesn't walk/matrix-update the
+// whole world every frame. Objects beyond VIS are detached (scene.remove) and re-attached when you return.
+let _cullAcc=0;
+function cullWorld(dt){
+  if(inDungeon||inNetwork) return;
+  _cullAcc+=dt; if(_cullAcc<0.25) return; _cullAcc=0;
+  const px=player.x,pz=player.z;
+  const toggle=(obj,x,z)=>{ if(!obj) return; const inR=((x-px)*(x-px)+(z-pz)*(z-pz))<VIS_R2;
+    if(inR){ if(!obj.parent) scene.add(obj); } else if(obj.parent) scene.remove(obj); };
+  for(const n of npcs) toggle(n.mesh,n.x,n.z);
+  for(const s of shops) toggle(s.mesh,s.x,s.z);
+  for(const m of monsters){ if(m.isDungeon||m.shared) continue; toggle(m.mesh,m.x,m.z); }
+  for(const o of scenery) if(o) toggle(o,o.position.x,o.position.z);
+  for(const nd of nodes) toggle(nd.mesh,nd.x,nd.z);
 }
 // how far the 3rd-person camera can sit behind the pivot before terrain/walls block it
 function camClampDist(tx,ty,tz,bx,by,bz,maxD){
