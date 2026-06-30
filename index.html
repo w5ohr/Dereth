@@ -707,20 +707,20 @@ const spellCd={};   // keyed by spell id
 const BESTIARY={
   drudge:   {name:"Drudge Skulker",c:0x6b8f4e,size:0.9,hp:34, dmg:7, spd:5.0,xp:120, gold:[2,9],  range:0,  sense:34,tall:1.4,shape:"humanoid"},
   mosswart: {name:"Mosswart",      c:0x3f7d6a,size:1.0,hp:52, dmg:11,spd:4.3,xp:200, gold:[4,14], range:0,  sense:36,tall:1.0,shape:"blob"},
-  reedshark:{name:"Reedshark",     c:0x9a6b3f,size:1.1,hp:70, dmg:14,spd:8.0,xp:300, gold:[6,18], range:0,  sense:42,tall:0.8,shape:"beast"},
-  tusker:   {name:"Tusker",        c:0xcaa56b,size:1.7,hp:160,dmg:24,spd:5.0,xp:620, gold:[14,40],range:0,  sense:43,tall:1.2,shape:"tusker"},
+  reedshark:{name:"Reedshark",     c:0x9a6b3f,size:1.1,hp:70, dmg:14,spd:8.0,xp:300, gold:[6,18], range:0,  sense:42,tall:0.8,shape:"beast",dmgEl:"pierce"},
+  tusker:   {name:"Tusker",        c:0xcaa56b,size:1.7,hp:160,dmg:24,spd:5.0,xp:620, gold:[14,40],range:0,  sense:43,tall:1.2,shape:"tusker",dmgEl:"pierce"},
   shadow:   {name:"Shadow Caster", c:0x7a4fae,size:1.0,hp:64, dmg:16,spd:3.8,xp:420, gold:[10,26],range:30, sense:47,tall:1.6,shape:"caster",mres:0.35},
-  olthoi:   {name:"Olthoi Warrior",c:0xb03a3a,size:2.0,hp:300,dmg:34,spd:6.2,xp:1400,gold:[40,90],range:0,  sense:52,tall:1.1,shape:"insect"},
+  olthoi:   {name:"Olthoi Warrior",c:0xb03a3a,size:2.0,hp:300,dmg:34,spd:6.2,xp:1400,gold:[40,90],range:0,  sense:52,tall:1.1,shape:"insect",dmgEl:"pierce"},
   banderling:{name:"Banderling",   c:0x7a6b3a,size:1.3,hp:120,dmg:20,spd:6.0,xp:520, gold:[12,32],range:0,  sense:44,tall:1.5,shape:"humanoid"},
   auroch:   {name:"Auroch",        c:0x8a6a4a,size:1.6,hp:200,dmg:26,spd:7.6,xp:760, gold:[16,44],range:0,  sense:46,tall:1.1,shape:"horns"},
   gromnie:  {name:"Gromnie",       c:0x3a6a4a,size:1.4,hp:150,dmg:18,spd:5.0,xp:680, gold:[14,40],range:28, sense:48,tall:0.85,shape:"beast"},
   lugian:   {name:"Lugian",        c:0x8a8278,size:1.9,hp:240,dmg:30,spd:4.6,xp:900, gold:[20,55],range:0,  sense:46,tall:1.3,shape:"lugian"},
   tumerok:  {name:"Tumerok",       c:0x4a7a5a,size:1.1,hp:110,dmg:18,spd:7.0,xp:480, gold:[10,28],range:0,  sense:44,tall:1.5,shape:"tumerok"},
   mattekar: {name:"Mattekar",      c:0xbfc6cf,size:1.2,hp:90, dmg:16,spd:8.5,xp:420, gold:[8,22], range:0,  sense:42,tall:0.9,shape:"mattekar"},
-  skeleton: {name:"Skeleton",      c:0xe8e4d8,size:1.0,hp:80, dmg:16,spd:6.0,xp:360, gold:[6,18], range:0,  sense:44,tall:1.5,shape:"skeleton"},
+  skeleton: {name:"Skeleton",      c:0xe8e4d8,size:1.0,hp:80, dmg:16,spd:6.0,xp:360, gold:[6,18], range:0,  sense:44,tall:1.5,shape:"skeleton",dmgEl:"slash"},
   virindi:  {name:"Virindi",       c:0x6a4a8a,size:1.1,hp:100,dmg:20,spd:4.0,xp:520, gold:[10,30],range:30, sense:48,tall:1.6,shape:"virindi",mres:0.45},
   olthoiworker:{name:"Olthoi Worker",c:0x9a7a3a,size:1.5,hp:160,dmg:20,spd:6.6,xp:700, gold:[18,40],range:0,  sense:48,tall:1.0,shape:"insect"},
-  olthoisoldier:{name:"Olthoi Soldier",c:0xc0532a,size:1.8,hp:240,dmg:28,spd:6.0,xp:1000,gold:[30,70],range:26,sense:50,tall:1.1,shape:"insect"},
+  olthoisoldier:{name:"Olthoi Soldier",c:0xc0532a,size:1.8,hp:240,dmg:28,spd:6.0,xp:1000,gold:[30,70],range:26,sense:50,tall:1.1,shape:"insect",dmgEl:"acid"},
 };
 // AC threat scale (Feeble/Weak/Dangerous/Deadly/Lethal), derived from a creature's HP + damage
 function threatTier(b){const s=b.hp+b.dmg*10;
@@ -2012,6 +2012,10 @@ function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYP
 // movement/stamina multipliers, averaged across all 5 slots (empty slot = no penalty) — partial armour = partial cost
 function armorMove(){ let sp=0,stm=0; for(const s of ARMOR_SLOTS){ const p=player.armorSlots&&player.armorSlots[s], at=p&&ARMOR_TYPES[p.at]; sp+=at?at.speedMul:1; stm+=at?at.stamMul:1; } const n=ARMOR_SLOTS.length; return {speed:sp/n, stam:stm/n}; }
 function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix; if(a&&a.k==="vital"&&a.stat===stat) n+=a.v; } return n; }
+// each armour material wards one damage element; worn pieces of that material stack a resistance (capped)
+const MAT_RESIST={Steel:"slash",Iron:"pierce",Bronze:"bludgeon",Brass:"slash",Copper:"acid",Granite:"bludgeon",Marble:"bludgeon",
+  Alabaster:"pierce",Ceramic:"fire",Leather:"slash",Hide:"pierce",Linen:"acid",Wool:"frost",Silk:"fire",Velvet:"nether",Satin:"shock"};
+function resistVs(el){ if(!el) return 0; let n=0; for(const p of wornPieces()){ if(MAT_RESIST[p.mat]===el) n+=0.16; } return Math.min(0.6,n); }
 // Item-set bonus (AC Item Sets): the dominant matching set among equipped pieces grants tiered boons.
 // 3 pieces → +armour & +max-health; 5 pieces → bigger, plus the set's themed skill (folded into gearSkill).
 function dominantSet(){ const c={}; let best=null,bn=0; for(const p of wornPieces()){ if(!p.aset)continue; c[p.aset]=(c[p.aset]||0)+1; if(c[p.aset]>bn){bn=c[p.aset];best=p.aset;} } return {set:best,count:bn}; }
@@ -2595,7 +2599,7 @@ function gainXP(amt){
     toast("LEVEL "+player.level);SFX.level();burst(player.x,EYE,player.z,0xffd23b,28);saveGame();need=xpForLevel(player.level);
   }
 }
-function playerHurt(dmg,sx,sz,type){
+function playerHurt(dmg,sx,sz,type,element){
   if(player.invuln>0||!player.alive||inNetwork) return;
   type=type||"melee";   // "melee" | "missile" | "magic" — selects which Defense skill mitigates
   // Armour blunts physical hits, scaled by the matching Defense skill; it only half-applies to spells.
@@ -2603,6 +2607,8 @@ function playerHurt(dmg,sx,sz,type){
   let armT=(player.armor+wornArmorV()+itemBuff("armor")+jewelryBonus("armor"))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense + jewelry
   if(type==="magic") armT*=0.5;
   dmg=Math.max(1,dmg*(1-armT/(armT+60)));
+  // armour material resists its element (e.g. Ceramic vs fire, Steel vs slash) — extra mitigation vs that type
+  if(element){ const rv=resistVs(element); if(rv>0){ dmg=Math.max(1,dmg*(1-rv)); if(Math.random()<0.5)floater(player.x,EYE+0.7,player.z,"resist","#9fd0ff"); } }
   // Each Defense skill also grants a flat avoidance, so it matters even with light armour
   // (Invulnerability/Impregnability/Magic Resistance aptitude buffs raise these skills).
   const defKey=type==="magic"?"magicd":armScale, dv=skillValue(defKey), denom=type==="magic"?120:200;
@@ -3327,7 +3333,7 @@ function update(dt){
     p.mesh.position.set(p.x,p.y,p.z);
     let gone=p.life<=0;
     if(Math.hypot(p.x-player.x,p.z-player.z)<player.r+p.r && Math.abs(p.y-EYE)<1.4){
-      playerHurt(p.dmg,p.x,p.z,p.type||"magic");burst(p.x,p.y,p.z,0xb266e0,8);gone=true;
+      playerHurt(p.dmg,p.x,p.z,p.type||"magic",p.element);burst(p.x,p.y,p.z,0xb266e0,8);gone=true;
       if(p.curse&&player.alive&&!(player.dispelImmune>0)){ player.debuffs[p.curse.type]={v:p.curse.v,t:p.curse.dur};
         floater(player.x,EYE+0.6,player.z,p.curse.type==="slow"?"Slowed!":"Imperiled!","#ff8f6b"); }
     }
@@ -3368,10 +3374,11 @@ function update(dt){
             const lt=new THREE.PointLight(col,1.2,6);mesh.add(lt);
             mesh.position.set(ox,oy,oz);scene.add(mesh);
             const atkType=(m.kind==="gromnie"||m.kind==="olthoisoldier")?"missile":"magic";  // beasts spit (missile), casters hurl spells (magic)
+            const atkEl=m.kind==="gromnie"?"acid":m.kind==="virindi"?"frost":m.kind==="shadow"?"nether":m.kind==="olthoisoldier"?"acid":"shock"; // bolt's damage element (armour can resist)
             // casters sometimes weave a curse into the bolt: Shadow Casters Imperil (you take more), Virindi Slow you
             let curse=null;
             if(atkType==="magic"&&Math.random()<0.5) curse=(m.kind==="virindi")?{type:"slow",v:0.4,dur:4}:{type:"vuln",v:1.3,dur:5};
-            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5,type:atkType,curse});
+            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5,type:atkType,element:atkEl,curse});
             m.atkCd=1.6;m.charging=0;
           }
         } else if(m.atkCd<=0&&d<b.range){
@@ -3381,7 +3388,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else m.charging=0.45;
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z);}
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");}
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
       if(Math.hypot(m.x-m.wx,m.z-m.wz)>20) m.ang=Math.atan2(m.wx-m.x,m.wz-m.z);
@@ -4600,6 +4607,7 @@ function buildTinker(){
       <div style="color:var(--dim);font-size:11px">Materials: <span style="color:var(--gold);font-weight:bold">${player.materials}</span></div>
       <div style="font-size:11px;margin-top:4px">🛡 Armor rating <b style="color:#fff">+${wornArmorV()}</b></div>
       ${(()=>{const sb=setBonus();return sb.count>=3?`<div style="font-size:10.5px;color:#9be08a;margin-top:3px">✦ ${esc(sb.set)} Set (${sb.count}/7): +${sb.armor} armor · +${sb.mhp} health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>`:`<div style="font-size:10px;color:var(--dim);margin-top:3px">Wear a full set for a bonus.</div>`;})()}
+      ${(()=>{const r=["slash","pierce","bludgeon","fire","frost","shock","acid","nether"].map(e=>[e,resistVs(e)]).filter(x=>x[1]>0);return r.length?`<div style="font-size:10px;color:#9fd0ff;margin-top:3px">Resist: ${r.map(x=>x[0]+" "+Math.round(x[1]*100)+"%").join(" · ")}</div>`:"";})()}
     </div>`;
   buildPaperDoll();
   document.getElementById('tinkW').onclick=()=>{ if(player.materials>=wCost){player.materials-=wCost;player.weaponTink+=2;SFX.quest();buildTinker();updateHUD();saveGame();} };
