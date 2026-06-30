@@ -3030,9 +3030,9 @@ const ARMOR_SLOT_DEFS=[
   {slot:"offhand", suf:"Shield",     ico:"🛡", vMul:0.70},   // off-hand shields are their own named ITEM_BASE entries (skipped in the set loop)
 ];
 const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slots scale off this), full-set skill boon
-  {n:"Brigandine",at:"light", base:13,skill:"missiled"},{n:"Chiran",at:"light", base:12,skill:"healing"},{n:"Amuli",at:"light", base:14,skill:"war"},
-  {n:"Chainmail", at:"medium",base:17,skill:"meleed"},{n:"Scalemail",at:"medium",base:18,skill:"heavy"},{n:"Celdon",at:"medium",base:18,skill:"life"},{n:"Koujia",at:"medium",base:19,skill:"creature"},
-  {n:"Platemail", at:"heavy", base:24,skill:"meleed"},{n:"Lorica",at:"heavy", base:24,skill:"heavy"},{n:"Yoroi",at:"heavy", base:25,skill:"magicd"},{n:"Olthoi",at:"heavy", base:27,skill:"meleed"},
+  {n:"Leather",at:"light", base:9, skill:"missiled"},{n:"Brigandine",at:"light", base:13,skill:"missile"},{n:"Chiran",at:"light", base:12,skill:"healing"},{n:"Amuli",at:"light", base:14,skill:"war"},{n:"Academy",at:"light", base:13,skill:"arcane"},
+  {n:"Studded Leather",at:"medium",base:15,skill:"meleed"},{n:"Chainmail", at:"medium",base:17,skill:"meleed"},{n:"Scalemail",at:"medium",base:18,skill:"heavy"},{n:"Celdon",at:"medium",base:18,skill:"life"},{n:"Koujia",at:"medium",base:19,skill:"creature"},{n:"Nariv",at:"medium",base:19,skill:"missile"},
+  {n:"Platemail", at:"heavy", base:24,skill:"meleed"},{n:"Lorica",at:"heavy", base:24,skill:"heavy"},{n:"Yoroi",at:"heavy", base:25,skill:"magicd"},{n:"Olthoi",at:"heavy", base:27,skill:"meleed"},{n:"Diforsa",at:"heavy", base:25,skill:"heavy"},{n:"Covenant",at:"heavy", base:28,skill:"magicd"},{n:"Empyrean",at:"heavy", base:29,skill:"arcane"},
 ];
 const ARMOR_SET_SKILL={}; for(const s of ARMOR_SETS) ARMOR_SET_SKILL[s.n]=s.skill;
 for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
@@ -3047,9 +3047,9 @@ const WORK_TIER=[null,[1,4],[2,6],[3,7],[3,9],[4,10]]; // loot tier 1..5 → [mi
 // AC's real salvage materials — metals/woods make weapons, metals/leather/cloth/stone make armour,
 // gems are the "other" class (imbue weapons / theme consumables). The first word of a loot name is its material.
 const MATERIALS={
-  weapon:["Iron","Steel","Bronze","Brass","Copper","Silver","Gold","Pyreal","Platinum","Oak","Mahogany","Teak","Ebony","Pine"],
-  armor:["Bronze","Steel","Iron","Brass","Copper","Granite","Marble","Alabaster","Ceramic","Leather","Hide","Linen","Wool","Silk","Velvet","Satin"],
-  other:["Amber","Quartz","Diamond","Ruby","Sapphire","Emerald","Jet","Onyx","Opal","Agate","Carnelian","Citrine","Peridot","Topaz","Zircon","Lapis Lazuli","Malachite","Hematite","Bloodstone","Moonstone","Tourmaline","Aquamarine","Imperial Topaz","Black Garnet"] };
+  weapon:["Iron","Steel","Bronze","Brass","Copper","Silver","Gold","Pyreal","Platinum","Titanium","Oak","Mahogany","Teak","Ebony","Pine","Hickory","Bamboo","Yew","Ironwood"],
+  armor:["Bronze","Steel","Iron","Brass","Copper","Granite","Marble","Alabaster","Sandstone","Serpentine","Porcelain","Ceramic","Leather","Hide","Sharkskin","Snakeskin","Linen","Wool","Silk","Velvet","Satin"],
+  other:["Amber","Quartz","Diamond","Ruby","Sapphire","Emerald","Jet","Onyx","Opal","Agate","Carnelian","Citrine","Peridot","Topaz","Zircon","Lapis Lazuli","Malachite","Hematite","Bloodstone","Moonstone","Tourmaline","Aquamarine","Imperial Topaz","Black Garnet","Amethyst","Azurite","Sunstone","Turquoise","Tiger Eye","Black Opal","Fire Opal","Green Garnet","Red Garnet","Yellow Garnet","Green Jade","White Jade","Lavender Jade","Rose Quartz","Smoky Quartz","White Quartz","White Sapphire","Sardonyx","Spinel"] };
 const MAT_APPLY={}; // material → which equipped slot a tink improves ("weapon" boosts damage, "armor" boosts defence)
 for(const m of MATERIALS.weapon) MAT_APPLY[m]="weapon";
 for(const m of MATERIALS.other ) MAT_APPLY[m]="weapon"; // imbue-type gems channel into weapon power here
