@@ -927,6 +927,7 @@ let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds u
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0;
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
+let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -3288,12 +3289,16 @@ buildSpellbar();
 
 // ---------- update ----------
 function collide(nx,nz){
+  if(inDungeon){ // wall-slide against the room/corridor layout
+    const s=dungeonSlide(player.x,player.z,nx,nz);
+    return [clamp(s[0],-HALF+1,HALF-1),clamp(s[1],-HALF+1,HALF-1)];
+  }
   for(const o of obstacles){
     const dx=nx-o.x,dz=nz-o.z,d=Math.hypot(dx,dz),min=o.r+player.r;
     if(d<min&&d>0.001){nx=o.x+dx/d*min;nz=o.z+dz/d*min;}
   }
   nx=clamp(nx,-HALF+1,HALF-1);nz=clamp(nz,-HALF+1,HALF-1);
-  if(!inDungeon&&terrainH(nx,nz)<-2) return [player.x,player.z]; // can't wade into deep water
+  if(terrainH(nx,nz)<-2) return [player.x,player.z]; // can't wade into deep water
   return [nx,nz];
 }
 let castReticle=null;
@@ -3453,9 +3458,12 @@ function update(dt){
     }
     if(m.slow>0)m.slow=Math.max(0,m.slow-dt*0.5);
     const slowF=m.slow>0?(1-m.slow):1;
+    const ox=m.x,oz=m.z; // pre-move (for dungeon wall-sliding)
     const dx=player.x-m.x,dz=player.z-m.z,d=Math.hypot(dx,dz);
-    if(player.alive&&d<b.sense){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now();SFX.growl();} m.state="chase"; }
-    if(m.state==="chase"&&d>b.sense*1.4) m.state="wander";
+    // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
+    const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
+    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now();SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
+    if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0) m.state="wander"; } else if(d>b.sense*1.4) m.state="wander"; }
     if(m.state==="chase"&&player.alive){
       m.ang=Math.atan2(dx,dz);
       const stopAt=b.range>0?b.range*0.7:m.r+player.r+0.2;
@@ -3493,6 +3501,7 @@ function update(dt){
       else {m.x+=Math.sin(m.ang)*b.spd*0.4*slowF*dt;m.z+=Math.cos(m.ang)*b.spd*0.4*slowF*dt;}
     }
     m.x=clamp(m.x,-HALF+1,HALF-1);m.z=clamp(m.z,-HALF+1,HALF-1);
+    if(inDungeon){ const s=dungeonSlide(ox,oz,m.x,m.z); m.x=s[0]; m.z=s[1]; } // keep creatures in the rooms/halls
     // capitals are safe havens — creatures cannot enter (overworld only)
     if(!inDungeon&&!m.isBoss){for(const c of CAPITALS){const dx2=m.x-c.x,dz2=m.z-c.z,dc=Math.hypot(dx2,dz2);
       if(dc<TOWN_SAFE&&dc>0.01){m.x=c.x+dx2/dc*TOWN_SAFE;m.z=c.z+dz2/dc*TOWN_SAFE;break;}}}
@@ -3778,28 +3787,45 @@ function drawCompass(){
       if(Math.abs(rel)<=halfFov){const x=place(bb);g.fillStyle="#ffd23b";g.beginPath();g.moveTo(x,H2-23);g.lineTo(x+4,H2-17);g.lineTo(x,H2-11);g.lineTo(x-4,H2-17);g.closePath();g.fill();}}
   }
 }
+function drawDungeonMinimap(g,S){
+  g.clearRect(0,0,S,S);g.fillStyle="#0a0c07";g.fillRect(0,0,S,S);
+  if(!dungeonRects.length) return;
+  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  for(const c of dungeonRects){ if(c.round){minX=Math.min(minX,c.cx-c.rad);maxX=Math.max(maxX,c.cx+c.rad);minZ=Math.min(minZ,c.cz-c.rad);maxZ=Math.max(maxZ,c.cz+c.rad);}
+    else {minX=Math.min(minX,c.x0);maxX=Math.max(maxX,c.x1);minZ=Math.min(minZ,c.z0);maxZ=Math.max(maxZ,c.z1);} }
+  const pad=8,spanX=(maxX-minX)||1,spanZ=(maxZ-minZ)||1,sc=Math.min((S-2*pad)/spanX,(S-2*pad)/spanZ);
+  const offX=(S-spanX*sc)/2,offZ=(S-spanZ*sc)/2,mx=x=>offX+(x-minX)*sc,mz=z=>offZ+(z-minZ)*sc;
+  g.fillStyle="#2b2a33";
+  for(const c of dungeonRects){ if(c.round){g.beginPath();g.arc(mx(c.cx),mz(c.cz),c.rad*sc,0,6.28);g.fill();}
+    else g.fillRect(mx(c.x0),mz(c.z0),(c.x1-c.x0)*sc,(c.z1-c.z0)*sc); }
+  // chest / exit / monsters
+  if(dungeonChest&&!dungeonChest.opened){g.fillStyle="#ffd23b";g.fillRect(mx(dungeonChest.x)-2,mz(dungeonChest.z)-2,4,4);}
+  g.fillStyle="#6aa0ff";g.fillRect(mx(dungeonExit.x)-2,mz(dungeonExit.z)-2,4,4);
+  for(const m of monsters){ if(!m.isDungeon)continue; g.fillStyle=m.isElite?"#ff3030":"#b03a3a"; const s=m.isElite?2:1.4; g.fillRect(mx(m.x)-s,mz(m.z)-s,s*2,s*2); }
+  g.save();g.translate(mx(player.x),mz(player.z));g.rotate(-player.yaw);
+  g.fillStyle="#ffd86b";g.beginPath();g.moveTo(0,-5);g.lineTo(3,4);g.lineTo(-3,4);g.closePath();g.fill();g.restore();
+}
 function drawMinimap(){
   const mm=document.getElementById('mm'),g=mm.getContext('2d'),S=150,sc=S/WORLD;
   const cx=v=>(v+HALF)*sc;
+  if(inDungeon){ drawDungeonMinimap(g,S); return; }
   g.clearRect(0,0,S,S);g.fillStyle="#0a0c07";g.fillRect(0,0,S,S);
   g.fillStyle="rgba(216,177,74,0.12)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
-  for(const m of monsters){if(m.isBoss||!!m.isDungeon!==inDungeon)continue;g.fillStyle="#b03a3a";g.fillRect(cx(m.x)-1,cx(m.z)-1,2,2);}
-  if(!inDungeon){
-    g.strokeStyle="rgba(150,140,120,0.6)";g.lineWidth=2;
-    for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
-    for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1,cx(n.z)-1,2,2);}
-    for(const pt of portals){g.fillStyle="#bf9bff";g.fillRect(cx(pt.x)-1.5,cx(pt.z)-1.5,3,3);}
-    for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");g.fillRect(cx(ls.x)-rr,cx(ls.z)-rr,rr*2,rr*2);}
-    for(const n of npcs){g.fillStyle="#ffd23b";g.fillRect(cx(n.x)-2,cx(n.z)-2,4,4);}
-    for(const sh of shops){g.fillStyle="#7fe6a0";g.fillRect(cx(sh.x)-2,cx(sh.z)-2,4,4);}
-    for(const e of dungeonEntrances){g.fillStyle=player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff";g.fillRect(cx(e.x)-1.5,cx(e.z)-1.5,3,3);}
-    if(boss){g.fillStyle="#ff3030";g.beginPath();g.arc(cx(boss.x),cx(boss.z),3.5,0,6.28);g.fill();}
-    // shared world bosses (online) — red rings
-    for(const m of monsters){ if(!m.isBoss||!m.shared)continue; g.fillStyle="#ff3030";g.beginPath();g.arc(cx(m.x),cx(m.z),3.5,0,6.28);g.fill(); }
-    // other online players — party members green, others cyan
-    if(isOnline) for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
-      g.fillStyle=NET.partyNames.has(r.name)?"#7fe6a0":"#5ad6ff"; g.beginPath();g.arc(cx(rx),cx(r.z!=null?r.z:r.tz),2.5,0,6.28);g.fill(); }
-  } else if(dungeonChest){g.fillStyle="#ffd23b";g.fillRect(cx(dungeonChest.x)-2,cx(dungeonChest.z)-2,4,4);}
+  for(const m of monsters){if(m.isBoss||m.isDungeon)continue;g.fillStyle="#b03a3a";g.fillRect(cx(m.x)-1,cx(m.z)-1,2,2);}
+  g.strokeStyle="rgba(150,140,120,0.6)";g.lineWidth=2;
+  for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
+  for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1,cx(n.z)-1,2,2);}
+  for(const pt of portals){g.fillStyle="#bf9bff";g.fillRect(cx(pt.x)-1.5,cx(pt.z)-1.5,3,3);}
+  for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");g.fillRect(cx(ls.x)-rr,cx(ls.z)-rr,rr*2,rr*2);}
+  for(const n of npcs){g.fillStyle="#ffd23b";g.fillRect(cx(n.x)-2,cx(n.z)-2,4,4);}
+  for(const sh of shops){g.fillStyle="#7fe6a0";g.fillRect(cx(sh.x)-2,cx(sh.z)-2,4,4);}
+  for(const e of dungeonEntrances){g.fillStyle=player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff";g.fillRect(cx(e.x)-1.5,cx(e.z)-1.5,3,3);}
+  if(boss){g.fillStyle="#ff3030";g.beginPath();g.arc(cx(boss.x),cx(boss.z),3.5,0,6.28);g.fill();}
+  // shared world bosses (online) — red rings
+  for(const m of monsters){ if(!m.isBoss||!m.shared)continue; g.fillStyle="#ff3030";g.beginPath();g.arc(cx(m.x),cx(m.z),3.5,0,6.28);g.fill(); }
+  // other online players — party members green, others cyan
+  if(isOnline) for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
+    g.fillStyle=NET.partyNames.has(r.name)?"#7fe6a0":"#5ad6ff"; g.beginPath();g.arc(cx(rx),cx(r.z!=null?r.z:r.tz),2.5,0,6.28);g.fill(); }
   // player + facing
   g.save();g.translate(cx(player.x),cx(player.z));g.rotate(-player.yaw);
   g.fillStyle="#ffd86b";g.beginPath();g.moveTo(0,-5);g.lineTo(3,4);g.lineTo(-3,4);g.closePath();g.fill();g.restore();
@@ -4605,49 +4631,120 @@ function buildProp(type,lx,lz,color){
   else{const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,2.2,6),solid(0x2a1c10));post.position.set(lx,1.1,lz);o.push(post);const flame=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,6),new THREE.MeshBasicMaterial({color}));flame.position.set(lx,2.5,lz);o.push(flame);const fl=new THREE.PointLight(color,1.7,20);fl.position.set(lx,2.5,lz);o.push(fl);}
   return o;
 }
+// ---- AC-style dungeons: rooms joined by corridors (real AC dungeons are tile-grid rooms
+//      linked by twisting halls; we lay out a deterministic per-dungeon room graph). ----
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function genDungeonLayout(def){
+  const rng=mulberry32((def.id+1)*2654435761>>>0 ^ (def.tier*40503));
+  const G=22; // cell spacing; depth grows north (−z), entry at z=0
+  const cells={},rooms=[],corridors=[],key=(c,d)=>c+","+d;
+  function addRoom(col,depth,type){
+    const round=type!=="entry"&&type!=="boss"&&rng()<0.32;
+    const hx=6+Math.floor(rng()*3),hz=6+Math.floor(rng()*3),rad=6+Math.floor(rng()*3);
+    const room={col,depth,cx:col*G,cz:-depth*G,hx,hz,round,rad,type,doors:{N:false,S:false,E:false,W:false}};
+    cells[key(col,depth)]=room;rooms.push(room);return room;
+  }
+  function connect(a,b){
+    if(a.col===b.col){ const x=a.cx,n=a.cz<b.cz?a:b,s=a.cz<b.cz?b:a; n.doors.S=true;s.doors.N=true;
+      corridors.push({a:n,b:s,vert:true,x,x0:x-2.5,x1:x+2.5,z0:Math.min(a.cz,b.cz),z1:Math.max(a.cz,b.cz)}); }
+    else { const z=a.cz,w=a.cx<b.cx?a:b,e=a.cx<b.cx?b:a; w.doors.E=true;e.doors.W=true;
+      corridors.push({a:w,b:e,vert:false,z,z0:z-2.5,z1:z+2.5,x0:Math.min(a.cx,b.cx),x1:Math.max(a.cx,b.cx)}); }
+  }
+  const entry=addRoom(0,0,"entry"); let prev=entry,pc=0,pd=0;
+  const N=3+Math.min(def.tier,4)+Math.floor(rng()*2); // 4–9 rooms along the spine
+  for(let i=1;i<=N;i++){
+    let nc=pc,nd=pd,r=rng();
+    if(r<0.6)nd=pd+1; else if(r<0.8)nc=pc+1; else nc=pc-1;
+    if(cells[key(nc,nd)]){nd=pd+1;nc=pc;} if(cells[key(nc,nd)]){nd=pd+1;}
+    const room=addRoom(nc,nd,i===N?"boss":"room");connect(prev,room);prev=room;pc=nc;pd=nd;
+  }
+  const mid=rooms.slice(1,rooms.length-1),nb=1+Math.floor(rng()*Math.min(3,def.tier));
+  for(let b=0;b<nb;b++){ const base=mid.length?mid[Math.floor(rng()*mid.length)]:entry;
+    const opts=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dc,dd])=>!cells[key(base.col+dc,base.depth+dd)]&&base.depth+dd>=0);
+    if(!opts.length)continue; const[dc,dd]=opts[Math.floor(rng()*opts.length)];
+    connect(base,addRoom(base.col+dc,base.depth+dd,"branch")); }
+  entry.doors.S=true; // the way you came in (exit archway)
+  return {rooms,corridors,entry,rng};
+}
+function roomExtent(room,dir){ return room.round?room.rad:(dir==="N"||dir==="S"?room.hz:room.hx); }
+function dungeonWalkable(x,z){ const r=player.r*0.6;
+  for(const c of dungeonRects){
+    if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad-r) return true; }
+    else if(x>=c.x0+r&&x<=c.x1-r&&z>=c.z0+r&&z<=c.z1-r) return true;
+  } return false;
+}
+function dungeonSlide(ox,oz,nx,nz){
+  if(dungeonWalkable(nx,nz))return[nx,nz];
+  if(dungeonWalkable(nx,oz))return[nx,oz];
+  if(dungeonWalkable(ox,nz))return[ox,nz];
+  return[ox,oz];
+}
+function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
+  if(!dungeonWalkable(ax+(bx-ax)*t,az+(bz-az)*t)) return false;} return true; }
 function buildDungeon(def){
-  dungeonObjs=[];dungeonMobs=0;const th=def.theme;
-  const floor=new THREE.Mesh(new THREE.CircleGeometry(DR,40),new THREE.MeshLambertMaterial({color:th.floor}));
-  floor.rotation.x=-Math.PI/2;floor.position.set(DCEN.x,0.04,DCEN.z);floor.receiveShadow=true;
-  scene.add(floor);dungeonObjs.push(floor);
-  const wallMat=new THREE.MeshLambertMaterial({color:th.wall,flatShading:true});
-  const seg=30;
-  for(let i=0;i<seg;i++){
-    const a=i/seg*Math.PI*2;
-    const w=new THREE.Mesh(new THREE.BoxGeometry(DR*2*Math.PI/seg*1.12,7,1.4),wallMat);
-    w.position.set(DCEN.x+Math.cos(a)*DR,3.5,DCEN.z+Math.sin(a)*DR);w.rotation.y=-a;
-    w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);
+  dungeonObjs=[];dungeonMobs=0;dungeonRects=[];const th=def.theme;
+  const L=genDungeonLayout(def),wallMat=new THREE.MeshLambertMaterial({color:th.wall,flatShading:true});
+  const floorMat=new THREE.MeshLambertMaterial({color:th.floor}),WH=7,Tw=1.0,wy=WH/2,gap=3.2;
+  // walkable cells (collision) — rooms + corridors (corridor rects overlap into rooms so the union stays connected)
+  for(const r of L.rooms) dungeonRects.push(r.round?{round:true,cx:r.cx,cz:r.cz,rad:r.rad}:{x0:r.cx-r.hx,z0:r.cz-r.hz,x1:r.cx+r.hx,z1:r.cz+r.hz});
+  for(const c of L.corridors) dungeonRects.push({x0:c.x0,z0:c.z0,x1:c.x1,z1:c.z1});
+  function wallBox(x,z,sx,sz){const w=new THREE.Mesh(new THREE.BoxGeometry(sx,WH,sz),wallMat);w.position.set(x,wy,z);w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);}
+  function floorTile(x,z,sx,sz,y){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),floorMat);f.rotation.x=-Math.PI/2;f.position.set(x,y,z);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);}
+  // floors
+  for(const r of L.rooms){ if(r.round){const f=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),floorMat);f.rotation.x=-Math.PI/2;f.position.set(r.cx,0.05,r.cz);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);}
+    else floorTile(r.cx,r.cz,r.hx*2,r.hz*2,0.05); }
+  for(const c of L.corridors) floorTile((c.x0+c.x1)/2,(c.z0+c.z1)/2,c.x1-c.x0,c.z1-c.z0,0.04);
+  // room walls (centered door gaps where corridors connect)
+  for(const r of L.rooms){
+    if(r.round){ const seg=24,da=[]; if(r.doors.N)da.push(-Math.PI/2); if(r.doors.S)da.push(Math.PI/2); if(r.doors.E)da.push(0); if(r.doors.W)da.push(Math.PI);
+      for(let i=0;i<seg;i++){const a=i/seg*Math.PI*2; let skip=false; for(const d of da){if(Math.abs(Math.atan2(Math.sin(a-d),Math.cos(a-d)))<0.46)skip=true;} if(skip)continue;
+        const w=new THREE.Mesh(new THREE.BoxGeometry(r.rad*2*Math.PI/seg*1.25,WH,Tw),wallMat);w.position.set(r.cx+Math.cos(a)*r.rad,wy,r.cz+Math.sin(a)*r.rad);w.rotation.y=-a;w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);} }
+    else { for(const side of["N","S"]){ const z=side==="N"?r.cz-r.hz:r.cz+r.hz;
+        if(r.doors[side]){const sh=(r.hx-gap)/2; if(sh>0.3){wallBox(r.cx-(gap+sh),z,sh*2,Tw);wallBox(r.cx+(gap+sh),z,sh*2,Tw);}}
+        else wallBox(r.cx,z,r.hx*2+Tw,Tw); }
+      for(const side of["E","W"]){ const x=side==="E"?r.cx+r.hx:r.cx-r.hx;
+        if(r.doors[side]){const sh=(r.hz-gap)/2; if(sh>0.3){wallBox(x,r.cz-(gap+sh),Tw,sh*2);wallBox(x,r.cz+(gap+sh),Tw,sh*2);}}
+        else wallBox(x,r.cz,Tw,r.hz*2+Tw); } }
   }
-  for(let i=0;i<7;i++){
-    const a=i/7*Math.PI*2,lx=DCEN.x+Math.cos(a)*(DR-3),lz=DCEN.z+Math.sin(a)*(DR-3);
-    for(const o of buildProp(th.prop,lx,lz,th.light)){scene.add(o);dungeonObjs.push(o);}
+  // corridor side rails (only across the gap between the two rooms, so they don't intrude into rooms)
+  for(const c of L.corridors){
+    if(c.vert){ const z0=Math.min(c.a.cz,c.b.cz)+roomExtent(c.a.cz<c.b.cz?c.a:c.b,"S"), z1=Math.max(c.a.cz,c.b.cz)-roomExtent(c.a.cz<c.b.cz?c.b:c.a,"N");
+      if(z1>z0){const len=z1-z0,zc=(z0+z1)/2; wallBox(c.x-2.5,zc,Tw,len);wallBox(c.x+2.5,zc,Tw,len);} }
+    else { const x0=Math.min(c.a.cx,c.b.cx)+roomExtent(c.a.cx<c.b.cx?c.a:c.b,"E"), x1=Math.max(c.a.cx,c.b.cx)-roomExtent(c.a.cx<c.b.cx?c.b:c.a,"W");
+      if(x1>x0){const len=x1-x0,xc=(x0+x1)/2; wallBox(xc,c.z-2.5,len,Tw);wallBox(xc,c.z+2.5,len,Tw);} }
   }
-  // exit archway
-  dungeonExit={x:DCEN.x,z:DCEN.z+DR-2};
-  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),
-    new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  // one themed prop (carries the room light) per room
+  for(const r of L.rooms){ const ox=r.round?0:Math.min(r.hx,r.hz)-2.5, off=r.round?(r.rad-2.5):ox;
+    for(const o of buildProp(th.prop, r.cx+(r.type==="entry"?0:off*0.5), r.cz, th.light)){scene.add(o);dungeonObjs.push(o);} }
+  // exit archway in the entry room's south doorway
+  const en=L.entry; dungeonExit={x:en.cx,z:en.cz+en.hz-0.6}; dungeonSpawn={x:en.cx,z:en.cz-Math.max(1,en.hz-3)};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
   arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
   const elbl=labelSprite("Leave the Delve — E");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
   const elt=new THREE.PointLight(0x6aa0ff,1.4,16);elt.position.set(dungeonExit.x,2,dungeonExit.z);scene.add(elt);dungeonObjs.push(elt);
-  // treasure chest at center
+  // treasure chest in the boss room
+  const boss=L.rooms[L.rooms.length-1];
   const cm=new THREE.Group();
-  const base=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.8,1.0),new THREE.MeshStandardMaterial({color:0x8a5a2a,metalness:0.3,roughness:0.6}));
-  base.position.y=0.4;base.castShadow=true;cm.add(base);
+  const cbase=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.8,1.0),new THREE.MeshStandardMaterial({color:0x8a5a2a,metalness:0.3,roughness:0.6}));
+  cbase.position.y=0.4;cbase.castShadow=true;cm.add(cbase);
   const lid=new THREE.Mesh(new THREE.BoxGeometry(1.46,0.34,1.05),new THREE.MeshStandardMaterial({color:0x6a4420,metalness:0.3,roughness:0.6}));
   lid.position.y=0.95;cm.add(lid);
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
-  cm.position.set(DCEN.x,0,DCEN.z);scene.add(cm);dungeonObjs.push(cm);
-  dungeonChest={x:DCEN.x,z:DCEN.z,mesh:cm,lid,light:clt,opened:false};
-  // guardians drawn from this dungeon's theme, count & power scaled by tier
-  const kinds=th.kinds,count=7+def.tier*2,hpMul=1+(def.tier-1)*0.32,entX=DCEN.x,entZ=DCEN.z+DR-6;
-  for(let i=0;i<count;i++){
-    let gx,gz,tries=0;
-    do{const a=rnd(0,6.28),rr=rnd(7,DR-7);gx=DCEN.x+Math.cos(a)*rr;gz=DCEN.z+Math.sin(a)*rr;tries++;}
-    while(Math.hypot(gx-entX,gz-entZ)<10 && tries<12);
-    spawnDungeonMonster(kinds[irnd(0,kinds.length-1)],gx,gz,false,hpMul);
+  cm.position.set(boss.cx,0,boss.cz);scene.add(cm);dungeonObjs.push(cm);
+  dungeonChest={x:boss.cx,z:boss.cz,mesh:cm,lid,light:clt,opened:false};
+  // guardians spread across the rooms; the warden guards the hoard
+  const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
+  function spawnIn(room,kind,elite){ let x,z,t=0;
+    do{ if(room.round){const a=rng2()*6.283,rr=Math.sqrt(rng2())*(room.rad-2);x=room.cx+Math.cos(a)*rr;z=room.cz+Math.sin(a)*rr;}
+        else{x=room.cx+rnd(-(room.hx-2),room.hx-2);z=room.cz+rnd(-(room.hz-2),room.hz-2);} t++; }
+    while(!dungeonWalkable(x,z)&&t<8);
+    spawnDungeonMonster(kind,x,z,elite,hpMul); }
+  const rng2=Math.random;
+  for(const r of L.rooms){
+    if(r.type==="entry") continue;
+    if(r.type==="boss"){ spawnIn(r,th.warden,true); const ex=1+def.tier; for(let i=0;i<ex;i++) spawnIn(r,kinds[irnd(0,kinds.length-1)],false); }
+    else { const n=1+Math.floor(def.tier/2)+irnd(0,1); for(let i=0;i<n;i++) spawnIn(r,kinds[irnd(0,kinds.length-1)],false); }
   }
-  // an elite warden guards the hoard
-  spawnDungeonMonster(th.warden,DCEN.x+rnd(-4,4),DCEN.z+rnd(-4,4),true,hpMul);
 }
 function enterDungeon(def,ex,ez){
   if(inDungeon) return;
@@ -4655,7 +4752,7 @@ function enterDungeon(def,ex,ez){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
   buildDungeon(def);markSceneSRGB();
-  player.x=DCEN.x;player.z=DCEN.z+DR-6;player.invuln=2.5;
+  player.x=dungeonSpawn.x;player.z=dungeonSpawn.z;player.invuln=2.5;
   toast(def.name.toUpperCase());
   log(`You descend into the <b>${def.name}</b> (tier ${def.tier}). Slay the guardians, then claim the hoard.`,"sys");
 }
