@@ -2952,6 +2952,7 @@ const WEAPON_TYPES={
   crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, blurb:"ranged, hard-hitting"},
   atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  blurb:"thrown darts — fast"},
   focus:   {mode:"focus",   cd:1.00, reach:0.00, dmg:0.0,  stam:0,  blurb:"casting focus — empowers every school of magic"},
+  unarmed: {mode:"melee",   cd:0.55, reach:0.70, dmg:0.66, stam:4,  blurb:"unarmed — fastest, very light"},
 };
 const FOCUS_SCHOOLS=["war","life","creature","item","void"];   // a focus lends skill to all spell schools
 // armor classes: protection vs mobility tradeoff (heavy guards more but slows you & drains stamina regen).
@@ -3040,6 +3041,46 @@ for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
   const lo=Math.max(2,Math.round(set.base*sd.vMul*0.65)), hi=Math.round(set.base*sd.vMul*1.3);
   ITEM_BASE.push({n:`${set.n} ${sd.suf}`,stat:"worn",at:set.at,aslot:sd.slot,aset:set.n,v:[lo,hi]});
 }
+// ── AC weapon roster expansion: many more authentic base names per skill (material prepends at roll time) ──
+ITEM_BASE.push(
+  // daggers / finesse
+  {n:"Poniard",stat:"weapon",wt:"dagger",v:[4,10]},{n:"Dirk",stat:"weapon",wt:"dagger",v:[4,11]},
+  {n:"Main Gauche",stat:"weapon",wt:"dagger",v:[5,11]},{n:"Kris",stat:"weapon",wt:"dagger",v:[5,12]},
+  {n:"Baselard",stat:"weapon",wt:"dagger",v:[5,12]},{n:"Lancet",stat:"weapon",wt:"dagger",v:[4,10]},
+  // swords
+  {n:"Broadsword",stat:"weapon",wt:"sword",v:[6,14]},{n:"Scimitar",stat:"weapon",wt:"sword",v:[5,13]},
+  {n:"Sabre",stat:"weapon",wt:"sword",v:[5,13]},{n:"Falchion",stat:"weapon",wt:"sword",v:[6,14]},
+  {n:"Katana",stat:"weapon",wt:"sword",v:[6,15]},{n:"Ken",stat:"weapon",wt:"sword",v:[5,13]},
+  {n:"Rapier",stat:"weapon",wt:"sword",v:[5,12]},{n:"Long Sword",stat:"weapon",wt:"sword",v:[6,14]},
+  // spears / polearms
+  {n:"Lance",stat:"weapon",wt:"spear",v:[7,15]},{n:"Pike",stat:"weapon",wt:"spear",v:[7,16]},
+  {n:"Partisan",stat:"weapon",wt:"spear",v:[6,15]},{n:"Boar Spear",stat:"weapon",wt:"spear",v:[6,14]},
+  // axes
+  {n:"Hand Axe",stat:"weapon",wt:"axe",v:[6,14]},{n:"War Axe",stat:"weapon",wt:"axe",v:[8,18]},
+  {n:"Cleaver",stat:"weapon",wt:"axe",v:[7,16]},{n:"Tungi",stat:"weapon",wt:"axe",v:[7,16]},
+  // maces
+  {n:"Mace",stat:"weapon",wt:"mace",v:[7,17]},{n:"Flail",stat:"weapon",wt:"mace",v:[8,18]},
+  {n:"Club",stat:"weapon",wt:"mace",v:[6,15]},{n:"Jo",stat:"weapon",wt:"mace",v:[7,16]},
+  // staves (melee)
+  {n:"Staff",stat:"weapon",wt:"staff",v:[5,13]},{n:"Bo",stat:"weapon",wt:"staff",v:[6,14]},
+  // two-handed
+  {n:"Espadon",stat:"weapon",wt:"twohand",v:[10,21]},{n:"Flamberge",stat:"weapon",wt:"twohand",v:[10,22]},
+  {n:"Nodachi",stat:"weapon",wt:"twohand",v:[10,21]},{n:"Greataxe",stat:"weapon",wt:"twohand",v:[11,23]},
+  {n:"Halberd",stat:"weapon",wt:"twohand",v:[10,21]},{n:"Great Mace",stat:"weapon",wt:"twohand",v:[11,23]},
+  // unarmed (new skill)
+  {n:"Cestus",stat:"weapon",wt:"unarmed",v:[3,9]},{n:"Katar",stat:"weapon",wt:"unarmed",v:[4,10]},
+  {n:"Nekode",stat:"weapon",wt:"unarmed",v:[3,9]},{n:"Knuckles",stat:"weapon",wt:"unarmed",v:[3,8]},
+  {n:"War Claw",stat:"weapon",wt:"unarmed",v:[4,10]},
+  // bows / crossbows / atlatls / thrown
+  {n:"War Bow",stat:"weapon",wt:"bow",v:[6,14]},{n:"Hunting Bow",stat:"weapon",wt:"bow",v:[5,12]},
+  {n:"Recurve Bow",stat:"weapon",wt:"bow",v:[6,15]},
+  {n:"Light Crossbow",stat:"weapon",wt:"crossbow",v:[7,16]},{n:"Repeating Crossbow",stat:"weapon",wt:"crossbow",v:[8,18]},
+  {n:"Royal Atlatl",stat:"weapon",wt:"atlatl",v:[6,14]},{n:"War Atlatl",stat:"weapon",wt:"atlatl",v:[6,14]},
+  {n:"Javelin",stat:"weapon",wt:"atlatl",v:[5,12]},{n:"Shouri Atlatl",stat:"weapon",wt:"atlatl",v:[6,13]},
+  // casting foci
+  {n:"Rod",stat:"weapon",wt:"focus",foc:true,v:[5,13]},{n:"Crystal Orb",stat:"weapon",wt:"focus",foc:true,v:[7,15]},
+  {n:"Crystal Wand",stat:"weapon",wt:"focus",foc:true,v:[6,14]},{n:"War Sceptre",stat:"weapon",wt:"focus",foc:true,v:[6,15]}
+);
 // AC-authentic itemization (research Phase 6.8): every loot item has a workmanship (1-10, rolled within a
 // range set by its loot tier) and a material (the first word of its name). Material → tinker target;
 // workmanship (+ Salvaging skill) → how many salvage units it yields. 100 units of one material = 1 tink.
@@ -3210,7 +3251,7 @@ function shapeWeaponModel(){
   const u=weaponHand&&weaponHand.userData; if(!u||!u.blade) return;
   const wt=player.weapon&&player.weapon.wt, prof=wt&&WEAPON_TYPES[wt];
   const melee=prof&&prof.mode==="melee";
-  if(!melee){ u.blade.visible=false; if(u.tip)u.tip.visible=false; if(u.headBall)u.headBall.visible=false; if(u.headAxe)u.headAxe.visible=false; return; } // bare fists / ranged → no blade
+  if(!melee||wt==="unarmed"){ u.blade.visible=false; if(u.tip)u.tip.visible=false; if(u.headBall)u.headBall.visible=false; if(u.headAxe)u.headAxe.visible=false; return; } // bare fists / unarmed / ranged → no blade
   u.blade.visible=true;
   const s=WEAPON_SHAPE[wt]||WEAPON_SHAPE.sword;
   const baseZ=-0.5, L=s.len;                              // hilt fixed at the guard; blade grows outward
