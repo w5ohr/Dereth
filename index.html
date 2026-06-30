@@ -2679,6 +2679,16 @@ function damageMonster(m,dmg,crit){
   }
   if(m.hp<=0) killMonster(m);
 }
+// creature trophies (AC drops): a body-part token each creature may yield, sellable to any vendor
+const TROPHY_BY_KIND={
+  drudge:{name:"Drudge Ear",v:8}, banderling:{name:"Banderling Tusk",v:12}, mosswart:{name:"Mosswart Tentacle",v:10},
+  reedshark:{name:"Reedshark Fin",v:11}, tusker:{name:"Tusker Tusk",v:18}, auroch:{name:"Auroch Horn",v:14},
+  gromnie:{name:"Gromnie Hide",v:16}, mattekar:{name:"Mattekar Paw",v:13}, skeleton:{name:"Skeletal Knuckle",v:9},
+  shadow:{name:"Shadow Essence",v:20}, virindi:{name:"Virindi Mask Shard",v:22}, lugian:{name:"Lugian Knucklebone",v:24},
+  tumerok:{name:"Tumerok Feather",v:17}, olthoi:{name:"Olthoi Claw",v:26}, olthoiworker:{name:"Olthoi Mandible",v:14},
+  olthoisoldier:{name:"Olthoi Carapace",v:22},
+};
+function rollTrophy(kind){ const t=TROPHY_BY_KIND[kind]; return t?{name:t.name,stat:"trophy",v:t.v,kind}:null; }
 function killMonster(m){
   const b=BESTIARY[m.kind];
   player.kills++;
@@ -2717,6 +2727,7 @@ function killMonster(m){
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
   if(g>0) addDrop(m.x,m.z,{type:"gold",amt:g});
   if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollItem(m.isElite||m.isDungeon, m.isDungeon&&curDungeon?curDungeon.tier:(m.isElite?3:1))});
+  if(Math.random()<0.20){ const tr=rollTrophy(m.kind); if(tr) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:tr}); }   // creature trophy
   log(`You have slain ${m.isElite?"<b>Champion "+b.name+"</b>":"a <b>"+b.name+"</b>"}.`,"die");
   retire(m);
   monsters.splice(monsters.indexOf(m),1);
@@ -3243,7 +3254,9 @@ function applyItem(it){
   else if(it.stat==="mn"){player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
-  else{player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
+  else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor.`,"sys"); }
+  else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
+  else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
 }
 // ---- salvage & tinkering (AC-authentic; success-chance formula is our own — real one stays gated) ----
 function salvageItem(i){
@@ -6581,11 +6594,13 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?"⚔️":it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
-function gearSellPrice(it){ if(it.scroll) return 30; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy") return Math.max(3,it.v|0); return Math.max(5,Math.round(gearPrice(it)*0.4)); }
 function gearDesc(it){
+  if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
+  if(it.wt==="focus") return `+${it.foc||it.v} all magic · casting focus`;
   if(it.stat==="weapon") return `+${it.v} dmg · ${it.wt}`+(it.affix?` · ${it.affix.desc}`:"");
   if(it.stat==="worn") return `+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`+(it.magicAbsorb?` · −${Math.round(it.magicAbsorb*100)}% magic`:"")+(it.affix?` · ${it.affix.desc}`:"");
   if(it.stat==="jewelry") return `${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · ${jewelryDesc(it)}`;
@@ -7368,11 +7383,13 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
+    const ctl=it.stat==="trophy"?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
+      :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="food")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span>${cmpHTML}</div>
-      <div class="ctl"><button class="tbtn" data-eq="${i}">Equip</button><button class="tbtn" data-sv="${i}">Salvage</button></div>`;
+      <div class="ctl">${ctl}</div>`;
     rows.appendChild(row);
   });
   rows.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>{const i=+b.dataset.eq;applyItem(player.inv[i]);player.inv.splice(i,1);buildTinker();updateHUD();saveGame();});
