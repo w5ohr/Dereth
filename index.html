@@ -509,6 +509,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
   arcsDone:[],                 // story arcs whose capstone reward has been granted
+  augment:{hp:0,st:0,mn:0},    // permanent boosts absorbed from augmentation gems
   name:"Adventurer",
   appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
@@ -534,6 +535,7 @@ function derive(){
   if(typeof wornVital==="function"){ player.mhp+=wornVital("mhp"); player.mst+=wornVital("mst"); player.mmn+=wornVital("mmn"); }  // "of Vigor/Endurance/Magus" pieces
   if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
   if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
+  const ag=player.augment; if(ag){ player.mhp+=ag.hp||0; player.mst+=ag.st||0; player.mmn+=ag.mn||0; }   // permanent augmentation-gem boosts
   player.hp=Math.min(player.hp,player.mhp);
   player.st=Math.min(player.st,player.mst);
   player.mn=Math.min(player.mn,player.mmn);
@@ -3160,6 +3162,14 @@ const NAMED_ITEMS=[
   {name:"Diforsa Greaves",     stat:"worn",  at:"heavy",  aslot:"legs", mat:"Steel",   v:[30,40],affix:()=>_oaff("of Vigor")},
   {name:"Empyrean Gauntlets",  stat:"worn",  at:"heavy",  aslot:"hands",mat:"Pyreal",  v:[26,34],affix:()=>_oaff("of Warding")},
 ];
+// augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
+const AUGMENT_ITEMS=[
+  {name:"Gem of Reinforcement",   aug:{hp:25}, desc:"+25 max health, forever"},
+  {name:"Gem of Perseverance",    aug:{st:25}, desc:"+25 max stamina, forever"},
+  {name:"Gem of the Magus",       aug:{mn:25}, desc:"+25 max mana, forever"},
+  {name:"Gem of Enlightenment",   aug:{skillpts:1}, desc:"+1 skill credit, forever"},
+];
+function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,tier:5,legendary:true}; }
 function rollNamedItem(){
   const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
   const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
@@ -3230,6 +3240,8 @@ function rollItem(rare,tier){
   }
   // rare chance at a named artifact (more likely on rich/deep loot)
   if(Math.random()<((rare?0.05:0)+((tier|0)>=5?0.03:0))) return rollNamedItem();
+  if(Math.random()<((rare?0.015:0)+((tier|0)>=5?0.01:0))) return rollAugment();   // very rare augmentation gem
+
   if(Math.random()<(rare?0.04:0.09)) return rollFood();   // a bite of cooking fare
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
   tier=clamp((tier|0)||(rare?3:1),1,5); if(rare) tier=clamp(tier+2,1,5);
@@ -3326,6 +3338,9 @@ function applyItem(it){
   else if(it.stat==="st"){player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
+  else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0};
+    player.augment.hp+=a.hp||0; player.augment.st+=a.st||0; player.augment.mn+=a.mn||0; if(a.skillpts) player.skillPts+=a.skillpts;
+    derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.`,"loot"); if(SFX.level)SFX.level(); toast("AUGMENTED"); }
   else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor.`,"sys"); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
   else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
@@ -6681,7 +6696,7 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
@@ -7489,11 +7504,12 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy")?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
       :(it.stat==="pick"||it.stat==="key")?`<span style="color:var(--dim);font-size:11px">use on a locked cache</span>`
+      :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span>${cmpHTML}</div>
       <div class="ctl">${ctl}</div>`;
@@ -7523,7 +7539,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,
+      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -7564,6 +7580,7 @@ function applySaveObj(s){
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
+  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0}:{hp:0,st:0,mn:0};
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
