@@ -2354,6 +2354,16 @@ function rollNamedItem(){
   if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at;
   return it;
 }
+// ---- Food & drink: consumables that grant a timed attribute buff (AC's cooking fare). Cooking skill
+//      stretches the duration. Reuses the Creature attribute-buff machinery (HUD/tick/expiry). ----
+const FOOD_ITEMS=[
+  {name:"Bread",             attr:"Endurance",   v:8,  dur:120},{name:"Wheel of Cheese",  attr:"Self",        v:8,  dur:120},
+  {name:"Roast Tenderloin",  attr:"Strength",    v:11, dur:150},{name:"Hearty Stew",      attr:"Endurance",   v:14, dur:180},
+  {name:"Mince Pie",         attr:"Coordination",v:11, dur:150},{name:"Honeyed Tea",      attr:"Focus",       v:12, dur:160},
+  {name:"Skewered Reedshark",attr:"Quickness",   v:11, dur:150},{name:"Goblet of Wine",   attr:"Self",        v:12, dur:160},
+  {name:"Frothing Ale",      attr:"Strength",    v:13, dur:160},{name:"Phial of Mana Tea",attr:"Focus",       v:14, dur:180},
+];
+function rollFood(){ const f=FOOD_ITEMS[irnd(0,FOOD_ITEMS.length-1)]; return {name:f.name,stat:"food",attr:f.attr,v:f.v,dur:f.dur}; }
 // ---- Jewelry: rings & necklaces (AC's signature skill/stat boosters). Each rolls one cantrip-style
 //      bonus — a skill aptitude, a vital boost, or armour. Bonuses are computed from equipped jewelry
 //      (derive/skillValue/armour), never mutate base stats, so equip/unequip is clean. ----
@@ -2387,6 +2397,7 @@ function rollItem(rare,tier){
   }
   // rare chance at a named artifact (more likely on rich/deep loot)
   if(Math.random()<((rare?0.05:0)+((tier|0)>=5?0.03:0))) return rollNamedItem();
+  if(Math.random()<(rare?0.04:0.09)) return rollFood();   // a bite of cooking fare
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
   tier=clamp((tier|0)||(rare?3:1),1,5); if(rare) tier=clamp(tier+2,1,5);
   let v=irnd(base.v[0],base.v[1]); if(rare) v=Math.ceil(v*2.2);
@@ -2431,6 +2442,8 @@ function applyItem(it){
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
   else if(it.stat==="hp"){player.hp=Math.min(player.mhp,player.hp+it.v);log(`Used <b>${it.name}</b> (+${it.v} HP).`,"loot");}
   else if(it.stat==="mn"){player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}
+  else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
+    log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else{player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
 }
 // ---- salvage & tinkering (AC-authentic; success-chance formula is our own — real one stays gated) ----
@@ -4472,7 +4485,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="jewelry"?`${it.jslot==="neck"?"necklace":"ring"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="jewelry"?`${it.jslot==="neck"?"necklace":"ring"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
       <div class="ctl"><button class="tbtn" data-eq="${i}">Equip</button><button class="tbtn" data-sv="${i}">Salvage</button></div>`;
