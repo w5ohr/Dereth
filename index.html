@@ -1760,6 +1760,15 @@ function buildWorld(){
   for(const c of CITIES) addCity(c);
   // each capital gets a quest Emissary
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8);
+  // every town fields a Town Crier (directions) and a Barkeeper (rumours)
+  for(const c of CITIES){
+    addNPC(c.x-6,c.z+9,{role:"crier",town:c.name});
+    addNPC(c.x+6,c.z+9,{role:"barkeep",town:c.name,name:c.name==="Cragstone"?"Barkeeper Wilomine":"Barkeeper"});
+  }
+  // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
+  addNPC(69.3*80-3,-21.2*80,{role:"reset_attr",name:"Chafulumisa"});
+  addNPC(69.3*80+3,-21.2*80,{role:"reset_skill",name:"Fianhe"});
+  {const tm=CITIES.find(c=>c.name==="Timaru"); if(tm) addNPC(tm.x,tm.z-12,{role:"gatekeep",name:"Aun Firanauri",town:"Timaru"});}
   // vendors in every town: capitals host a full market (one of each trade), smaller
   // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener)
   const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
@@ -3096,7 +3105,13 @@ function currentPrompt(){
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return "Leave the delve (E)";
     return "";
   }
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){const q=QUESTS[questIdx];return questActive?(questProg>=q.count?"Turn in quest (E)":"Speak to the Emissary (E)"):"Accept a bounty (E)";}}
+  {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
+    if(o.role==="crier") return "Ask the Town Crier for directions (E)";
+    if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
+    if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
+    if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
+    if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
+    const q=QUESTS[questIdx];return questActive?(questProg>=q.count?"Turn in quest (E)":"Speak to the Emissary (E)"):"Accept a bounty (E)";}}
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8) return "Trade with the "+(sh.o.title||"Vendor")+" (E)";}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4) return "Descend into "+ne.e.def.name+" (E)";}
   for(const tp of tnPortals) if(nr(tp.x,tp.z)<3.2) return "Enter the Town Network (E)";
@@ -3142,7 +3157,7 @@ function interact(){
     if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.5){ exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(); return; }}
+  {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
@@ -3942,30 +3957,63 @@ const QUESTS=[
   {type:"boss",count:1,text:"Slay Gnawvil, the Olthoi Queen.",xp:5000,gold:350},
 ];
 let questIdx=0,questProg=0,questActive=false,npcs=[];
-function buildNPC(){
+// ---- NPC roles: every town fields a Town Crier (directions) and a Barkeeper (rumors);
+//      capitals add Asheron's Emissary (bounties); Asheron's Castle holds the reset masters. ----
+const NPC_ROLES={
+  emissary:   {robe:0x8a3b2a,hood:0x6e2e20,mark:"!",mcol:"#ffd23b",label:"Asheron's Emissary"},
+  crier:      {robe:0x2e5a8a,hood:0x214567,mark:"?",mcol:"#7fd0ff",label:"Town Crier"},
+  barkeep:    {robe:0x6a4a2a,hood:0x4a3320,mark:"♪",mcol:"#ffcf6b",label:"Barkeeper"},
+  gatekeep:   {robe:0x556070,hood:0x3c4450,mark:"⚷",mcol:"#cfd6e0",label:"Gate Keeper"},
+  reset_attr: {robe:0x6a2250,hood:0x4d1839,mark:"⟳",mcol:"#ff9adf",label:"Chafulumisa"},
+  reset_skill:{robe:0x225a55,hood:0x18413d,mark:"⟳",mcol:"#9affe0",label:"Fianhe"},
+};
+const RUMORS=[
+  "They say the Olthoi Queen stirs again in the deep places of the world.",
+  "Bind to a lifestone, friend — in Dereth, death is rarely the end.",
+  "Trust no floating mask. The Virindi watch from beyond the veil.",
+  "Every dungeon hides a shard of the Empyrean past, if you've the nerve.",
+  "Drudges are cowards in ones and devils in tens.",
+  "Pyreals spend the same in Yaraq as in Holtburg — but the spice costs more.",
+  "Some portals open only to those of sufficient renown.",
+  "Asheron himself summoned us here. And Asheron, they say, has vanished.",
+  "The Tumeroks of the Direlands do not bargain. Go armed, or not at all.",
+  "Carve a foe with the right element and watch them wither twice as fast.",
+];
+const NPC_FLAVOR={
+  gatekeep:["None pass the gate of Timaru without the Aun's leave. State your purpose.",
+            "The Tumeroks beyond these walls do not parley. Tread carefully."],
+};
+function buildNPC(role,name){
+  const R=NPC_ROLES[role]||NPC_ROLES.emissary;
   const g=new THREE.Group();
-  const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.6,1.6,10),new THREE.MeshLambertMaterial({color:0x8a3b2a}));
+  const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.6,1.6,10),new THREE.MeshLambertMaterial({color:R.robe}));
   robe.position.y=0.8;robe.castShadow=true;g.add(robe);
   const head=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),new THREE.MeshLambertMaterial({color:0xcaa06a}));
   head.position.y=1.85;head.castShadow=true;g.add(head);
-  const hood=new THREE.Mesh(new THREE.ConeGeometry(0.42,0.5,10),new THREE.MeshLambertMaterial({color:0x6e2e20}));
+  const hood=new THREE.Mesh(new THREE.ConeGeometry(0.42,0.5,10),new THREE.MeshLambertMaterial({color:R.hood}));
   hood.position.y=2.15;g.add(hood);
-  const lbl=labelSprite("Asheron's Emissary");lbl.position.y=2.9;g.add(lbl);
-  const marker=textSprite("!","#ffd23b");marker.position.y=2.55;marker.scale.set(1,1,1);g.add(marker);
+  const lbl=labelSprite(name||R.label);lbl.position.y=2.9;g.add(lbl);
+  const marker=textSprite(R.mark,R.mcol);marker.position.y=2.55;marker.scale.set(1,1,1);g.add(marker);
   g.userData.marker=marker;
   return g;
 }
-function addNPC(x,z){
-  const mesh=buildNPC();mesh.position.set(x,0,z);scene.add(mesh);
-  npcs.push({x,z,mesh});obstacles.push({x,z,r:0.8});
+function addNPC(x,z,opts){
+  opts=opts||{}; const role=opts.role||"emissary";
+  const name=opts.name||(NPC_ROLES[role]||NPC_ROLES.emissary).label;
+  const mesh=buildNPC(role,name);mesh.position.set(x,0,z);scene.add(mesh);
+  npcs.push({x,z,mesh,role,name,town:opts.town||null,_line:0});obstacles.push({x,z,r:0.8});
   updateNPCMarker();
 }
-function updateNPCMarker(){
+function updateNPCMarker(){ // only the Emissaries reflect quest state
   const ready=questActive&&questProg>=QUESTS[questIdx].count;
   const col=ready?0x7fe6a0:(questActive?0x888888:0xffd23b);
-  for(const n of npcs) n.mesh.userData.marker.material.color.setHex(col);
+  for(const n of npcs) if(n.role==="emissary") n.mesh.userData.marker.material.color.setHex(col);
 }
-function talkToNPC(){
+function compassTo(dx,dz){ // world: +x=East, +z=South
+  const dirs=["E","NE","N","NW","W","SW","S","SE"];
+  return dirs[((Math.round(Math.atan2(-dz,dx)/(Math.PI/4))%8)+8)%8];
+}
+function talkEmissary(){
   const q=QUESTS[questIdx];
   if(!questActive){
     questActive=true;questProg=0;
@@ -3981,6 +4029,31 @@ function talkToNPC(){
     log(`<b>Emissary:</b> ${q.text} (${questProg}/${q.count})`,"sys");
   }
   updateNPCMarker();updateQuestHUD();
+}
+function talkToNPC(n){
+  if(!n||n.role==="emissary"){ talkEmissary(); return; }
+  if(n.role==="crier"){
+    const here=n.town?`<b>${n.town}</b>`:"the open road";
+    const near=CITIES.filter(c=>c.name!==n.town).map(c=>({c,d:Math.hypot(c.x-n.x,c.z-n.z)})).sort((a,b)=>a.d-b.d).slice(0,3);
+    const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/120))} leagues)`).join(" · ");
+    log(`<b>Town Crier:</b> Hear ye! You stand in ${here}. Nearest lie ${dirs}.`,"sys"); if(SFX.quest)SFX.quest();
+    return;
+  }
+  if(n.role==="barkeep"){ log(`<b>${n.name}:</b> ${RUMORS[(n._line++)%RUMORS.length]}`,"sys"); return; }
+  if(n.role==="reset_attr"){
+    const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0);
+    if(allocated<=0){ log("<b>Chafulumisa:</b> Your spirit is already unwritten, traveller.","sys"); return; }
+    ATTRS.forEach(a=>{player.skillPts+=(player.attr[a]-10);player.attr[a]=10;});derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
+    log(`<b>Chafulumisa:</b> I unmake your attributes — ${allocated} points returned. Reallocate them on your character sheet (C).`,"sys"); return;
+  }
+  if(n.role==="reset_skill"){
+    let refunded=0,trained=0; for(const k in player.skills){ refunded+=player.skills[k].xp||0; if(player.skills[k].t>0)trained++; }
+    if(!trained){ log("<b>Fianhe:</b> You have trained no skills to forget.","sys"); return; }
+    player.skills=freshSkills(); player.xpUnspent+=refunded; derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
+    log(`<b>Fianhe:</b> Your training is undone — ${trained} skills released, ${refunded.toLocaleString()} XP returned. Spend your credits anew (C).`,"sys"); return;
+  }
+  const lines=NPC_FLAVOR[n.role]||["Well met, traveller."];
+  log(`<b>${n.name}:</b> ${lines[(n._line++)%lines.length]}`,"sys");
 }
 function questEvent(type,kind){
   if(!questActive) return;
