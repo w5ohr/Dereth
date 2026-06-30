@@ -3894,6 +3894,22 @@ function cycleLoadout(){ // quick in-world swap (key \): rotate to the next save
   player._loIdx=((player._loIdx==null?-1:player._loIdx)+1)%player.loadouts.length;
   loadLoadout(player._loIdx);
 }
+// ---- Spell research: craft the next tier of a known spell from Prismatic Tapers + pyreals ----
+function nextTierId(id){ const mm=/^(.*)_(\d+)$/.exec(id); if(!mm) return null; const lvl=+mm[2]; if(lvl>=8) return null; const nid=mm[1]+"_"+(lvl+1); return SPELLBOOK[nid]?nid:null; }
+function researchCost(nid){ const lvl=SPELLBOOK[nid].lvl; return {prism:lvl, gold:lvl*120}; }
+function researchSpell(id){
+  const nid=nextTierId(id); if(!nid){ log("That spell can't be researched further.","warn"); return; }
+  if(player.knownSpells.indexOf(nid)>=0){ log("You already know that spell.","warn"); return; }
+  const ns=SPELLBOOK[nid], c=researchCost(nid);
+  if((player.prismTapers||0)<c.prism){ log(`Research needs ${c.prism} Prismatic Taper(s) — you have ${player.prismTapers||0}.`,"warn"); return; }
+  if(player.gold<c.gold){ log(`Research needs ${c.gold} pyreals — you have ${player.gold}.`,"warn"); return; }
+  player.prismTapers-=c.prism; player.gold-=c.gold;
+  const mk=MAGIC_SCHOOLS[ns.school], sv=mk?skillValue(mk):999;
+  const chance=clamp(0.45+(sv-(ns.req||0))*0.01+skillValue("arcane")*0.004, 0.15, 0.95);
+  if(Math.random()<chance){ learnSpell(nid); log(`<b>Research success!</b> You devise <b>${ns.name}</b>.`,"loot"); }
+  else { log(`Research of <b>${ns.name}</b> failed — the components are spent.`,"warn"); if(SFX.hit)SFX.hit(); }
+  buildSpellbook(); saveGame();
+}
 // a short, live effect readout for a spell at the player's current stats (shown in the Spellbook)
 function spellEffectText(s){ try{
   if(s.heal) return `+${Math.round(s.heal())} heal`;
@@ -3956,7 +3972,11 @@ function buildSpellbook(){
       let ctl="";
       if(known){ let opts=`<option value="-1"${slot<0?" selected":""}>—</option>`;
         for(let i=0;i<HOTKEYS.length;i++) opts+=`<option value="${i}"${slot===i?" selected":""}>slot ${HOTKEYS[i]}</option>`;
-        ctl=`<select class="sbslot" data-id="${s.id}" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:12px">${opts}</select>`; }
+        ctl=`<select class="sbslot" data-id="${s.id}" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:12px">${opts}</select>`;
+        const nid=nextTierId(s.id);
+        if(nid && player.knownSpells.indexOf(nid)<0){ const c=researchCost(nid);
+          ctl+=` <button class="sbres" data-id="${s.id}" title="Research ${esc(SPELLBOOK[nid].name)} — ${c.prism} Prismatic Taper(s) + ${c.gold}p" style="background:#241a0c;color:#cdb6ff;border:1px solid var(--border);border-radius:5px;padding:3px 7px;font-size:12px;cursor:pointer">⚗</button>`; }
+      }
       const row=document.createElement('div'); row.className="row";
       const eff=spellEffectText(s);
       row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur}s`:""}${s.req?` · req ${s.req}`:""} · ${status}</span></div><div class="ctl">${ctl}</div>`;
@@ -3964,6 +3984,7 @@ function buildSpellbook(){
     }
   }
   root.querySelectorAll('.sbslot').forEach(sel=>sel.onchange=()=>assignHotbar(+sel.value, sel.dataset.id));
+  root.querySelectorAll('.sbres').forEach(b=>b.onclick=()=>researchSpell(b.dataset.id));
 }
 document.getElementById('closeSpellbook').onclick=closeSpellbook;
 
