@@ -3144,11 +3144,25 @@ const NAMED_ITEMS=[
   {name:"Olthoi Helm",         stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
   {name:"Hoeshala's Wand",     stat:"weapon",wt:"focus",  mat:"Ebony",   v:[20,28]},   // legendary casting foci (no brand — they empower all magic)
   {name:"Sceptre of the Arcanum",stat:"weapon",wt:"focus",mat:"Diamond", v:[22,30]},
+  {name:"Orb of the A'nekshay",stat:"weapon",wt:"focus",  mat:"Ruby",    v:[24,32]},
+  // ── more iconic artifacts, covering the remaining weapon & armour types ──
+  {name:"Spectral Sword",      stat:"weapon",wt:"sword",  mat:"Diamond", v:[30,42],affix:()=>_wbrand("frost")},
+  {name:"Hieromancer's Bow",   stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
+  {name:"Heartseeker Arbalest",stat:"weapon",wt:"crossbow",mat:"Platinum",v:[34,46],affix:()=>_waff("crit")},
+  {name:"Trident of the Depths",stat:"weapon",wt:"spear", mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
+  {name:"Death's Grip",        stat:"weapon",wt:"mace",   mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Staff of All Aspects",stat:"weapon",wt:"staff",  mat:"Ebony",   v:[28,38],affix:()=>_wbrand("shock")},
+  {name:"Stormblade Atlatl",   stat:"weapon",wt:"atlatl", mat:"Diamond", v:[26,36],affix:()=>_wbrand("shock")},
+  {name:"Cestus of the Adept", stat:"weapon",wt:"unarmed",mat:"Pyreal",  v:[24,32],affix:()=>_waff("lifesteal")},
+  {name:"Aerlinthe Aegis",     stat:"worn",  at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.22,mat:"Pyreal",v:[26,38],affix:()=>_oaff("of Impregnability")},
+  {name:"Diforsa Greaves",     stat:"worn",  at:"heavy",  aslot:"legs", mat:"Steel",   v:[30,40],affix:()=>_oaff("of Vigor")},
+  {name:"Empyrean Gauntlets",  stat:"worn",  at:"heavy",  aslot:"hands",mat:"Pyreal",  v:[26,34],affix:()=>_oaff("of Warding")},
 ];
 function rollNamedItem(){
   const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
   const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
   if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at; if(t.aslot) it.aslot=t.aslot;
+  if(t.shield) it.shield=t.shield; if(t.magicAbsorb) it.magicAbsorb=t.magicAbsorb;
   if(t.wt==="focus") it.foc=it.v;   // a legendary focus's value is its all-school magic bonus
   return it;
 }
