@@ -1721,6 +1721,15 @@ function buildAvatarJointed(){
   return g;
 }
 function buildAvatar(){ return buildAvatarJointed(); }
+// a smooth, continuously-muscled limb: revolve a profile [[radius,t],…] (t 0→1 along length) into one
+// organic shape that hangs DOWN from the group pivot — no stacked-cylinder "tube" look, rounded ends.
+function organicLimb(profile,len,mat){
+  const pts=[new THREE.Vector2(0.001,0)];
+  for(const pr of profile) pts.push(new THREE.Vector2(pr[0],-pr[1]*len));
+  pts.push(new THREE.Vector2(0.001,-len));
+  const geo=new THREE.LatheGeometry(pts,20); geo.computeVertexNormals();
+  const m=new THREE.Mesh(geo,mat); m.castShadow=true; return m;
+}
 // ---- a proper humanoid townsperson (head/face/hair, torso, arms+hands, legs+boots or robe) ----
 const SKIN_TONES=[0xe8b890,0xdba56e,0xc68642,0x9c6b3f,0x7a4a28,0xf0cba0];
 const HAIR_TONES=[0x241810,0x4a3320,0x6a4a2a,0x141010,0x9a9a9a,0xb88040,0x5a2a14];
@@ -1747,10 +1756,8 @@ function buildPerson(o){
     const legs=[];
     for(const sx of[-1,1]){
       const leg=new THREE.Group();leg.position.set(sx*0.12,hipY,0);g.add(leg);
-      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.125,0.095,0.48,12),cloth2);thigh.position.y=-0.24;thigh.castShadow=true;leg.add(thigh);
-      const knee=new THREE.Mesh(new THREE.SphereGeometry(0.088,10,8),cloth2);knee.position.y=-0.47;leg.add(knee);
-      const shin=new THREE.Mesh(new THREE.CylinderGeometry(0.088,0.06,0.46,12),cloth2);shin.position.set(0,-0.70,0.012);shin.castShadow=true;leg.add(shin);
-      const calf=new THREE.Mesh(new THREE.SphereGeometry(0.07,10,8),cloth2);calf.scale.set(1,1.5,1.2);calf.position.set(0,-0.62,-0.02);leg.add(calf);   // calf muscle
+      // one continuous leg: thigh swell → knee → calf belly → slim ankle
+      const legM=organicLimb([[0.135,0.04],[0.14,0.16],[0.108,0.34],[0.092,0.5],[0.108,0.62],[0.075,0.8],[0.052,1.0]],0.94,cloth2);leg.add(legM);
       const ft=new THREE.Group();ft.position.set(0,-0.94,0.0);leg.add(ft);                   // shaped shoe: body + toe cap + sole
       const fb=new THREE.Mesh(new THREE.BoxGeometry(0.135,0.1,0.2),boot);fb.position.set(0,0.005,0.045);fb.castShadow=true;ft.add(fb);
       const toe=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.07,0.085),boot);toe.position.set(0,-0.012,0.175);toe.castShadow=true;ft.add(toe);
@@ -1771,11 +1778,11 @@ function buildPerson(o){
   const arms=[];
   for(const sx of[-1,1]){
     const arm=new THREE.Group();arm.position.set(sx*0.265,shY+0.03,0);arm.rotation.z=sx*0.09;g.add(arm);
-    const delt=new THREE.Mesh(new THREE.SphereGeometry(0.092,12,10),cloth);delt.scale.set(1,0.95,1);delt.position.y=-0.04;arm.add(delt);   // deltoid/shoulder cap
-    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.088,0.066,0.4,11),cloth);up.position.y=-0.22;up.castShadow=true;arm.add(up);   // biceps taper
-    const elb=new THREE.Mesh(new THREE.SphereGeometry(0.064,10,8),robed?cloth:skinM);elb.position.y=-0.42;arm.add(elb);
-    const lo=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.05,0.38,11),robed?cloth:skinM);lo.position.y=-0.6;lo.castShadow=true;arm.add(lo);
-    const hand=new THREE.Group();hand.position.y=-0.79;arm.add(hand);                       // palm + fingers + thumb (a hint of a real hand)
+    const delt=new THREE.Mesh(new THREE.SphereGeometry(0.094,14,12),cloth);delt.scale.set(1,0.95,1);delt.position.y=-0.02;arm.add(delt);   // deltoid/shoulder cap
+    // one continuous arm: bicep swell → elbow → forearm → slim wrist (sleeve over upper, skin over lower if bare)
+    const upM=organicLimb([[0.086,0.05],[0.08,0.22],[0.062,0.46],[0.058,0.5]],0.42,cloth);upM.position.y=-0.04;arm.add(upM);
+    const loM=organicLimb([[0.062,0.02],[0.058,0.18],[0.05,0.6],[0.044,1.0]],0.36,robed?cloth:skinM);loM.position.y=-0.44;arm.add(loM);
+    const hand=new THREE.Group();hand.position.y=-0.82;arm.add(hand);                       // palm + fingers + thumb (a hint of a real hand)
     const palm=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,7),skinM);palm.scale.set(1,0.95,0.7);hand.add(palm);
     const fng=new THREE.Mesh(new THREE.BoxGeometry(0.066,0.06,0.04),skinM);fng.position.y=-0.06;fng.castShadow=true;hand.add(fng);
     const thb=new THREE.Mesh(new THREE.BoxGeometry(0.022,0.05,0.03),skinM);thb.position.set(sx*-0.04,-0.01,0.012);thb.rotation.z=sx*0.7;hand.add(thb);
@@ -1889,8 +1896,9 @@ function buildFaceGroup(app){
   const bridge=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.026,0.085,8),skin);bridge.position.set(0,-0.012,-z*0.92);bridge.rotation.x=0.12;g.add(bridge);
   const tip=new THREE.Mesh(new THREE.SphereGeometry(0.022,10,8),skin);tip.scale.set(1.0,0.85,0.95);tip.position.set(0,-0.058,-z-0.004);g.add(tip);
   for(const sx of[-1,1]){const nw=new THREE.Mesh(new THREE.SphereGeometry(0.011,8,6),skin);nw.position.set(sx*0.022,-0.06,-z+0.008);g.add(nw);}
-  // ---- brows: two short angled bars ----
-  for(const sx of[-1,1]){const br=new THREE.Mesh(new THREE.BoxGeometry(0.085,0.02,0.03),new THREE.MeshLambertMaterial({color:_shade(hairCol,-0.05)}));br.position.set(sx*0.072,0.072,-z*0.96);br.rotation.z=sx*0.12;g.add(br);}
+  // ---- brows: soft tapered ridges with a hair texture (not boxes) ----
+  const browMat=new THREE.MeshLambertMaterial({color:_shade(hairCol,-0.04),map:hairTex(_shade(hairCol,-0.04))});
+  for(const sx of[-1,1]){const br=new THREE.Mesh(new THREE.SphereGeometry(0.05,12,8),browMat);br.scale.set(0.9,0.26,0.34);br.position.set(sx*0.072,0.07,-z*0.94);br.rotation.set(0.1,0,sx*0.16);g.add(br);}
   // ---- eyes: almond white set in a shallow socket, iris, and an upper lid ----
   for(const sx of[-1,1]){
     const sock=new THREE.Mesh(new THREE.SphereGeometry(0.04,10,8),new THREE.MeshLambertMaterial({color:_shade(skinCol,-0.08)}));sock.scale.set(1.1,0.66,0.4);sock.position.set(sx*0.072,0.028,-z*0.9);g.add(sock);
