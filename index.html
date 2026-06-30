@@ -176,7 +176,7 @@
   <div id="questlog" class="panel" style="display:none;left:50%;top:50%;transform:translate(-50%,-50%);width:470px;max-height:76vh;overflow:auto;z-index:25;pointer-events:auto;flex-direction:column">
     <h3 style="margin:0 0 8px;color:var(--gold)">Quest Log</h3>
     <div id="questlogBody" style="font-size:12px;line-height:1.5"></div>
-    <div style="color:var(--dim);font-size:11px;margin-top:10px">Press J or Esc to close · accept &amp; turn in bounties at Asheron's Emissary (gold !)</div>
+    <div style="color:var(--dim);font-size:11px;margin-top:10px">Press J or Esc to close · accept &amp; turn in each bounty at its named giver (gold !) in their town</div>
   </div>
   <div id="log"><div class="panel2" id="logInner"></div></div>
   <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say… (Enter · Esc · /who /tell /r /p /party)"
@@ -2137,8 +2137,8 @@ function buildWorld(){
 
   // the 25 cities of Dereth (each a bindable settlement; capitals are hubs)
   for(const c of CITIES) addCity(c);
-  // each capital gets a quest Emissary
-  for(const c of CAPITALS) addNPC(c.x+8,c.z-8);
+  // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
+  for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil"});
   // every town fields a Town Crier (directions) and a Barkeeper (rumours)
   for(const c of CITIES){
     addNPC(c.x-6,c.z+9,{role:"crier",town:c.name});
@@ -2147,6 +2147,14 @@ function buildWorld(){
     const tf=c.capital?5:3, rad=c.capital?14:9;
     for(let i=0;i<tf;i++){ const a=i/tf*6.283+c.region, tx=c.x+Math.cos(a)*rad*0.6, tz=c.z+Math.sin(a)*rad*0.6;
       addNPC(tx,tz,{role:"townsfolk",town:c.name,stroll:true,range:rad*0.55}); }
+  }
+  // named quest-givers, each standing in their AC home town (ringed around the plaza so they don't overlap)
+  { const byTown={};
+    for(const id in QUEST_GIVERS){ const g=QUEST_GIVERS[id]; (byTown[g.town]=byTown[g.town]||[]).push(id); }
+    for(const tn in byTown){ const c=CITIES.find(ct=>ct.name===tn); if(!c) continue;
+      const ids=byTown[tn], R=12.5;
+      ids.forEach((id,i)=>{ const a=(i/ids.length)*6.283 + (c.region||0)*0.7;
+        addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:QUEST_GIVERS[id].name, town:tn, questId:id, look:QUEST_GIVERS[id].look}); }); }
   }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*80-3,-21.2*80,{role:"reset_attr",name:"Chafulumisa"});
@@ -3683,7 +3691,13 @@ function currentPrompt(){
     if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
     if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
     if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
-    return questActive?(questComplete()?"Turn in quest (E)":"Speak to the Emissary (E)"):"Accept a bounty (E)";}}
+    // quest-giver (named NPC or the Emissary): the hint reflects THIS giver's quest state
+    if(o.questId){ const id=o.questId, gn=o.name||"the Emissary";
+      if(questActive && curQuest().id===id) return (questComplete()?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
+      if(questDone.indexOf(id)>=0) return "Speak to "+gn+" (E)";
+      if(questActive) return "Speak to "+gn+" (E)";
+      return "Accept a quest from "+gn+" (E)"; }
+    return "Speak (E)";}}
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8) return "Trade with the "+(sh.o.title||"Vendor")+" (E)";}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4) return "Descend into "+ne.e.def.name+" (E)";}
   for(const tp of tnPortals) if(nr(tp.x,tp.z)<3.2) return "Enter the Town Network (E)";
@@ -4776,9 +4790,105 @@ const QUESTS=[
 ];
 let questIdx=0,questActive=false,questProg=[],questDone=[],npcs=[];
 function curQuest(){ return QUESTS[questIdx]; }
+function questById(id){ return QUESTS.find(q=>q.id===id); }
 function ensureProg(){ const q=curQuest(); if(!Array.isArray(questProg)||questProg.length!==q.obj.length) questProg=q.obj.map(()=>0); }
 function questComplete(){ const q=curQuest(); ensureProg(); return q.obj.every((o,i)=>questProg[i]>=o.count); }
 function currentObjective(){ const q=curQuest(); ensureProg(); for(let i=0;i<q.obj.length;i++) if(questProg[i]<q.obj[i].count) return q.obj[i]; return null; }
+// ── named quest-givers: each quest is offered by a specific NPC standing in a real AC town,
+//    with its own conversation (greet/offer · accept · in-progress nudge · turn-in · post-completion). ──
+const QUEST_GIVERS={
+  alfrin:{name:"Alfrin",town:"Holtburg",look:"farmer",
+    prog:"Any sign of my seed-bags? Those thieving drudges can't have dragged them far.",
+    turn:"My seed — and the Robber Baron's head! Bless you, friend. Take this old buckler; it's done more good on your arm than on my wall.",
+    post:"The crops come in golden this year, all thanks to you."},
+  worcer:{name:"Worcer",town:"Holtburg",look:"scholar",
+    prog:"Eight heirlooms, friend — the Redoubt has swallowed them all. Each one is a life remembered.",
+    turn:"Every piece accounted for. The memorial will stand because of you — Holtburg will not forget Portal Year Six, nor your part in it.",
+    post:"The memorial draws mourners from three towns now. You did that."},
+  reedbanks:{name:"Sergeant Brandel",town:"Holtburg",look:"captain",
+    prog:"Still reedsharks in the shallows? Keep at it, recruit — the banks aren't safe yet.",
+    turn:"The banks run clear again. The militia owes you a debt — spend this well.",
+    post:"Not a single drowning this season. The Sergeant salutes you."},
+  brogord:{name:"Flinrala Ryndmad",town:"Holtburg",look:"daughter",
+    prog:"Have you reached the Cave of Alabree? My father's axe and letter are somewhere in that dark.",
+    turn:"His axe… and the letter he never sent. I can hear his voice in it. Take this shield — my father would want a brave hand to bear it.",
+    post:"I read his letter each night now. Thank you for bringing him home to me."},
+  nen_ai:{name:"Nen Ai",town:"Shoushi",look:"villager",
+    prog:"My poor drudge still goes hungry. The cider and cheese are deep in the Stone Cathedral.",
+    turn:"He eats! See how content he is. Here — a healing kit, and the first of the Jojiist lessons: seek the Four Stones.",
+    post:"My pet drudge sends his regards, in his way."},
+  lou_ka:{name:"Lou Ka",town:"Shoushi",look:"villager",
+    prog:"My belongings, and a lesson for those drudges — both, if you please.",
+    turn:"All returned, and the thieves punished. You have a careful eye and a sharp blade. My thanks.",
+    post:"My home is whole again. Peace to you, traveller."},
+  jojii:{name:"Oi-Tong Ye",town:"Shoushi",look:"scholar",
+    prog:"Discipline, Detachment, Compassion, Humility — the four Stones wait in the Shreth Hive.",
+    turn:"The Stones of Jojii, returned to Shoushi. You carry their wisdom now; let it steady your will.",
+    post:"The Jojiist way is brighter for your deed. Walk in balance."},
+  lubziklan:{name:"Lubziklan al-Luq",town:"Yaraq",look:"merchant",
+    prog:"My caravan's goods, eight of them, and a reckoning for the Red Rats' drudges. Have you finished?",
+    turn:"My whole caravan, recovered! And the brutes dealt with. Take this round shield from my stock — you have earned it twice over.",
+    post:"Trade flows again on the Yaraq road, thanks to you, my friend."},
+  lou_ei:{name:"Lou Ei",town:"Yanshi",look:"villager",
+    prog:"My mother's bracelet — the banderlings still have it. Please, it is all I have of her.",
+    turn:"Her bracelet, safe at last. And the raiders routed. You have given me back my mother's memory.",
+    post:"I wear her bracelet every day now. Bless you."},
+  skel_task:{name:"Hunter Garrek",town:"Eastham",look:"hunter",
+    prog:"Eight Wicked Skeletons, recruit. The dead don't tire — but neither does the Guild's gold.",
+    turn:"Eight back in their graves. The Hunters' Guild marks you a friend. Take your bounty.",
+    post:"The crypts are quieter. Good hunting, friend."},
+  mattekar_task:{name:"Hunter Sveld",town:"Stonehold",look:"hunter",
+    prog:"Six Arctic Mattekar still prowl the ice. Our trappers can't work until they're culled.",
+    turn:"Six white pelts' worth of peace. The trappers thank you — and so do I.",
+    post:"The ice roads are safe again. Stay warm out there."},
+  gromnie_task:{name:"Hunter Ojo",town:"Rithwic",look:"hunter",
+    prog:"Five Ebon Gromnies in the marsh. Mind their breath — it'll strip the flesh from bone.",
+    turn:"Five draconians slain. Few hunters could say the same. The bounty is yours.",
+    post:"The marsh holds fewer terrors now. Well done."},
+  auroch_hunt:{name:"Huntress Mara",town:"Cragstone",look:"hunter",
+    prog:"Three maddened aurochs trample the highland herds still. Bring them down.",
+    turn:"Three great beasts felled. The herders can graze the high pastures again. Take your due.",
+    post:"The highlands are calm. The herds remember you, in their way."},
+  nymph_task:{name:"Watcher Iselt",town:"Arwic",look:"captain",
+    prog:"Six Olthoi nymphs, before they grow into warriors. The breach won't hold itself.",
+    turn:"Six nymphs exterminated. You've spared us a hive of warriors. The Watch is grateful.",
+    post:"The breach is sealed and quiet. The Watch stands easier for you."},
+  virindi_incursion:{name:"Frightened Tem",town:"Arwic",look:"villager",
+    prog:"The masks — they still drift down from the rifts! Five of them, please, send them back!",
+    turn:"They're gone… truly gone? Oh, thank you. Take this aegis — a wanderer left it; it drinks their magic. You'll need it more than I.",
+    post:"I sleep without nightmares now. The masks haunt me no longer."},
+  tusker_tusk:{name:"Brighteyes",town:"Oolutanga's Refuge",look:"merchant",
+    prog:"Three great tusks from the Lodge, and I'll craft you a token of the Resistance.",
+    turn:"Three fine tusks! The Resistance honours you. Wear our mark with pride.",
+    post:"The Resistance speaks your name with respect, friend."},
+  tuskers:{name:"Ranger Holt",town:"Cragstone",look:"hunter",
+    prog:"Two tuskers still tear up the pastures. Fell them and the farmers can breathe.",
+    turn:"Both beasts down. Cragstone's fields are safe. Here's your pay.",
+    post:"The pastures are whole. The farmers raise a cup to you."},
+  aerbax_mosswart:{name:"Shaman Ulgo",town:"Yanshi",look:"shaman",
+    prog:"Bragara's horde still musters in the Holding. Break them, before Aerbax's grip tightens.",
+    turn:"Bragara's muster is shattered! My people are free of Aerbax's whisper. The marsh-folk thank you.",
+    post:"The Holding is ours again. Aerbax reaches for us no longer."},
+  mitemaze:{name:"Warden Pell",town:"Cragstone",look:"scholar",
+    prog:"The Mite Maze swarms still, and Branith's artifacts lie at its heart. Have you them?",
+    turn:"Branith's artifacts, recovered from the maze's depths! A scholar's dream. Take this great shield for your trouble.",
+    post:"Branith's work is studied openly now, thanks to your daring."},
+  aljalima:{name:"Captain Yusal",town:"Al-Jalima",look:"captain",
+    prog:"The dead still press our walls and the masks still raise them. Hold the line!",
+    turn:"The siege is broken — six skeletons down and the Virindi conjurers with them. Al-Jalima stands because of you.",
+    post:"Our walls are whole and our dead rest easy. Al-Jalima is in your debt."},
+  aerbax_lugian:{name:"Gorath the Outcast",town:"Linvak Tukal",look:"captain",
+    prog:"Two of my kin still serve Aerbax in the quarry depths. Free them — by the hammer if you must.",
+    turn:"My champions, freed of Aerbax's chains. The quarry is ours. Bear this tower shield — Lugian-forged, for a Lugian's friend.",
+    post:"The quarry rings with honest work again. You are kin to us now."},
+  zaikhal:{name:"Sentinel Rahid",town:"Zaikhal",look:"captain",
+    prog:"The Olthoi still pour from the sands against our gates. Three warriors — destroy them.",
+    turn:"Three Olthoi warriors broken on our walls. Zaikhal holds! Wear this Olthoi-chitin shield, hero of the gate.",
+    post:"The sands are quiet and the gates stand. Zaikhal will remember you."},
+};
+// look → buildNPC visual options for a quest-giver
+const GIVER_LOOK={ farmer:{apron:true,beard:true}, scholar:{robed:true}, captain:{helm:true},
+  daughter:{robed:true,cape:true}, villager:{}, merchant:{apron:true}, hunter:{hat:"cap",beard:true}, shaman:{hood:true,robed:true} };
 // ---- NPC roles: every town fields a Town Crier (directions) and a Barkeeper (rumors);
 //      capitals add Asheron's Emissary (bounties); Asheron's Castle holds the reset masters. ----
 const NPC_ROLES={
@@ -4789,6 +4899,7 @@ const NPC_ROLES={
   reset_attr: {robe:0x6a2250,hood:0x4d1839,mark:"⟳",mcol:"#ff9adf",label:"Chafulumisa"},
   reset_skill:{robe:0x225a55,hood:0x18413d,mark:"⟳",mcol:"#9affe0",label:"Fianhe"},
   townsfolk:  {robe:0x6a5a3a,hood:0x4a3a26,mark:"",mcol:"#cfc0a0",label:"Townsperson"},
+  questgiver: {robe:0x7a6a3a,hood:0x564a28,mark:"!",mcol:"#ffd23b",label:"Quest Giver"},
 };
 const TOWNSFOLK_ROBES=[0x6a5a3a,0x4a5a6a,0x6a3a3a,0x3a5a4a,0x5a4a6a,0x7a6a4a,0x4a4a52,0x8a6a4a]; // varied commoner clothing
 const RUMORS=[
@@ -4813,7 +4924,7 @@ const NPC_FLAVOR={
              "Spare a thought for the militia — they hold the frontier.",
              "Welcome, stranger. Trade's good when the drudges keep their distance."],
 };
-function buildNPC(role,name,seedX){
+function buildNPC(role,name,seedX,look){
   const R=NPC_ROLES[role]||NPC_ROLES.emissary;
   const seed=((name||role||"x").length+role.length+(seedX|0))|0;
   const o={robe:R.robe,accent:R.hood,seed};
@@ -4821,6 +4932,7 @@ function buildNPC(role,name,seedX){
   else if(role==="barkeep"){ o.apron=true; o.hat="cap"; o.beard=(seed%2===0); }
   else if(role==="crier"){ o.hat="cone"; o.beard=(seed%3===0); }
   else if(role==="gatekeep"){ o.helm=true; }
+  else if(role==="questgiver"){ Object.assign(o, GIVER_LOOK[look]||{}); if(o.beard===undefined && o.hood===undefined) o.beard=(seed%2===0); }
   else if(role==="townsfolk"){ o.robe=TOWNSFOLK_ROBES[Math.abs(seed)%TOWNSFOLK_ROBES.length]; o.accent=0x3a2e1e; o.beard=(seed%3===0); if(seed%4===0)o.hat="cap"; }
   else { o.beard=(seed%2===0); }
   const g=buildPerson(o);
@@ -4831,46 +4943,64 @@ function buildNPC(role,name,seedX){
 function addNPC(x,z,opts){
   opts=opts||{}; const role=opts.role||"emissary";
   const name=opts.name||(NPC_ROLES[role]||NPC_ROLES.emissary).label;
-  const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29));mesh.position.set(x,0,z);scene.add(mesh);
-  const rec={x,z,mesh,role,name,town:opts.town||null,_line:0};
+  const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29),opts.look);mesh.position.set(x,0,z);scene.add(mesh);
+  const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,_line:0};
   if(opts.stroll){ rec.stroll=true; rec.home={x,z}; rec.range=opts.range||3; }
   else obstacles.push({x,z,r:0.8});   // strollers move, so they aren't fixed obstacles
   npcs.push(rec);
   updateNPCMarker();
 }
-function updateNPCMarker(){ // only the Emissaries reflect quest state
-  const ready=questActive&&questComplete();
-  const col=ready?0x7fe6a0:(questActive?0x888888:0xffd23b);
-  for(const n of npcs) if(n.role==="emissary") n.mesh.userData.marker.material.color.setHex(col);
+// a quest-bound NPC's marker colour reflects ITS quest: gold=offer, grey=in progress, green=turn in, dim=busy/done
+function questNpcMarkerColor(qid){
+  if(questDone.indexOf(qid)>=0) return 0x59697a;                                   // already completed — dim
+  if(questActive && curQuest().id===qid) return questComplete()?0x7fe6a0:0x9a9a9a; // active: green = ready, grey = in progress
+  if(questActive) return 0x6a6256;                                                  // busy on another quest — dim offer
+  return 0xffd23b;                                                                  // available to accept — gold
+}
+function updateNPCMarker(){ // every quest-bound NPC (Emissary + named givers) shows its own quest state
+  for(const n of npcs){ if(!n.questId) continue; const mk=n.mesh.userData&&n.mesh.userData.marker;
+    if(mk) mk.material.color.setHex(questNpcMarkerColor(n.questId)); }
 }
 function compassTo(dx,dz){ // world: +x=East, +z=South
   const dirs=["E","NE","N","NW","W","SW","S","SE"];
   return dirs[((Math.round(Math.atan2(-dz,dx)/(Math.PI/4))%8)+8)%8];
 }
-function talkEmissary(){
-  const q=curQuest(); ensureProg();
-  if(!questActive){
-    questActive=true; questProg=q.obj.map(()=>0);
-    log(`<b>${q.giver}:</b> ${q.intro}`,"sys");
+// conversation with a named quest-giver (or the Emissary), bound to one quest by id
+function talkQuestGiver(n){
+  const id=n&&n.questId; const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
+  const gv=QUEST_GIVERS[id]||{}; const name=(n&&n.name)||gv.name||q.giver;
+  const isActive=questActive && curQuest().id===id;
+  if(isActive){
+    ensureProg();
+    if(questComplete()){                                  // ── turn in: pay out + flavour ──
+      gainXP(q.xp); player.gold+=q.gold;
+      let rw=`+${q.xp} XP, +${q.gold} pyreals`;
+      if(q.item){ player.inv.push(Object.assign({},q.item)); rw+=`, and a <b>${q.item.name}</b>`; }
+      if(questDone.indexOf(id)<0) questDone.push(id);
+      log(`<b>${name}:</b> ${gv.turn||"Well done — take your reward, and my thanks."}`,"sys");
+      log(`<b>Quest complete — ${q.name}:</b> ${rw}.`,"sys");
+      SFX.quest(); toast("QUEST COMPLETE");
+      questActive=false; questProg=[]; saveGame();
+    } else {                                              // ── in progress: nudge + objective tally ──
+      const prog=q.obj.map((o,i)=>`${o.label} (${Math.min(questProg[i],o.count)}/${o.count})`).join("; ");
+      log(`<b>${name}:</b> ${gv.prog||"Not finished yet — best be about it."} <span style="color:var(--dim)">[${prog}]</span>`,"sys");
+    }
+  } else if(questDone.indexOf(id)>=0){                    // ── already done: post-quest greeting ──
+    log(`<b>${name}:</b> ${gv.post||"My thanks again, friend."}`,"sys");
+  } else if(questActive){                                 // ── busy elsewhere ──
+    log(`<b>${name}:</b> You've a task in hand already — see it through, then come back to me.`,"sys");
+  } else {                                                // ── offer + accept ──
+    questIdx=QUESTS.findIndex(x=>x.id===id); questActive=true; questProg=q.obj.map(()=>0);
+    log(`<b>${name}:</b> ${q.intro}`,"sys");
     log(`<b>Quest accepted — ${q.name}:</b> ${q.obj.map(o=>o.label+" (0/"+o.count+")").join("; ")}`,"sys");
-    SFX.quest();toast("QUEST ACCEPTED");
-  } else if(questComplete()){
-    gainXP(q.xp); player.gold+=q.gold;
-    let rw=`+${q.xp} XP, +${q.gold} pyreals`;
-    if(q.item){ player.inv.push(Object.assign({},q.item)); rw+=`, and a <b>${q.item.name}</b>`; }
-    if(questDone.indexOf(q.id)<0) questDone.push(q.id);
-    log(`<b>${q.giver}:</b> Well done! Your reward: ${rw}.`,"sys");
-    SFX.quest();toast("QUEST COMPLETE");
-    questIdx=(questIdx+1)%QUESTS.length; questActive=false; questProg=[];
-    saveGame();
-  } else {
-    const prog=q.obj.map((o,i)=>`${o.label} (${Math.min(questProg[i],o.count)}/${o.count})`).join("; ");
-    log(`<b>${q.giver}:</b> Not yet — ${prog}.`,"sys");
+    SFX.quest(); toast("QUEST ACCEPTED");
   }
-  updateNPCMarker();updateQuestHUD();renderQuestLog();
+  updateNPCMarker(); updateQuestHUD(); renderQuestLog();
 }
+function talkEmissary(){ talkQuestGiver({questId:"gnawvil",name:"Asheron's Emissary"}); }  // legacy entry point
 function talkToNPC(n){
-  if(!n||n.role==="emissary"){ talkEmissary(); return; }
+  if(!n) return;
+  if(n.role==="emissary"||n.role==="questgiver"){ talkQuestGiver(n); return; }
   if(n.role==="crier"){
     const here=n.town?`<b>${n.town}</b>`:"the open road";
     const near=CITIES.filter(c=>c.name!==n.town).map(c=>({c,d:Math.hypot(c.x-n.x,c.z-n.z)})).sort((a,b)=>a.d-b.d).slice(0,3);
@@ -4912,7 +5042,7 @@ function questEvent(type,kind){
 function updateQuestHUD(){
   const panel=document.getElementById('quest');
   if(!questActive){panel.style.display="block";
-    document.getElementById('questText').innerHTML="No active bounty — seek Asheron's Emissary in Holtburg. <span style='color:var(--dim)'>(J: quest log)</span>";
+    document.getElementById('questText').innerHTML="No active bounty — seek a quest-giver (gold !) in a town. <span style='color:var(--dim)'>(J: quest log)</span>";
     document.getElementById('questProg').textContent="";return;}
   const q=curQuest(); ensureProg(); panel.style.display="block";
   document.getElementById('questText').innerHTML=`<b>${q.name}</b>`;
@@ -4922,24 +5052,25 @@ function updateQuestHUD(){
   }).join("<br>")+(questComplete()?"<br><span style='color:#7fe6a0;font-weight:bold'>✓ Turn in at the Emissary</span>":"");
 }
 // quest log modal (J)
+function giverLabel(q){ const gv=QUEST_GIVERS[q.id]; return gv?`${gv.name} · ${gv.town}`:(q.id==="gnawvil"?"Asheron's Emissary · any capital":q.giver); }
 function renderQuestLog(){
   const body=document.getElementById('questlogBody'); if(!body) return;
   let h="";
   if(questActive){ const q=curQuest(); ensureProg();
     h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,210,59,.08);border:1px solid var(--border);border-radius:6px">
-      <div style="color:var(--gold);font-weight:bold">▸ ${q.name} <span style="color:var(--dim);font-weight:normal">— ${q.giver}</span></div>
+      <div style="color:var(--gold);font-weight:bold">▸ ${q.name} <span style="color:var(--dim);font-weight:normal">— ${giverLabel(q)}</span></div>
       <div style="color:#bcae8a;font-style:italic;margin:4px 0">“${q.intro}”</div>
       ${q.obj.map((o,i)=>{const d=questProg[i]>=o.count;return `<div style="color:${d?'#7fe6a0':'#cdbf9a'}">${d?'✓':'☐'} ${o.label} — ${Math.min(questProg[i],o.count)}/${o.count}</div>`;}).join("")}
-      <div style="margin-top:4px;color:var(--gold)">Reward: +${q.xp} XP · +${q.gold} pyreals${q.item?` · ${q.item.name}`:""}${questComplete()?` &nbsp;<span style="color:#7fe6a0">✓ ready to turn in</span>`:""}</div>
+      <div style="margin-top:4px;color:var(--gold)">Reward: +${q.xp} XP · +${q.gold} pyreals${q.item?` · ${q.item.name}`:""}${questComplete()?` &nbsp;<span style="color:#7fe6a0">✓ return to ${(QUEST_GIVERS[q.id]||{}).name||"the Emissary"}</span>`:""}</div>
     </div>`;
   } else {
-    h+=`<div style="color:var(--dim);margin-bottom:10px">No active bounty. Seek Asheron's Emissary (gold !) in a capital to take one up.</div>`;
+    h+=`<div style="color:var(--dim);margin-bottom:10px">No active bounty. Quest-givers (gold !) stand in towns across Dereth — visit one to take up their task.</div>`;
   }
-  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:6px 0 4px">All Bounties</div>`;
+  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:6px 0 4px">All Bounties — found at their giver's town</div>`;
   h+=QUESTS.map((q,i)=>{
     const done=questDone.indexOf(q.id)>=0, active=questActive&&i===questIdx;
     const tag=active?`<span style="color:var(--gold)">● active</span>`:done?`<span style="color:#7fe6a0">✓ complete</span>`:`<span style="color:var(--dim)">○ available</span>`;
-    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>${q.name} <span style="color:var(--dim)">— ${q.giver}</span></span>${tag}</div>`;
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
   }).join("");
   body.innerHTML=h;
 }
@@ -6283,7 +6414,7 @@ function startGame(loadSaved,preset){
     log("Bind to the Lifestone (E), and open the map (Tab) to fast-travel between towns.","sys");
     toast("WELCOME TO DERETH");
     setTimeout(()=>{if(running)log("Tip: bind to the blue Lifestone (E) — death returns you there.","sys");},7000);
-    setTimeout(()=>{if(running)log("Tip: visit Asheron's Emissary (gold !) for a bounty, and the Vendor (green $) to trade.","sys");},14000);
+    setTimeout(()=>{if(running)log("Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $.","sys");},14000);
     setTimeout(()=>{if(running)log("Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);
     setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). Q swaps weapon.","sys");},28000);
     setTimeout(()=>{if(running)log("Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);
