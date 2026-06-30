@@ -81,6 +81,12 @@
   #potions .pot{display:flex;flex-direction:column;align-items:center;min-width:46px;color:var(--dim)}
   #potions .pot b{color:#fff;font-size:14px}#potions .pot .k{color:var(--gold)}
   .tbtn{padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:#2a2110;color:var(--gold);font-size:12px;cursor:pointer}
+  .doll{display:flex;flex-wrap:wrap;gap:5px}
+  .doll-grp{font-size:10px;color:var(--dim);width:100%;margin:6px 0 2px;text-transform:uppercase;letter-spacing:.6px}
+  .doll-slot{width:104px;min-height:32px;border:1px solid var(--border);border-radius:6px;padding:3px 7px;background:#0c0e08;display:flex;flex-direction:column;justify-content:center}
+  .doll-slot.filled{cursor:pointer;border-color:#3a4a2a}.doll-slot.filled:hover{background:#161c0e;border-color:var(--gold)}
+  .doll-slot .ds-ico{font-size:10px;color:var(--dim)}
+  .doll-slot .ds-lab{font-size:10.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tbtn:hover{background:#3a2e16}.tbtn:disabled{opacity:.35;cursor:default}
   #closeTink,#closeSettings,#closeMap,#closeCodex{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}
   #closeTink:hover,#closeSettings:hover,#closeMap:hover,#closeCodex:hover{background:#3a2e16}
@@ -204,6 +210,8 @@
   <h2>Inventory &amp; Tinkering</h2>
   <div class="sub">Salvage loot into materials, then tinker your gear — a craft of Dereth. Equip an item to gain its bonus.</div>
   <div id="tinkUpgrades" style="display:flex;gap:10px;margin-bottom:12px"></div>
+  <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Equipment <span style="color:var(--dim);font-weight:normal;font-size:11px">— click a worn item to unequip</span></div>
+  <div id="tinkDoll" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Salvaged Materials</div>
   <div id="tinkBags" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Satchel</div>
@@ -4481,6 +4489,33 @@ function lootItem(it){
 function salvageValue(it){ if(it.scroll) return 20; return Math.max(3,Math.round(it.v*(it.stat==="armor"?1.0:0.8))); }
 function openTinker(){ buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
+// ---- equipment paper-doll: every worn slot as a tile; click a filled tile to unequip ----
+function slotTile(label,ico,item,kind,slot){
+  const filled=!!item, col=filled?itemRarity(item).c:"#5a5346";
+  return `<div class="doll-slot${filled?' filled':''}" data-kind="${kind}" data-slot="${slot||''}" title="${filled?esc(item.name)+' — click to unequip':label+' (empty)'}">
+    <span class="ds-ico">${ico} ${label}</span><span class="ds-lab" style="color:${col}">${filled?esc(item.name):"—"}</span></div>`;
+}
+function buildPaperDoll(){
+  const el=document.getElementById('tinkDoll'); if(!el) return;
+  const armorHTML=ARMOR_SLOT_DEFS.map(d=>slotTile(d.slot,d.ico,player.armorSlots&&player.armorSlots[d.slot],"armor",d.slot)).join("");
+  const JW=[["lfinger","💍","L finger"],["rfinger","💍","R finger"],["lwrist","⌚","L wrist"],["rwrist","⌚","R wrist"],["neck","📿","necklace"]];
+  const jewelHTML=JW.map(([s,ic,lab])=>slotTile(lab,ic,player.jewelry&&player.jewelry[s],"jewelry",s)).join("");
+  el.innerHTML=`<div class="doll">${slotTile("weapon","⚔",player.weapon,"weapon","")}${armorHTML}</div>
+    <div class="doll-grp">Jewelry</div><div class="doll">${jewelHTML}</div>`;
+  el.querySelectorAll('.doll-slot.filled').forEach(t=>t.onclick=()=>unequipTile(t.dataset.kind,t.dataset.slot));
+}
+function unequipTile(kind,slot){
+  if(player.inv.length>=12){ log("Your satchel is full — salvage or sell something first.","warn"); SFX.hit&&SFX.hit(); return; }
+  let it=null;
+  if(kind==="weapon"){ it=player.weapon; if(!it)return; player.weapon=null; weaponMode="sword";
+    if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=true;bowModel.visible=false;} }
+  else if(kind==="armor"){ it=player.armorSlots&&player.armorSlots[slot]; if(!it)return; delete player.armorSlots[slot]; }
+  else { it=player.jewelry&&player.jewelry[slot]; if(!it)return; delete player.jewelry[slot]; }
+  player.inv.push(it);
+  if(kind!=="weapon"){ recomputeGearSkill(); derive(); }
+  log(`Unequipped <b>${esc(it.name)}</b>.`,"loot"); SFX.click&&SFX.click();
+  buildTinker(); updateHUD(); saveGame();
+}
 function buildTinker(){
   const up=document.getElementById('tinkUpgrades');
   const wCost=10+player.weaponTink*5, aCost=10+Math.floor(player.armorTink/3)*5;
@@ -4497,13 +4532,10 @@ function buildTinker(){
     </div>
     <div class="panel" style="position:static;width:150px">
       <div style="color:var(--dim);font-size:11px">Materials: <span style="color:var(--gold);font-weight:bold">${player.materials}</span></div>
-      <div style="font-size:11px;margin-top:4px">⚔ ${player.weapon?rarityName(player.weapon)+" (+"+player.weapon.v+")"+(WEAPON_TYPES[player.weapon.wt]?" · "+WEAPON_TYPES[player.weapon.wt].blurb:""):"<span style='color:var(--dim)'>bare fists</span>"}</div>
-      <div style="font-size:11px">🛡 Armor <b>+${wornArmorV()}</b> ${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return `<span style="color:var(--dim)">${d.ico}</span>`+(p?rarityName(p):"<span style='color:#5a5346'>·</span>");}).join(" ")}</div>
-      <div style="font-size:10px;color:var(--dim);margin-top:1px">${ARMOR_SLOT_DEFS.map(d=>{const p=player.armorSlots&&player.armorSlots[d.slot];return p?`${d.slot}: ${esc(p.name)} (+${p.v})`:"";}).filter(Boolean).join(" &nbsp;·&nbsp; ")||"no armor worn"}</div>
-      ${(()=>{const sb=setBonus();return sb.count>=3?`<div style="font-size:11px;color:#9be08a;margin-top:2px">✦ ${esc(sb.set)} Set (${sb.count}/7): +${sb.armor} armor · +${sb.mhp} max health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>`:"";})()}
-      <div style="font-size:11px;margin-top:2px">${[["lfinger","💍"],["rfinger","💍"],["lwrist","⌚"],["rwrist","⌚"],["neck","📿"]].map(([s,ic])=>{const p=player.jewelry&&player.jewelry[s];return `<span style="color:var(--dim)">${ic}</span>`+(p?rarityName(p):"<span style='color:#5a5346'>·</span>");}).join(" ")}</div>
-      <div style="font-size:10px;color:var(--dim);margin-top:1px">${JEWELRY_SLOTS.map(s=>{const p=player.jewelry&&player.jewelry[s];return p?`${({lfinger:"L finger",rfinger:"R finger",lwrist:"L wrist",rwrist:"R wrist",neck:"neck"})[s]}: ${esc(p.name)} (${jewelryDesc(p)})`:"";}).filter(Boolean).join(" &nbsp;·&nbsp; ")||"no jewelry"}</div>
+      <div style="font-size:11px;margin-top:4px">🛡 Armor rating <b style="color:#fff">+${wornArmorV()}</b></div>
+      ${(()=>{const sb=setBonus();return sb.count>=3?`<div style="font-size:10.5px;color:#9be08a;margin-top:3px">✦ ${esc(sb.set)} Set (${sb.count}/7): +${sb.armor} armor · +${sb.mhp} health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>`:`<div style="font-size:10px;color:var(--dim);margin-top:3px">Wear a full set for a bonus.</div>`;})()}
     </div>`;
+  buildPaperDoll();
   document.getElementById('tinkW').onclick=()=>{ if(player.materials>=wCost){player.materials-=wCost;player.weaponTink+=2;SFX.quest();buildTinker();updateHUD();saveGame();} };
   document.getElementById('tinkA').onclick=()=>{ if(player.materials>=aCost){player.materials-=aCost;player.armorTink+=3;player.armor+=3;SFX.quest();buildTinker();updateHUD();saveGame();} };
   // salvaged-material bags: 100 units of one material + the matching tinkering skill applies a workmanship-scaled tink
