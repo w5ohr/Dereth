@@ -188,6 +188,7 @@
     <div class="pot"><span class="k">R</span>❤<b id="pHealth">0</b></div>
     <div class="pot"><span class="k">G</span>❤<b id="pGreat">0</b></div>
     <div class="pot"><span class="k">F</span>🔷<b id="pMana">0</b></div>
+    <div class="pot"><span class="k">H</span>⚡<b id="pStam">0</b></div>
     <div class="pot"><span class="k">9</span>⚔<b id="pMight">0</b></div>
     <div class="pot"><span class="k">0</span>💨<b id="pSwift">0</b></div>
   </div>
@@ -503,7 +504,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   attr:{Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10},
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
   level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},jewelry:{},gearSkill:{},
-  inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,
+  inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,potStam:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
@@ -3842,6 +3843,7 @@ window.addEventListener('keydown',e=>{
   if(k==="r") drinkPotion("potHealth",60,"hp");
   if(k==="g") drinkPotion("potGreat",150,"hp");
   if(k==="f") drinkPotion("potMana",60,"mn");
+  if(k==="h") drinkPotion("potStam",60,"st");
   if(k==="9") useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b");
   if(k==="0") useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0");
   if("ctbo".includes(k)||k==="tab") SFX.click();
@@ -4585,6 +4587,7 @@ function updateHUD(){
   document.getElementById("pHealth").textContent=player.potHealth;
   document.getElementById("pGreat").textContent=player.potGreat;
   document.getElementById("pMana").textContent=player.potMana;
+  {const e=document.getElementById("pStam"); if(e) e.textContent=player.potStam;}
   document.getElementById("pMight").textContent=player.elixMight;
   document.getElementById("pSwift").textContent=player.elixSwift;
   const bf=[];if(player.buffMightT>0)bf.push("Might "+Math.ceil(player.buffMightT)+"s");if(player.buffSwiftT>0)bf.push("Swift "+Math.ceil(player.buffSwiftT)+"s");
@@ -6744,6 +6747,7 @@ const VENDOR_TYPES={
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
     {name:"Greater Health Potion",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
     {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"},
+    {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"},
     {name:"Elixir of Might",field:"elixMight",cost:60,desc:"+50% damage for 30s (key 9).",ico:"⚔"},
     {name:"Elixir of Swiftness",field:"elixSwift",cost:60,desc:"+40% move speed for 30s (key 0).",ico:"💨"}]},
   weaponsmith:{title:"Weaponsmith",marker:"⚔",mcol:"#ffd23b",robe:0x6a3a22,stock:()=>[
@@ -6768,7 +6772,8 @@ const VENDOR_TYPES={
   healer:{title:"Healer",marker:"✚",mcol:"#ff8aa0",robe:0x8a2236,heal:true,stock:()=>[
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
     {name:"Greater Health Potion",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
-    {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"}]},
+    {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"},
+    {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"}]},
   jeweler:{title:"Jeweler",marker:"💍",mcol:"#9af0ff",robe:0x2a5a6a,stock:jewelerStock},
 };
 let activeShop=null;
@@ -6850,6 +6855,7 @@ function drinkPotion(field,amt,kind){
   if(player[field]<=0){ log("You have none of that potion.","warn"); return; }
   player[field]--;player.drinkCd=0.6;
   if(kind==="hp"){player.hp=Math.min(player.mhp,player.hp+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#7fe6a0");}
+  else if(kind==="st"){player.st=Math.min(player.mst,player.st+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#ffd86b");}
   else{player.mn=Math.min(player.mmn,player.mn+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#5aa8ff");}
   SFX.heal();updateHUD();
 }
@@ -7533,7 +7539,7 @@ function saveGame(){
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
       weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
       name:player.name,appearance:player.appearance,
-      potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,
+      potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
       elixMight:player.elixMight,elixSwift:player.elixSwift,
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
@@ -7557,7 +7563,7 @@ function applySaveObj(s){
   Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
-    potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,
+    potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
     tapers:s.tapers||0,prismTapers:s.prismTapers||0,
     elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
     achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
