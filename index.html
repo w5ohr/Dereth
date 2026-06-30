@@ -417,7 +417,8 @@ function skillBase(key){ const s=SKILL_BY_KEY[key]; if(!s.d)return 0; let sum=0;
 // specialized = +10 bonus. (Faithful: untrained skills work at base; magic just can't be cast untrained.)
 function skillValue(key){ const st=skillState(key),base=skillBase(key);
   const sb=(player.skillBuffs&&player.skillBuffs[key])?player.skillBuffs[key].v:0;   // Creature skill "Aptitude" buff
-  return base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb; }
+  const gj=(player.gearSkill&&player.gearSkill[key])?player.gearSkill[key]:0;        // jewelry skill cantrips
+  return base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj; }
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
 function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_WEAPON_KEYS){ const e=skillEff(key,k); if(e>best)best=e; } return best; } // best of all melee weapon skills
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
@@ -445,7 +446,7 @@ const ATTR_DESC={Strength:"Melee damage",Endurance:"Health & stamina",Coordinati
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   attr:{Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10},
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
-  level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorItem:null,
+  level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorItem:null,ringItem:null,neckItem:null,gearSkill:{},
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],
@@ -470,6 +471,7 @@ function derive(){
   { const at=armorTypeOf(); if(at) player.speed*=at.speedMul; } // heavy armour slows you, light quickens
   const wa=player.armorItem&&player.armorItem.affix; // worn vital affixes (of Vigor / Endurance / Magus)
   if(wa&&wa.k==="vital"&&player[wa.stat]!==undefined) player[wa.stat]+=wa.v;
+  if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
   player.hp=Math.min(player.hp,player.mhp);
   player.st=Math.min(player.st,player.mst);
   player.mn=Math.min(player.mn,player.mmn);
@@ -2285,7 +2287,12 @@ const ITEM_BASE=[
   {n:"Celdon Breastplate",stat:"worn",at:"medium",v:[10,23]},{n:"Koujia Breastplate",stat:"worn",at:"medium",v:[10,24]},
   // heavy armour
   {n:"Platemail",stat:"worn",at:"heavy",v:[14,34]},{n:"Lorica Breastplate",stat:"worn",at:"heavy",v:[14,33]},
-  {n:"Yoroi Cuirass",stat:"worn",at:"heavy",v:[15,35]},{n:"Olthoi Cuirass",stat:"worn",at:"heavy",v:[16,38]}];
+  {n:"Yoroi Cuirass",stat:"worn",at:"heavy",v:[15,35]},{n:"Olthoi Cuirass",stat:"worn",at:"heavy",v:[16,38]},
+  // jewelry (gem material prepends; a cantrip bonus is rolled on top)
+  {n:"Ring",stat:"jewelry",jslot:"ring",v:[0,0]},{n:"Band",stat:"jewelry",jslot:"ring",v:[0,0]},
+  {n:"Signet",stat:"jewelry",jslot:"ring",v:[0,0]},{n:"Bracelet",stat:"jewelry",jslot:"ring",v:[0,0]},
+  {n:"Amulet",stat:"jewelry",jslot:"neck",v:[0,0]},{n:"Necklace",stat:"jewelry",jslot:"neck",v:[0,0]},
+  {n:"Pendant",stat:"jewelry",jslot:"neck",v:[0,0]}];
 // AC-authentic itemization (research Phase 6.8): every loot item has a workmanship (1-10, rolled within a
 // range set by its loot tier) and a material (the first word of its name). Material → tinker target;
 // workmanship (+ Salvaging skill) → how many salvage units it yields. 100 units of one material = 1 tink.
@@ -2347,6 +2354,32 @@ function rollNamedItem(){
   if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at;
   return it;
 }
+// ---- Jewelry: rings & necklaces (AC's signature skill/stat boosters). Each rolls one cantrip-style
+//      bonus — a skill aptitude, a vital boost, or armour. Bonuses are computed from equipped jewelry
+//      (derive/skillValue/armour), never mutate base stats, so equip/unequip is clean. ----
+const JEWELRY_BONUS=[
+  {kind:"skill",key:"war",     suf:"of War Magic"},      {kind:"skill",key:"life",    suf:"of Life Magic"},
+  {kind:"skill",key:"creature",suf:"of Enchantment"},    {kind:"skill",key:"item",    suf:"of Artifice"},
+  {kind:"skill",key:"magicd",  suf:"of Spirit"},          {kind:"skill",key:"meleed",  suf:"of Defending"},
+  {kind:"skill",key:"missiled",suf:"of Dodging"},         {kind:"skill",key:"heavy",   suf:"of Heavy Weapons"},
+  {kind:"skill",key:"missile", suf:"of Sniping"},         {kind:"skill",key:"healing", suf:"of Healing"},
+  {kind:"skill",key:"mana",    suf:"of Mana Flow"},       {kind:"skill",key:"arcane",  suf:"of Arcane Lore"},
+  {kind:"vital",vs:"mhp",      suf:"of Vigor"},           {kind:"vital",vs:"mmn",      suf:"of the Magus"},
+  {kind:"vital",vs:"mst",      suf:"of Stamina"},         {kind:"armor",               suf:"of Warding"},
+];
+function rollJewelryBonus(tier){
+  const b=JEWELRY_BONUS[irnd(0,JEWELRY_BONUS.length-1)], t=clamp(tier|0,1,5);
+  const v=b.kind==="vital"?irnd(14+t*4,22+t*7):b.kind==="armor"?irnd(5+t,9+t*2):irnd(4+t,7+t*2); // skill pts / armour / max-vital
+  return {kind:b.kind,key:b.key,vs:b.vs,v,suf:b.suf};
+}
+// sum a bonus kind across both equipped jewelry slots (+ worn-armour affix for armour/vital)
+function jewelryBonus(kind,arg){ let n=0;
+  for(const it of [player.ringItem,player.neckItem]){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
+    if(kind==="vital"){ if(bj.vs===arg) n+=bj.v; } else if(kind==="skill"){ if(bj.key===arg) n+=bj.v; } else n+=bj.v; }
+  return n;
+}
+function recomputeGearSkill(){ const g={}; for(const it of [player.ringItem,player.neckItem]){ const bj=it&&it.bonus;
+  if(bj&&bj.kind==="skill") g[bj.key]=(g[bj.key]||0)+bj.v; } player.gearSkill=g; }
 function rollItem(rare,tier){
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
     const id=SCROLL_POOL[irnd(0,SCROLL_POOL.length-1)];
@@ -2362,6 +2395,7 @@ function rollItem(rare,tier){
   const it={name:`${pre}${mat} ${base.n}`,stat:base.stat,v,work,mat,tier};   // material is the first word (AC convention)
   if(base.wt) it.wt=base.wt;
   if(base.at) it.at=base.at;
+  if(base.jslot){ it.jslot=base.jslot; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; return it; } // jewelry always bears a cantrip
   // affix roll: only gear (weapon/worn/armor), favouring rares & deep delves
   const affixable=base.stat==="weapon"||base.stat==="worn"||base.stat==="armor";
   if(affixable&&(rare||tier>=4)&&Math.random()<(rare?0.85:0.4)){
@@ -2372,23 +2406,28 @@ function rollItem(rare,tier){
 }
 function weaponProfile(){ const w=player.weapon; return (w&&w.wt&&WEAPON_TYPES[w.wt])||null; }
 // rarity grade (from loot tier + affix) → name colour, so deepened itemization reads at a glance
-function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tier||1;
+function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tier||1; const magical=it.affix||it.bonus;
   if(it.legendary) return {n:"legendary",c:"#ff5a5a"};
-  if(it.affix&&t>=5) return {n:"epic",c:"#ffb347"}; if(it.affix) return {n:"rare",c:"#c9a6ff"};
+  if(magical&&t>=5) return {n:"epic",c:"#ffb347"}; if(magical) return {n:"rare",c:"#c9a6ff"};
   if(t>=4) return {n:"fine",c:"#5aa8ff"}; if(t>=2) return {n:"uncommon",c:"#7fe6a0"}; return {n:"common",c:"#d7d0c2"}; }
 function rarityName(it){ const r=itemRarity(it); return `<span style="color:${r.c}">${it.name}</span>`; }
 function equipItem(it){
-  const slot=it.stat==="weapon"?"weapon":"armorItem",prev=player[slot];
+  const slot=it.stat==="jewelry"?(it.jslot==="neck"?"neckItem":"ringItem"):(it.stat==="weapon"?"weapon":"armorItem"),prev=player[slot];
   player[slot]=it; if(prev) player.inv.push(prev);
   if(slot==="weapon"){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
     const wp=WEAPON_TYPES[it.wt]; weaponMode=(wp&&wp.mode==="missile")?"bow":"sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=weaponMode==="sword";bowModel.visible=weaponMode==="bow";}
-  } else if(slot==="armorItem") derive(); // refresh max-vitals for "of Vigor/Endurance/Magus" affixes
+  } else { recomputeGearSkill(); derive(); } // refresh max-vitals + gear skill bonuses for armour/jewelry
+  if(it.stat==="jewelry"){ log(`Equipped <b>${it.name}</b> (${jewelryDesc(it)}).`,"loot"); return; }
   const tag=it.stat==="weapon"&&WEAPON_TYPES[it.wt]?` · ${WEAPON_TYPES[it.wt].blurb}`:"";
   log(`Equipped <b>${it.name}</b> (+${it.v} ${it.stat==="weapon"?"damage":"armor"}${tag}).`,"loot");
 }
+function jewelryDesc(it){ const b=it.bonus; if(!b) return "trinket";
+  if(b.kind==="skill") return `+${b.v} ${SKILL_BY_KEY[b.key]?SKILL_BY_KEY[b.key].n:b.key}`;
+  if(b.kind==="vital") return `+${b.v} max ${({mhp:"health",mst:"stamina",mmn:"mana"})[b.vs]}`;
+  return `+${b.v} armor`; }
 function applyItem(it){
-  if(it.stat==="weapon"||it.stat==="worn"){ equipItem(it); return; }
+  if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ equipItem(it); return; }
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
   else if(it.stat==="hp"){player.hp=Math.min(player.mhp,player.hp+it.v);log(`Used <b>${it.name}</b> (+${it.v} HP).`,"loot");}
   else if(it.stat==="mn"){player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}
@@ -2458,7 +2497,7 @@ function playerHurt(dmg,sx,sz,type){
   type=type||"melee";   // "melee" | "missile" | "magic" — selects which Defense skill mitigates
   // Armour blunts physical hits, scaled by the matching Defense skill; it only half-applies to spells.
   const armScale=type==="missile"?"missiled":"meleed";
-  let armT=(player.armor+wornArmorV()+itemBuff("armor"))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense
+  let armT=(player.armor+wornArmorV()+itemBuff("armor")+jewelryBonus("armor"))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense + jewelry
   if(type==="magic") armT*=0.5;
   dmg=Math.max(1,dmg*(1-armT/(armT+60)));
   // Each Defense skill also grants a flat avoidance, so it matters even with light armour
@@ -4403,6 +4442,8 @@ function buildTinker(){
       <div style="color:var(--dim);font-size:11px">Materials: <span style="color:var(--gold);font-weight:bold">${player.materials}</span></div>
       <div style="font-size:11px;margin-top:4px">⚔ ${player.weapon?rarityName(player.weapon)+" (+"+player.weapon.v+")"+(WEAPON_TYPES[player.weapon.wt]?" · "+WEAPON_TYPES[player.weapon.wt].blurb:""):"<span style='color:var(--dim)'>bare fists</span>"}</div>
       <div style="font-size:11px">🛡 ${player.armorItem?rarityName(player.armorItem)+" (+"+player.armorItem.v+")"+(ARMOR_TYPES[player.armorItem.at]?" · "+ARMOR_TYPES[player.armorItem.at].blurb:"")+(player.armorItem.affix?" · "+player.armorItem.affix.desc:""):"<span style='color:var(--dim)'>no armor worn</span>"}</div>
+      <div style="font-size:11px">💍 ${player.ringItem?rarityName(player.ringItem)+" · "+jewelryDesc(player.ringItem):"<span style='color:var(--dim)'>no ring</span>"}</div>
+      <div style="font-size:11px">📿 ${player.neckItem?rarityName(player.neckItem)+" · "+jewelryDesc(player.neckItem):"<span style='color:var(--dim)'>no necklace</span>"}</div>
     </div>`;
   document.getElementById('tinkW').onclick=()=>{ if(player.materials>=wCost){player.materials-=wCost;player.weaponTink+=2;SFX.quest();buildTinker();updateHUD();saveGame();} };
   document.getElementById('tinkA').onclick=()=>{ if(player.materials>=aCost){player.materials-=aCost;player.armorTink+=3;player.armor+=3;SFX.quest();buildTinker();updateHUD();saveGame();} };
@@ -4431,7 +4472,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="jewelry"?`${it.jslot==="neck"?"necklace":"ring"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
       <div class="ctl"><button class="tbtn" data-eq="${i}">Equip</button><button class="tbtn" data-sv="${i}">Salvage</button></div>`;
@@ -4453,7 +4494,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorItem:player.armorItem,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
+      weapon:player.weapon,armorItem:player.armorItem,ringItem:player.ringItem,neckItem:player.neckItem,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,
       tapers:player.tapers,prismTapers:player.prismTapers,
       elixMight:player.elixMight,elixSwift:player.elixSwift,
@@ -4481,7 +4522,7 @@ function applySaveObj(s){
     elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
     achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
-    weapon:s.weapon||null,armorItem:s.armorItem||null,
+    weapon:s.weapon||null,armorItem:s.armorItem||null,ringItem:s.ringItem||null,neckItem:s.neckItem||null,gearSkill:{},
     skills:migrateSkills(s.skills),patron:!!s.patron,vitae:s.vitae||0,heritage:s.heritage||"aluvian"});
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
@@ -4492,6 +4533,7 @@ function applySaveObj(s){
   // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
   player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
   questIdx=s.questIdx||0;questProg=s.questProg||0;questActive=!!s.questActive;
+  recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   // restore bound lifestone + spawn there
   if(s.boundLS>=0 && lifestones[s.boundLS]){
