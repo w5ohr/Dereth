@@ -1717,9 +1717,9 @@ function buildWorld(){
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8);
   // vendors in every town: capitals host a full market (one of each trade), smaller
   // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener)
-  const SPECIALISTS=["weaponsmith","armorer","scrivener"];
+  const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter"];
   CITIES.forEach((c,i)=>{
-    if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener"];
+    if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter"];
       all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; addMerchant(c.x+Math.cos(a)*12,c.z+Math.sin(a)*12,vt); });
     } else {
       addMerchant(c.x-9,c.z-7,"provisioner");
@@ -3975,6 +3975,22 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "item_blood_1","item_heart_1","item_impen_1","item_swift_1","item_blood_2","item_impen_2",
   "void_nether_2","void_nether_3","war_acid_1","war_force_1","war_blade_1","life_harm_1","life_harm_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
+// ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
+function gearIco(it){ return it.stat==="weapon"?"⚔️":it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":"📦"; }
+function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
+  return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
+function gearSellPrice(it){ if(it.scroll) return 30; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearDesc(it){
+  if(it.stat==="weapon") return `+${it.v} dmg · ${it.wt}`+(it.affix?` · ${it.affix.desc}`:"");
+  if(it.stat==="worn") return `+${it.v} armor · ${it.aslot||"chest"}`+(it.affix?` · ${it.affix.desc}`:"");
+  if(it.stat==="jewelry") return `${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · ${jewelryDesc(it)}`;
+  if(it.stat==="food") return `food · +${it.v} ${it.attr} ${it.dur}s`;
+  return `+${it.v} ${it.stat}`;
+}
+function genGearStock(){ const out=[]; for(const t of [1,2,2,3,3,4,5]){
+  let it=null; for(let k=0;k<8;k++){ const r=rollItem(t>=4,t); if(!r.scroll){it=r;break;} } if(!it) continue;
+  out.push({name:rarityName(it),desc:gearDesc(it),cost:gearPrice(it),ico:gearIco(it),gear:it}); } return out; }
+function gearVendorStock(){ if(activeShop){ if(!activeShop._stock||!activeShop._stock.length) activeShop._stock=genGearStock(); return activeShop._stock; } return genGearStock(); }
 // spell-component tapers (AC): colored tapers empower a cast a little; the universal
 // Prismatic Taper empowers it more. Bought in bundles; consumed when you cast offensive/healing magic.
 const TAPER_STOCK=[
@@ -4008,6 +4024,7 @@ const VENDOR_TYPES={
     {name:"Plate Breastplate",cost:220,desc:"Heavy chest armour.",ico:"🛡",gear:{name:"Plate Breastplate",stat:"worn",at:"heavy",aslot:"chest",v:26}},
     {name:"Plate Greaves",cost:160,desc:"Heavy leg armour.",ico:"🦵",gear:{name:"Plate Greaves",stat:"worn",at:"heavy",aslot:"legs",v:20}}]},
   scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>TAPER_STOCK.concat(scrollStock())},
+  outfitter:{title:"Outfitter",marker:"💰",mcol:"#ffcf6b",robe:0x7a5a2a,stock:gearVendorStock},
 };
 let activeShop=null;
 function buildMerchant(vt){
@@ -4048,7 +4065,8 @@ function buildShop(){
   });
   buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{const it=SHOP[+b.dataset.buy];
     if(player.gold<it.cost) return;
-    if(it.gear){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push(Object.assign({},it.gear)); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot"); }
+    if(it.gear){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push(Object.assign({},it.gear)); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
+      if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
     else if(it.scroll){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name}); log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
     else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
     SFX.gold();buildShop();updateHUD();saveGame();});
@@ -4064,15 +4082,15 @@ function buildShop(){
   sell.innerHTML="";
   player.inv.forEach((it,i)=>{
     if(it.scroll) return;   // scrolls are scribed (T), not sold
-    const price=salvageValue(it)*3;
-    const desc=it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · worn`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:`+${it.v} ${it.stat}`;
+    const price=gearSellPrice(it);
+    const desc=gearDesc(it);
     const row=document.createElement('div');row.className="row";
-    row.innerHTML=`<div><span class="lab">${it.name}</span> <span class="desc">— ${desc}</span></div>
+    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
       <div class="ctl"><button class="tbtn" data-sell="${i}">Sell — ${price}p</button></div>`;
     sell.appendChild(row);
   });
   sell.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sell;
-    player.gold+=salvageValue(player.inv[i])*3;player.inv.splice(i,1);SFX.gold();buildShop();updateHUD();saveGame();});
+    player.gold+=gearSellPrice(player.inv[i]);player.inv.splice(i,1);SFX.gold();buildShop();updateHUD();saveGame();});
 }
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
