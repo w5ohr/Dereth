@@ -2033,151 +2033,207 @@ function solid(hex,flat){return new THREE.MeshLambertMaterial({color:hex,flatSha
 function addEye(g,r,color,sx,y,z){const e=new THREE.Mesh(new THREE.SphereGeometry(r,8,8),new THREE.MeshBasicMaterial({color}));e.position.set(sx,y,z);g.add(e);}
 function part(g,geo,mat,x,y,z,rx,ry,rz){const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);if(rx)m.rotation.x=rx;if(ry)m.rotation.y=ry;if(rz)m.rotation.z=rz;g.add(m);return m;}
 
+// organic tapered limb with rounded ends (cheap "muscle" — no more plain tubes)
+function limb(g,mat,x,y,z,r1,r2,len,rx,rz){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,len,7),mat);
+  m.position.set(x,y,z); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz;
+  const a=new THREE.Mesh(new THREE.SphereGeometry(r1,7,6),mat);a.position.y=len/2;m.add(a);
+  const c=new THREE.Mesh(new THREE.SphereGeometry(r2,7,6),mat);c.position.y=-len/2;m.add(c);
+  g.add(m); return m;
+}
+function spike(g,mat,x,y,z,r,len,rx,rz){
+  const m=new THREE.Mesh(new THREE.ConeGeometry(r,len,5),mat);
+  m.position.set(x,y,z); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; g.add(m); return m;
+}
 function cDrudge(g,b,s){const m=skinMat("drudge","spots"),d=solid(b.c);
-  part(g,new THREE.CylinderGeometry(s*0.36,s*0.52,s*1.0,9),m,0,s*0.92,0,0.18);
-  part(g,new THREE.SphereGeometry(s*0.36,10,9),m,0,s*1.5,s*0.12);
-  part(g,new THREE.ConeGeometry(s*0.18,s*0.34,7),m,0,s*1.46,s*0.42,Math.PI/2);// snout
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.1,s*0.32,5),m,sx*s*0.27,s*1.78,0,0,0,sx*0.6);// ears
-  addEye(g,s*0.08,0xffd23b,-s*0.13,s*1.56,s*0.36);addEye(g,s*0.08,0xffd23b,s*0.13,s*1.56,s*0.36);
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.12,s*0.09,s*0.95,6),d,sx*s*0.48,s*0.9,s*0.12,0.6,0,sx*0.18);// arms
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.14,s*0.11,s*0.6,6),d,sx*s*0.22,s*0.3,0);// legs
-  return s*2.05;}
+  limb(g,m,0,s*0.9,0,s*0.32,s*0.46,s*0.85,0.22);                                          // hunched torso
+  part(g,new THREE.SphereGeometry(s*0.4,10,9),m,0,s*0.72,s*0.18).scale.set(1.1,0.9,1);    // pot belly
+  part(g,new THREE.SphereGeometry(s*0.31,10,9),m,0,s*1.42,s*0.2).scale.set(1,0.95,1.05);  // head thrust forward
+  part(g,new THREE.BoxGeometry(s*0.42,s*0.1,s*0.14),m,0,s*1.52,s*0.34);                   // heavy brow
+  part(g,new THREE.ConeGeometry(s*0.15,s*0.32,7),m,0,s*1.38,s*0.46,Math.PI/2);            // snout
+  part(g,new THREE.BoxGeometry(s*0.2,s*0.035,s*0.12),solid(0xf0ead8),0,s*1.31,s*0.44);    // fang line
+  for(const sx of[-1,1])spike(g,m,sx*s*0.3,s*1.6,s*0.06,s*0.12,s*0.42,0,sx*0.7);          // big pointed ears
+  addEye(g,s*0.07,0xffd23b,-s*0.12,s*1.47,s*0.36);addEye(g,s*0.07,0xffd23b,s*0.12,s*1.47,s*0.36);
+  for(const sx of[-1,1]){limb(g,d,sx*s*0.44,s*0.82,s*0.08,s*0.11,s*0.085,s*1.05,0.5,sx*0.22);  // long arms
+    const hx=sx*s*0.62,hy=s*0.3,hz=s*0.34; part(g,new THREE.SphereGeometry(s*0.12,7,6),d,hx,hy,hz);
+    for(let c=-1;c<=1;c++)spike(g,d,hx+c*s*0.05,hy-s*0.06,hz+s*0.09,s*0.028,s*0.14,Math.PI/2.3);}  // claws
+  for(const sx of[-1,1])limb(g,d,sx*s*0.2,s*0.32,0,s*0.13,s*0.1,s*0.62,0,sx*0.12);        // bent legs
+  return s*1.95;}
 
-function cBanderling(g,b,s){const m=skinMat("banderling","mottle"),d=solid(b.c);
-  part(g,new THREE.SphereGeometry(s*0.7,12,10),m,0,s*1.15,0).scale.set(1.2,1.1,1);// barrel chest
-  part(g,new THREE.SphereGeometry(s*0.32,9,8),m,0,s*1.7,s*0.18);// sunken head
-  part(g,new THREE.SphereGeometry(s*0.22,8,7),m,0,s*1.55,s*0.42);// jaw/muzzle
-  addEye(g,s*0.07,0xff7a3a,-s*0.12,s*1.74,s*0.34);addEye(g,s*0.07,0xff7a3a,s*0.12,s*1.74,s*0.34);
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.2,s*0.16,s*1.4,7),d,sx*s*0.7,s*0.85,s*0.1,0.35,0,sx*0.12);// long arms
-  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.2,7,6),d,sx*s*0.78,s*0.22,s*0.25);// fists
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.2,s*0.16,s*0.55,6),d,sx*s*0.3,s*0.28,0);// stubby legs
+function cBanderling(g,b,s){const m=skinMat("banderling","mottle"),d=solid(b.c),f=solid(0xf0ead8);
+  const chest=part(g,new THREE.SphereGeometry(s*0.72,12,10),m,0,s*1.2,0);chest.scale.set(1.25,1.15,1.0); // barrel chest
+  part(g,new THREE.SphereGeometry(s*0.5,10,9),m,0,s*0.78,s*0.05).scale.set(1.15,0.9,1);     // gut
+  for(let i=0;i<7;i++)part(g,new THREE.IcosahedronGeometry(s*0.2,0),m,rnd(-0.6,0.6)*s,s*(1.3+rnd(0,0.5)),rnd(-0.5,0.2)*s); // shaggy fur clumps
+  part(g,new THREE.SphereGeometry(s*0.3,9,8),m,0,s*1.72,s*0.16);                            // sunken head
+  part(g,new THREE.SphereGeometry(s*0.22,8,7),m,0,s*1.6,s*0.4).scale.set(1.1,0.8,1);        // heavy muzzle
+  for(const sx of[-1,1])spike(g,f,sx*s*0.1,s*1.5,s*0.5,s*0.04,s*0.16,-0.4);                 // lower fangs (underbite)
+  addEye(g,s*0.07,0xff7a3a,-s*0.12,s*1.76,s*0.34);addEye(g,s*0.07,0xff7a3a,s*0.12,s*1.76,s*0.34);
+  part(g,new THREE.BoxGeometry(s*0.5,s*0.08,s*0.14),m,0,s*1.83,s*0.28);                     // brow ridge
+  for(const sx of[-1,1]){limb(g,d,sx*s*0.78,s*0.95,s*0.05,s*0.22,s*0.17,s*1.5,0.3,sx*0.14); // long powerful arms
+    part(g,new THREE.SphereGeometry(s*0.22,8,7),d,sx*s*0.9,s*0.2,s*0.28);}                  // big fists
+  for(const sx of[-1,1])limb(g,d,sx*s*0.32,s*0.32,0,s*0.22,s*0.17,s*0.62);                  // stubby legs
   return s*2.15;}
 
-function cMosswart(g,b,s){const m=skinMat("mosswart","spots"),d=solid(b.c);
-  const body=part(g,new THREE.SphereGeometry(s*0.7,12,10),m,0,s*0.55,0);body.scale.set(1.25,0.85,1.1);
-  part(g,new THREE.SphereGeometry(s*0.5,10,8),m,0,s*0.75,s*0.45).scale.set(1.15,0.7,0.9);// wide head/mouth
-  part(g,new THREE.BoxGeometry(s*0.8,s*0.06,s*0.4),solid(0x20140e),0,s*0.66,s*0.66);// mouth line
-  for(const sx of[-1,1])addEye(g,s*0.13,0xe8e23b,sx*s*0.3,s*1.0,s*0.42);// bulging eyes on top
-  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.16,7,6),d,sx*s*0.55,s*0.18,s*0.2).scale.set(1,0.6,1.4);// webbed feet
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.1,s*0.09,s*0.5,6),d,sx*s*0.55,s*0.35,-s*0.2,0,0,sx*0.5);// arms
-  return s*1.5;}
+function cMosswart(g,b,s){const m=skinMat("mosswart","spots"),d=solid(b.c),bel=solid(0x9ac06a);
+  const body=part(g,new THREE.SphereGeometry(s*0.68,12,10),m,0,s*0.6,0);body.scale.set(1.2,0.95,1.05);
+  part(g,new THREE.SphereGeometry(s*0.5,10,9),bel,0,s*0.5,s*0.4).scale.set(1.0,0.8,0.7);    // pale throat/belly
+  const head=part(g,new THREE.SphereGeometry(s*0.52,12,9),m,0,s*0.92,s*0.32);head.scale.set(1.2,0.7,0.95); // wide flat toad head
+  part(g,new THREE.BoxGeometry(s*0.85,s*0.05,s*0.5),solid(0x20140e),0,s*0.82,s*0.6);        // wide mouth line
+  for(const sx of[-1,1]){part(g,new THREE.SphereGeometry(s*0.17,8,7),m,sx*s*0.28,s*1.12,s*0.3);  // eye bulge stalks
+    addEye(g,s*0.1,0xe8e23b,sx*s*0.28,s*1.15,s*0.42);}                                      // bulging eyes on top
+  for(const sx of[-1,1]){limb(g,d,sx*s*0.5,s*0.5,s*0.08,s*0.1,s*0.08,s*0.55,0.4,sx*0.5);    // arms
+    for(let c=-1;c<=1;c++)spike(g,d,sx*s*0.66+c*s*0.05,s*0.28,s*0.28,s*0.03,s*0.16,Math.PI/2.2);} // webbed fingers
+  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.18,8,7),d,sx*s*0.32,s*0.16,s*0.18).scale.set(1,0.55,1.5); // splayed webbed feet
+  return s*1.55;}
 
-function cReedshark(g,b,s){const m=skinMat("reedshark","scales"),d=solid(b.c);
-  const body=part(g,new THREE.SphereGeometry(s*0.55,12,10),m,0,s*0.7,0);body.scale.set(0.85,0.9,2.0);// streamlined
-  part(g,new THREE.ConeGeometry(s*0.42,s*0.9,9),m,0,s*0.72,s*1.0,Math.PI/2);// snout/jaws
-  part(g,new THREE.BoxGeometry(s*0.5,s*0.05,s*0.5),solid(0xf0ead8),0,s*0.6,s*1.05);// teeth line
-  addEye(g,s*0.09,0xff3b3b,-s*0.28,s*0.85,s*0.6);addEye(g,s*0.09,0xff3b3b,s*0.28,s*0.85,s*0.6);
-  part(g,new THREE.ConeGeometry(s*0.3,s*0.6,4),m,0,s*1.25,0,0,Math.PI/4);// dorsal fin
-  part(g,new THREE.ConeGeometry(s*0.4,s*0.7,4),m,0,s*0.75,-s*1.2,Math.PI/2,Math.PI/4);// tail fin
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.18,s*0.5,4),m,sx*s*0.5,s*0.55,s*0.1,0,0,sx*1.4);// side fins
-  for(const sx of[-1,1]){part(g,new THREE.CylinderGeometry(s*0.1,s*0.08,s*0.5,6),d,sx*s*0.32,s*0.28,s*0.4);part(g,new THREE.CylinderGeometry(s*0.1,s*0.08,s*0.5,6),d,sx*s*0.32,s*0.28,-s*0.5);}// legs
-  return s*1.5;}
+function cReedshark(g,b,s){const m=skinMat("reedshark","scales"),d=solid(b.c),pale=solid(0xcdb48a);
+  const body=part(g,new THREE.SphereGeometry(s*0.55,12,10),m,0,s*0.72,0);body.scale.set(0.85,0.95,2.1); // streamlined
+  part(g,new THREE.SphereGeometry(s*0.45,12,10),pale,0,s*0.58,s*0.3).scale.set(0.8,0.6,1.6);  // pale underside
+  part(g,new THREE.ConeGeometry(s*0.42,s*1.0,10),m,0,s*0.74,s*1.05,Math.PI/2);                // shark snout/jaws
+  part(g,new THREE.ConeGeometry(s*0.32,s*0.5,10),solid(0x20140e),0,s*0.66,s*1.15,Math.PI/2);  // dark mouth cavity
+  for(let i=0;i<6;i++){const a=i/5*Math.PI-Math.PI/2;spike(g,pale,Math.cos(a)*s*0.28,s*0.7+Math.sin(a)*s*0.16,s*1.32,s*0.03,s*0.16,-Math.PI/2);} // teeth
+  addEye(g,s*0.09,0xff3b3b,-s*0.28,s*0.9,s*0.62);addEye(g,s*0.09,0xff3b3b,s*0.28,s*0.9,s*0.62);
+  for(const sx of[-1,1])for(let i=0;i<3;i++)part(g,new THREE.BoxGeometry(s*0.03,s*0.16,s*0.02),solid(0x5a3f22),sx*s*0.42,s*0.74,s*0.5-i*s*0.12); // gill slits
+  spike(g,m,0,s*1.3,s*0.05,s*0.28,s*0.62,0,0);                                                // tall dorsal fin
+  part(g,new THREE.ConeGeometry(s*0.4,s*0.75,4),m,0,s*0.8,-s*1.25,Math.PI/2,Math.PI/4);       // tail fin
+  for(const sx of[-1,1])spike(g,m,sx*s*0.5,s*0.55,s*0.15,s*0.16,s*0.5,0,sx*1.4);              // pectoral fins
+  for(const sx of[-1,1]){limb(g,d,sx*s*0.32,s*0.3,s*0.45,s*0.1,s*0.08,s*0.5);limb(g,d,sx*s*0.32,s*0.3,-s*0.5,s*0.1,s*0.08,s*0.5);} // legs
+  return s*1.55;}
 
 function cTusker(g,b,s){const m=skinMat("tusker","scales"),d=solid(b.c),tu=solid(0xe8e0c8);
-  const body=part(g,new THREE.SphereGeometry(s*0.75,12,10),m,0,s*0.95,0);body.scale.set(1.1,0.95,1.5);
-  part(g,new THREE.SphereGeometry(s*0.55,11,9),m,0,s*1.05,s*0.95);// big head
-  part(g,new THREE.CylinderGeometry(s*0.16,s*0.22,s*0.6,8),m,0,s*0.85,s*1.35,Math.PI/2.4);// snout/trunk
-  addEye(g,s*0.09,0xffd23b,-s*0.28,s*1.25,s*1.0);addEye(g,s*0.09,0xffd23b,s*0.28,s*1.25,s*1.0);
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.1,s*0.9,6),tu,sx*s*0.3,s*0.78,s*1.3,Math.PI*0.42,0,sx*0.2);// tusks
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.09,s*0.35,5),m,sx*s*0.42,s*1.45,s*0.7,0,0,sx*0.4);// ears
-  for(const sx of[-1,1])for(const fz of[-1,1])part(g,new THREE.CylinderGeometry(s*0.18,s*0.15,s*0.85,6),d,sx*s*0.45,s*0.4,fz*s*0.6);// 4 legs
-  return s*1.7;}
+  const body=part(g,new THREE.SphereGeometry(s*0.78,12,10),m,0,s*1.0,0);body.scale.set(1.15,1.0,1.55);
+  part(g,new THREE.SphereGeometry(s*0.5,10,9),m,0,s*1.35,-s*0.2).scale.set(1.0,0.8,1.1);      // humped back
+  const head=part(g,new THREE.SphereGeometry(s*0.55,12,10),m,0,s*1.02,s*1.0);head.scale.set(1.05,1.0,1.05);
+  part(g,new THREE.CylinderGeometry(s*0.2,s*0.26,s*0.55,9),m,0,s*0.82,s*1.4,Math.PI/2.3);     // broad snout
+  part(g,new THREE.SphereGeometry(s*0.12,8,7),solid(0x1a1008),0,s*0.78,s*1.66);               // nose
+  addEye(g,s*0.08,0xffd23b,-s*0.28,s*1.2,s*1.05);addEye(g,s*0.08,0xffd23b,s*0.28,s*1.2,s*1.05);
+  for(const sx of[-1,1])spike(g,tu,sx*s*0.28,s*0.78,s*1.4,s*0.09,s*0.85,Math.PI*0.42,sx*0.18); // up-curved tusks
+  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.1,s*0.4,5),m,sx*s*0.44,s*1.45,s*0.72,0,0,sx*0.5); // ears
+  for(const sx of[-1,1])for(const fz of[-1,1])limb(g,d,sx*s*0.46,s*0.42,fz*s*0.62,s*0.19,s*0.15,s*0.85); // 4 pillar legs
+  return s*1.9;}
 
 function cAuroch(g,b,s){const m=skinMat("auroch","mottle"),d=solid(b.c),hm=solid(0xe8e0c8);
-  const body=part(g,new THREE.SphereGeometry(s*0.7,12,10),m,0,s*0.95,0);body.scale.set(1.05,0.95,1.6);
-  part(g,new THREE.SphereGeometry(s*0.45,10,8),m,0,s*0.95,s*1.0);// head
-  part(g,new THREE.BoxGeometry(s*0.5,s*0.3,s*0.4),m,0,s*0.78,s*1.3);// muzzle
-  addEye(g,s*0.08,0xffcaa0,-s*0.28,s*1.1,s*1.1);addEye(g,s*0.08,0xffcaa0,s*0.28,s*1.1,s*1.1);
-  for(const sx of[-1,1]){part(g,new THREE.TorusGeometry(s*0.28,s*0.07,6,10,Math.PI),hm,sx*s*0.3,s*1.3,s*0.85,0,sx*1.2,sx*0.3);}// curved horns
-  for(const sx of[-1,1])for(const fz of[-1,1])part(g,new THREE.CylinderGeometry(s*0.15,s*0.12,s*0.95,6),d,sx*s*0.42,s*0.45,fz*s*0.7);// legs
-  part(g,new THREE.CylinderGeometry(s*0.06,s*0.02,s*0.7,5),d,0,s*0.95,-s*1.1,-0.6);// tail
-  return s*1.7;}
+  const body=part(g,new THREE.SphereGeometry(s*0.72,12,10),m,0,s*1.0,0);body.scale.set(1.05,1.0,1.7);
+  part(g,new THREE.SphereGeometry(s*0.55,10,9),m,0,s*1.32,s*0.55).scale.set(1.1,0.9,0.9);     // shoulder hump
+  const head=part(g,new THREE.SphereGeometry(s*0.42,10,9),m,0,s*1.0,s*1.15);head.scale.set(1,1.05,1.1);
+  part(g,new THREE.BoxGeometry(s*0.42,s*0.34,s*0.42),m,0,s*0.82,s*1.4);                        // blunt muzzle
+  part(g,new THREE.SphereGeometry(s*0.1,8,7),solid(0x1a1008),0,s*0.78,s*1.62);                 // nose
+  addEye(g,s*0.08,0xffcaa0,-s*0.28,s*1.15,s*1.28);addEye(g,s*0.08,0xffcaa0,s*0.28,s*1.15,s*1.28);
+  for(const sx of[-1,1]){part(g,new THREE.TorusGeometry(s*0.3,s*0.07,6,10,Math.PI*0.9),hm,sx*s*0.32,s*1.28,s*1.1,0,sx*1.2,sx*0.4);
+    spike(g,hm,sx*s*0.56,s*1.42,s*1.1,s*0.06,s*0.28,0,sx*0.9);}                                // curved horns + tips
+  for(const sx of[-1,1])for(const fz of[-1,1])limb(g,d,sx*s*0.44,s*0.48,fz*s*0.72,s*0.15,s*0.12,s*1.0); // legs
+  part(g,new THREE.CylinderGeometry(s*0.06,s*0.02,s*0.8,5),d,0,s*1.0,-s*1.15,-0.5);            // tail
+  return s*1.85;}
 
-function cShadow(g,b,s){const robe=new THREE.MeshLambertMaterial({color:b.c,transparent:true,opacity:0.92});
-  part(g,new THREE.ConeGeometry(s*0.7,s*1.9,10),robe,0,s*1.0,0);// flowing robe
-  part(g,new THREE.SphereGeometry(s*0.34,10,9),robe,0,s*1.85,0);// hooded head
-  part(g,new THREE.ConeGeometry(s*0.36,s*0.5,10),robe,0,s*2.05,0);// hood point
-  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.2,10,9),new THREE.MeshBasicMaterial({color:0xc060ff}));core.position.set(0,s*1.15,s*0.2);g.add(core);// glowing core
-  const cl=new THREE.PointLight(0xc060ff,1.2,8);cl.position.set(0,s*1.3,0);g.add(cl);
-  addEye(g,s*0.08,0xff66ff,-s*0.12,s*1.85,s*0.28);addEye(g,s*0.08,0xff66ff,s*0.12,s*1.85,s*0.28);
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.12,s*0.8,6),robe,sx*s*0.5,s*1.1,s*0.1,0.3,0,sx*0.4);// draping sleeves
-  return s*2.4;}
+function cShadow(g,b,s){const robe=new THREE.MeshLambertMaterial({color:b.c,transparent:true,opacity:0.9});
+  part(g,new THREE.ConeGeometry(s*0.72,s*2.0,12),robe,0,s*1.0,0);                        // flowing robe
+  for(let i=0;i<8;i++){const a=i/8*6.28;spike(g,robe,Math.cos(a)*s*0.55,s*0.25,Math.sin(a)*s*0.55,s*0.12,s*0.5,0);} // tattered hem
+  part(g,new THREE.SphereGeometry(s*0.32,10,9),robe,0,s*1.9,0);                          // hooded head
+  part(g,new THREE.ConeGeometry(s*0.36,s*0.55,10),robe,0,s*2.12,0);                      // hood point
+  part(g,new THREE.SphereGeometry(s*0.22,10,9),solid(0x0a0410),0,s*1.9,s*0.16);          // dark void inside hood
+  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.2,10,9),new THREE.MeshBasicMaterial({color:0xc060ff}));core.position.set(0,s*1.2,s*0.18);g.add(core);
+  const cl=new THREE.PointLight(0xc060ff,1.1,8);cl.position.set(0,s*1.4,0);g.add(cl);
+  addEye(g,s*0.07,0xff66ff,-s*0.11,s*1.9,s*0.3);addEye(g,s*0.07,0xff66ff,s*0.11,s*1.9,s*0.3);
+  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.13,s*0.9,7),robe,sx*s*0.52,s*1.1,s*0.08,0.35,0,sx*0.42); // draping sleeves
+  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.09,7,6),solid(0xd8b0ff),sx*s*0.72,s*0.72,s*0.2);       // spectral claw-hands
+  return s*2.5;}
 
-function cOlthoi(g,b,s){const m=skinMat("olthoi","scales"),d=solid(0x6a1f1f,true);
-  part(g,new THREE.SphereGeometry(s*0.6,12,10),m,0,s*0.7,-s*0.6).scale.set(1.0,0.85,1.4);// abdomen
-  part(g,new THREE.SphereGeometry(s*0.45,11,9),m,0,s*0.72,s*0.4).scale.set(1.0,0.9,1.1);// thorax
-  part(g,new THREE.SphereGeometry(s*0.33,10,8),m,0,s*0.7,s*1.0);// head
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.08,s*0.6,6),solid(0x2a0c0c),sx*s*0.2,s*0.6,s*1.4,Math.PI*0.5,0,sx*0.3);// mandibles
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.02,s*0.02,s*0.5,4),d,sx*s*0.12,s*1.0,s*1.2,-0.7,0,sx*0.3);// antennae
-  addEye(g,s*0.1,0xff2020,-s*0.18,s*0.85,s*1.2);addEye(g,s*0.1,0xff2020,s*0.18,s*0.85,s*1.2);
-  for(let i=0;i<3;i++)for(const sx of[-1,1]){const lz=(i-1)*s*0.5;
-    part(g,new THREE.CylinderGeometry(s*0.05,s*0.04,s*0.7,5),d,sx*s*0.55,s*0.55,s*0.3+lz,0,0,sx*0.9);// upper leg
-    part(g,new THREE.CylinderGeometry(s*0.04,s*0.03,s*0.6,5),d,sx*s*0.85,s*0.25,s*0.3+lz,0,0,sx*0.5);}// lower leg
-  part(g,new THREE.ConeGeometry(s*0.15,s*0.6,6),m,0,s*0.7,-s*1.4,-Math.PI/2);// stinger tail
-  return s*1.5;}
+function cOlthoi(g,b,s){const m=skinMat("olthoi","scales"),d=solid(0x6a1f1f,true),dk=solid(0x2a0c0c,true);
+  part(g,new THREE.SphereGeometry(s*0.62,12,10),m,0,s*0.75,-s*0.7).scale.set(1.05,0.9,1.5);   // abdomen
+  for(let i=0;i<3;i++)part(g,new THREE.TorusGeometry(s*(0.5-i*0.08),s*0.05,5,10),dk,0,s*0.82,-s*(0.35+i*0.4),Math.PI/2); // plate ridges
+  part(g,new THREE.SphereGeometry(s*0.46,12,10),m,0,s*0.78,s*0.35).scale.set(1.0,0.95,1.1);   // thorax
+  part(g,new THREE.SphereGeometry(s*0.33,11,9),m,0,s*0.78,s*0.95);                             // head
+  for(const sx of[-1,1])spike(g,dk,sx*s*0.2,s*0.66,s*1.4,s*0.08,s*0.66,Math.PI*0.55,sx*0.35); // mandibles
+  for(const sx of[-1,1])limb(g,d,sx*s*0.1,s*1.05,s*1.15,s*0.02,s*0.015,s*0.55,-0.7,sx*0.3);   // antennae
+  for(const sx of[-1,1]){addEye(g,s*0.1,0xff2020,sx*s*0.18,s*0.9,s*1.18);addEye(g,s*0.05,0xffa0a0,sx*s*0.18,s*0.92,s*1.22);}
+  for(let i=0;i<3;i++)for(const sx of[-1,1]){const lz=(i-1)*s*0.5+s*0.3;
+    limb(g,d,sx*s*0.5,s*0.6,lz,s*0.05,s*0.04,s*0.7,0,sx*0.95);      // upper leg (out+up)
+    limb(g,d,sx*s*0.82,s*0.28,lz,s*0.04,s*0.03,s*0.62,0,sx*0.4);}   // lower leg (down)
+  spike(g,dk,0,s*0.78,-s*1.5,s*0.14,s*0.6,-Math.PI/2);              // stinger tail
+  return s*1.6;}
 
-function cGromnie(g,b,s){const m=skinMat("gromnie","scales"),d=solid(b.c);
-  const body=part(g,new THREE.SphereGeometry(s*0.5,12,10),m,0,s*0.5,0);body.scale.set(0.9,0.8,1.8);// low body
-  part(g,new THREE.SphereGeometry(s*0.36,10,8),m,0,s*0.55,s*0.95);// head
-  part(g,new THREE.ConeGeometry(s*0.24,s*0.7,8),m,0,s*0.5,s*1.35,Math.PI/2);// long snout
-  part(g,new THREE.BoxGeometry(s*0.4,s*0.06,s*0.55),solid(0xf0ead8),0,s*0.42,s*1.2);// teeth
-  addEye(g,s*0.08,0x9af03a,-s*0.2,s*0.7,s*1.0);addEye(g,s*0.08,0x9af03a,s*0.2,s*0.7,s*1.0);
-  for(let i=0;i<5;i++)part(g,new THREE.ConeGeometry(s*0.1,s*0.28,5),solid(0x9af03a),0,s*0.85,s*0.6-i*s*0.32);// back spikes
-  for(const sx of[-1,1])for(const fz of[-1,1])part(g,new THREE.CylinderGeometry(s*0.09,s*0.07,s*0.5,6),d,sx*s*0.42,s*0.22,fz*s*0.55,0,0,sx*0.5);// splayed legs
-  part(g,new THREE.ConeGeometry(s*0.18,s*1.3,7),m,0,s*0.45,-s*1.3,-Math.PI/2);// long tail
-  return s*1.2;}
+function cGromnie(g,b,s){const m=skinMat("gromnie","scales"),d=solid(b.c),pale=solid(0xc8d8b0);
+  const body=part(g,new THREE.SphereGeometry(s*0.5,12,10),m,0,s*0.55,0);body.scale.set(0.95,0.85,1.9); // low reptilian body
+  part(g,new THREE.SphereGeometry(s*0.4,12,10),pale,0,s*0.4,s*0.2).scale.set(0.75,0.55,1.7);   // pale belly
+  const head=part(g,new THREE.SphereGeometry(s*0.36,11,9),m,0,s*0.62,s*1.0);head.scale.set(1,0.9,1.1);
+  part(g,new THREE.ConeGeometry(s*0.24,s*0.75,9),m,0,s*0.56,s*1.4,Math.PI/2);                  // upper snout
+  part(g,new THREE.BoxGeometry(s*0.34,s*0.1,s*0.5),m,0,s*0.44,s*1.32);                          // lower jaw
+  part(g,new THREE.BoxGeometry(s*0.36,s*0.04,s*0.4),solid(0xf0ead8),0,s*0.5,s*1.28);            // teeth line
+  addEye(g,s*0.08,0x9af03a,-s*0.2,s*0.78,s*1.05);addEye(g,s*0.08,0x9af03a,s*0.2,s*0.78,s*1.05);
+  for(const sx of[-1,1])spike(g,m,sx*s*0.22,s*0.9,s*0.95,s*0.05,s*0.22,0,sx*0.5);              // brow horns
+  for(let i=0;i<7;i++)spike(g,solid(0x9af03a),0,s*(0.9-Math.abs(i-3)*0.03),s*0.75-i*s*0.32,s*0.09,s*0.3,0.2); // back-to-tail spikes
+  for(const sx of[-1,1])for(const fz of[-1,1])limb(g,d,sx*s*0.44,s*0.24,fz*s*0.6,s*0.1,s*0.08,s*0.55,0,sx*0.6); // splayed legs
+  part(g,new THREE.ConeGeometry(s*0.2,s*1.5,8),m,0,s*0.5,-s*1.45,-Math.PI/2);                  // long tapering tail
+  return s*1.25;}
 
 function cLugian(g,b,s){const m=skinMat("lugian","mottle"),d=solid(b.c,true);
-  const body=part(g,new THREE.BoxGeometry(s*1.3,s*1.5,s*0.9),m,0,s*1.1,0);body.castShadow=true;// massive stony torso
-  part(g,new THREE.SphereGeometry(s*0.4,8,7),m,0,s*1.95,s*0.05);// small head sunk into shoulders
-  addEye(g,s*0.07,0xffd23b,-s*0.13,s*1.98,s*0.32);addEye(g,s*0.07,0xffd23b,s*0.13,s*1.98,s*0.32);
-  for(const sx of[-1,1]){part(g,new THREE.BoxGeometry(s*0.5,s*0.5,s*0.5),m,sx*s*0.95,s*1.6,0);// shoulders
-    part(g,new THREE.CylinderGeometry(s*0.22,s*0.26,s*1.3,6),d,sx*s*0.95,s*0.9,0,0.1);// thick arms
-    part(g,new THREE.SphereGeometry(s*0.28,7,6),d,sx*s*0.95,s*0.25,s*0.1);}// fists
-  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.4,s*0.7,s*0.5),d,sx*s*0.4,s*0.35,0);// legs
-  // craggy rock chunks
-  for(let i=0;i<4;i++)part(g,new THREE.DodecahedronGeometry(s*0.22,0),d,rnd(-0.6,0.6)*s,s*(1.0+rnd(0,0.9)),rnd(-0.4,0.4)*s);
-  return s*2.4;}
-function cTumerok(g,b,s){const m=skinMat("tumerok","spots"),d=solid(b.c);
-  part(g,new THREE.CylinderGeometry(s*0.34,s*0.42,s*1.1,8),m,0,s*1.0,0);// lean torso
-  part(g,new THREE.SphereGeometry(s*0.32,10,8),m,0,s*1.6,0);// head
-  // feathered/horned crest
-  for(let i=-1;i<=1;i++)part(g,new THREE.ConeGeometry(s*0.06,s*0.5,4),solid(0xc24a3a),i*s*0.12,s*1.95,0,0,0,i*0.3);
-  addEye(g,s*0.07,0xffe23b,-s*0.12,s*1.66,s*0.3);addEye(g,s*0.07,0xffe23b,s*0.12,s*1.66,s*0.3);
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.1,s*0.09,s*0.85,6),d,sx*s*0.42,s*0.95,0,0,0,sx*0.12);// arms
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.13,s*0.1,s*0.7,6),d,sx*s*0.2,s*0.35,0);// legs
-  // spear in right hand
-  part(g,new THREE.CylinderGeometry(s*0.04,s*0.04,s*2.4,5),solid(0x6a4a2a),s*0.5,s*1.0,s*0.2,0.15);
-  part(g,new THREE.ConeGeometry(s*0.1,s*0.3,5),solid(0xd8dde6),s*0.5,s*2.2,s*0.2);
+  const body=part(g,new THREE.BoxGeometry(s*1.35,s*1.5,s*0.95),m,0,s*1.15,0);body.castShadow=true; // massive stony torso
+  for(let i=0;i<5;i++)part(g,new THREE.DodecahedronGeometry(s*0.24,0),d,rnd(-0.55,0.55)*s,s*(1.0+rnd(0,0.9)),s*0.5); // craggy chest plates
+  part(g,new THREE.BoxGeometry(s*0.55,s*0.4,s*0.5),m,0,s*1.95,s*0.02);                          // blocky sunk head
+  part(g,new THREE.BoxGeometry(s*0.6,s*0.1,s*0.1),m,0,s*2.02,s*0.24);                           // heavy brow
+  addEye(g,s*0.07,0xffd23b,-s*0.14,s*1.96,s*0.28);addEye(g,s*0.07,0xffd23b,s*0.14,s*1.96,s*0.28);
+  part(g,new THREE.BoxGeometry(s*0.3,s*0.14,s*0.3),d,0,s*1.78,s*0.16);                          // jutting jaw
+  for(const sx of[-1,1]){part(g,new THREE.BoxGeometry(s*0.55,s*0.55,s*0.55),m,sx*s*1.0,s*1.62,0); // boulder shoulders
+    limb(g,d,sx*s*1.0,s*0.85,0,s*0.26,s*0.3,s*1.35,0.08);                                       // thick arms
+    part(g,new THREE.DodecahedronGeometry(s*0.32,0),d,sx*s*1.0,s*0.2,s*0.08);}                   // rock fists
+  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.42,s*0.75,s*0.52),d,sx*s*0.4,s*0.38,0); // legs
+  return s*2.45;}
+function cTumerok(g,b,s){const m=skinMat("tumerok","spots"),d=solid(b.c),cr=solid(0xc24a3a);
+  limb(g,m,0,s*1.0,0,s*0.3,s*0.38,s*1.1,0.03);                        // lean muscular torso
+  part(g,new THREE.SphereGeometry(s*0.3,11,9),m,0,s*1.62,s*0.05);     // head
+  part(g,new THREE.BoxGeometry(s*0.28,s*0.14,s*0.2),m,0,s*1.52,s*0.22); // jaw/muzzle
+  for(let i=-2;i<=2;i++)spike(g,cr,i*s*0.09,s*1.9,-s*0.02,s*0.05,s*(0.4-Math.abs(i)*0.05),0,i*0.22); // bone/feather crest
+  addEye(g,s*0.07,0xffe23b,-s*0.12,s*1.66,s*0.28);addEye(g,s*0.07,0xffe23b,s*0.12,s*1.66,s*0.28);
+  for(const sx of[-1,1]){part(g,new THREE.SphereGeometry(s*0.16,8,7),m,sx*s*0.36,s*1.5,0);      // shoulders
+    limb(g,d,sx*s*0.42,s*1.05,0,s*0.1,s*0.085,s*0.9,0,sx*0.14);}                                // arms
+  for(const sx of[-1,1])limb(g,d,sx*s*0.18,s*0.4,0,s*0.13,s*0.1,s*0.8);                          // legs
+  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.06,s*0.2,s*0.02),cr,sx*s*0.1,s*1.62,s*0.27); // war paint
+  part(g,new THREE.CylinderGeometry(s*0.035,s*0.035,s*2.4,6),solid(0x6a4a2a),s*0.5,s*1.05,s*0.18,0.12); // spear haft
+  spike(g,solid(0xd8dde6),s*0.5,s*2.25,s*0.32,s*0.09,s*0.32,0);                                  // spear head
   return s*2.0;}
-function cMattekar(g,b,s){const m=skinMat("mattekar","scales"),d=solid(b.c);
-  const body=part(g,new THREE.SphereGeometry(s*0.6,12,10),m,0,s*0.7,0);body.scale.set(1.0,0.85,1.45);
-  part(g,new THREE.SphereGeometry(s*0.4,10,8),m,0,s*0.8,s*0.85);// head
-  part(g,new THREE.ConeGeometry(s*0.22,s*0.4,7),m,0,s*0.72,s*1.2,Math.PI/2);// snout
-  addEye(g,s*0.08,0x7fe0ff,-s*0.2,s*0.92,s*0.95);addEye(g,s*0.08,0x7fe0ff,s*0.2,s*0.92,s*0.95);
-  // horn ridge
-  for(let i=0;i<4;i++)part(g,new THREE.ConeGeometry(s*0.09,s*0.3,5),solid(0xe8eef4),0,s*1.05,s*0.5-i*s*0.3,0.2);
-  for(const sx of[-1,1])for(const fz of[-1,1]){part(g,new THREE.CylinderGeometry(s*0.13,s*0.1,s*0.7,6),d,sx*s*0.4,s*0.35,fz*s*0.5);
-    for(let c=0;c<3;c++)part(g,new THREE.ConeGeometry(s*0.04,s*0.18,4),solid(0xe8eef4),sx*s*0.4+(c-1)*s*0.08,s*0.04,fz*s*0.5+s*0.12,Math.PI/2);}// clawed feet
-  return s*1.4;}
-function cSkeleton(g,b,s){const bone=solid(0xe8e4d8,true);
-  part(g,new THREE.CylinderGeometry(s*0.28,s*0.22,s*0.9,8),bone,0,s*0.95,0);// ribcage/torso
-  for(let i=0;i<4;i++)part(g,new THREE.TorusGeometry(s*0.26,s*0.03,5,10),bone,0,s*0.7+i*s*0.18,0,Math.PI/2);// ribs
-  part(g,new THREE.SphereGeometry(s*0.26,10,8),bone,0,s*1.6,0.02);// skull
-  part(g,new THREE.BoxGeometry(s*0.28,s*0.12,s*0.18),bone,0,s*1.48,s*0.12);// jaw
-  addEye(g,s*0.06,0xff3030,-s*0.1,s*1.62,s*0.2);addEye(g,s*0.06,0xff3030,s*0.1,s*1.62,s*0.2);
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.05,s*0.05,s*0.85,5),bone,sx*s*0.32,s*0.95,0,0,0,sx*0.2);// arms
-  for(const sx of[-1,1])part(g,new THREE.CylinderGeometry(s*0.06,s*0.05,s*0.85,5),bone,sx*s*0.14,s*0.42,0);// legs
-  return s*1.95;}
+function cMattekar(g,b,s){const m=skinMat("mattekar","scales"),d=solid(b.c),ho=solid(0xe8eef4);
+  const body=part(g,new THREE.SphereGeometry(s*0.6,12,10),m,0,s*0.72,0);body.scale.set(1.05,0.95,1.5);
+  for(let i=0;i<8;i++)part(g,new THREE.IcosahedronGeometry(s*0.18,0),m,rnd(-0.5,0.5)*s,s*(0.9+rnd(0,0.3)),rnd(-0.6,0.4)*s); // shaggy fur
+  const head=part(g,new THREE.SphereGeometry(s*0.42,11,9),m,0,s*0.82,s*0.85);head.scale.set(1,0.95,1.05);
+  part(g,new THREE.ConeGeometry(s*0.22,s*0.42,8),m,0,s*0.72,s*1.2,Math.PI/2);                    // snout
+  part(g,new THREE.BoxGeometry(s*0.26,s*0.04,s*0.14),solid(0xf0ead8),0,s*0.66,s*1.22);           // teeth
+  addEye(g,s*0.08,0x7fe0ff,-s*0.2,s*0.94,s*0.98);addEye(g,s*0.08,0x7fe0ff,s*0.2,s*0.94,s*0.98);
+  for(const sx of[-1,1])spike(g,ho,sx*s*0.22,s*1.12,s*0.7,s*0.07,s*0.42,0,sx*0.5);                // horns
+  for(let i=0;i<4;i++)spike(g,ho,0,s*1.08,s*0.5-i*s*0.28,s*0.06,s*0.24,0.2);                      // spine ridge
+  for(const sx of[-1,1])for(const fz of[-1,1]){limb(g,d,sx*s*0.4,s*0.36,fz*s*0.52,s*0.13,s*0.1,s*0.7);
+    for(let c=0;c<3;c++)spike(g,ho,sx*s*0.4+(c-1)*s*0.07,s*0.03,fz*s*0.52+s*0.12,s*0.03,s*0.16,Math.PI/2);} // clawed feet
+  return s*1.45;}
+function cSkeleton(g,b,s){const bone=solid(0xe8e4d8);
+  part(g,new THREE.BoxGeometry(s*0.34,s*0.18,s*0.22),bone,0,s*0.95,0);                    // pelvis
+  for(let i=0;i<5;i++)part(g,new THREE.SphereGeometry(s*0.055,6,5),bone,0,s*1.08+i*s*0.1,0); // spine beads
+  for(let i=0;i<5;i++){const rw=s*(0.3-Math.abs(i-2)*0.02);
+    part(g,new THREE.TorusGeometry(rw,s*0.022,5,12,Math.PI),bone,0,s*1.14+i*s*0.1,0);}     // curved ribs
+  part(g,new THREE.BoxGeometry(s*0.045,s*0.5,s*0.045),bone,0,s*1.35,s*0.27);              // sternum
+  const skull=part(g,new THREE.SphereGeometry(s*0.24,12,11),bone,0,s*1.82,0.02);skull.scale.set(0.92,1.05,1);
+  part(g,new THREE.BoxGeometry(s*0.24,s*0.1,s*0.2),bone,0,s*1.67,s*0.06);                 // jaw
+  for(const sx of[-1,1]){addEye(g,s*0.062,0x110804,sx*s*0.09,s*1.84,s*0.19);addEye(g,s*0.032,0xff3030,sx*s*0.09,s*1.84,s*0.22);} // sockets + glow
+  part(g,new THREE.ConeGeometry(s*0.03,s*0.09,4),solid(0x110804),0,s*1.77,s*0.21,Math.PI); // nasal cavity
+  for(const sx of[-1,1]){part(g,new THREE.SphereGeometry(s*0.08,7,6),bone,sx*s*0.28,s*1.58,0); // shoulder ball
+    limb(g,bone,sx*s*0.3,s*1.3,0,s*0.045,s*0.04,s*0.52,0,sx*0.24);                        // humerus
+    limb(g,bone,sx*s*0.42,s*0.88,0,s*0.04,s*0.032,s*0.52,0,sx*0.14);                      // forearm
+    const hx=sx*s*0.48,hy=s*0.6;part(g,new THREE.SphereGeometry(s*0.055,6,5),bone,hx,hy,0); // hand
+    for(let f=-1;f<=1;f++)part(g,new THREE.CylinderGeometry(s*0.012,s*0.01,s*0.13,4),bone,hx+f*s*0.03,hy-s*0.09,0);} // finger bones
+  for(const sx of[-1,1]){limb(g,bone,sx*s*0.14,s*0.68,0,s*0.05,s*0.045,s*0.56,0,sx*0.06); // femur
+    limb(g,bone,sx*s*0.16,s*0.24,0,s*0.045,s*0.035,s*0.52);                               // tibia
+    part(g,new THREE.BoxGeometry(s*0.1,s*0.05,s*0.24),bone,sx*s*0.16,s*0.02,s*0.06);}     // foot
+  return s*2.05;}
 function cVirindi(g,b,s){const cloak=new THREE.MeshLambertMaterial({color:b.c});
-  part(g,new THREE.ConeGeometry(s*0.7,s*2.0,12),cloak,0,s*1.0,0);// floating cloak
-  const hood=part(g,new THREE.SphereGeometry(s*0.34,12,9),cloak,0,s*1.9,0);
-  const mask=new THREE.Mesh(new THREE.CircleGeometry(s*0.26,16),new THREE.MeshBasicMaterial({color:0xf0e6c0}));mask.position.set(0,s*1.92,s*0.3);g.add(mask);// pale round mask
-  addEye(g,s*0.05,0x000000,-s*0.09,s*1.96,s*0.42);addEye(g,s*0.05,0x000000,s*0.09,s*1.96,s*0.42);
-  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.16,10,8),new THREE.MeshBasicMaterial({color:0xb060ff}));core.position.set(0,s*1.1,s*0.2);g.add(core);
-  const lt=new THREE.PointLight(0xb060ff,1.0,8);lt.position.set(0,s*1.3,0);g.add(lt);
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.12,s*0.9,6),cloak,sx*s*0.5,s*1.1,s*0.1,0.3,0,sx*0.4);// sleeves
-  return s*2.4;}
+  part(g,new THREE.ConeGeometry(s*0.72,s*1.7,14),cloak,0,s*1.15,0);                      // floating cloak (hem off the ground)
+  for(let i=0;i<10;i++){const a=i/10*6.28;spike(g,cloak,Math.cos(a)*s*0.6,s*0.4,Math.sin(a)*s*0.6,s*0.1,s*0.5,0);} // tattered hem
+  part(g,new THREE.SphereGeometry(s*0.34,12,10),cloak,0,s*1.95,0);                       // hood
+  const mask=new THREE.Mesh(new THREE.CircleGeometry(s*0.27,18),new THREE.MeshBasicMaterial({color:0xf0e6c0}));mask.position.set(0,s*1.97,s*0.31);g.add(mask); // blank white mask
+  part(g,new THREE.TorusGeometry(s*0.27,s*0.03,6,18),solid(0xd8c89a),0,s*1.97,s*0.3);    // mask rim
+  for(const sx of[-1,1])addEye(g,s*0.05,0x000000,sx*s*0.1,s*2.02,s*0.42);               // dark eye holes
+  part(g,new THREE.BoxGeometry(s*0.14,s*0.02,s*0.02),solid(0x000000),0,s*1.9,s*0.42);    // mouth slit
+  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.15,10,8),new THREE.MeshBasicMaterial({color:0xb060ff}));core.position.set(0,s*1.25,s*0.15);g.add(core);
+  const lt=new THREE.PointLight(0xb060ff,1.0,8);lt.position.set(0,s*1.4,0);g.add(lt);
+  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.13,s*0.9,7),cloak,sx*s*0.5,s*1.2,s*0.08,0.3,0,sx*0.42); // sleeves
+  return s*2.45;}
 const CREATURE_BUILDERS={drudge:cDrudge,banderling:cBanderling,mosswart:cMosswart,reedshark:cReedshark,
   tusker:cTusker,auroch:cAuroch,shadow:cShadow,olthoi:cOlthoi,gromnie:cGromnie,
   lugian:cLugian,tumerok:cTumerok,mattekar:cMattekar,skeleton:cSkeleton,virindi:cVirindi,
