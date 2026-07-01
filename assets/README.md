@@ -27,57 +27,66 @@ without changing engines (see `docs/` discussion).
 - **Blender + Human Generator / MB-Lab** — full control; export glTF.
 - Three.js sample `Soldier.glb` (~2.1 MB, rigged with idle/walk/run) is handy for testing.
 
-## CDN "people" for NPCs (experimental, ON by default)
-Beyond the single player avatar, strolling **townsfolk** can be populated with real rigged
-humans pulled from public CDNs and assigned at random:
-- `GLTF_PEOPLE` (in `index.html`) lists CDN `.glb` URLs of rigged men & women, all verified
-  loadable & CORS-friendly for in-browser fetch:
-  - **Soldier**, **Xbot** (men) — three.js examples
-  - **CesiumMan** (man) — Khronos sample models
-  - **HVGirl** (woman) — Babylon.js Assets
-  - **Astronaut** (person) — Google model-viewer shared assets
-  - **RobotExpressive** (character) — three.js examples
-  (Ready Player Me men/women avatars work too — add `https://models.readyplayer.me/<id>.glb`
-  — but their CDN was unreachable from this build's network, so they're not in the default list.)
-- **Weighted pool:** each `GLTF_PEOPLE` entry is now `{url, w}` where `w` is the townsfolk-assignment
-  weight. The **KayKit fantasy adventurers** (barbarian/knight/mage/rogue/hooded-rogue) are `w:6`,
-  generic humans (Soldier, Xbot ×2, CesiumMan, RiggedFigure, HVGirl) `w:3`, and the sci-fi oddities
-  (Astronaut, RobotExpressive, BrainStem) `w:1` — so the streets read as a medieval crowd (~59%
-  fantasy humans) with the occasional out-of-place wanderer instead of half the town being robots.
-- `loadGltfPeople()` downloads them once; `assignGltfNpcs()` clones each via
-  **`THREE.SkeletonUtils.clone`** (skinned meshes need this, not plain `.clone()`) and progressively
-  fills up to `MAX_GLTF_NPCS` (40) townsfolk via a **weighted pick** (`pickWeightedPerson()`), playing
-  idle/walk through a per-NPC `AnimationMixer`. Flag: `USE_GLTF_NPCS` (default **true**).
-- **Load-order rebalance:** small generic models fetch faster and would greedily grab the slots before
-  the larger KayKit models arrive, undoing the weighting. So once *every* fetch has settled
+## Self-hosted "people" for NPCs (ON by default)
+Strolling **townsfolk** are populated with real rigged men & women. The models are **self-hosted**
+under `assets/models/` and served to the browser by the game's own static server (same-origin, no
+runtime CDN dependency, works offline). Run the fetcher once to populate them:
+
+```bash
+python3 assets/fetch-models.py        # downloads every model into assets/models/ (idempotent)
+```
+
+The `.glb` binaries are **git-ignored** (multi-MB); `assets/fetch-models.py` is the committed,
+reproducible source of truth for where each came from (all CC0 / permissive). Because they're
+fetched server-side, CORS/hot-link rules don't apply — only the browser's local same-origin fetch does.
+
+- `GLTF_PEOPLE` (in `index.html`) lists entries with a **sex** tag (`'f'`/`'m'`/`'n'` = female/male/
+  neutral, since players & townsfolk are a mix) and a townsfolk **weight** `w`. Two entry shapes:
+  - `{url, sex, w}` — a self-contained glTF (mesh + baked clips in one file).
+  - `{mesh, clips:[…], sex, w}` — a static mesh + separate animation-clip glTFs. Used for the
+    **Ready Player Me** base bodies: `Feminine_TPose.glb` / `Masculine_TPose.glb` are static meshes,
+    animated by shared `anim/{F,M}_Idle.glb` + `_Walk.glb` clips. The clips bind by **bone name**
+    (RPM's skeleton is identical across body & clips, so no retargeting is needed); on load each
+    clip is renamed with an `idle_`/`walk_` prefix so the idle/walk detector finds it.
+- **Gendered pool (16 models):** clear **women** — RPM Feminine, KayKit Mage, HVGirl; **men** — RPM
+  Masculine, KayKit Barbarian/Knight/Rogue/Hooded, Soldier, Xbot ×2, CesiumMan; **neutral** —
+  RiggedFigure, Astronaut, RobotExpressive, BrainStem. Verified live: townsfolk come out ~24–28%
+  female, the rest male, oddities rare.
+- **Weighted assignment:** KayKit fantasy humans + RPM bodies are `w:6`, generic humans `w:3`, sci-fi
+  oddities `w:1` — the streets read as a medieval crowd with the occasional out-of-place wanderer.
+- `loadGltfPeople()` loads each entry; `assignGltfNpcs()` clones via **`THREE.SkeletonUtils.clone`**
+  (skinned meshes need this, not plain `.clone()`) and progressively fills up to `MAX_GLTF_NPCS` (40)
+  townsfolk via a **weighted pick** (`pickWeightedPerson()`), playing idle/walk through a per-NPC
+  `AnimationMixer`. The chosen model's sex is recorded on the NPC (`n.sex`) for future gendered
+  names/voices. Flag: `USE_GLTF_NPCS` (default **true**).
+- **Load-order rebalance:** small models load faster and would greedily grab the slots before the
+  larger ones arrive, undoing the weighting. So once *every* load has settled
   (`gltfPeopleDone===GLTF_PEOPLE.length`), `rebalanceGltfNpcs()` re-rolls all skinned townsfolk against
   the full weighted pool — guaranteeing the final crowd matches the weights regardless of arrival order.
-- **Online-required** (offline support dropped). A failed fetch still falls back to procedural
-  for that NPC. Set `USE_GLTF_NPCS=false` to force all-procedural townsfolk.
-- The pool is **14 verified-loadable models** (5 KayKit adventurers + Soldier, Xbot ×2, CesiumMan,
-  RiggedFigure, HVGirl=woman, Astronaut, RobotExpressive, BrainStem), cap `MAX_GLTF_NPCS=40`.
-  Note: free hot-linkable *rigged human* glTFs are scarce (KayKit's human pack is exhausted at these
-  5, and no other reachable CC0 source adds distinct humans) — to reach ~25 distinct men/women, paste
-  **Ready Player Me** full-body URLs (`{url:"https://models.readyplayer.me/<id>.glb", w:6}`) into
-  `GLTF_PEOPLE`; RPM's CDN works in a normal browser (it was just blocked from the dev sandbox).
-  Avoid Draco-compressed models (e.g. Babylon YetiSmall) unless you also vendor a DRACOLoader.
+- A failed load still falls back to procedural for that NPC. Set `USE_GLTF_NPCS=false` to force
+  all-procedural townsfolk.
+- **Adding more distinct men/women:** drop rigged `.glb`s into `assets/models/people/`, add
+  `{url, sex, w}` (or `{mesh, clips, sex, w}`) to `GLTF_PEOPLE`, and list their source in
+  `assets/fetch-models.py`. Ready Player Me (`https://models.readyplayer.me/<id>.glb`) gives unlimited
+  distinct avatars — add the URL to the fetcher (its CDN is reachable from a normal machine).
+  Avoid Draco-compressed models unless you also vendor a DRACOLoader.
 - Quest-givers/vendors/criers stay procedural (they keep their markers, labels, and looks).
 - `vendor/SkeletonUtils.js` (r128 global build) is required and loaded after the GLTFLoader.
 
-## CDN monster models (experimental, ON by default)
-Monsters can also swap their procedural mesh for a rigged glTF creature:
-- `MONSTER_MODELS` (in `index.html`) maps a monster **kind** → an **array** of CDN `.glb` URLs;
+## Self-hosted monster models (ON by default)
+Monsters can also swap their procedural mesh for a rigged glTF creature (also served from
+`assets/models/monsters/` — same self-hosting as people, populated by `fetch-models.py`):
+- `MONSTER_MODELS` (in `index.html`) maps a monster **kind** → an **array** of local `.glb` paths;
   a random variant is chosen per spawn, so a kind with several models shows visual variety in a
   mob pack. Current mappings:
   - `mattekar → [Fox.glb]` (Khronos glTF-Sample-Models; rigged, ~1 MB, walk/run/survey clips).
-    Free hot-linkable *creature* glTFs are scarce and none exactly match AC monster descriptions,
-    so **Fox is a best-fit placeholder**.
+    Free *creature* glTFs matching AC monsters are scarce, so **Fox is a best-fit placeholder**.
   - `skeleton → [Warrior, Minion, Mage, Rogue]` — **KayKit Character Pack: Skeletons** (CC0, Kay
     Lousberg), 4 rigged undead humanoids (~4.8 MB each, 95 baked clips incl. idle/walk/attack).
-    Verified loadable & CORS-friendly via jsDelivr. AC's "skeleton" kind now spawns as one of the
-    four at random.
-  Add more kinds/variants by pasting verified CDN URLs into the arrays here.
-- `loadGltfMonsters()` downloads each URL once into `gltfMonsters{kind:[{scene,anims,h},…]}` (an
+    AC's "skeleton" kind spawns as one of the four at random.
+  Add more kinds/variants by dropping `.glb`s into `assets/models/monsters/`, listing them in the
+  arrays here, and adding their source to `assets/fetch-models.py`.
+- `loadGltfMonsters()` loads each path once into `gltfMonsters{kind:[{scene,anims,h},…]}` (an
   array of loaded variants per kind).
 - `spawnMonster(kind,x,z)` picks a random variant for the kind and uses `THREE.SkeletonUtils.clone`
   (scaled to the bestiary size, feet-to-ground, per-mob `AnimationMixer` playing a

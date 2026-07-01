@@ -9,6 +9,8 @@ server/*.db
 __pycache__/
 *.pyc
 
-# external avatar models (user-supplied; see assets/README.md)
+# external avatar / rigged models — multi-MB binaries, self-hosted so the game's own
+# static server serves them to clients. Reproduce with `python3 assets/fetch-models.py`.
 assets/*.glb
 assets/*.gltf
+assets/models/

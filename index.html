@@ -860,43 +860,66 @@ function tryLoadGltfAvatar(){
 // (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
 let USE_GLTF_NPCS=true;            // online-required (offline support dropped); false = all-procedural townsfolk
 const MAX_GLTF_NPCS=40;            // cap skinned NPCs for performance; the rest stay procedural
-// public-CDN rigged human/character models — every URL verified to return valid glTF & load in-browser.
-// `w` is the townsfolk-assignment weight: thematic medieval humans dominate the streets, while the
-// sci-fi oddities (astronaut, robots) stay rare curiosities instead of half the crowd.
+// Rigged human/character models, SELF-HOSTED under assets/models/ (run assets/fetch-models.py once to
+// populate). The game's own static server serves them same-origin — no runtime CDN dependency, works
+// offline, no CORS. Each entry:
+//   {url, sex, w}                        self-contained glTF (mesh + baked clips in one file)
+//   {mesh, clips:[...], sex, w}          a static mesh + separate animation-clip glTFs (Ready Player Me:
+//                                        the *_TPose body is animated by shared idle/walk clips)
+// sex: 'f' female · 'm' male · 'n' non-human/neutral (robots, astronaut). Players & townsfolk are a mix.
+// w = townsfolk-assignment weight: thematic medieval humans dominate; sci-fi oddities stay rare.
+const GP_DIR="assets/models/people/", GA_DIR="assets/models/anim/";
 const GLTF_PEOPLE=[
+  // Ready Player Me base bodies (CC0-licensed animation library) — clean textured man & woman, the only
+  // clearly-gendered humans; animated by shared idle+walk clips (same skeleton, so clips bind by bone name)
+  {mesh:GP_DIR+"Feminine_TPose.glb",  clips:[GA_DIR+"F_Idle.glb", GA_DIR+"F_Walk.glb"], sex:"f", w:6}, // woman
+  {mesh:GP_DIR+"Masculine_TPose.glb", clips:[GA_DIR+"M_Idle.glb", GA_DIR+"M_Walk.glb"], sex:"m", w:6}, // man
   // KayKit Adventurers (CC0, Kay Lousberg) — best-fit fantasy humans, rigged + 76 clips each; heaviest weight
-  {url:"https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Barbarian.glb",   w:6}, // barbarian
-  {url:"https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb",       w:6}, // knight
-  {url:"https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Mage.glb",         w:6}, // mage
-  {url:"https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Rogue.glb",        w:6}, // rogue
-  {url:"https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Rogue_Hooded.glb", w:6}, // hooded rogue
+  {url:GP_DIR+"Barbarian.glb",    sex:"m", w:6}, // barbarian
+  {url:GP_DIR+"Knight.glb",       sex:"m", w:6}, // knight
+  {url:GP_DIR+"Mage.glb",         sex:"f", w:6}, // mage (reads female)
+  {url:GP_DIR+"Rogue.glb",        sex:"m", w:6}, // rogue
+  {url:GP_DIR+"Rogue_Hooded.glb", sex:"m", w:6}, // hooded rogue
   // generic rigged humans — fine as ordinary townsfolk, medium weight
-  {url:"https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb",            w:3}, // man (idle/walk/run)
-  {url:"https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Xbot.glb",               w:3}, // man (idle/walk/run)
-  {url:"https://cdn.jsdelivr.net/gh/BabylonJS/Assets@master/meshes/Xbot.glb",                          w:3}, // man (variant)
-  {url:"https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb",       w:3}, // man (walk)
-  {url:"https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/RiggedFigure/glTF-Binary/RiggedFigure.glb", w:3}, // humanoid
-  {url:"https://cdn.jsdelivr.net/gh/BabylonJS/Assets@master/meshes/HVGirl.glb",                        w:3}, // woman (idle/walk/run)
+  {url:GP_DIR+"Soldier.glb",      sex:"m", w:3}, // man (idle/walk/run)
+  {url:GP_DIR+"Xbot.glb",         sex:"m", w:3}, // man (idle/walk/run)
+  {url:GP_DIR+"Xbot_bjs.glb",     sex:"m", w:3}, // man (variant)
+  {url:GP_DIR+"CesiumMan.glb",    sex:"m", w:3}, // man (walk)
+  {url:GP_DIR+"RiggedFigure.glb", sex:"n", w:3}, // humanoid
+  {url:GP_DIR+"HVGirl.glb",       sex:"f", w:3}, // woman (idle/walk/run)
   // sci-fi oddities — kept for variety but rare (a lone astronaut/automaton wandering Dereth), low weight
-  {url:"https://modelviewer.dev/shared-assets/models/Astronaut.glb",                                   w:1}, // astronaut (person)
-  {url:"https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb",        w:1}, // robot character
-  {url:"https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/BrainStem/glTF-Binary/BrainStem.glb",       w:1}, // robot
-  // Ready Player Me gives unlimited distinct men/women — paste full-body URLs here to reach 25+ (add {url,w:6}):
-  // {url:"https://models.readyplayer.me/<id>.glb", w:6},
+  {url:GP_DIR+"Astronaut.glb",       sex:"n", w:1}, // astronaut (person)
+  {url:GP_DIR+"RobotExpressive.glb", sex:"n", w:1}, // robot character
+  {url:GP_DIR+"BrainStem.glb",       sex:"n", w:1}, // robot
+  // More distinct men/women: drop rigged .glb files into assets/models/people/, add {url, sex, w} here,
+  // and list their source in assets/fetch-models.py so they re-download.
 ];
 let gltfPeople=[], gltfPeopleStarted=false, gltfPeopleDone=0;
 function loadGltfPeople(){
   if(gltfPeopleStarted||!USE_GLTF_NPCS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
   gltfPeopleStarted=true; const L=new THREE.GLTFLoader();
-  const settle=()=>{ if(++gltfPeopleDone>=GLTF_PEOPLE.length) rebalanceGltfNpcs(); };  // all fetches finished → re-roll for correct weighting
-  for(const p of GLTF_PEOPLE){ L.load(p.url, gltf=>{
-      const box=new THREE.Box3().setFromObject(gltf.scene), h=(box.max.y-box.min.y)||1;
-      // CDN models face +z; our procedural bodies face -z and the NPC yaw now aims -z at travel,
-      // so glTF clones need a +PI flip to face the same way (else they'd moonwalk).
-      const faceOffset = Math.PI;
-      gltfPeople.push({scene:gltf.scene, anims:gltf.animations||[], scale:1.8/h, faceOffset, w:(p.w>0?p.w:1)});
-      log("Loaded a CDN person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs(); settle();
-    }, undefined, err=>{ console.log("CDN person model failed:",p.url,(err&&err.message)||""); settle(); }); }
+  const settle=()=>{ if(++gltfPeopleDone>=GLTF_PEOPLE.length) rebalanceGltfNpcs(); };  // all loads finished → re-roll for correct weighting
+  const store=(p,scene,anims)=>{
+    const box=new THREE.Box3().setFromObject(scene), h=(box.max.y-box.min.y)||1;
+    // models face +z; our bodies face -z and NPC yaw aims -z at travel, so clones need a +PI flip (else moonwalk).
+    gltfPeople.push({scene, anims:anims||[], scale:1.8/h, faceOffset:Math.PI, w:(p.w>0?p.w:1), sex:p.sex||"n"});
+    log("Loaded a person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
+  };
+  for(const p of GLTF_PEOPLE){
+    if(p.mesh){                                        // modular: static mesh + external animation clips
+      L.load(p.mesh, gltf=>{
+        const scene=gltf.scene, anims=(gltf.animations||[]).slice(); let pending=p.clips.length;
+        if(!pending){ store(p,scene,anims); settle(); return; }
+        for(const cu of p.clips){ L.load(cu, cg=>{
+            for(const a of (cg.animations||[])){ a.name=(/idle/i.test(cu)?"idle_":/walk/i.test(cu)?"walk_":"")+a.name; anims.push(a); }
+            if(--pending===0){ store(p,scene,anims); settle(); }
+          }, undefined, err=>{ console.log("clip failed:",cu,(err&&err.message)||""); if(--pending===0){ store(p,scene,anims); settle(); } }); }
+      }, undefined, err=>{ console.log("person mesh failed:",p.mesh,(err&&err.message)||""); settle(); });
+    } else {                                           // self-contained glTF
+      L.load(p.url, gltf=>{ store(p, gltf.scene, gltf.animations||[]); settle(); },
+             undefined, err=>{ console.log("person model failed:",p.url,(err&&err.message)||""); settle(); });
+    }
+  }
 }
 function pickWeightedPerson(){   // weighted random over loaded people so fantasy humans dominate townsfolk
   let tot=0; for(const m of gltfPeople) tot+=(m.w||1);
@@ -911,7 +934,7 @@ function applyGltfToNpc(n,m){   // clone model m onto townsfolk n (also used to 
   clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
   if(n.gltf){ if(n.gltfMixer&&n.gltfMixer.stopAllAction)n.gltfMixer.stopAllAction(); n.mesh.remove(n.gltf); n.gltfMixer=n.gltfIdle=n.gltfWalk=null; }
   else { for(const ch of n.mesh.children) ch.visible=false; }                        // first time: hide the procedural body
-  n.mesh.add(clone); n.gltf=clone; n._gw=undefined;
+  n.mesh.add(clone); n.gltf=clone; n._gw=undefined; n.sex=m.sex||"n";   // record sex (gendered names/voices later)
   if(m.anims.length){ n.gltfMixer=new THREE.AnimationMixer(clone);
     n.gltfIdle=n.gltfMixer.clipAction(m.anims.find(a=>/idle/i.test(a.name))||m.anims[0]);
     const w=m.anims.find(a=>/walk/i.test(a.name)); n.gltfWalk=w?n.gltfMixer.clipAction(w):null;
@@ -936,17 +959,14 @@ function rebalanceGltfNpcs(){
 }
 // ---- rigged glTF models for MONSTER kinds (spawned via streamMonsters; procedural creature is the fallback) ----
 let USE_GLTF_MONSTERS=true;
-// AC kind → one or more CDN models. Each value is an array; a random variant is chosen per spawn,
-// so a kind with several models (e.g. the 4 skeleton types) shows visual variety in a mob pack.
+// AC kind → one or more SELF-HOSTED models (assets/models/monsters/, via fetch-models.py). Each value is
+// an array; a random variant is chosen per spawn, so a kind with several models (the 4 skeleton types)
+// shows visual variety in a mob pack.
+const GM_DIR="assets/models/monsters/";
 const MONSTER_MODELS={
-  mattekar:["https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Fox/glTF-Binary/Fox.glb"], // furred quadruped beast (best-fit)
+  mattekar:[GM_DIR+"Fox.glb"], // furred quadruped beast (best-fit)
   // KayKit Character Pack: Skeletons (CC0, Kay Lousberg) — rigged undead humanoids w/ baked idle/walk/attack clips
-  skeleton:[
-    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Warrior.glb",
-    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Minion.glb",
-    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Mage.glb",
-    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Rogue.glb",
-  ],
+  skeleton:[GM_DIR+"Skeleton_Warrior.glb", GM_DIR+"Skeleton_Minion.glb", GM_DIR+"Skeleton_Mage.glb", GM_DIR+"Skeleton_Rogue.glb"],
 };
 let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h} loaded variants
 function loadGltfMonsters(){
@@ -956,7 +976,7 @@ function loadGltfMonsters(){
     for(const url of MONSTER_MODELS[kind]){ (k=>L.load(url, g=>{
         const box=new THREE.Box3().setFromObject(g.scene), h=(box.max.y-box.min.y)||1;
         gltfMonsters[k].push({scene:g.scene, anims:g.animations||[], h});
-        log("Loaded a CDN monster model ("+k+" "+gltfMonsters[k].length+"/"+MONSTER_MODELS[k].length+").","sys");
+        log("Loaded a monster model ("+k+" "+gltfMonsters[k].length+"/"+MONSTER_MODELS[k].length+").","sys");
       }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
   }
 }
