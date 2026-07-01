@@ -6050,6 +6050,26 @@ const RECIPES=[
 ];
 const RECIPE_BY_ID={}; for(const r of RECIPES) RECIPE_BY_ID[r.id]=r;
 function craftChance(skill){ const st=skillTier(skill); if(st<1) return 0; return clamp(0.55+skillRank(skill)*0.003+(st>1?0.1:0),0.4,0.97); } // trained scales w/ rank, spec +10%
+// H12 Level-VIII scroll crafting (AC Ancient Powers): infuse a Mana/Diamond Scarab into a Level-8 spell
+// scroll — the endgame scribing. Condenses the quill→ink→glyph chain into one Arcane-Lore-gated craft.
+const L8_SCROLL_COST=30;
+function l8ScrollReady(){
+  const si=player.inv.findIndex(it=>it&&it.stat==="comp"&&SCARAB_LEVEL[it.name]===8);
+  const cand=Object.keys(SPELLBOOK).filter(id=>SPELLBOOK[id].lvl===8 && player.knownSpells.indexOf(id)<0);
+  return { arcane:skillTier("arcane")>0, scarab:si>=0, mats:player.materials>=L8_SCROLL_COST, cand:cand.length>0, si, cand };
+}
+function craftL8Scroll(){
+  const r=l8ScrollReady();
+  if(!r.arcane){ log("Scribing a <b>Level VIII</b> scroll needs <b>Arcane Lore</b> trained (sheet: C).","warn"); if(SFX.hit)SFX.hit(); return false; }
+  if(!r.scarab){ log("You need a level-8 casting scarab (a <b>Diamond Scarab</b>) to infuse a Level VIII scroll.","warn"); if(SFX.hit)SFX.hit(); return false; }
+  if(!r.mats){ log(`Scribing a Level VIII scroll needs ${L8_SCROLL_COST} materials.`,"warn"); if(SFX.hit)SFX.hit(); return false; }
+  if(!r.cand){ log("You already know every Level VIII spell — nothing left to scribe.","warn"); return false; }
+  player.materials-=L8_SCROLL_COST; takeFromInv(r.si);
+  const id=r.cand[irnd(0,r.cand.length-1)], it={scroll:true,spellId:id,name:"Scroll: "+SPELLBOOK[id].name};
+  if(!addToInv(it)){ log("Your satchel is too full to hold the scroll.","warn"); player.materials+=L8_SCROLL_COST; return false; }
+  log(`You infuse the scarab into a glyph and scribe <b>${it.name}</b> — a <b>Level VIII</b> scroll. Read it (T) to learn the spell.`,"loot");
+  if(SFX.level)SFX.level(); toast("LEVEL VIII SCRIBED"); updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
+}
 function craftRecipe(id){
   const r=RECIPE_BY_ID[id]; if(!r) return false;
   if(skillTier(r.skill)<1){ log(`You must train <b>${SKILL_BY_KEY[r.skill].n}</b> to craft ${r.name} (sheet: C).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
@@ -11404,6 +11424,13 @@ function buildTinker(){
       return `<div class="row"><div><span class="lab">${r.ico} ${r.name}</span> <span class="desc">— ${r.blurb} · ${r.cost} mat · ${SKILL_BY_KEY[r.skill].n} · ${req}</span></div>
         <div class="ctl"><button class="tbtn" data-craft="${r.id}" ${ok?"":"disabled"}>Craft</button></div></div>`;
     }).join("");
+    // H12: Level-VIII scroll scribing (Arcane Lore + a Diamond Scarab + materials)
+    { const r=l8ScrollReady(), ok=r.arcane&&r.scarab&&r.mats&&r.cand;
+      const req=!r.arcane?`<span style="color:#e0a0a0">needs Arcane Lore</span>`:!r.scarab?`<span style="color:#e0a0a0">needs a Diamond Scarab</span>`:!r.mats?`<span style="color:#e0a0a0">needs ${L8_SCROLL_COST} mat</span>`:!r.cand?`<span style="color:#9a8a66">all L8 known</span>`:`<span style="color:#9be08a">ready</span>`;
+      craftWrap.insertAdjacentHTML("beforeend",`<div class="row"><div><span class="lab">📜 Scribe Level VIII Scroll</span> <span class="desc">— a random unknown L8 spell · ${L8_SCROLL_COST} mat + a Diamond Scarab · Arcane Lore · ${req}</span></div>
+        <div class="ctl"><button class="tbtn" data-l8="1" ${ok?"":"disabled"}>Scribe</button></div></div>`);
+      const lb=craftWrap.querySelector('[data-l8]'); if(lb) lb.onclick=()=>{ craftL8Scroll(); buildTinker(); updateHUD(); };
+    }
     craftWrap.querySelectorAll('[data-craft]').forEach(btn=>btn.onclick=()=>{ craftRecipe(btn.dataset.craft); buildTinker(); updateHUD(); });
   }
   // dyeing: recolour the armour, gated by Cooking (Alchemy improves odds)
