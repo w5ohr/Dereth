@@ -407,6 +407,7 @@ const now=()=>performance.now();
 
 // ---------- world constants ----------
 const WORLD=16000, HALF=WORLD/2, EYE=1.7;
+const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
 const TOWN_SAFE=60, DAYLEN=4200; // safe radius around each capital; seconds per full day/night (long, slow cycle)
 
@@ -853,7 +854,7 @@ function tryLoadGltfAvatar(){
   if(gltfTried||!USE_GLTF_AVATAR||typeof THREE.GLTFLoader==="undefined") return; gltfTried=true;
   new THREE.GLTFLoader().load(GLTF_AVATAR_URL, gltf=>{
     const root=gltf.scene;
-    let box=new THREE.Box3().setFromObject(root); const h=(box.max.y-box.min.y)||1; root.scale.setScalar(1.85/h);   // normalise to ~1.85u tall
+    let box=new THREE.Box3().setFromObject(root); const h=(box.max.y-box.min.y)||1; root.scale.setScalar(TARGET_HUMAN_H/h);   // normalise to the shared human height
     box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;                                            // feet to y=0
     root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
     gltfAvatar=new THREE.Group(); gltfAvatar.add(root); gltfAvatar.visible=false; scene.add(gltfAvatar);
@@ -909,7 +910,7 @@ function loadGltfPeople(){
   const store=(p,scene,anims)=>{
     const box=new THREE.Box3().setFromObject(scene), h=(box.max.y-box.min.y)||1;
     // models face +z; our bodies face -z and NPC yaw aims -z at travel, so clones need a +PI flip (else moonwalk).
-    gltfPeople.push({scene, anims:anims||[], scale:1.8/h, faceOffset:Math.PI, w:(p.w>0?p.w:1), sex:p.sex||"n"});
+    gltfPeople.push({scene, anims:anims||[], scale:TARGET_HUMAN_H/h, faceOffset:Math.PI, w:(p.w>0?p.w:1), sex:p.sex||"n"});
     log("Loaded a person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
   };
   for(const p of GLTF_PEOPLE){
@@ -1953,6 +1954,15 @@ const SKIN_TONES=[0xe8b890,0xdba56e,0xc68642,0x9c6b3f,0x7a4a28,0xf0cba0];
 const HAIR_TONES=[0x241810,0x4a3320,0x6a4a2a,0x141010,0x9a9a9a,0xb88040,0x5a2a14];
 const _PERSON_FACES=["oval","square","round","long","angular","heart"];
 const _PERSON_HAIRS=["short","long","ponytail","topknot","braids","short"];
+// normalize a procedural humanoid group to a uniform standing height (feet on ground) by scaling an
+// inner wrapper — the outer group stays scale 1 so anything added later (e.g. a gltf clone) is unaffected.
+function _normHumanMesh(g,target){
+  target=target||TARGET_HUMAN_H;
+  const body=new THREE.Group(); while(g.children.length) body.add(g.children[0]);
+  const b=new THREE.Box3().setFromObject(body), h=(b.max.y-b.min.y)||1; body.scale.setScalar(target/h);
+  const b2=new THREE.Box3().setFromObject(body); body.position.y-=b2.min.y;   // feet to y=0
+  g.add(body); return g;
+}
 function buildPerson(o){
   o=o||{}; const g=new THREE.Group(), sd=Math.abs(o.seed|0);
   const robeCol=o.robe!=null?o.robe:0x6a4a2a, accent=o.accent!=null?o.accent:0x4a3320;
@@ -2018,7 +2028,7 @@ function buildPerson(o){
   if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.195,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=headY+0.05;h.castShadow=true;g.add(h);
     const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,headY-0.02,-0.19);g.add(nz);}
   g.userData={headY,torsoY:torso.position.y,headBaseY:head.position.y,lArm:arms[0],rArm:arms[1],lLeg,rLeg,torso,head,robed};
-  return g;
+  return _normHumanMesh(g);   // uniform human height (feet on ground); inner-wrapper scale keeps gltf swaps safe
 }
 // ============================================================================
 //  CHARACTER APPEARANCE — selectable face/hair/beard/tattoo, used by the creator + avatar
