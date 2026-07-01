@@ -238,6 +238,11 @@ anywhere.
   matches height to the target's BESTIARY size (≥1.5 High, ≤0.7 Low, else Middle): a match gives ×1.12
   accuracy / ×1.10 damage, the opposite extreme ×0.80 accuracy — folded into `meleeAttack`, stacking with
   the charge bar. Verified: olthoi rewards High/punishes Low, small crawlers reward Low, wheel cycles+clamps.
+- ✅ **G6. Sneak Attack + Recklessness (Cb5)** — activated two inert melee skills (jsc + preview verified,
+  0 console errors). `sneakFactor`: +30%/+55% (trained/spec) damage vs an unaware (not-chasing) or flanked
+  foe, with a "sneak!" floater. `recklessFactor`: +13%/+22% outgoing **and** incoming melee damage (the
+  risk trade), applied to `meleeAttack` and the hurt path. Stack with the charge bar + attack heights.
+  Verified: factor tiers + live damage 118 → 158 (reckless) → 213 (reckless+sneak) per hit.
 
 ## MILESTONE F — Optional later-era / stretch content  ◇
 - ✅ **F1. Void magic** — "Nether Bolt" spell (key Z, school `void`, requires Void Magic trained):
