@@ -22,6 +22,9 @@ THREE = "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/"
 KHR = "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/"
 BJS = "https://cdn.jsdelivr.net/gh/BabylonJS/Assets@master/meshes/"
 RPM = "https://cdn.jsdelivr.net/gh/readyplayerme/animation-library@master/"
+# cached full (clothed) Ready Player Me avatars committed in the animation-library-demo repo
+RPMAV = ("https://cdn.jsdelivr.net/gh/readyplayerme/animation-library-demo@master/"
+         "Assets/Ready%20Player%20Me/Avatars/")
 
 # (local relative path under assets/models/, source URL)
 MANIFEST = [
@@ -45,7 +48,8 @@ MANIFEST = [
     # --- people: Ready Player Me base bodies (gendered, textured) + shared animation clips ---
     #     the *_TPose meshes are static; idle/walk clips (below) apply to them (same skeleton).
     ("people/Feminine_TPose.glb",  RPM + "feminine/glb/Feminine_TPose.glb"),
-    ("people/Masculine_TPose.glb", RPM + "masculine/glb/Masculine_TPose.glb"),
+    # clothed, bearded RPM man (full outfit + hair); animated by the M_Idle/M_Walk clips (same RPM rig)
+    ("people/Masculine.glb", RPMAV + "64e359ea58f50a12df573a70/2fac66e374c947c41bc74325c6e3d934/64e359ea58f50a12df573a70.glb"),
     ("anim/F_Idle.glb", RPM + "feminine/glb/idle/F_Standing_Idle_001.glb"),
     ("anim/F_Walk.glb", RPM + "feminine/glb/locomotion/F_Walk_002.glb"),
     ("anim/M_Idle.glb", RPM + "masculine/glb/idle/M_Standing_Idle_001.glb"),
