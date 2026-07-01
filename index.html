@@ -3484,7 +3484,10 @@ const ITEM_BASE=[
   {n:"Amulet",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Necklace",stat:"jewelry",jtype:"neck",v:[0,0]},
   {n:"Pendant",stat:"jewelry",jtype:"neck",v:[0,0]},
   {n:"Seal",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Armband",stat:"jewelry",jtype:"wrist",v:[0,0]},
-  {n:"Choker",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Torc",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Locket",stat:"jewelry",jtype:"neck",v:[0,0]}];
+  {n:"Choker",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Torc",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Locket",stat:"jewelry",jtype:"neck",v:[0,0]},
+  {n:"Circle",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Wedding Band",stat:"jewelry",jtype:"finger",v:[0,0]},
+  {n:"Wristband",stat:"jewelry",jtype:"wrist",v:[0,0]},{n:"Cuff",stat:"jewelry",jtype:"wrist",v:[0,0]},
+  {n:"Medallion",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Gorget",stat:"jewelry",jtype:"neck",v:[0,0]}];
 // ── Multi-slot armour (AC-style): five worn slots, each its own piece. Loot generates a piece per
 //    armour set × slot, e.g. "Steel Chainmail Greaves", "Diamond Amuli Gauntlets". ──
 const ARMOR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet","offhand","back"];
@@ -3506,6 +3509,9 @@ const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slo
   // more cultural sets
   {n:"Alduressa",at:"light", base:15,skill:"missile"},{n:"Hieromancer",at:"light", base:14,skill:"arcane"},
   {n:"Sedgemail",at:"medium",base:17,skill:"missile"},{n:"Tenassa",at:"medium",base:18,skill:"war"},
+  // faction & creature armour
+  {n:"Eldrytch Web",at:"light", base:16,skill:"arcane"},{n:"Chitin",at:"medium",base:20,skill:"creature"},
+  {n:"Celestial Hand",at:"heavy",base:28,skill:"life"},{n:"Radiant Blood",at:"heavy",base:28,skill:"war"},
 ];
 const ARMOR_SET_SKILL={}; for(const s of ARMOR_SETS) ARMOR_SET_SKILL[s.n]=s.skill;
 for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
@@ -3891,6 +3897,15 @@ const NAMED_ITEMS=[
   // ── legendary staff (melee) weapons ──
   {name:"Glacial War Staff",   stat:"weapon",wt:"staff",   mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
   {name:"Ember Quarterstaff",  stat:"weapon",wt:"staff",   mat:"Ruby",    v:[28,38],affix:()=>_wbrand("fire")},
+  // ── further iconic artifacts (batch) ──
+  {name:"Chitin Carapace",     stat:"worn",  at:"medium", aslot:"chest", mat:"Emerald", v:[34,46],affix:()=>_oaff("of Impregnability")},
+  {name:"Celestial Hand Circlet",stat:"worn",at:"heavy", aslot:"head",  mat:"Pyreal",  v:[30,42],affix:()=>_oaff("of Vigor")},
+  {name:"Radiant Blood Pauldrons",stat:"worn",at:"heavy",aslot:"upperarm",mat:"Steel", v:[26,36],affix:()=>_oaff("of Warding")},
+  {name:"Eldrytch Web Vestments",stat:"worn",at:"light",aslot:"chest",  mat:"Silk",    v:[30,42],affix:()=>_oaff("of the Magus")},
+  {name:"Web of the Weaver",   stat:"worn",  at:"light",  aslot:"back",  mat:"Satin",   v:[24,32],affix:()=>_oaff("of the Magus")},
+  {name:"Tusker Splitter",     stat:"weapon",wt:"axe",     mat:"Diamond", v:[32,42],affix:()=>_wbrand("frost")},
+  {name:"Sundering Maul",      stat:"weapon",wt:"twohand", mat:"Steel",   v:[42,56],affix:()=>_waff("crit")},
+  {name:"Viper's Kiss",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
