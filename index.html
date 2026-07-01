@@ -706,6 +706,18 @@ const ITEM_TIERS=[{lvl:1,cost:20,req:0,dur:90},{lvl:2,cost:30,req:40,dur:120},{l
 for(const b of ITEM_BUFFS) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
   id:`item_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:8000,buff:"item",stat:b.stat,mag:b.mags[t.lvl-1],dur:t.dur});
+// ── Mg4 Banes: Item Enchantment self-buffs granting temporary protection vs one damage type (AC's 7 banes) ──
+const BANE_TYPES=[
+  {code:"flame", name:"Flame Bane",       ico:"🔥", el:"fire"},   {code:"frost",  name:"Frost Bane",       ico:"❄️", el:"frost"},
+  {code:"acid",  name:"Acid Bane",        ico:"🧪", el:"acid"},   {code:"storm",  name:"Lightning Bane",   ico:"⚡", el:"shock"},
+  {code:"blade", name:"Bladed Bane",      ico:"🗡", el:"slash"},  {code:"bludg",  name:"Bludgeoning Bane", ico:"🔨", el:"bludgeon"},
+  {code:"pierce",name:"Piercing Bane",    ico:"🎯", el:"pierce"},
+];
+const BANE_MAGS=[0.10,0.15,0.20,0.26,0.32,0.38,0.44,0.50];   // fraction of that element's damage negated, per level I–VIII
+for(const b of BANE_TYPES) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
+  id:`bane_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
+  cost:t.cost,cd:8000,buff:"bane",element:b.el,mag:BANE_MAGS[t.lvl-1],dur:t.dur});
+function baneResist(el){ const b=player.banes&&player.banes[el]; return b?b.v:0; }   // active bane protection vs a damage type
 // ── Item Enchantment: recall spells (AC's portal magic) — teleport home (overworld only) ──
 SPELLBOOK_LIST.push({id:"item_recall_lifestone",name:"Lifestone Recall",ico:"🔵",school:"item",lvl:2,req:30,cost:30,cd:20000,special:"recall",dest:"lifestone"});
 SPELLBOOK_LIST.push({id:"item_recall_sanctuary",name:"Sanctuary Recall",ico:"🏛️",school:"item",lvl:3,req:60,cost:40,cd:30000,special:"recall",dest:"sanctuary"});
@@ -6049,7 +6061,8 @@ function playerHurt(dmg,sx,sz,type,element){
     const ab=clamp(eq.magicAbsorb*(0.7+(skillValue("shield")-skillBase("shield"))*0.004),0,0.30);
     dmg=Math.max(1,dmg*(1-ab)); if(Math.random()<0.5)floater(player.x,EYE+0.7,player.z,"absorb","#9aa0ff"); } }
   // armour material resists its element (e.g. Ceramic vs fire, Steel vs slash) — extra mitigation vs that type
-  if(element){ const rv=resistVs(element); if(rv>0){ dmg=Math.max(1,dmg*(1-rv)); if(Math.random()<0.5)floater(player.x,EYE+0.7,player.z,"resist","#9fd0ff"); } }
+  if(element){ const rv=resistVs(element); if(rv>0){ dmg=Math.max(1,dmg*(1-rv)); if(Math.random()<0.5)floater(player.x,EYE+0.7,player.z,"resist","#9fd0ff"); }
+    const bn=baneResist(element); if(bn>0){ dmg=Math.max(1,dmg*(1-bn)); if(Math.random()<0.5)floater(player.x,EYE+0.9,player.z,"bane","#8fd0ff"); } }   // Mg4 Bane protection vs this element
   // Each Defense skill also grants a flat avoidance, so it matters even with light armour
   // (Invulnerability/Impregnability/Magic Resistance aptitude buffs raise these skills).
   const defKey=type==="magic"?"magicd":armScale, dv=skillValue(defKey), denom=type==="magic"?120:200;
@@ -6106,7 +6119,7 @@ function deathDrops(){
 }
 function die(){
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
-  player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};player.debuffs={};player.lightBuff=null;
+  player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.banes={};player.hots={};player.debuffs={};player.lightBuff=null;
   if(player.skillBuffs&&Object.keys(player.skillBuffs).length){player.skillBuffs={};derive();}
   // where the corpse falls: at your feet overworld, or at the instance's overworld return point (instances are torn down)
   const corpseX=inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x;
@@ -6213,7 +6226,7 @@ function castSpellById(id){
   player.casting={id,t:ct,total:ct};
   // mark self-cast up front so the wind-up already eases into the crouch (executeSpell refines it)
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
-    ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light";
+    ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
 }
 // fire the spell's actual effect (called when a cast completes; re-checks live mana/cooldown)
@@ -6249,7 +6262,7 @@ function executeSpell(id){
       log(`Your <b>${s.name}</b> fizzles — the weave slips.`,"warn"); castShow=0.3; return; } }
   // spells cast on your own body use a crouch→rise gesture + a swirling aura; targeted/forward spells thrust
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
-    ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light";
+    ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
   castDur=castSelf?0.78:0.55; castShow=castDur;
   castColor=s.buff==="light"?(s.lightColor||0xfff2cf):(s.buff==="attr"||s.buff==="skill")?0xbfe0ff
     :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
@@ -6323,6 +6336,7 @@ function executeSpell(id){
     else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
     else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};player.itemBuffs[s.stat]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
     else if(s.buff==="prot"){player.lifeBuffs=player.lifeBuffs||{};player.lifeBuffs.prot={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% dmg taken`,"#7fe6a0");}
+    else if(s.buff==="bane"&&s.element){player.banes=player.banes||{};player.banes[s.element]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% ${s.element}`,"#8fd0ff");}
     else if(s.buff==="skill"&&mag){player.skillBuffs=player.skillBuffs||{};player.skillBuffs[s.skillKey]={v:mag,t:dur};derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${SKILL_BY_KEY[s.skillKey]?SKILL_BY_KEY[s.skillKey].n:s.skillKey}`,"#bfe0ff");}
     else if(s.buff==="light"){player.lightBuff={t:dur,intensity:s.intensity,dist:s.dist,color:s.lightColor};
       const cs='#'+(s.lightColor||0xffffff).toString(16).padStart(6,'0');
@@ -7187,6 +7201,7 @@ function update(dt){
     if(b.t<=0){ player.attr[a]-=b.v; delete player.spellBuffs[a]; floater(player.x,EYE+0.6,player.z,a+" fades","#9fb0c0"); derive(); } } }
   if(player.itemBuffs){ for(const k of Object.keys(player.itemBuffs)){ const b=player.itemBuffs[k]; b.t-=dt; if(b.t<=0) delete player.itemBuffs[k]; } }
   if(player.lifeBuffs){ for(const k of Object.keys(player.lifeBuffs)){ const b=player.lifeBuffs[k]; b.t-=dt; if(b.t<=0) delete player.lifeBuffs[k]; } }
+  if(player.banes){ for(const k of Object.keys(player.banes)){ const b=player.banes[k]; b.t-=dt; if(b.t<=0) delete player.banes[k]; } }   // Mg4 Banes expire
   if(player.lightBuff){ player.lightBuff.t-=dt; if(player.lightBuff.t<=0){ player.lightBuff=null; floater(player.x,EYE+0.6,player.z,"light fades","#9fb0c0"); } }
   if(player.skillBuffs){ for(const k of Object.keys(player.skillBuffs)){ const b=player.skillBuffs[k]; b.t-=dt;
     if(b.t<=0){ delete player.skillBuffs[k]; floater(player.x,EYE+0.6,player.z,(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k)+" fades","#9fb0c0"); derive(); } } }
@@ -7528,6 +7543,7 @@ function updateHUD(){
   if(player.skillBuffs) for(const k in player.skillBuffs) bf.push(`+${player.skillBuffs[k].v} ${SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k}`);
   if(player.hots){ const HP={hp:"♥ regen",st:"⚡ regen",mn:"✦ regen"}; for(const k in player.hots) bf.push(HP[k]||k); }
   if(player.lifeBuffs&&player.lifeBuffs.prot) bf.push(`-${Math.round(player.lifeBuffs.prot.v*100)}% dmg`);
+  if(player.banes) for(const el in player.banes) bf.push(`🛡 ${el} ${Math.round(player.banes[el].v*100)}%`);
   if(player.lightBuff) bf.push(`🔆 light ${Math.ceil(player.lightBuff.t)}s`);
   if(player.debuffs) for(const k in player.debuffs) bf.push(k==="slow"?"⊘ slowed":"▲ imperiled");
   document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
@@ -11811,6 +11827,7 @@ function applyBuffSelf(sp,fx){
   else if(sp.buff==="attr"&&mag){ applyAttrBuff(sp.attr,mag,dur); flo(`+${mag} ${sp.attr}`); }
   else if(sp.buff==="item"){ player.itemBuffs=player.itemBuffs||{}; player.itemBuffs[sp.stat]={v:mag,t:dur}; flo(sp.name,"#ffd86b"); }
   else if(sp.buff==="prot"){ player.lifeBuffs=player.lifeBuffs||{}; player.lifeBuffs.prot={v:mag,t:dur}; flo(`-${Math.round(mag*100)}% dmg`,"#7fe6a0"); }
+  else if(sp.buff==="bane"&&sp.element){ player.banes=player.banes||{}; player.banes[sp.element]={v:mag,t:dur}; flo(`-${Math.round(mag*100)}% ${sp.element}`,"#8fd0ff"); }
   else if(sp.buff==="skill"&&mag){ player.skillBuffs=player.skillBuffs||{}; player.skillBuffs[sp.skillKey]={v:mag,t:dur}; derive(); flo(`+${mag} ${SKILL_BY_KEY[sp.skillKey]?SKILL_BY_KEY[sp.skillKey].n:sp.skillKey}`); }
   else return false;
   return true;
@@ -11831,6 +11848,7 @@ function buffBotList(){
   ["hp","st","mn"].forEach(p=>{ const sp=pick(s=>s.special==="regen"&&s.pool===p); if(sp)out.push(sp); });
   const hl=pick(s=>s.school==="life"&&typeof s.heal==="function"); if(hl)out.push(hl);
   ["dmg","crit","armor","haste"].forEach(st=>{ const sp=pick(s=>s.buff==="item"&&s.stat===st); if(sp)out.push(sp); });
+  if(typeof BANE_TYPES!=="undefined") BANE_TYPES.forEach(b=>{ const sp=pick(s=>s.buff==="bane"&&s.element===b.el); if(sp)out.push(sp); });
   const mt=pick(s=>s.buff==="might"); if(mt)out.push(mt);
   return out;
 }
