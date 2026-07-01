@@ -1628,7 +1628,7 @@ function lumNormalTex(tex,strength){
   _lumNrmCache.set(tex,t);return t;
 }
 function texMat(texFn,tint){
-  const tex=texFn();
+  const tex=texFn(); tex.encoding=THREE.sRGBEncoding;
   const m=new THREE.MeshStandardMaterial({map:tex,roughness:0.82,metalness:0.03,
     normalMap:lumNormalTex(tex),normalScale:new THREE.Vector2(0.7,0.7)});
   if(tint)m.color.setHex(tint);return m;
@@ -1773,11 +1773,12 @@ function updateWeather(dt){
 
 // sky-reflection strength follows daylight (and dies in dungeons); traverses only when the
 // lighting band actually shifts, so it costs nothing per frame.
-let _envK=-1;
+let _envK=-1,_envLastT=0;
 function updateEnvIntensity(daylight){
   const target=(typeof inDungeon!=="undefined"&&inDungeon)?0.03:(0.18+daylight*0.82);
-  if(Math.abs(target-_envK)<0.06) return;
-  _envK=target;
+  const tn=performance.now();
+  if(Math.abs(target-_envK)<0.06&&tn-_envLastT<4000) return;   // periodic sweep also catches newly-spawned materials
+  _envK=target;_envLastT=tn;
   scene.traverse(o=>{ if(!o.material) return;
     const mm=Array.isArray(o.material)?o.material:[o.material];
     for(const m of mm){ if(m.isMeshStandardMaterial) m.envMapIntensity=target; } });
@@ -1897,7 +1898,8 @@ function creatureTex(baseHex,pattern){
     else if(pattern==="spots"){ g.beginPath();g.arc(x,y,irnd(1,4),0,6.28);g.fill(); }
     else { g.fillRect(x,y,2,2); }
   }
-  return new THREE.CanvasTexture(c);
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;   // creatures spawn after markSceneSRGB — tag here
+  return t;
 }
 
 // ---- virtual point-light pool ----
@@ -1979,7 +1981,7 @@ function initThree(){
   // ground — per-pixel PBR; near the camera the detail tile shows crisp, far away it cross-fades
   // to a 4.3×-larger sampling of the same tile so the 110×110 repeat never reads as a grid.
   groundMat=new THREE.MeshStandardMaterial({map:texGround(),vertexColors:true,roughness:0.94,metalness:0.0,
-    normalMap:groundNormalTex(),normalScale:new THREE.Vector2(0.8,0.8)});
+    normalMap:groundNormalTex(),normalScale:new THREE.Vector2(1.05,1.05)});
   groundMat.onBeforeCompile=sh=>{ sh.fragmentShader=sh.fragmentShader
     .replace('#include <map_fragment>',
       '#ifdef USE_MAP\n'+
@@ -3159,6 +3161,9 @@ function buildForests(){
     const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(38,900);
     const x=clamp(h.x+Math.cos(a)*rr,-HALF+8,HALF-8),z=clamp(h.z+Math.sin(a)*rr,-HALF+8,HALF-8);
     if(nearestCapitalDist(x,z)<TOWN_SAFE) continue;
+    { let inTown=false;                                     // every settlement keeps a tree-free plaza
+      for(const t of FLATTEN){ if(Math.hypot(x-t.x,z-t.z)<t.r+12){inTown=true;break;} }
+      if(inTown) continue; }
     const hh=terrainH(x,z); if(hh<1.5||hh>230) continue;
     if(typeof onRoad==="function"&&onRoad(x,z)) continue;
     const bm=biomeAt(x,z), cl=clump(x,z);
