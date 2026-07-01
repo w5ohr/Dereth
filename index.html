@@ -6057,6 +6057,7 @@ function playerHurt(dmg,sx,sz,type,element){
       floater(player.x,EYE+0.5,player.z,eq?"block":"parry","#bfe6ff"); SFX.hit();
     }
   }
+  dmg=Math.round(dmg*(1+recklessFactor()));   // Cb5 Recklessness: you also take more damage — the risk half of the trade
   player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)); // combatT: recently-in-combat → Healing is less effective
   // a solid hit can shatter a spell you're mid-cast on — high Focus steadies your concentration
   if(player.casting){ const ic=clamp(0.55-player.attr.Focus*0.004,0.18,0.6);
@@ -6468,7 +6469,7 @@ function meleeAttack(power){
   const cdScale=Math.max(.35,1-player.attr.Coordination*0.02);
   player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"))*(0.7+power*0.5);player.swing=1;SFX.swing();  // heavier swings recover slower
   if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
-  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power;
+  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor());
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
@@ -6482,7 +6483,8 @@ function meleeAttack(power){
       if(dot>0.5){
         const hm=heightMods(m);   // Cb2: attack height vs the target's size
         if(!rollToHit(bestMeleeSkillValue(),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
-        applyHit(m,dmg*hm.dmg,meleeOpts);
+        const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
+        applyHit(m,dmg*hm.dmg*sneak,meleeOpts);
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
       }
@@ -6514,6 +6516,13 @@ function heightMods(m){
   if(ah===ideal) return {acc:1.12,dmg:1.10};                       // right height for the target
   if(ah==="mid"||ideal==="mid") return {acc:1.0,dmg:1.0};          // one step off — neutral
   return {acc:0.80,dmg:1.0};                                       // opposite extreme (high vs a low target) — poor accuracy
+}
+// Cb5/skill activation: Recklessness (trade defence for damage) & Sneak Attack (bonus vs an unaware/flanked foe)
+function recklessFactor(){ const t=skillTier("recklessness"); return t===2?0.22:t===1?0.13:0; }   // +outgoing AND +incoming damage
+function sneakFactor(m){ const t=skillTier("sneak"); if(t<1) return 1;
+  const toP=Math.atan2(player.x-m.x,player.z-m.z), rel=Math.abs(Math.atan2(Math.sin(toP-(m.ang||0)),Math.cos(toP-(m.ang||0))));
+  const behind=rel>2.0, unaware=m.state!=="chase";                 // rear arc, or a target not currently chasing you
+  return (behind||unaware)? 1+(t===2?0.55:0.30) : 1;
 }
 cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0){ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } } else if(e.button===2) blocking=true; });
 cEl.addEventListener('mouseup',e=>{ if(e.button===0){ if(chargeActive) releaseCharge(); } else if(e.button===2) blocking=false; });
