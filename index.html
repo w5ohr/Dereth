@@ -241,6 +241,8 @@
   <div id="tinkBags" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Crafting <span style="color:var(--dim);font-weight:normal;font-size:11px">— Alchemy / Cooking / Fletching · spends materials, needs the trade skill (C)</span></div>
   <div id="tinkCraft" style="margin-bottom:12px"></div>
+  <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Dyeing <span style="color:var(--dim);font-weight:normal;font-size:11px">— recolour your armour · 6 mat · needs Cooking (Alchemy improves the result)</span></div>
+  <div id="tinkDye" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Satchel <span id="invCount" style="color:var(--dim);font-weight:normal"></span></div>
   <div id="invRows"></div>
   <button id="closeTink">Return to Dereth  (T)</button>
@@ -1955,8 +1957,27 @@ function applyHeritageLook(h){
     if(h==="sho"){bm.map=leatherTex();bm.color.setHex(0x7a5a3a);}
     else if(h==="gharundim"){bm.map=clothTex();bm.color.setHex(0xa99ee0);}
     else {bm.map=metalTex();bm.color.setHex(0xffffff);}
+    if(typeof player!=="undefined"&&player.dye!=null) bm.color.setHex(player.dye);   // H7: applied armour dye overrides the heritage colour
     bm.needsUpdate=true;
     u.cape.visible=h==="gharundim"; u.quiver.visible=h==="sho";}
+}
+// ── H7 Dyeing (AC): recolour worn armour. Alchemy prepares the dye, Cooking applies it; a bad roll
+//    stains it the wrong colour (metal→orange, cloth→pink). Recolours the third-person body material. ──
+const DYES=[
+  {name:"Berimphur (deep red)", hex:0x8a2b24},{name:"Colban (blue)",     hex:0x2f4f8a},
+  {name:"Thananim (green)",     hex:0x2f6a3a},{name:"Relanim (violet)",  hex:0x5a3a7a},
+  {name:"Argenory (gold)",      hex:0xb8912e},{name:"Minoan (teal)",     hex:0x2a7a74},
+  {name:"Verdalim (black)",     hex:0x222428},{name:"Lapyan (white)",    hex:0xdcdad2},
+];
+function setBodyDye(hex){ if(playerAvatar&&playerAvatar.userData&&playerAvatar.userData.bodyMat){ const bm=playerAvatar.userData.bodyMat; bm.color.setHex(hex); bm.needsUpdate=true; } }
+function applyDye(hex,name){
+  if(skillTier("cooking")<1){ log("You need <b>Cooking</b> trained to apply a dye pot (sheet: C).","warn"); if(SFX.hit)SFX.hit(); return false; }
+  const COST=6; if(player.materials<COST){ log(`Dyeing needs ${COST} materials (you have ${player.materials}).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
+  player.materials-=COST;
+  const chance=clamp(0.55+skillRank("cooking")*0.003+(skillTier("alchemy")>0?0.1:0),0.4,0.97); // Alchemy (the dye pot) steadies the result
+  if(Math.random()<chance){ player.dye=hex; setBodyDye(hex); log(`You dye your armour <b>${name}</b>.`,"loot"); if(SFX.quest)SFX.quest(); toast("ARMOUR DYED"); }
+  else { const stain=0xc8662a; player.dye=stain; setBodyDye(stain); log(`The dye takes badly — your armour is stained a blotchy <b>orange</b>. (Raise Cooking.)`,"warn"); if(SFX.hit)SFX.hit(); }
+  updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
 }
 function buildBow(){
   const g=new THREE.Group();
@@ -11149,6 +11170,18 @@ function buildTinker(){
     }).join("");
     craftWrap.querySelectorAll('[data-craft]').forEach(btn=>btn.onclick=()=>{ craftRecipe(btn.dataset.craft); buildTinker(); updateHUD(); });
   }
+  // dyeing: recolour the armour, gated by Cooking (Alchemy improves odds)
+  const dyeWrap=document.getElementById('tinkDye');
+  if(dyeWrap){
+    const canDye=skillTier("cooking")>0&&player.materials>=6;
+    const swatches=DYES.map(d=>`<button class="tbtn" data-dye="${d.hex}" data-dyen="${esc(d.name)}" ${canDye?"":"disabled"} title="${esc(d.name)}"
+        style="background:#${d.hex.toString(16).padStart(6,'0')};color:#fff;min-width:34px;text-shadow:0 0 3px #000">▧</button>`).join("");
+    const note=skillTier("cooking")<1?`<span style="color:#e0a0a0">needs Cooking trained</span>`:player.materials<6?`<span style="color:#e0a0a0">needs 6 mat</span>`:`<span style="color:#9be08a">${Math.round(clamp(0.55+skillRank("cooking")*0.003+(skillTier("alchemy")>0?0.1:0),0.4,0.97)*100)}% clean dye</span>`;
+    dyeWrap.innerHTML=`<div class="row"><div><span class="desc">Current: ${player.dye!=null?`<span style="color:#${(player.dye).toString(16).padStart(6,'0')}">■</span> dyed`:"undyed (heritage colour)"} · ${note}</span></div>
+      <div class="ctl" style="display:flex;gap:4px;flex-wrap:wrap">${swatches}${player.dye!=null?`<button class="tbtn" data-dyeclear="1">Strip</button>`:""}</div></div>`;
+    dyeWrap.querySelectorAll('[data-dye]').forEach(btn=>btn.onclick=()=>{ applyDye(parseInt(btn.dataset.dye,10),btn.dataset.dyen); buildTinker(); updateHUD(); });
+    const clr=dyeWrap.querySelector('[data-dyeclear]'); if(clr) clr.onclick=()=>{ player.dye=null; applyHeritageLook(player.heritage); log("You strip the dye — your armour returns to its natural colour.","sys"); saveGame(); buildTinker(); };
+  }
   const rows=document.getElementById('invRows');
   { const ic=document.getElementById('invCount'); if(ic) ic.textContent=`${player.inv.length}/${invCap()}`; }
   if(!player.inv.length){ rows.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Empty — slay creatures and press E to gather loot.</div>`; return; }
@@ -11204,6 +11237,7 @@ function saveGame(){
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
+      dye:player.dye,colosseumClears:player.colosseumClears,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
@@ -11247,6 +11281,7 @@ function applySaveObj(s){
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
   player.packBonus=s.packBonus|0;
+  player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0;   // H7 armour dye + H16 clears
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
