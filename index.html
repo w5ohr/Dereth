@@ -7484,7 +7484,7 @@ function buildSignpost(name,yaw){
   const board=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.7,0.12),plank);board.position.set(1.05,2.5,0);board.castShadow=true;g.add(board);
   const tip=new THREE.Mesh(new THREE.ConeGeometry(0.42,0.7,4),plank);tip.rotation.z=-Math.PI/2;tip.position.set(2.3,2.5,0);g.add(tip);
   const lbl=labelSprite(name);lbl.scale.set(6,1.5,1);lbl.position.set(1.05,3.45,0);g.add(lbl);
-  g.rotation.y=yaw;return g;
+  g.rotation.y=yaw;g.userData.sign=true;g.userData.town=name;return g;
 }
 function placeSignposts(r){
   const dx=r.bx-r.ax,dz=r.bz-r.az,len=Math.hypot(dx,dz),ux=dx/len,uz=dz/len,pxn=-uz,pzn=ux;
