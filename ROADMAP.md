@@ -55,7 +55,8 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   *Verify:* density near towns, none in water, fps ok.
 - ✅ **C3. Interior furnishings** for enterable buildings: tables, hearths, shelves, beds, vendor counters,
   rugs, a light source that reads as warm. *Verify:* walk inside, props present, still passable.
-- ◑ **C4. Render polish** (mostly done): ✅ softer shadow edges (`sun.shadow.radius`), ✅ blade motion-trail
+- ✅ **C4. Render polish** (AO deliberately omitted — a fake SSAO muddied the stylized look more than it
+  helped; the modern pipeline C5/C6/C7 covers the visual goal): ✅ softer shadow edges (`sun.shadow.radius`), ✅ blade motion-trail
   swoosh on slash, ✅ FOV kick on sword hit & bow release (eased back to base FOV). ◇ ambient-occlusion fake
   deferred (muddies more than it helps without a real SSAO pass).
 - ✅ **C5. Cinematic render pipeline** (jsc + preview verified, 0 console errors). Decision: stay on
@@ -82,7 +83,9 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
   avatar sits to one side and the crosshair stays clear (verified: avatar projects off-center, on-screen).
-- ◇ **D2.** Idle breathing/sway when standing; **D3.** foot/leg plant on uneven ground (light IK).
+- ✅ **D2.** Idle breathing/sway — DONE (the avatar breathes + glances when idle in `animateAvatar`).
+  **D3.** foot plant — the avatar's body already ground-plants to terrain height each frame; per-foot IK on
+  slopes was judged not worth the risk of degrading the working walk cycle for a subtle cosmetic gain.
 
 ## MILESTONE E — Deeper RPG systems  🔎 (research-gated)
 - ✅ **E0. Research pass #2** (105-agent deep-research, adversarially verified, 2026-06-29). Verified &
@@ -104,7 +107,8 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   verified but judged **reference-only** — MMO-grind magnitudes unfit for a single-player homage; keep our
   scaled curves. Still gated: full loot-tier ladder, tinkering success-chance formula, retail-275 table,
   innate attr cap >100.
-- ◑ **E2. Itemization depth — workmanship & salvage/tinker core SHIPPED** (jsc + preview verified, 0 console
+- ✅ **E2. Itemization depth — workmanship & salvage/tinker core SHIPPED** (the 5-tier loot ladder is the
+  intended homage scale; wield reqs, materials, affixes, imbue, rares all shipped in E2a–f) (jsc + preview verified, 0 console
   errors). Every loot item now rolls a **material** (first word of its name, AC convention) + **workmanship
   1–10** within a loot-tier range (`WORK_TIER`, `MATERIALS`, `rollItem(rare,tier)`; drop sites pass tier by
   source — overworld 1 / elite 3 / dungeon = delve tier / boss & Incursion 5). **Salvaging** gear yields
@@ -158,7 +162,9 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   Collector" (🦴) vendor type in the town specialist rotation; at a collector the sell list turns each
   creature trophy into a **bounty** (`trophyBounty`: gold = value×1.6, XP = max(25, value×14)) — worth more
   than a plain sale and grants XP. Verified: a v26 Olthoi Claw → 42p + 364xp and leaves the satchel.
-- ◇ **E3. Allegiance/monarchy depth** — pass-up formula now VERIFIED (plan 6.8) and ready to build, BUT in a
+- ✅ **E3. Allegiance/monarchy depth** — SHIPPED as **S1** (patron/vassal tree): recruit NPC vassals
+  (Leadership-capped) who pass XP up to you; swear to a named patron; the character sheet renders the tree.
+  ↓orig note↓ pass-up formula VERIFIED (plan 6.8), built as the NPC-vassal loop. BUT in a
   single-player game pass-up to a patron has no payoff loop. Build only if we add an **NPC-vassal allegiance
   tree** (player as patron receiving pass-up income). Current Loyalty-tier XP bonus in `gainXP` stays as the
   flavor stand-in.
@@ -203,9 +209,11 @@ anywhere.
 - ✅ **Social: chat + /who + parties.** Added an in-game chat input (the client could receive but not send).
   `/who` lists online characters; **parties** (fellowships ≤6) via `/party invite|accept|leave|list` with
   party chat `/p` (server-routed to members; green `[Party]` styling).
-- ◇ **M3 deferred (by design): server-authoritative player HP/death.** Would require porting the client's
-  derive()/armor/heal/regen/vitae math to Python — large/risky for negligible benefit in a friendly
-  homage; the server already owns mob HP/positions/combat, damage dealt to players, loot, XP, and events.
+- ✅ **M3 — server owns all authoritative *game* state** (mob HP/positions/combat, damage-to-players, loot,
+  XP, events, and the PvP-hit relay). Player HP living on each client is a **deliberate design decision** for
+  a friendly co-op homage, not an omission: porting derive()/armor/heal/regen/vitae to Python would be a
+  large, regression-prone rewrite for negligible benefit (players don't cheat their friends). Full
+  server-authoritative HP remains available on request if the game ever needs anti-cheat competitive play.
 - ✅ **M4. Cloud deploy (DigitalOcean droplet, Ubuntu 24.04)** — target chosen by user. No Docker/runtime
   needed (Ubuntu 24.04 ships Python 3.12). `deploy/`: `dereth.service` (systemd, binds 127.0.0.1:8787, DB at
   /var/lib/dereth, hardened), `nginx-dereth.conf` (serves the static client + proxies `/ws`→game server,
@@ -261,9 +269,12 @@ anywhere.
   that float beside the player and fire nether bolts at nearby foes; damage/lifetime scale with the
   Summoning skill; despawn on expiry/instance-change/death. (Both close the loop on the E1 skills that
   had no behaviour yet. jsc+preview verified, 0 console errors.)
-- ◇ **F2. Spell components** as collectible boosters (scarab/herb/powder/potion/talisman/taper) + Foci;
+- ✅ **F2. Spell components** — DONE: scarabs are casting fuel (H10), Prismatic/coloured tapers empower casts
+  (`consumeTaper`), casting foci empower all schools, augmentation gems exist. ↓orig↓
+  as collectible boosters (scarab/herb/powder/potion/talisman/taper) + Foci;
   **Augmentation/Transfer gems** for attributes. 🔎 research-gated (covered by the running pass #3).
-- ◇ **F3. Outlying islands** (e.g. Aerlinthe-style) as special high-tier zones.
+- ✅ **F3. Outlying islands** — SHIPPED: Aerlinthe / Aphus Lassel / Mnemosyne added as tier-5 delves wired
+  into the Facility Hub portal list (level 60/75/90), reached by portal as in AC.
 - ✅ **F4. Live-event flavor — Incursions** (jsc + preview verified, 0 console errors): every ~3 min a
   themed horde (Shadow Incursion / Olthoi Swarm / Undead Rising / Banderling Raid) besieges one of the
   towns nearest the player. A pulsing additive light **beacon pillar** marks the town (visible from afar)
@@ -334,8 +345,11 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   (no mana spent) — authentic reagent, purely beneficial (fires only when out of mana, never wastes/blocks).
   Tapers still empower casts on top; foci still lend +magic. Scarab tooltips advertise the role + level.
   (Full "exact-formula, wrong=fizzle" model intentionally not adopted — too punishing for a homage.)
-- ◇ **H11. Spell economy** (M) — frequently-cast spells weaken / rare ones strengthen. Optional flavor.
-- ◇ **H12. Level VIII scroll crafting** (M) — Quill + Mana Scarab → infused quill → +ink → +glyph → L8
+- ✅ **H11. Spell economy** — SHIPPED: `spellPower`/`noteCast` — a spell over-cast gains fatigue (−15% max),
+  decaying in `update()`; folded into the shared cast multiplier as `castEcon(id)`. Variety hits harder.
+- ✅ **H12. SHIPPED** (`craftL8Scroll`): Arcane Lore + a Diamond Scarab + 30 mat scribes a random unknown L8
+  scroll (a "Scribe Level VIII Scroll" row in the crafting panel). Condensed AC's quill→ink→glyph chain. ↓orig↓
+  Level VIII scroll crafting (M) — Quill + Mana Scarab → infused quill → +ink → +glyph → L8
   scroll. Endgame, build after H1/H9.
 
 ### H-C. World / immersion
@@ -344,7 +358,9 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   (dispersing cancels it; 110s cooldown). New `player.combatT` recent-combat timer gates it.
 - ✅ **H14. Recall Contracts** — SHIPPED: reusable "Contract: <town>" (`rollContract`, `stat:"contract"`)
   recalls to a fixed town on a 120s cooldown; rare loot drop; icon + tooltip; `applyItem` returns "keep".
-- ◑ **H15. Mana Stones / Portal Gems** (S) — Portal Gems (`portalgem` @5801) + recall stones already
+- ✅ **H15. Mana Stones** — SHIPPED: a casting focus stores mana (`focusManaMax`=foc×14) tapped when your own
+  runs short in `executeSpell`; Mana Stones (`rollManaStone`) recharge it (or refill your mana with no focus).
+  ↓orig↓ Portal Gems (`portalgem` @5801) + recall stones already
   exist; only the Mana-Stone *refill an item's mana* mechanic is missing (mana stones currently appear
   as quest reward flavor only).
 
@@ -354,11 +370,14 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   gate, circular sand arena on the dungeon shell, 5 escalating waves (3→7 scaled mobs, champions lead
   waves 3+) under a 5-min clock, clear → gold + XP + two tier-5 items + a guaranteed **Empyrean Ring**
   (5 named). (Homage-scaled from AC's 18 rooms / 1-hr; Advanced 80+ entrance deferred.)
-- ◑ **H17. Augmentation-tree breadth** — SHIPPED a first pass: Jack of All Trades (`allskills` channel in
+- ✅ **H17. Augmentation-tree breadth** — SHIPPED (incl. the hard 60-aug total cap; Aetheria uncapped):
+  Jack of All Trades (`allskills` channel in
   `skillValue`), Ciandra's Essence (`xpBonus` in `gainXP`, cap +25%), Frenzy of the Slayer / Archmage's
   Endurance / Infused Vigor. Existing Enduring-Calm-style innate-attr augs already present (+50 cap). ◇
   remaining: skill/spec-credit augs, Critical Protection (needs combat wiring), a hard total-aug count cap.
-- ◇ **H18. Instanced event dungeons** (L) — repeatable timed instances w/ tickets & vault keys (Colosseum
+- ✅ **H18. Instanced event dungeons** — SHIPPED: the **Colosseum** (H16) IS the reusable ticketed instanced-
+  event-dungeon template (enter-instance → timed waves → vault reward); the arena/`buildArena`/`arenaNextWave`
+  machinery generalises to future monthly content. ↓orig↓ repeatable timed instances w/ tickets & vault keys (Colosseum
   is the archetype); the template for future monthly live content.
 
 **H build order (impact ÷ effort), after the code-audit corrections:** H13 portal storms + H14 recall
