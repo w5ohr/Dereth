@@ -3906,6 +3906,15 @@ const NAMED_ITEMS=[
   {name:"Tusker Splitter",     stat:"weapon",wt:"axe",     mat:"Diamond", v:[32,42],affix:()=>_wbrand("frost")},
   {name:"Sundering Maul",      stat:"weapon",wt:"twohand", mat:"Steel",   v:[42,56],affix:()=>_waff("crit")},
   {name:"Viper's Kiss",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
+  // ── further iconic artifacts (batch) ──
+  {name:"Blade of Elysa",      stat:"weapon",wt:"sword",   mat:"Gold",    v:[32,44],affix:()=>_wbrand("shock")},
+  {name:"Ivory Trident",       stat:"weapon",wt:"spear",   mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
+  {name:"Chattering Axe",      stat:"weapon",wt:"axe",     mat:"Onyx",    v:[30,40],affix:()=>_waff("crit")},
+  {name:"Nightshade Cutlass",  stat:"weapon",wt:"sword",   mat:"Jet",     v:[30,40],affix:()=>_wbrand("nether")},
+  {name:"Warden's Bulwark",    stat:"worn",  at:"heavy",  aslot:"offhand",shield:"tower",magicAbsorb:0.20,mat:"Steel",v:[26,38],affix:()=>_oaff("of Impregnability")},
+  {name:"Helm of the Radiant Blood",stat:"worn",at:"heavy",aslot:"head", mat:"Pyreal",  v:[30,42],affix:()=>_oaff("of Vigor")},
+  {name:"Boots of the Wisp",   stat:"worn",  at:"light",  aslot:"feet",  mat:"Satin",   v:[22,30],affix:()=>_oaff("of the Magus")},
+  {name:"Bracers of Perfection",stat:"worn", at:"medium", aslot:"lowerarm",mat:"Steel", v:[24,32],affix:()=>_oaff("of Warding")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -3971,6 +3980,10 @@ const FOOD_ITEMS=[
   {name:"Berry Tart",        attr:"Self",        v:11, dur:150},{name:"Lentil Soup",      attr:"Endurance",   v:11, dur:160},
   {name:"Candied Ginger",    attr:"Focus",       v:11, dur:150},{name:"Stuffed Peppers",  attr:"Coordination",v:12, dur:160},
   {name:"Mutton Chop",       attr:"Strength",    v:13, dur:170},{name:"Herbal Infusion",  attr:"Focus",       v:13, dur:180},
+  {name:"Fish Stew",         attr:"Endurance",   v:12, dur:160},{name:"Roast Boar",       attr:"Strength",    v:14, dur:180},
+  {name:"Almond Cake",       attr:"Self",        v:11, dur:150},{name:"Mushroom Pie",     attr:"Coordination",v:12, dur:160},
+  {name:"Ginger Tea",        attr:"Focus",       v:12, dur:160},{name:"Smoked Ham",       attr:"Strength",    v:13, dur:170},
+  {name:"Fruit Salad",       attr:"Quickness",   v:11, dur:150},{name:"Clam Chowder",     attr:"Endurance",   v:13, dur:170},
 ];
 function rollFood(){ const f=FOOD_ITEMS[irnd(0,FOOD_ITEMS.length-1)]; return {name:f.name,stat:"food",attr:f.attr,v:f.v,dur:f.dur}; }
 // ── ammunition (AC): arrows/quarrels/darts. Carried in stacks; when you fire a matching launcher one is
@@ -3983,22 +3996,28 @@ const AMMO_ITEMS=[
   {name:"Fire Quarrel",for:"crossbow",dmg:3,element:"fire"},{name:"Frost Quarrel",for:"crossbow",dmg:3,element:"frost"},
   {name:"Dart",for:"atlatl",dmg:2},{name:"Barbed Dart",for:"atlatl",dmg:4},
   {name:"Acid Dart",for:"atlatl",dmg:2,element:"acid"},{name:"Shock Dart",for:"atlatl",dmg:2,element:"shock"},
+  {name:"Nether Arrow",for:"bow",dmg:2,element:"nether"},{name:"Armor-Piercing Arrow",for:"bow",dmg:6},
+  {name:"Acid Quarrel",for:"crossbow",dmg:3,element:"acid"},{name:"Shock Quarrel",for:"crossbow",dmg:3,element:"shock"},
+  {name:"Fire Dart",for:"atlatl",dmg:2,element:"fire"},{name:"Frost Dart",for:"atlatl",dmg:2,element:"frost"},
 ];
 function rollAmmo(){ const a=AMMO_ITEMS[irnd(0,AMMO_ITEMS.length-1)]; return {name:a.name,stat:"ammo",for:a.for,dmg:a.dmg,element:a.element,v:a.dmg,count:irnd(5,15)}; }
 // ── weapon oils (AC): applied to buff weapon damage for a while (rides the itemBuff "dmg" channel) ──
 const OIL_ITEMS=[
   {name:"Whetstone",dmg:0.10,dur:90},{name:"Honing Oil",dmg:0.12,dur:100},{name:"Weeping Oil",dmg:0.14,dur:100},
   {name:"Brimstone Oil",dmg:0.16,dur:100},{name:"Hoarfrost Oil",dmg:0.16,dur:100},{name:"Prismatic Oil",dmg:0.20,dur:120},
+  {name:"Corrosive Oil",dmg:0.16,dur:100},{name:"Storm Oil",dmg:0.16,dur:100},{name:"Radiant Oil",dmg:0.18,dur:110},{name:"Master's Whetstone",dmg:0.22,dur:130},
 ];
 function rollOil(){ const o=OIL_ITEMS[irnd(0,OIL_ITEMS.length-1)]; return {name:o.name,stat:"oil",dmg:o.dmg,dur:o.dur,v:Math.round(o.dmg*100)}; }
 // ── utility consumables: recall stones (teleport to bound Lifestone) & antidotes (cleanse curses) ──
 function rollRecallStone(){ return {name:"Recall Stone",stat:"recall",v:0}; }
-const CURE_ITEMS=["Antidote","Cleansing Elixir","Elixir of Purity"];
+const CURE_ITEMS=["Antidote","Cleansing Elixir","Elixir of Purity","Antivenom","Panacea"];
 function rollCure(){ return {name:CURE_ITEMS[irnd(0,CURE_ITEMS.length-1)],stat:"cure",v:0}; }
 // ── regeneration potions (AC): start a heal-over-time on health/stamina/mana (rides player.hots) ──
 const REGEN_ITEMS=[
   {name:"Rejuvenation Potion",pool:"hp",rate:8,dur:15},{name:"Greater Rejuvenation Potion",pool:"hp",rate:12,dur:18},
   {name:"Regeneration Draught",pool:"st",rate:9,dur:15},{name:"Mana Renewal Potion",pool:"mn",rate:8,dur:15},
+  {name:"Lesser Rejuvenation Potion",pool:"hp",rate:6,dur:12},{name:"Superior Rejuvenation Potion",pool:"hp",rate:15,dur:20},
+  {name:"Greater Regeneration Draught",pool:"st",rate:12,dur:18},{name:"Greater Mana Renewal Potion",pool:"mn",rate:12,dur:18},
 ];
 function rollRegen(){ const r=REGEN_ITEMS[irnd(0,REGEN_ITEMS.length-1)]; return {name:r.name,stat:"hot",pool:r.pool,rate:r.rate,dur:r.dur,v:Math.round(r.rate*r.dur)}; }
 // ── aptitude elixirs (AC cantrip potions): temporarily raise a skill (rides player.skillBuffs) ──
@@ -4006,6 +4025,7 @@ const APTITUDE_ITEMS=[
   {name:"Elixir of War Magic",key:"war"},{name:"Elixir of Life Magic",key:"life"},{name:"Elixir of Marksmanship",key:"missile"},
   {name:"Elixir of Heavy Weapons",key:"heavy"},{name:"Elixir of Warding",key:"magicd"},{name:"Elixir of Healing",key:"healing"},
   {name:"Elixir of Mana Flow",key:"mana"},{name:"Elixir of Arcane Lore",key:"arcane"},
+  {name:"Elixir of Melee Defense",key:"meleed"},{name:"Elixir of Missile Defense",key:"missiled"},
 ];
 function rollAptitude(){ const a=APTITUDE_ITEMS[irnd(0,APTITUDE_ITEMS.length-1)], lvl=irnd(1,3);   // leveled like the buff spells: +10/level, 15+10(level-1) min
   return {name:`${a.name} ${ROMAN[lvl]}`,stat:"skillpot",skillKey:a.key,lvl,v:buffMagFor(lvl),dur:buffDurFor(lvl)}; }
@@ -4022,6 +4042,8 @@ const QUEST_ITEMS=[
   {name:"Dericost Sigil Shard",v:26},{name:"Falatacot Talisman Piece",v:24},{name:"Gaerlan's Notes",v:22},
   {name:"Virindi Fascinator",v:28},{name:"Lugian Deed-stone",v:18},{name:"Channel-glyph",v:20},
   {name:"Mattekar Bounty Token",v:14},{name:"Aetherium Splinter",v:30},{name:"Coral Rose",v:16},
+  {name:"Shadow Crystal",v:24},{name:"Empyrean Rubbing",v:22},{name:"Lugian Relic",v:20},
+  {name:"Gear Golem Core",v:26},{name:"Ley Line Shard",v:28},{name:"Bloodstone Fragment",v:22},
 ];
 function rollQuestItem(){ const q=QUEST_ITEMS[irnd(0,QUEST_ITEMS.length-1)]; return {name:q.name,stat:"quest",v:q.v}; }
 // ---- Jewelry: rings & necklaces (AC's signature skill/stat boosters). Each rolls one cantrip-style
