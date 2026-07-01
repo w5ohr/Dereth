@@ -252,22 +252,20 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
 ### H-A. Crafting / tradeskill loop (the biggest miss)
 - ☐ **H1. Combine engine** (L) — the core AC crafting verb: drag one inventory item onto another → skill
   check vs difficulty → consume inputs, produce output (failure may consume inputs). Everything below
-  rides on this. *Verify:* a test recipe (e.g. two partial salvage bags → one bigger bag) resolves via a
-  skill roll; success/fail paths both fire; inventory updates.
-- ☐ **H2. Alchemy** (M) — grind gems/stones → powders; brew Health/Mana potions; craft oils + Alchemy
-  Gems (cast self-buffs). Turns the inert Alchemy skill live. *Verify:* combine reagents → potion; drink
-  → heals; Alchemy skill gates difficulty.
-- ◑ **H3. Healing skill scaling** (S) — *Healing Kits + health/mana/stamina potions already exist*
-  (`ITEM_BASE` @4004, used @5760) but heal a **fixed** amount. Remaining: make kit/potion potency scale
-  with the (currently-inert) Healing skill + apply a combat-state penalty. *Verify:* same kit heals more
-  at higher Healing skill; heals less while in combat.
+  rides on this. **✅ SHIPPED** (jsc+preview, 0 errors): `RECIPES`/`craftRecipe()`/`craftChance()` — a
+  Crafting section in the Tinker panel; recipes spend the shared `player.materials` pool + require the
+  trade skill Trained; skill-scaled success roll; failure refunds half + a little craft XP.
+- ✅ **H2. Alchemy** — SHIPPED via H1: recipes for Health / Mana / Stamina potions + Treated Healing Kit,
+  gated on the Alchemy skill. (Grind-to-powder / Alchemy Gems deferred as flavor.)
+- ✅ **H3. Healing skill scaling** — SHIPPED: `healScale()` scales kit/potion HP with the Healing skill
+  (~+40% at rank 100, +10% spec) and −40% while `player.combatT>0`; applied at kit-use + `drinkPotion`.
 - ✅ **H4. Locked caches + Lockpick** — *already implemented*: `openLockedCache()` (@6515), pick/key
   drops (@3550), `dungeonLock`, prompt "Pick the locked cache (E)". ◇ only **Keyrings** (S) remain (a
   container that holds a key set).
-- ☐ **H5. Cooking** (M) — rations/food + Beer (stamina + attribute buffs) + mushroom food; applies dye
-  pots. *Verify:* cook food → eat → timed buff; Cooking skill gates.
-- ☐ **H6. Fletching** (M) — craft ammo (arrows/bolts/darts); apply Alchemy oils to arrowheads → elemental
-  damage. *Verify:* fletch arrows from components; oiled arrows carry an element into `fireArrow`.
+- ✅ **H5. Cooking** — SHIPPED via H1: recipes for Hearty Stew / Frothing Ale / Mana Tea (attribute-buff
+  food riding the existing FOOD_ITEMS buff machinery), gated on the Cooking skill. (Dye-pot use → H7.)
+- ✅ **H6. Fletching** — SHIPPED via H1: recipes for Broadhead Arrows / Steel Quarrels (stacked ammo),
+  gated on the Fletching skill. ◇ applying Alchemy oils to arrowheads for elemental ammo still deferred.
 - ☐ **H7. Dyeing armor** (M) — Alchemy dye pot + Cooking apply; dye plants spawn wild / grown by
   Herbalist; fail chance costs AL (−20 minor / −50 crit; metal→orange, cloth→pink). *Verify:* dye recolors
   a worn piece; fail path applies the AL penalty + wrong-color.
@@ -286,10 +284,11 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   scroll. Endgame, build after H1/H9.
 
 ### H-C. World / immersion
-- ☐ **H13. Portal Storms** (S) — crowded area → random teleport to town outskirts (anti-zerg; occasionally
-  into danger). *Verify:* N players/mobs within radius triggers a scatter-teleport with a warning.
-- ☐ **H14. Recall Contracts** (S) — inventory items granting recall to fixed spots (Aphus Lassel etc.),
-  distinct from recall spells. *Verify:* using a Contract recalls to its bound location.
+- ✅ **H13. Portal Storms** — SHIPPED: `updatePortalStorm`/`crowdNear`/`triggerPortalStorm` — crowding
+  (≥8 mobs/players within 26u) builds a storm that warns then scatters you 44–72u to the outskirts
+  (dispersing cancels it; 110s cooldown). New `player.combatT` recent-combat timer gates it.
+- ✅ **H14. Recall Contracts** — SHIPPED: reusable "Contract: <town>" (`rollContract`, `stat:"contract"`)
+  recalls to a fixed town on a 120s cooldown; rare loot drop; icon + tooltip; `applyItem` returns "keep".
 - ◑ **H15. Mana Stones / Portal Gems** (S) — Portal Gems (`portalgem` @5801) + recall stones already
   exist; only the Mana-Stone *refill an item's mana* mechanic is missing (mana stones currently appear
   as quest reward flavor only).
