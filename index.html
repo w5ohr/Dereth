@@ -1012,7 +1012,7 @@ function loadGltfMonsters(){
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
-let shops=[],weather="clear",weatherT=10,wetness=0,rainSegs=null,rainGain=null,fogFar=170;
+let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=170;
 function nearestOf(arr){let b=null,bd=Infinity;for(const o of arr){const d=Math.hypot(o.x-player.x,o.z-player.z);if(d<bd){bd=d;b=o;}}return b&&{o:b,d:bd};}
 let scenery=[],nodes=[],dying=[],roadMeshes=[];
 // stone highways linking the towns (Cragstone — Holtburg — Yaraq are collinear)
@@ -1463,25 +1463,33 @@ function buildRain(){
   rainSegs.frustumCulled=false;rainSegs.visible=false;
   return rainSegs;
 }
+function coldZone(x,z){ const lat=-z/COORD; return lat>58||lat<-68; }   // far-north Halaetan Isles / deep-south reaches stay wintry
 function updateWeather(dt){
   weatherT-=dt;
   if(weatherT<=0){
-    const r=Math.random();
-    weather=r<0.45?"clear":r<0.75?"cloudy":"rain";
+    const cold=coldZone(player.x,player.z), arid=regionOf(player.x,player.z)===2, r=Math.random();
+    let w;
+    if(cold) w=r<0.32?"clear":r<0.55?"cloudy":r<0.85?"snow":"fog";           // the frozen reaches: snow, not rain
+    else if(arid) w=r<0.6?"clear":r<0.86?"cloudy":"fog";                     // the Gharu'ndim desert rarely sees rain
+    else w=r<0.4?"clear":r<0.64?"cloudy":r<0.9?"rain":"fog";
+    if(w!==weather){ weather=w; log(({rain:"Storm clouds gather over Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
     weatherT=rnd(35,75);
-    log(weather==="rain"?"Storm clouds gather over Dereth.":weather==="cloudy"?"The sky grows overcast.":"The skies clear once more.","sys");
   }
   wetness+=clamp((weather==="rain"?1:0)-wetness,-dt*0.4,dt*0.4);
-  const targetFar=weather==="rain"?78:weather==="cloudy"?125:175;
+  snowAmt+=clamp((weather==="snow"?1:0)-snowAmt,-dt*0.35,dt*0.35);
+  const targetFar=weather==="fog"?42:weather==="rain"?78:weather==="snow"?95:weather==="cloudy"?125:175;
   fogFar+=(targetFar-fogFar)*Math.min(1,dt*0.5);scene.fog.far=fogFar;
+  const precip=Math.max(wetness,snowAmt), snowing=snowAmt>wetness+0.01;
   if(rainSegs){
     rainSegs.position.set(player.x,0,player.z);
-    rainSegs.material.opacity=wetness*0.55;
-    rainSegs.visible=wetness>0.02;
+    rainSegs.material.opacity=precip*(snowing?0.85:0.55);
+    rainSegs.material.color.setHex(snowing?0xffffff:0x9fc0ff);
+    rainSegs.visible=precip>0.02;
     if(rainSegs.visible){
-      const p=rainSegs.geometry.attributes.position.array,sp=58*dt;
+      const p=rainSegs.geometry.attributes.position.array, sp=(snowing?16:58)*dt, drift=snowing?Math.sin(now()/700)*sp*0.5:0;
       for(let i=0;i<RAIN_N;i++){
         let y0=p[i*6+1]-sp,y1=p[i*6+4]-sp;
+        if(drift){ p[i*6]+=drift; p[i*6+3]+=drift; }   // flakes drift sideways
         if(y0<0){const x=rnd(-42,42),z=rnd(-42,42),ny=rnd(26,46);
           p[i*6]=x;p[i*6+2]=z;p[i*6+3]=x;p[i*6+5]=z;y0=ny;y1=ny-0.8;}
         p[i*6+1]=y0;p[i*6+4]=y1;
@@ -1489,7 +1497,7 @@ function updateWeather(dt){
       rainSegs.geometry.attributes.position.needsUpdate=true;
     }
   }
-  if(rainGain) rainGain.gain.value=wetness*0.08;
+  if(rainGain) rainGain.gain.value=wetness*0.08;   // hiss only for rain
 }
 
 const _cDay=new THREE.Color(0x8a8062), _cNight=new THREE.Color(0x0a1020);
