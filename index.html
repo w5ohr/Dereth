@@ -374,6 +374,13 @@
 #charCreator #ccCreate{background:#3a5a22;color:#fff;border-color:#7fe6a0;font-weight:bold}
 #charCreator #ccBack{background:#241c10;color:#cfc0a0}
 #charCreator #ccMsg{text-align:center;min-height:16px;color:#ff8f6b;font-size:13px;margin-top:6px}
+#charCreator .cc-attr{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:13px}
+#charCreator .cc-attr .an{width:110px;color:#cfe6b0}
+#charCreator .cc-attr .av{width:26px;text-align:right;color:#ffd86b;font-weight:bold}
+#charCreator .cc-attr button{width:24px;height:24px;padding:0;font-size:15px;line-height:20px;background:#16210e;color:#cfe6b0;border:1px solid #3a3526;border-radius:5px;cursor:pointer}
+#charCreator .cc-attr button:disabled{opacity:.35;cursor:default}
+#charCreator .cc-budget{font-size:11.5px;color:#9a8a66;margin:2px 0 4px}
+#charCreator #ccSkills button{font-size:11.5px;padding:4px 8px}
 </style>
 <div id="charCreator"><div class="cc-wrap">
   <h2>✦ FORGE YOUR HERO ✦</h2>
@@ -382,6 +389,11 @@
     <div class="cc-controls">
       <div class="cc-row"><div class="cc-lab">Name</div><input id="ccName" placeholder="name (3-16 characters)" maxlength="16"></div>
       <div class="cc-row" data-cat="race"><div class="cc-lab">Race / Heritage</div><div class="cc-opts"></div></div>
+      <div class="cc-row"><div class="cc-lab">Gender</div><div class="cc-opts" id="ccGender"></div></div>
+      <div class="cc-row"><div class="cc-lab">Profession — template</div><div class="cc-opts" id="ccProf"></div></div>
+      <div class="cc-row"><div class="cc-lab" id="ccAttrLab">Attributes</div><div id="ccAttrs"></div></div>
+      <div class="cc-row"><div class="cc-lab" id="ccSkillLab">Skills — train with credits</div><div class="cc-opts" id="ccSkills"></div></div>
+      <div class="cc-row"><div class="cc-lab">Starting Town</div><div class="cc-opts" id="ccTown"></div></div>
       <div class="cc-row" data-cat="model"><div class="cc-lab">Body Model</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="face"><div class="cc-lab">Face Shape</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="skin"><div class="cc-lab">Skin Tone</div><div class="cc-opts"></div></div>
@@ -573,7 +585,20 @@ const PRESETS={
   aluvian:{attr:{Strength:5,Coordination:5},armor:5,pot:2,title:"the Aluvian",town:"Holtburg"},
   sho:{attr:{Coordination:5,Quickness:3,Focus:2},pot:1,mana:1,title:"the Sho",town:"Shoushi"},
   gharundim:{attr:{Focus:6,Self:4},mana:3,title:"the Gharu'ndim",town:"Yaraq"},
+  viamontian:{attr:{Strength:4,Coordination:4,Self:2},armor:5,pot:1,title:"the Viamontian",town:"Sanamar"},   // Throne of Destiny heritage
 };
+// AC creation: professions (templates) preset attributes + starting trained skills; "Custom" = free build.
+const CREATE_POOL=60;   // attribute points to distribute above the base 10 (scaled from AC's larger pool)
+const CREATE_CREDITS=50; // starting skill credits, as in AC
+const TEMPLATES=[
+  {k:"custom",  name:"Custom",       attr:{},                                    skills:[]},
+  {k:"soldier", name:"Soldier",      attr:{Strength:22,Endurance:16,Coordination:8}, skills:["heavy","meleed","shield"]},
+  {k:"swash",   name:"Swashbuckler", attr:{Coordination:22,Quickness:16,Strength:8}, skills:["light","meleed","dualwield"]},
+  {k:"archer",  name:"Bow Hunter",   attr:{Coordination:26,Quickness:12,Strength:8}, skills:["missile","meleed"]},
+  {k:"warmage", name:"War Mage",     attr:{Focus:26,Self:16,Endurance:4},         skills:["war","mana","meleed"]},
+  {k:"lifemage",name:"Life Caster",  attr:{Self:26,Focus:16,Endurance:4},         skills:["life","creature","meleed"]},
+  {k:"wayfarer",name:"Wayfarer",     attr:{Endurance:12,Coordination:12,Focus:10,Self:6}, skills:["heavy","life","meleed"]},
+];
 
 // ---------- spells ----------
 // ── SPELLBOOK ─────────────────────────────────────────────────────────────────
@@ -2082,7 +2107,7 @@ function buildPerson(o){
 //  CHARACTER APPEARANCE — selectable face/hair/beard/tattoo, used by the creator + avatar
 // ============================================================================
 const APPEARANCE={
-  race:[{k:"aluvian",n:"Aluvian"},{k:"gharundim",n:"Gharu'ndim"},{k:"sho",n:"Sho"}],
+  race:[{k:"aluvian",n:"Aluvian"},{k:"gharundim",n:"Gharu'ndim"},{k:"sho",n:"Sho"},{k:"viamontian",n:"Viamontian"}],
   skin:[{k:0xf0cba0,n:"Fair"},{k:0xe8b890,n:"Light"},{k:0xdba56e,n:"Tan"},{k:0xc68642,n:"Olive"},{k:0x9c6b3f,n:"Bronze"},{k:0x7a4a28,n:"Brown"},{k:0x553318,n:"Dark"}],
   face:[{k:"oval",n:"Oval",sx:0.94,sy:1.07,sz:0.97},{k:"square",n:"Square",sx:1.04,sy:0.97,sz:1.0},{k:"round",n:"Round",sx:1.06,sy:1.0,sz:1.04},{k:"long",n:"Long",sx:0.88,sy:1.18,sz:0.95},{k:"angular",n:"Angular",sx:0.9,sy:1.05,sz:0.88},{k:"heart",n:"Heart",sx:1.0,sy:1.04,sz:0.95}],
   hair:[{k:"short",n:"Short"},{k:"long",n:"Long"},{k:"ponytail",n:"Ponytail"},{k:"topknot",n:"Topknot"},{k:"mohawk",n:"Mohawk"},{k:"braids",n:"Braids"},{k:"bald",n:"Bald"}],
@@ -10857,7 +10882,7 @@ function onAuthOk(m){
   // the world is entered after picking a character (roster arrives next)
 }
 // ---- character select (up to 8 slots per account) ----
-const HERITAGE_LABEL={aluvian:"Aluvian",sho:"Sho",gharundim:"Gharu'ndim"};
+const HERITAGE_LABEL={aluvian:"Aluvian",sho:"Sho",gharundim:"Gharu'ndim",viamontian:"Viamontian"};
 function hideTitleSections(){ // collapse the title's offline/auth UI while choosing a character
   ['authBox'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display="none";});
   document.querySelectorAll('#overlay .plabel').forEach(e=>{ if(!e.closest('#charSelect')) e.style.display="none"; });
@@ -11095,13 +11120,17 @@ function startGame(loadSaved,preset){
   initAudio();
   player.spellBuffs={}; player.lifeBuffs={}; player.skillBuffs={}; player.hots={}; player.casting=null;   // Creature/Life buffs never carry into a new/loaded character (they fall on death)
   if(!loadSaved) player.itemBuffs={};   // fresh character: no item buffs (a loaded one restores them via applySaveObj)
-  if(!loadSaved&&preset&&PRESETS[preset]){const p=PRESETS[preset];
-    for(const a in p.attr) player.attr[a]+=p.attr[a];
-    player.armor+=p.armor||0;player.potHealth+=p.pot||0;player.potMana+=p.mana||0;player.title=p.title||"";player.heritage=preset;}
-  if(!loadSaved){ // creation skill loadout per heritage (spends starting credits; leaves room to choose more)
+  if(!loadSaved){
+    const p=PRESETS[preset]||{};
+    player.armor+=p.armor||0;player.potHealth+=p.pot||0;player.potMana+=p.mana||0;player.title=p.title||"";player.heritage=preset||player.heritage;
+    // attributes: from the creation allocation if the player made one, else the heritage bonus
+    if(player.createAttr){ for(const a of ATTRS) player.attr[a]=player.createAttr[a]||10; }
+    else for(const a in (p.attr||{})) player.attr[a]+=p.attr[a];
+    // skills: the trained set chosen at creation, else the heritage default loadout
     player.skills=freshSkills();
-    const load={aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],gharundim:["war","life","creature"]}[preset]||["heavy","meleed"];
-    for(const k of load) skillState(k).t=1;
+    const load=(player.createSkills&&player.createSkills.length)?player.createSkills
+      :({aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],gharundim:["war","life","creature"],viamontian:["heavy","meleed","shield"]}[preset]||["heavy","meleed"]);
+    for(const k of load){ if(SKILL_BY_KEY[k]) skillState(k).t=1; }
     const fs=freshSpells();player.knownSpells=fs.known;player.hotbar=fs.hotbar;buildSpellbar();
   }
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
@@ -11112,8 +11141,8 @@ function startGame(loadSaved,preset){
     log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(NET.me)}.`:"Your saga continues in <b>Dereth</b>.","sys");
     toast(isOnline?"ENTERING DERETH ONLINE":"WELCOME BACK");
   } else {
-    const homeName=(preset&&PRESETS[preset]&&PRESETS[preset].town)||"Holtburg";
-    const home=CAPITALS.find(c=>c.name===homeName)||CAPITALS[0];
+    const homeName=player.createTown||(preset&&PRESETS[preset]&&PRESETS[preset].town)||"Holtburg";
+    const home=CITIES.find(c=>c.name===homeName)||CAPITALS[0];
     player.x=home.x;player.z=home.z+4;
     log(`You step through Asheron's portal into <b>${home.name}</b>.`,"sys");
     log("You have crossed to <b>Dereth</b>, a volcanic isle on the world of <b>Auberean</b> — a land of portals, ancient ruins, and the insectoid Olthoi.","sys");
@@ -11173,7 +11202,7 @@ function ccBust_build(app){
   const head=buildFaceGroup(app); head.position.y=1.6; g.add(head);
   const skin=new THREE.MeshLambertMaterial({color:app.skin});
   const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.1,0.16,12),skin); neck.position.y=1.45; g.add(neck);
-  const garb={aluvian:0x44506a,gharundim:0x6a3a8a,sho:0x6a4d33}[app.race]||0x44506a;
+  const garb={aluvian:0x44506a,gharundim:0x6a3a8a,sho:0x6a4d33,viamontian:0x5a2a3a}[app.race]||0x44506a;
   const sh=new THREE.Mesh(new THREE.CylinderGeometry(0.33,0.42,0.5,18),new THREE.MeshLambertMaterial({color:garb})); sh.scale.z=0.7; sh.position.y=1.18; g.add(sh);
   const collar=new THREE.Mesh(new THREE.TorusGeometry(0.15,0.045,8,20),new THREE.MeshLambertMaterial({color:garb})); collar.rotation.x=Math.PI/2; collar.position.y=1.42; g.add(collar);
   return g;
@@ -11212,12 +11241,56 @@ function ccBuildOptions(){
     APPEARANCE[cat].forEach(o=>{ const b=document.createElement('button'); b.dataset.k=String(o.k);
       if(isColor){ b.className="cc-sw"; b.style.background="#"+(o.k>>>0).toString(16).padStart(6,"0"); b.title=o.n; }
       else b.textContent=o.n;
-      b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race") ccWork.heritage=o.k; ccSyncSel(); ccRebuild(); };
+      b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg"; ccRenderCreation(); } ccSyncSel(); ccRebuild(); };
       box.appendChild(b); });
   });
 }
 function ccSyncSel(){ document.querySelectorAll('#charCreator .cc-row[data-cat]').forEach(row=>{
   const cat=row.dataset.cat; row.querySelectorAll('.cc-opts button').forEach(b=>b.classList.toggle("sel",String(ccWork[cat])===b.dataset.k)); }); }
+// ── AC-style creation: profession template, attribute allocation, skill training, gender, starting town ──
+function ccTemplate(k){ return TEMPLATES.find(t=>t.k===k)||TEMPLATES[0]; }
+function ccInitCreation(){
+  ccWork.gender=ccWork.gender||"male";
+  ccWork.template=ccWork.template||"custom";
+  ccWork.cattr=ccWork.cattr||{Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10};
+  ccWork.ctrained=ccWork.ctrained||[];
+  ccWork.town=ccWork.town||(PRESETS[ccWork.race]&&PRESETS[ccWork.race].town)||"Holtburg";
+}
+function ccApplyTemplate(k){
+  const t=ccTemplate(k); ccWork.template=k;
+  ccWork.cattr={Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10};
+  for(const a in t.attr) ccWork.cattr[a]=10+t.attr[a];
+  ccWork.ctrained=t.skills.slice();
+  ccRenderCreation();
+}
+function ccAttrSpent(){ let s=0; for(const a of ATTRS) s+=(ccWork.cattr[a]-10); return s; }
+function ccCreditsSpent(){ let s=0; for(const k of ccWork.ctrained){ const sk=SKILL_BY_KEY[k]; if(sk)s+=sk.tc; } return s; }
+function ccRenderCreation(){
+  const gd=document.getElementById('ccGender');
+  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k;ccRenderCreation();}; gd.appendChild(b); }); }
+  const pf=document.getElementById('ccProf');
+  if(pf){ pf.innerHTML=""; TEMPLATES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.name; b.className=ccWork.template===t.k?"sel":""; b.onclick=()=>ccApplyTemplate(t.k); pf.appendChild(b); }); }
+  const at=document.getElementById('ccAttrs');
+  if(at){ const rem=CREATE_POOL-ccAttrSpent();
+    at.innerHTML=`<div class="cc-budget">Points remaining: <b style="color:${rem<0?'#e8704a':'#ffd86b'}">${rem}</b> / ${CREATE_POOL} (each 10–50)</div>`;
+    for(const a of ATTRS){ const v=ccWork.cattr[a]; const row=document.createElement('div'); row.className="cc-attr";
+      row.innerHTML=`<span class="an">${a}</span><button data-dec="${a}" ${v<=10?"disabled":""}>−</button><span class="av">${v}</span><button data-inc="${a}" ${(rem<=0||v>=50)?"disabled":""}>+</button>`;
+      at.appendChild(row); }
+    at.querySelectorAll('[data-inc]').forEach(b=>b.onclick=()=>{ const a=b.dataset.inc; if(ccAttrSpent()<CREATE_POOL&&ccWork.cattr[a]<50){ccWork.cattr[a]++;ccWork.template="custom";ccRenderCreation();} });
+    at.querySelectorAll('[data-dec]').forEach(b=>b.onclick=()=>{ const a=b.dataset.dec; if(ccWork.cattr[a]>10){ccWork.cattr[a]--;ccWork.template="custom";ccRenderCreation();} });
+  }
+  const sk=document.getElementById('ccSkills');
+  if(sk){ const rem=CREATE_CREDITS-ccCreditsSpent();
+    sk.innerHTML=`<div class="cc-budget">Credits: <b style="color:${rem<0?'#e8704a':'#ffd86b'}">${rem}</b> / ${CREATE_CREDITS} — click a skill to train it</div>`;
+    const trainable=SKILLS_DEF.filter(s=>s.tc>0&&s.fam!=="Tinkering");
+    trainable.forEach(s=>{ const on=ccWork.ctrained.indexOf(s.k)>=0; const b=document.createElement('button');
+      b.textContent=`${s.n} (${s.tc})`; b.className=on?"sel":""; b.disabled=!on&&rem<s.tc;
+      b.onclick=()=>{ const i=ccWork.ctrained.indexOf(s.k); if(i>=0)ccWork.ctrained.splice(i,1); else if(rem>=s.tc)ccWork.ctrained.push(s.k); ccWork.template="custom"; ccRenderCreation(); };
+      sk.appendChild(b); });
+  }
+  const tw=document.getElementById('ccTown');
+  if(tw){ tw.innerHTML=""; ["Holtburg","Shoushi","Yaraq","Sanamar","Cragstone","Rithwic","Yanshi","Al-Arqas"].forEach(n=>{ if(!CITIES.some(c=>c.name===n))return; const b=document.createElement('button'); b.textContent=n; b.className=ccWork.town===n?"sel":""; b.onclick=()=>{ccWork.town=n;ccRenderCreation();}; tw.appendChild(b); }); }
+}
 function openCharCreator(race,onCreate){
   ccOnCreate=onCreate;
   ccWork=Object.assign({},player.appearance); ccWork.race=race||ccWork.race||"aluvian"; if(!ccWork.model)ccWork.model="procedural";
@@ -11225,7 +11298,7 @@ function openCharCreator(race,onCreate){
   document.getElementById('charCreator').style.display="block"; ccVisible=true;
   const nameI=document.getElementById('ccName'); nameI.value=(player.name&&player.name!=="Adventurer")?player.name:"";
   document.getElementById('ccMsg').textContent="";
-  ccInitPreview(); ccBuildOptions(); ccSyncSel(); ccSize(); ccRebuild();
+  ccInitCreation(); ccInitPreview(); ccBuildOptions(); ccSyncSel(); ccRenderCreation(); ccSize(); ccRebuild();
   cancelAnimationFrame(ccRAF); ccAnim();
 }
 function closeCharCreator(){ ccVisible=false; cancelAnimationFrame(ccRAF); document.getElementById('charCreator').style.display="none"; }
@@ -11234,7 +11307,12 @@ document.getElementById('ccBack').onclick=()=>{ closeCharCreator(); document.get
 document.getElementById('ccCreate').onclick=()=>{
   const name=document.getElementById('ccName').value.trim();
   if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
-  player.name=name; player.appearance=Object.assign({},ccWork); player.heritage=ccWork.race;
+  player.name=name; player.heritage=ccWork.race;
+  const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","tattoo","model","gender"];
+  const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k]; player.appearance=app;
+  // carry the AC creation choices into startGame
+  player.createAttr=Object.assign({},ccWork.cattr); player.createSkills=(ccWork.ctrained||[]).slice();
+  player.createTown=ccWork.town; player.createTemplate=ccWork.template;
   const cb=ccOnCreate; ccOnCreate=null; closeCharCreator();
   if(cb) cb(ccWork.race);
 };
