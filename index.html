@@ -2558,6 +2558,16 @@ function buildWorld(){
         if(terrainH(nx,nz)>=2) return {x:nx,z:nz}; } }
     return {x,z}; }
   for(const d of DUNGEONS){ const L=landNear(d.x,d.z); d.x=L.x; d.z=L.z; addEntrance(d); }
+  // ── Player estate: a manor near Holtburg the housing owner can recall to (recallHome / /home / panel) ──
+  (function(){ const cap=CITIES.find(c=>c.name==="Holtburg")||CAPITALS[0]; if(!cap) return;
+    const L=landNear(cap.x+150, cap.z+50);   // just outside the capital core, on open land
+    HOUSE_LOC={x:L.x, z:L.z};
+    const est=buildBuilding(cap.region,"hall",1.6); est.position.set(L.x,groundY(L.x,L.z),L.z); est.rotation.y=Math.PI;
+    scene.add(est); scenery.push(est);
+    if(est.userData&&est.userData.surfaces) registerStructure(L.x,L.z,Math.PI,groundY(L.x,L.z),est.userData.surfaces);
+    const lbl=labelSprite("Kilmer's Estate — recall home (/home)"); lbl.scale.set(11,2.2,1); lbl.position.set(L.x,8.5,L.z); scene.add(lbl); scenery.push(lbl);
+    obstacles.push({x:L.x,z:L.z,r:6});
+  })();
   // capital portal network (step between the three capitals)
   for(let i=0;i<CAPITALS.length;i++){const a=CAPITALS[i],b=CAPITALS[(i+1)%CAPITALS.length];
     addPortal(a.x+11,a.z-3,{x:b.x,z:b.z+6,name:b.name});}
@@ -9216,9 +9226,22 @@ const HOUSE_TIERS=[
   {name:"Villa",     cost:40000,  storage:150, blurb:"a grand villa with generous vaults"},
   {name:"Mansion",   cost:120000, storage:300, blurb:"a monarch's mansion — cavernous storage befitting a lord"},
 ];
+let HOUSE_LOC=null;   // world position of the player's estate (a manor near Holtburg), set at world-build
 function houseTier(){ return (player.house&&player.house.tier)|0; }
 function houseCap(){ const t=houseTier(); return t>0?HOUSE_TIERS[t-1].storage:0; }
 function houseName(){ const t=houseTier(); return t>0?HOUSE_TIERS[t-1].name:"No dwelling"; }
+// your estate stands near Holtburg (placed at world-build); recall home teleports you to it.
+function recallHome(){
+  if(inDungeon||inNetwork){ log("You can't recall to your estate from here — return to the surface first.","warn"); if(SFX.err)SFX.err(); return; }
+  if(houseTier()<1){ log("You own no estate to recall to — buy one first (press Y).","sys"); if(SFX.err)SFX.err(); return; }
+  if(!HOUSE_LOC){ log("Your estate is not ready.","warn"); return; }
+  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  player.x=HOUSE_LOC.x; player.z=HOUSE_LOC.z+6; player.invuln=2;
+  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  if(typeof toast==="function") toast("ESTATE"); if(SFX.quest)SFX.quest();
+  log(`You recall to your <b>${houseName()}</b> near Holtburg.`,"sys");
+  if(document.getElementById('housing').style.display==="flex") closeHousing();
+}
 function buyHouse(tier){
   if(!player.house) player.house={tier:0,storage:[]};
   const cur=houseTier();
@@ -9263,6 +9286,8 @@ function renderHousing(){
     </div>`; });
   h+=`</div>`;
   if(t<1){ h+=`<div style="color:var(--dim)">Buy an estate above to unlock permanent storage. Higher tiers upgrade in place (you pay only the difference).</div>`; body.innerHTML=h; wireHousing(); return; }
+  // ── recall to your estate (a manor near Holtburg) ──
+  h+=`<div style="margin:2px 0 10px"><button class="tbtn" data-home="1">⌂ Recall to Estate (near Holtburg)</button> <span style="color:var(--dim);font-size:11px">or type /home</span></div>`;
   // ── two-column storage transfer: satchel ↔ house chest ──
   const inv=player.inv, st=player.house.storage;
   h+=`<div style="display:flex;gap:12px">`;
@@ -9279,6 +9304,7 @@ function wireHousing(){
   body.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>buyHouse(+b.dataset.buy));
   body.querySelectorAll('[data-dep]').forEach(b=>b.onclick=()=>houseDeposit(+b.dataset.dep));
   body.querySelectorAll('[data-wd]').forEach(b=>b.onclick=()=>houseWithdraw(+b.dataset.wd));
+  body.querySelectorAll('[data-home]').forEach(b=>b.onclick=()=>recallHome());
 }
 function openHousing(){ renderHousing(); document.getElementById('housing').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeHousing(){ document.getElementById('housing').style.display="none"; paused=false; }
@@ -10687,6 +10713,7 @@ function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
   if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
+  else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="who"){ netSend({t:"who"}); }
   else if(cmd==="tell"||cmd==="w"){ const name=parts[1], msg=parts.slice(2).join(" ").trim();
     if(name&&msg) netSend({t:"tell",name,msg}); else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
