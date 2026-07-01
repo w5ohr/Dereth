@@ -1230,8 +1230,17 @@ function genRoads(){
     const a=CAPITALS[i],b=CAPITALS[j];
     ROADS.push({ax:a.x,az:a.z,bx:b.x,bz:b.z,w:9,major:true,aname:a.name,bname:b.name});
   }
-  // smaller towns get only their own internal streets (a short cross), no inter-city road
-  for(const c of CITIES){ if(c.capital) continue; const L=22;
+  // W10: an organic web of lesser roads — each smaller town links to its nearest neighbour (town or
+  //      capital), so the settled land is threaded together rather than only the three capitals.
+  const seen=new Set();
+  for(const c of CITIES){ if(c.capital) continue;
+    let best=null,bd=Infinity;
+    for(const o of CITIES){ if(o===c) continue; const d=(o.x-c.x)*(o.x-c.x)+(o.z-c.z)*(o.z-c.z); if(d<bd){ bd=d; best=o; } }
+    if(best && bd < 2600*2600){   // skip absurdly isolated links
+      const key=[c.name,best.name].sort().join("|");
+      if(!seen.has(key)){ seen.add(key); ROADS.push({ax:c.x,az:c.z,bx:best.x,bz:best.z,w:5,aname:c.name,bname:best.name}); }
+    }
+    const L=22;   // plus the town's own street cross
     ROADS.push({ax:c.x-L,az:c.z,bx:c.x+L,bz:c.z,w:4});
     ROADS.push({ax:c.x,az:c.z-L,bx:c.x,bz:c.z+L,w:4});
   }
