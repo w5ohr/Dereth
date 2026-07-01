@@ -3539,6 +3539,16 @@ const SPELL_COMPONENTS=[
 ];
 function rollComponent(){ if(Math.random()<0.15) return {name:"Mana Scarab",stat:"mn",v:50};   // the usable component
   const c=SPELL_COMPONENTS[irnd(0,SPELL_COMPONENTS.length-1)]; return {name:c.name,stat:"comp",v:c.v}; }
+// H10/Mg2 component casting: scarabs are AC's casting reagent, keyed to spell level. When your mana runs
+// dry a scarab of sufficient level is consumed to power the cast — making the once-vendor-trash scarabs matter.
+const SCARAB_LEVEL={"Lead Scarab":1,"Iron Scarab":2,"Copper Scarab":3,"Silver Scarab":4,"Gold Scarab":5,"Pyreal Scarab":6,"Platinum Scarab":7,"Ivory Scarab":7,"Diamond Scarab":8};
+function isScarab(it){ return it&&it.stat==="comp"&&SCARAB_LEVEL[it.name]!=null; }
+function findScarabFor(spellLvl){   // index of the lowest-level scarab in the satchel that can power a level-N spell
+  let best=-1,bestLv=99;
+  for(let i=0;i<player.inv.length;i++){ const it=player.inv[i]; if(!isScarab(it)) continue;
+    const lv=SCARAB_LEVEL[it.name]; if(lv>=spellLvl && lv<bestLv){ best=i; bestLv=lv; } }
+  return best;
+}
 function killMonster(m){
   const b=BESTIARY[m.kind];
   player.kills++;
@@ -5880,7 +5890,7 @@ function applyItem(it){
     derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
   else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor.`,"sys"); }
   else if(it.stat==="quest"){ log(`<b>${it.name}</b> is a quest collectible — turn it in to the right quest-giver, or sell it.`,"sys"); }
-  else if(it.stat==="comp"){ log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
+  else if(it.stat==="comp"){ if(isScarab(it)) log(`<b>${it.name}</b> is a casting scarab (level ${SCARAB_LEVEL[it.name]}) — held in your satchel, it powers a spell automatically when your mana runs dry. Or sell it to a Scrivener.`,"sys"); else log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
   else if(it.stat==="note"){ player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
   else if(it.stat==="ammo"){ log(`<b>${it.name}</b> is loosed automatically when you fire a matching ${it.for}.`,"sys"); return "keep"; }
@@ -6221,8 +6231,15 @@ function executeSpell(id){
     floater(player.x,EYE+0.5,player.z,"+22 mana","#5aa8ff");spellCd[id]=now()+s.cd;return;
   }
   const cost=Math.round(s.cost*clamp(1-(skillValue("mana")-SKILL_BY_KEY.mana.base0)*0.005,0.55,1)); // Mana Conversion lowers cost
-  if(player.mn<cost){log(`Not enough mana for ${s.name}.`,"warn");return;}
-  player.mn-=cost;spellCd[id]=now()+s.cd;
+  let usedScarab=false;
+  if(player.mn<cost){   // out of mana — channel a scarab (AC casting reagent) of sufficient level if you hold one
+    const si=findScarabFor(s.lvl||1);
+    if(si>=0){ const sc=player.inv[si]; takeFromInv(si); usedScarab=true;
+      log(`Your mana runs dry — you channel a <b>${sc.name}</b> to power <b>${s.name}</b>.`,"heal"); floater(player.x,EYE+0.6,player.z,"scarab!","#c9a6ff"); if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
+    else { log(`Not enough mana for ${s.name} — and no scarab of level ${s.lvl||1}+ to channel.`,"warn"); return; }
+  }
+  if(!usedScarab) player.mn-=cost;
+  spellCd[id]=now()+s.cd;
   // Fizzle: an under-trained caster sometimes flubs the spell — chance falls to 0 as skill outgrows
   // the requirement (Arcane Lore steadies your hand too). Half the mana is wasted; quick retry.
   { const mk2=MAGIC_SCHOOLS[s.school]; const margin=mk2?skillValue(mk2)-(s.req||0):999;
@@ -10278,7 +10295,7 @@ function gearDesc(it){
   if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
   if(it.stat==="note") return `trade note · worth ${it.v}p`;
-  if(it.stat==="comp") return `spell component · worth ${it.v}p`;
+  if(it.stat==="comp") return isScarab(it)?`casting scarab (lv ${SCARAB_LEVEL[it.name]}) · worth ${it.v}p`:`spell component · worth ${it.v}p`;
   if(it.wt==="focus") return `+${it.foc||it.v} all magic · casting focus`;
   if(it.stat==="weapon") return `+${it.v} dmg · ${it.wt}`+(it.affix?` · ${it.affix.desc}`:"");
   if(it.stat==="worn") return `+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`+(it.magicAbsorb?` · −${Math.round(it.magicAbsorb*100)}% magic`:"")+(it.affix?` · ${it.affix.desc}`:"");
@@ -11298,7 +11315,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
