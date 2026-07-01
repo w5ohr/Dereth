@@ -6243,6 +6243,11 @@ function consumeTaper(){
   if(player.tapers>0){ player.tapers--; return 1.10; }
   return 1;
 }
+// H11 Spell economy (AC's early design): a spell cast over and over grows familiar and weakens (down to
+// −15%); fatigue decays as you rest it / cast others, so a varied repertoire hits harder than spamming one.
+function spellPower(id){ const f=(player.spellFatigue&&player.spellFatigue[id])||0; return 1-f*0.15; }
+function noteCast(id){ if(!id)return; player.spellFatigue=player.spellFatigue||{}; player.spellFatigue[id]=Math.min(1,(player.spellFatigue[id]||0)+0.10); }
+function castEcon(id){ noteCast(id); return consumeTaper()*spellPower(id); }   // one call per cast: taper boost × spell-economy fatigue
 function itemBuff(stat){ const b=player.itemBuffs&&player.itemBuffs[stat]; return b?b.v:0; }   // Item-Enchantment combat bonus
 // the ally (remote player) under your crosshair within range, for casting Creature/Life on others
 function pickAllyTarget(range){
@@ -6363,13 +6368,13 @@ function executeSpell(id){
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
   }
   if(s.school==="life"&&s.heal){
-    const pow=consumeTaper();
+    const pow=castEcon(id);
     const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01)*pow;player.hp=Math.min(player.mhp,player.hp+h);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(h)+(pow>1?" ✦":""),"#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, healing ${Math.round(h)}.`,"heal");return;
   }
   if(s.special==="revitalize"){
-    const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02)*consumeTaper();player.st=Math.min(player.mst,player.st+v);
+    const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02)*castEcon(id);player.st=Math.min(player.mst,player.st+v);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
   }
@@ -6419,7 +6424,7 @@ function executeSpell(id){
   if(s.special==="wall"){   // lay a persistent damage zone on the ground ahead of you
     const dir=new THREE.Vector3();cam.getWorldDirection(dir);
     const cx=clamp(player.x+dir.x*7,-HALF+2,HALF-2),cz=clamp(player.z+dir.z*7,-HALF+2,HALF-2);
-    const col=s.color||0xff7a2a, el=s.element||"fire", dps=s.dps()*skillEff("war",0.02)*consumeTaper();
+    const col=s.color||0xff7a2a, el=s.element||"fire", dps=s.dps()*skillEff("war",0.02)*castEcon(id);
     const disc=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,opacity:0.5,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
     disc.scale.set(s.r*2,s.r*2,s.r*2); disc.position.set(cx,0.4,cz);
     const lt=new THREE.PointLight(col,2.6,s.r*5); lt.position.set(cx,1.4,cz);
@@ -6436,7 +6441,7 @@ function executeSpell(id){
     burst(cx,0.6,cz,col,42);
     const fl=new THREE.PointLight(col,3.5,22);fl.position.set(cx,2.5,cz);scene.add(fl);
     setTimeout(()=>scene.remove(fl),350);
-    const dmg=s.dmg()*skillEff("war",0.02)*consumeTaper();
+    const dmg=s.dmg()*skillEff("war",0.02)*castEcon(id);
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
     for(const m of targets){const em=elemMult(m.kind,el);if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");else if(em<1)floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el,spell:true});}
     SFX.flame();castFlash(col);shake(0.22);
@@ -6452,7 +6457,7 @@ function executeSpell(id){
     return;
   }
   // war/void/life projectiles — geometry (bolt/streak/blast/volley/wave/ring) sets the shape
-  const pow=consumeTaper();
+  const pow=castEcon(id);
   const sp=s.make();
   const dmg=sp.dmg*skillEff(MAGIC_SCHOOLS[s.school]||"war",0.02)*pow;
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
@@ -7023,6 +7028,7 @@ function update(dt){
   if(player.emoteT>0){ player.emoteT=Math.max(0,player.emoteT-dt);   // emote gesture ends early if you move or attack
     if(chargeActive||held("forward")||held("back")||held("left")||held("right")) player.emoteT=0; }
   updateDrowning(dt);   // W3: over-head water depletes breath, then health
+  if(player.spellFatigue){ for(const k in player.spellFatigue){ const v=player.spellFatigue[k]-dt*0.06; if(v<=0) delete player.spellFatigue[k]; else player.spellFatigue[k]=v; } }   // H11 spell fatigue recovers over time
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
   updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
   // spell cast wind-up: fire the effect when the bar fills
