@@ -1143,19 +1143,36 @@ let USE_GLTF_MONSTERS=true;
 // an array; a random variant is chosen per spawn, so a kind with several models (the 4 skeleton types)
 // shows visual variety in a mob pack.
 const GM_DIR="assets/models/monsters/";
+// Each entry: {f:file, tint?/tints?:hex} — tint lerps the model's materials toward an AC-authentic hue
+// (breeds researched from AC lore: Ivory/Ash/Jade Gromnies, jet-black smoke Shadows, amber Olthoi workers…).
+// Rigged Quaternius/KayKit models (CC0) + Khronos Fox (CC-BY); fetched by assets/fetch-models.py.
 const MONSTER_MODELS={
-  mattekar:[GM_DIR+"Fox.glb"], // furred quadruped beast (best-fit)
+  drudge:       [{f:"Goblin.glb"}],                                        // hunched pale goblinoid, oversized head
+  mosswart:     [{f:"Mushnub.glb",tints:[0x6a9a4a,0x8aa04a,0xb0a04a]}],    // warty green swamp-thing (chiefs foul-yellow)
+  banderling:   [{f:"Orc.glb",tints:[0xb08a5a,0x9a7a52,0x8a7a6a]}],        // hulking shaggy tan ogre
+  lugian:       [{f:"Giant.glb",tints:[0x9aa4b8,0x8a94a8]}],               // slow blue-gray stone giant
+  tumerok:      [{f:"Demon.glb",tints:[0xc09a6a,0xa08a5a]}],               // lean crested tribal warrior, tan hide
+  tusker:       [{f:"Yeti.glb",tints:[0x9a8a72,0x8a8a8a,0xe8e8f0]}],       // gorilla bulk + tusks (Silver/Snow breeds)
+  mattekar:     [{f:"Wolf.glb",tints:[0xe8e8f0,0xcfcfd8,0x9a9aa4]}],       // shaggy horned snow-beast, pale pelts
+  reedshark:    [{f:"Velociraptor.glb",tints:[0x8a9a5a,0x9a8a5a,0x6a7a4a]}],// hairless crested lizard predator
+  gromnie:      [{f:"Trex.glb",tints:[0xe8e0d0,0x9a9a9a,0x5a8a4a]}],       // plump grinning wingless dragon: Ivory/Ash/Jade
+  auroch:       [{f:"Bull.glb",tints:[0x6a4a30,0x4a3626]}],                // shaggy longhorn wild cattle
+  shadow:       [{f:"Ghost.glb",tint:0x241a30}],                           // man-shaped void of ebon mist
+  virindi:      [{f:"Ghost.glb",tint:0xd8cff0}],                           // floating cloaked figure, white mask
+  olthoiworker: [{f:"Spider.glb",tint:0xd8b86a}],                          // pale amber chitin drone
+  olthoi:       [{f:"Spider.glb",tints:[0x7a2a1a,0x5a2016]}],              // dark red-brown insectoid
+  olthoisoldier:[{f:"Spider.glb",tint:0x3a1610}],                          // near-black soldier caste
   // KayKit Character Pack: Skeletons (CC0, Kay Lousberg) — rigged undead humanoids w/ baked idle/walk/attack clips
-  skeleton:[GM_DIR+"Skeleton_Warrior.glb", GM_DIR+"Skeleton_Minion.glb", GM_DIR+"Skeleton_Mage.glb", GM_DIR+"Skeleton_Rogue.glb"],
+  skeleton:[{f:"Skeleton_Warrior.glb"},{f:"Skeleton_Minion.glb"},{f:"Skeleton_Mage.glb"},{f:"Skeleton_Rogue.glb"}],
 };
-let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h} loaded variants
+let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h,tint,tints} loaded variants
 function loadGltfMonsters(){
   if(gltfMonstersStarted||!USE_GLTF_MONSTERS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
   gltfMonstersStarted=true; const L=new THREE.GLTFLoader();
   for(const kind in MONSTER_MODELS){ gltfMonsters[kind]=gltfMonsters[kind]||[];
-    for(const url of MONSTER_MODELS[kind]){ (k=>L.load(url, g=>{
+    for(const ent of MONSTER_MODELS[kind]){ (k=>L.load(GM_DIR+ent.f, g=>{
         const h=robustHeight(g.scene);
-        gltfMonsters[k].push({scene:g.scene, anims:g.animations||[], h});
+        gltfMonsters[k].push({scene:g.scene, anims:g.animations||[], h, tint:ent.tint, tints:ent.tints});
         log("Loaded a monster model ("+k+" "+gltfMonsters[k].length+"/"+MONSTER_MODELS[k].length+").","sys");
       }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
   }
@@ -4637,8 +4654,19 @@ function spawnMonster(kind,x,z,elite){
     if(!(msc>0.0001&&msc<1e4)) msc=1;   // guard against a degenerate native height producing a giant/invisible clone
     clone.scale.setScalar(msc);
     const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y; clone.rotation.y=Math.PI;
-    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
+    const tintHex=gm.tints?gm.tints[irnd(0,gm.tints.length-1)]:gm.tint;   // AC breed hue (Ivory/Ash/Jade Gromnie…)
+    const tintCol=tintHex!=null?new THREE.Color(tintHex):null;
+    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false;
+      if(tintCol&&o.material){ o.material=o.material.clone(); if(o.material.color) o.material.color.lerp(tintCol,0.72); } } });
     mesh.add(clone); mesh.userData={headY:b.size*1.5};
+    // billboard health bar — buildCreature makes one for procedural bodies; glTF monsters need their own
+    // (update()/boss code dereference userData.hb unguarded, so a missing bar crashed the render loop)
+    const hbg=new THREE.Group();
+    const hbBg=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.16),new THREE.MeshBasicMaterial({color:0x000000,fog:false}));
+    const hbFill=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.16),new THREE.MeshBasicMaterial({color:0xc0392b,fog:false}));
+    hbFill.position.z=0.01; hbg.add(hbBg); hbg.add(hbFill);
+    hbg.position.y=b.size*1.5+0.5; hbg.visible=false;
+    mesh.add(hbg); mesh.userData.hb=hbg; mesh.userData.fill=hbFill;
   } else mesh=buildCreature(kind);                                  // procedural fallback
   let hp=Math.round(b.hp*settings.diff),dmg=Math.round(b.dmg*settings.diff),xp=b.xp,goldMul=1,r=b.size*0.8;
   if(elite){
@@ -4791,7 +4819,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
-  m.mesh.userData.hb.visible=true;
+  if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
   if(crit) shake(0.16);
   // cornered foes enrage once below 30% HP: faster, hit harder, glow red
@@ -8594,7 +8622,7 @@ function update(dt){
     m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.y=m.ang;
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
-    if(m.hp<m.mhp||m.isBoss||m.isElite){hb.visible=true;hb.quaternion.copy(cam.quaternion);
+    if(hb&&(m.hp<m.mhp||m.isBoss||m.isElite)){hb.visible=true;hb.quaternion.copy(cam.quaternion);
       const fill=m.mesh.userData.fill,r=m.hp/m.mhp;fill.scale.x=r;fill.position.x=-(1-r)*0.7;}
   }
   for(const m of burned) if(monsters.indexOf(m)>=0) killMonster(m);

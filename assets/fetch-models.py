@@ -25,6 +25,7 @@ RPM = "https://cdn.jsdelivr.net/gh/readyplayerme/animation-library@master/"
 # cached full (clothed) Ready Player Me avatars committed in the animation-library-demo repo
 RPMAV = ("https://cdn.jsdelivr.net/gh/readyplayerme/animation-library-demo@master/"
          "Assets/Ready%20Player%20Me/Avatars/")
+QSHOW = "https://cdn.jsdelivr.net/gh/trebeljahr/quaternius-showcase@main/public/glb/"
 
 # (local relative path under assets/models/, source URL)
 MANIFEST = [
@@ -61,6 +62,20 @@ MANIFEST = [
     ("monsters/Skeleton_Minion.glb",  KAYSKEL + "Skeleton_Minion.glb"),
     ("monsters/Skeleton_Mage.glb",    KAYSKEL + "Skeleton_Mage.glb"),
     ("monsters/Skeleton_Rogue.glb",   KAYSKEL + "Skeleton_Rogue.glb"),
+    # --- monsters: Quaternius packs (CC0), verified non-Draco, rigged + animated ---
+    #     static.poly.pizza is the CDN behind poly.pizza (CORS *); QSHOW is a jsDelivr GitHub mirror.
+    ("monsters/Goblin.glb",       "https://static.poly.pizza/54e0fd61-6898-4b17-b039-8fa656d02954.glb"),   # drudge
+    ("monsters/Orc.glb",          "https://static.poly.pizza/52a479b3-a635-4a23-92cb-6697eaa5eed5.glb"),   # banderling
+    ("monsters/Giant.glb",        "https://static.poly.pizza/260aff73-1409-4a45-9746-b078229d8cf3.glb"),   # lugian
+    ("monsters/Yeti.glb",         "https://static.poly.pizza/40a831b3-686a-4af8-b189-a13b38a3c26a.glb"),   # tusker
+    ("monsters/Demon.glb",        "https://static.poly.pizza/6fbb8914-bd11-45e1-a906-51ace2ca5d2d.glb"),   # tumerok
+    ("monsters/Mushnub.glb",      "https://static.poly.pizza/55c64684-49a4-4fcc-b393-113126add89b.glb"),   # mosswart
+    ("monsters/Ghost.glb",        "https://static.poly.pizza/810f60a2-6e45-4c4e-a0d5-da91cd7288bd.glb"),   # shadow / virindi
+    ("monsters/Wolf.glb",         QSHOW + "animals_pack/Wolf.glb"),           # mattekar
+    ("monsters/Bull.glb",         QSHOW + "animals_pack/Bull.glb"),           # auroch
+    ("monsters/Velociraptor.glb", QSHOW + "dinosaurs_pack/Velociraptor.glb"), # reedshark
+    ("monsters/Trex.glb",         QSHOW + "dinosaurs_pack/Trex.glb"),         # gromnie
+    ("monsters/Spider.glb",       QSHOW + "easy_enemies_pack/Spider.glb"),    # olthoi family
 ]
 
 def valid_glb(path):

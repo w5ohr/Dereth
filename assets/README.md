@@ -107,3 +107,8 @@ Monsters can also swap their procedural mesh for a rigged glTF creature (also se
 - Current limitation: the model plays its own baked clips (idle); it is **not** yet driven by
   the game's per-joint locomotion. Wiring walk/run/attack to the model's skeleton (or Mixamo
   clips) is the next step if you adopt this path.
+
+## Monster models (assets/models/monsters/, fetched by fetch-models.py)
+- Quaternius (quaternius.com) — Goblin, Orc, Giant, Yeti, Demon, Mushnub, Ghost, Wolf, Bull, Velociraptor, Trex, Spider — CC0
+- Kay Lousberg / KayKit — Skeleton pack — CC0
+- Khronos glTF-Sample-Models — Fox (PixelMannen, AsoboStudio/tomkranis) — CC-BY 4.0
