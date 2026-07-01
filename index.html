@@ -239,6 +239,8 @@
   <div id="tinkDoll" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Salvaged Materials</div>
   <div id="tinkBags" style="margin-bottom:12px"></div>
+  <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Crafting <span style="color:var(--dim);font-weight:normal;font-size:11px">— Alchemy / Cooking / Fletching · spends materials, needs the trade skill (C)</span></div>
+  <div id="tinkCraft" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Satchel <span id="invCount" style="color:var(--dim);font-weight:normal"></span></div>
   <div id="invRows"></div>
   <button id="closeTink">Return to Dereth  (T)</button>
@@ -5898,6 +5900,35 @@ function applyTinker(mat){
   } else { log(`Tinkering <b>failed</b> — the ${mat} salvage is lost. (Your gear is spared.)`,"warn");SFX.hit(); } // single-player-friendly deviation: item not destroyed
   if(bag.units<=0) delete player.salvage[mat];
 }
+// ── H1/H2/H5/H6 Crafting (AC trade skills): Alchemy/Cooking/Fletching turn gathered materials into their
+//    consumables. Recipes spend the shared `player.materials` pool (from salvaging & nodes) + require the
+//    trade skill Trained; success scales with the skill so the once-inert skills finally matter. ──
+const RECIPES=[
+  {id:"alch_health", skill:"alchemy", name:"Health Potion",        cost:8,  ico:"🧪", out:()=>({name:"Health Potion",stat:"hp",v:60}),  blurb:"restores 60 HP"},
+  {id:"alch_mana",   skill:"alchemy", name:"Mana Potion",          cost:8,  ico:"🧪", out:()=>({name:"Mana Potion",stat:"mn",v:60}),   blurb:"restores 60 mana"},
+  {id:"alch_stam",   skill:"alchemy", name:"Stamina Tonic",        cost:6,  ico:"🧪", out:()=>({name:"Stamina Tonic",stat:"st",v:60}),  blurb:"restores 60 stamina"},
+  {id:"alch_kit",    skill:"alchemy", name:"Treated Healing Kit",  cost:14, ico:"🩹", out:()=>({name:"Treated Healing Kit",stat:"hp",v:70}), blurb:"a healing kit (scales with Healing)"},
+  {id:"cook_stew",   skill:"cooking", name:"Hearty Stew",          cost:6,  ico:"🍲", out:()=>({name:"Hearty Stew",stat:"food",attr:"Endurance",v:14,dur:180}), blurb:"+14 Endurance food"},
+  {id:"cook_ale",    skill:"cooking", name:"Frothing Ale",         cost:6,  ico:"🍺", out:()=>({name:"Frothing Ale",stat:"food",attr:"Strength",v:13,dur:160}),  blurb:"+13 Strength brew"},
+  {id:"cook_tea",    skill:"cooking", name:"Phial of Mana Tea",    cost:6,  ico:"🍵", out:()=>({name:"Phial of Mana Tea",stat:"food",attr:"Focus",v:14,dur:180}), blurb:"+14 Focus food"},
+  {id:"fletch_arrow",skill:"fletching",name:"Broadhead Arrows",    cost:5,  ico:"🏹", out:()=>({name:"Broadhead Arrow",stat:"ammo",for:"bow",dmg:4,v:4,count:15}), blurb:"15 arrows, +4 dmg"},
+  {id:"fletch_bolt", skill:"fletching",name:"Steel Quarrels",      cost:5,  ico:"🏹", out:()=>({name:"Steel Quarrel",stat:"ammo",for:"crossbow",dmg:4,v:4,count:15}), blurb:"15 quarrels, +4 dmg"},
+];
+const RECIPE_BY_ID={}; for(const r of RECIPES) RECIPE_BY_ID[r.id]=r;
+function craftChance(skill){ const st=skillTier(skill); if(st<1) return 0; return clamp(0.55+skillRank(skill)*0.003+(st>1?0.1:0),0.4,0.97); } // trained scales w/ rank, spec +10%
+function craftRecipe(id){
+  const r=RECIPE_BY_ID[id]; if(!r) return false;
+  if(skillTier(r.skill)<1){ log(`You must train <b>${SKILL_BY_KEY[r.skill].n}</b> to craft ${r.name} (sheet: C).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
+  if(player.materials<r.cost){ log(`Not enough materials for <b>${r.name}</b> (need ${r.cost}, have ${player.materials}). Salvage loot to gather more.`,"warn"); if(SFX.hit)SFX.hit(); return false; }
+  player.materials-=r.cost;
+  if(Math.random()<craftChance(r.skill)){
+    const it=r.out();
+    if(!addToInv(it)){ log(`Your satchel is too full to hold the <b>${r.name}</b>.`,"warn"); player.materials+=r.cost; return false; }
+    log(`<b>${SKILL_BY_KEY[r.skill].n}:</b> you craft <b>${it.name}</b>${it.count?` ×${it.count}`:""} — ${r.blurb}.`,"loot"); if(SFX.quest)SFX.quest(); toast("CRAFTED — "+r.name.toUpperCase());
+    if(typeof gainXP==="function") gainXP(Math.round(r.cost*4));   // a little XP for the craft
+  } else { const back=Math.floor(r.cost/2); player.materials+=back; log(`Your <b>${r.name}</b> spoils in the making — ${back} materials recovered. (Raise ${SKILL_BY_KEY[r.skill].n}.)`,"warn"); if(SFX.hit)SFX.hit(); }
+  updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
+}
 function gainXP(amt){
   if(player.patron) amt=Math.round(amt*(1.15+(skillTier("loyalty")>0?0.05:0))); // Loyalty deepens vassal XP flow
   if(player.vitae>0){ const was=player.vitae; player.vitae=Math.max(0,player.vitae-amt/40000); // recover Vitae through deeds (XP works it off)
@@ -10992,6 +11023,17 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-ap="${m}" ${ready?"":"disabled"}>Apply (100 u)</button></div></div>`;
     }).join("");
     bagWrap.querySelectorAll('[data-ap]').forEach(btn=>btn.onclick=()=>{applyTinker(btn.dataset.ap);buildTinker();updateHUD();saveGame();});
+  }
+  // crafting: recipes grouped by trade skill; craftable when the skill is Trained and you hold enough materials
+  const craftWrap=document.getElementById('tinkCraft');
+  if(craftWrap){
+    craftWrap.innerHTML=RECIPES.map(r=>{
+      const trained=skillTier(r.skill)>0, enough=player.materials>=r.cost, ok=trained&&enough, pct=Math.round(craftChance(r.skill)*100);
+      const req=!trained?`<span style="color:#e0a0a0">needs ${SKILL_BY_KEY[r.skill].n} trained</span>`:!enough?`<span style="color:#e0a0a0">needs ${r.cost} mat</span>`:`<span style="color:#9be08a">${pct}% success</span>`;
+      return `<div class="row"><div><span class="lab">${r.ico} ${r.name}</span> <span class="desc">— ${r.blurb} · ${r.cost} mat · ${SKILL_BY_KEY[r.skill].n} · ${req}</span></div>
+        <div class="ctl"><button class="tbtn" data-craft="${r.id}" ${ok?"":"disabled"}>Craft</button></div></div>`;
+    }).join("");
+    craftWrap.querySelectorAll('[data-craft]').forEach(btn=>btn.onclick=()=>{ craftRecipe(btn.dataset.craft); buildTinker(); updateHUD(); });
   }
   const rows=document.getElementById('invRows');
   { const ic=document.getElementById('invCount'); if(ic) ic.textContent=`${player.inv.length}/${invCap()}`; }
