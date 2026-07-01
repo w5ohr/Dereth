@@ -1652,6 +1652,20 @@ function lumNormalTex(tex,strength){
   const t=new THREE.CanvasTexture(c);t.wrapS=tex.wrapS;t.wrapT=tex.wrapT;t.repeat.copy(tex.repeat);
   _lumNrmCache.set(tex,t);return t;
 }
+// bundled-straw thatch (ceilings): overlapping horizontal straw courses, sun-bleached gold
+let _thatch;
+function thatchTex(){if(_thatch)return _thatch;const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+  g.fillStyle="#b89653";g.fillRect(0,0,256,256);
+  for(let row=0;row<256;row+=16){                                   // straw courses, each overlapping the last
+    for(let i=0;i<170;i++){const x=irnd(-6,255),y=row+irnd(0,15),v=irnd(-30,26);
+      g.strokeStyle=`rgba(${186+v},${152+v},${84+v},0.8)`;g.lineWidth=rnd(0.8,1.8);
+      g.beginPath();g.moveTo(x,y);g.lineTo(x+irnd(10,30),y+irnd(-2,2));g.stroke();}
+    g.strokeStyle="rgba(84,64,30,0.35)";g.lineWidth=2;               // shadow line under each course
+    g.beginPath();g.moveTo(0,row+15.5);g.lineTo(256,row+15.5);g.stroke();}
+  _thatch=new THREE.CanvasTexture(c);_thatch.wrapS=_thatch.wrapT=THREE.RepeatWrapping;return _thatch;}
+// flagstone floor texture (memoized reuse of the road cobbles)
+let _stoneFloor;
+function stoneFloorTex(){ return _stoneFloor||(_stoneFloor=cobbleTex()); }
 function texMat(texFn,tint){
   const tex=texFn(); tex.encoding=THREE.sRGBEncoding;
   const m=new THREE.MeshStandardMaterial({map:tex,roughness:0.82,metalness:0.03,
@@ -1818,6 +1832,7 @@ const _sunWarm=new THREE.Color(0xffb15a), _sunNoon=new THREE.Color(0xfff2d8);
 const _tmp=new THREE.Color();
 function updateDayNight(dt){
   gameTime=(gameTime+dt/DAYLEN)%1;
+  worldDays+=dt/DAYLEN; seasonTick();   // 90 full day/night cycles → the season turns
   const t2=gameTime*Math.PI*2;
   const sunY=-Math.cos(t2);            // -1 midnight .. +1 noon
   const sunX=Math.sin(t2);
@@ -3485,6 +3500,21 @@ function addLifestone(x,z,bound,name,capital,region){
   lifestones.push({x,z,bound,name,mesh,capital:!!capital,region});obstacles.push({x,z,r:1.2});
 }
 function roofPyramid(w,h,color){const r=new THREE.Mesh(new THREE.ConeGeometry(w,h,4),solid(color,true));r.rotation.y=Math.PI/4;r.castShadow=true;return r;}
+// ── solid roofs: stepped square platforms approximate the pyramid so a player who lands on a
+//    roof stands on it (and can walk to the ridge) instead of falling through into the house. ──
+function pyramidRoofPlats(W,D,baseY,h){
+  const plats=[],steps=Math.max(2,Math.ceil(h/0.5));
+  for(let i=0;i<steps;i++){ const k=1-i/steps;                     // shrink toward the apex
+    plats.push({x0:-W/2*k,z0:-D/2*k,x1:W/2*k,z1:D/2*k,y:baseY+h*(i/steps)}); }
+  return plats;
+}
+function mergeSurf(a,b){ if(!a) return b; if(!b) return a;
+  return {platforms:(a.platforms||[]).concat(b.platforms||[]),ramps:(a.ramps||[]).concat(b.ramps||[])}; }
+// interior ceiling slab under the roof — wood planks or thatch, visible from inside
+function addCeiling(g,W,D,y,mat){
+  const c=new THREE.Mesh(new THREE.BoxGeometry(W-0.2,0.14,D-0.2),mat);
+  c.position.y=y; c.receiveShadow=true; g.add(c);
+}
 // --- Aluvian: timber-frame, steep gabled roof, chimney ---
 // ── Buildings: bigger (≈2×) 2-storey-capable shells. Ground walls (door + windows) give colliders;
 //    two-storey kinds add a back balcony at H1 reached by an interior ramp, registered as a walkable
@@ -3632,23 +3662,28 @@ function bAluvian(s,kind){
   for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.3,(two?H1F+H2F:H1F),0.3),tm);p.position.set(sx*(W/2-0.02),(two?H1F+H2F:H1F)/2,sz*(D/2-0.02));g.add(p);}
   const top=two?H1F+H2F:H1F;
   addTimber(g,W,top,D);
+  // ceiling: thatch over simple houses, wood planks in shops & halls
+  addCeiling(g,W,D,top-0.14,kind==="house"?texMat(thatchTex,0xc8a860):texMat(woodTex,0x6a4a2a));
   const roof=roofRect(W*1.16,D*1.16,3.4,0x7a3a2c);roof.position.y=top+1.6;g.add(roof);
   const eave=new THREE.Mesh(new THREE.BoxGeometry(W*1.16,0.2,D*1.16),solid(0x3a2616));eave.position.y=top+0.1;g.add(eave); // overhanging eave
   const ch=new THREE.Mesh(new THREE.BoxGeometry(0.7,2.2,0.7),solid(0x7a5040));ch.position.set(W*0.32,top+1.7,-D*0.22);ch.castShadow=true;g.add(ch);
   const cap=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.2,0.85),solid(0x4a3a30));cap.position.set(W*0.32,top+2.85,-D*0.22);g.add(cap);
   if(kind==="shop") addSign(g,W,D,0xffcf6b);
   addBuildingProps(g,W,D,kind);
+  surf=mergeSurf(surf,{platforms:pyramidRoofPlats(W*1.16,D*1.16,top+0.2,3.1)});   // solid, walkable roof
   g.userData.surfaces=surf; return g;
 }
 // --- Gharu'ndim: sandstone block, parapet, dome ---
 function bGharu(s,kind){
   const g=new THREE.Group(),W=8.8*s,D=9.2*s,two=(kind!=="house"),wall=texMat(sandTex,0xd8b46a);
-  addShell(g,W,H1F,D,wall,solid(0xb89a5e),0x9a7a3a);
-  let surf=null; if(two){ surf=addBalcony(g,W,H1F,D,solid(0xb89a5e),0x9a7a3a); addUpperWalls(g,W,H1F,H2F,D,wall,0x9a7a3a); }
+  addShell(g,W,H1F,D,wall,texMat(stoneFloorTex,0xcbb691),0x9a7a3a);   // flagstone floor
+  let surf=null; if(two){ surf=addBalcony(g,W,H1F,D,texMat(stoneFloorTex,0xcbb691),0x9a7a3a); addUpperWalls(g,W,H1F,H2F,D,wall,0x9a7a3a); }
   addFurniture(g,W,D,kind);
   const top=two?H1F+H2F:H1F;
+  addCeiling(g,W,D,top-0.14,texMat(woodTex,0x8a6a42));                 // wood-beam ceiling
   const para=new THREE.Mesh(new THREE.BoxGeometry(W+0.6,0.7,D+0.6),solid(0xab8a4e));para.position.y=top+0.3;para.castShadow=true;g.add(para);
   const dome=new THREE.Mesh(new THREE.SphereGeometry(W*0.34,16,10,0,6.28,0,Math.PI/2),solid(0xd8b46a));dome.position.y=top+0.5;dome.castShadow=true;g.add(dome);
+  surf=mergeSurf(surf,{platforms:[{x0:-(W+0.6)/2,z0:-(D+0.6)/2,x1:(W+0.6)/2,z1:(D+0.6)/2,y:top+0.65}]});   // solid, walkable flat roof (parapet height)
   if(kind==="hall"){const tw=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,top+3,12),solid(0xcaa56a));tw.position.set(W*0.42,(top+3)/2,-D*0.32);tw.castShadow=true;g.add(tw);
     const td=new THREE.Mesh(new THREE.SphereGeometry(0.95,12,8,0,6.28,0,Math.PI/2),solid(0xe0bc70));td.position.set(W*0.42,top+3,-D*0.32);g.add(td);}
   if(kind==="shop") addSign(g,W,D,0xe0bc70);
@@ -3662,11 +3697,15 @@ function bSho(s,kind){
   let surf=null; if(two){ surf=addBalcony(g,W,H1F,D,texMat(woodTex,0x3a2a20),0x2a1a14); addUpperWalls(g,W,H1F,H2F,D,wall,0x2a1a14); }
   addFurniture(g,W,D,kind);
   let top=two?H1F+H2F:H1F;
+  addCeiling(g,W,D,top-0.14,texMat(woodTex,0x7a5a38));                 // wood-beam ceiling
   const r0=roofRect(W*1.42,D*1.42,1.5,0x46604a);r0.position.y=top+0.6;g.add(r0);
+  surf=mergeSurf(surf,{platforms:pyramidRoofPlats(W*1.42,D*1.42,top+0.1,1.3)});   // solid, walkable base roof
   let y=top+1.1,w=W*0.7;const tiers=kind==="hall"?2:1;
   for(let t=0;t<tiers;t++){const h=1.8;
     const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),texMat(woodTex,t%2?0x9a8260:0x9a4030));body.position.y=y+h/2;body.castShadow=true;g.add(body);
-    const rr=roofRect(w*1.5,w*1.5,1.3,0x46604a);rr.position.y=y+h+0.5;g.add(rr); y+=h+0.6;w*=0.82;}
+    const rr=roofRect(w*1.5,w*1.5,1.3,0x46604a);rr.position.y=y+h+0.5;g.add(rr);
+    surf=mergeSurf(surf,{platforms:[{x0:-w*0.75,z0:-w*0.75,x1:w*0.75,z1:w*0.75,y:y+h+0.35}]});   // each pagoda tier holds you
+    y+=h+0.6;w*=0.82;}
   if(kind==="shop") addSign(g,W,D,0x9a4030);
   addBuildingProps(g,W,D,kind);
   g.userData.surfaces=surf; return g;
@@ -4202,16 +4241,32 @@ const EVENT_CALENDAR=[   // sample arc: "The Fifth Sending of Darkness" — each
    clue:"The Hopeslayer himself walks Dereth. Fell him, if any can."},
 ];
 let gameMonth=0, eventClock=0, calendarDone={};
-const MONTH_SECS=210;                       // real seconds of play per in-world month
+const MONTH_SECS=210;                       // real seconds of play per in-world month (story chapters)
 const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
 function currentCalEvent(){ const n=EVENT_CALENDAR.length; return EVENT_CALENDAR[((gameMonth%n)+n)%n]; }
-function currentSeason(){ return SEASONS[currentCalEvent().season]||SEASONS.growth; }
-function updateSeasonHUD(){ const el=document.getElementById('sSeason'); if(el){ const S=currentSeason(),ce=currentCalEvent(); el.innerHTML=`${S.name} <span style="color:var(--dim)">· ${ce.name}</span>`; } }
+// ── seasons follow the sun, not the story: one season lasts SEASON_DAYS full day/night cycles.
+//    worldDays accumulates in updateDayNight and is saved, so the year advances across sessions.
+//    A fresh world begins at worldDays=90 — the first morning of summer (Verdantine). ──
+const SEASON_ORDER=["thaw","growth","harvest","frost"];   // spring → summer → autumn → winter
+const SEASON_DAYS=90;
+let worldDays=SEASON_DAYS, _seasonIdx=-1;                 // 90 = start of summer
+function seasonTick(){
+  const si=Math.floor(worldDays/SEASON_DAYS);
+  if(si===_seasonIdx) return;
+  const first=_seasonIdx<0; _seasonIdx=si;
+  if(!first){ const S=currentSeason();
+    log(`<b>The season turns to ${S.name}</b> — ${S.blurb}.`,"warn");
+    toast("SEASON — "+S.name.toUpperCase()); if(SFX.quest)SFX.quest(); }
+  if(typeof updateSeasonHUD==="function") updateSeasonHUD();
+}
+function currentSeason(){ return SEASONS[SEASON_ORDER[Math.floor(worldDays/SEASON_DAYS)%SEASON_ORDER.length]]||SEASONS.growth; }
+function seasonDayInfo(){ const d=Math.floor(worldDays%SEASON_DAYS)+1; return `day ${d}/${SEASON_DAYS}`; }
+function updateSeasonHUD(){ const el=document.getElementById('sSeason'); if(el){ const S=currentSeason(),ce=currentCalEvent(); el.innerHTML=`${S.name} <span style="color:var(--dim)">· ${seasonDayInfo()} · ${ce.name}</span>`; } }
 function advanceMonth(){
   gameMonth++;
-  const ce=currentCalEvent(), S=currentSeason();
-  log(`<b>The season turns to ${S.name}.</b> <b>${ce.name}</b> — ${ce.rumor}`,"warn");
-  toast(S.name+" — "+ce.name);
+  const ce=currentCalEvent();
+  log(`<b>A new chapter unfolds: ${ce.name}.</b> ${ce.rumor}`,"warn");
+  toast(ce.name);
   updateSeasonHUD();
   eventCd=Math.min(eventCd,18);             // an Incursion tied to the new event arrives shortly
   if(ce.boss){   // S9: the climactic chapter looses the apex terror upon Dereth
@@ -6718,12 +6773,12 @@ function die(){
   },1400);
 }
 // AC fall damage: drops past a safe height hurt, scaling with distance; the Jump skill softens landings.
-// portal/teleport arrival: every teleport lands the player 6u ABOVE the destination surface
+// portal/teleport arrival: every teleport lands the player 2u ABOVE the destination surface
 // (so you can never materialize inside a hill), and pins the fall apex to the ground height so
 // the gentle float-down out of a portal never deals fall damage.
 function arriveAt(x,z){
   player.x=clamp(x,-HALF+2,HALF-2); player.z=clamp(z,-HALF+2,HALF-2);
-  const g=groundY(player.x,player.z), lift=(inDungeon||inNetwork)?0.5:6;
+  const g=groundY(player.x,player.z), lift=(inDungeon||inNetwork)?0.5:2;
   player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
   player.arriveGrace=true;   // the float-down out of the portal never deals fall damage
   camInit=false;   // snap the third-person camera to the new location instead of easing across the map
@@ -12053,7 +12108,7 @@ function saveGame(){
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
-      gameMonth,calendarDone,eventTitles:player.eventTitles,
+      gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -12114,6 +12169,8 @@ function applySaveObj(s){
   } else activeQuests=[];
   tracked=(s.tracked&&isActive(s.tracked))?s.tracked:trackedId();
   gameMonth=s.gameMonth|0; eventClock=0; calendarDone=(s.calendarDone&&typeof s.calendarDone==="object")?s.calendarDone:{};
+  worldDays=(typeof s.worldDays==="number"&&isFinite(s.worldDays))?s.worldDays:SEASON_DAYS;   // older saves join at the first morning of summer
+  _seasonIdx=-1; seasonTick();
   player.eventTitles=Array.isArray(s.eventTitles)?s.eventTitles.slice():[]; updateSeasonHUD();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
   if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
