@@ -3458,6 +3458,14 @@ const ITEM_BASE=[
   {n:"Xiphos",stat:"weapon",wt:"sword",v:[6,13]},{n:"Pilum",stat:"weapon",wt:"spear",v:[6,14]},
   {n:"Sagaris",stat:"weapon",wt:"axe",v:[8,17]},{n:"Shishpar",stat:"weapon",wt:"mace",v:[9,19]},
   {n:"Espadon",stat:"weapon",wt:"twohand",v:[10,22]},{n:"Selfbow",stat:"weapon",wt:"bow",v:[5,13]},
+  {n:"Anlace",stat:"weapon",wt:"dagger",v:[5,11]},{n:"Cinquedea",stat:"weapon",wt:"dagger",v:[5,12]},
+  {n:"Kaskara",stat:"weapon",wt:"sword",v:[6,14]},{n:"Backsword",stat:"weapon",wt:"sword",v:[6,13]},
+  {n:"Fauchard",stat:"weapon",wt:"spear",v:[7,15]},{n:"Voulge",stat:"weapon",wt:"spear",v:[7,16]},
+  {n:"Bearded Axe",stat:"weapon",wt:"axe",v:[8,18]},{n:"Broadaxe",stat:"weapon",wt:"axe",v:[9,18]},
+  {n:"Bulawa",stat:"weapon",wt:"mace",v:[9,19]},{n:"Horseman's Pick",stat:"weapon",wt:"mace",v:[9,20]},
+  {n:"Runestaff",stat:"weapon",wt:"staff",v:[7,15]},{n:"Tekko",stat:"weapon",wt:"unarmed",v:[3,8]},
+  {n:"Montante",stat:"weapon",wt:"twohand",v:[11,23]},{n:"Dadao",stat:"weapon",wt:"twohand",v:[10,22]},
+  {n:"Horn Bow",stat:"weapon",wt:"bow",v:[7,16]},{n:"Repeating Crossbow",stat:"weapon",wt:"crossbow",v:[9,19]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3854,6 +3862,15 @@ const NAMED_ITEMS=[
   {name:"Aegis of the Nog",    stat:"worn",  at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.24,mat:"Pyreal",v:[26,38],affix:()=>_oaff("of Impregnability")},
   {name:"Empyrean Legguards",  stat:"worn",  at:"heavy",  aslot:"legs",  mat:"Pyreal",  v:[32,44],affix:()=>_oaff("of Vigor")},
   {name:"Cloak of Dark Thoughts",stat:"worn",at:"light", aslot:"back",   mat:"Satin",   v:[24,32],affix:()=>_oaff("of Warding")},
+  // ── further iconic artifacts (batch) ──
+  {name:"Kaskara of Dawn",     stat:"weapon",wt:"sword",   mat:"Gold",    v:[32,44],affix:()=>_wbrand("fire")},
+  {name:"Vault Zweihander",    stat:"weapon",wt:"twohand", mat:"Steel",   v:[42,56],affix:()=>_wbrand("frost")},
+  {name:"Ranseur of Tenkarga", stat:"weapon",wt:"spear",   mat:"Emerald", v:[32,42],affix:()=>_wbrand("acid")},
+  {name:"Francisca of the Reaver",stat:"weapon",wt:"axe",  mat:"Onyx",    v:[30,40],affix:()=>_waff("lifesteal")},
+  {name:"Repeating Arbalest of Woe",stat:"weapon",wt:"crossbow",mat:"Jet",v:[34,46],affix:()=>_wbrand("nether")},
+  {name:"Orb of Gharu'ndim",   stat:"weapon",wt:"focus",   mat:"Ruby",    v:[24,32]},
+  {name:"Gauntlets of the Ihmaht",stat:"worn",at:"heavy", aslot:"hands", mat:"Pyreal",  v:[26,34],affix:()=>_oaff("of Warding")},
+  {name:"Shroud of Falatacot", stat:"worn",  at:"light",  aslot:"back",  mat:"Satin",   v:[24,32],affix:()=>_oaff("of the Magus")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
