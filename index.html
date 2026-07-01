@@ -3466,6 +3466,13 @@ const PHYS_RESIST={
   reedshark:{slash:1.1,pierce:1.05,bludgeon:0.9},
 };
 function physMult(kind,type){ const t=PHYS_RESIST[kind]; return (t&&t[type])||1; }
+// AC to-hit contest: an attack is an attack-skill vs defense-skill roll, so blows can miss / be evaded.
+function monsterDefense(m){ const b=BESTIARY[m.kind]; if(!b) return 18;
+  let d=10+b.dmg*0.8+b.hp*0.04;                 // deadlier, tougher foes are harder to land a clean hit on
+  if(m.enraged) d*=1.12; if(m.isBoss) d*=1.18;
+  if(m.mesh&&m.mesh.scale&&m.mesh.scale.x>1.3) d*=1.1;   // elites/champions
+  return d; }
+function rollToHit(atk,m){ return Math.random()<clamp(0.72+(atk-monsterDefense(m))*0.006,0.30,0.98); }
 const FOCUS_SCHOOLS=["war","life","creature","item","void"];   // a focus lends skill to all spell schools
 // armor classes: protection vs mobility tradeoff (heavy guards more but slows you & drains stamina regen).
 const ARMOR_TYPES={
@@ -5531,6 +5538,10 @@ function gainXP(amt){
 function playerHurt(dmg,sx,sz,type,element){
   if(player.invuln>0||!player.alive||inNetwork) return;
   type=type||"melee";   // "melee" | "missile" | "magic" — selects which Defense skill mitigates
+  // AC: a trained Defense skill can make an incoming attack MISS outright (evade), on top of its mitigation
+  { const dk=type==="magic"?"magicd":(type==="missile"?"missiled":"meleed");
+    const ev=clamp((skillValue(dk)-skillBase(dk))*0.0025,0,0.35);
+    if(ev>0&&Math.random()<ev){ if(sx!==undefined)floater(player.x,EYE+0.5,player.z,"evade","#bfe6ff"); return; } }
   // Armour blunts physical hits, scaled by the matching Defense skill; it only half-applies to spells.
   const armScale=type==="missile"?"missiled":"meleed";
   let armT=(player.armor+wornArmorV()+itemBuff("armor")+jewelryBonus("armor"))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense + jewelry
@@ -5936,6 +5947,7 @@ function meleeAttack(){
     if(d<reach+m.r){
       const dot=(dx*fx+dz*fz)/(d*fl);
       if(dot>0.5){
+        if(!rollToHit(bestMeleeSkillValue(),m)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense
         applyHit(m,dmg,meleeOpts);
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
@@ -6327,6 +6339,7 @@ function update(dt){
       if(!!m.isDungeon!==inDungeon) continue;
       if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
+        if(p.arrow&&!rollToHit(skillValue("missile"),m)){ floater(m.x,(m.headY||1.6)+2.3,m.z,"miss","#b9c0cc"); gone=true; break; }  // missile accuracy vs defense
         if(p.slow)m.slow=Math.max(m.slow,p.slow);
         const em=elemMult(m.kind,p.element);
         if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");
