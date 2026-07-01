@@ -52,8 +52,13 @@
 
   #compassPanel{top:10px;left:50%;transform:translateX(-50%);padding:4px 6px}
   #compass{display:block}
-  #minimap{top:12px;right:12px;width:150px;height:150px;padding:0;overflow:hidden}
+  #minimap{top:12px;right:12px;width:150px;height:150px;padding:0;overflow:visible;background:none;border:none;box-shadow:none}
   #mm{display:block;width:150px;height:150px}
+  #mmCtrl{position:absolute;right:-3px;bottom:-3px;display:flex;gap:3px}
+  #mmCtrl button{width:20px;height:20px;padding:0;font-size:13px;line-height:16px;background:rgba(22,33,14,.9);color:#cfe6b0;border:1px solid #3a3526;border-radius:4px;cursor:pointer;pointer-events:auto}
+  #mmCtrl button:hover{border-color:#7fe6a0;color:#fff}
+  #mmToggles{position:absolute;top:100%;right:0;margin-top:5px;background:rgba(10,12,7,.96);border:1px solid #3a3526;border-radius:6px;padding:7px 10px;font-size:12px;color:#cfe6b0;min-width:118px;z-index:6;display:none;pointer-events:auto}
+  #mmToggles label{display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer;white-space:nowrap}
   #right{top:172px;right:12px;width:150px;font-size:11px}
   #right h4{margin:0 0 4px;color:var(--gold);font-size:11px;letter-spacing:.5px;text-transform:uppercase}
   .attr{display:flex;justify-content:space-between;padding:1px 0}.attr b{color:#fff}
@@ -146,7 +151,9 @@
     <div class="bar bxp"><i style="width:0%"></i><span id="xpT">0 / 500 XP</span></div>
   </div>
   <div id="compassPanel" class="panel"><canvas id="compass" width="460" height="34"></canvas></div>
-  <div id="minimap" class="panel"><canvas id="mm" width="150" height="150"></canvas></div>
+  <div id="minimap" class="panel"><canvas id="mm" width="150" height="150"></canvas>
+    <div id="mmCtrl"><button id="mmIn" title="Zoom in (centres on you)">+</button><button id="mmOut" title="Zoom out">−</button><button id="mmGear" title="Map filters">⚙</button></div>
+    <div id="mmToggles"></div></div>
   <div id="partyHud" class="panel" style="position:absolute;top:170px;right:12px;width:150px;display:none;font-size:11px;padding:6px 8px"></div>
   <div id="right" class="panel">
     <h4>Attributes</h4>
@@ -7013,30 +7020,59 @@ function drawDungeonMinimap(g,S){
   g.save();g.translate(mx(player.x),mz(player.z));g.rotate(-player.yaw);
   g.fillStyle="#ffd86b";g.beginPath();g.moveTo(0,-5);g.lineTo(3,4);g.lineTo(-3,4);g.closePath();g.fill();g.restore();
 }
+// Configurable round compass-minimap: centred on the player, zoomable, with per-category dot filters.
+let miniZoom=2600, miniShow={town:true,vendor:true,quest:true,dungeon:true,building:true,portal:true,resource:true,monster:true,players:true};
+function saveMiniPrefs(){ try{ localStorage.setItem("dereth_mini",JSON.stringify({z:miniZoom,s:miniShow})); }catch(e){} }
+function loadMiniPrefs(){ try{ const p=JSON.parse(localStorage.getItem("dereth_mini")); if(p){ if(p.z)miniZoom=clamp(p.z,700,WORLD*0.6); if(p.s)Object.assign(miniShow,p.s); } }catch(e){} }
+function miniZoomBy(f){ miniZoom=clamp(miniZoom*f,700,WORLD*0.6); saveMiniPrefs(); }
+function buildMiniToggles(){
+  const el=document.getElementById('mmToggles'); if(!el) return;
+  const cats=[["town","Towns"],["vendor","Vendors"],["quest","Quest givers"],["dungeon","Dungeons"],["building","Buildings"],["portal","Portals"],["resource","Resources"],["monster","Monsters"],["players","Players"]];
+  el.innerHTML=cats.map(([k,lab])=>`<label><input type="checkbox" data-mm="${k}" ${miniShow[k]?"checked":""}> ${lab}</label>`).join("");
+  el.querySelectorAll('input[data-mm]').forEach(cb=>cb.onchange=()=>{ miniShow[cb.dataset.mm]=cb.checked; saveMiniPrefs(); });
+}
+function initMinimap(){
+  loadMiniPrefs();
+  const inB=document.getElementById('mmIn'),outB=document.getElementById('mmOut'),gear=document.getElementById('mmGear'),tog=document.getElementById('mmToggles');
+  if(inB) inB.onclick=e=>{e.stopPropagation();miniZoomBy(0.7);};      // zoom in tightens the view around you
+  if(outB) outB.onclick=e=>{e.stopPropagation();miniZoomBy(1/0.7);};
+  if(gear) gear.onclick=e=>{e.stopPropagation();buildMiniToggles();tog.style.display=tog.style.display==="block"?"none":"block";};
+  buildMiniToggles();
+}
 function drawMinimap(){
-  const mm=document.getElementById('mm'),g=mm.getContext('2d'),S=150,sc=S/WORLD;
-  const cx=v=>(v+HALF)*sc;
+  const mm=document.getElementById('mm'),g=mm.getContext('2d'),S=150,C=S/2,R=S/2-2;
   if(inDungeon){ drawDungeonMinimap(g,S); return; }
-  g.clearRect(0,0,S,S);g.fillStyle="#0a0c07";g.fillRect(0,0,S,S);
-  g.fillStyle="rgba(216,177,74,0.12)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
-  for(const m of monsters){if(m.isBoss||m.isDungeon)continue;g.fillStyle="#b03a3a";g.fillRect(cx(m.x)-1,cx(m.z)-1,2,2);}
-  g.strokeStyle="rgba(150,140,120,0.6)";g.lineWidth=2;
-  for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
-  for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1,cx(n.z)-1,2,2);}
-  for(const pt of portals){g.fillStyle="#bf9bff";g.fillRect(cx(pt.x)-1.5,cx(pt.z)-1.5,3,3);}
-  for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");g.fillRect(cx(ls.x)-rr,cx(ls.z)-rr,rr*2,rr*2);}
-  for(const n of npcs){if(n.role==="townsfolk")continue;g.fillStyle="#ffd23b";g.fillRect(cx(n.x)-2,cx(n.z)-2,4,4);}
-  for(const sh of shops){g.fillStyle="#7fe6a0";g.fillRect(cx(sh.x)-2,cx(sh.z)-2,4,4);}
-  for(const e of dungeonEntrances){g.fillStyle=player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff";g.fillRect(cx(e.x)-1.5,cx(e.z)-1.5,3,3);}
-  if(boss){g.fillStyle="#ff3030";g.beginPath();g.arc(cx(boss.x),cx(boss.z),3.5,0,6.28);g.fill();}
-  // shared world bosses (online) — red rings
-  for(const m of monsters){ if(!m.isBoss||!m.shared)continue; g.fillStyle="#ff3030";g.beginPath();g.arc(cx(m.x),cx(m.z),3.5,0,6.28);g.fill(); }
-  // other online players — party members green, others cyan
-  if(isOnline) for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
-    g.fillStyle=NET.partyNames.has(r.name)?"#7fe6a0":"#5ad6ff"; g.beginPath();g.arc(cx(rx),cx(r.z!=null?r.z:r.tz),2.5,0,6.28);g.fill(); }
-  // player + facing
-  g.save();g.translate(cx(player.x),cx(player.z));g.rotate(-player.yaw);
+  const ppw=R/miniZoom, camX=player.x, camZ=player.z;           // centred on the player; north stays up (compass)
+  const sx=x=>C+(x-camX)*ppw, sy=z=>C+(z-camZ)*ppw;
+  const inR=(x,z)=>{const dx=sx(x)-C,dy=sy(z)-C;return dx*dx+dy*dy<=(R-1)*(R-1);};
+  const dot=(x,z,col,rr)=>{ if(!inR(x,z))return; g.fillStyle=col; g.fillRect(sx(x)-rr,sy(z)-rr,rr*2,rr*2); };
+  const cir=(x,z,col,rr)=>{ if(!inR(x,z))return; g.fillStyle=col; g.beginPath();g.arc(sx(x),sy(z),rr,0,6.28);g.fill(); };
+  g.clearRect(0,0,S,S);
+  g.save(); g.beginPath(); g.arc(C,C,R,0,6.28); g.clip();       // circular frame
+  g.fillStyle="#0a0c07"; g.fillRect(0,0,S,S);
+  g.strokeStyle="rgba(150,140,120,0.5)";g.lineWidth=2;
+  for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(sx(r.ax),sy(r.az));g.lineTo(sx(r.bx),sy(r.bz));g.stroke();}
+  if(miniShow.monster) for(const m of monsters){if(m.isBoss||m.isDungeon)continue;dot(m.x,m.z,"#b03a3a",1);}
+  if(miniShow.resource) for(const n of nodes) if(!n.depleted) dot(n.x,n.z,n.type==="ore"?"#7fd0d0":"#7fe6a0",1);
+  if(miniShow.building&&typeof structures!=="undefined") for(const st of structures){ if(st&&st.x!=null) dot(st.x,st.z,"#a89878",1); }
+  if(miniShow.portal) for(const pt of portals) dot(pt.x,pt.z,"#bf9bff",1.5);
+  if(miniShow.town) for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;dot(ls.x,ls.z,ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad"),rr);}
+  if(miniShow.quest) for(const n of npcs){if(n.role==="townsfolk")continue;dot(n.x,n.z,"#ffd23b",2);}
+  if(miniShow.vendor) for(const sh of shops) dot(sh.x,sh.z,"#7fe6a0",2);
+  if(miniShow.dungeon) for(const e of dungeonEntrances) dot(e.x,e.z,player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff",1.5);
+  if(boss) cir(boss.x,boss.z,"#ff3030",3.5);
+  for(const m of monsters){ if(!m.isBoss||!m.shared)continue; cir(m.x,m.z,"#ff3030",3.5); }
+  if(isOnline&&miniShow.players) for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
+    cir(rx,(r.z!=null?r.z:r.tz),NET.partyNames.has(r.name)?"#7fe6a0":"#5ad6ff",2.5); }
+  // player at centre + facing
+  g.save();g.translate(C,C);g.rotate(-player.yaw);
   g.fillStyle="#ffd86b";g.beginPath();g.moveTo(0,-5);g.lineTo(3,4);g.lineTo(-3,4);g.closePath();g.fill();g.restore();
+  g.restore(); // unclip
+  // compass ring + cardinal letters (north up)
+  g.strokeStyle="rgba(216,177,74,0.55)";g.lineWidth=2;g.beginPath();g.arc(C,C,R,0,6.28);g.stroke();
+  g.fillStyle="#ffd86b";g.font="bold 10px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
+  g.fillText("N",C,7); g.fillText("S",C,S-7); g.fillText("E",S-7,C); g.fillText("W",7,C);
+  g.textBaseline="alphabetic";
 }
 
 // ---------- full world map ----------
@@ -11097,6 +11133,7 @@ window.addEventListener('resize',()=>{
 loadSettings();
 initThree();
 applySettings();
+initMinimap();
 renderComposite();
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
