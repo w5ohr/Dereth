@@ -3438,9 +3438,10 @@ ITEM_BASE.push(
 );
 // ── tiered consumables (AC healing kits / potions / tonics) ──
 ITEM_BASE.push(
-  {n:"Crude Healing Kit",stat:"hp",v:[20,40]},{n:"Treated Healing Kit",stat:"hp",v:[50,80]},{n:"Gold Healing Kit",stat:"hp",v:[90,130]},
-  {n:"Stamina Tonic",stat:"st",v:[30,60]},{n:"Stamina Draught",stat:"st",v:[70,110]},
-  {n:"Lesser Mana Potion",stat:"mn",v:[25,45]},{n:"Greater Mana Potion",stat:"mn",v:[60,100]}
+  {n:"Crude Healing Kit",stat:"hp",v:[20,40]},{n:"Treated Healing Kit",stat:"hp",v:[50,80]},{n:"Gold Healing Kit",stat:"hp",v:[90,130]},{n:"Cetane Healing Kit",stat:"hp",v:[140,190]},
+  {n:"Stamina Tonic",stat:"st",v:[30,60]},{n:"Stamina Draught",stat:"st",v:[70,110]},{n:"Stamina Elixir",stat:"st",v:[120,170]},
+  {n:"Lesser Mana Potion",stat:"mn",v:[25,45]},{n:"Greater Mana Potion",stat:"mn",v:[60,100]},{n:"Major Mana Potion",stat:"mn",v:[120,170]},
+  {n:"Lesser Health Potion",stat:"hp",v:[25,45]},{n:"Greater Health Potion",stat:"hp",v:[60,100]},{n:"Major Health Potion",stat:"hp",v:[120,170]}
 );
 // AC-authentic itemization (research Phase 6.8): every loot item has a workmanship (1-10, rolled within a
 // range set by its loot tier) and a material (the first word of its name). Material → tinker target;
@@ -3451,7 +3452,7 @@ const WORK_TIER=[null,[1,4],[2,6],[3,7],[3,9],[4,10]]; // loot tier 1..5 → [mi
 const MATERIALS={
   weapon:["Iron","Steel","Bronze","Brass","Copper","Silver","Gold","Pyreal","Platinum","Titanium","Oak","Mahogany","Teak","Ebony","Pine","Hickory","Bamboo","Yew","Ironwood"],
   armor:["Bronze","Steel","Iron","Brass","Copper","Granite","Marble","Alabaster","Sandstone","Serpentine","Porcelain","Ceramic","Leather","Hide","Sharkskin","Snakeskin","Linen","Wool","Silk","Velvet","Satin"],
-  other:["Amber","Quartz","Diamond","Ruby","Sapphire","Emerald","Jet","Onyx","Opal","Agate","Carnelian","Citrine","Peridot","Topaz","Zircon","Lapis Lazuli","Malachite","Hematite","Bloodstone","Moonstone","Tourmaline","Aquamarine","Imperial Topaz","Black Garnet","Amethyst","Azurite","Sunstone","Turquoise","Tiger Eye","Black Opal","Fire Opal","Green Garnet","Red Garnet","Yellow Garnet","Green Jade","White Jade","Lavender Jade","Rose Quartz","Smoky Quartz","White Quartz","White Sapphire","Sardonyx","Spinel"] };
+  other:["Amber","Quartz","Diamond","Ruby","Sapphire","Emerald","Jet","Onyx","Opal","Agate","Carnelian","Citrine","Peridot","Topaz","Zircon","Lapis Lazuli","Malachite","Hematite","Bloodstone","Moonstone","Tourmaline","Aquamarine","Imperial Topaz","Black Garnet","Amethyst","Azurite","Sunstone","Turquoise","Tiger Eye","Black Opal","Fire Opal","Green Garnet","Red Garnet","Yellow Garnet","Green Jade","White Jade","Lavender Jade","Rose Quartz","Smoky Quartz","White Quartz","White Sapphire","Sardonyx","Spinel","Jasper","Chrysoprase","Obsidian","Chalcedony","Chrysoberyl","Garnet"] };
 const MAT_APPLY={}; // material → which equipped slot a tink improves ("weapon" boosts damage, "armor" boosts defence)
 for(const m of MATERIALS.weapon) MAT_APPLY[m]="weapon";
 for(const m of MATERIALS.other ) MAT_APPLY[m]="weapon"; // imbue-type gems channel into weapon power here
@@ -3556,6 +3557,22 @@ const NAMED_ITEMS=[
   {name:"Empyrean Bracers",    stat:"worn",  at:"heavy",  aslot:"lowerarm",mat:"Pyreal",v:[24,32],affix:()=>_oaff("of Warding")},
   {name:"Olthoi Alduressa Coat",stat:"worn", at:"light",  aslot:"chest", mat:"Leather",v:[34,46],affix:()=>_oaff("of Impregnability")},
   {name:"Diforsa Boots",       stat:"worn",  at:"heavy",  aslot:"feet",  mat:"Steel",   v:[24,32],affix:()=>_oaff("of Endurance")},
+  // ── artifact batch 4 ──
+  {name:"Biting Whisper",      stat:"weapon",wt:"dagger",  mat:"Diamond", v:[24,32],affix:()=>_waff("crit")},
+  {name:"Sunder",             stat:"weapon",wt:"twohand", mat:"Steel",   v:[42,56],affix:()=>_wbrand("acid")},
+  {name:"Serpent's Kiss",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
+  {name:"Skewer of the Hopeslayer",stat:"weapon",wt:"spear",mat:"Onyx",   v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Cleaver of Toxins",   stat:"weapon",wt:"axe",     mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
+  {name:"Thunderhead Maul",    stat:"weapon",wt:"twohand", mat:"Diamond", v:[42,56],affix:()=>_wbrand("shock")},
+  {name:"Whisperwind Bow",     stat:"weapon",wt:"bow",     mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
+  {name:"Sting of the Wasp",   stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
+  {name:"Fists of the Empyrean",stat:"weapon",wt:"unarmed",mat:"Pyreal",  v:[24,32],affix:()=>_waff("crit")},
+  {name:"Baton of the Lector", stat:"weapon",wt:"focus",   mat:"Diamond", v:[24,32]},
+  {name:"Casting Staff of Nys",stat:"weapon",wt:"focus",   mat:"Ebony",   v:[24,32]},
+  {name:"Warlord's Helm",      stat:"worn",  at:"heavy",  aslot:"head",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
+  {name:"Amuli Coat of the Wildland",stat:"worn",at:"light",aslot:"chest",mat:"Leather",v:[32,44],affix:()=>_oaff("of the Magus")},
+  {name:"Koujia Pauldrons",    stat:"worn",  at:"medium", aslot:"upperarm",mat:"Steel", v:[22,30],affix:()=>_oaff("of Warding")},
+  {name:"Celdon Gauntlets",    stat:"worn",  at:"medium", aslot:"hands", mat:"Steel",   v:[20,28],affix:()=>_oaff("of Endurance")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
