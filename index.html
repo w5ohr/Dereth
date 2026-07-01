@@ -757,7 +757,10 @@ function buffDurFor(lvl){ lvl=Math.max(1,lvl|0); return (15+(lvl-1)*10)*60; }   
 function buffMagFor(lvl){ lvl=Math.max(1,lvl|0); return lvl*10; }               // flat skill/stat points
 for(const s of SPELLBOOK_LIST){
   if(s.buff==="attr"||s.buff==="skill"){ s.mag=buffMagFor(s.lvl); s.dur=buffDurFor(s.lvl); }   // flat stat/skill → +10/level
-  else if(s.buff==="item"||s.buff==="prot"||s.debuff||s.vuln){ s.dur=buffDurFor(s.lvl); }       // %/special mag kept, timer unified
+  else if(s.buff==="item"||s.buff==="prot"){ s.dur=buffDurFor(s.lvl); }                        // %/special buff mag kept, timer unified
+  // debuffs mirror buffs the opposite way — 10 per level (as %), same level-based timer:
+  else if(s.debuff){ s.dmag=Math.round((1-0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }   // Weakness: enemy deals -10%/lvl · Slowness: -10%/lvl speed
+  else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
 }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
