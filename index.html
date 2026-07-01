@@ -2966,7 +2966,7 @@ function buildWorld(){
   {const tm=CITIES.find(c=>c.name==="Timaru"); if(tm) addNPC(tm.x,tm.z-12,{role:"gatekeep",name:"Aun Firanauri",town:"Timaru"});}
   // vendors in every town: capitals host a full market (one of each trade), smaller
   // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener)
-  const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
+  const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter","healer","jeweler","collector"];
   CITIES.forEach((c,i)=>{
     if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
       all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; addMerchant(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
@@ -10437,6 +10437,7 @@ const VENDOR_TYPES={
     {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"},
     {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"}]},
   jeweler:{title:"Jeweler",marker:"💍",mcol:"#9af0ff",robe:0x2a5a6a,stock:jewelerStock},
+  collector:{title:"Trophy Collector",marker:"🦴",mcol:"#cdbf9a",robe:0x5a4a2a,collector:true,stock:()=>[]},   // I7: turns in creature trophies for a bounty (gold + XP)
 };
 let activeShop=null;
 function buildMerchant(vt){
@@ -10498,20 +10499,32 @@ function buildShop(){
   if(hb) hb.onclick=()=>{ const need=Math.max(0,Math.round(player.mhp-player.hp)+Math.round(player.mmn-player.mn)+Math.round(player.mst-player.st)),hcost=Math.max(10,Math.ceil(need*0.25));
     if(need>0&&player.gold>=hcost){player.gold-=hcost;player.hp=player.mhp;player.mn=player.mmn;player.st=player.mst;floater(player.x,EYE+0.5,player.z,"Mended","#ff8aa0");SFX.heal();buildShop();updateHUD();saveGame();log("The Healer mends your wounds — you are restored to full.","heal");} };
   const sell=document.getElementById('shopSell');
-  if(!player.inv.length){ sell.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Nothing to sell.</div>`; return; }
+  const isCollector=!!(def&&def.collector);
+  if(!player.inv.length){ sell.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Nothing to ${isCollector?"turn in":"sell"}.</div>`; return; }
   sell.innerHTML="";
+  if(isCollector) sell.insertAdjacentHTML("beforeend",`<div style="color:var(--dim);font-size:11px;padding:2px 0 6px">The collector pays a <b>bounty</b> (gold + XP) for creature trophies — worth more than a vendor's coin.</div>`);
   player.inv.forEach((it,i)=>{
     if(it.scroll) return;   // scrolls are scribed (T), not sold
-    const price=gearSellPrice(it);
     const desc=gearDesc(it);
     const row=document.createElement('div');row.className="row";
-    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span></div>
-      <div class="ctl"><button class="tbtn" data-sell="${i}">Sell — ${price}p</button></div>`;
+    if(isCollector && it.stat==="trophy"){   // I7: turn a trophy in for a bounty
+      const b=trophyBounty(it);
+      row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— creature trophy · bounty</span></div>
+        <div class="ctl"><button class="tbtn" data-turnin="${i}">Turn In — ${b.gold}p +${b.xp}xp</button></div>`;
+    } else {
+      const price=gearSellPrice(it);
+      row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span></div>
+        <div class="ctl"><button class="tbtn" data-sell="${i}">Sell — ${price}p</button></div>`;
+    }
     sell.appendChild(row);
   });
   sell.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sell;
     player.gold+=gearSellPrice(player.inv[i]);takeFromInv(i);SFX.gold();buildShop();updateHUD();saveGame();});
+  sell.querySelectorAll('[data-turnin]').forEach(b=>b.onclick=()=>{const i=+b.dataset.turnin; const it=player.inv[i]; if(!it||it.stat!=="trophy")return;
+    const bt=trophyBounty(it); player.gold+=bt.gold; if(typeof gainXP==="function")gainXP(bt.xp); takeFromInv(i);
+    log(`You turn in a <b>${it.name}</b> for a bounty — <b>${bt.gold}</b> pyreals and <b>${bt.xp}</b> XP.`,"loot"); SFX.gold(); buildShop(); updateHUD(); saveGame();});
 }
+function trophyBounty(it){ const v=it.v|0; return {gold:Math.round(v*1.6), xp:Math.max(25,v*14)}; }   // I7 collector bounty — beats a plain sell
 function healScale(base){   // AC: the Healing skill boosts kit/potion potency; healing is less effective in combat
   const st=skillTier("healing");
   let m=1+(st>0? skillRank("healing")*0.004 : 0)+(st>1?0.10:0);   // trained scales with rank (~+40% at rank 100), spec +10%
