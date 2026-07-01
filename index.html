@@ -902,6 +902,20 @@ const PLAYER_MODELS=[
   {k:"soldier",  n:"Soldier",      url:"assets/models/people/Soldier.glb"},
 ];
 function playerModelDef(k){ return PLAYER_MODELS.find(m=>m.k===k)||PLAYER_MODELS[0]; }
+// Robust model height: some rigged/skinned glTFs report an empty bounding box on load (matrices not yet
+// updated), which used to fall back to 1 and leave a model in large native units GIGANTIC. This updates
+// world matrices, then falls back to summing per-geometry bounds, so normalization always gets a real height.
+function robustHeight(obj){
+  obj.updateMatrixWorld(true);
+  let box=new THREE.Box3().setFromObject(obj);
+  let h=(isFinite(box.min.y)&&isFinite(box.max.y))?(box.max.y-box.min.y):0;
+  if(!(h>0.001)){
+    box=new THREE.Box3();
+    obj.traverse(o=>{ const gm=o.geometry; if(gm){ if(!gm.boundingBox&&gm.computeBoundingBox)gm.computeBoundingBox(); if(gm.boundingBox){ const b=gm.boundingBox.clone().applyMatrix4(o.matrixWorld); box.union(b); } } });
+    h=(isFinite(box.min.y)&&isFinite(box.max.y))?(box.max.y-box.min.y):0;
+  }
+  return h>0.001?h:1;
+}
 // Load a chosen player model into gltfAvatar (shown in 3rd person; the render loop already swaps it for
 // the procedural avatar). url null → procedural (clears any gltf avatar). Latest choice wins on async load.
 function loadPlayerModel(url){
@@ -910,8 +924,8 @@ function loadPlayerModel(url){
   new THREE.GLTFLoader().load(url, gltf=>{
     if(gltfAvatarUrl!==url) return;                          // superseded by a newer choice
     const root=gltf.scene;
-    let box=new THREE.Box3().setFromObject(root); const h=(box.max.y-box.min.y)||1; root.scale.setScalar(TARGET_HUMAN_H/h);
-    box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;
+    root.scale.setScalar(TARGET_HUMAN_H/robustHeight(root));
+    let box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;
     root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
     gltfAvatar=new THREE.Group(); gltfAvatar.add(root); gltfAvatar.visible=false; scene.add(gltfAvatar);
     if(gltf.animations&&gltf.animations.length){ gltfMixer=new THREE.AnimationMixer(root);
@@ -966,7 +980,7 @@ function loadGltfPeople(){
   gltfPeopleStarted=true; const L=new THREE.GLTFLoader();
   const settle=()=>{ if(++gltfPeopleDone>=GLTF_PEOPLE.length) rebalanceGltfNpcs(); };  // all loads finished → re-roll for correct weighting
   const store=(p,scene,anims)=>{
-    const box=new THREE.Box3().setFromObject(scene), h=(box.max.y-box.min.y)||1;
+    const h=robustHeight(scene);
     // models face +z; our bodies face -z and NPC yaw aims -z at travel, so clones need a +PI flip (else moonwalk).
     gltfPeople.push({scene, anims:anims||[], scale:TARGET_HUMAN_H/h, faceOffset:Math.PI, w:(p.w>0?p.w:1), sex:p.sex||"n"});
     log("Loaded a person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
@@ -1040,7 +1054,7 @@ function loadGltfMonsters(){
   gltfMonstersStarted=true; const L=new THREE.GLTFLoader();
   for(const kind in MONSTER_MODELS){ gltfMonsters[kind]=gltfMonsters[kind]||[];
     for(const url of MONSTER_MODELS[kind]){ (k=>L.load(url, g=>{
-        const box=new THREE.Box3().setFromObject(g.scene), h=(box.max.y-box.min.y)||1;
+        const h=robustHeight(g.scene);
         gltfMonsters[k].push({scene:g.scene, anims:g.animations||[], h});
         log("Loaded a monster model ("+k+" "+gltfMonsters[k].length+"/"+MONSTER_MODELS[k].length+").","sys");
       }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
@@ -2032,7 +2046,7 @@ const _PERSON_HAIRS=["short","long","ponytail","topknot","braids","short"];
 function _normHumanMesh(g,target){
   target=target||TARGET_HUMAN_H;
   const body=new THREE.Group(); while(g.children.length) body.add(g.children[0]);
-  const b=new THREE.Box3().setFromObject(body), h=(b.max.y-b.min.y)||1; body.scale.setScalar(target/h);
+  body.scale.setScalar(target/robustHeight(body));
   const b2=new THREE.Box3().setFromObject(body); body.position.y-=b2.min.y;   // feet to y=0
   g.add(body); return g;
 }
@@ -3049,7 +3063,9 @@ function spawnMonster(kind,x,z,elite){
   const gm=gvar?gvar[irnd(0,gvar.length-1)]:null;   // random rigged variant for this kind (variety within a pack)
   let mesh;
   if(gm){ mesh=new THREE.Group();                                   // rigged CDN creature model
-    const clone=THREE.SkeletonUtils.clone(gm.scene); clone.scale.setScalar((b.size*1.5)/gm.h);
+    const clone=THREE.SkeletonUtils.clone(gm.scene); let msc=(b.size*1.5)/(gm.h>0.001?gm.h:1);
+    if(!(msc>0.0001&&msc<1e4)) msc=1;   // guard against a degenerate native height producing a giant/invisible clone
+    clone.scale.setScalar(msc);
     const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y; clone.rotation.y=Math.PI;
     clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
     mesh.add(clone); mesh.userData={headY:b.size*1.5};
@@ -11214,8 +11230,8 @@ function ccShowModel(url){                                   // render the chose
     ccModel=new THREE.Group(); ccModel.add(m); ccScene.add(ccModel); };
   if(ccModelCache[url]){ place(ccModelCache[url]); return; }
   new THREE.GLTFLoader().load(url,g=>{ const root=g.scene;
-    let b=new THREE.Box3().setFromObject(root); const h=(b.max.y-b.min.y)||1; root.scale.setScalar(TARGET_HUMAN_H/h);
-    b=new THREE.Box3().setFromObject(root); root.position.y-=b.min.y; root.traverse(o=>{if(o.isMesh)o.frustumCulled=false;});
+    root.scale.setScalar(TARGET_HUMAN_H/robustHeight(root));
+    let b=new THREE.Box3().setFromObject(root); root.position.y-=b.min.y; root.traverse(o=>{if(o.isMesh)o.frustumCulled=false;});
     ccModelCache[url]=root; place(root);
   }, undefined, e=>console.log("cc model failed",url,(e&&e.message)||""));
 }
