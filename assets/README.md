@@ -39,16 +39,26 @@ humans pulled from public CDNs and assigned at random:
   - **RobotExpressive** (character) — three.js examples
   (Ready Player Me men/women avatars work too — add `https://models.readyplayer.me/<id>.glb`
   — but their CDN was unreachable from this build's network, so they're not in the default list.)
+- **Weighted pool:** each `GLTF_PEOPLE` entry is now `{url, w}` where `w` is the townsfolk-assignment
+  weight. The **KayKit fantasy adventurers** (barbarian/knight/mage/rogue/hooded-rogue) are `w:6`,
+  generic humans (Soldier, Xbot ×2, CesiumMan, RiggedFigure, HVGirl) `w:3`, and the sci-fi oddities
+  (Astronaut, RobotExpressive, BrainStem) `w:1` — so the streets read as a medieval crowd (~59%
+  fantasy humans) with the occasional out-of-place wanderer instead of half the town being robots.
 - `loadGltfPeople()` downloads them once; `assignGltfNpcs()` clones each via
-  **`THREE.SkeletonUtils.clone`** (skinned meshes need this, not plain `.clone()`), assigns a
-  random model to up to `MAX_GLTF_NPCS` (18) townsfolk, and plays idle/walk via a per-NPC
-  `AnimationMixer`. Flag: `USE_GLTF_NPCS` (default **true**).
+  **`THREE.SkeletonUtils.clone`** (skinned meshes need this, not plain `.clone()`) and progressively
+  fills up to `MAX_GLTF_NPCS` (40) townsfolk via a **weighted pick** (`pickWeightedPerson()`), playing
+  idle/walk through a per-NPC `AnimationMixer`. Flag: `USE_GLTF_NPCS` (default **true**).
+- **Load-order rebalance:** small generic models fetch faster and would greedily grab the slots before
+  the larger KayKit models arrive, undoing the weighting. So once *every* fetch has settled
+  (`gltfPeopleDone===GLTF_PEOPLE.length`), `rebalanceGltfNpcs()` re-rolls all skinned townsfolk against
+  the full weighted pool — guaranteeing the final crowd matches the weights regardless of arrival order.
 - **Online-required** (offline support dropped). A failed fetch still falls back to procedural
   for that NPC. Set `USE_GLTF_NPCS=false` to force all-procedural townsfolk.
-- The pool is **9 verified-loadable models** (Soldier, Xbot ×2 variants, CesiumMan,
+- The pool is **14 verified-loadable models** (5 KayKit adventurers + Soldier, Xbot ×2, CesiumMan,
   RiggedFigure, HVGirl=woman, Astronaut, RobotExpressive, BrainStem), cap `MAX_GLTF_NPCS=40`.
-  Note: free hot-linkable *rigged human* glTFs are scarce — to reach ~25 distinct men/women,
-  paste **Ready Player Me** full-body URLs (`https://models.readyplayer.me/<id>.glb`) into
+  Note: free hot-linkable *rigged human* glTFs are scarce (KayKit's human pack is exhausted at these
+  5, and no other reachable CC0 source adds distinct humans) — to reach ~25 distinct men/women, paste
+  **Ready Player Me** full-body URLs (`{url:"https://models.readyplayer.me/<id>.glb", w:6}`) into
   `GLTF_PEOPLE`; RPM's CDN works in a normal browser (it was just blocked from the dev sandbox).
   Avoid Draco-compressed models (e.g. Babylon YetiSmall) unless you also vendor a DRACOLoader.
 - Quest-givers/vendors/criers stay procedural (they keep their markers, labels, and looks).
