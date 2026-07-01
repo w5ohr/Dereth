@@ -872,8 +872,9 @@ const GP_DIR="assets/models/people/", GA_DIR="assets/models/anim/";
 const GLTF_PEOPLE=[
   // Ready Player Me base bodies (CC0-licensed animation library) — clean textured man & woman, the only
   // clearly-gendered humans; animated by shared idle+walk clips (same skeleton, so clips bind by bone name)
-  {mesh:GP_DIR+"Feminine_TPose.glb", clips:[GA_DIR+"F_Idle.glb", GA_DIR+"F_Walk.glb"], sex:"f", w:6}, // woman
-  {mesh:GP_DIR+"Masculine.glb",      clips:[GA_DIR+"M_Idle.glb", GA_DIR+"M_Walk.glb"], sex:"m", w:6}, // clothed man
+  {mesh:GP_DIR+"Feminine_TPose.glb",  clips:[GA_DIR+"F_Idle.glb", GA_DIR+"F_Walk.glb"], sex:"f", w:6}, // woman (RPM base body)
+  {mesh:GP_DIR+"Masculine.glb",       clips:[GA_DIR+"M_Idle.glb", GA_DIR+"M_Walk.glb"], sex:"m", w:6}, // clothed man (RPM avatar)
+  {mesh:GP_DIR+"Masculine_TPose.glb", clips:[GA_DIR+"M_Idle.glb", GA_DIR+"M_Walk.glb"], sex:"m", w:3}, // bare man (RPM base body)
   // KayKit Adventurers (CC0, Kay Lousberg) — best-fit fantasy humans, rigged + 76 clips each; heaviest weight
   {url:GP_DIR+"Barbarian.glb",    sex:"m", w:6}, // barbarian
   {url:GP_DIR+"Knight.glb",       sex:"m", w:6}, // knight

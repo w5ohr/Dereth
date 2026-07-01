@@ -45,9 +45,10 @@ MANIFEST = [
     ("people/Astronaut.glb",       "https://modelviewer.dev/shared-assets/models/Astronaut.glb"),
     ("people/RobotExpressive.glb", THREE + "RobotExpressive/RobotExpressive.glb"),
     ("people/BrainStem.glb",       KHR + "BrainStem/glTF-Binary/BrainStem.glb"),
-    # --- people: Ready Player Me base bodies (gendered, textured) + shared animation clips ---
+    # --- people: Ready Player Me base bodies (gendered) + shared animation clips ---
     #     the *_TPose meshes are static; idle/walk clips (below) apply to them (same skeleton).
     ("people/Feminine_TPose.glb",  RPM + "feminine/glb/Feminine_TPose.glb"),
+    ("people/Masculine_TPose.glb", RPM + "masculine/glb/Masculine_TPose.glb"),
     # clothed, bearded RPM man (full outfit + hair); animated by the M_Idle/M_Walk clips (same RPM rig)
     ("people/Masculine.glb", RPMAV + "64e359ea58f50a12df573a70/2fac66e374c947c41bc74325c6e3d934/64e359ea58f50a12df573a70.glb"),
     ("anim/F_Idle.glb", RPM + "feminine/glb/idle/F_Standing_Idle_001.glb"),
