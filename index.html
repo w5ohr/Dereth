@@ -3022,6 +3022,7 @@ const SPELL_COMPONENTS=[
   {name:"Lead Scarab",v:8},{name:"Iron Scarab",v:14},{name:"Copper Scarab",v:22},{name:"Silver Scarab",v:34},{name:"Gold Scarab",v:55},{name:"Pyreal Scarab",v:85},{name:"Platinum Scarab",v:120},
   {name:"Hyssop",v:6},{name:"Mandrake Root",v:9},{name:"Frankincense",v:11},{name:"Saffron",v:13},{name:"Henbane",v:8},{name:"Eyebright",v:7},
   {name:"Comfrey",v:9},{name:"Damiana",v:10},{name:"Dragon's Blood",v:16},{name:"Yarrow",v:8},{name:"Amaranth",v:12},{name:"Wormwood",v:9},{name:"Ginseng",v:11},{name:"Powdered Iron",v:14},{name:"Colophony",v:10},{name:"Verdigris",v:12},
+  {name:"Bloodroot",v:10},{name:"Nightshade",v:13},{name:"Sage",v:8},{name:"Rue",v:9},{name:"Vervain",v:11},{name:"Belladonna",v:14},{name:"Foxglove",v:12},{name:"Elderflower",v:9},
 ];
 function rollComponent(){ if(Math.random()<0.15) return {name:"Mana Scarab",stat:"mn",v:50};   // the usable component
   const c=SPELL_COMPONENTS[irnd(0,SPELL_COMPONENTS.length-1)]; return {name:c.name,stat:"comp",v:c.v}; }
@@ -3392,6 +3393,10 @@ const ITEM_BASE=[
   {n:"Wakizashi",stat:"weapon",wt:"sword",v:[5,12]},{n:"Bill",stat:"weapon",wt:"spear",v:[7,15]},
   {n:"Tabar",stat:"weapon",wt:"axe",v:[8,17]},{n:"Kanabo",stat:"weapon",wt:"mace",v:[9,19]},
   {n:"Odachi",stat:"weapon",wt:"twohand",v:[10,22]},{n:"Composite Crossbow",stat:"weapon",wt:"crossbow",v:[9,19]},
+  {n:"Misericorde",stat:"weapon",wt:"dagger",v:[4,11]},{n:"Gladius",stat:"weapon",wt:"sword",v:[6,14]},
+  {n:"Xiphos",stat:"weapon",wt:"sword",v:[6,13]},{n:"Pilum",stat:"weapon",wt:"spear",v:[6,14]},
+  {n:"Sagaris",stat:"weapon",wt:"axe",v:[8,17]},{n:"Shishpar",stat:"weapon",wt:"mace",v:[9,19]},
+  {n:"Espadon",stat:"weapon",wt:"twohand",v:[10,22]},{n:"Selfbow",stat:"weapon",wt:"bow",v:[5,13]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3745,6 +3750,19 @@ const NAMED_ITEMS=[
   {name:"Helm of the Undying", stat:"worn", at:"heavy", aslot:"head",   mat:"Jet",     v:[34,46],affix:()=>_oaff("of Vigor")},
   {name:"Vestments of Knorr",  stat:"worn", at:"light", aslot:"chest",  mat:"Silk",    v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Wanderer's Cloak",    stat:"worn", at:"light", aslot:"back",   mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
+  // ── artifact batch 15 ──
+  {name:"Reaper of Souls",     stat:"weapon",wt:"twohand",  mat:"Jet",     v:[44,58],affix:()=>_wbrand("nether")},
+  {name:"Embertongue",         stat:"weapon",wt:"sword",    mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
+  {name:"Frostmourn",          stat:"weapon",wt:"axe",      mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
+  {name:"Venomtooth",          stat:"weapon",wt:"dagger",   mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
+  {name:"Stormpike",           stat:"weapon",wt:"spear",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("shock")},
+  {name:"Skullpiercer Bow",    stat:"weapon",wt:"bow",      mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
+  {name:"Acid Repeater",       stat:"weapon",wt:"crossbow", mat:"Emerald", v:[34,46],affix:()=>_wbrand("acid")},
+  {name:"Firebrand Baton",     stat:"weapon",wt:"focus",    mat:"Ruby",    v:[24,32]},
+  {name:"Breastplate of Ruin", stat:"worn", at:"heavy", aslot:"chest",  mat:"Platinum",v:[44,58],affix:()=>_oaff("of Impregnability")},
+  {name:"Boots of the Empyrean",stat:"worn",at:"light", aslot:"feet",   mat:"Silk",    v:[22,30],affix:()=>_oaff("of the Magus")},
+  {name:"Sabatons of Ruin",    stat:"worn", at:"heavy", aslot:"feet",   mat:"Steel",   v:[24,32],affix:()=>_oaff("of Endurance")},
+  {name:"Mantle of the Undying",stat:"worn",at:"light", aslot:"back",   mat:"Velvet",  v:[24,32],affix:()=>_oaff("of Vigor")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -3802,6 +3820,10 @@ const FOOD_ITEMS=[
   {name:"Wedge of Cheese",   attr:"Self",        v:9,  dur:130},{name:"Mug of Dark Ale",  attr:"Strength",    v:12, dur:150},
   {name:"Cup of Tea",        attr:"Focus",       v:11, dur:150},{name:"Bowl of Gruel",    attr:"Endurance",   v:10, dur:150},
   {name:"Sho Rice Ball",     attr:"Coordination",v:12, dur:160},{name:"Dried Dates",      attr:"Self",        v:11, dur:150},
+  {name:"Bowl of Porridge",  attr:"Endurance",   v:10, dur:150},{name:"Venison Steak",    attr:"Strength",    v:13, dur:170},
+  {name:"Grilled Salmon",    attr:"Quickness",   v:12, dur:160},{name:"Honey Cake",       attr:"Self",        v:11, dur:150},
+  {name:"Pickled Eggs",      attr:"Endurance",   v:10, dur:150},{name:"Spiced Cider",     attr:"Focus",       v:12, dur:160},
+  {name:"Pork Dumplings",    attr:"Coordination",v:12, dur:160},{name:"Barley Soup",      attr:"Endurance",   v:11, dur:160},
 ];
 function rollFood(){ const f=FOOD_ITEMS[irnd(0,FOOD_ITEMS.length-1)]; return {name:f.name,stat:"food",attr:f.attr,v:f.v,dur:f.dur}; }
 // ── ammunition (AC): arrows/quarrels/darts. Carried in stacks; when you fire a matching launcher one is
