@@ -221,7 +221,7 @@
   <div id="tinkDoll" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Salvaged Materials</div>
   <div id="tinkBags" style="margin-bottom:12px"></div>
-  <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Satchel</div>
+  <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Satchel <span id="invCount" style="color:var(--dim);font-weight:normal"></span></div>
   <div id="invRows"></div>
   <button id="closeTink">Return to Dereth  (T)</button>
 </div></div>
@@ -3335,6 +3335,29 @@ const ITEM_BASE=[
   {n:"Wand",stat:"weapon",wt:"focus",foc:true,v:[5,13]},{n:"Sceptre",stat:"weapon",wt:"focus",foc:true,v:[6,14]},
   {n:"Orb",stat:"weapon",wt:"focus",foc:true,v:[6,15]},{n:"Baton",stat:"weapon",wt:"focus",foc:true,v:[5,13]},
   {n:"Casting Staff",stat:"weapon",wt:"focus",foc:true,v:[7,16]},
+  // ── additional weapon bases (more variety per skill — same real-weapon naming as AC's roster) ──
+  {n:"Poniard",stat:"weapon",wt:"dagger",v:[4,10]},{n:"Dirk",stat:"weapon",wt:"dagger",v:[4,11]},
+  {n:"Baselard",stat:"weapon",wt:"dagger",v:[5,11]},{n:"Main Gauche",stat:"weapon",wt:"dagger",v:[4,10]},
+  {n:"Broadsword",stat:"weapon",wt:"sword",v:[6,14]},{n:"Scimitar",stat:"weapon",wt:"sword",v:[5,13]},
+  {n:"Falchion",stat:"weapon",wt:"sword",v:[6,14]},{n:"Rapier",stat:"weapon",wt:"sword",v:[5,12]},
+  {n:"Ken",stat:"weapon",wt:"sword",v:[6,14]},{n:"Takuba",stat:"weapon",wt:"sword",v:[5,13]},
+  {n:"Lance",stat:"weapon",wt:"spear",v:[7,15]},{n:"Corsesca",stat:"weapon",wt:"spear",v:[6,14]},
+  {n:"Nagimaki",stat:"weapon",wt:"spear",v:[7,15]},{n:"Partizan",stat:"weapon",wt:"spear",v:[6,15]},
+  {n:"Hand Axe",stat:"weapon",wt:"axe",v:[6,14]},{n:"War Axe",stat:"weapon",wt:"axe",v:[8,17]},
+  {n:"Silifi",stat:"weapon",wt:"axe",v:[8,18]},{n:"Dolabra",stat:"weapon",wt:"axe",v:[8,17]},
+  {n:"Flanged Mace",stat:"weapon",wt:"mace",v:[8,18]},{n:"Jitte",stat:"weapon",wt:"mace",v:[8,18]},
+  {n:"Club",stat:"weapon",wt:"mace",v:[6,15]},{n:"Mazule",stat:"weapon",wt:"mace",v:[9,19]},
+  {n:"Bo Staff",stat:"weapon",wt:"staff",v:[5,13]},{n:"Cudgel",stat:"weapon",wt:"staff",v:[5,13]},
+  {n:"Flamberge",stat:"weapon",wt:"twohand",v:[10,22]},{n:"Great Axe",stat:"weapon",wt:"twohand",v:[10,22]},
+  {n:"No-Dachi",stat:"weapon",wt:"twohand",v:[10,21]},{n:"Maul",stat:"weapon",wt:"twohand",v:[10,22]},
+  {n:"Great Bow",stat:"weapon",wt:"bow",v:[6,15]},{n:"War Bow",stat:"weapon",wt:"bow",v:[6,14]},
+  {n:"Recurve Bow",stat:"weapon",wt:"bow",v:[5,13]},
+  {n:"Light Crossbow",stat:"weapon",wt:"crossbow",v:[8,17]},{n:"Siege Crossbow",stat:"weapon",wt:"crossbow",v:[9,20]},
+  {n:"War Atlatl",stat:"weapon",wt:"atlatl",v:[5,13]},{n:"Dart Thrower",stat:"weapon",wt:"atlatl",v:[5,12]},
+  {n:"Cestus",stat:"weapon",wt:"unarmed",v:[4,10]},{n:"Katar",stat:"weapon",wt:"unarmed",v:[5,11]},
+  {n:"Nekode",stat:"weapon",wt:"unarmed",v:[4,10]},{n:"Claw",stat:"weapon",wt:"unarmed",v:[5,11]},
+  {n:"Rod",stat:"weapon",wt:"focus",foc:true,v:[5,13]},{n:"Crystal Wand",stat:"weapon",wt:"focus",foc:true,v:[6,15]},
+  {n:"War Sceptre",stat:"weapon",wt:"focus",foc:true,v:[6,14]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3359,6 +3382,9 @@ const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slo
   {n:"Leather",at:"light", base:9, skill:"missiled"},{n:"Brigandine",at:"light", base:13,skill:"missile"},{n:"Chiran",at:"light", base:12,skill:"healing"},{n:"Amuli",at:"light", base:14,skill:"war"},{n:"Academy",at:"light", base:13,skill:"arcane"},
   {n:"Studded Leather",at:"medium",base:15,skill:"meleed"},{n:"Chainmail", at:"medium",base:17,skill:"meleed"},{n:"Scalemail",at:"medium",base:18,skill:"heavy"},{n:"Celdon",at:"medium",base:18,skill:"life"},{n:"Koujia",at:"medium",base:19,skill:"creature"},{n:"Nariv",at:"medium",base:19,skill:"missile"},
   {n:"Platemail", at:"heavy", base:24,skill:"meleed"},{n:"Lorica",at:"heavy", base:24,skill:"heavy"},{n:"Yoroi",at:"heavy", base:25,skill:"magicd"},{n:"Olthoi",at:"heavy", base:27,skill:"meleed"},{n:"Diforsa",at:"heavy", base:25,skill:"heavy"},{n:"Covenant",at:"heavy", base:28,skill:"magicd"},{n:"Empyrean",at:"heavy", base:29,skill:"arcane"},
+  // more cultural sets
+  {n:"Alduressa",at:"light", base:15,skill:"missile"},{n:"Hieromancer",at:"light", base:14,skill:"arcane"},
+  {n:"Sedgemail",at:"medium",base:17,skill:"missile"},{n:"Tenassa",at:"medium",base:18,skill:"war"},
 ];
 const ARMOR_SET_SKILL={}; for(const s of ARMOR_SETS) ARMOR_SET_SKILL[s.n]=s.skill;
 for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
@@ -3496,6 +3522,20 @@ const NAMED_ITEMS=[
   {name:"Covenant Cuirass",    stat:"worn",  at:"heavy",  aslot:"chest",mat:"Pyreal",  v:[40,54],affix:()=>_oaff("of Impregnability")},
   {name:"Diforsa Helm",        stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[32,44],affix:()=>_oaff("of Vigor")},
   {name:"Sedgemail Leggings",  stat:"worn",  at:"medium", aslot:"legs", mat:"Steel",   v:[26,36],affix:()=>_oaff("of Endurance")},
+  // ── further iconic artifacts (more type & element coverage) ──
+  {name:"Bael'Zharon's Hope",  stat:"weapon",wt:"dagger",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
+  {name:"Sword of Jojii",      stat:"weapon",wt:"sword",   mat:"Pyreal",  v:[30,42],affix:()=>_wbrand("fire")},
+  {name:"Gelidite Greatsword", stat:"weapon",wt:"twohand", mat:"Diamond", v:[42,56],affix:()=>_wbrand("frost")},
+  {name:"Coraline Longbow",    stat:"weapon",wt:"bow",     mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
+  {name:"Blackfire Crossbow",  stat:"weapon",wt:"crossbow",mat:"Onyx",    v:[34,46],affix:()=>_wbrand("nether")},
+  {name:"Direblade",           stat:"weapon",wt:"sword",   mat:"Steel",   v:[30,42],affix:()=>_waff("lifesteal")},
+  {name:"Tusk of the Monouga", stat:"weapon",wt:"mace",    mat:"Ebony",   v:[32,42],affix:()=>_waff("crit")},
+  {name:"Aun Tumerok War Spear",stat:"weapon",wt:"spear",  mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
+  {name:"Firebrand Katar",     stat:"weapon",wt:"unarmed", mat:"Ruby",    v:[24,32],affix:()=>_wbrand("fire")},
+  {name:"Orb of the Undying",  stat:"weapon",wt:"focus",   mat:"Jet",     v:[24,32]},
+  {name:"Nariv Cowl",          stat:"worn",  at:"medium", aslot:"head",  mat:"Silk",    v:[26,36],affix:()=>_oaff("of the Magus")},
+  {name:"Alduressa Boots",     stat:"worn",  at:"light",  aslot:"feet",  mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
+  {name:"Tenassa Vambraces",   stat:"worn",  at:"medium", aslot:"lowerarm",mat:"Steel", v:[22,30],affix:()=>_oaff("of Warding")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -3509,6 +3549,11 @@ const AUGMENT_ITEMS=[
   {name:"Yellow Aetheria",aug:{crit:0.04},   desc:"+4% critical hit chance, forever",          aetheria:true},
 ];
 function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,tier:5,legendary:true}; }
+// containers (AC packs): stitched into your satchel to permanently expand its capacity
+const PACK_ITEMS=[{name:"Belt Pouch",cap:2},{name:"Sack",cap:3},{name:"Backpack",cap:4},{name:"Portmanteau",cap:6}];
+const PACK_MAX=18;   // most extra slots you can add (12 base → up to 30)
+function rollPack(){ const t=PACK_ITEMS[irnd(0,PACK_ITEMS.length-1)]; return {name:t.name,stat:"pack",cap:t.cap,v:t.cap,tier:3}; }
+function invCap(){ return 12 + (player.packBonus||0); }   // satchel capacity, grown by packs
 function rollNamedItem(){
   const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
   const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
@@ -3581,6 +3626,7 @@ function rollItem(rare,tier){
   // rare chance at a named artifact (more likely on rich/deep loot)
   if(Math.random()<((rare?0.05:0)+((tier|0)>=5?0.03:0))) return rollNamedItem();
   if(Math.random()<((rare?0.015:0)+((tier|0)>=5?0.01:0))) return rollAugment();   // very rare augmentation gem
+  if(Math.random()<(rare?0.02:0.012)) return rollPack();   // a container to expand your satchel
 
   if(Math.random()<(rare?0.04:0.09)) return rollFood();   // a bite of cooking fare
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
@@ -3687,6 +3733,10 @@ function applyItem(it){
   else if(it.stat==="comp"){ log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
   else if(it.stat==="note"){ player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
+  else if(it.stat==="pack"){ player.packBonus=player.packBonus||0;
+    if(player.packBonus>=PACK_MAX){ log(`Your satchel is already expanded to the maximum (${invCap()} slots).`,"warn"); return "keep"; }
+    player.packBonus=Math.min(PACK_MAX,player.packBonus+(it.cap||2));
+    log(`You stitch the <b>${it.name}</b> into your satchel — it now holds <b>${invCap()}</b> items.`,"loot"); if(SFX.gold)SFX.gold(); toast("SATCHEL EXPANDED"); updateHUD&&updateHUD(); }
   else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
   else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
 }
@@ -4286,7 +4336,7 @@ function interact(){
   for(const d of drops) if(d.type==="item"){const dd=Math.hypot(d.x-player.x,d.z-player.z);if(dd<bd){bd=dd;best=d;}}
   if(best){
     if(best.shared){ // server-validated pickup; the server grants it and broadcasts drop_gone
-      if(player.inv.length>=12){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
+      if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
       netSend({t:"pickup",id:best.id}); return;
     }
     lootItem(best.item);scene.remove(best.mesh);drops.splice(drops.indexOf(best),1);return;}
@@ -7118,10 +7168,10 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
-function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
 function gearDesc(it){
   if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
@@ -7170,7 +7220,9 @@ const VENDOR_TYPES={
     {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"},
     {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"},
     {name:"Elixir of Might",field:"elixMight",cost:60,desc:"+50% damage for 30s (key 9).",ico:"⚔"},
-    {name:"Elixir of Swiftness",field:"elixSwift",cost:60,desc:"+40% move speed for 30s (key 0).",ico:"💨"}]},
+    {name:"Elixir of Swiftness",field:"elixSwift",cost:60,desc:"+40% move speed for 30s (key 0).",ico:"💨"},
+    {name:"Sack",cost:120,desc:"Adds +3 satchel slots (Use it from your pack).",ico:"🎒",gear:{name:"Sack",stat:"pack",cap:3,v:3}},
+    {name:"Backpack",cost:220,desc:"Adds +4 satchel slots (Use it from your pack).",ico:"🎒",gear:{name:"Backpack",stat:"pack",cap:4,v:4}}]},
   weaponsmith:{title:"Weaponsmith",marker:"⚔",mcol:"#ffd23b",robe:0x6a3a22,stock:()=>[
     {name:"Steel Dagger",cost:80,desc:"Fast, light blade.",ico:"🗡",gear:{name:"Steel Dagger",stat:"weapon",wt:"dagger",v:8}},
     {name:"Soldier's Sword",cost:120,desc:"A reliable blade.",ico:"⚔️",gear:{name:"Soldier's Sword",stat:"weapon",wt:"sword",v:10}},
@@ -7238,9 +7290,9 @@ function buildShop(){
   });
   buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{const it=SHOP[+b.dataset.buy];
     if(player.gold<it.cost) return;
-    if(it.gear){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push(Object.assign({},it.gear)); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
+    if(it.gear){ if(player.inv.length>=invCap()){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push(Object.assign({},it.gear)); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
-    else if(it.scroll){ if(player.inv.length>=12){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name}); log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
+    else if(it.scroll){ if(player.inv.length>=invCap()){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name}); log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
     else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
     SFX.gold();buildShop();updateHUD();saveGame();});
   // services: respec (provisioners) and full healing (healers)
@@ -7873,7 +7925,7 @@ function openChest(){
 //  INVENTORY & TINKERING
 // ============================================================================
 function lootItem(it){
-  if(player.inv.length>=12){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
+  if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
   if(it.scroll&&!it.name) it.name="Scroll: "+((SPELLBOOK[it.spellId]||{}).name||"Spell");
   player.inv.push(it); SFX.gold();
   log(it.scroll?`You find a <b>${it.name}</b>. (T to scribe it)`:`You pick up a <b>${it.name}</b>. (T to equip or salvage)`,"loot");
@@ -7905,7 +7957,7 @@ function buildPaperDoll(){
   el.querySelectorAll('.doll-slot.filled').forEach(t=>t.onclick=()=>unequipTile(t.dataset.kind,t.dataset.slot));
 }
 function unequipTile(kind,slot){
-  if(player.inv.length>=12){ log("Your satchel is full — salvage or sell something first.","warn"); SFX.hit&&SFX.hit(); return; }
+  if(player.inv.length>=invCap()){ log("Your satchel is full — salvage or sell something first.","warn"); SFX.hit&&SFX.hit(); return; }
   let it=null;
   if(kind==="weapon"){ it=player.weapon; if(!it)return; player.weapon=null; weaponMode="sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=true;bowModel.visible=false;} styleWeaponModel(); }
@@ -7953,6 +8005,7 @@ function buildTinker(){
     bagWrap.querySelectorAll('[data-ap]').forEach(btn=>btn.onclick=()=>{applyTinker(btn.dataset.ap);buildTinker();updateHUD();saveGame();});
   }
   const rows=document.getElementById('invRows');
+  { const ic=document.getElementById('invCount'); if(ic) ic.textContent=`${player.inv.length}/${invCap()}`; }
   if(!player.inv.length){ rows.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Empty — slay creatures and press E to gather loot.</div>`; return; }
   rows.innerHTML="";
   player.inv.forEach((it,i)=>{
@@ -7964,19 +8017,20 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp")?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
       :(it.stat==="pick"||it.stat==="key")?`<span style="color:var(--dim);font-size:11px">use on a locked cache</span>`
       :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
+      :it.stat==="pack"?`<button class="tbtn" data-eq="${i}">Add</button>`
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span>${cmpHTML}</div>
       <div class="ctl">${ctl}</div>`;
     rows.appendChild(row);
   });
-  rows.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>{const i=+b.dataset.eq;applyItem(player.inv[i]);player.inv.splice(i,1);buildTinker();updateHUD();saveGame();});
+  rows.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>{const i=+b.dataset.eq;const r=applyItem(player.inv[i]);if(r!=="keep")player.inv.splice(i,1);buildTinker();updateHUD();saveGame();});
   rows.querySelectorAll('[data-sv]').forEach(b=>b.onclick=()=>{salvageItem(+b.dataset.sv);buildTinker();updateHUD();saveGame();});
   rows.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sc;if(learnSpell(player.inv[i].spellId)){player.inv.splice(i,1);buildTinker();updateHUD();}});
 }
@@ -8000,7 +8054,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,
+      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -8042,6 +8096,7 @@ function applySaveObj(s){
   player.societyRep=s.societyRep|0;
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
   player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
+  player.packBonus=s.packBonus|0;
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
