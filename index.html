@@ -2378,7 +2378,7 @@ function buildWorld(){
   // Online, the overworld monsters are server-authoritative & shared — they arrive via
   // snapshots (reconcileMobs), so the client does not spawn its own local population.
   if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; clearNetEvent(); NET.partyNames=new Set(); NET.partyLeader=null; if(typeof updatePartyHUD==="function") updatePartyHUD(); }
-  if(!isOnline) for(let i=0;i<300;i++) spawnSomewhere();
+  // monsters now STREAM in around the player (streamMonsters) instead of 300 spawned across the whole map
   // Online, world bosses are server-authoritative & shared (the Olthoi Queen arrives via
   // snapshots). The local per-client bosses only spawn in the offline solo game.
   if(!isOnline){ spawnBoss();spawnApex();spawnShadowGenerals(); }
@@ -4542,7 +4542,8 @@ function update(dt){
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
-  cullWorld(dt);         // stream nearby objects in / far objects out of the scene graph
+  cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
+  streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   syncCamera(dt);
   updateHUD();
 }
@@ -4691,9 +4692,36 @@ function cullWorld(dt){
     if(inR){ if(!obj.parent) scene.add(obj); } else if(obj.parent) scene.remove(obj); };
   for(const n of npcs) toggle(n.mesh,n.x,n.z);
   for(const s of shops) toggle(s.mesh,s.x,s.z);
-  for(const m of monsters){ if(m.isDungeon||m.shared) continue; toggle(m.mesh,m.x,m.z); }
   for(const o of scenery) if(o) toggle(o,o.position.x,o.position.z);
   for(const nd of nodes) toggle(nd.mesh,nd.x,nd.z);
+  // overworld monsters are streamed (built/disposed) by streamMonsters, not just toggled
+}
+// true region streaming for overworld monsters: keep ~MOB_TARGET alive around the player, spawning
+// region-appropriate kinds just inside view and disposing (geometry+material freed) those left behind.
+const MOB_TARGET=32, MOB_SPAWN_MIN=70, MOB_SPAWN_MAX=150, MOB_DESPAWN=215;
+let _mobStreamAcc=0;
+function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
+  o.traverse(c=>{ if(c.geometry)c.geometry.dispose(); const m=c.material; if(m){ (Array.isArray(m)?m:[m]).forEach(x=>{ if(x&&x.map)x.map.dispose(); if(x&&x.dispose)x.dispose(); }); } }); }
+function streamMonsters(dt){
+  if(inDungeon||inNetwork||isOnline) return;
+  _mobStreamAcc+=dt; if(_mobStreamAcc<0.4) return; _mobStreamAcc=0;
+  const px=player.x,pz=player.z;
+  // dispose creatures left far behind (frees their meshes/skeletons entirely — real unload)
+  for(let i=monsters.length-1;i>=0;i--){ const m=monsters[i]; if(m.isDungeon||m.shared) continue;
+    if((m.x-px)*(m.x-px)+(m.z-pz)*(m.z-pz) > MOB_DESPAWN*MOB_DESPAWN){
+      if(m.gltfMixer) m.gltfMixer.stopAllAction&&m.gltfMixer.stopAllAction();
+      disposeObject3D(m.mesh); monsters.splice(i,1); } }
+  // refill up to the target with region-appropriate kinds, spawned just inside view around the player
+  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
+  let tries=0;
+  while(live<MOB_TARGET && tries++<40){
+    const a=rnd(0,6.28), rr=rnd(MOB_SPAWN_MIN,MOB_SPAWN_MAX);
+    const x=clamp(px+Math.cos(a)*rr,-HALF+6,HALF-6), z=clamp(pz+Math.sin(a)*rr,-HALF+6,HALF-6);
+    const d=nearestCapitalDist(x,z);
+    if(d<TOWN_SAFE+6 || terrainH(x,z)<0) continue;          // not in town-safe rings or water
+    spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500);
+    live++;
+  }
 }
 // how far the 3rd-person camera can sit behind the pivot before terrain/walls block it
 function camClampDist(tx,ty,tz,bx,by,bz,maxD){
