@@ -315,6 +315,7 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Field of view</span><input id="setFov" type="range" min="60" max="100" step="1"><span id="setFovV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Difficulty</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
@@ -456,6 +457,7 @@ const now=()=>performance.now();
 // ---------- world constants ----------
 const WORLD=16000, HALF=WORLD/2, EYE=1.7;
 const GROUND_SEG=400;   // terrain grid resolution (40u cells) — groundY() and the mesh must agree
+const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled areas (must divide GROUND_SEG)
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
 const TOWN_SAFE=60, DAYLEN=4200; // safe radius around each capital; seconds per full day/night (long, slow cycle)
@@ -1581,6 +1583,29 @@ function metalTex(){if(_metal)return _metal;const c=document.createElement('canv
   for(let i=0;i<26;i++){const x=irnd(0,255),y=irnd(0,255),l=irnd(8,40),a=rnd(0,3.14);
     g.beginPath();g.moveTo(x,y);g.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);g.stroke();}
   _metal=new THREE.CanvasTexture(c);return _metal;}
+// body-armour plate: fine brushed steel with soft panel shading — NO building-scale rivet grid,
+// so it reads as forged plate on a person instead of sheet metal wrapped around a toy.
+let _armor;
+function armorTex(){if(_armor)return _armor;const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
+  g.fillStyle="#aeb6c0";g.fillRect(0,0,256,256);
+  for(let i=0;i<9000;i++){const v=irnd(-14,16);g.fillStyle=`rgba(${168+v},${176+v},${186+v},0.45)`;g.fillRect(irnd(0,255),irnd(0,255),irnd(6,22),1);} // fine brush
+  // whisper-soft panel shading (kept faint: strong bands read as wrapped cloth on thin limbs)
+  for(let i=0;i<3;i++){const y=i*86+irnd(-8,8);const gr=g.createLinearGradient(0,y,0,y+86);
+    gr.addColorStop(0,"rgba(70,78,90,0.07)");gr.addColorStop(0.4,"rgba(235,240,248,0.06)");gr.addColorStop(1,"rgba(70,78,90,0.07)");
+    g.fillStyle=gr;g.fillRect(0,y,256,86);}
+  // faint hammered dimples
+  for(let i=0;i<130;i++){const x=irnd(0,255),y=irnd(0,255),r=rnd(2,5);
+    g.fillStyle="rgba(70,78,92,0.10)";g.beginPath();g.arc(x+0.8,y+0.8,r,0,6.28);g.fill();
+    g.fillStyle="rgba(235,242,250,0.10)";g.beginPath();g.arc(x-0.5,y-0.5,r*0.8,0,6.28);g.fill();}
+  // light edge scratches
+  g.strokeStyle="rgba(225,232,240,0.18)";g.lineWidth=1;
+  for(let i=0;i<20;i++){const x=irnd(0,255),y=irnd(0,255),l=irnd(6,26),a=rnd(0,3.14);
+    g.beginPath();g.moveTo(x,y);g.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);g.stroke();}
+  _armor=new THREE.CanvasTexture(c);return _armor;}
+// shared fabric-weave relief for clothing (tiny checker normal map)
+let _weaveNrm=null;
+function weaveNrm(){ if(_weaveNrm)return _weaveNrm;
+  _weaveNrm=makeNormalTex(32,(x,y)=>(((x>>1)+(y>>1))%2)*0.9+Math.sin(x*1.7)*0.1,0.7,14); return _weaveNrm; }
 function leatherTex(){if(_leather)return _leather;const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
   g.fillStyle="#5a3f29";g.fillRect(0,0,256,256);
   // pebbled leather grain: dense overlapping cells
@@ -1992,10 +2017,13 @@ function initThree(){
       ' texelColor=mapTexelToLinear(texelColor);\n'+
       ' diffuseColor*=texelColor;\n'+
       '#endif');};
-  const ggeo=new THREE.PlaneGeometry(WORLD,WORLD,GROUND_SEG,GROUND_SEG);
-  const gp=ggeo.attributes.position,gcol=[],col=new THREE.Color();
-  for(let i=0;i<gp.count;i++){const wx=gp.getX(i),wz=-gp.getY(i),hh=terrainH(wx,wz);
-    gp.setZ(i,hh);                                  // displace into mountains/valleys (local Z → world height)
+  // terrain is a TERRA_CHUNKS×TERRA_CHUNKS grid of areas (256 chunks) instead of one world-sized
+  // mesh — the renderer frustum-culls the chunks behind you, so only visible land is drawn.
+  // Chunk vertices land exactly on the shared GROUND_SEG grid, so groundY() physics still matches.
+  // Normals are computed analytically from the terrainH gradient (identical on both sides of a
+  // border), so the chunk seams are invisible.
+  const col=new THREE.Color();
+  const groundVertColor=(wx,wz,hh)=>{
     const t=regionTint(wx,wz);
     let rr=t[0],gg=t[1],bb=t[2];
     // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
@@ -2014,12 +2042,32 @@ function initThree(){
     if(inSwamp(wx,wz)){const s=swampZone(),k=clamp(1-Math.hypot(wx-s.x,wz-s.z)/s.r,0,1)*0.7;rr=rr*(1-k)+0.27*k;gg=gg*(1-k)+0.33*k;bb=bb*(1-k)+0.22*k;}
     // subtle deterministic mottling so large flats aren't uniform
     const n=(Math.sin(wx*0.07)*Math.cos(wz*0.063)+Math.sin((wx+wz)*0.031))*0.5;
-    const m=1+n*0.06; rr*=m;gg*=m;bb*=m;
-    col.setRGB(clamp(rr,0,1),clamp(gg,0,1),clamp(bb,0,1));gcol.push(col.r,col.g,col.b);}
-  ggeo.setAttribute('color',new THREE.Float32BufferAttribute(gcol,3));
-  ggeo.computeVertexNormals();
-  groundMesh=new THREE.Mesh(ggeo,groundMat);
-  groundMesh.rotation.x=-Math.PI/2;groundMesh.receiveShadow=true;scene.add(groundMesh);
+    const m=1+n*0.06;
+    col.setRGB(clamp(rr*m,0,1),clamp(gg*m,0,1),clamp(bb*m,0,1));
+    return col;
+  };
+  groundMesh=new THREE.Group();
+  {
+    const CS=WORLD/TERRA_CHUNKS, segs=GROUND_SEG/TERRA_CHUNKS;
+    for(let ci=0;ci<TERRA_CHUNKS;ci++)for(let ck=0;ck<TERRA_CHUNKS;ck++){
+      const ccx=-HALF+(ci+0.5)*CS, ccz=-HALF+(ck+0.5)*CS;      // chunk centre (world)
+      const geo=new THREE.PlaneGeometry(CS,CS,segs,segs);
+      const gp=geo.attributes.position, gcol=[], nrm=[];
+      for(let i=0;i<gp.count;i++){
+        const wx=ccx+gp.getX(i), wz=ccz-gp.getY(i), hh=terrainH(wx,wz);
+        gp.setZ(i,hh);                                          // displace into mountains/valleys
+        const e=6, dhx=(terrainH(wx+e,wz)-terrainH(wx-e,wz))/(2*e), dhz=(terrainH(wx,wz+e)-terrainH(wx,wz-e))/(2*e);
+        const nl=Math.hypot(dhx,1,dhz); nrm.push(-dhx/nl, dhz/nl, 1/nl);   // world gradient → plane-local normal
+        const c=groundVertColor(wx,wz,hh); gcol.push(c.r,c.g,c.b);
+      }
+      geo.setAttribute('color',new THREE.Float32BufferAttribute(gcol,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+      const chunk=new THREE.Mesh(geo,groundMat);
+      chunk.rotation.x=-Math.PI/2; chunk.position.set(ccx,0,ccz);
+      chunk.receiveShadow=true; groundMesh.add(chunk);
+    }
+  }
+  scene.add(groundMesh);
   // ocean / lakes at sea level
   waterMesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,128,128),new THREE.MeshPhongMaterial({color:0x18466e,specular:0xdcf0ff,shininess:210,transparent:true,opacity:0.85,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.55,0.55)}));
   // fresnel: dark/deep looking straight down, bright sky-reflection at grazing angles. Injected before
@@ -2175,7 +2223,8 @@ function buildWeapon(){
   sleeve.rotation.x=Math.PI/2;sleeve.position.set(0,-0.04,-0.28);sleeve.visible=false;weaponHand.add(sleeve);
   weapon.userData.gloveMat=gloveMat;weapon.userData.sleeve=sleeve;
   // sword: polished blade (sheen+fuller), crossguard, leather-wrapped grip, pommel
-  const blade=new THREE.Mesh(new THREE.BoxGeometry(0.075,0.03,1.0),texMat(bladeTex));blade.position.set(0,0.06,-1.0);weaponHand.add(blade);
+  const bladeM=texMat(bladeTex); bladeM.metalness=0.88; bladeM.roughness=0.2;   // mirror-polished steel
+  const blade=new THREE.Mesh(new THREE.BoxGeometry(0.075,0.03,1.0),bladeM);blade.position.set(0,0.06,-1.0);weaponHand.add(blade);
   const tip=new THREE.Mesh(new THREE.ConeGeometry(0.05,0.18,4),steel);tip.rotation.x=-Math.PI/2;tip.position.set(0,0.06,-1.55);weaponHand.add(tip);
   const guard=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.06,0.08),texMat(metalTex,0xb8902a));guard.position.set(0,0.06,-0.48);weaponHand.add(guard);
   const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.22,8),texMat(leatherTex,0x3a2616));grip.rotation.x=Math.PI/2;grip.position.set(0,0.06,-0.36);weaponHand.add(grip);
@@ -2207,16 +2256,17 @@ function buildWeapon(){
 function applyHeritageLook(h){
   if(!weapon||!weapon.userData.gloveMat) return;
   const gm=weapon.userData.gloveMat,sl=weapon.userData.sleeve;
-  if(h==="sho"){ gm.map=leatherTex(); gm.color.setHex(0x6a4d33); sl.visible=false; weaponMode="bow"; }       // thief — stitched leather glove
-  else if(h==="gharundim"){ gm.map=clothTex(); gm.color.setHex(0x9a90d0); sl.visible=true; weaponMode="sword"; } // mage — woven cloth + robe sleeve
-  else { gm.map=metalTex(); gm.color.setHex(0xffffff); sl.visible=false; weaponMode="sword"; }              // knight — brushed-steel gauntlet
+  const setPBR=(m,met,rgh)=>{ if(m.metalness!==undefined){m.metalness=met;m.roughness=rgh;} };
+  if(h==="sho"){ gm.map=leatherTex(); gm.color.setHex(0x6a4d33); setPBR(gm,0.04,0.72); sl.visible=false; weaponMode="bow"; }       // thief — stitched leather glove
+  else if(h==="gharundim"){ gm.map=clothTex(); gm.color.setHex(0x9a90d0); setPBR(gm,0.02,0.88); sl.visible=true; weaponMode="sword"; } // mage — woven cloth + robe sleeve
+  else { gm.map=armorTex(); gm.color.setHex(0xffffff); setPBR(gm,0.72,0.34); sl.visible=false; weaponMode="sword"; }              // knight — forged-plate gauntlet
   if(gm.normalMap!==undefined) gm.normalMap=lumNormalTex(gm.map);
   gm.needsUpdate=true;
   // mirror the look on the third-person body
   if(playerAvatar&&playerAvatar.userData.bodyMat){const u=playerAvatar.userData,bm=u.bodyMat;
-    if(h==="sho"){bm.map=leatherTex();bm.color.setHex(0x7a5a3a);}
-    else if(h==="gharundim"){bm.map=clothTex();bm.color.setHex(0xa99ee0);}
-    else {bm.map=metalTex();bm.color.setHex(0xffffff);}
+    if(h==="sho"){bm.map=leatherTex();bm.color.setHex(0x7a5a3a);setPBR(bm,0.04,0.72);}
+    else if(h==="gharundim"){bm.map=clothTex();bm.color.setHex(0xa99ee0);setPBR(bm,0.02,0.88);}
+    else {bm.map=armorTex();bm.color.setHex(0xffffff);setPBR(bm,0.72,0.34);}
     if(bm.normalMap!==undefined) bm.normalMap=lumNormalTex(bm.map);
     if(typeof player!=="undefined"&&player.dye!=null) bm.color.setHex(player.dye);   // H7: applied armour dye overrides the heritage colour
     bm.needsUpdate=true;
@@ -2274,9 +2324,12 @@ const AV_HIP=0.94, AV_WAIST=0.97, AV_SH_LOCAL=0.53, AV_NECK_LOCAL=0.58, AV_HEAD_
 const AV_THIGH=0.43, AV_SHIN=0.42, AV_UPARM=0.3, AV_FOREARM=0.27;
 function buildAvatarJointed(){
   const g=new THREE.Group();
-  const bodyMat=texMat(metalTex), accent=new THREE.MeshStandardMaterial({color:0x39406a});
-  const dark=new THREE.MeshStandardMaterial({color:0x241a10}), gold=texMat(metalTex,0xc69a3a);
-  const app=player.appearance||{}, skinM=new THREE.MeshStandardMaterial({color:app.skin!=null?app.skin:0xe0b088});
+  // forged plate: metallic + fairly smooth so the sky/env map gives it real steel highlights
+  const bodyMat=texMat(armorTex); bodyMat.metalness=0.72; bodyMat.roughness=0.34; bodyMat.normalScale.set(0.45,0.45);
+  const accent=new THREE.MeshStandardMaterial({color:0x39406a,roughness:0.9,metalness:0.02,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)});
+  const dark=new THREE.MeshStandardMaterial({color:0x241a10,roughness:0.72,metalness:0.05});
+  const gold=texMat(armorTex,0xc69a3a); gold.metalness=0.85; gold.roughness=0.3;
+  const app=player.appearance||{}, skinM=new THREE.MeshStandardMaterial({color:app.skin!=null?app.skin:0xe0b088,roughness:0.55,metalness:0.0});
   const M=(geo,mat,x,y,z,sh)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x||0,y||0,z||0);if(sh)m.castShadow=true;return m;};
   const joint=(parent,y,x)=>{const j=new THREE.Group();j.position.set(x||0,y,0);parent.add(j);return j;};
   const bone=(parent,len,r0,r1,mat)=>{const m=M(new THREE.CylinderGeometry(r0*0.92,r1,len*0.96,14),mat,0,-len/2,0,true);parent.add(m);
@@ -2339,8 +2392,8 @@ function buildAvatarJointed(){
   }
   // pauldrons (on spine, over the shoulders)
   for(const sx of[-1,1]){const pa=new THREE.Group();pa.position.set(sx*0.215,AV_SH_LOCAL+0.04,0);spine.add(pa);
-    const p1=M(new THREE.SphereGeometry(0.115,16,12,0,6.28,0,Math.PI*0.6),bodyMat,0,0,0,true);p1.scale.set(1.05,0.74,1.05);pa.add(p1);
-    const tr=M(new THREE.TorusGeometry(0.11,0.015,6,16),gold,0,-0.03,0);tr.rotation.x=Math.PI/2;pa.add(tr);}
+    const p1=M(new THREE.SphereGeometry(0.098,16,12,0,6.28,0,Math.PI*0.6),bodyMat,0,0,0,true);p1.scale.set(1.0,0.68,1.0);pa.add(p1);
+    const tr=M(new THREE.TorusGeometry(0.094,0.014,6,16),gold,0,-0.028,0);tr.rotation.x=Math.PI/2;pa.add(tr);}
   // ---- neck → head ----
   const neck=joint(spine,AV_NECK_LOCAL);
   neck.add(M(new THREE.CylinderGeometry(0.058,0.07,0.1,10),skinM,0,0.02,0));
@@ -2358,7 +2411,8 @@ function buildAvatarJointed(){
   // ---- held weapon in the right wrist ----
   const hand=new THREE.Group();hand.position.set(0,-0.07,0);arms[0].wr.add(hand);
   const aSword=new THREE.Group();
-  aSword.add(M(new THREE.BoxGeometry(0.05,0.018,0.72),texMat(bladeTex),0,0,-0.39));
+  const aBladeM=texMat(bladeTex); aBladeM.metalness=0.88; aBladeM.roughness=0.2;
+  aSword.add(M(new THREE.BoxGeometry(0.05,0.018,0.72),aBladeM,0,0,-0.39));
   aSword.add(M(new THREE.BoxGeometry(0.17,0.045,0.05),gold,0,0,0));
   aSword.add(M(new THREE.SphereGeometry(0.033,8,6),gold,0,0,0.1));
   aSword.position.set(0,-0.02,0);aSword.rotation.x=-Math.PI/2;hand.add(aSword);
@@ -2414,8 +2468,9 @@ function buildPerson(o){
   const robeCol=o.robe!=null?o.robe:0x6a4a2a, accent=o.accent!=null?o.accent:0x4a3320;
   const skinCol=o.skin!=null?o.skin:SKIN_TONES[sd%SKIN_TONES.length];
   const hairCol=o.hair!=null?o.hair:HAIR_TONES[(sd*7+1)%HAIR_TONES.length];
-  const cloth=new THREE.MeshStandardMaterial({color:robeCol}), cloth2=new THREE.MeshStandardMaterial({color:accent});
-  const skinM=new THREE.MeshStandardMaterial({color:skinCol}), boot=new THREE.MeshStandardMaterial({color:0x2a1d12});
+  const cloth=new THREE.MeshStandardMaterial({color:robeCol,roughness:0.92,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.55,0.55)});
+  const cloth2=new THREE.MeshStandardMaterial({color:accent,roughness:0.92,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.55,0.55)});
+  const skinM=new THREE.MeshStandardMaterial({color:skinCol,roughness:0.55,metalness:0.0}), boot=new THREE.MeshStandardMaterial({color:0x2a1d12,roughness:0.75,metalness:0.03});
   const robed=!!o.robed;
   const app={skin:skinCol,face:_PERSON_FACES[(sd*3)%6],hair:o.hood?"bald":_PERSON_HAIRS[(sd*5)%6],
     hairColor:hairCol,beard:o.beard?["full","goatee","mustache","stubble"][sd%4]:"none",tattoo:"none",eye:[0x4a6a3a,0x3a5a8a,0x5a3a1a,0x6a6a6a][sd%4]};
@@ -2493,7 +2548,7 @@ const APPEARANCE={
 const _find=(cat,k)=>APPEARANCE[cat].find(o=>o.k===k)||APPEARANCE[cat][0];
 function addHair(g,style,col,fs){
   if(style==="bald") return;
-  const tex=hairTex(col); const mat=new THREE.MeshStandardMaterial({color:0xffffff,map:tex});
+  const tex=hairTex(col); const mat=new THREE.MeshStandardMaterial({color:0xffffff,map:tex,roughness:0.62,metalness:0.0});
   // crown shell — caps the top of the skull, hairline sitting just above the brows (not over the face)
   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.208,24,18,0,6.28,0,Math.PI*0.46),mat);
   cap.scale.set(fs.sx*1.05,fs.sy*1.04,fs.sz*1.05);cap.position.set(0,0.05,0.012);cap.castShadow=true;g.add(cap);
@@ -2562,7 +2617,7 @@ function hairTex(col){ if(_hairTexCache[col]) return _hairTexCache[col];
 function buildFaceGroup(app){
   app=app||{}; const g=new THREE.Group();
   const fs=_find("face",app.face), skinCol=app.skin!=null?app.skin:0xe8b890, hairCol=app.hairColor!=null?app.hairColor:0x3a2416;
-  const skin=new THREE.MeshStandardMaterial({color:skinCol});
+  const skin=new THREE.MeshStandardMaterial({color:skinCol,roughness:0.55,metalness:0.0});
   const z=0.2*fs.sz;   // face plane (front, -z)
   const skull=new THREE.Mesh(headGeometry(fs),skin);skull.castShadow=true;g.add(skull);
   // ears, set back along the jaw line
@@ -2619,17 +2674,30 @@ function buildPortal(name){
     new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.92,side:THREE.DoubleSide,fog:false,depthWrite:false}));
   disc.position.y=2.0; g.add(disc);
   const light=new THREE.PointLight(0x59b6ff,1.6,18);light.position.y=2;g.add(light);
-  const lbl=labelSprite("Portal → "+name);lbl.position.y=4.2;g.add(lbl);
+  const lbl=labelSprite("Portal → "+name,"portals");lbl.position.y=4.2;g.add(lbl);
   g.userData.disc=disc;g.userData.light=light;
   return g;
 }
-function labelSprite(txt){
+// floating name text. `cat` groups it under a Settings toggle: players / npcs / cities /
+// portals / lifestones / dungeons / monsters — each can be switched off in Settings (O).
+const LABELS=[];
+function labelSprite(txt,cat){
   const c=document.createElement('canvas');c.width=256;c.height=64;const g=c.getContext('2d');
   g.font="bold 26px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
   g.lineWidth=5;g.strokeStyle="rgba(0,0,0,.85)";g.strokeText(txt,128,32);
   g.fillStyle="#e8dcc0";g.fillText(txt,128,32);
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));
-  sp.scale.set(6,1.5,1);return sp;
+  sp.scale.set(6,1.5,1);
+  sp.userData.labelCat=cat||"npcs";
+  LABELS.push(sp);
+  sp.visible=!settings.labels||settings.labels[sp.userData.labelCat]!==false;
+  return sp;
+}
+function applyLabelSettings(){
+  const L=settings.labels||{};
+  for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
+    if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); continue; }
+    sp.visible=L[sp.userData.labelCat]!==false; }
 }
 
 // ---------- mesh builders ----------
@@ -3326,7 +3394,7 @@ function buildWorld(){
     const est=buildBuilding(cap.region,"hall",1.6); est.position.set(L.x,groundY(L.x,L.z),L.z); est.rotation.y=Math.PI;
     scene.add(est); scenery.push(est);
     if(est.userData&&est.userData.surfaces) registerStructure(L.x,L.z,Math.PI,groundY(L.x,L.z),est.userData.surfaces);
-    const lbl=labelSprite("Kilmer's Estate — recall home (/home)"); lbl.scale.set(11,2.2,1); lbl.position.set(L.x,8.5,L.z); scene.add(lbl); scenery.push(lbl);
+    const lbl=labelSprite("Kilmer's Estate — recall home (/home)","cities"); lbl.scale.set(11,2.2,1); lbl.position.set(L.x,8.5,L.z); scene.add(lbl); scenery.push(lbl);
     obstacles.push({x:L.x,z:L.z,r:6});
   })();
   // capital portal network (step between the three capitals)
@@ -3411,7 +3479,7 @@ function settleY(){ // drop every placed object onto the RENDERED ground surface
 }
 function addLifestone(x,z,bound,name,capital,region){
   const mesh=buildLifestone(bound);mesh.position.set(x,0,z);
-  const lbl=labelSprite(name+" — E to bind");lbl.position.y=4;mesh.add(lbl);
+  const lbl=labelSprite(name+" — E to bind","lifestones");lbl.position.y=4;mesh.add(lbl);
   scene.add(mesh);
   lifestones.push({x,z,bound,name,mesh,capital:!!capital,region});obstacles.push({x,z,r:1.2});
 }
@@ -3672,7 +3740,7 @@ function addCity(c){
       w.position.set(wx,1.8*sc,wz);w.rotation.y=-a;w.castShadow=true;w.receiveShadow=true;scene.add(w);scenery.push(w);obstacles.push({x:wx,z:wz,r:1.3*sc});}
     for(const ga of[Math.PI*0.42,Math.PI*0.58]){const gx=c.x+Math.cos(ga)*wr,gz=c.z+Math.sin(ga)*wr;
       const gp=new THREE.Mesh(new THREE.BoxGeometry(1.7*sc,5.4*sc,1.7*sc),solid(0x9a9079));gp.position.set(gx,2.7*sc,gz);gp.castShadow=true;scene.add(gp);scenery.push(gp);obstacles.push({x:gx,z:gz,r:1.3*sc});}
-    const banner=labelSprite("★ "+c.name+" ★");banner.scale.set(16,4,1);banner.position.set(c.x,13,c.z);banner.userData.float=13;scene.add(banner);scenery.push(banner);}
+    const banner=labelSprite("★ "+c.name+" ★","cities");banner.scale.set(16,4,1);banner.position.set(c.x,13,c.z);banner.userData.float=13;scene.add(banner);scenery.push(banner);}
 }
 function addPortal(x,z,dest){
   const mesh=buildPortal(dest.name);mesh.position.set(x,0,z);scene.add(mesh);
@@ -3716,7 +3784,7 @@ function spawnMonster(kind,x,z,elite){
     hp=Math.round(hp*2.5);dmg=Math.round(dmg*1.6);xp=Math.round(xp*2.5);goldMul=3;
     mesh.scale.setScalar(1.4);r*=1.4;
     const aura=new THREE.PointLight(0xffae3a,1.5,11);aura.position.y=1.4;mesh.add(aura);
-    const lbl=labelSprite("Champion "+b.name);lbl.scale.set(6,1.5,1);lbl.position.y=mesh.userData.headY+1.2;mesh.add(lbl);
+    const lbl=labelSprite("Champion "+b.name,"monsters");lbl.scale.set(6,1.5,1);lbl.position.y=mesh.userData.headY+1.2;mesh.add(lbl);
   }
   mesh.position.set(x,0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul,ang:rnd(0,6.28),
@@ -3960,7 +4028,7 @@ function spawnBoss(){
   const corners=[[-HALF+140,-HALF+140],[HALF-140,HALF-140],[HALF-140,-HALF+140],[-HALF+140,HALF-140]];
   const c=corners[irnd(0,3)];
   const mesh=buildCreature("olthoi");mesh.scale.setScalar(2.2);mesh.position.set(c[0],0,c[1]);scene.add(mesh);
-  const lbl=labelSprite("Gnawvil, the Olthoi Queen");lbl.scale.set(9,2.2,1);lbl.position.y=mesh.userData.headY+1.7;mesh.add(lbl);
+  const lbl=labelSprite("Gnawvil, the Olthoi Queen","monsters");lbl.scale.set(9,2.2,1);lbl.position.y=mesh.userData.headY+1.7;mesh.add(lbl);
   const bhp=Math.round(2000*settings.diff);
   const m={kind:"olthoi",x:c[0],z:c[1],r:BESTIARY.olthoi.size*0.8*2.2,hp:bhp,mhp:bhp,ang:0,
     state:"wander",t:0,atkCd:0,wx:c[0],wz:c[1],slow:0,flash:0,mesh,headY:mesh.userData.headY*2.2,
@@ -3975,7 +4043,7 @@ function spawnApex(){
   if(inDungeon){ setTimeout(spawnApex,8000); return; }
   const ang=rnd(0,6.28),r=rnd(300,900),x=Math.cos(ang)*r,z=Math.sin(ang)*r; // the Direlands centre
   const mesh=buildCreature("shadow");mesh.scale.setScalar(3.6);mesh.position.set(x,0,z);scene.add(mesh);
-  const lbl=labelSprite("Bael'Zharon, the Hopeslayer");lbl.scale.set(13,3,1);lbl.position.y=mesh.userData.headY+2;mesh.add(lbl);
+  const lbl=labelSprite("Bael'Zharon, the Hopeslayer","monsters");lbl.scale.set(13,3,1);lbl.position.y=mesh.userData.headY+2;mesh.add(lbl);
   const hp=Math.round(6000*settings.diff);
   const m={kind:"shadow",x,z,r:BESTIARY.shadow.size*0.8*3.6,hp,mhp:hp,ang:0,state:"wander",t:0,atkCd:0,
     wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*3.6,isBoss:true,apex:true,
@@ -3993,7 +4061,7 @@ function spawnShadowGeneral(idx){
   const sc=2.1,mesh=buildCreature("shadow");mesh.scale.setScalar(sc);mesh.position.set(x,0,z);
   mesh.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material=o.material.clone(),o.material.color.setHex(gd.tint);});
   scene.add(mesh);
-  const lbl=labelSprite(gd.name+", Shadow General");lbl.scale.set(10,2.4,1);lbl.position.y=mesh.userData.headY+1.8;mesh.add(lbl);
+  const lbl=labelSprite(gd.name+", Shadow General","monsters");lbl.scale.set(10,2.4,1);lbl.position.y=mesh.userData.headY+1.8;mesh.add(lbl);
   const hp=Math.round(1300*settings.diff);
   const m={kind:"shadow",x,z,r:BESTIARY.shadow.size*0.8*sc,hp,mhp:hp,ang:0,state:"wander",t:0,atkCd:0,
     wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*sc,isBoss:true,general:idx,
@@ -4152,7 +4220,7 @@ function triggerPortalStorm(){   // scatter the player to a town's outskirts (ex
   if(inDungeon||inNetwork||!player.alive) return false;
   const ang=rnd(0,6.28), dist=rnd(44,72);
   const nx=clamp(player.x+Math.cos(ang)*dist,-HALF+6,HALF-6), nz=clamp(player.z+Math.sin(ang)*dist,-HALF+6,HALF-6);
-  teleportFX(player.x,player.z); player.x=nx; player.z=nz; player.invuln=1.5; player.combatT=0;
+  teleportFX(player.x,player.z); arriveAt(nx,nz); player.invuln=1.5; player.combatT=0;
   stormPhase=0; stormBuild=0; stormCd=110; teleportFX(player.x,player.z);
   log("A <b>portal storm</b> sweeps you away to the outskirts.","sys"); if(SFX.quest)SFX.quest();
   return true;
@@ -6279,7 +6347,7 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot recall from here.","warn"); return "keep"; }
     const dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ log("You have no Lifestone to recall to.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); player.x=dest.x; player.z=dest.z+3; player.invuln=2; teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
     if(SFX.quest)SFX.quest(); log(`You crush the <b>${it.name}</b> and recall to the <b>${dest.name}</b> Lifestone.`,"heal"); }
   else if(it.stat==="cure"){
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
@@ -6300,14 +6368,14 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot open a portal from here.","warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The gem's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); player.x=c.x; player.z=c.z+3; player.invuln=2; teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; teleportFX(player.x,player.z);
     if(SFX.quest)SFX.quest(); log(`You shatter the <b>${it.name}</b> and step through to <b>${c.name}</b>.`,"heal"); }
   else if(it.stat==="contract"){
     if(inDungeon||inNetwork){ log("You cannot invoke a contract from here.","warn"); return "keep"; }
     if((player.contractCd||0)>0){ log(`The contract must recharge (${Math.ceil(player.contractCd)}s).`,"warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The contract's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); player.x=c.x; player.z=c.z+3; player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="manastone"){   // H15: recharge the equipped focus's mana battery (or, with no focus, your own mana)
@@ -6556,7 +6624,7 @@ function die(){
   derive();   // apply the new Vitae + any dropped gear to your vital pools before you respawn
   setTimeout(()=>{
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
-    player.x=ls.x;player.z=ls.z+3;player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
+    arriveAt(ls.x,ls.z+3);player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
     player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;player.invuln=2.5;
     document.getElementById('deathmsg').style.display="none";
     log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP, and death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals, skills & damage until you earn it back.${corpseNote}`,"sys");
@@ -6564,7 +6632,18 @@ function die(){
   },1400);
 }
 // AC fall damage: drops past a safe height hurt, scaling with distance; the Jump skill softens landings.
+// portal/teleport arrival: every teleport lands the player 6u ABOVE the destination surface
+// (so you can never materialize inside a hill), and pins the fall apex to the ground height so
+// the gentle float-down out of a portal never deals fall damage.
+function arriveAt(x,z){
+  player.x=clamp(x,-HALF+2,HALF-2); player.z=clamp(z,-HALF+2,HALF-2);
+  const g=groundY(player.x,player.z), lift=(inDungeon||inNetwork)?0.5:6;
+  player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
+  player.arriveGrace=true;   // the float-down out of the portal never deals fall damage
+  camInit=false;   // snap the third-person camera to the new location instead of easing across the map
+}
 function fallDamage(drop){
+  if(player.arriveGrace){ player.arriveGrace=false; return; }   // portal-arrival landing is free
   if(!player.alive||inDungeon||inNetwork||drop<=0) return;   // instances are flat — no meaningful drops
   const safe=5.5+skillValue("jump")*0.04;   // higher Jump → land safely from farther (a 2-storey drop is free)
   if(drop<=safe) return;
@@ -6746,7 +6825,7 @@ function executeSpell(id){
     else if(s.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(!p){ player.mn+=cost; spellCd[id]=0; log("You have no portal tied — take a portal (or cast Portal Tie) first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ player.mn+=cost; spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
-    teleportFX(player.x,player.z); player.x=dest.x; player.z=dest.z+3; player.invuln=2; teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
   }
   if(s.special==="dispel"){   // cleanse hostile curses on you, then brief immunity to re-application
@@ -7169,7 +7248,7 @@ function portalTouch(){
   for(const tp of tnPortals){ if(near(tp.x,tp.z,2.4)){ portalCd=1.5;enterNetwork(player.x,player.z);return; } }
   for(const pt of portals){ if(near(pt.x,pt.z,2.4)){
     portalCd=1.5;teleportFX(player.x,player.z);
-    player.x=pt.dest.x;player.z=pt.dest.z;player.invuln=1.5;
+    arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
     teleportFX(player.x,player.z);
     player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};   // remembered for Portal Recall / Portal Tie
     log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");toast(pt.dest.name.toUpperCase());
@@ -7235,7 +7314,7 @@ function interact(){
   for(const pt of portals){
     if(Math.hypot(pt.x-player.x,pt.z-player.z)<3.2){
       teleportFX(player.x,player.z);
-      player.x=pt.dest.x;player.z=pt.dest.z;player.invuln=1.5;
+      arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
       teleportFX(player.x,player.z);
       log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");
       toast(pt.dest.name.toUpperCase());
@@ -8239,7 +8318,7 @@ document.getElementById('bigmap').addEventListener('click',e=>{
   const S=520,sc=S/WORLD,wx=e.offsetX/sc-HALF,wz=e.offsetY/sc-HALF;
   let best=null,bd=Infinity;for(const ls of lifestones){const d=Math.hypot(ls.x-wx,ls.z-wz);if(d<bd){bd=d;best=ls;}}
   if(best&&bd<WORLD*0.05){
-    player.x=best.x;player.z=best.z+4;player.invuln=2;
+    arriveAt(best.x,best.z+4);player.invuln=2;
     teleportFX(player.x,player.z);
     toast(best.name.toUpperCase());log(`You journey to <b>${best.name}</b>.`,"sys");closeMap();
   }
@@ -8274,7 +8353,8 @@ function loop(ts){
 //  AUDIO — synthesized via WebAudio (no asset files; works fully offline)
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
-const settings={sens:1.0,vol:0.9,fov:72,diff:1.0};
+const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,
+  labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true}};
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){} }
 function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){} }
@@ -10335,7 +10415,7 @@ function buildNPC(role,name,seedX,look){
   o.robe=pickColor(SHIRT_COLORS,seed,17);
   o.accent=pickColor(PANTS_COLORS,seed,53);
   const g=buildPerson(o);
-  const lbl=labelSprite(name||R.label);lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
+  const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
   if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
   return g;
 }
@@ -10668,7 +10748,7 @@ function recallHome(){
   if(houseTier()<1){ log("You own no estate to recall to — buy one first (press Y).","sys"); if(SFX.err)SFX.err(); return; }
   if(!HOUSE_LOC){ log("Your estate is not ready.","warn"); return; }
   if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-  player.x=HOUSE_LOC.x; player.z=HOUSE_LOC.z+6; player.invuln=2;
+  arriveAt(HOUSE_LOC.x,HOUSE_LOC.z+6); player.invuln=2;
   if(typeof teleportFX==="function") teleportFX(player.x,player.z);
   if(typeof toast==="function") toast("ESTATE"); if(SFX.quest)SFX.quest();
   log(`You recall to your <b>${houseName()}</b> near Holtburg.`,"sys");
@@ -10886,7 +10966,7 @@ function buildMerchant(vt){
   const canopy=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.12,1.2),new THREE.MeshStandardMaterial({color:def.mcol||0xb04030}));canopy.position.set(0,2.05,0);canopy.castShadow=true;stall.add(canopy);
   const stripe=new THREE.Mesh(new THREE.BoxGeometry(1.84,0.13,0.3),new THREE.MeshStandardMaterial({color:0xe8e0c8}));stripe.position.set(0,2.04,0);stall.add(stripe);
   for(let i=0;i<3;i++){const w=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2),i%2?wood2:new THREE.MeshStandardMaterial({color:def.robe}));w.position.set(-0.45+i*0.45,1.04,0.1);stall.add(w);}
-  const lbl=labelSprite(def.title+" — E to trade");lbl.position.y=2.5;g.add(lbl);
+  const lbl=labelSprite(def.title+" — E to trade","npcs");lbl.position.y=2.5;g.add(lbl);
   const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
   return g;
 }
@@ -11149,6 +11229,20 @@ function openSettings(){
   const hi=()=>diffBtns.forEach(b=>b.style.opacity=(+b.dataset.diff===settings.diff)?1:0.45);
   hi();
   diffBtns.forEach(b=>b.onclick=()=>{settings.diff=+b.dataset.diff;saveSettings();hi();log("Difficulty set — affects newly-spawned foes.","sys");});
+  // per-category floating-name toggles (lit = shown)
+  const lc=document.getElementById('setLabels');
+  if(lc&&!lc.dataset.built){ lc.dataset.built="1";
+    if(!settings.labels) settings.labels={};
+    const cats=[["players","Players"],["npcs","NPCs"],["cities","Cities"],["portals","Portals"],
+                ["lifestones","Lifestones"],["dungeons","Dungeons"],["monsters","Bosses"]];
+    for(const [k,n] of cats){
+      const b=document.createElement('button'); b.className="tbtn"; b.textContent=n;
+      b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ b.style.opacity=settings.labels[k]!==false?1:0.35; };
+      b.onclick=()=>{ settings.labels[k]=settings.labels[k]===false; paint(); saveSettings(); applyLabelSettings(); };
+      paint(); lc.appendChild(b);
+    }
+  }
 }
 function closeSettings(){ document.getElementById('settings').style.display="none";paused=false; }
 document.getElementById('closeSettings').onclick=closeSettings;
@@ -11246,7 +11340,7 @@ function buildSignpost(name,yaw){
   const post=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.18,3.0,7),wood);post.position.y=1.5;post.castShadow=true;g.add(post);
   const board=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.7,0.12),plank);board.position.set(1.05,2.5,0);board.castShadow=true;g.add(board);
   const tip=new THREE.Mesh(new THREE.ConeGeometry(0.42,0.7,4),plank);tip.rotation.z=-Math.PI/2;tip.position.set(2.3,2.5,0);g.add(tip);
-  const lbl=labelSprite(name);lbl.scale.set(6,1.5,1);lbl.position.set(1.05,3.45,0);g.add(lbl);
+  const lbl=labelSprite(name,"portals");lbl.scale.set(6,1.5,1);lbl.position.set(1.05,3.45,0);g.add(lbl);
   g.rotation.y=yaw;g.userData.sign=true;g.userData.town=name;return g;
 }
 function placeSignposts(r){
@@ -11311,7 +11405,7 @@ function addEntrance(def){
   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(2.6,0),new THREE.MeshStandardMaterial({color:0x4a4640,flatShading:true}));
   rock.position.set(0,1,-1.6);rock.castShadow=true;g.add(rock);
   // (no per-entrance PointLight: the emissive arch carries the glow; 70+ lights would blow the GPU shader uniform cap)
-  const lbl=labelSprite(def.name+" — E to delve");lbl.scale.set(8,1.8,1);lbl.position.y=4.2;g.add(lbl);
+  const lbl=labelSprite(def.name+" — E to delve","dungeons");lbl.scale.set(8,1.8,1);lbl.position.y=4.2;g.add(lbl);
   g.position.set(def.x,0,def.z);scene.add(g);
   dungeonEntrances.push({x:def.x,z:def.z,mesh:g,def});obstacles.push({x:def.x,z:def.z-1.6,r:1.6});
 }
@@ -11328,6 +11422,7 @@ function hideOverworld(v){
   if(groundMesh) groundMesh.visible=v;
   if(waterMesh) waterMesh.visible=v;
   if(grassMesh) grassMesh.visible=v;
+  applyLabelSettings();   // scenery banners were force-shown above — re-hide any the user toggled off
 }
 function clearDrops(){ for(const d of drops) scene.remove(d.mesh); drops=[]; }
 function clearProjectiles(){ for(const p of pProj) scene.remove(p.mesh); for(const p of eProj) scene.remove(p.mesh); for(const w of walls) scene.remove(w.mesh); pProj=[];eProj=[];walls=[]; }
@@ -11339,7 +11434,7 @@ function spawnDungeonMonster(kind,x,z,elite,hpMul){
   if(elite){
     hp=Math.round(b.hp*3.5*hpMul);dmg=Math.round(b.dmg*1.8*Math.sqrt(hpMul));xp=Math.round(b.xp*3*hpMul);r*=1.5;base=1.5;mesh.scale.setScalar(1.5);
     const aura=new THREE.PointLight(0xff5a3a,1.8,14);aura.position.y=1.6;mesh.add(aura);
-    const lbl=labelSprite("Warden — "+b.name);lbl.scale.set(7,1.8,1);lbl.position.y=mesh.userData.headY+1.4;mesh.add(lbl);
+    const lbl=labelSprite("Warden — "+b.name,"monsters");lbl.scale.set(7,1.8,1);lbl.position.y=mesh.userData.headY+1.4;mesh.add(lbl);
   }
   mesh.position.set(x,0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul:elite?4:1,ang:rnd(0,6.28),state:"chase",t:0,atkCd:0,
@@ -11449,7 +11544,7 @@ function buildDungeon(def){
   const en=L.entry; dungeonExit={x:en.cx,z:en.cz+en.hz-0.6}; dungeonSpawn={x:en.cx,z:en.cz-Math.max(1,en.hz-3)};
   const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
   arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
-  const elbl=labelSprite("Leave the Delve — E");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+  const elbl=labelSprite("Leave the Delve — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
   const elt=new THREE.PointLight(0x6aa0ff,1.4,16);elt.position.set(dungeonExit.x,2,dungeonExit.z);scene.add(elt);dungeonObjs.push(elt);
   // treasure chest in the boss room
   const boss=L.rooms[L.rooms.length-1];
@@ -11473,7 +11568,7 @@ function buildDungeon(def){
     const lk=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6),new THREE.MeshStandardMaterial({color:0xffd23b,emissive:0x6a5320,emissiveIntensity:0.7}));
     lk.position.set(0,0.46,0.4);lg.add(lk);
     lg.position.set(lx,0,lz);scene.add(lg);dungeonObjs.push(lg);
-    const llbl=labelSprite("Locked Cache");llbl.position.set(lx,2.0,lz);scene.add(llbl);dungeonObjs.push(llbl);
+    const llbl=labelSprite("Locked Cache","dungeons");llbl.position.set(lx,2.0,lz);scene.add(llbl);dungeonObjs.push(llbl);
     dungeonLock={x:lx,z:lz,mesh:lg,opened:false};
   }
   // a Sealed Vault (AC): KEY-only (a pick won't do), richer reward — rarer, ~25% of delves, near the boss room
@@ -11486,7 +11581,7 @@ function buildDungeon(def){
     const vk=new THREE.Mesh(new THREE.TorusGeometry(0.18,0.05,8,16),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x3a6abf,emissiveIntensity:0.9}));
     vk.position.set(0.45,1.0,0.22);vg.add(vk);
     vg.position.set(vx,0,vz);scene.add(vg);dungeonObjs.push(vg);
-    const vlbl=labelSprite("Sealed Vault");vlbl.position.set(vx,2.7,vz);scene.add(vlbl);dungeonObjs.push(vlbl);
+    const vlbl=labelSprite("Sealed Vault","dungeons");vlbl.position.set(vx,2.7,vz);scene.add(vlbl);dungeonObjs.push(vlbl);
     dungeonVault={x:vx,z:vz,mesh:vg,opened:false};
   }
   // guardians spread across the rooms; the warden guards the hoard
@@ -11510,7 +11605,7 @@ function enterDungeon(def,ex,ez){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
   buildDungeon(def);markSceneSRGB();
-  player.x=dungeonSpawn.x;player.z=dungeonSpawn.z;player.invuln=2.5;
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=2.5;
   toast(def.name.toUpperCase());
   log(`You descend into the <b>${def.name}</b> (tier ${def.tier}). Slay the guardians, then claim the hoard.`,"sys");
   const ls=playerLightSource();
@@ -11528,7 +11623,7 @@ function exitDungeon(toEntrance){
   dungeonChest=null;dungeonMobs=0;inDungeon=false;
   arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
   hideOverworld(true);
-  if(toEntrance){player.x=dungeonReturn.x;player.z=dungeonReturn.z;player.invuln=2;}
+  if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
 }
 // ---- H16 Colosseum: a ticketed wave-survival gauntlet (reuses the dungeon-instance shell) ----
 const EMPYREAN_RINGS=[
@@ -11561,7 +11656,7 @@ function buildArena(){
   dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz-R+4};
   const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
   arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
-  const elbl=labelSprite("Leave the Colosseum — E");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+  const elbl=labelSprite("Leave the Colosseum — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
 }
 function enterColosseum(def,ex,ez){
   if(inDungeon) return;
@@ -11575,7 +11670,7 @@ function enterColosseum(def,ex,ez){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.35";   // open-air: only a light vignette
   buildArena();markSceneSRGB();
-  player.x=dungeonSpawn.x;player.z=dungeonSpawn.z;player.invuln=3;
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
   arenaWaves=5;arenaWave=0;arenaTimer=300;arenaInter=0;   // 5 rounds, 5-minute clock
   toast("THE COLOSSEUM");
   log("You stride onto the sand. <b>Five waves</b> stand between you and the vault — clear them before the clock runs out.","sys");
@@ -11661,14 +11756,14 @@ function enterNetwork(ex,ez){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
   buildNetwork();markSceneSRGB();
-  player.x=DCEN.x;player.z=DCEN.z-2;player.invuln=2;
+  arriveAt(DCEN.x,DCEN.z-2);player.invuln=2;
   teleportFX(player.x,player.z);
   toast("THE TOWN NETWORK");log("You enter the <b>Town Network</b> — portals to every town ring the hall (E to travel). Step to the <b>Facility Hub</b> portal for level-gated delves.","sys");
 }
 function switchHub(mode){
   for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];
   netMode=mode;buildNetwork();markSceneSRGB();
-  player.x=DCEN.x;player.z=DCEN.z-2;player.invuln=1;teleportFX(player.x,player.z);
+  arriveAt(DCEN.x,DCEN.z-2);player.invuln=1;teleportFX(player.x,player.z);
 }
 function netToDungeon(def){
   for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];inNetwork=false;
@@ -11691,7 +11786,7 @@ function exitNetwork(dest){
   clearDrops();clearProjectiles();
   document.getElementById('dvig').style.opacity="0";
   inNetwork=false;hideOverworld(true);
-  player.x=dest.x;player.z=dest.z+4;player.invuln=2;
+  arriveAt(dest.x,dest.z+4);player.invuln=2;
   teleportFX(player.x,player.z);
 }
 function openChest(){
@@ -11941,11 +12036,11 @@ function applySaveObj(s){
   if(s.boundLS>=0 && lifestones[s.boundLS]){
     lifestones.forEach(l=>{l.bound=false;recolorLifestone(l);});
     const ls=lifestones[s.boundLS];ls.bound=true;recolorLifestone(ls);
-    player.x=ls.x;player.z=ls.z+3;
+    arriveAt(ls.x,ls.z+3);
   }
   // restore exact last position (takes precedence over the bind point); fresh chars saved
   // their heritage-capital spawn, so this also fixes "reappear at the wrong town".
-  if(typeof s.px==="number" && typeof s.pz==="number"){ player.x=s.px; player.z=s.pz; if(typeof s.pyaw==="number") player.yaw=s.pyaw; }
+  if(typeof s.px==="number" && typeof s.pz==="number"){ arriveAt(s.px,s.pz); if(typeof s.pyaw==="number") player.yaw=s.pyaw; }
   updateNPCMarker();updateQuestHUD();
   return true;
 }
@@ -12097,7 +12192,7 @@ function spawnSharedMob(sm){
   if(sm.boss){ // shared world boss — nameplate + menacing aura, like the local boss look
     if(sm.tint!==undefined) mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.color){ o.material=o.material.clone(); o.material.color.setHex(sm.tint); } });
     const aura=new THREE.PointLight(sm.tint!==undefined?sm.tint:0xff5a5a,1.6,16); aura.position.y=2; mesh.add(aura);
-    const lbl=labelSprite(sm.name||"World Boss"); lbl.scale.set(9,2.2,1); lbl.position.y=mesh.userData.headY+1.7; mesh.add(lbl);
+    const lbl=labelSprite(sm.name||"World Boss","monsters"); lbl.scale.set(9,2.2,1); lbl.position.y=mesh.userData.headY+1.7; mesh.add(lbl);
   }
   scene.add(mesh);
   const m={shared:true,id:sm.id,kind:sm.kind,x:sm.x,z:sm.z,tx:sm.x,tz:sm.z,yaw:sm.yaw||0,
@@ -12424,7 +12519,7 @@ function reconcileRemotes(players){
     if(p.id===NET.me) continue;
     seen[p.id]=1;
     let r=NET.players[p.id];
-    if(!r){ const mesh=buildAvatar(); const tag=labelSprite(p.name||p.id); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
+    if(!r){ const mesh=buildAvatar(); const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
     r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk;
   }
@@ -12495,7 +12590,7 @@ function startGame(loadSaved,preset){
   } else {
     const homeName=player.createTown||(preset&&PRESETS[preset]&&PRESETS[preset].town)||"Holtburg";
     const home=CITIES.find(c=>c.name===homeName)||CAPITALS[0];
-    player.x=home.x;player.z=home.z+4;
+    arriveAt(home.x,home.z+4);
     log(`You step through Asheron's portal into <b>${home.name}</b>.`,"sys");
     log("You have crossed to <b>Dereth</b>, a volcanic isle on the world of <b>Auberean</b> — a land of portals, ancient ruins, and the insectoid Olthoi.","sys");
     log("Bind to the Lifestone (E), and open the map (Tab) to fast-travel between towns.","sys");
@@ -12545,6 +12640,7 @@ function ccInitPreview(){
   ccRenderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
   ccRenderer.outputEncoding=THREE.sRGBEncoding; ccRenderer.toneMapping=THREE.ACESFilmicToneMapping; ccRenderer.toneMappingExposure=1.05;
   ccScene=new THREE.Scene();
+  if(typeof scene!=="undefined"&&scene&&scene.environment) ccScene.environment=scene.environment;   // metal needs an env map to read as steel
   ccCam=new THREE.PerspectiveCamera(30,1,0.1,20); ccCam.position.set(0,1.62,1.45); ccCam.lookAt(0,1.6,0);
   ccScene.add(new THREE.HemisphereLight(0xdfeaff,0x2a2820,1.05));
   const key=new THREE.DirectionalLight(0xfff2d8,1.5); key.position.set(1.6,2.4,2.2); ccScene.add(key);
