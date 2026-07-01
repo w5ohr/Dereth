@@ -2534,7 +2534,7 @@ function buildWorld(){
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
 }
 function settleY(){ // drop every placed object onto the RENDERED ground surface (groundY, not raw terrainH)
-  for(const s of scenery) s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0);
+  for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
   for(const ls of lifestones) ls.mesh.position.y=groundY(ls.x,ls.z);
   for(const pt of portals) pt.mesh.position.y=groundY(pt.x,pt.z);
   for(const e of dungeonEntrances) e.mesh.position.y=groundY(e.x,e.z);
@@ -2778,9 +2778,18 @@ function addCity(c){
     for(const cc of cols){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
     if(b.userData.surfaces) registerStructure(hx,hz,th,groundY(hx,hz),b.userData.surfaces);   // ramp + upstairs become walkable (base = ground the building sits on)
   }
-  // paved plaza
-  const plaza=new THREE.Mesh(new THREE.CircleGeometry(ring*0.74,28),solid(0x8f8a7e));
-  plaza.rotation.x=-Math.PI/2;plaza.position.set(c.x,0.05,c.z);plaza.receiveShadow=true;scene.add(plaza);scenery.push(plaza);
+  // paved plaza — a triangle-fan that CONFORMS to the ground (groundY) so townsfolk standing
+  // on it aren't half-buried: a flat disc mismatched the tilted town terrain by up to ~0.5u.
+  { const pr=ring*0.74, PSEG=40, pos=[],uv=[],idx=[];
+    pos.push(0, groundY(c.x,c.z)+0.05, 0); uv.push(0.5,0.5);
+    for(let i=0;i<=PSEG;i++){ const a=i/PSEG*6.283, lx=Math.cos(a)*pr, lz=Math.sin(a)*pr;
+      pos.push(lx, groundY(c.x+lx,c.z+lz)+0.05, lz); uv.push((Math.cos(a)+1)/2,(Math.sin(a)+1)/2);
+      if(i<PSEG) idx.push(0,i+2,i+1); }   // wind CCW so the plaza faces up
+    const pgeo=new THREE.BufferGeometry();
+    pgeo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    pgeo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); pgeo.setIndex(idx); pgeo.computeVertexNormals();
+    const plaza=new THREE.Mesh(pgeo,solid(0x8f8a7e)); plaza.position.set(c.x,0,c.z); plaza.receiveShadow=true;
+    plaza.userData.noSettle=true; scene.add(plaza); scenery.push(plaza); }
   // central culture feature (offset from the lifestone)
   const fx=c.x+ring*0.34,fz=c.z;
   const feat=buildPlazaFeature(c.region,sc);feat.position.set(fx,0,fz);scene.add(feat);scenery.push(feat);obstacles.push({x:fx,z:fz,r:1.7*sc});
