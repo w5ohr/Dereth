@@ -3679,6 +3679,12 @@ const AMMO_ITEMS=[
   {name:"Acid Dart",for:"atlatl",dmg:2,element:"acid"},{name:"Shock Dart",for:"atlatl",dmg:2,element:"shock"},
 ];
 function rollAmmo(){ const a=AMMO_ITEMS[irnd(0,AMMO_ITEMS.length-1)]; return {name:a.name,stat:"ammo",for:a.for,dmg:a.dmg,element:a.element,v:a.dmg,count:irnd(5,15)}; }
+// ── weapon oils (AC): applied to buff weapon damage for a while (rides the itemBuff "dmg" channel) ──
+const OIL_ITEMS=[
+  {name:"Whetstone",dmg:0.10,dur:90},{name:"Honing Oil",dmg:0.12,dur:100},{name:"Weeping Oil",dmg:0.14,dur:100},
+  {name:"Brimstone Oil",dmg:0.16,dur:100},{name:"Hoarfrost Oil",dmg:0.16,dur:100},{name:"Prismatic Oil",dmg:0.20,dur:120},
+];
+function rollOil(){ const o=OIL_ITEMS[irnd(0,OIL_ITEMS.length-1)]; return {name:o.name,stat:"oil",dmg:o.dmg,dur:o.dur,v:Math.round(o.dmg*100)}; }
 // ---- Jewelry: rings & necklaces (AC's signature skill/stat boosters). Each rolls one cantrip-style
 //      bonus — a skill aptitude, a vital boost, or armour. Bonuses are computed from equipped jewelry
 //      (derive/skillValue/armour), never mutate base stats, so equip/unequip is clean. ----
@@ -3735,6 +3741,7 @@ function rollItem(rare,tier){
   if(Math.random()<((rare?0.015:0)+((tier|0)>=5?0.01:0))) return rollAugment();   // very rare augmentation gem
   if(Math.random()<(rare?0.02:0.012)) return rollPack();   // a container to expand your satchel
   if(Math.random()<(rare?0.04:0.06)) return rollAmmo();    // a stack of arrows/quarrels/darts
+  if(Math.random()<(rare?0.03:0.03)) return rollOil();     // a weapon oil
 
   if(Math.random()<(rare?0.04:0.09)) return rollFood();   // a bite of cooking fare
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
@@ -3842,6 +3849,9 @@ function applyItem(it){
   else if(it.stat==="note"){ player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
   else if(it.stat==="ammo"){ log(`<b>${it.name}</b> is loosed automatically when you fire a matching ${it.for}.`,"sys"); return "keep"; }
+  else if(it.stat==="oil"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.dmg;
+    player.itemBuffs.dmg={v:Math.max(it.dmg,cur?cur.v:0),t:it.dur};
+    log(`You apply <b>${it.name}</b> — +${Math.round(it.dmg*100)}% weapon damage for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="pack"){ player.packBonus=player.packBonus||0;
     if(player.packBonus>=PACK_MAX){ log(`Your satchel is already expanded to the maximum (${invCap()} slots).`,"warn"); return "keep"; }
     player.packBonus=Math.min(PACK_MAX,player.packBonus+(it.cap||2));
@@ -7285,10 +7295,10 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
-function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
 function gearDesc(it){
   if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
@@ -7348,7 +7358,9 @@ const VENDOR_TYPES={
     {name:"Crossbow",cost:180,desc:"Hard-hitting ranged.",ico:"🎯",gear:{name:"Crossbow",stat:"weapon",wt:"crossbow",v:16}},
     {name:"Bundle of Arrows",cost:40,desc:"20 arrows — bonus damage when you fire a bow.",ico:"🏹",gear:{name:"Arrow",stat:"ammo",for:"bow",dmg:2,v:2,count:20}},
     {name:"Case of Quarrels",cost:50,desc:"20 quarrels — bonus damage with a crossbow.",ico:"🏹",gear:{name:"Quarrel",stat:"ammo",for:"crossbow",dmg:3,v:3,count:20}},
-    {name:"Pouch of Darts",cost:36,desc:"20 darts — bonus damage with an atlatl.",ico:"🏹",gear:{name:"Dart",stat:"ammo",for:"atlatl",dmg:2,v:2,count:20}}]},
+    {name:"Pouch of Darts",cost:36,desc:"20 darts — bonus damage with an atlatl.",ico:"🏹",gear:{name:"Dart",stat:"ammo",for:"atlatl",dmg:2,v:2,count:20}},
+    {name:"Honing Oil",cost:70,desc:"+12% weapon damage for 100s (Use it).",ico:"🧴",gear:{name:"Honing Oil",stat:"oil",dmg:0.12,dur:100,v:12}},
+    {name:"Prismatic Oil",cost:150,desc:"+20% weapon damage for 120s (Use it).",ico:"🧴",gear:{name:"Prismatic Oil",stat:"oil",dmg:0.20,dur:120,v:20}}]},
   armorer:{title:"Armorer",marker:"🛡",mcol:"#9fd0ff",robe:0x44506a,stock:()=>[
     {name:"Leather Breastplate",cost:100,desc:"Light chest armour.",ico:"🛡",gear:{name:"Leather Breastplate",stat:"worn",at:"light",aslot:"chest",v:12}},
     {name:"Chainmail Breastplate",cost:150,desc:"Balanced chest armour.",ico:"🛡",gear:{name:"Chainmail Breastplate",stat:"worn",at:"medium",aslot:"chest",v:18}},
@@ -8137,7 +8149,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp")?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
@@ -8146,7 +8158,7 @@ function buildTinker(){
       :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
       :it.stat==="pack"?`<button class="tbtn" data-eq="${i}">Add</button>`
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
-      :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
+      :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
       <div class="ctl">${ctl}</div>`;
     rows.appendChild(row);
