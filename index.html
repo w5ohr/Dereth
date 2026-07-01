@@ -3362,6 +3362,10 @@ const ITEM_BASE=[
   {n:"Nekode",stat:"weapon",wt:"unarmed",v:[4,10]},{n:"Claw",stat:"weapon",wt:"unarmed",v:[5,11]},
   {n:"Rod",stat:"weapon",wt:"focus",foc:true,v:[5,13]},{n:"Crystal Wand",stat:"weapon",wt:"focus",foc:true,v:[6,15]},
   {n:"War Sceptre",stat:"weapon",wt:"focus",foc:true,v:[6,14]},
+  {n:"Kris",stat:"weapon",wt:"dagger",v:[5,11]},{n:"Cutlass",stat:"weapon",wt:"sword",v:[6,14]},
+  {n:"Ranseur",stat:"weapon",wt:"spear",v:[6,15]},{n:"Francisca",stat:"weapon",wt:"axe",v:[7,16]},
+  {n:"Warhammer",stat:"weapon",wt:"mace",v:[9,19]},{n:"Zweihander",stat:"weapon",wt:"twohand",v:[10,22]},
+  {n:"Reflex Bow",stat:"weapon",wt:"bow",v:[6,14]},{n:"Tekagi",stat:"weapon",wt:"unarmed",v:[5,11]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3573,6 +3577,22 @@ const NAMED_ITEMS=[
   {name:"Amuli Coat of the Wildland",stat:"worn",at:"light",aslot:"chest",mat:"Leather",v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Koujia Pauldrons",    stat:"worn",  at:"medium", aslot:"upperarm",mat:"Steel", v:[22,30],affix:()=>_oaff("of Warding")},
   {name:"Celdon Gauntlets",    stat:"worn",  at:"medium", aslot:"hands", mat:"Steel",   v:[20,28],affix:()=>_oaff("of Endurance")},
+  // ── artifact batch 5 ──
+  {name:"Riftmaker",           stat:"weapon",wt:"twohand", mat:"Platinum",v:[42,56],affix:()=>_wbrand("nether")},
+  {name:"Emberfang",           stat:"weapon",wt:"dagger",  mat:"Ruby",    v:[24,32],affix:()=>_wbrand("fire")},
+  {name:"Glacius",             stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
+  {name:"Voidpiercer",         stat:"weapon",wt:"spear",   mat:"Jet",     v:[30,40],affix:()=>_wbrand("nether")},
+  {name:"Sandstorm Cutlass",   stat:"weapon",wt:"sword",   mat:"Emerald", v:[30,42],affix:()=>_wbrand("acid")},
+  {name:"Galestrike Bow",      stat:"weapon",wt:"bow",     mat:"Diamond", v:[28,38],affix:()=>_wbrand("shock")},
+  {name:"Cinderquarrel Arbalest",stat:"weapon",wt:"crossbow",mat:"Ruby",  v:[34,46],affix:()=>_wbrand("fire")},
+  {name:"Venomcast Atlatl",    stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
+  {name:"Knuckles of the Tempest",stat:"weapon",wt:"unarmed",mat:"Diamond",v:[24,32],affix:()=>_wbrand("shock")},
+  {name:"Wand of Ruin",        stat:"weapon",wt:"focus",   mat:"Onyx",    v:[24,32]},
+  {name:"Sceptre of Frost",    stat:"weapon",wt:"focus",   mat:"Sapphire",v:[24,32]},
+  {name:"Warden's Plate",      stat:"worn",  at:"heavy",  aslot:"chest", mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
+  {name:"Shroud of the Virindi",stat:"worn", at:"light",  aslot:"head",  mat:"Velvet",  v:[28,38],affix:()=>_oaff("of the Magus")},
+  {name:"Gauntlets of Sundering",stat:"worn",at:"heavy",  aslot:"hands", mat:"Steel",   v:[26,34],affix:()=>_oaff("of Warding")},
+  {name:"Greaves of the Lugian",stat:"worn", at:"heavy",  aslot:"legs",  mat:"Granite", v:[32,44],affix:()=>_oaff("of Vigor")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
