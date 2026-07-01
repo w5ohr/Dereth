@@ -1424,6 +1424,7 @@ let blocking=false; // active shield block (hold right-mouse): cuts frontal dama
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0,dungeonLock=null,dungeonVault=null;
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
+let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -3539,7 +3540,7 @@ function killMonster(m){
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
     dungeonMobs--;
-    if(dungeonMobs<=0){
+    if(dungeonMobs<=0&&!arenaActive){   // arena wave transitions are handled by updateArena, not the hoard hook
       if(dungeonChest){dungeonChest.light.intensity=1.4;}
       log("The guardians lie slain — the hoard is unsealed!","sys");toast("HOARD UNSEALED");
     }
@@ -5705,6 +5706,7 @@ function rollItem(rare,tier){
   if(Math.random()<(rare?0.03:0.02)) return rollAttrPot();       // an attribute philtre
   if(Math.random()<(rare?0.02:0.012)) return rollPortalGem();    // a town portal gem
   if(Math.random()<(rare?0.015:0.008)) return rollContract();    // a reusable recall contract (rarer than a gem)
+  if(Math.random()<(rare?0.02:0.01)) return rollColosseumTicket(); // a Colosseum arena ticket
   if(Math.random()<(rare?0.04:0.03)) return rollQuestItem();     // a quest collectible
 
   if(Math.random()<(rare?0.04:0.09)) return rollFood();   // a bite of cooking fare
@@ -5856,6 +5858,7 @@ function applyItem(it){
     if(!c){ log("The contract's destination is lost to you.","warn"); return "keep"; }
     teleportFX(player.x,player.z); player.x=c.x; player.z=c.z+3; player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
+  else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="pack"){ player.packBonus=player.packBonus||0;
     if(player.packBonus>=PACK_MAX){ log(`Your satchel is already expanded to the maximum (${invCap()} slots).`,"warn"); return "keep"; }
     player.packBonus=Math.min(PACK_MAX,player.packBonus+(it.cap||2));
@@ -6780,6 +6783,7 @@ function update(dt){
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
   if(player.contractCd>0) player.contractCd=Math.max(0,player.contractCd-dt);   // H14 recall-contract cooldown
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
+  updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -10142,7 +10146,7 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="quest"?"📜":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="quest"?"📜":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
@@ -10850,6 +10854,7 @@ function buildDungeon(def){
 }
 function enterDungeon(def,ex,ez){
   if(inDungeon) return;
+  if(def.name==="Colosseum"){ enterColosseum(def,ex,ez); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
@@ -10870,8 +10875,107 @@ function exitDungeon(toEntrance){
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
   dungeonChest=null;dungeonMobs=0;inDungeon=false;
+  arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
   hideOverworld(true);
   if(toEntrance){player.x=dungeonReturn.x;player.z=dungeonReturn.z;player.invuln=2;}
+}
+// ---- H16 Colosseum: a ticketed wave-survival gauntlet (reuses the dungeon-instance shell) ----
+const EMPYREAN_RINGS=[
+  {name:"Empyrean Ring of Weapon Mastery", jtype:"finger", bonus:{kind:"skill",key:"heavy",   v:6}},
+  {name:"Empyrean Ring of the Arcane",     jtype:"finger", bonus:{kind:"skill",key:"war",     v:6}},
+  {name:"Empyrean Ring of Warding",        jtype:"finger", bonus:{kind:"skill",key:"magicd",  v:6}},
+  {name:"Empyrean Ring of the Hunt",       jtype:"finger", bonus:{kind:"skill",key:"missile", v:6}},
+  {name:"Empyrean Ring of Vigor",          jtype:"finger", bonus:{kind:"vital", vs:"mhp",     v:40}},
+];
+function rollEmpyreanRing(){ const t=EMPYREAN_RINGS[irnd(0,EMPYREAN_RINGS.length-1)];
+  return {name:t.name,stat:"jewelry",jtype:t.jtype,bonus:Object.assign({},t.bonus),tier:5,legendary:true}; }
+function rollColosseumTicket(){ return {name:"Colosseum Ticket",stat:"ticket",v:0,ico:"🎟️"}; }
+function buildArena(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=24;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const sand=new THREE.MeshStandardMaterial({color:0xcbb385,roughness:0.95});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),sand);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // tiered stone wall ring around the sand
+  const wallMat=new THREE.MeshStandardMaterial({color:0x9a8c74,roughness:0.9});
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(R+0.6,R+0.6,7,48,1,true),wallMat);ring.position.set(cx,3.5,cz);ring.material.side=THREE.DoubleSide;scene.add(ring);dungeonObjs.push(ring);
+  const tier=new THREE.Mesh(new THREE.TorusGeometry(R+1.4,1.0,8,48),wallMat);tier.rotation.x=-Math.PI/2;tier.position.set(cx,6.4,cz);scene.add(tier);dungeonObjs.push(tier);
+  // arena lighting — bright, open-air feel
+  const sun=new THREE.PointLight(0xfff2d8,1.5,120);sun.position.set(cx,30,cz);scene.add(sun);dungeonObjs.push(sun);
+  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.7);scene.add(amb);dungeonObjs.push(amb);
+  // brazier torches at four corners
+  for(let i=0;i<4;i++){ const a=i/4*Math.PI*2,tx=cx+Math.cos(a)*(R-2),tz=cz+Math.sin(a)*(R-2);
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.2,2.2,6),solid(0x3a2c1c));post.position.set(tx,1.1,tz);scene.add(post);dungeonObjs.push(post);
+    const fl=new THREE.PointLight(0xff8a3a,1.4,20);fl.position.set(tx,2.6,tz);scene.add(fl);dungeonObjs.push(fl); }
+  // exit archway (leave / abort)
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz-R+4};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Leave the Colosseum — E");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterColosseum(def,ex,ez){
+  if(inDungeon) return;
+  // ticket gate: spend a Colosseum Ticket if held, else a pyreal fee
+  const ti=player.inv.findIndex(it=>it&&it.stat==="ticket");
+  const FEE=1000;
+  if(ti>=0){ takeFromInv(ti); log("You present a <b>Colosseum Ticket</b> at the gate.","sys"); }
+  else if(player.gold>=FEE){ player.gold-=FEE; log(`You pay <b>${FEE}</b> pyreals for entry to the Colosseum.`,"sys"); }
+  else { log("The gatekeeper turns you away — you need a <b>Colosseum Ticket</b> or 1000 pyreals to enter.","warn"); if(SFX.hit)SFX.hit(); return; }
+  inDungeon=true;arenaActive=true;curDungeon=def;dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.35";   // open-air: only a light vignette
+  buildArena();markSceneSRGB();
+  player.x=dungeonSpawn.x;player.z=dungeonSpawn.z;player.invuln=3;
+  arenaWaves=5;arenaWave=0;arenaTimer=300;arenaInter=0;   // 5 rounds, 5-minute clock
+  toast("THE COLOSSEUM");
+  log("You stride onto the sand. <b>Five waves</b> stand between you and the vault — clear them before the clock runs out.","sys");
+  updateHUD&&updateHUD();
+  arenaNextWave();
+}
+function arenaNextWave(){
+  arenaWave++;
+  if(arenaWave>arenaWaves){ arenaWin(); return; }
+  const tier=curDungeon?curDungeon.tier:5, adv=Math.min(1+arenaWave*0.25, 2.5);   // each wave hits harder
+  const count=2+arenaWave, cx=DCEN.x,cz=DCEN.z,R=20;
+  const pool=["drudge","mosswart","banderling","tumerok","skeleton","zombie","sclavus","lugian","olthoi","golem","virindi"];
+  for(let i=0;i<count;i++){ const a=Math.random()*Math.PI*2,rr=8+Math.random()*(R-8);
+    const kind=pool[Math.min(pool.length-1, irnd(Math.max(0,arenaWave-2), Math.min(pool.length-1, arenaWave+3)))];
+    const elite=(i===0&&arenaWave>=3);   // a champion leads later waves
+    spawnDungeonMonster(kind, cx+Math.cos(a)*rr, cz+Math.sin(a)*rr, elite, adv);
+  }
+  log(`<b>Wave ${arenaWave}/${arenaWaves}</b> — the gates open and the foes pour in!`,"warn");
+  toast("WAVE "+arenaWave+" / "+arenaWaves); if(SFX.growl)SFX.growl();
+}
+function updateArena(dt){
+  if(!arenaActive) return;
+  arenaTimer-=dt;
+  if(arenaTimer<=0){ arenaFail(); return; }
+  if(dungeonMobs<=0){   // wave cleared → short breather, then the next wave
+    if(arenaInter<=0){ arenaInter=3.5; if(arenaWave<arenaWaves) log("The sand clears. Steel yourself — the next wave gathers.","sys"); }
+    else { arenaInter-=dt; if(arenaInter<=0) arenaNextWave(); }
+  }
+}
+function arenaWin(){
+  arenaActive=false;
+  const cx=DCEN.x,cz=DCEN.z;
+  burst(cx,2,cz,0xffd23b,60); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const gold=1500+player.level*40, xp=6000+player.level*300;
+  player.gold+=gold; gainXP(xp);
+  log(`<b>The Colosseum is conquered!</b> The vault opens: ${gold} pyreals, ${xp} XP, and its prizes.`,"sys");
+  toast("COLOSSEUM CLEARED");
+  // vault loot: two tier-7-equivalent items + a guaranteed Empyrean Ring
+  for(let i=0;i<2;i++){ const it=rollItem(true,5); if(!addToInv(it)) addDrop(cx+rnd(-2,2),cz+rnd(-2,2),{type:"item",item:it}); }
+  const ring=rollEmpyreanRing(); if(!addToInv(ring)) addDrop(cx,cz,{type:"item",item:ring});
+  log(`You claim the <b>${ring.name}</b> from the vault!`,"loot");
+  player.colosseumClears=(player.colosseumClears||0)+1;
+  checkAchievements&&checkAchievements();
+  updateHUD&&updateHUD(); saveGame&&saveGame();
+  setTimeout(()=>{ if(!arenaActive&&inDungeon) exitDungeon(true); }, 4000);   // auto-return to the world shortly after
+}
+function arenaFail(){
+  arenaActive=false;
+  log("The clock runs out — the Colosseum crowd jeers as the gate hauls you back to the sand's edge.","warn");
+  toast("OUT OF TIME"); if(SFX.hit)SFX.hit();
+  exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
 function buildNetwork(){
@@ -11058,7 +11162,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
