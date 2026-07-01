@@ -867,7 +867,10 @@ function loadGltfPeople(){
   gltfPeopleStarted=true; const L=new THREE.GLTFLoader();
   for(const url of GLTF_PEOPLE){ L.load(url, gltf=>{
       const box=new THREE.Box3().setFromObject(gltf.scene), h=(box.max.y-box.min.y)||1;
-      gltfPeople.push({scene:gltf.scene, anims:gltf.animations||[], scale:1.8/h});
+      // most CDN models' native front maps to +z after our Math.PI flip; RobotExpressive faces the
+      // opposite way and was moonwalking (front trailing the travel dir) — give it no flip.
+      const faceOffset = /RobotExpressive/i.test(url) ? 0 : Math.PI;
+      gltfPeople.push({scene:gltf.scene, anims:gltf.animations||[], scale:1.8/h, faceOffset});
       log("Loaded a CDN person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
     }, undefined, err=>console.log("CDN person model failed:",url,(err&&err.message)||"")); }
 }
@@ -881,7 +884,7 @@ function assignGltfNpcs(){
     try{ clone=THREE.SkeletonUtils.clone(m.scene); }catch(e){ continue; }
     clone.scale.setScalar(m.scale);
     const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y;   // feet to 0
-    clone.rotation.y=Math.PI;                                                       // models face +z; procedural faces -z
+    clone.rotation.y=(m.faceOffset!=null?m.faceOffset:Math.PI);                     // per-model front alignment (RobotExpressive faces the other way)
     clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
     for(const ch of n.mesh.children) ch.visible=false;                              // hide the procedural body
     n.mesh.add(clone); n.gltf=clone;
@@ -1089,7 +1092,21 @@ function terrainH(x,z){
     if(d<t.r){const k=clamp(1-(d-t.core)/(t.r-t.core),0,1);h=h*(1-k)+t.h*k;}}
   return h;
 }
-function groundY(x,z){ return (inDungeon||inNetwork)?0:terrainH(x,z); } // instances are flat at y=0
+// Standing height that matches the RENDERED ground. The terrain mesh is a coarse 80u grid
+// (PlaneGeometry 200x200 over WORLD) whose flat triangles deviate from the smooth terrainH by up
+// to ~1u — sampling terrainH directly sank characters to the waist (or floated them). So sample
+// terrainH at the 4 surrounding grid vertices and bilinear-interpolate → the actual drawn surface.
+function groundY(x,z){
+  if(inDungeon||inNetwork) return 0;                 // instances are flat at y=0
+  const STEP=WORLD/200;                              // grid cell size (matches buildGround's 200 segments)
+  const gx=(x+HALF)/STEP, gz=(z+HALF)/STEP;
+  const i0=Math.floor(gx), k0=Math.floor(gz), fx=gx-i0, fz=gz-k0;
+  const vx0=-HALF+i0*STEP, vx1=vx0+STEP, vz0=-HALF+k0*STEP, vz1=vz0+STEP;
+  const h00=terrainH(vx0,vz0), h10=terrainH(vx1,vz0), h01=terrainH(vx0,vz1), h11=terrainH(vx1,vz1);
+  // exact planar interpolation over PlaneGeometry's two triangles (diagonal (i,k+1)→(i+1,k))
+  if(fx+fz<=1) return h00 + fx*(h10-h00) + fz*(h01-h00);
+  return h01 + (fx+fz-1)*(h11-h01) + (1-fz)*(h10-h01);
+}
 // ── walkable structures: buildings register upper-floor platforms + ramps (local coords + world transform)
 //    so the player can climb to a second story and stand on it. ──
 let structures=[];
@@ -2004,15 +2021,34 @@ function buildFaceGroup(app){
   addHair(g,app.hair,hairCol,fs); addBeard(g,app.beard,hairCol,fs); addTattoo(g,app.tattoo,fs);
   return g;
 }
+// light-blue spiral swirl texture for portals (unlit → glows at night), transparent background
+let _swirlTex=null;
+function swirlTex(){
+  if(_swirlTex) return _swirlTex;
+  const N=256, c=document.createElement('canvas'); c.width=c.height=N; const g=c.getContext('2d');
+  g.clearRect(0,0,N,N); const cx=N/2, cy=N/2;
+  // soft light-blue radial body first
+  const grd=g.createRadialGradient(cx,cy,0,cx,cy,N*0.5);
+  grd.addColorStop(0,'rgba(140,205,255,0.85)'); grd.addColorStop(0.55,'rgba(90,165,255,0.6)'); grd.addColorStop(1,'rgba(60,140,255,0)');
+  g.fillStyle=grd; g.beginPath(); g.arc(cx,cy,N*0.5,0,6.29); g.fill();
+  // brighter light-blue spiral arms on top
+  g.lineCap='round';
+  for(let arm=0;arm<3;arm++){ g.beginPath();
+    for(let t=0;t<=1;t+=0.004){ const ang=arm*2.094 + t*7.2, r=t*(N*0.47);
+      const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r; if(t===0)g.moveTo(x,y); else g.lineTo(x,y); }
+    g.strokeStyle='rgba(190,228,255,0.95)'; g.lineWidth=6.5; g.stroke(); }
+  const t=new THREE.CanvasTexture(c); _swirlTex=t; return t;
+}
 function buildPortal(name){
   const g=new THREE.Group();
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.18,12,32),
-    new THREE.MeshStandardMaterial({color:0x9b6bff,emissive:0x6a2fae,emissiveIntensity:0.9,metalness:0.4,roughness:0.3}));
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.16,12,32),
+    new THREE.MeshStandardMaterial({color:0x8fd4ff,emissive:0x39a6ff,emissiveIntensity:1.1,metalness:0.35,roughness:0.35}));
   ring.position.y=2.0; g.add(ring);
-  const disc=new THREE.Mesh(new THREE.CircleGeometry(1.5,32),
-    new THREE.MeshBasicMaterial({color:0xbf9bff,transparent:true,opacity:0.4,side:THREE.DoubleSide,fog:false}));
+  // slowly-spinning light-blue swirl; MeshBasic + additive so it stays visible (lit) at night
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(1.5,48),
+    new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.92,side:THREE.DoubleSide,fog:false,depthWrite:false}));
   disc.position.y=2.0; g.add(disc);
-  const light=new THREE.PointLight(0x9b6bff,1.5,16);light.position.y=2;g.add(light);
+  const light=new THREE.PointLight(0x59b6ff,1.6,18);light.position.y=2;g.add(light);
   const lbl=labelSprite("Portal → "+name);lbl.position.y=4.2;g.add(lbl);
   g.userData.disc=disc;g.userData.light=light;
   return g;
@@ -2311,7 +2347,7 @@ function buildGrass(){
   for(let i=0;i<N;i++){const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(14,320);
     const x=clamp(h.x+Math.cos(a)*rr,-HALF+5,HALF-5),z=clamp(h.z+Math.sin(a)*rr,-HALF+5,HALF-5);
     if(terrainH(x,z)<1.2||terrainH(x,z)>190) continue;             // skip water and snow
-    d.position.set(x,terrainH(x,z),z);d.rotation.set(0,rnd(0,6.28),0);
+    d.position.set(x,groundY(x,z),z);d.rotation.set(0,rnd(0,6.28),0);
     const sc=rnd(0.7,1.8);d.scale.set(sc,rnd(0.8,1.6),sc);d.updateMatrix();grassMesh.setMatrixAt(n++,d.matrix);}
   grassMesh.count=n;grassMesh.castShadow=false;grassMesh.receiveShadow=true;grassMesh.instanceMatrix.needsUpdate=true;
   scene.add(grassMesh);
@@ -2322,15 +2358,45 @@ function buildRock(s){
   m.position.y=0.4*s;m.rotation.set(rnd(0,6),rnd(0,6),rnd(0,6));
   m.castShadow=true;m.receiveShadow=true;return m;
 }
+// carved-rune stone texture for the lifestone plinth (a handful of variants, cached)
+function glyphStoneTex(seed){
+  const key=((seed*9973)|0%6+6)%6, cache=glyphStoneTex._c||(glyphStoneTex._c={});
+  if(cache[key]) return cache[key];
+  const N=256,H=64,c=document.createElement('canvas');c.width=N;c.height=H;const g=c.getContext('2d');
+  g.fillStyle='#3c3f47';g.fillRect(0,0,N,H);
+  for(let i=0;i<240;i++){g.fillStyle='rgba(0,0,0,'+(Math.random()*0.16)+')';g.fillRect(Math.random()*N,Math.random()*H,2,2);}
+  g.strokeStyle='#9fc2ff';g.lineWidth=2.4;g.lineCap='round';g.lineJoin='round';   // glowing carved runes
+  const n=16; for(let i=0;i<n;i++){ let px=6+i*(N-12)/n+((key+i)%3)*2, py=20; g.beginPath();g.moveTo(px,py);
+    const seg=2+((i+key)%3); for(let s=0;s<seg;s++){ px+=(Math.random()-0.5)*11; py+=6+Math.random()*6; g.lineTo(px,py); } g.stroke(); }
+  const t=new THREE.CanvasTexture(c);t.wrapS=THREE.RepeatWrapping;t.repeat.x=3;cache[key]=t;return t;
+}
+// a longer jagged crystal — elongated faceted bipyramid, jittered uniquely per seed
+function buildCrystal(seed,col){
+  const geo=new THREE.OctahedronGeometry(0.52,0), p=geo.attributes.position, elong=2.6+seed*1.0, j=0.11;
+  for(let i=0;i<p.count;i++){ let x=p.getX(i),y=p.getY(i),z=p.getZ(i);
+    y*=elong; x+=Math.sin(i*12.9+seed*47)*j; z+=Math.cos(i*7.7+seed*33)*j;      // longer + jagged (unique)
+    p.setXYZ(i,x,y,z); }
+  geo.computeVertexNormals();
+  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.35,metalness:0.0,roughness:0.6,flatShading:true}));
+  m.castShadow=true; m.rotation.y=seed*6.28; return m;
+}
 function buildLifestone(bound){
-  const g=new THREE.Group();
-  const col=bound?0x2e6fd0:0x7a3fae;
-  const crystal=new THREE.Mesh(new THREE.OctahedronGeometry(1.1,0),
-    new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.7,metalness:0.3,roughness:0.2,transparent:true,opacity:0.85}));
-  crystal.position.y=1.6;crystal.castShadow=true;g.add(crystal);
-  const base=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.2,0.6,8),new THREE.MeshLambertMaterial({color:0x444048}));
-  base.position.y=0.3;base.castShadow=true;base.receiveShadow=true;g.add(base);
-  const light=new THREE.PointLight(col,1.2,16);light.position.y=1.8;g.add(light);
+  const g=new THREE.Group(), seed=Math.random();
+  const col=bound?0x172a86:0x101d5c;                                              // deep dark blue (bound = brighter)
+  const gt=glyphStoneTex(seed);
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.45,0.55,10),
+    new THREE.MeshStandardMaterial({color:0x6a6e78,map:gt,emissive:col,emissiveMap:gt,emissiveIntensity:0.4,roughness:0.85,metalness:0.05}));
+  base.position.y=0.28;base.castShadow=true;base.receiveShadow=true;g.add(base);  // glyph-carved plinth the gem spins on
+  const plinth=new THREE.Mesh(new THREE.CylinderGeometry(1.45,1.7,0.28,10),new THREE.MeshLambertMaterial({color:0x3a3d44}));
+  plinth.position.y=0.14;plinth.receiveShadow=true;g.add(plinth);
+  // 3 tusk-like rocks evenly spaced (120°), leaning inward to frame the spinning gem
+  const rockMat=new THREE.MeshLambertMaterial({color:0x44474e,flatShading:true});
+  for(let i=0;i<3;i++){ const holder=new THREE.Group();holder.rotation.y=seed*6.28+i*2.094;g.add(holder);
+    const tusk=new THREE.Mesh(new THREE.ConeGeometry(0.3,1.3,5),rockMat);
+    tusk.position.set(0.92,0.8,0);tusk.rotation.z=0.22;tusk.castShadow=true;holder.add(tusk);   // rock tusk leans slightly toward centre
+    const boul=new THREE.Mesh(new THREE.DodecahedronGeometry(0.34,0),rockMat);boul.position.set(0.92,0.4,0);boul.rotation.set(seed*3+i,i,0);holder.add(boul); }
+  const crystal=buildCrystal(seed,col); crystal.position.y=1.55; g.add(crystal);   // spins INSIDE the three rocks (gem rises above them)
+  const light=new THREE.PointLight(col,1.2,16);light.position.y=1.9;g.add(light);
   g.userData.crystal=crystal;g.userData.light=light;
   return g;
 }
@@ -2467,14 +2533,14 @@ function buildWorld(){
   loadGltfPeople(); assignGltfNpcs();   // populate some townsfolk with real CDN people models (async; procedural fallback)
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
 }
-function settleY(){ // drop every placed object onto the terrain surface
-  for(const s of scenery) s.position.y=terrainH(s.position.x,s.position.z)+(s.userData.float||0);
-  for(const ls of lifestones) ls.mesh.position.y=terrainH(ls.x,ls.z);
-  for(const pt of portals) pt.mesh.position.y=terrainH(pt.x,pt.z);
-  for(const e of dungeonEntrances) e.mesh.position.y=terrainH(e.x,e.z);
-  for(const n of nodes) n.mesh.position.y=terrainH(n.x,n.z);
-  for(const np of npcs) np.mesh.position.y=terrainH(np.x,np.z);
-  for(const sh of shops) sh.mesh.position.y=terrainH(sh.x,sh.z);
+function settleY(){ // drop every placed object onto the RENDERED ground surface (groundY, not raw terrainH)
+  for(const s of scenery) s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0);
+  for(const ls of lifestones) ls.mesh.position.y=groundY(ls.x,ls.z);
+  for(const pt of portals) pt.mesh.position.y=groundY(pt.x,pt.z);
+  for(const e of dungeonEntrances) e.mesh.position.y=groundY(e.x,e.z);
+  for(const n of nodes) n.mesh.position.y=groundY(n.x,n.z);
+  for(const np of npcs) np.mesh.position.y=groundY(np.x,np.z);
+  for(const sh of shops) sh.mesh.position.y=groundY(sh.x,sh.z);
 }
 function addLifestone(x,z,bound,name,capital,region){
   const mesh=buildLifestone(bound);mesh.position.set(x,0,z);
@@ -2700,7 +2766,7 @@ function addCity(c){
   addLifestone(c.x,c.z,c.name==="Holtburg",c.name,c.capital,c.region);
   // a Town Network portal stands in every town
   const tpx=c.x,tpz=c.z-9,tp=buildPortal("Town Network");tp.position.set(tpx,0,tpz);scene.add(tp);scenery.push(tp);
-  tnPortals.push({x:tpx,z:tpz});obstacles.push({x:tpx,z:tpz,r:1.2});
+  tnPortals.push({x:tpx,z:tpz,mesh:tp});obstacles.push({x:tpx,z:tpz,r:1.2});
   const cnt=c.capital?9:5,ring=c.capital?40:24,sc=c.capital?1.4:1.0;  // wider ring for the larger (≈2×) buildings
   for(let i=0;i<cnt;i++){
     const a=i/cnt*6.28+c.region*0.7,hx=c.x+Math.cos(a)*ring,hz=c.z+Math.sin(a)*ring;
@@ -2710,7 +2776,7 @@ function addCity(c){
     b.position.set(hx,0,hz);b.rotation.y=th;scene.add(b);scenery.push(b);
     const cols=b.userData.colliders||[],ct=Math.cos(th),st=Math.sin(th);
     for(const cc of cols){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
-    if(b.userData.surfaces) registerStructure(hx,hz,th,terrainH(hx,hz),b.userData.surfaces);   // ramp + upstairs become walkable (base = terrain the building sits on)
+    if(b.userData.surfaces) registerStructure(hx,hz,th,groundY(hx,hz),b.userData.surfaces);   // ramp + upstairs become walkable (base = ground the building sits on)
   }
   // paved plaza
   const plaza=new THREE.Mesh(new THREE.CircleGeometry(ring*0.74,28),solid(0x8f8a7e));
@@ -4252,7 +4318,7 @@ function interact(){
   }
 }
 function recolorLifestone(ls){
-  const col=ls.bound?0x2e6fd0:0x7a3fae;
+  const col=ls.bound?0x172a86:0x101d5c;   // deep dark blue (matches buildLifestone)
   ls.mesh.userData.crystal.material.color.setHex(col);
   ls.mesh.userData.crystal.material.emissive.setHex(col);
   ls.mesh.userData.light.color.setHex(col);
@@ -4601,9 +4667,11 @@ function update(dt){
   // lifestone shimmer
   for(const ls of lifestones){ls.mesh.userData.crystal.rotation.y+=dt*0.8;
     ls.mesh.userData.light.intensity=1+0.4*Math.sin(now()/350);}
-  // portal swirl
-  for(const pt of portals){pt.mesh.userData.disc.rotation.z+=dt*1.6;
-    pt.mesh.userData.light.intensity=1.2+0.5*Math.sin(now()/250);}
+  // portal swirl (capital portals + every town's Town-Network portal + the hall portals)
+  const swirlPulse=1.2+0.5*Math.sin(now()/250);
+  for(const pt of portals){pt.mesh.userData.disc.rotation.z+=dt*0.5; pt.mesh.userData.light.intensity=swirlPulse;}
+  for(const tp of tnPortals){ const u=tp.mesh&&tp.mesh.userData; if(u&&u.disc){u.disc.rotation.z+=dt*0.5; if(u.light)u.light.intensity=swirlPulse;} }
+  if(inNetwork) for(const o of netObjs){ const u=o.userData; if(u&&u.disc){u.disc.rotation.z+=dt*0.5; if(u.light)u.light.intensity=swirlPulse;} }
   // gathering nodes respawn
   for(const n of nodes){ if(n.depleted&&now()>n.readyAt){n.depleted=false;if(!inDungeon)n.mesh.visible=true;} }
 
@@ -4746,7 +4814,7 @@ function animateOnePerson(p,dt){
     if(p._tgt){ const dx=p._tgt.x-p.x,dz=p._tgt.z-p.z,d=Math.hypot(dx,dz);
       if(d<0.5){ p._tgt=null; p._wait=2.5+Math.random()*5; }
       else { const sp=Math.min(d,1.15*dt); p.x+=dx/d*sp; p.z+=dz/d*sp; moving=true; p._wp=(p._wp||0)+dt*7.5;
-        p._face=Math.atan2(dx,dz); p.mesh.position.set(p.x,terrainH(p.x,p.z),p.z); } }
+        p._face=Math.atan2(dx,dz); p.mesh.position.set(p.x,groundY(p.x,p.z),p.z); } }
   }
   // smooth body facing
   let fy=p.mesh.rotation.y; const df=((p._face-fy+Math.PI*3)%(Math.PI*2))-Math.PI; p.mesh.rotation.y=fy+df*Math.min(1,dt*6);
@@ -7396,7 +7464,7 @@ function buildRoads(){
     for(let i=0;i<=n;i++){
       const t=i/n,cx=r.ax+dx*t,cz=r.az+dz*t;
       const lx=cx-pxn*hw,lz=cz-pzn*hw,rx=cx+pxn*hw,rz=cz+pzn*hw;
-      pos.push(lx,terrainH(lx,lz)+0.12,lz, rx,terrainH(rx,rz)+0.12,rz);
+      pos.push(lx,groundY(lx,lz)+0.12,lz, rx,groundY(rx,rz)+0.12,rz);
       const vv=(len*t)/r.w;uv.push(0,vv,1,vv);
       if(i<n){const a=i*2;idx.push(a,a+1,a+2, a+1,a+3,a+2);}
     }
@@ -7427,7 +7495,7 @@ function placeSignposts(r){
     const sx=px+pxn*off, sz=pz+pzn*off;
     if(terrainH(sx,sz)<0.2) continue;                 // not in water
     const yaw=Math.atan2(-(tz-pz),(tx-px));
-    const sp=buildSignpost(tn,yaw);sp.position.set(sx,terrainH(sx,sz),sz);scene.add(sp);scenery.push(sp);
+    const sp=buildSignpost(tn,yaw);sp.position.set(sx,groundY(sx,sz),sz);scene.add(sp);scenery.push(sp);
     obstacles.push({x:sx,z:sz,r:0.5});
   }
 }
