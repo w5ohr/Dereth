@@ -961,7 +961,7 @@ function applyPlayerModel(){ loadPlayerModel(playerModelDef((player.appearance&&
 function tryLoadGltfAvatar(){ if(gltfTried||!USE_GLTF_AVATAR) return; gltfTried=true; loadPlayerModel(GLTF_AVATAR_URL); }
 // ---- real rigged "people" pulled from public CDNs, randomly assigned to strolling townsfolk ----
 // (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
-let USE_GLTF_NPCS=true;            // online-required (offline support dropped); false = all-procedural townsfolk
+let USE_GLTF_NPCS=false;           // all NPCs/townsfolk use the standard procedural humanoid (buildPerson) with per-NPC random colours — no grab-bag of CDN models
 const MAX_GLTF_NPCS=40;            // cap skinned NPCs for performance; the rest stay procedural
 // Rigged human/character models, SELF-HOSTED under assets/models/ (run assets/fetch-models.py once to
 // populate). The game's own static server serves them same-origin — no runtime CDN dependency, works
@@ -9467,6 +9467,10 @@ const NPC_FLAVOR={
              "Spare a thought for the militia — they hold the frontier.",
              "Welcome, stranger. Trade's good when the drudges keep their distance."],
 };
+// broad wardrobe palettes so every NPC on the standard model reads distinctly (deterministic per NPC via seed)
+const SHIRT_COLORS=[0x8a3b2a,0x2e5a8a,0x6a4a2a,0x556070,0x3a6a4a,0x7a6a3a,0x6a3a5a,0x4a5a6a,0x8a6a4a,0x5a4a6a,0x2e7a5a,0x8a7a3a,0xa04a3a,0x3a4a7a,0x9a6a3a,0x4a7a6a];
+const PANTS_COLORS=[0x3a2e1e,0x2a3340,0x3a3320,0x2e2a3a,0x243028,0x40342a,0x2a2a2e,0x4a3a2a,0x30303a,0x3a2a24];
+function pickColor(arr,seed,salt){ return arr[Math.abs(Math.imul((seed|0)+salt,2654435761)>>>0)%arr.length]; }
 function buildNPC(role,name,seedX,look){
   const R=NPC_ROLES[role]||NPC_ROLES.emissary;
   const seed=((name||role||"x").length+role.length+(seedX|0))|0;
@@ -9476,8 +9480,12 @@ function buildNPC(role,name,seedX,look){
   else if(role==="crier"){ o.hat="cone"; o.beard=(seed%3===0); }
   else if(role==="gatekeep"){ o.helm=true; }
   else if(role==="questgiver"){ Object.assign(o, GIVER_LOOK[look]||{}); if(o.beard===undefined && o.hood===undefined) o.beard=(seed%2===0); }
-  else if(role==="townsfolk"){ o.robe=TOWNSFOLK_ROBES[Math.abs(seed)%TOWNSFOLK_ROBES.length]; o.accent=0x3a2e1e; o.beard=(seed%3===0); if(seed%4===0)o.hat="cap"; }
+  else if(role==="townsfolk"){ o.beard=(seed%3===0); if(seed%4===0)o.hat="cap"; }
   else { o.beard=(seed%2===0); }
+  // everyone wears the standard model with randomised shirt (torso) + pants (legs/trim) colours; hair & skin
+  // are already seed-varied in buildPerson. Role silhouette (hood/hat/helm/apron/cape) & markers are kept.
+  o.robe=pickColor(SHIRT_COLORS,seed,17);
+  o.accent=pickColor(PANTS_COLORS,seed,53);
   const g=buildPerson(o);
   const lbl=labelSprite(name||R.label);lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
   if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
@@ -10019,7 +10027,7 @@ let activeShop=null;
 function buildMerchant(vt){
   const def=VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner;
   const seed=def.title.length;
-  const g=buildPerson({robe:def.robe,accent:0x3a2a1a,apron:true,hat:(vt==="scrivener"||vt==="provisioner")?"cap":null,beard:(seed%2===0),seed:seed*3});
+  const g=buildPerson({robe:pickColor(SHIRT_COLORS,seed*3,29),accent:pickColor(PANTS_COLORS,seed*3,71),apron:true,hat:(vt==="scrivener"||vt==="provisioner")?"cap":null,beard:(seed%2===0),seed:seed*3});
   // market stall beside the shopkeeper: counter, canopy on posts, a few wares
   const stall=new THREE.Group();stall.position.set(1.45,0,0);g.add(stall);
   const wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318);
