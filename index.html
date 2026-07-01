@@ -3641,6 +3641,17 @@ const NAMED_ITEMS=[
   {name:"Mantle of the Arcanum",stat:"worn", at:"light",  aslot:"chest", mat:"Silk",    v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Grips of the Bloodletter",stat:"worn",at:"medium",aslot:"hands",mat:"Leather", v:[20,28],affix:()=>_oaff("of Endurance")},
   {name:"Crown of the Undying",stat:"worn",  at:"light",  aslot:"head",  mat:"Gold",    v:[28,38],affix:()=>_oaff("of Vigor")},
+  // ── artifact batch 9 ──
+  {name:"Dawnbreaker",         stat:"weapon",wt:"sword",   mat:"Gold",    v:[32,44],affix:()=>_wbrand("fire")},
+  {name:"Permafrost Maul",     stat:"weapon",wt:"twohand", mat:"Sapphire",v:[42,56],affix:()=>_wbrand("frost")},
+  {name:"Gravemaker",          stat:"weapon",wt:"mace",    mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Wasp's Sting",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
+  {name:"Tempest Longbow",     stat:"weapon",wt:"bow",     mat:"Diamond", v:[28,38],affix:()=>_wbrand("shock")},
+  {name:"Reaver's Edge",       stat:"weapon",wt:"axe",     mat:"Steel",   v:[30,40],affix:()=>_waff("crit")},
+  {name:"Impaler",             stat:"weapon",wt:"spear",   mat:"Platinum",v:[30,40],affix:()=>_waff("crit")},
+  {name:"Wand of Cinders",     stat:"weapon",wt:"focus",   mat:"Ruby",    v:[24,32]},
+  {name:"Girth of the Titan",  stat:"worn",  at:"heavy",  aslot:"chest", mat:"Steel",   v:[42,56],affix:()=>_oaff("of Vigor")},
+  {name:"Bracers of the Adept",stat:"worn",  at:"light",  aslot:"lowerarm",mat:"Silk",  v:[20,28],affix:()=>_oaff("of the Magus")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -3722,6 +3733,12 @@ function rollOil(){ const o=OIL_ITEMS[irnd(0,OIL_ITEMS.length-1)]; return {name:
 function rollRecallStone(){ return {name:"Recall Stone",stat:"recall",v:0}; }
 const CURE_ITEMS=["Antidote","Cleansing Elixir","Elixir of Purity"];
 function rollCure(){ return {name:CURE_ITEMS[irnd(0,CURE_ITEMS.length-1)],stat:"cure",v:0}; }
+// ── regeneration potions (AC): start a heal-over-time on health/stamina/mana (rides player.hots) ──
+const REGEN_ITEMS=[
+  {name:"Rejuvenation Potion",pool:"hp",rate:8,dur:15},{name:"Greater Rejuvenation Potion",pool:"hp",rate:12,dur:18},
+  {name:"Regeneration Draught",pool:"st",rate:9,dur:15},{name:"Mana Renewal Potion",pool:"mn",rate:8,dur:15},
+];
+function rollRegen(){ const r=REGEN_ITEMS[irnd(0,REGEN_ITEMS.length-1)]; return {name:r.name,stat:"hot",pool:r.pool,rate:r.rate,dur:r.dur,v:Math.round(r.rate*r.dur)}; }
 // ---- Jewelry: rings & necklaces (AC's signature skill/stat boosters). Each rolls one cantrip-style
 //      bonus — a skill aptitude, a vital boost, or armour. Bonuses are computed from equipped jewelry
 //      (derive/skillValue/armour), never mutate base stats, so equip/unequip is clean. ----
@@ -3781,6 +3798,7 @@ function rollItem(rare,tier){
   if(Math.random()<(rare?0.03:0.03)) return rollOil();     // a weapon oil
   if(Math.random()<(rare?0.02:0.012)) return rollRecallStone();  // a recall stone
   if(Math.random()<(rare?0.02:0.02)) return rollCure();          // an antidote
+  if(Math.random()<(rare?0.03:0.03)) return rollRegen();         // a regeneration potion
 
   if(Math.random()<(rare?0.04:0.09)) return rollFood();   // a bite of cooking fare
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
@@ -3901,6 +3919,9 @@ function applyItem(it){
   else if(it.stat==="oil"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.dmg;
     player.itemBuffs.dmg={v:Math.max(it.dmg,cur?cur.v:0),t:it.dur};
     log(`You apply <b>${it.name}</b> — +${Math.round(it.dmg*100)}% weapon damage for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
+  else if(it.stat==="hot"){ player.hots=player.hots||{}; player.hots[it.pool]={rate:it.rate,t:it.dur};
+    const nm={hp:"health",st:"stamina",mn:"mana"}[it.pool]||it.pool;
+    log(`You drink the <b>${it.name}</b> — ${nm} regenerates ${it.rate}/s for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="pack"){ player.packBonus=player.packBonus||0;
     if(player.packBonus>=PACK_MAX){ log(`Your satchel is already expanded to the maximum (${invCap()} slots).`,"warn"); return "keep"; }
     player.packBonus=Math.min(PACK_MAX,player.packBonus+(it.cap||2));
@@ -7344,10 +7365,10 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
-function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
 function gearDesc(it){
   if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
@@ -7400,7 +7421,8 @@ const VENDOR_TYPES={
     {name:"Sack",cost:120,desc:"Adds +3 satchel slots (Use it from your pack).",ico:"🎒",gear:{name:"Sack",stat:"pack",cap:3,v:3}},
     {name:"Backpack",cost:220,desc:"Adds +4 satchel slots (Use it from your pack).",ico:"🎒",gear:{name:"Backpack",stat:"pack",cap:4,v:4}},
     {name:"Recall Stone",cost:90,desc:"Crush to teleport to your bound Lifestone.",ico:"🔵",gear:{name:"Recall Stone",stat:"recall",v:0}},
-    {name:"Antidote",cost:35,desc:"Cleanses hostile curses (slow, imperil).",ico:"🟢",gear:{name:"Antidote",stat:"cure",v:0}}]},
+    {name:"Antidote",cost:35,desc:"Cleanses hostile curses (slow, imperil).",ico:"🟢",gear:{name:"Antidote",stat:"cure",v:0}},
+    {name:"Rejuvenation Potion",cost:45,desc:"Regenerates 8 health/s for 15s (Use it).",ico:"💧",gear:{name:"Rejuvenation Potion",stat:"hot",pool:"hp",rate:8,dur:15,v:120}}]},
   weaponsmith:{title:"Weaponsmith",marker:"⚔",mcol:"#ffd23b",robe:0x6a3a22,stock:()=>[
     {name:"Steel Dagger",cost:80,desc:"Fast, light blade.",ico:"🗡",gear:{name:"Steel Dagger",stat:"weapon",wt:"dagger",v:8}},
     {name:"Soldier's Sword",cost:120,desc:"A reliable blade.",ico:"⚔️",gear:{name:"Soldier's Sword",stat:"weapon",wt:"sword",v:10}},
@@ -8200,7 +8222,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp")?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
@@ -8209,7 +8231,7 @@ function buildTinker(){
       :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
       :it.stat==="pack"?`<button class="tbtn" data-eq="${i}">Add</button>`
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
-      :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil"||it.stat==="recall"||it.stat==="cure")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
+      :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil"||it.stat==="recall"||it.stat==="cure"||it.stat==="hot")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
       <div class="ctl">${ctl}</div>`;
     rows.appendChild(row);
