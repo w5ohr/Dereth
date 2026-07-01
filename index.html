@@ -15,6 +15,8 @@
   #c{display:block;width:100vw;height:100vh}
 
   #hud{position:absolute;inset:0;pointer-events:none;z-index:10}
+  #hud.uimove .panel{pointer-events:auto;outline:2px dashed rgba(255,210,120,.9);cursor:move}
+  #uimoveHint{position:absolute;left:50%;top:8px;transform:translateX(-50%);background:rgba(8,6,3,.92);border:1px solid var(--border);border-radius:6px;padding:6px 14px;color:#ffd86b;font-size:12px;z-index:60;display:none}
   .panel{position:absolute;background:linear-gradient(180deg,rgba(28,22,9,.82),rgba(16,12,6,.82));
     border:1px solid var(--border);border-radius:6px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.5);
     backdrop-filter:blur(2px)}
@@ -924,6 +926,16 @@ const PLAYER_MODELS=[
   {k:"rogue",    n:"Rogue",        url:"assets/models/people/Rogue.glb"},
   {k:"hooded",   n:"Hooded Rogue", url:"assets/models/people/Rogue_Hooded.glb"},
   {k:"soldier",  n:"Soldier",      url:"assets/models/people/Soldier.glb"},
+  // the rest of the available rigged models — any can be the player's avatar
+  {k:"man",      n:"Man",          url:"assets/models/people/Masculine.glb"},
+  {k:"woman",    n:"Woman",        url:"assets/models/people/Feminine_TPose.glb"},
+  {k:"hvgirl",   n:"Adventuress",  url:"assets/models/people/HVGirl.glb"},
+  {k:"cesium",   n:"Wayfarer",     url:"assets/models/people/CesiumMan.glb"},
+  {k:"rigged",   n:"Figure",       url:"assets/models/people/RiggedFigure.glb"},
+  {k:"xbot",     n:"X-Bot",        url:"assets/models/people/Xbot.glb"},
+  {k:"astronaut",n:"Astronaut",    url:"assets/models/people/Astronaut.glb"},
+  {k:"robot",    n:"Robot",        url:"assets/models/people/RobotExpressive.glb"},
+  {k:"brainstem",n:"Construct",    url:"assets/models/people/BrainStem.glb"},
 ];
 function playerModelDef(k){ return PLAYER_MODELS.find(m=>m.k===k)||PLAYER_MODELS[0]; }
 // Robust model height: some rigged/skinned glTFs report an empty bounding box on load (matrices not yet
@@ -6309,7 +6321,7 @@ document.addEventListener('pointerlockchange',()=>{
   document.getElementById('hint').style.display=(running&&!locked&&player.alive&&sheet.style.display!=="flex")?"block":"none";
   if(running&&!locked&&sheet.style.display!=="flex") document.getElementById('hint').textContent="Click to look around";
 });
-cEl.addEventListener('click',()=>{ if(running&&!locked&&sheet.style.display!=="flex") cEl.requestPointerLock(); });
+cEl.addEventListener('click',()=>{ if(running&&!locked&&!movingUI&&sheet.style.display!=="flex") cEl.requestPointerLock(); });
 cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0) primaryAttack(); else if(e.button===2) blocking=true; });
 cEl.addEventListener('mouseup',e=>{ if(e.button===2) blocking=false; });
 cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse raises the shield, no menu
@@ -6356,6 +6368,7 @@ window.addEventListener('keydown',e=>{
   if(k==="o"){ if(document.getElementById('settings').style.display==="flex") closeSettings(); else openSettings(); }
   if(k==="tab"){ e.preventDefault(); if(document.getElementById('worldmap').style.display==="flex") closeMap(); else openMap(); }
   if(k==="p"){ paused=!paused; document.getElementById('pausemsg').style.display=paused?"flex":"none"; log(paused?"Paused.":"Resumed.","sys"); }
+  if(k==="n"){ setUIMove(!movingUI); log(movingUI?"<b>Move UI</b> — drag any panel to rearrange your HUD; press N to finish.":"HUD layout saved.","sys"); }
 });
 window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
 
@@ -7307,6 +7320,29 @@ function buildMiniToggles(){
   const cats=[["town","Towns"],["vendor","Vendors"],["quest","Quest givers"],["dungeon","Dungeons"],["building","Buildings"],["portal","Portals"],["resource","Resources"],["monster","Monsters"],["players","Players"]];
   el.innerHTML=cats.map(([k,lab])=>`<label><input type="checkbox" data-mm="${k}" ${miniShow[k]?"checked":""}> ${lab}</label>`).join("");
   el.querySelectorAll('input[data-mm]').forEach(cb=>cb.onchange=()=>{ miniShow[cb.dataset.mm]=cb.checked; saveMiniPrefs(); });
+}
+// ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
+const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions"];
+let movingUI=false, _uiDrag=null;
+function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
+  for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
+    if(q&&isFinite(q.x)&&isFinite(q.y)){ el.style.left=q.x+"px"; el.style.top=q.y+"px"; el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; } } }
+function saveUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
+  for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(el&&el.style.left){ p[id]={x:parseInt(el.style.left),y:parseInt(el.style.top)}; } }
+  try{ localStorage.setItem("dereth_ui",JSON.stringify(p)); }catch(e){} }
+function resetUIPos(){ try{ localStorage.removeItem("dereth_ui"); }catch(e){} location.reload(); }
+function setUIMove(on){ movingUI=!!on; document.getElementById('hud').classList.toggle('uimove',movingUI);
+  const h=document.getElementById('uimoveHint'); if(h) h.style.display=movingUI?"block":"none";
+  if(movingUI&&locked) document.exitPointerLock(); }
+function initDragUI(){
+  applyUIPos();
+  const hint=document.createElement('div'); hint.id="uimoveHint"; hint.textContent="Move UI — drag any panel · press N to finish"; document.getElementById('hud').appendChild(hint);
+  for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
+    el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
+  document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
+    el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
+    el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
+  document.addEventListener('mouseup',()=>{ if(_uiDrag){ _uiDrag=null; saveUIPos(); } });
 }
 function initMinimap(){
   loadMiniPrefs();
@@ -11425,6 +11461,7 @@ loadSettings();
 initThree();
 applySettings();
 initMinimap();
+initDragUI();
 renderComposite();
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
