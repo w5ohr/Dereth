@@ -6502,6 +6502,10 @@ function meleeAttack(power){
   power=(typeof power==="number")?clamp(power,0.6,1.6):1;   // Cb1 power bar: charge-scaled damage (0.6 tap → 1.6 full)
   const acc=1-Math.abs(power-1.05)*0.5;   // accuracy peaks in the mid-upper charge band (AC's sweet spot), falls off at the extremes
   const wp=weaponProfile(),melee=wp&&wp.mode==="melee",prof=melee?wp:WEAPON_TYPES.sword; // equipped melee weapon or bare fists
+  // Cb8 Dual Wield: a one-handed melee weapon with no shield + the skill trained weaves in off-hand strikes
+  const wt=melee&&player.weapon?player.weapon.wt:null, dualT=skillTier("dualwield");
+  const dualOK=melee&&wt&&wt!=="twohand"&&!equippedShield()&&dualT>0;
+  const offhand=dualOK&&Math.random()<clamp(0.25+skillValue("dualwield")*0.003,0,0.65);
   const cdScale=Math.max(.35,1-player.attr.Coordination*0.02);
   player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"))*(0.7+power*0.5);player.swing=1;SFX.swing();  // heavier swings recover slower
   if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
@@ -6522,6 +6526,7 @@ function meleeAttack(power){
         const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
         applyHit(m,dmg*hm.dmg*sneak,meleeOpts);
         dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
+        if(offhand){ applyHit(m,dmg*hm.dmg*(dualT===2?0.6:0.45),meleeOpts); floater(m.x,(m.headY||1.6)+2.2,m.z,"off-hand","#bfe6ff"); }   // Cb8 dual-wield follow-up strike
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
       }
