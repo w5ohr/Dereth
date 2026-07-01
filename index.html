@@ -484,7 +484,9 @@ function skillBase(key){ const s=SKILL_BY_KEY[key]; if(!s.d)return 0; let sum=0;
 function skillValue(key){ const st=skillState(key),base=skillBase(key);
   const sb=(player.skillBuffs&&player.skillBuffs[key])?player.skillBuffs[key].v:0;   // Creature skill "Aptitude" buff
   const gj=(player.gearSkill&&player.gearSkill[key])?player.gearSkill[key]:0;        // jewelry skill cantrips
-  return base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj; }
+  let v=base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj;
+  if(player.vitae>0) v=Math.max(0,Math.round(v*(1-player.vitae)));   // Vitae death penalty saps ALL skills too (AC), not just vitals
+  return v; }
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
 function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_WEAPON_KEYS){ const e=skillEff(key,k); if(e>best)best=e; } return best; } // best of all melee weapon skills
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
@@ -505,8 +507,8 @@ function migrateSkills(old){ const fresh=freshSkills(); if(!old||typeof old!=="o
   for(const ok in map){ fresh[map[ok]]={t:1,xp:skillCumXP(old[ok]|0,false)}; }
   return fresh;
 }
-const ATTR_DESC={Strength:"Melee damage",Endurance:"Health & stamina",Coordination:"Attack speed",
-  Quickness:"Move speed",Focus:"Mana & spell power",Self:"Mana & defense"};
+const ATTR_DESC={Strength:"Melee damage & burden",Endurance:"Health, stamina & regen",Coordination:"Attack accuracy",
+  Quickness:"Defense & run speed",Focus:"Spell skill & mana",Self:"Mana & spell skill"};
 
 // ---------- player ----------
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
@@ -1032,31 +1034,31 @@ const TOWN_DATA=[
   // — Aluvia —
   ["Holtburg",42.3,33.3,0,true],["Cragstone",25.6,49.2,0,false],["Arwic",33.5,56.8,0,false],
   ["Eastham",17.7,63.4,0,false],["Glenden Wood",29.7,27.4,0,false],["Rithwic",10.5,58.3,0,false],
-  ["Lytelthorpe",0.7,51.4,0,false],["Dryreach",-7.9,73.0,0,false],["Fort Tethana",1.6,-71.8,0,false],
-  ["Plateau Village",44.2,-43.5,0,false],["Stonehold",68.7,-21.7,0,false],["Underground City",21.3,53.9,0,false],
+  ["Lytelthorpe",0.7,51.4,0,false],["Dryreach",-7.9,73.0,0,false,20],["Fort Tethana",1.6,-71.8,0,false,25],
+  ["Plateau Village",44.2,-43.5,0,false,25],["Stonehold",68.7,-21.7,0,false,35],["Underground City",21.3,53.9,0,false,30],
   // — Sho —
   ["Shoushi",-33.6,72.7,1,true],["Yanshi",-12.1,42.6,1,false],["Sawato",-28.7,59.4,1,false],
   ["Baishi",-49.4,62.5,1,false],["Hebian-To",-39.2,83.1,1,false],["Nanto",-52.7,82.3,1,false],
-  ["Lin",-54.5,73.2,1,false],["Wai Jhou",-62.0,-51.4,1,false],["Mayoi",-61.8,82.1,1,false],
-  ["Kryst",-74.3,84.4,1,false],["MacNiall's Freehold",-74.0,92.2,1,false],["Kara",-83.3,47.1,1,false],
+  ["Lin",-54.5,73.2,1,false],["Wai Jhou",-62.0,-51.4,1,false,35],["Mayoi",-61.8,82.1,1,false],
+  ["Kryst",-74.3,84.4,1,false,35],["MacNiall's Freehold",-74.0,92.2,1,false,40],["Kara",-83.3,47.1,1,false,45],
   ["Tou-Tou",-30.3,94.8,1,false],
   // — Gharu'ndim —
   ["Yaraq",-21.5,-1.5,2,true],["Zaikhal",13.6,0.6,2,false],["Al-Jalima",7.4,4.8,2,false],
   ["Tufa",-14.9,5.8,2,false],["Samsur",-2.9,19.4,2,false],["Mar'uun",-10.6,17.1,2,false],
   ["Al-Arqas",-31.2,13.9,2,false],["Uziz",-25.1,28.2,2,false],["Xarabydun",-41.9,15.8,2,false],
-  ["Khayyaban",-47.6,24.7,2,false],["Qalaba'r",-74.3,19.2,2,false],["Ayan Baqur",-59.9,-87.9,2,false],
+  ["Khayyaban",-47.6,24.7,2,false,30],["Qalaba'r",-74.3,19.2,2,false,45],["Ayan Baqur",-59.9,-87.9,2,false,50],
   // — New Viamont & northern Halaetan Isles (Aluvian-style build; geographically frontier) —
-  ["Sanamar",72.0,-61.3,0,false],["Greenspire",43.1,-66.7,0,false],["Bluespire",39.4,-75.4,0,false],
-  ["Redspire",40.7,-83.2,0,false],["Westwatch",72.8,-73.3,0,false],["Eastwatch",90.4,-43.2,0,false],
-  ["Silyun",87.3,-70.6,0,false],["Fiun Outpost",95.9,-56.8,0,false],
+  ["Sanamar",72.0,-61.3,0,false],["Greenspire",43.1,-66.7,0,false,25],["Bluespire",39.4,-75.4,0,false,30],
+  ["Redspire",40.7,-83.2,0,false,35],["Westwatch",72.8,-73.3,0,false,55],["Eastwatch",90.4,-43.2,0,false,80],
+  ["Silyun",87.3,-70.6,0,false,60],["Fiun Outpost",95.9,-56.8,0,false,70],
   // — Independent / Direlands frontier (Tumerok, Lugian, outposts) —
-  ["Timaru",44.1,-78.0,0,false],["Ahurenga",47.1,-90.2,0,false],["Neydisa Castle",69.6,17.6,0,false],
-  ["Crater Lake Village",64.9,13.5,0,false],["Bandit Castle",66.4,49.9,0,false],["Beach Fort",76.0,-49.1,0,false],
-  ["Merwart Village",79.9,59.0,0,false],["Danby's Outpost",23.4,-28.6,0,false],["Oolutanga's Refuge",2.3,95.4,1,false],
-  ["Linvak Tukal",-77.6,28.1,2,false],["Candeth Keep",-87.5,-67.1,2,false],
+  ["Timaru",44.1,-78.0,0,false,35],["Ahurenga",47.1,-90.2,0,false,40],["Neydisa Castle",69.6,17.6,0,false,50],
+  ["Crater Lake Village",64.9,13.5,0,false,40],["Bandit Castle",66.4,49.9,0,false,45],["Beach Fort",76.0,-49.1,0,false,40],
+  ["Merwart Village",79.9,59.0,0,false,35],["Danby's Outpost",23.4,-28.6,0,false,20],["Oolutanga's Refuge",2.3,95.4,1,false,30],
+  ["Linvak Tukal",-77.6,28.1,2,false,40],["Candeth Keep",-87.5,-67.1,2,false,40],
 ];
 function buildCityList(){
-  return TOWN_DATA.map(t=>({name:t[0],x:t[2]*COORD,z:-t[1]*COORD,region:t[3],capital:t[4]}));
+  return TOWN_DATA.map(t=>({name:t[0],x:t[2]*COORD,z:-t[1]*COORD,region:t[3],capital:t[4],req:t[5]||0}));
 }
 const CITIES=buildCityList();
 const CAPITALS=CITIES.filter(c=>c.capital);
@@ -1294,7 +1296,7 @@ function jumpVelocity(){
 function tryJump(){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
   if(player.st<8){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
-  player.vy=jumpVelocity(); player.grounded=false; player.st=Math.max(0,player.st-8); if(SFX.step)SFX.step();
+  player.vy=jumpVelocity(); player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-8); if(SFX.step)SFX.step();
 }
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
@@ -3135,7 +3137,7 @@ function applyHit(m,base,opts){ opts=opts||{};
     if(opts.element==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
     else if(opts.element==="frost"){m.slow=Math.max(m.slow,0.4);}
     else if(opts.element==="shock"&&Math.random()<0.35){m.atkCd=Math.max(m.atkCd,1.0);} }
-  const crit=Math.random()<clamp(0.07+player.attr.Coordination*0.004+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2;  // Heart Seeker + Yellow Aetheria
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Yellow Aetheria
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -5478,7 +5480,7 @@ function gainXP(amt){
   player.xp+=amt;player.xpUnspent+=amt;
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
-  while(player.xp>=need){
+  while(player.level<275&&player.xp>=need){   // AC hard level cap of 275 (XP past it still banks as unspent for skills/attributes)
     player.xp-=need;player.level++;player.skillPts+=4;
     derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
     log(`<b>Level ${player.level}!</b> +4 attribute points${player.level-1<=46?" & +1 skill credit":""} — press C to spend.`,"sys");
@@ -5546,6 +5548,20 @@ function die(){
     log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP, and death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals & damage until you earn it back.`,"sys");
     toast("RESTORED");
   },1400);
+}
+// AC fall damage: drops past a safe height hurt, scaling with distance; the Jump skill softens landings.
+function fallDamage(drop){
+  if(!player.alive||inDungeon||inNetwork||drop<=0) return;   // instances are flat — no meaningful drops
+  const safe=5.5+skillValue("jump")*0.04;   // higher Jump → land safely from farther (a 2-storey drop is free)
+  if(drop<=safe) return;
+  const over=drop-safe;
+  let dmg=Math.round(over*over*0.8+over*3);   // gentle knee near the safe height, steep for real cliffs (which can kill)
+  if(dmg<=0) return;
+  dmg=Math.min(dmg,player.mhp);
+  player.hp-=dmg; if(SFX.hurt)SFX.hurt(); shake(clamp(dmg*0.02,0.1,0.5));
+  floater(player.x,EYE,player.z,"-"+dmg+" fall","#ff8a6b");
+  log(`You hit the ground hard — <b>${dmg}</b> fall damage.`,"warn");
+  if(player.hp<=0) die();
 }
 
 // ---------- casting & melee ----------
@@ -6128,14 +6144,16 @@ function buildSheet(){
   else al.innerHTML=`<div class="desc" style="color:var(--dim)">Reach level 5 to swear to an Allegiance.</div>`;
   attrRows.querySelectorAll('.pmbtn').forEach(btn=>btn.onclick=()=>{
     if(player.skillPts<=0) return;
-    const a=btn.dataset.a;player.attr[a]++;player.skillPts--;derive();
+    const a=btn.dataset.a;
+    if(player.attr[a]>=100){ log("Innate attributes cap at 100 — raise further only with Augmentation gems.","warn"); return; }  // AC innate cap
+    player.attr[a]++;player.skillPts--;derive();
     document.getElementById('sv_'+a).textContent=player.attr[a];
     document.getElementById('pts').textContent=player.skillPts;
     refreshBtns();
   });
   refreshBtns();
 }
-function refreshBtns(){attrRows.querySelectorAll('.pmbtn').forEach(b=>b.disabled=player.skillPts<=0);}
+function refreshBtns(){attrRows.querySelectorAll('.pmbtn').forEach(b=>b.disabled=player.skillPts<=0||player.attr[b.dataset.a]>=100);}
 function openSheet(){buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
@@ -6226,10 +6244,14 @@ function update(dt){
     const support=supportAt(player.x,player.z,player.y);
     if(player.grounded){
       if(support>=player.y-STICK){ player.y=support; player.vy=0; }   // glue to slopes/ramps (up via STEP_UP, down via STICK)
-      else { player.grounded=false; player.vy=0; }                    // walked off a real ledge → fall
+      else { player.grounded=false; player.vy=0; player.fallPeak=player.y; }   // walked off a real ledge → fall
     } else {
       player.vy-=GRAV*dt; player.y+=player.vy*dt;
-      if(player.vy<=0 && player.y<=support){ player.y=support; player.vy=0; player.grounded=true; } // land
+      if(player.y>player.fallPeak) player.fallPeak=player.y;   // remember the apex so drop = apex − landing
+      if(player.vy<=0 && player.y<=support){                   // land
+        const drop=(player.fallPeak!==undefined?player.fallPeak:support)-support;
+        player.y=support; player.vy=0; player.grounded=true; fallDamage(drop);
+      }
     }
   }
   // timers/regen
@@ -7611,8 +7633,8 @@ const SOCIETIES=[
   {id:"radblood", name:"Radiant Blood", col:"#ff8a6b",
    blurb:"A martial order pledged in blood to hold the Olthoi and the Virindi at bay."},
 ];
-const SOCIETY_RANKS=[  // rep thresholds → rank title (prefixes the society name)
-  {min:0,title:"Adherent"},{min:600,title:"Sworn"},{min:1800,title:"Knight"},
+const SOCIETY_RANKS=[  // AC society rank ladder: Initiate→Adept→Knight→Lord→Master (advanced by Commendation-Ribbon standing)
+  {min:0,title:"Initiate"},{min:600,title:"Adept"},{min:1800,title:"Knight"},
   {min:4200,title:"Lord"},{min:9000,title:"Master"},
 ];
 function societyById(id){ return SOCIETIES.find(s=>s.id===id)||null; }
@@ -7633,7 +7655,7 @@ function grantSocietyRep(n){ if(!player.society||n<=0) return;
 function pledgeSociety(id){ const so=societyById(id); if(!so||player.society) return;
   player.society=id; player.societyRep=0;
   toast("SOCIETY PLEDGE");
-  log(`<span style="color:${so.col}">You pledge yourself to the <b>${so.name}</b>. ${so.blurb} You rise as an <b>Adherent</b> — complete bounties to earn your standing.</span>`,"sys");
+  log(`<span style="color:${so.col}">You pledge yourself to the <b>${so.name}</b>. ${so.blurb} You rise as an <b>Initiate</b> — complete bounties to earn your standing.</span>`,"sys");
   if(SFX.quest)SFX.quest(); if(typeof checkAchievements==="function") checkAchievements(); saveGame(); renderQuestLog(); updateQuestHUD();
 }
 // ── Story Arcs: curated multi-quest storylines. Finishing every quest in an arc grants a title + capstone reward. ──
@@ -10124,7 +10146,7 @@ function buildNetwork(){
   const list=fac?FACILITY_PORTALS:CITIES;
   list.forEach((c,i)=>{const a=i/list.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
     const np=fac?{x:px,z:pz,kind:"facility",dungeon:c.def,req:c.req,name:c.def.name}:{x:px,z:pz,kind:"town",town:c,name:c.name};
-    const m=buildPortal(fac?`${c.def.name} · Lv${c.req}`:c.name);m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
+    const m=buildPortal(fac?`${c.def.name} · Lv${c.req}`:(c.req?`${c.name} · Lv${c.req}`:c.name));m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
     m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
     scene.add(m);netObjs.push(m);netPortals.push(np);});
   netExit={x:DCEN.x,z:DCEN.z+7};
@@ -10155,7 +10177,9 @@ function netToDungeon(def){
   enterDungeon(def,netReturn.x,netReturn.z);
 }
 function activateNetPortal(np){
-  if(np.kind==="town"){ exitNetwork({x:np.town.x,z:np.town.z});toast(np.town.name.toUpperCase());log(`You travel to <b>${np.town.name}</b>.`,"sys");SFX.portal();return; }
+  if(np.kind==="town"){
+    if(np.town.req&&player.level<np.town.req){ log(`The portal to <b>${np.town.name}</b> flares and rejects you — the frontier there demands level <b>${np.town.req}</b>.`,"warn");if(SFX.deny)SFX.deny();return; }  // AC level-gated frontier portals
+    exitNetwork({x:np.town.x,z:np.town.z});toast(np.town.name.toUpperCase());log(`You travel to <b>${np.town.name}</b>.`,"sys");SFX.portal();return; }
   if(np.kind==="switch"){ switchHub(np.to);toast(np.to==="facility"?"FACILITY HUB":"THE TOWN NETWORK");
     log(np.to==="facility"?"You enter the <b>Facility Hub</b> — portals here lead to dungeons, gated by your level.":"You return to the <b>Town Network</b>.","sys");SFX.portal();return; }
   if(np.kind==="facility"){
