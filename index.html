@@ -1869,17 +1869,17 @@ function buildPerson(o){
   if(robed){
     const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.5,1.14,16),cloth);robe.position.y=hipY-0.34;robe.castShadow=true;g.add(robe);
     const hem=new THREE.Mesh(new THREE.CylinderGeometry(0.51,0.51,0.06,16),cloth2);hem.position.y=0.05;g.add(hem);
-    for(const sx of[-1,1]){const b=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.16,0.27),boot);b.position.set(sx*0.11,0.08,0.05);b.castShadow=true;g.add(b);}
+    for(const sx of[-1,1]){const b=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.16,0.27),boot);b.position.set(sx*0.11,0.08,-0.05);b.castShadow=true;g.add(b);}
   } else {
     const legs=[];
     for(const sx of[-1,1]){
       const leg=new THREE.Group();leg.position.set(sx*0.12,hipY,0);g.add(leg);
       // one continuous leg: thigh swell → knee → calf belly → slim ankle
       const legM=organicLimb([[0.135,0.04],[0.14,0.16],[0.108,0.34],[0.092,0.5],[0.108,0.62],[0.075,0.8],[0.052,1.0]],0.94,cloth2);leg.add(legM);
-      const ft=new THREE.Group();ft.position.set(0,-0.94,0.0);leg.add(ft);                   // shaped shoe: body + toe cap + sole
-      const fb=new THREE.Mesh(new THREE.BoxGeometry(0.135,0.1,0.2),boot);fb.position.set(0,0.005,0.045);fb.castShadow=true;ft.add(fb);
-      const toe=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.07,0.085),boot);toe.position.set(0,-0.012,0.175);toe.castShadow=true;ft.add(toe);
-      ft.add(new THREE.Mesh(new THREE.BoxGeometry(0.145,0.03,0.30),new THREE.MeshLambertMaterial({color:0x17100a}))).position.set(0,-0.058,0.06);
+      const ft=new THREE.Group();ft.position.set(0,-0.94,0.0);leg.add(ft);                   // shaped shoe: body + toe cap + sole (toe points -z = forward, like the face)
+      const fb=new THREE.Mesh(new THREE.BoxGeometry(0.135,0.1,0.2),boot);fb.position.set(0,0.005,-0.045);fb.castShadow=true;ft.add(fb);
+      const toe=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.07,0.085),boot);toe.position.set(0,-0.012,-0.175);toe.castShadow=true;ft.add(toe);
+      ft.add(new THREE.Mesh(new THREE.BoxGeometry(0.145,0.03,0.30),new THREE.MeshLambertMaterial({color:0x17100a}))).position.set(0,-0.058,-0.06);
       legs.push(leg);
     }
     lLeg=legs[0];rLeg=legs[1];
@@ -3797,7 +3797,7 @@ const AUGMENT_ITEMS=[
 function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,tier:5,legendary:true}; }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
 const PACK_ITEMS=[{name:"Belt Pouch",cap:2},{name:"Sack",cap:3},{name:"Backpack",cap:4},{name:"Portmanteau",cap:6}];
-const PACK_MAX=18;   // most extra slots you can add (12 base → up to 30)
+const PACK_MAX=88;   // stack many packs — each adds slots (12 base → up to 100)
 function rollPack(){ const t=PACK_ITEMS[irnd(0,PACK_ITEMS.length-1)]; return {name:t.name,stat:"pack",cap:t.cap,v:t.cap,tier:3}; }
 function invCap(){ return 12 + (player.packBonus||0); }   // satchel capacity, grown by packs
 // ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
