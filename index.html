@@ -10238,7 +10238,8 @@ function applySaveObj(s){
     skills:migrateSkills(s.skills),patron:!!s.patron,vitae:s.vitae||0,heritage:s.heritage||"aluvian",
     name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a}});
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
-  player.knownSpells=(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
+  player.knownSpells=(s.knownSpells==="all")?Object.keys(SPELLBOOK)              // admin/testing: know every spell
+    :(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
   player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,HOTKEYS.length):DEFAULT_HOTBAR.slice()).map(id=>SPELLBOOK[id]?id:null);
   player.loadouts=Array.isArray(s.loadouts)?s.loadouts.filter(l=>l&&l.name&&Array.isArray(l.bar)).slice(0,8):[];
   while(player.hotbar.length<HOTKEYS.length) player.hotbar.push(null);
