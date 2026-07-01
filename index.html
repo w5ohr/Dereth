@@ -520,7 +520,8 @@ function skillValue(key){ const st=skillState(key),base=skillBase(key);
   const sb=(player.skillBuffs&&player.skillBuffs[key])?player.skillBuffs[key].v:0;   // Creature skill "Aptitude" buff
   const gj=(player.gearSkill&&player.gearSkill[key])?player.gearSkill[key]:0;        // jewelry skill cantrips
   let v=base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj
-    +((player.auras&&player.auras.world)||0)+(player.enlightenment||0);   // Aura of the World + Enlightenment: +1 all skills each level/tier
+    +((player.auras&&player.auras.world)||0)+(player.enlightenment||0)   // Aura of the World + Enlightenment: +1 all skills each level/tier
+    +((player.augment&&player.augment.allskills)||0);   // H17 Jack of All Trades augmentation: +N to every skill
   if(player.vitae>0) v=Math.max(0,Math.round(v*(1-player.vitae)));   // Vitae death penalty saps ALL skills too (AC), not just vitals
   return v; }
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
@@ -5491,6 +5492,12 @@ const AUGMENT_ITEMS=[
   {name:"Steadfast Will",               aug:{attr:5,attrName:"Self"},         desc:"+5 innate Self, forever"},
   {name:"Clutch of the Miser",          aug:{dropReduce:1},                   desc:"drop one fewer item on death, forever"},
   {name:"Arrow Turner",                 aug:{resist:0.05},                    desc:"+5% resistance to every element, forever"},
+  // H17 augmentation-tree breadth (AC Master-of-Design augs) — skill/XP/combat boons
+  {name:"Jack of All Trades",           aug:{allskills:5},                    desc:"+5 to every skill, forever"},
+  {name:"Ciandra's Essence",            aug:{xpBonus:0.05},                   desc:"+5% experience from all sources, forever"},
+  {name:"Frenzy of the Slayer",         aug:{crit:0.03},                      desc:"+3% critical hit chance, forever"},
+  {name:"Archmage's Endurance",         aug:{mn:25},                          desc:"+25 max mana, forever"},
+  {name:"Infused Vigor",                aug:{hp:25},                          desc:"+25 max health, forever"},
 ];
 function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,tier:5,legendary:true}; }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
@@ -5803,6 +5810,8 @@ function applyItem(it){
       if(player.augment.attrTotal>=50){ log("You cannot absorb more attribute augmentations — the innate +50 augment limit is reached.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
       const add=Math.min(a.attr,50-player.augment.attrTotal); player.attr[a.attrName]=(player.attr[a.attrName]||10)+add; player.augment.attrTotal+=add; }
     if(a.dropReduce){ player.augment.dropReduce=Math.min(5,(player.augment.dropReduce||0)+a.dropReduce); }
+    if(a.allskills){ player.augment.allskills=(player.augment.allskills||0)+a.allskills; }   // H17 Jack of All Trades
+    if(a.xpBonus){ player.augment.xpBonus=Math.min(0.25,(player.augment.xpBonus||0)+a.xpBonus); }   // H17 XP aug (cap +25%)
     player.augment.hp+=a.hp||0; player.augment.st+=a.st||0; player.augment.mn+=a.mn||0; if(a.skillpts) player.skillPts+=a.skillpts;
     player.augment.resist=(player.augment.resist||0)+(a.resist||0); player.augment.magic=(player.augment.magic||0)+(a.magic||0); player.augment.crit=(player.augment.crit||0)+(a.crit||0);
     if(typeof recomputeGearSkill==="function") recomputeGearSkill();
@@ -5930,6 +5939,7 @@ function craftRecipe(id){
   updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
 }
 function gainXP(amt){
+  if(player.augment&&player.augment.xpBonus) amt=Math.round(amt*(1+player.augment.xpBonus)); // H17 XP augmentation (Ciandra's Essence)
   if(player.patron) amt=Math.round(amt*(1.15+(skillTier("loyalty")>0?0.05:0))); // Loyalty deepens vassal XP flow
   if(player.vitae>0){ const was=player.vitae; player.vitae=Math.max(0,player.vitae-amt/40000); // recover Vitae through deeds (XP works it off)
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
