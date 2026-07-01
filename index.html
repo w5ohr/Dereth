@@ -3466,6 +3466,16 @@ const ITEM_BASE=[
   {n:"Runestaff",stat:"weapon",wt:"staff",v:[7,15]},{n:"Tekko",stat:"weapon",wt:"unarmed",v:[3,8]},
   {n:"Montante",stat:"weapon",wt:"twohand",v:[11,23]},{n:"Dadao",stat:"weapon",wt:"twohand",v:[10,22]},
   {n:"Horn Bow",stat:"weapon",wt:"bow",v:[7,16]},{n:"Repeating Crossbow",stat:"weapon",wt:"crossbow",v:[9,19]},
+  // ── full wand / orb / staff spread (casting foci empower every school; no melee) ──
+  {n:"Golden Wand",stat:"weapon",wt:"focus",v:[6,14]},{n:"Serpentine Wand",stat:"weapon",wt:"focus",v:[6,14]},
+  {n:"Prismatic Wand",stat:"weapon",wt:"focus",v:[7,15]},{n:"Runed Wand",stat:"weapon",wt:"focus",v:[6,13]},
+  {n:"Crystal Orb",stat:"weapon",wt:"focus",v:[7,15]},{n:"Scrying Orb",stat:"weapon",wt:"focus",v:[7,15]},
+  {n:"Void Orb",stat:"weapon",wt:"focus",v:[8,16]},{n:"Glowing Orb",stat:"weapon",wt:"focus",v:[6,14]},
+  {n:"Runed Staff",stat:"weapon",wt:"focus",v:[7,15]},{n:"Elder Staff",stat:"weapon",wt:"focus",v:[8,16]},
+  {n:"Ceremonial Sceptre",stat:"weapon",wt:"focus",v:[7,15]},{n:"Iron Baton",stat:"weapon",wt:"focus",v:[6,13]},
+  // ── more staff (melee) weapons ──
+  {n:"Jo Staff",stat:"weapon",wt:"staff",v:[6,14]},{n:"Battle Staff",stat:"weapon",wt:"staff",v:[7,16]},
+  {n:"Long Staff",stat:"weapon",wt:"staff",v:[7,15]},{n:"Gnarled Staff",stat:"weapon",wt:"staff",v:[6,14]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3871,6 +3881,16 @@ const NAMED_ITEMS=[
   {name:"Orb of Gharu'ndim",   stat:"weapon",wt:"focus",   mat:"Ruby",    v:[24,32]},
   {name:"Gauntlets of the Ihmaht",stat:"worn",at:"heavy", aslot:"hands", mat:"Pyreal",  v:[26,34],affix:()=>_oaff("of Warding")},
   {name:"Shroud of Falatacot", stat:"worn",  at:"light",  aslot:"back",  mat:"Satin",   v:[24,32],affix:()=>_oaff("of the Magus")},
+  // ── legendary casting foci (wand/orb/staff — no brand; they empower every school of magic) ──
+  {name:"Wand of the Empyrean",stat:"weapon",wt:"focus",   mat:"Diamond", v:[26,34]},
+  {name:"Smoldering Sceptre",  stat:"weapon",wt:"focus",   mat:"Ruby",    v:[24,32]},
+  {name:"Orb of the Leviathan",stat:"weapon",wt:"focus",   mat:"Sapphire",v:[26,34]},
+  {name:"Scrying Orb of Nexus",stat:"weapon",wt:"focus",  mat:"Emerald", v:[24,32]},
+  {name:"Staff of Tendrils",   stat:"weapon",wt:"focus",   mat:"Ebony",   v:[26,34]},
+  {name:"Coalesced Wand of Aun",stat:"weapon",wt:"focus",  mat:"Onyx",    v:[24,32]},
+  // ── legendary staff (melee) weapons ──
+  {name:"Glacial War Staff",   stat:"weapon",wt:"staff",   mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
+  {name:"Ember Quarterstaff",  stat:"weapon",wt:"staff",   mat:"Ruby",    v:[28,38],affix:()=>_wbrand("fire")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
