@@ -3370,6 +3370,10 @@ const ITEM_BASE=[
   {n:"Guisarme",stat:"weapon",wt:"spear",v:[7,15]},{n:"Bardiche",stat:"weapon",wt:"twohand",v:[10,21]},
   {n:"Bec de Corbin",stat:"weapon",wt:"mace",v:[9,19]},{n:"Claymore",stat:"weapon",wt:"twohand",v:[10,22]},
   {n:"Flatbow",stat:"weapon",wt:"bow",v:[5,13]},{n:"Bagh Nakh",stat:"weapon",wt:"unarmed",v:[5,11]},
+  {n:"Rondel",stat:"weapon",wt:"dagger",v:[4,11]},{n:"Katana",stat:"weapon",wt:"sword",v:[6,14]},
+  {n:"Wakizashi",stat:"weapon",wt:"sword",v:[5,12]},{n:"Bill",stat:"weapon",wt:"spear",v:[7,15]},
+  {n:"Tabar",stat:"weapon",wt:"axe",v:[8,17]},{n:"Kanabo",stat:"weapon",wt:"mace",v:[9,19]},
+  {n:"Odachi",stat:"weapon",wt:"twohand",v:[10,22]},{n:"Composite Crossbow",stat:"weapon",wt:"crossbow",v:[9,19]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3663,6 +3667,22 @@ const NAMED_ITEMS=[
   {name:"Sceptre of Ruin",     stat:"weapon",wt:"focus",   mat:"Onyx",    v:[24,32]},
   {name:"Aegis of Dawn",       stat:"worn",  at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.24,mat:"Gold",v:[28,40],affix:()=>_oaff("of Impregnability")},
   {name:"Warplate of the Titan",stat:"worn", at:"heavy",  aslot:"chest", mat:"Platinum",v:[44,58],affix:()=>_oaff("of Impregnability")},
+  // ── artifact batch 11 ──
+  {name:"Soulflare",           stat:"weapon",wt:"sword",   mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
+  {name:"Winterbite",          stat:"weapon",wt:"dagger",  mat:"Sapphire",v:[24,32],affix:()=>_wbrand("frost")},
+  {name:"Stonebreaker Maul",   stat:"weapon",wt:"twohand", mat:"Granite", v:[44,58],affix:()=>_waff("crit")},
+  {name:"Grave Whisper",       stat:"weapon",wt:"dagger",  mat:"Jet",     v:[24,32],affix:()=>_wbrand("nether")},
+  {name:"Acidmaw Axe",         stat:"weapon",wt:"axe",     mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
+  {name:"Skypiercer Bow",      stat:"weapon",wt:"bow",     mat:"Diamond", v:[28,38],affix:()=>_wbrand("shock")},
+  {name:"Warpike of the Auroch",stat:"weapon",wt:"spear",  mat:"Steel",   v:[30,40],affix:()=>_waff("crit")},
+  {name:"Repeater of Ruin",    stat:"weapon",wt:"crossbow",mat:"Jet",     v:[34,46],affix:()=>_wbrand("nether")},
+  {name:"Ironfist",            stat:"weapon",wt:"unarmed",  mat:"Steel",   v:[24,32],affix:()=>_waff("crit")},
+  {name:"Orb of Storms",       stat:"weapon",wt:"focus",   mat:"Diamond", v:[24,32]},
+  {name:"Casque of the Warmaster",stat:"worn",at:"heavy", aslot:"head",  mat:"Platinum",v:[36,48],affix:()=>_oaff("of Impregnability")},
+  {name:"Cuisses of the Lugian",stat:"worn", at:"heavy",  aslot:"legs",  mat:"Granite", v:[34,46],affix:()=>_oaff("of Vigor")},
+  {name:"Sandals of the Adept",stat:"worn",  at:"light",  aslot:"feet",  mat:"Silk",    v:[22,30],affix:()=>_oaff("of the Magus")},
+  {name:"Signet of the Empyrean",stat:"worn",at:"medium", aslot:"hands", mat:"Gold",    v:[22,30],affix:()=>_oaff("of Warding")},
+  {name:"Aegis of the Tempest",stat:"worn",  at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.22,mat:"Diamond",v:[28,40],affix:()=>_oaff("of Impregnability")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
