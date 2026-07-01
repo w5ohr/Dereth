@@ -747,6 +747,11 @@ for(const t of VOID_TIERS){
     cost:Math.round(34*(1+(t.lvl-1)*0.45)),cd:1100,geom:"blast",
     make:()=>({dmg:(24+player.attr.Focus*1.6)*t.mult*0.7,speed:46,color:0x9b30ff,r:0.32,burn:true,element:"nether",drain:0.35})});
 }
+// ── Mg6 Void curses: Nether Corruption — a targeted nether DoT that also corrodes the foe's defences ──
+const VOID_CORRUPT=[{lvl:2,dps:9,cvuln:1.12,req:40},{lvl:3,dps:13,cvuln:1.15,req:70},{lvl:4,dps:18,cvuln:1.18,req:115},
+  {lvl:5,dps:24,cvuln:1.22,req:155},{lvl:6,dps:31,cvuln:1.26,req:200},{lvl:7,dps:40,cvuln:1.30,req:255},{lvl:8,dps:50,cvuln:1.35,req:305}];
+for(const t of VOID_CORRUPT) SPELLBOOK_LIST.push({id:`void_corrupt_${t.lvl}`,name:`Nether Corruption ${ROMAN[t.lvl]}`,ico:"🕸️",
+  school:"void",lvl:t.lvl,req:t.req,cost:Math.round(30*(1+(t.lvl-1)*0.45)),cd:2200,special:"corrupt",dps:t.dps,cvuln:t.cvuln,dur:12});  // cvuln (not vuln) to dodge the buff-normalization loop
 // ── Creature Enchantment: skill "Aptitude" Self buffs (I–VIII) — raise a skill's value for a
 //    duration. Wired into skillValue(), so they really boost spell damage / healing / mana cost /
 //    weapon damage etc. (AC has no researchable Creature *Other* skill buffs, so these are Self-only.)
@@ -6278,6 +6283,15 @@ function executeSpell(id){
     if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
     else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
     castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
+  }
+  if(s.special==="corrupt"){   // Mg6 Void curse — a nether DoT that also corrodes the foe's defences
+    const m=pickMonsterTarget(28);
+    if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
+    const dps=Math.round(s.dps*skillEff("void",0.02));
+    m.burnT=Math.max(m.burnT||0,s.dur); m.burnDps=Math.max(m.burnDps||0,dps);   // nether DoT (rides the burn tick)
+    m.vulnV=Math.max(m.vulnV||1,s.cvuln); m.vulnUntil=now()+s.dur*1000;          // corruption weakens its defences
+    floater(m.x,(m.headY||1.6)+2,m.z,"corrupted","#b060ff"); castFlash(0x9040c0);
+    log(`You wrack a foe with <b>${s.name}</b> — nether corruption festers.`,"heal"); return;
   }
   if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
     const m=pickMonsterTarget(28);
