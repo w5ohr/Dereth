@@ -242,10 +242,75 @@ anywhere.
   Network and reset on new game/load. `worldEvent`/`eventCd` globals; `EVENT_TYPES`, `startEvent`,
   `eventSuccess`, `eventFail`, `endEvent`, `updateEvents` (called in `update()`).
 
+## MILESTONE H — AC long-tail systems  ☐ (research done, all ☐ planned)
+From the Round-2 gap sweep (`docs/asherons-call-longtail-gaps.md`, 2026-07-01). **Headline:** the
+`SKILLS_DEF` table (index.html:457) already *lists* nearly every AC skill (Alchemy, Cooking, Fletching,
+Lockpick, Healing, Salvaging, Summoning, Deception, Run, Jump, Leadership, Loyalty, Arcane Lore, Assess…)
+but most are **skills-in-name-only** — the systems they drive don't exist (grep-verified:
+recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M/L** as in the doc.
+
+### H-A. Crafting / tradeskill loop (the biggest miss)
+- ☐ **H1. Combine engine** (L) — the core AC crafting verb: drag one inventory item onto another → skill
+  check vs difficulty → consume inputs, produce output (failure may consume inputs). Everything below
+  rides on this. *Verify:* a test recipe (e.g. two partial salvage bags → one bigger bag) resolves via a
+  skill roll; success/fail paths both fire; inventory updates.
+- ☐ **H2. Alchemy** (M) — grind gems/stones → powders; brew Health/Mana potions; craft oils + Alchemy
+  Gems (cast self-buffs). Turns the inert Alchemy skill live. *Verify:* combine reagents → potion; drink
+  → heals; Alchemy skill gates difficulty.
+- ☐ **H3. Healing skill + Healing Kits** (M) — consumable kit, use → target self/ally; difficulty =
+  missing-HP×2, harder in combat state; kits from loot/vendors/quests/craft; plus health/mana potions as
+  consumables. *Verify:* kit heals scaled by Healing skill; blocked/penalized in combat; consumed on use.
+- ☐ **H4. Lockpick + locked chests/doors + Keyrings** (M) — reward chests & some doors spawn locked,
+  opened by Lockpick (skill roll) or a matching key; Keyrings hold key sets. *Verify:* a locked dungeon
+  chest resists opening until a Lockpick roll (or key) succeeds; skill affects success.
+- ☐ **H5. Cooking** (M) — rations/food + Beer (stamina + attribute buffs) + mushroom food; applies dye
+  pots. *Verify:* cook food → eat → timed buff; Cooking skill gates.
+- ☐ **H6. Fletching** (M) — craft ammo (arrows/bolts/darts); apply Alchemy oils to arrowheads → elemental
+  damage. *Verify:* fletch arrows from components; oiled arrows carry an element into `fireArrow`.
+- ☐ **H7. Dyeing armor** (M) — Alchemy dye pot + Cooking apply; dye plants spawn wild / grown by
+  Herbalist; fail chance costs AL (−20 minor / −50 crit; metal→orange, cloth→pink). *Verify:* dye recolors
+  a worn piece; fail path applies the AL penalty + wrong-color.
+- ☐ **H8. Partial salvage bags** (S) — salvaging yields *partial* bags that combine up to a full 100-unit
+  bag before tinkering (extends E2). *Verify:* two partials combine; a full bag tinkers.
+
+### H-B. Spell acquisition & economy
+- ☐ **H9. Spells learned from Scrolls / quests** (M) — spells not auto-known: learn from Scroll items
+  (creature loot / Scriveners / Steel Chests) or quest rewards. *Verify:* a locked spell won't cast until
+  its scroll is read; scroll consumed; spell then appears in the bar.
+- ☐ **H10. Component casting** (L full / S soft) — school Foci + level Scarab + Prismatic Tapers consumed
+  per cast (soft version: tapers as a soft requirement). *Verify:* casting draws & consumes components;
+  out-of-components blocks the cast. (Overlaps prior audit Mg2.)
+- ◇ **H11. Spell economy** (M) — frequently-cast spells weaken / rare ones strengthen. Optional flavor.
+- ◇ **H12. Level VIII scroll crafting** (M) — Quill + Mana Scarab → infused quill → +ink → +glyph → L8
+  scroll. Endgame, build after H1/H9.
+
+### H-C. World / immersion
+- ☐ **H13. Portal Storms** (S) — crowded area → random teleport to town outskirts (anti-zerg; occasionally
+  into danger). *Verify:* N players/mobs within radius triggers a scatter-teleport with a warning.
+- ☐ **H14. Recall Contracts** (S) — inventory items granting recall to fixed spots (Aphus Lassel etc.),
+  distinct from recall spells. *Verify:* using a Contract recalls to its bound location.
+- ◇ **H15. Mana Stones / Portal Gems** (S) — Mana Stones refill an item's mana; single-use recall gems.
+
+### H-D. Endgame & repeatable event content
+- ☐ **H16. Colosseum arena** (M) — 18-room ticketed gauntlet w/ 1-hr timer; Ticket (5 MMD / any Rare);
+  Advanced entrance 80+; clear → Vault Key → Tier-7 loot + one of five Empyrean Rings. Marquee repeatable
+  endgame; reuses the Incursion (F4) wave tech. *Verify:* buy ticket → enter → clear rooms under timer →
+  vault key → tiered reward.
+- ☐ **H17. Full augmentation tree** (M) — beyond attr/vital gems: Jack of All Trades (+5 all skills),
+  skill/spec-credit augs, XP augs, Innate-attribute reinforcements (Enduring Calm…), Critical Protection,
+  Clutch of the Miser, Master of the Five Fold Path, Frenzy of the Slayer, etc., with a hard total-aug
+  cap. *Verify:* applying an aug grants its effect once and counts against the cap.
+- ◇ **H18. Instanced event dungeons** (L) — repeatable timed instances w/ tickets & vault keys (Colosseum
+  is the archetype); the template for future monthly live content.
+
+**H build order (impact ÷ effort):** H13/H14/H8 (quick wins) → **H1 combine engine** → H2+H3 (Alchemy→
+potions→Healing kits: revives 5 dead skills in one vertical slice) → H4 locked chests → H9 spell scrolls
+→ H16 Colosseum → H17 augments → H5/H6/H7 rest of the crafting web → H10/H12 component/L8 casting.
+
 ---
 
 ## Suggested order of execution
-**A (all) → C1 → C2 → B1 → B2 → B3 → C3 → A-leftovers polish → E0 (research) → E1/E2/E3 → D → F.**
+**A (all) → C1 → C2 → B1 → B2 → B3 → C3 → A-leftovers polish → E0 (research) → E1/E2/E3 → D → F → H.**
 Rationale: finish the cheap authenticity wins first (A); then the biggest visual upgrades (C1/C2) since
 "improve graphics" is a standing request; interleave bestiary/lore (B) which is mostly data; do interiors
 (C3) once furnishings have a lit space; gate the deep RPG systems (E) behind a second research pass so we
