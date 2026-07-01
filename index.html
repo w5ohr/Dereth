@@ -3316,6 +3316,11 @@ const ITEM_BASE=[
   {n:"Diforsa Kite Shield",stat:"worn",at:"heavy", aslot:"offhand",shield:"kite",   v:[20,36]},
   {n:"Nariv Round Shield", stat:"worn",at:"medium",aslot:"offhand",shield:"round",  v:[12,22]},
   {n:"Ceremonial Buckler", stat:"worn",at:"light", aslot:"offhand",shield:"buckler",v:[5,13]},
+  // ── cloaks (AC back slot): light worn items, roll a material + affix like other gear ──
+  {n:"Cloak",           stat:"worn",at:"light",aslot:"back",v:[4,10]},
+  {n:"Traveler's Cloak",stat:"worn",at:"light",aslot:"back",v:[5,11]},
+  {n:"Shroud",          stat:"worn",at:"light",aslot:"back",v:[5,12]},
+  {n:"Mantle",          stat:"worn",at:"light",aslot:"back",v:[6,13]},
   // consumables & attribute attunements (AC mana stones / health kits / spirit gems)
   {n:"Health Kit",stat:"hp",v:[30,70]},{n:"Mana Stone",stat:"mn",v:[30,70]},
   {n:"Strength Gem",stat:"Strength",v:[1,1]},{n:"Endurance Gem",stat:"Endurance",v:[1,1]},
@@ -3398,7 +3403,7 @@ const ITEM_BASE=[
   {n:"Choker",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Torc",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Locket",stat:"jewelry",jtype:"neck",v:[0,0]}];
 // ── Multi-slot armour (AC-style): five worn slots, each its own piece. Loot generates a piece per
 //    armour set × slot, e.g. "Steel Chainmail Greaves", "Diamond Amuli Gauntlets". ──
-const ARMOR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet","offhand"];
+const ARMOR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet","offhand","back"];
 const ARMOR_SLOT_DEFS=[
   {slot:"head",    suf:"Helm",       ico:"⛑", vMul:0.55},
   {slot:"chest",   suf:"Breastplate",ico:"🛡", vMul:1.0},
@@ -3408,6 +3413,7 @@ const ARMOR_SLOT_DEFS=[
   {slot:"legs",    suf:"Greaves",    ico:"🦵", vMul:0.80},
   {slot:"feet",    suf:"Boots",      ico:"🥾", vMul:0.45},
   {slot:"offhand", suf:"Shield",     ico:"🛡", vMul:0.70},   // off-hand shields are their own named ITEM_BASE entries (skipped in the set loop)
+  {slot:"back",    suf:"Cloak",      ico:"🧣", vMul:0.35},   // cloaks are standalone items (skipped in the set loop)
 ];
 const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slots scale off this), full-set skill boon
   {n:"Leather",at:"light", base:9, skill:"missiled"},{n:"Brigandine",at:"light", base:13,skill:"missile"},{n:"Chiran",at:"light", base:12,skill:"healing"},{n:"Amuli",at:"light", base:14,skill:"war"},{n:"Academy",at:"light", base:13,skill:"arcane"},
@@ -3419,7 +3425,7 @@ const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slo
 ];
 const ARMOR_SET_SKILL={}; for(const s of ARMOR_SETS) ARMOR_SET_SKILL[s.n]=s.skill;
 for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
-  if(sd.slot==="offhand") continue;   // shields aren't part of cultural armour sets — they're named items above
+  if(sd.slot==="offhand"||sd.slot==="back") continue;   // shields & cloaks aren't part of cultural armour sets — they're named items above
   const lo=Math.max(2,Math.round(set.base*sd.vMul*0.65)), hi=Math.round(set.base*sd.vMul*1.3);
   ITEM_BASE.push({n:`${set.n} ${sd.suf}`,stat:"worn",at:set.at,aslot:sd.slot,aset:set.n,v:[lo,hi]});
 }
@@ -3696,6 +3702,11 @@ const NAMED_ITEMS=[
   {name:"Sandals of the Adept",stat:"worn",  at:"light",  aslot:"feet",  mat:"Silk",    v:[22,30],affix:()=>_oaff("of the Magus")},
   {name:"Signet of the Empyrean",stat:"worn",at:"medium", aslot:"hands", mat:"Gold",    v:[22,30],affix:()=>_oaff("of Warding")},
   {name:"Aegis of the Tempest",stat:"worn",  at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.22,mat:"Diamond",v:[28,40],affix:()=>_oaff("of Impregnability")},
+  // ── legendary cloaks (back slot) ──
+  {name:"Cloak of Darkness",   stat:"worn", at:"light", aslot:"back", mat:"Velvet", v:[22,30],affix:()=>_oaff("of the Magus")},
+  {name:"Empyrean Mantle",     stat:"worn", at:"light", aslot:"back", mat:"Silk",   v:[24,32],affix:()=>_oaff("of Vigor")},
+  {name:"Aetherium Cloak",     stat:"worn", at:"light", aslot:"back", mat:"Satin",  v:[24,32],affix:()=>_oaff("of Warding")},
+  {name:"Shroud of the Virindi Masker",stat:"worn",at:"light",aslot:"back",mat:"Velvet",v:[24,32],affix:()=>_oaff("of Endurance")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
