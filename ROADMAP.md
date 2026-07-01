@@ -245,6 +245,10 @@ anywhere.
   `dirtyStrike`: 25%/40% chance to debilitate keyed to attack height (low→Exposed vulnerability,
   high→Staggered delayed attack, mid→Bleed DoT), reusing existing debuff channels. All stack with the
   charge bar + attack heights. Verified: factor tiers, live damage 118→158→213, and each dirty effect.
+- ✅ **G7. Dual Wield (Cb8)** — activated the last inert melee skill (jsc + preview verified, 0 console
+  errors). A one-handed melee weapon with no shield + Dual Wield trained gives each swing a 25%+skill
+  chance (cap 65%) to land an off-hand follow-up for 45%/60% (trained/spec) of the hit's damage; a shield
+  or two-hander disables it. Verified: avg damage 213→297 with the skill; shield suppresses it to ~222.
 
 ## MILESTONE F — Optional later-era / stretch content  ◇
 - ✅ **F1. Void magic** — "Nether Bolt" spell (key Z, school `void`, requires Void Magic trained):
