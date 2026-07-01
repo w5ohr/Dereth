@@ -216,7 +216,7 @@
   <h2>Character Sheet</h2>
   <div class="sub">Asheron's Call has no classes — you are what you train. Spend points to grow.</div>
   <div id="attrRows"></div>
-  <div style="text-align:center;margin-top:14px;font-size:14px">Attribute Points: <span id="pts">0</span> <span style="color:var(--dim);font-size:10px">(raise the six attributes)</span></div>
+  <div style="text-align:center;margin-top:14px;font-size:14px">Unspent XP: <span id="pts">0</span> <span style="color:var(--dim);font-size:10px">(spend to raise attributes & skills; lower an attribute to refund it)</span></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin:14px 0 6px">Skills <span style="color:var(--dim);font-weight:normal;font-size:10px">— Train / Specialize with skill credits, then raise ranks with unspent XP</span></div>
   <div id="skillRows"></div>
   <div id="allegianceRow" style="margin:8px 0"></div>
@@ -510,6 +510,8 @@ function skillValue(key){ const st=skillState(key),base=skillBase(key);
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
 function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_WEAPON_KEYS){ const e=skillEff(key,k); if(e>best)best=e; } return best; } // best of all melee weapon skills
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
+// AC: attributes are bought with unassigned XP on a steep escalating curve (not free level points).
+function attrCost(v){ return Math.round(25*Math.pow(Math.max(1,v-9),1.7)); }   // XP to raise from innate v → v+1
 // credit economy: available = base(level) − spent; specialization capped at 70 credits' worth
 function creditBase(){ return 52 + Math.min(Math.max(player.level-1,0),46) + (player.level>=35?1:0) + (player.level>=90?1:0); }
 function creditsSpent(){ let n=0; for(const s of SKILLS_DEF){ const t=skillTier(s.k); if(t>=1&&s.tc>0)n+=s.tc; if(t>=2&&s.sc>0)n+=s.sc; } return n; }
@@ -5610,9 +5612,9 @@ function gainXP(amt){
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
   while(player.level<275&&player.xp>=need){   // AC hard level cap of 275 (XP past it still banks as unspent for skills/attributes)
-    player.xp-=need;player.level++;player.skillPts+=4;
+    player.xp-=need;player.level++;
     derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
-    log(`<b>Level ${player.level}!</b> +4 attribute points${player.level-1<=46?" & +1 skill credit":""} — press C to spend.`,"sys");
+    log(`<b>Level ${player.level}!</b> Spend unspent XP on attributes & skills${player.level-1<=46?", and +1 skill credit":""} — press C.`,"sys");
     toast("LEVEL "+player.level);SFX.level();burst(player.x,EYE,player.z,0xffd23b,28);saveGame();need=xpForLevel(player.level);
   }
   // AC endgame: once powerful enough you also draw Luminance from your deeds (held cap 1,000,000)
@@ -6286,12 +6288,13 @@ const sheet=document.getElementById('sheet'),attrRows=document.getElementById('a
 function buildSheet(){
   attrRows.innerHTML="";
   for(const a of ATTRS){
+    const v=player.attr[a], cost=attrCost(v), canRaise=v<100&&(player.skillPts>0||player.xpUnspent>=cost);
     const row=document.createElement('div');row.className="row";
     row.innerHTML=`<div><span class="lab">${a}</span> <span class="desc">— ${ATTR_DESC[a]}</span></div>
-      <div class="ctl"><button class="pmbtn" data-a="${a}">+</button><span class="val" id="sv_${a}">${player.attr[a]}</span></div>`;
+      <div class="ctl"><button class="pmbtn" data-lower="${a}" title="lower (refund ${v>10?attrCost(v-1).toLocaleString():0} XP)" ${v<=10?'disabled':''}>−</button><span class="val" id="sv_${a}">${v}</span><button class="pmbtn" data-a="${a}" title="${v>=100?'at innate cap 100':(player.skillPts>0?'raise (free legacy point)':'raise: '+cost.toLocaleString()+' XP')}" ${canRaise?'':'disabled'}>+</button></div>`;
     attrRows.appendChild(row);
   }
-  document.getElementById('pts').textContent=player.skillPts;
+  document.getElementById('pts').textContent=player.xpUnspent.toLocaleString()+(player.skillPts>0?" (+"+player.skillPts+" free)":"");
   const ar=document.getElementById('achRows');
   ar.innerHTML=ACHIEVEMENTS.map(a=>{
     const got=player.achievements.indexOf(a.id)>=0,active=got&&player.title===a.title;
@@ -6335,18 +6338,18 @@ function buildSheet(){
     al.querySelectorAll('[data-aura]').forEach(b=>b.onclick=()=>{ if(buyAura(b.dataset.aura)){saveGame();if(typeof updateHUD==="function")updateHUD();buildSheet();} });
     const eb=document.getElementById('enlightenBtn'); if(eb) eb.onclick=()=>enlighten();
   }
-  attrRows.querySelectorAll('.pmbtn').forEach(btn=>btn.onclick=()=>{
-    if(player.skillPts<=0) return;
-    const a=btn.dataset.a;
-    if(player.attr[a]>=100){ log("Innate attributes cap at 100 — raise further only with Augmentation gems.","warn"); return; }  // AC innate cap
-    player.attr[a]++;player.skillPts--;derive();
-    document.getElementById('sv_'+a).textContent=player.attr[a];
-    document.getElementById('pts').textContent=player.skillPts;
-    refreshBtns();
+  attrRows.querySelectorAll('[data-a]').forEach(btn=>btn.onclick=()=>{
+    const a=btn.dataset.a, v=player.attr[a];
+    if(v>=100){ log("Innate attributes cap at 100 — raise further only with Augmentation gems.","warn"); return; }  // AC innate cap
+    if(player.skillPts>0){ player.skillPts--; }                                   // spend a legacy free point first (old saves)
+    else { const cost=attrCost(v); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise "+a+".","warn"); return; } player.xpUnspent-=cost; }
+    player.attr[a]++; derive(); saveGame(); buildSheet();
   });
-  refreshBtns();
+  attrRows.querySelectorAll('[data-lower]').forEach(btn=>btn.onclick=()=>{
+    const a=btn.dataset.lower, v=player.attr[a]; if(v<=10) return;
+    player.attr[a]--; player.xpUnspent+=attrCost(v-1); derive(); saveGame(); buildSheet();   // AC-style: lowering refunds the XP that point cost
+  });
 }
-function refreshBtns(){attrRows.querySelectorAll('.pmbtn').forEach(b=>b.disabled=player.skillPts<=0||player.attr[b.dataset.a]>=100);}
 function openSheet(){buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
@@ -9399,8 +9402,10 @@ function talkToNPC(n){
   if(n.role==="reset_attr"){
     const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0);
     if(allocated<=0){ log("<b>Chafulumisa:</b> Your spirit is already unwritten, traveller.","sys"); return; }
-    ATTRS.forEach(a=>{player.skillPts+=(player.attr[a]-10);player.attr[a]=10;});derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
-    log(`<b>Chafulumisa:</b> I unmake your attributes — ${allocated} points returned. Reallocate them on your character sheet (C).`,"sys"); return;
+    // AC-style redistribution: unmake attributes back to 10 and refund all the XP spent on them
+    let refund=0; ATTRS.forEach(a=>{ for(let v=10;v<player.attr[a];v++) refund+=attrCost(v); player.attr[a]=10; });
+    player.xpUnspent+=refund; derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
+    log(`<b>Chafulumisa:</b> I unmake your attributes — <b>${refund.toLocaleString()} XP</b> returned to reallocate on your character sheet (C).`,"sys"); return;
   }
   if(n.role==="reset_skill"){
     let refunded=0,trained=0; for(const k in player.skills){ refunded+=player.skills[k].xp||0; if(player.skills[k].t>0)trained++; }
