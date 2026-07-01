@@ -6888,6 +6888,8 @@ function update(dt){
   if(player.contractCd>0) player.contractCd=Math.max(0,player.contractCd-dt);   // H14 recall-contract cooldown
   if(chargeActive){ if(!player.alive||!locked){ chargeActive=false; chargeT=0; } else { chargeT+=dt; if(chargeT>=CHARGE_MAX) releaseCharge(); } }   // Cb1 charge accumulate + auto-release at max
   updateChargeBar();
+  if(player.emoteT>0){ player.emoteT=Math.max(0,player.emoteT-dt);   // emote gesture ends early if you move or attack
+    if(chargeActive||held("forward")||held("back")||held("left")||held("right")) player.emoteT=0; }
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
   updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
   // spell cast wind-up: fire the effect when the bar fills
@@ -7246,6 +7248,22 @@ function animateAvatar(dt){
     } else {  // single-handed diagonal slash
       sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2;
     }
+  }
+  else if(player.emoteT>0){        // EMOTE gesture — a deliberate social animation (yields to a swing, overrides idle/cast)
+    const act=player.emoteAct, osc=Math.sin(now()/110);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false;   // free the hands for the gesture
+    sX=0.05; sZ=-0.05; eX=-0.2; lX=0.05; lZ=0.05; lE=-0.2; twist=0;      // relaxed default
+    if(act==="wave"){ sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }
+    else if(act==="clap"){ const c=Math.abs(osc); sX=-1.35; sZ=-0.35+c*0.34; eX=-1.05; lX=-1.35; lZ=0.35-c*0.34; lE=-1.05; }
+    else if(act==="cheer"){ sX=-2.9; lX=-2.9; sZ=-0.25; lZ=0.25; u.spine.position.y+=Math.abs(osc)*0.05; }
+    else if(act==="bow"){ u.spine.rotation.x=0.62; sX=-0.45; lX=-0.45; sZ=-0.1; lZ=0.1; }
+    else if(act==="flex"){ sX=-1.6; sZ=-0.5; eX=-2.5; lX=-1.6; lZ=0.5; lE=-2.5; }
+    else if(act==="point"){ sX=-1.5; sZ=0; eX=-0.05; }
+    else if(act==="salute"){ sX=-2.4; sZ=0.28; eX=-2.5; }
+    else if(act==="dance"){ twist=osc*0.4; sX=-1.8+osc*0.4; lX=-1.8-osc*0.4; u.spine.position.y+=Math.abs(osc)*0.03; }
+    else if(act==="kneel"){ u.hipR.rotation.x+=0.9;u.hipL.rotation.x+=0.9;u.knR.rotation.x-=1.6;u.knL.rotation.x-=1.6; u.spine.position.y-=0.24; sX=-0.4; lX=-0.4; }
+    else if(act==="laugh"){ u.spine.rotation.x=-0.18+osc*0.05; sX=-1.1; eX=-1.4; lX=-1.1; lE=-1.4; }
+    else { sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }   // fallback = wave
   }
   else if(castShow>0&&castSelf){   // SELF-cast: dip into a slight crouch, then rise tall sweeping both arms overhead
     const cp=clamp(1-castShow/castDur,0,1), down=clamp(cp/0.42,0,1), up=clamp((cp-0.42)/0.58,0,1), crouch=down*(1-up);
@@ -11706,7 +11724,8 @@ function closeChat(relock){
 function sendChatLine(text){
   text=(text||"").trim(); if(!text) return;
   if(text[0]==="/"){ handleSlash(text); return; }
-  netSend({t:"chat",msg:text});
+  if(isOnline) netSend({t:"chat",msg:text});
+  else log(`<b style="color:#cfe0ff">${esc(player.name||"You")}:</b> ${esc(text)}`,"say");   // solo: echo your own line so chat still works offline
 }
 function updatePartyHUD(){
   const el=document.getElementById('partyHud'); if(!el) return;
@@ -11716,11 +11735,44 @@ function updatePartyHUD(){
   el.style.display="";
 }
 const EMOTE_CMDS={wave:1,cheer:1,dance:1,bow:1,laugh:1,point:1,salute:1,flex:1,kneel:1,clap:1};
+const EMOTE_VERB={wave:"wave.",cheer:"cheer!",dance:"break into a dance.",bow:"bow solemnly.",laugh:"burst out laughing.",point:"point.",salute:"salute.",flex:"flex.",kneel:"kneel.",clap:"applaud."};
+const EMOTE_DUR=2.2;
+function playEmoteAnim(act){ player.emoteAct=act; player.emoteT=EMOTE_DUR; }   // your own avatar performs the gesture
+// perform an emote: online → the server echoes it to everyone (incl. us) via onEmote; offline → show it locally
+function doEmote(act,text){
+  if(act==="me"){ const t=(text||"").trim(); if(!t){ log("Usage: /me &lt;action&gt;","warn"); return; }
+    if(isOnline) netSend({t:"emote",act:"me",text:t});
+    else log(`<span style="color:#d6c79b"><i>${esc(player.name||"You")} ${esc(t)}</i></span>`,"sys");
+    return; }
+  if(!EMOTE_CMDS[act]){ log("Unknown emote. Try: "+Object.keys(EMOTE_CMDS).join(", "),"warn"); return; }
+  if(isOnline){ netSend({t:"emote",act}); }
+  else { playEmoteAnim(act); log(`<span style="color:#d6c79b"><i>You ${EMOTE_VERB[act]||act}</i></span>`,"sys"); floater(player.x,EYE+1.4,player.z,act,"#ffe9b0",1.1); }
+}
+function playRemoteEmote(r,act){ if(r){ r.emoteAct=act; r.emoteT=EMOTE_DUR; } }   // remote avatars gesture too (see updateRemotes)
+function poseRemoteEmote(mesh,act,osc){   // apply an emote pose to a remote player's shared rig (mirrors the local branch in animateAvatar)
+  const u=mesh&&mesh.userData; if(!u||!u.shR) return;
+  let sX=0.05,sZ=-0.05,eX=-0.2,lX=0.05,lZ=0.05,lE=-0.2;
+  if(act==="wave"){ sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }
+  else if(act==="clap"){ const c=Math.abs(osc); sX=-1.35;sZ=-0.35+c*0.34;eX=-1.05;lX=-1.35;lZ=0.35-c*0.34;lE=-1.05; }
+  else if(act==="cheer"){ sX=-2.9;lX=-2.9;sZ=-0.25;lZ=0.25; }
+  else if(act==="bow"){ if(u.spine)u.spine.rotation.x=0.62; sX=-0.45;lX=-0.45; }
+  else if(act==="flex"){ sX=-1.6;sZ=-0.5;eX=-2.5;lX=-1.6;lZ=0.5;lE=-2.5; }
+  else if(act==="point"){ sX=-1.5;sZ=0;eX=-0.05; }
+  else if(act==="salute"){ sX=-2.4;sZ=0.28;eX=-2.5; }
+  else if(act==="dance"){ sX=-1.8+osc*0.4;lX=-1.8-osc*0.4; }
+  else if(act==="kneel"){ sX=-0.4;lX=-0.4; }
+  else if(act==="laugh"){ if(u.spine)u.spine.rotation.x=-0.18; sX=-1.1;eX=-1.4;lX=-1.1;lE=-1.4; }
+  else { sX=-2.6;sZ=-0.2+osc*0.38;eX=-0.3; }
+  u.shR.rotation.x=sX;u.shR.rotation.z=sZ;u.elR.rotation.x=eX;
+  u.shL.rotation.x=lX;u.shL.rotation.z=lZ;u.elL.rotation.x=lE;
+}
+function clearRemoteEmote(mesh){ const u=mesh&&mesh.userData; if(!u||!u.shR) return;   // return arms to the neutral built pose
+  u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0); if(u.spine)u.spine.rotation.x=0; }
 function onEmote(m){
   log(`<span style="color:#d6c79b"><i>${esc(m.msg)}</i></span>`,"sys");
   let x=null,z=null;
-  if(m.id===NET.me){ x=player.x; z=player.z; }
-  else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz); } }
+  if(m.id===NET.me){ x=player.x; z=player.z; if(m.act&&m.act!=="me") playEmoteAnim(m.act); }   // our own emote, echoed back → animate us
+  else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz); if(m.act&&m.act!=="me") playRemoteEmote(r,m.act); } }
   if(x!=null && m.act!=="me") floater(x,EYE+1.4,z,m.act,"#ffe9b0",1.1);
 }
 function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff bot) cast on you
@@ -11808,9 +11860,12 @@ function handleSlash(text){
     else if(sub==="list"||!sub) netSend({t:"party",act:"list"});
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
-  else if(EMOTE_CMDS[cmd]){ netSend({t:"emote",act:cmd}); }
-  else if(cmd==="me"){ const text=parts.slice(1).join(" ").trim(); if(text) netSend({t:"emote",act:"me",text}); else log("Usage: /me &lt;action&gt;","warn"); }
-  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /party, /wave","warn");
+  else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
+    if(!act) log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+" — e.g. <b>/emote clap</b>","sys");
+    else doEmote(act); }
+  else if(EMOTE_CMDS[cmd]){ doEmote(cmd); }                                   // shorthand: /clap, /wave, …
+  else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
+  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /party, /emote clap","warn");
 }
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
@@ -11842,6 +11897,7 @@ function updateRemotes(dt){
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
     mesh.position.set(r.x, groundY(r.x,r.z), r.z); mesh.rotation.y=r.yaw||0;
+    if(r.emoteT>0){ r.emoteT-=dt; poseRemoteEmote(mesh, r.emoteAct, Math.sin(now()/110)); if(r.emoteT<=0) clearRemoteEmote(mesh); }   // play/expire a remote player's emote gesture
   }
 }
 function sendInput(dt){
