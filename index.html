@@ -932,7 +932,7 @@ const SIM_RADIUS=95, VIS_RADIUS=160, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RA
 // ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
 let USE_GLTF_AVATAR=false;                      // legacy single-avatar drop-in (assets/avatar.glb); superseded by model choice
 const GLTF_AVATAR_URL="assets/avatar.glb";
-let gltfAvatar=null,gltfMixer=null,gltfReady=false,gltfTried=false,gltfAvatarUrl=null;
+let gltfAvatar=null,gltfMixer=null,gltfIdle=null,gltfWalk=null,_pgWalk=false,gltfReady=false,gltfTried=false,gltfAvatarUrl=null;
 // ── Player-character models, chosen at avatar creation. "procedural" = the customizable classic avatar;
 //    the rest are self-hosted rigged models (idle-animated) rendered as your character in third person. ──
 const PLAYER_MODELS=[
@@ -944,8 +944,8 @@ const PLAYER_MODELS=[
   {k:"hooded",   n:"Hooded Rogue", url:"assets/models/people/Rogue_Hooded.glb"},
   {k:"soldier",  n:"Soldier",      url:"assets/models/people/Soldier.glb"},
   // the rest of the available rigged models — any can be the player's avatar
-  {k:"man",      n:"Man",          url:"assets/models/people/Masculine.glb"},
-  {k:"woman",    n:"Woman",        url:"assets/models/people/Feminine_TPose.glb"},
+  {k:"man",      n:"Man",          url:"assets/models/people/Masculine.glb",     clips:["assets/models/anim/M_Idle.glb","assets/models/anim/M_Walk.glb"]},
+  {k:"woman",    n:"Woman",        url:"assets/models/people/Feminine_TPose.glb",clips:["assets/models/anim/F_Idle.glb","assets/models/anim/F_Walk.glb"]},
   {k:"hvgirl",   n:"Adventuress",  url:"assets/models/people/HVGirl.glb"},
   {k:"cesium",   n:"Wayfarer",     url:"assets/models/people/CesiumMan.glb"},
   {k:"rigged",   n:"Figure",       url:"assets/models/people/RiggedFigure.glb"},
@@ -971,22 +971,34 @@ function robustHeight(obj){
 }
 // Load a chosen player model into gltfAvatar (shown in 3rd person; the render loop already swaps it for
 // the procedural avatar). url null → procedural (clears any gltf avatar). Latest choice wins on async load.
-function loadPlayerModel(url){
-  if(gltfAvatar){ scene.remove(gltfAvatar); gltfAvatar=null; } gltfMixer=null; gltfReady=false; gltfAvatarUrl=url||null;
+function loadPlayerModel(def){
+  def=(typeof def==="string")?{url:def}:(def||{});
+  const url=def.url||null;
+  if(gltfAvatar){ scene.remove(gltfAvatar); gltfAvatar=null; } gltfMixer=gltfIdle=gltfWalk=null; gltfReady=false; gltfAvatarUrl=url;
   if(!url||typeof THREE.GLTFLoader==="undefined") return;   // procedural avatar
-  new THREE.GLTFLoader().load(url, gltf=>{
+  const L=new THREE.GLTFLoader();
+  const finish=(root,anims)=>{
     if(gltfAvatarUrl!==url) return;                          // superseded by a newer choice
-    const root=gltf.scene;
     root.scale.setScalar(TARGET_HUMAN_H/robustHeight(root));
     let box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;
     root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
     gltfAvatar=new THREE.Group(); gltfAvatar.add(root); gltfAvatar.visible=false; scene.add(gltfAvatar);
-    if(gltf.animations&&gltf.animations.length){ gltfMixer=new THREE.AnimationMixer(root);
-      const idle=gltf.animations.find(a=>/idle/i.test(a.name))||gltf.animations[0]; gltfMixer.clipAction(idle).play(); }
+    if(anims&&anims.length){ gltfMixer=new THREE.AnimationMixer(root);
+      const idle=anims.find(a=>/idle/i.test(a.name))||anims[0], walk=anims.find(a=>/walk|run/i.test(a.name));
+      gltfIdle=gltfMixer.clipAction(idle); gltfWalk=walk?gltfMixer.clipAction(walk):null; gltfIdle.play(); }
     gltfReady=true;
+  };
+  L.load(url, gltf=>{
+    const root=gltf.scene, anims=(gltf.animations||[]).slice();
+    if(!def.clips||!def.clips.length){ finish(root,anims); return; }   // model has its own baked clips
+    let pending=def.clips.length;                                       // else load shared idle/walk clips (RPM bodies)
+    for(const cu of def.clips){ L.load(cu, cg=>{
+        for(const a of (cg.animations||[])){ a.name=(/idle/i.test(cu)?"idle_":/walk/i.test(cu)?"walk_":"")+a.name; anims.push(a); }
+        if(--pending===0) finish(root,anims);
+      }, undefined, e=>{ if(--pending===0) finish(root,anims); }); }
   }, undefined, err=>console.log("player model failed:",url,(err&&err.message)||""));
 }
-function applyPlayerModel(){ loadPlayerModel(playerModelDef((player.appearance&&player.appearance.model)||"procedural").url); }
+function applyPlayerModel(){ loadPlayerModel(playerModelDef((player.appearance&&player.appearance.model)||"procedural")); }
 function tryLoadGltfAvatar(){ if(gltfTried||!USE_GLTF_AVATAR) return; gltfTried=true; loadPlayerModel(GLTF_AVATAR_URL); }
 // ---- real rigged "people" pulled from public CDNs, randomly assigned to strolling townsfolk ----
 // (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
@@ -2885,7 +2897,7 @@ function buildWorld(){
     // strolling townsfolk that wander the plaza (more in capitals)
     const tf=c.capital?5:3, rad=c.capital?14:9;
     for(let i=0;i<tf;i++){ const a=i/tf*6.283+c.region, tx=c.x+Math.cos(a)*rad*0.6, tz=c.z+Math.sin(a)*rad*0.6;
-      addNPC(tx,tz,{role:"townsfolk",town:c.name,stroll:true,range:rad*0.55}); }
+      addNPC(tx,tz,{role:"townsfolk",town:c.name,name:townName(c.region,Math.round(tx*3+tz*7+i)),stroll:true,range:rad*0.55}); }
   }
   // named quest-givers, each standing in their AC home town (ringed around the plaza so they don't overlap)
   { const byTown={};
@@ -7195,7 +7207,9 @@ function syncCamera(dt){
     if(gltfReady&&gltfAvatar){   // external rigged model
       playerAvatar.visible=false; gltfAvatar.visible=player.alive;
       gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=yaw+Math.PI;   // glTF faces +z; our forward is -z
-      if(gltfMixer) gltfMixer.update(dt);
+      if(gltfMixer){ gltfMixer.update(dt);   // swap idle↔walk with movement (RPM bodies use loaded clips)
+        const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
+        if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
     } else {                     // procedural avatar
       playerAvatar.visible=player.alive;
       playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
@@ -9544,6 +9558,18 @@ const NPC_ROLES={
   questgiver: {robe:0x7a6a3a,hood:0x564a28,mark:"!",mcol:"#ffd23b",label:"Quest Giver"},
 };
 const TOWNSFOLK_ROBES=[0x6a5a3a,0x4a5a6a,0x6a3a3a,0x3a5a4a,0x5a4a6a,0x7a6a4a,0x4a4a52,0x8a6a4a]; // varied commoner clothing
+// culture-appropriate townsperson names, matching each region's people (Aluvian / Sho / Gharu'ndim)
+const NAME_POOLS={
+  0:{first:["Edda","Drick","Nessa","Orlin","Alfrin","Wat","Hugh","Osric","Bryn","Mara","Elda","Ferrin","Gwen","Rolf","Aldous","Tamsin","Cedric","Willa","Godwin","Aelfric","Bess","Hardin","Merla","Oswin","Rowena","Thane","Ulric","Wynn","Aldwin","Maribel"],
+     last:["of the Vale","Millward","Blackwood","Fletcher","Cooper","Thatcher","Ashby","Holt","Marsh","Stone","Reed","Wick"]},
+  1:{first:["Jojii","Hoshino","Kenji","Aiko","Ryo","Mei","Taka","Yuki","Hana","Sora","Kaito","Emi","Jin","Nao","Rin","Sato","Haru","Kiyo","Toru","Yumi","Daichi","Suki","Ren","Ayame","Goro","Chie"],
+     last:["of Hebian-to","Takashi","Nagai","Shimizu","Kuroda","Mori","Hayashi","Ozu"]},
+  2:{first:["Salima","Yusuf","Amina","Rashid","Nadira","Kamil","Layla","Tariq","Zahra","Hakim","Farah","Jamil","Samira","Nasir","Aziza","Malik","Rana","Faisal","Habiba","Idris","Karima","Sohrab","Nabila","Umar"],
+     last:["al-Yaraq","ibn Sayyid","al-Zahir","of the Oasis","al-Amun","ibn Rashad","al-Din"]},
+};
+function townName(region,seed){ const p=NAME_POOLS[region]||NAME_POOLS[0]; seed=Math.abs(seed|0);
+  const f=p.first[seed%p.first.length];
+  return f+((seed*7)%3===0?" "+p.last[(seed*13)%p.last.length]:""); }
 const RUMORS=[
   "They say the Olthoi Queen stirs again in the deep places of the world.",
   "Bind to a lifestone, friend — in Dereth, death is rarely the end.",
