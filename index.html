@@ -3150,16 +3150,22 @@ function applyHit(m,base,opts){ opts=opts||{};
   if(player.auras&&player.auras.valor) base*=(1+player.auras.valor*0.01);   // Luminance Aura of Valor (damage rating)
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
   if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
-  if(m.vulnUntil>now()) base*=m.vulnV;   // Life Vulnerability — foe takes more damage (any source)
-  if(m.vulnElemUntil>now()&&opts.element&&opts.element===m.vulnElem) base*=m.vulnElemV;  // element-specific Vulnerability
-  let dmg=base+(opts.brandDmg||0);
-  if(opts.element){ const em=elemMult(m.kind,opts.element); dmg*=em;
-    if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0"); else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
+  const vgen=(m.vulnUntil>now())?m.vulnV:1;   // Life Vulnerability scales ALL incoming damage
+  // A weapon/arrow deals its PHYSICAL component (base, vs the creature's slash/pierce/bludgeon resistance)
+  const pm=opts.phys?physMult(m.kind,opts.phys):1;
+  let dmg=base*pm;
+  // …PLUS an independent ELEMENTAL component (brand/imbue/elemental ammo, vs elemental affinity) — both coexist
+  if(opts.brandDmg&&opts.element){
+    let em=elemMult(m.kind,opts.element);
+    if(m.vulnElemUntil>now()&&opts.element===m.vulnElem) em*=m.vulnElemV;   // element-specific Vulnerability
+    dmg+=opts.brandDmg*em;
     if(opts.element==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
     else if(opts.element==="frost"){m.slow=Math.max(m.slow,0.4);}
-    else if(opts.element==="shock"&&Math.random()<0.35){m.atkCd=Math.max(m.atkCd,1.0);} }
-  if(opts.phys){ const pm=physMult(m.kind,opts.phys);   // weapon damage type vs creature physical resistance (slash/pierce/bludgeon)
-    if(pm!==1){ dmg*=pm; floater(m.x,(m.headY||1.6)+2.3,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0"); } }
+    else if(opts.element==="shock"&&Math.random()<0.35){m.atkCd=Math.max(m.atkCd,1.0);}
+    if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,opts.element+" weak!","#7fe6a0"); else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,opts.element+" resist","#9fb0c0");
+  }
+  if(opts.phys&&pm!==1) floater(m.x,(m.headY||1.6)+2.9,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0");
+  dmg*=vgen;
   const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Yellow Aetheria; Aura of Glory boosts crit damage
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
@@ -5987,20 +5993,21 @@ function fireArrow(){
   player.st-=prof.stam;
   const cdScale=Math.max(.4,1-player.attr.Coordination*0.02);
   player.meleeCd=0.55*prof.cd*cdScale*(1-itemBuff("haste")); player.bowDraw=1; SFX.arrow(); fovKick=Math.min(fovKick+3,4); // recoil punch on loose (Swift Killer hastens)
-  let dmg=(12+player.attr.Coordination*1.6+player.weaponTink+(ranged?player.weapon.v:0))*skillEff("missile",0.02)*prof.dmg;
-  // brand affixes ride the existing projectile element/status/drain channels
-  const af=ranged?player.weapon.affix:null; let element,burn=false,pslow=0,stun=false,drain=0,col=0xffe6b0;
-  if(af){ if(af.k==="brand"){ element=af.element; dmg+=Math.max(2,Math.round(dmg*0.25));
+  let dmg=(12+player.attr.Coordination*1.6+player.weaponTink+(ranged?player.weapon.v:0))*skillEff("missile",0.02)*prof.dmg;   // PHYSICAL (pierce) component
+  // brand affixes add a SEPARATE elemental component — arrows carry BOTH physical and elemental damage
+  const af=ranged?player.weapon.affix:null; let element,elemDmg=0,burn=false,pslow=0,stun=false,drain=0,col=0xffe6b0;
+  if(af){ if(af.k==="brand"){ element=af.element; elemDmg=Math.max(2,Math.round(dmg*0.25));
       if(af.element==="fire"){burn=true;col=0xff7a2a;} else if(af.element==="frost"){pslow=0.4;col=0x9fe6ff;}
       else if(af.element==="shock"){stun=true;col=0xfff15a;} else if(af.element==="nether"){drain=0.3;col=0x9b30ff;} }
     else if(af.k==="crit") dmg=Math.round(dmg*1.2); else if(af.k==="lifesteal") drain=af.v; }
-  // ammunition: loose a matching arrow/quarrel/dart for a bonus (weapon brand takes priority over ammo element)
+  // ammunition: elemental ammo adds an elemental component; plain ammo adds physical (brand takes the element slot)
   const wtype=(ranged&&player.weapon&&player.weapon.wt)||"bow";
   const ai=player.inv.findIndex(x=>x.stat==="ammo"&&x.for===wtype);
-  if(ai>=0){ const am=player.inv[ai]; dmg+=am.dmg||0;
-    if(!element&&am.element){ element=am.element;
+  if(ai>=0){ const am=player.inv[ai];
+    if(am.element&&!element){ element=am.element; elemDmg+=am.dmg||0;
       if(element==="fire"){burn=true;col=0xff7a2a;} else if(element==="frost"){pslow=0.4;col=0x9fe6ff;}
       else if(element==="shock"){stun=true;col=0xfff15a;} else if(element==="acid"){col=0x9af06a;} else if(element==="nether"){drain=0.3;col=0x9b30ff;} }
+    else { dmg+=am.dmg||0; }   // non-elemental ammo just adds to the physical hit
     takeFromInv(ai); }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
   const ox=player.x+dir.x*0.8,oz=player.z+dir.z*0.8,oy=EYE-0.1;
@@ -6009,7 +6016,7 @@ function fireArrow(){
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
   mesh.position.set(ox,oy,oz);mesh.castShadow=true;scene.add(mesh);
   pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*75,vy:dir.y*75,vz:dir.z*75,
-    dmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
+    dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(){
   if(!player.alive||player.meleeCd>0||paused) return;
@@ -6433,13 +6440,17 @@ function update(dt){
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
         if(p.arrow&&!rollToHit(skillValue("missile"),m)){ floater(m.x,(m.headY||1.6)+2.3,m.z,"miss","#b9c0cc"); gone=true; break; }  // missile accuracy vs defense
         if(p.slow)m.slow=Math.max(m.slow,p.slow);
-        const em=elemMult(m.kind,p.element);
-        if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");
-        else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
-        if(p.burn){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
-        if(p.stun){m.atkCd=Math.max(m.atkCd,1.2);}
-        applyHit(m,p.dmg*em,p.arrow?{phys:p.phys}:{spell:true});   // arrows are physical (pierce) — magic resistance shouldn't blunt them
-        if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
+        if(p.arrow){   // arrow: physical (pierce) + optional elemental component, each resisted independently
+          applyHit(m,p.dmg,{phys:p.phys,element:p.element,brandDmg:p.elemDmg,lifesteal:p.drain});
+        } else {   // spell projectile: pre-multiplied elemental damage, subject to magic resistance
+          const em=elemMult(m.kind,p.element);
+          if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");
+          else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
+          if(p.burn){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
+          if(p.stun){m.atkCd=Math.max(m.atkCd,1.2);}
+          applyHit(m,p.dmg*em,{spell:true});
+          if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
+        }
         burst(p.x,p.y,p.z,p.color,8);
         const ifl=new THREE.PointLight(p.color,2.2,7);ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
         gone=true;break;
