@@ -213,6 +213,7 @@
 </div>
 
 <div id="hint"></div>
+<div id="atkHeight" style="position:fixed;left:50%;bottom:132px;transform:translateX(-50%);font-size:11px;color:#ffd86b;text-shadow:0 1px 2px #000;z-index:40;display:none;pointer-events:none">Attack: Middle</div>
 <div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
   <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
   <span style="position:absolute;top:-2px;left:45%;width:2px;height:13px;background:#fff;opacity:.7"></span>
@@ -6479,8 +6480,9 @@ function meleeAttack(power){
     if(d<reach+m.r){
       const dot=(dx*fx+dz*fz)/(d*fl);
       if(dot>0.5){
-        if(!rollToHit(bestMeleeSkillValue(),m,acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy)
-        applyHit(m,dmg,meleeOpts);
+        const hm=heightMods(m);   // Cb2: attack height vs the target's size
+        if(!rollToHit(bestMeleeSkillValue(),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
+        applyHit(m,dmg*hm.dmg,meleeOpts);
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
       }
@@ -6503,10 +6505,25 @@ function chargePower(){ return clamp(0.6+Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX
 function releaseCharge(){ if(!chargeActive) return; chargeActive=false; const p=chargePower(); chargeT=0; meleeAttack(p); }
 function updateChargeBar(){ const b=document.getElementById('chargeBar'); if(!b) return;
   if(chargeActive){ b.style.display="block"; const f=document.getElementById('chargeFill'); if(f) f.style.width=Math.round(Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX*100)+"%"; }
-  else b.style.display="none"; }
+  else b.style.display="none";
+  const ah=document.getElementById('atkHeight'); if(ah&&ah.style.display==="block"&&ah._t&&now()-ah._t>2500) ah.style.display="none"; }
+// Cb2: which attack height best fits a creature's size, and the accuracy/damage modifiers for a match/mismatch
+function heightMods(m){
+  const sz=(typeof BESTIARY!=="undefined"&&BESTIARY[m.kind]&&BESTIARY[m.kind].size)||m.r||1;
+  const ideal=sz>=1.5?"high":sz<=0.7?"low":"mid", ah=player.atkHeight||"mid";
+  if(ah===ideal) return {acc:1.12,dmg:1.10};                       // right height for the target
+  if(ah==="mid"||ideal==="mid") return {acc:1.0,dmg:1.0};          // one step off — neutral
+  return {acc:0.80,dmg:1.0};                                       // opposite extreme (high vs a low target) — poor accuracy
+}
 cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0){ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } } else if(e.button===2) blocking=true; });
 cEl.addEventListener('mouseup',e=>{ if(e.button===0){ if(chargeActive) releaseCharge(); } else if(e.button===2) blocking=false; });
 cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse raises the shield, no menu
+// Cb2 attack heights: mouse-wheel aims the swing high / middle / low (matched to the target's size)
+const ATK_HEIGHTS=["low","mid","high"], ATK_LABEL={low:"Low",mid:"Middle",high:"High"};
+window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
+  let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); i=clamp(i+(e.deltaY<0?1:-1),0,2); player.atkHeight=ATK_HEIGHTS[i];
+  const el=document.getElementById('atkHeight'); if(el){ el.textContent="Attack: "+ATK_LABEL[player.atkHeight]; el.style.display="block"; el._t=now(); }
+},{passive:false});
 document.addEventListener('mousemove',e=>{
   if(!locked) return;
   player.yaw-=e.movementX*0.0022*settings.sens;
