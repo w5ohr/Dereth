@@ -233,6 +233,11 @@ anywhere.
   and a mid-upper-charge accuracy sweet spot (`rollToHit` `accMul`). Charge state machine auto-releases at
   `CHARGE_MAX` and cancels on unlock/death; `#chargeBar` HUD fills while held. Verified: 0.6/1.1/1.6 curve,
   release fires+resets, damage scales (58→162 dmg/hit vs a dummy).
+- ✅ **G5. Attack heights (Cb2)** — the other half of AC's melee tactics (jsc + preview verified, 0 console
+  errors). Mouse-wheel cycles low↔middle↔high (`player.atkHeight`, fading HUD indicator). `heightMods(m)`
+  matches height to the target's BESTIARY size (≥1.5 High, ≤0.7 Low, else Middle): a match gives ×1.12
+  accuracy / ×1.10 damage, the opposite extreme ×0.80 accuracy — folded into `meleeAttack`, stacking with
+  the charge bar. Verified: olthoi rewards High/punishes Low, small crawlers reward Low, wheel cycles+clamps.
 
 ## MILESTONE F — Optional later-era / stretch content  ◇
 - ✅ **F1. Void magic** — "Nether Bolt" spell (key Z, school `void`, requires Void Magic trained):
