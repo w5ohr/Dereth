@@ -82,7 +82,7 @@
     color:var(--gold);background:rgba(8,6,3,.7);padding:8px 16px;border-radius:8px;border:1px solid var(--border);
     font-size:14px;pointer-events:none;display:none}
 
-  #sheet,#tinker,#shop,#settings,#worldmap,#codex,#spellbook{position:absolute;inset:0;background:rgba(4,3,1,.82);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:30}
+  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook{position:absolute;inset:0;background:rgba(4,3,1,.82);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50}
   #sheet .card,#tinker .card,#shop .card,#settings .card,#worldmap .card,#codex .card,#spellbook .card{width:560px;max-width:92vw;background:linear-gradient(180deg,#1b1509,#0e0a05);
     border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 20px 60px #000;max-height:92vh;overflow:auto}
   #sheet h2,#tinker h2,#shop h2,#settings h2,#worldmap h2,#codex h2,#spellbook h2{margin:0 0 2px;color:var(--gold)}#sheet .sub,#tinker .sub,#shop .sub,#settings .sub,#worldmap .sub,#codex .sub,#spellbook .sub{color:var(--dim);font-size:12px;margin-bottom:14px}
@@ -301,7 +301,14 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Field of view</span><input id="setFov" type="range" min="60" max="100" step="1"><span id="setFovV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Difficulty</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
+</div></div>
+<div id="keymap"><div class="card" style="text-align:left">
+  <h2>Map Keys</h2>
+  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind.</div>
+  <div id="keymapBody" style="font-size:13px"></div>
+  <div style="display:flex;gap:10px;margin-top:14px"><button id="keymapReset" class="tbtn">Reset to defaults</button><button id="keymapClose">Done</button></div>
 </div></div>
 
 <div id="overlay">
@@ -357,6 +364,7 @@
     <button data-path="gharundim">✨ Gharu'ndim</button>
   </div>
   <button id="startBtn">Create a New Hero</button>
+  <button id="titleSettingsBtn" style="margin-top:10px;font-size:13px;opacity:.85">⚙ Settings</button>
 </div>
 
 <style>
@@ -6256,8 +6264,8 @@ function dodge(){
   if(player.casting) player.casting=null;   // dodging breaks your own cast
   const yaw=player.yaw,fx=-Math.sin(yaw),fz=-Math.cos(yaw),rx=-fz,rz=fx;
   let f=0,s=0;
-  if(keys["w"]||keys["arrowup"])f+=1; if(keys["s"]||keys["arrowdown"])f-=1;
-  if(keys["d"]||keys["arrowright"])s+=1; if(keys["a"]||keys["arrowleft"])s-=1;
+  if(held("forward")||keys["arrowup"])f+=1; if(held("back")||keys["arrowdown"])f-=1;
+  if(held("right")||keys["arrowright"])s+=1; if(held("left")||keys["arrowleft"])s-=1;
   let dx,dz; if(f||s){dx=fx*f+rx*s;dz=fz*f+rz*s;} else {dx=-fx;dz=-fz;} // no input → dodge backward
   const l=Math.hypot(dx,dz)||1; player.dashX=dx/l; player.dashZ=dz/l;
   player.dashT=0.18; player.dashCd=1.1; player.invuln=Math.max(player.invuln,0.32); player.st-=16;
@@ -6339,49 +6347,84 @@ document.addEventListener('mousemove',e=>{
   player.yaw-=e.movementX*0.0022*settings.sens;
   player.pitch=clamp(player.pitch-e.movementY*0.0022*settings.sens,-1.2,1.2);
 });
+// ── remappable keybinds ────────────────────────────────────────────────────
+// Actions dispatch by a combo string = optional modifiers (ctrl/alt/meta/shift) + KeyboardEvent.code,
+// e.g. "KeyE", "shift+Space", "meta+KeyR". Movement (held) is polled in update() via held().
+function weaponSwap(){ weaponMode=weaponMode==="sword"?"bow":"sword"; if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=weaponMode==="sword";bowModel.visible=weaponMode==="bow";} log("You ready your "+(weaponMode==="bow"?"bow":"sword")+".","sys"); }
+function toggleView(){ thirdPerson=!thirdPerson; log(thirdPerson?"View: <b>third person</b> — you can see your character.":"View: <b>first person</b>.","sys"); if(SFX.click)SFX.click(); }
+function togglePause(){ paused=!paused; document.getElementById('pausemsg').style.display=paused?"flex":"none"; log(paused?"Paused.":"Resumed.","sys"); }
+function togglePanel(id,open,close){ const el=document.getElementById(id); if(el&&el.style.display==="flex") close(); else { open(); if(SFX.click)SFX.click(); } }
+const ACTIONS=[
+  {id:"forward",label:"Move Forward",group:"Movement",def:"KeyW",held:true},
+  {id:"back",   label:"Move Back",   group:"Movement",def:"KeyS",held:true},
+  {id:"left",   label:"Strafe Left", group:"Movement",def:"KeyA",held:true},
+  {id:"right",  label:"Strafe Right",group:"Movement",def:"KeyD",held:true},
+  {id:"jump",   label:"Jump",        group:"Movement",def:"Space",run:()=>tryJump()},
+  {id:"dodge",  label:"Dodge Roll",  group:"Movement",def:"shift+Space",run:()=>dodge()},
+  {id:"interact",  label:"Interact / Talk", group:"Actions",def:"KeyE",run:()=>interact()},
+  {id:"weaponswap",label:"Swap Weapon",     group:"Actions",def:"KeyQ",run:()=>weaponSwap()},
+  {id:"view",      label:"Toggle View 1st/3rd",group:"Actions",def:"KeyV",run:()=>toggleView()},
+  {id:"buffbot",   label:"Buff Self",       group:"Actions",def:"KeyU",run:()=>buffBotCast()},
+  {id:"loadout",   label:"Cycle Spell Loadout",group:"Actions",def:"Backslash",run:()=>cycleLoadout()},
+  {id:"pothealth",label:"Drink Health Potion",  group:"Consumables",def:"KeyR",run:()=>drinkPotion("potHealth",60,"hp")},
+  {id:"potgreat", label:"Drink Greater Potion", group:"Consumables",def:"KeyG",run:()=>drinkPotion("potGreat",150,"hp")},
+  {id:"potmana",  label:"Drink Mana Potion",    group:"Consumables",def:"KeyF",run:()=>drinkPotion("potMana",60,"mn")},
+  {id:"potstam",  label:"Drink Stamina Potion", group:"Consumables",def:"KeyH",run:()=>drinkPotion("potStam",60,"st")},
+  {id:"elixmight",label:"Elixir of Might",      group:"Consumables",def:"Comma",run:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b")},
+  {id:"elixswift",label:"Elixir of Swiftness",  group:"Consumables",def:"Period",run:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")},
+  {id:"character",label:"Character Sheet",  group:"Panels",def:"KeyC",run:()=>togglePanel('sheet',openSheet,closeSheet)},
+  {id:"tinker",   label:"Inventory / Tinker",group:"Panels",def:"KeyT",run:()=>togglePanel('tinker',openTinker,closeTinker)},
+  {id:"bestiary", label:"Bestiary / Codex", group:"Panels",def:"KeyB",run:()=>togglePanel('codex',openCodex,closeCodex)},
+  {id:"spellbook",label:"Spellbook",        group:"Panels",def:"KeyK",run:()=>togglePanel('spellbook',openSpellbook,closeSpellbook)},
+  {id:"questlog", label:"Quest Log",        group:"Panels",def:"KeyJ",run:()=>togglePanel('questlog',openQuestLog,closeQuestLog)},
+  {id:"housing",  label:"Estate / Storage", group:"Panels",def:"KeyY",run:()=>togglePanel('housing',openHousing,closeHousing)},
+  {id:"map",      label:"World Map",        group:"Panels",def:"Tab",run:()=>togglePanel('worldmap',openMap,closeMap)},
+  {id:"settings", label:"Settings",         group:"Panels",def:"KeyO",run:()=>togglePanel('settings',openSettings,closeSettings)},
+  {id:"moveui",   label:"Move UI Mode",     group:"Interface",def:"KeyN",run:()=>{ setUIMove(!movingUI); log(movingUI?"<b>Move UI</b> — drag any panel; press again to finish.":"HUD layout saved.","sys"); }},
+  {id:"mute",     label:"Mute Sound",       group:"Interface",def:"KeyM",run:()=>toggleMute()},
+  {id:"pause",    label:"Pause",            group:"Interface",def:"KeyP",run:()=>togglePause()},
+  {id:"qbprev",   label:"Quickbar Page ◀",  group:"Quickbar",def:"BracketLeft",run:()=>{hotbarPage=(hotbarPage+QB_PAGES-1)%QB_PAGES;buildSpellbar();}},
+  {id:"qbnext",   label:"Quickbar Page ▶",  group:"Quickbar",def:"BracketRight",run:()=>{hotbarPage=(hotbarPage+1)%QB_PAGES;buildSpellbar();}},
+];
+const ROW1_DEF=["Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0","Minus","Equal"];
+for(let i=0;i<QB_PAGE;i++){ const idx=i; ACTIONS.push({id:"qb"+i,label:"Quick Slot R"+(i<QB_COLS?1:2)+"·"+((i%QB_COLS)+1),group:"Quick Slots",def:i<QB_COLS?ROW1_DEF[i]:"",run:()=>castSlot(hotbarPage*QB_PAGE+idx)}); }
+function defaultBinds(){ const b={}; for(const a of ACTIONS) b[a.id]=a.def?[a.def]:[]; return b; }
+let KEYBINDS=defaultBinds(), ACTION_BY_COMBO={};
+const ACTION_RUN={}; for(const a of ACTIONS) if(a.run) ACTION_RUN[a.id]=a.run;
+function rebuildComboMap(){ ACTION_BY_COMBO={}; for(const a of ACTIONS){ if(a.held)continue; for(const c of (KEYBINDS[a.id]||[])) if(c) ACTION_BY_COMBO[c]=a.id; } }
+function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_keys")); if(s) for(const a of ACTIONS) if(Array.isArray(s[a.id])) KEYBINDS[a.id]=s[a.id]; }catch(e){} rebuildComboMap(); }
+function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
+function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
+function evtCombo(e){ let m=""; if(e.ctrlKey)m+="ctrl+"; if(e.altKey)m+="alt+"; if(e.metaKey)m+="meta+"; if(e.shiftKey)m+="shift+"; return m+e.code; }
+function held(id){ const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }
+function codeLabel(c){ if(!c)return ""; if(c.startsWith("Key"))return c.slice(3); if(c.startsWith("Digit"))return c.slice(5);
+  const map={Space:"Space",Minus:"-",Equal:"=",BracketLeft:"[",BracketRight:"]",Backslash:"\\",Escape:"Esc",Tab:"Tab",Enter:"Enter",Backquote:"`",Semicolon:";",Quote:"'",Comma:",",Period:".",Slash:"/",ArrowUp:"↑",ArrowDown:"↓",ArrowLeft:"←",ArrowRight:"→",ShiftLeft:"Shift",ShiftRight:"Shift"}; return map[c]||c; }
+function comboLabel(combo){ if(!combo)return "—"; const p=combo.split("+"),code=p.pop(),mods={ctrl:"Ctrl",alt:"Alt/Opt",meta:"Cmd",shift:"Shift"};
+  return p.map(m=>mods[m]||m).concat(codeLabel(code)).join(" + "); }
+function bindLabel(id){ const a=KEYBINDS[id]; return (a&&a.length)?a.map(comboLabel).join(", "):"—"; }
+loadKeybinds();
+let rebindCapture=null;   // when set, the next keydown captures a new binding
+
 window.addEventListener('keydown',e=>{
   const ce=document.getElementById('chatInput');
   if(ce && ce.style.display!=="none") return; // typing in chat — the input owns the keyboard
   const k=e.key.toLowerCase();
+  keys[k]=true; keys[e.code]=true;   // record by both e.key and e.code so held()/movement work
+  if(rebindCapture){ e.preventDefault(); rebindCapture(e); return; }   // capturing a new keybind
   if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k)) e.preventDefault();
-  keys[k]=true;
+  if(k==="enter"){ if(running&&isOnline) openChat(); return; } // Enter opens chat (online only)
+  if(k==="escape"){ closeAnyPanel(); return; }
   if(!running) return;
-  if(k==="enter"){ if(isOnline) openChat(); return; } // Enter opens chat (online only)
-  { const si=ROW1_KEYS.indexOf(k); if(si>=0) castSlot(hotbarPage*QB_PAGE+si); }   // number row casts the active page's row 1
-  if(k==="["){ hotbarPage=(hotbarPage+QB_PAGES-1)%QB_PAGES; buildSpellbar(); }     // cycle quickbar pages
-  if(k==="]"){ hotbarPage=(hotbarPage+1)%QB_PAGES; buildSpellbar(); }
-  if(k===" "){ if(keys["shift"]) dodge(); else tryJump(); }
-  if(k==="e") interact();
-  if(k==="q"){
-    weaponMode=weaponMode==="sword"?"bow":"sword";
-    weaponHand.visible=weaponMode==="sword"; bowModel.visible=weaponMode==="bow";
-    log("You ready your "+(weaponMode==="bow"?"bow":"sword")+".","sys");
-  }
-  if(k==="v"){ thirdPerson=!thirdPerson; log(thirdPerson?"View: <b>third person</b> — you can see your character.":"View: <b>first person</b>.","sys"); SFX.click(); }
-  if(k==="c"){ if(sheet.style.display==="flex") closeSheet(); else openSheet(); }
-  if(k==="t"){ if(document.getElementById('tinker').style.display==="flex") closeTinker(); else openTinker(); }
-  if(k==="b"){ if(document.getElementById('codex').style.display==="flex") closeCodex(); else openCodex(); }
-  if(k==="k"){ if(document.getElementById('spellbook').style.display==="flex") closeSpellbook(); else openSpellbook(); }
-  if(k==="j"){ if(document.getElementById('questlog').style.display==="flex") closeQuestLog(); else openQuestLog(); }
-  if(k==="escape" && document.getElementById('questlog').style.display==="flex") closeQuestLog();
-  if(k==="u") buffBotCast();   // buff bot: cast all creature/life/item buffs on yourself (offline & online)
-  if(k==="y"){ if(document.getElementById('housing').style.display==="flex") closeHousing(); else openHousing(); }
-  if(k==="escape" && document.getElementById('housing').style.display==="flex") closeHousing();
-  if(k==="\\") cycleLoadout();   // quick-swap to the next saved spell loadout
-  if(k==="r") drinkPotion("potHealth",60,"hp");
-  if(k==="g") drinkPotion("potGreat",150,"hp");
-  if(k==="f") drinkPotion("potMana",60,"mn");
-  if(k==="h") drinkPotion("potStam",60,"st");
-  if(k==="9") useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b");
-  if(k==="0") useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0");
-  if("ctbo".includes(k)||k==="tab") SFX.click();
-  if(k==="m") toggleMute();
-  if(k==="o"){ if(document.getElementById('settings').style.display==="flex") closeSettings(); else openSettings(); }
-  if(k==="tab"){ e.preventDefault(); if(document.getElementById('worldmap').style.display==="flex") closeMap(); else openMap(); }
-  if(k==="p"){ paused=!paused; document.getElementById('pausemsg').style.display=paused?"flex":"none"; log(paused?"Paused.":"Resumed.","sys"); }
-  if(k==="n"){ setUIMove(!movingUI); log(movingUI?"<b>Move UI</b> — drag any panel to rearrange your HUD; press N to finish.":"HUD layout saved.","sys"); }
+  const id=ACTION_BY_COMBO[evtCombo(e)];
+  if(id){ e.preventDefault(); runAction(id); }
 });
-window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+function runAction(id){ const f=ACTION_RUN[id]; if(f) f(); }
+function closeAnyPanel(){
+  if(movingUI){ setUIMove(false); return; }
+  for(const [id,close] of [["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){
+    const el=document.getElementById(id); if(el&&el.style.display==="flex"){ close(); return; } }
+}
+window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;keys[e.code]=false;});
 
 function currentPrompt(){
   const nr=(x,z)=>Math.hypot(x-player.x,z-player.z);
@@ -6651,10 +6694,10 @@ function update(dt){
     else hideCastReticle(); }
   // movement
   let f=0,s=0;
-  if(keys["w"]||keys["arrowup"]) f+=1;
-  if(keys["s"]||keys["arrowdown"]) f-=1;
-  if(keys["d"]||keys["arrowright"]) s+=1;
-  if(keys["a"]||keys["arrowleft"]) s-=1;
+  if(held("forward")||keys["arrowup"]) f+=1;      // bound movement key + arrow fallback
+  if(held("back")||keys["arrowdown"]) f-=1;
+  if(held("right")||keys["arrowright"]) s+=1;
+  if(held("left")||keys["arrowleft"]) s-=1;
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
@@ -6950,7 +6993,7 @@ function animateAvatar(dt){
   const u=playerAvatar.userData;
   idleT+=dt;
   updateShieldModel();                                        // reflect the equipped off-hand shield
-  const moving=!!(keys["w"]||keys["a"]||keys["s"]||keys["d"]||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"])&&player.alive;
+  const moving=!!(held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"])&&player.alive;
   const sw=player.swing, acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow");
   const blk=blocking&&sw<=0;                                   // actively raising the guard (not mid-swing)
   const idle=!moving&&!acting;
@@ -10337,6 +10380,37 @@ function openSettings(){
 }
 function closeSettings(){ document.getElementById('settings').style.display="none";paused=false; }
 document.getElementById('closeSettings').onclick=closeSettings;
+// ── Map Keys panel ──
+function openKeymap(){ document.getElementById('keymap').style.display="flex"; buildKeymap(); if(locked)document.exitPointerLock(); paused=true; }
+function closeKeymap(){ rebindCapture=null; document.getElementById('keymap').style.display="none"; }
+function buildKeymap(){
+  const body=document.getElementById('keymapBody'); if(!body) return; body.innerHTML="";
+  const groups={}; for(const a of ACTIONS){ (groups[a.group]=groups[a.group]||[]).push(a); }
+  for(const g of Object.keys(groups)){
+    const h=document.createElement('div'); h.style.cssText="color:var(--gold);font-weight:bold;margin:12px 0 4px;text-transform:uppercase;font-size:11px;letter-spacing:.5px"; h.textContent=g; body.appendChild(h);
+    for(const a of groups[g]){
+      const row=document.createElement('div'); row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)";
+      const nm=document.createElement('span'); nm.style.color="var(--ink)"; nm.textContent=a.label; row.appendChild(nm);
+      const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="min-width:130px;font-size:12px"; btn.textContent=bindLabel(a.id);
+      btn.onclick=()=>startRebind(a.id,btn); row.appendChild(btn); body.appendChild(row);
+    }
+  }
+}
+function startRebind(id,btn){
+  btn.textContent="press a key…"; btn.style.outline="2px solid var(--gold)";
+  rebindCapture=(e)=>{
+    const kk=e.key.toLowerCase();
+    if(kk==="escape"){ rebindCapture=null; buildKeymap(); return; }
+    if(["shift","control","alt","meta"].includes(kk)) return;   // wait for the actual (non-modifier) key
+    const combo=evtCombo(e);
+    for(const aid in KEYBINDS) KEYBINDS[aid]=(KEYBINDS[aid]||[]).filter(c=>c!==combo);   // a combo maps to one action
+    KEYBINDS[id]=[combo];
+    rebindCapture=null; saveKeybinds(); rebuildComboMap(); buildKeymap();
+  };
+}
+{ const b=document.getElementById('openKeymapBtn'); if(b) b.onclick=openKeymap;
+  const c=document.getElementById('keymapClose'); if(c) c.onclick=closeKeymap;
+  const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); buildKeymap(); }; }
 
 // ============================================================================
 //  DUNGEONS / DELVES  (instanced: overworld hidden + gated while inside)
@@ -11642,6 +11716,7 @@ function refreshAvatarAppearance(){
 }
 
 startBtn.onclick=()=>{ isOnline=false; openCharCreator("",race=>{ wipeSave(); startGame(false,race); }); };
+{ const tsb=document.getElementById('titleSettingsBtn'); if(tsb) tsb.onclick=openSettings; }
 continueBtn.onclick=()=>{ isOnline=false; startGame(true); };
 document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{   // offline: pick a heritage → open the creator
   isOnline=false; openCharCreator(b.dataset.path,race=>{ wipeSave(); startGame(false,race); });
