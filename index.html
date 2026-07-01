@@ -5837,6 +5837,7 @@ window.addEventListener('keydown',e=>{
   if(k==="k"){ if(document.getElementById('spellbook').style.display==="flex") closeSpellbook(); else openSpellbook(); }
   if(k==="j"){ if(document.getElementById('questlog').style.display==="flex") closeQuestLog(); else openQuestLog(); }
   if(k==="escape" && document.getElementById('questlog').style.display==="flex") closeQuestLog();
+  if(k==="u") buffBotCast();   // buff bot: cast all creature/life/item buffs on yourself (offline & online)
   if(k==="y"){ if(document.getElementById('housing').style.display==="flex") closeHousing(); else openHousing(); }
   if(k==="escape" && document.getElementById('housing').style.display==="flex") closeHousing();
   if(k==="\\") cycleLoadout();   // quick-swap to the next saved spell loadout
@@ -10609,11 +10610,66 @@ function onEmote(m){
   else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz); } }
   if(x!=null && m.act!=="me") floater(x,EYE+1.4,z,m.act,"#ffe9b0",1.1);
 }
-function onRemoteBuff(m){   // a Creature/Life spell another player cast on you
+function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff bot) cast on you
   const sp=SPELLBOOK[m.spell]; if(!sp||!player.alive||!running) return;
-  if(sp.heal){ const h=sp.heal(); player.hp=Math.min(player.mhp,player.hp+h); floater(player.x,EYE+0.5,player.z,"+"+Math.round(h),"#7fe6a0"); if(SFX.heal)SFX.heal(); }
-  else if(sp.buff==="attr"){ applyAttrBuff(sp.attr,sp.mag,sp.dur); floater(player.x,EYE+0.5,player.z,`+${sp.mag} ${sp.attr}`,"#bfe0ff"); }
+  applyBuffSelf(sp,true);   // apply every buff type to us (heal/attr/skill/swift/prot/item/regen)
   log(`<b>${esc(m.from)}</b> casts <b>${sp.name}</b> on you.`,"heal");
+}
+// ── Buff-bot: apply a single beneficial enchantment's effect to the LOCAL player (instant, no mana/cd).
+//    Item enchantments ride player.itemBuffs, which are global — so they empower whatever weapon/armour
+//    you are holding (i.e. "all items held by the player"), exactly like AC item magic on your person. ──
+function applyBuffSelf(sp,fx){
+  if(!sp) return false;
+  const dur=sp.dur||(typeof buffDurFor==="function"?buffDurFor(sp.lvl||1):120), mag=sp.mag;
+  const flo=(txt,col)=>{ if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,txt,col||"#bfe0ff"); };
+  if(typeof sp.heal==="function"){ const h=sp.heal(); player.hp=Math.min(player.mhp,player.hp+h); flo("+"+Math.round(h),"#7fe6a0"); }
+  else if(sp.special==="regen"){ player.hots=player.hots||{}; player.hots[sp.pool]={rate:sp.rate,t:sp.dur}; flo("regen "+sp.pool,"#8fe6a0"); }
+  else if(sp.buff==="might"){ player.buffMightT=dur; flo("+50% dmg","#ff8f6b"); }
+  else if(sp.buff==="swift"){ player.buffSwiftT=dur; flo("+speed","#7fe6a0"); }
+  else if(sp.buff==="attr"&&mag){ applyAttrBuff(sp.attr,mag,dur); flo(`+${mag} ${sp.attr}`); }
+  else if(sp.buff==="item"){ player.itemBuffs=player.itemBuffs||{}; player.itemBuffs[sp.stat]={v:mag,t:dur}; flo(sp.name,"#ffd86b"); }
+  else if(sp.buff==="prot"){ player.lifeBuffs=player.lifeBuffs||{}; player.lifeBuffs.prot={v:mag,t:dur}; flo(`-${Math.round(mag*100)}% dmg`,"#7fe6a0"); }
+  else if(sp.buff==="skill"&&mag){ player.skillBuffs=player.skillBuffs||{}; player.skillBuffs[sp.skillKey]={v:mag,t:dur}; derive(); flo(`+${mag} ${SKILL_BY_KEY[sp.skillKey]?SKILL_BY_KEY[sp.skillKey].n:sp.skillKey}`); }
+  else return false;
+  return true;
+}
+// pick the highest-level castable buff of every family the caster knows (attr×6, each skill aptitude,
+// swift, protection, the 3 regen HoTs, heal, and the 4 item enchantments + Blade Lure).
+function buffBotList(){
+  const known=player.knownSpells||[];
+  const pick=(pred)=>{ let best=null; for(const id of known){ const sp=SPELLBOOK[id]; if(!sp||!pred(sp)) continue;
+    const mk=MAGIC_SCHOOLS[sp.school]; if(sp.req>0&&mk&&skillValue(mk)<sp.req) continue; if(!canCast(sp.school)) continue;
+    if(!best||(sp.lvl||0)>(best.lvl||0)) best=sp; } return best; };
+  const out=[];
+  (typeof ATTR_NAMES!=="undefined"?ATTR_NAMES:[]).forEach(a=>{ const sp=pick(s=>s.buff==="attr"&&s.attr===a); if(sp)out.push(sp); });
+  const sk={}; known.forEach(id=>{ const sp=SPELLBOOK[id]; if(sp&&sp.buff==="skill") sk[sp.skillKey]=1; });
+  Object.keys(sk).forEach(k=>{ const sp=pick(s=>s.buff==="skill"&&s.skillKey===k); if(sp)out.push(sp); });
+  const sw=pick(s=>s.buff==="swift"); if(sw)out.push(sw);
+  const pr=pick(s=>s.buff==="prot"); if(pr)out.push(pr);
+  ["hp","st","mn"].forEach(p=>{ const sp=pick(s=>s.special==="regen"&&s.pool===p); if(sp)out.push(sp); });
+  const hl=pick(s=>s.school==="life"&&typeof s.heal==="function"); if(hl)out.push(hl);
+  ["dmg","crit","armor","haste"].forEach(st=>{ const sp=pick(s=>s.buff==="item"&&s.stat===st); if(sp)out.push(sp); });
+  const mt=pick(s=>s.buff==="might"); if(mt)out.push(mt);
+  return out;
+}
+// the simple command: /buff (self) · /buff <name> (a nearby online player) · /buff all (all nearby)
+function buffBotCast(targetName){
+  const list=buffBotList();
+  if(!list.length){ log("You know no buffs to cast — learn creature/life/item enchantments first.","warn"); return; }
+  const t=(targetName||"").trim();
+  if(!t||/^(me|self)$/i.test(t)){
+    list.forEach(sp=>applyBuffSelf(sp,true)); derive(); if(typeof updateHUD==="function")updateHUD();
+    log(`<b>Buff bot:</b> applied <b>${list.length}</b> enchantments to yourself — creature, life &amp; item buffs. Item enchantments empower all gear you hold.`,"heal");
+    if(typeof toast==="function")toast("BUFFED"); if(SFX.quest)SFX.quest(); if(typeof saveGame==="function")saveGame(); return;
+  }
+  if(!isOnline){ log("Buffing others requires being online.","warn"); return; }
+  const send=(id,name)=>{ list.forEach(sp=>netSend({t:"cast",target:id,spell:sp.id})); return name; };
+  if(/^all$/i.test(t)){ let n=0; for(const id in NET.players){ const r=NET.players[id]; if(!r) continue; send(id,r.name); n++; }
+    log(n?`<b>Buff bot:</b> cast ${list.length} enchantments toward <b>${n}</b> nearby ${n===1?"player":"players"} (within range).`:"No other players nearby.","heal"); return; }
+  let pid=null,pname=null; for(const id in NET.players){ const nm=NET.players[id].name||""; if(nm.toLowerCase()===t.toLowerCase()){ pid=id; pname=nm; break; } }
+  if(!pid){ log(`No nearby online player named "${esc(t)}". Use /buff, /buff &lt;name&gt;, or /buff all.`,"warn"); return; }
+  send(pid,pname);
+  log(`<b>Buff bot:</b> cast ${list.length} enchantments on <b>${esc(pname)}</b>.`,"heal");
 }
 function onWho(m){
   const ps=m.players||[];
@@ -10622,7 +10678,8 @@ function onWho(m){
 function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
-  if(cmd==="who"){ netSend({t:"who"}); }
+  if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
+  else if(cmd==="who"){ netSend({t:"who"}); }
   else if(cmd==="tell"||cmd==="w"){ const name=parts[1], msg=parts.slice(2).join(" ").trim();
     if(name&&msg) netSend({t:"tell",name,msg}); else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
   else if(cmd==="r"){ const msg=parts.slice(1).join(" ").trim();
