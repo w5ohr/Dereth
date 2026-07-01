@@ -3003,11 +3003,12 @@ const TROPHY_BY_KIND={
 };
 function rollTrophy(kind){ const t=TROPHY_BY_KIND[kind]; return t?{name:t.name,stat:"trophy",v:t.v,kind}:null; }
 // trade notes (AC): portable pyreal certificates — redeem for their face value
-function rollTradeNote(){ const v=[50,100,250,500][irnd(0,3)]; return {name:`Trade Note (${v}p)`,stat:"note",v}; }
+function rollTradeNote(){ const v=[50,100,250,500,1000][irnd(0,4)]; return {name:`Trade Note (${v}p)`,stat:"note",v}; }
 // spell components (AC scarabs / herbs) — sellable trade-goods; the Mana Scarab is the one you can use (restores mana)
 const SPELL_COMPONENTS=[
-  {name:"Lead Scarab",v:8},{name:"Iron Scarab",v:14},{name:"Copper Scarab",v:22},{name:"Silver Scarab",v:34},{name:"Gold Scarab",v:55},{name:"Pyreal Scarab",v:85},
+  {name:"Lead Scarab",v:8},{name:"Iron Scarab",v:14},{name:"Copper Scarab",v:22},{name:"Silver Scarab",v:34},{name:"Gold Scarab",v:55},{name:"Pyreal Scarab",v:85},{name:"Platinum Scarab",v:120},
   {name:"Hyssop",v:6},{name:"Mandrake Root",v:9},{name:"Frankincense",v:11},{name:"Saffron",v:13},{name:"Henbane",v:8},{name:"Eyebright",v:7},
+  {name:"Comfrey",v:9},{name:"Damiana",v:10},{name:"Dragon's Blood",v:16},{name:"Yarrow",v:8},{name:"Amaranth",v:12},{name:"Wormwood",v:9},{name:"Ginseng",v:11},{name:"Powdered Iron",v:14},{name:"Colophony",v:10},{name:"Verdigris",v:12},
 ];
 function rollComponent(){ if(Math.random()<0.15) return {name:"Mana Scarab",stat:"mn",v:50};   // the usable component
   const c=SPELL_COMPONENTS[irnd(0,SPELL_COMPONENTS.length-1)]; return {name:c.name,stat:"comp",v:c.v}; }
@@ -3299,6 +3300,9 @@ const ITEM_BASE=[
   {n:"Covenant Shield",stat:"worn",at:"heavy", aslot:"offhand",shield:"covenant",v:[30,50]},
   {n:"Olthoi Shield",  stat:"worn",at:"heavy", aslot:"offhand",shield:"olthoi",  v:[28,48]},
   {n:"Aegis",          stat:"worn",at:"medium",aslot:"offhand",shield:"aegis",magicAbsorb:0.18,v:[14,26]},  // negates a slice of magic bolts
+  {n:"Diforsa Kite Shield",stat:"worn",at:"heavy", aslot:"offhand",shield:"kite",   v:[20,36]},
+  {n:"Nariv Round Shield", stat:"worn",at:"medium",aslot:"offhand",shield:"round",  v:[12,22]},
+  {n:"Ceremonial Buckler", stat:"worn",at:"light", aslot:"offhand",shield:"buckler",v:[5,13]},
   // consumables & attribute attunements (AC mana stones / health kits / spirit gems)
   {n:"Health Kit",stat:"hp",v:[30,70]},{n:"Mana Stone",stat:"mn",v:[30,70]},
   {n:"Strength Gem",stat:"Strength",v:[1,1]},{n:"Endurance Gem",stat:"Endurance",v:[1,1]},
