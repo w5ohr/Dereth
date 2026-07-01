@@ -9,8 +9,8 @@ server/*.db
 __pycache__/
 *.pyc
 
-# external avatar / rigged models — multi-MB binaries, self-hosted so the game's own
-# static server serves them to clients. Reproduce with `python3 assets/fetch-models.py`.
+# experimental single-avatar drop-in (assets/avatar.glb) stays user-supplied / ignored.
+# The assets/models/ pack IS committed (self-hosted, served to clients); repopulate or
+# extend it with `python3 assets/fetch-models.py`.
 assets/*.glb
 assets/*.gltf
-assets/models/
