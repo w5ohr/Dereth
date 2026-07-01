@@ -3554,6 +3554,17 @@ const PACK_ITEMS=[{name:"Belt Pouch",cap:2},{name:"Sack",cap:3},{name:"Backpack"
 const PACK_MAX=18;   // most extra slots you can add (12 base → up to 30)
 function rollPack(){ const t=PACK_ITEMS[irnd(0,PACK_ITEMS.length-1)]; return {name:t.name,stat:"pack",cap:t.cap,v:t.cap,tier:3}; }
 function invCap(){ return 12 + (player.packBonus||0); }   // satchel capacity, grown by packs
+// ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
+//    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
+function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry")); }
+function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):""].join("|"); }
+function addToInv(it, force){   // → true if added/stacked, false if the satchel was full
+  if(stackable(it)){ const k=stackKey(it), ex=player.inv.find(x=>stackable(x)&&stackKey(x)===k);
+    if(ex){ ex.count=(ex.count||1)+(it.count||1); return true; } }
+  if(!force && player.inv.length>=invCap()) return false;
+  player.inv.push(it); return true;
+}
+function takeFromInv(i){ const it=player.inv[i]; if(!it) return; if(stackable(it)&&(it.count||1)>1) it.count--; else player.inv.splice(i,1); }
 function rollNamedItem(){
   const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
   const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
@@ -3749,7 +3760,7 @@ function salvageItem(i){
   const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
   bag.work=(bag.work*bag.units+work*units)/(bag.units+units);  // units-weighted average workmanship
   bag.units+=units;
-  player.inv.splice(i,1);
+  takeFromInv(i);
   player.materials+=Math.max(1,Math.round(work*0.4));        // a little generic material too (back-compat path)
   log(`Salvaged <b>${it.name}</b> → +${units} ${mat} (wk ${work}). ${mat} bag: ${bag.units}/100 @ wk ${bag.work.toFixed(1)}.`,"loot");
   SFX.gold();
@@ -4311,7 +4322,7 @@ function hasKey(){ return player.inv.some(it=>it.stat==="key"); }
 function openVault(){
   const i=player.inv.findIndex(it=>it.stat==="key");
   if(i<0){ log("The vault is sealed. Only a <b>Key</b> will open it — a lockpick won't.","warn"); if(SFX.hit)SFX.hit(); return; }
-  const key=player.inv.splice(i,1)[0]; dungeonVault.opened=true;
+  const key=player.inv[i]; takeFromInv(i); dungeonVault.opened=true;
   if(dungeonVault.mesh) dungeonVault.mesh.rotation.y=-0.6;   // door swings open
   const tier=curDungeon?curDungeon.tier:4;
   for(let k=0;k<4;k++) addDrop(dungeonVault.x+rnd(-2,2),dungeonVault.z+rnd(-1,2),{type:"item",item:rollItem(true,Math.min(5,tier+1))});
@@ -4323,7 +4334,7 @@ function openVault(){
 function openLockedCache(){
   const i=player.inv.findIndex(it=>it.stat==="pick"||it.stat==="key");
   if(i<0){ log("The cache is locked. You need a <b>Lockpick</b> or a <b>Key</b>.","warn"); if(SFX.hit)SFX.hit(); return; }
-  const opener=player.inv.splice(i,1)[0]; dungeonLock.opened=true;
+  const opener=player.inv[i]; takeFromInv(i); dungeonLock.opened=true;
   if(dungeonLock.mesh) dungeonLock.mesh.rotation.z=-0.35;   // lid pops open
   const tier=curDungeon?curDungeon.tier:3, n=2+irnd(0,1);
   for(let k=0;k<n;k++) addDrop(dungeonLock.x+rnd(-1.6,1.6),dungeonLock.z+rnd(-1.6,1.6),{type:"item",item:rollItem(true,tier)});
@@ -5759,7 +5770,7 @@ function checkArcs(){   // grant the capstone for any arc whose every quest is n
     player.arcsDone.push(arc.id);
     if(arc.xp) gainXP(arc.xp);
     if(arc.gold) player.gold+=arc.gold;
-    if(arc.reward) player.inv.push(Object.assign({},arc.reward));
+    if(arc.reward) addToInv(Object.assign({},arc.reward),true);
     if(arc.title) player.title=arc.title;
     toast("STORYLINE COMPLETE"); if(SFX.level)SFX.level();
     log(`<span style="color:${arc.col}"><b>Storyline complete — ${arc.name}!</b> You are honoured as <b>${arc.title}</b>${arc.reward?`, and receive <b>${arc.reward.name}</b>`:""}. <span style="color:var(--dim)">(+${arc.xp||0} XP · +${arc.gold||0} pyreals)</span></span>`,"sys");
@@ -6873,7 +6884,7 @@ function showRewardChoice(q, name){
   document.body.appendChild(ov);
   paused=true; if(locked)document.exitPointerLock();
   ov.querySelectorAll('[data-rw]').forEach(b=>b.onclick=()=>{
-    const it=rewards[b.dataset.rw|0]; player.inv.push(Object.assign({},it));
+    const it=rewards[b.dataset.rw|0]; addToInv(Object.assign({},it),true);
     log(`You choose your reward: <b>${it.name}</b>.`,"loot"); if(SFX.quest)SFX.quest();
     ov.remove(); paused=false; saveGame(); if(typeof updateHUD==="function") updateHUD(); renderQuestLog();
   });
@@ -6889,10 +6900,10 @@ function talkQuestGiver(n){
       let rw=`+${q.xp} XP, +${q.gold} pyreals`;
       if(bonusAllDone(id)){                               // optional bonus objectives all met → extra reward
         if(q.bonusGold){ player.gold+=q.bonusGold; rw+=`, +${q.bonusGold} bonus pyreals`; }
-        if(q.bonusReward){ player.inv.push(Object.assign({},q.bonusReward)); rw+=`, a bonus <b>${q.bonusReward.name}</b>`; }
+        if(q.bonusReward){ addToInv(Object.assign({},q.bonusReward),true); rw+=`, a bonus <b>${q.bonusReward.name}</b>`; }
       }
       if(q.rewards && q.rewards.length){ rw+=`, and your choice of reward`; }   // reward choice handled after turn-in
-      else if(q.item){ player.inv.push(Object.assign({},q.item)); rw+=`, and a <b>${q.item.name}</b>`; }
+      else if(q.item){ addToInv(Object.assign({},q.item),true); rw+=`, and a <b>${q.item.name}</b>`; }
       const repGain=player.society?questRepValue(id):0;   // society standing for the order you've pledged to
       if(repGain) rw+=`, +${repGain} ${societyById(player.society).name} standing`;
       if(q.repeatable){ taskReps[id]=(taskReps[id]|0)+1; taskCooldown[id]=Date.now()+questCdMs(id); }  // tally + start the timer
@@ -7290,9 +7301,9 @@ function buildShop(){
   });
   buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{const it=SHOP[+b.dataset.buy];
     if(player.gold<it.cost) return;
-    if(it.gear){ if(player.inv.length>=invCap()){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push(Object.assign({},it.gear)); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
+    if(it.gear){ if(!addToInv(Object.assign({},it.gear))){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
-    else if(it.scroll){ if(player.inv.length>=invCap()){log("Your satchel is full.","warn");return;} player.gold-=it.cost; player.inv.push({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name}); log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
+    else if(it.scroll){ if(!addToInv({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name})){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
     else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
     SFX.gold();buildShop();updateHUD();saveGame();});
   // services: respec (provisioners) and full healing (healers)
@@ -7316,12 +7327,12 @@ function buildShop(){
     const price=gearSellPrice(it);
     const desc=gearDesc(it);
     const row=document.createElement('div');row.className="row";
-    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span></div>
+    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span></div>
       <div class="ctl"><button class="tbtn" data-sell="${i}">Sell — ${price}p</button></div>`;
     sell.appendChild(row);
   });
   sell.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sell;
-    player.gold+=gearSellPrice(player.inv[i]);player.inv.splice(i,1);SFX.gold();buildShop();updateHUD();saveGame();});
+    player.gold+=gearSellPrice(player.inv[i]);takeFromInv(i);SFX.gold();buildShop();updateHUD();saveGame();});
 }
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
@@ -7925,9 +7936,9 @@ function openChest(){
 //  INVENTORY & TINKERING
 // ============================================================================
 function lootItem(it){
-  if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
   if(it.scroll&&!it.name) it.name="Scroll: "+((SPELLBOOK[it.spellId]||{}).name||"Spell");
-  player.inv.push(it); SFX.gold();
+  if(!addToInv(it)){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
+  SFX.gold();
   log(it.scroll?`You find a <b>${it.name}</b>. (T to scribe it)`:`You pick up a <b>${it.name}</b>. (T to equip or salvage)`,"loot");
 }
 function salvageValue(it){ if(it.scroll) return 20; return Math.max(3,Math.round(it.v*(it.stat==="armor"?1.0:0.8))); }
@@ -8026,13 +8037,13 @@ function buildTinker(){
       :it.stat==="pack"?`<button class="tbtn" data-eq="${i}">Add</button>`
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
-    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span> <span class="desc">— ${desc}</span>${cmpHTML}</div>
+    row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
       <div class="ctl">${ctl}</div>`;
     rows.appendChild(row);
   });
-  rows.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>{const i=+b.dataset.eq;const r=applyItem(player.inv[i]);if(r!=="keep")player.inv.splice(i,1);buildTinker();updateHUD();saveGame();});
+  rows.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>{const i=+b.dataset.eq;const it=player.inv[i];const r=applyItem(it);if(r!=="keep"){ if(stackable(it)&&(it.count||1)>1) it.count--; else player.inv.splice(i,1); }buildTinker();updateHUD();saveGame();});
   rows.querySelectorAll('[data-sv]').forEach(b=>b.onclick=()=>{salvageItem(+b.dataset.sv);buildTinker();updateHUD();saveGame();});
-  rows.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sc;if(learnSpell(player.inv[i].spellId)){player.inv.splice(i,1);buildTinker();updateHUD();}});
+  rows.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sc;if(learnSpell(player.inv[i].spellId)){takeFromInv(i);buildTinker();updateHUD();}});
 }
 document.getElementById('closeTink').onclick=closeTinker;
 
