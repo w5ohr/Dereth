@@ -5551,6 +5551,38 @@ function rollNamedItem(){
   if(t.stat==="jewelry"){ it.jtype=t.jtype; it.bonus=Object.assign({},t.bonus); }   // legendary ring/amulet: fixed jtype + cantrip (name is complete, no suffix appended)
   return it;
 }
+// ── I6 Rares (AC's beloved ~1/2000 pity-timer drops): a small pool of iconic gold-tier artifacts ──
+const RARE_ITEMS=[
+  {name:"Coral Fan",                 stat:"weapon",wt:"mace",    mat:"Coral",     v:[34,44],affix:()=>_waff("crit")},
+  {name:"Deadly Blade of Rembrandt", stat:"weapon",wt:"sword",   mat:"Pyreal",    v:[42,54],affix:()=>_wbrand("nether")},
+  {name:"Golden Gutbuster",          stat:"weapon",wt:"mace",    mat:"Gold",      v:[44,58],affix:()=>_wbrand("shock")},
+  {name:"Blackfire Crossbow",        stat:"weapon",wt:"crossbow",mat:"Ebony",     v:[36,48],affix:()=>_wbrand("nether")},
+  {name:"Shimmering Isparian Wand",  stat:"weapon",wt:"focus",   mat:"Diamond",   v:[30,40]},
+  {name:"Ring of the Silver Hand",   stat:"jewelry",jtype:"finger",               bonus:{kind:"skill",key:"heavy", v:8}},
+  {name:"Perfect Amethyst Amulet",   stat:"jewelry",jtype:"neck",                 bonus:{kind:"vital",vs:"mmn",   v:60}},
+  {name:"Bracelet of the Vaettir",   stat:"jewelry",jtype:"wrist",                bonus:{kind:"vital",vs:"mhp",   v:60}},
+  {name:"Storm Amuli Coat",          stat:"worn",  at:"medium", aslot:"chest",mat:"Sharkskin",v:[46,60],affix:()=>_oaff("of Impregnability")},
+  {name:"Rarrilcrown of the Empyrean",stat:"worn", at:"light",  aslot:"head", mat:"Pyreal",  v:[38,50],affix:()=>_oaff("of the Magus")},
+];
+function rollRare(){
+  const t=RARE_ITEMS[irnd(0,RARE_ITEMS.length-1)];
+  const it={name:t.name,stat:t.stat,mat:t.mat||"Pyreal",work:10,tier:5,legendary:true,rareItem:true};
+  if(t.v) it.v=irnd(t.v[0],t.v[1]);
+  if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at; if(t.aslot) it.aslot=t.aslot;
+  if(t.wt==="focus") it.foc=it.v;
+  if(t.affix) it.affix=t.affix();
+  if(t.stat==="jewelry"){ it.jtype=t.jtype; it.bonus=Object.assign({},t.bonus); }
+  log(`✦ A <b style="color:#ffd23b">rare</b> glimmers among the spoils — <b>${it.name}</b>!`,"loot");
+  toast("★ RARE — "+it.name.toUpperCase()); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  return it;
+}
+// pity timer: base ~1/1800 per real loot roll, ramping after a long dry streak so a rare is never impossibly far
+function rareRoll(){
+  player.rarePity=(player.rarePity||0)+1;
+  const chance=1/1800 + Math.max(0,player.rarePity-1200)*0.00025;
+  if(Math.random()<chance){ player.rarePity=0; return true; }
+  return false;
+}
 // ---- Food & drink: consumables that grant a timed attribute buff (AC's cooking fare). Cooking skill
 //      stretches the duration. Reuses the Creature attribute-buff machinery (HUD/tick/expiry). ----
 const FOOD_ITEMS=[
@@ -5713,7 +5745,8 @@ function wieldReqHTML(it){
   if(!parts.length) return "";
   return ` · <span style="color:${wieldFail(it)?'#e07a7a':'#8a9a7a'}">req ${parts.join("/")}</span>`;
 }
-function rollItem(rare,tier){
+function rollItem(rare,tier,noRare){
+  if(!noRare && rareRoll()) return rollRare();   // I6: the pity-timed rare artifact drop (real drops only, not vendor stock)
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
     const id=SCROLL_POOL[irnd(0,SCROLL_POOL.length-1)];
     return {scroll:true,spellId:id,name:"Scroll: "+SPELLBOOK[id].name};
@@ -5796,6 +5829,7 @@ function shapeWeaponModel(){
 }
 // rarity grade (from loot tier + affix) → name colour, so deepened itemization reads at a glance
 function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tier||1; const magical=it.affix||it.bonus;
+  if(it.rareItem) return {n:"rare",c:"#ffd23b"};   // AC "rares" — the gold-tier artifact drops
   if(it.legendary) return {n:"legendary",c:"#ff5a5a"};
   if(magical&&t>=5) return {n:"epic",c:"#ffb347"}; if(magical) return {n:"rare",c:"#c9a6ff"};
   if(t>=4) return {n:"fine",c:"#5aa8ff"}; if(t>=2) return {n:"uncommon",c:"#7fe6a0"}; return {n:"common",c:"#d7d0c2"}; }
@@ -10202,7 +10236,7 @@ function gearDesc(it){
   return `+${it.v} ${it.stat}`;
 }
 function genGearStock(){ const out=[]; for(const t of [1,2,2,3,3,4,5]){
-  let it=null; for(let k=0;k<8;k++){ const r=rollItem(t>=4,t); if(!r.scroll){it=r;break;} } if(!it) continue;
+  let it=null; for(let k=0;k<8;k++){ const r=rollItem(t>=4,t,true); if(!r.scroll){it=r;break;} } if(!it) continue;   // noRare: vendors don't sell rares
   out.push({name:rarityName(it),desc:gearDesc(it),cost:gearPrice(it),ico:gearIco(it),gear:it}); } return out; }
 function gearVendorStock(){ if(activeShop){ if(!activeShop._stock||!activeShop._stock.length) activeShop._stock=genGearStock(); return activeShop._stock; } return genGearStock(); }
 // ---- Jeweler: rolls finished jewelry (ring/bracelet/necklace), each bearing a cantrip bonus ----
@@ -11252,7 +11286,7 @@ function saveGame(){
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
-      dye:player.dye,colosseumClears:player.colosseumClears,
+      dye:player.dye,colosseumClears:player.colosseumClears,rarePity:player.rarePity,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
@@ -11297,6 +11331,7 @@ function applySaveObj(s){
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
   player.packBonus=s.packBonus|0;
   player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0;   // H7 armour dye + H16 clears
+  player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
