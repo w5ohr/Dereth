@@ -7455,14 +7455,34 @@ document.getElementById('closeSettings').onclick=closeSettings;
 // ============================================================================
 let roadMat=null;
 function cobbleTex(){
-  const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
-  g.fillStyle="#3e3a34";g.fillRect(0,0,128,128); // mortar
-  for(let gy=0;gy<128;gy+=18)for(let gx=0;gx<128;gx+=20){
-    const ox=((gy/18)|0)%2?10:0,x=gx+ox+irnd(-2,2),y=gy+irnd(-2,2),v=irnd(-20,24),b=118+v;
-    g.fillStyle=`rgb(${b},${b-6},${b-14})`;g.beginPath();g.ellipse(x+9,y+8,9,7.5,rnd(-0.3,0.3),0,6.28);g.fill();
-    g.fillStyle=`rgba(255,255,255,0.06)`;g.beginPath();g.ellipse(x+7,y+6,4,3,0,0,6.28);g.fill(); // highlight
+  // Voronoi cobbles: jittered stone cells packed edge-to-edge with thin mortar seams,
+  // each stone rounded (darker toward its rim) — reads as fitted stones, not scattered circles.
+  const N=256, cell=16, cols=N/cell;
+  const sites=[];
+  for(let cy=0;cy<cols;cy++)for(let cx=0;cx<cols;cx++)
+    sites.push({x:(cx+0.5+rnd(-0.4,0.4))*cell, y:(cy+0.5+rnd(-0.4,0.4))*cell, b:114+irnd(-20,22)});
+  const c=document.createElement('canvas');c.width=c.height=N;const g=c.getContext('2d');
+  const img=g.createImageData(N,N), d=img.data, half=N/2;
+  for(let py=0;py<N;py++)for(let px=0;px<N;px++){
+    let f1=1e9,f2=1e9,s1=null; const gcx=(px/cell)|0, gcy=(py/cell)|0;
+    for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
+      const s=sites[((gcy+oy+cols)%cols)*cols + ((gcx+ox+cols)%cols)];
+      let dx=px-s.x; if(dx>half)dx-=N; else if(dx<-half)dx+=N;
+      let dy=py-s.y; if(dy>half)dy-=N; else if(dy<-half)dy+=N;
+      const q=dx*dx+dy*dy; if(q<f1){f2=f1;f1=q;s1=s;} else if(q<f2){f2=q;}
+    }
+    f1=Math.sqrt(f1); f2=Math.sqrt(f2);
+    const edge=f2-f1; let r,gg,bb;
+    if(edge<1.8){ const m=42+edge*6; r=m; gg=m-2; bb=m-7; }        // dark mortar seam
+    else { const shade=1-Math.min(1,f1/(cell*0.62))*0.34;          // rounded cobble (darker rim)
+      let b=s1.b*shade + Math.sin(px*1.7)*Math.cos(py*1.3)*3;      // + subtle grain
+      r=b; gg=b-6; bb=b-13; }
+    const i=(py*N+px)*4; d[i]=r; d[i+1]=gg; d[i+2]=bb; d[i+3]=255;  // Uint8Clamped auto-clamps
   }
-  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
+  g.putImageData(img,0,0);
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  if(typeof renderer!=="undefined"&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  return t;
 }
 // roads as a ribbon of quads that follow the terrain contours
 function buildRoads(){
