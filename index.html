@@ -1391,6 +1391,11 @@ function terrainBase(x,z){
   return h;
 }
 const FLATTEN=CITIES.map(c=>({x:c.x,z:c.z,core:c.capital?52:40,r:c.capital?96:80,h:Math.max(8,terrainBase(c.x,c.z))}));
+// ── Castle Val Halla: Lord Kilmer's private castle on its own flattened plateau west of Holtburg
+//    (site chosen ≥600u clear of every town & dungeon entrance; the plateau gets its own FLATTEN ring) ──
+const KC={x:2100,z:-3230,wall:88,moatIn:100,moatOut:116,gateHalf:6,safeR:200,
+  name:"Castle Val Halla",lord:"Kilmer"};
+FLATTEN.push({x:KC.x,z:KC.z,core:160,r:240,h:Math.max(10,terrainBase(KC.x,KC.z))});
 function terrainH(x,z){
   let h=terrainBase(x,z);
   for(const t of FLATTEN){const d=Math.hypot(x-t.x,z-t.z);
@@ -2487,7 +2492,7 @@ function buildPerson(o){
   const cloth2=new THREE.MeshStandardMaterial({color:accent,roughness:0.92,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.55,0.55)});
   const skinM=new THREE.MeshStandardMaterial({color:skinCol,roughness:0.55,metalness:0.0}), boot=new THREE.MeshStandardMaterial({color:0x2a1d12,roughness:0.75,metalness:0.03});
   const robed=!!o.robed;
-  const app={skin:skinCol,face:_PERSON_FACES[(sd*3)%6],hair:o.hood?"bald":_PERSON_HAIRS[(sd*5)%6],
+  const app={skin:skinCol,face:_PERSON_FACES[(sd*3)%6],hair:o.hood?"bald":(o.hairStyle||_PERSON_HAIRS[(sd*5)%6]),
     hairColor:hairCol,beard:o.beard?["full","goatee","mustache","stubble"][sd%4]:"none",tattoo:"none",eye:[0x4a6a3a,0x3a5a8a,0x5a3a1a,0x6a6a6a][sd%4]};
   const hipY=robed?1.02:0.94;
   // ---- legs (articulated groups, pivot at hip) or a robe skirt ----
@@ -2699,6 +2704,8 @@ const LABELS=[];
 function labelSprite(txt,cat){
   const c=document.createElement('canvas');c.width=256;c.height=64;const g=c.getContext('2d');
   g.font="bold 26px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
+  const tw=g.measureText(txt).width;   // long names shrink to fit the canvas instead of cropping
+  if(tw>244) g.font=`bold ${Math.max(13,Math.floor(26*244/tw))}px Trebuchet MS`;
   g.lineWidth=5;g.strokeStyle="rgba(0,0,0,.85)";g.strokeText(txt,128,32);
   g.fillStyle="#e8dcc0";g.fillText(txt,128,32);
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));
@@ -3360,6 +3367,7 @@ function buildWorld(){
   for(const c of CITIES) addCity(c);
   flushTownBatches();   // all queued buildings → a few InstancedMeshes per archetype (like the forests)
   addCasinos();         // the Dens of Iniquity: Holtburg, Shoushi & Yaraq gambling halls
+  addKilmerCastle();    // Castle Val Halla — Lord Kilmer's moated castle & the town of Valstead
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil"});
   // every town fields a Town Crier (directions) and a Barkeeper (rumours)
@@ -4055,6 +4063,374 @@ function addCity(c){
     for(const ga of[Math.PI*0.42,Math.PI*0.58]){const gx=c.x+Math.cos(ga)*wr,gz=c.z+Math.sin(ga)*wr;
       const gp=new THREE.Mesh(new THREE.BoxGeometry(1.7*sc,5.4*sc,1.7*sc),solid(0x9a9079));gp.position.set(gx,2.7*sc,gz);gp.castShadow=true;scene.add(gp);scenery.push(gp);obstacles.push({x:gx,z:gz,r:1.3*sc});}
     const banner=labelSprite("★ "+c.name+" ★","cities");banner.scale.set(16,4,1);banner.position.set(c.x,13,c.z);banner.userData.float=13;scene.add(banner);scenery.push(banner);}
+}
+// ════════════════════════════════════════════════════════════════════════════
+//  CASTLE VAL HALLA — the private seat of Lord Kilmer, on its own plateau west
+//  of Holtburg. A moated curtain wall encloses the town of Valstead (every
+//  vendor type, names echoing the hall) and the great keep: eight trophy-hung
+//  rooms (sword/bow/crossbow/dagger/orb/staff/throne/trophy), 20 vault chests
+//  wired to estate storage, hoard chests (MMD notes, jewelry, armour, foci,
+//  keys, scarabs, tapers, portal gems), a caged killer bunny, and ten valkyrie
+//  attendants — max-level buff bots & portal bots sworn to Kilmer.
+//  Access: Kilmer + guests he names with /grant (see castleAccess/enforce).
+// ════════════════════════════════════════════════════════════════════════════
+let kcChests=[],kcHooks=[],kcBunnyRec=null;
+const KC_VALKYRIES=["Sigrun","Brynhild","Eir","Gondul","Hildr","Kara","Mist","Rota","Skuld","Thrud"];
+const KC_VENDORS=[["provisioner","Valga"],["weaponsmith","Hallbrand"],["armorer","Valgard"],["scrivener","Hallwyn"],
+  ["outfitter","Valfen"],["healer","Hallveig"],["jeweler","Valdis"],["collector","Hallrik"]];
+function kcGuests(){ try{ return JSON.parse(localStorage.getItem("kcGuests")||"[]"); }catch(e){ return []; } }
+function kcSaveGuests(a){ try{ localStorage.setItem("kcGuests",JSON.stringify(a)); }catch(e){} }
+function castleAccess(){ const nm=((player&&player.name)||"").trim().toLowerCase(); if(!nm) return false;
+  if(nm===KC.lord.toLowerCase()) return true; return kcGuests().some(g=>(g||"").toLowerCase()===nm); }
+let _kcWarnT=0;
+function enforceCastleAccess(dt){   // strangers are turned back at the moat — the castle admits Kilmer + sworn guests
+  if(inDungeon||inNetwork||!player.alive||castleAccess()) return;
+  const dx=player.x-KC.x,dz=player.z-KC.z,ch=Math.max(Math.abs(dx),Math.abs(dz));
+  if(ch>=KC.moatOut+4) return;
+  const k=(KC.moatOut+6)/Math.max(ch,0.1);
+  player.x=KC.x+dx*k; player.z=KC.z+dz*k;
+  _kcWarnT-=dt; if(_kcWarnT<=0){ _kcWarnT=5;
+    log("A valkyrie bars your way — <b>Castle Val Halla</b> admits only Lord Kilmer and his sworn guests.","warn"); if(SFX.hit)SFX.hit(); }
+}
+// top-N named-item templates by power (weapons/armour by max roll, jewelry by cantrip strength), instantiated
+function kcTopNamed(pred,n){
+  const arr=NAMED_ITEMS.filter(pred);
+  arr.sort((a,b)=>(((b.v&&b.v[1])||0)+((b.bonus&&b.bonus.v)||0)*3)-(((a.v&&a.v[1])||0)+((a.bonus&&a.bonus.v)||0)*3));
+  return arr.slice(0,n).map(namedItemFrom);
+}
+function kcRoomItems(key){   // the top-20 display pieces for each themed room
+  const pad=(list,pred)=>{ if(list.length>=20) return list.slice(0,20);
+    const seen=new Set(list.map(i=>i.name));
+    for(const it of kcTopNamed(pred,40)){ if(list.length>=20) break; if(!seen.has(it.name)){ seen.add(it.name); list.push(it); } }
+    return list; };
+  if(key==="sword")    return kcTopNamed(t=>t.stat==="weapon"&&t.wt==="sword",20);
+  if(key==="bow")      return kcTopNamed(t=>t.stat==="weapon"&&t.wt==="bow",20);
+  if(key==="crossbow") return kcTopNamed(t=>t.stat==="weapon"&&t.wt==="crossbow",20);
+  if(key==="dagger")   return kcTopNamed(t=>t.stat==="weapon"&&t.wt==="dagger",20);
+  if(key==="orb")      return pad(kcTopNamed(t=>t.wt==="focus"&&/orb/i.test(t.name),20),t=>t.wt==="focus");
+  if(key==="staff")    return pad(kcTopNamed(t=>t.wt==="staff"||(t.wt==="focus"&&/staff/i.test(t.name)),20),t=>t.wt==="focus");
+  if(key==="throne")   return kcTopNamed(t=>t.stat==="worn"&&!t.shield,20);
+  if(key==="trophy"){  // AC Rares + the finest creature trophies — every unique/rare/trophy class on display
+    const rares=RARE_ITEMS.map(namedItemFrom);
+    const tr=Object.keys(TROPHY_BY_KIND).map(k=>({name:TROPHY_BY_KIND[k].name,stat:"trophy",v:TROPHY_BY_KIND[k].v,kind:k}))
+      .sort((a,b)=>b.v-a.v).slice(0,20-rares.length);
+    return rares.concat(tr); }
+  return [];
+}
+function kcDescribe(it){
+  if(it.stat==="weapon") return it.wt==="focus"?`casting focus · +${it.foc||it.v} all magic`:`${it.wt} · +${it.v} dmg`;
+  if(it.stat==="worn") return `${it.aslot||"armor"} · +${it.v} armor`;
+  if(it.stat==="jewelry") return (typeof jewelryDesc==="function")?jewelryDesc(it):"jewelry";
+  if(it.stat==="trophy") return `trophy · worth ${it.v}p`;
+  return "treasure of Val Halla";
+}
+function kcInspectHook(hk){
+  log(`<b>${hk.it.name}</b> — ${kcDescribe(hk.it)} <span style="color:var(--dim)">(on display in the ${hk.room})</span>`,"loot");
+}
+function kcPokeBunny(){
+  const lines=["The bunny's nose twitches. Somewhere far away, a drudge screams.",
+    "A tiny sign reads: <b>Property of Lord Kilmer. DO NOT OPEN. EVER.</b>",
+    "It has a vicious streak a mile wide! Look at the bones!",
+    "Sharp, pointy teeth glint in the torchlight."];
+  kcBunnyRec._line=((kcBunnyRec._line||0)+1)%lines.length;
+  log(`<b>The Killer Bunny of Val Halla:</b> ${lines[kcBunnyRec._line]}`,"warn"); if(SFX.growl)SFX.growl();
+}
+function openKcChest(ch){
+  if(ch.kind==="storage"){
+    if(!castleAccess()){ log("The vault chest is sealed by Lord Kilmer's ward.","warn"); if(SFX.hit)SFX.hit(); return; }
+    log("The keep's vault chest swings open — your estate storage lies within.","sys"); openHousing(); return; }
+  if(!castleAccess()){ log("The chest is sealed by Lord Kilmer's ward.","warn"); if(SFX.hit)SFX.hit(); return; }
+  const give=(it,flavor)=>{ if(!addToInv(it)){ log("Your satchel is full — free a slot first.","warn"); if(SFX.hit)SFX.hit(); return false; }
+    log(`${flavor} — <b>${it.name}${(it.count||1)>1?" ×"+it.count:""}</b>.`,"loot"); if(SFX.gold)SFX.gold(); updateHUD(); saveGame(); return true; };
+  const pickOf=(pool)=>pool[irnd(0,pool.length-1)];
+  switch(ch.kind){
+    case "mmd": give({name:"Trade Note (MMD)",stat:"note",v:250000,count:5},"You lift out a crisp stack of MMD notes"); break;
+    case "jewelry": give(pickOf(kcTopNamed(t=>t.stat==="jewelry",20)),"From the finest jewels of Dereth you take"); break;
+    case "rings": give(pickOf(kcTopNamed(t=>t.stat==="jewelry"&&t.jtype==="finger",20)),"From the ring hoard you take"); break;
+    case "armor": give(pickOf(kcTopNamed(t=>t.stat==="worn"&&!t.shield,20)),"From the armoury chest you take"); break;
+    case "orbs": give(pickOf(kcRoomItems("orb")),"From the orb chest you take"); break;
+    case "staffs": give(pickOf(kcRoomItems("staff")),"From the staff chest you take"); break;
+    case "wands": give(pickOf(kcTopNamed(t=>t.wt==="focus"&&/wand|sceptre|scepter|baton|rod/i.test(t.name),20).concat(kcTopNamed(t=>t.wt==="focus",5))),"From the wand chest you take"); break;
+    case "portalgem": { let n=0; for(let i=0;i<3;i++){ if(addToInv(rollPortalGem())) n++; }
+      if(n){ log(`You scoop up <b>${n} portal gem${n>1?"s":""}</b> from the chest.`,"loot"); if(SFX.gold)SFX.gold(); updateHUD(); saveGame(); }
+      else { log("Your satchel is full — free a slot first.","warn"); if(SFX.hit)SFX.hit(); } break; }
+    case "keys": give({name:"Brass Key",stat:"key",v:1,count:5},"You pocket a handful of keys"); break;
+    case "scarabs": give({name:"Diamond Scarab",stat:"comp",v:150,count:5},"Level-8 casting scarabs — you take"); break;
+    case "tapers": player.prismTapers=(player.prismTapers||0)+50;
+      log("You gather <b>50 Prismatic Tapers</b> from the chest.","loot"); if(SFX.gold)SFX.gold(); updateHUD(); saveGame(); break;
+  }
+}
+// ── the valkyries: max-level buff bots + portal bots, sworn to Lord Kilmer ──
+function kcMaxBuffList(){   // the single highest tier of every beneficial enchantment family in the spellbook
+  const best={};
+  for(const s of SPELLBOOK_LIST){
+    if(s.dmag!=null||s.vuln!=null) continue;   // never the debuff mirrors
+    let fam=null;
+    if(s.buff==="attr") fam="attr:"+s.attr;
+    else if(s.buff==="skill") fam="skill:"+s.skillKey;
+    else if(s.buff==="swift") fam="swift";
+    else if(s.buff==="prot") fam="prot";
+    else if(s.buff==="might") fam="might";
+    else if(s.buff==="item") fam="item:"+s.stat;
+    else if(s.buff==="bane"&&s.element) fam="bane:"+s.element;
+    else if(s.special==="regen") fam="regen:"+s.pool;
+    else if(s.school==="life"&&typeof s.heal==="function") fam="heal";
+    else continue;
+    if(!best[fam]||(s.lvl||0)>(best[fam].lvl||0)) best[fam]=s;
+  }
+  return Object.keys(best).map(k=>best[k]);
+}
+let _kcNpc=null;
+function kcBlessing(){
+  const list=kcMaxBuffList();
+  list.forEach(sp=>applyBuffSelf(sp,false)); derive(); updateHUD();
+  log(`<b>${_kcNpc?_kcNpc.name:"The valkyrie"}:</b> "By the hall and its lord." She weaves <b>${list.length}</b> enchantments over you — every buff in the book, at its highest circle.`,"heal");
+  if(typeof toast==="function")toast("BLESSED BY THE VALKYRIES"); if(SFX.quest)SFX.quest(); saveGame();
+  closeAttendant();
+}
+function kcPortalTo(name){
+  if(inDungeon||inNetwork) return;
+  let dest=null;
+  if(name==="__estate"&&typeof HOUSE_LOC!=="undefined"&&HOUSE_LOC) dest={x:HOUSE_LOC.x,z:HOUSE_LOC.z+6,name:"Kilmer's Estate"};
+  else { const c=CITIES.find(ct=>ct.name===name); if(c) dest={x:c.x,z:c.z+3,name:c.name}; }
+  if(!dest) return;
+  closeAttendant();
+  teleportFX(player.x,player.z); arriveAt(dest.x,dest.z); player.invuln=2; teleportFX(player.x,player.z);
+  if(typeof toast==="function")toast(dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
+  log(`The valkyrie opens a shimmering way — you step through to <b>${dest.name}</b>.`,"sys");
+}
+function closeAttendant(){ const ov=document.getElementById('kcPanel'); if(ov) ov.remove(); paused=false; }
+function openAttendant(n){
+  if(!castleAccess()){ log(`<b>${n.name}:</b> I serve Lord Kilmer alone. Away with you.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+  _kcNpc=n;
+  const old=document.getElementById('kcPanel'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='kcPanel';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  const towns=CITIES.slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(c=>`<button data-kcp="${c.name}" style="display:inline-block;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;color:#cfe0ff;cursor:pointer;padding:4px 8px;margin:2px;font-size:11px">${c.name}</button>`).join("");
+  ov.innerHTML=`<div style="max-width:520px;width:94%;max-height:86vh;overflow:auto;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">❦ ${n.name} — Valkyrie of Val Halla</div>
+    <div style="color:var(--dim);margin:4px 0 10px">“Welcome home, ${player.name===KC.lord?"my lord":"honoured guest"}. The hall stands ready.”</div>
+    <button id="kcBless" style="${btn}"><b style="color:#8fe6a0">✨ Blessings of Val Halla</b><div style="color:#bcae8a;font-size:11px;margin-top:2px">every enchantment in the book at its highest circle — attributes, skills, protections, item magic &amp; regeneration</div></button>
+    <div style="color:var(--gold);font-size:12px;margin-top:14px;text-transform:uppercase;letter-spacing:.6px">Portal Service — name your destination</div>
+    <div style="margin-top:6px"><button data-kcp="__estate" style="${btn};margin-top:2px"><b style="color:#ffd86b">⌂ Kilmer's Estate</b> — near Holtburg</button></div>
+    <div style="margin-top:6px">${towns}</div>
+    <button id="kcClose" style="${btn};text-align:center">Ask nothing for now</button></div>`;
+  document.body.appendChild(ov);
+  paused=true; if(locked)document.exitPointerLock();
+  ov.querySelector('#kcBless').onclick=()=>kcBlessing();
+  ov.querySelector('#kcClose').onclick=()=>closeAttendant();
+  ov.querySelectorAll('[data-kcp]').forEach(b=>b.onclick=()=>kcPortalTo(b.dataset.kcp));
+}
+// ── construction ──
+function addKilmerCastle(){
+  kcChests=[]; kcHooks=[]; kcBunnyRec=null;
+  const gy=groundY(KC.x,KC.z);
+  const G=new THREE.Group(); G.position.set(KC.x,gy,KC.z); G.userData.noSettle=true;
+  scene.add(G); scenery.push(G);
+  const stone=texMat(stoneFloorTex,0x9a958c), stoneDark=texMat(stoneFloorTex,0x6f6a62), wood=texMat(woodTex,0x6a4a2a);
+  const iron=solid(0x2a2620), crimson=new THREE.MeshStandardMaterial({color:0x5c1018,roughness:0.9});
+  const gold=new THREE.MeshStandardMaterial({color:0xd8a832,metalness:0.75,roughness:0.3});
+  const water=new THREE.MeshStandardMaterial({color:0x1c3550,transparent:true,opacity:0.85,roughness:0.25,metalness:0.1});
+  const obst=(lx,lz,r)=>obstacles.push({x:KC.x+lx,z:KC.z+lz,r:r});
+  const box=(w,h,d,lx,ly,lz,mat,shadow)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+    m.position.set(lx,ly,lz); if(shadow!==false){m.castShadow=true;m.receiveShadow=true;} G.add(m); return m; };
+  // a wall segment (axis-aligned) with a line of colliders
+  const wallSeg=(x0,z0,x1,z1,h,th,mat,r)=>{
+    const w=Math.max(Math.abs(x1-x0),th), d=Math.max(Math.abs(z1-z0),th);
+    box(w,h,d,(x0+x1)/2,h/2,(z0+z1)/2,mat);
+    const len=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.ceil(len/((r||0.9)*1.7)));
+    for(let i=0;i<=n;i++){ const t=i/n; obst(x0+(x1-x0)*t,z0+(z1-z0)*t,r||0.9); }
+  };
+  const merlons=(x0,z0,x1,z1,y)=>{ const len=Math.hypot(x1-x0,z1-z0), n=Math.floor(len/6);
+    for(let i=0;i<=n;i++){ const t=i/n; const m=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.2,1.6),stone);
+      m.position.set(x0+(x1-x0)*t,y,z0+(z1-z0)*t); m.castShadow=false; G.add(m); } };
+  const banner=(lx,ly,lz,ry)=>{ const p=new THREE.Mesh(new THREE.BoxGeometry(0.1,3.2,0.1),iron); p.position.set(lx,ly,lz); G.add(p);
+    const f=new THREE.Mesh(new THREE.PlaneGeometry(1.3,2.2),crimson); f.position.set(lx,ly+0.2,lz); f.rotation.y=ry||0; f.material.side=THREE.DoubleSide; G.add(f); };
+  const W=KC.wall, WH=9, WT=2.4;
+  // ── moat: a square ring of dark water with stone banks, bridged at the south causeway ──
+  const MI=KC.moatIn, MO=KC.moatOut, GH=KC.gateHalf;
+  const strip=(x0,z0,x1,z1)=>{ const m=box(Math.abs(x1-x0),0.22,Math.abs(z1-z0),(x0+x1)/2,0.11,(z0+z1)/2,water,false); m.receiveShadow=true; return m; };
+  strip(-MO,-MO,MO,-MI); strip(-MO,MI,-GH,MO); strip(GH,MI,MO,MO); strip(-MO,-MI,-MI,MI); strip(MI,-MI,MO,MI);
+  // banks: low stone rims + colliders on both edges (nobody swims the moat) — the causeway stays open
+  const bank=(x0,z0,x1,z1,skipCauseway)=>{ box(Math.max(Math.abs(x1-x0),0.9),0.5,Math.max(Math.abs(z1-z0),0.9),(x0+x1)/2,0.25,(z0+z1)/2,stoneDark);
+    const len=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.ceil(len/2.4));
+    for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
+      if(skipCauseway&&Math.abs(lx)<GH+0.6&&lz>0) continue; obst(lx,lz,1.5); } };
+  bank(-MI,-MI,MI,-MI); bank(-MI,MI,-GH,MI,true); bank(GH,MI,MI,MI,true); bank(-MI,-MI,-MI,MI); bank(MI,-MI,MI,MI);
+  bank(-MO,-MO,MO,-MO); bank(-MO,MO,-GH,MO,true); bank(GH,MO,MO,MO,true); bank(-MO,-MO,-MO,MO); bank(MO,-MO,MO,MO);
+  // the bridge: an oaken deck over the south channel, rails to either side
+  box(GH*2-0.6,0.5,MO-MI+6,0,0.3,(MI+MO)/2,wood);
+  for(const sx of[-1,1]){ box(0.3,1.1,MO-MI+6,sx*(GH-0.6),1.05,(MI+MO)/2,wood);
+    for(let z=MI-2;z<=MO+2;z+=2.4) obst(sx*(GH-0.4),z,0.55); }
+  // ── curtain wall: four battlemented walls, corner towers, a gatehouse on the south face ──
+  wallSeg(-W,-W,W,-W,WH,WT,stone,1.6); merlons(-W,-W,W,-W,WH+0.5);
+  wallSeg(-W,-W,-W,W,WH,WT,stone,1.6); merlons(-W,-W,-W,W,WH+0.5);
+  wallSeg(W,-W,W,W,WH,WT,stone,1.6);   merlons(W,-W,W,W,WH+0.5);
+  wallSeg(-W,W,-GH,W,WH,WT,stone,1.6); merlons(-W,W,-GH-2,W,WH+0.5);
+  wallSeg(GH,W,W,W,WH,WT,stone,1.6);   merlons(GH+2,W,W,W,WH+0.5);
+  for(const [tx,tz] of [[-W,-W],[W,-W],[-W,W],[W,W]]){
+    const tw=new THREE.Mesh(new THREE.CylinderGeometry(6.5,7.2,15,12),stone); tw.position.set(tx,7.5,tz); tw.castShadow=true; G.add(tw);
+    const cap=new THREE.Mesh(new THREE.ConeGeometry(7.4,4.5,12),solid(0x5a2a30,true)); cap.position.set(tx,17.2,tz); cap.castShadow=true; G.add(cap);
+    banner(tx,13.5,tz+(tz>0?7.0:-7.0),0); obst(tx,tz,7.4);
+  }
+  // gatehouse: twin drum towers flanking the gate, an arch above, banners of the lord
+  for(const sx of[-1,1]){ const gt=new THREE.Mesh(new THREE.CylinderGeometry(4,4.6,13,10),stone); gt.position.set(sx*(GH+4),6.5,W); gt.castShadow=true; G.add(gt);
+    const gc=new THREE.Mesh(new THREE.ConeGeometry(4.8,3.4,10),solid(0x5a2a30,true)); gc.position.set(sx*(GH+4),14.7,W); G.add(gc);
+    banner(sx*(GH+4),10.5,W+4.4,0); obst(sx*(GH+4),W,4.6); }
+  box(GH*2+2,3,3,0,WH-1.2,W,stone);   // arch over the gate
+  { const pc=new THREE.Mesh(new THREE.BoxGeometry(GH*2-1,4.4,0.24),new THREE.MeshStandardMaterial({color:0x2a2620,metalness:0.6,roughness:0.5,transparent:true,opacity:0.9}));
+    pc.position.set(0,WH+0.4,W); G.add(pc); }   // the raised portcullis, visible in the arch
+  { const gl=new THREE.PointLight(0xffb43a,1.4,20); gl.position.set(0,7.5,W+3); G.add(gl); }
+  // ── the town of VALSTEAD: paved plaza, well, vendor ring, cottages against the walls ──
+  const path=(x0,z0,x1,z1,w)=>{ const m=box(Math.abs(x1-x0)||w,0.12,Math.abs(z1-z0)||w,(x0+x1)/2,0.06,(z0+z1)/2,stoneDark,false); m.receiveShadow=true; };
+  path(-2.5,8,2.5,W,5);                       // gate → keep road
+  { const pl=new THREE.Mesh(new THREE.CylinderGeometry(17,17,0.14,24),stoneDark); pl.position.set(0,0.07,45); pl.receiveShadow=true; G.add(pl); }
+  const well=buildPlazaFeature(0,1.5); well.position.set(0,0,45); G.add(well); obst(0,45,2.2);
+  const townLbl=labelSprite("VALSTEAD — the town of Castle Val Halla","cities"); townLbl.scale.set(15,3,1); townLbl.position.set(0,13,45); G.add(townLbl);
+  const castleLbl=labelSprite("CASTLE VAL HALLA — seat of Lord Kilmer","cities"); castleLbl.scale.set(22,4.4,1); castleLbl.position.set(0,34,-30); G.add(castleLbl);
+  for(let i=0;i<KC_VENDORS.length;i++){ const a=(i/KC_VENDORS.length)*Math.PI*2+Math.PI/8;
+    addMerchant(KC.x+Math.cos(a)*13,KC.z+45+Math.sin(a)*13,KC_VENDORS[i][0],KC_VENDORS[i][1]); }
+  const HOUSES=[[-52,-45],[-56,-12],[-52,22],[52,-45],[56,-12],[52,22],[-34,62],[34,62]];
+  for(const [hx,hz] of HOUSES){
+    const hb=buildBuilding(0,"house",1.1), ry=Math.atan2(0-hx,45-hz);
+    hb.position.set(KC.x+hx,gy,KC.z+hz); hb.rotation.y=ry; hb.userData.noSettle=true;
+    scene.add(hb); scenery.push(hb);
+    const ct=Math.cos(ry),st=Math.sin(ry);
+    for(const cc of (hb.userData.colliders||[])) obstacles.push({x:KC.x+hx+cc.x*ct+cc.z*st, z:KC.z+hz-cc.x*st+cc.z*ct, r:cc.r});
+  }
+  for(let i=0;i<4;i++){ const a=i/4*6.283+0.7;
+    addNPC(KC.x+Math.cos(a)*9,KC.z+45+Math.sin(a)*9,{role:"townsfolk",town:"Valstead",name:["Valdi","Halla","Erna","Torvi"][i],stroll:true,range:8}); }
+  addLifestone(KC.x-16,KC.z+58,false,"Castle Val Halla",false,0);
+  // ── THE KEEP: 38×70, eight great rooms off a central corridor, door facing the gate ──
+  const KX0=-19,KX1=19,KZ0=-65,KZ1=5,KH=12,DOOR=2.2;   // keep bounds (local), wall height (towers over the 9u curtain), door half-widths
+  const rows=[-65,-47.5,-30,-12.5,5], rowC=rows.slice(0,4).map((z,i)=>(z+rows[i+1])/2);
+  { const fl=box(KX1-KX0-0.2,0.16,KZ1-KZ0-0.2,0,0.08,(KZ0+KZ1)/2,stoneDark,false); fl.receiveShadow=true; }
+  { const cp=new THREE.Mesh(new THREE.PlaneGeometry(6.4,KZ1-KZ0-4),crimson); cp.rotation.x=-Math.PI/2; cp.position.set(0,0.19,(KZ0+KZ1)/2); G.add(cp); }
+  // outer shell (door gap on the south face), flat battlemented roof with corner turrets
+  wallSeg(KX0,KZ0,KX1,KZ0,KH,1.0,stone,1.0);
+  wallSeg(KX0,KZ0,KX0,KZ1,KH,1.0,stone,1.0);
+  wallSeg(KX1,KZ0,KX1,KZ1,KH,1.0,stone,1.0);
+  wallSeg(KX0,KZ1,-DOOR,KZ1,KH,1.0,stone,1.0);
+  wallSeg(DOOR,KZ1,KX1,KZ1,KH,1.0,stone,1.0);
+  box(DOOR*2+1.4,1.6,1.4,0,KH-0.8,KZ1,stone);                                  // lintel above the keep door
+  box(KX1-KX0+1.6,0.5,KZ1-KZ0+1.6,0,KH+0.25,(KZ0+KZ1)/2,stone);                // roof slab (ceiling from inside)
+  merlons(KX0-0.5,KZ0-0.5,KX1+0.5,KZ0-0.5,KH+1.0); merlons(KX0-0.5,KZ1+0.5,KX1+0.5,KZ1+0.5,KH+1.0);
+  merlons(KX0-0.5,KZ0-0.5,KX0-0.5,KZ1+0.5,KH+1.0); merlons(KX1+0.5,KZ0-0.5,KX1+0.5,KZ1+0.5,KH+1.0);
+  for(const [tx,tz] of [[KX0,KZ0],[KX1,KZ0],[KX0,KZ1],[KX1,KZ1]]){
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(2,2.3,3.4,8),stone); t.position.set(tx,KH+1.7,tz); G.add(t);
+    const c=new THREE.Mesh(new THREE.ConeGeometry(2.4,1.8,8),solid(0x5a2a30,true)); c.position.set(tx,KH+4.3,tz); G.add(c); }
+  banner(-3.4,KH+1.2,KZ1+0.9,0); banner(3.4,KH+1.2,KZ1+0.9,0);
+  // interior partitions: corridor walls at x=±4 (door gap per room), row dividers inside each column
+  for(let i=0;i<4;i++){
+    const zc=rowC[i], zLo=rows[i], zHi=rows[i+1];
+    for(const sx of[-1,1]){
+      wallSeg(sx*4,zLo,sx*4,zc-DOOR,KH-1.2,0.6,stone,0.8);
+      wallSeg(sx*4,zc+DOOR,sx*4,zHi,KH-1.2,0.6,stone,0.8);
+      box(0.7,1.2,DOOR*2+0.6,sx*4,KH-1.8,zc,stone);                            // doorway lintel
+      if(i<3){ wallSeg(sx*4,rows[i+1],sx*19,rows[i+1],KH-1.2,0.6,stone,0.8); } // row divider
+    }
+  }
+  // torch sconces down the corridor (emissive — the light pool stays untouched)
+  for(let z=KZ0+6;z<KZ1-2;z+=9) for(const sx of[-1,1]){
+    const tf=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.5,6),new THREE.MeshStandardMaterial({color:0x3a2c14,emissive:0xffa03a,emissiveIntensity:1.1}));
+    tf.position.set(sx*3.6,2.6,z); tf.castShadow=false; G.add(tf); }
+  // ── the eight rooms: hooks bearing the top-20 pieces of each type ──
+  const ROOMS=[
+    {key:"sword",   label:"Sword Room",   col:-1, row:0},
+    {key:"bow",     label:"Bow Room",     col:-1, row:1},
+    {key:"crossbow",label:"Crossbow Room",col:-1, row:2},
+    {key:"dagger",  label:"Dagger Room",  col:-1, row:3},
+    {key:"trophy",  label:"Trophy Room",  col: 1, row:0},
+    {key:"orb",     label:"Orb Room",     col: 1, row:1},
+    {key:"staff",   label:"Staff Room",   col: 1, row:2},
+    {key:"throne",  label:"Throne Room",  col: 1, row:3},
+  ];
+  const hookIco=(it)=>{ try{ return (typeof gearIco==="function")?gearIco(it):"⚔️"; }catch(e){ return "⚔️"; } };
+  for(const R of ROOMS){
+    const x0=R.col<0?-19:4, x1=R.col<0?-4:19, z0=rows[R.row], z1=rows[R.row+1], zc=rowC[R.row];
+    const rl=labelSprite(R.label,"cities"); rl.scale.set(7,1.6,1); rl.position.set((x0+x1)/2,4.6,zc); G.add(rl);
+    const items=kcRoomItems(R.key);
+    // 20 floor hooks around the walls: 6 on the outer wall, 5+5 on the end walls, 4 flanking the door
+    const inx0=x0+1.7,inx1=x1-1.7,inz0=z0+1.7,inz1=z1-1.7, pts=[];
+    for(let i=0;i<6;i++) pts.push([R.col<0?inx0:inx1, inz0+(inz1-inz0)*(i+0.5)/6]);
+    for(let i=0;i<5;i++) pts.push([inx0+(inx1-inx0)*(i+0.5)/5, inz0]);
+    for(let i=0;i<5;i++) pts.push([inx0+(inx1-inx0)*(i+0.5)/5, inz1]);
+    for(const f of [0.08,0.3,0.7,0.92]) pts.push([R.col<0?inx1:inx0, inz0+(inz1-inz0)*f]);
+    for(let i=0;i<Math.min(20,items.length);i++){
+      const it=items[i], [hx,hz]=pts[i];
+      const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.34,1.1,8),stoneDark); ped.position.set(hx,0.55,hz); ped.castShadow=true; G.add(ped);
+      const ic=textSprite(hookIco(it), it.stat==="trophy"?"#cdbf9a":"#ff6a5a"); ic.position.set(hx,1.6,hz); ic.scale.set(0.9,0.9,1); G.add(ic);
+      const nl=labelSprite(it.name,"npcs"); nl.scale.set(4.2,1.05,1); nl.position.set(hx,2.3,hz); G.add(nl);
+      obst(hx,hz,0.5);
+      kcHooks.push({x:KC.x+hx,z:KC.z+hz,it,room:R.label});
+    }
+  }
+  // the throne itself, on a dais at the east wall of the Throne Room
+  { const zc=rowC[3];
+    const dais=new THREE.Mesh(new THREE.CylinderGeometry(2.6,3.0,0.5,10),stone); dais.position.set(15.5,0.25,zc); dais.receiveShadow=true; G.add(dais);
+    box(1.5,0.6,1.4,15.5,0.8,zc,crimson); box(1.5,2.6,0.3,16.2,1.9,zc,crimson);
+    box(1.7,0.24,0.3,16.2,3.2,zc,gold); for(const dz of[-0.75,0.75]) box(0.24,1.1,1.3,15.5+0.6,1.1,zc+dz,gold);
+    const tl=new THREE.PointLight(0xffd08a,1.2,16); tl.position.set(13,4.5,zc); G.add(tl);
+    obst(15.5,zc,1.8);
+  }
+  // ── 20 vault chests (estate storage) lining the great corridor ──
+  const mkChest=(lx,lz,tint,bandTint)=>{ const ch=new THREE.Group();
+    const bx=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.8,0.85),texMat(woodTex,tint||0x7a5a2a)); bx.position.y=0.4; bx.castShadow=true; ch.add(bx);
+    const lid=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.3,10,1,false,0,Math.PI),new THREE.MeshStandardMaterial({color:bandTint||0xb8912e,metalness:0.7,roughness:0.35}));
+    lid.rotation.z=Math.PI/2; lid.position.y=0.8; ch.add(lid);
+    ch.position.set(lx,0.16,lz); G.add(ch); obst(lx,lz,0.8); return ch; };
+  let placed=0;
+  for(let z=KZ0+3.2;z<KZ1-1&&placed<20;z+=3.4){
+    if(rowC.some(c=>Math.abs(z-c)<DOOR+1.2)) continue;               // keep the room doorways clear
+    for(const sx of[-1,1]){ if(placed>=20) break;
+      mkChest(sx*3.1,z,0x7a5a2a,0xb8912e);
+      kcChests.push({x:KC.x+sx*3.1,z:KC.z+z,kind:"storage"}); placed++; }
+  }
+  // ── the hoard: themed chests in their rooms ──
+  const themed=(lx,lz,kind,label,tint,band)=>{ mkChest(lx,lz,tint,band);
+    const l=labelSprite(label,"npcs"); l.scale.set(4.6,1.15,1); l.position.set(lx,1.9,lz); G.add(l);
+    kcChests.push({x:KC.x+lx,z:KC.z+lz,kind}); };
+  { const zc=rowC[3];                                                 // Throne Room: the treasury
+    for(let i=0;i<5;i++) themed(6.2+i*2.1,zc+6.4,"mmd","MMD Notes",0x4a3a1a,0xffd23b);
+    themed(6.2,zc-6.4,"jewelry","Finest Jewelry",0x3a2a4a,0x9af0ff);
+    themed(8.6,zc-6.4,"rings","Best Rings",0x3a2a4a,0xff9adf);
+    themed(11.0,zc-6.4,"armor","Best Armor",0x3a3a4a,0x9fd0ff); }
+  { const zc=rowC[1];                                                 // Orb Room: orbs & wands
+    themed(9.5,zc+6.4,"orbs","Best Orbs",0x2a3a4a,0x9af0ff);
+    themed(12.5,zc+6.4,"wands","Best Wands",0x2a3a4a,0xc9a6ff); }
+  themed(11.5,rowC[2]+6.4,"staffs","Best Staffs",0x2a3a2a,0x7fe6a0);  // Staff Room
+  { const zc=rowC[0];                                                 // Trophy Room: keys, scarabs, tapers, gems
+    themed(6.6,zc+6.4,"keys","Chest of Keys",0x4a3320,0xcdbf9a);
+    themed(9.0,zc+6.4,"scarabs","Level-8 Scarabs",0x2a2a3a,0xcf9bea);
+    themed(11.4,zc+6.4,"tapers","Prismatic Tapers",0x3a2a3a,0xff8aa0);
+    themed(13.8,zc+6.4,"portalgem","Portal Gems",0x2a3a3a,0xc7a6ff); }
+  // ── the killer bunny, caged at the north end of the corridor ──
+  { const bx=0,bz=KZ0+4;
+    const plinth=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.3,4.6),stoneDark); plinth.position.set(bx,0.15,bz); G.add(plinth);
+    const bun=buildCreature("rabbit"); bun.scale.set(2.6,2.6,2.6); bun.position.set(bx,0.3,bz); bun.rotation.y=Math.PI; G.add(bun);
+    for(let i=0;i<2;i++){ const eye=new THREE.Mesh(new THREE.SphereGeometry(0.045,6,5),new THREE.MeshStandardMaterial({color:0xff2020,emissive:0xff2020,emissiveIntensity:1.6}));
+      eye.position.set((i?0.09:-0.09),(bun.userData.headY||0.5)*0.98,-0.3); bun.add(eye); }
+    const cage=new THREE.Group(); cage.position.set(bx,0.3,bz); G.add(cage);
+    for(let i=0;i<=8;i++){ const t=-1.9+i*0.475;
+      for(const [px,pz] of [[t,-1.9],[t,1.9],[-1.9,t],[1.9,t]]){
+        const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,2.8,5),iron); bar.position.set(px,1.4,pz); bar.castShadow=false; cage.add(bar); } }
+    const top=new THREE.Mesh(new THREE.BoxGeometry(4.1,0.14,4.1),iron); top.position.set(0,2.85,0); cage.add(top);
+    for(const [ox,oz] of [[-1.9,-1.9],[1.9,-1.9],[-1.9,1.9],[1.9,1.9],[0,-1.9],[0,1.9],[-1.9,0],[1.9,0]]) obst(bx+ox,bz+oz,0.9);
+    const wl=labelSprite("THE KILLER BUNNY — do NOT open the cage","npcs"); wl.scale.set(8,2,1); wl.position.set(bx,4.2,bz); G.add(wl);
+    kcBunnyRec={x:KC.x+bx,z:KC.z+bz,_line:0};
+  }
+  // ── the ten valkyries: buff bots of the highest circle & portal bots, sworn to serve Lord Kilmer ──
+  const VPOS=[[-2.6,7.6],[2.6,7.6],[13.5,rowC[3]-3],[13.5,rowC[3]+3],[-3,-52],[3,-44],[-3,-36],[3,-28],[-3,-20],[3,-12]];
+  for(let i=0;i<KC_VALKYRIES.length;i++){
+    addNPC(KC.x+VPOS[i][0],KC.z+VPOS[i][1],{role:"attendant",name:KC_VALKYRIES[i],town:"Castle Val Halla"});
+  }
+  // bridge deck + keep roof are real standing surfaces
+  registerStructure(KC.x,KC.z,0,gy,{platforms:[
+    {x0:-GH+0.4,z0:MI-3,x1:GH-0.4,z1:MO+3,y:0.55},
+    {x0:KX0,z0:KZ0,x1:KX1,z1:KZ1,y:KH+0.5},
+  ]});
 }
 function addPortal(x,z,dest){
   const mesh=buildPortal(dest.name);mesh.position.set(x,0,z);scene.add(mesh);
@@ -6321,15 +6697,15 @@ function addToInv(it, force){   // → true if added/stacked, false if the satch
   player.inv.push(it); return true;
 }
 function takeFromInv(i){ const it=player.inv[i]; if(!it) return; if(stackable(it)&&(it.count||1)>1) it.count--; else player.inv.splice(i,1); }
-function rollNamedItem(){
-  const t=NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)];
-  const it={name:t.name,stat:t.stat,v:irnd(t.v[0],t.v[1]),mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
+function namedItemFrom(t){   // instantiate a NAMED_ITEMS / RARE_ITEMS template into a real item
+  const it={name:t.name,stat:t.stat,v:t.v?irnd(t.v[0],t.v[1]):0,mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
   if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at; if(t.aslot) it.aslot=t.aslot;
   if(t.shield) it.shield=t.shield; if(t.magicAbsorb) it.magicAbsorb=t.magicAbsorb;
   if(t.wt==="focus") it.foc=it.v;   // a legendary focus's value is its all-school magic bonus
   if(t.stat==="jewelry"){ it.jtype=t.jtype; it.bonus=Object.assign({},t.bonus); }   // legendary ring/amulet: fixed jtype + cantrip (name is complete, no suffix appended)
   return it;
 }
+function rollNamedItem(){ return namedItemFrom(NAMED_ITEMS[irnd(0,NAMED_ITEMS.length-1)]); }
 // ── I6 Rares (AC's beloved ~1/2000 pity-timer drops): a small pool of iconic gold-tier artifacts ──
 const RARE_ITEMS=[
   {name:"Coral Fan",                 stat:"weapon",wt:"mace",    mat:"Coral",     v:[34,44],affix:()=>_waff("crit")},
@@ -7638,6 +8014,9 @@ function interact(){
   }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
+  for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6){ openKcChest(ch); return; } }
+  if(kcBunnyRec&&Math.hypot(kcBunnyRec.x-player.x,kcBunnyRec.z-player.z)<4){ kcPokeBunny(); return; }
+  for(const hk of kcHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<1.9){ kcInspectHook(hk); return; } }
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
@@ -8105,6 +8484,7 @@ function update(dt){
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
+  enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
   cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   syncCamera(dt);
@@ -8300,6 +8680,7 @@ function streamMonsters(dt){
     const x=clamp(px+Math.cos(a)*rr,-HALF+6,HALF-6), z=clamp(pz+Math.sin(a)*rr,-HALF+6,HALF-6);
     const d=nearestCapitalDist(x,z);
     if(d<TOWN_SAFE+6 || terrainH(x,z)<0) continue;          // not in town-safe rings or water
+    if(Math.hypot(x-KC.x,z-KC.z)<KC.safeR) continue;        // Castle Val Halla's grounds are guarded — no spawns
     spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500);
     live++;
   }
@@ -10691,6 +11072,7 @@ const NPC_ROLES={
   townsfolk:  {robe:0x6a5a3a,hood:0x4a3a26,mark:"",mcol:"#cfc0a0",label:"Townsperson"},
   questgiver: {robe:0x7a6a3a,hood:0x564a28,mark:"!",mcol:"#ffd23b",label:"Quest Giver"},
   casino:     {robe:0x7a5a16,hood:0x5a3f0e,mark:"♦",mcol:"#ffd86b",label:"Casino Owner"},
+  attendant:  {robe:0xcfd4e6,hood:0x8a94b8,mark:"❦",mcol:"#c9d6ff",label:"Valkyrie of the Keep"},
 };
 const TOWNSFOLK_ROBES=[0x6a5a3a,0x4a5a6a,0x6a3a3a,0x3a5a4a,0x5a4a6a,0x7a6a4a,0x4a4a52,0x8a6a4a]; // varied commoner clothing
 // culture-appropriate townsperson names, matching each region's people (Aluvian / Sho / Gharu'ndim)
@@ -10741,6 +11123,7 @@ function buildNPC(role,name,seedX,look){
   else if(role==="gatekeep"){ o.helm=true; }
   else if(role==="questgiver"){ Object.assign(o, GIVER_LOOK[look]||{}); if(o.beard===undefined && o.hood===undefined) o.beard=(seed%2===0); }
   else if(role==="townsfolk"){ o.beard=(seed%3===0); if(seed%4===0)o.hat="cap"; }
+  else if(role==="attendant"){ o.beard=false; o.cape=true; o.hairStyle=["long","ponytail","braids"][seed%3]; }   // the valkyries of Val Halla — women of the keep
   else { o.beard=(seed%2===0); }
   // everyone wears the standard model with randomised shirt (torso) + pants (legs/trim) colours; hair & skin
   // are already seed-varied in buildPerson. Role silhouette (hood/hat/helm/apron/cape) & markers are kept.
@@ -10890,6 +11273,7 @@ function talkToNPC(n){
   }
   if(n.role==="barkeep"){ log(`<b>${n.name}:</b> ${RUMORS[(n._line++)%RUMORS.length]}`,"sys"); return; }
   if(n.role==="casino"){ openCasino(n); return; }
+  if(n.role==="attendant"){ openAttendant(n); return; }
   if(n.role==="reset_attr"){
     const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0);
     if(allocated<=0){ log("<b>Chafulumisa:</b> Your spirit is already unwritten, traveller.","sys"); return; }
@@ -11286,9 +11670,9 @@ const VENDOR_TYPES={
   collector:{title:"Trophy Collector",marker:"🦴",mcol:"#cdbf9a",robe:0x5a4a2a,collector:true,stock:()=>[]},   // I7: turns in creature trophies for a bounty (gold + XP)
 };
 let activeShop=null;
-function buildMerchant(vt){
+function buildMerchant(vt,name){
   const def=VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner;
-  const seed=def.title.length;
+  const seed=(name?name.length*7:0)+def.title.length;
   const g=buildPerson({robe:pickColor(SHIRT_COLORS,seed*3,29),accent:pickColor(PANTS_COLORS,seed*3,71),apron:true,hat:(vt==="scrivener"||vt==="provisioner")?"cap":null,beard:(seed%2===0),seed:seed*3});
   // market stall beside the shopkeeper: counter, canopy on posts, a few wares
   const stall=new THREE.Group();stall.position.set(1.45,0,0);g.add(stall);
@@ -11299,14 +11683,14 @@ function buildMerchant(vt){
   const canopy=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.12,1.2),new THREE.MeshStandardMaterial({color:def.mcol||0xb04030}));canopy.position.set(0,2.05,0);canopy.castShadow=true;stall.add(canopy);
   const stripe=new THREE.Mesh(new THREE.BoxGeometry(1.84,0.13,0.3),new THREE.MeshStandardMaterial({color:0xe8e0c8}));stripe.position.set(0,2.04,0);stall.add(stripe);
   for(let i=0;i<3;i++){const w=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2),i%2?wood2:new THREE.MeshStandardMaterial({color:def.robe}));w.position.set(-0.45+i*0.45,1.04,0.1);stall.add(w);}
-  const lbl=labelSprite(def.title+" — E to trade","npcs");lbl.position.y=2.5;g.add(lbl);
+  const lbl=labelSprite((name?name+" — ":"")+def.title+" — E to trade","npcs");lbl.position.y=2.5;g.add(lbl);
   const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
   return g;
 }
-function addMerchant(x,z,vt){
+function addMerchant(x,z,vt,name){
   vt=vt||"provisioner";
-  const mesh=buildMerchant(vt);mesh.position.set(x,0,z);scene.add(mesh);
-  shops.push({x,z,mesh,vtype:vt,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
+  const mesh=buildMerchant(vt,name);mesh.position.set(x,0,z);scene.add(mesh);
+  shops.push({x,z,mesh,vtype:vt,name:name||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
 }
 function openShop(){ buildShop(); document.getElementById('shop').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeShop(){ document.getElementById('shop').style.display="none"; paused=false; }
@@ -11315,7 +11699,7 @@ function buildShop(){
   if(activeShop){ if(activeShop.pyreals==null){activeShop.pyreals=irnd(14000,20000);activeShop.pmax=20000;}   // I4: coin regenerates ~150/s up to the vendor's max
     const t=now(); if(activeShop._pt) activeShop.pyreals=Math.min(activeShop.pmax||20000,(activeShop.pyreals||0)+(t-activeShop._pt)/1000*150); activeShop._pt=t; }
   const SHOP=def.stock();
-  const h=document.querySelector('#shop h2'); if(h) h.textContent=def.title;
+  const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
   const sub=document.querySelector('#shop .sub');
   if(sub) sub.textContent=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel.`;
   const buy=document.getElementById('shopBuy');buy.innerHTML="";
@@ -12813,6 +13197,17 @@ function handleSlash(text){
   const after=text.slice(text.indexOf(" ")+1);
   if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
+  else if(cmd==="castle"){ if(inDungeon||inNetwork){ log("You cannot recall to the castle from here.","warn"); }
+    else if(!castleAccess()){ log("Castle Val Halla admits only Lord Kilmer and his sworn guests.","warn"); }
+    else { teleportFX(player.x,player.z); arriveAt(KC.x,KC.z+45); player.invuln=2; teleportFX(player.x,player.z);
+      toast("CASTLE VAL HALLA"); log("You recall to <b>Castle Val Halla</b>.","sys"); if(SFX.portal)SFX.portal(); } }
+  else if(cmd==="grant"||cmd==="revoke"){ const who=parts.slice(1).join(" ").trim();
+    if((player.name||"")!==KC.lord){ log("Only Lord Kilmer commands the castle rolls.","warn"); }
+    else if(!who){ log(`Castle guests: <b>${kcGuests().map(esc).join(", ")||"none"}</b> — /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys"); }
+    else { const g=kcGuests().filter(x=>(x||"").toLowerCase()!==who.toLowerCase());
+      if(cmd==="grant"){ g.push(who); log(`<b>${esc(who)}</b> is granted the freedom of Castle Val Halla.`,"sys"); }
+      else log(`<b>${esc(who)}</b> is struck from the castle rolls.`,"sys");
+      kcSaveGuests(g); if(SFX.quest)SFX.quest(); } }
   else if(cmd==="who"){ netSend({t:"who"}); }
   else if(cmd==="tell"||cmd==="w"){ const name=parts[1], msg=parts.slice(2).join(" ").trim();
     if(name&&msg) netSend({t:"tell",name,msg}); else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
