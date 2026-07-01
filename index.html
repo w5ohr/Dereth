@@ -880,9 +880,9 @@ function loadGltfPeople(){
   gltfPeopleStarted=true; const L=new THREE.GLTFLoader();
   for(const url of GLTF_PEOPLE){ L.load(url, gltf=>{
       const box=new THREE.Box3().setFromObject(gltf.scene), h=(box.max.y-box.min.y)||1;
-      // most CDN models' native front maps to +z after our Math.PI flip; RobotExpressive faces the
-      // opposite way and was moonwalking (front trailing the travel dir) — give it no flip.
-      const faceOffset = /RobotExpressive/i.test(url) ? 0 : Math.PI;
+      // CDN models face +z; our procedural bodies face -z and the NPC yaw now aims -z at travel,
+      // so glTF clones need a +PI flip to face the same way (else they'd moonwalk).
+      const faceOffset = Math.PI;
       gltfPeople.push({scene:gltf.scene, anims:gltf.animations||[], scale:1.8/h, faceOffset});
       log("Loaded a CDN person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
     }, undefined, err=>console.log("CDN person model failed:",url,(err&&err.message)||"")); }
@@ -5216,7 +5216,7 @@ function animateOnePerson(p,dt){
     if(p._tgt){ const dx=p._tgt.x-p.x,dz=p._tgt.z-p.z,d=Math.hypot(dx,dz);
       if(d<0.5){ p._tgt=null; p._wait=2.5+Math.random()*5; }
       else { const sp=Math.min(d,1.15*dt); p.x+=dx/d*sp; p.z+=dz/d*sp; moving=true; p._wp=(p._wp||0)+dt*7.5;
-        p._face=Math.atan2(dx,dz); p.mesh.position.set(p.x,groundY(p.x,p.z),p.z); } }
+        p._face=Math.atan2(dx,dz)+Math.PI; p.mesh.position.set(p.x,groundY(p.x,p.z),p.z); } }  // bodies face -z, so aim -z at the target (not +z) — else they moonwalk
   }
   // smooth body facing
   let fy=p.mesh.rotation.y; const df=((p._face-fy+Math.PI*3)%(Math.PI*2))-Math.PI; p.mesh.rotation.y=fy+df*Math.min(1,dt*6);
