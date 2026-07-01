@@ -278,6 +278,10 @@ anywhere.
   when your head is under the surface (`player.y<−1.5`), then 6%/s health (ignores armour) with a warning;
   surfacing refills. Breath bar + blue underwater vignette HUD; reset at the lifestone on respawn.
   Verified: submerged→breath 0.29 in 10s; out of air→HP 200→140 in 5s; surfacing refills.
+- ✅ **F7. Void curses (Mg6)** — SHIPPED (jsc + preview verified, 0 console errors). `VOID_CORRUPT` →
+  Nether Corruption II–VIII: a targeted Void curse applying a nether DoT (rides the burn tick, Void-scaled)
+  **and** corroding the foe's defences (vulnUntil/vulnV) for 12s. New `special:"corrupt"` handler; uses a
+  `cvuln` field to dodge the buff-normalization that would stretch the DoT to 15 min. Verified: DoT + 1.18× vuln.
 
 ## MILESTONE H — AC long-tail systems  ☐ (research done, all ☐ planned)
 From the Round-2 gap sweep (`docs/asherons-call-longtail-gaps.md`, 2026-07-01). **Headline:** the
