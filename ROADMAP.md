@@ -269,6 +269,11 @@ anywhere.
   Lightning/Bladed/Bludgeoning/Piercing Bane I–VIII, 10%→50% protection, higher tiers gated by Item skill).
   `player.banes[element]` + `baneResist()` applied in `playerHurt` after material resist; ticks/expires with
   the other buffs, shown in the buff HUD, cast-able by the buff-bot. Verified: a 50% fire bane halves fire damage.
+- ✅ **F6. Drowning (W3)** — SHIPPED (jsc + preview verified, 0 console errors). `collide()` now lets you
+  wade into water up to 6 deep (abyss past −6 still walled); `updateDrowning()` drains breath over ~14s
+  when your head is under the surface (`player.y<−1.5`), then 6%/s health (ignores armour) with a warning;
+  surfacing refills. Breath bar + blue underwater vignette HUD; reset at the lifestone on respawn.
+  Verified: submerged→breath 0.29 in 10s; out of air→HP 200→140 in 5s; surfacing refills.
 
 ## MILESTONE H — AC long-tail systems  ☐ (research done, all ☐ planned)
 From the Round-2 gap sweep (`docs/asherons-call-longtail-gaps.md`, 2026-07-01). **Headline:** the
