@@ -298,10 +298,10 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   Advanced entrance 80+; clear → Vault Key → Tier-7 loot + one of five Empyrean Rings. Marquee repeatable
   endgame; reuses the Incursion (F4) wave tech. *Verify:* buy ticket → enter → clear rooms under timer →
   vault key → tiered reward.
-- ☐ **H17. Full augmentation tree** (M) — beyond attr/vital gems: Jack of All Trades (+5 all skills),
-  skill/spec-credit augs, XP augs, Innate-attribute reinforcements (Enduring Calm…), Critical Protection,
-  Clutch of the Miser, Master of the Five Fold Path, Frenzy of the Slayer, etc., with a hard total-aug
-  cap. *Verify:* applying an aug grants its effect once and counts against the cap.
+- ◑ **H17. Augmentation-tree breadth** — SHIPPED a first pass: Jack of All Trades (`allskills` channel in
+  `skillValue`), Ciandra's Essence (`xpBonus` in `gainXP`, cap +25%), Frenzy of the Slayer / Archmage's
+  Endurance / Infused Vigor. Existing Enduring-Calm-style innate-attr augs already present (+50 cap). ◇
+  remaining: skill/spec-credit augs, Critical Protection (needs combat wiring), a hard total-aug count cap.
 - ◇ **H18. Instanced event dungeons** (L) — repeatable timed instances w/ tickets & vault keys (Colosseum
   is the archetype); the template for future monthly live content.
 
