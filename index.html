@@ -651,6 +651,8 @@ for(const b of ITEM_BUFFS) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
 // ── Item Enchantment: recall spells (AC's portal magic) — teleport home (overworld only) ──
 SPELLBOOK_LIST.push({id:"item_recall_lifestone",name:"Lifestone Recall",ico:"🔵",school:"item",lvl:2,req:30,cost:30,cd:20000,special:"recall",dest:"lifestone"});
 SPELLBOOK_LIST.push({id:"item_recall_sanctuary",name:"Sanctuary Recall",ico:"🏛️",school:"item",lvl:3,req:60,cost:40,cd:30000,special:"recall",dest:"sanctuary"});
+SPELLBOOK_LIST.push({id:"item_portal_tie",name:"Portal Tie",ico:"🔗",school:"item",lvl:3,req:60,cost:35,cd:15000,special:"portaltie"});
+SPELLBOOK_LIST.push({id:"item_portal_recall",name:"Portal Recall",ico:"🌀",school:"item",lvl:4,req:95,cost:45,cd:30000,special:"recall",dest:"portal"});
 const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115},
   {lvl:5,base:112,foc:2.8,drain:0.62,cost:100,req:155},{lvl:6,base:150,foc:3.2,drain:0.65,cost:130,req:200},{lvl:7,base:198,foc:3.6,drain:0.68,cost:166,req:255},{lvl:8,base:258,foc:4.0,drain:0.72,cost:208,req:305}];
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
@@ -5813,14 +5815,21 @@ function executeSpell(id){
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
   }
-  if(s.special==="recall"){   // teleport to your bound Lifestone, or to the Holtburg sanctuary
+  if(s.special==="portaltie"){   // bind your return to the last portal you took (AC Portal Tie)
+    if(inDungeon||inNetwork){ player.mn+=cost; spellCd[id]=0; log("You cannot tie a portal from here.","warn"); return; }
+    const p=player.lastPortal; if(!p){ player.mn+=cost; spellCd[id]=0; log("Step through a portal first, then Portal Tie to bind your return to it.","warn"); return; }
+    player.tiedPortal={x:p.x,z:p.z,name:p.name}; castFlash(0x9b6bff); SFX.quest&&SFX.quest();
+    log(`You tie a magical thread to <b>${p.name}</b> — Portal Recall will return you there.`,"heal"); return;
+  }
+  if(s.special==="recall"){   // teleport to your bound Lifestone, the Holtburg sanctuary, or your tied/last portal
     if(inDungeon||inNetwork){ player.mn+=cost; spellCd[id]=0; log("You cannot recall from here.","warn"); return; }
-    let dest;
+    let dest,isLS=true;
     if(s.dest==="sanctuary") dest=lifestones.find(l=>l.name==="Holtburg")||lifestones[0];
+    else if(s.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(!p){ player.mn+=cost; spellCd[id]=0; log("You have no portal tied — take a portal (or cast Portal Tie) first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ player.mn+=cost; spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
     teleportFX(player.x,player.z); player.x=dest.x; player.z=dest.z+3; player.invuln=2; teleportFX(player.x,player.z);
-    SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to the <b>${dest.name}</b> Lifestone.`,"heal"); return;
+    SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
   }
   if(s.special==="dispel"){   // cleanse hostile curses on you, then brief immunity to re-application
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
@@ -6135,6 +6144,7 @@ function portalTouch(){
     portalCd=1.5;teleportFX(player.x,player.z);
     player.x=pt.dest.x;player.z=pt.dest.z;player.invuln=1.5;
     teleportFX(player.x,player.z);
+    player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};   // remembered for Portal Recall / Portal Tie
     log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");toast(pt.dest.name.toUpperCase());
     return;
   } }
@@ -9852,7 +9862,8 @@ function spellEffectText(s){ try{
   if(s.special==="revitalize") return `+${Math.round(s.amt+player.attr.Self*s.foc)} stam`;
   if(s.special==="regen") return `+${s.rate}/s ${({hp:"health",st:"stam",mn:"mana"})[s.pool]}`;
   if(s.special==="dispel") return `cleanse · ${s.immune}s immune`;
-  if(s.special==="recall") return "teleport home";
+  if(s.special==="portaltie") return "bind your return to the last portal";
+  if(s.special==="recall") return s.dest==="portal"?"recall to your tied portal":"teleport home";
   if(s.special==="stam2mana") return "stam→mana";
   if(s.special==="summon") return "summon pet";
   if(s.make){ const mk=s.make(); let t=`${Math.round(mk.dmg)} dmg`; if(mk.splash)t+=" splash"; if(mk.drain)t+=`, ${Math.round(mk.drain*100)}% leech`; return t; }
@@ -10336,6 +10347,7 @@ function netToDungeon(def){
 function activateNetPortal(np){
   if(np.kind==="town"){
     if(np.town.req&&player.level<np.town.req){ log(`The portal to <b>${np.town.name}</b> flares and rejects you — the frontier there demands level <b>${np.town.req}</b>.`,"warn");if(SFX.deny)SFX.deny();return; }  // AC level-gated frontier portals
+    player.lastPortal={x:np.town.x,z:np.town.z,name:np.town.name};   // remembered for Portal Recall / Portal Tie
     exitNetwork({x:np.town.x,z:np.town.z});toast(np.town.name.toUpperCase());log(`You travel to <b>${np.town.name}</b>.`,"sys");SFX.portal();return; }
   if(np.kind==="switch"){ switchHub(np.to);toast(np.to==="facility"?"FACILITY HUB":"THE TOWN NETWORK");
     log(np.to==="facility"?"You enter the <b>Facility Hub</b> — portals here lead to dungeons, gated by your level.":"You return to the <b>Town Network</b>.","sys");SFX.portal();return; }
@@ -10499,7 +10511,7 @@ function saveGame(){
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,
-      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,
+      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -10543,6 +10555,7 @@ function applySaveObj(s){
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
   player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
+  player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
   player.packBonus=s.packBonus|0;
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
