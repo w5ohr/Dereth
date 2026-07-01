@@ -3734,6 +3734,19 @@ function advanceMonth(){
   toast(S.name+" — "+ce.name);
   updateSeasonHUD();
   eventCd=Math.min(eventCd,18);             // an Incursion tied to the new event arrives shortly
+  if(ce.boss){   // S9: the climactic chapter looses the apex terror upon Dereth
+    if(!isOnline && typeof spawnApex==="function" && !monsters.some(m=>m.apex)) spawnApex();
+    log(`<b style="color:#ff5a5a">⚠ ${ce.name}</b> — ${ce.clue}`,"warn"); toast("⚠ "+ce.name.toUpperCase());
+  }
+}
+// S9 live story: show the serialized arc and where the world currently stands within it
+function storyView(){
+  const n=EVENT_CALENDAR.length, cur=((gameMonth%n)+n)%n, ce=EVENT_CALENDAR[cur];
+  log(`<b>Dereth's Story — “The Fifth Sending of Darkness”</b> · chapter <b>${cur+1}/${n}</b> · ${currentSeason().name}`,"sys");
+  log(`<b>${ce.name}</b> — <i>${ce.rumor}</i>`,"sys");
+  if(ce.clue) log(`Town Crier: “${ce.clue}”`,"sys");
+  EVENT_CALENDAR.forEach((c,i)=>{ const mark=i<cur?"✓":i===cur?"➤":"·";
+    log(`${mark} <b>${c.name}</b>${c.title?` <span style="color:#ffd23b">— ${c.title}${calendarDone[c.id]?" ✓":""}</span>`:""}`, i===cur?"warn":"sys"); });
 }
 function updateCalendar(dt){
   eventClock+=dt;
@@ -12057,6 +12070,7 @@ function handleSlash(text){
     else if(sub==="list"||!sub) netSend({t:"party",act:"list"});
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
+  else if(cmd==="story"||cmd==="arc"){ storyView(); }
   else if(cmd==="pk"){ if(!isOnline){ log("PvP requires being online.","warn"); return; } player.pk=!player.pk;
     log(player.pk?"⚔️ You raise your <b>PK flag</b> — you and other flagged players can now strike each other. <b>/pk</b> again to stand down.":"You lower your <b>PK flag</b> — you are no longer open to player combat.","warn"); if(SFX.growl)SFX.growl(); }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
