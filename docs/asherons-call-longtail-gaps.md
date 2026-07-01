@@ -8,11 +8,19 @@ actual code in `index.html` via grep before being called a gap.
 **Headline finding:** the game's `SKILLS_DEF` table (index.html:457) already *lists* nearly every AC
 skill — Alchemy, Cooking, Fletching, Lockpick, Healing, Salvaging, Two Handed, Dual Wield, Dirty
 Fighting, Recklessness, Sneak Attack, Summoning, Deception, Run, Jump, Leadership, Loyalty, Arcane
-Lore, Assess Creature/Person. **But the gameplay systems those skills drive are almost entirely
-absent.** They are skills-in-name-only: you can train them, they do nothing. Verified by grep —
-`recipe` 0, `combine` 0, `healkit` 0, `dye` 0, `portal storm` 0, `colosseum/arena` 0, `keyring` 0,
-`scroll`/`learnSpell` 0, `locked`/`pickLock` 0, `craftArrow` 0. (Emotes, by contrast, ARE implemented
-— `EMOTE_CMDS` at 11391: wave/cheer/dance/bow/laugh/point/salute/flex/kneel/clap — so not a gap.)
+Lore, Assess Creature/Person. The **trade-crafting** subset (Alchemy/Cooking/Fletching) is
+skills-in-name-only: their outputs (potions, food, ammo) exist as *loot data* but there is no way to
+*craft* them, because **no item-combine engine exists** (`recipe` 0, `combine` 0, no craft panel).
+
+> **CORRECTION (verified against code 2026-07-01, after a grep-methodology bug):** the first draft of
+> this doc claimed Healing Kits, Locked Caches/Lockpick, and Spell Scrolls were *also* missing. That was
+> wrong — a grep using `\|` under `grep -E` matched a literal pipe and returned false zeros. On direct
+> code inspection **all three are already implemented**: tiered Healing Kits + health/mana/stamina
+> potions (`ITEM_BASE` @4004, used @5760); Locked Caches with the Lockpick skill, pick/key drops and
+> `openLockedCache()` (@6515, prompt "Pick the locked cache (E)"); and spells learned from Scrolls into
+> `player.knownSpells` (scribe with **T** @623/846, Scriveners sell leveled scrolls @10052). Mana stones
+> exist as quest rewards. Emotes are implemented (`EMOTE_CMDS` @11391). Those rows below are struck
+> through / re-scoped to the small remaining sub-gaps.
 
 Legend — Effort: **S** small · **M** medium subsystem · **L** large structural.
 
@@ -31,8 +39,8 @@ None of this combine engine exists in the game (`recipe`/`combine` = 0 hits).
 | L2 | **Alchemy** | grind gems/stones→powders; brew Health/Mana potions; craft oils, Trade Elixirs, Alchemy Gems (cast self-buffs); make dye pots | skill trains, zero effect | M |
 | L3 | **Cooking** | rations & food, Beer (big stamina + attribute buffs), Tiriun Mushroom food; applies dye pots to armor | skill trains, zero effect | M |
 | L4 | **Fletching** | craft Ammo for bows/crossbows/atlatls; apply alchemy oils to arrowheads → elemental damage + more dmg | arrows are just loot; skill inert | M |
-| L5 | **Healing skill + Healing Kits** | consumable kit, double-click→target; difficulty = missing-HP×2, harder in combat state; kits from loot/Healers/quests/craft; also health/mana potions | Healing skill inert; no kits, no potions-as-consumable | M |
-| L6 | **Lockpick + locked chests/doors + Keyrings** | locked reward chests & doors need Lockpick (or a key); Keyrings carved with Intricate Carving Tool hold key sets | no locked containers; reward chest opens freely | M |
+| L5 | ~~Healing skill + Healing Kits~~ **DONE — remaining: skill-scaling** | kit heal amount scales with Healing skill; harder (or blocked) in combat state | tiered kits + potions exist (@4004/5760) but heal a **fixed** amount — Healing skill does nothing; no combat penalty | S |
+| L6 | ~~Lockpick + locked chests/doors~~ **DONE — remaining: Keyrings only** | Keyrings carved with Intricate Carving Tool hold key sets | Locked Caches + Lockpick + pick/key drops fully implemented (`openLockedCache` @6515); only Keyrings absent | S |
 | L7 | **Dyeing armor** | Alchemy makes a dye pot (crush dye plant w/ Mortar & Pestle + Neutral Balm), Cooking applies it; dye plants spawn wild or grown by Herbalist; fail chance costs AL (−20 minor / −50 crit; metal→orange, cloth→pink) | no dyeing; armor colour fixed | M |
 | L8 | **Salvage → 100-unit bags → tinker** | salvaging yields *partial* bags; combine partials up to a full 100-unit bag; then tinker | salvaging simplified; no partial-bag combine (see prior audit I3) | S |
 
@@ -46,7 +54,7 @@ economy rather than a menu.
 
 | # | System | Authentic AC | Game now | Effort |
 |---|--------|--------------|----------|--------|
-| Sp1 | **Spells learned from Scrolls / quests** | you don't auto-know spells — learn them from Scrolls (creature loot, Scriveners, Steel Chests) or quest rewards | all spells effectively available; no scroll items or learn step (`scroll` = 0) | M |
+| Sp1 | ~~Spells learned from Scrolls / quests~~ **DONE** | — | fully implemented: `player.knownSpells`, scribe Scroll items with **T** (@623/846), Scriveners sell leveled scrolls (@10052), cast blocked until learned | — |
 | Sp2 | **Component casting formula** | modern: school Foci + level Scarab + Prismatic Tapers; old: Scarab→Taper→Herb→Taper→Powder→Potion→Talisman (incl. 2 *personal* tapers) | components exist as vendor trash, only tapers consumed (prior audit Mg2) | L(full)/S(soft) |
 | Sp3 | **Spell economy** | frequently-cast spells lose power / rarely-cast spells gain power; component scarcity as sink | no dynamic spell power | M |
 | Sp4 | **Level VIII scroll crafting** | Quill + Mana Scarab → infused quill → +ink → +glyph → L8 scroll (Ancient Powers event) | none | M |
@@ -59,7 +67,7 @@ economy rather than a menu.
 |---|--------|--------------|----------|--------|
 | Wl1 | **Portal Storms** | when an area gets too crowded, players are randomly teleported to the town outskirts (anti-lag / anti-zerg) — occasionally into danger | none (`portal storm` = 0) | S |
 | Wl2 | **Recall Contracts** | inventory items granting recall to fixed spots (e.g. Aphus Lassel Contract), distinct from recall spells | recall is spell/gem only; no Contract items | S |
-| Wl3 | **Mana Stones / Portal Gems** | Mana Stones drain into / refill an item's mana; single-use Portal/recall Gems | no mana-item economy; gems are stat buffs only | S |
+| Wl3 | Mana Stones / Portal Gems | Mana Stones drain into / refill an item's mana; single-use Portal/recall Gems | Portal Gems (`portalgem` @5801) + recall stones exist; mana stones appear only as quest rewards, no refill mechanic | S |
 
 ---
 
@@ -85,13 +93,17 @@ weapon damage types / to-hit / power bar (Cb1–Cb4), fall damage & weather & am
 
 ## Suggested build order for Round-2 gaps (impact ÷ effort)
 
-**Quick wins (S):** Wl1 portal storms · Wl2 recall Contracts · L8 partial salvage bags.
-**High-impact subsystems (M):** L1+L2+L5 a minimal **combine engine** wiring Alchemy (potions) →
-Healing (kits) as the first vertical slice — it makes 5 dead skills real at once · L6 locked chests +
-Lockpick (turns Lockpick live and adds dungeon texture) · Sp1 spell scrolls (makes spell acquisition a
-loop) · E1 Colosseum (marquee repeatable endgame) · E2 augmentation tree.
-**Structural (L):** full component casting (Sp2) · L3/L4/L7 the rest of the crafting web (cooking/
-fletching/dyeing) once the combine engine exists.
+**Genuinely-missing, ordered (after the corrections above):**
+**Quick wins (S):** Wl1 portal storms · Wl2 recall Contracts · L5 make Healing skill scale kit potency +
+combat penalty · L6-remainder Keyrings.
+**High-impact subsystems (M):** **L1 combine engine** — the confirmed central gap — wiring L2 Alchemy
+(potions), L5-craft (kits), L3 Cooking (food) and L6 Fletching (arrows) so 3 inert trade skills produce
+their already-existing loot items · L7 Dyeing (rides on the combine engine) · E1 Colosseum **gauntlet
+run** (the location dungeon exists; add the 18-room ticketed timer + Empyrean Ring reward) · E2
+augmentation-tree breadth.
+**Structural (L):** full component casting (Sp2) · H18 instanced event-dungeon template.
+**Already done (do NOT rebuild):** Healing Kits & potions · Locked Caches + Lockpick · Spell Scrolls +
+learning · Portal Gems/recall stones · Emotes · partial salvage bags (bags already accumulate to 100).
 
 **Sources:** acpedia.org (Crafting, Skills, Healing, Salvaging, Recall Spells), asheron.fandom.com
 (Alchemy, Fletching, Dyeing, Colosseum, Portal Storm, Jack of All Trades, Spell Research, Emotes),

@@ -257,12 +257,13 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
 - ☐ **H2. Alchemy** (M) — grind gems/stones → powders; brew Health/Mana potions; craft oils + Alchemy
   Gems (cast self-buffs). Turns the inert Alchemy skill live. *Verify:* combine reagents → potion; drink
   → heals; Alchemy skill gates difficulty.
-- ☐ **H3. Healing skill + Healing Kits** (M) — consumable kit, use → target self/ally; difficulty =
-  missing-HP×2, harder in combat state; kits from loot/vendors/quests/craft; plus health/mana potions as
-  consumables. *Verify:* kit heals scaled by Healing skill; blocked/penalized in combat; consumed on use.
-- ☐ **H4. Lockpick + locked chests/doors + Keyrings** (M) — reward chests & some doors spawn locked,
-  opened by Lockpick (skill roll) or a matching key; Keyrings hold key sets. *Verify:* a locked dungeon
-  chest resists opening until a Lockpick roll (or key) succeeds; skill affects success.
+- ◑ **H3. Healing skill scaling** (S) — *Healing Kits + health/mana/stamina potions already exist*
+  (`ITEM_BASE` @4004, used @5760) but heal a **fixed** amount. Remaining: make kit/potion potency scale
+  with the (currently-inert) Healing skill + apply a combat-state penalty. *Verify:* same kit heals more
+  at higher Healing skill; heals less while in combat.
+- ✅ **H4. Locked caches + Lockpick** — *already implemented*: `openLockedCache()` (@6515), pick/key
+  drops (@3550), `dungeonLock`, prompt "Pick the locked cache (E)". ◇ only **Keyrings** (S) remain (a
+  container that holds a key set).
 - ☐ **H5. Cooking** (M) — rations/food + Beer (stamina + attribute buffs) + mushroom food; applies dye
   pots. *Verify:* cook food → eat → timed buff; Cooking skill gates.
 - ☐ **H6. Fletching** (M) — craft ammo (arrows/bolts/darts); apply Alchemy oils to arrowheads → elemental
@@ -270,13 +271,13 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
 - ☐ **H7. Dyeing armor** (M) — Alchemy dye pot + Cooking apply; dye plants spawn wild / grown by
   Herbalist; fail chance costs AL (−20 minor / −50 crit; metal→orange, cloth→pink). *Verify:* dye recolors
   a worn piece; fail path applies the AL penalty + wrong-color.
-- ☐ **H8. Partial salvage bags** (S) — salvaging yields *partial* bags that combine up to a full 100-unit
-  bag before tinkering (extends E2). *Verify:* two partials combine; a full bag tinkers.
+- ✅ **H8. Partial salvage bags** — *already implemented*: `player.salvage[mat]={units,work}` bags
+  accumulate units toward 100 (units-weighted-avg workmanship) before `applyTinker` (@5820).
 
 ### H-B. Spell acquisition & economy
-- ☐ **H9. Spells learned from Scrolls / quests** (M) — spells not auto-known: learn from Scroll items
-  (creature loot / Scriveners / Steel Chests) or quest rewards. *Verify:* a locked spell won't cast until
-  its scroll is read; scroll consumed; spell then appears in the bar.
+- ✅ **H9. Spells learned from Scrolls / quests** — *already implemented*: `player.knownSpells`, scribe
+  Scroll items with **T** (@623/846), Scriveners sell leveled scrolls (@10052), casting blocked until the
+  spell is learned (@6050).
 - ☐ **H10. Component casting** (L full / S soft) — school Foci + level Scarab + Prismatic Tapers consumed
   per cast (soft version: tapers as a soft requirement). *Verify:* casting draws & consumes components;
   out-of-components blocks the cast. (Overlaps prior audit Mg2.)
@@ -289,7 +290,9 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   into danger). *Verify:* N players/mobs within radius triggers a scatter-teleport with a warning.
 - ☐ **H14. Recall Contracts** (S) — inventory items granting recall to fixed spots (Aphus Lassel etc.),
   distinct from recall spells. *Verify:* using a Contract recalls to its bound location.
-- ◇ **H15. Mana Stones / Portal Gems** (S) — Mana Stones refill an item's mana; single-use recall gems.
+- ◑ **H15. Mana Stones / Portal Gems** (S) — Portal Gems (`portalgem` @5801) + recall stones already
+  exist; only the Mana-Stone *refill an item's mana* mechanic is missing (mana stones currently appear
+  as quest reward flavor only).
 
 ### H-D. Endgame & repeatable event content
 - ☐ **H16. Colosseum arena** (M) — 18-room ticketed gauntlet w/ 1-hr timer; Ticket (5 MMD / any Rare);
@@ -303,9 +306,11 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
 - ◇ **H18. Instanced event dungeons** (L) — repeatable timed instances w/ tickets & vault keys (Colosseum
   is the archetype); the template for future monthly live content.
 
-**H build order (impact ÷ effort):** H13/H14/H8 (quick wins) → **H1 combine engine** → H2+H3 (Alchemy→
-potions→Healing kits: revives 5 dead skills in one vertical slice) → H4 locked chests → H9 spell scrolls
-→ H16 Colosseum → H17 augments → H5/H6/H7 rest of the crafting web → H10/H12 component/L8 casting.
+**H build order (impact ÷ effort), after the code-audit corrections:** H13 portal storms + H14 recall
+Contracts + H3 Healing-skill scaling (quick wins) → **H1 combine engine** (the confirmed central gap) →
+H2 Alchemy + H5 Cooking + H6 Fletching (make 3 inert trade skills craft their already-existing loot) →
+H7 dyeing → H16 Colosseum gauntlet run → H17 augment breadth → H10/H12 component/L8 casting.
+(H4 locked caches, H8 salvage bags, H9 spell scrolls, H15 portal gems, emotes = already done.)
 
 ---
 
