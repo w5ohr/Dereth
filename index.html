@@ -3372,7 +3372,9 @@ const ITEM_BASE=[
   {n:"Signet",stat:"jewelry",jtype:"finger",v:[0,0]},
   {n:"Bracelet",stat:"jewelry",jtype:"wrist",v:[0,0]},{n:"Bangle",stat:"jewelry",jtype:"wrist",v:[0,0]},
   {n:"Amulet",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Necklace",stat:"jewelry",jtype:"neck",v:[0,0]},
-  {n:"Pendant",stat:"jewelry",jtype:"neck",v:[0,0]}];
+  {n:"Pendant",stat:"jewelry",jtype:"neck",v:[0,0]},
+  {n:"Seal",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Armband",stat:"jewelry",jtype:"wrist",v:[0,0]},
+  {n:"Choker",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Torc",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Locket",stat:"jewelry",jtype:"neck",v:[0,0]}];
 // ── Multi-slot armour (AC-style): five worn slots, each its own piece. Loot generates a piece per
 //    armour set × slot, e.g. "Steel Chainmail Greaves", "Diamond Amuli Gauntlets". ──
 const ARMOR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet","offhand"];
@@ -3593,6 +3595,19 @@ const NAMED_ITEMS=[
   {name:"Shroud of the Virindi",stat:"worn", at:"light",  aslot:"head",  mat:"Velvet",  v:[28,38],affix:()=>_oaff("of the Magus")},
   {name:"Gauntlets of Sundering",stat:"worn",at:"heavy",  aslot:"hands", mat:"Steel",   v:[26,34],affix:()=>_oaff("of Warding")},
   {name:"Greaves of the Lugian",stat:"worn", at:"heavy",  aslot:"legs",  mat:"Granite", v:[32,44],affix:()=>_oaff("of Vigor")},
+  // ── artifact batch 6 ──
+  {name:"Frostbrand",          stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
+  {name:"Doomhammer",          stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_wbrand("shock")},
+  {name:"Widowmaker",          stat:"weapon",wt:"crossbow",mat:"Ebony",   v:[34,46],affix:()=>_waff("crit")},
+  {name:"Soulrender",          stat:"weapon",wt:"twohand", mat:"Jet",     v:[42,56],affix:()=>_wbrand("nether")},
+  {name:"Sunflare Bow",        stat:"weapon",wt:"bow",     mat:"Ruby",    v:[28,38],affix:()=>_wbrand("fire")},
+  {name:"Corrosive Fang",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
+  {name:"Thornwhip Atlatl",    stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
+  {name:"Stormcaller Staff",   stat:"weapon",wt:"focus",   mat:"Diamond", v:[24,32]},
+  {name:"Aegis of the Empyrean",stat:"worn", at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.24,mat:"Pyreal",v:[28,40],affix:()=>_oaff("of Impregnability")},
+  {name:"Vestments of the Undying",stat:"worn",at:"light", aslot:"chest", mat:"Velvet",  v:[32,44],affix:()=>_oaff("of the Magus")},
+  {name:"Helm of the Warmaster",stat:"worn", at:"heavy",  aslot:"head",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
+  {name:"Boots of the Wanderer",stat:"worn", at:"light",  aslot:"feet",  mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -3604,6 +3619,12 @@ const AUGMENT_ITEMS=[
   {name:"Blue Aetheria",  aug:{resist:0.06}, desc:"+6% resistance to every element, forever", aetheria:true},
   {name:"Red Aetheria",   aug:{magic:3},     desc:"+3 to every school of magic, forever",     aetheria:true},
   {name:"Yellow Aetheria",aug:{crit:0.04},   desc:"+4% critical hit chance, forever",          aetheria:true},
+  {name:"Gem of Fortification", aug:{hp:25}, desc:"+25 max health, forever"},
+  {name:"Gem of Vigor",         aug:{st:25}, desc:"+25 max stamina, forever"},
+  {name:"Gem of Concentration", aug:{mn:25}, desc:"+25 max mana, forever"},
+  {name:"Gem of Mastery",       aug:{skillpts:1}, desc:"+1 skill credit, forever"},
+  {name:"Coalesced Blue Aetheria",aug:{resist:0.08}, desc:"+8% resistance to every element, forever", aetheria:true},
+  {name:"Coalesced Red Aetheria", aug:{magic:4},     desc:"+4 to every school of magic, forever",     aetheria:true},
 ];
 function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,tier:5,legendary:true}; }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
