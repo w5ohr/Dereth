@@ -1387,15 +1387,17 @@ let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],p
 
 function texGround(){
   const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
-  // mottled earth base
-  g.fillStyle="#34401f";g.fillRect(0,0,256,256);
-  for(let i=0;i<1400;i++){const v=irnd(-16,14);g.fillStyle=`rgba(${58+v},${70+v},${38+v},0.5)`;g.fillRect(irnd(0,255),irnd(0,255),irnd(2,5),irnd(2,5));}
-  // grass blades (two tones, slight angle)
+  // NEUTRAL warm-grey detail base — colour comes from per-vertex biome tint (green forest / sand desert /
+  // white snow / grey Direlands), so this texture stays near-grey and only supplies relief/variation.
+  g.fillStyle="#9a968a";g.fillRect(0,0,256,256);
+  for(let i=0;i<1400;i++){const v=irnd(-18,16);g.fillStyle=`rgba(${150+v},${146+v},${132+v},0.5)`;g.fillRect(irnd(0,255),irnd(0,255),irnd(2,5),irnd(2,5));}
+  // blade/relief strokes (two tones, slight angle) — greyscale so they tint to any biome
   for(let i=0;i<5200;i++){const x=irnd(0,255),y=irnd(0,255),h=irnd(3,7),lean=irnd(-1,1),lit=Math.random()<0.5;
-    g.strokeStyle=lit?`rgba(${90+irnd(-18,18)},${118+irnd(-18,18)},${52+irnd(-12,12)},0.8)`:`rgba(${46+irnd(-12,12)},${66+irnd(-12,12)},${30+irnd(-8,8)},0.8)`;
+    const b=lit?190:130,v=irnd(-16,16);
+    g.strokeStyle=`rgba(${b+v},${b+v-4},${b+v-14},0.8)`;
     g.lineWidth=1;g.beginPath();g.moveTo(x,y);g.lineTo(x+lean,y-h);g.stroke();}
-  // sparse dirt/pebbles
-  for(let i=0;i<140;i++){const v=irnd(-14,14);g.fillStyle=`rgba(${96+v},${80+v},${58+v},0.7)`;g.beginPath();g.arc(irnd(0,255),irnd(0,255),rnd(0.8,2.2),0,6.28);g.fill();}
+  // sparse pebbles
+  for(let i=0;i<140;i++){const v=irnd(-16,16);g.fillStyle=`rgba(${170+v},${162+v},${146+v},0.7)`;g.beginPath();g.arc(irnd(0,255),irnd(0,255),rnd(0.8,2.2),0,6.28);g.fill();}
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(110,110);
   if(typeof renderer!=="undefined"&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
   return t;
@@ -1723,6 +1725,11 @@ function initThree(){
     gp.setZ(i,hh);                                  // displace into mountains/valleys (local Z → world height)
     const t=regionTint(wx,wz);
     let rr=t[0],gg=t[1],bb=t[2];
+    // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
+    const bmv=biomeAt(wx,wz);
+    if(bmv==="desert"){ rr=0.90;gg=0.78;bb=0.50; }
+    else if(bmv==="cold"){ rr=0.90;gg=0.93;bb=1.0; }
+    else if(bmv==="direlands"){ rr=0.46;gg=0.42;bb=0.44; }
     // slope → rock; sample terrain gradient over a small span
     const slope=Math.abs(terrainH(wx+6,wz)-terrainH(wx-6,wz))+Math.abs(terrainH(wx,wz+6)-terrainH(wx,wz-6));
     const rock=clamp((slope-7)/14,0,1);
@@ -2700,6 +2707,39 @@ function buildBush(s){
   g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
   return g;
 }
+// ── biome-specific flora ──
+function buildPalm(s){ const g=new THREE.Group();   // desert oasis palm
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.13*s,0.2*s,3.2*s,7),texMat(woodTex,0x7a5a34)); trunk.position.y=1.6*s; trunk.rotation.z=rnd(-0.12,0.12); g.add(trunk);
+  const frondMat=new THREE.MeshLambertMaterial({color:0x4a7a3a,flatShading:true,side:THREE.DoubleSide});
+  for(let i=0;i<7;i++){ const a=i/7*6.28; const f=new THREE.Mesh(new THREE.ConeGeometry(0.26*s,1.7*s,4),frondMat); f.position.set(Math.cos(a)*0.45*s,3.05*s,Math.sin(a)*0.45*s); f.rotation.z=Math.cos(a)*1.15; f.rotation.x=Math.sin(a)*1.15; g.add(f); }
+  for(let i=0;i<3;i++)part(g,new THREE.SphereGeometry(0.11*s,7,6),solid(0x5a3a20),rnd(-0.2,0.2)*s,3.0*s,rnd(-0.2,0.2)*s);
+  g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}}); return g; }
+function buildCactus(s){ const g=new THREE.Group(); const m=new THREE.MeshLambertMaterial({color:0x3a6a3a,flatShading:true});
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.26*s,0.32*s,1.8*s,8),m); body.position.y=0.9*s; g.add(body);
+  for(const sx of[-1,1]) if(Math.random()<0.7){ const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.13*s,0.15*s,0.8*s,6),m); arm.position.set(sx*0.3*s,1.0*s,0); arm.rotation.z=sx*0.9; g.add(arm);
+    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.12*s,0.13*s,0.6*s,6),m); up.position.set(sx*0.48*s,1.3*s,0); g.add(up); }
+  g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}}); return g; }
+function buildDeadTree(s){ const g=new THREE.Group(); const m=texMat(woodTex,0x6a6154);
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.13*s,0.24*s,2.4*s,6),m); trunk.position.y=1.2*s; g.add(trunk);
+  for(let i=0;i<5;i++){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.035*s,0.08*s,1.0*s,5),m); const a=rnd(0,6.28); b.position.set(Math.cos(a)*0.2*s,rnd(1.4,2.3)*s,Math.sin(a)*0.2*s); b.rotation.z=rnd(-1,1); b.rotation.x=rnd(-1,1); g.add(b); }
+  g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}}); return g; }
+function buildSnowPine(s){ const g=buildTree(s);   // conifer under snow
+  g.traverse(o=>{ if(o.isMesh&&o.material&&o.material.color&&o.geometry&&o.geometry.type==="ConeGeometry"){ o.material=o.material.clone(); o.material.color.setHex(0x2f4a37); } });
+  for(let i=0;i<3;i++){ const cap=new THREE.Mesh(new THREE.ConeGeometry((1.15-i*0.3)*s,0.42*s,8),new THREE.MeshLambertMaterial({color:0xeef2ff})); cap.position.y=(1.95+i*0.9)*s; cap.castShadow=true; g.add(cap); }
+  return g; }
+function buildReed(s){ const g=new THREE.Group(); const m=new THREE.MeshLambertMaterial({color:0x6a7a3a,side:THREE.DoubleSide});
+  for(let i=0;i<6;i++){ const bl=new THREE.Mesh(new THREE.ConeGeometry(0.04*s,rnd(1.2,2.0)*s,4),m); bl.position.set(rnd(-0.3,0.3)*s,rnd(0.6,1.0)*s,rnd(-0.3,0.3)*s); bl.rotation.z=rnd(-0.2,0.2); g.add(bl); }
+  g.traverse(o=>{if(o.isMesh)o.castShadow=true;}); return g; }
+// which biome a spot belongs to → drives flora & ground cover
+function biomeAt(x,z){
+  if(typeof coldZone==="function"&&coldZone(x,z)) return "cold";
+  const reg=regionOf(x,z);
+  if(reg===-1) return "direlands";
+  if(inSwamp(x,z)) return "swamp";
+  if(reg===2) return "desert";
+  if(reg===1) return "sho";
+  return "forest";   // Aluvia — temperate woodland
+}
 // instanced grass tufts — a billboard quad with a procedural blade texture
 let grassMesh=null,_grassTex=null;
 function grassTex(){if(_grassTex)return _grassTex;const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
@@ -2717,6 +2757,7 @@ function buildGrass(){
   for(let i=0;i<N;i++){const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(14,320);
     const x=clamp(h.x+Math.cos(a)*rr,-HALF+5,HALF-5),z=clamp(h.z+Math.sin(a)*rr,-HALF+5,HALF-5);
     if(terrainH(x,z)<1.2||terrainH(x,z)>190) continue;             // skip water and snow
+    const bm=biomeAt(x,z); if(bm==="desert"||bm==="cold"||bm==="direlands") continue;   // no lush grass on sand, snow or barren rock
     d.position.set(x,groundY(x,z),z);d.rotation.set(0,rnd(0,6.28),0);
     const sc=rnd(0.7,1.8);d.scale.set(sc,rnd(0.8,1.6),sc);d.updateMatrix();grassMesh.setMatrixAt(n++,d.matrix);}
   grassMesh.count=n;grassMesh.castShadow=false;grassMesh.receiveShadow=true;grassMesh.instanceMatrix.needsUpdate=true;
@@ -2888,17 +2929,26 @@ function buildWorld(){
   // gathering nodes scattered across the wilds
   for(let i=0;i<54;i++){let nx,nz,t=0;do{nx=rnd(-HALF+10,HALF-10);nz=rnd(-HALF+10,HALF-10);t++;}while(nearestCapitalDist(nx,nz)<TOWN_SAFE+10&&t<20);
     addNode(nx,nz,Math.random()<0.5?"ore":"herb");}
-  // scenery clusters around hubs (towns & delves) so the fog-bounded view has life
-  for(let i=0;i<1600;i++){
+  // scenery clusters around hubs, keyed to each region's AC biome (forest / wooded hills / desert /
+  // barren Direlands / snowy frontier / swamp) so the flora around each town matches Asheron's Call
+  for(let i=0;i<1900;i++){
     const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(45,460);
     const x=clamp(h.x+Math.cos(a)*rr,-HALF+5,HALF-5),z=clamp(h.z+Math.sin(a)*rr,-HALF+5,HALF-5);
     if(nearestCapitalDist(x,z)<TOWN_SAFE||terrainH(x,z)<1) continue; // not in town cores or water
-    const s=rnd(0.8,1.8),roll=Math.random();
+    const bm=biomeAt(x,z), s=rnd(0.8,1.8), roll=Math.random();
     let mesh,r;
-    if(roll<0.4){mesh=buildTree(s);r=0.9*s;}
-    else if(roll<0.62){mesh=buildTree2(s);r=1.0*s;}
-    else if(roll<0.82){mesh=buildBush(s);r=0.7*s;}
-    else{mesh=buildRock(s);r=0.8*s;}
+    if(bm==="desert"){ if(roll<0.55) continue;                                   // mostly barren sand
+      if(roll<0.72){mesh=buildRock(s);r=0.8*s;} else if(roll<0.88){mesh=buildCactus(s);r=0.5*s;} else {mesh=buildPalm(s*1.1);r=0.6*s;} }
+    else if(bm==="direlands"){ if(roll<0.6) continue;                            // barren volcanic frontier
+      if(roll<0.85){mesh=buildRock(s*rnd(1,1.8));r=1.0*s;} else {mesh=buildDeadTree(s);r=0.7*s;} }
+    else if(bm==="cold"){ if(roll<0.45) continue;                               // sparse snowy conifer
+      if(roll<0.78){mesh=buildSnowPine(s);r=0.9*s;} else {mesh=buildRock(s*rnd(1,1.6));r=0.9*s;} }
+    else if(bm==="swamp"){                                                       // reeds, scraggly wetland trees
+      if(roll<0.35){mesh=buildReed(s);r=0.4*s;} else if(roll<0.6){mesh=buildTree2(s*0.9);r=0.9*s;} else if(roll<0.8){mesh=buildBush(s);r=0.6*s;} else {mesh=buildDeadTree(s*0.9);r=0.6*s;} }
+    else if(bm==="sho"){                                                         // wooded hills: broadleaf + conifer
+      if(roll<0.35){mesh=buildTree(s);r=0.9*s;} else if(roll<0.7){mesh=buildTree2(s*1.1);r=1.0*s;} else if(roll<0.88){mesh=buildBush(s);r=0.6*s;} else {mesh=buildRock(s);r=0.8*s;} }
+    else {                                                                       // forest (Aluvia): lush mixed woodland w/ some large trees
+      if(roll<0.34){mesh=buildTree(s*rnd(1,1.5));r=0.9*s;} else if(roll<0.68){mesh=buildTree2(s*rnd(1,1.6));r=1.0*s;} else if(roll<0.88){mesh=buildBush(s);r=0.7*s;} else {mesh=buildRock(s);r=0.8*s;} }
     mesh.position.set(x,0,z);scene.add(mesh);scenery.push(mesh);
     obstacles.push({x,z,r});
   }
