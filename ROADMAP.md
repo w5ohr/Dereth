@@ -273,7 +273,7 @@ but most are **skills-in-name-only** — the systems they drive don't exist (gre
 recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M/L** as in the doc.
 
 ### H-A. Crafting / tradeskill loop (the biggest miss)
-- ☐ **H1. Combine engine** (L) — the core AC crafting verb: drag one inventory item onto another → skill
+- ✅ **H1. Combine engine** (L) — the core AC crafting verb: drag one inventory item onto another → skill
   check vs difficulty → consume inputs, produce output (failure may consume inputs). Everything below
   rides on this. **✅ SHIPPED** (jsc+preview, 0 errors): `RECIPES`/`craftRecipe()`/`craftChance()` — a
   Crafting section in the Tinker panel; recipes spend the shared `player.materials` pool + require the
@@ -301,9 +301,12 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
 - ✅ **H9. Spells learned from Scrolls / quests** — *already implemented*: `player.knownSpells`, scribe
   Scroll items with **T** (@623/846), Scriveners sell leveled scrolls (@10052), casting blocked until the
   spell is learned (@6050).
-- ☐ **H10. Component casting** (L full / S soft) — school Foci + level Scarab + Prismatic Tapers consumed
-  per cast (soft version: tapers as a soft requirement). *Verify:* casting draws & consumes components;
-  out-of-components blocks the cast. (Overlaps prior audit Mg2.)
+- ✅ **H10. Component casting (Mg2)** — SHIPPED (jsc + preview verified, 0 console errors). Scarabs were
+  vendor trash; now `SCARAB_LEVEL`/`findScarabFor` make the seven AC casting scarabs (Lead=1…Diamond=8)
+  real: in `executeSpell`, when mana < cost a sufficient-level scarab is **channelled** to power the cast
+  (no mana spent) — authentic reagent, purely beneficial (fires only when out of mana, never wastes/blocks).
+  Tapers still empower casts on top; foci still lend +magic. Scarab tooltips advertise the role + level.
+  (Full "exact-formula, wrong=fizzle" model intentionally not adopted — too punishing for a homage.)
 - ◇ **H11. Spell economy** (M) — frequently-cast spells weaken / rare ones strengthen. Optional flavor.
 - ◇ **H12. Level VIII scroll crafting** (M) — Quill + Mana Scarab → infused quill → +ink → +glyph → L8
   scroll. Endgame, build after H1/H9.
