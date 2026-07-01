@@ -3973,6 +3973,13 @@ const NAMED_ITEMS=[
   {name:"Chitin Helm",         stat:"worn",  at:"medium", aslot:"head",  mat:"Emerald", v:[26,36],affix:()=>_oaff("of Impregnability")},
   {name:"Diforsa Vambraces",   stat:"worn",  at:"heavy",  aslot:"lowerarm",mat:"Steel", v:[24,32],affix:()=>_oaff("of Warding")},
   {name:"Ophto Helm",          stat:"worn",  at:"light",  aslot:"head",  mat:"Silk",    v:[24,32],affix:()=>_oaff("of the Magus")},
+  // ── legendary jewelry (fixed cantrip; rollNamedItem carries jtype+bonus, name is complete so no suffix) ──
+  {name:"Amulet of Timmawin",  stat:"jewelry",jtype:"neck",  mat:"Sapphire",v:[0,0],bonus:{kind:"skill",key:"life",v:14}},
+  {name:"Ring of Ihmaht",      stat:"jewelry",jtype:"finger",mat:"Ruby",    v:[0,0],bonus:{kind:"skill",key:"war", v:14}},
+  {name:"Empyrean Band",       stat:"jewelry",jtype:"finger",mat:"Diamond", v:[0,0],bonus:{kind:"vital",vs:"mmn",  v:40}},
+  {name:"Bracelet of Aerlinthe",stat:"jewelry",jtype:"wrist",mat:"Gold",    v:[0,0],bonus:{kind:"skill",key:"arcane",v:14}},
+  {name:"Gelidite Choker",     stat:"jewelry",jtype:"neck",  mat:"Sapphire",v:[0,0],bonus:{kind:"protect",el:"frost",v:22}},
+  {name:"Pendant of the Undying",stat:"jewelry",jtype:"neck",mat:"Jet",     v:[0,0],bonus:{kind:"vital",vs:"mhp",  v:45}},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -4014,6 +4021,7 @@ function rollNamedItem(){
   if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at; if(t.aslot) it.aslot=t.aslot;
   if(t.shield) it.shield=t.shield; if(t.magicAbsorb) it.magicAbsorb=t.magicAbsorb;
   if(t.wt==="focus") it.foc=it.v;   // a legendary focus's value is its all-school magic bonus
+  if(t.stat==="jewelry"){ it.jtype=t.jtype; it.bonus=Object.assign({},t.bonus); }   // legendary ring/amulet: fixed jtype + cantrip (name is complete, no suffix appended)
   return it;
 }
 // ---- Food & drink: consumables that grant a timed attribute buff (AC's cooking fare). Cooking skill
