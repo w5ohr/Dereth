@@ -457,7 +457,7 @@ const SKILLS_DEF=[
   {k:"magictink",  n:"Magic Item Tinkering", fam:"Tinkering",a:[], d:0, tc:0, sc:-1, u:"util", e:"Improves magic items"},
   {k:"salvaging",  n:"Salvaging",            fam:"Tinkering",a:[], d:0, tc:0, sc:-1, u:"util", e:"Better salvage returns"},
   // — Lore & Society —
-  {k:"arcane",     n:"Arcane Lore",          fam:"Lore",   a:[], d:0, tc:0,  sc:2,  u:"util", e:"Use higher-requirement items"},
+  {k:"arcane",     n:"Arcane Lore",          fam:"Lore",   a:["Focus"], d:3, tc:0,  sc:2,  u:"util", e:"Use higher-requirement items"},
   {k:"run",        n:"Run",                  fam:"Lore",   a:["Quickness"], d:1, tc:0, sc:4, u:"util", e:"Increases run speed"},
   {k:"jump",       n:"Jump",                 fam:"Lore",   a:[], d:0, tc:0,  sc:0,  u:"util", e:"Jump farther"},
   {k:"leadership", n:"Leadership",           fam:"Lore",   a:[], d:0, tc:4,  sc:8,  u:"util", e:"Patron XP pass-up"},                                   //e tc/sc
@@ -5266,6 +5266,32 @@ function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ cons
   if(w&&w.wt==="focus"&&w.foc){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+w.foc; const h=Math.round(w.foc*0.5); g.mana=(g.mana||0)+h; g.arcane=(g.arcane||0)+h; }
   if(player.augment&&player.augment.magic){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+player.augment.magic; }   // Red Aetheria: permanent +all magic schools
   player.gearSkill=g; }
+// ── AC wield requirements: loot rolls skill/level/arcane gates you must meet before you can equip it ──
+const WEAPON_SKILL={dagger:"light",staff:"light",sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile",unarmed:"light"};
+function bestMeleeSkillValue(){ let b=0; for(const k of MELEE_WEAPON_KEYS){ const v=skillValue(k); if(v>b)b=v; } return b; }
+function rollWield(it,tier,work,rare){
+  // higher tier + workmanship + magic ⇒ steeper requirement (AC's core loot balance lever). Tier-1 gear stays freely wieldable.
+  const magical=!!(it.affix||it.bonus||it.foc);
+  it.reqLvl=clamp(Math.round((tier-1)*11+Math.max(0,(work||1)-4)*2+(rare?8:0)),0,150);
+  if(it.stat==="weapon"&&it.wt&&tier>=2){ it.reqVal=Math.round(25+(tier-2)*42+(work||1)*3+(it.affix?18:0)); }
+  if(magical&&tier>=3){ it.reqArcane=Math.round(15+(tier-3)*22+(work||1)*2); }
+}
+function wieldFail(it){   // → a human string naming the first unmet requirement, or null if wieldable
+  if(!it) return null;
+  if(it.reqLvl&&player.level<it.reqLvl) return `level ${it.reqLvl}`;
+  if(it.reqVal){ const missile=it.stat==="weapon"&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].mode==="missile";
+    const v=missile?skillValue("missile"):bestMeleeSkillValue();
+    if(v<it.reqVal) return `${missile?"Missile Weapons":"a weapon skill of"} ${it.reqVal}`; }
+  if(it.reqArcane&&skillValue("arcane")<it.reqArcane) return `Arcane Lore ${it.reqArcane}`;
+  return null;
+}
+function wieldReqHTML(it){
+  const parts=[]; if(it.reqLvl) parts.push("Lv "+it.reqLvl);
+  if(it.reqVal) parts.push((it.stat==="weapon"&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].mode==="missile"?"Missile ":"Wpn ")+it.reqVal);
+  if(it.reqArcane) parts.push("Arcane "+it.reqArcane);
+  if(!parts.length) return "";
+  return ` · <span style="color:${wieldFail(it)?'#e07a7a':'#8a9a7a'}">req ${parts.join("/")}</span>`;
+}
 function rollItem(rare,tier){
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
     const id=SCROLL_POOL[irnd(0,SCROLL_POOL.length-1)];
@@ -5298,14 +5324,15 @@ function rollItem(rare,tier){
   if(base.aset) it.aset=base.aset;
   if(base.shield) it.shield=base.shield;
   if(base.magicAbsorb) it.magicAbsorb=base.magicAbsorb;
-  if(base.jtype){ it.jtype=base.jtype; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; return it; } // jewelry always bears a cantrip
-  if(base.foc){ it.foc=it.v; return it; }   // casting focus: its value IS the magic-skill bonus (no brand affix)
+  if(base.jtype){ it.jtype=base.jtype; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; rollWield(it,tier,work,rare); return it; } // jewelry always bears a cantrip
+  if(base.foc){ it.foc=it.v; rollWield(it,tier,work,rare); return it; }   // casting focus: its value IS the magic-skill bonus (no brand affix)
   // affix roll: only gear (weapon/worn/armor), favouring rares & deep delves
   const affixable=base.stat==="weapon"||base.stat==="worn"||base.stat==="armor";
   if(affixable&&(rare||tier>=4)&&Math.random()<(rare?0.85:0.4)){
     const ap=base.stat==="weapon"?WEAPON_AFFIXES:WORN_AFFIXES, af=ap[irnd(0,ap.length-1)];
     it.affix=af; it.name+=" "+af.suffix;
   }
+  rollWield(it,tier,work,rare);
   return it;
 }
 function weaponProfile(){ const w=player.weapon; return (w&&w.wt&&WEAPON_TYPES[w.wt])||null; }
@@ -5351,6 +5378,7 @@ function itemRarity(it){ if(!it) return {n:"common",c:"#c9c4b8"}; const t=it.tie
   if(t>=4) return {n:"fine",c:"#5aa8ff"}; if(t>=2) return {n:"uncommon",c:"#7fe6a0"}; return {n:"common",c:"#d7d0c2"}; }
 function rarityName(it){ const r=itemRarity(it); return `<span style="color:${r.c}">${it.name}</span>`; }
 function equipItem(it){
+  const wf=wieldFail(it); if(wf){ log(`You cannot wield <b>${it.name}</b> yet — it requires ${wf}.`,"warn"); if(SFX.deny)SFX.deny(); return false; }  // AC wield requirement
   let prev, isWeapon=it.stat==="weapon";
   if(it.stat==="jewelry"){ player.jewelry=player.jewelry||{}; const slot=jewelrySlotFor(it); prev=player.jewelry[slot]; player.jewelry[slot]=it; }
   else if(it.stat==="worn"){ const asl=ARMOR_SLOTS.indexOf(it.aslot)>=0?it.aslot:"chest"; player.armorSlots=player.armorSlots||{}; prev=player.armorSlots[asl]; player.armorSlots[asl]=it; }
@@ -5374,7 +5402,7 @@ function jewelryDesc(it){ const b=it.bonus; if(!b) return "trinket";
   if(b.kind==="protect") return `+${b.v}% ${b.el} protection`;
   return `+${b.v} armor`; }
 function applyItem(it){
-  if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ equipItem(it); return; }
+  if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ return equipItem(it)===false?"keep":undefined; }  // "keep" leaves an un-wieldable item in the satchel
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
   else if(it.stat==="hp"){player.hp=Math.min(player.mhp,player.hp+it.v);log(`Used <b>${it.name}</b> (+${it.v} HP).`,"loot");}
   else if(it.stat==="mn"){player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}
@@ -10304,7 +10332,7 @@ function buildTinker(){
       rows.appendChild(row); return;
     }
     const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
-    const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
+    const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
       :(it.stat==="pick"||it.stat==="key")?`<span style="color:var(--dim);font-size:11px">use on a locked cache</span>`
