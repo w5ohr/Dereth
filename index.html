@@ -3536,6 +3536,22 @@ const NAMED_ITEMS=[
   {name:"Nariv Cowl",          stat:"worn",  at:"medium", aslot:"head",  mat:"Silk",    v:[26,36],affix:()=>_oaff("of the Magus")},
   {name:"Alduressa Boots",     stat:"worn",  at:"light",  aslot:"feet",  mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
   {name:"Tenassa Vambraces",   stat:"worn",  at:"medium", aslot:"lowerarm",mat:"Steel", v:[22,30],affix:()=>_oaff("of Warding")},
+  // ── still more iconic artifacts ──
+  {name:"Coraline Sword",      stat:"weapon",wt:"sword",  mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
+  {name:"Gelidite Dagger",     stat:"weapon",wt:"dagger", mat:"Diamond", v:[24,32],affix:()=>_wbrand("frost")},
+  {name:"Olthoi Acid Blade",   stat:"weapon",wt:"sword",  mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
+  {name:"Dericost Dagger",     stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[24,32],affix:()=>_wbrand("fire")},
+  {name:"Knorr Battle Axe",    stat:"weapon",wt:"axe",    mat:"Diamond", v:[32,42],affix:()=>_wbrand("frost")},
+  {name:"Tumerok Crusher",     stat:"weapon",wt:"mace",   mat:"Ebony",   v:[32,42],affix:()=>_waff("crit")},
+  {name:"Blade of Elysa",      stat:"weapon",wt:"sword",  mat:"Gold",    v:[32,44],affix:()=>_wbrand("shock")},
+  {name:"Aun Ralirea Spear",   stat:"weapon",wt:"spear",  mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
+  {name:"Shard of the Herald", stat:"weapon",wt:"dagger", mat:"Jet",     v:[26,36],affix:()=>_wbrand("nether")},
+  {name:"Prismatic Wand",      stat:"weapon",wt:"focus",  mat:"Opal",    v:[24,32]},
+  {name:"Falatacot Talisman",  stat:"weapon",wt:"focus",  mat:"Onyx",    v:[24,32]},
+  {name:"Warmount Lance",      stat:"weapon",wt:"spear",  mat:"Steel",   v:[30,40],affix:()=>_waff("crit")},
+  {name:"Empyrean Bracers",    stat:"worn",  at:"heavy",  aslot:"lowerarm",mat:"Pyreal",v:[24,32],affix:()=>_oaff("of Warding")},
+  {name:"Olthoi Alduressa Coat",stat:"worn", at:"light",  aslot:"chest", mat:"Leather",v:[34,46],affix:()=>_oaff("of Impregnability")},
+  {name:"Diforsa Boots",       stat:"worn",  at:"heavy",  aslot:"feet",  mat:"Steel",   v:[24,32],affix:()=>_oaff("of Endurance")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -3581,6 +3597,12 @@ const FOOD_ITEMS=[
   {name:"Mince Pie",         attr:"Coordination",v:11, dur:150},{name:"Honeyed Tea",      attr:"Focus",       v:12, dur:160},
   {name:"Skewered Reedshark",attr:"Quickness",   v:11, dur:150},{name:"Goblet of Wine",   attr:"Self",        v:12, dur:160},
   {name:"Frothing Ale",      attr:"Strength",    v:13, dur:160},{name:"Phial of Mana Tea",attr:"Focus",       v:14, dur:180},
+  {name:"Loaf of Bread",     attr:"Endurance",   v:9,  dur:130},{name:"Apple",            attr:"Quickness",   v:8,  dur:120},
+  {name:"Bunch of Grapes",   attr:"Coordination",v:9,  dur:130},{name:"Roast Chicken",    attr:"Strength",    v:12, dur:160},
+  {name:"Trout Fillet",      attr:"Quickness",   v:12, dur:160},{name:"Meat Pie",         attr:"Endurance",   v:13, dur:170},
+  {name:"Wedge of Cheese",   attr:"Self",        v:9,  dur:130},{name:"Mug of Dark Ale",  attr:"Strength",    v:12, dur:150},
+  {name:"Cup of Tea",        attr:"Focus",       v:11, dur:150},{name:"Bowl of Gruel",    attr:"Endurance",   v:10, dur:150},
+  {name:"Sho Rice Ball",     attr:"Coordination",v:12, dur:160},{name:"Dried Dates",      attr:"Self",        v:11, dur:150},
 ];
 function rollFood(){ const f=FOOD_ITEMS[irnd(0,FOOD_ITEMS.length-1)]; return {name:f.name,stat:"food",attr:f.attr,v:f.v,dur:f.dur}; }
 // ---- Jewelry: rings & necklaces (AC's signature skill/stat boosters). Each rolls one cantrip-style
