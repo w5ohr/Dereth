@@ -154,6 +154,10 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   (~1/1800 per real loot roll, ramps after a 1200-roll dry streak, resets on hit; `player.rarePity`
   persisted). Hooked into `rollItem` via a `noRare` param so it fires only on real drops, never vendor
   stock. Verified: forced pity drops+resets, vendors never roll a rare, a rare ring equips (+8 skill).
+- ✅ **E2g. Trophy turn-ins (I7)** — SHIPPED (jsc + preview verified, 0 console errors). A new "Trophy
+  Collector" (🦴) vendor type in the town specialist rotation; at a collector the sell list turns each
+  creature trophy into a **bounty** (`trophyBounty`: gold = value×1.6, XP = max(25, value×14)) — worth more
+  than a plain sale and grants XP. Verified: a v26 Olthoi Claw → 42p + 364xp and leaves the satchel.
 - ◇ **E3. Allegiance/monarchy depth** — pass-up formula now VERIFIED (plan 6.8) and ready to build, BUT in a
   single-player game pass-up to a patron has no payoff loop. Build only if we add an **NPC-vassal allegiance
   tree** (player as patron receiving pass-up income). Current Loyalty-tier XP bonus in `gainXP` stays as the
