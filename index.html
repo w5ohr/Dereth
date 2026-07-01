@@ -963,7 +963,7 @@ let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwi
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // world activity/visibility culling: only the area around the player is simulated & drawn (perf).
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
-const SIM_RADIUS=95, VIS_RADIUS=160, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;
+const SIM_RADIUS=95, VIS_RADIUS=265, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;   // VIS reaches past the clear-weather fog wall (245) so nothing pops in view
 // ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
 let USE_GLTF_AVATAR=false;                      // legacy single-avatar drop-in (assets/avatar.glb); superseded by model choice
 const GLTF_AVATAR_URL="assets/avatar.glb";
@@ -3343,6 +3343,7 @@ function buildWorld(){
 
   // the 25 cities of Dereth (each a bindable settlement; capitals are hubs)
   for(const c of CITIES) addCity(c);
+  flushTownBatches();   // all queued buildings → a few InstancedMeshes per archetype (like the forests)
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil"});
   // every town fields a Town Crier (directions) and a Barkeeper (rumours)
@@ -3672,6 +3673,91 @@ function bSho(s,kind){
 }
 const CULTURE_BUILDERS=[bAluvian,bSho,bGharu]; // region index 0 Aluvia, 1 Sho, 2 Gharu'ndim
 function buildBuilding(region,kind,s){ return (CULTURE_BUILDERS[region]||bAluvian)(s,kind); }
+// ---- batched town architecture (same idea as the instanced forests) ----
+// ~170 buildings × ~90 meshes each was ~15k scene objects. Instead: build ONE prototype per
+// archetype (region × kind × scale), merge its meshes by material (UVs kept, so plaster/wood/
+// sand textures survive), and draw every copy of that archetype in the world as a handful of
+// InstancedMeshes. Colliders + walkable surfaces come from the prototype and are registered
+// per placement, so doors, interiors, ramps and lofts behave exactly as before.
+const ARCH_CACHE={};
+function buildingArchetype(region,kind,s){
+  const key=region+"|"+kind+"|"+s.toFixed(2);
+  if(ARCH_CACHE[key]) return ARCH_CACHE[key];
+  const proto=buildBuilding(region,kind,s);
+  proto.updateMatrixWorld(true);
+  // group by everything EXCEPT color — each material's colour tint is baked into vertex colours,
+  // so all six wood tints (etc.) collapse into ONE part per texture map.
+  const groups=new Map();
+  proto.traverse(o=>{ if(!o.isMesh) return;
+    const m=o.material;
+    const sig=[m.type,m.map?m.map.uuid:'-',
+      m.emissive?m.emissive.getHexString():'-',m.emissiveIntensity!=null?m.emissiveIntensity:1,
+      m.flatShading?1:0,m.transparent?1:0,m.opacity!=null?m.opacity:1,m.side||0].join('/');
+    let gr=groups.get(sig); if(!gr){gr={mat:m,geos:[],tints:[]};groups.set(sig,gr);}
+    const gg=o.geometry.clone(); gg.applyMatrix4(o.matrixWorld);   // bake building-local transform
+    gr.geos.push(gg); gr.tints.push(m.color?m.color:new THREE.Color(1,1,1));
+  });
+  const parts=[];
+  for(const gr of groups.values()){
+    const pos=[],nrm=[],uv=[],vc=[];
+    for(let k=0;k<gr.geos.length;k++){
+      const g0=gr.geos[k], t=gr.tints[k];
+      const g=g0.index?g0.toNonIndexed():g0;
+      if(!g.attributes.normal) g.computeVertexNormals();
+      const pa=g.attributes.position.array,na=g.attributes.normal.array;
+      const ua=g.attributes.uv?g.attributes.uv.array:null, vn=g.attributes.position.count;
+      for(let i=0;i<pa.length;i++){pos.push(pa[i]);nrm.push(na[i]);}
+      if(ua) for(let i=0;i<vn*2;i++) uv.push(ua[i]); else for(let i=0;i<vn*2;i++) uv.push(0);
+      for(let i=0;i<vn;i++) vc.push(t.r,t.g,t.b);                 // material tint → vertex colour
+      g.dispose(); if(g!==g0) g0.dispose();
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    geo.setAttribute('color',new THREE.Float32BufferAttribute(vc,3));
+    // instances sit up to ~75u from their town centre — override the sphere used for culling
+    geo.boundingSphere=new THREE.Sphere(new THREE.Vector3(0,7,0),110);
+    const mat=gr.mat.clone(); mat.vertexColors=true; if(mat.color)mat.color.setRGB(1,1,1);
+    parts.push({geo,mat});
+  }
+  const arch={parts,surfaces:proto.userData.surfaces||null,colliders:proto.userData.colliders||[],placements:[]};
+  ARCH_CACHE[key]=arch; return arch;
+}
+let TOWN_BATCH=[];
+function queueBuilding(arch,x,z,th,y,cl){
+  arch.placements.push({x,z,th,y,cl});
+  if(TOWN_BATCH.indexOf(arch)<0) TOWN_BATCH.push(arch);
+}
+// one InstancedMesh per (town × archetype × material-part), positioned AT the town centre with
+// town-local instance matrices — so the normal frustum culling drops whole towns behind you.
+function flushTownBatches(){
+  const d=new THREE.Object3D();
+  for(const arch of TOWN_BATCH){
+    const byTown=new Map();
+    for(const p of arch.placements){ const k=p.cl.x+","+p.cl.z;
+      let a=byTown.get(k); if(!a){a=[];byTown.set(k,a);} a.push(p); }
+    for(const list of byTown.values()){
+      const cl=list[0].cl;
+      for(const part of arch.parts){
+        const im=new THREE.InstancedMesh(part.geo,part.mat,list.length);
+        for(let i=0;i<list.length;i++){ const p=list[i];
+          d.position.set(p.x-cl.x,p.y,p.z-cl.z); d.rotation.set(0,p.th,0); d.scale.set(1,1,1);
+          d.updateMatrix(); im.setMatrixAt(i,d.matrix); }
+        im.instanceMatrix.needsUpdate=true;
+        im.position.set(cl.x,0,cl.z);
+        im.castShadow=true; im.receiveShadow=true;
+        // NO noCull flag: the object sits at the town centre, so the distance streamer
+        // (cullWorld) detaches whole towns beyond VIS_RADIUS — like buildings always were,
+        // but ~30 objects per town instead of ~450.
+        im.userData.noSettle=true;
+        scene.add(im); scenery.push(im);
+      }
+    }
+    arch.placements=[];
+  }
+  TOWN_BATCH=[];
+}
 function buildPlazaFeature(region,s){
   const g=new THREE.Group();
   if(region===0){ // Aluvian well
@@ -3706,12 +3792,12 @@ function addCity(c){
   for(let i=0;i<cnt;i++){
     const a=i/cnt*6.28+c.region*0.7,hx=c.x+Math.cos(a)*ring,hz=c.z+Math.sin(a)*ring;
     const kind=i===0?"hall":(i%3===0?"shop":"house");
-    const b=buildBuilding(c.region,kind,sc*(kind==="hall"?1.2:1));
-    const th=Math.atan2(c.x-hx,c.z-hz); // door (+z) faces the plaza centre
-    b.position.set(hx,0,hz);b.rotation.y=th;scene.add(b);scenery.push(b);
-    const cols=b.userData.colliders||[],ct=Math.cos(th),st=Math.sin(th);
-    for(const cc of cols){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
-    if(b.userData.surfaces) registerStructure(hx,hz,th,groundY(hx,hz),b.userData.surfaces);   // ramp + upstairs become walkable (base = ground the building sits on)
+    const arch=buildingArchetype(c.region,kind,sc*(kind==="hall"?1.2:1));
+    const th=Math.atan2(c.x-hx,c.z-hz), gy=groundY(hx,hz); // door (+z) faces the plaza centre
+    queueBuilding(arch,hx,hz,th,gy,c);   // c = town centre → per-town culling cluster
+    const ct=Math.cos(th),st=Math.sin(th);
+    for(const cc of arch.colliders){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
+    if(arch.surfaces) registerStructure(hx,hz,th,gy,arch.surfaces);   // ramp + upstairs become walkable (base = ground the building sits on)
   }
   // paved plaza — a triangle-fan that CONFORMS to the ground (groundY) so townsfolk standing
   // on it aren't half-buried: a flat disc mismatched the tilted town terrain by up to ~0.5u.
