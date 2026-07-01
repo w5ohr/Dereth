@@ -871,6 +871,12 @@ const GLTF_PEOPLE=[
   "https://modelviewer.dev/shared-assets/models/Astronaut.glb",                                   // astronaut (person)
   "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb",       // robot character
   "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/BrainStem/glTF-Binary/BrainStem.glb",      // robot
+  // KayKit Adventurers (CC0, Kay Lousberg) — rigged + 76 anim clips each, verified loadable & CORS-friendly
+  "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Barbarian.glb",   // barbarian
+  "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb",       // knight
+  "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Mage.glb",         // mage
+  "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Rogue.glb",        // rogue
+  "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/Rogue_Hooded.glb", // hooded rogue
   // Ready Player Me gives unlimited distinct men/women — paste full-body URLs here to reach 25+:
   // "https://models.readyplayer.me/<id>.glb",
 ];
@@ -884,28 +890,37 @@ function loadGltfPeople(){
       // so glTF clones need a +PI flip to face the same way (else they'd moonwalk).
       const faceOffset = Math.PI;
       gltfPeople.push({scene:gltf.scene, anims:gltf.animations||[], scale:1.8/h, faceOffset});
-      log("Loaded a CDN person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
+      log("Loaded a CDN person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs(gltfPeople[gltfPeople.length-1]);
     }, undefined, err=>console.log("CDN person model failed:",url,(err&&err.message)||"")); }
 }
-function assignGltfNpcs(){
+function applyGltfToNpc(n,m){   // clone model m onto townsfolk n (also used to REPLACE an existing clone)
+  let clone; try{ clone=THREE.SkeletonUtils.clone(m.scene); }catch(e){ return false; }
+  clone.scale.setScalar(m.scale);
+  const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y;     // feet to 0
+  clone.rotation.y=(m.faceOffset!=null?m.faceOffset:Math.PI);                       // per-model front alignment
+  clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
+  if(n.gltf){ if(n.gltfMixer&&n.gltfMixer.stopAllAction)n.gltfMixer.stopAllAction(); n.mesh.remove(n.gltf); n.gltfMixer=n.gltfIdle=n.gltfWalk=null; }
+  else { for(const ch of n.mesh.children) ch.visible=false; }                        // first time: hide the procedural body
+  n.mesh.add(clone); n.gltf=clone; n._gw=undefined;
+  if(m.anims.length){ n.gltfMixer=new THREE.AnimationMixer(clone);
+    n.gltfIdle=n.gltfMixer.clipAction(m.anims.find(a=>/idle/i.test(a.name))||m.anims[0]);
+    const w=m.anims.find(a=>/walk/i.test(a.name)); n.gltfWalk=w?n.gltfMixer.clipAction(w):null;
+    n.gltfIdle.play(); }
+  return true;
+}
+function assignGltfNpcs(newModel){
   if(!USE_GLTF_NPCS||!gltfPeople.length||typeof THREE.SkeletonUtils==="undefined") return;
   let count=npcs.filter(n=>n.gltf).length;
-  for(const n of npcs){
+  for(const n of npcs){                              // fill empty townsfolk slots
     if(count>=MAX_GLTF_NPCS) break;
     if(n.gltf||n.role!=="townsfolk"||!n.mesh) continue;
-    const m=gltfPeople[irnd(0,gltfPeople.length-1)]; let clone;
-    try{ clone=THREE.SkeletonUtils.clone(m.scene); }catch(e){ continue; }
-    clone.scale.setScalar(m.scale);
-    const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y;   // feet to 0
-    clone.rotation.y=(m.faceOffset!=null?m.faceOffset:Math.PI);                     // per-model front alignment (RobotExpressive faces the other way)
-    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
-    for(const ch of n.mesh.children) ch.visible=false;                              // hide the procedural body
-    n.mesh.add(clone); n.gltf=clone;
-    if(m.anims.length){ n.gltfMixer=new THREE.AnimationMixer(clone);
-      n.gltfIdle=n.gltfMixer.clipAction(m.anims.find(a=>/idle/i.test(a.name))||m.anims[0]);
-      const w=m.anims.find(a=>/walk/i.test(a.name)); n.gltfWalk=w?n.gltfMixer.clipAction(w):null;
-      n.gltfIdle.play(); }
-    count++;
+    if(applyGltfToNpc(n, gltfPeople[irnd(0,gltfPeople.length-1)])) count++;
+  }
+  // a model that finished loading after the slots filled would otherwise never appear —
+  // give each newly-loaded model a couple of slots by reassigning random already-skinned townsfolk.
+  if(newModel && count>=MAX_GLTF_NPCS){
+    const assigned=npcs.filter(n=>n.gltf&&n.role==="townsfolk");
+    for(let k=0;k<2&&assigned.length;k++){ const n=assigned.splice(irnd(0,assigned.length-1),1)[0]; applyGltfToNpc(n,newModel); }
   }
 }
 // ---- rigged glTF models for MONSTER kinds (spawned via streamMonsters; procedural creature is the fallback) ----
