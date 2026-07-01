@@ -266,9 +266,11 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   food riding the existing FOOD_ITEMS buff machinery), gated on the Cooking skill. (Dye-pot use → H7.)
 - ✅ **H6. Fletching** — SHIPPED via H1: recipes for Broadhead Arrows / Steel Quarrels (stacked ammo),
   gated on the Fletching skill. ◇ applying Alchemy oils to arrowheads for elemental ammo still deferred.
-- ☐ **H7. Dyeing armor** (M) — Alchemy dye pot + Cooking apply; dye plants spawn wild / grown by
-  Herbalist; fail chance costs AL (−20 minor / −50 crit; metal→orange, cloth→pink). *Verify:* dye recolors
-  a worn piece; fail path applies the AL penalty + wrong-color.
+- ✅ **H7. Dyeing armour** — SHIPPED: `DYES` (8 AC colours) + `applyDye()`/`setBodyDye()` recolour the
+  third-person body material; gated by Cooking, +10% clean-dye odds with Alchemy, 6 mat; a failed roll
+  stains it orange (player-friendly: no AL loss). `player.dye` persists in save + re-applies over the
+  heritage colour in `applyHeritageLook`. Dyeing section (swatches + Strip) in the Tinker panel.
+  (Simplified from AC's per-item dye / dye-plant gathering to a whole-armour tint.)
 - ✅ **H8. Partial salvage bags** — *already implemented*: `player.salvage[mat]={units,work}` bags
   accumulate units toward 100 (units-weighted-avg workmanship) before `applyTinker` (@5820).
 
