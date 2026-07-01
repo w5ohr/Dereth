@@ -54,6 +54,21 @@ humans pulled from public CDNs and assigned at random:
 - Quest-givers/vendors/criers stay procedural (they keep their markers, labels, and looks).
 - `vendor/SkeletonUtils.js` (r128 global build) is required and loaded after the GLTFLoader.
 
+## CDN monster models (experimental, ON by default)
+Monsters can also swap their procedural mesh for a rigged glTF creature:
+- `MONSTER_MODELS` (in `index.html`) maps a monster **kind** → CDN `.glb` URL. Currently
+  `mattekar → Fox.glb` (Khronos glTF-Sample-Models; rigged, ~1 MB, walk/run/survey clips).
+  Free hot-linkable *creature* glTFs are scarce and none exactly match AC monster descriptions,
+  so **Fox is a best-fit placeholder** — add more kinds by pasting verified CDN URLs here.
+- `loadGltfMonsters()` downloads each once into `gltfMonsters{kind:{scene,anims,h}}`.
+- `spawnMonster(kind,x,z)` uses `THREE.SkeletonUtils.clone` for kinds with a model (scaled to the
+  bestiary size, feet-to-ground, per-mob `AnimationMixer` playing a walk/run/survey/idle clip);
+  all other kinds keep `buildCreature()`. Flag: `USE_GLTF_MONSTERS` (default **true**).
+- **Streaming-safe disposal:** monster streaming (`streamMonsters`) despawns far mobs. glTF mobs
+  share geometry with the cached source, so despawn only **stops the mixer + removes from scene**
+  (no geometry `dispose()`, which would corrupt the cache/other clones); procedural mobs get a
+  full `disposeObject3D()`. A failed model fetch falls back to procedural for that kind.
+
 ## Notes / trade-offs
 - Model files are **git-ignored** (`.gitignore`) — they're multi-MB binaries and not part of
   the self-contained game. The pipeline (loader + code) **is** committed.

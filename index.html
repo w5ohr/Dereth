@@ -892,6 +892,20 @@ function assignGltfNpcs(){
     count++;
   }
 }
+// ---- rigged glTF models for MONSTER kinds (spawned via streamMonsters; procedural creature is the fallback) ----
+let USE_GLTF_MONSTERS=true;
+const MONSTER_MODELS={   // AC kind → CDN model (best-fit; drop in better AC-matching models here)
+  mattekar:"https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Fox/glTF-Binary/Fox.glb", // furred quadruped beast
+};
+let gltfMonsters={}, gltfMonstersStarted=false;
+function loadGltfMonsters(){
+  if(gltfMonstersStarted||!USE_GLTF_MONSTERS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
+  gltfMonstersStarted=true; const L=new THREE.GLTFLoader();
+  for(const kind in MONSTER_MODELS){ (k=>L.load(MONSTER_MODELS[k], g=>{
+      const box=new THREE.Box3().setFromObject(g.scene), h=(box.max.y-box.min.y)||1;
+      gltfMonsters[k]={scene:g.scene, anims:g.animations||[], h}; log("Loaded a CDN monster model ("+k+").","sys");
+    }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
+}
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
@@ -2385,6 +2399,7 @@ function buildWorld(){
   if(worldEvent){if(worldEvent.beam)scene.remove(worldEvent.beam);if(worldEvent.beacon)scene.remove(worldEvent.beacon);}
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfPeople(); assignGltfNpcs();   // populate some townsfolk with real CDN people models (async; procedural fallback)
+  loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
 }
 function settleY(){ // drop every placed object onto the terrain surface
   for(const s of scenery) s.position.y=terrainH(s.position.x,s.position.z)+(s.userData.float||0);
@@ -2674,7 +2689,14 @@ function spawnSomewhere(){
 }
 function spawnMonster(kind,x,z,elite){
   const b=BESTIARY[kind];
-  const mesh=buildCreature(kind);
+  const gm=(USE_GLTF_MONSTERS&&gltfMonsters[kind])?gltfMonsters[kind]:null;
+  let mesh;
+  if(gm){ mesh=new THREE.Group();                                   // rigged CDN creature model
+    const clone=THREE.SkeletonUtils.clone(gm.scene); clone.scale.setScalar((b.size*1.5)/gm.h);
+    const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y; clone.rotation.y=Math.PI;
+    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
+    mesh.add(clone); mesh.userData={headY:b.size*1.5};
+  } else mesh=buildCreature(kind);                                  // procedural fallback
   let hp=Math.round(b.hp*settings.diff),dmg=Math.round(b.dmg*settings.diff),xp=b.xp,goldMul=1,r=b.size*0.8;
   if(elite){
     hp=Math.round(hp*2.5);dmg=Math.round(dmg*1.6);xp=Math.round(xp*2.5);goldMul=3;
@@ -2685,8 +2707,11 @@ function spawnMonster(kind,x,z,elite){
   mesh.position.set(x,0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul,ang:rnd(0,6.28),
     state:"wander",t:0,atkCd:0,wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*(elite?1.4:1),
-    isElite:!!elite,baseScale:elite?1.4:1,burnT:0,burnDps:0,burnAcc:0});
-  return monsters[monsters.length-1];
+    isElite:!!elite,baseScale:elite?1.4:1,burnT:0,burnDps:0,burnAcc:0,gltf:!!gm});
+  const m=monsters[monsters.length-1];
+  if(gm&&gm.anims.length){ m.gltfMixer=new THREE.AnimationMixer(mesh);
+    const clip=gm.anims.find(c=>/walk|run|survey|idle/i.test(c.name))||gm.anims[0]; m.gltfMixer.clipAction(clip).play(); }
+  return m;
 }
 
 // ---------- log / toast ----------
@@ -4428,8 +4453,9 @@ function update(dt){
     const slowF=m.slow>0?(1-m.slow):1;
     const ox=m.x,oz=m.z; // pre-move (for dungeon wall-sliding)
     const dx=player.x-m.x,dz=player.z-m.z,d=Math.hypot(dx,dz);
-    // freeze AI for far, non-chasing overworld creatures (cullWorld removes their mesh from the scene)
+    // freeze AI for far, non-chasing overworld creatures (streamMonsters/cull handles their mesh)
     if(!inDungeon && d>SIM_RADIUS && m.state!=="chase") continue;
+    if(m.gltfMixer) m.gltfMixer.update(dt);   // animate rigged creature models that are close enough to simulate
     // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
     const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
     if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now();SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
@@ -4709,8 +4735,10 @@ function streamMonsters(dt){
   // dispose creatures left far behind (frees their meshes/skeletons entirely — real unload)
   for(let i=monsters.length-1;i>=0;i--){ const m=monsters[i]; if(m.isDungeon||m.shared) continue;
     if((m.x-px)*(m.x-px)+(m.z-pz)*(m.z-pz) > MOB_DESPAWN*MOB_DESPAWN){
-      if(m.gltfMixer) m.gltfMixer.stopAllAction&&m.gltfMixer.stopAllAction();
-      disposeObject3D(m.mesh); monsters.splice(i,1); } }
+      if(m.gltf){ if(m.gltfMixer&&m.gltfMixer.stopAllAction)m.gltfMixer.stopAllAction();   // skinned clone shares geometry with the cache — don't dispose it, just detach
+        if(m.mesh&&m.mesh.parent)m.mesh.parent.remove(m.mesh); }
+      else disposeObject3D(m.mesh);
+      monsters.splice(i,1); } }
   // refill up to the target with region-appropriate kinds, spawned just inside view around the player
   let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
   let tries=0;
