@@ -213,6 +213,10 @@
 </div>
 
 <div id="hint"></div>
+<div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
+  <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
+  <span style="position:absolute;top:-2px;left:45%;width:2px;height:13px;background:#fff;opacity:.7"></span>
+</div>
 <div id="eprompt"></div>
 <div id="toast"></div>
 <div id="pausemsg">PAUSED<div class="ds">Press P to resume</div></div>
@@ -3852,7 +3856,7 @@ function monsterDefense(m){ const b=BESTIARY[m.kind]; if(!b) return 18;
   if(m.enraged) d*=1.12; if(m.isBoss) d*=1.18;
   if(m.mesh&&m.mesh.scale&&m.mesh.scale.x>1.3) d*=1.1;   // elites/champions
   return d; }
-function rollToHit(atk,m){ return Math.random()<clamp(0.72+(atk-monsterDefense(m))*0.006,0.30,0.98); }
+function rollToHit(atk,m,accMul){ return Math.random()<clamp((0.72+(atk-monsterDefense(m))*0.006)*(accMul||1),0.20,0.98); }
 const FOCUS_SCHOOLS=["war","life","creature","item","void"];   // a focus lends skill to all spell schools
 // armor classes: protection vs mobility tradeoff (heavy guards more but slows you & drains stamina regen).
 const ARMOR_TYPES={
@@ -6421,13 +6425,15 @@ function fireArrow(){
   pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*75,vy:dir.y*75,vz:dir.z*75,
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
-function meleeAttack(){
+function meleeAttack(power){
   if(!player.alive||player.meleeCd>0||paused) return;
+  power=(typeof power==="number")?clamp(power,0.6,1.6):1;   // Cb1 power bar: charge-scaled damage (0.6 tap → 1.6 full)
+  const acc=1-Math.abs(power-1.05)*0.5;   // accuracy peaks in the mid-upper charge band (AC's sweet spot), falls off at the extremes
   const wp=weaponProfile(),melee=wp&&wp.mode==="melee",prof=melee?wp:WEAPON_TYPES.sword; // equipped melee weapon or bare fists
   const cdScale=Math.max(.35,1-player.attr.Coordination*0.02);
-  player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"));player.swing=1;SFX.swing();  // Swift Killer hastens
-  if(player.st>=prof.stam) player.st-=prof.stam;
-  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg;
+  player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"))*(0.7+power*0.5);player.swing=1;SFX.swing();  // heavier swings recover slower
+  if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
+  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power;
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
@@ -6439,7 +6445,7 @@ function meleeAttack(){
     if(d<reach+m.r){
       const dot=(dx*fx+dz*fz)/(d*fl);
       if(dot>0.5){
-        if(!rollToHit(bestMeleeSkillValue(),m)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense
+        if(!rollToHit(bestMeleeSkillValue(),m,acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy)
         applyHit(m,dmg,meleeOpts);
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
@@ -6452,13 +6458,20 @@ function meleeAttack(){
 const keys={};let locked=false,paused=false,running=false;
 const cEl=document.getElementById('c');
 document.addEventListener('pointerlockchange',()=>{
-  locked=document.pointerLockElement===cEl; if(!locked) blocking=false;
+  locked=document.pointerLockElement===cEl; if(!locked){ blocking=false; chargeActive=false; chargeT=0; }
   document.getElementById('hint').style.display=(running&&!locked&&player.alive&&sheet.style.display!=="flex")?"block":"none";
   if(running&&!locked&&sheet.style.display!=="flex") document.getElementById('hint').textContent="Click to look around";
 });
 cEl.addEventListener('click',()=>{ if(running&&!locked&&!movingUI&&sheet.style.display!=="flex") cEl.requestPointerLock(); });
-cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0) primaryAttack(); else if(e.button===2) blocking=true; });
-cEl.addEventListener('mouseup',e=>{ if(e.button===2) blocking=false; });
+// Cb1 power/accuracy bar: hold left-mouse to charge a melee swing (bows fire instantly on press)
+let chargeActive=false,chargeT=0; const CHARGE_MAX=1.0;
+function chargePower(){ return clamp(0.6+Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX*1.0,0.6,1.6); }
+function releaseCharge(){ if(!chargeActive) return; chargeActive=false; const p=chargePower(); chargeT=0; meleeAttack(p); }
+function updateChargeBar(){ const b=document.getElementById('chargeBar'); if(!b) return;
+  if(chargeActive){ b.style.display="block"; const f=document.getElementById('chargeFill'); if(f) f.style.width=Math.round(Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX*100)+"%"; }
+  else b.style.display="none"; }
+cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0){ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } } else if(e.button===2) blocking=true; });
+cEl.addEventListener('mouseup',e=>{ if(e.button===0){ if(chargeActive) releaseCharge(); } else if(e.button===2) blocking=false; });
 cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse raises the shield, no menu
 document.addEventListener('mousemove',e=>{
   if(!locked) return;
@@ -6803,6 +6816,8 @@ function update(dt){
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
   if(player.contractCd>0) player.contractCd=Math.max(0,player.contractCd-dt);   // H14 recall-contract cooldown
+  if(chargeActive){ if(!player.alive||!locked){ chargeActive=false; chargeT=0; } else { chargeT+=dt; if(chargeT>=CHARGE_MAX) releaseCharge(); } }   // Cb1 charge accumulate + auto-release at max
+  updateChargeBar();
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
   updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
   // spell cast wind-up: fire the effect when the bar fills
