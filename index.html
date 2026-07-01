@@ -1879,7 +1879,7 @@ function buildPerson(o){
       const ft=new THREE.Group();ft.position.set(0,-0.94,0.0);leg.add(ft);                   // shaped shoe: body + toe cap + sole (toe points -z = forward, like the face)
       const fb=new THREE.Mesh(new THREE.BoxGeometry(0.135,0.1,0.2),boot);fb.position.set(0,0.005,-0.045);fb.castShadow=true;ft.add(fb);
       const toe=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.07,0.085),boot);toe.position.set(0,-0.012,-0.175);toe.castShadow=true;ft.add(toe);
-      ft.add(new THREE.Mesh(new THREE.BoxGeometry(0.145,0.03,0.30),new THREE.MeshLambertMaterial({color:0x17100a}))).position.set(0,-0.058,-0.06);
+      const sole=new THREE.Mesh(new THREE.BoxGeometry(0.145,0.03,0.30),new THREE.MeshLambertMaterial({color:0x17100a}));sole.position.set(0,-0.058,-0.06);ft.add(sole);  // NB: ft.add(x) returns ft — must set sole.position separately or it clobbers ft's y
       legs.push(leg);
     }
     lLeg=legs[0];rLeg=legs[1];
