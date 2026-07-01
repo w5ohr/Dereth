@@ -751,6 +751,14 @@ for(const sp of LIGHT_SPELLS) for(const t of LIGHT_TIERS) SPELLBOOK_LIST.push({
   lightColor:sp.color,intensity:t.intensity,dist:t.dist,dur:t.dur});
 // AC's level-VIII spells are "Incantations" — rename every level-8 entry (e.g. "Flame Bolt VIII" → "Incantation of Flame Bolt").
 for(const s of SPELLBOOK_LIST){ if(s.lvl===8 && / VIII$/.test(s.name)) s.name="Incantation of "+s.name.slice(0,-5); }
+// ── Unified buff/debuff scaling (by level) ──
+//   duration = 15 min at level 1, +10 min per level above 1;  stat/skill magnitude = 10 × level.
+function buffDurFor(lvl){ lvl=Math.max(1,lvl|0); return (15+(lvl-1)*10)*60; }   // seconds (900 … 5100)
+function buffMagFor(lvl){ lvl=Math.max(1,lvl|0); return lvl*10; }               // flat skill/stat points
+for(const s of SPELLBOOK_LIST){
+  if(s.buff==="attr"||s.buff==="skill"){ s.mag=buffMagFor(s.lvl); s.dur=buffDurFor(s.lvl); }   // flat stat/skill → +10/level
+  else if(s.buff==="item"||s.buff==="prot"||s.debuff||s.vuln){ s.dur=buffDurFor(s.lvl); }       // %/special mag kept, timer unified
+}
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
 const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
@@ -3776,7 +3784,8 @@ const APTITUDE_ITEMS=[
   {name:"Elixir of Heavy Weapons",key:"heavy"},{name:"Elixir of Warding",key:"magicd"},{name:"Elixir of Healing",key:"healing"},
   {name:"Elixir of Mana Flow",key:"mana"},{name:"Elixir of Arcane Lore",key:"arcane"},
 ];
-function rollAptitude(){ const a=APTITUDE_ITEMS[irnd(0,APTITUDE_ITEMS.length-1)]; return {name:a.name,stat:"skillpot",skillKey:a.key,v:irnd(8,16),dur:120}; }
+function rollAptitude(){ const a=APTITUDE_ITEMS[irnd(0,APTITUDE_ITEMS.length-1)], lvl=irnd(1,3);   // leveled like the buff spells: +10/level, 15+10(level-1) min
+  return {name:`${a.name} ${ROMAN[lvl]}`,stat:"skillpot",skillKey:a.key,lvl,v:buffMagFor(lvl),dur:buffDurFor(lvl)}; }
 // ---- Jewelry: rings & necklaces (AC's signature skill/stat boosters). Each rolls one cantrip-style
 //      bonus — a skill aptitude, a vital boost, or armour. Bonuses are computed from equipped jewelry
 //      (derive/skillValue/armour), never mutate base stats, so equip/unequip is clean. ----
@@ -7465,7 +7474,7 @@ const VENDOR_TYPES={
     {name:"Recall Stone",cost:90,desc:"Crush to teleport to your bound Lifestone.",ico:"🔵",gear:{name:"Recall Stone",stat:"recall",v:0}},
     {name:"Antidote",cost:35,desc:"Cleanses hostile curses (slow, imperil).",ico:"🟢",gear:{name:"Antidote",stat:"cure",v:0}},
     {name:"Rejuvenation Potion",cost:45,desc:"Regenerates 8 health/s for 15s (Use it).",ico:"💧",gear:{name:"Rejuvenation Potion",stat:"hot",pool:"hp",rate:8,dur:15,v:120}},
-    {name:"Elixir of Marksmanship",cost:60,desc:"+12 Missile skill for 120s (Use it).",ico:"⚗️",gear:{name:"Elixir of Marksmanship",stat:"skillpot",skillKey:"missile",v:12,dur:120}}]},
+    {name:"Elixir of Marksmanship I",cost:60,desc:"+10 Missile skill for 15 min (Use it).",ico:"⚗️",gear:{name:"Elixir of Marksmanship I",stat:"skillpot",skillKey:"missile",lvl:1,v:10,dur:900}}]},
   weaponsmith:{title:"Weaponsmith",marker:"⚔",mcol:"#ffd23b",robe:0x6a3a22,stock:()=>[
     {name:"Steel Dagger",cost:80,desc:"Fast, light blade.",ico:"🗡",gear:{name:"Steel Dagger",stat:"weapon",wt:"dagger",v:8}},
     {name:"Soldier's Sword",cost:120,desc:"A reliable blade.",ico:"⚔️",gear:{name:"Soldier's Sword",stat:"weapon",wt:"sword",v:10}},
@@ -7721,7 +7730,7 @@ function buildSpellbook(){
       }
       const row=document.createElement('div'); row.className="row";
       const eff=spellEffectText(s);
-      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur}s`:""}${s.req?` · req ${s.req}`:""} · ${status}</span></div><div class="ctl">${ctl}</div>`;
+      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span></div><div class="ctl">${ctl}</div>`;
       root.appendChild(row);
     }
   }
@@ -8265,7 +8274,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur}s</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"");
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp")?`<span style="color:var(--dim);font-size:11px">sell at a vendor</span>`
