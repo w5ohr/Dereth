@@ -5581,23 +5581,58 @@ function playerHurt(dmg,sx,sz,type,element){
     setTimeout(()=>dd.style.opacity="0",420);}
   if(player.hp<=0) die();
 }
+// AC death: you leave a corpse holding some of your gear (highest-value first) + half your pyreals; walk back to reclaim it.
+function deathDrops(){
+  let n=Math.max(1,Math.ceil(player.level/10));
+  if(player.level>=10) n+=irnd(0,2);                                  // level 10+: equal chance of +0/+1/+2
+  n=Math.max(0,n-((player.augment&&player.augment.dropReduce)||0));   // Clutch of the Miser augmentation
+  const safe=it=>!it||it.stat==="note"||it.stat==="quest"||it.scroll||it.starter;   // trade notes, quest items, scrolls, starter gear are spared
+  const hasSpareWeapon=player.inv.some(it=>it.stat==="weapon"&&!safe(it));
+  const pool=[];
+  if(player.weapon&&!safe(player.weapon)&&hasSpareWeapon) pool.push({src:"weapon",it:player.weapon});  // keep your weapon if it's your only one
+  for(const sl in (player.armorSlots||{})){ const it=player.armorSlots[sl]; if(!safe(it)) pool.push({src:"armor",sl,it}); }
+  for(const sl in (player.jewelry||{})){ const it=player.jewelry[sl]; if(!safe(it)) pool.push({src:"jewel",sl,it}); }
+  player.inv.forEach((it,i)=>{ if(!safe(it)) pool.push({src:"inv",i,it}); });
+  pool.sort((a,b)=>(b.it.v||0)-(a.it.v||0));   // your most valuable belongings drop first — real risk
+  const chosen=pool.slice(0,n), invIdx=[];
+  for(const c of chosen){
+    if(c.src==="weapon"){ player.weapon=null; }
+    else if(c.src==="armor"){ delete player.armorSlots[c.sl]; }
+    else if(c.src==="jewel"){ delete player.jewelry[c.sl]; }
+    else invIdx.push(c.i);
+  }
+  invIdx.sort((a,b)=>b-a).forEach(i=>player.inv.splice(i,1));
+  const gold=Math.floor(player.gold*0.5); player.gold-=gold;
+  return {items:chosen.map(c=>c.it),gold};
+}
 function die(){
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
   player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.hots={};player.debuffs={};player.lightBuff=null;
   if(player.skillBuffs&&Object.keys(player.skillBuffs).length){player.skillBuffs={};derive();}
+  // where the corpse falls: at your feet overworld, or at the instance's overworld return point (instances are torn down)
+  const corpseX=inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x;
+  const corpseZ=inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z;
   if(inDungeon) exitDungeon(false);
   if(inNetwork) exitNetwork(netReturn);
   document.getElementById('deathmsg').style.display="flex";
   log("You have died. Your spirit drifts toward your bound Lifestone…","warn");
   const lost=Math.floor(player.xpUnspent*0.10);player.xpUnspent-=lost;
   player.vitae=Math.min(0.40,player.vitae+0.05); // Vitae: +5% penalty per death, capped at -40% (AC); recovers as you earn XP
-  derive();   // apply the new Vitae to your vital pools before you respawn
+  // drop a recoverable corpse (some gear + half your pyreals) where you fell
+  const dd=deathDrops(); let corpseNote="";
+  if(dd.items.length||dd.gold){
+    for(const it of dd.items) addDrop(corpseX+rnd(-1.4,1.4),corpseZ+rnd(-1.4,1.4),{type:"item",item:it,corpse:true});
+    if(dd.gold>0) addDrop(corpseX,corpseZ,{type:"gold",amt:dd.gold,corpse:true});
+    if(typeof recomputeGearSkill==="function") recomputeGearSkill();
+    corpseNote=` Your corpse holds <b>${dd.items.length}</b> item(s)${dd.gold?` and <b>${dd.gold}</b> pyreals`:""} where you fell — reclaim them before they fade.`;
+  }
+  derive();   // apply the new Vitae + any dropped gear to your vital pools before you respawn
   setTimeout(()=>{
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
     player.x=ls.x;player.z=ls.z+3;player.alive=true;
     player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;player.invuln=2.5;
     document.getElementById('deathmsg').style.display="none";
-    log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP, and death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals & damage until you earn it back.`,"sys");
+    log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP, and death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals, skills & damage until you earn it back.${corpseNote}`,"sys");
     toast("RESTORED");
   },1400);
 }
@@ -6486,7 +6521,7 @@ function update(dt){
       if(dp.shared){ if(!dp.req){ dp.req=true; netSend({t:"pickup",id:dp.id}); } continue; } // server-validated; server removes it
       player.gold+=dp.amt;floater(player.x,EYE+0.4,player.z,"+"+dp.amt+" p","#ffd86b");
       SFX.gold();scene.remove(dp.mesh);drops.splice(i,1);continue;}
-    if(dp.type==="item"&&!dp.shared&&dp.t>45){scene.remove(dp.mesh);drops.splice(i,1);} // shared drops expire server-side
+    if(dp.type==="item"&&!dp.shared&&dp.t>(dp.corpse?600:45)){scene.remove(dp.mesh);drops.splice(i,1);} // corpse drops linger ~10min so you can recover them; other loot 45s
   }
   // floaters & bursts
   for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.sp.position.y+=f.vy*dt;f.t-=dt;
