@@ -375,6 +375,7 @@
     <div class="cc-controls">
       <div class="cc-row"><div class="cc-lab">Name</div><input id="ccName" placeholder="name (3-16 characters)" maxlength="16"></div>
       <div class="cc-row" data-cat="race"><div class="cc-lab">Race / Heritage</div><div class="cc-opts"></div></div>
+      <div class="cc-row" data-cat="model"><div class="cc-lab">Body Model</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="face"><div class="cc-lab">Face Shape</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="skin"><div class="cc-lab">Skin Tone</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="hair"><div class="cc-lab">Hair Style</div><div class="cc-opts"></div></div>
@@ -847,22 +848,40 @@ let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
 const SIM_RADIUS=95, VIS_RADIUS=160, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;
 // ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
-let USE_GLTF_AVATAR=false;                      // EXPERIMENTAL: set true (and drop a rigged .glb at GLTF_AVATAR_URL) for a realistic avatar; off = procedural avatar (offline default)
-const GLTF_AVATAR_URL="assets/avatar.glb";      // drop a rigged .glb here (Ready Player Me / Mixamo / Character Creator export)
-let gltfAvatar=null,gltfMixer=null,gltfReady=false,gltfTried=false;
-function tryLoadGltfAvatar(){
-  if(gltfTried||!USE_GLTF_AVATAR||typeof THREE.GLTFLoader==="undefined") return; gltfTried=true;
-  new THREE.GLTFLoader().load(GLTF_AVATAR_URL, gltf=>{
+let USE_GLTF_AVATAR=false;                      // legacy single-avatar drop-in (assets/avatar.glb); superseded by model choice
+const GLTF_AVATAR_URL="assets/avatar.glb";
+let gltfAvatar=null,gltfMixer=null,gltfReady=false,gltfTried=false,gltfAvatarUrl=null;
+// ── Player-character models, chosen at avatar creation. "procedural" = the customizable classic avatar;
+//    the rest are self-hosted rigged models (idle-animated) rendered as your character in third person. ──
+const PLAYER_MODELS=[
+  {k:"procedural",n:"Classic"},
+  {k:"knight",   n:"Knight",       url:"assets/models/people/Knight.glb"},
+  {k:"barbarian",n:"Barbarian",    url:"assets/models/people/Barbarian.glb"},
+  {k:"mage",     n:"Mage",         url:"assets/models/people/Mage.glb"},
+  {k:"rogue",    n:"Rogue",        url:"assets/models/people/Rogue.glb"},
+  {k:"hooded",   n:"Hooded Rogue", url:"assets/models/people/Rogue_Hooded.glb"},
+  {k:"soldier",  n:"Soldier",      url:"assets/models/people/Soldier.glb"},
+];
+function playerModelDef(k){ return PLAYER_MODELS.find(m=>m.k===k)||PLAYER_MODELS[0]; }
+// Load a chosen player model into gltfAvatar (shown in 3rd person; the render loop already swaps it for
+// the procedural avatar). url null → procedural (clears any gltf avatar). Latest choice wins on async load.
+function loadPlayerModel(url){
+  if(gltfAvatar){ scene.remove(gltfAvatar); gltfAvatar=null; } gltfMixer=null; gltfReady=false; gltfAvatarUrl=url||null;
+  if(!url||typeof THREE.GLTFLoader==="undefined") return;   // procedural avatar
+  new THREE.GLTFLoader().load(url, gltf=>{
+    if(gltfAvatarUrl!==url) return;                          // superseded by a newer choice
     const root=gltf.scene;
-    let box=new THREE.Box3().setFromObject(root); const h=(box.max.y-box.min.y)||1; root.scale.setScalar(TARGET_HUMAN_H/h);   // normalise to the shared human height
-    box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;                                            // feet to y=0
+    let box=new THREE.Box3().setFromObject(root); const h=(box.max.y-box.min.y)||1; root.scale.setScalar(TARGET_HUMAN_H/h);
+    box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;
     root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
     gltfAvatar=new THREE.Group(); gltfAvatar.add(root); gltfAvatar.visible=false; scene.add(gltfAvatar);
     if(gltf.animations&&gltf.animations.length){ gltfMixer=new THREE.AnimationMixer(root);
       const idle=gltf.animations.find(a=>/idle/i.test(a.name))||gltf.animations[0]; gltfMixer.clipAction(idle).play(); }
-    gltfReady=true; log("External avatar model loaded (glTF).","sys");
-  }, undefined, err=>{ console.log("glTF avatar not loaded ("+GLTF_AVATAR_URL+") — using the procedural avatar.", (err&&err.message)||""); });
+    gltfReady=true;
+  }, undefined, err=>console.log("player model failed:",url,(err&&err.message)||""));
 }
+function applyPlayerModel(){ loadPlayerModel(playerModelDef((player.appearance&&player.appearance.model)||"procedural").url); }
+function tryLoadGltfAvatar(){ if(gltfTried||!USE_GLTF_AVATAR) return; gltfTried=true; loadPlayerModel(GLTF_AVATAR_URL); }
 // ---- real rigged "people" pulled from public CDNs, randomly assigned to strolling townsfolk ----
 // (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
 let USE_GLTF_NPCS=true;            // online-required (offline support dropped); false = all-procedural townsfolk
@@ -2049,6 +2068,7 @@ const APPEARANCE={
   beard:[{k:"none",n:"None"},{k:"stubble",n:"Stubble"},{k:"mustache",n:"Mustache"},{k:"goatee",n:"Goatee"},{k:"full",n:"Full Beard"},{k:"long",n:"Long Beard"}],
   tattoo:[{k:"none",n:"None"},{k:"warpaint",n:"War Paint"},{k:"tribal",n:"Tribal"},{k:"runes",n:"Runes"},{k:"mark",n:"Clan Mark"}],
   eye:[{k:0x4a6a3a,n:"Green"},{k:0x3a5a8a,n:"Blue"},{k:0x5a3a1a,n:"Brown"},{k:0x6a6a6a,n:"Grey"},{k:0x8a6a2a,n:"Amber"}],
+  model:PLAYER_MODELS.map(m=>({k:m.k,n:m.n})),   // body model choice (Classic procedural, or a rigged model)
 };
 const _find=(cat,k)=>APPEARANCE[cat].find(o=>o.k===k)||APPEARANCE[cat][0];
 function addHair(g,style,col,fs){
@@ -10864,6 +10884,7 @@ function startGame(loadSaved,preset){
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
+  applyPlayerModel();          // if the player chose a rigged body model at creation, load it as their avatar
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
   running=true;paused=false;lastTs=0;updateQuestHUD();updateSeasonHUD();
@@ -10889,7 +10910,7 @@ if(hasSave()){ continueBtn.style.display="block";
 // ============================================================================
 //  CHARACTER CREATOR — live 3D face/hair/beard/tattoo customization
 // ============================================================================
-let ccRenderer=null,ccScene=null,ccCam=null,ccBust=null,ccRAF=0,ccWork=null,ccOnCreate=null,ccVisible=false;
+let ccRenderer=null,ccScene=null,ccCam=null,ccBust=null,ccRAF=0,ccWork=null,ccOnCreate=null,ccVisible=false,ccModel=null,ccModelCache={},ccModelToken=0;
 function ccInitPreview(){
   if(ccRenderer) return;
   const canvas=document.getElementById('ccPreview');
@@ -10913,9 +10934,30 @@ function ccBust_build(app){
   const collar=new THREE.Mesh(new THREE.TorusGeometry(0.15,0.045,8,20),new THREE.MeshLambertMaterial({color:garb})); collar.rotation.x=Math.PI/2; collar.position.y=1.42; g.add(collar);
   return g;
 }
-function ccRebuild(){ if(!ccScene) return; if(ccBust) ccScene.remove(ccBust); ccBust=ccBust_build(ccWork); ccScene.add(ccBust); }
+function ccShowModel(url){                                   // render the chosen rigged model full-body in the preview
+  const tok=++ccModelToken;
+  const place=root=>{ if(tok!==ccModelToken) return; if(ccModel){ccScene.remove(ccModel);ccModel=null;}
+    const m=(typeof THREE.SkeletonUtils!=="undefined")?THREE.SkeletonUtils.clone(root):root.clone();
+    ccModel=new THREE.Group(); ccModel.add(m); ccScene.add(ccModel); };
+  if(ccModelCache[url]){ place(ccModelCache[url]); return; }
+  new THREE.GLTFLoader().load(url,g=>{ const root=g.scene;
+    let b=new THREE.Box3().setFromObject(root); const h=(b.max.y-b.min.y)||1; root.scale.setScalar(TARGET_HUMAN_H/h);
+    b=new THREE.Box3().setFromObject(root); root.position.y-=b.min.y; root.traverse(o=>{if(o.isMesh)o.frustumCulled=false;});
+    ccModelCache[url]=root; place(root);
+  }, undefined, e=>console.log("cc model failed",url,(e&&e.message)||""));
+}
+function ccRebuild(){ if(!ccScene) return;
+  const md=playerModelDef(ccWork.model||"procedural");
+  // face/skin/hair options only matter for the classic procedural body — hide them for rigged models
+  ["face","skin","hair","hairColor","beard","eye","tattoo"].forEach(cat=>{ const row=document.querySelector('#charCreator .cc-row[data-cat="'+cat+'"]'); if(row) row.style.display=md.url?"none":""; });
+  if(ccBust){ ccScene.remove(ccBust); ccBust=null; }
+  if(md.url){ if(ccCam){ccCam.position.set(0,1.05,3.5);ccCam.lookAt(0,0.95,0);} ccShowModel(md.url); }
+  else { ccModelToken++; if(ccModel){ccScene.remove(ccModel);ccModel=null;} if(ccCam){ccCam.position.set(0,1.62,1.45);ccCam.lookAt(0,1.6,0);} ccBust=ccBust_build(ccWork); ccScene.add(ccBust); }
+}
 function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
-  if(ccBust) ccBust.rotation.y=Math.PI+Math.sin(performance.now()/1500)*0.5;  // face the camera (built facing -z), gentle sway
+  const sway=Math.PI+Math.sin(performance.now()/1500)*0.5;
+  if(ccBust) ccBust.rotation.y=sway;
+  if(ccModel) ccModel.rotation.y=sway;
   ccRenderer.render(ccScene,ccCam); }
 function ccSize(){ const cv=document.getElementById('ccPreview'); const w=cv.clientWidth||330,h=cv.clientHeight||430;
   ccRenderer.setSize(w,h,false); ccCam.aspect=w/h; ccCam.updateProjectionMatrix(); }
@@ -10934,7 +10976,7 @@ function ccSyncSel(){ document.querySelectorAll('#charCreator .cc-row[data-cat]'
   const cat=row.dataset.cat; row.querySelectorAll('.cc-opts button').forEach(b=>b.classList.toggle("sel",String(ccWork[cat])===b.dataset.k)); }); }
 function openCharCreator(race,onCreate){
   ccOnCreate=onCreate;
-  ccWork=Object.assign({},player.appearance); ccWork.race=race||ccWork.race||"aluvian";
+  ccWork=Object.assign({},player.appearance); ccWork.race=race||ccWork.race||"aluvian"; if(!ccWork.model)ccWork.model="procedural";
   document.getElementById('overlay').style.display="none";
   document.getElementById('charCreator').style.display="block"; ccVisible=true;
   const nameI=document.getElementById('ccName'); nameI.value=(player.name&&player.name!=="Adventurer")?player.name:"";
