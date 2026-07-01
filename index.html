@@ -213,6 +213,11 @@
 </div>
 
 <div id="hint"></div>
+<div id="drownTint" style="position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(20,70,120,0) 30%,rgba(12,50,90,.62) 100%);z-index:35;display:none;pointer-events:none"></div>
+<div id="breathBar" style="position:fixed;left:50%;bottom:146px;transform:translateX(-50%);width:130px;z-index:40;display:none;pointer-events:none;text-align:center">
+  <div style="font-size:11px;color:#bfe6ff;text-shadow:0 1px 2px #000;margin-bottom:2px">Breath</div>
+  <div style="width:100%;height:8px;background:rgba(0,0,0,.55);border:1px solid #4a80a8;border-radius:5px;overflow:hidden"><i id="breathFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#2a6a9a,#7fd0ff)"></i></div>
+</div>
 <div id="atkHeight" style="position:fixed;left:50%;bottom:132px;transform:translateX(-50%);font-size:11px;color:#ffd86b;text-shadow:0 1px 2px #000;z-index:40;display:none;pointer-events:none">Attack: Middle</div>
 <div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
   <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
@@ -6141,7 +6146,7 @@ function die(){
   derive();   // apply the new Vitae + any dropped gear to your vital pools before you respawn
   setTimeout(()=>{
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
-    player.x=ls.x;player.z=ls.z+3;player.alive=true;
+    player.x=ls.x;player.z=ls.z+3;player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
     player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;player.invuln=2.5;
     document.getElementById('deathmsg').style.display="none";
     log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP, and death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals, skills & damage until you earn it back.${corpseNote}`,"sys");
@@ -6537,6 +6542,25 @@ cEl.addEventListener('click',()=>{ if(running&&!locked&&!movingUI&&sheet.style.d
 let chargeActive=false,chargeT=0; const CHARGE_MAX=1.0;
 function chargePower(){ return clamp(0.6+Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX*1.0,0.6,1.6); }
 function releaseCharge(){ if(!chargeActive) return; chargeActive=false; const p=chargePower(); chargeT=0; meleeAttack(p); }
+// W3 Drowning: when the player's head is under the water surface (y=0), breath drains, then health.
+function updateDrowning(dt){
+  if(player.breath==null) player.breath=1;
+  const submerged = player.alive && !inDungeon && !inNetwork && (player.y < -1.5);
+  if(submerged){
+    if(player.breath>0){ player.breath=Math.max(0,player.breath-dt/14);   // ~14s of air
+      if(player.breath<=0 && SFX.hurt) SFX.hurt(); }
+    else { player.drownAcc=(player.drownAcc||0)+dt;
+      if(player.drownAcc>=1){ player.drownAcc-=1;
+        const d=Math.max(6,Math.round(player.mhp*0.06)); player.hp-=d;   // drowning ignores armour
+        floater(player.x,player.y+EYE,player.z,"-"+d+" drown","#7fd0ff"); if(SFX.hurt)SFX.hurt();
+        if(now()-lastBreath>1400){ lastBreath=now(); log("You are <b>drowning</b> — get to the surface!","warn"); }
+        if(player.hp<=0){ player.hp=0; if(typeof die==="function") die(); } } }
+  } else { player.breath=Math.min(1,player.breath+dt/2.5); player.drownAcc=0; }   // refill on the surface
+  // HUD: breath bar (only while it matters) + underwater tint
+  const bb=document.getElementById('breathBar'), bf=document.getElementById('breathFill'), dt2=document.getElementById('drownTint');
+  if(bb){ if(submerged||player.breath<1){ bb.style.display="block"; if(bf) bf.style.width=Math.round(player.breath*100)+"%"; } else bb.style.display="none"; }
+  if(dt2){ dt2.style.display=submerged?"block":"none"; dt2.style.opacity=submerged?String(clamp(0.5+(1-player.breath)*0.5,0.5,1)):"0"; }
+}
 function updateChargeBar(){ const b=document.getElementById('chargeBar'); if(!b) return;
   if(chargeActive){ b.style.display="block"; const f=document.getElementById('chargeFill'); if(f) f.style.width=Math.round(Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX*100)+"%"; }
   else b.style.display="none";
@@ -6900,7 +6924,7 @@ function collide(nx,nz){
     if(d<min&&d>0.001){nx=o.x+dx/d*min;nz=o.z+dz/d*min;}
   }
   nx=clamp(nx,-HALF+1,HALF-1);nz=clamp(nz,-HALF+1,HALF-1);
-  if(terrainH(nx,nz)<-2) return [player.x,player.z]; // can't wade into deep water
+  if(terrainH(nx,nz)<-6) return [player.x,player.z]; // W3: you can wade into deep water (and drown), but the ocean abyss stays a wall
   return [nx,nz];
 }
 let castReticle=null;
@@ -6921,6 +6945,7 @@ function update(dt){
   updateChargeBar();
   if(player.emoteT>0){ player.emoteT=Math.max(0,player.emoteT-dt);   // emote gesture ends early if you move or attack
     if(chargeActive||held("forward")||held("back")||held("left")||held("right")) player.emoteT=0; }
+  updateDrowning(dt);   // W3: over-head water depletes breath, then health
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
   updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
   // spell cast wind-up: fire the effect when the bar fills
