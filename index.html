@@ -6086,9 +6086,22 @@ function craftRecipe(id){
   } else { const back=Math.floor(r.cost/2); player.materials+=back; log(`Your <b>${r.name}</b> spoils in the making — ${back} materials recovered. (Raise ${SKILL_BY_KEY[r.skill].n}.)`,"warn"); if(SFX.hit)SFX.hit(); }
   updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
 }
+// S1 allegiance patron/vassal tree: recruit NPC vassals (capped by Leadership) whose deeds pass XP up to you
+function vassalCap(){ return 3 + skillTier("leadership")*3 + Math.floor(skillValue("leadership")/25); }
+function vassalName(){ return (typeof townName==="function")? townName(irnd(0,3), irnd(1,99999)) : "Vassal "+irnd(100,999); }
+function recruitVassal(){
+  player.vassals=player.vassals||[];
+  if(player.vassals.length>=vassalCap()){ log("Your allegiance is full — train <b>Leadership</b> to swear in more vassals.","warn"); if(SFX.hit)SFX.hit(); return false; }
+  const nm=vassalName(); player.vassals.push({name:nm});
+  log(`<b>${nm}</b> swears into your allegiance — their deeds now pass XP up to you (patron income). See it on the character sheet (C).`,"sys"); if(typeof toast==="function")toast("VASSAL SWORN");
+  return true;
+}
 function gainXP(amt){
   if(player.augment&&player.augment.xpBonus) amt=Math.round(amt*(1+player.augment.xpBonus)); // H17 XP augmentation (Ciandra's Essence)
   if(player.patron) amt=Math.round(amt*(1.15+(skillTier("loyalty")>0?0.05:0))); // Loyalty deepens vassal XP flow
+  if(player.vassals&&player.vassals.length){   // S1 patron income: your sworn vassals pass a share of their earnings up to you (Leadership deepens it)
+    const rate=Math.min(0.30, player.vassals.length*0.02*(1+(skillTier("leadership")>0?0.6:0)));
+    const passup=Math.round(amt*rate); if(passup>0){ amt+=passup; player.vassalXP=(player.vassalXP||0)+passup; } }
   if(player.vitae>0){ const was=player.vitae; player.vitae=Math.max(0,player.vitae-amt/40000); // recover Vitae through deeds (XP works it off)
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
     if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
@@ -6944,12 +6957,21 @@ function buildSheet(){
   sr.querySelectorAll('[data-train]').forEach(b=>b.onclick=()=>{ if(trainSkill(b.dataset.train)){SFX.quest();derive();saveGame();updateHUD();buildSheet();} });
   sr.querySelectorAll('[data-spec]').forEach(b=>b.onclick=()=>{ if(specSkill(b.dataset.spec)){SFX.quest();derive();saveGame();updateHUD();buildSheet();} });
   sr.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{ if(raiseSkill(b.dataset.raise)){SFX.quest();derive();saveGame();updateHUD();buildSheet();} });
-  // allegiance
+  // allegiance — patron/vassal tree (S1): swear UP to a patron (+XP), recruit vassals BELOW who pass income up to you
   const al=document.getElementById('allegianceRow');
-  if(player.patron) al.innerHTML=`<div class="desc" style="color:#7fe6a0">✦ Sworn to the Allegiance — +15% XP from all sources.</div>`;
-  else if(player.level>=5){ al.innerHTML=`<button class="tbtn" id="swearBtn">Swear to the Allegiance (+15% XP)</button>`;
-    document.getElementById('swearBtn').onclick=()=>{player.patron=true;SFX.quest();log("You swear allegiance to a Patron — XP flows more freely.","sys");saveGame();buildSheet();};}
-  else al.innerHTML=`<div class="desc" style="color:var(--dim)">Reach level 5 to swear to an Allegiance.</div>`;
+  player.vassals=player.vassals||[];
+  const vCap=vassalCap(), vN=player.vassals.length;
+  let ah="";
+  if(player.patron) ah+=`<div class="desc" style="color:#7fe6a0">✦ Sworn to <b>${esc(player.monarch||"a Patron")}</b> — +${15+(skillTier("loyalty")>0?5:0)}% XP (Loyalty).</div>`;
+  else if(player.level>=5) ah+=`<button class="tbtn" id="swearBtn">Swear to a Patron (+15% XP)</button>`;
+  else ah+=`<div class="desc" style="color:var(--dim)">Reach level 5 to swear to a Patron.</div>`;
+  ah+=`<div class="desc" style="margin-top:6px;color:#c9a6ff">Your vassals: <b>${vN}/${vCap}</b>${vN?` — ${player.vassals.map(v=>esc(v.name)).join(", ")}`:" (none yet)"}</div>`;
+  const passRate=Math.round(Math.min(0.30, vN*0.02*(1+(skillTier("leadership")>0?0.6:0)))*100);
+  if(vN) ah+=`<div class="desc" style="color:#9be08a">Patron income: <b>+${passRate}%</b> XP passed up${player.vassalXP?` · <b>${player.vassalXP.toLocaleString()}</b> lifetime`:""}. Train <b>Leadership</b> to hold &amp; earn more.</div>`;
+  ah+=`<button class="tbtn" id="recruitBtn" ${vN>=vCap?"disabled":""} style="margin-top:4px">Recruit a Vassal${vN>=vCap?" (at cap — raise Leadership)":""}</button>`;
+  al.innerHTML=ah;
+  { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{player.patron=true;player.monarch=vassalName();SFX.quest();log(`You swear allegiance to Patron <b>${player.monarch}</b> — XP flows more freely.`,"sys");saveGame();buildSheet();}; }
+  { const rb=document.getElementById('recruitBtn'); if(rb) rb.onclick=()=>{ if(recruitVassal()){ SFX.quest(); saveGame(); buildSheet(); } }; }
   // Luminance / Enlightenment endgame
   if(player.lumUnlocked||player.enlightenment){
     let lh=`<div style="margin-top:8px;border-top:1px solid #3a3550;padding-top:6px"><div class="desc" style="color:#ffd23b">✦ Luminance <b>${(player.luminance||0).toLocaleString()}</b> / 1,000,000${player.enlightenment?` · <span style="color:#c9a6ff">${ENLIGHTEN_TITLES[player.enlightenment-1]}</span> (+${player.enlightenment} to all skills)`:""}</div>`;
@@ -11497,7 +11519,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vitae:player.vitae,heritage:player.heritage,
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,vitae:player.vitae,heritage:player.heritage,
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -11532,7 +11554,7 @@ function applySaveObj(s){
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
     weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
     jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
-    skills:migrateSkills(s.skills),patron:!!s.patron,vitae:s.vitae||0,heritage:s.heritage||"aluvian",
+    skills:migrateSkills(s.skills),patron:!!s.patron,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,vitae:s.vitae||0,heritage:s.heritage||"aluvian",
     name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a}});
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(s.knownSpells==="all")?Object.keys(SPELLBOOK)              // admin/testing: know every spell
