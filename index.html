@@ -539,6 +539,8 @@ function derive(){
   if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
   if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
   const ag=player.augment; if(ag){ player.mhp+=ag.hp||0; player.mst+=ag.st||0; player.mmn+=ag.mn||0; }   // permanent augmentation-gem boosts
+  if(player.vitae>0){ const vm=1-player.vitae;   // Vitae (death penalty): your vital pools shrink until worked off with XP
+    player.mhp=Math.max(1,Math.round(player.mhp*vm)); player.mst=Math.max(1,Math.round(player.mst*vm)); player.mmn=Math.max(0,Math.round(player.mmn*vm)); }
   player.hp=Math.min(player.hp,player.mhp);
   player.st=Math.min(player.st,player.mst);
   player.mn=Math.min(player.mn,player.mmn);
@@ -4031,7 +4033,9 @@ function applyTinker(mat){
 }
 function gainXP(amt){
   if(player.patron) amt=Math.round(amt*(1.15+(skillTier("loyalty")>0?0.05:0))); // Loyalty deepens vassal XP flow
-  if(player.vitae>0) player.vitae=Math.max(0,player.vitae-amt/40000); // recover Vitae through deeds
+  if(player.vitae>0){ const was=player.vitae; player.vitae=Math.max(0,player.vitae-amt/40000); // recover Vitae through deeds (XP works it off)
+    if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
+    if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
   player.xp+=amt;player.xpUnspent+=amt;
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
@@ -4093,13 +4097,14 @@ function die(){
   document.getElementById('deathmsg').style.display="flex";
   log("You have died. Your spirit drifts toward your bound Lifestone…","warn");
   const lost=Math.floor(player.xpUnspent*0.10);player.xpUnspent-=lost;
-  player.vitae=Math.min(0.45,player.vitae+0.05); // death weakens you (Vitae); recovers as you earn XP
+  player.vitae=Math.min(0.40,player.vitae+0.05); // Vitae: +5% penalty per death, capped at -40% (AC); recovers as you earn XP
+  derive();   // apply the new Vitae to your vital pools before you respawn
   setTimeout(()=>{
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
     player.x=ls.x;player.z=ls.z+3;player.alive=true;
     player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;player.invuln=2.5;
     document.getElementById('deathmsg').style.display="none";
-    log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP to death.`,"sys");
+    log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP, and death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals & damage until you earn it back.`,"sys");
     toast("RESTORED");
   },1400);
 }
