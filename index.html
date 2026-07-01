@@ -6615,11 +6615,13 @@ function meleeAttack(power){
         applyHit(m,dmg*hm.dmg*sneak,meleeOpts);
         dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
         if(offhand){ applyHit(m,dmg*hm.dmg*(dualT===2?0.6:0.45),meleeOpts); floater(m.x,(m.headY||1.6)+2.2,m.z,"off-hand","#bfe6ff"); }   // Cb8 dual-wield follow-up strike
+
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
       }
     }
   }
+  if(player.pk) pvpStrike(dmg, af&&af.k==="brand"?af.element:null);   // S3 PvP: the same swing strikes any flagged player in range
 }
 
 // ---------- input ----------
@@ -11663,6 +11665,7 @@ function netHandle(m){
   if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="who") return onWho(m);
   if(m.t==="emote") return onEmote(m);
+  if(m.t==="pvp") return onPvp(m);
   if(m.t==="rbuff") return onRemoteBuff(m);
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
@@ -12054,6 +12057,8 @@ function handleSlash(text){
     else if(sub==="list"||!sub) netSend({t:"party",act:"list"});
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
+  else if(cmd==="pk"){ if(!isOnline){ log("PvP requires being online.","warn"); return; } player.pk=!player.pk;
+    log(player.pk?"⚔️ You raise your <b>PK flag</b> — you and other flagged players can now strike each other. <b>/pk</b> again to stand down.":"You lower your <b>PK flag</b> — you are no longer open to player combat.","warn"); if(SFX.growl)SFX.growl(); }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
     if(!act) log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+" — e.g. <b>/emote clap</b>","sys");
     else doEmote(act); }
@@ -12079,7 +12084,7 @@ function reconcileRemotes(players){
     let r=NET.players[p.id];
     if(!r){ const mesh=buildAvatar(); const tag=labelSprite(p.name||p.id); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
-    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id;
+    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk;
   }
   for(const id in NET.players){ if(!seen[id]){ scene.remove(NET.meshes[id]); delete NET.meshes[id]; delete NET.players[id]; } }
 }
@@ -12098,7 +12103,23 @@ function sendInput(dt){
   if(!isOnline||!NET.open) return;
   netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
   netSend({t:"input",x:player.x,z:player.z,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
-    level:player.level,heritage:player.heritage,title:player.title});
+    level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk});
+}
+// S3 PvP: apply an incoming player hit (the server only relays it if we're both PK-flagged & in range)
+function onPvp(m){
+  if(!player.pk||!player.alive||!running) return;
+  const el=m.element||undefined, type=(el==="nether"||el==="fire"||el==="frost"||el==="shock"||el==="acid")?"magic":"melee";
+  playerHurt(Math.max(1,Math.round(m.dmg||0)),undefined,undefined,type,el);
+  log(`<b>${esc(m.from||"A foe")}</b> strikes you for <b>${Math.round(m.dmg||0)}</b> in combat!`,"warn");
+}
+// send a PvP hit to a flagged remote player under your attack (called from melee/war when player.pk)
+function pvpStrike(dmg,element){
+  if(!player.pk||!isOnline||inDungeon||inNetwork) return;
+  const dir=new THREE.Vector3(); cam.getWorldDirection(dir); const fx=dir.x,fz=dir.z,fl=Math.hypot(fx,fz)||1;
+  for(const id in NET.players){ const r=NET.players[id]; if(!r||!r.pk) continue;
+    const rx=(r.x!=null?r.x:r.tx), rz=(r.z!=null?r.z:r.tz); if(rx==null) continue;
+    const dx=rx-player.x,dz=rz-player.z,d=Math.hypot(dx,dz); if(d>6) continue;
+    if((dx*fx+dz*fz)/(d*fl)>0.4){ netSend({t:"pvp",target:id,dmg:Math.round(dmg),element:element||""}); floater(rx,EYE+1.4,rz,"-"+Math.round(dmg),"#ff7a7a"); } }
 }
 
 // ---------- boot ----------

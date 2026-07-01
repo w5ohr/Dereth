@@ -244,7 +244,8 @@ def mob_pub(m):
 def snapshot():
     snap = {"t": "snapshot", "players": [
         {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
-         "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title}
+         "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
+         "pk": getattr(cl, "pk", False)}
         for u, cl in CLIENTS.items() if cl.in_world],
         "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
     if EVENT.get("active"):
@@ -858,6 +859,7 @@ async def dispatch(cl, msg):
         cl.mhp = int(msg.get("mhp", cl.mhp)); cl.level = int(msg.get("level", cl.level))
         cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
         cl.title = str(msg.get("title", cl.title))[:40]
+        cl.pk = bool(msg.get("pk", getattr(cl, "pk", False)))   # S3 PvP flag
     elif t == "chat":
         text = str(msg.get("msg", ""))[:240].strip()
         if text and cl.in_world:
@@ -909,6 +911,14 @@ async def dispatch(cl, msg):
             spell = msg.get("spell")
             if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
+    elif t == "pvp":
+        # S3 PvP: relay a hit to the target, only if BOTH players are PK-flagged and in range (target applies it)
+        if cl.in_world and getattr(cl, "pk", False):
+            tgt = CLIENTS.get(msg.get("target"))
+            try: dmg = float(msg.get("dmg", 0))
+            except Exception: dmg = 0
+            if tgt and tgt.in_world and getattr(tgt, "pk", False) and 0 < dmg <= 2000 and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 40:
+                await tgt.send({"t": "pvp", "from": cl.charname, "dmg": round(dmg, 1), "element": str(msg.get("element", ""))[:12]})
     elif t == "spellfx":
         # relay a cosmetic spell visual to other in-world players (no damage authority here)
         if cl.in_world and str(msg.get("cat", "")) in ("proj", "ring", "aoe", "wall"):
