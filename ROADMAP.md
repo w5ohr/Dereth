@@ -286,6 +286,11 @@ anywhere.
   Nether Corruption II–VIII: a targeted Void curse applying a nether DoT (rides the burn tick, Void-scaled)
   **and** corroding the foe's defences (vulnUntil/vulnV) for 12s. New `special:"corrupt"` handler; uses a
   `cvuln` field to dodge the buff-normalization that would stretch the DoT to 15 min. Verified: DoT + 1.18× vuln.
+- ✅ **F8. Organic road web (W10)** — SHIPPED (jsc + preview verified, 0 console errors). `genRoads()` adds
+  a nearest-neighbour road for every non-capital town (to the closest town/capital, deduped, distance-capped)
+  — 37 new town-to-town roads atop the 3 capital highways; they ride the existing `ROADS` array so
+  `buildRoads`/`onRoad` render them + grant road speed automatically. Verified: 51/53 towns linked, roads
+  render in-world + on the minimap.
 
 ## MILESTONE H — AC long-tail systems  ☐ (research done, all ☐ planned)
 From the Round-2 gap sweep (`docs/asherons-call-longtail-gaps.md`, 2026-07-01). **Headline:** the
