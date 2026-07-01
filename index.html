@@ -1393,9 +1393,9 @@ function terrainBase(x,z){
 const FLATTEN=CITIES.map(c=>({x:c.x,z:c.z,core:c.capital?52:40,r:c.capital?96:80,h:Math.max(8,terrainBase(c.x,c.z))}));
 // ── Castle Val Halla: Lord Kilmer's private castle on its own flattened plateau west of Holtburg
 //    (site chosen ≥600u clear of every town & dungeon entrance; the plateau gets its own FLATTEN ring) ──
-const KC={x:2100,z:-3230,wall:88,moatIn:100,moatOut:116,gateHalf:6,safeR:200,
-  name:"Castle Val Halla",lord:"Kilmer"};
-FLATTEN.push({x:KC.x,z:KC.z,core:160,r:240,h:Math.max(10,terrainBase(KC.x,KC.z))});
+const KC={x:2100,z:-3230,wall:190,moatIn:205,moatOut:235,gateHalf:7,safeR:370,
+  name:"Castle Val Halla",lord:"Kilmer"};   // held by Lord Kilmer free of any tithe, rent or upkeep — in perpetuity
+FLATTEN.push({x:KC.x,z:KC.z,core:300,r:420,h:Math.max(10,terrainBase(KC.x,KC.z))});
 function terrainH(x,z){
   let h=terrainBase(x,z);
   for(const t of FLATTEN){const d=Math.hypot(x-t.x,z-t.z);
@@ -4224,119 +4224,286 @@ function openAttendant(n){
   ov.querySelectorAll('[data-kcp]').forEach(b=>b.onclick=()=>kcPortalTo(b.dataset.kcp));
 }
 // ── construction ──
+// ── gates: the keep's great doors close, the gatehouse portcullis raises & lowers (E to work them) ──
+let kcGateDefs=[];
+function toggleKcGate(gd){
+  if(!castleAccess()){ log("Only Lord Kilmer and his sworn guests may work the castle gates.","warn"); if(SFX.hit)SFX.hit(); return; }
+  gd.open=!gd.open;
+  if(!gd.open&&!gd.obst.length){   // bar the way the moment the gate starts to close
+    for(let x=-gd.half+0.6;x<=gd.half-0.6;x+=1.2){ const o={x:gd.x+x,z:gd.z,r:0.8}; obstacles.push(o); gd.obst.push(o); } }
+  log(gd.kind==="portcullis"
+    ? (gd.open?"Chains rattle through the murder holes — the <b>portcullis</b> grinds upward.":"The <b>portcullis</b> slams down. None shall cross the moat.")
+    : (gd.open?"The <b>keep gates</b> swing wide.":"The <b>keep gates</b> boom shut."),"sys");
+  if(SFX.quest)SFX.quest();
+}
+function updateKcGates(dt){
+  for(const gd of kcGateDefs){
+    if(gd.kind==="portcullis"){
+      const ty=gd.open?gd.yOpen:gd.yClosed;
+      gd.mesh.position.y+=clamp(ty-gd.mesh.position.y,-dt*2.4,dt*2.4);
+      if(gd.open&&gd.obst.length&&Math.abs(gd.mesh.position.y-gd.yOpen)<0.3){
+        for(const o of gd.obst){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); } gd.obst.length=0; }
+    } else {
+      const tr=gd.open?gd.ryOpen:0;
+      for(let i=0;i<2;i++){ const d=gd.doors[i], t=(i?-tr:tr);
+        d.rotation.y+=clamp(t-d.rotation.y,-dt*1.6,dt*1.6); }
+      if(gd.open&&gd.obst.length&&Math.abs(gd.doors[0].rotation.y-gd.ryOpen)<0.08){
+        for(const o of gd.obst){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); } gd.obst.length=0; }
+    }
+  }
+}
+// ── the castle guard: 20 level-200 veterans with legendary crossbows, endless elemental bolts,
+//    and the Life & Creature arts. Any hostile creature that nears them is attacked on sight. ──
+let kcGuards=[];
+const KC_GUARD_NAMES=["Valgrim","Hallstein","Bjorn","Ragnar","Sigfast","Thorolf","Eirik","Gunnar","Hakon","Sten",
+  "Ulfar","Vidar","Orm","Ketil","Brandr","Snorri","Askel","Rurik","Geir","Leif"];
+const KC_GUARD_ELEMENTS=[["fire",0xff6a2a],["frost",0x8fd0ff],["shock",0xffe86a],["acid",0x9fe64a]];
+function addKcGuard(lx,lz,i){
+  const bolts=kcTopNamed(t=>t.stat==="weapon"&&t.wt==="crossbow",20);
+  const xbow=bolts[i%bolts.length];
+  addNPC(KC.x+lx,KC.z+lz,{role:"guard",name:KC_GUARD_NAMES[i]+" · L200",town:"Castle Val Halla"});
+  const g=npcs[npcs.length-1];
+  g.level=200; g.attr={Strength:290,Endurance:290,Coordination:290,Quickness:290,Focus:290,Self:290};   // maxed veteran
+  g.xbow=xbow; g.element=KC_GUARD_ELEMENTS[i%4]; g.cd=Math.random(); g.healCd=0; g.buffT=0;
+  // the crossbow itself, carried at the shoulder
+  const prop=new THREE.Group();
+  const wood2=texMat(woodTex,0x3a2616), metal=texMat(metalTex,0x8a8f9a);
+  const stock=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.1,0.78),wood2); prop.add(stock);
+  const arms=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.05,0.07),metal); arms.position.set(0,0.04,-0.3); prop.add(arms);
+  for(const sx of[-1,1]){ const tip=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,0.16),metal); tip.position.set(sx*0.3,0.04,-0.22); tip.rotation.y=sx*0.5; prop.add(tip); }
+  prop.position.set(0.42,1.28,0.05); prop.rotation.x=-0.35; g.mesh.add(prop);
+  kcGuards.push(g);
+}
+let _kcGuardAcc=0;
+function updateKcGuards(dt){
+  if(inDungeon||inNetwork||!kcGuards.length) return;
+  _kcGuardAcc+=dt; const tick=_kcGuardAcc>=0.15; if(tick)_kcGuardAcc=0;
+  for(const g of kcGuards){
+    g.cd-=dt; if(g.buffT>0)g.buffT-=dt; if(g.healCd>0)g.healCd-=dt;
+    if(!tick) continue;
+    // Life magic: mend Lord Kilmer (or a guest) if wounded nearby
+    if(player.alive&&castleAccess()&&g.healCd<=0&&player.hp<player.mhp*0.65&&Math.hypot(player.x-g.x,player.z-g.z)<22){
+      g.healCd=8; const h=200; player.hp=Math.min(player.mhp,player.hp+h);
+      floater(player.x,EYE+0.6,player.z,"+"+h,"#7fe6a0"); burst(player.x,1.4,player.z,0x7fe6a0,14);
+      log(`<b>${g.name.split(" ·")[0]}</b> casts <b>Heal Other VIII</b> on you.`,"heal"); updateHUD();
+    }
+    // watch for hostile creatures
+    let best=null,bd=52*52;
+    for(const m of monsters){ if(m.isDungeon||m.hp<=0) continue; const b=BESTIARY[m.kind]; if(b&&b.ambient) continue;
+      const dd=(m.x-g.x)*(m.x-g.x)+(m.z-g.z)*(m.z-g.z); if(dd<bd){bd=dd;best=m;} }
+    if(!best) continue;
+    g.mesh.rotation.y=Math.atan2(best.x-g.x,best.z-g.z)+Math.PI;   // face the foe (bodies face −z)
+    if(g.buffT<=0){ g.buffT=60; burst(g.x,1.6,g.z,0xcf9bea,12); }  // Creature magic: battle-blessing on himself
+    if(g.cd>0) continue;
+    g.cd=1.0;
+    // an elemental quarrel — conjured, never spent
+    const [el,col]=g.element, dmg=140*(g.buffT>0?1.3:1);
+    const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(g.x,1.5,g.z),new THREE.Vector3(best.x,(best.headY||1.2),best.z)]);
+    const ln=new THREE.Line(geo,new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9}));
+    scene.add(ln); setTimeout(()=>{scene.remove(ln);geo.dispose();},90);
+    burst(best.x,1.2,best.z,col,10);
+    applyHit(best,dmg,{element:el,brandDmg:60});
+  }
+}
 function addKilmerCastle(){
-  kcChests=[]; kcHooks=[]; kcBunnyRec=null;
+  kcChests=[]; kcHooks=[]; kcBunnyRec=null; kcGateDefs=[]; kcGuards=[];
   const gy=groundY(KC.x,KC.z);
-  const G=new THREE.Group(); G.position.set(KC.x,gy,KC.z); G.userData.noSettle=true;
+  const G=new THREE.Group(); G.position.set(KC.x,gy,KC.z); G.userData.noSettle=true; G.userData.cullR2=620*620;
   scene.add(G); scenery.push(G);
-  const stone=texMat(stoneFloorTex,0x9a958c), stoneDark=texMat(stoneFloorTex,0x6f6a62), wood=texMat(woodTex,0x6a4a2a);
+  const stone=texMat(stoneFloorTex,0x9a958c), stoneDark=texMat(stoneFloorTex,0x6f6a62), stoneBlk=texMat(stoneFloorTex,0x4e4a44), wood=texMat(woodTex,0x6a4a2a);
   const iron=solid(0x2a2620), crimson=new THREE.MeshStandardMaterial({color:0x5c1018,roughness:0.9});
   const gold=new THREE.MeshStandardMaterial({color:0xd8a832,metalness:0.75,roughness:0.3});
-  const water=new THREE.MeshStandardMaterial({color:0x1c3550,transparent:true,opacity:0.85,roughness:0.25,metalness:0.1});
-  const obst=(lx,lz,r)=>obstacles.push({x:KC.x+lx,z:KC.z+lz,r:r});
+  const slate=solid(0x39424e,true);
+  const water=new THREE.MeshStandardMaterial({color:0x16283e,transparent:true,opacity:0.88,roughness:0.2,metalness:0.15});
+  const obst=(lx,lz,r,yMax)=>{ const o={x:KC.x+lx,z:KC.z+lz,r:r}; if(yMax!=null)o.yMax=gy+yMax; obstacles.push(o); return o; };
   const box=(w,h,d,lx,ly,lz,mat,shadow)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
     m.position.set(lx,ly,lz); if(shadow!==false){m.castShadow=true;m.receiveShadow=true;} G.add(m); return m; };
-  // a wall segment (axis-aligned) with a line of colliders
-  const wallSeg=(x0,z0,x1,z1,h,th,mat,r)=>{
+  const wallSeg=(x0,z0,x1,z1,h,th,mat,r,yMax)=>{
     const w=Math.max(Math.abs(x1-x0),th), d=Math.max(Math.abs(z1-z0),th);
     box(w,h,d,(x0+x1)/2,h/2,(z0+z1)/2,mat);
     const len=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.ceil(len/((r||0.9)*1.7)));
-    for(let i=0;i<=n;i++){ const t=i/n; obst(x0+(x1-x0)*t,z0+(z1-z0)*t,r||0.9); }
+    for(let i=0;i<=n;i++){ const t=i/n; obst(x0+(x1-x0)*t,z0+(z1-z0)*t,r||0.9,yMax); }
   };
-  const merlons=(x0,z0,x1,z1,y)=>{ const len=Math.hypot(x1-x0,z1-z0), n=Math.floor(len/6);
-    for(let i=0;i<=n;i++){ const t=i/n; const m=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.2,1.6),stone);
+  const merlons=(x0,z0,x1,z1,y,step)=>{ const len=Math.hypot(x1-x0,z1-z0), n=Math.floor(len/(step||7));
+    for(let i=0;i<=n;i++){ const t=i/n; const m=new THREE.Mesh(new THREE.BoxGeometry(2.0,1.5,2.0),stone);
       m.position.set(x0+(x1-x0)*t,y,z0+(z1-z0)*t); m.castShadow=false; G.add(m); } };
-  const banner=(lx,ly,lz,ry)=>{ const p=new THREE.Mesh(new THREE.BoxGeometry(0.1,3.2,0.1),iron); p.position.set(lx,ly,lz); G.add(p);
-    const f=new THREE.Mesh(new THREE.PlaneGeometry(1.3,2.2),crimson); f.position.set(lx,ly+0.2,lz); f.rotation.y=ry||0; f.material.side=THREE.DoubleSide; G.add(f); };
-  const W=KC.wall, WH=9, WT=2.4;
-  // ── moat: a square ring of dark water with stone banks, bridged at the south causeway ──
-  const MI=KC.moatIn, MO=KC.moatOut, GH=KC.gateHalf;
+  const bannerMat=new THREE.MeshStandardMaterial({color:0x5c1018,roughness:0.9,side:THREE.DoubleSide});
+  const sigilMat=new THREE.MeshStandardMaterial({color:0xd8a832,metalness:0.75,roughness:0.3,side:THREE.DoubleSide});
+  const banner=(lx,ly,lz)=>{ const p=new THREE.Mesh(new THREE.BoxGeometry(0.12,4.4,0.12),iron); p.position.set(lx,ly,lz); G.add(p);
+    const f=new THREE.Mesh(new THREE.PlaneGeometry(1.8,3.1),bannerMat); f.position.set(lx,ly+0.3,lz+0.02); G.add(f);
+    const sig=new THREE.Mesh(new THREE.CircleGeometry(0.42,8),sigilMat); sig.position.set(lx,ly+0.5,lz+0.06); G.add(sig); };
+  const windowsRow=(wallAxis,fixed,c0,c1,y,n,w,h)=>{ for(let i=0;i<n;i++){ const c=c0+(c1-c0)*(i+0.5)/n;
+    const pn=new THREE.Mesh(new THREE.PlaneGeometry(w,h),_BWIN);
+    if(wallAxis==="z"){ pn.position.set(c,y,fixed); pn.rotation.y=fixed>0?0:Math.PI; }
+    else { pn.position.set(fixed,y,c); pn.rotation.y=fixed>0?Math.PI/2:-Math.PI/2; }
+    pn.castShadow=false; G.add(pn); } };
+  const W=KC.wall, WH=14, WT=3.2, GH=KC.gateHalf, MI=KC.moatIn, MO=KC.moatOut;
+  // ═══ THE MOAT — a 30u black-water ring, stone banks, one oaken bridge at the south causeway ═══
   const strip=(x0,z0,x1,z1)=>{ const m=box(Math.abs(x1-x0),0.22,Math.abs(z1-z0),(x0+x1)/2,0.11,(z0+z1)/2,water,false); m.receiveShadow=true; return m; };
   strip(-MO,-MO,MO,-MI); strip(-MO,MI,-GH,MO); strip(GH,MI,MO,MO); strip(-MO,-MI,-MI,MI); strip(MI,-MI,MO,MI);
-  // banks: low stone rims + colliders on both edges (nobody swims the moat) — the causeway stays open
-  const bank=(x0,z0,x1,z1,skipCauseway)=>{ box(Math.max(Math.abs(x1-x0),0.9),0.5,Math.max(Math.abs(z1-z0),0.9),(x0+x1)/2,0.25,(z0+z1)/2,stoneDark);
-    const len=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.ceil(len/2.4));
+  const bank=(x0,z0,x1,z1,skipCauseway)=>{ box(Math.max(Math.abs(x1-x0),1.2),0.6,Math.max(Math.abs(z1-z0),1.2),(x0+x1)/2,0.3,(z0+z1)/2,stoneDark);
+    const len=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.ceil(len/2.6));
     for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
-      if(skipCauseway&&Math.abs(lx)<GH+0.6&&lz>0) continue; obst(lx,lz,1.5); } };
+      if(skipCauseway&&Math.abs(lx)<GH+0.8&&lz>0) continue; obst(lx,lz,1.6); } };
   bank(-MI,-MI,MI,-MI); bank(-MI,MI,-GH,MI,true); bank(GH,MI,MI,MI,true); bank(-MI,-MI,-MI,MI); bank(MI,-MI,MI,MI);
   bank(-MO,-MO,MO,-MO); bank(-MO,MO,-GH,MO,true); bank(GH,MO,MO,MO,true); bank(-MO,-MO,-MO,MO); bank(MO,-MO,MO,MO);
-  // the bridge: an oaken deck over the south channel, rails to either side
-  box(GH*2-0.6,0.5,MO-MI+6,0,0.3,(MI+MO)/2,wood);
-  for(const sx of[-1,1]){ box(0.3,1.1,MO-MI+6,sx*(GH-0.6),1.05,(MI+MO)/2,wood);
-    for(let z=MI-2;z<=MO+2;z+=2.4) obst(sx*(GH-0.4),z,0.55); }
-  // ── curtain wall: four battlemented walls, corner towers, a gatehouse on the south face ──
-  wallSeg(-W,-W,W,-W,WH,WT,stone,1.6); merlons(-W,-W,W,-W,WH+0.5);
-  wallSeg(-W,-W,-W,W,WH,WT,stone,1.6); merlons(-W,-W,-W,W,WH+0.5);
-  wallSeg(W,-W,W,W,WH,WT,stone,1.6);   merlons(W,-W,W,W,WH+0.5);
-  wallSeg(-W,W,-GH,W,WH,WT,stone,1.6); merlons(-W,W,-GH-2,W,WH+0.5);
-  wallSeg(GH,W,W,W,WH,WT,stone,1.6);   merlons(GH+2,W,W,W,WH+0.5);
-  for(const [tx,tz] of [[-W,-W],[W,-W],[-W,W],[W,W]]){
-    const tw=new THREE.Mesh(new THREE.CylinderGeometry(6.5,7.2,15,12),stone); tw.position.set(tx,7.5,tz); tw.castShadow=true; G.add(tw);
-    const cap=new THREE.Mesh(new THREE.ConeGeometry(7.4,4.5,12),solid(0x5a2a30,true)); cap.position.set(tx,17.2,tz); cap.castShadow=true; G.add(cap);
-    banner(tx,13.5,tz+(tz>0?7.0:-7.0),0); obst(tx,tz,7.4);
-  }
-  // gatehouse: twin drum towers flanking the gate, an arch above, banners of the lord
-  for(const sx of[-1,1]){ const gt=new THREE.Mesh(new THREE.CylinderGeometry(4,4.6,13,10),stone); gt.position.set(sx*(GH+4),6.5,W); gt.castShadow=true; G.add(gt);
-    const gc=new THREE.Mesh(new THREE.ConeGeometry(4.8,3.4,10),solid(0x5a2a30,true)); gc.position.set(sx*(GH+4),14.7,W); G.add(gc);
-    banner(sx*(GH+4),10.5,W+4.4,0); obst(sx*(GH+4),W,4.6); }
-  box(GH*2+2,3,3,0,WH-1.2,W,stone);   // arch over the gate
-  { const pc=new THREE.Mesh(new THREE.BoxGeometry(GH*2-1,4.4,0.24),new THREE.MeshStandardMaterial({color:0x2a2620,metalness:0.6,roughness:0.5,transparent:true,opacity:0.9}));
-    pc.position.set(0,WH+0.4,W); G.add(pc); }   // the raised portcullis, visible in the arch
-  { const gl=new THREE.PointLight(0xffb43a,1.4,20); gl.position.set(0,7.5,W+3); G.add(gl); }
-  // ── the town of VALSTEAD: paved plaza, well, vendor ring, cottages against the walls ──
+  box(GH*2-0.6,0.55,MO-MI+8,0,0.32,(MI+MO)/2,wood);   // the bridge deck
+  for(const sx of[-1,1]){ box(0.34,1.2,MO-MI+8,sx*(GH-0.6),1.12,(MI+MO)/2,wood);
+    for(let z=MI-3;z<=MO+3;z+=2.6) obst(sx*(GH-0.4),z,0.55); }
+  // ═══ THE CURTAIN — 14u battlemented walls, machicolation course, six great drum towers ═══
+  const machic=(x0,z0,x1,z1)=>{ const w=Math.max(Math.abs(x1-x0),WT+1.2), d=Math.max(Math.abs(z1-z0),WT+1.2);
+    box(w,1.2,d,(x0+x1)/2,WH-0.9,(z0+z1)/2,stoneBlk); };
+  wallSeg(-W,-W,W,-W,WH,WT,stone,1.8); merlons(-W,-W,W,-W,WH+0.6); machic(-W,-W,W,-W);
+  wallSeg(-W,-W,-W,W,WH,WT,stone,1.8); merlons(-W,-W,-W,W,WH+0.6); machic(-W,-W,-W,W);
+  wallSeg(W,-W,W,W,WH,WT,stone,1.8);   merlons(W,-W,W,W,WH+0.6);   machic(W,-W,W,W);
+  wallSeg(-W,W,-GH,W,WH,WT,stone,1.8); merlons(-W,W,-GH-2,W,WH+0.6); machic(-W,W,-GH-4,W);
+  wallSeg(GH,W,W,W,WH,WT,stone,1.8);   merlons(GH+2,W,W,W,WH+0.6);   machic(GH+4,W,W,W);
+  const drumTower=(tx,tz,r,h)=>{
+    const tw=new THREE.Mesh(new THREE.CylinderGeometry(r*0.92,r*1.1,h,14),stone); tw.position.set(tx,h/2,tz); tw.castShadow=true; G.add(tw);
+    const crown=new THREE.Mesh(new THREE.CylinderGeometry(r*1.12,r*0.98,2.2,14),stoneBlk); crown.position.set(tx,h+0.4,tz); G.add(crown);
+    const cap=new THREE.Mesh(new THREE.ConeGeometry(r*1.18,r*1.5,14),slate); cap.position.set(tx,h+1.5+r*0.75,tz); cap.castShadow=true; G.add(cap);
+    for(let i=0;i<3;i++){ const sl=new THREE.Mesh(new THREE.PlaneGeometry(0.5,2.2),_BWIN);
+      const a=i*2.1+0.5; sl.position.set(tx+Math.sin(a)*(r+0.15),h*0.55+i*2.6,tz+Math.cos(a)*(r+0.15)); sl.rotation.y=a; sl.castShadow=false; G.add(sl); }
+    obst(tx,tz,r+0.6); return h; };
+  for(const [tx,tz] of [[-W,-W],[W,-W],[-W,W],[W,W]]){ drumTower(tx,tz,11,26); banner(tx,20,tz+(tz>0?12.4:-12.4)); }
+  drumTower(-W,0,9,22); drumTower(W,0,9,22); drumTower(0,-W,9,22);   // mid-wall towers
+  // ═══ THE BARBICAN — twin drums, murder holes, and the working portcullis ═══
+  for(const sx of[-1,1]){ drumTower(sx*(GH+6),W,7,24); banner(sx*(GH+6),18,W+8.2); }
+  box(GH*2+4,5,5,0,WH-0.5,W,stone);                                   // gate arch + murder-hole gallery
+  for(let x=-GH+2;x<=GH-2;x+=3){ const mh=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.3,0.8),iron); mh.position.set(x,WH-3.2,W); G.add(mh); }
+  { const pc=new THREE.Group(); const pw=GH*2-0.8;
+    for(let x=-pw/2;x<=pw/2;x+=1.0){ const bar=new THREE.Mesh(new THREE.BoxGeometry(0.18,9,0.18),iron); bar.position.set(x,0,0); pc.add(bar); }
+    for(let y=-3.6;y<=3.6;y+=1.8){ const bar=new THREE.Mesh(new THREE.BoxGeometry(pw,0.18,0.18),iron); bar.position.set(0,y,0); pc.add(bar); }
+    for(let x=-pw/2;x<=pw/2;x+=1.0){ const tip=new THREE.Mesh(new THREE.ConeGeometry(0.14,0.5,4),iron); tip.position.set(x,-4.75,0); tip.rotation.x=Math.PI; pc.add(tip); }
+    pc.position.set(0,13.5,W); G.add(pc);
+    kcGateDefs.push({kind:"portcullis",mesh:pc,x:KC.x,z:KC.z+W,half:GH,yClosed:4.6,yOpen:13.5,open:true,obst:[]});
+    const gl=labelSprite("Portcullis — E to raise / lower","npcs"); gl.scale.set(8,2,1); gl.position.set(9,7.5,W-3); G.add(gl); }
+  { const gl=new THREE.PointLight(0xffb43a,1.5,26); gl.position.set(0,9,W+4); G.add(gl); }
+  // ═══ VALSTEAD — the walled town: plaza, well, vendors, cottages, orchard, training yard ═══
   const path=(x0,z0,x1,z1,w)=>{ const m=box(Math.abs(x1-x0)||w,0.12,Math.abs(z1-z0)||w,(x0+x1)/2,0.06,(z0+z1)/2,stoneDark,false); m.receiveShadow=true; };
-  path(-2.5,8,2.5,W,5);                       // gate → keep road
-  { const pl=new THREE.Mesh(new THREE.CylinderGeometry(17,17,0.14,24),stoneDark); pl.position.set(0,0.07,45); pl.receiveShadow=true; G.add(pl); }
-  const well=buildPlazaFeature(0,1.5); well.position.set(0,0,45); G.add(well); obst(0,45,2.2);
-  const townLbl=labelSprite("VALSTEAD — the town of Castle Val Halla","cities"); townLbl.scale.set(15,3,1); townLbl.position.set(0,13,45); G.add(townLbl);
-  const castleLbl=labelSprite("CASTLE VAL HALLA — seat of Lord Kilmer","cities"); castleLbl.scale.set(22,4.4,1); castleLbl.position.set(0,34,-30); G.add(castleLbl);
+  path(-3.5,98,3.5,W,7);
+  { const pl=new THREE.Mesh(new THREE.CylinderGeometry(24,24,0.14,28),stoneDark); pl.position.set(0,0.07,138); pl.receiveShadow=true; G.add(pl); }
+  const well=buildPlazaFeature(0,1.8); well.position.set(0,0,138); G.add(well); obst(0,138,2.6);
+  const townLbl=labelSprite("VALSTEAD — town of Castle Val Halla","cities"); townLbl.scale.set(16,3.2,1); townLbl.position.set(0,15,138); G.add(townLbl);
+  const castleLbl=labelSprite("CASTLE VAL HALLA — seat of Lord Kilmer","cities"); castleLbl.scale.set(26,5.2,1); castleLbl.position.set(0,62,0); G.add(castleLbl);
+  const deedLbl=labelSprite("Held in perpetuity — no tithe, rent, nor upkeep","cities"); deedLbl.scale.set(15,2.6,1); deedLbl.position.set(0,57,0); G.add(deedLbl);
   for(let i=0;i<KC_VENDORS.length;i++){ const a=(i/KC_VENDORS.length)*Math.PI*2+Math.PI/8;
-    addMerchant(KC.x+Math.cos(a)*13,KC.z+45+Math.sin(a)*13,KC_VENDORS[i][0],KC_VENDORS[i][1]); }
-  const HOUSES=[[-52,-45],[-56,-12],[-52,22],[52,-45],[56,-12],[52,22],[-34,62],[34,62]];
+    addMerchant(KC.x+Math.cos(a)*17,KC.z+138+Math.sin(a)*17,KC_VENDORS[i][0],KC_VENDORS[i][1]); }
+  const HOUSES=[[-140,-120],[-160,-55],[-156,25],[-140,105],[140,-120],[160,-55],[156,25],[140,105],[-75,165],[75,165],[-70,-165],[70,-165]];
   for(const [hx,hz] of HOUSES){
-    const hb=buildBuilding(0,"house",1.1), ry=Math.atan2(0-hx,45-hz);
+    const hb=buildBuilding(0,"house",1.25), ry=Math.atan2(0-hx,138-hz);
     hb.position.set(KC.x+hx,gy,KC.z+hz); hb.rotation.y=ry; hb.userData.noSettle=true;
     scene.add(hb); scenery.push(hb);
     const ct=Math.cos(ry),st=Math.sin(ry);
     for(const cc of (hb.userData.colliders||[])) obstacles.push({x:KC.x+hx+cc.x*ct+cc.z*st, z:KC.z+hz-cc.x*st+cc.z*ct, r:cc.r});
   }
-  for(let i=0;i<4;i++){ const a=i/4*6.283+0.7;
-    addNPC(KC.x+Math.cos(a)*9,KC.z+45+Math.sin(a)*9,{role:"townsfolk",town:"Valstead",name:["Valdi","Halla","Erna","Torvi"][i],stroll:true,range:8}); }
-  addLifestone(KC.x-16,KC.z+58,false,"Castle Val Halla",false,0);
-  // ── THE KEEP: 38×70, eight great rooms off a central corridor, door facing the gate ──
-  const KX0=-19,KX1=19,KZ0=-65,KZ1=5,KH=12,DOOR=2.2;   // keep bounds (local), wall height (towers over the 9u curtain), door half-widths
-  const rows=[-65,-47.5,-30,-12.5,5], rowC=rows.slice(0,4).map((z,i)=>(z+rows[i+1])/2);
-  { const fl=box(KX1-KX0-0.2,0.16,KZ1-KZ0-0.2,0,0.08,(KZ0+KZ1)/2,stoneDark,false); fl.receiveShadow=true; }
-  { const cp=new THREE.Mesh(new THREE.PlaneGeometry(6.4,KZ1-KZ0-4),crimson); cp.rotation.x=-Math.PI/2; cp.position.set(0,0.19,(KZ0+KZ1)/2); G.add(cp); }
-  // outer shell (door gap on the south face), flat battlemented roof with corner turrets
-  wallSeg(KX0,KZ0,KX1,KZ0,KH,1.0,stone,1.0);
-  wallSeg(KX0,KZ0,KX0,KZ1,KH,1.0,stone,1.0);
-  wallSeg(KX1,KZ0,KX1,KZ1,KH,1.0,stone,1.0);
-  wallSeg(KX0,KZ1,-DOOR,KZ1,KH,1.0,stone,1.0);
-  wallSeg(DOOR,KZ1,KX1,KZ1,KH,1.0,stone,1.0);
-  box(DOOR*2+1.4,1.6,1.4,0,KH-0.8,KZ1,stone);                                  // lintel above the keep door
-  box(KX1-KX0+1.6,0.5,KZ1-KZ0+1.6,0,KH+0.25,(KZ0+KZ1)/2,stone);                // roof slab (ceiling from inside)
-  merlons(KX0-0.5,KZ0-0.5,KX1+0.5,KZ0-0.5,KH+1.0); merlons(KX0-0.5,KZ1+0.5,KX1+0.5,KZ1+0.5,KH+1.0);
-  merlons(KX0-0.5,KZ0-0.5,KX0-0.5,KZ1+0.5,KH+1.0); merlons(KX1+0.5,KZ0-0.5,KX1+0.5,KZ1+0.5,KH+1.0);
-  for(const [tx,tz] of [[KX0,KZ0],[KX1,KZ0],[KX0,KZ1],[KX1,KZ1]]){
-    const t=new THREE.Mesh(new THREE.CylinderGeometry(2,2.3,3.4,8),stone); t.position.set(tx,KH+1.7,tz); G.add(t);
-    const c=new THREE.Mesh(new THREE.ConeGeometry(2.4,1.8,8),solid(0x5a2a30,true)); c.position.set(tx,KH+4.3,tz); G.add(c); }
-  banner(-3.4,KH+1.2,KZ1+0.9,0); banner(3.4,KH+1.2,KZ1+0.9,0);
-  // interior partitions: corridor walls at x=±4 (door gap per room), row dividers inside each column
+  for(let i=0;i<6;i++){ const a=i/6*6.283+0.5;
+    addNPC(KC.x+Math.cos(a)*11,KC.z+138+Math.sin(a)*11,{role:"townsfolk",town:"Valstead",name:["Valdi","Halla","Erna","Torvi","Runa","Svea"][i],stroll:true,range:10}); }
+  addLifestone(KC.x-30,KC.z+156,false,"Castle Val Halla",false,0);
+  for(let ox=0;ox<3;ox++)for(let oz=0;oz<3;oz++){ const t=buildTree(1.35); t.position.set(-122+ox*13,0,122+oz*13);
+    G.add(t); obst(-122+ox*13,122+oz*13,0.9); }   // the orchard
+  for(const dx of[100,112]){ const post=box(0.4,2.2,0.4,dx,1.1,132,wood); const arm=box(1.6,0.25,0.25,dx,1.7,132,wood);
+    const sack=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.5,1.2,8),texMat(woodTex,0x8a6a3a)); sack.position.set(dx,1.0,132.8); G.add(sack); obst(dx,132,0.8); }
+  // ═══ THE GREAT KEEP — 100×150, six stories, four bastion towers, a western stair tower ═══
+  const KX0=-65,KX1=65,KZ0=-105,KZ1=95,ST=7,STORIES=6,KH=ST*STORIES,DOOR=4;   // 130×200, 42u to the parapet
+  const rows=[-105,-55,-5,45,95], rowC=[-80,-30,20,70];
+  const SLOT0=16.5,SLOT1=23.5;                                         // stair-tower doorway slot in the west wall
+  { const fl=box(KX1-KX0-0.3,0.18,KZ1-KZ0-0.3,0,0.09,0,stoneDark,false); fl.receiveShadow=true; }
+  { const cp=new THREE.Mesh(new THREE.PlaneGeometry(10,KZ1-KZ0-6),crimson); cp.rotation.x=-Math.PI/2; cp.position.set(0,0.2,0); G.add(cp); }
+  // outer shell: door gap on the south face, stair slot on the west face; windows on every story
+  wallSeg(KX0,KZ0,KX1,KZ0,KH,1.4,stone,1.1);
+  wallSeg(KX1,KZ0,KX1,KZ1,KH,1.4,stone,1.1);
+  wallSeg(KX0,KZ0,KX0,SLOT0,KH,1.4,stone,1.1);
+  wallSeg(KX0,SLOT1,KX0,KZ1,KH,1.4,stone,1.1);
+  wallSeg(KX0,KZ1,-DOOR,KZ1,KH,1.4,stone,1.1);
+  wallSeg(DOOR,KZ1,KX1,KZ1,KH,1.4,stone,1.1);
+  box(DOOR*2+2.4,2.2,2.0,0,ST-0.9,KZ1,stone);                          // lintel above the keep gates
+  for(let s=0;s<STORIES;s++){ const wy=s*ST+4.1;
+    windowsRow("z",KZ0-0.75,-58,58,wy,9,1.6,3.0); windowsRow("z",KZ1+0.75,-58,58,wy,9,1.6,3.0);
+    windowsRow("x",KX1+0.75,-98,88,wy,12,1.6,3.0); if(s>0) windowsRow("x",KX0-0.75,-98,88,wy,12,1.6,3.0); }
+  for(let bx=-60;bx<=60;bx+=20){ box(3,KH*0.85,2.6,bx,KH*0.42,KZ1+1.4,stoneBlk); box(3,KH*0.85,2.6,bx,KH*0.42,KZ0-1.4,stoneBlk); }   // buttresses
+  for(let bz=-95;bz<=85;bz+=24){ box(2.6,KH*0.85,3,KX1+1.4,KH*0.42,bz,stoneBlk); }
+  box(KX1-KX0+2.2,0.6,KZ1-KZ0+2.2,0,KH+0.3,0,stone);                   // roof slab
+  merlons(KX0-0.6,KZ0-0.6,KX1+0.6,KZ0-0.6,KH+1.3,5); merlons(KX0-0.6,KZ1+0.6,KX1+0.6,KZ1+0.6,KH+1.3,5);
+  merlons(KX0-0.6,KZ0-0.6,KX0-0.6,KZ1+0.6,KH+1.3,5); merlons(KX1+0.6,KZ0-0.6,KX1+0.6,KZ1+0.6,KH+1.3,5);
+  for(const [tx,tz] of [[KX0,KZ0],[KX1,KZ0],[KX0,KZ1],[KX1,KZ1]]) drumTower(tx,tz,9,KH+14);   // four bastions rise past the roof
+  { const bcn=new THREE.Mesh(new THREE.CylinderGeometry(1.6,2.0,1.6,10),iron); bcn.position.set(0,KH+1.6,-88); G.add(bcn);
+    const fire=new THREE.Mesh(new THREE.ConeGeometry(1.2,2.4,8),new THREE.MeshStandardMaterial({color:0xff7a2a,emissive:0xff8a30,emissiveIntensity:1.4})); fire.position.set(0,KH+3.4,-88); G.add(fire);
+    const bl=new THREE.PointLight(0xff9040,1.6,40); bl.position.set(0,KH+4,-88); G.add(bl); }
+  banner(-6,KH+2.4,KZ1+1.2); banner(6,KH+2.4,KZ1+1.2);
+  // the keep's great doors (closeable)
+  { const doors=[];
+    for(const side of[-1,1]){ const hinge=new THREE.Group(); hinge.position.set(side*DOOR,0,KZ1-0.2); G.add(hinge);
+      const panel=new THREE.Mesh(new THREE.BoxGeometry(DOOR-0.1,ST-1.4,0.5),texMat(woodTex,0x4a3016));
+      panel.position.set(-side*(DOOR/2),(ST-1.4)/2,0); panel.castShadow=true; hinge.add(panel);
+      for(const by of[1.6,4.2]){ const band=new THREE.Mesh(new THREE.BoxGeometry(DOOR-0.2,0.28,0.56),iron); band.position.set(-side*(DOOR/2),by,0); hinge.add(band); }
+      hinge.rotation.y=side*2.1; doors.push(hinge); }
+    kcGateDefs.push({kind:"keepgate",doors,x:KC.x,z:KC.z+KZ1,half:DOOR,ryOpen:2.1,open:true,obst:[]});
+    const gl=labelSprite("Keep Gates — E to open / close","npcs"); gl.scale.set(8,2,1); gl.position.set(0,7.6,KZ1+1.5); G.add(gl); }
+  // interior: central corridor x∈[-6,6], row partitions (ground story only), columns rising all six stories
   for(let i=0;i<4;i++){
     const zc=rowC[i], zLo=rows[i], zHi=rows[i+1];
     for(const sx of[-1,1]){
-      wallSeg(sx*4,zLo,sx*4,zc-DOOR,KH-1.2,0.6,stone,0.8);
-      wallSeg(sx*4,zc+DOOR,sx*4,zHi,KH-1.2,0.6,stone,0.8);
-      box(0.7,1.2,DOOR*2+0.6,sx*4,KH-1.8,zc,stone);                            // doorway lintel
-      if(i<3){ wallSeg(sx*4,rows[i+1],sx*19,rows[i+1],KH-1.2,0.6,stone,0.8); } // row divider
+      wallSeg(sx*6,zLo,sx*6,zc-DOOR,ST-0.5,0.7,stone,0.9,ST-0.2);
+      wallSeg(sx*6,zc+DOOR,sx*6,zHi,ST-0.5,0.7,stone,0.9,ST-0.2);
+      box(0.8,1.4,DOOR*2+0.8,sx*6,ST-1.0,zc,stone);
+      if(i<3){ wallSeg(sx*6,rows[i+1],sx*KX1,rows[i+1],ST-0.5,0.7,stone,0.9,ST-0.2); }
     }
   }
-  // torch sconces down the corridor (emissive — the light pool stays untouched)
-  for(let z=KZ0+6;z<KZ1-2;z+=9) for(const sx of[-1,1]){
-    const tf=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.5,6),new THREE.MeshStandardMaterial({color:0x3a2c14,emissive:0xffa03a,emissiveIntensity:1.1}));
-    tf.position.set(sx*3.6,2.6,z); tf.castShadow=false; G.add(tf); }
-  // ── the eight rooms: hooks bearing the top-20 pieces of each type ──
+  for(const px of[-36,36]) for(let pz=-90;pz<=90;pz+=30){
+    const col=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.3,KH,10),stone); col.position.set(px,KH/2,pz); col.castShadow=true; G.add(col);
+    obst(px,pz,1.5); }
+  for(let z=KZ0+8;z<KZ1-4;z+=12) for(const sx of[-1,1]){
+    const tf=new THREE.Mesh(new THREE.ConeGeometry(0.18,0.55,6),new THREE.MeshStandardMaterial({color:0x3a2c14,emissive:0xffa03a,emissiveIntensity:1.1}));
+    tf.position.set(sx*5.4,3.0,z); tf.castShadow=false; G.add(tf); }
+  for(const lz of[-70,-10,50]){ const cl=new THREE.PointLight(0xffb050,1.4,40); cl.position.set(0,4.5,lz); G.add(cl); }   // corridor lamplight
+  for(const R2 of[[-35,-80],[35,-80],[-35,-30],[35,-30],[-35,20],[35,20],[-35,70],[35,70]]){
+    const rl2=new THREE.PointLight(0xffc070,1.1,36); rl2.position.set(R2[0],4.8,R2[1]); G.add(rl2); }   // one warm light per great room
+  // ═══ upper stories: five great halls + the roof, joined by the western stair tower ═══
+  const FLOOR_NAMES=["","The Armory","The Great Library","The Feast Hall","The War Room","Lord Kilmer's Solar"];
+  const plats=[];
+  for(let s=1;s<STORIES;s++){ const y=s*ST;
+    box(KX1-KX0,0.5,KZ1-KZ0,0,y-0.25,0,stoneDark);                     // the floor slab
+    plats.push({x0:KX0,z0:KZ0,x1:KX1,z1:KZ1,y:y});
+    const fl=labelSprite(FLOOR_NAMES[s]+" — floor "+(s+1),"cities"); fl.scale.set(9,2,1); fl.position.set(0,y+5.4,30); G.add(fl);
+    for(const bx of[-14,14]){ const br=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.62,1.1,8),iron); br.position.set(bx,y+0.55,0); G.add(br);
+      const fm=new THREE.Mesh(new THREE.ConeGeometry(0.4,0.9,6),new THREE.MeshStandardMaterial({color:0x3a2c14,emissive:0xff9a3a,emissiveIntensity:1.2})); fm.position.set(bx,y+1.5,0); G.add(fm);
+      const bl=new THREE.PointLight(0xffa03a,1.4,34); bl.position.set(bx,y+2.6,0); G.add(bl); }
+    banner(-20,y+3.4,KZ0+1.6); banner(20,y+3.4,KZ0+1.6);
+    if(s===1){ for(const rx of[-34,-20,20,34]){ box(6,2.4,0.8,rx,y+1.2,-30,wood); for(let k=0;k<4;k++){ box(0.18,2.0,0.18,rx-2.2+k*1.5,y+2.2,-30,iron); } } }
+    if(s===2){ for(let bx=-36;bx<=36;bx+=12){ box(5,4.2,1.0,bx,y+2.1,-24,texMat(woodTex,0x4a3016)); box(4.6,3.6,0.4,bx,y+2.0,-23.6,texMat(woodTex,0x7a5f3a)); } }
+    if(s===3){ for(const tz of[-16,8]){ box(26,0.4,3.4,0,y+1.25,tz,wood); for(const bz of[tz-2.6,tz+2.6]) box(24,0.3,0.9,0,y+0.55,bz,wood); }
+      const hearth=box(6,4.5,1.4,0,y+2.2,KZ0+1.8,stoneBlk); const fire2=new THREE.Mesh(new THREE.PlaneGeometry(3.4,2.2),new THREE.MeshStandardMaterial({color:0x2a1408,emissive:0xff8a30,emissiveIntensity:1.3})); fire2.position.set(0,y+1.6,KZ0+2.6); G.add(fire2); }
+    if(s===4){ box(16,0.5,9,0,y+1.3,0,wood); const map=new THREE.Mesh(new THREE.PlaneGeometry(14.6,7.6),texMat(sandTex,0xcbb691)); map.rotation.x=-Math.PI/2; map.position.set(0,y+1.62,0); G.add(map); }
+    if(s===5){ box(7,1.2,10,38,y+0.6,-80,crimson); box(7.4,1.0,2.2,38,y+1.4,-84.4,wood);   // the lord's bed
+      box(9,0.5,4.5,-38,y+1.2,-80,wood); box(2.6,2.6,2.6,44,y+1.3,60,gold); box(2.2,2.2,2.2,38,y+1.1,64,gold); }   // desk + treasure
+  }
+  plats.push({x0:KX0,z0:KZ0,x1:KX1,z1:KZ1,y:KH+0.6});                  // the battlemented roof walk
+  // the stair tower: switchback flights on the west face, doorways through the wall slot on every story
+  const TX0=-87,TX1=KX0,TZ0=1.5,TZ1=41.5,TH=KH+8;
+  wallSeg(TX0,TZ0,TX0,TZ1,TH,1.2,stone,1.0);
+  wallSeg(TX0,TZ0,TX1,TZ0,TH,1.2,stone,1.0);
+  wallSeg(TX0,TZ1,TX1,TZ1,TH,1.2,stone,1.0);
+  box(TX1-TX0+1.4,0.6,TZ1-TZ0+1.4,(TX0+TX1)/2,TH+0.3,(TZ0+TZ1)/2,stone);
+  { const cone=new THREE.Mesh(new THREE.ConeGeometry(16,10,4),slate); cone.rotation.y=Math.PI/4; cone.position.set((TX0+TX1)/2,TH+5.2,(TZ0+TZ1)/2); cone.scale.set(1.4,1,1.2); G.add(cone); }
+  for(let s=0;s<STORIES;s++) windowsRow("x",TX0-0.7,TZ0+4,TZ1-4,s*ST+4.1,3,1.1,2.4);
+  const ramps=[];
+  const rampMeshZ=(xc,w,z0,z1,y0,y1)=>{ const L=Math.hypot(z1-z0,y1-y0);
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,0.4,L),stoneDark);
+    m.position.set(xc,(y0+y1)/2,(z0+z1)/2); m.rotation.x=-Math.atan2(y1-y0,z1-z0); m.castShadow=true; m.receiveShadow=true; G.add(m); };
+  for(let s=0;s<STORIES;s++){ const y0=s*ST, y1=(s+1)*ST, laneA=(s%2===0);
+    const xc=laneA?-82:-76, x0=xc-2.7, x1=xc+2.7;
+    const zLo=TZ0+4.5, zHi=TZ1-4.5;   // flights run the tower's length
+    if(laneA){ ramps.push({x0,z0:zLo,x1,z1:zHi,yLo:y0,yHi:y1,axis:"z",dir:1}); rampMeshZ(xc,5.2,zLo,zHi,y0,y1); }
+    else { ramps.push({x0,z0:zLo,x1,z1:zHi,yLo:y0,yHi:y1,axis:"z",dir:-1}); rampMeshZ(xc,5.2,zHi,zLo,y0,y1); }
+  }
+  for(let s=1;s<=STORIES;s++){ const y=s*ST===KH?KH+0.6:s*ST;
+    box(TX1-TX0-1.4,0.4,4.0,(TX0+TX1)/2,y-0.2,TZ0+2.4,stoneDark); plats.push({x0:TX0+0.7,z0:TZ0+0.6,x1:TX1,z1:TZ0+4.5,y:y});
+    box(TX1-TX0-1.4,0.4,4.0,(TX0+TX1)/2,y-0.2,TZ1-2.4,stoneDark); plats.push({x0:TX0+0.7,z0:TZ1-4.5,x1:TX1,z1:TZ1-0.6,y:y});
+    box(6.2,0.4,TZ1-TZ0-1.2,-68.4,y-0.2,(TZ0+TZ1)/2,stoneDark); plats.push({x0:-71.5,z0:TZ0+0.6,x1:TX1+0.5,z1:TZ1-0.6,y:y});
+  }
+  { const sl=labelSprite("Stair Tower — six flights to the roof","npcs"); sl.scale.set(9,2.2,1); sl.position.set(-76,6.5,21.5); G.add(sl); }
+  // ═══ the eight great rooms (ground story), hooks bearing the finest arms of Dereth ═══
   const ROOMS=[
     {key:"sword",   label:"Sword Room",   col:-1, row:0},
     {key:"bow",     label:"Bow Room",     col:-1, row:1},
@@ -4349,11 +4516,10 @@ function addKilmerCastle(){
   ];
   const hookIco=(it)=>{ try{ return (typeof gearIco==="function")?gearIco(it):"⚔️"; }catch(e){ return "⚔️"; } };
   for(const R of ROOMS){
-    const x0=R.col<0?-19:4, x1=R.col<0?-4:19, z0=rows[R.row], z1=rows[R.row+1], zc=rowC[R.row];
-    const rl=labelSprite(R.label,"cities"); rl.scale.set(7,1.6,1); rl.position.set((x0+x1)/2,4.6,zc); G.add(rl);
+    const x0=R.col<0?KX0:6, x1=R.col<0?-6:KX1, z0=rows[R.row], z1=rows[R.row+1], zc=rowC[R.row];
+    const rl=labelSprite(R.label,"cities"); rl.scale.set(8,1.8,1); rl.position.set((x0+x1)/2,5.4,zc); G.add(rl);
     const items=kcRoomItems(R.key);
-    // 20 floor hooks around the walls: 6 on the outer wall, 5+5 on the end walls, 4 flanking the door
-    const inx0=x0+1.7,inx1=x1-1.7,inz0=z0+1.7,inz1=z1-1.7, pts=[];
+    const inx0=x0+2.2,inx1=x1-2.2,inz0=z0+2.2,inz1=z1-2.2, pts=[];
     for(let i=0;i<6;i++) pts.push([R.col<0?inx0:inx1, inz0+(inz1-inz0)*(i+0.5)/6]);
     for(let i=0;i<5;i++) pts.push([inx0+(inx1-inx0)*(i+0.5)/5, inz0]);
     for(let i=0;i<5;i++) pts.push([inx0+(inx1-inx0)*(i+0.5)/5, inz1]);
@@ -4363,51 +4529,50 @@ function addKilmerCastle(){
       const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.34,1.1,8),stoneDark); ped.position.set(hx,0.55,hz); ped.castShadow=true; G.add(ped);
       const ic=textSprite(hookIco(it), it.stat==="trophy"?"#cdbf9a":"#ff6a5a"); ic.position.set(hx,1.6,hz); ic.scale.set(0.9,0.9,1); G.add(ic);
       const nl=labelSprite(it.name,"npcs"); nl.scale.set(4.2,1.05,1); nl.position.set(hx,2.3,hz); G.add(nl);
-      obst(hx,hz,0.5);
+      obst(hx,hz,0.5,2.2);
       kcHooks.push({x:KC.x+hx,z:KC.z+hz,it,room:R.label});
     }
   }
-  // the throne itself, on a dais at the east wall of the Throne Room
-  { const zc=rowC[3];
-    const dais=new THREE.Mesh(new THREE.CylinderGeometry(2.6,3.0,0.5,10),stone); dais.position.set(15.5,0.25,zc); dais.receiveShadow=true; G.add(dais);
-    box(1.5,0.6,1.4,15.5,0.8,zc,crimson); box(1.5,2.6,0.3,16.2,1.9,zc,crimson);
-    box(1.7,0.24,0.3,16.2,3.2,zc,gold); for(const dz of[-0.75,0.75]) box(0.24,1.1,1.3,15.5+0.6,1.1,zc+dz,gold);
-    const tl=new THREE.PointLight(0xffd08a,1.2,16); tl.position.set(13,4.5,zc); G.add(tl);
-    obst(15.5,zc,1.8);
+  { const zc=rowC[3];   // the throne, on a dais at the east wall of the Throne Room
+    const dais=new THREE.Mesh(new THREE.CylinderGeometry(3.4,4.0,0.7,12),stone); dais.position.set(58,0.35,zc); dais.receiveShadow=true; G.add(dais);
+    box(1.8,0.7,1.6,58,1.05,zc,crimson); box(1.8,3.2,0.36,58.8,2.4,zc,crimson);
+    box(2.1,0.3,0.4,58.8,4.05,zc,gold); for(const dz of[-0.9,0.9]) box(0.28,1.3,1.5,57.6,1.35,zc+dz,gold);
+    const tl=new THREE.PointLight(0xffd08a,1.3,20); tl.position.set(54,5,zc); G.add(tl);
+    obst(58,zc,2.2,3.5);
   }
-  // ── 20 vault chests (estate storage) lining the great corridor ──
+  // ═══ 20 vault chests (estate storage) lining the great corridor ═══
   const mkChest=(lx,lz,tint,bandTint)=>{ const ch=new THREE.Group();
     const bx=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.8,0.85),texMat(woodTex,tint||0x7a5a2a)); bx.position.y=0.4; bx.castShadow=true; ch.add(bx);
     const lid=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.3,10,1,false,0,Math.PI),new THREE.MeshStandardMaterial({color:bandTint||0xb8912e,metalness:0.7,roughness:0.35}));
     lid.rotation.z=Math.PI/2; lid.position.y=0.8; ch.add(lid);
-    ch.position.set(lx,0.16,lz); G.add(ch); obst(lx,lz,0.8); return ch; };
+    ch.position.set(lx,0.18,lz); G.add(ch); obst(lx,lz,0.8,1.6); return ch; };
   let placed=0;
-  for(let z=KZ0+3.2;z<KZ1-1&&placed<20;z+=3.4){
-    if(rowC.some(c=>Math.abs(z-c)<DOOR+1.2)) continue;               // keep the room doorways clear
+  for(let z=KZ0+6;z<KZ1-4&&placed<20;z+=6.4){
+    if(rowC.some(c=>Math.abs(z-c)<DOOR+1.6)) continue;
     for(const sx of[-1,1]){ if(placed>=20) break;
-      mkChest(sx*3.1,z,0x7a5a2a,0xb8912e);
-      kcChests.push({x:KC.x+sx*3.1,z:KC.z+z,kind:"storage"}); placed++; }
+      mkChest(sx*5.0,z,0x7a5a2a,0xb8912e);
+      kcChests.push({x:KC.x+sx*5.0,z:KC.z+z,kind:"storage"}); placed++; }
   }
-  // ── the hoard: themed chests in their rooms ──
+  // ═══ the hoard: themed chests in their rooms ═══
   const themed=(lx,lz,kind,label,tint,band)=>{ mkChest(lx,lz,tint,band);
     const l=labelSprite(label,"npcs"); l.scale.set(4.6,1.15,1); l.position.set(lx,1.9,lz); G.add(l);
     kcChests.push({x:KC.x+lx,z:KC.z+lz,kind}); };
-  { const zc=rowC[3];                                                 // Throne Room: the treasury
-    for(let i=0;i<5;i++) themed(6.2+i*2.1,zc+6.4,"mmd","MMD Notes",0x4a3a1a,0xffd23b);
-    themed(6.2,zc-6.4,"jewelry","Finest Jewelry",0x3a2a4a,0x9af0ff);
-    themed(8.6,zc-6.4,"rings","Best Rings",0x3a2a4a,0xff9adf);
-    themed(11.0,zc-6.4,"armor","Best Armor",0x3a3a4a,0x9fd0ff); }
-  { const zc=rowC[1];                                                 // Orb Room: orbs & wands
-    themed(9.5,zc+6.4,"orbs","Best Orbs",0x2a3a4a,0x9af0ff);
-    themed(12.5,zc+6.4,"wands","Best Wands",0x2a3a4a,0xc9a6ff); }
-  themed(11.5,rowC[2]+6.4,"staffs","Best Staffs",0x2a3a2a,0x7fe6a0);  // Staff Room
-  { const zc=rowC[0];                                                 // Trophy Room: keys, scarabs, tapers, gems
-    themed(6.6,zc+6.4,"keys","Chest of Keys",0x4a3320,0xcdbf9a);
-    themed(9.0,zc+6.4,"scarabs","Level-8 Scarabs",0x2a2a3a,0xcf9bea);
-    themed(11.4,zc+6.4,"tapers","Prismatic Tapers",0x3a2a3a,0xff8aa0);
-    themed(13.8,zc+6.4,"portalgem","Portal Gems",0x2a3a3a,0xc7a6ff); }
-  // ── the killer bunny, caged at the north end of the corridor ──
-  { const bx=0,bz=KZ0+4;
+  { const zc=rowC[3];
+    for(let i=0;i<5;i++) themed(10+i*3.2,zc+13,"mmd","MMD Notes",0x4a3a1a,0xffd23b);
+    themed(10,zc-13,"jewelry","Finest Jewelry",0x3a2a4a,0x9af0ff);
+    themed(14,zc-13,"rings","Best Rings",0x3a2a4a,0xff9adf);
+    themed(18,zc-13,"armor","Best Armor",0x3a3a4a,0x9fd0ff); }
+  { const zc=rowC[1];
+    themed(14,zc+13,"orbs","Best Orbs",0x2a3a4a,0x9af0ff);
+    themed(18,zc+13,"wands","Best Wands",0x2a3a4a,0xc9a6ff); }
+  themed(16,rowC[2]+13,"staffs","Best Staffs",0x2a3a2a,0x7fe6a0);
+  { const zc=rowC[0];
+    themed(10,zc+13,"keys","Chest of Keys",0x4a3320,0xcdbf9a);
+    themed(14,zc+13,"scarabs","Level-8 Scarabs",0x2a2a3a,0xcf9bea);
+    themed(18,zc+13,"tapers","Prismatic Tapers",0x3a2a3a,0xff8aa0);
+    themed(22,zc+13,"portalgem","Portal Gems",0x2a3a3a,0xc7a6ff); }
+  // ═══ the killer bunny, caged at the corridor's north end ═══
+  { const bx=0,bz=KZ0+5;
     const plinth=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.3,4.6),stoneDark); plinth.position.set(bx,0.15,bz); G.add(plinth);
     const bun=buildCreature("rabbit"); bun.scale.set(2.6,2.6,2.6); bun.position.set(bx,0.3,bz); bun.rotation.y=Math.PI; G.add(bun);
     for(let i=0;i<2;i++){ const eye=new THREE.Mesh(new THREE.SphereGeometry(0.045,6,5),new THREE.MeshStandardMaterial({color:0xff2020,emissive:0xff2020,emissiveIntensity:1.6}));
@@ -4417,20 +4582,26 @@ function addKilmerCastle(){
       for(const [px,pz] of [[t,-1.9],[t,1.9],[-1.9,t],[1.9,t]]){
         const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,2.8,5),iron); bar.position.set(px,1.4,pz); bar.castShadow=false; cage.add(bar); } }
     const top=new THREE.Mesh(new THREE.BoxGeometry(4.1,0.14,4.1),iron); top.position.set(0,2.85,0); cage.add(top);
-    for(const [ox,oz] of [[-1.9,-1.9],[1.9,-1.9],[-1.9,1.9],[1.9,1.9],[0,-1.9],[0,1.9],[-1.9,0],[1.9,0]]) obst(bx+ox,bz+oz,0.9);
+    for(const [ox,oz] of [[-1.9,-1.9],[1.9,-1.9],[-1.9,1.9],[1.9,1.9],[0,-1.9],[0,1.9],[-1.9,0],[1.9,0]]) obst(bx+ox,bz+oz,0.9,3.2);
     const wl=labelSprite("THE KILLER BUNNY — do NOT open the cage","npcs"); wl.scale.set(8,2,1); wl.position.set(bx,4.2,bz); G.add(wl);
     kcBunnyRec={x:KC.x+bx,z:KC.z+bz,_line:0};
   }
-  // ── the ten valkyries: buff bots of the highest circle & portal bots, sworn to serve Lord Kilmer ──
-  const VPOS=[[-2.6,7.6],[2.6,7.6],[13.5,rowC[3]-3],[13.5,rowC[3]+3],[-3,-52],[3,-44],[-3,-36],[3,-28],[-3,-20],[3,-12]];
+  // ═══ the ten valkyries: buff bots of the highest circle & portal bots, sworn to Lord Kilmer ═══
+  const VPOS=[[-5.5,100],[5.5,100],[54,rowC[3]-4],[54,rowC[3]+4],[-2,-72],[2,-52],[-2,-42],[2,-12],[-2,8],[2,32]];
   for(let i=0;i<KC_VALKYRIES.length;i++){
     addNPC(KC.x+VPOS[i][0],KC.z+VPOS[i][1],{role:"attendant",name:KC_VALKYRIES[i],town:"Castle Val Halla"});
   }
-  // bridge deck + keep roof are real standing surfaces
-  registerStructure(KC.x,KC.z,0,gy,{platforms:[
-    {x0:-GH+0.4,z0:MI-3,x1:GH-0.4,z1:MO+3,y:0.55},
-    {x0:KX0,z0:KZ0,x1:KX1,z1:KZ1,y:KH+0.5},
-  ]});
+  // ═══ the castle guard — twenty level-200 veterans at wall, gate, keep and yard ═══
+  const GPOS=[[-180,-180],[180,-180],[-180,180],[180,180],[0,-180],[-180,0],[180,0],
+    [-11,184],[11,184],[-5,177],[5,177],[-7,101],[7,101],[-24,138],[24,138],[0,162],[0,115],[0,-140],[-6,-80],[6,20]];
+  for(let i=0;i<GPOS.length;i++) addKcGuard(GPOS[i][0],GPOS[i][1],i);
+  // bridge deck, six stories, roof & stair tower are real standing surfaces
+  plats.push({x0:-GH+0.4,z0:MI-4,x1:GH-0.4,z1:MO+4,y:0.58});
+  registerStructure(KC.x,KC.z,0,gy,{platforms:plats,ramps:ramps});
+  // freeze the whole castle's transforms (static geometry) — the gates re-enable theirs below
+  G.traverse(o=>{ o.updateMatrix(); o.matrixAutoUpdate=false; });
+  for(const gd of kcGateDefs){ const list=gd.kind==="portcullis"?[gd.mesh]:gd.doors;
+    for(const m of list){ m.traverse(o=>{o.matrixAutoUpdate=true;}); m.matrixAutoUpdate=true; } }
 }
 function addPortal(x,z,dest){
   const mesh=buildPortal(dest.name);mesh.position.set(x,0,z);scene.add(mesh);
@@ -8014,6 +8185,7 @@ function interact(){
   }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
+  for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
   for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6){ openKcChest(ch); return; } }
   if(kcBunnyRec&&Math.hypot(kcBunnyRec.x-player.x,kcBunnyRec.z-player.z)<4){ kcPokeBunny(); return; }
   for(const hk of kcHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<1.9){ kcInspectHook(hk); return; } }
@@ -8157,6 +8329,7 @@ function collide(nx,nz){
     return [clamp(s[0],-HALF+1,HALF-1),clamp(s[1],-HALF+1,HALF-1)];
   }
   for(const o of obstacles){
+    if(o.yMax!=null&&player.y>o.yMax) continue;   // low obstacles (ground-story walls, furniture) don't haunt upper floors
     const dx=nx-o.x,dz=nz-o.z,d=Math.hypot(dx,dz),min=o.r+player.r;
     if(d<min&&d>0.001){nx=o.x+dx/d*min;nz=o.z+dz/d*min;}
   }
@@ -8485,6 +8658,8 @@ function update(dt){
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
   enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
+  updateKcGates(dt);       // the portcullis & keep doors glide open / shut
+  updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
   cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   syncCamera(dt);
@@ -8647,11 +8822,11 @@ function cullWorld(dt){
   if(inDungeon||inNetwork) return;
   _cullAcc+=dt; if(_cullAcc<0.25) return; _cullAcc=0;
   const px=player.x,pz=player.z;
-  const toggle=(obj,x,z)=>{ if(!obj) return; const inR=((x-px)*(x-px)+(z-pz)*(z-pz))<VIS_R2;
+  const toggle=(obj,x,z,r2)=>{ if(!obj) return; const inR=((x-px)*(x-px)+(z-pz)*(z-pz))<(r2||VIS_R2);
     if(inR){ if(!obj.parent) scene.add(obj); } else if(obj.parent) scene.remove(obj); };
   for(const n of npcs) toggle(n.mesh,n.x,n.z);
   for(const s of shops) toggle(s.mesh,s.x,s.z);
-  for(const o of scenery) if(o&&!(o.userData&&o.userData.noCull)) toggle(o,o.position.x,o.position.z);
+  for(const o of scenery) if(o&&!(o.userData&&o.userData.noCull)) toggle(o,o.position.x,o.position.z,o.userData&&o.userData.cullR2);
   for(const nd of nodes) toggle(nd.mesh,nd.x,nd.z);
   // overworld monsters are streamed (built/disposed) by streamMonsters, not just toggled
 }
@@ -8690,7 +8865,7 @@ function camClampDist(tx,ty,tz,bx,by,bz,maxD){
   let d=maxD;
   if(!inDungeon&&!inNetwork){
     for(let s=0.5;s<=maxD;s+=0.5){const py=ty+by*s; if(py<terrainH(tx+bx*s,tz+bz*s)+0.3){ d=Math.min(d,s-0.3); break; }}
-    for(const o of obstacles){const ex=tx-o.x,ez=tz-o.z,rr=o.r+0.4;
+    for(const o of obstacles){if(o.yMax!=null&&ty>o.yMax+0.6) continue; const ex=tx-o.x,ez=tz-o.z,rr=o.r+0.4;
       const A=bx*bx+bz*bz; if(A<1e-6) continue;
       const B=2*(ex*bx+ez*bz),C=ex*ex+ez*ez-rr*rr,disc=B*B-4*A*C; if(disc<0) continue;
       const t1=(-B-Math.sqrt(disc))/(2*A); if(t1>0.2&&t1<d) d=t1-0.2;}
@@ -11073,6 +11248,7 @@ const NPC_ROLES={
   questgiver: {robe:0x7a6a3a,hood:0x564a28,mark:"!",mcol:"#ffd23b",label:"Quest Giver"},
   casino:     {robe:0x7a5a16,hood:0x5a3f0e,mark:"♦",mcol:"#ffd86b",label:"Casino Owner"},
   attendant:  {robe:0xcfd4e6,hood:0x8a94b8,mark:"❦",mcol:"#c9d6ff",label:"Valkyrie of the Keep"},
+  guard:      {robe:0x39415a,hood:0x232a3c,mark:"⚔",mcol:"#ff8a6a",label:"Castle Guard"},
 };
 const TOWNSFOLK_ROBES=[0x6a5a3a,0x4a5a6a,0x6a3a3a,0x3a5a4a,0x5a4a6a,0x7a6a4a,0x4a4a52,0x8a6a4a]; // varied commoner clothing
 // culture-appropriate townsperson names, matching each region's people (Aluvian / Sho / Gharu'ndim)
@@ -11102,6 +11278,10 @@ const RUMORS=[
 const NPC_FLAVOR={
   gatekeep:["None pass the gate of Timaru without the Aun's leave. State your purpose.",
             "The Tumeroks beyond these walls do not parley. Tread carefully."],
+  guard:["All quiet on the walls, my lord. No creature has crossed the moat.",
+         "Two hundred seasons of war have I served. Nothing gets past this crossbow.",
+         "The bolts never run dry — valkyrie-blessed, every quarrel.",
+         "Say the word and we loose. The castle stands while we stand."],
   townsfolk:["Well met, traveller. The roads have been dangerous of late.",
              "A fine day in Dereth — Olthoi willing.",
              "Mind the wilds beyond the walls, friend.",
@@ -11124,6 +11304,7 @@ function buildNPC(role,name,seedX,look){
   else if(role==="questgiver"){ Object.assign(o, GIVER_LOOK[look]||{}); if(o.beard===undefined && o.hood===undefined) o.beard=(seed%2===0); }
   else if(role==="townsfolk"){ o.beard=(seed%3===0); if(seed%4===0)o.hat="cap"; }
   else if(role==="attendant"){ o.beard=false; o.cape=true; o.hairStyle=["long","ponytail","braids"][seed%3]; }   // the valkyries of Val Halla — women of the keep
+  else if(role==="guard"){ o.helm=true; o.cape=(seed%2===0); o.beard=(seed%3!==0); }   // Castle Val Halla's veteran guard
   else { o.beard=(seed%2===0); }
   // everyone wears the standard model with randomised shirt (torso) + pants (legs/trim) colours; hair & skin
   // are already seed-varied in buildPerson. Role silhouette (hood/hat/helm/apron/cape) & markers are kept.
@@ -13199,7 +13380,7 @@ function handleSlash(text){
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="castle"){ if(inDungeon||inNetwork){ log("You cannot recall to the castle from here.","warn"); }
     else if(!castleAccess()){ log("Castle Val Halla admits only Lord Kilmer and his sworn guests.","warn"); }
-    else { teleportFX(player.x,player.z); arriveAt(KC.x,KC.z+45); player.invuln=2; teleportFX(player.x,player.z);
+    else { teleportFX(player.x,player.z); arriveAt(KC.x,KC.z+138); player.invuln=2; teleportFX(player.x,player.z);
       toast("CASTLE VAL HALLA"); log("You recall to <b>Castle Val Halla</b>.","sys"); if(SFX.portal)SFX.portal(); } }
   else if(cmd==="grant"||cmd==="revoke"){ const who=parts.slice(1).join(" ").trim();
     if((player.name||"")!==KC.lord){ log("Only Lord Kilmer commands the castle rolls.","warn"); }
