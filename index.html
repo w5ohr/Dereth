@@ -5704,6 +5704,9 @@ function rollAttrPot(){ const attr=ATTR_NAMES[irnd(0,ATTR_NAMES.length-1)], lvl=
 function rollPortalGem(){ const c=CITIES[irnd(0,CITIES.length-1)]; return {name:`Portal Gem: ${c.name}`,stat:"portalgem",town:c.name,v:0}; }
 // ── H14 Recall Contracts (AC): reusable papers that recall you to a fixed town on a cooldown (unlike single-use gems) ──
 function rollContract(){ const c=CITIES[irnd(0,CITIES.length-1)]; return {name:`Contract: ${c.name}`,stat:"contract",town:c.name,ico:"📜",v:0}; }
+// H15 Mana Stones: a casting focus stores mana (a battery tapped when your own runs short); stones recharge it
+function focusManaMax(){ const w=player.weapon; return (w&&w.wt==="focus"&&w.foc)? w.foc*14 : 0; }
+function rollManaStone(){ return {name:"Mana Stone",stat:"manastone",charge:irnd(120,220),v:0}; }
 // Keyrings (AC): a carved ring that holds your lockpicks & keys in one slot; the lock functions draw from it
 function rollKeyring(){ return {name:"Keyring",stat:"keyring",picks:0,keys:0,v:0}; }
 function findKeyring(needKey){ return player.inv.find(it=>it&&it.stat==="keyring" && (needKey?it.keys>0:(it.picks>0||it.keys>0))); }
@@ -5811,6 +5814,7 @@ function rollItem(rare,tier,noRare){
   if(Math.random()<(rare?0.015:0.008)) return rollContract();    // a reusable recall contract (rarer than a gem)
   if(Math.random()<(rare?0.02:0.01)) return rollColosseumTicket(); // a Colosseum arena ticket
   if(Math.random()<(rare?0.012:0.006)) return rollKeyring();     // a keyring to stow lockpicks & keys
+  if(Math.random()<(rare?0.02:0.014)) return rollManaStone();    // a mana stone (recharges a focus battery)
   if(Math.random()<(rare?0.04:0.03)) return rollQuestItem();     // a quest collectible
 
   if(Math.random()<(rare?0.04:0.09)) return rollFood();   // a bite of cooking fare
@@ -5964,6 +5968,12 @@ function applyItem(it){
     teleportFX(player.x,player.z); player.x=c.x; player.z=c.z+3; player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
+  else if(it.stat==="manastone"){   // H15: recharge the equipped focus's mana battery (or, with no focus, your own mana)
+    const amt=it.charge||150, max=focusManaMax();
+    if(max>0){ player.focusMana=Math.min(max,(player.focusMana||0)+amt);
+      log(`You channel the <b>${it.name}</b> into your focus — its mana battery charges to <b>${Math.round(player.focusMana)}/${max}</b>.`,"loot"); }
+    else { player.mn=Math.min(player.mmn,player.mn+amt); log(`You drain the <b>${it.name}</b> — <b>+${amt}</b> mana. (Wield a casting focus to store it as a battery.)`,"loot"); }
+    if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
   else if(it.stat==="keyring"){   // consolidate every loose lockpick & key in the satchel onto the ring
     let np=0,nk=0;
     for(let i=player.inv.length-1;i>=0;i--){ const x=player.inv[i]; if(x===it) continue;
@@ -6274,12 +6284,15 @@ function executeSpell(id){
     floater(player.x,EYE+0.5,player.z,"+22 mana","#5aa8ff");spellCd[id]=now()+s.cd;return;
   }
   const cost=Math.round(s.cost*clamp(1-(skillValue("mana")-SKILL_BY_KEY.mana.base0)*0.005,0.55,1)); // Mana Conversion lowers cost
-  let usedScarab=false;
-  if(player.mn<cost){   // out of mana — channel a scarab (AC casting reagent) of sufficient level if you hold one
-    const si=findScarabFor(s.lvl||1);
-    if(si>=0){ const sc=player.inv[si]; takeFromInv(si); usedScarab=true;
-      log(`Your mana runs dry — you channel a <b>${sc.name}</b> to power <b>${s.name}</b>.`,"heal"); floater(player.x,EYE+0.6,player.z,"scarab!","#c9a6ff"); if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
-    else { log(`Not enough mana for ${s.name} — and no scarab of level ${s.lvl||1}+ to channel.`,"warn"); return; }
+  let usedScarab=false, focusPaid=0;
+  if(player.mn<cost){   // out of mana — first tap the casting focus's mana battery (H15), then channel a scarab (AC reagent)
+    const need=cost-player.mn;
+    if((player.focusMana||0)>0 && focusManaMax()>0 && player.focusMana>=need){ player.focusMana-=need; focusPaid=need; player.mn=cost;   // battery covers the shortfall
+      floater(player.x,EYE+0.6,player.z,"focus mana","#9af0ff"); }
+    else { const si=findScarabFor(s.lvl||1);
+      if(si>=0){ const sc=player.inv[si]; takeFromInv(si); usedScarab=true;
+        log(`Your mana runs dry — you channel a <b>${sc.name}</b> to power <b>${s.name}</b>.`,"heal"); floater(player.x,EYE+0.6,player.z,"scarab!","#c9a6ff"); if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
+      else { log(`Not enough mana for ${s.name} — no focus charge or scarab to channel.`,"warn"); return; } }
   }
   if(!usedScarab) player.mn-=cost;
   spellCd[id]=now()+s.cd;
@@ -7613,6 +7626,7 @@ function updateHUD(){
   if(player.hots){ const HP={hp:"♥ regen",st:"⚡ regen",mn:"✦ regen"}; for(const k in player.hots) bf.push(HP[k]||k); }
   if(player.lifeBuffs&&player.lifeBuffs.prot) bf.push(`-${Math.round(player.lifeBuffs.prot.v*100)}% dmg`);
   if(player.banes) for(const el in player.banes) bf.push(`🛡 ${el} ${Math.round(player.banes[el].v*100)}%`);
+  { const fm=focusManaMax(); if(fm>0) bf.push(`🔮 ${Math.round(player.focusMana||0)}/${fm} focus`); }
   if(player.lightBuff) bf.push(`🔆 light ${Math.ceil(player.lightBuff.t)}s`);
   if(player.debuffs) for(const k in player.debuffs) bf.push(k==="slow"?"⊘ slowed":"▲ imperiled");
   document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
@@ -10372,7 +10386,7 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="quest"?"📜":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="quest"?"📜":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
@@ -11413,7 +11427,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
@@ -11455,7 +11469,7 @@ function saveGame(){
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
-      dye:player.dye,colosseumClears:player.colosseumClears,rarePity:player.rarePity,
+      dye:player.dye,colosseumClears:player.colosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
@@ -11501,6 +11515,7 @@ function applySaveObj(s){
   player.packBonus=s.packBonus|0;
   player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0;   // H7 armour dye + H16 clears
   player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
+  player.focusMana=+s.focusMana||0;   // H15 focus mana battery
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
