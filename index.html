@@ -3083,6 +3083,7 @@ const SPELL_COMPONENTS=[
   {name:"Hyssop",v:6},{name:"Mandrake Root",v:9},{name:"Frankincense",v:11},{name:"Saffron",v:13},{name:"Henbane",v:8},{name:"Eyebright",v:7},
   {name:"Comfrey",v:9},{name:"Damiana",v:10},{name:"Dragon's Blood",v:16},{name:"Yarrow",v:8},{name:"Amaranth",v:12},{name:"Wormwood",v:9},{name:"Ginseng",v:11},{name:"Powdered Iron",v:14},{name:"Colophony",v:10},{name:"Verdigris",v:12},
   {name:"Bloodroot",v:10},{name:"Nightshade",v:13},{name:"Sage",v:8},{name:"Rue",v:9},{name:"Vervain",v:11},{name:"Belladonna",v:14},{name:"Foxglove",v:12},{name:"Elderflower",v:9},
+  {name:"Ivory Scarab",v:70},{name:"Diamond Scarab",v:150},{name:"Chamomile",v:8},{name:"Motherwort",v:11},{name:"Turmeric",v:10},{name:"Feverfew",v:9},{name:"Angelica",v:12},{name:"Snakeroot",v:13},
 ];
 function rollComponent(){ if(Math.random()<0.15) return {name:"Mana Scarab",stat:"mn",v:50};   // the usable component
   const c=SPELL_COMPONENTS[irnd(0,SPELL_COMPONENTS.length-1)]; return {name:c.name,stat:"comp",v:c.v}; }
@@ -3836,6 +3837,23 @@ const NAMED_ITEMS=[
   {name:"Coat of the Hieromancer",stat:"worn",at:"light", aslot:"chest", mat:"Silk",    v:[32,44],affix:()=>_oaff("of Vigor")},
   {name:"Diforsa Cuirass",     stat:"worn", at:"heavy", aslot:"chest",  mat:"Steel",   v:[42,56],affix:()=>_oaff("of Impregnability")},
   {name:"Cloak of the Arcanum",stat:"worn", at:"light", aslot:"back",   mat:"Satin",   v:[24,32],affix:()=>_oaff("of the Magus")},
+  // ── further iconic artifacts (batch) ──
+  {name:"Ghassan al Sayf",     stat:"weapon",wt:"sword",   mat:"Pyreal",  v:[32,44],affix:()=>_wbrand("fire")},
+  {name:"Fist of Three Principles",stat:"weapon",wt:"unarmed",mat:"Diamond",v:[26,34],affix:()=>_wbrand("shock")},
+  {name:"Nib of the Scrivener",stat:"weapon",wt:"dagger",  mat:"Gold",    v:[24,32],affix:()=>_waff("crit")},
+  {name:"Yanshi's Fervor",     stat:"weapon",wt:"mace",    mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Coruscating War Spear",stat:"weapon",wt:"spear",  mat:"Sapphire",v:[32,42],affix:()=>_wbrand("frost")},
+  {name:"Sanguinary Axe",      stat:"weapon",wt:"axe",     mat:"Onyx",    v:[30,40],affix:()=>_waff("lifesteal")},
+  {name:"Greatsword of the Freebooter",stat:"weapon",wt:"twohand",mat:"Diamond",v:[42,56],affix:()=>_wbrand("frost")},
+  {name:"Bow of S'ryu",        stat:"weapon",wt:"bow",     mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
+  {name:"Kithfire Crossbow",   stat:"weapon",wt:"crossbow",mat:"Platinum",v:[34,46],affix:()=>_wbrand("fire")},
+  {name:"Warden's Atlatl",     stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
+  {name:"Baton of Tirethas",   stat:"weapon",wt:"focus",   mat:"Ruby",    v:[24,32]},
+  {name:"Deadly Blackmoor Rod",stat:"weapon",wt:"focus",   mat:"Onyx",    v:[22,30]},
+  {name:"Amuli Coat of Aerlinthe",stat:"worn",at:"light",aslot:"chest", mat:"Silk",    v:[32,44],affix:()=>_oaff("of the Magus")},
+  {name:"Aegis of the Nog",    stat:"worn",  at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.24,mat:"Pyreal",v:[26,38],affix:()=>_oaff("of Impregnability")},
+  {name:"Empyrean Legguards",  stat:"worn",  at:"heavy",  aslot:"legs",  mat:"Pyreal",  v:[32,44],affix:()=>_oaff("of Vigor")},
+  {name:"Cloak of Dark Thoughts",stat:"worn",at:"light", aslot:"back",   mat:"Satin",   v:[24,32],affix:()=>_oaff("of Warding")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
@@ -3897,6 +3915,10 @@ const FOOD_ITEMS=[
   {name:"Grilled Salmon",    attr:"Quickness",   v:12, dur:160},{name:"Honey Cake",       attr:"Self",        v:11, dur:150},
   {name:"Pickled Eggs",      attr:"Endurance",   v:10, dur:150},{name:"Spiced Cider",     attr:"Focus",       v:12, dur:160},
   {name:"Pork Dumplings",    attr:"Coordination",v:12, dur:160},{name:"Barley Soup",      attr:"Endurance",   v:11, dur:160},
+  {name:"Smoked Trout",      attr:"Quickness",   v:12, dur:160},{name:"Roast Duck",       attr:"Strength",    v:13, dur:170},
+  {name:"Berry Tart",        attr:"Self",        v:11, dur:150},{name:"Lentil Soup",      attr:"Endurance",   v:11, dur:160},
+  {name:"Candied Ginger",    attr:"Focus",       v:11, dur:150},{name:"Stuffed Peppers",  attr:"Coordination",v:12, dur:160},
+  {name:"Mutton Chop",       attr:"Strength",    v:13, dur:170},{name:"Herbal Infusion",  attr:"Focus",       v:13, dur:180},
 ];
 function rollFood(){ const f=FOOD_ITEMS[irnd(0,FOOD_ITEMS.length-1)]; return {name:f.name,stat:"food",attr:f.attr,v:f.v,dur:f.dur}; }
 // ── ammunition (AC): arrows/quarrels/darts. Carried in stacks; when you fire a matching launcher one is
