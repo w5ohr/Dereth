@@ -925,17 +925,29 @@ function assignGltfNpcs(newModel){
 }
 // ---- rigged glTF models for MONSTER kinds (spawned via streamMonsters; procedural creature is the fallback) ----
 let USE_GLTF_MONSTERS=true;
-const MONSTER_MODELS={   // AC kind → CDN model (best-fit; drop in better AC-matching models here)
-  mattekar:"https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Fox/glTF-Binary/Fox.glb", // furred quadruped beast
+// AC kind → one or more CDN models. Each value is an array; a random variant is chosen per spawn,
+// so a kind with several models (e.g. the 4 skeleton types) shows visual variety in a mob pack.
+const MONSTER_MODELS={
+  mattekar:["https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Fox/glTF-Binary/Fox.glb"], // furred quadruped beast (best-fit)
+  // KayKit Character Pack: Skeletons (CC0, Kay Lousberg) — rigged undead humanoids w/ baked idle/walk/attack clips
+  skeleton:[
+    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Warrior.glb",
+    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Minion.glb",
+    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Mage.glb",
+    "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0@main/addons/kaykit_character_pack_skeletons/Characters/gltf/Skeleton_Rogue.glb",
+  ],
 };
-let gltfMonsters={}, gltfMonstersStarted=false;
+let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h} loaded variants
 function loadGltfMonsters(){
   if(gltfMonstersStarted||!USE_GLTF_MONSTERS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
   gltfMonstersStarted=true; const L=new THREE.GLTFLoader();
-  for(const kind in MONSTER_MODELS){ (k=>L.load(MONSTER_MODELS[k], g=>{
-      const box=new THREE.Box3().setFromObject(g.scene), h=(box.max.y-box.min.y)||1;
-      gltfMonsters[k]={scene:g.scene, anims:g.animations||[], h}; log("Loaded a CDN monster model ("+k+").","sys");
-    }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
+  for(const kind in MONSTER_MODELS){ gltfMonsters[kind]=gltfMonsters[kind]||[];
+    for(const url of MONSTER_MODELS[kind]){ (k=>L.load(url, g=>{
+        const box=new THREE.Box3().setFromObject(g.scene), h=(box.max.y-box.min.y)||1;
+        gltfMonsters[k].push({scene:g.scene, anims:g.animations||[], h});
+        log("Loaded a CDN monster model ("+k+" "+gltfMonsters[k].length+"/"+MONSTER_MODELS[k].length+").","sys");
+      }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
+  }
 }
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
@@ -2858,7 +2870,8 @@ function spawnSomewhere(){
 }
 function spawnMonster(kind,x,z,elite){
   const b=BESTIARY[kind];
-  const gm=(USE_GLTF_MONSTERS&&gltfMonsters[kind])?gltfMonsters[kind]:null;
+  const gvar=(USE_GLTF_MONSTERS&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+  const gm=gvar?gvar[irnd(0,gvar.length-1)]:null;   // random rigged variant for this kind (variety within a pack)
   let mesh;
   if(gm){ mesh=new THREE.Group();                                   // rigged CDN creature model
     const clone=THREE.SkeletonUtils.clone(gm.scene); clone.scale.setScalar((b.size*1.5)/gm.h);

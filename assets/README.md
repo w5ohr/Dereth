@@ -56,14 +56,23 @@ humans pulled from public CDNs and assigned at random:
 
 ## CDN monster models (experimental, ON by default)
 Monsters can also swap their procedural mesh for a rigged glTF creature:
-- `MONSTER_MODELS` (in `index.html`) maps a monster **kind** → CDN `.glb` URL. Currently
-  `mattekar → Fox.glb` (Khronos glTF-Sample-Models; rigged, ~1 MB, walk/run/survey clips).
-  Free hot-linkable *creature* glTFs are scarce and none exactly match AC monster descriptions,
-  so **Fox is a best-fit placeholder** — add more kinds by pasting verified CDN URLs here.
-- `loadGltfMonsters()` downloads each once into `gltfMonsters{kind:{scene,anims,h}}`.
-- `spawnMonster(kind,x,z)` uses `THREE.SkeletonUtils.clone` for kinds with a model (scaled to the
-  bestiary size, feet-to-ground, per-mob `AnimationMixer` playing a walk/run/survey/idle clip);
-  all other kinds keep `buildCreature()`. Flag: `USE_GLTF_MONSTERS` (default **true**).
+- `MONSTER_MODELS` (in `index.html`) maps a monster **kind** → an **array** of CDN `.glb` URLs;
+  a random variant is chosen per spawn, so a kind with several models shows visual variety in a
+  mob pack. Current mappings:
+  - `mattekar → [Fox.glb]` (Khronos glTF-Sample-Models; rigged, ~1 MB, walk/run/survey clips).
+    Free hot-linkable *creature* glTFs are scarce and none exactly match AC monster descriptions,
+    so **Fox is a best-fit placeholder**.
+  - `skeleton → [Warrior, Minion, Mage, Rogue]` — **KayKit Character Pack: Skeletons** (CC0, Kay
+    Lousberg), 4 rigged undead humanoids (~4.8 MB each, 95 baked clips incl. idle/walk/attack).
+    Verified loadable & CORS-friendly via jsDelivr. AC's "skeleton" kind now spawns as one of the
+    four at random.
+  Add more kinds/variants by pasting verified CDN URLs into the arrays here.
+- `loadGltfMonsters()` downloads each URL once into `gltfMonsters{kind:[{scene,anims,h},…]}` (an
+  array of loaded variants per kind).
+- `spawnMonster(kind,x,z)` picks a random variant for the kind and uses `THREE.SkeletonUtils.clone`
+  (scaled to the bestiary size, feet-to-ground, per-mob `AnimationMixer` playing a
+  walk/run/survey/idle clip); all other kinds keep `buildCreature()`. Flag: `USE_GLTF_MONSTERS`
+  (default **true**).
 - **Streaming-safe disposal:** monster streaming (`streamMonsters`) despawns far mobs. glTF mobs
   share geometry with the cached source, so despawn only **stops the mixer + removes from scene**
   (no geometry `dispose()`, which would corrupt the cache/other clones); procedural mobs get a
