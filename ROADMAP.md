@@ -294,10 +294,11 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   as quest reward flavor only).
 
 ### H-D. Endgame & repeatable event content
-- ☐ **H16. Colosseum arena** (M) — 18-room ticketed gauntlet w/ 1-hr timer; Ticket (5 MMD / any Rare);
-  Advanced entrance 80+; clear → Vault Key → Tier-7 loot + one of five Empyrean Rings. Marquee repeatable
-  endgame; reuses the Incursion (F4) wave tech. *Verify:* buy ticket → enter → clear rooms under timer →
-  vault key → tiered reward.
+- ✅ **H16. Colosseum arena** — SHIPPED as a wave-survival gauntlet: the Colosseum dungeon entrance now
+  runs `enterColosseum`/`buildArena`/`arenaNextWave`/`updateArena`/`arenaWin` — ticket-or-1000-pyreal
+  gate, circular sand arena on the dungeon shell, 5 escalating waves (3→7 scaled mobs, champions lead
+  waves 3+) under a 5-min clock, clear → gold + XP + two tier-5 items + a guaranteed **Empyrean Ring**
+  (5 named). (Homage-scaled from AC's 18 rooms / 1-hr; Advanced 80+ entrance deferred.)
 - ◑ **H17. Augmentation-tree breadth** — SHIPPED a first pass: Jack of All Trades (`allskills` channel in
   `skillValue`), Ciandra's Essence (`xpBonus` in `gainXP`, cap +25%), Frenzy of the Slayer / Archmage's
   Endurance / Infused Vigor. Existing Enduring-Calm-style innate-attr augs already present (+50 cap). ◇
