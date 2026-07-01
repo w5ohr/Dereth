@@ -3359,6 +3359,7 @@ function buildWorld(){
   // the 25 cities of Dereth (each a bindable settlement; capitals are hubs)
   for(const c of CITIES) addCity(c);
   flushTownBatches();   // all queued buildings → a few InstancedMeshes per archetype (like the forests)
+  addCasinos();         // the Dens of Iniquity: Holtburg, Shoushi & Yaraq gambling halls
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil"});
   // every town fields a Town Crier (directions) and a Barkeeper (rumours)
@@ -3821,6 +3822,194 @@ function buildStall(s,i){
   for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.1*s,1.9*s,0.1*s),solid(0x4a3220));p.position.set(sx*0.95*s,0.95*s,sz*0.5*s);g.add(p);}
   const canopy=new THREE.Mesh(new THREE.BoxGeometry(2.3*s,0.16*s,1.3*s),solid([0xb0432a,0x3a7a4a,0x3a5a8a,0xb0902a][i%4]));canopy.position.y=1.9*s;canopy.castShadow=true;g.add(canopy);
   return g;
+}
+// ════════════════════════════════════════════════════════════════════════════
+//  CASINOS — AC's "Dens of Iniquity" (July 2005): gambling halls in the three
+//  starter towns. Buy Low/Mid/High-stakes tokens from the owner, hand them to the
+//  house for random prizes; bet on Carenzi races; keys open the Grand Casino Chest.
+//  Owners are the authentic three: Monty the Munificent (Holtburg), Mi Gan-Zo
+//  (Shoushi) and Arshid al-Qiyid (Yaraq).
+// ════════════════════════════════════════════════════════════════════════════
+const CASINO_TOWNS={Holtburg:"Monty the Munificent",Shoushi:"Mi Gan-Zo",Yaraq:"Arshid al-Qiyid"};
+const CARENZI_ROSTER=["Whiskers","Old One-Eye","Dustpaw","The Baroness"];   // racing carenzi (giant Dereth rodents)
+const PACK_DOLLS=["Golden Gromnie","Drudge","Mosswart","Tumerok","Lugian","Olthoi"];   // AC first-generation pack dolls
+let casinoChests=[];
+function buildCasino(region,town){
+  const g=new THREE.Group(), W=13,D=10.5,H=4.6;
+  const wall=region===2?texMat(sandTex,0xd8b46a):region===1?texMat(woodTex,0x9a4030):texMat(plasterTex,0xded1b6);
+  const floorM=region===2?texMat(stoneFloorTex,0xcbb691):texMat(woodTex,0x5a4632);
+  addShell(g,W,H,D,wall,floorM,region===2?0x9a7a3a:0x4a3220);
+  addCeiling(g,W,D,H-0.14,texMat(woodTex,0x6a4a2a));
+  const roof=roofRect(W*1.15,D*1.15,2.6,region===1?0x46604a:region===2?0xab8a4e:0x7a3a2c);roof.position.y=H+1.2;g.add(roof);
+  // glowing gable sign: golden diamond + lamp glow, readable at night
+  const sign=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.9,0.14),new THREE.MeshStandardMaterial({color:0x2a2016,emissive:0xffb43a,emissiveIntensity:0.55}));
+  sign.position.set(0,H+0.55,D/2+0.2);g.add(sign);
+  const gem=new THREE.Mesh(new THREE.OctahedronGeometry(0.34,0),new THREE.MeshStandardMaterial({color:0xffd23b,emissive:0xffc23a,emissiveIntensity:0.9,metalness:0.6,roughness:0.3}));
+  gem.position.set(0,H+0.55,D/2+0.34);g.add(gem);
+  const gl=new THREE.PointLight(0xffb43a,1.6,14);gl.position.set(0,H+0.8,D/2+0.8);g.add(gl);
+  // interior: gaming tables with dice, a fat rug, coin piles behind the counter
+  const felt=new THREE.MeshStandardMaterial({color:0x2e6a3e,roughness:0.9}), wood2=texMat(woodTex,0x4a3318);
+  for(const [tx,tz] of [[-3.4,-1.2],[0.4,-2.6],[3.4,-0.8]]){
+    const top=new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.1,14),felt);top.position.set(tx,1.02,tz);top.castShadow=true;g.add(top);
+    const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.22,1.0,8),wood2);leg.position.set(tx,0.5,tz);g.add(leg);
+    for(let di=0;di<2;di++){const die=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.14),new THREE.MeshStandardMaterial({color:0xf0ead8}));
+      die.position.set(tx+rnd(-0.5,0.5),1.14,tz+rnd(-0.5,0.5));die.rotation.y=rnd(0,1.5);g.add(die);}
+  }
+  const rug=new THREE.Mesh(new THREE.PlaneGeometry(4.2,3.0),new THREE.MeshStandardMaterial({color:0x6a1f2a,roughness:0.95}));
+  rug.rotation.x=-Math.PI/2;rug.position.set(0,0.2,1.4);g.add(rug);
+  const counter=new THREE.Mesh(new THREE.BoxGeometry(3.2,1.05,0.8),wood2);counter.position.set(-W/2+2.1,0.53,D/2-1.7);counter.castShadow=true;g.add(counter);
+  for(let i=0;i<4;i++){const coins=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.14,rnd(0.06,0.2),8),
+    new THREE.MeshStandardMaterial({color:0xffd23b,metalness:0.7,roughness:0.35}));coins.position.set(-W/2+1.2+i*0.5,1.15,D/2-1.7);g.add(coins);}
+  // the Grand Casino Chest at the back wall
+  const chest=new THREE.Group();
+  const box=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.9,0.95),texMat(woodTex,0x7a5a2a));box.position.y=0.45;box.castShadow=true;chest.add(box);
+  const lid=new THREE.Mesh(new THREE.CylinderGeometry(0.48,0.48,1.5,10,1,false,0,Math.PI),new THREE.MeshStandardMaterial({color:0xb8912e,metalness:0.75,roughness:0.3}));
+  lid.rotation.z=Math.PI/2;lid.position.y=0.9;chest.add(lid);
+  const band=new THREE.Mesh(new THREE.BoxGeometry(1.56,0.14,1.0),new THREE.MeshStandardMaterial({color:0xffd23b,metalness:0.8,roughness:0.25}));band.position.y=0.5;chest.add(band);
+  chest.position.set(W/2-2.0,0.18,-D/2+1.4);g.add(chest);
+  g.userData.chestLocal={x:W/2-2.0,z:-D/2+1.4};
+  const lbl=labelSprite("The "+town+" Casino","cities");lbl.scale.set(9,2,1);lbl.position.y=H+2.6;g.add(lbl);
+  g.userData.surfaces=mergeSurf(null,{platforms:pyramidRoofPlats(W*1.15,D*1.15,H+0.2,2.4)});
+  return g;
+}
+function addCasinos(){
+  casinoChests=[];
+  for(const tn in CASINO_TOWNS){
+    const c=CITIES.find(x=>x.name===tn); if(!c) continue;
+    const ring=(c.capital?40:24)+21, a=2.35+c.region*0.4;          // just outside the building ring
+    const cx=c.x+Math.cos(a)*ring, cz=c.z+Math.sin(a)*ring, gy=groundY(cx,cz);
+    const th=Math.atan2(c.x-cx,c.z-cz);                            // door faces the plaza
+    const g=buildCasino(c.region,tn);
+    g.position.set(cx,gy,cz);g.rotation.y=th;g.userData.noSettle=true;
+    scene.add(g);scenery.push(g);
+    const ct=Math.cos(th),st=Math.sin(th);
+    for(const cc of (g.userData.colliders||[])) obstacles.push({x:cx+cc.x*ct+cc.z*st, z:cz-cc.x*st+cc.z*ct, r:cc.r});
+    if(g.userData.surfaces) registerStructure(cx,cz,th,gy,g.userData.surfaces);
+    const cl=g.userData.chestLocal;
+    casinoChests.push({x:cx+cl.x*ct+cl.z*st, z:cz-cl.x*st+cl.z*ct, town:tn});
+    // the owner waits by the door outside
+    const ox=cx+Math.sin(th)*(6.6), oz=cz+Math.cos(th)*(6.6);
+    addNPC(ox,oz,{role:"casino",name:CASINO_TOWNS[tn],town:tn});
+  }
+}
+// ── the games themselves ──
+const CASINO_STAKES={
+  low: {label:"Low Stakes",  cost:200,  key:0.015},
+  mid: {label:"Mid Stakes",  cost:800,  key:0.03},
+  high:{label:"High Stakes", cost:3000, key:0.05},
+};
+const CASINO_LOSE_LINES=[
+  "The dice clatter, tumble… and betray you.",
+  "The house smiles. Your pyreals vanish beneath the felt.",
+  "So close! The last die spins on its corner — and falls against you.",
+  "A hush, a groan from the onlookers. Not this time.",
+];
+function casinoTierOf(cost){ return cost>=3000?5:cost>=800?4:3; }
+function casinoPlay(stakeKey,ownerName){
+  const st=CASINO_STAKES[stakeKey]; if(!st) return;
+  if(player.gold<st.cost){ log(`You need <b>${st.cost}</b> pyreals for a ${st.label} token.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+  player.gold-=st.cost;
+  log(`You buy a <b>${st.label} Gambling Token</b> and hand it to the house…`,"sys");
+  const r=Math.random(), tier=casinoTierOf(st.cost);
+  if(r<st.key){                                                     // golden key — the real prize
+    addToInv({name:"Golden Casino Key",stat:"ticket",v:0,ico:"🔑"},true);
+    log(`The wheel stops on the golden sliver — <b>a Golden Casino Key!</b> The Grand Casino Chest awaits.`,"loot");
+    toast("GOLDEN CASINO KEY"); if(SFX.quest)SFX.quest();
+  } else if(r<st.key+0.06&&stakeKey!=="low"){                       // pack doll (AC's collectible)
+    const doll=PACK_DOLLS[irnd(0,PACK_DOLLS.length-1)]+" Pack Doll";
+    addToInv({name:doll,stat:"ticket",v:0,ico:"🧸"},true);
+    log(`You win a <b>${doll}</b>! ${ownerName} winks: “Bring it back to me someday — I collect them.”`,"loot");
+    toast("PACK DOLL"); if(SFX.quest)SFX.quest();
+  } else if(r<st.key+0.14){                                          // gear prize off the prize shelf
+    const it=rollItem(stakeKey==="high",tier,stakeKey==="low");
+    addToInv(it,true); log(`The house pays out in kind — <b>${it.name}</b>!`,"loot"); if(SFX.gold)SFX.gold();
+  } else if(r<st.key+0.24){                                          // big win
+    const won=Math.round(st.cost*rnd(3.2,5.5)); player.gold+=won;
+    log(`The table erupts — <b>you win ${won} pyreals!</b>`,"loot"); toast("JACKPOT"); if(SFX.gold)SFX.gold();
+  } else if(r<st.key+0.47){                                          // small win
+    const won=Math.round(st.cost*rnd(1.3,2.1)); player.gold+=won;
+    log(`A modest turn of luck — you collect <b>${won}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold();
+  } else {
+    log(CASINO_LOSE_LINES[irnd(0,CASINO_LOSE_LINES.length-1)],"warn"); if(SFX.hit)SFX.hit();
+  }
+  updateHUD&&updateHUD(); saveGame&&saveGame(); refreshCasinoPanel();
+}
+const CARENZI_COST=300;
+function carenziRace(pick,ownerName){
+  if(player.gold<CARENZI_COST){ log(`A race bet costs <b>${CARENZI_COST}</b> pyreals.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+  player.gold-=CARENZI_COST;
+  const order=CARENZI_ROSTER.slice().sort(()=>Math.random()-0.5), winner=order[0];
+  log(`The carenzi burst from the gates! <b>${order[3]}</b> stumbles early…`,"sys");
+  log(`Down the stretch it's <b>${order[0]}</b> and <b>${order[1]}</b> whisker to whisker…`,"sys");
+  if(winner===pick){
+    const won=Math.round(CARENZI_COST*3.5); player.gold+=won;
+    log(`<b>${winner}</b> takes it by a nose — <b>your pick! You win ${won} pyreals!</b>`,"loot");
+    toast(winner.toUpperCase()+" WINS!"); if(SFX.quest)SFX.quest();
+    if(Math.random()<0.12){ addToInv({name:"Grand Casino Key",stat:"ticket",v:0,ico:"🗝️"},true);
+      log(`${ownerName} presents the winner's purse — <b>a Grand Casino Key!</b>`,"loot"); toast("GRAND CASINO KEY"); }
+  } else {
+    log(`<b>${winner}</b> takes the race. Your carenzi, <b>${pick}</b>, finds a snack instead.`,"warn"); if(SFX.hit)SFX.hit();
+  }
+  updateHUD&&updateHUD(); saveGame&&saveGame(); refreshCasinoPanel();
+}
+function invFindIdx(name){ return player.inv.findIndex(it=>it&&it.name===name); }
+function invCountDolls(){ return player.inv.filter(it=>it&&/Pack Doll$/.test(it.name||"")).length; }
+function casinoDollTurnIn(ownerName){
+  const i=player.inv.findIndex(it=>it&&/Pack Doll$/.test(it.name||""));
+  if(i<0) return;
+  const doll=player.inv[i].name; player.inv.splice(i,1);
+  const r=Math.random();
+  if(r<0.5){ const it=rollItem(true,5,false); addToInv(it,true);
+    log(`${ownerName} cradles the <b>${doll}</b> like a lost child, and presses <b>${it.name}</b> into your hands.`,"loot"); }
+  else { const won=irnd(900,2200); player.gold+=won;
+    log(`${ownerName} pays <b>${won}</b> pyreals for the <b>${doll}</b>. “A fine addition.”`,"loot"); }
+  if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); saveGame&&saveGame(); refreshCasinoPanel();
+}
+function openCasinoChest(ch){
+  const gi=invFindIdx("Grand Casino Key"), yi=invFindIdx("Golden Casino Key");
+  if(gi>=0){ player.inv.splice(gi,1);
+    const it=rollItem(true,5,false), won=irnd(1500,4000); addToInv(it,true); player.gold+=won;
+    log(`The Grand Casino Chest swings wide — <b>${it.name}</b> and <b>${won} pyreals</b>!`,"loot");
+    if(Math.random()<0.5){ const doll=PACK_DOLLS[irnd(0,PACK_DOLLS.length-1)]+" Pack Doll";
+      addToInv({name:doll,stat:"ticket",v:0,ico:"🧸"},true); log(`Tucked in the corner: a <b>${doll}</b>.`,"loot"); }
+    toast("GRAND PRIZE"); if(SFX.quest)SFX.quest();
+  } else if(yi>=0){ player.inv.splice(yi,1);
+    const it=rollItem(false,4,false), won=irnd(400,1200); addToInv(it,true); player.gold+=won;
+    log(`Your Golden Key clicks — the chest yields <b>${it.name}</b> and <b>${won} pyreals</b>.`,"loot");
+    toast("CASINO PRIZE"); if(SFX.gold)SFX.gold();
+  } else { log(`The <b>Grand Casino Chest</b> is locked tight. Win a key at the tables or the races.`,"warn"); if(SFX.hit)SFX.hit(); }
+  updateHUD&&updateHUD(); saveGame&&saveGame();
+}
+// ── the casino panel (opened by talking to the owner) ──
+let _casinoNpc=null;
+function refreshCasinoPanel(){ const ov=document.getElementById('casinoPanel'); if(ov&&_casinoNpc){ ov.remove(); openCasino(_casinoNpc); } }
+function openCasino(n){
+  _casinoNpc=n;
+  const old=document.getElementById('casinoPanel'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='casinoPanel';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  const stakes=Object.keys(CASINO_STAKES).map(k=>{const st=CASINO_STAKES[k];
+    return `<button data-stake="${k}" style="${btn}"><b style="color:var(--gold)">${st.label} Token</b> — ${st.cost} pyreals<div style="color:#bcae8a;font-size:11px;margin-top:2px">${k==="low"?"a cautious flutter":k==="mid"?"a gambler's wager":"fortune favours the bold"}</div></button>`;}).join("");
+  const runners=CARENZI_ROSTER.map(r=>`<button data-carenzi="${r}" style="${btn};width:auto;display:inline-block;margin-right:6px;padding:6px 10px">🐀 ${r}</button>`).join("");
+  const dolls=invCountDolls();
+  ov.innerHTML=`<div style="max-width:480px;width:92%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">♦ ${n.name} — Den of Iniquity</div>
+    <div style="color:var(--dim);margin:4px 0 10px">“Fortune favours the daring, friend. Purse: <b style="color:#ffd86b">${player.gold}</b> pyreals.”</div>
+    ${stakes}
+    <div style="color:var(--gold);font-size:12px;margin-top:14px;text-transform:uppercase;letter-spacing:.6px">Carenzi Races — ${CARENZI_COST} pyreals a bet, pays 3½×</div>
+    <div style="margin-top:6px">${runners}</div>
+    ${dolls>0?`<button id="casinoDoll" style="${btn}"><b style="color:#ffd86b">Turn in a Pack Doll</b> (${dolls} carried) — the owner collects them</button>`:""}
+    <div style="color:var(--dim);font-size:11px;margin-top:12px">Golden & Grand Casino Keys open the Grand Casino Chest at the back of the hall.</div>
+    <button id="casinoClose" style="${btn};text-align:center">Walk away</button></div>`;
+  document.body.appendChild(ov);
+  paused=true; if(locked)document.exitPointerLock();
+  const close=()=>{ ov.remove(); paused=false; _casinoNpc=null; };
+  ov.querySelector('#casinoClose').onclick=close;
+  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+  ov.querySelectorAll('[data-stake]').forEach(b=>b.onclick=()=>casinoPlay(b.dataset.stake,n.name));
+  ov.querySelectorAll('[data-carenzi]').forEach(b=>b.onclick=()=>carenziRace(b.dataset.carenzi,n.name));
+  const db=ov.querySelector('#casinoDoll'); if(db) db.onclick=()=>casinoDollTurnIn(n.name);
 }
 function addCity(c){
   addLifestone(c.x,c.z,c.name==="Holtburg",c.name,c.capital,c.region);
@@ -7448,6 +7637,7 @@ function interact(){
     return;
   }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
+  for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
@@ -10500,6 +10690,7 @@ const NPC_ROLES={
   reset_skill:{robe:0x225a55,hood:0x18413d,mark:"⟳",mcol:"#9affe0",label:"Fianhe"},
   townsfolk:  {robe:0x6a5a3a,hood:0x4a3a26,mark:"",mcol:"#cfc0a0",label:"Townsperson"},
   questgiver: {robe:0x7a6a3a,hood:0x564a28,mark:"!",mcol:"#ffd23b",label:"Quest Giver"},
+  casino:     {robe:0x7a5a16,hood:0x5a3f0e,mark:"♦",mcol:"#ffd86b",label:"Casino Owner"},
 };
 const TOWNSFOLK_ROBES=[0x6a5a3a,0x4a5a6a,0x6a3a3a,0x3a5a4a,0x5a4a6a,0x7a6a4a,0x4a4a52,0x8a6a4a]; // varied commoner clothing
 // culture-appropriate townsperson names, matching each region's people (Aluvian / Sho / Gharu'ndim)
@@ -10698,6 +10889,7 @@ function talkToNPC(n){
     return;
   }
   if(n.role==="barkeep"){ log(`<b>${n.name}:</b> ${RUMORS[(n._line++)%RUMORS.length]}`,"sys"); return; }
+  if(n.role==="casino"){ openCasino(n); return; }
   if(n.role==="reset_attr"){
     const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0);
     if(allocated<=0){ log("<b>Chafulumisa:</b> Your spirit is already unwritten, traveller.","sys"); return; }
