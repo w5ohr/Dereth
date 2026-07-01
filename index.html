@@ -455,6 +455,7 @@ const now=()=>performance.now();
 
 // ---------- world constants ----------
 const WORLD=16000, HALF=WORLD/2, EYE=1.7;
+const GROUND_SEG=400;   // terrain grid resolution (40u cells) — groundY() and the mesh must agree
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
 const TOWN_SAFE=60, DAYLEN=4200; // safe radius around each capital; seconds per full day/night (long, slow cycle)
@@ -1400,7 +1401,7 @@ function terrainH(x,z){
 // terrainH at the 4 surrounding grid vertices and bilinear-interpolate → the actual drawn surface.
 function groundY(x,z){
   if(inDungeon||inNetwork) return 0;                 // instances are flat at y=0
-  const STEP=WORLD/200;                              // grid cell size (matches buildGround's 200 segments)
+  const STEP=WORLD/GROUND_SEG;                       // grid cell size (matches the ground mesh's segments)
   const gx=(x+HALF)/STEP, gz=(z+HALF)/STEP;
   const i0=Math.floor(gx), k0=Math.floor(gz), fx=gx-i0, fz=gz-k0;
   const vx0=-HALF+i0*STEP, vx1=vx0+STEP, vz0=-HALF+k0*STEP, vz1=vz0+STEP;
@@ -1984,12 +1985,12 @@ function initThree(){
       '#ifdef USE_MAP\n'+
       ' vec4 _tNear=texture2D(map,vUv);\n'+
       ' vec4 _tFar=texture2D(map,vUv*0.233+vec2(0.37));\n'+
-      ' float _dk=smoothstep(28.0,90.0,length(vViewPosition));\n'+
-      ' vec4 texelColor=mix(_tNear,mix(_tNear,_tFar,0.72),_dk);\n'+
+      ' float _dk=smoothstep(26.0,85.0,length(vViewPosition));\n'+
+      ' vec4 texelColor=mix(_tNear,_tNear*_tFar*2.0,_dk*0.7);\n'+   // multiplicative detail blend keeps contrast at range
       ' texelColor=mapTexelToLinear(texelColor);\n'+
       ' diffuseColor*=texelColor;\n'+
       '#endif');};
-  const ggeo=new THREE.PlaneGeometry(WORLD,WORLD,200,200);
+  const ggeo=new THREE.PlaneGeometry(WORLD,WORLD,GROUND_SEG,GROUND_SEG);
   const gp=ggeo.attributes.position,gcol=[],col=new THREE.Color();
   for(let i=0;i<gp.count;i++){const wx=gp.getX(i),wz=-gp.getY(i),hh=terrainH(wx,wz);
     gp.setZ(i,hh);                                  // displace into mountains/valleys (local Z → world height)
@@ -3094,6 +3095,97 @@ function buildGrass(){
   grassMesh.count=n;grassMesh.castShadow=false;grassMesh.receiveShadow=true;grassMesh.instanceMatrix.needsUpdate=true;
   scene.add(grassMesh);
 }
+// ── instanced forests: the hand-placed scenery (~1900 groups) left the wilds feeling empty.
+// Each species is ONE merged vertex-colored geometry drawn as ONE InstancedMesh (a whole
+// forest costs a handful of draw calls), placed in noise-clumped woodland patches per biome. ──
+function _mergeColored(parts){       // [{geo,color,translate?}] → single vertex-colored geometry
+  const pos=[],nrm=[],col=[],c=new THREE.Color();
+  for(const p of parts){
+    const g=p.geo.toNonIndexed();
+    if(p.translate)g.translate(p.translate[0],p.translate[1],p.translate[2]);
+    const pa=g.attributes.position.array,na=g.attributes.normal.array;
+    c.setHex(p.color).convertSRGBToLinear();   // hex values are picked as seen on screen (sRGB)
+    for(let i=0;i<pa.length;i+=3){pos.push(pa[i],pa[i+1],pa[i+2]);nrm.push(na[i],na[i+1],na[i+2]);col.push(c.r,c.g,c.b);}
+    g.dispose();p.geo.dispose();
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+  geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+  return geo;
+}
+let _floraGeo=null;
+function floraGeos(){
+  if(_floraGeo) return _floraGeo;
+  _floraGeo={
+    conifer:_mergeColored([
+      {geo:new THREE.CylinderGeometry(0.14,0.24,1.6,6),color:0x54402a,translate:[0,0.8,0]},
+      {geo:new THREE.ConeGeometry(1.35,1.7,7),color:0x2c4c2a,translate:[0,2.0,0]},
+      {geo:new THREE.ConeGeometry(1.05,1.5,7),color:0x315233,translate:[0,2.9,0]},
+      {geo:new THREE.ConeGeometry(0.72,1.3,7),color:0x37583a,translate:[0,3.8,0]}]),
+    broadleaf:_mergeColored([
+      {geo:new THREE.CylinderGeometry(0.18,0.3,2.0,6),color:0x5c452c,translate:[0,1.0,0]},
+      {geo:new THREE.IcosahedronGeometry(1.5,1),color:0x3b5c31,translate:[0,2.9,0]},
+      {geo:new THREE.IcosahedronGeometry(1.05,1),color:0x446636,translate:[0.9,2.4,0.35]},
+      {geo:new THREE.IcosahedronGeometry(1.0,1),color:0x365427,translate:[-0.8,2.55,-0.3]}]),
+    snowpine:_mergeColored([
+      {geo:new THREE.CylinderGeometry(0.14,0.24,1.6,6),color:0x4a3d30,translate:[0,0.8,0]},
+      {geo:new THREE.ConeGeometry(1.3,1.7,7),color:0x2f4a37,translate:[0,2.0,0]},
+      {geo:new THREE.ConeGeometry(1.28,0.45,7),color:0xe8eef8,translate:[0,2.35,0]},
+      {geo:new THREE.ConeGeometry(0.95,1.5,7),color:0x2f4a37,translate:[0,2.9,0]},
+      {geo:new THREE.ConeGeometry(0.93,0.4,7),color:0xeef2fa,translate:[0,3.25,0]},
+      {geo:new THREE.ConeGeometry(0.6,1.2,7),color:0xf2f6fc,translate:[0,3.8,0]}]),
+    deadtree:_mergeColored([
+      {geo:new THREE.CylinderGeometry(0.12,0.24,2.6,5),color:0x6a6154,translate:[0,1.3,0]},
+      {geo:new THREE.CylinderGeometry(0.05,0.09,1.2,4),color:0x615a4e,translate:[0.45,2.3,0.2]},
+      {geo:new THREE.CylinderGeometry(0.04,0.08,1.0,4),color:0x6d6558,translate:[-0.4,2.0,-0.15]}]),
+    boulder:_mergeColored([
+      {geo:new THREE.DodecahedronGeometry(0.85,0),color:0x5a564d,translate:[0,0.42,0]},
+      {geo:new THREE.DodecahedronGeometry(0.5,0),color:0x514d45,translate:[0.6,0.25,0.3]}]),
+  };
+  return _floraGeo;
+}
+function buildForests(){
+  const G=floraGeos();
+  const mkMat=flat=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.92,metalness:0.0,flatShading:!!flat});
+  const pools={conifer:{cap:9500,mat:mkMat(false)},broadleaf:{cap:7500,mat:mkMat(false)},
+               snowpine:{cap:3200,mat:mkMat(false)},deadtree:{cap:1600,mat:mkMat(true)},boulder:{cap:2600,mat:mkMat(true)}};
+  for(const k in pools){ const p=pools[k];
+    p.mesh=new THREE.InstancedMesh(G[k],p.mat,p.cap); p.n=0;
+    p.mesh.castShadow=true; p.mesh.receiveShadow=true; }
+  const d=new THREE.Object3D(), tint=new THREE.Color();
+  const clump=(x,z)=>Math.sin(x*0.0021+1.7)*Math.cos(z*0.0019)+Math.sin((x-z)*0.0011)*0.7+Math.sin(x*0.0063)*Math.sin(z*0.0057)*0.5;
+  for(let i=0;i<90000;i++){
+    const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(38,900);
+    const x=clamp(h.x+Math.cos(a)*rr,-HALF+8,HALF-8),z=clamp(h.z+Math.sin(a)*rr,-HALF+8,HALF-8);
+    if(nearestCapitalDist(x,z)<TOWN_SAFE) continue;
+    const hh=terrainH(x,z); if(hh<1.5||hh>230) continue;
+    if(typeof onRoad==="function"&&onRoad(x,z)) continue;
+    const bm=biomeAt(x,z), cl=clump(x,z);
+    let key=null,s=1;
+    if(bm==="forest"||bm==="sho"){ if(cl<0.1) continue;                       // woodland grows in patches, not everywhere
+      key=Math.random()<(bm==="sho"?0.62:0.45)?"conifer":"broadleaf"; s=rnd(1.0,2.6); }
+    else if(bm==="cold"){ if(cl<0.3) continue; key="snowpine"; s=rnd(1.0,2.3); }
+    else if(bm==="direlands"){ if(cl<0.8) continue; key=Math.random()<0.55?"boulder":"deadtree"; s=rnd(0.8,1.9); }
+    else if(bm==="swamp"){ if(cl<0.4) continue; key=Math.random()<0.7?"broadleaf":"deadtree"; s=rnd(0.8,1.6); }
+    else continue;                                                             // desert stays open sand
+    const p=pools[key]; if(p.n>=p.cap) continue;
+    d.position.set(x,groundY(x,z)-0.05,z);
+    d.rotation.set(rnd(-0.05,0.05),rnd(0,6.28),rnd(-0.05,0.05));   // slight natural lean
+    d.scale.set(s*rnd(0.9,1.1),s*rnd(0.85,1.2),s*rnd(0.9,1.1));
+    d.updateMatrix(); p.mesh.setMatrixAt(p.n,d.matrix);
+    const v=rnd(0.82,1.12); tint.setRGB(v*rnd(0.94,1.06),v,v*rnd(0.92,1.04));  // subtle per-tree hue drift
+    p.mesh.setColorAt(p.n,tint);
+    p.n++;
+    if(key!=="boulder"&&s>1.1) obstacles.push({x,z,r:0.34*s});                 // trunks block movement
+  }
+  for(const k in pools){ const p=pools[k];
+    p.mesh.count=p.n; p.mesh.instanceMatrix.needsUpdate=true;
+    if(p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate=true;
+    p.mesh.userData.noCull=true; p.mesh.userData.noSettle=true;   // world-spanning: exempt from streaming & settleY
+    p.mesh.frustumCulled=false;                                    // instance bounds ≠ geometry bounds
+    scene.add(p.mesh); scenery.push(p.mesh); }
+}
 function buildRock(s){
   const m=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7*s,0),
     new THREE.MeshStandardMaterial({color:0x5a564d,flatShading:true}));
@@ -3284,6 +3376,7 @@ function buildWorld(){
     obstacles.push({x,z,r});
   }
   buildGrass();
+  buildForests();
   // a murky pool at the heart of the Blackmire swamp
   const sz=swampZone();
   if(sz.r>0){const pool=new THREE.Mesh(new THREE.CircleGeometry(300,32),new THREE.MeshPhongMaterial({color:0x2c3a26,specular:0x4a5a3a,shininess:40,transparent:true,opacity:0.82}));
@@ -7763,7 +7856,7 @@ function cullWorld(dt){
     if(inR){ if(!obj.parent) scene.add(obj); } else if(obj.parent) scene.remove(obj); };
   for(const n of npcs) toggle(n.mesh,n.x,n.z);
   for(const s of shops) toggle(s.mesh,s.x,s.z);
-  for(const o of scenery) if(o) toggle(o,o.position.x,o.position.z);
+  for(const o of scenery) if(o&&!(o.userData&&o.userData.noCull)) toggle(o,o.position.x,o.position.z);
   for(const nd of nodes) toggle(nd.mesh,nd.x,nd.z);
   // overworld monsters are streamed (built/disposed) by streamMonsters, not just toggled
 }
@@ -7818,6 +7911,7 @@ function syncCamera(dt){
     const rxv=-dz,rzv=dx,rl=Math.hypot(rxv,rzv)||1,SHOULDER=0.7;
     const tx=player.x+rxv/rl*SHOULDER,ty=gy+EYE*0.95,tz=player.z+rzv/rl*SHOULDER; // pivot near the shoulders
     const dist=camClampDist(tx,ty,tz,-dx,-dy,-dz,4.2);                  // collision: shorten if blocked
+    const camTooClose=dist<1.7;                                         // camera inside the body/back-gear — hide the avatar
     const desX=tx-dx*dist, desY=Math.max(gy+0.6, ty-dy*dist), desZ=tz-dz*dist;
     if(!camCur) camCur=new THREE.Vector3(desX,desY,desZ);
     if(!camInit){ camCur.set(desX,desY,desZ); camInit=true; }           // snap on entering 3rd person
@@ -7826,13 +7920,13 @@ function syncCamera(dt){
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false;
     if(gltfReady&&gltfAvatar){   // external rigged model
-      playerAvatar.visible=false; gltfAvatar.visible=player.alive;
+      playerAvatar.visible=false; gltfAvatar.visible=player.alive&&!camTooClose;
       gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=yaw+Math.PI;   // glTF faces +z; our forward is -z
       if(gltfMixer){ gltfMixer.update(dt);   // swap idle↔walk with movement (RPM bodies use loaded clips)
         const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
         if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
     } else {                     // procedural avatar
-      playerAvatar.visible=player.alive;
+      playerAvatar.visible=player.alive&&!camTooClose;
       playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
       animateAvatar(dt);
     }
