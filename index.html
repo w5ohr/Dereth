@@ -1271,6 +1271,8 @@ const DUNGEON_ADJ=["Forgotten","Sunken","Cursed","Ancient","Howling","Blighted",
 // Canonical Asheron's Call dungeons at their real coordinates (docs/asherons-call-world-reference.md).
 // [name, lat(N+/S-), lon(E+/W-), themeIndex, tier]. themeIndex → DUNGEON_THEMES (interior set).
 const CANON_DUNGEONS=[
+  // — Outlying islands (F3): special high-tier zones, reached by the Facility Hub portal (as in AC) —
+  ["Aerlinthe Island",86.0,-58.0,0,5],["Aphus Lassel",-88.0,72.0,5,5],["Mnemosyne",92.0,60.0,13,5],
   // — Aluvia (low tier) —
   ["Holtburg Dungeon",43.6,33.0,12,1],["Arwic Mines",33.7,56.7,8,1],["Armoredillo Cave",11.0,21.1,2,1],
   ["Catacombs of the Forgotten",17.4,32.8,12,2],["Hunter's Leap",35.8,33.5,7,2],["Haunted Mansion",6.0,43.7,12,3],
@@ -1369,6 +1371,7 @@ const FACILITY_LIST=[
   ["Crumbling Empyrean Mansion",30],["Haunted Mansion",30],["Mite Maze",30],
   ["Skeleton Fort",35],["Suntik Village",35],
   ["Castle of Baron Nuvillus",40],["Tusker Emporium",40],["Blackmire Temple",45],
+  ["Aphus Lassel",60],["Aerlinthe Island",75],["Mnemosyne",90],   // F3 outlying islands — high-level portal destinations
 ];
 const FACILITY_PORTALS=FACILITY_LIST.map(([name,req])=>{const def=DUNGEONS.find(d=>d.name===name);return def&&{def,req};}).filter(Boolean);
 const HUBS=CITIES.concat(DUNGEONS); // content (scenery, monsters) clusters around these
