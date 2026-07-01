@@ -2234,10 +2234,20 @@ function cVirindi(g,b,s){const cloak=new THREE.MeshLambertMaterial({color:b.c});
   const lt=new THREE.PointLight(0xb060ff,1.0,8);lt.position.set(0,s*1.4,0);g.add(lt);
   for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.13,s*0.9,7),cloak,sx*s*0.5,s*1.2,s*0.08,0.3,0,sx*0.42); // sleeves
   return s*2.45;}
+// Olthoi castes share the base insect body but read distinctly:
+function cOlthoiWorker(g,b,s){ const headY=cOlthoi(g,b,s);   // drone: forward digging claws, no war stinger emphasis
+  const dig=solid(0x3a1a10,true);
+  for(const sx of[-1,1])spike(g,dig,sx*s*0.28,s*0.55,s*1.5,s*0.07,s*0.44,Math.PI*0.5,sx*0.22); // heavy digging claws
+  return headY; }
+function cOlthoiSoldier(g,b,s){ const headY=cOlthoi(g,b,s);  // armored acid caste
+  const arm=solid(0x8a2a1a,true), acid=solid(0x9af06a);
+  for(let i=0;i<3;i++)part(g,new THREE.SphereGeometry(s*(0.5-i*0.1),8,6),arm,0,s*1.0,s*(0.3-i*0.45)).scale.set(1.15,0.5,1); // dorsal armor plates
+  for(const sx of[-1,1])spike(g,acid,sx*s*0.22,s*0.62,s*1.72,s*0.05,s*0.22,Math.PI*0.5,sx*0.35); // acid-dripping mandible tips
+  return headY; }
 const CREATURE_BUILDERS={drudge:cDrudge,banderling:cBanderling,mosswart:cMosswart,reedshark:cReedshark,
   tusker:cTusker,auroch:cAuroch,shadow:cShadow,olthoi:cOlthoi,gromnie:cGromnie,
   lugian:cLugian,tumerok:cTumerok,mattekar:cMattekar,skeleton:cSkeleton,virindi:cVirindi,
-  olthoiworker:cOlthoi,olthoisoldier:cOlthoi};
+  olthoiworker:cOlthoiWorker,olthoisoldier:cOlthoiSoldier};
 
 function buildCreature(kind){
   const b=BESTIARY[kind],g=new THREE.Group(),s=b.size;
