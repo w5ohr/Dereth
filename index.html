@@ -31,16 +31,20 @@
   #name{font-weight:bold;color:var(--gold);font-size:14px}
   #lvline{font-size:11px;color:var(--dim);margin-top:2px}
 
-  #spellbar{bottom:14px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;max-width:96vw;gap:8px;padding:8px}
+  #spellbar{bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:flex-end;gap:8px;padding:8px;max-width:99vw}
+  #qbGrid{display:grid;grid-template-columns:repeat(12,44px);grid-auto-rows:44px;gap:5px}
+  #qbPages{display:flex;flex-direction:column;gap:4px;pointer-events:auto}
+  #qbPages button{width:22px;height:22px;padding:0;font-size:12px;background:#2a2110;color:var(--gold);border:1px solid var(--border);border-radius:5px;cursor:pointer}
+  #qbPages button.on{background:#3a5a22;color:#fff;border-color:#7fe6a0}
   #castbar{position:absolute;bottom:92px;left:50%;transform:translateX(-50%);width:220px;height:14px;border:1px solid var(--gold);
     border-radius:7px;background:rgba(8,6,3,.85);display:none;overflow:hidden;z-index:20}
   #castfill{height:100%;width:0%;background:linear-gradient(90deg,#7ec8ff,#9af0ff);transition:width .04s linear}
   #castlabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;text-shadow:0 1px 2px #000}
-  .slot{width:54px;height:54px;border:1px solid var(--border);border-radius:6px;
+  .slot{width:44px;height:44px;border:1px solid var(--border);border-radius:6px;
     background:radial-gradient(circle at 50% 35%,#241a0c,#0c0905);display:flex;flex-direction:column;
     align-items:center;justify-content:center;position:relative;cursor:pointer;pointer-events:auto}
   .slot .key{position:absolute;top:2px;left:4px;font-size:10px;color:var(--gold)}
-  .slot .ico{font-size:22px;line-height:1}.slot .nm{font-size:8.5px;color:var(--dim);margin-top:2px}
+  .slot .ico{font-size:20px;line-height:1}.slot .nm{display:none}
   .slot.cool{opacity:.55}.slot .cd{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
     font-size:14px;color:#fff;font-weight:bold;text-shadow:0 1px 2px #000;z-index:1}
   .slot.cool .cd{display:flex}
@@ -816,11 +820,16 @@ for(const s of SPELLBOOK_LIST){
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
 }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
-const HOTKEYS=["1","2","3","4","5","6","7","8","z","x"];        // hotbar slot → key
-const DEFAULT_HOTBAR=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
+// Quickbar: 12 slots × 2 rows per page, 4 pages (buttons 1–4) = 96 assignable slots.
+const QB_COLS=12, QB_ROWS=2, QB_PAGES=4, QB_PAGE=QB_COLS*QB_ROWS, QB_TOTAL=QB_PAGE*QB_PAGES;
+const ROW1_KEYS=["1","2","3","4","5","6","7","8","9","0","-","="];   // number row casts row-1 slots of the active page
+const HOTKEYS=ROW1_KEYS;   // legacy alias kept for existing references
+let hotbarPage=0;
+const DEFAULT_SPELLS=["war_flame_1","war_frost_1","life_heal_1","life_stam2mana","war_light_1",
   "war_storm_1","item_might_1","creature_swift_1","void_nether_1","summon_wisp"];
-const DEFAULT_KNOWN=DEFAULT_HOTBAR.slice();
-function freshSpells(){ return {known:DEFAULT_KNOWN.slice(), hotbar:DEFAULT_HOTBAR.slice()}; }
+const DEFAULT_KNOWN=DEFAULT_SPELLS.slice();
+function freshHotbar(){ const h=new Array(QB_TOTAL).fill(null); for(let i=0;i<DEFAULT_SPELLS.length;i++) h[i]=DEFAULT_SPELLS[i]; return h; }
+function freshSpells(){ return {known:DEFAULT_KNOWN.slice(), hotbar:freshHotbar()}; }
 { const fs=freshSpells(); player.knownSpells=fs.known; player.hotbar=fs.hotbar; }   // seed defaults
 // spells you can find/buy as scrolls (everything not in the starting set)
 const SCROLL_POOL=SPELLBOOK_LIST.filter(s=>DEFAULT_KNOWN.indexOf(s.id)<0).map(s=>s.id);
@@ -6338,7 +6347,9 @@ window.addEventListener('keydown',e=>{
   keys[k]=true;
   if(!running) return;
   if(k==="enter"){ if(isOnline) openChat(); return; } // Enter opens chat (online only)
-  { const si=HOTKEYS.indexOf(k); if(si>=0) castSlot(si); }
+  { const si=ROW1_KEYS.indexOf(k); if(si>=0) castSlot(hotbarPage*QB_PAGE+si); }   // number row casts the active page's row 1
+  if(k==="["){ hotbarPage=(hotbarPage+QB_PAGES-1)%QB_PAGES; buildSpellbar(); }     // cycle quickbar pages
+  if(k==="]"){ hotbarPage=(hotbarPage+1)%QB_PAGES; buildSpellbar(); }
   if(k===" "){ if(keys["shift"]) dodge(); else tryJump(); }
   if(k==="e") interact();
   if(k==="q"){
@@ -6584,13 +6595,22 @@ document.getElementById('closeSheet').onclick=closeSheet;
 const spellbar=document.getElementById('spellbar');
 function buildSpellbar(){
   spellbar.innerHTML="";
-  for(let i=0;i<HOTKEYS.length;i++){
-    const id=player.hotbar[i], s=id&&SPELLBOOK[id];
-    const d=document.createElement('div');d.className="slot";
-    d.title=s?`${s.name} — ${SCHOOLS[s.school]||"Magic"}`:"empty — assign in the Spellbook (K)";
-    d.innerHTML=`<span class="cdsweep"></span><span class="key">${HOTKEYS[i]}</span><span class="ico">${s?s.ico:""}</span><span class="nm">${s?s.name:"—"}</span><span class="cd"></span>`;
-    d.onclick=()=>castSlot(i);spellbar.appendChild(d);
+  const grid=document.createElement('div'); grid.id="qbGrid";
+  const base=hotbarPage*QB_PAGE;
+  for(let i=0;i<QB_PAGE;i++){
+    const abs=base+i, id=player.hotbar[abs], s=id&&SPELLBOOK[id];
+    const key=i<QB_COLS?ROW1_KEYS[i]:"";   // row 1 shows number-key labels; row 2 is click-only
+    const d=document.createElement('div'); d.className="slot"; d.dataset.abs=abs;
+    d.title=s?`${s.name} — ${SCHOOLS[s.school]||"Magic"}`:"empty — assign a spell in the Spellbook (K)";
+    d.innerHTML=`<span class="cdsweep"></span><span class="key">${key}</span><span class="ico">${s?s.ico:""}</span><span class="nm"></span><span class="cd"></span>`;
+    d.onclick=()=>castSlot(abs); grid.appendChild(d);
   }
+  spellbar.appendChild(grid);
+  const pages=document.createElement('div'); pages.id="qbPages";
+  for(let p=0;p<QB_PAGES;p++){ const b=document.createElement('button'); b.textContent=(p+1);
+    b.className=p===hotbarPage?"on":""; b.title="Quickbar page "+(p+1)+"  ( [ ] to cycle )";
+    b.onclick=()=>{ hotbarPage=p; buildSpellbar(); }; pages.appendChild(b); }
+  spellbar.appendChild(pages);
 }
 buildSpellbar();
 
@@ -7232,8 +7252,8 @@ function updateHUD(){
   if(worldEvent&&worldEvent.active){evr.style.display="";document.getElementById("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
   else if(isOnline&&NET.event){ evr.style.display=""; const a=netEventAlive(); document.getElementById("sEvent").textContent=`${NET.event.name} · ${NET.event.total-a}/${NET.event.total} cleared`; }
   else evr.style.display="none";
-  spellbar.querySelectorAll(".slot").forEach((el,i)=>{
-    const id=player.hotbar[i], s=id&&SPELLBOOK[id], cd=id?((spellCd[id]||0)-now()):0;
+  spellbar.querySelectorAll(".slot").forEach((el)=>{
+    const abs=+el.dataset.abs, id=player.hotbar[abs], s=id&&SPELLBOOK[id], cd=id?((spellCd[id]||0)-now()):0;
     if(cd>0){el.classList.add("cool");el.querySelector(".cd").textContent=(cd/1000).toFixed(1);
       const frac=s&&s.cd?clamp(cd/s.cd,0,1):0, deg=Math.round(frac*360);   // radial sweep depletes clockwise as it recharges
       const sw=el.querySelector(".cdsweep"); if(sw) sw.style.background=`conic-gradient(rgba(6,4,1,.62) ${deg}deg, transparent ${deg}deg)`;}
@@ -10157,9 +10177,11 @@ for(const id of ["sbSearch","sbSchool","sbLevel","sbKnown","sbReady"]){ const el
 function closeSpellbook(){ document.getElementById('spellbook').style.display="none"; paused=false; }
 function assignHotbar(slot,id){
   for(let i=0;i<player.hotbar.length;i++) if(player.hotbar[i]===id) player.hotbar[i]=null; // a spell lives in one slot
-  if(slot>=0 && slot<HOTKEYS.length) player.hotbar[slot]=id;
+  if(slot>=0 && slot<QB_TOTAL) player.hotbar[slot]=id;
   buildSpellbar(); buildSpellbook(); saveGame();
 }
+// slot label like "P2 R1·3" for the assign dropdown
+function qbSlotLabel(abs){ const p=Math.floor(abs/QB_PAGE), r=Math.floor((abs%QB_PAGE)/QB_COLS), c=abs%QB_COLS; return `P${p+1} R${r+1}·${c+1}`; }
 // ---- hotbar loadouts: save/swap named spell sets (the bar holds 10 of 800+ spells) ----
 function saveLoadout(name){
   name=(name||"").trim().slice(0,24); if(!name) return;
@@ -10171,7 +10193,8 @@ function saveLoadout(name){
 function loadLoadout(i){
   const l=player.loadouts&&player.loadouts[i]; if(!l) return;
   player._loIdx=i;   // keep the \-cycle in sync with manual picks
-  player.hotbar=l.bar.slice(0,HOTKEYS.length).map(id=>SPELLBOOK[id]&&player.knownSpells.indexOf(id)>=0?id:null);
+  player.hotbar=l.bar.slice(0,QB_TOTAL).map(id=>SPELLBOOK[id]&&player.knownSpells.indexOf(id)>=0?id:null);
+  while(player.hotbar.length<QB_TOTAL) player.hotbar.push(null);
   buildSpellbar(); buildSpellbook(); toast("LOADOUT: "+l.name.toUpperCase()); if(SFX.quest)SFX.quest(); saveGame();
 }
 function deleteLoadout(i){ if(player.loadouts&&player.loadouts[i]){ player.loadouts.splice(i,1); buildSpellbook(); saveGame(); } }
@@ -10276,7 +10299,9 @@ function buildSpellbook(){
         status=fz>0.01?`<span style="color:#7fe6a0">ready</span> <span style="color:#c9a6ff">· ${Math.round(fz*100)}% fizzle</span>`:`<span style="color:#7fe6a0">ready</span>`; }
       let ctl="";
       if(known){ let opts=`<option value="-1"${slot<0?" selected":""}>—</option>`;
-        for(let i=0;i<HOTKEYS.length;i++) opts+=`<option value="${i}"${slot===i?" selected":""}>slot ${HOTKEYS[i]}</option>`;
+        for(let p=0;p<QB_PAGES;p++){ opts+=`<optgroup label="Page ${p+1}">`;
+          for(let i=0;i<QB_PAGE;i++){ const abs=p*QB_PAGE+i; opts+=`<option value="${abs}"${slot===abs?" selected":""}>${qbSlotLabel(abs)}</option>`; }
+          opts+=`</optgroup>`; }
         ctl=`<select class="sbslot" data-id="${s.id}" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:12px">${opts}</select>`;
         const nid=nextTierId(s.id);
         if(nid && player.knownSpells.indexOf(nid)<0){ const c=researchCost(nid);
@@ -10900,9 +10925,9 @@ function applySaveObj(s){
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(s.knownSpells==="all")?Object.keys(SPELLBOOK)              // admin/testing: know every spell
     :(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
-  player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,HOTKEYS.length):DEFAULT_HOTBAR.slice()).map(id=>SPELLBOOK[id]?id:null);
+  player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,QB_TOTAL):freshHotbar()).map(id=>SPELLBOOK[id]?id:null);
   player.loadouts=Array.isArray(s.loadouts)?s.loadouts.filter(l=>l&&l.name&&Array.isArray(l.bar)).slice(0,8):[];
-  while(player.hotbar.length<HOTKEYS.length) player.hotbar.push(null);
+  while(player.hotbar.length<QB_TOTAL) player.hotbar.push(null);
   buildSpellbar();
   // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
   player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
@@ -11440,6 +11465,7 @@ function startGame(loadSaved,preset){
     setTimeout(()=>{if(running)log("Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);
     setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). Q swaps weapon.","sys");},28000);
     setTimeout(()=>{if(running)log("Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);
+    setTimeout(()=>{if(running)log("Tip: press <b>N</b> to rearrange your HUD (drag any panel). Your <b>quickbar</b> has 4 pages — the <b>1–4</b> buttons (or <b>[ ]</b>) switch pages; assign spells to any of its 96 slots in the Spellbook (K).","sys");},42000);
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
