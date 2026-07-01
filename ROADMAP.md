@@ -264,6 +264,11 @@ anywhere.
   let it expire and the horde fades. Mob HP/XP scale with player level. Events pause inside dungeons/Town
   Network and reset on new game/load. `worldEvent`/`eventCd` globals; `EVENT_TYPES`, `startEvent`,
   `eventSuccess`, `eventFail`, `endEvent`, `updateEvents` (called in `update()`).
+- ✅ **F5. Banes (Mg4)** — SHIPPED (jsc + preview verified, 0 console errors). AC's seven elemental-
+  protection Item Enchantments: `BANE_TYPES`×`ITEM_TIERS` = 56 self-buff spells (Flame/Frost/Acid/
+  Lightning/Bladed/Bludgeoning/Piercing Bane I–VIII, 10%→50% protection, higher tiers gated by Item skill).
+  `player.banes[element]` + `baneResist()` applied in `playerHurt` after material resist; ticks/expires with
+  the other buffs, shown in the buff HUD, cast-able by the buff-bot. Verified: a 50% fire bane halves fire damage.
 
 ## MILESTONE H — AC long-tail systems  ☐ (research done, all ☐ planned)
 From the Round-2 gap sweep (`docs/asherons-call-longtail-gaps.md`, 2026-07-01). **Headline:** the
