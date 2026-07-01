@@ -3137,6 +3137,8 @@ function applyHit(m,base,opts){ opts=opts||{};
     if(opts.element==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
     else if(opts.element==="frost"){m.slow=Math.max(m.slow,0.4);}
     else if(opts.element==="shock"&&Math.random()<0.35){m.atkCd=Math.max(m.atkCd,1.0);} }
+  if(opts.phys){ const pm=physMult(m.kind,opts.phys);   // weapon damage type vs creature physical resistance (slash/pierce/bludgeon)
+    if(pm!==1){ dmg*=pm; floater(m.x,(m.headY||1.6)+2.3,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0"); } }
   const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Yellow Aetheria
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
@@ -3440,19 +3442,30 @@ const ITEM_PREFIX=["Rusty","Sturdy","Keen","Blessed","Singularity","Olthoi","Aci
 // distinct weapon types — speed (cd mult) vs damage vs reach tradeoffs so the equipped weapon's TYPE matters.
 // (Profile shapes are our design; AC's exact per-type numbers are still research-gated.)
 const WEAPON_TYPES={
-  dagger:  {mode:"melee",  cd:0.60, reach:0.85, dmg:0.78, stam:5,  blurb:"very fast, light"},
-  sword:   {mode:"melee",  cd:1.00, reach:1.00, dmg:1.00, stam:8,  blurb:"balanced"},
-  spear:   {mode:"melee",  cd:1.12, reach:1.55, dmg:1.05, stam:9,  blurb:"long reach"},
-  axe:     {mode:"melee",  cd:1.20, reach:0.95, dmg:1.28, stam:10, blurb:"heavy, slow"},
-  mace:    {mode:"melee",  cd:1.36, reach:0.95, dmg:1.42, stam:11, blurb:"crushing, slow"},
-  staff:   {mode:"melee",  cd:1.05, reach:1.30, dmg:0.96, stam:8,  blurb:"staff — reach, steady"},
-  twohand: {mode:"melee",  cd:1.45, reach:1.45, dmg:1.62, stam:14, blurb:"two-handed — devastating, slow"},
-  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, blurb:"ranged"},
-  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, blurb:"ranged, hard-hitting"},
-  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  blurb:"thrown darts — fast"},
+  dagger:  {mode:"melee",  cd:0.60, reach:0.85, dmg:0.78, stam:5,  dt:"pierce",   blurb:"very fast, light"},
+  sword:   {mode:"melee",  cd:1.00, reach:1.00, dmg:1.00, stam:8,  dt:"slash",    blurb:"balanced"},
+  spear:   {mode:"melee",  cd:1.12, reach:1.55, dmg:1.05, stam:9,  dt:"pierce",   blurb:"long reach"},
+  axe:     {mode:"melee",  cd:1.20, reach:0.95, dmg:1.28, stam:10, dt:"slash",    blurb:"heavy, slow"},
+  mace:    {mode:"melee",  cd:1.36, reach:0.95, dmg:1.42, stam:11, dt:"bludgeon", blurb:"crushing, slow"},
+  staff:   {mode:"melee",  cd:1.05, reach:1.30, dmg:0.96, stam:8,  dt:"bludgeon", blurb:"staff — reach, steady"},
+  twohand: {mode:"melee",  cd:1.45, reach:1.45, dmg:1.62, stam:14, dt:"slash",    blurb:"two-handed — devastating, slow"},
+  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, dt:"pierce",  blurb:"ranged"},
+  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, dt:"pierce",  blurb:"ranged, hard-hitting"},
+  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  dt:"pierce",  blurb:"thrown darts — fast"},
   focus:   {mode:"focus",   cd:1.00, reach:0.00, dmg:0.0,  stam:0,  blurb:"casting focus — empowers every school of magic"},
-  unarmed: {mode:"melee",   cd:0.55, reach:0.70, dmg:0.66, stam:4,  blurb:"unarmed — fastest, very light"},
+  unarmed: {mode:"melee",   cd:0.55, reach:0.70, dmg:0.66, stam:4,  dt:"bludgeon", blurb:"unarmed — fastest, very light"},
 };
+// creature physical resistances — weapon damage type matters (AC): bones shrug off blades but shatter under maces, etc.
+const PHYS_RESIST={
+  skeleton:{slash:0.65,pierce:0.5,bludgeon:1.45},   // undead bone: blades/arrows glance, crushing shatters
+  olthoi:{slash:0.65,pierce:1.2,bludgeon:0.95}, olthoisoldier:{slash:0.6,pierce:1.15,bludgeon:0.9}, olthoiworker:{slash:0.7,pierce:1.2,bludgeon:1.0}, // chitin plating vs a piercing gap
+  lugian:{slash:0.8,pierce:0.8,bludgeon:1.2},        // stony giants — crushed, not cut
+  gromnie:{slash:0.7,pierce:1.15,bludgeon:1.05},     // scaled hide resists slashing
+  mattekar:{slash:0.85,pierce:1.1,bludgeon:1.0},     // thick shaggy hide
+  virindi:{slash:1.1,pierce:1.1,bludgeon:0.8},       // robed constructs — little to crush
+  reedshark:{slash:1.1,pierce:1.05,bludgeon:0.9},
+};
+function physMult(kind,type){ const t=PHYS_RESIST[kind]; return (t&&t[type])||1; }
 const FOCUS_SCHOOLS=["war","life","creature","item","void"];   // a focus lends skill to all spell schools
 // armor classes: protection vs mobility tradeoff (heavy guards more but slows you & drains stamina regen).
 const ARMOR_TYPES={
@@ -5903,7 +5916,7 @@ function fireArrow(){
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
   mesh.position.set(ox,oy,oz);mesh.castShadow=true;scene.add(mesh);
   pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*75,vy:dir.y*75,vz:dir.z*75,
-    dmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain});
+    dmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(){
   if(!player.alive||player.meleeCd>0||paused) return;
@@ -5912,7 +5925,7 @@ function meleeAttack(){
   player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"));player.swing=1;SFX.swing();  // Swift Killer hastens
   if(player.st>=prof.stam) player.st-=prof.stam;
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg;
-  const af=melee?player.weapon.affix:null, meleeOpts={};
+  const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
@@ -6320,7 +6333,7 @@ function update(dt){
         else if(em<1) floater(m.x,(m.headY||1.6)+2.3,m.z,"resist","#9fb0c0");
         if(p.burn){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
         if(p.stun){m.atkCd=Math.max(m.atkCd,1.2);}
-        applyHit(m,p.dmg*em,{spell:true});
+        applyHit(m,p.dmg*em,p.arrow?{phys:p.phys}:{spell:true});   // arrows are physical (pierce) — magic resistance shouldn't blunt them
         if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
         burst(p.x,p.y,p.z,p.color,8);
         const ifl=new THREE.PointLight(p.color,2.2,7);ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
@@ -10331,7 +10344,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · weapon`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`:it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
