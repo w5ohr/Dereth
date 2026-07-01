@@ -222,6 +222,12 @@ anywhere.
   ~1.1s cooldown. `player.dashT/dashCd/dashX/dashZ`; `dodge()` bound to Space; dash displacement (collision-
   aware) + i-frames applied in `update`. Verified: i-frames set, ~8.8u travel, backward default, stamina
   cost, low-stamina & cooldown gating.
+- ✅ **G4. Power/accuracy charge bar (Cb1)** — the signature AC melee feel (jsc + preview verified, 0
+  console errors). Hold left-mouse to charge a swing, release to strike (bows fire instantly on press);
+  `meleeAttack(power)` scales damage ×0.6 (tap) → ×1.6 (full), with power-scaled stamina cost + recovery
+  and a mid-upper-charge accuracy sweet spot (`rollToHit` `accMul`). Charge state machine auto-releases at
+  `CHARGE_MAX` and cancels on unlock/death; `#chargeBar` HUD fills while held. Verified: 0.6/1.1/1.6 curve,
+  release fires+resets, damage scales (58→162 dmg/hit vs a dummy).
 
 ## MILESTONE F — Optional later-era / stretch content  ◇
 - ✅ **F1. Void magic** — "Nether Bolt" spell (key Z, school `void`, requires Void Magic trained):
