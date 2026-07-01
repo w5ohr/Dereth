@@ -5917,6 +5917,8 @@ function applyItem(it){
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
+    player.augment.count=player.augment.count||0;   // H17: a hard total-augmentation cap (Aetheria sigils are separate, uncapped)
+    if(!it.aetheria && player.augment.count>=60){ log("You have reached the <b>augmentation limit</b> (60) — your body can bind no more.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
     if(a.attr){ player.augment.attrTotal=player.augment.attrTotal||0;   // innate-attribute aug, capped at +50 total (AC's ten-aug limit)
       if(player.augment.attrTotal>=50){ log("You cannot absorb more attribute augmentations — the innate +50 augment limit is reached.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
       const add=Math.min(a.attr,50-player.augment.attrTotal); player.attr[a.attrName]=(player.attr[a.attrName]||10)+add; player.augment.attrTotal+=add; }
@@ -5925,8 +5927,9 @@ function applyItem(it){
     if(a.xpBonus){ player.augment.xpBonus=Math.min(0.25,(player.augment.xpBonus||0)+a.xpBonus); }   // H17 XP aug (cap +25%)
     player.augment.hp+=a.hp||0; player.augment.st+=a.st||0; player.augment.mn+=a.mn||0; if(a.skillpts) player.skillPts+=a.skillpts;
     player.augment.resist=(player.augment.resist||0)+(a.resist||0); player.augment.magic=(player.augment.magic||0)+(a.magic||0); player.augment.crit=(player.augment.crit||0)+(a.crit||0);
+    if(!it.aetheria) player.augment.count++;   // count this aug against the cap
     if(typeof recomputeGearSkill==="function") recomputeGearSkill();
-    derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
+    derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.${it.aetheria?"":` (${player.augment.count}/60 augmentations)`}`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
   else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor.`,"sys"); }
   else if(it.stat==="quest"){ log(`<b>${it.name}</b> is a quest collectible — turn it in to the right quest-giver, or sell it.`,"sys"); }
   else if(it.stat==="comp"){ if(isScarab(it)) log(`<b>${it.name}</b> is a casting scarab (level ${SCARAB_LEVEL[it.name]}) — held in your satchel, it powers a spell automatically when your mana runs dry. Or sell it to a Scrivener.`,"sys"); else log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
