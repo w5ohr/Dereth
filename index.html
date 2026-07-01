@@ -6485,6 +6485,7 @@ function meleeAttack(power){
         if(!rollToHit(bestMeleeSkillValue(),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
         const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
         applyHit(m,dmg*hm.dmg*sneak,meleeOpts);
+        dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
       }
@@ -6523,6 +6524,15 @@ function sneakFactor(m){ const t=skillTier("sneak"); if(t<1) return 1;
   const toP=Math.atan2(player.x-m.x,player.z-m.z), rel=Math.abs(Math.atan2(Math.sin(toP-(m.ang||0)),Math.cos(toP-(m.ang||0))));
   const behind=rel>2.0, unaware=m.state!=="chase";                 // rear arc, or a target not currently chasing you
   return (behind||unaware)? 1+(t===2?0.55:0.30) : 1;
+}
+// Cb5 Dirty Fighting: a chance on hit to debilitate — the effect depends on your attack height (AC).
+//   low → Exposed (takes more damage) · high → Staggered (its next attack is delayed) · middle → Bleeding (DoT).
+function dirtyStrike(m){
+  const t=skillTier("dirty"); if(t<1) return; if(Math.random() > (t===2?0.40:0.25)) return;
+  const ah=player.atkHeight||"mid", hy=(m.headY||1.6)+2.6;
+  if(ah==="low"){ m.vulnV=Math.max(m.vulnV||1,t===2?1.35:1.25); m.vulnUntil=now()+5000; floater(m.x,hy,m.z,"exposed!","#ffb0b0"); }
+  else if(ah==="high"){ m.atkCd=Math.max(m.atkCd||0,1.6); floater(m.x,hy,m.z,"staggered!","#ffd0a0"); }
+  else { m.burnT=Math.max(m.burnT||0,4); m.burnDps=Math.max(m.burnDps||0,4+skillValue("dirty")*0.06); floater(m.x,hy,m.z,"bleeding!","#ff6a6a"); }
 }
 cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0){ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } } else if(e.button===2) blocking=true; });
 cEl.addEventListener('mouseup',e=>{ if(e.button===0){ if(chargeActive) releaseCharge(); } else if(e.button===2) blocking=false; });
