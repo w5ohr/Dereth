@@ -3366,6 +3366,10 @@ const ITEM_BASE=[
   {n:"Ranseur",stat:"weapon",wt:"spear",v:[6,15]},{n:"Francisca",stat:"weapon",wt:"axe",v:[7,16]},
   {n:"Warhammer",stat:"weapon",wt:"mace",v:[9,19]},{n:"Zweihander",stat:"weapon",wt:"twohand",v:[10,22]},
   {n:"Reflex Bow",stat:"weapon",wt:"bow",v:[6,14]},{n:"Tekagi",stat:"weapon",wt:"unarmed",v:[5,11]},
+  {n:"Bodkin",stat:"weapon",wt:"dagger",v:[4,11]},{n:"Estoc",stat:"weapon",wt:"sword",v:[6,14]},
+  {n:"Guisarme",stat:"weapon",wt:"spear",v:[7,15]},{n:"Bardiche",stat:"weapon",wt:"twohand",v:[10,21]},
+  {n:"Bec de Corbin",stat:"weapon",wt:"mace",v:[9,19]},{n:"Claymore",stat:"weapon",wt:"twohand",v:[10,22]},
+  {n:"Flatbow",stat:"weapon",wt:"bow",v:[5,13]},{n:"Bagh Nakh",stat:"weapon",wt:"unarmed",v:[5,11]},
   // worn armour pieces are generated per-slot from ARMOR_SETS below (head/chest/hands/legs/feet)
   // jewelry (gem material prepends; a cantrip bonus is rolled on top)
   {n:"Ring",stat:"jewelry",jtype:"finger",v:[0,0]},{n:"Band",stat:"jewelry",jtype:"finger",v:[0,0]},
@@ -3608,6 +3612,22 @@ const NAMED_ITEMS=[
   {name:"Vestments of the Undying",stat:"worn",at:"light", aslot:"chest", mat:"Velvet",  v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Helm of the Warmaster",stat:"worn", at:"heavy",  aslot:"head",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
   {name:"Boots of the Wanderer",stat:"worn", at:"light",  aslot:"feet",  mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
+  // ── artifact batch 7 ──
+  {name:"Kingslayer",          stat:"weapon",wt:"sword",   mat:"Platinum",v:[32,44],affix:()=>_waff("crit")},
+  {name:"Ashbringer",          stat:"weapon",wt:"twohand", mat:"Ruby",    v:[42,56],affix:()=>_wbrand("fire")},
+  {name:"Rimeclaw",            stat:"weapon",wt:"unarmed", mat:"Sapphire",v:[24,32],affix:()=>_wbrand("frost")},
+  {name:"Gutripper",           stat:"weapon",wt:"axe",     mat:"Steel",   v:[30,40],affix:()=>_waff("lifesteal")},
+  {name:"Nightfall Bow",       stat:"weapon",wt:"bow",     mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
+  {name:"Skullcracker",        stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_waff("crit")},
+  {name:"Wyrmspine Spear",     stat:"weapon",wt:"spear",   mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
+  {name:"Volley Arbalest",     stat:"weapon",wt:"crossbow",mat:"Diamond", v:[34,46],affix:()=>_wbrand("shock")},
+  {name:"Scorpion Atlatl",     stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
+  {name:"Rod of the Arcanum",  stat:"weapon",wt:"focus",   mat:"Ruby",    v:[24,32]},
+  {name:"Crystal Orb of Knorr",stat:"weapon",wt:"focus",   mat:"Sapphire",v:[24,32]},
+  {name:"Pauldrons of the Titan",stat:"worn",at:"heavy",  aslot:"upperarm",mat:"Steel",v:[26,34],affix:()=>_oaff("of Vigor")},
+  {name:"Vambraces of Warding",stat:"worn",  at:"medium", aslot:"lowerarm",mat:"Steel",v:[22,30],affix:()=>_oaff("of Warding")},
+  {name:"Circlet of the Empyrean",stat:"worn",at:"light", aslot:"head",  mat:"Gold",    v:[28,38],affix:()=>_oaff("of the Magus")},
+  {name:"Sabatons of the Lugian",stat:"worn",at:"heavy",  aslot:"feet",  mat:"Granite", v:[24,32],affix:()=>_oaff("of Endurance")},
 ];
 // augmentation gems (AC augmentations): a one-use gem that permanently boosts you when absorbed
 const AUGMENT_ITEMS=[
