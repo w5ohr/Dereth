@@ -2549,7 +2549,15 @@ function buildWorld(){
       addMerchant(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
     }
   });
-  for(const d of DUNGEONS) addEntrance(d);
+  // A few far dungeons (Direlands / northern isles) clamp to coordinates that fall below sea level,
+  // leaving their entrance underwater and unreachable on foot. Relocate any such entrance to the
+  // nearest walkable land (spiral search) so every delve can actually be reached.
+  function landNear(x,z){ if(terrainH(x,z)>=2) return {x,z};
+    for(let rad=10; rad<=900; rad+=14){ for(let a=0;a<20;a++){ const ang=a/20*Math.PI*2,
+        nx=clamp(x+Math.cos(ang)*rad,-HALF+80,HALF-80), nz=clamp(z+Math.sin(ang)*rad,-HALF+80,HALF-80);
+        if(terrainH(nx,nz)>=2) return {x:nx,z:nz}; } }
+    return {x,z}; }
+  for(const d of DUNGEONS){ const L=landNear(d.x,d.z); d.x=L.x; d.z=L.z; addEntrance(d); }
   // capital portal network (step between the three capitals)
   for(let i=0;i<CAPITALS.length;i++){const a=CAPITALS[i],b=CAPITALS[(i+1)%CAPITALS.length];
     addPortal(a.x+11,a.z-3,{x:b.x,z:b.z+6,name:b.name});}
