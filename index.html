@@ -484,7 +484,8 @@ function skillBase(key){ const s=SKILL_BY_KEY[key]; if(!s.d)return 0; let sum=0;
 function skillValue(key){ const st=skillState(key),base=skillBase(key);
   const sb=(player.skillBuffs&&player.skillBuffs[key])?player.skillBuffs[key].v:0;   // Creature skill "Aptitude" buff
   const gj=(player.gearSkill&&player.gearSkill[key])?player.gearSkill[key]:0;        // jewelry skill cantrips
-  let v=base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj;
+  let v=base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj
+    +((player.auras&&player.auras.world)||0)+(player.enlightenment||0);   // Aura of the World + Enlightenment: +1 all skills each level/tier
   if(player.vitae>0) v=Math.max(0,Math.round(v*(1-player.vitae)));   // Vitae death penalty saps ALL skills too (AC), not just vitals
   return v; }
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
@@ -520,6 +521,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
+  luminance:0,lumUnlocked:false,auras:{},enlightenment:0,   // AC endgame: Luminance currency → permanent Auras; Enlightenment prestige resets
   arcsDone:[],                 // story arcs whose capstone reward has been granted
   augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0},    // permanent boosts: augmentation gems + Aetheria sigils
   house:{tier:0,storage:[]},   // AC housing: 0=none, 1=Apartment…4=Mansion; storage[] persists forever
@@ -549,6 +551,7 @@ function derive(){
   if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
   if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
   const ag=player.augment; if(ag){ player.mhp+=ag.hp||0; player.mst+=ag.st||0; player.mmn+=ag.mn||0; }   // permanent augmentation-gem boosts
+  if(player.enlightenment){ const e=1+player.enlightenment*0.02; player.mhp=Math.round(player.mhp*e);player.mst=Math.round(player.mst*e);player.mmn=Math.round(player.mmn*e); }  // Enlightenment: +2% vitals per tier, forever
   if(player.vitae>0){ const vm=1-player.vitae;   // Vitae (death penalty): your vital pools shrink until worked off with XP
     player.mhp=Math.max(1,Math.round(player.mhp*vm)); player.mst=Math.max(1,Math.round(player.mst*vm)); player.mmn=Math.max(0,Math.round(player.mmn*vm)); }
   player.hp=Math.min(player.hp,player.mhp);
@@ -3135,6 +3138,7 @@ function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
+  if(player.auras&&player.auras.valor) base*=(1+player.auras.valor*0.01);   // Luminance Aura of Valor (damage rating)
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
   if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
   if(m.vulnUntil>now()) base*=m.vulnV;   // Life Vulnerability — foe takes more damage (any source)
@@ -3147,7 +3151,7 @@ function applyHit(m,base,opts){ opts=opts||{};
     else if(opts.element==="shock"&&Math.random()<0.35){m.atkCd=Math.max(m.atkCd,1.0);} }
   if(opts.phys){ const pm=physMult(m.kind,opts.phys);   // weapon damage type vs creature physical resistance (slash/pierce/bludgeon)
     if(pm!==1){ dmg*=pm; floater(m.x,(m.headY||1.6)+2.3,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0"); } }
-  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Yellow Aetheria
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Yellow Aetheria; Aura of Glory boosts crit damage
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -5555,6 +5559,11 @@ function gainXP(amt){
     log(`<b>Level ${player.level}!</b> +4 attribute points${player.level-1<=46?" & +1 skill credit":""} — press C to spend.`,"sys");
     toast("LEVEL "+player.level);SFX.level();burst(player.x,EYE,player.z,0xffd23b,28);saveGame();need=xpForLevel(player.level);
   }
+  // AC endgame: once powerful enough you also draw Luminance from your deeds (held cap 1,000,000)
+  if(player.level>=50){
+    if(!player.lumUnlocked){ player.lumUnlocked=true; log("You have grown powerful enough to draw <b>Luminance</b> — spend it on permanent Auras in the character sheet (C).","sys"); }
+    player.luminance=Math.min(1000000,(player.luminance||0)+Math.round(amt*0.2));
+  }
 }
 function playerHurt(dmg,sx,sz,type,element){
   if(player.invuln>0||!player.alive||inNetwork) return;
@@ -5579,6 +5588,7 @@ function playerHurt(dmg,sx,sz,type,element){
   const defKey=type==="magic"?"magicd":armScale, dv=skillValue(defKey), denom=type==="magic"?120:200;
   dmg=Math.max(1,dmg*(1-dv/(dv+denom)));
   if(player.lifeBuffs&&player.lifeBuffs.prot) dmg=Math.max(1,dmg*(1-player.lifeBuffs.prot.v));  // Life Protection
+  if(player.auras&&player.auras.protect) dmg=Math.max(1,dmg*(1-player.auras.protect*0.01));  // Luminance Aura of Protection (damage reduction)
   if(player.debuffs&&player.debuffs.vuln) dmg*=player.debuffs.vuln.v;   // enemy Imperil curse — you take more
   // active shield block: cut frontal damage (scales with Shield skill), costs stamina — physical attacks only
   if(blocking&&player.st>4&&sx!==undefined&&type!=="magic"){
@@ -6251,6 +6261,15 @@ function buildSheet(){
   else if(player.level>=5){ al.innerHTML=`<button class="tbtn" id="swearBtn">Swear to the Allegiance (+15% XP)</button>`;
     document.getElementById('swearBtn').onclick=()=>{player.patron=true;SFX.quest();log("You swear allegiance to a Patron — XP flows more freely.","sys");saveGame();buildSheet();};}
   else al.innerHTML=`<div class="desc" style="color:var(--dim)">Reach level 5 to swear to an Allegiance.</div>`;
+  // Luminance / Enlightenment endgame
+  if(player.lumUnlocked||player.enlightenment){
+    let lh=`<div style="margin-top:8px;border-top:1px solid #3a3550;padding-top:6px"><div class="desc" style="color:#ffd23b">✦ Luminance <b>${(player.luminance||0).toLocaleString()}</b> / 1,000,000${player.enlightenment?` · <span style="color:#c9a6ff">${ENLIGHTEN_TITLES[player.enlightenment-1]}</span> (+${player.enlightenment} to all skills)`:""}</div>`;
+    for(const a of LUM_AURAS){ const lv=auraLevel(a.k); lh+=`<div class="row"><span class="desc">${a.name} <b>${lv}</b>/${a.max} — ${a.desc}</span> <button class="pmbtn" data-aura="${a.k}" ${(lv>=a.max||(player.luminance||0)<a.cost)?'disabled':''}>${a.cost.toLocaleString()} lum</button></div>`; }
+    if(player.level>=100&&(player.enlightenment||0)<5) lh+=`<div class="row"><button class="tbtn" id="enlightenBtn">Attain Enlightenment — reset for permanent power</button></div>`;
+    lh+=`</div>`; al.innerHTML+=lh;
+    al.querySelectorAll('[data-aura]').forEach(b=>b.onclick=()=>{ if(buyAura(b.dataset.aura)){saveGame();if(typeof updateHUD==="function")updateHUD();buildSheet();} });
+    const eb=document.getElementById('enlightenBtn'); if(eb) eb.onclick=()=>enlighten();
+  }
   attrRows.querySelectorAll('.pmbtn').forEach(btn=>btn.onclick=()=>{
     if(player.skillPts<=0) return;
     const a=btn.dataset.a;
@@ -7747,6 +7766,34 @@ const SOCIETY_RANKS=[  // AC society rank ladder: Initiate→Adept→Knight→Lo
   {min:0,title:"Initiate"},{min:600,title:"Adept"},{min:1800,title:"Knight"},
   {min:4200,title:"Lord"},{min:9000,title:"Master"},
 ];
+// ── AC endgame: Luminance Auras (permanent, bought with luminance) + Enlightenment prestige ──
+const LUM_AURAS=[
+  {k:"valor",   name:"Aura of Valor",      max:5, cost:20000, desc:"+1% damage / level"},
+  {k:"protect", name:"Aura of Protection", max:5, cost:20000, desc:"+1% damage reduction / level"},
+  {k:"glory",   name:"Aura of Glory",      max:5, cost:24000, desc:"+critical damage / level"},
+  {k:"world",   name:"Aura of the World",  max:10,cost:16000, desc:"+1 to ALL skills / level"},
+];
+const ENLIGHTEN_TITLES=["Awakened","Enlightened","Illuminated","Transcended","Cosmic Conscious"];
+function auraLevel(k){ return (player.auras&&player.auras[k])||0; }
+function buyAura(k){ const a=LUM_AURAS.find(x=>x.k===k); if(!a) return false;
+  const lv=auraLevel(k); if(lv>=a.max){ log(`${a.name} is already at its maximum.`,"warn"); return false; }
+  if((player.luminance||0)<a.cost){ log(`Not enough Luminance for ${a.name} (need ${a.cost.toLocaleString()}).`,"warn"); return false; }
+  player.luminance-=a.cost; player.auras=player.auras||{}; player.auras[k]=lv+1;
+  if(SFX.level)SFX.level(); log(`You bind the <b>${a.name}</b> (level ${lv+1}).`,"loot"); derive(); return true; }
+function enlighten(){
+  if((player.enlightenment||0)>=5){ log("You are <b>Cosmic Conscious</b> — no further Enlightenment remains.","warn"); return; }
+  if(player.level<100){ log("Enlightenment demands a character level of at least <b>100</b>.","warn"); return; }
+  if(typeof confirm==="function" && !confirm("Enlightenment resets you to level 1 and clears your invested skill XP, but is PERMANENT: +1 to all skills and +2% vitals each time, keeping your augmentations & auras. Proceed?")) return;
+  player.enlightenment=(player.enlightenment||0)+1;
+  player.level=1; player.xp=0; player.xpUnspent=0; player.skillPts=0;
+  for(const k in player.skills){ if(player.skills[k]) player.skills[k].xp=0; }   // ranks reset; training tiers (credits) are kept, as in AC
+  derive(); player.hp=player.mhp; player.st=player.mst; player.mn=player.mmn;
+  const title=ENLIGHTEN_TITLES[player.enlightenment-1];
+  player.title=title; if(player.achievements.indexOf(title)<0) player.achievements.push(title);
+  toast("ENLIGHTENMENT"); if(SFX.level)SFX.level();
+  log(`<span style="color:#ffd23b">You attain <b>${title}</b> — reborn at level 1, forever stronger (+${player.enlightenment} to all skills, +${player.enlightenment*2}% vitals). Your augmentations and auras endure.</span>`,"sys");
+  saveGame(); buildSheet&&buildSheet(); updateHUD&&updateHUD();
+}
 function societyById(id){ return SOCIETIES.find(s=>s.id===id)||null; }
 function societyRankInfo(rep){ let idx=0; for(let i=0;i<SOCIETY_RANKS.length;i++) if(rep>=SOCIETY_RANKS[i].min) idx=i;
   const r=SOCIETY_RANKS[idx], next=SOCIETY_RANKS[idx+1]||null;
@@ -10452,6 +10499,7 @@ function saveGame(){
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,
+      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,
       gameMonth,calendarDone,eventTitles:player.eventTitles,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -10493,7 +10541,8 @@ function applySaveObj(s){
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
-  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
+  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
+  player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
   player.packBonus=s.packBonus|0;
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
