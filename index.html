@@ -1221,6 +1221,10 @@ let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,wa
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
 let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
+// atmospheric conditions: a wind vector drives cloud drift + rain slant; cloudCover thickens the sky;
+// storms flash lightning (stormFlash) and roll thunder. All eased smoothly and biome-weighted.
+let windDir=0.8, windDirTarget=0.8, windSpd=8, cloudCover=0.3, boltCd=5, stormFlash=0;
+let rainDrops=[]; const _rainObj=new THREE.Object3D();   // precipitation as instanced mesh streaks (renders on any GL, unlike thin GL_LINES)
 function nearestOf(arr){let b=null,bd=Infinity;for(const o of arr){const d=Math.hypot(o.x-player.x,o.z-player.z);if(d<bd){bd=d;b=o;}}return b&&{o:b,d:bd};}
 let scenery=[],nodes=[],dying=[],roadMeshes=[];
 // stone highways linking the towns (Cragstone — Holtburg — Yaraq are collinear)
@@ -1282,7 +1286,7 @@ function swampZone(){ if(_swamp) return _swamp;
   _swamp=(a&&b)?{x:(a.x+b.x)/2,z:(a.z+b.z)/2,r:900}:{x:0,z:0,r:0}; return _swamp; }
 function inSwamp(x,z){const s=swampZone();return s.r>0&&Math.hypot(x-s.x,z-s.z)<s.r;}
 function regionTint(x,z){const r=regionOf(x,z);return r<0?DIRELANDS_TINT:REGIONS[r].tint;}
-let ROADS=[];
+let ROADS=[], CARAVAN_PATH=null;
 function genRoads(){
   ROADS=[];
   // major highways link the great cities (capitals) to one another — every pair
@@ -1303,6 +1307,20 @@ function genRoads(){
     const L=22;   // plus the town's own street cross
     ROADS.push({ax:c.x-L,az:c.z,bx:c.x+L,bz:c.z,w:4});
     ROADS.push({ax:c.x,az:c.z-L,bx:c.x,bz:c.z+L,w:4});
+  }
+  // a winding cobbled road from Holtburg to Lord Kilmer's Castle Val Halla — it meanders (S-curve) and
+  // the road builder samples groundY per edge, so it rolls with the hills. Also the caravan's route.
+  { const hb=CITIES.find(c=>c.name==="Holtburg");
+    if(hb && typeof KC!=="undefined"){
+      const kx=KC.x,kz=KC.z, ddx=hb.x-kx,ddz=hb.z-kz, dl=Math.hypot(ddx,ddz)||1;
+      const ex=kx+ddx/dl*250, ez=kz+ddz/dl*250;                       // stop just outside the castle moat
+      const dx=ex-hb.x, dz=ez-hb.z, len=Math.hypot(dx,dz)||1, ux=dx/len, uz=dz/len, px=-uz, pz=ux;
+      const N=8, wp=[];
+      for(let i=0;i<=N;i++){ const t=i/N, off=Math.sin(t*Math.PI*2.3)*40*Math.sin(t*Math.PI);   // sinuous, zero at both ends
+        wp.push({x:hb.x+dx*t+px*off, z:hb.z+dz*t+pz*off}); }
+      CARAVAN_PATH=wp;
+      for(let i=0;i<N;i++) ROADS.push({ax:wp[i].x,az:wp[i].z,bx:wp[i+1].x,bz:wp[i+1].z,w:6});
+    }
   }
 }
 
@@ -1884,7 +1902,7 @@ function softTex(inner,outer,stops){ // radial-gradient sprite texture
   g.fillStyle=grd;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);
 }
 function buildStars(){
-  const n=1500,pos=new Float32Array(n*3),colArr=new Float32Array(n*3);
+  const n=2600,pos=new Float32Array(n*3),colArr=new Float32Array(n*3);
   for(let i=0;i<n;i++){
     const u=Math.random(),v=Math.random()*0.55,th=u*Math.PI*2,ph=Math.acos(1-v),R=WORLD*0.92;
     pos[i*3]=R*Math.sin(ph)*Math.cos(th);pos[i*3+1]=R*Math.cos(ph)+WORLD*0.05;pos[i*3+2]=R*Math.sin(ph)*Math.sin(th);
@@ -1925,55 +1943,93 @@ function buildClouds(){
   return cloudGroup;
 }
 
-const RAIN_N=1100;
+const RAIN_N=1400;
 function buildRain(){
-  const positions=new Float32Array(RAIN_N*2*3);
-  for(let i=0;i<RAIN_N;i++){
-    const x=rnd(-42,42),y=rnd(0,46),z=rnd(-42,42);
-    positions[i*6]=x;positions[i*6+1]=y;positions[i*6+2]=z;
-    positions[i*6+3]=x;positions[i*6+4]=y-0.8;positions[i*6+5]=z;
-  }
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
-  rainSegs=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x9fc0ff,transparent:true,opacity:0,fog:true}));
-  rainSegs.frustumCulled=false;rainSegs.visible=false;
+  const geo=new THREE.PlaneGeometry(0.05,1); geo.translate(0,-0.5,0);   // unit-tall streak, pivot at the TOP (scale grows downward)
+  const mat=new THREE.MeshBasicMaterial({color:0xbcd6ff,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide,fog:true});
+  rainSegs=new THREE.InstancedMesh(geo,mat,RAIN_N); rainSegs.frustumCulled=false; rainSegs.visible=false;
+  rainDrops=[]; for(let i=0;i<RAIN_N;i++) rainDrops.push({x:rnd(-34,34),y:rnd(0,46),z:rnd(-34,34)});
   return rainSegs;
 }
 function coldZone(x,z){ const lat=-z/COORD; return lat>58||lat<-68; }   // far-north Halaetan Isles / deep-south reaches stay wintry
+// thunder: a filtered noise rumble with a rolling envelope (distant = quieter, deeper, longer)
+function playThunder(distant){
+  if(typeof actx==="undefined"||!actx||!masterGain) return;
+  const t=actx.currentTime, dur=distant?2.8:1.7;
+  const buf=actx.createBuffer(1,Math.floor(actx.sampleRate*dur),actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1);
+  const src=actx.createBufferSource(); src.buffer=buf;
+  const lp=actx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=distant?240:540; lp.Q.value=0.7;
+  const g=actx.createGain(), peak=distant?0.22:0.5;
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(peak,t+0.06);           // the crack
+  g.gain.exponentialRampToValueAtTime(peak*0.45,t+0.4);
+  g.gain.exponentialRampToValueAtTime(peak*0.8,t+0.75);        // the rolling boom
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  src.connect(lp).connect(g).connect(masterGain); src.start(t); src.stop(t+dur);
+}
 function updateWeather(dt){
   weatherT-=dt;
   if(weatherT<=0){
-    const cold=coldZone(player.x,player.z), arid=regionOf(player.x,player.z)===2, r=Math.random();
+    const bm=(typeof biomeAt==="function")?biomeAt(player.x,player.z):"", cold=coldZone(player.x,player.z),
+      arid=(regionOf(player.x,player.z)===2||bm==="desert"), wet=(bm==="swamp"), r=Math.random();
     let w;
-    if(cold) w=r<0.32?"clear":r<0.55?"cloudy":r<0.85?"snow":"fog";           // the frozen reaches: snow, not rain
-    else if(arid) w=r<0.6?"clear":r<0.86?"cloudy":"fog";                     // the Gharu'ndim desert rarely sees rain
-    else w=r<0.4?"clear":r<0.64?"cloudy":r<0.9?"rain":"fog";
-    if(w!==weather){ weather=w; log(({rain:"Storm clouds gather over Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
+    if(cold)      w=r<0.30?"clear":r<0.52?"cloudy":r<0.86?"snow":"fog";                 // frozen reaches: snow, not rain
+    else if(arid) w=r<0.74?"clear":r<0.95?"cloudy":"fog";                               // Gharu'ndim desert: almost never rains
+    else if(wet)  w=r<0.14?"clear":r<0.34?"cloudy":r<0.70?"rain":r<0.90?"storm":"fog";  // Blackmire wetlands: frequent rain & storms
+    else          w=r<0.42?"clear":r<0.64?"cloudy":r<0.82?"rain":r<0.90?"storm":"fog";  // temperate lands
+    if(w!==weather){ weather=w; windDirTarget=rnd(0,6.283); log(({rain:"Rain sweeps across the land.",storm:"A tempest breaks — thunder rolls across Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
     weatherT=rnd(35,75);
   }
-  wetness+=clamp((weather==="rain"?1:0)-wetness,-dt*0.4,dt*0.4);
+  const raining=(weather==="rain"||weather==="storm"), storming=(weather==="storm");
+  // wind: strength eases per weather; direction drifts toward a target repicked on each weather change
+  const windTgt=storming?34:raining?18:weather==="cloudy"?12:7;
+  windSpd+=(windTgt-windSpd)*Math.min(1,dt*0.4);
+  { let dd=windDirTarget-windDir; while(dd>Math.PI)dd-=6.283; while(dd<-Math.PI)dd+=6.283; windDir+=dd*Math.min(1,dt*0.12); }
+  // cloud cover thickens toward storm/overcast, thins when clear
+  const coverTgt=storming?1.0:raining?0.85:weather==="cloudy"?0.75:weather==="fog"?0.6:weather==="snow"?0.7:0.28;
+  cloudCover+=clamp(coverTgt-cloudCover,-dt*0.3,dt*0.3);
+  wetness+=clamp((raining?1:0)-wetness,-dt*0.4,dt*0.4);
   snowAmt+=clamp((weather==="snow"?1:0)-snowAmt,-dt*0.35,dt*0.35);
-  const targetFar=weather==="fog"?55:weather==="rain"?150:weather==="snow"?175:weather==="cloudy"?235:350;
+  const targetFar=weather==="fog"?55:storming?110:weather==="rain"?150:weather==="snow"?175:weather==="cloudy"?235:350;
   fogFar+=(targetFar-fogFar)*Math.min(1,dt*0.5);scene.fog.far=fogFar;
   const precip=Math.max(wetness,snowAmt), snowing=snowAmt>wetness+0.01;
   if(rainSegs){
     rainSegs.position.set(player.x,0,player.z);
-    rainSegs.material.opacity=precip*(snowing?0.85:0.55);
-    rainSegs.material.color.setHex(snowing?0xffffff:0x9fc0ff);
     rainSegs.visible=precip>0.02;
     if(rainSegs.visible){
-      const p=rainSegs.geometry.attributes.position.array, sp=(snowing?16:58)*dt, drift=snowing?Math.sin(now()/700)*sp*0.5:0;
-      for(let i=0;i<RAIN_N;i++){
-        let y0=p[i*6+1]-sp,y1=p[i*6+4]-sp;
-        if(drift){ p[i*6]+=drift; p[i*6+3]+=drift; }   // flakes drift sideways
-        if(y0<0){const x=rnd(-42,42),z=rnd(-42,42),ny=rnd(26,46);
-          p[i*6]=x;p[i*6+2]=z;p[i*6+3]=x;p[i*6+5]=z;y0=ny;y1=ny-0.8;}
-        p[i*6+1]=y0;p[i*6+4]=y1;
+      rainSegs.material.color.setHex(snowing?0xffffff:0xbcd6ff);
+      rainSegs.material.opacity=precip*(snowing?0.9:storming?0.95:0.7);
+      const fall=(snowing?16:storming?74:58)*dt;
+      const streak=snowing?0.3:(storming?3.6:2.6), wdt=snowing?0.3:(storming?0.18:0.12);   // rain = thin tall streak · snow = small flake
+      const wsx=Math.cos(windDir), wsz=Math.sin(windDir);
+      const dfx=snowing?Math.sin(now()/700)*fall*0.5:wsx*fall*(0.05+windSpd*0.012), dfz=snowing?0:wsz*fall*(0.05+windSpd*0.012);
+      const tilt=snowing?0:clamp(0.12+windSpd*0.012,0,0.7);   // streaks lean with the wind
+      for(let i=0;i<RAIN_N;i++){ const dp=rainDrops[i];
+        dp.y-=fall; dp.x+=dfx; dp.z+=dfz;
+        if(dp.y<0){ dp.x=rnd(-34,34); dp.z=rnd(-34,34); dp.y=rnd(26,46); }
+        _rainObj.position.set(dp.x,dp.y,dp.z);
+        _rainObj.rotation.set(0,player.yaw,tilt);            // billboard to camera (Y) + wind tilt (Z)
+        _rainObj.scale.set(wdt,streak,1);
+        _rainObj.updateMatrix(); rainSegs.setMatrixAt(i,_rainObj.matrix);
       }
-      rainSegs.geometry.attributes.position.needsUpdate=true;
+      rainSegs.instanceMatrix.needsUpdate=true;
     }
   }
-  if(rainGain) rainGain.gain.value=wetness*0.08;   // hiss only for rain
+  if(rainGain) rainGain.gain.value=wetness*(storming?0.14:0.08);   // heavier hiss in a storm
+  // overcast dimming: heavy cloud cover mutes the light for moodier storms
+  if(hemi){ hemi.intensity*=1-cloudCover*0.30; amb.intensity*=1-cloudCover*0.22; }
+  if(sun) sun.intensity*=1-cloudCover*0.38;
+  // storms: periodic lightning flash (screen + a burst of light) with thunder delayed by "distance"
+  if(storming && wetness>0.5){
+    boltCd-=dt;
+    if(boltCd<=0){ boltCd=rnd(3.5,11); stormFlash=1;
+      if(typeof castFlash==="function") castFlash(0xe6f0ff);
+      const dist=rnd(0.3,3.2); setTimeout(()=>{ if(weather==="storm"||wetness>0.3) playThunder(dist>1.5); }, dist*1000);
+    }
+  }
+  stormFlash=Math.max(0,stormFlash-dt*3.5);
+  if(stormFlash>0){ if(hemi){hemi.intensity+=stormFlash*2.4;amb.intensity+=stormFlash*1.6;} if(skyU)skyU.uGlow.value=Math.min(1,skyU.uGlow.value+stormFlash*0.7); }
 }
 
 // sky-reflection strength follows daylight (and dies in dungeons); traverses only when the
@@ -1995,6 +2051,7 @@ const _zenDay=new THREE.Color(0x2f63cf), _zenNight=new THREE.Color(0x060b1a);   
 const _horDay=new THREE.Color(0xd0e2ee), _horNight=new THREE.Color(0x0e1626);   // luminous clean horizon
 const _gndDay=new THREE.Color(0x59524a), _gndNight=new THREE.Color(0x05070d);
 const _sunWarm=new THREE.Color(0xffb15a), _sunNoon=new THREE.Color(0xfff2d8);
+const _stormGrey=new THREE.Color(0x484c56);   // dense storm/overcast cloud tint
 const _tmp=new THREE.Color();
 function updateDayNight(dt){
   gameTime=(gameTime+dt/DAYLEN)%1;
@@ -2014,12 +2071,17 @@ function updateDayNight(dt){
   updateEnvIntensity(daylight);
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
   scene.fog.color.copy(_cNight).lerp(_cDay,daylight).lerp(_cWarm,warm*0.5);
+  const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm
+  if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar(0.42+daylight*0.72); scene.fog.color.lerp(_tmp,_oc*0.6); }
   if(skyU){
     skyU.uZen.value.copy(_zenNight).lerp(_zenDay,daylight);
     skyU.uHor.value.copy(_horNight).lerp(_horDay,daylight).lerp(_cWarm,warm*0.75);
     skyU.uGnd.value.copy(_gndNight).lerp(_gndDay,daylight).lerp(_cWarm,warm*0.3);
     skyU.uSunCol.value.copy(_sunNoon).lerp(_cWarm,warm);
     skyU.uGlow.value=clamp(sunY*2.2+0.4,0,1);
+    if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar(0.42+daylight*0.72);   // cloud cover greys the whole dome & smothers the sun
+      skyU.uZen.value.lerp(_tmp,_oc*0.82); skyU.uHor.value.lerp(_tmp,_oc*0.7); skyU.uGnd.value.lerp(_tmp,_oc*0.5);
+      skyU.uGlow.value*=1-_oc*0.88; }
   }
   // seasonal reskin (smoothly blended): the calendar season tints the ground, fog and sky
   if(groundMat && !inDungeon && !inNetwork && typeof currentSeason==="function"){
@@ -2040,11 +2102,16 @@ function updateDayNight(dt){
   if(moonSprite){moonSprite.position.set(player.x-sky.x*R,Math.max(-200,-sky.y*R*0.7),player.z-sky.z*R);
     moonSprite.material.opacity=clamp(-sunY*3+0.4,0,1);}
   // drifting clouds, fading at night, wrapping across the sky, following the player
-  if(cloudGroup){const op=0.2+daylight*0.7;
-    for(const p of cloudGroup.children){p.position.x+=p.userData.spd*dt;
+  if(cloudGroup){
+    const wcx=Math.cos(windDir), wcz=Math.sin(windDir);                 // clouds ride the wind vector (both axes)
+    const op=(0.2+daylight*0.7)*clamp(0.55+cloudCover*0.6,0,1);         // denser, opaquer sky under overcast & storm
+    _tmp.copy(_skyDay).lerp(_cWarm,warm*0.6).multiplyScalar(0.45+0.55*clamp(daylight*1.6,0,1));   // white day · warm dusk · dim night
+    _tmp.lerp(_stormGrey, clamp((cloudCover-0.65)/0.35,0,1)*0.7);       // storm/overcast clouds turn grey
+    for(const p of cloudGroup.children){ const spd=windSpd*(0.6+p.userData.spd*0.055);   // per-puff parallax on the wind
+      p.position.x+=wcx*spd*dt; p.position.z+=wcz*spd*dt;
       if(p.position.x>player.x+WORLD*0.5)p.position.x-=WORLD;else if(p.position.x<player.x-WORLD*0.5)p.position.x+=WORLD;
       if(p.position.z>player.z+WORLD*0.5)p.position.z-=WORLD;else if(p.position.z<player.z-WORLD*0.5)p.position.z+=WORLD;
-      for(const sp of p.children)sp.material.opacity=op;}}
+      for(const sp of p.children){sp.material.opacity=op;sp.material.color.copy(_tmp);}}}
   // reflective water: gentle swell + scrolling ripple normals + a sun glint streak near the player
   if(waterMesh){ waterMesh.position.y=Math.sin(now()/1100)*0.12;
     const t=now()/1000;
@@ -3967,7 +4034,7 @@ function buildWorld(){
     for(const fn of rl.from){ const o=CITIES.find(c=>c.name===fn); if(!o) continue;
       addPortal(o.x-13,o.z+5,{x:d.x+13,z:d.z-5,name:rl.label}); } }
   // roads linking every city to its capital, and the capitals to each other
-  genRoads();buildRoads();
+  genRoads();buildRoads();buildCaravan();
   // gathering nodes scattered across the wilds
   for(let i=0;i<54;i++){let nx,nz,t=0;do{nx=rnd(-HALF+10,HALF-10);nz=rnd(-HALF+10,HALF-10);t++;}while(nearestCapitalDist(nx,nz)<TOWN_SAFE+10&&t<20);
     addNode(nx,nz,Math.random()<0.5?"ore":"herb");}
@@ -9809,6 +9876,7 @@ function update(dt){
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
+  updateCaravan(dt);     // the wandering ox-drawn caravan plies the road
   enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
   updateKcGates(dt);       // the portcullis & keep doors glide open / shut
   updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
@@ -13062,6 +13130,134 @@ function addMerchant(x,z,vt,name){
   const mesh=buildMerchant(vt,name);mesh.position.set(x,0,z);scene.add(mesh);
   shops.push({x,z,mesh,vtype:vt,name:name||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
 }
+// ── The Wandering Caravan: an ox-drawn covered wagon that plies the winding road between Holtburg and
+//    Lord Kilmer's Castle Val Halla. Its keeper is a buff-bot + portal-bot who deals in every spell, scarab & taper. ──
+let caravan=null;
+function buildOxWagon(){
+  const g=new THREE.Group();
+  const wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318), iron=solid(0x2a2620),
+        canvasMat=new THREE.MeshStandardMaterial({color:0xdccaa0,roughness:0.9,side:THREE.DoubleSide,metalness:0.0}),
+        hide=solid(0x6a4a30), hide2=solid(0x4a3320), horn=solid(0xe8e0c8);
+  // covered wagon (behind, toward -Z)
+  const bed=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.7,3.0),wood); bed.position.set(0,1.0,-1.1); bed.castShadow=true; g.add(bed);
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(2.02,0.16,3.1),wood2); rail.position.set(0,1.4,-1.1); g.add(rail);
+  const cover=new THREE.Mesh(new THREE.CylinderGeometry(0.98,0.98,2.7,16),canvasMat); cover.rotation.x=Math.PI/2; cover.position.set(0,1.65,-1.35); cover.castShadow=true; g.add(cover);
+  const bench=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.22,0.5),wood2); bench.position.set(0,1.5,0.45); g.add(bench);
+  for(const sx of[-1,1])for(const zz of[-2.15,-0.15]){ const wh=new THREE.Mesh(new THREE.TorusGeometry(0.62,0.13,7,16),iron); wh.position.set(sx*1.04,0.6,zz); wh.rotation.y=Math.PI/2; wh.castShadow=true; g.add(wh);
+    const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.16,7),iron); hub.position.set(sx*1.04,0.6,zz); hub.rotation.z=Math.PI/2; g.add(hub); }
+  const tongue=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,2.2),wood2); tongue.position.set(0,0.78,1.55); g.add(tongue);
+  const yoke=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.12,0.12),wood2); yoke.position.set(0,0.85,2.55); g.add(yoke);
+  // the ox (ahead, +Z), facing forward
+  const ox=new THREE.Group(); ox.position.set(0,0,3.05); g.add(ox); g.userData.ox=ox;
+  const body=new THREE.Mesh(new THREE.SphereGeometry(0.62,12,10),hide); body.scale.set(1.0,0.95,1.7); body.position.y=1.05; body.castShadow=true; ox.add(body);
+  const hump=new THREE.Mesh(new THREE.SphereGeometry(0.42,10,9),hide); hump.scale.set(1.1,0.9,0.9); hump.position.set(0,1.42,-0.35); ox.add(hump);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.36,10,9),hide); head.scale.set(1,1.05,1.1); head.position.set(0,1.0,0.98); ox.add(head);
+  const muzzle=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.26,0.32),hide2); muzzle.position.set(0,0.86,1.22); ox.add(muzzle);
+  for(const sx of[-1,1]){ const hn=new THREE.Mesh(new THREE.ConeGeometry(0.06,0.34,6),horn); hn.position.set(sx*0.24,1.3,0.98); hn.rotation.z=sx*0.8; ox.add(hn);
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),new THREE.MeshBasicMaterial({color:0x201008})); eye.position.set(sx*0.19,1.1,1.16); ox.add(eye); }
+  for(const sx of[-1,1])for(const zz of[-0.55,0.55]){ const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.1,1.05,7),hide2); leg.position.set(sx*0.34,0.52,zz); leg.castShadow=true; ox.add(leg); }
+  const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.02,0.8,5),hide2); tail.position.set(0,1.0,-0.98); tail.rotation.x=-0.5; ox.add(tail);
+  // the keeper, seated on the bench driving the ox
+  const driver=buildPerson({robe:0x3a4a6a,accent:0x2a2438,hat:"cap",beard:true,seed:7717});
+  driver.position.set(0,1.12,0.5); g.add(driver);
+  const lbl=labelSprite("Wandering Caravan — E to trade, buff & portal","npcs"); lbl.position.set(0,3.0,-1.1); g.add(lbl);
+  const marker=textSprite("🐂","#ffd86b"); marker.position.set(0,2.6,0.4); g.add(marker);
+  return g;
+}
+function isCapitalName(n){ return (typeof CAPITALS!=="undefined")&&CAPITALS.some(c=>c.name===n); }
+// the caravan's circuit: Lord Kilmer's castle + the three great capitals; it shuttles between them,
+// resting in each town for a full game day. Returns the ordered stop list.
+function caravanStops(){
+  const cap=(typeof CAPITALS!=="undefined")?CAPITALS.slice():[];
+  const hb=cap.find(c=>c.name==="Holtburg")||cap[0]||{x:2664,z:-3384,name:"Holtburg"};
+  const stops=[];
+  if(typeof KC!=="undefined"){ const dx=hb.x-KC.x,dz=hb.z-KC.z,dl=Math.hypot(dx,dz)||1; stops.push({x:KC.x+dx/dl*250,z:KC.z+dz/dl*250,name:"Castle Val Halla",town:false}); }
+  stops.push({x:hb.x,z:hb.z,name:"Holtburg",town:true});
+  for(const c of cap){ if(c.name!=="Holtburg") stops.push({x:c.x,z:c.z,name:c.name,town:true}); }   // Shoushi, Yaraq
+  return stops;
+}
+// a winding polyline between two stops that rolls with the land (the road builder + groundY do the vertical)
+function caravanLeg(a,b){
+  const dx=b.x-a.x,dz=b.z-a.z,len=Math.hypot(dx,dz)||1,px=-dz/len,pz=dx/len,N=Math.max(4,Math.round(len/120)),wp=[];
+  for(let i=0;i<=N;i++){ const t=i/N, off=Math.sin(t*Math.PI*2.3)*Math.min(70,len*0.06)*Math.sin(t*Math.PI);
+    wp.push({x:a.x+dx*t+px*off, z:a.z+dz*t+pz*off}); }
+  return wp;
+}
+function caravanStartLeg(){
+  const c=caravan; let nxt=c.si+c.dir;
+  if(nxt>=c.stops.length){ c.dir=-1; nxt=c.si+c.dir; } else if(nxt<0){ c.dir=1; nxt=c.si+c.dir; }
+  const from=c.stops[c.si], to=c.stops[nxt]; c.next=nxt;
+  const ch=(from.name==="Castle Val Halla"&&to.name==="Holtburg")||(from.name==="Holtburg"&&to.name==="Castle Val Halla");
+  c.leg = (ch && CARAVAN_PATH) ? (from.name==="Holtburg"?CARAVAN_PATH.slice():CARAVAN_PATH.slice().reverse()) : caravanLeg(from,to);
+  c.li=1;
+}
+function buildCaravan(){
+  const stops=caravanStops(); if(stops.length<2) return;
+  if(caravan&&caravan.mesh) scene.remove(caravan.mesh);
+  if(caravan&&caravan.shop){ const i=shops.indexOf(caravan.shop); if(i>=0) shops.splice(i,1); }
+  const mesh=buildOxWagon(); scene.add(mesh);
+  const start=stops[1];   // begin at Holtburg
+  const shop={x:start.x,z:start.z,mesh,vtype:"caravan",name:"Wandering Caravan",title:"Wandering Caravan",pyreals:80000,pmax:80000,caravan:true};
+  shops.push(shop);
+  caravan={mesh,shop,stops,si:1,dir:1,leg:null,li:1,next:2,x:start.x,z:start.z,dwell:0,_face:0};
+  caravanStartLeg();
+  mesh.position.set(start.x,groundY(start.x,start.z),start.z);
+}
+function updateCaravan(dt){
+  if(!caravan||inDungeon||inNetwork) return; const c=caravan;
+  if(c.dwell>0){ c.dwell-=dt; }                                  // resting in town — parked for the day
+  else {
+    if(!c.leg) caravanStartLeg();
+    const wp=c.leg&&c.leg[c.li];
+    if(!wp){ c.si=c.next; c.leg=null; c.dwell=c.stops[c.si].town?DAYLEN:90; }   // reached a stop → dwell
+    else { const dx=wp.x-c.x, dz=wp.z-c.z, d=Math.hypot(dx,dz), SPD=4.4;
+      if(d<0.9){ c.li++; }
+      else { const step=Math.min(d,SPD*dt); c.x+=dx/d*step; c.z+=dz/d*step; c._face=Math.atan2(dx,dz); } }
+  }
+  const gy=groundY(c.x,c.z); c.mesh.position.set(c.x,gy,c.z);
+  let fy=c.mesh.rotation.y; const df=(((c._face||0)-fy+Math.PI*3)%(Math.PI*2))-Math.PI; c.mesh.rotation.y=fy+df*Math.min(1,dt*2.5);
+  if(c.shop){ c.shop.x=c.x; c.shop.z=c.z; }
+}
+// the keeper's blessing (buff bot): weave a broad set of enchantments over the player for 10 minutes
+function caravanBless(){
+  const DUR=3600;   // one hour
+  // the single highest circle (level 8) of every Creature, Item and Life buff family
+  const fams={};
+  for(const s of SPELLBOOK_LIST){
+    if(s.dmag!=null||s.vuln!=null) continue;                                  // never the debuff mirrors
+    if(!(s.school==="creature"||s.school==="item"||s.school==="life")) continue;
+    let fam=null;
+    if(s.buff==="attr") fam="attr:"+s.attr;
+    else if(s.buff==="skill") fam="skill:"+s.skillKey;
+    else if(s.buff==="item") fam="item:"+s.stat;
+    else if(s.buff==="prot") fam="prot";
+    else if(s.buff==="might") fam="might";
+    else if(s.buff==="swift") fam="swift";
+    else if(s.buff==="bane"&&s.element) fam="bane:"+s.element;
+    else if(s.special==="regen") fam="regen:"+s.pool;                         // life HoTs
+    else continue;
+    if(!fams[fam]||(s.lvl||0)>(fams[fam].lvl||0)) fams[fam]=s;                // keep the top circle
+  }
+  let n=0; for(const k in fams){ if(applyBuffSelf(Object.assign({},fams[k],{dur:DUR}),false)) n++; }
+  if(typeof derive==="function") derive(); updateHUD&&updateHUD();
+  if(SFX.quest)SFX.quest(); if(typeof castFlash==="function")castFlash(0x9af0ff);
+  floater(player.x,EYE+0.6,player.z,"BLESSED","#9af0ff");
+  log(`<b>The caravan keeper</b> weaves <b>${n}</b> level-8 Creature, Item &amp; Life enchantments over you — blessed for one hour.`,"heal");
+  if(typeof buildShop==="function") buildShop();
+}
+// vendor: every spell (scroll), every casting scarab, every taper — plus free portals & a blessing
+function caravanStock(){
+  const list=[];
+  list.push({name:"Portal: Holtburg", warp:{x:2664,z:-3381,name:"Holtburg"}, cost:0, ico:"🌀", desc:"the keeper opens a portal to Holtburg"});
+  if(typeof KC!=="undefined") list.push({name:"Portal: Castle Val Halla", warp:{x:KC.x,z:KC.z+150,name:"Castle Val Halla"}, cost:0, ico:"🌀", desc:"a portal to Lord Kilmer's castle"});
+  list.push({name:"Caravan Blessing", blessing:true, cost:0, ico:"✨", desc:"level-8 Creature, Item & Life buffs (1 hour)"});
+  for(const t of TAPER_STOCK) list.push(t);
+  for(const nm in SCARAB_LEVEL) list.push({name:nm+" (×3)", gear:{name:nm,stat:"comp",count:3}, cost:60+SCARAB_LEVEL[nm]*45, ico:"🪲", desc:`level ${SCARAB_LEVEL[nm]} casting scarab (channels mana when dry)`});
+  for(const id in SPELLBOOK){ const sp=SPELLBOOK[id]; if(!sp||sp.dmag!=null||sp.vuln!=null) continue;   // skip debuff mirrors
+    list.push({name:"Scroll: "+sp.name, scroll:true, spellId:id, cost:scrollPrice(id), ico:"📜", desc:`learn ${(SCHOOLS[sp.school]||"Magic").split(" · ")[0]} L${sp.lvl||1} (T to scribe)`}); }
+  return list;
+}
+VENDOR_TYPES.caravan={title:"Wandering Caravan",marker:"🐂",mcol:"#ffd86b",robe:0x3a4a6a,caravan:true,stock:caravanStock};
 function openShop(){ buildShop(); document.getElementById('shop').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeShop(){ document.getElementById('shop').style.display="none"; paused=false; }
 function buildShop(){
@@ -13082,6 +13278,8 @@ function buildShop(){
   });
   buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{const it=SHOP[+b.dataset.buy];
     if(player.gold<it.cost) return;
+    if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
+    if(it.blessing){ caravanBless(); return; }
     if(it.gear){ if(!addToInv(Object.assign({},it.gear))){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
     else if(it.scroll){ if(!addToInv({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name})){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
