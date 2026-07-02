@@ -12236,6 +12236,17 @@ Object.assign(QUEST_GIVERS,{
   "hunters_wager":{"name": "Wager-Master Tibb", "town": "Danby's Outpost", "look": "hunter", "prog": "Four aurochs for the bounty — and the tuskers, if you're taking the wager. Either way, bring the aurochs.", "turn": "Four aurochs, bounty paid! And if you took the wager and dropped the tuskers, that gem's yours too — fair's fair.", "post": "Best tally on the wager-board, hunter. Tibb still grumbles about the gem he owed you."},
   "deep_survey":{"name": "Surveyor Holt", "town": "Stonehold", "look": "scholar", "prog": "Five laid to rest and the main vault mapped — and the side-passages too, if you're thorough.", "turn": "The vault's mapped and the dead at rest! And if you charted the side-passages, here's that mana-stone — thorough work earns it.", "post": "The Deep is mapped, main vault and side-passages both. My survey's the most complete in the guild, thanks to you."}
 });
+// ── The Sword of Lost Light — AC's classic seven-key hunt, wired to the real room-for-room dungeons:
+//    each worn key sits in a strongbox in its documented dungeon (Holtburg Dungeon, Yaraq Tunnels,
+//    Yanshi Tunnels, Shoushi Grotto, Dungeon Manor, Rithwic Crypt, Carved Cave) and the Halls of Lost
+//    Light open only to the full set. Keys count as gathers when their strongboxes are opened. ──
+QUESTS.push(
+    {"id": "sword_lost_light", "name": "The Sword of Lost Light", "giver": "Loremaster Aldric (Holtburg)", "intro": "Seven worn keys lie scattered in seven delves — Holtburg Dungeon, the Yaraq and Yanshi Tunnels, Shoushi Grotto, Dungeon Manor, Rithwic Crypt, and the Carved Cave. Gather them all, open the Halls of Lost Light near Candeth, and claim the blade the Guardian keeps.", "obj": [{"type": "gather", "count": 7, "label": "Gather the seven worn keys"}, {"type": "delve", "count": 1, "label": "Claim the hoard of the Halls of Lost Light"}], "xp": 5200, "gold": 340, "item": {"name": "Lost Light Pendant", "stat": "jewelry", "jtype": "neck", "mat": "Silver", "v": 0, "bonus": {"kind": "vital", "vs": "mhp", "v": 30, "suf": ""}}}
+);
+Object.assign(QUEST_LVL,{sword_lost_light:14});
+Object.assign(QUEST_GIVERS,{
+  "sword_lost_light":{"name": "Loremaster Aldric", "town": "Holtburg", "look": "scholar", "prog": "Seven keys, seven delves — Strange, Small, Old, Plain, Rusty, Odd, and the silvery one from the Carved Cave. The Halls near Candeth open to nothing less.", "turn": "The Guardian bested and the blade brought into the light at last! Keep the sword — it was always meant for the one who could gather the seven. Take the pendant too; it shone beside the blade for centuries.", "post": "The Sword of Lost Light rides at your hip, and the Halls stand open and empty. The old tale is finished — and you finished it."}
+});
 // look → buildNPC visual options for a quest-giver
 const GIVER_LOOK={ farmer:{apron:true,beard:true}, scholar:{robed:true}, captain:{helm:true},
   daughter:{robed:true,cape:true}, villager:{}, merchant:{apron:true}, hunter:{hat:"cap",beard:true}, shaman:{hood:true,robed:true} };
@@ -13387,7 +13398,7 @@ const DUNGEON_SCRIPTS={
     rooms:[["en",0,0,0,{t:"entry"}],["split",0,1,0,{small:1}],["r1",0,2,2.6,{}],["cells",-1,2,2.6,{cells:1,big:1}],
       ["over",-1,3,5.2,{}],["large",-1,4,5.2,{t:"boss",big:1}]],
     links:[["en","split","flat"],["split","r1","ramp"],["r1","cells","key","Short Key"],["cells","over","ramp"],["over","large","key","Simple Key"]]},
-  "Mines of Despair":{boss:"Despair Overseer",loot:["Focusing Stone"],
+  "Mines of Despair":{boss:"Lich Overseer",loot:["Focusing Stone"],
     d:"From the drop head north — the Golden Key opens the wooden door. Jump down into the pit and hug the left wall to a small square room with a wall lever; a second lever opens the second door. Le-Ai Rea's Key opens the way west — and the portal beyond the mines.",
     rooms:[["en",0,0,0,{t:"entry"}],["dr",0,1,-3.4,{small:1}],["kd",0,2,-3.4,{}],["pit",0,3,-6.8,{big:1}],
       ["lev1",-1,3,-6.8,{small:1}],["hall",0,4,-6.8,{}],["lev2",1,4,-6.8,{small:1}],["west",0,5,-6.8,{}],["por",1,5,-6.8,{t:"boss",big:1,portal:1}]],
@@ -13459,10 +13470,61 @@ const DUNGEON_SCRIPTS={
     links:[["en","dr","drop"],["dr","lab1","flat"],["lab1","lev","flat"],["dr","sealed","lever","@lev"],
       ["sealed","kd","key","Golden Key"],["kd","boss","flat"]]},
   "Holtburg Dungeon":{boss:"Drudge Ringleader",loot:["Worn Family Blade"],
-    d:"The classic first delve: drudge-held cellars beneath the Holtburg farmsteads, one ramp down, with a side larder the drudges stuff their takings into.",
-    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,0,{}],["c2",0,2,-2.6,{}],["side",-1,2,-2.6,{small:1,m:1}],
+    d:"From the drop hug the left wall to the down ramp, and enter the first room on the right — the swamp rats there swallowed a Worn Small Key. One of the seven of the Lost Light hunt.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,0,{}],["c2",0,2,-2.6,{}],["rats",-1,2,-2.6,{small:1,m:2,box:"Worn Small Key"}],
       ["boss",0,3,-2.6,{t:"boss"}]],
-    links:[["en","c1","flat"],["c1","c2","ramp"],["c2","side","flat"],["c2","boss","flat"]]},
+    links:[["en","c1","flat"],["c1","c2","ramp"],["c2","rats","flat"],["c2","boss","flat"]]},
+  "Yaraq Tunnels":{boss:"Drudge Slavemaster",loot:["Worn Strange Key"],
+    d:"Straight through the first two doors into the large curving room. South exit, hug the left wall to the down ramp; first right, then first left to another ramp; at the five-way take the second hall left — the drudge slaves at the dead end keep the Worn Strange Key.",
+    rooms:[["en",0,0,0,{t:"entry"}],["curve",0,1,0,{round:1,big:1}],["s1",-1,1,0,{}],["r1",-1,2,-2.6,{}],
+      ["j1",0,2,-2.6,{small:1}],["r2",0,3,-5.2,{}],["five",-1,3,-5.2,{small:1}],["dead",-2,3,-5.2,{m:2,box:"Worn Strange Key"}],
+      ["boss",-1,4,-5.2,{t:"boss"}]],
+    links:[["en","curve","flat"],["curve","s1","flat"],["s1","r1","ramp"],["r1","j1","flat"],["j1","r2","ramp"],
+      ["r2","five","flat"],["five","dead","flat"],["five","boss","flat"]]},
+  "Yanshi Tunnels":{boss:"Drudge Slaver",loot:["Worn Plain Key"],
+    d:"Hug the left wall through the tunnels to the diamond-shaped room — the drudge slaves there carry the Worn Plain Key of the Lost Light hunt.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",-1,0,0,{}],["t2",-1,1,0,{}],["diamond",0,1,0,{round:1,big:1,m:3,box:"Worn Plain Key"}],
+      ["boss",0,2,0,{t:"boss"}]],
+    links:[["en","t1","flat"],["t1","t2","flat"],["t2","diamond","flat"],["en","diamond","flat"],["diamond","boss","flat"]]},
+  "Shoushi Grotto":{boss:"Grotto Throne-Warden",loot:["Worn Old Key"],
+    d:"Head straight and take the ramp down to the rectangular room. West exit, then the right hallway, and descend; hug the left wall past the old lifestone foundations, exit right, and straight on to the Throne Room — its drudge slaves hold the Worn Old Key.",
+    rooms:[["en",0,0,0,{t:"entry"}],["rect",0,1,-2.6,{}],["w1",-1,1,-2.6,{}],["r1",-1,2,-5.2,{}],
+      ["found",0,2,-5.2,{big:1}],["exit",1,2,-5.2,{small:1}],["throne",1,3,-5.2,{t:"boss",big:1,m:3,box:"Worn Old Key"}]],
+    links:[["en","rect","ramp"],["rect","w1","flat"],["w1","r1","ramp"],["r1","found","flat"],["found","exit","flat"],["exit","throne","flat"]]},
+  "Dungeon Manor":{boss:"Manor Master",loot:["Worn Rusty Key"],
+    d:"First right from the drop, left at the split, and down the ramp to the open area. Hug the left wall and descend to the larger room with the pedestal and the floating gem — the drudge slaves there keep the Worn Rusty Key.",
+    rooms:[["en",0,0,0,{t:"entry"}],["r1",1,0,0,{}],["split",1,1,0,{small:1}],["open",0,1,-2.6,{big:1}],
+      ["ped",0,2,-5.2,{big:1,m:2,box:"Worn Rusty Key"}],["boss",1,2,-5.2,{t:"boss"}]],
+    links:[["en","r1","flat"],["r1","split","flat"],["split","open","ramp"],["open","ped","ramp"],["ped","boss","flat"]]},
+  "Rithwic Crypt":{boss:"Crypt Keeper",loot:["Worn Odd Key"],
+    d:"First right from the drop, then the third door on the left. Down the ramp and left to the room of three rats — one swallowed the Worn Odd Key.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",1,0,0,{}],["d1",1,1,0,{small:1,m:1}],["d2",2,1,0,{small:1,m:1}],
+      ["d3",1,2,0,{small:1}],["r1",1,3,-2.6,{}],["rats",0,3,-2.6,{small:1,m:3,box:"Worn Odd Key"}],
+      ["boss",2,3,-2.6,{t:"boss"}]],
+    links:[["en","h1","flat"],["h1","d1","flat"],["d1","d2","flat"],["d1","d3","flat"],["d3","r1","ramp"],
+      ["r1","rats","flat"],["r1","boss","flat"]]},
+  "Carved Cave":{boss:"Shadow Keeper",loot:["A Silvery, Mysterious Key"],noBoxes:true,
+    d:"East hallway to the large room; the Carved Key lies in the smaller room to the left. Back at the drop, the west hallway ends at the Carved Key's door. North past the pit (mind the jump), the Small Carved Key waits in the chest east; the west ramp climbs to its door. From the ledge, tap-jump southeast and take the south ramp down to the pillared room of Shadows — the Oak Chest holds a silvery, mysterious key.",
+    rooms:[["en",0,0,0,{t:"entry"}],["big",1,0,0,{big:1}],["side",1,1,0,{small:1,box:"Carved Key"}],
+      ["whall",-1,0,0,{}],["plat",-2,0,0,{}],["pitr",-2,1,-3.4,{small:1}],["chE",-1,1,-3.4,{small:1,box:"Small Carved Key"}],
+      ["upw",-2,2,-0.8,{}],["ledge",-1,2,-0.8,{small:1}],["low",-1,3,-4.2,{}],
+      ["pillars",0,3,-4.2,{t:"boss",big:1,m:3,portal:1,box:"A Silvery, Mysterious Key"}]],
+    links:[["en","big","flat"],["big","side","flat"],["en","whall","flat"],["whall","plat","key","Carved Key"],
+      ["plat","pitr","drop"],["pitr","chE","flat"],["pitr","upw","ramp"],["upw","ledge","key","Small Carved Key"],
+      ["ledge","low","drop"],["low","pillars","flat"]]},
+  "Halls of Lost Light":{boss:"Guardian of the Lost Light",loot:["Sword of Lost Light","Superior Shield"],noBoxes:true,
+    d:"Six worn keys gathered across Dereth open the halls in order — Strange, Small, Old, Plain, Rusty, Odd — then jump down and find the wooden door under the old cloth banner on the north wall. Only a silvery, mysterious key opens it. Beyond waits the Guardian of the Lost Light.",
+    rooms:[["en",0,0,0,{t:"entry"}],["a",-1,0,0,{}],["b",-1,1,0,{}],["c",0,1,0,{}],["d",1,1,0,{}],
+      ["e",1,2,0,{}],["f",0,2,0,{}],["dropr",0,3,-3.4,{}],["final",1,3,-3.4,{t:"boss",big:1,portal:1}]],
+    links:[["en","a","key","Worn Strange Key"],["a","b","key","Worn Small Key"],["b","c","key","Worn Old Key"],
+      ["c","d","key","Worn Plain Key"],["d","e","key","Worn Rusty Key"],["e","f","key","Worn Odd Key"],
+      ["f","dropr","drop"],["dropr","final","key","A Silvery, Mysterious Key"]]},
+  "Gelidite Library":{boss:"Gelidite Lorekeeper",loot:["Linaural Urilaentai","Miadun hu Okardunai"],
+    d:"The frozen stacks of the Gelidite priesthood, where flame and frost elementals drift between the shelves. Two lost books remain — and the priests' portal to the Labyrinth still stands open at the back.",
+    rooms:[["en",0,0,0,{t:"entry"}],["stk1",0,1,0,{}],["stk2",-1,1,0,{}],["stk3",-1,2,0,{m:3}],
+      ["read",0,2,0,{round:1,big:1}],["vault",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","stk1","flat"],["stk1","stk2","flat"],["stk2","stk3","flat"],["stk1","read","flat"],
+      ["stk3","read","flat"],["read","vault","key","Gelidite Key"]]},
   "Sand Shallows Cave":{boss:"Shallows Shreth",loot:["Shallows Pearl"],
     d:"Tidal caves that step down toward the waterline — one sheer drop with no way back but through the shreth nest.",
     rooms:[["en",0,0,0,{t:"entry"}],["r1",0,1,-2.6,{}],["dr",0,2,-6,{}],["tide",-1,2,-6,{}],
@@ -13534,6 +13596,7 @@ function genDungeonLayout(def){
       if(o.round){ room.round=true; room.rad=o.big?10:o.small?5:7; }
       else { room.round=false; const sz=o.big?10:o.small?4.5:7; room.hx=sz; room.hz=sz; }
       if(o.cells) room.cells=true; if(o.portal) room.portalHere=true; if(o.m!=null) room.m=o.m;
+      if(o.box) room.box=o.box;   // a strongbox holding this named key (quest keys collected ACROSS dungeons)
       byId[id]=room; }
     for(const lk of script.links||[]){ const a=byId[lk[0]],b=byId[lk[1]],feat=lk[2]||"flat",extra=lk[3];
       if(!a||!b) continue;
@@ -13690,6 +13753,16 @@ function buildDungeon(def){
       if(x1>x0){const len=x1-x0,xc=(x0+x1)/2; wallBox(xc,c.z-2.5,len,Tw,base,hh);wallBox(xc,c.z+2.5,len,Tw,base,hh);} }
   }
   // walkthrough gates: portcullises across lever/key corridors, wall levers & key strongboxes in the room before
+  function mkStrongbox(bx,bz,fy,keyName){
+    const sb=new THREE.Group(); sb.position.set(bx,fy,bz);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.5,0.55),new THREE.MeshStandardMaterial({color:0x5a4326,metalness:0.3,roughness:0.6})); body.position.y=0.25; sb.add(body);
+    const strap=new THREE.Mesh(new THREE.BoxGeometry(0.84,0.1,0.58),new THREE.MeshStandardMaterial({color:0x8a8a92,metalness:0.8,roughness:0.35})); strap.position.y=0.34; sb.add(strap);
+    scene.add(sb); dungeonObjs.push(sb);
+    const slbl=labelSprite("Strongbox","dungeons"); slbl.position.set(bx,fy+1.8,bz); scene.add(slbl); dungeonObjs.push(slbl);
+    dungeonBoxes.push({x:bx,z:bz,key:keyName,opened:false,mesh:sb});
+  }
+  // rooms that hold a named quest key (collected here, used in ANOTHER dungeon — e.g. the Sword of Lost Light hunt)
+  for(const r of L.rooms) if(r.box) mkStrongbox(r.cx-(r.round?r.rad-1.8:r.hx-1.4), r.cz-2, r.fy, r.box);
   for(const c of L.corridors){
     if(!c.door) continue;
     const seg=pureSeg(c), mid=(seg.p0+seg.p1)/2, fy=c.lo.fy;
@@ -13713,14 +13786,9 @@ function buildDungeon(def){
       scene.add(lg); dungeonObjs.push(lg);
       const llbl=labelSprite("Wall Lever","dungeons"); llbl.position.set(lx,hi.fy+2.6,lz); scene.add(llbl); dungeonObjs.push(llbl);
       dungeonLevers.push({x:lx,z:lz,bar,pulled:false,handle});
-    } else {                     // the key waits in a strongbox in the room before
-      const bx=hi.cx-(hi.round?hi.rad-1.8:hi.hx-1.4), bz=hi.cz-2;
-      const sb=new THREE.Group(); sb.position.set(bx,hi.fy,bz);
-      const body=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.5,0.55),new THREE.MeshStandardMaterial({color:0x5a4326,metalness:0.3,roughness:0.6})); body.position.y=0.25; sb.add(body);
-      const strap=new THREE.Mesh(new THREE.BoxGeometry(0.84,0.1,0.58),new THREE.MeshStandardMaterial({color:0x8a8a92,metalness:0.8,roughness:0.35})); strap.position.y=0.34; sb.add(strap);
-      scene.add(sb); dungeonObjs.push(sb);
-      const slbl=labelSprite("Strongbox","dungeons"); slbl.position.set(bx,hi.fy+1.8,bz); scene.add(slbl); dungeonObjs.push(slbl);
-      dungeonBoxes.push({x:bx,z:bz,key:c.door.need,opened:false,mesh:sb});
+    } else if(!(script&&script.noBoxes)){   // the key waits in a strongbox in the room before —
+      // unless the dungeon's keys are collected ELSEWHERE (noBoxes, e.g. the Halls of Lost Light)
+      mkStrongbox(hi.cx-(hi.round?hi.rad-1.8:hi.hx-1.4), hi.cz-2, hi.fy, c.door.need);
     }
   }
   // prison cells (walkthrough flavour, e.g. Green Mire Grave): barred alcoves along the flagged room's wall
@@ -14025,8 +14093,9 @@ function pullDungeonLever(lv){
 function openStrongbox(bx){
   bx.opened=true; if(bx.mesh) bx.mesh.rotation.x=-0.18;
   player.inv.push({name:bx.key,stat:"key",v:1});
-  log(`The strongbox holds the <b>${esc(bx.key)}</b> — it must open something deeper in.`,"loot");
+  log(`The strongbox holds the <b>${esc(bx.key)}</b> — it must open something, somewhere.`,"loot");
   if(SFX.gold)SFX.gold(); burst(bx.x,1,bx.z,0xffd23b,10);
+  if(typeof questEvent==="function") questEvent("gather");   // quest keys count as gathers (Sword of Lost Light hunt)
 }
 function unlockDungeonDoor(b){
   if(!hasNamedKey(b.need)){ log(`The door is locked fast — you need the <b>${esc(b.need)}</b>.`,"warn"); if(SFX.deny)SFX.deny(); return; }
