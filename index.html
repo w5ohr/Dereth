@@ -908,10 +908,10 @@ const BESTIARY={
   drudge:   {name:"Drudge Skulker",c:0x6b8f4e,size:0.9,hp:34, dmg:7, spd:5.0,xp:120, gold:[2,9],  range:0,  sense:34,tall:1.4,shape:"humanoid"},
   mosswart: {name:"Mosswart",      c:0x3f7d6a,size:1.0,hp:52, dmg:11,spd:4.3,xp:200, gold:[4,14], range:0,  sense:36,tall:1.0,shape:"blob"},
   reedshark:{name:"Reedshark",     c:0x9a3b30,size:1.1,hp:70, dmg:14,spd:8.0,xp:300, gold:[6,18], range:0,  sense:42,tall:0.8,shape:"beast",dmgEl:"pierce"},
-  tusker:   {name:"Tusker",        c:0xcaa56b,size:1.7,hp:160,dmg:24,spd:5.0,xp:620, gold:[14,40],range:0,  sense:43,tall:1.2,shape:"tusker",dmgEl:"pierce"},
+  tusker:   {name:"Tusker",        c:0x7d7266,size:1.7,hp:160,dmg:24,spd:5.0,xp:620, gold:[14,40],range:0,  sense:43,tall:1.2,shape:"tusker",dmgEl:"pierce"},
   shadow:   {name:"Shadow Caster", c:0x7a4fae,size:1.0,hp:64, dmg:16,spd:3.8,xp:420, gold:[10,26],range:30, sense:47,tall:1.6,shape:"caster",mres:0.35},
   olthoi:   {name:"Olthoi Warrior",c:0xb03a3a,size:2.0,hp:300,dmg:34,spd:6.2,xp:1400,gold:[40,90],range:0,  sense:52,tall:1.1,shape:"insect",dmgEl:"pierce"},
-  banderling:{name:"Banderling",   c:0x7a6b3a,size:1.3,hp:120,dmg:20,spd:6.0,xp:520, gold:[12,32],range:0,  sense:44,tall:1.5,shape:"humanoid"},
+  banderling:{name:"Banderling",   c:0x5b4632,size:1.3,hp:120,dmg:20,spd:6.0,xp:520, gold:[12,32],range:0,  sense:44,tall:1.5,shape:"humanoid"},
   auroch:   {name:"Auroch",        c:0x8a6a4a,size:1.6,hp:200,dmg:26,spd:7.6,xp:760, gold:[16,44],range:0,  sense:46,tall:1.1,shape:"horns"},
   gromnie:  {name:"Gromnie",       c:0x3a6a4a,size:1.4,hp:150,dmg:18,spd:5.0,xp:680, gold:[14,40],range:28, sense:48,tall:0.85,shape:"beast"},
   lugian:   {name:"Lugian",        c:0x8a8278,size:1.9,hp:240,dmg:30,spd:4.6,xp:900, gold:[20,55],range:0,  sense:46,tall:1.3,shape:"lugian"},
@@ -981,6 +981,9 @@ let scene,cam,renderer,sun;
 let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,quad:null,bright:null,blur:null,comp:null};
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
 let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[];  // self-cast (crouch→raise) vs forward cast
+let castKind="self";   // "self" (buff/heal on self) | "bolt" (offensive thrust) | "bestow" (gift a spell to an ally)
+// Generic avatar activity gesture (gather/mine/craft/tinker/fish) — a timed pose the animator plays over `dur`.
+function startAction(type,dur){ if(!player.alive) return; player.act={type,t:dur,dur}; }
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // world activity/visibility culling: only the area around the player is simulated & drawn (perf).
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
@@ -3339,21 +3342,24 @@ function cDrudge(g,b,s){const m=solid(0x24211d),red=solid(0xc0301e),d=solid(0x2b
   return s*1.95;}
 
 // AC Banderling: gray-skinned muscular humanoid in a RED tunic, heavy muzzle with lower tusks, pointed ears
-function cBanderling(g,b,s){const m=solid(0x8a8f96),red=solid(0x992a22),strap=solid(0x3a1a14),tu=solid(0xf0ead8);
-  const chest=part(g,new THREE.SphereGeometry(s*0.6,12,10),red,0,s*1.28,0);chest.scale.set(1.22,1.2,0.95); // red-tunic torso
-  part(g,new THREE.BoxGeometry(s*1.0,s*0.55,s*0.85),red,0,s*0.95,0);                        // red tunic skirt
-  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.13,s*1.0,s*0.13),strap,sx*s*0.24,s*1.2,s*0.42); // chest straps
-  part(g,new THREE.CylinderGeometry(s*0.2,s*0.24,s*0.2,10),m,0,s*1.62,0);                   // thick gray neck
+// AC Banderling: shaggy brown-furred ape/yeti brute — barrel torso, huge shoulders, long thick arms,
+// grey-brown exposed skin on face/hands, tan muzzle, lower tusks (underbite), fights with mauls.
+function cBanderling(g,b,s){const m=solid(0x726a5e),fur=solid(0x5b4632),strap=solid(0x2a1a12),tu=solid(0xf0ead8),muz=solid(0x8a7a5c);
+  const chest=part(g,new THREE.SphereGeometry(s*0.6,12,10),fur,0,s*1.28,0);chest.scale.set(1.22,1.2,0.95); // furred barrel torso
+  part(g,new THREE.BoxGeometry(s*1.0,s*0.55,s*0.85),fur,0,s*0.95,0);                        // furred midsection
+  for(let i=0;i<8;i++)part(g,new THREE.IcosahedronGeometry(s*0.2,0),fur,rnd(-0.55,0.55)*s,s*(1.05+rnd(0,0.5)),rnd(-0.5,0.35)*s); // shaggy coat clumps
+  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.12,s*0.9,s*0.12),strap,sx*s*0.24,s*1.2,s*0.44); // harness straps
+  part(g,new THREE.CylinderGeometry(s*0.2,s*0.24,s*0.2,10),m,0,s*1.62,0);                   // thick neck
   const head=part(g,new THREE.SphereGeometry(s*0.34,11,9),m,0,s*1.85,s*0.05);head.scale.set(1,1.05,1.05);
-  part(g,new THREE.SphereGeometry(s*0.26,10,8),m,0,s*1.74,s*0.34).scale.set(1.05,0.8,1.0);  // heavy muzzle
+  part(g,new THREE.SphereGeometry(s*0.26,10,8),muz,0,s*1.74,s*0.34).scale.set(1.05,0.8,1.0);  // tan muzzle
   part(g,new THREE.BoxGeometry(s*0.5,s*0.09,s*0.14),m,0,s*1.99,s*0.28);                      // brow ridge
   for(const sx of[-1,1])spike(g,tu,sx*s*0.12,s*1.66,s*0.5,s*0.04,s*0.2,-0.5);               // lower tusks (underbite)
   for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.08,s*0.24,6),m,sx*s*0.34,s*1.98,0,0,0,sx*0.6); // pointed ears
   addEye(g,s*0.06,0xffcf3b,-s*0.11,s*1.9,s*0.33);addEye(g,s*0.06,0xffcf3b,s*0.11,s*1.9,s*0.33);
-  for(const sx of[-1,1]){part(g,new THREE.SphereGeometry(s*0.24,10,8),red,sx*s*0.6,s*1.5,0); // red shoulder pads
-    limb(g,m,sx*s*0.62,s*1.05,s*0.05,s*0.16,s*0.13,s*1.35,0.25,sx*0.16,"arm");                     // long gray arms
-    part(g,new THREE.SphereGeometry(s*0.18,8,7),m,sx*s*0.78,s*0.32,s*0.18);}                 // big gray fists
-  for(const sx of[-1,1])limb(g,m,sx*s*0.28,s*0.7,0,s*0.18,s*0.14,s*0.72,0,sx*0.05,"leg");          // thick gray legs
+  for(const sx of[-1,1]){part(g,new THREE.SphereGeometry(s*0.28,10,8),fur,sx*s*0.6,s*1.5,0); // furred shoulders
+    limb(g,m,sx*s*0.62,s*1.05,s*0.05,s*0.16,s*0.13,s*1.35,0.25,sx*0.16,"arm");                     // long arms
+    part(g,new THREE.SphereGeometry(s*0.18,8,7),m,sx*s*0.78,s*0.32,s*0.18);}                 // big fists
+  for(const sx of[-1,1])limb(g,m,sx*s*0.28,s*0.7,0,s*0.18,s*0.14,s*0.72,0,sx*0.05,"leg");          // thick legs
   return s*2.05;}
 
 // AC Mosswart: upright bright-green toad-humanoid, pale yellow-green throat/belly, wide flat toad head, bulging eyes
@@ -3385,22 +3391,25 @@ function cReedshark(g,b,s){const m=skinMat("reedshark","scales"),d=solid(b.c),pa
   limb(g,d,0,s*0.32,-s*0.55,s*0.13,s*0.1,s*0.62,0,0,"leg");                                        // single central hind leg (tripod stance)
   return s*1.55;}
 
-function cTusker(g,b,s){const m=skinMat("tusker","scales"),d=solid(b.c),tu=solid(0xe8e0c8);
-  const body=part(g,new THREE.SphereGeometry(s*0.78,12,10),m,0,s*1.0,0);body.scale.set(1.15,1.0,1.55);
-  part(g,new THREE.SphereGeometry(s*0.5,10,9),m,0,s*1.35,-s*0.2).scale.set(1.0,0.8,1.1);      // humped back
-  const head=part(g,new THREE.SphereGeometry(s*0.55,12,10),m,0,s*1.02,s*1.0);head.scale.set(1.05,1.0,1.05);
-  part(g,new THREE.CylinderGeometry(s*0.2,s*0.26,s*0.55,9),m,0,s*0.82,s*1.4,Math.PI/2.3);     // broad snout
-  part(g,new THREE.SphereGeometry(s*0.12,8,7),solid(0x1a1008),0,s*0.78,s*1.66);               // nose
-  addEye(g,s*0.08,0xffd23b,-s*0.28,s*1.2,s*1.05);addEye(g,s*0.08,0xffd23b,s*0.28,s*1.2,s*1.05);
-  for(const sx of[-1,1])spike(g,tu,sx*s*0.28,s*0.78,s*1.4,s*0.09,s*0.85,Math.PI*0.42,sx*0.18); // up-curved tusks
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.1,s*0.4,5),m,sx*s*0.44,s*1.45,s*0.72,0,0,sx*0.5); // ears
-  const steel=solid(0xb8bcc4,true),rivet=solid(0x6a6e76);
-  part(g,new THREE.SphereGeometry(s*0.7,12,8,0,Math.PI*2,0,Math.PI*0.55),steel,0,s*1.05,-s*0.05).scale.set(1.18,1.0,1.5); // armored back barding
-  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.34,10,8),steel,sx*s*0.62,s*1.2,s*0.15).scale.set(1,1,1.1); // shoulder pauldrons
-  part(g,new THREE.BoxGeometry(s*0.7,s*0.16,s*0.06),steel,0,s*1.28,s*1.28);                   // brow/tusk face plate
-  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.04,6,5),rivet,sx*s*0.24,s*1.28,s*1.31); // face-plate rivets
-  for(const sx of[-1,1])for(const fz of[-1,1])limb(g,d,sx*s*0.46,s*0.42,fz*s*0.62,s*0.19,s*0.15,s*0.85,0,0,"leg"); // 4 pillar legs
-  return s*1.9;}
+// AC Tusker: hulking apelike brute — barrel torso, hunched forward, huge muscular arms reaching the ground
+// (knuckle stance), heavy tusked warthog head with paired up-curving lower tusks, short powerful legs.
+function cTusker(g,b,s){const m=skinMat("tusker","scales"),d=solid(0x4f463b),tu=solid(0xe6dcc1),saddle=solid(0x8f3a2e),bel=solid(0xa89578);
+  const body=part(g,new THREE.SphereGeometry(s*0.66,12,10),m,0,s*1.15,0);body.scale.set(1.3,1.2,1.15);   // barrel torso
+  part(g,new THREE.SphereGeometry(s*0.52,10,9),m,0,s*1.6,-s*0.28).scale.set(1.25,0.95,1.05);             // humped shoulders/back
+  part(g,new THREE.SphereGeometry(s*0.46,10,9),saddle,0,s*1.68,-s*0.3).scale.set(1.0,0.55,0.85);          // colored "back" saddle (Crimsonback etc.)
+  part(g,new THREE.SphereGeometry(s*0.5,10,9),bel,0,s*1.0,s*0.24).scale.set(1.0,1.1,0.72);                // pale chest/belly
+  const head=part(g,new THREE.SphereGeometry(s*0.42,12,10),m,0,s*1.42,s*0.6);head.scale.set(1.1,0.95,1.05); // low-slung head thrust forward
+  part(g,new THREE.BoxGeometry(s*0.52,s*0.16,s*0.12),m,0,s*1.58,s*0.8);                                   // heavy brow ridge
+  part(g,new THREE.CylinderGeometry(s*0.24,s*0.3,s*0.5,9),m,0,s*1.3,s*0.9,Math.PI/2.2);                   // warthog snout
+  part(g,new THREE.SphereGeometry(s*0.1,8,7),solid(0x1a1008),0,s*1.26,s*1.16);                            // nose
+  addEye(g,s*0.07,0xffd23b,-s*0.17,s*1.48,s*0.84);addEye(g,s*0.07,0xffd23b,s*0.17,s*1.48,s*0.84);
+  for(const sx of[-1,1])spike(g,tu,sx*s*0.17,s*1.16,s*1.0,s*0.07,s*0.72,-Math.PI*0.14,sx*0.12);           // paired lower tusks, up-curving
+  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.09,s*0.3,5),m,sx*s*0.34,s*1.6,s*0.48,0,0,sx*0.5); // ears
+  for(const sx of[-1,1]){ part(g,new THREE.SphereGeometry(s*0.3,10,9),m,sx*s*0.66,s*1.5,s*0.02);          // massive shoulders
+    limb(g,d,sx*s*0.7,s*1.08,s*0.14,s*0.2,s*0.16,s*1.2,0.22,sx*0.12,"arm");                               // thick arm to the ground
+    part(g,new THREE.SphereGeometry(s*0.23,9,8),d,sx*s*0.82,s*0.34,s*0.34); }                             // big knuckle fist
+  for(const sx of[-1,1])limb(g,d,sx*s*0.28,s*0.6,-s*0.06,s*0.2,s*0.16,s*0.68,0,sx*0.06,"leg");            // short powerful legs
+  return s*2.0;}
 
 function cAuroch(g,b,s){const m=skinMat("auroch","mottle"),d=solid(b.c),hm=solid(0xe8e0c8);
   const body=part(g,new THREE.SphereGeometry(s*0.72,12,10),m,0,s*1.0,0);body.scale.set(1.05,1.0,1.7);
@@ -3490,8 +3499,9 @@ function cMattekar(g,b,s){const m=skinMat("mattekar","scales"),d=solid(b.c),ho=s
   addEye(g,s*0.08,0x7fe0ff,-s*0.2,s*0.94,s*0.98);addEye(g,s*0.08,0x7fe0ff,s*0.2,s*0.94,s*0.98);
   for(const sx of[-1,1])spike(g,ho,sx*s*0.22,s*1.12,s*0.7,s*0.07,s*0.42,0,sx*0.5);                // horns
   for(let i=0;i<4;i++)spike(g,ho,0,s*1.08,s*0.5-i*s*0.28,s*0.06,s*0.24,0.2);                      // spine ridge
-  for(const sx of[-1,1])for(const fz of[-1,1]){limb(g,d,sx*s*0.4,s*0.36,fz*s*0.52,s*0.13,s*0.1,s*0.7,0,0,"leg");
-    for(let c=0;c<3;c++)spike(g,ho,sx*s*0.4+(c-1)*s*0.07,s*0.03,fz*s*0.52+s*0.12,s*0.03,s*0.16,Math.PI/2);} // clawed feet
+  for(const[lx,lz,lr]of[[-0.4,0.52,-0.12],[0.4,0.52,0.12],[0,-0.55,0]]){   // tripod: two forelegs + one central hind leg (reedshark plan)
+    limb(g,d,lx*s,s*0.36,lz*s,s*0.14,s*0.1,s*0.72,0,lr,"leg");
+    for(let c=0;c<3;c++)spike(g,ho,lx*s+(c-1)*s*0.07,s*0.03,lz*s+s*0.12,s*0.03,s*0.16,Math.PI/2);} // clawed feet
   return s*1.45;}
 function cSkeleton(g,b,s){const bone=solid(0xe8e4d8);
   part(g,new THREE.BoxGeometry(s*0.34,s*0.18,s*0.22),bone,0,s*0.95,0);                    // pelvis
@@ -3560,23 +3570,28 @@ function cMite(g,b,s){const m=skinMat("mite","spots");
   for(const sx of[-1,1])limb(g,m,sx*s*0.14,s*0.4,0,s*0.07,s*0.05,s*0.5,0,0,"leg");
   return s*1.65;}
 // AC Sclavus: green reptilian lizardman warrior — snouted head, neck frill, curved blade + round shield, tail
-function cSclavus(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),cloth=solid(0x8a7a4a),steel=solid(0xb0b6c0),blade=solid(0xd8dde6),bone=solid(0xf0ead8);
+function cSclavus(g,b,s){const m=solid(b.c),d=solid(0x35502f),cloth=solid(0x8a7a4a),steel=solid(0xb0b6c0),blade=solid(0xd8dde6),bone=solid(0xf0ead8),belly=solid(0xc7b26a);
   limb(g,m,0,s*1.0,0,s*0.28,s*0.34,s*0.95,0.05);                                  // upright scaly torso
-  part(g,new THREE.BoxGeometry(s*0.62,s*0.45,s*0.42),cloth,0,s*0.82,0);           // loincloth wrap
+  // legless serpent lower body: torso descends into a thick tail that coils on the ground
+  part(g,new THREE.CylinderGeometry(s*0.26,s*0.32,s*0.7,10),m,0,s*0.52,0);        // thick serpent trunk
+  part(g,new THREE.CylinderGeometry(s*0.24,s*0.28,s*0.6,9),belly,0,s*0.52,s*0.14).scale.set(0.6,1,0.5); // pale belly scales
+  part(g,new THREE.TorusGeometry(s*0.36,s*0.17,8,16),m,0,s*0.17,s*0.04,Math.PI/2);// coiled base on the ground
+  part(g,new THREE.ConeGeometry(s*0.16,s*1.1,8),m,s*0.32,s*0.2,s*0.36,-1.3,0,0.3);// tail tip curling out of the coil
   const head=part(g,new THREE.SphereGeometry(s*0.26,10,9),m,0,s*1.62,s*0.05);head.scale.set(1,0.95,1.2); // reptile head
+  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.3,10,8,0,Math.PI,0,Math.PI),m,sx*s*0.16,s*1.5,-s*0.12).scale.set(1,1.1,0.35); // flared cobra hood
   part(g,new THREE.ConeGeometry(s*0.14,s*0.42,7),m,0,s*1.58,s*0.34,Math.PI/2);    // snout
   part(g,new THREE.BoxGeometry(s*0.24,s*0.04,s*0.34),bone,0,s*1.55,s*0.34);       // teeth
   for(const sx of[-1,1])addEye(g,s*0.05,0xffd23b,sx*s*0.11,s*1.67,s*0.2);
   for(let i=0;i<4;i++)spike(g,d,0,s*(1.72-i*0.1),-s*0.08-i*s*0.09,s*0.035,s*0.16,-0.3); // head/neck frill
   for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.14,8,7),m,sx*s*0.34,s*1.42,0); // shoulders
-  limb(g,m,s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.62,0.5,0.35);                    // right arm
+  for(const sx of[-1,1]){limb(g,m,sx*s*0.3,s*0.98,s*0.08,s*0.06,s*0.045,s*0.5,0.6,sx*0.42,"arm"); // lower 2nd pair of arms (Sclavi have up to four)
+    part(g,new THREE.SphereGeometry(s*0.06,7,6),m,sx*s*0.5,s*0.66,s*0.3);}         // clawed lower hands
+  limb(g,m,s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.62,0.5,0.35);                    // right arm (blade)
   part(g,new THREE.CylinderGeometry(s*0.028,s*0.028,s*0.18,6),solid(0x5a3f22),s*0.62,s*0.78,s*0.3); // hilt
   part(g,new THREE.BoxGeometry(s*0.05,s*0.66,s*0.02),blade,s*0.66,s*1.12,s*0.32,0,0,0.28); // curved blade
   limb(g,m,-s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.55,0.5,-0.35);                  // left arm
   const sh=part(g,new THREE.CylinderGeometry(s*0.3,s*0.3,s*0.05,12),steel,-s*0.52,s*1.08,s*0.32,Math.PI/2);sh.scale.set(1,1,1.15); // shield
   part(g,new THREE.SphereGeometry(s*0.08,8,7),solid(0x6a6e76),-s*0.52,s*1.08,s*0.38); // shield boss
-  for(const sx of[-1,1])limb(g,m,sx*s*0.18,s*0.55,0,s*0.1,s*0.08,s*0.55);         // digitigrade legs
-  part(g,new THREE.ConeGeometry(s*0.14,s*0.85,7),m,0,s*0.55,-s*0.52,-Math.PI/2.3); // tail
   return s*1.9;}
 // AC Zefir: purple winged bat-demon — lean body, horned muzzle, large membranous bat wings, tail
 function cZefir(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),memb=new THREE.MeshStandardMaterial({color:0x7a9a68,transparent:true,opacity:0.5,side:THREE.DoubleSide});
@@ -3589,8 +3604,8 @@ function cZefir(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),memb=new THREE.MeshS
     for(let f=0;f<3;f++)spike(g,d,sx*s*0.32,s*1.15,-s*0.1,s*0.03,s*0.9,0.2+f*0.15,sx*(0.5+f*0.5)); // wing spar bones
     const w=new THREE.Mesh(new THREE.PlaneGeometry(s*1.0,s*0.85),memb);w.position.set(sx*s*0.7,s*1.05,-s*0.25);w.rotation.y=sx*0.5;w.rotation.z=sx*0.2;g.add(w);jreg(g,w,"wing"); // membrane
   }
-  for(const sx of[-1,1])limb(g,m,sx*s*0.22,s*0.9,s*0.05,s*0.05,s*0.04,s*0.5,0.3,sx*0.3); // arms
-  for(const sx of[-1,1])limb(g,m,sx*s*0.13,s*0.42,0,s*0.06,s*0.045,s*0.42);       // legs
+  for(const sx of[-1,1])limb(g,m,sx*s*0.22,s*0.9,s*0.05,s*0.05,s*0.04,s*0.5,0.3,sx*0.3,"arm"); // arms
+  for(const sx of[-1,1])limb(g,m,sx*s*0.13,s*0.42,0,s*0.06,s*0.045,s*0.42);       // legs (dangle in flight)
   part(g,new THREE.ConeGeometry(s*0.08,s*0.6,6),m,0,s*0.85,-s*0.3,-Math.PI/2.2);  // tail
   return s*1.6;}
 function cMonouga(g,b,s){const m=solid(b.c);
@@ -3635,22 +3650,41 @@ function cWisp(g,b,s){
   const rayMat=new THREE.MeshBasicMaterial({color:b.c,transparent:true,opacity:0.5});
   for(let i=0;i<6;i++){const a=i/6*6.28;spike(g,rayMat,Math.cos(a)*s*0.4,s*1.2,Math.sin(a)*s*0.4,s*0.06,s*0.3,Math.PI/2,a);}
   return s*1.7;}
-function cGolem(g,b,s){const rock=solid(0x54545a,true),panel=solid(0x9a9a95,true);
+// AC has two golem forms: a carved stone statue, and a levitating cluster of floating material chunks.
+function cGolem(g,b,s){ return (Math.random()<0.5)?cGolemStatue(g,b,s):cGolemElemental(g,b,s); }
+function cGolemStatue(g,b,s){const rock=solid(0x54545a,true),panel=solid(0x9a9a95,true);
   part(g,new THREE.BoxGeometry(s*0.7,s*0.9,s*0.5),rock,0,s*1.1,0);
   part(g,new THREE.BoxGeometry(s*0.5,s*0.4,s*0.4),rock,0,s*1.75,0);
   for(const sy of[0.8,1.1,1.4])part(g,new THREE.BoxGeometry(s*0.5,s*0.06,s*0.05),panel,0,s*sy,s*0.26);   // engraved labyrinth panels
   for(const sx of[-1,1])addEye(g,s*0.07,0xd42a22,sx*s*0.12,s*1.78,s*0.2);   // glowing red eyes
-  for(const sx of[-1,1]){limb(g,rock,sx*s*0.5,s*1.1,0,s*0.18,s*0.16,s*0.7,0,sx*0.15);
+  for(const sx of[-1,1]){limb(g,rock,sx*s*0.5,s*1.1,0,s*0.18,s*0.16,s*0.7,0,sx*0.15,"arm");
     part(g,new THREE.SphereGeometry(s*0.22,7,6),rock,sx*s*0.6,s*0.6,0);}
-  for(const sx of[-1,1])limb(g,rock,sx*s*0.22,s*0.5,0,s*0.18,s*0.16,s*0.7);
+  for(const sx of[-1,1])limb(g,rock,sx*s*0.22,s*0.5,0,s*0.18,s*0.16,s*0.7,0,0,"leg");
   for(let i=0;i<5;i++)part(g,new THREE.BoxGeometry(s*0.12,s*0.12,s*0.12),rock,rnd(-s*0.4,s*0.4),s*(0.7+Math.random()*0.8),rnd(-s*0.2,s*0.2));
   return s*2.1;}
+// elemental golem: a hovering humanoid-arranged swarm of glowing material chunks with a gap where the neck would be
+function cGolemElemental(g,b,s){
+  const E=[{rock:0x1e1a18,glow:0xff7a1a},{rock:0x2a3550,glow:0x8cbeec},{rock:0x203048,glow:0x2f6fe0},{rock:0x2a2e36,glow:0xffe23b}]; // magma / ice / wave / lightning
+  const e=E[irnd(0,E.length-1)];
+  const rockM=new THREE.MeshStandardMaterial({color:e.rock,emissive:e.glow,emissiveIntensity:0.4,flatShading:true,roughness:0.9});
+  const spin=new THREE.Group(); g.add(spin);
+  const pts=[[0,1.6,0,0.32],                                            // head orb (floats above the neck gap)
+    [0,1.15,0,0.5],[0.12,0.95,0.05,0.34],[-0.12,1.25,-0.05,0.3],        // torso mass
+    [0.52,1.35,0,0.24],[-0.52,1.35,0,0.24],[0.62,1.0,0,0.2],[-0.62,1.0,0,0.2],[0.66,0.66,0,0.18],[-0.66,0.66,0,0.18], // arms
+    [0.24,0.62,0,0.26],[-0.24,0.62,0,0.26],[0.27,0.24,0,0.22],[-0.27,0.24,0,0.22]]; // legs
+  for(const p of pts){ const c=new THREE.Mesh(new THREE.DodecahedronGeometry(s*p[3],0),rockM);
+    c.position.set(p[0]*s,p[1]*s,p[2]*s); c.rotation.set(rnd(0,6),rnd(0,6),rnd(0,6)); spin.add(c); }
+  for(const sx of[-1,1])addEye(g,s*0.06,e.glow,sx*s*0.1,s*1.62,s*0.24);
+  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.18,10,9),new THREE.MeshBasicMaterial({color:e.glow})); core.position.y=s*1.15; g.add(core);
+  const lt=new THREE.PointLight(e.glow,1.5,13); lt.position.y=s*1.2; g.add(lt);
+  g.userData.gait="float"; jreg(g,spin,"orbit");   // hovers and slowly rotates as a mass
+  return s*2.0;}
 function cZombie(g,b,s){const m=solid(b.c);
   limb(g,m,s*0.05,s*0.9,0,s*0.26,s*0.32,s*0.85,0.12);
   part(g,new THREE.SphereGeometry(s*0.28,10,9),m,-s*0.08,s*1.45,s*0.05);
   for(const sx of[-1,1])addEye(g,s*0.045,0xaacf5a,sx*s*0.09,s*1.46,s*0.2);
   part(g,new THREE.BoxGeometry(s*0.2,s*0.05,s*0.1),solid(0x3a1a1a),-s*0.08,s*1.36,s*0.22);
-  for(const sx of[-1,1])limb(g,m,sx*s*0.3,s*1.1,s*0.1,s*0.06,s*0.05,s*0.6,-0.9,sx*0.1);
+  for(const sx of[-1,1])limb(g,m,sx*s*0.3,s*1.1,s*0.1,s*0.06,s*0.05,s*0.6,-0.9,sx*0.1,"arm");
   for(const sx of[-1,1])limb(g,m,sx*s*0.14,s*0.45,0,s*0.07,s*0.05,s*0.55,0,0,"leg");
   return s*1.55;}
 function cMummy(g,b,s){const wrap=solid(b.c);
@@ -3658,7 +3692,7 @@ function cMummy(g,b,s){const wrap=solid(b.c);
   part(g,new THREE.SphereGeometry(s*0.28,10,9),wrap,0,s*1.5,s*0.03);
   for(let i=0;i<6;i++)part(g,new THREE.TorusGeometry(s*0.29,s*0.03,5,14),solid(0xb0a074),0,s*0.7+i*s*0.16,0,Math.PI/2);
   for(const sx of[-1,1])addEye(g,s*0.04,0xffd23b,sx*s*0.09,s*1.5,s*0.22);
-  for(const sx of[-1,1])limb(g,wrap,sx*s*0.3,s*1.15,s*0.15,s*0.06,s*0.05,s*0.6,-1.0,sx*0.1);
+  for(const sx of[-1,1])limb(g,wrap,sx*s*0.3,s*1.15,s*0.15,s*0.06,s*0.05,s*0.6,-1.0,sx*0.1,"arm");
   for(const sx of[-1,1])limb(g,wrap,sx*s*0.14,s*0.45,0,s*0.07,s*0.05,s*0.55,0,0,"leg");
   return s*1.6;}
 // AC Grievver: spindly radial spider-daemon — small slender core, thin bladed legs splaying outward, crimson veins
@@ -3767,7 +3801,7 @@ function buildCreature(kind){
   // classify the rig once: a creature with legs placed both fore and aft (sz≠0) walks as a quadruped
   const J=g.userData.joints;
   if(J){ const legs=J.filter(j=>j.role==="leg"); g.userData.quad=legs.length>=3&&legs.some(j=>j.sz!==0); }
-  g.userData.gait=creatureGait(kind,b);
+  g.userData.gait=g.userData.gait||creatureGait(kind,b);   // a builder may pick a per-instance gait (e.g. floating elemental golem)
   // health bar (billboarded planes)
   const hb=new THREE.Group();
   const bg=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.16),new THREE.MeshBasicMaterial({color:0x000000,fog:false}));
@@ -3794,11 +3828,35 @@ const GAIT={
   zombie:"shamble", mummy:"shamble",
 };
 function creatureGait(kind,b){ return GAIT[kind]||"walk"; }
+// Per-species melee attack style, from each creature's canonical attacks (acpedia/fandom):
+//   pound  — heavy two-fist overhead slam (Banderlings smash with fists/mauls; Lugians crush in one blow;
+//            Golems bash with club limbs; Tuskers pound; Monouga haymaker; Mummies slam)
+//   swipe  — fast alternating claw slashes (Drudge/Mite claws, Moarsman muck-claws, Mukkir rends,
+//            Mosswart/Burun claws, Zefir aerial claws, Skeleton weapon cuts)
+//   bite   — head rears back then snaps forward (Reedshark/Gromnie/Rat/Shreth/Carenzi fangs,
+//            Remoran's gaping maw, Mattekar teeth)
+//   gore   — head-down charge toss with the horns (Auroch)
+//   spin   — the Armoredillo's devastating full-body spin, bony blades leading
+//   sting  — nose-down darting stinger dive (Phyntos Wasp)
+//   rear   — rise up tall, then crash down with the forelimbs (Olthoi castes rear to strike with
+//            their digging claws; Ursuin rears to maul; Sclavus rears its cobra body to strike)
+//   grab   — both arms reach out in a lurching grasp (Zombie)
+//   thrust — a single deep spear-arm drive (Tumerok spearman)
+const ATTACK={
+  banderling:"pound",lugian:"pound",golem:"pound",tusker:"pound",monouga:"pound",mummy:"pound",
+  drudge:"swipe",mite:"swipe",moarsman:"swipe",mosswart:"swipe",burun:"swipe",zefir:"swipe",skeleton:"swipe",
+  reedshark:"bite",gromnie:"bite",rat:"bite",shreth:"bite",carenzi:"bite",remoran:"bite",mattekar:"bite",mukkir:"bite",
+  auroch:"gore",armoredillo:"spin",phyntoswasp:"sting",
+  olthoi:"rear",olthoiworker:"rear",olthoisoldier:"rear",ursuin:"rear",sclavus:"rear",
+  zombie:"grab",tumerok:"thrust",
+};
+const ATK_DUR={pound:0.55,rear:0.6,spin:0.6,gore:0.5,bite:0.35,sting:0.35,swipe:0.4,grab:0.45,thrust:0.35};
+function startStrike(m){ const st=ATTACK[m.kind]; m.strikeDur=(st&&ATK_DUR[st])||0.3; m.strikeT=m.strikeDur; }
 // Drives one creature's rig for the frame. Sets body pitch/roll on m._pitch/m._roll and
 // returns the vertical bob offset (added to groundY by the caller). `moved` = it travelled this frame.
 function animateCreatureRig(m,dt,moved){
   const g=m.mesh, b=BESTIARY[m.kind];
-  m._pitch=0; m._roll=0;
+  m._pitch=0; m._roll=0; m._yawOff=0;
   if(!g||!b) return 0;
   if(m.gltf){ return Math.abs(Math.sin(now()/140+m.x))*(m.state==="chase"?0.12:0.04); } // rigged models animate via their mixer
   const chase=m.state==="chase", gait=g.userData.gait||"walk";
@@ -3813,6 +3871,15 @@ function animateCreatureRig(m,dt,moved){
   // limb rig
   const J=g.userData.joints, quad=g.userData.quad;
   const lunge=(m.lungeT>0)?Math.sin(Math.max(0,m.lungeT)/0.18*Math.PI):0;   // 0→1→0 during a melee strike
+  // per-species melee strike (startStrike() sets m.strikeT when the blow lands): a wind-up phase
+  // (aWind 0→1, held) flows into the hit/follow-through (aSlam 0→1→0)
+  let style=null, atkPh=0, aWind=0, aSlam=0, atkSin=0;
+  if(m.strikeT>0){ m.strikeT-=dt; style=ATTACK[m.kind]||null;
+    atkPh=clamp(1-m.strikeT/(m.strikeDur||0.35),0,1);
+    aWind=Math.sin(Math.min(1,atkPh/0.4)*Math.PI/2); aSlam=atkPh<0.4?0:Math.sin((atkPh-0.4)/0.6*Math.PI);
+    atkSin=Math.sin(atkPh*Math.PI); }
+  // ranged wind-up (m.charging): the creature gathers itself back before loosing the bolt/spit
+  const chg=(m.charging>0)?Math.sin(clamp(1-m.charging/0.45,0,1)*Math.PI):0;
   if(J&&gait!=="float"&&gait!=="swim"){
     for(const j of J){ const p=j.piv;
       if(j.role==="leg"){
@@ -3822,7 +3889,14 @@ function animateCreatureRig(m,dt,moved){
       } else if(j.role==="arm"){
         const armPh=(j.sx<0?Math.PI:0);                                    // contralateral to the legs
         let a=Math.sin(ph+armPh)*0.36*gi + (moving?0:Math.sin(tsec*1.3)*0.05);
-        a-=lunge*0.9;                                                       // both arms punch forward on a strike
+        if(style==="pound")      a=-2.2*aWind+3.2*aSlam;                    // both fists high overhead, then slammed down past the body
+        else if(style==="swipe") a=-1.3*Math.sin(atkPh*Math.PI*2+armPh)*atkSin; // fast alternating claw slashes
+        else if(style==="grab")  a=-0.8*atkSin;                             // lurching two-hand reach (arms already hang forward)
+        else if(style==="thrust")a=(j.sx>0)?-1.8*atkSin:-0.3*atkSin;        // spear arm drives deep, off-arm braces
+        else if(style==="rear")  a=-1.1*aWind+1.6*aSlam;                    // forelimbs rise with the rear, crash on the drop
+        else if(style)           a-=atkSin*0.9;                             // other styles: simple strike
+        else a-=lunge*0.9;                                                  // no style: legacy punch
+        if(chg>0) a-=chg*1.3;                                               // spell/spit wind-up: arms gather upward
         p.rotation.x=j.rx+a;
       } else if(j.role==="tail"){
         p.rotation.y=j.ry+Math.sin(ph*0.5)*0.22*(0.35+gi*0.65);
@@ -3833,6 +3907,7 @@ function animateCreatureRig(m,dt,moved){
       }
     }
   }
+  if(J) for(const j of J) if(j.role==="orbit") j.piv.rotation.y=tsec*0.4;   // floating elemental cluster drifts as a mass (runs even under float gait)
   // body-level motion + vertical bob
   let by=0;
   if(gait==="hop"){ by=Math.max(0,Math.sin(ph))*0.45*b.size*gi; m._pitch=-Math.cos(ph)*0.12*gi; }
@@ -3844,6 +3919,17 @@ function animateCreatureRig(m,dt,moved){
   else { by=Math.abs(Math.sin(ph))*0.05*b.size*gi; }                                            // walk/scurry/skitter/crawl/lope/shamble
   if(chase&&!floaty) m._pitch+=-0.12*gi;                                                        // lean into the charge
   if(gait==="shamble") m._roll+=Math.sin(ph*0.5)*0.12;                                          // undead list side to side
+  // strike body language, per style
+  if(style==="pound"){ m._pitch+=-0.1*aWind+0.28*aSlam; by-=0.05*b.size*aSlam; }                // rock back, then drop the weight into the slam
+  else if(style==="bite"){ m._pitch+=-0.32*aWind+0.6*aSlam; }                                    // head rears, then snaps forward
+  else if(style==="gore"){ m._pitch+=0.34*aWind-0.55*aSlam; m._roll+=0.12*aSlam; }               // horns dip, then toss up and aside
+  else if(style==="spin"){ m._yawOff=atkPh*Math.PI*2; m._pitch+=0.08*atkSin; }                   // one full bladed revolution
+  else if(style==="sting"){ m._pitch+=0.5*atkSin; by+=0.1*b.size*aWind; }                        // rises, then dives nose-first with the stinger
+  else if(style==="rear"){ m._pitch+=-0.55*aWind+0.85*aSlam; by+=0.18*b.size*aWind*(1-aSlam); }  // rears tall, then crashes down
+  else if(style==="grab"){ m._pitch+=0.18*atkSin; }
+  else if(style==="swipe"){ m._roll+=0.12*Math.sin(atkPh*Math.PI*2); }
+  else if(style==="thrust"){ m._pitch+=0.12*aSlam; }
+  if(chg>0){ m._pitch+=-0.16*chg; by+=0.04*b.size*chg; }                                         // gathering itself back before loosing the bolt
   return by;
 }
 function buildTree(s){
@@ -9385,6 +9471,7 @@ function castSpellById(id){
   // mark self-cast up front so the wind-up already eases into the crouch (executeSpell refines it)
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
+  castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
 }
 // fire the spell's actual effect (called when a cast completes; re-checks live mana/cooldown)
@@ -9424,6 +9511,7 @@ function executeSpell(id){
   // spells cast on your own body use a crouch→rise gesture + a swirling aura; targeted/forward spells thrust
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
+  castKind=castSelf?"self":"bolt";
   castDur=castSelf?0.78:0.55; castShow=castDur;
   castColor=s.buff==="light"?(s.lightColor||0xfff2cf):(s.buff==="attr"||s.buff==="skill")?0xbfe0ff
     :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
@@ -9457,7 +9545,7 @@ function executeSpell(id){
   // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
   if((s.buff==="attr")||(s.school==="life"&&s.heal)){
     const ally=pickAllyTarget(40);
-    if(ally){ castSelf=false; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+    if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
   }
   if(s.school==="life"&&s.heal){
@@ -9673,6 +9761,10 @@ function meleeAttack(power){
   const offhand=dualOK&&Math.random()<clamp(0.25+skillValue("dualwield")*0.003,0,0.65);
   const cdScale=Math.max(.35,1-player.attr.Coordination*0.02);
   player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"))*(0.7+power*0.5);player.swing=1;SFX.swing();  // heavier swings recover slower
+  // each weapon class owns two signature attacks; one is rolled per swing (off-hand weave gets its own cut)
+  { const SW_VAR={dagger:["stab","fan"],sword:["diag","horiz"],axe:["hew","chopdn"],mace:["smash","rising"],
+      spear:["lunge","sweep"],staff:["sweep","lunge"],twohand:["chop","cleave"],unarmed:["cross","hook"]};
+    const v=SW_VAR[wt]||SW_VAR.sword; player.swingAnim=offhand?"offhand":v[irnd(0,v.length-1)]; }
   if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor());
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
@@ -10213,6 +10305,7 @@ function update(dt){
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
   player.invuln=Math.max(0,player.invuln-dt);
   player.swing=Math.max(0,player.swing-dt*3.2);
+  if(player.act){ player.act.t-=dt; if(player.act.t<=0) player.act=null; }   // activity gesture (gather/craft/…)
   player.bowDraw=Math.max(0,player.bowDraw-dt*4);
   portalCd=Math.max(0,portalCd-dt); portalTouch();
   if(castSelf&&castShow>0&&!castSwirlActive){ selfCastFX(player.x,player.z,castColor); castSwirlActive=true; }  // one swirl per self-cast
@@ -10335,7 +10428,7 @@ function update(dt){
       else { if(m.t>rnd(2,4)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.5)m.idleT=rnd(1,2.5);} if(m.idleT>0)m.idleT-=dt; else {m.x+=Math.sin(m.ang)*b.spd*0.35*slowF*dt;m.z+=Math.cos(m.ang)*b.spd*0.35*slowF*dt;} }
       m.x=clamp(m.x,-HALF+1,HALF-1);m.z=clamp(m.z,-HALF+1,HALF-1);
       const aby=animateCreatureRig(m,dt,Math.hypot(m.x-oax,m.z-oaz)>1e-4);
-      m.mesh.position.set(m.x,groundY(m.x,m.z)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang,m._roll||0);
+      m.mesh.position.set(m.x,groundY(m.x,m.z)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
       m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.2:1)); if(m.flash>0)m.flash-=dt;
       continue;
     }
@@ -10372,7 +10465,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else m.charging=0.45;
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
@@ -10389,7 +10482,7 @@ function update(dt){
     let lx=m.x,lz=m.z;
     if(m.lungeT>0){m.lungeT-=dt;const la=Math.atan2(player.x-m.x,player.z-m.z),lf=Math.sin(Math.max(0,m.lungeT)/0.18*Math.PI)*0.6;lx+=Math.sin(la)*lf;lz+=Math.cos(la)*lf;}
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-ox,m.z-oz)>1e-4);
-    m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang,m._roll||0);
+    m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb&&(m.hp<m.mhp||m.isBoss||m.isElite)){hb.visible=true;hb.quaternion.copy(cam.quaternion);
@@ -10474,7 +10567,8 @@ function animateAvatar(dt){
   idleT+=dt;
   updateShieldModel();                                        // reflect the equipped off-hand shield
   const moving=!!(held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"])&&player.alive;
-  const sw=player.swing, acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow");
+  const sw=player.swing, actGesture=!!(player.act&&player.act.t>0);
+  const acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow")||actGesture;
   const blk=blocking&&sw<=0;                                   // actively raising the guard (not mid-swing)
   const idle=!moving&&!acting;
   // movement intensity: walk vs run (sprint amplifies the whole gait)
@@ -10483,7 +10577,7 @@ function animateAvatar(dt){
   u._r=(u._r==null?0:u._r)+((running?1:0)-(u._r||0))*Math.min(1,dt*6); const rN=u._r;
   const amp=1+rN*0.8;                                         // longer strides / bigger arm swing when running
   // combat engagement: acting or blocking holds a "ready" stance, which relaxes to "resting" a few seconds later
-  if(acting||blk) u._combatT=4; else u._combatT=Math.max(0,(u._combatT||0)-dt);
+  if(sw>0||castShow>0||(player.bowDraw>0)||blk) u._combatT=4; else u._combatT=Math.max(0,(u._combatT||0)-dt);  // gather/craft don't raise the guard
   u._c=(u._c==null?0:u._c)+(((u._combatT>0)?1:0)-(u._c||0))*Math.min(1,dt*5); const cW=u._c;
   const hasShield=!!equippedShield();
   const p=player.bob*3, sP=Math.sin(p), sQ=Math.sin(p+Math.PI);
@@ -10515,13 +10609,85 @@ function animateAvatar(dt){
   // left arm defaults to the opposite-leg walk swing; attacks may grip it onto the weapon
   let lX=w*(-sQ*0.4*amp)+(1-w)*(0.04+breath*0.02), lZ=0.04, lE=-(0.2+w*Math.max(0,-sQ)*0.5*amp)-(1-w)*0.18;
   let sX,sZ,eX, twist=w*sP*0.06*amp;
+  // shared casting lower-body: from the ready stance, dip into a slight squat (identical for every cast
+  // type); on release the legs spring back with a little bounce that lifts just past neutral, then settles.
+  const castSquat=(k,rel)=>{ const q=k*(1-(rel||0)), b=Math.sin((rel||0)*Math.PI)*0.055;
+    u.spine.position.y+=b-q*0.1;
+    u.hipR.rotation.x+=q*0.3; u.hipL.rotation.x+=q*0.3;
+    u.knR.rotation.x-=q*0.62; u.knL.rotation.x-=q*0.62;
+    u.anR.rotation.x+=q*0.32; u.anL.rotation.x+=q*0.32; };
   if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
-    if(twoH){ // two-handed overhead chop — both hands grip, torso rotates through the swing
-      sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
-      lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2;
-    } else {  // single-handed diagonal slash
-      sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2;
+    const kind=player.swingAnim||(twoH?"chop":"diag");
+    const drive=k=>{ u.spine.rotation.x+=k*0.2; u.hipR.rotation.x+=k*0.26; u.knR.rotation.x-=k*0.5; u.anR.rotation.x+=k*0.24; };  // footwork: the lead leg plants & drives into the blow
+    switch(kind){
+      case "chop":   // TWOHAND: overhead chop — both hands grip, torso rotates through the swing
+        sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
+        lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2; drive(slash*0.55); break;
+      case "cleave": // TWOHAND: massive flat cleave — full torso wind, blade carried level through the arc
+        sX=-1.25; sZ=-0.15-raise*0.55+slash*0.85; eX=-(0.5-slash*0.25);
+        lX=-1.1; lZ=-0.5; lE=-0.9; twist=-(0.55+raise*0.25)+slash*1.15; u.neck.rotation.y=-twist*0.5; drive(slash*0.4); break;
+      case "horiz":  // SWORD: flat cut across the body
+        sX=-1.2-raise*0.2; sZ=-0.2-raise*0.6+slash*0.95; eX=-(0.45-slash*0.25);
+        twist=-(0.35+raise*0.2)+slash*0.85; u.neck.rotation.y=-twist*0.45; drive(slash*0.35); break;
+      case "stab":   // DAGGER: lunge-stab — the point snaps from the hip straight out
+        sX=-0.25+raise*0.15-slash*1.5; sZ=-0.06; eX=-(1.5-slash*1.3);
+        lX=-0.5+slash*0.7; lZ=0.15; lE=-0.9; twist=raise*0.15-slash*0.4; drive(slash*0.8); break;
+      case "fan":    // DAGGER: fan — two fast wrist-led cuts in one beat
+        { const osc=Math.sin(t*Math.PI*2);
+          sX=-1.15; sZ=-0.15+osc*0.5; eX=-(0.8-Math.abs(osc)*0.4); twist=osc*0.3; } break;
+      case "hew":    // AXE: heavy flat hew — the whole body drops in behind the edge
+        sX=-1.05-raise*0.3; sZ=-0.25-raise*0.7+slash*1.05; eX=-(0.55-slash*0.3);
+        twist=-(0.5+raise*0.25)+slash*1.05; u.spine.position.y-=slash*0.06; u.neck.rotation.y=-twist*0.45; drive(slash*0.5); break;
+      case "chopdn": // AXE: steep diagonal chop — pitches forward as the edge bites
+        sX=-0.4-raise*2.0+slash*2.9; sZ=-0.14-slash*0.3; eX=-(0.45+raise*0.7-slash*0.6);
+        twist=slash*0.3; u.spine.rotation.x+=slash*0.14; drive(slash*0.5); break;
+      case "smash":  // MACE: overhead smash — big raise, the body drops with the impact
+        sX=-0.5-raise*2.2+slash*3.1; sZ=-0.05; eX=-(0.35+raise*0.75-slash*0.6);
+        twist=-0.15+slash*0.3; u.spine.position.y-=slash*0.09; u.knL.rotation.x-=slash*0.35; drive(slash*0.7); break;
+      case "rising": // MACE: rising blow — rips upward from beside the hip
+        sX=0.35+raise*0.25-slash*2.3; sZ=-0.12; eX=-(0.95-slash*0.75);
+        twist=-0.2+slash*0.5; u.spine.position.y+=slash*0.05; u.spine.rotation.x-=slash*0.12; drive(raise*0.4); break;
+      case "lunge":  // SPEAR/STAFF: two-handed driving thrust down the line
+        sX=-0.55+raise*0.35-slash*1.35; sZ=-0.08; eX=-(1.15-slash*0.95);
+        lX=-1.0-slash*0.3; lZ=-0.35; lE=-0.7+slash*0.3; twist=raise*0.2-slash*0.45; drive(slash*0.9); break;
+      case "sweep":  // SPEAR/STAFF: wide haft sweep — both hands carry the shaft through a flat arc
+        sX=-1.15; sZ=-0.2-raise*0.5+slash*0.8; eX=-(0.6-slash*0.2);
+        lX=-0.95; lZ=0.3-slash*0.5; lE=-0.8; twist=-(0.45+raise*0.2)+slash*1.0; u.neck.rotation.y=-twist*0.4; drive(slash*0.35); break;
+      case "cross":  // UNARMED: hip-driven straight right
+        sX=-0.3+raise*0.2-slash*1.45; sZ=-0.1; eX=-(1.7-slash*1.5);
+        lX=-0.9+slash*0.3; lZ=0.2; lE=-1.5; twist=raise*0.2-slash*0.5; drive(slash*0.6); break;
+      case "hook":   // UNARMED: hook — the elbow stays bent, the torso whips it around
+        sX=-1.2; sZ=-0.3-raise*0.4+slash*0.8; eX=-1.25;
+        lX=-0.9; lZ=0.25; lE=-1.5; twist=-(0.4+raise*0.2)+slash*0.9; drive(slash*0.4); break;
+      case "offhand": // DUAL WIELD: the LEFT hand cuts while the right keeps its guard
+        lX=-0.3-raise*1.7+slash*2.7; lZ=0.1+slash*0.5; lE=-(0.4+raise*0.9-slash*0.7);
+        sX=-0.55; sZ=-0.2; eX=-1.25; twist=slash*-0.2; break;
+      default:       // SWORD: diagonal slash
+        sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2; drive(slash*0.4);
     }
+  }
+  else if(actGesture){             // ACTIVITY gesture — gather / mine / craft / tinker / fish
+    const ap=1-player.act.t/player.act.dur, ty=player.act.type, osc=Math.sin(now()/90), osc2=Math.sin(now()/70+1);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;   // free the hands to mime the work
+    if(ty==="mine"){               // two-handed overhead pick swing, repeating: overhead → strike down
+      const k=(Math.sin(ap*Math.PI*5-Math.PI/2)+1)/2;
+      u.spine.rotation.x=0.12+k*0.24; u.spine.position.y=AV_WAIST-0.05-k*0.05;
+      u.hipR.rotation.x=0.22;u.hipL.rotation.x=0.22;u.knR.rotation.x=-0.5;u.knL.rotation.x=-0.5;u.anR.rotation.x=0.28;u.anL.rotation.x=0.28;
+      sX=-2.7+k*3.0; sZ=-0.06; eX=-(0.25+(1-k)*0.5); twist=0.05; lX=sX; lZ=0.12; lE=eX-0.1; u.neck.rotation.x=0.15+k*0.22; u.neck.rotation.y=0;
+    } else if(ty==="gather"){      // crouch low and pluck from the ground
+      u.spine.rotation.x=0.55; u.spine.position.y=AV_WAIST-0.16;
+      u.hipR.rotation.x=0.5;u.hipL.rotation.x=0.5;u.knR.rotation.x=-1.0;u.knL.rotation.x=-1.0;u.anR.rotation.x=0.5;u.anL.rotation.x=0.5;
+      sX=-0.35+osc*0.2; sZ=-0.08; eX=-0.5-Math.max(0,osc)*0.45; lX=-0.15; lZ=0.1; lE=-0.5; twist=0; u.neck.rotation.x=0.42; u.neck.rotation.y=0;
+    } else if(ty==="craft"){       // work at a bench — the right hand hammer-taps, the left steadies the piece
+      u.spine.rotation.x=0.24; u.spine.position.y=AV_WAIST-0.04; u.knR.rotation.x=-0.2;u.knL.rotation.x=-0.2;
+      sX=-0.85+Math.max(0,osc)*0.45; sZ=-0.12; eX=-1.35; lX=-0.7; lZ=0.14; lE=-1.5; twist=0.03; u.neck.rotation.x=0.34; u.neck.rotation.y=0;
+    } else if(ty==="tinker"){      // fine precise handwork, hands together at the chest
+      u.spine.rotation.x=0.2;
+      sX=-1.0+osc*0.1; sZ=-0.16; eX=-1.7+osc2*0.12; lX=-1.0-osc2*0.1; lZ=0.16; lE=-1.7+osc*0.12; twist=0; u.neck.rotation.x=0.4; u.neck.rotation.y=0;
+    } else if(ty==="fish"){        // a brief overhead cast, then hold the rod out with a lazy twitch
+      const cast=Math.sin(clamp(ap,0,0.18)/0.18*Math.PI);
+      sX=-1.1-cast*0.8; sZ=-0.08; eX=-0.55+cast*0.5+osc*0.06; lX=-0.8; lZ=0.12; lE=-0.7; twist=0.08; u.neck.rotation.x=0.1;
+    } else { sX=-0.6; sZ=-0.1; eX=-1.0; lX=-0.6; lZ=0.1; lE=-1.0; }
   }
   else if(player.emoteT>0){        // EMOTE gesture — a deliberate social animation (yields to a swing, overrides idle/cast)
     const act=player.emoteAct, osc=Math.sin(now()/110);
@@ -10539,23 +10705,41 @@ function animateAvatar(dt){
     else if(act==="laugh"){ u.spine.rotation.x=-0.18+osc*0.05; sX=-1.1; eX=-1.4; lX=-1.1; lE=-1.4; }
     else { sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }   // fallback = wave
   }
-  else if(castShow>0&&castSelf){   // SELF-cast: dip into a slight crouch, then rise tall sweeping both arms overhead
-    const cp=clamp(1-castShow/castDur,0,1), down=clamp(cp/0.42,0,1), up=clamp((cp-0.42)/0.58,0,1), crouch=down*(1-up);
-    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false;   // hands free for the gesture
-    u.spine.position.y=AV_WAIST - crouch*0.15 + up*0.03;
-    u.spine.rotation.x=crouch*0.18 - up*0.13;                 // hunch down, then arch back looking up
-    const kb=-(crouch*0.75);
-    u.hipR.rotation.x=crouch*0.4; u.hipL.rotation.x=crouch*0.4; u.knR.rotation.x=kb; u.knL.rotation.x=kb;
-    u.anR.rotation.x=crouch*0.34; u.anL.rotation.x=crouch*0.34;
-    u.neck.rotation.x=-up*0.38; u.neck.rotation.y=0;          // gaze rises as the spell releases
-    sX=0.55*crouch - up*3.1; sZ=-0.2*up; eX=-(0.55*(1-up)+0.05);   // arms low → swept up into an overhead V
-    lX=sX; lZ=0.2*up; lE=eX; twist=0;
+  else if(castShow>0&&castKind==="self"){   // SELF-cast: slight squat from the ready guard, hands sweep from close-in up into an overhead V
+    const cp=clamp(1-castShow/castDur,0,1);
+    const rise=clamp((cp-0.3)/0.45,0,1), rel=clamp((cp-0.78)/0.22,0,1);
+    const sq=clamp(cp/0.18,0,1);                              // quick dip in; castSquat springs it back with a bounce on release
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.position.y=AV_WAIST + rise*0.04;
+    u.spine.rotation.x=sq*(1-rel)*0.06 - rise*0.15;           // lean to balance the squat, then arch back looking up
+    castSquat(sq,rel);
+    u.neck.rotation.x=-rise*0.42; u.neck.rotation.y=0;
+    // arms start slightly raised with hands close to the body (ready guard), then sweep up into an overhead V
+    const V=-2.6*rise*(1-rel*0.18);
+    sX=-0.5+V; sZ=-0.08-0.34*rise; eX=-(1.15*(1-rise)+0.05);
+    lX=sX; lZ=0.08+0.34*rise; lE=eX; twist=0;
   }
-  else if(castShow>0){            // forward/targeted cast: thrust the wand toward the target
-    const cp=1-castShow/castDur, back=Math.sin(clamp(cp,0,0.3)/0.3*Math.PI), thrust=cp>=0.3?Math.sin((cp-0.3)/0.7*Math.PI):0;
-    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true;
-    sX=-0.7-back*0.6+thrust*1.7; sZ=-0.1; eX=-(0.9-thrust*0.7); twist=thrust*0.12;
-    lX=-0.3+back*0.4; lZ=0.2; lE=-0.6;                        // off-hand gestures with the cast
+  else if(castShow>0&&castKind==="bestow"){ // BESTOW on an ally: same slight squat; both palms rise and present the gift outward
+    const cp=clamp(1-castShow/castDur,0,1);
+    const draw=clamp(cp/0.4,0,1), offer=cp>=0.4?Math.sin((cp-0.4)/0.6*Math.PI):0;
+    const sq=clamp(cp/0.18,0,1), rel=clamp((cp-0.75)/0.25,0,1);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.rotation.x=sq*(1-rel)*0.05-offer*0.07; u.spine.position.y=AV_WAIST+offer*0.03;
+    castSquat(sq,rel);
+    sX=-0.55-draw*0.75-offer*0.55; sZ=-0.18; eX=-(1.05-offer*0.75);   // palms rise, then extend toward the ally
+    lX=sX; lZ=0.18; lE=eX; twist=0; u.neck.rotation.x=-0.12-offer*0.1; u.neck.rotation.y=0;
+  }
+  else if(castShow>0){            // BOLT (offensive/targeted): same slight squat; coil back, then snap a forward thrust through the torso
+    const cp=1-castShow/castDur;
+    const coil=Math.sin(clamp(cp,0,0.35)/0.35*Math.PI*0.5), thrust=cp>=0.35?Math.sin((cp-0.35)/0.65*Math.PI):0;
+    const sq=clamp(cp/0.18,0,1), rel=clamp((cp-0.75)/0.25,0,1);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.position.y=AV_WAIST;
+    u.spine.rotation.x=sq*(1-rel)*0.05-coil*0.08+thrust*0.15;
+    castSquat(sq,rel);
+    sX=-0.4+coil*0.5-thrust*1.95; sZ=-0.08-coil*0.22+thrust*0.06; eX=-(1.15+coil*0.4-thrust*0.95);   // draw the wand back & up, then snap it forward at the target
+    lX=-0.3+coil*0.4-thrust*0.25; lZ=0.2; lE=-0.7;
+    twist=coil*0.32-thrust*0.48; u.neck.rotation.y=-twist*0.4; u.neck.rotation.x=-0.05;   // head tracks toward the target
   }
   else if(player.bowDraw>0&&weaponMode==="bow"){ sX=-1.4; sZ=-0.1; eX=-1.1; lX=-1.3; lZ=0.15; lE=-0.25; }
   else if(blk){                    // raising the guard: brace low, off-hand/shield up across the body, weapon tucked
@@ -10573,6 +10757,13 @@ function animateAvatar(dt){
     lX=lX+(glX-lX)*guard; lZ=lZ+(glZ-lZ)*guard; lE=lE+(glE-lE)*guard;
     u.knR.rotation.x-=guard*0.28; u.knL.rotation.x-=guard*0.28; u.hipR.rotation.x+=guard*0.10; u.hipL.rotation.x+=guard*0.10;
     u.spine.position.y-=guard*0.04; twist+=guard*0.10;
+    // living ready stance: breathing lift, weapon-hand micro-bob, a slow weight shift & torso sway (only while at the ready)
+    const rb=Math.sin(idleT*1.5), rb2=Math.sin(idleT*0.9+0.7), shift=Math.sin(idleT*0.55);
+    sX+=guard*rb*0.045; eX+=guard*rb2*0.05; sZ+=guard*Math.sin(idleT*1.2)*0.02;
+    lX+=guard*rb2*0.03; lE+=guard*rb*0.045;
+    u.spine.position.y+=guard*Math.abs(rb)*0.009; u.spine.rotation.z+=guard*shift*0.03;
+    u.neck.rotation.y+=guard*shift*0.14; twist+=guard*shift*0.035;
+    u.hipR.rotation.x+=guard*shift*0.02; u.hipL.rotation.x-=guard*shift*0.02;   // weight rocks subtly between the feet
   }
   u.spine.rotation.y=twist;
   u.shR.rotation.x=sX; u.shR.rotation.z=sZ; u.elR.rotation.x=eX;
@@ -10726,12 +10917,23 @@ function syncCamera(dt){
   const sw=player.swing, t=1-sw;                                  // t: 0→1 over the swing
   const raise=sw>0?Math.sin(clamp(t,0,0.3)/0.3*Math.PI):0;        // anticipation hump (first 30%)
   const slash=(sw>0&&t>=0.22)?Math.sin((t-0.22)/0.78*Math.PI):0;  // strike + follow-through hump
-  weaponHand.rotation.x=0.1 - raise*0.75 + slash*1.85;
-  weaponHand.rotation.y=-0.15 + raise*0.5  - slash*1.15;
-  weaponHand.rotation.z=0.05 + raise*0.4   - slash*0.55;
-  weaponHand.position.x=0.42 + bobX + raise*0.14 - slash*0.5;
-  weaponHand.position.y=-0.42 + bobY + raise*0.18 - slash*0.16;
-  weaponHand.position.z=-0.7 + slash*0.24;
+  // first-person swing follows the rolled attack (player.swingAnim) via five motion families:
+  // each row is [raiseCoeff,slashCoeff] for rx,ry,rz,px,py,pz around the rest pose.
+  { const FPS={
+      diag:  [[-0.75,1.85],[0.5,-1.15],[0.4,-0.55],[0.14,-0.5],[0.18,-0.16],[0,0.24]],          // over-the-shoulder diagonal
+      flat:  [[-0.2,0.45],[0.85,-1.9],[0.2,-0.3],[0.3,-0.8],[0.06,-0.04],[0,0.2]],               // level cut across the view
+      thrust:[[-0.12,0.3],[0.25,-0.3],[0.05,-0.05],[0.08,-0.16],[0.04,-0.06],[0.3,-0.62]],        // pull back, drive the point forward
+      over:  [[-1.15,2.35],[0.2,-0.4],[0.12,-0.25],[0.06,-0.22],[0.3,-0.34],[0.05,0.2]],          // high overhead smash
+      rise:  [[0.55,-1.7],[0.15,-0.3],[-0.1,0.2],[0.05,-0.1],[-0.16,0.34],[0.1,-0.35]] };         // rips upward from low
+    const MAP={diag:"diag",offhand:"diag",fan:"flat",horiz:"flat",cleave:"flat",hew:"flat",sweep:"flat",hook:"flat",
+      stab:"thrust",lunge:"thrust",cross:"thrust",chop:"over",chopdn:"over",smash:"over",rising:"rise"};
+    const P=FPS[MAP[player.swingAnim]||"diag"];
+    weaponHand.rotation.x=0.1   + raise*P[0][0] + slash*P[0][1];
+    weaponHand.rotation.y=-0.15 + raise*P[1][0] + slash*P[1][1];
+    weaponHand.rotation.z=0.05  + raise*P[2][0] + slash*P[2][1];
+    weaponHand.position.x=0.42 + bobX + raise*P[3][0] + slash*P[3][1];
+    weaponHand.position.y=-0.42 + bobY + raise*P[4][0] + slash*P[4][1];
+    weaponHand.position.z=-0.7 + raise*P[5][0] + slash*P[5][1]; }
   // --- bow: snap release + recoil; string and arrow leave the nock, then re-nock ---
   const bd=player.bowDraw, td=1-bd;                               // td: 0→1 after release
   const recoil=bd>0?Math.sin(clamp(td,0,0.45)/0.45*Math.PI):0;    // kick hump
@@ -14299,6 +14501,7 @@ function addNode(x,z,type){
 }
 function gatherNode(n){
   n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
+  startAction(n.type==="ore"?"mine":"gather",1.3);   // play the work animation (mining swing / crouched harvest)
   if(n.type==="ore"){const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot");}
   else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
     if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
@@ -16136,7 +16339,7 @@ function updateSharedMobs(dt){
     m.flash=Math.max(0,m.flash-dt);
     const smx=m.x,smz=m.z; m.x+=(m.tx-m.x)*k; m.z+=(m.tz-m.z)*k;
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-smx,m.z-smz)>2e-3);
-    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.set(m._pitch||0,m.yaw||0,m._roll||0);
+    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.set(m._pitch||0,(m.yaw||0)+(m._yawOff||0),m._roll||0);
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb){ if(m.hp<m.mhp){ hb.visible=true; hb.quaternion.copy(cam.quaternion);
