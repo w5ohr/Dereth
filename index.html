@@ -1628,7 +1628,63 @@ const FACILITY_LIST=[
 const FACILITY_PORTALS=FACILITY_LIST.map(([name,req])=>{const def=DUNGEONS.find(d=>d.name===name);return def&&{def,req};}).filter(Boolean);
 const HUBS=CITIES.concat(DUNGEONS); // content (scenery, monsters) clusters around these
 // ---- terrain: mountains, valleys, hills, lakes, and an ocean rim ----
+// ═══ THE REAL DERETH — terrain sampled from the AC client's own cell data (user-supplied dats,
+//     exported by tools/ac_dat_export.py into assets/acmap.png: R = height-table index,
+//     G = terrain type 0–31, B = road bits). Falls back to the legacy procedural island when the
+//     data texture is missing/unreadable, so the game still runs standalone. ═══
+const AC_HEIGHTS=[0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,104,106,108,110,112,114,116,118,120,122,124,126,128,130,132,134,136,138,140,142,144,146,148,150,152,154,156,158,160,162,164,166,168,170,172,174,176,178,180,182,184,186,188,190,192,194,196,198,200,202,204,206,208,210,212,214,216,218,220,222,224,226,228,230,232,234,236,238,240,242,244,246,248,250,252,254,256,258,260,262,264,266,268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298,300,302,304,306,308,310,312,314,316,318,320,322,324,326,328,330,332,334,336,338,340,342,344,346,348,350,352,354,356,358,360,362,364,366,368,370,372,374,376,378,380,382,384,386,388,390,392,394,396,398,400,404,408,412,416,420,424,428,432,436,440,444,448,452,456,460,464,468,472,476,480,484,488,492,496,500,504,508,512,516,520,524,528,532,536,540,544,548,552,556,560,568,576,584,592,600,608,616,624,632,640,650,660,670,680,700];
+const ACMAP={on:false,W:2041,H:null,T:null,Rd:null};
+const AC_VSCALE=1/3;   // AC metres → world units (24 m cells → 8 u grid, so 1/3 keeps slopes true)
+ACMAP.load=function(){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{ try{
+        const W=ACMAP.W, c=document.createElement('canvas'); c.width=c.height=W;
+        const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(img,0,0);
+        const d=g.getImageData(0,0,W,W).data, n=W*W;
+        ACMAP.H=new Float32Array(n); ACMAP.T=new Uint8Array(n); ACMAP.Rd=new Uint8Array(n);
+        for(let i=0;i<n;i++){ ACMAP.H[i]=AC_HEIGHTS[d[i*4]]*AC_VSCALE; ACMAP.T[i]=d[i*4+1]; ACMAP.Rd[i]=d[i*4+2]; }
+        // low-pass the heights to the ground mesh's 40u resolution: the raw field carries 8u detail,
+        // and sampling that at 40u aliases into jagged shards. Two separable box passes ≈ gaussian.
+        for(let pass=0;pass<2;pass++){
+          const src=ACMAP.H, tmp=new Float32Array(n);
+          for(let r=0;r<W;r++){ const o=r*W;                      // horizontal
+            for(let c=0;c<W;c++){ let s=0,k=0;
+              for(let dx=-2;dx<=2;dx++){ const cc=c+dx; if(cc>=0&&cc<W){ s+=src[o+cc]; k++; } }
+              tmp[o+c]=s/k; } }
+          for(let c=0;c<W;c++){                                    // vertical
+            for(let r=0;r<W;r++){ let s=0,k=0;
+              for(let dy=-2;dy<=2;dy++){ const rr=r+dy; if(rr>=0&&rr<W){ s+=tmp[rr*W+c]; k++; } }
+              src[r*W+c]=s/k; } }
+        }
+        ACMAP.on=true;
+        for(const t of FLATTEN) t.h=Math.max(8,terrainBase(t.x,t.z));   // re-seat every town & castle plateau on the REAL ground
+        console.log("ACMAP: the real Dereth is loaded");
+      }catch(e){ console.warn("ACMAP unreadable ("+e.message+") — procedural terrain fallback"); }
+      res(); };
+    img.onerror=()=>{ console.warn("ACMAP texture missing — procedural terrain fallback"); res(); };
+    img.src="assets/acmap.png";
+  });
+};
+// world → data-texture: column = x/8+1019.5 (west→east), row = z/8+1020.5 (image row 0 = north)
+function acType(x,z){ if(!ACMAP.on) return -1;
+  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  if(c<0||c>=W||r<0||r>=W) return 20; return ACMAP.T[r*W+c]; }
+function acRoad(x,z){ if(!ACMAP.on) return 0;
+  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  if(c<0||c>=W||r<0||r>=W) return 0; return ACMAP.Rd[r*W+c]; }
+const AC_WATER_DEPTH={16:-2.5,17:-2.5,18:-3.2,19:-3.2,20:-6.5};   // running/fresh · shallow sea · deep sea
+function acHeight(x,z){
+  const W=ACMAP.W, fc=x/8+1019.5, fr=z/8+1020.5;
+  if(fc<0||fc>=W-1||fr<0||fr>=W-1) return -30;                    // beyond the charted world: open ocean
+  const c0=Math.floor(fc), r0=Math.floor(fr), tc=fc-c0, tr=fr-r0, i=r0*W+c0;
+  let h=ACMAP.H[i]*(1-tc)*(1-tr)+ACMAP.H[i+1]*tc*(1-tr)+ACMAP.H[i+W]*(1-tc)*tr+ACMAP.H[i+W+1]*tc*tr;
+  const ty=ACMAP.T[Math.round(fr)*W+Math.round(fc)];
+  const wd=AC_WATER_DEPTH[ty]; if(wd!==undefined) h=Math.min(h,wd);   // rivers & seas cut below the water plane
+  return h;
+}
 function terrainBase(x,z){
+  if(ACMAP.on) return acHeight(x,z);
   const d=Math.hypot(x,z);
   let h = 24
     + Math.sin(x*0.0009)*Math.cos(z*0.0011)*60          // broad hills & valleys (valleys dip below sea → lakes)
@@ -2366,9 +2422,26 @@ function initThree(){
   // Normals are computed analytically from the terrainH gradient (identical on both sides of a
   // border), so the chunk seams are invisible.
   const col=new THREE.Color();
+  // AC terrain-type ground palette (LandDefs types 0–31, from the client's own cell data)
+  const AC_TYPE_COL=[
+    [0.46,0.42,0.38],[0.34,0.50,0.25],[0.78,0.86,0.93],[0.26,0.48,0.20],   // BarrenRock · Grassland · Ice · LushGrass
+    [0.30,0.38,0.24],[0.42,0.32,0.22],[0.13,0.11,0.14],[0.52,0.44,0.32],   // Marsh · MudRichDirt · ObsidianPlain · PackedDirt
+    [0.50,0.42,0.30],[0.42,0.53,0.27],[0.82,0.72,0.46],[0.66,0.63,0.52],   // PatchyDirt · PatchyGrassland · SandYellow · SandGrey
+    [0.62,0.56,0.42],[0.50,0.46,0.42],[0.47,0.44,0.38],[0.90,0.92,0.96],   // SandRockStrewn · Sedimentary · SemiBarrenRock · Snow
+    [0.20,0.34,0.40],[0.22,0.36,0.40],[0.22,0.38,0.44],[0.22,0.38,0.44],   // water types (visible on shorelines under the plane)
+    [0.18,0.32,0.42],[0.46,0.52,0.32],[0.40,0.48,0.28],[0.44,0.50,0.30],   // deep sea · prairie-ish spares
+    [0.42,0.46,0.30],[0.38,0.46,0.28],[0.40,0.44,0.30],[0.42,0.48,0.30],
+    [0.40,0.46,0.30],[0.42,0.46,0.32],[0.40,0.44,0.30],[0.44,0.38,0.28]];
   const groundVertColor=(wx,wz,hh)=>{
     const t=regionTint(wx,wz);
     let rr=t[0],gg=t[1],bb=t[2];
+    if(ACMAP.on){                                        // the REAL ground: colour straight from the client's terrain bytes
+      const ty=acType(wx,wz), tc=AC_TYPE_COL[ty]||AC_TYPE_COL[1];
+      const j=0.94+Math.sin(wx*0.37)*Math.sin(wz*0.41)*0.06;               // per-vertex jitter so fields never read flat
+      rr=tc[0]*j; gg=tc[1]*j; bb=tc[2]*j;
+      if(acRoad(wx,wz)){ rr=0.46; gg=0.37; bb=0.26; }                      // the authentic AC road web, packed earth
+      return col.setRGB(rr,gg,bb);
+    }
     // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
     const bmv=biomeAt(wx,wz);
     if(bmv==="desert"){ rr=0.90;gg=0.78;bb=0.50; }
@@ -11373,10 +11446,30 @@ function drawMinimap(){
 }
 
 // ---------- full world map ----------
+let _acMapBg=null;
+function acMapBackdrop(S){   // the real continent, painted once from the client's terrain bytes
+  if(_acMapBg||!ACMAP.on) return _acMapBg;
+  const c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d'), im=g.createImageData(S,S);
+  for(let py=0;py<S;py++) for(let px=0;px<S;px++){
+    const wx=px/S*WORLD-HALF, wz=py/S*WORLD-HALF;
+    const ty=acType(wx,wz), h=acHeight(wx,wz), i=(py*S+px)*4;
+    let r,gg,b;
+    if(h<=0.05||(ty>=16&&ty<=20)){ r=14;gg=22;b=44; }                     // sea & rivers
+    else { const tc=(typeof AC_TYPE_COL!=="undefined"&&0)||null;          // palette lives in initThree scope — mirror the key tones
+      const P={0:[92,84,76],1:[62,92,46],2:[176,192,206],3:[48,88,38],4:[56,70,45],5:[84,64,44],6:[26,22,28],7:[104,88,64],8:[100,84,60],9:[78,98,50],10:[164,144,92],11:[132,126,104],12:[124,112,84],13:[100,92,84],14:[94,88,76],15:[194,198,206]};
+      const t=P[ty]||[80,94,52]; const sh=Math.min(1.25,0.75+h/160);      // altitude lightening
+      r=t[0]*sh; gg=t[1]*sh; b=t[2]*sh; }
+    if(acRoad(wx,wz)){ r=118;gg=94;b=64; }
+    im.data[i]=r; im.data[i+1]=gg; im.data[i+2]=b; im.data[i+3]=255;
+  }
+  g.putImageData(im,0,0); _acMapBg=c; return c;
+}
 function drawBigMap(){
   const c=document.getElementById('bigmap'),g=c.getContext('2d'),S=520,sc=S/WORLD;
   const cx=v=>(v+HALF)*sc;
   g.clearRect(0,0,S,S);g.fillStyle="#11140c";g.fillRect(0,0,S,S);
+  const bg=acMapBackdrop(S); if(bg&&!inDungeon){ g.drawImage(bg,0,0); g.fillStyle="rgba(10,10,6,0.28)"; g.fillRect(0,0,S,S); }   // real Dereth under the markers, dimmed for contrast
   g.strokeStyle="rgba(216,177,74,0.07)";g.lineWidth=1;
   for(let i=1;i<8;i++){const p=i/8*S;g.beginPath();g.moveTo(p,0);g.lineTo(p,S);g.moveTo(0,p);g.lineTo(S,p);g.stroke();}
   if(inDungeon){
@@ -14592,7 +14685,7 @@ function updateTargetUI(dt,force){
     if(m.mesh&&m.mesh.userData.hb) m.mesh.userData.hb.visible=true;            // the tri-bar stays visible while targeted
     const tb=m.mesh&&m.mesh.userData.tfBars;
     if(tb){ tb.st.scale.x=Math.max(0.001,(m.st!=null?m.st/m.mst:1)); tb.mn.scale.x=Math.max(0.001,(m.mn!=null?m.mn/m.mmn:1)); }
-    setBar(tf,"tfHp","bhp",m.hp,m.mhp); setBar(tf,"tfSt","bst",m.st!=null?m.st:1,m.mst||1); setBar(tf,"tfMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+    tfSetBar(tf,"tfHp","bhp",m.hp,m.mhp); tfSetBar(tf,"tfSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(tf,"tfMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
   } else {                                                                      // npc / vendor / item: name only
     ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="none"; });
   }
@@ -14600,7 +14693,7 @@ function updateTargetUI(dt,force){
   document.getElementById('tfName').textContent=targetName(t);
   tf.style.display=uiHiddenIs("targetFrame")?"none":"block";
 }
-function setBar(root,spanId,cls,v,max){
+function tfSetBar(root,spanId,cls,v,max){
   const b=root.querySelector("."+cls); if(!b) return;
   b.querySelector("i").style.width=Math.round(clamp(v/Math.max(1,max),0,1)*100)+"%";
   const sp=document.getElementById(spanId); if(sp) sp.textContent=Math.max(0,Math.round(v))+" / "+Math.round(max);
@@ -14648,7 +14741,7 @@ function openIdPanel(pick){
   let mesh=null, html="";
   if(pick.type==="monster"){ const m=pick.ref,b=BESTIARY[m.kind]; mesh=m.mesh;
     bars.style.display="block";
-    setBar(p,"idHp","bhp",m.hp,m.mhp); setBar(p,"idSt","bst",m.st!=null?m.st:1,m.mst||1); setBar(p,"idMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+    tfSetBar(p,"idHp","bhp",m.hp,m.mhp); tfSetBar(p,"idSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(p,"idMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
     if(b&&player.bestiary&&player.bestiary.indexOf(m.kind)>=0){
       const tier=(typeof threatTier==="function")?threatTier(b):null;
       const aff=(typeof AFFINITY!=="undefined")?AFFINITY[m.kind]:null;
@@ -14987,6 +15080,7 @@ function placeSignposts(r){
 }
 function onRoad(x,z){
   if(inDungeon) return false;
+  if(typeof acRoad==="function"&&acRoad(x,z)) return true;   // the authentic AC road web grants road speed too
   for(const r of ROADS){
     const dx=r.bx-r.ax,dz=r.bz-r.az,len2=dx*dx+dz*dz;
     let t=((x-r.ax)*dx+(z-r.az)*dz)/len2;t=clamp(t,0,1);
@@ -17277,11 +17371,14 @@ window.addEventListener('resize',()=>{
   resizePost();
 });
 loadSettings();
-initThree();
-applySettings();
-initMinimap();
-initDragUI();
-renderComposite();
+// the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
+ACMAP.load().then(()=>{
+  initThree();
+  applySettings();
+  initMinimap();
+  initDragUI();
+  renderComposite();
+});
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
   try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));

@@ -135,6 +135,31 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   the box routes to the ACTIVE tab's channel; inactive tabs show a gold unread dot; the active tab
   persists (settings.chatTab); per-channel colour/mute settings still apply.
 
+## MILESTONE R — THE REAL DERETH  ✅ (user-supplied AC client data; jsc + preview verified, 0 console errors)
+Decision (user, 2026-07-02): the original client's core files drive the world. This intentionally
+amends the old "all procedural" asset rule for terrain DATA (geometry stays ours; Turbine dats stay
+gitignored in acdata/, only the derived data texture ships).
+- ✅ **R1. DAT extraction** — `tools/ac_dat_export.py`: reads the Turbine DAT BTree (per ACE docs),
+  pulls **all 65,025 landblocks** from client_cell_1.dat (9×9 height indices + terrain/road words) and
+  the 256-float LandHeightTable from the Region file in client_portal.dat → `assets/acmap.png`
+  (2041×2041 RGBA: R=height index, G=terrain type, B=road bits) + hillshade/type verification renders
+  that match the official map.png exactly.
+- ✅ **R2. The game runs on the real world** — `ACMAP` module decodes the data texture before
+  `initThree` (boot awaits it; procedural fallback if missing): `terrainBase` bilinear-samples true
+  heights (VSCALE 1/3 keeps slopes honest vs the 24 m→8 u compression; two separable blur passes
+  low-pass the 8 u detail to the 40 u mesh so nothing aliases), water terrain types cut below the
+  plane (**real rivers & seas**), ground vertex colours come straight from the client's terrain-type
+  bytes (32-type palette: lush Osteth, SandYellow desert, ObsidianPlain, snow…), the **authentic AC
+  road web** paints the ground AND grants road speed via `onRoad`, `FLATTEN` re-seats every town and
+  **Castle Val Halla's plateau on the real ground (kept intact per the user)**, and the world-map
+  panel paints the true continent under its markers. Towns already sat at wiki coords, so Holtburg
+  landed on LushGrass at 26 u and Yaraq on SandYellow without moving a thing. 44 fps at Yaraq.
+- 🐛 Fixed en route: the U1 targeting commit's `setBar` helper shadowed the HUD's original `setBar`
+  → `updateHUD` threw on the first vital change and killed the render loop (screenshots froze at the
+  last composite). Renamed to `tfSetBar`.
+- ◇ Not in client data (server-side in retail): vendor stock & item weenies — the ACE-World community
+  DB is the path if wanted later.
+
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
   avatar sits to one side and the crosshair stays clear (verified: avatar projects off-center, on-screen).
