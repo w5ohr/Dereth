@@ -578,6 +578,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   arcsDone:[],                 // story arcs whose capstone reward has been granted
   augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0},    // permanent boosts: augmentation gems + Aetheria sigils
   house:{tier:0,storage:[]},   // AC housing: 0=none, 1=Apartment…4=Mansion; storage[] persists forever
+  homestead:null,              // a purchased settlement dwelling: {set,idx,type,hooks{}} (AC covenant housing)
   name:"Adventurer",
   appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
@@ -1402,6 +1403,88 @@ const CANON_DUNGEONS=[
   ["Freebooter Isle",-82.6,88.8,7,5],["Gaerlan's Citadel",57.8,48.4,12,5],["Nexus",-40.1,-79.2,13,5],["Rynthid Foundry",-62.5,-64.9,1,5],
   ["Deewain's Dark Cavern",87.9,-9.3,12,5],["Direlands Subway",-18.6,-84.4,5,5],["Reclamation",21.4,54.0,5,2],["Blighted Verdant Moarsman Tunnels",92.7,-42.3,14,5],
   ["Sanctum of Xik Minru",73.3,69.5,14,5],["Linvak Tukal Entryway",-75.7,28.2,15,5],["The Floating City",-86.5,5.4,7,5],
+  // second research sweep: famous AC dungeons cross-referenced from acpedia/fandom (2026-07)
+  ["Holtburg Redoubt",40.4,34.4,5,1],
+  ["Rithwic Crypt",14.0,59.1,12,1],
+  ["Mite Tunnels",38.7,50.0,3,1],
+  ["Drudge Hideout",41.3,33.3,5,1],
+  ["Folthid Cellar",-8.6,52.9,12,2],
+  ["Mines of Despair",-75.4,57.2,5,1],
+  ["Smugglers Hideaway",-29.5,91.4,5,1],
+  ["Banderling Hovel",-32.0,72.8,8,1],
+  ["Lightless Catacombs",-82.2,-35.2,12,1],
+  ["Empyrean Cloister",-23.4,5.8,13,1],
+  ["Lair of Death",42.0,58.1,12,1],
+  ["Glenden Wood Dungeon",29.9,26.4,8,2],
+  ["Banderling Ruin",36.1,39.5,8,2],
+  ["Colier Mine",56.8,38.3,3,2],
+  ["Black Death Catacombs",59.9,71.2,12,2],
+  ["Temple of Forgetfulness",88.8,0.0,0,2],
+  ["Mountain Halls",10.1,-56.7,15,2],
+  ["Mount Lethe Magma Tubes",-33.8,-85.3,1,2],
+  ["Mountain Cavern",63.2,5.5,5,2],
+  ["Olthoi Tunnels",48.1,53.0,3,2],
+  ["Olthoi Horde Nest",64.3,52.8,3,2],
+  ["Accursed Halls",-24.0,-57.9,12,2],
+  ["Tumerok Fortress",12.3,-73.7,16,2],
+  ["Tumerok Mine",7.9,-61.3,16,2],
+  ["Gredaline Consulate",-61.6,29.3,2,2],
+  ["Black Dominion",-88.7,-25.9,12,2],
+  ["Tumideon Fortress",-56.0,-60.7,12,2],
+  ["Sawato Bandit's Hideout",-25.3,56.6,5,2],
+  ["Citadel Library",17.1,63.0,5,2],
+  ["Hall of Hollows",25.0,37.8,12,2],
+  ["Dark Mosswart Halls",-74.2,83.6,2,2],
+  ["Blighted Rank Moarsman Tunnels",40.7,-86.5,14,1],
+  ["Olthoi Brood Hive",44.2,66.2,3,2],
+  ["Singularity Bore",-64.1,-63.8,13,3],
+  ["Singular Obsidian Repository",-55.9,-64.8,13,3],
+  ["K'nath Lair",-49.7,-56.3,2,3],
+  ["Temple of Kivik Lir",-38.1,-47.3,16,3],
+  ["Temple of Hizk Ri",-51.5,-67.9,16,3],
+  ["Temple of Ixir Zi",-21.7,47.6,16,3],
+  ["Temple of Izji Qo",-12.8,-58.9,16,3],
+  ["Renegade Fortress",-29.5,-65.5,16,3],
+  ["Burun Fortress",-25.5,46.4,5,3],
+  ["Aerbax's Holding",-62.4,-71.1,13,3],
+  ["Aerbax Laboratory",-10.1,8.1,13,3],
+  ["Asheron's Sanctum",21.2,69.1,13,3],
+  ["Aerfalle Keep",86.4,45.4,7,3],
+  ["Eastham Sewer",18.7,63.4,5,3],
+  ["Lord Mhoire's Tomb",-64.6,-44.1,12,3],
+  ["Lugian Mines",-73.9,39.0,15,3],
+  ["Wilderness Citadel",-67.9,62.5,5,3],
+  ["Coral Tunnels",84.1,46.9,5,3],
+  ["Remote Empyrean Vault",81.6,-71.2,13,3],
+  ["Ruined Empyrean Vault",85.9,-59.0,13,3],
+  ["Frozen Cenotaph",90.6,-66.7,12,3],
+  ["Eater Pit",88.8,-72.6,5,3],
+  ["North Glenden Prison",31.8,25.5,13,4],
+  ["Assassins' Hideout",-54.5,-80.7,13,4],
+  ["Harraag's Hideout",-60.2,-80.2,16,4],
+  ["Abhorrent Vault",88.5,-50.3,12,4],
+  ["Ravenous Vault",92.8,-48.9,12,4],
+  ["Shadow Lugian Stronghold",12.2,-81.1,15,4],
+  ["Greater Olthoi Brood Hive",64.6,56.1,3,4],
+  ["Northern Temple Catacombs",80.2,54.4,12,4],
+  ["Aerbax's Antechamber",-94.8,-91.0,13,4],
+  ["Caul Asylum",-94.6,-90.6,13,4],
+  ["Egg Orchard",96.2,-48.1,3,5],
+  ["Apostate Nexus",-10.4,-75.2,13,5],
+  ["Insatiable Vault",97.4,-48.0,12,5],
+  ["Massilor's Crypt",-65.4,-43.6,12,5],
+  ["Oubliette of Mhoire Castle",-64.5,-44.0,12,5],
+  ["Mhoire Armory",-64.8,-44.3,12,5],
+  ["Altar Nest",75.9,69.3,5,5],
+  ["Corrupted Falatacot Temple",87.3,41.6,12,5],
+  ["Devastated Falatacot Temple",87.3,51.2,12,5],
+  ["Falatacot Temple",-74.7,98.2,12,5],
+  ["Freebooter Phyntos Wasp Hive",-63.1,97.5,3,5],
+  ["Moarsman Prison",-56.4,96.9,14,5],
+  ["Corrupted Catacombs",-23.9,54.1,12,5],
+  ["Nanjou Shou-jen Academy",78.1,-42.2,5,5],
+  ["Bloodstone Factory",84.5,-5.1,5,5],
+  ["Eldrytch Web Stronghold",26.3,49.6,13,5],
 ];
 function buildDungeonList(){
   return CANON_DUNGEONS.map((d,i)=>{
@@ -3490,6 +3573,7 @@ function buildWorld(){
   flushTownBatches();   // all queued buildings → a few InstancedMeshes per archetype (like the forests)
   addCasinos();         // the Dens of Iniquity: Holtburg, Shoushi & Yaraq gambling halls
   addKilmerCastle();    // Castle Val Halla — Lord Kilmer's moated castle & the town of Valstead
+  addHousingSettlements(); // AC player housing: 3 cottage + 3 villa settlements + the Sanctum apartments
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil"});
   // every town fields a Town Crier (directions) and a Barkeeper (rumours)
@@ -4724,6 +4808,231 @@ function addKilmerCastle(){
   G.traverse(o=>{ o.updateMatrix(); o.matrixAutoUpdate=false; });
   for(const gd of kcGateDefs){ const list=gd.kind==="portcullis"?[gd.mesh]:gd.doors;
     for(const m of list){ m.traverse(o=>{o.matrixAutoUpdate=true;}); m.matrixAutoUpdate=true; } }
+}
+// ════════════════════════════════════════════════════════════════════════════
+//  PLAYER HOUSING — Asheron's Call's Nov-2001 system, faithfully recreated
+//  (docs/asherons-call-housing-reference.md). Seven settlements: three cottage
+//  (Mirthless Dale, Ahr-Zona, Wisp Lake), three villa (Bucolic, Far Claw,
+//  Tarn Vinara) and the Sanctum Residential Halls apartments. Buy at the
+//  Covenant Crystal outside each dwelling — authentic costs, level reqs and
+//  Writs of Refuge (traded for creature trophies at Agents of the Arcanum).
+//  Hooks display furniture bought from Apprentice Craftsman furniture sellers.
+// ════════════════════════════════════════════════════════════════════════════
+const HOUSING_TYPES={
+  apartment:{n:"Apartment",cost:100000,writs:1,lvl:20,hooks:3,chests:1,rent:"10,000 py / 3 months"},
+  cottage:{n:"Cottage",cost:300000,writs:1,lvl:20,hooks:8,chests:1,rent:"30,000 py / month"},
+  villa:{n:"Villa",cost:2000000,writs:5,lvl:35,hooks:12,chests:2,rent:"100,000 py + 2 Writs / month"},
+};
+const HS_SETTLEMENTS=[   // authentic AC settlements at their real coordinates
+  {id:"mirthless", name:"Mirthless Dale",          type:"cottage",  lat:23.2, lon:-42.3, n:8},
+  {id:"ahrzona",   name:"Ahr-Zona",                type:"cottage",  lat:-21.6,lon:18.5,  n:10},
+  {id:"wisplake",  name:"Wisp Lake Cottages",      type:"cottage",  lat:13.0, lon:60.0,  n:9},
+  {id:"bucolic",   name:"Bucolic Villas",          type:"villa",    lat:41.6, lon:15.4,  n:3},
+  {id:"farclaw",   name:"Far Claw Villas",         type:"villa",    lat:54.0, lon:58.9,  n:8},
+  {id:"tarnvinara",name:"Tarn Vinara Villas",      type:"villa",    lat:-27.0,lon:11.0,  n:6},
+  {id:"sanctum",   name:"Sanctum Residential Halls",type:"apartment",lat:25.5, lon:51.2, n:12},
+];
+for(const S of HS_SETTLEMENTS){ S.x=S.lon*COORD; S.z=-S.lat*COORD;
+  FLATTEN.push({x:S.x,z:S.z,core:S.type==="apartment"?42:46,r:S.type==="apartment"?80:86,h:Math.max(9,terrainBase(S.x,S.z))}); }
+// AC furniture (Steiner's Apprentice Craftsman price list; Jasin's deluxe pieces at the end)
+const FURNITURE_ITEMS=[
+  {name:"Bench",cost:5001,kind:"bench"},{name:"Stool",cost:5001,kind:"stool"},{name:"Chair",cost:5001,kind:"chair"},
+  {name:"Couch",cost:5001,kind:"couch"},{name:"Desk",cost:5001,kind:"table"},{name:"Workbench",cost:5001,kind:"table"},
+  {name:"Bed",cost:7750,kind:"bed"},{name:"Bedroll",cost:775,kind:"bedroll"},{name:"Cooking Table",cost:9300,kind:"table"},
+  {name:"Set Dinner Table",cost:9300,kind:"table"},{name:"Screen",cost:1550,kind:"screen"},
+  {name:"Aluvian Rug",cost:7750,kind:"rug"},{name:"Aluvian Hanging Rug",cost:7750,kind:"banner"},
+  {name:"Tapestry",cost:10850,kind:"banner"},{name:"Candelabra",cost:5001,kind:"lamp"},{name:"Chandelier",cost:5001,kind:"lamp"},
+  {name:"Torch",cost:16,kind:"lamp"},{name:"Aluvian Lamp",cost:7750,kind:"lamp"},
+  {name:"Crystal Vase",cost:15500,kind:"vase"},{name:"Pedestal",cost:15500,kind:"pedestal"},
+  {name:"Painting: Into the Unknown",cost:20002,kind:"painting"},{name:"Painting: The Studious Mind",cost:20002,kind:"painting"},
+  {name:"Book Shelf",cost:8200,kind:"shelf"},{name:"Barrel",cost:900,kind:"barrel"},{name:"Cask",cost:1200,kind:"barrel"},
+  {name:"Banner",cost:4200,kind:"banner"},{name:"Campfire",cost:2100,kind:"campfire"},
+  {name:"Carved Tusker Statue",cost:35000,kind:"statue"},{name:"Oxidized Drudge Statue",cost:35000,kind:"statue"},
+  {name:"Garden Drudge",cost:200000,kind:"statue"},{name:"Ornate Fountain",cost:200000,kind:"fountain"},
+];
+let hsCrystals=[],hsHooks=[],hsFurnMeshes=[],hsDwellings=[];
+function hsType(){ return player.homestead?HOUSING_TYPES[player.homestead.type]:null; }
+function writCount(){ let n=0; for(const it of player.inv) if(it&&it.stat==="writ") n+=(it.count||1); return n; }
+function takeWrits(n){ for(let i=player.inv.length-1;i>=0&&n>0;i--){ const it=player.inv[i]; if(!it||it.stat!=="writ") continue;
+  const c=it.count||1; if(c<=n){ n-=c; player.inv.splice(i,1); } else { it.count=c-n; n=0; } } }
+// small furniture prop meshes, keyed by kind
+function buildFurniture(kind){
+  const g=new THREE.Group(), wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318), cloth=solid(0x7a3a4a);
+  const bx=(w,h,d,x,y,z,m)=>{ const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m||wood); b.position.set(x,y,z); b.castShadow=true; g.add(b); return b; };
+  if(kind==="bench"){ bx(1.4,0.1,0.45,0,0.45,0); for(const sx of[-1,1]) bx(0.1,0.45,0.4,sx*0.6,0.22,0); }
+  else if(kind==="stool"){ bx(0.4,0.08,0.4,0,0.45,0); for(const sx of[-1,1]) bx(0.07,0.45,0.34,sx*0.15,0.22,0); }
+  else if(kind==="chair"){ bx(0.5,0.08,0.5,0,0.45,0); bx(0.5,0.6,0.07,0,0.75,0.22); for(const sx of[-1,1])for(const sz of[-1,1]) bx(0.06,0.45,0.06,sx*0.2,0.22,sz*0.2); }
+  else if(kind==="couch"){ bx(1.5,0.3,0.6,0,0.35,0,cloth); bx(1.5,0.5,0.14,0,0.65,0.24,cloth); for(const sx of[-1,1]) bx(0.16,0.5,0.6,sx*0.72,0.5,0,cloth); }
+  else if(kind==="table"){ bx(1.3,0.08,0.8,0,0.72,0); for(const sx of[-1,1])for(const sz of[-1,1]) bx(0.08,0.72,0.08,sx*0.55,0.36,sz*0.32); }
+  else if(kind==="bed"){ bx(1.0,0.28,2.0,0,0.3,0); bx(0.96,0.1,1.9,0,0.48,0,solid(0xd8ccb0)); bx(1.0,0.5,0.1,0,0.6,-0.95); bx(0.7,0.12,0.4,0,0.55,-0.6,solid(0xe8e0d0)); }
+  else if(kind==="bedroll"){ const r=bx(0.8,0.1,1.9,0,0.06,0,solid(0x8a6a4a)); bx(0.6,0.14,0.35,0,0.12,-0.65,solid(0xa88a5a)); }
+  else if(kind==="screen"){ for(let i=0;i<3;i++) bx(0.55,1.5,0.05,(i-1)*0.52,0.75,(i%2?0.08:-0.08),texMat(woodTex,0x8a6a3a)); }
+  else if(kind==="rug"){ const r=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.2),new THREE.MeshStandardMaterial({color:0x7a2a3a,roughness:0.95})); r.rotation.x=-Math.PI/2; r.position.y=0.03; g.add(r); }
+  else if(kind==="banner"){ bx(0.08,2.2,0.08,0,1.1,0,wood2); const p=new THREE.Mesh(new THREE.PlaneGeometry(0.9,1.3),new THREE.MeshStandardMaterial({color:0x5c1018,side:THREE.DoubleSide})); p.position.set(0,1.5,0.06); g.add(p); }
+  else if(kind==="lamp"){ bx(0.3,0.06,0.3,0,0.03,0,wood2); bx(0.07,1.3,0.07,0,0.68,0,wood2);
+    const fl=new THREE.Mesh(new THREE.SphereGeometry(0.12,8,7),new THREE.MeshStandardMaterial({color:0x3a2c14,emissive:0xffb050,emissiveIntensity:1.3})); fl.position.y=1.44; g.add(fl); }
+  else if(kind==="vase"){ const v=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.2,0.55,10),new THREE.MeshStandardMaterial({color:0x9af0ff,metalness:0.4,roughness:0.2,transparent:true,opacity:0.85})); v.position.y=0.3; g.add(v); }
+  else if(kind==="pedestal"){ bx(0.5,0.12,0.5,0,0.06,0,texMat(stoneFloorTex,0x9a958c)); const c=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,0.9,10),texMat(stoneFloorTex,0x9a958c)); c.position.y=0.55; g.add(c); bx(0.42,0.08,0.42,0,1.04,0,texMat(stoneFloorTex,0x9a958c)); }
+  else if(kind==="painting"){ bx(0.1,1.4,0.1,0,0.7,0,wood2); bx(0.9,0.7,0.06,0,1.35,0.02,wood2); const p=new THREE.Mesh(new THREE.PlaneGeometry(0.8,0.6),new THREE.MeshStandardMaterial({color:0x6a8aa0})); p.position.set(0,1.35,0.06); g.add(p); }
+  else if(kind==="shelf"){ bx(1.1,1.7,0.34,0,0.85,0,wood2); for(let i=0;i<3;i++){ bx(1.0,0.06,0.3,0,0.35+i*0.5,0.0); for(let b=0;b<5;b++) bx(0.1,0.3,0.2,-0.4+b*0.2,0.55+i*0.5,0,solid([0x7a3a2a,0x3a5a7a,0x5a7a3a,0x8a7a3a][b%4])); } }
+  else if(kind==="barrel"){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.26,0.75,12),wood); b.position.y=0.38; b.castShadow=true; g.add(b);
+    for(const by of[0.16,0.58]){ const hp=new THREE.Mesh(new THREE.TorusGeometry(0.3,0.02,6,14),solid(0x2a2620)); hp.rotation.x=Math.PI/2; hp.position.y=by; g.add(hp); } }
+  else if(kind==="campfire"){ for(let i=0;i<4;i++){ const lg=bx(0.6,0.08,0.08,0,0.06,0); lg.rotation.y=i*0.8; }
+    const fl=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.5,7),new THREE.MeshStandardMaterial({color:0xff7a2a,emissive:0xff8a30,emissiveIntensity:1.5})); fl.position.y=0.35; g.add(fl); }
+  else if(kind==="statue"){ bx(0.6,0.25,0.6,0,0.12,0,texMat(stoneFloorTex,0x8a8a80)); const bod=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.2,0.85,8),texMat(stoneFloorTex,0x8a8a80)); bod.position.y=0.68; g.add(bod);
+    const hd=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),texMat(stoneFloorTex,0x8a8a80)); hd.position.y=1.2; g.add(hd); }
+  else if(kind==="fountain"){ const f=buildPlazaFeature(2,0.8); g.add(f); }
+  else { bx(0.5,0.5,0.5,0,0.25,0); }
+  return g;
+}
+function rollFurniture(){ const t=FURNITURE_ITEMS[irnd(0,FURNITURE_ITEMS.length-1)]; return {name:t.name,stat:"furniture",kind:t.kind,v:Math.round(t.cost/10)}; }
+// ── construction ──
+function addHousingSettlements(){
+  hsCrystals=[]; hsHooks=[]; hsFurnMeshes=[]; hsDwellings=[];
+  for(const S of HS_SETTLEMENTS){
+    const gy=groundY(S.x,S.z), reg=Math.max(0,regionOf(S.x,S.z)), T=HOUSING_TYPES[S.type];
+    const G=new THREE.Group(); G.position.set(S.x,gy,S.z); G.userData.noSettle=true; G.userData.cullR2=300*300;
+    scene.add(G); scenery.push(G);
+    // shared courtyard: fountain, lampposts, benches (the research: dwellings loop around shared props)
+    const well=buildPlazaFeature(reg===1?1:reg===2?2:0,1.2); G.add(well); obstacles.push({x:S.x,z:S.z,r:2});
+    { const pl=new THREE.Mesh(new THREE.CylinderGeometry(13,13,0.12,22),texMat(stoneFloorTex,0x8a857c)); pl.position.y=0.06; pl.receiveShadow=true; G.add(pl); }
+    for(let i=0;i<4;i++){ const a=i/4*6.283+0.4;
+      const post=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,2.6,8),solid(0x2a2620)); post.position.set(Math.cos(a)*10,1.3,Math.sin(a)*10); G.add(post);
+      const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,7),new THREE.MeshStandardMaterial({color:0x3a2c14,emissive:0xffcf6b,emissiveIntensity:1.2})); lamp.position.set(Math.cos(a)*10,2.7,Math.sin(a)*10); G.add(lamp);
+      const bench=buildFurniture("bench"); bench.position.set(Math.cos(a+0.4)*8,0,Math.sin(a+0.4)*8); bench.rotation.y=-a; G.add(bench); }
+    const sLbl=labelSprite(S.name+" — "+T.n+" settlement","cities"); sLbl.scale.set(15,3,1); sLbl.position.y=12; G.add(sLbl);
+    // dwellings on a loop around the courtyard, each with its Covenant Crystal
+    const isApt=S.type==="apartment", R=isApt?30:(S.type==="villa"?36:27);
+    const bCount=isApt?2:S.n;   // apartments: two great halls, 6 units each
+    for(let i=0;i<bCount;i++){
+      const a=(i/bCount)*Math.PI*2+0.35, hx=S.x+Math.cos(a)*R, hz=S.z+Math.sin(a)*R, ry=Math.atan2(S.x-hx,S.z-hz);
+      const hb=buildBuilding(reg,isApt?"hall":(S.type==="villa"?"hall":"house"),isApt?1.7:(S.type==="villa"?1.35:1.12));
+      hb.position.set(hx,gy,hz); hb.rotation.y=ry; hb.userData.noSettle=true;
+      scene.add(hb); scenery.push(hb);
+      const ct=Math.cos(ry),st=Math.sin(ry);
+      for(const cc of (hb.userData.colliders||[])) obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r});
+      if(hb.userData&&hb.userData.surfaces) registerStructure(hx,hz,ry,gy,hb.userData.surfaces);
+    }
+    // covenant crystals — one per dwelling unit (apartments: a row of unit crystals before the halls)
+    for(let u=0;u<S.n;u++){
+      let cx,cz;
+      if(isApt){ cx=S.x-11+(u%6)*4.4; cz=S.z+(u<6?16:20); }
+      else { const a=(u/S.n)*Math.PI*2+0.35; cx=S.x+Math.cos(a)*(R-7); cz=S.z+Math.sin(a)*(R-7); }
+      const cg=new THREE.Group(); cg.position.set(cx,gy,cz); cg.userData.noSettle=true; scene.add(cg); scenery.push(cg);
+      const cry=new THREE.Mesh(new THREE.OctahedronGeometry(0.5,0),new THREE.MeshStandardMaterial({color:0x8fd4ff,emissive:0x3a86d0,emissiveIntensity:0.9,metalness:0.4,roughness:0.3}));
+      cry.position.y=1.5; cry.castShadow=true; cg.add(cry);
+      const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.32,1.1,8),texMat(stoneFloorTex,0x8a857c)); ped.position.y=0.55; cg.add(ped);
+      const own=(player.homestead&&player.homestead.set===S.id&&player.homestead.idx===u);
+      const lbl=labelSprite(own?`${T.n} ${u+1} — ${player.name||"Kilmer"}'s`:`${T.n} ${u+1} — for sale (E)`,"npcs");
+      lbl.scale.set(6.5,1.6,1); lbl.position.y=3.1; cg.add(lbl);
+      obstacles.push({x:cx,z:cz,r:0.7});
+      hsCrystals.push({set:S.id,idx:u,x:cx,z:cz,mesh:cg,lbl,type:S.type});
+    }
+    // an Agent of the Arcanum (writs for trophies) + a furniture seller at every settlement
+    addNPC(S.x+5,S.z+7,{role:"arcanum",name:"Agent of the Arcanum",town:S.name});
+    addMerchant(S.x-6,S.z+7,"furnisher","Apprentice Craftsman");
+  }
+  // the three authentic named furniture sellers near the great towns
+  const NAMED_SELLERS=[["Cragstone","Steiner's Apprentice Craftsman"],["Hebian-To","Jubei's Apprentice Craftsman"],["Zaikhal","Jordan's Apprentice Craftsman"]];
+  for(const [tn,nm] of NAMED_SELLERS){ const c=CITIES.find(x=>x.name===tn); if(!c) continue;
+    addMerchant(c.x-14,c.z-9,"furnisher",nm); }
+  // Agents of the Arcanum in the three capitals (as in the Oct 2001 housing rush)
+  for(const c of CAPITALS) addNPC(c.x-9,c.z-12,{role:"arcanum",name:"Agent of the Arcanum",town:c.name});
+  hsRefreshHomestead();
+}
+function hsDwellingSpot(){ if(!player.homestead) return null;
+  const S=HS_SETTLEMENTS.find(s=>s.id===player.homestead.set); if(!S) return null;
+  const cr=hsCrystals.find(c=>c.set===S.id&&c.idx===player.homestead.idx);
+  return cr?{x:cr.x,z:cr.z,S}:{x:S.x,z:S.z,S};
+}
+function hsRefreshHomestead(){   // rebuild the owner's hook pedestals + placed furniture (after load / purchase / placement)
+  for(const m of hsFurnMeshes){ if(m.parent) m.parent.remove(m); } hsFurnMeshes=[]; hsHooks=[];
+  for(const cr of hsCrystals){ const own=(player.homestead&&player.homestead.set===cr.set&&player.homestead.idx===cr.idx);
+    if(cr.lbl){ const T=HOUSING_TYPES[cr.type];
+      // (labels are canvas sprites — rebuild only when ownership changed is overkill; leave initial text)
+    }
+    if(!own) continue;
+    const T=HOUSING_TYPES[cr.type], spot=hsDwellingSpot(), gy=groundY(cr.x,cr.z);
+    const S=spot.S, aw=Math.atan2(S.x-cr.x,S.z-cr.z);
+    for(let h=0;h<T.hooks;h++){
+      const a=aw+Math.PI+ (h/(T.hooks))*Math.PI*1.5-Math.PI*0.75, hx=cr.x+Math.sin(a)*4.6, hz=cr.z+Math.cos(a)*4.6;
+      const hg=new THREE.Group(); hg.position.set(hx,groundY(hx,hz),hz); scene.add(hg); hsFurnMeshes.push(hg);
+      const placed=player.homestead.hooks&&player.homestead.hooks[h];
+      if(placed){ const t=FURNITURE_ITEMS.find(f=>f.name===placed);
+        const fm=buildFurniture(t?t.kind:"pedestal"); fm.rotation.y=a+Math.PI; hg.add(fm);
+        const l=labelSprite(placed,"npcs"); l.scale.set(3.6,0.9,1); l.position.y=2.0; hg.add(l); }
+      else { const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.34,0.1,8),texMat(stoneFloorTex,0x7a756c)); disc.position.y=0.05; hg.add(disc);
+        const l=labelSprite("hook — E to furnish","npcs"); l.scale.set(3.6,0.9,1); l.position.y=1.2; hg.add(l); }
+      hsHooks.push({set:cr.set,idx:cr.idx,h,x:hx,z:hz});
+    }
+  }
+}
+function hsUseHook(hk){
+  if(!player.homestead||player.homestead.set!==hk.set||player.homestead.idx!==hk.idx){ log("This hook belongs to another homestead.","warn"); return; }
+  player.homestead.hooks=player.homestead.hooks||{};
+  const cur=player.homestead.hooks[hk.h];
+  if(cur){ if(!addToInv({name:cur,stat:"furniture",kind:(FURNITURE_ITEMS.find(f=>f.name===cur)||{}).kind,v:200})){ log("Your satchel is full.","warn"); return; }
+    delete player.homestead.hooks[hk.h]; log(`You take down the <b>${cur}</b>.`,"sys"); hsRefreshHomestead(); saveGame(); return; }
+  const i=player.inv.findIndex(it=>it&&it.stat==="furniture");
+  if(i<0){ log("You carry no furniture — an <b>Apprentice Craftsman</b> sells beds, tables, lamps and more.","sys"); return; }
+  const it=player.inv[i]; player.homestead.hooks[hk.h]=it.name; takeFromInv(i);
+  log(`You set the <b>${it.name}</b> on the hook.`,"loot"); if(SFX.quest)SFX.quest(); hsRefreshHomestead(); saveGame(); updateHUD();
+}
+function closeCovenant(){ const ov=document.getElementById('hsPanel'); if(ov) ov.remove(); paused=false; }
+function openCovenant(cr){
+  const T=HOUSING_TYPES[cr.type], S=HS_SETTLEMENTS.find(s=>s.id===cr.set);
+  const mine=(player.homestead&&player.homestead.set===cr.set&&player.homestead.idx===cr.idx);
+  const old=document.getElementById('hsPanel'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='hsPanel';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  let body="";
+  if(mine){
+    body=`<button id="hsStore" style="${btn}"><b style="color:#9fd0ff">🗄 Open storage</b> — ${T.chests} chest${T.chests>1?"s":""} (estate storage)</button>
+      <button id="hsRecallSet" style="${btn}"><b style="color:#8fe6a0">⌂ House Recall</b> is bound here — /home returns you to this door</button>
+      <button id="hsAbandon" style="${btn}"><b style="color:#ff8a6a">Abandon the ${T.n.toLowerCase()}</b> — the deed is torn up (items on hooks are returned first… nothing is lost)</button>`;
+  } else if(player.homestead){
+    body=`<div style="color:var(--dim);margin-top:8px">You already hold a dwelling — <b>one per account</b>, as the Agents of the Arcanum decreed.</div>`;
+  } else {
+    const okLvl=player.level>=T.lvl, okGold=player.gold>=T.cost, okWrit=writCount()>=T.writs;
+    body=`<div style="margin:8px 0;color:#cfc0a0">Price: <b style="color:${okGold?'#7fe6a0':'#ff8a6a'}">${T.cost.toLocaleString()} pyreals</b>
+      + <b style="color:${okWrit?'#7fe6a0':'#ff8a6a'}">${T.writs} Writ${T.writs>1?"s":""} of Refuge</b> (you hold ${writCount()})
+      · Level <b style="color:${okLvl?'#7fe6a0':'#ff8a6a'}">${T.lvl}+</b> · Upkeep: ${T.rent} <span style="color:var(--dim)">(the Arcanum defers collection)</span><br>
+      <span style="color:var(--dim);font-size:11px">${T.hooks} furniture hooks · ${T.chests} storage chest${T.chests>1?"s":""} · House Recall · one dwelling per account</span></div>
+      <button id="hsBuy" style="${btn}" ${okLvl&&okGold&&okWrit?"":"disabled"}><b style="color:var(--gold)">Buy this ${T.n.toLowerCase()}</b></button>`;
+  }
+  ov.innerHTML=`<div style="max-width:470px;width:92%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">◈ Covenant Crystal — ${T.n} ${cr.idx+1}, ${S.name}</div>
+    <div style="color:var(--dim);margin-top:4px">${mine?`The crystal bears your name, ${player.name}.`:"The crystal hums, awaiting a deed-holder."}</div>
+    ${body}
+    <button id="hsClose" style="${btn};text-align:center">Step away</button></div>`;
+  document.body.appendChild(ov); paused=true; if(locked)document.exitPointerLock();
+  ov.querySelector('#hsClose').onclick=closeCovenant;
+  const b=ov.querySelector('#hsBuy'); if(b) b.onclick=()=>{
+    player.gold-=T.cost; takeWrits(T.writs);
+    player.homestead={set:cr.set,idx:cr.idx,type:cr.type,hooks:{}};
+    if(player.house&&player.house.tier<(cr.type==="villa"?3:cr.type==="cottage"?2:1)) player.house.tier=(cr.type==="villa"?3:cr.type==="cottage"?2:1);
+    log(`The Covenant Crystal flares — <b>the ${T.n.toLowerCase()} in ${S.name} is yours</b>. /home now recalls to its door.`,"loot");
+    toast("HOME SWEET HOME"); if(SFX.quest)SFX.quest(); closeCovenant(); hsRefreshHomestead(); updateHUD(); saveGame();
+  };
+  const st=ov.querySelector('#hsStore'); if(st) st.onclick=()=>{ closeCovenant(); openHousing(); };
+  const rc=ov.querySelector('#hsRecallSet'); if(rc) rc.onclick=closeCovenant;
+  const ab=ov.querySelector('#hsAbandon'); if(ab) ab.onclick=()=>{
+    const hooks=player.homestead.hooks||{};
+    for(const h in hooks){ addToInv({name:hooks[h],stat:"furniture",kind:(FURNITURE_ITEMS.find(f=>f.name===hooks[h])||{}).kind,v:200},true); }
+    player.homestead=null; log("You tear up the deed. The Covenant Crystal dims, awaiting its next holder.","sys");
+    closeCovenant(); hsRefreshHomestead(); saveGame();
+  };
+}
+function talkArcanum(n){
+  const trophies=player.inv.filter(it=>it&&it.stat==="trophy").length;
+  if(!trophies){ log(`<b>${n.name}:</b> The Arcanum grants <b>Writs of Refuge</b> for creature trophies — one writ per trophy. Bring me ears, tusks, fins… and a home can be yours.`,"sys"); return; }
+  let writs=0;
+  for(let i=player.inv.length-1;i>=0;i--){ const it=player.inv[i]; if(!it||it.stat!=="trophy") continue;
+    writs+=(it.count||1); player.inv.splice(i,1); }
+  addToInv({name:"Writ of Refuge",stat:"writ",v:1000,count:writs},true);
+  log(`<b>${n.name}:</b> The Arcanum thanks you. <b>${writs} Writ${writs>1?"s":""} of Refuge</b> issued — housing awaits (${writCount()} held).`,"loot");
+  if(SFX.quest)SFX.quest(); updateHUD(); saveGame();
 }
 function addPortal(x,z,dest){
   const mesh=buildPortal(dest.name);mesh.position.set(x,0,z);scene.add(mesh);
@@ -7362,7 +7671,9 @@ function applyItem(it){
     if(!it.aetheria) player.augment.count++;   // count this aug against the cap
     if(typeof recomputeGearSkill==="function") recomputeGearSkill();
     derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.${it.aetheria?"":` (${player.augment.count}/60 augmentations)`}`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
-  else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor.`,"sys"); }
+  else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor, or trade it to an <b>Agent of the Arcanum</b> for a Writ of Refuge.`,"sys"); }
+  else if(it.stat==="furniture"){ log(`<b>${it.name}</b> is housing furniture — stand at an empty hook at your dwelling and press E to place it.`,"sys"); return "keep"; }
+  else if(it.stat==="writ"){ log(`A <b>Writ of Refuge</b> — the Arcanum's housing scrip. Spend it at a Covenant Crystal when buying a dwelling.`,"sys"); return "keep"; }
   else if(it.stat==="quest"){ log(`<b>${it.name}</b> is a quest collectible — turn it in to the right quest-giver, or sell it.`,"sys"); }
   else if(it.stat==="comp"){ if(isScarab(it)) log(`<b>${it.name}</b> is a casting scarab (level ${SCARAB_LEVEL[it.name]}) — held in your satchel, it powers a spell automatically when your mana runs dry. Or sell it to a Scrivener.`,"sys"); else log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
   else if(it.stat==="note"){ player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
@@ -8337,6 +8648,8 @@ function interact(){
   for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6){ openKcChest(ch); return; } }
   if(kcBunnyRec&&Math.hypot(kcBunnyRec.x-player.x,kcBunnyRec.z-player.z)<4){ kcPokeBunny(); return; }
   for(const hk of kcHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<1.9){ kcInspectHook(hk); return; } }
+  for(const cr of hsCrystals){ if(Math.hypot(cr.x-player.x,cr.z-player.z)<3){ openCovenant(cr); return; } }
+  for(const hk of hsHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<2.2){ hsUseHook(hk); return; } }
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
@@ -11401,6 +11714,7 @@ const NPC_ROLES={
   casino:     {robe:0x7a5a16,hood:0x5a3f0e,mark:"♦",mcol:"#ffd86b",label:"Casino Owner"},
   attendant:  {robe:0xcfd4e6,hood:0x8a94b8,mark:"❦",mcol:"#c9d6ff",label:"Valkyrie of the Keep"},
   guard:      {robe:0x39415a,hood:0x232a3c,mark:"⚔",mcol:"#ff8a6a",label:"Castle Guard"},
+  arcanum:    {robe:0x3a2a5a,hood:0x2a1e42,mark:"◈",mcol:"#9fd0ff",label:"Agent of the Arcanum"},
 };
 const TOWNSFOLK_ROBES=[0x6a5a3a,0x4a5a6a,0x6a3a3a,0x3a5a4a,0x5a4a6a,0x7a6a4a,0x4a4a52,0x8a6a4a]; // varied commoner clothing
 // culture-appropriate townsperson names, matching each region's people (Aluvian / Sho / Gharu'ndim)
@@ -11607,6 +11921,7 @@ function talkToNPC(n){
   if(n.role==="barkeep"){ log(`<b>${n.name}:</b> ${RUMORS[(n._line++)%RUMORS.length]}`,"sys"); return; }
   if(n.role==="casino"){ openCasino(n); return; }
   if(n.role==="attendant"){ openAttendant(n); return; }
+  if(n.role==="arcanum"){ talkArcanum(n); return; }
   if(n.role==="reset_attr"){
     const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0);
     if(allocated<=0){ log("<b>Chafulumisa:</b> Your spirit is already unwritten, traveller.","sys"); return; }
@@ -11795,6 +12110,14 @@ function houseName(){ const t=houseTier(); return t>0?HOUSE_TIERS[t-1].name:"No 
 // your estate stands near Holtburg (placed at world-build); recall home teleports you to it.
 function recallHome(){
   if(inDungeon||inNetwork){ log("You can't recall to your estate from here — return to the surface first.","warn"); if(SFX.err)SFX.err(); return; }
+  // AC House Recall: a purchased settlement dwelling takes precedence over the abstract estate
+  if(player.homestead&&typeof hsDwellingSpot==="function"){ const sp=hsDwellingSpot();
+    if(sp){ if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+      arriveAt(sp.x,sp.z+4); player.invuln=2;
+      if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+      if(typeof toast==="function") toast("HOME"); if(SFX.quest)SFX.quest();
+      log(`You recall to your <b>${HOUSING_TYPES[player.homestead.type].n.toLowerCase()}</b> in ${sp.S.name}.`,"sys");
+      if(document.getElementById('housing').style.display==="flex") closeHousing(); return; } }
   if(houseTier()<1){ log("You own no estate to recall to — buy one first (press Y).","sys"); if(SFX.err)SFX.err(); return; }
   if(!HOUSE_LOC){ log("Your estate is not ready.","warn"); return; }
   if(typeof teleportFX==="function") teleportFX(player.x,player.z);
@@ -11910,10 +12233,10 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="quest"?"📜":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
-function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; if(it.stat==="furniture"||it.stat==="writ") return Math.max(10,it.v|0); return Math.max(5,Math.round(gearPrice(it)*0.4)); }
 function gearDesc(it){
   if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
@@ -12001,6 +12324,7 @@ const VENDOR_TYPES={
     {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"}]},
   jeweler:{title:"Jeweler",marker:"💍",mcol:"#9af0ff",robe:0x2a5a6a,stock:jewelerStock},
   collector:{title:"Trophy Collector",marker:"🦴",mcol:"#cdbf9a",robe:0x5a4a2a,collector:true,stock:()=>[]},   // I7: turns in creature trophies for a bounty (gold + XP)
+  furnisher:{title:"Furniture Seller",marker:"🪑",mcol:"#d8b06a",robe:0x6a4a2a,stock:()=>FURNITURE_ITEMS.map(f=>({name:f.name,cost:f.cost,desc:"housing furniture — place it on a hook at your dwelling",ico:"🪑",gear:{name:f.name,stat:"furniture",kind:f.kind,v:Math.round(f.cost/10)}}))},   // AC Apprentice Craftsman
 };
 let activeShop=null;
 function buildMerchant(vt,name){
@@ -13025,7 +13349,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,
+      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
@@ -13077,6 +13401,8 @@ function applySaveObj(s){
   player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
   player.focusMana=+s.focusMana||0;   // H15 focus mana battery
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
+  player.homestead=(s.homestead&&typeof s.homestead==="object"&&s.homestead.set)?s.homestead:null;
+  if(typeof hsRefreshHomestead==="function"&&typeof hsCrystals!=="undefined"&&hsCrystals.length) hsRefreshHomestead();
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
