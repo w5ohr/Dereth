@@ -546,7 +546,8 @@ function skillValue(key){ const st=skillState(key),base=skillBase(key);
   const gj=(player.gearSkill&&player.gearSkill[key])?player.gearSkill[key]:0;        // jewelry skill cantrips
   let v=base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj
     +((player.auras&&player.auras.world)||0)+(player.enlightenment||0)   // Aura of the World + Enlightenment: +1 all skills each level/tier
-    +((player.augment&&player.augment.allskills)||0);   // H17 Jack of All Trades augmentation: +N to every skill
+    +((player.augment&&player.augment.allskills)||0)   // H17 Jack of All Trades augmentation: +N to every skill
+    +((player.augment&&player.augment.fam&&player.augment.fam[SKILL_BY_KEY[key].fam])||0);   // skill-family masteries: Steel Circle (melee) / Five Fold Path (magic) / Focused Eye (missile), +10 each
   if(player.vitae>0) v=Math.max(0,Math.round(v*(1-player.vitae)));   // Vitae death penalty saps ALL skills too (AC), not just vitals
   return v; }
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
@@ -555,7 +556,7 @@ function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTie
 // AC: attributes are bought with unassigned XP on a steep escalating curve (not free level points).
 function attrCost(v){ return Math.round(25*Math.pow(Math.max(1,v-9),1.7)); }   // XP to raise from innate v → v+1
 // credit economy: available = base(level) − spent; specialization capped at 70 credits' worth
-function creditBase(){ return 52 + Math.min(Math.max(player.level-1,0),46) + (player.level>=35?1:0) + (player.level>=90?1:0); }
+function creditBase(){ return 52 + Math.min(Math.max(player.level-1,0),46) + (player.level>=35?1:0) + (player.level>=90?1:0) + ((player.augment&&player.augment.skillCredits)|0); }   // + Gems of Enlightenment/Mastery
 function creditsSpent(){ let n=0; for(const s of SKILLS_DEF){ const t=skillTier(s.k); if(t>=1&&s.tc>0)n+=s.tc; if(t>=2&&s.sc>0)n+=s.sc; } return n; }
 function creditsAvail(){ return creditBase()-creditsSpent(); }
 function specCreditsUsed(){ let n=0; for(const s of SKILLS_DEF){ if(skillTier(s.k)>=2){ if(s.tc>0)n+=s.tc; if(s.sc>0)n+=s.sc; } } return n; }
@@ -586,7 +587,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
   luminance:0,lumUnlocked:false,auras:{},enlightenment:0,   // AC endgame: Luminance currency → permanent Auras; Enlightenment prestige resets
   arcsDone:[],                 // story arcs whose capstone reward has been granted
-  augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,allskills:0,xpBonus:0,attrTotal:0,dropReduce:0,count:0},    // permanent boosts: augmentation gems + Aetheria sigils
+  augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,allskills:0,xpBonus:0,attrTotal:0,dropReduce:0,count:0,skillCredits:0,fam:{},owned:{}},    // permanent boosts: augmentation gems + Aetheria sigils
   house:{tier:0,storage:[]},   // AC housing: 0=none, 1=Apartment…4=Mansion; storage[] persists forever
   homestead:null,              // a purchased settlement dwelling: {set,idx,type,hooks{}} (AC covenant housing)
   name:"Adventurer",
@@ -6545,7 +6546,7 @@ function buildItemModel(it,opts){
         const ring=new THREE.Mesh(new THREE.TorusGeometry(0.075,0.012,8,20),_glowMat(col));g.add(ring);
         for(let i=0;i<6;i++){const a=i/6*6.28;const rune=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.008),_glowMat(col));rune.position.set(Math.cos(a)*0.075,Math.sin(a)*0.075,0.012);g.add(rune);} }
       const lt=new THREE.PointLight(col,0.5,0.9);g.add(lt); }
-    else if(S==="augment"){ const col=/lugians|fortification/.test(nm)?0xff5a4a:/fortitude|vigor/.test(nm)?0x4ad06a:/magus|concentration/.test(nm)?0x4a6aff:/enlighten|mastery/.test(nm)?0xffd23b:/oswald|coordination/.test(nm)?0xd06aff:0x8ad0ff;
+    else if(S==="augment"){ const col=/lugians|fortification/.test(nm)?0xff5a4a:/fortitude|vigor/.test(nm)?0x4ad06a:/magus|concentration/.test(nm)?0x4a6aff:/enlighten|mastery|master of|essence/.test(nm)?0xffd23b:/oswald|coordination/.test(nm)?0xd06aff:0x8ad0ff;
       const st=new THREE.Mesh(new THREE.OctahedronGeometry(0.12),_glowMat(col));g.add(st);const lt=new THREE.PointLight(col,0.6,1);g.add(lt); }
     else if(S==="pack"){ const pouch=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.28,0.16),mat(0x6a4a2a));pouch.position.y=0.14;g.add(pouch);
       const flap=new THREE.Mesh(new THREE.BoxGeometry(0.27,0.1,0.17),mat(0x5a3a20));flap.position.y=0.24;g.add(flap); }
@@ -8381,13 +8382,22 @@ const AUGMENT_ITEMS=[
   {name:"Arrow Turner",                 aug:{resist:0.05},                    desc:"+5% resistance to every element, forever"},
   // H17 augmentation-tree breadth (AC Master-of-Design augs) — skill/XP/combat boons
   {name:"Jack of All Trades",           aug:{allskills:5},                    desc:"+5 to every skill, forever"},
-  {name:"Ciandra's Essence",            aug:{xpBonus:0.05},                   desc:"+5% experience from all sources, forever"},
+  {name:"Quick Learner",                aug:{xpBonus:0.05},                   desc:"+5% experience from all sources, forever"},
   {name:"Frenzy of the Slayer",         aug:{crit:0.03},                      desc:"+3% critical hit chance, forever"},
   {name:"Archmage's Endurance",         aug:{mn:25},                          desc:"+25 max mana, forever"},
   {name:"Infused Vigor",                aug:{hp:25},                          desc:"+25 max health, forever"},
   {name:"Critical Protection",          aug:{critReduce:0.5},                 desc:"halve the extra damage from critical hits against you, forever"},
+  // H17 finale — skill-family masteries (+10 effective skill) and the specialize-via-augmentation
+  // essences for the tinkering skills. All non-repeatable, as in AC.
+  {name:"Master of the Steel Circle",   aug:{fam:"Melee",famv:10},   nonRepeat:true, desc:"+10 to every melee weapon skill, forever"},
+  {name:"Master of the Five Fold Path", aug:{fam:"Magic",famv:10},   nonRepeat:true, desc:"+10 to every school of magic, forever"},
+  {name:"Master of the Focused Eye",    aug:{fam:"Missile",famv:10}, nonRepeat:true, desc:"+10 to your missile weapon skills, forever"},
+  {name:"Koga's Essence",               aug:{spec:"weapontink"},     nonRepeat:true, desc:"specialize Weapon Tinkering, forever"},
+  {name:"Jibril's Essence",             aug:{spec:"armortink"},      nonRepeat:true, desc:"specialize Armor Tinkering, forever"},
+  {name:"Celdiseth's Essence",          aug:{spec:"magictink"},      nonRepeat:true, desc:"specialize Magic Item Tinkering, forever"},
+  {name:"Ciandra's Essence",            aug:{spec:"salvaging"},      nonRepeat:true, desc:"specialize Salvaging, forever"},
 ];
-function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,tier:5,legendary:true}; }
+function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,nonRepeat:t.nonRepeat,tier:5,legendary:true}; }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
 const PACK_ITEMS=[{name:"Belt Pouch",cap:2},{name:"Sack",cap:3},{name:"Backpack",cap:4},{name:"Portmanteau",cap:6}];
 const PACK_MAX=88;   // stack many packs — each adds slots (12 base → up to 100)
@@ -8819,6 +8829,12 @@ function applyItem(it){
   else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
     player.augment.count=player.augment.count||0;   // H17: a hard total-augmentation cap (Aetheria sigils are separate, uncapped)
     if(!it.aetheria && player.augment.count>=60){ log("You have reached the <b>augmentation limit</b> (60) — your body can bind no more.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+    if(it.nonRepeat && player.augment.owned && player.augment.owned[it.name]){ log(`You have already absorbed <b>${it.name}</b> — its power cannot be bound twice.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+    if(a.spec){ const sst=skillState(a.spec);   // tinkering-specialization essence: the only way to specialize a tinkering skill
+      if(sst.t>=2){ log(`<b>${SKILL_BY_KEY[a.spec].n}</b> is already specialized.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+      sst.t=2; }
+    if(a.fam){ player.augment.fam=player.augment.fam||{}; player.augment.fam[a.fam]=(player.augment.fam[a.fam]||0)+(a.famv||10); }   // Master of the Steel Circle / Five Fold Path / Focused Eye
+    if(it.nonRepeat){ (player.augment.owned=player.augment.owned||{})[it.name]=1; }
     if(a.attr){ player.augment.attrTotal=player.augment.attrTotal||0;   // innate-attribute aug, capped at +50 total (AC's ten-aug limit)
       if(player.augment.attrTotal>=50){ log("You cannot absorb more attribute augmentations — the innate +50 augment limit is reached.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
       const add=Math.min(a.attr,50-player.augment.attrTotal); player.attr[a.attrName]=(player.attr[a.attrName]||10)+add; player.augment.attrTotal+=add; }
@@ -8826,7 +8842,8 @@ function applyItem(it){
     if(a.allskills){ player.augment.allskills=(player.augment.allskills||0)+a.allskills; }   // H17 Jack of All Trades
     if(a.xpBonus){ player.augment.xpBonus=Math.min(0.25,(player.augment.xpBonus||0)+a.xpBonus); }   // H17 XP aug (cap +25%)
     if(a.critReduce){ player.augment.critReduce=Math.min(1,(player.augment.critReduce||0)+a.critReduce); }   // Critical Protection (cap: full crit negation)
-    player.augment.hp+=a.hp||0; player.augment.st+=a.st||0; player.augment.mn+=a.mn||0; if(a.skillpts) player.skillPts+=a.skillpts;
+    player.augment.hp+=a.hp||0; player.augment.st+=a.st||0; player.augment.mn+=a.mn||0;
+    if(a.skillpts) player.augment.skillCredits=(player.augment.skillCredits||0)+a.skillpts;   // real skill credits (fed into creditBase) — was mis-wired to the legacy free-attribute pool
     player.augment.resist=(player.augment.resist||0)+(a.resist||0); player.augment.magic=(player.augment.magic||0)+(a.magic||0); player.augment.crit=(player.augment.crit||0)+(a.crit||0);
     if(!it.aetheria) player.augment.count++;   // count this aug against the cap
     if(typeof recomputeGearSkill==="function") recomputeGearSkill();
@@ -15777,7 +15794,7 @@ function applySaveObj(s){
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
-  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0};
+  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
   player.packBonus=s.packBonus|0;
