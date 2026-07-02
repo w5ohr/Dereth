@@ -2032,7 +2032,10 @@ function updateDayNight(dt){
   if(waterMesh){ waterMesh.position.y=Math.sin(now()/1100)*0.12;
     const t=now()/1000;
     const nm=waterMesh.material.normalMap; if(nm){nm.offset.set((t*0.018)%1,(t*0.012)%1);}
-    const wsh=waterMesh.material.userData.sh; if(wsh)wsh.uniforms.uWTime.value=t; }
+    const wsh=waterMesh.material.userData.sh; if(wsh){ wsh.uniforms.uWTime.value=t;
+      if(wsh.uniforms.uSunView){ wsh.uniforms.uSunView.value.copy(sky).transformDirection(cam.matrixWorldInverse);   // sun dir → view space
+        wsh.uniforms.uSunCol.value.copy(_sunNoon).lerp(_cWarm,warm);                                                 // glitter reddens at dawn/dusk
+        if(skyU) wsh.uniforms.uSkyCol.value.copy(skyU.uZen.value).lerp(skyU.uHor.value,0.5).multiplyScalar(1.15); } } }  // reflect the live sky
   if(waterGlint){waterGlint.position.set(player.x+sky.x*42,0.5,player.z+sky.z*42);
     waterGlint.material.opacity=clamp(sunY*2,0,1)*0.7;waterGlint.material.color.copy(sunSprite?sunSprite.material.color:_sunNoon);}
 }
@@ -2248,15 +2251,26 @@ function initThree(){
   // vertex stage: two crossed travelling swells displace the (now 128×128) sheet so the sea
   // actually heaves instead of being a flat pane.
   waterMesh.material.onBeforeCompile=sh=>{
-    sh.uniforms.uWTime={value:0}; waterMesh.material.userData.sh=sh;
+    sh.uniforms.uWTime={value:0};
+    sh.uniforms.uSunView={value:new THREE.Vector3(0,0,1)};   // sun direction in VIEW space (set per frame)
+    sh.uniforms.uSkyCol={value:new THREE.Color(0xbcd0e8)};   // colour the water reflects (the live sky)
+    sh.uniforms.uSunCol={value:new THREE.Color(0xfff2d8)};   // sun colour for the glitter streak
+    waterMesh.material.userData.sh=sh;
     sh.vertexShader='uniform float uWTime;\n'+sh.vertexShader.replace('#include <begin_vertex>',
       '#include <begin_vertex>\n'+
       'transformed.z+=sin(position.x*0.012+uWTime*0.9)*cos(position.y*0.011+uWTime*0.7)*0.55\n'+
       '            +sin(position.x*0.043-uWTime*1.4)*0.18+cos(position.y*0.037+uWTime*1.1)*0.15;');
-    sh.fragmentShader=sh.fragmentShader.replace('#include <fog_fragment>',
-    'float _fres=pow(1.0-clamp(dot(normalize(normal),normalize(vViewPosition)),0.0,1.0),3.0);\n'+
-    'gl_FragColor.rgb=mix(gl_FragColor.rgb*0.48,gl_FragColor.rgb+vec3(0.17,0.25,0.35),_fres);\n'+   // deeper looking down, brighter sky-reflection at grazing angles
-    'gl_FragColor.a=mix(0.78,0.985,_fres);\n#include <fog_fragment>'); };
+    // Reflective water: Fresnel blends deep-water colour (looking down) into a live sky reflection (grazing),
+    // plus a specular sun-glitter that tracks the sun and dances on the ripple-perturbed normal.
+    sh.fragmentShader='uniform vec3 uSunView,uSkyCol,uSunCol;\n'+sh.fragmentShader.replace('#include <fog_fragment>',
+    'vec3 _N=normalize(normal), _V=normalize(vViewPosition);\n'+
+    'float _fres=pow(1.0-clamp(dot(_N,_V),0.0,1.0),4.0);\n'+
+    'vec3 _deep=gl_FragColor.rgb*0.42;\n'+                                    // deep, dark water straight down
+    'vec3 _refl=mix(gl_FragColor.rgb,uSkyCol,0.85);\n'+                       // grazing angles mirror the sky
+    'gl_FragColor.rgb=mix(_deep,_refl,_fres);\n'+
+    'float _rd=max(dot(reflect(-normalize(uSunView),_N),_V),0.0);\n'+
+    'gl_FragColor.rgb+=uSunCol*(pow(_rd,180.0)*1.8+pow(_rd,26.0)*0.22);\n'+   // sharp glitter + soft sheen
+    'gl_FragColor.a=mix(0.80,0.99,_fres);\n#include <fog_fragment>'); };
   waterMesh.rotation.x=-Math.PI/2;waterMesh.position.y=0;scene.add(waterMesh);
 
   CIRC=circleTex();
