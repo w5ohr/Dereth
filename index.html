@@ -10421,11 +10421,13 @@ function animateAvatar(dt){
   // left arm defaults to the opposite-leg walk swing; attacks may grip it onto the weapon
   let lX=w*(-sQ*0.4*amp)+(1-w)*(0.04+breath*0.02), lZ=0.04, lE=-(0.2+w*Math.max(0,-sQ)*0.5*amp)-(1-w)*0.18;
   let sX,sZ,eX, twist=w*sP*0.06*amp;
-  // shared casting lower-body: from the ready stance, dip into a slight squat (identical for every cast type)
-  const castSquat=k=>{ u.spine.position.y-=k*0.1;
-    u.hipR.rotation.x+=k*0.3; u.hipL.rotation.x+=k*0.3;
-    u.knR.rotation.x-=k*0.62; u.knL.rotation.x-=k*0.62;
-    u.anR.rotation.x+=k*0.32; u.anL.rotation.x+=k*0.32; };
+  // shared casting lower-body: from the ready stance, dip into a slight squat (identical for every cast
+  // type); on release the legs spring back with a little bounce that lifts just past neutral, then settles.
+  const castSquat=(k,rel)=>{ const q=k*(1-(rel||0)), b=Math.sin((rel||0)*Math.PI)*0.055;
+    u.spine.position.y+=b-q*0.1;
+    u.hipR.rotation.x+=q*0.3; u.hipL.rotation.x+=q*0.3;
+    u.knR.rotation.x-=q*0.62; u.knL.rotation.x-=q*0.62;
+    u.anR.rotation.x+=q*0.32; u.anL.rotation.x+=q*0.32; };
   if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
     if(twoH){ // two-handed overhead chop — both hands grip, torso rotates through the swing
       sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
@@ -10476,11 +10478,11 @@ function animateAvatar(dt){
   else if(castShow>0&&castKind==="self"){   // SELF-cast: slight squat from the ready guard, hands sweep from close-in up into an overhead V
     const cp=clamp(1-castShow/castDur,0,1);
     const rise=clamp((cp-0.3)/0.45,0,1), rel=clamp((cp-0.78)/0.22,0,1);
-    const sq=clamp(cp/0.18,0,1)*(1-rel*0.5);                  // quick dip in, ease back up on release
+    const sq=clamp(cp/0.18,0,1);                              // quick dip in; castSquat springs it back with a bounce on release
     u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
     u.spine.position.y=AV_WAIST + rise*0.04;
-    u.spine.rotation.x=sq*0.06 - rise*0.15;                   // lean to balance the squat, then arch back looking up
-    castSquat(sq);
+    u.spine.rotation.x=sq*(1-rel)*0.06 - rise*0.15;           // lean to balance the squat, then arch back looking up
+    castSquat(sq,rel);
     u.neck.rotation.x=-rise*0.42; u.neck.rotation.y=0;
     // arms start slightly raised with hands close to the body (ready guard), then sweep up into an overhead V
     const V=-2.6*rise*(1-rel*0.18);
@@ -10490,21 +10492,21 @@ function animateAvatar(dt){
   else if(castShow>0&&castKind==="bestow"){ // BESTOW on an ally: same slight squat; both palms rise and present the gift outward
     const cp=clamp(1-castShow/castDur,0,1);
     const draw=clamp(cp/0.4,0,1), offer=cp>=0.4?Math.sin((cp-0.4)/0.6*Math.PI):0;
-    const sq=clamp(cp/0.18,0,1);
+    const sq=clamp(cp/0.18,0,1), rel=clamp((cp-0.75)/0.25,0,1);
     u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
-    u.spine.rotation.x=sq*0.05-offer*0.07; u.spine.position.y=AV_WAIST+offer*0.03;
-    castSquat(sq);
+    u.spine.rotation.x=sq*(1-rel)*0.05-offer*0.07; u.spine.position.y=AV_WAIST+offer*0.03;
+    castSquat(sq,rel);
     sX=-0.55-draw*0.75-offer*0.55; sZ=-0.18; eX=-(1.05-offer*0.75);   // palms rise, then extend toward the ally
     lX=sX; lZ=0.18; lE=eX; twist=0; u.neck.rotation.x=-0.12-offer*0.1; u.neck.rotation.y=0;
   }
   else if(castShow>0){            // BOLT (offensive/targeted): same slight squat; coil back, then snap a forward thrust through the torso
     const cp=1-castShow/castDur;
     const coil=Math.sin(clamp(cp,0,0.35)/0.35*Math.PI*0.5), thrust=cp>=0.35?Math.sin((cp-0.35)/0.65*Math.PI):0;
-    const sq=clamp(cp/0.18,0,1);
+    const sq=clamp(cp/0.18,0,1), rel=clamp((cp-0.75)/0.25,0,1);
     u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true; if(u.aHeld)u.aHeld.visible=false;
     u.spine.position.y=AV_WAIST;
-    u.spine.rotation.x=sq*0.05-coil*0.08+thrust*0.15;
-    castSquat(sq);
+    u.spine.rotation.x=sq*(1-rel)*0.05-coil*0.08+thrust*0.15;
+    castSquat(sq,rel);
     sX=-0.4+coil*0.5-thrust*1.95; sZ=-0.08-coil*0.22+thrust*0.06; eX=-(1.15+coil*0.4-thrust*0.95);   // draw the wand back & up, then snap it forward at the target
     lX=-0.3+coil*0.4-thrust*0.25; lZ=0.2; lE=-0.7;
     twist=coil*0.32-thrust*0.48; u.neck.rotation.y=-twist*0.4; u.neck.rotation.x=-0.05;   // head tracks toward the target
