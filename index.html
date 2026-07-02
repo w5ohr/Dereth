@@ -1762,6 +1762,30 @@ function acTownVendors(townName){
     return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v))};
   });
 }
+// ═══ RETAIL WORLD FACTS — the second ACE-World pass (assets/acworld.json · tools/ace_world_more.py):
+//     the REAL fauna map (165k `encounter` rows → a 51×51 grid of what actually spawned where),
+//     1,700+ overworld portals with their true destinations, 255 lifestone placements, and
+//     per-creature retail level/health/XP bands for the appraisal panel. Dungeon interiors are
+//     deliberately untouched (another workstream owns those). Missing file → legacy behaviour. ═══
+const ACW={on:false,creatures:null,spawns:null,portals:null,lifestones:null};
+ACW.load=function(){
+  return fetch("assets/acworld.json").then(r=>r.json()).then(j=>{
+    ACW.creatures=j.creatures; ACW.spawns=j.spawns; ACW.portals=j.portals; ACW.lifestones=j.lifestones; ACW.on=true;
+    console.log("ACW: retail spawn map ("+Object.keys(j.spawns).length+" cells), "+j.portals.length+" portals, "+j.lifestones.length+" lifestones");
+  }).catch(e=>console.warn("ACW unavailable ("+e.message+") — legacy spawns/portals"));
+};
+function acSpawnKinds(x,z){   // the creatures that REALLY lived here, per the retail encounter table
+  if(!ACW.on) return null;
+  const bx=clamp(Math.floor((x/8+1019.5)/8),0,254), by=clamp(Math.floor((-z/8+1019.5)/8),0,254);
+  const gx=Math.min(50,Math.floor(bx*51/255)), gy=Math.min(50,Math.floor(by*51/255));
+  // retail only defined random-spawn tables on ~a quarter of the map — let real fauna
+  // bleed over from neighbouring cells (nearest ring first) before falling back to legacy pools
+  for(let r=0;r<=2;r++) for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+    if(Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+    const s=ACW.spawns[(gx+dx)+","+(gy+dy)]; if(s) return s.split(",");
+  }
+  return null;
+}
 function terrainBase(x,z){
   if(ACMAP.on) return acHeight(x,z);
   const d=Math.hypot(x,z);
@@ -4635,6 +4659,30 @@ function buildWorld(){
       place(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
     }
   });
+  // ── the RETAIL travel web: authentic overworld portals (real names, TRUE destinations) and
+  //    wayside lifestones from the ACE-World placements. Spaced out so the ⅓-scale world doesn't
+  //    clutter; town portals/lifestones keep their existing spots. ──
+  if(typeof ACW!=="undefined"&&ACW.on){
+    let np=0,nl=0;
+    const clearOf=(arr,x,z,r)=>!arr.some(o=>Math.hypot(o.x-x,o.z-z)<r);
+    for(const p of ACW.portals){
+      if(np>=240) break;
+      if(!p.n||p.n==="Surface"||p.n==="Portal"||p.n.length<4) continue;
+      const x=p.lng*COORD, z=-p.lat*COORD, dx=p.dlng*COORD, dz=-p.dlat*COORD;
+      if(Math.abs(x)>HALF-40||Math.abs(z)>HALF-40||Math.abs(dx)>HALF-40||Math.abs(dz)>HALF-40) continue;
+      if(terrainH(x,z)<1.5||terrainH(dx,dz)<1.5) continue;              // no drowned ends
+      if(!clearOf(portals,x,z,110)||nearestCapitalDist(x,z)<TOWN_SAFE) continue;
+      addPortal(x,z,{x:dx,z:dz,name:p.n}); np++;
+    }
+    for(const l of ACW.lifestones){
+      if(nl>=160) break;
+      const x=l.lng*COORD, z=-l.lat*COORD;
+      if(Math.abs(x)>HALF-40||Math.abs(z)>HALF-40||terrainH(x,z)<1.5) continue;
+      if(!clearOf(lifestones,x,z,140)) continue;
+      addLifestone(x,z,false,"Wayside Lifestone",false,Math.max(0,regionOf(x,z))); nl++;
+    }
+    console.log("ACW placed:",np,"retail portals ·",nl,"wayside lifestones");
+  }
   // A few far dungeons (Direlands / northern isles) clamp to coordinates that fall below sea level,
   // leaving their entrance underwater and unreachable on foot. Relocate any such entrance to the
   // nearest walkable land (spiral search) so every delve can actually be reached.
@@ -6147,6 +6195,9 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
   const reg=regionOf(x,z), pick=a=>a[irnd(0,a.length-1)];
   // ambient fauna in settled/grassland areas — a rabbit or cow now and then
   if(reg>=0 && !coldZone(x,z) && d>60 && Math.random()<0.10) return Math.random()<0.7?"rabbit":"cow";
+  // the RETAIL spawn table: if the encounter data says what lived here, spawn that (mostly)
+  if(d>=200){ const real=acSpawnKinds(x,z);
+    if(real&&real.length&&Math.random()<0.75) return pick(real); }
   if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin"]);   // frozen north/south — snowy spawns
   if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow","mukkir","remoran"]); // Direlands — deadliest frontier
   if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge","burun","remoran"]);  // the Blackmire swamp
@@ -15112,7 +15163,9 @@ function openIdPanel(pick){
     if(b&&player.bestiary&&player.bestiary.indexOf(m.kind)>=0){
       const tier=(typeof threatTier==="function")?threatTier(b):null;
       const aff=(typeof AFFINITY!=="undefined")?AFFINITY[m.kind]:null;
+      const band=(typeof ACW!=="undefined"&&ACW.on&&ACW.creatures&&ACW.creatures[m.kind])?ACW.creatures[m.kind]:null;
       html=`<div><b>${b.name}</b>${tier?` — <span style="color:${tier.c};text-shadow:0 0 2px #241c10"><b>${tier.t}</b></span>`:""}</div>
+        ${band&&band.lv?`<div>Retail kin ranged <b>level ${band.lv[0]}–${band.lv[1]}</b></div>`:""}
         <div>Damage ~${Math.round(b.dmg*settings.diff)} · Speed ${b.spd}</div>
         <div>Worth ${b.xp} XP · ${b.gold[0]}–${b.gold[1]}p</div>
         ${aff?`<div>Weak to <b>${aff.weak}</b> · resists <b>${aff.resist}</b></div>`:""}${m.isElite?"<div><b>Champion</b> — stronger than its kin</div>":""}`;
@@ -18159,7 +18212,7 @@ window.addEventListener('resize',()=>{
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
 // (the retail-vendor data rides the same gate so towns build with their true merchants)
-Promise.all([ACMAP.load(),ACV.load()]).then(()=>{
+Promise.all([ACMAP.load(),ACV.load(),ACW.load()]).then(()=>{
   initThree();
   applySettings();
   initMinimap();
