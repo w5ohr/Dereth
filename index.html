@@ -12991,7 +12991,13 @@ let activeShop=null;
 function buildMerchant(vt,name){
   const def=VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner;
   const seed=(name?name.length*7:0)+def.title.length;
-  const g=buildPerson({robe:pickColor(SHIRT_COLORS,seed*3,29),accent:pickColor(PANTS_COLORS,seed*3,71),apron:true,hat:(vt==="scrivener"||vt==="provisioner")?"cap":null,beard:(seed%2===0),seed:seed*3});
+  // dress the vendor to their trade so it reads at a glance: they wear the trade's colour, smiths are
+  // bearded & aproned, shopkeeps aproned & capped, scriveners/jewelers are robed scholars.
+  const smith=(vt==="weaponsmith"||vt==="armorer"), scholar=(vt==="scrivener"||vt==="jeweler");
+  const g=buildPerson({robe:def.robe, accent:pickColor(PANTS_COLORS,seed*3,71),
+    apron:!scholar, robed:scholar,
+    hat: scholar?"cap":(vt==="provisioner"||vt==="outfitter"||vt==="healer"||vt==="furnisher")?"cap":null,
+    beard: smith?true:(seed%2===0), seed:seed*3});
   // market stall beside the shopkeeper: counter, canopy on posts, a few wares
   const stall=new THREE.Group();stall.position.set(1.45,0,0);g.add(stall);
   const wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318);
