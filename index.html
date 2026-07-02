@@ -9577,6 +9577,10 @@ function meleeAttack(power){
   const offhand=dualOK&&Math.random()<clamp(0.25+skillValue("dualwield")*0.003,0,0.65);
   const cdScale=Math.max(.35,1-player.attr.Coordination*0.02);
   player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"))*(0.7+power*0.5);player.swing=1;SFX.swing();  // heavier swings recover slower
+  // each weapon class owns two signature attacks; one is rolled per swing (off-hand weave gets its own cut)
+  { const SW_VAR={dagger:["stab","fan"],sword:["diag","horiz"],axe:["hew","chopdn"],mace:["smash","rising"],
+      spear:["lunge","sweep"],staff:["sweep","lunge"],twohand:["chop","cleave"],unarmed:["cross","hook"]};
+    const v=SW_VAR[wt]||SW_VAR.sword; player.swingAnim=offhand?"offhand":v[irnd(0,v.length-1)]; }
   if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor());
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
@@ -10429,11 +10433,53 @@ function animateAvatar(dt){
     u.knR.rotation.x-=q*0.62; u.knL.rotation.x-=q*0.62;
     u.anR.rotation.x+=q*0.32; u.anL.rotation.x+=q*0.32; };
   if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
-    if(twoH){ // two-handed overhead chop — both hands grip, torso rotates through the swing
-      sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
-      lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2;
-    } else {  // single-handed diagonal slash
-      sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2;
+    const kind=player.swingAnim||(twoH?"chop":"diag");
+    const drive=k=>{ u.spine.rotation.x+=k*0.2; u.hipR.rotation.x+=k*0.26; u.knR.rotation.x-=k*0.5; u.anR.rotation.x+=k*0.24; };  // footwork: the lead leg plants & drives into the blow
+    switch(kind){
+      case "chop":   // TWOHAND: overhead chop — both hands grip, torso rotates through the swing
+        sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
+        lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2; drive(slash*0.55); break;
+      case "cleave": // TWOHAND: massive flat cleave — full torso wind, blade carried level through the arc
+        sX=-1.25; sZ=-0.15-raise*0.55+slash*0.85; eX=-(0.5-slash*0.25);
+        lX=-1.1; lZ=-0.5; lE=-0.9; twist=-(0.55+raise*0.25)+slash*1.15; u.neck.rotation.y=-twist*0.5; drive(slash*0.4); break;
+      case "horiz":  // SWORD: flat cut across the body
+        sX=-1.2-raise*0.2; sZ=-0.2-raise*0.6+slash*0.95; eX=-(0.45-slash*0.25);
+        twist=-(0.35+raise*0.2)+slash*0.85; u.neck.rotation.y=-twist*0.45; drive(slash*0.35); break;
+      case "stab":   // DAGGER: lunge-stab — the point snaps from the hip straight out
+        sX=-0.25+raise*0.15-slash*1.5; sZ=-0.06; eX=-(1.5-slash*1.3);
+        lX=-0.5+slash*0.7; lZ=0.15; lE=-0.9; twist=raise*0.15-slash*0.4; drive(slash*0.8); break;
+      case "fan":    // DAGGER: fan — two fast wrist-led cuts in one beat
+        { const osc=Math.sin(t*Math.PI*2);
+          sX=-1.15; sZ=-0.15+osc*0.5; eX=-(0.8-Math.abs(osc)*0.4); twist=osc*0.3; } break;
+      case "hew":    // AXE: heavy flat hew — the whole body drops in behind the edge
+        sX=-1.05-raise*0.3; sZ=-0.25-raise*0.7+slash*1.05; eX=-(0.55-slash*0.3);
+        twist=-(0.5+raise*0.25)+slash*1.05; u.spine.position.y-=slash*0.06; u.neck.rotation.y=-twist*0.45; drive(slash*0.5); break;
+      case "chopdn": // AXE: steep diagonal chop — pitches forward as the edge bites
+        sX=-0.4-raise*2.0+slash*2.9; sZ=-0.14-slash*0.3; eX=-(0.45+raise*0.7-slash*0.6);
+        twist=slash*0.3; u.spine.rotation.x+=slash*0.14; drive(slash*0.5); break;
+      case "smash":  // MACE: overhead smash — big raise, the body drops with the impact
+        sX=-0.5-raise*2.2+slash*3.1; sZ=-0.05; eX=-(0.35+raise*0.75-slash*0.6);
+        twist=-0.15+slash*0.3; u.spine.position.y-=slash*0.09; u.knL.rotation.x-=slash*0.35; drive(slash*0.7); break;
+      case "rising": // MACE: rising blow — rips upward from beside the hip
+        sX=0.35+raise*0.25-slash*2.3; sZ=-0.12; eX=-(0.95-slash*0.75);
+        twist=-0.2+slash*0.5; u.spine.position.y+=slash*0.05; u.spine.rotation.x-=slash*0.12; drive(raise*0.4); break;
+      case "lunge":  // SPEAR/STAFF: two-handed driving thrust down the line
+        sX=-0.55+raise*0.35-slash*1.35; sZ=-0.08; eX=-(1.15-slash*0.95);
+        lX=-1.0-slash*0.3; lZ=-0.35; lE=-0.7+slash*0.3; twist=raise*0.2-slash*0.45; drive(slash*0.9); break;
+      case "sweep":  // SPEAR/STAFF: wide haft sweep — both hands carry the shaft through a flat arc
+        sX=-1.15; sZ=-0.2-raise*0.5+slash*0.8; eX=-(0.6-slash*0.2);
+        lX=-0.95; lZ=0.3-slash*0.5; lE=-0.8; twist=-(0.45+raise*0.2)+slash*1.0; u.neck.rotation.y=-twist*0.4; drive(slash*0.35); break;
+      case "cross":  // UNARMED: hip-driven straight right
+        sX=-0.3+raise*0.2-slash*1.45; sZ=-0.1; eX=-(1.7-slash*1.5);
+        lX=-0.9+slash*0.3; lZ=0.2; lE=-1.5; twist=raise*0.2-slash*0.5; drive(slash*0.6); break;
+      case "hook":   // UNARMED: hook — the elbow stays bent, the torso whips it around
+        sX=-1.2; sZ=-0.3-raise*0.4+slash*0.8; eX=-1.25;
+        lX=-0.9; lZ=0.25; lE=-1.5; twist=-(0.4+raise*0.2)+slash*0.9; drive(slash*0.4); break;
+      case "offhand": // DUAL WIELD: the LEFT hand cuts while the right keeps its guard
+        lX=-0.3-raise*1.7+slash*2.7; lZ=0.1+slash*0.5; lE=-(0.4+raise*0.9-slash*0.7);
+        sX=-0.55; sZ=-0.2; eX=-1.25; twist=slash*-0.2; break;
+      default:       // SWORD: diagonal slash
+        sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2; drive(slash*0.4);
     }
   }
   else if(actGesture){             // ACTIVITY gesture — gather / mine / craft / tinker / fish
@@ -10687,12 +10733,23 @@ function syncCamera(dt){
   const sw=player.swing, t=1-sw;                                  // t: 0→1 over the swing
   const raise=sw>0?Math.sin(clamp(t,0,0.3)/0.3*Math.PI):0;        // anticipation hump (first 30%)
   const slash=(sw>0&&t>=0.22)?Math.sin((t-0.22)/0.78*Math.PI):0;  // strike + follow-through hump
-  weaponHand.rotation.x=0.1 - raise*0.75 + slash*1.85;
-  weaponHand.rotation.y=-0.15 + raise*0.5  - slash*1.15;
-  weaponHand.rotation.z=0.05 + raise*0.4   - slash*0.55;
-  weaponHand.position.x=0.42 + bobX + raise*0.14 - slash*0.5;
-  weaponHand.position.y=-0.42 + bobY + raise*0.18 - slash*0.16;
-  weaponHand.position.z=-0.7 + slash*0.24;
+  // first-person swing follows the rolled attack (player.swingAnim) via five motion families:
+  // each row is [raiseCoeff,slashCoeff] for rx,ry,rz,px,py,pz around the rest pose.
+  { const FPS={
+      diag:  [[-0.75,1.85],[0.5,-1.15],[0.4,-0.55],[0.14,-0.5],[0.18,-0.16],[0,0.24]],          // over-the-shoulder diagonal
+      flat:  [[-0.2,0.45],[0.85,-1.9],[0.2,-0.3],[0.3,-0.8],[0.06,-0.04],[0,0.2]],               // level cut across the view
+      thrust:[[-0.12,0.3],[0.25,-0.3],[0.05,-0.05],[0.08,-0.16],[0.04,-0.06],[0.3,-0.62]],        // pull back, drive the point forward
+      over:  [[-1.15,2.35],[0.2,-0.4],[0.12,-0.25],[0.06,-0.22],[0.3,-0.34],[0.05,0.2]],          // high overhead smash
+      rise:  [[0.55,-1.7],[0.15,-0.3],[-0.1,0.2],[0.05,-0.1],[-0.16,0.34],[0.1,-0.35]] };         // rips upward from low
+    const MAP={diag:"diag",offhand:"diag",fan:"flat",horiz:"flat",cleave:"flat",hew:"flat",sweep:"flat",hook:"flat",
+      stab:"thrust",lunge:"thrust",cross:"thrust",chop:"over",chopdn:"over",smash:"over",rising:"rise"};
+    const P=FPS[MAP[player.swingAnim]||"diag"];
+    weaponHand.rotation.x=0.1   + raise*P[0][0] + slash*P[0][1];
+    weaponHand.rotation.y=-0.15 + raise*P[1][0] + slash*P[1][1];
+    weaponHand.rotation.z=0.05  + raise*P[2][0] + slash*P[2][1];
+    weaponHand.position.x=0.42 + bobX + raise*P[3][0] + slash*P[3][1];
+    weaponHand.position.y=-0.42 + bobY + raise*P[4][0] + slash*P[4][1];
+    weaponHand.position.z=-0.7 + raise*P[5][0] + slash*P[5][1]; }
   // --- bow: snap release + recoil; string and arrow leave the nock, then re-nock ---
   const bd=player.bowDraw, td=1-bd;                               // td: 0→1 after release
   const recoil=bd>0?Math.sin(clamp(td,0,0.45)/0.45*Math.PI):0;    // kick hump
