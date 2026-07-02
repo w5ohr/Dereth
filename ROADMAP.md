@@ -157,8 +157,19 @@ gitignored in acdata/, only the derived data texture ships).
 - 🐛 Fixed en route: the U1 targeting commit's `setBar` helper shadowed the HUD's original `setBar`
   → `updateHUD` threw on the first vital change and killed the render loop (screenshots froze at the
   last composite). Renamed to `tfSetBar`.
-- ◇ Not in client data (server-side in retail): vendor stock & item weenies — the ACE-World community
-  DB is the path if wanted later.
+- ✅ **R3. Retail vendors** (ACE-World community DB v0.9.294, 19 MB release zip → 155 MB SQL, parsed by
+  `tools/ace_world_export.py`): **699 placed vendors with their real shop stock** (via
+  `weenie_properties_create_list` + `landblock_instance` world placements → lat/long), 3,827 catalog
+  items, 7,013 leveled creatures. `tools/ace_trim_towns.py` matches them to our towns →
+  `assets/acvendors.json` (529 vendors across 53 towns, 256 KB). In-game `ACV` module (loads with
+  ACMAP before boot; generic rotation if absent): every town slot seats its **authentic retail
+  merchant by name**, classified to our vendor types, selling their **real wares** translated into our
+  item system by name-keyword (weapons w/ type, armour w/ slot+tier, ammo, potions/kits, spell
+  components, food, trade notes, packs, picks/keys; untranslatables sell as curios) at AC-value-scaled
+  prices. Trophy Collector + Furniture slots keep their gameplay roles. Verified: Holtburg seats its
+  ten retail merchants (Archmage Cindrue ×60 wares, Sedor Wystan the Blacksmith, Sontella Dagroff the
+  Bowyer, Thelnoth Cort the Healer, Barkeeper Wilomine…) and the Blacksmith's shop sells his actual
+  retail armour list. 0 console errors.
 
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the

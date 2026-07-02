@@ -22,3 +22,4 @@ assets/*.gltf
 acdata/
 winter-full*
 winter-onset*
+ace-world*.sql*

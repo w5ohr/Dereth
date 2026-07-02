@@ -1683,6 +1683,85 @@ function acHeight(x,z){
   const wd=AC_WATER_DEPTH[ty]; if(wd!==undefined) h=Math.min(h,wd);   // rivers & seas cut below the water plane
   return h;
 }
+// ═══ RETAIL VENDORS — every town's authentic merchants and their REAL shop stock, from the
+//     ACE-World community database (assets/acvendors.json · tools/ace_world_export.py +
+//     ace_trim_towns.py). Wares translate into our item system by name; the untranslatable
+//     sell as curios. Missing file → the generic vendor rotation, unchanged. ═══
+const ACV={on:false,catalog:null,towns:null};
+ACV.load=function(){
+  return fetch("assets/acvendors.json").then(r=>r.json()).then(j=>{
+    ACV.catalog=j.catalog; ACV.towns=j.towns; ACV.on=true;
+    console.log("ACV: retail vendors loaded for "+Object.keys(j.towns).length+" towns");
+  }).catch(e=>console.warn("ACV unavailable ("+e.message+") — generic vendors"));
+};
+function acVendorType(name,stockNames){
+  const n=name.toLowerCase();
+  if(/archmage|scrivener|scribe|enchanter/.test(n)) return "scrivener";
+  if(/healer|apothec/.test(n)) return "healer";
+  if(/jeweler|gem/.test(n)) return "jeweler";
+  if(/bowyer|weapons/.test(n)) return "weaponsmith";
+  if(/blacksmith|armorer|smith/.test(n)) return "armorer";
+  if(/grocer|provision|butcher|baker|barkeep|innkeep/.test(n)) return "provisioner";
+  if(/tailor|outfit|shopkeep|pawn/.test(n)) return "outfitter";
+  const s=stockNames.join(" ").toLowerCase();
+  if(/scarab|talisman|tome|parchment/.test(s)) return "scrivener";
+  if(/potion|healing kit/.test(s)) return "healer";
+  if(/\bbow\b|arrow|sword|quarrel/.test(s)) return "weaponsmith";
+  if(/breastplate|leggings|gauntlet/.test(s)) return "armorer";
+  if(/cheese|bread|wine|beef|pie/.test(s)) return "provisioner";
+  return "outfitter";
+}
+function acPrice(v){ return clamp(Math.max(2,Math.round((v||20)/5)),2,6000); }
+function acItemRow(nm,val){
+  const n=nm.toLowerCase(), cost=acPrice(val), P=(g,ico,desc)=>({name:nm,cost,desc,ico,gear:g});
+  const wep=(wt,base)=>P({name:nm,stat:"weapon",wt,v:clamp(Math.round((val||50)/40)+base,6,26)},"⚔️",(WEAPON_TYPES[wt]?wt:"melee")+" · authentic Dereth arms");
+  const noteM=n.match(/trade note \(([\d,]+)\)/);
+  if(noteM){ const amt=Math.round(+noteM[1].replace(/,/g,"")/50);
+    return {name:nm,cost:clamp(amt,2,20000),desc:"portable pyreal certificate",ico:"💵",gear:{name:nm,stat:"note",v:amt}}; }
+  if(/arrow/.test(n)&&!/head/.test(n)) return P({name:nm,stat:"ammo",for:"bow",dmg:2,v:2,count:20},"🏹","20 arrows — bonus bow damage");
+  if(/quarrel|bolt\b/.test(n)) return P({name:nm,stat:"ammo",for:"crossbow",dmg:3,v:3,count:20},"🏹","20 quarrels — bonus crossbow damage");
+  if(/\bdart\b|djarid/.test(n)) return P({name:nm,stat:"ammo",for:"atlatl",dmg:2,v:2,count:20},"🏹","20 darts — bonus atlatl damage");
+  if(/crossbow|arbalest/.test(n)) return wep("crossbow",8);
+  if(/shortbow|longbow|\bbow\b|yumi|nayin/.test(n)) return wep("bow",6);
+  if(/atlatl/.test(n)) return wep("atlatl",6);
+  if(/dagger|knife|jambiya|kris|stiletto|dirk/.test(n)) return wep("dagger",5);
+  if(/spear|yari|trident|pike|naginata|partizan/.test(n)) return wep("spear",7);
+  if(/throwing/.test(n)) return wep("dagger",4);
+  if(/\baxe\b|hatchet|silifi|\bono\b|war axe/.test(n)) return wep("axe",8);
+  if(/mace|club|kasrukha|mazule|jitte|morning star|war hammer/.test(n)) return wep("mace",8);
+  if(/sword|scimitar|rapier|sabre|saber|\bken\b|yaoji|takuba|shamshir|flamberge|epee|schlager|spada|tachi/.test(n)) return wep("sword",8);
+  if(/staff|sceptre|scepter|wand|\borb\b/.test(n)) return P({name:nm,stat:"weapon",wt:"focus",v:4,foc:4},"🔮","casting focus · +4 all magic");
+  const at=/plate|metal|celdon|nariyid|chiran|olthoi/.test(n)?"heavy":/studded|chain|scale|yoroi|koujia|amuli/.test(n)?"medium":"light";
+  const arm=(aslot,base)=>P({name:nm,stat:"worn",at,aslot,v:clamp(Math.round((val||60)/30)+base,8,26)},"🛡",at+" "+aslot+" armour");
+  if(/tower shield/.test(n)) return P({name:nm,stat:"worn",at:"heavy",aslot:"offhand",shield:"tower",v:26},"🛡","heavy shield — great guard, slows you");
+  if(/kite shield|large shield|round shield/.test(n)) return P({name:nm,stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:16},"🛡","balanced shield");
+  if(/buckler|shield/.test(n)) return P({name:nm,stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9},"🛡","light shield");
+  if(/breastplate|cuirass|hauberk|shirt|doublet|tunic|robe|gown|jerkin|coat\b/.test(n)) return arm("chest",8);
+  if(/helm|basinet|\bcap\b|cowl|kabuton|coif/.test(n)) return arm("head",6);
+  if(/gauntlet|glove/.test(n)) return arm("hands",5);
+  if(/greaves|leggings|tasset|pants|trousers|breeches|kilt|skirt/.test(n)) return arm("legs",7);
+  if(/boot|shoe|solleret|sandal/.test(n)) return arm("feet",5);
+  if(/bracer|vambrace|sleeves/.test(n)) return arm("lowerarm",5);
+  if(/pauldron|shoulder/.test(n)) return arm("upperarm",5);
+  if(/girth|\bbelt\b/.test(n)) return arm("chest",4);
+  if(/potion of healing|health (potion|draught|tonic)|healing (potion|draught|tonic)|elixir of health/.test(n)) return P({name:nm,stat:"hp",v:60},"🧪","restores 60 health");
+  if(/mana (potion|draught|tonic)|elixir of mana/.test(n)) return P({name:nm,stat:"mn",v:60},"🔷","restores 60 mana");
+  if(/stamina (potion|draught|tonic)/.test(n)) return P({name:nm,stat:"st",v:60},"⚡","restores 60 stamina");
+  if(/healing kit|first aid/.test(n)) return P({name:nm,stat:"hot",pool:"hp",rate:6,dur:12},"💉","mends 6 health/s for 12 s");
+  if(/scarab|talisman|taper|ginseng|hyssop|mandrake|frankincense|saffron|henbane|eyebright|comfrey|damiana|yarrow|amaranth|wormwood|bloodroot|nightshade|\bsage\b|\brue\b|vervain|belladonna|foxglove|powdered|dragon's blood|quill|\bink\b|turpeth|springwort|brimstone|cadmia|cobalt|colophony|gypsum|quicksilver|realgar|stipite|verdigris|vitriol/.test(n)) return P({name:nm,stat:"comp",v:Math.max(4,cost)},"🪲","spell component");
+  if(/lockpick/.test(n)) return P({name:nm,stat:"pick",v:1},"🔓","opens a locked cache");
+  if(/\bkey\b/.test(n)) return P({name:nm,stat:"key",v:1},"🔑","opens a locked cache");
+  if(/backpack|\bpack\b|\bsack\b|pouch|basket/.test(n)) return P({name:nm,stat:"pack",cap:3,v:3},"🎒","+3 satchel slots");
+  if(/cheese|bread|pie\b|cake|egg|grape|apple|beef|chicken|fish|stew|ration|milk|wine|stout|\bale\b|cider|sake|\btea\b|mead|water\b|jerky|melon|pear|olive|carrot|mushroom|honey|noodle|rice\b|tofu/.test(n)) return P({name:nm,stat:"food",attr:"Endurance",v:2,dur:90},"🍖","hearty fare · +2 Endurance for 90 s");
+  return P({name:nm,stat:"trophy",v:Math.max(3,Math.round((val||15)/6))},"📦","curio · an authentic Dereth trade good");
+}
+function acTownVendors(townName){
+  if(!ACV.on||!ACV.towns[townName]) return null;
+  return ACV.towns[townName].map(v=>{
+    const st=v.stock.map(id=>ACV.catalog[id]).filter(Boolean);
+    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v))};
+  });
+}
 function terrainBase(x,z){
   if(ACMAP.on) return acHeight(x,z);
   const d=Math.hypot(x,z);
@@ -4421,15 +4500,27 @@ function buildWorld(){
   addNPC(69.3*80+3,-21.2*80,{role:"reset_skill",name:"Fianhe"});
   {const tm=CITIES.find(c=>c.name==="Timaru"); if(tm) addNPC(tm.x,tm.z-12,{role:"gatekeep",name:"Aun Firanauri",town:"Timaru"});}
   // vendors in every town: capitals host a full market (one of each trade), smaller
-  // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener)
+  // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener).
+  // When the ACE-World data is loaded, each slot is filled by that town's RETAIL vendor —
+  // authentic name AND their real shop stock — with the game's own systems (trophy collectors,
+  // furniture) keeping their slots.
   const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter","healer","jeweler","collector"];
+  const AC_KEEP={collector:1,furnisher:1};
   CITIES.forEach((c,i)=>{
+    const acv=(typeof acTownVendors==="function")?acTownVendors(c.name):null; let acvi=0;
+    const place=(x,z,vt)=>{
+      if(acv&&!AC_KEEP[vt]&&acv[acvi]){ const av=acv[acvi++]; addMerchant(x,z,av.vt,av.name,av.acStock); }
+      else addMerchant(x,z,vt);
+    };
     if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
-      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; addMerchant(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
+      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; place(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
+      // capitals were bustling in retail — seat up to three more of the town's real merchants
+      for(let k=0;k<3&&acv&&acv[acvi];k++){ const a=(all.length+k)/(all.length+3)*6.28+0.9;
+        const av=acv[acvi++]; addMerchant(c.x+Math.cos(a)*19,c.z+Math.sin(a)*19,av.vt,av.name,av.acStock); }
     } else {
-      addMerchant(c.x-9,c.z-7,"provisioner");
-      addMerchant(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
-      addMerchant(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
+      place(c.x-9,c.z-7,"provisioner");
+      place(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
+      place(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
     }
   });
   // A few far dungeons (Direlands / northern isles) clamp to coordinates that fall below sea level,
@@ -14238,10 +14329,10 @@ function buildMerchant(vt,name){
   const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
   return g;
 }
-function addMerchant(x,z,vt,name){
+function addMerchant(x,z,vt,name,acStock){
   vt=vt||"provisioner";
   const mesh=buildMerchant(vt,name);mesh.position.set(x,0,z);scene.add(mesh);
-  shops.push({x,z,mesh,vtype:vt,name:name||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
+  shops.push({x,z,mesh,vtype:vt,name:name||null,acStock:acStock||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
 }
 // ── The Wandering Caravan: an ox-drawn covered wagon that plies the winding road between Holtburg and
 //    Lord Kilmer's Castle Val Halla. Its keeper is a buff-bot + portal-bot who deals in every spell, scarab & taper. ──
@@ -14377,7 +14468,7 @@ function buildShop(){
   const def=VENDOR_TYPES[(activeShop&&activeShop.vtype)||"provisioner"]||VENDOR_TYPES.provisioner;
   if(activeShop){ if(activeShop.pyreals==null){activeShop.pyreals=irnd(14000,20000);activeShop.pmax=20000;}   // I4: coin regenerates ~150/s up to the vendor's max
     const t=now(); if(activeShop._pt) activeShop.pyreals=Math.min(activeShop.pmax||20000,(activeShop.pyreals||0)+(t-activeShop._pt)/1000*150); activeShop._pt=t; }
-  const SHOP=def.stock();
+  const SHOP=(activeShop&&activeShop.acStock)?activeShop.acStock:def.stock();   // retail vendors sell their REAL wares
   const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
   const sub=document.querySelector('#shop .sub');
   if(sub) sub.textContent=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel.`;
@@ -17372,7 +17463,8 @@ window.addEventListener('resize',()=>{
 });
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
-ACMAP.load().then(()=>{
+// (the retail-vendor data rides the same gate so towns build with their true merchants)
+Promise.all([ACMAP.load(),ACV.load()]).then(()=>{
   initThree();
   applySettings();
   initMinimap();
