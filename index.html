@@ -377,6 +377,7 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Show or hide any on-screen interface (each also has an ✕ and a keybind — see Map Keys → HUD Toggles)">Interfaces</span><span id="setHud" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
@@ -475,13 +476,16 @@
 .vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
 .vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
 #vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
-/* Universal drag grips — every game panel drags like the plugin windows (grip shows on hover) */
-.dragGrip{position:absolute;top:1px;right:1px;z-index:6;display:none;pointer-events:auto;cursor:move;
+/* Universal drag grips — every game panel drags like the plugin windows. The HUD layer is
+   pointer-events:none, so parent :hover can never fire — the grips stay ALWAYS visible (faint,
+   brightening under their own cursor, which works because the grip itself takes pointer events). */
+.dragGrip,.hudX{position:absolute;top:1px;z-index:6;display:block;opacity:.38;pointer-events:auto;
   font-size:11px;line-height:1;padding:2px 4px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;user-select:none}
-.dragGrip:hover{color:#ffd86b;border-color:#8a7a52}
-#hud .panel:hover>.dragGrip, #log:hover>.dragGrip, #goarrow:hover>.dragGrip, #targetFrame:hover>.dragGrip,
-#minimap:hover>.dragGrip, #spellbar:hover>.dragGrip, #potions:hover>.dragGrip, #quest:hover>.dragGrip,
-#right:hover>.dragGrip, #vitals:hover>.dragGrip, #compassPanel:hover>.dragGrip, #partyHud:hover>.dragGrip{display:block}
+.dragGrip{right:18px;cursor:move}
+.hudX{right:1px;cursor:pointer}
+.dragGrip:hover,.hudX:hover{opacity:1;color:#ffd86b;border-color:#8a7a52}
+/* the potion belt introduces itself — it was an unlabeled mystery box */
+#potions::before{content:"POTION BELT";position:absolute;top:-13px;left:6px;font-size:9px;letter-spacing:1px;color:#9a8a66}
 /* Chat box resize — a corner grip; the log is bottom-anchored so it grows up/right */
 #logResize{position:absolute;top:-6px;right:-6px;z-index:6;display:none;pointer-events:auto;cursor:nesw-resize;
   font-size:12px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;padding:1px 4px;user-select:none}
@@ -10054,7 +10058,7 @@ const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Com
   ["minimap","Minimap","shift+F3"],["right","Attributes & Status","shift+F4"],["quest","Quest Tracker","shift+F5"],
   ["spellbar","Quickbar","shift+F6"],["potions","Potion Belt","shift+F7"],["partyHud","Party Frame","shift+F8"],
   ["goarrow","GoArrow","shift+F9"],["alinco","Alinco Buffs","shift+F10"],["vtank","Virindi Tank","shift+F11"],
-  ["magtools","Mag-Tools","shift+F12"],["targetFrame","Target Frame","shift+Backquote"]];
+  ["magtools","Mag-Tools","shift+F12"],["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
 for(const [id,label,def] of HUD_TOGGLES)
   ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
 const ROW1_DEF=["Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0","Minus","Equal"];
@@ -11294,6 +11298,7 @@ function initDragUI(){
 // every game panel gets a hover ⠿ grip that drags the same way as the plugin windows, anytime.
 // Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
 function ensureGrips(){
+  const label={}; if(typeof HUD_TOGGLES!=="undefined") for(const [id,n] of HUD_TOGGLES) label[id]=n;
   for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","idPanel"].indexOf(id)>=0) continue;
     const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
     if(getComputedStyle(el).position==="static") el.style.position="relative";
@@ -11301,7 +11306,16 @@ function ensureGrips(){
     grip.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation();
       const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; });
     el.appendChild(grip);
+    if(label[id]){   // ✕ closes the panel; reopen via its keybind or Settings → Interfaces
+      const x=document.createElement('div'); x.className="hudX"; x.textContent="✕";
+      x.title=`Hide ${label[id]} — reopen in Settings → Interfaces${(KEYBINDS["ui_"+id]||[])[0]?` or press ${(KEYBINDS["ui_"+id])[0]}`:""}`;
+      x.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation(); });
+      x.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); toggleHud(id,label[id]); });
+      el.appendChild(x);
+    }
   }
+  const pot=document.getElementById('potions');
+  if(pot&&!pot.title) pot.title="Potion Belt — press R / G / F / H to drink potions, 9 / 0 for elixirs. ✕ hides it; Settings → Interfaces brings it back.";
 }
 let _logRz=null;
 function applyLogSize(w,h){
@@ -14829,6 +14843,18 @@ function openSettings(){
       paint(); pc.appendChild(b);
     }
   }
+  // Interfaces: lit = shown (mirrors the ✕ buttons and the HUD-Toggle keybinds)
+  const hc=document.getElementById('setHud');
+  if(hc&&!hc.dataset.built){ hc.dataset.built="1";
+    for(const [id,n] of HUD_TOGGLES){
+      const b=document.createElement('button'); b.className="tbtn"; b.textContent=n;
+      b.title=`Show / hide the ${n}${(KEYBINDS["ui_"+id]||[])[0]?` (key: ${(KEYBINDS["ui_"+id])[0]})`:""}`;
+      b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ b.style.opacity=uiHiddenIs(id)?0.35:1; };
+      b.onclick=()=>{ toggleHud(id,n); paint(); };
+      b.dataset.hudBtn=id; paint(); hc.appendChild(b);
+    }
+  } else if(hc){ hc.querySelectorAll('[data-hud-btn],[data-hudBtn],button').forEach(b=>{ const id=b.dataset.hudBtn; if(id) b.style.opacity=uiHiddenIs(id)?0.35:1; }); }
   // per-channel chat colour + mute (click the name to mute, the swatch to recolour)
   const cc=document.getElementById('setChat');
   if(cc&&!cc.dataset.built){ cc.dataset.built="1";

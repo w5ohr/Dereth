@@ -117,6 +117,13 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   rebuild their innerHTML and shed the grip); the chat window joined the drag registry. The **chat box
   resizes** by a ◥ corner grip (bottom-anchored → grows up/right, 220–720 × 90–560), a taller box shows
   more scrollable history pinned to the newest line, and the size persists (settings.logSize).
+- ✅ **U9. Grips-for-real fix + per-panel ✕ + Interfaces settings** (jsc + preview, 0 console errors):
+  the U7 hover-revealed grips could NEVER appear for real users — the HUD layer is
+  `pointer-events:none`, so parent `:hover` never fires (synthetic-event tests masked it). Grips are
+  now **always visible** (faint, brighten under their own cursor — the grip itself takes pointer
+  events), every panel gained an **✕ close** chip (reopen via its keybind or the new **Settings →
+  Interfaces** row, 14 toggles), and the unlabeled bottom-right mystery box now introduces itself:
+  a "POTION BELT" caption + tooltip (R/G/F/H potions, 9/0 elixirs).
 - ✅ **U8. Combat + Craft tabs** (jsc + preview e2e, 0 console errors): the chat gained a **Combat**
   tab — real per-hit logging (`clog()`): damage dealt with crit call-outs, damage taken (post-armour,
   in red), and kill lines with XP; per-hit spam is flagged so it lives ONLY on the Combat tab and never
