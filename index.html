@@ -3646,7 +3646,9 @@ function cWisp(g,b,s){
   const rayMat=new THREE.MeshBasicMaterial({color:b.c,transparent:true,opacity:0.5});
   for(let i=0;i<6;i++){const a=i/6*6.28;spike(g,rayMat,Math.cos(a)*s*0.4,s*1.2,Math.sin(a)*s*0.4,s*0.06,s*0.3,Math.PI/2,a);}
   return s*1.7;}
-function cGolem(g,b,s){const rock=solid(0x54545a,true),panel=solid(0x9a9a95,true);
+// AC has two golem forms: a carved stone statue, and a levitating cluster of floating material chunks.
+function cGolem(g,b,s){ return (Math.random()<0.5)?cGolemStatue(g,b,s):cGolemElemental(g,b,s); }
+function cGolemStatue(g,b,s){const rock=solid(0x54545a,true),panel=solid(0x9a9a95,true);
   part(g,new THREE.BoxGeometry(s*0.7,s*0.9,s*0.5),rock,0,s*1.1,0);
   part(g,new THREE.BoxGeometry(s*0.5,s*0.4,s*0.4),rock,0,s*1.75,0);
   for(const sy of[0.8,1.1,1.4])part(g,new THREE.BoxGeometry(s*0.5,s*0.06,s*0.05),panel,0,s*sy,s*0.26);   // engraved labyrinth panels
@@ -3656,6 +3658,23 @@ function cGolem(g,b,s){const rock=solid(0x54545a,true),panel=solid(0x9a9a95,true
   for(const sx of[-1,1])limb(g,rock,sx*s*0.22,s*0.5,0,s*0.18,s*0.16,s*0.7,0,0,"leg");
   for(let i=0;i<5;i++)part(g,new THREE.BoxGeometry(s*0.12,s*0.12,s*0.12),rock,rnd(-s*0.4,s*0.4),s*(0.7+Math.random()*0.8),rnd(-s*0.2,s*0.2));
   return s*2.1;}
+// elemental golem: a hovering humanoid-arranged swarm of glowing material chunks with a gap where the neck would be
+function cGolemElemental(g,b,s){
+  const E=[{rock:0x1e1a18,glow:0xff7a1a},{rock:0x2a3550,glow:0x8cbeec},{rock:0x203048,glow:0x2f6fe0},{rock:0x2a2e36,glow:0xffe23b}]; // magma / ice / wave / lightning
+  const e=E[irnd(0,E.length-1)];
+  const rockM=new THREE.MeshStandardMaterial({color:e.rock,emissive:e.glow,emissiveIntensity:0.4,flatShading:true,roughness:0.9});
+  const spin=new THREE.Group(); g.add(spin);
+  const pts=[[0,1.6,0,0.32],                                            // head orb (floats above the neck gap)
+    [0,1.15,0,0.5],[0.12,0.95,0.05,0.34],[-0.12,1.25,-0.05,0.3],        // torso mass
+    [0.52,1.35,0,0.24],[-0.52,1.35,0,0.24],[0.62,1.0,0,0.2],[-0.62,1.0,0,0.2],[0.66,0.66,0,0.18],[-0.66,0.66,0,0.18], // arms
+    [0.24,0.62,0,0.26],[-0.24,0.62,0,0.26],[0.27,0.24,0,0.22],[-0.27,0.24,0,0.22]]; // legs
+  for(const p of pts){ const c=new THREE.Mesh(new THREE.DodecahedronGeometry(s*p[3],0),rockM);
+    c.position.set(p[0]*s,p[1]*s,p[2]*s); c.rotation.set(rnd(0,6),rnd(0,6),rnd(0,6)); spin.add(c); }
+  for(const sx of[-1,1])addEye(g,s*0.06,e.glow,sx*s*0.1,s*1.62,s*0.24);
+  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.18,10,9),new THREE.MeshBasicMaterial({color:e.glow})); core.position.y=s*1.15; g.add(core);
+  const lt=new THREE.PointLight(e.glow,1.5,13); lt.position.y=s*1.2; g.add(lt);
+  g.userData.gait="float"; jreg(g,spin,"orbit");   // hovers and slowly rotates as a mass
+  return s*2.0;}
 function cZombie(g,b,s){const m=solid(b.c);
   limb(g,m,s*0.05,s*0.9,0,s*0.26,s*0.32,s*0.85,0.12);
   part(g,new THREE.SphereGeometry(s*0.28,10,9),m,-s*0.08,s*1.45,s*0.05);
@@ -3778,7 +3797,7 @@ function buildCreature(kind){
   // classify the rig once: a creature with legs placed both fore and aft (sz≠0) walks as a quadruped
   const J=g.userData.joints;
   if(J){ const legs=J.filter(j=>j.role==="leg"); g.userData.quad=legs.length>=3&&legs.some(j=>j.sz!==0); }
-  g.userData.gait=creatureGait(kind,b);
+  g.userData.gait=g.userData.gait||creatureGait(kind,b);   // a builder may pick a per-instance gait (e.g. floating elemental golem)
   // health bar (billboarded planes)
   const hb=new THREE.Group();
   const bg=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.16),new THREE.MeshBasicMaterial({color:0x000000,fog:false}));
@@ -3844,6 +3863,7 @@ function animateCreatureRig(m,dt,moved){
       }
     }
   }
+  if(J) for(const j of J) if(j.role==="orbit") j.piv.rotation.y=tsec*0.4;   // floating elemental cluster drifts as a mass (runs even under float gait)
   // body-level motion + vertical bob
   let by=0;
   if(gait==="hop"){ by=Math.max(0,Math.sin(ph))*0.45*b.size*gi; m._pitch=-Math.cos(ph)*0.12*gi; }
