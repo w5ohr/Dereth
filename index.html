@@ -2588,6 +2588,14 @@ function buildAvatarJointed(){
     const cs=new THREE.Shape(); cs.moveTo(-0.21,0); cs.lineTo(0.21,0); cs.lineTo(0.3,-1.02); cs.lineTo(-0.3,-1.02); cs.closePath();
     const cloak=new THREE.Mesh(new THREE.ExtrudeGeometry(cs,{depth:0.024,bevelEnabled:false}),e.mat); cloak.castShadow=true; bg.add(cloak);   // one continuous tapered sheet — no seam
     for(const sx of[-1,1]) AM(e,bg,new THREE.SphereGeometry(0.028,8,6),sx*0.18,0.0,-0.02); }   // shoulder clasps
+  { const e=mkSlot('shirt');                                                        // SHIRT under-layer: sleeves + collar + hip skirt (slimmer than the armour shells)
+    for(const a of arms){ const g1=AG(e,a.sh,0,0,0); AM(e,g1,new THREE.CylinderGeometry(0.066,0.055,0.24,10),0,-0.14,0);
+      const g2=AG(e,a.el,0,0,0); AM(e,g2,new THREE.CylinderGeometry(0.052,0.043,0.2,10),0,-0.12,0); }
+    const cg=AG(e,spine,0,0,0); AM(e,cg,new THREE.CylinderGeometry(0.095,0.115,0.09,12),0,0.5,0);   // collar
+    const sk=AG(e,pelvisG,0,0,0); AM(e,sk,new THREE.CylinderGeometry(0.175,0.19,0.14,14,1,true),0,-0.1,0).scale.z=0.74; }   // shirt tail below the belt
+  { const e=mkSlot('pants');                                                        // PANTS under-layer: thigh + shin sleeves (armour cuisses/greaves fit over them)
+    for(const l of legs){ const g1=AG(e,l.hip,0,0,0); AM(e,g1,new THREE.CylinderGeometry(0.094,0.073,0.34,10),0,-0.2,0);
+      const g2=AG(e,l.knee,0,0,0); AM(e,g2,new THREE.CylinderGeometry(0.066,0.05,0.26,10),0,-0.15,0); } }
   // ---- cape / quiver (on spine) ----
   const cape=new THREE.Group();const clm=texMat(clothTex,0x4a3a7a);
   cape.add(M(new THREE.BoxGeometry(0.42,0.5,0.03),clm,0,-0.12,0,true));
@@ -5946,6 +5954,13 @@ function buildItemModel(it,opts){
       const toe=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.06,0.08),plate);toe.position.set(sx*0.1,-0.01,0.14);g.add(toe); } }
     else if(sl==="back"){ const cloak=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.55,0.03),new THREE.MeshStandardMaterial({color:tint,roughness:0.9,metalness:0}));g.add(cloak);
       const clasp=new THREE.Mesh(new THREE.SphereGeometry(0.03,10,8),gold);clasp.position.set(0,0.28,0.02);g.add(clasp); }
+    else if(sl==="shirt"){ const clothM=new THREE.MeshStandardMaterial({color:tint,roughness:0.9,metalness:0});   // folded tunic + short sleeves
+      const body=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.34,0.1),clothM);g.add(body);
+      for(const sx of[-1,1]){const sv=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.045,0.14,8),clothM);sv.rotation.z=sx*1.25;sv.position.set(sx*0.2,0.1,0);g.add(sv);}
+      const col=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.085,0.05,10),clothM);col.position.y=0.19;g.add(col); }
+    else if(sl==="pants"){ const clothM=new THREE.MeshStandardMaterial({color:tint,roughness:0.9,metalness:0});   // waistband + two legs
+      const waist=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.08,12),clothM);waist.position.y=0.16;g.add(waist);
+      for(const sx of[-1,1]){const lg=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.05,0.32,8),clothM);lg.position.set(sx*0.065,0,0);g.add(lg);} }
     else { const p=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.12),plate);g.add(p); }
   } else if(S==="jewelry"){
     const band=_imat(tint,0.9,0.2), gem=_glowMat(gemCol);
@@ -6171,7 +6186,7 @@ const ITEM_BASE=[
   {n:"Medallion",stat:"jewelry",jtype:"neck",v:[0,0]},{n:"Gorget",stat:"jewelry",jtype:"neck",v:[0,0]}];
 // ── Multi-slot armour (AC-style): five worn slots, each its own piece. Loot generates a piece per
 //    armour set × slot, e.g. "Steel Chainmail Greaves", "Diamond Amuli Gauntlets". ──
-const ARMOR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet","offhand","back"];
+const ARMOR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet","offhand","back","shirt","pants"];
 const ARMOR_SLOT_DEFS=[
   {slot:"head",    suf:"Helm",       ico:"⛑", vMul:0.55},
   {slot:"chest",   suf:"Breastplate",ico:"🛡", vMul:1.0},
@@ -6182,6 +6197,8 @@ const ARMOR_SLOT_DEFS=[
   {slot:"feet",    suf:"Boots",      ico:"🥾", vMul:0.45},
   {slot:"offhand", suf:"Shield",     ico:"🛡", vMul:0.70},   // off-hand shields are their own named ITEM_BASE entries (skipped in the set loop)
   {slot:"back",    suf:"Cloak",      ico:"🧣", vMul:0.35},   // cloaks are standalone items (skipped in the set loop)
+  {slot:"shirt",   suf:"Shirt",      ico:"👕", vMul:0.30},   // under-clothing: worn BENEATH armour, bonuses stack (standalone items, skipped in the set loop)
+  {slot:"pants",   suf:"Pants",      ico:"👖", vMul:0.30},
 ];
 const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slots scale off this), full-set skill boon
   {n:"Leather",at:"light", base:9, skill:"missiled"},{n:"Brigandine",at:"light", base:13,skill:"missile"},{n:"Chiran",at:"light", base:12,skill:"healing"},{n:"Amuli",at:"light", base:14,skill:"war"},{n:"Academy",at:"light", base:13,skill:"arcane"},
@@ -6196,10 +6213,25 @@ const ARMOR_SETS=[  // cultural set name → armour class, base chest-value (slo
 ];
 const ARMOR_SET_SKILL={}; for(const s of ARMOR_SETS) ARMOR_SET_SKILL[s.n]=s.skill;
 for(const set of ARMOR_SETS) for(const sd of ARMOR_SLOT_DEFS){
-  if(sd.slot==="offhand"||sd.slot==="back") continue;   // shields & cloaks aren't part of cultural armour sets — they're named items above
+  if(sd.slot==="offhand"||sd.slot==="back"||sd.slot==="shirt"||sd.slot==="pants") continue;   // shields/cloaks/clothing aren't part of cultural armour sets
   const lo=Math.max(2,Math.round(set.base*sd.vMul*0.65)), hi=Math.round(set.base*sd.vMul*1.3);
   ITEM_BASE.push({n:`${set.n} ${sd.suf}`,stat:"worn",at:set.at,aslot:sd.slot,aset:set.n,v:[lo,hi]});
 }
+// multi-slot COVERAGE bodies (AC-authentic): a Hauberk covers chest + upper arms, a Coat covers chest +
+// the full arms — one piece, bigger armour value, and it SHOWS on every slot it covers. cov = extra slots.
+for(const set of ARMOR_SETS){
+  ITEM_BASE.push({n:`${set.n} Hauberk`,stat:"worn",at:set.at,aslot:"chest",aset:set.n,cov:["upperarm"],v:[Math.max(3,Math.round(set.base*0.95)),Math.round(set.base*1.8)]});
+  ITEM_BASE.push({n:`${set.n} Coat`,   stat:"worn",at:set.at,aslot:"chest",aset:set.n,cov:["upperarm","lowerarm"],v:[Math.max(4,Math.round(set.base*1.1)),Math.round(set.base*2.05)]});
+}
+// under-clothing: shirts & pants worn BENEATH armour in their own slots — light, cloth-rolled, all bonuses stack
+const CLOTH_MATS=["Linen","Wool","Silk","Satin","Velvet","Leather","Hide"];
+ITEM_BASE.push(
+  {n:"Shirt",stat:"worn",at:"light",aslot:"shirt",mats:CLOTH_MATS,v:[2,6]},{n:"Tunic",stat:"worn",at:"light",aslot:"shirt",mats:CLOTH_MATS,v:[3,7]},
+  {n:"Doublet",stat:"worn",at:"light",aslot:"shirt",mats:CLOTH_MATS,v:[3,8]},{n:"Jerkin",stat:"worn",at:"light",aslot:"shirt",mats:CLOTH_MATS,v:[3,8]},
+  {n:"Puffy Shirt",stat:"worn",at:"light",aslot:"shirt",mats:CLOTH_MATS,v:[2,6]},
+  {n:"Pants",stat:"worn",at:"light",aslot:"pants",mats:CLOTH_MATS,v:[2,6]},{n:"Trousers",stat:"worn",at:"light",aslot:"pants",mats:CLOTH_MATS,v:[3,7]},
+  {n:"Breeches",stat:"worn",at:"light",aslot:"pants",mats:CLOTH_MATS,v:[3,7]},{n:"Leggings",stat:"worn",at:"light",aslot:"pants",mats:CLOTH_MATS,v:[2,6]},
+  {n:"Pantaloons",stat:"worn",at:"light",aslot:"pants",mats:CLOTH_MATS,v:[3,8]});
 // ── AC weapon roster expansion: many more authentic base names per skill (material prepends at roll time) ──
 ITEM_BASE.push(
   // daggers / finesse
@@ -7958,13 +7990,14 @@ function rollItem(rare,tier,noRare){
   const base=ITEM_BASE[irnd(0,ITEM_BASE.length-1)];
   tier=clamp((tier|0)||(rare?3:1),1,5); if(rare) tier=clamp(tier+2,1,5);
   let v=irnd(base.v[0],base.v[1]); if(rare) v=Math.ceil(v*2.2);
-  const pool=MATERIALS[matClass(base.stat)], mat=pool[irnd(0,pool.length-1)], work=rollWork(tier);
+  const pool=base.mats||MATERIALS[matClass(base.stat)], mat=pool[irnd(0,pool.length-1)], work=rollWork(tier);   // clothing rolls cloth/leather, not granite
   const pre=rare?ITEM_PREFIX[irnd(ITEM_PREFIX.length-3,ITEM_PREFIX.length-1)]+" ":"";
   const it={name:`${pre}${mat} ${base.n}`,stat:base.stat,v,work,mat,tier};   // material is the first word (AC convention)
   if(base.wt) it.wt=base.wt;
   if(base.at) it.at=base.at;
   if(base.aslot) it.aslot=base.aslot;
   if(base.aset) it.aset=base.aset;
+  if(base.cov) it.cov=base.cov;   // multi-slot coverage (hauberk/coat)
   if(base.shield) it.shield=base.shield;
   if(base.magicAbsorb) it.magicAbsorb=base.magicAbsorb;
   if(base.jtype){ it.jtype=base.jtype; it.bonus=rollJewelryBonus(tier); it.name+=" "+it.bonus.suf; rollWield(it,tier,work,rare); return it; } // jewelry always bears a cantrip
@@ -8018,8 +8051,12 @@ function refreshAvatarArmor(){
   if(typeof playerAvatar==="undefined"||!playerAvatar) return;
   const u=playerAvatar.userData, rig=u.armorRig; if(!rig) return;
   const slots=(typeof player!=="undefined"&&player.armorSlots)||{};
+  // effective piece per rig slot: the slot's own item, else any piece whose COVERAGE reaches it
+  // (a hauberk shows on the upper arms, a coat on the whole arm) — a dedicated piece wins the slot
+  const eff=k=>{ if(slots[k]) return slots[k];
+    for(const s in slots){ const p=slots[s]; if(p&&p.cov&&p.cov.indexOf(k)>=0) return p; } return null; };
   const CLS={heavy:{me:0.85,ro:0.3,bulk:1.07},medium:{me:0.55,ro:0.52,bulk:1.0},light:{me:0.06,ro:0.8,bulk:0.95}};
-  for(const k in rig){ const ent=rig[k], it=slots[k];
+  for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
     if(!it) continue;
     const tint=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
@@ -8094,7 +8131,8 @@ function equipItem(it){
   if(it.stat==="worn") refreshAvatarArmor();   // reflect the piece on the third-person body
   if(it.stat==="jewelry"){ log(`Equipped <b>${it.name}</b> (${jewelryDesc(it)}).`,"loot"); return; }
   if(it.stat==="worn"){ const sd=ARMOR_SLOT_DEFS.find(d=>d.slot===(it.aslot||"chest")); const at=ARMOR_TYPES[it.at];
-    log(`Equipped <b>${it.name}</b> (+${it.v} armor · ${sd?sd.slot:"chest"}${at?" · "+at.blurb.split(" — ")[0]:""}${it.affix?" · "+it.affix.desc:""}).`,"loot"); return; }
+    const where=it.cov?`covers ${[it.aslot||"chest"].concat(it.cov).join(" + ")}`:(sd?sd.slot:"chest");
+    log(`Equipped <b>${it.name}</b> (+${it.v} armor · ${where}${at?" · "+at.blurb.split(" — ")[0]:""}${it.affix?" · "+it.affix.desc:""}).`,"loot"); return; }
   if(it.wt==="focus"){ log(`Equipped <b>${it.name}</b> (+${it.foc||it.v} to every magic school · casting focus).`,"loot"); return; }
   const tag=WEAPON_TYPES[it.wt]?` · ${WEAPON_TYPES[it.wt].blurb}`:"";
   log(`Equipped <b>${it.name}</b> (+${it.v} damage${tag}).`,"loot");
@@ -12707,7 +12745,7 @@ function gearDesc(it){
   if(it.stat==="comp") return isScarab(it)?`casting scarab (lv ${SCARAB_LEVEL[it.name]}) · worth ${it.v}p`:`spell component · worth ${it.v}p`;
   if(it.wt==="focus") return `+${it.foc||it.v} all magic · casting focus`;
   if(it.stat==="weapon") return `+${it.v} dmg · ${it.wt}`+(it.affix?` · ${it.affix.desc}`:"");
-  if(it.stat==="worn") return `+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`+(it.magicAbsorb?` · −${Math.round(it.magicAbsorb*100)}% magic`:"")+(it.affix?` · ${it.affix.desc}`:"");
+  if(it.stat==="worn") return `+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`+(it.magicAbsorb?` · −${Math.round(it.magicAbsorb*100)}% magic`:"")+(it.affix?` · ${it.affix.desc}`:"");
   if(it.stat==="jewelry") return `${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · ${jewelryDesc(it)}`;
   if(it.stat==="food") return `food · +${it.v} ${it.attr} ${it.dur}s`;
   if(it.stat==="hp") return `restores ${it.v} health`;
@@ -13774,7 +13812,7 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
