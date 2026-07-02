@@ -2343,15 +2343,20 @@ function initThree(){
     sh.uniforms.uHeightMap={value:terrainHeightTex()};       // baked sea-bed height (for shoreline foam)
     sh.uniforms.uFoamCol={value:new THREE.Color(0xeaf4ff)};
     sh.uniforms.uWorld={value:WORLD};
+    sh.uniforms.uReflMap={value:null};                       // C6◇: planar-reflection render (see renderReflection)
+    sh.uniforms.uTexMat={value:new THREE.Matrix4()};
+    sh.uniforms.uReflStr={value:0};
     waterMesh.material.userData.sh=sh;
-    sh.vertexShader='uniform float uWTime;\nvarying vec2 vWXZ;\n'+sh.vertexShader.replace('#include <begin_vertex>',
+    sh.vertexShader='uniform float uWTime;\nuniform mat4 uTexMat;\nvarying vec2 vWXZ;\nvarying vec4 vReflC;\n'+sh.vertexShader.replace('#include <begin_vertex>',
       '#include <begin_vertex>\n'+
       'transformed.z+=sin(position.x*0.012+uWTime*0.9)*cos(position.y*0.011+uWTime*0.7)*0.55\n'+
       '            +sin(position.x*0.043-uWTime*1.4)*0.18+cos(position.y*0.037+uWTime*1.1)*0.15;\n'+
-      'vWXZ=(modelMatrix*vec4(transformed,1.0)).xz;');                        // world XZ for the foam lookup
+      'vWXZ=(modelMatrix*vec4(transformed,1.0)).xz;\n'+                       // world XZ for the foam lookup
+      'vReflC=uTexMat*modelMatrix*vec4(transformed,1.0);');                   // projective UV into the mirror render
     // Reflective water: Fresnel blends deep-water colour (looking down) into a live sky reflection (grazing),
-    // a specular sun-glitter that tracks the sun, and depth-based shoreline foam read from the baked heightfield.
-    sh.fragmentShader='uniform vec3 uSunView,uSkyCol,uSunCol,uFoamCol;\nuniform sampler2D uHeightMap;\nuniform float uWTime,uWorld;\nvarying vec2 vWXZ;\n'+sh.fragmentShader.replace('#include <fog_fragment>',
+    // a true planar reflection of the world (buildings/terrain/trees mirrored in the shallows), a specular
+    // sun-glitter that tracks the sun, and depth-based shoreline foam read from the baked heightfield.
+    sh.fragmentShader='uniform vec3 uSunView,uSkyCol,uSunCol,uFoamCol;\nuniform sampler2D uHeightMap,uReflMap;\nuniform float uWTime,uWorld,uReflStr;\nuniform mat4 uTexMat;\nvarying vec2 vWXZ;\nvarying vec4 vReflC;\n'+sh.fragmentShader.replace('#include <fog_fragment>',
     // decode sea-bed depth under this fragment from the baked heightfield (drives shallow colour + foam)
     'float _th=texture2D(uHeightMap, vWXZ/uWorld+0.5).r*12.0-6.0;\n'+
     'float _depth=-_th;\n'+
@@ -2361,6 +2366,10 @@ function initThree(){
     'float _fres=pow(1.0-clamp(dot(_N,_V),0.0,1.0),4.0);\n'+
     'vec3 _deep=gl_FragColor.rgb*0.42;\n'+                                    // deep, dark water straight down
     'vec3 _refl=mix(gl_FragColor.rgb,uSkyCol,0.72);\n'+                       // grazing angles mirror the sky (keep some water blue so it never blows to white)
+    'vec3 _rp=vReflC.xyz/max(vReflC.w,1e-4);\n'+                              // the mirrored world, ripple-distorted
+    'if(uReflStr>0.01&&_rp.x>0.001&&_rp.x<0.999&&_rp.y>0.001&&_rp.y<0.999){\n'+
+    '  vec3 _rs=texture2D(uReflMap,clamp(_rp.xy+_N.xy*0.05,0.001,0.999)).rgb;\n'+
+    '  _refl=mix(_refl,_rs,uReflStr);\n}\n'+
     'gl_FragColor.rgb=mix(_deep,_refl,_fres);\n'+
     'float _rd=max(dot(reflect(-normalize(uSunView),_N),_V),0.0);\n'+
     'gl_FragColor.rgb+=uSunCol*(pow(_rd,180.0)*1.8+pow(_rd,26.0)*0.22);\n'+   // sharp glitter + soft sheen
@@ -2372,6 +2381,7 @@ function initThree(){
     'gl_FragColor.rgb=mix(gl_FragColor.rgb,uFoamCol,_foam);\n'+
     'gl_FragColor.a=max(mix(0.80,0.99,_fres),_foam);\n#include <fog_fragment>'); };
   waterMesh.rotation.x=-Math.PI/2;waterMesh.position.y=0;scene.add(waterMesh);
+  initReflections();
 
   CIRC=circleTex();
   buildWeapon();
@@ -2477,7 +2487,58 @@ function blitPass(mat,src,dst){
   renderer.setRenderTarget(dst);
   renderer.render(POST.quadScene,POST.quadCam);
 }
+// ── C6◇ finished — planar water reflections (the deferred "screen-space reflections" item).
+//    A half-rate, quarter-res mirror render: the camera is reflected across the waterline as a
+//    proper rigid transform (no winding flip), the scene is clipped just above y=0 so the seabed
+//    never bleeds into the mirror, shadow maps are frozen for the pass, and the water shader
+//    projects the result into its fresnel term with ripple distortion. ──
+const REFL={on:true,rt:null,cam:null,mat:new THREE.Matrix4(),tick:0,
+  plane:new THREE.Plane(new THREE.Vector3(0,1,0),0.02),
+  _q:new THREE.Quaternion(),_p:new THREE.Vector3(),_f:new THREE.Vector3(),_u:new THREE.Vector3(),_t:new THREE.Vector3()};
+function initReflections(){
+  if(REFL.rt) return;
+  REFL.rt=new THREE.WebGLRenderTarget(512,288,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+  REFL.cam=new THREE.PerspectiveCamera();
+}
+function renderReflection(){
+  if(!REFL.on||!REFL.rt||!waterMesh||!waterMesh.visible||typeof cam==="undefined"||!cam) return;
+  const sh=waterMesh.material.userData.sh; if(!sh||!sh.uniforms.uReflMap) return;
+  if(inDungeon||inNetwork){ sh.uniforms.uReflStr.value=0; return; }          // no open water inside instances
+  if((REFL.tick=(REFL.tick+1)%3)!==0) return;                                // third-rate: the mirror lags ~2 frames — invisible on rippled water
+  cam.updateMatrixWorld();
+  const p=REFL._p.setFromMatrixPosition(cam.matrixWorld);
+  if(p.y<0.06){ sh.uniforms.uReflStr.value=0; return; }                      // underwater: the surface mirrors nothing
+  const q=cam.getWorldQuaternion(REFL._q);
+  const fwd=REFL._f.set(0,0,-1).applyQuaternion(q), up=REFL._u.set(0,1,0).applyQuaternion(q);
+  const rc=REFL.cam;
+  rc.position.set(p.x,-p.y,p.z);
+  rc.up.set(up.x,-up.y,up.z);
+  rc.lookAt(REFL._t.set(p.x+fwd.x,-(p.y+fwd.y),p.z+fwd.z));
+  rc.fov=cam.fov; rc.aspect=cam.aspect; rc.near=cam.near; rc.far=Math.min(cam.far,900); rc.updateProjectionMatrix();   // fog swallows the mirror's horizon anyway
+  rc.updateMatrixWorld();
+  REFL.mat.set(0.5,0,0,0.5, 0,0.5,0,0.5, 0,0,0.5,0.5, 0,0,0,1);
+  REFL.mat.multiply(rc.projectionMatrix).multiply(rc.matrixWorldInverse);
+  sh.uniforms.uTexMat.value.copy(REFL.mat);
+  // clip below the waterline with an OBLIQUE NEAR PLANE (Lengyel, as THREE.Reflector does) — a pure
+  // projection-matrix trick. Never renderer.clippingPlanes here: flipping global clipping recompiles
+  // every shader in the scene and freezes the page for tens of seconds.
+  REFL.plane.set(REFL._u.set(0,1,0),-0.02);                    // world plane y=0.02, keeping the seabed out
+  REFL.plane.applyMatrix4(rc.matrixWorldInverse);              // → view space
+  const cp=REFL._t.set(REFL.plane.normal.x,REFL.plane.normal.y,REFL.plane.normal.z), cw=REFL.plane.constant;
+  const pe=rc.projectionMatrix.elements;
+  const qx=(Math.sign(cp.x)+pe[8])/pe[0], qy=(Math.sign(cp.y)+pe[9])/pe[5], qz=-1.0, qw=(1.0+pe[10])/pe[14];
+  const dot=cp.x*qx+cp.y*qy+cp.z*qz+cw*qw, s=2.0/dot;
+  pe[2]=cp.x*s; pe[6]=cp.y*s; pe[10]=cp.z*s+1.0-0.003; pe[14]=cw*s;
+  const oldShadow=renderer.shadowMap.autoUpdate, oldTarget=renderer.getRenderTarget();
+  waterMesh.visible=false; renderer.shadowMap.autoUpdate=false;
+  renderer.setRenderTarget(REFL.rt); renderer.render(scene,rc);
+  renderer.setRenderTarget(oldTarget); renderer.shadowMap.autoUpdate=oldShadow;
+  waterMesh.visible=true;
+  sh.uniforms.uReflMap.value=REFL.rt.texture;
+  sh.uniforms.uReflStr.value=0.55;
+}
 function renderComposite(){
+  renderReflection();
   if(!POST.on||!POST.rtScene){ renderer.setRenderTarget(null); renderer.render(scene,cam); return; }
   // 1) scene → rtScene (tonemapped + sRGB by the renderer)
   renderer.setRenderTarget(POST.rtScene);
@@ -2873,6 +2934,34 @@ function buildPerson(o){
     const thb=new THREE.Mesh(new THREE.BoxGeometry(0.022,0.05,0.03),skinM);thb.position.set(sx*-0.04,-0.01,0.012);thb.rotation.z=sx*0.7;hand.add(thb);
     arms.push(arm);
   }
+  // ── AC-reference costume dressing (Purser-Jak doublet / wedding-planner wrap silhouettes) ──
+  if(o.placket && !robed){   // contrasting buttoned front panel + collar band — the AC doublet read
+    const pm=new THREE.MeshStandardMaterial({color:o.placketCol!=null?o.placketCol:0xd8d0c0,roughness:0.85});
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.5,0.035),pm);panel.position.set(0,hipY+0.36,fem?-0.145:-0.165);panel.rotation.x=0.06;g.add(panel);
+    const stud=new THREE.MeshStandardMaterial({color:0xb08030,metalness:0.6,roughness:0.35});
+    for(let i=0;i<5;i++) for(const sx of[-1,1]){ const b=new THREE.Mesh(new THREE.SphereGeometry(0.012,6,5),stud);
+      b.position.set(sx*0.048,hipY+0.17+i*0.095,(fem?-0.152:-0.172)-0.008);g.add(b); }
+    const collar=new THREE.Mesh(new THREE.TorusGeometry(0.072,0.02,6,14),pm);collar.rotation.x=Math.PI/2;collar.position.y=shY+0.15;g.add(collar);
+  }
+  if(o.shoulderRolls){       // quilted shoulder rolls at the sleeve seam
+    const rm=new THREE.MeshStandardMaterial({color:o.rollCol!=null?o.rollCol:0xcfc8b8,roughness:0.85,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.6,0.6)});
+    for(const sx of[-1,1]){ const roll=new THREE.Mesh(new THREE.TorusGeometry(0.072,0.04,8,14),rm);
+      roll.position.set(sx*(fem?0.225:0.27),shY+0.1,0); roll.rotation.y=Math.PI/2; roll.scale.set(1,1,1.3); roll.castShadow=true; g.add(roll); }
+  }
+  if(o.sash && !robed){      // diagonal cross-wrap + wide waist sash (the Sho/female AC wrap look)
+    const sm=new THREE.MeshStandardMaterial({color:o.sashCol!=null?o.sashCol:0x8a4a6a,roughness:0.9});
+    const wrap=new THREE.Mesh(new THREE.BoxGeometry(0.095,0.6,0.028),sm);
+    wrap.position.set(0.02,hipY+0.36,fem?-0.14:-0.16); wrap.rotation.z=0.62; wrap.rotation.x=0.05; g.add(wrap);
+    const obi=new THREE.Mesh(new THREE.CylinderGeometry(fem?0.176:0.202,fem?0.182:0.202,0.16,16),sm);obi.scale.z=0.68;obi.position.y=hipY+(fem?0.12:0.08);g.add(obi);
+  }
+  if(o.puffSleeves){         // full upper sleeves gathered above the elbow
+    for(const arm of arms){ const puff=new THREE.Mesh(new THREE.SphereGeometry(fem?0.085:0.104,12,10),cloth);
+      puff.scale.set(1,1.18,1); puff.position.y=-0.12; arm.add(puff); }
+  }
+  if(o.cuffs){               // banded forearm bracers
+    const cm=new THREE.MeshStandardMaterial({color:o.cuffCol!=null?o.cuffCol:0x3a3026,roughness:0.8});
+    for(const arm of arms){ for(const cy of[-0.5,-0.64]){ const ring=new THREE.Mesh(new THREE.CylinderGeometry(0.056,0.059,0.05,10),cm);ring.position.y=cy;arm.add(ring); } }
+  }
   const neck=new THREE.Mesh(new THREE.CylinderGeometry(fem?0.048:0.062,fem?0.06:0.078,0.1,8),skinM);neck.position.y=shY+0.16;g.add(neck);
   for(const sx of[-1,1]){ const trap=new THREE.Mesh(new THREE.SphereGeometry(fem?0.07:0.09,10,8),cloth);   // trapezius slope — the head no longer floats on a peg
     trap.scale.set(1.35,0.5,0.7); trap.rotation.z=sx*0.55; trap.position.set(sx*(fem?0.1:0.125),shY+0.1,0.01); g.add(trap); }
@@ -2886,6 +2975,29 @@ function buildPerson(o){
   if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.185,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=headY+0.1;g.add(h);const br=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.03,0.16),cloth2);br.position.set(0,headY+0.06,-0.14);g.add(br);}
   if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.195,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=headY+0.05;h.castShadow=true;g.add(h);
     const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,headY-0.02,-0.19);g.add(nz);}
+  // ── AC-reference headwear (from wiki character-creation + NPC screenshots) ──
+  if(o.hat==='beret'){   // the iconic Aluvian flat beret: squashed tilted dome on a band, with a stalk
+    const hm=new THREE.MeshStandardMaterial({color:o.hatCol!=null?o.hatCol:0x28365a,roughness:0.9});
+    const br=new THREE.Mesh(new THREE.SphereGeometry(0.24,16,10),hm);br.scale.set(1,0.34,1);br.position.set(0.035,headY+0.155,0);br.rotation.z=-0.18;br.castShadow=true;g.add(br);
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.168,0.178,0.05,14),hm);band.position.y=headY+0.095;g.add(band);
+    const stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.05,5),hm);stalk.position.set(0.05,headY+0.245,0);g.add(stalk);
+  }
+  if(o.hat==='turban'){  // Gharu'ndim wrap: stacked cloth coils + crown + a gold brooch at the brow
+    const hm=new THREE.MeshStandardMaterial({color:o.hatCol!=null?o.hatCol:0xe8e0cc,roughness:0.92,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)});
+    for(let i=0;i<3;i++){ const wrap=new THREE.Mesh(new THREE.TorusGeometry(0.152-i*0.02,0.056-i*0.009,8,18),hm);
+      wrap.rotation.x=Math.PI/2; wrap.rotation.z=(i%2?0.16:-0.12); wrap.position.y=headY+0.1+i*0.05; wrap.castShadow=true; g.add(wrap); }
+    const crown=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,9),hm);crown.scale.set(1,0.7,1);crown.position.y=headY+0.24;g.add(crown);
+    const brooch=new THREE.Mesh(new THREE.OctahedronGeometry(0.028),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3}));brooch.position.set(0,headY+0.13,-0.185);g.add(brooch);
+  }
+  if(o.hat==='straw'){   // Sho field hat: wide shallow woven cone
+    const hm=new THREE.MeshStandardMaterial({color:0xc8ae6a,roughness:0.95,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.8,0.8)});
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.17,18),hm);cone.position.y=headY+0.175;cone.castShadow=true;g.add(cone);
+  }
+  if(o.headband){        // Sho cloth headband, knotted at the back
+    const hm=new THREE.MeshStandardMaterial({color:(o.headband===true?0x8a2a2a:o.headband),roughness:0.9});
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.176,0.176,0.045,14),hm);band.position.y=headY+0.055;g.add(band);
+    const knot=new THREE.Mesh(new THREE.SphereGeometry(0.032,7,6),hm);knot.position.set(0,headY+0.05,0.185);g.add(knot);
+  }
   g.userData={headY,torsoY:torso.position.y,headBaseY:head.position.y,lArm:arms[0],rArm:arms[1],lLeg,rLeg,torso,head,robed};
   return _normHumanMesh(g);   // uniform human height (feet on ground); inner-wrapper scale keeps gltf swaps safe
 }
@@ -4485,7 +4597,8 @@ function bAluvian(s,kind){
   surf=mergeSurf(surf,{platforms:pyramidRoofPlats(W*1.16,D*1.16,top+0.2,3.1)});   // solid, walkable roof
   g.userData.surfaces=surf; return g;
 }
-// --- Gharu'ndim: sandstone block, parapet, dome ---
+// --- Gharu'ndim: adobe sandstone, crenellated parapet, banded trim, horseshoe-arched door, finialed dome
+//     (per the AC Yaraq screenshots: flat tan roofs with merlons, a decorative band under the rim, low domes) ---
 function bGharu(s,kind){
   const g=new THREE.Group(),W=8.8*s,D=9.2*s,two=(kind!=="house"),wall=texMat(sandTex,0xd8b46a);
   addShell(g,W,H1F,D,wall,texMat(stoneFloorTex,0xcbb691),0x9a7a3a);   // flagstone floor
@@ -4493,34 +4606,81 @@ function bGharu(s,kind){
   addFurniture(g,W,D,kind);
   const top=two?H1F+H2F:H1F;
   addCeiling(g,W,D,top-0.14,texMat(woodTex,0x8a6a42));                 // wood-beam ceiling
+  const band=new THREE.Mesh(new THREE.BoxGeometry(W+0.4,0.26,D+0.4),solid(0x9a6a34));band.position.y=top-0.42;g.add(band);   // decorative frieze band under the rim
   const para=new THREE.Mesh(new THREE.BoxGeometry(W+0.6,0.7,D+0.6),solid(0xab8a4e));para.position.y=top+0.3;para.castShadow=true;g.add(para);
-  const dome=new THREE.Mesh(new THREE.SphereGeometry(W*0.34,16,10,0,6.28,0,Math.PI/2),solid(0xd8b46a));dome.position.y=top+0.5;dome.castShadow=true;g.add(dome);
+  // crenellation: merlons marching around the parapet rim
+  const mer=solid(0xb8965a), mw=0.55, gap=1.15, mh=0.5;
+  for(const sz of[-1,1]) for(let mx=-W/2+0.4; mx<=W/2-0.3; mx+=gap){ const m=new THREE.Mesh(new THREE.BoxGeometry(mw,mh,0.34),mer);m.position.set(mx,top+0.65+mh/2,sz*((D+0.6)/2-0.17));m.castShadow=true;g.add(m); }
+  for(const sx of[-1,1]) for(let mz=-D/2+0.4; mz<=D/2-0.3; mz+=gap){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.34,mh,mw),mer);m.position.set(sx*((W+0.6)/2-0.17),top+0.65+mh/2,mz);m.castShadow=true;g.add(m); }
+  // low dome with a point and a brass finial (the Yaraq skyline read)
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(W*0.34,16,10,0,6.28,0,Math.PI/2),solid(0xc89a52));dome.position.y=top+0.5;dome.castShadow=true;g.add(dome);
+  const dtip=new THREE.Mesh(new THREE.ConeGeometry(W*0.09,W*0.14,10),solid(0xc89a52));dtip.position.y=top+0.5+W*0.335;g.add(dtip);
+  const fin=new THREE.Mesh(new THREE.SphereGeometry(0.12,8,7),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3}));fin.position.y=top+0.5+W*0.34+W*0.12;g.add(fin);
+  // horseshoe arch framing the door (front is +z), with tiled jambs
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.62,0.24,8,18,Math.PI),solid(0xb8895a));arch.position.set(0,3.0,D/2+0.14);g.add(arch);
+  for(const sx of[-1,1]){ const jamb=new THREE.Mesh(new THREE.BoxGeometry(0.34,3.0,0.26),solid(0xb8895a));jamb.position.set(sx*1.62,1.5,D/2+0.14);g.add(jamb); }
+  // recessed arched windows with dark grille hints, flanking the door
+  for(const sx of[-1,1]){ const win=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.3,0.08),solid(0x3a2c1a));win.position.set(sx*W*0.32,2.5,D/2+0.13);g.add(win);
+    const wa=new THREE.Mesh(new THREE.TorusGeometry(0.45,0.09,6,12,Math.PI),solid(0xb8895a));wa.position.set(sx*W*0.32,3.15,D/2+0.13);g.add(wa);
+    for(let i=0;i<3;i++){ const bar=new THREE.Mesh(new THREE.BoxGeometry(0.03,1.25,0.03),solid(0x6a4a2a));bar.position.set(sx*W*0.32-0.22+i*0.22,2.5,D/2+0.17);g.add(bar); } }
   surf=mergeSurf(surf,{platforms:[{x0:-(W+0.6)/2,z0:-(D+0.6)/2,x1:(W+0.6)/2,z1:(D+0.6)/2,y:top+0.65}]});   // solid, walkable flat roof (parapet height)
   if(kind==="hall"){const tw=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,top+3,12),solid(0xcaa56a));tw.position.set(W*0.42,(top+3)/2,-D*0.32);tw.castShadow=true;g.add(tw);
-    const td=new THREE.Mesh(new THREE.SphereGeometry(0.95,12,8,0,6.28,0,Math.PI/2),solid(0xe0bc70));td.position.set(W*0.42,top+3,-D*0.32);g.add(td);}
+    const td=new THREE.Mesh(new THREE.SphereGeometry(0.95,12,8,0,6.28,0,Math.PI/2),solid(0xe0bc70));td.position.set(W*0.42,top+3,-D*0.32);g.add(td);
+    const tfin=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.6,8),solid(0xd8b03a));tfin.position.set(W*0.42,top+3.95,-D*0.32);g.add(tfin);}
   if(kind==="shop") addSign(g,W,D,0xe0bc70);
   addBuildingProps(g,W,D,kind);
   g.userData.surfaces=surf; return g;
 }
-// --- Sho: timber-framed with a tiered pagoda roof ---
+// --- Sho: pale plaster walls with dark timber bands, upswept eaves, a railed veranda and glowing
+//     shoji windows under tiered pagoda roofs (per the AC Shoushi screenshots: cream walls, dark
+//     horizontal banding, stacked dark roofs with lifted corners, ridge finials) ---
 function bSho(s,kind){
-  const g=new THREE.Group(),W=8.4*s,D=8.4*s,two=(kind!=="house"),wall=texMat(woodTex,0x9a4030);
+  const g=new THREE.Group(),W=8.4*s,D=8.4*s,two=(kind!=="house"),wall=texMat(plasterTex,0xe4d8bc);
+  const dk=solid(0x2e2018), ROOF=0x3c4a42;
   addShell(g,W,H1F,D,wall,texMat(woodTex,0x3a2a20),0x2a1a14);
   let surf=null; if(two){ surf=addBalcony(g,W,H1F,D,texMat(woodTex,0x3a2a20),0x2a1a14); addUpperWalls(g,W,H1F,H2F,D,wall,0x2a1a14); }
   addFurniture(g,W,D,kind);
   let top=two?H1F+H2F:H1F;
+  // dark timber banding over the plaster: corner posts + two horizontal rails per face
+  for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.26,top,0.26),dk);p.position.set(sx*(W/2-0.02),top/2,sz*(D/2-0.02));g.add(p);}
+  for(const sz of[-1,1]) for(const hy of[top*0.45,top-0.3]){const b=new THREE.Mesh(new THREE.BoxGeometry(W,0.14,0.14),dk);b.position.set(0,hy,sz*(D/2+0.04));g.add(b);}
+  for(const sx of[-1,1]) for(const hy of[top*0.45,top-0.3]){const b=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,D),dk);b.position.set(sx*(W/2+0.04),hy,0);g.add(b);}
+  // glowing shoji window on the front face (warm paper light behind a dark lattice)
+  const shoji=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.2,0.06),new THREE.MeshStandardMaterial({color:0xe8d8b0,emissive:0xcf9c48,emissiveIntensity:0.42,roughness:0.9}));
+  shoji.position.set(-W*0.28,2.5,D/2+0.1);g.add(shoji);
+  for(let i=0;i<4;i++){const lat=new THREE.Mesh(new THREE.BoxGeometry(i<2?1.5:0.05,i<2?0.05:1.2,0.03),dk);lat.position.set(-W*0.28+(i<2?0:(i===2?-0.38:0.38)),2.5+(i<2?(i===0?-0.28:0.28):0),D/2+0.14);g.add(lat);}
+  // raised veranda across the front: deck, posts and a rail (kept clear of the door gap)
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(W*1.06,0.22,1.5),texMat(woodTex,0x5a4028));deck.position.set(0,0.34,D/2+0.9);deck.castShadow=true;deck.receiveShadow=true;g.add(deck);
+  for(const sx of[-1,1]){ const vp=new THREE.Mesh(new THREE.BoxGeometry(0.16,2.6,0.16),dk);vp.position.set(sx*W*0.5,1.6,D/2+1.5);g.add(vp);
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(W*0.5-1.5,0.08,0.08),dk);rail.position.set(sx*(W*0.27+0.72),1.05,D/2+1.5);g.add(rail);
+    const rp=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.7,0.1),dk);rp.position.set(sx*W*0.3,0.75,D/2+1.5);g.add(rp); }
+  const veranda=new THREE.Mesh(new THREE.BoxGeometry(W*1.06,0.14,1.7),solid(ROOF,true));veranda.position.set(0,2.9,D/2+0.95);veranda.castShadow=true;g.add(veranda);   // porch roof
+  surf=mergeSurf(surf,{platforms:[{x0:-W*0.53,z0:D/2+0.15,x1:W*0.53,z1:D/2+1.65,y:0.45}]});   // the deck holds you
   addCeiling(g,W,D,top-0.14,texMat(woodTex,0x7a5a38));                 // wood-beam ceiling
-  const r0=roofRect(W*1.42,D*1.42,1.5,0x46604a);r0.position.y=top+0.6;g.add(r0);
+  const r0=roofRect(W*1.42,D*1.42,1.5,ROOF);r0.position.y=top+0.6;g.add(r0);
+  upsweep(g,W*1.42,D*1.42,top+0.32,ROOF);                              // lifted eave corners on the base roof
   surf=mergeSurf(surf,{platforms:pyramidRoofPlats(W*1.42,D*1.42,top+0.1,1.3)});   // solid, walkable base roof
   let y=top+1.1,w=W*0.7;const tiers=kind==="hall"?2:1;
   for(let t=0;t<tiers;t++){const h=1.8;
-    const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),texMat(woodTex,t%2?0x9a8260:0x9a4030));body.position.y=y+h/2;body.castShadow=true;g.add(body);
-    const rr=roofRect(w*1.5,w*1.5,1.3,0x46604a);rr.position.y=y+h+0.5;g.add(rr);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),t%2?texMat(woodTex,0x8a7250):texMat(plasterTex,0xe4d8bc));body.position.y=y+h/2;body.castShadow=true;g.add(body);
+    for(const sx of[-1,1])for(const sz of[-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(0.14,h,0.14),dk);p.position.set(sx*(w/2-0.02),y+h/2,sz*(w/2-0.02));g.add(p);}
+    const rr=roofRect(w*1.5,w*1.5,1.3,ROOF);rr.position.y=y+h+0.5;g.add(rr);
+    upsweep(g,w*1.5,w*1.5,y+h+0.24,ROOF);
     surf=mergeSurf(surf,{platforms:[{x0:-w*0.75,z0:-w*0.75,x1:w*0.75,z1:w*0.75,y:y+h+0.35}]});   // each pagoda tier holds you
     y+=h+0.6;w*=0.82;}
+  const finial=new THREE.Mesh(new THREE.ConeGeometry(0.14,0.7,8),new THREE.MeshStandardMaterial({color:0xb8963a,metalness:0.6,roughness:0.35}));finial.position.y=y+0.9;finial.castShadow=true;g.add(finial);   // gilt ridge finial
   if(kind==="shop") addSign(g,W,D,0x9a4030);
   addBuildingProps(g,W,D,kind);
   g.userData.surfaces=surf; return g;
+}
+// upswept eave corners: a small tilted lip at each corner of a pagoda roof slab
+function upsweep(g,W,D,y,col){
+  const m=solid(col,true);
+  for(const sx of[-1,1])for(const sz of[-1,1]){
+    const lip=new THREE.Mesh(new THREE.ConeGeometry(0.32,0.55,4),m);
+    lip.position.set(sx*(W/2-0.34),y+0.08,sz*(D/2-0.34));   // tucked into the eave corner so it reads as one roof
+    lip.rotation.z=sx*0.5; lip.rotation.x=-sz*0.5; lip.castShadow=true; g.add(lip);
+  }
 }
 const CULTURE_BUILDERS=[bAluvian,bSho,bGharu]; // region index 0 Aluvia, 1 Sho, 2 Gharu'ndim
 function buildBuilding(region,kind,s){ return (CULTURE_BUILDERS[region]||bAluvian)(s,kind); }
@@ -13127,8 +13287,30 @@ const NPC_FLAVOR={
 // broad wardrobe palettes so every NPC on the standard model reads distinctly (deterministic per NPC via seed)
 const SHIRT_COLORS=[0x8a3b2a,0x2e5a8a,0x6a4a2a,0x556070,0x3a6a4a,0x7a6a3a,0x6a3a5a,0x4a5a6a,0x8a6a4a,0x5a4a6a,0x2e7a5a,0x8a7a3a,0xa04a3a,0x3a4a7a,0x9a6a3a,0x4a7a6a];
 const PANTS_COLORS=[0x3a2e1e,0x2a3340,0x3a3320,0x2e2a3a,0x243028,0x40342a,0x2a2a2e,0x4a3a2a,0x30303a,0x3a2a24];
+// ── per-heritage NPC dressing (AC reference screenshots) — region 0 Aluvian · 1 Sho · 2 Gharu'ndim.
+//    Skin/hair pools match the HERITAGE_LOOK creator defaults; garb palettes + headwear/costume odds
+//    give each people its own street silhouette: Aluvian berets & buttoned doublets, Sho straw hats,
+//    headbands & cross-wrap sashes, Gharu'ndim turbans & pale desert robes. ──
+const REGION_DRESS=[
+  {skin:[0xf0cba0,0xe8b890,0xdba56e], hair:[0x6a4a2a,0x4a3320,0xb88040,0x241810,0xd8b86a],
+   shirts:[0x2e4a7a,0x28365a,0x4a5a6a,0x6a4a2a,0x8a3b2a,0x3a5a4a,0x556070],
+   pants:[0x2a3340,0x3a2e1e,0x2e2a3a],
+   dress(o,s){ if(s%3===0)o.hat='beret'; else if(s%4===1)o.hat='cap';
+     if(s%3===1){o.placket=true;o.placketCol=[0xd8d0c0,0xc8b8a0,0xb8c0cc][s%3];}
+     if(s%4===2)o.shoulderRolls=true; if(s%2===0)o.puffSleeves=true; }},
+  {skin:[0xdba56e,0xc68642,0xe8b890], hair:[0x141010,0x241810],
+   shirts:[0x8a3a2a,0x2a3a5a,0x6a5a3a,0x4a6a5a,0x7a3a3a,0x3a4a3a,0x8a6a4a],
+   pants:[0x3a3320,0x243028,0x2a2a2e],
+   dress(o,s){ if(s%4===0)o.hat='straw'; else if(s%3===1)o.headband=[0x8a2a2a,0x2a3a5a,0x3a3a2a][s%3];
+     o.sash=true; o.sashCol=[0x8a4a6a,0xa0703a,0x3a5a7a,0x7a3a3a][s%4]; if(s%3===2)o.cuffs=true; }},
+  {skin:[0x9c6b3f,0x7a4a28,0x553318,0xc68642], hair:[0x141010,0x241810,0x4a3320],
+   shirts:[0xe0d6bc,0xc8a05a,0x8a6a3a,0x7a4a6a,0xa0703a,0x6a6a4a,0x9a7a4a],
+   pants:[0x40342a,0x4a3a2a,0x3a2a24],
+   dress(o,s){ if(s%2===0)o.hat='turban'; if(s%3===0)o.robed=true;
+     if(!o.robed&&s%3===1){o.sash=true;o.sashCol=[0x6a2a4a,0x8a5a2a,0x2a4a6a][s%3];} if(s%4===1)o.cuffs=true; }},
+];
 function pickColor(arr,seed,salt){ return arr[Math.abs(Math.imul((seed|0)+salt,2654435761)>>>0)%arr.length]; }
-function buildNPC(role,name,seedX,look){
+function buildNPC(role,name,seedX,look,region){
   const R=NPC_ROLES[role]||NPC_ROLES.emissary;
   const seed=((name||role||"x").length+role.length+(seedX|0))|0;
   const o={robe:R.robe,accent:R.hood,seed};
@@ -13145,6 +13327,22 @@ function buildNPC(role,name,seedX,look){
   // are already seed-varied in buildPerson. Role silhouette (hood/hat/helm/apron/cape) & markers are kept.
   o.robe=pickColor(SHIRT_COLORS,seed,17);
   o.accent=pickColor(PANTS_COLORS,seed,53);
+  // ── heritage dressing: people of each realm look like their AC people (skin/hair pools + regional
+  //    garb palettes + headwear/costume). Role headwear/silhouette wins over the regional hat. ──
+  const RD=REGION_DRESS[region];
+  if(RD){
+    o.skin=RD.skin[(seed*5+1)%RD.skin.length];
+    o.hair=RD.hair[(seed*7+2)%RD.hair.length];
+    o.robe=RD.shirts[(seed*3)%RD.shirts.length];
+    o.accent=RD.pants[(seed*11)%RD.pants.length];
+    if(role==="townsfolk"||role==="crier"||role==="barkeep"||role==="questgiver"){
+      const hadHat=o.hat,hadRobe=o.robed;
+      RD.dress(o,seed);
+      if(hadHat)o.hat=hadHat;               // criers keep the cone, barkeeps the cap — their identity
+      if(hadRobe!==undefined&&role!=="townsfolk")o.robed=hadRobe;
+      if(o.hood){o.hat=null;}               // hooded figures stay hooded
+    }
+  }
   const g=buildPerson(o);
   const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
   if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
@@ -13154,7 +13352,8 @@ function addNPC(x,z,opts){
   opts=opts||{}; const role=opts.role||"emissary";
   const name=opts.name||(NPC_ROLES[role]||NPC_ROLES.emissary).label;
   usedNpcNames.add(name);   // fixed-name NPCs claim their name so townName never mints a twin
-  const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29),opts.look);mesh.position.set(x,0,z);scene.add(mesh);
+  const region=opts.region!=null?opts.region:((typeof regionOf==="function")?Math.max(0,regionOf(x,z)):0);   // Direlands (-1) dresses Aluvian
+  const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29),opts.look,region);mesh.position.set(x,0,z);scene.add(mesh);
   const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,questIds:opts.questIds||null,_line:0};
   if(opts.stroll){ rec.stroll=true; rec.home={x,z}; rec.range=opts.range||3; }
   else obstacles.push({x,z,r:0.8});   // strollers move, so they aren't fixed obstacles
@@ -13709,16 +13908,24 @@ const VENDOR_TYPES={
   furnisher:{title:"Furniture Seller",marker:"🪑",mcol:"#d8b06a",robe:0x6a4a2a,stock:()=>FURNITURE_ITEMS.map(f=>({name:f.name,cost:f.cost,desc:"housing furniture — place it on a hook at your dwelling",ico:"🪑",gear:{name:f.name,stat:"furniture",kind:f.kind,v:Math.round(f.cost/10)}}))},   // AC Apprentice Craftsman
 };
 let activeShop=null;
-function buildMerchant(vt,name){
+function buildMerchant(vt,name,region){
   const def=VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner;
   const seed=(name?name.length*7:0)+def.title.length;
   // dress the vendor to their trade so it reads at a glance: they wear the trade's colour, smiths are
   // bearded & aproned, shopkeeps aproned & capped, scriveners/jewelers are robed scholars.
   const smith=(vt==="weaponsmith"||vt==="armorer"), scholar=(vt==="scrivener"||vt==="jeweler");
-  const g=buildPerson({robe:def.robe, accent:pickColor(PANTS_COLORS,seed*3,71),
+  const RD=REGION_DRESS[region]||REGION_DRESS[0];
+  const po={robe:def.robe, accent:pickColor(PANTS_COLORS,seed*3,71),
     apron:!scholar, robed:scholar,
-    hat: scholar?"cap":(vt==="provisioner"||vt==="outfitter"||vt==="healer"||vt==="furnisher")?"cap":null,
-    beard: smith?true:(seed%2===0), seed:seed*3});
+    // heritage headwear (the trade look stays in the robe colour): Gharu'ndim turbans, Sho straw
+    // hats, Aluvian berets/caps. Smiths work bare-headed; scholars keep the scholar's cap in Aluvia.
+    hat: smith?null:(region===2?"turban":region===1?"straw":(scholar||seed%2?"cap":"beret")),
+    beard: smith?true:(seed%2===0), seed:seed*3,
+    skin:RD.skin[(seed*5+1)%RD.skin.length], hair:RD.hair[(seed*7+2)%RD.hair.length]};
+  if(vt==="armorer"){ po.shoulderRolls=true; po.rollCol=0x9aa0a8; }                 // wears his own quilted rolls
+  if(vt==="outfitter"){ po.placket=true; po.placketCol=0xd8d0c0; po.puffSleeves=true; }   // dressed to sell dress
+  if(vt==="healer"){ po.sash=true; po.sashCol=0xb03246; }                            // the healer's red sash
+  const g=buildPerson(po);
   // market stall beside the shopkeeper: counter, canopy on posts, a few wares
   const stall=new THREE.Group();stall.position.set(1.45,0,0);g.add(stall);
   const wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318);
@@ -13728,13 +13935,82 @@ function buildMerchant(vt,name){
   const canopy=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.12,1.2),new THREE.MeshStandardMaterial({color:def.mcol||0xb04030}));canopy.position.set(0,2.05,0);canopy.castShadow=true;stall.add(canopy);
   const stripe=new THREE.Mesh(new THREE.BoxGeometry(1.84,0.13,0.3),new THREE.MeshStandardMaterial({color:0xe8e0c8}));stripe.position.set(0,2.04,0);stall.add(stripe);
   for(let i=0;i<3;i++){const w=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2),i%2?wood2:new THREE.MeshStandardMaterial({color:def.robe}));w.position.set(-0.45+i*0.45,1.04,0.1);stall.add(w);}
+  addVendorKit(g,stall,vt);   // each trade's signature possessions: tools at the stall + one in hand
   const lbl=labelSprite((name?name+" — ":"")+def.title+" — E to trade","npcs");lbl.position.y=2.5;g.add(lbl);
   const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
   return g;
 }
+// ── vendor-class possessions: every trade carries and displays the tools of its craft ──
+function addVendorKit(g,stall,vt){
+  const metal=new THREE.MeshStandardMaterial({color:0x8a8f98,metalness:0.75,roughness:0.35});
+  const dark=new THREE.MeshStandardMaterial({color:0x2a2620,metalness:0.55,roughness:0.5});
+  const wood=texMat(woodTex,0x5a3f24), paper=new THREE.MeshStandardMaterial({color:0xe8dcc0,roughness:0.9});
+  const hand=g.userData.rArm;                       // held prop rides the right arm (hand sits at y≈-0.82)
+  const hold=(mesh,ry)=>{ if(hand){ mesh.position.y=-0.84; if(ry)mesh.rotation.y=ry; hand.add(mesh); } };
+  const P=(geo,mat,x,y,z,rx,ry,rz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);if(rx)m.rotation.x=rx;if(ry)m.rotation.y=ry;if(rz)m.rotation.z=rz;m.castShadow=true;stall.add(m);return m;};
+  if(vt==="weaponsmith"){
+    P(new THREE.BoxGeometry(0.42,0.3,0.24),dark,-1.15,0.62,0.55);                     // anvil on a stump
+    P(new THREE.CylinderGeometry(0.2,0.24,0.48,10),wood,-1.15,0.24,0.55);
+    P(new THREE.BoxGeometry(0.14,0.3,0.1),dark,-1.03,0.86,0.55);                      // anvil horn block
+    for(let i=0;i<2;i++){ P(new THREE.BoxGeometry(0.05,1.15,0.1),metal,0.62+i*0.16,1.42,-0.42,0,0,0.28-i*0.1);  // blades leaning on the counter
+      P(new THREE.BoxGeometry(0.2,0.05,0.12),dark,0.53+i*0.19,0.98,-0.42,0,0,0.28-i*0.1); }
+    const hm=new THREE.Group(); const hh=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.34,7),wood); hm.add(hh);
+    const hd=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.08,0.08),dark); hd.position.y=0.17; hm.add(hd); hold(hm);   // smith's hammer in hand
+  } else if(vt==="armorer"){
+    P(new THREE.CylinderGeometry(0.05,0.07,1.5,8),wood,-1.1,0.75,0.5);                // armour stand
+    const tor=P(new THREE.SphereGeometry(0.24,12,10),metal,-1.1,1.28,0.5); tor.scale.set(1,1.25,0.62);
+    P(new THREE.SphereGeometry(0.13,10,8,0,6.28,0,Math.PI*0.55),metal,-1.1,1.72,0.5); // helm atop it
+    const sh=P(new THREE.CylinderGeometry(0.34,0.34,0.05,16),metal,0,0.55,-0.5,Math.PI/2);  // shield hung on the counter face
+    P(new THREE.SphereGeometry(0.07,8,7),dark,0,0.55,-0.55);
+    sh.scale.z=1.2;
+  } else if(vt==="scrivener"){
+    for(let i=0;i<3;i++) P(new THREE.BoxGeometry(0.34-i*0.05,0.07,0.26),new THREE.MeshStandardMaterial({color:[0x6a2a2a,0x2a3a5a,0x3a5a3a][i],roughness:0.85}),0.45,1.02+i*0.075,0.32,0,i*0.24);  // stacked tomes
+    P(new THREE.CylinderGeometry(0.05,0.06,0.1,8),dark,0.15,1.03,0.28);               // inkpot
+    const q=P(new THREE.ConeGeometry(0.016,0.3,5),paper,0.15,1.2,0.28,0.5);           // quill in the pot
+    const sc=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.34,8),paper); sc.rotation.z=Math.PI/2; hold(sc);  // scroll in hand
+  } else if(vt==="healer"){
+    P(new THREE.CylinderGeometry(0.11,0.08,0.14,10),new THREE.MeshStandardMaterial({color:0xb8b0a0,roughness:0.7}),0.4,1.05,0.3);  // mortar
+    P(new THREE.CylinderGeometry(0.02,0.03,0.22,6),wood,0.46,1.16,0.3,0,0,0.5);       // pestle
+    for(let i=0;i<3;i++) P(new THREE.ConeGeometry(0.06,0.24,6),new THREE.MeshStandardMaterial({color:0x4a6a3a,roughness:0.95}),-0.5+i*0.5,1.86,0.42,Math.PI);  // herb bundles hung from the canopy
+    const vial=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.04,0.12,8),new THREE.MeshStandardMaterial({color:0xc03246,emissive:0x501018,emissiveIntensity:0.5})); hold(vial);  // red potion in hand
+  } else if(vt==="jeweler"){
+    P(new THREE.BoxGeometry(0.5,0.05,0.34),new THREE.MeshStandardMaterial({color:0x3a2440,roughness:0.95}),0.42,1.0,0.3);   // velvet tray
+    const gemCols=[0xd84a6a,0x4ad0d8,0xd8c04a,0x8a4ad8];
+    for(let i=0;i<4;i++){ const gm=P(new THREE.OctahedronGeometry(0.045),new THREE.MeshStandardMaterial({color:gemCols[i],metalness:0.3,roughness:0.15,emissive:gemCols[i],emissiveIntensity:0.25}),0.28+(i%2)*0.26,1.06,0.22+Math.floor(i/2)*0.18); }
+    P(new THREE.CylinderGeometry(0.04,0.09,0.3,8),wood,-0.35,1.12,0.3);               // necklace bust
+    P(new THREE.TorusGeometry(0.07,0.012,6,14),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.8,roughness:0.25}),-0.35,1.2,0.34,0.4);
+    const loupe=new THREE.Group(); const lr=new THREE.Mesh(new THREE.TorusGeometry(0.045,0.012,6,12),metal); loupe.add(lr);
+    const lh=new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.12,5),wood); lh.position.y=-0.08; loupe.add(lh); hold(loupe);  // loupe in hand
+  } else if(vt==="provisioner"){
+    P(new THREE.TorusGeometry(0.2,0.045,6,14),wood,0.42,1.0,0.3,Math.PI/2);           // bread basket
+    for(let i=0;i<3;i++){ const b=P(new THREE.SphereGeometry(0.09,8,7),new THREE.MeshStandardMaterial({color:0xc89a5a,roughness:0.9}),0.34+i*0.09,1.06,0.26+(i%2)*0.1); b.scale.set(1,0.7,1.6); }
+    for(let i=0;i<4;i++) P(new THREE.SphereGeometry(0.05,7,6),new THREE.MeshStandardMaterial({color:0x8a3a2a,roughness:0.85}),-0.55,1.9-i*0.11,0.42);  // sausage links from the canopy
+    P(new THREE.CylinderGeometry(0.13,0.13,0.09,12),new THREE.MeshStandardMaterial({color:0xe0c060,roughness:0.8}),-0.35,1.02,0.3);  // cheese wheel
+    const loaf=new THREE.Mesh(new THREE.SphereGeometry(0.08,8,7),new THREE.MeshStandardMaterial({color:0xc89a5a,roughness:0.9})); loaf.scale.set(1,0.65,1.7); hold(loaf);
+  } else if(vt==="outfitter"){
+    for(let i=0;i<3;i++) P(new THREE.CylinderGeometry(0.07,0.07,0.62,10),new THREE.MeshStandardMaterial({color:[0x8a3a4a,0x3a5a8a,0x8a7a3a][i],roughness:0.9}),0.35,0.99+i*0.15,0.3,0,0,Math.PI/2);  // bolts of cloth
+    P(new THREE.BoxGeometry(0.06,0.02,0.9),wood,-0.6,1.9,0.3);                        // hanging rail
+    const tun=P(new THREE.BoxGeometry(0.4,0.5,0.04),new THREE.MeshStandardMaterial({color:0x5a7a4a,roughness:0.9}),-0.6,1.6,0.3);   // tunic on display
+    for(const sx of[-1,1]) P(new THREE.BoxGeometry(0.12,0.3,0.04),new THREE.MeshStandardMaterial({color:0x5a7a4a,roughness:0.9}),-0.6+sx*0.25,1.72,0.3,0,0,sx*0.5);
+    const rod=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.5,5),wood); rod.rotation.z=Math.PI/2; hold(rod);  // measuring rod
+  } else if(vt==="collector"){
+    const skull=P(new THREE.SphereGeometry(0.12,10,8),new THREE.MeshStandardMaterial({color:0xd8d0bc,roughness:0.85}),0.4,1.06,0.3); skull.scale.set(1,0.9,1.1);
+    for(const sx of[-1,1]) P(new THREE.SphereGeometry(0.026,6,5),dark,0.4+sx*0.045,1.08,0.41);   // eye sockets
+    for(let i=0;i<2;i++){ P(new THREE.CylinderGeometry(0.022,0.022,0.34,6),paper,-0.4+i*0.16,1.86,0.42,0.4+i*0.5);  // bones strung from the canopy
+      P(new THREE.SphereGeometry(0.04,6,5),paper,-0.4+i*0.16,1.7,0.46); }
+    const bone=new THREE.Group(); const bs=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.3,6),paper); bone.add(bs);
+    for(const by of[-0.15,0.15]){ const k=new THREE.Mesh(new THREE.SphereGeometry(0.038,6,5),paper); k.position.y=by; bone.add(k); } hold(bone,0.6);
+  } else if(vt==="furnisher"){
+    P(new THREE.CylinderGeometry(0.14,0.16,0.3,8),wood,0.42,1.07,0.3);                // mini stool on display
+    for(let i=0;i<2;i++) P(new THREE.CylinderGeometry(0.09,0.09,0.7,10),new THREE.MeshStandardMaterial({color:i?0x7a4a3a:0x39406a,roughness:0.95}),-0.95-i*0.22,0.35,0.55,0,0,Math.PI/2*0.94);  // rolled rugs leant on the stall
+    const mallet=new THREE.Group(); const mh=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.3,6),wood); mallet.add(mh);
+    const md=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.12,8),wood); md.rotation.z=Math.PI/2; md.position.y=0.15; mallet.add(md); hold(mallet);
+  }
+}
 function addMerchant(x,z,vt,name){
   vt=vt||"provisioner";
-  const mesh=buildMerchant(vt,name);mesh.position.set(x,0,z);scene.add(mesh);
+  const region=(typeof regionOf==="function")?Math.max(0,regionOf(x,z)):0;
+  const mesh=buildMerchant(vt,name,region);mesh.position.set(x,0,z);scene.add(mesh);
   shops.push({x,z,mesh,vtype:vt,name:name||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
 }
 // ── The Wandering Caravan: an ox-drawn covered wagon that plies the winding road between Holtburg and

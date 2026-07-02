@@ -78,7 +78,28 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   frame in `updateDayNight`) + brighter specular sheen. **Foliage** density 2400 → 3600 tufts. Also lifted
   near-black roof palette (Sho `0x2c3a2c`→`0x46604a`, Aluvian `0x5a2a20`→`0x7a3a2c`) that the C5
   tone-mapper was crushing to black. Verified midday grass relief, scrolling water normals, readable roofs.
-  ◇ Further (optional): real fresnel water shader, screen-space reflections, MeshStandard PBR everywhere.
+  ✅ Further items all closed: real fresnel water (C7) · **planar water reflections** (the "SSR" line —
+  a third-rate 512×288 mirror render, camera reflected across the waterline as a proper rigid transform,
+  oblique-near-plane clipped (never `renderer.clippingPlanes` — global clip toggles recompile every
+  shader and froze the page ~30s), shadow maps frozen for the pass, far clamped to 900 (fog hides it),
+  projected into the water's fresnel term with ripple distortion; measured 43→34 fps in a capital on the
+  dev box) · MeshStandard PBR was already everywhere (`texMat`/`solid`).
+- ✅ **C8. AC-faithful NPCs + regional architecture** (reference shots pulled from the AC wiki/MobyGames:
+  character-creation screens, Purser Jak, festival vendors, Yaraq + Shoushi towns). **People:**
+  `REGION_DRESS` — per-heritage skin/hair pools + garb palettes + costume odds so each realm's streets
+  read like their AC people: Aluvian **berets**, buttoned **doublet plackets** + quilted **shoulder
+  rolls** + puff sleeves; Sho **straw hats**, headbands, **cross-wrap sashes** + obi + cuffs; Gharu'ndim
+  **turbans** (gold brooch), desert robes, darker skin pools. New buildPerson options (beret/turban/
+  straw/headband/placket/shoulderRolls/sash/puffSleeves/cuffs) reusable by any future dress-up.
+  **Vendors:** `addVendorKit` — every trade displays + holds its craft (smith: anvil/blades/hammer-in-
+  hand · armorer: armour stand/shield + own shoulder rolls · scrivener: tomes/inkpot/scroll-in-hand ·
+  healer: mortar/herbs/red sash/potion · jeweler: gem tray/necklace bust/loupe · provisioner: bread
+  basket/sausages/cheese · outfitter: cloth bolts/hung tunic/measuring rod · collector: skull/bones ·
+  furnisher: stool/rolled rugs). **Architecture** (propagates to every town via the archetype instancer):
+  Gharu'ndim — crenellated merlon parapets, frieze band, pointed dome + brass finial, horseshoe-arch
+  door surround, grilled arch windows; Sho — pale plaster + dark timber banding/corner posts, glowing
+  shoji lattice window, railed veranda (walkable deck), upswept eave corners, gilt ridge finial, tier
+  bodies alternating plaster/wood. Verified in preview at Yaraq/Shoushi/Holtburg, 0 console errors.
 
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
