@@ -3603,8 +3603,8 @@ function cZefir(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),memb=new THREE.MeshS
     for(let f=0;f<3;f++)spike(g,d,sx*s*0.32,s*1.15,-s*0.1,s*0.03,s*0.9,0.2+f*0.15,sx*(0.5+f*0.5)); // wing spar bones
     const w=new THREE.Mesh(new THREE.PlaneGeometry(s*1.0,s*0.85),memb);w.position.set(sx*s*0.7,s*1.05,-s*0.25);w.rotation.y=sx*0.5;w.rotation.z=sx*0.2;g.add(w);jreg(g,w,"wing"); // membrane
   }
-  for(const sx of[-1,1])limb(g,m,sx*s*0.22,s*0.9,s*0.05,s*0.05,s*0.04,s*0.5,0.3,sx*0.3); // arms
-  for(const sx of[-1,1])limb(g,m,sx*s*0.13,s*0.42,0,s*0.06,s*0.045,s*0.42);       // legs
+  for(const sx of[-1,1])limb(g,m,sx*s*0.22,s*0.9,s*0.05,s*0.05,s*0.04,s*0.5,0.3,sx*0.3,"arm"); // arms
+  for(const sx of[-1,1])limb(g,m,sx*s*0.13,s*0.42,0,s*0.06,s*0.045,s*0.42);       // legs (dangle in flight)
   part(g,new THREE.ConeGeometry(s*0.08,s*0.6,6),m,0,s*0.85,-s*0.3,-Math.PI/2.2);  // tail
   return s*1.6;}
 function cMonouga(g,b,s){const m=solid(b.c);
@@ -3683,7 +3683,7 @@ function cZombie(g,b,s){const m=solid(b.c);
   part(g,new THREE.SphereGeometry(s*0.28,10,9),m,-s*0.08,s*1.45,s*0.05);
   for(const sx of[-1,1])addEye(g,s*0.045,0xaacf5a,sx*s*0.09,s*1.46,s*0.2);
   part(g,new THREE.BoxGeometry(s*0.2,s*0.05,s*0.1),solid(0x3a1a1a),-s*0.08,s*1.36,s*0.22);
-  for(const sx of[-1,1])limb(g,m,sx*s*0.3,s*1.1,s*0.1,s*0.06,s*0.05,s*0.6,-0.9,sx*0.1);
+  for(const sx of[-1,1])limb(g,m,sx*s*0.3,s*1.1,s*0.1,s*0.06,s*0.05,s*0.6,-0.9,sx*0.1,"arm");
   for(const sx of[-1,1])limb(g,m,sx*s*0.14,s*0.45,0,s*0.07,s*0.05,s*0.55,0,0,"leg");
   return s*1.55;}
 function cMummy(g,b,s){const wrap=solid(b.c);
@@ -3691,7 +3691,7 @@ function cMummy(g,b,s){const wrap=solid(b.c);
   part(g,new THREE.SphereGeometry(s*0.28,10,9),wrap,0,s*1.5,s*0.03);
   for(let i=0;i<6;i++)part(g,new THREE.TorusGeometry(s*0.29,s*0.03,5,14),solid(0xb0a074),0,s*0.7+i*s*0.16,0,Math.PI/2);
   for(const sx of[-1,1])addEye(g,s*0.04,0xffd23b,sx*s*0.09,s*1.5,s*0.22);
-  for(const sx of[-1,1])limb(g,wrap,sx*s*0.3,s*1.15,s*0.15,s*0.06,s*0.05,s*0.6,-1.0,sx*0.1);
+  for(const sx of[-1,1])limb(g,wrap,sx*s*0.3,s*1.15,s*0.15,s*0.06,s*0.05,s*0.6,-1.0,sx*0.1,"arm");
   for(const sx of[-1,1])limb(g,wrap,sx*s*0.14,s*0.45,0,s*0.07,s*0.05,s*0.55,0,0,"leg");
   return s*1.6;}
 // AC Grievver: spindly radial spider-daemon — small slender core, thin bladed legs splaying outward, crimson veins
@@ -3827,11 +3827,35 @@ const GAIT={
   zombie:"shamble", mummy:"shamble",
 };
 function creatureGait(kind,b){ return GAIT[kind]||"walk"; }
+// Per-species melee attack style, from each creature's canonical attacks (acpedia/fandom):
+//   pound  — heavy two-fist overhead slam (Banderlings smash with fists/mauls; Lugians crush in one blow;
+//            Golems bash with club limbs; Tuskers pound; Monouga haymaker; Mummies slam)
+//   swipe  — fast alternating claw slashes (Drudge/Mite claws, Moarsman muck-claws, Mukkir rends,
+//            Mosswart/Burun claws, Zefir aerial claws, Skeleton weapon cuts)
+//   bite   — head rears back then snaps forward (Reedshark/Gromnie/Rat/Shreth/Carenzi fangs,
+//            Remoran's gaping maw, Mattekar teeth)
+//   gore   — head-down charge toss with the horns (Auroch)
+//   spin   — the Armoredillo's devastating full-body spin, bony blades leading
+//   sting  — nose-down darting stinger dive (Phyntos Wasp)
+//   rear   — rise up tall, then crash down with the forelimbs (Olthoi castes rear to strike with
+//            their digging claws; Ursuin rears to maul; Sclavus rears its cobra body to strike)
+//   grab   — both arms reach out in a lurching grasp (Zombie)
+//   thrust — a single deep spear-arm drive (Tumerok spearman)
+const ATTACK={
+  banderling:"pound",lugian:"pound",golem:"pound",tusker:"pound",monouga:"pound",mummy:"pound",
+  drudge:"swipe",mite:"swipe",moarsman:"swipe",mosswart:"swipe",burun:"swipe",zefir:"swipe",skeleton:"swipe",
+  reedshark:"bite",gromnie:"bite",rat:"bite",shreth:"bite",carenzi:"bite",remoran:"bite",mattekar:"bite",mukkir:"bite",
+  auroch:"gore",armoredillo:"spin",phyntoswasp:"sting",
+  olthoi:"rear",olthoiworker:"rear",olthoisoldier:"rear",ursuin:"rear",sclavus:"rear",
+  zombie:"grab",tumerok:"thrust",
+};
+const ATK_DUR={pound:0.55,rear:0.6,spin:0.6,gore:0.5,bite:0.35,sting:0.35,swipe:0.4,grab:0.45,thrust:0.35};
+function startStrike(m){ const st=ATTACK[m.kind]; m.strikeDur=(st&&ATK_DUR[st])||0.3; m.strikeT=m.strikeDur; }
 // Drives one creature's rig for the frame. Sets body pitch/roll on m._pitch/m._roll and
 // returns the vertical bob offset (added to groundY by the caller). `moved` = it travelled this frame.
 function animateCreatureRig(m,dt,moved){
   const g=m.mesh, b=BESTIARY[m.kind];
-  m._pitch=0; m._roll=0;
+  m._pitch=0; m._roll=0; m._yawOff=0;
   if(!g||!b) return 0;
   if(m.gltf){ return Math.abs(Math.sin(now()/140+m.x))*(m.state==="chase"?0.12:0.04); } // rigged models animate via their mixer
   const chase=m.state==="chase", gait=g.userData.gait||"walk";
@@ -3846,6 +3870,15 @@ function animateCreatureRig(m,dt,moved){
   // limb rig
   const J=g.userData.joints, quad=g.userData.quad;
   const lunge=(m.lungeT>0)?Math.sin(Math.max(0,m.lungeT)/0.18*Math.PI):0;   // 0→1→0 during a melee strike
+  // per-species melee strike (startStrike() sets m.strikeT when the blow lands): a wind-up phase
+  // (aWind 0→1, held) flows into the hit/follow-through (aSlam 0→1→0)
+  let style=null, atkPh=0, aWind=0, aSlam=0, atkSin=0;
+  if(m.strikeT>0){ m.strikeT-=dt; style=ATTACK[m.kind]||null;
+    atkPh=clamp(1-m.strikeT/(m.strikeDur||0.35),0,1);
+    aWind=Math.sin(Math.min(1,atkPh/0.4)*Math.PI/2); aSlam=atkPh<0.4?0:Math.sin((atkPh-0.4)/0.6*Math.PI);
+    atkSin=Math.sin(atkPh*Math.PI); }
+  // ranged wind-up (m.charging): the creature gathers itself back before loosing the bolt/spit
+  const chg=(m.charging>0)?Math.sin(clamp(1-m.charging/0.45,0,1)*Math.PI):0;
   if(J&&gait!=="float"&&gait!=="swim"){
     for(const j of J){ const p=j.piv;
       if(j.role==="leg"){
@@ -3855,7 +3888,14 @@ function animateCreatureRig(m,dt,moved){
       } else if(j.role==="arm"){
         const armPh=(j.sx<0?Math.PI:0);                                    // contralateral to the legs
         let a=Math.sin(ph+armPh)*0.36*gi + (moving?0:Math.sin(tsec*1.3)*0.05);
-        a-=lunge*0.9;                                                       // both arms punch forward on a strike
+        if(style==="pound")      a=-2.2*aWind+3.2*aSlam;                    // both fists high overhead, then slammed down past the body
+        else if(style==="swipe") a=-1.3*Math.sin(atkPh*Math.PI*2+armPh)*atkSin; // fast alternating claw slashes
+        else if(style==="grab")  a=-0.8*atkSin;                             // lurching two-hand reach (arms already hang forward)
+        else if(style==="thrust")a=(j.sx>0)?-1.8*atkSin:-0.3*atkSin;        // spear arm drives deep, off-arm braces
+        else if(style==="rear")  a=-1.1*aWind+1.6*aSlam;                    // forelimbs rise with the rear, crash on the drop
+        else if(style)           a-=atkSin*0.9;                             // other styles: simple strike
+        else a-=lunge*0.9;                                                  // no style: legacy punch
+        if(chg>0) a-=chg*1.3;                                               // spell/spit wind-up: arms gather upward
         p.rotation.x=j.rx+a;
       } else if(j.role==="tail"){
         p.rotation.y=j.ry+Math.sin(ph*0.5)*0.22*(0.35+gi*0.65);
@@ -3878,6 +3918,17 @@ function animateCreatureRig(m,dt,moved){
   else { by=Math.abs(Math.sin(ph))*0.05*b.size*gi; }                                            // walk/scurry/skitter/crawl/lope/shamble
   if(chase&&!floaty) m._pitch+=-0.12*gi;                                                        // lean into the charge
   if(gait==="shamble") m._roll+=Math.sin(ph*0.5)*0.12;                                          // undead list side to side
+  // strike body language, per style
+  if(style==="pound"){ m._pitch+=-0.1*aWind+0.28*aSlam; by-=0.05*b.size*aSlam; }                // rock back, then drop the weight into the slam
+  else if(style==="bite"){ m._pitch+=-0.32*aWind+0.6*aSlam; }                                    // head rears, then snaps forward
+  else if(style==="gore"){ m._pitch+=0.34*aWind-0.55*aSlam; m._roll+=0.12*aSlam; }               // horns dip, then toss up and aside
+  else if(style==="spin"){ m._yawOff=atkPh*Math.PI*2; m._pitch+=0.08*atkSin; }                   // one full bladed revolution
+  else if(style==="sting"){ m._pitch+=0.5*atkSin; by+=0.1*b.size*aWind; }                        // rises, then dives nose-first with the stinger
+  else if(style==="rear"){ m._pitch+=-0.55*aWind+0.85*aSlam; by+=0.18*b.size*aWind*(1-aSlam); }  // rears tall, then crashes down
+  else if(style==="grab"){ m._pitch+=0.18*atkSin; }
+  else if(style==="swipe"){ m._roll+=0.12*Math.sin(atkPh*Math.PI*2); }
+  else if(style==="thrust"){ m._pitch+=0.12*aSlam; }
+  if(chg>0){ m._pitch+=-0.16*chg; by+=0.04*b.size*chg; }                                         // gathering itself back before loosing the bolt
   return by;
 }
 function buildTree(s){
@@ -10244,7 +10295,7 @@ function update(dt){
       else { if(m.t>rnd(2,4)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.5)m.idleT=rnd(1,2.5);} if(m.idleT>0)m.idleT-=dt; else {m.x+=Math.sin(m.ang)*b.spd*0.35*slowF*dt;m.z+=Math.cos(m.ang)*b.spd*0.35*slowF*dt;} }
       m.x=clamp(m.x,-HALF+1,HALF-1);m.z=clamp(m.z,-HALF+1,HALF-1);
       const aby=animateCreatureRig(m,dt,Math.hypot(m.x-oax,m.z-oaz)>1e-4);
-      m.mesh.position.set(m.x,groundY(m.x,m.z)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang,m._roll||0);
+      m.mesh.position.set(m.x,groundY(m.x,m.z)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
       m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.2:1)); if(m.flash>0)m.flash-=dt;
       continue;
     }
@@ -10281,7 +10332,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else m.charging=0.45;
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
@@ -10298,7 +10349,7 @@ function update(dt){
     let lx=m.x,lz=m.z;
     if(m.lungeT>0){m.lungeT-=dt;const la=Math.atan2(player.x-m.x,player.z-m.z),lf=Math.sin(Math.max(0,m.lungeT)/0.18*Math.PI)*0.6;lx+=Math.sin(la)*lf;lz+=Math.cos(la)*lf;}
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-ox,m.z-oz)>1e-4);
-    m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang,m._roll||0);
+    m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb&&(m.hp<m.mhp||m.isBoss||m.isElite)){hb.visible=true;hb.quaternion.copy(cam.quaternion);
@@ -16153,7 +16204,7 @@ function updateSharedMobs(dt){
     m.flash=Math.max(0,m.flash-dt);
     const smx=m.x,smz=m.z; m.x+=(m.tx-m.x)*k; m.z+=(m.tz-m.z)*k;
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-smx,m.z-smz)>2e-3);
-    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.set(m._pitch||0,m.yaw||0,m._roll||0);
+    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.set(m._pitch||0,(m.yaw||0)+(m._yawOff||0),m._roll||0);
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb){ if(m.hp<m.mhp){ hb.visible=true; hb.quaternion.copy(cam.quaternion);
