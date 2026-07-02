@@ -1666,8 +1666,11 @@ function makeNormalTex(size,hf,strength,repeat){
 }
 let _groundNrm=null,_waterNrm=null;
 function groundNormalTex(){ if(_groundNrm)return _groundNrm;
-  _groundNrm=makeNormalTex(256,(x,y)=>Math.sin(x*0.42)*Math.cos(y*0.39)+Math.sin((x+y)*0.21)*0.6
-    +Math.sin(x*1.1+y*0.7)*0.25+Math.sin(x*0.11-y*0.09)*1.1+Math.sin(x*2.3+y*1.9)*0.12,2.6,110);return _groundNrm; }
+  // Balanced, near-isotropic micro-relief. Two equal-amplitude ~orthogonal mid-freq waves cancel any
+  // directional bias, plus finer mixed-direction detail — avoids the low-freq diagonal wave that used
+  // to tile into "corduroy" banding across open fields.
+  _groundNrm=makeNormalTex(256,(x,y)=>Math.sin(x*0.55+y*0.20)*0.5+Math.sin(x*0.19-y*0.57)*0.5
+    +Math.sin(x*0.90-y*0.85)*0.28+Math.sin(x*1.31+y*1.03)*0.18+Math.sin((x+y)*2.3)*0.10,1.8,130);return _groundNrm; }
 function waterNormalTex(){ if(_waterNrm)return _waterNrm;
   _waterNrm=makeNormalTex(256,(x,y)=>Math.sin(x*0.19+y*0.05)*1.1+Math.sin(y*0.16-x*0.04)*0.9
     +Math.sin((x+y)*0.09)*0.5+Math.sin(x*0.47-y*0.31)*0.35+Math.sin(y*0.53+x*0.22)*0.28,2.0,42);return _waterNrm; }
@@ -2167,7 +2170,7 @@ function initThree(){
   // ground — per-pixel PBR; near the camera the detail tile shows crisp, far away it cross-fades
   // to a 4.3×-larger sampling of the same tile so the 110×110 repeat never reads as a grid.
   groundMat=new THREE.MeshStandardMaterial({map:texGround(),vertexColors:true,roughness:0.94,metalness:0.0,
-    normalMap:groundNormalTex(),normalScale:new THREE.Vector2(1.05,1.05)});
+    normalMap:groundNormalTex(),normalScale:new THREE.Vector2(0.7,0.7)});
   groundMat.onBeforeCompile=sh=>{ sh.fragmentShader=sh.fragmentShader
     .replace('#include <map_fragment>',
       '#ifdef USE_MAP\n'+
@@ -2201,6 +2204,15 @@ function initThree(){
     const snow=clamp((hh-190)/60,0,1); if(snow>0){rr=rr*(1-snow)+snow;gg=gg*(1-snow)+snow;bb=bb*(1-snow)+snow;}
     // the Blackmire — murky green-brown swamp tint
     if(inSwamp(wx,wz)){const s=swampZone(),k=clamp(1-Math.hypot(wx-s.x,wz-s.z)/s.r,0,1)*0.7;rr=rr*(1-k)+0.27*k;gg=gg*(1-k)+0.33*k;bb=bb*(1-k)+0.22*k;}
+    // grassland colour life: large-scale lush↔dry drift + occasional worn-earth patches (grass only —
+    // leaves sand/snow/rock/shore/swamp as-is) so meadows read varied instead of one flat green.
+    if(bmv!=="desert"&&bmv!=="cold"&&bmv!=="direlands"&&rock<0.5&&snow<=0&&hh>3&&!inSwamp(wx,wz)){
+      const lush=clamp((Math.sin(wx*0.011)*Math.sin(wz*0.009)+Math.sin((wx-wz)*0.006)*0.6)*0.6+0.5,0,1);
+      rr*=1-(lush-0.5)*0.22; gg*=1+(lush-0.5)*0.14; bb*=1-(lush-0.5)*0.10;   // lush→deep green · dry→olive/tan
+      const patch=Math.sin(wx*0.017+2.1)*Math.cos(wz*0.021-1.2)+Math.sin((wx+wz)*0.013)*0.7;
+      const dirt=clamp((patch-0.95)*1.5,0,1)*0.5;                            // scattered worn-earth clearings
+      if(dirt>0){ rr=rr*(1-dirt)+0.46*dirt; gg=gg*(1-dirt)+0.38*dirt; bb=bb*(1-dirt)+0.27*dirt; }
+    }
     // subtle deterministic mottling so large flats aren't uniform
     const n=(Math.sin(wx*0.07)*Math.cos(wz*0.063)+Math.sin((wx+wz)*0.031))*0.5;
     const m=1+n*0.06;
@@ -3655,14 +3667,29 @@ function floraGeos(){
   _floraGeo={
     conifer:_mergeColored([
       {geo:new THREE.CylinderGeometry(0.14,0.24,1.6,6),color:0x54402a,translate:[0,0.8,0]},
-      {geo:new THREE.ConeGeometry(1.35,1.7,7),color:0x2c4c2a,translate:[0,2.0,0]},
-      {geo:new THREE.ConeGeometry(1.05,1.5,7),color:0x315233,translate:[0,2.9,0]},
-      {geo:new THREE.ConeGeometry(0.72,1.3,7),color:0x37583a,translate:[0,3.8,0]}]),
+      {geo:new THREE.ConeGeometry(1.5,1.8,8),color:0x274529,translate:[0,1.9,0]},        // fuller: 4 rounder tiers
+      {geo:new THREE.ConeGeometry(1.2,1.6,8),color:0x2c4c2a,translate:[0,2.8,0]},
+      {geo:new THREE.ConeGeometry(0.9,1.4,8),color:0x315233,translate:[0,3.7,0]},
+      {geo:new THREE.ConeGeometry(0.6,1.2,8),color:0x37583a,translate:[0,4.5,0]}]),
     broadleaf:_mergeColored([
       {geo:new THREE.CylinderGeometry(0.18,0.3,2.0,6),color:0x5c452c,translate:[0,1.0,0]},
       {geo:new THREE.IcosahedronGeometry(1.5,1),color:0x3b5c31,translate:[0,2.9,0]},
       {geo:new THREE.IcosahedronGeometry(1.05,1),color:0x446636,translate:[0.9,2.4,0.35]},
-      {geo:new THREE.IcosahedronGeometry(1.0,1),color:0x365427,translate:[-0.8,2.55,-0.3]}]),
+      {geo:new THREE.IcosahedronGeometry(1.0,1),color:0x365427,translate:[-0.8,2.55,-0.3]},
+      {geo:new THREE.IcosahedronGeometry(0.95,1),color:0x40602f,translate:[0.2,3.55,-0.5]}, // fuller crown
+      {geo:new THREE.IcosahedronGeometry(0.85,1),color:0x30491f,translate:[-0.35,2.9,0.75]}]),
+    oak:_mergeColored([
+      {geo:new THREE.CylinderGeometry(0.26,0.46,2.3,7),color:0x5a4430,translate:[0,1.15,0]},   // broad shade tree, wide multi-lobe crown
+      {geo:new THREE.IcosahedronGeometry(1.95,1),color:0x3e5e30,translate:[0,3.15,0]},
+      {geo:new THREE.IcosahedronGeometry(1.45,1),color:0x496b38,translate:[1.25,2.8,0.3]},
+      {geo:new THREE.IcosahedronGeometry(1.4,1),color:0x37552a,translate:[-1.15,2.9,-0.4]},
+      {geo:new THREE.IcosahedronGeometry(1.25,1),color:0x44662f,translate:[0.1,3.95,0.55]},
+      {geo:new THREE.IcosahedronGeometry(1.2,1),color:0x2f4a26,translate:[-0.3,3.0,1.05]}]),
+    birch:_mergeColored([
+      {geo:new THREE.CylinderGeometry(0.1,0.16,3.6,6),color:0xdcd6c8,translate:[0,1.8,0]},      // tall, slender, pale trunk + airy light-green crown
+      {geo:new THREE.IcosahedronGeometry(0.98,1),color:0x74963f,translate:[0,3.9,0]},
+      {geo:new THREE.IcosahedronGeometry(0.78,1),color:0x648438,translate:[0.5,4.4,0.2]},
+      {geo:new THREE.IcosahedronGeometry(0.72,1),color:0x82a24a,translate:[-0.45,3.7,-0.25]}]),
     snowpine:_mergeColored([
       {geo:new THREE.CylinderGeometry(0.14,0.24,1.6,6),color:0x4a3d30,translate:[0,0.8,0]},
       {geo:new THREE.ConeGeometry(1.3,1.7,7),color:0x2f4a37,translate:[0,2.0,0]},
@@ -3683,7 +3710,8 @@ function floraGeos(){
 function buildForests(){
   const G=floraGeos();
   const mkMat=flat=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.92,metalness:0.0,flatShading:!!flat});
-  const pools={conifer:{cap:9500,mat:mkMat(false)},broadleaf:{cap:7500,mat:mkMat(false)},
+  const pools={conifer:{cap:8500,mat:mkMat(false)},broadleaf:{cap:6500,mat:mkMat(false)},
+               oak:{cap:4200,mat:mkMat(false)},birch:{cap:2600,mat:mkMat(false)},
                snowpine:{cap:3200,mat:mkMat(false)},deadtree:{cap:1600,mat:mkMat(true)},boulder:{cap:2600,mat:mkMat(true)}};
   for(const k in pools){ const p=pools[k];
     p.mesh=new THREE.InstancedMesh(G[k],p.mat,p.cap); p.n=0;
@@ -3702,7 +3730,10 @@ function buildForests(){
     const bm=biomeAt(x,z), cl=clump(x,z);
     let key=null,s=1;
     if(bm==="forest"||bm==="sho"){ if(cl<0.1) continue;                       // woodland grows in patches, not everywhere
-      key=Math.random()<(bm==="sho"?0.62:0.45)?"conifer":"broadleaf"; s=rnd(1.0,2.6); }
+      const rF=Math.random();                                                 // mixed woodland: fir / broadleaf / oak / birch
+      if(bm==="sho") key = rF<0.5?"conifer": rF<0.72?"broadleaf": rF<0.9?"oak":"birch";
+      else           key = rF<0.32?"conifer": rF<0.6?"broadleaf": rF<0.84?"oak":"birch";
+      s=rnd(1.0,2.6); }
     else if(bm==="cold"){ if(cl<0.3) continue; key="snowpine"; s=rnd(1.0,2.3); }
     else if(bm==="direlands"){ if(cl<0.8) continue; key=Math.random()<0.55?"boulder":"deadtree"; s=rnd(0.8,1.9); }
     else if(bm==="swamp"){ if(cl<0.4) continue; key=Math.random()<0.7?"broadleaf":"deadtree"; s=rnd(0.8,1.6); }
