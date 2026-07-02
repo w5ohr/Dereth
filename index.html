@@ -980,6 +980,9 @@ let scene,cam,renderer,sun;
 let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,quad:null,bright:null,blur:null,comp:null};
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
 let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[];  // self-cast (crouch→raise) vs forward cast
+let castKind="self";   // "self" (buff/heal on self) | "bolt" (offensive thrust) | "bestow" (gift a spell to an ally)
+// Generic avatar activity gesture (gather/mine/craft/tinker/fish) — a timed pose the animator plays over `dur`.
+function startAction(type,dur){ if(!player.alive) return; player.act={type,t:dur,dur}; }
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // world activity/visibility culling: only the area around the player is simulated & drawn (perf).
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
@@ -9284,6 +9287,7 @@ function castSpellById(id){
   // mark self-cast up front so the wind-up already eases into the crouch (executeSpell refines it)
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
+  castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
 }
 // fire the spell's actual effect (called when a cast completes; re-checks live mana/cooldown)
@@ -9323,6 +9327,7 @@ function executeSpell(id){
   // spells cast on your own body use a crouch→rise gesture + a swirling aura; targeted/forward spells thrust
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
+  castKind=castSelf?"self":"bolt";
   castDur=castSelf?0.78:0.55; castShow=castDur;
   castColor=s.buff==="light"?(s.lightColor||0xfff2cf):(s.buff==="attr"||s.buff==="skill")?0xbfe0ff
     :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
@@ -9356,7 +9361,7 @@ function executeSpell(id){
   // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
   if((s.buff==="attr")||(s.school==="life"&&s.heal)){
     const ally=pickAllyTarget(40);
-    if(ally){ castSelf=false; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+    if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
   }
   if(s.school==="life"&&s.heal){
@@ -10112,6 +10117,7 @@ function update(dt){
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
   player.invuln=Math.max(0,player.invuln-dt);
   player.swing=Math.max(0,player.swing-dt*3.2);
+  if(player.act){ player.act.t-=dt; if(player.act.t<=0) player.act=null; }   // activity gesture (gather/craft/…)
   player.bowDraw=Math.max(0,player.bowDraw-dt*4);
   portalCd=Math.max(0,portalCd-dt); portalTouch();
   if(castSelf&&castShow>0&&!castSwirlActive){ selfCastFX(player.x,player.z,castColor); castSwirlActive=true; }  // one swirl per self-cast
@@ -10373,7 +10379,8 @@ function animateAvatar(dt){
   idleT+=dt;
   updateShieldModel();                                        // reflect the equipped off-hand shield
   const moving=!!(held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"])&&player.alive;
-  const sw=player.swing, acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow");
+  const sw=player.swing, actGesture=!!(player.act&&player.act.t>0);
+  const acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow")||actGesture;
   const blk=blocking&&sw<=0;                                   // actively raising the guard (not mid-swing)
   const idle=!moving&&!acting;
   // movement intensity: walk vs run (sprint amplifies the whole gait)
@@ -10382,7 +10389,7 @@ function animateAvatar(dt){
   u._r=(u._r==null?0:u._r)+((running?1:0)-(u._r||0))*Math.min(1,dt*6); const rN=u._r;
   const amp=1+rN*0.8;                                         // longer strides / bigger arm swing when running
   // combat engagement: acting or blocking holds a "ready" stance, which relaxes to "resting" a few seconds later
-  if(acting||blk) u._combatT=4; else u._combatT=Math.max(0,(u._combatT||0)-dt);
+  if(sw>0||castShow>0||(player.bowDraw>0)||blk) u._combatT=4; else u._combatT=Math.max(0,(u._combatT||0)-dt);  // gather/craft don't raise the guard
   u._c=(u._c==null?0:u._c)+(((u._combatT>0)?1:0)-(u._c||0))*Math.min(1,dt*5); const cW=u._c;
   const hasShield=!!equippedShield();
   const p=player.bob*3, sP=Math.sin(p), sQ=Math.sin(p+Math.PI);
@@ -10422,6 +10429,29 @@ function animateAvatar(dt){
       sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2;
     }
   }
+  else if(actGesture){             // ACTIVITY gesture — gather / mine / craft / tinker / fish
+    const ap=1-player.act.t/player.act.dur, ty=player.act.type, osc=Math.sin(now()/90), osc2=Math.sin(now()/70+1);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;   // free the hands to mime the work
+    if(ty==="mine"){               // two-handed overhead pick swing, repeating: overhead → strike down
+      const k=(Math.sin(ap*Math.PI*5-Math.PI/2)+1)/2;
+      u.spine.rotation.x=0.12+k*0.24; u.spine.position.y=AV_WAIST-0.05-k*0.05;
+      u.hipR.rotation.x=0.22;u.hipL.rotation.x=0.22;u.knR.rotation.x=-0.5;u.knL.rotation.x=-0.5;u.anR.rotation.x=0.28;u.anL.rotation.x=0.28;
+      sX=-2.7+k*3.0; sZ=-0.06; eX=-(0.25+(1-k)*0.5); twist=0.05; lX=sX; lZ=0.12; lE=eX-0.1; u.neck.rotation.x=0.15+k*0.22; u.neck.rotation.y=0;
+    } else if(ty==="gather"){      // crouch low and pluck from the ground
+      u.spine.rotation.x=0.55; u.spine.position.y=AV_WAIST-0.16;
+      u.hipR.rotation.x=0.5;u.hipL.rotation.x=0.5;u.knR.rotation.x=-1.0;u.knL.rotation.x=-1.0;u.anR.rotation.x=0.5;u.anL.rotation.x=0.5;
+      sX=-0.35+osc*0.2; sZ=-0.08; eX=-0.5-Math.max(0,osc)*0.45; lX=-0.15; lZ=0.1; lE=-0.5; twist=0; u.neck.rotation.x=0.42; u.neck.rotation.y=0;
+    } else if(ty==="craft"){       // work at a bench — the right hand hammer-taps, the left steadies the piece
+      u.spine.rotation.x=0.24; u.spine.position.y=AV_WAIST-0.04; u.knR.rotation.x=-0.2;u.knL.rotation.x=-0.2;
+      sX=-0.85+Math.max(0,osc)*0.45; sZ=-0.12; eX=-1.35; lX=-0.7; lZ=0.14; lE=-1.5; twist=0.03; u.neck.rotation.x=0.34; u.neck.rotation.y=0;
+    } else if(ty==="tinker"){      // fine precise handwork, hands together at the chest
+      u.spine.rotation.x=0.2;
+      sX=-1.0+osc*0.1; sZ=-0.16; eX=-1.7+osc2*0.12; lX=-1.0-osc2*0.1; lZ=0.16; lE=-1.7+osc*0.12; twist=0; u.neck.rotation.x=0.4; u.neck.rotation.y=0;
+    } else if(ty==="fish"){        // a brief overhead cast, then hold the rod out with a lazy twitch
+      const cast=Math.sin(clamp(ap,0,0.18)/0.18*Math.PI);
+      sX=-1.1-cast*0.8; sZ=-0.08; eX=-0.55+cast*0.5+osc*0.06; lX=-0.8; lZ=0.12; lE=-0.7; twist=0.08; u.neck.rotation.x=0.1;
+    } else { sX=-0.6; sZ=-0.1; eX=-1.0; lX=-0.6; lZ=0.1; lE=-1.0; }
+  }
   else if(player.emoteT>0){        // EMOTE gesture — a deliberate social animation (yields to a swing, overrides idle/cast)
     const act=player.emoteAct, osc=Math.sin(now()/110);
     u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false;   // free the hands for the gesture
@@ -10438,23 +10468,39 @@ function animateAvatar(dt){
     else if(act==="laugh"){ u.spine.rotation.x=-0.18+osc*0.05; sX=-1.1; eX=-1.4; lX=-1.1; lE=-1.4; }
     else { sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }   // fallback = wave
   }
-  else if(castShow>0&&castSelf){   // SELF-cast: dip into a slight crouch, then rise tall sweeping both arms overhead
-    const cp=clamp(1-castShow/castDur,0,1), down=clamp(cp/0.42,0,1), up=clamp((cp-0.42)/0.58,0,1), crouch=down*(1-up);
-    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false;   // hands free for the gesture
-    u.spine.position.y=AV_WAIST - crouch*0.15 + up*0.03;
-    u.spine.rotation.x=crouch*0.18 - up*0.13;                 // hunch down, then arch back looking up
-    const kb=-(crouch*0.75);
-    u.hipR.rotation.x=crouch*0.4; u.hipL.rotation.x=crouch*0.4; u.knR.rotation.x=kb; u.knL.rotation.x=kb;
-    u.anR.rotation.x=crouch*0.34; u.anL.rotation.x=crouch*0.34;
-    u.neck.rotation.x=-up*0.38; u.neck.rotation.y=0;          // gaze rises as the spell releases
-    sX=0.55*crouch - up*3.1; sZ=-0.2*up; eX=-(0.55*(1-up)+0.05);   // arms low → swept up into an overhead V
-    lX=sX; lZ=0.2*up; lE=eX; twist=0;
+  else if(castShow>0&&castKind==="self"){   // SELF-cast: gather energy low, rise & arch back sweeping both arms into an overhead V
+    const cp=clamp(1-castShow/castDur,0,1);
+    const gather=clamp(cp/0.3,0,1), rise=clamp((cp-0.3)/0.45,0,1), rel=clamp((cp-0.78)/0.22,0,1), crouch=gather*(1-rise);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.position.y=AV_WAIST - crouch*0.16 + rise*0.05;
+    u.spine.rotation.x=crouch*0.22 - rise*0.15;               // hunch to gather, then arch back looking up
+    const kb=-(crouch*0.82);
+    u.hipR.rotation.x=crouch*0.44; u.hipL.rotation.x=crouch*0.44; u.knR.rotation.x=kb; u.knL.rotation.x=kb;
+    u.anR.rotation.x=crouch*0.38; u.anL.rotation.x=crouch*0.38;
+    u.neck.rotation.x=-rise*0.42; u.neck.rotation.y=0;
+    // hands cup inward at the waist to gather, then sweep up into an overhead V, easing open on release
+    const V=-3.05*rise*(1-rel*0.18);
+    sX=0.62*crouch + V; sZ=-0.06 - 0.36*rise; eX=-(0.85*(1-rise)+0.05);
+    lX=sX; lZ=0.06+0.36*rise; lE=eX; twist=0;
   }
-  else if(castShow>0){            // forward/targeted cast: thrust the wand toward the target
-    const cp=1-castShow/castDur, back=Math.sin(clamp(cp,0,0.3)/0.3*Math.PI), thrust=cp>=0.3?Math.sin((cp-0.3)/0.7*Math.PI):0;
-    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true;
-    sX=-0.7-back*0.6+thrust*1.7; sZ=-0.1; eX=-(0.9-thrust*0.7); twist=thrust*0.12;
-    lX=-0.3+back*0.4; lZ=0.2; lE=-0.6;                        // off-hand gestures with the cast
+  else if(castShow>0&&castKind==="bestow"){ // BESTOW on an ally: raise both palms and present the gift outward toward them
+    const cp=clamp(1-castShow/castDur,0,1);
+    const draw=clamp(cp/0.4,0,1), offer=cp>=0.4?Math.sin((cp-0.4)/0.6*Math.PI):0;
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.rotation.x=-0.05-offer*0.07; u.spine.position.y=AV_WAIST+offer*0.03;
+    sX=-0.55-draw*0.75-offer*0.55; sZ=-0.18; eX=-(1.05-offer*0.75);   // palms rise, then extend toward the ally
+    lX=sX; lZ=0.18; lE=eX; twist=0; u.neck.rotation.x=-0.12-offer*0.1; u.neck.rotation.y=0;
+  }
+  else if(castShow>0){            // BOLT (offensive/targeted): coil back, then snap a forward thrust through the torso
+    const cp=1-castShow/castDur;
+    const coil=Math.sin(clamp(cp,0,0.35)/0.35*Math.PI*0.5), thrust=cp>=0.35?Math.sin((cp-0.35)/0.65*Math.PI):0;
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.position.y=AV_WAIST-coil*0.04;
+    u.spine.rotation.x=-coil*0.08+thrust*0.15;
+    u.hipR.rotation.x=coil*0.12; u.knR.rotation.x=-coil*0.22-thrust*0.1; u.knL.rotation.x=-thrust*0.28;   // weight back on the wind-up, drive forward on the thrust
+    sX=-0.4+coil*0.5-thrust*1.95; sZ=-0.08-coil*0.22+thrust*0.06; eX=-(1.15+coil*0.4-thrust*0.95);   // draw the wand back & up, then snap it forward at the target
+    lX=-0.3+coil*0.4-thrust*0.25; lZ=0.2; lE=-0.7;
+    twist=coil*0.32-thrust*0.48; u.neck.rotation.y=-twist*0.4; u.neck.rotation.x=-0.05;   // head tracks toward the target
   }
   else if(player.bowDraw>0&&weaponMode==="bow"){ sX=-1.4; sZ=-0.1; eX=-1.1; lX=-1.3; lZ=0.15; lE=-0.25; }
   else if(blk){                    // raising the guard: brace low, off-hand/shield up across the body, weapon tucked
@@ -10472,6 +10518,13 @@ function animateAvatar(dt){
     lX=lX+(glX-lX)*guard; lZ=lZ+(glZ-lZ)*guard; lE=lE+(glE-lE)*guard;
     u.knR.rotation.x-=guard*0.28; u.knL.rotation.x-=guard*0.28; u.hipR.rotation.x+=guard*0.10; u.hipL.rotation.x+=guard*0.10;
     u.spine.position.y-=guard*0.04; twist+=guard*0.10;
+    // living ready stance: breathing lift, weapon-hand micro-bob, a slow weight shift & torso sway (only while at the ready)
+    const rb=Math.sin(idleT*1.5), rb2=Math.sin(idleT*0.9+0.7), shift=Math.sin(idleT*0.55);
+    sX+=guard*rb*0.045; eX+=guard*rb2*0.05; sZ+=guard*Math.sin(idleT*1.2)*0.02;
+    lX+=guard*rb2*0.03; lE+=guard*rb*0.045;
+    u.spine.position.y+=guard*Math.abs(rb)*0.009; u.spine.rotation.z+=guard*shift*0.03;
+    u.neck.rotation.y+=guard*shift*0.14; twist+=guard*shift*0.035;
+    u.hipR.rotation.x+=guard*shift*0.02; u.hipL.rotation.x-=guard*shift*0.02;   // weight rocks subtly between the feet
   }
   u.spine.rotation.y=twist;
   u.shR.rotation.x=sX; u.shR.rotation.z=sZ; u.elR.rotation.x=eX;
@@ -14198,6 +14251,7 @@ function addNode(x,z,type){
 }
 function gatherNode(n){
   n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
+  startAction(n.type==="ore"?"mine":"gather",1.3);   // play the work animation (mining swing / crouched harvest)
   if(n.type==="ore"){const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot");}
   else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
     if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
