@@ -430,6 +430,10 @@
       <div class="cc-row" data-cat="hairColor"><div class="cc-lab">Hair Colour</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="beard"><div class="cc-lab">Facial Hair</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="eye"><div class="cc-lab">Eyes</div><div class="cc-opts"></div></div>
+      <div class="cc-row" data-cat="eyeShape"><div class="cc-lab">Eye Shape</div><div class="cc-opts"></div></div>
+      <div class="cc-row" data-cat="nose"><div class="cc-lab">Nose</div><div class="cc-opts"></div></div>
+      <div class="cc-row" data-cat="mouth"><div class="cc-lab">Mouth</div><div class="cc-opts"></div></div>
+      <div class="cc-row" data-cat="feature"><div class="cc-lab">Features</div><div class="cc-opts"></div></div>
       <div class="cc-row" data-cat="tattoo"><div class="cc-lab">Tattoos</div><div class="cc-opts"></div></div>
     </div>
   </div>
@@ -580,7 +584,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   house:{tier:0,storage:[]},   // AC housing: 0=none, 1=Apartment…4=Mansion; storage[] persists forever
   homestead:null,              // a purchased settlement dwelling: {set,idx,type,hooks{}} (AC covenant housing)
   name:"Adventurer",
-  appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},
+  appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"},
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
   spellBuffs:{},              // active Creature-Enchantment attribute buffs: attr -> {v,t}
   skillBuffs:{},              // active Creature-Enchantment skill "Aptitude" buffs: skillKey -> {v,t}; fall on death
@@ -2623,6 +2627,8 @@ function buildPerson(o){
   const robed=!!o.robed;
   const app={skin:skinCol,face:_PERSON_FACES[(sd*3)%6],hair:o.hood?"bald":(o.hairStyle||_PERSON_HAIRS[(sd*5)%6]),
     hairColor:hairCol,beard:o.beard?["full","goatee","mustache","stubble"][sd%4]:"none",tattoo:"none",eye:[0x4a6a3a,0x3a5a8a,0x5a3a1a,0x6a6a6a][sd%4],
+    nose:["straight","button","aquiline","broad"][(sd*7)%4],eyeShape:["almond","round","narrow","hooded"][(sd*11)%4],mouth:["medium","full","thin","wide"][(sd*13)%4],
+    feature:(sd%7===3)?"freckles":(sd%11===5)?"age":(sd%13===7)?"scar":"none",   // seeded nose/eyes/mouth + occasional skin character — no two townsfolk alike
     gender:o.gender||(o.beard?"male":(o.hairStyle?"female":(((sd*3)%2)?"female":"male")))};   // beardless townsfolk split ~50/50; styled-hair roles (valkyries) read female
   const hipY=robed?1.02:0.94;
   // ---- legs (articulated groups, pivot at hip) or a robe skirt ----
@@ -2714,7 +2720,23 @@ const APPEARANCE={
   beard:[{k:"none",n:"None"},{k:"stubble",n:"Stubble"},{k:"mustache",n:"Mustache"},{k:"goatee",n:"Goatee"},{k:"full",n:"Full Beard"},{k:"long",n:"Long Beard"}],
   tattoo:[{k:"none",n:"None"},{k:"warpaint",n:"War Paint"},{k:"tribal",n:"Tribal"},{k:"runes",n:"Runes"},{k:"mark",n:"Clan Mark"}],
   eye:[{k:0x4a6a3a,n:"Green"},{k:0x3a5a8a,n:"Blue"},{k:0x5a3a1a,n:"Brown"},{k:0x6a6a6a,n:"Grey"},{k:0x8a6a2a,n:"Amber"}],
+  // eye APERTURE (whites height/lid crop/outer tilt) — independent of iris colour above
+  eyeShape:[{k:"almond",n:"Almond",wy:1.0,lidS:1.0,lidDrop:0,tilt:0},{k:"round",n:"Round",wy:1.28,lidS:0.8,lidDrop:-0.004,tilt:0},{k:"narrow",n:"Narrow",wy:0.7,lidS:1.2,lidDrop:0.005,tilt:0.09},{k:"hooded",n:"Hooded",wy:0.88,lidS:1.45,lidDrop:0.007,tilt:-0.05}],
+  // bridge length/width, tip size/height, dorsal hump, nostril-wing spread
+  nose:[{k:"straight",n:"Straight",br1:0.013,br2:0.023,blen:0.095,tipS:1.0,tipY:-0.052,hump:0,wingS:1.0,wingX:0.02},
+        {k:"button",n:"Button",br1:0.011,br2:0.019,blen:0.075,tipS:1.1,tipY:-0.046,hump:0,wingS:0.92,wingX:0.018},
+        {k:"aquiline",n:"Aquiline",br1:0.014,br2:0.024,blen:0.108,tipS:0.98,tipY:-0.058,hump:0.013,wingS:0.95,wingX:0.02},
+        {k:"broad",n:"Broad",br1:0.017,br2:0.028,blen:0.088,tipS:1.18,tipY:-0.052,hump:0,wingS:1.35,wingX:0.027}],
+  mouth:[{k:"medium",n:"Medium",w:1.0,th:1.0},{k:"full",n:"Full",w:1.0,th:1.35},{k:"thin",n:"Thin",w:1.04,th:0.6},{k:"wide",n:"Wide",w:1.28,th:0.85}],
+  feature:[{k:"none",n:"None"},{k:"freckles",n:"Freckles"},{k:"scar",n:"Scar"},{k:"age",n:"Age Lines"},{k:"beauty",n:"Beauty Mark"}],
   model:PLAYER_MODELS.map(m=>({k:m.k,n:m.n})),   // body model choice (Classic procedural, or a rigged model)
+};
+// per-heritage look defaults — applied when a heritage is picked in the creator (still freely overridable)
+const HERITAGE_LOOK={
+  aluvian:   {face:"oval",   skin:0xe8b890,hairColor:0x6a4a2a,nose:"straight",eyeShape:"almond",eye:0x3a5a8a},
+  gharundim: {face:"long",   skin:0x9c6b3f,hairColor:0x141010,nose:"aquiline",eyeShape:"almond",eye:0x5a3a1a},
+  sho:       {face:"round",  skin:0xdba56e,hairColor:0x141010,nose:"button",  eyeShape:"narrow",eye:0x5a3a1a},
+  viamontian:{face:"angular",skin:0xf0cba0,hairColor:0x141010,nose:"straight",eyeShape:"hooded",eye:0x6a6a6a},
 };
 const _find=(cat,k)=>APPEARANCE[cat].find(o=>o.k===k)||APPEARANCE[cat][0];
 function addHair(g,style,col,fs){
@@ -2756,17 +2778,24 @@ function addHair(g,style,col,fs){
     br.scale.set(0.9,1.25,0.9); br.position.set(sx*(0.175-k*0.012),-0.02-k*0.1,0.04+k*0.012); br.castShadow=true; g.add(br);}}}
 }
 function addBeard(g,style,col,fs){
-  if(!style||style==="none") return; const mat=new THREE.MeshStandardMaterial({color:col}), zf=-0.19*fs.sz;
-  if(style==="stubble"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.207,16,12,0,6.28,Math.PI*0.62,Math.PI*0.38),new THREE.MeshStandardMaterial({color:col,transparent:true,opacity:0.45}));b.scale.set(fs.sx,fs.sy,fs.sz);b.position.set(0,-0.012,-0.012);g.add(b);}
-  else if(style==="mustache"){const m=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.026,0.05),mat);m.position.set(0,-0.082,zf);g.add(m);}
-  else if(style==="goatee"){const m=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.024,0.05),mat);m.position.set(0,-0.082,zf);g.add(m);const ch=new THREE.Mesh(new THREE.ConeGeometry(0.055,0.15,8),mat);ch.position.set(0,-0.18,zf+0.05);ch.rotation.x=Math.PI;g.add(ch);}
-  else if(style==="full"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.214,16,14,0,6.28,Math.PI*0.54,Math.PI*0.46),mat);b.scale.set(fs.sx,fs.sy*1.02,fs.sz);b.position.set(0,-0.016,-0.012);b.castShadow=true;g.add(b);}
-  else if(style==="long"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.214,16,14,0,6.28,Math.PI*0.52,Math.PI*0.48),mat);b.scale.set(fs.sx,fs.sy,fs.sz);b.position.set(0,-0.014,-0.012);b.castShadow=true;g.add(b);const h=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.045,0.3,10),mat);h.position.set(0,-0.27,zf+0.08);h.castShadow=true;g.add(h);}
+  if(!style||style==="none") return;
+  const mat=new THREE.MeshStandardMaterial({color:0xffffff,map:hairTex(col),roughness:0.7}), z=0.2*fs.sz;
+  const lobes=()=>{ for(const sx of[-1,1]){ const m=new THREE.Mesh(new THREE.SphereGeometry(0.019,9,7),mat);   // mustache = two drooping lobes under the nose
+    m.scale.set(1.55,0.42,0.45); m.position.set(sx*0.026,-0.082,-z*0.965); m.rotation.z=sx*-0.28; g.add(m); } };
+  if(style==="stubble"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.207,16,12,0,6.28,Math.PI*0.62,Math.PI*0.38),new THREE.MeshStandardMaterial({color:0xffffff,map:hairTex(col),transparent:true,opacity:0.4}));b.scale.set(fs.sx,fs.sy,fs.sz);b.position.set(0,-0.012,-0.012);g.add(b);}
+  else if(style==="mustache"){ lobes(); }
+  else if(style==="goatee"){ lobes();
+    const ch=new THREE.Mesh(new THREE.SphereGeometry(0.032,10,8),mat); ch.scale.set(1.1,1.0,0.55); ch.position.set(0,-0.158,-z*0.9); g.add(ch);   // chin patch
+    const pt=new THREE.Mesh(new THREE.SphereGeometry(0.02,8,6),mat); pt.scale.set(0.9,1.5,0.5); pt.position.set(0,-0.195,-z*0.85); g.add(pt); }   // tapering point
+  else if(style==="full"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.214,16,14,0,6.28,Math.PI*0.54,Math.PI*0.46),mat);b.scale.set(fs.sx,fs.sy*1.02,fs.sz);b.position.set(0,-0.016,-0.012);b.castShadow=true;g.add(b);lobes();}
+  else if(style==="long"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.214,16,14,0,6.28,Math.PI*0.52,Math.PI*0.48),mat);b.scale.set(fs.sx,fs.sy,fs.sz);b.position.set(0,-0.014,-0.012);b.castShadow=true;g.add(b);lobes();
+    const h=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.03,0.3,10),mat);h.position.set(0,-0.27,-z*0.6);h.castShadow=true;g.add(h);
+    const tp=new THREE.Mesh(new THREE.SphereGeometry(0.032,8,6),mat);tp.position.set(0,-0.42,-z*0.6);tp.scale.set(0.95,1.2,0.95);g.add(tp);}
 }
 function addTattoo(g,style,fs){
   if(!style||style==="none") return;
   const col=style==="warpaint"?0xc02424:style==="runes"?0x3a8ae0:style==="tribal"?0x14110c:0x8a3ac0;
-  const mat=new THREE.MeshBasicMaterial({color:col}), z=-0.198*fs.sz;
+  const mat=new THREE.MeshBasicMaterial({color:col,side:THREE.DoubleSide}), z=-0.198*fs.sz;   // DoubleSide: decal planes face +z, the face fronts -z
   if(style==="warpaint"){ // a bold band across the upper cheeks (kept off the eyes) + brow dabs
     for(const sx of[-1,1]){const b=new THREE.Mesh(new THREE.PlaneGeometry(0.13,0.04),mat);b.position.set(sx*0.09,-0.05,z);b.rotation.y=sx*0.32;g.add(b);}
     const fr=new THREE.Mesh(new THREE.PlaneGeometry(0.16,0.025,3,1),mat);fr.position.set(0,0.11,z);g.add(fr);
@@ -2775,9 +2804,12 @@ function addTattoo(g,style,fs){
 // Sculpt a sphere into a real head: cranium, flattened face plane, brow ridge, eye sockets,
 // cheekbones, tapering jaw and a chin ball — classic portrait proportions (eye line at the head's
 // vertical middle, face in equal thirds). Female skulls get a softer jaw, higher cheeks, lighter brow.
-function headGeometry(fs,fem){
+// Heritage shapes the bone: Sho wider/fuller cheekbones + soft brow, Viamontian sharp jaw + deep
+// cheek hollows, Gharu'ndim a slightly stronger brow — Aluvian is the baseline.
+function headGeometry(fs,fem,race){
   const geo=new THREE.SphereGeometry(0.2,40,32); const p=geo.attributes.position, v=new THREE.Vector3();
-  const jawT=fem?0.42:0.34, chinW=fem?0.38:0.3;
+  const her={sho:{jaw:-0.05,chin:0,brow:0.65,cheek:1.5,cheekW:0.012},viamontian:{jaw:0.07,chin:0.06,brow:1.05,cheek:1.7,cheekW:0},gharundim:{jaw:0,chin:0,brow:1.15,cheek:1.0,cheekW:0}}[race]||{jaw:0,chin:0,brow:1,cheek:1,cheekW:0};
+  const jawT=(fem?0.42:0.34)+her.jaw, chinW=(fem?0.38:0.3)+her.chin;
   for(let i=0;i<p.count;i++){ v.fromBufferAttribute(p,i); const ny=v.y/0.2;   // -1 (chin) .. 1 (crown)
     let w=1;
     if(ny<0){ w=1+ny*jawT; w=Math.max(0.45,w); }          // narrow toward the jaw/chin
@@ -2788,7 +2820,7 @@ function headGeometry(fs,fem){
     if(v.z<-0.10&&Math.abs(ny)<0.55) v.z=-0.10+(v.z+0.10)*0.82;   // faces are planes, not ball fronts
     if(v.z<-0.08){
       const brow=Math.exp(-Math.pow((v.y-0.058)/0.03,2))*Math.exp(-Math.pow(v.x/0.115,2));
-      v.z-=brow*(fem?0.005:0.012);                        // brow ridge (males heavier)
+      v.z-=brow*(fem?0.005:0.012)*her.brow;               // brow ridge (males heavier)
       for(const sx of[-1,1]){                             // eye sockets — shallow dents the eyes sit in
         const d=Math.exp(-(Math.pow((v.x-sx*0.062)/0.045,2)+Math.pow((v.y-0.02)/0.032,2)));
         v.z+=d*0.018; }
@@ -2796,7 +2828,8 @@ function headGeometry(fs,fem){
     if(v.z<-0.05){
       for(const sx of[-1,1]){                             // cheekbones (higher & fuller on women)
         const d=Math.exp(-(Math.pow((v.x-sx*0.098)/0.05,2)+Math.pow((v.y+(fem?0.04:0.052))/0.045,2)));
-        v.z-=d*(fem?0.012:0.008); }
+        v.z-=d*(fem?0.012:0.008)*her.cheek;
+        v.x+=sx*d*her.cheekW; }                           // Sho: cheekbones also spread wider
       const ch=Math.exp(-(Math.pow(v.x/0.052,2)+Math.pow((v.y+0.158)/0.05,2)));
       v.z-=ch*0.012;                                      // chin ball
     }
@@ -2810,65 +2843,112 @@ const _hairTexCache={};
 function hairTex(col){ if(_hairTexCache[col]) return _hairTexCache[col];
   const c=document.createElement('canvas'); c.width=64; c.height=64; const x=c.getContext('2d');
   const base=new THREE.Color(col); x.fillStyle="#"+base.getHexString(); x.fillRect(0,0,64,64);
+  const hsl=base.getHSL({h:0,s:0,l:0});   // strand contrast scales with base lightness: black hair keeps a
+  const amp=0.08+hsl.l*0.5;               // subtle dark sheen instead of washing to grey
   for(let i=0;i<150;i++){ const lx=Math.random()*64, lh=8+Math.random()*40, ly=Math.random()*64;
-    const sh=(Math.random()-0.5)*0.34; const cc=base.clone(); cc.offsetHSL(0,0,sh);
+    const sh=(Math.random()-0.5)*amp; const cc=base.clone(); cc.offsetHSL(0,0,sh);
     x.strokeStyle="#"+cc.getHexString(); x.lineWidth=0.6+Math.random()*1.1; x.globalAlpha=0.55+Math.random()*0.45;
     x.beginPath(); x.moveTo(lx,ly); x.lineTo(lx+(Math.random()-0.5)*4,ly+lh); x.stroke(); }
   x.globalAlpha=1; const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(2,2);
+  t.encoding=THREE.sRGBEncoding;   // heads build after markSceneSRGB — untagged, dark hair washes to grey
   _hairTexCache[col]=t; return t;
 }
 // a head group built from an appearance object (skull, face, hair, beard, tattoos) — used by creator + avatar
 function buildFaceGroup(app){
   app=app||{}; const g=new THREE.Group();
   const fs=_find("face",app.face), skinCol=app.skin!=null?app.skin:0xe8b890, hairCol=app.hairColor!=null?app.hairColor:0x3a2416;
-  const fem=app.gender==="female";
+  const fem=app.gender==="female", race=app.race;
+  const es=_find("eyeShape",app.eyeShape), no=_find("nose",app.nose), mo=_find("mouth",app.mouth);
   const skin=new THREE.MeshStandardMaterial({color:skinCol,roughness:0.55,metalness:0.0});
   const z=0.2*fs.sz;   // face plane (front, -z)
-  const skull=new THREE.Mesh(headGeometry(fs,fem),skin);skull.castShadow=true;g.add(skull);
+  const skull=new THREE.Mesh(headGeometry(fs,fem,race),skin);skull.castShadow=true;g.add(skull);
   // ears sit on the eye line, hugging the skull
   for(const sx of[-1,1]){const ear=new THREE.Mesh(new THREE.SphereGeometry(0.038,10,8),skin);ear.scale.set(0.42,1.0,0.6);ear.position.set(sx*0.182*fs.sx,0.005,0.012);g.add(ear);}
-  // ---- nose: glabella → bridge → rounded tip + nostril wings (women slighter) ----
+  // ---- nose: glabella → bridge (+ optional aquiline hump) → rounded tip + nostril wings (women slighter) ----
   const nsc=fem?0.85:1.0;
   const glab=new THREE.Mesh(new THREE.SphereGeometry(0.02,8,7),skin);glab.scale.set(0.9,0.7,0.6);glab.position.set(0,0.035,-z*0.985);g.add(glab);
-  const bridge=new THREE.Mesh(new THREE.CylinderGeometry(0.013*nsc,0.023*nsc,0.095,8),skin);bridge.position.set(0,-0.012,-z*0.94);bridge.rotation.x=0.14;g.add(bridge);
-  const tip=new THREE.Mesh(new THREE.SphereGeometry(0.02*nsc,10,8),skin);tip.scale.set(1.0,0.82,0.95);tip.position.set(0,-0.052,-z-0.004);g.add(tip);
-  for(const sx of[-1,1]){const nw=new THREE.Mesh(new THREE.SphereGeometry(0.011*nsc,8,6),skin);nw.scale.set(1,0.8,0.9);nw.position.set(sx*0.02*nsc,-0.056,-z+0.007);g.add(nw);}
+  const bridge=new THREE.Mesh(new THREE.CylinderGeometry(no.br1*nsc,no.br2*nsc,no.blen,8),skin);bridge.position.set(0,0.036-no.blen/2*Math.cos(0.14),-z*0.94);bridge.rotation.x=0.14;g.add(bridge);
+  if(no.hump){const hp=new THREE.Mesh(new THREE.SphereGeometry(0.012*nsc,8,7),skin);hp.scale.set(0.75,1.15,0.6);hp.position.set(0,0.002,-z*0.965-no.hump*0.5);g.add(hp);}
+  const tip=new THREE.Mesh(new THREE.SphereGeometry(0.02*nsc*no.tipS,10,8),skin);tip.scale.set(1.0,0.82,0.95);tip.position.set(0,no.tipY,-z-0.004);g.add(tip);
+  for(const sx of[-1,1]){const nw=new THREE.Mesh(new THREE.SphereGeometry(0.011*nsc*no.wingS,8,6),skin);nw.scale.set(1,0.8,0.9);nw.position.set(sx*no.wingX*nsc,no.tipY-0.004,-z+0.007);g.add(nw);}
   // ---- brows: tapered arches along the ridge — inner ends low, outer ends lifted; women's finer ----
   const browMat=new THREE.MeshStandardMaterial({color:_shade(hairCol,-0.04),map:hairTex(_shade(hairCol,-0.04))});
   for(const sx of[-1,1]){const br=new THREE.Mesh(new THREE.SphereGeometry(0.05,12,8),browMat);
     br.scale.set(0.82,fem?0.11:0.17,0.24);br.position.set(sx*0.064,0.05,-z*0.985);br.rotation.set(0.1,0,sx*(fem?0.24:0.16));g.add(br);}
-  // ---- eyes: whites recessed into the sculpted sockets, large irises, lids cropping to an almond,
-  //      and a catchlight — one eye-width apart on the head's midline (portrait proportion) ----
+  // ---- eyes: whites recessed into the sculpted sockets, large irises, lids cropping to the chosen
+  //      APERTURE (almond/round/narrow/hooded — es), a catchlight — one eye-width apart (portrait
+  //      proportion). Sho get an epicanthic inner-corner fold; upper lids are registered for blinking ----
+  const blinkLids=[];
   for(const sx of[-1,1]){
     const w=new THREE.Mesh(new THREE.SphereGeometry(0.027,14,10),new THREE.MeshStandardMaterial({color:0xf6f2ea,roughness:0.25}));
-    w.scale.set(1.28,fem?0.8:0.7,0.5);w.position.set(sx*0.062,0.02,-z*0.945);g.add(w);
+    w.scale.set(1.28,(fem?0.8:0.7)*es.wy,0.5);w.position.set(sx*0.062,0.02,-z*0.945);w.rotation.z=sx*es.tilt;g.add(w);
     const iris=new THREE.Mesh(new THREE.SphereGeometry(0.0155,12,10),new THREE.MeshStandardMaterial({color:app.eye!=null?app.eye:0x4a6a3a,roughness:0.15}));
-    iris.scale.set(1,1,0.4);iris.position.set(sx*0.062,0.019,-z-0.008);g.add(iris);
+    iris.scale.set(1,Math.min(1,es.wy*1.05),0.4);iris.position.set(sx*0.062,0.019,-z-0.008);g.add(iris);
     const pup=new THREE.Mesh(new THREE.SphereGeometry(0.0072,8,6),new THREE.MeshBasicMaterial({color:0x0c0806}));
     pup.scale.set(1,1,0.4);pup.position.set(sx*0.062,0.019,-z-0.0125);g.add(pup);
     const glint=new THREE.Mesh(new THREE.SphereGeometry(0.0034,6,5),new THREE.MeshBasicMaterial({color:0xffffff}));
     glint.position.set(sx*0.062-0.005,0.025,-z-0.015);g.add(glint);
     const lidUp=new THREE.Mesh(new THREE.SphereGeometry(0.03,12,8,0,6.28,0,Math.PI*0.4),skin);
-    lidUp.scale.set(1.2,0.5,0.5);lidUp.position.set(sx*0.062,0.035,-z*0.95);g.add(lidUp);
+    lidUp.scale.set(1.2,0.5*es.lidS,0.5);lidUp.position.set(sx*0.062,0.035-es.lidDrop,-z*0.95);lidUp.rotation.z=sx*es.tilt;g.add(lidUp);
+    lidUp.userData.baseSY=lidUp.scale.y; lidUp.userData.basePY=lidUp.position.y; blinkLids.push(lidUp);
     const lidLo=new THREE.Mesh(new THREE.SphereGeometry(0.028,12,8,0,6.28,Math.PI*0.6,Math.PI*0.4),skin);
-    lidLo.scale.set(1.22,0.42,0.5);lidLo.position.set(sx*0.062,0.007,-z*0.95);g.add(lidLo);
+    lidLo.scale.set(1.22,0.42,0.5);lidLo.position.set(sx*0.062,0.007+es.lidDrop*0.5,-z*0.95);lidLo.rotation.z=sx*es.tilt;g.add(lidLo);
+    if(race==="sho"){ const fold=new THREE.Mesh(new THREE.SphereGeometry(0.012,8,6),skin);   // epicanthic fold hooding the inner corner
+      fold.scale.set(1.15,0.55,0.5);fold.position.set(sx*0.036,0.024,-z*0.955);fold.rotation.z=-sx*0.35;g.add(fold); }
     if(fem){ const liner=new THREE.Mesh(new THREE.SphereGeometry(0.0272,12,6,0,6.28,Math.PI*0.34,Math.PI*0.1),new THREE.MeshBasicMaterial({color:0x1a120c}));
-      liner.scale.set(1.3,0.6,0.5);liner.position.set(sx*0.062,0.024,-z*0.946);g.add(liner); }   // lash line
+      liner.scale.set(1.3,0.6,0.5);liner.position.set(sx*0.062,0.024,-z*0.946);liner.rotation.z=sx*es.tilt;g.add(liner); }   // lash line
   }
-  // ---- mouth: a real cupid's-bow upper lip over a fuller lower lip, corners softened ----
+  g.userData.blink={lids:blinkLids,t:0.5+Math.random()*4,ph:-1};   // ticked by tickFace() — random blink cadence
+  // ---- mouth: a real cupid's-bow upper lip over a fuller lower lip, corners softened;
+  //      mo (medium/full/thin/wide) sets width & fullness ----
   const lipCol=new THREE.Color(skinCol); lipCol.offsetHSL(-0.015,fem?0.25:0.06,fem?-0.10:-0.16);
   const lipMat=new THREE.MeshStandardMaterial({color:lipCol,roughness:0.45});
   for(const sx of[-1,1]){ const ul=new THREE.Mesh(new THREE.SphereGeometry(0.021,10,8),lipMat);
-    ul.scale.set(1.05,0.34,0.42);ul.position.set(sx*0.0165,-0.102,-z*0.955);ul.rotation.z=sx*0.22;g.add(ul); }
+    ul.scale.set(1.05*mo.w,0.34*mo.th,0.42);ul.position.set(sx*0.0165*mo.w,-0.102,-z*0.955);ul.rotation.z=sx*0.22;g.add(ul); }
   const ll=new THREE.Mesh(new THREE.SphereGeometry(0.026,12,8),lipMat);
-  ll.scale.set(1.1,fem?0.5:0.42,0.5);ll.position.set(0,-0.121,-z*0.95);g.add(ll);
-  const mline=new THREE.Mesh(new THREE.BoxGeometry(0.062,0.0028,0.012),new THREE.MeshBasicMaterial({color:_shade(skinCol,-0.3)}));
+  ll.scale.set(1.1*mo.w,(fem?0.5:0.42)*mo.th,0.5);ll.position.set(0,-0.121,-z*0.95);g.add(ll);
+  const mline=new THREE.Mesh(new THREE.BoxGeometry(0.062*mo.w,0.0028,0.012),new THREE.MeshBasicMaterial({color:_shade(skinCol,-0.3)}));
   mline.position.set(0,-0.1105,-z*0.985);g.add(mline);   // the shadow where the lips meet
   if(fem){ for(const sx of[-1,1]){ const bl=new THREE.Mesh(new THREE.CircleGeometry(0.026,10),
       new THREE.MeshBasicMaterial({color:0xe08a7a,transparent:true,opacity:0.16}));
     bl.position.set(sx*0.094,-0.032,-z*0.94); bl.rotation.y=sx*0.55; g.add(bl); } }   // soft cheek blush
+  addFeature(g,app.feature,skinCol,fs,z);
   addHair(g,app.hair,hairCol,fs); addBeard(g,app.beard,hairCol,fs); addTattoo(g,app.tattoo,fs);
   return g;
+}
+// skin character: freckles across the nose & cheeks, an old blade scar, age creases, a beauty mark
+function addFeature(g,style,skinCol,fs,z){
+  if(!style||style==="none") return;
+  const R=(s)=>{ let h=s*2654435761>>>0; return ((h>>8)&1023)/1023; };   // deterministic per-index jitter
+  const DS=THREE.DoubleSide;   // decal planes face +z, the face fronts -z — draw both sides
+  const zAt=(fx,fy)=>-z*Math.max(0.5,0.92-14*fx*fx-10*(fy||0)*(fy||0));   // hug the head's curve — the face falls away past the cheeks and toward brow/jaw
+  if(style==="freckles"){ const mat=new THREE.MeshBasicMaterial({color:_shade(skinCol,-0.17),transparent:true,opacity:0.6,side:DS});
+    for(let i=0;i<16;i++){ const fx=(R(i)-0.5)*0.21, fy=-0.075+R(i+31)*0.075;
+      if(Math.abs(fx)<0.028&&fy<-0.03) continue;   // keep them off the nose tip/lips
+      const d=new THREE.Mesh(new THREE.CircleGeometry(0.0035+R(i+77)*0.0025,6),mat);
+      d.position.set(fx*fs.sx,fy,zAt(fx,fy)); d.rotation.y=fx*4; g.add(d); } }
+  else if(style==="scar"){ const mat=new THREE.MeshBasicMaterial({color:_shade(skinCol,0.09),transparent:true,opacity:0.9,side:DS});
+    const s1=new THREE.Mesh(new THREE.PlaneGeometry(0.01,0.06),mat); s1.position.set(-0.09*fs.sx,-0.04,zAt(-0.09,-0.04)); s1.rotation.set(0,-0.42,0.38); g.add(s1);
+    const s2=new THREE.Mesh(new THREE.PlaneGeometry(0.008,0.05),mat); s2.position.set(-0.072*fs.sx,-0.095,zAt(-0.072,-0.095)); s2.rotation.set(0,-0.3,0.34); g.add(s2); }   // old slash down the left cheek, below the eye
+  else if(style==="age"){ const mat=new THREE.MeshBasicMaterial({color:_shade(skinCol,-0.2),transparent:true,opacity:0.5,side:DS});
+    for(const sx of[-1,1]){ for(let i=0;i<3;i++){ const cf=new THREE.Mesh(new THREE.PlaneGeometry(0.028,0.0028),mat);   // crow's feet
+        cf.position.set(sx*0.108*fs.sx,0.03-i*0.013,zAt(0.108,0.02)); cf.rotation.set(0,sx*0.6,sx*(i-1)*0.3); g.add(cf); }
+      const nl=new THREE.Mesh(new THREE.PlaneGeometry(0.0035,0.055),mat);   // nasolabial crease
+      nl.position.set(sx*0.045*fs.sx,-0.082,zAt(0.045,-0.082)); nl.rotation.set(0,sx*0.25,sx*0.35); g.add(nl); }
+    for(let i=0;i<2;i++){ const fl=new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.003),mat);   // forehead lines
+      fl.position.set(0,0.095+i*0.022,zAt(0,0.095+i*0.022)); fl.rotation.x=0.15; g.add(fl); } }
+  else if(style==="beauty"){ const d=new THREE.Mesh(new THREE.CircleGeometry(0.005,8),new THREE.MeshBasicMaterial({color:0x2a1a10,side:DS}));
+    d.position.set(0.047*fs.sx,-0.093,zAt(0.047,-0.093)); d.rotation.y=0.25; g.add(d); }
+}
+// blink tick — call with any buildFaceGroup head each frame; cheap (2 lids, one sin)
+function tickFace(head,dt){
+  const b=head&&head.userData&&head.userData.blink; if(!b) return;
+  if(b.ph<0){ b.t-=dt; if(b.t>0) return; b.ph=0; }
+  b.ph+=dt/0.14;
+  const k=Math.sin(Math.PI*Math.min(1,b.ph));   // 0→1→0 over the 0.14s blink
+  for(const l of b.lids){ l.scale.y=l.userData.baseSY*(1+1.1*k); l.position.y=l.userData.basePY-0.02*k; }
+  if(b.ph>=1){ b.ph=-1; b.t=1.5+Math.random()*4.5;
+    for(const l of b.lids){ l.scale.y=l.userData.baseSY; l.position.y=l.userData.basePY; } }
 }
 // light-blue spiral swirl texture for portals (unlit → glows at night), transparent background
 let _swirlTex=null;
@@ -9245,6 +9325,7 @@ function animateAvatar(dt){
 // ---- townsfolk life: idle breathing/glancing for everyone, plus a gentle stroll for wanderers ----
 function animateOnePerson(p,dt){
   const u=p.mesh&&p.mesh.userData; if(!u||!u.torso) return;
+  if(u.head) tickFace(u.head,dt);   // nearby townsfolk blink
   if(p._ph==null){ p._ph=(p.x*0.7+p.z*0.31)%6.283; p._pt=Math.abs(p._ph); p._face=p.mesh.rotation.y||0; }
   p._pt+=dt; const t=p._pt;
   let moving=false;
@@ -9365,6 +9446,7 @@ function syncCamera(dt){
       playerAvatar.visible=player.alive&&!camTooClose;
       playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
       animateAvatar(dt);
+      if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
     }
   } else {
     cam.position.set(player.x, gy+EYE+Math.sin(player.bob)*0.06, player.z);
@@ -13377,7 +13459,7 @@ function applySaveObj(s){
     weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
     jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
     skills:migrateSkills(s.skills),patron:!!s.patron,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,vitae:s.vitae||0,heritage:s.heritage||"aluvian",
-    name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a}});
+    name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}});
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(s.knownSpells==="all")?Object.keys(SPELLBOOK)              // admin/testing: know every spell
     :(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
@@ -14041,14 +14123,14 @@ function ccInitPreview(){
   ccScene=new THREE.Scene();
   if(typeof scene!=="undefined"&&scene&&scene.environment) ccScene.environment=scene.environment;   // metal needs an env map to read as steel
   ccCam=new THREE.PerspectiveCamera(30,1,0.1,20); ccCam.position.set(0,1.62,1.45); ccCam.lookAt(0,1.6,0);
-  ccScene.add(new THREE.HemisphereLight(0xdfeaff,0x2a2820,1.05));
-  const key=new THREE.DirectionalLight(0xfff2d8,1.5); key.position.set(1.6,2.4,2.2); ccScene.add(key);
-  const fill=new THREE.DirectionalLight(0x88aaff,0.55); fill.position.set(-2,1,1.2); ccScene.add(fill);
-  const rim=new THREE.DirectionalLight(0xffd0a0,0.5); rim.position.set(0,1.5,-2.5); ccScene.add(rim);
+  ccScene.add(new THREE.HemisphereLight(0xdfeaff,0x2a2820,0.65));   // kept moderate — hot lights + ACES wash the skin tones to cream
+  const key=new THREE.DirectionalLight(0xfff2d8,0.95); key.position.set(1.6,2.4,2.2); ccScene.add(key);
+  const fill=new THREE.DirectionalLight(0x88aaff,0.35); fill.position.set(-2,1,1.2); ccScene.add(fill);
+  const rim=new THREE.DirectionalLight(0xffd0a0,0.32); rim.position.set(0,1.5,-2.5); ccScene.add(rim);
 }
 function ccBust_build(app){
   const g=new THREE.Group();
-  const head=buildFaceGroup(app); head.position.y=1.6; g.add(head);
+  const head=buildFaceGroup(app); head.position.y=1.6; g.add(head); g.userData.head=head;
   const skin=new THREE.MeshStandardMaterial({color:app.skin});
   const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.1,0.16,12),skin); neck.position.y=1.45; g.add(neck);
   const garb={aluvian:0x44506a,gharundim:0x6a3a8a,sho:0x6a4d33,viamontian:0x5a2a3a}[app.race]||0x44506a;
@@ -14071,14 +14153,16 @@ function ccShowModel(url){                                   // render the chose
 function ccRebuild(){ if(!ccScene) return;
   const md=playerModelDef(ccWork.model||"procedural");
   // face/skin/hair options only matter for the classic procedural body — hide them for rigged models
-  ["face","skin","hair","hairColor","beard","eye","tattoo"].forEach(cat=>{ const row=document.querySelector('#charCreator .cc-row[data-cat="'+cat+'"]'); if(row) row.style.display=md.url?"none":""; });
+  ["face","skin","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo"].forEach(cat=>{ const row=document.querySelector('#charCreator .cc-row[data-cat="'+cat+'"]'); if(row) row.style.display=md.url?"none":""; });
   if(ccBust){ ccScene.remove(ccBust); ccBust=null; }
   if(md.url){ if(ccCam){ccCam.position.set(0,1.05,3.5);ccCam.lookAt(0,0.95,0);} ccShowModel(md.url); }
   else { ccModelToken++; if(ccModel){ccScene.remove(ccModel);ccModel=null;} if(ccCam){ccCam.position.set(0,1.62,1.45);ccCam.lookAt(0,1.6,0);} ccBust=ccBust_build(ccWork); ccScene.add(ccBust); }
 }
+let _ccLastT=0;
 function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
-  const sway=Math.PI+Math.sin(performance.now()/1500)*0.5;
-  if(ccBust) ccBust.rotation.y=sway;
+  const tNow=performance.now(), dt=Math.min(0.1,(tNow-(_ccLastT||tNow))/1000); _ccLastT=tNow;
+  const sway=Math.PI+Math.sin(tNow/1500)*0.5;
+  if(ccBust){ ccBust.rotation.y=sway; if(ccBust.userData.head) tickFace(ccBust.userData.head,dt); }
   if(ccModel) ccModel.rotation.y=sway;
   ccRenderer.render(ccScene,ccCam); }
 function ccSize(){ const cv=document.getElementById('ccPreview'); const w=cv.clientWidth||330,h=cv.clientHeight||430;
@@ -14090,7 +14174,9 @@ function ccBuildOptions(){
     APPEARANCE[cat].forEach(o=>{ const b=document.createElement('button'); b.dataset.k=String(o.k);
       if(isColor){ b.className="cc-sw"; b.style.background="#"+(o.k>>>0).toString(16).padStart(6,"0"); b.title=o.n; }
       else b.textContent=o.n;
-      b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg"; ccRenderCreation(); } ccSyncSel(); ccRebuild(); };
+      b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
+        Object.assign(ccWork,HERITAGE_LOOK[o.k]||{});   // heritage look defaults (face/skin/hair/nose/eyes) — still overridable below
+        ccRenderCreation(); } ccSyncSel(); ccRebuild(); };
       box.appendChild(b); });
   });
 }
@@ -14151,13 +14237,13 @@ function openCharCreator(race,onCreate){
   cancelAnimationFrame(ccRAF); ccAnim();
 }
 function closeCharCreator(){ ccVisible=false; cancelAnimationFrame(ccRAF); document.getElementById('charCreator').style.display="none"; }
-function ccRandomize(){ for(const cat of ["face","skin","hair","hairColor","beard","eye","tattoo"]){ const a=APPEARANCE[cat]; ccWork[cat]=a[Math.floor(Math.random()*a.length)].k; } ccSyncSel(); ccRebuild(); }
+function ccRandomize(){ for(const cat of ["face","skin","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo"]){ const a=APPEARANCE[cat]; ccWork[cat]=a[Math.floor(Math.random()*a.length)].k; } ccSyncSel(); ccRebuild(); }
 document.getElementById('ccBack').onclick=()=>{ closeCharCreator(); document.getElementById('overlay').style.display=""; };
 document.getElementById('ccCreate').onclick=()=>{
   const name=document.getElementById('ccName').value.trim();
   if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
   player.name=name; player.heritage=ccWork.race;
-  const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","tattoo","model","gender"];
+  const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo","model","gender"];
   const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k]; player.appearance=app;
   // carry the AC creation choices into startGame
   player.createAttr=Object.assign({},ccWork.cattr); player.createSkills=(ccWork.ctrained||[]).slice();
