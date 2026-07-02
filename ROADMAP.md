@@ -497,8 +497,14 @@ Ten-year serialized storyline (design: `docs/kilmer-saga-storyline.md`; framewor
   incl. the **Echo of Bael'Zharon** one-time world boss with *Shard-Scarred Pauldrons* + "Bane of the
   Ember"), crier rumor + `/story` journal + HUD chip integration, `sagaProg`/`sagaVer` persisted (pre-saga
   saves restart at the Coronation). Solo-world only (`isOnline` guarded) — server-shared saga is future work.
-- ☐ **K2–K10. Years 2–10** — pure data drops on the K1 engine (new goal types as needed: siege state Y4,
-  season reskin Y7, rift spawner Y8, coastal water Y9, relic ceremony Y10M116).
+- ✅ **K1b. Full event specifications** — `docs/kilmer-saga-event-specs.md`: every one of the 120 months
+  (+ epilogue) specced with **crier rumor + clue lines verbatim**, the engine goal, rewards, world
+  changes, and each year's "Needs" (new goal types land the month they're first used). This is the
+  monthly implementation bible — **cadence: one chapter ships per real month** (workflow at the doc top).
+- ☐ **K2–K10. Years 2–10** — data drops on the K1 engine per the specs doc. New goal types by year:
+  `visits:N`+saga-boss generalization (Y2) · siege+deliver (Y4) · relics+contribute+under-temple delve
+  (Y5) · multi-boss+citadel (Y6) · season-lock+Frore (Y7) · rift spawner+ascent+Asheron NPC (Y8) ·
+  drowned shores+underwater delve (Y9) · survive+stages+finale (Y10).
 
 ## Suggested order of execution
 **A (all) → C1 → C2 → B1 → B2 → B3 → C3 → A-leftovers polish → E0 (research) → E1/E2/E3 → D → F → H.**
