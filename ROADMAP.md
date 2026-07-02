@@ -321,12 +321,13 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
 - ✅ **H3. Healing skill scaling** — SHIPPED: `healScale()` scales kit/potion HP with the Healing skill
   (~+40% at rank 100, +10% spec) and −40% while `player.combatT>0`; applied at kit-use + `drinkPotion`.
 - ✅ **H4. Locked caches + Lockpick** — *already implemented*: `openLockedCache()` (@6515), pick/key
-  drops (@3550), `dungeonLock`, prompt "Pick the locked cache (E)". ◇ only **Keyrings** (S) remain (a
-  container that holds a key set).
+  drops (@3550), `dungeonLock`, prompt "Pick the locked cache (E)". ✅ **Keyrings** shipped too
+  (`rollKeyring`, use-to-stow, `findKeyring` feeds both the cache and vault openers).
 - ✅ **H5. Cooking** — SHIPPED via H1: recipes for Hearty Stew / Frothing Ale / Mana Tea (attribute-buff
   food riding the existing FOOD_ITEMS buff machinery), gated on the Cooking skill. (Dye-pot use → H7.)
 - ✅ **H6. Fletching** — SHIPPED via H1: recipes for Broadhead Arrows / Steel Quarrels (stacked ammo),
-  gated on the Fletching skill. ◇ applying Alchemy oils to arrowheads for elemental ammo still deferred.
+  gated on the Fletching skill. ✅ Alchemy oils on arrowheads shipped too (Fire/Frost oil-tipped
+  arrow + quarrel recipes riding `fireArrow`'s element channels).
 - ✅ **H7. Dyeing armour** — SHIPPED: `DYES` (8 AC colours) + `applyDye()`/`setBodyDye()` recolour the
   third-person body material; gated by Cooking, +10% clean-dye odds with Alchemy, 6 mat; a failed roll
   stains it orange (player-friendly: no AL loss). `player.dye` persists in save + re-applies over the
@@ -370,11 +371,17 @@ recipe/combine/healkit/dye/colosseum/scroll/locked/keyring all 0). Effort: **S/M
   gate, circular sand arena on the dungeon shell, 5 escalating waves (3→7 scaled mobs, champions lead
   waves 3+) under a 5-min clock, clear → gold + XP + two tier-5 items + a guaranteed **Empyrean Ring**
   (5 named). (Homage-scaled from AC's 18 rooms / 1-hr; Advanced 80+ entrance deferred.)
-- ✅ **H17. Augmentation-tree breadth** — SHIPPED (incl. the hard 60-aug total cap; Aetheria uncapped):
-  Jack of All Trades (`allskills` channel in
-  `skillValue`), Ciandra's Essence (`xpBonus` in `gainXP`, cap +25%), Frenzy of the Slayer / Archmage's
-  Endurance / Infused Vigor. Existing Enduring-Calm-style innate-attr augs already present (+50 cap). ◇
-  remaining: skill/spec-credit augs, Critical Protection (needs combat wiring), a hard total-aug count cap.
+- ✅ **H17. Augmentation-tree breadth** — SHIPPED **complete** (incl. the hard 60-aug total cap; Aetheria
+  uncapped): Jack of All Trades (`allskills`), Quick Learner (`xpBonus`, cap +25% — was misnamed
+  "Ciandra's Essence"; wiki says that's the Salvaging spec essence), Frenzy of the Slayer / Archmage's
+  Endurance / Infused Vigor, Critical Protection (`critReduce`, wired in the hurt path), innate-attr augs
+  (+50 cap). **Finale (2026-07-02, wiki-verified):** skill-family masteries **Master of the Steel Circle /
+  Five Fold Path / Focused Eye** (+10 effective melee/magic/missile via `player.augment.fam` in
+  `skillValue`, non-repeatable) + the specialize-via-augmentation essences **Koga's / Jibril's /
+  Celdiseth's / Ciandra's** (Weapon/Armor/Magic-Item Tinkering + Salvaging → tier 2, the only spec path
+  for `sc:-1` skills, non-repeatable) + **skill-credit gems fixed** (Gems of Enlightenment/Mastery now
+  feed `creditBase()` as real skill credits — they were mis-wired to the legacy free-attribute pool).
+  `player.augment.{skillCredits,fam,owned}` persisted in save/load.
 - ✅ **H18. Instanced event dungeons** — SHIPPED: the **Colosseum** (H16) IS the reusable ticketed instanced-
   event-dungeon template (enter-instance → timed waves → vault reward); the arena/`buildArena`/`arenaNextWave`
   machinery generalises to future monthly content. ↓orig↓ repeatable timed instances w/ tickets & vault keys (Colosseum
