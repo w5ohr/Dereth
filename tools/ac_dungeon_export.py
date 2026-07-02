@@ -97,13 +97,23 @@ def dungeon_cells(cell, lb):
         except struct.error:
             continue
         cells[c["id"]] = c
-    if 0x0100 not in cells:
+    if not cells:
         return None
-    seen, q = {0x0100}, deque([0x0100])
-    while q:
-        for o in cells[q.popleft()]["ports"]:
-            if o in cells and o not in seen:
-                seen.add(o); q.append(o)
+    # keep the component holding the entrance cell; if that's a fragment, take the largest component
+    def component(start):
+        seen, q = {start}, deque([start])
+        while q:
+            for o in cells[q.popleft()]["ports"]:
+                if o in cells and o not in seen:
+                    seen.add(o); q.append(o)
+        return seen
+    seen = component(0x0100 if 0x0100 in cells else min(cells))
+    if len(seen) < max(3, len(cells) // 4):
+        rest, comps = set(cells) - seen, [seen]
+        while rest:
+            c = component(next(iter(rest)))
+            comps.append(c); rest -= c
+        seen = max(comps, key=len)
     return {i: c for i, c in cells.items() if i in seen}
 
 # ─────────────────────────── ACE world database ───────────────────────────
@@ -201,7 +211,7 @@ def _cluster(cells, Q):
     for i, k in key.items():
         groups[k].append(i)
     gids = {k: n for n, k in enumerate(sorted(groups))}
-    entry_g = gids[key[0x0100]]
+    entry_g = gids[key[0x0100 if 0x0100 in key else min(key)]]
     adj = defaultdict(set)
     for i, c in cells.items():
         a = gids[key[i]]
