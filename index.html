@@ -2390,7 +2390,9 @@ function buildWeapon(){
   const headBall=new THREE.Mesh(new THREE.SphereGeometry(0.12,10,8),steel); headBall.position.set(0,0.06,-1.5); headBall.visible=false; weaponHand.add(headBall);
   const headAxe=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.24,0.09),steel); headAxe.position.set(0.0,0.06,-1.4); headAxe.visible=false; weaponHand.add(headAxe);
   weapon.userData.trail=trail;
+  const fpHeld=new THREE.Group(); fpHeld.visible=false; weaponHand.add(fpHeld);   // the real equipped-item model (buildItemModel) — legacy blade parts hide when this is filled
   weaponHand.userData.blade=blade; weaponHand.userData.tip=tip; weaponHand.userData.headBall=headBall; weaponHand.userData.headAxe=headAxe;   // styleWeaponModel/shapeWeaponModel adjust these
+  weaponHand.userData.guard=guard; weaponHand.userData.grip=grip; weaponHand.userData.pommel=pommel; weaponHand.userData.fpHeld=fpHeld;
   weaponHand.position.set(0.42,-0.42,-0.7);
   weaponHand.rotation.set(0.1,-0.15,0.05);
   weapon.add(weaponHand);
@@ -2423,7 +2425,7 @@ function applyHeritageLook(h){
     if(bm.normalMap!==undefined) bm.normalMap=lumNormalTex(bm.map);
     if(typeof player!=="undefined"&&player.dye!=null) bm.color.setHex(player.dye);   // H7: applied armour dye overrides the heritage colour
     bm.needsUpdate=true;
-    u.cape.visible=h==="gharundim"; u.quiver.visible=h==="sho";}
+    u.cape.visible=(h==="gharundim")&&!u.capeArmored; u.quiver.visible=h==="sho";}   // a worn cloak outranks the heritage cape
 }
 // ── H7 Dyeing (AC): recolour worn armour. Alchemy prepares the dye, Cooking applies it; a bad roll
 //    stains it the wrong colour (metal→orange, cloth→pink). Recolours the third-person body material. ──
@@ -2551,6 +2553,41 @@ function buildAvatarJointed(){
   const neck=joint(spine,AV_NECK_LOCAL);
   neck.add(M(new THREE.CylinderGeometry(0.058,0.07,0.1,10),skinM,0,0.02,0));
   const head=buildFaceGroup(app);head.position.y=AV_HEAD_LOCAL;head.scale.setScalar(AV_HEADSCALE);neck.add(head);
+  // ---- ARMOR RIG: per-slot attachment shells riding the joints, hidden until the matching piece is
+  //      equipped; refreshAvatarArmor() shows + tints them from player.armorSlots (material + class) ----
+  const armorRig={};
+  const mkSlot=k=>{ const mat=new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.75,roughness:0.4}); const ent={mat,groups:[]}; armorRig[k]=ent; return ent; };
+  const AG=(ent,parent,x,y,z)=>{ const gr=new THREE.Group(); gr.position.set(x||0,y||0,z||0); gr.visible=false; parent.add(gr); ent.groups.push(gr); return gr; };
+  const AM=(ent,gr,geo,x,y,z)=>{ const m=new THREE.Mesh(geo,ent.mat); m.position.set(x||0,y||0,z||0); m.castShadow=true; gr.add(m); return m; };
+  { const e=mkSlot('head'); const hg=AG(e,neck,0,AV_HEAD_LOCAL+0.075,0);            // HELM: dome + brow band + nasal + cheek guards (band rides the brow, not the eyes)
+    AM(e,hg,new THREE.SphereGeometry(0.135,16,12,0,6.28,0,Math.PI*0.6),0,0.02,0.008);
+    const band=AM(e,hg,new THREE.TorusGeometry(0.132,0.018,8,18),0,-0.033,0.008); band.rotation.x=Math.PI/2;
+    AM(e,hg,new THREE.BoxGeometry(0.026,0.1,0.03),0,-0.068,-0.125);
+    for(const sx of[-1,1]) AM(e,hg,new THREE.BoxGeometry(0.03,0.09,0.09),sx*0.125,-0.085,0); }
+  { const e=mkSlot('chest'); const cg=AG(e,spine,0,0,0);                            // BREASTPLATE: chest shell + torso wrap + over-gorget
+    const bp=AM(e,cg,new THREE.SphereGeometry(0.21,18,14,0,6.28,0,Math.PI*0.55),0,0.35,-0.075); bp.scale.set(1.02,0.66,0.55);
+    const wrap=AM(e,cg,new THREE.CylinderGeometry(0.235,0.205,0.3,18,1,true),0,0.22,0); wrap.scale.z=0.52;   // tucked inside the cloak plane (z<0.14)
+    const gg=AM(e,cg,new THREE.TorusGeometry(0.088,0.04,8,18),0,0.53,0); gg.rotation.x=Math.PI/2; }
+  { const e=mkSlot('upperarm'); for(const a of arms){ const gr=AG(e,a.sh,0,0,0);    // PAULDRON cap + rerebrace
+      const cap=AM(e,gr,new THREE.SphereGeometry(0.105,14,10,0,6.28,0,Math.PI*0.62),0,0.045,0); cap.scale.y=0.75;
+      AM(e,gr,new THREE.CylinderGeometry(0.072,0.06,0.18,12),0,-0.12,0); } }
+  { const e=mkSlot('lowerarm'); for(const a of arms){ const gr=AG(e,a.el,0,0,0);    // VAMBRACE
+      AM(e,gr,new THREE.CylinderGeometry(0.058,0.047,0.2,12),0,-0.13,0); } }
+  { const e=mkSlot('hands'); for(const a of arms){ const gr=AG(e,a.wr,0,0,0);       // GAUNTLET cuff + back plate
+      AM(e,gr,new THREE.CylinderGeometry(0.06,0.052,0.07,12),0,-0.02,0);
+      AM(e,gr,new THREE.BoxGeometry(0.082,0.08,0.06),0,-0.075,0); } }
+  { const e=mkSlot('legs');                                                          // CUISSE + poleyn + GREAVE
+    for(const l of legs){ const gr=AG(e,l.hip,0,0,0); AM(e,gr,new THREE.CylinderGeometry(0.098,0.078,0.3,12),0,-0.2,0); }
+    for(const l of legs){ const gr=AG(e,l.knee,0,0,0);
+      AM(e,gr,new THREE.SphereGeometry(0.078,12,8),0,0,0.008);
+      AM(e,gr,new THREE.CylinderGeometry(0.07,0.055,0.26,12),0,-0.16,0); } }
+  { const e=mkSlot('feet'); for(const f of feet){ const gr=AG(e,f,0,0,0);           // SABATON toe cap + ankle cuff
+      AM(e,gr,new THREE.BoxGeometry(0.128,0.06,0.1),0,-0.058,-0.15);
+      AM(e,gr,new THREE.CylinderGeometry(0.068,0.06,0.08,12),0,0.0,0); } }
+  { const e=mkSlot('back'); const bg=AG(e,spine,0,AV_SH_LOCAL+0.02,0.14); bg.rotation.x=0.1;   // armour CLOAK (replaces the heritage cape while worn)
+    const cs=new THREE.Shape(); cs.moveTo(-0.21,0); cs.lineTo(0.21,0); cs.lineTo(0.3,-1.02); cs.lineTo(-0.3,-1.02); cs.closePath();
+    const cloak=new THREE.Mesh(new THREE.ExtrudeGeometry(cs,{depth:0.024,bevelEnabled:false}),e.mat); cloak.castShadow=true; bg.add(cloak);   // one continuous tapered sheet — no seam
+    for(const sx of[-1,1]) AM(e,bg,new THREE.SphereGeometry(0.028,8,6),sx*0.18,0.0,-0.02); }   // shoulder clasps
   // ---- cape / quiver (on spine) ----
   const cape=new THREE.Group();const clm=texMat(clothTex,0x4a3a7a);
   cape.add(M(new THREE.BoxGeometry(0.42,0.5,0.03),clm,0,-0.12,0,true));
@@ -2589,7 +2626,7 @@ function buildAvatarJointed(){
     shR:arms[0].sh,shL:arms[1].sh,elR:arms[0].el,elL:arms[1].el,wrR:arms[0].wr,wrL:arms[1].wr,
     hipR:legs[0].hip,hipL:legs[1].hip,knR:legs[0].knee,knL:legs[1].knee,anR:legs[0].ankle,anL:legs[1].ankle,
     rArm:arms[0].sh,lArm:arms[1].sh,rLeg:legs[0].hip,lLeg:legs[1].hip,rFoot:feet[0],lFoot:feet[1],
-    aSword,aBow,aWand,aHeld,cape,quiver};
+    aSword,aBow,aWand,aHeld,cape,quiver,armorRig};
   g.visible=false;
   return g;
 }
@@ -7949,12 +7986,52 @@ const MAT_TINT={Iron:0x9aa0a8,Steel:0xc0c8d2,Bronze:0xb5793a,Brass:0xc9a43a,Copp
 const BRAND_GLOW={fire:0xff2222,frost:0xf4f8ff,shock:0x3a7aff,nether:0x9b30ff,acid:0x3ae04a};
 function styleWeaponModel(){
   refreshAvatarWeapon();   // rebuild the 3rd-person held model to match the equipped weapon/focus
+  refreshFPWeapon();       // and the first-person hand
   if(typeof weaponHand==="undefined"||!weaponHand||!weaponHand.userData.blade) return;
   const w=player.weapon, blade=weaponHand.userData.blade;
   blade.material.color.setHex((w&&MAT_TINT[w.mat])||0xc0c8d2);
   const el=(w&&w.affix&&w.affix.k==="brand")?w.affix.element:null;
   blade.material.emissive.setHex((el&&BRAND_GLOW[el])||0x000000);
   shapeWeaponModel();
+}
+// First-person hand carries the REAL equipped item model (orb/wand/staff/curved scimitar/...), replacing
+// the legacy box blade+guard+grip. Falls back to the legacy blade only when there's no weapon model.
+function refreshFPWeapon(){
+  const u=(typeof weaponHand!=="undefined")&&weaponHand&&weaponHand.userData; if(!u||!u.fpHeld) return;
+  while(u.fpHeld.children.length){ const c=u.fpHeld.children[0]; u.fpHeld.remove(c); if(c.traverse)c.traverse(o=>{if(o.isMesh&&o.geometry&&o.geometry.dispose)o.geometry.dispose();}); }
+  const w=player.weapon, wp=w&&WEAPON_TYPES[w.wt];
+  u.hasFP=false;
+  const legacy=v=>{ for(const k of["blade","tip","guard","grip","pommel"]) if(u[k]) u[k].visible=v; if(!v){u.headBall.visible=false;u.headAxe.visible=false;} };
+  if(!w||!wp||wp.mode==="missile"){ legacy(true); u.fpHeld.visible=false; return; }   // bows/crossbows use bowModel
+  const m=buildItemModel(w,{hand:true});
+  if(w.wt==="focus"){ m.rotation.x=-0.55; m.rotation.z=0.15; m.position.set(-0.1,0.06,-0.62); }   // foci held raised toward centre-view, gem up
+  else { m.rotation.x=-Math.PI/2; m.position.set(0,0.06,-0.48); }                     // blades/hafts point forward
+  u.fpHeld.add(m); u.fpHeld.visible=true; u.hasFP=true; legacy(false);
+}
+// armour materials that aren't in MAT_TINT (organics + stone), for tinting worn pieces
+// (values pre-darkened ~40% — the renderer's linear-colour pipeline brightens hexes, washing dark cloth to pastel)
+const ARMOR_MAT_TINT={Leather:0x4a3018,Hide:0x54402a,Sharkskin:0x38505e,Snakeskin:0x40502a,Linen:0xb0a380,Wool:0x8a7c60,
+  Silk:0xa88ab8,Satin:0x9878a8,Velvet:0x461420,Granite:0x5c5c62,Marble:0xb8b8c2,Alabaster:0xc8c2b0,Sandstone:0xa08050};
+// Show/tint the avatar's per-slot armor shells from player.armorSlots: colour from the piece's material,
+// finish + bulk from its class (heavy=broad polished plate, medium=duller mail, light=matte leather).
+function refreshAvatarArmor(){
+  if(typeof playerAvatar==="undefined"||!playerAvatar) return;
+  const u=playerAvatar.userData, rig=u.armorRig; if(!rig) return;
+  const slots=(typeof player!=="undefined"&&player.armorSlots)||{};
+  const CLS={heavy:{me:0.85,ro:0.3,bulk:1.07},medium:{me:0.55,ro:0.52,bulk:1.0},light:{me:0.06,ro:0.8,bulk:0.95}};
+  for(const k in rig){ const ent=rig[k], it=slots[k];
+    for(const gr of ent.groups) gr.visible=!!it;
+    if(!it) continue;
+    const tint=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
+    const cls=CLS[it.at]||CLS.medium;
+    ent.mat.color.setHex(tint);
+    if(/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||"")){ ent.mat.metalness=0.04; ent.mat.roughness=0.82; }
+    else if(/granite|marble|alabaster|sandstone/i.test(it.mat||"")){ ent.mat.metalness=0.1; ent.mat.roughness=0.6; }
+    else { ent.mat.metalness=cls.me; ent.mat.roughness=cls.ro; }
+    for(const gr of ent.groups) gr.scale.setScalar(cls.bulk);
+  }
+  u.capeArmored=!!slots.back;
+  if(u.cape&&u.capeArmored) u.cape.visible=false;   // the worn cloak replaces the heritage cape
 }
 // Build the equipped weapon/focus as a real model (buildItemModel) in the avatar's hand, so a wand looks
 // like a wand, an orb like an orb, a scimitar curved — not a generic box blade. Melee + foci use aHeld;
@@ -7983,6 +8060,7 @@ const WEAPON_SHAPE={
 };
 function shapeWeaponModel(){
   const u=weaponHand&&weaponHand.userData; if(!u||!u.blade) return;
+  if(u.hasFP){ u.blade.visible=false; if(u.tip)u.tip.visible=false; if(u.headBall)u.headBall.visible=false; if(u.headAxe)u.headAxe.visible=false; return; }   // a real item model is in hand — legacy blade stays hidden
   const wt=player.weapon&&player.weapon.wt, prof=wt&&WEAPON_TYPES[wt];
   const melee=prof&&prof.mode==="melee";
   if(!melee||wt==="unarmed"){ u.blade.visible=false; if(u.tip)u.tip.visible=false; if(u.headBall)u.headBall.visible=false; if(u.headAxe)u.headAxe.visible=false; return; } // bare fists / unarmed / ranged → no blade
@@ -8013,6 +8091,7 @@ function equipItem(it){
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=weaponMode==="sword";bowModel.visible=weaponMode==="bow";}
     styleWeaponModel(); recomputeGearSkill(); derive();   // a focus lends magic-skill; refresh on any weapon swap
   } else { recomputeGearSkill(); derive(); } // refresh max-vitals + gear skill bonuses for armour/jewelry
+  if(it.stat==="worn") refreshAvatarArmor();   // reflect the piece on the third-person body
   if(it.stat==="jewelry"){ log(`Equipped <b>${it.name}</b> (${jewelryDesc(it)}).`,"loot"); return; }
   if(it.stat==="worn"){ const sd=ARMOR_SLOT_DEFS.find(d=>d.slot===(it.aslot||"chest")); const at=ARMOR_TYPES[it.at];
     log(`Equipped <b>${it.name}</b> (+${it.v} armor · ${sd?sd.slot:"chest"}${at?" · "+at.blurb.split(" — ")[0]:""}${it.affix?" · "+it.affix.desc:""}).`,"loot"); return; }
@@ -8304,7 +8383,7 @@ function deathDrops(){
   const chosen=pool.slice(0,n), invIdx=[];
   for(const c of chosen){
     if(c.src==="weapon"){ player.weapon=null; }
-    else if(c.src==="armor"){ delete player.armorSlots[c.sl]; }
+    else if(c.src==="armor"){ delete player.armorSlots[c.sl]; refreshAvatarArmor(); }
     else if(c.src==="jewel"){ delete player.jewelry[c.sl]; }
     else invIdx.push(c.i);
   }
@@ -9785,7 +9864,8 @@ function syncCamera(dt){
   bowModel.rotation.x=recoil*0.22; bowModel.rotation.z=-recoil*0.12;
   // --- cast: wind the wand back, thrust forward with a flick, gem flares at the apex ---
   const casting=castShow>0;
-  wandModel.visible=casting;
+  const focusHeld=!!(player.weapon&&player.weapon.wt==="focus"&&weaponHand.userData.hasFP);   // the real orb/wand is in hand — cast with IT, not the generic wand
+  wandModel.visible=casting&&!focusHeld;
   if(casting){const cp=1-castShow/0.55;
     const back=Math.sin(clamp(cp,0,0.3)/0.3*Math.PI);             // pull back
     const thrust=cp>=0.3?Math.sin((cp-0.3)/0.7*Math.PI):0;        // thrust forward
@@ -9793,7 +9873,9 @@ function syncCamera(dt){
     wandModel.rotation.set(0.1 - back*0.45 + thrust*0.6, -0.15, 0.05 + thrust*0.2);
     const flare=1+thrust*1.4; wandModel.userData.gem.scale.setScalar(flare);
     wandModel.userData.light.intensity=1.2+thrust*3.0;
-    weaponHand.visible=false; bowModel.visible=false;
+    weaponHand.visible=focusHeld; bowModel.visible=false;
+    if(focusHeld){ weaponHand.position.set(0.42+bobX-thrust*0.1,-0.42+bobY+back*0.12-thrust*0.05,-0.7+back*0.14-thrust*0.4);   // the held focus makes the cast gesture
+      weaponHand.rotation.set(0.1-back*0.4+thrust*0.55,-0.15,0.05); }
   } else { wandModel.userData.gem.scale.setScalar(1); weaponHand.visible=weaponMode==="sword"; bowModel.visible=weaponMode==="bow"; }
   // blade trail rides the slash hump (sword only)
   const tr=weapon.userData.trail;
@@ -13606,7 +13688,7 @@ function unequipTile(kind,slot){
   let it=null;
   if(kind==="weapon"){ it=player.weapon; if(!it)return; player.weapon=null; weaponMode="sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=true;bowModel.visible=false;} styleWeaponModel(); }
-  else if(kind==="armor"){ it=player.armorSlots&&player.armorSlots[slot]; if(!it)return; delete player.armorSlots[slot]; }
+  else if(kind==="armor"){ it=player.armorSlots&&player.armorSlots[slot]; if(!it)return; delete player.armorSlots[slot]; refreshAvatarArmor(); }
   else { it=player.jewelry&&player.jewelry[slot]; if(!it)return; delete player.jewelry[slot]; }
   player.inv.push(it);
   recomputeGearSkill(); derive();   // weapon too: removing a casting focus must drop its magic-skill bonus
@@ -13800,6 +13882,7 @@ function applySaveObj(s){
   player.eventTitles=Array.isArray(s.eventTitles)?s.eventTitles.slice():[]; updateSeasonHUD();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
   if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
+  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // show the loaded armour on the body
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   // restore bound lifestone + spawn there
   if(s.boundLS>=0 && lifestones[s.boundLS]){
