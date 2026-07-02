@@ -3,8 +3,9 @@
 static server can serve them to clients (no runtime CDN dependency; works offline).
 
 Run once from the repo root:  python3 assets/fetch-models.py
-Idempotent — already-present, valid .glb files are skipped. The binaries are
-git-ignored (see .gitignore); this script is the committed, reproducible source of truth.
+Idempotent — already-present, valid .glb files are skipped. The assets/models/ pack is
+committed to git, so a fresh clone needs no fetch; this script is the reproducible record
+of where every model came from and the way to repopulate or extend the pack.
 
 Sources are all CC0 / permissive and fetched server-side (curl-style), so CORS/hot-link
 rules don't apply — only the local same-origin fetch by the browser matters at runtime.

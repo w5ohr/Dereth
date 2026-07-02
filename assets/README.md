@@ -36,9 +36,11 @@ runtime CDN dependency, works offline). Run the fetcher once to populate them:
 python3 assets/fetch-models.py        # downloads every model into assets/models/ (idempotent)
 ```
 
-The `.glb` binaries are **git-ignored** (multi-MB); `assets/fetch-models.py` is the committed,
-reproducible source of truth for where each came from (all CC0 / permissive). Because they're
-fetched server-side, CORS/hot-link rules don't apply — only the browser's local same-origin fetch does.
+The `assets/models/` pack **is committed to git** (self-hosted, served to clients), so a fresh
+clone works with no extra step; `assets/fetch-models.py` remains the reproducible record of where
+each file came from (all CC0 / permissive) and the way to repopulate or extend the pack. Because
+models are fetched server-side, CORS/hot-link rules don't apply — only the browser's local
+same-origin fetch does. (Only the top-level `assets/avatar.glb` drop-in stays git-ignored.)
 
 - `GLTF_PEOPLE` (in `index.html`) lists entries with a **sex** tag (`'f'`/`'m'`/`'n'` = female/male/
   neutral, since players & townsfolk are a mix) and a townsfolk **weight** `w`. Two entry shapes:
@@ -76,14 +78,12 @@ fetched server-side, CORS/hot-link rules don't apply — only the browser's loca
 ## Self-hosted monster models (ON by default)
 Monsters can also swap their procedural mesh for a rigged glTF creature (also served from
 `assets/models/monsters/` — same self-hosting as people, populated by `fetch-models.py`):
-- `MONSTER_MODELS` (in `index.html`) maps a monster **kind** → an **array** of local `.glb` paths;
-  a random variant is chosen per spawn, so a kind with several models shows visual variety in a
-  mob pack. Current mappings:
-  - `mattekar → [Fox.glb]` (Khronos glTF-Sample-Models; rigged, ~1 MB, walk/run/survey clips).
-    Free *creature* glTFs matching AC monsters are scarce, so **Fox is a best-fit placeholder**.
-  - `skeleton → [Warrior, Minion, Mage, Rogue]` — **KayKit Character Pack: Skeletons** (CC0, Kay
-    Lousberg), 4 rigged undead humanoids (~4.8 MB each, 95 baked clips incl. idle/walk/attack).
-    AC's "skeleton" kind spawns as one of the four at random.
+- `MONSTER_MODELS` (in `index.html`) maps a monster **kind** → an **array** of `{f, tint/tints}`
+  entries (a local `.glb` filename plus optional breed tints); a random variant is chosen per
+  spawn, so a kind with several models/tints shows visual variety in a mob pack. ~35 AC kinds are
+  mapped across 24 shared `.glb`s (e.g. `skeleton` spawns one of the 4 KayKit skeletons at random;
+  `Spider.glb` covers the olthoi castes and grievver via tints) — see `MONSTER_MODELS` in
+  `index.html` for the full, current mapping.
   Add more kinds/variants by dropping `.glb`s into `assets/models/monsters/`, listing them in the
   arrays here, and adding their source to `assets/fetch-models.py`.
 - `loadGltfMonsters()` loads each path once into `gltfMonsters{kind:[{scene,anims,h},…]}` (an
@@ -98,8 +98,8 @@ Monsters can also swap their procedural mesh for a rigged glTF creature (also se
   full `disposeObject3D()`. A failed model fetch falls back to procedural for that kind.
 
 ## Notes / trade-offs
-- Model files are **git-ignored** (`.gitignore`) — they're multi-MB binaries and not part of
-  the self-contained game. The pipeline (loader + code) **is** committed.
+- The `assets/models/` pack (people, anim clips, monsters) **is committed** so clones work
+  out of the box; only the experimental top-level `assets/avatar.glb` drop-in is git-ignored.
 - File-size scope: loader ≈ **94 KB** (always loaded); a real avatar adds **~1–15 MB**,
   fetched async at startup (the procedural avatar shows first, then the model swaps in).
 - This keeps everything **local/offline** as long as the `.glb` is a local file. Do **not**
@@ -108,7 +108,9 @@ Monsters can also swap their procedural mesh for a rigged glTF creature (also se
   the game's per-joint locomotion. Wiring walk/run/attack to the model's skeleton (or Mixamo
   clips) is the next step if you adopt this path.
 
-## Monster models (assets/models/monsters/, fetched by fetch-models.py)
-- Quaternius (quaternius.com) — Goblin, Orc, Giant, Yeti, Demon, Mushnub, Ghost, Wolf, Bull, Velociraptor, Trex, Spider — CC0
+## Monster models (assets/models/monsters/, sources recorded in fetch-models.py)
+- Quaternius (quaternius.com) — Goblin, Orc, Giant, Yeti, Demon, Mushnub, Ghost, Wolf, Bull, Velociraptor, Trex, Spider, Rat, Wasp, Snake, Crab — CC0
 - Kay Lousberg / KayKit — Skeleton pack — CC0
 - Khronos glTF-Sample-Models — Fox (PixelMannen, AsoboStudio/tomkranis) — CC-BY 4.0
+- Poly Pizza (poly.pizza) hosted — Bat, Slime, Glub (CC0/permissive); Bear, Boar, Golem,
+  Zombie (CC-BY) — exact per-model source URLs are recorded in `assets/fetch-models.py`
