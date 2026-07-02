@@ -75,7 +75,19 @@ MANIFEST = [
     ("monsters/Bull.glb",         QSHOW + "animals_pack/Bull.glb"),           # auroch
     ("monsters/Velociraptor.glb", QSHOW + "dinosaurs_pack/Velociraptor.glb"), # reedshark
     ("monsters/Trex.glb",         QSHOW + "dinosaurs_pack/Trex.glb"),         # gromnie
-    ("monsters/Spider.glb",       QSHOW + "easy_enemies_pack/Spider.glb"),    # olthoi family
+    ("monsters/Spider.glb",       QSHOW + "easy_enemies_pack/Spider.glb"),    # olthoi family / grievver
+    # --- second creature wave: rats, wasps, snakes, crabs, bats, slimes, fish-men, bears, boars, golems, zombies ---
+    ("monsters/Rat.glb",          QSHOW + "easy_enemies_pack/Rat.glb"),       # rat / carenzi
+    ("monsters/Wasp.glb",         QSHOW + "easy_enemies_pack/Wasp.glb"),      # phyntos wasp
+    ("monsters/Snake.glb",        QSHOW + "easy_enemies_pack/Snake.glb"),     # sclavus / remoran
+    ("monsters/Crab.glb",         QSHOW + "platformer_game_pack/Crab.glb"),   # armoredillo
+    ("monsters/Bat.glb",          "https://static.poly.pizza/4ae13ae9-c257-41ed-86b5-1b4760924ebc.glb"),  # zefir
+    ("monsters/Slime.glb",        "https://static.poly.pizza/93e6c3e3-75f8-441f-86d0-b223f7829005.glb"),  # niffis
+    ("monsters/Glub.glb",         "https://static.poly.pizza/f64d32a9-c1da-4978-8f83-158130703e6c.glb"),  # moarsman / burun
+    ("monsters/Bear.glb",         "https://static.poly.pizza/4df3c877-5c14-4fbe-8c16-d31d8a67cc8c.glb"),  # ursuin (static, CC-BY)
+    ("monsters/Boar.glb",         "https://static.poly.pizza/ac6309df-42bc-428a-9bb6-932765491991.glb"),  # shreth (static, CC-BY)
+    ("monsters/Golem.glb",        "https://static.poly.pizza/58e9a658-1e95-474d-bf69-abfdb0b3e79a.glb"),  # stone golem (static, CC-BY)
+    ("monsters/Zombie.glb",       "https://static.poly.pizza/cf4368cf-b39e-4c9a-8a83-a9c637740eb8.glb"),  # zombie / mummy (CC-BY)
 ]
 
 def valid_glb(path):

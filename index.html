@@ -924,6 +924,13 @@ const BESTIARY={
   zombie:   {name:"Zombie",      c:0x6a7a5a,size:1.0,hp:100,dmg:16,spd:3.2,xp:380, gold:[6,18], range:0,  sense:40,tall:1.55,shape:"humanoid"},
   mummy:    {name:"Mummy",       c:0xcabf9a,size:1.1,hp:130,dmg:20,spd:3.4,xp:560, gold:[10,30],range:28, sense:46,tall:1.6,shape:"caster",mres:0.35,dmgEl:"fire"},
   grievver: {name:"Grievver",    c:0x5a6a4a,size:1.1,hp:110,dmg:18,spd:6.6,xp:520, gold:[10,28],range:26, sense:46,tall:1.4,shape:"beast",mres:0.40,dmgEl:"acid"},
+  // ── second research wave (lore: acpedia/fandom bestiaries) ──
+  carenzi:  {name:"Carenzi",     c:0x8a8a92,size:0.7,hp:40, dmg:9, spd:8.8,xp:180, gold:[3,10], range:0,  sense:40,tall:0.6,shape:"beast",dmgEl:"pierce"},   // fanged burrowing rodent, erupts in packs
+  niffis:   {name:"Niffis",      c:0xd89ab0,size:1.0,hp:90, dmg:15,spd:3.4,xp:420, gold:[8,22], range:26, sense:44,tall:1.3,shape:"blob",mres:0.30,dmgEl:"frost"},   // floating shelled jelly, whipping tentacles
+  remoran:  {name:"Remoran",     c:0x4a5668,size:1.3,hp:140,dmg:22,spd:7.2,xp:640, gold:[12,32],range:0,  sense:46,tall:1.2,shape:"beast",dmgEl:"pierce"},   // air-swimming eel, gaping toothed maw
+  armoredillo:{name:"Armoredillo",c:0xb09a6a,size:1.1,hp:150,dmg:18,spd:4.4,xp:520, gold:[10,26],range:0, sense:40,tall:0.8,shape:"beast",dmgEl:"pierce"},   // spike-shelled tank, devastating spin
+  burun:    {name:"Burun",       c:0x6a7a3a,size:1.0,hp:110,dmg:17,spd:5.4,xp:500, gold:[9,26], range:26, sense:44,tall:1.2,shape:"humanoid",dmgEl:"acid"},  // croaking frog-man of the marshes
+  mukkir:   {name:"Mukkir",      c:0x3a2a2a,size:1.3,hp:180,dmg:26,spd:7.0,xp:820, gold:[16,40],range:0,  sense:50,tall:1.4,shape:"humanoid",dmgEl:"slash"}, // feral rending horror of the Dark Isle
   rabbit:   {name:"Rabbit",      c:0xc8b89a,size:0.45,hp:10,dmg:0, spd:7.5,xp:20,  gold:[0,1],  range:0,  sense:26,tall:0.4,shape:"beast",ambient:true},
   cow:      {name:"Cow",         c:0xd8c8b0,size:1.3,hp:40, dmg:0, spd:3.0,xp:30,  gold:[0,2],  range:0,  sense:24,tall:1.1,shape:"beast",ambient:true},
 };
@@ -951,6 +958,8 @@ const AFFINITY={
   ursuin:{weak:"fire"}, moarsman:{weak:"shock",resist:"frost"}, phyntoswasp:{weak:"frost"},
   wisp:{resist:"shock",weak:"nether"}, golem:{resist:"fire",weak:"shock"},
   zombie:{weak:"fire",resist:"nether"}, mummy:{weak:"fire",resist:"nether"}, grievver:{resist:"acid",weak:"fire"},
+  carenzi:{weak:"fire"}, niffis:{resist:"frost",weak:"shock"}, remoran:{weak:"shock",resist:"frost"},
+  armoredillo:{resist:"pierce",weak:"acid"}, burun:{weak:"fire",resist:"acid"}, mukkir:{weak:"fire",resist:"nether"},
 };
 function elemMult(kind,el){const a=AFFINITY[kind];if(!a||!el)return 1;if(a.weak===el)return 1.5;if(a.resist===el)return 0.5;return 1;}
 
@@ -1162,8 +1171,28 @@ const MONSTER_MODELS={
   olthoiworker: [{f:"Spider.glb",tint:0xd8b86a}],                          // pale amber chitin drone
   olthoi:       [{f:"Spider.glb",tints:[0x7a2a1a,0x5a2016]}],              // dark red-brown insectoid
   olthoisoldier:[{f:"Spider.glb",tint:0x3a1610}],                          // near-black soldier caste
+  grievver:     [{f:"Spider.glb",tint:0x9a8ab0}],                          // stick-thin pale-violet stalker
   // KayKit Character Pack: Skeletons (CC0, Kay Lousberg) — rigged undead humanoids w/ baked idle/walk/attack clips
   skeleton:[{f:"Skeleton_Warrior.glb"},{f:"Skeleton_Minion.glb"},{f:"Skeleton_Mage.glb"},{f:"Skeleton_Rogue.glb"}],
+  // ── second research wave ──
+  rat:          [{f:"Rat.glb",tints:[0x6a5a4a,0x4a4a4a,0x8a7a6a]}],        // black/brown/grey breeds
+  carenzi:      [{f:"Rat.glb",tints:[0x8a8a92,0x7a7284]}],                 // sleek dusky burrower
+  mite:         [{f:"Goblin.glb",tints:[0x8a7a62,0x7a6a52]}],              // yapping rat-goblin
+  sclavus:      [{f:"Snake.glb",tints:[0x5a7a4a,0x4a7a6a,0x8a5a3a]}],      // green/teal/red-brown serpent-folk
+  remoran:      [{f:"Snake.glb",tints:[0x4a5668,0x8a7a3a]}],               // dark/gold air-eels
+  zefir:        [{f:"Bat.glb",tints:[0x9a7ab0,0x6a6a8a]}],                 // bat-winged imp
+  monouga:      [{f:"Giant.glb",tint:0x7a5a42}],                           // three-eyed hulk
+  ursuin:       [{f:"Bear.glb",tints:[0x6a4a2a,0x2a2420,0xe8e8f0]}],       // brown/black/polar bears
+  shreth:       [{f:"Boar.glb",tints:[0x8a7a5a,0x9a4a3a]}],                // spike-backed rammer (+Blood breed)
+  moarsman:     [{f:"Glub.glb",tints:[0x3a6a7a,0x4a7a5a]}],                // slimy finned deep-one
+  burun:        [{f:"Glub.glb",tint:0x6a7a3a}],                            // marsh frog-man
+  phyntoswasp:  [{f:"Wasp.glb",tints:[0xc9b03a,0xc05a2a,0xe8e8e8]}],       // gold/red/white breeds
+  golem:        [{f:"Golem.glb",tints:[0x8a8a7a,0x6a5a4a,0x9ab0c0]}],      // granite/mud/ice golems
+  zombie:       [{f:"Zombie.glb",tint:0x6a7a5a}],
+  mummy:        [{f:"Zombie.glb",tint:0xcabf9a}],                          // sand-wrapped dead
+  niffis:       [{f:"Slime.glb",tints:[0xd89ab0,0x8ab0d8,0xd8c86a]}],      // pink/blue/gold floaters
+  armoredillo:  [{f:"Crab.glb",tints:[0xb09a6a,0x8a7a5a]}],                // spiked shell tank
+  mukkir:       [{f:"Demon.glb",tint:0x3a2a2a}],                           // feral dark horror
 };
 let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h,tint,tints} loaded variants
 function loadGltfMonsters(){
@@ -2575,6 +2604,8 @@ function buildPerson(o){
     arms.push(arm);
   }
   const neck=new THREE.Mesh(new THREE.CylinderGeometry(fem?0.048:0.062,fem?0.06:0.078,0.1,8),skinM);neck.position.y=shY+0.16;g.add(neck);
+  for(const sx of[-1,1]){ const trap=new THREE.Mesh(new THREE.SphereGeometry(fem?0.07:0.09,10,8),cloth);   // trapezius slope — the head no longer floats on a peg
+    trap.scale.set(1.35,0.5,0.7); trap.rotation.z=sx*0.55; trap.position.set(sx*(fem?0.1:0.125),shY+0.1,0.01); g.add(trap); }
   const headY=shY+0.36;
   const head=buildFaceGroup(app);head.position.y=headY;head.scale.set(0.92,0.96,0.92);g.add(head);
   if(o.hood){
@@ -2606,23 +2637,40 @@ const _find=(cat,k)=>APPEARANCE[cat].find(o=>o.k===k)||APPEARANCE[cat][0];
 function addHair(g,style,col,fs){
   if(style==="bald") return;
   const tex=hairTex(col); const mat=new THREE.MeshStandardMaterial({color:0xffffff,map:tex,roughness:0.62,metalness:0.0});
-  // crown shell — caps the top of the skull, hairline sitting just above the brows (not over the face)
-  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.208,24,18,0,6.28,0,Math.PI*0.46),mat);
-  cap.scale.set(fs.sx*1.05,fs.sy*1.04,fs.sz*1.05);cap.position.set(0,0.05,0.012);cap.castShadow=true;g.add(cap);
-  // back-of-head fill so the scalp is covered round to the nape (back only, doesn't reach the face)
-  const backFill=new THREE.Mesh(new THREE.SphereGeometry(0.205,18,16,0,6.28,Math.PI*0.36,Math.PI*0.46),mat);backFill.scale.set(fs.sx*1.02,fs.sy,fs.sz*1.02);backFill.position.set(0,0.01,0.05);g.add(backFill);
-  // volume tufts across the crown so it isn't a smooth shell
-  for(let i=0;i<7;i++){ const a=(i/7)*6.283; const tuft=new THREE.Mesh(new THREE.SphereGeometry(0.05+Math.random()*0.02,8,7),mat);
-    tuft.scale.set(1,0.7,1);tuft.position.set(Math.cos(a)*0.13*fs.sx,0.15-Math.random()*0.03,Math.sin(a)*0.13*fs.sz+0.02);g.add(tuft); }
-  // fringe clumps along the front hairline (above the brows, not covering them)
-  for(const fx of[-0.1,-0.04,0.03,0.09]){ const fr=new THREE.Mesh(new THREE.SphereGeometry(0.035,8,6),mat);fr.scale.set(0.95,0.7,0.7);fr.position.set(fx*fs.sx,0.122,-0.15*fs.sz);g.add(fr); }
-  if(style==="long"){const back=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.14,0.5,14),mat);back.position.set(0,-0.18,0.15);back.scale.z=0.62;back.castShadow=true;g.add(back);
-    for(const sx of[-1,1]){const sd=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.04,0.34,8),mat);sd.position.set(sx*0.16,-0.12,-0.02);g.add(sd);}}
-  else if(style==="ponytail"){const band=new THREE.Mesh(new THREE.SphereGeometry(0.05,10,8),mat);band.position.set(0,0.02,0.2);g.add(band);
-    const t=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.025,0.46,10),mat);t.position.set(0,-0.08,0.24);t.rotation.x=0.55;t.castShadow=true;g.add(t);}
+  const R=(a,b)=>a+Math.random()*(b-a);
+  // scalp base — a close cap the locks grow out of (hairline above the brows)
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.205,24,18,0,6.28,0,Math.PI*0.5),mat);
+  cap.scale.set(fs.sx*1.05,fs.sy*1.05,fs.sz*1.05);cap.position.set(0,0.045,0.012);cap.castShadow=true;g.add(cap);
+  // layered LOCKS ringing the crown — clumps of hair, not a smooth helmet shell
+  for(let ring=0;ring<3;ring++){
+    const n=8+ring*3, ry=0.145-ring*0.07, rr=0.145+ring*0.035;
+    for(let i=0;i<n;i++){ const a=(i/n)*6.283+(ring%2?0.26:0);
+      if(ring>0 && Math.sin(a)<-0.4) continue;   // never hang locks over the face (front = -z = sin<0)
+      const cl=new THREE.Mesh(new THREE.SphereGeometry(R(0.05,0.068),8,7),mat);
+      cl.scale.set(0.75,R(1.2,1.5),0.75); cl.rotation.set(R(-0.2,0.2),0,R(-0.3,0.3));
+      cl.position.set(Math.cos(a)*rr*fs.sx, ry+R(-0.015,0.015), Math.sin(a)*rr*fs.sz+0.015);
+      cl.castShadow=false; g.add(cl); } }
+  // side locks over the ears + a nape fall at the back
+  for(const sx of[-1,1]){ const sl=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,7),mat);
+    sl.scale.set(0.5,1.5,0.78); sl.position.set(sx*0.183*fs.sx,0.0,0.025); g.add(sl); }
+  { const nape=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),mat);
+    nape.scale.set(1.4,1.1,0.6); nape.position.set(0,-0.03,0.16*fs.sz); g.add(nape); }
+  // fringe strands along the hairline
+  for(const f of[-0.105,-0.05,0.0,0.05,0.1]){ const fr=new THREE.Mesh(new THREE.SphereGeometry(0.03,8,6),mat);
+    fr.scale.set(0.85,R(1.0,1.3),0.55); fr.rotation.z=R(-0.25,0.25); fr.position.set(f*fs.sx,0.125,-0.152*fs.sz); fr.castShadow=false; g.add(fr); }
+  if(style==="long"){   // a cascading mane: staggered clumps falling to the shoulder blades + side falls
+    for(let k=0;k<3;k++) for(const lx of[-0.13,-0.045,0.045,0.13]){
+      const cl=new THREE.Mesh(new THREE.SphereGeometry(R(0.05,0.065),8,7),mat);
+      cl.scale.set(0.8,1.7,0.55); cl.position.set(lx*fs.sx+R(-0.01,0.01),-0.06-k*0.13,0.14*fs.sz+k*0.012); cl.castShadow=true; g.add(cl); }
+    for(const sx of[-1,1]){ const fall=new THREE.Mesh(new THREE.SphereGeometry(0.055,8,7),mat);
+      fall.scale.set(0.6,2.6,0.6); fall.position.set(sx*0.165*fs.sx,-0.17,0.03); fall.castShadow=true; g.add(fall); } }
+  else if(style==="ponytail"){const band=new THREE.Mesh(new THREE.SphereGeometry(0.05,10,8),mat);band.position.set(0,0.04,0.19);g.add(band);
+    for(let k=0;k<4;k++){ const seg=new THREE.Mesh(new THREE.SphereGeometry(0.052-k*0.008,8,7),mat);
+      seg.scale.set(0.9,1.6,0.9); seg.position.set(R(-0.008,0.008),-0.02-k*0.11,0.22+k*0.035); seg.castShadow=true; g.add(seg); } }
   else if(style==="topknot"){const b=new THREE.Mesh(new THREE.SphereGeometry(0.072,14,12),mat);b.position.set(0,0.26,0.05);b.castShadow=true;g.add(b);}
   else if(style==="mohawk"){for(let i=0;i<5;i++){const cr=new THREE.Mesh(new THREE.ConeGeometry(0.04,0.16-i*0.012,6),mat);cr.position.set(0,0.24,0.08-i*0.04);g.add(cr);}}
-  else if(style==="braids"){for(const sx of[-1,1]){for(let k=0;k<3;k++){const br=new THREE.Mesh(new THREE.SphereGeometry(0.03,8,6),mat);br.position.set(sx*0.18,-0.04-k*0.1,0.05);g.add(br);}}}
+  else if(style==="braids"){for(const sx of[-1,1]){for(let k=0;k<4;k++){const br=new THREE.Mesh(new THREE.SphereGeometry(0.034-k*0.003,8,6),mat);
+    br.scale.set(0.9,1.25,0.9); br.position.set(sx*(0.175-k*0.012),-0.02-k*0.1,0.04+k*0.012); br.castShadow=true; g.add(br);}}}
 }
 function addBeard(g,style,col,fs){
   if(!style||style==="none") return; const mat=new THREE.MeshStandardMaterial({color:col}), zf=-0.19*fs.sz;
@@ -2733,6 +2781,9 @@ function buildFaceGroup(app){
   ll.scale.set(1.1,fem?0.5:0.42,0.5);ll.position.set(0,-0.121,-z*0.95);g.add(ll);
   const mline=new THREE.Mesh(new THREE.BoxGeometry(0.062,0.0028,0.012),new THREE.MeshBasicMaterial({color:_shade(skinCol,-0.3)}));
   mline.position.set(0,-0.1105,-z*0.985);g.add(mline);   // the shadow where the lips meet
+  if(fem){ for(const sx of[-1,1]){ const bl=new THREE.Mesh(new THREE.CircleGeometry(0.026,10),
+      new THREE.MeshBasicMaterial({color:0xe08a7a,transparent:true,opacity:0.16}));
+    bl.position.set(sx*0.094,-0.032,-z*0.94); bl.rotation.y=sx*0.55; g.add(bl); } }   // soft cheek blush
   addHair(g,app.hair,hairCol,fs); addBeard(g,app.beard,hairCol,fs); addTattoo(g,app.tattoo,fs);
   return g;
 }
@@ -3148,7 +3199,8 @@ const CREATURE_BUILDERS={drudge:cDrudge,banderling:cBanderling,mosswart:cMosswar
   olthoiworker:cOlthoiWorker,olthoisoldier:cOlthoiSoldier,
   rat:cRat,shreth:cShreth,mite:cMite,sclavus:cSclavus,zefir:cZefir,monouga:cMonouga,ursuin:cUrsuin,
   moarsman:cMoarsman,phyntoswasp:cPhyntosWasp,wisp:cWisp,golem:cGolem,zombie:cZombie,mummy:cMummy,
-  grievver:cGrievver,rabbit:cRabbit,cow:cCow};
+  grievver:cGrievver,rabbit:cRabbit,cow:cCow,
+  carenzi:cRat,niffis:cWisp,remoran:cReedshark,armoredillo:cShreth,burun:cMosswart,mukkir:cShadow};   // wave-2 kinds: procedural stand-ins if a model fails to load
 
 function buildCreature(kind){
   const b=BESTIARY[kind],g=new THREE.Group(),s=b.size;
@@ -4682,12 +4734,12 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
   // ambient fauna in settled/grassland areas — a rabbit or cow now and then
   if(reg>=0 && !coldZone(x,z) && d>60 && Math.random()<0.10) return Math.random()<0.7?"rabbit":"cow";
   if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin"]);   // frozen north/south — snowy spawns
-  if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow"]); // Direlands — deadliest frontier
-  if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge"]);  // the Blackmire swamp
-  if(d<200) return pick(["drudge","mosswart","rat","rat","mite"]);                             // town outskirts — weakest
-  if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin"]); // Aluvia — temperate forest
-  if(reg===1) return pick(["shreth","drudge","phyntoswasp","banderling","mosswart","sclavus","wisp","mite","reedshark"]);   // Sho — wooded hills
-  return pick(["skeleton","drudge","rat","shreth","monouga","mummy","zombie","tumerok","gromnie"]);   // Gharu'ndim — desert
+  if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow","mukkir","remoran"]); // Direlands — deadliest frontier
+  if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge","burun","remoran"]);  // the Blackmire swamp
+  if(d<200) return pick(["drudge","mosswart","rat","rat","mite","carenzi"]);                   // town outskirts — weakest
+  if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin","carenzi"]); // Aluvia — temperate forest
+  if(reg===1) return pick(["shreth","drudge","phyntoswasp","banderling","mosswart","sclavus","wisp","mite","reedshark","burun"]);   // Sho — wooded hills
+  return pick(["skeleton","drudge","rat","shreth","monouga","mummy","zombie","tumerok","gromnie","armoredillo","niffis"]);   // Gharu'ndim — desert
 }
 function spawnSomewhere(){
   if(inDungeon||inNetwork||isOnline) return; // online overworld monsters are server-authoritative
@@ -4734,7 +4786,15 @@ function spawnMonster(kind,x,z,elite){
     isElite:!!elite,baseScale:elite?1.4:1,burnT:0,burnDps:0,burnAcc:0,gltf:!!gm});
   const m=monsters[monsters.length-1];
   if(gm&&gm.anims.length){ m.gltfMixer=new THREE.AnimationMixer(mesh);
-    const clip=gm.anims.find(c=>/walk|run|survey|idle/i.test(c.name))||gm.anims[0]; m.gltfMixer.clipAction(clip).play(); }
+    // real animation states: idle / walk (crossfaded by movement) + a one-shot attack clip on strikes
+    const find=re=>gm.anims.find(c=>re.test(c.name));
+    const idleC=find(/idle|survey/i)||gm.anims[0];
+    const walkC=find(/walk(?!.*back)|run|gallop|fast_fly|flying|crawl/i)||idleC;
+    const atkC=find(/attack|bite|punch|headbutt|sting|spit|chop|slice|stab/i);
+    m.actIdle=m.gltfMixer.clipAction(idleC); m.actIdle.play();
+    if(walkC!==idleC){ m.actWalk=m.gltfMixer.clipAction(walkC); m.actWalk.play(); m.actWalk.weight=0; }
+    if(atkC){ m.actAtk=m.gltfMixer.clipAction(atkC); m.actAtk.setLoop(THREE.LoopOnce,1); }
+  }
   return m;
 }
 
@@ -4892,6 +4952,13 @@ const TROPHY_BY_KIND={
   shadow:{name:"Shadow Essence",v:20}, virindi:{name:"Virindi Mask Shard",v:22}, lugian:{name:"Lugian Knucklebone",v:24},
   tumerok:{name:"Tumerok Feather",v:17}, olthoi:{name:"Olthoi Claw",v:26}, olthoiworker:{name:"Olthoi Mandible",v:14},
   olthoisoldier:{name:"Olthoi Carapace",v:22},
+  rat:{name:"Rat Tail",v:4}, mite:{name:"Mite Whisker",v:6}, shreth:{name:"Shreth Spine",v:10},
+  sclavus:{name:"Sclavus Scale",v:16}, zefir:{name:"Zefir Wing",v:12}, monouga:{name:"Monouga Eye",v:18},
+  ursuin:{name:"Ursuin Pelt",v:16}, moarsman:{name:"Moarsman Fin",v:15}, phyntoswasp:{name:"Phyntos Stinger",v:12},
+  wisp:{name:"Wisp Mote",v:18}, golem:{name:"Golem Heartstone",v:24}, zombie:{name:"Rotting Finger",v:8},
+  mummy:{name:"Burial Wrapping",v:12}, grievver:{name:"Grievver Pincer",v:16},
+  carenzi:{name:"Carenzi Fang",v:8}, niffis:{name:"Niffis Shell Chip",v:14}, remoran:{name:"Remoran Whisker",v:15},
+  armoredillo:{name:"Armoredillo Blade",v:14}, burun:{name:"Burun Croaker Gland",v:13}, mukkir:{name:"Mukkir Talon",v:20},
 };
 function rollTrophy(kind){ const t=TROPHY_BY_KIND[kind]; return t?{name:t.name,stat:"trophy",v:t.v,kind}:null; }
 // trade notes (AC): portable pyreal certificates — redeem for their face value
@@ -8613,7 +8680,10 @@ function update(dt){
     const dx=player.x-m.x,dz=player.z-m.z,d=Math.hypot(dx,dz);
     // freeze AI for far, non-chasing overworld creatures (streamMonsters/cull handles their mesh)
     if(!inDungeon && d>SIM_RADIUS && m.state!=="chase") continue;
-    if(m.gltfMixer) m.gltfMixer.update(dt);   // animate rigged creature models that are close enough to simulate
+    if(m.gltfMixer){ m.gltfMixer.update(dt);   // animate rigged creature models that are close enough to simulate
+      if(m.actWalk){ const moving=(m.state==="chase"||m.state==="wander"||m.state==="flee");   // blend idle ↔ walk with movement
+        const tw=moving?1:0; m.actWalk.weight+=(tw-m.actWalk.weight)*Math.min(1,dt*6);
+        m.actIdle.weight=1-m.actWalk.weight; } }
     if(b.ambient){   // rabbits / cattle: never fight — bolt away when you get close, otherwise graze & wander
       m.t+=dt;
       if(d<20){ m.ang=Math.atan2(m.x-player.x,m.z-player.z); m.x+=Math.sin(m.ang)*b.spd*slowF*dt; m.z+=Math.cos(m.ang)*b.spd*slowF*dt; }
@@ -8656,7 +8726,8 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else m.charging=0.45;
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");}
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+        if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
       if(Math.hypot(m.x-m.wx,m.z-m.wz)>20) m.ang=Math.atan2(m.wx-m.x,m.wz-m.z);
@@ -12376,13 +12447,23 @@ function gatherNode(n){
 }
 function addEntrance(def){
   const g=new THREE.Group(),col=def.theme.light;
-  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.8,0.35,8,18,Math.PI),
-    new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.95,metalness:0.3,roughness:0.4}));
+  const stoneM=texMat(stoneFloorTex,0x6a655c);
+  // dolmen gateway: two weathered standing stones + a capstone lintel over the glowing mouth
+  for(const sx of[-1,1]){ const pil=new THREE.Mesh(new THREE.BoxGeometry(0.85,3.6,0.9),stoneM);
+    pil.position.set(sx*1.95,1.8,0); pil.rotation.z=sx*0.06; pil.castShadow=true; pil.receiveShadow=true; g.add(pil); }
+  const cap=new THREE.Mesh(new THREE.BoxGeometry(5.2,0.8,1.2),stoneM); cap.position.y=3.9; cap.rotation.z=0.03; cap.castShadow=true; g.add(cap);
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.65,0.22,8,18,Math.PI),
+    new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:1.1,metalness:0.3,roughness:0.4}));
   arch.position.y=0.2;arch.castShadow=true;g.add(arch);
-  const mouth=new THREE.Mesh(new THREE.CircleGeometry(1.7,20),new THREE.MeshBasicMaterial({color:0x05030a}));
-  mouth.position.set(0,1.8,0.06);g.add(mouth);
+  const mouth=new THREE.Mesh(new THREE.CircleGeometry(1.55,20),new THREE.MeshBasicMaterial({color:0x05030a}));
+  mouth.position.set(0,1.7,0.06);g.add(mouth);
+  const mist=new THREE.Mesh(new THREE.CircleGeometry(1.4,18),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.16,fog:false}));
+  mist.position.set(0,1.7,0.12);g.add(mist);                                   // faint themed glow breathing out of the dark
+  const step=new THREE.Mesh(new THREE.CylinderGeometry(2.6,3.0,0.3,14),stoneM); step.position.y=0.15; step.receiveShadow=true; g.add(step);
   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(2.6,0),new THREE.MeshStandardMaterial({color:0x4a4640,flatShading:true}));
   rock.position.set(0,1,-1.6);rock.castShadow=true;g.add(rock);
+  for(const [rx,rz,rs] of [[-2.9,1.1,0.7],[2.7,1.4,0.55],[1.9,-1.8,0.8]]){    // tumbled stones half-buried around the mouth
+    const rb=new THREE.Mesh(new THREE.DodecahedronGeometry(rs,0),stoneM); rb.position.set(rx,rs*0.4,rz); rb.rotation.set(rx,rz,0); rb.castShadow=true; g.add(rb); }
   // (no per-entrance PointLight: the emissive arch carries the glow; 70+ lights would blow the GPU shader uniform cap)
   const lbl=labelSprite(def.name+" — E to delve","dungeons");lbl.scale.set(8,1.8,1);lbl.position.y=4.2;g.add(lbl);
   g.position.set(def.x,0,def.z);scene.add(g);
@@ -12483,9 +12564,9 @@ function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
   if(!dungeonWalkable(ax+(bx-ax)*t,az+(bz-az)*t)) return false;} return true; }
 function buildDungeon(def){
   dungeonObjs=[];dungeonMobs=0;dungeonRects=[];const th=def.theme;
-  const L=genDungeonLayout(def),wallMat=new THREE.MeshStandardMaterial({color:th.wall,flatShading:true});
-  const floorMat=new THREE.MeshStandardMaterial({color:th.floor}),WH=7,Tw=1.0,wy=WH/2,gap=3.2;
-  const ceilMat=new THREE.MeshStandardMaterial({color:new THREE.Color(th.wall).multiplyScalar(0.42).getHex()}); // low, dark vaulted ceiling
+  const L=genDungeonLayout(def),wallMat=texMat(stoneFloorTex,th.wall);   // real masonry texture, tinted to the theme
+  const floorMat=texMat(stoneFloorTex,th.floor),WH=7,Tw=1.0,wy=WH/2,gap=3.2;
+  const ceilMat=texMat(stoneFloorTex,new THREE.Color(th.wall).multiplyScalar(0.42).getHex()); // low, dark vaulted ceiling
   // walkable cells (collision) — rooms + corridors (corridor rects overlap into rooms so the union stays connected)
   for(const r of L.rooms) dungeonRects.push(r.round?{round:true,cx:r.cx,cz:r.cz,rad:r.rad}:{x0:r.cx-r.hx,z0:r.cz-r.hz,x1:r.cx+r.hx,z1:r.cz+r.hz});
   for(const c of L.corridors) dungeonRects.push({x0:c.x0,z0:c.z0,x1:c.x1,z1:c.z1});
