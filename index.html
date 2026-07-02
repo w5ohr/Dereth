@@ -2573,6 +2573,7 @@ function buildAvatarJointed(){
   aBow.rotation.y=Math.PI/2;aBow.visible=false;hand.add(aBow);
   const aWand=M(new THREE.CylinderGeometry(0.018,0.024,0.42,6),texMat(woodTex,0x4a3220),0,-0.16,-0.1);
   aWand.rotation.x=-Math.PI/2.2;aWand.visible=false;hand.add(aWand);
+  const aHeld=new THREE.Group();aHeld.visible=false;hand.add(aHeld);   // the actual equipped weapon/focus model (buildItemModel), refreshed on equip
   // ---- off-hand shield, strapped to the left forearm (shown when a shield is equipped; raised when blocking) ----
   const aShield=new THREE.Group();
   const shPlate=new THREE.MeshStandardMaterial({color:0x9aa0a8}), shBoss=new THREE.MeshStandardMaterial({color:0x6a727e});
@@ -2588,7 +2589,7 @@ function buildAvatarJointed(){
     shR:arms[0].sh,shL:arms[1].sh,elR:arms[0].el,elL:arms[1].el,wrR:arms[0].wr,wrL:arms[1].wr,
     hipR:legs[0].hip,hipL:legs[1].hip,knR:legs[0].knee,knL:legs[1].knee,anR:legs[0].ankle,anL:legs[1].ankle,
     rArm:arms[0].sh,lArm:arms[1].sh,rLeg:legs[0].hip,lLeg:legs[1].hip,rFoot:feet[0],lFoot:feet[1],
-    aSword,aBow,aWand,aShield,cape,quiver};
+    aSword,aBow,aWand,aHeld,cape,quiver};
   g.visible=false;
   return g;
 }
@@ -7945,12 +7946,28 @@ const MAT_TINT={Iron:0x9aa0a8,Steel:0xc0c8d2,Bronze:0xb5793a,Brass:0xc9a43a,Copp
   Oak:0x8a6a3a,Mahogany:0x6a3a2a,Teak:0x9a7a4a,Ebony:0x2a2620,Pine:0xb89a6a,Diamond:0xdff0ff,Ruby:0xff5a6a,Sapphire:0x5a8aff,Emerald:0x4ad07a,Jet:0x2a2630,Onyx:0x3a3640};
 const BRAND_GLOW={fire:0xff6a1a,frost:0x6ad0ff,shock:0xfff060,nether:0x9b30ff,acid:0x8ad04a};
 function styleWeaponModel(){
+  refreshAvatarWeapon();   // rebuild the 3rd-person held model to match the equipped weapon/focus
   if(typeof weaponHand==="undefined"||!weaponHand||!weaponHand.userData.blade) return;
   const w=player.weapon, blade=weaponHand.userData.blade;
   blade.material.color.setHex((w&&MAT_TINT[w.mat])||0xc0c8d2);
   const el=(w&&w.affix&&w.affix.k==="brand")?w.affix.element:null;
   blade.material.emissive.setHex((el&&BRAND_GLOW[el])||0x000000);
   shapeWeaponModel();
+}
+// Build the equipped weapon/focus as a real model (buildItemModel) in the avatar's hand, so a wand looks
+// like a wand, an orb like an orb, a scimitar curved — not a generic box blade. Melee + foci use aHeld;
+// bows keep the dedicated aBow. Called on every weapon swap + on load.
+function refreshAvatarWeapon(){
+  if(typeof playerAvatar==="undefined"||!playerAvatar) return;
+  const u=playerAvatar.userData; if(!u||!u.aHeld) return;
+  while(u.aHeld.children.length){ const c=u.aHeld.children[0]; u.aHeld.remove(c); if(c.traverse)c.traverse(o=>{if(o.isMesh){o.geometry&&o.geometry.dispose&&o.geometry.dispose();}}); }
+  const w=player.weapon; const wp=w&&WEAPON_TYPES[w.wt];
+  u.aHeld.userData.hasModel=false;
+  if(!w||!wp||wp.mode==="missile") return;   // bows/crossbows/atlatls use the dedicated aBow
+  const m=buildItemModel(w,{hand:true});
+  m.rotation.set(-Math.PI/2,0,0);            // model's +Y (blade/haft) → forward (-z), like the old aSword
+  m.position.set(0,-0.02,0.02);
+  u.aHeld.add(m); u.aHeld.userData.hasModel=true;
 }
 // the held melee model takes the silhouette of the equipped weapon type (length/width + head)
 const WEAPON_SHAPE={
@@ -9529,7 +9546,10 @@ function animateAvatar(dt){
   u.neck.rotation.z=(1-w)*Math.sin(idleT*0.8+0.6)*0.025;
   // ---- arms: action poses (attack/cast/bow) override the walk swing ----
   const twoH=!!(player.weapon&&player.weapon.wt==="twohand")&&weaponMode==="sword";
-  u.aSword.visible=weaponMode==="sword"; u.aBow.visible=weaponMode==="bow"; u.aWand.visible=false;
+  const hasHeld=!!(u.aHeld&&u.aHeld.userData.hasModel);      // a real weapon/focus model is loaded
+  u.aHeld&&(u.aHeld.visible=hasHeld&&weaponMode==="sword");  // melee + foci carry their true model
+  u.aSword.visible=weaponMode==="sword"&&!hasHeld;           // fall back to the box blade only if no model
+  u.aBow.visible=weaponMode==="bow"; u.aWand.visible=false;
   u.aSword.scale.z=twoH?1.5:1;                                // greatswords carry a longer blade
   // left arm defaults to the opposite-leg walk swing; attacks may grip it onto the weapon
   let lX=w*(-sQ*0.4*amp)+(1-w)*(0.04+breath*0.02), lZ=0.04, lE=-(0.2+w*Math.max(0,-sQ)*0.5*amp)-(1-w)*0.18;
