@@ -80,6 +80,97 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   tone-mapper was crushing to black. Verified midday grass relief, scrolling water normals, readable roofs.
   ◇ Further (optional): real fresnel water shader, screen-space reflections, MeshStandard PBR everywhere.
 
+## MILESTONE P — Decal plugin homages  ✅ (jsc + preview verified, 0 console errors)
+- ✅ **P1. In-game "Decal plugins"** (Settings → Decal plugins; each toggleable + persisted; interfaces
+  modeled on the real plugin screenshots from the AC wiki): **GoArrow** (chrome destination arrow —
+  name over, distance + authentic AC lat/long coords under; auto-tracks the live saga objective → your
+  corpse → bound Lifestone, or click the name for an atlas of every town; verified Holtburg = 42.3N,
+  33.3E) · **Alinco Buffs** (parchment buff HUD listing every active enchantment with its countdown,
+  red under 15 s) · **Virindi Tank v0.3** (parchment window, green LED toggles: Enable Buffing —
+  rebuffs enchantments expiring <12 s when idle at 20 mana each; Enable Looting — picks up item drops
+  within 4.5 u, online-aware; live State line) · **Mag-Tools Combat Tracker** (session time, XP/hour via
+  a gainXP tap, kills/hour, ETA to next level). Defaults: GoArrow + Alinco on, automation opt-in.
+  (Flynn's Minimap dungeon-walls plugin was already native — `drawDungeonMinimap`.)
+
+## MILESTONE U — Selection, appraisal & UI freedom  ✅ (jsc + preview e2e, 0 console errors)
+- ✅ **U1. AC-style targeting**: **left-click selects** whatever is under the cursor (crosshair ray when
+  mouse-look is locked, click-point ray when not) — creatures, NPCs, vendors, dropped items; **, / .**
+  cycle nearby creatures (defaults per request; elixirs moved to I / L). A target frame shows the name +
+  **health/stamina/mana bars in the character's own gradient colours**, and the same stamina/mana bars
+  join the creature's overhead billboarded health bar while targeted (monsters gained nominal st/mn
+  pools; casters carry real mana).
+- ✅ **U2. Right-click appraisal**: a quick right-tap (hold still raises the shield) opens a parchment
+  window with a **live-rendered portrait** (offscreen render-to-target of the actual mesh), the tri-bar,
+  and what you know: bestiary-known creatures show threat tier / damage / speed / worth / elemental
+  affinity; unknown ones say so; NPCs/vendors/items get role, purse, or item facts.
+- ✅ **U3. Every interface toggleable by keystroke** (`HUD_TOGGLES` → auto-generated "HUD Toggles"
+  group in Map Keys, all rebindable): vitals shift+F1 · compass F2 · minimap F3 · attributes F4 · quest
+  F5 · quickbar F6 · potions F7 · party F8 · GoArrow F9 · Alinco F10 · VTank F11 · Mag-Tools F12 ·
+  target frame shift+`. Hidden state persists (settings.uiHidden).
+- ✅ **U4. Every interface movable**: all panels (incl. the plugin HUDs, target frame, appraisal) join
+  the N-mode drag registry, and parchment windows drag by their title bar at ANY time.
+- ✅ **U5. Free-look**: the mouse looks around even without pointer lock whenever it rides the world
+  canvas (over HUD panels/menus the cursor behaves normally, so buttons stay clickable).
+- ✅ **U7. Uniform drag + resizable chat** (jsc + preview e2e, 0 console errors): every game panel now
+  drags exactly like the plugin windows — a hover **⠿ grip** on each panel starts the same `_uiDrag`
+  path anytime, no N-mode needed (`ensureGrips()` re-runs at 1 Hz because the quickbar/party panels
+  rebuild their innerHTML and shed the grip); the chat window joined the drag registry. The **chat box
+  resizes** by a ◥ corner grip (bottom-anchored → grows up/right, 220–720 × 90–560), a taller box shows
+  more scrollable history pinned to the newest line, and the size persists (settings.logSize).
+- ✅ **U9. Grips-for-real fix + per-panel ✕ + Interfaces settings** (jsc + preview, 0 console errors):
+  the U7 hover-revealed grips could NEVER appear for real users — the HUD layer is
+  `pointer-events:none`, so parent `:hover` never fires (synthetic-event tests masked it). Grips are
+  now **always visible** (faint, brighten under their own cursor — the grip itself takes pointer
+  events), every panel gained an **✕ close** chip (reopen via its keybind or the new **Settings →
+  Interfaces** row, 14 toggles), and the unlabeled bottom-right mystery box now introduces itself:
+  a "POTION BELT" caption + tooltip (R/G/F/H potions, 9/0 elixirs).
+- ✅ **U8. Combat + Craft tabs** (jsc + preview e2e, 0 console errors): the chat gained a **Combat**
+  tab — real per-hit logging (`clog()`): damage dealt with crit call-outs, damage taken (post-armour,
+  in red), and kill lines with XP; per-hit spam is flagged so it lives ONLY on the Combat tab and never
+  floods All — and a **Craft** tab collecting cooking/alchemy/tinkering/salvage/fletching/dye/imbue/
+  scribing lines by classification. Seven tabs total.
+- ✅ **U6. Tabbed chat** (jsc + preview e2e, 0 console errors): the chat window gained tabs —
+  **All · Global** (say/tells/emotes) **· Team** (allegiance, `/a`, server `achat`) **· Group** (party,
+  `/p`, server `pchat`) **· Quest** (saga/bounty/crier lines, keyword-classified). Plain text typed into
+  the box routes to the ACTIVE tab's channel; inactive tabs show a gold unread dot; the active tab
+  persists (settings.chatTab); per-channel colour/mute settings still apply.
+
+## MILESTONE R — THE REAL DERETH  ✅ (user-supplied AC client data; jsc + preview verified, 0 console errors)
+Decision (user, 2026-07-02): the original client's core files drive the world. This intentionally
+amends the old "all procedural" asset rule for terrain DATA (geometry stays ours; Turbine dats stay
+gitignored in acdata/, only the derived data texture ships).
+- ✅ **R1. DAT extraction** — `tools/ac_dat_export.py`: reads the Turbine DAT BTree (per ACE docs),
+  pulls **all 65,025 landblocks** from client_cell_1.dat (9×9 height indices + terrain/road words) and
+  the 256-float LandHeightTable from the Region file in client_portal.dat → `assets/acmap.png`
+  (2041×2041 RGBA: R=height index, G=terrain type, B=road bits) + hillshade/type verification renders
+  that match the official map.png exactly.
+- ✅ **R2. The game runs on the real world** — `ACMAP` module decodes the data texture before
+  `initThree` (boot awaits it; procedural fallback if missing): `terrainBase` bilinear-samples true
+  heights (VSCALE 1/3 keeps slopes honest vs the 24 m→8 u compression; two separable blur passes
+  low-pass the 8 u detail to the 40 u mesh so nothing aliases), water terrain types cut below the
+  plane (**real rivers & seas**), ground vertex colours come straight from the client's terrain-type
+  bytes (32-type palette: lush Osteth, SandYellow desert, ObsidianPlain, snow…), the **authentic AC
+  road web** paints the ground AND grants road speed via `onRoad`, `FLATTEN` re-seats every town and
+  **Castle Val Halla's plateau on the real ground (kept intact per the user)**, and the world-map
+  panel paints the true continent under its markers. Towns already sat at wiki coords, so Holtburg
+  landed on LushGrass at 26 u and Yaraq on SandYellow without moving a thing. 44 fps at Yaraq.
+- 🐛 Fixed en route: the U1 targeting commit's `setBar` helper shadowed the HUD's original `setBar`
+  → `updateHUD` threw on the first vital change and killed the render loop (screenshots froze at the
+  last composite). Renamed to `tfSetBar`.
+- ✅ **R3. Retail vendors** (ACE-World community DB v0.9.294, 19 MB release zip → 155 MB SQL, parsed by
+  `tools/ace_world_export.py`): **699 placed vendors with their real shop stock** (via
+  `weenie_properties_create_list` + `landblock_instance` world placements → lat/long), 3,827 catalog
+  items, 7,013 leveled creatures. `tools/ace_trim_towns.py` matches them to our towns →
+  `assets/acvendors.json` (529 vendors across 53 towns, 256 KB). In-game `ACV` module (loads with
+  ACMAP before boot; generic rotation if absent): every town slot seats its **authentic retail
+  merchant by name**, classified to our vendor types, selling their **real wares** translated into our
+  item system by name-keyword (weapons w/ type, armour w/ slot+tier, ammo, potions/kits, spell
+  components, food, trade notes, packs, picks/keys; untranslatables sell as curios) at AC-value-scaled
+  prices. Trophy Collector + Furniture slots keep their gameplay roles. Verified: Holtburg seats its
+  ten retail merchants (Archmage Cindrue ×60 wares, Sedor Wystan the Blacksmith, Sontella Dagroff the
+  Bowyer, Thelnoth Cort the Healer, Barkeeper Wilomine…) and the Blacksmith's shop sells his actual
+  retail armour list. 0 console errors.
+
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
   avatar sits to one side and the crosshair stays clear (verified: avatar projects off-center, on-screen).

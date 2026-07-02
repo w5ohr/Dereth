@@ -200,8 +200,12 @@
     <div id="housingBody" style="font-size:12px;line-height:1.5"></div>
     <div style="color:var(--dim);font-size:11px;margin-top:10px">Press Y or Esc to close · items in your house storage persist forever, across sessions and death</div>
   </div>
-  <div id="log"><div class="panel2" id="logInner"></div>
-    <div id="chatBar" title="Click to chat — plain text speaks aloud; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
+  <div id="log">
+    <div id="chatTabs">
+      <button class="ctab on" data-tab="all">All</button><button class="ctab" data-tab="global">Global</button><button class="ctab" data-tab="team">Team</button><button class="ctab" data-tab="group">Group</button><button class="ctab" data-tab="quest">Quest</button><button class="ctab" data-tab="combat">Combat</button><button class="ctab" data-tab="craft">Craft</button>
+    </div>
+    <div class="panel2" id="logInner"></div>
+    <div id="chatBar" title="Click to chat — plain text speaks to the active tab; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
   </div>
   <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
     style="position:absolute;left:12px;bottom:56px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
@@ -224,6 +228,56 @@
   <div style="width:100%;height:8px;background:rgba(0,0,0,.55);border:1px solid #4a80a8;border-radius:5px;overflow:hidden"><i id="breathFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#2a6a9a,#7fd0ff)"></i></div>
 </div>
 <div id="atkHeight" style="position:fixed;left:50%;bottom:132px;transform:translateX(-50%);font-size:11px;color:#ffd86b;text-shadow:0 1px 2px #000;z-index:40;display:none;pointer-events:none">Attack: Middle</div>
+<!-- ═══ Decal plugin HUDs (toggled in Settings → Decal plugins) — interfaces styled after the real
+     AC plugin screenshots: GoArrow's arrow+coords HUD, VTank's parchment window with green LED
+     toggles, Alinco's buff list, Mag-Tools' session tracker tab. ═══ -->
+<div id="goarrow" style="display:none;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:41;text-align:center;pointer-events:auto;user-select:none">
+  <div id="gaDest" style="color:#fff;font-weight:bold;font-size:13px;text-shadow:0 1px 3px #000;cursor:pointer" title="Click to change destination">—</div>
+  <svg id="gaArrow" width="46" height="46" viewBox="-23 -23 46 46" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))">
+    <polygon points="0,-19 11,8 0,2 -11,8" fill="url(#gaChrome)" stroke="#2a2e36" stroke-width="1.4"/>
+    <defs><linearGradient id="gaChrome" x1="0" y1="-1" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f6fa"/><stop offset="0.45" stop-color="#9fb0c0"/><stop offset="0.55" stop-color="#5a6a7a"/><stop offset="1" stop-color="#cdd8e2"/>
+    </linearGradient></defs>
+  </svg>
+  <div id="gaInfo" style="color:#e8e4da;font-size:12px;text-shadow:0 1px 3px #000">—</div>
+  <select id="gaSel" style="display:none;margin-top:3px;background:#1d1a14;color:#e8e0c8;border:1px solid #6a5a3a;border-radius:4px;font-size:11px;max-width:180px"></select>
+</div>
+<div id="alinco" style="display:none;position:fixed;left:14px;top:196px;z-index:40;min-width:150px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Alinco Buffs</div>
+  <div id="alincoRows" style="padding:4px 8px 5px"></div>
+</div>
+<div id="vtank" style="display:none;position:fixed;right:14px;bottom:150px;z-index:40;width:196px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Virindi Tank <span style="font-weight:normal;opacity:.75">v0.3</span></div>
+  <div style="padding:5px 8px 6px">
+    <div class="vtrow" data-vt="buff" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Buffing</div>
+    <div class="vtrow" data-vt="loot" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Looting</div>
+    <div style="border-top:1px solid #a08a5a;margin-top:4px;padding-top:3px;color:#5a4a2e">State: <b id="vtState">Idle</b></div>
+  </div>
+</div>
+<div id="magtools" style="display:none;position:fixed;left:14px;top:196px;z-index:40;min-width:168px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Mag-Tools <span style="font-weight:normal;opacity:.75">· Combat Tracker</span></div>
+  <div id="magRows" style="padding:4px 8px 5px"></div>
+</div>
+<!-- Target frame (,/. cycles targets · left-click selects) + right-click appraisal window -->
+<div id="targetFrame" style="display:none;position:fixed;left:50%;top:148px;transform:translateX(-50%);z-index:41;width:180px;background:rgba(12,10,6,.82);border:1px solid #6a5a3a;border-radius:6px;padding:4px 8px 6px;font-size:12px">
+  <div id="tfName" style="color:#ffd86b;font-weight:bold;text-align:center;text-shadow:0 1px 2px #000">—</div>
+  <div class="bar bhp"><i style="width:100%"></i><span id="tfHp"></span></div>
+  <div class="bar bst"><i style="width:100%"></i><span id="tfSt"></span></div>
+  <div class="bar bmn"><i style="width:100%"></i><span id="tfMn"></span></div>
+</div>
+<div id="idPanel" style="display:none;position:fixed;right:230px;top:160px;z-index:60;width:220px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.55);font-size:12px;color:#2a2014">
+  <div class="idHead">✦ Appraisal <span class="idX" id="idClose">✕</span></div>
+  <div style="padding:6px 8px 8px">
+    <div style="text-align:center"><canvas id="idPortrait" width="150" height="150" style="width:150px;height:150px;border:1px solid #6a4a2a;border-radius:5px;background:#241c10"></canvas></div>
+    <div id="idName" style="font-weight:bold;text-align:center;margin:4px 0 2px">—</div>
+    <div id="idBars" style="display:none">
+      <div class="bar bhp"><i style="width:100%"></i><span id="idHp"></span></div>
+      <div class="bar bst"><i style="width:100%"></i><span id="idSt"></span></div>
+      <div class="bar bmn"><i style="width:100%"></i><span id="idMn"></span></div>
+    </div>
+    <div id="idBody" style="margin-top:4px;line-height:1.45"></div>
+  </div>
+</div>
 <div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
   <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
   <span style="position:absolute;top:-2px;left:45%;width:2px;height:13px;background:#fff;opacity:.7"></span>
@@ -322,6 +376,8 @@
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Show or hide any on-screen interface (each also has an ✕ and a keybind — see Map Keys → HUD Toggles)">Interfaces</span><span id="setHud" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
@@ -416,6 +472,38 @@
 #charCreator .cc-attr button:disabled{opacity:.35;cursor:default}
 #charCreator .cc-budget{font-size:11.5px;color:#9a8a66;margin:2px 0 4px}
 #charCreator #ccSkills button{font-size:11.5px;padding:4px 8px}
+/* Decal plugin HUDs — VTank's green LED toggles (per the real plugin screenshot) */
+.vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
+.vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
+#vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
+/* Universal drag grips — every game panel drags like the plugin windows. The HUD layer is
+   pointer-events:none, so parent :hover can never fire — the grips stay ALWAYS visible (faint,
+   brightening under their own cursor, which works because the grip itself takes pointer events). */
+.dragGrip,.hudX{position:absolute;top:1px;z-index:6;display:block;opacity:.38;pointer-events:auto;
+  font-size:11px;line-height:1;padding:2px 4px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;user-select:none}
+.dragGrip{right:18px;cursor:move}
+.hudX{right:1px;cursor:pointer}
+.dragGrip:hover,.hudX:hover{opacity:1;color:#ffd86b;border-color:#8a7a52}
+/* the potion belt introduces itself — it was an unlabeled mystery box */
+#potions::before{content:"POTION BELT";position:absolute;top:-13px;left:6px;font-size:9px;letter-spacing:1px;color:#9a8a66}
+/* Chat box resize — a corner grip; the log is bottom-anchored so it grows up/right */
+#logResize{position:absolute;top:-6px;right:-6px;z-index:6;display:none;pointer-events:auto;cursor:nesw-resize;
+  font-size:12px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;padding:1px 4px;user-select:none}
+#log:hover #logResize{display:block}
+#logInner.sized{overflow-y:auto;pointer-events:auto}
+.lg.cmb{color:#c9b09a;font-size:11px}   /* per-hit combat spam reads quieter than event lines */
+/* Chat tabs — All · Global · Team (allegiance) · Group (party) · Quest */
+#chatTabs{display:flex;gap:2px;margin-bottom:2px;pointer-events:auto}
+.ctab{font-size:10px;padding:2px 9px;background:rgba(10,8,5,.7);border:1px solid #3a3526;border-bottom:none;border-radius:5px 5px 0 0;color:#9a8a66;cursor:pointer}
+.ctab.on{background:rgba(30,24,14,.92);color:#e8d8b0;font-weight:bold}
+.ctab.unread{color:#ffd23b}
+.ctab.unread::after{content:" •"}
+/* Target frame + right-click appraisal window — vital bars share the character's .bhp/.bst/.bmn gradients */
+#targetFrame .bar,#idPanel .bar{height:11px;margin:2px 0;background:#1a140c;border:1px solid #4a3a20;border-radius:3px;position:relative;overflow:hidden}
+#targetFrame .bar i,#idPanel .bar i{display:block;height:100%}
+#targetFrame .bar span,#idPanel .bar span{position:absolute;inset:0;text-align:center;font-size:9px;line-height:11px;color:#fff;text-shadow:0 1px 2px #000}
+.idHead{background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px;display:flex;justify-content:space-between;cursor:move}
+.idX{cursor:pointer;color:#f0d0b0;padding:0 3px}.idX:hover{color:#fff}
 </style>
 <div id="charCreator"><div class="cc-wrap">
   <h2>✦ FORGE YOUR HERO ✦</h2>
@@ -1540,7 +1628,142 @@ const FACILITY_LIST=[
 const FACILITY_PORTALS=FACILITY_LIST.map(([name,req])=>{const def=DUNGEONS.find(d=>d.name===name);return def&&{def,req};}).filter(Boolean);
 const HUBS=CITIES.concat(DUNGEONS); // content (scenery, monsters) clusters around these
 // ---- terrain: mountains, valleys, hills, lakes, and an ocean rim ----
+// ═══ THE REAL DERETH — terrain sampled from the AC client's own cell data (user-supplied dats,
+//     exported by tools/ac_dat_export.py into assets/acmap.png: R = height-table index,
+//     G = terrain type 0–31, B = road bits). Falls back to the legacy procedural island when the
+//     data texture is missing/unreadable, so the game still runs standalone. ═══
+const AC_HEIGHTS=[0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,104,106,108,110,112,114,116,118,120,122,124,126,128,130,132,134,136,138,140,142,144,146,148,150,152,154,156,158,160,162,164,166,168,170,172,174,176,178,180,182,184,186,188,190,192,194,196,198,200,202,204,206,208,210,212,214,216,218,220,222,224,226,228,230,232,234,236,238,240,242,244,246,248,250,252,254,256,258,260,262,264,266,268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298,300,302,304,306,308,310,312,314,316,318,320,322,324,326,328,330,332,334,336,338,340,342,344,346,348,350,352,354,356,358,360,362,364,366,368,370,372,374,376,378,380,382,384,386,388,390,392,394,396,398,400,404,408,412,416,420,424,428,432,436,440,444,448,452,456,460,464,468,472,476,480,484,488,492,496,500,504,508,512,516,520,524,528,532,536,540,544,548,552,556,560,568,576,584,592,600,608,616,624,632,640,650,660,670,680,700];
+const ACMAP={on:false,W:2041,H:null,T:null,Rd:null};
+const AC_VSCALE=1/3;   // AC metres → world units (24 m cells → 8 u grid, so 1/3 keeps slopes true)
+ACMAP.load=function(){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{ try{
+        const W=ACMAP.W, c=document.createElement('canvas'); c.width=c.height=W;
+        const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(img,0,0);
+        const d=g.getImageData(0,0,W,W).data, n=W*W;
+        ACMAP.H=new Float32Array(n); ACMAP.T=new Uint8Array(n); ACMAP.Rd=new Uint8Array(n);
+        for(let i=0;i<n;i++){ ACMAP.H[i]=AC_HEIGHTS[d[i*4]]*AC_VSCALE; ACMAP.T[i]=d[i*4+1]; ACMAP.Rd[i]=d[i*4+2]; }
+        // low-pass the heights to the ground mesh's 40u resolution: the raw field carries 8u detail,
+        // and sampling that at 40u aliases into jagged shards. Two separable box passes ≈ gaussian.
+        for(let pass=0;pass<2;pass++){
+          const src=ACMAP.H, tmp=new Float32Array(n);
+          for(let r=0;r<W;r++){ const o=r*W;                      // horizontal
+            for(let c=0;c<W;c++){ let s=0,k=0;
+              for(let dx=-2;dx<=2;dx++){ const cc=c+dx; if(cc>=0&&cc<W){ s+=src[o+cc]; k++; } }
+              tmp[o+c]=s/k; } }
+          for(let c=0;c<W;c++){                                    // vertical
+            for(let r=0;r<W;r++){ let s=0,k=0;
+              for(let dy=-2;dy<=2;dy++){ const rr=r+dy; if(rr>=0&&rr<W){ s+=tmp[rr*W+c]; k++; } }
+              src[r*W+c]=s/k; } }
+        }
+        ACMAP.on=true;
+        for(const t of FLATTEN) t.h=Math.max(8,terrainBase(t.x,t.z));   // re-seat every town & castle plateau on the REAL ground
+        console.log("ACMAP: the real Dereth is loaded");
+      }catch(e){ console.warn("ACMAP unreadable ("+e.message+") — procedural terrain fallback"); }
+      res(); };
+    img.onerror=()=>{ console.warn("ACMAP texture missing — procedural terrain fallback"); res(); };
+    img.src="assets/acmap.png";
+  });
+};
+// world → data-texture: column = x/8+1019.5 (west→east), row = z/8+1020.5 (image row 0 = north)
+function acType(x,z){ if(!ACMAP.on) return -1;
+  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  if(c<0||c>=W||r<0||r>=W) return 20; return ACMAP.T[r*W+c]; }
+function acRoad(x,z){ if(!ACMAP.on) return 0;
+  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  if(c<0||c>=W||r<0||r>=W) return 0; return ACMAP.Rd[r*W+c]; }
+const AC_WATER_DEPTH={16:-2.5,17:-2.5,18:-3.2,19:-3.2,20:-6.5};   // running/fresh · shallow sea · deep sea
+function acHeight(x,z){
+  const W=ACMAP.W, fc=x/8+1019.5, fr=z/8+1020.5;
+  if(fc<0||fc>=W-1||fr<0||fr>=W-1) return -30;                    // beyond the charted world: open ocean
+  const c0=Math.floor(fc), r0=Math.floor(fr), tc=fc-c0, tr=fr-r0, i=r0*W+c0;
+  let h=ACMAP.H[i]*(1-tc)*(1-tr)+ACMAP.H[i+1]*tc*(1-tr)+ACMAP.H[i+W]*(1-tc)*tr+ACMAP.H[i+W+1]*tc*tr;
+  const ty=ACMAP.T[Math.round(fr)*W+Math.round(fc)];
+  const wd=AC_WATER_DEPTH[ty]; if(wd!==undefined) h=Math.min(h,wd);   // rivers & seas cut below the water plane
+  return h;
+}
+// ═══ RETAIL VENDORS — every town's authentic merchants and their REAL shop stock, from the
+//     ACE-World community database (assets/acvendors.json · tools/ace_world_export.py +
+//     ace_trim_towns.py). Wares translate into our item system by name; the untranslatable
+//     sell as curios. Missing file → the generic vendor rotation, unchanged. ═══
+const ACV={on:false,catalog:null,towns:null};
+ACV.load=function(){
+  return fetch("assets/acvendors.json").then(r=>r.json()).then(j=>{
+    ACV.catalog=j.catalog; ACV.towns=j.towns; ACV.on=true;
+    console.log("ACV: retail vendors loaded for "+Object.keys(j.towns).length+" towns");
+  }).catch(e=>console.warn("ACV unavailable ("+e.message+") — generic vendors"));
+};
+function acVendorType(name,stockNames){
+  const n=name.toLowerCase();
+  if(/archmage|scrivener|scribe|enchanter/.test(n)) return "scrivener";
+  if(/healer|apothec/.test(n)) return "healer";
+  if(/jeweler|gem/.test(n)) return "jeweler";
+  if(/bowyer|weapons/.test(n)) return "weaponsmith";
+  if(/blacksmith|armorer|smith/.test(n)) return "armorer";
+  if(/grocer|provision|butcher|baker|barkeep|innkeep/.test(n)) return "provisioner";
+  if(/tailor|outfit|shopkeep|pawn/.test(n)) return "outfitter";
+  const s=stockNames.join(" ").toLowerCase();
+  if(/scarab|talisman|tome|parchment/.test(s)) return "scrivener";
+  if(/potion|healing kit/.test(s)) return "healer";
+  if(/\bbow\b|arrow|sword|quarrel/.test(s)) return "weaponsmith";
+  if(/breastplate|leggings|gauntlet/.test(s)) return "armorer";
+  if(/cheese|bread|wine|beef|pie/.test(s)) return "provisioner";
+  return "outfitter";
+}
+function acPrice(v){ return clamp(Math.max(2,Math.round((v||20)/5)),2,6000); }
+function acItemRow(nm,val){
+  const n=nm.toLowerCase(), cost=acPrice(val), P=(g,ico,desc)=>({name:nm,cost,desc,ico,gear:g});
+  const wep=(wt,base)=>P({name:nm,stat:"weapon",wt,v:clamp(Math.round((val||50)/40)+base,6,26)},"⚔️",(WEAPON_TYPES[wt]?wt:"melee")+" · authentic Dereth arms");
+  const noteM=n.match(/trade note \(([\d,]+)\)/);
+  if(noteM){ const amt=Math.round(+noteM[1].replace(/,/g,"")/50);
+    return {name:nm,cost:clamp(amt,2,20000),desc:"portable pyreal certificate",ico:"💵",gear:{name:nm,stat:"note",v:amt}}; }
+  if(/arrow/.test(n)&&!/head/.test(n)) return P({name:nm,stat:"ammo",for:"bow",dmg:2,v:2,count:20},"🏹","20 arrows — bonus bow damage");
+  if(/quarrel|bolt\b/.test(n)) return P({name:nm,stat:"ammo",for:"crossbow",dmg:3,v:3,count:20},"🏹","20 quarrels — bonus crossbow damage");
+  if(/\bdart\b|djarid/.test(n)) return P({name:nm,stat:"ammo",for:"atlatl",dmg:2,v:2,count:20},"🏹","20 darts — bonus atlatl damage");
+  if(/crossbow|arbalest/.test(n)) return wep("crossbow",8);
+  if(/shortbow|longbow|\bbow\b|yumi|nayin/.test(n)) return wep("bow",6);
+  if(/atlatl/.test(n)) return wep("atlatl",6);
+  if(/dagger|knife|jambiya|kris|stiletto|dirk/.test(n)) return wep("dagger",5);
+  if(/spear|yari|trident|pike|naginata|partizan/.test(n)) return wep("spear",7);
+  if(/throwing/.test(n)) return wep("dagger",4);
+  if(/\baxe\b|hatchet|silifi|\bono\b|war axe/.test(n)) return wep("axe",8);
+  if(/mace|club|kasrukha|mazule|jitte|morning star|war hammer/.test(n)) return wep("mace",8);
+  if(/sword|scimitar|rapier|sabre|saber|\bken\b|yaoji|takuba|shamshir|flamberge|epee|schlager|spada|tachi/.test(n)) return wep("sword",8);
+  if(/staff|sceptre|scepter|wand|\borb\b/.test(n)) return P({name:nm,stat:"weapon",wt:"focus",v:4,foc:4},"🔮","casting focus · +4 all magic");
+  const at=/plate|metal|celdon|nariyid|chiran|olthoi/.test(n)?"heavy":/studded|chain|scale|yoroi|koujia|amuli/.test(n)?"medium":"light";
+  const arm=(aslot,base)=>P({name:nm,stat:"worn",at,aslot,v:clamp(Math.round((val||60)/30)+base,8,26)},"🛡",at+" "+aslot+" armour");
+  if(/tower shield/.test(n)) return P({name:nm,stat:"worn",at:"heavy",aslot:"offhand",shield:"tower",v:26},"🛡","heavy shield — great guard, slows you");
+  if(/kite shield|large shield|round shield/.test(n)) return P({name:nm,stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:16},"🛡","balanced shield");
+  if(/buckler|shield/.test(n)) return P({name:nm,stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9},"🛡","light shield");
+  if(/breastplate|cuirass|hauberk|shirt|doublet|tunic|robe|gown|jerkin|coat\b/.test(n)) return arm("chest",8);
+  if(/helm|basinet|\bcap\b|cowl|kabuton|coif/.test(n)) return arm("head",6);
+  if(/gauntlet|glove/.test(n)) return arm("hands",5);
+  if(/greaves|leggings|tasset|pants|trousers|breeches|kilt|skirt/.test(n)) return arm("legs",7);
+  if(/boot|shoe|solleret|sandal/.test(n)) return arm("feet",5);
+  if(/bracer|vambrace|sleeves/.test(n)) return arm("lowerarm",5);
+  if(/pauldron|shoulder/.test(n)) return arm("upperarm",5);
+  if(/girth|\bbelt\b/.test(n)) return arm("chest",4);
+  if(/potion of healing|health (potion|draught|tonic)|healing (potion|draught|tonic)|elixir of health/.test(n)) return P({name:nm,stat:"hp",v:60},"🧪","restores 60 health");
+  if(/mana (potion|draught|tonic)|elixir of mana/.test(n)) return P({name:nm,stat:"mn",v:60},"🔷","restores 60 mana");
+  if(/stamina (potion|draught|tonic)/.test(n)) return P({name:nm,stat:"st",v:60},"⚡","restores 60 stamina");
+  if(/healing kit|first aid/.test(n)) return P({name:nm,stat:"hot",pool:"hp",rate:6,dur:12},"💉","mends 6 health/s for 12 s");
+  if(/scarab|talisman|taper|ginseng|hyssop|mandrake|frankincense|saffron|henbane|eyebright|comfrey|damiana|yarrow|amaranth|wormwood|bloodroot|nightshade|\bsage\b|\brue\b|vervain|belladonna|foxglove|powdered|dragon's blood|quill|\bink\b|turpeth|springwort|brimstone|cadmia|cobalt|colophony|gypsum|quicksilver|realgar|stipite|verdigris|vitriol/.test(n)) return P({name:nm,stat:"comp",v:Math.max(4,cost)},"🪲","spell component");
+  if(/lockpick/.test(n)) return P({name:nm,stat:"pick",v:1},"🔓","opens a locked cache");
+  if(/\bkey\b/.test(n)) return P({name:nm,stat:"key",v:1},"🔑","opens a locked cache");
+  if(/backpack|\bpack\b|\bsack\b|pouch|basket/.test(n)) return P({name:nm,stat:"pack",cap:3,v:3},"🎒","+3 satchel slots");
+  if(/cheese|bread|pie\b|cake|egg|grape|apple|beef|chicken|fish|stew|ration|milk|wine|stout|\bale\b|cider|sake|\btea\b|mead|water\b|jerky|melon|pear|olive|carrot|mushroom|honey|noodle|rice\b|tofu/.test(n)) return P({name:nm,stat:"food",attr:"Endurance",v:2,dur:90},"🍖","hearty fare · +2 Endurance for 90 s");
+  return P({name:nm,stat:"trophy",v:Math.max(3,Math.round((val||15)/6))},"📦","curio · an authentic Dereth trade good");
+}
+function acTownVendors(townName){
+  if(!ACV.on||!ACV.towns[townName]) return null;
+  return ACV.towns[townName].map(v=>{
+    const st=v.stock.map(id=>ACV.catalog[id]).filter(Boolean);
+    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v))};
+  });
+}
 function terrainBase(x,z){
+  if(ACMAP.on) return acHeight(x,z);
   const d=Math.hypot(x,z);
   let h = 24
     + Math.sin(x*0.0009)*Math.cos(z*0.0011)*60          // broad hills & valleys (valleys dip below sea → lakes)
@@ -2278,9 +2501,26 @@ function initThree(){
   // Normals are computed analytically from the terrainH gradient (identical on both sides of a
   // border), so the chunk seams are invisible.
   const col=new THREE.Color();
+  // AC terrain-type ground palette (LandDefs types 0–31, from the client's own cell data)
+  const AC_TYPE_COL=[
+    [0.46,0.42,0.38],[0.34,0.50,0.25],[0.78,0.86,0.93],[0.26,0.48,0.20],   // BarrenRock · Grassland · Ice · LushGrass
+    [0.30,0.38,0.24],[0.42,0.32,0.22],[0.13,0.11,0.14],[0.52,0.44,0.32],   // Marsh · MudRichDirt · ObsidianPlain · PackedDirt
+    [0.50,0.42,0.30],[0.42,0.53,0.27],[0.82,0.72,0.46],[0.66,0.63,0.52],   // PatchyDirt · PatchyGrassland · SandYellow · SandGrey
+    [0.62,0.56,0.42],[0.50,0.46,0.42],[0.47,0.44,0.38],[0.90,0.92,0.96],   // SandRockStrewn · Sedimentary · SemiBarrenRock · Snow
+    [0.20,0.34,0.40],[0.22,0.36,0.40],[0.22,0.38,0.44],[0.22,0.38,0.44],   // water types (visible on shorelines under the plane)
+    [0.18,0.32,0.42],[0.46,0.52,0.32],[0.40,0.48,0.28],[0.44,0.50,0.30],   // deep sea · prairie-ish spares
+    [0.42,0.46,0.30],[0.38,0.46,0.28],[0.40,0.44,0.30],[0.42,0.48,0.30],
+    [0.40,0.46,0.30],[0.42,0.46,0.32],[0.40,0.44,0.30],[0.44,0.38,0.28]];
   const groundVertColor=(wx,wz,hh)=>{
     const t=regionTint(wx,wz);
     let rr=t[0],gg=t[1],bb=t[2];
+    if(ACMAP.on){                                        // the REAL ground: colour straight from the client's terrain bytes
+      const ty=acType(wx,wz), tc=AC_TYPE_COL[ty]||AC_TYPE_COL[1];
+      const j=0.94+Math.sin(wx*0.37)*Math.sin(wz*0.41)*0.06;               // per-vertex jitter so fields never read flat
+      rr=tc[0]*j; gg=tc[1]*j; bb=tc[2]*j;
+      if(acRoad(wx,wz)){ rr=0.46; gg=0.37; bb=0.26; }                      // the authentic AC road web, packed earth
+      return col.setRGB(rr,gg,bb);
+    }
     // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
     const bmv=biomeAt(wx,wz);
     if(bmv==="desert"){ rr=0.90;gg=0.78;bb=0.50; }
@@ -4260,15 +4500,27 @@ function buildWorld(){
   addNPC(69.3*80+3,-21.2*80,{role:"reset_skill",name:"Fianhe"});
   {const tm=CITIES.find(c=>c.name==="Timaru"); if(tm) addNPC(tm.x,tm.z-12,{role:"gatekeep",name:"Aun Firanauri",town:"Timaru"});}
   // vendors in every town: capitals host a full market (one of each trade), smaller
-  // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener)
+  // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener).
+  // When the ACE-World data is loaded, each slot is filled by that town's RETAIL vendor —
+  // authentic name AND their real shop stock — with the game's own systems (trophy collectors,
+  // furniture) keeping their slots.
   const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter","healer","jeweler","collector"];
+  const AC_KEEP={collector:1,furnisher:1};
   CITIES.forEach((c,i)=>{
+    const acv=(typeof acTownVendors==="function")?acTownVendors(c.name):null; let acvi=0;
+    const place=(x,z,vt)=>{
+      if(acv&&!AC_KEEP[vt]&&acv[acvi]){ const av=acv[acvi++]; addMerchant(x,z,av.vt,av.name,av.acStock); }
+      else addMerchant(x,z,vt);
+    };
     if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
-      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; addMerchant(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
+      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; place(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
+      // capitals were bustling in retail — seat up to three more of the town's real merchants
+      for(let k=0;k<3&&acv&&acv[acvi];k++){ const a=(all.length+k)/(all.length+3)*6.28+0.9;
+        const av=acv[acvi++]; addMerchant(c.x+Math.cos(a)*19,c.z+Math.sin(a)*19,av.vt,av.name,av.acStock); }
     } else {
-      addMerchant(c.x-9,c.z-7,"provisioner");
-      addMerchant(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
-      addMerchant(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
+      place(c.x-9,c.z-7,"provisioner");
+      place(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
+      place(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
     }
   });
   // A few far dungeons (Direlands / northern isles) clamp to coordinates that fall below sea level,
@@ -5776,6 +6028,9 @@ function spawnMonster(kind,x,z,elite){
     mesh.add(hbg); mesh.userData.hb=hbg; mesh.userData.fill=hbFill;
   } else mesh=buildCreature(kind);                                  // procedural fallback
   let hp=Math.round(b.hp*settings.diff),dmg=Math.round(b.dmg*settings.diff),xp=b.xp,goldMul=1,r=b.size*0.8;
+  // nominal stamina/mana pools so target frames & appraisal read like AC's tri-bar (casters carry mana)
+  const CASTER_KINDS={virindi:1,wisp:1,sclavus:1,niffis:1,zefir:1,mukkir:1,shadow:1};
+  const _mst=Math.round(hp*0.75), _mmn=Math.round(hp*(CASTER_KINDS[kind]?0.8:0.15));
   if(elite){
     hp=Math.round(hp*2.5);dmg=Math.round(dmg*1.6);xp=Math.round(xp*2.5);goldMul=3;
     mesh.scale.setScalar(1.4);r*=1.4;
@@ -5784,6 +6039,7 @@ function spawnMonster(kind,x,z,elite){
   }
   mesh.position.set(x,0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul,ang:rnd(0,6.28),
+    st:_mst,mst:_mst,mn:_mmn,mmn:_mmn,
     state:"wander",t:0,atkCd:0,wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*(elite?1.4:1),
     isElite:!!elite,baseScale:elite?1.4:1,burnT:0,burnDps:0,burnAcc:0,gltf:!!gm});
   const m=monsters[monsters.length-1];
@@ -5802,8 +6058,40 @@ function spawnMonster(kind,x,z,elite){
 
 // ---------- log / toast ----------
 const logInner=document.getElementById('logInner');const logLines=[];
-function log(msg,cls=""){logLines.push({msg,cls});if(logLines.length>8)logLines.shift();
-  logInner.innerHTML=logLines.map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");}
+// ── tabbed chat: All · Global (say/tells/emotes) · Team (allegiance) · Group (party) · Quest ──
+let chatTab="all";
+const CHAT_TAB_OF={say:"global",tell:"global",tell_out:"global",emote:"global",party:"group",allegiance:"team"};
+function classifyLog(msg,tab){
+  if(tab) return tab;
+  if(/saga|chapter|quest|bounty|objective|storyline|journal|crier/i.test(msg)) return "quest";
+  if(/craft|salvag|tinker|alchemy|cook|fletch|dye|imbue|scribe|recipe|brew|workmanship|materials?\b/i.test(msg)) return "craft";
+  if(/you have slain|slain|kill streak|enrage/i.test(msg)) return "combat";
+  return "sys";   // sys lines live in All only
+}
+function log(msg,cls="",tab,spam){
+  tab=classifyLog(msg,tab);
+  logLines.push({msg,cls,tab,spam:!!spam}); if(logLines.length>160)logLines.shift();
+  if(tab!=="sys"&&chatTab!=="all"&&tab!==chatTab){ const b=document.querySelector(`#chatTabs [data-tab="${tab}"]`); if(b) b.classList.add("unread"); }
+  renderLog();
+}
+// per-hit combat spam: lands ONLY on the Combat tab, never floods the main feed
+function clog(msg){ log(msg,"cmb","combat",true); }
+function renderLog(){
+  const vis=chatTab==="all"?logLines.filter(l=>!l.spam):logLines.filter(l=>l.tab===chatTab);
+  const sized=logInner.classList.contains("sized");
+  const n=sized?Math.max(8,Math.floor((logInner.clientHeight||140)/17)):8;   // a taller chat box shows more history
+  logInner.innerHTML=vis.slice(-n).map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");
+  if(sized) logInner.scrollTop=logInner.scrollHeight;                        // stay pinned to the newest line
+}
+function setChatTab(t){
+  chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; if(typeof saveSettings==="function") saveSettings(); }
+  document.querySelectorAll('#chatTabs .ctab').forEach(b=>{ b.classList.toggle('on',b.dataset.tab===t); if(b.dataset.tab===t) b.classList.remove('unread'); });
+  const ci=document.getElementById('chatInput');
+  if(ci) ci.placeholder=({global:"say aloud to the realm…",team:"message your allegiance… (/allegiance join <name> first)",
+    group:"message your party… (/party invite <name> first)",quest:"say aloud…",combat:"say aloud…",craft:"say aloud…"})[t]||"say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap";
+  renderLog();
+}
+document.querySelectorAll('#chatTabs .ctab').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); setChatTab(b.dataset.tab); }));
 // ── CHAT CHANNELS: every player-to-player line flows through chatMsg(), which applies the channel's
 //    colour (Settings-tunable), honours mutes, logs it, and runs it across the persistent chat bar ──
 const CHAT_CHANNELS={
@@ -5819,7 +6107,7 @@ function chatMsg(ch,html){
   const conf=chatChan(ch);
   if(conf.m) return;                                    // muted channel
   const line=`<span style="color:${conf.c}">${html}</span>`;
-  log(line,"chat");
+  log(line,"chat",CHAT_TAB_OF[ch]||"global");           // player-to-player lines land on their tab
   const bar=document.getElementById('chatBarText');
   if(bar){ bar.innerHTML=line; bar.style.opacity=1; _chatBarT=12; }   // ride the chat bar, dim after a while
 }
@@ -5953,6 +6241,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
+  clog(`You ${crit?'<b style="color:#ff8f6b">critically strike</b>':'hit'} the ${m.name||((BESTIARY[m.kind]||{}).name||m.kind)} for <b>${Math.round(dmg)}</b>.`);
   if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
   if(crit) shake(0.16);
@@ -6029,6 +6318,7 @@ function killMonster(m){
     saveGame();return;
   }
   burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death();
+  clog(`You have slain the <b>${m.name||b.name}</b>${m.isElite?" (champion)":""} — +${Math.round((m.xp||b.xp)*sMult)} XP.`);
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
     dungeonMobs--;
@@ -9252,6 +9542,7 @@ function gainXP(amt){
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
     if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
   player.xp+=amt;player.xpUnspent+=amt;
+  if(typeof PLUG!=="undefined"&&PLUG.mag) PLUG.mag.xp+=amt;   // Mag-Tools combat tracker
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
   while(player.level<275&&player.xp>=need){   // AC hard level cap of 275 (XP past it still banks as unspent for skills/attributes)
@@ -9309,6 +9600,7 @@ function playerHurt(dmg,sx,sz,type,element){
   { const cc=clamp(0.10-player.attr.Coordination*0.0008,0.03,0.12);
     if(Math.random()<cc){ _crit=true; const cr=Math.min(1,(player.augment&&player.augment.critReduce)||0); dmg=Math.round(dmg*(2-cr)); } }
   player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)*(_crit?1.8:1)); // combatT: recently-in-combat → Healing is less effective
+  clog(`You take <b style="color:#ff6a5a">${Math.round(dmg)}</b> ${element||type} damage${_crit?' — <b style="color:#ff8f6b">a critical blow!</b>':'.'}`);
   if(_crit){ if(SFX.crit)SFX.crit(); if(sx!==undefined)floater(player.x,EYE+0.95,player.z,"CRIT!","#ff5a3a"); }
   // a solid hit can shatter a spell you're mid-cast on — high Focus steadies your concentration
   if(player.casting){ const ic=clamp(0.55-player.attr.Focus*0.004,0.18,0.6);
@@ -9853,9 +10145,21 @@ function dirtyStrike(m){
   else if(ah==="high"){ m.atkCd=Math.max(m.atkCd||0,1.6); floater(m.x,hy,m.z,"staggered!","#ffd0a0"); }
   else { m.burnT=Math.max(m.burnT||0,4); m.burnDps=Math.max(m.burnDps||0,4+skillValue("dirty")*0.06); floater(m.x,hy,m.z,"bleeding!","#ff6a6a"); }
 }
-cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0){ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } } else if(e.button===2) blocking=true; });
-cEl.addEventListener('mouseup',e=>{ if(e.button===0){ if(chargeActive) releaseCharge(); } else if(e.button===2) blocking=false; });
-cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse raises the shield, no menu
+let _rmbT=0;
+cEl.addEventListener('mousedown',e=>{
+  if(!running) return;
+  if(e.button===0){                                    // left: select what's under the cursor, then attack
+    const hit=raycastPick(locked?null:e); if(hit) selectTarget(hit,true); else if(!locked) selectTarget(null,true);
+    if(!locked) return;                                // (unlocked click still locks via the click handler)
+    if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; }
+  } else if(e.button===2){ _rmbT=now(); blocking=locked; }   // right: hold = shield (locked); a quick tap = appraise
+});
+cEl.addEventListener('mouseup',e=>{
+  if(e.button===0){ if(chargeActive) releaseCharge(); }
+  else if(e.button===2){ blocking=false;
+    if(running&&now()-_rmbT<280){ const hit=raycastPick(locked?null:e); if(hit) openIdPanel(hit); } }
+});
+cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse = shield / appraisal, no menu
 // Cb2 attack heights: mouse-wheel aims the swing high / middle / low (matched to the target's size)
 const ATK_HEIGHTS=["low","mid","high"], ATK_LABEL={low:"Low",mid:"Middle",high:"High"};
 window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
@@ -9863,7 +10167,12 @@ window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
   const el=document.getElementById('atkHeight'); if(el){ el.textContent="Attack: "+ATK_LABEL[player.atkHeight]; el.style.display="block"; el._t=now(); }
 },{passive:false});
 document.addEventListener('mousemove',e=>{
-  if(!locked) return;
+  if(!locked){
+    // free-look: the mouse looks around even without pointer lock, whenever it rides the world
+    // itself (over a HUD panel or menu the cursor behaves normally so buttons stay clickable)
+    if(!running||paused||movingUI||_uiDrag||e.target!==cEl) return;
+    if(typeof sheet!=="undefined"&&sheet.style.display==="flex") return;
+  }
   player.yaw-=e.movementX*0.0022*settings.sens;
   player.pitch=clamp(player.pitch-e.movementY*0.0022*settings.sens,-1.2,1.2);
 });
@@ -9890,8 +10199,10 @@ const ACTIONS=[
   {id:"potgreat", label:"Drink Greater Potion", group:"Consumables",def:"KeyG",run:()=>drinkPotion("potGreat",150,"hp")},
   {id:"potmana",  label:"Drink Mana Potion",    group:"Consumables",def:"KeyF",run:()=>drinkPotion("potMana",60,"mn")},
   {id:"potstam",  label:"Drink Stamina Potion", group:"Consumables",def:"KeyH",run:()=>drinkPotion("potStam",60,"st")},
-  {id:"elixmight",label:"Elixir of Might",      group:"Consumables",def:"Comma",run:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b")},
-  {id:"elixswift",label:"Elixir of Swiftness",  group:"Consumables",def:"Period",run:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")},
+  {id:"elixmight",label:"Elixir of Might",      group:"Consumables",def:"KeyI",run:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b")},
+  {id:"elixswift",label:"Elixir of Swiftness",  group:"Consumables",def:"KeyL",run:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")},
+  {id:"targprev", label:"Previous Target",      group:"Targeting",def:"Comma", run:()=>cycleTarget(-1)},
+  {id:"targnext", label:"Next Target",          group:"Targeting",def:"Period",run:()=>cycleTarget(1)},
   {id:"character",label:"Character Sheet",  group:"Panels",def:"KeyC",run:()=>togglePanel('sheet',openSheet,closeSheet)},
   {id:"tinker",   label:"Inventory / Tinker",group:"Panels",def:"KeyT",run:()=>togglePanel('tinker',openTinker,closeTinker)},
   {id:"bestiary", label:"Bestiary / Codex", group:"Panels",def:"KeyB",run:()=>togglePanel('codex',openCodex,closeCodex)},
@@ -9906,6 +10217,14 @@ const ACTIONS=[
   {id:"qbprev",   label:"Quickbar Page ◀",  group:"Quickbar",def:"BracketLeft",run:()=>{hotbarPage=(hotbarPage+QB_PAGES-1)%QB_PAGES;buildSpellbar();}},
   {id:"qbnext",   label:"Quickbar Page ▶",  group:"Quickbar",def:"BracketRight",run:()=>{hotbarPage=(hotbarPage+1)%QB_PAGES;buildSpellbar();}},
 ];
+// every on-screen interface gets its own show/hide keystroke (rebind any of them in Map Keys)
+const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Compass","shift+F2"],
+  ["minimap","Minimap","shift+F3"],["right","Attributes & Status","shift+F4"],["quest","Quest Tracker","shift+F5"],
+  ["spellbar","Quickbar","shift+F6"],["potions","Potion Belt","shift+F7"],["partyHud","Party Frame","shift+F8"],
+  ["goarrow","GoArrow","shift+F9"],["alinco","Alinco Buffs","shift+F10"],["vtank","Virindi Tank","shift+F11"],
+  ["magtools","Mag-Tools","shift+F12"],["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
+for(const [id,label,def] of HUD_TOGGLES)
+  ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
 const ROW1_DEF=["Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0","Minus","Equal"];
 for(let i=0;i<QB_PAGE;i++){ const idx=i; ACTIONS.push({id:"qb"+i,label:"Quick Slot R"+(i<QB_COLS?1:2)+"·"+((i%QB_COLS)+1),group:"Quick Slots",def:i<QB_COLS?ROW1_DEF[i]:"",run:()=>castSlot(hotbarPage*QB_PAGE+idx)}); }
 function defaultBinds(){ const b={}; for(const a of ACTIONS) b[a.id]=a.def?[a.def]:[]; return b; }
@@ -10546,6 +10865,8 @@ function update(dt){
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
   updateCalendar(dt);
+  updatePlugins(dt);
+  updateTargetUI(dt);
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
@@ -11097,7 +11418,8 @@ function buildMiniToggles(){
   el.querySelectorAll('input[data-mm]').forEach(cb=>cb.onchange=()=>{ miniShow[cb.dataset.mm]=cb.checked; saveMiniPrefs(); });
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
-const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions"];
+const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
+  "goarrow","alinco","vtank","magtools","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -11114,11 +11436,62 @@ function initDragUI(){
   const hint=document.createElement('div'); hint.id="uimoveHint"; hint.textContent="Move UI — drag any panel · press N to finish"; document.getElementById('hud').appendChild(hint);
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
     el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
-  document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
-    el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
-    el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
-  document.addEventListener('mouseup',()=>{ if(_uiDrag){ _uiDrag=null; saveUIPos(); } });
+  // parchment windows also drag by their title bar at any time (no N-mode needed)
+  for(const id of ["alinco","vtank","magtools","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
+    const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
+    head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
+      e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
+  ensureGrips();   // hover ⠿ grips on every other panel — re-run periodically since some panels rebuild their innerHTML
+  // the chat box resizes by its corner grip (bottom-anchored: drag up/right to grow); size persists
+  const lg=document.getElementById('log');
+  if(lg&&!document.getElementById('logResize')){
+    const rz=document.createElement('div'); rz.id="logResize"; rz.textContent="◥"; rz.title="Drag to resize the chat window";
+    rz.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation();
+      const inner=document.getElementById('logInner');
+      _logRz={x0:e.clientX,y0:e.clientY,w0:lg.getBoundingClientRect().width,h0:inner.getBoundingClientRect().height}; });
+    lg.appendChild(rz);
+    document.addEventListener('mousemove',e=>{ if(!_logRz) return;
+      const w=clamp(_logRz.w0+(e.clientX-_logRz.x0),220,Math.min(720,innerWidth-40));
+      const h=clamp(_logRz.h0-(e.clientY-_logRz.y0),90,Math.min(560,innerHeight-160));
+      applyLogSize(w,h); });
+    document.addEventListener('mouseup',()=>{ if(_logRz){ _logRz=null;
+      if(typeof settings!=="undefined"){ settings.logSize={w:parseInt(lg.style.width)||340,h:parseInt(document.getElementById('logInner').style.height)||0};
+        if(typeof saveSettings==="function") saveSettings(); } } });
+  }
 }
+// every game panel gets a hover ⠿ grip that drags the same way as the plugin windows, anytime.
+// Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
+function ensureGrips(){
+  const label={}; if(typeof HUD_TOGGLES!=="undefined") for(const [id,n] of HUD_TOGGLES) label[id]=n;
+  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","idPanel"].indexOf(id)>=0) continue;
+    const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
+    if(getComputedStyle(el).position==="static") el.style.position="relative";
+    const grip=document.createElement('div'); grip.className="dragGrip"; grip.textContent="⠿"; grip.title="Drag to move (or press N to move whole panels)";
+    grip.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation();
+      const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; });
+    el.appendChild(grip);
+    if(label[id]){   // ✕ closes the panel; reopen via its keybind or Settings → Interfaces
+      const x=document.createElement('div'); x.className="hudX"; x.textContent="✕";
+      x.title=`Hide ${label[id]} — reopen in Settings → Interfaces${(KEYBINDS["ui_"+id]||[])[0]?` or press ${(KEYBINDS["ui_"+id])[0]}`:""}`;
+      x.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation(); });
+      x.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); toggleHud(id,label[id]); });
+      el.appendChild(x);
+    }
+  }
+  const pot=document.getElementById('potions');
+  if(pot&&!pot.title) pot.title="Potion Belt — press R / G / F / H to drink potions, 9 / 0 for elixirs. ✕ hides it; Settings → Interfaces brings it back.";
+}
+let _logRz=null;
+function applyLogSize(w,h){
+  const lg=document.getElementById('log'), inner=document.getElementById('logInner'); if(!lg||!inner) return;
+  if(w) lg.style.width=Math.round(w)+"px";
+  if(h){ inner.style.height=Math.round(h)+"px"; inner.classList.add("sized"); }
+  if(typeof renderLog==="function") renderLog();
+}
+document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
+  el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
+  el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
+document.addEventListener('mouseup',()=>{ if(_uiDrag){ _uiDrag=null; saveUIPos(); } });
 function initMinimap(){
   loadMiniPrefs();
   const inB=document.getElementById('mmIn'),outB=document.getElementById('mmOut'),gear=document.getElementById('mmGear'),tog=document.getElementById('mmToggles');
@@ -11164,10 +11537,30 @@ function drawMinimap(){
 }
 
 // ---------- full world map ----------
+let _acMapBg=null;
+function acMapBackdrop(S){   // the real continent, painted once from the client's terrain bytes
+  if(_acMapBg||!ACMAP.on) return _acMapBg;
+  const c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d'), im=g.createImageData(S,S);
+  for(let py=0;py<S;py++) for(let px=0;px<S;px++){
+    const wx=px/S*WORLD-HALF, wz=py/S*WORLD-HALF;
+    const ty=acType(wx,wz), h=acHeight(wx,wz), i=(py*S+px)*4;
+    let r,gg,b;
+    if(h<=0.05||(ty>=16&&ty<=20)){ r=14;gg=22;b=44; }                     // sea & rivers
+    else { const tc=(typeof AC_TYPE_COL!=="undefined"&&0)||null;          // palette lives in initThree scope — mirror the key tones
+      const P={0:[92,84,76],1:[62,92,46],2:[176,192,206],3:[48,88,38],4:[56,70,45],5:[84,64,44],6:[26,22,28],7:[104,88,64],8:[100,84,60],9:[78,98,50],10:[164,144,92],11:[132,126,104],12:[124,112,84],13:[100,92,84],14:[94,88,76],15:[194,198,206]};
+      const t=P[ty]||[80,94,52]; const sh=Math.min(1.25,0.75+h/160);      // altitude lightening
+      r=t[0]*sh; gg=t[1]*sh; b=t[2]*sh; }
+    if(acRoad(wx,wz)){ r=118;gg=94;b=64; }
+    im.data[i]=r; im.data[i+1]=gg; im.data[i+2]=b; im.data[i+3]=255;
+  }
+  g.putImageData(im,0,0); _acMapBg=c; return c;
+}
 function drawBigMap(){
   const c=document.getElementById('bigmap'),g=c.getContext('2d'),S=520,sc=S/WORLD;
   const cx=v=>(v+HALF)*sc;
   g.clearRect(0,0,S,S);g.fillStyle="#11140c";g.fillRect(0,0,S,S);
+  const bg=acMapBackdrop(S); if(bg&&!inDungeon){ g.drawImage(bg,0,0); g.fillStyle="rgba(10,10,6,0.28)"; g.fillRect(0,0,S,S); }   // real Dereth under the markers, dimmed for contrast
   g.strokeStyle="rgba(216,177,74,0.07)";g.lineWidth=1;
   for(let i=1;i<8;i++){const p=i/8*S;g.beginPath();g.moveTo(p,0);g.lineTo(p,S);g.moveTo(0,p);g.lineTo(S,p);g.stroke();}
   if(inDungeon){
@@ -11252,7 +11645,9 @@ function loop(ts){
 let actx=null,masterGain=null,muted=false,musicTimer=null;
 const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,
   labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
-  chat:{}};   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
+  chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
+  vtankBuff:true,vtankLoot:true,gaDest:"auto"};
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){} }
 function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){} }
@@ -13934,10 +14329,10 @@ function buildMerchant(vt,name){
   const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
   return g;
 }
-function addMerchant(x,z,vt,name){
+function addMerchant(x,z,vt,name,acStock){
   vt=vt||"provisioner";
   const mesh=buildMerchant(vt,name);mesh.position.set(x,0,z);scene.add(mesh);
-  shops.push({x,z,mesh,vtype:vt,name:name||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
+  shops.push({x,z,mesh,vtype:vt,name:name||null,acStock:acStock||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
 }
 // ── The Wandering Caravan: an ox-drawn covered wagon that plies the winding road between Holtburg and
 //    Lord Kilmer's Castle Val Halla. Its keeper is a buff-bot + portal-bot who deals in every spell, scarab & taper. ──
@@ -14073,7 +14468,7 @@ function buildShop(){
   const def=VENDOR_TYPES[(activeShop&&activeShop.vtype)||"provisioner"]||VENDOR_TYPES.provisioner;
   if(activeShop){ if(activeShop.pyreals==null){activeShop.pyreals=irnd(14000,20000);activeShop.pmax=20000;}   // I4: coin regenerates ~150/s up to the vendor's max
     const t=now(); if(activeShop._pt) activeShop.pyreals=Math.min(activeShop.pmax||20000,(activeShop.pyreals||0)+(t-activeShop._pt)/1000*150); activeShop._pt=t; }
-  const SHOP=def.stock();
+  const SHOP=(activeShop&&activeShop.acStock)?activeShop.acStock:def.stock();   // retail vendors sell their REAL wares
   const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
   const sub=document.querySelector('#shop .sub');
   if(sub) sub.textContent=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel.`;
@@ -14308,6 +14703,288 @@ function buildSpellbook(){
 document.getElementById('closeSpellbook').onclick=closeSpellbook;
 
 // ---- Settings menu ----
+// ═══ TARGETING & APPRAISAL — AC-style selection. Left-click selects whatever is under the cursor
+//     (crosshair when mouse-look is locked); , / . cycle nearby creatures; a quick right-click
+//     appraises the thing in a parchment window with a live-rendered portrait. Creature vitals show
+//     in the character's own bar colours, over the target frame AND above the creature's head. ═══
+let TARGET=null, _idRay=new THREE.Raycaster(), _idNDC=new THREE.Vector2();
+function pickables(){
+  const out=[];
+  for(const m of monsters){ if(m.hp>0&&m.mesh){ m.mesh._pickRef={type:"monster",ref:m}; out.push(m.mesh); } }
+  for(const n of npcs){ if(n.mesh){ n.mesh._pickRef={type:"npc",ref:n}; out.push(n.mesh); } }
+  for(const s of shops){ if(s.mesh){ s.mesh._pickRef={type:"vendor",ref:s}; out.push(s.mesh); } }
+  for(const d of drops){ if(d.mesh&&d.type==="item"){ d.mesh._pickRef={type:"item",ref:d}; out.push(d.mesh); } }
+  return out;
+}
+function raycastPick(ev){
+  if(typeof cam==="undefined"||!cam) return null;
+  if(ev&&!locked){ const r=cEl.getBoundingClientRect();
+    _idNDC.set(((ev.clientX-r.left)/r.width)*2-1, -((ev.clientY-r.top)/r.height)*2+1); }
+  else _idNDC.set(0,0);                                        // locked: the crosshair is the cursor
+  _idRay.setFromCamera(_idNDC,cam); _idRay.far=60;
+  const hits=_idRay.intersectObjects(pickables(),true);
+  for(const h of hits){ let o=h.object; while(o&&!o._pickRef) o=o.parent;
+    if(o&&o._pickRef){ const ref=o._pickRef.ref;
+      const d=Math.hypot((ref.x||0)-player.x,(ref.z||0)-player.z);
+      if(d<60) return o._pickRef; } }
+  return null;
+}
+function targetName(t){
+  if(!t) return "—";
+  if(t.type==="monster"){ const m=t.ref,b=BESTIARY[m.kind]; return m.name||((m.isElite?"Elite ":"")+(b?b.name:m.kind)); }
+  if(t.type==="npc") return t.ref.name||"Townsperson";
+  if(t.type==="vendor") return (t.ref.name?t.ref.name+" — ":"")+t.ref.title;
+  if(t.type==="item") return t.ref.item?t.ref.item.name:"Dropped item";
+  return "—";
+}
+// overhead tri-bar: stamina + mana planes join the creature's existing billboarded health bar
+function attachTargetBars(m){
+  if(!m.mesh||!m.mesh.userData.hb||m.mesh.userData.tfBars) return;
+  const hb=m.mesh.userData.hb, mk=(col,y)=>{ const bar=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.09),
+    new THREE.MeshBasicMaterial({color:col,fog:false})); bar.position.set(0,y,0.012); hb.add(bar); return bar; };
+  const stB=mk(0x46d784,-0.15), mnB=mk(0x5aa8ff,-0.26);                       // the character's own vital colours
+  m.mesh.userData.tfBars={st:stB,mn:mnB};
+}
+function detachTargetBars(m){
+  const tb=m&&m.mesh&&m.mesh.userData.tfBars; if(!tb) return;
+  const hb=m.mesh.userData.hb; hb.remove(tb.st); hb.remove(tb.mn); m.mesh.userData.tfBars=null;
+}
+function selectTarget(pick,silent){
+  if(TARGET&&TARGET.type==="monster") detachTargetBars(TARGET.ref);
+  TARGET=pick||null;
+  const tf=document.getElementById('targetFrame');
+  if(!TARGET){ if(tf&&!uiHiddenIs("targetFrame")) tf.style.display="none"; return; }
+  if(TARGET.type==="monster") attachTargetBars(TARGET.ref);
+  if(!silent) log(`Target: <b>${targetName(TARGET)}</b>`,"sys");
+  updateTargetUI(0,true);
+}
+function cycleTarget(dir){
+  const cand=monsters.filter(m=>m.hp>0&&!m.isDungeon===!inDungeon&&Math.hypot(m.x-player.x,m.z-player.z)<70)
+    .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+  if(!cand.length){ selectTarget(null); log("No targets in range.","sys"); return; }
+  let i=TARGET&&TARGET.type==="monster"?cand.indexOf(TARGET.ref):-1;
+  i=((i+dir)%cand.length+cand.length)%cand.length;
+  selectTarget({type:"monster",ref:cand[i]});
+}
+function uiHiddenIs(id){ return !!(settings.uiHidden&&settings.uiHidden[id]); }
+function updateTargetUI(dt,force){
+  const tf=document.getElementById('targetFrame'); if(!tf) return;
+  if(!TARGET){ tf.style.display="none"; return; }
+  const t=TARGET;
+  if(t.type==="monster"){ const m=t.ref;
+    if(m.hp<=0||monsters.indexOf(m)<0){ selectTarget(null,true); return; }     // fell or despawned
+    if(m.mesh&&m.mesh.userData.hb) m.mesh.userData.hb.visible=true;            // the tri-bar stays visible while targeted
+    const tb=m.mesh&&m.mesh.userData.tfBars;
+    if(tb){ tb.st.scale.x=Math.max(0.001,(m.st!=null?m.st/m.mst:1)); tb.mn.scale.x=Math.max(0.001,(m.mn!=null?m.mn/m.mmn:1)); }
+    tfSetBar(tf,"tfHp","bhp",m.hp,m.mhp); tfSetBar(tf,"tfSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(tf,"tfMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+  } else {                                                                      // npc / vendor / item: name only
+    ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="none"; });
+  }
+  if(t.type==="monster") ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="block"; });
+  document.getElementById('tfName').textContent=targetName(t);
+  tf.style.display=uiHiddenIs("targetFrame")?"none":"block";
+}
+function tfSetBar(root,spanId,cls,v,max){
+  const b=root.querySelector("."+cls); if(!b) return;
+  b.querySelector("i").style.width=Math.round(clamp(v/Math.max(1,max),0,1)*100)+"%";
+  const sp=document.getElementById(spanId); if(sp) sp.textContent=Math.max(0,Math.round(v))+" / "+Math.round(max);
+}
+// ── right-click appraisal: a live-rendered portrait + what you know of the thing ──
+let _idRT=null,_idScene=null,_idCam=null,_idLight=null;
+function snapshotToCanvas(srcMesh,cnv){
+  try{
+    if(!_idRT){ _idRT=new THREE.WebGLRenderTarget(150,150); _idScene=new THREE.Scene();
+      _idScene.add(new THREE.AmbientLight(0xffffff,0.75));
+      _idLight=new THREE.DirectionalLight(0xfff2d8,0.9); _idLight.position.set(2,3,2); _idScene.add(_idLight);
+      _idCam=new THREE.PerspectiveCamera(38,1,0.05,200); }
+    const cl=srcMesh.clone(true); cl.position.set(0,0,0); cl.rotation.set(0,0,0); cl.scale.copy(srcMesh.scale);
+    cl.traverse(o=>{ if(o.isSprite||o.type==="Sprite"||(o.material&&o.material.isSpriteMaterial)) o.visible=false; });   // no nameplates in portraits
+    _idScene.add(cl);
+    const box=new THREE.Box3().setFromObject(cl), c=box.getCenter(new THREE.Vector3()), sz=box.getSize(new THREE.Vector3());
+    const r=Math.max(sz.x,sz.y,sz.z)*0.5||1;
+    _idCam.position.set(c.x+r*1.5,c.y+r*0.75,c.z+r*1.9); _idCam.lookAt(c); _idCam.updateProjectionMatrix();
+    const oldT=renderer.getRenderTarget(), oldC=new THREE.Color(); renderer.getClearColor(oldC); const oldA=renderer.getClearAlpha();
+    renderer.setClearColor(0x241c10,1); renderer.setRenderTarget(_idRT); renderer.clear(); renderer.render(_idScene,_idCam);
+    const px=new Uint8Array(150*150*4); renderer.readRenderTargetPixels(_idRT,0,0,150,150,px);
+    renderer.setRenderTarget(oldT); renderer.setClearColor(oldC,oldA);
+    _idScene.remove(cl);
+    const ctx=cnv.getContext('2d'), img=ctx.createImageData(150,150);
+    for(let y=0;y<150;y++) img.data.set(px.subarray((149-y)*600,(149-y)*600+600), y*600);   // flip Y
+    ctx.putImageData(img,0,0);
+  }catch(e){ const ctx=cnv.getContext('2d'); ctx.fillStyle="#241c10"; ctx.fillRect(0,0,150,150); }
+}
+function idItemDesc(it){
+  const rar=(typeof itemRarity==="function")?itemRarity(it).n:"";
+  const bits=[];
+  if(it.stat==="weapon") bits.push(`+${it.v} damage · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`);
+  else if(it.stat==="worn") bits.push(`+${it.v} armor · ${it.aslot||"chest"}${it.at?" ("+it.at+")":""}`);
+  else if(it.stat==="jewelry") bits.push("trinket"+(typeof jewelryDesc==="function"?" · "+jewelryDesc(it):""));
+  else if(it.v!=null) bits.push(`value ${it.v}p`);
+  if(it.mat) bits.push(it.mat);
+  if(it.work) bits.push("workmanship "+it.work);
+  return `<div>${gearIco(it)} <b>${rar}</b></div><div>${bits.join(" · ")}</div>`;
+}
+function openIdPanel(pick){
+  const p=document.getElementById('idPanel'); if(!p||!pick) return;
+  selectTarget(pick,true);                                       // appraising a thing also targets it
+  const nameEl=document.getElementById('idName'), body=document.getElementById('idBody'), bars=document.getElementById('idBars');
+  nameEl.textContent=targetName(pick);
+  let mesh=null, html="";
+  if(pick.type==="monster"){ const m=pick.ref,b=BESTIARY[m.kind]; mesh=m.mesh;
+    bars.style.display="block";
+    tfSetBar(p,"idHp","bhp",m.hp,m.mhp); tfSetBar(p,"idSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(p,"idMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+    if(b&&player.bestiary&&player.bestiary.indexOf(m.kind)>=0){
+      const tier=(typeof threatTier==="function")?threatTier(b):null;
+      const aff=(typeof AFFINITY!=="undefined")?AFFINITY[m.kind]:null;
+      html=`<div><b>${b.name}</b>${tier?` — <span style="color:${tier.c};text-shadow:0 0 2px #241c10"><b>${tier.t}</b></span>`:""}</div>
+        <div>Damage ~${Math.round(b.dmg*settings.diff)} · Speed ${b.spd}</div>
+        <div>Worth ${b.xp} XP · ${b.gold[0]}–${b.gold[1]}p</div>
+        ${aff?`<div>Weak to <b>${aff.weak}</b> · resists <b>${aff.resist}</b></div>`:""}${m.isElite?"<div><b>Champion</b> — stronger than its kin</div>":""}`;
+    } else html=`<i>You know little of this creature. Slay one, and its nature will be written in your Bestiary (B).</i>`;
+  } else if(pick.type==="npc"){ const n=pick.ref; mesh=n.mesh;
+    bars.style.display="none";
+    const R=NPC_ROLES[n.role]||{label:n.role};
+    html=`<div><b>${R.label}</b>${n.town?" of "+n.town:""}</div><div><i>Press E nearby to speak.</i></div>`;
+  } else if(pick.type==="vendor"){ const s=pick.ref; mesh=s.mesh;
+    bars.style.display="none";
+    html=`<div><b>${s.title}</b></div><div>Coin purse: ~${(s.pyreals||0).toLocaleString()}p</div><div><i>Press E nearby to trade.</i></div>`;
+  } else if(pick.type==="item"){ const d=pick.ref; mesh=d.mesh;
+    bars.style.display="none";
+    html=idItemDesc(d.item||{})+"<div><i>Press E nearby to take it.</i></div>";
+  }
+  body.innerHTML=html;
+  if(mesh) snapshotToCanvas(mesh,document.getElementById('idPortrait'));
+  p.style.display="block";
+}
+function closeIdPanel(){ const p=document.getElementById('idPanel'); if(p) p.style.display="none"; }
+// ── HUD visibility keystrokes (settings.uiHidden persists; Map Keys rebin)s ──
+function toggleHud(id,label){
+  settings.uiHidden=settings.uiHidden||{};
+  settings.uiHidden[id]=!settings.uiHidden[id]; saveSettings(); applyUIVis();
+  log(`<b>${label}</b> ${settings.uiHidden[id]?"hidden":"shown"}.`,"sys");
+}
+function applyUIVis(){
+  const h=settings.uiHidden||{};
+  for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
+    if(h[id]) el.style.display="none";
+    else if(["goarrow","alinco","vtank","magtools"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
+  if(typeof applyPluginSettings==="function") applyPluginSettings();            // plugin panels re-apply their own visibility
+}
+// ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
+//     real plugin screenshots (AC wiki): GoArrow's chrome arrow with destination-over / distance-
+//     under + coords, Virindi Tank's parchment window with green LED toggles, Alinco's buff list,
+//     Mag-Tools' combat tracker. Toggled in Settings → "Decal plugins"; states persist. ═══
+const PLUGIN_DEFS=[
+  {k:"goarrow", n:"GoArrow",      d:"Destination arrow with distance + AC coordinates. Auto-tracks the saga chapter, your corpse, or your Lifestone — click the destination name to pick any town."},
+  {k:"alinco",  n:"Alinco Buffs", d:"Buff HUD — every active enchantment with its time remaining."},
+  {k:"vtank",   n:"Virindi Tank", d:"Combat assistant: rebuffs expiring enchantments when idle (20 mana each) and loots nearby drops."},
+  {k:"magtools",n:"Mag-Tools",    d:"Combat tracker — XP/hour, kills/hour, time to next level."},
+];
+const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
+function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
+  return Math.abs(N).toFixed(1)+(N>=0?"N":"S")+", "+Math.abs(E).toFixed(1)+(E>=0?"E":"W"); }
+function pluginOn(k){ return !!(settings.plugins&&settings.plugins[k]); }
+function applyPluginSettings(){
+  for(const p of PLUGIN_DEFS){ const el=document.getElementById(p.k); if(el) el.style.display=(pluginOn(p.k)&&running&&!uiHiddenIs(p.k))?"block":"none"; }
+  const mt=document.getElementById('magtools'); if(mt) mt.style.top=pluginOn("alinco")?"334px":"196px";   // stack below Alinco when both live
+  if(pluginOn("magtools")&&!PLUG.mag&&typeof player!=="undefined") PLUG.mag={t0:performance.now(),xp:0,k0:player.kills||0};
+  vtPaint();
+}
+function vtPaint(){ document.querySelectorAll('#vtank .vtrow').forEach(r=>{
+  const on=r.dataset.vt==="buff"?settings.vtankBuff:settings.vtankLoot;
+  const led=r.querySelector('.vtled'); if(led) led.className="vtled"+(on?" on":""); }); }
+function initPluginUI(){
+  document.querySelectorAll('#vtank .vtrow').forEach(r=>{ r.onclick=()=>{
+    if(r.dataset.vt==="buff") settings.vtankBuff=!settings.vtankBuff; else settings.vtankLoot=!settings.vtankLoot;
+    saveSettings(); vtPaint(); }; });
+  const de=document.getElementById('gaDest'), sel=document.getElementById('gaSel');
+  if(de&&sel){
+    const opts=[["auto","◈ Auto (saga / corpse / lifestone)"],["valhalla","Castle Val Halla"]].concat(
+      CITIES.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>[c.name,c.name]));
+    sel.innerHTML=opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("");
+    sel.value=settings.gaDest||"auto";
+    de.onclick=()=>{ sel.style.display=sel.style.display==="none"?"inline-block":"none"; };
+    sel.onchange=()=>{ settings.gaDest=sel.value; saveSettings(); sel.style.display="none"; };
+  }
+}
+// GoArrow destination: "auto" = live saga objective → your corpse → bound Lifestone; else a town
+function gaTarget(){
+  const mode=settings.gaDest||"auto";
+  if(mode==="auto"){
+    const ce=(typeof currentCalEvent==="function")?currentCalEvent():null;
+    if(ce&&ce.goal&&ce.goal.v&&!calendarDone[ce.id]){ const p=sagaGoalPoint(ce.goal); if(p) return {x:p.x,z:p.z,label:"Saga: "+ce.name}; }
+    for(const d of drops) if(d.corpse) return {x:d.x,z:d.z,label:"Your corpse"};
+    const ls=lifestones.find(l=>l.bound); if(ls) return {x:ls.x,z:ls.z,label:ls.name+" Lifestone"};
+    return null;
+  }
+  if(mode==="valhalla") return {x:KC.x,z:KC.z+138,label:"Castle Val Halla"};
+  const c=CITIES.find(c=>c.name===mode); return c?{x:c.x,z:c.z,label:c.name}:null;
+}
+function updatePlugins(dt){
+  if(!running) return;
+  if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyUIVis();
+    setChatTab(settings.chatTab||"all");                    // restore the last-used chat tab
+    if(settings.logSize&&settings.logSize.h) applyLogSize(settings.logSize.w,settings.logSize.h);   // …and its size
+    const ix=document.getElementById('idClose'); if(ix) ix.onclick=closeIdPanel;
+    document.addEventListener('keydown',e=>{ if(e.code==="Escape"&&document.getElementById('idPanel').style.display==="block"){ closeIdPanel(); } });
+  }
+  // ── Virindi Tank behaviours ──
+  PLUG.t1-=dt;
+  if(pluginOn("vtank")&&PLUG.t1<=0){ PLUG.t1=0.4;
+    if(settings.vtankLoot&&player.alive&&!paused&&player.inv.length<invCap()){
+      let best=null,bd=4.5;
+      for(const d of drops){ if(d.type!=="item"||(d.shared&&!isOnline)) continue;
+        const dd=Math.hypot(d.x-player.x,d.z-player.z); if(dd<bd){bd=dd;best=d;} }
+      if(best){ if(best.shared){ netSend({t:"pickup",id:best.id}); }
+        else { lootItem(best.item); scene.remove(best.mesh); drops.splice(drops.indexOf(best),1); }
+        PLUG.vtMsg="Looting…"; PLUG.vtMsgT=2; }
+    }
+    if(settings.vtankBuff&&player.alive&&!paused&&!player.combatT){   // "Rebuff when idle"
+      const RECAST=(pool,label)=>{ if(!pool) return false;
+        for(const k of Object.keys(pool)){ const b=pool[k];
+          if(b&&b.t>0&&b.t<12&&player.mn>=20){ player.mn-=20; b.t=240;
+            log(`<span style="color:#9fd0ff">[VTank]</span> rebuffs <b>${label(k)}</b>.`,"sys");
+            PLUG.vtMsg="Rebuffing…"; PLUG.vtMsgT=2; return true; } }
+        return false; };
+      RECAST(player.spellBuffs,a=>a)||RECAST(player.skillBuffs,k=>(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k))||RECAST(player.banes,el=>el+" bane");
+    }
+    PLUG.vtMsgT-=0.4; const st=document.getElementById('vtState');
+    if(st) st.textContent=PLUG.vtMsgT>0?PLUG.vtMsg:(player.combatT?"Combat":"Idle");
+  }
+  // ── GoArrow tracks the camera every frame ──
+  if(pluginOn("goarrow")){
+    const t=gaTarget(), ar=document.getElementById('gaArrow'), de=document.getElementById('gaDest'), inf=document.getElementById('gaInfo');
+    if(ar&&de&&inf){ if(t){ const dx=t.x-player.x,dz=t.z-player.z,d=Math.hypot(dx,dz);
+        ar.style.transform="rotate("+(player.yaw-Math.atan2(-dx,-dz))+"rad)";   // forward = (-sin yaw, -cos yaw)
+        de.textContent=t.label; inf.textContent=Math.round(d)+" m · "+acCoordStr(t.x,t.z);
+      } else { de.textContent="No destination"; inf.textContent="—"; ar.style.transform="rotate(0rad)"; } }
+  }
+  // ── 1 Hz panels ──
+  PLUG.t2-=dt; if(PLUG.t2>0) return; PLUG.t2=1;
+  if(typeof ensureGrips==="function") ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
+  if(pluginOn("alinco")){
+    const rows=[];
+    if(player.spellBuffs) for(const a of Object.keys(player.spellBuffs)) rows.push(["+"+player.spellBuffs[a].v+" "+a,player.spellBuffs[a].t]);
+    if(player.skillBuffs) for(const k of Object.keys(player.skillBuffs)) rows.push(["+"+player.skillBuffs[k].v+" "+(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k),player.skillBuffs[k].t]);
+    if(player.banes) for(const el of Object.keys(player.banes)) rows.push([el[0].toUpperCase()+el.slice(1)+" Bane",player.banes[el].t]);
+    const el=document.getElementById('alincoRows');
+    if(el) el.innerHTML=rows.length?rows.sort((a,b)=>a[1]-b[1]).map(r=>{
+      const mm=Math.floor(r[1]/60), ss=Math.floor(r[1]%60);
+      return `<div style="display:flex;justify-content:space-between;gap:8px${r[1]<15?";color:#8a1e1e;font-weight:bold":""}"><span>${r[0]}</span><span>${mm}:${String(ss).padStart(2,"0")}</span></div>`;
+    }).join(""):'<div style="color:#7a6a4a">No active enchantments</div>';
+  }
+  if(pluginOn("magtools")&&PLUG.mag){
+    const hrs=Math.max((performance.now()-PLUG.mag.t0)/3600000,1/3600);
+    const xph=Math.round(PLUG.mag.xp/hrs), kph=Math.round((player.kills-PLUG.mag.k0)/hrs);
+    const need=(typeof xpForLevel==="function")?xpForLevel(player.level):0;
+    const eta=(xph>0&&need>player.xp)?(need-player.xp)/xph:null;
+    const fmt=s=>{const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?h+"h "+String(m).padStart(2,"0")+"m":m+"m";};
+    const el=document.getElementById('magRows');
+    if(el) el.innerHTML=[["Session",fmt((performance.now()-PLUG.mag.t0)/1000)],["XP / hour",xph.toLocaleString()],
+      ["Kills / hour",kph],["Next level",eta!=null?"~"+fmt(eta*3600):"—"]]
+      .map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
+  }
+}
 function openSettings(){
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
   const sens=document.getElementById('setSens'),vol=document.getElementById('setVol'),fov=document.getElementById('setFov');
@@ -14337,6 +15014,31 @@ function openSettings(){
       paint(); lc.appendChild(b);
     }
   }
+  // Decal plugins: lit = loaded (click for on/off; hover for what each one does)
+  const pc=document.getElementById('setPlugins');
+  if(pc&&!pc.dataset.built){ pc.dataset.built="1";
+    if(!settings.plugins) settings.plugins={};
+    for(const p of PLUGIN_DEFS){
+      const b=document.createElement('button'); b.className="tbtn"; b.textContent=p.n; b.title=p.d;
+      b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ b.style.opacity=pluginOn(p.k)?1:0.35; };
+      b.onclick=()=>{ settings.plugins[p.k]=!pluginOn(p.k); paint(); saveSettings(); applyPluginSettings();
+        log(`<b>${p.n}</b> ${pluginOn(p.k)?"loaded":"unloaded"}. <span style="color:var(--dim)">${p.d}</span>`,"sys"); };
+      paint(); pc.appendChild(b);
+    }
+  }
+  // Interfaces: lit = shown (mirrors the ✕ buttons and the HUD-Toggle keybinds)
+  const hc=document.getElementById('setHud');
+  if(hc&&!hc.dataset.built){ hc.dataset.built="1";
+    for(const [id,n] of HUD_TOGGLES){
+      const b=document.createElement('button'); b.className="tbtn"; b.textContent=n;
+      b.title=`Show / hide the ${n}${(KEYBINDS["ui_"+id]||[])[0]?` (key: ${(KEYBINDS["ui_"+id])[0]})`:""}`;
+      b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ b.style.opacity=uiHiddenIs(id)?0.35:1; };
+      b.onclick=()=>{ toggleHud(id,n); paint(); };
+      b.dataset.hudBtn=id; paint(); hc.appendChild(b);
+    }
+  } else if(hc){ hc.querySelectorAll('[data-hud-btn],[data-hudBtn],button').forEach(b=>{ const id=b.dataset.hudBtn; if(id) b.style.opacity=uiHiddenIs(id)?0.35:1; }); }
   // per-channel chat colour + mute (click the name to mute, the swatch to recolour)
   const cc=document.getElementById('setChat');
   if(cc&&!cc.dataset.built){ cc.dataset.built="1";
@@ -14469,6 +15171,7 @@ function placeSignposts(r){
 }
 function onRoad(x,z){
   if(inDungeon) return false;
+  if(typeof acRoad==="function"&&acRoad(x,z)) return true;   // the authentic AC road web grants road speed too
   for(const r of ROADS){
     const dx=r.bx-r.ax,dz=r.bz-r.az,len2=dx*dx+dz*dz;
     let t=((x-r.ax)*dx+(z-r.az)*dz)/len2;t=clamp(t,0,1);
@@ -16887,6 +17590,8 @@ function closeChat(relock){
 function sendChatLine(text){
   text=(text||"").trim(); if(!text) return;
   if(text[0]==="/"){ handleSlash(text); return; }
+  if(chatTab==="group"){ handleSlash("/p "+text); return; }   // the active tab routes plain text
+  if(chatTab==="team"){ handleSlash("/a "+text); return; }
   if(isOnline) netSend({t:"chat",msg:text});
   else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
     if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
@@ -17176,11 +17881,15 @@ window.addEventListener('resize',()=>{
   resizePost();
 });
 loadSettings();
-initThree();
-applySettings();
-initMinimap();
-initDragUI();
-renderComposite();
+// the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
+// (the retail-vendor data rides the same gate so towns build with their true merchants)
+Promise.all([ACMAP.load(),ACV.load()]).then(()=>{
+  initThree();
+  applySettings();
+  initMinimap();
+  initDragUI();
+  renderComposite();
+});
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
   try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));
