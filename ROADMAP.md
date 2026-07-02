@@ -111,6 +111,11 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   the N-mode drag registry, and parchment windows drag by their title bar at ANY time.
 - ✅ **U5. Free-look**: the mouse looks around even without pointer lock whenever it rides the world
   canvas (over HUD panels/menus the cursor behaves normally, so buttons stay clickable).
+- ✅ **U6. Tabbed chat** (jsc + preview e2e, 0 console errors): the chat window gained tabs —
+  **All · Global** (say/tells/emotes) **· Team** (allegiance, `/a`, server `achat`) **· Group** (party,
+  `/p`, server `pchat`) **· Quest** (saga/bounty/crier lines, keyword-classified). Plain text typed into
+  the box routes to the ACTIVE tab's channel; inactive tabs show a gold unread dot; the active tab
+  persists (settings.chatTab); per-channel colour/mute settings still apply.
 
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the

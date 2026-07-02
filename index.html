@@ -200,8 +200,12 @@
     <div id="housingBody" style="font-size:12px;line-height:1.5"></div>
     <div style="color:var(--dim);font-size:11px;margin-top:10px">Press Y or Esc to close · items in your house storage persist forever, across sessions and death</div>
   </div>
-  <div id="log"><div class="panel2" id="logInner"></div>
-    <div id="chatBar" title="Click to chat — plain text speaks aloud; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
+  <div id="log">
+    <div id="chatTabs">
+      <button class="ctab on" data-tab="all">All</button><button class="ctab" data-tab="global">Global</button><button class="ctab" data-tab="team">Team</button><button class="ctab" data-tab="group">Group</button><button class="ctab" data-tab="quest">Quest</button>
+    </div>
+    <div class="panel2" id="logInner"></div>
+    <div id="chatBar" title="Click to chat — plain text speaks to the active tab; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
   </div>
   <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
     style="position:absolute;left:12px;bottom:56px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
@@ -471,6 +475,12 @@
 .vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
 .vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
 #vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
+/* Chat tabs — All · Global · Team (allegiance) · Group (party) · Quest */
+#chatTabs{display:flex;gap:2px;margin-bottom:2px;pointer-events:auto}
+.ctab{font-size:10px;padding:2px 9px;background:rgba(10,8,5,.7);border:1px solid #3a3526;border-bottom:none;border-radius:5px 5px 0 0;color:#9a8a66;cursor:pointer}
+.ctab.on{background:rgba(30,24,14,.92);color:#e8d8b0;font-weight:bold}
+.ctab.unread{color:#ffd23b}
+.ctab.unread::after{content:" •"}
 /* Target frame + right-click appraisal window — vital bars share the character's .bhp/.bst/.bmn gradients */
 #targetFrame .bar,#idPanel .bar{height:11px;margin:2px 0;background:#1a140c;border:1px solid #4a3a20;border-radius:3px;position:relative;overflow:hidden}
 #targetFrame .bar i,#idPanel .bar i{display:block;height:100%}
@@ -5867,8 +5877,32 @@ function spawnMonster(kind,x,z,elite){
 
 // ---------- log / toast ----------
 const logInner=document.getElementById('logInner');const logLines=[];
-function log(msg,cls=""){logLines.push({msg,cls});if(logLines.length>8)logLines.shift();
-  logInner.innerHTML=logLines.map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");}
+// ── tabbed chat: All · Global (say/tells/emotes) · Team (allegiance) · Group (party) · Quest ──
+let chatTab="all";
+const CHAT_TAB_OF={say:"global",tell:"global",tell_out:"global",emote:"global",party:"group",allegiance:"team"};
+function classifyLog(msg,tab){
+  if(tab) return tab;
+  return /saga|chapter|quest|bounty|objective|storyline|journal|crier/i.test(msg)?"quest":"sys";   // sys lines live in All only
+}
+function log(msg,cls="",tab){
+  tab=classifyLog(msg,tab);
+  logLines.push({msg,cls,tab}); if(logLines.length>80)logLines.shift();
+  if(tab!=="sys"&&chatTab!=="all"&&tab!==chatTab){ const b=document.querySelector(`#chatTabs [data-tab="${tab}"]`); if(b) b.classList.add("unread"); }
+  renderLog();
+}
+function renderLog(){
+  const vis=chatTab==="all"?logLines:logLines.filter(l=>l.tab===chatTab);
+  logInner.innerHTML=vis.slice(-8).map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");
+}
+function setChatTab(t){
+  chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; if(typeof saveSettings==="function") saveSettings(); }
+  document.querySelectorAll('#chatTabs .ctab').forEach(b=>{ b.classList.toggle('on',b.dataset.tab===t); if(b.dataset.tab===t) b.classList.remove('unread'); });
+  const ci=document.getElementById('chatInput');
+  if(ci) ci.placeholder=({global:"say aloud to the realm…",team:"message your allegiance… (/allegiance join <name> first)",
+    group:"message your party… (/party invite <name> first)",quest:"say aloud…"})[t]||"say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap";
+  renderLog();
+}
+document.querySelectorAll('#chatTabs .ctab').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); setChatTab(b.dataset.tab); }));
 // ── CHAT CHANNELS: every player-to-player line flows through chatMsg(), which applies the channel's
 //    colour (Settings-tunable), honours mutes, logs it, and runs it across the persistent chat bar ──
 const CHAT_CHANNELS={
@@ -5884,7 +5918,7 @@ function chatMsg(ch,html){
   const conf=chatChan(ch);
   if(conf.m) return;                                    // muted channel
   const line=`<span style="color:${conf.c}">${html}</span>`;
-  log(line,"chat");
+  log(line,"chat",CHAT_TAB_OF[ch]||"global");           // player-to-player lines land on their tab
   const bar=document.getElementById('chatBarText');
   if(bar){ bar.innerHTML=line; bar.style.opacity=1; _chatBarT=12; }   // ride the chat bar, dim after a while
 }
@@ -14631,6 +14665,7 @@ function gaTarget(){
 function updatePlugins(dt){
   if(!running) return;
   if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyUIVis();
+    setChatTab(settings.chatTab||"all");                    // restore the last-used chat tab
     const ix=document.getElementById('idClose'); if(ix) ix.onclick=closeIdPanel;
     document.addEventListener('keydown',e=>{ if(e.code==="Escape"&&document.getElementById('idPanel').style.display==="block"){ closeIdPanel(); } });
   }
@@ -16863,6 +16898,8 @@ function closeChat(relock){
 function sendChatLine(text){
   text=(text||"").trim(); if(!text) return;
   if(text[0]==="/"){ handleSlash(text); return; }
+  if(chatTab==="group"){ handleSlash("/p "+text); return; }   // the active tab routes plain text
+  if(chatTab==="team"){ handleSlash("/a "+text); return; }
   if(isOnline) netSend({t:"chat",msg:text});
   else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
     if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
