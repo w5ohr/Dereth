@@ -5937,7 +5937,8 @@ function killMonster(m){
     toast("WORLD BOSS SLAIN");shake(0.5);questEvent("boss");checkAchievements();
     retire(m);monsters.splice(monsters.indexOf(m),1);
     if(m.apex){ setTimeout(spawnApex,90000); }
-    else if(m.general!==undefined){ const gi=m.general; setTimeout(()=>spawnShadowGeneral(gi),120000); }
+    else if(m.sagaEcho){ sagaNotify("echo"); }   // the saga's one-time boss — no respawn
+    else if(m.general!==undefined){ const gi=m.general; setTimeout(()=>spawnShadowGeneral(gi),120000); sagaNotify("general"); }
     else { boss=null; setTimeout(spawnBoss,45000); }
     saveGame();return;
   }
@@ -5951,6 +5952,8 @@ function killMonster(m){
     }
   }
   questEvent("slay",m.kind);   // both overworld AND dungeon kills count toward slay quests (themed delves are where many creatures live)
+  if(m.sagaTag==="agitator") sagaNotify("agitator");
+  sagaNotify("kill",m.kind);   // saga cull objectives (cheap no-op when the live chapter has none)
   if(m.isElite) player.championKills++;
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
@@ -6033,36 +6036,80 @@ const SEASONS={
   growth: {name:"Verdantine",  ground:0xeef4dc, fog:0xccd6b4, sky:0x90b8e6, blurb:"high summer — the land is lush"},
   harvest:{name:"Harvestgain", ground:0xe8c98a, fog:0xdcc492, sky:0xbcb6cc, blurb:"autumn — the harvest comes in"},
 };
-const EVENT_CALENDAR=[   // sample arc: "The Fifth Sending of Darkness" — each entry is one in-world month
-  {id:"frostfell", season:"frost",  name:"Sudden Frost",        incursion:2, title:"Frostbitten",
-   rumor:"An expedition into the northern peaks is long overdue, and an unnatural cold has come early.",
-   clue:"Seek the lost amid the frozen delves — the dead walk where they fell."},
-  {id:"whispers",  season:"frost",  name:"Whispers in the Cold",incursion:0, title:null,
-   rumor:"The Shadows gather thicker each night. Something stirs beneath the ice.",
-   clue:"The nearest capital will feel the Shadow's reach first."},
-  {id:"thaw",      season:"thaw",   name:"The Thaw",            incursion:3, title:null,
-   rumor:"The snows retreat at last, and green creeps back over Dereth.",
-   clue:"Open roads embolden the banderling warbands — guard the towns."},
-  {id:"hive",      season:"thaw",   name:"Hive Stirrings",      incursion:1, title:"Hive-Breaker",
-   rumor:"Olthoi scouts range farther than ever; the deep hive is waking.",
-   clue:"The Olthoi will boil over against the settlements."},
-  {id:"verdant",   season:"growth", name:"The Long Days",       incursion:0, title:null,
-   rumor:"High summer lies bright on the land — yet the Shadows do not rest.",
-   clue:"Shadow incursions test the borders of every realm."},
-  {id:"harvest",   season:"harvest",name:"Harvestgain Feast",   incursion:2, title:"Harvest Warden",
-   rumor:"The harvest comes in gold and red and folk feast — but the restless dead envy the living.",
-   clue:"The dead rise thick beneath the harvest moons."},
-  {id:"heralds",   season:"harvest",name:"The Hopeslayer Stirs",incursion:0, title:null,
-   rumor:"Bael'Zharon's heralds walk openly; his Shadow Generals roam the Direlands.",
-   clue:"His Shadows muster in force against the capitals."},
-  {id:"reign",     season:"frost",  name:"Reign of Shadow",     incursion:0, title:"Hopeslayer's Bane", boss:true,
-   rumor:"The sky darkens — Bael'Zharon, the Hopeslayer, has broken his crystal prison.",
-   clue:"The Hopeslayer himself walks Dereth. Fell him, if any can."},
+// ═══ THE KILMER SAGA — "The Tenfold Crown" · Year 1: Year of Embers (docs/kilmer-saga-storyline.md) ═══
+// The calendar is now the saga: months advance when their objective is met (progression-gated, so no
+// story is ever missed), criers broadcast the live rumor, and each month rides the 5-beat skeleton
+// (rumor → clue → destination → climax → reward + world change). Years 2–10 append here as data.
+// goal types: v (visit a place) · repel (break a featured Incursion) · agitator (hunt a planted cultist)
+//             clear (clear a delve) · general (fell a Shadow General) · echo (slay the boss) · kills (cull a family)
+const EVENT_CALENDAR=[
+  {id:"y1m1", mon:"Morningthaw", name:"The Coronation", kind:"beat", incursion:null,
+   rumor:"Lord Kilmer is crowned High Monarch at Castle Val Halla, and the Concord of the Three Realms is sworn! The coronation feast stands open to every traveller.",
+   clue:"Attend the feast at Valstead, beneath the castle walls, and witness the crown.",
+   goal:{v:"valstead"}, obj:"Attend the coronation at Valstead", title:"Witness of the Crown", xp:800, gold:100},
+  {id:"y1m2", mon:"Seedsow", name:"Ash on the Wind", kind:"beat", incursion:0,
+   rumor:"Shrines near Glenden Wood lie burned, each marked with a crimson star.",
+   clue:"Walk the ashes outside Glenden Wood — the cult's trail begins there.",
+   goal:{v:"glenden"}, obj:"Search the burned shrines at Glenden Wood", xp:900, gold:120,
+   item:{name:"Crimson Star Cipher",stat:"quest",v:40},
+   seeds:"Among the ashes you find a cipher in the cult's hand — the Crimson Star is organized, and growing."},
+  {id:"y1m3", mon:"Leafdawning", name:"The Crimson Star Rises", kind:"invasion", incursion:0,
+   rumor:"Shadow raids strike at Cragstone and Arwic under the cult's crimson star.",
+   clue:"Repel a Shadow Incursion while the star burns overhead.",
+   goal:{repel:1}, obj:"Repel an Incursion this month", xp:1200, gold:200},
+  {id:"y1m4", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"The spring festival blooms in every capital — but a Crimson Star agitator works the crowds.",
+   clue:"Visit a capital fair and root the agitator out.",
+   goal:{agitator:1}, obj:"Catch the cult agitator at any capital", xp:1000, gold:150,
+   item:{name:"Agitator's Crimson Note",stat:"quest",v:30},
+   seeds:"The agitator's note names a dig: the cult tunnels beneath Trothyr's Rest for something buried."},
+  {id:"y1m5", mon:"Verdantine", name:"The Ember Unearthed", kind:"explore", incursion:2,
+   rumor:"The cult digs beneath Trothyr's Rest for a buried crystal ember — a sliver of the Hopeslayer's shattered prison.",
+   clue:"Clear Trothyr's Rest before they raise it.",
+   goal:{clear:"Trothyr's Rest"}, obj:"Clear the delve of Trothyr's Rest", xp:1500, gold:220,
+   seeds:"In the lowest hall you glimpse the crystal ember — crimson, humming — before a cultist spirits it into the dark."},
+  {id:"y1m6", mon:"Solclaim", name:"Whispers in Valstead", kind:"beat", incursion:0,
+   rumor:"The cult moves supplies with unsettling ease. The trail leads home — to Valstead itself.",
+   clue:"Search Valstead for proof of the traitor.",
+   goal:{v:"valstead"}, obj:"Uncover the cult's manifests in Valstead", xp:1100, gold:160,
+   seeds:"You copy the supply manifests. The hand that signed them sits on Valstead's own council."},
+  {id:"y1m7", mon:"Leaffall", name:"The Generals Walk", kind:"invasion", incursion:0,
+   rumor:"The three Shadow Generals — Ler Rhan, Black Ferah, Isin Dule — roam the wilds openly, gathering the cult to war.",
+   clue:"Fell one of the named Generals and take their seal.",
+   goal:{general:1}, obj:"Slay a Shadow General", xp:1600, gold:260,
+   item:{name:"Broken Seal Fragment",stat:"quest",v:60}},
+  {id:"y1m8", mon:"Harvestgain", name:"Reign of Embers", kind:"boss", incursion:0,
+   rumor:"The crystal ember blazes over the Direlands — an ECHO OF BAEL'ZHARON takes shape within it!",
+   clue:"Cast the Hopeslayer's Echo down before it finishes waking.",
+   goal:{echo:1}, obj:"Slay the Echo of Bael'Zharon in the Direlands", title:"Bane of the Ember", xp:4000, gold:600,
+   item:{name:"Shard-Scarred Pauldrons",stat:"worn",at:"heavy",aslot:"upperarm",v:34,tier:5,legendary:true},
+   seeds:"The Echo shatters into cooling motes. The ember is spent — and the cult is suddenly, utterly leaderless."},
+  {id:"y1m9", mon:"Leafcull", name:"The Unmasking", kind:"beat", incursion:null,
+   rumor:"With the Echo cast down, the trial of the cult's hidden herald convenes at Castle Val Halla.",
+   clue:"Bring your year of testimony — cipher, note, and manifests — to the castle trial.",
+   goal:{v:"valstead"}, obj:"Attend the trial at Castle Val Halla", xp:1800, gold:300,
+   seeds:"Councilor Merwyn Hale is unmasked as the cult's herald; your gathered testimony seals the verdict. Valstead rebuilds its council."},
+  {id:"y1m10", mon:"Coldeve", name:"Sweeping the Ashes", kind:"beat", incursion:0,
+   rumor:"The Crimson Star is broken; its last cells scatter for the deep halls and the wild dark.",
+   clue:"Hunt the shadow remnant down wherever it hides.",
+   goal:{kills:8,fams:["shadow","skeleton"]}, obj:"Destroy 8 of the shadow remnant (shadows or risen dead)", xp:1600, gold:240},
+  {id:"y1m11", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Snow settles on a safer Dereth. Lord Kilmer gifts castle-forged keepsakes at every capital's festival.",
+   clue:"Join the Frostfell festival at any capital.",
+   goal:{v:"capital"}, obj:"Attend the festival at any capital", xp:900, gold:100,
+   item:{name:"Castle-Forged Keepsake",stat:"quest",v:150}},
+  {id:"y1m12", mon:"Snowreap", name:"A Mask in the Snow", kind:"beat", incursion:null,
+   rumor:"A Virindi mask hangs nailed to Holtburg's notice board. Nobody saw it placed. It has been counting.",
+   clue:"See it for yourself at Holtburg.",
+   goal:{v:"holtburg"}, obj:"Examine the mask at Holtburg", xp:1200, gold:180,
+   seeds:"The mask has tallied every death of the Year of Embers, in a neat, empty hand. Something is auditing the new crown. <b>Year 2 — the Year of Whispers — will continue the saga.</b>"},
 ];
-let gameMonth=0, eventClock=0, calendarDone={};
-const MONTH_SECS=210;                       // real seconds of play per in-world month (story chapters)
+const SAGA_REST={id:"y1rest", mon:"Morningthaw", name:"The Embers Rest", kind:"beat", incursion:null, goal:null,
+  rumor:"The Year of Embers is written into the chronicles, and Dereth breathes. The empty-faced auditors have not left.",
+  clue:"Rest, adventurer. The Year of Whispers is coming."};
+let gameMonth=0, eventClock=0, calendarDone={}, sagaProg={};
 const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
-function currentCalEvent(){ const n=EVENT_CALENDAR.length; return EVENT_CALENDAR[((gameMonth%n)+n)%n]; }
+function currentCalEvent(){ return EVENT_CALENDAR[gameMonth]||SAGA_REST; }
 // ── seasons follow the sun, not the story: one season lasts SEASON_DAYS full day/night cycles.
 //    worldDays accumulates in updateDayNight and is saved, so the year advances across sessions.
 //    A fresh world begins at worldDays=90 — the first morning of summer (Verdantine). ──
@@ -6081,30 +6128,103 @@ function seasonTick(){
 function currentSeason(){ return SEASONS[SEASON_ORDER[Math.floor(worldDays/SEASON_DAYS)%SEASON_ORDER.length]]||SEASONS.growth; }
 function seasonDayInfo(){ const d=Math.floor(worldDays%SEASON_DAYS)+1; return `day ${d}/${SEASON_DAYS}`; }
 function updateSeasonHUD(){ const el=document.getElementById('sSeason'); if(el){ const S=currentSeason(),ce=currentCalEvent(); el.innerHTML=`${S.name} <span style="color:var(--dim)">· ${seasonDayInfo()} · ${ce.name}</span>`; } }
-function advanceMonth(){
-  gameMonth++;
+function advanceMonth(){   // announce the CURRENT saga month (called on saga start + after each completion)
   const ce=currentCalEvent();
-  log(`<b>A new chapter unfolds: ${ce.name}.</b> ${ce.rumor}`,"warn");
+  log(`<b>The Kilmer Saga — ${ce.mon}: ${ce.name}.</b> ${ce.rumor}`,"warn");
+  if(ce.obj) log(`<b>Objective:</b> ${ce.obj}. <span style="color:var(--dim)">(/story reviews the saga)</span>`,"sys");
   toast(ce.name);
   updateSeasonHUD();
-  eventCd=Math.min(eventCd,18);             // an Incursion tied to the new event arrives shortly
-  if(ce.boss){   // S9: the climactic chapter looses the apex terror upon Dereth
-    if(!isOnline && typeof spawnApex==="function" && !monsters.some(m=>m.apex)) spawnApex();
-    log(`<b style="color:#ff5a5a">⚠ ${ce.name}</b> — ${ce.clue}`,"warn"); toast("⚠ "+ce.name.toUpperCase());
+  if(ce.goal&&ce.goal.repel!=null) eventCd=Math.min(eventCd,18);   // the featured Incursion arrives shortly
+  if(ce.goal&&ce.goal.echo) log(`<b style="color:#ff5a5a">⚠ ${ce.name}</b> — ${ce.clue}`,"warn");
+}
+// ── saga progression: objectives report here; completing the live month grants its reward and advances ──
+function sagaNotify(type,data){
+  if(isOnline) return;                        // the saga unfolds in the solo world (server events are shared)
+  const ce=currentCalEvent(), g=ce.goal;
+  if(!g||calendarDone[ce.id]) return;
+  if(type==="repel"  && g.repel!=null){ sagaProg[ce.id]=(sagaProg[ce.id]||0)+1; if(sagaProg[ce.id]>=g.repel) sagaComplete(ce); }
+  else if(type==="agitator" && g.agitator){ sagaComplete(ce); }
+  else if(type==="general"  && g.general){ sagaComplete(ce); }
+  else if(type==="echo"     && g.echo){ sagaComplete(ce); }
+  else if(type==="kill"     && g.kills && g.fams && g.fams.indexOf(data)>=0){
+    sagaProg[ce.id]=(sagaProg[ce.id]||0)+1;
+    if(sagaProg[ce.id]>=g.kills) sagaComplete(ce);
+    else if(sagaProg[ce.id]%3===0) log(`<b>${ce.name}:</b> ${sagaProg[ce.id]}/${g.kills} of the remnant destroyed.`,"sys");
   }
+  else if(type==="visit"    && g.v){ sagaComplete(ce); }
+  else if(type==="clear"    && g.clear){ sagaComplete(ce); }
 }
-// S9 live story: show the serialized arc and where the world currently stands within it
+function sagaComplete(ce){
+  if(calendarDone[ce.id]) return;
+  calendarDone[ce.id]=true;
+  if(ce.xp) gainXP(ce.xp); if(ce.gold) player.gold+=ce.gold;
+  if(ce.item) addToInv(Object.assign({},ce.item),true);
+  if(ce.title){ player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf(ce.title)<0) player.eventTitles.push(ce.title);
+    player.title=ce.title; log(`You are honoured with the title <b>${ce.title}</b>!`,"sys"); toast("TITLE — "+ce.title.toUpperCase()); }
+  log(`<span style="color:#ffd23b"><b>Saga chapter complete — ${ce.name}!</b></span> <span style="color:var(--dim)">(+${ce.xp||0} XP · +${ce.gold||0} pyreals${ce.item?` · ${ce.item.name}`:""})</span>`,"sys");
+  if(ce.seeds) log(`<i>${ce.seeds}</i>`,"sys");
+  toast("SAGA — CHAPTER COMPLETE"); if(SFX.level)SFX.level();
+  gameMonth++; updateHUD&&updateHUD(); saveGame();
+  if(gameMonth<EVENT_CALENDAR.length) advanceMonth();
+  else { log(`<span style="color:#ffd23b"><b>The Year of Embers is complete.</b></span> ${SAGA_REST.rumor}`,"sys"); toast("YEAR OF EMBERS — COMPLETE"); updateSeasonHUD(); }
+}
+// the Reign of Embers world boss — a half-woken echo of the Hopeslayer, burning over the Direlands
+function spawnEmberEcho(){
+  if(inDungeon||inNetwork){ setTimeout(spawnEmberEcho,8000); return; }
+  const ang=rnd(0,6.28),r=rnd(300,900),x=Math.cos(ang)*r,z=Math.sin(ang)*r;
+  const mesh=buildCreature("shadow");mesh.scale.setScalar(3.2);mesh.position.set(x,0,z);scene.add(mesh);
+  mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(0x5a1010); });   // ember-lit
+  const lbl=labelSprite("Echo of Bael'Zharon","monsters");lbl.scale.set(12,2.8,1);lbl.position.y=mesh.userData.headY+2;mesh.add(lbl);
+  const hp=Math.round(4200*settings.diff);
+  const m={kind:"shadow",x,z,r:BESTIARY.shadow.size*0.8*3.2,hp,mhp:hp,ang:0,state:"wander",t:0,atkCd:0,
+    wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*3.2,isBoss:true,sagaEcho:true,
+    name:"Echo of Bael'Zharon",dmg:Math.round(55*settings.diff),xp:18000,goldRange:[500,900],
+    goldMul:1,baseScale:3.2,burnT:0,burnDps:0,burnAcc:0};
+  monsters.push(m);
+  log("The crystal ember blazes — an <b>Echo of Bael'Zharon</b> takes shape over the Direlands. Cast it down before it wakes!","warn");
+  toast("THE ECHO RISES"); if(SFX.growl)SFX.growl();
+}
+// visit-goal destinations, resolved at runtime against the built world
+function sagaGoalPoint(g){
+  if(g.v==="valstead") return {x:KC.x,z:KC.z+138,r:70,name:"Valstead"};
+  if(g.v==="glenden"){ const c=CITIES.find(c=>c.name==="Glenden Wood"); return c?{x:c.x,z:c.z,r:44,name:c.name}:null; }
+  if(g.v==="holtburg"){ const c=CITIES.find(c=>c.name==="Holtburg"); return c?{x:c.x,z:c.z,r:34,name:c.name}:null; }
+  if(g.v==="capital"){ let best=null,bd=1e9; for(const c of CAPITALS){ const d=Math.hypot(c.x-player.x,c.z-player.z); if(d<bd){bd=d;best=c;} } return best?{x:best.x,z:best.z,r:34,name:best.name}:null; }
+  return null;
+}
+// the live saga journal: where the Tenfold Crown currently stands
 function storyView(){
-  const n=EVENT_CALENDAR.length, cur=((gameMonth%n)+n)%n, ce=EVENT_CALENDAR[cur];
-  log(`<b>Dereth's Story — “The Fifth Sending of Darkness”</b> · chapter <b>${cur+1}/${n}</b> · ${currentSeason().name}`,"sys");
-  log(`<b>${ce.name}</b> — <i>${ce.rumor}</i>`,"sys");
-  if(ce.clue) log(`Town Crier: “${ce.clue}”`,"sys");
-  EVENT_CALENDAR.forEach((c,i)=>{ const mark=i<cur?"✓":i===cur?"➤":"·";
-    log(`${mark} <b>${c.name}</b>${c.title?` <span style="color:#ffd23b">— ${c.title}${calendarDone[c.id]?" ✓":""}</span>`:""}`, i===cur?"warn":"sys"); });
+  const n=EVENT_CALENDAR.length, done=gameMonth>=n, ce=currentCalEvent();
+  log(`<b>The Kilmer Saga — “The Tenfold Crown” · Year 1: Year of Embers</b> · ${done?"<b>complete</b>":`chapter <b>${gameMonth+1}/${n}</b>`} · ${currentSeason().name}`,"sys");
+  log(`<b>${ce.mon} — ${ce.name}</b> — <i>${ce.rumor}</i>`,"sys");
+  if(!done&&ce.obj){ const g=ce.goal,p=sagaProg[ce.id]||0,tgt=g&&(g.kills||g.repel);
+    log(`<b>Objective:</b> ${ce.obj}${tgt?` (${p}/${tgt})`:""}`,"warn"); }
+  if(isOnline) log(`<span style="color:var(--dim)">The saga unfolds in the solo world — log off to continue it.</span>`,"sys");
+  EVENT_CALENDAR.forEach((c,i)=>{ const mark=calendarDone[c.id]?"✓":i===gameMonth?"➤":"·";
+    log(`${mark} <b>${c.mon}</b> — ${c.name}${c.title?` <span style="color:#ffd23b">— ${c.title}${calendarDone[c.id]?" ✓":""}</span>`:""}`, i===gameMonth&&!done?"warn":"sys"); });
 }
+let _sagaTick=0;
 function updateCalendar(dt){
-  eventClock+=dt;
-  if(eventClock>=MONTH_SECS){ eventClock-=MONTH_SECS; advanceMonth(); }
+  if(isOnline) return;                                   // solo-world saga (see sagaNotify)
+  _sagaTick-=dt; if(_sagaTick>0) return; _sagaTick=0.7;  // goal checks are cheap but needn't run every frame
+  if(!player.alive) return;
+  if(!sagaProg._intro){ sagaProg._intro=1; advanceMonth(); }   // herald the live chapter once per world (new game or migrated save)
+  const ce=currentCalEvent(), g=ce.goal;
+  if(!g||calendarDone[ce.id]) return;
+  if(g.echo){ if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaEcho)) spawnEmberEcho(); return; }   // covers load mid-chapter
+  if(g.clear){ const d=DUNGEONS.find(d=>d.name===g.clear);
+    if(d&&player.clearedDungeons.indexOf(d.id)>=0) sagaNotify("clear"); return; }   // cleared (now or ever) → the ember is glimpsed
+  if(inDungeon||inNetwork) return;
+  if(g.agitator){   // plant the cultist when the player reaches a capital fair
+    const near=CAPITALS.find(c=>Math.hypot(c.x-player.x,c.z-player.z)<38);
+    if(near&&!sagaProg[ce.id+"_up"]&&!monsters.some(m=>m.sagaTag==="agitator")){
+      sagaProg[ce.id+"_up"]=1;
+      const a=rnd(0,6.28),ax=near.x+Math.cos(a)*14,az=near.z+Math.sin(a)*14;
+      const m=spawnMonster("shadow",ax,az,false); m.sagaTag="agitator"; m.name="Crimson Star Agitator";
+      log(`A <b>Crimson Star agitator</b> bolts from the festival crowd at <b>${near.name}</b> — cut him down!`,"warn"); toast("THE AGITATOR"); if(SFX.growl)SFX.growl(); }
+    return; }
+  if(g.v){ const pt=sagaGoalPoint(g);
+    if(pt&&Math.hypot(pt.x-player.x,pt.z-player.z)<pt.r) sagaNotify("visit"); }
 }
 function startEvent(){
   if(inDungeon||inNetwork||worldEvent) return;
@@ -6153,11 +6273,7 @@ function eventSuccess(){
   player.incursions=(player.incursions||0)+1;
   log(`The Incursion upon <b>${t.name}</b> is broken! Bounty: ${gold} pyreals + ${xp} XP.`,"sys");
   toast("INCURSION REPELLED");SFX.level();SFX.quest();
-  // featured-event reward: the month's one-time title for breaking its Incursion
-  const ce=currentCalEvent();
-  if(ce&&ce.title&&!calendarDone[ce.id]){ calendarDone[ce.id]=true;
-    player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf(ce.title)<0) player.eventTitles.push(ce.title);
-    log(`For breaking the <b>${ce.name}</b>, you earn the title <b>${ce.title}</b>!`,"sys"); toast("TITLE — "+ce.title.toUpperCase()); }
+  sagaNotify("repel");   // saga invasion chapters complete by breaking a featured Incursion
   checkAchievements();
   endEvent(false);saveGame();
 }
@@ -15752,7 +15868,7 @@ function saveGame(){
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
-      gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,
+      gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
@@ -15815,6 +15931,8 @@ function applySaveObj(s){
   } else activeQuests=[];
   tracked=(s.tracked&&isActive(s.tracked))?s.tracked:trackedId();
   gameMonth=s.gameMonth|0; eventClock=0; calendarDone=(s.calendarDone&&typeof s.calendarDone==="object")?s.calendarDone:{};
+  sagaProg=(s.sagaProg&&typeof s.sagaProg==="object")?s.sagaProg:{};
+  if(!s.sagaVer){ gameMonth=0; sagaProg={}; }   // pre-saga saves (the old "Fifth Sending" loop) begin the Kilmer Saga at the Coronation
   worldDays=(typeof s.worldDays==="number"&&isFinite(s.worldDays))?s.worldDays:SEASON_DAYS;   // older saves join at the first morning of summer
   _seasonIdx=-1; seasonTick();
   player.eventTitles=Array.isArray(s.eventTitles)?s.eventTitles.slice():[]; updateSeasonHUD();

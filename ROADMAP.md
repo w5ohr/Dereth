@@ -395,6 +395,20 @@ H7 dyeing → H16 Colosseum gauntlet run → H17 augment breadth → H10/H12 com
 
 ---
 
+## MILESTONE K — The Kilmer Saga: "The Tenfold Crown"  ◑ (engine + Year 1 live; Years 2–10 are data)
+Ten-year serialized storyline (design: `docs/kilmer-saga-storyline.md`; framework: events doc §5).
+- ✅ **K0. Storyline + 120-month schedule** authored (canon-continuous with AC history; Kilmer, Castle
+  Val Halla, the Falatacot-root twist, T'thuun finale).
+- ✅ **K1. Saga engine + Year 1 "Year of Embers"** (jsc + preview verified: all 12 chapters e2e via real
+  code paths, save/load + migration, 0 console errors). The sample "Fifth Sending" calendar loop became
+  the saga: **progression-gated months** (objectives, not timers — no chapter can be missed), goal types
+  `visit / repel / agitator / clear / general / echo / kills`, per-chapter rewards (XP/gold/items/titles,
+  incl. the **Echo of Bael'Zharon** one-time world boss with *Shard-Scarred Pauldrons* + "Bane of the
+  Ember"), crier rumor + `/story` journal + HUD chip integration, `sagaProg`/`sagaVer` persisted (pre-saga
+  saves restart at the Coronation). Solo-world only (`isOnline` guarded) — server-shared saga is future work.
+- ☐ **K2–K10. Years 2–10** — pure data drops on the K1 engine (new goal types as needed: siege state Y4,
+  season reskin Y7, rift spawner Y8, coastal water Y9, relic ceremony Y10M116).
+
 ## Suggested order of execution
 **A (all) → C1 → C2 → B1 → B2 → B3 → C3 → A-leftovers polish → E0 (research) → E1/E2/E3 → D → F → H.**
 Rationale: finish the cheap authenticity wins first (A); then the biggest visual upgrades (C1/C2) since
