@@ -191,6 +191,16 @@ gitignored in acdata/, only the derived data texture ships).
   ten retail merchants (Archmage Cindrue ×60 wares, Sedor Wystan the Blacksmith, Sontella Dagroff the
   Bowyer, Thelnoth Cort the Healer, Barkeeper Wilomine…) and the Blacksmith's shop sells his actual
   retail armour list. 0 console errors.
+- ✅ **R4. Retail world facts** (`tools/ace_world_more.py` → `assets/acworld.json`, 170 KB; dungeon
+  interiors intentionally left to the parallel workstream): **the real fauna map** — 165k `encounter`
+  rows → a 51×51 grid of what actually spawned where (24k matched to our 36 bestiary kinds);
+  `pickKind` spawns the retail species 75% of the time wherever data exists (84% of land after a
+  2-ring neighbour fallback; legacy pools fill retail's deliberately-quiet town heartlands). **The
+  retail travel web** — 217 authentic overworld portals placed with their real names and TRUE
+  destinations (Mount Alphus, North Gemm, South Bellig…; interior-destination portals excluded) plus
+  wayside lifestones to 189 total, both spaced against clutter at ⅓ world scale. **Creature reality**:
+  per-kind retail level/health/XP bands (10th–90th percentile across 7k creatures) shown in the
+  appraisal panel ("Retail kin ranged level 5–160").
 
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
