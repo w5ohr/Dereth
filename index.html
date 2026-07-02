@@ -1546,7 +1546,8 @@ function terrainH(x,z){
 // to ~1u — sampling terrainH directly sank characters to the waist (or floated them). So sample
 // terrainH at the 4 surrounding grid vertices and bilinear-interpolate → the actual drawn surface.
 function groundY(x,z){
-  if(inDungeon||inNetwork) return 0;                 // instances are flat at y=0
+  if(inDungeon) return (typeof dungeonFloorAt==="function")?dungeonFloorAt(x,z):0;   // dungeons are multi-level (ramps & pit-drops)
+  if(inNetwork) return 0;                            // the Town Network stays flat
   const STEP=WORLD/GROUND_SEG;                       // grid cell size (matches the ground mesh's segments)
   const gx=(x+HALF)/STEP, gz=(z+HALF)/STEP;
   const i0=Math.floor(gx), k0=Math.floor(gz), fx=gx-i0, fz=gz-k0;
@@ -1610,6 +1611,7 @@ let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds u
 let stormBuild=0,stormPhase=0,stormCd=0; // H13 portal storms: build-up timer / phase (0 idle,1 warned) / post-storm cooldown
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0,dungeonLock=null,dungeonVault=null;
+let dungeonBars=[],dungeonLevers=[],dungeonPortals=[],dungeonBoxes=[];   // walkthrough mechanics: doors/ledges, wall levers, internal portals, key strongboxes
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
@@ -9065,6 +9067,11 @@ function currentPrompt(){
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&nr(dungeonChest.x,dungeonChest.z)<3.5) return "Open the hoard (E)";
     if(dungeonLock&&!dungeonLock.opened&&nr(dungeonLock.x,dungeonLock.z)<3.2) return hasLockOpener()?"Pick the locked cache (E)":"Locked — need a Lockpick or Key";
     if(dungeonVault&&!dungeonVault.opened&&nr(dungeonVault.x,dungeonVault.z)<3.2) return hasKey()?"Unlock the vault (E)":"Sealed Vault — needs a Key";
+    for(const lv of dungeonLevers) if(!lv.pulled&&nr(lv.x,lv.z)<2.8) return "Pull the wall lever (E)";
+    for(const bx of dungeonBoxes) if(!bx.opened&&nr(bx.x,bx.z)<2.8) return "Open the strongbox (E)";
+    for(const b of dungeonBars) if(b.kind==="key"&&!b.open&&nr(b.x,b.z)<3.2) return hasNamedKey(b.need)?("Unlock with the "+b.need+" (E)"):("Locked — find the "+b.need);
+    for(const b of dungeonBars) if(b.kind==="lever"&&!b.open&&nr(b.x,b.z)<3.2) return "A portcullis bars the way — find its lever";
+    for(const pp of dungeonPortals) if(nr(pp.x,pp.z)<2.8) return "Take the portal back (E)";
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return "Leave the delve (E)";
     return "";
   }
@@ -9157,6 +9164,10 @@ function interact(){
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&Math.hypot(dungeonChest.x-player.x,dungeonChest.z-player.z)<3.5){ openChest(); return; }
     if(dungeonLock&&!dungeonLock.opened&&Math.hypot(dungeonLock.x-player.x,dungeonLock.z-player.z)<3.2){ openLockedCache(); return; }
     if(dungeonVault&&!dungeonVault.opened&&Math.hypot(dungeonVault.x-player.x,dungeonVault.z-player.z)<3.2){ openVault(); return; }
+    for(const lv of dungeonLevers) if(!lv.pulled&&Math.hypot(lv.x-player.x,lv.z-player.z)<2.8){ pullDungeonLever(lv); return; }
+    for(const bx of dungeonBoxes) if(!bx.opened&&Math.hypot(bx.x-player.x,bx.z-player.z)<2.8){ openStrongbox(bx); return; }
+    for(const b of dungeonBars) if(b.kind==="key"&&!b.open&&Math.hypot(b.x-player.x,b.z-player.z)<3.2){ unlockDungeonDoor(b); return; }
+    for(const pp of dungeonPortals) if(Math.hypot(pp.x-player.x,pp.z-player.z)<2.8){ teleportFX(player.x,player.z); arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=1.5; if(SFX.portal)SFX.portal(); log("The portal casts you back to the entrance.","sys"); return; }
     if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.5){ exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
@@ -13355,7 +13366,43 @@ function hideOverworld(v){
 }
 function clearDrops(){ for(const d of drops) scene.remove(d.mesh); drops=[]; }
 function clearProjectiles(){ for(const p of pProj) scene.remove(p.mesh); for(const p of eProj) scene.remove(p.mesh); for(const w of walls) scene.remove(w.mesh); pProj=[];eProj=[];walls=[]; }
-function spawnDungeonMonster(kind,x,z,elite,hpMul){
+// ── per-dungeon WALKTHROUGH SCRIPTS, encoded from the documented AC walkthroughs (acpedia/fandom).
+//    w = the spine, one beat per link: flat · ramp (slope down) · drop (sheer one-way jump-down) ·
+//    lever (portcullis opened by a wall lever in the room before) · key (locked door; its named key
+//    waits in a strongbox in the room before). boss/loot name the warden & the hoard's quest items;
+//    d is the walkthrough line shown on entry; portal adds the end-of-dungeon portal back; cells
+//    lines a mid room with prison bars. Everything else falls back to the seeded generator. ──
+const DUNGEON_SCRIPTS={
+  "Halls of the Helm":{w:["drop","ramp","flat","drop","ramp"],boss:"Guardian of the Helm",loot:["Fiery Shield","Superior Helmet"],
+    d:"Run straight ahead and jump down. Ramps lead west through undead-filled halls to a ledge above a round chamber — drop in, hug the wall, and the Guardian's lair waits beyond."},
+  "Green Mire Grave":{w:["flat","ramp","key","ramp","key"],cells:true,boss:"Ravenous Mosswart",loot:["Green Mire Yari"],
+    d:"Mosswart barrows: ramps climb past four prison cells; keys open the way — the last guards the chest of the Green Mire Yari."},
+  "Mines of Despair":{w:["drop","lever","lever","key","flat"],portal:true,loot:["Focusing Stone"],boss:"Despair Overseer",
+    d:"From the drop head north — a Golden Key opens the wooden door. Jump into the pit, hug the left wall to the wall levers, and the portal beyond the mines lies west."},
+  "Folthid Cellar":{w:["flat","lever","drop","key"],portal:true,boss:"Aste Sclavus",loot:["Dagger of Tikola"],
+    d:"The cellar of the Folthid estate. A lever west of the bridge room opens the lower door; the Aste Sclavus at the bottom carries the key — and the Dagger of Tikola."},
+  "Holtburg Redoubt":{w:["flat","ramp","flat","ramp"],boss:"Redoubt Chieftain",loot:["Bronze Candlestick","Antique Bowl"],
+    d:"The old redoubt under the Holtburg hills — junction after junction of banderling-held halls hiding Worcer's stolen heirlooms."},
+  "Smugglers Hideaway":{w:["drop","lever","flat"],boss:"Smuggler Chief",loot:["Alloy Contrivance"],
+    d:"Hang right from the drop. A hidden trigger opens the smugglers' vault — their chief keeps the Alloy Contrivance."},
+  "Glenden Wood Dungeon":{w:["ramp","flat","key","ramp"],boss:"Banderling Chieftain",loot:["Glenden Wood Signet"],
+    d:"Banderling warrens beneath Glenden Wood — a keyed gate bars the deep ramps where the chieftain holds court."},
+  "Mite Maze":{w:["flat","flat","lever","flat","flat"],boss:"Mite Snob",loot:["Mite Sceptre"],
+    d:"A true maze of mite tunnels — dead ends everywhere. Somewhere a lever opens the way to the nest."},
+  "Braid Mansion Ruin":{w:["ramp","key","flat","drop"],boss:"Aerfalle's Footman",loot:["Aerfalle's Signet"],
+    d:"The drowned halls of the Braid Mansion. Lady Aerfalle's servants still walk them; a keyed door and a sheer fall guard the inner sanctum."},
+  "Empyrean Garrison":{w:["ramp","lever","flat","key","ramp","flat"],portal:true,boss:"Garrison Warden",loot:["Empyrean Great Sword"],
+    d:"An Empyrean garrison sealed since the Fall — lever-gates and warded doors, and at its heart a blade of the old world."},
+  "Mountain Sewer":{w:["drop","flat","ramp","lever"],boss:"Sewer Rat King",loot:["Tarnished Bracelet"],
+    d:"Drop into the runoff and wade the dark channels — the rat king's warren lies past the flood-gate lever."},
+  "Arcanum Research Facility":{w:["drop","lever","flat","key"],portal:true,boss:"Rogue Golem",loot:["Arcanum Prism"],
+    d:"A Vitae-age research hub: sealed test doors, a rogue golem, and the prism the arcanists abandoned."},
+  "Holtburg Dungeon":{w:["flat","ramp","flat"],boss:"Drudge Ringleader",loot:["Worn Family Blade"],
+    d:"The classic first delve: drudge-held cellars beneath Holtburg farmsteads."},
+  "Sand Shallows Cave":{w:["ramp","drop","flat"],boss:"Shallows Shreth",loot:["Shallows Pearl"],
+    d:"Tidal caves that step down toward the waterline — one sheer drop, no way back but through."},
+};
+function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName){
   hpMul=hpMul||1;
   const b=BESTIARY[kind];
   const mesh=buildCreature(kind);
@@ -13363,9 +13410,9 @@ function spawnDungeonMonster(kind,x,z,elite,hpMul){
   if(elite){
     hp=Math.round(b.hp*3.5*hpMul);dmg=Math.round(b.dmg*1.8*Math.sqrt(hpMul));xp=Math.round(b.xp*3*hpMul);r*=1.5;base=1.5;mesh.scale.setScalar(1.5);
     const aura=new THREE.PointLight(0xff5a3a,1.8,14);aura.position.y=1.6;mesh.add(aura);
-    const lbl=labelSprite("Warden — "+b.name,"monsters");lbl.scale.set(7,1.8,1);lbl.position.y=mesh.userData.headY+1.4;mesh.add(lbl);
+    const lbl=labelSprite(bossName||("Warden — "+b.name),"monsters");lbl.scale.set(7,1.8,1);lbl.position.y=mesh.userData.headY+1.4;mesh.add(lbl);
   }
-  mesh.position.set(x,0,z);scene.add(mesh);
+  mesh.position.set(x,(typeof dungeonFloorAt==="function"&&inDungeon)?dungeonFloorAt(x,z):0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul:elite?4:1,ang:rnd(0,6.28),state:"chase",t:0,atkCd:0,
     wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*base,isDungeon:true,isElite:!!elite,baseScale:base,
     burnT:0,burnDps:0,burnAcc:0});
@@ -13384,40 +13431,81 @@ function buildProp(type,lx,lz,color){
 // ---- AC-style dungeons: rooms joined by corridors (real AC dungeons are tile-grid rooms
 //      linked by twisting halls; we lay out a deterministic per-dungeon room graph). ----
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const RAMP_DY=2.6, DROP_DY=3.4;   // how far ramps slope / pit-drops fall between rooms
 function genDungeonLayout(def){
   const rng=mulberry32((def.id+1)*2654435761>>>0 ^ (def.tier*40503));
+  const script=DUNGEON_SCRIPTS[def.name]||null;
   const G=22; // cell spacing; depth grows north (−z), entry at z=0
   const cells={},rooms=[],corridors=[],key=(c,d)=>c+","+d;
   function addRoom(col,depth,type){
     const round=type!=="entry"&&type!=="boss"&&rng()<0.32;
     const hx=6+Math.floor(rng()*3),hz=6+Math.floor(rng()*3),rad=6+Math.floor(rng()*3);
-    const room={col,depth,cx:col*G,cz:-depth*G,hx,hz,round,rad,type,doors:{N:false,S:false,E:false,W:false}};
+    const room={col,depth,cx:col*G,cz:-depth*G,hx,hz,round,rad,type,fy:0,doors:{N:false,S:false,E:false,W:false}};
     cells[key(col,depth)]=room;rooms.push(room);return room;
   }
   function connect(a,b){
+    let c;
     if(a.col===b.col){ const x=a.cx,n=a.cz<b.cz?a:b,s=a.cz<b.cz?b:a; n.doors.S=true;s.doors.N=true;
-      corridors.push({a:n,b:s,vert:true,x,x0:x-2.5,x1:x+2.5,z0:Math.min(a.cz,b.cz),z1:Math.max(a.cz,b.cz)}); }
+      c={a:n,b:s,vert:true,x,x0:x-2.5,x1:x+2.5,z0:Math.min(a.cz,b.cz),z1:Math.max(a.cz,b.cz)}; }
     else { const z=a.cz,w=a.cx<b.cx?a:b,e=a.cx<b.cx?b:a; w.doors.E=true;e.doors.W=true;
-      corridors.push({a:w,b:e,vert:false,z,z0:z-2.5,z1:z+2.5,x0:Math.min(a.cx,b.cx),x1:Math.max(a.cx,b.cx)}); }
+      c={a:w,b:e,vert:false,z,z0:z-2.5,z1:z+2.5,x0:Math.min(a.cx,b.cx),x1:Math.max(a.cx,b.cx)}; }
+    corridors.push(c); return c;
   }
-  const entry=addRoom(0,0,"entry"); let prev=entry,pc=0,pd=0;
-  const N=3+Math.min(def.tier,4)+Math.floor(rng()*2); // 4–9 rooms along the spine
+  const entry=addRoom(0,0,"entry"); let prev=entry,pc=0,pd=0,fy=0;
+  const KEY_NAMES=["Golden Key","Iron Key","Worn Key","Silver Key"]; let keyN=0;
+  const N=script?script.w.length:(3+Math.min(def.tier,4)+Math.floor(rng()*2)); // spine length (scripted dungeons follow their walkthrough)
   for(let i=1;i<=N;i++){
     let nc=pc,nd=pd,r=rng();
     if(r<0.6)nd=pd+1; else if(r<0.8)nc=pc+1; else nc=pc-1;
     if(cells[key(nc,nd)]){nd=pd+1;nc=pc;} if(cells[key(nc,nd)]){nd=pd+1;}
-    const room=addRoom(nc,nd,i===N?"boss":"room");connect(prev,room);prev=room;pc=nc;pd=nd;
+    // the walkthrough beat for this link — scripted, or seeded so every delve has AC verticality/gates
+    let feat=script?(script.w[i-1]||"flat"):(()=>{const f=rng();
+      return f<0.2?"ramp":f<0.3?"drop":f<0.4?"lever":(def.tier>=2&&f<0.48?"key":"flat");})();
+    if(feat==="ramp")fy-=RAMP_DY; else if(feat==="drop")fy-=DROP_DY;
+    const room=addRoom(nc,nd,i===N?"boss":"room");room.fy=fy;
+    const cor=connect(prev,room);
+    cor.feat=feat; cor.hi=prev; cor.lo=room;   // hi = the earlier (higher) room on the spine
+    if(feat==="lever") cor.door={kind:"lever"};
+    else if(feat==="key") cor.door={kind:"key",need:KEY_NAMES[(keyN++)%KEY_NAMES.length]};
+    prev=room;pc=nc;pd=nd;
   }
   const mid=rooms.slice(1,rooms.length-1),nb=1+Math.floor(rng()*Math.min(3,def.tier));
   for(let b=0;b<nb;b++){ const base=mid.length?mid[Math.floor(rng()*mid.length)]:entry;
     const opts=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dc,dd])=>!cells[key(base.col+dc,base.depth+dd)]&&base.depth+dd>=0);
     if(!opts.length)continue; const[dc,dd]=opts[Math.floor(rng()*opts.length)];
-    connect(base,addRoom(base.col+dc,base.depth+dd,"branch")); }
+    const br=addRoom(base.col+dc,base.depth+dd,"branch"); br.fy=base.fy;
+    const bc=connect(base,br); bc.feat="flat"; bc.hi=base; bc.lo=br; }
   entry.doors.S=true; // the way you came in (exit archway)
-  return {rooms,corridors,entry,rng};
+  return {rooms,corridors,entry,rng,script};
 }
 function roomExtent(room,dir){ return room.round?room.rad:(dir==="N"||dir==="S"?room.hz:room.hx); }
+// floor height at a point: rooms first (flat per-room fy), then corridors (ramps interpolate).
+// dungeonRects entries carry fy; ramp rects carry {ramp:{vert,lo,hi,fyHi,fyLo}}.
+function dungeonFloorAt(x,z){
+  let cor=null;
+  for(const c of dungeonRects){
+    if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad) return c.fy||0; }
+    else if(x>=c.x0&&x<=c.x1&&z>=c.z0&&z<=c.z1){
+      if(c.room) return c.fy||0;                       // room floors win over overlapping corridors
+      if(!cor) cor=c;
+    }
+  }
+  if(!cor) return 0;
+  if(cor.ramp){ const rp=cor.ramp, t=clamp(((rp.vert?z:x)-rp.p0)/(rp.p1-rp.p0),0,1);
+    return rp.f0+(rp.f1-rp.f0)*t; }
+  return cor.fy||0;
+}
+// closed portcullises and pit-ledges block 2D movement; a ledge only blocks walkers BELOW it
+// (the player above steps off it and falls — the classic one-way AC jump-down)
+function dungeonBarred(x,z,r){
+  for(const b of dungeonBars){
+    if(b.open) continue;
+    if(b.topY!=null && player.y>b.topY-0.4) continue;   // ledge: passable from above
+    if(x>=b.x0-r&&x<=b.x1+r&&z>=b.z0-r&&z<=b.z1+r) return true;
+  } return false;
+}
 function dungeonWalkable(x,z){ const r=player.r*0.6;
+  if(dungeonBarred(x,z,r)) return false;
   for(const c of dungeonRects){
     if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad-r) return true; }
     else if(x>=c.x0+r&&x<=c.x1-r&&z>=c.z0+r&&z<=c.z1-r) return true;
@@ -13432,43 +13520,129 @@ function dungeonSlide(ox,oz,nx,nz){
 function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
   if(!dungeonWalkable(ax+(bx-ax)*t,az+(bz-az)*t)) return false;} return true; }
 function buildDungeon(def){
-  dungeonObjs=[];dungeonMobs=0;dungeonRects=[];const th=def.theme;
+  dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+  const th=def.theme;
   const L=genDungeonLayout(def),wallMat=texMat(stoneFloorTex,th.wall);   // real masonry texture, tinted to the theme
-  const floorMat=texMat(stoneFloorTex,th.floor),WH=7,Tw=1.0,wy=WH/2,gap=3.2;
+  const floorMat=texMat(stoneFloorTex,th.floor),WH=7,Tw=1.0,gap=3.2;
   const ceilMat=texMat(stoneFloorTex,new THREE.Color(th.wall).multiplyScalar(0.42).getHex()); // low, dark vaulted ceiling
-  // walkable cells (collision) — rooms + corridors (corridor rects overlap into rooms so the union stays connected)
-  for(const r of L.rooms) dungeonRects.push(r.round?{round:true,cx:r.cx,cz:r.cz,rad:r.rad}:{x0:r.cx-r.hx,z0:r.cz-r.hz,x1:r.cx+r.hx,z1:r.cz+r.hz});
-  for(const c of L.corridors) dungeonRects.push({x0:c.x0,z0:c.z0,x1:c.x1,z1:c.z1});
-  function wallBox(x,z,sx,sz){const w=new THREE.Mesh(new THREE.BoxGeometry(sx,WH,sz),wallMat);w.position.set(x,wy,z);w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);}
+  const script=L.script;
+  // the PURE corridor segment between the two rooms' wall planes (rails/ramps/doors live here)
+  function pureSeg(c){
+    if(c.vert){ const p0=Math.min(c.a.cz,c.b.cz)+roomExtent(c.a.cz<c.b.cz?c.a:c.b,"S"), p1=Math.max(c.a.cz,c.b.cz)-roomExtent(c.a.cz<c.b.cz?c.b:c.a,"N");
+      return {p0,p1,hiFirst:(c.hi===(c.a.cz<c.b.cz?c.a:c.b))}; }
+    const p0=Math.min(c.a.cx,c.b.cx)+roomExtent(c.a.cx<c.b.cx?c.a:c.b,"E"), p1=Math.max(c.a.cx,c.b.cx)-roomExtent(c.a.cx<c.b.cx?c.b:c.a,"W");
+    return {p0,p1,hiFirst:(c.hi===(c.a.cx<c.b.cx?c.a:c.b))};
+  }
+  // walkable cells (collision + floor heights) — room rects flagged so their floor wins the overlap
+  for(const r of L.rooms) dungeonRects.push(r.round?{round:true,cx:r.cx,cz:r.cz,rad:r.rad,fy:r.fy,room:true}:{x0:r.cx-r.hx,z0:r.cz-r.hz,x1:r.cx+r.hx,z1:r.cz+r.hz,fy:r.fy,room:true});
+  for(const c of L.corridors){
+    const dfy=(c.hi&&c.lo)?(c.hi.fy-c.lo.fy):0;
+    if(dfy>0.1&&(c.feat==="ramp"||c.feat==="drop")){
+      const seg=pureSeg(c);
+      const rect={x0:c.x0,z0:c.z0,x1:c.x1,z1:c.z1,fy:c.lo.fy};
+      if(c.feat==="ramp"){ const f0=seg.hiFirst?c.hi.fy:c.lo.fy, f1=seg.hiFirst?c.lo.fy:c.hi.fy;
+        rect.ramp={vert:!!c.vert,p0:seg.p0,p1:seg.p1,f0,f1}; }
+      dungeonRects.push(rect);
+    } else dungeonRects.push({x0:c.x0,z0:c.z0,x1:c.x1,z1:c.z1,fy:c.lo?c.lo.fy:0});
+  }
+  function wallBox(x,z,sx,sz,base,hh){const h=hh||WH,w=new THREE.Mesh(new THREE.BoxGeometry(sx,h,sz),wallMat);w.position.set(x,(base||0)+h/2,z);w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);}
   function floorTile(x,z,sx,sz,y){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),floorMat);f.rotation.x=-Math.PI/2;f.position.set(x,y,z);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);}
-  function ceilTile(x,z,sx,sz){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),ceilMat);f.rotation.x=Math.PI/2;f.position.set(x,WH,z);scene.add(f);dungeonObjs.push(f);}
-  // floors + matching ceilings (dungeons are enclosed and dark — you need a light source)
-  for(const r of L.rooms){ if(r.round){const f=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),floorMat);f.rotation.x=-Math.PI/2;f.position.set(r.cx,0.05,r.cz);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);
-      const cl=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),ceilMat);cl.rotation.x=Math.PI/2;cl.position.set(r.cx,WH,r.cz);scene.add(cl);dungeonObjs.push(cl);}
-    else { floorTile(r.cx,r.cz,r.hx*2,r.hz*2,0.05); ceilTile(r.cx,r.cz,r.hx*2,r.hz*2); } }
-  for(const c of L.corridors){ floorTile((c.x0+c.x1)/2,(c.z0+c.z1)/2,c.x1-c.x0,c.z1-c.z0,0.04); ceilTile((c.x0+c.x1)/2,(c.z0+c.z1)/2,c.x1-c.x0,c.z1-c.z0); }
-  // room walls (centered door gaps where corridors connect)
+  function ceilTile(x,z,sx,sz,y){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),ceilMat);f.rotation.x=Math.PI/2;f.position.set(x,y,z);scene.add(f);dungeonObjs.push(f);}
+  // floors + matching ceilings, each at its room's level (dungeons descend — ramps slope, pits drop)
+  for(const r of L.rooms){ if(r.round){const f=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),floorMat);f.rotation.x=-Math.PI/2;f.position.set(r.cx,r.fy+0.05,r.cz);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);
+      const cl=new THREE.Mesh(new THREE.CircleGeometry(r.rad,28),ceilMat);cl.rotation.x=Math.PI/2;cl.position.set(r.cx,r.fy+WH,r.cz);scene.add(cl);dungeonObjs.push(cl);}
+    else { floorTile(r.cx,r.cz,r.hx*2,r.hz*2,r.fy+0.05); ceilTile(r.cx,r.cz,r.hx*2,r.hz*2,r.fy+WH); } }
+  for(const c of L.corridors){
+    const hiF=c.hi?c.hi.fy:0, loF=c.lo?c.lo.fy:0, dfy=hiF-loF;
+    const cx=(c.x0+c.x1)/2, cz=(c.z0+c.z1)/2, sx=c.x1-c.x0, sz=c.z1-c.z0;
+    if(dfy>0.1&&c.feat==="ramp"){ const seg=pureSeg(c), len=seg.p1-seg.p0, mid=(seg.p0+seg.p1)/2;
+      const slope=new THREE.Mesh(new THREE.PlaneGeometry(c.vert?5:len, c.vert?len:5),floorMat);   // the sloped run between the two wall planes
+      slope.rotation.x=-Math.PI/2;
+      const ang=Math.atan2(dfy,len);
+      if(c.vert){ slope.rotation.x=-Math.PI/2+(seg.hiFirst?-ang:ang)*1; slope.position.set(c.x,(hiF+loF)/2+0.06,mid); }
+      else { slope.rotation.y=0; slope.rotation.x=-Math.PI/2; slope.rotation.z=(seg.hiFirst?ang:-ang); slope.position.set(mid,(hiF+loF)/2+0.06,c.z); }
+      slope.receiveShadow=true;scene.add(slope);dungeonObjs.push(slope);
+      ceilTile(cx,cz,sx,sz,hiF+WH);
+    } else if(dfy>0.1&&c.feat==="drop"){
+      floorTile(cx,cz,sx,sz,loF+0.04); ceilTile(cx,cz,sx,sz,hiF+WH);
+      // riser face under the high room's doorway + a one-way ledge bar (blocks walkers from below only)
+      const seg=pureSeg(c), edge=seg.hiFirst?seg.p0:seg.p1;
+      if(c.vert){ wallBox(c.x,edge,5,Tw*0.6,loF,dfy); dungeonBars.push({x0:c.x-2.5,x1:c.x+2.5,z0:edge-0.5,z1:edge+0.5,topY:hiF,ledge:true}); }
+      else { wallBox(edge,c.z,Tw*0.6,5,loF,dfy); dungeonBars.push({x0:edge-0.5,x1:edge+0.5,z0:c.z-2.5,z1:c.z+2.5,topY:hiF,ledge:true}); }
+    } else { floorTile(cx,cz,sx,sz,loF+0.04); ceilTile(cx,cz,sx,sz,loF+WH); }
+  }
+  // room walls (centered door gaps where corridors connect), based at each room's floor
   for(const r of L.rooms){
+    const wy=r.fy;
     if(r.round){ const seg=24,da=[]; if(r.doors.N)da.push(-Math.PI/2); if(r.doors.S)da.push(Math.PI/2); if(r.doors.E)da.push(0); if(r.doors.W)da.push(Math.PI);
       for(let i=0;i<seg;i++){const a=i/seg*Math.PI*2; let skip=false; for(const d of da){if(Math.abs(Math.atan2(Math.sin(a-d),Math.cos(a-d)))<0.46)skip=true;} if(skip)continue;
-        const w=new THREE.Mesh(new THREE.BoxGeometry(r.rad*2*Math.PI/seg*1.25,WH,Tw),wallMat);w.position.set(r.cx+Math.cos(a)*r.rad,wy,r.cz+Math.sin(a)*r.rad);w.rotation.y=-a;w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);} }
+        const w=new THREE.Mesh(new THREE.BoxGeometry(r.rad*2*Math.PI/seg*1.25,WH,Tw),wallMat);w.position.set(r.cx+Math.cos(a)*r.rad,wy+WH/2,r.cz+Math.sin(a)*r.rad);w.rotation.y=-a;w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);} }
     else { for(const side of["N","S"]){ const z=side==="N"?r.cz-r.hz:r.cz+r.hz;
-        if(r.doors[side]){const sh=(r.hx-gap)/2; if(sh>0.3){wallBox(r.cx-(gap+sh),z,sh*2,Tw);wallBox(r.cx+(gap+sh),z,sh*2,Tw);}}
-        else wallBox(r.cx,z,r.hx*2+Tw,Tw); }
+        if(r.doors[side]){const sh=(r.hx-gap)/2; if(sh>0.3){wallBox(r.cx-(gap+sh),z,sh*2,Tw,wy);wallBox(r.cx+(gap+sh),z,sh*2,Tw,wy);}}
+        else wallBox(r.cx,z,r.hx*2+Tw,Tw,wy); }
       for(const side of["E","W"]){ const x=side==="E"?r.cx+r.hx:r.cx-r.hx;
-        if(r.doors[side]){const sh=(r.hz-gap)/2; if(sh>0.3){wallBox(x,r.cz-(gap+sh),Tw,sh*2);wallBox(x,r.cz+(gap+sh),Tw,sh*2);}}
-        else wallBox(x,r.cz,Tw,r.hz*2+Tw); } }
+        if(r.doors[side]){const sh=(r.hz-gap)/2; if(sh>0.3){wallBox(x,r.cz-(gap+sh),Tw,sh*2,wy);wallBox(x,r.cz+(gap+sh),Tw,sh*2,wy);}}
+        else wallBox(x,r.cz,Tw,r.hz*2+Tw,wy); } }
   }
-  // corridor side rails (only across the gap between the two rooms, so they don't intrude into rooms)
+  // corridor side rails between the wall planes — tall enough to enclose both levels
   for(const c of L.corridors){
+    const base=Math.min(c.hi?c.hi.fy:0,c.lo?c.lo.fy:0), hh=WH+Math.abs((c.hi?c.hi.fy:0)-(c.lo?c.lo.fy:0));
     if(c.vert){ const z0=Math.min(c.a.cz,c.b.cz)+roomExtent(c.a.cz<c.b.cz?c.a:c.b,"S"), z1=Math.max(c.a.cz,c.b.cz)-roomExtent(c.a.cz<c.b.cz?c.b:c.a,"N");
-      if(z1>z0){const len=z1-z0,zc=(z0+z1)/2; wallBox(c.x-2.5,zc,Tw,len);wallBox(c.x+2.5,zc,Tw,len);} }
+      if(z1>z0){const len=z1-z0,zc=(z0+z1)/2; wallBox(c.x-2.5,zc,Tw,len,base,hh);wallBox(c.x+2.5,zc,Tw,len,base,hh);} }
     else { const x0=Math.min(c.a.cx,c.b.cx)+roomExtent(c.a.cx<c.b.cx?c.a:c.b,"E"), x1=Math.max(c.a.cx,c.b.cx)-roomExtent(c.a.cx<c.b.cx?c.b:c.a,"W");
-      if(x1>x0){const len=x1-x0,xc=(x0+x1)/2; wallBox(xc,c.z-2.5,len,Tw);wallBox(xc,c.z+2.5,len,Tw);} }
+      if(x1>x0){const len=x1-x0,xc=(x0+x1)/2; wallBox(xc,c.z-2.5,len,Tw,base,hh);wallBox(xc,c.z+2.5,len,Tw,base,hh);} }
   }
+  // walkthrough gates: portcullises across lever/key corridors, wall levers & key strongboxes in the room before
+  for(const c of L.corridors){
+    if(!c.door) continue;
+    const seg=pureSeg(c), mid=(seg.p0+seg.p1)/2, fy=c.lo.fy;
+    const px=c.vert?c.x:mid, pz=c.vert?mid:c.z;
+    const pg=new THREE.Group(); pg.position.set(px,fy,pz);
+    const barMat=new THREE.MeshStandardMaterial({color:0x3a3a42,metalness:0.8,roughness:0.35});
+    const gate=new THREE.Group();
+    for(let i=-2;i<=2;i++){ const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,5.2,6),barMat); bar.position.set(c.vert?i*1.0:0,2.6,c.vert?0:i*1.0); gate.add(bar); }
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(c.vert?5:0.3,0.3,c.vert?0.3:5),barMat); rail.position.y=5.0; gate.add(rail);
+    pg.add(gate); scene.add(pg); dungeonObjs.push(pg);
+    const bar={x0:px-(c.vert?2.5:0.5),x1:px+(c.vert?2.5:0.5),z0:pz-(c.vert?0.5:2.5),z1:pz+(c.vert?0.5:2.5),open:false,gate,kind:c.door.kind,need:c.door.need,x:px,z:pz};
+    dungeonBars.push(bar);
+    const blbl=labelSprite(c.door.kind==="key"?("Locked — "+c.door.need):"Portcullis","dungeons"); blbl.position.set(px,fy+5.6,pz); scene.add(blbl); dungeonObjs.push(blbl);
+    const hi=c.hi;
+    if(c.door.kind==="lever"){   // wall lever in the room before the gate
+      const lx=hi.cx+(hi.round?hi.rad-1.6:hi.hx-1.2), lz=hi.cz+2;
+      const lg=new THREE.Group(); lg.position.set(lx,hi.fy,lz);
+      const plate=new THREE.Mesh(new THREE.BoxGeometry(0.5,1.0,0.28),new THREE.MeshStandardMaterial({color:0x4a4038,roughness:0.7})); plate.position.y=1.3; lg.add(plate);
+      const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.9,6),barMat); handle.position.set(0,1.35,-0.2); handle.rotation.x=0.7; lg.add(handle);
+      const knob=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6),new THREE.MeshStandardMaterial({color:0xb03a2a})); knob.position.set(0,1.75,-0.5); lg.add(knob);
+      scene.add(lg); dungeonObjs.push(lg);
+      const llbl=labelSprite("Wall Lever","dungeons"); llbl.position.set(lx,hi.fy+2.6,lz); scene.add(llbl); dungeonObjs.push(llbl);
+      dungeonLevers.push({x:lx,z:lz,bar,pulled:false,handle});
+    } else {                     // the key waits in a strongbox in the room before
+      const bx=hi.cx-(hi.round?hi.rad-1.8:hi.hx-1.4), bz=hi.cz-2;
+      const sb=new THREE.Group(); sb.position.set(bx,hi.fy,bz);
+      const body=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.5,0.55),new THREE.MeshStandardMaterial({color:0x5a4326,metalness:0.3,roughness:0.6})); body.position.y=0.25; sb.add(body);
+      const strap=new THREE.Mesh(new THREE.BoxGeometry(0.84,0.1,0.58),new THREE.MeshStandardMaterial({color:0x8a8a92,metalness:0.8,roughness:0.35})); strap.position.y=0.34; sb.add(strap);
+      scene.add(sb); dungeonObjs.push(sb);
+      const slbl=labelSprite("Strongbox","dungeons"); slbl.position.set(bx,hi.fy+1.8,bz); scene.add(slbl); dungeonObjs.push(slbl);
+      dungeonBoxes.push({x:bx,z:bz,key:c.door.need,opened:false,mesh:sb});
+    }
+  }
+  // prison cells (walkthrough flavour, e.g. Green Mire Grave): barred alcoves along a mid room's wall
+  if(script&&script.cells){ const rm=L.rooms.find(r=>r.type==="room"&&!r.round)||L.rooms[1];
+    if(rm){ const barMat=new THREE.MeshStandardMaterial({color:0x3a3a42,metalness:0.8,roughness:0.35});
+      for(let ci=0;ci<4;ci++){ const czp=rm.cz-rm.hz+2+ci*(rm.hz*2-4)/3;
+        for(let bi=0;bi<4;bi++){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,3.4,5),barMat);
+          b.position.set(rm.cx-rm.hx+1.5,rm.fy+1.7,czp-0.9+bi*0.6); scene.add(b); dungeonObjs.push(b); } } } }
+  // internal portal (walkthrough dungeons like Mines of Despair): from the boss room back to the entrance
+  if(script&&script.portal){ const boss=L.rooms[L.rooms.length-1];
+    const ppx=boss.cx,ppz=boss.cz-(boss.round?boss.rad-2.5:boss.hz-2.5);
+    const disc=new THREE.Mesh(new THREE.CircleGeometry(1.2,32),new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.9,side:THREE.DoubleSide,fog:false,depthWrite:false}));
+    disc.position.set(ppx,boss.fy+2.0,ppz); scene.add(disc); dungeonObjs.push(disc);
+    const plt=new THREE.PointLight(0x59b6ff,1.2,12); plt.position.set(ppx,boss.fy+2,ppz); scene.add(plt); dungeonObjs.push(plt);
+    const plbl=labelSprite("Portal — the way out","dungeons"); plbl.position.set(ppx,boss.fy+3.8,ppz); scene.add(plbl); dungeonObjs.push(plbl);
+    dungeonPortals.push({x:ppx,z:ppz,disc}); }
   // one themed prop (carries the room light) per room
   for(const r of L.rooms){ const ox=r.round?0:Math.min(r.hx,r.hz)-2.5, off=r.round?(r.rad-2.5):ox;
-    for(const o of buildProp(th.prop, r.cx+(r.type==="entry"?0:off*0.5), r.cz, th.light)){scene.add(o);dungeonObjs.push(o);} }
+    for(const o of buildProp(th.prop, r.cx+(r.type==="entry"?0:off*0.5), r.cz, th.light)){o.position.y+=r.fy;scene.add(o);dungeonObjs.push(o);} }
   // exit archway in the entry room's south doorway
   const en=L.entry; dungeonExit={x:en.cx,z:en.cz+en.hz-0.6}; dungeonSpawn={x:en.cx,z:en.cz-Math.max(1,en.hz-3)};
   const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
@@ -13483,7 +13657,7 @@ function buildDungeon(def){
   const lid=new THREE.Mesh(new THREE.BoxGeometry(1.46,0.34,1.05),new THREE.MeshStandardMaterial({color:0x6a4420,metalness:0.3,roughness:0.6}));
   lid.position.y=0.95;cm.add(lid);
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
-  cm.position.set(boss.cx,0,boss.cz);scene.add(cm);dungeonObjs.push(cm);
+  cm.position.set(boss.cx,boss.fy,boss.cz);scene.add(cm);dungeonObjs.push(cm);
   dungeonChest={x:boss.cx,z:boss.cz,mesh:cm,lid,light:clt,opened:false};
   // a locked cache (AC): needs a Lockpick or Key, gives bonus loot — appears in ~55% of delves, in a mid room
   dungeonLock=null;
@@ -13496,8 +13670,8 @@ function buildDungeon(def){
     lb.position.y=0.33;lb.castShadow=true;lg.add(lb);
     const lk=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6),new THREE.MeshStandardMaterial({color:0xffd23b,emissive:0x6a5320,emissiveIntensity:0.7}));
     lk.position.set(0,0.46,0.4);lg.add(lk);
-    lg.position.set(lx,0,lz);scene.add(lg);dungeonObjs.push(lg);
-    const llbl=labelSprite("Locked Cache","dungeons");llbl.position.set(lx,2.0,lz);scene.add(llbl);dungeonObjs.push(llbl);
+    lg.position.set(lx,rm.fy,lz);scene.add(lg);dungeonObjs.push(lg);
+    const llbl=labelSprite("Locked Cache","dungeons");llbl.position.set(lx,rm.fy+2.0,lz);scene.add(llbl);dungeonObjs.push(llbl);
     dungeonLock={x:lx,z:lz,mesh:lg,opened:false};
   }
   // a Sealed Vault (AC): KEY-only (a pick won't do), richer reward — rarer, ~25% of delves, near the boss room
@@ -13509,21 +13683,21 @@ function buildDungeon(def){
     vd.position.y=1.0;vd.castShadow=true;vg.add(vd);
     const vk=new THREE.Mesh(new THREE.TorusGeometry(0.18,0.05,8,16),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x3a6abf,emissiveIntensity:0.9}));
     vk.position.set(0.45,1.0,0.22);vg.add(vk);
-    vg.position.set(vx,0,vz);scene.add(vg);dungeonObjs.push(vg);
-    const vlbl=labelSprite("Sealed Vault","dungeons");vlbl.position.set(vx,2.7,vz);scene.add(vlbl);dungeonObjs.push(vlbl);
+    vg.position.set(vx,boss.fy,vz);scene.add(vg);dungeonObjs.push(vg);
+    const vlbl=labelSprite("Sealed Vault","dungeons");vlbl.position.set(vx,boss.fy+2.7,vz);scene.add(vlbl);dungeonObjs.push(vlbl);
     dungeonVault={x:vx,z:vz,mesh:vg,opened:false};
   }
   // guardians spread across the rooms; the warden guards the hoard
   const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
-  function spawnIn(room,kind,elite){ let x,z,t=0;
+  function spawnIn(room,kind,elite,bossName){ let x,z,t=0;
     do{ if(room.round){const a=rng2()*6.283,rr=Math.sqrt(rng2())*(room.rad-2);x=room.cx+Math.cos(a)*rr;z=room.cz+Math.sin(a)*rr;}
         else{x=room.cx+rnd(-(room.hx-2),room.hx-2);z=room.cz+rnd(-(room.hz-2),room.hz-2);} t++; }
     while(!dungeonWalkable(x,z)&&t<8);
-    spawnDungeonMonster(kind,x,z,elite,hpMul); }
+    spawnDungeonMonster(kind,x,z,elite,hpMul,bossName); }
   const rng2=Math.random;
   for(const r of L.rooms){
     if(r.type==="entry") continue;
-    if(r.type==="boss"){ spawnIn(r,th.warden,true); const ex=1+def.tier; for(let i=0;i<ex;i++) spawnIn(r,kinds[irnd(0,kinds.length-1)],false); }
+    if(r.type==="boss"){ spawnIn(r,th.warden,true,script&&script.boss); const ex=1+def.tier; for(let i=0;i<ex;i++) spawnIn(r,kinds[irnd(0,kinds.length-1)],false); }
     else { const n=1+Math.floor(def.tier/2)+irnd(0,1); for(let i=0;i<n;i++) spawnIn(r,kinds[irnd(0,kinds.length-1)],false); }
   }
 }
@@ -13537,6 +13711,8 @@ function enterDungeon(def,ex,ez){
   arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=2.5;
   toast(def.name.toUpperCase());
   log(`You descend into the <b>${def.name}</b> (tier ${def.tier}). Slay the guardians, then claim the hoard.`,"sys");
+  const sc=DUNGEON_SCRIPTS[def.name];
+  if(sc&&sc.d) log(`<i style="color:#cdbf9a">${sc.d}</i>`,"sys");   // the dungeon's walkthrough, in the old explorers' words
   const ls=playerLightSource();
   log(ls.src==="flaming blade"?"Your <b>flaming blade</b> throws a flickering orange light across the dark.":
       ls.src==="glowing blade"?"Your <b>glowing blade</b> lights the way through the dark.":
@@ -13718,6 +13894,46 @@ function exitNetwork(dest){
   arriveAt(dest.x,dest.z+4);player.invuln=2;
   teleportFX(player.x,player.z);
 }
+// turn a walkthrough treasure NAME into real gear — keyword-mapped so the Fiery Shield is a shield,
+// the Green Mire Yari a spear, the Superior Helmet a helm; anything else becomes a valuable trophy
+function questLootItem(nm,tier){
+  tier=clamp(tier||2,1,5); const v=(m)=>Math.round(m*(6+tier*5));
+  const low=nm.toLowerCase(), it={name:nm,tier,work:rollWork(tier)};
+  if(/shield/.test(low)) Object.assign(it,{stat:"worn",at:"heavy",aslot:"offhand",shield:"kite",mat:"Steel",v:v(1.0)});
+  else if(/helm|helmet|cowl|crown/.test(low)) Object.assign(it,{stat:"worn",at:"heavy",aslot:"head",mat:"Steel",v:v(0.6)});
+  else if(/yari|spear|lance/.test(low)) Object.assign(it,{stat:"weapon",wt:"spear",mat:"Ebony",v:v(0.9)});
+  else if(/dagger|knife|dirk/.test(low)) Object.assign(it,{stat:"weapon",wt:"dagger",mat:"Silver",v:v(0.8)});
+  else if(/great sword|greatsword/.test(low)) Object.assign(it,{stat:"weapon",wt:"twohand",mat:"Pyreal",v:v(1.1)});
+  else if(/sword|blade/.test(low)) Object.assign(it,{stat:"weapon",wt:"sword",mat:"Steel",v:v(0.9)});
+  else if(/sceptre|scepter|wand|orb|prism|stone/.test(low)) Object.assign(it,{stat:"weapon",wt:"focus",foc:v(0.35),mat:"Diamond",v:v(0.35)});
+  else if(/bracelet|band|signet|ring/.test(low)) Object.assign(it,{stat:"jewelry",jtype:/bracelet|band/.test(low)?"wrist":"finger",mat:"Gold",v:0,bonus:{kind:"vital",vs:"mhp",v:10+tier*6,suf:""}});
+  else Object.assign(it,{stat:"trophy",v:60*tier});   // heirlooms & curios (Bronze Candlestick, Alloy Contrivance…) sell well
+  return it;
+}
+// ── walkthrough gates: levers, strongbox keys, and the portcullises they open ──
+function hasNamedKey(nm){ return player.inv.some(it=>it&&it.name===nm); }
+function openDungeonBar(b){
+  b.open=true;
+  if(b.gate){ b.gate.position.y+=4.6; }   // the portcullis grinds up into the ceiling
+  if(SFX.quest)SFX.quest(); burst(b.x,1.5,b.z,0x9ac0ff,14);
+}
+function pullDungeonLever(lv){
+  lv.pulled=true; if(lv.handle){ lv.handle.rotation.x=-0.7; }
+  log("You haul the <b>wall lever</b> down — somewhere, chains rattle and a portcullis grinds open.","sys");
+  openDungeonBar(lv.bar); if(SFX.click)SFX.click();
+}
+function openStrongbox(bx){
+  bx.opened=true; if(bx.mesh) bx.mesh.rotation.x=-0.18;
+  player.inv.push({name:bx.key,stat:"key",v:1});
+  log(`The strongbox holds the <b>${esc(bx.key)}</b> — it must open something deeper in.`,"loot");
+  if(SFX.gold)SFX.gold(); burst(bx.x,1,bx.z,0xffd23b,10);
+}
+function unlockDungeonDoor(b){
+  if(!hasNamedKey(b.need)){ log(`The door is locked fast — you need the <b>${esc(b.need)}</b>.`,"warn"); if(SFX.deny)SFX.deny(); return; }
+  const i=player.inv.findIndex(it=>it&&it.name===b.need); if(i>=0) player.inv.splice(i,1);   // the key turns once, then stays in the lock
+  log(`The <b>${esc(b.need)}</b> turns — the door swings wide.`,"sys");
+  openDungeonBar(b);
+}
 function openChest(){
   if(!dungeonChest||dungeonChest.opened) return;
   dungeonChest.opened=true;dungeonChest.lid.position.y=1.18;dungeonChest.lid.rotation.x=-0.5;dungeonChest.light.intensity=2;
@@ -13726,6 +13942,11 @@ function openChest(){
   if(curDungeon&&player.clearedDungeons.indexOf(curDungeon.id)<0){player.clearedDungeons.push(curDungeon.id);
     log(`First conquest of the <b>${curDungeon.name}</b>! (${player.clearedDungeons.length}/50 delves cleared)`,"sys");}
   for(let i=0;i<dn;i++) addDrop(dungeonChest.x+rnd(-2,2),dungeonChest.z+rnd(-2,2),{type:"item",item:rollItem(true,curDungeon?curDungeon.tier:4)});
+  // the walkthrough's named quest treasures (e.g. the Fiery Shield & Superior Helmet of the Halls of the Helm)
+  const dscript=curDungeon&&DUNGEON_SCRIPTS[curDungeon.name];
+  if(dscript&&dscript.loot) for(const nm of dscript.loot){
+    addDrop(dungeonChest.x+rnd(-2,2),dungeonChest.z+rnd(-2,2),{type:"item",item:questLootItem(nm,tier)});
+    log(`Among the hoard lies the <b>${esc(nm)}</b>!`,"loot"); }
   player.gold+=irnd(120,260)*tier;player.materials+=irnd(8,18)*tier;player.delves++;gainXP(1800*tier);
   SFX.level();toast("HOARD CLAIMED");log(`You plunder the hoard of the <b>${curDungeon?curDungeon.name:"delve"}</b> — rare treasures spill forth!`,"loot");questEvent("delve");checkAchievements();saveGame();
 }
