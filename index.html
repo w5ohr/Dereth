@@ -254,6 +254,26 @@
   <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Mag-Tools <span style="font-weight:normal;opacity:.75">· Combat Tracker</span></div>
   <div id="magRows" style="padding:4px 8px 5px"></div>
 </div>
+<!-- Target frame (,/. cycles targets · left-click selects) + right-click appraisal window -->
+<div id="targetFrame" style="display:none;position:fixed;left:50%;top:148px;transform:translateX(-50%);z-index:41;width:180px;background:rgba(12,10,6,.82);border:1px solid #6a5a3a;border-radius:6px;padding:4px 8px 6px;font-size:12px">
+  <div id="tfName" style="color:#ffd86b;font-weight:bold;text-align:center;text-shadow:0 1px 2px #000">—</div>
+  <div class="bar bhp"><i style="width:100%"></i><span id="tfHp"></span></div>
+  <div class="bar bst"><i style="width:100%"></i><span id="tfSt"></span></div>
+  <div class="bar bmn"><i style="width:100%"></i><span id="tfMn"></span></div>
+</div>
+<div id="idPanel" style="display:none;position:fixed;right:230px;top:160px;z-index:60;width:220px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.55);font-size:12px;color:#2a2014">
+  <div class="idHead">✦ Appraisal <span class="idX" id="idClose">✕</span></div>
+  <div style="padding:6px 8px 8px">
+    <div style="text-align:center"><canvas id="idPortrait" width="150" height="150" style="width:150px;height:150px;border:1px solid #6a4a2a;border-radius:5px;background:#241c10"></canvas></div>
+    <div id="idName" style="font-weight:bold;text-align:center;margin:4px 0 2px">—</div>
+    <div id="idBars" style="display:none">
+      <div class="bar bhp"><i style="width:100%"></i><span id="idHp"></span></div>
+      <div class="bar bst"><i style="width:100%"></i><span id="idSt"></span></div>
+      <div class="bar bmn"><i style="width:100%"></i><span id="idMn"></span></div>
+    </div>
+    <div id="idBody" style="margin-top:4px;line-height:1.45"></div>
+  </div>
+</div>
 <div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
   <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
   <span style="position:absolute;top:-2px;left:45%;width:2px;height:13px;background:#fff;opacity:.7"></span>
@@ -451,6 +471,12 @@
 .vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
 .vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
 #vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
+/* Target frame + right-click appraisal window — vital bars share the character's .bhp/.bst/.bmn gradients */
+#targetFrame .bar,#idPanel .bar{height:11px;margin:2px 0;background:#1a140c;border:1px solid #4a3a20;border-radius:3px;position:relative;overflow:hidden}
+#targetFrame .bar i,#idPanel .bar i{display:block;height:100%}
+#targetFrame .bar span,#idPanel .bar span{position:absolute;inset:0;text-align:center;font-size:9px;line-height:11px;color:#fff;text-shadow:0 1px 2px #000}
+.idHead{background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px;display:flex;justify-content:space-between;cursor:move}
+.idX{cursor:pointer;color:#f0d0b0;padding:0 3px}.idX:hover{color:#fff}
 </style>
 <div id="charCreator"><div class="cc-wrap">
   <h2>✦ FORGE YOUR HERO ✦</h2>
@@ -5811,6 +5837,9 @@ function spawnMonster(kind,x,z,elite){
     mesh.add(hbg); mesh.userData.hb=hbg; mesh.userData.fill=hbFill;
   } else mesh=buildCreature(kind);                                  // procedural fallback
   let hp=Math.round(b.hp*settings.diff),dmg=Math.round(b.dmg*settings.diff),xp=b.xp,goldMul=1,r=b.size*0.8;
+  // nominal stamina/mana pools so target frames & appraisal read like AC's tri-bar (casters carry mana)
+  const CASTER_KINDS={virindi:1,wisp:1,sclavus:1,niffis:1,zefir:1,mukkir:1,shadow:1};
+  const _mst=Math.round(hp*0.75), _mmn=Math.round(hp*(CASTER_KINDS[kind]?0.8:0.15));
   if(elite){
     hp=Math.round(hp*2.5);dmg=Math.round(dmg*1.6);xp=Math.round(xp*2.5);goldMul=3;
     mesh.scale.setScalar(1.4);r*=1.4;
@@ -5819,6 +5848,7 @@ function spawnMonster(kind,x,z,elite){
   }
   mesh.position.set(x,0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul,ang:rnd(0,6.28),
+    st:_mst,mst:_mst,mn:_mmn,mmn:_mmn,
     state:"wander",t:0,atkCd:0,wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*(elite?1.4:1),
     isElite:!!elite,baseScale:elite?1.4:1,burnT:0,burnDps:0,burnAcc:0,gltf:!!gm});
   const m=monsters[monsters.length-1];
@@ -9889,9 +9919,21 @@ function dirtyStrike(m){
   else if(ah==="high"){ m.atkCd=Math.max(m.atkCd||0,1.6); floater(m.x,hy,m.z,"staggered!","#ffd0a0"); }
   else { m.burnT=Math.max(m.burnT||0,4); m.burnDps=Math.max(m.burnDps||0,4+skillValue("dirty")*0.06); floater(m.x,hy,m.z,"bleeding!","#ff6a6a"); }
 }
-cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0){ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } } else if(e.button===2) blocking=true; });
-cEl.addEventListener('mouseup',e=>{ if(e.button===0){ if(chargeActive) releaseCharge(); } else if(e.button===2) blocking=false; });
-cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse raises the shield, no menu
+let _rmbT=0;
+cEl.addEventListener('mousedown',e=>{
+  if(!running) return;
+  if(e.button===0){                                    // left: select what's under the cursor, then attack
+    const hit=raycastPick(locked?null:e); if(hit) selectTarget(hit,true); else if(!locked) selectTarget(null,true);
+    if(!locked) return;                                // (unlocked click still locks via the click handler)
+    if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; }
+  } else if(e.button===2){ _rmbT=now(); blocking=locked; }   // right: hold = shield (locked); a quick tap = appraise
+});
+cEl.addEventListener('mouseup',e=>{
+  if(e.button===0){ if(chargeActive) releaseCharge(); }
+  else if(e.button===2){ blocking=false;
+    if(running&&now()-_rmbT<280){ const hit=raycastPick(locked?null:e); if(hit) openIdPanel(hit); } }
+});
+cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse = shield / appraisal, no menu
 // Cb2 attack heights: mouse-wheel aims the swing high / middle / low (matched to the target's size)
 const ATK_HEIGHTS=["low","mid","high"], ATK_LABEL={low:"Low",mid:"Middle",high:"High"};
 window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
@@ -9899,7 +9941,12 @@ window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
   const el=document.getElementById('atkHeight'); if(el){ el.textContent="Attack: "+ATK_LABEL[player.atkHeight]; el.style.display="block"; el._t=now(); }
 },{passive:false});
 document.addEventListener('mousemove',e=>{
-  if(!locked) return;
+  if(!locked){
+    // free-look: the mouse looks around even without pointer lock, whenever it rides the world
+    // itself (over a HUD panel or menu the cursor behaves normally so buttons stay clickable)
+    if(!running||paused||movingUI||_uiDrag||e.target!==cEl) return;
+    if(typeof sheet!=="undefined"&&sheet.style.display==="flex") return;
+  }
   player.yaw-=e.movementX*0.0022*settings.sens;
   player.pitch=clamp(player.pitch-e.movementY*0.0022*settings.sens,-1.2,1.2);
 });
@@ -9926,8 +9973,10 @@ const ACTIONS=[
   {id:"potgreat", label:"Drink Greater Potion", group:"Consumables",def:"KeyG",run:()=>drinkPotion("potGreat",150,"hp")},
   {id:"potmana",  label:"Drink Mana Potion",    group:"Consumables",def:"KeyF",run:()=>drinkPotion("potMana",60,"mn")},
   {id:"potstam",  label:"Drink Stamina Potion", group:"Consumables",def:"KeyH",run:()=>drinkPotion("potStam",60,"st")},
-  {id:"elixmight",label:"Elixir of Might",      group:"Consumables",def:"Comma",run:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b")},
-  {id:"elixswift",label:"Elixir of Swiftness",  group:"Consumables",def:"Period",run:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")},
+  {id:"elixmight",label:"Elixir of Might",      group:"Consumables",def:"KeyI",run:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b")},
+  {id:"elixswift",label:"Elixir of Swiftness",  group:"Consumables",def:"KeyL",run:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")},
+  {id:"targprev", label:"Previous Target",      group:"Targeting",def:"Comma", run:()=>cycleTarget(-1)},
+  {id:"targnext", label:"Next Target",          group:"Targeting",def:"Period",run:()=>cycleTarget(1)},
   {id:"character",label:"Character Sheet",  group:"Panels",def:"KeyC",run:()=>togglePanel('sheet',openSheet,closeSheet)},
   {id:"tinker",   label:"Inventory / Tinker",group:"Panels",def:"KeyT",run:()=>togglePanel('tinker',openTinker,closeTinker)},
   {id:"bestiary", label:"Bestiary / Codex", group:"Panels",def:"KeyB",run:()=>togglePanel('codex',openCodex,closeCodex)},
@@ -9942,6 +9991,14 @@ const ACTIONS=[
   {id:"qbprev",   label:"Quickbar Page ◀",  group:"Quickbar",def:"BracketLeft",run:()=>{hotbarPage=(hotbarPage+QB_PAGES-1)%QB_PAGES;buildSpellbar();}},
   {id:"qbnext",   label:"Quickbar Page ▶",  group:"Quickbar",def:"BracketRight",run:()=>{hotbarPage=(hotbarPage+1)%QB_PAGES;buildSpellbar();}},
 ];
+// every on-screen interface gets its own show/hide keystroke (rebind any of them in Map Keys)
+const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Compass","shift+F2"],
+  ["minimap","Minimap","shift+F3"],["right","Attributes & Status","shift+F4"],["quest","Quest Tracker","shift+F5"],
+  ["spellbar","Quickbar","shift+F6"],["potions","Potion Belt","shift+F7"],["partyHud","Party Frame","shift+F8"],
+  ["goarrow","GoArrow","shift+F9"],["alinco","Alinco Buffs","shift+F10"],["vtank","Virindi Tank","shift+F11"],
+  ["magtools","Mag-Tools","shift+F12"],["targetFrame","Target Frame","shift+Backquote"]];
+for(const [id,label,def] of HUD_TOGGLES)
+  ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
 const ROW1_DEF=["Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0","Minus","Equal"];
 for(let i=0;i<QB_PAGE;i++){ const idx=i; ACTIONS.push({id:"qb"+i,label:"Quick Slot R"+(i<QB_COLS?1:2)+"·"+((i%QB_COLS)+1),group:"Quick Slots",def:i<QB_COLS?ROW1_DEF[i]:"",run:()=>castSlot(hotbarPage*QB_PAGE+idx)}); }
 function defaultBinds(){ const b={}; for(const a of ACTIONS) b[a.id]=a.def?[a.def]:[]; return b; }
@@ -10583,6 +10640,7 @@ function update(dt){
   updateDayNight(dt);
   updateCalendar(dt);
   updatePlugins(dt);
+  updateTargetUI(dt);
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
@@ -11134,7 +11192,8 @@ function buildMiniToggles(){
   el.querySelectorAll('input[data-mm]').forEach(cb=>cb.onchange=()=>{ miniShow[cb.dataset.mm]=cb.checked; saveMiniPrefs(); });
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
-const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions"];
+const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
+  "goarrow","alinco","vtank","magtools","targetFrame","idPanel"];   // every interface is movable (N-mode; parchment windows also drag by their header)
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -11151,6 +11210,11 @@ function initDragUI(){
   const hint=document.createElement('div'); hint.id="uimoveHint"; hint.textContent="Move UI — drag any panel · press N to finish"; document.getElementById('hud').appendChild(hint);
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
     el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
+  // parchment windows also drag by their title bar at any time (no N-mode needed)
+  for(const id of ["alinco","vtank","magtools","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
+    const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
+    head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
+      e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
   document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
     el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
     el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
@@ -14347,6 +14411,173 @@ function buildSpellbook(){
 document.getElementById('closeSpellbook').onclick=closeSpellbook;
 
 // ---- Settings menu ----
+// ═══ TARGETING & APPRAISAL — AC-style selection. Left-click selects whatever is under the cursor
+//     (crosshair when mouse-look is locked); , / . cycle nearby creatures; a quick right-click
+//     appraises the thing in a parchment window with a live-rendered portrait. Creature vitals show
+//     in the character's own bar colours, over the target frame AND above the creature's head. ═══
+let TARGET=null, _idRay=new THREE.Raycaster(), _idNDC=new THREE.Vector2();
+function pickables(){
+  const out=[];
+  for(const m of monsters){ if(m.hp>0&&m.mesh){ m.mesh._pickRef={type:"monster",ref:m}; out.push(m.mesh); } }
+  for(const n of npcs){ if(n.mesh){ n.mesh._pickRef={type:"npc",ref:n}; out.push(n.mesh); } }
+  for(const s of shops){ if(s.mesh){ s.mesh._pickRef={type:"vendor",ref:s}; out.push(s.mesh); } }
+  for(const d of drops){ if(d.mesh&&d.type==="item"){ d.mesh._pickRef={type:"item",ref:d}; out.push(d.mesh); } }
+  return out;
+}
+function raycastPick(ev){
+  if(typeof cam==="undefined"||!cam) return null;
+  if(ev&&!locked){ const r=cEl.getBoundingClientRect();
+    _idNDC.set(((ev.clientX-r.left)/r.width)*2-1, -((ev.clientY-r.top)/r.height)*2+1); }
+  else _idNDC.set(0,0);                                        // locked: the crosshair is the cursor
+  _idRay.setFromCamera(_idNDC,cam); _idRay.far=60;
+  const hits=_idRay.intersectObjects(pickables(),true);
+  for(const h of hits){ let o=h.object; while(o&&!o._pickRef) o=o.parent;
+    if(o&&o._pickRef){ const ref=o._pickRef.ref;
+      const d=Math.hypot((ref.x||0)-player.x,(ref.z||0)-player.z);
+      if(d<60) return o._pickRef; } }
+  return null;
+}
+function targetName(t){
+  if(!t) return "—";
+  if(t.type==="monster"){ const m=t.ref,b=BESTIARY[m.kind]; return m.name||((m.isElite?"Elite ":"")+(b?b.name:m.kind)); }
+  if(t.type==="npc") return t.ref.name||"Townsperson";
+  if(t.type==="vendor") return (t.ref.name?t.ref.name+" — ":"")+t.ref.title;
+  if(t.type==="item") return t.ref.item?t.ref.item.name:"Dropped item";
+  return "—";
+}
+// overhead tri-bar: stamina + mana planes join the creature's existing billboarded health bar
+function attachTargetBars(m){
+  if(!m.mesh||!m.mesh.userData.hb||m.mesh.userData.tfBars) return;
+  const hb=m.mesh.userData.hb, mk=(col,y)=>{ const bar=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.09),
+    new THREE.MeshBasicMaterial({color:col,fog:false})); bar.position.set(0,y,0.012); hb.add(bar); return bar; };
+  const stB=mk(0x46d784,-0.15), mnB=mk(0x5aa8ff,-0.26);                       // the character's own vital colours
+  m.mesh.userData.tfBars={st:stB,mn:mnB};
+}
+function detachTargetBars(m){
+  const tb=m&&m.mesh&&m.mesh.userData.tfBars; if(!tb) return;
+  const hb=m.mesh.userData.hb; hb.remove(tb.st); hb.remove(tb.mn); m.mesh.userData.tfBars=null;
+}
+function selectTarget(pick,silent){
+  if(TARGET&&TARGET.type==="monster") detachTargetBars(TARGET.ref);
+  TARGET=pick||null;
+  const tf=document.getElementById('targetFrame');
+  if(!TARGET){ if(tf&&!uiHiddenIs("targetFrame")) tf.style.display="none"; return; }
+  if(TARGET.type==="monster") attachTargetBars(TARGET.ref);
+  if(!silent) log(`Target: <b>${targetName(TARGET)}</b>`,"sys");
+  updateTargetUI(0,true);
+}
+function cycleTarget(dir){
+  const cand=monsters.filter(m=>m.hp>0&&!m.isDungeon===!inDungeon&&Math.hypot(m.x-player.x,m.z-player.z)<70)
+    .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+  if(!cand.length){ selectTarget(null); log("No targets in range.","sys"); return; }
+  let i=TARGET&&TARGET.type==="monster"?cand.indexOf(TARGET.ref):-1;
+  i=((i+dir)%cand.length+cand.length)%cand.length;
+  selectTarget({type:"monster",ref:cand[i]});
+}
+function uiHiddenIs(id){ return !!(settings.uiHidden&&settings.uiHidden[id]); }
+function updateTargetUI(dt,force){
+  const tf=document.getElementById('targetFrame'); if(!tf) return;
+  if(!TARGET){ tf.style.display="none"; return; }
+  const t=TARGET;
+  if(t.type==="monster"){ const m=t.ref;
+    if(m.hp<=0||monsters.indexOf(m)<0){ selectTarget(null,true); return; }     // fell or despawned
+    if(m.mesh&&m.mesh.userData.hb) m.mesh.userData.hb.visible=true;            // the tri-bar stays visible while targeted
+    const tb=m.mesh&&m.mesh.userData.tfBars;
+    if(tb){ tb.st.scale.x=Math.max(0.001,(m.st!=null?m.st/m.mst:1)); tb.mn.scale.x=Math.max(0.001,(m.mn!=null?m.mn/m.mmn:1)); }
+    setBar(tf,"tfHp","bhp",m.hp,m.mhp); setBar(tf,"tfSt","bst",m.st!=null?m.st:1,m.mst||1); setBar(tf,"tfMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+  } else {                                                                      // npc / vendor / item: name only
+    ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="none"; });
+  }
+  if(t.type==="monster") ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="block"; });
+  document.getElementById('tfName').textContent=targetName(t);
+  tf.style.display=uiHiddenIs("targetFrame")?"none":"block";
+}
+function setBar(root,spanId,cls,v,max){
+  const b=root.querySelector("."+cls); if(!b) return;
+  b.querySelector("i").style.width=Math.round(clamp(v/Math.max(1,max),0,1)*100)+"%";
+  const sp=document.getElementById(spanId); if(sp) sp.textContent=Math.max(0,Math.round(v))+" / "+Math.round(max);
+}
+// ── right-click appraisal: a live-rendered portrait + what you know of the thing ──
+let _idRT=null,_idScene=null,_idCam=null,_idLight=null;
+function snapshotToCanvas(srcMesh,cnv){
+  try{
+    if(!_idRT){ _idRT=new THREE.WebGLRenderTarget(150,150); _idScene=new THREE.Scene();
+      _idScene.add(new THREE.AmbientLight(0xffffff,0.75));
+      _idLight=new THREE.DirectionalLight(0xfff2d8,0.9); _idLight.position.set(2,3,2); _idScene.add(_idLight);
+      _idCam=new THREE.PerspectiveCamera(38,1,0.05,200); }
+    const cl=srcMesh.clone(true); cl.position.set(0,0,0); cl.rotation.set(0,0,0); cl.scale.copy(srcMesh.scale);
+    cl.traverse(o=>{ if(o.isSprite||o.type==="Sprite"||(o.material&&o.material.isSpriteMaterial)) o.visible=false; });   // no nameplates in portraits
+    _idScene.add(cl);
+    const box=new THREE.Box3().setFromObject(cl), c=box.getCenter(new THREE.Vector3()), sz=box.getSize(new THREE.Vector3());
+    const r=Math.max(sz.x,sz.y,sz.z)*0.5||1;
+    _idCam.position.set(c.x+r*1.5,c.y+r*0.75,c.z+r*1.9); _idCam.lookAt(c); _idCam.updateProjectionMatrix();
+    const oldT=renderer.getRenderTarget(), oldC=new THREE.Color(); renderer.getClearColor(oldC); const oldA=renderer.getClearAlpha();
+    renderer.setClearColor(0x241c10,1); renderer.setRenderTarget(_idRT); renderer.clear(); renderer.render(_idScene,_idCam);
+    const px=new Uint8Array(150*150*4); renderer.readRenderTargetPixels(_idRT,0,0,150,150,px);
+    renderer.setRenderTarget(oldT); renderer.setClearColor(oldC,oldA);
+    _idScene.remove(cl);
+    const ctx=cnv.getContext('2d'), img=ctx.createImageData(150,150);
+    for(let y=0;y<150;y++) img.data.set(px.subarray((149-y)*600,(149-y)*600+600), y*600);   // flip Y
+    ctx.putImageData(img,0,0);
+  }catch(e){ const ctx=cnv.getContext('2d'); ctx.fillStyle="#241c10"; ctx.fillRect(0,0,150,150); }
+}
+function idItemDesc(it){
+  const rar=(typeof itemRarity==="function")?itemRarity(it).n:"";
+  const bits=[];
+  if(it.stat==="weapon") bits.push(`+${it.v} damage · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`);
+  else if(it.stat==="worn") bits.push(`+${it.v} armor · ${it.aslot||"chest"}${it.at?" ("+it.at+")":""}`);
+  else if(it.stat==="jewelry") bits.push("trinket"+(typeof jewelryDesc==="function"?" · "+jewelryDesc(it):""));
+  else if(it.v!=null) bits.push(`value ${it.v}p`);
+  if(it.mat) bits.push(it.mat);
+  if(it.work) bits.push("workmanship "+it.work);
+  return `<div>${gearIco(it)} <b>${rar}</b></div><div>${bits.join(" · ")}</div>`;
+}
+function openIdPanel(pick){
+  const p=document.getElementById('idPanel'); if(!p||!pick) return;
+  selectTarget(pick,true);                                       // appraising a thing also targets it
+  const nameEl=document.getElementById('idName'), body=document.getElementById('idBody'), bars=document.getElementById('idBars');
+  nameEl.textContent=targetName(pick);
+  let mesh=null, html="";
+  if(pick.type==="monster"){ const m=pick.ref,b=BESTIARY[m.kind]; mesh=m.mesh;
+    bars.style.display="block";
+    setBar(p,"idHp","bhp",m.hp,m.mhp); setBar(p,"idSt","bst",m.st!=null?m.st:1,m.mst||1); setBar(p,"idMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+    if(b&&player.bestiary&&player.bestiary.indexOf(m.kind)>=0){
+      const tier=(typeof threatTier==="function")?threatTier(b):null;
+      const aff=(typeof AFFINITY!=="undefined")?AFFINITY[m.kind]:null;
+      html=`<div><b>${b.name}</b>${tier?` — <span style="color:${tier.c};text-shadow:0 0 2px #241c10"><b>${tier.t}</b></span>`:""}</div>
+        <div>Damage ~${Math.round(b.dmg*settings.diff)} · Speed ${b.spd}</div>
+        <div>Worth ${b.xp} XP · ${b.gold[0]}–${b.gold[1]}p</div>
+        ${aff?`<div>Weak to <b>${aff.weak}</b> · resists <b>${aff.resist}</b></div>`:""}${m.isElite?"<div><b>Champion</b> — stronger than its kin</div>":""}`;
+    } else html=`<i>You know little of this creature. Slay one, and its nature will be written in your Bestiary (B).</i>`;
+  } else if(pick.type==="npc"){ const n=pick.ref; mesh=n.mesh;
+    bars.style.display="none";
+    const R=NPC_ROLES[n.role]||{label:n.role};
+    html=`<div><b>${R.label}</b>${n.town?" of "+n.town:""}</div><div><i>Press E nearby to speak.</i></div>`;
+  } else if(pick.type==="vendor"){ const s=pick.ref; mesh=s.mesh;
+    bars.style.display="none";
+    html=`<div><b>${s.title}</b></div><div>Coin purse: ~${(s.pyreals||0).toLocaleString()}p</div><div><i>Press E nearby to trade.</i></div>`;
+  } else if(pick.type==="item"){ const d=pick.ref; mesh=d.mesh;
+    bars.style.display="none";
+    html=idItemDesc(d.item||{})+"<div><i>Press E nearby to take it.</i></div>";
+  }
+  body.innerHTML=html;
+  if(mesh) snapshotToCanvas(mesh,document.getElementById('idPortrait'));
+  p.style.display="block";
+}
+function closeIdPanel(){ const p=document.getElementById('idPanel'); if(p) p.style.display="none"; }
+// ── HUD visibility keystrokes (settings.uiHidden persists; Map Keys rebin)s ──
+function toggleHud(id,label){
+  settings.uiHidden=settings.uiHidden||{};
+  settings.uiHidden[id]=!settings.uiHidden[id]; saveSettings(); applyUIVis();
+  log(`<b>${label}</b> ${settings.uiHidden[id]?"hidden":"shown"}.`,"sys");
+}
+function applyUIVis(){
+  const h=settings.uiHidden||{};
+  for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
+    if(h[id]) el.style.display="none";
+    else if(["goarrow","alinco","vtank","magtools"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
+  if(typeof applyPluginSettings==="function") applyPluginSettings();            // plugin panels re-apply their own visibility
+}
 // ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
 //     real plugin screenshots (AC wiki): GoArrow's chrome arrow with destination-over / distance-
 //     under + coords, Virindi Tank's parchment window with green LED toggles, Alinco's buff list,
@@ -14362,7 +14593,7 @@ function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
   return Math.abs(N).toFixed(1)+(N>=0?"N":"S")+", "+Math.abs(E).toFixed(1)+(E>=0?"E":"W"); }
 function pluginOn(k){ return !!(settings.plugins&&settings.plugins[k]); }
 function applyPluginSettings(){
-  for(const p of PLUGIN_DEFS){ const el=document.getElementById(p.k); if(el) el.style.display=(pluginOn(p.k)&&running)?"block":"none"; }
+  for(const p of PLUGIN_DEFS){ const el=document.getElementById(p.k); if(el) el.style.display=(pluginOn(p.k)&&running&&!uiHiddenIs(p.k))?"block":"none"; }
   const mt=document.getElementById('magtools'); if(mt) mt.style.top=pluginOn("alinco")?"334px":"196px";   // stack below Alinco when both live
   if(pluginOn("magtools")&&!PLUG.mag&&typeof player!=="undefined") PLUG.mag={t0:performance.now(),xp:0,k0:player.kills||0};
   vtPaint();
@@ -14399,7 +14630,10 @@ function gaTarget(){
 }
 function updatePlugins(dt){
   if(!running) return;
-  if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyPluginSettings(); }
+  if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyUIVis();
+    const ix=document.getElementById('idClose'); if(ix) ix.onclick=closeIdPanel;
+    document.addEventListener('keydown',e=>{ if(e.code==="Escape"&&document.getElementById('idPanel').style.display==="block"){ closeIdPanel(); } });
+  }
   // ── Virindi Tank behaviours ──
   PLUG.t1-=dt;
   if(pluginOn("vtank")&&PLUG.t1<=0){ PLUG.t1=0.4;

@@ -92,6 +92,26 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   a gainXP tap, kills/hour, ETA to next level). Defaults: GoArrow + Alinco on, automation opt-in.
   (Flynn's Minimap dungeon-walls plugin was already native — `drawDungeonMinimap`.)
 
+## MILESTONE U — Selection, appraisal & UI freedom  ✅ (jsc + preview e2e, 0 console errors)
+- ✅ **U1. AC-style targeting**: **left-click selects** whatever is under the cursor (crosshair ray when
+  mouse-look is locked, click-point ray when not) — creatures, NPCs, vendors, dropped items; **, / .**
+  cycle nearby creatures (defaults per request; elixirs moved to I / L). A target frame shows the name +
+  **health/stamina/mana bars in the character's own gradient colours**, and the same stamina/mana bars
+  join the creature's overhead billboarded health bar while targeted (monsters gained nominal st/mn
+  pools; casters carry real mana).
+- ✅ **U2. Right-click appraisal**: a quick right-tap (hold still raises the shield) opens a parchment
+  window with a **live-rendered portrait** (offscreen render-to-target of the actual mesh), the tri-bar,
+  and what you know: bestiary-known creatures show threat tier / damage / speed / worth / elemental
+  affinity; unknown ones say so; NPCs/vendors/items get role, purse, or item facts.
+- ✅ **U3. Every interface toggleable by keystroke** (`HUD_TOGGLES` → auto-generated "HUD Toggles"
+  group in Map Keys, all rebindable): vitals shift+F1 · compass F2 · minimap F3 · attributes F4 · quest
+  F5 · quickbar F6 · potions F7 · party F8 · GoArrow F9 · Alinco F10 · VTank F11 · Mag-Tools F12 ·
+  target frame shift+`. Hidden state persists (settings.uiHidden).
+- ✅ **U4. Every interface movable**: all panels (incl. the plugin HUDs, target frame, appraisal) join
+  the N-mode drag registry, and parchment windows drag by their title bar at ANY time.
+- ✅ **U5. Free-look**: the mouse looks around even without pointer lock whenever it rides the world
+  canvas (over HUD panels/menus the cursor behaves normally, so buttons stay clickable).
+
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
   avatar sits to one side and the crosshair stays clear (verified: avatar projects off-center, on-screen).
