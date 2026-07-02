@@ -3879,6 +3879,9 @@ function buildWorld(){
   for(const o of netObjs) scene.remove(o);
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
+  // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
+  usedNpcNames=new Set();
+  for(const k in QUEST_GIVERS) usedNpcNames.add(QUEST_GIVERS[k].name);
 
   // the 25 cities of Dereth (each a bindable settlement; capitals are hubs)
   for(const c of CITIES) addCity(c);
@@ -3887,11 +3890,12 @@ function buildWorld(){
   addKilmerCastle();    // Castle Val Halla — Lord Kilmer's moated castle & the town of Valstead
   addHousingSettlements(); // AC player housing: 3 cottage + 3 villa settlements + the Sanctum apartments
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
-  for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil"});
-  // every town fields a Town Crier (directions) and a Barkeeper (rumours)
+  for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil",
+    name:titledName(c.region||0,Math.round(c.x*11+c.z*13),"Emissary of Asheron")});
+  // every town fields a Town Crier (directions) and a Barkeeper (rumours) — each an individual
   for(const c of CITIES){
-    addNPC(c.x-6,c.z+9,{role:"crier",town:c.name});
-    addNPC(c.x+6,c.z+9,{role:"barkeep",town:c.name,name:c.name==="Cragstone"?"Barkeeper Wilomine":"Barkeeper"});
+    addNPC(c.x-6,c.z+9,{role:"crier",town:c.name,name:titledName(c.region||0,Math.round(c.x*5+c.z*3),"Town Crier")});
+    addNPC(c.x+6,c.z+9,{role:"barkeep",town:c.name,name:c.name==="Cragstone"?"Barkeeper Wilomine":titledName(c.region||0,Math.round(c.x*7+c.z*5),"Barkeeper")});
     // strolling townsfolk that wander the plaza (more in capitals)
     const tf=c.capital?5:3, rad=c.capital?14:9;
     for(let i=0;i<tf;i++){ const a=i/tf*6.283+c.region, tx=c.x+Math.cos(a)*rad*0.6, tz=c.z+Math.sin(a)*rad*0.6;
@@ -3901,9 +3905,15 @@ function buildWorld(){
   { const byTown={};
     for(const id in QUEST_GIVERS){ const g=QUEST_GIVERS[id]; (byTown[g.town]=byTown[g.town]||[]).push(id); }
     for(const tn in byTown){ const c=CITIES.find(ct=>ct.name===tn); if(!c) continue;
-      const ids=byTown[tn], R=12.5;
-      ids.forEach((id,i)=>{ const a=(i/ids.length)*6.283 + (c.region||0)*0.7;
-        addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:QUEST_GIVERS[id].name, town:tn, questId:id, look:QUEST_GIVERS[id].look}); }); }
+      // one NPC per named character — a giver with several quests (chain sequels) holds them all
+      const byName={},order=[];
+      for(const id of byTown[tn]){ const nm=QUEST_GIVERS[id].name;
+        if(!byName[nm]){ byName[nm]=[]; order.push(nm); } byName[nm].push(id); }
+      const R=12.5;
+      order.forEach((nm,i)=>{ const ids=byName[nm], a=(i/order.length)*6.283 + (c.region||0)*0.7;
+        // anonymous archetypes ("an old cartographer") become individuals who keep the role in their name
+        const shown=/^(a|an|the)\s/i.test(nm)? titledName(c.region||0, Math.round(c.x*3+c.z*7)+nm.length*31+i*97, nm) : nm;
+        addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:shown, town:tn, questId:ids[0], questIds:ids, look:QUEST_GIVERS[ids[0]].look}); }); }
   }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*80-3,-21.2*80,{role:"reset_attr",name:"Chafulumisa"});
@@ -5270,7 +5280,8 @@ function addHousingSettlements(){
       hsCrystals.push({set:S.id,idx:u,x:cx,z:cz,mesh:cg,lbl,type:S.type});
     }
     // an Agent of the Arcanum (writs for trophies) + a furniture seller at every settlement
-    addNPC(S.x+5,S.z+7,{role:"arcanum",name:"Agent of the Arcanum",town:S.name});
+    addNPC(S.x+5,S.z+7,{role:"arcanum",town:S.name,
+      name:titledName(S.region||0,Math.round(S.x*13+S.z*11),"Agent of the Arcanum")});
     addMerchant(S.x-6,S.z+7,"furnisher","Apprentice Craftsman");
   }
   // the three authentic named furniture sellers near the great towns
@@ -5278,7 +5289,8 @@ function addHousingSettlements(){
   for(const [tn,nm] of NAMED_SELLERS){ const c=CITIES.find(x=>x.name===tn); if(!c) continue;
     addMerchant(c.x-14,c.z-9,"furnisher",nm); }
   // Agents of the Arcanum in the three capitals (as in the Oct 2001 housing rush)
-  for(const c of CAPITALS) addNPC(c.x-9,c.z-12,{role:"arcanum",name:"Agent of the Arcanum",town:c.name});
+  for(const c of CAPITALS) addNPC(c.x-9,c.z-12,{role:"arcanum",town:c.name,
+    name:titledName(c.region||0,Math.round(c.x*13+c.z*11),"Agent of the Arcanum")});
   hsRefreshHomestead();
 }
 function hsDwellingSpot(){ if(!player.homestead) return null;
@@ -12430,9 +12442,23 @@ const NAME_POOLS={
   2:{first:["Salima","Yusuf","Amina","Rashid","Nadira","Kamil","Layla","Tariq","Zahra","Hakim","Farah","Jamil","Samira","Nasir","Aziza","Malik","Rana","Faisal","Habiba","Idris","Karima","Sohrab","Nabila","Umar"],
      last:["al-Yaraq","ibn Sayyid","al-Zahir","of the Oasis","al-Amun","ibn Rashad","al-Din"]},
 };
+let usedNpcNames=new Set();   // every NPC name in the world — townName never hands out one twice (reset per world build)
 function townName(region,seed){ const p=NAME_POOLS[region]||NAME_POOLS[0]; seed=Math.abs(seed|0);
-  const f=p.first[seed%p.first.length];
-  return f+((seed*7)%3===0?" "+p.last[(seed*13)%p.last.length]:""); }
+  const F=p.first.length,L=p.last.length,f0=p.first[seed%F];
+  const pick=n=>{ if(n&&!usedNpcNames.has(n)){ usedNpcNames.add(n); return n; } return null; };
+  // seeded style first; on collision walk the whole first×last combo space, then number the elders
+  let n=pick((seed*7)%3===0? f0+" "+p.last[(seed*13)%L] : f0);
+  if(!n) n=pick(f0);
+  for(let k=0;!n&&k<F*L;k++) n=pick(p.first[(seed+Math.floor(k/L))%F]+" "+p.last[(seed*13+k)%L]);
+  for(let r=2;!n;r++) n=pick(f0+" "+p.last[(seed*13)%L]+" "+(["II","III","IV","V","VI","VII","VIII","IX"][r-2]||r));
+  return n; }
+const _TITLE_SMALL=/^(of|the|and|for|to|in)$/i;
+function titledName(region,seed,label){ // "an old cartographer" → "Hana Ozu the Old Cartographer": a unique person, role kept in the name
+  const t=label.replace(/^(a|an|the)\s+/i,"").split(" ")
+    .map((w,i)=>(i>0&&_TITLE_SMALL.test(w))?w.toLowerCase():w.replace(/(^|-|')([a-z])/g,(m,p,ch)=>p+ch.toUpperCase())).join(" ");
+  let pn=townName(region,seed);                                   // avoid "Hugh of the Vale the Crier" pile-ups
+  for(let k=1;/ of /.test(pn)&&k<8;k++) pn=townName(region,seed+k*1013);
+  const n=pn+" the "+t; usedNpcNames.add(n); return n; }
 const RUMORS=[
   "They say the Olthoi Queen stirs again in the deep places of the world.",
   "Bind to a lifestone, friend — in Dereth, death is rarely the end.",
@@ -12488,8 +12514,9 @@ function buildNPC(role,name,seedX,look){
 function addNPC(x,z,opts){
   opts=opts||{}; const role=opts.role||"emissary";
   const name=opts.name||(NPC_ROLES[role]||NPC_ROLES.emissary).label;
+  usedNpcNames.add(name);   // fixed-name NPCs claim their name so townName never mints a twin
   const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29),opts.look);mesh.position.set(x,0,z);scene.add(mesh);
-  const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,_line:0};
+  const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,questIds:opts.questIds||null,_line:0};
   if(opts.stroll){ rec.stroll=true; rec.home={x,z}; rec.range=opts.range||3; }
   else obstacles.push({x,z,r:0.8});   // strollers move, so they aren't fixed obstacles
   npcs.push(rec);
@@ -12504,8 +12531,19 @@ function questNpcMarkerColor(qid){
   if(isRepeatable(qid) && onCooldown(qid)) return 0x8a7a4a;        // standing bounty cooling down — dim gold
   return 0xffd23b;                                                 // available to accept — gold
 }
+function resolveGiverQuest(n){ // a giver holding several quests speaks to the most pressing one
+  const ids=n&&n.questIds; if(!ids||!ids.length) return n?n.questId:null;
+  for(const id of ids) if(isActive(id)&&questCompleteId(id)) return id;   // ready to turn in
+  for(const id of ids) if(isActive(id)) return id;                        // in progress
+  for(const id of ids){ const cleared=isDone(id)&&!isRepeatable(id);      // next offerable (chains unlock in order)
+    if(!cleared&&questUnlocked(id)&&socOk(id)&&!(isRepeatable(id)&&onCooldown(id))) return id; }
+  for(const id of ids) if(isRepeatable(id)&&onCooldown(id)) return id;    // standing bounty cooling down
+  return ids[ids.length-1];                                               // everything done — reminisce
+}
 function updateNPCMarker(){ // every quest-bound NPC (Emissary + named givers) shows its own quest state
-  for(const n of npcs){ if(!n.questId) continue; const mk=n.mesh.userData&&n.mesh.userData.marker;
+  for(const n of npcs){ if(!n.questId) continue;
+    if(n.questIds&&n.questIds.length>1) n.questId=resolveGiverQuest(n);
+    const mk=n.mesh.userData&&n.mesh.userData.marker;
     if(mk) mk.material.color.setHex(questNpcMarkerColor(n.questId)); }
 }
 function compassTo(dx,dz){ // world: +x=East, +z=South
@@ -12542,7 +12580,8 @@ function showRewardChoice(q, name){
 }
 // conversation with a named quest-giver (or the Emissary), bound to one quest by id
 function talkQuestGiver(n){
-  const id=n&&n.questId; const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
+  const id=(n&&n.questIds&&n.questIds.length>1)?(n.questId=resolveGiverQuest(n)):(n&&n.questId);
+  const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
   const gv=QUEST_GIVERS[id]||{}; const name=(n&&n.name)||gv.name||q.giver;
   if(isActive(id)){
     const a=activeEntry(id);
@@ -13737,6 +13776,451 @@ const DUNGEON_SCRIPTS={
       ["pit",1,4,-5.2,{t:"boss",big:1,m:3}]],
     links:[["en","s1","ramp"],["s1","left","flat"],["left","maze","flat"],["maze","g1","flat"],["maze","g2","flat"],
       ["s1","s2","flat"],["s2","wd","flat"],["wd","porR","flat"],["wd","stairs","ramp"],["stairs","pit","flat"]]},
+  "The Pit":{boss:"Merciless Monouga",loot:["Suzuhara Baijin's Care Package"],
+    d:"A great hole passes through every level of the dungeon — three sheer drops with no way back up. Galleries of monougas and restless dead open off each landing. At the very bottom waits the way out: a portal beside the explorers' marker.",
+    rooms:[["en",0,0,0,{t:"entry"}],["sh1",0,1,-3.4,{}],["g1",-1,1,-3.4,{m:2}],["sh2",0,2,-6.8,{}],
+      ["g2",1,2,-6.8,{m:2}],["sh3",0,3,-10.2,{}],["bottom",0,4,-10.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","sh1","drop"],["sh1","g1","flat"],["sh1","sh2","drop"],["sh2","g2","flat"],
+      ["sh2","sh3","drop"],["sh3","bottom","flat"]]},
+  "Web Maze":{boss:"Drudge Ravener",loot:["Wayfarer's Cache"],
+    d:"A drudge-dug maze under the Baishi hills, prized for its three standing portals — Hebian-To, Mayoi and Shoushi — hidden in the looping passages. Lurkers and stalkers prowl the crossings; the raveners keep the deepest nest.",
+    rooms:[["en",0,0,0,{t:"entry"}],["a",0,1,0,{small:1}],["b",-1,1,0,{small:1,m:1}],["c",1,1,0,{small:1,m:1}],
+      ["d",0,2,0,{small:1}],["e",-1,2,0,{small:1,m:2}],["f",1,2,0,{small:1,m:2}],
+      ["porH",-1,3,0,{small:1,portal:1}],["porM",0,3,0,{small:1,portal:1}],["porS",2,2,0,{small:1,portal:1}],
+      ["nest",1,3,0,{t:"boss",big:1}]],
+    links:[["en","a","flat"],["a","b","flat"],["a","c","flat"],["b","e","flat"],["c","f","flat"],
+      ["d","a","flat"],["d","e","flat"],["d","f","flat"],["e","porH","flat"],["d","porM","flat"],
+      ["f","porS","flat"],["f","nest","flat"]]},
+  "Golem Burial Ground":{boss:"Obsidian Golem",loot:["Golem Heart"],
+    d:"Where the golems go to fall apart — copper, oak, mist and glacial hulks wander the burial caverns. In the treasure room at the back stands the Runed Chest, and lesser spoils lie scattered on the ground around it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,-2.6,{m:2}],["c2",0,2,-2.6,{m:2}],
+      ["side",-1,2,-2.6,{small:1,m:1}],["runed",0,3,-2.6,{t:"boss",big:1}]],
+    links:[["en","c1","ramp"],["c1","c2","flat"],["c2","side","flat"],["c2","runed","flat"]]},
+  "Bandit Castle Prison":{boss:"Bone Lord",loot:["Bandit Shield","Gwillim's Alchemy Notes"],noBoxes:true,
+    d:"From the drop go straight and right at the split to the great cell block with the pit at its center. Jump down: the three Giant White Rats by the surface portal carry the Bridge Access Key. The gate room's north chest holds the Cell Access Key; the Bridge key opens the Revenant's door, and the Cell key the chest inside — the Prison Access Key. That opens the bridge to the three Revenants and the Silver Key, which at last unlocks the shield alcove.",
+    rooms:[["en",0,0,0,{t:"entry"}],["split",0,1,0,{small:1}],["cellrm",1,1,0,{big:1,cells:1,m:2}],
+      ["gater",2,1,0,{}],["vaultN",2,2,0,{small:1,box:"Cell Access Key"}],["pit",1,2,-3.4,{small:1}],
+      ["rats",0,2,-3.4,{m:3,box:"Bridge Access Key",portal:1}],["rev",1,3,-3.4,{m:1}],
+      ["pvault",2,3,-3.4,{small:1,box:"Prison Access Key"}],["bridge",0,3,-3.4,{}],
+      ["brm",-1,3,-3.4,{big:1,m:3,box:"Silver Key"}],["shield",-1,2,-3.4,{t:"boss"}]],
+    links:[["en","split","flat"],["split","cellrm","flat"],["cellrm","gater","flat"],["gater","vaultN","flat"],
+      ["cellrm","pit","drop"],["pit","rats","flat"],["pit","rev","key","Bridge Access Key"],
+      ["rev","pvault","key","Cell Access Key"],["rats","bridge","key","Prison Access Key"],
+      ["bridge","brm","flat"],["brm","shield","key","Silver Key"]]},
+  "Viamontian Royal Prison":{boss:"Royal Prison Warden",loot:["Prison Warden's Orders","Oswald's Prison Journal"],noBoxes:true,
+    d:"From the drop stick to the middle until the room with the acid pit. North to a small room, then east until the large L-shaped room — a hallway climbs from its middle to a lever that opens the far east door. East again to the T, north to the green room, and through the hidden wall near its northeast corner. The Royal Prison Warden keeps the key to his own chest — and a lever by it opens the prison cell across the acid pit.",
+    rooms:[["en",0,0,0,{t:"entry"}],["mid",0,1,0,{}],["acid",0,2,0,{big:1,m:2}],
+      ["cell",-1,2,0,{small:1,cells:1}],["nsm",0,3,0,{small:1}],["e1",1,3,0,{}],
+      ["lrm",2,3,0,{big:1,m:2}],["lev",2,4,2.6,{small:1}],["e2",3,3,0,{}],["tj",4,3,0,{small:1}],
+      ["green",4,4,0,{m:2}],["whall",5,4,0,{m:2,box:"Prison Warden's Key"}],
+      ["vault",5,5,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","mid","flat"],["mid","acid","flat"],["acid","cell","lever","@vault"],["acid","nsm","flat"],
+      ["nsm","e1","flat"],["e1","lrm","flat"],["lrm","lev","ramp"],["lrm","e2","lever","@lev"],
+      ["e2","tj","flat"],["tj","green","flat"],["green","whall","flat"],
+      ["whall","vault","key","Prison Warden's Key"]]},
+  "Crypt of Ashen Tears":{boss:"Lich Lord",loot:["Alloy Mechanism"],
+    d:"A deep and winding crypt near Zaikhal. Take the south exit from the drop and just hang left, ramp after ramp, past banderling rogues and gold phyntos wasps. Four levels down, the Alloy Mechanism rests in an alcove — and the Lich Lord holds the last hall.",
+    rooms:[["en",0,0,0,{t:"entry"}],["s1",0,1,-2.6,{}],["l1",-1,1,-2.6,{m:1}],["l2",-1,2,-5.2,{m:2}],
+      ["w1",0,2,-5.2,{small:1,m:2}],["l3",-1,3,-7.8,{m:2}],["l4",-1,4,-10.4,{}],
+      ["alc",-2,4,-10.4,{small:1}],["boss",0,4,-10.4,{t:"boss",big:1}]],
+    links:[["en","s1","ramp"],["s1","l1","flat"],["l1","l2","ramp"],["l2","w1","flat"],
+      ["l2","l3","ramp"],["l3","l4","ramp"],["l4","alc","flat"],["l4","boss","flat"]]},
+  "Frozen Library":{boss:"Demented Fiun",loot:["Glacial Tome"],
+    d:"The Hall opens onto frozen stacks stalked by deranged Fiun and rabid eaters. Among the shelves a strongbox keeps the Ruschk Iceberg Key; the last room's exit door is sealed — its lever hides in the east reading room.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",0,1,0,{big:1,m:2}],["stacks",-1,1,0,{m:2}],
+      ["keyrm",-1,2,0,{small:1,box:"Ruschk Iceberg Key"}],["deep",0,2,0,{m:2}],["lev",1,2,0,{small:1}],
+      ["last",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","hall","flat"],["hall","stacks","flat"],["stacks","keyrm","flat"],["hall","deep","flat"],
+      ["deep","lev","flat"],["deep","last","lever","@lev"]]},
+  "Abayar's Laboratory":{boss:"Maniacal Fiun",loot:["Fiun Spellcasting Gloves"],
+    d:"The portal hides in the base of Abayar's strange tower northwest of Eastwatch. Frenzied Fiun and enoki thrungus haunt the workrooms around the Pool of Glacial Water — and at the south end of the dungeon, Abayar's private study portal still stands.",
+    rooms:[["en",0,0,0,{t:"entry"}],["lab1",0,1,0,{m:2}],["pool",-1,1,0,{small:1}],
+      ["grove",0,2,0,{m:2}],["study",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","lab1","flat"],["lab1","pool","flat"],["lab1","grove","flat"],["grove","study","flat"]]},
+  "Empyrean Foundry":{boss:"Siessa Sclavus",loot:["Ancient Pyreal Dagger"],
+    d:"Hamud's Foundry Key opens the sealed door just past the drop. Mosswart thralls hold the upper works and sclavi the lower — and the way to the old forges is all lever-pulling: one gate at the head of the works, another before the forge floor. The Ancient Pyreal Dagger lies beyond, and a surface portal past it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["gate",0,1,0,{}],["up1",1,1,0,{m:2}],["lev1",1,2,0,{small:1}],
+      ["mid",0,2,0,{}],["down",0,3,-2.6,{m:2}],["lev2",-1,3,-2.6,{small:1}],["forge",0,4,-2.6,{m:2}],
+      ["vault",1,4,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","gate","key","Foundry Key"],["gate","up1","flat"],["up1","lev1","flat"],
+      ["gate","mid","lever","@lev1"],["mid","down","ramp"],["down","lev2","flat"],
+      ["down","forge","lever","@lev2"],["forge","vault","flat"]]},
+  "Tusker Temple":{boss:"Tusker Kin",loot:["Tusker Paw"],
+    d:"A temple of the tusker cult west of Dryreach, where human Tusker Kin worship among their beasts. Down the inner ramp, the Tusker Shrine Statue still hums with the old teleportation magic to Oolutanga's Refuge on Aphus Lassel.",
+    rooms:[["en",0,0,0,{t:"entry"}],["nave",0,1,0,{big:1,m:2}],["side",1,1,0,{small:1,m:1}],
+      ["inner",0,2,-2.6,{m:2}],["shrine",0,3,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","nave","flat"],["nave","side","flat"],["nave","inner","ramp"],["inner","shrine","flat"]]},
+  "Hunter's Leap":{boss:"Lich Lord",loot:["Lilitha's Broken Bow"],
+    d:"A place to practice precision jumps — ledge after ledge falls away beneath the drop, with brigands and cutthroats denned on the landings and liches below. Lilitha's broken bow lies at the very bottom; bring it back to Eldrista the Adventurer.",
+    rooms:[["en",0,0,0,{t:"entry"}],["b1",0,1,-3.4,{m:1}],["b2",0,2,-6.8,{m:1}],
+      ["den",1,2,-6.8,{small:1,m:2}],["b3",0,3,-10.2,{}],["bottom",0,4,-10.2,{t:"boss",big:1}]],
+    links:[["en","b1","drop"],["b1","b2","drop"],["b2","den","flat"],["b2","b3","drop"],["b3","bottom","flat"]]},
+  "Haunted Mansion":{boss:"Skeleton Captain",loot:["Frest Greelving's Treasure"],
+    d:"Frest Greelving's mansion near Lytelthorpe, where apparitions hang in the halls and the parlor rug is alive. His chest waits in the upper bedroom at the top of the stairs — and the cellar portal drops to his private dungeon.",
+    rooms:[["en",0,0,0,{t:"entry"}],["foyer",0,1,0,{big:1,m:2}],["parlor",-1,1,0,{m:2}],
+      ["cellar",1,1,0,{small:1,portal:1}],["stairs",0,2,2.6,{}],["bed",0,3,2.6,{t:"boss"}]],
+    links:[["en","foyer","flat"],["foyer","parlor","flat"],["foyer","cellar","flat"],
+      ["foyer","stairs","ramp"],["stairs","bed","flat"]]},
+  "Arwic Mines":{boss:"Banderling Bandit",loot:["Quarter Staff of Fire","Stone of Alb'arel"],
+    d:"The mine outside Arwic's north wall, thick with banderling raiders and mine rats. Portals to the Old Mine and the Moss Chamber open off the crossing; the Mine Key unlocks the sealed workings, where a banderling bandit carries the Quarter Staff of Fire and the Stone of Alb'arel lies at the very bottom.",
+    rooms:[["en",0,0,0,{t:"entry"}],["m1",0,1,-2.6,{m:2}],["cross",0,2,-2.6,{}],
+      ["old",-1,2,-2.6,{small:1,portal:1}],["moss",1,2,-2.6,{small:1,portal:1}],
+      ["lockd",0,3,-2.6,{m:2}],["bottom",0,4,-5.2,{t:"boss",big:1}]],
+    links:[["en","m1","ramp"],["m1","cross","flat"],["cross","old","flat"],["cross","moss","flat"],
+      ["cross","lockd","key","Mine Key"],["lockd","bottom","ramp"]]},
+  "North Glenden Prison":{boss:"Royal Thaumaturge",loot:["Commander Kurth's Orders"],
+    d:"A Viamontian prison north of Glenden Wood, held by tribunes and their royal thaumaturge — abhorrent eaters pace the cell rows. At the far end stands the portal to the Commander's Quarters, where Commander Kurth was beaten in the days of Ashes and Dust.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",0,1,0,{m:2}],["cells",-1,1,0,{cells:1,m:1}],
+      ["h2",0,2,0,{m:2}],["chestr",1,2,0,{small:1}],["cq",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","h1","flat"],["h1","cells","flat"],["h1","h2","flat"],["h2","chestr","flat"],["h2","cq","flat"]]},
+  "Eastham Sewer":{boss:"Malus Shreth",loot:["Metal Round Shield","Slimy Broad Sword"],noBoxes:true,
+    d:"Drudge-infested runoff under Eastham. The Matted Drudge Ravener in the northeast corner carries the Gold Key to the shield room door; the pack rat in the upper sewer keeps the key to the shield chest itself — a metal round shield and a slimy broad sword for Samuel, Former Guardian.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ch1",0,1,-2.6,{m:2}],["ne",1,1,-2.6,{m:2,box:"Gold Key"}],
+      ["up",0,2,0,{m:2,box:"Eastham Sewer Key"}],["sh",1,2,-2.6,{}],
+      ["vault",2,2,-2.6,{t:"boss",portal:1}]],
+    links:[["en","ch1","ramp"],["ch1","ne","flat"],["ch1","up","ramp"],
+      ["ne","sh","key","Gold Key"],["sh","vault","key","Eastham Sewer Key"]]},
+  "Colier Mine":{boss:"Baron of Colier",loot:["Baron's Amulet of Life Giving","Baron's Lightning Long Sword"],noBoxes:true,
+    d:"Beneath the abandoned town of Colier. The raider guardian's post keeps the Small Rusted Key for the metal door; the drudge cellar the Cell Key for the door beyond the turns — right, left, right, left. The Undead Curator at the end of the hall holds the Scratched Key to the vault where the Baron's Key lies, and that opens the south door of the lower chamber: the Baron of Colier among his undead miners, his amulet in the treasure room.",
+    rooms:[["en",0,0,0,{t:"entry"}],["guard",1,0,0,{small:1,m:1,box:"Small Rusted Key"}],
+      ["cellar",-1,0,0,{small:1,m:2,box:"Cell Key"}],["md",0,1,0,{}],["t1",0,2,0,{}],
+      ["cd",1,2,0,{}],["hall",1,3,0,{m:2}],["cur",1,4,0,{m:2,box:"Scratched Key"}],
+      ["vaultd",0,4,0,{small:1,box:"The Baron's Key"}],["low",0,5,-2.6,{m:2}],
+      ["lair",1,5,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","guard","flat"],["en","cellar","flat"],["en","md","key","Small Rusted Key"],
+      ["md","t1","flat"],["t1","cd","key","Cell Key"],["cd","hall","flat"],["hall","cur","flat"],
+      ["cur","vaultd","key","Scratched Key"],["vaultd","low","ramp"],
+      ["low","lair","key","The Baron's Key"]]},
+  "Bone Lair":{boss:"Skeleton Warrior",loot:["Alloy Instrument"],
+    d:"A small skeleton den northwest of Al-Arqas — but the Alloy Instrument sits behind two lever-gates, and only the right levers open the way. A surface portal stands beside the instrument room.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",0,1,0,{m:2}],["lev1",1,1,0,{small:1}],
+      ["g1",0,2,0,{m:1}],["lev2",-1,2,0,{small:1}],["alloy",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","h1","flat"],["h1","lev1","flat"],["h1","g1","lever","@lev1"],
+      ["g1","lev2","flat"],["g1","alloy","lever","@lev2"]]},
+  "Olthoi Chasm":{boss:"Olthoi Swarm Harvester",loot:["Untranslated Note"],
+    d:"The first chasm of the series, west of Lytelthorpe — two sheer drops through olthoi galleries into the risen dead below. The Untranslated Note at the dungeon's end is worth a fortune to Xavier, Royal Guard, and the portal beside it leads deeper: the Shallow Olthoi Chasm.",
+    rooms:[["en",0,0,0,{t:"entry"}],["lip",0,1,-3.4,{m:2}],["gal",1,1,-3.4,{m:2}],
+      ["lip2",0,2,-6.8,{m:2}],["crypt",-1,2,-6.8,{m:2}],["endr",0,3,-6.8,{t:"boss",big:1,portal:1}]],
+    links:[["en","lip","drop"],["lip","gal","flat"],["lip","lip2","drop"],["lip2","crypt","flat"],
+      ["lip2","endr","flat"]]},
+  "Mite Tunnels":{boss:"Mite Scion",loot:["Mite Larder Cache"],
+    d:"Looping mite warrens near Arwic where diggers and squibs hoard their spoils — food and spell components lie scattered on every floor, and the vat room reeks of brew. The scions keep the deepest nest.",
+    rooms:[["en",0,0,0,{t:"entry"}],["a",0,1,0,{small:1,m:1}],["b",-1,1,0,{small:1,m:1}],
+      ["vats",1,1,0,{small:1}],["c",-1,2,0,{small:1,m:2}],["d",0,2,0,{small:1,m:1}],
+      ["nest",0,3,0,{t:"boss",big:1}]],
+    links:[["en","a","flat"],["a","b","flat"],["a","vats","flat"],["b","c","flat"],["c","d","flat"],
+      ["d","a","flat"],["d","nest","flat"]]},
+  "Drudge Hideout":{boss:"Drudge Robber Baron",loot:["Robber Baron Head","Bag of Rye Seed"],
+    d:"A good adventure for someone newly arrived in Dereth: Alfrin's stolen seed bags lie on the hideout floors among the drudge slinkers, and the Drudge Robber Baron himself holds the last hall — bring Alfrin his head and the rye, wheat and corn.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",0,1,0,{m:2}],["store",-1,1,0,{small:1,m:1}],
+      ["h2",0,2,0,{m:2}],["baron",0,3,0,{t:"boss"}]],
+    links:[["en","h1","flat"],["h1","store","flat"],["h1","h2","flat"],["h2","baron","flat"]]},
+  "Accursed Halls":{boss:"Banderling Captain",loot:["Altar Offering Bowl"],
+    d:"Banderling and Gotrok halls under the Direlands, strewn with food and spoils. A fountain of strength plays in the north alcove, a portal opens halfway down, and in the deep the Altar of Bael'Zharon still hungers. The Peddler keeps shop by the exit portal at the very end.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",0,1,-2.6,{m:2}],["fount",-1,1,-2.6,{small:1}],
+      ["h2",0,2,-2.6,{m:2}],["midp",1,2,-2.6,{small:1,portal:1}],["h3",0,3,-5.2,{m:2}],
+      ["altar",-1,3,-5.2,{small:1}],["endr",0,4,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","h1","ramp"],["h1","fount","flat"],["h1","h2","flat"],["h2","midp","flat"],
+      ["h2","h3","ramp"],["h3","altar","flat"],["h3","endr","flat"]]},
+  "Lightless Catacombs":{boss:"Umbris Shadow",loot:["Splintered Staff","Dark Note"],
+    d:"No light burns in the Empyrean ruins' catacombs — panumbris and tenebrous shadows drift the halls with harrower grievvers among them. In the southwest corner of the final room, a sturdy iron chest keeps a Dark Note and a splintered piece of the Staff of the Nomads.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,-2.6,{m:2}],["c2",0,2,-2.6,{m:2}],
+      ["griev",1,2,-2.6,{small:1,m:2}],["c3",0,3,-5.2,{m:2}],["final",0,4,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","c1","ramp"],["c1","c2","flat"],["c2","griev","flat"],["c2","c3","ramp"],["c3","final","flat"]]},
+  "Temple of Forgetfulness":{boss:"Obsidian Golem",loot:["Token of Modification"],
+    d:"The golem-kept temple near Neydisa Castle. Keep generally left and jump down a few pits — the Inner Sanctum lies below, where the Servants of Forgetfulness and Alteration grant their tokens to those who would remake themselves.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,0,{m:2}],["pit1",0,2,-3.4,{m:1}],
+      ["l1",-1,2,-3.4,{m:2}],["pit2",-1,3,-6.8,{}],["sanct",0,3,-6.8,{t:"boss",big:1}]],
+    links:[["en","t1","flat"],["t1","pit1","drop"],["pit1","l1","flat"],["l1","pit2","drop"],["pit2","sanct","flat"]]},
+  "Mount Lethe Magma Tubes":{boss:"Lord Cambarth",loot:["Water of Mount Lethe","Torn Journal"],
+    d:"Head down through the tubes until you reach the lever guarded by a magma golem — Lord Cambarth holds that hall. Pull it, go right through the opened door and pull the other lever where Foreman Brelax stands, then return near the surface portal and head down. At the end waits the Pool of Lethe: open it like a chest for its water.",
+    rooms:[["en",0,0,0,{t:"entry"}],["d1",0,1,-2.6,{m:2}],["lev1",0,2,-2.6,{m:2}],
+      ["r1",1,2,-2.6,{m:2}],["d2",-1,1,-2.6,{m:1}],["low",-1,2,-5.2,{m:2}],
+      ["pool",-1,3,-5.2,{t:"boss",big:1}]],
+    links:[["en","d1","ramp"],["d1","lev1","flat"],["lev1","r1","lever","@lev1"],
+      ["d1","d2","lever","@r1"],["d2","low","ramp"],["low","pool","flat"]]},
+  "Aerfalle Keep":{boss:"Lich Oppressor",loot:["Aerfalle's Pallium","Staff of Aerfalle"],
+    d:"Lady Aerfalle's island keep on Aerlinthe, held by firestorms, dark guardians and relic bones. The Ghost of Galaeral lingers by the relic hall — and beyond the oppressors' court, the portal to Aerfalle's Sanctum itself.",
+    rooms:[["en",0,0,0,{t:"entry"}],["court",0,1,0,{big:1,m:2}],["fire",1,1,0,{m:2}],
+      ["relic",0,2,0,{m:2}],["ghost",-1,2,0,{small:1}],["sanct",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","court","flat"],["court","fire","flat"],["court","relic","flat"],
+      ["relic","ghost","flat"],["relic","sanct","flat"]]},
+  "Black Death Catacombs":{boss:"Olthoi Ward Guardian",loot:["Quiddity Seed"],
+    d:"Olthoi-riddled catacombs near Bandit Castle — eviscerators and nobles swarm the main chamber. A portal to the Lower Corridor opens off it, and the south passage ends at the Deeper Catacombs portal, warded by the Olthoi Ward Guardian himself.",
+    rooms:[["en",0,0,0,{t:"entry"}],["tun1",0,1,-2.6,{m:2}],["main",0,2,-2.6,{big:1,m:3}],
+      ["lower",1,2,-2.6,{m:2,portal:1}],["spass",0,3,-2.6,{m:2}],["ward",0,4,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","tun1","ramp"],["tun1","main","flat"],["main","lower","flat"],["main","spass","flat"],
+      ["spass","ward","flat"]]},
+  "Dericost Vault":{boss:"Ruschk Sadist Warchief",loot:["Unfinished Dericost Phylactery"],noBoxes:true,
+    d:"A vault of the old winter kingdom near Stonehold, crawling with ruschk sadists and panumbris shadows. The warchief's hall keeps the Dericost Vault Key — and behind the locked door, the Unfinished Dericost Phylactery the Ruschk covet for Grael.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,-2.6,{m:2}],["shad",1,1,-2.6,{m:2}],
+      ["hall",0,2,-2.6,{big:1,m:3,box:"Dericost Vault Key"}],["vault",0,3,-2.6,{t:"boss",portal:1}]],
+    links:[["en","t1","ramp"],["t1","shad","flat"],["t1","hall","flat"],
+      ["hall","vault","key","Dericost Vault Key"]]},
+  "Lugian Ice Tunnels":{boss:"Gotrok Titan",loot:["Note to Alvirre"],
+    d:"Ice-bored tunnels west of Eastwatch where Bokrok and Gotrok lugians den against the cold. At the end of the tunnels lies a frozen corpse still clutching a note to Alvirre — and a surface portal beside it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ice1",0,1,-2.6,{m:2}],["ice2",0,2,-2.6,{m:2}],
+      ["den",-1,2,-2.6,{small:1,m:2}],["deep",0,3,-5.2,{m:2}],["endr",0,4,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","ice1","ramp"],["ice1","ice2","flat"],["ice2","den","flat"],["ice2","deep","ramp"],
+      ["deep","endr","flat"]]},
+  "Water Temple":{boss:"Mist Golem",loot:["Bottle of Water","Nanto Town Stamp"],
+    d:"An old starter-town temple up the hill from Nanto, its halls given over to mist golems and cursed wisps. The sacred pool still runs clear — and the Temple Key opens the vault where the bottled water and the Nanto town stamp are kept.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,0,{m:2}],["pool",-1,1,0,{small:1}],
+      ["t2",0,2,0,{m:2}],["vault",0,3,0,{t:"boss",portal:1}]],
+    links:[["en","t1","flat"],["t1","pool","flat"],["t1","t2","flat"],["t2","vault","key","Temple Key"]]},
+  "Hall of Hollows":{boss:"Dranith Menacet",loot:["Menacet's Orders"],
+    d:"Beneath a trap door in the middle house of Fort Witshire: the headquarters of Martine's plot against Borelean Strathelar. Hollow minions — proof against all magic — guard the descent, and at the bottom waits Dranith Menacet with his orders.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",0,1,-2.6,{m:2}],["h2",0,2,-5.2,{m:2}],
+      ["side",1,2,-5.2,{small:1,m:1}],["bottom",0,3,-7.8,{t:"boss",big:1}]],
+    links:[["en","h1","ramp"],["h1","h2","ramp"],["h2","side","flat"],["h2","bottom","ramp"]]},
+  "Lair of Death":{boss:"Olthoi Noble",loot:["Note from a Scout"],
+    d:"The olthoi warren north of Arwic that generations of adventurers braved for its riches. Two sheer drops through the nests — and at the bottom, a scout's last note and the portal to the Deeper Catacombs.",
+    rooms:[["en",0,0,0,{t:"entry"}],["tun",0,1,-3.4,{m:2}],["nest1",0,2,-3.4,{big:1,m:3}],
+      ["gard",1,2,-3.4,{m:2}],["low",0,3,-6.8,{m:2}],["bottom",0,4,-6.8,{t:"boss",big:1,portal:1}]],
+    links:[["en","tun","drop"],["tun","nest1","flat"],["nest1","gard","flat"],["nest1","low","drop"],
+      ["low","bottom","flat"]]},
+  "Blackmire Temple":{boss:"Guardian of the Outer Ward",loot:["Bloodstone Gem","Serpentine Gem"],
+    d:"The Odd Looking Vine hides behind a wall on the left side of the bunker — beyond it, the temple of the Blackmire. Gem-eyed statues line the ward halls; give the statue its bloodstone and the portal to the Hall of the Temple Guardians opens. The Guardian of the Outer Ward suffers no trespass.",
+    rooms:[["en",0,0,0,{t:"entry"}],["bunker",0,1,0,{small:1}],["wardh",0,2,0,{big:1,m:2}],
+      ["gems",-1,2,0,{small:1}],["statue",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","bunker","flat"],["bunker","wardh","flat"],["wardh","gems","flat"],["wardh","statue","flat"]]},
+  "Catacombs of the Forgotten":{boss:"Skeleton Lord",loot:["Mi Krau-Li's Jitte","Note from Mi Krau-Li"],
+    d:"Skeleton-haunted catacombs near Glenden Wood. Mi Krau-Li's sarcophagus rests in the last vault, his note still inside — and his jitte lies on the ground near the end, where the wraiths gather thickest.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,-2.6,{m:2}],["c2",0,2,-2.6,{m:2}],
+      ["wing",1,2,-2.6,{small:1,m:1}],["sarc",0,3,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","c1","ramp"],["c1","c2","flat"],["c2","wing","flat"],["c2","sarc","flat"]]},
+  "Sawato Bandit's Hideout":{boss:"Sawato Bandit Ringleader",loot:["Sawato Bandit's Ledger"],
+    d:"The extortionists' den under Sawato — stolen art on one wall, someone's prized stone collection on another, and yes, stolen cows. The bandits' ledger names every family they've squeezed. Portals stand to Bandit Castle and to the Ringleader's own chambers.",
+    rooms:[["en",0,0,0,{t:"entry"}],["dr",0,1,-2.6,{m:2}],["art",-1,1,-2.6,{small:1}],
+      ["cows",1,1,-2.6,{small:1}],["camp",0,2,-2.6,{big:1,m:3}],["bcp",1,2,-2.6,{small:1,portal:1}],
+      ["ring",0,3,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","dr","ramp"],["dr","art","flat"],["dr","cows","flat"],["dr","camp","flat"],
+      ["camp","bcp","flat"],["camp","ring","flat"]]},
+  "Citadel Library":{boss:"Animated Tome",loot:["Leather Bound Tome","Icy Tome"],
+    d:"Gaerlan's library under Eastham — an Escher-like maze of stairs, books and floating candles where nothing living walks. The Dericost and Yalaini bookshelves yield their tomes to patient readers; the elemental trial portals open off the upper stair, and Gaerlan's Inner Sanctum waits at the top.",
+    rooms:[["en",0,0,0,{t:"entry"}],["st1",0,1,2.6,{m:0}],["shelfD",-1,1,2.6,{small:1,m:0}],
+      ["st2",0,2,0,{m:0}],["shelfY",1,2,0,{small:1,m:0}],["st3",0,3,2.6,{m:0}],
+      ["porE",-1,3,2.6,{small:1,portal:1,m:0}],["sanct",0,4,2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","st1","ramp"],["st1","shelfD","flat"],["st1","st2","ramp"],["st2","shelfY","flat"],
+      ["st2","st3","ramp"],["st3","porE","flat"],["st3","sanct","flat"]]},
+  "Gredaline Consulate":{boss:"Esard the Legate",loot:["Esard's Life Magic Scroll","Nelamar's War Magic Scroll"],
+    d:"A Virindi consulate near Frost Haven where innocent-eyed dolls drift among the drudges. The Legates — Esard, Geraux and Nelamar — carry their magic scrolls, and the portal to the Envoy's Chamber opens beyond their court.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,0,{m:2}],["dolls",-1,1,0,{small:1,m:2}],
+      ["c2",0,2,0,{m:2}],["leg1",1,2,0,{small:1,m:1}],["envoy",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","c1","flat"],["c1","dolls","flat"],["c1","c2","flat"],["c2","leg1","flat"],
+      ["c2","envoy","flat"]]},
+  "Black Dominion":{boss:"Virindi Executor",loot:["Singularity Trove"],
+    d:"A Virindi hold on the south Direlands shore. The door near the start yields only to nimble fingers — beyond it, hollow minions that no magic touches, and in the final room a marooned Virindi Castaway beside a sturdy iron chest and the surface portal.",
+    rooms:[["en",0,0,0,{t:"entry"}],["lock",0,1,0,{}],["h1",0,2,0,{m:2}],
+      ["wisp",-1,2,0,{small:1,m:1}],["h2",0,3,-2.6,{m:2}],["final",0,4,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","lock","lever","@en"],["lock","h1","flat"],["h1","wisp","flat"],["h1","h2","ramp"],
+      ["h2","final","flat"]]},
+  "Mountain Halls":{boss:"Kilif Zefir",loot:["Zefir Wing"],
+    d:"Drudge-dug halls near Fort Tethana where zefirs ride the draughts and sandstone golems grind the walls. A font of revitalization plays on the upper level; loot lies scattered on the floor of the bottom drudge room, and the Kilif Zefir haunts the last hall.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",0,1,-2.6,{m:2}],["font",1,1,-2.6,{small:1}],
+      ["h2",0,2,-5.2,{m:2}],["den",-1,2,-5.2,{m:2}],["bottom",0,3,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","h1","ramp"],["h1","font","flat"],["h1","h2","ramp"],["h2","den","flat"],
+      ["h2","bottom","flat"]]},
+  "Rat King's Cave":{boss:"Rat King",loot:["Rat King's Tail"],
+    d:"Home of the Rat King, near Shoushi. Black, red, silver and mountain rats swarm the looping warrens — and only those who have done the Rat Catcher's every task may claim the King's tail.",
+    rooms:[["en",0,0,0,{t:"entry"}],["w1",0,1,0,{small:1,m:2}],["w2",-1,1,0,{small:1,m:1}],
+      ["w3",-1,2,0,{small:1,m:2}],["w4",0,2,0,{small:1,m:1}],["throne",0,3,0,{t:"boss",big:1}]],
+    links:[["en","w1","flat"],["w1","w2","flat"],["w2","w3","flat"],["w3","w4","flat"],
+      ["w4","w1","flat"],["w4","throne","flat"]]},
+  "Matron Hive East":{boss:"Olthoi Brood Matron",loot:["Brood Matron Carapace"],
+    d:"The eastern brood hive near Baishi, dug by slashers and slayers for their matron. Her carapace is the prize — the Raiment of Asheron cannot be made without it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,-2.6,{m:2}],["t2",0,2,-2.6,{m:2}],
+      ["cell",1,2,-2.6,{small:1,m:2}],["brood",0,3,-2.6,{t:"boss",big:1}]],
+    links:[["en","t1","ramp"],["t1","t2","flat"],["t2","cell","flat"],["t2","brood","flat"]]},
+  "Matron Hive West":{boss:"Olthoi Brood Matron",loot:["Brood Matron Carapace"],
+    d:"The western brood hive — a sheer drop into the slasher tunnels, then down again to the matron's chamber. Her carapace, like her sisters', goes to the making of Asheron's Raiment.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,-3.4,{m:2}],["t2",-1,1,-3.4,{m:2}],
+      ["deep",-1,2,-6,{m:2}],["brood",-1,3,-6,{t:"boss",big:1}]],
+    links:[["en","t1","drop"],["t1","t2","flat"],["t2","deep","ramp"],["deep","brood","flat"]]},
+  "Matron Hive North":{boss:"Olthoi Brood Matron",loot:["Brood Matron Carapace"],
+    d:"The northern brood hive forks around the matron's chamber — slayers nest in both galleries, and the matron suffers no visitor to leave with her carapace unearned.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,-2.6,{m:2}],["fork",0,2,-2.6,{}],
+      ["w",-1,2,-2.6,{small:1,m:2}],["e",1,2,-2.6,{small:1,m:2}],["brood",0,3,-2.6,{t:"boss",big:1}]],
+    links:[["en","t1","ramp"],["t1","fork","flat"],["fork","w","flat"],["fork","e","flat"],
+      ["fork","brood","flat"]]},
+  "Matron Hive South":{boss:"Olthoi Brood Matron",loot:["Brood Matron Carapace"],
+    d:"The southern brood hive winds east before doubling back to the matron. The fourth carapace completes the set — and Asheron's Supreme Raiment waits on the loom.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,-2.6,{m:2}],["t2",1,1,-2.6,{m:2}],
+      ["t3",1,2,-2.6,{m:2}],["brood",0,2,-2.6,{t:"boss",big:1}]],
+    links:[["en","t1","ramp"],["t1","t2","flat"],["t2","t3","flat"],["t3","brood","flat"]]},
+  "Lugian Quarry":{boss:"Obeloth Raider",loot:["Medium-Grade Chorizite Ore","Lugian Pick Axe"],
+    d:"The quarry in the High Mountain Valley where Obeloth and Lithos raiders swing hollow weapons — and dispel traps in the upper works strip every enchantment you carry. The chorizite deposits lie in the lower cuts; bring a Lugian pickaxe, or take one from its owner.",
+    rooms:[["en",0,0,0,{t:"entry"}],["up",0,1,-2.6,{m:2}],["traps",1,1,-2.6,{small:1}],
+      ["mid",0,2,-5.2,{m:2}],["ore",-1,2,-5.2,{small:1,m:1}],["quarry",0,3,-5.2,{t:"boss",big:1}]],
+    links:[["en","up","ramp"],["up","traps","flat"],["up","mid","ramp"],["mid","ore","flat"],
+      ["mid","quarry","flat"]]},
+  "Mhoire Castle":{boss:"Shade of Lord Rytheran",loot:["Mhoire Treasury Trove"],
+    d:"Lord Mhoire's cursed castle beneath the Graveyard, one of the few places in Dereth where the dead hoard legendary treasure. Wights and pyre skeletons hold the courtyard; the tower portals open to the flagged, and the Shades of Antemy, Fordroth and Ormend set their tasks. Beyond the sealed treasury vaults, the Shade of Lord Rytheran keeps the Great Hall.",
+    rooms:[["en",0,0,0,{t:"entry"}],["court",0,1,0,{big:1,m:3}],["tNE",1,1,0,{small:1,portal:1}],
+      ["tNW",-1,1,0,{small:1,portal:1}],["hall",0,2,0,{m:2}],["vaults",1,2,0,{small:1,cells:1}],
+      ["great",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","court","flat"],["court","tNE","flat"],["court","tNW","flat"],["court","hall","flat"],
+      ["hall","vaults","flat"],["hall","great","flat"]]},
+  "Asheron's Sanctum":{boss:"Golem Guardian",loot:["Empyrean Spherule","Olthoi Resurgent"],
+    d:"A single great chamber beneath Asheron's Castle: the last First-Born's library, its studies still open on the tables. Two golem guardians keep the stacks, patient as stone, exactly as their master left them.",
+    rooms:[["en",0,0,0,{t:"entry"}],["lib",0,1,0,{t:"boss",big:1,round:1,m:2}]],
+    links:[["en","lib","flat"]]},
+  "Frozen Cenotaph":{boss:"Ruschk Warlord",loot:["Untranslated Dreams of Salt and Ash"],
+    d:"A tomb of ice north of Silyun where the Ruschk keep their grief. Sadists and vile ruschk prowl the frozen galleries; the warlord holds the cenotaph itself, and the Untranslated Dreams of Salt and Ash rest in its niche — the royal scholars of Cragstone would pay dearly for them.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ice1",0,1,-2.6,{m:2}],["ice2",0,2,-2.6,{m:2}],
+      ["niche",-1,2,-2.6,{small:1}],["ceno",0,3,-2.6,{t:"boss",big:1}]],
+    links:[["en","ice1","ramp"],["ice1","ice2","flat"],["ice2","niche","flat"],["ice2","ceno","flat"]]},
+  "Eater Pit":{boss:"Sword Swallower",loot:["Sir Ginazio's Sword"],
+    d:"Long but relatively linear, and full of eaters the whole way down. At the end waits the Sword Swallower — Sir Ginazio's blade is still in there somewhere — beside the explorers' marker and the surface portal.",
+    rooms:[["en",0,0,0,{t:"entry"}],["e1",0,1,-2.6,{m:2}],["e2",0,2,-2.6,{m:2}],
+      ["e3",0,3,-5.2,{m:2}],["e4",0,4,-5.2,{m:2}],["boss",0,5,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","e1","ramp"],["e1","e2","flat"],["e2","e3","ramp"],["e3","e4","flat"],["e4","boss","flat"]]},
+  "Palenqual's Cavern":{boss:"Strand Siraluun",loot:["Palenqual's Living Weapon"],
+    d:"The caverns northeast of Timaru where Aun Kerehanua tends Palenqual's living weapons. Island armoredillos and feral carenzi den in the side galleries, zefirs and wisps drift the deeps, and portals thread the cavern for those who know them.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,-2.6,{m:2}],["cren",-1,1,-2.6,{small:1,m:2}],
+      ["c2",0,2,-2.6,{m:2}],["por",1,2,-2.6,{small:1,portal:1}],["deep",0,3,-2.6,{t:"boss",big:1}]],
+    links:[["en","c1","ramp"],["c1","cren","flat"],["c1","c2","flat"],["c2","por","flat"],["c2","deep","flat"]]},
+  "Secret Chamber of Kresovus":{boss:"Watcher in the Warren",loot:["Watcher's Message Shard"],
+    d:"Hidden behind Kresovus' lockbox high in Linvak Tukal. The Watcher's guards respawn fast and swing hollow weapons; the inner door is built to outlast a siege — break its mechanism and press on to the Watcher in the Warren, whose shattered message shard names his masters.",
+    rooms:[["en",0,0,0,{t:"entry"}],["guard",0,1,0,{m:3}],["lev",1,1,0,{small:1}],
+      ["warren",0,2,0,{m:2}],["watch",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","guard","flat"],["guard","lev","flat"],["guard","warren","lever","@lev"],
+      ["warren","watch","flat"]]},
+  "Gaerlan's Citadel":{boss:"Gaerlan",loot:["Gaerlan's Heart"],
+    d:"The rebel Empyrean's citadel in the clouds, entered through his library below. The elemental trials open off the lower hall — Icy Demise, Fiery Consumption, Entropic Decay, Electric Destruction — each portal fiercer than the last, and above them all Gaerlan waits in his Inner Sanctum.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",0,1,2.6,{m:2}],["trIce",-1,1,2.6,{small:1,portal:1}],
+      ["trFire",1,1,2.6,{small:1,portal:1}],["upper",0,2,5.2,{m:3}],["sanct",0,3,5.2,{t:"boss",big:1}]],
+    links:[["en","hall","ramp"],["hall","trIce","flat"],["hall","trFire","flat"],["hall","upper","ramp"],
+      ["upper","sanct","flat"]]},
+  "Colosseum":{boss:"The Master",loot:["Empyrean Ring","Colosseum Trophy"],noBoxes:true,
+    d:"The arena west of Yanshi: clear a room and the door to the next appears on the north wall, arena after arena against the hour-glass. The statue hallway portals to the champions' pits — Stone Fists, Azaxis and the rest — and those who survive every arena earn the Colosseum Vault Key. Tier-seven riches and an Empyrean Ring wait in the vault, guarded by the Master himself.",
+    rooms:[["en",0,0,0,{t:"entry"}],["tick",-1,0,0,{small:1}],["a1",0,1,0,{round:1,big:1,m:3}],
+      ["statH",1,1,0,{small:1,portal:1}],["a2",0,2,0,{round:1,big:1,m:3}],
+      ["a3",0,3,0,{round:1,big:1,m:3,box:"Colosseum Vault Key"}],["vault",0,4,0,{t:"boss",big:1}]],
+    links:[["en","tick","flat"],["en","a1","flat"],["a1","statH","flat"],["a1","a2","flat"],
+      ["a2","a3","flat"],["a3","vault","key","Colosseum Vault Key"]]},
+  "Advanced Colosseum":{boss:"Gladiator Diemos",loot:["Gladiator's Girdle"],
+    d:"The advanced arenas begin where the sixth door opens — waves fit for the world's strongest fellowships. The statue hall portals to Killagurg and the Demon Swarm Matron, and past the last arena waits Gladiator Diemos, who has never once saluted a challenger.",
+    rooms:[["en",0,0,0,{t:"entry"}],["a6",0,1,0,{round:1,big:1,m:3}],["a7",0,2,0,{round:1,big:1,m:3}],
+      ["stat",1,2,0,{small:1,portal:1}],["a8",0,3,0,{round:1,big:1,m:3}],["champ",0,4,0,{t:"boss",big:1}]],
+    links:[["en","a6","flat"],["a6","a7","flat"],["a7","stat","flat"],["a7","a8","flat"],["a8","champ","flat"]]},
+  "Panopticon":{boss:"Virindi Master",loot:["Soul Chalice"],
+    d:"The Virindi watchtower near Ayan Baqur, where the kidnapped folk of the town were once held under Adirred the Theoretican's gaze. Ramp over ramp past puppets and hollow minions, past the holding cells, to the all-seeing eye at the top — the surface portal stands beyond it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,2.6,{m:2}],["t2",0,2,5.2,{m:2}],
+      ["cellR",1,2,5.2,{small:1,cells:1}],["t3",0,3,7.8,{m:2}],["eye",0,4,7.8,{t:"boss",big:1,portal:1}]],
+    links:[["en","t1","ramp"],["t1","t2","ramp"],["t2","cellR","flat"],["t2","t3","ramp"],["t3","eye","flat"]]},
+  "The Pit of Heretics":{boss:"Illu Sclavus",loot:["Coral Hollow"],
+    d:"A sclavus ziggurat southeast of Candeth Keep — the pit drops you into the fort with no way back up. The twin statues on the walls hold the coral hollows that portal the sworn to Moarsman City; the heretic priests hold everything else.",
+    rooms:[["en",0,0,0,{t:"entry"}],["pit",0,1,-3.4,{m:2}],["fort",0,2,-3.4,{big:1,m:3}],
+      ["wstat",-1,2,-3.4,{small:1,portal:1}],["estat",1,2,-3.4,{small:1,portal:1}],
+      ["zig",0,3,-3.4,{t:"boss",big:1}]],
+    links:[["en","pit","drop"],["pit","fort","flat"],["fort","wstat","flat"],["fort","estat","flat"],
+      ["fort","zig","flat"]]},
+  "Tusker Emporium":{boss:"Tusker Redeemer",loot:["Ketnan's Curios"],
+    d:"A very long, winding delve inside the Aphus crater — redeemers and liberators of the tusker cult at every turn. Endure to the end and the reward is famous: a relaxation area with a bar, Ketnan's shop of unique wares, and the exit portal right beside your stool.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,-2.6,{m:2}],["c2",0,2,-2.6,{m:2}],
+      ["c3",1,2,-2.6,{m:2}],["c4",1,3,-2.6,{m:2}],["c5",0,3,-2.6,{m:2}],
+      ["bar",0,4,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","c1","ramp"],["c1","c2","flat"],["c2","c3","flat"],["c3","c4","flat"],
+      ["c4","c5","flat"],["c2","c5","flat"],["c5","bar","flat"]]},
+  "Undead Temple":{boss:"Dark Master",loot:["Healing Machine Orb"],
+    d:"A temple of ghosts and primeval bone at the foot of the Eastwatch mountains. The Runic Door Guardian bars the final chamber — only a runic skull persuades him — and beyond, the Healing Machine Orb rests in an old chest beside the end portal.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,-2.6,{m:2}],["ghost",-1,1,-2.6,{small:1,m:2}],
+      ["t2",0,2,-2.6,{m:2}],["rdg",0,3,-2.6,{}],["final",0,4,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","t1","ramp"],["t1","ghost","flat"],["t1","t2","flat"],["t2","rdg","flat"],
+      ["rdg","final","key","Runic Skull"]]},
+  "Monouga Feeding Pits":{boss:"Giant Imprisoned Monouga",loot:["Giant Monouga Ribs","Large Bag of Food"],
+    d:"An open pit in the Direlands where the drudge cult keeps its imprisoned monougas — large, huge and giant — behind bars in three wings. The attunement bells stand near the start; the Drudge Caretaker makes his rounds with his bag of food, and a portal sometimes opens in the partitioned room at the north wing's end.",
+    rooms:[["en",0,0,0,{t:"entry"}],["pit",0,1,-3.4,{big:1,m:2}],["bells",0,2,-3.4,{small:1}],
+      ["sw",-1,2,-3.4,{cells:1,m:2}],["ew",1,2,-3.4,{cells:1,m:2}],["nw",0,3,-3.4,{m:2}],
+      ["nend",0,4,-3.4,{t:"boss",big:1,portal:1}]],
+    links:[["en","pit","drop"],["pit","bells","flat"],["bells","sw","flat"],["bells","ew","flat"],
+      ["bells","nw","flat"],["nw","nend","flat"]]},
+  "Aphus Lassel":{boss:"Tusker Devastator",loot:["Tusker Tusk"],
+    d:"The tropical isle of the tuskers off Osteth's east coast — chitticks hum in the jungle mouth and phyntos wasps nest in the walls. The grotto descends toward the extreme island caves where the devastators rampage, and the Tusker Shrine at the deep end still teleports the faithful.",
+    rooms:[["en",0,0,0,{t:"entry"}],["jungle",0,1,0,{big:1,m:3}],["wasp",1,1,0,{small:1,m:2}],
+      ["grot",0,2,-2.6,{m:2}],["ext",-1,2,-2.6,{small:1,m:2}],["shrine",0,3,-2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","jungle","flat"],["jungle","wasp","flat"],["jungle","grot","ramp"],["grot","ext","flat"],
+      ["grot","shrine","flat"]]},
+  "Swamp Temple":{boss:"Essa Sclavus",loot:["Swamp Temple Tome","Fire Auroch Meat"],
+    d:"Three temples stacked in the Yanshi mire: mosswarts and their chief above, sandstone golems and the lifestone chamber in the middle works beside the Sho roadside portal, and the sclavus priests below. The drop-room door answers to the Carved Key from the bunker outside — and Essa Sclavus at the bottom guards a grotesquely carved key for the temple's twin near Wai Jhou.",
+    rooms:[["en",0,0,0,{t:"entry"}],["gate",0,1,0,{}],["moss",0,2,0,{big:1,m:3}],
+      ["chief",1,2,0,{small:1,m:2}],["mid",0,3,-2.6,{m:2}],["ls",-1,3,-2.6,{small:1,portal:1}],
+      ["low",0,4,-5.2,{m:2}],["boss",0,5,-5.2,{t:"boss",big:1,portal:1,box:"Grotesquely Carved Key"}]],
+    links:[["en","gate","key","Swamp Carved Key"],["gate","moss","flat"],["moss","chief","flat"],
+      ["moss","mid","ramp"],["mid","ls","flat"],["mid","low","ramp"],["low","boss","flat"]]},
+  "Sea Temple Catacombs":{boss:"Drudge Skulker",loot:["Perfectly Aged Cider","Perfect Cove Apple"],
+    d:"Catacombs under the old sea temple near Yaraq, swarming with drudges and rats — and piled with Lubziklan al-Luq's stolen goods: cove apples, baking pans, wine, hot pies. The perfectly aged cider sits in the deepest strongbox.",
+    rooms:[["en",0,0,0,{t:"entry"}],["c1",0,1,0,{m:2}],["pantry",-1,1,0,{small:1,m:1}],
+      ["c2",0,2,0,{m:2}],["c3",1,2,0,{small:1,m:1}],["den",0,3,0,{t:"boss",big:1}]],
+    links:[["en","c1","flat"],["c1","pantry","flat"],["c1","c2","flat"],["c2","c3","flat"],["c2","den","flat"]]},
+  "Gold Legion Keep":{boss:"Captain Aurachon",loot:["Gold Invader Lord Helm","Corcima Castle Gold Ward Portal Gem"],noBoxes:true,
+    d:"The Gold Legion's keep near Zaikhal — the entrance is guarded by Viamontian knights and their counselor. The Quartermaster keeps his key in the barracks; it opens his storeroom, where the Door Key lies. That opens the way to Captain Aurachon's hall — and the exit portal stands behind him.",
+    rooms:[["en",0,0,0,{t:"entry"}],["guards",0,1,0,{m:3}],["qm",1,1,0,{m:2,box:"Gold Legion Quartermaster's Key"}],
+      ["store",1,2,0,{small:1,box:"Gold Legion Door Key"}],["hall",0,2,0,{m:2}],
+      ["aur",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","guards","flat"],["guards","qm","flat"],["qm","store","key","Gold Legion Quartermaster's Key"],
+      ["guards","hall","flat"],["hall","aur","key","Gold Legion Door Key"]]},
+  "Lair of the Ancient Queen":{boss:"Olthoi Sentinel",loot:["Olthoi Abdomen Fragment"],
+    d:"The old Queen's lair near Zaikhal, held now by her Sentinel in the primary chamber. Down the ramp beside the Sentinel the brood eggs glisten — smash them if you dare. The swarm never forgives.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,-2.6,{m:2}],["main",0,2,-2.6,{big:1,m:3}],
+      ["eggs",-1,2,-5.2,{small:1,m:2}],["chamber",0,3,-2.6,{t:"boss",big:1}]],
+    links:[["en","t1","ramp"],["t1","main","flat"],["main","eggs","ramp"],["main","chamber","flat"]]},
+  "Desert Mine":{boss:"Skeleton Lord",loot:["Miner's Cache"],
+    d:"An abandoned mine southeast of Samsur, its shafts given over to skeletons and liches. An old sign halfway down still warns: Danger! Do not proceed beyond this point. The miners who ignored it are the ones you'll meet in the bottom room.",
+    rooms:[["en",0,0,0,{t:"entry"}],["m1",0,1,-2.6,{m:2}],["sign",0,2,-2.6,{small:1}],
+      ["m2",0,3,-5.2,{m:2}],["side",1,3,-5.2,{small:1,m:1}],["bottom",0,4,-7.8,{t:"boss",big:1}]],
+    links:[["en","m1","ramp"],["m1","sign","flat"],["sign","m2","ramp"],["m2","side","flat"],["m2","bottom","ramp"]]},
+  "Hills Citadel":{boss:"Gotrok Obeloth",loot:["Lugian Citadel Tablet"],
+    d:"The gentlest of the five Lugian citadels, in the hills south of Baishi. Gotrok gigas and lithos drill in the court; the ramp climbs to the keep where Obeloth holds the high hall.",
+    rooms:[["en",0,0,0,{t:"entry"}],["court",0,1,0,{big:1,m:2}],["barr",-1,1,0,{m:2}],
+      ["up",0,2,2.6,{m:2}],["keep",0,3,2.6,{t:"boss",big:1}]],
+    links:[["en","court","flat"],["court","barr","flat"],["court","up","ramp"],["up","keep","flat"]]},
+  "Umbral Hall":{boss:"Dread Idol",loot:["Mire Witch Loincloth","Idol Gem"],
+    d:"The old 'Super Sub' on Laesvos Island — the drop is hot, shadow lieutenants meet you at the bottom. Four branches open off the hub; their town portals were destroyed in the Shifting Gears calamity, all but MacNiall's Freehold at the far branch's end. The dread idols keep the mire witch's loincloth.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hub",0,1,0,{big:1,m:3}],["wb",-1,1,0,{m:1}],
+      ["eb",1,1,0,{m:1}],["wend",-1,2,0,{small:1,m:1}],["eend",1,2,0,{small:1,m:1}],
+      ["sb",0,2,0,{m:2}],["boss",0,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","hub","flat"],["hub","wb","flat"],["hub","eb","flat"],["wb","wend","flat"],
+      ["eb","eend","flat"],["hub","sb","flat"],["sb","boss","flat"]]},
+  "Dragon's Power":{boss:"Great Revenant",loot:["Brazier of Power","Journey's End"],
+    d:"From the drop hug the left wall to the east ramp down. Through a few rooms and up a ramp to an intersection — straight, then left, then north until two ramps descend again. In the last room turn left at the intersection: the Smoldering Brazier waits among the revenants, and Journey's End lies on the floor beside it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["l1",-1,0,0,{}],["r1",-1,1,-2.6,{m:2}],["r2",0,1,-2.6,{m:1}],
+      ["up",0,2,0,{small:1}],["x1",1,2,0,{m:2}],["d1",1,3,-2.6,{}],["d2",1,4,-5.2,{m:2}],
+      ["x2",0,4,-5.2,{small:1}],["braz",0,5,-5.2,{t:"boss",big:1}]],
+    links:[["en","l1","flat"],["l1","r1","ramp"],["r1","r2","flat"],["r2","up","ramp"],["up","x1","flat"],
+      ["x1","d1","ramp"],["d1","d2","ramp"],["d2","x2","flat"],["x2","braz","flat"]]},
+  "Virindi Complex":{boss:"Virindi Interrogator",loot:["A Virindi Signet","Obsidian Shard from Aerbax"],
+    d:"A maze of portals near Neydisa Castle, confusing without a guide — Atlas' route through the west portal, Syretta's through the east. Enthralled tuskers and pristine dolls wander between; the Interrogators of the final section carry the Virindi Signet.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",0,1,0,{m:2}],["porW",-1,1,0,{small:1,portal:1}],
+      ["porE",1,1,0,{small:1,portal:1}],["mid",0,2,0,{m:2}],["tusk",1,2,0,{m:2}],
+      ["final",0,3,0,{t:"boss",big:1}]],
+    links:[["en","hall","flat"],["hall","porW","flat"],["hall","porE","flat"],["hall","mid","flat"],
+      ["mid","tusk","flat"],["mid","final","flat"]]},
+  "Mannikin Foundry":{boss:"Bronze Statue of a Gromnie",loot:["Bronze Gear"],
+    d:"The foundry where animated bronze statues of famous Isparian figures still walk their casting floors — drudge, gromnie, mosswart and reedshark in gleaming metal, each hiding a bronze gear in its works. A portal to Nanto hums by the east gallery.",
+    rooms:[["en",0,0,0,{t:"entry"}],["f1",0,1,0,{m:2}],["casting",-1,1,0,{small:1,m:1}],
+      ["f2",0,2,0,{m:2}],["nanto",1,2,0,{small:1,portal:1}],["forge",0,3,0,{t:"boss",big:1}]],
+    links:[["en","f1","flat"],["f1","casting","flat"],["f1","f2","flat"],["f2","nanto","flat"],
+      ["f2","forge","flat"]]},
+  "Castle of Baron Nuvillus":{boss:"Baron Nuvillus",loot:["Crown of Bone"],
+    d:"An Empyrean castle northeast of Shoushi where the Baron holds a court of bone — lords, knights and wraiths by the dozen. Loot lies on the ground-floor table and in the cellar by the well; the stairs climb past the first-floor chests to the throne room, its runed chest, and the Crown of Bone.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hallg",0,1,0,{big:1,m:3}],["cellar",-1,1,0,{small:1,m:1}],
+      ["stairs",0,2,2.6,{m:2}],["wing",1,2,2.6,{small:1,m:2}],["throne",0,3,2.6,{t:"boss",big:1}]],
+    links:[["en","hallg","flat"],["hallg","cellar","flat"],["hallg","stairs","ramp"],
+      ["stairs","wing","flat"],["stairs","throne","flat"]]},
+  "Banderling Hovel":{boss:"Banderling Chief",loot:["Hand of Vagurat"],
+    d:"A banderling warren north of Shoushi. The breeders keep to the west den; the Hand of Vagurat rests on a pedestal in the chief's hall — Bleeargh the mosswart would trade dearly for it. A portal back to Shoushi stands by the east passage.",
+    rooms:[["en",0,0,0,{t:"entry"}],["h1",0,1,0,{m:2}],["breed",-1,1,0,{small:1,m:2}],
+      ["h2",0,2,0,{m:2}],["shoP",1,2,0,{small:1,portal:1}],["ped",0,3,0,{t:"boss",big:1}]],
+    links:[["en","h1","flat"],["h1","breed","flat"],["h1","h2","flat"],["h2","shoP","flat"],["h2","ped","flat"]]},
+  "Shreth Hive":{boss:"Carrion Shreth",loot:["Stone of Compassion","Stone of Humility"],
+    d:"The dungeon entrance is hot — watch for falling drudges! Gnawer shreths and blue phyntos wasps hold the hive galleries, and the four Stones of Jojii lie hidden through them: Compassion in the west cell, Detachment in a chest, Discipline and Humility in the deep. A surface portal stands at the end.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hot",0,1,-3.4,{m:3}],["b1",-1,1,-3.4,{small:1,m:1}],
+      ["b2",0,2,-3.4,{m:2}],["b3",1,2,-3.4,{small:1,m:1}],["b4",0,3,-3.4,{m:2}],
+      ["hive",0,4,-3.4,{t:"boss",big:1,portal:1}]],
+    links:[["en","hot","drop"],["hot","b1","flat"],["hot","b2","flat"],["b2","b3","flat"],
+      ["b2","b4","flat"],["b4","hive","flat"]]},
 };
 // optional full-fidelity layout pack: drop a cell.dat-derived export (same schema, keyed by dungeon
 // name) at assets/dungeon-layouts.json and every entry merges over DUNGEON_SCRIPTS at boot.
