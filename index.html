@@ -3475,24 +3475,39 @@ function cMite(g,b,s){const m=skinMat("mite","spots");
   for(const sx of[-1,1])limb(g,m,sx*s*0.28,s*0.9,0,s*0.06,s*0.05,s*0.5,0,sx*0.3);
   for(const sx of[-1,1])limb(g,m,sx*s*0.14,s*0.4,0,s*0.07,s*0.05,s*0.5);
   return s*1.65;}
-function cSclavus(g,b,s){const m=solid(b.c);
-  part(g,new THREE.ConeGeometry(s*0.4,s*1.0,10),m,0,s*0.5,0);
-  limb(g,m,0,s*1.2,0,s*0.26,s*0.3,s*0.7,0.05);
-  part(g,new THREE.SphereGeometry(s*0.26,10,9),m,0,s*1.7,s*0.05);
-  part(g,new THREE.ConeGeometry(s*0.12,s*0.3,6),m,0,s*1.7,s*0.28,Math.PI/2);
-  for(const sx of[-1,1])addEye(g,s*0.05,0xffd23b,sx*s*0.09,s*1.74,s*0.2);
-  for(const sx of[-1,1])limb(g,m,sx*s*0.28,s*1.25,0,s*0.06,s*0.05,s*0.55,0,sx*0.35);
-  part(g,new THREE.CylinderGeometry(s*0.04,s*0.04,s*1.3,6),solid(0x6a4a2a),s*0.5,s*1.1,s*0.2,0,0,0.2);
-  const orb=new THREE.Mesh(new THREE.SphereGeometry(s*0.12,8,7),new THREE.MeshBasicMaterial({color:0x9b30ff}));orb.position.set(s*0.62,s*1.75,s*0.22);g.add(orb);
+// AC Sclavus: green reptilian lizardman warrior — snouted head, neck frill, curved blade + round shield, tail
+function cSclavus(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),cloth=solid(0x8a7a4a),steel=solid(0xb0b6c0),blade=solid(0xd8dde6),bone=solid(0xf0ead8);
+  limb(g,m,0,s*1.0,0,s*0.28,s*0.34,s*0.95,0.05);                                  // upright scaly torso
+  part(g,new THREE.BoxGeometry(s*0.62,s*0.45,s*0.42),cloth,0,s*0.82,0);           // loincloth wrap
+  const head=part(g,new THREE.SphereGeometry(s*0.26,10,9),m,0,s*1.62,s*0.05);head.scale.set(1,0.95,1.2); // reptile head
+  part(g,new THREE.ConeGeometry(s*0.14,s*0.42,7),m,0,s*1.58,s*0.34,Math.PI/2);    // snout
+  part(g,new THREE.BoxGeometry(s*0.24,s*0.04,s*0.34),bone,0,s*1.55,s*0.34);       // teeth
+  for(const sx of[-1,1])addEye(g,s*0.05,0xffd23b,sx*s*0.11,s*1.67,s*0.2);
+  for(let i=0;i<4;i++)spike(g,d,0,s*(1.72-i*0.1),-s*0.08-i*s*0.09,s*0.035,s*0.16,-0.3); // head/neck frill
+  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.14,8,7),m,sx*s*0.34,s*1.42,0); // shoulders
+  limb(g,m,s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.62,0.5,0.35);                    // right arm
+  part(g,new THREE.CylinderGeometry(s*0.028,s*0.028,s*0.18,6),solid(0x5a3f22),s*0.62,s*0.78,s*0.3); // hilt
+  part(g,new THREE.BoxGeometry(s*0.05,s*0.66,s*0.02),blade,s*0.66,s*1.12,s*0.32,0,0,0.28); // curved blade
+  limb(g,m,-s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.55,0.5,-0.35);                  // left arm
+  const sh=part(g,new THREE.CylinderGeometry(s*0.3,s*0.3,s*0.05,12),steel,-s*0.52,s*1.08,s*0.32,Math.PI/2);sh.scale.set(1,1,1.15); // shield
+  part(g,new THREE.SphereGeometry(s*0.08,8,7),solid(0x6a6e76),-s*0.52,s*1.08,s*0.38); // shield boss
+  for(const sx of[-1,1])limb(g,m,sx*s*0.18,s*0.55,0,s*0.1,s*0.08,s*0.55);         // digitigrade legs
+  part(g,new THREE.ConeGeometry(s*0.14,s*0.85,7),m,0,s*0.55,-s*0.52,-Math.PI/2.3); // tail
   return s*1.9;}
-function cZefir(g,b,s){const m=solid(b.c);
-  limb(g,m,0,s*0.9,0,s*0.24,s*0.28,s*0.6,0.1);
-  part(g,new THREE.SphereGeometry(s*0.26,9,8),m,0,s*1.3,s*0.08);
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.08,s*0.2,5),m,sx*s*0.14,s*1.5,0);
-  for(const sx of[-1,1])addEye(g,s*0.05,0xff8a3a,sx*s*0.09,s*1.32,s*0.2);
-  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.03,s*0.7,s*0.5),new THREE.MeshStandardMaterial({color:0x3a2a4a,transparent:true,opacity:0.85}),sx*s*0.3,s*1.1,-s*0.2,0,sx*0.5,0);
-  for(const sx of[-1,1])limb(g,m,sx*s*0.24,s*0.9,0,s*0.05,s*0.04,s*0.45,0,sx*0.3);
-  for(const sx of[-1,1])limb(g,m,sx*s*0.12,s*0.45,0,s*0.05,s*0.04,s*0.4);
+// AC Zefir: purple winged bat-demon — lean body, horned muzzle, large membranous bat wings, tail
+function cZefir(g,b,s){const m=solid(b.c),d=solid(0x5a3a70),memb=new THREE.MeshStandardMaterial({color:0x6a4a80,transparent:true,opacity:0.86,side:THREE.DoubleSide});
+  limb(g,m,0,s*0.9,0,s*0.24,s*0.3,s*0.7,0.08);                                    // lean purple torso
+  part(g,new THREE.SphereGeometry(s*0.24,10,9),m,0,s*1.42,s*0.05);                // head
+  part(g,new THREE.ConeGeometry(s*0.12,s*0.26,6),m,0,s*1.38,s*0.24,Math.PI/2);    // muzzle
+  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.06,s*0.24,5),m,sx*s*0.13,s*1.6,0,0,0,sx*0.4); // horns
+  for(const sx of[-1,1])addEye(g,s*0.05,0xff8a3a,sx*s*0.09,s*1.44,s*0.18);        // glowing eyes
+  for(const sx of[-1,1]){
+    for(let f=0;f<3;f++)spike(g,d,sx*s*0.32,s*1.15,-s*0.1,s*0.03,s*0.9,0.2+f*0.15,sx*(0.5+f*0.5)); // wing spar bones
+    const w=new THREE.Mesh(new THREE.PlaneGeometry(s*1.0,s*0.85),memb);w.position.set(sx*s*0.7,s*1.05,-s*0.25);w.rotation.y=sx*0.5;w.rotation.z=sx*0.2;g.add(w); // membrane
+  }
+  for(const sx of[-1,1])limb(g,m,sx*s*0.22,s*0.9,s*0.05,s*0.05,s*0.04,s*0.5,0.3,sx*0.3); // arms
+  for(const sx of[-1,1])limb(g,m,sx*s*0.13,s*0.42,0,s*0.06,s*0.045,s*0.42);       // legs
+  part(g,new THREE.ConeGeometry(s*0.08,s*0.6,6),m,0,s*0.85,-s*0.3,-Math.PI/2.2);  // tail
   return s*1.6;}
 function cMonouga(g,b,s){const m=solid(b.c);
   limb(g,m,0,s*0.95,0,s*0.3,s*0.4,s*0.8,0.05);
@@ -3582,6 +3597,44 @@ function cCow(g,b,s){const m=solid(b.c);
   for(const sx of[-1,1])addEye(g,s*0.05,0x201008,sx*s*0.12,s*0.88,s*0.78);
   for(const sx of[-1,1])for(const zz of[0.4,-0.4])limb(g,m,sx*s*0.26,s*0.35,zz*s*0.4,s*0.09,s*0.08,s*0.7);
   return s*1.2;}
+// AC Armoredillo: low reddish-brown lizard-dino under an armored carapace, dorsal spike ridge, long tapering tail
+function cArmoredillo(g,b,s){const m=solid(b.c),shell=solid(0x5a3222,true),spk=solid(0x3a2016),pale=solid(0xa88a6a);
+  const body=part(g,new THREE.SphereGeometry(s*0.55,12,10),m,0,s*0.5,0);body.scale.set(1.05,0.85,1.9); // long low body
+  const back=part(g,new THREE.SphereGeometry(s*0.56,12,8,0,Math.PI*2,0,Math.PI*0.62),shell,0,s*0.42,-s*0.05);back.scale.set(1.08,0.85,1.95); // armored carapace (low)
+  part(g,new THREE.SphereGeometry(s*0.45,10,9),pale,0,s*0.34,s*0.1).scale.set(0.9,0.6,1.7);    // pale underbelly
+  for(let i=0;i<7;i++)spike(g,spk,0,s*(0.86-Math.abs(i-3)*0.02),s*0.7-i*s*0.26,s*0.07,s*0.34,0.1); // dorsal spike ridge (protruding)
+  const head=part(g,new THREE.SphereGeometry(s*0.3,10,9),m,0,s*0.46,s*1.0);head.scale.set(1.1,0.85,1.15); // broad head
+  part(g,new THREE.CylinderGeometry(s*0.16,s*0.22,s*0.34,8),m,0,s*0.4,s*1.28,Math.PI/2.2);     // broad snout
+  part(g,new THREE.BoxGeometry(s*0.34,s*0.05,s*0.36),solid(0xf0ead8),0,s*0.36,s*1.24);          // teeth line
+  for(const sx of[-1,1])addEye(g,s*0.05,0xffb03a,sx*s*0.16,s*0.54,s*1.14);
+  for(const sx of[-1,1])spike(g,spk,sx*s*0.2,s*0.66,s*0.9,s*0.04,s*0.18,0,sx*0.4);             // small head horns
+  part(g,new THREE.ConeGeometry(s*0.18,s*1.3,8),shell,0,s*0.48,-s*1.35,-Math.PI/2);            // long armored tapering tail
+  for(const sx of[-1,1])for(const fz of[-1,1])limb(g,m,sx*s*0.42,s*0.24,fz*s*0.62,s*0.11,s*0.09,s*0.42); // legs
+  return s*1.2;}
+// AC Carenzi: plump upright brown furry biped, snouted face, pale belly, small ears, thick tail
+function cCarenzi(g,b,s){const m=solid(b.c),bel=solid(0xd8c4a0);
+  const body=part(g,new THREE.SphereGeometry(s*0.38,11,10),m,0,s*0.6,0);body.scale.set(1,1.25,1); // plump upright body
+  part(g,new THREE.SphereGeometry(s*0.28,10,9),bel,0,s*0.55,s*0.24).scale.set(0.85,1.15,0.6);   // pale belly
+  part(g,new THREE.SphereGeometry(s*0.26,11,10),m,0,s*1.05,s*0.05);                             // head
+  part(g,new THREE.ConeGeometry(s*0.13,s*0.3,8),m,0,s*1.0,s*0.28,Math.PI/2);                    // snout
+  part(g,new THREE.SphereGeometry(s*0.05,7,6),solid(0x30201a),0,s*0.98,s*0.42);                 // nose
+  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.09,8,7),m,sx*s*0.16,s*1.24,s*0.02); // small rounded ears
+  for(const sx of[-1,1])addEye(g,s*0.06,0x201008,sx*s*0.1,s*1.08,s*0.2);                        // eyes
+  for(const sx of[-1,1])limb(g,m,sx*s*0.28,s*0.72,s*0.06,s*0.08,s*0.06,s*0.5,0.3,sx*0.3);       // arms
+  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.08,7,6),m,sx*s*0.34,s*0.34,s*0.16); // paws
+  for(const sx of[-1,1])limb(g,m,sx*s*0.16,s*0.4,0,s*0.09,s*0.07,s*0.42);                       // hind legs
+  part(g,new THREE.ConeGeometry(s*0.16,s*0.6,8),m,0,s*0.5,-s*0.35,-Math.PI/2.3);                // thick tail
+  return s*1.15;}
+// AC Niffis: glowing white-blue spectral swamp apparition — translucent floating figure with an inner light
+function cNiffis(g,b,s){const glow=new THREE.MeshBasicMaterial({color:0xbfe8ff,transparent:true,opacity:0.5});
+  const torso=part(g,new THREE.SphereGeometry(s*0.3,10,9),glow,0,s*1.0,0);torso.scale.set(0.8,1.3,0.8); // ghostly torso
+  part(g,new THREE.SphereGeometry(s*0.2,10,9),glow,0,s*1.45,s*0.02);                            // head
+  part(g,new THREE.ConeGeometry(s*0.26,s*0.8,9),glow,0,s*0.55,0,Math.PI);                       // tapering spectral tail (no legs)
+  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.1,s*0.5,7),glow,sx*s*0.28,s*1.0,0,0,0,sx*0.4); // wispy arms
+  for(const sx of[-1,1])addEye(g,s*0.05,0xffffff,sx*s*0.07,s*1.47,s*0.15);                       // glowing eyes
+  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.14,10,9),new THREE.MeshBasicMaterial({color:0xffffff}));core.position.y=s*1.1;g.add(core);
+  const lt=new THREE.PointLight(0x9fd8ff,1.2,8);lt.position.y=s*1.1;g.add(lt);
+  return s*1.6;}
 const CREATURE_BUILDERS={drudge:cDrudge,banderling:cBanderling,mosswart:cMosswart,reedshark:cReedshark,
   tusker:cTusker,auroch:cAuroch,shadow:cShadow,olthoi:cOlthoi,gromnie:cGromnie,
   lugian:cLugian,tumerok:cTumerok,mattekar:cMattekar,skeleton:cSkeleton,virindi:cVirindi,
@@ -3589,7 +3642,8 @@ const CREATURE_BUILDERS={drudge:cDrudge,banderling:cBanderling,mosswart:cMosswar
   rat:cRat,shreth:cShreth,mite:cMite,sclavus:cSclavus,zefir:cZefir,monouga:cMonouga,ursuin:cUrsuin,
   moarsman:cMoarsman,phyntoswasp:cPhyntosWasp,wisp:cWisp,golem:cGolem,zombie:cZombie,mummy:cMummy,
   grievver:cGrievver,rabbit:cRabbit,cow:cCow,
-  carenzi:cRat,niffis:cWisp,remoran:cReedshark,armoredillo:cShreth,burun:cMosswart,mukkir:cShadow};   // wave-2 kinds: procedural stand-ins if a model fails to load
+  carenzi:cCarenzi,niffis:cNiffis,armoredillo:cArmoredillo,
+  remoran:cReedshark,burun:cMosswart,mukkir:cShadow};   // remoran/burun/mukkir reuse close cousins
 
 function buildCreature(kind){
   const b=BESTIARY[kind],g=new THREE.Group(),s=b.size;
@@ -6240,22 +6294,147 @@ function buildItemModel(it,opts){
       const g2=new THREE.Mesh(new THREE.OctahedronGeometry(0.032),gem);g2.position.y=0.06;g.add(g2); }
   } else {                                                          // CONSUMABLES & misc — a readable shape per kind
     const potCol={hp:0xff3a4a,mn:0x3a6aff,st:0x3ad06a,cure:0x8ae06a,hot:0x6ad0ff,attrpot:0xffd23b,skillpot:0xb060ff}[S];
-    if(potCol){ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.2,12),new THREE.MeshStandardMaterial({color:potCol,transparent:true,opacity:0.75,roughness:0.2,metalness:0.1,emissive:potCol,emissiveIntensity:0.3}));body.position.y=0.1;g.add(body);
-      const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.045,0.08,10),new THREE.MeshStandardMaterial({color:0x9ac0d0,transparent:true,opacity:0.6}));neck.position.y=0.24;g.add(neck);
-      const cork=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.04,8),wood);cork.position.y=0.3;g.add(cork); }
-    else if(S==="scroll"||S==="contract"||S==="quest"||S==="note"||S==="writ"){ const roll=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.34,12),new THREE.MeshStandardMaterial({color:0xe8dcc0,roughness:0.85}));roll.rotation.z=Math.PI/2;g.add(roll);
-      const rib=new THREE.Mesh(new THREE.TorusGeometry(0.052,0.01,6,12),new THREE.MeshStandardMaterial({color:0xa03a3a}));rib.rotation.y=Math.PI/2;g.add(rib); }
-    else if(S==="gem"||S==="attrgem"||S==="manastone"||S==="comp"){ const gm=new THREE.Mesh(new THREE.OctahedronGeometry(0.11),_glowMat(gemCol));gm.scale.y=1.3;g.add(gm); }
-    else if(S==="augment"){ const st=new THREE.Mesh(new THREE.OctahedronGeometry(0.12),_glowMat(0xffd23b));g.add(st);const lt=new THREE.PointLight(0xffd23b,0.6,1);g.add(lt); }
-    else if(S==="pack"){ const pouch=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.28,0.16),new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:0.8}));pouch.position.y=0.14;g.add(pouch);
-      const flap=new THREE.Mesh(new THREE.BoxGeometry(0.27,0.1,0.17),new THREE.MeshStandardMaterial({color:0x5a3a20,roughness:0.8}));flap.position.y=0.24;g.add(flap); }
-    else if(S==="key"||S==="pick"||S==="keyring"){ const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,0.3,8),gold);shaft.rotation.z=Math.PI/2;g.add(shaft);
-      const bow=new THREE.Mesh(new THREE.TorusGeometry(0.05,0.014,8,16),gold);bow.position.x=-0.15;g.add(bow);
-      for(const bx of[0.1,0.13]){const tooth=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.05,0.02),gold);tooth.position.set(bx,-0.04,0);g.add(tooth);} }
-    else if(S==="food"){ const loaf=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10),new THREE.MeshStandardMaterial({color:0xb5793a,roughness:0.9}));loaf.scale.set(1.3,0.8,1);g.add(loaf); }
+    const mat=(c,r)=>new THREE.MeshStandardMaterial({color:c,roughness:r==null?0.8:r,metalness:0.05});
+    if((S==="hp"||S==="mn"||S==="st")&&/kit|tissue/.test(nm)){      // HEALING KITS — a rolled field dressing; finer tiers bind whiter, best get a clasp
+      const tier=/crude/.test(nm)?0:/plain|handy/.test(nm)?1:/good|adept/.test(nm)?2:/excellent|gifted/.test(nm)?3:/peerless/.test(nm)?4:5;
+      const roll=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.24,12),mat([0x9a8a6a,0xb5a888,0xcaba98,0xe0d6c0,0xeee8d8,0xf6f2e8][tier],0.9));roll.rotation.z=Math.PI/2;roll.position.y=0.07;g.add(roll);
+      const strap=new THREE.Mesh(new THREE.CylinderGeometry(0.074,0.074,0.05,12),mat(0x6a3a2a));strap.rotation.z=Math.PI/2;strap.position.y=0.07;g.add(strap);
+      if(tier>=3){const clasp=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.024,0.06),gold);clasp.position.set(0,0.145,0);g.add(clasp);}
+    } else if(potCol){                                              // POTIONS — vial grows fancier up the AC ladder (Draught→Potion→…→Philtre)
+      const tier=/draught/.test(nm)?0:/tincture/.test(nm)?2:/elixir/.test(nm)?3:/tonic|brew/.test(nm)?4:/philtre/.test(nm)?5:1;
+      const sc=0.8+tier*0.08;
+      const body=new THREE.Mesh(tier>=3?new THREE.SphereGeometry(0.09,12,10):new THREE.CylinderGeometry(0.07,0.09,0.2,12),new THREE.MeshStandardMaterial({color:potCol,transparent:true,opacity:0.75,roughness:0.2,metalness:0.1,emissive:potCol,emissiveIntensity:0.25+tier*0.06}));body.position.y=tier>=3?0.09:0.1;body.scale.setScalar(sc);g.add(body);
+      const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.045,0.08,10),new THREE.MeshStandardMaterial({color:0x9ac0d0,transparent:true,opacity:0.6}));neck.position.y=(tier>=3?0.17:0.24)*sc;g.add(neck);
+      const cork=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.04,8),wood);cork.position.y=(tier>=3?0.23:0.3)*sc;g.add(cork);
+      if(tier>=5){const collar=new THREE.Mesh(new THREE.TorusGeometry(0.036,0.008,6,12),gold);collar.rotation.x=Math.PI/2;collar.position.y=0.16;g.add(collar);}
+    }
+    else if(S==="scroll"||S==="contract"||S==="quest"||S==="writ"){ const roll=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.34,12),mat(0xe8dcc0,0.85));roll.rotation.z=Math.PI/2;g.add(roll);
+      const rib=new THREE.Mesh(new THREE.TorusGeometry(0.052,0.01,6,12),mat(0xa03a3a));rib.rotation.y=Math.PI/2;g.add(rib); }
+    else if(S==="note"){                                            // TRADE NOTE — a crisp parchment banknote with a scrollwork border + wax seal
+      const paper=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.012,0.18),mat(0xf0e8d0,0.9));paper.position.y=0.02;g.add(paper);
+      const border=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.014,0.14),mat(0xb08a3a,0.7));border.position.y=0.021;g.add(border);
+      const inner=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.016,0.1),mat(0xf0e8d0,0.9));inner.position.y=0.022;g.add(inner);
+      const seal=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.034,0.014,10),mat(0xa02a2a,0.5));seal.position.set(0.1,0.03,0.04);g.add(seal); }
+    else if(S==="comp"&&/scarab/.test(nm)){                          // SCARABS — a carved beetle token; the tier is the metal
+      const sc={lead:0x5a6070,iron:0x4a4440,copper:0xb0703a,silver:0xd8dde4,gold:0xffd23b,pyreal:0xe8c4b8,platinum:0xf0f4f8,ivory:0xe8e0cc,diamond:0xeaf6ff,dark:0x1a1a22}[(nm.match(/lead|iron|copper|silver|gold|pyreal|platinum|ivory|diamond|dark/)||["iron"])[0]];
+      const glow=/diamond|mana/.test(nm);
+      const bmat=glow?_glowMat(/mana/.test(nm)?0x4ad0b8:0xeaf6ff):_imat(sc,0.8,0.35);
+      const shell=new THREE.Mesh(new THREE.SphereGeometry(0.09,12,10),bmat);shell.scale.set(0.8,0.5,1.15);shell.position.y=0.045;g.add(shell);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(0.045,10,8),bmat);head.scale.set(0.85,0.6,0.8);head.position.set(0,0.035,-0.11);g.add(head);
+      const seam=new THREE.Mesh(new THREE.BoxGeometry(0.006,0.02,0.16),_imat(0x2a2a30,0.5,0.6));seam.position.y=0.075;g.add(seam);   // split wing-casing
+      for(const sx of[-1,1])for(const lz of[-0.05,0.02,0.09]){const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.004,0.05,5),bmat);leg.rotation.z=sx*1.2;leg.position.set(sx*0.075,0.015,lz);g.add(leg);} }
+    else if(S==="comp"){                                             // HERBS & reagents — each family gets its own read
+      if(/mandrake/.test(nm)){ const root=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.014,0.14,7),mat(0xc0a878));root.position.y=0.1;g.add(root);
+        for(const sx of[-1,1]){const fork=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.006,0.1,6),mat(0xc0a878));fork.rotation.z=sx*0.5;fork.position.set(sx*0.03,0.03,0);g.add(fork);} }
+      else if(/saffron/.test(nm)){ for(let i=0;i<7;i++){const th=new THREE.Mesh(new THREE.CylinderGeometry(0.004,0.002,0.12,4),mat(0xd05a2a));th.rotation.set(Math.sin(i*2.1)*0.5,0,Math.cos(i*1.7)*0.5);th.position.set(Math.sin(i)*0.02,0.06,Math.cos(i)*0.02);g.add(th);} }
+      else if(/frankincense|dragon's blood/.test(nm)){ const col=/dragon/.test(nm)?0x8a2a22:0xd8a03a;
+        for(let i=0;i<4;i++){const lump=new THREE.Mesh(new THREE.SphereGeometry(0.035+((i*29)%3)*0.008,7,6),new THREE.MeshStandardMaterial({color:col,roughness:0.35,metalness:0.05,emissive:col,emissiveIntensity:0.12}));lump.position.set(Math.sin(i*2.4)*0.05,0.035,Math.cos(i*2.4)*0.05);g.add(lump);} }
+      else if(/powdered|powder|verdigris|colophony/.test(nm)){ const pouch=new THREE.Mesh(new THREE.SphereGeometry(0.08,10,8),mat(0x9a8a6a));pouch.scale.y=0.75;pouch.position.y=0.06;g.add(pouch);
+        const heap=new THREE.Mesh(new THREE.ConeGeometry(0.05,0.04,10),mat(/verdigris/.test(nm)?0x4a9a6a:/iron/.test(nm)?0x5a5a62:0xc0b090,0.95));heap.position.y=0.13;g.add(heap); }
+      else{ const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.008,0.16,5),mat(0x4a6a2a));stem.rotation.z=0.15;stem.position.y=0.08;g.add(stem);   // a tied green sprig
+        for(let i=0;i<4;i++){const leaf=new THREE.Mesh(new THREE.ConeGeometry(0.02,0.07,5),mat(0x5a8a3a));leaf.rotation.z=(i%2?0.9:-0.9);leaf.position.set((i%2?0.03:-0.03),0.07+i*0.03,0);g.add(leaf);}
+        const tie=new THREE.Mesh(new THREE.TorusGeometry(0.014,0.005,5,8),mat(0x8a6a3a));tie.position.y=0.03;g.add(tie);
+        const bloomCol=/hyssop/.test(nm)?0x6a7ac0:/henbane/.test(nm)?0xb0b04a:/eyebright/.test(nm)?0xf0f0e0:/nightshade|belladonna/.test(nm)?0x5a3a7a:/foxglove/.test(nm)?0xc06a9a:0;
+        if(bloomCol){const bl=new THREE.Mesh(new THREE.SphereGeometry(0.02,7,6),mat(bloomCol,0.6));bl.position.y=0.18;g.add(bl);} } }
+    else if(S==="gem"||S==="attrgem"){ const gm=new THREE.Mesh(new THREE.OctahedronGeometry(0.11),_glowMat(gemCol));gm.scale.y=1.3;g.add(gm); }
+    else if(S==="manastone"||(S==="mn"&&/stone|charge/.test(nm))){   // MANA STONE — a fist-sized faceted crystal, lit from within
+      const cr=new THREE.Mesh(new THREE.IcosahedronGeometry(0.11),new THREE.MeshStandardMaterial({color:0x8a86a8,roughness:0.25,metalness:0.3,emissive:0x3a6aff,emissiveIntensity:0.55}));cr.position.y=0.1;g.add(cr);
+      const lt=new THREE.PointLight(0x5a8aff,0.5,0.9);lt.position.y=0.1;g.add(lt); }
+    else if(S==="augment"&&/aetheria/.test(nm)){                     // AETHERIA — coalesced = raw crystal lump; revealed = medallion with a glowing sigil ring
+      const col=/blue/.test(nm)?0x4a8aff:/red/.test(nm)?0xff4a4a:0xffd23b;
+      if(/coalesced/.test(nm)){ for(let i=0;i<3;i++){const sh=new THREE.Mesh(new THREE.OctahedronGeometry(0.07-i*0.014),_glowMat(col));sh.position.set(Math.sin(i*2.4)*0.04,0.07+i*0.02,Math.cos(i*2.4)*0.04);sh.rotation.set(i,i*2,0);g.add(sh);} }
+      else{ const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.11,0.02,18),_imat(0x3a3a44,0.7,0.4));disc.rotation.x=Math.PI/2;g.add(disc);
+        const ring=new THREE.Mesh(new THREE.TorusGeometry(0.075,0.012,8,20),_glowMat(col));g.add(ring);
+        for(let i=0;i<6;i++){const a=i/6*6.28;const rune=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.008),_glowMat(col));rune.position.set(Math.cos(a)*0.075,Math.sin(a)*0.075,0.012);g.add(rune);} }
+      const lt=new THREE.PointLight(col,0.5,0.9);g.add(lt); }
+    else if(S==="augment"){ const col=/lugians|fortification/.test(nm)?0xff5a4a:/fortitude|vigor/.test(nm)?0x4ad06a:/magus|concentration/.test(nm)?0x4a6aff:/enlighten|mastery/.test(nm)?0xffd23b:/oswald|coordination/.test(nm)?0xd06aff:0x8ad0ff;
+      const st=new THREE.Mesh(new THREE.OctahedronGeometry(0.12),_glowMat(col));g.add(st);const lt=new THREE.PointLight(col,0.6,1);g.add(lt); }
+    else if(S==="pack"){ const pouch=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.28,0.16),mat(0x6a4a2a));pouch.position.y=0.14;g.add(pouch);
+      const flap=new THREE.Mesh(new THREE.BoxGeometry(0.27,0.1,0.17),mat(0x5a3a20));flap.position.y=0.24;g.add(flap); }
+    else if(S==="salvage"){                                          // SALVAGE — a cinched drawstring sack with a chunk of the material on show
+      const sack=new THREE.Mesh(new THREE.SphereGeometry(0.12,10,8),mat(0x8a7050));sack.scale.y=0.9;sack.position.y=0.1;g.add(sack);
+      const neckS=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.05,0.06,8),mat(0x7a6040));neckS.position.y=0.22;g.add(neckS);
+      const chunk=new THREE.Mesh(new THREE.OctahedronGeometry(0.045),_imat(tint,0.6,0.4));chunk.position.set(0.08,0.21,0.04);g.add(chunk); }
+    else if(S==="pick"){                                             // LOCKPICKS — a slim tool wallet: pick rods + a bent tension wrench
+      const wallet=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.02,0.12),mat(0x5a4028));wallet.position.y=0.02;g.add(wallet);
+      for(let i=0;i<3;i++){const rod=new THREE.Mesh(new THREE.CylinderGeometry(0.005,0.005,0.16,5),steel);rod.rotation.z=Math.PI/2;rod.position.set(0.01,0.036,-0.03+i*0.03);g.add(rod);}
+      const wrench=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.008,0.01),steel);wrench.position.set(-0.02,0.036,0.05);g.add(wrench);
+      const bend=new THREE.Mesh(new THREE.BoxGeometry(0.008,0.008,0.03),steel);bend.position.set(-0.066,0.036,0.062);g.add(bend); }
+    else if(S==="key"||S==="keyring"){                               // KEYS — a skeleton key in the named metal (bone keys read pale)
+      const kmat=/bone|skeleton|ivory/.test(nm)?mat(0xe8e0cc,0.6):/iron/.test(nm)?_imat(0x5a5a62,0.7,0.45):/copper/.test(nm)?_imat(0xb0703a,0.8,0.35):/obsidian/.test(nm)?_imat(0x2a2a32,0.6,0.3):/crystal|virindi/.test(nm)?_glowMat(0xcfe6ff):gold;
+      const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,0.3,8),kmat);shaft.rotation.z=Math.PI/2;g.add(shaft);
+      const bow=new THREE.Mesh(new THREE.TorusGeometry(0.05,0.014,8,16),kmat);bow.position.x=-0.15;g.add(bow);
+      for(const bx of[0.1,0.13]){const tooth=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.05,0.02),kmat);tooth.position.set(bx,-0.04,0);g.add(tooth);}
+      if(S==="keyring"){for(let i=1;i<3;i++){const k2=new THREE.Mesh(new THREE.TorusGeometry(0.04,0.012,6,12),kmat);k2.position.set(-0.15,-i*0.02,i*0.03);g.add(k2);}} }
+    else if(S==="food"){                                             // FOOD & DRINK — a shape per dish
+      if(/cheese/.test(nm)){ const wedge=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.11,0.09,3),mat(0xe8c23a,0.7));wedge.position.y=0.05;g.add(wedge);
+        for(const hp2 of[[0.03,0.09,0.02],[-0.04,0.06,-0.03]]){const hole=new THREE.Mesh(new THREE.SphereGeometry(0.016,6,5),mat(0xc0a02a));hole.position.set(hp2[0],hp2[1],hp2[2]);g.add(hole);} }
+      else if(/pie|stew/.test(nm)){ const dish=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.09,0.06,14),mat(/stew/.test(nm)?0x8a5a2a:0xd8a85a,0.8));dish.position.y=0.04;g.add(dish);
+        const crust=new THREE.Mesh(new THREE.TorusGeometry(0.1,0.02,8,16),mat(0xb5793a,0.85));crust.rotation.x=Math.PI/2;crust.position.y=0.075;g.add(crust); }
+      else if(/apple|grape/.test(nm)){ const fr=/grape/.test(nm);
+        if(fr){for(let i=0;i<7;i++){const gr=new THREE.Mesh(new THREE.SphereGeometry(0.028,8,6),mat(0x6a3a8a,0.5));gr.position.set(Math.sin(i*2.4)*0.035,0.14-i*0.018,Math.cos(i*2.4)*0.03);g.add(gr);}}
+        else{const ap=new THREE.Mesh(new THREE.SphereGeometry(0.08,10,8),mat(0xc03a2a,0.5));ap.position.y=0.08;g.add(ap);}
+        const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.006,0.05,5),wood);stem.position.y=fr?0.17:0.18;g.add(stem); }
+      else if(/wine|ale|tea|mead|cider|goblet|phial/.test(nm)){ const cup=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.045,0.13,10),/goblet|wine/.test(nm)?gold:mat(0x8a6a4a,0.6));cup.position.y=0.1;g.add(cup);
+        const drink=new THREE.Mesh(new THREE.CylinderGeometry(0.052,0.052,0.02,10),mat(/tea|phial/.test(nm)?0x6ad0b8:/wine/.test(nm)?0x7a2a3a:0xd8a03a,0.3));drink.position.y=0.165;g.add(drink);
+        if(/goblet|wine/.test(nm)){const stem2=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.03,0.06,8),gold);stem2.position.y=0.015;g.add(stem2);} }
+      else if(/chicken|tenderloin|roast|meat|reedshark|trout/.test(nm)){ const cut=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),mat(/trout|reedshark/.test(nm)?0xa8b5b0:0x9a5a3a,0.7));cut.scale.set(1.4,0.6,0.8);cut.position.y=0.06;g.add(cut);
+        if(/chicken/.test(nm)){const bone2=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.1,6),mat(0xe8e0cc,0.6));bone2.rotation.z=1.1;bone2.position.set(0.14,0.08,0);g.add(bone2);} }
+      else{ const loaf=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10),mat(0xb5793a,0.9));loaf.scale.set(1.3,0.8,1);loaf.position.y=0.07;g.add(loaf);
+        for(let i=-1;i<=1;i++){const slash=new THREE.Mesh(new THREE.BoxGeometry(0.016,0.01,0.09),mat(0xe8cf9a,0.9));slash.position.set(i*0.06,0.155,0);slash.rotation.y=0.3;g.add(slash);} } }
     else if(S==="oil"){ const vial=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.16,10),new THREE.MeshStandardMaterial({color:0x8a6a3a,transparent:true,opacity:0.8}));vial.position.y=0.08;g.add(vial); }
-    else if(S==="ammo"){ for(let i=-1;i<=1;i++){const ar=new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.006,0.42,5),wood);ar.position.set(i*0.03,0.1,0);g.add(ar);const tp=new THREE.Mesh(new THREE.ConeGeometry(0.015,0.05,5),steel);tp.position.set(i*0.03,0.32,0);g.add(tp);} }
-    else if(S==="trophy"){ const t=new THREE.Mesh(new THREE.SphereGeometry(0.1,10,8),new THREE.MeshStandardMaterial({color:0xd8cba0,roughness:0.8}));t.scale.set(0.7,1.2,0.7);g.add(t); }
+    else if(S==="ammo"){ const dart=/dart/.test(nm), quarrel=/quarrel|bolt/.test(nm), r=dart?0.01:quarrel?0.009:0.006, len=dart?0.6:quarrel?0.3:0.42;
+      for(let i=-1;i<=1;i++){const ar=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,5),wood);ar.position.set(i*0.03,0.1,0);g.add(ar);
+        const tp=new THREE.Mesh(new THREE.ConeGeometry(r*2.4,0.05,5),steel);tp.position.set(i*0.03,0.1+len/2+0.02,0);g.add(tp);
+        for(let f=0;f<3;f++){const fl=new THREE.Mesh(new THREE.BoxGeometry(0.001,0.05,dart?0.03:0.02),mat(0xd8d0b8,0.9));fl.rotation.y=f*2.094;fl.position.set(i*0.03,0.1-len/2+0.03,0);g.add(fl);} } }
+    else if(S==="trophy"){                                           // CREATURE TROPHIES — the severed piece itself, shaped + tinted per creature
+      const kind=it.kind||"", TR={drudge:["ear",0x8a9a7a],banderling:["tusk",0xe8dcc0],mosswart:["tentacle",0x5a7a3a],reedshark:["fin",0x6a8a7a],
+        tusker:["tusk",0xf0e6d0],auroch:["horn",0xe8dcc0],gromnie:["hide",0x6a8a4a],mattekar:["hide",0xd8d0c8],skeleton:["bone",0xe8e0cc],
+        shadow:["mote",0x6a4a9a],virindi:["shard",0xf0eee8],lugian:["bone",0xd8cba0],tumerok:["feather",0xc07a3a],olthoi:["claw",0x9aa04a],
+        olthoiworker:["claw",0x8a904a],olthoisoldier:["shell",0x9aa04a],rat:["tail",0xc09a8a],mite:["spine",0xd8cba0],shreth:["spine",0x7a6a5a],
+        sclavus:["scale",0x5a8a5a],zefir:["wing",0xc0d0e0],monouga:["eye",0xf0eee8],ursuin:["hide",0x6a4a2a],moarsman:["fin",0x4a7a6a],
+        phyntoswasp:["spine",0xd8a03a],wisp:["mote",0x8ad0ff],golem:["heart",0x8a8a92],zombie:["finger",0x8a9a6a],mummy:["wrap",0xd8cba0],
+        grievver:["claw",0x3a3a4a],carenzi:["tusk",0xe8e0cc],niffis:["shell",0x9ab0c0],remoran:["spine",0x7a8a9a],armoredillo:["scale",0xc0a87a],
+        burun:["gland",0x7a9a4a],mukkir:["claw",0x4a4a3a]};
+      const trEnt=TR[kind]||["bone",0xd8cba0], shape=trEnt[0], col=trEnt[1], tm=mat(col,0.75);
+      if(shape==="ear"){ const e=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),tm);e.scale.set(0.5,1.1,0.35);e.position.y=0.1;e.rotation.z=0.3;g.add(e);
+        const tip=new THREE.Mesh(new THREE.ConeGeometry(0.03,0.08,6),tm);tip.position.set(-0.05,0.2,0);tip.rotation.z=0.5;g.add(tip); }
+      else if(shape==="tusk"||shape==="horn"){ const arc=new THREE.Mesh(new THREE.TorusGeometry(0.11,0.026,8,14,Math.PI*0.75),tm);arc.rotation.z=-0.4;arc.position.y=0.1;g.add(arc);
+        const tip=new THREE.Mesh(new THREE.ConeGeometry(0.024,0.07,6),tm);tip.position.set(0.1,0.2,0);tip.rotation.z=-1.2;g.add(tip); }
+      else if(shape==="tentacle"){ const t1=new THREE.Mesh(new THREE.TorusGeometry(0.09,0.028,8,14,Math.PI*1.2),tm);t1.position.y=0.1;g.add(t1);
+        for(let i=0;i<4;i++){const sk=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.005,0.02,5),mat(0x3a5a24,0.8));sk.position.set(Math.cos(i*0.9)*0.09,0.1+Math.sin(i*0.9)*0.09,0.026);g.add(sk);} }
+      else if(shape==="fin"){ const sh2=new THREE.Shape();sh2.moveTo(0,0);sh2.lineTo(0.18,0.02);sh2.lineTo(0.02,0.2);sh2.closePath();
+        const fin=new THREE.Mesh(new THREE.ExtrudeGeometry(sh2,{depth:0.02,bevelEnabled:false}),tm);fin.position.set(-0.08,0.02,-0.01);g.add(fin); }
+      else if(shape==="feather"){ const quill=new THREE.Mesh(new THREE.CylinderGeometry(0.005,0.008,0.3,5),mat(0xe8e0d0,0.8));quill.rotation.z=0.5;quill.position.y=0.12;g.add(quill);
+        const vane=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6),tm);vane.scale.set(0.3,1.0,0.06);vane.rotation.z=0.5;vane.position.set(-0.03,0.16,0);g.add(vane); }
+      else if(shape==="hide"||shape==="wrap"){ const rollH=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.22,12),tm);rollH.rotation.z=Math.PI/2;rollH.position.y=0.07;g.add(rollH);
+        const band=new THREE.Mesh(new THREE.TorusGeometry(0.072,0.01,6,12),mat(0x5a4028,0.85));band.rotation.y=Math.PI/2;band.position.y=0.07;g.add(band); }
+      else if(shape==="claw"){ for(let i=0;i<(kind==="olthoi"?1:3);i++){ const cl=new THREE.Mesh(new THREE.TorusGeometry(kind==="olthoi"?0.13:0.08,kind==="olthoi"?0.03:0.016,7,12,Math.PI*0.6),tm);
+        cl.position.set(-0.04+i*0.05,0.06,i*0.012);cl.rotation.z=0.6;g.add(cl); } }
+      else if(shape==="tail"){ const t2=new THREE.Mesh(new THREE.TorusGeometry(0.1,0.016,7,16,Math.PI*1.6),tm);t2.position.y=0.1;g.add(t2);
+        const tip=new THREE.Mesh(new THREE.ConeGeometry(0.014,0.05,6),tm);tip.position.set(0.02,0.2,0);tip.rotation.z=2.4;g.add(tip); }
+      else if(shape==="eye"){ const ball=new THREE.Mesh(new THREE.SphereGeometry(0.09,12,10),mat(0xf0eee8,0.4));ball.position.y=0.09;g.add(ball);
+        const iris=new THREE.Mesh(new THREE.SphereGeometry(0.04,10,8),mat(0xc09a2a,0.3));iris.position.set(0,0.1,-0.068);g.add(iris);
+        const pupil=new THREE.Mesh(new THREE.SphereGeometry(0.018,8,6),mat(0x0a0a0a,0.3));pupil.position.set(0,0.1,-0.086);g.add(pupil); }
+      else if(shape==="shard"){ const sh3=new THREE.Shape();sh3.moveTo(-0.08,0);sh3.lineTo(0.09,0.03);sh3.lineTo(0.05,0.2);sh3.lineTo(-0.05,0.16);sh3.closePath();
+        const pl=new THREE.Mesh(new THREE.ExtrudeGeometry(sh3,{depth:0.014,bevelEnabled:false}),mat(col,0.35));pl.position.y=0.02;g.add(pl);
+        const slit=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.012,0.01),mat(0x2a2a32,0.5));slit.position.set(0,0.12,0.012);g.add(slit); }   // an empty Virindi eye-slit
+      else if(shape==="mote"){ const core=new THREE.Mesh(new THREE.SphereGeometry(0.06,12,10),_glowMat(col));core.position.y=0.12;g.add(core);
+        const halo=new THREE.Mesh(new THREE.SphereGeometry(0.095,12,10),new THREE.MeshStandardMaterial({color:col,transparent:true,opacity:0.28,emissive:col,emissiveIntensity:0.5}));halo.position.y=0.12;g.add(halo);
+        const lt=new THREE.PointLight(col,0.5,0.9);lt.position.y=0.12;g.add(lt); }
+      else if(shape==="heart"){ const rock=new THREE.Mesh(new THREE.IcosahedronGeometry(0.1),mat(col,0.9));rock.position.y=0.1;g.add(rock);
+        const vein=new THREE.Mesh(new THREE.IcosahedronGeometry(0.055),_glowMat(0xffb03a));vein.position.y=0.1;g.add(vein); }
+      else if(shape==="finger"){ const seg=new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.026,0.16,7),tm);seg.rotation.z=0.4;seg.position.y=0.08;g.add(seg);
+        const nail=new THREE.Mesh(new THREE.ConeGeometry(0.016,0.04,6),mat(0xc8c0a0,0.5));nail.rotation.z=0.4;nail.position.set(-0.035,0.17,0);g.add(nail); }
+      else if(shape==="scale"||shape==="shell"){ const pl2=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,8,0,6.28,0,Math.PI*0.45),tm);pl2.position.y=0.03;pl2.scale.set(1,0.7,shape==="scale"?0.7:1.1);g.add(pl2);
+        if(shape==="shell")for(let i=-1;i<=1;i++){const rib=new THREE.Mesh(new THREE.TorusGeometry(0.1,0.008,5,12,Math.PI*0.8),mat(col,0.9));rib.rotation.set(Math.PI/2,0,i*0.4);rib.position.y=0.05;rib.scale.setScalar(1-Math.abs(i)*0.22);g.add(rib);} }
+      else if(shape==="wing"){ const w1=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),new THREE.MeshStandardMaterial({color:col,transparent:true,opacity:0.6,roughness:0.4}));w1.scale.set(1.2,0.55,0.06);w1.rotation.z=0.4;w1.position.y=0.09;g.add(w1);
+        for(let i=0;i<3;i++){const veinW=new THREE.Mesh(new THREE.CylinderGeometry(0.004,0.003,0.22,4),mat(0x8a96a2,0.6));veinW.rotation.z=0.9-i*0.5;veinW.position.set(-0.02+i*0.03,0.09,0.006);g.add(veinW);} }
+      else if(shape==="gland"){ const sac=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),new THREE.MeshStandardMaterial({color:col,roughness:0.3,transparent:true,opacity:0.85}));sac.scale.set(1,0.8,0.9);sac.position.y=0.08;g.add(sac);
+        const duct=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.03,0.06,7),mat(0x5a7a34,0.6));duct.position.y=0.17;g.add(duct); }
+      else if(shape==="spine"){ for(let i=0;i<3;i++){const nd=new THREE.Mesh(new THREE.ConeGeometry(0.014,0.2,6),tm);nd.rotation.z=(i-1)*0.25;nd.position.set((i-1)*0.045,0.1,0);g.add(nd);} }
+      else { const b1=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.18,7),tm);b1.rotation.z=Math.PI/2;b1.position.y=0.06;g.add(b1);   // a plain bone
+        for(const sx of[-1,1]){const knob=new THREE.Mesh(new THREE.SphereGeometry(0.034,8,6),tm);knob.position.set(sx*0.09,0.06,0);g.add(knob);} } }
     else { const box=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.28,0.28),new THREE.MeshStandardMaterial({color:0xcaa14a,metalness:0.4,roughness:0.5}));g.add(box); }
   }
   g.traverse(o=>{if(o.isMesh)o.castShadow=true;});
@@ -6542,10 +6721,12 @@ ITEM_BASE.push(
 );
 // ── tiered consumables (AC healing kits / potions / tonics) ──
 ITEM_BASE.push(
-  {n:"Crude Healing Kit",stat:"hp",v:[20,40]},{n:"Treated Healing Kit",stat:"hp",v:[50,80]},{n:"Gold Healing Kit",stat:"hp",v:[90,130]},{n:"Cetane Healing Kit",stat:"hp",v:[140,190]},
-  {n:"Stamina Tonic",stat:"st",v:[30,60]},{n:"Stamina Draught",stat:"st",v:[70,110]},{n:"Stamina Elixir",stat:"st",v:[120,170]},
-  {n:"Lesser Mana Potion",stat:"mn",v:[25,45]},{n:"Greater Mana Potion",stat:"mn",v:[60,100]},{n:"Major Mana Potion",stat:"mn",v:[120,170]},
-  {n:"Lesser Health Potion",stat:"hp",v:[25,45]},{n:"Greater Health Potion",stat:"hp",v:[60,100]},{n:"Major Health Potion",stat:"hp",v:[120,170]}
+  // AC's real kit ladder: Crude → Plain → Good → Excellent → Peerless → Treated (no "Gold"/"Cetane" kits existed)
+  {n:"Crude Healing Kit",stat:"hp",v:[20,40]},{n:"Good Healing Kit",stat:"hp",v:[50,80]},{n:"Excellent Healing Kit",stat:"hp",v:[90,130]},{n:"Peerless Healing Kit",stat:"hp",v:[140,190]},{n:"Treated Healing Kit",stat:"hp",v:[190,250]},
+  // AC's real potion ladder runs Draught → Potion → Tincture → Elixir → Tonic/Brew → Philtre (weakest→strongest)
+  {n:"Stamina Draught",stat:"st",v:[30,60]},{n:"Stamina Tonic",stat:"st",v:[70,110]},{n:"Stamina Philtre",stat:"st",v:[120,170]},
+  {n:"Mana Potion",stat:"mn",v:[25,45]},{n:"Mana Elixir",stat:"mn",v:[60,100]},{n:"Mana Philtre",stat:"mn",v:[120,170]},
+  {n:"Health Potion",stat:"hp",v:[25,45]},{n:"Health Elixir",stat:"hp",v:[60,100]},{n:"Health Philtre",stat:"hp",v:[120,170]}
 );
 // AC-authentic itemization (research Phase 6.8): every loot item has a workmanship (1-10, rolled within a
 // range set by its loot tier) and a material (the first word of its name). Material → tinker target;
@@ -13122,7 +13303,7 @@ function scrollStock(){ return SCRIVENER_SCROLLS.filter(id=>SPELLBOOK[id]).map(i
 const VENDOR_TYPES={
   provisioner:{title:"Provisioner",marker:"🧪",mcol:"#7fe6a0",robe:0x2e7a4a,respec:true,stock:()=>[
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
-    {name:"Greater Health Potion",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
+    {name:"Health Elixir",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
     {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"},
     {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"},
     {name:"Elixir of Might",field:"elixMight",cost:60,desc:"+50% damage for 30s (key 9).",ico:"⚔"},
@@ -13160,7 +13341,7 @@ const VENDOR_TYPES={
   outfitter:{title:"Outfitter",marker:"💰",mcol:"#ffcf6b",robe:0x7a5a2a,stock:gearVendorStock},
   healer:{title:"Healer",marker:"✚",mcol:"#ff8aa0",robe:0x8a2236,heal:true,stock:()=>[
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
-    {name:"Greater Health Potion",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
+    {name:"Health Elixir",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
     {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"},
     {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"}]},
   jeweler:{title:"Jeweler",marker:"💍",mcol:"#9af0ff",robe:0x2a5a6a,stock:jewelerStock},
