@@ -53,6 +53,9 @@
 
   #log{position:absolute;left:12px;bottom:80px;width:340px;font-size:12px;line-height:1.45;pointer-events:none}
   #log .panel2{background:linear-gradient(0deg,rgba(8,6,3,.8),rgba(8,6,3,.15));padding:6px 9px;border-radius:6px}
+  #chatBar{pointer-events:auto;cursor:text;margin-top:3px;padding:5px 9px;background:rgba(8,6,3,.85);border:1px solid var(--border);border-radius:6px;font-size:12px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:17px}
+  #chatBar:hover{border-color:#8a7a52}
   .lg{margin-top:2px}.lg.sys{color:var(--gold)}.lg.heal{color:#7fe6a0}.lg.xp{color:#cf9bea}
   .lg.loot{color:#ffd86b}.lg.warn{color:#ff6b6b}.lg.die{color:#bbb}
 
@@ -197,9 +200,11 @@
     <div id="housingBody" style="font-size:12px;line-height:1.5"></div>
     <div style="color:var(--dim);font-size:11px;margin-top:10px">Press Y or Esc to close · items in your house storage persist forever, across sessions and death</div>
   </div>
-  <div id="log"><div class="panel2" id="logInner"></div></div>
-  <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say… (Enter · Esc · /who /tell /r /p /party /emote clap)"
-    style="position:absolute;left:12px;bottom:54px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
+  <div id="log"><div class="panel2" id="logInner"></div>
+    <div id="chatBar" title="Click to chat — plain text speaks aloud; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
+  </div>
+  <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
+    style="position:absolute;left:12px;bottom:56px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
   <div id="castbar"><div id="castfill"></div><span id="castlabel"></span></div>
   <div id="spellbar" class="panel"></div>
   <div id="potions" class="panel">
@@ -316,6 +321,7 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Difficulty</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
@@ -5340,6 +5346,25 @@ function spawnMonster(kind,x,z,elite){
 const logInner=document.getElementById('logInner');const logLines=[];
 function log(msg,cls=""){logLines.push({msg,cls});if(logLines.length>8)logLines.shift();
   logInner.innerHTML=logLines.map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");}
+// ── CHAT CHANNELS: every player-to-player line flows through chatMsg(), which applies the channel's
+//    colour (Settings-tunable), honours mutes, logs it, and runs it across the persistent chat bar ──
+const CHAT_CHANNELS={
+  say:       {n:"Say",       c:"#9fd0ff"},
+  party:     {n:"Party",     c:"#b6f0c0"},
+  allegiance:{n:"Allegiance",c:"#ffd08a"},
+  tell:      {n:"Tells",     c:"#e0a6ff"},
+  emote:     {n:"Emotes",    c:"#d6c79b"},
+};
+function chatChan(ch){ const d=CHAT_CHANNELS[ch]||CHAT_CHANNELS.say, o=(settings.chat&&settings.chat[ch])||{}; return {n:d.n, c:o.c||d.c, m:!!o.m}; }
+let _chatBarT=0;
+function chatMsg(ch,html){
+  const conf=chatChan(ch);
+  if(conf.m) return;                                    // muted channel
+  const line=`<span style="color:${conf.c}">${html}</span>`;
+  log(line,"chat");
+  const bar=document.getElementById('chatBarText');
+  if(bar){ bar.innerHTML=line; bar.style.opacity=1; _chatBarT=12; }   // ride the chat bar, dim after a while
+}
 let toastT=0;function toast(t){document.getElementById('toast').textContent=t;toastT=2.2;}
 
 // ---------- effects ----------
@@ -9010,7 +9035,7 @@ window.addEventListener('keydown',e=>{
   keys[k]=true; keys[e.code]=true;   // record by both e.key and e.code so held()/movement work
   if(rebindCapture){ e.preventDefault(); rebindCapture(e); return; }   // capturing a new keybind
   if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k)) e.preventDefault();
-  if(k==="enter"){ if(running&&isOnline) openChat(); return; } // Enter opens chat (online only)
+  if(k==="enter"){ if(running) openChat(); return; } // Enter opens chat (offline says aloud locally)
   if(k==="escape"){ closeAnyPanel(); return; }
   if(!running) return;
   const id=ACTION_BY_COMBO[evtCombo(e)];
@@ -9588,6 +9613,7 @@ function update(dt){
   for(const n of nodes){ if(n.depleted&&now()>n.readyAt){n.depleted=false;if(!inDungeon)n.mesh.visible=true;} }
 
   if(toastT>0)toastT-=dt;
+  if(_chatBarT>0){ _chatBarT-=dt; if(_chatBarT<=0){ const b=document.getElementById('chatBarText'); if(b) b.style.opacity=0.45; } }
   player.drinkCd=Math.max(0,player.drinkCd-dt);
   player.buffMightT=Math.max(0,player.buffMightT-dt);
   player.buffSwiftT=Math.max(0,player.buffSwiftT-dt);
@@ -10207,7 +10233,8 @@ function loop(ts){
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
 const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,
-  labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true}};
+  labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
+  chat:{}};   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){} }
 function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){} }
@@ -13118,6 +13145,23 @@ function openSettings(){
       paint(); lc.appendChild(b);
     }
   }
+  // per-channel chat colour + mute (click the name to mute, the swatch to recolour)
+  const cc=document.getElementById('setChat');
+  if(cc&&!cc.dataset.built){ cc.dataset.built="1";
+    if(!settings.chat) settings.chat={};
+    for(const ch in CHAT_CHANNELS){
+      const conf=()=>chatChan(ch);
+      const wrap=document.createElement('span'); wrap.style.cssText="display:inline-flex;align-items:center;gap:3px";
+      const col=document.createElement('input'); col.type="color"; col.value=conf().c;
+      col.style.cssText="width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer";
+      col.oninput=()=>{ settings.chat[ch]=settings.chat[ch]||{}; settings.chat[ch].c=col.value; saveSettings(); paint(); };
+      const b=document.createElement('button'); b.className="tbtn"; b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ const c=conf(); b.textContent=c.m?CHAT_CHANNELS[ch].n+" 🔇":CHAT_CHANNELS[ch].n; b.style.opacity=c.m?0.35:1; b.style.color=c.c; };
+      b.title="Click to mute / unmute this channel";
+      b.onclick=()=>{ settings.chat[ch]=settings.chat[ch]||{}; settings.chat[ch].m=!settings.chat[ch].m; saveSettings(); paint(); };
+      paint(); wrap.appendChild(col); wrap.appendChild(b); cc.appendChild(wrap);
+    }
+  }
 }
 function closeSettings(){ document.getElementById('settings').style.display="none";paused=false; }
 document.getElementById('closeSettings').onclick=closeSettings;
@@ -13842,7 +13886,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,vitae:player.vitae,heritage:player.heritage,
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -13877,7 +13921,7 @@ function applySaveObj(s){
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
     weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
     jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
-    skills:migrateSkills(s.skills),patron:!!s.patron,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,vitae:s.vitae||0,heritage:s.heritage||"aluvian",
+    skills:migrateSkills(s.skills),patron:!!s.patron,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,vitae:s.vitae||0,heritage:s.heritage||"aluvian",allegianceName:s.allegianceName||null,
     name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}});
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(s.knownSpells==="all")?Object.keys(SPELLBOOK)              // admin/testing: know every spell
@@ -13996,10 +14040,11 @@ function netHandle(m){
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){
-    if(m.channel==="party") log(`<span style="color:#b6f0c0">[Party] <b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat");
-    else if(m.channel==="tell"){ NET.lastWhisperFrom=m.from; log(`<span style="color:#e0a6ff">[${esc(m.from)} whispers] ${esc(m.msg)}</span>`,"chat"); }
-    else if(m.channel==="tell_out") log(`<span style="color:#c79bd6">[to ${esc(m.from)}] ${esc(m.msg)}</span>`,"chat");
-    else log(`<span style="color:#9fd0ff"><b>${esc(m.from)}:</b> ${esc(m.msg)}</span>`,"chat");
+    if(m.channel==="party") chatMsg("party",`[Party] <b>${esc(m.from)}:</b> ${esc(m.msg)}`);
+    else if(m.channel==="allegiance") chatMsg("allegiance",`[Allegiance] <b>${esc(m.from)}:</b> ${esc(m.msg)}`);
+    else if(m.channel==="tell"){ NET.lastWhisperFrom=m.from; chatMsg("tell",`[${esc(m.from)} whispers] ${esc(m.msg)}`); }
+    else if(m.channel==="tell_out") chatMsg("tell",`[to ${esc(m.from)}] ${esc(m.msg)}`);
+    else chatMsg("say",`<b>${esc(m.from)}:</b> ${esc(m.msg)}`);
     return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
   if(m.t==="mob_hit") return onMobHit(m);
@@ -14224,6 +14269,7 @@ function onPlayOk(m){
   if(creatingChar){ creatingChar=false; const preset=pendingPreset; pendingPreset=null;
     startGame(false, preset||undefined); saveGame();   // persist the fresh character to its slot
   } else { pendingServerChar=m.char; startGame(true); }
+  setTimeout(()=>{ if(isOnline&&player.allegianceName) netSend({t:"allegiance",name:player.allegianceName}); },1500);   // re-announce allegiance for /a routing
 }
 function onPlayErr(m){
   creatingChar=false;
@@ -14246,7 +14292,8 @@ function sendChatLine(text){
   text=(text||"").trim(); if(!text) return;
   if(text[0]==="/"){ handleSlash(text); return; }
   if(isOnline) netSend({t:"chat",msg:text});
-  else log(`<b style="color:#cfe0ff">${esc(player.name||"You")}:</b> ${esc(text)}`,"say");   // solo: echo your own line so chat still works offline
+  else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
+    if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
 }
 function updatePartyHUD(){
   const el=document.getElementById('partyHud'); if(!el) return;
@@ -14263,11 +14310,11 @@ function playEmoteAnim(act){ player.emoteAct=act; player.emoteT=EMOTE_DUR; }   /
 function doEmote(act,text){
   if(act==="me"){ const t=(text||"").trim(); if(!t){ log("Usage: /me &lt;action&gt;","warn"); return; }
     if(isOnline) netSend({t:"emote",act:"me",text:t});
-    else log(`<span style="color:#d6c79b"><i>${esc(player.name||"You")} ${esc(t)}</i></span>`,"sys");
+    else chatMsg("emote",`<i>${esc(player.name||"You")} ${esc(t)}</i>`);
     return; }
   if(!EMOTE_CMDS[act]){ log("Unknown emote. Try: "+Object.keys(EMOTE_CMDS).join(", "),"warn"); return; }
   if(isOnline){ netSend({t:"emote",act}); }
-  else { playEmoteAnim(act); log(`<span style="color:#d6c79b"><i>You ${EMOTE_VERB[act]||act}</i></span>`,"sys"); floater(player.x,EYE+1.4,player.z,act,"#ffe9b0",1.1); }
+  else { playEmoteAnim(act); chatMsg("emote",`<i>You ${EMOTE_VERB[act]||act}</i>`); floater(player.x,EYE+1.4,player.z,act,"#ffe9b0",1.1); }
 }
 function playRemoteEmote(r,act){ if(r){ r.emoteAct=act; r.emoteT=EMOTE_DUR; } }   // remote avatars gesture too (see updateRemotes)
 function poseRemoteEmote(mesh,act,osc){   // apply an emote pose to a remote player's shared rig (mirrors the local branch in animateAvatar)
@@ -14290,7 +14337,7 @@ function poseRemoteEmote(mesh,act,osc){   // apply an emote pose to a remote pla
 function clearRemoteEmote(mesh){ const u=mesh&&mesh.userData; if(!u||!u.shR) return;   // return arms to the neutral built pose
   u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0); if(u.spine)u.spine.rotation.x=0; }
 function onEmote(m){
-  log(`<span style="color:#d6c79b"><i>${esc(m.msg)}</i></span>`,"sys");
+  chatMsg("emote",`<i>${esc(m.msg)}</i>`);
   let x=null,z=null;
   if(m.id===NET.me){ x=player.x; z=player.z; if(m.act&&m.act!=="me") playEmoteAnim(m.act); }   // our own emote, echoed back → animate us
   else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz); if(m.act&&m.act!=="me") playRemoteEmote(r,m.act); } }
@@ -14385,7 +14432,20 @@ function handleSlash(text){
   else if(cmd==="r"){ const msg=parts.slice(1).join(" ").trim();
     if(NET.lastWhisperFrom&&msg) netSend({t:"tell",name:NET.lastWhisperFrom,msg});
     else log(NET.lastWhisperFrom?"Usage: /r &lt;message&gt;":"No one has whispered you yet.","warn"); }
-  else if(cmd==="p"){ const msg=(text.indexOf(" ")>=0?after:"").trim(); if(msg) netSend({t:"pchat",msg}); else log("Usage: /p &lt;message&gt;","warn"); }
+  else if(cmd==="p"){ const msg=(text.indexOf(" ")>=0?after:"").trim();
+    if(!msg) log("Usage: /p &lt;message&gt;","warn");
+    else if(isOnline) netSend({t:"pchat",msg});
+    else log("You have no party here — parties live on the online realm.","warn"); }
+  else if(cmd==="a"){ const msg=(text.indexOf(" ")>=0?after:"").trim();
+    if(!msg) log("Usage: /a &lt;message&gt; — speaks to your allegiance ("+(player.allegianceName?esc(player.allegianceName):"none — /allegiance join &lt;name&gt;")+")","warn");
+    else if(!player.allegianceName) log("You are sworn to no allegiance — <b>/allegiance join &lt;name&gt;</b> first.","warn");
+    else if(isOnline) netSend({t:"achat",msg});
+    else chatMsg("allegiance",`[Allegiance] <b>${esc(player.name||"You")}:</b> ${esc(msg)} <span style="opacity:.55">(no allegiance mates online)</span>`); }
+  else if(cmd==="allegiance"){ const sub=(parts[1]||"").toLowerCase(), nm=parts.slice(2).join(" ").trim();
+    if(sub==="join"&&nm){ player.allegianceName=nm; if(isOnline) netSend({t:"allegiance",name:nm});
+      log(`You swear to the <b>${esc(nm)}</b> allegiance — <b>/a &lt;message&gt;</b> speaks to them.`,"sys"); saveGame(); }
+    else if(sub==="leave"){ if(player.allegianceName){ log(`You leave the <b>${esc(player.allegianceName)}</b> allegiance.`,"sys"); player.allegianceName=null; if(isOnline) netSend({t:"allegiance",name:""}); saveGame(); } else log("You are sworn to no allegiance.","warn"); }
+    else log(player.allegianceName?`Allegiance: <b>${esc(player.allegianceName)}</b> — /allegiance leave to quit, /a to speak.`:"Usage: /allegiance join &lt;name&gt; · /allegiance leave","sys"); }
   else if(cmd==="party"||cmd==="f"){
     const sub=(parts[1]||"").toLowerCase();
     if(sub==="invite"&&parts[2]) netSend({t:"party",act:"invite",name:parts[2]});
@@ -14402,7 +14462,7 @@ function handleSlash(text){
     else doEmote(act); }
   else if(EMOTE_CMDS[cmd]){ doEmote(cmd); }                                   // shorthand: /clap, /wave, …
   else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
-  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /party, /emote clap","warn");
+  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /a, /allegiance, /party, /emote clap","warn");
 }
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
@@ -14696,6 +14756,8 @@ document.querySelectorAll('#csPaths button').forEach(b=>b.onclick=()=>{
 });
 document.getElementById('csCancel').onclick=()=>{ document.getElementById('csCreate').style.display="none"; };
 // chat input: Enter sends (or runs a slash command), Esc cancels
+{ const cb=document.getElementById('chatBar');
+  if(cb) cb.addEventListener('mousedown',e=>{ e.preventDefault(); if(running) openChat(); }); }   // click the chat line to type
 document.getElementById('chatInput').addEventListener('keydown',e=>{
   e.stopPropagation();
   if(e.key==="Enter"){ const v=e.target.value; closeChat(true); sendChatLine(v); }

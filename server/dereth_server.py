@@ -954,6 +954,20 @@ async def dispatch(cl, msg):
                     await c.send({"t": "chat", "from": cl.charname, "msg": text, "channel": "party", "ts": int(time.time())})
         elif cl.in_world:
             await cl.send({"t": "system", "msg": "You are not in a party (/party invite <name>)."})
+    elif t == "allegiance":
+        # set/clear this character's allegiance name (the client persists it in its save;
+        # the server only needs it live to route /a chat)
+        name = str(msg.get("name", ""))[:40].strip()
+        cl.allegiance = name or None
+    elif t == "achat":
+        text = str(msg.get("msg", ""))[:240].strip()
+        alg = getattr(cl, "allegiance", None)
+        if cl.in_world and text and alg:
+            for c in CLIENTS.values():
+                if c.in_world and getattr(c, "allegiance", None) == alg:
+                    await c.send({"t": "chat", "from": cl.charname, "msg": text, "channel": "allegiance", "ts": int(time.time())})
+        elif cl.in_world:
+            await cl.send({"t": "system", "msg": "You are sworn to no allegiance (/allegiance join <name>)."})
     elif t == "ping":
         await cl.send({"t": "pong"})
 
