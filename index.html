@@ -3890,11 +3890,12 @@ function buildWorld(){
   addKilmerCastle();    // Castle Val Halla — Lord Kilmer's moated castle & the town of Valstead
   addHousingSettlements(); // AC player housing: 3 cottage + 3 villa settlements + the Sanctum apartments
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
-  for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil"});
-  // every town fields a Town Crier (directions) and a Barkeeper (rumours)
+  for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil",
+    name:titledName(c.region||0,Math.round(c.x*11+c.z*13),"Emissary of Asheron")});
+  // every town fields a Town Crier (directions) and a Barkeeper (rumours) — each an individual
   for(const c of CITIES){
-    addNPC(c.x-6,c.z+9,{role:"crier",town:c.name});
-    addNPC(c.x+6,c.z+9,{role:"barkeep",town:c.name,name:c.name==="Cragstone"?"Barkeeper Wilomine":"Barkeeper"});
+    addNPC(c.x-6,c.z+9,{role:"crier",town:c.name,name:titledName(c.region||0,Math.round(c.x*5+c.z*3),"Town Crier")});
+    addNPC(c.x+6,c.z+9,{role:"barkeep",town:c.name,name:c.name==="Cragstone"?"Barkeeper Wilomine":titledName(c.region||0,Math.round(c.x*7+c.z*5),"Barkeeper")});
     // strolling townsfolk that wander the plaza (more in capitals)
     const tf=c.capital?5:3, rad=c.capital?14:9;
     for(let i=0;i<tf;i++){ const a=i/tf*6.283+c.region, tx=c.x+Math.cos(a)*rad*0.6, tz=c.z+Math.sin(a)*rad*0.6;
@@ -3910,7 +3911,9 @@ function buildWorld(){
         if(!byName[nm]){ byName[nm]=[]; order.push(nm); } byName[nm].push(id); }
       const R=12.5;
       order.forEach((nm,i)=>{ const ids=byName[nm], a=(i/order.length)*6.283 + (c.region||0)*0.7;
-        addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:nm, town:tn, questId:ids[0], questIds:ids, look:QUEST_GIVERS[ids[0]].look}); }); }
+        // anonymous archetypes ("an old cartographer") become individuals who keep the role in their name
+        const shown=/^(a|an|the)\s/i.test(nm)? titledName(c.region||0, Math.round(c.x*3+c.z*7)+nm.length*31+i*97, nm) : nm;
+        addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:shown, town:tn, questId:ids[0], questIds:ids, look:QUEST_GIVERS[ids[0]].look}); }); }
   }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*80-3,-21.2*80,{role:"reset_attr",name:"Chafulumisa"});
@@ -5277,7 +5280,8 @@ function addHousingSettlements(){
       hsCrystals.push({set:S.id,idx:u,x:cx,z:cz,mesh:cg,lbl,type:S.type});
     }
     // an Agent of the Arcanum (writs for trophies) + a furniture seller at every settlement
-    addNPC(S.x+5,S.z+7,{role:"arcanum",name:"Agent of the Arcanum",town:S.name});
+    addNPC(S.x+5,S.z+7,{role:"arcanum",town:S.name,
+      name:titledName(S.region||0,Math.round(S.x*13+S.z*11),"Agent of the Arcanum")});
     addMerchant(S.x-6,S.z+7,"furnisher","Apprentice Craftsman");
   }
   // the three authentic named furniture sellers near the great towns
@@ -5285,7 +5289,8 @@ function addHousingSettlements(){
   for(const [tn,nm] of NAMED_SELLERS){ const c=CITIES.find(x=>x.name===tn); if(!c) continue;
     addMerchant(c.x-14,c.z-9,"furnisher",nm); }
   // Agents of the Arcanum in the three capitals (as in the Oct 2001 housing rush)
-  for(const c of CAPITALS) addNPC(c.x-9,c.z-12,{role:"arcanum",name:"Agent of the Arcanum",town:c.name});
+  for(const c of CAPITALS) addNPC(c.x-9,c.z-12,{role:"arcanum",town:c.name,
+    name:titledName(c.region||0,Math.round(c.x*13+c.z*11),"Agent of the Arcanum")});
   hsRefreshHomestead();
 }
 function hsDwellingSpot(){ if(!player.homestead) return null;
@@ -12447,6 +12452,13 @@ function townName(region,seed){ const p=NAME_POOLS[region]||NAME_POOLS[0]; seed=
   for(let k=0;!n&&k<F*L;k++) n=pick(p.first[(seed+Math.floor(k/L))%F]+" "+p.last[(seed*13+k)%L]);
   for(let r=2;!n;r++) n=pick(f0+" "+p.last[(seed*13)%L]+" "+(["II","III","IV","V","VI","VII","VIII","IX"][r-2]||r));
   return n; }
+const _TITLE_SMALL=/^(of|the|and|for|to|in)$/i;
+function titledName(region,seed,label){ // "an old cartographer" → "Hana Ozu the Old Cartographer": a unique person, role kept in the name
+  const t=label.replace(/^(a|an|the)\s+/i,"").split(" ")
+    .map((w,i)=>(i>0&&_TITLE_SMALL.test(w))?w.toLowerCase():w.replace(/(^|-|')([a-z])/g,(m,p,ch)=>p+ch.toUpperCase())).join(" ");
+  let pn=townName(region,seed);                                   // avoid "Hugh of the Vale the Crier" pile-ups
+  for(let k=1;/ of /.test(pn)&&k<8;k++) pn=townName(region,seed+k*1013);
+  const n=pn+" the "+t; usedNpcNames.add(n); return n; }
 const RUMORS=[
   "They say the Olthoi Queen stirs again in the deep places of the world.",
   "Bind to a lifestone, friend — in Dereth, death is rarely the end.",
