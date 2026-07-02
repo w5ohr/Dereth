@@ -2036,7 +2036,7 @@ function updateDayNight(dt){
   if(sunSprite){sunSprite.position.set(player.x+sky.x*R,Math.max(-200,sky.y*R*0.7),player.z+sky.z*R);
     sunSprite.material.opacity=clamp(sunY*3+0.4,0,1);
     sunSprite.material.color.copy(_sunNoon).lerp(_cWarm,warm);} // redden at dawn/dusk
-  if(sunHalo){sunHalo.position.copy(sunSprite.position);sunHalo.material.opacity=clamp(sunY*2+0.25,0,1)*0.55;sunHalo.material.color.copy(sunSprite.material.color);}
+  if(sunHalo){sunHalo.position.copy(sunSprite.position);sunHalo.material.opacity=clamp(sunY*2+0.25,0,1)*0.4;sunHalo.material.color.copy(sunSprite.material.color);}
   if(moonSprite){moonSprite.position.set(player.x-sky.x*R,Math.max(-200,-sky.y*R*0.7),player.z-sky.z*R);
     moonSprite.material.opacity=clamp(-sunY*3+0.4,0,1);}
   // drifting clouds, fading at night, wrapping across the sky, following the player
@@ -2052,7 +2052,7 @@ function updateDayNight(dt){
     const wsh=waterMesh.material.userData.sh; if(wsh){ wsh.uniforms.uWTime.value=t;
       if(wsh.uniforms.uSunView){ wsh.uniforms.uSunView.value.copy(sky).transformDirection(cam.matrixWorldInverse);   // sun dir → view space
         wsh.uniforms.uSunCol.value.copy(_sunNoon).lerp(_cWarm,warm);                                                 // glitter reddens at dawn/dusk
-        if(skyU) wsh.uniforms.uSkyCol.value.copy(skyU.uZen.value).lerp(skyU.uHor.value,0.5).multiplyScalar(1.15); } } }  // reflect the live sky
+        if(skyU) wsh.uniforms.uSkyCol.value.copy(skyU.uZen.value).lerp(skyU.uHor.value,0.5).multiplyScalar(0.82); } } }  // reflect the live sky (dimmed so midday water stays blue, not white)
   if(waterGlint){waterGlint.position.set(player.x+sky.x*42,0.5,player.z+sky.z*42);
     waterGlint.material.opacity=clamp(sunY*2,0,1)*0.7;waterGlint.material.color.copy(sunSprite?sunSprite.material.color:_sunNoon);}
 }
@@ -2168,7 +2168,7 @@ function initThree(){
   scene.add(buildSun());scene.add(buildMoon());scene.add(buildClouds());
   // soft sun halo for a god-ray glow
   sunHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,240,200,0.8)","rgba(255,200,120,0)"),transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
-  sunHalo.scale.set(2600,2600,1);scene.add(sunHalo);
+  sunHalo.scale.set(1700,1700,1);scene.add(sunHalo);
   // sun glint on the water
   waterGlint=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,250,235,0.9)","rgba(255,240,200,0)"),transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
   waterGlint.scale.set(120,60,1);scene.add(waterGlint);
@@ -2262,7 +2262,7 @@ function initThree(){
   }
   scene.add(groundMesh);
   // ocean / lakes at sea level
-  waterMesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,128,128),new THREE.MeshPhongMaterial({color:0x115982,specular:0xeaf6ff,shininess:300,transparent:true,opacity:0.86,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.6,0.6)}));
+  waterMesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,128,128),new THREE.MeshPhongMaterial({color:0x115982,specular:0x223243,shininess:90,transparent:true,opacity:0.86,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.6,0.6)}));
   // fresnel: dark/deep looking straight down, bright sky-reflection at grazing angles. Injected before
   // <fog_fragment> so distant water still blends into the fog. Keeps Phong ripples/specular/shadows.
   // vertex stage: two crossed travelling swells displace the (now 128×128) sheet so the sea
@@ -2284,20 +2284,23 @@ function initThree(){
     // Reflective water: Fresnel blends deep-water colour (looking down) into a live sky reflection (grazing),
     // a specular sun-glitter that tracks the sun, and depth-based shoreline foam read from the baked heightfield.
     sh.fragmentShader='uniform vec3 uSunView,uSkyCol,uSunCol,uFoamCol;\nuniform sampler2D uHeightMap;\nuniform float uWTime,uWorld;\nvarying vec2 vWXZ;\n'+sh.fragmentShader.replace('#include <fog_fragment>',
+    // decode sea-bed depth under this fragment from the baked heightfield (drives shallow colour + foam)
+    'float _th=texture2D(uHeightMap, vWXZ/uWorld+0.5).r*12.0-6.0;\n'+
+    'float _depth=-_th;\n'+
+    'float _sh=smoothstep(7.0,0.4,_depth);\n'+                                // 1 in the shallows, 0 in the deep
+    'gl_FragColor.rgb=mix(gl_FragColor.rgb, vec3(0.16,0.52,0.60), _sh*0.5);\n'+  // shallows read turquoise, deep stays blue
     'vec3 _N=normalize(normal), _V=normalize(vViewPosition);\n'+
     'float _fres=pow(1.0-clamp(dot(_N,_V),0.0,1.0),4.0);\n'+
     'vec3 _deep=gl_FragColor.rgb*0.42;\n'+                                    // deep, dark water straight down
-    'vec3 _refl=mix(gl_FragColor.rgb,uSkyCol,0.85);\n'+                       // grazing angles mirror the sky
+    'vec3 _refl=mix(gl_FragColor.rgb,uSkyCol,0.72);\n'+                       // grazing angles mirror the sky (keep some water blue so it never blows to white)
     'gl_FragColor.rgb=mix(_deep,_refl,_fres);\n'+
     'float _rd=max(dot(reflect(-normalize(uSunView),_N),_V),0.0);\n'+
     'gl_FragColor.rgb+=uSunCol*(pow(_rd,180.0)*1.8+pow(_rd,26.0)*0.22);\n'+   // sharp glitter + soft sheen
-    // shoreline foam: decode sea-bed height under this fragment → water depth; surf where shallow, undulating
-    'float _th=texture2D(uHeightMap, vWXZ/uWorld+0.5).r*12.0-6.0;\n'+
-    'float _depth=-_th;\n'+
+    // shoreline foam: surf where shallow, undulating with a wave term
     'float _wv=0.5+0.25*sin(vWXZ.x*0.25+uWTime*2.2)+0.25*sin(vWXZ.y*0.21-uWTime*1.8);\n'+
     'float _foam=smoothstep(2.4,0.0,_depth)*clamp(_depth*3.0,0.0,1.0);\n'+    // fade in deep→shore, kill on dry land
     'float _surf=smoothstep(0.55,0.0,abs(_depth-0.45-_wv*0.6));\n'+           // a wandering breaking line
-    '_foam=clamp(_foam*(0.5+0.6*_wv)+_surf*0.7,0.0,1.0);\n'+
+    '_foam=clamp(_foam*(0.4+0.5*_wv)+_surf*0.55,0.0,0.9);\n'+
     'gl_FragColor.rgb=mix(gl_FragColor.rgb,uFoamCol,_foam);\n'+
     'gl_FragColor.a=max(mix(0.80,0.99,_fres),_foam);\n#include <fog_fragment>'); };
   waterMesh.rotation.x=-Math.PI/2;waterMesh.position.y=0;scene.add(waterMesh);
@@ -2369,7 +2372,7 @@ function initPost(){
     "varying vec2 vUv; uniform sampler2D tDiffuse; uniform float threshold; uniform float knee;"+
     "void main(){ vec3 c=texture2D(tDiffuse,vUv).rgb; float l=dot(c,vec3(0.2126,0.7152,0.0722));"+
     " float f=smoothstep(threshold,threshold+knee,l); gl_FragColor=vec4(c*f,1.0); }",
-    {tDiffuse:{value:null},threshold:{value:0.84},knee:{value:0.2}});
+    {tDiffuse:{value:null},threshold:{value:0.90},knee:{value:0.2}});
   // separable gaussian blur (9-tap)
   POST.blur=makePass(
     "varying vec2 vUv; uniform sampler2D tDiffuse; uniform vec2 dir;"+
