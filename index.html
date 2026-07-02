@@ -13197,7 +13197,7 @@ function buildCaravan(){
   if(caravan&&caravan.shop){ const i=shops.indexOf(caravan.shop); if(i>=0) shops.splice(i,1); }
   const mesh=buildOxWagon(); scene.add(mesh);
   const start=stops[1];   // begin at Holtburg
-  const shop={x:start.x,z:start.z,mesh,vtype:"caravan",name:"Wandering Caravan",title:"Wandering Caravan",pyreals:80000,pmax:80000,caravan:true};
+  const shop={x:start.x,z:start.z,mesh,vtype:"caravan",name:"Wandering Caravan",title:"Wandering Caravan",pyreals:1000000,pmax:1000000,caravan:true};
   shops.push(shop);
   caravan={mesh,shop,stops,si:1,dir:1,leg:null,li:1,next:2,x:start.x,z:start.z,dwell:0,_face:0};
   caravanStartLeg();
