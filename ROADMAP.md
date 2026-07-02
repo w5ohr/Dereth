@@ -117,6 +117,11 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   rebuild their innerHTML and shed the grip); the chat window joined the drag registry. The **chat box
   resizes** by a ◥ corner grip (bottom-anchored → grows up/right, 220–720 × 90–560), a taller box shows
   more scrollable history pinned to the newest line, and the size persists (settings.logSize).
+- ✅ **U8. Combat + Craft tabs** (jsc + preview e2e, 0 console errors): the chat gained a **Combat**
+  tab — real per-hit logging (`clog()`): damage dealt with crit call-outs, damage taken (post-armour,
+  in red), and kill lines with XP; per-hit spam is flagged so it lives ONLY on the Combat tab and never
+  floods All — and a **Craft** tab collecting cooking/alchemy/tinkering/salvage/fletching/dye/imbue/
+  scribing lines by classification. Seven tabs total.
 - ✅ **U6. Tabbed chat** (jsc + preview e2e, 0 console errors): the chat window gained tabs —
   **All · Global** (say/tells/emotes) **· Team** (allegiance, `/a`, server `achat`) **· Group** (party,
   `/p`, server `pchat`) **· Quest** (saga/bounty/crier lines, keyword-classified). Plain text typed into
