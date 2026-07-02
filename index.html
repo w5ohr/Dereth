@@ -586,7 +586,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
   luminance:0,lumUnlocked:false,auras:{},enlightenment:0,   // AC endgame: Luminance currency → permanent Auras; Enlightenment prestige resets
   arcsDone:[],                 // story arcs whose capstone reward has been granted
-  augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0},    // permanent boosts: augmentation gems + Aetheria sigils
+  augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,allskills:0,xpBonus:0,attrTotal:0,dropReduce:0,count:0},    // permanent boosts: augmentation gems + Aetheria sigils
   house:{tier:0,storage:[]},   // AC housing: 0=none, 1=Apartment…4=Mansion; storage[] persists forever
   homestead:null,              // a purchased settlement dwelling: {set,idx,type,hooks{}} (AC covenant housing)
   name:"Adventurer",
@@ -983,7 +983,7 @@ let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwi
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // world activity/visibility culling: only the area around the player is simulated & drawn (perf).
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
-const SIM_RADIUS=95, VIS_RADIUS=265, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;   // VIS reaches past the clear-weather fog wall (245) so nothing pops in view
+const SIM_RADIUS=95, VIS_RADIUS=380, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;   // VIS reaches past the clear-weather fog wall (350) so distant land is drawn, not popped — AC's long vistas
 // ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
 let USE_GLTF_AVATAR=false;                      // legacy single-avatar drop-in (assets/avatar.glb); superseded by model choice
 const GLTF_AVATAR_URL="assets/avatar.glb";
@@ -1220,7 +1220,7 @@ function loadGltfMonsters(){
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
-let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=235;
+let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
 function nearestOf(arr){let b=null,bd=Infinity;for(const o of arr){const d=Math.hypot(o.x-player.x,o.z-player.z);if(d<bd){bd=d;b=o;}}return b&&{o:b,d:bd};}
 let scenery=[],nodes=[],dying=[],roadMeshes=[];
 // stone highways linking the towns (Cragstone — Holtburg — Yaraq are collinear)
@@ -1342,7 +1342,7 @@ const CANON_DUNGEONS=[
   ["Hebian-To Sewers",-38.8,83.8,2,2],["A Drudge Nest",-40.6,83.6,5,1],["Green Mire Grave",-27.8,71.6,2,2],
   ["Banderling Conquest Dungeon",-29.1,50.6,8,3],["Blackmire Temple",-21.8,48.0,12,4],["Castle of Baron Nuvillus",-24.5,76.7,12,4],
   ["Mosswart Camp",-27.5,70.6,2,1],["Shreth Hive",-32.4,71.0,14,2],["Rat King's Cave",-32.9,70.5,3,1],
-  ["Stone Cathedral",-34.5,70.4,5,2],["Yanshi Tunnels",-12.2,45.5,5,1],["Colosseum",-11.3,37.6,16,5],
+  ["Stone Cathedral",-34.5,70.4,5,2],["Yanshi Tunnels",-12.2,45.5,5,1],["Colosseum",-11.3,37.6,16,5],["Advanced Colosseum",-11.9,38.2,16,5],
   ["Swamp Temple",-23.4,47.9,2,2],["Web Maze",-49.4,65.4,5,3],["Golem Burial Ground",-50.9,67.3,12,4],
   ["Matron Hive East",-49.8,62.0,3,4],["Hills Citadel",-56.6,66.9,15,4],["Firebird's Splendor",-53.6,66.7,12,4],
   ["Water Temple",-52.1,80.3,14,3],["Empyrean Garrison",-54.2,81.8,5,4],["Moarsman Tunnels",-60.7,83.0,14,4],
@@ -1841,7 +1841,7 @@ function skyDome(){
       " vec3 c=mix(uHor,uZen,pow(h,0.62));\n"+                       // Rayleigh-ish falloff
       " if(d.y<0.0) c=mix(uHor,uGnd,clamp(-d.y*4.0,0.0,1.0));\n"+    // haze under the horizon line
       " float s=max(dot(d,normalize(uSunDir)),0.0);\n"+
-      " c+=uSunCol*(pow(s,350.0)*0.9+pow(s,24.0)*0.28+pow(s,5.0)*0.10)*uGlow;\n"+ // sun aureole + wide scatter
+      " c+=uSunCol*(pow(s,420.0)*1.1+pow(s,26.0)*0.34+pow(s,5.0)*0.16)*uGlow;\n"+ // sun disc + aureole + wider warm scatter
       " gl_FragColor=vec4(c,1.0); }"});
   skyU=mat.uniforms;
   return new THREE.Mesh(geo,mat);
@@ -1892,12 +1892,12 @@ function buildMoon(){
 function buildClouds(){
   cloudGroup=new THREE.Group();
   const ctex=softTex("rgba(255,255,255,0.95)","rgba(255,255,255,0)");
-  for(let i=0;i<30;i++){
+  for(let i=0;i<52;i++){
     const puff=new THREE.Group();
-    const blobs=irnd(3,6);
-    for(let b=0;b<blobs;b++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:ctex,transparent:true,opacity:0.9,fog:false,depthWrite:false}));
-      const sc=rnd(120,260);sp.scale.set(sc,sc*0.62,1);sp.position.set(rnd(-170,170),rnd(-25,25),0);puff.add(sp);}
-    puff.position.set(rnd(-WORLD*0.5,WORLD*0.5),rnd(420,760),rnd(-WORLD*0.5,WORLD*0.5));
+    const blobs=irnd(4,8);
+    for(let b=0;b<blobs;b++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:ctex,transparent:true,opacity:0.92,fog:false,depthWrite:false}));
+      const sc=rnd(140,320);sp.scale.set(sc,sc*rnd(0.5,0.66),1);sp.position.set(rnd(-210,210),rnd(-30,30),0);puff.add(sp);}
+    puff.position.set(rnd(-WORLD*0.5,WORLD*0.5),rnd(400,820),rnd(-WORLD*0.5,WORLD*0.5));
     puff.userData.spd=rnd(4,11);cloudGroup.add(puff);
   }
   return cloudGroup;
@@ -1931,7 +1931,7 @@ function updateWeather(dt){
   }
   wetness+=clamp((weather==="rain"?1:0)-wetness,-dt*0.4,dt*0.4);
   snowAmt+=clamp((weather==="snow"?1:0)-snowAmt,-dt*0.35,dt*0.35);
-  const targetFar=weather==="fog"?45:weather==="rain"?105:weather==="snow"?128:weather==="cloudy"?175:245;
+  const targetFar=weather==="fog"?55:weather==="rain"?150:weather==="snow"?175:weather==="cloudy"?235:350;
   fogFar+=(targetFar-fogFar)*Math.min(1,dt*0.5);scene.fog.far=fogFar;
   const precip=Math.max(wetness,snowAmt), snowing=snowAmt>wetness+0.01;
   if(rainSegs){
@@ -1966,11 +1966,11 @@ function updateEnvIntensity(daylight){
     const mm=Array.isArray(o.material)?o.material:[o.material];
     for(const m of mm){ if(m.isMeshStandardMaterial) m.envMapIntensity=target; } });
 }
-const _cDay=new THREE.Color(0x8a8062), _cNight=new THREE.Color(0x0a1020);
+const _cDay=new THREE.Color(0xaebccb), _cNight=new THREE.Color(0x0a1020);   // day fog leans atmospheric blue-grey → distant land hazes into sky (aerial perspective)
 const _skyDay=new THREE.Color(0xffffff), _skyNight=new THREE.Color(0x1a2742);
 // analytic-sky palette (zenith / horizon / below-horizon ground haze, day vs night)
-const _zenDay=new THREE.Color(0x3468c2), _zenNight=new THREE.Color(0x060b1a);
-const _horDay=new THREE.Color(0xc3d6e6), _horNight=new THREE.Color(0x0e1626);
+const _zenDay=new THREE.Color(0x2f63cf), _zenNight=new THREE.Color(0x060b1a);   // deeper, more saturated overhead blue
+const _horDay=new THREE.Color(0xd0e2ee), _horNight=new THREE.Color(0x0e1626);   // luminous clean horizon
 const _gndDay=new THREE.Color(0x59524a), _gndNight=new THREE.Color(0x05070d);
 const _sunWarm=new THREE.Color(0xffb15a), _sunNoon=new THREE.Color(0xfff2d8);
 const _tmp=new THREE.Color();
@@ -1985,10 +1985,10 @@ function updateDayNight(dt){
   const dir=new THREE.Vector3(sunX*0.7,Math.max(0.12,sunY),0.45).normalize();
   sun.position.set(player.x+dir.x*110,dir.y*110+8,player.z+dir.z*110);
   sun.target.position.set(player.x,0,player.z);sun.target.updateMatrixWorld();
-  sun.intensity=clamp(sunY,0,1)*0.95;
+  sun.intensity=clamp(sunY,0,1)*1.25;   // stronger key light → clear directional shaping (AC's sunlit look)
   sun.color.copy(_sunNoon).lerp(_sunWarm,clamp(1-sunY,0,1)*0.8);
-  hemi.intensity=0.22+daylight*0.65;
-  amb.intensity=0.18+daylight*0.32;
+  hemi.intensity=0.16+daylight*0.46;   // less flat sky-fill so the sun defines form + shadow
+  amb.intensity=0.12+daylight*0.22;
   updateEnvIntensity(daylight);
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
   scene.fog.color.copy(_cNight).lerp(_cDay,daylight).lerp(_cWarm,warm*0.5);
@@ -2149,8 +2149,8 @@ function initThree(){
   waterGlint.scale.set(120,60,1);scene.add(waterGlint);
   scene.add(buildRain());
   // lights
-  hemi=new THREE.HemisphereLight(0xbcd0ff,0x4a4230,0.85);scene.add(hemi);
-  sun=new THREE.DirectionalLight(0xffe6b0,0.95);
+  hemi=new THREE.HemisphereLight(0xbcd0ff,0x4a4230,0.62);scene.add(hemi);
+  sun=new THREE.DirectionalLight(0xffedc2,1.25);
   sun.position.set(SUN_OFF.x,SUN_OFF.y,SUN_OFF.z);
   sun.castShadow=true;
   sun.shadow.mapSize.set(4096,4096);
@@ -2159,7 +2159,7 @@ function initThree(){
   sun.shadow.camera.top=72;sun.shadow.camera.bottom=-72;
   sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.035;sun.shadow.radius=2.2;
   scene.add(sun);scene.add(sun.target);
-  amb=new THREE.AmbientLight(0x404040,0.4);scene.add(amb);
+  amb=new THREE.AmbientLight(0x404040,0.28);scene.add(amb);
   initLightPool();
 
   // ground — per-pixel PBR; near the camera the detail tile shows crisp, far away it cross-fades
@@ -2228,7 +2228,7 @@ function initThree(){
   }
   scene.add(groundMesh);
   // ocean / lakes at sea level
-  waterMesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,128,128),new THREE.MeshPhongMaterial({color:0x18466e,specular:0xdcf0ff,shininess:210,transparent:true,opacity:0.85,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.55,0.55)}));
+  waterMesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,128,128),new THREE.MeshPhongMaterial({color:0x115982,specular:0xeaf6ff,shininess:300,transparent:true,opacity:0.86,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.6,0.6)}));
   // fresnel: dark/deep looking straight down, bright sky-reflection at grazing angles. Injected before
   // <fog_fragment> so distant water still blends into the fog. Keeps Phong ripples/specular/shadows.
   // vertex stage: two crossed travelling swells displace the (now 128×128) sheet so the sea
@@ -2241,8 +2241,8 @@ function initThree(){
       '            +sin(position.x*0.043-uWTime*1.4)*0.18+cos(position.y*0.037+uWTime*1.1)*0.15;');
     sh.fragmentShader=sh.fragmentShader.replace('#include <fog_fragment>',
     'float _fres=pow(1.0-clamp(dot(normalize(normal),normalize(vViewPosition)),0.0,1.0),3.0);\n'+
-    'gl_FragColor.rgb=mix(gl_FragColor.rgb*0.55,gl_FragColor.rgb+vec3(0.12,0.18,0.24),_fres);\n'+
-    'gl_FragColor.a=mix(0.74,0.97,_fres);\n#include <fog_fragment>'); };
+    'gl_FragColor.rgb=mix(gl_FragColor.rgb*0.48,gl_FragColor.rgb+vec3(0.17,0.25,0.35),_fres);\n'+   // deeper looking down, brighter sky-reflection at grazing angles
+    'gl_FragColor.a=mix(0.78,0.985,_fres);\n#include <fog_fragment>'); };
   waterMesh.rotation.x=-Math.PI/2;waterMesh.position.y=0;scene.add(waterMesh);
 
   CIRC=circleTex();
@@ -2328,14 +2328,15 @@ function initPost(){
   POST.comp=makePass(
     "varying vec2 vUv; uniform sampler2D tScene; uniform sampler2D tBloom; uniform float strength; uniform float vig;"+
     "void main(){ vec3 c=texture2D(tScene,vUv).rgb; vec3 b=texture2D(tBloom,vUv).rgb;"+
-    " c+=b*strength;"+                                            // additive glow
-    " float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,1.06);"+ // mild saturation lift
-    " c*=mix(vec3(0.98,0.99,1.03),vec3(1.04,1.01,0.97),clamp(l,0.0,1.0));"+ // cool shadows / warm highlights
-    " vec2 q=vUv-0.5; float d=dot(q,q); c*=1.0-smoothstep(0.24,0.8,d)*vig;"+ // vignette
+    " float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,1.18);"+ // richer saturation (AC's vivid fantasy palette)
+    " c=mix(c, c*c*(3.0-2.0*c), 0.16);"+                          // gentle S-curve — deeper shadows, snappier midtones
+    " c*=mix(vec3(0.95,0.975,1.07),vec3(1.08,1.02,0.92),clamp(l,0.0,1.0));"+ // cooler shadows / warmer highlights (sunlit warmth)
+    " c+=b*strength;"+                                            // additive glow (after grade so highlights stay hot)
+    " vec2 q=vUv-0.5; float d=dot(q,q); c*=1.0-smoothstep(0.24,0.82,d)*vig;"+ // vignette
     " float n=fract(sin(dot(vUv,vec2(12.9898,78.233)))*43758.5453);"+ // ordered-noise dither:
     " c+=(n-0.5)/255.0;"+                                          // kills sky-gradient banding
     " gl_FragColor=vec4(c,1.0); }",
-    {tScene:{value:null},tBloom:{value:null},strength:{value:0.7},vig:{value:0.32}});
+    {tScene:{value:null},tBloom:{value:null},strength:{value:0.74},vig:{value:0.33}});
 }
 function resizePost(){
   if(!POST.rtScene) return;
@@ -3949,7 +3950,28 @@ function addLifestone(x,z,bound,name,capital,region){
   scene.add(mesh);
   lifestones.push({x,z,bound,name,mesh,capital:!!capital,region});obstacles.push({x,z,r:1.2});
 }
-function roofPyramid(w,h,color){const r=new THREE.Mesh(new THREE.ConeGeometry(w,h,4),solid(color,true));r.rotation.y=Math.PI/4;r.castShadow=true;return r;}
+// procedural roof-tile/shingle texture — staggered rows with per-tile shading + shadowed gaps.
+// Kept light-grey so a building's roof colour tints it; baked into the per-town archetype (near-free).
+let _roofTex=null;
+function roofTex(){ if(_roofTex) return _roofTex;
+  const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+  g.fillStyle="#bcb4a6";g.fillRect(0,0,128,128);
+  const rows=9, rh=128/rows, tw=17;
+  for(let r=0;r<rows;r++){ const y=r*rh, off=(r%2)*(tw/2);
+    g.fillStyle="rgba(0,0,0,0.26)";g.fillRect(0,y,128,2);                     // shadow line under each course
+    for(let x=-tw;x<136;x+=tw){
+      const grd=g.createLinearGradient(0,y,0,y+rh);                           // rounded tile shading
+      grd.addColorStop(0,"rgba(255,255,255,0.18)");grd.addColorStop(0.55,"rgba(255,255,255,0.0)");grd.addColorStop(1,"rgba(0,0,0,0.16)");
+      g.fillStyle=grd;g.fillRect(x+off+1,y+2,tw-2,rh-2);
+      g.fillStyle="rgba(0,0,0,0.20)";g.fillRect(x+off,y+2,1,rh-2);            // seam between tiles
+    }
+  }
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,3);t.encoding=THREE.sRGBEncoding;
+  if(typeof renderer!=="undefined"&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  _roofTex=t;return t;
+}
+function roofMat(color){ return new THREE.MeshStandardMaterial({map:roofTex(),color,roughness:0.86,metalness:0.0,flatShading:true}); }
+function roofPyramid(w,h,color){const r=new THREE.Mesh(new THREE.ConeGeometry(w,h,4),roofMat(color));r.rotation.y=Math.PI/4;r.castShadow=true;return r;}
 // ── solid roofs: stepped square platforms approximate the pyramid so a player who lands on a
 //    roof stands on it (and can walk to the ridge) instead of falling through into the house. ──
 function pyramidRoofPlats(W,D,baseY,h){
@@ -4262,6 +4284,14 @@ function buildPlazaFeature(region,s){
     for(const sx of[-1,1]){const p=new THREE.Mesh(new THREE.CylinderGeometry(0.18*s,0.22*s,3.4*s,8),m);p.position.set(sx*1.4*s,1.7*s,0);p.castShadow=true;g.add(p);}
     const top=new THREE.Mesh(new THREE.BoxGeometry(3.8*s,0.32*s,0.45*s),m);top.position.y=3.5*s;g.add(top);
     const top2=new THREE.Mesh(new THREE.BoxGeometry(3.2*s,0.24*s,0.34*s),solid(0x2a1810));top2.position.y=3.05*s;g.add(top2);
+  }
+  // lit braziers flanking the plaza feature — vertical elements + warm pooled light that reads at night
+  for(const sx of[-1,1]){ const bg=new THREE.Group(); bg.position.set(sx*2.3*s,0,0);
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.11*s,0.16*s,1.3*s,8),solid(0x3a2c1c));post.position.y=0.65*s;post.castShadow=true;bg.add(post);
+    const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.36*s,0.2*s,0.3*s,10),solid(0x2a2620));bowl.position.y=1.42*s;bowl.castShadow=true;bg.add(bowl);
+    const coals=new THREE.Mesh(new THREE.SphereGeometry(0.26*s,8,6),new THREE.MeshBasicMaterial({color:0xff7a1a}));coals.scale.y=0.5;coals.position.y=1.54*s;bg.add(coals);
+    const fl=new THREE.PointLight(0xffa64d,1.15,15*s);fl.position.y=1.8*s;bg.add(fl);
+    g.add(bg);
   }
   return g;
 }
@@ -7760,6 +7790,7 @@ const AUGMENT_ITEMS=[
   {name:"Frenzy of the Slayer",         aug:{crit:0.03},                      desc:"+3% critical hit chance, forever"},
   {name:"Archmage's Endurance",         aug:{mn:25},                          desc:"+25 max mana, forever"},
   {name:"Infused Vigor",                aug:{hp:25},                          desc:"+25 max health, forever"},
+  {name:"Critical Protection",          aug:{critReduce:0.5},                 desc:"halve the extra damage from critical hits against you, forever"},
 ];
 function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,tier:5,legendary:true}; }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
@@ -8184,6 +8215,7 @@ function applyItem(it){
     if(a.dropReduce){ player.augment.dropReduce=Math.min(5,(player.augment.dropReduce||0)+a.dropReduce); }
     if(a.allskills){ player.augment.allskills=(player.augment.allskills||0)+a.allskills; }   // H17 Jack of All Trades
     if(a.xpBonus){ player.augment.xpBonus=Math.min(0.25,(player.augment.xpBonus||0)+a.xpBonus); }   // H17 XP aug (cap +25%)
+    if(a.critReduce){ player.augment.critReduce=Math.min(1,(player.augment.critReduce||0)+a.critReduce); }   // Critical Protection (cap: full crit negation)
     player.augment.hp+=a.hp||0; player.augment.st+=a.st||0; player.augment.mn+=a.mn||0; if(a.skillpts) player.skillPts+=a.skillpts;
     player.augment.resist=(player.augment.resist||0)+(a.resist||0); player.augment.magic=(player.augment.magic||0)+(a.magic||0); player.augment.crit=(player.augment.crit||0)+(a.crit||0);
     if(!it.aetheria) player.augment.count++;   // count this aug against the cap
@@ -8218,6 +8250,8 @@ function applyItem(it){
     log(`You drink the <b>${it.name}</b> — +${it.v} ${nm} for ${Math.round(it.dur/60)} min.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="attrpot"){ applyAttrBuff(it.attr,it.v,it.dur);
     log(`You quaff the <b>${it.name}</b> — +${it.v} ${it.attr} for ${Math.round(it.dur/60)} min.`,"loot"); if(SFX.quest)SFX.quest(); }
+  else if(it.stat==="attrgem"){ const dur=it.dur||300; applyAttrBuff(it.attr,it.v,dur);   // Alchemy Gem: crush to cast a timed self-buff
+    castFlash&&castFlash(0x9af0ff); log(`You crush the <b>${it.name}</b> and invoke its enchantment — +${it.v} ${it.attr} for ${Math.round(dur/60)} min.`,"heal"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="portalgem"){
     if(inDungeon||inNetwork){ log("You cannot open a portal from here.","warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
@@ -8311,6 +8345,20 @@ const RECIPES=[
   {id:"cook_tea",    skill:"cooking", name:"Phial of Mana Tea",    cost:6,  ico:"🍵", out:()=>({name:"Phial of Mana Tea",stat:"food",attr:"Focus",v:14,dur:180}), blurb:"+14 Focus food"},
   {id:"fletch_arrow",skill:"fletching",name:"Broadhead Arrows",    cost:5,  ico:"🏹", out:()=>({name:"Broadhead Arrow",stat:"ammo",for:"bow",dmg:4,v:4,count:15}), blurb:"15 arrows, +4 dmg"},
   {id:"fletch_bolt", skill:"fletching",name:"Steel Quarrels",      cost:5,  ico:"🏹", out:()=>({name:"Steel Quarrel",stat:"ammo",for:"crossbow",dmg:4,v:4,count:15}), blurb:"15 quarrels, +4 dmg"},
+  // H6: Alchemy oils applied to arrowheads → elemental ammo. Fletched (oil-tipped), each round carries an
+  //     elemental component fireArrow() reads off the ammo (burn/chill/stun/acid), matching AMMO_ITEMS drops.
+  {id:"fletch_fire_arrow", skill:"fletching",name:"Flaming Arrows",   cost:7, ico:"🔥", out:()=>({name:"Fire Arrow",stat:"ammo",for:"bow",dmg:3,element:"fire",v:3,count:12}),      blurb:"12 fire-oiled arrows"},
+  {id:"fletch_frost_arrow",skill:"fletching",name:"Frost Arrows",     cost:7, ico:"❄️", out:()=>({name:"Frost Arrow",stat:"ammo",for:"bow",dmg:3,element:"frost",v:3,count:12}),     blurb:"12 frost-oiled arrows"},
+  {id:"fletch_acid_arrow", skill:"fletching",name:"Acid Arrows",      cost:7, ico:"🧪", out:()=>({name:"Acid Arrow",stat:"ammo",for:"bow",dmg:3,element:"acid",v:3,count:12}),       blurb:"12 acid-oiled arrows"},
+  {id:"fletch_shock_arrow",skill:"fletching",name:"Storm Arrows",     cost:7, ico:"⚡", out:()=>({name:"Lightning Arrow",stat:"ammo",for:"bow",dmg:3,element:"shock",v:3,count:12}),  blurb:"12 storm-oiled arrows"},
+  {id:"fletch_fire_bolt",  skill:"fletching",name:"Flaming Quarrels", cost:7, ico:"🔥", out:()=>({name:"Fire Quarrel",stat:"ammo",for:"crossbow",dmg:3,element:"fire",v:3,count:12}),  blurb:"12 fire-oiled quarrels"},
+  {id:"fletch_frost_bolt", skill:"fletching",name:"Frost Quarrels",   cost:7, ico:"❄️", out:()=>({name:"Frost Quarrel",stat:"ammo",for:"crossbow",dmg:3,element:"frost",v:3,count:12}), blurb:"12 frost-oiled quarrels"},
+  {id:"fletch_acid_bolt",  skill:"fletching",name:"Acid Quarrels",    cost:7, ico:"🧪", out:()=>({name:"Acid Quarrel",stat:"ammo",for:"crossbow",dmg:3,element:"acid",v:3,count:12}),   blurb:"12 acid-oiled quarrels"},
+  {id:"fletch_shock_bolt", skill:"fletching",name:"Storm Quarrels",   cost:7, ico:"⚡", out:()=>({name:"Shock Quarrel",stat:"ammo",for:"crossbow",dmg:3,element:"shock",v:3,count:12}), blurb:"12 storm-oiled quarrels"},
+  // Alchemy Gems (AC trade gems): crush one to cast a timed self-buff — the alchemist's answer to Creature magic.
+  {id:"alch_gem_str",  skill:"alchemy", name:"Gem of Strength",     cost:12, ico:"💎", out:()=>({name:"Gem of Strength",stat:"attrgem",attr:"Strength",v:10,dur:300}),         blurb:"cast +10 Strength for 5 min"},
+  {id:"alch_gem_coord",skill:"alchemy", name:"Gem of Coordination", cost:12, ico:"💎", out:()=>({name:"Gem of Coordination",stat:"attrgem",attr:"Coordination",v:10,dur:300}), blurb:"cast +10 Coordination for 5 min"},
+  {id:"alch_gem_focus",skill:"alchemy", name:"Gem of Focus",        cost:12, ico:"💎", out:()=>({name:"Gem of Focus",stat:"attrgem",attr:"Focus",v:10,dur:300}),               blurb:"cast +10 Focus for 5 min"},
 ];
 const RECIPE_BY_ID={}; for(const r of RECIPES) RECIPE_BY_ID[r.id]=r;
 function craftChance(skill){ const st=skillTier(skill); if(st<1) return 0; return clamp(0.55+skillRank(skill)*0.003+(st>1?0.1:0),0.4,0.97); } // trained scales w/ rank, spec +10%
@@ -8418,7 +8466,13 @@ function playerHurt(dmg,sx,sz,type,element){
     }
   }
   dmg=Math.round(dmg*(1+recklessFactor()));   // Cb5 Recklessness: you also take more damage — the risk half of the trade
-  player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)); // combatT: recently-in-combat → Healing is less effective
+  // AC: creatures can land critical hits for double damage. The Critical Protection augmentation blunts the
+  //     extra (critReduce∈[0,1]; 1 = crits deal only normal damage). Coordination shaves a sliver of crit chance.
+  let _crit=false;
+  { const cc=clamp(0.10-player.attr.Coordination*0.0008,0.03,0.12);
+    if(Math.random()<cc){ _crit=true; const cr=Math.min(1,(player.augment&&player.augment.critReduce)||0); dmg=Math.round(dmg*(2-cr)); } }
+  player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)*(_crit?1.8:1)); // combatT: recently-in-combat → Healing is less effective
+  if(_crit){ if(SFX.crit)SFX.crit(); if(sx!==undefined)floater(player.x,EYE+0.95,player.z,"CRIT!","#ff5a3a"); }
   // a solid hit can shatter a spell you're mid-cast on — high Focus steadies your concentration
   if(player.casting){ const ic=clamp(0.55-player.attr.Focus*0.004,0.18,0.6);
     if(Math.random()<ic){ const nm=SPELLBOOK[player.casting.id]; player.casting=null; spellCd[nm.id]=now()+500;
@@ -13529,7 +13583,7 @@ function buildDungeon(def){
 }
 function enterDungeon(def,ex,ez){
   if(inDungeon) return;
-  if(def.name==="Colosseum"){ enterColosseum(def,ex,ez); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
+  if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
@@ -13587,34 +13641,37 @@ function buildArena(){
   arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
   const elbl=labelSprite("Leave the Colosseum — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
 }
-function enterColosseum(def,ex,ez){
+function enterColosseum(def,ex,ez,advanced){
   if(inDungeon) return;
-  // ticket gate: spend a Colosseum Ticket if held, else a pyreal fee
+  // AC's Advanced entrance is a veterans-only gauntlet — earn it by conquering the standard Colosseum first.
+  if(advanced && !(player.colosseumClears>0)){ log("The Advanced gate stays shut — <b>conquer the standard Colosseum</b> at least once before the veterans' gauntlet will admit you.","warn"); if(SFX.hit)SFX.hit(); return; }
+  // ticket gate: spend a Colosseum Ticket if held, else a pyreal fee (the Advanced gauntlet costs more)
   const ti=player.inv.findIndex(it=>it&&it.stat==="ticket");
-  const FEE=1000;
+  const FEE=advanced?2500:1000;
   if(ti>=0){ takeFromInv(ti); log("You present a <b>Colosseum Ticket</b> at the gate.","sys"); }
-  else if(player.gold>=FEE){ player.gold-=FEE; log(`You pay <b>${FEE}</b> pyreals for entry to the Colosseum.`,"sys"); }
-  else { log("The gatekeeper turns you away — you need a <b>Colosseum Ticket</b> or 1000 pyreals to enter.","warn"); if(SFX.hit)SFX.hit(); return; }
-  inDungeon=true;arenaActive=true;curDungeon=def;dungeonReturn={x:ex,z:ez};
+  else if(player.gold>=FEE){ player.gold-=FEE; log(`You pay <b>${FEE}</b> pyreals for entry to the ${advanced?"Advanced ":""}Colosseum.`,"sys"); }
+  else { log(`The gatekeeper turns you away — you need a <b>Colosseum Ticket</b> or ${FEE} pyreals to enter.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+  inDungeon=true;arenaActive=true;arenaAdvanced=!!advanced;curDungeon=def;dungeonReturn={x:ex,z:ez};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.35";   // open-air: only a light vignette
   buildArena();markSceneSRGB();
   arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
-  arenaWaves=5;arenaWave=0;arenaTimer=300;arenaInter=0;   // 5 rounds, 5-minute clock
-  toast("THE COLOSSEUM");
-  log("You stride onto the sand. <b>Five waves</b> stand between you and the vault — clear them before the clock runs out.","sys");
+  arenaWaves=advanced?8:5;arenaWave=0;arenaTimer=advanced?480:300;arenaInter=0;   // Advanced: 8 rounds, 8-minute clock
+  toast(advanced?"THE ADVANCED COLOSSEUM":"THE COLOSSEUM");
+  log(`You stride onto the sand. <b>${arenaWaves===8?"Eight":"Five"} waves</b>${advanced?" of the veterans' gauntlet":""} stand between you and the vault — clear them before the clock runs out.`,"sys");
   updateHUD&&updateHUD();
   arenaNextWave();
 }
 function arenaNextWave(){
   arenaWave++;
   if(arenaWave>arenaWaves){ arenaWin(); return; }
-  const tier=curDungeon?curDungeon.tier:5, adv=Math.min(1+arenaWave*0.25, 2.5);   // each wave hits harder
-  const count=2+arenaWave, cx=DCEN.x,cz=DCEN.z,R=20;
+  const tier=curDungeon?curDungeon.tier:5, adv=(arenaAdvanced?1.6:1)*Math.min(1+arenaWave*0.25, arenaAdvanced?3.5:2.5);   // each wave hits harder; the Advanced gauntlet far harder
+  const count=(arenaAdvanced?3:2)+arenaWave, cx=DCEN.x,cz=DCEN.z,R=20;
+  const shift=arenaAdvanced?2:0;   // Advanced skews the roster toward the deadlier end of the pool
   const pool=["drudge","mosswart","banderling","tumerok","skeleton","zombie","sclavus","lugian","olthoi","golem","virindi"];
   for(let i=0;i<count;i++){ const a=Math.random()*Math.PI*2,rr=8+Math.random()*(R-8);
-    const kind=pool[Math.min(pool.length-1, irnd(Math.max(0,arenaWave-2), Math.min(pool.length-1, arenaWave+3)))];
-    const elite=(i===0&&arenaWave>=3);   // a champion leads later waves
+    const kind=pool[Math.min(pool.length-1, irnd(Math.max(0,arenaWave-2+shift), Math.min(pool.length-1, arenaWave+3+shift)))];
+    const elite=(i===0&&arenaWave>=(arenaAdvanced?2:3));   // a champion leads later waves (sooner in the Advanced gauntlet)
     spawnDungeonMonster(kind, cx+Math.cos(a)*rr, cz+Math.sin(a)*rr, elite, adv);
   }
   log(`<b>Wave ${arenaWave}/${arenaWaves}</b> — the gates open and the foes pour in!`,"warn");
@@ -13630,24 +13687,27 @@ function updateArena(dt){
   }
 }
 function arenaWin(){
-  arenaActive=false;
+  const adv=arenaAdvanced;
+  arenaActive=false; arenaAdvanced=false;
   const cx=DCEN.x,cz=DCEN.z;
-  burst(cx,2,cz,0xffd23b,60); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
-  const gold=1500+player.level*40, xp=6000+player.level*300;
+  burst(cx,2,cz,0xffd23b,adv?90:60); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const gold=Math.round((1500+player.level*40)*(adv?2.2:1)), xp=Math.round((6000+player.level*300)*(adv?2.2:1));
   player.gold+=gold; gainXP(xp);
-  log(`<b>The Colosseum is conquered!</b> The vault opens: ${gold} pyreals, ${xp} XP, and its prizes.`,"sys");
-  toast("COLOSSEUM CLEARED");
-  // vault loot: two tier-7-equivalent items + a guaranteed Empyrean Ring
-  for(let i=0;i<2;i++){ const it=rollItem(true,5); if(!addToInv(it)) addDrop(cx+rnd(-2,2),cz+rnd(-2,2),{type:"item",item:it}); }
-  const ring=rollEmpyreanRing(); if(!addToInv(ring)) addDrop(cx,cz,{type:"item",item:ring});
-  log(`You claim the <b>${ring.name}</b> from the vault!`,"loot");
+  log(`<b>The ${adv?"Advanced ":""}Colosseum is conquered!</b> The vault opens: ${gold} pyreals, ${xp} XP, and its prizes.`,"sys");
+  toast(adv?"ADVANCED COLOSSEUM CLEARED":"COLOSSEUM CLEARED");
+  // vault loot: tier-5 items + guaranteed Empyrean Ring(s) — the Advanced gauntlet pays out richer
+  const nItems=adv?3:2, nRings=adv?2:1;
+  for(let i=0;i<nItems;i++){ const it=rollItem(true,5); if(!addToInv(it)) addDrop(cx+rnd(-2,2),cz+rnd(-2,2),{type:"item",item:it}); }
+  for(let i=0;i<nRings;i++){ const ring=rollEmpyreanRing(); if(!addToInv(ring)) addDrop(cx+rnd(-1.5,1.5),cz,{type:"item",item:ring});
+    log(`You claim the <b>${ring.name}</b> from the vault!`,"loot"); }
   player.colosseumClears=(player.colosseumClears||0)+1;
+  if(adv) player.advColosseumClears=(player.advColosseumClears||0)+1;
   checkAchievements&&checkAchievements();
   updateHUD&&updateHUD(); saveGame&&saveGame();
   setTimeout(()=>{ if(!arenaActive&&inDungeon) exitDungeon(true); }, 4000);   // auto-return to the world shortly after
 }
 function arenaFail(){
-  arenaActive=false;
+  arenaActive=false; arenaAdvanced=false;
   log("The clock runs out — the Colosseum crowd jeers as the gate hauls you back to the sand's edge.","warn");
   toast("OUT OF TIME"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
@@ -13898,7 +13958,7 @@ function saveGame(){
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
-      dye:player.dye,colosseumClears:player.colosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
+      dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
@@ -13938,11 +13998,11 @@ function applySaveObj(s){
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
-  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
+  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
   player.packBonus=s.packBonus|0;
-  player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0;   // H7 armour dye + H16 clears
+  player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0; player.advColosseumClears=s.advColosseumClears|0;   // H7 armour dye + H16 clears
   player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
   player.focusMana=+s.focusMana||0;   // H15 focus mana battery
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
