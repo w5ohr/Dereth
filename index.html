@@ -3879,6 +3879,9 @@ function buildWorld(){
   for(const o of netObjs) scene.remove(o);
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
+  // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
+  usedNpcNames=new Set();
+  for(const k in QUEST_GIVERS) usedNpcNames.add(QUEST_GIVERS[k].name);
 
   // the 25 cities of Dereth (each a bindable settlement; capitals are hubs)
   for(const c of CITIES) addCity(c);
@@ -3901,9 +3904,13 @@ function buildWorld(){
   { const byTown={};
     for(const id in QUEST_GIVERS){ const g=QUEST_GIVERS[id]; (byTown[g.town]=byTown[g.town]||[]).push(id); }
     for(const tn in byTown){ const c=CITIES.find(ct=>ct.name===tn); if(!c) continue;
-      const ids=byTown[tn], R=12.5;
-      ids.forEach((id,i)=>{ const a=(i/ids.length)*6.283 + (c.region||0)*0.7;
-        addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:QUEST_GIVERS[id].name, town:tn, questId:id, look:QUEST_GIVERS[id].look}); }); }
+      // one NPC per named character — a giver with several quests (chain sequels) holds them all
+      const byName={},order=[];
+      for(const id of byTown[tn]){ const nm=QUEST_GIVERS[id].name;
+        if(!byName[nm]){ byName[nm]=[]; order.push(nm); } byName[nm].push(id); }
+      const R=12.5;
+      order.forEach((nm,i)=>{ const ids=byName[nm], a=(i/order.length)*6.283 + (c.region||0)*0.7;
+        addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:nm, town:tn, questId:ids[0], questIds:ids, look:QUEST_GIVERS[ids[0]].look}); }); }
   }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*80-3,-21.2*80,{role:"reset_attr",name:"Chafulumisa"});
@@ -12430,9 +12437,16 @@ const NAME_POOLS={
   2:{first:["Salima","Yusuf","Amina","Rashid","Nadira","Kamil","Layla","Tariq","Zahra","Hakim","Farah","Jamil","Samira","Nasir","Aziza","Malik","Rana","Faisal","Habiba","Idris","Karima","Sohrab","Nabila","Umar"],
      last:["al-Yaraq","ibn Sayyid","al-Zahir","of the Oasis","al-Amun","ibn Rashad","al-Din"]},
 };
+let usedNpcNames=new Set();   // every NPC name in the world — townName never hands out one twice (reset per world build)
 function townName(region,seed){ const p=NAME_POOLS[region]||NAME_POOLS[0]; seed=Math.abs(seed|0);
-  const f=p.first[seed%p.first.length];
-  return f+((seed*7)%3===0?" "+p.last[(seed*13)%p.last.length]:""); }
+  const F=p.first.length,L=p.last.length,f0=p.first[seed%F];
+  const pick=n=>{ if(n&&!usedNpcNames.has(n)){ usedNpcNames.add(n); return n; } return null; };
+  // seeded style first; on collision walk the whole first×last combo space, then number the elders
+  let n=pick((seed*7)%3===0? f0+" "+p.last[(seed*13)%L] : f0);
+  if(!n) n=pick(f0);
+  for(let k=0;!n&&k<F*L;k++) n=pick(p.first[(seed+Math.floor(k/L))%F]+" "+p.last[(seed*13+k)%L]);
+  for(let r=2;!n;r++) n=pick(f0+" "+p.last[(seed*13)%L]+" "+(["II","III","IV","V","VI","VII","VIII","IX"][r-2]||r));
+  return n; }
 const RUMORS=[
   "They say the Olthoi Queen stirs again in the deep places of the world.",
   "Bind to a lifestone, friend — in Dereth, death is rarely the end.",
@@ -12488,8 +12502,9 @@ function buildNPC(role,name,seedX,look){
 function addNPC(x,z,opts){
   opts=opts||{}; const role=opts.role||"emissary";
   const name=opts.name||(NPC_ROLES[role]||NPC_ROLES.emissary).label;
+  usedNpcNames.add(name);   // fixed-name NPCs claim their name so townName never mints a twin
   const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29),opts.look);mesh.position.set(x,0,z);scene.add(mesh);
-  const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,_line:0};
+  const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,questIds:opts.questIds||null,_line:0};
   if(opts.stroll){ rec.stroll=true; rec.home={x,z}; rec.range=opts.range||3; }
   else obstacles.push({x,z,r:0.8});   // strollers move, so they aren't fixed obstacles
   npcs.push(rec);
@@ -12504,8 +12519,19 @@ function questNpcMarkerColor(qid){
   if(isRepeatable(qid) && onCooldown(qid)) return 0x8a7a4a;        // standing bounty cooling down — dim gold
   return 0xffd23b;                                                 // available to accept — gold
 }
+function resolveGiverQuest(n){ // a giver holding several quests speaks to the most pressing one
+  const ids=n&&n.questIds; if(!ids||!ids.length) return n?n.questId:null;
+  for(const id of ids) if(isActive(id)&&questCompleteId(id)) return id;   // ready to turn in
+  for(const id of ids) if(isActive(id)) return id;                        // in progress
+  for(const id of ids){ const cleared=isDone(id)&&!isRepeatable(id);      // next offerable (chains unlock in order)
+    if(!cleared&&questUnlocked(id)&&socOk(id)&&!(isRepeatable(id)&&onCooldown(id))) return id; }
+  for(const id of ids) if(isRepeatable(id)&&onCooldown(id)) return id;    // standing bounty cooling down
+  return ids[ids.length-1];                                               // everything done — reminisce
+}
 function updateNPCMarker(){ // every quest-bound NPC (Emissary + named givers) shows its own quest state
-  for(const n of npcs){ if(!n.questId) continue; const mk=n.mesh.userData&&n.mesh.userData.marker;
+  for(const n of npcs){ if(!n.questId) continue;
+    if(n.questIds&&n.questIds.length>1) n.questId=resolveGiverQuest(n);
+    const mk=n.mesh.userData&&n.mesh.userData.marker;
     if(mk) mk.material.color.setHex(questNpcMarkerColor(n.questId)); }
 }
 function compassTo(dx,dz){ // world: +x=East, +z=South
@@ -12542,7 +12568,8 @@ function showRewardChoice(q, name){
 }
 // conversation with a named quest-giver (or the Emissary), bound to one quest by id
 function talkQuestGiver(n){
-  const id=n&&n.questId; const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
+  const id=(n&&n.questIds&&n.questIds.length>1)?(n.questId=resolveGiverQuest(n)):(n&&n.questId);
+  const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
   const gv=QUEST_GIVERS[id]||{}; const name=(n&&n.name)||gv.name||q.giver;
   if(isActive(id)){
     const a=activeEntry(id);
