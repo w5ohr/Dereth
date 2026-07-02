@@ -224,6 +224,36 @@
   <div style="width:100%;height:8px;background:rgba(0,0,0,.55);border:1px solid #4a80a8;border-radius:5px;overflow:hidden"><i id="breathFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#2a6a9a,#7fd0ff)"></i></div>
 </div>
 <div id="atkHeight" style="position:fixed;left:50%;bottom:132px;transform:translateX(-50%);font-size:11px;color:#ffd86b;text-shadow:0 1px 2px #000;z-index:40;display:none;pointer-events:none">Attack: Middle</div>
+<!-- ═══ Decal plugin HUDs (toggled in Settings → Decal plugins) — interfaces styled after the real
+     AC plugin screenshots: GoArrow's arrow+coords HUD, VTank's parchment window with green LED
+     toggles, Alinco's buff list, Mag-Tools' session tracker tab. ═══ -->
+<div id="goarrow" style="display:none;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:41;text-align:center;pointer-events:auto;user-select:none">
+  <div id="gaDest" style="color:#fff;font-weight:bold;font-size:13px;text-shadow:0 1px 3px #000;cursor:pointer" title="Click to change destination">—</div>
+  <svg id="gaArrow" width="46" height="46" viewBox="-23 -23 46 46" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))">
+    <polygon points="0,-19 11,8 0,2 -11,8" fill="url(#gaChrome)" stroke="#2a2e36" stroke-width="1.4"/>
+    <defs><linearGradient id="gaChrome" x1="0" y1="-1" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f6fa"/><stop offset="0.45" stop-color="#9fb0c0"/><stop offset="0.55" stop-color="#5a6a7a"/><stop offset="1" stop-color="#cdd8e2"/>
+    </linearGradient></defs>
+  </svg>
+  <div id="gaInfo" style="color:#e8e4da;font-size:12px;text-shadow:0 1px 3px #000">—</div>
+  <select id="gaSel" style="display:none;margin-top:3px;background:#1d1a14;color:#e8e0c8;border:1px solid #6a5a3a;border-radius:4px;font-size:11px;max-width:180px"></select>
+</div>
+<div id="alinco" style="display:none;position:fixed;left:14px;top:196px;z-index:40;min-width:150px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Alinco Buffs</div>
+  <div id="alincoRows" style="padding:4px 8px 5px"></div>
+</div>
+<div id="vtank" style="display:none;position:fixed;right:14px;bottom:150px;z-index:40;width:196px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Virindi Tank <span style="font-weight:normal;opacity:.75">v0.3</span></div>
+  <div style="padding:5px 8px 6px">
+    <div class="vtrow" data-vt="buff" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Buffing</div>
+    <div class="vtrow" data-vt="loot" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Looting</div>
+    <div style="border-top:1px solid #a08a5a;margin-top:4px;padding-top:3px;color:#5a4a2e">State: <b id="vtState">Idle</b></div>
+  </div>
+</div>
+<div id="magtools" style="display:none;position:fixed;left:14px;top:196px;z-index:40;min-width:168px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Mag-Tools <span style="font-weight:normal;opacity:.75">· Combat Tracker</span></div>
+  <div id="magRows" style="padding:4px 8px 5px"></div>
+</div>
 <div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
   <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
   <span style="position:absolute;top:-2px;left:45%;width:2px;height:13px;background:#fff;opacity:.7"></span>
@@ -322,6 +352,7 @@
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
@@ -416,6 +447,10 @@
 #charCreator .cc-attr button:disabled{opacity:.35;cursor:default}
 #charCreator .cc-budget{font-size:11.5px;color:#9a8a66;margin:2px 0 4px}
 #charCreator #ccSkills button{font-size:11.5px;padding:4px 8px}
+/* Decal plugin HUDs — VTank's green LED toggles (per the real plugin screenshot) */
+.vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
+.vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
+#vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
 </style>
 <div id="charCreator"><div class="cc-wrap">
   <h2>✦ FORGE YOUR HERO ✦</h2>
@@ -9252,6 +9287,7 @@ function gainXP(amt){
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
     if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
   player.xp+=amt;player.xpUnspent+=amt;
+  if(typeof PLUG!=="undefined"&&PLUG.mag) PLUG.mag.xp+=amt;   // Mag-Tools combat tracker
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
   while(player.level<275&&player.xp>=need){   // AC hard level cap of 275 (XP past it still banks as unspent for skills/attributes)
@@ -10546,6 +10582,7 @@ function update(dt){
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
   updateCalendar(dt);
+  updatePlugins(dt);
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
@@ -11252,7 +11289,9 @@ function loop(ts){
 let actx=null,masterGain=null,muted=false,musicTimer=null;
 const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,
   labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
-  chat:{}};   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
+  chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
+  vtankBuff:true,vtankLoot:true,gaDest:"auto"};
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){} }
 function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){} }
@@ -14308,6 +14347,115 @@ function buildSpellbook(){
 document.getElementById('closeSpellbook').onclick=closeSpellbook;
 
 // ---- Settings menu ----
+// ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
+//     real plugin screenshots (AC wiki): GoArrow's chrome arrow with destination-over / distance-
+//     under + coords, Virindi Tank's parchment window with green LED toggles, Alinco's buff list,
+//     Mag-Tools' combat tracker. Toggled in Settings → "Decal plugins"; states persist. ═══
+const PLUGIN_DEFS=[
+  {k:"goarrow", n:"GoArrow",      d:"Destination arrow with distance + AC coordinates. Auto-tracks the saga chapter, your corpse, or your Lifestone — click the destination name to pick any town."},
+  {k:"alinco",  n:"Alinco Buffs", d:"Buff HUD — every active enchantment with its time remaining."},
+  {k:"vtank",   n:"Virindi Tank", d:"Combat assistant: rebuffs expiring enchantments when idle (20 mana each) and loots nearby drops."},
+  {k:"magtools",n:"Mag-Tools",    d:"Combat tracker — XP/hour, kills/hour, time to next level."},
+];
+const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
+function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
+  return Math.abs(N).toFixed(1)+(N>=0?"N":"S")+", "+Math.abs(E).toFixed(1)+(E>=0?"E":"W"); }
+function pluginOn(k){ return !!(settings.plugins&&settings.plugins[k]); }
+function applyPluginSettings(){
+  for(const p of PLUGIN_DEFS){ const el=document.getElementById(p.k); if(el) el.style.display=(pluginOn(p.k)&&running)?"block":"none"; }
+  const mt=document.getElementById('magtools'); if(mt) mt.style.top=pluginOn("alinco")?"334px":"196px";   // stack below Alinco when both live
+  if(pluginOn("magtools")&&!PLUG.mag&&typeof player!=="undefined") PLUG.mag={t0:performance.now(),xp:0,k0:player.kills||0};
+  vtPaint();
+}
+function vtPaint(){ document.querySelectorAll('#vtank .vtrow').forEach(r=>{
+  const on=r.dataset.vt==="buff"?settings.vtankBuff:settings.vtankLoot;
+  const led=r.querySelector('.vtled'); if(led) led.className="vtled"+(on?" on":""); }); }
+function initPluginUI(){
+  document.querySelectorAll('#vtank .vtrow').forEach(r=>{ r.onclick=()=>{
+    if(r.dataset.vt==="buff") settings.vtankBuff=!settings.vtankBuff; else settings.vtankLoot=!settings.vtankLoot;
+    saveSettings(); vtPaint(); }; });
+  const de=document.getElementById('gaDest'), sel=document.getElementById('gaSel');
+  if(de&&sel){
+    const opts=[["auto","◈ Auto (saga / corpse / lifestone)"],["valhalla","Castle Val Halla"]].concat(
+      CITIES.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>[c.name,c.name]));
+    sel.innerHTML=opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("");
+    sel.value=settings.gaDest||"auto";
+    de.onclick=()=>{ sel.style.display=sel.style.display==="none"?"inline-block":"none"; };
+    sel.onchange=()=>{ settings.gaDest=sel.value; saveSettings(); sel.style.display="none"; };
+  }
+}
+// GoArrow destination: "auto" = live saga objective → your corpse → bound Lifestone; else a town
+function gaTarget(){
+  const mode=settings.gaDest||"auto";
+  if(mode==="auto"){
+    const ce=(typeof currentCalEvent==="function")?currentCalEvent():null;
+    if(ce&&ce.goal&&ce.goal.v&&!calendarDone[ce.id]){ const p=sagaGoalPoint(ce.goal); if(p) return {x:p.x,z:p.z,label:"Saga: "+ce.name}; }
+    for(const d of drops) if(d.corpse) return {x:d.x,z:d.z,label:"Your corpse"};
+    const ls=lifestones.find(l=>l.bound); if(ls) return {x:ls.x,z:ls.z,label:ls.name+" Lifestone"};
+    return null;
+  }
+  if(mode==="valhalla") return {x:KC.x,z:KC.z+138,label:"Castle Val Halla"};
+  const c=CITIES.find(c=>c.name===mode); return c?{x:c.x,z:c.z,label:c.name}:null;
+}
+function updatePlugins(dt){
+  if(!running) return;
+  if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyPluginSettings(); }
+  // ── Virindi Tank behaviours ──
+  PLUG.t1-=dt;
+  if(pluginOn("vtank")&&PLUG.t1<=0){ PLUG.t1=0.4;
+    if(settings.vtankLoot&&player.alive&&!paused&&player.inv.length<invCap()){
+      let best=null,bd=4.5;
+      for(const d of drops){ if(d.type!=="item"||(d.shared&&!isOnline)) continue;
+        const dd=Math.hypot(d.x-player.x,d.z-player.z); if(dd<bd){bd=dd;best=d;} }
+      if(best){ if(best.shared){ netSend({t:"pickup",id:best.id}); }
+        else { lootItem(best.item); scene.remove(best.mesh); drops.splice(drops.indexOf(best),1); }
+        PLUG.vtMsg="Looting…"; PLUG.vtMsgT=2; }
+    }
+    if(settings.vtankBuff&&player.alive&&!paused&&!player.combatT){   // "Rebuff when idle"
+      const RECAST=(pool,label)=>{ if(!pool) return false;
+        for(const k of Object.keys(pool)){ const b=pool[k];
+          if(b&&b.t>0&&b.t<12&&player.mn>=20){ player.mn-=20; b.t=240;
+            log(`<span style="color:#9fd0ff">[VTank]</span> rebuffs <b>${label(k)}</b>.`,"sys");
+            PLUG.vtMsg="Rebuffing…"; PLUG.vtMsgT=2; return true; } }
+        return false; };
+      RECAST(player.spellBuffs,a=>a)||RECAST(player.skillBuffs,k=>(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k))||RECAST(player.banes,el=>el+" bane");
+    }
+    PLUG.vtMsgT-=0.4; const st=document.getElementById('vtState');
+    if(st) st.textContent=PLUG.vtMsgT>0?PLUG.vtMsg:(player.combatT?"Combat":"Idle");
+  }
+  // ── GoArrow tracks the camera every frame ──
+  if(pluginOn("goarrow")){
+    const t=gaTarget(), ar=document.getElementById('gaArrow'), de=document.getElementById('gaDest'), inf=document.getElementById('gaInfo');
+    if(ar&&de&&inf){ if(t){ const dx=t.x-player.x,dz=t.z-player.z,d=Math.hypot(dx,dz);
+        ar.style.transform="rotate("+(player.yaw-Math.atan2(-dx,-dz))+"rad)";   // forward = (-sin yaw, -cos yaw)
+        de.textContent=t.label; inf.textContent=Math.round(d)+" m · "+acCoordStr(t.x,t.z);
+      } else { de.textContent="No destination"; inf.textContent="—"; ar.style.transform="rotate(0rad)"; } }
+  }
+  // ── 1 Hz panels ──
+  PLUG.t2-=dt; if(PLUG.t2>0) return; PLUG.t2=1;
+  if(pluginOn("alinco")){
+    const rows=[];
+    if(player.spellBuffs) for(const a of Object.keys(player.spellBuffs)) rows.push(["+"+player.spellBuffs[a].v+" "+a,player.spellBuffs[a].t]);
+    if(player.skillBuffs) for(const k of Object.keys(player.skillBuffs)) rows.push(["+"+player.skillBuffs[k].v+" "+(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k),player.skillBuffs[k].t]);
+    if(player.banes) for(const el of Object.keys(player.banes)) rows.push([el[0].toUpperCase()+el.slice(1)+" Bane",player.banes[el].t]);
+    const el=document.getElementById('alincoRows');
+    if(el) el.innerHTML=rows.length?rows.sort((a,b)=>a[1]-b[1]).map(r=>{
+      const mm=Math.floor(r[1]/60), ss=Math.floor(r[1]%60);
+      return `<div style="display:flex;justify-content:space-between;gap:8px${r[1]<15?";color:#8a1e1e;font-weight:bold":""}"><span>${r[0]}</span><span>${mm}:${String(ss).padStart(2,"0")}</span></div>`;
+    }).join(""):'<div style="color:#7a6a4a">No active enchantments</div>';
+  }
+  if(pluginOn("magtools")&&PLUG.mag){
+    const hrs=Math.max((performance.now()-PLUG.mag.t0)/3600000,1/3600);
+    const xph=Math.round(PLUG.mag.xp/hrs), kph=Math.round((player.kills-PLUG.mag.k0)/hrs);
+    const need=(typeof xpForLevel==="function")?xpForLevel(player.level):0;
+    const eta=(xph>0&&need>player.xp)?(need-player.xp)/xph:null;
+    const fmt=s=>{const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?h+"h "+String(m).padStart(2,"0")+"m":m+"m";};
+    const el=document.getElementById('magRows');
+    if(el) el.innerHTML=[["Session",fmt((performance.now()-PLUG.mag.t0)/1000)],["XP / hour",xph.toLocaleString()],
+      ["Kills / hour",kph],["Next level",eta!=null?"~"+fmt(eta*3600):"—"]]
+      .map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
+  }
+}
 function openSettings(){
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
   const sens=document.getElementById('setSens'),vol=document.getElementById('setVol'),fov=document.getElementById('setFov');
@@ -14335,6 +14483,19 @@ function openSettings(){
       const paint=()=>{ b.style.opacity=settings.labels[k]!==false?1:0.35; };
       b.onclick=()=>{ settings.labels[k]=settings.labels[k]===false; paint(); saveSettings(); applyLabelSettings(); };
       paint(); lc.appendChild(b);
+    }
+  }
+  // Decal plugins: lit = loaded (click for on/off; hover for what each one does)
+  const pc=document.getElementById('setPlugins');
+  if(pc&&!pc.dataset.built){ pc.dataset.built="1";
+    if(!settings.plugins) settings.plugins={};
+    for(const p of PLUGIN_DEFS){
+      const b=document.createElement('button'); b.className="tbtn"; b.textContent=p.n; b.title=p.d;
+      b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ b.style.opacity=pluginOn(p.k)?1:0.35; };
+      b.onclick=()=>{ settings.plugins[p.k]=!pluginOn(p.k); paint(); saveSettings(); applyPluginSettings();
+        log(`<b>${p.n}</b> ${pluginOn(p.k)?"loaded":"unloaded"}. <span style="color:var(--dim)">${p.d}</span>`,"sys"); };
+      paint(); pc.appendChild(b);
     }
   }
   // per-channel chat colour + mute (click the name to mute, the swatch to recolour)

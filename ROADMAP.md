@@ -80,6 +80,18 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   tone-mapper was crushing to black. Verified midday grass relief, scrolling water normals, readable roofs.
   ◇ Further (optional): real fresnel water shader, screen-space reflections, MeshStandard PBR everywhere.
 
+## MILESTONE P — Decal plugin homages  ✅ (jsc + preview verified, 0 console errors)
+- ✅ **P1. In-game "Decal plugins"** (Settings → Decal plugins; each toggleable + persisted; interfaces
+  modeled on the real plugin screenshots from the AC wiki): **GoArrow** (chrome destination arrow —
+  name over, distance + authentic AC lat/long coords under; auto-tracks the live saga objective → your
+  corpse → bound Lifestone, or click the name for an atlas of every town; verified Holtburg = 42.3N,
+  33.3E) · **Alinco Buffs** (parchment buff HUD listing every active enchantment with its countdown,
+  red under 15 s) · **Virindi Tank v0.3** (parchment window, green LED toggles: Enable Buffing —
+  rebuffs enchantments expiring <12 s when idle at 20 mana each; Enable Looting — picks up item drops
+  within 4.5 u, online-aware; live State line) · **Mag-Tools Combat Tracker** (session time, XP/hour via
+  a gainXP tap, kills/hour, ETA to next level). Defaults: GoArrow + Alinco on, automation opt-in.
+  (Flynn's Minimap dungeon-walls plugin was already native — `drawDungeonMinimap`.)
+
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
   avatar sits to one side and the crosshair stays clear (verified: avatar projects off-center, on-screen).
