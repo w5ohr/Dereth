@@ -475,6 +475,18 @@
 .vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
 .vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
 #vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
+/* Universal drag grips — every game panel drags like the plugin windows (grip shows on hover) */
+.dragGrip{position:absolute;top:1px;right:1px;z-index:6;display:none;pointer-events:auto;cursor:move;
+  font-size:11px;line-height:1;padding:2px 4px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;user-select:none}
+.dragGrip:hover{color:#ffd86b;border-color:#8a7a52}
+#hud .panel:hover>.dragGrip, #log:hover>.dragGrip, #goarrow:hover>.dragGrip, #targetFrame:hover>.dragGrip,
+#minimap:hover>.dragGrip, #spellbar:hover>.dragGrip, #potions:hover>.dragGrip, #quest:hover>.dragGrip,
+#right:hover>.dragGrip, #vitals:hover>.dragGrip, #compassPanel:hover>.dragGrip, #partyHud:hover>.dragGrip{display:block}
+/* Chat box resize — a corner grip; the log is bottom-anchored so it grows up/right */
+#logResize{position:absolute;top:-6px;right:-6px;z-index:6;display:none;pointer-events:auto;cursor:nesw-resize;
+  font-size:12px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;padding:1px 4px;user-select:none}
+#log:hover #logResize{display:block}
+#logInner.sized{overflow-y:auto;pointer-events:auto}
 /* Chat tabs — All · Global · Team (allegiance) · Group (party) · Quest */
 #chatTabs{display:flex;gap:2px;margin-bottom:2px;pointer-events:auto}
 .ctab{font-size:10px;padding:2px 9px;background:rgba(10,8,5,.7);border:1px solid #3a3526;border-bottom:none;border-radius:5px 5px 0 0;color:#9a8a66;cursor:pointer}
@@ -5892,7 +5904,10 @@ function log(msg,cls="",tab){
 }
 function renderLog(){
   const vis=chatTab==="all"?logLines:logLines.filter(l=>l.tab===chatTab);
-  logInner.innerHTML=vis.slice(-8).map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");
+  const sized=logInner.classList.contains("sized");
+  const n=sized?Math.max(8,Math.floor((logInner.clientHeight||140)/17)):8;   // a taller chat box shows more history
+  logInner.innerHTML=vis.slice(-n).map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");
+  if(sized) logInner.scrollTop=logInner.scrollHeight;                        // stay pinned to the newest line
 }
 function setChatTab(t){
   chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; if(typeof saveSettings==="function") saveSettings(); }
@@ -11227,7 +11242,7 @@ function buildMiniToggles(){
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
 const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
-  "goarrow","alinco","vtank","magtools","targetFrame","idPanel"];   // every interface is movable (N-mode; parchment windows also drag by their header)
+  "goarrow","alinco","vtank","magtools","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -11249,11 +11264,47 @@ function initDragUI(){
     const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
     head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
       e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
-  document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
-    el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
-    el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
-  document.addEventListener('mouseup',()=>{ if(_uiDrag){ _uiDrag=null; saveUIPos(); } });
+  ensureGrips();   // hover ⠿ grips on every other panel — re-run periodically since some panels rebuild their innerHTML
+  // the chat box resizes by its corner grip (bottom-anchored: drag up/right to grow); size persists
+  const lg=document.getElementById('log');
+  if(lg&&!document.getElementById('logResize')){
+    const rz=document.createElement('div'); rz.id="logResize"; rz.textContent="◥"; rz.title="Drag to resize the chat window";
+    rz.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation();
+      const inner=document.getElementById('logInner');
+      _logRz={x0:e.clientX,y0:e.clientY,w0:lg.getBoundingClientRect().width,h0:inner.getBoundingClientRect().height}; });
+    lg.appendChild(rz);
+    document.addEventListener('mousemove',e=>{ if(!_logRz) return;
+      const w=clamp(_logRz.w0+(e.clientX-_logRz.x0),220,Math.min(720,innerWidth-40));
+      const h=clamp(_logRz.h0-(e.clientY-_logRz.y0),90,Math.min(560,innerHeight-160));
+      applyLogSize(w,h); });
+    document.addEventListener('mouseup',()=>{ if(_logRz){ _logRz=null;
+      if(typeof settings!=="undefined"){ settings.logSize={w:parseInt(lg.style.width)||340,h:parseInt(document.getElementById('logInner').style.height)||0};
+        if(typeof saveSettings==="function") saveSettings(); } } });
+  }
 }
+// every game panel gets a hover ⠿ grip that drags the same way as the plugin windows, anytime.
+// Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
+function ensureGrips(){
+  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","idPanel"].indexOf(id)>=0) continue;
+    const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
+    if(getComputedStyle(el).position==="static") el.style.position="relative";
+    const grip=document.createElement('div'); grip.className="dragGrip"; grip.textContent="⠿"; grip.title="Drag to move (or press N to move whole panels)";
+    grip.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation();
+      const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; });
+    el.appendChild(grip);
+  }
+}
+let _logRz=null;
+function applyLogSize(w,h){
+  const lg=document.getElementById('log'), inner=document.getElementById('logInner'); if(!lg||!inner) return;
+  if(w) lg.style.width=Math.round(w)+"px";
+  if(h){ inner.style.height=Math.round(h)+"px"; inner.classList.add("sized"); }
+  if(typeof renderLog==="function") renderLog();
+}
+document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
+  el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
+  el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
+document.addEventListener('mouseup',()=>{ if(_uiDrag){ _uiDrag=null; saveUIPos(); } });
 function initMinimap(){
   loadMiniPrefs();
   const inB=document.getElementById('mmIn'),outB=document.getElementById('mmOut'),gear=document.getElementById('mmGear'),tog=document.getElementById('mmToggles');
@@ -14666,6 +14717,7 @@ function updatePlugins(dt){
   if(!running) return;
   if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyUIVis();
     setChatTab(settings.chatTab||"all");                    // restore the last-used chat tab
+    if(settings.logSize&&settings.logSize.h) applyLogSize(settings.logSize.w,settings.logSize.h);   // …and its size
     const ix=document.getElementById('idClose'); if(ix) ix.onclick=closeIdPanel;
     document.addEventListener('keydown',e=>{ if(e.code==="Escape"&&document.getElementById('idPanel').style.display==="block"){ closeIdPanel(); } });
   }
@@ -14702,6 +14754,7 @@ function updatePlugins(dt){
   }
   // ── 1 Hz panels ──
   PLUG.t2-=dt; if(PLUG.t2>0) return; PLUG.t2=1;
+  if(typeof ensureGrips==="function") ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
   if(pluginOn("alinco")){
     const rows=[];
     if(player.spellBuffs) for(const a of Object.keys(player.spellBuffs)) rows.push(["+"+player.spellBuffs[a].v+" "+a,player.spellBuffs[a].t]);

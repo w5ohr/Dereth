@@ -111,6 +111,12 @@ Low risk, high faithfulness; all from verified research (Phase 6.6).
   the N-mode drag registry, and parchment windows drag by their title bar at ANY time.
 - ✅ **U5. Free-look**: the mouse looks around even without pointer lock whenever it rides the world
   canvas (over HUD panels/menus the cursor behaves normally, so buttons stay clickable).
+- ✅ **U7. Uniform drag + resizable chat** (jsc + preview e2e, 0 console errors): every game panel now
+  drags exactly like the plugin windows — a hover **⠿ grip** on each panel starts the same `_uiDrag`
+  path anytime, no N-mode needed (`ensureGrips()` re-runs at 1 Hz because the quickbar/party panels
+  rebuild their innerHTML and shed the grip); the chat window joined the drag registry. The **chat box
+  resizes** by a ◥ corner grip (bottom-anchored → grows up/right, 220–720 × 90–560), a taller box shows
+  more scrollable history pinned to the newest line, and the size persists (settings.logSize).
 - ✅ **U6. Tabbed chat** (jsc + preview e2e, 0 console errors): the chat window gained tabs —
   **All · Global** (say/tells/emotes) **· Team** (allegiance, `/a`, server `achat`) **· Group** (party,
   `/p`, server `pchat`) **· Quest** (saga/bounty/crier lines, keyword-classified). Plain text typed into
