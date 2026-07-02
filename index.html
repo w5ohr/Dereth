@@ -5873,10 +5873,11 @@ function buildItemModel(it,opts){
       else if(/broadsword|flamberge|zweihander|greatsword|spadone|claymore/.test(nm)){w=twoH?0.13:0.1;}
       if(wt==='dagger'){len=0.34;w=0.055;}
       const blade=_mkBlade(len,w,curve,belly,thick,steel);g.add(blade);
-      if(brand){blade.material.emissive.setHex(brand);blade.material.emissiveIntensity=0.5;}
+      if(brand){blade.material=blade.material.clone();blade.material.color.multiplyScalar(0.3);   // darken the steel so the glow colour dominates
+        blade.material.emissive.setHex(brand);blade.material.emissiveIntensity=0.95;}   // the bonus GLOWS
       _hilt(g,twoH?0.2:0.15,twoH?0.24:0.18,gold);
     }
-    if(brand){ const gl=new THREE.PointLight(brand,0.4,0.9);gl.position.y=0.5;g.add(gl); }
+    if(brand){ const gl=new THREE.PointLight(brand,0.7,1.3);gl.position.y=0.5;g.add(gl); }
   } else if(S==="worn"&&it.aslot==="offhand"){                      // SHIELDS — shaped per type, not just scaled
     const ty=it.shield||"kite", plate=_imat(tint,0.7,0.4), rimM=gold;
     if(ty==="buckler"||ty==="round"){ const r=ty==="buckler"?0.16:0.24;
@@ -7944,7 +7945,8 @@ function weaponProfile(){ const w=player.weapon; return (w&&w.wt&&WEAPON_TYPES[w
 // the held weapon's blade takes its colour from the equipped weapon's material, and glows with its brand
 const MAT_TINT={Iron:0x9aa0a8,Steel:0xc0c8d2,Bronze:0xb5793a,Brass:0xc9a43a,Copper:0xb0703a,Silver:0xd8dde4,Gold:0xffd23b,Pyreal:0xffe06a,Platinum:0xd0e0ee,
   Oak:0x8a6a3a,Mahogany:0x6a3a2a,Teak:0x9a7a4a,Ebony:0x2a2620,Pine:0xb89a6a,Diamond:0xdff0ff,Ruby:0xff5a6a,Sapphire:0x5a8aff,Emerald:0x4ad07a,Jet:0x2a2630,Onyx:0x3a3640};
-const BRAND_GLOW={fire:0xff6a1a,frost:0x6ad0ff,shock:0xfff060,nether:0x9b30ff,acid:0x8ad04a};
+// elemental item-bonus glow colours: fire=RED, acid=GREEN, lightning=BLUE, cold=WHITE (user-specified), nether=purple
+const BRAND_GLOW={fire:0xff2222,frost:0xf4f8ff,shock:0x3a7aff,nether:0x9b30ff,acid:0x3ae04a};
 function styleWeaponModel(){
   refreshAvatarWeapon();   // rebuild the 3rd-person held model to match the equipped weapon/focus
   if(typeof weaponHand==="undefined"||!weaponHand||!weaponHand.userData.blade) return;
