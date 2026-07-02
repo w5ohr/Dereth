@@ -200,8 +200,12 @@
     <div id="housingBody" style="font-size:12px;line-height:1.5"></div>
     <div style="color:var(--dim);font-size:11px;margin-top:10px">Press Y or Esc to close · items in your house storage persist forever, across sessions and death</div>
   </div>
-  <div id="log"><div class="panel2" id="logInner"></div>
-    <div id="chatBar" title="Click to chat — plain text speaks aloud; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
+  <div id="log">
+    <div id="chatTabs">
+      <button class="ctab on" data-tab="all">All</button><button class="ctab" data-tab="global">Global</button><button class="ctab" data-tab="team">Team</button><button class="ctab" data-tab="group">Group</button><button class="ctab" data-tab="quest">Quest</button><button class="ctab" data-tab="combat">Combat</button><button class="ctab" data-tab="craft">Craft</button>
+    </div>
+    <div class="panel2" id="logInner"></div>
+    <div id="chatBar" title="Click to chat — plain text speaks to the active tab; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
   </div>
   <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
     style="position:absolute;left:12px;bottom:56px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
@@ -224,6 +228,56 @@
   <div style="width:100%;height:8px;background:rgba(0,0,0,.55);border:1px solid #4a80a8;border-radius:5px;overflow:hidden"><i id="breathFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#2a6a9a,#7fd0ff)"></i></div>
 </div>
 <div id="atkHeight" style="position:fixed;left:50%;bottom:132px;transform:translateX(-50%);font-size:11px;color:#ffd86b;text-shadow:0 1px 2px #000;z-index:40;display:none;pointer-events:none">Attack: Middle</div>
+<!-- ═══ Decal plugin HUDs (toggled in Settings → Decal plugins) — interfaces styled after the real
+     AC plugin screenshots: GoArrow's arrow+coords HUD, VTank's parchment window with green LED
+     toggles, Alinco's buff list, Mag-Tools' session tracker tab. ═══ -->
+<div id="goarrow" style="display:none;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:41;text-align:center;pointer-events:auto;user-select:none">
+  <div id="gaDest" style="color:#fff;font-weight:bold;font-size:13px;text-shadow:0 1px 3px #000;cursor:pointer" title="Click to change destination">—</div>
+  <svg id="gaArrow" width="46" height="46" viewBox="-23 -23 46 46" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))">
+    <polygon points="0,-19 11,8 0,2 -11,8" fill="url(#gaChrome)" stroke="#2a2e36" stroke-width="1.4"/>
+    <defs><linearGradient id="gaChrome" x1="0" y1="-1" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f6fa"/><stop offset="0.45" stop-color="#9fb0c0"/><stop offset="0.55" stop-color="#5a6a7a"/><stop offset="1" stop-color="#cdd8e2"/>
+    </linearGradient></defs>
+  </svg>
+  <div id="gaInfo" style="color:#e8e4da;font-size:12px;text-shadow:0 1px 3px #000">—</div>
+  <select id="gaSel" style="display:none;margin-top:3px;background:#1d1a14;color:#e8e0c8;border:1px solid #6a5a3a;border-radius:4px;font-size:11px;max-width:180px"></select>
+</div>
+<div id="alinco" style="display:none;position:fixed;left:14px;top:196px;z-index:40;min-width:150px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Alinco Buffs</div>
+  <div id="alincoRows" style="padding:4px 8px 5px"></div>
+</div>
+<div id="vtank" style="display:none;position:fixed;right:14px;bottom:150px;z-index:40;width:196px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Virindi Tank <span style="font-weight:normal;opacity:.75">v0.3</span></div>
+  <div style="padding:5px 8px 6px">
+    <div class="vtrow" data-vt="buff" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Buffing</div>
+    <div class="vtrow" data-vt="loot" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Looting</div>
+    <div style="border-top:1px solid #a08a5a;margin-top:4px;padding-top:3px;color:#5a4a2e">State: <b id="vtState">Idle</b></div>
+  </div>
+</div>
+<div id="magtools" style="display:none;position:fixed;left:14px;top:196px;z-index:40;min-width:168px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Mag-Tools <span style="font-weight:normal;opacity:.75">· Combat Tracker</span></div>
+  <div id="magRows" style="padding:4px 8px 5px"></div>
+</div>
+<!-- Target frame (,/. cycles targets · left-click selects) + right-click appraisal window -->
+<div id="targetFrame" style="display:none;position:fixed;left:50%;top:148px;transform:translateX(-50%);z-index:41;width:180px;background:rgba(12,10,6,.82);border:1px solid #6a5a3a;border-radius:6px;padding:4px 8px 6px;font-size:12px">
+  <div id="tfName" style="color:#ffd86b;font-weight:bold;text-align:center;text-shadow:0 1px 2px #000">—</div>
+  <div class="bar bhp"><i style="width:100%"></i><span id="tfHp"></span></div>
+  <div class="bar bst"><i style="width:100%"></i><span id="tfSt"></span></div>
+  <div class="bar bmn"><i style="width:100%"></i><span id="tfMn"></span></div>
+</div>
+<div id="idPanel" style="display:none;position:fixed;right:230px;top:160px;z-index:60;width:220px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.55);font-size:12px;color:#2a2014">
+  <div class="idHead">✦ Appraisal <span class="idX" id="idClose">✕</span></div>
+  <div style="padding:6px 8px 8px">
+    <div style="text-align:center"><canvas id="idPortrait" width="150" height="150" style="width:150px;height:150px;border:1px solid #6a4a2a;border-radius:5px;background:#241c10"></canvas></div>
+    <div id="idName" style="font-weight:bold;text-align:center;margin:4px 0 2px">—</div>
+    <div id="idBars" style="display:none">
+      <div class="bar bhp"><i style="width:100%"></i><span id="idHp"></span></div>
+      <div class="bar bst"><i style="width:100%"></i><span id="idSt"></span></div>
+      <div class="bar bmn"><i style="width:100%"></i><span id="idMn"></span></div>
+    </div>
+    <div id="idBody" style="margin-top:4px;line-height:1.45"></div>
+  </div>
+</div>
 <div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
   <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
   <span style="position:absolute;top:-2px;left:45%;width:2px;height:13px;background:#fff;opacity:.7"></span>
@@ -322,6 +376,8 @@
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Show or hide any on-screen interface (each also has an ✕ and a keybind — see Map Keys → HUD Toggles)">Interfaces</span><span id="setHud" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
@@ -416,6 +472,38 @@
 #charCreator .cc-attr button:disabled{opacity:.35;cursor:default}
 #charCreator .cc-budget{font-size:11.5px;color:#9a8a66;margin:2px 0 4px}
 #charCreator #ccSkills button{font-size:11.5px;padding:4px 8px}
+/* Decal plugin HUDs — VTank's green LED toggles (per the real plugin screenshot) */
+.vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
+.vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
+#vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
+/* Universal drag grips — every game panel drags like the plugin windows. The HUD layer is
+   pointer-events:none, so parent :hover can never fire — the grips stay ALWAYS visible (faint,
+   brightening under their own cursor, which works because the grip itself takes pointer events). */
+.dragGrip,.hudX{position:absolute;top:1px;z-index:6;display:block;opacity:.38;pointer-events:auto;
+  font-size:11px;line-height:1;padding:2px 4px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;user-select:none}
+.dragGrip{right:18px;cursor:move}
+.hudX{right:1px;cursor:pointer}
+.dragGrip:hover,.hudX:hover{opacity:1;color:#ffd86b;border-color:#8a7a52}
+/* the potion belt introduces itself — it was an unlabeled mystery box */
+#potions::before{content:"POTION BELT";position:absolute;top:-13px;left:6px;font-size:9px;letter-spacing:1px;color:#9a8a66}
+/* Chat box resize — a corner grip; the log is bottom-anchored so it grows up/right */
+#logResize{position:absolute;top:-6px;right:-6px;z-index:6;display:none;pointer-events:auto;cursor:nesw-resize;
+  font-size:12px;color:#cbb88a;background:rgba(10,8,5,.75);border:1px solid #4a3f2a;border-radius:4px;padding:1px 4px;user-select:none}
+#log:hover #logResize{display:block}
+#logInner.sized{overflow-y:auto;pointer-events:auto}
+.lg.cmb{color:#c9b09a;font-size:11px}   /* per-hit combat spam reads quieter than event lines */
+/* Chat tabs — All · Global · Team (allegiance) · Group (party) · Quest */
+#chatTabs{display:flex;gap:2px;margin-bottom:2px;pointer-events:auto}
+.ctab{font-size:10px;padding:2px 9px;background:rgba(10,8,5,.7);border:1px solid #3a3526;border-bottom:none;border-radius:5px 5px 0 0;color:#9a8a66;cursor:pointer}
+.ctab.on{background:rgba(30,24,14,.92);color:#e8d8b0;font-weight:bold}
+.ctab.unread{color:#ffd23b}
+.ctab.unread::after{content:" •"}
+/* Target frame + right-click appraisal window — vital bars share the character's .bhp/.bst/.bmn gradients */
+#targetFrame .bar,#idPanel .bar{height:11px;margin:2px 0;background:#1a140c;border:1px solid #4a3a20;border-radius:3px;position:relative;overflow:hidden}
+#targetFrame .bar i,#idPanel .bar i{display:block;height:100%}
+#targetFrame .bar span,#idPanel .bar span{position:absolute;inset:0;text-align:center;font-size:9px;line-height:11px;color:#fff;text-shadow:0 1px 2px #000}
+.idHead{background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px;display:flex;justify-content:space-between;cursor:move}
+.idX{cursor:pointer;color:#f0d0b0;padding:0 3px}.idX:hover{color:#fff}
 </style>
 <div id="charCreator"><div class="cc-wrap">
   <h2>✦ FORGE YOUR HERO ✦</h2>
@@ -908,10 +996,10 @@ const BESTIARY={
   drudge:   {name:"Drudge Skulker",c:0x6b8f4e,size:0.9,hp:34, dmg:7, spd:5.0,xp:120, gold:[2,9],  range:0,  sense:34,tall:1.4,shape:"humanoid"},
   mosswart: {name:"Mosswart",      c:0x3f7d6a,size:1.0,hp:52, dmg:11,spd:4.3,xp:200, gold:[4,14], range:0,  sense:36,tall:1.0,shape:"blob"},
   reedshark:{name:"Reedshark",     c:0x9a3b30,size:1.1,hp:70, dmg:14,spd:8.0,xp:300, gold:[6,18], range:0,  sense:42,tall:0.8,shape:"beast",dmgEl:"pierce"},
-  tusker:   {name:"Tusker",        c:0xcaa56b,size:1.7,hp:160,dmg:24,spd:5.0,xp:620, gold:[14,40],range:0,  sense:43,tall:1.2,shape:"tusker",dmgEl:"pierce"},
+  tusker:   {name:"Tusker",        c:0x7d7266,size:1.7,hp:160,dmg:24,spd:5.0,xp:620, gold:[14,40],range:0,  sense:43,tall:1.2,shape:"tusker",dmgEl:"pierce"},
   shadow:   {name:"Shadow Caster", c:0x7a4fae,size:1.0,hp:64, dmg:16,spd:3.8,xp:420, gold:[10,26],range:30, sense:47,tall:1.6,shape:"caster",mres:0.35},
   olthoi:   {name:"Olthoi Warrior",c:0xb03a3a,size:2.0,hp:300,dmg:34,spd:6.2,xp:1400,gold:[40,90],range:0,  sense:52,tall:1.1,shape:"insect",dmgEl:"pierce"},
-  banderling:{name:"Banderling",   c:0x7a6b3a,size:1.3,hp:120,dmg:20,spd:6.0,xp:520, gold:[12,32],range:0,  sense:44,tall:1.5,shape:"humanoid"},
+  banderling:{name:"Banderling",   c:0x5b4632,size:1.3,hp:120,dmg:20,spd:6.0,xp:520, gold:[12,32],range:0,  sense:44,tall:1.5,shape:"humanoid"},
   auroch:   {name:"Auroch",        c:0x8a6a4a,size:1.6,hp:200,dmg:26,spd:7.6,xp:760, gold:[16,44],range:0,  sense:46,tall:1.1,shape:"horns"},
   gromnie:  {name:"Gromnie",       c:0x3a6a4a,size:1.4,hp:150,dmg:18,spd:5.0,xp:680, gold:[14,40],range:28, sense:48,tall:0.85,shape:"beast"},
   lugian:   {name:"Lugian",        c:0x8a8278,size:1.9,hp:240,dmg:30,spd:4.6,xp:900, gold:[20,55],range:0,  sense:46,tall:1.3,shape:"lugian"},
@@ -981,6 +1069,9 @@ let scene,cam,renderer,sun;
 let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,quad:null,bright:null,blur:null,comp:null};
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
 let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[];  // self-cast (crouch→raise) vs forward cast
+let castKind="self";   // "self" (buff/heal on self) | "bolt" (offensive thrust) | "bestow" (gift a spell to an ally)
+// Generic avatar activity gesture (gather/mine/craft/tinker/fish) — a timed pose the animator plays over `dur`.
+function startAction(type,dur){ if(!player.alive) return; player.act={type,t:dur,dur}; }
 let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // world activity/visibility culling: only the area around the player is simulated & drawn (perf).
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
@@ -1537,7 +1628,142 @@ const FACILITY_LIST=[
 const FACILITY_PORTALS=FACILITY_LIST.map(([name,req])=>{const def=DUNGEONS.find(d=>d.name===name);return def&&{def,req};}).filter(Boolean);
 const HUBS=CITIES.concat(DUNGEONS); // content (scenery, monsters) clusters around these
 // ---- terrain: mountains, valleys, hills, lakes, and an ocean rim ----
+// ═══ THE REAL DERETH — terrain sampled from the AC client's own cell data (user-supplied dats,
+//     exported by tools/ac_dat_export.py into assets/acmap.png: R = height-table index,
+//     G = terrain type 0–31, B = road bits). Falls back to the legacy procedural island when the
+//     data texture is missing/unreadable, so the game still runs standalone. ═══
+const AC_HEIGHTS=[0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,104,106,108,110,112,114,116,118,120,122,124,126,128,130,132,134,136,138,140,142,144,146,148,150,152,154,156,158,160,162,164,166,168,170,172,174,176,178,180,182,184,186,188,190,192,194,196,198,200,202,204,206,208,210,212,214,216,218,220,222,224,226,228,230,232,234,236,238,240,242,244,246,248,250,252,254,256,258,260,262,264,266,268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298,300,302,304,306,308,310,312,314,316,318,320,322,324,326,328,330,332,334,336,338,340,342,344,346,348,350,352,354,356,358,360,362,364,366,368,370,372,374,376,378,380,382,384,386,388,390,392,394,396,398,400,404,408,412,416,420,424,428,432,436,440,444,448,452,456,460,464,468,472,476,480,484,488,492,496,500,504,508,512,516,520,524,528,532,536,540,544,548,552,556,560,568,576,584,592,600,608,616,624,632,640,650,660,670,680,700];
+const ACMAP={on:false,W:2041,H:null,T:null,Rd:null};
+const AC_VSCALE=1/3;   // AC metres → world units (24 m cells → 8 u grid, so 1/3 keeps slopes true)
+ACMAP.load=function(){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{ try{
+        const W=ACMAP.W, c=document.createElement('canvas'); c.width=c.height=W;
+        const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(img,0,0);
+        const d=g.getImageData(0,0,W,W).data, n=W*W;
+        ACMAP.H=new Float32Array(n); ACMAP.T=new Uint8Array(n); ACMAP.Rd=new Uint8Array(n);
+        for(let i=0;i<n;i++){ ACMAP.H[i]=AC_HEIGHTS[d[i*4]]*AC_VSCALE; ACMAP.T[i]=d[i*4+1]; ACMAP.Rd[i]=d[i*4+2]; }
+        // low-pass the heights to the ground mesh's 40u resolution: the raw field carries 8u detail,
+        // and sampling that at 40u aliases into jagged shards. Two separable box passes ≈ gaussian.
+        for(let pass=0;pass<2;pass++){
+          const src=ACMAP.H, tmp=new Float32Array(n);
+          for(let r=0;r<W;r++){ const o=r*W;                      // horizontal
+            for(let c=0;c<W;c++){ let s=0,k=0;
+              for(let dx=-2;dx<=2;dx++){ const cc=c+dx; if(cc>=0&&cc<W){ s+=src[o+cc]; k++; } }
+              tmp[o+c]=s/k; } }
+          for(let c=0;c<W;c++){                                    // vertical
+            for(let r=0;r<W;r++){ let s=0,k=0;
+              for(let dy=-2;dy<=2;dy++){ const rr=r+dy; if(rr>=0&&rr<W){ s+=tmp[rr*W+c]; k++; } }
+              src[r*W+c]=s/k; } }
+        }
+        ACMAP.on=true;
+        for(const t of FLATTEN) t.h=Math.max(8,terrainBase(t.x,t.z));   // re-seat every town & castle plateau on the REAL ground
+        console.log("ACMAP: the real Dereth is loaded");
+      }catch(e){ console.warn("ACMAP unreadable ("+e.message+") — procedural terrain fallback"); }
+      res(); };
+    img.onerror=()=>{ console.warn("ACMAP texture missing — procedural terrain fallback"); res(); };
+    img.src="assets/acmap.png";
+  });
+};
+// world → data-texture: column = x/8+1019.5 (west→east), row = z/8+1020.5 (image row 0 = north)
+function acType(x,z){ if(!ACMAP.on) return -1;
+  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  if(c<0||c>=W||r<0||r>=W) return 20; return ACMAP.T[r*W+c]; }
+function acRoad(x,z){ if(!ACMAP.on) return 0;
+  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  if(c<0||c>=W||r<0||r>=W) return 0; return ACMAP.Rd[r*W+c]; }
+const AC_WATER_DEPTH={16:-2.5,17:-2.5,18:-3.2,19:-3.2,20:-6.5};   // running/fresh · shallow sea · deep sea
+function acHeight(x,z){
+  const W=ACMAP.W, fc=x/8+1019.5, fr=z/8+1020.5;
+  if(fc<0||fc>=W-1||fr<0||fr>=W-1) return -30;                    // beyond the charted world: open ocean
+  const c0=Math.floor(fc), r0=Math.floor(fr), tc=fc-c0, tr=fr-r0, i=r0*W+c0;
+  let h=ACMAP.H[i]*(1-tc)*(1-tr)+ACMAP.H[i+1]*tc*(1-tr)+ACMAP.H[i+W]*(1-tc)*tr+ACMAP.H[i+W+1]*tc*tr;
+  const ty=ACMAP.T[Math.round(fr)*W+Math.round(fc)];
+  const wd=AC_WATER_DEPTH[ty]; if(wd!==undefined) h=Math.min(h,wd);   // rivers & seas cut below the water plane
+  return h;
+}
+// ═══ RETAIL VENDORS — every town's authentic merchants and their REAL shop stock, from the
+//     ACE-World community database (assets/acvendors.json · tools/ace_world_export.py +
+//     ace_trim_towns.py). Wares translate into our item system by name; the untranslatable
+//     sell as curios. Missing file → the generic vendor rotation, unchanged. ═══
+const ACV={on:false,catalog:null,towns:null};
+ACV.load=function(){
+  return fetch("assets/acvendors.json").then(r=>r.json()).then(j=>{
+    ACV.catalog=j.catalog; ACV.towns=j.towns; ACV.on=true;
+    console.log("ACV: retail vendors loaded for "+Object.keys(j.towns).length+" towns");
+  }).catch(e=>console.warn("ACV unavailable ("+e.message+") — generic vendors"));
+};
+function acVendorType(name,stockNames){
+  const n=name.toLowerCase();
+  if(/archmage|scrivener|scribe|enchanter/.test(n)) return "scrivener";
+  if(/healer|apothec/.test(n)) return "healer";
+  if(/jeweler|gem/.test(n)) return "jeweler";
+  if(/bowyer|weapons/.test(n)) return "weaponsmith";
+  if(/blacksmith|armorer|smith/.test(n)) return "armorer";
+  if(/grocer|provision|butcher|baker|barkeep|innkeep/.test(n)) return "provisioner";
+  if(/tailor|outfit|shopkeep|pawn/.test(n)) return "outfitter";
+  const s=stockNames.join(" ").toLowerCase();
+  if(/scarab|talisman|tome|parchment/.test(s)) return "scrivener";
+  if(/potion|healing kit/.test(s)) return "healer";
+  if(/\bbow\b|arrow|sword|quarrel/.test(s)) return "weaponsmith";
+  if(/breastplate|leggings|gauntlet/.test(s)) return "armorer";
+  if(/cheese|bread|wine|beef|pie/.test(s)) return "provisioner";
+  return "outfitter";
+}
+function acPrice(v){ return clamp(Math.max(2,Math.round((v||20)/5)),2,6000); }
+function acItemRow(nm,val){
+  const n=nm.toLowerCase(), cost=acPrice(val), P=(g,ico,desc)=>({name:nm,cost,desc,ico,gear:g});
+  const wep=(wt,base)=>P({name:nm,stat:"weapon",wt,v:clamp(Math.round((val||50)/40)+base,6,26)},"⚔️",(WEAPON_TYPES[wt]?wt:"melee")+" · authentic Dereth arms");
+  const noteM=n.match(/trade note \(([\d,]+)\)/);
+  if(noteM){ const amt=Math.round(+noteM[1].replace(/,/g,"")/50);
+    return {name:nm,cost:clamp(amt,2,20000),desc:"portable pyreal certificate",ico:"💵",gear:{name:nm,stat:"note",v:amt}}; }
+  if(/arrow/.test(n)&&!/head/.test(n)) return P({name:nm,stat:"ammo",for:"bow",dmg:2,v:2,count:20},"🏹","20 arrows — bonus bow damage");
+  if(/quarrel|bolt\b/.test(n)) return P({name:nm,stat:"ammo",for:"crossbow",dmg:3,v:3,count:20},"🏹","20 quarrels — bonus crossbow damage");
+  if(/\bdart\b|djarid/.test(n)) return P({name:nm,stat:"ammo",for:"atlatl",dmg:2,v:2,count:20},"🏹","20 darts — bonus atlatl damage");
+  if(/crossbow|arbalest/.test(n)) return wep("crossbow",8);
+  if(/shortbow|longbow|\bbow\b|yumi|nayin/.test(n)) return wep("bow",6);
+  if(/atlatl/.test(n)) return wep("atlatl",6);
+  if(/dagger|knife|jambiya|kris|stiletto|dirk/.test(n)) return wep("dagger",5);
+  if(/spear|yari|trident|pike|naginata|partizan/.test(n)) return wep("spear",7);
+  if(/throwing/.test(n)) return wep("dagger",4);
+  if(/\baxe\b|hatchet|silifi|\bono\b|war axe/.test(n)) return wep("axe",8);
+  if(/mace|club|kasrukha|mazule|jitte|morning star|war hammer/.test(n)) return wep("mace",8);
+  if(/sword|scimitar|rapier|sabre|saber|\bken\b|yaoji|takuba|shamshir|flamberge|epee|schlager|spada|tachi/.test(n)) return wep("sword",8);
+  if(/staff|sceptre|scepter|wand|\borb\b/.test(n)) return P({name:nm,stat:"weapon",wt:"focus",v:4,foc:4},"🔮","casting focus · +4 all magic");
+  const at=/plate|metal|celdon|nariyid|chiran|olthoi/.test(n)?"heavy":/studded|chain|scale|yoroi|koujia|amuli/.test(n)?"medium":"light";
+  const arm=(aslot,base)=>P({name:nm,stat:"worn",at,aslot,v:clamp(Math.round((val||60)/30)+base,8,26)},"🛡",at+" "+aslot+" armour");
+  if(/tower shield/.test(n)) return P({name:nm,stat:"worn",at:"heavy",aslot:"offhand",shield:"tower",v:26},"🛡","heavy shield — great guard, slows you");
+  if(/kite shield|large shield|round shield/.test(n)) return P({name:nm,stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:16},"🛡","balanced shield");
+  if(/buckler|shield/.test(n)) return P({name:nm,stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9},"🛡","light shield");
+  if(/breastplate|cuirass|hauberk|shirt|doublet|tunic|robe|gown|jerkin|coat\b/.test(n)) return arm("chest",8);
+  if(/helm|basinet|\bcap\b|cowl|kabuton|coif/.test(n)) return arm("head",6);
+  if(/gauntlet|glove/.test(n)) return arm("hands",5);
+  if(/greaves|leggings|tasset|pants|trousers|breeches|kilt|skirt/.test(n)) return arm("legs",7);
+  if(/boot|shoe|solleret|sandal/.test(n)) return arm("feet",5);
+  if(/bracer|vambrace|sleeves/.test(n)) return arm("lowerarm",5);
+  if(/pauldron|shoulder/.test(n)) return arm("upperarm",5);
+  if(/girth|\bbelt\b/.test(n)) return arm("chest",4);
+  if(/potion of healing|health (potion|draught|tonic)|healing (potion|draught|tonic)|elixir of health/.test(n)) return P({name:nm,stat:"hp",v:60},"🧪","restores 60 health");
+  if(/mana (potion|draught|tonic)|elixir of mana/.test(n)) return P({name:nm,stat:"mn",v:60},"🔷","restores 60 mana");
+  if(/stamina (potion|draught|tonic)/.test(n)) return P({name:nm,stat:"st",v:60},"⚡","restores 60 stamina");
+  if(/healing kit|first aid/.test(n)) return P({name:nm,stat:"hot",pool:"hp",rate:6,dur:12},"💉","mends 6 health/s for 12 s");
+  if(/scarab|talisman|taper|ginseng|hyssop|mandrake|frankincense|saffron|henbane|eyebright|comfrey|damiana|yarrow|amaranth|wormwood|bloodroot|nightshade|\bsage\b|\brue\b|vervain|belladonna|foxglove|powdered|dragon's blood|quill|\bink\b|turpeth|springwort|brimstone|cadmia|cobalt|colophony|gypsum|quicksilver|realgar|stipite|verdigris|vitriol/.test(n)) return P({name:nm,stat:"comp",v:Math.max(4,cost)},"🪲","spell component");
+  if(/lockpick/.test(n)) return P({name:nm,stat:"pick",v:1},"🔓","opens a locked cache");
+  if(/\bkey\b/.test(n)) return P({name:nm,stat:"key",v:1},"🔑","opens a locked cache");
+  if(/backpack|\bpack\b|\bsack\b|pouch|basket/.test(n)) return P({name:nm,stat:"pack",cap:3,v:3},"🎒","+3 satchel slots");
+  if(/cheese|bread|pie\b|cake|egg|grape|apple|beef|chicken|fish|stew|ration|milk|wine|stout|\bale\b|cider|sake|\btea\b|mead|water\b|jerky|melon|pear|olive|carrot|mushroom|honey|noodle|rice\b|tofu/.test(n)) return P({name:nm,stat:"food",attr:"Endurance",v:2,dur:90},"🍖","hearty fare · +2 Endurance for 90 s");
+  return P({name:nm,stat:"trophy",v:Math.max(3,Math.round((val||15)/6))},"📦","curio · an authentic Dereth trade good");
+}
+function acTownVendors(townName){
+  if(!ACV.on||!ACV.towns[townName]) return null;
+  return ACV.towns[townName].map(v=>{
+    const st=v.stock.map(id=>ACV.catalog[id]).filter(Boolean);
+    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v))};
+  });
+}
 function terrainBase(x,z){
+  if(ACMAP.on) return acHeight(x,z);
   const d=Math.hypot(x,z);
   let h = 24
     + Math.sin(x*0.0009)*Math.cos(z*0.0011)*60          // broad hills & valleys (valleys dip below sea → lakes)
@@ -2275,9 +2501,26 @@ function initThree(){
   // Normals are computed analytically from the terrainH gradient (identical on both sides of a
   // border), so the chunk seams are invisible.
   const col=new THREE.Color();
+  // AC terrain-type ground palette (LandDefs types 0–31, from the client's own cell data)
+  const AC_TYPE_COL=[
+    [0.46,0.42,0.38],[0.34,0.50,0.25],[0.78,0.86,0.93],[0.26,0.48,0.20],   // BarrenRock · Grassland · Ice · LushGrass
+    [0.30,0.38,0.24],[0.42,0.32,0.22],[0.13,0.11,0.14],[0.52,0.44,0.32],   // Marsh · MudRichDirt · ObsidianPlain · PackedDirt
+    [0.50,0.42,0.30],[0.42,0.53,0.27],[0.82,0.72,0.46],[0.66,0.63,0.52],   // PatchyDirt · PatchyGrassland · SandYellow · SandGrey
+    [0.62,0.56,0.42],[0.50,0.46,0.42],[0.47,0.44,0.38],[0.90,0.92,0.96],   // SandRockStrewn · Sedimentary · SemiBarrenRock · Snow
+    [0.20,0.34,0.40],[0.22,0.36,0.40],[0.22,0.38,0.44],[0.22,0.38,0.44],   // water types (visible on shorelines under the plane)
+    [0.18,0.32,0.42],[0.46,0.52,0.32],[0.40,0.48,0.28],[0.44,0.50,0.30],   // deep sea · prairie-ish spares
+    [0.42,0.46,0.30],[0.38,0.46,0.28],[0.40,0.44,0.30],[0.42,0.48,0.30],
+    [0.40,0.46,0.30],[0.42,0.46,0.32],[0.40,0.44,0.30],[0.44,0.38,0.28]];
   const groundVertColor=(wx,wz,hh)=>{
     const t=regionTint(wx,wz);
     let rr=t[0],gg=t[1],bb=t[2];
+    if(ACMAP.on){                                        // the REAL ground: colour straight from the client's terrain bytes
+      const ty=acType(wx,wz), tc=AC_TYPE_COL[ty]||AC_TYPE_COL[1];
+      const j=0.94+Math.sin(wx*0.37)*Math.sin(wz*0.41)*0.06;               // per-vertex jitter so fields never read flat
+      rr=tc[0]*j; gg=tc[1]*j; bb=tc[2]*j;
+      if(acRoad(wx,wz)){ rr=0.46; gg=0.37; bb=0.26; }                      // the authentic AC road web, packed earth
+      return col.setRGB(rr,gg,bb);
+    }
     // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
     const bmv=biomeAt(wx,wz);
     if(bmv==="desert"){ rr=0.90;gg=0.78;bb=0.50; }
@@ -3451,21 +3694,24 @@ function cDrudge(g,b,s){const m=solid(0x24211d),red=solid(0xc0301e),d=solid(0x2b
   return s*1.95;}
 
 // AC Banderling: gray-skinned muscular humanoid in a RED tunic, heavy muzzle with lower tusks, pointed ears
-function cBanderling(g,b,s){const m=solid(0x8a8f96),red=solid(0x992a22),strap=solid(0x3a1a14),tu=solid(0xf0ead8);
-  const chest=part(g,new THREE.SphereGeometry(s*0.6,12,10),red,0,s*1.28,0);chest.scale.set(1.22,1.2,0.95); // red-tunic torso
-  part(g,new THREE.BoxGeometry(s*1.0,s*0.55,s*0.85),red,0,s*0.95,0);                        // red tunic skirt
-  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.13,s*1.0,s*0.13),strap,sx*s*0.24,s*1.2,s*0.42); // chest straps
-  part(g,new THREE.CylinderGeometry(s*0.2,s*0.24,s*0.2,10),m,0,s*1.62,0);                   // thick gray neck
+// AC Banderling: shaggy brown-furred ape/yeti brute — barrel torso, huge shoulders, long thick arms,
+// grey-brown exposed skin on face/hands, tan muzzle, lower tusks (underbite), fights with mauls.
+function cBanderling(g,b,s){const m=solid(0x726a5e),fur=solid(0x5b4632),strap=solid(0x2a1a12),tu=solid(0xf0ead8),muz=solid(0x8a7a5c);
+  const chest=part(g,new THREE.SphereGeometry(s*0.6,12,10),fur,0,s*1.28,0);chest.scale.set(1.22,1.2,0.95); // furred barrel torso
+  part(g,new THREE.BoxGeometry(s*1.0,s*0.55,s*0.85),fur,0,s*0.95,0);                        // furred midsection
+  for(let i=0;i<8;i++)part(g,new THREE.IcosahedronGeometry(s*0.2,0),fur,rnd(-0.55,0.55)*s,s*(1.05+rnd(0,0.5)),rnd(-0.5,0.35)*s); // shaggy coat clumps
+  for(const sx of[-1,1])part(g,new THREE.BoxGeometry(s*0.12,s*0.9,s*0.12),strap,sx*s*0.24,s*1.2,s*0.44); // harness straps
+  part(g,new THREE.CylinderGeometry(s*0.2,s*0.24,s*0.2,10),m,0,s*1.62,0);                   // thick neck
   const head=part(g,new THREE.SphereGeometry(s*0.34,11,9),m,0,s*1.85,s*0.05);head.scale.set(1,1.05,1.05);
-  part(g,new THREE.SphereGeometry(s*0.26,10,8),m,0,s*1.74,s*0.34).scale.set(1.05,0.8,1.0);  // heavy muzzle
+  part(g,new THREE.SphereGeometry(s*0.26,10,8),muz,0,s*1.74,s*0.34).scale.set(1.05,0.8,1.0);  // tan muzzle
   part(g,new THREE.BoxGeometry(s*0.5,s*0.09,s*0.14),m,0,s*1.99,s*0.28);                      // brow ridge
   for(const sx of[-1,1])spike(g,tu,sx*s*0.12,s*1.66,s*0.5,s*0.04,s*0.2,-0.5);               // lower tusks (underbite)
   for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.08,s*0.24,6),m,sx*s*0.34,s*1.98,0,0,0,sx*0.6); // pointed ears
   addEye(g,s*0.06,0xffcf3b,-s*0.11,s*1.9,s*0.33);addEye(g,s*0.06,0xffcf3b,s*0.11,s*1.9,s*0.33);
-  for(const sx of[-1,1]){part(g,new THREE.SphereGeometry(s*0.24,10,8),red,sx*s*0.6,s*1.5,0); // red shoulder pads
-    limb(g,m,sx*s*0.62,s*1.05,s*0.05,s*0.16,s*0.13,s*1.35,0.25,sx*0.16,"arm");                     // long gray arms
-    part(g,new THREE.SphereGeometry(s*0.18,8,7),m,sx*s*0.78,s*0.32,s*0.18);}                 // big gray fists
-  for(const sx of[-1,1])limb(g,m,sx*s*0.28,s*0.7,0,s*0.18,s*0.14,s*0.72,0,sx*0.05,"leg");          // thick gray legs
+  for(const sx of[-1,1]){part(g,new THREE.SphereGeometry(s*0.28,10,8),fur,sx*s*0.6,s*1.5,0); // furred shoulders
+    limb(g,m,sx*s*0.62,s*1.05,s*0.05,s*0.16,s*0.13,s*1.35,0.25,sx*0.16,"arm");                     // long arms
+    part(g,new THREE.SphereGeometry(s*0.18,8,7),m,sx*s*0.78,s*0.32,s*0.18);}                 // big fists
+  for(const sx of[-1,1])limb(g,m,sx*s*0.28,s*0.7,0,s*0.18,s*0.14,s*0.72,0,sx*0.05,"leg");          // thick legs
   return s*2.05;}
 
 // AC Mosswart: upright bright-green toad-humanoid, pale yellow-green throat/belly, wide flat toad head, bulging eyes
@@ -3497,22 +3743,25 @@ function cReedshark(g,b,s){const m=skinMat("reedshark","scales"),d=solid(b.c),pa
   limb(g,d,0,s*0.32,-s*0.55,s*0.13,s*0.1,s*0.62,0,0,"leg");                                        // single central hind leg (tripod stance)
   return s*1.55;}
 
-function cTusker(g,b,s){const m=skinMat("tusker","scales"),d=solid(b.c),tu=solid(0xe8e0c8);
-  const body=part(g,new THREE.SphereGeometry(s*0.78,12,10),m,0,s*1.0,0);body.scale.set(1.15,1.0,1.55);
-  part(g,new THREE.SphereGeometry(s*0.5,10,9),m,0,s*1.35,-s*0.2).scale.set(1.0,0.8,1.1);      // humped back
-  const head=part(g,new THREE.SphereGeometry(s*0.55,12,10),m,0,s*1.02,s*1.0);head.scale.set(1.05,1.0,1.05);
-  part(g,new THREE.CylinderGeometry(s*0.2,s*0.26,s*0.55,9),m,0,s*0.82,s*1.4,Math.PI/2.3);     // broad snout
-  part(g,new THREE.SphereGeometry(s*0.12,8,7),solid(0x1a1008),0,s*0.78,s*1.66);               // nose
-  addEye(g,s*0.08,0xffd23b,-s*0.28,s*1.2,s*1.05);addEye(g,s*0.08,0xffd23b,s*0.28,s*1.2,s*1.05);
-  for(const sx of[-1,1])spike(g,tu,sx*s*0.28,s*0.78,s*1.4,s*0.09,s*0.85,Math.PI*0.42,sx*0.18); // up-curved tusks
-  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.1,s*0.4,5),m,sx*s*0.44,s*1.45,s*0.72,0,0,sx*0.5); // ears
-  const steel=solid(0xb8bcc4,true),rivet=solid(0x6a6e76);
-  part(g,new THREE.SphereGeometry(s*0.7,12,8,0,Math.PI*2,0,Math.PI*0.55),steel,0,s*1.05,-s*0.05).scale.set(1.18,1.0,1.5); // armored back barding
-  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.34,10,8),steel,sx*s*0.62,s*1.2,s*0.15).scale.set(1,1,1.1); // shoulder pauldrons
-  part(g,new THREE.BoxGeometry(s*0.7,s*0.16,s*0.06),steel,0,s*1.28,s*1.28);                   // brow/tusk face plate
-  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.04,6,5),rivet,sx*s*0.24,s*1.28,s*1.31); // face-plate rivets
-  for(const sx of[-1,1])for(const fz of[-1,1])limb(g,d,sx*s*0.46,s*0.42,fz*s*0.62,s*0.19,s*0.15,s*0.85,0,0,"leg"); // 4 pillar legs
-  return s*1.9;}
+// AC Tusker: hulking apelike brute — barrel torso, hunched forward, huge muscular arms reaching the ground
+// (knuckle stance), heavy tusked warthog head with paired up-curving lower tusks, short powerful legs.
+function cTusker(g,b,s){const m=skinMat("tusker","scales"),d=solid(0x4f463b),tu=solid(0xe6dcc1),saddle=solid(0x8f3a2e),bel=solid(0xa89578);
+  const body=part(g,new THREE.SphereGeometry(s*0.66,12,10),m,0,s*1.15,0);body.scale.set(1.3,1.2,1.15);   // barrel torso
+  part(g,new THREE.SphereGeometry(s*0.52,10,9),m,0,s*1.6,-s*0.28).scale.set(1.25,0.95,1.05);             // humped shoulders/back
+  part(g,new THREE.SphereGeometry(s*0.46,10,9),saddle,0,s*1.68,-s*0.3).scale.set(1.0,0.55,0.85);          // colored "back" saddle (Crimsonback etc.)
+  part(g,new THREE.SphereGeometry(s*0.5,10,9),bel,0,s*1.0,s*0.24).scale.set(1.0,1.1,0.72);                // pale chest/belly
+  const head=part(g,new THREE.SphereGeometry(s*0.42,12,10),m,0,s*1.42,s*0.6);head.scale.set(1.1,0.95,1.05); // low-slung head thrust forward
+  part(g,new THREE.BoxGeometry(s*0.52,s*0.16,s*0.12),m,0,s*1.58,s*0.8);                                   // heavy brow ridge
+  part(g,new THREE.CylinderGeometry(s*0.24,s*0.3,s*0.5,9),m,0,s*1.3,s*0.9,Math.PI/2.2);                   // warthog snout
+  part(g,new THREE.SphereGeometry(s*0.1,8,7),solid(0x1a1008),0,s*1.26,s*1.16);                            // nose
+  addEye(g,s*0.07,0xffd23b,-s*0.17,s*1.48,s*0.84);addEye(g,s*0.07,0xffd23b,s*0.17,s*1.48,s*0.84);
+  for(const sx of[-1,1])spike(g,tu,sx*s*0.17,s*1.16,s*1.0,s*0.07,s*0.72,-Math.PI*0.14,sx*0.12);           // paired lower tusks, up-curving
+  for(const sx of[-1,1])part(g,new THREE.ConeGeometry(s*0.09,s*0.3,5),m,sx*s*0.34,s*1.6,s*0.48,0,0,sx*0.5); // ears
+  for(const sx of[-1,1]){ part(g,new THREE.SphereGeometry(s*0.3,10,9),m,sx*s*0.66,s*1.5,s*0.02);          // massive shoulders
+    limb(g,d,sx*s*0.7,s*1.08,s*0.14,s*0.2,s*0.16,s*1.2,0.22,sx*0.12,"arm");                               // thick arm to the ground
+    part(g,new THREE.SphereGeometry(s*0.23,9,8),d,sx*s*0.82,s*0.34,s*0.34); }                             // big knuckle fist
+  for(const sx of[-1,1])limb(g,d,sx*s*0.28,s*0.6,-s*0.06,s*0.2,s*0.16,s*0.68,0,sx*0.06,"leg");            // short powerful legs
+  return s*2.0;}
 
 function cAuroch(g,b,s){const m=skinMat("auroch","mottle"),d=solid(b.c),hm=solid(0xe8e0c8);
   const body=part(g,new THREE.SphereGeometry(s*0.72,12,10),m,0,s*1.0,0);body.scale.set(1.05,1.0,1.7);
@@ -3602,8 +3851,9 @@ function cMattekar(g,b,s){const m=skinMat("mattekar","scales"),d=solid(b.c),ho=s
   addEye(g,s*0.08,0x7fe0ff,-s*0.2,s*0.94,s*0.98);addEye(g,s*0.08,0x7fe0ff,s*0.2,s*0.94,s*0.98);
   for(const sx of[-1,1])spike(g,ho,sx*s*0.22,s*1.12,s*0.7,s*0.07,s*0.42,0,sx*0.5);                // horns
   for(let i=0;i<4;i++)spike(g,ho,0,s*1.08,s*0.5-i*s*0.28,s*0.06,s*0.24,0.2);                      // spine ridge
-  for(const sx of[-1,1])for(const fz of[-1,1]){limb(g,d,sx*s*0.4,s*0.36,fz*s*0.52,s*0.13,s*0.1,s*0.7,0,0,"leg");
-    for(let c=0;c<3;c++)spike(g,ho,sx*s*0.4+(c-1)*s*0.07,s*0.03,fz*s*0.52+s*0.12,s*0.03,s*0.16,Math.PI/2);} // clawed feet
+  for(const[lx,lz,lr]of[[-0.4,0.52,-0.12],[0.4,0.52,0.12],[0,-0.55,0]]){   // tripod: two forelegs + one central hind leg (reedshark plan)
+    limb(g,d,lx*s,s*0.36,lz*s,s*0.14,s*0.1,s*0.72,0,lr,"leg");
+    for(let c=0;c<3;c++)spike(g,ho,lx*s+(c-1)*s*0.07,s*0.03,lz*s+s*0.12,s*0.03,s*0.16,Math.PI/2);} // clawed feet
   return s*1.45;}
 function cSkeleton(g,b,s){const bone=solid(0xe8e4d8);
   part(g,new THREE.BoxGeometry(s*0.34,s*0.18,s*0.22),bone,0,s*0.95,0);                    // pelvis
@@ -3672,23 +3922,28 @@ function cMite(g,b,s){const m=skinMat("mite","spots");
   for(const sx of[-1,1])limb(g,m,sx*s*0.14,s*0.4,0,s*0.07,s*0.05,s*0.5,0,0,"leg");
   return s*1.65;}
 // AC Sclavus: green reptilian lizardman warrior — snouted head, neck frill, curved blade + round shield, tail
-function cSclavus(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),cloth=solid(0x8a7a4a),steel=solid(0xb0b6c0),blade=solid(0xd8dde6),bone=solid(0xf0ead8);
+function cSclavus(g,b,s){const m=solid(b.c),d=solid(0x35502f),cloth=solid(0x8a7a4a),steel=solid(0xb0b6c0),blade=solid(0xd8dde6),bone=solid(0xf0ead8),belly=solid(0xc7b26a);
   limb(g,m,0,s*1.0,0,s*0.28,s*0.34,s*0.95,0.05);                                  // upright scaly torso
-  part(g,new THREE.BoxGeometry(s*0.62,s*0.45,s*0.42),cloth,0,s*0.82,0);           // loincloth wrap
+  // legless serpent lower body: torso descends into a thick tail that coils on the ground
+  part(g,new THREE.CylinderGeometry(s*0.26,s*0.32,s*0.7,10),m,0,s*0.52,0);        // thick serpent trunk
+  part(g,new THREE.CylinderGeometry(s*0.24,s*0.28,s*0.6,9),belly,0,s*0.52,s*0.14).scale.set(0.6,1,0.5); // pale belly scales
+  part(g,new THREE.TorusGeometry(s*0.36,s*0.17,8,16),m,0,s*0.17,s*0.04,Math.PI/2);// coiled base on the ground
+  part(g,new THREE.ConeGeometry(s*0.16,s*1.1,8),m,s*0.32,s*0.2,s*0.36,-1.3,0,0.3);// tail tip curling out of the coil
   const head=part(g,new THREE.SphereGeometry(s*0.26,10,9),m,0,s*1.62,s*0.05);head.scale.set(1,0.95,1.2); // reptile head
+  for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.3,10,8,0,Math.PI,0,Math.PI),m,sx*s*0.16,s*1.5,-s*0.12).scale.set(1,1.1,0.35); // flared cobra hood
   part(g,new THREE.ConeGeometry(s*0.14,s*0.42,7),m,0,s*1.58,s*0.34,Math.PI/2);    // snout
   part(g,new THREE.BoxGeometry(s*0.24,s*0.04,s*0.34),bone,0,s*1.55,s*0.34);       // teeth
   for(const sx of[-1,1])addEye(g,s*0.05,0xffd23b,sx*s*0.11,s*1.67,s*0.2);
   for(let i=0;i<4;i++)spike(g,d,0,s*(1.72-i*0.1),-s*0.08-i*s*0.09,s*0.035,s*0.16,-0.3); // head/neck frill
   for(const sx of[-1,1])part(g,new THREE.SphereGeometry(s*0.14,8,7),m,sx*s*0.34,s*1.42,0); // shoulders
-  limb(g,m,s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.62,0.5,0.35);                    // right arm
+  for(const sx of[-1,1]){limb(g,m,sx*s*0.3,s*0.98,s*0.08,s*0.06,s*0.045,s*0.5,0.6,sx*0.42,"arm"); // lower 2nd pair of arms (Sclavi have up to four)
+    part(g,new THREE.SphereGeometry(s*0.06,7,6),m,sx*s*0.5,s*0.66,s*0.3);}         // clawed lower hands
+  limb(g,m,s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.62,0.5,0.35);                    // right arm (blade)
   part(g,new THREE.CylinderGeometry(s*0.028,s*0.028,s*0.18,6),solid(0x5a3f22),s*0.62,s*0.78,s*0.3); // hilt
   part(g,new THREE.BoxGeometry(s*0.05,s*0.66,s*0.02),blade,s*0.66,s*1.12,s*0.32,0,0,0.28); // curved blade
   limb(g,m,-s*0.4,s*1.15,s*0.06,s*0.08,s*0.06,s*0.55,0.5,-0.35);                  // left arm
   const sh=part(g,new THREE.CylinderGeometry(s*0.3,s*0.3,s*0.05,12),steel,-s*0.52,s*1.08,s*0.32,Math.PI/2);sh.scale.set(1,1,1.15); // shield
   part(g,new THREE.SphereGeometry(s*0.08,8,7),solid(0x6a6e76),-s*0.52,s*1.08,s*0.38); // shield boss
-  for(const sx of[-1,1])limb(g,m,sx*s*0.18,s*0.55,0,s*0.1,s*0.08,s*0.55);         // digitigrade legs
-  part(g,new THREE.ConeGeometry(s*0.14,s*0.85,7),m,0,s*0.55,-s*0.52,-Math.PI/2.3); // tail
   return s*1.9;}
 // AC Zefir: purple winged bat-demon — lean body, horned muzzle, large membranous bat wings, tail
 function cZefir(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),memb=new THREE.MeshStandardMaterial({color:0x7a9a68,transparent:true,opacity:0.5,side:THREE.DoubleSide});
@@ -3701,8 +3956,8 @@ function cZefir(g,b,s){const m=solid(b.c),d=solid(0x3a5a2a),memb=new THREE.MeshS
     for(let f=0;f<3;f++)spike(g,d,sx*s*0.32,s*1.15,-s*0.1,s*0.03,s*0.9,0.2+f*0.15,sx*(0.5+f*0.5)); // wing spar bones
     const w=new THREE.Mesh(new THREE.PlaneGeometry(s*1.0,s*0.85),memb);w.position.set(sx*s*0.7,s*1.05,-s*0.25);w.rotation.y=sx*0.5;w.rotation.z=sx*0.2;g.add(w);jreg(g,w,"wing"); // membrane
   }
-  for(const sx of[-1,1])limb(g,m,sx*s*0.22,s*0.9,s*0.05,s*0.05,s*0.04,s*0.5,0.3,sx*0.3); // arms
-  for(const sx of[-1,1])limb(g,m,sx*s*0.13,s*0.42,0,s*0.06,s*0.045,s*0.42);       // legs
+  for(const sx of[-1,1])limb(g,m,sx*s*0.22,s*0.9,s*0.05,s*0.05,s*0.04,s*0.5,0.3,sx*0.3,"arm"); // arms
+  for(const sx of[-1,1])limb(g,m,sx*s*0.13,s*0.42,0,s*0.06,s*0.045,s*0.42);       // legs (dangle in flight)
   part(g,new THREE.ConeGeometry(s*0.08,s*0.6,6),m,0,s*0.85,-s*0.3,-Math.PI/2.2);  // tail
   return s*1.6;}
 function cMonouga(g,b,s){const m=solid(b.c);
@@ -3747,22 +4002,41 @@ function cWisp(g,b,s){
   const rayMat=new THREE.MeshBasicMaterial({color:b.c,transparent:true,opacity:0.5});
   for(let i=0;i<6;i++){const a=i/6*6.28;spike(g,rayMat,Math.cos(a)*s*0.4,s*1.2,Math.sin(a)*s*0.4,s*0.06,s*0.3,Math.PI/2,a);}
   return s*1.7;}
-function cGolem(g,b,s){const rock=solid(0x54545a,true),panel=solid(0x9a9a95,true);
+// AC has two golem forms: a carved stone statue, and a levitating cluster of floating material chunks.
+function cGolem(g,b,s){ return (Math.random()<0.5)?cGolemStatue(g,b,s):cGolemElemental(g,b,s); }
+function cGolemStatue(g,b,s){const rock=solid(0x54545a,true),panel=solid(0x9a9a95,true);
   part(g,new THREE.BoxGeometry(s*0.7,s*0.9,s*0.5),rock,0,s*1.1,0);
   part(g,new THREE.BoxGeometry(s*0.5,s*0.4,s*0.4),rock,0,s*1.75,0);
   for(const sy of[0.8,1.1,1.4])part(g,new THREE.BoxGeometry(s*0.5,s*0.06,s*0.05),panel,0,s*sy,s*0.26);   // engraved labyrinth panels
   for(const sx of[-1,1])addEye(g,s*0.07,0xd42a22,sx*s*0.12,s*1.78,s*0.2);   // glowing red eyes
-  for(const sx of[-1,1]){limb(g,rock,sx*s*0.5,s*1.1,0,s*0.18,s*0.16,s*0.7,0,sx*0.15);
+  for(const sx of[-1,1]){limb(g,rock,sx*s*0.5,s*1.1,0,s*0.18,s*0.16,s*0.7,0,sx*0.15,"arm");
     part(g,new THREE.SphereGeometry(s*0.22,7,6),rock,sx*s*0.6,s*0.6,0);}
-  for(const sx of[-1,1])limb(g,rock,sx*s*0.22,s*0.5,0,s*0.18,s*0.16,s*0.7);
+  for(const sx of[-1,1])limb(g,rock,sx*s*0.22,s*0.5,0,s*0.18,s*0.16,s*0.7,0,0,"leg");
   for(let i=0;i<5;i++)part(g,new THREE.BoxGeometry(s*0.12,s*0.12,s*0.12),rock,rnd(-s*0.4,s*0.4),s*(0.7+Math.random()*0.8),rnd(-s*0.2,s*0.2));
   return s*2.1;}
+// elemental golem: a hovering humanoid-arranged swarm of glowing material chunks with a gap where the neck would be
+function cGolemElemental(g,b,s){
+  const E=[{rock:0x1e1a18,glow:0xff7a1a},{rock:0x2a3550,glow:0x8cbeec},{rock:0x203048,glow:0x2f6fe0},{rock:0x2a2e36,glow:0xffe23b}]; // magma / ice / wave / lightning
+  const e=E[irnd(0,E.length-1)];
+  const rockM=new THREE.MeshStandardMaterial({color:e.rock,emissive:e.glow,emissiveIntensity:0.4,flatShading:true,roughness:0.9});
+  const spin=new THREE.Group(); g.add(spin);
+  const pts=[[0,1.6,0,0.32],                                            // head orb (floats above the neck gap)
+    [0,1.15,0,0.5],[0.12,0.95,0.05,0.34],[-0.12,1.25,-0.05,0.3],        // torso mass
+    [0.52,1.35,0,0.24],[-0.52,1.35,0,0.24],[0.62,1.0,0,0.2],[-0.62,1.0,0,0.2],[0.66,0.66,0,0.18],[-0.66,0.66,0,0.18], // arms
+    [0.24,0.62,0,0.26],[-0.24,0.62,0,0.26],[0.27,0.24,0,0.22],[-0.27,0.24,0,0.22]]; // legs
+  for(const p of pts){ const c=new THREE.Mesh(new THREE.DodecahedronGeometry(s*p[3],0),rockM);
+    c.position.set(p[0]*s,p[1]*s,p[2]*s); c.rotation.set(rnd(0,6),rnd(0,6),rnd(0,6)); spin.add(c); }
+  for(const sx of[-1,1])addEye(g,s*0.06,e.glow,sx*s*0.1,s*1.62,s*0.24);
+  const core=new THREE.Mesh(new THREE.SphereGeometry(s*0.18,10,9),new THREE.MeshBasicMaterial({color:e.glow})); core.position.y=s*1.15; g.add(core);
+  const lt=new THREE.PointLight(e.glow,1.5,13); lt.position.y=s*1.2; g.add(lt);
+  g.userData.gait="float"; jreg(g,spin,"orbit");   // hovers and slowly rotates as a mass
+  return s*2.0;}
 function cZombie(g,b,s){const m=solid(b.c);
   limb(g,m,s*0.05,s*0.9,0,s*0.26,s*0.32,s*0.85,0.12);
   part(g,new THREE.SphereGeometry(s*0.28,10,9),m,-s*0.08,s*1.45,s*0.05);
   for(const sx of[-1,1])addEye(g,s*0.045,0xaacf5a,sx*s*0.09,s*1.46,s*0.2);
   part(g,new THREE.BoxGeometry(s*0.2,s*0.05,s*0.1),solid(0x3a1a1a),-s*0.08,s*1.36,s*0.22);
-  for(const sx of[-1,1])limb(g,m,sx*s*0.3,s*1.1,s*0.1,s*0.06,s*0.05,s*0.6,-0.9,sx*0.1);
+  for(const sx of[-1,1])limb(g,m,sx*s*0.3,s*1.1,s*0.1,s*0.06,s*0.05,s*0.6,-0.9,sx*0.1,"arm");
   for(const sx of[-1,1])limb(g,m,sx*s*0.14,s*0.45,0,s*0.07,s*0.05,s*0.55,0,0,"leg");
   return s*1.55;}
 function cMummy(g,b,s){const wrap=solid(b.c);
@@ -3770,7 +4044,7 @@ function cMummy(g,b,s){const wrap=solid(b.c);
   part(g,new THREE.SphereGeometry(s*0.28,10,9),wrap,0,s*1.5,s*0.03);
   for(let i=0;i<6;i++)part(g,new THREE.TorusGeometry(s*0.29,s*0.03,5,14),solid(0xb0a074),0,s*0.7+i*s*0.16,0,Math.PI/2);
   for(const sx of[-1,1])addEye(g,s*0.04,0xffd23b,sx*s*0.09,s*1.5,s*0.22);
-  for(const sx of[-1,1])limb(g,wrap,sx*s*0.3,s*1.15,s*0.15,s*0.06,s*0.05,s*0.6,-1.0,sx*0.1);
+  for(const sx of[-1,1])limb(g,wrap,sx*s*0.3,s*1.15,s*0.15,s*0.06,s*0.05,s*0.6,-1.0,sx*0.1,"arm");
   for(const sx of[-1,1])limb(g,wrap,sx*s*0.14,s*0.45,0,s*0.07,s*0.05,s*0.55,0,0,"leg");
   return s*1.6;}
 // AC Grievver: spindly radial spider-daemon — small slender core, thin bladed legs splaying outward, crimson veins
@@ -3879,7 +4153,7 @@ function buildCreature(kind){
   // classify the rig once: a creature with legs placed both fore and aft (sz≠0) walks as a quadruped
   const J=g.userData.joints;
   if(J){ const legs=J.filter(j=>j.role==="leg"); g.userData.quad=legs.length>=3&&legs.some(j=>j.sz!==0); }
-  g.userData.gait=creatureGait(kind,b);
+  g.userData.gait=g.userData.gait||creatureGait(kind,b);   // a builder may pick a per-instance gait (e.g. floating elemental golem)
   // health bar (billboarded planes)
   const hb=new THREE.Group();
   const bg=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.16),new THREE.MeshBasicMaterial({color:0x000000,fog:false}));
@@ -3906,11 +4180,35 @@ const GAIT={
   zombie:"shamble", mummy:"shamble",
 };
 function creatureGait(kind,b){ return GAIT[kind]||"walk"; }
+// Per-species melee attack style, from each creature's canonical attacks (acpedia/fandom):
+//   pound  — heavy two-fist overhead slam (Banderlings smash with fists/mauls; Lugians crush in one blow;
+//            Golems bash with club limbs; Tuskers pound; Monouga haymaker; Mummies slam)
+//   swipe  — fast alternating claw slashes (Drudge/Mite claws, Moarsman muck-claws, Mukkir rends,
+//            Mosswart/Burun claws, Zefir aerial claws, Skeleton weapon cuts)
+//   bite   — head rears back then snaps forward (Reedshark/Gromnie/Rat/Shreth/Carenzi fangs,
+//            Remoran's gaping maw, Mattekar teeth)
+//   gore   — head-down charge toss with the horns (Auroch)
+//   spin   — the Armoredillo's devastating full-body spin, bony blades leading
+//   sting  — nose-down darting stinger dive (Phyntos Wasp)
+//   rear   — rise up tall, then crash down with the forelimbs (Olthoi castes rear to strike with
+//            their digging claws; Ursuin rears to maul; Sclavus rears its cobra body to strike)
+//   grab   — both arms reach out in a lurching grasp (Zombie)
+//   thrust — a single deep spear-arm drive (Tumerok spearman)
+const ATTACK={
+  banderling:"pound",lugian:"pound",golem:"pound",tusker:"pound",monouga:"pound",mummy:"pound",
+  drudge:"swipe",mite:"swipe",moarsman:"swipe",mosswart:"swipe",burun:"swipe",zefir:"swipe",skeleton:"swipe",
+  reedshark:"bite",gromnie:"bite",rat:"bite",shreth:"bite",carenzi:"bite",remoran:"bite",mattekar:"bite",mukkir:"bite",
+  auroch:"gore",armoredillo:"spin",phyntoswasp:"sting",
+  olthoi:"rear",olthoiworker:"rear",olthoisoldier:"rear",ursuin:"rear",sclavus:"rear",
+  zombie:"grab",tumerok:"thrust",
+};
+const ATK_DUR={pound:0.55,rear:0.6,spin:0.6,gore:0.5,bite:0.35,sting:0.35,swipe:0.4,grab:0.45,thrust:0.35};
+function startStrike(m){ const st=ATTACK[m.kind]; m.strikeDur=(st&&ATK_DUR[st])||0.3; m.strikeT=m.strikeDur; }
 // Drives one creature's rig for the frame. Sets body pitch/roll on m._pitch/m._roll and
 // returns the vertical bob offset (added to groundY by the caller). `moved` = it travelled this frame.
 function animateCreatureRig(m,dt,moved){
   const g=m.mesh, b=BESTIARY[m.kind];
-  m._pitch=0; m._roll=0;
+  m._pitch=0; m._roll=0; m._yawOff=0;
   if(!g||!b) return 0;
   if(m.gltf){ return Math.abs(Math.sin(now()/140+m.x))*(m.state==="chase"?0.12:0.04); } // rigged models animate via their mixer
   const chase=m.state==="chase", gait=g.userData.gait||"walk";
@@ -3925,6 +4223,15 @@ function animateCreatureRig(m,dt,moved){
   // limb rig
   const J=g.userData.joints, quad=g.userData.quad;
   const lunge=(m.lungeT>0)?Math.sin(Math.max(0,m.lungeT)/0.18*Math.PI):0;   // 0→1→0 during a melee strike
+  // per-species melee strike (startStrike() sets m.strikeT when the blow lands): a wind-up phase
+  // (aWind 0→1, held) flows into the hit/follow-through (aSlam 0→1→0)
+  let style=null, atkPh=0, aWind=0, aSlam=0, atkSin=0;
+  if(m.strikeT>0){ m.strikeT-=dt; style=ATTACK[m.kind]||null;
+    atkPh=clamp(1-m.strikeT/(m.strikeDur||0.35),0,1);
+    aWind=Math.sin(Math.min(1,atkPh/0.4)*Math.PI/2); aSlam=atkPh<0.4?0:Math.sin((atkPh-0.4)/0.6*Math.PI);
+    atkSin=Math.sin(atkPh*Math.PI); }
+  // ranged wind-up (m.charging): the creature gathers itself back before loosing the bolt/spit
+  const chg=(m.charging>0)?Math.sin(clamp(1-m.charging/0.45,0,1)*Math.PI):0;
   if(J&&gait!=="float"&&gait!=="swim"){
     for(const j of J){ const p=j.piv;
       if(j.role==="leg"){
@@ -3934,7 +4241,14 @@ function animateCreatureRig(m,dt,moved){
       } else if(j.role==="arm"){
         const armPh=(j.sx<0?Math.PI:0);                                    // contralateral to the legs
         let a=Math.sin(ph+armPh)*0.36*gi + (moving?0:Math.sin(tsec*1.3)*0.05);
-        a-=lunge*0.9;                                                       // both arms punch forward on a strike
+        if(style==="pound")      a=-2.2*aWind+3.2*aSlam;                    // both fists high overhead, then slammed down past the body
+        else if(style==="swipe") a=-1.3*Math.sin(atkPh*Math.PI*2+armPh)*atkSin; // fast alternating claw slashes
+        else if(style==="grab")  a=-0.8*atkSin;                             // lurching two-hand reach (arms already hang forward)
+        else if(style==="thrust")a=(j.sx>0)?-1.8*atkSin:-0.3*atkSin;        // spear arm drives deep, off-arm braces
+        else if(style==="rear")  a=-1.1*aWind+1.6*aSlam;                    // forelimbs rise with the rear, crash on the drop
+        else if(style)           a-=atkSin*0.9;                             // other styles: simple strike
+        else a-=lunge*0.9;                                                  // no style: legacy punch
+        if(chg>0) a-=chg*1.3;                                               // spell/spit wind-up: arms gather upward
         p.rotation.x=j.rx+a;
       } else if(j.role==="tail"){
         p.rotation.y=j.ry+Math.sin(ph*0.5)*0.22*(0.35+gi*0.65);
@@ -3945,6 +4259,7 @@ function animateCreatureRig(m,dt,moved){
       }
     }
   }
+  if(J) for(const j of J) if(j.role==="orbit") j.piv.rotation.y=tsec*0.4;   // floating elemental cluster drifts as a mass (runs even under float gait)
   // body-level motion + vertical bob
   let by=0;
   if(gait==="hop"){ by=Math.max(0,Math.sin(ph))*0.45*b.size*gi; m._pitch=-Math.cos(ph)*0.12*gi; }
@@ -3956,6 +4271,17 @@ function animateCreatureRig(m,dt,moved){
   else { by=Math.abs(Math.sin(ph))*0.05*b.size*gi; }                                            // walk/scurry/skitter/crawl/lope/shamble
   if(chase&&!floaty) m._pitch+=-0.12*gi;                                                        // lean into the charge
   if(gait==="shamble") m._roll+=Math.sin(ph*0.5)*0.12;                                          // undead list side to side
+  // strike body language, per style
+  if(style==="pound"){ m._pitch+=-0.1*aWind+0.28*aSlam; by-=0.05*b.size*aSlam; }                // rock back, then drop the weight into the slam
+  else if(style==="bite"){ m._pitch+=-0.32*aWind+0.6*aSlam; }                                    // head rears, then snaps forward
+  else if(style==="gore"){ m._pitch+=0.34*aWind-0.55*aSlam; m._roll+=0.12*aSlam; }               // horns dip, then toss up and aside
+  else if(style==="spin"){ m._yawOff=atkPh*Math.PI*2; m._pitch+=0.08*atkSin; }                   // one full bladed revolution
+  else if(style==="sting"){ m._pitch+=0.5*atkSin; by+=0.1*b.size*aWind; }                        // rises, then dives nose-first with the stinger
+  else if(style==="rear"){ m._pitch+=-0.55*aWind+0.85*aSlam; by+=0.18*b.size*aWind*(1-aSlam); }  // rears tall, then crashes down
+  else if(style==="grab"){ m._pitch+=0.18*atkSin; }
+  else if(style==="swipe"){ m._roll+=0.12*Math.sin(atkPh*Math.PI*2); }
+  else if(style==="thrust"){ m._pitch+=0.12*aSlam; }
+  if(chg>0){ m._pitch+=-0.16*chg; by+=0.04*b.size*chg; }                                         // gathering itself back before loosing the bolt
   return by;
 }
 function buildTree(s){
@@ -4286,15 +4612,27 @@ function buildWorld(){
   addNPC(69.3*80+3,-21.2*80,{role:"reset_skill",name:"Fianhe"});
   {const tm=CITIES.find(c=>c.name==="Timaru"); if(tm) addNPC(tm.x,tm.z-12,{role:"gatekeep",name:"Aun Firanauri",town:"Timaru"});}
   // vendors in every town: capitals host a full market (one of each trade), smaller
-  // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener)
+  // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener).
+  // When the ACE-World data is loaded, each slot is filled by that town's RETAIL vendor —
+  // authentic name AND their real shop stock — with the game's own systems (trophy collectors,
+  // furniture) keeping their slots.
   const SPECIALISTS=["weaponsmith","armorer","scrivener","outfitter","healer","jeweler","collector"];
+  const AC_KEEP={collector:1,furnisher:1};
   CITIES.forEach((c,i)=>{
+    const acv=(typeof acTownVendors==="function")?acTownVendors(c.name):null; let acvi=0;
+    const place=(x,z,vt)=>{
+      if(acv&&!AC_KEEP[vt]&&acv[acvi]){ const av=acv[acvi++]; addMerchant(x,z,av.vt,av.name,av.acStock); }
+      else addMerchant(x,z,vt);
+    };
     if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
-      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; addMerchant(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
+      all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; place(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
+      // capitals were bustling in retail — seat up to three more of the town's real merchants
+      for(let k=0;k<3&&acv&&acv[acvi];k++){ const a=(all.length+k)/(all.length+3)*6.28+0.9;
+        const av=acv[acvi++]; addMerchant(c.x+Math.cos(a)*19,c.z+Math.sin(a)*19,av.vt,av.name,av.acStock); }
     } else {
-      addMerchant(c.x-9,c.z-7,"provisioner");
-      addMerchant(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
-      addMerchant(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
+      place(c.x-9,c.z-7,"provisioner");
+      place(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
+      place(c.x,c.z+11,SPECIALISTS[(i+3)%SPECIALISTS.length]); // a second rotating specialist
     }
   });
   // A few far dungeons (Direlands / northern isles) clamp to coordinates that fall below sea level,
@@ -5850,6 +6188,9 @@ function spawnMonster(kind,x,z,elite){
     mesh.add(hbg); mesh.userData.hb=hbg; mesh.userData.fill=hbFill;
   } else mesh=buildCreature(kind);                                  // procedural fallback
   let hp=Math.round(b.hp*settings.diff),dmg=Math.round(b.dmg*settings.diff),xp=b.xp,goldMul=1,r=b.size*0.8;
+  // nominal stamina/mana pools so target frames & appraisal read like AC's tri-bar (casters carry mana)
+  const CASTER_KINDS={virindi:1,wisp:1,sclavus:1,niffis:1,zefir:1,mukkir:1,shadow:1};
+  const _mst=Math.round(hp*0.75), _mmn=Math.round(hp*(CASTER_KINDS[kind]?0.8:0.15));
   if(elite){
     hp=Math.round(hp*2.5);dmg=Math.round(dmg*1.6);xp=Math.round(xp*2.5);goldMul=3;
     mesh.scale.setScalar(1.4);r*=1.4;
@@ -5858,6 +6199,7 @@ function spawnMonster(kind,x,z,elite){
   }
   mesh.position.set(x,0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul,ang:rnd(0,6.28),
+    st:_mst,mst:_mst,mn:_mmn,mmn:_mmn,
     state:"wander",t:0,atkCd:0,wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*(elite?1.4:1),
     isElite:!!elite,baseScale:elite?1.4:1,burnT:0,burnDps:0,burnAcc:0,gltf:!!gm});
   const m=monsters[monsters.length-1];
@@ -5876,8 +6218,40 @@ function spawnMonster(kind,x,z,elite){
 
 // ---------- log / toast ----------
 const logInner=document.getElementById('logInner');const logLines=[];
-function log(msg,cls=""){logLines.push({msg,cls});if(logLines.length>8)logLines.shift();
-  logInner.innerHTML=logLines.map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");}
+// ── tabbed chat: All · Global (say/tells/emotes) · Team (allegiance) · Group (party) · Quest ──
+let chatTab="all";
+const CHAT_TAB_OF={say:"global",tell:"global",tell_out:"global",emote:"global",party:"group",allegiance:"team"};
+function classifyLog(msg,tab){
+  if(tab) return tab;
+  if(/saga|chapter|quest|bounty|objective|storyline|journal|crier/i.test(msg)) return "quest";
+  if(/craft|salvag|tinker|alchemy|cook|fletch|dye|imbue|scribe|recipe|brew|workmanship|materials?\b/i.test(msg)) return "craft";
+  if(/you have slain|slain|kill streak|enrage/i.test(msg)) return "combat";
+  return "sys";   // sys lines live in All only
+}
+function log(msg,cls="",tab,spam){
+  tab=classifyLog(msg,tab);
+  logLines.push({msg,cls,tab,spam:!!spam}); if(logLines.length>160)logLines.shift();
+  if(tab!=="sys"&&chatTab!=="all"&&tab!==chatTab){ const b=document.querySelector(`#chatTabs [data-tab="${tab}"]`); if(b) b.classList.add("unread"); }
+  renderLog();
+}
+// per-hit combat spam: lands ONLY on the Combat tab, never floods the main feed
+function clog(msg){ log(msg,"cmb","combat",true); }
+function renderLog(){
+  const vis=chatTab==="all"?logLines.filter(l=>!l.spam):logLines.filter(l=>l.tab===chatTab);
+  const sized=logInner.classList.contains("sized");
+  const n=sized?Math.max(8,Math.floor((logInner.clientHeight||140)/17)):8;   // a taller chat box shows more history
+  logInner.innerHTML=vis.slice(-n).map(l=>`<div class="lg ${l.cls}">${l.msg}</div>`).join("");
+  if(sized) logInner.scrollTop=logInner.scrollHeight;                        // stay pinned to the newest line
+}
+function setChatTab(t){
+  chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; if(typeof saveSettings==="function") saveSettings(); }
+  document.querySelectorAll('#chatTabs .ctab').forEach(b=>{ b.classList.toggle('on',b.dataset.tab===t); if(b.dataset.tab===t) b.classList.remove('unread'); });
+  const ci=document.getElementById('chatInput');
+  if(ci) ci.placeholder=({global:"say aloud to the realm…",team:"message your allegiance… (/allegiance join <name> first)",
+    group:"message your party… (/party invite <name> first)",quest:"say aloud…",combat:"say aloud…",craft:"say aloud…"})[t]||"say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap";
+  renderLog();
+}
+document.querySelectorAll('#chatTabs .ctab').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); setChatTab(b.dataset.tab); }));
 // ── CHAT CHANNELS: every player-to-player line flows through chatMsg(), which applies the channel's
 //    colour (Settings-tunable), honours mutes, logs it, and runs it across the persistent chat bar ──
 const CHAT_CHANNELS={
@@ -5893,7 +6267,7 @@ function chatMsg(ch,html){
   const conf=chatChan(ch);
   if(conf.m) return;                                    // muted channel
   const line=`<span style="color:${conf.c}">${html}</span>`;
-  log(line,"chat");
+  log(line,"chat",CHAT_TAB_OF[ch]||"global");           // player-to-player lines land on their tab
   const bar=document.getElementById('chatBarText');
   if(bar){ bar.innerHTML=line; bar.style.opacity=1; _chatBarT=12; }   // ride the chat bar, dim after a while
 }
@@ -6027,6 +6401,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
+  clog(`You ${crit?'<b style="color:#ff8f6b">critically strike</b>':'hit'} the ${m.name||((BESTIARY[m.kind]||{}).name||m.kind)} for <b>${Math.round(dmg)}</b>.`);
   if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
   if(crit) shake(0.16);
@@ -6103,6 +6478,7 @@ function killMonster(m){
     saveGame();return;
   }
   burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death();
+  clog(`You have slain the <b>${m.name||b.name}</b>${m.isElite?" (champion)":""} — +${Math.round((m.xp||b.xp)*sMult)} XP.`);
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
     dungeonMobs--;
@@ -9326,6 +9702,7 @@ function gainXP(amt){
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
     if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
   player.xp+=amt;player.xpUnspent+=amt;
+  if(typeof PLUG!=="undefined"&&PLUG.mag) PLUG.mag.xp+=amt;   // Mag-Tools combat tracker
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
   while(player.level<275&&player.xp>=need){   // AC hard level cap of 275 (XP past it still banks as unspent for skills/attributes)
@@ -9383,6 +9760,7 @@ function playerHurt(dmg,sx,sz,type,element){
   { const cc=clamp(0.10-player.attr.Coordination*0.0008,0.03,0.12);
     if(Math.random()<cc){ _crit=true; const cr=Math.min(1,(player.augment&&player.augment.critReduce)||0); dmg=Math.round(dmg*(2-cr)); } }
   player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)*(_crit?1.8:1)); // combatT: recently-in-combat → Healing is less effective
+  clog(`You take <b style="color:#ff6a5a">${Math.round(dmg)}</b> ${element||type} damage${_crit?' — <b style="color:#ff8f6b">a critical blow!</b>':'.'}`);
   if(_crit){ if(SFX.crit)SFX.crit(); if(sx!==undefined)floater(player.x,EYE+0.95,player.z,"CRIT!","#ff5a3a"); }
   // a solid hit can shatter a spell you're mid-cast on — high Focus steadies your concentration
   if(player.casting){ const ic=clamp(0.55-player.attr.Focus*0.004,0.18,0.6);
@@ -9545,6 +9923,7 @@ function castSpellById(id){
   // mark self-cast up front so the wind-up already eases into the crouch (executeSpell refines it)
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
+  castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
 }
 // fire the spell's actual effect (called when a cast completes; re-checks live mana/cooldown)
@@ -9584,6 +9963,7 @@ function executeSpell(id){
   // spells cast on your own body use a crouch→rise gesture + a swirling aura; targeted/forward spells thrust
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
+  castKind=castSelf?"self":"bolt";
   castDur=castSelf?0.78:0.55; castShow=castDur;
   castColor=s.buff==="light"?(s.lightColor||0xfff2cf):(s.buff==="attr"||s.buff==="skill")?0xbfe0ff
     :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
@@ -9617,7 +9997,7 @@ function executeSpell(id){
   // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
   if((s.buff==="attr")||(s.school==="life"&&s.heal)){
     const ally=pickAllyTarget(40);
-    if(ally){ castSelf=false; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+    if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
   }
   if(s.school==="life"&&s.heal){
@@ -9833,6 +10213,10 @@ function meleeAttack(power){
   const offhand=dualOK&&Math.random()<clamp(0.25+skillValue("dualwield")*0.003,0,0.65);
   const cdScale=Math.max(.35,1-player.attr.Coordination*0.02);
   player.meleeCd=0.42*prof.cd*cdScale*(1-itemBuff("haste"))*(0.7+power*0.5);player.swing=1;SFX.swing();  // heavier swings recover slower
+  // each weapon class owns two signature attacks; one is rolled per swing (off-hand weave gets its own cut)
+  { const SW_VAR={dagger:["stab","fan"],sword:["diag","horiz"],axe:["hew","chopdn"],mace:["smash","rising"],
+      spear:["lunge","sweep"],staff:["sweep","lunge"],twohand:["chop","cleave"],unarmed:["cross","hook"]};
+    const v=SW_VAR[wt]||SW_VAR.sword; player.swingAnim=offhand?"offhand":v[irnd(0,v.length-1)]; }
   if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor());
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
@@ -9921,9 +10305,21 @@ function dirtyStrike(m){
   else if(ah==="high"){ m.atkCd=Math.max(m.atkCd||0,1.6); floater(m.x,hy,m.z,"staggered!","#ffd0a0"); }
   else { m.burnT=Math.max(m.burnT||0,4); m.burnDps=Math.max(m.burnDps||0,4+skillValue("dirty")*0.06); floater(m.x,hy,m.z,"bleeding!","#ff6a6a"); }
 }
-cEl.addEventListener('mousedown',e=>{ if(!locked)return; if(e.button===0){ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } } else if(e.button===2) blocking=true; });
-cEl.addEventListener('mouseup',e=>{ if(e.button===0){ if(chargeActive) releaseCharge(); } else if(e.button===2) blocking=false; });
-cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse raises the shield, no menu
+let _rmbT=0;
+cEl.addEventListener('mousedown',e=>{
+  if(!running) return;
+  if(e.button===0){                                    // left: select what's under the cursor, then attack
+    const hit=raycastPick(locked?null:e); if(hit) selectTarget(hit,true); else if(!locked) selectTarget(null,true);
+    if(!locked) return;                                // (unlocked click still locks via the click handler)
+    if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; }
+  } else if(e.button===2){ _rmbT=now(); blocking=locked; }   // right: hold = shield (locked); a quick tap = appraise
+});
+cEl.addEventListener('mouseup',e=>{
+  if(e.button===0){ if(chargeActive) releaseCharge(); }
+  else if(e.button===2){ blocking=false;
+    if(running&&now()-_rmbT<280){ const hit=raycastPick(locked?null:e); if(hit) openIdPanel(hit); } }
+});
+cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse = shield / appraisal, no menu
 // Cb2 attack heights: mouse-wheel aims the swing high / middle / low (matched to the target's size)
 const ATK_HEIGHTS=["low","mid","high"], ATK_LABEL={low:"Low",mid:"Middle",high:"High"};
 window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
@@ -9931,7 +10327,12 @@ window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
   const el=document.getElementById('atkHeight'); if(el){ el.textContent="Attack: "+ATK_LABEL[player.atkHeight]; el.style.display="block"; el._t=now(); }
 },{passive:false});
 document.addEventListener('mousemove',e=>{
-  if(!locked) return;
+  if(!locked){
+    // free-look: the mouse looks around even without pointer lock, whenever it rides the world
+    // itself (over a HUD panel or menu the cursor behaves normally so buttons stay clickable)
+    if(!running||paused||movingUI||_uiDrag||e.target!==cEl) return;
+    if(typeof sheet!=="undefined"&&sheet.style.display==="flex") return;
+  }
   player.yaw-=e.movementX*0.0022*settings.sens;
   player.pitch=clamp(player.pitch-e.movementY*0.0022*settings.sens,-1.2,1.2);
 });
@@ -9958,8 +10359,10 @@ const ACTIONS=[
   {id:"potgreat", label:"Drink Greater Potion", group:"Consumables",def:"KeyG",run:()=>drinkPotion("potGreat",150,"hp")},
   {id:"potmana",  label:"Drink Mana Potion",    group:"Consumables",def:"KeyF",run:()=>drinkPotion("potMana",60,"mn")},
   {id:"potstam",  label:"Drink Stamina Potion", group:"Consumables",def:"KeyH",run:()=>drinkPotion("potStam",60,"st")},
-  {id:"elixmight",label:"Elixir of Might",      group:"Consumables",def:"Comma",run:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b")},
-  {id:"elixswift",label:"Elixir of Swiftness",  group:"Consumables",def:"Period",run:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")},
+  {id:"elixmight",label:"Elixir of Might",      group:"Consumables",def:"KeyI",run:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b")},
+  {id:"elixswift",label:"Elixir of Swiftness",  group:"Consumables",def:"KeyL",run:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")},
+  {id:"targprev", label:"Previous Target",      group:"Targeting",def:"Comma", run:()=>cycleTarget(-1)},
+  {id:"targnext", label:"Next Target",          group:"Targeting",def:"Period",run:()=>cycleTarget(1)},
   {id:"character",label:"Character Sheet",  group:"Panels",def:"KeyC",run:()=>togglePanel('sheet',openSheet,closeSheet)},
   {id:"tinker",   label:"Inventory / Tinker",group:"Panels",def:"KeyT",run:()=>togglePanel('tinker',openTinker,closeTinker)},
   {id:"bestiary", label:"Bestiary / Codex", group:"Panels",def:"KeyB",run:()=>togglePanel('codex',openCodex,closeCodex)},
@@ -9974,6 +10377,14 @@ const ACTIONS=[
   {id:"qbprev",   label:"Quickbar Page ◀",  group:"Quickbar",def:"BracketLeft",run:()=>{hotbarPage=(hotbarPage+QB_PAGES-1)%QB_PAGES;buildSpellbar();}},
   {id:"qbnext",   label:"Quickbar Page ▶",  group:"Quickbar",def:"BracketRight",run:()=>{hotbarPage=(hotbarPage+1)%QB_PAGES;buildSpellbar();}},
 ];
+// every on-screen interface gets its own show/hide keystroke (rebind any of them in Map Keys)
+const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Compass","shift+F2"],
+  ["minimap","Minimap","shift+F3"],["right","Attributes & Status","shift+F4"],["quest","Quest Tracker","shift+F5"],
+  ["spellbar","Quickbar","shift+F6"],["potions","Potion Belt","shift+F7"],["partyHud","Party Frame","shift+F8"],
+  ["goarrow","GoArrow","shift+F9"],["alinco","Alinco Buffs","shift+F10"],["vtank","Virindi Tank","shift+F11"],
+  ["magtools","Mag-Tools","shift+F12"],["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
+for(const [id,label,def] of HUD_TOGGLES)
+  ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
 const ROW1_DEF=["Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0","Minus","Equal"];
 for(let i=0;i<QB_PAGE;i++){ const idx=i; ACTIONS.push({id:"qb"+i,label:"Quick Slot R"+(i<QB_COLS?1:2)+"·"+((i%QB_COLS)+1),group:"Quick Slots",def:i<QB_COLS?ROW1_DEF[i]:"",run:()=>castSlot(hotbarPage*QB_PAGE+idx)}); }
 function defaultBinds(){ const b={}; for(const a of ACTIONS) b[a.id]=a.def?[a.def]:[]; return b; }
@@ -10373,6 +10784,7 @@ function update(dt){
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
   player.invuln=Math.max(0,player.invuln-dt);
   player.swing=Math.max(0,player.swing-dt*3.2);
+  if(player.act){ player.act.t-=dt; if(player.act.t<=0) player.act=null; }   // activity gesture (gather/craft/…)
   player.bowDraw=Math.max(0,player.bowDraw-dt*4);
   portalCd=Math.max(0,portalCd-dt); portalTouch();
   if(castSelf&&castShow>0&&!castSwirlActive){ selfCastFX(player.x,player.z,castColor); castSwirlActive=true; }  // one swirl per self-cast
@@ -10495,7 +10907,7 @@ function update(dt){
       else { if(m.t>rnd(2,4)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.5)m.idleT=rnd(1,2.5);} if(m.idleT>0)m.idleT-=dt; else {m.x+=Math.sin(m.ang)*b.spd*0.35*slowF*dt;m.z+=Math.cos(m.ang)*b.spd*0.35*slowF*dt;} }
       m.x=clamp(m.x,-HALF+1,HALF-1);m.z=clamp(m.z,-HALF+1,HALF-1);
       const aby=animateCreatureRig(m,dt,Math.hypot(m.x-oax,m.z-oaz)>1e-4);
-      m.mesh.position.set(m.x,groundY(m.x,m.z)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang,m._roll||0);
+      m.mesh.position.set(m.x,groundY(m.x,m.z)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
       m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.2:1)); if(m.flash>0)m.flash-=dt;
       continue;
     }
@@ -10532,7 +10944,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else m.charging=0.45;
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
@@ -10549,7 +10961,7 @@ function update(dt){
     let lx=m.x,lz=m.z;
     if(m.lungeT>0){m.lungeT-=dt;const la=Math.atan2(player.x-m.x,player.z-m.z),lf=Math.sin(Math.max(0,m.lungeT)/0.18*Math.PI)*0.6;lx+=Math.sin(la)*lf;lz+=Math.cos(la)*lf;}
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-ox,m.z-oz)>1e-4);
-    m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang,m._roll||0);
+    m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb&&(m.hp<m.mhp||m.isBoss||m.isElite)){hb.visible=true;hb.quaternion.copy(cam.quaternion);
@@ -10613,6 +11025,8 @@ function update(dt){
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
   updateCalendar(dt);
+  updatePlugins(dt);
+  updateTargetUI(dt);
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
@@ -10634,7 +11048,8 @@ function animateAvatar(dt){
   idleT+=dt;
   updateShieldModel();                                        // reflect the equipped off-hand shield
   const moving=!!(held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"])&&player.alive;
-  const sw=player.swing, acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow");
+  const sw=player.swing, actGesture=!!(player.act&&player.act.t>0);
+  const acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow")||actGesture;
   const blk=blocking&&sw<=0;                                   // actively raising the guard (not mid-swing)
   const idle=!moving&&!acting;
   // movement intensity: walk vs run (sprint amplifies the whole gait)
@@ -10643,7 +11058,7 @@ function animateAvatar(dt){
   u._r=(u._r==null?0:u._r)+((running?1:0)-(u._r||0))*Math.min(1,dt*6); const rN=u._r;
   const amp=1+rN*0.8;                                         // longer strides / bigger arm swing when running
   // combat engagement: acting or blocking holds a "ready" stance, which relaxes to "resting" a few seconds later
-  if(acting||blk) u._combatT=4; else u._combatT=Math.max(0,(u._combatT||0)-dt);
+  if(sw>0||castShow>0||(player.bowDraw>0)||blk) u._combatT=4; else u._combatT=Math.max(0,(u._combatT||0)-dt);  // gather/craft don't raise the guard
   u._c=(u._c==null?0:u._c)+(((u._combatT>0)?1:0)-(u._c||0))*Math.min(1,dt*5); const cW=u._c;
   const hasShield=!!equippedShield();
   const p=player.bob*3, sP=Math.sin(p), sQ=Math.sin(p+Math.PI);
@@ -10675,13 +11090,85 @@ function animateAvatar(dt){
   // left arm defaults to the opposite-leg walk swing; attacks may grip it onto the weapon
   let lX=w*(-sQ*0.4*amp)+(1-w)*(0.04+breath*0.02), lZ=0.04, lE=-(0.2+w*Math.max(0,-sQ)*0.5*amp)-(1-w)*0.18;
   let sX,sZ,eX, twist=w*sP*0.06*amp;
+  // shared casting lower-body: from the ready stance, dip into a slight squat (identical for every cast
+  // type); on release the legs spring back with a little bounce that lifts just past neutral, then settles.
+  const castSquat=(k,rel)=>{ const q=k*(1-(rel||0)), b=Math.sin((rel||0)*Math.PI)*0.055;
+    u.spine.position.y+=b-q*0.1;
+    u.hipR.rotation.x+=q*0.3; u.hipL.rotation.x+=q*0.3;
+    u.knR.rotation.x-=q*0.62; u.knL.rotation.x-=q*0.62;
+    u.anR.rotation.x+=q*0.32; u.anL.rotation.x+=q*0.32; };
   if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
-    if(twoH){ // two-handed overhead chop — both hands grip, torso rotates through the swing
-      sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
-      lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2;
-    } else {  // single-handed diagonal slash
-      sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2;
+    const kind=player.swingAnim||(twoH?"chop":"diag");
+    const drive=k=>{ u.spine.rotation.x+=k*0.2; u.hipR.rotation.x+=k*0.26; u.knR.rotation.x-=k*0.5; u.anR.rotation.x+=k*0.24; };  // footwork: the lead leg plants & drives into the blow
+    switch(kind){
+      case "chop":   // TWOHAND: overhead chop — both hands grip, torso rotates through the swing
+        sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
+        lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2; drive(slash*0.55); break;
+      case "cleave": // TWOHAND: massive flat cleave — full torso wind, blade carried level through the arc
+        sX=-1.25; sZ=-0.15-raise*0.55+slash*0.85; eX=-(0.5-slash*0.25);
+        lX=-1.1; lZ=-0.5; lE=-0.9; twist=-(0.55+raise*0.25)+slash*1.15; u.neck.rotation.y=-twist*0.5; drive(slash*0.4); break;
+      case "horiz":  // SWORD: flat cut across the body
+        sX=-1.2-raise*0.2; sZ=-0.2-raise*0.6+slash*0.95; eX=-(0.45-slash*0.25);
+        twist=-(0.35+raise*0.2)+slash*0.85; u.neck.rotation.y=-twist*0.45; drive(slash*0.35); break;
+      case "stab":   // DAGGER: lunge-stab — the point snaps from the hip straight out
+        sX=-0.25+raise*0.15-slash*1.5; sZ=-0.06; eX=-(1.5-slash*1.3);
+        lX=-0.5+slash*0.7; lZ=0.15; lE=-0.9; twist=raise*0.15-slash*0.4; drive(slash*0.8); break;
+      case "fan":    // DAGGER: fan — two fast wrist-led cuts in one beat
+        { const osc=Math.sin(t*Math.PI*2);
+          sX=-1.15; sZ=-0.15+osc*0.5; eX=-(0.8-Math.abs(osc)*0.4); twist=osc*0.3; } break;
+      case "hew":    // AXE: heavy flat hew — the whole body drops in behind the edge
+        sX=-1.05-raise*0.3; sZ=-0.25-raise*0.7+slash*1.05; eX=-(0.55-slash*0.3);
+        twist=-(0.5+raise*0.25)+slash*1.05; u.spine.position.y-=slash*0.06; u.neck.rotation.y=-twist*0.45; drive(slash*0.5); break;
+      case "chopdn": // AXE: steep diagonal chop — pitches forward as the edge bites
+        sX=-0.4-raise*2.0+slash*2.9; sZ=-0.14-slash*0.3; eX=-(0.45+raise*0.7-slash*0.6);
+        twist=slash*0.3; u.spine.rotation.x+=slash*0.14; drive(slash*0.5); break;
+      case "smash":  // MACE: overhead smash — big raise, the body drops with the impact
+        sX=-0.5-raise*2.2+slash*3.1; sZ=-0.05; eX=-(0.35+raise*0.75-slash*0.6);
+        twist=-0.15+slash*0.3; u.spine.position.y-=slash*0.09; u.knL.rotation.x-=slash*0.35; drive(slash*0.7); break;
+      case "rising": // MACE: rising blow — rips upward from beside the hip
+        sX=0.35+raise*0.25-slash*2.3; sZ=-0.12; eX=-(0.95-slash*0.75);
+        twist=-0.2+slash*0.5; u.spine.position.y+=slash*0.05; u.spine.rotation.x-=slash*0.12; drive(raise*0.4); break;
+      case "lunge":  // SPEAR/STAFF: two-handed driving thrust down the line
+        sX=-0.55+raise*0.35-slash*1.35; sZ=-0.08; eX=-(1.15-slash*0.95);
+        lX=-1.0-slash*0.3; lZ=-0.35; lE=-0.7+slash*0.3; twist=raise*0.2-slash*0.45; drive(slash*0.9); break;
+      case "sweep":  // SPEAR/STAFF: wide haft sweep — both hands carry the shaft through a flat arc
+        sX=-1.15; sZ=-0.2-raise*0.5+slash*0.8; eX=-(0.6-slash*0.2);
+        lX=-0.95; lZ=0.3-slash*0.5; lE=-0.8; twist=-(0.45+raise*0.2)+slash*1.0; u.neck.rotation.y=-twist*0.4; drive(slash*0.35); break;
+      case "cross":  // UNARMED: hip-driven straight right
+        sX=-0.3+raise*0.2-slash*1.45; sZ=-0.1; eX=-(1.7-slash*1.5);
+        lX=-0.9+slash*0.3; lZ=0.2; lE=-1.5; twist=raise*0.2-slash*0.5; drive(slash*0.6); break;
+      case "hook":   // UNARMED: hook — the elbow stays bent, the torso whips it around
+        sX=-1.2; sZ=-0.3-raise*0.4+slash*0.8; eX=-1.25;
+        lX=-0.9; lZ=0.25; lE=-1.5; twist=-(0.4+raise*0.2)+slash*0.9; drive(slash*0.4); break;
+      case "offhand": // DUAL WIELD: the LEFT hand cuts while the right keeps its guard
+        lX=-0.3-raise*1.7+slash*2.7; lZ=0.1+slash*0.5; lE=-(0.4+raise*0.9-slash*0.7);
+        sX=-0.55; sZ=-0.2; eX=-1.25; twist=slash*-0.2; break;
+      default:       // SWORD: diagonal slash
+        sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7); twist=slash*0.2; drive(slash*0.4);
     }
+  }
+  else if(actGesture){             // ACTIVITY gesture — gather / mine / craft / tinker / fish
+    const ap=1-player.act.t/player.act.dur, ty=player.act.type, osc=Math.sin(now()/90), osc2=Math.sin(now()/70+1);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;   // free the hands to mime the work
+    if(ty==="mine"){               // two-handed overhead pick swing, repeating: overhead → strike down
+      const k=(Math.sin(ap*Math.PI*5-Math.PI/2)+1)/2;
+      u.spine.rotation.x=0.12+k*0.24; u.spine.position.y=AV_WAIST-0.05-k*0.05;
+      u.hipR.rotation.x=0.22;u.hipL.rotation.x=0.22;u.knR.rotation.x=-0.5;u.knL.rotation.x=-0.5;u.anR.rotation.x=0.28;u.anL.rotation.x=0.28;
+      sX=-2.7+k*3.0; sZ=-0.06; eX=-(0.25+(1-k)*0.5); twist=0.05; lX=sX; lZ=0.12; lE=eX-0.1; u.neck.rotation.x=0.15+k*0.22; u.neck.rotation.y=0;
+    } else if(ty==="gather"){      // crouch low and pluck from the ground
+      u.spine.rotation.x=0.55; u.spine.position.y=AV_WAIST-0.16;
+      u.hipR.rotation.x=0.5;u.hipL.rotation.x=0.5;u.knR.rotation.x=-1.0;u.knL.rotation.x=-1.0;u.anR.rotation.x=0.5;u.anL.rotation.x=0.5;
+      sX=-0.35+osc*0.2; sZ=-0.08; eX=-0.5-Math.max(0,osc)*0.45; lX=-0.15; lZ=0.1; lE=-0.5; twist=0; u.neck.rotation.x=0.42; u.neck.rotation.y=0;
+    } else if(ty==="craft"){       // work at a bench — the right hand hammer-taps, the left steadies the piece
+      u.spine.rotation.x=0.24; u.spine.position.y=AV_WAIST-0.04; u.knR.rotation.x=-0.2;u.knL.rotation.x=-0.2;
+      sX=-0.85+Math.max(0,osc)*0.45; sZ=-0.12; eX=-1.35; lX=-0.7; lZ=0.14; lE=-1.5; twist=0.03; u.neck.rotation.x=0.34; u.neck.rotation.y=0;
+    } else if(ty==="tinker"){      // fine precise handwork, hands together at the chest
+      u.spine.rotation.x=0.2;
+      sX=-1.0+osc*0.1; sZ=-0.16; eX=-1.7+osc2*0.12; lX=-1.0-osc2*0.1; lZ=0.16; lE=-1.7+osc*0.12; twist=0; u.neck.rotation.x=0.4; u.neck.rotation.y=0;
+    } else if(ty==="fish"){        // a brief overhead cast, then hold the rod out with a lazy twitch
+      const cast=Math.sin(clamp(ap,0,0.18)/0.18*Math.PI);
+      sX=-1.1-cast*0.8; sZ=-0.08; eX=-0.55+cast*0.5+osc*0.06; lX=-0.8; lZ=0.12; lE=-0.7; twist=0.08; u.neck.rotation.x=0.1;
+    } else { sX=-0.6; sZ=-0.1; eX=-1.0; lX=-0.6; lZ=0.1; lE=-1.0; }
   }
   else if(player.emoteT>0){        // EMOTE gesture — a deliberate social animation (yields to a swing, overrides idle/cast)
     const act=player.emoteAct, osc=Math.sin(now()/110);
@@ -10699,23 +11186,41 @@ function animateAvatar(dt){
     else if(act==="laugh"){ u.spine.rotation.x=-0.18+osc*0.05; sX=-1.1; eX=-1.4; lX=-1.1; lE=-1.4; }
     else { sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }   // fallback = wave
   }
-  else if(castShow>0&&castSelf){   // SELF-cast: dip into a slight crouch, then rise tall sweeping both arms overhead
-    const cp=clamp(1-castShow/castDur,0,1), down=clamp(cp/0.42,0,1), up=clamp((cp-0.42)/0.58,0,1), crouch=down*(1-up);
-    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false;   // hands free for the gesture
-    u.spine.position.y=AV_WAIST - crouch*0.15 + up*0.03;
-    u.spine.rotation.x=crouch*0.18 - up*0.13;                 // hunch down, then arch back looking up
-    const kb=-(crouch*0.75);
-    u.hipR.rotation.x=crouch*0.4; u.hipL.rotation.x=crouch*0.4; u.knR.rotation.x=kb; u.knL.rotation.x=kb;
-    u.anR.rotation.x=crouch*0.34; u.anL.rotation.x=crouch*0.34;
-    u.neck.rotation.x=-up*0.38; u.neck.rotation.y=0;          // gaze rises as the spell releases
-    sX=0.55*crouch - up*3.1; sZ=-0.2*up; eX=-(0.55*(1-up)+0.05);   // arms low → swept up into an overhead V
-    lX=sX; lZ=0.2*up; lE=eX; twist=0;
+  else if(castShow>0&&castKind==="self"){   // SELF-cast: slight squat from the ready guard, hands sweep from close-in up into an overhead V
+    const cp=clamp(1-castShow/castDur,0,1);
+    const rise=clamp((cp-0.3)/0.45,0,1), rel=clamp((cp-0.78)/0.22,0,1);
+    const sq=clamp(cp/0.18,0,1);                              // quick dip in; castSquat springs it back with a bounce on release
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.position.y=AV_WAIST + rise*0.04;
+    u.spine.rotation.x=sq*(1-rel)*0.06 - rise*0.15;           // lean to balance the squat, then arch back looking up
+    castSquat(sq,rel);
+    u.neck.rotation.x=-rise*0.42; u.neck.rotation.y=0;
+    // arms start slightly raised with hands close to the body (ready guard), then sweep up into an overhead V
+    const V=-2.6*rise*(1-rel*0.18);
+    sX=-0.5+V; sZ=-0.08-0.34*rise; eX=-(1.15*(1-rise)+0.05);
+    lX=sX; lZ=0.08+0.34*rise; lE=eX; twist=0;
   }
-  else if(castShow>0){            // forward/targeted cast: thrust the wand toward the target
-    const cp=1-castShow/castDur, back=Math.sin(clamp(cp,0,0.3)/0.3*Math.PI), thrust=cp>=0.3?Math.sin((cp-0.3)/0.7*Math.PI):0;
-    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true;
-    sX=-0.7-back*0.6+thrust*1.7; sZ=-0.1; eX=-(0.9-thrust*0.7); twist=thrust*0.12;
-    lX=-0.3+back*0.4; lZ=0.2; lE=-0.6;                        // off-hand gestures with the cast
+  else if(castShow>0&&castKind==="bestow"){ // BESTOW on an ally: same slight squat; both palms rise and present the gift outward
+    const cp=clamp(1-castShow/castDur,0,1);
+    const draw=clamp(cp/0.4,0,1), offer=cp>=0.4?Math.sin((cp-0.4)/0.6*Math.PI):0;
+    const sq=clamp(cp/0.18,0,1), rel=clamp((cp-0.75)/0.25,0,1);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.rotation.x=sq*(1-rel)*0.05-offer*0.07; u.spine.position.y=AV_WAIST+offer*0.03;
+    castSquat(sq,rel);
+    sX=-0.55-draw*0.75-offer*0.55; sZ=-0.18; eX=-(1.05-offer*0.75);   // palms rise, then extend toward the ally
+    lX=sX; lZ=0.18; lE=eX; twist=0; u.neck.rotation.x=-0.12-offer*0.1; u.neck.rotation.y=0;
+  }
+  else if(castShow>0){            // BOLT (offensive/targeted): same slight squat; coil back, then snap a forward thrust through the torso
+    const cp=1-castShow/castDur;
+    const coil=Math.sin(clamp(cp,0,0.35)/0.35*Math.PI*0.5), thrust=cp>=0.35?Math.sin((cp-0.35)/0.65*Math.PI):0;
+    const sq=clamp(cp/0.18,0,1), rel=clamp((cp-0.75)/0.25,0,1);
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=true; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.position.y=AV_WAIST;
+    u.spine.rotation.x=sq*(1-rel)*0.05-coil*0.08+thrust*0.15;
+    castSquat(sq,rel);
+    sX=-0.4+coil*0.5-thrust*1.95; sZ=-0.08-coil*0.22+thrust*0.06; eX=-(1.15+coil*0.4-thrust*0.95);   // draw the wand back & up, then snap it forward at the target
+    lX=-0.3+coil*0.4-thrust*0.25; lZ=0.2; lE=-0.7;
+    twist=coil*0.32-thrust*0.48; u.neck.rotation.y=-twist*0.4; u.neck.rotation.x=-0.05;   // head tracks toward the target
   }
   else if(player.bowDraw>0&&weaponMode==="bow"){ sX=-1.4; sZ=-0.1; eX=-1.1; lX=-1.3; lZ=0.15; lE=-0.25; }
   else if(blk){                    // raising the guard: brace low, off-hand/shield up across the body, weapon tucked
@@ -10733,6 +11238,13 @@ function animateAvatar(dt){
     lX=lX+(glX-lX)*guard; lZ=lZ+(glZ-lZ)*guard; lE=lE+(glE-lE)*guard;
     u.knR.rotation.x-=guard*0.28; u.knL.rotation.x-=guard*0.28; u.hipR.rotation.x+=guard*0.10; u.hipL.rotation.x+=guard*0.10;
     u.spine.position.y-=guard*0.04; twist+=guard*0.10;
+    // living ready stance: breathing lift, weapon-hand micro-bob, a slow weight shift & torso sway (only while at the ready)
+    const rb=Math.sin(idleT*1.5), rb2=Math.sin(idleT*0.9+0.7), shift=Math.sin(idleT*0.55);
+    sX+=guard*rb*0.045; eX+=guard*rb2*0.05; sZ+=guard*Math.sin(idleT*1.2)*0.02;
+    lX+=guard*rb2*0.03; lE+=guard*rb*0.045;
+    u.spine.position.y+=guard*Math.abs(rb)*0.009; u.spine.rotation.z+=guard*shift*0.03;
+    u.neck.rotation.y+=guard*shift*0.14; twist+=guard*shift*0.035;
+    u.hipR.rotation.x+=guard*shift*0.02; u.hipL.rotation.x-=guard*shift*0.02;   // weight rocks subtly between the feet
   }
   u.spine.rotation.y=twist;
   u.shR.rotation.x=sX; u.shR.rotation.z=sZ; u.elR.rotation.x=eX;
@@ -10886,12 +11398,23 @@ function syncCamera(dt){
   const sw=player.swing, t=1-sw;                                  // t: 0→1 over the swing
   const raise=sw>0?Math.sin(clamp(t,0,0.3)/0.3*Math.PI):0;        // anticipation hump (first 30%)
   const slash=(sw>0&&t>=0.22)?Math.sin((t-0.22)/0.78*Math.PI):0;  // strike + follow-through hump
-  weaponHand.rotation.x=0.1 - raise*0.75 + slash*1.85;
-  weaponHand.rotation.y=-0.15 + raise*0.5  - slash*1.15;
-  weaponHand.rotation.z=0.05 + raise*0.4   - slash*0.55;
-  weaponHand.position.x=0.42 + bobX + raise*0.14 - slash*0.5;
-  weaponHand.position.y=-0.42 + bobY + raise*0.18 - slash*0.16;
-  weaponHand.position.z=-0.7 + slash*0.24;
+  // first-person swing follows the rolled attack (player.swingAnim) via five motion families:
+  // each row is [raiseCoeff,slashCoeff] for rx,ry,rz,px,py,pz around the rest pose.
+  { const FPS={
+      diag:  [[-0.75,1.85],[0.5,-1.15],[0.4,-0.55],[0.14,-0.5],[0.18,-0.16],[0,0.24]],          // over-the-shoulder diagonal
+      flat:  [[-0.2,0.45],[0.85,-1.9],[0.2,-0.3],[0.3,-0.8],[0.06,-0.04],[0,0.2]],               // level cut across the view
+      thrust:[[-0.12,0.3],[0.25,-0.3],[0.05,-0.05],[0.08,-0.16],[0.04,-0.06],[0.3,-0.62]],        // pull back, drive the point forward
+      over:  [[-1.15,2.35],[0.2,-0.4],[0.12,-0.25],[0.06,-0.22],[0.3,-0.34],[0.05,0.2]],          // high overhead smash
+      rise:  [[0.55,-1.7],[0.15,-0.3],[-0.1,0.2],[0.05,-0.1],[-0.16,0.34],[0.1,-0.35]] };         // rips upward from low
+    const MAP={diag:"diag",offhand:"diag",fan:"flat",horiz:"flat",cleave:"flat",hew:"flat",sweep:"flat",hook:"flat",
+      stab:"thrust",lunge:"thrust",cross:"thrust",chop:"over",chopdn:"over",smash:"over",rising:"rise"};
+    const P=FPS[MAP[player.swingAnim]||"diag"];
+    weaponHand.rotation.x=0.1   + raise*P[0][0] + slash*P[0][1];
+    weaponHand.rotation.y=-0.15 + raise*P[1][0] + slash*P[1][1];
+    weaponHand.rotation.z=0.05  + raise*P[2][0] + slash*P[2][1];
+    weaponHand.position.x=0.42 + bobX + raise*P[3][0] + slash*P[3][1];
+    weaponHand.position.y=-0.42 + bobY + raise*P[4][0] + slash*P[4][1];
+    weaponHand.position.z=-0.7 + raise*P[5][0] + slash*P[5][1]; }
   // --- bow: snap release + recoil; string and arrow leave the nock, then re-nock ---
   const bd=player.bowDraw, td=1-bd;                               // td: 0→1 after release
   const recoil=bd>0?Math.sin(clamp(td,0,0.45)/0.45*Math.PI):0;    // kick hump
@@ -11055,7 +11578,8 @@ function buildMiniToggles(){
   el.querySelectorAll('input[data-mm]').forEach(cb=>cb.onchange=()=>{ miniShow[cb.dataset.mm]=cb.checked; saveMiniPrefs(); });
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
-const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions"];
+const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
+  "goarrow","alinco","vtank","magtools","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -11072,11 +11596,62 @@ function initDragUI(){
   const hint=document.createElement('div'); hint.id="uimoveHint"; hint.textContent="Move UI — drag any panel · press N to finish"; document.getElementById('hud').appendChild(hint);
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
     el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
-  document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
-    el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
-    el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
-  document.addEventListener('mouseup',()=>{ if(_uiDrag){ _uiDrag=null; saveUIPos(); } });
+  // parchment windows also drag by their title bar at any time (no N-mode needed)
+  for(const id of ["alinco","vtank","magtools","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
+    const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
+    head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
+      e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
+  ensureGrips();   // hover ⠿ grips on every other panel — re-run periodically since some panels rebuild their innerHTML
+  // the chat box resizes by its corner grip (bottom-anchored: drag up/right to grow); size persists
+  const lg=document.getElementById('log');
+  if(lg&&!document.getElementById('logResize')){
+    const rz=document.createElement('div'); rz.id="logResize"; rz.textContent="◥"; rz.title="Drag to resize the chat window";
+    rz.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation();
+      const inner=document.getElementById('logInner');
+      _logRz={x0:e.clientX,y0:e.clientY,w0:lg.getBoundingClientRect().width,h0:inner.getBoundingClientRect().height}; });
+    lg.appendChild(rz);
+    document.addEventListener('mousemove',e=>{ if(!_logRz) return;
+      const w=clamp(_logRz.w0+(e.clientX-_logRz.x0),220,Math.min(720,innerWidth-40));
+      const h=clamp(_logRz.h0-(e.clientY-_logRz.y0),90,Math.min(560,innerHeight-160));
+      applyLogSize(w,h); });
+    document.addEventListener('mouseup',()=>{ if(_logRz){ _logRz=null;
+      if(typeof settings!=="undefined"){ settings.logSize={w:parseInt(lg.style.width)||340,h:parseInt(document.getElementById('logInner').style.height)||0};
+        if(typeof saveSettings==="function") saveSettings(); } } });
+  }
 }
+// every game panel gets a hover ⠿ grip that drags the same way as the plugin windows, anytime.
+// Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
+function ensureGrips(){
+  const label={}; if(typeof HUD_TOGGLES!=="undefined") for(const [id,n] of HUD_TOGGLES) label[id]=n;
+  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","idPanel"].indexOf(id)>=0) continue;
+    const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
+    if(getComputedStyle(el).position==="static") el.style.position="relative";
+    const grip=document.createElement('div'); grip.className="dragGrip"; grip.textContent="⠿"; grip.title="Drag to move (or press N to move whole panels)";
+    grip.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation();
+      const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; });
+    el.appendChild(grip);
+    if(label[id]){   // ✕ closes the panel; reopen via its keybind or Settings → Interfaces
+      const x=document.createElement('div'); x.className="hudX"; x.textContent="✕";
+      x.title=`Hide ${label[id]} — reopen in Settings → Interfaces${(KEYBINDS["ui_"+id]||[])[0]?` or press ${(KEYBINDS["ui_"+id])[0]}`:""}`;
+      x.addEventListener('mousedown',e=>{ e.preventDefault(); e.stopPropagation(); });
+      x.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); toggleHud(id,label[id]); });
+      el.appendChild(x);
+    }
+  }
+  const pot=document.getElementById('potions');
+  if(pot&&!pot.title) pot.title="Potion Belt — press R / G / F / H to drink potions, 9 / 0 for elixirs. ✕ hides it; Settings → Interfaces brings it back.";
+}
+let _logRz=null;
+function applyLogSize(w,h){
+  const lg=document.getElementById('log'), inner=document.getElementById('logInner'); if(!lg||!inner) return;
+  if(w) lg.style.width=Math.round(w)+"px";
+  if(h){ inner.style.height=Math.round(h)+"px"; inner.classList.add("sized"); }
+  if(typeof renderLog==="function") renderLog();
+}
+document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
+  el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
+  el.style.right="auto"; el.style.bottom="auto"; el.style.transform="none"; });
+document.addEventListener('mouseup',()=>{ if(_uiDrag){ _uiDrag=null; saveUIPos(); } });
 function initMinimap(){
   loadMiniPrefs();
   const inB=document.getElementById('mmIn'),outB=document.getElementById('mmOut'),gear=document.getElementById('mmGear'),tog=document.getElementById('mmToggles');
@@ -11122,10 +11697,30 @@ function drawMinimap(){
 }
 
 // ---------- full world map ----------
+let _acMapBg=null;
+function acMapBackdrop(S){   // the real continent, painted once from the client's terrain bytes
+  if(_acMapBg||!ACMAP.on) return _acMapBg;
+  const c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d'), im=g.createImageData(S,S);
+  for(let py=0;py<S;py++) for(let px=0;px<S;px++){
+    const wx=px/S*WORLD-HALF, wz=py/S*WORLD-HALF;
+    const ty=acType(wx,wz), h=acHeight(wx,wz), i=(py*S+px)*4;
+    let r,gg,b;
+    if(h<=0.05||(ty>=16&&ty<=20)){ r=14;gg=22;b=44; }                     // sea & rivers
+    else { const tc=(typeof AC_TYPE_COL!=="undefined"&&0)||null;          // palette lives in initThree scope — mirror the key tones
+      const P={0:[92,84,76],1:[62,92,46],2:[176,192,206],3:[48,88,38],4:[56,70,45],5:[84,64,44],6:[26,22,28],7:[104,88,64],8:[100,84,60],9:[78,98,50],10:[164,144,92],11:[132,126,104],12:[124,112,84],13:[100,92,84],14:[94,88,76],15:[194,198,206]};
+      const t=P[ty]||[80,94,52]; const sh=Math.min(1.25,0.75+h/160);      // altitude lightening
+      r=t[0]*sh; gg=t[1]*sh; b=t[2]*sh; }
+    if(acRoad(wx,wz)){ r=118;gg=94;b=64; }
+    im.data[i]=r; im.data[i+1]=gg; im.data[i+2]=b; im.data[i+3]=255;
+  }
+  g.putImageData(im,0,0); _acMapBg=c; return c;
+}
 function drawBigMap(){
   const c=document.getElementById('bigmap'),g=c.getContext('2d'),S=520,sc=S/WORLD;
   const cx=v=>(v+HALF)*sc;
   g.clearRect(0,0,S,S);g.fillStyle="#11140c";g.fillRect(0,0,S,S);
+  const bg=acMapBackdrop(S); if(bg&&!inDungeon){ g.drawImage(bg,0,0); g.fillStyle="rgba(10,10,6,0.28)"; g.fillRect(0,0,S,S); }   // real Dereth under the markers, dimmed for contrast
   g.strokeStyle="rgba(216,177,74,0.07)";g.lineWidth=1;
   for(let i=1;i<8;i++){const p=i/8*S;g.beginPath();g.moveTo(p,0);g.lineTo(p,S);g.moveTo(0,p);g.lineTo(S,p);g.stroke();}
   if(inDungeon){
@@ -11210,7 +11805,9 @@ function loop(ts){
 let actx=null,masterGain=null,muted=false,musicTimer=null;
 const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,
   labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
-  chat:{}};   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
+  chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
+  vtankBuff:true,vtankLoot:true,gaDest:"auto"};
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){} }
 function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){} }
@@ -14007,11 +14604,11 @@ function addVendorKit(g,stall,vt){
     const md=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.12,8),wood); md.rotation.z=Math.PI/2; md.position.y=0.15; mallet.add(md); hold(mallet);
   }
 }
-function addMerchant(x,z,vt,name){
+function addMerchant(x,z,vt,name,acStock){   // merged: heritage dressing (region) + retail stock (acStock)
   vt=vt||"provisioner";
   const region=(typeof regionOf==="function")?Math.max(0,regionOf(x,z)):0;
   const mesh=buildMerchant(vt,name,region);mesh.position.set(x,0,z);scene.add(mesh);
-  shops.push({x,z,mesh,vtype:vt,name:name||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
+  shops.push({x,z,mesh,vtype:vt,name:name||null,acStock:acStock||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000});obstacles.push({x,z,r:0.9});obstacles.push({x:x+1.3,z,r:0.9});   // I4: vendors carry limited coin (regens over time)
 }
 // ── The Wandering Caravan: an ox-drawn covered wagon that plies the winding road between Holtburg and
 //    Lord Kilmer's Castle Val Halla. Its keeper is a buff-bot + portal-bot who deals in every spell, scarab & taper. ──
@@ -14147,7 +14744,7 @@ function buildShop(){
   const def=VENDOR_TYPES[(activeShop&&activeShop.vtype)||"provisioner"]||VENDOR_TYPES.provisioner;
   if(activeShop){ if(activeShop.pyreals==null){activeShop.pyreals=irnd(14000,20000);activeShop.pmax=20000;}   // I4: coin regenerates ~150/s up to the vendor's max
     const t=now(); if(activeShop._pt) activeShop.pyreals=Math.min(activeShop.pmax||20000,(activeShop.pyreals||0)+(t-activeShop._pt)/1000*150); activeShop._pt=t; }
-  const SHOP=def.stock();
+  const SHOP=(activeShop&&activeShop.acStock)?activeShop.acStock:def.stock();   // retail vendors sell their REAL wares
   const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
   const sub=document.querySelector('#shop .sub');
   if(sub) sub.textContent=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel.`;
@@ -14382,6 +14979,288 @@ function buildSpellbook(){
 document.getElementById('closeSpellbook').onclick=closeSpellbook;
 
 // ---- Settings menu ----
+// ═══ TARGETING & APPRAISAL — AC-style selection. Left-click selects whatever is under the cursor
+//     (crosshair when mouse-look is locked); , / . cycle nearby creatures; a quick right-click
+//     appraises the thing in a parchment window with a live-rendered portrait. Creature vitals show
+//     in the character's own bar colours, over the target frame AND above the creature's head. ═══
+let TARGET=null, _idRay=new THREE.Raycaster(), _idNDC=new THREE.Vector2();
+function pickables(){
+  const out=[];
+  for(const m of monsters){ if(m.hp>0&&m.mesh){ m.mesh._pickRef={type:"monster",ref:m}; out.push(m.mesh); } }
+  for(const n of npcs){ if(n.mesh){ n.mesh._pickRef={type:"npc",ref:n}; out.push(n.mesh); } }
+  for(const s of shops){ if(s.mesh){ s.mesh._pickRef={type:"vendor",ref:s}; out.push(s.mesh); } }
+  for(const d of drops){ if(d.mesh&&d.type==="item"){ d.mesh._pickRef={type:"item",ref:d}; out.push(d.mesh); } }
+  return out;
+}
+function raycastPick(ev){
+  if(typeof cam==="undefined"||!cam) return null;
+  if(ev&&!locked){ const r=cEl.getBoundingClientRect();
+    _idNDC.set(((ev.clientX-r.left)/r.width)*2-1, -((ev.clientY-r.top)/r.height)*2+1); }
+  else _idNDC.set(0,0);                                        // locked: the crosshair is the cursor
+  _idRay.setFromCamera(_idNDC,cam); _idRay.far=60;
+  const hits=_idRay.intersectObjects(pickables(),true);
+  for(const h of hits){ let o=h.object; while(o&&!o._pickRef) o=o.parent;
+    if(o&&o._pickRef){ const ref=o._pickRef.ref;
+      const d=Math.hypot((ref.x||0)-player.x,(ref.z||0)-player.z);
+      if(d<60) return o._pickRef; } }
+  return null;
+}
+function targetName(t){
+  if(!t) return "—";
+  if(t.type==="monster"){ const m=t.ref,b=BESTIARY[m.kind]; return m.name||((m.isElite?"Elite ":"")+(b?b.name:m.kind)); }
+  if(t.type==="npc") return t.ref.name||"Townsperson";
+  if(t.type==="vendor") return (t.ref.name?t.ref.name+" — ":"")+t.ref.title;
+  if(t.type==="item") return t.ref.item?t.ref.item.name:"Dropped item";
+  return "—";
+}
+// overhead tri-bar: stamina + mana planes join the creature's existing billboarded health bar
+function attachTargetBars(m){
+  if(!m.mesh||!m.mesh.userData.hb||m.mesh.userData.tfBars) return;
+  const hb=m.mesh.userData.hb, mk=(col,y)=>{ const bar=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.09),
+    new THREE.MeshBasicMaterial({color:col,fog:false})); bar.position.set(0,y,0.012); hb.add(bar); return bar; };
+  const stB=mk(0x46d784,-0.15), mnB=mk(0x5aa8ff,-0.26);                       // the character's own vital colours
+  m.mesh.userData.tfBars={st:stB,mn:mnB};
+}
+function detachTargetBars(m){
+  const tb=m&&m.mesh&&m.mesh.userData.tfBars; if(!tb) return;
+  const hb=m.mesh.userData.hb; hb.remove(tb.st); hb.remove(tb.mn); m.mesh.userData.tfBars=null;
+}
+function selectTarget(pick,silent){
+  if(TARGET&&TARGET.type==="monster") detachTargetBars(TARGET.ref);
+  TARGET=pick||null;
+  const tf=document.getElementById('targetFrame');
+  if(!TARGET){ if(tf&&!uiHiddenIs("targetFrame")) tf.style.display="none"; return; }
+  if(TARGET.type==="monster") attachTargetBars(TARGET.ref);
+  if(!silent) log(`Target: <b>${targetName(TARGET)}</b>`,"sys");
+  updateTargetUI(0,true);
+}
+function cycleTarget(dir){
+  const cand=monsters.filter(m=>m.hp>0&&!m.isDungeon===!inDungeon&&Math.hypot(m.x-player.x,m.z-player.z)<70)
+    .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+  if(!cand.length){ selectTarget(null); log("No targets in range.","sys"); return; }
+  let i=TARGET&&TARGET.type==="monster"?cand.indexOf(TARGET.ref):-1;
+  i=((i+dir)%cand.length+cand.length)%cand.length;
+  selectTarget({type:"monster",ref:cand[i]});
+}
+function uiHiddenIs(id){ return !!(settings.uiHidden&&settings.uiHidden[id]); }
+function updateTargetUI(dt,force){
+  const tf=document.getElementById('targetFrame'); if(!tf) return;
+  if(!TARGET){ tf.style.display="none"; return; }
+  const t=TARGET;
+  if(t.type==="monster"){ const m=t.ref;
+    if(m.hp<=0||monsters.indexOf(m)<0){ selectTarget(null,true); return; }     // fell or despawned
+    if(m.mesh&&m.mesh.userData.hb) m.mesh.userData.hb.visible=true;            // the tri-bar stays visible while targeted
+    const tb=m.mesh&&m.mesh.userData.tfBars;
+    if(tb){ tb.st.scale.x=Math.max(0.001,(m.st!=null?m.st/m.mst:1)); tb.mn.scale.x=Math.max(0.001,(m.mn!=null?m.mn/m.mmn:1)); }
+    tfSetBar(tf,"tfHp","bhp",m.hp,m.mhp); tfSetBar(tf,"tfSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(tf,"tfMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+  } else {                                                                      // npc / vendor / item: name only
+    ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="none"; });
+  }
+  if(t.type==="monster") ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="block"; });
+  document.getElementById('tfName').textContent=targetName(t);
+  tf.style.display=uiHiddenIs("targetFrame")?"none":"block";
+}
+function tfSetBar(root,spanId,cls,v,max){
+  const b=root.querySelector("."+cls); if(!b) return;
+  b.querySelector("i").style.width=Math.round(clamp(v/Math.max(1,max),0,1)*100)+"%";
+  const sp=document.getElementById(spanId); if(sp) sp.textContent=Math.max(0,Math.round(v))+" / "+Math.round(max);
+}
+// ── right-click appraisal: a live-rendered portrait + what you know of the thing ──
+let _idRT=null,_idScene=null,_idCam=null,_idLight=null;
+function snapshotToCanvas(srcMesh,cnv){
+  try{
+    if(!_idRT){ _idRT=new THREE.WebGLRenderTarget(150,150); _idScene=new THREE.Scene();
+      _idScene.add(new THREE.AmbientLight(0xffffff,0.75));
+      _idLight=new THREE.DirectionalLight(0xfff2d8,0.9); _idLight.position.set(2,3,2); _idScene.add(_idLight);
+      _idCam=new THREE.PerspectiveCamera(38,1,0.05,200); }
+    const cl=srcMesh.clone(true); cl.position.set(0,0,0); cl.rotation.set(0,0,0); cl.scale.copy(srcMesh.scale);
+    cl.traverse(o=>{ if(o.isSprite||o.type==="Sprite"||(o.material&&o.material.isSpriteMaterial)) o.visible=false; });   // no nameplates in portraits
+    _idScene.add(cl);
+    const box=new THREE.Box3().setFromObject(cl), c=box.getCenter(new THREE.Vector3()), sz=box.getSize(new THREE.Vector3());
+    const r=Math.max(sz.x,sz.y,sz.z)*0.5||1;
+    _idCam.position.set(c.x+r*1.5,c.y+r*0.75,c.z+r*1.9); _idCam.lookAt(c); _idCam.updateProjectionMatrix();
+    const oldT=renderer.getRenderTarget(), oldC=new THREE.Color(); renderer.getClearColor(oldC); const oldA=renderer.getClearAlpha();
+    renderer.setClearColor(0x241c10,1); renderer.setRenderTarget(_idRT); renderer.clear(); renderer.render(_idScene,_idCam);
+    const px=new Uint8Array(150*150*4); renderer.readRenderTargetPixels(_idRT,0,0,150,150,px);
+    renderer.setRenderTarget(oldT); renderer.setClearColor(oldC,oldA);
+    _idScene.remove(cl);
+    const ctx=cnv.getContext('2d'), img=ctx.createImageData(150,150);
+    for(let y=0;y<150;y++) img.data.set(px.subarray((149-y)*600,(149-y)*600+600), y*600);   // flip Y
+    ctx.putImageData(img,0,0);
+  }catch(e){ const ctx=cnv.getContext('2d'); ctx.fillStyle="#241c10"; ctx.fillRect(0,0,150,150); }
+}
+function idItemDesc(it){
+  const rar=(typeof itemRarity==="function")?itemRarity(it).n:"";
+  const bits=[];
+  if(it.stat==="weapon") bits.push(`+${it.v} damage · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`);
+  else if(it.stat==="worn") bits.push(`+${it.v} armor · ${it.aslot||"chest"}${it.at?" ("+it.at+")":""}`);
+  else if(it.stat==="jewelry") bits.push("trinket"+(typeof jewelryDesc==="function"?" · "+jewelryDesc(it):""));
+  else if(it.v!=null) bits.push(`value ${it.v}p`);
+  if(it.mat) bits.push(it.mat);
+  if(it.work) bits.push("workmanship "+it.work);
+  return `<div>${gearIco(it)} <b>${rar}</b></div><div>${bits.join(" · ")}</div>`;
+}
+function openIdPanel(pick){
+  const p=document.getElementById('idPanel'); if(!p||!pick) return;
+  selectTarget(pick,true);                                       // appraising a thing also targets it
+  const nameEl=document.getElementById('idName'), body=document.getElementById('idBody'), bars=document.getElementById('idBars');
+  nameEl.textContent=targetName(pick);
+  let mesh=null, html="";
+  if(pick.type==="monster"){ const m=pick.ref,b=BESTIARY[m.kind]; mesh=m.mesh;
+    bars.style.display="block";
+    tfSetBar(p,"idHp","bhp",m.hp,m.mhp); tfSetBar(p,"idSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(p,"idMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+    if(b&&player.bestiary&&player.bestiary.indexOf(m.kind)>=0){
+      const tier=(typeof threatTier==="function")?threatTier(b):null;
+      const aff=(typeof AFFINITY!=="undefined")?AFFINITY[m.kind]:null;
+      html=`<div><b>${b.name}</b>${tier?` — <span style="color:${tier.c};text-shadow:0 0 2px #241c10"><b>${tier.t}</b></span>`:""}</div>
+        <div>Damage ~${Math.round(b.dmg*settings.diff)} · Speed ${b.spd}</div>
+        <div>Worth ${b.xp} XP · ${b.gold[0]}–${b.gold[1]}p</div>
+        ${aff?`<div>Weak to <b>${aff.weak}</b> · resists <b>${aff.resist}</b></div>`:""}${m.isElite?"<div><b>Champion</b> — stronger than its kin</div>":""}`;
+    } else html=`<i>You know little of this creature. Slay one, and its nature will be written in your Bestiary (B).</i>`;
+  } else if(pick.type==="npc"){ const n=pick.ref; mesh=n.mesh;
+    bars.style.display="none";
+    const R=NPC_ROLES[n.role]||{label:n.role};
+    html=`<div><b>${R.label}</b>${n.town?" of "+n.town:""}</div><div><i>Press E nearby to speak.</i></div>`;
+  } else if(pick.type==="vendor"){ const s=pick.ref; mesh=s.mesh;
+    bars.style.display="none";
+    html=`<div><b>${s.title}</b></div><div>Coin purse: ~${(s.pyreals||0).toLocaleString()}p</div><div><i>Press E nearby to trade.</i></div>`;
+  } else if(pick.type==="item"){ const d=pick.ref; mesh=d.mesh;
+    bars.style.display="none";
+    html=idItemDesc(d.item||{})+"<div><i>Press E nearby to take it.</i></div>";
+  }
+  body.innerHTML=html;
+  if(mesh) snapshotToCanvas(mesh,document.getElementById('idPortrait'));
+  p.style.display="block";
+}
+function closeIdPanel(){ const p=document.getElementById('idPanel'); if(p) p.style.display="none"; }
+// ── HUD visibility keystrokes (settings.uiHidden persists; Map Keys rebin)s ──
+function toggleHud(id,label){
+  settings.uiHidden=settings.uiHidden||{};
+  settings.uiHidden[id]=!settings.uiHidden[id]; saveSettings(); applyUIVis();
+  log(`<b>${label}</b> ${settings.uiHidden[id]?"hidden":"shown"}.`,"sys");
+}
+function applyUIVis(){
+  const h=settings.uiHidden||{};
+  for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
+    if(h[id]) el.style.display="none";
+    else if(["goarrow","alinco","vtank","magtools"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
+  if(typeof applyPluginSettings==="function") applyPluginSettings();            // plugin panels re-apply their own visibility
+}
+// ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
+//     real plugin screenshots (AC wiki): GoArrow's chrome arrow with destination-over / distance-
+//     under + coords, Virindi Tank's parchment window with green LED toggles, Alinco's buff list,
+//     Mag-Tools' combat tracker. Toggled in Settings → "Decal plugins"; states persist. ═══
+const PLUGIN_DEFS=[
+  {k:"goarrow", n:"GoArrow",      d:"Destination arrow with distance + AC coordinates. Auto-tracks the saga chapter, your corpse, or your Lifestone — click the destination name to pick any town."},
+  {k:"alinco",  n:"Alinco Buffs", d:"Buff HUD — every active enchantment with its time remaining."},
+  {k:"vtank",   n:"Virindi Tank", d:"Combat assistant: rebuffs expiring enchantments when idle (20 mana each) and loots nearby drops."},
+  {k:"magtools",n:"Mag-Tools",    d:"Combat tracker — XP/hour, kills/hour, time to next level."},
+];
+const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
+function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
+  return Math.abs(N).toFixed(1)+(N>=0?"N":"S")+", "+Math.abs(E).toFixed(1)+(E>=0?"E":"W"); }
+function pluginOn(k){ return !!(settings.plugins&&settings.plugins[k]); }
+function applyPluginSettings(){
+  for(const p of PLUGIN_DEFS){ const el=document.getElementById(p.k); if(el) el.style.display=(pluginOn(p.k)&&running&&!uiHiddenIs(p.k))?"block":"none"; }
+  const mt=document.getElementById('magtools'); if(mt) mt.style.top=pluginOn("alinco")?"334px":"196px";   // stack below Alinco when both live
+  if(pluginOn("magtools")&&!PLUG.mag&&typeof player!=="undefined") PLUG.mag={t0:performance.now(),xp:0,k0:player.kills||0};
+  vtPaint();
+}
+function vtPaint(){ document.querySelectorAll('#vtank .vtrow').forEach(r=>{
+  const on=r.dataset.vt==="buff"?settings.vtankBuff:settings.vtankLoot;
+  const led=r.querySelector('.vtled'); if(led) led.className="vtled"+(on?" on":""); }); }
+function initPluginUI(){
+  document.querySelectorAll('#vtank .vtrow').forEach(r=>{ r.onclick=()=>{
+    if(r.dataset.vt==="buff") settings.vtankBuff=!settings.vtankBuff; else settings.vtankLoot=!settings.vtankLoot;
+    saveSettings(); vtPaint(); }; });
+  const de=document.getElementById('gaDest'), sel=document.getElementById('gaSel');
+  if(de&&sel){
+    const opts=[["auto","◈ Auto (saga / corpse / lifestone)"],["valhalla","Castle Val Halla"]].concat(
+      CITIES.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>[c.name,c.name]));
+    sel.innerHTML=opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("");
+    sel.value=settings.gaDest||"auto";
+    de.onclick=()=>{ sel.style.display=sel.style.display==="none"?"inline-block":"none"; };
+    sel.onchange=()=>{ settings.gaDest=sel.value; saveSettings(); sel.style.display="none"; };
+  }
+}
+// GoArrow destination: "auto" = live saga objective → your corpse → bound Lifestone; else a town
+function gaTarget(){
+  const mode=settings.gaDest||"auto";
+  if(mode==="auto"){
+    const ce=(typeof currentCalEvent==="function")?currentCalEvent():null;
+    if(ce&&ce.goal&&ce.goal.v&&!calendarDone[ce.id]){ const p=sagaGoalPoint(ce.goal); if(p) return {x:p.x,z:p.z,label:"Saga: "+ce.name}; }
+    for(const d of drops) if(d.corpse) return {x:d.x,z:d.z,label:"Your corpse"};
+    const ls=lifestones.find(l=>l.bound); if(ls) return {x:ls.x,z:ls.z,label:ls.name+" Lifestone"};
+    return null;
+  }
+  if(mode==="valhalla") return {x:KC.x,z:KC.z+138,label:"Castle Val Halla"};
+  const c=CITIES.find(c=>c.name===mode); return c?{x:c.x,z:c.z,label:c.name}:null;
+}
+function updatePlugins(dt){
+  if(!running) return;
+  if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyUIVis();
+    setChatTab(settings.chatTab||"all");                    // restore the last-used chat tab
+    if(settings.logSize&&settings.logSize.h) applyLogSize(settings.logSize.w,settings.logSize.h);   // …and its size
+    const ix=document.getElementById('idClose'); if(ix) ix.onclick=closeIdPanel;
+    document.addEventListener('keydown',e=>{ if(e.code==="Escape"&&document.getElementById('idPanel').style.display==="block"){ closeIdPanel(); } });
+  }
+  // ── Virindi Tank behaviours ──
+  PLUG.t1-=dt;
+  if(pluginOn("vtank")&&PLUG.t1<=0){ PLUG.t1=0.4;
+    if(settings.vtankLoot&&player.alive&&!paused&&player.inv.length<invCap()){
+      let best=null,bd=4.5;
+      for(const d of drops){ if(d.type!=="item"||(d.shared&&!isOnline)) continue;
+        const dd=Math.hypot(d.x-player.x,d.z-player.z); if(dd<bd){bd=dd;best=d;} }
+      if(best){ if(best.shared){ netSend({t:"pickup",id:best.id}); }
+        else { lootItem(best.item); scene.remove(best.mesh); drops.splice(drops.indexOf(best),1); }
+        PLUG.vtMsg="Looting…"; PLUG.vtMsgT=2; }
+    }
+    if(settings.vtankBuff&&player.alive&&!paused&&!player.combatT){   // "Rebuff when idle"
+      const RECAST=(pool,label)=>{ if(!pool) return false;
+        for(const k of Object.keys(pool)){ const b=pool[k];
+          if(b&&b.t>0&&b.t<12&&player.mn>=20){ player.mn-=20; b.t=240;
+            log(`<span style="color:#9fd0ff">[VTank]</span> rebuffs <b>${label(k)}</b>.`,"sys");
+            PLUG.vtMsg="Rebuffing…"; PLUG.vtMsgT=2; return true; } }
+        return false; };
+      RECAST(player.spellBuffs,a=>a)||RECAST(player.skillBuffs,k=>(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k))||RECAST(player.banes,el=>el+" bane");
+    }
+    PLUG.vtMsgT-=0.4; const st=document.getElementById('vtState');
+    if(st) st.textContent=PLUG.vtMsgT>0?PLUG.vtMsg:(player.combatT?"Combat":"Idle");
+  }
+  // ── GoArrow tracks the camera every frame ──
+  if(pluginOn("goarrow")){
+    const t=gaTarget(), ar=document.getElementById('gaArrow'), de=document.getElementById('gaDest'), inf=document.getElementById('gaInfo');
+    if(ar&&de&&inf){ if(t){ const dx=t.x-player.x,dz=t.z-player.z,d=Math.hypot(dx,dz);
+        ar.style.transform="rotate("+(player.yaw-Math.atan2(-dx,-dz))+"rad)";   // forward = (-sin yaw, -cos yaw)
+        de.textContent=t.label; inf.textContent=Math.round(d)+" m · "+acCoordStr(t.x,t.z);
+      } else { de.textContent="No destination"; inf.textContent="—"; ar.style.transform="rotate(0rad)"; } }
+  }
+  // ── 1 Hz panels ──
+  PLUG.t2-=dt; if(PLUG.t2>0) return; PLUG.t2=1;
+  if(typeof ensureGrips==="function") ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
+  if(pluginOn("alinco")){
+    const rows=[];
+    if(player.spellBuffs) for(const a of Object.keys(player.spellBuffs)) rows.push(["+"+player.spellBuffs[a].v+" "+a,player.spellBuffs[a].t]);
+    if(player.skillBuffs) for(const k of Object.keys(player.skillBuffs)) rows.push(["+"+player.skillBuffs[k].v+" "+(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k),player.skillBuffs[k].t]);
+    if(player.banes) for(const el of Object.keys(player.banes)) rows.push([el[0].toUpperCase()+el.slice(1)+" Bane",player.banes[el].t]);
+    const el=document.getElementById('alincoRows');
+    if(el) el.innerHTML=rows.length?rows.sort((a,b)=>a[1]-b[1]).map(r=>{
+      const mm=Math.floor(r[1]/60), ss=Math.floor(r[1]%60);
+      return `<div style="display:flex;justify-content:space-between;gap:8px${r[1]<15?";color:#8a1e1e;font-weight:bold":""}"><span>${r[0]}</span><span>${mm}:${String(ss).padStart(2,"0")}</span></div>`;
+    }).join(""):'<div style="color:#7a6a4a">No active enchantments</div>';
+  }
+  if(pluginOn("magtools")&&PLUG.mag){
+    const hrs=Math.max((performance.now()-PLUG.mag.t0)/3600000,1/3600);
+    const xph=Math.round(PLUG.mag.xp/hrs), kph=Math.round((player.kills-PLUG.mag.k0)/hrs);
+    const need=(typeof xpForLevel==="function")?xpForLevel(player.level):0;
+    const eta=(xph>0&&need>player.xp)?(need-player.xp)/xph:null;
+    const fmt=s=>{const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?h+"h "+String(m).padStart(2,"0")+"m":m+"m";};
+    const el=document.getElementById('magRows');
+    if(el) el.innerHTML=[["Session",fmt((performance.now()-PLUG.mag.t0)/1000)],["XP / hour",xph.toLocaleString()],
+      ["Kills / hour",kph],["Next level",eta!=null?"~"+fmt(eta*3600):"—"]]
+      .map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
+  }
+}
 function openSettings(){
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
   const sens=document.getElementById('setSens'),vol=document.getElementById('setVol'),fov=document.getElementById('setFov');
@@ -14411,6 +15290,31 @@ function openSettings(){
       paint(); lc.appendChild(b);
     }
   }
+  // Decal plugins: lit = loaded (click for on/off; hover for what each one does)
+  const pc=document.getElementById('setPlugins');
+  if(pc&&!pc.dataset.built){ pc.dataset.built="1";
+    if(!settings.plugins) settings.plugins={};
+    for(const p of PLUGIN_DEFS){
+      const b=document.createElement('button'); b.className="tbtn"; b.textContent=p.n; b.title=p.d;
+      b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ b.style.opacity=pluginOn(p.k)?1:0.35; };
+      b.onclick=()=>{ settings.plugins[p.k]=!pluginOn(p.k); paint(); saveSettings(); applyPluginSettings();
+        log(`<b>${p.n}</b> ${pluginOn(p.k)?"loaded":"unloaded"}. <span style="color:var(--dim)">${p.d}</span>`,"sys"); };
+      paint(); pc.appendChild(b);
+    }
+  }
+  // Interfaces: lit = shown (mirrors the ✕ buttons and the HUD-Toggle keybinds)
+  const hc=document.getElementById('setHud');
+  if(hc&&!hc.dataset.built){ hc.dataset.built="1";
+    for(const [id,n] of HUD_TOGGLES){
+      const b=document.createElement('button'); b.className="tbtn"; b.textContent=n;
+      b.title=`Show / hide the ${n}${(KEYBINDS["ui_"+id]||[])[0]?` (key: ${(KEYBINDS["ui_"+id])[0]})`:""}`;
+      b.style.cssText="font-size:11px;padding:3px 8px";
+      const paint=()=>{ b.style.opacity=uiHiddenIs(id)?0.35:1; };
+      b.onclick=()=>{ toggleHud(id,n); paint(); };
+      b.dataset.hudBtn=id; paint(); hc.appendChild(b);
+    }
+  } else if(hc){ hc.querySelectorAll('[data-hud-btn],[data-hudBtn],button').forEach(b=>{ const id=b.dataset.hudBtn; if(id) b.style.opacity=uiHiddenIs(id)?0.35:1; }); }
   // per-channel chat colour + mute (click the name to mute, the swatch to recolour)
   const cc=document.getElementById('setChat');
   if(cc&&!cc.dataset.built){ cc.dataset.built="1";
@@ -14543,6 +15447,7 @@ function placeSignposts(r){
 }
 function onRoad(x,z){
   if(inDungeon) return false;
+  if(typeof acRoad==="function"&&acRoad(x,z)) return true;   // the authentic AC road web grants road speed too
   for(const r of ROADS){
     const dx=r.bx-r.ax,dz=r.bz-r.az,len2=dx*dx+dz*dz;
     let t=((x-r.ax)*dx+(z-r.az)*dz)/len2;t=clamp(t,0,1);
@@ -14575,6 +15480,7 @@ function addNode(x,z,type){
 }
 function gatherNode(n){
   n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
+  startAction(n.type==="ore"?"mine":"gather",1.3);   // play the work animation (mining swing / crouched harvest)
   if(n.type==="ore"){const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot");}
   else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
     if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
@@ -14632,6 +15538,425 @@ function clearProjectiles(){ for(const p of pProj) scene.remove(p.mesh); for(con
 //    A full cell.dat-derived pack can be dropped at assets/dungeon-layouts.json (same schema) and is
 //    merged over these at boot.
 const DUNGEON_SCRIPTS={
+  // ── batch 20c: misc quest dungeons (wiki walkthroughs + ACMaps; Old Scratchy's Cave is
+  //    officially unmapped — only its documented cave-and-lair structure is encoded) ──
+  "Colton Reeyan's Sanctuary":{boss:"Mosswart Director",noBoxes:true,
+    d:"A swamp-warren of mosswart kidnappers lit by lava seams, where every ledge must be leapt and the only treasures are three drugged beasts snoring in their cages. Hand the Sealed Letter to the Messenger at the door; the warren splits three ways from the hub — west up the platform shaft to the Director and Shady's cage, north to Bubba, east up the harder jumps to Spot.",
+    rooms:[["en",0,0,0,{t:"entry",box:"Sealed Letter"}],["hub",0,1,0,{m:1,portal:1}],
+      ["west",-1,1,0,{m:2}],["climbW",-1,2,2.6,{m:2}],["dirW",-1,3,2.6,{t:"boss",m:2}],
+      ["mid",0,2,0,{m:2}],["east",1,1,0,{m:2}],["climbE",1,2,2.6,{m:2}]],
+    links:[["en","hub","key","Sealed Letter"],["hub","west","flat"],["west","climbW","ramp"],
+      ["climbW","dirW","flat"],["hub","mid","flat"],["hub","east","flat"],["east","climbE","ramp"]]},
+  "Cells of the Black Book":{boss:"Dark Master",loot:["Black Page of Salt and Ash"],
+    d:"A dead-symmetric Dericost prison where four arms of cells converge on one raised scriptorium, and the same black book waits at every compass point. Through the octagon and the cell-block with its Font of Stasis, up the ramp to the book-chamber — and above them all, the central chamber where the fifth book lies. Only those with blood on their hands may read it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["oct",0,1,0,{round:1,m:2}],["cellb",0,2,0,{cells:1,m:2}],
+      ["book",0,3,2.6,{m:1}],["center",0,4,5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","oct","flat"],["oct","cellb","flat"],["cellb","book","ramp"],["book","center","ramp"]]},
+  "Dardante's Workshop":{boss:"Bound Falatacot",loot:["Untranslated Bound Falatacot Fragment"],noBoxes:true,
+    d:"A Viamontian sorcerer's atelier of pillared halls marching ever upward, each grander than the last — the octagon, the pillared square, the great waffle-grid hall. The Summoning Adepts in the northeast octagons carry the ring that opens the way onward, and past the hexagonal hall something ancient and serpentine is chained in the Binding Realm — and does not wish to remain so.",
+    rooms:[["en",0,0,0,{t:"entry"}],["oct1",0,1,2.6,{round:1,m:2}],["pill",0,2,2.6,{m:2}],
+      ["waffle",0,3,5.2,{big:1,m:2}],["adepts",1,3,5.2,{round:1,m:2,box:"Ring of the Summoning Adepts"}],
+      ["summ",1,4,5.2,{m:2}],["hex",0,4,5.2,{round:1,m:1}],["bind",0,5,5.2,{t:"boss",round:1,portal:1}]],
+    links:[["en","oct1","ramp"],["oct1","pill","flat"],["pill","waffle","ramp"],["waffle","adepts","flat"],
+      ["adepts","summ","key","Ring of the Summoning Adepts"],["summ","hex","flat"],["hex","bind","flat"]]},
+  "Saadia's Retreat":{boss:"Mosswart Soul Trapper",loot:["Alloy Implement"],
+    d:"A mosswart burrow that keeps going down — past the ring gallery and the warrens, the floor opens into three black shafts spanned by plank bridges, croaking zealots on every one. Somewhere by the pit, a forgotten scrap of machined alloy waits in a dead end, and a locked door at the deepest block guards the strongbox.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ring",0,1,-2.6,{round:1,m:2}],["warren",0,2,-5.2,{m:3}],
+      ["hook",-1,2,-5.2,{small:1,m:1}],["pits",0,3,-8.6,{big:1,m:2}],["deep",0,4,-8.6,{t:"boss",m:2}]],
+    links:[["en","ring","ramp"],["ring","warren","ramp"],["warren","hook","flat"],
+      ["warren","pits","drop"],["pits","deep","key"]]},
+  "Setab's Barracks":{boss:"Drudge Prowler",
+    d:"A tumeroken-named drudge den under the Lytelthorpe hills: bunk-room after bunk-room of chittering slinkers, a locked guard block hiding the garrison's chests, a switchback ramp worn smooth, and one looping lower gallery ending in the great square hall.",
+    rooms:[["en",0,0,0,{t:"entry"}],["barr",1,0,-2.6,{big:1,m:3}],["guard",2,0,-2.6,{m:2}],
+      ["switch",1,1,-5.2,{m:1}],["loop",1,2,-5.2,{m:1}],["hall",1,3,-5.2,{t:"boss",big:1}]],
+    links:[["en","barr","ramp"],["barr","guard","key"],["barr","switch","ramp"],
+      ["switch","loop","flat"],["loop","hall","flat"]]},
+  "Old Scratchy's Cave":{boss:"Old Scratchy",loot:["Cartilage of Old Scratchy"],
+    d:"A low reed-choked burrow south of Uziz where skinners drag their kills, and at its heart the great old reedshark himself — scarred, patient, and worth cutting open only if a dead Sho weaponsmith has asked you nicely.",
+    rooms:[["en",0,0,0,{t:"entry"}],["passage",0,1,0,{m:2}],["lair",0,2,0,{t:"boss",round:1,big:1}]],
+    links:[["en","passage","flat"],["passage","lair","flat"]]},
+  // ── batch 20b: classics (Harbinger + Disaster Maze from quest walkthroughs; the low-level
+  //    four from ACMaps layouts — no prose walkthroughs exist for those) ──
+  "Tunnels to the Harbinger":{boss:"The Harbinger",loot:["Harbinger Arm Token","Royal Coat of Arms Stamp"],
+    d:"A wound bored straight down through the world, where the floors themselves burn, freeze, and dissolve, and unseen ledges are all that carry the faithful across pits of acid and fire. Down the switchbacks and the twin diamond rooms, across the acid pit and the lava pit, past the grey stair-halls and the ice shelf to the staging octagon — and at the bottom of thirty-three levels of screaming elemental dark, the Harbinger waits: a thing that should not be.",
+    rooms:[["en",0,0,0,{t:"entry"}],["loop",0,1,-2.6,{m:2}],["diam",0,2,-5.2,{m:2}],
+      ["acid",0,3,-8.6,{m:1}],["lava",1,3,-12,{m:1}],["grey",1,4,-14.6,{m:2}],
+      ["ice",1,5,-18,{m:1}],["stage",0,5,-18,{round:1,big:1,m:2}],
+      ["harb",0,6,-21.4,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","loop","ramp"],["loop","diam","ramp"],["diam","acid","drop"],["acid","lava","drop"],
+      ["lava","grey","ramp"],["grey","ice","drop"],["ice","stage","flat"],["stage","harb","drop"]]},
+  "Disaster Maze":{boss:"Virindi Director",loot:["Slimy Note"],noBoxes:true,
+    d:"A lightless warren where every gate is locked and every corridor doubles back upon itself, its halls crowded with squealing tuskers and drifting Virindi. The Silvery Key lies at the top of the ramp east of the drop; no pick can force the Director's door — only that key. Behind it, the only Virindi Director in Dereth conducts its silent experiments beside the chests that made this maze a legend.",
+    rooms:[["en",0,0,0,{t:"entry"}],["keyup",1,0,2.6,{m:2,box:"Silvery Key"}],["bridge",0,1,0,{m:2}],
+      ["upper",-1,1,2.6,{m:1}],["web",0,2,-2.6,{big:1,m:3}],["pocket",1,2,-2.6,{small:1,m:1}],
+      ["director",0,3,-2.6,{t:"boss",big:1}]],
+    links:[["en","keyup","ramp"],["en","bridge","flat"],["bridge","upper","ramp"],["bridge","web","ramp"],
+      ["web","pocket","flat"],["web","director","key","Silvery Key"]]},
+  "Behind the Waterfall":{boss:"Tusker Annihilator",
+    d:"Beyond the curtain of falling water, a humid tusker-warren tunnels ever east and ever downward, ramp after ramp echoing with the bellows of the island's hulking wardens. At its deepest hall a graven image of Bael'Zharon glowers over the portal it was carved to conceal — the road to the Tusker Warrior's Lair.",
+    rooms:[["en",0,0,0,{t:"entry"}],["e1",1,0,-2.6,{m:2}],["e2",2,0,-5.2,{m:2}],
+      ["e3",2,1,-7.8,{m:2}],["statue",2,2,-7.8,{t:"boss",big:1,portal:1}]],
+    links:[["en","e1","ramp"],["e1","e2","ramp"],["e2","e3","ramp"],["e3","statue","flat"]]},
+  "Hebian-To Sewers":{boss:"Lich",
+    d:"The stink of Hebian-To's refuse rolls through gated brick channels where rats and wasps swarm the shallows and something colder shuffles below. Down past the round junction, rusted locks guard the zombie galleries, and a sheer pit falls to the deep sewers — where, ten levels beneath the tea-houses, three lifestones glow in the dark like altars of a drowned chapel.",
+    rooms:[["en",0,0,0,{t:"entry"}],["grid",0,1,0,{m:2}],["junc",0,2,-2.6,{round:1,m:2}],
+      ["gall",0,3,-2.6,{m:2}],["zomb",1,3,-2.6,{m:2}],["deep",1,4,-6,{big:1,m:2}],
+      ["lich",0,4,-6,{t:"boss",big:1,portal:1}]],
+    links:[["en","grid","flat"],["grid","junc","ramp"],["junc","gall","flat"],["gall","zomb","key"],
+      ["zomb","deep","drop"],["deep","lich","flat"]]},
+  "Dungeon Binar":{boss:"Skeleton Captain",
+    d:"Old bones litter the threshold of this Samsur crypt, where rats scurry between sandstone pillars and dead men in rusted mail still hold their posts. East and west spread the pillared halls; north, behind the locked door, one long climbing gallery leads to the far vault that keeps its chests locked against all but the patient.",
+    rooms:[["en",0,0,0,{t:"entry"}],["rats",0,1,0,{small:1,m:2}],["east",1,0,0,{big:1,m:2}],
+      ["west",-1,0,-2.6,{big:1,m:2}],["nstair",0,2,0,{m:1}],["vault",1,2,-2.6,{t:"boss",big:1}]],
+    links:[["en","rats","flat"],["en","east","flat"],["en","west","ramp"],["rats","nstair","key"],
+      ["nstair","vault","ramp"]]},
+  "Dungeon Mei":{boss:"Lich",
+    d:"A modest old barrow off the Shoushi road, its front cells opening onto one vast black cavern where zombies wander among the drudge-fires. Climb the western ramps and force the eighty-weight lock, and you stand in a high square chamber that few travellers ever bother to find.",
+    rooms:[["en",0,0,0,{t:"entry"}],["cavern",0,1,0,{big:1,m:3}],["chests",1,0,0,{small:1,m:2}],
+      ["nw",-1,0,2.6,{m:1}],["far",-1,1,2.6,{t:"boss",small:1}]],
+    links:[["en","cavern","key"],["en","chests","flat"],["en","nw","ramp"],["nw","far","key"]]},
+  "Dungeon Muddy":{boss:"Sandstone Golem",
+    d:"A wet clay burrow north of Shoushi where golems shoulder out of the muck and seared bones stand guard over nothing in particular. Its one treasure is honest: a still pool at the deep end of the diamond cavern where a traveller may catch their breath before slogging home.",
+    rooms:[["en",0,0,0,{t:"entry"}],["grid",1,0,0,{m:2}],["cavern",2,0,0,{big:1,m:2}],
+      ["pinch",2,1,0,{small:1,m:1}],["diamond",2,2,0,{t:"boss",big:1}]],
+    links:[["en","grid","flat"],["grid","cavern","flat"],["cavern","pinch","flat"],["pinch","diamond","flat"]]},
+  // ── batch 20: the Zaikhal war-keeps (Defense of Zaikhal + Simulacra Infiltrators; wiki + ACMaps —
+  //    each Legion Keep has its own layout but all follow the documented Doorkeeper-key formula) ──
+  "Gold Legion Keep":{boss:"Captain Aurachon",loot:["Gold Invader Lord Helm","Corcima Castle Gold Ward Portal Gem"],noBoxes:true,
+    d:"A dead-straight Viamontian war-fort driven like a spear into the earth south of Zaikhal — hall after garrisoned hall marching ever southward. The lever in the pillared octagon opens the way to the donut gallery; the Doorkeeper's key opens the Captain's hall. Gold-liveried knights drill beside their pet Virindi, and the air in Aurachon's gallery smells of portal-fire bound for Corcima Castle.",
+    rooms:[["en",0,0,0,{t:"entry"}],["dais",0,1,-2.6,{m:2}],["hub",0,2,-2.6,{big:1,m:2}],
+      ["oct",0,3,-2.6,{round:1,m:2}],["donut",0,4,-2.6,{big:1,m:2}],["hex",0,5,-5.2,{m:2}],
+      ["dk",0,6,-5.2,{small:1,m:1,box:"Gold Legion Door Key"}],["qm",1,6,-5.2,{small:1,m:1}],
+      ["boss",0,7,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","dais","ramp"],["dais","hub","flat"],["hub","oct","flat"],["oct","donut","lever","@oct"],
+      ["donut","hex","ramp"],["hex","dk","flat"],["dk","qm","flat"],["dk","boss","key","Gold Legion Door Key"]]},
+  "Copper Legion Keep":{boss:"Captain Ramelle",loot:["Copper Invader Lord Helm","Corcima Castle Copper Ward Portal Gem"],noBoxes:true,
+    d:"The junior legion's warren, and the crookedest of the keeps — a torch on the junction wall unlocks the cell-block, the quartermaster's chest lies sunk below the barracks, and the gauntlet climbs again to where Captain Ramelle holds court on a high platform near the sky. Mercenaries and battle-mages bicker in every hall.",
+    rooms:[["en",0,0,0,{t:"entry"}],["barr",0,1,-2.6,{big:1,m:2}],["junc",0,2,-2.6,{small:1}],
+      ["cellb",1,2,-2.6,{cells:1,m:2}],["hex",0,3,-5.2,{m:2}],["qm",1,3,-5.2,{small:1,m:1}],
+      ["gaunt",0,4,-2.6,{m:2}],["dk",1,4,-2.6,{small:1,m:1,box:"Copper Legion Door Key"}],
+      ["boss",0,5,-2.6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","barr","ramp"],["barr","junc","flat"],["junc","cellb","lever","@junc"],
+      ["junc","hex","ramp"],["hex","qm","flat"],["hex","gaunt","ramp"],["gaunt","dk","flat"],
+      ["gaunt","boss","key","Copper Legion Door Key"]]},
+  "Silver Legion Keep":{boss:"Captain Argenne",loot:["Silver Invader Lord Helm","Corcima Castle Silver Ward Portal Gem"],noBoxes:true,
+    d:"Silver banners and Lugian mercenaries share these galleries, where every hall funnels you toward one great vaulted chamber and its commander's plateau. Pull the lever atop that dais and the east wall grinds open — the Doorkeeper beyond carries the only key that fits Argenne's door, and past him the portal home.",
+    rooms:[["en",0,0,0,{t:"entry"}],["guard",0,1,-2.6,{m:2}],["ring",0,2,-2.6,{round:1,m:2}],
+      ["hall",0,3,-5.2,{big:1,m:2}],["qm",0,4,-5.2,{small:1,m:1}],["east",1,3,-5.2,{m:2}],
+      ["dk",1,4,-2.6,{small:1,m:1,box:"Silver Legion Door Key"}],["boss",1,5,-2.6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","guard","ramp"],["guard","ring","flat"],["ring","hall","ramp"],["hall","qm","flat"],
+      ["hall","east","lever","@hall"],["east","dk","ramp"],["dk","boss","key","Silver Legion Door Key"]]},
+  "Platinum Legion Keep":{boss:"Captain Balanchi",loot:["Platinum Invader Lord Helm","Shard of Corcima's Armor"],noBoxes:true,
+    d:"The elite legion's citadel, all lever-warded gates and thaumaturge-haunted ramps — three locks stand between the gate and Balanchi's octagon, and every one demands you climb. Past the Captain waits the hot drop into Corcima's own courtyard, where the General himself wears the armor the Queen wants shattered.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ringg",0,1,-2.6,{big:1,m:2}],["inner",0,2,-2.6,{m:2}],
+      ["lr1",0,3,-2.6,{m:2}],["ramped",0,4,0,{m:2}],["hall",-1,4,0,{m:2}],["qm",-1,5,0,{small:1,m:1}],
+      ["dk",-2,4,0,{small:1,m:1,box:"Platinum Legion Door Key"}],["boss",-2,5,0,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","ringg","ramp"],["ringg","inner","flat"],["inner","lr1","lever","@inner"],
+      ["lr1","ramped","ramp"],["ramped","hall","lever","@ramped"],["hall","qm","flat"],
+      ["hall","dk","flat"],["dk","boss","key","Platinum Legion Door Key"]]},
+  "Northern Infiltrator Keep":{boss:"Northern Infiltrator Master",loot:["Shield of the Simulacra","Northern Infiltrator Message Shard"],
+    d:"A renegade Virindi listening-post strung out like a rope beneath the Zaikhal hills — drudge thralls and Tumerok muscle billeted in cell after identical cell along one long march north, through the ring-loops and the octagonal hub of radiating cells. At the rope's end a hollow-cowled Master waits with a shield of not-quite-right make.",
+    rooms:[["en",0,0,0,{t:"entry"}],["guard",0,1,0,{m:2}],["loop1",0,2,0,{round:1,m:2}],
+      ["cells4",0,3,0,{small:1,m:2}],["hub",0,4,0,{round:1,big:1,m:2}],["zig",1,4,0,{m:2}],
+      ["twin",1,5,2.6,{m:2}],["boss",0,5,2.6,{t:"boss",portal:1}]],
+    links:[["en","guard","flat"],["guard","loop1","flat"],["loop1","cells4","flat"],["cells4","hub","flat"],
+      ["hub","zig","flat"],["zig","twin","ramp"],["twin","boss","flat"]]},
+  "Southern Infiltrator Keep":{boss:"Southern Infiltrator Master",loot:["Helm of the Simulacra","Southern Infiltrator Message Shard"],
+    d:"The southern twin keeps no straight lines — its halls knot and double back, sinking two storeys through drudge-warrens toward a corner chamber where the Master weaves human-shaped puppets in the dark. Where the northern keep is a road, this one is a snare.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",-1,0,0,{m:2}],["tall",-1,1,-2.6,{m:2}],
+      ["web1",-1,2,-2.6,{big:1,m:2}],["side",0,2,-2.6,{small:1,m:1}],["web2",-1,3,-5.2,{big:1,m:2}],
+      ["boss",-1,4,-5.2,{t:"boss",portal:1}]],
+    links:[["en","maze","flat"],["maze","tall","ramp"],["tall","web1","flat"],["web1","side","flat"],
+      ["web1","web2","ramp"],["web2","boss","flat"]]},
+  "Nor's Folly":{boss:"Drudge Prowler",
+    d:"A drudge-gnawed burrow in the Al-Arqas sands, so obscure the cartographers themselves misfiled which hemisphere it sits in. Whatever Nor sought down these three sinking levels, only shreths and sneaks remain to guard it — and two portals stand ready for travelers who agree the venture was folly.",
+    rooms:[["en",0,0,0,{t:"entry",portal:1}],["wind",-1,0,0,{m:2}],["hub",-1,1,-2.6,{m:2}],
+      ["lcorr",-1,2,-5.2,{m:2}],["west",0,2,-5.2,{t:"boss",portal:1}]],
+    links:[["en","wind","flat"],["wind","hub","ramp"],["hub","lcorr","ramp"],["lcorr","west","flat"]]},
+  // ── batch 19d: Graveyard cluster + Atlan vaults + the Blighted tunnels (wiki + ACMaps; the six
+  //    Blighted Moarsman Tunnels share one documented layout — encoded once per canon variant) ──
+  "Mhoire Armory":{boss:"Forge Golem",loot:["Spectral Ingot","Ancient Mhoire Coin"],noBoxes:true,
+    d:"The dead of House Mhoire still man their armory in fourfold ranks — pale captains drilling wights at the head of each wing, whilst below the great forge yet glows. Down the ring-loops beneath the forge chamber, a golem tends the vault in a great diamond hall; its key opens the Forge Vault, and Hurnmel's smithy and the way out lie just beyond. Fight nothing you can outwalk.",
+    rooms:[["en",0,0,0,{t:"entry"}],["wingE",1,0,0,{m:2}],["wingW",-1,0,0,{m:2}],["wingN",0,1,0,{m:2}],
+      ["forge",0,2,-2.6,{round:1,big:1,m:2}],["ring2",0,3,-5.2,{m:2}],
+      ["golem",0,4,-5.2,{t:"boss",big:1,box:"Forge Vault Key"}],["vault",1,4,-5.2,{portal:1}]],
+    links:[["en","wingE","flat"],["en","wingW","flat"],["en","wingN","flat"],["wingN","forge","ramp"],
+      ["forge","ring2","ramp"],["ring2","golem","flat"],["golem","vault","key","Forge Vault Key"]]},
+  "Gardens of Menilesh":{boss:"Lord Rytheran",loot:["Ring of Remembrance","Engraved Ashen Key"],
+    d:"Once a pleasure-garden, now a drowned ring of stone where a mad lich keeps court and begs passing strangers to fetch his lady's ring. Down three ramped chambers to the ruined gardens; whatever you do, do not touch the Strange Pillar — the gardens remember their dead, and they come when called. The great circle closes on the far hall where the Ring of Remembrance lies.",
+    rooms:[["en",0,0,0,{t:"entry"}],["d1",0,1,-2.6,{small:1,m:1}],["d2",0,2,-5.2,{small:1,m:1}],
+      ["garden",0,3,-5.2,{big:1,m:2}],["pillar",1,3,-5.2,{round:1,m:2}],["pfar",1,4,-5.2,{m:1}],
+      ["far",0,4,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","d1","ramp"],["d1","d2","ramp"],["d2","garden","flat"],["garden","pillar","flat"],
+      ["garden","far","flat"],["pillar","pfar","flat"],["pfar","far","flat"]]},
+  "Jahannan Vault":{boss:"Inferno",loot:["Major Smoldering Stone","Atlan's Treatise"],
+    d:"A furnace-hollowed vault where the very architecture conspires against you — rotten planks, false beams, and drops that swallow the careless whole, all lit by things made of living flame. West from the drop, down the sheer fall, then climb: catwalk, planks, the Inferno's spiral stairs, the open bridge — and one last long drop onto the chamber of the red stone.",
+    rooms:[["en",0,0,0,{t:"entry"}],["west",-1,0,0,{m:1}],["lower",-1,1,-3.4,{m:1}],["south",0,1,-3.4,{m:1}],
+      ["cat",0,2,-0.8,{m:1}],["planks",0,3,1.8,{small:1,m:1}],["spiral",1,3,4.4,{round:1,m:1}],
+      ["bridge",1,4,7,{big:1,m:1}],["stone",0,4,1.8,{t:"boss",portal:1}]],
+    links:[["en","west","flat"],["west","lower","drop"],["lower","south","flat"],["south","cat","ramp"],
+      ["cat","planks","ramp"],["planks","spiral","ramp"],["spiral","bridge","ramp"],["bridge","stone","drop"]]},
+  "Incunabula Vault":{boss:"Olthoi Swarm Soldier",loot:["Major Stinging Stone","Atlan's Treatise"],
+    d:"An Olthoi-riddled catacomb eaten through with acid pools, its passages chewed into a honeycomb by the swarm. Down the southern ramp, keep a hand to the right-hand wall through the warren, across the bridges to the second great room — then the corner-ledge leap over the acid pit, and the green stone waits in the hall past the exit portal.",
+    rooms:[["en",0,0,0,{t:"entry"}],["warren",0,1,-2.6,{m:3}],["open1",0,2,-2.6,{big:1,m:2}],
+      ["bridge",1,2,-2.6,{m:1}],["open2",1,3,-2.6,{big:1,m:2}],["acid",0,3,-6,{m:1}],
+      ["stone",0,4,-6,{t:"boss",portal:1}]],
+    links:[["en","warren","ramp"],["warren","open1","flat"],["open1","bridge","flat"],
+      ["bridge","open2","flat"],["open2","acid","drop"],["acid","stone","flat"]]},
+  "Forbidden Crypts":{boss:"Lich Lord",
+    d:"An honest old boneyard of the desert dead: four floors of crypts, each darker and narrower than the last. Below the central hall and the sprawling catacomb, a locked gate bars the lich-maze — and at the very bottom, a great sunken theatre where the liches gather as if still awaiting a sermon. Generations of young mages learned their craft here.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",0,1,0,{big:1,m:2}],["cat",0,2,-2.6,{big:1,m:3}],
+      ["mazeC",0,3,-2.6,{m:2}],["amph",0,4,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","hall","flat"],["hall","cat","ramp"],["cat","mazeC","key"],["mazeC","amph","ramp"]]},
+  "Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
+    d:"Beneath each slime-crowned temple the frog-men have dug the same warren, as if one blighted mind drew every tunnel. Right, left, right, straight, straight, right through the maze, down past the side chambers to the pit-jump gallery — miss a leap and the water below leads back to an unseen stair. At the bottom squats a man they keep like a pet prophet, scribbling rituals no sane hand should copy.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
+      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
+      ["pits","water","flat"],["pits","hermit","flat"]]},
+  "Blighted Desolation Moarsman Tunnels":{boss:"Despe the Insane",loot:["Tattered Desolation Moarsman Ritual","The Creation of Blighted Moarsmen"],
+    d:"One of the six identical warrens of the Ritual of the Blight. The maze runs right, left, right, straight, straight, right; the pit-jump gallery forgives a miss with an unseen stair from the water; and at the bottom the moarsmen keep Despe the Insane like a pet prophet, scribbling his tattered ritual.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
+      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
+      ["pits","water","flat"],["pits","hermit","flat"]]},
+  "Blighted Verdant Moarsman Tunnels":{boss:"Lorfne the Unhinged",loot:["Tattered Verdant Moarsman Ritual","The Creation of Blighted Moarsmen"],
+    d:"One of the six identical warrens of the Ritual of the Blight — this one under the verdant temple near Eastwatch, with a side portal to the Moarsmen Priory near the start. Through the maze and across the pit-jumps, Lorfne the Unhinged waits at the bottom with his tattered ritual.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
+      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
+      ["pits","water","flat"],["pits","hermit","flat"]]},
+  "Blighted Disgusting Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
+    d:"One of the six identical warrens of the Ritual of the Blight — the same maze, the same pit-jumps, the same mad scribbler at the bottom, as if one blighted mind drew every tunnel.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
+      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
+      ["pits","water","flat"],["pits","hermit","flat"]]},
+  "Blighted Putrid Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
+    d:"One of the six identical warrens of the Ritual of the Blight — the same maze, the same pit-jumps, the same mad scribbler at the bottom, as if one blighted mind drew every tunnel.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
+      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
+      ["pits","water","flat"],["pits","hermit","flat"]]},
+  "Blighted Rank Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
+    d:"One of the six identical warrens of the Ritual of the Blight — the same maze, the same pit-jumps, the same mad scribbler at the bottom, as if one blighted mind drew every tunnel.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
+      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
+      ["pits","water","flat"],["pits","hermit","flat"]]},
+  // ── batch 19c: the foundries + deep hunts (ACMaps layouts; Rynthid is officially unmapped —
+  //    its beats come from the quest walkthrough text only) ──
+  "Colossus Foundry":{boss:"Bronze Statue of a Virindi",loot:["Bronze Nuts and Bolts from a Statue"],
+    d:"An old smiths' works beneath the town squares, where the bronze colossi of Grievver, Shadow, and Virindi still walk their casting floors between cold furnaces. Up past the overlook gallery lies the great diamond-pillared hall; below the furnace room, the deepest statue hall waits. The clank of metal feet on grated iron is the only welcome you shall receive.",
+    rooms:[["en",0,0,0,{t:"entry"}],["furn",0,1,0,{big:1,m:3}],["over",0,2,2.6,{m:2}],
+      ["diamond",1,2,2.6,{big:1,m:3}],["hook",1,1,0,{m:1}],["deep",-1,1,-2.6,{t:"boss",big:1}]],
+    links:[["en","furn","flat"],["furn","over","ramp"],["over","diamond","flat"],
+      ["diamond","hook","ramp"],["furn","deep","ramp"]]},
+  "Mammet Foundry":{boss:"Bronze Statue of a Golem",loot:["Bronze Spring from a Statue"],
+    d:"Its halls branch wide and low, every pillar-shadow hiding another mammet of bronze — golem, sclavus, skeleton, tumerok — wound like clockwork and hostile to the living. Wise travelers know it best as the secret road to Baishi: the portal stands beside the very drop.",
+    rooms:[["en",0,0,0,{t:"entry",portal:1}],["warren",1,0,0,{small:1,m:2}],["core1",1,1,-2.6,{big:1,m:3}],
+      ["core2",0,1,-2.6,{big:1,m:3}],["ne",1,2,-5.2,{m:2}],["south",0,2,-5.2,{t:"boss",big:1}]],
+    links:[["en","warren","flat"],["warren","core1","ramp"],["core1","core2","flat"],
+      ["core1","ne","ramp"],["core2","south","ramp"]]},
+  "Tenkarrdun Foundry":{boss:"Smithing Golem",loot:["Sluice Gate Bar","Red Fire Infusion"],
+    d:"The dead forge-heart of Mount Tenkarrdun, where Yalaini machinery lies cold under falling ash and things of flame and stone keep the old watches. Down past the gear chambers, the lever hall opens the furnace room — the Sluice Gate Bar lies on its floor — and in the deepest forge the Smithing Golem waits for its bellows. Give it them, and far below the decayed machinery groans: the mountain wakes.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hatch",0,1,-2.6,{m:2}],["gear",0,2,-2.6,{round:1,m:2}],
+      ["lhall",0,3,-5.2,{big:1,m:2}],["furnace",1,3,-5.2,{big:1,m:2}],["purple",1,4,-7.8,{m:2}],
+      ["forge",0,4,-7.8,{t:"boss",portal:1}]],
+    links:[["en","hatch","ramp"],["hatch","gear","flat"],["gear","lhall","ramp"],
+      ["lhall","furnace","lever","@lhall"],["furnace","purple","ramp"],["purple","forge","flat"]]},
+  "Rynthid Foundry":{boss:"Rynthid Taskmaster",loot:["Legendary Key","Pile of Spare Parts"],
+    d:"A factory hung in the black sky over the Obsidian Plains, where Rynthid horrors lash captive Gear Knights into corrupted service. In general you should be going down: past the production halls, three caches of blue-glowing Aetherium ore must be ruined with tainted oils, and when the Taskmaster dies a thousand voices scream and the last door opens on the rewards vault. No map of this place was ever drawn that survives.",
+    rooms:[["en",0,0,0,{t:"entry"}],["prod",0,1,-2.6,{big:1,m:3}],["ore1",-1,1,-2.6,{small:1,m:2}],
+      ["down2",0,2,-5.2,{m:3}],["ore2",1,2,-5.2,{small:1,m:2}],["ore3",0,3,-7.8,{small:1,m:2}],
+      ["task",0,4,-7.8,{t:"boss",big:1}],["reward",1,4,-7.8,{portal:1}]],
+    links:[["en","prod","ramp"],["prod","ore1","flat"],["prod","down2","ramp"],["down2","ore2","flat"],
+      ["down2","ore3","ramp"],["ore3","task","lever","@ore3"],["task","reward","flat"]]},
+  "Egg Orchard":{boss:"Olthoi Slayer",loot:["Golden Shuriken of Tanada","Olthoi Ripper Spine"],
+    d:"A brood-warren nine levels deep where the Olthoi seed their orchard of eggs, and where — strangest of all — the ninja of clan Tanada slip from the shadows to avenge each slaughtered Ripper. Up through the rounded egg-chambers of the upper orchard, then the long eastern stairs wind down past the hexagonal hall and the brood-tunnels to the great Egg Room at the bottom. The deeper you dig, the louder the hive.",
+    rooms:[["en",0,0,0,{t:"entry"}],["up1",0,1,2.6,{round:1,m:2}],["up2",1,1,2.6,{round:1,m:2}],
+      ["east",1,2,0,{m:2}],["hex",1,3,-2.6,{round:1,big:1,m:2}],["brood",0,3,-5.2,{m:3}],
+      ["egg",0,4,-7.8,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","up1","ramp"],["up1","up2","flat"],["up2","east","ramp"],["east","hex","ramp"],
+      ["hex","brood","ramp"],["brood","egg","ramp"]]},
+  "Deewain's Dark Cavern":{boss:"Iron Golem",loot:["Energy Infused Rock","Legendary Key"],
+    d:"A lightless labyrinth beneath the northern snows, sown with pits that swallow the unwary whole. Jump into the NORTH pit — its ledge is invisible but real; the south pit forgives nothing. Past the stone servants of Deewain, each defender's death opens the twin doors onward, the spike-hall demands the left wall, and in the deep an iron titan broods over rocks that weigh nothing at all.",
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{big:1,m:2}],["pit",0,2,-3.4,{big:1,m:1}],
+      ["g1",0,3,-3.4,{m:2}],["g2",1,3,-3.4,{m:2}],["spikes",1,4,-3.4,{m:1}],
+      ["final",0,4,-3.4,{big:1,m:3}],["chamber",0,5,-6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","pit","drop"],["pit","g1","flat"],["g1","g2","lever","@g1"],
+      ["g2","spikes","lever","@g2"],["spikes","final","flat"],["final","chamber","drop"]]},
+  // ── batch 19b: the three society strongholds — safe NPC headquarters sharing ONE documented
+  //    floor plan (ACMaps 00B7/00B8/00B9 are the same template); rooms spawn nothing (m:0),
+  //    only the vault warden guards the quartermasters' chests ──
+  "Celestial Hand Stronghold":{boss:"Vault Keeper of the Hand",loot:["Society Armor"],
+    d:"A bustling war-office buried beneath the Sho hills — banners of the Hand over polished stone. West from the drop octagon to the entry hall, south to the four-pillared crossing: the east wing holds the quest clerks, the west wing the armorsmiths' cells and their annex, and the long south corridor ends in the shield-shaped vault wing where the mana foci hum behind the promotions dais.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",-1,0,0,{m:0}],["central",-1,1,0,{m:0}],
+      ["east",0,1,0,{big:1,m:0}],["west",-2,1,0,{big:1,m:0}],["annex",-2,2,0,{small:1,m:0}],
+      ["south",-1,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","hall","flat"],["hall","central","flat"],["central","east","flat"],
+      ["central","west","flat"],["west","annex","flat"],["central","south","flat"]]},
+  "Eldrytch Web Stronghold":{boss:"Vault Keeper of the Web",loot:["Society Armor"],
+    d:"Beneath Cragstone the Web keeps its ledgers: the same halls as its rivals, stone for stone — drop octagon, entry hall, the pillared crossing, quest clerks east and armorsmiths west — proof the three societies were cut from a single mold. The shield-shaped south wing guards the quartermasters' chests and the humming mana foci.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",-1,0,0,{m:0}],["central",-1,1,0,{m:0}],
+      ["east",0,1,0,{big:1,m:0}],["west",-2,1,0,{big:1,m:0}],["annex",-2,2,0,{small:1,m:0}],
+      ["south",-1,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","hall","flat"],["hall","central","flat"],["central","east","flat"],
+      ["central","west","flat"],["west","annex","flat"],["central","south","flat"]]},
+  "Radiant Blood Stronghold":{boss:"Vault Keeper of the Blood",loot:["Society Armor"],
+    d:"Under Zaikhal's golden streets the Blood keep their crimson court — stipend-masters counting out pyreals, armorsmiths hammering society plate in the basement galleries. The same stones as their rivals' halls, but the torchlight here seems redder. The vault wing at the end of the south corridor holds the chests and the mana foci.",
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",-1,0,0,{m:0}],["central",-1,1,0,{m:0}],
+      ["east",0,1,0,{big:1,m:0}],["west",-2,1,0,{big:1,m:0}],["annex",-2,2,0,{small:1,m:0}],
+      ["south",-1,3,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","hall","flat"],["hall","central","flat"],["central","east","flat"],
+      ["central","west","flat"],["west","annex","flat"],["central","south","flat"]]},
+  // faction chapterhouses: the Blade's and the Red Death's lodges are safe hubs (ACMaps 0081/0080 —
+  // their only documented creature is the practice target); Silyun is the raided one with a real route.
+  "Whispering Blade Chapterhouse":{boss:"Pyreal Target Drudge",loot:["Eye of Darkness","Crystal of Life Protections"],
+    d:"East of Ayan Baqur, behind a ring-warded portal, the Blade's assassins keep a tidy lodge: a whispering audience hall, a row of merchants who ask no questions, portal-cells ready to fling agents to every corner of Dereth — and a training room where a pyreal drudge stands patiently to be stabbed. The annex chest holds the Eye of Darkness.",
+    rooms:[["en",0,0,0,{t:"entry"}],["vend",0,1,0,{m:0}],["pwing",-1,1,0,{small:1,m:0,portal:1}],
+      ["train",1,1,0,{t:"boss",big:1}],["annex",1,2,0,{small:1,m:0}]],
+    links:[["en","vend","flat"],["vend","pwing","flat"],["vend","train","flat"],["train","annex","flat"]]},
+  "Rossu Morta Chapterhouse":{boss:"Pyreal Target Drudge",loot:["Eye of Darkness"],
+    d:"In the pinewood north of Sanamar the Red Death keeps its house: a six-sided council hall where the Chamberlain greets each ring-bearer by name, vendors trading in silveran steel, portal-cells east — and a locked north-west wing where the order's darker trophies sleep in chests. Not a blade is drawn within; the killing is all done elsewhere.",
+    rooms:[["en",0,0,0,{t:"entry"}],["central",0,1,0,{round:1,big:1,m:0}],["pwing",1,1,0,{small:1,m:0,portal:1}],
+      ["westr",-1,1,0,{big:1,m:0}],["annex",-1,2,0,{t:"boss",small:1}]],
+    links:[["en","central","flat"],["central","pwing","flat"],["central","westr","flat"],["westr","annex","flat"]]},
+  "Silyun Chapterhouse":{boss:"Commander Jin Zo",loot:["Letter to Commander Jin Zo"],
+    d:"A long throat of stone plunging south beneath the Silyun cliffs, every landing garrisoned by the Blade's silent swordsmen. The Chamberlain in the side-room carries the key to the locked door; past it the passage crosses a reeking trench of acid, and in the lowest chamber Commander Jin Zo waits with his orders still folded in his coat.",
+    rooms:[["en",0,0,0,{t:"entry"}],["lobby",0,1,0,{m:2}],["oct",0,2,-2.6,{round:1,big:1,m:2}],
+      ["hall3",0,3,-5.2,{cells:1,m:2}],["guard2",1,3,-5.2,{m:2}],["chmb",0,4,-5.2,{m:1}],
+      ["acid",0,5,-5.2,{m:2}],["out",1,5,-5.2,{small:1,portal:1}],["jinzo",0,6,-7.8,{t:"boss"}]],
+    links:[["en","lobby","flat"],["lobby","oct","ramp"],["oct","hall3","ramp"],["hall3","guard2","flat"],
+      ["hall3","chmb","flat"],["chmb","acid","key","Chapterhouse Chamberlain's Key"],
+      ["acid","out","flat"],["acid","jinzo","drop"]]},
+  // ── batch 19: the Aerlinthe twin temples (Gateway to the Deep) — the Corrupted temple is
+  //    documented as a mirror image of the Devastated one (same route, east for west) ──
+  "Devastated Falatacot Temple":{boss:"Mu-miyah Sentinel",
+    d:"On Aerlinthe's shore the Watcher takes its token and the temple takes the rest. West and south the undead halls wind down past the menhir mana field; in the great central hall entropy wisps hang unseen and the floor has half-forgotten to be. Beyond the west wing's guarded chests, one last wisp bars the portal to the Gatekeepers.",
+    rooms:[["en",0,0,0,{t:"entry"}],["w1",-1,0,0,{m:2}],["menhir",-1,1,-2.6,{m:2}],
+      ["ssk",0,1,-2.6,{small:1,m:1}],["central",-1,2,-6,{big:1,m:3}],["wing",-2,2,-3.4,{m:2}],
+      ["final",-2,3,-3.4,{t:"boss",portal:1}]],
+    links:[["en","w1","flat"],["w1","menhir","ramp"],["menhir","ssk","flat"],
+      ["menhir","central","drop"],["central","wing","ramp"],["wing","final","flat"]]},
+  "Corrupted Falatacot Temple":{boss:"Doomed Spirit",
+    d:"The Devastated temple's dark twin across the island — the same drowned halls reflected as in black water, east for west. The undead walk its mirrored galleries, the same unseen wisps hold the pit-floored hall, and its portal too opens onto the Gatekeepers.",
+    rooms:[["en",0,0,0,{t:"entry"}],["e1",1,0,0,{m:2}],["menhir",1,1,-2.6,{m:2}],
+      ["ssk",0,1,-2.6,{small:1,m:1}],["central",1,2,-6,{big:1,m:3}],["wing",2,2,-3.4,{m:2}],
+      ["final",2,3,-3.4,{t:"boss",portal:1}]],
+    links:[["en","e1","flat"],["e1","menhir","ramp"],["menhir","ssk","flat"],
+      ["menhir","central","drop"],["central","wing","ramp"],["wing","final","flat"]]},
+  // ── batch 18: quest dungeons (wiki walkthroughs + ACMaps layouts) ──
+  "Nanjou Shou-jen Academy":{boss:"Spectral Nanjou Master",loot:["Spectral Nanjou Master's Sword","Legendary Key"],
+    d:"An academy of the dead where masters still drill their pupils in the arts of murder: three gem-sealed halls run west to east, each floor sown with unseen engines that flense the unwary. Slay the spectral assassins of each hall and their gatekeeper yields the gem key to the next — sapphire, emerald, ruby — and beyond the ruby door the Nanjou Master waits among his statues.",
+    rooms:[["en",0,0,0,{t:"entry"}],["sec1",1,0,0,{m:2}],["a1",1,1,0,{small:1,m:1}],
+      ["sec2",2,0,0,{m:2}],["a2",2,1,0,{small:1,m:1}],["sec3",3,0,0,{m:2}],
+      ["master",4,0,0,{t:"boss",big:1,portal:1}]],
+    links:[["en","sec1","flat"],["sec1","a1","flat"],["sec1","sec2","key","Sapphire Door Key"],
+      ["sec2","a2","flat"],["sec2","sec3","key","Emerald Door Key"],["sec3","master","key","Ruby Door Key"]]},
+  "Winthura's Garden":{boss:"Tumerok Priest",loot:["Story of Winthura's Gardens"],
+    d:"A lord's buried pleasure-garden gone to seed: the trees Lady Winthura planted still stand in the dark, but it is the drums of Tumerok squatters that echo now through Lord Balthall's pillared halls. Down through the manor block with its western wing, the levers open the way to the bridge complex and the red-carpeted hall of the priests below.",
+    rooms:[["en",0,0,0,{t:"entry"}],["land",0,1,-2.6,{small:1}],["manor",0,2,-5.2,{big:1,m:2}],
+      ["wing",-1,2,-5.2,{small:1,m:1}],["complex",0,3,-7.8,{big:1,m:3,portal:1}],["loop",1,3,-7.8,{small:1,m:1}],
+      ["hall",0,4,-10.4,{t:"boss",big:1}]],
+    links:[["en","land","ramp"],["land","manor","ramp"],["manor","wing","flat"],
+      ["manor","complex","lever","@manor"],["complex","loop","flat"],["complex","hall","lever","@complex"]]},
+  "Harraag's Hideout":{boss:"Harraag",loot:["Sack of Banderling Artifacts","Shard of Harraag's Dagger"],
+    d:"Deep past Ayan Baqur the caves close in like a fist — banderling champions and Virindi paradoxes haunt the winding warrens east, and the pillared round chamber opens onto the ramp down. At the very bottom waits the flagging portal, and beyond it broods Harraag, the changed one, grown too vast and too wrong for any shield to turn his blows.",
+    rooms:[["en",0,0,0,{t:"entry"}],["e1",1,0,0,{m:2}],["cir",2,0,0,{round:1,big:1,m:2}],
+      ["down",2,1,-2.6,{m:1}],["w1",1,1,-2.6,{m:2}],["flag",0,1,-2.6,{small:1,portal:1}],
+      ["lair",0,2,-2.6,{t:"boss",round:1}]],
+    links:[["en","e1","flat"],["e1","cir","flat"],["cir","down","ramp"],["down","w1","flat"],
+      ["w1","flag","flat"],["flag","lair","flat"]]},
+  "K'nath Lair":{boss:"K'nath Ri'shc",loot:["Runic Skull","Brown Lump"],noBoxes:true,
+    d:"A chittering hive sunk beneath the Direlands swamp, where the K'nathtead broods guard their gates with locks of their own cunning make. The key-bearers lair in the south room; their key opens the western cruciform hall with its stamina pool, while the east warren winds down to the dense lower gallery — and beneath it all, an older, deeper lair that mirrors the first as a reflection in black water.",
+    rooms:[["en",0,0,0,{t:"entry"}],["south",0,1,0,{m:2,box:"K'nath Key"}],["west",-1,0,0,{big:1,m:2}],
+      ["east",1,0,0,{m:2}],["warren",1,1,-2.6,{m:2}],["lower",0,2,-2.6,{big:1,m:3}],
+      ["deep",0,3,-2.6,{t:"boss",portal:1}]],
+    links:[["en","south","flat"],["en","west","key","K'nath Key"],["en","east","flat"],
+      ["east","warren","ramp"],["south","lower","ramp"],["lower","deep","flat"]]},
+  "Falatacot Temple":{boss:"Mu-miyah Sentinel",
+    d:"A drowned fane of the blood-witches, its floors half-eaten by the void. West and south the undead halls wind down past the menhir mana field; in the great central hall black wisps hang unseen and the very stone has forgotten to be — though the faithful may yet walk upon its memory. The west wing's chests are guarded, and the final chamber's wisp must fall before the portal to the Gatekeepers opens.",
+    rooms:[["en",0,0,0,{t:"entry"}],["w1",-1,0,0,{m:2}],["menhir",-1,1,-2.6,{m:2}],
+      ["ssk",0,1,-2.6,{small:1,m:1}],["central",-1,2,-6,{big:1,m:3}],["wing",-2,2,-3.4,{m:2}],
+      ["final",-2,3,-3.4,{t:"boss",portal:1}]],
+    links:[["en","w1","flat"],["w1","menhir","ramp"],["menhir","ssk","flat"],
+      ["menhir","central","drop"],["central","wing","ramp"],["wing","final","flat"]]},
+  "Sanctum of Xik Minru":{boss:"High Priestess Xik Minru",loot:["Unreadable Falatacot Volume","Geowulf's Wedding Ring"],noBoxes:true,
+    d:"Beyond a sentinel who takes amber for passage, the sanctum's flooded halls crawl with moarsmen and the sodden dead, and every northern door yields only to its lever — until at last a floating platform opens beneath the sky, where an offering of grave-goods calls the High Priestess up from her long dark. Her Aurulent Key opens the Reserve and its ancient dyes.",
+    rooms:[["en",0,0,0,{t:"entry",box:"Amber Gem"}],["bunker",0,1,0,{small:1}],["ledge",0,2,2.6,{}],
+      ["n1",0,3,2.6,{m:2}],["n2",0,4,2.6,{m:2}],["plat",0,5,2.6,{t:"boss",round:1,big:1,m:2,box:"Aurulent Key"}],
+      ["reserve",1,5,2.6,{portal:1}]],
+    links:[["en","bunker","key","Amber Gem"],["bunker","ledge","ramp"],["ledge","n1","lever","@ledge"],
+      ["n1","n2","lever","@n1"],["n2","plat","lever","@n2"],["plat","reserve","key","Aurulent Key"]]},
+  // ── batch 17: Facility Hub destinations (wiki walkthroughs; Mosswart Camp / Skeleton Fort /
+  //    Suntik Village are documented SURFACE sites — encoded shallow & open, nothing invented) ──
+  "Dangerous Cave":{boss:"Banderling Ogre",loot:["Tibri's Fire Spear"],
+    d:"The warden's warning proves honest: banderlings prowl every gallery. South from the drop, second right and down the ramp lies the rat-infested chamber — Tibri's Fire Spear lies on the floor at its back. Return to the three-way split, take the middle hall south and bear east along the right wall: Tibri the Cavedweller keeps her chamber at the end.",
+    rooms:[["en",0,0,0,{t:"entry"}],["s1",0,1,0,{}],["split",0,2,0,{small:1}],["w1",-1,2,0,{}],
+      ["rat",-1,3,-2.6,{big:1,m:3}],["mid",0,3,0,{}],["east",1,3,0,{m:1}],["tibri",1,4,0,{t:"boss",portal:1}]],
+    links:[["en","s1","flat"],["s1","split","flat"],["split","w1","flat"],["w1","rat","ramp"],
+      ["split","mid","flat"],["mid","east","flat"],["east","tibri","flat"]]},
+  "Banderling Conquest Dungeon":{boss:"Banderling Chief",loot:["Banderling Mace Shaft","A Battered Leather Journal"],
+    d:"Here the banderling tribes muster in numbers seen nowhere else — scouts, guards, breeders, even their chiefs. South at the T-junction; the side room holds poor Sir Martine's battered journal. Ignore the great western hall, press south down the ramp to the rocky gallery where the ceremonial mace shaft lies, and take the lower ramp to the surface portal.",
+    rooms:[["en",0,0,0,{t:"entry"}],["t1",0,1,0,{small:1}],["r2",0,2,0,{}],["jr",1,2,0,{small:1,m:1}],
+      ["decoy",-1,2,0,{big:1,m:2}],["w3",0,3,-2.6,{}],["rocky",0,4,-2.6,{m:2}],["out",0,5,-5.2,{t:"boss",portal:1}]],
+    links:[["en","t1","flat"],["t1","r2","flat"],["r2","jr","flat"],["r2","decoy","flat"],
+      ["r2","w3","ramp"],["w3","rocky","flat"],["rocky","out","ramp"]]},
+  "Mosswart Camp":{boss:"Mosswart Mucker",loot:["Ice Tachi"],
+    d:"Among the toppled white stones of an Empyrean ruin the swamp-things have made their squatting-ground, and the mud is strewn with the fish they catch and forget. Their chieftain-mucker wields a blade of ice far too fine for its webbed hands — none can say where it stole it.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ruins",0,1,0,{big:1,m:3}],["camp",0,2,0,{t:"boss",round:1,big:1,m:2}]],
+    links:[["en","ruins","flat"],["ruins","camp","flat"]]},
+  "Skeleton Fort":{boss:"Hard-Headed Skeleton",loot:["Jacob's Axe"],
+    d:"A queen's fort east of Arwic, now garrisoned by the restless dead. Skeleton lords and wraiths hold the courtyard, and at the far wall opposite the gate struts their hardest-headed knight — a woodsman's axe still lodged fast in his skull, worn like a crown he cannot remove.",
+    rooms:[["en",0,0,0,{t:"entry"}],["gate",0,1,0,{small:1}],["yard",0,2,0,{big:1,m:4}],["wall",0,3,0,{t:"boss",big:1}]],
+    links:[["en","gate","flat"],["gate","yard","flat"],["yard","wall","flat"]]},
+  "Suntik Village":{boss:"Wily Monouga",loot:["Acid Axe","Letter of Request"],
+    d:"Suntik's axes were famed in Zaikhal, but no hammer rings here now — the monougas came, the folk were slain, and their Naqib's cry for aid lies with an arrow-shot messenger on the roadside. The smith is dead at his own forge, his last acid-etched axe still gleaming beside him.",
+    rooms:[["en",0,0,0,{t:"entry"}],["outsk",0,1,0,{big:1,m:3}],["well",0,2,0,{round:1,m:2}],["smith",1,2,0,{t:"boss",small:1}]],
+    links:[["en","outsk","flat"],["outsk","well","flat"],["well","smith","flat"]]},
+  // ── batch 16: Ancient Armor temple cycle + House Mhoire (wiki walkthroughs) ──
+  "Temple of Kivik Lir":{boss:"High Matriarch's Champion",loot:["Ancient Armored Leggings","Manacle of Biting Pain"],noBoxes:true,
+    d:"Beneath the black mire the Lady's temple sleeps, watched by stone guardians. West at the fork lies charred wood, east solidified blood — together the Emblem of Blackened Blood, the price of passage. Beyond the Guardian's door, a lever on the north wall of the Haven opens the way to the trials, and in the arena below the Matriarch's champion waits over her cursed sarcophagus.",
+    rooms:[["en",0,0,0,{t:"entry"}],["fork",0,1,0,{small:1}],["west",-1,1,0,{small:1,box:"Emblem of Blackened Blood"}],
+      ["east",1,1,0,{small:1,m:1}],["lyceum",0,2,-2.6,{m:2}],["haven",0,3,-2.6,{big:1,m:3}],
+      ["trial",1,3,-2.6,{small:1}],["device",1,4,-5.2,{m:2}],["arena",0,4,-5.2,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","fork","flat"],["fork","west","flat"],["fork","east","flat"],["fork","lyceum","key","Emblem of Blackened Blood"],
+      ["lyceum","haven","flat"],["haven","trial","lever","@haven"],["trial","device","ramp"],["device","arena","drop"]]},
+  "Temple of Hizk Ri":{boss:"Patriarch Zixki",loot:["Ancient Armored Gauntlets","Ancient Armored Long Boots"],
+    d:"The Matron of Pain seals her halls with a riddle of four pillars — answer wrong and the guardian strikes you dead. Past the sealed doors, the torch-lit hall leads down to the Well of Tears; a phial of bloody tears opens the trials. Through the jump gauntlet and the Burun sewers, Zixki holds a circular arena ringed with eight iron cells, and flings the unwary into them.",
+    rooms:[["en",0,0,0,{t:"entry"}],["riddle",0,1,0,{round:1,big:1,m:1}],["sealed",0,2,-2.6,{}],
+      ["torch",1,2,-2.6,{small:1}],["well",1,3,-5.2,{small:1}],["gaunt",1,4,-5.2,{m:2}],
+      ["sewer",0,4,-7.8,{m:3}],["arena",0,5,-7.8,{t:"boss",round:1,big:1,cells:1,portal:1}]],
+    links:[["en","riddle","flat"],["riddle","sealed","lever","@riddle"],["sealed","torch","flat"],
+      ["torch","well","ramp"],["well","gaunt","key","A Phial of Bloody Tears"],["gaunt","sewer","drop"],
+      ["sewer","arena","lever","@sewer"]]},
+  "Temple of Ixir Zi":{boss:"High Matriarch Ixir Zi",loot:["Ancient Armored Vestment","Lance of the Bloodletter"],noBoxes:true,
+    d:"First of the sleeping matrons. The button-hall's four passages must be worked in turn; above the entrance a Bloodstone Gem buys the statue's teleport into the Hall of the Guardians. West, blades of sacrificial magic sweep the trap maze; north wait the offering tables. When the fourth Eye has drunk its fill of your blood, the Matriarch herself rises from the crypt.",
+    rooms:[["en",0,0,0,{t:"entry"}],["btn",0,1,0,{big:1,m:2}],["gem",1,1,0,{small:1,box:"Bloodstone Gem"}],
+      ["guard",0,2,-2.6,{m:3}],["maze",-1,2,-2.6,{small:1,m:2}],["offer",0,3,-2.6,{small:1,m:1}],
+      ["crypt",0,4,-5.2,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","btn","flat"],["btn","gem","flat"],["btn","guard","key","Bloodstone Gem"],
+      ["guard","maze","flat"],["guard","offer","lever","@maze"],["offer","crypt","drop"]]},
+  "Temple of Izji Qo":{boss:"Guruk Titan",loot:["Scrolls of the Endless Well","The Golden Wind"],
+    d:"Of the five sleeping matrons, Izji Qo alone is gone — her crypt broken open, her sarcophagus upset and empty. Only the croaking Burun and their hulking Guruk wardens contest the linear dark: northeast from the drop, right at the T, down through the defenders' halls to a ledge over a room of staring stone heads, and north to the defiled crypt.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ne",1,0,0,{}],["hall",1,1,-2.6,{m:2}],["tri",1,2,-2.6,{small:1}],
+      ["def",1,3,-5.2,{m:3}],["ledge",0,3,-5.2,{small:1}],["heads",0,4,-8.6,{big:1,m:3}],
+      ["crypt",0,5,-8.6,{t:"boss",portal:1}]],
+    links:[["en","ne","flat"],["ne","hall","ramp"],["hall","tri","flat"],["tri","def","ramp"],
+      ["def","ledge","flat"],["ledge","heads","drop"],["heads","crypt","flat"]]},
+  "The Graveyard":{boss:"Lord Hendrel",loot:["Ancient Mhoire Coin","Pyre Shroud"],noBoxes:true,
+    d:"Raised whole from beneath the earth by Rytheran's reading of the Book of Eibhil, the traitor-house's burial ground lies under a sky that boils black at noon. Past the grave-fields and the sunken recall bunker, a row of three tombs guards an Ornate Bone Key; beyond the burning wood, Lord Mhoire's temple stands flanked by stone guardians — the key opens his vault.",
+    rooms:[["en",0,0,0,{t:"entry"}],["field",0,1,0,{big:1,m:3}],["bunker",-1,1,-2.6,{small:1}],
+      ["tombs",0,2,0,{cells:1,m:2,box:"Ornate Bone Key"}],["wood",1,2,0,{m:3}],
+      ["temple",0,3,2.6,{big:1,m:3}],["vault",0,4,2.6,{t:"boss",big:1,portal:1}]],
+    links:[["en","field","flat"],["field","bunker","ramp"],["field","tombs","flat"],["tombs","wood","flat"],
+      ["tombs","temple","ramp"],["temple","vault","key","Ornate Bone Key"]]},
+  "Lord Mhoire's Tomb":{boss:"Lord Cynreft Mhoire",loot:["Lord Cynreft's Ancient Emblem of Mhoire","Ancient Mhoire Coin"],noBoxes:true,
+    d:"A bone key whispers as it turns, and for thirty heartbeats a door stands open into the last honest lord of Dericost's resting place. Five times his royal guard rises from the flagstones — pyre minions, wights, blade sorcerers, champions — and Lord Cynreft himself with his pillars of fire at the last. His grateful shade yields the key to his own sealed treasury.",
+    rooms:[["en",0,0,0,{t:"entry"}],["ante",0,1,-2.6,{small:1}],
+      ["tomb",0,2,-2.6,{t:"boss",round:1,big:1,m:4,box:"Lord Cynreft Mhoire's Key"}],["vault",0,3,-2.6,{portal:1}]],
+    links:[["en","ante","ramp"],["ante","tomb","flat"],["tomb","vault","key","Lord Cynreft Mhoire's Key"]]},
   "Halls of the Helm":{boss:"Guardian of the Helm",loot:["Fiery Shield","Superior Helmet"],
     d:"Run straight ahead and jump down. Take the ramp and head west through two rooms of Undead. At the end you come to a ledge above a circular room — jump down, hug the left wall, and take the ramp north. Beyond, the Guardian's lair.",
     rooms:[["en",0,0,0,{t:"entry"}],["pit",0,1,-3.4,{small:1}],["w1",-1,1,-6,{}],["w2",-2,1,-6,{}],
@@ -16412,7 +17737,7 @@ function updateSharedMobs(dt){
     m.flash=Math.max(0,m.flash-dt);
     const smx=m.x,smz=m.z; m.x+=(m.tx-m.x)*k; m.z+=(m.tz-m.z)*k;
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-smx,m.z-smz)>2e-3);
-    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.set(m._pitch||0,m.yaw||0,m._roll||0);
+    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.set(m._pitch||0,(m.yaw||0)+(m._yawOff||0),m._roll||0);
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb){ if(m.hp<m.mhp){ hb.visible=true; hb.quaternion.copy(cam.quaternion);
@@ -16541,6 +17866,8 @@ function closeChat(relock){
 function sendChatLine(text){
   text=(text||"").trim(); if(!text) return;
   if(text[0]==="/"){ handleSlash(text); return; }
+  if(chatTab==="group"){ handleSlash("/p "+text); return; }   // the active tab routes plain text
+  if(chatTab==="team"){ handleSlash("/a "+text); return; }
   if(isOnline) netSend({t:"chat",msg:text});
   else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
     if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
@@ -16830,11 +18157,15 @@ window.addEventListener('resize',()=>{
   resizePost();
 });
 loadSettings();
-initThree();
-applySettings();
-initMinimap();
-initDragUI();
-renderComposite();
+// the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
+// (the retail-vendor data rides the same gate so towns build with their true merchants)
+Promise.all([ACMAP.load(),ACV.load()]).then(()=>{
+  initThree();
+  applySettings();
+  initMinimap();
+  initDragUI();
+  renderComposite();
+});
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
   try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));
