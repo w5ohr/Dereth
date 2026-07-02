@@ -1674,6 +1674,23 @@ function groundNormalTex(){ if(_groundNrm)return _groundNrm;
 function waterNormalTex(){ if(_waterNrm)return _waterNrm;
   _waterNrm=makeNormalTex(256,(x,y)=>Math.sin(x*0.19+y*0.05)*1.1+Math.sin(y*0.16-x*0.04)*0.9
     +Math.sin((x+y)*0.09)*0.5+Math.sin(x*0.47-y*0.31)*0.35+Math.sin(y*0.53+x*0.22)*0.28,2.0,42);return _waterNrm; }
+// bake the terrain heightfield into a texture so the water shader can read the sea-bed depth beneath each
+// fragment (for depth-based shoreline foam). Height range [-6,6] → 0..1, giving fine precision near shore.
+let _terrHTex=null;
+function terrainHeightTex(){ if(_terrHTex) return _terrHTex;
+  const S=512, c=document.createElement('canvas'); c.width=c.height=S; const g=c.getContext('2d');
+  const img=g.createImageData(S,S), d=img.data;
+  for(let j=0;j<S;j++)for(let i=0;i<S;i++){
+    const wx=-HALF+(i+0.5)/S*WORLD, wz=-HALF+(j+0.5)/S*WORLD;
+    const v=clamp((terrainH(wx,wz)+6)/12,0,1)*255;
+    const k=(j*S+i)*4; d[k]=d[k+1]=d[k+2]=v; d[k+3]=255;
+  }
+  g.putImageData(img,0,0);
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;
+  t.minFilter=THREE.LinearFilter; t.magFilter=THREE.LinearFilter; t.generateMipmaps=false;
+  t.flipY=false;   // sample by world XZ directly: uv=(worldXZ+HALF)/WORLD → texel (i,j) with no vertical flip
+  _terrHTex=t; return t;
+}
 // --- procedural building textures (original, canvas-drawn) ---
 let _plaster,_sand,_wood,_shingle,_metal,_leather,_cloth,_blade;
 function plasterTex(){if(_plaster)return _plaster;const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');
@@ -2032,7 +2049,10 @@ function updateDayNight(dt){
   if(waterMesh){ waterMesh.position.y=Math.sin(now()/1100)*0.12;
     const t=now()/1000;
     const nm=waterMesh.material.normalMap; if(nm){nm.offset.set((t*0.018)%1,(t*0.012)%1);}
-    const wsh=waterMesh.material.userData.sh; if(wsh)wsh.uniforms.uWTime.value=t; }
+    const wsh=waterMesh.material.userData.sh; if(wsh){ wsh.uniforms.uWTime.value=t;
+      if(wsh.uniforms.uSunView){ wsh.uniforms.uSunView.value.copy(sky).transformDirection(cam.matrixWorldInverse);   // sun dir → view space
+        wsh.uniforms.uSunCol.value.copy(_sunNoon).lerp(_cWarm,warm);                                                 // glitter reddens at dawn/dusk
+        if(skyU) wsh.uniforms.uSkyCol.value.copy(skyU.uZen.value).lerp(skyU.uHor.value,0.5).multiplyScalar(1.15); } } }  // reflect the live sky
   if(waterGlint){waterGlint.position.set(player.x+sky.x*42,0.5,player.z+sky.z*42);
     waterGlint.material.opacity=clamp(sunY*2,0,1)*0.7;waterGlint.material.color.copy(sunSprite?sunSprite.material.color:_sunNoon);}
 }
@@ -2248,15 +2268,38 @@ function initThree(){
   // vertex stage: two crossed travelling swells displace the (now 128×128) sheet so the sea
   // actually heaves instead of being a flat pane.
   waterMesh.material.onBeforeCompile=sh=>{
-    sh.uniforms.uWTime={value:0}; waterMesh.material.userData.sh=sh;
-    sh.vertexShader='uniform float uWTime;\n'+sh.vertexShader.replace('#include <begin_vertex>',
+    sh.uniforms.uWTime={value:0};
+    sh.uniforms.uSunView={value:new THREE.Vector3(0,0,1)};   // sun direction in VIEW space (set per frame)
+    sh.uniforms.uSkyCol={value:new THREE.Color(0xbcd0e8)};   // colour the water reflects (the live sky)
+    sh.uniforms.uSunCol={value:new THREE.Color(0xfff2d8)};   // sun colour for the glitter streak
+    sh.uniforms.uHeightMap={value:terrainHeightTex()};       // baked sea-bed height (for shoreline foam)
+    sh.uniforms.uFoamCol={value:new THREE.Color(0xeaf4ff)};
+    sh.uniforms.uWorld={value:WORLD};
+    waterMesh.material.userData.sh=sh;
+    sh.vertexShader='uniform float uWTime;\nvarying vec2 vWXZ;\n'+sh.vertexShader.replace('#include <begin_vertex>',
       '#include <begin_vertex>\n'+
       'transformed.z+=sin(position.x*0.012+uWTime*0.9)*cos(position.y*0.011+uWTime*0.7)*0.55\n'+
-      '            +sin(position.x*0.043-uWTime*1.4)*0.18+cos(position.y*0.037+uWTime*1.1)*0.15;');
-    sh.fragmentShader=sh.fragmentShader.replace('#include <fog_fragment>',
-    'float _fres=pow(1.0-clamp(dot(normalize(normal),normalize(vViewPosition)),0.0,1.0),3.0);\n'+
-    'gl_FragColor.rgb=mix(gl_FragColor.rgb*0.48,gl_FragColor.rgb+vec3(0.17,0.25,0.35),_fres);\n'+   // deeper looking down, brighter sky-reflection at grazing angles
-    'gl_FragColor.a=mix(0.78,0.985,_fres);\n#include <fog_fragment>'); };
+      '            +sin(position.x*0.043-uWTime*1.4)*0.18+cos(position.y*0.037+uWTime*1.1)*0.15;\n'+
+      'vWXZ=(modelMatrix*vec4(transformed,1.0)).xz;');                        // world XZ for the foam lookup
+    // Reflective water: Fresnel blends deep-water colour (looking down) into a live sky reflection (grazing),
+    // a specular sun-glitter that tracks the sun, and depth-based shoreline foam read from the baked heightfield.
+    sh.fragmentShader='uniform vec3 uSunView,uSkyCol,uSunCol,uFoamCol;\nuniform sampler2D uHeightMap;\nuniform float uWTime,uWorld;\nvarying vec2 vWXZ;\n'+sh.fragmentShader.replace('#include <fog_fragment>',
+    'vec3 _N=normalize(normal), _V=normalize(vViewPosition);\n'+
+    'float _fres=pow(1.0-clamp(dot(_N,_V),0.0,1.0),4.0);\n'+
+    'vec3 _deep=gl_FragColor.rgb*0.42;\n'+                                    // deep, dark water straight down
+    'vec3 _refl=mix(gl_FragColor.rgb,uSkyCol,0.85);\n'+                       // grazing angles mirror the sky
+    'gl_FragColor.rgb=mix(_deep,_refl,_fres);\n'+
+    'float _rd=max(dot(reflect(-normalize(uSunView),_N),_V),0.0);\n'+
+    'gl_FragColor.rgb+=uSunCol*(pow(_rd,180.0)*1.8+pow(_rd,26.0)*0.22);\n'+   // sharp glitter + soft sheen
+    // shoreline foam: decode sea-bed height under this fragment → water depth; surf where shallow, undulating
+    'float _th=texture2D(uHeightMap, vWXZ/uWorld+0.5).r*12.0-6.0;\n'+
+    'float _depth=-_th;\n'+
+    'float _wv=0.5+0.25*sin(vWXZ.x*0.25+uWTime*2.2)+0.25*sin(vWXZ.y*0.21-uWTime*1.8);\n'+
+    'float _foam=smoothstep(2.4,0.0,_depth)*clamp(_depth*3.0,0.0,1.0);\n'+    // fade in deep→shore, kill on dry land
+    'float _surf=smoothstep(0.55,0.0,abs(_depth-0.45-_wv*0.6));\n'+           // a wandering breaking line
+    '_foam=clamp(_foam*(0.5+0.6*_wv)+_surf*0.7,0.0,1.0);\n'+
+    'gl_FragColor.rgb=mix(gl_FragColor.rgb,uFoamCol,_foam);\n'+
+    'gl_FragColor.a=max(mix(0.80,0.99,_fres),_foam);\n#include <fog_fragment>'); };
   waterMesh.rotation.x=-Math.PI/2;waterMesh.position.y=0;scene.add(waterMesh);
 
   CIRC=circleTex();
@@ -12991,7 +13034,13 @@ let activeShop=null;
 function buildMerchant(vt,name){
   const def=VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner;
   const seed=(name?name.length*7:0)+def.title.length;
-  const g=buildPerson({robe:pickColor(SHIRT_COLORS,seed*3,29),accent:pickColor(PANTS_COLORS,seed*3,71),apron:true,hat:(vt==="scrivener"||vt==="provisioner")?"cap":null,beard:(seed%2===0),seed:seed*3});
+  // dress the vendor to their trade so it reads at a glance: they wear the trade's colour, smiths are
+  // bearded & aproned, shopkeeps aproned & capped, scriveners/jewelers are robed scholars.
+  const smith=(vt==="weaponsmith"||vt==="armorer"), scholar=(vt==="scrivener"||vt==="jeweler");
+  const g=buildPerson({robe:def.robe, accent:pickColor(PANTS_COLORS,seed*3,71),
+    apron:!scholar, robed:scholar,
+    hat: scholar?"cap":(vt==="provisioner"||vt==="outfitter"||vt==="healer"||vt==="furnisher")?"cap":null,
+    beard: smith?true:(seed%2===0), seed:seed*3});
   // market stall beside the shopkeeper: counter, canopy on posts, a few wares
   const stall=new THREE.Group();stall.position.set(1.45,0,0);g.add(stall);
   const wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318);
