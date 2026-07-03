@@ -11439,36 +11439,67 @@ function salvageItem(i){
   SFX.gold();
 }
 function tinkSkillFor(mat){ return MAT_APPLY[mat]==="armor"?"armortink":"weapontink"; }
-function tinkSuccess(mat){
+// AC: tinkering lives ON THE ITEM — each tink raises the difficulty of the next; ten tinks max.
+function tinkSuccess(mat,it){
   const sk=skillTier(tinkSkillFor(mat)),                    // 0 untrained / 1 trained / 2 specialised
-        cur=MAT_APPLY[mat]==="armor"?player.armorTink:player.weaponTink;
-  return clamp(0.5+sk*0.18-0.03*(cur/2),0.2,0.95);          // harder as the item gets more tinks (our formula)
+        t=(it&&it.tinks)||((MAT_APPLY[mat]==="armor"?player.armorTink:player.weaponTink)>0?2:0);  // legacy character-tinks count as a couple for display
+  return clamp(0.55+sk*0.18-0.05*t,0.15,0.95);              // harder with every tink already on the item (AC's rising difficulty)
+}
+// apply one 100-unit salvage bag to a SPECIFIC item (AC): weapon mats + imbues target the equipped
+// weapon; armor mats open a worn-piece picker. Up to 10 tinks per item; an imbue lands once, ever,
+// and consumes a tink slot. Success adds to the ITEM's own value (damage/AL follow automatically).
+function tinkItem(mat,it,label){
+  const bag=player.salvage[mat]; if(!bag||bag.units<100) return;
+  const apply=MAT_APPLY[mat], imbueEl=IMBUE_MAT[mat];
+  if((it.tinks||0)>=10){ log(`${it.name} already carries <b>ten tinkerings</b> — AC's limit.`,"warn"); SFX.hit(); return; }
+  const p=tinkSuccess(mat,it), work=Math.round(bag.work); bag.units-=100;
+  if(imbueEl){
+    if(Math.random()<p){
+      const br=WEAPON_AFFIXES.find(a=>a.k==="brand"&&a.element===imbueEl);
+      if(it.affix&&it.affix.suffix) it.name=it.name.replace(" "+it.affix.suffix,"");
+      it.affix=br; it.name+=" "+br.suffix; it.imbued=1; it.tinks=(it.tinks||0)+1;
+      log(`<b>Imbued!</b> Your ${it.name} now carries ${br.desc}. (tink ${it.tinks}/10)`,"sys"); toast("WEAPON IMBUED"); SFX.level();
+    } else { log(`Imbue <b>failed</b> — the ${mat} salvage is lost.`,"warn"); SFX.hit(); }
+  } else if(Math.random()<p){
+    const bonus=Math.max(1,Math.round(work*(apply==="weapon"?0.7:0.9)));
+    it.v=(it.v||0)+bonus; it.tinks=(it.tinks||0)+1;
+    log(`<b>Tinkering success!</b> ${mat} (wk ${work}) → ${label||it.name} +${bonus} ${apply==="weapon"?"damage":"armor"} (tink ${it.tinks}/10).`,"sys");
+    toast("TINKER SUCCESS +"+bonus);SFX.level();
+    if(apply!=="weapon"&&typeof derive==="function") derive();
+  } else { log(`Tinkering <b>failed</b> — the ${mat} salvage is lost. (Your gear is spared.)`,"warn");SFX.hit(); } // single-player-friendly deviation: item not destroyed
+  if(bag.units<=0) delete player.salvage[mat];
+  saveGame();
 }
 function applyTinker(mat){
   const bag=player.salvage[mat]; if(!bag||bag.units<100) return;
   const apply=MAT_APPLY[mat], skKey=tinkSkillFor(mat);
   if(skillTier(skKey)<1){ log(`You must train <b>${SKILL_BY_KEY[skKey].n}</b> to apply ${mat} (sheet: C).`,"warn"); SFX.hit(); return; }
   const imbueEl=IMBUE_MAT[mat];
-  if(imbueEl){ // imbue: brand the equipped weapon with an element
-    if(!player.weapon){ log(`Equip a weapon to imbue it with <b>${mat}</b>.`,"warn"); SFX.hit(); return; }
-    bag.units-=100;
-    if(Math.random()<tinkSuccess(mat)){
-      const br=WEAPON_AFFIXES.find(a=>a.k==="brand"&&a.element===imbueEl), w=player.weapon;
-      if(w.affix&&w.affix.suffix) w.name=w.name.replace(" "+w.affix.suffix,""); // strip prior brand
-      w.affix=br; w.name+=" "+br.suffix;
-      log(`<b>Imbued!</b> Your ${w.name} now carries ${br.desc}.`,"sys"); toast("WEAPON IMBUED"); SFX.level();
-    } else { log(`Imbue <b>failed</b> — the ${mat} salvage is lost.`,"warn"); SFX.hit(); }
-    if(bag.units<=0) delete player.salvage[mat];
-    return;
+  if(imbueEl||apply==="weapon"){   // weapon work targets what's in your hands
+    const w=player.weapon;
+    if(!w){ log(`Equip a weapon to ${imbueEl?"imbue":"tinker"} it with <b>${mat}</b>.`,"warn"); SFX.hit(); return; }
+    if(imbueEl&&w.imbued){ log(`${w.name} has already been imbued — an item takes only <b>one</b> imbue, ever (AC).`,"warn"); SFX.hit(); return; }
+    tinkItem(mat,w); return;
   }
-  const p=tinkSuccess(mat), work=Math.round(bag.work); bag.units-=100;
-  if(Math.random()<p){
-    const bonus=Math.max(1,Math.round(work*(apply==="weapon"?0.7:0.9)));
-    if(apply==="weapon") player.weaponTink+=bonus; else { player.armorTink+=bonus; player.armor+=bonus; }
-    log(`<b>Tinkering success!</b> ${mat} (wk ${work}) → +${bonus} ${apply==="weapon"?"damage":"armor"}.`,"sys");
-    toast("TINKER SUCCESS +"+bonus);SFX.level();
-  } else { log(`Tinkering <b>failed</b> — the ${mat} salvage is lost. (Your gear is spared.)`,"warn");SFX.hit(); } // single-player-friendly deviation: item not destroyed
-  if(bag.units<=0) delete player.salvage[mat];
+  // armor: choose the worn piece to tinker (AC lets you pick the item)
+  const slots=player.armorSlots||{}, keys=Object.keys(slots).filter(k=>slots[k]&&slots[k].name);
+  if(!keys.length){ log("You wear no armor to tinker.","warn"); SFX.hit(); return; }
+  const old=document.getElementById('tinkPick'); if(old) old.remove();
+  paused=true; if(locked)document.exitPointerLock();
+  const ov=document.createElement('div'); ov.id='tinkPick';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  ov.innerHTML=`<div style="max-width:420px;width:92%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">⚒ ${mat} salvage — choose the piece</div>
+    ${keys.map(k=>`<button data-slot="${k}" style="${btn}"><b>${esc(slots[k].name)}</b> <span style="color:var(--dim)">(${k} · AL ${slots[k].v||0} · tinks ${slots[k].tinks||0}/10)</span></button>`).join("")}
+    <button id="tinkCancel" style="${btn};text-align:center">Keep the salvage</button></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#tinkCancel').onclick=()=>{ ov.remove(); paused=false; };
+  ov.querySelectorAll('[data-slot]').forEach(b=>b.onclick=()=>{
+    const piece=slots[b.dataset.slot]; ov.remove(); paused=false;
+    tinkItem(mat,piece,piece.name);
+    if(typeof buildTinker==="function"){ try{buildTinker();}catch(e){} } updateHUD();
+  });
 }
 // ── H1/H2/H5/H6 Crafting (AC trade skills): Alchemy/Cooking/Fletching turn gathered materials into their
 //    consumables. Recipes spend the shared `player.materials` pool (from salvaging & nodes) + require the
