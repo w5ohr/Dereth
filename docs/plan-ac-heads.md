@@ -33,7 +33,26 @@ All parsers needed already exist and are proven: `tools/ac_chargen_export.py` wa
 CharGen **byte-exact** (it currently *discards* the ObjDesc payloads — the upgrade is
 to return them), and `tools/ac_model_export.py` has GfxObj/Surface/Texture/Palette.
 
-## Phase 1 — Extraction (`tools/ac_head_export.py` + chargen upgrade)
+## STATUS
+
+- **Phase 1 core — DONE (`8c2a4fd`).** `ac_chargen_export.py` upgraded (byte-exact
+  CLEAN) to return every ObjDesc payload; `ac_head_export.py` bakes 170 head meshes
+  (each group tagged with its original SurfaceTexture id) + 511 decoded facial
+  textures + `index.json` (per heritage/gender: default head, hair styles, eye/nose/
+  mouth strips, skin/hair/eye palette DIDs). 14MB. Verified: slot ids
+  (hair 05000098, eyes 0500024C, nose 050002F5, mouth 0500025C) match mesh otex
+  groups; textures decode to genuine AC facial art; indexed PNGs lossless (sources
+  ≤256 colours).
+- **Phase 1 stage 2 — TODO: palette colour compositing.** The default textures carry
+  their own baked skin/hair tone, so heads render correctly now, but choosing skin/
+  hair/eye COLOUR variants needs subpalette compositing (see Risks). The palette DIDs
+  are already carried in `index.json`. Approach: PaletteSet 0x0F expands to a skin-tone
+  palette list; re-decode the skin-bearing face texture (`050030F0`-family) with the
+  chosen tone over the base range; hair textures × hairColors, eye strips × eyeColors.
+  Emit `<tex>_<pal>.png` variants, or fall back to per-group material-colour multiply.
+- **Phase 2 — TODO: engine wiring / attachment** (see below).
+
+## Phase 1 — Extraction (`tools/ac_head_export.py` + chargen upgrade)  ✅ core done
 
 1. Upgrade `ac_chargen_export.py`: `objdesc()`/`hairstyle()`/`eyestrip()`/`facestrip()`
    RETURN their data (anim part swaps, texture old→new pairs, subpalette ranges,
