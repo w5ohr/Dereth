@@ -713,6 +713,7 @@ function acItemize(it){
   if(a.mana){ it.itemMana=a.mana; if(a.mrate)it.manaRate=a.mrate; }
   if(a.spells) it.acspells=a.spells;
   if(a.icon) it.acicon=a.icon;
+  if(a.wield&&it.stat==="weapon"&&it.wt!=="focus"&&!it.reqVal) it.reqVal=a.wield;   // the RETAIL wield difficulty (skill gate)
   return it;
 }
 const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
@@ -6530,8 +6531,11 @@ function addHousingNPCs(){
   for(const [tn,nm] of NAMED_SELLERS){ const c=CITIES.find(x=>x.name===tn); if(!c) continue;
     addMerchant(c.x-14,c.z-9,"furnisher",nm); }
   // Agents of the Arcanum in the three capitals (as in the Oct 2001 housing rush)
-  for(const c of CAPITALS) addNPC(c.x-9,c.z-12,{role:"arcanum",town:c.name,
+  for(const c of CAPITALS){ addNPC(c.x-9,c.z-12,{role:"arcanum",town:c.name,
     name:titledName(c.region||0,Math.round(c.x*13+c.z*11),"Agent of the Arcanum")});
+    // …and a Barber (AC's appearance-change service) beside them
+    addNPC(c.x+11,c.z-14,{role:"barber",town:c.name,
+      name:titledName(c.region||0,Math.round(c.x*7+c.z*5),"Barber")}); }
   hsRefreshHomestead();
 }
 function hsDwellingSpot(){ if(!player.homestead) return null;
@@ -10735,7 +10739,14 @@ function applyItem(it){
   if(AC_RCP_BYSRC&&it.name&&AC_RCP_BYSRC[it.name.toLowerCase()]&&craftTargetsFor(it.name).length){ tryCraft(it); return "keep"; }
   if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ return equipItem(it)===false?"keep":undefined; }  // "keep" leaves an un-wieldable item in the satchel
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
-  else if(it.stat==="hp"){const h=healScale(it.v);player.hp=Math.min(player.mhp,player.hp+h);log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""}).`,"loot");}
+  else if(it.stat==="hp"){const h=healScale(it.v);player.hp=Math.min(player.mhp,player.hp+h);
+    if(/healing kit/i.test(it.name)){   // retail kits carry multiple uses (Crude 5 … Treated 100), each a Healing-skill application
+      if(it.uses==null) it.uses=/crude/i.test(it.name)?5:/plain/i.test(it.name)?10:/good/i.test(it.name)?15:/excellent/i.test(it.name)?20:/peerless/i.test(it.name)?25:/treated/i.test(it.name)?100:10;
+      it.uses--;
+      log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""} · ${it.uses} use${it.uses===1?"":"s"} left).`,"loot");
+      if(it.uses>0) return "keep";
+      log(`The <b>${it.name}</b> is used up.`,"sys");
+    } else log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""}).`,"loot");}
   else if(it.stat==="mn"){player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}
   else if(it.stat==="st"){player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
@@ -15464,6 +15475,7 @@ function talkToNPC(n){
     if(bl&&i%2===0){ log(`<b>${n.name}:</b> ${esc(bl[(i>>1)%bl.length])}`,"sys"); return; }
     log(`<b>${n.name}:</b> ${RUMORS[i%RUMORS.length]}`,"sys"); return; }
   if(n.role==="casino"){ openCasino(n); return; }
+  if(n.role==="barber"){ openBarber(n); return; }
   if(n.role==="attendant"){ openAttendant(n); return; }
   if(n.role==="arcanum"){ talkArcanum(n); return; }
   if(n.role==="reset_attr"){
@@ -19933,8 +19945,22 @@ function openCharCreator(race,onCreate){
   cancelAnimationFrame(ccRAF); ccAnim();
 }
 function closeCharCreator(){ ccVisible=false; cancelAnimationFrame(ccRAF); document.getElementById('charCreator').style.display="none"; }
+// ── the BARBER (AC's 2005 appearance-change service): reopen the creator on the living character ──
+let ccBarber=false;
+function openBarber(n){
+  if(n) log(`<b>${n.name}:</b> Sit, sit. A new face, a new braid — walk out a stranger to your own reflection.`,"sys");
+  paused=true; if(locked)document.exitPointerLock();
+  ccBarber=true;
+  openCharCreator((player.appearance&&player.appearance.race)||player.heritage,()=>{
+    ccBarber=false; paused=false;
+    refreshAvatarAppearance(); if(typeof refreshACArmor==="function")refreshACArmor();
+    log("The barber's work is done — <b>you wear a new look</b>.","loot"); toast("A NEW FACE"); if(SFX.quest)SFX.quest(); saveGame();
+  });
+}
 function ccRandomize(){ for(const cat of ["face","skin","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo"]){ const a=APPEARANCE[cat]; ccWork[cat]=a[Math.floor(Math.random()*a.length)].k; } ccSyncSel(); ccRebuild(); }
-document.getElementById('ccBack').onclick=()=>{ closeCharCreator(); document.getElementById('overlay').style.display=""; };
+document.getElementById('ccBack').onclick=()=>{ closeCharCreator();
+  if(ccBarber){ ccBarber=false; ccOnCreate=null; paused=false; return; }   // barber visit: back to the world, not the title
+  document.getElementById('overlay').style.display=""; };
 document.getElementById('ccCreate').onclick=()=>{
   const name=document.getElementById('ccName').value.trim();
   if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
