@@ -3306,9 +3306,9 @@ function buildAvatar(){ const g=buildAvatarJointed(); applyACBody(g); return g; 
 let AC_BODY={m:null,f:null};
 function acPartTemplates(j){
   const out=[], TL=new THREE.TextureLoader();
-  for(const pt of j.parts){
+  j.parts.forEach((pt,pi)=>{
     let tris=0; for(const g of pt.groups) tris+=g.i.length;
-    if(tris<12) continue;                                        // 1-tri attachment markers
+    if(tris<12) return;                                          // 1-tri attachment markers
     const meshes=pt.groups.map(g=>{
       const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
@@ -3322,8 +3322,8 @@ function acPartTemplates(j){
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.6,metalness:0.02});
       return {geo,mat};
     });
-    out.push({p:pt.p,q:pt.q,meshes});
-  }
+    out.push({i:pi,p:pt.p,q:pt.q,meshes});   // i = setup part index (animation track index)
+  });
   return out;
 }
 function loadACBody(){
@@ -3360,6 +3360,7 @@ function applyACBody(av){
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
   const hipT=tpl.find(t=>acJointFor(t.p)==='pelvisG');
   const s=AV_HIP/((hipT&&hipT.p[1])||0.95);
+  const drive={};   // joint key -> the lowest-index part that pivots there, for MotionTable playback
   for(const t of tpl){
     const jk=acJointFor(t.p); const J=jk&&joints[jk]; if(!J) continue;
     const grp=new THREE.Group(); grp.userData.acBody=true;
@@ -3369,7 +3370,14 @@ function applyACBody(av){
     grp.quaternion.set(t.q[0],t.q[1],t.q[2],t.q[3]);
     grp.scale.setScalar(s);
     J.add(grp);
+    if(!drive[jk]||t.i<drive[jk].i){
+      const chain=[]; for(let p=J.parent;p&&p!==av;p=p.parent) chain.unshift(p);   // av→…→J.parent, top-down
+      drive[jk]={J,i:t.i,chain,
+        lp:grp.position.clone(), lq:grp.quaternion.clone(),                       // the part's local placement under J
+        restP:J.position.clone(), restQ:J.quaternion.clone()};
+    }
   }
+  u.acDrive=drive;
   // hide the plate placeholder; the face, armor shells, shield, weapons, cape and quiver stay
   const keep=new Set([u.head,u.aSword,u.aBow,u.aWand,u.aHeld,u.cape,u.quiver].filter(Boolean));
   av.traverse(o=>{ if(o.userData&&o.userData.plate!==undefined) keep.add(o); });   // aShield
@@ -3381,6 +3389,65 @@ function applyACBody(av){
   });
   u.acScale=s;
   u.acBody=true;
+}
+// ── REAL PLAYER ANIMATIONS: the human MotionTable's own cycles & gestures ──
+// assets/acmotions.json (tools/ac_player_anims.py) carries idle/walk/run/ready
+// cycles plus attack/punch/cast/death one-shots as setup-local part frames.
+// Playback drives the avatar's JOINTS so weapons, armor shells and the AC armor
+// parts all follow: for each joint, solve the joint transform that lands its
+// pivot part exactly on the animation frame, localized through the live parent
+// chain (so any residual procedural motion above it is compensated away).
+let AC_MOTION=null;
+fetch('assets/acmotions.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.clips)AC_MOTION=j; }).catch(()=>{});
+const AC_DRIVE_ORDER=["pelvisG","torso","hipR","hipL","knR","knL","anR","anL","shR","shL","elR","elL","wrR","wrL"];
+const _acmP=new THREE.Vector3(),_acmP2=new THREE.Vector3(),_acmQ=new THREE.Quaternion(),_acmQ2=new THREE.Quaternion(),
+      _acmJQ=new THREE.Quaternion(),_acmJP=new THREE.Vector3(),_acmPQ=new THREE.Quaternion(),_acmPP=new THREE.Vector3(),
+      _acmIQ=new THREE.Quaternion(),_acmTV=new THREE.Vector3();
+function acMotionPose(u,clip,tt,loop){
+  const c=AC_MOTION.clips[clip]; if(!c) return false;
+  const s=u.acScale, D=u.acDrive, ts=c.t;
+  let t=loop?tt%c.dur:Math.min(tt,ts[ts.length-1]);
+  let i1=ts.length-1; for(let i=1;i<ts.length;i++){ if(ts[i]>=t){ i1=i; break; } }
+  const i0=Math.max(0,i1-1), f0=c.f[i0], f1=c.f[i1];
+  const span=(ts[i1]-ts[i0])||1, k=clamp((t-ts[i0])/span,0,1);
+  for(const jk of AC_DRIVE_ORDER){
+    const d=D[jk]; if(!d) continue;
+    const a=f0[d.i], b=f1[d.i]; if(!a||!b) continue;
+    _acmP.set(a[0],a[1],a[2]); _acmP2.set(b[0],b[1],b[2]); _acmP.lerp(_acmP2,k).multiplyScalar(s);
+    _acmQ.set(a[3],a[4],a[5],a[6]); _acmQ2.set(b[3],b[4],b[5],b[6]); _acmQ.slerp(_acmQ2,k);
+    // desired part (root-local) = joint ∘ placement  ⇒  joint = desired ∘ placement⁻¹
+    _acmIQ.copy(d.lq).invert();
+    _acmJQ.multiplyQuaternions(_acmQ,_acmIQ);
+    _acmJP.copy(d.lp).applyQuaternion(_acmJQ).negate().add(_acmP);
+    // localize through the live parent chain (top-down accumulate, then invert)
+    _acmPQ.set(0,0,0,1); _acmPP.set(0,0,0);
+    for(const n of d.chain){ _acmTV.copy(n.position).applyQuaternion(_acmPQ); _acmPP.add(_acmTV); _acmPQ.multiply(n.quaternion); }
+    _acmIQ.copy(_acmPQ).invert();
+    d.J.quaternion.multiplyQuaternions(_acmIQ,_acmJQ);
+    d.J.position.copy(_acmJP).sub(_acmPP).applyQuaternion(_acmIQ);
+  }
+  return true;
+}
+function acMotionTick(u,dt,moving,running,guarded){
+  if(!AC_MOTION||!u.acBody||!u.acDrive) return;
+  let posed=false;
+  if(player.alive){
+    const sw=player.swing;
+    if(sw>0&&weaponMode==="sword"){
+      const clip=player.weapon?"attack":"punch", c=AC_MOTION.clips[clip]||AC_MOTION.clips.attack;
+      if(c) posed=acMotionPose(u,player.weapon&&AC_MOTION.clips.attack?"attack":"punch",(1-sw)*c.dur,false);
+    } else if(castShow>0&&castDur>0&&AC_MOTION.clips.cast){
+      posed=acMotionPose(u,"cast",clamp(1-castShow/castDur,0,1)*AC_MOTION.clips.cast.dur,false);
+    } else if(!guarded&&!(player.bowDraw>0)&&weaponMode!=="bow"){
+      u._acmT=(u._acmT||0)+dt;
+      if(moving) posed=acMotionPose(u,(running&&AC_MOTION.clips.run)?"run":"walk",u._acmT,true);
+      else posed=acMotionPose(u,(u._combatT>0&&AC_MOTION.clips.ready)?"ready":"idle",u._acmT,true);
+    }
+  }
+  if(!posed&&u._acPosed){   // hand the body back to the procedural poser at its rest transforms
+    for(const k in u.acDrive){ const d=u.acDrive[k]; d.J.position.copy(d.restP); }
+  }
+  u._acPosed=posed;
 }
 // a smooth, continuously-muscled limb: revolve a profile [[radius,t],…] (t 0→1 along length) into one
 // organic shape that hangs DOWN from the group pivot — no stacked-cylinder "tube" look, rounded ends.
@@ -12456,6 +12523,8 @@ function animateAvatar(dt){
   u.shL.rotation.x=lX; u.shL.rotation.z=lZ; u.elL.rotation.x=lE;
   // keep the forearm shield roughly upright & facing forward regardless of arm pose (counter the arm's pitch/roll)
   if(u.aShield&&u.aShield.visible) u.aShield.rotation.set(-(lX+lE)+0.12, 0, -lZ*0.6);
+  // real AC body present → the human MotionTable's own cycles override the procedural pose
+  acMotionTick(u,dt,moving,rN>0.5,blk||actGesture);
 }
 // ---- townsfolk life: idle breathing/glancing for everyone, plus a gentle stroll for wanderers ----
 function animateOnePerson(p,dt){
