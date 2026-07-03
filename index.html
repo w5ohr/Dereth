@@ -6872,13 +6872,71 @@ const EVENT_CALENDAR=[
    clue:"See the breathing tunnel at Arwic before the Concord seals the shaft.",
    goal:{v:"arwic"}, obj:"See the breathing tunnel at Arwic", xp:1400, gold:200,
    seeds:"The wax flexes. Somewhere below, something vast inhales. <b>Year 3 — the Year of Chitin — will continue the saga.</b>"},
+
+  // ═══ YEAR 3 — YEAR OF CHITIN (The Deep Brood) ═══
+  {id:"y3m25", mon:"Morningthaw", name:"The Breathing Tunnels", kind:"explore", incursion:1,
+   rumor:"The Concord unsealed the Arwic shaft with soldiers this time. The wax tunnel goes DOWN, friends — farther than any lamp has ever come back from.",
+   clue:"Clear the tunnel-mouth delve at Arwic and map what breathes below.",
+   goal:{clear:"Arwic Mines"}, obj:"Clear the Arwic Mines", xp:1800, gold:300,
+   item:{name:"Hive-Map Fragment",stat:"quest",v:50}},
+  {id:"y3m26", mon:"Seedsow", name:"Swarm at the Walls", kind:"invasion", incursion:1,
+   rumor:"Olthoi soldiers hit Plateau Village at dusk and Danby's Outpost by dawn. Not raids — probes. Something below is measuring our walls.",
+   clue:"Repel an Olthoi Swarm and thin the probing castes.",
+   goal:{repel:1}, obj:"Repel an Olthoi Swarm", xp:1500, gold:240},
+  {id:"y3m27", mon:"Leafdawning", name:"The Matron Triangle", kind:"beat", incursion:null,
+   rumor:"Three waxen spires now stand on the Direlands skyline where last month there was only scrub. They grow by the WEEK.",
+   clue:"Scout all three Matron spires and chart the triangle they make.",
+   goal:{visits:3}, obj:"Scout the three Matron spires", xp:1700, gold:280,
+   seeds:"Three spires, one geometry — a summoning-triangle drawn in chitin, aimed at the heart of Dereth."},
+  {id:"y3m28", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"The festival is held under guard this spring — and for the first time in living memory, Aun Tumerok envoys attend. They know Olthoi war better than any of us.",
+   clue:"Join the guarded fair at any capital and hear the Aun drums.",
+   goal:{v:"capital"}, obj:"Attend the guarded festival at any capital", xp:1100, gold:160,
+   item:{name:"Aun War-Drum Charm",stat:"quest",v:120}},
+  {id:"y3m29", mon:"Verdantine", name:"The Slave Pens Again", kind:"beat", incursion:1,
+   rumor:"They are taking PEOPLE below — to pens, like the old arrival-days our grandmothers sang of. The Concord will not leave them there.",
+   clue:"Fight into the Olthoi warrens and break the captives out.",
+   goal:{clear:"Olthoi Chasm"}, obj:"Break the captives out of the Olthoi Chasm", title:"Pen-Breaker", xp:2000, gold:340},
+  {id:"y3m30", mon:"Solclaim", name:"Acid Summer", kind:"seasonal", incursion:1,
+   rumor:"The Direlands are POCKED with acid craters overnight — the hive vents its bile before it marches. Even the rain off that waste burns.",
+   clue:"Cull the venting workers before the scars spread past the Direlands.",
+   goal:{kills:8,fams:["olthoi","olthoiworker","olthoisoldier"]}, obj:"Cull 8 venting Olthoi", xp:1700, gold:280},
+  {id:"y3m31", mon:"Leaffall", name:"March of the Soldiers", kind:"invasion", incursion:1,
+   rumor:"The soldiers march in COLUMN now, friends — on more towns than one, with the Concord's own armies in the field beside us. The largest muster since the Fading.",
+   clue:"Repel the rolling swarm — twice, if you have the mettle.",
+   goal:{repel:2}, obj:"Repel two Olthoi Swarms", xp:2200, gold:380},
+  {id:"y3m32", mon:"Harvestgain", name:"The Brood-Empress", kind:"boss", incursion:null,
+   rumor:"Below the northern spire she waits — EMPRESS GNAWVIL-RAX, last clutch of the Ancient Queen, grown vast in a generation of dark. The Concord sounds the horn.",
+   clue:"Descend beneath the north Matron spire and end the Brood-Empress.",
+   goal:{boss:"empress"}, obj:"Slay Empress Gnawvil-Rax", title:"Hivebane", xp:5000, gold:800,
+   item:{name:"Empress-Carapace Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"tower",v:44,tier:5,legendary:true},
+   seeds:"The Empress falls, and a generation of dark falls with her. The three spires stand leaderless — burn them."},
+  {id:"y3m33", mon:"Leafcull", name:"Burning the Combs", kind:"beat", incursion:null,
+   rumor:"Torch-teams and Tumerok fire-drums move on the spires. Every comb we burn now is a war our children never fight.",
+   clue:"Fire all three Matron spires and collapse the tunnels beneath them.",
+   goal:{visits:3}, obj:"Burn the three Matron spires", xp:1900, gold:320},
+  {id:"y3m34", mon:"Coldeve", name:"The Aun Accord", kind:"beat", incursion:null,
+   rumor:"It is signed! Timaru pledges the Aun war-bands to the Concord — the first nation not of Ispar to swear. The drums in the passes tonight are FRIENDLY.",
+   clue:"Visit Timaru and witness the Accord.",
+   goal:{v:"timaru"}, obj:"Witness the Aun Accord at Timaru", xp:1600, gold:260,
+   seeds:"Timaru's Aun war-bands march under the Concord banner — the first nation not of Ispar to swear to Kilmer's crown."},
+  {id:"y3m35", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Frostfell! This year's keepsake is a candle of hive-wax — burn the enemy's house to light your own, says the Monarch.",
+   clue:"Keep the feast at any capital.",
+   goal:{v:"capital"}, obj:"Attend the festival at any capital", xp:1100, gold:160,
+   item:{name:"Hive-Wax Candle",stat:"quest",v:120}},
+  {id:"y3m36", mon:"Snowreap", name:"Sails off Sanamar", kind:"beat", incursion:null,
+   rumor:"Fisherfolk off the Halaetan coast swear they saw SAILS — royal purple, the old invader colors, not flown since Varicci the Second. The Concord says: weather. The fisherfolk say: fleet.",
+   clue:"Watch the western sea from Sanamar and judge for yourself.",
+   goal:{v:"sanamar"}, obj:"Watch the western sea from Sanamar", xp:1500, gold:220,
+   seeds:"Purple sails, hull after hull, riding the horizon. <b>Year 4 — the Year of Banners — will continue the saga.</b>"},
 ];
 const SAGA_YEAR_NAMES={1:"Year of Embers",2:"Year of Whispers",3:"Year of Chitin",4:"Year of Banners",5:"Year of Blood",6:"Year of Storms",7:"Year of Bone",8:"Year of Rifts",9:"Year of Tides",10:"Year of the Crown"};
 function sagaYear(ce){ const m=ce&&ce.id&&ce.id.match(/^y(\d+)/); return m?+m[1]:1; }
 function sagaYearName(ce){ return SAGA_YEAR_NAMES[sagaYear(ce)]||"the Saga"; }
-const SAGA_REST={id:"y2rest", mon:"Morningthaw", name:"The Whispers Fade", kind:"beat", incursion:null, goal:null,
-  rumor:"The empty-faced audit is closed, its verdict unknown, and Dereth counts its true faces again. Below Arwic, the wax still breathes.",
-  clue:"Rest, adventurer. The Year of Chitin is coming."};
+const SAGA_REST={id:"y3rest", mon:"Morningthaw", name:"The Combs Cool", kind:"beat", incursion:null, goal:null,
+  rumor:"The Deep Brood is broken and the spires are ash. But purple sails ride the western horizon, and the old invader colors have not flown since Varicci the Second.",
+  clue:"Rest, adventurer. The Year of Banners is coming."};
 let gameMonth=0, eventClock=0, calendarDone={}, sagaProg={};
 const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
 function currentCalEvent(){ return EVENT_CALENDAR[gameMonth]||SAGA_REST; }
@@ -6957,6 +7015,8 @@ const SAGA_BOSSES={
            rise:"A cold-eyed drudge that <b>speaks</b> — <b>Aerbax's Prodigal Drudge</b> — marshals the Nest to war. End it.", toast:"THE PRODIGAL DRUDGE"},
   monarch:{name:"The Prodigal Monarch", kind:"virindi", scale:2.4, tint:0xf0f0ff, hp:5200, dmg:60, xp:22000, near:false, crowned:true,
            rise:"On a false throne sits a second Kilmer wearing the Monarch's own smile — <b>The Prodigal Monarch</b>. Destroy the puppet.", toast:"THE PRODIGAL MONARCH"},
+  empress:{name:"Empress Gnawvil-Rax", kind:"olthoi", scale:3.4, tint:0x2a5a14, hp:5400, dmg:64, xp:24000, near:false,
+           rise:"Below the northern spire she waits — <b>EMPRESS GNAWVIL-RAX</b>, last clutch of the Ancient Queen, grown vast in a generation of dark. Descend and end her.", toast:"THE BROOD-EMPRESS"},
 };
 function spawnSagaBoss(bossId){
   if(inDungeon||inNetwork){ setTimeout(()=>spawnSagaBoss(bossId),8000); return; }
@@ -6984,7 +7044,7 @@ function sagaPlace(name){
   if(name==="capital"){ let best=null,bd=1e9; for(const c of CAPITALS){ const d=Math.hypot(c.x-player.x,c.z-player.z); if(d<bd){bd=d;best=c;} } return best?{x:best.x,z:best.z,r:34,name:best.name}:null; }
   const NAMED={holtburg:"Holtburg",glenden:"Glenden Wood",arwic:"Arwic",zaikhal:"Zaikhal",
     neydisa:"Neydisa Castle",eastham:"Eastham",rithwic:"Rithwic",yaraq:"Yaraq",shoushi:"Shoushi",
-    cragstone:"Cragstone",drudgenest:"Holtburg"};   // drudge nest ≈ near Holtburg on our map
+    cragstone:"Cragstone",drudgenest:"Holtburg",sanamar:"Sanamar",timaru:"Timaru"};   // drudge nest ≈ near Holtburg on our map
   const cn=NAMED[name]; if(cn){ const c=CITIES.find(c=>c.name===cn); if(c) return {x:c.x,z:c.z,r:cn==="Glenden Wood"?44:34,name:c.name}; }
   return null;
 }
