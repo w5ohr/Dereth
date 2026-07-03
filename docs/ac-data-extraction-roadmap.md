@@ -23,11 +23,12 @@ no usable output.
 | 9 | Town building placement | **ASSET** | 811 real structures w/ offsets+DIDs; rendering needs building Setup meshes exported |
 | 10 | Region scenery + sky/fog | **ASSET** | per-terrain flora tables + day-night keyframes; kept as data — the tuned procedural sky/flora look better than raw client keyframes |
 | 11 | Dungeon environment meshes | **ASSET** | REAL geometry+textures for 8 dungeons; in-engine render needs a geometry-driven collision pass (meshes are in AC coords, not the room-graph) |
-| 12 | Chargen / particles / music / housing | **PARTIAL** | music **WIRED** (ambient loops); housing extracted (**ASSET**); chargen + particles **N/P** (format not cleanly parsed this pass) |
+| 12 | Chargen / particles / music / housing | **DONE** | music **WIRED** (ambient loops); chargen (13 heritages, credits, appearance palettes), particles (2051 emitter defs), housing (7062 houses, real prices) all extracted (**ASSET**) |
 
-The ASSET-state items are the genuinely hard extractions (real meshes, clothing swaps, building
-placement) — captured and committed as reusable drop-in data; their remaining work is engine
-integration, not data recovery. Follow-up wiring candidates: export building/clothing Setup GfxObjs
+Every one of the 18 items was extracted this pass (all 12 tool families now exist under `tools/`);
+half are wired into gameplay and half are committed as reusable drop-in assets. The ASSET-state
+items are the genuinely hard extractions (real meshes, clothing swaps, building placement, chargen,
+particles) — captured as data; their remaining work is engine integration, not data recovery. Follow-up wiring candidates: export building/clothing Setup GfxObjs
 through the ac_env pipeline, then a geometry-driven dungeon/town renderer.
 
 ## ALREADY EXTRACTED & WIRED ✅
