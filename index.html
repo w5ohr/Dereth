@@ -6930,13 +6930,73 @@ const EVENT_CALENDAR=[
    clue:"Watch the western sea from Sanamar and judge for yourself.",
    goal:{v:"sanamar"}, obj:"Watch the western sea from Sanamar", xp:1500, gold:220,
    seeds:"Purple sails, hull after hull, riding the horizon. <b>Year 4 — the Year of Banners — will continue the saga.</b>"},
+
+  // ═══ YEAR 4 — YEAR OF BANNERS (The Pretender's War) ═══
+  {id:"y4m37", mon:"Morningthaw", name:"The Pretender's Proclamation", kind:"beat", incursion:null,
+   rumor:"A herald in purple read it on our own square: 'Dereth belongs to Viamont by right of conquest, and the commoner Kilmer will kneel or burn.' Bluespire's garrison has FLIPPED to his banner.",
+   clue:"Hear the proclamation read at two towns and take the measure of this Pretender.",
+   goal:{visits:2}, obj:"Hear the proclamation at two towns", xp:1600, gold:260},
+  {id:"y4m38", mon:"Seedsow", name:"Blockade Running", kind:"beat", incursion:null,
+   rumor:"Greenspire starves behind the Pretender's blockade. The Concord pays runners' rates for any soul who can put supplies through the net.",
+   clue:"Run Concord supplies to the besieged coast camp.",
+   goal:{deliver:"reliefcamp"}, obj:"Run supplies to the Greenspire relief camp", xp:2000, gold:350},
+  {id:"y4m39", mon:"Leafdawning", name:"The Siege of Redspire", kind:"invasion", incursion:null,
+   rumor:"REDSPIRE IS UNDER SIEGE — real siege, ladders and fire, the first since the Fading. The garrison mans the walls and prays for hands.",
+   clue:"Stand the walls at the siege and break the assault.",
+   goal:{siege:1}, obj:"Break the siege of the coast (3 waves)", xp:2400, gold:420},
+  {id:"y4m40", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"The festival is held in DEFIANCE this year at Holtburg — and the Pretender has sent our Monarch a gift. The taster who sniffed it has not woken.",
+   clue:"Walk the Holtburg fair and find who carried the poisoned gift.",
+   goal:{agitator:1,at:"holtburg",avt:"banderling",aname:"The Pretender's Gift-Bearer"}, obj:"Catch the gift-bearer at Holtburg", xp:1400, gold:200,
+   item:{name:"Poisoned Gift Ribbon",stat:"quest",v:40}},
+  {id:"y4m41", mon:"Verdantine", name:"Letters of Marque", kind:"item", incursion:null,
+   rumor:"The Concord issues LETTERS OF MARQUE: captured Viamontian steel is yours to keep, privateer, if you take it off their armories.",
+   clue:"Raid the corsair warbands and claim their rapiers and boarding axes.",
+   goal:{kills:6,fams:["banderling"]}, obj:"Cull 6 Viamontian corsairs", xp:1900, gold:320,
+   item:{name:"Viamontian Rapier",stat:"weapon",wt:"sword",mat:"Steel",v:22,tier:4}},
+  {id:"y4m42", mon:"Solclaim", name:"The Duel of Envoys", kind:"boss", incursion:null,
+   rumor:"At Silyun the two courts met — and settled Westwatch's allegiance the old way: one champion apiece, first yield. The Pretender's man is a mountain in plate.",
+   clue:"Stand as the Concord's champion at Silyun and win the duel.",
+   goal:{boss:"champion"}, obj:"Win the duel at Silyun", xp:2800, gold:450,
+   seeds:"The champion yields — Westwatch flies Concord colors, and the Pretender's court is one ally poorer."},
+  {id:"y4m43", mon:"Leaffall", name:"Grael Unbound", kind:"boss", incursion:null,
+   rumor:"He is LOSING — so he has loosed it. GRAEL, THE ARM OF DESTRUCTION, walks the Halaetan Isles unbound, and even the Pretender's own men flee it.",
+   clue:"Hunt the Arm of Destruction across the isles before nothing is left to claim.",
+   goal:{boss:"grael"}, obj:"Fell Grael, the Arm of Destruction", xp:3200, gold:550,
+   item:{name:"Empyrean Binding-Link",stat:"quest",v:70},
+   seeds:"Grael falls still — but only stunned. You keep the Empyrean Binding-Link; at Sanamar, it will chain the horror for good."},
+  {id:"y4m44", mon:"Harvestgain", name:"The Battle of the Halaetan Isles", kind:"boss", incursion:null,
+   rumor:"FLEET AND FIELD, friends — the Concord sails against Sanamar at dawn. Varicci the Fourth will yield his flagship or the sea can have it.",
+   clue:"Board the flagship: break the siege, then take the Pretender himself.",
+   goal:{siege:1,then:"varicci"}, obj:"Break the siege, then take Varicci IV", title:"Isles-Sworn", xp:5500, gold:900,
+   item:{name:"The Pretender's Sabre",stat:"weapon",wt:"sword",mat:"Diamond",v:38,tier:5,legendary:true},
+   seeds:"Varicci IV yields his flagship, and Grael is re-bound with your Empyrean link. New Viamont is beaten — and watching."},
+  {id:"y4m45", mon:"Leafcull", name:"The Spire Compact", kind:"beat", incursion:null,
+   rumor:"New Viamont signs! Sanamar takes a Concord governor, purple hauls down, and spire-wine flows for FREE in the plazas. Well. For an hour.",
+   clue:"Visit the new governor's camp at Sanamar and see the Compact sworn.",
+   goal:{v:"governor"}, obj:"Witness the Spire Compact at Sanamar", xp:1800, gold:300,
+   seeds:"New Viamont formally joins the Concord — Sanamar gets a governor, and a Viamontian vendor opens in the plaza."},
+  {id:"y4m46", mon:"Coldeve", name:"Prisoners & Pardons", kind:"beat", incursion:null,
+   rumor:"The cells hold three of the Pretender's officers, and the Concord — curse its fairness — asks the PEOPLE to judge them: pardon, ransom, or the quarry.",
+   clue:"Attend the judgments at the prison camp and speak your verdicts.",
+   goal:{v:"prison"}, obj:"Judge the captured officers", xp:1700, gold:280},
+  {id:"y4m47", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Frostfell in SANAMAR, under Concord banners, with Viamontian mulled wine — the first festival that town has thrown for anyone but a king across the sea.",
+   clue:"Keep the feast at Sanamar or any capital.",
+   goal:{v:"sanamar"}, obj:"Keep the feast at Sanamar", xp:1200, gold:170,
+   item:{name:"Spire-Wine Flask",stat:"quest",v:100}},
+  {id:"y4m48", mon:"Snowreap", name:"The Red Spring", kind:"beat", incursion:null,
+   rumor:"Valstead's wells ran RED for a morning — iron-red, then clear, as if the land blinked. By royal order the castle cellars are sealed. No one says why.",
+   clue:"See the stained well-stones of Valstead yourself, before the masons scrub them.",
+   goal:{v:"valstead"}, obj:"See the stained wells of Valstead", xp:1600, gold:240,
+   seeds:"Under the well-water: a taste of copper, and a warmth that has no business in snowmelt. <b>Year 5 — the Year of Blood — will continue the saga.</b>"},
 ];
 const SAGA_YEAR_NAMES={1:"Year of Embers",2:"Year of Whispers",3:"Year of Chitin",4:"Year of Banners",5:"Year of Blood",6:"Year of Storms",7:"Year of Bone",8:"Year of Rifts",9:"Year of Tides",10:"Year of the Crown"};
 function sagaYear(ce){ const m=ce&&ce.id&&ce.id.match(/^y(\d+)/); return m?+m[1]:1; }
 function sagaYearName(ce){ return SAGA_YEAR_NAMES[sagaYear(ce)]||"the Saga"; }
-const SAGA_REST={id:"y3rest", mon:"Morningthaw", name:"The Combs Cool", kind:"beat", incursion:null, goal:null,
-  rumor:"The Deep Brood is broken and the spires are ash. But purple sails ride the western horizon, and the old invader colors have not flown since Varicci the Second.",
-  clue:"Rest, adventurer. The Year of Banners is coming."};
+const SAGA_REST={id:"y4rest", mon:"Morningthaw", name:"The Banners Furl", kind:"beat", incursion:null, goal:null,
+  rumor:"New Viamont is beaten and sworn, Grael is re-bound, and the Concord holds every coast. But Valstead's wells ran red, and the castle cellars are sealed by royal order.",
+  clue:"Rest, adventurer. The Year of Blood is coming."};
 let gameMonth=0, eventClock=0, calendarDone={}, sagaProg={};
 const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
 function currentCalEvent(){ return EVENT_CALENDAR[gameMonth]||SAGA_REST; }
@@ -6975,7 +7035,13 @@ function sagaNotify(type,data){
   if(type==="repel"  && g.repel!=null){ sagaProg[ce.id]=(sagaProg[ce.id]||0)+1; if(sagaProg[ce.id]>=g.repel) sagaComplete(ce); }
   else if(type==="agitator" && g.agitator){ sagaComplete(ce); }
   else if(type==="general"  && g.general){ sagaComplete(ce); }
-  else if(type==="boss"     && ((g.boss&&data===g.boss) || (g.echo&&data==="ember"))){ sagaComplete(ce); }   // echo is the legacy alias for boss:"ember"
+  else if(type==="boss"     && ((g.boss&&data===g.boss) || (g.echo&&data==="ember") || (g.then&&data===g.then))){ sagaComplete(ce); }   // echo=legacy boss:"ember"; then=the second-stage boss after a siege
+  else if(type==="siege"    && g.siege){
+    if(g.then&&!sagaProg[ce.id+"_boss"]){ sagaProg[ce.id+"_boss"]=1;   // two-stage climax: siege cleared → the Pretender appears
+      log(`The walls hold — now the flagship. <b>${(SAGA_BOSSES[g.then]||{}).name||"The Pretender"}</b> awaits.`,"warn"); spawnSagaBoss(g.then); }
+    else sagaComplete(ce);
+  }
+  else if(type==="deliver"  && g.deliver){ sagaComplete(ce); }
   else if(type==="kill"     && g.kills && g.fams && g.fams.indexOf(data)>=0){
     sagaProg[ce.id]=(sagaProg[ce.id]||0)+1;
     if(sagaProg[ce.id]>=g.kills) sagaComplete(ce);
@@ -7017,6 +7083,12 @@ const SAGA_BOSSES={
            rise:"On a false throne sits a second Kilmer wearing the Monarch's own smile — <b>The Prodigal Monarch</b>. Destroy the puppet.", toast:"THE PRODIGAL MONARCH"},
   empress:{name:"Empress Gnawvil-Rax", kind:"olthoi", scale:3.4, tint:0x2a5a14, hp:5400, dmg:64, xp:24000, near:false,
            rise:"Below the northern spire she waits — <b>EMPRESS GNAWVIL-RAX</b>, last clutch of the Ancient Queen, grown vast in a generation of dark. Descend and end her.", toast:"THE BROOD-EMPRESS"},
+  champion:{name:"Champion of the Pretender", kind:"lugian", scale:2.6, tint:0x3a2a5a, hp:4200, dmg:56, xp:16000, near:true,
+           rise:"The Pretender's champion steps onto the Silyun ground — a mountain in Viamontian plate. Yield him nothing.", toast:"THE DUEL"},
+  grael:  {name:"Grael, the Arm of Destruction", kind:"golem", scale:3.6, tint:0x8a2a10, hp:5600, dmg:66, xp:26000, near:false,
+           rise:"Loosed at last — <b>GRAEL, THE ARM OF DESTRUCTION</b> — walks the Halaetan Isles, and even the Pretender's men flee it. Hunt it down.", toast:"GRAEL UNBOUND"},
+  varicci:{name:"Corsair-Prince Varicci IV", kind:"lugian", scale:2.8, tint:0x5a1a4a, hp:6000, dmg:64, xp:24000, near:true, crowned:true,
+           rise:"Aboard the flagship stands <b>CORSAIR-PRINCE VARICCI IV</b>, the Pretender himself. Take him, and the Isles are sworn.", toast:"THE PRETENDER"},
 };
 function spawnSagaBoss(bossId){
   if(inDungeon||inNetwork){ setTimeout(()=>spawnSagaBoss(bossId),8000); return; }
@@ -7046,6 +7118,12 @@ function sagaPlace(name){
     neydisa:"Neydisa Castle",eastham:"Eastham",rithwic:"Rithwic",yaraq:"Yaraq",shoushi:"Shoushi",
     cragstone:"Cragstone",drudgenest:"Holtburg",sanamar:"Sanamar",timaru:"Timaru"};   // drudge nest ≈ near Holtburg on our map
   const cn=NAMED[name]; if(cn){ const c=CITIES.find(c=>c.name===cn); if(c) return {x:c.x,z:c.z,r:cn==="Glenden Wood"?44:34,name:c.name}; }
+  // Year-4 coastal camps: points a short way off Sanamar (the Halaetan front) toward the sea
+  const SAN=CITIES.find(c=>c.name==="Sanamar");
+  if(SAN){ const off={reliefcamp:[46,-30,"the Greenspire relief camp"],governor:[38,26,"the Sanamar governor's camp"],prison:[-34,34,"the prison camp"]}[name];
+    if(off) return {x:SAN.x+off[0],z:SAN.z+off[1],r:40,name:off[2]}; }
+  if(name==="silyun"){ const c=CITIES.find(c=>/Silyun/.test(c.name)); if(c) return {x:c.x,z:c.z,r:34,name:c.name};
+    return {x:SAN?SAN.x-60:0,z:SAN?SAN.z+40:0,r:44,name:"Silyun"}; }   // Silyun stand-in near the front
   return null;
 }
 // visit-goal destination (single). Multi-stop visits:N resolve their own points in updateCalendar.
@@ -7081,9 +7159,21 @@ function updateCalendar(dt){
   if(!g||calendarDone[ce.id]) return;
   if(g.echo||g.boss){ const bid=g.boss||"ember";
     if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaBoss===bid)) spawnSagaBoss(bid); return; }   // covers load mid-chapter
+  if(g.siege){   // launch the siege once; its second-stage boss (g.then) re-spawns on reload if pending
+    if(g.then&&sagaProg[ce.id+"_boss"]){ if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaBoss===g.then)) spawnSagaBoss(g.then); return; }
+    if(!worldEvent&&!inDungeon&&!inNetwork) startSiege(); return; }
   if(g.clear){ const d=DUNGEONS.find(d=>d.name===g.clear);
     if(d&&player.clearedDungeons.indexOf(d.id)>=0) sagaNotify("clear"); return; }   // cleared (now or ever) → the objective is met
   if(inDungeon||inNetwork) return;
+  if(g.deliver){   // grant the supplies once, then it's a run to the delivery point (which consumes them)
+    if(!sagaProg[ce.id+"_sup"]){ sagaProg[ce.id+"_sup"]=1;
+      addToInv({name:"Concord Supplies",stat:"quest",v:20,count:5},true);
+      log("You take up <b>Concord Supplies</b> for the besieged coast — run them through the corsair net.","sys"); }
+    const pt=sagaPlace(g.deliver);
+    if(pt&&Math.hypot(pt.x-player.x,pt.z-player.z)<pt.r){
+      const i=player.inv.findIndex(it=>it.name==="Concord Supplies"); if(i>=0) player.inv.splice(i,1);
+      log("The relief camp takes the supplies — <b>Greenspire will hold</b>.","sys"); sagaNotify("deliver"); }
+    return; }
   if(g.agitator){   // plant the named agitator(s) when the player reaches the fair (a specific town, or the nearest capital)
     const spot=g.at?sagaPlace(g.at):(()=>{const c=CAPITALS.find(c=>Math.hypot(c.x-player.x,c.z-player.z)<38);return c?{x:c.x,z:c.z,name:c.name}:null;})();
     if(spot&&Math.hypot(spot.x-player.x,spot.z-player.z)<38&&!sagaProg[ce.id+"_up"]&&!monsters.some(m=>m.sagaTag==="agitator")){
@@ -7160,6 +7250,53 @@ function eventFail(){
   toast("INCURSION FADES");
   endEvent(true);
 }
+// ── SIEGE (Y4 debut): a town-under-siege wave defense. A beefed-up incursion at a coastal town —
+//    Viamontian corsairs (purple banderling raiders) storm the walls in 3 escalating waves. Clear a
+//    wave → the next lands; clear the last → the siege is broken (sagaNotify "siege"). ──
+const SIEGE_WAVES=3;
+function corsairKind(){ return "banderling"; }   // the corsair raiders are a Viamontian warband
+function spawnSiegeWave(wv){
+  const t=worldEvent.town, count=clamp(5+wv+Math.floor(player.level/4),5,12), hpMul=1+Math.min(player.level,40)*0.035+wv*0.08;
+  worldEvent.mobs=worldEvent.mobs.filter(m=>monsters.indexOf(m)>=0);
+  for(let i=0;i<count;i++){
+    let x,z,tries=0;
+    do{const a=rnd(0,6.28),rr=(t.capital?TOWN_SAFE+14:22)+rnd(0,28);
+       x=clamp(t.x+Math.cos(a)*rr,-HALF+6,HALF-6);z=clamp(t.z+Math.sin(a)*rr,-HALF+6,HALF-6);tries++;}
+    while(terrainH(x,z)<0&&tries<12);
+    const m=spawnMonster(corsairKind(),x,z,wv>=2&&Math.random()<0.3);
+    m.event=worldEvent; m.corsair=true; m.name="Viamontian Corsair";
+    m.mhp=m.hp=Math.round(m.mhp*hpMul); m.xp=Math.round(m.xp*1.5);
+    m.mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(0x3a1a5a); });
+    worldEvent.mobs.push(m);
+  }
+  log(`<b>Siege of ${t.name} — wave ${wv}/${SIEGE_WAVES}!</b> Viamontian corsairs storm the walls.`,"warn");
+  toast("SIEGE WAVE "+wv); if(SFX.growl)SFX.growl();
+}
+function startSiege(){
+  if(inDungeon||inNetwork||worldEvent) return;
+  // a coastal town near the player (falls back to the nearest town)
+  const coastal=CITIES.filter(c=>{ for(let a=0;a<8;a++){ const ang=a/8*6.28; if(terrainH(c.x+Math.cos(ang)*90,c.z+Math.sin(ang)*90)<0) return true; } return false; });
+  const pool=(coastal.length?coastal:CITIES).slice().sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+  const town=pool[0];
+  worldEvent={type:{name:"Siege",col:0x8a2aff,blurb:"Corsairs storm the walls"},town,t:600,total:0,alive:0,active:true,mobs:[],beam:null,beacon:null,siege:true,wave:1};
+  const gy=groundY(town.x,town.z);
+  const beam=new THREE.Mesh(new THREE.CylinderGeometry(4,10,240,16,1,true),
+    new THREE.MeshBasicMaterial({color:0x8a2aff,transparent:true,opacity:0.32,depthWrite:false,fog:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending}));
+  beam.position.set(town.x,gy+120,town.z);beam.renderOrder=2;scene.add(beam);
+  const bl=new THREE.PointLight(0x8a2aff,3,240);bl.position.set(town.x,gy+12,town.z);scene.add(bl);
+  worldEvent.beam=beam;worldEvent.beacon=bl;
+  spawnSiegeWave(1);
+}
+function siegeSuccess(){
+  const t=worldEvent.town, xp=Math.round(1000+player.level*150), gold=Math.round(240+player.level*18);
+  burst(t.x,2,t.z,0x8a2aff,50); gainXP(xp); player.gold+=gold;
+  for(let i=0;i<3;i++) addDrop(t.x+rnd(-3,3),t.z+rnd(-3,3),{type:"item",item:rollItem(true,5)});
+  addDrop(t.x,t.z,{type:"gold",amt:gold});
+  log(`The siege of <b>${t.name}</b> is broken! The corsairs fall back to the sea. Bounty: ${gold}p + ${xp} XP.`,"sys");
+  toast("SIEGE BROKEN"); SFX.level(); SFX.quest();
+  sagaNotify("siege");
+  checkAchievements(); endEvent(false); saveGame();
+}
 // ── H13 Portal Storms (AC): when an area gets too crowded, the world sweeps you to the outskirts.
 //    A practical anti-zerg mechanic in retail; here it fires on dense monster/player clustering. ──
 function crowdNear(radius){
@@ -7199,7 +7336,12 @@ function updateEvents(dt){
     worldEvent.alive=alive;
     if(worldEvent.beacon) worldEvent.beacon.intensity=2+1.3*Math.sin(now()/180);
     if(worldEvent.beam) worldEvent.beam.rotation.y+=dt*0.4;
-    if(alive<=0) eventSuccess();
+    if(worldEvent.siege){                       // a siege advances wave by wave; each wave has its own clear
+      if(alive<=0){ if(worldEvent.wave>=SIEGE_WAVES) siegeSuccess();
+        else { worldEvent.wave++; spawnSiegeWave(worldEvent.wave); } }
+      else if(worldEvent.t<=0){ log(`The garrison at <b>${worldEvent.town.name}</b> is overrun — the siege lifts, for now.`,"warn"); toast("SIEGE LIFTS"); endEvent(true); }
+    }
+    else if(alive<=0) eventSuccess();
     else if(worldEvent.t<=0) eventFail();
   } else if(!worldEvent){
     eventCd-=dt;

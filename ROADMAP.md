@@ -557,7 +557,19 @@ Ten-year serialized storyline (design: `docs/kilmer-saga-storyline.md`; framewor
   (clear Olthoi Chasm, title **Pen-Breaker**) → Acid Summer (cull 8 Olthoi) → the column march (repel:2)
   → **Empress Gnawvil-Rax** (new saga boss; title **Hivebane**, unique *Empress-Carapace Shield*) →
   burning the combs → the Aun Accord at Timaru → Frostfell → sails off Sanamar (seeds Year 4).
-- ☐ **K4–K10. Years 4–10** — data drops on the K1 engine per the specs doc. New goal types by year:
+- ✅ **K4. Year 4 "Year of Banners" (The Pretender's War)** (jsc + preview e2e all 12 chapters, 0
+  console errors). New engine: the **siege** system — a town-under-siege wave defense built on the
+  incursion machinery (`startSiege`/`spawnSiegeWave`/`siegeSuccess`: a coastal town, 3 escalating waves
+  of purple Viamontian corsairs, each wave clears into the next, no timeout-fail unless overrun) · the
+  **deliver** goal (grant Concord Supplies → run them to a coastal camp, consumed on arrival) · a
+  **two-stage climax** (`siege`+`then`: break the siege, then the Pretender appears) · three bosses
+  (Champion of the Pretender, Grael, Corsair-Prince Varicci IV) · coastal camp places off Sanamar.
+  Chapters M37–M48: proclamation → blockade running → the **Siege of Redspire** (siege debut) → the
+  poisoned-gift hunt → Letters of Marque (privateer weapons) → the Duel of Envoys → **Grael Unbound** →
+  **the Battle of the Halaetan Isles** (siege→Varicci; titles **Isles-Sworn** + **Grael's Jailer**,
+  unique *The Pretender's Sabre*) → the Spire Compact → Prisoners & Pardons → Frostfell → the Red Spring
+  (seeds Year 5).
+- ☐ **K5–K10. Years 5–10** — data drops on the K1 engine per the specs doc. New goal types by year:
   `visits:N`+saga-boss generalization (Y2) · siege+deliver (Y4) · relics+contribute+under-temple delve
   (Y5) · multi-boss+citadel (Y6) · season-lock+Frore (Y7) · rift spawner+ascent+Asheron NPC (Y8) ·
   drowned shores+underwater delve (Y9) · survive+stages+finale (Y10).
