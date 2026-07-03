@@ -312,6 +312,11 @@
   <div id="tinkCraft" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Dyeing <span style="color:var(--dim);font-weight:normal;font-size:11px">— recolour your armour · 6 mat · needs Cooking (Alchemy improves the result)</span></div>
   <div id="tinkDye" style="margin-bottom:12px"></div>
+  <div id="tinkRecipeWrap" style="display:none;margin-bottom:12px">
+    <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Recipe Codex <span style="color:var(--dim);font-weight:normal;font-size:11px">— the authentic recipes of Dereth (reference)</span></div>
+    <input id="tinkRecipeSearch" placeholder="search recipes — e.g. arrow, oil, pie…" style="width:100%;box-sizing:border-box;background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px;margin-bottom:6px">
+    <div id="tinkRecipes" style="max-height:180px;overflow:auto;font-size:12px"></div>
+  </div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Satchel <span id="invCount" style="color:var(--dim);font-weight:normal"></span></div>
   <div id="invRows"></div>
   <button id="closeTink">Return to Dereth  (T)</button>
@@ -963,6 +968,33 @@ for(const s of SPELLBOOK_LIST){
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
 }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
+// ── authentic spell data (assets/acspells.json · tools/ac_spell_export.py): the real client
+//    SpellTable — names, cast WORDS, and component formulas. Matched to our spells by name so
+//    casting speaks the true words of power and the spellbook shows the real reagents. ──
+let AC_SPELLS=null;
+fetch('assets/acspells.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j)return; AC_SPELLS=j;
+  const byName={}, comps=j.components||{};
+  for(const id in j.spells){ const s=j.spells[id]; if(s.n) byName[s.n.toLowerCase()]=s; }
+  for(const sid in SPELLBOOK){ const g=SPELLBOOK[sid], a=byName[(g.name||"").toLowerCase()]; if(!a)continue;
+    g.words=a.words||g.words;                                              // "Zojak Quaguz"
+    if(a.comps&&a.comps.length) g.reagents=a.comps.map(c=>comps[c]&&comps[c].n).filter(Boolean);
+    if(a.d&&!g.acDesc) g.acDesc=a.d; }
+}).catch(()=>{});
+// ── real item icons (assets/acicons/, tools/ac_icon_export.py): authentic client bitmaps keyed by
+//    lowercase item name; itemIconHTML() returns an <img> when one matches, else the emoji glyph. ──
+let AC_ICONS=null;
+fetch('assets/acicons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.names)AC_ICONS=j; }).catch(()=>{});
+function itemIconDID(name){ if(!AC_ICONS||!name)return null; const n=name.toLowerCase();
+  if(AC_ICONS.names[n])return AC_ICONS.names[n];
+  for(const w of n.split(/\s+/).reverse()){ if(AC_ICONS.names[w])return AC_ICONS.names[w]; }   // fall back to the base noun ("… sword")
+  return null; }
+function itemIconHTML(name,emoji,px){ const did=itemIconDID(name); const s=px||18;
+  if(did&&AC_ICONS.icons[did]) return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`;
+  return emoji||""; }
+// ── crafting recipes (assets/acrecipes.json) surfaced as an in-game reference. (Retail loot tiers
+//    are handled by the ACLOOT system below — acLootTier/acLootCount.) ──
+let AC_RECIPES=null;
+fetch('assets/acrecipes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_RECIPES=j; }).catch(()=>{});
 // Quickbar: 12 slots × 2 rows per page, 4 pages (buttons 1–4) = 96 assignable slots.
 const QB_COLS=12, QB_ROWS=2, QB_PAGES=4, QB_PAGE=QB_COLS*QB_ROWS, QB_TOTAL=QB_PAGE*QB_PAGES;
 const ROW1_KEYS=["1","2","3","4","5","6","7","8","9","0","-","="];   // number row casts row-1 slots of the active page
@@ -10258,6 +10290,7 @@ function castSpellById(id){
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mkc=MAGIC_SCHOOLS[s.school];
   if(s.req>0 && mkc && skillValue(mkc)<s.req){ log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).`,"warn"); SFX.hit&&SFX.hit(); return; }
+  if(s.words) log(`You intone the words of power: <i style="color:#c9a6ff">${esc(s.words)}</i>`,"sys");   // authentic AC cast words
   const ct=castTimeFor(s);
   if(ct<=0){ executeSpell(id); return; }            // instant utility (Stam→Mana) skips the cast bar
   player.casting={id,t:ct,total:ct};
@@ -11254,7 +11287,7 @@ function update(dt){
     }
     // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
     const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
-    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now();SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
+    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle"))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
     if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0) m.state="wander"; } else if(d>b.sense*1.4) m.state="wander"; }
     if(m.state==="chase"&&player.alive){
       m.ang=Math.atan2(dx,dz);
@@ -11285,7 +11318,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else m.charging=0.45;
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack");const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
@@ -12177,8 +12210,24 @@ function initAudio(){
   musicTimer=setInterval(musicTick,4400); setTimeout(musicTick,800);
 }
 const MSCALE=[164.81,196.00,220.00,246.94,293.66,329.63]; // E minor-ish, low octave
+// authentic AC ambient tracks (assets/acmusic/, tools/ac_music_export.py): occasionally an original
+// client ambient loop plays low under the synth pad — otherwise the synth pad carries the mood.
+let AC_MUSIC=null, _acMusicPlaying=false, _acMusicBuf={};
+fetch('assets/acmusic/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.tracks)AC_MUSIC=j.tracks; }).catch(()=>{});
+function playAcAmbient(){
+  if(!AC_MUSIC||!AC_MUSIC.length||!actx||muted||_acMusicPlaying) return false;
+  const tr=AC_MUSIC[irnd(0,AC_MUSIC.length-1)];
+  const start=buf=>{ const s=actx.createBufferSource(); s.buffer=buf; const g=actx.createGain();
+    g.gain.value=0.16; s.connect(g); g.connect(masterGain); _acMusicPlaying=true; s.onended=()=>{_acMusicPlaying=false;}; s.start(); };
+  if(_acMusicBuf[tr.did]){ start(_acMusicBuf[tr.did]); return true; }
+  fetch('assets/acmusic/'+tr.file).then(r=>r.arrayBuffer()).then(a=>actx.decodeAudioData(a))
+    .then(b=>{ _acMusicBuf[tr.did]=b; start(b); }).catch(()=>{});
+  return true;
+}
 function musicTick(){
   if(!actx||muted) return;
+  if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
+  if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
   [root,root*1.5,root*2].forEach(f=>{
     const o=actx.createOscillator(),g=actx.createGain();
@@ -12225,6 +12274,32 @@ const SFX={
   growl:()=>blip(92,0.34,"sawtooth",0.11,58),
   click:()=>blip(680,0.05,"square",0.07,900),
 };
+// ── real AC sounds (assets/acsounds/, tools/ac_sound_export.py): when the manifest is present the
+//    authentic client samples play; the synth SFX above stay as the offline fallback. ──
+const _SFX=Object.assign({},SFX);
+let SND=null, _sndBuf={};                                  // manifest {key:file} + decoded AudioBuffer cache
+fetch('assets/acsounds/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)SND=j; }).catch(()=>{});
+function playSample(keys,vol){
+  if(!SND||!actx||muted) return false;
+  const list=Array.isArray(keys)?keys:[keys], have=list.filter(k=>SND[k]); if(!have.length) return false;
+  const key=have[irnd(0,have.length-1)];
+  const play=buf=>{ const s=actx.createBufferSource(); s.buffer=buf; const g=actx.createGain();
+    g.gain.value=(vol==null?0.7:vol)*(settings.vol!=null?1:1); s.connect(g); g.connect(masterGain||actx.destination); s.start(); };
+  if(_sndBuf[key]){ if(_sndBuf[key]!=="loading") play(_sndBuf[key]); return true; }
+  _sndBuf[key]="loading";
+  fetch('assets/acsounds/'+SND[key]).then(r=>r.arrayBuffer()).then(a=>actx.decodeAudioData(a))
+    .then(buf=>{ _sndBuf[key]=buf; play(buf); }).catch(()=>{ _sndBuf[key]=null; });
+  return true;
+}
+// prefer real samples for the unambiguous events; fall back to the synth voice per call
+const _SND_MAP={ swing:["swing1","swing2","swing3"],hit:["hit_flesh"],heal:["heal"],death:["player_death"],
+  hurt:["player_wound"],level:["level_up"],portal:["portal_enter"],whoosh:["portal_exit"],gold:["pickup"],
+  quest:["receive_item"],step:["footstep1","footstep2"],arrow:["bow_release"],
+  flame:["cast_fire","explode_fire"],frost:["cast_frost","explode_frost"] };
+for(const k in _SND_MAP){ const syn=_SFX[k], keys=_SND_MAP[k];
+  SFX[k]=(...a)=>{ if(!playSample(keys)) syn&&syn(...a); }; }
+// authentic per-creature vocals (kind_idle/_attack/_wound/_death) — used by the monster AI where it has a kind
+function creatureSFX(kind,act){ return playSample((kind||"")+"_"+act); }
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -14455,9 +14530,18 @@ function talkToNPC(n){
     player.skills=freshSkills(); player.xpUnspent+=refunded; derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
     log(`<b>Fianhe:</b> Your training is undone — ${trained} skills released, ${refunded.toLocaleString()} XP returned. Spend your credits anew (C).`,"sys"); return;
   }
-  const lines=NPC_FLAVOR[n.role]||["Well met, traveller."];
-  log(`<b>${n.name}:</b> ${lines[(n._line++)%lines.length]}`,"sys");
+  const ac=acDialogueLine(n.name);   // authentic retail line for this NPC, if the client data has one
+  const lines=ac||NPC_FLAVOR[n.role]||["Well met, traveller."];
+  log(`<b>${n.name}:</b> ${esc(lines[(n._line++)%lines.length])}`,"sys");
 }
+// authentic NPC dialogue (assets/acdialogue.json · tools/ace_emote_export.py) — the real retail
+// greeting/quest lines, keyed by lowercase NPC name; returns the line array or null.
+let AC_DIALOGUE=null;
+fetch('assets/acdialogue.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.npcs)AC_DIALOGUE=j.npcs; }).catch(()=>{});
+function acDialogueLine(name){ if(!AC_DIALOGUE||!name) return null;
+  const e=AC_DIALOGUE[name.toLowerCase()]; if(!e) return null;
+  const pool=(e.greetings||[]).concat(e.quest||[]).filter(s=>s&&s.length<300);
+  return pool.length?pool:null; }
 function questEvent(type,kind){   // a world event advances the matching objective in EVERY active quest that needs it
   let any=false;
   for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
@@ -15093,7 +15177,7 @@ function buildShop(){
   SHOP.forEach((it,i)=>{
     const row=document.createElement('div');row.className="row";
     const have=it.field?` (have ${player[it.field]})`:(it.scroll&&player.knownSpells.indexOf(it.spellId)>=0?` <span style="color:#9a8a66">(known)</span>`:"");
-    row.innerHTML=`<div><span class="lab">${it.ico} ${it.name}</span> <span class="desc">— ${it.desc}${have}</span></div>
+    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico)} ${it.name}</span> <span class="desc">— ${it.desc}${have}</span></div>
       <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""}>Buy — ${it.cost}p</button></div>`;
     buy.appendChild(row);
   });
@@ -15310,7 +15394,8 @@ function buildSpellbook(){
       }
       const row=document.createElement('div'); row.className="row";
       const eff=spellEffectText(s);
-      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span></div><div class="ctl">${ctl}</div>`;
+      const lore = s.words?`<div class="desc" style="margin-left:22px;color:#a98fd0;font-size:11px">⟡ <i>${esc(s.words)}</i>${s.reagents&&s.reagents.length?` · <span style="color:#8a9a6a">${s.reagents.map(esc).join(", ")}</span>`:""}</div>`:"";
+      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span>${lore}</div><div class="ctl">${ctl}</div>`;
       root.appendChild(row);
     }
   }
@@ -15893,25 +15978,31 @@ const DUNGEON_SCRIPTS={
   "Cells of the Black Book":{boss:"Dark Master",loot:["Black Page of Salt and Ash"],
     d:"A dead-symmetric Dericost prison where four arms of cells converge on one raised scriptorium, and the same black book waits at every compass point. Through the octagon and the cell-block with its Font of Stasis, up the ramp to the book-chamber — and above them all, the central chamber where the fifth book lies. Only those with blood on their hands may read it.",
     rooms:[["en",0,0,0,{t:"entry"}],["oct",0,1,0,{round:1,m:2}],["cellb",0,2,0,{cells:1,m:2}],
-      ["book",0,3,2.6,{m:1}],["center",0,4,5.2,{t:"boss",big:1,portal:1}]],
-    links:[["en","oct","flat"],["oct","cellb","flat"],["cellb","book","ramp"],["book","center","ramp"]]},
+      ["armW",-1,2,0,{small:1,m:1}],["armE",1,2,0,{small:1,m:1}],
+      ["bookW",-1,3,2.6,{round:1,m:1}],["bookE",1,3,2.6,{round:1,m:1}],
+      ["center",0,3,5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","oct","flat"],["oct","cellb","flat"],["cellb","armW","flat"],["cellb","armE","flat"],
+      ["armW","bookW","ramp"],["armE","bookE","ramp"],["bookW","center","ramp"],["bookE","center","ramp"]]},
   "Dardante's Workshop":{boss:"Bound Falatacot",loot:["Untranslated Bound Falatacot Fragment"],noBoxes:true,
     d:"A Viamontian sorcerer's atelier of pillared halls marching ever upward, each grander than the last — the octagon, the pillared square, the great waffle-grid hall. The Summoning Adepts in the northeast octagons carry the ring that opens the way onward, and past the hexagonal hall something ancient and serpentine is chained in the Binding Realm — and does not wish to remain so.",
-    rooms:[["en",0,0,0,{t:"entry"}],["oct1",0,1,2.6,{round:1,m:2}],["pill",0,2,2.6,{m:2}],
-      ["waffle",0,3,5.2,{big:1,m:2}],["adepts",1,3,5.2,{round:1,m:2,box:"Ring of the Summoning Adepts"}],
-      ["summ",1,4,5.2,{m:2}],["hex",0,4,5.2,{round:1,m:1}],["bind",0,5,5.2,{t:"boss",round:1,portal:1}]],
-    links:[["en","oct1","ramp"],["oct1","pill","flat"],["pill","waffle","ramp"],["waffle","adepts","flat"],
+    rooms:[["en",0,0,0,{t:"entry"}],["oct1",0,1,2.6,{round:1,m:2}],["side",1,1,2.6,{small:1,m:1}],
+      ["pill",0,2,2.6,{m:2}],["alcove",0,3,5.2,{m:2}],["waffle",0,4,5.2,{big:1,m:2}],
+      ["bigoct",1,4,5.2,{round:1,m:2}],["adepts",1,5,7.8,{round:1,m:2,box:"Ring of the Summoning Adepts"}],
+      ["summ",0,5,7.8,{m:2}],["hex",0,6,7.8,{round:1,m:1}],["bind",0,7,7.8,{t:"boss",round:1,portal:1}]],
+    links:[["en","oct1","ramp"],["oct1","side","flat"],["oct1","pill","flat"],["pill","alcove","ramp"],
+      ["alcove","waffle","flat"],["waffle","bigoct","flat"],["bigoct","adepts","ramp"],
       ["adepts","summ","key","Ring of the Summoning Adepts"],["summ","hex","flat"],["hex","bind","flat"]]},
   "Saadia's Retreat":{boss:"Mosswart Soul Trapper",loot:["Alloy Implement"],
     d:"A mosswart burrow that keeps going down — past the ring gallery and the warrens, the floor opens into three black shafts spanned by plank bridges, croaking zealots on every one. Somewhere by the pit, a forgotten scrap of machined alloy waits in a dead end, and a locked door at the deepest block guards the strongbox.",
     rooms:[["en",0,0,0,{t:"entry"}],["ring",0,1,-2.6,{round:1,m:2}],["warren",0,2,-5.2,{m:3}],
-      ["hook",-1,2,-5.2,{small:1,m:1}],["pits",0,3,-8.6,{big:1,m:2}],["deep",0,4,-8.6,{t:"boss",m:2}]],
-    links:[["en","ring","ramp"],["ring","warren","ramp"],["warren","hook","flat"],
+      ["warren2",1,2,-5.2,{small:1,m:1}],["hook",-1,2,-5.2,{small:1,m:1}],
+      ["pits",0,3,-8.6,{big:1,m:2}],["deep",0,4,-8.6,{t:"boss",m:2}]],
+    links:[["en","ring","ramp"],["ring","warren","ramp"],["warren","warren2","flat"],["warren","hook","flat"],
       ["warren","pits","drop"],["pits","deep","key"]]},
   "Setab's Barracks":{boss:"Drudge Prowler",
     d:"A tumeroken-named drudge den under the Lytelthorpe hills: bunk-room after bunk-room of chittering slinkers, a locked guard block hiding the garrison's chests, a switchback ramp worn smooth, and one looping lower gallery ending in the great square hall.",
     rooms:[["en",0,0,0,{t:"entry"}],["barr",1,0,-2.6,{big:1,m:3}],["guard",2,0,-2.6,{m:2}],
-      ["switch",1,1,-5.2,{m:1}],["loop",1,2,-5.2,{m:1}],["hall",1,3,-5.2,{t:"boss",big:1}]],
+      ["switch",1,1,-5.2,{m:1}],["loop",1,2,-5.2,{round:1,m:1}],["hall",1,3,-5.2,{t:"boss",big:1}]],
     links:[["en","barr","ramp"],["barr","guard","key"],["barr","switch","ramp"],
       ["switch","loop","flat"],["loop","hall","flat"]]},
   "Old Scratchy's Cave":{boss:"Old Scratchy",loot:["Cartilage of Old Scratchy"],
@@ -16021,11 +16112,13 @@ const DUNGEON_SCRIPTS={
       ["zig","twin","ramp"],["twin","boss","flat"]]},
   "Southern Infiltrator Keep":{boss:"Southern Infiltrator Master",loot:["Helm of the Simulacra","Southern Infiltrator Message Shard"],
     d:"The southern twin keeps no straight lines — its halls knot and double back, sinking two storeys through drudge-warrens toward a corner chamber where the Master weaves human-shaped puppets in the dark. Where the northern keep is a road, this one is a snare.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",-1,0,0,{m:2}],["tall",-1,1,-2.6,{m:2}],
-      ["web1",-1,2,-2.6,{big:1,m:2}],["side",0,2,-2.6,{small:1,m:1}],["web2",-1,3,-5.2,{big:1,m:2}],
-      ["boss",-1,4,-5.2,{t:"boss",portal:1}]],
-    links:[["en","maze","flat"],["maze","tall","ramp"],["tall","web1","flat"],["web1","side","flat"],
-      ["web1","web2","ramp"],["web2","boss","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",-1,0,0,{small:1,m:2}],["wind",-1,1,-2.6,{m:1}],
+      ["tall",-1,2,-2.6,{m:2}],["web1",-1,3,-5.2,{big:1,m:2}],["sideE",0,3,-5.2,{small:1,m:1}],
+      ["nw",-2,3,-5.2,{small:1,m:1}],["web2",-1,4,-7.8,{big:1,m:2}],["east2",0,4,-7.8,{m:1}],
+      ["vest",-2,4,-7.8,{small:1,m:1}],["boss",-2,5,-7.8,{t:"boss"}],["out",-1,5,-7.8,{small:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","wind","ramp"],["wind","tall","flat"],["tall","web1","ramp"],
+      ["web1","sideE","flat"],["web1","nw","flat"],["web1","web2","ramp"],["web2","east2","flat"],
+      ["web2","vest","flat"],["vest","boss","flat"],["boss","out","flat"]]},
   "Nor's Folly":{boss:"Drudge Prowler",
     d:"A drudge-gnawed burrow in the Al-Arqas sands, so obscure the cartographers themselves misfiled which hemisphere it sits in. Whatever Nor sought down these three sinking levels, only shreths and sneaks remain to guard it — and two portals stand ready for travelers who agree the venture was folly.",
     rooms:[["en",0,0,0,{t:"entry",portal:1}],["wind",-1,0,0,{m:2}],["hub",-1,1,-2.6,{m:2}],
@@ -16046,86 +16139,114 @@ const DUNGEON_SCRIPTS={
   "Gardens of Menilesh":{boss:"Lord Rytheran",loot:["Ring of Remembrance","Engraved Ashen Key"],
     d:"Once a pleasure-garden, now a drowned ring of stone where a mad lich keeps court and begs passing strangers to fetch his lady's ring. Down three ramped chambers to the ruined gardens; whatever you do, do not touch the Strange Pillar — the gardens remember their dead, and they come when called. The great circle closes on the far hall where the Ring of Remembrance lies.",
     rooms:[["en",0,0,0,{t:"entry"}],["d1",0,1,-2.6,{small:1,m:1}],["d2",0,2,-5.2,{small:1,m:1}],
-      ["garden",0,3,-5.2,{big:1,m:2}],["pillar",1,3,-5.2,{round:1,m:2}],["pfar",1,4,-5.2,{m:1}],
-      ["far",0,4,-5.2,{t:"boss",big:1,portal:1}]],
-    links:[["en","d1","ramp"],["d1","d2","ramp"],["d2","garden","flat"],["garden","pillar","flat"],
-      ["garden","far","flat"],["pillar","pfar","flat"],["pfar","far","flat"]]},
+      ["north",0,3,-5.2,{big:1,m:2}],["west",-1,3,-5.2,{m:2}],["east",1,3,-5.2,{m:2}],
+      ["west2",-1,4,-5.2,{m:1}],["east2",1,4,-5.2,{m:1}],["pillar",0,4,-5.2,{round:1,m:2}],
+      ["rem",0,5,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","d1","ramp"],["d1","d2","ramp"],["d2","north","flat"],["north","west","flat"],
+      ["north","east","flat"],["west","west2","flat"],["east","east2","flat"],
+      ["west2","pillar","flat"],["east2","pillar","flat"],["pillar","rem","flat"]]},
   "Jahannan Vault":{boss:"Inferno",loot:["Major Smoldering Stone","Atlan's Treatise"],
     d:"A furnace-hollowed vault where the very architecture conspires against you — rotten planks, false beams, and drops that swallow the careless whole, all lit by things made of living flame. West from the drop, down the sheer fall, then climb: catwalk, planks, the Inferno's spiral stairs, the open bridge — and one last long drop onto the chamber of the red stone.",
-    rooms:[["en",0,0,0,{t:"entry"}],["west",-1,0,0,{m:1}],["lower",-1,1,-3.4,{m:1}],["south",0,1,-3.4,{m:1}],
+    rooms:[["en",0,0,0,{t:"entry"}],["west",-1,0,0,{m:1}],["lower",-1,1,-3.4,{m:1}],
+      ["diamond",-2,1,-3.4,{round:1,m:1}],["south",0,1,-3.4,{m:1}],
       ["cat",0,2,-0.8,{m:1}],["planks",0,3,1.8,{small:1,m:1}],["spiral",1,3,4.4,{round:1,m:1}],
-      ["bridge",1,4,7,{big:1,m:1}],["stone",0,4,1.8,{t:"boss",portal:1}]],
-    links:[["en","west","flat"],["west","lower","drop"],["lower","south","flat"],["south","cat","ramp"],
-      ["cat","planks","ramp"],["planks","spiral","ramp"],["spiral","bridge","ramp"],["bridge","stone","drop"]]},
+      ["note",2,3,4.4,{small:1,m:1}],["bridge",1,4,7,{big:1,m:1}],["stone",0,4,1.8,{t:"boss",portal:1}]],
+    links:[["en","west","flat"],["west","lower","drop"],["lower","diamond","flat"],["lower","south","flat"],
+      ["south","cat","ramp"],["cat","planks","ramp"],["planks","spiral","ramp"],["spiral","note","flat"],
+      ["spiral","bridge","ramp"],["bridge","stone","drop"]]},
   "Incunabula Vault":{boss:"Olthoi Swarm Soldier",loot:["Major Stinging Stone","Atlan's Treatise"],
     d:"An Olthoi-riddled catacomb eaten through with acid pools, its passages chewed into a honeycomb by the swarm. Down the southern ramp, keep a hand to the right-hand wall through the warren, across the bridges to the second great room — then the corner-ledge leap over the acid pit, and the green stone waits in the hall past the exit portal.",
-    rooms:[["en",0,0,0,{t:"entry"}],["warren",0,1,-2.6,{m:3}],["open1",0,2,-2.6,{big:1,m:2}],
-      ["bridge",1,2,-2.6,{m:1}],["open2",1,3,-2.6,{big:1,m:2}],["acid",0,3,-6,{m:1}],
-      ["stone",0,4,-6,{t:"boss",portal:1}]],
-    links:[["en","warren","ramp"],["warren","open1","flat"],["open1","bridge","flat"],
-      ["bridge","open2","flat"],["open2","acid","drop"],["acid","stone","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["warren",0,1,-2.6,{m:3}],["mid",0,2,-2.6,{big:1,m:2}],
+      ["loop",-1,2,-5.2,{round:1,m:2}],["east",1,2,-2.6,{big:1,m:2}],["north",1,3,-2.6,{m:1}],
+      ["acid",0,3,-6,{m:1}],["stone",0,4,-6,{t:"boss",portal:1}]],
+    links:[["en","warren","ramp"],["warren","mid","flat"],["mid","loop","ramp"],["mid","east","flat"],
+      ["east","north","flat"],["north","acid","drop"],["acid","stone","flat"]]},
   "Forbidden Crypts":{boss:"Lich Lord",
     d:"An honest old boneyard of the desert dead: four floors of crypts, each darker and narrower than the last. Below the central hall and the sprawling catacomb, a locked gate bars the lich-maze — and at the very bottom, a great sunken theatre where the liches gather as if still awaiting a sermon. Generations of young mages learned their craft here.",
-    rooms:[["en",0,0,0,{t:"entry"}],["hall",0,1,0,{big:1,m:2}],["cat",0,2,-2.6,{big:1,m:3}],
-      ["mazeC",0,3,-2.6,{m:2}],["amph",0,4,-5.2,{t:"boss",big:1,portal:1}]],
-    links:[["en","hall","flat"],["hall","cat","ramp"],["cat","mazeC","key"],["mazeC","amph","ramp"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["hall",0,1,0,{big:1,m:2}],["cellsW",-1,1,0,{small:1,m:1}],
+      ["cellsE",1,1,0,{small:1,m:1}],["cat",0,2,-2.6,{big:1,m:3}],["cat2",1,2,-2.6,{m:2}],
+      ["mazeC",0,3,-2.6,{m:2}],["maze2",-1,3,-2.6,{m:1}],["amph",0,4,-5.2,{t:"boss",big:1,portal:1}]],
+    links:[["en","hall","flat"],["hall","cellsW","flat"],["hall","cellsE","flat"],["hall","cat","ramp"],
+      ["cat","cat2","flat"],["cat","mazeC","key"],["mazeC","maze2","flat"],["mazeC","amph","ramp"]]},
   "Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
     d:"Beneath each slime-crowned temple the frog-men have dug the same warren, as if one blighted mind drew every tunnel. Right, left, right, straight, straight, right through the maze, down past the side chambers to the pit-jump gallery — miss a leap and the water below leads back to an unseen stair. At the bottom squats a man they keep like a pet prophet, scribbling rituals no sane hand should copy.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
-      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
-    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
-      ["pits","water","flat"],["pits","hermit","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["cross",-1,1,0,{big:1,m:2}],
+      ["mid",0,2,-2.6,{m:2}],["side",1,2,-2.6,{m:2}],
+      ["pits1",1,3,-6,{small:1,m:1}],["pits2",0,3,-6,{small:1,m:1}],["water",-1,3,-6,{m:1}],
+      ["hermit",0,4,-6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","cross","flat"],["maze","mid","ramp"],
+      ["mid","side","flat"],["side","pits1","drop"],["pits1","pits2","flat"],
+      ["pits2","water","flat"],["pits2","hermit","flat"]]},
   "Blighted Desolation Moarsman Tunnels":{boss:"Despe the Insane",loot:["Tattered Desolation Moarsman Ritual","The Creation of Blighted Moarsmen"],
     d:"One of the six identical warrens of the Ritual of the Blight. The maze runs right, left, right, straight, straight, right; the pit-jump gallery forgives a miss with an unseen stair from the water; and at the bottom the moarsmen keep Despe the Insane like a pet prophet, scribbling his tattered ritual.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
-      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
-    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
-      ["pits","water","flat"],["pits","hermit","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["cross",-1,1,0,{big:1,m:2}],
+      ["mid",0,2,-2.6,{m:2}],["side",1,2,-2.6,{m:2}],
+      ["pits1",1,3,-6,{small:1,m:1}],["pits2",0,3,-6,{small:1,m:1}],["water",-1,3,-6,{m:1}],
+      ["hermit",0,4,-6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","cross","flat"],["maze","mid","ramp"],
+      ["mid","side","flat"],["side","pits1","drop"],["pits1","pits2","flat"],
+      ["pits2","water","flat"],["pits2","hermit","flat"]]},
   "Blighted Verdant Moarsman Tunnels":{boss:"Lorfne the Unhinged",loot:["Tattered Verdant Moarsman Ritual","The Creation of Blighted Moarsmen"],
     d:"One of the six identical warrens of the Ritual of the Blight — this one under the verdant temple near Eastwatch, with a side portal to the Moarsmen Priory near the start. Through the maze and across the pit-jumps, Lorfne the Unhinged waits at the bottom with his tattered ritual.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
-      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
-    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
-      ["pits","water","flat"],["pits","hermit","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["cross",-1,1,0,{big:1,m:2}],
+      ["mid",0,2,-2.6,{m:2}],["side",1,2,-2.6,{m:2}],
+      ["pits1",1,3,-6,{small:1,m:1}],["pits2",0,3,-6,{small:1,m:1}],["water",-1,3,-6,{m:1}],
+      ["hermit",0,4,-6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","cross","flat"],["maze","mid","ramp"],
+      ["mid","side","flat"],["side","pits1","drop"],["pits1","pits2","flat"],
+      ["pits2","water","flat"],["pits2","hermit","flat"]]},
   "Blighted Disgusting Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
     d:"One of the six identical warrens of the Ritual of the Blight — the same maze, the same pit-jumps, the same mad scribbler at the bottom, as if one blighted mind drew every tunnel.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
-      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
-    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
-      ["pits","water","flat"],["pits","hermit","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["cross",-1,1,0,{big:1,m:2}],
+      ["mid",0,2,-2.6,{m:2}],["side",1,2,-2.6,{m:2}],
+      ["pits1",1,3,-6,{small:1,m:1}],["pits2",0,3,-6,{small:1,m:1}],["water",-1,3,-6,{m:1}],
+      ["hermit",0,4,-6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","cross","flat"],["maze","mid","ramp"],
+      ["mid","side","flat"],["side","pits1","drop"],["pits1","pits2","flat"],
+      ["pits2","water","flat"],["pits2","hermit","flat"]]},
   "Blighted Putrid Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
     d:"One of the six identical warrens of the Ritual of the Blight — the same maze, the same pit-jumps, the same mad scribbler at the bottom, as if one blighted mind drew every tunnel.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
-      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
-    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
-      ["pits","water","flat"],["pits","hermit","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["cross",-1,1,0,{big:1,m:2}],
+      ["mid",0,2,-2.6,{m:2}],["side",1,2,-2.6,{m:2}],
+      ["pits1",1,3,-6,{small:1,m:1}],["pits2",0,3,-6,{small:1,m:1}],["water",-1,3,-6,{m:1}],
+      ["hermit",0,4,-6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","cross","flat"],["maze","mid","ramp"],
+      ["mid","side","flat"],["side","pits1","drop"],["pits1","pits2","flat"],
+      ["pits2","water","flat"],["pits2","hermit","flat"]]},
   "Blighted Rank Moarsman Tunnels":{boss:"Blighted Hermit",loot:["The Creation of Blighted Moarsmen"],
     d:"One of the six identical warrens of the Ritual of the Blight — the same maze, the same pit-jumps, the same mad scribbler at the bottom, as if one blighted mind drew every tunnel.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["side",1,1,-2.6,{m:2}],
-      ["pits",1,2,-6,{small:1,m:1}],["water",0,2,-6,{m:1}],["hermit",1,3,-6,{t:"boss",round:1,portal:1}]],
-    links:[["en","maze","flat"],["maze","side","ramp"],["side","pits","drop"],
-      ["pits","water","flat"],["pits","hermit","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{m:2}],["cross",-1,1,0,{big:1,m:2}],
+      ["mid",0,2,-2.6,{m:2}],["side",1,2,-2.6,{m:2}],
+      ["pits1",1,3,-6,{small:1,m:1}],["pits2",0,3,-6,{small:1,m:1}],["water",-1,3,-6,{m:1}],
+      ["hermit",0,4,-6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","maze","flat"],["maze","cross","flat"],["maze","mid","ramp"],
+      ["mid","side","flat"],["side","pits1","drop"],["pits1","pits2","flat"],
+      ["pits2","water","flat"],["pits2","hermit","flat"]]},
   // ── batch 19c: the foundries + deep hunts (ACMaps layouts; Rynthid is officially unmapped —
   //    its beats come from the quest walkthrough text only) ──
   "Colossus Foundry":{boss:"Bronze Statue of a Virindi",loot:["Bronze Nuts and Bolts from a Statue"],
     d:"An old smiths' works beneath the town squares, where the bronze colossi of Grievver, Shadow, and Virindi still walk their casting floors between cold furnaces. Up past the overlook gallery lies the great diamond-pillared hall; below the furnace room, the deepest statue hall waits. The clank of metal feet on grated iron is the only welcome you shall receive.",
-    rooms:[["en",0,0,0,{t:"entry"}],["furn",0,1,0,{big:1,m:3}],["over",0,2,2.6,{m:2}],
-      ["diamond",1,2,2.6,{big:1,m:3}],["hook",1,1,0,{m:1}],["deep",-1,1,-2.6,{t:"boss",big:1}]],
-    links:[["en","furn","flat"],["furn","over","ramp"],["over","diamond","flat"],
-      ["diamond","hook","ramp"],["furn","deep","ramp"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["furn",0,1,0,{big:1,m:3}],["lvl1",-1,1,3.4,{m:2}],
+      ["over",0,2,3.4,{m:2}],["diamond",-1,2,3.4,{big:1,m:3}],["windows",1,2,3.4,{small:1,m:1}],
+      ["deep",0,3,0.8,{t:"boss",big:1}]],
+    links:[["en","furn","flat"],["furn","lvl1","ramp"],["furn","over","ramp"],["over","diamond","flat"],
+      ["over","windows","flat"],["over","deep","ramp"]]},
   "Mammet Foundry":{boss:"Bronze Statue of a Golem",loot:["Bronze Spring from a Statue"],
     d:"Its halls branch wide and low, every pillar-shadow hiding another mammet of bronze — golem, sclavus, skeleton, tumerok — wound like clockwork and hostile to the living. Wise travelers know it best as the secret road to Baishi: the portal stands beside the very drop.",
-    rooms:[["en",0,0,0,{t:"entry",portal:1}],["warren",1,0,0,{small:1,m:2}],["core1",1,1,-2.6,{big:1,m:3}],
-      ["core2",0,1,-2.6,{big:1,m:3}],["ne",1,2,-5.2,{m:2}],["south",0,2,-5.2,{t:"boss",big:1}]],
-    links:[["en","warren","flat"],["warren","core1","ramp"],["core1","core2","flat"],
-      ["core1","ne","ramp"],["core2","south","ramp"]]},
+    rooms:[["en",0,0,0,{t:"entry",portal:1}],["warren",1,0,0,{m:2}],["upper",2,0,0,{big:1,m:2}],
+      ["core2",0,1,-2.6,{big:1,m:3}],["core1",1,1,-2.6,{big:1,m:3}],["ne",2,1,-5.2,{big:1,m:2}],
+      ["seW",0,2,-5.2,{t:"boss",big:1}],["seE",1,2,-5.2,{big:1,m:2}]],
+    links:[["en","warren","flat"],["warren","upper","flat"],["warren","core1","ramp"],["core1","core2","flat"],
+      ["core1","ne","ramp"],["core2","seW","ramp"],["core1","seE","ramp"]]},
   "Tenkarrdun Foundry":{boss:"Smithing Golem",loot:["Sluice Gate Bar","Red Fire Infusion"],
     d:"The dead forge-heart of Mount Tenkarrdun, where Yalaini machinery lies cold under falling ash and things of flame and stone keep the old watches. Down past the gear chambers, the lever hall opens the furnace room — the Sluice Gate Bar lies on its floor — and in the deepest forge the Smithing Golem waits for its bellows. Give it them, and far below the decayed machinery groans: the mountain wakes.",
-    rooms:[["en",0,0,0,{t:"entry"}],["hatch",0,1,-2.6,{m:2}],["gear",0,2,-2.6,{round:1,m:2}],
-      ["lhall",0,3,-5.2,{big:1,m:2}],["furnace",1,3,-5.2,{big:1,m:2}],["purple",1,4,-7.8,{m:2}],
-      ["forge",0,4,-7.8,{t:"boss",portal:1}]],
-    links:[["en","hatch","ramp"],["hatch","gear","flat"],["gear","lhall","ramp"],
-      ["lhall","furnace","lever","@lhall"],["furnace","purple","ramp"],["purple","forge","flat"]]},
+    rooms:[["en",0,0,0,{t:"entry"}],["west",-1,0,0,{m:1}],["hatch",0,1,-2.6,{m:2}],
+      ["sect2",0,2,-2.6,{m:2}],["gear",0,3,-2.6,{round:1,m:2}],["sik1",1,3,-2.6,{small:1,m:1}],
+      ["lhall",0,4,-5.2,{big:1,m:2}],["furnace",1,4,-5.2,{big:1,m:2}],["purple",1,5,-7.8,{m:2}],
+      ["sik2",0,5,-7.8,{small:1,m:1}],["forge",1,6,-7.8,{t:"boss",portal:1}]],
+    links:[["en","west","flat"],["en","hatch","ramp"],["hatch","sect2","flat"],["sect2","gear","flat"],
+      ["gear","sik1","key"],["gear","lhall","ramp"],["lhall","furnace","lever","@lhall"],
+      ["furnace","purple","ramp"],["purple","sik2","flat"],["purple","forge","lever","@purple"]]},
   "Rynthid Foundry":{boss:"Rynthid Taskmaster",loot:["Legendary Key","Pile of Spare Parts"],
     d:"A factory hung in the black sky over the Obsidian Plains, where Rynthid horrors lash captive Gear Knights into corrupted service. In general you should be going down: past the production halls, three caches of blue-glowing Aetherium ore must be ruined with tainted oils, and when the Taskmaster dies a thousand voices scream and the last door opens on the rewards vault. No map of this place was ever drawn that survives.",
     rooms:[["en",0,0,0,{t:"entry"}],["prod",0,1,-2.6,{big:1,m:3}],["ore1",-1,1,-2.6,{small:1,m:2}],
@@ -16142,10 +16263,12 @@ const DUNGEON_SCRIPTS={
       ["east","hex","ramp"],["hex","brood","ramp"],["brood","egg","ramp"]]},
   "Deewain's Dark Cavern":{boss:"Iron Golem",loot:["Energy Infused Rock","Legendary Key"],
     d:"A lightless labyrinth beneath the northern snows, sown with pits that swallow the unwary whole. Jump into the NORTH pit — its ledge is invisible but real; the south pit forgives nothing. Past the stone servants of Deewain, each defender's death opens the twin doors onward, the spike-hall demands the left wall, and in the deep an iron titan broods over rocks that weigh nothing at all.",
-    rooms:[["en",0,0,0,{t:"entry"}],["maze",0,1,0,{big:1,m:2}],["pit",0,2,-3.4,{big:1,m:1}],
-      ["g1",0,3,-3.4,{m:2}],["g2",1,3,-3.4,{m:2}],["spikes",1,4,-3.4,{m:1}],
-      ["final",0,4,-3.4,{big:1,m:3}],["chamber",0,5,-6,{t:"boss",round:1,big:1,portal:1}]],
-    links:[["en","maze","flat"],["maze","pit","drop"],["pit","g1","flat"],["g1","g2","lever","@g1"],
+    rooms:[["en",0,0,0,{t:"entry"}],["mazeU",0,1,0,{big:1,m:2}],["mazeM",0,2,-2.6,{big:1,m:2}],
+      ["spit",1,2,-6.5,{small:1}],["npit",0,3,-6,{big:1,m:1}],["jump",1,3,-6,{small:1,m:1}],
+      ["g1",0,4,-6,{m:2}],["g2",1,4,-6,{m:2}],["spikes",1,5,-6,{m:1}],
+      ["final",0,5,-6,{big:1,m:3}],["chamber",0,6,-8.6,{t:"boss",round:1,big:1,portal:1}]],
+    links:[["en","mazeU","flat"],["mazeU","mazeM","ramp"],["mazeM","spit","drop"],["mazeM","npit","drop"],
+      ["npit","jump","flat"],["npit","g1","flat"],["g1","g2","lever","@g1"],
       ["g2","spikes","lever","@g2"],["spikes","final","flat"],["final","chamber","drop"]]},
   // ── batch 19b: the three society strongholds — safe NPC headquarters sharing ONE documented
   //    floor plan (ACMaps 00B7/00B8/00B9 are the same template); rooms spawn nothing (m:0),
@@ -17775,8 +17898,9 @@ function itemCompare(it){
 // ---- equipment paper-doll: every worn slot as a tile; click a filled tile to unequip ----
 function slotTile(label,ico,item,kind,slot){
   const filled=!!item, col=filled?itemRarity(item).c:"#5a5346";
+  const glyph=filled?itemIconHTML(item.name,ico,20):ico;
   return `<div class="doll-slot${filled?' filled':''}" data-kind="${kind}" data-slot="${slot||''}" title="${filled?esc(item.name)+' — click to unequip':label+' (empty)'}">
-    <span class="ds-ico">${ico} ${label}</span><span class="ds-lab" style="color:${col}">${filled?esc(item.name):"—"}</span></div>`;
+    <span class="ds-ico">${glyph} ${label}</span><span class="ds-lab" style="color:${col}">${filled?esc(item.name):"—"}</span></div>`;
 }
 function buildPaperDoll(){
   const el=document.getElementById('tinkDoll'); if(!el) return;
@@ -17852,6 +17976,18 @@ function buildTinker(){
       const lb=craftWrap.querySelector('[data-l8]'); if(lb) lb.onclick=()=>{ craftL8Scroll(); buildTinker(); updateHUD(); };
     }
     craftWrap.querySelectorAll('[data-craft]').forEach(btn=>btn.onclick=()=>{ craftRecipe(btn.dataset.craft); buildTinker(); updateHUD(); });
+  }
+  // authentic recipe codex (assets/acrecipes.json) — a searchable reference of the real recipes of Dereth
+  if(AC_RECIPES&&AC_RECIPES.recipes&&AC_RECIPES.recipes.length){
+    const wrap=document.getElementById('tinkRecipeWrap'), box=document.getElementById('tinkRecipes'), srch=document.getElementById('tinkRecipeSearch');
+    if(wrap&&box){ wrap.style.display="block";
+      const FAM={38:"Alchemy",39:"Cooking",37:"Fletching",18:"Tinkering",28:"Tinkering",29:"Tinkering",30:"Tinkering"};
+      const render=q=>{ q=(q||"").toLowerCase();
+        const rows=AC_RECIPES.recipes.filter(r=>!q||((r.tool||"")+ (r.target||"")+(r.result||"")).toLowerCase().includes(q)).slice(0,120);
+        box.innerHTML=rows.length?rows.map(r=>`<div class="row" style="padding:2px 0"><span class="desc"><span style="color:#cdb98a">${esc(r.tool||"?")}</span> + <span style="color:#cdb98a">${esc(r.target||"?")}</span> → <b style="color:#e8dcc0">${esc(r.result||"?")}</b>${r.difficulty?` <span style="color:#8a9a6a">· diff ${r.difficulty}</span>`:""}${FAM[r.skill]?` <span style="color:#7a8aa0">· ${FAM[r.skill]}</span>`:""}</span></div>`).join(""):`<div style="color:var(--dim)">No recipes match.</div>`;
+        if(!q) box.insertAdjacentHTML("afterbegin",`<div style="color:var(--dim);margin-bottom:3px">${AC_RECIPES.recipes.length} authentic recipes — type to search:</div>`); };
+      render(srch&&srch.value); if(srch&&!srch._wired){ srch._wired=1; srch.oninput=()=>render(srch.value); }
+    }
   }
   // dyeing: recolour the armour, gated by Cooking (Alchemy improves odds)
   const dyeWrap=document.getElementById('tinkDye');

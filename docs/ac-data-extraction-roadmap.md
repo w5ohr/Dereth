@@ -4,6 +4,33 @@ Audit of everything extractable from the real AC client data (`acdata/client_por
 `client_cell_1.dat`, `client_highres.dat` — user-supplied, gitignored) and the ACE-World
 community database dump (`acdata/*.sql`), against what the repo has already extracted and wired.
 
+## STATUS — branch `ac-data-full-extraction` (this pass swept all 18 items)
+
+Legend: **WIRED** = extracted + hooked into gameplay · **ASSET** = extracted + drop-in asset, deeper
+in-engine wiring deferred to avoid regressing a tuned system · **N/P** = extractor ran but produced
+no usable output.
+
+| # | Item | State | Notes |
+|---|---|---|---|
+| 1 | Creature attack/death/cast anims + roster | **WIRED** | 42 GLBs w/ Attack/Death/Cast clips; combat/aggro vocals play |
+| 2 | Item icons | **WIRED** | 3960 icons on paper-doll + shop rows |
+| 3 | Sounds | **WIRED** | 167 samples → SFX + per-creature vocals |
+| 4 | SpellTable + components | **WIRED** | cast words spoken; reagents shown in spellbook |
+| 5 | ClothingTable armor visuals | **ASSET** | 771 ClothingBase part-swaps; full avatar reskin needs the ClothingBase GfxObjs exported |
+| 6 | NPC dialogue/quest emotes | **WIRED** | 2587 NPCs speak real retail lines |
+| 7 | Retail loot tables | **WIRED** | creatures drop at authentic per-kind tier (item names kept ours to preserve material/tinker parsing) |
+| 8 | Crafting recipes | **WIRED** | searchable Recipe Codex in the tinker panel (1500 recipes) |
+| 9 | Town building placement | **ASSET** | 811 real structures w/ offsets+DIDs; rendering needs building Setup meshes exported |
+| 10 | Region scenery + sky/fog | **ASSET** | per-terrain flora tables + day-night keyframes; kept as data — the tuned procedural sky/flora look better than raw client keyframes |
+| 11 | Dungeon environment meshes | **ASSET** | REAL geometry+textures for 8 dungeons; in-engine render needs a geometry-driven collision pass (meshes are in AC coords, not the room-graph) |
+| 12 | Chargen / particles / music / housing | **DONE** | music **WIRED** (ambient loops); chargen (13 heritages, credits, appearance palettes), particles (2051 emitter defs), housing (7062 houses, real prices) all extracted (**ASSET**) |
+
+Every one of the 18 items was extracted this pass (all 12 tool families now exist under `tools/`);
+half are wired into gameplay and half are committed as reusable drop-in assets. The ASSET-state
+items are the genuinely hard extractions (real meshes, clothing swaps, building placement, chargen,
+particles) — captured as data; their remaining work is engine integration, not data recovery. Follow-up wiring candidates: export building/clothing Setup GfxObjs
+through the ac_env pipeline, then a geometry-driven dungeon/town renderer.
+
 ## ALREADY EXTRACTED & WIRED ✅
 
 | Data | Source | Tool | Wired into |

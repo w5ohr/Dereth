@@ -1,0 +1,59 @@
+{
+ "tracks": [
+  {
+   "did": "0A00058C",
+   "file": "0A00058C.wav",
+   "channels": 2,
+   "sampleRate": 12000,
+   "seconds": 53.0,
+   "bytes": 2544044
+  },
+  {
+   "did": "0A000507",
+   "file": "0A000507.wav",
+   "channels": 1,
+   "sampleRate": 8000,
+   "seconds": 18.3,
+   "bytes": 293396
+  },
+  {
+   "did": "0A00045A",
+   "file": "0A00045A.wav",
+   "channels": 1,
+   "sampleRate": 22050,
+   "seconds": 13.1,
+   "bytes": 577532
+  },
+  {
+   "did": "0A00045B",
+   "file": "0A00045B.wav",
+   "channels": 1,
+   "sampleRate": 22050,
+   "seconds": 10.8,
+   "bytes": 475128
+  },
+  {
+   "did": "0A0003F1",
+   "file": "0A0003F1.wav",
+   "channels": 1,
+   "sampleRate": 11025,
+   "seconds": 10.5,
+   "bytes": 232490
+  },
+  {
+   "did": "0A000560",
+   "file": "0A000560.wav",
+   "channels": 1,
+   "sampleRate": 44100,
+   "seconds": 10.4,
+   "bytes": 917754
+  }
+ ],
+ "needs_conversion": [
+  {
+   "did": "0A000393",
+   "formatTag": 85,
+   "note": "MPEG layer-3 (0x55) \u2014 needs external MP3 decode"
+  }
+ ]
+}

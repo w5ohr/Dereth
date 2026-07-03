@@ -1,0 +1,66 @@
+{
+ "Holtburg Dungeon": {
+  "file": "Holtburg_Dungeon.json",
+  "landblock": "01F6",
+  "cells": 400,
+  "tris": 11054,
+  "groups": 12,
+  "capped": true
+ },
+ "Green Mire Grave": {
+  "file": "Green_Mire_Grave.json",
+  "landblock": "01E5",
+  "cells": 400,
+  "tris": 9786,
+  "groups": 10,
+  "capped": true
+ },
+ "Mines of Despair": {
+  "file": "Mines_of_Despair.json",
+  "landblock": "0188",
+  "cells": 400,
+  "tris": 9978,
+  "groups": 30,
+  "capped": true
+ },
+ "Halls of the Helm": {
+  "file": "Halls_of_the_Helm.json",
+  "landblock": "01CC",
+  "cells": 357,
+  "tris": 8998,
+  "groups": 12,
+  "capped": false
+ },
+ "Glenden Wood Dungeon": {
+  "file": "Glenden_Wood_Dungeon.json",
+  "landblock": "01E3",
+  "cells": 400,
+  "tris": 11158,
+  "groups": 25,
+  "capped": true
+ },
+ "Colossus Foundry": {
+  "file": "Colossus_Foundry.json",
+  "landblock": "5457",
+  "cells": 400,
+  "tris": 5796,
+  "groups": 12,
+  "capped": true
+ },
+ "Empyrean Foundry": {
+  "file": "Empyrean_Foundry.json",
+  "landblock": "0136",
+  "cells": 400,
+  "tris": 11360,
+  "groups": 15,
+  "capped": true
+ },
+ "Mattekar Cave": {
+  "file": "Mattekar_Cave.json",
+  "landblock": "0169",
+  "cells": 270,
+  "tris": 5506,
+  "groups": 11,
+  "capped": false
+ }
+}

@@ -179,10 +179,10 @@ def parse_setup(d):
 def parse_surface(d):
     r = Buf(d)
     st = r.u32()
-    if st & 0x3:                 # Base1Image | Base1ClipMap
+    if st & 0x6:                 # Base1Image (0x2) | Base1ClipMap (0x4)
         tex = r.u32(); pal = r.u32()
-        return dict(tex=tex, pal=pal, clip=bool(st & 0x2))
-    color = r.u32()
+        return dict(tex=tex, pal=pal, clip=bool(st & 0x4))
+    color = r.u32()              # Base1Solid (0x1): ARGB color value
     return dict(color=color)
 
 def parse_surfacetexture(d):
