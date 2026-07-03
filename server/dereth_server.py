@@ -921,6 +921,95 @@ async def party_leave(cl, quiet=False):
         await party_notify(pid, f"{who} has left the party.")
         await party_sync(pid)
 
+# ---------------------------------------------------------------- secure trade (AC)
+# Two players open a trade window; each offers items; BOTH must accept; any change
+# to either offer clears both accepts (retail rule). Items are inventory blobs —
+# the server brokers the swap, each client applies it to its own satchel.
+TRADES = {}     # tid -> {"a":acc,"b":acc,"offers":{acc:[items]},"ok":{acc:False},"pending":bool}
+_trade_seq = 0
+
+def trade_of(acc):
+    for tid, tr in list(TRADES.items()):
+        if acc in (tr["a"], tr["b"]):
+            return tid, tr
+    return None, None
+
+async def trade_sync(tr):
+    for acc in (tr["a"], tr["b"]):
+        c = CLIENTS.get(acc)
+        other = tr["b"] if acc == tr["a"] else tr["a"]
+        oc = CLIENTS.get(other)
+        if c:
+            await c.send({"t": "trade", "act": "sync", "you": tr["offers"][acc], "them": tr["offers"][other],
+                          "youOk": tr["ok"][acc], "themOk": tr["ok"][other],
+                          "with": oc.charname if oc else "?"})
+
+async def trade_cancel(acc, reason="The trade was cancelled."):
+    tid, tr = trade_of(acc)
+    if not tr:
+        return
+    del TRADES[tid]
+    for a in (tr["a"], tr["b"]):
+        c = CLIENTS.get(a)
+        if c:
+            await c.send({"t": "trade", "act": "cancel", "msg": reason})
+
+async def handle_trade(cl, msg):
+    global _trade_seq
+    act = msg.get("act")
+    if act == "open":
+        name = str(msg.get("name", ""))[:24]
+        target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
+        if not target or target is cl:
+            return await cl.send({"t": "system", "msg": f"No player named {name} is here."})
+        if math.hypot(target.x - cl.x, target.z - cl.z) > 15:
+            return await cl.send({"t": "system", "msg": f"{name} is too far away to trade."})
+        t1, _ = trade_of(cl.username); t2, _ = trade_of(target.username)
+        if t1 or t2:
+            return await cl.send({"t": "system", "msg": "One of you is already trading."})
+        _trade_seq += 1
+        TRADES["t%d" % _trade_seq] = {"a": cl.username, "b": target.username,
+                                      "offers": {cl.username: [], target.username: []},
+                                      "ok": {cl.username: False, target.username: False}, "pending": True}
+        await cl.send({"t": "system", "msg": f"You offer to trade with {name}."})
+        await target.send({"t": "trade", "act": "invite", "from": cl.charname})
+    elif act == "accept_open":
+        tid, tr = trade_of(cl.username)
+        if not tr or not tr.get("pending"):
+            return await cl.send({"t": "system", "msg": "No trade offer waiting."})
+        tr["pending"] = False
+        await trade_sync(tr)
+    elif act in ("add", "remove"):
+        tid, tr = trade_of(cl.username)
+        if not tr or tr.get("pending"):
+            return
+        if act == "add":
+            item = msg.get("item")
+            if isinstance(item, dict) and len(tr["offers"][cl.username]) < 12:
+                tr["offers"][cl.username].append(item)
+        else:
+            idx = int(msg.get("idx", -1))
+            if 0 <= idx < len(tr["offers"][cl.username]):
+                tr["offers"][cl.username].pop(idx)
+        tr["ok"][tr["a"]] = tr["ok"][tr["b"]] = False        # AC: ANY change clears both accepts
+        await trade_sync(tr)
+    elif act == "ok":
+        tid, tr = trade_of(cl.username)
+        if not tr or tr.get("pending"):
+            return
+        tr["ok"][cl.username] = True
+        if tr["ok"][tr["a"]] and tr["ok"][tr["b"]]:
+            for acc in (tr["a"], tr["b"]):
+                other = tr["b"] if acc == tr["a"] else tr["a"]
+                c = CLIENTS.get(acc)
+                if c:
+                    await c.send({"t": "trade", "act": "done", "give": tr["offers"][other]})
+            del TRADES[tid]
+        else:
+            await trade_sync(tr)
+    elif act == "cancel":
+        await trade_cancel(cl.username)
+
 async def handle_party(cl, msg):
     global _party_seq
     act = msg.get("act")
@@ -1141,6 +1230,9 @@ async def dispatch(cl, msg):
     elif t == "party":
         if cl.in_world:
             await handle_party(cl, msg)
+    elif t == "trade":
+        if cl.in_world:
+            await handle_trade(cl, msg)
     elif t == "pchat":
         text = str(msg.get("msg", ""))[:240].strip()
         if cl.in_world and cl.party in PARTIES and text:
@@ -1252,6 +1344,7 @@ async def handle(reader, writer):
             cl.in_world = False
             if cl.party:
                 await party_leave(cl, quiet=True)
+            await trade_cancel(cl.username, "Your trading partner left the world.")
             CLIENTS.pop(cl.username, None)
             if was_in_world:
                 await broadcast({"t": "system", "msg": f"{who} has left Dereth."})
