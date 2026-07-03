@@ -847,8 +847,8 @@ const PRESETS={
   viamontian:{attr:{Strength:4,Coordination:4,Self:2},armor:5,pot:1,title:"the Viamontian",town:"Sanamar"},   // Throne of Destiny heritage
 };
 // AC creation: professions (templates) preset attributes + starting trained skills; "Custom" = free build.
-const CREATE_POOL=60;   // attribute points to distribute above the base 10 (scaled from AC's larger pool)
-const CREATE_CREDITS=50; // starting skill credits, as in AC
+const CREATE_POOL=270;   // AC: 270 Attribute Credits above the six 10-point bases (330 total), max 100 each
+const CREATE_CREDITS=52; // AC: 52 starting skill credits (Train or, only at creation-time freely, Specialize)
 const TEMPLATES=[
   {k:"custom",  name:"Custom",       attr:{},                                    skills:[]},
   {k:"soldier", name:"Soldier",      attr:{Strength:22,Endurance:16,Coordination:8}, skills:["heavy","meleed","shield"]},
@@ -21321,6 +21321,7 @@ function startGame(loadSaved,preset){
     const load=(player.createSkills&&player.createSkills.length)?player.createSkills
       :({aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],gharundim:["war","life","creature"],viamontian:["heavy","meleed","shield"]}[preset]||["heavy","meleed"]);
     for(const k of load){ if(SKILL_BY_KEY[k]) skillState(k).t=1; }
+    for(const k of (player.createSpec||[])){ if(SKILL_BY_KEY[k]) skillState(k).t=2; }   // AC: skills specialized at creation
     const fs=freshSpells();player.knownSpells=fs.known;player.hotbar=fs.hotbar;buildSpellbar();
     // AC starter kit (ToD): every new arrival carries a Calling Stone + a Letter From Home, and
     // spawns HOLDING a Training Weapon matched to their profession (upgradeable at the Academy);
@@ -21488,7 +21489,8 @@ function ccApplyTemplate(k){
   ccRenderCreation();
 }
 function ccAttrSpent(){ let s=0; for(const a of ATTRS) s+=(ccWork.cattr[a]-10); return s; }
-function ccCreditsSpent(){ let s=0; for(const k of ccWork.ctrained){ const sk=SKILL_BY_KEY[k]; if(sk)s+=sk.tc; } return s; }
+function ccCreditsSpent(){ let s=0; for(const k of ccWork.ctrained){ const sk=SKILL_BY_KEY[k]; if(sk)s+=sk.tc; }
+  for(const k of (ccWork.cspec||[])){ const sk=SKILL_BY_KEY[k]; if(sk&&sk.sc>0)s+=sk.sc; } return s; }
 function ccRenderCreation(){
   const gd=document.getElementById('ccGender');
   if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k;ccRenderCreation();}; gd.appendChild(b); }); }
@@ -21496,20 +21498,26 @@ function ccRenderCreation(){
   if(pf){ pf.innerHTML=""; TEMPLATES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.name; b.className=ccWork.template===t.k?"sel":""; b.onclick=()=>ccApplyTemplate(t.k); pf.appendChild(b); }); }
   const at=document.getElementById('ccAttrs');
   if(at){ const rem=CREATE_POOL-ccAttrSpent();
-    at.innerHTML=`<div class="cc-budget">Points remaining: <b style="color:${rem<0?'#e8704a':'#ffd86b'}">${rem}</b> / ${CREATE_POOL} (each 10–50)</div>`;
+    at.innerHTML=`<div class="cc-budget">Attribute Credits remaining: <b style="color:${rem<0?'#e8704a':'#ffd86b'}">${rem}</b> / ${CREATE_POOL} (each 10–100)</div>`;
     for(const a of ATTRS){ const v=ccWork.cattr[a]; const row=document.createElement('div'); row.className="cc-attr";
-      row.innerHTML=`<span class="an">${a}</span><button data-dec="${a}" ${v<=10?"disabled":""}>−</button><span class="av">${v}</span><button data-inc="${a}" ${(rem<=0||v>=50)?"disabled":""}>+</button>`;
+      row.innerHTML=`<span class="an">${a}</span><button data-dec="${a}" ${v<=10?"disabled":""}>−</button><span class="av">${v}</span><button data-inc="${a}" ${(rem<=0||v>=100)?"disabled":""}>+</button>`;
       at.appendChild(row); }
-    at.querySelectorAll('[data-inc]').forEach(b=>b.onclick=()=>{ const a=b.dataset.inc; if(ccAttrSpent()<CREATE_POOL&&ccWork.cattr[a]<50){ccWork.cattr[a]++;ccWork.template="custom";ccRenderCreation();} });
+    at.querySelectorAll('[data-inc]').forEach(b=>b.onclick=()=>{ const a=b.dataset.inc; if(ccAttrSpent()<CREATE_POOL&&ccWork.cattr[a]<100){ccWork.cattr[a]++;ccWork.template="custom";ccRenderCreation();} });
     at.querySelectorAll('[data-dec]').forEach(b=>b.onclick=()=>{ const a=b.dataset.dec; if(ccWork.cattr[a]>10){ccWork.cattr[a]--;ccWork.template="custom";ccRenderCreation();} });
   }
   const sk=document.getElementById('ccSkills');
   if(sk){ const rem=CREATE_CREDITS-ccCreditsSpent();
-    sk.innerHTML=`<div class="cc-budget">Credits: <b style="color:${rem<0?'#e8704a':'#ffd86b'}">${rem}</b> / ${CREATE_CREDITS} — click a skill to train it</div>`;
+    sk.innerHTML=`<div class="cc-budget">Skill Credits: <b style="color:${rem<0?'#e8704a':'#ffd86b'}">${rem}</b> / ${CREATE_CREDITS} — click to Train, again to <span style="color:#ffd23b">Specialize</span> (creation is the only free chance), a third time to clear</div>`;
+    ccWork.cspec=ccWork.cspec||[];
     const trainable=SKILLS_DEF.filter(s=>s.tc>0&&s.fam!=="Tinkering");
-    trainable.forEach(s=>{ const on=ccWork.ctrained.indexOf(s.k)>=0; const b=document.createElement('button');
-      b.textContent=`${s.n} (${s.tc})`; b.className=on?"sel":""; b.disabled=!on&&rem<s.tc;
-      b.onclick=()=>{ const i=ccWork.ctrained.indexOf(s.k); if(i>=0)ccWork.ctrained.splice(i,1); else if(rem>=s.tc)ccWork.ctrained.push(s.k); ccWork.template="custom"; ccRenderCreation(); };
+    trainable.forEach(s=>{ const tr=ccWork.ctrained.indexOf(s.k)>=0, sp=ccWork.cspec.indexOf(s.k)>=0; const b=document.createElement('button');
+      b.textContent=sp?`★ ${s.n} (${s.tc}+${s.sc})`:`${s.n} (${s.tc})`;
+      b.className=sp?"sel":(tr?"sel":""); if(sp)b.style.color="#ffd23b"; b.disabled=!tr&&!sp&&rem<s.tc;
+      b.onclick=()=>{ const ti=ccWork.ctrained.indexOf(s.k), si=ccWork.cspec.indexOf(s.k);
+        if(si>=0){ ccWork.cspec.splice(si,1); if(ti>=0)ccWork.ctrained.splice(ccWork.ctrained.indexOf(s.k),1); }         // spec → clear
+        else if(ti>=0){ if(s.sc>0&&rem>=s.sc) ccWork.cspec.push(s.k); else { ccWork.ctrained.splice(ti,1); } }            // trained → specialize (or clear if unspecializable)
+        else if(rem>=s.tc) ccWork.ctrained.push(s.k);                                                                     // untrained → train
+        ccWork.template="custom"; ccRenderCreation(); };
       sk.appendChild(b); });
   }
   const tw=document.getElementById('ccTown');
@@ -21550,7 +21558,7 @@ document.getElementById('ccCreate').onclick=()=>{
   const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k]; player.appearance=app;
   // carry the AC creation choices into startGame
   player.createAttr=Object.assign({},ccWork.cattr); player.createSkills=(ccWork.ctrained||[]).slice();
-  player.createTown=ccWork.town; player.createTemplate=ccWork.template;
+  player.createTown=ccWork.town; player.createTemplate=ccWork.template; player.createSpec=(ccWork.cspec||[]).slice();
   const cb=ccOnCreate; ccOnCreate=null; closeCharCreator();
   if(cb) cb(ccWork.race);
 };
