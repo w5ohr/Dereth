@@ -6685,6 +6685,7 @@ function killMonster(m){
   questEvent("slay",m.kind);   // both overworld AND dungeon kills count toward slay quests (themed delves are where many creatures live)
   if(m.sagaTag==="agitator") sagaNotify("agitator");
   sagaNotify("kill",m.kind);   // saga cull objectives (cheap no-op when the live chapter has none)
+  if(typeof sagaStageKill==="function") sagaStageKill(m);   // finale kills-stage
   if(m.isElite) player.championKills++;
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
@@ -6766,6 +6767,8 @@ const EVENT_TYPES=[
   {name:"Undead Rising",    kinds:["skeleton","shadow"],              col:0xbfe0ff, blurb:"The restless dead claw up from the barrows"},
   {name:"Banderling Raid",  kinds:["banderling","drudge","mosswart"], col:0xffc14a, blurb:"A savage warband descends"},
   {name:"Virindi Abduction",kinds:["virindi","shadow"],              col:0xd0d4e6, blurb:"Empty-faced Virindi snatch-squads raid the town"},
+  {name:"Burun Tide",       kinds:["burun","mosswart","moarsman"],   col:0x6a8a3a, blurb:"Burun hordes croak up out of the swamps"},
+  {name:"Slithis Tide",     kinds:["sclavus","moarsman","mukkir"],   col:0x2a8a7a, blurb:"The drowned god's Slithis brood floods the shore"},
 ];
 // ---------- monthly event calendar: seasons + a rotating story event (see docs/asherons-call-events-reference.md) ----------
 // The world cycles through seasons; each "month" features a story beat whose rumour the Town Criers broadcast and
@@ -7067,6 +7070,7 @@ function sagaNotify(type,data){
   if(type==="repel"  && g.repel!=null){ sagaProg[ce.id]=(sagaProg[ce.id]||0)+1; if(sagaProg[ce.id]>=g.repel) sagaComplete(ce); }
   else if(type==="agitator" && g.agitator){ sagaComplete(ce); }
   else if(type==="general"  && g.general){ sagaComplete(ce); }
+  else if(type==="boss"     && g.bosses){ if(g.bosses.every(b=>!monsters.some(m=>m.sagaBoss===b))) sagaComplete(ce); }   // multi-boss: all down
   else if(type==="boss"     && ((g.boss&&data===g.boss) || (g.echo&&data==="ember") || (g.then&&data===g.then))){ sagaComplete(ce); }   // echo=legacy boss:"ember"; then=the second-stage boss after a siege
   else if(type==="siege"    && g.siege){
     if(g.then&&!sagaProg[ce.id+"_boss"]){ sagaProg[ce.id+"_boss"]=1;   // two-stage climax: siege cleared → the Pretender appears
@@ -7074,6 +7078,9 @@ function sagaNotify(type,data){
     else sagaComplete(ce);
   }
   else if(type==="deliver"  && g.deliver){ sagaComplete(ce); }
+  else if(type==="contribute"&& g.contribute){ sagaComplete(ce); }
+  else if(type==="survive"  && g.survive){ sagaComplete(ce); }
+  else if(type==="stage"    && g.stages){ if((sagaProg[ce.id+"_stg"]||0)>=g.stages.length) sagaComplete(ce); }
   else if(type==="kill"     && g.kills && g.fams && g.fams.indexOf(data)>=0){
     sagaProg[ce.id]=(sagaProg[ce.id]||0)+1;
     if(sagaProg[ce.id]>=g.kills) sagaComplete(ce);
@@ -7088,8 +7095,15 @@ function sagaComplete(ce){
   calendarDone[ce.id]=true;
   if(ce.xp) gainXP(ce.xp); if(ce.gold) player.gold+=ce.gold;
   if(ce.item) addToInv(Object.assign({},ce.item),true);
-  if(ce.title){ player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf(ce.title)<0) player.eventTitles.push(ce.title);
-    player.title=ce.title; log(`You are honoured with the title <b>${ce.title}</b>!`,"sys"); toast("TITLE — "+ce.title.toUpperCase()); }
+  const grantTitle=t=>{ if(!t)return; player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf(t)<0) player.eventTitles.push(t);
+    player.title=t; log(`You are honoured with the title <b>${t}</b>!`,"sys"); toast("TITLE — "+t.toUpperCase()); };
+  grantTitle(ce.title);
+  if(ce.title2 && (ce.title2.indexOf("Grael")<0 || calendarDone["y4m43"])) grantTitle(ce.title2);   // conditional second title (e.g. Grael's Jailer)
+  if(ce.item2) addToInv(Object.assign({},ce.item2),true);
+  if(ce.tenfold){   // The Tenfold — all ten Harvestgain climaxes complete
+    const climaxes=["y1m8","y2m20","y3m32","y4m44","y5m56","y6m68","y7m80","y8m92","y9m104","y10m120"];
+    if(climaxes.every(id=>calendarDone[id]||id===ce.id)) grantTitle("The Tenfold");
+  }
   log(`<span style="color:#ffd23b"><b>Saga chapter complete — ${ce.name}!</b></span> <span style="color:var(--dim)">(+${ce.xp||0} XP · +${ce.gold||0} pyreals${ce.item?` · ${ce.item.name}`:""})</span>`,"sys");
   if(ce.seeds) log(`<i>${ce.seeds}</i>`,"sys");
   toast("SAGA — CHAPTER COMPLETE"); if(SFX.level)SFX.level();
@@ -7103,6 +7117,22 @@ function sagaComplete(ce){
     advanceMonth();
   }
   else { log(`<span style="color:#ffd23b"><b>The ${SAGA_YEAR_NAMES[prevYear]} is complete.</b></span> ${SAGA_REST.rumor}`,"sys"); toast((SAGA_YEAR_NAMES[prevYear]||"YEAR").toUpperCase()+" — COMPLETE"); updateSeasonHUD(); }
+}
+// ── finale stage sequencer: advance the current staged chapter one step ──
+function sagaStageAdvance(ce,msg){
+  const key=ce.id+"_stg", st=(sagaProg[key]||0);
+  if(!ce.goal||!ce.goal.stages||st>=ce.goal.stages.length) return;
+  sagaProg[key]=st+1; delete sagaProg[key+"_s"];   // reset the per-stage siege latch
+  const next=ce.goal.stages[st+1];
+  log(`<b>${ce.name}</b> — stage ${st+1}/${ce.goal.stages.length} done (${msg}).${next?` Next: ${next.label||next.type}.`:""}`,"sys");
+  sagaNotify("stage");
+}
+function sagaStageKill(m){   // a kills-stage of the finale counts family kills toward its threshold
+  const ce=currentCalEvent(), g=ce.goal; if(!g||!g.stages||calendarDone[ce.id]) return;
+  const st=sagaProg[ce.id+"_stg"]||0, cur=g.stages[st]; if(!cur||cur.type!=="kills") return;
+  if(cur.fams && cur.fams.indexOf(m.kind)<0) return;
+  const kk=ce.id+"_stgk"; sagaProg[kk]=(sagaProg[kk]||0)+1;
+  if(sagaProg[kk]>=(cur.n||8)) sagaStageAdvance(ce,"waves held");
 }
 // ── generalized saga world-boss: a one-time apparition for a story climax. `bossId` keys SAGA_BOSSES;
 //    the boss carries m.sagaBoss=bossId so killMonster reports it and it never respawns. ──
@@ -7121,6 +7151,23 @@ const SAGA_BOSSES={
            rise:"Loosed at last — <b>GRAEL, THE ARM OF DESTRUCTION</b> — walks the Halaetan Isles, and even the Pretender's men flee it. Hunt it down.", toast:"GRAEL UNBOUND"},
   varicci:{name:"Corsair-Prince Varicci IV", kind:"lugian", scale:2.8, tint:0x5a1a4a, hp:6000, dmg:64, xp:24000, near:true, crowned:true,
            rise:"Aboard the flagship stands <b>CORSAIR-PRINCE VARICCI IV</b>, the Pretender himself. Take him, and the Isles are sworn.", toast:"THE PRETENDER"},
+  // Years 5–10
+  matriarch:{name:"The Blood Matriarch Ascendant", kind:"mosswart", scale:3.2, tint:0x8a1020, hp:5800, dmg:66, xp:26000, near:false,
+           rise:"Denied the root, the eldest Matriarch has drunk her own leyline — <b>THE BLOOD MATRIARCH ASCENDANT</b> swells beneath Val Halla. End her before she finishes becoming.", toast:"THE ASCENDANT"},
+  windN:{name:"North Gale, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0x9ad0ff, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>North Gale</b> rides the northern sky.", toast:"NORTH GALE"},
+  windS:{name:"South Scorch, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0xff8a3a, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>South Scorch</b> burns over the southern realm.", toast:"SOUTH SCORCH"},
+  windE:{name:"East Deluge, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0x3a8aff, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>East Deluge</b> floods the eastern sky.", toast:"EAST DELUGE"},
+  windW:{name:"West Frost, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0xd8f0ff, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>West Frost</b> freezes the western wind.", toast:"WEST FROST"},
+  cyrannic:{name:"Cyrannic, Warlord of the Four Winds", kind:"golem", scale:3.2, tint:0x5a8aff, hp:6000, dmg:66, xp:26000, near:false,
+           rise:"In the tempest-throne sits <b>CYRANNIC, WARLORD OF THE FOUR WINDS</b>, wearing the storm like a cloak. The eye is collapsing — now or never.", toast:"THE WARLORD"},
+  lichking:{name:"The Lich-King of Frore", kind:"skeleton", scale:3.2, tint:0x2a3a6a, hp:6200, dmg:68, xp:28000, near:false, crowned:true,
+           rise:"On his glacier throne sits <b>THE LICH-KING OF FRORE</b>, three seasons of stolen springtime about his shoulders. His phylactery is a single snowflake.", toast:"THE LICH-KING"},
+  warden:{name:"Warden of the Sundered Veil", kind:"virindi", scale:3.4, tint:0xc0a0ff, hp:6400, dmg:70, xp:30000, near:false,
+           rise:"Portalspace itself given teeth — <b>THE WARDEN OF THE SUNDERED VEIL</b> — guards the seal at the ascent's peak. Defeat it, and pull the Architect free.", toast:"THE WARDEN"},
+  herald:{name:"The Herald of T'thuun", kind:"moarsman", scale:3.8, tint:0x2a7a5a, hp:6800, dmg:72, xp:32000, near:false,
+           rise:"At the rift's rim waits <b>THE HERALD OF T'THUUN</b>, a mountain of tide and shell that speaks its master's coming in breakers. Slay it.", toast:"THE HERALD"},
+  tthuun:{name:"T'thuun, the Drowned God", kind:"golem", scale:4.6, tint:0x1a4a44, hp:9000, dmg:80, xp:40000, near:false,
+           rise:"<b>T'THUUN</b> breaches the world. It cannot be killed — it can only be held, and sealed.", toast:"THE DROWNED GOD"},
 };
 function spawnSagaBoss(bossId){
   if(inDungeon||inNetwork){ setTimeout(()=>spawnSagaBoss(bossId),8000); return; }
@@ -7189,8 +7236,35 @@ function updateCalendar(dt){
   if(!sagaProg._intro){ sagaProg._intro=1; advanceMonth(); }   // herald the live chapter once per world (new game or migrated save)
   const ce=currentCalEvent(), g=ce.goal;
   if(!g||calendarDone[ce.id]) return;
+  if(g.bosses){   // multi-boss: spawn all avatars once, complete when all are down
+    if(!inDungeon&&!inNetwork){ for(const b of g.bosses) if(!monsters.some(m=>m.sagaBoss===b)&&!sagaProg[ce.id+"_"+b]){ sagaProg[ce.id+"_"+b]=1; spawnSagaBoss(b); } }
+    return; }
   if(g.echo||g.boss){ const bid=g.boss||"ember";
     if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaBoss===bid)) spawnSagaBoss(bid); return; }   // covers load mid-chapter
+  if(g.survive){   // live through a timed onslaught while an unkillable avatar rampages, then it's done
+    if(!sagaProg[ce.id+"_sv"]){ sagaProg[ce.id+"_sv"]=now(); if(g.avatar&&!inDungeon&&!inNetwork) spawnSagaBoss(g.avatar);
+      log(`<b>${ce.name}</b> — survive ${g.survive}s. The thing at the rift cannot be killed. Endure.`,"warn"); toast("SURVIVE"); }
+    const el=(now()-sagaProg[ce.id+"_sv"])/1000;
+    if(el>=g.survive){ log("You held first contact and covered the withdrawal — <b>everyone comes home</b>.","sys"); sagaNotify("survive"); }
+    return; }
+  if(g.contribute){   // spend materials at the site (drain the pool toward the target as you stand there)
+    const pt=sagaPlace(g.at||"valstead"); const key=ce.id+"_ctr";
+    if(pt&&Math.hypot(pt.x-player.x,pt.z-player.z)<pt.r&&(sagaProg[key]||0)<g.contribute){
+      const give=Math.min(player.materials|0, g.contribute-(sagaProg[key]||0));
+      if(give>0){ player.materials-=give; sagaProg[key]=(sagaProg[key]||0)+give;
+        log(`You give <b>${give}</b> materials to ${pt.name} — ${sagaProg[key]}/${g.contribute}.`,"sys"); updateHUD&&updateHUD(); }
+      else if(!sagaProg[key+"_warn"]||now()-sagaProg[key+"_warn"]>4000){ sagaProg[key+"_warn"]=now();
+        log(`${pt.name} needs materials (${sagaProg[key]||0}/${g.contribute}) — salvage or tinker to gather more.`,"warn"); } }
+    if((sagaProg[key]||0)>=g.contribute) sagaNotify("contribute");
+    return; }
+  if(g.stages){   // the finale: a sequence of sub-goals, each advanced in turn
+    const key=ce.id+"_stg", st=sagaProg[key]||0;
+    if(st>=g.stages.length){ sagaNotify("stage"); return; }
+    const cur=g.stages[st];
+    if(cur.type==="siege"){ if(!worldEvent&&!inDungeon&&!inNetwork&&!sagaProg[key+"_s"]){ sagaProg[key+"_s"]=1; startSiege(); } }
+    else if(cur.type==="kills"){ /* advanced by killMonster via sagaStageKill */ }
+    else if(cur.type==="visit"){ const pt=sagaPlace(cur.at); if(pt&&Math.hypot(pt.x-player.x,pt.z-player.z)<pt.r) sagaStageAdvance(ce,"reached "+pt.name); }
+    return; }
   if(g.siege){   // launch the siege once; its second-stage boss (g.then) re-spawns on reload if pending
     if(g.then&&sagaProg[ce.id+"_boss"]){ if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaBoss===g.then)) spawnSagaBoss(g.then); return; }
     if(!worldEvent&&!inDungeon&&!inNetwork) startSiege(); return; }
@@ -7326,6 +7400,8 @@ function siegeSuccess(){
   addDrop(t.x,t.z,{type:"gold",amt:gold});
   log(`The siege of <b>${t.name}</b> is broken! The corsairs fall back to the sea. Bounty: ${gold}p + ${xp} XP.`,"sys");
   toast("SIEGE BROKEN"); SFX.level(); SFX.quest();
+  { const ce=currentCalEvent(), g=ce.goal;   // a siege-stage of the finale advances here
+    if(g&&g.stages&&(g.stages[sagaProg[ce.id+"_stg"]||0]||{}).type==="siege") sagaStageAdvance(ce,"walls held"); }
   sagaNotify("siege");
   checkAchievements(); endEvent(false); saveGame();
 }
