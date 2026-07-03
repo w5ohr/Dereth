@@ -191,7 +191,7 @@ town isn't mapped).
 
 ---
 
-## YEAR 4 — YEAR OF BANNERS (The Pretender's War) — months 37–48
+## YEAR 4 — YEAR OF BANNERS ✅ SHIPPED (The Pretender's War) — months 37–48
 *Corsair-Prince Varicci IV lands with a fleet, a claim, and a leashed horror: the bindings of Grael.*
 **Needs:** `siege` goal (town-under-siege wave defense — walls manned, gates-shut flavor, longer waves)
 · `deliver` goal · a "Viamontian Corsair" hostile (human-silhouette mob or banderling reskin in purple)
