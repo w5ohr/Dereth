@@ -299,6 +299,21 @@ MOB_BESTIARY = {
     "skeleton":  {"hp": 80,  "dmg": 16, "spd": 6.0, "xp": 360, "gold": (6, 18),  "size": 1.0, "sense": 44, "atk": 1.4},
     "tusker":    {"hp": 160, "dmg": 24, "spd": 5.0, "xp": 620, "gold": (14, 40), "size": 1.7, "sense": 43, "atk": 1.6},
 }
+# Authentic pack parity: when assets/acrewards.json exists (extracted from the player's own
+# AC data by tools/ace_reward_export.py), shared mobs use the same retail hp/dmg/kill-XP the
+# offline client uses — online and offline kills pay identically.
+try:
+    import json as _json
+    _rw = _json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "acrewards.json")))
+    for _k, _e in _rw.get("killxp", {}).items():
+        if _k in MOB_BESTIARY:
+            MOB_BESTIARY[_k]["xp"] = _e["xp"]
+            if _e.get("hp"): MOB_BESTIARY[_k]["hp"] = _e["hp"]
+            if _e.get("dmg"): MOB_BESTIARY[_k]["dmg"] = _e["dmg"]
+    print("acrewards pack: retail hp/dmg/xp applied to %d shared mob kinds"
+          % sum(1 for k in _rw.get("killxp", {}) if k in MOB_BESTIARY))
+except Exception:
+    pass
 # Monsters cluster near real Dereth towns (world coords = lon*80, -lat*80) so the shared
 # population is where players actually spawn/travel — not out at the empty origin.
 MOB_CLUSTERS = [

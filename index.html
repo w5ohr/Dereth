@@ -663,9 +663,45 @@ try{ fetch('assets/acrewards.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(
 //    for 4,300+ items — damage/variance/speed/skill, armor level, value, burden, item mana
 //    + mana rate, spells, and the original inventory icon. Any item the game creates with a
 //    retail name takes the authentic numbers. ──
-let AC_ITEMS=null;
-try{ fetch('assets/acitems.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_ITEMS=j;
-  console.log("AC item catalog: "+Object.keys(j).length+" retail items loaded."); } }).catch(()=>{}); }catch(e){}
+let AC_ITEMS=null, AC_POOLS=null;
+try{ fetch('assets/acitems.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
+  AC_ITEMS=j;
+  // loot pools: retail items sorted by Value and cut into five tier bands per class,
+  // so a tier-1 delve drops training swords and a tier-5 delve drops the real prizes
+  const cls={weapon:[],armor:[],caster:[]};
+  for(const n in j){ const a=j[n];
+    if((a.t==="MeleeWeapon"||a.t==="MissileLauncher")&&a.dmg) cls.weapon.push([n,a.val||0]);
+    else if(a.t==="Clothing"&&a.al) cls.armor.push([n,a.val||0]);
+    else if(a.t==="Caster") cls.caster.push([n,a.val||0]); }
+  AC_POOLS={};
+  for(const c in cls){ const arr=cls[c].sort((x,y)=>x[1]-y[1]).map(x=>x[0]);
+    AC_POOLS[c]=[0,1,2,3,4].map(t=>arr.slice(Math.floor(arr.length*t/5),Math.floor(arr.length*(t+1)/5))); }
+  console.log("AC item catalog: "+Object.keys(j).length+" retail items loaded ("
+    +cls.weapon.length+" weapons, "+cls.armor.length+" armor, "+cls.caster.length+" casters in loot pools).");
+}).catch(()=>{}); }catch(e){}
+const AC_TITLE_SMALL=/^(of|the|a|an|and|in|to)$/;
+function acTitle(n){ return n.split(" ").map((w,i)=>(i>0&&AC_TITLE_SMALL.test(w))?w:w.charAt(0).toUpperCase()+w.slice(1)).join(" "); }
+const AC_WT_BY_SKILL={1:"axe",4:"dagger",5:"mace",9:"spear",10:"staff",11:"sword",12:"atlatl",2:"bow",3:"crossbow",8:"atlatl",41:"twohand",44:"sword",45:"dagger",46:"dagger",47:"bow"};
+function rollACItem(rare,tier){   // a REAL retail item of the right tier, exact specs via acItemize
+  if(!AC_POOLS) return null;
+  const t=clamp((tier|0)||1,1,5), r=Math.random();
+  const cls=r<0.55?"weapon":r<0.9?"armor":"caster";
+  const band=AC_POOLS[cls][t-1]; if(!band||!band.length) return null;
+  const key=band[irnd(0,band.length-1)], a=AC_ITEMS[key], nm=acTitle(key), low=key;
+  const it={name:nm,tier:t,work:rollWork(t)};
+  if(cls==="weapon"){
+    let wt=AC_WT_BY_SKILL[a.skill]||"sword";
+    if(/bow\b/.test(low)&&!/crossbow/.test(low)) wt="bow"; else if(/crossbow|arbalest/.test(low)) wt="crossbow";
+    else if(/two.?hand|great|zweihander|quadrelle/.test(low)) wt="twohand";
+    Object.assign(it,{stat:"weapon",wt,mat:"Steel",v:a.dmg});
+  } else if(cls==="armor"){
+    const aslot=/helm|cap\b|basinet|coif|kabuton|crown|cowl/.test(low)?"head":/boots|shoes|sollerets|sandal/.test(low)?"feet":/gauntlet|glove|mitt/.test(low)?"hands":/legging|greave|pant|breeches|tasset|chiran leg/.test(low)?"legs":/shield|buckler|aegis/.test(low)?"offhand":"chest";
+    const at=/leather|hide|cloth|silk|robe|quilt/.test(low)?"light":/chain|scale|mail\b/.test(low)?"medium":"heavy";
+    Object.assign(it,{stat:"worn",at,aslot,mat:"Steel",v:a.al});
+    if(aslot==="offhand") it.shield=/buckler/.test(low)?"buckler":/tower/.test(low)?"tower":"kite";
+  } else Object.assign(it,{stat:"weapon",wt:"focus",mat:"Diamond",foc:6+t*5,v:6+t*5});
+  return acItemize(it);
+}
 function acItemize(it){
   if(!AC_ITEMS||!it||!it.name) return it;
   const a=AC_ITEMS[it.name.toLowerCase()]; if(!a) return it;
@@ -10232,6 +10268,9 @@ function rollItem(rare,tier,noRare){
   if(Math.random()<((rare?0.015:0)+((tier|0)>=5?0.01:0))) return rollAugment();   // very rare augmentation gem
   if(Math.random()<(rare?0.02:0.012)) return rollPack();   // a container to expand your satchel
   if(Math.random()<(rare?0.04:0.06)) return rollAmmo();    // a stack of arrows/quarrels/darts
+  // most gear drops are now REAL retail items of the right tier (exact specs + original icon);
+  // the generative material/affix system below remains as the Dereth-flavored remainder
+  if(AC_POOLS&&Math.random()<0.65){ const ac=rollACItem(rare,tier); if(ac) return ac; }
   if(Math.random()<(rare?0.03:0.03)) return rollOil();     // a weapon oil
   if((tier|0)>=3&&Math.random()<(rare?0.03:0.015)) return rollAtlanStone(tier);   // an Atlan upgrade stone (sets an elemental brand)
   if(Math.random()<(rare?0.02:0.012)) return rollRecallStone();  // a recall stone
@@ -15407,7 +15446,9 @@ const SCRIVENER_SCROLLS=["creature_str_2","creature_coord_2","creature_quick_2",
   "life_enlighten_1","life_enlighten_2","creature_foxfire_1","creature_foxfire_2"];
 function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
-function gearIco(it){ return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+function gearIco(it){
+  if(it&&it.acicon) return `<img src="assets/acicons/${it.acicon}.png" style="width:1.25em;height:1.25em;vertical-align:-0.28em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('📦'))">`;   // the item's ORIGINAL inventory icon
+  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="atlanstone") return Math.max(30,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; if(it.stat==="furniture"||it.stat==="writ") return Math.max(10,it.v|0); return Math.max(5,Math.round(gearPrice(it)*0.4)); }
