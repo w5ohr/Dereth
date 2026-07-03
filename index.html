@@ -14057,17 +14057,17 @@ const QUESTS=[
     intro:"Drudges keep raiding my farm and making off with my seed. Recover my three stolen seed-bags, then slay the Drudge Robber Baron who leads the thieves.",
     obj:[{type:"gather",count:3,label:"Recover Alfrin's stolen seed-bags"},
          {type:"slay",kind:"drudge",count:1,label:"Slay the Drudge Robber Baron"}],
-    xp:1200, gold:90, item:{name:"Buckler",stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9} },
+    xp:25000, gold:90, item:{name:"Buckler",stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9} },   // retail: 5,000/bag ×3 + 10,000 for the Baron's head
   { id:"nen_ai", name:"Nen Ai's Pet Drudge", giver:"Nen Ai (Shoushi)",
     intro:"My pet drudge has gone hungry. Fetch Greenmire Cider and Greenmire Cheese from the Stone Cathedral behind my house, and I'll teach you of the Jojiist way.",
     obj:[{type:"gather",count:2,label:"Recover the Greenmire cider & cheese"},
          {type:"delve",count:1,label:"Brave the Stone Cathedral"}],
-    xp:900, gold:65, item:{name:"Health Kit",stat:"hp",v:50} },
+    xp:30000, gold:65, item:{name:"Health Kit",stat:"hp",v:50} },   // retail: 15,000 per treat ×2
   { id:"lou_ka", name:"Lou Ka's Stolen Items", giver:"Lou Ka (Shoushi)",
     intro:"Thieving drudges have stripped my home bare. Recover my belongings and put the rascals to the sword.",
-    obj:[{type:"gather",count:6,label:"Recover Lou Ka's stolen belongings"},
+    obj:[{type:"gather",count:8,label:"Recover Lou Ka's stolen belongings"},
          {type:"slay",kind:"drudge",count:2,label:"Punish the drudge thieves"}],
-    xp:1300, gold:85, item:null },
+    xp:36000, gold:85, item:null },   // retail: 8 items (his katar/shouken/trident/yaoji + Bai Den's four) ×4,500
   { id:"reedbanks", name:"The Banks Run Red", giver:"the Holtburg militia",
     intro:"Reedsharks have made the riverbanks a slaughter. Thin their numbers before another farmer is dragged under.",
     obj:[{type:"slay",kind:"reedshark",count:4,label:"Hunt Reedsharks along the banks"}],
@@ -14075,13 +14075,13 @@ const QUESTS=[
   { id:"worcer", name:"Worcer's Missing Heirlooms", giver:"Worcer, curator at the Helm & Shield (Holtburg)",
     intro:"I am raising a memorial to those the Tumeroks slaughtered in Portal Year 6. Recover eight lost heirlooms from the Holtburg Redoubt.",
     obj:[{type:"gather",count:8,label:"Recover lost heirlooms from the Redoubt"}],
-    xp:1700, gold:130, item:null },
+    xp:36000, gold:130, item:null },   // retail: 8 heirlooms ×4,500
   // ── Gharu'ndim & Sho bounties (Yaraq / Yanshi / Shoushi) ──
   { id:"lubziklan", name:"Lubziklan al-Luq's Stolen Goods", giver:"Lubziklan al-Luq (Yaraq)",
     intro:"The Red Rats and their drudge servants have plundered my caravan. Slay the brutes outside their lair and recover my eight stolen goods from the Sea Temple catacombs.",
     obj:[{type:"slay",kind:"drudge",count:3,label:"Slay the drudges of the Red Rat Lair"},
          {type:"gather",count:8,label:"Recover the stolen caravan goods"}],
-    xp:1800, gold:120, item:{name:"Round Shield",stat:"worn",at:"light",aslot:"offhand",shield:"round",v:13} },
+    xp:36000, gold:120, item:{name:"Mara's Healing Pie",stat:"hp",v:60} },   // retail: 8 goods ×4,500 + Mara's Healing Pie
   { id:"lou_ei", name:"Lou Ei's Stolen Bracelet", giver:"Lou Ei (Yanshi)",
     intro:"Banderlings raided the village and took my mother's bracelet. Recover it and make them pay for their thievery.",
     obj:[{type:"gather",count:1,label:"Recover Lou Ei's bracelet"},
@@ -14091,7 +14091,7 @@ const QUESTS=[
     intro:"The four Stones of Jojii — Discipline, Detachment, Compassion, and Humility — lie within the Shreth Hive. Recover them and return the wisdom of the Jojiist principles to Shoushi.",
     obj:[{type:"delve",count:1,label:"Descend into the Shreth Hive"},
          {type:"gather",count:4,label:"Recover the four Stones of Jojii"}],
-    xp:2000, gold:140, item:{name:"Willpower Gem",stat:"Self",v:1} },
+    xp:37500, gold:140, item:{name:"Willpower Gem",stat:"Self",v:1} },   // retail: 4 Stones ×9,375
   // ── Hunter kill-tasks (slay N of a beast for a bounty) ──
   { id:"skel_task", name:"Wicked Skeleton Kill Task", giver:"a Hunter of the Dead", repeatable:true,
     intro:"The risen dead walk the old crypts. Put eight Wicked Skeletons back to their rest and the Hunters' Guild will see you rewarded.",
@@ -14122,7 +14122,7 @@ const QUESTS=[
     intro:"My father Brogord fell in the Cave of Alabree holding back the Tumeroks. Avenge him, and bring back his axe and the last letter he wrote to my mother.",
     obj:[{type:"slay",kind:"tumerok",count:4,label:"Cut down the Tumeroks of the Cave of Alabree"},
          {type:"delve",count:1,label:"Recover Brogord's axe & letter from the depths"}],
-    xp:2400, gold:170, item:{name:"Kite Shield",stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:18} },
+    xp:30000, gold:170, item:{name:"Kite Shield",stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:18} },   // retail: axe + letter ×15,000
   { id:"tusker_tusk", name:"The Tusker Tusk", giver:"Brighteyes, the Tailor (Oolutanga's Refuge)",
     intro:"Bring me three great tusks from the Tusker Lodge and I will craft you a token of the Resistance.",
     obj:[{type:"slay",kind:"tusker",count:3,label:"Claim three Tusker tusks"}],
