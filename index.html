@@ -1297,6 +1297,15 @@ const MONSTER_MODELS={
   armoredillo:  [{f:"Crab.glb",tints:[0xb09a6a,0x8a7a5a]}],                // spiked shell tank
   mukkir:       [{f:"Demon.glb",tint:0x3a2a2a}],                           // feral dark horror
 };
+// THE REAL THING: creatures extracted from the AC client data (tools/ac_creature_export.py) —
+// original meshes, original textures, original Idle/Walk animations replayed as glTF clips.
+// They REPLACE the CC0 stand-ins above; kinds without an extract (shadow, mummy, mukkir,
+// remoran, zefir) keep their stand-in models. No tints — the authentic skins ship as-is.
+for(const k of ["armoredillo","auroch","banderling","burun","carenzi","drudge","golem","gromnie",
+  "grievver","lugian","mattekar","mite","moarsman","monouga","mosswart","niffis","olthoi",
+  "olthoisoldier","olthoiworker","rat","reedshark","sclavus","shreth","skeleton","tumerok",
+  "tusker","ursuin","virindi","zombie"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
+MONSTER_MODELS.phyntoswasp=[{f:"ac/wasp.glb"}];
 let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h,tint,tints} loaded variants
 function loadGltfMonsters(){
   if(gltfMonstersStarted||!USE_GLTF_MONSTERS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
