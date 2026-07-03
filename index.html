@@ -991,14 +991,10 @@ function itemIconDID(name){ if(!AC_ICONS||!name)return null; const n=name.toLowe
 function itemIconHTML(name,emoji,px){ const did=itemIconDID(name); const s=px||18;
   if(did&&AC_ICONS.icons[did]) return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`;
   return emoji||""; }
-// ── retail loot tiers + crafting recipes (assets/acloot.json / acrecipes.json). The item/material/
-//    tinker mechanics stay ours (real AC item names would break material parsing); we DO adopt the
-//    authentic per-creature loot tier, and surface the real recipe book as an in-game reference. ──
-let AC_LOOT=null, AC_RECIPES=null;
-fetch('assets/acloot.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_LOOT=j; }).catch(()=>{});
+// ── crafting recipes (assets/acrecipes.json) surfaced as an in-game reference. (Retail loot tiers
+//    are handled by the ACLOOT system below — acLootTier/acLootCount.) ──
+let AC_RECIPES=null;
 fetch('assets/acrecipes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_RECIPES=j; }).catch(()=>{});
-function creatureLootTier(kind,fallback){ const t=AC_LOOT&&AC_LOOT.creatureTier&&AC_LOOT.creatureTier[kind];
-  return t?clamp(Math.ceil(t*5/8),1,5):fallback; }   // AC tiers 1-8 → our 1-5
 // Quickbar: 12 slots × 2 rows per page, 4 pages (buttons 1–4) = 96 assignable slots.
 const QB_COLS=12, QB_ROWS=2, QB_PAGES=4, QB_PAGE=QB_COLS*QB_ROWS, QB_TOTAL=QB_PAGE*QB_PAGES;
 const ROW1_KEYS=["1","2","3","4","5","6","7","8","9","0","-","="];   // number row casts row-1 slots of the active page
@@ -1819,6 +1815,27 @@ ACW.load=function(){
     console.log("ACW: retail spawn map ("+Object.keys(j.spawns).length+" cells), "+j.portals.length+" portals, "+j.lifestones.length+" lifestones");
   }).catch(e=>console.warn("ACW unavailable ("+e.message+") — legacy spawns/portals"));
 };
+// ═══ RETAIL LOOT TIERS (assets/acloot.json · tools/ace_loot_export.py). Retail loot is a tiered
+//     GENERATOR: each creature's DeathTreasureType → a treasure profile → tier 1–8 + drop counts.
+//     We carry each bestiary kind's authentic loot tier so a rat drops tier-1 trinkets and a sclavus
+//     drops tier-7 gear, mapped onto the game's 1–5 scale. Missing file → the legacy elite/dungeon tier. ═══
+const ACLOOT={on:false,kinds:null,tiers:null};
+ACLOOT.load=function(){
+  return fetch("assets/acloot.json").then(r=>r.json()).then(j=>{
+    ACLOOT.kinds=j.kinds; ACLOOT.tiers=j.tiers; ACLOOT.on=true;
+    console.log("ACLOOT: retail loot tiers for "+Object.keys(j.kinds).length+" creature kinds");
+  }).catch(e=>console.warn("ACLOOT unavailable ("+e.message+") — legacy loot tiers"));
+};
+const AC_TIER_MAP=[0,1,1,2,3,4,4,5,5];   // retail tier 1–8 → the game's 1–5 loot scale
+function acLootTier(kind){                // authentic game-scale loot tier for a creature kind
+  if(!ACLOOT.on||!ACLOOT.kinds[kind]) return null;
+  return AC_TIER_MAP[clamp(ACLOOT.kinds[kind].tier,1,8)];
+}
+function acLootCount(kind,rich){          // how many items a rich kill (elite/dungeon) drops, from the tier's retail max
+  if(!rich||!ACLOOT.on||!ACLOOT.kinds[kind]) return 1;
+  const t=ACLOOT.tiers[String(ACLOOT.kinds[kind].tier)];
+  return t?clamp(t.items,1,3):1;
+}
 function acSpawnKinds(x,z){   // the creatures that REALLY lived here, per the retail encounter table
   if(!ACW.on) return null;
   const bx=clamp(Math.floor((x/8+1019.5)/8),0,254), by=clamp(Math.floor((-z/8+1019.5)/8),0,254);
@@ -6650,7 +6667,7 @@ function killMonster(m){
     toast("WORLD BOSS SLAIN");shake(0.5);questEvent("boss");checkAchievements();
     retire(m);monsters.splice(monsters.indexOf(m),1);
     if(m.apex){ setTimeout(spawnApex,90000); }
-    else if(m.sagaEcho){ sagaNotify("echo"); }   // the saga's one-time boss — no respawn
+    else if(m.sagaBoss){ sagaNotify("boss",m.sagaBoss); }   // the saga's one-time bosses — no respawn
     else if(m.general!==undefined){ const gi=m.general; setTimeout(()=>spawnShadowGeneral(gi),120000); sagaNotify("general"); }
     else { boss=null; setTimeout(spawnBoss,45000); }
     saveGame();return;
@@ -6672,8 +6689,15 @@ function killMonster(m){
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
   if(g>0) addDrop(m.x,m.z,{type:"gold",amt:g});
-  if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)){ const baseTier=m.isDungeon&&curDungeon?curDungeon.tier:creatureLootTier(m.kind,(m.isElite?3:1));
-    addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollItem(m.isElite||m.isDungeon, baseTier)}); }
+  if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)){
+    const rich=m.isElite||m.isDungeon;
+    // authentic per-creature loot tier (a rat drops trinkets, a sclavus drops tier-5 gear); dungeon
+    // depth still overrides. Rich kills drop the retail item-count for that tier.
+    const acT=acLootTier(m.kind);
+    const tier=(m.isDungeon&&curDungeon)?curDungeon.tier:(acT!=null?acT:(m.isElite?3:1));
+    const n=acLootCount(m.kind,rich);
+    for(let i=0;i<n;i++) addDrop(m.x+rnd(-1.2,1.2),m.z+rnd(-1.2,1.2),{type:"item",item:rollItem(rich,tier)});
+  }
   if(Math.random()<0.20){ const tr=rollTrophy(m.kind); if(tr) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:tr}); }   // creature trophy
   if(Math.random()<0.05){ const k=Math.random()<0.7?{name:"Lockpick",stat:"pick",v:1}:{name:"Brass Key",stat:"key",v:1}; addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:k}); }   // lockpick / key
   if(Math.random()<0.04) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollTradeNote()});   // trade note
@@ -6741,6 +6765,7 @@ const EVENT_TYPES=[
   {name:"Olthoi Swarm",     kinds:["olthoiworker","olthoisoldier","olthoi"], col:0xff5a2a, blurb:"An Olthoi hive boils over"},
   {name:"Undead Rising",    kinds:["skeleton","shadow"],              col:0xbfe0ff, blurb:"The restless dead claw up from the barrows"},
   {name:"Banderling Raid",  kinds:["banderling","drudge","mosswart"], col:0xffc14a, blurb:"A savage warband descends"},
+  {name:"Virindi Abduction",kinds:["virindi","shadow"],              col:0xd0d4e6, blurb:"Empty-faced Virindi snatch-squads raid the town"},
 ];
 // ---------- monthly event calendar: seasons + a rotating story event (see docs/asherons-call-events-reference.md) ----------
 // The world cycles through seasons; each "month" features a story beat whose rumour the Town Criers broadcast and
@@ -6818,10 +6843,132 @@ const EVENT_CALENDAR=[
    clue:"See it for yourself at Holtburg.",
    goal:{v:"holtburg"}, obj:"Examine the mask at Holtburg", xp:1200, gold:180,
    seeds:"The mask has tallied every death of the Year of Embers, in a neat, empty hand. Something is auditing the new crown. <b>Year 2 — the Year of Whispers — will continue the saga.</b>"},
+
+  // ═══ YEAR 2 — YEAR OF WHISPERS (Aerbax's Audit) ═══
+  {id:"y2m13", mon:"Morningthaw", name:"The Empty-Faced Census", kind:"beat", incursion:null,
+   rumor:"Empty-faced Virindi drift through our streets counting citizens like coin. They take nothing. They touch nothing. They only count.",
+   clue:"Find the counters at their work — three towns will show you what they study.",
+   goal:{visits:3}, obj:"Find the census-Virindi in three towns", xp:1300, gold:180,
+   seeds:"Every count ends in the same tally-mark. This is not a census. It is an audit."},
+  {id:"y2m14", mon:"Seedsow", name:"Hollow Abductions", kind:"invasion", incursion:4,
+   rumor:"Snatch-squads took nine souls from Eastham and Rithwic in the night. The taken walk home days later — and their neighbours say they came back wrong.",
+   clue:"Break an abduction raid while it happens, and the taken may yet come home themselves.",
+   goal:{repel:1}, obj:"Repel a Virindi Abduction raid", xp:1400, gold:220},
+  {id:"y2m15", mon:"Leafdawning", name:"The Prodigal Drudge", kind:"boss", incursion:null,
+   rumor:"A drudge — but wrong. Tall as a man, cold-eyed, and it SPEAKS. It has broken the Nest's tribes to its will and wears a white sigil.",
+   clue:"Face the Prodigal Drudge at the Drudge Nest before its army learns to march in step.",
+   goal:{boss:"drudge"}, obj:"Slay Aerbax's Prodigal Drudge", xp:2600, gold:400,
+   item:{name:"Aerbax's Audit-Ledger Page",stat:"quest",v:60},
+   seeds:"On the ledger page, in a neat empty hand: your own name, and a column headed 'obedience'."},
+  {id:"y2m16", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"The spring festival blooms in every capital! Yet in Zaikhal a juggler juggles a heartbeat too perfectly, and never once blinks.",
+   clue:"Watch the fair at Zaikhal. When the mask slips — strike.",
+   goal:{agitator:1,at:"zaikhal",avt:"virindi",aname:"Simulacrum Juggler"}, obj:"Unmask the simulacrum at Zaikhal", xp:1200, gold:160,
+   item:{name:"Cracked Simulacrum Mask",stat:"quest",v:30}},
+  {id:"y2m17", mon:"Verdantine", name:"The White Laboratory", kind:"explore", incursion:0,
+   rumor:"The rescued all speak of the same dream: a white laboratory, glass wombs, and half-made people who wear familiar faces.",
+   clue:"The Virindi hold a complex near Neydisa. Break its laboratory open and free what you find.",
+   goal:{clear:"Virindi Complex"}, obj:"Clear the Virindi laboratory", xp:1800, gold:300,
+   seeds:"You free the half-made — simulacra of people you know, blinking at a world they were built to replace."},
+  {id:"y2m18", mon:"Solclaim", name:"A Question of Faces", kind:"beat", incursion:null,
+   rumor:"The vendor sold me the wrong nails and called me by my dead father's name. Friends — that was not our vendor.",
+   clue:"Three towns harbor false faces. Expose them one by one.",
+   goal:{visits:3}, obj:"Expose the false faces in three towns", xp:1700, gold:280},
+  {id:"y2m19", mon:"Leaffall", name:"The Puppet Court", kind:"beat", incursion:null,
+   rumor:"A Concord envoy nearly set Yaraq and Shoushi at war with three sentences. When they cut the envoy's arm — no blood. Wax.",
+   clue:"Carry the TRUE letters yourself: Yaraq first, then Shoushi, before the week turns.",
+   goal:{visits:2,pts:["yaraq","shoushi"]}, obj:"Carry the true letters to Yaraq, then Shoushi", xp:1700, gold:300},
+  {id:"y2m20", mon:"Harvestgain", name:"The Prodigal Monarch", kind:"boss", incursion:null,
+   rumor:"In a crumbling Empyrean mansion sits a second Kilmer on a false throne — and it smiles our Monarch's own smile. The court it keeps does not breathe.",
+   clue:"Destroy the Prodigal Monarch. And afterward, adventurer — be certain which one you kneel to.",
+   goal:{boss:"monarch"}, obj:"Destroy the Prodigal Monarch", title:"True-Sighted", xp:4500, gold:700,
+   item:{name:"Mask of the Unmade",stat:"worn",at:"medium",aslot:"head",v:30,tier:5,legendary:true},
+   seeds:"The puppet-crown rolls empty across the floor. Somewhere, Aerbax closes a ledger — the audit has its answer."},
+  {id:"y2m21", mon:"Leafcull", name:"The Audit Ends", kind:"beat", incursion:null,
+   rumor:"The Virindi are gone from our streets — every one, everywhere, in a single night. The Concord does not celebrate. An audit that ends has reached its total.",
+   clue:"Report the year's findings at Castle Val Halla. Bring your proofs.",
+   goal:{v:"valstead"}, obj:"Report to Castle Val Halla", xp:1900, gold:320,
+   seeds:"Aerbax withdraws — verdict unknown. Its watch-crystals stay, seeded across Dereth like frozen dew."},
+  {id:"y2m22", mon:"Coldeve", name:"Crystal Harvest", kind:"item", incursion:0,
+   rumor:"The watch-crystals dot the land like frozen dew, and the Arcanum pays honest coin for shards — if you can quiet their guardians.",
+   clue:"Cull the crystals' Virindi guardians and bring the shards to any Agent of the Arcanum.",
+   goal:{kills:6,fams:["virindi"]}, obj:"Destroy 6 watch-crystal guardians (Virindi)", xp:1600, gold:260,
+   item:{name:"Watch-Crystal Shard",stat:"comp",v:40}},
+  {id:"y2m23", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Frostfell comes! Kilmer keeps the feast — though on the castle walls a single Virindi stands in the snow, watching, touching nothing. The Monarch commands cheer anyway.",
+   clue:"Keep the feast at any capital. Let the watcher see us unafraid.",
+   goal:{v:"capital"}, obj:"Attend the festival at any capital", xp:1000, gold:150,
+   item:{name:"Hollow-Glass Snowflake",stat:"quest",v:150}},
+  {id:"y2m24", mon:"Snowreap", name:"Chitin in the Mines", kind:"beat", incursion:null,
+   rumor:"Miners at Arwic broke into a tunnel of grey wax at the deep face — and the tunnel, they swear on their lamps, was BREATHING.",
+   clue:"See the breathing tunnel at Arwic before the Concord seals the shaft.",
+   goal:{v:"arwic"}, obj:"See the breathing tunnel at Arwic", xp:1400, gold:200,
+   seeds:"The wax flexes. Somewhere below, something vast inhales. <b>Year 3 — the Year of Chitin — will continue the saga.</b>"},
+
+  // ═══ YEAR 3 — YEAR OF CHITIN (The Deep Brood) ═══
+  {id:"y3m25", mon:"Morningthaw", name:"The Breathing Tunnels", kind:"explore", incursion:1,
+   rumor:"The Concord unsealed the Arwic shaft with soldiers this time. The wax tunnel goes DOWN, friends — farther than any lamp has ever come back from.",
+   clue:"Clear the tunnel-mouth delve at Arwic and map what breathes below.",
+   goal:{clear:"Arwic Mines"}, obj:"Clear the Arwic Mines", xp:1800, gold:300,
+   item:{name:"Hive-Map Fragment",stat:"quest",v:50}},
+  {id:"y3m26", mon:"Seedsow", name:"Swarm at the Walls", kind:"invasion", incursion:1,
+   rumor:"Olthoi soldiers hit Plateau Village at dusk and Danby's Outpost by dawn. Not raids — probes. Something below is measuring our walls.",
+   clue:"Repel an Olthoi Swarm and thin the probing castes.",
+   goal:{repel:1}, obj:"Repel an Olthoi Swarm", xp:1500, gold:240},
+  {id:"y3m27", mon:"Leafdawning", name:"The Matron Triangle", kind:"beat", incursion:null,
+   rumor:"Three waxen spires now stand on the Direlands skyline where last month there was only scrub. They grow by the WEEK.",
+   clue:"Scout all three Matron spires and chart the triangle they make.",
+   goal:{visits:3}, obj:"Scout the three Matron spires", xp:1700, gold:280,
+   seeds:"Three spires, one geometry — a summoning-triangle drawn in chitin, aimed at the heart of Dereth."},
+  {id:"y3m28", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"The festival is held under guard this spring — and for the first time in living memory, Aun Tumerok envoys attend. They know Olthoi war better than any of us.",
+   clue:"Join the guarded fair at any capital and hear the Aun drums.",
+   goal:{v:"capital"}, obj:"Attend the guarded festival at any capital", xp:1100, gold:160,
+   item:{name:"Aun War-Drum Charm",stat:"quest",v:120}},
+  {id:"y3m29", mon:"Verdantine", name:"The Slave Pens Again", kind:"beat", incursion:1,
+   rumor:"They are taking PEOPLE below — to pens, like the old arrival-days our grandmothers sang of. The Concord will not leave them there.",
+   clue:"Fight into the Olthoi warrens and break the captives out.",
+   goal:{clear:"Olthoi Chasm"}, obj:"Break the captives out of the Olthoi Chasm", title:"Pen-Breaker", xp:2000, gold:340},
+  {id:"y3m30", mon:"Solclaim", name:"Acid Summer", kind:"seasonal", incursion:1,
+   rumor:"The Direlands are POCKED with acid craters overnight — the hive vents its bile before it marches. Even the rain off that waste burns.",
+   clue:"Cull the venting workers before the scars spread past the Direlands.",
+   goal:{kills:8,fams:["olthoi","olthoiworker","olthoisoldier"]}, obj:"Cull 8 venting Olthoi", xp:1700, gold:280},
+  {id:"y3m31", mon:"Leaffall", name:"March of the Soldiers", kind:"invasion", incursion:1,
+   rumor:"The soldiers march in COLUMN now, friends — on more towns than one, with the Concord's own armies in the field beside us. The largest muster since the Fading.",
+   clue:"Repel the rolling swarm — twice, if you have the mettle.",
+   goal:{repel:2}, obj:"Repel two Olthoi Swarms", xp:2200, gold:380},
+  {id:"y3m32", mon:"Harvestgain", name:"The Brood-Empress", kind:"boss", incursion:null,
+   rumor:"Below the northern spire she waits — EMPRESS GNAWVIL-RAX, last clutch of the Ancient Queen, grown vast in a generation of dark. The Concord sounds the horn.",
+   clue:"Descend beneath the north Matron spire and end the Brood-Empress.",
+   goal:{boss:"empress"}, obj:"Slay Empress Gnawvil-Rax", title:"Hivebane", xp:5000, gold:800,
+   item:{name:"Empress-Carapace Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"tower",v:44,tier:5,legendary:true},
+   seeds:"The Empress falls, and a generation of dark falls with her. The three spires stand leaderless — burn them."},
+  {id:"y3m33", mon:"Leafcull", name:"Burning the Combs", kind:"beat", incursion:null,
+   rumor:"Torch-teams and Tumerok fire-drums move on the spires. Every comb we burn now is a war our children never fight.",
+   clue:"Fire all three Matron spires and collapse the tunnels beneath them.",
+   goal:{visits:3}, obj:"Burn the three Matron spires", xp:1900, gold:320},
+  {id:"y3m34", mon:"Coldeve", name:"The Aun Accord", kind:"beat", incursion:null,
+   rumor:"It is signed! Timaru pledges the Aun war-bands to the Concord — the first nation not of Ispar to swear. The drums in the passes tonight are FRIENDLY.",
+   clue:"Visit Timaru and witness the Accord.",
+   goal:{v:"timaru"}, obj:"Witness the Aun Accord at Timaru", xp:1600, gold:260,
+   seeds:"Timaru's Aun war-bands march under the Concord banner — the first nation not of Ispar to swear to Kilmer's crown."},
+  {id:"y3m35", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Frostfell! This year's keepsake is a candle of hive-wax — burn the enemy's house to light your own, says the Monarch.",
+   clue:"Keep the feast at any capital.",
+   goal:{v:"capital"}, obj:"Attend the festival at any capital", xp:1100, gold:160,
+   item:{name:"Hive-Wax Candle",stat:"quest",v:120}},
+  {id:"y3m36", mon:"Snowreap", name:"Sails off Sanamar", kind:"beat", incursion:null,
+   rumor:"Fisherfolk off the Halaetan coast swear they saw SAILS — royal purple, the old invader colors, not flown since Varicci the Second. The Concord says: weather. The fisherfolk say: fleet.",
+   clue:"Watch the western sea from Sanamar and judge for yourself.",
+   goal:{v:"sanamar"}, obj:"Watch the western sea from Sanamar", xp:1500, gold:220,
+   seeds:"Purple sails, hull after hull, riding the horizon. <b>Year 4 — the Year of Banners — will continue the saga.</b>"},
 ];
-const SAGA_REST={id:"y1rest", mon:"Morningthaw", name:"The Embers Rest", kind:"beat", incursion:null, goal:null,
-  rumor:"The Year of Embers is written into the chronicles, and Dereth breathes. The empty-faced auditors have not left.",
-  clue:"Rest, adventurer. The Year of Whispers is coming."};
+const SAGA_YEAR_NAMES={1:"Year of Embers",2:"Year of Whispers",3:"Year of Chitin",4:"Year of Banners",5:"Year of Blood",6:"Year of Storms",7:"Year of Bone",8:"Year of Rifts",9:"Year of Tides",10:"Year of the Crown"};
+function sagaYear(ce){ const m=ce&&ce.id&&ce.id.match(/^y(\d+)/); return m?+m[1]:1; }
+function sagaYearName(ce){ return SAGA_YEAR_NAMES[sagaYear(ce)]||"the Saga"; }
+const SAGA_REST={id:"y3rest", mon:"Morningthaw", name:"The Combs Cool", kind:"beat", incursion:null, goal:null,
+  rumor:"The Deep Brood is broken and the spires are ash. But purple sails ride the western horizon, and the old invader colors have not flown since Varicci the Second.",
+  clue:"Rest, adventurer. The Year of Banners is coming."};
 let gameMonth=0, eventClock=0, calendarDone={}, sagaProg={};
 const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
 function currentCalEvent(){ return EVENT_CALENDAR[gameMonth]||SAGA_REST; }
@@ -6860,7 +7007,7 @@ function sagaNotify(type,data){
   if(type==="repel"  && g.repel!=null){ sagaProg[ce.id]=(sagaProg[ce.id]||0)+1; if(sagaProg[ce.id]>=g.repel) sagaComplete(ce); }
   else if(type==="agitator" && g.agitator){ sagaComplete(ce); }
   else if(type==="general"  && g.general){ sagaComplete(ce); }
-  else if(type==="echo"     && g.echo){ sagaComplete(ce); }
+  else if(type==="boss"     && ((g.boss&&data===g.boss) || (g.echo&&data==="ember"))){ sagaComplete(ce); }   // echo is the legacy alias for boss:"ember"
   else if(type==="kill"     && g.kills && g.fams && g.fams.indexOf(data)>=0){
     sagaProg[ce.id]=(sagaProg[ce.id]||0)+1;
     if(sagaProg[ce.id]>=g.kills) sagaComplete(ce);
@@ -6868,6 +7015,7 @@ function sagaNotify(type,data){
   }
   else if(type==="visit"    && g.v){ sagaComplete(ce); }
   else if(type==="clear"    && g.clear){ sagaComplete(ce); }
+  else if(type==="visits"   && g.visits){ sagaComplete(ce); }   // fired when the last stop is reached
 }
 function sagaComplete(ce){
   if(calendarDone[ce.id]) return;
@@ -6879,43 +7027,80 @@ function sagaComplete(ce){
   log(`<span style="color:#ffd23b"><b>Saga chapter complete — ${ce.name}!</b></span> <span style="color:var(--dim)">(+${ce.xp||0} XP · +${ce.gold||0} pyreals${ce.item?` · ${ce.item.name}`:""})</span>`,"sys");
   if(ce.seeds) log(`<i>${ce.seeds}</i>`,"sys");
   toast("SAGA — CHAPTER COMPLETE"); if(SFX.level)SFX.level();
+  const prevYear=sagaYear(ce);
   gameMonth++; updateHUD&&updateHUD(); saveGame();
-  if(gameMonth<EVENT_CALENDAR.length) advanceMonth();
-  else { log(`<span style="color:#ffd23b"><b>The Year of Embers is complete.</b></span> ${SAGA_REST.rumor}`,"sys"); toast("YEAR OF EMBERS — COMPLETE"); updateSeasonHUD(); }
+  if(gameMonth<EVENT_CALENDAR.length){
+    const nextYear=sagaYear(currentCalEvent());
+    if(nextYear!==prevYear){   // a year turned — mark the milestone
+      log(`<span style="color:#ffd23b"><b>The ${SAGA_YEAR_NAMES[prevYear]} is complete.</b></span> The saga turns to the <b>${SAGA_YEAR_NAMES[nextYear]}</b>.`,"sys");
+      toast((SAGA_YEAR_NAMES[prevYear]||"YEAR").toUpperCase()+" — COMPLETE"); }
+    advanceMonth();
+  }
+  else { log(`<span style="color:#ffd23b"><b>The ${SAGA_YEAR_NAMES[prevYear]} is complete.</b></span> ${SAGA_REST.rumor}`,"sys"); toast((SAGA_YEAR_NAMES[prevYear]||"YEAR").toUpperCase()+" — COMPLETE"); updateSeasonHUD(); }
 }
-// the Reign of Embers world boss — a half-woken echo of the Hopeslayer, burning over the Direlands
-function spawnEmberEcho(){
-  if(inDungeon||inNetwork){ setTimeout(spawnEmberEcho,8000); return; }
-  const ang=rnd(0,6.28),r=rnd(300,900),x=Math.cos(ang)*r,z=Math.sin(ang)*r;
-  const mesh=buildCreature("shadow");mesh.scale.setScalar(3.2);mesh.position.set(x,0,z);scene.add(mesh);
-  mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(0x5a1010); });   // ember-lit
-  const lbl=labelSprite("Echo of Bael'Zharon","monsters");lbl.scale.set(12,2.8,1);lbl.position.y=mesh.userData.headY+2;mesh.add(lbl);
-  const hp=Math.round(4200*settings.diff);
-  const m={kind:"shadow",x,z,r:BESTIARY.shadow.size*0.8*3.2,hp,mhp:hp,ang:0,state:"wander",t:0,atkCd:0,
-    wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*3.2,isBoss:true,sagaEcho:true,
-    name:"Echo of Bael'Zharon",dmg:Math.round(55*settings.diff),xp:18000,goldRange:[500,900],
-    goldMul:1,baseScale:3.2,burnT:0,burnDps:0,burnAcc:0};
+// ── generalized saga world-boss: a one-time apparition for a story climax. `bossId` keys SAGA_BOSSES;
+//    the boss carries m.sagaBoss=bossId so killMonster reports it and it never respawns. ──
+const SAGA_BOSSES={
+  ember:  {name:"Echo of Bael'Zharon", kind:"shadow", scale:3.2, tint:0x5a1010, hp:4200, dmg:55, xp:18000, near:false,
+           rise:"The crystal ember blazes — an <b>Echo of Bael'Zharon</b> takes shape over the Direlands. Cast it down before it wakes!", toast:"THE ECHO RISES"},
+  drudge: {name:"Aerbax's Prodigal Drudge", kind:"drudge", scale:2.6, tint:0xe8e8f0, hp:3400, dmg:48, xp:13000, near:true,
+           rise:"A cold-eyed drudge that <b>speaks</b> — <b>Aerbax's Prodigal Drudge</b> — marshals the Nest to war. End it.", toast:"THE PRODIGAL DRUDGE"},
+  monarch:{name:"The Prodigal Monarch", kind:"virindi", scale:2.4, tint:0xf0f0ff, hp:5200, dmg:60, xp:22000, near:false, crowned:true,
+           rise:"On a false throne sits a second Kilmer wearing the Monarch's own smile — <b>The Prodigal Monarch</b>. Destroy the puppet.", toast:"THE PRODIGAL MONARCH"},
+  empress:{name:"Empress Gnawvil-Rax", kind:"olthoi", scale:3.4, tint:0x2a5a14, hp:5400, dmg:64, xp:24000, near:false,
+           rise:"Below the northern spire she waits — <b>EMPRESS GNAWVIL-RAX</b>, last clutch of the Ancient Queen, grown vast in a generation of dark. Descend and end her.", toast:"THE BROOD-EMPRESS"},
+};
+function spawnSagaBoss(bossId){
+  if(inDungeon||inNetwork){ setTimeout(()=>spawnSagaBoss(bossId),8000); return; }
+  const d=SAGA_BOSSES[bossId]||SAGA_BOSSES.ember;
+  const ang=rnd(0,6.28), r=d.near?rnd(90,240):rnd(300,900);
+  const x=(d.near?player.x:0)+Math.cos(ang)*r, z=(d.near?player.z:0)+Math.sin(ang)*r;
+  const mesh=buildCreature(d.kind);mesh.scale.setScalar(d.scale);mesh.position.set(x,0,z);scene.add(mesh);
+  mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(d.tint); });
+  if(d.crowned){ const crown=new THREE.Mesh(new THREE.TorusGeometry(0.24,0.05,6,12),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3,emissive:0x5a4410}));
+    crown.rotation.x=Math.PI/2; crown.position.y=(mesh.userData.headY||1.6)+0.1; mesh.add(crown); }
+  const lbl=labelSprite(d.name,"monsters");lbl.scale.set(12,2.8,1);lbl.position.y=mesh.userData.headY+2;mesh.add(lbl);
+  const hp=Math.round(d.hp*settings.diff);
+  const m={kind:d.kind,x,z,r:BESTIARY[d.kind].size*0.8*d.scale,hp,mhp:hp,ang:0,state:"wander",t:0,atkCd:0,
+    wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*d.scale,isBoss:true,sagaBoss:bossId,
+    st:hp,mst:hp,mn:Math.round(hp*0.4),mmn:Math.round(hp*0.4),
+    name:d.name,dmg:Math.round(d.dmg*settings.diff),xp:d.xp,goldRange:[500,1000],
+    goldMul:1,baseScale:d.scale,burnT:0,burnDps:0,burnAcc:0};
   monsters.push(m);
-  log("The crystal ember blazes — an <b>Echo of Bael'Zharon</b> takes shape over the Direlands. Cast it down before it wakes!","warn");
-  toast("THE ECHO RISES"); if(SFX.growl)SFX.growl();
+  log(d.rise,"warn"); toast(d.toast); if(SFX.growl)SFX.growl();
 }
-// visit-goal destinations, resolved at runtime against the built world
-function sagaGoalPoint(g){
-  if(g.v==="valstead") return {x:KC.x,z:KC.z+138,r:70,name:"Valstead"};
-  if(g.v==="glenden"){ const c=CITIES.find(c=>c.name==="Glenden Wood"); return c?{x:c.x,z:c.z,r:44,name:c.name}:null; }
-  if(g.v==="holtburg"){ const c=CITIES.find(c=>c.name==="Holtburg"); return c?{x:c.x,z:c.z,r:34,name:c.name}:null; }
-  if(g.v==="capital"){ let best=null,bd=1e9; for(const c of CAPITALS){ const d=Math.hypot(c.x-player.x,c.z-player.z); if(d<bd){bd=d;best=c;} } return best?{x:best.x,z:best.z,r:34,name:best.name}:null; }
+function spawnEmberEcho(){ spawnSagaBoss("ember"); }   // back-compat for Year 1's g.echo chapter
+// resolve a named saga place → a world point. "capital"/"3 nearest towns" resolve relative to the player.
+function sagaPlace(name){
+  if(name==="valstead") return {x:KC.x,z:KC.z+138,r:70,name:"Valstead"};
+  if(name==="capital"){ let best=null,bd=1e9; for(const c of CAPITALS){ const d=Math.hypot(c.x-player.x,c.z-player.z); if(d<bd){bd=d;best=c;} } return best?{x:best.x,z:best.z,r:34,name:best.name}:null; }
+  const NAMED={holtburg:"Holtburg",glenden:"Glenden Wood",arwic:"Arwic",zaikhal:"Zaikhal",
+    neydisa:"Neydisa Castle",eastham:"Eastham",rithwic:"Rithwic",yaraq:"Yaraq",shoushi:"Shoushi",
+    cragstone:"Cragstone",drudgenest:"Holtburg",sanamar:"Sanamar",timaru:"Timaru"};   // drudge nest ≈ near Holtburg on our map
+  const cn=NAMED[name]; if(cn){ const c=CITIES.find(c=>c.name===cn); if(c) return {x:c.x,z:c.z,r:cn==="Glenden Wood"?44:34,name:c.name}; }
   return null;
+}
+// visit-goal destination (single). Multi-stop visits:N resolve their own points in updateCalendar.
+function sagaGoalPoint(g){ return g.v?sagaPlace(g.v):null; }
+// the N stops of a visits:N chapter — the nearest N towns, or an explicit g.pts list of place keys
+function sagaVisitStops(ce){
+  const g=ce.goal;
+  if(g.pts) return g.pts.map(p=>sagaPlace(p)).filter(Boolean);
+  const n=g.visits||3;
+  return CITIES.slice().sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z))
+    .slice(0,n).map(c=>({x:c.x,z:c.z,r:34,name:c.name}));
 }
 // the live saga journal: where the Tenfold Crown currently stands
 function storyView(){
   const n=EVENT_CALENDAR.length, done=gameMonth>=n, ce=currentCalEvent();
-  log(`<b>The Kilmer Saga — “The Tenfold Crown” · Year 1: Year of Embers</b> · ${done?"<b>complete</b>":`chapter <b>${gameMonth+1}/${n}</b>`} · ${currentSeason().name}`,"sys");
+  const yr=sagaYear(ce);
+  log(`<b>The Kilmer Saga — “The Tenfold Crown” · Year ${yr}: ${SAGA_YEAR_NAMES[yr]}</b> · ${done?"<b>complete</b>":`chapter <b>${gameMonth+1}/${n}</b>`} · ${currentSeason().name}`,"sys");
   log(`<b>${ce.mon} — ${ce.name}</b> — <i>${ce.rumor}</i>`,"sys");
   if(!done&&ce.obj){ const g=ce.goal,p=sagaProg[ce.id]||0,tgt=g&&(g.kills||g.repel);
     log(`<b>Objective:</b> ${ce.obj}${tgt?` (${p}/${tgt})`:""}`,"warn"); }
   if(isOnline) log(`<span style="color:var(--dim)">The saga unfolds in the solo world — log off to continue it.</span>`,"sys");
-  EVENT_CALENDAR.forEach((c,i)=>{ const mark=calendarDone[c.id]?"✓":i===gameMonth?"➤":"·";
+  // list only the CURRENT year's chapters (the full ten years would flood the log)
+  EVENT_CALENDAR.forEach((c,i)=>{ if(sagaYear(c)!==yr) return; const mark=calendarDone[c.id]?"✓":i===gameMonth?"➤":"·";
     log(`${mark} <b>${c.mon}</b> — ${c.name}${c.title?` <span style="color:#ffd23b">— ${c.title}${calendarDone[c.id]?" ✓":""}</span>`:""}`, i===gameMonth&&!done?"warn":"sys"); });
 }
 let _sagaTick=0;
@@ -6926,17 +7111,26 @@ function updateCalendar(dt){
   if(!sagaProg._intro){ sagaProg._intro=1; advanceMonth(); }   // herald the live chapter once per world (new game or migrated save)
   const ce=currentCalEvent(), g=ce.goal;
   if(!g||calendarDone[ce.id]) return;
-  if(g.echo){ if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaEcho)) spawnEmberEcho(); return; }   // covers load mid-chapter
+  if(g.echo||g.boss){ const bid=g.boss||"ember";
+    if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaBoss===bid)) spawnSagaBoss(bid); return; }   // covers load mid-chapter
   if(g.clear){ const d=DUNGEONS.find(d=>d.name===g.clear);
-    if(d&&player.clearedDungeons.indexOf(d.id)>=0) sagaNotify("clear"); return; }   // cleared (now or ever) → the ember is glimpsed
+    if(d&&player.clearedDungeons.indexOf(d.id)>=0) sagaNotify("clear"); return; }   // cleared (now or ever) → the objective is met
   if(inDungeon||inNetwork) return;
-  if(g.agitator){   // plant the cultist when the player reaches a capital fair
-    const near=CAPITALS.find(c=>Math.hypot(c.x-player.x,c.z-player.z)<38);
-    if(near&&!sagaProg[ce.id+"_up"]&&!monsters.some(m=>m.sagaTag==="agitator")){
+  if(g.agitator){   // plant the named agitator(s) when the player reaches the fair (a specific town, or the nearest capital)
+    const spot=g.at?sagaPlace(g.at):(()=>{const c=CAPITALS.find(c=>Math.hypot(c.x-player.x,c.z-player.z)<38);return c?{x:c.x,z:c.z,name:c.name}:null;})();
+    if(spot&&Math.hypot(spot.x-player.x,spot.z-player.z)<38&&!sagaProg[ce.id+"_up"]&&!monsters.some(m=>m.sagaTag==="agitator")){
       sagaProg[ce.id+"_up"]=1;
-      const a=rnd(0,6.28),ax=near.x+Math.cos(a)*14,az=near.z+Math.sin(a)*14;
-      const m=spawnMonster("shadow",ax,az,false); m.sagaTag="agitator"; m.name="Crimson Star Agitator";
-      log(`A <b>Crimson Star agitator</b> bolts from the festival crowd at <b>${near.name}</b> — cut him down!`,"warn"); toast("THE AGITATOR"); if(SFX.growl)SFX.growl(); }
+      const a=rnd(0,6.28),ax=spot.x+Math.cos(a)*14,az=spot.z+Math.sin(a)*14;
+      const m=spawnMonster(g.avt||"shadow",ax,az,false); m.sagaTag="agitator"; m.sagaCe=ce.id; m.name=g.aname||"Crimson Star Agitator";
+      log(`A <b>${m.name}</b> breaks from the crowd at <b>${spot.name}</b> — cut it down!`,"warn"); toast("THE AGITATOR"); if(SFX.growl)SFX.growl(); }
+    return; }
+  if(g.visits){   // multi-stop: approach each of the N stops in turn (fixed list per world, so order is stable)
+    const key=ce.id+"_stops";
+    if(!sagaProg[key]){ sagaProg[key]=sagaVisitStops(ce).map(p=>({x:p.x,z:p.z,r:p.r,name:p.name,done:false})); }
+    const stops=sagaProg[key]; let left=0;
+    for(const s of stops){ if(!s.done){ if(Math.hypot(s.x-player.x,s.z-player.z)<s.r){ s.done=true;
+        log(`<b>${ce.name}:</b> ${s.name} — ${stops.filter(x=>x.done).length}/${stops.length}.`,"sys"); } if(!s.done)left++; } }
+    if(!stops.some(s=>!s.done)) sagaNotify("visits");
     return; }
   if(g.v){ const pt=sagaGoalPoint(g);
     if(pt&&Math.hypot(pt.x-player.x,pt.z-player.z)<pt.r) sagaNotify("visit"); }
@@ -18550,7 +18744,7 @@ window.addEventListener('resize',()=>{
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
 // (the retail-vendor data rides the same gate so towns build with their true merchants)
-Promise.all([ACMAP.load(),ACV.load(),ACW.load()]).then(()=>{
+Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
   initThree();
   applySettings();
   initMinimap();

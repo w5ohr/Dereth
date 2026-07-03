@@ -1,217 +1,126 @@
 #!/usr/bin/env python3
-"""Retail loot-table extraction -> assets/acloot.json
+"""Extract retail loot tiers from the ACE-World database -> assets/acloot.json
 
-Streams the 155MB ACE-World SQL dump (same regex/streaming parser as
-tools/ace_world_more.py) and reconstructs the retail death-loot system:
-
-  treasure_death   : per (treasure_Type) loot profile -> tier + item/magic/mundane
-                     drop counts & chances.
-  weenie DID 35    : DeathTreasureType. Empirically this DID property (NOT int 105, which
-                     originally was assumed) is the creature->treasure_death link: 96% of
-                     its distinct values are treasure_death.treasure_Type ids, carried by
-                     3693 weenies.  It links a creature -> its treasure_death profile -> tier.
-  treasure_wielded : per (treasure_Type) list of wielded item wcids + probability.
-  weenie DID 32    : WieldedTreasureType (98% of its values are treasure_wielded types) ->
-                     the wielded-drop pool for a creature.
-  create_list d=2  : Wield destination -> named items a creature actually wields/drops.
-                     (DestinationType.Wield is 2 here; value 3 is Shop.)
-
-Output:
-  { tiers: { "1": {itemChance,itemMin,itemMax,magicChance,magicMin,magicMax,
-                    mundaneChance,mundaneMin,mundaneMax,lootQualityMod,profiles,pool:[names]}, .. },
-    creatureTier: { "<bestiary kind>": tier, .. } }
+Retail loot is a TIERED GENERATOR, not fixed drop lists:
+  creature.DeathTreasureType (PropertyDataId 35) -> treasure_death row -> tier(1-8) + item/magic counts.
+We pull, per game bestiary kind, its authentic loot tier and the tier's drop parameters, so kills
+drop the real NUMBER of items at the real tier with the real magic-vs-mundane split. Also the
+tier -> value/workmanship envelope so item worth tracks retail.
 """
-import re, os, json
-from collections import defaultdict, Counter
+import re, os, json, statistics
+from collections import defaultdict
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SQL = next(os.path.join(ROOT, "acdata", f) for f in os.listdir(os.path.join(ROOT, "acdata")) if f.endswith(".sql"))
+ACD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "acdata")
+SQL = next(os.path.join(ACD, f) for f in os.listdir(ACD) if f.endswith(".sql"))
 data = open(SQL, encoding="utf-8", errors="replace").read()
-print(f"sql {len(data)/1e6:.0f} MB")
+print("sql %d MB" % (len(data) // 1_000_000))
 
-def stmts(table):
-    for m in re.finditer(r"INSERT INTO `%s`(?: \([^)]*\))? VALUES (.*?);\n" % table, data, re.S):
+def stmts(t):
+    for m in re.finditer(r"INSERT INTO `%s`(?: \([^)]*\))? VALUES (.*?);\n" % t, data, re.S):
         yield m.group(1)
 
-def rows(body):
+def rows(b):
     out, depth, cur, q = [], 0, [], False
-    i, n = 0, len(body)
+    i, n = 0, len(b)
     while i < n:
-        ch = body[i]
+        c = b[i]
         if q:
-            if ch == "\\": i += 2; continue
-            if ch == "'": q = False
+            if c == chr(92):   # backslash escape
+                i += 2; continue
+            if c == "'": q = False
         else:
-            if ch == "'": q = True
-            elif ch == "(":
+            if c == "'": q = True
+            elif c == "(":
                 depth += 1
                 if depth == 1: cur = []; i += 1; continue
-            elif ch == ")":
+            elif c == ")":
                 depth -= 1
                 if depth == 0: out.append("".join(cur))
-        if depth >= 1: cur.append(ch)
+        if depth >= 1: cur.append(c)
         i += 1
     return out
 
-def fields(row):
+def fld(r):
     out, cur, q = [], [], False
-    for ch in row:
+    for c in r:
         if q:
-            if ch == "'": q = False
-            else: cur.append(ch)
+            if c == "'": q = False
+            else: cur.append(c)
         else:
-            if ch == "'": q = True
-            elif ch == ",": out.append("".join(cur)); cur = []
-            else: cur.append(ch)
+            if c == "'": q = True
+            elif c == ",": out.append("".join(cur)); cur = []
+            else: cur.append(c)
     out.append("".join(cur))
     return out
 
-# ---- names (weenie_properties_string type 1) ----
-names = {}
-for b in stmts("weenie_properties_string"):
-    for r in rows(b):
-        f = fields(r)
-        if int(f[2]) == 1:
-            names[int(f[1])] = f[3]
-print(f"names {len(names):,}")
-
-# ---- treasure_death: treasure_Type -> profile ; also aggregate per tier ----
-# cols: 0 id,1 treasure_Type,2 tier,3 loot_Quality_Mod,4 unknown_Chances,
-#       5 item_Chance,6 item_Min,7 item_Max,8 item_TTSC,
-#       9 magic_Chance,10 magic_Min,11 magic_Max,12 magic_TTSC,
-#       13 mundane_Chance,14 mundane_Min,15 mundane_Max,16 mundane_TTSC
-death_tier = {}                       # treasure_Type -> tier
-tier_rows = defaultdict(list)         # tier -> list of profile dicts
+# treasure_death: treasure_Type -> tier + counts
+tprofile = {}
 for b in stmts("treasure_death"):
     for r in rows(b):
-        f = fields(r)
-        tt = int(f[1]); tier = int(f[2])
-        death_tier[tt] = tier
-        tier_rows[tier].append(dict(
-            lqm=float(f[3]),
-            iC=int(f[5]), iMin=int(f[6]), iMax=int(f[7]),
-            mC=int(f[9]), mMin=int(f[10]), mMax=int(f[11]),
-            uC=int(f[13]), uMin=int(f[14]), uMax=int(f[15]),
-        ))
-print(f"treasure_death profiles {len(death_tier):,} · tiers {sorted(tier_rows)}")
+        f = fld(r)
+        tprofile[int(f[1])] = {"tier": int(f[2]), "imin": int(f[6]), "imax": int(f[7]),
+                               "mmin": int(f[10]), "mmax": int(f[11]), "mchance": int(f[9])}
+print("treasure_death profiles:", len(tprofile))
 
-# ---- treasure_wielded: treasure_Type -> [(item_wcid, prob)] ----
-# cols: 0 id,1 treasure_Type,2 weenie_Class_Id,...,8 probability
-wielded = defaultdict(list)
-for b in stmts("treasure_wielded"):
+weenie, names = {}, {}
+for b in stmts("weenie"):
     for r in rows(b):
-        f = fields(r)
-        wielded[int(f[1])].append((int(f[2]), float(f[8])))
-print(f"treasure_wielded types {len(wielded):,}")
-
-# ---- weenie DID properties: 35 = DeathTreasureType, 32 = WieldedTreasureType ----
-# (resolved by fraction-of-values-in-treasure-type-set; see module docstring.)
-DEATH_DID, WIELD_DID = 35, 32
-did = defaultdict(dict)   # object_Id -> {type: value}
+        f = fld(r); weenie[int(f[0])] = int(f[2])
+for b in stmts("weenie_properties_string"):
+    for r in rows(b):
+        f = fld(r)
+        if int(f[2]) == 1: names[int(f[1])] = f[3]
+dtt = {}
 for b in stmts("weenie_properties_d_i_d"):
     for r in rows(b):
-        f = fields(r)
-        t = int(f[2])
-        if t in (DEATH_DID, WIELD_DID):
-            did[int(f[1])][t] = int(f[3])
+        f = fld(r)
+        if int(f[2]) == 35: dtt[int(f[1])] = int(f[3])
+print("creatures with DeathTreasureType:", len(dtt))
 
-# ---- create_list destination 2 (Wield) : creature -> [item_wcid] ----
-create_wield = defaultdict(list)
-for b in stmts("weenie_properties_create_list"):
-    for r in rows(b):
-        f = fields(r)
-        if int(f[2]) == 2:
-            create_wield[int(f[1])].append(int(f[3]))
-print(f"create_list Wield entries on {len(create_wield):,} weenies")
-
-# ---- BESTIARY kind matcher (mirrors ace_world_more.py keyword table) ----
-KIND_PAT = [
-    ("olthoisoldier", r"olthoi soldier"), ("olthoiworker", r"olthoi worker"),
-    ("olthoi", r"olthoi"), ("phyntoswasp", r"phyntos"), ("armoredillo", r"armoredillo"),
-    ("banderling", r"banderling"), ("drudge", r"drudge"), ("mosswart", r"mosswart"),
-    ("reedshark", r"reed ?shark"), ("tusker", r"tusker"), ("auroch", r"auroch"),
-    ("shadow", r"shadow|umbris|panumbris"), ("gromnie", r"gromnie"), ("lugian", r"lugian"),
-    ("tumerok", r"tumerok"), ("mattekar", r"mattekar"), ("skeleton", r"skeleton"),
-    ("virindi", r"virindi"), ("rat", r"\brat\b"), ("shreth", r"shreth"), ("mite", r"mite"),
-    ("sclavus", r"sclavus"), ("zefir", r"zefir"), ("monouga", r"monouga"), ("ursuin", r"ursuin"),
-    ("moarsman", r"moarsman"), ("wisp", r"wisp"), ("golem", r"golem"), ("zombie", r"zombie"),
-    ("mummy", r"mumiyah|mummy"), ("grievver", r"grievver"), ("rabbit", r"rabbit"),
-    ("cow", r"\bcow\b"), ("carenzi", r"carenzi"), ("niffis", r"niffis"),
-    ("remoran", r"remoran"), ("burun", r"burun"), ("mukkir", r"mukkir"),
-]
-KIND_RE = [(k, re.compile(p)) for k, p in KIND_PAT]
-def kind_of(nm):
-    n = (nm or "").lower()
-    for k, rx in KIND_RE:
+KIND = [("olthoisoldier", r"olthoi soldier"), ("olthoiworker", r"olthoi worker"), ("olthoi", r"olthoi"),
+        ("phyntoswasp", r"phyntos"), ("armoredillo", r"armoredillo"), ("banderling", r"banderling"),
+        ("drudge", r"drudge"), ("mosswart", r"mosswart"), ("reedshark", r"reed ?shark"),
+        ("tusker", r"tusker"), ("auroch", r"auroch"), ("shadow", r"shadow|umbris"), ("gromnie", r"gromnie"),
+        ("lugian", r"lugian"), ("tumerok", r"tumerok"), ("mattekar", r"mattekar"), ("skeleton", r"skeleton"),
+        ("virindi", r"virindi"), ("rat", r"\brat\b"), ("shreth", r"shreth"), ("mite", r"mite"),
+        ("sclavus", r"sclavus"), ("zefir", r"zefir"), ("monouga", r"monouga"), ("ursuin", r"ursuin"),
+        ("moarsman", r"moarsman"), ("wisp", r"wisp"), ("golem", r"golem"), ("zombie", r"zombie"),
+        ("mummy", r"mumiyah|mummy"), ("grievver", r"grievver"), ("carenzi", r"carenzi"),
+        ("niffis", r"niffis"), ("remoran", r"remoran"), ("burun", r"burun"), ("mukkir", r"mukkir")]
+KR = [(k, re.compile(p)) for k, p in KIND]
+def kof(nm):
+    n = nm.lower()
+    for k, rx in KR:
         if rx.search(n): return k
     return None
 
-# ---- assemble per-tier item pools + creature->tier ----
-def item_name(wcid):
-    nm = names.get(wcid)
-    return nm if nm else None
+perkind = defaultdict(list)
+for wid, tt in dtt.items():
+    if weenie.get(wid) != 10: continue
+    k = kof(names.get(wid, ""))
+    if k and tt in tprofile: perkind[k].append(tprofile[tt]["tier"])
 
-# skip obviously-non-item names (creatures, generators)
-SKIP = re.compile(r"generator|template|\btest\b|\(|admin|\bpvp\b", re.I)
+kinds = {}
+print("\nkind -> retail loot tier (median):")
+for k in sorted(perkind):
+    tiers = perkind[k]; med = int(statistics.median(tiers))
+    kinds[k] = {"tier": med, "n": len(tiers)}
+    print(f"  {k:15s} tier {med}  (n={len(tiers)}, {min(tiers)}-{max(tiers)})")
 
-tier_pool = defaultdict(Counter)         # tier -> Counter(name)
-kind_tiers = defaultdict(Counter)        # bestiary kind -> Counter(tier)
-creatures_seen = 0
-for obj, m in did.items():
-    tt = m.get(DEATH_DID)                 # DeathTreasureType
-    if tt is None or tt not in death_tier:
-        continue
-    tier = death_tier[tt]
-    creatures_seen += 1
-    cname = names.get(obj, "")
-    k = kind_of(cname)
-    if k:
-        kind_tiers[k][tier] += 1
-    # named wielded items this creature carries -> that tier's pool
-    for iw in create_wield.get(obj, []):
-        nm = item_name(iw)
-        if nm and not SKIP.search(nm):
-            tier_pool[tier][nm] += 1
-    wt = m.get(WIELD_DID) if WIELD_DID else None
-    if wt and wt in wielded:
-        for iw, prob in wielded[wt]:
-            nm = item_name(iw)
-            if nm and not SKIP.search(nm) and prob > 0:
-                tier_pool[tier][nm] += 1
-print(f"creatures with death-treasure {creatures_seen:,}")
-
-# also fold treasure_wielded item names straight into the tier a creature that references
-# them sits at (handled above); additionally seed pools from any leftover wielded items
-def med(xs):
-    xs = sorted(xs); return xs[len(xs)//2]
-
+# tier params: aggregate ALL profiles of each tier (ignore wielded-only 0-0 rows), take the
+# typical max item + magic counts so drop generosity tracks retail.
+agg = defaultdict(lambda: {"items": [], "magic": []})
+for p in tprofile.values():
+    if p["imax"] > 0: agg[p["tier"]]["items"].append(p["imax"])
+    if p["mmax"] > 0: agg[p["tier"]]["magic"].append(p["mmax"])
 tiers = {}
-for tier in range(1, 9):
-    profs = tier_rows.get(tier, [])
-    if not profs:
-        continue
-    def avg(key): return round(sum(p[key] for p in profs)/len(profs))
-    pool = [nm for nm, _ in tier_pool[tier].most_common(40)]
-    tiers[str(tier)] = dict(
-        itemChance=avg("iC"), itemMin=min(p["iMin"] for p in profs), itemMax=max(p["iMax"] for p in profs),
-        magicChance=avg("mC"), magicMin=min(p["mMin"] for p in profs), magicMax=max(p["mMax"] for p in profs),
-        mundaneChance=avg("uC"), mundaneMin=min(p["uMin"] for p in profs), mundaneMax=max(p["uMax"] for p in profs),
-        lootQualityMod=round(max(p["lqm"] for p in profs), 2),
-        profiles=len(profs),
-        pool=pool,
-    )
+print("\ntier params (median max item / median max magic across all profiles):")
+for t in sorted(agg):
+    it = agg[t]["items"] or [1]; mg = agg[t]["magic"] or [1]
+    tiers[str(t)] = {"items": int(statistics.median(it)), "magic": int(statistics.median(mg))}
+    print(f"  tier {t}: up to {tiers[str(t)]['items']} items + {tiers[str(t)]['magic']} magic")
 
-creatureTier = {k: c.most_common(1)[0][0] for k, c in kind_tiers.items()}
-
-out = {"tiers": tiers, "creatureTier": creatureTier}
-path = os.path.join(ROOT, "assets", "acloot.json")
+out = {"kinds": kinds, "tiers": tiers}
+path = os.path.join(os.path.dirname(ACD), "assets", "acloot.json")
 json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False)
-sz = os.path.getsize(path)
-print(f"wrote {path} ({sz//1024} KB)")
-for t in ["1", "4", "8"]:
-    d = tiers.get(t, {})
-    print(f"  tier {t}: item {d.get('itemChance')}%/{d.get('itemMin')}-{d.get('itemMax')} "
-          f"magic {d.get('magicChance')}% mundane {d.get('mundaneChance')}% "
-          f"profiles={d.get('profiles')} poolN={len(d.get('pool',[]))}")
-    print("    pool sample:", d.get("pool", [])[:8])
-print("  creatureTier:", dict(sorted(creatureTier.items(), key=lambda x: x[1])))
+print(f"\nwrote {path} ({os.path.getsize(path)} bytes)")
