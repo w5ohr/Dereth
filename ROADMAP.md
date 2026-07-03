@@ -201,6 +201,15 @@ gitignored in acdata/, only the derived data texture ships).
   wayside lifestones to 189 total, both spaced against clutter at ⅓ world scale. **Creature reality**:
   per-kind retail level/health/XP bands (10th–90th percentile across 7k creatures) shown in the
   appraisal panel ("Retail kin ranged level 5–160").
+- ✅ **R5. Retail loot tiers** (`tools/ace_loot_export.py` → `assets/acloot.json`; un-gates the old
+  "research-gated" E2 loot ladder). Retail loot is a tiered *generator*: each creature's
+  `DeathTreasureType` → a `treasure_death` profile → tier 1–8 + drop counts. Extracted per bestiary
+  kind (median across 3,693 creatures) → its authentic loot tier, mapped onto the game's 1–5 scale, so
+  a mite/rat drops tier-1/2 trinkets and a sclavus/remoran drops tier-5 gear (`acLootTier`); rich
+  (elite/dungeon) kills drop the tier's retail item-count (`acLootCount`). `killMonster` now anchors
+  every drop to the creature's true tier instead of a flat elite/overworld guess; dungeon depth still
+  overrides. Verified: normal-kill tiers mite 1 · rat/drudge 2 · olthoi 4 · sclavus 5; elite +2 bump
+  intact. 0 console errors.
 
 ## MILESTONE D — Third-person polish  ◇
 - ✅ **D1.** Over-the-shoulder camera offset — pivot shifted along camera-right (`SHOULDER=0.7`) so the
@@ -240,7 +249,7 @@ gitignored in acdata/, only the derived data texture ships).
   `weaponTink`/`armorTink`), with a success chance (our own formula — real one gated) that rises in
   difficulty as bonuses stack; failure costs the salvage (gear spared — player-friendly deviation from
   AC's destroy-both). New Tinker-panel "Salvaged Materials" section; satchel shows workmanship; saved/
-  loaded. ◑ *Remaining for full E2:* loot-tier ladder, imbue/rare item classes — still partly gated.
+  loaded. ✅ *E2 loot-tier ladder — un-gated & shipped from the ACE data* (see R5).
 - ✅ **E2b. Distinct weapon types** (jsc + preview verified, 0 console errors). `WEAPON_TYPES` (dagger/
   sword/spear/axe/mace = melee; bow/crossbow = missile), each with a speed (cd mult) / reach / damage /
   stamina profile so the equipped weapon's TYPE drives a real DPS-vs-burst-vs-reach tradeoff (dagger
