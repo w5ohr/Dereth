@@ -65,24 +65,37 @@ def rdid(r, known):              # ReadAsDataIDOfKnownType
 def smart_count(r): return r.cuint()
 
 def objdesc(r):
+    """ObjDesc: base palette (opt) + SubPalette ranges + TextureMapChange (old->new
+    SurfaceTexture) + AnimationPartChange (part -> GfxObj). Returns the full payload so
+    heads can be rebuilt exactly as the client did."""
     align4(r)
     r.u8()                                   # discarded (0x11)
     npal, ntex, nanim = r.u8(), r.u8(), r.u8()
     pal = rdid(r, 0x04000000) if npal > 0 else 0
-    for _ in range(npal): rdid(r, 0x04000000); r.u8(); r.u8()       # SubPalette
-    for _ in range(ntex): r.u8(); rdid(r, 0x05000000); rdid(r, 0x05000000)  # TextureMapChange
-    for _ in range(nanim): r.u8(); rdid(r, 0x01000000)             # AnimationPartChange
+    subs = []
+    for _ in range(npal):                                          # SubPalette
+        sp = rdid(r, 0x04000000); off = r.u8(); ln = r.u8(); subs.append(dict(pal="%08X" % sp, off=off, len=ln))
+    texs = []
+    for _ in range(ntex):                                          # TextureMapChange
+        part = r.u8(); old = rdid(r, 0x05000000); new = rdid(r, 0x05000000)
+        texs.append(dict(part=part, old="%08X" % old, new="%08X" % new))
+    anims = []
+    for _ in range(nanim):                                         # AnimationPartChange
+        part = r.u8(); gfx = rdid(r, 0x01000000); anims.append(dict(part=part, gfx="%08X" % gfx))
     align4(r)
-    return pal
+    return dict(pal="%08X" % pal, subs=subs, tex=texs, anim=anims)
 
 def hairstyle(r):
-    r.u32(); r.u8(); r.u32(); objdesc(r)          # IconImage, Bald(byte), AlternateSetup, ObjDesc
+    icon = r.u32(); bald = r.u8(); alt = r.u32(); od = objdesc(r)  # IconImage, Bald(byte), AlternateSetup, ObjDesc
+    return dict(bald=bald, alt="%08X" % alt, od=od)
 
 def eyestrip(r):
-    r.u32(); r.u32(); objdesc(r); objdesc(r)     # IconImage, IconImageBald, ObjDesc, ObjDescBald
+    r.u32(); r.u32(); od = objdesc(r); odb = objdesc(r)           # IconImage, IconImageBald, ObjDesc, ObjDescBald
+    return dict(od=od, odBald=odb)
 
 def facestrip(r):
-    r.u32(); objdesc(r)                          # IconImage, ObjDesc
+    r.u32(); od = objdesc(r)                                      # IconImage, ObjDesc
+    return dict(od=od)
 
 def gear(r):
     rstr(r); r.u32(); r.u32()                     # Name, ClothingTable, WeenieDefault
@@ -101,24 +114,28 @@ def sexcg(r):
     name = rstr(r)
     scale = r.u32(); setup = r.u32(); sound = r.u32(); icon = r.u32()
     base_pal = r.u32(); skin_pal_set = r.u32(); r.u32(); r.u32(); r.u32()  # phys,motion,combat
-    objdesc(r)                                             # BaseObjDesc
+    base_od = objdesc(r)                                   # BaseObjDesc (part 16 = head GfxObj)
     hair_colors = [r.u32() for _ in range(smart_count(r))]
     n_hair = smart_count(r)
-    for _ in range(n_hair): hairstyle(r)
+    hair_styles = [hairstyle(r) for _ in range(n_hair)]
     eye_colors = [r.u32() for _ in range(smart_count(r))]
-    for _ in range(smart_count(r)): eyestrip(r)            # EyeStripList
-    for _ in range(smart_count(r)): facestrip(r)           # NoseStripList
-    for _ in range(smart_count(r)): facestrip(r)           # MouthStripList
+    eyes = [eyestrip(r) for _ in range(smart_count(r))]    # EyeStripList
+    noses = [facestrip(r) for _ in range(smart_count(r))]  # NoseStripList
+    mouths = [facestrip(r) for _ in range(smart_count(r))]  # MouthStripList
     for _ in range(smart_count(r)): gear(r)                # HeadgearList
     for _ in range(smart_count(r)): gear(r)                # ShirtList
     for _ in range(smart_count(r)): gear(r)                # PantsList
     for _ in range(smart_count(r)): gear(r)                # FootwearList
     clothing_colors = [r.u32() for _ in range(smart_count(r))]
+    # the default head GfxObj is the base ObjDesc's AnimationPartChange for part 16
+    head_gfx = next((a["gfx"] for a in base_od["anim"] if a["part"] == 16), None)
     return dict(name=name, scale=scale, setupId="%08X" % setup,
-                skinPalSet="%08X" % skin_pal_set,
+                basePalette="%08X" % base_pal, skinPalSet="%08X" % skin_pal_set,
+                defaultHead=head_gfx, baseObjDesc=base_od,
                 hairColors=["%08X" % h for h in hair_colors],
                 eyeColors=["%08X" % e for e in eye_colors],
-                hairStyles=n_hair, clothingColors=len(clothing_colors))
+                hairStyles=hair_styles, eyes=eyes, noses=noses, mouths=mouths,
+                clothingColors=len(clothing_colors))
 
 def heritagecg(r):
     name = rstr(r)
@@ -183,8 +200,9 @@ def main():
               f"start={h['primaryStartAreas']} genders={[x['name'] for x in g]} "
               f"skills={len(h['skills'])} templates={len(h['templates'])}")
         for x in g:
-            print(f"       {x['name']:8s} skinPalSet={x['skinPalSet']} hairColors={len(x['hairColors'])} "
-                  f"eyeColors={len(x['eyeColors'])} hairStyles={x['hairStyles']}")
+            print(f"       {x['name']:8s} head={x['defaultHead']} skinPalSet={x['skinPalSet']} "
+                  f"hairColors={len(x['hairColors'])} eyeColors={len(x['eyeColors'])} "
+                  f"hairStyles={len(x['hairStyles'])} eyes={len(x['eyes'])} noses={len(x['noses'])} mouths={len(x['mouths'])}")
     print(f"wrote {OUT} ({os.path.getsize(OUT)//1024} KB)")
 
 if __name__ == "__main__":
