@@ -312,6 +312,11 @@
   <div id="tinkCraft" style="margin-bottom:12px"></div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Dyeing <span style="color:var(--dim);font-weight:normal;font-size:11px">— recolour your armour · 6 mat · needs Cooking (Alchemy improves the result)</span></div>
   <div id="tinkDye" style="margin-bottom:12px"></div>
+  <div id="tinkRecipeWrap" style="display:none;margin-bottom:12px">
+    <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Recipe Codex <span style="color:var(--dim);font-weight:normal;font-size:11px">— the authentic recipes of Dereth (reference)</span></div>
+    <input id="tinkRecipeSearch" placeholder="search recipes — e.g. arrow, oil, pie…" style="width:100%;box-sizing:border-box;background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px;margin-bottom:6px">
+    <div id="tinkRecipes" style="max-height:180px;overflow:auto;font-size:12px"></div>
+  </div>
   <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Satchel <span id="invCount" style="color:var(--dim);font-weight:normal"></span></div>
   <div id="invRows"></div>
   <button id="closeTink">Return to Dereth  (T)</button>
@@ -17761,6 +17766,18 @@ function buildTinker(){
       const lb=craftWrap.querySelector('[data-l8]'); if(lb) lb.onclick=()=>{ craftL8Scroll(); buildTinker(); updateHUD(); };
     }
     craftWrap.querySelectorAll('[data-craft]').forEach(btn=>btn.onclick=()=>{ craftRecipe(btn.dataset.craft); buildTinker(); updateHUD(); });
+  }
+  // authentic recipe codex (assets/acrecipes.json) — a searchable reference of the real recipes of Dereth
+  if(AC_RECIPES&&AC_RECIPES.recipes&&AC_RECIPES.recipes.length){
+    const wrap=document.getElementById('tinkRecipeWrap'), box=document.getElementById('tinkRecipes'), srch=document.getElementById('tinkRecipeSearch');
+    if(wrap&&box){ wrap.style.display="block";
+      const FAM={38:"Alchemy",39:"Cooking",37:"Fletching",18:"Tinkering",28:"Tinkering",29:"Tinkering",30:"Tinkering"};
+      const render=q=>{ q=(q||"").toLowerCase();
+        const rows=AC_RECIPES.recipes.filter(r=>!q||((r.tool||"")+ (r.target||"")+(r.result||"")).toLowerCase().includes(q)).slice(0,120);
+        box.innerHTML=rows.length?rows.map(r=>`<div class="row" style="padding:2px 0"><span class="desc"><span style="color:#cdb98a">${esc(r.tool||"?")}</span> + <span style="color:#cdb98a">${esc(r.target||"?")}</span> → <b style="color:#e8dcc0">${esc(r.result||"?")}</b>${r.difficulty?` <span style="color:#8a9a6a">· diff ${r.difficulty}</span>`:""}${FAM[r.skill]?` <span style="color:#7a8aa0">· ${FAM[r.skill]}</span>`:""}</span></div>`).join(""):`<div style="color:var(--dim)">No recipes match.</div>`;
+        if(!q) box.insertAdjacentHTML("afterbegin",`<div style="color:var(--dim);margin-bottom:3px">${AC_RECIPES.recipes.length} authentic recipes — type to search:</div>`); };
+      render(srch&&srch.value); if(srch&&!srch._wired){ srch._wired=1; srch.oninput=()=>render(srch.value); }
+    }
   }
   // dyeing: recolour the armour, gated by Cooking (Alchemy improves odds)
   const dyeWrap=document.getElementById('tinkDye');
