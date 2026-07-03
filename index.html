@@ -10826,6 +10826,7 @@ function applyItem(it){
     teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
+  else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
   else if(it.stat==="manastone"){   // H15: recharge the equipped focus's mana battery (or, with no focus, your own mana)
     const amt=it.charge||150, max=focusManaMax();
     if(max>0){ player.focusMana=Math.min(max,(player.focusMana||0)+amt);
@@ -15826,7 +15827,7 @@ function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
 function gearIco(it){
   if(it&&it.acicon) return `<img src="assets/acicons/${it.acicon}.png" style="width:1.25em;height:1.25em;vertical-align:-0.28em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('📦'))">`;   // the item's ORIGINAL inventory icon
-  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="atlanstone") return Math.max(30,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; if(it.stat==="furniture"||it.stat==="writ") return Math.max(10,it.v|0); return Math.max(5,Math.round(gearPrice(it)*0.4)); }
@@ -15869,6 +15870,44 @@ const TAPER_STOCK=[
   {name:"White Taper (×10)", field:"tapers",amt:10,cost:40, ico:"🕯️",desc:"spell component — empowers a cast (+10%)"},
   {name:"Prismatic Taper (×10)",field:"prismTapers",amt:10,cost:160,ico:"🌈",desc:"universal component — empowers a cast (+25%)"},
 ];
+// ── readable retail books (assets/acbooks.json · tools/ace_book_export.py): 898 Book weenies'
+//    true page text. Scriveners stock a rotating shelf; reading opens the parchment reader. ──
+let AC_BOOKS=null,_acBookKeys=null;
+fetch('assets/acbooks.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_BOOKS=j;
+  // the shelf only offers real lore: enough text to be worth the pyreals, no untranslated scraps
+  _acBookKeys=Object.keys(j).sort().filter(k=>!/untranslated|blank page|^page /.test(k)
+    && j[k].pages.join("").length>=250); } }).catch(()=>{});
+function bookStock(){   // four titles a day, rotating through the whole retail library
+  if(!_acBookKeys||!_acBookKeys.length) return [];
+  const day=Math.floor(Date.now()/86400000), stride=Math.max(1,Math.floor(_acBookKeys.length/4)), out=[];
+  for(let i=0;i<4;i++){ const b=AC_BOOKS[_acBookKeys[(day+i*stride)%_acBookKeys.length]];
+    out.push({name:b.n,cost:75,ico:"📖",desc:`a bound volume — ${b.pages.length} page${b.pages.length>1?"s":""} of Dereth's own lore (Use to read)`,
+      gear:{name:b.n,stat:"book",v:35}}); }
+  return out;
+}
+function openBookReader(it){
+  const b=AC_BOOKS&&AC_BOOKS[(it.name||"").toLowerCase()];
+  if(!b){ log(`You leaf through <b>${it.name}</b>, but its script defeats you.`,"sys"); return; }
+  const old=document.getElementById('bookReader'); if(old) old.remove();
+  paused=true; if(locked)document.exitPointerLock();
+  const ov=document.createElement('div'); ov.id='bookReader';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  let pg=0;
+  const render=()=>{ ov.innerHTML=`<div style="max-width:560px;width:92%;max-height:78vh;background:#efe4c8;color:#2a2114;border:1px solid #8a7a52;border-radius:6px;padding:26px 30px;box-shadow:0 10px 44px rgba(0,0,0,.65);font-family:Georgia,serif;display:flex;flex-direction:column">
+      <div style="font-size:17px;font-weight:bold;border-bottom:1px solid #b7a878;padding-bottom:8px">${esc(b.n)}</div>
+      <div style="flex:1;overflow:auto;white-space:pre-wrap;line-height:1.5;font-size:14px;margin:12px 0">${esc(b.pages[pg])}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #b7a878;padding-top:9px;font-size:13px">
+        <button id="bkPrev" ${pg<=0?"disabled":""} style="background:none;border:1px solid #8a7a52;border-radius:5px;padding:4px 12px;cursor:pointer;color:#2a2114">◀ prev</button>
+        <span>page ${pg+1} of ${b.pages.length}</span>
+        <button id="bkNext" ${pg>=b.pages.length-1?"disabled":""} style="background:none;border:1px solid #8a7a52;border-radius:5px;padding:4px 12px;cursor:pointer;color:#2a2114">next ▶</button>
+        <button id="bkClose" style="background:none;border:1px solid #8a7a52;border-radius:5px;padding:4px 12px;cursor:pointer;color:#2a2114">close</button>
+      </div></div>`;
+    ov.querySelector('#bkPrev').onclick=()=>{ if(pg>0){pg--;render();} };
+    ov.querySelector('#bkNext').onclick=()=>{ if(pg<b.pages.length-1){pg++;render();} };
+    ov.querySelector('#bkClose').onclick=()=>{ ov.remove(); paused=false; };
+  };
+  render(); document.body.appendChild(ov);
+}
 function scrollStock(){ return SCRIVENER_SCROLLS.filter(id=>SPELLBOOK[id]).map(id=>{ const sp=SPELLBOOK[id];
   return {name:"Scroll: "+sp.name, scroll:true, spellId:id, cost:scrollPrice(id), ico:"📜",
     desc:`learn ${(SCHOOLS[sp.school]||"Magic").split(" · ")[0]} L${sp.lvl} (T to scribe)`}; }); }
@@ -15910,7 +15949,7 @@ const VENDOR_TYPES={
     {name:"Kite Shield",cost:160,desc:"Balanced off-hand shield.",ico:"🛡",gear:{name:"Kite Shield",stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:18}},
     {name:"Tower Shield",cost:260,desc:"Heavy off-hand shield — great guard, slows you.",ico:"🛡",gear:{name:"Tower Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"tower",v:30}},
     {name:"Aegis",cost:320,desc:"Magic-absorbing shield — negates a slice of spells.",ico:"🛡",gear:{name:"Aegis",stat:"worn",at:"medium",aslot:"offhand",shield:"aegis",magicAbsorb:0.18,v:20}}]},
-  scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>TAPER_STOCK.concat(scrollStock())},
+  scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>TAPER_STOCK.concat(bookStock(),scrollStock())},
   outfitter:{title:"Outfitter",marker:"💰",mcol:"#ffcf6b",robe:0x7a5a2a,stock:gearVendorStock},
   healer:{title:"Healer",marker:"✚",mcol:"#ff8aa0",robe:0x8a2236,heal:true,stock:()=>[
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
