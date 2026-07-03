@@ -1783,6 +1783,27 @@ ACW.load=function(){
     console.log("ACW: retail spawn map ("+Object.keys(j.spawns).length+" cells), "+j.portals.length+" portals, "+j.lifestones.length+" lifestones");
   }).catch(e=>console.warn("ACW unavailable ("+e.message+") — legacy spawns/portals"));
 };
+// ═══ RETAIL LOOT TIERS (assets/acloot.json · tools/ace_loot_export.py). Retail loot is a tiered
+//     GENERATOR: each creature's DeathTreasureType → a treasure profile → tier 1–8 + drop counts.
+//     We carry each bestiary kind's authentic loot tier so a rat drops tier-1 trinkets and a sclavus
+//     drops tier-7 gear, mapped onto the game's 1–5 scale. Missing file → the legacy elite/dungeon tier. ═══
+const ACLOOT={on:false,kinds:null,tiers:null};
+ACLOOT.load=function(){
+  return fetch("assets/acloot.json").then(r=>r.json()).then(j=>{
+    ACLOOT.kinds=j.kinds; ACLOOT.tiers=j.tiers; ACLOOT.on=true;
+    console.log("ACLOOT: retail loot tiers for "+Object.keys(j.kinds).length+" creature kinds");
+  }).catch(e=>console.warn("ACLOOT unavailable ("+e.message+") — legacy loot tiers"));
+};
+const AC_TIER_MAP=[0,1,1,2,3,4,4,5,5];   // retail tier 1–8 → the game's 1–5 loot scale
+function acLootTier(kind){                // authentic game-scale loot tier for a creature kind
+  if(!ACLOOT.on||!ACLOOT.kinds[kind]) return null;
+  return AC_TIER_MAP[clamp(ACLOOT.kinds[kind].tier,1,8)];
+}
+function acLootCount(kind,rich){          // how many items a rich kill (elite/dungeon) drops, from the tier's retail max
+  if(!rich||!ACLOOT.on||!ACLOOT.kinds[kind]) return 1;
+  const t=ACLOOT.tiers[String(ACLOOT.kinds[kind].tier)];
+  return t?clamp(t.items,1,3):1;
+}
 function acSpawnKinds(x,z){   // the creatures that REALLY lived here, per the retail encounter table
   if(!ACW.on) return null;
   const bx=clamp(Math.floor((x/8+1019.5)/8),0,254), by=clamp(Math.floor((-z/8+1019.5)/8),0,254);
@@ -6636,7 +6657,15 @@ function killMonster(m){
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
   if(g>0) addDrop(m.x,m.z,{type:"gold",amt:g});
-  if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollItem(m.isElite||m.isDungeon, m.isDungeon&&curDungeon?curDungeon.tier:(m.isElite?3:1))});
+  if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)){
+    const rich=m.isElite||m.isDungeon;
+    // authentic per-creature loot tier (a rat drops trinkets, a sclavus drops tier-5 gear); dungeon
+    // depth still overrides. Rich kills drop the retail item-count for that tier.
+    const acT=acLootTier(m.kind);
+    const tier=(m.isDungeon&&curDungeon)?curDungeon.tier:(acT!=null?acT:(m.isElite?3:1));
+    const n=acLootCount(m.kind,rich);
+    for(let i=0;i<n;i++) addDrop(m.x+rnd(-1.2,1.2),m.z+rnd(-1.2,1.2),{type:"item",item:rollItem(rich,tier)});
+  }
   if(Math.random()<0.20){ const tr=rollTrophy(m.kind); if(tr) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:tr}); }   // creature trophy
   if(Math.random()<0.05){ const k=Math.random()<0.7?{name:"Lockpick",stat:"pick",v:1}:{name:"Brass Key",stat:"key",v:1}; addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:k}); }   // lockpick / key
   if(Math.random()<0.04) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollTradeNote()});   // trade note
@@ -18519,7 +18548,7 @@ window.addEventListener('resize',()=>{
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
 // (the retail-vendor data rides the same gate so towns build with their true merchants)
-Promise.all([ACMAP.load(),ACV.load(),ACW.load()]).then(()=>{
+Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
   initThree();
   applySettings();
   initMinimap();
