@@ -12016,8 +12016,24 @@ function initAudio(){
   musicTimer=setInterval(musicTick,4400); setTimeout(musicTick,800);
 }
 const MSCALE=[164.81,196.00,220.00,246.94,293.66,329.63]; // E minor-ish, low octave
+// authentic AC ambient tracks (assets/acmusic/, tools/ac_music_export.py): occasionally an original
+// client ambient loop plays low under the synth pad — otherwise the synth pad carries the mood.
+let AC_MUSIC=null, _acMusicPlaying=false, _acMusicBuf={};
+fetch('assets/acmusic/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.tracks)AC_MUSIC=j.tracks; }).catch(()=>{});
+function playAcAmbient(){
+  if(!AC_MUSIC||!AC_MUSIC.length||!actx||muted||_acMusicPlaying) return false;
+  const tr=AC_MUSIC[irnd(0,AC_MUSIC.length-1)];
+  const start=buf=>{ const s=actx.createBufferSource(); s.buffer=buf; const g=actx.createGain();
+    g.gain.value=0.16; s.connect(g); g.connect(masterGain); _acMusicPlaying=true; s.onended=()=>{_acMusicPlaying=false;}; s.start(); };
+  if(_acMusicBuf[tr.did]){ start(_acMusicBuf[tr.did]); return true; }
+  fetch('assets/acmusic/'+tr.file).then(r=>r.arrayBuffer()).then(a=>actx.decodeAudioData(a))
+    .then(b=>{ _acMusicBuf[tr.did]=b; start(b); }).catch(()=>{});
+  return true;
+}
 function musicTick(){
   if(!actx||muted) return;
+  if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
+  if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
   [root,root*1.5,root*2].forEach(f=>{
     const o=actx.createOscillator(),g=actx.createGain();
