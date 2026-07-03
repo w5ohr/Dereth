@@ -3819,15 +3819,41 @@ function acHeadTexture(texDID, remapDID, cb){    // load a head texture, RGB-rem
 }
 function acHeadOpts(app){          // resolve the appearance's head choices against the heritage/gender lists
   if(!AC_HEADS) return null;
-  const her=((app&&app.race)||"aluvian").toLowerCase(), gen=(app&&app.gender==="female")?"female":"male";
+  const raceMap={gharundim:"gharu'ndim"};
+  let her=((app&&app.race)||"aluvian").toLowerCase(); her=raceMap[her]||her;
+  const gen=(app&&app.gender==="female")?"female":"male";
   const HB=AC_HEADS.heritages[her]||AC_HEADS.heritages.aluvian; if(!HB) return null;
   const H=HB[gen]||HB.male; if(!H||!H.hairStyles||!H.hairStyles.length) return null;
   return H;
 }
+// resolve a character's AC head choices: explicit app.acHead wins; otherwise DERIVE from the
+// existing creator appearance (skin/hair/eye colours map proportionally so the creator's choices
+// visibly drive the AC head) plus a per-character seed for the style/eye/nose/mouth strips — so
+// every character gets a stable, varied head without new UI.
+function acHeadChoices(app){
+  const H=acHeadOpts(app); if(!H) return null;
+  const cl=(i,n)=>Math.max(0,Math.min(n-1,i|0));
+  const ah=app&&app.acHead;
+  if(ah) return {style:cl(ah.style,H.hairStyles.length), eyes:cl(ah.eyes,H.eyes.length),
+    nose:cl(ah.nose,H.noses.length), mouth:cl(ah.mouth,H.mouths.length),
+    skinTone:cl(ah.skinTone,H.skinTones.length), hairColor:cl(ah.hairColor,H.hairPals.length),
+    eyeColor:cl(ah.eyeColor,H.eyeColors.length)};
+  const seedStr=(app.race||"")+(app.gender||"")+((typeof player!=="undefined"&&player.name)||"")+(app.hair||"")+(app.nose||"")+(app.mouth||"");
+  let sd=2166136261; for(let i=0;i<seedStr.length;i++){ sd^=seedStr.charCodeAt(i); sd=Math.imul(sd,16777619)>>>0; }
+  const rnd=n=>{ sd=(Math.imul(sd,1103515245)+12345)>>>0; return n>0?sd%n:0; };
+  const prop=(cat,key,len)=>{ const a=APPEARANCE[cat]; if(!a||!len) return 0; let i=a.findIndex(o=>o.k===key); if(i<0)i=0; return Math.min(len-1,Math.floor(i/a.length*len)); };
+  return {
+    style: prop("hair", app.hair, H.hairStyles.length),
+    hairColor: prop("hairColor", app.hairColor, H.hairPals.length),
+    skinTone: prop("skin", app.skin, H.skinTones.length),
+    eyeColor: prop("eye", app.eye, H.eyeColors.length),
+    eyes: rnd(H.eyes.length), nose: rnd(H.noses.length), mouth: rnd(H.mouths.length),
+  };
+}
 function acBuildHead(av){
   const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return;
   const H=acHeadOpts(player.appearance); if(!H) return;
-  const app=player.appearance||{}, ah=app.acHead||{};
+  const app=player.appearance||{}, ah=acHeadChoices(app)||{};
   const pick=(arr,i)=>arr&&arr.length?arr[clamp(i|0,0,arr.length-1)]:null;
   const style=pick(H.hairStyles,ah.style)||H.hairStyles[0];
   const eye=pick(H.eyes,ah.eyes), nose=pick(H.noses,ah.nose), mouth=pick(H.mouths,ah.mouth);
