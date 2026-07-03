@@ -551,7 +551,13 @@ Ten-year serialized storyline (design: `docs/kilmer-saga-storyline.md`; framewor
   simulacrum juggler → the White Laboratory (clear Virindi Complex) → false faces → the Puppet Court
   (Yaraq→Shoushi) → **The Prodigal Monarch** (boss climax; title **True-Sighted**, *Mask of the Unmade*)
   → the audit ends → crystal harvest → Frostfell → chitin in the Arwic mines (seeds Year 3).
-- ☐ **K3–K10. Years 3–10** — data drops on the K1 engine per the specs doc. New goal types by year:
+- ✅ **K3. Year 3 "Year of Chitin" (The Deep Brood)** (jsc + preview e2e all 12 chapters, 0 console
+  errors). Reused every existing goal type — no new engine work: the Breathing Tunnels (clear Arwic
+  Mines) → Olthoi Swarm probes → the Matron Triangle (visits:3) → the guarded festival → the Slave Pens
+  (clear Olthoi Chasm, title **Pen-Breaker**) → Acid Summer (cull 8 Olthoi) → the column march (repel:2)
+  → **Empress Gnawvil-Rax** (new saga boss; title **Hivebane**, unique *Empress-Carapace Shield*) →
+  burning the combs → the Aun Accord at Timaru → Frostfell → sails off Sanamar (seeds Year 4).
+- ☐ **K4–K10. Years 4–10** — data drops on the K1 engine per the specs doc. New goal types by year:
   `visits:N`+saga-boss generalization (Y2) · siege+deliver (Y4) · relics+contribute+under-temple delve
   (Y5) · multi-boss+citadel (Y6) · season-lock+Frore (Y7) · rift spawner+ascent+Asheron NPC (Y8) ·
   drowned shores+underwater delve (Y9) · survive+stages+finale (Y10).

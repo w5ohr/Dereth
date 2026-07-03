@@ -112,7 +112,7 @@ Frostfell (*Castle-Forged Keepsake*) · A Mask in the Snow (Holtburg notice boar
 
 ---
 
-## YEAR 3 — YEAR OF CHITIN (The Deep Brood) — months 25–36
+## YEAR 3 — YEAR OF CHITIN (The Deep Brood) — months 25–36 ✅ SHIPPED
 *A new Brood-Empress has grown under the Direlands for a generation. Her tunnels reach every realm.*
 **Needs:** hive-spire / hive-crater world props · a Tumerok envoy camp prop (Timaru stand-in if the
 town isn't mapped).
