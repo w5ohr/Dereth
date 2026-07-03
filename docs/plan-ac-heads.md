@@ -68,6 +68,20 @@ to return them), and `tools/ac_model_export.py` has GfxObj/Surface/Texture/Palet
   style/eye/nose/mouth) so every character gets a stable varied head and it saves/loads
   via player.appearance. Verified: distinct appearances → distinct heads, clean AC face
   seated on the body, 0 console errors.
+- **Phase 2c — DONE (`352e39c`): WYSIWYG creator.** The character-creator bust
+  (`ccBust_build`) now swaps in `acHeadGroup(app)` — the real AC head — and rebuilds on
+  every option change, so creation shows the actual head. `acHeadTexture` takes an
+  ORDERED remap list (skin first, then feature colour) because the AC skin/hair/eye
+  palettes overlap in index range and a merged RGB remap is ambiguous; sequential
+  application recolours a strip's skin ground then its iris/hair.
+- **KNOWN COSMETIC BUG — female forehead band.** Diagnosed: the eye group is not an
+  overlay — it FILLS the eye-region hole in the face mesh, and the eye-strip texture's
+  top ~40% is a dark-brown under-hair forehead band (with a jagged hairline edge) meant
+  to sit beneath the hair. On female styles the hair mesh doesn't cover it, so the dark
+  band shows across the brow. Male styles cover it, so they render clean. Fix options
+  for a future pass: (a) match AC's hair-mesh coverage over the eye strip, (b) fade the
+  eye strip's top rows to the skin tone / alpha them out, or (c) recolour the dark band
+  to the forehead skin. Not blocking — males and the default look correct.
 - **Phase 2 remaining — POLISH (optional):** (a) the character-creator PREVIEW (ccBust)
   still shows the procedural painted head, so the creator isn't WYSIWYG — build the AC
   head in the preview scene too. (b) Explicit creator/barber rows to pick from the full
