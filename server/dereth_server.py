@@ -38,6 +38,9 @@ def db():
         account TEXT NOT NULL, slot INTEGER NOT NULL, name TEXT,
         data TEXT, created INTEGER, seen INTEGER,
         PRIMARY KEY(account, slot))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS allegiance(
+        charname TEXT PRIMARY KEY, patron TEXT, motd TEXT,
+        sworn_at INTEGER, pending_xp INTEGER DEFAULT 0)""")
     return c
 
 def hash_pw(password: str, salt: bytes) -> str:
@@ -708,8 +711,131 @@ async def resolve_attack(cl, mid, dmg):
             c = CLIENTS.get(u)
             if c:
                 await c.send({"t": "reward", "xp": m["xp"], "kind": m["kind"], "boss": is_boss})
+        # allegiance: each rewarded character's patron receives EXTRA pass-up XP
+        await alg_passup_kill([CLIENTS[u].charname for u in recipients
+                               if CLIENTS.get(u) and CLIENTS[u].charname], m["xp"])
         # gold + items drop on the ground as shared, first-come loot
         await spawn_loot(m, is_boss)
+
+# ---------------------------------------------------------------- allegiance (patron/vassal pyramid)
+# The server owns the online graph: swear to an equal-or-higher character, the chain runs
+# up to a Monarch. Kill XP passes UP as EXTRA XP (patron loses nothing, vassal loses
+# nothing): direct pass-up starts at AC's 25% floor and deepens with time sworn (~90% cap).
+# Offline patrons accrue pending XP, delivered when they next enter the world.
+
+def alg_row(name):
+    with db() as c:
+        r = c.execute("SELECT patron,motd,sworn_at,pending_xp FROM allegiance WHERE charname=?", (name,)).fetchone()
+    return {"patron": r[0], "motd": r[1], "sworn_at": r[2] or 0, "pending_xp": r[3] or 0} if r else None
+
+def alg_set_patron(name, patron):
+    with db() as c:
+        c.execute("INSERT INTO allegiance(charname,patron,sworn_at,pending_xp) VALUES(?,?,?,0) "
+                  "ON CONFLICT(charname) DO UPDATE SET patron=?, sworn_at=?",
+                  (name, patron, int(time.time()), patron, int(time.time())))
+
+def alg_vassals(name):
+    with db() as c:
+        return [r[0] for r in c.execute("SELECT charname FROM allegiance WHERE patron=?", (name,)).fetchall()]
+
+def alg_monarch(name, _seen=None):
+    """walk up the patron chain (cycle-guarded) to the tree's crown"""
+    _seen = _seen or set()
+    cur = name
+    while cur not in _seen:
+        _seen.add(cur)
+        r = alg_row(cur)
+        if not r or not r["patron"]:
+            return cur
+        cur = r["patron"]
+    return cur
+
+def alg_followers(name, _seen=None):
+    """size of the whole subtree under a character"""
+    _seen = _seen or {name}
+    n = 0
+    for v in alg_vassals(name):
+        if v in _seen:
+            continue
+        _seen.add(v)
+        n += 1 + alg_followers(v, _seen)
+    return n
+
+ALG_MINF = [0, 0, 2, 6, 14, 30, 62, 126, 254, 510, 1022]
+
+def alg_rank(name):
+    vs = alg_vassals(name)
+    if not vs:
+        return 1 if alg_row(name) else 0
+    ranks = sorted((alg_rank_shallow(v) for v in vs), reverse=True)
+    r = ranks[0]
+    if len(ranks) >= 2:
+        r = max(r, min(ranks[0], ranks[1]) + 1)
+    f = alg_followers(name)
+    cap = 1
+    for i in range(2, 11):
+        if f >= ALG_MINF[i]:
+            cap = i
+        else:
+            break
+    return min(r, cap)
+
+def alg_rank_shallow(name):
+    """vassal rank from their follower count (avoids deep recursion on big trees)"""
+    f = alg_followers(name)
+    r = 1
+    for i in range(2, 11):
+        if f >= ALG_MINF[i]:
+            r = i
+        else:
+            break
+    return r
+
+def alg_passup_pct(vassal_name):
+    r = alg_row(vassal_name)
+    if not r or not r["patron"]:
+        return 0.0
+    days = min(730.0, max(0.0, (time.time() - (r["sworn_at"] or time.time())) / 86400.0))
+    return min(0.90, 0.25 + 0.65 * (days / 730.0))   # AC direct pass-up: 25% floor -> ~90% with time
+
+def alg_add_pending(name, xp):
+    with db() as c:
+        c.execute("INSERT INTO allegiance(charname,pending_xp) VALUES(?,?) "
+                  "ON CONFLICT(charname) DO UPDATE SET pending_xp=pending_xp+?", (name, xp, xp))
+
+def alg_take_pending(name):
+    with db() as c:
+        r = c.execute("SELECT pending_xp FROM allegiance WHERE charname=?", (name,)).fetchone()
+        if r and (r[0] or 0) > 0:
+            c.execute("UPDATE allegiance SET pending_xp=0 WHERE charname=?", (name,))
+            return r[0]
+    return 0
+
+async def alg_passup_kill(recipients_names, xp):
+    """extra free XP up the chain for each rewarded character's patron"""
+    for nm in set(recipients_names):
+        r = alg_row(nm)
+        if not r or not r["patron"]:
+            continue
+        share = int(xp * alg_passup_pct(nm))
+        if share <= 0:
+            continue
+        pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == r["patron"]), None)
+        if pc:
+            await pc.send({"t": "passup", "xp": share, "from": nm})
+        else:
+            alg_add_pending(r["patron"], share)
+
+def alg_info_pub(name):
+    r = alg_row(name) or {}
+    mon = alg_monarch(name)
+    vs = alg_vassals(name)
+    online = {c.charname for c in CLIENTS.values() if c.in_world}
+    mrow = alg_row(mon)
+    return {"t": "alg", "patron": r.get("patron"), "monarch": mon if (r.get("patron") or vs) else None,
+            "vassals": [{"name": v, "online": v in online, "passup": round(alg_passup_pct(v) * 100)} for v in vs],
+            "rank": alg_rank(name), "followers": alg_followers(name),
+            "motd": (mrow or {}).get("motd")}
 
 # ---------------------------------------------------------------- parties (fellowships)
 EMOTES = {"wave": "waves.", "cheer": "cheers!", "dance": "breaks into a dance.", "bow": "bows solemnly.",
@@ -847,6 +973,14 @@ async def enter_world(cl, slot, name, data):
     """Bring a selected/created character into the shared world."""
     cl.slot = slot; cl.charname = name; cl.in_world = True
     await cl.send({"t": "play_ok", "slot": slot, "name": name, "char": data})
+    # allegiance: the graph decides the /a channel (everyone under one Monarch); deliver
+    # any pass-up XP your vassals earned while you were away
+    r = alg_row(name)
+    if r and (r["patron"] or alg_vassals(name)):
+        cl.allegiance = alg_monarch(name)
+    pending = alg_take_pending(name)
+    if pending > 0:
+        await cl.send({"t": "passup", "xp": pending, "from": "your vassals (while away)"})
     # sync current ground loot + any active Incursion to the entering player
     for d in list(DROPS.values()):
         await cl.send(drop_pub(d))
@@ -1004,9 +1138,58 @@ async def dispatch(cl, msg):
             await cl.send({"t": "system", "msg": "You are not in a party (/party invite <name>)."})
     elif t == "allegiance":
         # set/clear this character's allegiance name (the client persists it in its save;
-        # the server only needs it live to route /a chat)
+        # the server only needs it live to route /a chat). The sworn GRAPH channel wins.
         name = str(msg.get("name", ""))[:40].strip()
-        cl.allegiance = name or None
+        r = alg_row(cl.charname or "")
+        if not (r and (r["patron"] or alg_vassals(cl.charname))):
+            cl.allegiance = name or None
+    elif t == "swear":
+        # swear fealty to an online equal-or-higher character (AC rule)
+        name = str(msg.get("name", ""))[:32].strip()
+        if not cl.in_world or not cl.charname:
+            return
+        target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
+        if not target or target is cl:
+            return await cl.send({"t": "system", "msg": f"No online character named '{name}' to swear to."})
+        if target.level < cl.level:
+            return await cl.send({"t": "system", "msg": f"{name} (level {target.level}) is beneath your level {cl.level} — AC lets you swear only to an equal or higher."})
+        if alg_monarch(name) == cl.charname:
+            return await cl.send({"t": "system", "msg": "They stand beneath you in your own tree — that fealty would be a circle."})
+        if len(alg_vassals(name)) >= max(1, target.level):
+            return await cl.send({"t": "system", "msg": f"{name}'s patronage is full (AC caps vassals at character level)."})
+        alg_set_patron(cl.charname, name)
+        mon = alg_monarch(cl.charname)
+        cl.allegiance = mon; target.allegiance = mon
+        await cl.send({"t": "system", "msg": f"You swear fealty to {name}. Your allegiance stands under Monarch {mon}; your kill XP passes up as extra XP for your patron (you lose nothing)."})
+        await target.send({"t": "system", "msg": f"{cl.charname} has sworn fealty to you — their deeds now pass XP up to you."})
+        await cl.send(alg_info_pub(cl.charname))
+        await target.send(alg_info_pub(name))
+    elif t == "unswear":
+        if cl.in_world and cl.charname:
+            r = alg_row(cl.charname)
+            if r and r["patron"]:
+                old = r["patron"]
+                alg_set_patron(cl.charname, None)
+                await cl.send({"t": "system", "msg": f"You break fealty with {old}. Accrued sworn-time resets."})
+                pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == old), None)
+                if pc:
+                    await pc.send({"t": "system", "msg": f"{cl.charname} has broken fealty with you."})
+            else:
+                await cl.send({"t": "system", "msg": "You are sworn to no patron."})
+    elif t == "alg_info":
+        if cl.in_world and cl.charname:
+            await cl.send(alg_info_pub(cl.charname))
+    elif t == "alg_motd":
+        text = str(msg.get("text", ""))[:200].strip()
+        if cl.in_world and cl.charname:
+            if alg_monarch(cl.charname) != cl.charname or not alg_vassals(cl.charname):
+                return await cl.send({"t": "system", "msg": "Only a Monarch (the crown of a tree) sets the allegiance MOTD."})
+            with db() as c:
+                c.execute("INSERT INTO allegiance(charname,motd) VALUES(?,?) "
+                          "ON CONFLICT(charname) DO UPDATE SET motd=?", (cl.charname, text, text))
+            for c2 in CLIENTS.values():
+                if c2.in_world and getattr(c2, "allegiance", None) == cl.charname:
+                    await c2.send({"t": "system", "msg": f"[Allegiance MOTD] {text}"})
     elif t == "achat":
         text = str(msg.get("msg", ""))[:240].strip()
         alg = getattr(cl, "allegiance", None)

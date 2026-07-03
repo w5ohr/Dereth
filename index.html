@@ -379,6 +379,8 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Field of view</span><input id="setFov" type="range" min="60" max="100" step="1"><span id="setFovV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Difficulty</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="AC's iconic risk: death leaves a lootable corpse holding your most valuable items + half your pyreals — walk back to recover it">AC-authentic death</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-acdeath="1">Corpse &amp; item drop</button><button class="tbtn" data-acdeath="0">Soft (Vitae only)</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
@@ -777,7 +779,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,potStam:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
-  skills:freshSkills(),patron:false,vitae:0,heritage:"aluvian",
+  skills:freshSkills(),patronInfo:null,vassals:[],vassalXP:0,allegianceMOTD:null,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
   luminance:0,lumUnlocked:false,auras:{},enlightenment:0,   // AC endgame: Luminance currency → permanent Auras; Enlightenment prestige resets
   arcsDone:[],                 // story arcs whose capstone reward has been granted
@@ -6874,13 +6876,7 @@ function hsHintInside(){
   if(nr(dungeonExit.x,dungeonExit.z)<3.0) return "Step outside (E)";
   return "";
 }
-// ── allegiance rank (mansion purchases demand rank 6+, per the retail slumlords) ──
-function allegianceRank(){
-  const followers=(player.vassals?player.vassals.length:0)+Math.floor((player.vassalXP||0)/25000);
-  const T=[0,1,2,4,7,12,20,33,54,88];   // followers needed per rank 1..10
-  let r=0; for(let i=0;i<T.length;i++) if(followers>=T[i]) r=i+1;
-  return player.patron?r:Math.min(r,5);   // rank 6+ belongs to standing monarchs
-}
+// (allegianceRank/algIsMonarch live in the allegiance module — mansions demand a rank-6 Monarch)
 // ── maintenance: 30-day upkeep, paid at the crystal; long neglect forfeits the deed ──
 function hsRentStatus(){
   const hs=player.homestead; if(!hs) return null;
@@ -6892,6 +6888,8 @@ function hsRentStatus(){
 function hsPayRent(){
   const hs=player.homestead; if(!hs) return;
   const T=HOUSING_TYPES[hs.type];
+  if(hs.type==="mansion"&&typeof algIsMonarch==="function"&&!(algIsMonarch()&&allegianceRank()>=6)){
+    log("The Arcanum refuses your pyreals — a mansion's upkeep is only accepted from a <b>rank-6 Monarch</b>. Regain your standing.","warn"); return; }
   if(hs.rentDue-Date.now()>2*HS_RENT_MS){ log("The Arcanum accepts no more than 90 days of maintenance in advance.","sys"); return; }
   if(player.gold<T.rentPy){ log(`Maintenance costs <b>${T.rentPy.toLocaleString()} pyreals</b>${T.rentWrits?` + ${T.rentWrits} Writ${T.rentWrits>1?"s":""}`:""}.`,"warn"); return; }
   if(writCount()<T.rentWrits){ log(`Maintenance also takes <b>${T.rentWrits} Writ${T.rentWrits>1?"s":""} of Refuge</b> (you hold ${writCount()}).`,"warn"); return; }
@@ -6903,6 +6901,11 @@ function hsPayRent(){
 function hsRentTick(){
   const hs=player.homestead; if(!hs) return;
   const st=hsRentStatus();
+  // AC: a mansion belongs to a rank-6 Monarch — losing the rank forfeits the deed with the next upkeep
+  if(hs.type==="mansion"&&typeof algIsMonarch==="function"&&!(algIsMonarch()&&allegianceRank()>=6)&&!hs._rankNagged){
+    hs._rankNagged=true;
+    log("⚠ Your mansion's deed demands a <b>rank-6 Monarch</b> — regain your standing before the maintenance falls due, or the Arcanum will reclaim it.","warn");
+  }
   if(st.overdue&&Date.now()>st.evictAt){   // a full period past due — the Arcanum forecloses
     hsEvict("The Agents of the Arcanum have reclaimed your "+st.T.n.toLowerCase()+" for unpaid maintenance.");
   } else if(st.overdue&&!hs._nagged){ hs._nagged=true;
@@ -6958,9 +6961,9 @@ function openCovenant(cr){
     body=`<div style="color:var(--dim);margin-top:8px">You abandoned a dwelling recently — the Arcanum bars a new purchase for <b>${Math.ceil((player.hsRebuyUntil-Date.now())/86400000)} more day${Math.ceil((player.hsRebuyUntil-Date.now())/86400000)!==1?"s":""}</b>. (Apartments are exempt.)</div>`;
   } else {
     const okLvl=player.level>=lvl, okGold=player.gold>=price, okWrit=writCount()>=writs;
-    const tr=hsTrophyCheck(term), okRank=!rank||allegianceRank()>=rank;
+    const tr=hsTrophyCheck(term), okRank=!rank||(allegianceRank()>=rank&&algIsMonarch());
     const trTxt=(term.trophies&&term.trophies.length)?`<br>Settlement trophies: ${term.trophies.map(t=>`<b style="color:${player.inv.some(it=>it&&(it.name===t||it.stat==="trophy"))?'#7fe6a0':'#ff8a6a'}">${t}</b>`).join(", ")} <span style="color:var(--dim)">(a spare creature trophy may substitute)</span>`:"";
-    const rankTxt=rank?`<br>Allegiance: <b style="color:${okRank?'#7fe6a0':'#ff8a6a'}">Monarch, rank ${rank}+</b> (you: rank ${allegianceRank()})`:"";
+    const rankTxt=rank?`<br>Allegiance: <b style="color:${okRank?'#7fe6a0':'#ff8a6a'}">Monarch, rank ${rank}+</b> (you: ${algIsMonarch()?"Monarch, ":""}rank ${allegianceRank()})`:"";
     body=`<div style="margin:8px 0;color:#cfc0a0">Price: <b style="color:${okGold?'#7fe6a0':'#ff8a6a'}">${price.toLocaleString()} pyreals</b>
       + <b style="color:${okWrit?'#7fe6a0':'#ff8a6a'}">${writs} Writ${writs>1?"s":""} of Refuge</b> (you hold ${writCount()})
       · Level <b style="color:${okLvl?'#7fe6a0':'#ff8a6a'}">${lvl}+</b>${trTxt}${rankTxt}
@@ -8932,6 +8935,15 @@ function addDrop(x,z,data){
   if(data.type==="gold"){
     mesh=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),
       new THREE.MeshStandardMaterial({color:0xffd23b,emissive:0x6b4f00,metalness:0.7,roughness:0.3}));
+  }else if(data.type==="corpse"){
+    // the player's corpse: a shrouded body + a faint soul-light, lootable with E
+    mesh=new THREE.Group();
+    const shroud=new THREE.Mesh(THREE.CapsuleGeometry?new THREE.CapsuleGeometry(0.38,1.1,4,10):new THREE.SphereGeometry(0.5,10,8),
+      new THREE.MeshStandardMaterial({color:0xcfc6b4,roughness:0.95}));
+    shroud.rotation.z=Math.PI/2; shroud.position.y=0.28; shroud.scale.y=0.62; shroud.castShadow=true; mesh.add(shroud);
+    const glow=new THREE.PointLight(0x9ab8ff,0.9,7); glow.position.y=1.0; mesh.add(glow);
+    const lbl=labelSprite(`${data.owner||"Your"} corpse — recover (E)`,"npcs");
+    lbl.scale.set(7,1.5,1); lbl.position.y=2.0; mesh.add(lbl);
   }else{
     const model=buildItemModel(data.item||{},{drop:true}); mesh=new THREE.Group();
     const box=new THREE.Box3().setFromObject(model), size=box.getSize(new THREE.Vector3());
@@ -11469,23 +11481,121 @@ function craftRecipe(id){
   } else { const back=Math.floor(r.cost/2); player.materials+=back; log(`Your <b>${r.name}</b> spoils in the making — ${back} materials recovered. (Raise ${SKILL_BY_KEY[r.skill].n}.)`,"warn"); if(SFX.hit)SFX.hit(); }
   updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
 }
-// S1 allegiance patron/vassal tree: recruit NPC vassals (capped by Leadership) whose deeds pass XP up to you
-function vassalCap(){ return 3 + skillTier("leadership")*3 + Math.floor(skillValue("leadership")/25); }
+// ════════════════════════════════════════════════════════════════════════════
+//  ALLEGIANCE — AC's real patron/vassal pyramid (docs/asherons-call-mechanics-
+//  reference.md). Swearing gives the PATRON extra free XP (pass-up), driven by
+//  the vassal's Loyalty (Generated%) and the patron's Leadership (Received%):
+//     Generated% = 50 + 22.5·(BLoy/291)·(1 + (RT/730)·(IG/720))
+//     Received%  = 50 + 22.5·(BLdr/291)·(1 + V·(RT/730)·(IG/720))
+//     Passup%    = Generated%·Received%/100   (direct: min 25%, max 90%)
+//  Rank = one higher than the lower of your two highest-ranked vassals (or your
+//  highest), gated by min followers per rank; per-race gendered rank titles.
+//  Monarch = top of the tree (no patron). Solo world: NPC characters swear in,
+//  adventure on their own and pass XP up; online the server owns the graph.
+// ════════════════════════════════════════════════════════════════════════════
+const ALG_MINF=[0,0,2,6,14,30,62,126,254,510,1022];   // min followers for rank 1..10
+const ALG_TITLES={
+  aluvian:{m:["Yeoman","Baronet","Baron","Reeve","Thane","Ealdor","Duke","Aetheling","King","High King"],
+           f:["Yeoman","Baronetess","Baroness","Reeve","Thane","Ealdor","Duchess","Aetheling","Queen","High Queen"]},
+  gharundim:{m:["Sayyid","Shayk","Maulan","Mu'allim","Naqib","Qadi","Mushir","Amir","Malik","Sultan"],
+             f:["Sayyida","Shayka","Maulana","Mu'allima","Naqiba","Qadiya","Mushira","Amira","Malika","Sultana"]},
+  sho:{m:["Jinin","Jo-Chueh","Nan-Chueh","Shi-Chueh","Ta-Chueh","Kun-Chueh","Kou","Taikou","Ou","Koutei"],
+       f:["Jinin","Jo-Chueh","Nan-Chueh","Shi-Chueh","Ta-Chueh","Kun-Chueh","Kou","Taikou","Joou","Koutei"]},
+  viamontian:{m:["Squire","Banner","Baron","Viscount","Count","Marquis","Duke","Grand Duke","King","High King"],
+              f:["Dame","Banner","Baroness","Viscountess","Countess","Marquise","Duchess","Grand Duchess","Queen","High Queen"]}};
+function algTitle(rank){
+  if(rank<1) return null;
+  const t=ALG_TITLES[player.heritage]||ALG_TITLES.aluvian;
+  const fem=player.appearance&&player.appearance.gender==="female";
+  return (fem?t.f:t.m)[Math.min(10,rank)-1];
+}
+function vassalCap(){ return player.level; }   // AC: vassal cap = your character level
 function vassalName(){ return (typeof townName==="function")? townName(irnd(0,3), irnd(1,99999)) : "Vassal "+irnd(100,999); }
+// followers = everyone under you in the tree (vassals + their own simulated subtrees)
+function algFollowerCount(){ let n=0; for(const v of (player.vassals||[])) n+=1+(v.followers||0); return n; }
+function algVassalRank(v){ let r=1; for(let i=2;i<=10;i++) if((v.followers||0)>=ALG_MINF[i]) r=i; else break; return r; }
+function allegianceRank(){
+  const ranks=(player.vassals||[]).map(algVassalRank).sort((a,b)=>b-a);
+  if(!ranks.length) return (player.patronInfo||player.allegianceName)?1:0;
+  let r=ranks[0];
+  if(ranks.length>=2) r=Math.max(r,Math.min(ranks[0],ranks[1])+1);
+  const f=algFollowerCount(); let cap=1;
+  for(let i=2;i<=10;i++) if(f>=ALG_MINF[i]) cap=i; else break;
+  return Math.min(r,cap);
+}
+function algIsMonarch(){ return !player.patronInfo&&(player.vassals||[]).length>0; }
+// ── the pass-up formula (per relationship: RT real days sworn, IG in-game hours) ──
+const ALG_VFACTOR=[0,0.25,0.50,0.75,1.00];
+function algGenerated(v){   // vassal side: their Loyalty
+  const rt=Math.min(730,(Date.now()-(v.sworn||Date.now()))/86400000), ig=Math.min(720,v.ig||0);
+  return 50+22.5*(Math.min(291,v.loyalty||0)/291)*(1+(rt/730)*(ig/720));
+}
+function algReceived(v){    // patron side: your (buffed) Leadership
+  const rt=Math.min(730,(Date.now()-(v.sworn||Date.now()))/86400000), ig=Math.min(720,v.ig||0);
+  const V=ALG_VFACTOR[Math.min(4,(player.vassals||[]).length)];
+  return 50+22.5*(Math.min(291,skillValue("leadership"))/291)*(1+V*(rt/730)*(ig/720));
+}
+function algPassupPct(v){ return clamp(algGenerated(v)*algReceived(v)/100,25,90); }
 function recruitVassal(){
   player.vassals=player.vassals||[];
-  if(player.vassals.length>=vassalCap()){ log("Your allegiance is full — train <b>Leadership</b> to swear in more vassals.","warn"); if(SFX.hit)SFX.hit(); return false; }
-  const nm=vassalName(); player.vassals.push({name:nm});
-  log(`<b>${nm}</b> swears into your allegiance — their deeds now pass XP up to you (patron income). See it on the character sheet (C).`,"sys"); if(typeof toast==="function")toast("VASSAL SWORN");
+  if(player.vassals.length>=vassalCap()){ log(`Your patronage is full — AC caps vassals at your <b>character level</b> (${vassalCap()}).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
+  // AC: you swear to an equal-or-HIGHER character, so vassals join at your level or below
+  const lvl=Math.max(1,player.level-irnd(0,Math.min(12,player.level-1)));
+  const v={name:vassalName(),level:lvl,loyalty:irnd(60,140)+lvl,sworn:Date.now(),ig:0,followers:0,xpUp:0,xpAcc:0};
+  player.vassals.push(v);
+  log(`<b>${v.name}</b> (level ${v.level}) swears fealty to you — their deeds now pass XP up to you at <b>${Math.round(algPassupPct(v))}%</b> (Loyalty × your Leadership; deepens with time sworn).`,"sys");
+  if(typeof toast==="function")toast("VASSAL SWORN");
   return true;
 }
-function gainXP(amt){
+function swearToPatron(){
+  if(player.patronInfo){ log(`You are already sworn to <b>${esc(player.patronInfo.name)}</b>.`,"warn"); return; }
+  // your patron is an equal-or-higher character; their chain runs up to a Monarch
+  const p={name:vassalName(),level:player.level+irnd(0,15),sworn:Date.now(),ig:0};
+  const mon=Math.random()<0.5?p.name:vassalName();
+  player.patronInfo=p; player.monarch=mon;
+  if(!player.allegianceName) player.allegianceName=mon+"'s Court";
+  log(`You swear fealty to <b>${esc(p.name)}</b> (level ${p.level}). Your allegiance stands under Monarch <b>${esc(mon)}</b> — your deeds pass up as extra XP for your patron (you lose nothing).`,"sys");
+  if(typeof toast==="function")toast("SWORN");
+  saveGame();
+}
+function breakFromPatron(){
+  if(!player.patronInfo){ log("You are sworn to no patron.","warn"); return; }
+  log(`You break fealty with <b>${esc(player.patronInfo.name)}</b>. Accrued sworn-time resets (AC: the only pass-up decay).`,"sys");
+  player.patronInfo=null; player.monarch=null;
+  saveGame();
+}
+// ── the solo fabric: sworn NPC vassals adventure on their own and pass XP up.
+//    Their subtrees also grow (followers), which is what raises YOUR rank. ──
+let _algT=0;
+function algTick(dt){
+  if(isOnline) return;                       // online: the server owns pass-up
+  const vs=player.vassals||[]; if(!vs.length&&!player.patronInfo) return;
+  _algT+=dt; if(_algT<30) return;            // settle up every 30s of play
+  const step=_algT/3600; _algT=0;            // hours of in-game time this step
+  if(player.patronInfo) player.patronInfo.ig=Math.min(720,(player.patronInfo.ig||0)+step);
+  let up=0;
+  for(const v of vs){
+    v.ig=Math.min(720,(v.ig||0)+step);
+    // the vassal adventures: XP generated scales with their level
+    v.xpAcc=(v.xpAcc||0)+v.level*3*(step*60);          // ~lvl·3 XP per minute afield
+    const gen=Math.floor(v.xpAcc); v.xpAcc-=gen;
+    if(gen>0){ const share=Math.round(gen*algPassupPct(v)/100); v.xpUp=(v.xpUp||0)+share; up+=share; }
+    // their own court grows with time (and your Leadership sets the example)
+    if(Math.random()<step*(0.9+skillTier("leadership")*0.5)*Math.min(3,v.level/12)){
+      v.followers=(v.followers||0)+1;
+      if(algVassalRank(v)>algVassalRank({followers:(v.followers||1)-1}))
+        log(`Word arrives: your vassal <b>${esc(v.name)}</b> has risen to rank ${algVassalRank(v)} — their court now numbers ${v.followers}.`,"sys");
+    }
+    // vassals level slowly on their own (never past you — they swore to an equal-or-higher)
+    if(v.level<player.level&&Math.random()<step*0.35) v.level++;
+  }
+  if(up>0){ player.vassalXP=(player.vassalXP||0)+up; gainXP(up,{passup:true}); }
+}
+function gainXP(amt,opts){
+  opts=opts||{};
   if(player.augment&&player.augment.xpBonus) amt=Math.round(amt*(1+player.augment.xpBonus)); // H17 XP augmentation (Ciandra's Essence)
-  if(player.patron) amt=Math.round(amt*(1.15+(skillTier("loyalty")>0?0.05:0))); // Loyalty deepens vassal XP flow
-  if(player.vassals&&player.vassals.length){   // S1 patron income: your sworn vassals pass a share of their earnings up to you (Leadership deepens it)
-    const rate=Math.min(0.30, player.vassals.length*0.02*(1+(skillTier("leadership")>0?0.6:0)));
-    const passup=Math.round(amt*rate); if(passup>0){ amt+=passup; player.vassalXP=(player.vassalXP||0)+passup; } }
-  if(player.vitae>0){ const was=player.vitae; player.vitae=Math.max(0,player.vitae-amt/40000); // recover Vitae through deeds (XP works it off)
+  // Vitae recovers through your OWN deeds — allegiance pass-up does not burn it (AC)
+  if(player.vitae>0&&!opts.passup){ const was=player.vitae; player.vitae=Math.max(0,player.vitae-amt/40000);
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
     if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
   player.xp+=amt;player.xpUnspent+=amt;
@@ -11560,20 +11670,32 @@ function playerHurt(dmg,sx,sz,type,element){
     setTimeout(()=>dd.style.opacity="0",420);}
   if(player.hp<=0) die();
 }
-// AC death: you leave a corpse holding some of your gear (highest-value first) + half your pyreals; walk back to reclaim it.
+// AC death: you leave a LOOTABLE CORPSE holding some of your gear + half your pyreals;
+// walk back to reclaim it before it decays (5 min/level, minimum 1 hour). No XP is lost —
+// Vitae is the debt, and it saps vitals, skills & damage until worked off with your own deeds.
 function deathDrops(){
   let n=Math.max(1,Math.ceil(player.level/10));
-  if(player.level>=10) n+=irnd(0,2);                                  // level 10+: equal chance of +0/+1/+2
+  if(player.level>=10) n+=irnd(0,2);                                  // level 10+: equal 1/3 chance of +0/+1/+2
   n=Math.max(0,n-((player.augment&&player.augment.dropReduce)||0));   // Clutch of the Miser augmentation
-  const safe=it=>!it||it.stat==="note"||it.stat==="quest"||it.scroll||it.starter;   // trade notes, quest items, scrolls, starter gear are spared
+  // exempt: trade notes, quest items, starting wand & clothing (NOT food or spell components — AC)
+  const safe=it=>!it||it.stat==="note"||it.stat==="quest"||it.starter;
   const hasSpareWeapon=player.inv.some(it=>it.stat==="weapon"&&!safe(it));
   const pool=[];
   if(player.weapon&&!safe(player.weapon)&&hasSpareWeapon) pool.push({src:"weapon",it:player.weapon});  // keep your weapon if it's your only one
   for(const sl in (player.armorSlots||{})){ const it=player.armorSlots[sl]; if(!safe(it)) pool.push({src:"armor",sl,it}); }
   for(const sl in (player.jewelry||{})){ const it=player.jewelry[sl]; if(!safe(it)) pool.push({src:"jewel",sl,it}); }
   player.inv.forEach((it,i)=>{ if(!safe(it)) pool.push({src:"inv",i,it}); });
-  pool.sort((a,b)=>(b.it.v||0)-(a.it.v||0));   // your most valuable belongings drop first — real risk
-  const chosen=pool.slice(0,n), invIdx=[];
+  // AC drop order: highest value first — but once a TYPE has dropped, remaining items of
+  // that type count at HALF value per drop when ranking the next pick, spreading the loss
+  const droppedTypes={};
+  const effVal=c=>(c.it.v||0)*Math.pow(0.5,droppedTypes[c.it.stat||"misc"]||0);
+  const chosen=[];
+  for(let k=0;k<n&&pool.length;k++){
+    pool.sort((a,b)=>effVal(b)-effVal(a));
+    const c=pool.shift(); chosen.push(c);
+    const ty=c.it.stat||"misc"; droppedTypes[ty]=(droppedTypes[ty]||0)+1;
+  }
+  const invIdx=[];
   for(const c of chosen){
     if(c.src==="weapon"){ player.weapon=null; }
     else if(c.src==="armor"){ delete player.armorSlots[c.sl]; refreshAvatarArmor(); }
@@ -11581,7 +11703,7 @@ function deathDrops(){
     else invIdx.push(c.i);
   }
   invIdx.sort((a,b)=>b-a).forEach(i=>player.inv.splice(i,1));
-  const gold=Math.floor(player.gold*0.5); player.gold-=gold;
+  const gold=Math.floor(player.gold*0.5); player.gold-=gold;   // half your pyreals, always (AC)
   return {items:chosen.map(c=>c.it),gold};
 }
 function die(){
@@ -11595,26 +11717,33 @@ function die(){
   if(inNetwork) exitNetwork(netReturn);
   document.getElementById('deathmsg').style.display="flex";
   log("You have died. Your spirit drifts toward your bound Lifestone…","warn");
-  const lost=Math.floor(player.xpUnspent*0.10);player.xpUnspent-=lost;
   player.vitae=Math.min(0.40,player.vitae+0.05); // Vitae: +5% penalty per death, capped at -40% (AC); recovers as you earn XP
-  // drop a recoverable corpse (some gear + half your pyreals) where you fell
-  const dd=deathDrops(); let corpseNote="";
-  if(dd.items.length||dd.gold){
-    for(const it of dd.items) addDrop(corpseX+rnd(-1.4,1.4),corpseZ+rnd(-1.4,1.4),{type:"item",item:it,corpse:true});
-    if(dd.gold>0) addDrop(corpseX,corpseZ,{type:"gold",amt:dd.gold,corpse:true});
-    if(typeof recomputeGearSkill==="function") recomputeGearSkill();
-    corpseNote=` Your corpse holds <b>${dd.items.length}</b> item(s)${dd.gold?` and <b>${dd.gold}</b> pyreals`:""} where you fell — reclaim them before they fade.`;
-  }
-  derive();   // apply the new Vitae + any dropped gear to your vital pools before you respawn
+  let corpseNote="";
+  if(settings.acDeath!==false){
+    // one lootable corpse holding everything — decays after 5 min/level (min 1 hour)
+    const dd=deathDrops();
+    if(dd.items.length||dd.gold){
+      addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,
+        owner:player.name||"Adventurer",ttl:Math.max(3600,300*player.level)});
+      if(typeof recomputeGearSkill==="function") recomputeGearSkill();
+      corpseNote=` Your corpse holds <b>${dd.items.length}</b> item(s)${dd.gold?` and <b>${dd.gold.toLocaleString()}</b> pyreals`:""} where you fell — recover it before it decays (${Math.round(Math.max(3600,300*player.level)/60)} min).`;
+    }
+  } else corpseNote=" (Soft death is on — nothing dropped. Settings → AC-authentic death.)";
+  derive();   // apply the new Vitae to your vital pools before you respawn
   setTimeout(()=>{
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
     arriveAt(ls.x,ls.z+3);player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
-    player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;player.invuln=2.5;
+    // AC: vitals restore to 75% of the (Vitae-reduced) max; ~1 min of protection, broken by offensive action
+    player.hp=Math.round(player.mhp*0.75);player.st=Math.round(player.mst*0.75);player.mn=Math.round(player.mmn*0.75);
+    player.invuln=60;player.resProt=true;
     document.getElementById('deathmsg').style.display="none";
-    log(`You awaken at the <b>${ls.name}</b>. Lost ${lost} unspent XP, and death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals, skills & damage until you earn it back.${corpseNote}`,"sys");
+    log(`You awaken at the <b>${ls.name}</b> under a minute's protection. Death's chill leaves you with <b>Vitae −${Math.round(player.vitae*100)}%</b> — weakened vitals, skills & damage until you earn it back (no XP was lost).${corpseNote}`,"sys");
     toast("RESTORED");
   },1400);
 }
+// resurrection protection breaks the moment you act offensively (AC)
+function breakResProt(){ if(player.resProt){ player.resProt=false; player.invuln=Math.min(player.invuln,1.0);
+  log("Your resurrection protection fades as you strike.","sys"); } }
 // AC fall damage: drops past a safe height hurt, scaling with distance; the Jump skill softens landings.
 // portal/teleport arrival: every teleport lands the player 2u ABOVE the destination surface
 // (so you can never materialize inside a hill), and pins the fall apex to the ground height so
@@ -11712,6 +11841,7 @@ function castSpellById(id){
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
   castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
+  if(!castSelf&&typeof breakResProt==="function") breakResProt();   // offensive casting ends res protection
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
 }
 // retail component destruction: each formula component you CARRY burns with probability
@@ -12014,6 +12144,7 @@ function fireArrow(){
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(power){
+  if(typeof breakResProt==="function") breakResProt();   // offensive action ends res protection
   if(!player.alive||player.meleeCd>0||paused) return;
   power=(typeof power==="number")?clamp(power,0.6,1.6):1;   // Cb1 power bar: charge-scaled damage (0.6 tap → 1.6 full)
   const acc=1-Math.abs(power-1.05)*0.5;   // accuracy peaks in the mid-upper charge band (AC's sweet spot), falls off at the extremes
@@ -12261,6 +12392,7 @@ function currentPrompt(){
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return "Leave the delve (E)";
     return "";
   }
+  for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4) return "Recover your corpse (E)";
   {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
     if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
@@ -12350,6 +12482,8 @@ function openLockedCache(){
   if(SFX.quest)SFX.quest(); toast("CACHE OPENED");
 }
 function interact(){
+  // your corpse first — recover everything it holds in one motion
+  for(const d of drops) if(d.type==="corpse"&&Math.hypot(d.x-player.x,d.z-player.z)<4){ recoverCorpse(d); return; }
   let best=null,bd=4;
   for(const d of drops) if(d.type==="item"){const dd=Math.hypot(d.x-player.x,d.z-player.z);if(dd<bd){bd=dd;best=d;}}
   if(best){
@@ -12409,6 +12543,18 @@ function interact(){
     }
   }
 }
+function recoverCorpse(d){
+  // pyreals always come home; items return to the satchel until it fills — the rest spills out
+  if(d.amt>0){ player.gold+=d.amt; floater(player.x,EYE+0.4,player.z,"+"+d.amt+" p","#ffd86b"); }
+  let taken=0,spilled=0;
+  for(const it of (d.items||[])){
+    if(addToInv(it,false)) taken++;
+    else { addDrop(d.x+rnd(-1.2,1.2),d.z+rnd(-1.2,1.2),{type:"item",item:it,corpse:true}); spilled++; }
+  }
+  scene.remove(d.mesh); const i=drops.indexOf(d); if(i>=0)drops.splice(i,1);
+  log(`You recover your corpse — <b>${taken}</b> item(s)${d.amt?` and <b>${d.amt.toLocaleString()}</b> pyreals`:""} returned${spilled?`; <b>${spilled}</b> spilled beside it (satchel full)`:""}.`,"loot");
+  if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
+}
 function recolorLifestone(ls){
   const col=ls.bound?0x172a86:0x101d5c;   // deep dark blue (matches buildLifestone)
   ls.mesh.userData.crystal.material.color.setHex(col);
@@ -12456,20 +12602,27 @@ function buildSheet(){
   sr.querySelectorAll('[data-train]').forEach(b=>b.onclick=()=>{ if(trainSkill(b.dataset.train)){SFX.quest();derive();saveGame();updateHUD();buildSheet();} });
   sr.querySelectorAll('[data-spec]').forEach(b=>b.onclick=()=>{ if(specSkill(b.dataset.spec)){SFX.quest();derive();saveGame();updateHUD();buildSheet();} });
   sr.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{ if(raiseSkill(b.dataset.raise)){SFX.quest();derive();saveGame();updateHUD();buildSheet();} });
-  // allegiance — patron/vassal tree (S1): swear UP to a patron (+XP), recruit vassals BELOW who pass income up to you
+  // allegiance — AC's patron/vassal pyramid: rank + gendered title, the tree above and below you,
+  // per-vassal pass-up rates from the real Loyalty×Leadership formula
   const al=document.getElementById('allegianceRow');
   player.vassals=player.vassals||[];
-  const vCap=vassalCap(), vN=player.vassals.length;
+  const vCap=vassalCap(), vN=player.vassals.length, rank=allegianceRank(), title=algTitle(rank);
   let ah="";
-  if(player.patron) ah+=`<div class="desc" style="color:#7fe6a0">✦ Sworn to <b>${esc(player.monarch||"a Patron")}</b> — +${15+(skillTier("loyalty")>0?5:0)}% XP (Loyalty).</div>`;
-  else if(player.level>=5) ah+=`<button class="tbtn" id="swearBtn">Swear to a Patron (+15% XP)</button>`;
-  else ah+=`<div class="desc" style="color:var(--dim)">Reach level 5 to swear to a Patron.</div>`;
-  ah+=`<div class="desc" style="margin-top:6px;color:#c9a6ff">Your vassals: <b>${vN}/${vCap}</b>${vN?` — ${player.vassals.map(v=>esc(v.name)).join(", ")}`:" (none yet)"}</div>`;
-  const passRate=Math.round(Math.min(0.30, vN*0.02*(1+(skillTier("leadership")>0?0.6:0)))*100);
-  if(vN) ah+=`<div class="desc" style="color:#9be08a">Patron income: <b>+${passRate}%</b> XP passed up${player.vassalXP?` · <b>${player.vassalXP.toLocaleString()}</b> lifetime`:""}. Train <b>Leadership</b> to hold &amp; earn more.</div>`;
-  ah+=`<button class="tbtn" id="recruitBtn" ${vN>=vCap?"disabled":""} style="margin-top:4px">Recruit a Vassal${vN>=vCap?" (at cap — raise Leadership)":""}</button>`;
+  if(rank>0) ah+=`<div class="desc" style="color:#ffd27f">✦ Allegiance rank <b>${rank}</b> — <b>${title}</b>${algIsMonarch()?` · <b style="color:#ffd23b">Monarch</b>`:""} · ${algFollowerCount()} follower${algFollowerCount()!==1?"s":""}${rank<10?` <span style="color:var(--dim)">(rank ${rank+1} needs ${ALG_MINF[rank+1]} followers + higher-ranked vassals)</span>`:""}</div>`;
+  if(player.patronInfo) ah+=`<div class="desc" style="color:#7fe6a0">Sworn to <b>${esc(player.patronInfo.name)}</b> (level ${player.patronInfo.level}) under Monarch <b>${esc(player.monarch||"?")}</b> — your deeds pass up as free XP for your patron (you lose nothing). <button class="pmbtn" id="breakBtn">Break fealty</button></div>`;
+  else if(player.level>=5) ah+=`<button class="tbtn" id="swearBtn">Swear fealty to a Patron</button> <span class="desc" style="color:var(--dim)">— joins an allegiance under a Monarch; your XP passes up (none is lost)</span>`;
+  else ah+=`<div class="desc" style="color:var(--dim)">Reach level 5 to swear fealty to a Patron.</div>`;
+  ah+=`<div class="desc" style="margin-top:6px;color:#c9a6ff">Your vassals: <b>${vN}/${vCap}</b> <span style="color:var(--dim)">(AC caps vassals at your character level)</span></div>`;
+  for(const v of player.vassals){
+    const vr=algVassalRank(v);
+    ah+=`<div class="desc" style="margin-left:8px">• <b>${esc(v.name)}</b> — level ${v.level}, rank ${vr}${v.followers?`, court of ${v.followers}`:""} · passes up <b>${Math.round(algPassupPct(v))}%</b>${v.xpUp?` <span style="color:#9be08a">(${v.xpUp.toLocaleString()} XP to date)</span>`:""}</div>`;
+  }
+  if(vN) ah+=`<div class="desc" style="color:#9be08a">Pass-up is EXTRA XP generated by your vassals' own deeds — Loyalty (theirs) × Leadership (yours), deepening with time sworn${player.vassalXP?` · <b>${player.vassalXP.toLocaleString()}</b> lifetime received`:""}.</div>`;
+  ah+=`<button class="tbtn" id="recruitBtn" ${vN>=vCap?"disabled":""} style="margin-top:4px">Swear in a Vassal${vN>=vCap?" (at your level cap)":""}</button>`;
+  if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
-  { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{player.patron=true;player.monarch=vassalName();SFX.quest();log(`You swear allegiance to Patron <b>${player.monarch}</b> — XP flows more freely.`,"sys");saveGame();buildSheet();}; }
+  { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
+  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{ breakFromPatron(); buildSheet(); }; }
   { const rb=document.getElementById('recruitBtn'); if(rb) rb.onclick=()=>{ if(recruitVassal()){ SFX.quest(); saveGame(); buildSheet(); } }; }
   // Luminance / Enlightenment endgame
   if(player.lumUnlocked||player.enlightenment){
@@ -12616,6 +12769,7 @@ function update(dt){
   player.meleeCd=Math.max(0,player.meleeCd-dt);
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
   player.invuln=Math.max(0,player.invuln-dt);
+  if(player.resProt&&player.invuln<=0) player.resProt=false;   // res protection ran its minute out
   player.swing=Math.max(0,player.swing-dt*3.2);
   if(player.act){ player.act.t-=dt; if(player.act.t<=0) player.act=null; }   // activity gesture (gather/craft/…)
   player.bowDraw=Math.max(0,player.bowDraw-dt*4);
@@ -12811,7 +12965,10 @@ function update(dt){
       if(dp.shared){ if(!dp.req){ dp.req=true; netSend({t:"pickup",id:dp.id}); } continue; } // server-validated; server removes it
       player.gold+=dp.amt;floater(player.x,EYE+0.4,player.z,"+"+dp.amt+" p","#ffd86b");
       SFX.gold();scene.remove(dp.mesh);drops.splice(i,1);continue;}
-    if(dp.type==="item"&&!dp.shared&&dp.t>(dp.corpse?600:45)){scene.remove(dp.mesh);drops.splice(i,1);} // corpse drops linger ~10min so you can recover them; other loot 45s
+    if(dp.type==="corpse"&&dp.t>(dp.ttl||3600)){   // corpses decay after 5 min/level (min 1 hr)
+      log("Far away, your corpse crumbles to dust — what it held is lost.","warn");
+      scene.remove(dp.mesh);drops.splice(i,1);continue;}
+    if(dp.type==="item"&&!dp.shared&&dp.t>(dp.corpse?600:45)){scene.remove(dp.mesh);drops.splice(i,1);} // stray corpse spill lingers ~10min; other loot 45s
   }
   // floaters & bursts
   for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.sp.position.y+=f.vy*dt;f.t-=dt;
@@ -12871,6 +13028,7 @@ function update(dt){
   cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
+  algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
   syncCamera(dt);
   updateHUD();
 }
@@ -13640,7 +13798,7 @@ function loop(ts){
 //  AUDIO — synthesized via WebAudio (no asset files; works fully offline)
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
-const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,
+const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,
   labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
@@ -17283,6 +17441,11 @@ function openSettings(){
   const hi=()=>diffBtns.forEach(b=>b.style.opacity=(+b.dataset.diff===settings.diff)?1:0.45);
   hi();
   diffBtns.forEach(b=>b.onclick=()=>{settings.diff=+b.dataset.diff;saveSettings();hi();log("Difficulty set — affects newly-spawned foes.","sys");});
+  const adBtns=document.querySelectorAll('#settings [data-acdeath]');
+  const adHi=()=>adBtns.forEach(b=>b.style.opacity=((+b.dataset.acdeath===1)===(settings.acDeath!==false))?1:0.45);
+  adHi();
+  adBtns.forEach(b=>b.onclick=()=>{settings.acDeath=+b.dataset.acdeath===1;saveSettings();adHi();
+    log(settings.acDeath?"Death now leaves a <b>lootable corpse</b> with dropped items + half your pyreals (AC-authentic).":"Death softened — Vitae only, no items or pyreals drop.","sys");});
   // per-category floating-name toggles (lit = shown)
   const lc=document.getElementById('setLabels');
   if(lc&&!lc.dataset.built){ lc.dataset.built="1";
@@ -19689,7 +19852,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -19724,8 +19887,15 @@ function applySaveObj(s){
     championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
     weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
     jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
-    skills:migrateSkills(s.skills),patron:!!s.patron,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,vitae:s.vitae||0,heritage:s.heritage||"aluvian",allegianceName:s.allegianceName||null,
+    skills:migrateSkills(s.skills),patronInfo:(s.patronInfo&&typeof s.patronInfo==="object")?s.patronInfo:null,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,allegianceMOTD:s.allegianceMOTD||null,vitae:s.vitae||0,heritage:s.heritage||"aluvian",allegianceName:s.allegianceName||null,
     name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}});
+  // allegiance migration: old saves held patron:bool + vassals:[{name}] — lift them into the pyramid
+  if(s.patron&&!player.patronInfo) player.patronInfo={name:s.monarch||vassalName(),level:player.level+5,sworn:Date.now(),ig:0};
+  player.vassals=player.vassals.map(v=>{
+    if(typeof v==="string") v={name:v};
+    if(v&&v.level==null) v=Object.assign({level:Math.max(1,(player.level|0)-irnd(2,10)),
+      loyalty:irnd(80,180),sworn:Date.now(),ig:0,followers:0,xpUp:0,xpAcc:0},v);
+    return v; }).filter(Boolean);
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(s.knownSpells==="all")?Object.keys(SPELLBOOK)              // admin/testing: know every spell
     :(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
@@ -19860,6 +20030,10 @@ function netHandle(m){
   if(m.t==="mob_die") return onMobDie(m);
   if(m.t==="dmg")     return onMobDmg(m);
   if(m.t==="reward")  return onReward(m);
+  if(m.t==="passup"){ gainXP(m.xp|0,{passup:true}); player.vassalXP=(player.vassalXP||0)+(m.xp|0);
+    log(`Your allegiance passes up <b>${(m.xp|0).toLocaleString()} XP</b>${m.from?` (from ${esc(m.from)})`:""}.`,"sys"); return; }
+  if(m.t==="alg"){ NET.alg=m;
+    log(`Allegiance — rank <b>${m.rank}</b>${m.monarch?` under Monarch <b>${esc(m.monarch)}</b>`:""} · ${m.followers} follower${m.followers!==1?"s":""}${m.vassals&&m.vassals.length?`<br>Vassals: ${m.vassals.map(v=>`${esc(v.name)}${v.online?"":" (away)"} — passes up ${v.passup}%`).join(" · ")}`:""}${m.motd?`<br>MOTD: <i>${esc(m.motd)}</i>`:""}`,"sys"); return; }
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
   if(m.t==="loot")      return onLoot(m);
@@ -20227,6 +20401,13 @@ function handleSlash(text){
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="house"){ hsHouseCmd(parts); }
   else if(cmd==="hor"||cmd==="house_recall"){ recallHome(); }
+  else if(cmd==="swear"){ const who=parts.slice(1).join(" ").trim();
+    if(!isOnline){ log("Solo world: swear fealty on the character sheet (C) — /swear &lt;name&gt; works on the online realm.","sys"); }
+    else if(!who){ log("Usage: /swear &lt;name&gt; — swear fealty to an online equal-or-higher character.","warn"); }
+    else netSend({t:"swear",name:who}); }
+  else if(cmd==="break"||cmd==="unswear"){
+    if(!isOnline){ breakFromPatron(); }
+    else netSend({t:"unswear"}); }
   else if(cmd==="hom"||cmd==="mansion_recall"){   // AC: recall to your (or your monarch's) mansion
     if(player.homestead&&player.homestead.type==="mansion") recallHome();
     else log("You hold no mansion to recall to — /hom recalls a mansion owner (or their allegiance) home.","sys"); }
@@ -20263,7 +20444,20 @@ function handleSlash(text){
     if(sub==="join"&&nm){ player.allegianceName=nm; if(isOnline) netSend({t:"allegiance",name:nm});
       log(`You swear to the <b>${esc(nm)}</b> allegiance — <b>/a &lt;message&gt;</b> speaks to them.`,"sys"); saveGame(); }
     else if(sub==="leave"){ if(player.allegianceName){ log(`You leave the <b>${esc(player.allegianceName)}</b> allegiance.`,"sys"); player.allegianceName=null; if(isOnline) netSend({t:"allegiance",name:""}); saveGame(); } else log("You are sworn to no allegiance.","warn"); }
-    else log(player.allegianceName?`Allegiance: <b>${esc(player.allegianceName)}</b> — /allegiance leave to quit, /a to speak.`:"Usage: /allegiance join &lt;name&gt; · /allegiance leave","sys"); }
+    else if(sub==="motd"){
+      if(!nm){ log(player.allegianceMOTD?`Allegiance MOTD: <i>${esc(player.allegianceMOTD)}</i>`:"No MOTD is set — /allegiance motd &lt;text&gt; (Monarchs only).","sys"); }
+      else if(!algIsMonarch()){ log("Only the <b>Monarch</b> sets the allegiance MOTD.","warn"); }
+      else { player.allegianceMOTD=nm.slice(0,200); if(isOnline) netSend({t:"alg_motd",text:player.allegianceMOTD});
+        log(`Allegiance MOTD set: <i>${esc(player.allegianceMOTD)}</i>`,"sys"); saveGame(); } }
+    else if(sub==="info"||!sub){
+      if(isOnline){ netSend({t:"alg_info"}); }
+      const rank=allegianceRank(), title=algTitle(rank);
+      let s2=`Allegiance: <b>${esc(player.allegianceName||"none")}</b>`;
+      if(rank>0) s2+=` · rank <b>${rank}</b> — <b>${title}</b>${algIsMonarch()?" · <b>Monarch</b>":""} · ${algFollowerCount()} followers`;
+      if(player.patronInfo) s2+=` · sworn to <b>${esc(player.patronInfo.name)}</b> under Monarch <b>${esc(player.monarch||"?")}</b>`;
+      s2+=`<br>Commands: /allegiance join &lt;name&gt; · leave · motd &lt;text&gt; · info — /a speaks to the allegiance. Swear/recruit on the character sheet (C).`;
+      log(s2,"sys"); }
+    else log("Usage: /allegiance join &lt;name&gt; · leave · motd &lt;text&gt; · info","sys"); }
   else if(cmd==="party"||cmd==="f"){
     const sub=(parts[1]||"").toLowerCase();
     if(sub==="invite"&&parts[2]) netSend({t:"party",act:"invite",name:parts[2]});
