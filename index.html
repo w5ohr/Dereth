@@ -639,6 +639,22 @@ try{ fetch('assets/acskills.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!
 }).catch(()=>{}); }catch(e){}
 // THE AC skill check (client formula): success chance vs difficulty is a logistic curve.
 function skillCheck(skill,diff){ return 1/(1+Math.exp(0.03*(diff-skill))); }
+// ── The authentic reward economy (assets/acrewards.json, from the ACE world DB by
+//    tools/ace_reward_export.py): per-creature kill XP (XpOverride), retail quest rewards
+//    (NPC emote AwardXP / Pyreal gives), and treasure_death loot-tier profiles. ──
+let AC_REW=null;
+try{ fetch('assets/acrewards.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
+  AC_REW=j;
+  for(const k in j.killxp){ if(typeof BESTIARY!=="undefined"&&BESTIARY[k]){ BESTIARY[k].xp=j.killxp[k].xp; BESTIARY[k].lvl=j.killxp[k].lvl; } }
+  let nq=0;
+  if(typeof QUESTS!=="undefined") for(const q of QUESTS){
+    const nm=(q.giver||"").split(" (")[0].trim().toLowerCase();
+    for(const npc in j.quests){ if(npc.toLowerCase()===nm){ const r=j.quests[npc];
+      if(r.xp) q.xp=r.xp; if(r.py) q.gold=r.py; nq++; break; } }
+  }
+  console.log("AC reward pack: kill XP for "+Object.keys(j.killxp).length+" kinds, "
+    +nq+" quests matched to retail NPC rewards, treasure tiers loaded.");
+}).catch(()=>{}); }catch(e){}
 const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
 const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
 const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
@@ -748,7 +764,9 @@ function derive(){
   player.st=Math.min(player.st,player.mst);
   player.mn=Math.min(player.mn,player.mmn);
 }
-const xpForLevel=l=>Math.floor(450*Math.pow(l,1.55));
+// the REAL 275-level ladder from the client XpTable when the skill pack is loaded (cumulative
+// chart → per-level need); the old fitted curve stays as the offline fallback
+const xpForLevel=l=>(AC_XP&&AC_XP.level&&l+1<AC_XP.level.length)?(AC_XP.level[l+1]-AC_XP.level[l]):Math.floor(450*Math.pow(l,1.55));
 
 // starting-path presets (AC is classless — these just seed your build)
 // the three heritage groups of Dereth — each starts in its culture's capital
@@ -11414,7 +11432,9 @@ function openLockedCache(){
   }
   dungeonLock.opened=true;
   if(dungeonLock.mesh) dungeonLock.mesh.rotation.z=-0.35;   // lid pops open
-  const n=2+irnd(0,1);
+  // yield from the real treasure_death tier profile (chests sit one tier above trash drops)
+  const tp=AC_REW&&AC_REW.tiers&&AC_REW.tiers[Math.min(6,tier+1)];
+  const n=tp?Math.max(2,irnd(tp.m0,tp.m1)+(Math.random()<tp.iC?irnd(tp.i0,tp.i1):0)):2+irnd(0,1);
   for(let k=0;k<n;k++) addDrop(dungeonLock.x+rnd(-1.6,1.6),dungeonLock.z+rnd(-1.6,1.6),{type:"item",item:rollItem(true,tier)});
   addDrop(dungeonLock.x,dungeonLock.z,{type:"gold",amt:irnd(40,120)});
   log(`You ${opener.stat==="key"?"unlock":"pick open"} the cache with your <b>${opener.name}</b> — treasure spills out!`,"loot");
@@ -18388,7 +18408,9 @@ function openChest(){
   if(!dungeonChest||dungeonChest.opened) return;
   dungeonChest.opened=true;dungeonChest.lid.position.y=1.18;dungeonChest.lid.rotation.x=-0.5;dungeonChest.light.intensity=2;
   burst(dungeonChest.x,1,dungeonChest.z,0xffd23b,28);
-  const tier=curDungeon?curDungeon.tier:1,dn=3+Math.floor(tier/2);
+  const tier=curDungeon?curDungeon.tier:1;
+  const _tp=AC_REW&&AC_REW.tiers&&AC_REW.tiers[Math.min(6,tier+1)];   // hoards yield per the real tier profile
+  const dn=_tp?Math.max(3,irnd(_tp.m0,_tp.m1)+irnd(_tp.i0,_tp.i1)+1):3+Math.floor(tier/2);
   if(curDungeon&&player.clearedDungeons.indexOf(curDungeon.id)<0){player.clearedDungeons.push(curDungeon.id);
     log(`First conquest of the <b>${curDungeon.name}</b>! (${player.clearedDungeons.length}/50 delves cleared)`,"sys");}
   for(let i=0;i<dn;i++) addDrop(dungeonChest.x+rnd(-2,2),dungeonChest.z+rnd(-2,2),{type:"item",item:rollItem(true,curDungeon?curDungeon.tier:4)});
