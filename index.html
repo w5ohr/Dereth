@@ -745,6 +745,9 @@ function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_W
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
 // AC: attributes are bought with unassigned XP on a steep escalating curve (not free level points).
 function attrCost(v){ return Math.round(25*Math.pow(Math.max(1,v-9),1.7)); }   // XP to raise from innate v → v+1
+// AC's cheaper secondary-attribute track: pour XP into Health / Stamina / Mana points (n → n+1). Cheaper
+// than primary attributes (retail pt-1 = 73 vs 110), capped at +200 like retail's ~196.
+function vitalCost(n){ return Math.round(16*Math.pow(Math.max(1,n+1),1.7)); }
 // credit economy: available = base(level) − spent; specialization capped at 70 credits' worth
 function creditBase(){ let fromLevels=0;
   if(AC_XP){ const ch=AC_XP.credits, top=Math.min(player.level,ch.length-1);   // the real chart: credits granted at each level (46 total to 275)
@@ -773,6 +776,7 @@ const ATTR_DESC={Strength:"Melee damage & burden",Endurance:"Health, stamina & r
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   attr:{Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10},
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
+  vitals:{hp:0,st:0,mn:0},   // AC secondary attributes: XP-raised Health/Stamina/Mana points, added to the derived base max
   level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},jewelry:{},gearSkill:{},
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,potStam:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
@@ -804,6 +808,7 @@ function derive(){
   player.mhp=60+a.Endurance*2+player.level*6;
   player.mst=50+a.Endurance*4;
   player.mmn=40+a.Self*6+player.level*2;
+  if(player.vitals){ player.mhp+=player.vitals.hp||0; player.mst+=player.vitals.st||0; player.mmn+=player.vitals.mn||0; }  // AC: XP-raised vital points add to the base max
   // THE authentic AC run formula (client GetRunRate, preserved in ACEmulator):
   //   rate = (burdenMod × (Run/(Run+200) × 11) + 4) / 4, hard-capped at 4.5× when Run ≥ 800.
   //   burdenMod: ≤100% carry capacity = 1.0, then linear down to 0 at 300% (AC EncumbranceSystem).
@@ -12474,6 +12479,15 @@ function buildSheet(){
       <div class="ctl"><button class="pmbtn" data-lower="${a}" title="lower (refund ${v>10?attrCost(v-1).toLocaleString():0} XP)" ${v<=10?'disabled':''}>−</button><span class="val" id="sv_${a}">${v}</span><button class="pmbtn" data-a="${a}" title="${v>=100?'at innate cap 100':(player.skillPts>0?'raise (free legacy point)':'raise: '+cost.toLocaleString()+' XP')}" ${canRaise?'':'disabled'}>+</button></div>`;
     attrRows.appendChild(row);
   }
+  // AC secondary attributes — pour XP into Health / Stamina / Mana (the cheaper vital track)
+  player.vitals=player.vitals||{hp:0,st:0,mn:0};
+  for(const [vk,vlab,mk] of [["hp","Health","mhp"],["st","Stamina","mst"],["mn","Mana","mmn"]]){
+    const n=player.vitals[vk]||0, cost=vitalCost(n), canR=n<200&&player.xpUnspent>=cost;
+    const row=document.createElement('div');row.className="row";
+    row.innerHTML=`<div><span class="lab">${vlab}</span> <span class="desc">— max ${player[mk]}${n>0?' ('+'+'+n+' raised)':''}</span></div>
+      <div class="ctl"><button class="pmbtn" data-vitlo="${vk}" title="lower (refund ${n>0?vitalCost(n-1).toLocaleString():0} XP)" ${n<=0?'disabled':''}>−</button><span class="val">${n}</span><button class="pmbtn" data-vit="${vk}" title="${n>=200?'at cap 200':'raise: '+cost.toLocaleString()+' XP'}" ${canR?'':'disabled'}>+</button></div>`;
+    attrRows.appendChild(row);
+  }
   document.getElementById('pts').textContent=player.xpUnspent.toLocaleString()+(player.skillPts>0?" (+"+player.skillPts+" free)":"");
   const ar=document.getElementById('achRows');
   ar.innerHTML=ACHIEVEMENTS.map(a=>{
@@ -12537,6 +12551,16 @@ function buildSheet(){
   attrRows.querySelectorAll('[data-lower]').forEach(btn=>btn.onclick=()=>{
     const a=btn.dataset.lower, v=player.attr[a]; if(v<=10) return;
     player.attr[a]--; player.xpUnspent+=attrCost(v-1); derive(); saveGame(); buildSheet();   // AC-style: lowering refunds the XP that point cost
+  });
+  attrRows.querySelectorAll('[data-vit]').forEach(btn=>btn.onclick=()=>{
+    const vk=btn.dataset.vit; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0;
+    if(n>=200){ log("Vital points cap at 200.","warn"); return; }
+    const cost=vitalCost(n); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise that vital.","warn"); return; }
+    player.xpUnspent-=cost; player.vitals[vk]=n+1; derive(); saveGame(); buildSheet();
+  });
+  attrRows.querySelectorAll('[data-vitlo]').forEach(btn=>btn.onclick=()=>{
+    const vk=btn.dataset.vitlo; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0; if(n<=0) return;
+    player.vitals[vk]=n-1; player.xpUnspent+=vitalCost(n-1); derive(); saveGame(); buildSheet();   // lowering refunds the XP that point cost
   });
 }
 function openSheet(){buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
@@ -19739,7 +19763,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patron:player.patron,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -19765,6 +19789,7 @@ function applySave(){
 function applySaveObj(s){
   if(!s) return false;
   Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
+    vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
