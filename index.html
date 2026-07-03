@@ -1240,7 +1240,7 @@ let scene,cam,renderer,sun;
 // cinematic post-processing pipeline (bloom + filmic tonemap + vignette), built inline (no extra files)
 let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,quad:null,bright:null,blur:null,comp:null};
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
-let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[];  // self-cast (crouch→raise) vs forward cast
+let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[],castRingFX=[];  // self-cast (crouch→raise) vs forward cast; castRingFX = AC concentric casting rings
 let castKind="self";   // "self" (buff/heal on self) | "bolt" (offensive thrust) | "bestow" (gift a spell to an ally)
 // Generic avatar activity gesture (gather/mine/craft/tinker/fish) — a timed pose the animator plays over `dur`.
 function startAction(type,dur){ if(!player.alive) return; player.act={type,t:dur,dur}; }
@@ -6821,6 +6821,31 @@ function updateCastSwirls(dt){
     if(c.t>=c.dur){ scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); castSwirls.splice(i,1); }
   }
 }
+// AC's signature spell-cast animation: concentric rings of light that contract inward and rise up
+// the caster's body as the mana gathers, just before the bolt is loosed.
+function castRings(x,z,color){
+  const g=new THREE.Group(); g.position.set(x,0,z); scene.add(g);
+  const bright=new THREE.Color(color).lerp(new THREE.Color(0xffffff),0.4).getHex();
+  const rings=[];
+  for(let i=0;i<3;i++){
+    const m=new THREE.Mesh(new THREE.TorusGeometry(1,0.05,6,26),
+      new THREE.MeshBasicMaterial({color:bright,transparent:true,opacity:0.95,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+    m.rotation.x=Math.PI/2; g.add(m);   // lie flat, a halo around the caster
+    rings.push({m,delay:i*0.11,y0:0.1+i*0.16});
+  }
+  castRingFX.push({g,t:0,dur:0.72,rings});
+}
+function updateCastRings(dt){
+  for(let i=castRingFX.length-1;i>=0;i--){ const c=castRingFX[i]; c.t+=dt; let alive=false;
+    for(const r of c.rings){ const lt=c.t-r.delay; if(lt<0){alive=true;continue;}
+      const k=Math.min(1,lt/(c.dur-r.delay));
+      const rad=1.55*(1-k)+0.12; r.m.scale.set(rad,rad,rad);   // contract inward as the mana draws in…
+      r.m.position.y=r.y0+k*1.55;                              // …and rise from the feet toward the head
+      r.m.material.opacity=clamp((1-k)*0.95,0,1);
+      if(k<1)alive=true; }
+    if(!alive){ scene.remove(c.g); c.rings.forEach(r=>{r.m.geometry.dispose();r.m.material.dispose();}); castRingFX.splice(i,1); }
+  }
+}
 // portal-travel effect: a swirling column of motes + a flash of light + a whoosh
 function teleportFX(x,z){
   const gy=groundY(x,z),col=0x9b6bff;
@@ -11480,13 +11505,14 @@ function executeSpell(id){
   const geom=s.geom||"bolt";
   if(geom==="ring"){   // point-blank ring: strike every nearby foe around you
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<7.5);
-    burst(player.x,1,player.z,sp.color,30);
+    burst(player.x,1,player.z,sp.color,30); castRings(player.x,player.z,sp.color);
     for(const m of targets){ if(sp.element){const em=elemMult(m.kind,sp.element); if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");} applyHit(m,dmg,{element:sp.element,spell:true}); }
     castFlash(sp.color);SFX.flame();shake(0.2);
     if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
     netSpellFx("ring",player.x,player.z,0,0,sp.color,7.5,0);
     return;
   }
+  castRings(player.x,player.z,sp.color);   // AC gathering-rings flourish as the bolt is loosed
   // spread angles per geometry: single, fan (blast/wave), tight stream (volley)
   const spread=geom==="blast"?[-0.26,0,0.26]:geom==="wave"?[-0.45,-0.22,0,0.22,0.45]:geom==="volley"?[-0.07,0,0.07]:[0];
   for(const off of spread){
@@ -11494,6 +11520,8 @@ function executeSpell(id){
     const ox=player.x+dx*0.8, oz=player.z+dz*0.8, oy=EYE-0.15;
     const mesh=new THREE.Mesh(projGeom(sp),new THREE.MeshBasicMaterial({color:sp.color}));
     mesh.position.set(ox,oy,oz);
+    const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+    halo.scale.setScalar((sp.r||0.28)*4.2); mesh.add(halo);   // additive glow so the bolt reads as energy, not a solid primitive
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
     pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:oy,z:oz,vx:dx*sp.speed,vy:dir.y*sp.speed,vz:dz*sp.speed,
       dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:2.2});
@@ -12186,6 +12214,7 @@ function update(dt){
   if(castShow<=0) castSwirlActive=false;
   castShow=Math.max(0,castShow-dt);
   if(castSwirls.length) updateCastSwirls(dt);
+  if(castRingFX.length) updateCastRings(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
