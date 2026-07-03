@@ -2077,6 +2077,23 @@ function encumbrance(){
   return {load,cap,ratio:clamp(load/cap,0,1.8)};
 }
 const GRAV=22;
+const ACADEMY_POS={x:2640,z:-3820};   // B1: the Training Academy grounds, north of Holtburg
+// a felled Academy practice target pays its retail XP and drops its token into your pack
+function academyKill(m){
+  const A=player.academy; if(!A||A[m.academyGoal]) return;
+  const XP={golem:1000,wasp:2000,thrungus:3000,olthoi:5000}, IT={golem:"Academy Token",wasp:"Carpenter Wasp Wing",thrungus:"Bellows",olthoi:"Protection Orb"};
+  A[m.academyGoal]=1; gainXP(XP[m.academyGoal]||1000);
+  player.inv.push({name:IT[m.academyGoal]||"Token",stat:"quest",v:10});
+  log(`<b>${IT[m.academyGoal]}</b> recovered — return to your instructor. <span style="color:#7fe6a0">+${(XP[m.academyGoal]||1000).toLocaleString()} XP</span>`,"loot");
+  saveGame();
+}
+function academyExit(){   // the single exit portal: one destination, the town you chose at creation
+  const tn=player.createTown||"Holtburg", c=CITIES.find(x=>x.name===tn)||CAPITALS[0];
+  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  arriveAt(c.x,(c.z||0)+4); player.academy.done=1;
+  log(`You step through the Academy portal into <b>${c.name||tn}</b>. Seek out the town's greeters by the plaza — they'll see you settled.`,"sys");
+  toast("WELCOME TO "+String(c.name||tn).toUpperCase()); saveGame();
+}
 // AC jump (ACE MovementSystem): hold-to-charge power bar 0→1; height scales LINEARLY with power
 // (so velocity ∝ √power), with the skill term on AC's asymptote curve jump/(jump+1300) and the
 // burden modifier (≤100% free, linear to zero at 200%). At 0 stamina the skill counts as 0.
@@ -5547,6 +5564,12 @@ function buildWorld(){
       Sanamar:[["Marcett du Nouy","ls"],["Aleta Perine","bar"],["Thierra Molanti","path"]]};
     for(const tn in GREETERS){ const c=CITIES.find(x=>x.name===tn); if(!c) continue;
       GREETERS[tn].forEach((g,i)=>addNPC(c.x-10+i*4,c.z-11,{role:"greeter",greet:g[1],town:tn,name:g[0]})); } }
+  // B1 — the TRAINING ACADEMY (ToD): new arrivals spawn at the Exploration Society's grounds
+  // north of Holtburg and walk the retail station chain before portaling to their chosen town.
+  { const A=ACADEMY_POS, ANPC=[["Society Greeter","greet",-8,0],["Jonathan","skip",-8,-6],["Samuel","armor",-3,3],
+      ["Training Master","master",2,3],["Academy Foreman","foreman",7,3],["Academy Blacksmith","smith",12,3],
+      ["Academy Researcher","research",17,3],["Academy Sentry","sentry",22,0]];
+    for(const [nm,key,dx,dz] of ANPC) addNPC(A.x+dx,A.z+dz,{role:"academy",greet:key,town:"Training Academy",name:nm}); }
   // named quest-givers, each standing in their AC home town (ringed around the plaza so they don't overlap)
   { const byTown={};
     for(const id in QUEST_GIVERS){ const g=QUEST_GIVERS[id]; (byTown[g.town]=byTown[g.town]||[]).push(id); }
@@ -7995,6 +8018,7 @@ function killMonster(m){
   if(m.sagaTag==="agitator") sagaNotify("agitator");
   sagaNotify("kill",m.kind);   // saga cull objectives (cheap no-op when the live chapter has none)
   if(typeof sagaStageKill==="function") sagaStageKill(m);   // finale kills-stage
+  if(m.academyGoal&&typeof academyKill==="function") academyKill(m);   // B1 Training Academy practice targets
   if(m.isElite) player.championKills++;
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
@@ -16829,6 +16853,56 @@ function talkToNPC(n){
     const bl=acDialogueLine(n.name,"barkeep"), i=(n._line=(n._line||0)+1);
     if(bl&&i%2===0){ log(`<b>${n.name}:</b> ${esc(bl[(i>>1)%bl.length])}`,"sys"); return; }
     log(`<b>${n.name}:</b> ${RUMORS[i%RUMORS.length]}`,"sys"); return; }
+  if(n.role==="academy"){   // B1: the Training Academy station chain (ToD walkthrough)
+    player.academy=player.academy||{}; const A=player.academy, k=n.greet, AP=ACADEMY_POS;
+    const say=m=>log(`<b>${n.name}:</b> ${m}`,"sys");
+    const practice=(kind,nm,goal,hp)=>{ const m=spawnMonster(kind,AP.x+rnd(-4,4),AP.z+12+rnd(0,4),false);
+      if(m){ m.name=nm; m.mhp=m.hp=hp; m.dmg=Math.min(m.dmg,6); m.academyGoal=goal; floater(m.x,2.5,m.z,nm,"#ffd27a"); } };
+    if(k==="greet"){ if(!A.greet){ A.greet=1; const ci=player.inv.findIndex(i=>i.name==="Calling Stone"); if(ci>=0)takeFromInv(ci);
+        say("Welcome to the Training Academy! I'll take that Calling Stone. Move with <b>W A S D</b>, speak to folk with <b>E</b>. Samuel waits with your armor, and the Training Master will test your arm. The Sentry keeps the portal out — or <b>Jonathan</b> can send you on at once."); }
+      else say("Samuel first, then the Training Master. The Sentry holds your way out."); }
+    else if(k==="skip"){ if(A.done){ say("Once you leave, you cannot come back — and you have left, friend."); return; }
+      A.done=1; gainXP(11000);
+      if(!A.armor){ A.armor=1; for(const s of [["Leather Cap","head",8],["Leather Gauntlets","hands",8],["Leather Leggings","legs",8]]) player.inv.push({name:s[0],stat:"worn",at:"light",aslot:s[1],v:s[2],mat:"Leather",tier:1}); }
+      player.inv.push({name:"Academy Coat",stat:"worn",at:"light",aslot:"chest",v:12,mat:"Leather",tier:1});
+      player.inv.push({name:"Facility Hub Portal Gem",stat:"quest",v:100});
+      say("Very well — everything you would have earned, and the way out. Remember: once you leave the Training Academy, you cannot come back! <span style=\"color:#7fe6a0\">+11,000 XP</span>");
+      academyExit(); }
+    else if(k==="armor"){ if(!A.armor){ A.armor=1; for(const s of [["Leather Cap","head",8],["Leather Gauntlets","hands",8],["Leather Leggings","legs",8]]) player.inv.push({name:s[0],stat:"worn",at:"light",aslot:s[1],v:s[2],mat:"Leather",tier:1});
+        say("Your kit: cap, gauntlets, leggings. Press <b>I</b> and drag them on — and examine anything with a right-click."); }
+      else say("Wearing it well! The Training Master is next."); }
+    else if(k==="master"){ if(A.golem) say("Well fought! The Foreman has honest work for you.");
+      else if(!A.golemUp){ A.golemUp=1; practice("golem","Sparring Golem","golem",40);
+        say("Warriors read the signs on the left; spellcasters the right. Now, a practical test — best my <b>Sparring Golem</b>! Mind your power bar and your attack height."); }
+      else say("The Sparring Golem awaits your challenge."); }
+    else if(k==="foreman"){ if(!A.golem) say("The Training Master's golem first, friend.");
+      else if(A.wasp) say("Good wing-work. The Blacksmith is short a bellows, I hear.");
+      else if(!A.waspUp){ A.waspUp=1; practice("phyntoswasp","Carpenter Wasp","wasp",26);
+        say("Pests! A <b>Carpenter Wasp</b> chews our scaffolds in the west passage. Bring me its wing."); }
+      else say("The wasp still buzzes out there."); }
+    else if(k==="smith"){ if(!A.wasp) say("Help the Foreman first — I'm mid-forging.");
+      else if(A.thrungus) say("My bellows, returned! The Library stands open to you now.");
+      else if(!A.thrungusUp){ A.thrungusUp=1; practice("shreth","Thieving Thrungus","thrungus",34);
+        say("A thieving <b>Thrungus</b> made off with my BELLOWS — south passage, by the vegetable gardens. Fetch it back!"); }
+      else say("The Thrungus still has my bellows."); }
+    else if(k==="research"){ if(!A.thrungus) say("The Library opens to those the Blacksmith vouches for.");
+      else if(!A.oil){ A.oil=1;
+        if(player.weapon&&/^Training /.test(player.weapon.name)){ player.weapon.name=player.weapon.name.replace(/^Training /,"Academy "); player.weapon.v+=3;
+          say("Oil of Rendering — watch the finish deepen to a lustrous red. Your <b>"+esc(player.weapon.name)+"</b> is the finer for it."); }
+        else { player.inv.push({name:"Oil of Rendering",stat:"quest",v:25}); say("Take this <b>Oil of Rendering</b> for your training weapon."); } }
+      else say("Knowledge keeps. Read what you like before you go."); }
+    else if(k==="sentry"){ if(!A.oil) say("See the Researcher before the wall, recruit.");
+      else if(A.done){ academyExit(); return; }
+      else if(A.olthoi){ A.done=1;
+        player.inv.push({name:"Academy Coat",stat:"worn",at:"light",aslot:"chest",v:12,mat:"Leather",tier:1});
+        player.inv.push({name:"Facility Hub Portal Gem",stat:"quest",v:100});
+        say("The orb recovered — the Academy thanks you. Take the <b>Academy Coat</b> and this <b>Facility Hub Portal Gem</b>. Your portal stands ready — seek out the greeters when you arrive!");
+        academyExit(); }
+      else if(!A.olthoiUp){ A.olthoiUp=1; practice("olthoiworker","Adolescent Olthoi","olthoi",50);
+        say("Olthoi breached the Outer Wall and stole our <b>Protection Orbs</b>! An adolescent skulks in the tunnels — recover an orb!"); }
+      else say("Recover the Protection Orb from the Adolescent Olthoi!"); }
+    if(SFX.quest)SFX.quest(); saveGame(); return;
+  }
   if(n.role==="greeter"){   // A3: the retail new-arrival chain — Lifestone → Bartender → Pathwarden
     player.greeters=player.greeters||{};
     const G=player.greeters, k=n.greet;
@@ -20545,7 +20619,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,greeters:player.greeters||{},
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,greeters:player.greeters||{},academy:player.academy||{},
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -20573,6 +20647,7 @@ function applySaveObj(s){
   Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
     vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
     greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
+    academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
@@ -21273,8 +21348,16 @@ function startGame(loadSaved,preset){
   } else {
     const homeName=player.createTown||(preset&&PRESETS[preset]&&PRESETS[preset].town)||"Holtburg";
     const home=CITIES.find(c=>c.name===homeName)||CAPITALS[0];
-    arriveAt(home.x,home.z+4);
-    log(`You step through Asheron's portal into <b>${home.name}</b>.`,"sys");
+    // B1 (ToD): new arrivals materialize at the TRAINING ACADEMY, not in town — the Society
+    // Greeter takes it from there (Jonathan offers the instant skip; the Sentry keeps the exit).
+    player.academy=player.academy||{};
+    if(!player.academy.done){
+      arriveAt(ACADEMY_POS.x-14,ACADEMY_POS.z);
+      log(`You awaken on the training grounds of the <b>Exploration Society's Academy</b>. A woman in Society colors beckons — <i>"Walk up to me using the 'W' key... I'll talk to you if you press 'E'. I promise."</i>`,"sys");
+    } else {
+      arriveAt(home.x,home.z+4);
+      log(`You step through Asheron's portal into <b>${home.name}</b>.`,"sys");
+    }
     log("You have crossed to <b>Dereth</b>, a volcanic isle on the world of <b>Auberean</b> — a land of portals, ancient ruins, and the insectoid Olthoi.","sys");
     log("Bind to the Lifestone (E), and open the map (Tab) to fast-travel between towns.","sys");
     toast("WELCOME TO DERETH");
