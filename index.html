@@ -3344,7 +3344,7 @@ function acJointFor(p){          // classify a part by its pivot: arm chain by |
   if(Math.abs(ax)>=0.17) return (ay>1.3?'sh':ay>1.02?'el':'wr')+(ax<0?'R':'L');
   if(ay>1.5) return null;                                        // head — the sculpted face system stays
   if(ay>1.02) return 'torso';
-  if(ay>0.84) return 'pelvisG';
+  if(ay>0.84) return Math.abs(ax)>=0.06?('hip'+(ax<0?'R':'L')):'pelvisG';   // thigh pivots sit at hip height
   return (ay>0.55?'hip':ay>0.2?'kn':'an')+(ax<0?'R':'L');
 }
 function acRestPos(J,av){        // joint's avatar-local REST position: sum ancestor offsets, ignore animation rotations
@@ -3379,6 +3379,7 @@ function applyACBody(av){
     for(let p=o;p&&p!==av;p=p.parent){ if(keep.has(p)||(p.userData&&p.userData.acBody)) return; }
     o.visible=false;
   });
+  u.acScale=s;
   u.acBody=true;
 }
 // a smooth, continuously-muscled limb: revolve a profile [[radius,t],…] (t 0→1 along length) into one
@@ -10393,6 +10394,58 @@ function refreshAvatarArmor(){
   }
   u.capeArmored=!!slots.back;
   if(u.cape&&u.capeArmored) u.cape.visible=false;   // the worn cloak replaces the heritage cape
+  if(typeof refreshACArmor==="function") refreshACArmor();   // retail pieces swap the real body-part meshes
+}
+// ── ClothingTable armor-on-body (assets/acarmor, tools/ac_armor_export.py): equipping a
+//    retail piece replaces the AC body's part meshes with the armor's — a breastplate is
+//    the actual armored chest, a coat re-clads chest and arms, exactly as the client did. ──
+let AC_ARMOR=null,_acArmorMesh={};
+try{ fetch('assets/acarmor/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
+  AC_ARMOR=j; console.log("AC armor-on-body: "+Object.keys(j.items).length+" retail pieces mapped.");
+  if(typeof playerAvatar!=="undefined"&&playerAvatar) refreshACArmor();
+}).catch(()=>{}); }catch(e){}
+function acArmorPart(gid,cb){
+  if(_acArmorMesh[gid]!==undefined){ if(_acArmorMesh[gid]&&_acArmorMesh[gid]!=="loading") cb(_acArmorMesh[gid]); return; }
+  _acArmorMesh[gid]="loading";
+  fetch('assets/acarmor/'+gid+'.json').then(r=>r.json()).then(j=>{
+    const grp=new THREE.Group(), TL=new THREE.TextureLoader();
+    for(const g of j.groups){ const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(g.n,3));
+      geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
+      geo.setIndex(g.i);
+      let mat;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+        mat=new THREE.MeshStandardMaterial({map:t,roughness:0.55,metalness:0.15});
+        if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
+      else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.55,metalness:0.15});
+      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
+    _acArmorMesh[gid]=grp; cb(grp);
+  }).catch(()=>{ _acArmorMesh[gid]=null; });
+}
+function refreshACArmor(){
+  const av=(typeof playerAvatar!=="undefined")&&playerAvatar, u=av&&av.userData;
+  if(!u||!u.acBody||!AC_ARMOR) return;
+  av.traverse(o=>{ if(o.userData&&o.userData.acBody) o.visible=true; });          // restore the bare body
+  const del=[]; av.traverse(o=>{ if(o.userData&&o.userData.acArmor) del.push(o); });
+  for(const d of del) if(d.parent) d.parent.remove(d);
+  const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
+    hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
+  const as=player.armorSlots||{};
+  for(const slot in as){ const it=as[slot]; if(!it||!it.name) continue;
+    const swaps=AC_ARMOR.items[it.name.toLowerCase()]; if(!swaps) continue;
+    if(u.armorRig&&u.armorRig[slot]) for(const gr of u.armorRig[slot].groups) gr.visible=false;   // the real mesh replaces the shell
+    for(const s of swaps){ const jk=AC_ARMOR.partJoint[s.p], J=jk&&joints[jk]; if(!J) continue;
+      acArmorPart(s.g, grp=>{
+        if(!player.armorSlots||!player.armorSlots[slot]||player.armorSlots[slot].name!==it.name) return;   // unequipped meanwhile
+        const inst=grp.clone(); inst.userData.acArmor=slot;
+        let ref=null; for(const ch of J.children){ if(ch.userData&&ch.userData.acBody){ ref=ch; break; } }
+        if(ref){ inst.position.copy(ref.position); inst.quaternion.copy(ref.quaternion); inst.scale.copy(ref.scale); ref.visible=false; }
+        else inst.scale.setScalar(u.acScale||1);
+        J.add(inst);
+      });
+    }
+  }
 }
 // Build the equipped weapon/focus as a real model (buildItemModel) in the avatar's hand, so a wand looks
 // like a wand, an orb like an orb, a scimitar curved — not a generic box blade. Melee + foci use aHeld;
