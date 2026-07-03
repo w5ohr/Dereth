@@ -645,7 +645,11 @@ function skillCheck(skill,diff){ return 1/(1+Math.exp(0.03*(diff-skill))); }
 let AC_REW=null;
 try{ fetch('assets/acrewards.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
   AC_REW=j;
-  for(const k in j.killxp){ if(typeof BESTIARY!=="undefined"&&BESTIARY[k]){ BESTIARY[k].xp=j.killxp[k].xp; BESTIARY[k].lvl=j.killxp[k].lvl; } }
+  for(const k in j.killxp){ if(typeof BESTIARY!=="undefined"&&BESTIARY[k]){ const e=j.killxp[k],b=BESTIARY[k];
+    b.xp=e.xp; b.lvl=e.lvl;                        // exact retail kill XP + level
+    if(e.hp>0) b.hp=e.hp;                          // real max health (attribute_2nd)
+    if(e.dmg>0) b.dmg=e.dmg;                       // real strike damage (hardest body part)
+    if(e.al>0) b.al=e.al; } }                      // median body armor level (for future mitigation)
   let nq=0;
   if(typeof QUESTS!=="undefined") for(const q of QUESTS){
     const nm=(q.giver||"").split(" (")[0].trim().toLowerCase();
@@ -1384,10 +1388,11 @@ const MONSTER_MODELS={
 // They REPLACE the CC0 stand-ins above; kinds without an extract (shadow, mummy, mukkir,
 // remoran, zefir) keep their stand-in models. No tints — the authentic skins ship as-is.
 for(const k of ["armoredillo","auroch","banderling","burun","carenzi","drudge","golem","gromnie",
-  "grievver","lugian","mattekar","mite","moarsman","monouga","mosswart","niffis","olthoi",
-  "olthoisoldier","olthoiworker","rat","reedshark","sclavus","shreth","skeleton","tumerok",
-  "tusker","ursuin","virindi","zombie"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
+  "grievver","lugian","mattekar","mite","moarsman","monouga","mosswart","mukkir","niffis","olthoi",
+  "olthoisoldier","olthoiworker","rat","reedshark","remoran","sclavus","shadow","shreth","siraluun",
+  "skeleton","tumerok","tusker","ursuin","virindi","wisp","zefir","zombie"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
 MONSTER_MODELS.phyntoswasp=[{f:"ac/wasp.glb"}];
+MONSTER_MODELS.mummy=[{f:"ac/zombie.glb",tint:0xcabf9a}];   // mu-miyah: the undead body in sand-wrap tones
 let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h,tint,tints} loaded variants
 function loadGltfMonsters(){
   if(gltfMonstersStarted||!USE_GLTF_MONSTERS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;

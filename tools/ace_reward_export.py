@@ -52,7 +52,19 @@ def main():
         src = open(path, encoding="utf-8", errors="replace").read()
         lv = re.search(r"\(\d+,\s*25,\s*(\d+)\)\s*/\* Level \*/", src)
         xp = re.search(r"\(\d+,\s*146,\s*(\d+)\)\s*/\* XpOverride \*/", src)
-        return (int(lv.group(1)), int(xp.group(1))) if lv and xp else None
+        if not (lv and xp): return None
+        hp = re.search(r"\(\d+,\s*1,\s*\d+, \d+, \d+, (\d+)\)\s*/\* MaxHealth \*/", src)
+        # attack damage: the hardest-hitting body part (d_Val) and its variance
+        dmg = [(int(m.group(1)), float(m.group(2)))
+               for m in re.finditer(r"VALUES \(\d+,\s*\d+,\s*\d+,\s*(\d+),\s*([\d.]+),", src)]
+        dmg += [(int(m.group(1)), float(m.group(2)))
+                for m in re.finditer(r",\s*\(\d+,\s*\d+,\s*\d+,\s*(\d+),\s*([\d.]+),", src)]
+        best = max(dmg) if dmg else (0, 0)
+        arm = [int(a) for a in re.findall(r"VALUES \(\d+,\s*\d+,\s*\d+,\s*\d+,\s*[\d.]+,\s*(\d+),", src)]
+        arm += [int(a) for a in re.findall(r",\s*\(\d+,\s*\d+,\s*\d+,\s*\d+,\s*[\d.]+,\s*(\d+),", src)]
+        return (int(lv.group(1)), int(xp.group(1)),
+                int(hp.group(1)) if hp else 0, best[0], round(best[1], 2),
+                int(statistics.median(arm)) if arm else 0)
     for pat, kinds in want.items():
         # names get reused for late-era bosses ("Skeleton" exists at L710) — our bestiary
         # kinds are the classic overworld breeds, so take the LOWEST-level match
@@ -63,9 +75,12 @@ def main():
                 if s and s[1] > 0: cands.append(s)
         if cands:
             got = min(cands)
-            for k in kinds: killxp[k] = dict(lvl=got[0], xp=got[1])
+            for k in kinds:
+                killxp[k] = dict(lvl=got[0], xp=got[1], hp=got[2], dmg=got[3], dvar=got[4], al=got[5])
     print(f"killxp: {len(killxp)} kinds")
-    for k in sorted(killxp): print(f"  {k:14s} L{killxp[k]['lvl']:<3d} {killxp[k]['xp']:,} xp")
+    for k in sorted(killxp):
+        e = killxp[k]
+        print(f"  {k:14s} L{e['lvl']:<3d} {e['xp']:>7,} xp  hp {e['hp']:<5d} dmg {e['dmg']:<3d}±{e['dvar']:<4} AL {e['al']}")
 
     # ── NPC quest rewards from emote tables ──
     quests = {}

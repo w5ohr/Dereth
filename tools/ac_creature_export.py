@@ -100,6 +100,8 @@ def parse_motiontable(d):
 def creature_dids():
     """kind -> (setupId, motionTableId) from the ACE world DB dump: creature weenies
     (type 10) matched by display name — exact first, then 'Name ...' / '... Name'."""
+    if not os.path.isfile(ACEDB):
+        return creature_dids_split()               # fall back to the 3-Core split DB
     re_weenie = re.compile(r"\((\d+),'(?:[^'\\]|\\.)*',(\d+),'[^']*'\)")
     re_str = re.compile(r"\((\d+),(\d+),(\d+),'((?:[^'\\]|\\.)*)'\)")
     re_did = re.compile(r"\((\d+),(\d+),(\d+),(\d+)\)")
@@ -130,6 +132,39 @@ def creature_dids():
             for n in allnames:
                 if n.startswith(pat + " ") or n.endswith(" " + pat):
                     got = byname[n]; break
+        if got: out[kind] = got
+    if "olthoisoldier" in out and "olthoi" not in out: out["olthoi"] = out["olthoisoldier"]
+    return out
+
+def creature_dids_split():
+    """Same resolution against the 3-Core split DB (per-weenie SQL files) when the
+    monolithic dump isn't present: exact display-name file first, then prefix/suffix
+    variants; human-setup impostors rejected."""
+    base = os.path.join(ROOT, "ACE-World-16PY-master", "Database", "3-Core",
+                        "9 WeenieDefaults", "SQL", "Creature")
+    allfiles = []
+    for root, _, files in os.walk(base):
+        for fn in files:
+            m = re.match(r"\d+ (.+)\.sql$", fn)
+            if m: allfiles.append((m.group(1), os.path.join(root, fn)))
+    def dids_of(path):
+        src = open(path, encoding="utf-8", errors="replace").read()
+        blk = re.search(r"weenie_properties_d_i_d.*?;", src, re.S)
+        d = dict(re.findall(r"\(\d+,\s*(\d+),\s*(0x[0-9A-Fa-f]+)\)", blk.group(0))) if blk else {}
+        if d.get("1") and d.get("2"):
+            s = int(d["1"], 16)
+            if s != 0x02000001:
+                return (s, int(d["2"], 16))
+        return None
+    byname = {n: p for n, p in allfiles}
+    out = {}
+    for kind, pat in KINDS.items():
+        got = byname.get(pat) and dids_of(byname[pat])
+        if not got:
+            for n, p in sorted(allfiles):
+                if n.startswith(pat + " ") or n.endswith(" " + pat):
+                    got = dids_of(p)
+                    if got: break
         if got: out[kind] = got
     if "olthoisoldier" in out and "olthoi" not in out: out["olthoi"] = out["olthoisoldier"]
     return out
