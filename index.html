@@ -15316,7 +15316,9 @@ function talkQuestGiver(n){
       log(`<b>${name}:</b> ${gv.prog||"Not finished yet — best be about it."} <span style="color:var(--dim)">[${prog}]</span>`,"sys");
     }
   } else if(isDone(id)){                                  // ── already done: post-quest greeting ──
-    log(`<b>${name}:</b> ${gv.post||"My thanks again, friend."}`,"sys");
+    const ral=typeof acDialogueLine==="function"?acDialogueLine(name):null;   // retail-named givers speak their true lines
+    if(ral&&!gv.post){ gv._line=(gv._line||0)+1; log(`<b>${name}:</b> ${esc(ral[gv._line%ral.length])}`,"sys"); }
+    else log(`<b>${name}:</b> ${gv.post||"My thanks again, friend."}`,"sys");
   } else if(!questUnlocked(id)){                          // ── locked behind a prerequisite quest ──
     const rid=questReq(id), rq=questById(rid);
     log(`<b>${name}:</b> ${gv.gate||`This is no task for the untested. First see <b>${rq?rq.name:"an earlier task"}</b> done — speak to ${giverWhere(rid)} — then return to me.`}`,"sys");
@@ -15358,10 +15360,16 @@ function talkToNPC(n){
     const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/120))} leagues)`).join(" · ");
     const ce=currentCalEvent(), S=currentSeason();
     log(`<b>Town Crier:</b> Hear ye! It is <b>${S.name}</b>. <b>${ce.name}</b> — ${ce.rumor} ${ce.clue}`,"sys");
-    log(`<b>Town Crier:</b> You stand in ${here}. Nearest lie ${dirs}.`,"sys"); if(SFX.quest)SFX.quest();
+    log(`<b>Town Crier:</b> You stand in ${here}. Nearest lie ${dirs}.`,"sys");
+    const cl=acDialogueLine(null,"crier");   // one real retail crier rumor on top of the directions
+    if(cl) log(`<b>Town Crier:</b> ${esc(cl[(n._line=(n._line||0)+1)%cl.length])}`,"sys");
+    if(SFX.quest)SFX.quest();
     return;
   }
-  if(n.role==="barkeep"){ log(`<b>${n.name}:</b> ${RUMORS[(n._line++)%RUMORS.length]}`,"sys"); return; }
+  if(n.role==="barkeep"){   // alternate our tavern rumors with real retail barkeep patter
+    const bl=acDialogueLine(n.name,"barkeep"), i=(n._line=(n._line||0)+1);
+    if(bl&&i%2===0){ log(`<b>${n.name}:</b> ${esc(bl[(i>>1)%bl.length])}`,"sys"); return; }
+    log(`<b>${n.name}:</b> ${RUMORS[i%RUMORS.length]}`,"sys"); return; }
   if(n.role==="casino"){ openCasino(n); return; }
   if(n.role==="attendant"){ openAttendant(n); return; }
   if(n.role==="arcanum"){ talkArcanum(n); return; }
@@ -15379,18 +15387,44 @@ function talkToNPC(n){
     player.skills=freshSkills(); player.xpUnspent+=refunded; derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
     log(`<b>Fianhe:</b> Your training is undone — ${trained} skills released, ${refunded.toLocaleString()} XP returned. Spend your credits anew (C).`,"sys"); return;
   }
-  const ac=acDialogueLine(n.name);   // authentic retail line for this NPC, if the client data has one
+  const ac=acDialogueLine(n.name,n.role);   // authentic retail line for this NPC or its trade
   const lines=ac||NPC_FLAVOR[n.role]||["Well met, traveller."];
   log(`<b>${n.name}:</b> ${esc(lines[(n._line++)%lines.length])}`,"sys");
 }
 // authentic NPC dialogue (assets/acdialogue.json · tools/ace_emote_export.py) — the real retail
-// greeting/quest lines, keyed by lowercase NPC name; returns the line array or null.
-let AC_DIALOGUE=null;
-fetch('assets/acdialogue.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.npcs)AC_DIALOGUE=j.npcs; }).catch(()=>{});
-function acDialogueLine(name){ if(!AC_DIALOGUE||!name) return null;
-  const e=AC_DIALOGUE[name.toLowerCase()]; if(!e) return null;
-  const pool=(e.greetings||[]).concat(e.quest||[]).filter(s=>s&&s.length<300);
-  return pool.length?pool:null; }
+// greeting/quest lines from 2,587 NPCs' emote tables, keyed by lowercase NPC name.
+// Resolution: exact name → the "the <title>" part of an individualized name → a pool
+// aggregated from every retail NPC of the same trade (all the barkeeps' lines, etc.).
+let AC_DIALOGUE=null,AC_DIA_ROLE=null;
+const AC_DIA_TRADES={   // engine role / vendor type → retail name fragments to harvest
+  crier:["town crier"], arcanum:["agent of the arcanum"],
+  barkeep:["barkeep","barkeeper","innkeeper"], blacksmith:["blacksmith"],
+  armorer:["armorer"], weaponsmith:["weaponsmith"], bowyer:["bowyer","fletcher"],
+  provisioner:["provisioner","shopkeep","grocer"], outfitter:["trader","shopkeep"],
+  healer:["healer"], tailor:["tailor"], jeweler:["jeweler"],
+  scrivener:["scrivener"], archmage:["archmage"], guard:["guardian"],
+  collector:["collector"], furnisher:["craftsman"],
+};
+fetch('assets/acdialogue.json').then(r=>r&&r.ok?r.json():null).then(j=>{
+  if(!j||!j.npcs) return; AC_DIALOGUE=j.npcs;
+  AC_DIA_ROLE={};
+  for(const role in AC_DIA_TRADES){ const pool=[];
+    for(const key in AC_DIALOGUE){
+      if(!AC_DIA_TRADES[role].some(w=>key===w||key.includes(w))) continue;
+      for(const s of (AC_DIALOGUE[key].greetings||[])) if(s&&s.length>=10&&s.length<300) pool.push(s); }
+    if(pool.length) AC_DIA_ROLE[role]=pool; }
+}).catch(()=>{});
+function acDialogueLine(name,role){ if(!AC_DIALOGUE||!name&&!role) return null;
+  if(name){
+    const e=AC_DIALOGUE[name.toLowerCase()];
+    if(e){ const pool=(e.greetings||[]).concat(e.quest||[]).filter(s=>s&&s.length<300);
+      if(pool.length) return pool; }
+    const parts=name.toLowerCase().split(" the ");   // "Elda Cooper the Town Crier" → "town crier"
+    if(parts.length>1){ const t=AC_DIALOGUE[parts[parts.length-1]];
+      if(t){ const pool=(t.greetings||[]).filter(s=>s&&s.length<300); if(pool.length) return pool; } }
+  }
+  if(role&&AC_DIA_ROLE&&AC_DIA_ROLE[role]) return AC_DIA_ROLE[role];
+  return null; }
 function questEvent(type,kind){   // a world event advances the matching objective in EVERY active quest that needs it
   let any=false;
   for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
@@ -16016,7 +16050,12 @@ function caravanStock(){
   return list;
 }
 VENDOR_TYPES.caravan={title:"Wandering Caravan",marker:"🐂",mcol:"#ffd86b",robe:0x3a4a6a,caravan:true,stock:caravanStock};
-function openShop(){ buildShop(); document.getElementById('shop').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+function openShop(){ buildShop(); document.getElementById('shop').style.display="flex"; paused=true; if(locked)document.exitPointerLock();
+  // the shopkeeper greets you with a real retail line for their trade
+  if(activeShop&&typeof acDialogueLine==="function"){
+    const pool=acDialogueLine(activeShop.name,activeShop.vtype);
+    if(pool){ const i=(activeShop._line=(activeShop._line||0)+1);
+      log(`<b>${activeShop.name||activeShop.title}:</b> ${esc(pool[i%pool.length])}`,"sys"); } } }
 function closeShop(){ document.getElementById('shop').style.display="none"; paused=false; }
 function buildShop(){
   const def=VENDOR_TYPES[(activeShop&&activeShop.vtype)||"provisioner"]||VENDOR_TYPES.provisioner;
