@@ -6253,6 +6253,7 @@ const HOUSING_TYPES={
   apartment:{n:"Apartment",cost:100000,writs:1,lvl:20,hooks:3,chests:1,rent:"10,000 py / 3 months"},
   cottage:{n:"Cottage",cost:300000,writs:1,lvl:20,hooks:8,chests:1,rent:"30,000 py / month"},
   villa:{n:"Villa",cost:2000000,writs:5,lvl:35,hooks:12,chests:2,rent:"100,000 py + 2 Writs / month"},
+  mansion:{n:"Mansion",cost:10000000,writs:10,lvl:50,hooks:18,chests:4,rent:"1,000,000 py + 5 Writs / month"},
 };
 const HS_SETTLEMENTS=[   // authentic AC settlements at their real coordinates
   {id:"mirthless", name:"Mirthless Dale",          type:"cottage",  lat:23.2, lon:-42.3, n:8},
@@ -6265,6 +6266,88 @@ const HS_SETTLEMENTS=[   // authentic AC settlements at their real coordinates
 ];
 for(const S of HS_SETTLEMENTS){ S.x=S.lon*COORD; S.z=-S.lat*COORD;
   FLATTEN.push({x:S.x,z:S.z,core:S.type==="apartment"?42:46,r:S.type==="apartment"?80:86,h:Math.max(9,terrainBase(S.x,S.z))}); }
+// ── the RETAIL housing map (assets/achousing.json): every dwelling AC ever sold,
+//    at its true coordinates with its true purchase price. When the pack loads,
+//    the seven stand-in settlements above are retired and the 2,000 real
+//    apartments/cottages/villas/mansions stream in around the player instead. ──
+let AC_HOUSES=null,_hsReady=false,_hsPackOn=false,_hsLegacy=false;
+try{ fetch('assets/achousing.json').then(r=>r.ok?r.json():null).then(j=>{
+  if(!j||!j.houses||!j.houses.length) return;
+  const seen={};
+  AC_HOUSES=j.houses.map((h,i)=>{ const u=(seen[h.name]=(seen[h.name]||0)+1);
+    return {i,name:h.name,unit:u,type:HOUSING_TYPES[h.type]?h.type:"cottage",cost:h.cost||(HOUSING_TYPES[h.type]||{}).cost||300000,
+      x:clamp(h.x*COORD,-HALF+40,HALF-40), z:clamp(-h.z*COORD,-HALF+40,HALF-40)};});
+  // apartments sit 3–7 units apart — they are units WITHIN shared residential halls.
+  // One hall per 30-unit cluster cell; every unit still gets its own Covenant Crystal.
+  const aptCell={};
+  for(const h of AC_HOUSES){ if(h.type!=="apartment") continue;
+    const k=Math.round(h.x/30)+"_"+Math.round(h.z/30);
+    if(aptCell[k]==null){ aptCell[k]=h.i; h.lead=true; } }
+  if(_hsReady&&!_hsLegacy) hsPackInit();
+}).catch(()=>{}); }catch(e){}
+function hsPackInit(){ if(_hsPackOn||!AC_HOUSES) return; _hsPackOn=true;
+  // migrate a legacy settlement deed to the nearest retail dwelling of the same type
+  if(player.homestead&&player.homestead.set&&player.homestead.hid==null){
+    const S=HS_SETTLEMENTS.find(s=>s.id===player.homestead.set), sx=S?S.x:0, sz=S?S.z:0;
+    let best=null,bd=Infinity;
+    for(const h of AC_HOUSES){ if(h.type!==player.homestead.type) continue;
+      const d=(h.x-sx)*(h.x-sx)+(h.z-sz)*(h.z-sz); if(d<bd){bd=d;best=h;} }
+    if(best){ player.homestead={hid:best.i,type:best.type,hooks:player.homestead.hooks||{}};
+      log(`The Agents of the Arcanum have re-surveyed Dereth — your ${HOUSING_TYPES[best.type].n.toLowerCase()} deed now names its true plot: <b>${best.name} ${best.unit}</b>.`,"sys"); } }
+  hsRefreshHomestead();
+}
+// stream the retail dwellings in and out around the player (same idea as streamMonsters)
+let _hsBuilt={},_hsStreamT=0;
+const HS_BUILD_R=230, HS_DROP_R=310, HS_MAX=48;
+function hsStreamHouses(dt){ if(!_hsPackOn||inDungeon||inNetwork) return;
+  _hsStreamT-=dt; if(_hsStreamT>0) return; _hsStreamT=0.5;
+  const px=player.x,pz=player.z;
+  for(const k in _hsBuilt){ const e=_hsBuilt[k];
+    if(Math.hypot(e.x-px,e.z-pz)>HS_DROP_R){
+      for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0)obstacles.splice(i,1); }
+      const ci=hsCrystals.indexOf(e.cr); if(ci>=0)hsCrystals.splice(ci,1);
+      disposeObject3D(e.g); delete _hsBuilt[k]; } }
+  let n=Object.keys(_hsBuilt).length; if(n>=HS_MAX) return;
+  for(const h of AC_HOUSES){ if(_hsBuilt[h.i]) continue;
+    if(Math.hypot(h.x-px,h.z-pz)>HS_BUILD_R) continue;
+    _hsBuilt[h.i]=hsBuildHouse(h); if(++n>=HS_MAX) break; }
+}
+function hsCrystalLabel(cr){   // (re)write a crystal's sprite after ownership changes
+  if(!cr.lbl||!cr.lbl.parent) return;
+  const own=(player.homestead&&player.homestead.hid===cr.hid&&cr.hid!=null);
+  const nl=labelSprite(own?`${cr.name} — ${player.name||"Kilmer"}'s`:`${cr.name} — for sale (E)`,"npcs");
+  nl.position.copy(cr.lbl.position); nl.scale.copy(cr.lbl.scale);
+  cr.lbl.parent.add(nl); cr.lbl.parent.remove(cr.lbl); cr.lbl=nl;
+}
+function hsBuildHouse(h){
+  const T=HOUSING_TYPES[h.type], gy=groundY(h.x,h.z), reg=Math.max(0,regionOf(h.x,h.z));
+  const ry=((h.i*2654435761)%360)*Math.PI/180;   // seeded facing — stable across visits
+  const g=new THREE.Group(); g.position.set(h.x,gy,h.z); g.userData.noSettle=true; scene.add(g);
+  const obst=[];
+  const withBuilding=h.type!=="apartment"||h.lead;   // apartment units share their cluster's hall
+  if(withBuilding){
+    const hb=buildBuilding(reg,h.type==="cottage"?"house":"hall",
+      h.type==="mansion"?1.6:h.type==="villa"?1.35:h.type==="apartment"?1.6:1.1);
+    hb.rotation.y=ry; g.add(hb);
+    const ct=Math.cos(ry), st=Math.sin(ry);
+    for(const cc of (hb.userData.colliders||[])){
+      const o={x:h.x+cc.x*ct+cc.z*st, z:h.z-cc.x*st+cc.z*ct, r:cc.r}; obstacles.push(o); obst.push(o); }
+  }
+  // the Covenant Crystal before the door (apartment units: at the unit's own plot)
+  const cd=withBuilding?7.5:0.9;
+  const cx=h.x+Math.sin(ry)*cd, cz=h.z+Math.cos(ry)*cd;
+  const cg=new THREE.Group(); cg.position.set(Math.sin(ry)*cd,groundY(cx,cz)-gy,Math.cos(ry)*cd); g.add(cg);
+  const cry=new THREE.Mesh(new THREE.OctahedronGeometry(0.5,0),new THREE.MeshStandardMaterial({color:0x8fd4ff,emissive:0x3a86d0,emissiveIntensity:0.9,metalness:0.4,roughness:0.3}));
+  cry.position.y=1.5; cry.castShadow=true; cg.add(cry);
+  const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.32,1.1,8),texMat(stoneFloorTex,0x8a857c)); ped.position.y=0.55; cg.add(ped);
+  const cr={hid:h.i,x:cx,z:cz,type:h.type,cost:h.cost,name:`${h.name} ${h.unit}`,mesh:g,lbl:null};
+  const own=(player.homestead&&player.homestead.hid===h.i);
+  cr.lbl=labelSprite(own?`${cr.name} — ${player.name||"Kilmer"}'s`:`${cr.name} — for sale (E)`,"npcs");
+  cr.lbl.scale.set(7.5,1.7,1); cr.lbl.position.y=3.1; cg.add(cr.lbl);
+  const o2={x:cx,z:cz,r:0.7}; obstacles.push(o2); obst.push(o2);
+  hsCrystals.push(cr);
+  return {x:h.x,z:h.z,g,obst,cr};
+}
 // AC furniture (Steiner's Apprentice Craftsman price list; Jasin's deluxe pieces at the end)
 const FURNITURE_ITEMS=[
   {name:"Bench",cost:5001,kind:"bench"},{name:"Stool",cost:5001,kind:"stool"},{name:"Chair",cost:5001,kind:"chair"},
@@ -6320,6 +6403,9 @@ function rollFurniture(){ const t=FURNITURE_ITEMS[irnd(0,FURNITURE_ITEMS.length-
 // ── construction ──
 function addHousingSettlements(){
   hsCrystals=[]; hsHooks=[]; hsFurnMeshes=[]; hsDwellings=[];
+  _hsReady=true;
+  if(AC_HOUSES){ hsPackInit(); addHousingNPCs(); return; }   // retail map loaded — the stand-ins retire
+  _hsLegacy=true;
   for(const S of HS_SETTLEMENTS){
     const gy=groundY(S.x,S.z), reg=Math.max(0,regionOf(S.x,S.z)), T=HOUSING_TYPES[S.type];
     const G=new THREE.Group(); G.position.set(S.x,gy,S.z); G.userData.noSettle=true; G.userData.cullR2=300*300;
@@ -6364,6 +6450,9 @@ function addHousingSettlements(){
       name:titledName(S.region||0,Math.round(S.x*13+S.z*11),"Agent of the Arcanum")});
     addMerchant(S.x-6,S.z+7,"furnisher","Apprentice Craftsman");
   }
+  addHousingNPCs();
+}
+function addHousingNPCs(){
   // the three authentic named furniture sellers near the great towns
   const NAMED_SELLERS=[["Cragstone","Steiner's Apprentice Craftsman"],["Hebian-To","Jubei's Apprentice Craftsman"],["Zaikhal","Jordan's Apprentice Craftsman"]];
   for(const [tn,nm] of NAMED_SELLERS){ const c=CITIES.find(x=>x.name===tn); if(!c) continue;
@@ -6374,34 +6463,33 @@ function addHousingSettlements(){
   hsRefreshHomestead();
 }
 function hsDwellingSpot(){ if(!player.homestead) return null;
+  if(player.homestead.hid!=null){ if(!AC_HOUSES) return null;
+    const h=AC_HOUSES[player.homestead.hid]; if(!h) return null;
+    return {x:h.x,z:h.z,S:{name:`${h.name} ${h.unit}`}}; }
   const S=HS_SETTLEMENTS.find(s=>s.id===player.homestead.set); if(!S) return null;
   const cr=hsCrystals.find(c=>c.set===S.id&&c.idx===player.homestead.idx);
   return cr?{x:cr.x,z:cr.z,S}:{x:S.x,z:S.z,S};
 }
 function hsRefreshHomestead(){   // rebuild the owner's hook pedestals + placed furniture (after load / purchase / placement)
   for(const m of hsFurnMeshes){ if(m.parent) m.parent.remove(m); } hsFurnMeshes=[]; hsHooks=[];
-  for(const cr of hsCrystals){ const own=(player.homestead&&player.homestead.set===cr.set&&player.homestead.idx===cr.idx);
-    if(cr.lbl){ const T=HOUSING_TYPES[cr.type];
-      // (labels are canvas sprites — rebuild only when ownership changed is overkill; leave initial text)
-    }
-    if(!own) continue;
-    const T=HOUSING_TYPES[cr.type], spot=hsDwellingSpot(), gy=groundY(cr.x,cr.z);
-    const S=spot.S, aw=Math.atan2(S.x-cr.x,S.z-cr.z);
-    for(let h=0;h<T.hooks;h++){
-      const a=aw+Math.PI+ (h/(T.hooks))*Math.PI*1.5-Math.PI*0.75, hx=cr.x+Math.sin(a)*4.6, hz=cr.z+Math.cos(a)*4.6;
-      const hg=new THREE.Group(); hg.position.set(hx,groundY(hx,hz),hz); scene.add(hg); hsFurnMeshes.push(hg);
-      const placed=player.homestead.hooks&&player.homestead.hooks[h];
-      if(placed){ const t=FURNITURE_ITEMS.find(f=>f.name===placed);
-        const fm=buildFurniture(t?t.kind:"pedestal"); fm.rotation.y=a+Math.PI; hg.add(fm);
-        const l=labelSprite(placed,"npcs"); l.scale.set(3.6,0.9,1); l.position.y=2.0; hg.add(l); }
-      else { const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.34,0.1,8),texMat(stoneFloorTex,0x7a756c)); disc.position.y=0.05; hg.add(disc);
-        const l=labelSprite("hook — E to furnish","npcs"); l.scale.set(3.6,0.9,1); l.position.y=1.2; hg.add(l); }
-      hsHooks.push({set:cr.set,idx:cr.idx,h,x:hx,z:hz});
-    }
+  if(!player.homestead) return;
+  const T=hsType(), spot=hsDwellingSpot(); if(!T||!spot) return;
+  const aw=(spot.S&&spot.S.x!=null)?Math.atan2(spot.S.x-spot.x,spot.S.z-spot.z)
+    :(((player.homestead.hid||0)*2654435761)%360)*Math.PI/180;   // retail plot: hooks fan out from the seeded facing
+  for(let h=0;h<T.hooks;h++){
+    const a=aw+Math.PI+ (h/(T.hooks))*Math.PI*1.5-Math.PI*0.75, hx=spot.x+Math.sin(a)*4.6, hz=spot.z+Math.cos(a)*4.6;
+    const hg=new THREE.Group(); hg.position.set(hx,groundY(hx,hz),hz); scene.add(hg); hsFurnMeshes.push(hg);
+    const placed=player.homestead.hooks&&player.homestead.hooks[h];
+    if(placed){ const t=FURNITURE_ITEMS.find(f=>f.name===placed);
+      const fm=buildFurniture(t?t.kind:"pedestal"); fm.rotation.y=a+Math.PI; hg.add(fm);
+      const l=labelSprite(placed,"npcs"); l.scale.set(3.6,0.9,1); l.position.y=2.0; hg.add(l); }
+    else { const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.34,0.1,8),texMat(stoneFloorTex,0x7a756c)); disc.position.y=0.05; hg.add(disc);
+      const l=labelSprite("hook — E to furnish","npcs"); l.scale.set(3.6,0.9,1); l.position.y=1.2; hg.add(l); }
+    hsHooks.push({hid:player.homestead.hid,set:player.homestead.set,idx:player.homestead.idx,h,x:hx,z:hz});
   }
 }
 function hsUseHook(hk){
-  if(!player.homestead||player.homestead.set!==hk.set||player.homestead.idx!==hk.idx){ log("This hook belongs to another homestead.","warn"); return; }
+  if(!player.homestead){ log("This hook belongs to another homestead.","warn"); return; }
   player.homestead.hooks=player.homestead.hooks||{};
   const cur=player.homestead.hooks[hk.h];
   if(cur){ if(!addToInv({name:cur,stat:"furniture",kind:(FURNITURE_ITEMS.find(f=>f.name===cur)||{}).kind,v:200})){ log("Your satchel is full.","warn"); return; }
@@ -6413,8 +6501,10 @@ function hsUseHook(hk){
 }
 function closeCovenant(){ const ov=document.getElementById('hsPanel'); if(ov) ov.remove(); paused=false; }
 function openCovenant(cr){
-  const T=HOUSING_TYPES[cr.type], S=HS_SETTLEMENTS.find(s=>s.id===cr.set);
-  const mine=(player.homestead&&player.homestead.set===cr.set&&player.homestead.idx===cr.idx);
+  const T=HOUSING_TYPES[cr.type], S=cr.hid!=null?{name:cr.name}:HS_SETTLEMENTS.find(s=>s.id===cr.set);
+  const price=cr.cost||T.cost;
+  const mine=(player.homestead&&(cr.hid!=null?player.homestead.hid===cr.hid
+    :(player.homestead.set===cr.set&&player.homestead.idx===cr.idx)));
   const old=document.getElementById('hsPanel'); if(old) old.remove();
   const ov=document.createElement('div'); ov.id='hsPanel';
   ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
@@ -6427,26 +6517,29 @@ function openCovenant(cr){
   } else if(player.homestead){
     body=`<div style="color:var(--dim);margin-top:8px">You already hold a dwelling — <b>one per account</b>, as the Agents of the Arcanum decreed.</div>`;
   } else {
-    const okLvl=player.level>=T.lvl, okGold=player.gold>=T.cost, okWrit=writCount()>=T.writs;
-    body=`<div style="margin:8px 0;color:#cfc0a0">Price: <b style="color:${okGold?'#7fe6a0':'#ff8a6a'}">${T.cost.toLocaleString()} pyreals</b>
+    const okLvl=player.level>=T.lvl, okGold=player.gold>=price, okWrit=writCount()>=T.writs;
+    body=`<div style="margin:8px 0;color:#cfc0a0">Price: <b style="color:${okGold?'#7fe6a0':'#ff8a6a'}">${price.toLocaleString()} pyreals</b>
       + <b style="color:${okWrit?'#7fe6a0':'#ff8a6a'}">${T.writs} Writ${T.writs>1?"s":""} of Refuge</b> (you hold ${writCount()})
       · Level <b style="color:${okLvl?'#7fe6a0':'#ff8a6a'}">${T.lvl}+</b> · Upkeep: ${T.rent} <span style="color:var(--dim)">(the Arcanum defers collection)</span><br>
       <span style="color:var(--dim);font-size:11px">${T.hooks} furniture hooks · ${T.chests} storage chest${T.chests>1?"s":""} · House Recall · one dwelling per account</span></div>
       <button id="hsBuy" style="${btn}" ${okLvl&&okGold&&okWrit?"":"disabled"}><b style="color:var(--gold)">Buy this ${T.n.toLowerCase()}</b></button>`;
   }
   ov.innerHTML=`<div style="max-width:470px;width:92%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
-    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">◈ Covenant Crystal — ${T.n} ${cr.idx+1}, ${S.name}</div>
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">◈ Covenant Crystal — ${cr.hid!=null?`${cr.name} (${T.n})`:`${T.n} ${cr.idx+1}, ${S.name}`}</div>
     <div style="color:var(--dim);margin-top:4px">${mine?`The crystal bears your name, ${player.name}.`:"The crystal hums, awaiting a deed-holder."}</div>
     ${body}
     <button id="hsClose" style="${btn};text-align:center">Step away</button></div>`;
   document.body.appendChild(ov); paused=true; if(locked)document.exitPointerLock();
   ov.querySelector('#hsClose').onclick=closeCovenant;
   const b=ov.querySelector('#hsBuy'); if(b) b.onclick=()=>{
-    player.gold-=T.cost; takeWrits(T.writs);
-    player.homestead={set:cr.set,idx:cr.idx,type:cr.type,hooks:{}};
-    if(player.house&&player.house.tier<(cr.type==="villa"?3:cr.type==="cottage"?2:1)) player.house.tier=(cr.type==="villa"?3:cr.type==="cottage"?2:1);
-    log(`The Covenant Crystal flares — <b>the ${T.n.toLowerCase()} in ${S.name} is yours</b>. /home now recalls to its door.`,"loot");
-    toast("HOME SWEET HOME"); if(SFX.quest)SFX.quest(); closeCovenant(); hsRefreshHomestead(); updateHUD(); saveGame();
+    player.gold-=price; takeWrits(T.writs);
+    player.homestead=cr.hid!=null?{hid:cr.hid,type:cr.type,hooks:{}}:{set:cr.set,idx:cr.idx,type:cr.type,hooks:{}};
+    const hTier=cr.type==="mansion"?4:cr.type==="villa"?3:cr.type==="cottage"?2:1;
+    if(player.house&&player.house.tier<hTier) player.house.tier=hTier;
+    log(`The Covenant Crystal flares — <b>${cr.hid!=null?cr.name:`the ${T.n.toLowerCase()} in ${S.name}`} is yours</b>. /home now recalls to its door.`,"loot");
+    toast("HOME SWEET HOME"); if(SFX.quest)SFX.quest(); closeCovenant();
+    if(cr.hid!=null) hsCrystalLabel(cr);
+    hsRefreshHomestead(); updateHUD(); saveGame();
   };
   const st=ov.querySelector('#hsStore'); if(st) st.onclick=()=>{ closeCovenant(); openHousing(); };
   const rc=ov.querySelector('#hsRecallSet'); if(rc) rc.onclick=closeCovenant;
@@ -6454,7 +6547,7 @@ function openCovenant(cr){
     const hooks=player.homestead.hooks||{};
     for(const h in hooks){ addToInv({name:hooks[h],stat:"furniture",kind:(FURNITURE_ITEMS.find(f=>f.name===hooks[h])||{}).kind,v:200},true); }
     player.homestead=null; log("You tear up the deed. The Covenant Crystal dims, awaiting its next holder.","sys");
-    closeCovenant(); hsRefreshHomestead(); saveGame();
+    closeCovenant(); if(cr.hid!=null) hsCrystalLabel(cr); hsRefreshHomestead(); saveGame();
   };
 }
 function talkArcanum(n){
@@ -12147,6 +12240,7 @@ function update(dt){
   updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
   cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
+  hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
   syncCamera(dt);
   updateHUD();
 }
@@ -18928,8 +19022,8 @@ function applySaveObj(s){
   player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
   player.focusMana=+s.focusMana||0;   // H15 focus mana battery
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
-  player.homestead=(s.homestead&&typeof s.homestead==="object"&&s.homestead.set)?s.homestead:null;
-  if(typeof hsRefreshHomestead==="function"&&typeof hsCrystals!=="undefined"&&hsCrystals.length) hsRefreshHomestead();
+  player.homestead=(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null;
+  if(typeof hsRefreshHomestead==="function"&&typeof hsCrystals!=="undefined"&&(hsCrystals.length||_hsPackOn)) hsRefreshHomestead();
   if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
