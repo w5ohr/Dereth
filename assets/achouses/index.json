@@ -1,0 +1,334 @@
+{
+ "models": {
+  "01002226": {
+   "file": "01002226.json",
+   "n": 371,
+   "extGroups": 12,
+   "intGroups": 11,
+   "plats": 6,
+   "kb": 40
+  },
+  "01002228": {
+   "file": "01002228.json",
+   "n": 441,
+   "extGroups": 11,
+   "intGroups": 9,
+   "plats": 4,
+   "kb": 50
+  },
+  "0100222F": {
+   "file": "0100222F.json",
+   "n": 367,
+   "extGroups": 9,
+   "intGroups": 9,
+   "plats": 4,
+   "kb": 42
+  },
+  "01002232": {
+   "file": "01002232.json",
+   "n": 254,
+   "extGroups": 7,
+   "intGroups": 9,
+   "plats": 4,
+   "kb": 49
+  },
+  "01002286": {
+   "file": "01002286.json",
+   "n": 73,
+   "extGroups": 8,
+   "intGroups": 6,
+   "plats": 20,
+   "kb": 89
+  },
+  "01002287": {
+   "file": "01002287.json",
+   "n": 73,
+   "extGroups": 10,
+   "intGroups": 6,
+   "plats": 10,
+   "kb": 71
+  },
+  "01002289": {
+   "file": "01002289.json",
+   "n": 73,
+   "extGroups": 11,
+   "intGroups": 7,
+   "plats": 17,
+   "kb": 100
+  },
+  "0100228B": {
+   "file": "0100228B.json",
+   "n": 243,
+   "extGroups": 8,
+   "intGroups": 8,
+   "plats": 5,
+   "kb": 48
+  },
+  "010022CE": {
+   "file": "010022CE.json",
+   "n": 284,
+   "extGroups": 10,
+   "intGroups": 9,
+   "plats": 16,
+   "kb": 119
+  },
+  "010022D2": {
+   "file": "010022D2.json",
+   "n": 73,
+   "extGroups": 7,
+   "intGroups": 7,
+   "plats": 23,
+   "kb": 130
+  },
+  "010022EF": {
+   "file": "010022EF.json",
+   "n": 341,
+   "extGroups": 6,
+   "intGroups": 9,
+   "plats": 5,
+   "kb": 42
+  },
+  "01002383": {
+   "file": "01002383.json",
+   "n": 280,
+   "extGroups": 7,
+   "intGroups": 6,
+   "plats": 18,
+   "kb": 132
+  },
+  "010025D4": {
+   "file": "010025D4.json",
+   "n": 132,
+   "extGroups": 8,
+   "intGroups": 8,
+   "plats": 5,
+   "kb": 50
+  },
+  "010025E0": {
+   "file": "010025E0.json",
+   "n": 160,
+   "extGroups": 12,
+   "intGroups": 12,
+   "plats": 6,
+   "kb": 40
+  },
+  "010025E3": {
+   "file": "010025E3.json",
+   "n": 131,
+   "extGroups": 11,
+   "intGroups": 9,
+   "plats": 4,
+   "kb": 51
+  },
+  "010025E6": {
+   "file": "010025E6.json",
+   "n": 160,
+   "extGroups": 8,
+   "intGroups": 9,
+   "plats": 4,
+   "kb": 42
+  }
+ },
+ "halls": {
+  "5360": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5361": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5362": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5363": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5364": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5365": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5366": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5367": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5368": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "5369": {
+   "file": "hall_5360.json",
+   "units": 100
+  },
+  "7200": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7300": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7400": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7500": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7600": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7700": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7800": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7900": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7A00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7B00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7C00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7D00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7E00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "7F00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8000": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8100": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8200": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8300": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8400": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8500": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8600": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8700": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8800": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8900": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8A00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8B00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8C00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8D00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8E00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "8F00": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9000": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9100": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9200": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9300": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9400": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9500": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9600": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9700": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9800": {
+   "file": "hall_7200.json",
+   "units": 50
+  },
+  "9900": {
+   "file": "hall_7200.json",
+   "units": 50
+  }
+ }
+}
