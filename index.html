@@ -2077,15 +2077,32 @@ function encumbrance(){
   return {load,cap,ratio:clamp(load/cap,0,1.8)};
 }
 const GRAV=22;
-function jumpVelocity(){
-  const jv=skillValue("jump");                                   // trained & raised Jump → higher leaps
-  const skF=clamp(1+jv*0.010,1.0,1.45), encF=clamp(1.15-encumbrance().ratio*0.5,0.55,1.15);
-  return 7.6*skF*encF;                                           // height ≈ v²/2g (≈0.4 overloaded … ≈3.5 light & skilled)
+// AC jump (ACE MovementSystem): hold-to-charge power bar 0→1; height scales LINEARLY with power
+// (so velocity ∝ √power), with the skill term on AC's asymptote curve jump/(jump+1300) and the
+// burden modifier (≤100% free, linear to zero at 200%). At 0 stamina the skill counts as 0.
+function jumpVelocity(power){
+  power=(typeof power==="number")?clamp(power,0,1):1;
+  const jv=player.st>0?skillValue("jump"):0;
+  const enc=encumbrance().ratio, burdenMod=enc<1?1:Math.max(0,2-enc);
+  const skF=clamp(1+ (jv/(jv+1300))*6.0 ,1.0,1.9);               // AC's asymptote shape, tuned to this world's GRAV/geometry
+  return 7.6*skF*Math.max(0.28,Math.sqrt(burdenMod))*Math.sqrt(0.12+0.88*power);   // h ∝ power (AC), tap ≈ AC's minimum hop
 }
-function tryJump(){
+function tryJump(power){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
-  if(player.st<8){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
-  player.vy=jumpVelocity(); player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-8); if(SFX.step)SFX.step();
+  if(encumbrance().ratio>=2){ if(now()-lastBreath>1600){lastBreath=now();log("You are too encumbered to jump!","warn");} return; }   // AC: CantJumpLoadedDown
+  power=(typeof power==="number")?clamp(power,0,1):1;
+  const cost=Math.ceil((encumbrance().ratio+0.5)*power*8+2);     // ACE JumpStaminaCost: ceil((burden+0.5)×power×8+2)
+  if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
+  player.vy=jumpVelocity(power); player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.step)SFX.step();
+}
+// hold Space to charge (AC's jump bar: ~0.7s to full), release to leap; a tap gives the minimum hop
+let jumpChargeT=-1;
+function startJumpCharge(){ if(!player.alive||paused||!player.grounded) return; if(jumpChargeT<0) jumpChargeT=0; }
+function updateJumpCharge(dt){
+  if(jumpChargeT<0) return;
+  if(!player.alive||paused){ jumpChargeT=-1; return; }
+  if(held("jump")){ jumpChargeT=Math.min(1,jumpChargeT+dt/0.7); }
+  else { const p=jumpChargeT; jumpChargeT=-1; tryJump(p<0.08?0:p); }
 }
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
@@ -9393,9 +9410,9 @@ const WEAPON_TYPES={
   mace:    {mode:"melee",  cd:1.36, reach:0.95, dmg:1.42, stam:11, dt:"bludgeon", dvar:0.45, blurb:"crushing, slow"},
   staff:   {mode:"melee",  cd:1.05, reach:1.30, dmg:0.96, stam:8,  dt:"bludgeon", dvar:0.33, blurb:"staff — reach, steady"},
   twohand: {mode:"melee",  cd:1.45, reach:1.45, dmg:1.62, stam:14, dt:"slash",    dvar:0.50, blurb:"two-handed — devastating, slow"},
-  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, dt:"pierce",  dvar:0.33, blurb:"ranged"},
-  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, dt:"pierce",  dvar:0.42, blurb:"ranged, hard-hitting"},
-  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  dt:"pierce",  dvar:0.30, blurb:"thrown darts — fast"},
+  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, dt:"pierce",  dvar:0.33, pspd:78, blurb:"ranged"},
+  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, dt:"pierce",  dvar:0.42, pspd:84, blurb:"ranged, hard-hitting"},
+  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  dt:"pierce",  dvar:0.30, pspd:70, blurb:"thrown darts — fast"},
   focus:   {mode:"focus",   cd:1.00, reach:0.00, dmg:0.0,  stam:0,  blurb:"casting focus — empowers every school of magic"},
   unarmed: {mode:"melee",   cd:0.55, reach:0.70, dmg:0.66, stam:4,  dt:"bludgeon", dvar:0.20, blurb:"unarmed — fastest, very light"},
 };
@@ -11810,36 +11827,67 @@ function salvageItem(i){
   SFX.gold();
 }
 function tinkSkillFor(mat){ return MAT_APPLY[mat]==="armor"?"armortink":"weapontink"; }
-function tinkSuccess(mat){
+// AC: tinkering lives ON THE ITEM — each tink raises the difficulty of the next; ten tinks max.
+function tinkSuccess(mat,it){
   const sk=skillTier(tinkSkillFor(mat)),                    // 0 untrained / 1 trained / 2 specialised
-        cur=MAT_APPLY[mat]==="armor"?player.armorTink:player.weaponTink;
-  return clamp(0.5+sk*0.18-0.03*(cur/2),0.2,0.95);          // harder as the item gets more tinks (our formula)
+        t=(it&&it.tinks)||((MAT_APPLY[mat]==="armor"?player.armorTink:player.weaponTink)>0?2:0);  // legacy character-tinks count as a couple for display
+  return clamp(0.55+sk*0.18-0.05*t,0.15,0.95);              // harder with every tink already on the item (AC's rising difficulty)
+}
+// apply one 100-unit salvage bag to a SPECIFIC item (AC): weapon mats + imbues target the equipped
+// weapon; armor mats open a worn-piece picker. Up to 10 tinks per item; an imbue lands once, ever,
+// and consumes a tink slot. Success adds to the ITEM's own value (damage/AL follow automatically).
+function tinkItem(mat,it,label){
+  const bag=player.salvage[mat]; if(!bag||bag.units<100) return;
+  const apply=MAT_APPLY[mat], imbueEl=IMBUE_MAT[mat];
+  if((it.tinks||0)>=10){ log(`${it.name} already carries <b>ten tinkerings</b> — AC's limit.`,"warn"); SFX.hit(); return; }
+  const p=tinkSuccess(mat,it), work=Math.round(bag.work); bag.units-=100;
+  if(imbueEl){
+    if(Math.random()<p){
+      const br=WEAPON_AFFIXES.find(a=>a.k==="brand"&&a.element===imbueEl);
+      if(it.affix&&it.affix.suffix) it.name=it.name.replace(" "+it.affix.suffix,"");
+      it.affix=br; it.name+=" "+br.suffix; it.imbued=1; it.tinks=(it.tinks||0)+1;
+      log(`<b>Imbued!</b> Your ${it.name} now carries ${br.desc}. (tink ${it.tinks}/10)`,"sys"); toast("WEAPON IMBUED"); SFX.level();
+    } else { log(`Imbue <b>failed</b> — the ${mat} salvage is lost.`,"warn"); SFX.hit(); }
+  } else if(Math.random()<p){
+    const bonus=Math.max(1,Math.round(work*(apply==="weapon"?0.7:0.9)));
+    it.v=(it.v||0)+bonus; it.tinks=(it.tinks||0)+1;
+    log(`<b>Tinkering success!</b> ${mat} (wk ${work}) → ${label||it.name} +${bonus} ${apply==="weapon"?"damage":"armor"} (tink ${it.tinks}/10).`,"sys");
+    toast("TINKER SUCCESS +"+bonus);SFX.level();
+    if(apply!=="weapon"&&typeof derive==="function") derive();
+  } else { log(`Tinkering <b>failed</b> — the ${mat} salvage is lost. (Your gear is spared.)`,"warn");SFX.hit(); } // single-player-friendly deviation: item not destroyed
+  if(bag.units<=0) delete player.salvage[mat];
+  saveGame();
 }
 function applyTinker(mat){
   const bag=player.salvage[mat]; if(!bag||bag.units<100) return;
   const apply=MAT_APPLY[mat], skKey=tinkSkillFor(mat);
   if(skillTier(skKey)<1){ log(`You must train <b>${SKILL_BY_KEY[skKey].n}</b> to apply ${mat} (sheet: C).`,"warn"); SFX.hit(); return; }
   const imbueEl=IMBUE_MAT[mat];
-  if(imbueEl){ // imbue: brand the equipped weapon with an element
-    if(!player.weapon){ log(`Equip a weapon to imbue it with <b>${mat}</b>.`,"warn"); SFX.hit(); return; }
-    bag.units-=100;
-    if(Math.random()<tinkSuccess(mat)){
-      const br=WEAPON_AFFIXES.find(a=>a.k==="brand"&&a.element===imbueEl), w=player.weapon;
-      if(w.affix&&w.affix.suffix) w.name=w.name.replace(" "+w.affix.suffix,""); // strip prior brand
-      w.affix=br; w.name+=" "+br.suffix;
-      log(`<b>Imbued!</b> Your ${w.name} now carries ${br.desc}.`,"sys"); toast("WEAPON IMBUED"); SFX.level();
-    } else { log(`Imbue <b>failed</b> — the ${mat} salvage is lost.`,"warn"); SFX.hit(); }
-    if(bag.units<=0) delete player.salvage[mat];
-    return;
+  if(imbueEl||apply==="weapon"){   // weapon work targets what's in your hands
+    const w=player.weapon;
+    if(!w){ log(`Equip a weapon to ${imbueEl?"imbue":"tinker"} it with <b>${mat}</b>.`,"warn"); SFX.hit(); return; }
+    if(imbueEl&&w.imbued){ log(`${w.name} has already been imbued — an item takes only <b>one</b> imbue, ever (AC).`,"warn"); SFX.hit(); return; }
+    tinkItem(mat,w); return;
   }
-  const p=tinkSuccess(mat), work=Math.round(bag.work); bag.units-=100;
-  if(Math.random()<p){
-    const bonus=Math.max(1,Math.round(work*(apply==="weapon"?0.7:0.9)));
-    if(apply==="weapon") player.weaponTink+=bonus; else { player.armorTink+=bonus; player.armor+=bonus; }
-    log(`<b>Tinkering success!</b> ${mat} (wk ${work}) → +${bonus} ${apply==="weapon"?"damage":"armor"}.`,"sys");
-    toast("TINKER SUCCESS +"+bonus);SFX.level();
-  } else { log(`Tinkering <b>failed</b> — the ${mat} salvage is lost. (Your gear is spared.)`,"warn");SFX.hit(); } // single-player-friendly deviation: item not destroyed
-  if(bag.units<=0) delete player.salvage[mat];
+  // armor: choose the worn piece to tinker (AC lets you pick the item)
+  const slots=player.armorSlots||{}, keys=Object.keys(slots).filter(k=>slots[k]&&slots[k].name);
+  if(!keys.length){ log("You wear no armor to tinker.","warn"); SFX.hit(); return; }
+  const old=document.getElementById('tinkPick'); if(old) old.remove();
+  paused=true; if(locked)document.exitPointerLock();
+  const ov=document.createElement('div'); ov.id='tinkPick';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  ov.innerHTML=`<div style="max-width:420px;width:92%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">⚒ ${mat} salvage — choose the piece</div>
+    ${keys.map(k=>`<button data-slot="${k}" style="${btn}"><b>${esc(slots[k].name)}</b> <span style="color:var(--dim)">(${k} · AL ${slots[k].v||0} · tinks ${slots[k].tinks||0}/10)</span></button>`).join("")}
+    <button id="tinkCancel" style="${btn};text-align:center">Keep the salvage</button></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#tinkCancel').onclick=()=>{ ov.remove(); paused=false; };
+  ov.querySelectorAll('[data-slot]').forEach(b=>b.onclick=()=>{
+    const piece=slots[b.dataset.slot]; ov.remove(); paused=false;
+    tinkItem(mat,piece,piece.name);
+    if(typeof buildTinker==="function"){ try{buildTinker();}catch(e){} } updateHUD();
+  });
 }
 // ── H1/H2/H5/H6 Crafting (AC trade skills): Alchemy/Cooking/Fletching turn gathered materials into their
 //    consumables. Recipes spend the shared `player.materials` pool (from salvaging & nodes) + require the
@@ -12182,10 +12230,14 @@ function arriveAt(x,z){
 function fallDamage(drop){
   if(player.arriveGrace){ player.arriveGrace=false; return; }   // portal-arrival landing is free
   if(!player.alive||inDungeon||inNetwork||drop<=0) return;   // instances are flat — no meaningful drops
-  const safe=5.5+skillValue("jump")*0.04;   // higher Jump → land safely from farther (a 2-storey drop is free)
+  // ACE HandleFallingDamage: damage is LINEAR in landing speed past a safe threshold —
+  // dmg = (v/vSafe − 1) × 87.29, bludgeon-typed. AC's safe fall ≈ 12.7 m ≈ a 4-storey drop here
+  // (one storey H1F=4.4u ≈ 3 m). Retail reportedly let Jump ability soften landings (ACE left the
+  // damping commented out) — we keep a modest Jump bump on the threshold for that.
+  const safe=17+skillValue("jump")*0.02;
   if(drop<=safe) return;
-  const over=drop-safe;
-  let dmg=Math.round(over*over*0.8+over*3);   // gentle knee near the safe height, steep for real cliffs (which can kill)
+  const v=Math.sqrt(2*GRAV*drop), vSafe=Math.sqrt(2*GRAV*safe);
+  let dmg=Math.round((v/vSafe-1)*87.29*(1-resistVs("bludgeon")));   // bludgeon resistance mitigates, as in ACE
   if(dmg<=0) return;
   dmg=Math.min(dmg,player.mhp);
   player.hp-=dmg; if(SFX.hurt)SFX.hurt(); shake(clamp(dmg*0.02,0.1,0.5));
@@ -12477,8 +12529,11 @@ function executeSpell(id){
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
     halo.scale.setScalar((sp.r||0.28)*4.2); mesh.add(halo);   // additive glow so the bolt reads as energy, not a solid primitive
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
-    pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:oy,z:oz,vx:dx*sp.speed,vy:dir.y*sp.speed,vz:dz*sp.speed,
-      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:2.2});
+    // AC (ACE WorldObject_Magic): ARC spells are the only lobbed war geometry — launched from full
+    // caster height with an upward loft, falling under gravity; all other geometries fly flat.
+    const isArc=geom==="arc";
+    pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:isArc?EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,
+      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?4:2.2});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
@@ -12564,7 +12619,10 @@ function fireArrow(){
     new THREE.MeshStandardMaterial({color:0x8a6a3a}));
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
   mesh.position.set(ox,oy,oz);mesh.castShadow=true;scene.add(mesh);
-  pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*75,vy:dir.y*75,vz:dir.z*75,
+  // AC (ACE Creature_Missile): launch speed comes from the LAUNCHER (heavy launchers loose faster
+  // bolts than light ones), and missiles fly a true ballistic arc under gravity — loft to reach.
+  const pv=prof.pspd||75;
+  pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*pv,vy:dir.y*pv,vz:dir.z*pv,grav:true,
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(power){
@@ -12714,7 +12772,7 @@ const ACTIONS=[
   {id:"back",   label:"Move Back",   group:"Movement",def:"KeyS",held:true},
   {id:"left",   label:"Strafe Left", group:"Movement",def:"KeyA",held:true},
   {id:"right",  label:"Strafe Right",group:"Movement",def:"KeyD",held:true},
-  {id:"jump",   label:"Jump",        group:"Movement",def:"Space",run:()=>tryJump()},
+  {id:"jump",   label:"Jump",        group:"Movement",def:"Space",run:()=>startJumpCharge()},   // hold to charge (AC jump bar), release to leap
   {id:"dodge",  label:"Dodge Roll",  group:"Movement",def:"shift+Space",run:()=>dodge()},
   {id:"interact",  label:"Interact / Talk", group:"Actions",def:"KeyE",run:()=>interact()},
   {id:"weaponswap",label:"Swap Weapon",     group:"Actions",def:"KeyQ",run:()=>weaponSwap()},
@@ -13209,6 +13267,7 @@ function update(dt){
     }
   }
   // timers/regen
+  updateJumpCharge(dt);   // AC hold-to-charge jump: releases when Space is let go
   player.meleeCd=Math.max(0,player.meleeCd-dt);
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
   player.invuln=Math.max(0,player.invuln-dt);
@@ -13233,7 +13292,10 @@ function update(dt){
   updatePets(dt);
   // player projectiles
   for(let i=pProj.length-1;i>=0;i--){
-    const p=pProj[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
+    const p=pProj[i];
+    if(p.grav){ p.vy-=GRAV*dt;   // AC ballistics: arrows/bolts (and lobbed arcs) fall under gravity
+      if(p.arrow){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); } }  // nose follows the arc
+    p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
@@ -14399,17 +14461,17 @@ const QUESTS=[
     intro:"Drudges keep raiding my farm and making off with my seed. Recover my three stolen seed-bags, then slay the Drudge Robber Baron who leads the thieves.",
     obj:[{type:"gather",count:3,label:"Recover Alfrin's stolen seed-bags"},
          {type:"slay",kind:"drudge",count:1,label:"Slay the Drudge Robber Baron"}],
-    xp:1200, gold:90, item:{name:"Buckler",stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9} },
+    xp:25000, gold:90, item:{name:"Buckler",stat:"worn",at:"light",aslot:"offhand",shield:"buckler",v:9} },   // retail: 5,000/bag ×3 + 10,000 for the Baron's head
   { id:"nen_ai", name:"Nen Ai's Pet Drudge", giver:"Nen Ai (Shoushi)",
     intro:"My pet drudge has gone hungry. Fetch Greenmire Cider and Greenmire Cheese from the Stone Cathedral behind my house, and I'll teach you of the Jojiist way.",
     obj:[{type:"gather",count:2,label:"Recover the Greenmire cider & cheese"},
          {type:"delve",count:1,label:"Brave the Stone Cathedral"}],
-    xp:900, gold:65, item:{name:"Health Kit",stat:"hp",v:50} },
+    xp:30000, gold:65, item:{name:"Health Kit",stat:"hp",v:50} },   // retail: 15,000 per treat ×2
   { id:"lou_ka", name:"Lou Ka's Stolen Items", giver:"Lou Ka (Shoushi)",
     intro:"Thieving drudges have stripped my home bare. Recover my belongings and put the rascals to the sword.",
-    obj:[{type:"gather",count:6,label:"Recover Lou Ka's stolen belongings"},
+    obj:[{type:"gather",count:8,label:"Recover Lou Ka's stolen belongings"},
          {type:"slay",kind:"drudge",count:2,label:"Punish the drudge thieves"}],
-    xp:1300, gold:85, item:null },
+    xp:36000, gold:85, item:null },   // retail: 8 items (his katar/shouken/trident/yaoji + Bai Den's four) ×4,500
   { id:"reedbanks", name:"The Banks Run Red", giver:"the Holtburg militia",
     intro:"Reedsharks have made the riverbanks a slaughter. Thin their numbers before another farmer is dragged under.",
     obj:[{type:"slay",kind:"reedshark",count:4,label:"Hunt Reedsharks along the banks"}],
@@ -14417,13 +14479,13 @@ const QUESTS=[
   { id:"worcer", name:"Worcer's Missing Heirlooms", giver:"Worcer, curator at the Helm & Shield (Holtburg)",
     intro:"I am raising a memorial to those the Tumeroks slaughtered in Portal Year 6. Recover eight lost heirlooms from the Holtburg Redoubt.",
     obj:[{type:"gather",count:8,label:"Recover lost heirlooms from the Redoubt"}],
-    xp:1700, gold:130, item:null },
+    xp:36000, gold:130, item:null },   // retail: 8 heirlooms ×4,500
   // ── Gharu'ndim & Sho bounties (Yaraq / Yanshi / Shoushi) ──
   { id:"lubziklan", name:"Lubziklan al-Luq's Stolen Goods", giver:"Lubziklan al-Luq (Yaraq)",
     intro:"The Red Rats and their drudge servants have plundered my caravan. Slay the brutes outside their lair and recover my eight stolen goods from the Sea Temple catacombs.",
     obj:[{type:"slay",kind:"drudge",count:3,label:"Slay the drudges of the Red Rat Lair"},
          {type:"gather",count:8,label:"Recover the stolen caravan goods"}],
-    xp:1800, gold:120, item:{name:"Round Shield",stat:"worn",at:"light",aslot:"offhand",shield:"round",v:13} },
+    xp:36000, gold:120, item:{name:"Mara's Healing Pie",stat:"hp",v:60} },   // retail: 8 goods ×4,500 + Mara's Healing Pie
   { id:"lou_ei", name:"Lou Ei's Stolen Bracelet", giver:"Lou Ei (Yanshi)",
     intro:"Banderlings raided the village and took my mother's bracelet. Recover it and make them pay for their thievery.",
     obj:[{type:"gather",count:1,label:"Recover Lou Ei's bracelet"},
@@ -14433,7 +14495,7 @@ const QUESTS=[
     intro:"The four Stones of Jojii — Discipline, Detachment, Compassion, and Humility — lie within the Shreth Hive. Recover them and return the wisdom of the Jojiist principles to Shoushi.",
     obj:[{type:"delve",count:1,label:"Descend into the Shreth Hive"},
          {type:"gather",count:4,label:"Recover the four Stones of Jojii"}],
-    xp:2000, gold:140, item:{name:"Willpower Gem",stat:"Self",v:1} },
+    xp:37500, gold:140, item:{name:"Willpower Gem",stat:"Self",v:1} },   // retail: 4 Stones ×9,375
   // ── Hunter kill-tasks (slay N of a beast for a bounty) ──
   { id:"skel_task", name:"Wicked Skeleton Kill Task", giver:"a Hunter of the Dead", repeatable:true,
     intro:"The risen dead walk the old crypts. Put eight Wicked Skeletons back to their rest and the Hunters' Guild will see you rewarded.",
@@ -14464,7 +14526,7 @@ const QUESTS=[
     intro:"My father Brogord fell in the Cave of Alabree holding back the Tumeroks. Avenge him, and bring back his axe and the last letter he wrote to my mother.",
     obj:[{type:"slay",kind:"tumerok",count:4,label:"Cut down the Tumeroks of the Cave of Alabree"},
          {type:"delve",count:1,label:"Recover Brogord's axe & letter from the depths"}],
-    xp:2400, gold:170, item:{name:"Kite Shield",stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:18} },
+    xp:30000, gold:170, item:{name:"Kite Shield",stat:"worn",at:"medium",aslot:"offhand",shield:"kite",v:18} },   // retail: axe + letter ×15,000
   { id:"tusker_tusk", name:"The Tusker Tusk", giver:"Brighteyes, the Tailor (Oolutanga's Refuge)",
     intro:"Bring me three great tusks from the Tusker Lodge and I will craft you a token of the Resistance.",
     obj:[{type:"slay",kind:"tusker",count:3,label:"Claim three Tusker tusks"}],
