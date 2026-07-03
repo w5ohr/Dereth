@@ -622,12 +622,32 @@ const SKILLS_DEF=[
 ];
 const SKILL_BY_KEY={};
 for(const s of SKILLS_DEF){ let b=0; if(s.d){let sum=0;for(const a of s.a)sum+=10;b=Math.floor(sum/s.d);} s.base0=b; SKILL_BY_KEY[s.k]=s; }
+// ── THE authentic skill system (assets/acskills.json, extracted from client_portal.dat by
+//    tools/ac_skill_export.py): every skill's real attribute formula and train/spec credit
+//    cost from the client SkillTable, plus the genuine XP charts — cumulative XP per trained
+//    (208 ranks) / specialized (226 ranks) skill rank, attribute & vital point, and the
+//    skill credits earned at each level. Static defs above stay as the offline fallback. ──
+let AC_XP=null;
+try{ fetch('assets/acskills.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
+  for(const k in j.skills){ const s=SKILL_BY_KEY[k]; if(!s) continue; const a=j.skills[k];
+    if(a.a&&a.a.length){ s.a=a.a; s.d=a.d; } else if(a.d===0){ s.a=[]; s.d=0; }
+    s.tc=Math.max(0,a.tc); s.sc=(a.sc>=900?-1:a.sc);              // 1000+ in the table = cannot specialize
+    let b=0; if(s.d){let sum=0;for(const at of s.a)sum+=10;b=Math.floor(sum/s.d);} s.base0=b; }
+  AC_XP=j.xp;
+  if(typeof derive==="function"&&typeof player!=="undefined"&&player.skills){ derive(); if(typeof updateHUD==="function") updateHUD(); }
+  console.log("AC skill pack: "+Object.keys(j.skills).length+" authentic skill formulas + XP charts loaded.");
+}).catch(()=>{}); }catch(e){}
+// THE AC skill check (client formula): success chance vs difficulty is a logistic curve.
+function skillCheck(skill,diff){ return 1/(1+Math.exp(0.03*(diff-skill))); }
 const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
 const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
 const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
 // Trained-vs-Specialized cumulative XP curves, fit to the two verified anchors (pt1: 23/58, pt70: 67504/168758)
-function skillCumXP(rank,spec){ if(rank<=0)return 0; return spec? Math.round(23*rank+0.192*rank*rank*rank) : Math.round(58*rank+0.48*rank*rank*rank); }
-function skillRankFromXP(xp,spec){ let r=0; while(skillCumXP(r+1,spec)<=xp&&r<260) r++; return r; }
+function skillCumXP(rank,spec){ if(rank<=0)return 0;
+  if(AC_XP){ const ch=spec?AC_XP.spec:AC_XP.trained; return ch[Math.min(rank,ch.length-1)]; }   // the real chart
+  return spec? Math.round(23*rank+0.192*rank*rank*rank) : Math.round(58*rank+0.48*rank*rank*rank); }
+function skillRankFromXP(xp,spec){ const cap=AC_XP?(spec?AC_XP.spec.length:AC_XP.trained.length)-1:260;
+  let r=0; while(r<cap&&skillCumXP(r+1,spec)<=xp) r++; return r; }
 function skillState(key){ return player.skills[key]||(player.skills[key]={t:0,xp:0}); }
 function skillTier(key){ return skillState(key).t; } // 0 untrained, 1 trained, 2 specialized
 function skillRank(key){ const st=skillState(key); return st.t>0?skillRankFromXP(st.xp,st.t===2):0; }
@@ -649,7 +669,11 @@ function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTie
 // AC: attributes are bought with unassigned XP on a steep escalating curve (not free level points).
 function attrCost(v){ return Math.round(25*Math.pow(Math.max(1,v-9),1.7)); }   // XP to raise from innate v → v+1
 // credit economy: available = base(level) − spent; specialization capped at 70 credits' worth
-function creditBase(){ return 52 + Math.min(Math.max(player.level-1,0),46) + (player.level>=35?1:0) + (player.level>=90?1:0) + ((player.augment&&player.augment.skillCredits)|0); }   // + Gems of Enlightenment/Mastery
+function creditBase(){ let fromLevels=0;
+  if(AC_XP){ const ch=AC_XP.credits, top=Math.min(player.level,ch.length-1);   // the real chart: credits granted at each level (46 total to 275)
+    for(let i=2;i<=top;i++) fromLevels+=ch[i]; }
+  else fromLevels=Math.min(Math.max(player.level-1,0),46) + (player.level>=35?1:0) + (player.level>=90?1:0);
+  return 52 + fromLevels + ((player.augment&&player.augment.skillCredits)|0); }   // 52 at creation (AC) + Gems of Enlightenment/Mastery
 function creditsSpent(){ let n=0; for(const s of SKILLS_DEF){ const t=skillTier(s.k); if(t>=1&&s.tc>0)n+=s.tc; if(t>=2&&s.sc>0)n+=s.sc; } return n; }
 function creditsAvail(){ return creditBase()-creditsSpent(); }
 function specCreditsUsed(){ let n=0; for(const s of SKILLS_DEF){ if(skillTier(s.k)>=2){ if(s.tc>0)n+=s.tc; if(s.sc>0)n+=s.sc; } } return n; }
@@ -11378,9 +11402,19 @@ function openLockedCache(){
   if(i>=0){ openerName=player.inv[i].name; const st=player.inv[i].stat; takeFromInv(i); openerName={name:openerName,stat:st}; }
   else { const kr=findKeyring(false); if(!kr){ log("The cache is locked. You need a <b>Lockpick</b> or a <b>Key</b>.","warn"); if(SFX.hit)SFX.hit(); return; }
     if(kr.picks>0){ kr.picks--; openerName={name:"Keyring lockpick",stat:"pick"}; } else { kr.keys--; openerName={name:"Keyring key",stat:"key"}; } }
-  const opener=openerName; dungeonLock.opened=true;
+  const opener=openerName;
+  const tier=curDungeon?curDungeon.tier:3;
+  if(opener.stat==="pick"){   // AC: picking is a real skill check — logistic curve vs the lock's resistance
+    const diff=[0,50,100,180,260,360][tier]||180;
+    const chance=skillCheck(skillValue("lockpick"),diff);
+    if(Math.random()>=chance){
+      log(`Your <b>${opener.name}</b> snaps in the lock — the mechanism resists you. <i>(Lockpick ${skillValue("lockpick")} vs resistance ${diff}: ${Math.round(chance*100)}%)</i>`,"warn");
+      if(SFX.hit)SFX.hit(); return;
+    }
+  }
+  dungeonLock.opened=true;
   if(dungeonLock.mesh) dungeonLock.mesh.rotation.z=-0.35;   // lid pops open
-  const tier=curDungeon?curDungeon.tier:3, n=2+irnd(0,1);
+  const n=2+irnd(0,1);
   for(let k=0;k<n;k++) addDrop(dungeonLock.x+rnd(-1.6,1.6),dungeonLock.z+rnd(-1.6,1.6),{type:"item",item:rollItem(true,tier)});
   addDrop(dungeonLock.x,dungeonLock.z,{type:"gold",amt:irnd(40,120)});
   log(`You ${opener.stat==="key"?"unlock":"pick open"} the cache with your <b>${opener.name}</b> — treasure spills out!`,"loot");
