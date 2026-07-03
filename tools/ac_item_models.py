@@ -17,7 +17,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location("ame", os.path.join(ROOT, "tools", "ac_model_export.py"))
 ame = importlib.util.module_from_spec(spec); spec.loader.exec_module(ame)
 OUT = os.path.join(ROOT, "assets", "acitemmodels")
-CATS = ("MeleeWeapon", "MissileLauncher", "Caster")
+# every catalogued class with a Setup bakes now — weapons were the pilot; clothing/armor,
+# gems, food, keys, components, ammo, healing kits, mana stones and lockpicks join them
+CATS = ("MeleeWeapon", "MissileLauncher", "Caster", "Clothing", "Gem", "Food", "Key",
+        "SpellComponent", "Ammunition", "Missile", "Healer", "ManaStone", "Lockpick")
 
 def qmul(a, b):
     ax, ay, az, aw = a; bx, by, bz, bw = b
@@ -64,6 +67,13 @@ def main():
         if v.get("setup") and v.get("t") in CATS:
             index[name] = v["setup"]
             setups.setdefault(v["setup"], name)
+    # housing furnishings (assets/acfurnishings.json, tools/ace_furnishing_export.py):
+    # keyed by the GAME's furniture names so hooks resolve them like any retail item
+    furn_path = os.path.join(ROOT, "assets", "acfurnishings.json")
+    if os.path.isfile(furn_path):
+        for name, shex in json.load(open(furn_path)).items():
+            index[name] = shex
+            setups.setdefault(shex, name)
     done = fails = 0
     for shex in sorted(setups):
         path = os.path.join(OUT, shex + ".json")

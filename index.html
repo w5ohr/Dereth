@@ -3271,13 +3271,78 @@ function gfxForestStream(){
   }
   GFX._fx=player.x; GFX._fz=player.z;
 }
+// ── REAL AC HEADS for the townsfolk (assets/acheads, tools/ac_head_export.py):
+//    Turbine's own head meshes + hair/eye/nose/mouth strip textures, seeded per NPC
+//    (heritage follows the region), swapped onto the nearest few procedural bodies.
+//    Self-contained on purpose — the player's head attachment is a separate work lane. ──
+let AC_HEADS=null,_acHeadGeo={},_acHeadTexC={};
+fetch('assets/acheads/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.heritages)AC_HEADS=j; }).catch(()=>{});
+const _NPC_HERITAGE={0:"aluvian",1:"sho",2:"gharu'ndim",3:"viamontian"};
+function _acHeadTex(id){
+  if(!_acHeadTexC[id]){ const t=new THREE.TextureLoader().load('assets/acheads/tex/'+id+'.png');
+    t.encoding=THREE.sRGBEncoding; _acHeadTexC[id]=t; }   // same UV convention as the proven acmodels loaders
+  return _acHeadTexC[id];
+}
+function npcAcHead(n){
+  if(!AC_HEADS||n._acHeadTried) return;
+  const body=n.mesh; if(!body||!body.userData||!body.userData.head) return;
+  n._acHeadTried=true;
+  const app=body.userData.headApp||{}, sd=Math.abs(app.faceSeed|0)||((n.x*13+n.z*7)|0);
+  const reg=Math.max(0,(typeof regionOf==="function")?regionOf(n.x,n.z):0);
+  const H=(AC_HEADS.heritages[_NPC_HERITAGE[reg]||"aluvian"]||{})[app.gender==="female"?"female":"male"];
+  if(!H||!H.hairStyles||!H.hairStyles.length) return;
+  const style=H.hairStyles[sd%H.hairStyles.length];
+  const eyes=H.eyes[(sd*7)%H.eyes.length], nose=H.noses[(sd*11)%H.noses.length], mouth=H.mouths[(sd*13)%H.mouths.length];
+  const gfx=style.gfx||H.defaultHead;
+  const attach=j=>{
+    const grp=new THREE.Group();
+    for(const gr of j.groups){
+      const slot=AC_HEADS.slots[gr.otex];
+      const texId=slot==="hair"?style.hairTex
+        :slot==="eyes"?((style.bald&&eyes.texBald)?eyes.texBald:eyes.tex)
+        :slot==="nose"?nose.tex
+        :slot==="mouth"?mouth.tex:gr.otex;
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(gr.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
+      geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
+      geo.setIndex(gr.i);
+      const mat=new THREE.MeshStandardMaterial({map:_acHeadTex(texId),roughness:0.62,metalness:0.0,
+        transparent:true,alphaTest:0.4});
+      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm);
+    }
+    // fit the retail head over the procedural anchor: normalize height, chin at the neck
+    const box=new THREE.Box3().setFromObject(grp), size=box.getSize(new THREE.Vector3());
+    const s=0.46/Math.max(0.001,size.y);
+    grp.scale.setScalar(s);
+    const c=box.getCenter(new THREE.Vector3());
+    grp.position.set(-c.x*s,(body.userData.headY+0.16)-c.y*s,-c.z*s);
+    body.add(grp);
+    body.userData.acHead=grp;
+    body.userData.head.visible=false;   // the painted head yields to Turbine's
+  };
+  const cached=_acHeadGeo[gfx];
+  if(cached&&cached!=="loading") attach(cached);
+  else if(!cached){ _acHeadGeo[gfx]="loading";
+    fetch('assets/acheads/'+gfx+'.json').then(r=>r.json()).then(j=>{ _acHeadGeo[gfx]=j;
+      if(!n._acHeadDead) attach(j); }).catch(()=>{ _acHeadGeo[gfx]=null; });
+  } else n._acHeadTried=false;   // someone else is fetching this mesh — try again next pass
+}
 // ── small-prop culling: NPC bodies, market stalls and lifestones are dozens of little
 //    meshes each (a draw call apiece) — past ~a hundred units they're sub-pixel. ──
 function gfxCullProps(){
   const px=player.x,pz=player.z;
   const near=(o,r)=>{ if(!o) return; const dx=(o.position?o.position.x:o.x)-px, dz=(o.position?o.position.z:o.z)-pz;
     o.visible=dx*dx+dz*dz<r*r; };
-  if(typeof npcs!=="undefined") for(const n of npcs){ if(n.mesh){ const dx=n.x-px,dz=n.z-pz; n.mesh.visible=dx*dx+dz*dz<110*110; } }
+  let acHeadBudget=[0,8,16,24][GFX.tier];
+  if(typeof npcs!=="undefined") for(const n of npcs){ if(n.mesh){ const dx=n.x-px,dz=n.z-pz, d2=dx*dx+dz*dz;
+    n.mesh.visible=d2<110*110;
+    // the nearest townsfolk wear Turbine's real heads (tier-budgeted; swap back when far)
+    if(d2<45*45&&acHeadBudget>0&&n.mesh.visible){ acHeadBudget--; npcAcHead(n); }
+    const ud=n.mesh.userData;
+    if(ud&&ud.acHead){ const nearHead=d2<55*55;
+      ud.acHead.visible=nearHead; if(ud.head) ud.head.visible=!nearHead; }
+  } }
   if(typeof shops!=="undefined") for(const s of shops){ const m=s.mesh||s.stall; if(m){ const dx=s.x-px,dz=s.z-pz; m.visible=dx*dx+dz*dz<130*130; } }
   if(typeof lifestones!=="undefined") for(const ls of lifestones){ if(ls.mesh){ const dx=ls.x-px,dz=ls.z-pz; ls.mesh.visible=dx*dx+dz*dz<180*180; } }
 }
@@ -3410,11 +3475,11 @@ function gfxGovern(dt){
   if(GFX._grace>0){ GFX._grace-=dt; GFX._lo=0; return; }   // teleport/stream churn doesn't count
   // decay-based windows: brief good frames ease the counters instead of resetting them,
   // so a scene hovering at 27-29 FPS still steps down within a few seconds
-  if(GFX.fps<31&&GFX.tier>0){ GFX._lo+=dt; GFX._hi=0; }
+  if(GFX.fps<32&&GFX.tier>0){ GFX._lo+=dt; GFX._hi=0; }
   else { GFX._lo=Math.max(0,GFX._lo-dt*2); }
   if(GFX.fps>54&&GFX.tier<3){ GFX._hi+=dt; }
   else { GFX._hi=Math.max(0,GFX._hi-dt*2); }
-  if(GFX._lo>2.2){ GFX._lo=0; GFX._hi=0; applyGfxTier(GFX.tier-1,true);
+  if(GFX._lo>1.8){ GFX._lo=0; GFX._hi=0; applyGfxTier(GFX.tier-1,true);
     log(`<span style="color:#cdbb88">Frame rate dipped below 30 — stepped graphics down to <b>${GFX.TIERS[GFX.tier]}</b>.</span>`,"sys"); }
   else if(GFX._hi>15){ GFX._hi=0; applyGfxTier(GFX.tier+1,true); }
 }
@@ -4111,6 +4176,7 @@ function buildPerson(o){
     trap.scale.set(1.35,0.5,0.7); trap.rotation.z=sx*0.55; trap.position.set(sx*(fem?0.1:0.125),shY+0.1,0.01); g.add(trap); }
   const headY=shY+0.36;
   const head=buildFaceGroup(app);head.position.y=headY;head.scale.set(0.92,0.96,0.92);g.add(head);
+  g.userData.head=head; g.userData.headApp=app; g.userData.headY=headY;   // real-AC-head swap anchor (npcAcHead)
   if(o.hood){
     const cowl=new THREE.Mesh(new THREE.SphereGeometry(0.215,14,12,0,6.28,0,Math.PI*0.72),cloth2);cowl.position.set(0,headY+0.015,0.02);g.add(cowl);
     const drape=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.27,0.42,12),cloth2);drape.position.set(0,headY-0.2,0.05);g.add(drape);
@@ -7269,14 +7335,39 @@ function hsHookAccepts(hookKind,it){
 }
 function hsHookCount(){ const hs=player.homestead; if(!hs) return 0;
   let n=0; for(const k in (hs.hooks||{})) if(hs.hooks[k]) n++; return n; }
+let _hsRedecT=null;
+function hsScheduleRedecorate(){   // a real model is still fetching — redraw the hooks when it lands
+  if(_hsRedecT) return;
+  _hsRedecT=setTimeout(()=>{ _hsRedecT=null;
+    try{ hsRefreshHomestead(); if(hsInst) hsInstDecorate(); }catch(e){} },1300);
+}
 function hsBuildHookMesh(hookKind,placed){
   const hg=new THREE.Group();
   if(placed){
-    const t=placed.stat==="furniture"?FURNITURE_ITEMS.find(f=>f.name===placed.name):null;
-    const fm=buildFurniture(t?t.kind:(placed.stat==="furniture"?placed.kind||"pedestal":"pedestal"));
-    if(!t&&placed.stat!=="furniture"){   // a displayed treasure: pedestal + hovering token
-      const tok=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3),new THREE.MeshStandardMaterial({color:0xd8c060,metalness:0.5,roughness:0.4}));
-      tok.position.y=1.25; tok.rotation.y=0.6; fm.add(tok); }
+    let fm=null;
+    const real=placed.name&&acItemMesh(placed.name);
+    hg.userData.placedName=placed.name;
+    if(real){
+      // Turbine's own model, at its true size (clamped so nothing swallows the room)
+      fm=real.clone(); fm.userData.acReal=true; hg.userData.acReal=true;
+      const box=new THREE.Box3().setFromObject(fm), size=box.getSize(new THREE.Vector3());
+      const md=Math.max(size.x,size.y,size.z)||1;
+      const target=hookKind==="wall"?clamp(md,0.35,1.15):clamp(md,0.45,2.3);
+      const s=target/md; fm.scale.setScalar(s);
+      const c=box.getCenter(new THREE.Vector3());
+      if(hookKind==="wall"||hookKind==="ceiling") fm.position.set(-c.x*s,(hookKind==="ceiling"?-size.y*s:0.55)-c.y*s,-c.z*s);
+      else fm.position.set(-c.x*s,-box.min.y*s,-c.z*s);   // floor/yard/roof: sit it on the hook
+      if(md<0.4&&hookKind!=="wall"&&hookKind!=="ceiling"){   // a small treasure gets its display pedestal
+        const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,0.9,10),texMat(stoneFloorTex,0x9a958c));
+        ped.position.y=0.45; hg.add(ped); fm.position.y+=0.95; }
+    } else {
+      if(placed.name&&AC_ITEM_MODELS&&AC_ITEM_MODELS[placed.name.toLowerCase()]) hsScheduleRedecorate();
+      const t=placed.stat==="furniture"?FURNITURE_ITEMS.find(f=>f.name===placed.name):null;
+      fm=buildFurniture(t?t.kind:(placed.stat==="furniture"?placed.kind||"pedestal":"pedestal"));
+      if(!t&&placed.stat!=="furniture"){   // a displayed treasure: pedestal + hovering token
+        const tok=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3),new THREE.MeshStandardMaterial({color:0xd8c060,metalness:0.5,roughness:0.4}));
+        tok.position.y=1.25; tok.rotation.y=0.6; fm.add(tok); }
+    }
     hg.add(fm);
     const l=labelSprite(placed.name,"npcs"); l.scale.set(3.6,0.9,1); l.position.y=2.0; hg.add(l);
   } else {
