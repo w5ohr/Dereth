@@ -3961,11 +3961,12 @@ function acHeadGroup(app, cb){
       geo.setIndex(g.i);
       const mat=new THREE.MeshStandardMaterial({color:0xd8b48c,roughness:0.62,metalness:0.02});
       const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm);
-      let texDID=g.otex, remapDIDs=[skinDID];                                                     // face/skin
-      if(g.otex==='05000098'){ texDID=(style&&style.hairTex)||g.otex; remapDIDs=[skinDID,hairDID]; }        // hair (over its scalp skin)
-      else if(g.otex==='0500024C'){ texDID=(eye&&(bald?eye.texBald:eye.tex))||g.otex; remapDIDs=[skinDID,eyeDID]; }  // eyes (iris over the strip's skin)
-      else if(g.otex==='050002F5'){ texDID=(nose&&nose.tex)||g.otex; remapDIDs=[skinDID]; }        // nose
-      else if(g.otex==='0500025C'){ texDID=(mouth&&mouth.tex)||g.otex; remapDIDs=[skinDID]; }      // mouth
+      let texDID=g.otex, remapDIDs=[skinDID], slot="face";                                        // face/skin
+      if(g.otex==='05000098'){ texDID=(style&&style.hairTex)||g.otex; remapDIDs=[skinDID,hairDID]; slot="hair"; }        // hair (over its scalp skin)
+      else if(g.otex==='0500024C'){ texDID=(eye&&(bald?eye.texBald:eye.tex))||g.otex; remapDIDs=[skinDID,eyeDID]; slot="eyes"; }  // eyes (iris over the strip's skin)
+      else if(g.otex==='050002F5'){ texDID=(nose&&nose.tex)||g.otex; remapDIDs=[skinDID]; slot="nose"; }        // nose
+      else if(g.otex==='0500025C'){ texDID=(mouth&&mouth.tex)||g.otex; remapDIDs=[skinDID]; slot="mouth"; }      // mouth
+      mm.userData.acSlot=slot;                                                                     // for face-direction detection
       if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(0xffffff); mat.needsUpdate=true; });
     }
     cb&&cb(grp);
@@ -21634,7 +21635,7 @@ if(hasSave()){ continueBtn.style.display="block";
 // ============================================================================
 //  CHARACTER CREATOR — live 3D face/hair/beard/tattoo customization
 // ============================================================================
-let ccRenderer=null,ccScene=null,ccCam=null,ccBust=null,ccRAF=0,ccWork=null,ccOnCreate=null,ccVisible=false,ccModel=null,ccModelCache={},ccModelToken=0;
+let ccRenderer=null,ccScene=null,ccCam=null,ccBust=null,ccRAF=0,ccWork=null,ccOnCreate=null,ccVisible=false,ccModel=null,ccModelCache={},ccModelToken=0,ccBody=null;
 function ccInitPreview(){
   if(ccRenderer) return;
   const canvas=document.getElementById('ccPreview');
@@ -21669,6 +21670,25 @@ function ccBust_build(app){
   }
   return g;
 }
+// build the FULL player model (AC jointed body + real AC head) for the appearance being edited,
+// so the creator shows the whole character. buildAvatar/applyACBody/acBuildHead read the global
+// player.appearance synchronously, so point it at ccWork for the build, then restore.
+function ccBuildBody(app){
+  const savedApp=player.appearance;
+  player.appearance=app;
+  let av=null;
+  try{ av=buildAvatar(); }catch(e){ av=null; }
+  player.appearance=savedApp;
+  if(!av) return null;
+  const u=av.userData;
+  av.visible=true;                                          // the in-world loop toggles this; force it on for the preview
+  av.traverse(o=>{ if(o.isMesh) o.frustumCulled=false; });  // small close-up scene — never cull
+  // a character in creation wears no gear: hide weapons, shield, quiver and the armour shells
+  [u.aSword,u.aBow,u.aWand,u.aHeld,u.aShield,u.quiver].forEach(o=>{ if(o) o.visible=false; });
+  if(u.armorRig) for(const k in u.armorRig){ const e=u.armorRig[k]; if(e&&e.groups) for(const gr of e.groups) if(gr) gr.visible=false; }
+  av.position.set(0,0,0);
+  return av;
+}
 function ccShowModel(url){                                   // render the chosen rigged model full-body in the preview
   const tok=++ccModelToken;
   const place=root=>{ if(tok!==ccModelToken) return; if(ccModel){ccScene.remove(ccModel);ccModel=null;}
@@ -21686,8 +21706,14 @@ function ccRebuild(){ if(!ccScene) return;
   // face/skin/hair options only matter for the classic procedural body — hide them for rigged models
   ["face","skin","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo"].forEach(cat=>{ const row=document.querySelector('#charCreator .cc-row[data-cat="'+cat+'"]'); if(row) row.style.display=md.url?"none":""; });
   if(ccBust){ ccScene.remove(ccBust); ccBust=null; }
+  if(ccBody){ ccScene.remove(ccBody); ccBody=null; }
   if(md.url){ if(ccCam){ccCam.position.set(0,1.05,3.5);ccCam.lookAt(0,0.95,0);} ccShowModel(md.url); }
-  else { ccModelToken++; if(ccModel){ccScene.remove(ccModel);ccModel=null;} if(ccCam){ccCam.position.set(0,1.62,1.45);ccCam.lookAt(0,1.6,0);} ccBust=ccBust_build(ccWork); ccScene.add(ccBust); }
+  else {
+    ccModelToken++; if(ccModel){ccScene.remove(ccModel);ccModel=null;}
+    ccBody=ccBuildBody(ccWork);                              // the whole player model, head included
+    if(ccBody){ ccScene.add(ccBody); if(ccCam){ccCam.position.set(0,0.98,3.35);ccCam.lookAt(0,0.94,0);} }
+    else { if(ccCam){ccCam.position.set(0,1.62,1.45);ccCam.lookAt(0,1.6,0);} ccBust=ccBust_build(ccWork); ccScene.add(ccBust); }   // fallback: head-and-shoulders bust
+  }
 }
 let _ccLastT=0;
 function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
@@ -21695,6 +21721,13 @@ function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
   const sway=Math.PI+Math.sin(tNow/1500)*0.5;
   if(ccBust){ ccBust.rotation.y=sway; if(ccBust.userData.head) tickFace(ccBust.userData.head,dt); }
   if(ccModel) ccModel.rotation.y=sway;
+  if(ccBody){ const u=ccBody.userData;
+    // slow turntable: the character rotates so every side (face included) comes around. Male and
+    // female AC bodies front opposite ways, so a fixed "face the camera" base is unreliable; a
+    // gentle continuous spin is the robust character-preview convention.
+    ccBody.rotation.y=(u&&u._spinBase!=null?u._spinBase:0)+tNow/3600;
+    if(u){ if(u.acBody&&AC_MOTION&&typeof acMotionPose==="function"){ try{ acMotionPose(u,"idle",tNow/1000,true); }catch(e){} }
+      if(u.head&&u.head.visible) tickFace(u.head,dt); } }
   ccRenderer.render(ccScene,ccCam); }
 function ccSize(){ const cv=document.getElementById('ccPreview'); const w=cv.clientWidth||330,h=cv.clientHeight||430;
   ccRenderer.setSize(w,h,false); ccCam.aspect=w/h; ccCam.updateProjectionMatrix(); }
