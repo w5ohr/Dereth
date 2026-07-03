@@ -381,6 +381,8 @@
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="AC's iconic risk: death leaves a lootable corpse holding your most valuable items + half your pyreals — walk back to recover it">AC-authentic death</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-acdeath="1">Corpse &amp; item drop</button><button class="tbtn" data-acdeath="0">Soft (Vitae only)</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+    <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
@@ -2713,6 +2715,8 @@ function initThree(){
   waterGlint=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,250,235,0.9)","rgba(255,240,200,0)"),transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
   waterGlint.scale.set(120,60,1);scene.add(waterGlint);
   scene.add(buildRain());
+  scene.add(buildMilkyWay());scene.add(buildAurora());   // the sorcerous night sky
+  scene.add(buildMotes());scene.add(buildMist());        // fireflies, portal-motes, dawn mist
   // lights
   hemi=new THREE.HemisphereLight(0xbcd0ff,0x4a4230,0.62);scene.add(hemi);
   sun=new THREE.DirectionalLight(0xffedc2,1.25);
@@ -2885,6 +2889,7 @@ function initThree(){
   markSceneSRGB();
   initEnvironment();
   initPost();
+  applyGfxSetting();   // graphics tier (auto governor keeps it above 30 FPS)
 }
 // image-based ambient: a tiny sky-and-ground gradient scene run through PMREM becomes
 // scene.environment, so every MeshStandardMaterial picks up soft sky reflections (metal
@@ -2951,19 +2956,27 @@ function initPost(){
     " s+=texture2D(tDiffuse,vUv+dir*3.0).rgb*0.0918; s+=texture2D(tDiffuse,vUv+dir*4.0).rgb*0.051;"+
     " gl_FragColor=vec4(s,1.0); }",
     {tDiffuse:{value:null},dir:{value:new THREE.Vector2()}});
-  // composite: scene + bloom, subtle teal/gold grade, vignette
+  // god-rays: radial smear of the blurred bright pass toward the sun's screen position
+  POST.ray=makePass(
+    "varying vec2 vUv; uniform sampler2D tDiffuse; uniform vec2 uSun;"+
+    "void main(){ vec2 d=(uSun-vUv)/26.0; vec2 p=vUv; vec3 acc=vec3(0.0); float w=1.0,tot=0.0;"+
+    " for(int i=0;i<26;i++){ acc+=texture2D(tDiffuse,p).rgb*w; tot+=w; w*=0.93; p+=d; }"+
+    " gl_FragColor=vec4(acc/tot,1.0); }",
+    {tDiffuse:{value:null},uSun:{value:new THREE.Vector2(0.5,0.8)}});
+  // composite: scene + bloom + god-rays, subtle teal/gold grade, vignette
   POST.comp=makePass(
-    "varying vec2 vUv; uniform sampler2D tScene; uniform sampler2D tBloom; uniform float strength; uniform float vig;"+
+    "varying vec2 vUv; uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tRays; uniform float strength; uniform float vig; uniform float rayStr;"+
     "void main(){ vec3 c=texture2D(tScene,vUv).rgb; vec3 b=texture2D(tBloom,vUv).rgb;"+
     " float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,1.18);"+ // richer saturation (AC's vivid fantasy palette)
     " c=mix(c, c*c*(3.0-2.0*c), 0.16);"+                          // gentle S-curve — deeper shadows, snappier midtones
     " c*=mix(vec3(0.95,0.975,1.07),vec3(1.08,1.02,0.92),clamp(l,0.0,1.0));"+ // cooler shadows / warmer highlights (sunlit warmth)
     " c+=b*strength;"+                                            // additive glow (after grade so highlights stay hot)
+    " if(rayStr>0.001) c+=texture2D(tRays,vUv).rgb*rayStr;"+       // the sun streams through the world
     " vec2 q=vUv-0.5; float d=dot(q,q); c*=1.0-smoothstep(0.24,0.82,d)*vig;"+ // vignette
     " float n=fract(sin(dot(vUv,vec2(12.9898,78.233)))*43758.5453);"+ // ordered-noise dither:
     " c+=(n-0.5)/255.0;"+                                          // kills sky-gradient banding
     " gl_FragColor=vec4(c,1.0); }",
-    {tScene:{value:null},tBloom:{value:null},strength:{value:0.74},vig:{value:0.33}});
+    {tScene:{value:null},tBloom:{value:null},tRays:{value:null},strength:{value:0.74},vig:{value:0.33},rayStr:{value:0}});
 }
 function resizePost(){
   if(!POST.rtScene) return;
@@ -2993,7 +3006,7 @@ function renderReflection(){
   if(!REFL.on||!REFL.rt||!waterMesh||!waterMesh.visible||typeof cam==="undefined"||!cam) return;
   const sh=waterMesh.material.userData.sh; if(!sh||!sh.uniforms.uReflMap) return;
   if(inDungeon||inNetwork){ sh.uniforms.uReflStr.value=0; return; }          // no open water inside instances
-  if((REFL.tick=(REFL.tick+1)%3)!==0) return;                                // third-rate: the mirror lags ~2 frames — invisible on rippled water
+  if((REFL.tick=(REFL.tick+1)%(REFL.rate||3))!==0) return;                   // fractional-rate: the mirror lags a few frames — invisible on rippled water
   cam.updateMatrixWorld();
   const p=REFL._p.setFromMatrixPosition(cam.matrixWorld);
   if(p.y<0.06){ sh.uniforms.uReflStr.value=0; return; }                      // underwater: the surface mirrors nothing
@@ -3040,11 +3053,342 @@ function renderComposite(){
     POST.blur.uniforms.tDiffuse.value=POST.rtA.texture; POST.blur.uniforms.dir.value.set(1/hw,0); blitPass(POST.blur,null,POST.rtB);
     POST.blur.uniforms.tDiffuse.value=POST.rtB.texture; POST.blur.uniforms.dir.value.set(0,1/hh); blitPass(POST.blur,null,POST.rtA);
   }
-  // 4) composite → screen
+  // 4) god-rays: radial-smear the blurred bright pass toward the sun's screen position
+  if(GFX.rays&&POST.ray&&_raysStr>0.003){
+    POST.ray.uniforms.tDiffuse.value=POST.rtA.texture;
+    blitPass(POST.ray,null,POST.rtB);
+    POST.comp.uniforms.tRays.value=POST.rtB.texture;
+    POST.comp.uniforms.rayStr.value=_raysStr;
+  } else POST.comp.uniforms.rayStr.value=0;
+  // 5) composite → screen
   POST.comp.uniforms.tScene.value=POST.rtScene.texture; POST.comp.uniforms.tBloom.value=POST.rtA.texture;
   renderer.setRenderTarget(null);
   POST.quad.material=POST.comp;
   renderer.render(POST.quadScene,POST.quadCam);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  A MAGICAL DERETH — the graphics finishing pass, quality-governed.
+//  · living wind: grass and whole forests sway (storms bend them harder)
+//  · a sorcerous night sky: the galactic band, curtains of aurora over the
+//    northlands, shooting stars
+//  · fireflies over the meadows at dusk, violet motes around portalspace
+//  · dawn river-mist that burns off with the sun
+//  · god-rays streaming from the sun through the bloom chain
+//  · GFX quality tiers + an auto governor that keeps the game above 30 FPS
+// ════════════════════════════════════════════════════════════════════════════
+const WIND={uT:{value:0},uS:{value:1}};
+function addWindSway(mat,amp,yLo,yHi){
+  const prev=mat.onBeforeCompile;
+  mat.onBeforeCompile=sh=>{
+    if(prev)prev(sh);
+    sh.uniforms.uWT=WIND.uT; sh.uniforms.uWS=WIND.uS;
+    sh.vertexShader="uniform float uWT; uniform float uWS;\n"+sh.vertexShader.replace(
+      "#include <begin_vertex>",
+      "#include <begin_vertex>\n"+
+      "{ float _ph=0.0;\n"+
+      "#ifdef USE_INSTANCING\n"+
+      "  _ph=instanceMatrix[3].x*0.35+instanceMatrix[3].z*0.29;\n"+
+      "#endif\n"+
+      "  float _wk=smoothstep("+yLo.toFixed(2)+","+yHi.toFixed(2)+",transformed.y);\n"+
+      "  float _sw=sin(uWT*1.9+_ph)*0.7+sin(uWT*3.23+_ph*1.7)*0.3;\n"+
+      "  transformed.x+=_sw*_wk*"+amp.toFixed(3)+"*uWS;\n"+
+      "  transformed.z+=cos(uWT*1.53+_ph)*_wk*"+amp.toFixed(3)+"*0.6*uWS; }");
+  };
+  mat.needsUpdate=true;
+}
+// ── the night sky's magic ──
+let milkyWay=null,auroraGroup=null,auroraU=null,_shoot=null,_shootCd=12;
+function buildMilkyWay(){
+  const c=document.createElement('canvas');c.width=512;c.height=192;const g=c.getContext('2d');
+  g.clearRect(0,0,512,192);
+  // the galactic river: layered soft blobs along the band, dusted with micro-stars
+  for(let i=0;i<330;i++){
+    const x=Math.random()*512, y=96+(Math.random()+Math.random()-1)*46;
+    const r=4+Math.random()*26, a=0.018+Math.random()*0.05;
+    const hue=Math.random();
+    const col=hue<0.6?"200,215,255":hue<0.85?"235,210,255":"170,240,230";
+    const grd=g.createRadialGradient(x,y,0,x,y,r);
+    grd.addColorStop(0,`rgba(${col},${a})`);grd.addColorStop(1,`rgba(${col},0)`);
+    g.fillStyle=grd;g.fillRect(x-r,y-r,r*2,r*2);
+  }
+  for(let i=0;i<420;i++){ const x=Math.random()*512,y=96+(Math.random()+Math.random()-1)*52;
+    g.fillStyle=`rgba(255,255,255,${0.25+Math.random()*0.5})`;g.fillRect(x,y,1,1); }
+  const tex=new THREE.CanvasTexture(c);
+  const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0,fog:false,
+    depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide});
+  milkyWay=new THREE.Mesh(new THREE.PlaneGeometry(WORLD*1.25,WORLD*0.36),mat);
+  milkyWay.rotation.set(-Math.PI/2+0.42,0,0.6);   // a tilted river across the dome
+  milkyWay.position.y=WORLD*0.42; milkyWay.renderOrder=-1;
+  return milkyWay;
+}
+function buildAurora(){
+  auroraGroup=new THREE.Group(); auroraU=[];
+  for(let i=0;i<2;i++){
+    const u={uT:{value:0},uA:{value:0},uHueOff:{value:i*0.7}};
+    // BackSide: we stand inside the arc looking at its inner face — one layer of fill, not two
+    const mat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,side:THREE.BackSide,
+      blending:THREE.AdditiveBlending,
+      uniforms:u,
+      vertexShader:"varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
+      fragmentShader:
+        "varying vec2 vUv; uniform float uT,uA,uHueOff;\n"+
+        "void main(){\n"+
+        " float x=vUv.x*6.28318;\n"+
+        " float rip=sin(x*3.0+uT*0.53)*0.5+sin(x*7.0-uT*0.91)*0.3+sin(x*13.0+uT*1.7)*0.2;\n"+
+        " float base=0.16+rip*0.10;\n"+                                 // the curtain's dancing lower hem
+        " float body=smoothstep(base,base+0.06,vUv.y)*(1.0-smoothstep(base+0.10,0.96,vUv.y)*0.9);\n"+
+        " float rays=0.55+0.45*sin(x*24.0+rip*7.0+uT*0.6);\n"+          // vertical shafts
+        " float k=body*rays;\n"+
+        " vec3 teal=vec3(0.15,0.95,0.62), violet=vec3(0.55,0.30,0.95), rose=vec3(0.9,0.35,0.6);\n"+
+        " float m=0.5+0.5*sin(x*1.5+uT*0.21+uHueOff);\n"+
+        " vec3 col=mix(teal,violet,m); col=mix(col,rose,smoothstep(0.75,0.98,vUv.y)*0.5);\n"+
+        " gl_FragColor=vec4(col*k*uA,k*uA);\n"+
+        "}"});
+    // a curtain hung across the northern sky (kept lean — sky fill is the frame-rate killer)
+    const geo=new THREE.CylinderGeometry(WORLD*0.55,WORLD*0.55,WORLD*0.20,48,1,true,Math.PI*0.78,Math.PI*0.44);
+    const m=new THREE.Mesh(geo,mat);
+    m.position.y=WORLD*0.28+i*WORLD*0.05; m.rotation.y=i*0.3; m.renderOrder=-1;
+    auroraGroup.add(m); auroraU.push(u);
+  }
+  return auroraGroup;
+}
+// tonight's aurora strength: some nights blaze, some barely breathe (seeded per world-day)
+function auroraTonight(){
+  const d=Math.floor(typeof worldDays==="number"?worldDays:0);
+  const h=Math.sin(d*127.1)*43758.5453, f=h-Math.floor(h);
+  return f<0.25?0:0.3+f*0.9;   // 1 night in 4 is dark; the rest glow 0.3–1.2
+}
+// ── fireflies & portalspace motes ──
+const MOTES={n:340,mesh:null,base:null,phase:null,on:true};
+function buildMotes(){
+  const pos=new Float32Array(MOTES.n*3),col=new Float32Array(MOTES.n*3);
+  MOTES.base=new Float32Array(MOTES.n*3); MOTES.phase=new Float32Array(MOTES.n);
+  for(let i=0;i<MOTES.n;i++){ MOTES.phase[i]=Math.random()*6.28;
+    const fire=i<260;   // 260 fireflies (warm green-gold) + 80 violet portal-motes
+    col[i*3]=fire?0.72:0.62; col[i*3+1]=fire?0.95:0.42; col[i*3+2]=fire?0.35:1.0; }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+  const mat=new THREE.PointsMaterial({size:0.42,map:softTex("rgba(255,255,255,1)","rgba(255,255,255,0)"),
+    vertexColors:true,transparent:true,opacity:0,sizeAttenuation:true,fog:true,
+    depthWrite:false,blending:THREE.AdditiveBlending});
+  MOTES.mesh=new THREE.Points(geo,mat); MOTES.mesh.frustumCulled=false;
+  MOTES.anchor={x:1e9,z:1e9};
+  return MOTES.mesh;
+}
+function seedMotes(){
+  const b=MOTES.base;
+  for(let i=0;i<260;i++){   // fireflies: low over the grass around the player
+    const a=Math.random()*6.28,r=6+Math.random()*46;
+    const x=player.x+Math.cos(a)*r, z=player.z+Math.sin(a)*r;
+    b[i*3]=x; b[i*3+1]=groundY(x,z)+0.4+Math.random()*1.6; b[i*3+2]=z;
+  }
+  // portal-motes drift around the nearest portals & lifestones
+  const near=[];
+  if(typeof portals!=="undefined") for(const pt of portals){ if(Math.hypot(pt.x-player.x,pt.z-player.z)<130) near.push(pt); }
+  if(typeof lifestones!=="undefined") for(const ls of lifestones){ if(Math.hypot(ls.x-player.x,ls.z-player.z)<130) near.push(ls); }
+  for(let i=260;i<MOTES.n;i++){
+    if(!near.length){ b[i*3+1]=-9999; continue; }
+    const pt=near[i%near.length], a=Math.random()*6.28, r=0.8+Math.random()*3.2;
+    b[i*3]=pt.x+Math.cos(a)*r; b[i*3+1]=groundY(pt.x,pt.z)+0.5+Math.random()*3.4; b[i*3+2]=pt.z+Math.sin(a)*r;
+  }
+  MOTES.anchor={x:player.x,z:player.z};
+}
+// ── dawn mist over the low ground ──
+const MIST={n:16,pool:[],on:true};
+function buildMist(){
+  const g=new THREE.Group(); g.renderOrder=1;
+  const tex=softTex("rgba(225,232,244,0.55)","rgba(225,232,244,0)");
+  for(let i=0;i<MIST.n;i++){
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(rnd(20,34),rnd(14,24)),
+      new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0,depthWrite:false,fog:true}));
+    m.rotation.x=-Math.PI/2; m.userData={drift:rnd(0.2,0.7),ph:rnd(0,6.28),k:rnd(0.5,1)};
+    g.add(m); MIST.pool.push(m);
+  }
+  MIST.group=g; MIST.anchor={x:1e9,z:1e9};
+  return g;
+}
+function seedMist(){
+  for(const m of MIST.pool){
+    const a=rnd(0,6.28),r=rnd(14,90);
+    const x=player.x+Math.cos(a)*r, z=player.z+Math.sin(a)*r;
+    const gy=groundY(x,z);
+    m.position.set(x,Math.max(0.4,gy)+rnd(0.5,1.6),z);
+    m.userData.low=gy<9;   // river valleys & shores mist hardest
+  }
+  MIST.anchor={x:player.x,z:player.z};
+}
+// ── forest streaming: compact only the instances within fog range to the front of each
+//    pool's buffer. The fog swallows everything past ~235u, so this is pure free speed. ──
+function gfxForestStream(){
+  if(!GFX.forest) return;
+  const R2=(GFX.treeR||260)*(GFX.treeR||260), px=player.x, pz=player.z;
+  for(const k in GFX.forest){ const p=GFX.forest[k];
+    if(!p.all||!p.mesh) continue;
+    const dst=p.mesh.instanceMatrix.array; let m=0;
+    for(let i=0;i<p.n;i++){
+      const dx=p.px[i]-px, dz=p.pz[i]-pz;
+      if(dx*dx+dz*dz>R2) continue;
+      dst.set(p.all.subarray(i*16,i*16+16),m*16); m++;
+    }
+    p.mesh.count=m;
+    p.mesh.instanceMatrix.needsUpdate=true;
+  }
+  GFX._fx=player.x; GFX._fz=player.z;
+}
+// ── small-prop culling: NPC bodies, market stalls and lifestones are dozens of little
+//    meshes each (a draw call apiece) — past ~a hundred units they're sub-pixel. ──
+function gfxCullProps(){
+  const px=player.x,pz=player.z;
+  const near=(o,r)=>{ if(!o) return; const dx=(o.position?o.position.x:o.x)-px, dz=(o.position?o.position.z:o.z)-pz;
+    o.visible=dx*dx+dz*dz<r*r; };
+  if(typeof npcs!=="undefined") for(const n of npcs){ if(n.mesh){ const dx=n.x-px,dz=n.z-pz; n.mesh.visible=dx*dx+dz*dz<110*110; } }
+  if(typeof shops!=="undefined") for(const s of shops){ const m=s.mesh||s.stall; if(m){ const dx=s.x-px,dz=s.z-pz; m.visible=dx*dx+dz*dz<130*130; } }
+  if(typeof lifestones!=="undefined") for(const ls of lifestones){ if(ls.mesh){ const dx=ls.x-px,dz=ls.z-pz; ls.mesh.visible=dx*dx+dz*dz<180*180; } }
+}
+// ── the per-frame magic tick (wind, sky, motes, mist, god-rays, governor) ──
+let _raysStr=0,_gfxSeedT=0;
+const _sunNDC=new THREE.Vector3();
+function gfxTick(dt){
+  GFX._fT=(GFX._fT||0)+dt;
+  if(GFX._fT>0.7&&(GFX._fx==null||GFX._fT>=99||Math.hypot(player.x-GFX._fx,player.z-GFX._fz)>18)){
+    GFX._fT=0; gfxForestStream(); }
+  GFX._lT=(GFX._lT||0)+dt;
+  if(GFX._lT>0.4){ GFX._lT=0; gfxCullLabels(); gfxCullProps(); }
+  if(GFX.shadowEvery>1&&renderer.shadowMap.enabled){   // shadow refresh on a cadence, not every frame
+    GFX._sF=(GFX._sF||0)+1;
+    if(GFX._sF>=GFX.shadowEvery){ GFX._sF=0; renderer.shadowMap.needsUpdate=true; }
+  }
+  WIND.uT.value+=dt*(0.75+(typeof windSpd==="number"?windSpd:8)*0.05);
+  WIND.uS.value=clamp(0.45+(typeof windSpd==="number"?windSpd:8)*0.075,0.45,2.4);
+  const t2=gameTime*Math.PI*2, sunY=-Math.cos(t2);
+  const daylight=clamp(sunY*1.15+0.4,0,1), night=clamp(1-daylight*1.6,0,1);
+  const oc=clamp((cloudCover-0.5)/0.5,0,1);
+  const inside=inDungeon||inNetwork;
+  // galactic band + aurora ride with the star dome
+  if(milkyWay){ milkyWay.position.x=player.x; milkyWay.position.z=player.z;
+    milkyWay.material.opacity=(inside?0:night*(1-oc*0.9))*0.5;
+    milkyWay.visible=milkyWay.material.opacity>0.01; }
+  if(auroraGroup){
+    const str=GFX.auroraOn&&!inside?auroraTonight()*night*(1-oc*0.85):0;
+    auroraGroup.position.set(player.x,0,player.z-WORLD*0.18);   // hung over the northlands
+    auroraGroup.visible=str>0.01;
+    for(const u of auroraU){ u.uT.value+=dt; u.uA.value+=(str*0.72-u.uA.value)*Math.min(1,dt*0.5); }
+  }
+  // a shooting star now and then
+  if(!inside&&night>0.5&&(_shootCd-=dt)<=0){
+    _shootCd=rnd(14,40);
+    if(!_shoot){ _shoot=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,255,255,1)","rgba(200,220,255,0)"),
+      transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+      _shoot.scale.set(260,26,1); scene.add(_shoot); }
+    const a=rnd(0,6.28);
+    _shoot.userData={t:0,x0:player.x+Math.cos(a)*WORLD*0.3,z0:player.z+Math.sin(a)*WORLD*0.3,
+      y0:WORLD*0.34+rnd(-40,80),dx:rnd(-1,1)*WORLD*0.12,dy:-WORLD*0.05,dz:rnd(-1,1)*WORLD*0.12};
+    _shoot.material.rotation=Math.atan2(_shoot.userData.dy,_shoot.userData.dx);
+  }
+  if(_shoot&&_shoot.userData&&_shoot.userData.t<1){
+    const s=_shoot.userData; s.t+=dt*1.4;
+    _shoot.position.set(s.x0+s.dx*s.t,s.y0+s.dy*s.t,s.z0+s.dz*s.t);
+    _shoot.material.opacity=Math.sin(Math.min(1,s.t)*Math.PI)*0.9*night;
+  } else if(_shoot) _shoot.material.opacity=0;
+  // fireflies wake at dusk; portal-motes glow all night
+  if(MOTES.mesh){
+    const want=GFX.motesOn&&!inside&&night>0.15;
+    const op=want?clamp((night-0.15)/0.4,0,1)*0.9:0;
+    MOTES.mesh.material.opacity+= (op-MOTES.mesh.material.opacity)*Math.min(1,dt*2);
+    MOTES.mesh.visible=MOTES.mesh.material.opacity>0.02;
+    if(MOTES.mesh.visible){
+      if(Math.hypot(player.x-MOTES.anchor.x,player.z-MOTES.anchor.z)>55) seedMotes();
+      const pos=MOTES.mesh.geometry.attributes.position.array,b=MOTES.base,t=WIND.uT.value;
+      for(let i=0;i<MOTES.n;i++){ const ph=MOTES.phase[i];
+        pos[i*3]  =b[i*3]  +Math.sin(t*0.7+ph)*1.1+Math.sin(t*0.23+ph*2.0)*1.8;
+        pos[i*3+1]=b[i*3+1]+Math.sin(t*0.9+ph*1.3)*0.5;
+        pos[i*3+2]=b[i*3+2]+Math.cos(t*0.6+ph)*1.1; }
+      MOTES.mesh.geometry.attributes.position.needsUpdate=true;
+    }
+  }
+  // river-mist: thickest at dawn & dusk, after rain, and over low ground
+  if(MIST.group){
+    const warm=clamp(1-Math.abs(sunY)*2.4,0,1);
+    const wet=(typeof wetness==="number"?wetness:0);
+    const base=GFX.mistOn&&!inside?clamp(warm*0.55+wet*0.35+night*0.12,0,0.8):0;
+    MIST.group.visible=base>0.02;
+    if(MIST.group.visible){
+      if(Math.hypot(player.x-MIST.anchor.x,player.z-MIST.anchor.z)>70) seedMist();
+      const nM=GFX.mistN!=null?GFX.mistN:MIST.pool.length;
+      MIST.pool.forEach((m,i)=>{ const u=m.userData;
+        if(i>=nM){ m.material.opacity=0; return; }
+        m.position.x+=Math.cos(windDir)*u.drift*dt; m.position.z+=Math.sin(windDir)*u.drift*dt;
+        m.material.opacity=base*u.k*(u.low?1:0.35)*(0.75+0.25*Math.sin(WIND.uT.value*0.4+u.ph)); });
+    }
+  }
+  // god-rays strength: sun above the horizon, on screen, not smothered by storm-cover
+  _raysStr=0;
+  if(GFX.rays&&!inside&&sunSprite&&sunY>0.02){
+    _sunNDC.copy(sunSprite.position).project(cam);
+    if(_sunNDC.z<1&&_sunNDC.x>-1.4&&_sunNDC.x<1.4&&_sunNDC.y>-1.4&&_sunNDC.y<1.4){
+      const edge=clamp(1.3-Math.max(Math.abs(_sunNDC.x),Math.abs(_sunNDC.y)),0,1);
+      _raysStr=clamp(sunY*2,0,1)*edge*(1-oc*0.9)*0.5;
+      if(POST.ray) POST.ray.uniforms.uSun.value.set(_sunNDC.x*0.5+0.5,_sunNDC.y*0.5+0.5);
+    }
+  }
+  gfxGovern(dt);
+}
+// ── quality tiers + the 30-FPS governor ──
+const GFX={tier:3,rays:true,motesOn:true,mistOn:true,auroraOn:true,fps:60,_lo:0,_hi:0,forest:null,
+  TIERS:["Low","Medium","High","Ultra"]};
+function applyGfxTier(t,quiet){
+  t=clamp(t|0,0,3); GFX.tier=t;
+  if(typeof renderer==="undefined"||!renderer) return;
+  // Low renders SUB-native and upscales — fill rate is what integrated GPUs drown in
+  renderer.setPixelRatio(Math.min(devicePixelRatio,[0.85,1,1.25,2][t]));
+  renderer.setSize(innerWidth,innerHeight);
+  if(typeof resizePost==="function") resizePost();
+  renderer.shadowMap.enabled=t>=1;
+  if(typeof sun!=="undefined"&&sun){
+    const sz=[1024,1024,2048,4096][t];
+    if(sun.shadow.mapSize.x!==sz){ sun.shadow.mapSize.set(sz,sz);
+      if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; } }
+  }
+  REFL.on=t>=2; REFL.rate=t>=3?3:6;
+  GFX.shadowEvery=[0,3,2,1][t];   // Medium redraws the shadow map every 3rd frame, High every 2nd
+  renderer.shadowMap.autoUpdate=GFX.shadowEvery<=1;
+  if(GFX.shadowEvery>1) renderer.shadowMap.needsUpdate=true;
+  POST.on=t>=1;
+  GFX.rays=t>=2; GFX.motesOn=t>=1; GFX.mistOn=t>=1; GFX.auroraOn=t>=1;
+  GFX.auroraN=t>=3?2:1; GFX.mistN=[0,8,12,16][t];
+  if(auroraGroup) auroraGroup.children.forEach((m,i)=>m.visible=i<GFX.auroraN);
+  if(MIST.pool) MIST.pool.forEach((m,i)=>{ if(i>=GFX.mistN) m.material.opacity=0; });
+  if(typeof rainSegs!=="undefined"&&rainSegs) rainSegs.count=[500,800,1100,1400][t];
+  if(typeof grassMesh!=="undefined"&&grassMesh&&grassMesh.userData.full!=null)
+    grassMesh.count=Math.max(1,Math.floor(grassMesh.userData.full*[0.25,0.55,0.85,1][t]));
+  GFX.treeR=[150,200,260,320][t];   // trees stream in to this radius (fog ends ~235 — nothing is lost)
+  GFX._fT=99;                       // restream the forest now
+  if(typeof cloudGroup!=="undefined"&&cloudGroup){ const nC=[14,26,40,52][t];
+    cloudGroup.children.forEach((p,i)=>p.visible=i<nC); }
+  if(!quiet&&typeof log==="function") log(`Graphics: <b>${GFX.TIERS[t]}</b>${settings.gfx==="auto"?" (auto)":""}.`,"sys");
+}
+function gfxGovern(dt){
+  if(dt<=0||dt>0.5||typeof paused!=="undefined"&&paused) return;
+  GFX.fps+=(1/dt-GFX.fps)*0.06;
+  if(settings.gfx!=="auto") return;
+  if(GFX._grace>0){ GFX._grace-=dt; GFX._lo=0; return; }   // teleport/stream churn doesn't count
+  // decay-based windows: brief good frames ease the counters instead of resetting them,
+  // so a scene hovering at 27-29 FPS still steps down within a few seconds
+  if(GFX.fps<31&&GFX.tier>0){ GFX._lo+=dt; GFX._hi=0; }
+  else { GFX._lo=Math.max(0,GFX._lo-dt*2); }
+  if(GFX.fps>54&&GFX.tier<3){ GFX._hi+=dt; }
+  else { GFX._hi=Math.max(0,GFX._hi-dt*2); }
+  if(GFX._lo>2.2){ GFX._lo=0; GFX._hi=0; applyGfxTier(GFX.tier-1,true);
+    log(`<span style="color:#cdbb88">Frame rate dipped below 30 — stepped graphics down to <b>${GFX.TIERS[GFX.tier]}</b>.</span>`,"sys"); }
+  else if(GFX._hi>15){ GFX._hi=0; applyGfxTier(GFX.tier+1,true); }
+}
+function applyGfxSetting(){
+  const g=settings.gfx;
+  if(g==="auto") applyGfxTier(3,true);
+  else applyGfxTier(+g,true);
+  GFX._lo=0; GFX._hi=0;
 }
 
 // first-person sword + hand attached to camera
@@ -4040,6 +4384,21 @@ function applyLabelSettings(){
     if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); continue; }
     sp.visible=L[sp.userData.labelCat]!==false; }
 }
+// every sprite is its own draw call — the census found 1,500 name labels drawing from
+// across the whole world. Only the ones near enough to read get to render.
+const _LBL_R={players:90,npcs:60,monsters:85,portals:170,lifestones:170,cities:340,dungeons:220};
+const _lblV=new THREE.Vector3();
+function gfxCullLabels(){
+  const L=settings.labels||{};
+  for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
+    if(!sp.parent){ LABELS.splice(i,1); continue; }
+    const cat=sp.userData.labelCat||"npcs";
+    if(L[cat]===false){ sp.visible=false; continue; }
+    sp.getWorldPosition(_lblV);
+    const r=_LBL_R[cat]||90, dx=_lblV.x-player.x, dz=_lblV.z-player.z;
+    sp.visible=dx*dx+dz*dz<r*r;
+  }
+}
 
 // ---------- mesh builders ----------
 // ---- detailed creature modelling ----
@@ -4809,6 +5168,7 @@ function buildGrass(){
   if(grassMesh){scene.remove(grassMesh);grassMesh.geometry.dispose();grassMesh=null;}
   const geo=new THREE.PlaneGeometry(1.5,1.1);geo.translate(0,0.55,0);
   const mat=new THREE.MeshStandardMaterial({map:grassTex(),alphaTest:0.4,transparent:true,side:THREE.DoubleSide});
+  addWindSway(mat,0.22,0.06,1.05);   // the meadows ripple in the wind
   const N=7200;grassMesh=new THREE.InstancedMesh(geo,mat,N);
   const d=new THREE.Object3D();let n=0;
   for(let i=0;i<N;i++){const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(14,320);
@@ -4817,7 +5177,8 @@ function buildGrass(){
     const bm=biomeAt(x,z); if(bm==="desert"||bm==="cold"||bm==="direlands") continue;   // no lush grass on sand, snow or barren rock
     d.position.set(x,groundY(x,z),z);d.rotation.set(0,rnd(0,6.28),0);
     const sc=rnd(0.7,1.8);d.scale.set(sc,rnd(0.8,1.6),sc);d.updateMatrix();grassMesh.setMatrixAt(n++,d.matrix);}
-  grassMesh.count=n;grassMesh.castShadow=false;grassMesh.receiveShadow=true;grassMesh.instanceMatrix.needsUpdate=true;
+  grassMesh.count=n;grassMesh.userData.full=n;grassMesh.castShadow=false;grassMesh.receiveShadow=true;grassMesh.instanceMatrix.needsUpdate=true;
+  if(typeof GFX!=="undefined") grassMesh.count=Math.max(1,Math.floor(n*[0.3,0.6,0.85,1][GFX.tier]));
   scene.add(grassMesh);
 }
 // ── instanced forests: the hand-placed scenery (~1900 groups) left the wilds feeling empty.
@@ -4891,9 +5252,12 @@ function buildForests(){
   const pools={conifer:{cap:8500,mat:mkMat(false)},broadleaf:{cap:6500,mat:mkMat(false)},
                oak:{cap:4200,mat:mkMat(false)},birch:{cap:2600,mat:mkMat(false)},
                snowpine:{cap:3200,mat:mkMat(false)},deadtree:{cap:1600,mat:mkMat(true)},boulder:{cap:2600,mat:mkMat(true)}};
+  // the whole forest sways: canopies bend, trunks stay planted (boulders sit still)
+  for(const k in pools){ if(k!=="boulder") addWindSway(pools[k].mat,k==="deadtree"?0.035:(k==="birch"?0.13:0.09),1.3,4.6); }
   for(const k in pools){ const p=pools[k];
     p.mesh=new THREE.InstancedMesh(G[k],p.mat,p.cap); p.n=0;
     p.mesh.castShadow=true; p.mesh.receiveShadow=true; }
+  if(typeof GFX!=="undefined") GFX.forest=pools;   // the quality governor scales visible counts
   const d=new THREE.Object3D(), tint=new THREE.Color();
   const clump=(x,z)=>Math.sin(x*0.0021+1.7)*Math.cos(z*0.0019)+Math.sin((x-z)*0.0011)*0.7+Math.sin(x*0.0063)*Math.sin(z*0.0057)*0.5;
   for(let i=0;i<90000;i++){
@@ -4927,7 +5291,14 @@ function buildForests(){
     if(key!=="boulder"&&s>1.1) obstacles.push({x,z,r:0.34*s});                 // trunks block movement
   }
   for(const k in pools){ const p=pools[k];
-    p.mesh.count=p.n; p.mesh.instanceMatrix.needsUpdate=true;
+    p.full=p.n;
+    // keep every placement's matrix + position; gfxForestStream() draws only what the fog
+    // hasn't swallowed (the old way drew ALL ~25k trees every frame, twice with shadows)
+    p.all=p.mesh.instanceMatrix.array.slice(0,p.n*16);
+    p.px=new Float32Array(p.n); p.pz=new Float32Array(p.n);
+    for(let i=0;i<p.n;i++){ p.px[i]=p.all[i*16+12]; p.pz[i]=p.all[i*16+14]; }
+    p.mesh.count=p.n;
+    p.mesh.instanceMatrix.needsUpdate=true;
     if(p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate=true;
     p.mesh.userData.noCull=true; p.mesh.userData.noSettle=true;   // world-spanning: exempt from streaming & settleY
     p.mesh.frustumCulled=false;                                    // instance bounds ≠ geometry bounds
@@ -11801,6 +12172,7 @@ function breakResProt(){ if(player.resProt){ player.resProt=false; player.invuln
 // (so you can never materialize inside a hill), and pins the fall apex to the ground height so
 // the gentle float-down out of a portal never deals fall damage.
 function arriveAt(x,z){
+  if(typeof GFX!=="undefined") GFX._grace=2.0;   // don't let arrival stutter trip the quality governor
   player.x=clamp(x,-HALF+2,HALF-2); player.z=clamp(z,-HALF+2,HALF-2);
   const g=groundY(player.x,player.z), lift=(inDungeon||inNetwork)?0.5:2;
   player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
@@ -13103,6 +13475,7 @@ function update(dt){
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
+  gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
   updateHUD();
 }
@@ -13872,7 +14245,7 @@ function loop(ts){
 //  AUDIO — synthesized via WebAudio (no asset files; works fully offline)
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
-const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,
+const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",
   labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
@@ -17520,6 +17893,12 @@ function openSettings(){
   adHi();
   adBtns.forEach(b=>b.onclick=()=>{settings.acDeath=+b.dataset.acdeath===1;saveSettings();adHi();
     log(settings.acDeath?"Death now leaves a <b>lootable corpse</b> with dropped items + half your pyreals (AC-authentic).":"Death softened — Vitae only, no items or pyreals drop.","sys");});
+  const gxBtns=document.querySelectorAll('#settings [data-gfx]');
+  const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
+  gxHi();
+  gxBtns.forEach(b=>b.onclick=()=>{settings.gfx=b.dataset.gfx==="auto"?"auto":+b.dataset.gfx;
+    saveSettings();gxHi();applyGfxSetting();
+    log(settings.gfx==="auto"?"Graphics on <b>Auto</b> — quality steps itself to hold 30+ FPS.":`Graphics locked to <b>${GFX.TIERS[+settings.gfx]}</b>.`,"sys");});
   // per-category floating-name toggles (lit = shown)
   const lc=document.getElementById('setLabels');
   if(lc&&!lc.dataset.built){ lc.dataset.built="1";
