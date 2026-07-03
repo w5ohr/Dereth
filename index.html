@@ -659,6 +659,26 @@ try{ fetch('assets/acrewards.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(
   console.log("AC reward pack: kill XP for "+Object.keys(j.killxp).length+" kinds, "
     +nq+" quests matched to retail NPC rewards, treasure tiers loaded.");
 }).catch(()=>{}); }catch(e){}
+// ── The retail item catalog (assets/acitems.json by tools/ace_item_export.py): exact specs
+//    for 4,300+ items — damage/variance/speed/skill, armor level, value, burden, item mana
+//    + mana rate, spells, and the original inventory icon. Any item the game creates with a
+//    retail name takes the authentic numbers. ──
+let AC_ITEMS=null;
+try{ fetch('assets/acitems.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_ITEMS=j;
+  console.log("AC item catalog: "+Object.keys(j).length+" retail items loaded."); } }).catch(()=>{}); }catch(e){}
+function acItemize(it){
+  if(!AC_ITEMS||!it||!it.name) return it;
+  const a=AC_ITEMS[it.name.toLowerCase()]; if(!a) return it;
+  it.ac=1;
+  if(a.dmg&&it.stat==="weapon"&&it.wt!=="focus"){ it.v=a.dmg; if(a.dvar!=null)it.dvar=a.dvar; if(a.spd)it.spd=a.spd; }
+  if(a.al&&it.stat==="worn") it.v=a.al;
+  if(a.val) it.acval=a.val;
+  if(a.bur!=null) it.bur=a.bur;
+  if(a.mana){ it.itemMana=a.mana; if(a.mrate)it.manaRate=a.mrate; }
+  if(a.spells) it.acspells=a.spells;
+  if(a.icon) it.acicon=a.icon;
+  return it;
+}
 const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
 const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
 const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
@@ -15396,8 +15416,10 @@ function gearDesc(it){
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
   if(it.stat==="note") return `trade note · worth ${it.v}p`;
   if(it.stat==="comp") return isScarab(it)?`casting scarab (lv ${SCARAB_LEVEL[it.name]}) · worth ${it.v}p`:`spell component · worth ${it.v}p`;
-  if(it.wt==="focus") return `+${it.foc||it.v} all magic · casting focus`;
-  if(it.stat==="weapon") return `+${it.v} dmg · ${it.wt}`+(it.affix?` · ${it.affix.desc}`:"");
+  const acx=(it.ac?[it.dvar!=null?`${Math.round(it.v*(1-it.dvar))}–${it.v} dmg`:null,it.spd?`speed ${it.spd}`:null,
+    it.itemMana?`${it.itemMana} mana${it.manaRate?` (${it.manaRate}/s)`:""}`:null].filter(Boolean).join(" · "):"");
+  if(it.wt==="focus") return `+${it.foc||it.v} all magic · casting focus`+(acx?` · ${acx}`:"");
+  if(it.stat==="weapon") return (it.ac&&acx?acx+` · ${it.wt}`:`+${it.v} dmg · ${it.wt}`)+(it.affix?` · ${it.affix.desc}`:"");
   if(it.stat==="worn") return `+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`+(it.magicAbsorb?` · −${Math.round(it.magicAbsorb*100)}% magic`:"")+(it.affix?` · ${it.affix.desc}`:"");
   if(it.stat==="jewelry") return `${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · ${jewelryDesc(it)}`;
   if(it.stat==="food") return `food · +${it.v} ${it.attr} ${it.dur}s`;
@@ -18382,7 +18404,7 @@ function questLootItem(nm,tier){
   else if(/sceptre|scepter|wand|orb|prism|stone/.test(low)) Object.assign(it,{stat:"weapon",wt:"focus",foc:v(0.35),mat:"Diamond",v:v(0.35)});
   else if(/bracelet|band|signet|ring/.test(low)) Object.assign(it,{stat:"jewelry",jtype:/bracelet|band/.test(low)?"wrist":"finger",mat:"Gold",v:0,bonus:{kind:"vital",vs:"mhp",v:10+tier*6,suf:""}});
   else Object.assign(it,{stat:"trophy",v:60*tier});   // heirlooms & curios (Bronze Candlestick, Alloy Contrivance…) sell well
-  return it;
+  return acItemize(it);   // named quest treasures take their EXACT retail specs when the catalog knows them
 }
 // ── walkthrough gates: levers, strongbox keys, and the portcullises they open ──
 function hasNamedKey(nm){ return player.inv.some(it=>it&&it.name===nm); }
