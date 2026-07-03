@@ -2122,6 +2122,7 @@ function updateJumpCharge(dt){
   else { const p=jumpChargeT; jumpChargeT=-1; tryJump(p<0.08?0:p); }
 }
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
+let autoRun=false;   // AC: Q toggles auto-run (1999 manual); backing up cancels it
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
 let stormBuild=0,stormPhase=0,stormCd=0; // H13 portal storms: build-up timer / phase (0 idle,1 warned) / post-storm cooldown
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
@@ -13069,7 +13070,8 @@ const ACTIONS=[
   {id:"jump",   label:"Jump",        group:"Movement",def:"Space",run:()=>startJumpCharge()},   // hold to charge (AC jump bar), release to leap
   {id:"dodge",  label:"Dodge Roll",  group:"Movement",def:"shift+Space",run:()=>dodge()},
   {id:"interact",  label:"Interact / Talk", group:"Actions",def:"KeyE",run:()=>interact()},
-  {id:"weaponswap",label:"Swap Weapon",     group:"Actions",def:"KeyQ",run:()=>weaponSwap()},
+  {id:"autorun",   label:"Auto-Run",        group:"Movement",def:"KeyQ",run:()=>{ autoRun=!autoRun; log(autoRun?"<b>Auto-run</b> — Q again (or back up) to stop.":"Auto-run off.","sys"); }},   // AC: "Pressing Q toggles auto-run off and on" (1999 manual)
+  {id:"weaponswap",label:"Swap Weapon",     group:"Actions",def:"shift+KeyQ",run:()=>weaponSwap()},
   {id:"view",      label:"Toggle View 1st/3rd",group:"Actions",def:"KeyV",run:()=>toggleView()},
   {id:"buffbot",   label:"Buff Self",       group:"Actions",def:"KeyU",run:()=>buffBotCast()},
   {id:"loadout",   label:"Cycle Spell Loadout",group:"Actions",def:"Backslash",run:()=>cycleLoadout()},
@@ -13516,12 +13518,15 @@ function update(dt){
       const reach=cs.special==="wall"?7:12, rx=clamp(player.x+d.x*reach,-HALF+2,HALF-2), rz=clamp(player.z+d.z*reach,-HALF+2,HALF-2);
       showCastReticle(rx,rz, cs.special==="wall"?(cs.r||3.5):8, cs.color||0xff7a2a); }
     else hideCastReticle(); }
-  // movement
+  // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
+  // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
   let f=0,s=0;
-  if(held("forward")||keys["arrowup"]) f+=1;      // bound movement key + arrow fallback
-  if(held("back")||keys["arrowdown"]) f-=1;
-  if(held("right")||keys["arrowright"]) s+=1;
-  if(held("left")||keys["arrowleft"]) s-=1;
+  if(keys["arrowleft"])  player.yaw+=dt*2.6;      // AC: left/right arrows turn the character
+  if(keys["arrowright"]) player.yaw-=dt*2.6;
+  if(held("forward")||keys["arrowup"]||autoRun) f+=1;
+  if(held("back")||keys["arrowdown"]||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
+  if(held("right")||keys["keyc"]) s+=1;           // Z / C sidestep (AC)
+  if(held("left")||keys["keyz"]) s-=1;
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
