@@ -5424,6 +5424,16 @@ function buildWorld(){
     for(let i=0;i<tf;i++){ const a=i/tf*6.283+c.region, tx=c.x+Math.cos(a)*rad*0.6, tz=c.z+Math.sin(a)*rad*0.6;
       addNPC(tx,tz,{role:"townsfolk",town:c.name,name:townName(c.region,Math.round(tx*3+tz*7+i)),stroll:true,range:rad*0.55}); }
   }
+  // A3 — the retail post-Academy greeter chain in each starter town: Lifestone Greeter →
+  // Bartender Greeter → Pathwarden (race armor + the +4% XP Pathwarden Trinket). Holtburg's
+  // names are wiki-verified (Alcott/Buckminster/Thorolf); the four Pathwardens are all retail.
+  { const GREETERS={
+      Holtburg:[["Alcott","ls"],["Buckminster","bar"],["Thorolf","path"]],
+      Shoushi:[["Mei Ling","ls"],["Ojimi","bar"],["Koro Ijida","path"]],
+      Yaraq:[["Rashida bint Aluqa","ls"],["Hamud ibn Rafik","bar"],["Qanara bint Qolosh","path"]],
+      Sanamar:[["Marcett du Nouy","ls"],["Aleta Perine","bar"],["Thierra Molanti","path"]]};
+    for(const tn in GREETERS){ const c=CITIES.find(x=>x.name===tn); if(!c) continue;
+      GREETERS[tn].forEach((g,i)=>addNPC(c.x-10+i*4,c.z-11,{role:"greeter",greet:g[1],town:tn,name:g[0]})); } }
   // named quest-givers, each standing in their AC home town (ringed around the plaza so they don't overlap)
   { const byTown={};
     for(const id in QUEST_GIVERS){ const g=QUEST_GIVERS[id]; (byTown[g.town]=byTown[g.town]||[]).push(id); }
@@ -16552,7 +16562,7 @@ function addNPC(x,z,opts){
   usedNpcNames.add(name);   // fixed-name NPCs claim their name so townName never mints a twin
   const region=opts.region!=null?opts.region:((typeof regionOf==="function")?Math.max(0,regionOf(x,z)):0);   // Direlands (-1) dresses Aluvian
   const mesh=buildNPC(role,name,Math.round(x*0.13+z*0.29),opts.look,region);mesh.position.set(x,0,z);scene.add(mesh);
-  const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,questIds:opts.questIds||null,_line:0};
+  const rec={x,z,mesh,role,name,town:opts.town||null,questId:opts.questId||null,questIds:opts.questIds||null,greet:opts.greet||null,_line:0};
   if(opts.stroll){ rec.stroll=true; rec.home={x,z}; rec.range=opts.range||3; }
   else obstacles.push({x,z,r:0.8});   // strollers move, so they aren't fixed obstacles
   npcs.push(rec);
@@ -16706,6 +16716,24 @@ function talkToNPC(n){
     const bl=acDialogueLine(n.name,"barkeep"), i=(n._line=(n._line||0)+1);
     if(bl&&i%2===0){ log(`<b>${n.name}:</b> ${esc(bl[(i>>1)%bl.length])}`,"sys"); return; }
     log(`<b>${n.name}:</b> ${RUMORS[i%RUMORS.length]}`,"sys"); return; }
+  if(n.role==="greeter"){   // A3: the retail new-arrival chain — Lifestone → Bartender → Pathwarden
+    player.greeters=player.greeters||{};
+    const G=player.greeters, k=n.greet;
+    if(G[k]){ log(`<b>${n.name}:</b> ${k==="path"?"Walk the roads well, Pathwarden's friend.":"Welcome again, adventurer. Dereth is kinder for hands like yours."}`,"sys"); return; }
+    if(k==="ls"){ G.ls=1; gainXP(7000);
+      log(`<b>${n.name}:</b> New to Dereth? Bind at the <b>Lifestone</b> (walk to it and press E) — death returns you there, body and soul. Here — a small sum for listening. <span style="color:#7fe6a0">+7,000 XP</span>`,"sys"); }
+    else if(k==="bar"){ if(!G.ls){ log(`<b>${n.name}:</b> See the Lifestone Greeter first, friend — bind before you wander.`,"sys"); return; }
+      G.bar=1; gainXP(9300); player.gold+=500;
+      log(`<b>${n.name}:</b> The taverns post <b>Contracts</b> — bounties any hand can take up. Start with the board here. A round on the house, and coin besides. <span style="color:#7fe6a0">+9,300 XP · +500 pyreals</span>`,"sys"); }
+    else if(k==="path"){ if(!G.bar){ log(`<b>${n.name}:</b> Speak with the tavern's greeter before the road takes you.`,"sys"); return; }
+      G.path=1; gainXP(12500);
+      const suit=[["Leather Cap","head",9],["Leather Vest","chest",11],["Leather Leggings","legs",9]];
+      for(const s of suit) player.inv.push({name:"Pathwarden "+s[0],stat:"worn",at:"light",aslot:s[1],v:s[2],mat:"Leather",tier:1});
+      player.inv.push({name:"Pathwarden Trinket",stat:"quest",v:150});
+      player.augment.xpBonus=(player.augment.xpBonus||0)+0.04;   // the Trinket's retail +4% XP, kept permanently
+      log(`<b>${n.name}:</b> You found the Pathwarden — good. Take the <b>Supply Chest</b>'s due: an armor suit and the <b>Pathwarden Trinket</b> (+4% XP earned, yours for good). <span style="color:#7fe6a0">+12,500 XP</span>`,"sys"); }
+    if(SFX.quest)SFX.quest(); saveGame(); return;
+  }
   if(n.role==="casino"){ openCasino(n); return; }
   if(n.role==="barber"){ openBarber(n); return; }
   if(n.role==="attendant"){ openAttendant(n); return; }
@@ -20404,7 +20432,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,greeters:player.greeters||{},
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -20431,6 +20459,7 @@ function applySaveObj(s){
   if(!s) return false;
   Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
     vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
+    greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
