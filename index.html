@@ -1083,8 +1083,9 @@ const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 //    spellbook entry whose name matches a retail spell takes the real mana cost, damage
 //    roll (base_Intensity..+variance), heal boost, and buff magnitude. Requested by the
 //    user 2026-07-03: this supersedes the earlier hand-tuned balance. ──
+let AC_COMP_CDM=null;   // component name (lowercase) -> destruction modifier (tapers 1.0, scarabs 0.1)
 try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
-  let n=0,nd=0,nb=0,nm=0;
+  let n=0,nd=0,nb=0,nm=0,ndur=0;
   for(const s of SPELLBOOK_LIST){
     const a=j[s.name.toLowerCase()]; if(!a) continue;
     n++;
@@ -1099,8 +1100,12 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
       s.heal=()=>lo+Math.random()*(hi-lo); s.acboost=a.boost; nb++; }
     if(a.boost&&s.special==="revitalize"){ s.amt=a.boost[0]; s.foc=0; s.acboost=a.boost; nb++; }
     if(a.mod&&typeof s.mag==="number"){ s.mag=a.mod; nm++; }
+    if(a.dur&&s.buff){ s.dur=Math.round(a.dur); ndur++; }                   // real enchantment duration (Str I = 30 min)
+    if(a.closs) s.closs=a.closs;                                            // component-loss base for the burn roll
+    if(a.compn) s.accomps=a.compn.map(c=>({n:c.n,cdm:c.cdm==null?1:c.cdm}));
   }
-  console.log("AC spell stats: "+n+" spellbook entries matched retail ("+nd+" damage rolls, "+nb+" heals, "+nm+" buff magnitudes).");
+  AC_COMP_CDM=j._components||null;
+  console.log("AC spell stats: "+n+" spellbook entries matched retail ("+nd+" damage rolls, "+nb+" heals, "+nm+" buff magnitudes, "+ndur+" real durations).");
 }).catch(()=>{}); }catch(e){}
 // ── authentic spell data (assets/acspells.json · tools/ac_spell_export.py): the real client
 //    SpellTable — names, cast WORDS, and component formulas. Matched to our spells by name so
@@ -11184,6 +11189,24 @@ function castSpellById(id){
   castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
 }
+// retail component destruction: each formula component you CARRY burns with probability
+// componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
+// Carrying components is not required to cast — but stocked casters burn them exactly as retail did.
+function burnSpellComponents(s){
+  if(!s||!s.closs||!s.reagents||!s.reagents.length) return;
+  const burned=[];
+  for(const rn of s.reagents){
+    let cdm=1;
+    if(s.accomps){ const c=s.accomps.find(c=>c.n===rn); if(c&&c.cdm!=null) cdm=c.cdm; }
+    else if(AC_COMP_CDM&&AC_COMP_CDM[rn.toLowerCase()]!=null) cdm=AC_COMP_CDM[rn.toLowerCase()];
+    if(Math.random()>=Math.min(1,s.closs*cdm)) continue;
+    const i=player.inv.findIndex(it=>it&&it.stat==="comp"&&it.name.toLowerCase()===rn.toLowerCase());
+    if(i<0) continue;
+    const it=player.inv[i]; if((it.count||1)>1) it.count--; else player.inv.splice(i,1);
+    burned.push(rn);
+  }
+  if(burned.length){ log(`The casting consumes: <b>${burned.join(", ")}</b>.`,"sys"); updateHUD&&updateHUD(); }
+}
 // fire the spell's actual effect (called when a cast completes; re-checks live mana/cooldown)
 function executeSpell(id){
   if(!player.alive||paused) return;
@@ -11219,6 +11242,7 @@ function executeSpell(id){
     if(Math.random()<fz){ player.mn+=Math.round(cost*0.5); spellCd[id]=now()+600;
       floater(player.x,EYE+0.5,player.z,"fizzle!","#c9a6ff"); if(SFX.hit)SFX.hit();
       log(`Your <b>${s.name}</b> fizzles — the weave slips.`,"warn"); castShow=0.3; return; } }
+  burnSpellComponents(s);   // a good cast burns carried formula components (retail closs × CDM)
   // spells cast on your own body use a crouch→rise gesture + a swirling aura; targeted/forward spells thrust
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";

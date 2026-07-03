@@ -80,19 +80,21 @@ def parse_spell(b):
     power = b.u32()
     b.f()                                    # spellEconomyMod
     b.u32()                                  # formulaVersion
-    b.f()                                    # componentLoss
+    closs = b.f()                            # componentLoss (burn probability base)
     meta_type = b.u32(); b.u32()             # metaSpellType, metaSpellId
+    dur = 0.0
     if meta_type in (ENCHANTMENT, FELLOW_ENCHANTMENT):
-        f64(b); b.f(2)                       # duration, degradeModifier, degradeLimit
+        dur = f64(b); b.f(2)                 # duration, degradeModifier, degradeLimit
     elif meta_type == PORTAL_SUMMON:
-        f64(b)                               # portalLifetime
+        dur = f64(b)                         # portalLifetime
     raw_comps = [b.u32() for _ in range(8)]
     formula = decrypt_formula([c for c in raw_comps if c], name_raw, desc_raw)
     b.u32(); b.u32(); b.u32()                # caster/target/fizzle effects
     f64(b); b.f()                            # recoveryInterval, recoveryAmount
     b.u32(); b.u32(); b.u32()                # displayOrder, nonComponentTargetType, manaMod
     return dict(name=name, desc=desc, school=school, icon=icon, category=category,
-                bitfield=bitfield, mana=mana, power=power, formula=formula)
+                bitfield=bitfield, mana=mana, power=power, formula=formula,
+                dur=dur, closs=closs)
 
 def parse_spell_table(data):
     b = Buf(data)
@@ -110,8 +112,8 @@ def parse_component(b):
     ctype = b.u32()
     b.u32(); b.f()                           # gesture, time
     _, text = obf_string(b)
-    b.f()                                    # CDM
-    return dict(name=name, type=ctype, text=text)
+    cdm = b.f()                              # component destruction modifier
+    return dict(name=name, type=ctype, text=text, cdm=cdm)
 
 def parse_component_table(data):
     b = Buf(data)
@@ -158,11 +160,14 @@ def main():
         formula = [c for c in s["formula"] if 0 < c <= HIGHEST_COMP_ID]
         if len(formula) != len(s["formula"]):
             bad_comps += 1
-        out_spells[sid] = dict(
+        o = dict(
             n=s["name"], d=s["desc"][:200], school=s["school"],
             lvl=power_tier(s["power"]), mana=s["mana"], icon=s["icon"],
             comps=formula, words=spell_words(formula, comps))
-    out_comps = {cid: dict(n=c["name"], type=c["type"], words=c["text"])
+        if s["dur"]: o["dur"] = round(s["dur"], 1)
+        if s["closs"]: o["closs"] = round(s["closs"], 3)
+        out_spells[sid] = o
+    out_comps = {cid: dict(n=c["name"], type=c["type"], words=c["text"], cdm=round(c["cdm"], 3))
                  for cid, c in sorted(comps.items())}
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

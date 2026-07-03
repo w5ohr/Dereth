@@ -61,6 +61,8 @@ def main():
             o["compn"] = [compnames.get(str(x), "?") for x in c["comps"]]
         if c.get("icon"): o["icon"] = "%08x" % c["icon"]
         if c.get("d"): o["desc"] = c["d"]
+        if c.get("dur"): o["dur"] = c["dur"]          # real enchantment duration / portal lifetime (secs)
+        if c.get("closs"): o["closs"] = c["closs"]    # component-loss base (burn = closs × comp CDM)
         bi = e.get("base_Intensity"); var = e.get("variance")
         if isinstance(bi, (int, float)) and bi:
             o["dmg"] = [int(bi), int(bi + (var or 0))]; n_dmg += 1
@@ -73,6 +75,8 @@ def main():
         dr = e.get("drain_Percentage")
         if isinstance(dr, (int, float)) and dr: o["drain"] = dr
         if o: out[key] = o
+    # per-component destruction modifiers, keyed by lowercase name (for the burn roll)
+    out["_components"] = {v["n"].lower(): v.get("cdm", 1) for v in compnames.values() if isinstance(v, dict) and v.get("n")}
     path = os.path.join(ROOT, "assets", "acspellstats.json")
     json.dump(out, open(path, "w"), separators=(",", ":"))
     print(f"spells: {len(out):,} (damage rolls {n_dmg:,} · boosts {n_boost:,} · stat mods {n_mod:,})")
