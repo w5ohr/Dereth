@@ -4482,28 +4482,30 @@ function swirlTex(){
   if(_swirlTex) return _swirlTex;
   const N=256, c=document.createElement('canvas'); c.width=c.height=N; const g=c.getContext('2d');
   g.clearRect(0,0,N,N); const cx=N/2, cy=N/2;
-  // soft light-blue radial body first
+  // AC's portal is a swirling PURPLE mist: lavender body fading violet at the wispy rim
   const grd=g.createRadialGradient(cx,cy,0,cx,cy,N*0.5);
-  grd.addColorStop(0,'rgba(140,205,255,0.85)'); grd.addColorStop(0.55,'rgba(90,165,255,0.6)'); grd.addColorStop(1,'rgba(60,140,255,0)');
+  grd.addColorStop(0,'rgba(215,190,255,0.9)'); grd.addColorStop(0.45,'rgba(150,110,235,0.65)'); grd.addColorStop(1,'rgba(90,60,190,0)');
   g.fillStyle=grd; g.beginPath(); g.arc(cx,cy,N*0.5,0,6.29); g.fill();
-  // brighter light-blue spiral arms on top
+  // bright blue-white spiral arms drawn over the mist
   g.lineCap='round';
   for(let arm=0;arm<3;arm++){ g.beginPath();
     for(let t=0;t<=1;t+=0.004){ const ang=arm*2.094 + t*7.2, r=t*(N*0.47);
       const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r; if(t===0)g.moveTo(x,y); else g.lineTo(x,y); }
-    g.strokeStyle='rgba(190,228,255,0.95)'; g.lineWidth=6.5; g.stroke(); }
+    g.strokeStyle=arm===1?'rgba(160,200,255,0.9)':'rgba(225,205,255,0.95)'; g.lineWidth=6.5; g.stroke(); }
   const t=new THREE.CanvasTexture(c); _swirlTex=t; return t;
 }
 function buildPortal(name){
+  // AC's portal is FREE-STANDING — no ring or frame: a vertically-stretched lens of swirling
+  // purple mist, two counter-rotating layers so the energy visibly churns, wispy at the rim.
   const g=new THREE.Group();
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.16,12,32),
-    new THREE.MeshStandardMaterial({color:0x8fd4ff,emissive:0x39a6ff,emissiveIntensity:1.1,metalness:0.35,roughness:0.35}));
-  ring.position.y=2.0; g.add(ring);
-  // slowly-spinning light-blue swirl; MeshBasic + additive so it stays visible (lit) at night
   const disc=new THREE.Mesh(new THREE.CircleGeometry(1.5,48),
-    new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.92,side:THREE.DoubleSide,fog:false,depthWrite:false}));
-  disc.position.y=2.0; g.add(disc);
-  const light=new THREE.PointLight(0x59b6ff,1.6,18);light.position.y=2;g.add(light);
+    new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.9,side:THREE.DoubleSide,fog:false,depthWrite:false}));
+  disc.scale.set(1.05,1.5,1); disc.position.y=2.3; g.add(disc);              // the upright lens
+  const disc2=new THREE.Mesh(new THREE.CircleGeometry(1.32,48),
+    new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.55,side:THREE.DoubleSide,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+  disc2.scale.set(1.0,1.42,1); disc2.position.y=2.3; disc2.position.z=0.02; g.add(disc2);   // additive counter-swirl
+  const light=new THREE.PointLight(0x9a7aff,1.6,18);light.position.y=2;g.add(light);
+  g.userData.disc2=disc2;
   const lbl=labelSprite("Portal → "+name,"portals");lbl.position.y=4.2;g.add(lbl);
   g.userData.disc=disc;g.userData.light=light;
   return g;
@@ -7846,6 +7848,43 @@ function teleportFX(x,z){
   }
   const fl=new THREE.PointLight(col,3,16);fl.position.set(x,gy+2,z);scene.add(fl);setTimeout(()=>scene.remove(fl),220);
   SFX.whoosh();
+}
+// ── PORTAL SPACE (AC): stepping through a portal wraps you in the swirling blue tube that
+//    carried every traveler between places — streaks of blue/violet rushing past for a couple
+//    of seconds, the destination materializing as the tunnel fades. ──
+let portalTransit=null,_tubeTex=null;
+function portalTubeTex(){
+  if(_tubeTex) return _tubeTex;
+  const N=256, c=document.createElement('canvas'); c.width=c.height=N; const g=c.getContext('2d');
+  g.fillStyle='#06041a'; g.fillRect(0,0,N,N);                       // deep portal-space indigo
+  for(let i=0;i<90;i++){                                            // rushing streaks along the tube
+    const x=Math.random()*N, y=Math.random()*N, len=20+Math.random()*90, w=1+Math.random()*3;
+    const hue=Math.random()<0.72?'#3a6aff':(Math.random()<0.5?'#8a5aff':'#cfe4ff');
+    g.strokeStyle=hue; g.globalAlpha=0.25+Math.random()*0.6; g.lineWidth=w; g.lineCap='round';
+    g.beginPath(); g.moveTo(x,y); g.lineTo(x,y+len); g.stroke();
+  }
+  g.globalAlpha=1;
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,2); _tubeTex=t; return t;
+}
+function startPortalTransit(arrive){
+  if(portalTransit){ arrive(); return; }                            // never stack transits
+  scene.add(cam);                                                    // camera-attached overlay (idempotent)
+  const mat=new THREE.MeshBasicMaterial({map:portalTubeTex(),side:THREE.BackSide,transparent:true,opacity:0,fog:false,depthTest:false,depthWrite:false});
+  const tube=new THREE.Mesh(new THREE.CylinderGeometry(5,5,90,24,1,true),mat);
+  tube.rotation.x=Math.PI/2; tube.renderOrder=999; cam.add(tube);
+  portalTransit={tube,mat,t:0,dur:2.0,arrive,fired:false};
+  player.invuln=Math.max(player.invuln,2.2);
+  if(SFX.whoosh)SFX.whoosh();
+}
+function updatePortalTransit(dt){
+  const p=portalTransit; if(!p) return;
+  p.t+=dt;
+  const tex=p.mat.map; tex.offset.y-=dt*1.6; tex.offset.x+=dt*0.12;  // streaks rush past, tunnel slowly twists
+  p.tube.rotation.z+=dt*0.9;
+  const k=p.t/p.dur;
+  p.mat.opacity=k<0.15?k/0.15:(k>0.8?Math.max(0,(1-k)/0.2):1);      // fade in, hold, fade out on arrival
+  if(!p.fired&&k>=0.45){ p.fired=true; try{p.arrive();}catch(e){} } // the world switches WHILE you're inside the tube
+  if(k>=1){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
 }
 
 // ---------- combat ----------
@@ -13060,11 +13099,14 @@ function portalTouch(){
   }
   for(const tp of tnPortals){ if(near(tp.x,tp.z,2.4)){ portalCd=1.5;enterNetwork(player.x,player.z);return; } }
   for(const pt of portals){ if(near(pt.x,pt.z,2.4)){
-    portalCd=1.5;teleportFX(player.x,player.z);
-    arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
-    teleportFX(player.x,player.z);
-    player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};   // remembered for Portal Recall / Portal Tie
-    log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");toast(pt.dest.name.toUpperCase());
+    portalCd=3.0;teleportFX(player.x,player.z);
+    log(`You step into the portal…`,"sys");
+    startPortalTransit(()=>{   // AC portal space: the swirling tube carries you; the world switches mid-tunnel
+      arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
+      teleportFX(player.x,player.z);
+      player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};   // remembered for Portal Recall / Portal Tie
+      log(`…and out, into <b>${pt.dest.name}</b>.`,"sys");toast(pt.dest.name.toUpperCase());
+    });
     return;
   } }
 }
@@ -13428,6 +13470,7 @@ function update(dt){
   castShow=Math.max(0,castShow-dt);
   if(castSwirls.length) updateCastSwirls(dt);
   if(castRingFX.length) updateCastRings(dt);
+  if(portalTransit) updatePortalTransit(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
@@ -13639,7 +13682,7 @@ function update(dt){
     ls.mesh.userData.light.intensity=1+0.4*Math.sin(now()/350);}
   // portal swirl (capital portals + every town's Town-Network portal + the hall portals)
   const swirlPulse=1.2+0.5*Math.sin(now()/250);
-  for(const pt of portals){pt.mesh.userData.disc.rotation.z+=dt*0.5; pt.mesh.userData.light.intensity=swirlPulse;}
+  for(const pt of portals){pt.mesh.userData.disc.rotation.z+=dt*0.5; if(pt.mesh.userData.disc2)pt.mesh.userData.disc2.rotation.z-=dt*0.85; pt.mesh.userData.light.intensity=swirlPulse;}
   for(const tp of tnPortals){ const u=tp.mesh&&tp.mesh.userData; if(u&&u.disc){u.disc.rotation.z+=dt*0.5; if(u.light)u.light.intensity=swirlPulse;} }
   if(inNetwork) for(const o of netObjs){ const u=o.userData; if(u&&u.disc){u.disc.rotation.z+=dt*0.5; if(u.light)u.light.intensity=swirlPulse;} }
   // gathering nodes respawn
