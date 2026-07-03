@@ -986,6 +986,14 @@ function itemIconDID(name){ if(!AC_ICONS||!name)return null; const n=name.toLowe
 function itemIconHTML(name,emoji,px){ const did=itemIconDID(name); const s=px||18;
   if(did&&AC_ICONS.icons[did]) return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`;
   return emoji||""; }
+// ── retail loot tiers + crafting recipes (assets/acloot.json / acrecipes.json). The item/material/
+//    tinker mechanics stay ours (real AC item names would break material parsing); we DO adopt the
+//    authentic per-creature loot tier, and surface the real recipe book as an in-game reference. ──
+let AC_LOOT=null, AC_RECIPES=null;
+fetch('assets/acloot.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_LOOT=j; }).catch(()=>{});
+fetch('assets/acrecipes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_RECIPES=j; }).catch(()=>{});
+function creatureLootTier(kind,fallback){ const t=AC_LOOT&&AC_LOOT.creatureTier&&AC_LOOT.creatureTier[kind];
+  return t?clamp(Math.ceil(t*5/8),1,5):fallback; }   // AC tiers 1-8 → our 1-5
 // Quickbar: 12 slots × 2 rows per page, 4 pages (buttons 1–4) = 96 assignable slots.
 const QB_COLS=12, QB_ROWS=2, QB_PAGES=4, QB_PAGE=QB_COLS*QB_ROWS, QB_TOTAL=QB_PAGE*QB_PAGES;
 const ROW1_KEYS=["1","2","3","4","5","6","7","8","9","0","-","="];   // number row casts row-1 slots of the active page
@@ -6659,7 +6667,8 @@ function killMonster(m){
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
   if(g>0) addDrop(m.x,m.z,{type:"gold",amt:g});
-  if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollItem(m.isElite||m.isDungeon, m.isDungeon&&curDungeon?curDungeon.tier:(m.isElite?3:1))});
+  if(m.isElite||Math.random()<(m.isDungeon?0.4:0.22)){ const baseTier=m.isDungeon&&curDungeon?curDungeon.tier:creatureLootTier(m.kind,(m.isElite?3:1));
+    addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollItem(m.isElite||m.isDungeon, baseTier)}); }
   if(Math.random()<0.20){ const tr=rollTrophy(m.kind); if(tr) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:tr}); }   // creature trophy
   if(Math.random()<0.05){ const k=Math.random()<0.7?{name:"Lockpick",stat:"pick",v:1}:{name:"Brass Key",stat:"key",v:1}; addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:k}); }   // lockpick / key
   if(Math.random()<0.04) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollTradeNote()});   // trade note
@@ -14306,9 +14315,18 @@ function talkToNPC(n){
     player.skills=freshSkills(); player.xpUnspent+=refunded; derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
     log(`<b>Fianhe:</b> Your training is undone — ${trained} skills released, ${refunded.toLocaleString()} XP returned. Spend your credits anew (C).`,"sys"); return;
   }
-  const lines=NPC_FLAVOR[n.role]||["Well met, traveller."];
-  log(`<b>${n.name}:</b> ${lines[(n._line++)%lines.length]}`,"sys");
+  const ac=acDialogueLine(n.name);   // authentic retail line for this NPC, if the client data has one
+  const lines=ac||NPC_FLAVOR[n.role]||["Well met, traveller."];
+  log(`<b>${n.name}:</b> ${esc(lines[(n._line++)%lines.length])}`,"sys");
 }
+// authentic NPC dialogue (assets/acdialogue.json · tools/ace_emote_export.py) — the real retail
+// greeting/quest lines, keyed by lowercase NPC name; returns the line array or null.
+let AC_DIALOGUE=null;
+fetch('assets/acdialogue.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.npcs)AC_DIALOGUE=j.npcs; }).catch(()=>{});
+function acDialogueLine(name){ if(!AC_DIALOGUE||!name) return null;
+  const e=AC_DIALOGUE[name.toLowerCase()]; if(!e) return null;
+  const pool=(e.greetings||[]).concat(e.quest||[]).filter(s=>s&&s.length<300);
+  return pool.length?pool:null; }
 function questEvent(type,kind){   // a world event advances the matching objective in EVERY active quest that needs it
   let any=false;
   for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
