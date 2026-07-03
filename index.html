@@ -14123,6 +14123,27 @@ const QUESTS=[
     obj:[{type:"delve",count:1,label:"Descend into the Shreth Hive"},
          {type:"gather",count:4,label:"Recover the four Stones of Jojii"}],
     xp:37500, gold:140, item:{name:"Willpower Gem",stat:"Self",v:1} },   // retail: 4 Stones ×9,375
+  // ── Sanamar starter bounties (ToD; Viamontian capital) ──
+  { id:"beacon", name:"The Beacon", giver:"Elena Du Furza (Sanamar)",
+    intro:"The Beacon Tower off our coast has gone dark, and the fisher-fleets sail blind. Climb it, deal with whatever has nested there, and see the light rekindled.",
+    obj:[{type:"delve",count:1,label:"Rekindle the Beacon Tower"}],
+    xp:15000, gold:120, item:null },
+  { id:"necklace", name:"The Missing Necklace", giver:"Lorca Sammel (Sanamar)",
+    intro:"My grandmother's necklace is GONE — carried off toward the Penguin Den, of all places. Bring it back before some bird makes a nest of it.",
+    obj:[{type:"gather",count:1,label:"Recover the necklace from the Penguin Den"},
+         {type:"delve",count:1,label:"Search the Penguin Den"}],
+    xp:12000, gold:90, item:null },
+  // ── The cross-town classics ──
+  { id:"soll", name:"Sword of Lost Light", giver:"an old parchment posted in every tavern",
+    intro:"Seven keys, seven delves — Holtburg Dungeon, Yaraq Tunnels, Shoushi Grotto, Yanshi Tunnels, Rithwic Crypt, Dungeon Manor, Carved Cave. Gather them all, open the Halls of Lost Light, and take the sword from its Guardian.",
+    obj:[{type:"delve",count:7,label:"Recover the seven keys from the seven delves"},
+         {type:"delve",count:1,label:"Open the Halls of Lost Light and best the Guardian"}],
+    xp:50000, gold:300, item:{name:"Sword of Lost Light",stat:"weapon",wt:"sword",mat:"Gold",v:34,tier:3} },
+  { id:"elysa", name:"Elysa's Favor", giver:"Sir Rylanan, knight of the Queen (Holtburg)",
+    intro:"Her Majesty asks a service of the realm's rising heroes: recover the Wood, Copper and Obsidian Hearts, then ride to Fort Witshire — Dranith Menacet plots against the Queen's own son.",
+    obj:[{type:"gather",count:3,label:"Recover the Wood, Copper & Obsidian Hearts"},
+         {type:"slay",kind:"tumerok",count:1,label:"Foil Dranith Menacet at Fort Witshire"}],
+    xp:350000, gold:800, item:{name:"Elysa's Favor",stat:"jewelry",jtype:"finger",mat:"Gold",v:0,bonus:{kind:"vital",vs:"mhp",v:25}} },   // retail: 50k/100k/200k across the three hearts + the ring
   // ── Hunter kill-tasks (slay N of a beast for a bounty) ──
   { id:"skel_task", name:"Wicked Skeleton Kill Task", giver:"a Hunter of the Dead", repeatable:true,
     intro:"The risen dead walk the old crypts. Put eight Wicked Skeletons back to their rest and the Hunters' Guild will see you rewarded.",
@@ -14604,7 +14625,7 @@ const QUESTS=[
     xp:3200, gold:256, item:null },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
-const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4,
+const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
   skel_task:5, mattekar_task:5, aerbax_mosswart:5, lou_ei:6, virindi_incursion:7, brogord:8, aljalima:8,
   tuskers:9, gromnie_task:9, nymph_task:10, tusker_tusk:10, auroch_hunt:11, aerbax_lugian:15, zaikhal:18, gnawvil:20,
   jacob:4, glenden_invaders:6, mace_explorer:6, mosswart_cull:4, tusker_guard:11, dire_mattekar:6,
@@ -14789,6 +14810,22 @@ function questTimerTick(dt){   // fail timed quests whose clock runs out; tick t
 // ── named quest-givers: each quest is offered by a specific NPC standing in a real AC town,
 //    with its own conversation (greet/offer · accept · in-progress nudge · turn-in · post-completion). ──
 const QUEST_GIVERS={
+  beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
+    prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
+    turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
+    post:"The Beacon burns steady, and the fleets sail by its light."},
+  necklace:{name:"Lorca Sammel",town:"Sanamar",look:"scholar",
+    prog:"Still no necklace? Check every nest in that dreadful den if you must.",
+    turn:"Grandmother's necklace! Oh, it still smells of penguin. Thank you, truly.",
+    post:"The necklace sits back in its case — with the clasp mended, no thanks to the birds."},
+  soll:{name:"the tavern parchment",town:"Holtburg",look:"scholar",
+    prog:"Seven keys open the Halls of Lost Light. Bring your courage — the Guardian keeps the sword.",
+    turn:"The Guardian is bested and the blade is yours: the Sword of Lost Light, out of legend.",
+    post:"The Halls stand quiet again; the sword rides at your hip."},
+  elysa:{name:"Sir Rylanan",town:"Holtburg",look:"captain",
+    prog:"The Hearts, adventurer — Wood, Copper, Obsidian — and then Fort Witshire. The Queen's son is not safe while Menacet breathes.",
+    turn:"Menacet foiled, the Hearts recovered — Her Majesty herself asked your name. Wear her favor with honor.",
+    post:"Queen Elysa remembers those who serve. You are one of them."},
   alfrin:{name:"Alfrin",town:"Holtburg",look:"farmer",
     prog:"Any sign of my seed-bags? Those thieving drudges can't have dragged them far.",
     turn:"My seed — and the Robber Baron's head! Bless you, friend. Take this old buckler; it's done more good on your arm than on my wall.",
