@@ -1078,6 +1078,28 @@ for(const s of SPELLBOOK_LIST){
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
 }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
+// ── THE authentic spell numbers (assets/acspellstats.json — client SpellTable mana/words/
+//    components merged with the ACE effect table by tools/ace_spell_stats.py). Every
+//    spellbook entry whose name matches a retail spell takes the real mana cost, damage
+//    roll (base_Intensity..+variance), heal boost, and buff magnitude. Requested by the
+//    user 2026-07-03: this supersedes the earlier hand-tuned balance. ──
+try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
+  let n=0,nd=0,nb=0,nm=0;
+  for(const s of SPELLBOOK_LIST){
+    const a=j[s.name.toLowerCase()]; if(!a) continue;
+    n++;
+    if(a.mana) s.cost=a.mana;
+    if(a.words) s.acwords=a.words;
+    if(a.desc) s.acdesc=a.desc;
+    if(a.dmg&&typeof s.make==="function"){ const om=s.make,[lo,hi]=a.dmg;
+      s.make=()=>{ const o=om(); o.dmg=lo+Math.random()*(hi-lo); return o; }; s.acdmg=a.dmg; nd++; }
+    if(a.boost&&typeof s.heal==="function"){ const [lo,hi]=a.boost;
+      s.heal=()=>lo+Math.random()*(hi-lo); s.acboost=a.boost; nb++; }
+    if(a.boost&&s.special==="revitalize"){ s.amt=a.boost[0]; s.foc=0; s.acboost=a.boost; nb++; }
+    if(a.mod&&typeof s.mag==="number"){ s.mag=a.mod; nm++; }
+  }
+  console.log("AC spell stats: "+n+" spellbook entries matched retail ("+nd+" damage rolls, "+nb+" heals, "+nm+" buff magnitudes).");
+}).catch(()=>{}); }catch(e){}
 // ── authentic spell data (assets/acspells.json · tools/ac_spell_export.py): the real client
 //    SpellTable — names, cast WORDS, and component formulas. Matched to our spells by name so
 //    casting speaks the true words of power and the spellbook shows the real reagents. ──
