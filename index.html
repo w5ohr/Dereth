@@ -4593,6 +4593,53 @@ const ATTACK={
 };
 const ATK_DUR={pound:0.55,rear:0.6,spin:0.6,gore:0.5,bite:0.35,sting:0.35,swipe:0.4,grab:0.45,thrust:0.35};
 function startStrike(m){ const st=ATTACK[m.kind]; m.strikeDur=(st&&ATK_DUR[st])||0.3; m.strikeT=m.strikeDur; }
+// B1 — signature family attacks. Each creature family fights like its AC counterpart. Returns true when
+// the special OWNS the creature's action this frame (a charge dash or spin whirl), so the generic
+// move+attack is suppressed; ranged/utility specials (boulder, acid, drain) fire on cooldown and
+// return false so ordinary pursuit continues alongside them.
+const MONSTER_SPECIAL={ tusker:"charge", auroch:"charge", mattekar:"charge",
+  lugian:"boulder", golem:"boulder",
+  olthoi:"acid", olthoisoldier:"acid", olthoiworker:"acid",
+  skeleton:"drain", mummy:"drain", zombie:"drain",
+  armoredillo:"spin" };
+function monsterSpecial(m,b,d,dx,dz,dt){
+  const sp=MONSTER_SPECIAL[m.kind]; if(!sp||!player.alive) return false;
+  m.spCd=Math.max(0,(m.spCd||0)-dt);
+  if(m.chargeT>0){   // charge in progress → barrel forward, gore on contact
+    m.chargeT-=dt; const a=Math.atan2(dx,dz); m.ang=a;
+    m.x+=Math.sin(a)*b.spd*3.4*dt; m.z+=Math.cos(a)*b.spd*3.4*dt;
+    if(Math.random()<0.6) burst(m.x,1.1,m.z,0xffcf7a,1);
+    if(d<m.r+player.r+0.9){ playerHurt(m.dmg*2.3*(m.enraged?1.3:1),m.x,m.z,"melee","pierce");
+      floater(m.x,(m.headY||1.6)+2,m.z,"GORE!","#ff9a3a"); if(SFX.growl)SFX.growl(); shake(0.22); m.chargeT=0; m.spCd=6; }
+    else if(m.chargeT<=0) m.spCd=4;
+    return true; }
+  if(m.spinT>0){   // spin in progress → whirl, striking anything close (once)
+    m.spinT-=dt; m.ang+=dt*16;
+    if(Math.random()<0.5) burst(m.x,0.8,m.z,0xcdbf9a,1);
+    if(d<m.r+player.r+1.7 && !m._spinHit){ playerHurt(m.dmg*1.7,m.x,m.z,"melee","bludgeon"); floater(m.x,(m.headY||1.6)+2,m.z,"SPIN!","#ffd27a"); m._spinHit=1; }
+    if(m.spinT<=0){ m.spCd=5; m._spinHit=0; }
+    return true; }
+  if(m.spCd>0) return false;
+  if(sp==="charge" && d>4.5 && d<15){ m.chargeT=0.75; m.spCd=6; floater(m.x,(m.headY||1.6)+2,m.z,"lowers its head…","#ffd27a"); return true; }
+  if(sp==="spin"   && d<4.5){ m.spinT=0.85; m._spinHit=0; floater(m.x,(m.headY||1.6)+2,m.z,"curls up…","#ffd27a"); return true; }
+  if(sp==="boulder"&& d>6 && d<44){   // giants hurl an arcing rock even at melee ranges
+    const dirx=dx/d,dirz=dz/d,oy=1.5, spd=Math.min(40,16+d);
+    const mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(0.44,0),new THREE.MeshStandardMaterial({color:0x8a8276,roughness:1,flatShading:true}));
+    mesh.position.set(m.x,oy,m.z); scene.add(mesh);
+    eProj.push({mesh,x:m.x,y:oy,z:m.z,vx:dirx*spd,vy:0,vz:dirz*spd,dmg:Math.round(m.dmg*1.6*(m.enraged?1.3:1)),r:0.5,life:3,type:"missile",element:null});
+    m.spCd=5; floater(m.x,(m.headY||1.6)+2.2,m.z,"hurls a boulder!","#cdbfa0"); if(SFX.growl)SFX.growl(); return false; }
+  if(sp==="acid" && d<7){   // short-range acid spray cone + a clinging slow
+    const ax=dx/d,az=dz/d, fx=Math.sin(m.ang),fz=Math.cos(m.ang);
+    if(fx*ax+fz*az>0.35){ playerHurt(m.dmg*1.25,m.x,m.z,"missile","acid");
+      if(!(player.dispelImmune>0)){ player.debuffs=player.debuffs||{}; player.debuffs.slow={v:0.5,t:2.5}; floater(player.x,EYE+0.6,player.z,"Slowed!","#9af06a"); }
+      for(let i=0;i<12;i++) burst(m.x+ax*(1+Math.random()*2),0.9,m.z+az*(1+Math.random()*2),0x9af06a,1);
+      floater(m.x,(m.headY||1.6)+2,m.z,"acid spray!","#9af06a"); m.spCd=4.5; }
+    return false; }
+  if(sp==="drain" && d<m.r+player.r+1.0){   // undead sap your stamina & mana as they close
+    player.st=Math.max(0,player.st-10); player.mn=Math.max(0,player.mn-10);
+    floater(player.x,EYE+0.7,player.z,"drained!","#9b6bd0"); burst(player.x,EYE,player.z,0x9b6bd0,8); m.spCd=5; return false; }
+  return false;
+}
 // Drives one creature's rig for the frame. Sets body pitch/roll on m._pitch/m._roll and
 // returns the vertical bob offset (added to groundY by the caller). `moved` = it travelled this frame.
 function animateCreatureRig(m,dt,moved){
@@ -12341,6 +12388,8 @@ function update(dt){
     if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0) m.state="wander"; } else if(d>b.sense*1.4) m.state="wander"; }
     if(m.state==="chase"&&player.alive){
       m.ang=Math.atan2(dx,dz);
+      const spActive=monsterSpecial(m,b,d,dx,dz,dt);   // B1: a charge/spin owns the frame; boulder/acid/drain layer on top
+      if(!spActive){
       const stopAt=b.range>0?b.range*0.7:m.r+player.r+0.2;
       if(d>stopAt){const es=m.enraged?1.35:1;m.x+=dx/d*b.spd*es*slowF*dt;m.z+=dz/d*b.spd*es*slowF*dt;}
       if(b.range>0){
@@ -12370,6 +12419,7 @@ function update(dt){
         }
       } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack");const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
+      }   // end B1 !spActive gate
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
       if(Math.hypot(m.x-m.wx,m.z-m.wz)>20) m.ang=Math.atan2(m.wx-m.x,m.wz-m.z);
