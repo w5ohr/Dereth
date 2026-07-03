@@ -13,12 +13,13 @@ Each real month we ship the next chapter:
 4. Verify (syntax → preview e2e via real code paths → 0 console errors → screenshot) → PR.
 
 ## Engine goal vocabulary
-Shipped: `visit` · `repel` (featured Incursion) · `agitator` (planted named hunt) · `clear` (delve) ·
-`general` (Shadow General) · `echo`/`boss` (saga world boss) · `kills` (family cull).
-To build, the month they first appear: `visits:N` (multi-stop) · `deliver` (carry relic to a point) ·
-`siege` (town-under-siege wave defense, Y4) · `contribute` (spend N materials at a site) ·
-`relics` (possess/present saga items) · `survive` (live through a timed onslaught, Y10) ·
-`stages` (chained sub-goals, Y10 finale). The "Hear ye!" prefix is added by the crier itself.
+All shipped: `visit` · `visits:N` (multi-stop — nearest N or ordered `pts`) · `repel` (featured
+Incursion) · `agitator` (planted named hunt) · `clear` (delve) · `general` (Shadow General) ·
+`echo`/`boss` (saga world boss) · `bosses` (multi-boss — all must fall, Y6) · `kills` (family cull) ·
+`deliver` (carry relic to a point, Y4) · `siege` (town-under-siege wave defense, Y4) · `contribute`
+(spend N materials at a named site, Y5) · `survive` (live through a timed onslaught vs. a spawned
+`avatar`, Y10) · `stages` (chained ordered sub-goals — siege→kills→visit, the Y10 finale). The
+"Hear ye!" prefix is added by the crier itself.
 
 ---
 
@@ -271,7 +272,7 @@ town isn't mapped).
 
 ---
 
-## YEAR 5 — YEAR OF BLOOD (The Falatacot Root) — months 49–60 · *the mid-saga twist*
+## YEAR 5 — YEAR OF BLOOD ✅ SHIPPED (The Falatacot Root) — months 49–60 · *the mid-saga twist*
 *The Burun rise, and the Blood Matriarchs name Castle Val Halla "the Stolen Crown of Ley". The truth
 under the plateau comes out — and Kilmer keeps his crown by a single vote.*
 **Needs:** "Burun Tide" `EVENT_TYPES` row (kinds: burun/mosswart/moarsman) · the **Val Halla
@@ -352,7 +353,7 @@ Under-Temple** delve (a Falatacot event wing beneath the castle — warm stone, 
 
 ---
 
-## YEAR 6 — YEAR OF STORMS (Gaerlan's Heirs) — months 61–72
+## YEAR 6 — YEAR OF STORMS ✅ SHIPPED (Gaerlan's Heirs) — months 61–72
 *Gaerlan's students shatter the sky-citadel's weather-seals; the sky itself is the battlefield.
 Built on the live weather system.*
 **Needs:** storm-elemental spawns at storm-cell eyes (wisp/golem storm-tint) · storm-rod world props ·
@@ -432,7 +433,7 @@ a Citadel event delve (Mount Esper) · multi-boss month support (4 concurrent sa
 
 ---
 
-## YEAR 7 — YEAR OF BONE (The Dericost Winter) — months 73–84
+## YEAR 7 — YEAR OF BONE ✅ SHIPPED (The Dericost Winter) — months 73–84
 *The undead winter kings wake, and their season comes with them: snow that will not end until the
 Lich-King of Frore is put down. Three story-seasons pass under snow.*
 **Needs:** **season lock** (the world's snow reskin persists M73–M80 regardless of the wheel — the
@@ -513,7 +514,7 @@ hunts.
 
 ---
 
-## YEAR 8 — YEAR OF RIFTS (The Sundered Veil) — months 85–96 · *the revelation*
+## YEAR 8 — YEAR OF RIFTS ✅ SHIPPED (The Sundered Veil) — months 85–96 · *the revelation*
 *Portalspace is failing. The trail leads to Asheron — sealed into the Veil's edge the whole
 Interregnum, holding it shut. His warning: T'thuun never stopped rising.*
 **Needs:** **rift spawner** (random portal props spilling mixed-era creatures; high-variance loot) ·
@@ -594,7 +595,7 @@ survey-anchor interact props · a **portalspace ascent delve** (the Veil's edge)
 
 ---
 
-## YEAR 9 — YEAR OF TIDES (The Gathering Dark) — months 97–108
+## YEAR 9 — YEAR OF TIDES ✅ SHIPPED (The Gathering Dark) — months 97–108
 *T'thuun's Herald rises to prepare the drowning. The year of alliances: everything with a spine —
 or without one — chooses a side.*
 **Needs:** **coastal drowned-shore zones** (visual water-rise bands at three coasts, slithis/moarsman
@@ -675,7 +676,7 @@ contribution tracking (reuses `contribute`) · an **underwater-approach delve** 
 
 ---
 
-## YEAR 10 — YEAR OF THE CROWN (The Final Sending) — months 109–120
+## YEAR 10 — YEAR OF THE CROWN ✅ SHIPPED (The Final Sending) — months 109–120
 *T'thuun rises. Every month is a front. Kilmer must feed the root everything it ever gave him.*
 **Needs:** multi-front invasions (3 simultaneous incursions) · `survive` goal (timed onslaught with
 an unkillable boss) · `relics` ceremony (checks veterans' saga items from Y1/Y2/Y5/Y6/Y8) · the

@@ -6685,6 +6685,7 @@ function killMonster(m){
   questEvent("slay",m.kind);   // both overworld AND dungeon kills count toward slay quests (themed delves are where many creatures live)
   if(m.sagaTag==="agitator") sagaNotify("agitator");
   sagaNotify("kill",m.kind);   // saga cull objectives (cheap no-op when the live chapter has none)
+  if(typeof sagaStageKill==="function") sagaStageKill(m);   // finale kills-stage
   if(m.isElite) player.championKills++;
   checkAchievements();
   const g=irnd(b.gold[0],b.gold[1])*(m.goldMul||1);
@@ -6766,6 +6767,8 @@ const EVENT_TYPES=[
   {name:"Undead Rising",    kinds:["skeleton","shadow"],              col:0xbfe0ff, blurb:"The restless dead claw up from the barrows"},
   {name:"Banderling Raid",  kinds:["banderling","drudge","mosswart"], col:0xffc14a, blurb:"A savage warband descends"},
   {name:"Virindi Abduction",kinds:["virindi","shadow"],              col:0xd0d4e6, blurb:"Empty-faced Virindi snatch-squads raid the town"},
+  {name:"Burun Tide",       kinds:["burun","mosswart","moarsman"],   col:0x6a8a3a, blurb:"Burun hordes croak up out of the swamps"},
+  {name:"Slithis Tide",     kinds:["sclavus","moarsman","mukkir"],   col:0x2a8a7a, blurb:"The drowned god's Slithis brood floods the shore"},
 ];
 // ---------- monthly event calendar: seasons + a rotating story event (see docs/asherons-call-events-reference.md) ----------
 // The world cycles through seasons; each "month" features a story beat whose rumour the Town Criers broadcast and
@@ -7022,13 +7025,266 @@ const EVENT_CALENDAR=[
    clue:"See the stained well-stones of Valstead yourself, before the masons scrub them.",
    goal:{v:"valstead"}, obj:"See the stained wells of Valstead", xp:1600, gold:240,
    seeds:"Under the well-water: a taste of copper, and a warmth that has no business in snowmelt. <b>Year 5 — the Year of Blood — will continue the saga.</b>"},
+
+  // ═══ YEAR 5 — YEAR OF BLOOD (The Falatacot Root) · the mid-saga twist ═══
+  {id:"y5m49", mon:"Morningthaw", name:"The Croaking Tide", kind:"invasion", incursion:5,
+   rumor:"The swamps have EMPTIED — Burun in their hundreds out of Yanshi and Sawato, and drums in the Blackmire that no Isparian ever taught them.",
+   clue:"Repel the Burun tide before it reaches the dry towns.", goal:{repel:1}, obj:"Repel a Burun Tide", xp:1800, gold:300},
+  {id:"y5m50", mon:"Seedsow", name:"The Matriarch's Claim", kind:"beat", incursion:null,
+   rumor:"A Blood Matriarch stood in PARLEY at the Swamp Temple and spoke Isparian: 'The castle on the flattened hill is the Stolen Crown of Ley. Return our heart, or we return for it.'",
+   clue:"Hear the claim yourself at the Blackmire temple stones.", goal:{v:"swamptemple"}, obj:"Hear the Matriarch's claim", xp:1700, gold:280,
+   seeds:"The accusation is public now: Castle Val Halla stands on a severed Falatacot temple-crown."},
+  {id:"y5m51", mon:"Leafdawning", name:"The Sealed Cellars", kind:"explore", incursion:null,
+   rumor:"By royal WRIT — the Monarch himself asks it — the sealed cellars of Castle Val Halla open to adventurers of proven name. What the masons found down there needs witnesses, not soldiers.",
+   clue:"Descend the castle cellars and see what the plateau was built upon.", goal:{clear:"Unfinished Temple"}, obj:"Clear the Val Halla Under-Temple", xp:2400, gold:400,
+   seeds:"An intact Falatacot under-temple, warm to the touch — the root of Kilmer's golden reign, laid bare."},
+  {id:"y5m52", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"A muted festival this spring. Protest banners hang in Valstead — 'WHOSE LUCK?' — and the Monarch walks the fair UNGUARDED, meeting every eye that will meet his.",
+   clue:"Walk the Valstead fair beside him.", goal:{v:"valstead"}, obj:"Walk the Valstead fair", xp:1300, gold:180, item:{name:"Protest Ribbon",stat:"quest",v:60}},
+  {id:"y5m53", mon:"Verdantine", name:"The Ledger of Luck", kind:"beat", incursion:null,
+   rumor:"The Concord's inquest wants EVIDENCE: a generation of Valstead's harvests, dice, and dodged lightning, all written down. If the luck was borrowed, the ledger will show the loan.",
+   clue:"Gather testimony pages around Valstead for the inquest.", goal:{visits:3}, obj:"Gather three Ledger of Luck pages", xp:1900, gold:320, item:{name:"Ledger of Luck Page",stat:"quest",v:60}},
+  {id:"y5m54", mon:"Solclaim", name:"Blood Rites at Dusk", kind:"invasion", incursion:5,
+   rumor:"Ritual fires at Amiantos Bethel and the Swamp Ruin — the Matriarchs BEND the leyline toward the swamps every night at dusk. You can feel it pull in your back teeth.",
+   clue:"Raid the dusk rites and break the ritual circles.", goal:{repel:1}, obj:"Break the dusk blood-rites", xp:2200, gold:380},
+  {id:"y5m55", mon:"Leaffall", name:"The Vote of the Concord", kind:"beat", incursion:null,
+   rumor:"The Concord votes on the CROWN ITSELF tomorrow. Holtburg wavers, Yaraq is stone, Shoushi weeps — and every scrap of testimony an adventurer carried matters tonight.",
+   clue:"Present your evidence at Castle Val Halla before the vote is called.", goal:{v:"valstead"}, obj:"Present the testimony at Val Halla", xp:2300, gold:400,
+   seeds:"Kilmer keeps the throne by ONE vote, pledging the root will never again feed the treasury."},
+  {id:"y5m56", mon:"Harvestgain", name:"The Blood Matriarch Ascendant", kind:"boss", incursion:null,
+   rumor:"Denied the root, the eldest Matriarch has DRUNK HER OWN LEYLINE. She is in the under-temple — beneath the Monarch's own floor — and she is still swelling.",
+   clue:"Descend beneath Val Halla and end the Ascendant before she finishes becoming.", goal:{boss:"matriarch"}, obj:"Slay the Blood Matriarch Ascendant", title:"Root-Warden", xp:5500, gold:900,
+   item:{name:"Leyline Athame",stat:"weapon",wt:"dagger",mat:"Onyx",v:36,tier:5,legendary:true,affix:"lifesteal"}, item2:{name:"Matriarch's Heart-Bead",stat:"quest",v:80},
+   seeds:"The Ascendant falls. The root is warded, not destroyed — the scholars warn that severing a leyline this old could tear the Veil itself."},
+  {id:"y5m57", mon:"Leafcull", name:"The Warded Heart", kind:"beat", incursion:null,
+   rumor:"The scholars are UNANIMOUS, which frightens me more than the Matriarch did: the root cannot be destroyed. Sever a leyline this old and you tear the Veil. So — we ward it.",
+   clue:"Bring materials to the under-temple wardstones and help raise the ward.", goal:{contribute:20,at:"wardstone"}, obj:"Give 20 materials to the wardstones", xp:2000, gold:340},
+  {id:"y5m58", mon:"Coldeve", name:"Burun Ebb", kind:"beat", incursion:null,
+   rumor:"The tide recedes. Burun tribes without Matriarchs sue for SWAMP-TRUCE at Green Mire — they want the fighting done more than they want the heart back.",
+   clue:"Visit the Green Mire truce camp and witness the peace.", goal:{v:"greenmire"}, obj:"Witness the Green Mire truce", xp:1700, gold:280},
+  {id:"y5m59", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Frostfell at the castle, and the Monarch's toast rings the hall: 'To a crown that owes no debt it will not NAME.' The cheering took a moment. Then it didn't stop.",
+   clue:"Keep the feast at any capital or Valstead.", goal:{v:"capital"}, obj:"Keep the feast", xp:1300, gold:180, item:{name:"Debt-Named Goblet",stat:"quest",v:100}},
+  {id:"y5m60", mon:"Snowreap", name:"The Weather Breaks Wrong", kind:"beat", incursion:null,
+   rumor:"HALFWAY through our Monarch's saga, and the sky forgets its seasons: lightning from cloudless blue, hail in Solclaim heat, and over Mount Esper a stormfront that DOES NOT MOVE.",
+   clue:"Stand in one of the rogue storms and feel what rides inside it.", goal:{v:"stormcell"}, obj:"Stand in a rogue storm", xp:1800, gold:300,
+   seeds:"Inside the storm: voices on the wind, giving orders. <b>Year 6 — the Year of Storms — will continue the saga.</b>"},
+
+  // ═══ YEAR 6 — YEAR OF STORMS (Gaerlan's Heirs) ═══
+  {id:"y6m61", mon:"Morningthaw", name:"Lightning Out of Season", kind:"seasonal", incursion:null,
+   rumor:"The rogue storms have TEETH now — things of living wind and charge walk at each storm's eye, and they do not scatter when it passes.",
+   clue:"Hunt the elementals at the storm-eyes.", goal:{kills:5,fams:["wisp","golem"]}, obj:"Cull 5 storm elementals", xp:1900, gold:320},
+  {id:"y6m62", mon:"Seedsow", name:"The Broken Seals", kind:"beat", incursion:null,
+   rumor:"Seal-stones fall like METEORS across the realms — and the Wandering Caravan was caught smuggling one east under grain sacks. Its keeper is... talkative, now.",
+   clue:"Find the Wandering Caravan on the roads and hear the keeper's confession.", goal:{v:"capital"}, obj:"Find the caravan keeper", xp:1800, gold:300, item:{name:"Weather-Seal Fragment",stat:"quest",v:60}},
+  {id:"y6m63", mon:"Leafdawning", name:"Children of the Citadel", kind:"beat", incursion:null,
+   rumor:"Storm-cults gather on the rooftops of Qalaba'r and Neydisa, calling the lightning down BY NAME. Their heralds recruit openly: 'Cyrannic pays in wind and fire.'",
+   clue:"Silence the cult heralds at Qalaba'r and Neydisa.", goal:{visits:2,pts:["qalaba","neydisa"]}, obj:"Silence the storm-cult heralds", xp:2000, gold:340},
+  {id:"y6m64", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"A festival under a PERFECT sky — too perfect. The calm was bought, friends: one of the recovered seals now hangs spent over the fairground. Enjoy what it cost.",
+   clue:"Attend the fair and see the price of a clear day.", goal:{v:"capital"}, obj:"Attend the fair", xp:1300, gold:180, item:{name:"Spent Seal Sliver",stat:"quest",v:80}},
+  {id:"y6m65", mon:"Verdantine", name:"The Four Winds", kind:"boss", incursion:null,
+   rumor:"FOUR avatars ride the four realms' skies — North Gale, South Scorch, East Deluge, West Frost — each a season gone to war. Cyrannic tests his cardinal points.",
+   clue:"Fell all four Wind avatars, in any order.", goal:{bosses:["windN","windS","windE","windW"]}, obj:"Fell the four Wind avatars", xp:3600, gold:600, item:{name:"Cardinal Sigil",stat:"quest",v:80}},
+  {id:"y6m66", mon:"Solclaim", name:"Eye of the Tempest", kind:"explore", incursion:null,
+   rumor:"The stormfront over Mount Esper has OPENED — inside its eye hangs a rebuilt wing of Gaerlan's citadel, stair-stones of cloud and all. It will not stay open long.",
+   clue:"Climb into the tempest's eye and clear the citadel wing.", goal:{clear:"Hills Citadel"}, obj:"Clear Gaerlan's Citadel wing", xp:2600, gold:440},
+  {id:"y6m67", mon:"Leaffall", name:"Grounding the Grid", kind:"beat", incursion:null,
+   rumor:"The scholars' answer to a weaponized sky: STORM-RODS over every capital, raised by common hands with common iron. Bring what you can spare; the sky is everyone's roof.",
+   clue:"Contribute materials to the storm-rods at a capital.", goal:{contribute:20,at:"capital"}, obj:"Give 20 materials to the storm-rods", xp:2200, gold:380},
+  {id:"y6m68", mon:"Harvestgain", name:"Warlord of the Four Winds", kind:"boss", incursion:null,
+   rumor:"CYRANNIC sits the tempest-throne in his master's rebuilt hall, wearing the storm like a cloak. The eye is collapsing — this month or never, friends.",
+   clue:"Ascend the citadel and unseat the Warlord of the Four Winds.", goal:{boss:"cyrannic"}, obj:"Unseat Cyrannic", title:"Stormbreaker", xp:5800, gold:950,
+   item:{name:"Crown of the Calm Eye",stat:"worn",at:"medium",aslot:"head",v:32,tier:5,legendary:true},
+   seeds:"The Warlord falls and the eye closes. Now the seals go back into the earth, and the sky back on its wheel."},
+  {id:"y6m69", mon:"Leafcull", name:"Setting the Seals", kind:"beat", incursion:null,
+   rumor:"Four seals, four realms, one RELAY — the recovered weather-seals go back into the earth this month, and the sky goes back on its wheel.",
+   clue:"Carry your Cardinal Sigils to the four realm seal-stones.", goal:{visits:4}, obj:"Set the four weather-seals", xp:2400, gold:400},
+  {id:"y6m70", mon:"Coldeve", name:"The Salvage Court", kind:"item", incursion:null,
+   rumor:"The citadel's wreckage is a MINE of storm-steel. The Salvage Court convenes: bring citadel salvage, learn the lightning-work, keep what you forge.",
+   clue:"Learn storm-forged tinkering from the Salvage Court at any capital.", goal:{v:"capital"}, obj:"Attend the Salvage Court", xp:1900, gold:320, item:{name:"Storm-Forged Render",stat:"quest",v:120}},
+  {id:"y6m71", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"SNOW! Real snow, ON TIME, falling because the calendar says so and for no other reason — and grown adults are dancing in it like children. Let them.",
+   clue:"Keep the feast under the first honest snowfall in a year.", goal:{v:"capital"}, obj:"Keep the feast", xp:1300, gold:180, item:{name:"First-Snow Vial",stat:"quest",v:100}},
+  {id:"y6m72", mon:"Snowreap", name:"The Winter That Stays", kind:"beat", incursion:null,
+   rumor:"Frostfell's snow lies deeper each week and will not melt — and Stonehold reports LIGHTS in the old Dericost Vault. Blue lights. Patient lights.",
+   clue:"See the vault-lights from Stonehold's walls.", goal:{v:"stonehold"}, obj:"See the Dericost vault-lights", xp:1800, gold:300,
+   seeds:"Below the ice, something keeps court. <b>Year 7 — the Year of Bone — will continue the saga.</b>"},
+
+  // ═══ YEAR 7 — YEAR OF BONE (The Dericost Winter) ═══
+  {id:"y7m73", mon:"Morningthaw", name:"No Thaw", kind:"seasonal", incursion:null, winter:true,
+   rumor:"Morningthaw came and went and NOTHING THAWED. The roads are white, the wells crack, and the old folk use a word I had to ask about: Dericost.",
+   clue:"Walk any capital and see the winter that stayed.", goal:{v:"capital"}, obj:"See the winter that stayed", xp:1600, gold:260},
+  {id:"y7m74", mon:"Seedsow", name:"The Waking Vaults", kind:"invasion", incursion:2,
+   rumor:"The Dericost Vault at Stonehold stands OPEN from the inside, and the Gelidite Library answers it. The dead of the winter kingdom are punctual guests.",
+   clue:"Repel the risen dead.", goal:{repel:1}, obj:"Repel an Undead Rising", xp:1900, gold:320},
+  {id:"y7m75", mon:"Leafdawning", name:"The Pale Court", kind:"beat", incursion:null,
+   rumor:"In three frozen villages the Dericost nobles hold COURT — crowned skeletons on borrowed thrones, demanding fealties older than Ispar. The villagers kneel because the cold makes them.",
+   clue:"Break the Pale Court: unseat the nobles at three towns.", goal:{visits:3}, obj:"Unseat the three Dericost nobles", xp:2300, gold:400},
+  {id:"y7m76", mon:"Thistledown", name:"Frostbound Festival", kind:"festival", incursion:null,
+   rumor:"No thaw, no flowers? WRONG. The greenhouses force the thistle blooms by lamplight, and the festival goes ahead IN the snow — defiance you can smell over the frost.",
+   clue:"Keep the frostbound festival at any capital.", goal:{v:"capital"}, obj:"Keep the frostbound festival", xp:1400, gold:200, item:{name:"Lamplight Thistle",stat:"quest",v:100}},
+  {id:"y7m77", mon:"Verdantine", name:"The Road to Frore", kind:"explore", incursion:null,
+   rumor:"The ice-city is FOUND: Frore, whole and frozen, its gates cleared by Concord sappers. Every hall below is older than the arrival and colder than the grave it is.",
+   clue:"Enter Frore and clear its outer halls.", goal:{clear:"Frozen Library"}, obj:"Clear Frore's outer halls", xp:2700, gold:460,
+   seeds:"Frore stands open now — an ice-delve older than Ispar, and colder."},
+  {id:"y7m78", mon:"Solclaim", name:"The Gelidite Choir", kind:"beat", incursion:null,
+   rumor:"You can HEAR it on a still night now — the Gelidite priests singing the winter deeper, verse by verse. Every choir-hall silenced buys back a week of spring.",
+   clue:"Silence the choir in Frore's halls.", goal:{kills:8,fams:["skeleton","shadow","zombie"]}, obj:"Silence the Gelidite choir (8 undead)", xp:2200, gold:380},
+  {id:"y7m79", mon:"Leaffall", name:"Bones of the Three Realms", kind:"invasion", incursion:2,
+   rumor:"The dead of EVERY realm rise at once — Aluvian barrow-wights, Gharu'ndim sand-shrouds, Sho ancestor-husks — each at their own capital. The Lich-King calls in every grave's debt.",
+   clue:"Repel the risen at the capitals — twice proves the realms can hold.", goal:{repel:2}, obj:"Repel two undead risings", xp:2500, gold:420},
+  {id:"y7m80", mon:"Harvestgain", name:"The Lich-King of Frore", kind:"boss", incursion:null,
+   rumor:"The throne-hall is REACHED. The Lich-King of Frore sits a glacier throne with three seasons of our stolen springtime around his shoulders — and his phylactery, they say, is a single snowflake.",
+   clue:"Slay the Lich-King and break the endless winter.", goal:{boss:"lichking"}, obj:"Slay the Lich-King of Frore", title:"Winter's End", xp:6000, gold:1000,
+   item:{name:"Tremblant's Ivory Staff",stat:"weapon",wt:"staff",mat:"Ivory",v:36,tier:5,legendary:true,affix:"frost"},
+   seeds:"The phylactery-snowflake melts, and three seasons of stolen spring return in one glorious instant. The snow finally goes."},
+  {id:"y7m81", mon:"Leafcull", name:"The Late Harvest", kind:"seasonal", incursion:null,
+   rumor:"A MIRACLE HARVEST — three seasons of growth in one, the fields frantic and golden, and every granary paying double for hands. The land is making up for lost time.",
+   clue:"Join the late harvest at any capital fair.", goal:{v:"capital"}, obj:"Join the late harvest", xp:1800, gold:300},
+  {id:"y7m82", mon:"Coldeve", name:"Laying the Dead", kind:"beat", incursion:null,
+   rumor:"The war is over; the WARDING begins. Grave-goods looted in the winter go home to their vaults, and the Dericost sleep on our terms this time.",
+   clue:"Recover grave-goods and return them to the Stonehold vault.", goal:{v:"stonehold"}, obj:"Return the grave-goods to Stonehold", title:"Quiet-Bringer", xp:2300, gold:400},
+  {id:"y7m83", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Frostfell — and nobody quite trusts the snow this year, do they? The Monarch names it 'winter on OUR terms' and lights the bonfires himself.",
+   clue:"Keep the feast, warily, at any capital.", goal:{v:"capital"}, obj:"Keep the feast", xp:1400, gold:200, item:{name:"Our-Terms Bonfire Coal",stat:"quest",v:100}},
+  {id:"y7m84", mon:"Snowreap", name:"The Torn Horizon", kind:"beat", incursion:null,
+   rumor:"Over the Vesayen Isles a portal OPENED IN MID-AIR — and it SCREAMED, friends, a sound the fisherfolk will not describe twice. It did not close. Others are opening.",
+   clue:"Watch the torn horizon from the coastal overlook.", goal:{v:"coastaloverlook"}, obj:"Watch the torn horizon", xp:1900, gold:320,
+   seeds:"The tear hangs there still, humming. Portalspace itself is wounded. <b>Year 8 — the Year of Rifts — will continue the saga.</b>"},
+
+  // ═══ YEAR 8 — YEAR OF RIFTS (The Sundered Veil) · the revelation ═══
+  {id:"y8m85", mon:"Morningthaw", name:"Rift-Storm Season", kind:"seasonal", incursion:0,
+   rumor:"RIFTS tear open where they please now — one spat snow-era drudges into a Verdantine orchard; another rained fish. Do not laugh. The next may not be fish.",
+   clue:"Close the rifts by culling what holds them open.", goal:{kills:8,fams:["shadow","drudge","skeleton","virindi"]}, obj:"Cull 8 rift-spills", xp:2400, gold:400},
+  {id:"y8m86", mon:"Seedsow", name:"The Cartographers", kind:"beat", incursion:null,
+   rumor:"The Arcanum maps the madness: survey-anchors, planted at every stable tear. Early word is STRANGE, friends — the rifts don't point inward at Dereth. They point OUT.",
+   clue:"Plant survey-anchors at three rift sites.", goal:{visits:3}, obj:"Plant three survey-anchors", xp:2200, gold:380},
+  {id:"y8m87", mon:"Leafdawning", name:"Through the Tear", kind:"explore", incursion:null,
+   rumor:"A rift held STABLE long enough to walk through — into a pocket of old Empyrean portalspace, preserved like a fly in amber. Lamps still lit. Table still set.",
+   clue:"Walk the stable tear and clear the preserved pocket.", goal:{clear:"Ancient Empyrean Grotto"}, obj:"Clear the Empyrean pocket", xp:2700, gold:460},
+  {id:"y8m88", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"A rift opened over the fairground — harmless, high, and showing ANOTHER DERETH'S festival: same music, same lights, dancers we almost knew. It closed at moonrise. Nobody clapped.",
+   clue:"Attend the fair beneath the window into elsewhere.", goal:{v:"capital"}, obj:"Attend the fair", xp:1500, gold:220, item:{name:"Elsewhere Mirror-Shard",stat:"quest",v:100}},
+  {id:"y8m89", mon:"Verdantine", name:"Echoes of the Architect", kind:"beat", incursion:null,
+   rumor:"Asheron's old constructs woke in the night — mnemosynes, workshop golems, every last one — and began WALKING. Different roads, one direction. They are going somewhere, friends.",
+   clue:"Follow the constructs' road to where they gather.", goal:{visits:2}, obj:"Follow the constructs' march", xp:2300, gold:400},
+  {id:"y8m90", mon:"Solclaim", name:"The Edge of the Veil", kind:"explore", incursion:null,
+   rumor:"The constructs led TRUE: an ascent through raw portalspace to the Veil's very edge — and set into that edge like a keystone, a SEAL, and in the seal a sleeping shape we all know from statues.",
+   clue:"Climb the ascent to the Veil's edge and look on the seal.", goal:{clear:"Beacon Tower"}, obj:"Reach the Veil's edge", xp:2900, gold:500,
+   seeds:"Asheron did not abandon Dereth. He sealed HIMSELF into the Veil's edge to hold it shut — and he IS the lock."},
+  {id:"y8m91", mon:"Leaffall", name:"The Price of the Door", kind:"beat", incursion:null,
+   rumor:"To free the Architect, the Veil needs a NEW anchor — and in open council someone finally said the words: 'the root under Val Halla.' The Monarch refused to decide alone.",
+   clue:"Attend the council at Castle Val Halla and hear the price named.", goal:{v:"valstead"}, obj:"Attend the council at Val Halla", xp:2200, gold:380},
+  {id:"y8m92", mon:"Harvestgain", name:"The Unsealing", kind:"boss", incursion:null,
+   rumor:"It is TODAY. Not the root — ten thousand lesser anchors instead: every lifestone every soul has ever touched, braided into one rope. But portalspace guards its wound, and it has grown TEETH.",
+   clue:"Defeat the Warden of the Sundered Veil and pull the Architect free.", goal:{boss:"warden"}, obj:"Defeat the Warden of the Sundered Veil", title:"Veil-Walker", xp:6200, gold:1050,
+   item:{name:"Sliver of the Old Door",stat:"jewelry",jtype:"finger",mat:"Pyreal",v:0,legendary:true,bonus:{kind:"skill",key:"war",v:12}},
+   seeds:"The Warden falls and Asheron is freed — by ten thousand lifestones, not the root. The Architect walks Dereth again."},
+  {id:"y8m93", mon:"Leafcull", name:"The Architect Returns", kind:"beat", incursion:null,
+   rumor:"ASHERON WALKS DERETH AGAIN. He came down the castle road on foot, thinner than his statues, and met the Monarch at the gates. Neither bowed. All Dereth held its breath — and then both men laughed.",
+   clue:"Witness the meeting at Asheron's castle courtyard.", goal:{v:"asheron"}, obj:"Witness Asheron's return", xp:2400, gold:420,
+   seeds:"Asheron stands in his courtyard once more — a dialogue with the age before the Sundering."},
+  {id:"y8m94", mon:"Coldeve", name:"The Warning", kind:"beat", incursion:null,
+   rumor:"The Architect's testimony, plain as frost: 'T'thuun has been rising through the whole of the Fading. The Veil will not hold a second siege. Look at your tide-marks.' ...Friends, the tide-marks ARE wrong.",
+   clue:"Hear the warning from Asheron himself.", goal:{v:"asheron"}, obj:"Hear Asheron's warning", xp:2200, gold:380},
+  {id:"y8m95", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"Frostfell with the ARCHITECT at table — two eras toasting each other over hive-wax candles and spire-wine. He asked for the old Yalain carol. The choir faked it beautifully.",
+   clue:"Keep the feast at any capital.", goal:{v:"capital"}, obj:"Keep the feast", xp:1500, gold:220, item:{name:"Two-Eras Candle",stat:"quest",v:100}},
+  {id:"y8m96", mon:"Snowreap", name:"Black Water", kind:"beat", incursion:null,
+   rumor:"Fishermen off Mayoi hauled up SLITHIS-SIGN — deep-coral growths on their anchors that should not exist above the abyss. And mark this: the Moarsmen have stopped raiding. They are moving INLAND.",
+   clue:"See the black water for yourself at Mayoi's docks.", goal:{v:"mayoi"}, obj:"See the black water at Mayoi", xp:2000, gold:340,
+   seeds:"When the sea's own children flee the sea, believe them. <b>Year 9 — the Year of Tides — will continue the saga.</b>"},
+
+  // ═══ YEAR 9 — YEAR OF TIDES (The Gathering Dark) ═══
+  {id:"y9m97", mon:"Morningthaw", name:"The Wrong Tide", kind:"seasonal", incursion:null,
+   rumor:"The tide came in at Mayoi and DID NOT GO OUT. Kryst and the Dryreach coast report the same: a hand's width of sea that stays, and stays, and stays.",
+   clue:"Walk a drowned shore and see the sea that won't retreat.", goal:{v:"drownedshore"}, obj:"See the drowned shore", xp:2000, gold:340},
+  {id:"y9m98", mon:"Seedsow", name:"The Moarsman Exodus", kind:"beat", incursion:null,
+   rumor:"Moarsmen at the GATES — not raiding: KNEELING. They beg sanctuary inland, whole spawning-schools of them, and they will not say the name of what they flee. They gesture at the sea and shudder.",
+   clue:"Visit the refugee camps and keep the peace of three towns.", goal:{visits:3}, obj:"Settle the Moarsman refugees", xp:2300, gold:400},
+  {id:"y9m99", mon:"Leafdawning", name:"Slithis Landfall", kind:"invasion", incursion:6,
+   rumor:"SLITHIS on the beaches — the drowned god's own brood, first landfall since the T'thuun war our great-grandmothers lost sleep to. The source is a drowned rift off the Vesayen Isles.",
+   clue:"Repel the Slithis beach-head.", goal:{repel:1}, obj:"Repel the Slithis landfall", xp:2400, gold:420},
+  {id:"y9m100", mon:"Thistledown", name:"Thistledown Festival", kind:"festival", incursion:null,
+   rumor:"The hundredth month of the saga, and the festival DOUBLES as a war-muster: every realm's fair raises fleet-funds, every ribbon buys a plank. Dance, then donate.",
+   clue:"Attend any fair and contribute to the fleet.", goal:{contribute:10,at:"capital"}, obj:"Fund the Alliance fleet (10 materials)", xp:2000, gold:350, item:{name:"Fleet-Fund Ribbon",stat:"quest",v:100}},
+  {id:"y9m101", mon:"Verdantine", name:"The Grand Alliance", kind:"beat", incursion:null,
+   rumor:"SWORN AT VAL HALLA: the Concord, the Architect, Timaru's Aun, the Lugian nations, the truce-Burun of Green Mire — every banner of Dereth under ONE war-standard, for the first time in this world's history.",
+   clue:"Attend the signing of the Grand Alliance at Castle Val Halla.", goal:{v:"valstead"}, obj:"Witness the Grand Alliance sworn", xp:2600, gold:450},
+  {id:"y9m102", mon:"Solclaim", name:"Fleets of the Free Realms", kind:"item", incursion:null,
+   rumor:"Every nation forges for the fleet: Aluvian oak, Gharu'ndim brass, Sho lacquer, Lugian stone-rivets, Aun bone-charms. ALLIANCE WAR-GEAR is in the armories — earn yours.",
+   clue:"Claim a piece of Alliance war-gear at any capital.", goal:{v:"capital"}, obj:"Claim Alliance war-gear", xp:2200, gold:380, item:{name:"Alliance War-Plate",stat:"worn",at:"heavy",aslot:"chest",v:40,tier:5}},
+  {id:"y9m103", mon:"Leaffall", name:"The Drowned Rift", kind:"explore", incursion:null,
+   rumor:"The fleet SAILS. Marines hold the Vesayen approach while divers walk the sea-floor to the rift's rim — under the waves, under the pressure, under things with too many rows of teeth.",
+   clue:"Take the underwater approach to the drowned rift's rim.", goal:{clear:"Sea Temple Catacombs"}, obj:"Clear the underwater approach", xp:3000, gold:520},
+  {id:"y9m104", mon:"Harvestgain", name:"The Herald of T'thuun", kind:"boss", incursion:null,
+   rumor:"AT THE RIM IT WAITS — the Herald, a mountain of tide and shell that speaks its master's coming in breakers. The Alliance strikes this month. All of it. You too.",
+   clue:"Slay the Herald of T'thuun at the drowned rift's rim.", goal:{boss:"herald"}, obj:"Slay the Herald of T'thuun", title:"Tide-Turner", xp:6500, gold:1100,
+   item:{name:"The Herald's Hooked Crown",stat:"worn",at:"medium",aslot:"head",v:34,tier:5,legendary:true},
+   seeds:"Its death-cry rolls out to sea. And something below ANSWERS."},
+  {id:"y9m105", mon:"Leafcull", name:"The Answer From Below", kind:"beat", incursion:null,
+   rumor:"Seaquakes every night since the Herald fell — and the rift is WIDER, friends, not narrower. The scholars say it plainly: the Herald was a doorman. The door is opening on schedule.",
+   clue:"Witness the widening rift from the Vesayen overlook.", goal:{v:"vesayen"}, obj:"Witness the widening rift", xp:2300, gold:400},
+  {id:"y9m106", mon:"Coldeve", name:"The Root Question", kind:"beat", incursion:null,
+   rumor:"The Architect confirms what the Matriarchs always knew: only a FALATACOT LEYLINE ROOT can seal a god — and Dereth has exactly one left, under the castle. Kilmer heard it in silence.",
+   clue:"Hear it from Asheron, then stand with Kilmer at the castle.", goal:{visits:2,pts:["asheron","valstead"]}, obj:"Hear the root question", xp:2400, gold:420},
+  {id:"y9m107", mon:"Frostfell", name:"Frostfell Festival", kind:"festival", incursion:null,
+   rumor:"The quietest Frostfell of the saga. No games this year — just the feast, the folk, and candles. Everyone knows what next year is. This year's keepsake is a candle 'for the last light.'",
+   clue:"Keep the quiet feast at any capital.", goal:{v:"capital"}, obj:"Keep the quiet feast", xp:1600, gold:240, item:{name:"Candle for the Last Light",stat:"quest",v:100}},
+  {id:"y9m108", mon:"Snowreap", name:"The Monarch's Walk", kind:"beat", incursion:null,
+   rumor:"The Monarch walks ALONE — Holtburg, then Yaraq, then Shoushi, on foot, no crown, asking each square the same question: 'If the crown must burn, will you still stand?'",
+   clue:"Escort Kilmer's walk: stand with him at the three capitals.", goal:{visits:3,pts:["holtburg","yaraq","shoushi"]}, obj:"Escort the Monarch's walk", xp:2800, gold:480,
+   seeds:"Three squares. Three answers, roared. <b>Year 10 — the Year of the Crown — will end the saga.</b>"},
+
+  // ═══ YEAR 10 — YEAR OF THE CROWN (The Final Sending) ═══
+  {id:"y10m109", mon:"Morningthaw", name:"The Rising", kind:"invasion", incursion:6,
+   rumor:"IT BEGINS. T'thuun's vanguard storms every coast at once — the drowned shores are war-fronts now, and the Alliance standard is UP. To your posts, friends. All of you.",
+   clue:"Repel the vanguard — twice; the coasts cannot trade blows alone.", goal:{repel:2}, obj:"Repel the Slithis vanguard", xp:2800, gold:480},
+  {id:"y10m110", mon:"Seedsow", name:"The Sunken Roads", kind:"beat", incursion:null,
+   rumor:"The Slithis are IN THE TOWN NETWORK — the under-passages run black with them, and the hub lamps gutter wing by wing. If the roads drown, every realm fights alone.",
+   clue:"Purge the Network's under-passages and re-light the hub.", goal:{kills:8,fams:["sclavus","moarsman","mukkir"]}, obj:"Purge the sunken roads (8 Slithis)", xp:2900, gold:500},
+  {id:"y10m111", mon:"Leafdawning", name:"The First Capital Falls", kind:"invasion", incursion:null,
+   rumor:"SHOUSHI HAS FALLEN. Say it plainly, because it has never been said: a Concord capital is TAKEN — siege-state, gates lost, garrison driven to the gardens. The Alliance marches to take it back. NOW.",
+   clue:"Break the siege of Shoushi and liberate the capital.", goal:{siege:1}, obj:"Liberate Shoushi", xp:3400, gold:580},
+  {id:"y10m112", mon:"Thistledown", name:"The Last Festival", kind:"festival", incursion:null,
+   rumor:"Thistledown is held IN SHOUSHI'S RUBBLE — flowers on the broken gates, music in the burned gardens, the whole Alliance dancing in a liberated ruin. If the saga has one image, this is it.",
+   clue:"Keep the feast in liberated Shoushi.", goal:{v:"shoushi"}, obj:"Keep the feast in liberated Shoushi", title:"Kept the Feast", xp:2400, gold:400},
+  {id:"y10m113", mon:"Verdantine", name:"The Weeping Root", kind:"beat", incursion:null,
+   rumor:"The under-temple RESONATES with the rising god — the castle lights gutter in time with the sea now, and Valstead is ordered EMPTY. The Monarch carried the first evacuee's trunk himself.",
+   clue:"Help empty Valstead: see the evacuation through.", goal:{visits:2,pts:["valstead","holtburg"]}, obj:"See the Valstead evacuation through", xp:2700, gold:460},
+  {id:"y10m114", mon:"Solclaim", name:"Three Fronts", kind:"invasion", incursion:6,
+   rumor:"THREE GRAND-INCURSIONS AT ONCE — Holtburg, Yaraq, Sanamar, simultaneous, coordinated, meant to split us. The Alliance splits INSTEAD OF BREAKING. Pick your front and HOLD IT.",
+   clue:"Hold a front — break the assault.", goal:{repel:1}, obj:"Hold a front of the three", xp:3000, gold:520},
+  {id:"y10m115", mon:"Leaffall", name:"The God Breaches", kind:"survival", incursion:null,
+   rumor:"T'THUUN'S TRUE BODY BREACHED AT THE RIFT — no, we did not kill it; you do not kill the sea. Today the Alliance fought for ONE thing: everyone comes home.",
+   clue:"Survive first contact at the rift zone and cover the fleet's withdrawal.", goal:{survive:100,avatar:"tthuun"}, obj:"Survive first contact (100s)", xp:3600, gold:620},
+  {id:"y10m116", mon:"Harvestgain", name:"The Rite Prepared", kind:"beat", incursion:null,
+   rumor:"The Falatacot rite is REBUILT — from ten years of relics: a broken seal, an audit page, a heart-bead, cardinal sigils, a sliver of the old door. If you carried the saga, the rite has a ROLE for you.",
+   clue:"Present your saga relics at the under-temple.", goal:{v:"undertemple"}, obj:"Present the relics for the Rite", xp:3200, gold:550},
+  {id:"y10m117", mon:"Leafcull", name:"The Debt Named", kind:"beat", incursion:null,
+   rumor:"The Monarch spoke the WHOLE truth at last, in open square: the root, the borrowed luck, the plateau that was flat before any mason touched it — and signed the crown's entire treasury to the realms. The Concord's vote was UNANIMOUS. It took eleven seconds.",
+   clue:"Stand in the square at Castle Val Halla as the debt is named.", goal:{v:"valstead"}, obj:"Stand as the debt is named", xp:2900, gold:500},
+  {id:"y10m118", mon:"Coldeve", name:"The March to the Sea", kind:"invasion", incursion:6,
+   rumor:"THE GRAND ALLIANCE MARCHES — a rolling, month-long escort war from the heartland to the Vesayen shore, every nation in column, every step contested. This is the largest thing our world has ever done ON PURPOSE.",
+   clue:"Fight the column through: break the assaults, then reach the shore.", goal:{repel:2}, obj:"March the Alliance to the sea", xp:3800, gold:650},
+  {id:"y10m119", mon:"Frostfell", name:"The Vigil", kind:"festival", incursion:null,
+   rumor:"No games. No feast. Tonight every lifestone on Dereth burns with candles — a world-wide VIGIL for tomorrow. Attend one. Take a flame. You will want it where we are going.",
+   clue:"Hold vigil at any lifestone.", goal:{v:"capital"}, obj:"Hold the vigil", xp:2000, gold:300, item:{name:"The Last Light",stat:"quest",v:150}},
+  {id:"y10m120", mon:"Snowreap", name:"The Last Light of Val Halla", kind:"boss", incursion:null,
+   rumor:"IT IS TONIGHT. The Alliance holds the god at the rift — the champions hold the under-temple — and the Monarch feeds the root EVERYTHING it ever gave him, castle-light and all, while the Architect guides the lash across portalspace. One night, three battles, ten years. LAST LIGHT, FRIENDS.",
+   clue:"Stand your stage: hold the rift, defend the under-temple, then see the sealing done.",
+   goal:{stages:[{type:"siege",label:"hold the rift"},{type:"kills",n:8,fams:["sclavus","moarsman","mukkir"],label:"defend the under-temple"},{type:"visit",at:"undertemple",label:"the sealing"}]},
+   obj:"The Last Light: hold, defend, and seal", title:"Light of the Last Sending", tenfold:true, xp:8000, gold:1500,
+   item:{name:"The Unlit Crown",stat:"worn",at:"medium",aslot:"head",v:40,tier:5,legendary:true}, item2:{name:"Rootless Blade",stat:"weapon",wt:"sword",mat:"Diamond",v:42,tier:5,legendary:true},
+   seeds:"T'thuun is sealed beneath the Vesayen deeps under a Falatacot knot no key can turn. Castle Val Halla goes DARK and ordinary — and stands. The crown is re-given, owed to no root. <b>The Tenfold Crown is complete.</b>"},
 ];
 const SAGA_YEAR_NAMES={1:"Year of Embers",2:"Year of Whispers",3:"Year of Chitin",4:"Year of Banners",5:"Year of Blood",6:"Year of Storms",7:"Year of Bone",8:"Year of Rifts",9:"Year of Tides",10:"Year of the Crown"};
 function sagaYear(ce){ const m=ce&&ce.id&&ce.id.match(/^y(\d+)/); return m?+m[1]:1; }
 function sagaYearName(ce){ return SAGA_YEAR_NAMES[sagaYear(ce)]||"the Saga"; }
-const SAGA_REST={id:"y4rest", mon:"Morningthaw", name:"The Banners Furl", kind:"beat", incursion:null, goal:null,
-  rumor:"New Viamont is beaten and sworn, Grael is re-bound, and the Concord holds every coast. But Valstead's wells ran red, and the castle cellars are sealed by royal order.",
-  clue:"Rest, adventurer. The Year of Blood is coming."};
+const SAGA_REST={id:"epilogue", mon:"Morningthaw", name:"The Age of the Free Realms", kind:"beat", incursion:null, goal:null,
+  rumor:"The Tenfold Crown is complete. T'thuun sleeps sealed, Castle Val Halla stands dark and ordinary, and the crown is re-given — owed to no root. The chronicles remember your name.",
+  clue:"The saga is written. Walk Dereth as its hero."};
 let gameMonth=0, eventClock=0, calendarDone={}, sagaProg={};
 const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
 function currentCalEvent(){ return EVENT_CALENDAR[gameMonth]||SAGA_REST; }
@@ -7067,6 +7323,7 @@ function sagaNotify(type,data){
   if(type==="repel"  && g.repel!=null){ sagaProg[ce.id]=(sagaProg[ce.id]||0)+1; if(sagaProg[ce.id]>=g.repel) sagaComplete(ce); }
   else if(type==="agitator" && g.agitator){ sagaComplete(ce); }
   else if(type==="general"  && g.general){ sagaComplete(ce); }
+  else if(type==="boss"     && g.bosses){ if(g.bosses.every(b=>!monsters.some(m=>m.sagaBoss===b))) sagaComplete(ce); }   // multi-boss: all down
   else if(type==="boss"     && ((g.boss&&data===g.boss) || (g.echo&&data==="ember") || (g.then&&data===g.then))){ sagaComplete(ce); }   // echo=legacy boss:"ember"; then=the second-stage boss after a siege
   else if(type==="siege"    && g.siege){
     if(g.then&&!sagaProg[ce.id+"_boss"]){ sagaProg[ce.id+"_boss"]=1;   // two-stage climax: siege cleared → the Pretender appears
@@ -7074,6 +7331,9 @@ function sagaNotify(type,data){
     else sagaComplete(ce);
   }
   else if(type==="deliver"  && g.deliver){ sagaComplete(ce); }
+  else if(type==="contribute"&& g.contribute){ sagaComplete(ce); }
+  else if(type==="survive"  && g.survive){ sagaComplete(ce); }
+  else if(type==="stage"    && g.stages){ if((sagaProg[ce.id+"_stg"]||0)>=g.stages.length) sagaComplete(ce); }
   else if(type==="kill"     && g.kills && g.fams && g.fams.indexOf(data)>=0){
     sagaProg[ce.id]=(sagaProg[ce.id]||0)+1;
     if(sagaProg[ce.id]>=g.kills) sagaComplete(ce);
@@ -7088,8 +7348,15 @@ function sagaComplete(ce){
   calendarDone[ce.id]=true;
   if(ce.xp) gainXP(ce.xp); if(ce.gold) player.gold+=ce.gold;
   if(ce.item) addToInv(Object.assign({},ce.item),true);
-  if(ce.title){ player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf(ce.title)<0) player.eventTitles.push(ce.title);
-    player.title=ce.title; log(`You are honoured with the title <b>${ce.title}</b>!`,"sys"); toast("TITLE — "+ce.title.toUpperCase()); }
+  const grantTitle=t=>{ if(!t)return; player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf(t)<0) player.eventTitles.push(t);
+    player.title=t; log(`You are honoured with the title <b>${t}</b>!`,"sys"); toast("TITLE — "+t.toUpperCase()); };
+  grantTitle(ce.title);
+  if(ce.title2 && (ce.title2.indexOf("Grael")<0 || calendarDone["y4m43"])) grantTitle(ce.title2);   // conditional second title (e.g. Grael's Jailer)
+  if(ce.item2) addToInv(Object.assign({},ce.item2),true);
+  if(ce.tenfold){   // The Tenfold — all ten Harvestgain climaxes complete
+    const climaxes=["y1m8","y2m20","y3m32","y4m44","y5m56","y6m68","y7m80","y8m92","y9m104","y10m120"];
+    if(climaxes.every(id=>calendarDone[id]||id===ce.id)) grantTitle("The Tenfold");
+  }
   log(`<span style="color:#ffd23b"><b>Saga chapter complete — ${ce.name}!</b></span> <span style="color:var(--dim)">(+${ce.xp||0} XP · +${ce.gold||0} pyreals${ce.item?` · ${ce.item.name}`:""})</span>`,"sys");
   if(ce.seeds) log(`<i>${ce.seeds}</i>`,"sys");
   toast("SAGA — CHAPTER COMPLETE"); if(SFX.level)SFX.level();
@@ -7103,6 +7370,22 @@ function sagaComplete(ce){
     advanceMonth();
   }
   else { log(`<span style="color:#ffd23b"><b>The ${SAGA_YEAR_NAMES[prevYear]} is complete.</b></span> ${SAGA_REST.rumor}`,"sys"); toast((SAGA_YEAR_NAMES[prevYear]||"YEAR").toUpperCase()+" — COMPLETE"); updateSeasonHUD(); }
+}
+// ── finale stage sequencer: advance the current staged chapter one step ──
+function sagaStageAdvance(ce,msg){
+  const key=ce.id+"_stg", st=(sagaProg[key]||0);
+  if(!ce.goal||!ce.goal.stages||st>=ce.goal.stages.length) return;
+  sagaProg[key]=st+1; delete sagaProg[key+"_s"];   // reset the per-stage siege latch
+  const next=ce.goal.stages[st+1];
+  log(`<b>${ce.name}</b> — stage ${st+1}/${ce.goal.stages.length} done (${msg}).${next?` Next: ${next.label||next.type}.`:""}`,"sys");
+  sagaNotify("stage");
+}
+function sagaStageKill(m){   // a kills-stage of the finale counts family kills toward its threshold
+  const ce=currentCalEvent(), g=ce.goal; if(!g||!g.stages||calendarDone[ce.id]) return;
+  const st=sagaProg[ce.id+"_stg"]||0, cur=g.stages[st]; if(!cur||cur.type!=="kills") return;
+  if(cur.fams && cur.fams.indexOf(m.kind)<0) return;
+  const kk=ce.id+"_stgk"; sagaProg[kk]=(sagaProg[kk]||0)+1;
+  if(sagaProg[kk]>=(cur.n||8)) sagaStageAdvance(ce,"waves held");
 }
 // ── generalized saga world-boss: a one-time apparition for a story climax. `bossId` keys SAGA_BOSSES;
 //    the boss carries m.sagaBoss=bossId so killMonster reports it and it never respawns. ──
@@ -7121,6 +7404,23 @@ const SAGA_BOSSES={
            rise:"Loosed at last — <b>GRAEL, THE ARM OF DESTRUCTION</b> — walks the Halaetan Isles, and even the Pretender's men flee it. Hunt it down.", toast:"GRAEL UNBOUND"},
   varicci:{name:"Corsair-Prince Varicci IV", kind:"lugian", scale:2.8, tint:0x5a1a4a, hp:6000, dmg:64, xp:24000, near:true, crowned:true,
            rise:"Aboard the flagship stands <b>CORSAIR-PRINCE VARICCI IV</b>, the Pretender himself. Take him, and the Isles are sworn.", toast:"THE PRETENDER"},
+  // Years 5–10
+  matriarch:{name:"The Blood Matriarch Ascendant", kind:"mosswart", scale:3.2, tint:0x8a1020, hp:5800, dmg:66, xp:26000, near:false,
+           rise:"Denied the root, the eldest Matriarch has drunk her own leyline — <b>THE BLOOD MATRIARCH ASCENDANT</b> swells beneath Val Halla. End her before she finishes becoming.", toast:"THE ASCENDANT"},
+  windN:{name:"North Gale, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0x9ad0ff, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>North Gale</b> rides the northern sky.", toast:"NORTH GALE"},
+  windS:{name:"South Scorch, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0xff8a3a, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>South Scorch</b> burns over the southern realm.", toast:"SOUTH SCORCH"},
+  windE:{name:"East Deluge, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0x3a8aff, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>East Deluge</b> floods the eastern sky.", toast:"EAST DELUGE"},
+  windW:{name:"West Frost, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0xd8f0ff, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>West Frost</b> freezes the western wind.", toast:"WEST FROST"},
+  cyrannic:{name:"Cyrannic, Warlord of the Four Winds", kind:"golem", scale:3.2, tint:0x5a8aff, hp:6000, dmg:66, xp:26000, near:false,
+           rise:"In the tempest-throne sits <b>CYRANNIC, WARLORD OF THE FOUR WINDS</b>, wearing the storm like a cloak. The eye is collapsing — now or never.", toast:"THE WARLORD"},
+  lichking:{name:"The Lich-King of Frore", kind:"skeleton", scale:3.2, tint:0x2a3a6a, hp:6200, dmg:68, xp:28000, near:false, crowned:true,
+           rise:"On his glacier throne sits <b>THE LICH-KING OF FRORE</b>, three seasons of stolen springtime about his shoulders. His phylactery is a single snowflake.", toast:"THE LICH-KING"},
+  warden:{name:"Warden of the Sundered Veil", kind:"virindi", scale:3.4, tint:0xc0a0ff, hp:6400, dmg:70, xp:30000, near:false,
+           rise:"Portalspace itself given teeth — <b>THE WARDEN OF THE SUNDERED VEIL</b> — guards the seal at the ascent's peak. Defeat it, and pull the Architect free.", toast:"THE WARDEN"},
+  herald:{name:"The Herald of T'thuun", kind:"moarsman", scale:3.8, tint:0x2a7a5a, hp:6800, dmg:72, xp:32000, near:false,
+           rise:"At the rift's rim waits <b>THE HERALD OF T'THUUN</b>, a mountain of tide and shell that speaks its master's coming in breakers. Slay it.", toast:"THE HERALD"},
+  tthuun:{name:"T'thuun, the Drowned God", kind:"golem", scale:4.6, tint:0x1a4a44, hp:9000, dmg:80, xp:40000, near:false,
+           rise:"<b>T'THUUN</b> breaches the world. It cannot be killed — it can only be held, and sealed.", toast:"THE DROWNED GOD"},
 };
 function spawnSagaBoss(bossId){
   if(inDungeon||inNetwork){ setTimeout(()=>spawnSagaBoss(bossId),8000); return; }
@@ -7148,7 +7448,8 @@ function sagaPlace(name){
   if(name==="capital"){ let best=null,bd=1e9; for(const c of CAPITALS){ const d=Math.hypot(c.x-player.x,c.z-player.z); if(d<bd){bd=d;best=c;} } return best?{x:best.x,z:best.z,r:34,name:best.name}:null; }
   const NAMED={holtburg:"Holtburg",glenden:"Glenden Wood",arwic:"Arwic",zaikhal:"Zaikhal",
     neydisa:"Neydisa Castle",eastham:"Eastham",rithwic:"Rithwic",yaraq:"Yaraq",shoushi:"Shoushi",
-    cragstone:"Cragstone",drudgenest:"Holtburg",sanamar:"Sanamar",timaru:"Timaru"};   // drudge nest ≈ near Holtburg on our map
+    cragstone:"Cragstone",drudgenest:"Holtburg",sanamar:"Sanamar",timaru:"Timaru",
+    mayoi:"Mayoi",stonehold:"Stonehold",qalaba:"Qalaba'r"};   // drudge nest ≈ near Holtburg on our map
   const cn=NAMED[name]; if(cn){ const c=CITIES.find(c=>c.name===cn); if(c) return {x:c.x,z:c.z,r:cn==="Glenden Wood"?44:34,name:c.name}; }
   // Year-4 coastal camps: points a short way off Sanamar (the Halaetan front) toward the sea
   const SAN=CITIES.find(c=>c.name==="Sanamar");
@@ -7156,6 +7457,18 @@ function sagaPlace(name){
     if(off) return {x:SAN.x+off[0],z:SAN.z+off[1],r:40,name:off[2]}; }
   if(name==="silyun"){ const c=CITIES.find(c=>/Silyun/.test(c.name)); if(c) return {x:c.x,z:c.z,r:34,name:c.name};
     return {x:SAN?SAN.x-60:0,z:SAN?SAN.z+40:0,r:44,name:"Silyun"}; }   // Silyun stand-in near the front
+  // Year 5–10 story points: named landmarks resolved to sensible world coordinates
+  if(name==="swamptemple"){ const sz=(typeof swampZone==="function")?swampZone():{x:0,z:0}; return {x:sz.x,z:sz.z,r:70,name:"the Blackmire Temple"}; }
+  if(name==="greenmire"){ const sz=(typeof swampZone==="function")?swampZone():{x:0,z:0}; return {x:sz.x+120,z:sz.z-90,r:60,name:"the Green Mire camp"}; }
+  if(name==="asheron"){ return {x:69.3*COORD,z:-21.2*COORD,r:60,name:"Asheron's Castle"}; }   // the reset-master courtyard
+  if(name==="undertemple"){ return {x:KC.x,z:KC.z+40,r:60,name:"the Val Halla Under-Temple"}; }   // beneath the castle
+  if(name==="wardstone"){ return {x:KC.x,z:KC.z+40,r:60,name:"the warded heart"}; }
+  const MAY=CITIES.find(c=>c.name==="Mayoi");
+  if(name==="drownedshore"||name==="vesayen"||name==="coastaloverlook"||name==="shore"){
+    if(MAY) return {x:MAY.x,z:MAY.z,r:44,name:name==="vesayen"?"the Vesayen overlook":"the drowned shore"};
+    return {x:SAN?SAN.x:0,z:SAN?SAN.z:0,r:44,name:"the coast"}; }
+  if(name==="stormcell"){ const ang=rnd(0,6.28); return {x:Math.cos(ang)*500,z:Math.sin(ang)*500,r:80,name:"the storm's eye"}; }   // a Direlands weather point
+  if(name==="riftzone"){ const ang=rnd(0,6.28); return {x:Math.cos(ang)*700,z:Math.sin(ang)*700,r:90,name:"the rift zone"}; }
   return null;
 }
 // visit-goal destination (single). Multi-stop visits:N resolve their own points in updateCalendar.
@@ -7189,8 +7502,35 @@ function updateCalendar(dt){
   if(!sagaProg._intro){ sagaProg._intro=1; advanceMonth(); }   // herald the live chapter once per world (new game or migrated save)
   const ce=currentCalEvent(), g=ce.goal;
   if(!g||calendarDone[ce.id]) return;
+  if(g.bosses){   // multi-boss: spawn all avatars once, complete when all are down
+    if(!inDungeon&&!inNetwork){ for(const b of g.bosses) if(!monsters.some(m=>m.sagaBoss===b)&&!sagaProg[ce.id+"_"+b]){ sagaProg[ce.id+"_"+b]=1; spawnSagaBoss(b); } }
+    return; }
   if(g.echo||g.boss){ const bid=g.boss||"ember";
     if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaBoss===bid)) spawnSagaBoss(bid); return; }   // covers load mid-chapter
+  if(g.survive){   // live through a timed onslaught while an unkillable avatar rampages, then it's done
+    if(!sagaProg[ce.id+"_sv"]){ sagaProg[ce.id+"_sv"]=now(); if(g.avatar&&!inDungeon&&!inNetwork) spawnSagaBoss(g.avatar);
+      log(`<b>${ce.name}</b> — survive ${g.survive}s. The thing at the rift cannot be killed. Endure.`,"warn"); toast("SURVIVE"); }
+    const el=(now()-sagaProg[ce.id+"_sv"])/1000;
+    if(el>=g.survive){ log("You held first contact and covered the withdrawal — <b>everyone comes home</b>.","sys"); sagaNotify("survive"); }
+    return; }
+  if(g.contribute){   // spend materials at the site (drain the pool toward the target as you stand there)
+    const pt=sagaPlace(g.at||"valstead"); const key=ce.id+"_ctr";
+    if(pt&&Math.hypot(pt.x-player.x,pt.z-player.z)<pt.r&&(sagaProg[key]||0)<g.contribute){
+      const give=Math.min(player.materials|0, g.contribute-(sagaProg[key]||0));
+      if(give>0){ player.materials-=give; sagaProg[key]=(sagaProg[key]||0)+give;
+        log(`You give <b>${give}</b> materials to ${pt.name} — ${sagaProg[key]}/${g.contribute}.`,"sys"); updateHUD&&updateHUD(); }
+      else if(!sagaProg[key+"_warn"]||now()-sagaProg[key+"_warn"]>4000){ sagaProg[key+"_warn"]=now();
+        log(`${pt.name} needs materials (${sagaProg[key]||0}/${g.contribute}) — salvage or tinker to gather more.`,"warn"); } }
+    if((sagaProg[key]||0)>=g.contribute) sagaNotify("contribute");
+    return; }
+  if(g.stages){   // the finale: a sequence of sub-goals, each advanced in turn
+    const key=ce.id+"_stg", st=sagaProg[key]||0;
+    if(st>=g.stages.length){ sagaNotify("stage"); return; }
+    const cur=g.stages[st];
+    if(cur.type==="siege"){ if(!worldEvent&&!inDungeon&&!inNetwork&&!sagaProg[key+"_s"]){ sagaProg[key+"_s"]=1; startSiege(); } }
+    else if(cur.type==="kills"){ /* advanced by killMonster via sagaStageKill */ }
+    else if(cur.type==="visit"){ const pt=sagaPlace(cur.at); if(pt&&Math.hypot(pt.x-player.x,pt.z-player.z)<pt.r) sagaStageAdvance(ce,"reached "+pt.name); }
+    return; }
   if(g.siege){   // launch the siege once; its second-stage boss (g.then) re-spawns on reload if pending
     if(g.then&&sagaProg[ce.id+"_boss"]){ if(!inDungeon&&!inNetwork&&!monsters.some(m=>m.sagaBoss===g.then)) spawnSagaBoss(g.then); return; }
     if(!worldEvent&&!inDungeon&&!inNetwork) startSiege(); return; }
@@ -7326,6 +7666,8 @@ function siegeSuccess(){
   addDrop(t.x,t.z,{type:"gold",amt:gold});
   log(`The siege of <b>${t.name}</b> is broken! The corsairs fall back to the sea. Bounty: ${gold}p + ${xp} XP.`,"sys");
   toast("SIEGE BROKEN"); SFX.level(); SFX.quest();
+  { const ce=currentCalEvent(), g=ce.goal;   // a siege-stage of the finale advances here
+    if(g&&g.stages&&(g.stages[sagaProg[ce.id+"_stg"]||0]||{}).type==="siege") sagaStageAdvance(ce,"walls held"); }
   sagaNotify("siege");
   checkAchievements(); endEvent(false); saveGame();
 }

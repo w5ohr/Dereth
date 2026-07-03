@@ -526,7 +526,7 @@ H7 dyeing → H16 Colosseum gauntlet run → H17 augment breadth → H10/H12 com
 
 ---
 
-## MILESTONE K — The Kilmer Saga: "The Tenfold Crown"  ◑ (engine + Year 1 live; Years 2–10 are data)
+## MILESTONE K — The Kilmer Saga: "The Tenfold Crown"  ✅ (all 10 years live — the full saga ships)
 Ten-year serialized storyline (design: `docs/kilmer-saga-storyline.md`; framework: events doc §5).
 - ✅ **K0. Storyline + 120-month schedule** authored (canon-continuous with AC history; Kilmer, Castle
   Val Halla, the Falatacot-root twist, T'thuun finale).
@@ -569,10 +569,22 @@ Ten-year serialized storyline (design: `docs/kilmer-saga-storyline.md`; framewor
   **the Battle of the Halaetan Isles** (siege→Varicci; titles **Isles-Sworn** + **Grael's Jailer**,
   unique *The Pretender's Sabre*) → the Spire Compact → Prisoners & Pardons → Frostfell → the Red Spring
   (seeds Year 5).
-- ☐ **K5–K10. Years 5–10** — data drops on the K1 engine per the specs doc. New goal types by year:
-  `visits:N`+saga-boss generalization (Y2) · siege+deliver (Y4) · relics+contribute+under-temple delve
-  (Y5) · multi-boss+citadel (Y6) · season-lock+Frore (Y7) · rift spawner+ascent+Asheron NPC (Y8) ·
-  drowned shores+underwater delve (Y9) · survive+stages+finale (Y10).
+- ✅ **K5–K10. Years 5–10 — the saga completed** (jsc + full-run preview e2e: every chapter M49–M120
+  advanced through real code paths, all year rollovers, 0 console errors; the finale grants all rewards).
+  New engine landed across these years: two **Tide** incursion rows (Burun Y5, Slithis Y10) in
+  `EVENT_TYPES`; ten new entries in `SAGA_BOSSES` (matriarch, the four wind avatars, cyrannic, lichking,
+  warden, herald, t'thuun) and the multi-boss **`bosses`** goal (all must fall); the **`contribute`**
+  goal (drain materials at a named site), **`survive`** (timed hold vs. a spawned `avatar`), and the
+  **`stages`** sequencer (ordered sub-goals: siege→kills→visit — drives the finale); a `sagaPlace`
+  named-location resolver (under-temple, wardstone, drowned shores, rift zone, Asheron, etc.). Story
+  beats: Y5 **Year of Blood** (the Falatacot root under Val Halla → **Blood Matriarch Ascendant**, title
+  *Root-Warden*) · Y6 **Year of Storms** (four wind-avatars → **Cyrannic**, *Stormbreaker*) · Y7 **Year
+  of Bone** (the winter-deep → **the Lich-King**, *Winter's End*) · Y8 **Year of Rifts** (Asheron's aid →
+  **the Warden**, *Veil-Walker*) · Y9 **Year of Tides** (the drowned shore → **the Herald**, *Tide-Turner*)
+  · Y10 **Year of the Crown** — the Rising → Shoushi falls & is liberated (siege) → the God breaches
+  (survive T'thuun) → the Rite → **The Last Light of Val Halla** (three-stage finale; titles *Light of the
+  Last Sending* + **The Tenfold**, the *Unlit Crown* + *Rootless Blade*). `SAGA_REST` is now the epilogue,
+  **"The Age of the Free Realms."**
 
 ## Suggested order of execution
 **A (all) → C1 → C2 → B1 → B2 → B3 → C3 → A-leftovers polish → E0 (research) → E1/E2/E3 → D → F → H.**
