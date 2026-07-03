@@ -11331,7 +11331,10 @@ function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; r
 const PACK_ITEMS=[{name:"Belt Pouch",cap:2},{name:"Sack",cap:3},{name:"Backpack",cap:4},{name:"Portmanteau",cap:6}];
 const PACK_MAX=88;   // stack many packs — each adds slots (12 base → up to 100)
 function rollPack(){ const t=PACK_ITEMS[irnd(0,PACK_ITEMS.length-1)]; return {name:t.name,stat:"pack",cap:t.cap,v:t.cap,tier:3}; }
-function invCap(){ return 12 + (player.packBonus||0); }   // satchel capacity, grown by packs
+// AC packs: a MAIN pack plus up to 7 SIDE PACKS, each a real container with its own slots
+// (legacy stitched packBonus from old saves still counts toward the main pack).
+function mainPackCap(){ return 12 + (player.packBonus||0); }
+function invCap(){ let n=mainPackCap(); for(const p of (player.packs||[])) n+=p.cap||0; return n; }
 // ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
 //    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
 function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry")); }
@@ -11991,10 +11994,10 @@ function applyItem(it){
     it.picks=(it.picks||0)+np; it.keys=(it.keys||0)+nk;
     log(np||nk?`You slip ${np} lockpick(s) and ${nk} key(s) onto the <b>Keyring</b> — it now holds <b>${it.picks}</b> picks &amp; <b>${it.keys}</b> keys.`:`Your <b>Keyring</b> holds <b>${it.picks}</b> picks &amp; <b>${it.keys}</b> keys. Loot picks/keys, then use this to stow them.`,"loot");
     if(SFX.gold)SFX.gold(); updateHUD&&updateHUD(); return "keep"; }
-  else if(it.stat==="pack"){ player.packBonus=player.packBonus||0;
-    if(player.packBonus>=PACK_MAX){ log(`Your satchel is already expanded to the maximum (${invCap()} slots).`,"warn"); return "keep"; }
-    player.packBonus=Math.min(PACK_MAX,player.packBonus+(it.cap||2));
-    log(`You stitch the <b>${it.name}</b> into your satchel — it now holds <b>${invCap()}</b> items.`,"loot"); if(SFX.gold)SFX.gold(); toast("SATCHEL EXPANDED"); updateHUD&&updateHUD(); }
+  else if(it.stat==="pack"){ player.packs=player.packs||[];
+    if(player.packs.length>=7){ log(`You already wear <b>seven side packs</b> — AC's limit. Drop one to make room.`,"warn"); return "keep"; }
+    player.packs.push({name:it.name,cap:Math.max(3,(it.cap||3)+3)});   // a real AC side pack: its own container on your belt
+    log(`You clip the <b>${it.name}</b> to your belt — a new side pack with <b>${player.packs[player.packs.length-1].cap}</b> slots (${player.packs.length}/7).`,"loot"); if(SFX.gold)SFX.gold(); toast("SIDE PACK EQUIPPED"); updateHUD&&updateHUD(); }
   else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
   else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
 }
@@ -20621,10 +20624,35 @@ function buildTinker(){
   }
   const rows=document.getElementById('invRows');
   { const ic=document.getElementById('invCount'); if(ic) ic.textContent=`${player.inv.length}/${invCap()}`; }
-  if(!player.inv.length){ rows.innerHTML=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Empty — slay creatures and press E to gather loot.</div>`; return; }
   rows.innerHTML="";
+  // ── AC pack bar + slot grid: the MAIN pack and each equipped SIDE PACK are separate
+  //    containers — square icon slots (real client icons), tabs to flip between packs. ──
+  player.packs=player.packs||[]; if(window._activePack==null)window._activePack=0;
+  if(window._activePack>player.packs.length)window._activePack=0;
+  { const caps=[mainPackCap()].concat(player.packs.map(p=>p.cap||0));
+    const lows=[0]; for(let k=0;k<caps.length-1;k++) lows.push(lows[k]+caps[k]);
+    const ap=window._activePack, lo=lows[ap], hi=lo+caps[ap];
+    const tabS=on=>`background:${on?'#2a2438':'rgba(255,255,255,.05)'};border:1px solid ${on?'var(--gold)':'var(--border)'};border-radius:5px;color:${on?'#ffd86b':'#cdbf9a'};cursor:pointer;padding:3px 8px;font-size:11px`;
+    let bar=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px"><button data-pk="0" style="${tabS(ap===0)}">Main Pack ${Math.min(player.inv.length,caps[0])}/${caps[0]}</button>`;
+    player.packs.forEach((p,k)=>{ const n=Math.max(0,Math.min(player.inv.length-lows[k+1],p.cap));
+      bar+=`<button data-pk="${k+1}" style="${tabS(ap===k+1)}" title="${esc(p.name)}">${itemIconHTML(p.name,"🎒",14)} ${n}/${p.cap}</button>`; });
+    bar+=`</div>`;
+    // the active pack's slot grid — AC's square cells, real inventory icons, count badges
+    let grid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;margin-bottom:8px">`;
+    for(let s=lo;s<hi;s++){ const it=player.inv[s];
+      grid+=it?`<div data-slot="${s}" title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
+              :`<div style="width:34px;height:34px;border:1px solid #2c2820;border-radius:4px;background:rgba(0,0,0,.35)"></div>`; }
+    grid+=`</div>`;
+    const hdr=document.createElement('div'); hdr.innerHTML=bar+grid; rows.appendChild(hdr);
+    hdr.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>{ window._activePack=+b.dataset.pk; buildTinker(); });
+    hdr.querySelectorAll('[data-slot]').forEach(b=>b.onclick=()=>{ const el=rows.querySelector(`[data-row="${b.dataset.slot}"]`);
+      if(el){ el.scrollIntoView({block:"center"}); el.style.background="rgba(216,177,74,.18)"; setTimeout(()=>el.style.background="",900); } });
+    window._invLo=lo; window._invHi=hi;
+  }
+  if(!player.inv.length){ rows.innerHTML+=`<div style="color:var(--dim);font-size:12px;padding:6px 0">Empty — slay creatures and press E to gather loot.</div>`; return; }
   player.inv.forEach((it,i)=>{
-    const row=document.createElement('div');row.className="row";
+    if(i<window._invLo||i>=window._invHi) return;   // the detail list shows the ACTIVE pack's contents
+    const row=document.createElement('div');row.className="row";row.dataset.row=i;
     if(it.scroll){
       const sp=SPELLBOOK[it.spellId], known=sp&&player.knownSpells.indexOf(it.spellId)>=0;
       const sch=sp?(SCHOOLS[sp.school]||"Magic").split(" · ")[0]+" L"+sp.lvl:"unreadable";
@@ -20662,7 +20690,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,greeters:player.greeters||{},academy:player.academy||{},
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -20691,6 +20719,7 @@ function applySaveObj(s){
     vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
     greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
     academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
+    packs:Array.isArray(s.packs)?s.packs:[],
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
