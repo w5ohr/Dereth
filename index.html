@@ -10251,6 +10251,41 @@ const RARE_ITEMS=[
   {name:"Storm Amuli Coat",          stat:"worn",  at:"medium", aslot:"chest",mat:"Sharkskin",v:[46,60],affix:()=>_oaff("of Impregnability")},
   {name:"Rarrilcrown of the Empyrean",stat:"worn", at:"light",  aslot:"head", mat:"Pyreal",  v:[38,50],affix:()=>_oaff("of the Magus")},
 ];
+// ── ARMOR DYEING (AC's dye pots): the eight retail dye plants, brewed into pots that recolor a worn
+//    piece — the tint multiplies onto armorRig shells AND the retail armor-on-body textures. ──
+const DYE_POTS=[
+  {name:"Colban Dye Pot",     hex:0x2a4a9a},{name:"Lapyan Dye Pot",   hex:0x6a9ad0},
+  {name:"Relanim Dye Pot",    hex:0xa02a2a},{name:"Verdalim Dye Pot", hex:0x2a7a3a},
+  {name:"Minalim Dye Pot",    hex:0x9ab02a},{name:"Argenory Dye Pot", hex:0xd8d8d0},
+  {name:"Thananim Dye Pot",   hex:0x2a2a30},{name:"Berimphur Dye Pot",hex:0xd0a02a},
+];
+function dyeStock(){ return DYE_POTS.map(d=>({name:d.name,cost:850,ico:"🎨",
+  desc:`armor dye — recolors one worn piece (<span style="color:#${d.hex.toString(16).padStart(6,'0')}">■</span> Use it, then pick the piece)`,
+  gear:{name:d.name,stat:"dye",hex:d.hex,v:85}})); }
+function openDyePicker(it){
+  const slots=player.armorSlots||{}, keys=Object.keys(slots).filter(k=>slots[k]&&slots[k].name);
+  if(!keys.length){ log("You wear no armor to dye.","warn"); return "keep"; }
+  const old=document.getElementById('dyePick'); if(old) old.remove();
+  paused=true; if(locked)document.exitPointerLock();
+  const ov=document.createElement('div'); ov.id='dyePick';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  ov.innerHTML=`<div style="max-width:420px;width:92%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">🎨 ${esc(it.name)} — choose the piece</div>
+    ${keys.map(k=>`<button data-slot="${k}" style="${btn}"><b>${esc(slots[k].name)}</b> <span style="color:var(--dim)">(${k})</span></button>`).join("")}
+    <button id="dyeCancel" style="${btn};text-align:center">Keep the pot</button></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#dyeCancel').onclick=()=>{ ov.remove(); paused=false; };
+  ov.querySelectorAll('[data-slot]').forEach(b=>b.onclick=()=>{
+    const piece=slots[b.dataset.slot]; piece.dye=it.hex;
+    ov.remove(); paused=false;
+    const i=player.inv.indexOf(it); if(i>=0){ const c=it.count||1; if(c>1)it.count=c-1; else player.inv.splice(i,1); }
+    refreshAvatarArmor();
+    log(`The <b>${it.name.replace(" Pot","")}</b> takes — your <b>${piece.name}</b> wears the new colour.`,"loot");
+    if(SFX.quest)SFX.quest(); updateHUD(); saveGame();
+  });
+  return "keep";
+}
 function rollRare(){
   const t=RARE_ITEMS[irnd(0,RARE_ITEMS.length-1)];
   const it={name:t.name,stat:t.stat,mat:t.mat||"Pyreal",work:10,tier:5,legendary:true,rareItem:true};
@@ -10553,7 +10588,7 @@ function refreshAvatarArmor(){
   for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
     if(!it) continue;
-    const tint=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
+    const tint=it.dye||(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
     const cls=CLS[it.at]||CLS.medium;
     ent.mat.color.setHex(tint);
     if(/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||"")){ ent.mat.metalness=0.04; ent.mat.roughness=0.82; }
@@ -10608,6 +10643,7 @@ function refreshACArmor(){
       acArmorPart(s.g, grp=>{
         if(!player.armorSlots||!player.armorSlots[slot]||player.armorSlots[slot].name!==it.name) return;   // unequipped meanwhile
         const inst=grp.clone(); inst.userData.acArmor=slot;
+        if(it.dye) inst.traverse(o=>{ if(o.isMesh&&o.material){ o.material=o.material.clone(); o.material.color.setHex(it.dye); } });
         let ref=null; for(const ch of J.children){ if(ch.userData&&ch.userData.acBody){ ref=ch; break; } }
         if(ref){ inst.position.copy(ref.position); inst.quaternion.copy(ref.quaternion); inst.scale.copy(ref.scale); ref.visible=false; }
         else inst.scale.setScalar(u.acScale||1);
@@ -10827,6 +10863,7 @@ function applyItem(it){
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
+  else if(it.stat==="dye"){ return openDyePicker(it); }             // AC dye pots recolor a worn piece
   else if(it.stat==="manastone"){   // H15: recharge the equipped focus's mana battery (or, with no focus, your own mana)
     const amt=it.charge||150, max=focusManaMax();
     if(max>0){ player.focusMana=Math.min(max,(player.focusMana||0)+amt);
@@ -15827,7 +15864,7 @@ function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
 function gearIco(it){
   if(it&&it.acicon) return `<img src="assets/acicons/${it.acicon}.png" style="width:1.25em;height:1.25em;vertical-align:-0.28em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('📦'))">`;   // the item's ORIGINAL inventory icon
-  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="atlanstone") return Math.max(30,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; if(it.stat==="furniture"||it.stat==="writ") return Math.max(10,it.v|0); return Math.max(5,Math.round(gearPrice(it)*0.4)); }
@@ -15950,7 +15987,7 @@ const VENDOR_TYPES={
     {name:"Tower Shield",cost:260,desc:"Heavy off-hand shield — great guard, slows you.",ico:"🛡",gear:{name:"Tower Shield",stat:"worn",at:"heavy",aslot:"offhand",shield:"tower",v:30}},
     {name:"Aegis",cost:320,desc:"Magic-absorbing shield — negates a slice of spells.",ico:"🛡",gear:{name:"Aegis",stat:"worn",at:"medium",aslot:"offhand",shield:"aegis",magicAbsorb:0.18,v:20}}]},
   scrivener:{title:"Scrivener",marker:"📜",mcol:"#c9a6ff",robe:0x4a3a6a,stock:()=>TAPER_STOCK.concat(bookStock(),scrollStock())},
-  outfitter:{title:"Outfitter",marker:"💰",mcol:"#ffcf6b",robe:0x7a5a2a,stock:gearVendorStock},
+  outfitter:{title:"Outfitter",marker:"💰",mcol:"#ffcf6b",robe:0x7a5a2a,stock:()=>gearVendorStock().concat(dyeStock())},
   healer:{title:"Healer",marker:"✚",mcol:"#ff8aa0",robe:0x8a2236,heal:true,stock:()=>[
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
     {name:"Health Elixir",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
