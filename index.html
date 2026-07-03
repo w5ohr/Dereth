@@ -10464,7 +10464,55 @@ function jewelryDesc(it){ const b=it.bonus; if(!b) return "trinket";
   if(b.kind==="vital") return `+${b.v} max ${({mhp:"health",mst:"stamina",mmn:"mana"})[b.vs]}`;
   if(b.kind==="protect") return `+${b.v}% ${b.el} protection`;
   return `+${b.v} armor`; }
+// ── THE retail crafting system (assets/acrecipes.json, extracted from the world DB):
+//    1,500 genuine use-source-on-target recipes across alchemy, cooking, fletching,
+//    tinkering and more — rolled with the authentic sigmoid skill check. ──
+let AC_RCP_BYSRC=null;
+try{ fetch('assets/acrecipes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j||!j.recipes) return;
+  AC_RCP_BYSRC={};
+  for(const r of j.recipes){ const k=r.tool.toLowerCase(); (AC_RCP_BYSRC[k]=AC_RCP_BYSRC[k]||[]).push(r); }
+  console.log("AC recipes: "+j.recipes.length+" retail crafting combinations loaded.");
+}).catch(()=>{}); }catch(e){}
+const AC_RCP_SKILL={38:"alchemy",39:"cooking",37:"fletching",23:"lockpick",21:"healing",28:"weapontink",29:"armortink",30:"magictink",40:"salvaging",18:"magictink"};
+const AC_PERSISTENT_TOOL=/pot\b|alembic|mortar|pestle|saw\b|knife|awl|shears|clamp|drift|vise|stamp|press\b|loom|anvil|needle|skillet|pan\b/;
+function craftTargetsFor(srcName){
+  const rs=AC_RCP_BYSRC&&AC_RCP_BYSRC[(srcName||"").toLowerCase()]; if(!rs) return [];
+  const out=[];
+  for(const r of rs){ const idx=player.inv.findIndex(t=>t&&t.name&&t.name.toLowerCase()===r.target.toLowerCase());
+    if(idx>=0) out.push({r,idx}); }
+  return out;
+}
+function craftResultItem(name){
+  const a=(typeof AC_ITEMS!=="undefined")&&AC_ITEMS&&AC_ITEMS[name.toLowerCase()];
+  let it={name,stat:"trophy",v:a&&a.val?Math.max(2,Math.round(a.val/2)):25};
+  if(a){ if(a.t==="Food") it={name,stat:"food",v:8,attr:"Endurance",dur:60};
+    else if(a.dmg) it={name,stat:"weapon",wt:"sword",mat:"Steel",v:a.dmg};
+    else if(a.al) it={name,stat:"worn",at:"light",aslot:"chest",mat:"Steel",v:a.al}; }
+  return (typeof acItemize==="function")?acItemize(it):it;
+}
+function tryCraft(src){
+  const cands=craftTargetsFor(src.name); if(!cands.length) return false;
+  const {r,idx}=cands[0];
+  const key=AC_RCP_SKILL[r.skill]||"alchemy";
+  const chance=r.difficulty>0?skillCheck(skillValue(key),r.difficulty):1;
+  const ok=Math.random()<chance;
+  const tgt=player.inv[idx]; player.inv.splice(idx,1);
+  if(!AC_PERSISTENT_TOOL.test(src.name.toLowerCase())){ const si=player.inv.indexOf(src); if(si>=0) player.inv.splice(si,1); }
+  const sk=SKILL_BY_KEY[key]?SKILL_BY_KEY[key].n:key;
+  if(ok){ const res=craftResultItem(r.result);
+    if(!addToInv(res)) addDrop(player.x,player.z,{type:"item",item:res});
+    log(`You use the <b>${esc(src.name)}</b> on the <b>${esc(tgt.name)}</b> — <b>${esc(r.result)}</b>! <i>(${sk} ${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"loot");
+    if(SFX.quest)SFX.quest(); if(typeof questEvent==="function")questEvent("gather");
+  } else {
+    log(`Your ${sk} attempt fails — the <b>${esc(tgt.name)}</b> is ruined. <i>(${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"warn");
+    if(SFX.hit)SFX.hit();
+  }
+  if(typeof updateHUD==="function")updateHUD(); if(typeof saveGame==="function")saveGame();
+  return true;
+}
 function applyItem(it){
+  // crafting first: if this item is a recipe source and a matching target is in the satchel, craft
+  if(AC_RCP_BYSRC&&it.name&&AC_RCP_BYSRC[it.name.toLowerCase()]&&craftTargetsFor(it.name).length){ tryCraft(it); return "keep"; }
   if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ return equipItem(it)===false?"keep":undefined; }  // "keep" leaves an un-wieldable item in the satchel
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
   else if(it.stat==="hp"){const h=healScale(it.v);player.hp=Math.min(player.mhp,player.hp+h);log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""}).`,"loot");}
