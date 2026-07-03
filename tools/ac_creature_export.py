@@ -44,6 +44,16 @@ KINDS = {
  "mukkir":"Mukkir","rabbit":"White Rabbit",
  # named bosses
  "olthoiqueen":"Olthoi Queen","lichlord":"Lich Lord","virindidirector":"Virindi Director",
+ # third wave — the creature deep-dive: every remaining classic family with a real
+ # (non-human-rig) retail setup, representatives verified against placement counts
+ "wight":"Frozen Wight","lich":"Lich","hollow":"Hollow Minion","thrungus":"Thrungus",
+ "ruschk":"Vile Ruschk","gurog":"Gurog Soldier","sleech":"Parfal Sleech",
+ "fiun":"Frenzied Fiun","marionette":"Marionette","doll":"Pristine Doll",
+ "penguin":"Aggressive Penguin","crystalwisp":"Crystalline Wisp","statue":"Statue",
+ "margul":"Stalking Margul","phantom":"Phantom","elemental":"Water Elemental",
+ "snowman":"Snowman","chicken":"Chicken","viamontian":"Viamontian Knight",
+ "falatacot":"Falatacot Consort","tormented":"Tormented Attendant","hea":"Hea Hunter",
+ "gearknight":"Gold Gear Knight",
 }
 
 HOOK_PAYLOAD = {0:0,1:4,2:4,3:28,4:0,6:4,7:16,8:12,9:16,10:12,11:16,12:8,13:40,14:4,

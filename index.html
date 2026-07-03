@@ -650,7 +650,7 @@ let AC_REW=null;
 try{ fetch('assets/acrewards.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
   AC_REW=j;
   for(const k in j.killxp){ if(typeof BESTIARY!=="undefined"&&BESTIARY[k]){ const e=j.killxp[k],b=BESTIARY[k];
-    b.xp=e.xp; b.lvl=e.lvl;                        // exact retail kill XP + level
+    if(e.xp>0) b.xp=e.xp; b.lvl=e.lvl;             // exact retail kill XP + level (0-XP reps keep the baseline)
     if(e.hp>0) b.hp=e.hp;                          // real max health (attribute_2nd)
     if(e.dmg>0) b.dmg=e.dmg;                       // real strike damage (hardest body part)
     if(e.al>0) b.al=e.al; } }                      // median body armor level (for future mitigation)
@@ -1214,6 +1214,31 @@ const BESTIARY={
   mukkir:   {name:"Mukkir",      c:0x3a2a2a,size:1.3,hp:180,dmg:26,spd:7.0,xp:820, gold:[16,40],range:0,  sense:50,tall:1.4,shape:"humanoid",dmgEl:"slash"}, // feral rending horror of the Dark Isle
   rabbit:   {name:"Rabbit",      c:0xc8b89a,size:0.45,hp:10,dmg:0, spd:7.5,xp:20,  gold:[0,1],  range:0,  sense:26,tall:0.4,shape:"beast",ambient:true},
   cow:      {name:"Cow",         c:0xd8c8b0,size:1.3,hp:40, dmg:0, spd:3.0,xp:30,  gold:[0,2],  range:0,  sense:24,tall:1.1,shape:"beast",ambient:true},
+  // ── the creature deep-dive wave: every remaining classic family with a real retail
+  //    model + SoundTable + stats (acrewards overrides these baselines at load) ──
+  siraluun: {name:"Siraluun",    c:0x6a5a8a,size:1.3,hp:150,dmg:22,spd:8.0,xp:600, gold:[12,30],range:0,  sense:48,tall:1.3,shape:"beast",dmgEl:"pierce"},   // striding raptor-bird of the cliffs
+  wight:    {name:"Wight",       c:0x8ab0d0,size:1.2,hp:220,dmg:28,spd:4.6,xp:1200,gold:[24,60],range:28, sense:48,tall:1.6,shape:"skeleton",mres:0.30,dmgEl:"frost"},
+  lich:     {name:"Lich",        c:0x4a5a3a,size:1.0,hp:120,dmg:18,spd:3.6,xp:640, gold:[14,36],range:30, sense:48,tall:1.6,shape:"caster",mres:0.40,dmgEl:"nether"},
+  hollow:   {name:"Hollow Minion",c:0xd8d0c0,size:1.0,hp:90,dmg:16,spd:5.6,xp:420, gold:[8,22], range:0,  sense:44,tall:1.5,shape:"skeleton",mres:0.95},   // the magic-proof horror
+  thrungus: {name:"Thrungus",    c:0x9a8ab0,size:1.0,hp:80, dmg:14,spd:4.2,xp:360, gold:[6,18], range:24, sense:40,tall:1.4,shape:"blob",dmgEl:"acid"},
+  ruschk:   {name:"Ruschk",      c:0x8a9aa8,size:1.4,hp:260,dmg:30,spd:5.6,xp:1100,gold:[22,54],range:0,  sense:46,tall:1.4,shape:"humanoid",dmgEl:"frost"},
+  gurog:    {name:"Gurog",       c:0x5a4a3a,size:1.9,hp:420,dmg:40,spd:5.0,xp:1800,gold:[36,90],range:0,  sense:48,tall:1.6,shape:"lugian"},
+  sleech:   {name:"Sleech",      c:0x6a8a4a,size:0.9,hp:110,dmg:16,spd:4.4,xp:520, gold:[10,26],range:26, sense:44,tall:0.8,shape:"blob",dmgEl:"acid"},
+  fiun:     {name:"Fiun",        c:0xb0b8c0,size:1.0,hp:120,dmg:17,spd:5.2,xp:520, gold:[10,28],range:28, sense:44,tall:1.5,shape:"caster",dmgEl:"shock"},
+  marionette:{name:"Marionette", c:0xc09a5a,size:0.9,hp:100,dmg:16,spd:7.0,xp:460, gold:[8,24], range:0,  sense:44,tall:1.4,shape:"humanoid",dmgEl:"slash"},
+  doll:     {name:"Enchanted Doll",c:0xd0a8b8,size:0.7,hp:80,dmg:14,spd:5.8,xp:400,gold:[8,22], range:26, sense:46,tall:1.0,shape:"humanoid",mres:0.30,dmgEl:"nether"},
+  penguin:  {name:"Penguin",     c:0x30383f,size:0.7,hp:60, dmg:14,spd:6.8,xp:300, gold:[4,14], range:0,  sense:40,tall:0.8,shape:"beast",dmgEl:"frost"},
+  crystalwisp:{name:"Crystalline Wisp",c:0xa8e0ff,size:0.75,hp:90,dmg:16,spd:5.0,xp:520,gold:[8,26],range:32,sense:50,tall:1.7,shape:"caster",mres:0.50,dmgEl:"shock"},
+  margul:   {name:"Margul",      c:0x3a3244,size:1.3,hp:230,dmg:30,spd:6.6,xp:1100,gold:[22,52],range:0,  sense:50,tall:1.2,shape:"beast",dmgEl:"slash"},
+  phantom:  {name:"Phantom",     c:0x9ab0c8,size:1.0,hp:140,dmg:22,spd:5.2,xp:700, gold:[12,32],range:28, sense:48,tall:1.6,shape:"caster",mres:0.50,dmgEl:"nether"},
+  elemental:{name:"Elemental",   c:0x4a8ab0,size:1.2,hp:200,dmg:26,spd:4.6,xp:900, gold:[18,44],range:30, sense:46,tall:1.5,shape:"caster",mres:0.35,dmgEl:"frost"},
+  snowman:  {name:"Snowman",     c:0xeef2f8,size:1.0,hp:100,dmg:12,spd:3.4,xp:360, gold:[6,18], range:24, sense:40,tall:1.4,shape:"blob",dmgEl:"frost"},
+  chicken:  {name:"Chicken",     c:0xd8c090,size:0.4,hp:8,  dmg:0, spd:5.5,xp:15,  gold:[0,1],  range:0,  sense:24,tall:0.4,shape:"beast",ambient:true},
+  viamontian:{name:"Viamontian Knight",c:0x8a2a34,size:1.1,hp:220,dmg:26,spd:5.6,xp:1000,gold:[22,55],range:0,sense:46,tall:1.7,shape:"humanoid",dmgEl:"slash"},
+  falatacot:{name:"Falatacot",   c:0x7a2a4a,size:1.0,hp:180,dmg:24,spd:4.2,xp:900, gold:[18,44],range:30, sense:50,tall:1.6,shape:"caster",mres:0.40,dmgEl:"nether"},
+  tormented:{name:"Tormented",   c:0x6a5a50,size:1.1,hp:200,dmg:26,spd:4.0,xp:900, gold:[16,40],range:0,  sense:44,tall:1.6,shape:"humanoid"},
+  hea:      {name:"Hea Tumerok", c:0x4a7a5a,size:1.1,hp:130,dmg:20,spd:6.8,xp:560, gold:[10,28],range:30, sense:48,tall:1.5,shape:"tumerok",dmgEl:"pierce"},
+  gearknight:{name:"Gear Knight",c:0xb8a860,size:1.4,hp:320,dmg:34,spd:5.2,xp:1400,gold:[30,70],range:0,  sense:46,tall:1.7,shape:"lugian",dmgEl:"slash"},
 };
 // AC threat scale (Feeble/Weak/Dangerous/Deadly/Lethal), derived from a creature's HP + damage
 function threatTier(b){const s=b.hp+b.dmg*10;
@@ -1241,6 +1266,15 @@ const AFFINITY={
   zombie:{weak:"fire",resist:"nether"}, mummy:{weak:"fire",resist:"nether"}, grievver:{resist:"acid",weak:"fire"},
   carenzi:{weak:"fire"}, niffis:{resist:"frost",weak:"shock"}, remoran:{weak:"shock",resist:"frost"},
   armoredillo:{resist:"pierce",weak:"acid"}, burun:{weak:"fire",resist:"acid"}, mukkir:{weak:"fire",resist:"nether"},
+  siraluun:{weak:"shock"}, wight:{weak:"fire",resist:"frost"}, lich:{weak:"fire",resist:"nether"},
+  thrungus:{weak:"fire",resist:"acid"}, ruschk:{weak:"fire",resist:"frost"}, gurog:{weak:"acid"},
+  sleech:{weak:"fire",resist:"acid"}, fiun:{resist:"shock",weak:"frost"}, marionette:{weak:"fire"},
+  doll:{weak:"fire",resist:"nether"}, penguin:{weak:"fire",resist:"frost"},
+  crystalwisp:{resist:"shock",weak:"bludgeon"}, margul:{weak:"fire",resist:"nether"},
+  phantom:{weak:"fire",resist:"nether"}, elemental:{resist:"frost",weak:"fire"},
+  snowman:{weak:"fire",resist:"frost"}, viamontian:{weak:"nether"},
+  falatacot:{weak:"fire",resist:"nether"}, tormented:{weak:"fire",resist:"nether"},
+  hea:{weak:"fire"}, gearknight:{resist:"pierce",weak:"shock"},
 };
 function elemMult(kind,el){const a=AFFINITY[kind];if(!a||!el)return 1;if(a.weak===el)return 1.5;if(a.resist===el)return 0.5;return 1;}
 
@@ -1480,12 +1514,19 @@ const MONSTER_MODELS={
 };
 // THE REAL THING: creatures extracted from the AC client data (tools/ac_creature_export.py) —
 // original meshes, original textures, original Idle/Walk animations replayed as glTF clips.
-// They REPLACE the CC0 stand-ins above; kinds without an extract (shadow, mummy, mukkir,
-// remoran, zefir) keep their stand-in models. No tints — the authentic skins ship as-is.
+// They REPLACE the CC0 stand-ins above — every combat kind now has its authentic extract
+// (only mummy borrows the zombie body in sand-wrap tones; the mu-miyah rig is human).
+// No tints — the authentic skins ship as-is.
 for(const k of ["armoredillo","auroch","banderling","burun","carenzi","drudge","golem","gromnie",
   "grievver","lugian","mattekar","mite","moarsman","monouga","mosswart","mukkir","niffis","olthoi",
   "olthoisoldier","olthoiworker","rat","reedshark","remoran","sclavus","shadow","shreth","siraluun",
-  "skeleton","tumerok","tusker","ursuin","virindi","wisp","zefir","zombie"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
+  "skeleton","tumerok","tusker","ursuin","virindi","wisp","zefir","zombie",
+  // the creature deep-dive wave (tools/ac_creature_export.py third wave)
+  "rabbit","wight","lich","hollow","thrungus","ruschk","gurog","sleech","fiun","marionette",
+  "doll","penguin","crystalwisp","margul","phantom","elemental","snowman","chicken",
+  "viamontian","falatacot","tormented","hea","gearknight",
+  // named-boss extracts (spawners pick these up by boss kind)
+  "olthoiqueen","lichlord","virindidirector"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
 MONSTER_MODELS.phyntoswasp=[{f:"ac/wasp.glb"}];
 MONSTER_MODELS.mummy=[{f:"ac/zombie.glb",tint:0xcabf9a}];   // mu-miyah: the undead body in sand-wrap tones
 let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h,tint,tints} loaded variants
@@ -1609,9 +1650,9 @@ function genRoads(){
 
 // ---- 50 dungeons: themed environments scattered across Dereth ----
 const DUNGEON_THEMES=[
-  {env:"Ice Cavern",    floor:0x2a3a4a,wall:0x3a5a72,prop:"ice",     light:0x8fd0ff,kinds:["reedshark","tusker","olthoi"],   warden:"tusker"},
+  {env:"Ice Cavern",    floor:0x2a3a4a,wall:0x3a5a72,prop:"ice",     light:0x8fd0ff,kinds:["reedshark","tusker","ruschk","penguin"],   warden:"ruschk"},
   {env:"Lava Forge",    floor:0x281410,wall:0x4a2418,prop:"lava",    light:0xff6a2a,kinds:["gromnie","olthoi","tusker"],     warden:"olthoi"},
-  {env:"Fungal Grotto", floor:0x1e2a1a,wall:0x2e3a26,prop:"mushroom",light:0x7fe6a0,kinds:["mosswart","drudge","gromnie"],   warden:"gromnie"},
+  {env:"Fungal Grotto", floor:0x1e2a1a,wall:0x2e3a26,prop:"mushroom",light:0x7fe6a0,kinds:["mosswart","thrungus","sleech"],   warden:"thrungus"},
   {env:"Olthoi Hive",   floor:0x2a1a1a,wall:0x4a2020,prop:"brazier", light:0xff5a3a,kinds:["olthoi","olthoi","reedshark"],   warden:"olthoi"},
   {env:"Forgotten Crypt",floor:0x1a1a1e,wall:0x2c2c33,prop:"torch",  light:0xc060ff,kinds:["shadow","drudge","banderling"], warden:"shadow"},
   {env:"Crystal Mine",  floor:0x22222a,wall:0x33333f,prop:"crystal", light:0x9af0ff,kinds:["drudge","reedshark","gromnie"],  warden:"tusker"},
@@ -1621,8 +1662,12 @@ const DUNGEON_THEMES=[
   {env:"Frozen Tomb",   floor:0x2c3848,wall:0x46607a,prop:"ice",     light:0xbfe0ff,kinds:["reedshark","tusker","shadow"],   warden:"olthoi"},
   {env:"Overgrown Ruin",floor:0x24301e,wall:0x3a4a2e,prop:"mushroom",light:0x9af06a,kinds:["mosswart","reedshark","auroch"], warden:"tusker"},
   {env:"The Deep",      floor:0x141420,wall:0x222236,prop:"crystal", light:0x6a8aff,kinds:["olthoi","shadow","gromnie"],     warden:"olthoi"},
-  {env:"Undead Crypt",  floor:0x18161e,wall:0x2a2630,prop:"brazier", light:0xb060ff,kinds:["skeleton","skeleton","shadow"], warden:"skeleton"},
-  {env:"Empyrean Ruins",floor:0x1c2230,wall:0x33405a,prop:"crystal", light:0x6a8aff,kinds:["virindi","shadow","skeleton"],  warden:"virindi"},
+  {env:"Undead Crypt",  floor:0x18161e,wall:0x2a2630,prop:"brazier", light:0xb060ff,kinds:["skeleton","lich","wight","tormented"], warden:"lich"},
+  {env:"Empyrean Ruins",floor:0x1c2230,wall:0x33405a,prop:"crystal", light:0x6a8aff,kinds:["virindi","crystalwisp","phantom"],  warden:"virindi"},
+  {env:"Haunted Manor", floor:0x1e1820,wall:0x322636,prop:"torch",   light:0xd0a8b8,kinds:["doll","marionette","phantom"],  warden:"marionette"},
+  {env:"Hollow Warrens",floor:0x201e1a,wall:0x36322a,prop:"brazier", light:0xd8d0c0,kinds:["hollow","skeleton","zombie"],   warden:"hollow"},
+  {env:"Clockwork Vault",floor:0x26221a,wall:0x453e2c,prop:"crystal",light:0xb8a860,kinds:["gearknight","marionette","golem"],warden:"gearknight"},
+  {env:"Blood Grotto",  floor:0x241418,wall:0x3e2028,prop:"brazier", light:0x7a2a4a,kinds:["falatacot","sclavus","moarsman"],warden:"falatacot"},
   {env:"Moarsman Cave", floor:0x16242a,wall:0x244650,prop:"ice",     light:0x5ad0d0,kinds:["reedshark","gromnie","mosswart"],warden:"gromnie"},
   {env:"Lugian Quarry", floor:0x2a2620,wall:0x4a4438,prop:"crystal", light:0x9ab0c0,kinds:["lugian","olthoiworker","olthoi"],warden:"lugian"},
   {env:"Tumerok Camp",  floor:0x1e2818,wall:0x35471f,prop:"torch",   light:0xff9a3a,kinds:["tumerok","banderling","mattekar"],warden:"tumerok"},
@@ -5130,7 +5175,15 @@ const CREATURE_BUILDERS={drudge:cDrudge,banderling:cBanderling,mosswart:cMosswar
   moarsman:cMoarsman,phyntoswasp:cPhyntosWasp,wisp:cWisp,golem:cGolem,zombie:cZombie,mummy:cMummy,
   grievver:cGrievver,rabbit:cRabbit,cow:cCow,
   carenzi:cCarenzi,niffis:cNiffis,armoredillo:cArmoredillo,
-  remoran:cRemoran,burun:cMosswart,mukkir:cMukkir};   // burun (frog-man) reuses the mosswart cousin
+  remoran:cRemoran,burun:cMosswart,mukkir:cMukkir,   // burun (frog-man) reuses the mosswart cousin
+  // deep-dive wave: procedural stand-ins borrow the nearest cousin (the real GLB extract
+  // is what actually renders — these only cover a failed model fetch)
+  siraluun:cCarenzi,wight:cSkeleton,lich:cZombie,hollow:cSkeleton,thrungus:cMosswart,
+  ruschk:cUrsuin,gurog:cLugian,sleech:cReedshark,fiun:cDrudge,marionette:cDrudge,
+  doll:cDrudge,penguin:cRabbit,crystalwisp:cWisp,margul:cMonouga,phantom:cShadow,
+  elemental:cWisp,snowman:cGolem,chicken:cRabbit,viamontian:cSkeleton,falatacot:cSclavus,
+  tormented:cZombie,hea:cTumerok,gearknight:cGolem,
+  olthoiqueen:cOlthoi,lichlord:cSkeleton,virindidirector:cVirindi};
 
 function buildCreature(kind){
   const b=BESTIARY[kind],g=new THREE.Group(),s=b.size;
@@ -5164,6 +5217,11 @@ const GAIT={
   armoredillo:"lumber", lugian:"lumber", golem:"lumber", tusker:"lumber", auroch:"lumber",
   olthoi:"skitter", olthoiworker:"skitter", olthoisoldier:"skitter",
   zombie:"shamble", mummy:"shamble",
+  // deep-dive wave
+  siraluun:"lope", penguin:"hop", chicken:"scurry", sleech:"crawl",
+  crystalwisp:"float", phantom:"float", elemental:"float", doll:"scurry",
+  wight:"shamble", tormented:"shamble", lich:"walk", hollow:"walk",
+  gurog:"lumber", gearknight:"lumber", snowman:"lumber", margul:"lope",
 };
 function creatureGait(kind,b){ return GAIT[kind]||"walk"; }
 // Per-species melee attack style, from each creature's canonical attacks (acpedia/fandom):
@@ -5187,6 +5245,11 @@ const ATTACK={
   auroch:"gore",armoredillo:"spin",phyntoswasp:"sting",
   olthoi:"rear",olthoiworker:"rear",olthoisoldier:"rear",ursuin:"rear",sclavus:"rear",
   zombie:"grab",tumerok:"thrust",
+  // deep-dive wave
+  gurog:"pound",gearknight:"pound",snowman:"pound",tormented:"pound",ruschk:"pound",
+  wight:"swipe",hollow:"swipe",marionette:"swipe",doll:"swipe",fiun:"swipe",thrungus:"swipe",
+  margul:"bite",sleech:"bite",penguin:"bite",siraluun:"bite",
+  viamontian:"thrust",hea:"thrust",lich:"grab",phantom:"grab",
 };
 const ATK_DUR={pound:0.55,rear:0.6,spin:0.6,gore:0.5,bite:0.35,sting:0.35,swipe:0.4,grab:0.45,thrust:0.35};
 function startStrike(m){ const st=ATTACK[m.kind]; m.strikeDur=(st&&ATK_DUR[st])||0.3; m.strikeT=m.strikeDur; }
@@ -7757,13 +7820,13 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
   // the RETAIL spawn table: if the encounter data says what lived here, spawn that (mostly)
   if(d>=200){ const real=acSpawnKinds(x,z);
     if(real&&real.length&&Math.random()<0.75) return pick(real); }
-  if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin"]);   // frozen north/south — snowy spawns
-  if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow","mukkir","remoran"]); // Direlands — deadliest frontier
-  if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge","burun","remoran"]);  // the Blackmire swamp
+  if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin","ruschk","penguin","snowman","wight","elemental"]);   // frozen north/south — snowy spawns
+  if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow","mukkir","remoran","hollow","margul","phantom","gurog","gearknight","falatacot","tormented","crystalwisp"]); // Direlands — deadliest frontier
+  if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge","burun","remoran","sleech","thrungus"]);  // the Blackmire swamp
   if(d<200) return pick(["drudge","mosswart","rat","rat","mite","carenzi"]);                   // town outskirts — weakest
-  if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin","carenzi"]); // Aluvia — temperate forest
-  if(reg===1) return pick(["shreth","drudge","phyntoswasp","banderling","mosswart","sclavus","wisp","mite","reedshark","burun"]);   // Sho — wooded hills
-  return pick(["skeleton","drudge","rat","shreth","monouga","mummy","zombie","tumerok","gromnie","armoredillo","niffis"]);   // Gharu'ndim — desert
+  if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin","carenzi","marionette","lich","viamontian"]); // Aluvia — temperate forest
+  if(reg===1) return pick(["shreth","drudge","phyntoswasp","banderling","mosswart","sclavus","wisp","mite","reedshark","burun","doll","hea","siraluun"]);   // Sho — wooded hills
+  return pick(["skeleton","drudge","rat","shreth","monouga","mummy","zombie","tumerok","gromnie","armoredillo","niffis","fiun","thrungus","hea"]);   // Gharu'ndim — desert
 }
 function spawnSomewhere(){
   if(inDungeon||inNetwork||isOnline) return; // online overworld monsters are server-authoritative
@@ -7799,7 +7862,8 @@ function spawnMonster(kind,x,z,elite){
   } else mesh=buildCreature(kind);                                  // procedural fallback
   let hp=Math.round(b.hp*settings.diff),dmg=Math.round(b.dmg*settings.diff),xp=b.xp,goldMul=1,r=b.size*0.8;
   // nominal stamina/mana pools so target frames & appraisal read like AC's tri-bar (casters carry mana)
-  const CASTER_KINDS={virindi:1,wisp:1,sclavus:1,niffis:1,zefir:1,mukkir:1,shadow:1};
+  const CASTER_KINDS={virindi:1,wisp:1,sclavus:1,niffis:1,zefir:1,mukkir:1,shadow:1,
+    lich:1,falatacot:1,crystalwisp:1,elemental:1,phantom:1,doll:1,fiun:1,wight:1,sleech:1};
   const _mst=Math.round(hp*0.75), _mmn=Math.round(hp*(CASTER_KINDS[kind]?0.8:0.15));
   if(elite){
     hp=Math.round(hp*2.5);dmg=Math.round(dmg*1.6);xp=Math.round(xp*2.5);goldMul=3;
@@ -8073,6 +8137,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
+  if(Math.random()<0.35) creatureSFX(m.kind,"wound");   // the creature's own retail pain vocal
   clog(`You ${crit?'<b style="color:#ff8f6b">critically strike</b>':'hit'} the ${m.name||((BESTIARY[m.kind]||{}).name||m.kind)} for <b>${Math.round(dmg)}</b>.`);
   if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
@@ -8189,18 +8254,58 @@ function killMonster(m){
 }
 function retire(m){ dying.push({mesh:m.mesh,t:0.4,base:m.baseScale||1}); }
 function clearDying(){ for(const d of dying) scene.remove(d.mesh); dying=[]; }
+// a named boss wears its own retail extract when the pack has one (olthoiqueen, lichlord,
+// virindidirector — or its family's body); procedural fallback keeps the old look
+function bossMesh(kind,fallbackKind,scale,tint){
+  const b=BESTIARY[fallbackKind]||BESTIARY.drudge;
+  const gvar=(USE_GLTF_MONSTERS&&typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+  if(gvar&&typeof THREE.SkeletonUtils!=="undefined"){
+    const gm=gvar[0], mesh=new THREE.Group();
+    const clone=THREE.SkeletonUtils.clone(gm.scene);
+    let msc=(b.size*1.5)/(gm.h>0.001?gm.h:1);
+    if(!(msc>0.0001&&msc<1e4)) msc=1;
+    clone.scale.setScalar(msc);
+    const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y; clone.rotation.y=Math.PI;
+    const tintCol=tint!=null?new THREE.Color(tint):null;
+    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false;
+      if(tintCol&&o.material){ o.material=o.material.clone(); if(o.material.color) o.material.color.lerp(tintCol,0.55); } } });
+    mesh.add(clone);
+    mesh.userData={headY:b.size*1.5,gm};   // unscaled — spawners multiply by their own scale
+    const hbg=new THREE.Group();
+    const hbBg=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.16),new THREE.MeshBasicMaterial({color:0x000000,fog:false}));
+    const hbFill=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.16),new THREE.MeshBasicMaterial({color:0xc0392b,fog:false}));
+    hbFill.position.z=0.01; hbg.add(hbBg); hbg.add(hbFill);
+    hbg.position.y=b.size*1.5+0.6; hbg.visible=false;
+    mesh.add(hbg); mesh.userData.hb=hbg; mesh.userData.fill=hbFill;
+    return mesh;
+  }
+  const mesh=buildCreature(fallbackKind);
+  return mesh;
+}
+function attachBossAnims(m){   // the retail clips drive the boss exactly like a streamed monster
+  const gm=m.mesh&&m.mesh.userData&&m.mesh.userData.gm; if(!gm||!gm.anims||!gm.anims.length) return;
+  m.gltfMixer=new THREE.AnimationMixer(m.mesh);
+  const find=re=>gm.anims.find(c=>re.test(c.name));
+  const idleC=find(/idle|survey/i)||gm.anims[0];
+  const walkC=find(/walk(?!.*back)|run|gallop|fast_fly|flying|crawl/i)||idleC;
+  const atkC=find(/attack|bite|punch|headbutt|sting|spit|chop|slice|stab/i);
+  m.actIdle=m.gltfMixer.clipAction(idleC); m.actIdle.play();
+  if(walkC!==idleC){ m.actWalk=m.gltfMixer.clipAction(walkC); m.actWalk.play(); m.actWalk.weight=0; }
+  if(atkC){ m.actAtk=m.gltfMixer.clipAction(atkC); m.actAtk.setLoop(THREE.LoopOnce,1); }
+  m.gltf=true;
+}
 function spawnBoss(){
   if(inDungeon){ setTimeout(spawnBoss,8000); return; }
   const corners=[[-HALF+140,-HALF+140],[HALF-140,HALF-140],[HALF-140,-HALF+140],[-HALF+140,HALF-140]];
   const c=corners[irnd(0,3)];
-  const mesh=buildCreature("olthoi");mesh.scale.setScalar(2.2);mesh.position.set(c[0],0,c[1]);scene.add(mesh);
+  const mesh=bossMesh("olthoiqueen","olthoi",2.2);mesh.position.set(c[0],0,c[1]);scene.add(mesh);
   const lbl=labelSprite("Gnawvil, the Olthoi Queen","monsters");lbl.scale.set(9,2.2,1);lbl.position.y=mesh.userData.headY+1.7;mesh.add(lbl);
   const bhp=Math.round(2000*settings.diff);
   const m={kind:"olthoi",x:c[0],z:c[1],r:BESTIARY.olthoi.size*0.8*2.2,hp:bhp,mhp:bhp,ang:0,
     state:"wander",t:0,atkCd:0,wx:c[0],wz:c[1],slow:0,flash:0,mesh,headY:mesh.userData.headY*2.2,
     isBoss:true,name:"Gnawvil, the Olthoi Queen",dmg:Math.round(46*settings.diff),xp:9000,goldRange:[300,600],
     goldMul:1,baseScale:2.2,burnT:0,burnDps:0,burnAcc:0};
-  monsters.push(m);boss=m;
+  monsters.push(m);boss=m;attachBossAnims(m);
   log("A tremor rolls across Dereth — <b>Gnawvil, the Olthoi Queen</b> stirs in the far reaches.","warn");
   toast("A WORLD BOSS STIRS");
 }
@@ -8208,14 +8313,14 @@ function spawnBoss(){
 function spawnApex(){
   if(inDungeon){ setTimeout(spawnApex,8000); return; }
   const ang=rnd(0,6.28),r=rnd(300,900),x=Math.cos(ang)*r,z=Math.sin(ang)*r; // the Direlands centre
-  const mesh=buildCreature("shadow");mesh.scale.setScalar(3.6);mesh.position.set(x,0,z);scene.add(mesh);
+  const mesh=bossMesh("shadow","shadow",3.6,0x7a4fae);mesh.position.set(x,0,z);scene.add(mesh);
   const lbl=labelSprite("Bael'Zharon, the Hopeslayer","monsters");lbl.scale.set(13,3,1);lbl.position.y=mesh.userData.headY+2;mesh.add(lbl);
   const hp=Math.round(6000*settings.diff);
   const m={kind:"shadow",x,z,r:BESTIARY.shadow.size*0.8*3.6,hp,mhp:hp,ang:0,state:"wander",t:0,atkCd:0,
     wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*3.6,isBoss:true,apex:true,
     name:"Bael'Zharon, the Hopeslayer",dmg:Math.round(70*settings.diff),xp:30000,goldRange:[800,1500],
     goldMul:1,baseScale:3.6,burnT:0,burnDps:0,burnAcc:0};
-  monsters.push(m);
+  monsters.push(m);attachBossAnims(m);
   log("The sky darkens — <b>Bael'Zharon, the Hopeslayer</b>, once the Empyrean <b>Ilservian Palacost</b>, walks the Direlands. Few return.","warn");
   toast("THE HOPESLAYER WAKES");
 }
@@ -8224,8 +8329,7 @@ const SHADOW_GENERALS=[{name:"Ler Rhan",tint:0x8a5fc8},{name:"Black Ferah",tint:
 function spawnShadowGeneral(idx){
   if(inDungeon){ setTimeout(()=>spawnShadowGeneral(idx),8000); return; }
   const gd=SHADOW_GENERALS[idx],ang=rnd(0,6.28),r=rnd(500,1500),x=Math.cos(ang)*r,z=Math.sin(ang)*r;
-  const sc=2.1,mesh=buildCreature("shadow");mesh.scale.setScalar(sc);mesh.position.set(x,0,z);
-  mesh.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material=o.material.clone(),o.material.color.setHex(gd.tint);});
+  const sc=2.1,mesh=bossMesh("shadow","shadow",sc,gd.tint);mesh.position.set(x,0,z);
   scene.add(mesh);
   const lbl=labelSprite(gd.name+", Shadow General","monsters");lbl.scale.set(10,2.4,1);lbl.position.y=mesh.userData.headY+1.8;mesh.add(lbl);
   const hp=Math.round(1300*settings.diff);
@@ -8233,7 +8337,7 @@ function spawnShadowGeneral(idx){
     wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*sc,isBoss:true,general:idx,
     name:gd.name+", Shadow General",dmg:Math.round(42*settings.diff),xp:11000,goldRange:[260,520],
     goldMul:1,baseScale:sc,burnT:0,burnDps:0,burnAcc:0};
-  monsters.push(m);
+  monsters.push(m);attachBossAnims(m);
 }
 function spawnShadowGenerals(){ for(let i=0;i<SHADOW_GENERALS.length;i++) spawnShadowGeneral(i); }
 
@@ -8248,6 +8352,8 @@ const EVENT_TYPES=[
   {name:"Virindi Abduction",kinds:["virindi","shadow"],              col:0xd0d4e6, blurb:"Empty-faced Virindi snatch-squads raid the town"},
   {name:"Burun Tide",       kinds:["burun","mosswart","moarsman"],   col:0x6a8a3a, blurb:"Burun hordes croak up out of the swamps"},
   {name:"Slithis Tide",     kinds:["sclavus","moarsman","mukkir"],   col:0x2a8a7a, blurb:"The drowned god's Slithis brood floods the shore"},
+  {name:"Gear Knight March",kinds:["gearknight","marionette","doll"],col:0xb8a860, blurb:"The Clockwork legion marches in perfect brass ranks"},
+  {name:"Frozen Legion",    kinds:["wight","ruschk","snowman"],      col:0x8ab0d0, blurb:"The frozen dead march south under a wight banner"},
 ];
 // ---------- monthly event calendar: seasons + a rotating story event (see docs/asherons-call-events-reference.md) ----------
 // The world cycles through seasons; each "month" features a story beat whose rumour the Town Criers broadcast and
@@ -8873,9 +8979,9 @@ const SAGA_BOSSES={
            rise:"The crystal ember blazes — an <b>Echo of Bael'Zharon</b> takes shape over the Direlands. Cast it down before it wakes!", toast:"THE ECHO RISES"},
   drudge: {name:"Aerbax's Prodigal Drudge", kind:"drudge", scale:2.6, tint:0xe8e8f0, hp:3400, dmg:48, xp:13000, near:true,
            rise:"A cold-eyed drudge that <b>speaks</b> — <b>Aerbax's Prodigal Drudge</b> — marshals the Nest to war. End it.", toast:"THE PRODIGAL DRUDGE"},
-  monarch:{name:"The Prodigal Monarch", kind:"virindi", scale:2.4, tint:0xf0f0ff, hp:5200, dmg:60, xp:22000, near:false, crowned:true,
+  monarch:{name:"The Prodigal Monarch", kind:"virindi", gltf:"virindidirector", scale:2.4, tint:0xf0f0ff, hp:5200, dmg:60, xp:22000, near:false, crowned:true,
            rise:"On a false throne sits a second Kilmer wearing the Monarch's own smile — <b>The Prodigal Monarch</b>. Destroy the puppet.", toast:"THE PRODIGAL MONARCH"},
-  empress:{name:"Empress Gnawvil-Rax", kind:"olthoi", scale:3.4, tint:0x2a5a14, hp:5400, dmg:64, xp:24000, near:false,
+  empress:{name:"Empress Gnawvil-Rax", kind:"olthoi", gltf:"olthoiqueen", scale:3.4, tint:0x2a5a14, hp:5400, dmg:64, xp:24000, near:false,
            rise:"Below the northern spire she waits — <b>EMPRESS GNAWVIL-RAX</b>, last clutch of the Ancient Queen, grown vast in a generation of dark. Descend and end her.", toast:"THE BROOD-EMPRESS"},
   champion:{name:"Champion of the Pretender", kind:"lugian", scale:2.6, tint:0x3a2a5a, hp:4200, dmg:56, xp:16000, near:true,
            rise:"The Pretender's champion steps onto the Silyun ground — a mountain in Viamontian plate. Yield him nothing.", toast:"THE DUEL"},
@@ -8892,9 +8998,9 @@ const SAGA_BOSSES={
   windW:{name:"West Frost, Avatar of the Wind", kind:"wisp", scale:2.6, tint:0xd8f0ff, hp:3200, dmg:52, xp:9000, near:false, rise:"<b>West Frost</b> freezes the western wind.", toast:"WEST FROST"},
   cyrannic:{name:"Cyrannic, Warlord of the Four Winds", kind:"golem", scale:3.2, tint:0x5a8aff, hp:6000, dmg:66, xp:26000, near:false,
            rise:"In the tempest-throne sits <b>CYRANNIC, WARLORD OF THE FOUR WINDS</b>, wearing the storm like a cloak. The eye is collapsing — now or never.", toast:"THE WARLORD"},
-  lichking:{name:"The Lich-King of Frore", kind:"skeleton", scale:3.2, tint:0x2a3a6a, hp:6200, dmg:68, xp:28000, near:false, crowned:true,
+  lichking:{name:"The Lich-King of Frore", kind:"skeleton", gltf:"lichlord", scale:3.2, tint:0x2a3a6a, hp:6200, dmg:68, xp:28000, near:false, crowned:true,
            rise:"On his glacier throne sits <b>THE LICH-KING OF FRORE</b>, three seasons of stolen springtime about his shoulders. His phylactery is a single snowflake.", toast:"THE LICH-KING"},
-  warden:{name:"Warden of the Sundered Veil", kind:"virindi", scale:3.4, tint:0xc0a0ff, hp:6400, dmg:70, xp:30000, near:false,
+  warden:{name:"Warden of the Sundered Veil", kind:"virindi", gltf:"virindidirector", scale:3.4, tint:0xc0a0ff, hp:6400, dmg:70, xp:30000, near:false,
            rise:"Portalspace itself given teeth — <b>THE WARDEN OF THE SUNDERED VEIL</b> — guards the seal at the ascent's peak. Defeat it, and pull the Architect free.", toast:"THE WARDEN"},
   herald:{name:"The Herald of T'thuun", kind:"moarsman", scale:3.8, tint:0x2a7a5a, hp:6800, dmg:72, xp:32000, near:false,
            rise:"At the rift's rim waits <b>THE HERALD OF T'THUUN</b>, a mountain of tide and shell that speaks its master's coming in breakers. Slay it.", toast:"THE HERALD"},
@@ -8906,7 +9012,8 @@ function spawnSagaBoss(bossId){
   const d=SAGA_BOSSES[bossId]||SAGA_BOSSES.ember;
   const ang=rnd(0,6.28), r=d.near?rnd(90,240):rnd(300,900);
   const x=(d.near?player.x:0)+Math.cos(ang)*r, z=(d.near?player.z:0)+Math.sin(ang)*r;
-  const mesh=buildCreature(d.kind);mesh.scale.setScalar(d.scale);mesh.position.set(x,0,z);scene.add(mesh);
+  // saga bosses wear a unique retail extract when one fits (d.gltf), else the family body
+  const mesh=bossMesh(d.gltf||d.kind,d.kind,d.scale,d.tint);mesh.position.set(x,0,z);scene.add(mesh);
   mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(d.tint); });
   if(d.crowned){ const crown=new THREE.Mesh(new THREE.TorusGeometry(0.24,0.05,6,12),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3,emissive:0x5a4410}));
     crown.rotation.x=Math.PI/2; crown.position.y=(mesh.userData.headY||1.6)+0.1; mesh.add(crown); }
@@ -8917,7 +9024,7 @@ function spawnSagaBoss(bossId){
     st:hp,mst:hp,mn:Math.round(hp*0.4),mmn:Math.round(hp*0.4),
     name:d.name,dmg:Math.round(d.dmg*settings.diff),xp:d.xp,goldRange:[500,1000],
     goldMul:1,baseScale:d.scale,burnT:0,burnDps:0,burnAcc:0};
-  monsters.push(m);
+  monsters.push(m);attachBossAnims(m);
   log(d.rise,"warn"); toast(d.toast); if(SFX.growl)SFX.growl();
 }
 function spawnEmberEcho(){ spawnSagaBoss("ember"); }   // back-compat for Year 1's g.echo chapter
@@ -14584,7 +14691,9 @@ document.getElementById('bigmap').addEventListener('click',e=>{
 
 // ---------- bestiary codex ----------
 function buildCodex(){
-  const order=["drudge","mosswart","reedshark","skeleton","mattekar","tumerok","banderling","shadow","virindi","gromnie","tusker","auroch","lugian","olthoiworker","olthoisoldier","olthoi"];
+  // every creature in the bestiary, weakest first (retail levels order the codex)
+  const order=Object.keys(BESTIARY).filter(k=>!BESTIARY[k].ambient)
+    .sort((a,b2)=>(BESTIARY[a].lvl||BESTIARY[a].hp/10)-(BESTIARY[b2].lvl||BESTIARY[b2].hp/10));
   document.getElementById('codexRows').innerHTML=order.map(k=>{
     const b=BESTIARY[k],seen=player.bestiary.indexOf(k)>=0;
     if(!seen) return `<div class="row" style="opacity:.5"><div><span class="lab">??? </span><span class="desc">— defeat one to learn its nature</span></div></div>`;
