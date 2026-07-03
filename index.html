@@ -18488,9 +18488,10 @@ function buildDungeonReal(def,dj){
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
   scene.add(grp); dungeonObjs.push(grp);
-  const amb=new THREE.AmbientLight(0x8a7a66,0.55); scene.add(amb); dungeonObjs.push(amb);
+  const amb=new THREE.AmbientLight(0x9a8a72,0.85); scene.add(amb); dungeonObjs.push(amb);
+  const hemi=new THREE.HemisphereLight(0x6a6a7a,0x2a2218,0.35); scene.add(hemi); dungeonObjs.push(hemi);
   // torch props with pooled lights along the halls
-  for(let i=4;i<dj.cellPos.length;i+=Math.max(6,Math.floor(dj.cellPos.length/10))){
+  for(let i=3;i<dj.cellPos.length;i+=Math.max(4,Math.floor(dj.cellPos.length/16))){
     const c=dj.cellPos[i];
     for(const o of buildProp(th.prop,c[0],c[2],th.light)){ o.position.y+=c[1]; scene.add(o); dungeonObjs.push(o); } }
   // entry: spawn + exit archway at the true entrance cell
