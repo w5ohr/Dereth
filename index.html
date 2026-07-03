@@ -3808,22 +3808,28 @@ fetch('assets/acheads/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j
   if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.acBody) acBuildHead(playerAvatar); } }).catch(()=>{});
 fetch('assets/acheads/palettes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_HEAD_REMAP=j; }).catch(()=>{});
 const _acHeadTexCache={};
-function acHeadTexture(texDID, remapDID, cb){    // load a head texture, RGB-remapped for the chosen colour
-  const key=texDID+"|"+(remapDID||"");
+function acHeadTexture(texDID, remapDIDs, cb){    // load a head texture, RGB-remapped through an ordered list of colour palettes
+  const rms=(Array.isArray(remapDIDs)?remapDIDs:[remapDIDs]).filter(Boolean);
+  const key=texDID+"|"+rms.join(",");
   const c=_acHeadTexCache[key];
   if(c){ if(c!=="loading") cb(c); return; }
   _acHeadTexCache[key]="loading";
   const img=new Image();
   img.onload=()=>{
     let tex;
-    const rm=remapDID&&AC_HEAD_REMAP&&AC_HEAD_REMAP[remapDID];
-    if(rm){
+    // apply each palette's remap in order: skin recolours the feature's skin ground first, then the
+    // feature colour (iris/hair) recolours its own pixels — since skin-mapped pixels leave base RGB,
+    // the later pass no longer matches them (the palettes' index ranges overlap, so order matters).
+    const maps=rms.map(d=>AC_HEAD_REMAP&&AC_HEAD_REMAP[d]).filter(Boolean);
+    if(maps.length){
       const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height;
       const cx=cv.getContext('2d'); cx.drawImage(img,0,0);
       const id=cx.getImageData(0,0,cv.width,cv.height), d=id.data;
-      for(let i=0;i<d.length;i+=4){
-        const k=((d[i]<<16)|(d[i+1]<<8)|d[i+2]).toString(16).padStart(6,'0');
-        const nv=rm[k]; if(nv!==undefined){ const n=parseInt(nv,16); d[i]=(n>>16)&255; d[i+1]=(n>>8)&255; d[i+2]=n&255; }
+      for(const rm of maps){
+        for(let i=0;i<d.length;i+=4){
+          const k=((d[i]<<16)|(d[i+1]<<8)|d[i+2]).toString(16).padStart(6,'0');
+          const nv=rm[k]; if(nv!==undefined){ const n=parseInt(nv,16); d[i]=(n>>16)&255; d[i+1]=(n>>8)&255; d[i+2]=n&255; }
+        }
       }
       cx.putImageData(id,0,0);
       tex=new THREE.CanvasTexture(cv);
@@ -3867,21 +3873,20 @@ function acHeadChoices(app){
     eyes: rnd(H.eyes.length), nose: rnd(H.noses.length), mouth: rnd(H.mouths.length),
   };
 }
-function acBuildHead(av){
-  const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return;
-  const H=acHeadOpts(player.appearance); if(!H) return;
-  const app=player.appearance||{}, ah=acHeadChoices(app)||{};
+// build just the head GROUP (mesh in part-16 local space, face +z, textured + recoloured
+// for the appearance's resolved choices). Shared by the in-world avatar and the creator bust.
+function acHeadGroup(app, cb){
+  const H=acHeadOpts(app); if(!H){ cb&&cb(null); return; }
+  const ah=acHeadChoices(app)||{};
   const pick=(arr,i)=>arr&&arr.length?arr[clamp(i|0,0,arr.length-1)]:null;
   const style=pick(H.hairStyles,ah.style)||H.hairStyles[0];
   const eye=pick(H.eyes,ah.eyes), nose=pick(H.noses,ah.nose), mouth=pick(H.mouths,ah.mouth);
   const skinDID=pick(H.skinTones,ah.skinTone), hairDID=pick(H.hairPals,ah.hairColor), eyeDID=pick(H.eyeColors,ah.eyeColor);
-  const gfx=(style&&style.gfx)||H.defaultHead; if(!gfx) return;
+  const gfx=(style&&style.gfx)||H.defaultHead; if(!gfx){ cb&&cb(null); return; }
   const bald=!!(style&&style.bald);
-  const token=(u._acHeadToken=(u._acHeadToken||0)+1);
   fetch('assets/acheads/'+gfx+'.json').then(r=>r&&r.ok?r.json():null).then(mesh=>{
-    if(!mesh||u._acHeadToken!==token) return;
-    if(u.acHead&&u.acHead.parent){ u.acHead.parent.remove(u.acHead); }
-    const grp=new THREE.Group(); grp.userData.acBody=true; grp.userData.acHeadGrp=true;
+    if(!mesh){ cb&&cb(null); return; }
+    const grp=new THREE.Group();
     for(const g of mesh.groups){
       const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
@@ -3890,21 +3895,30 @@ function acBuildHead(av){
       geo.setIndex(g.i);
       const mat=new THREE.MeshStandardMaterial({color:0xd8b48c,roughness:0.62,metalness:0.02});
       const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm);
-      // texture + colour by facial slot
-      let texDID=g.otex, remapDID=skinDID;
-      if(g.otex==='05000098'){ texDID=(style&&style.hairTex)||g.otex; remapDID=hairDID; }        // hair
-      else if(g.otex==='0500024C'){ texDID=(eye&&(bald?eye.texBald:eye.tex))||g.otex; remapDID=eyeDID; }  // eyes
-      else if(g.otex==='050002F5'){ texDID=(nose&&nose.tex)||g.otex; remapDID=skinDID; }          // nose
-      else if(g.otex==='0500025C'){ texDID=(mouth&&mouth.tex)||g.otex; remapDID=skinDID; }        // mouth
-      if(texDID) acHeadTexture(texDID, remapDID, tex=>{ if(u._acHeadToken===token){ mat.map=tex; mat.color.setHex(0xffffff); mat.needsUpdate=true; } });
+      let texDID=g.otex, remapDIDs=[skinDID];                                                     // face/skin
+      if(g.otex==='05000098'){ texDID=(style&&style.hairTex)||g.otex; remapDIDs=[skinDID,hairDID]; }        // hair (over its scalp skin)
+      else if(g.otex==='0500024C'){ texDID=(eye&&(bald?eye.texBald:eye.tex))||g.otex; remapDIDs=[skinDID,eyeDID]; }  // eyes (iris over the strip's skin)
+      else if(g.otex==='050002F5'){ texDID=(nose&&nose.tex)||g.otex; remapDIDs=[skinDID]; }        // nose
+      else if(g.otex==='0500025C'){ texDID=(mouth&&mouth.tex)||g.otex; remapDIDs=[skinDID]; }      // mouth
+      if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(0xffffff); mat.needsUpdate=true; });
     }
+    cb&&cb(grp);
+  }).catch(()=>{ cb&&cb(null); });
+}
+function acBuildHead(av){
+  const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return;
+  const token=(u._acHeadToken=(u._acHeadToken||0)+1);
+  acHeadGroup(player.appearance, grp=>{
+    if(!grp||u._acHeadToken!==token) return;
+    if(u.acHead&&u.acHead.parent){ u.acHead.parent.remove(u.acHead); }
+    grp.userData.acBody=true; grp.userData.acHeadGrp=true;
     const s=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
     grp.position.set(P.p[0]*s-jl.x, P.p[1]*s-jl.y, P.p[2]*s-jl.z);
     grp.quaternion.set(P.q[0],P.q[1],P.q[2],P.q[3]);
     grp.scale.setScalar(s);
     u.neck.add(grp); u.acHead=grp;
     if(u.head) u.head.visible=false;                 // retire the procedural painted head
-  }).catch(()=>{});
+  });
 }
 // ── REAL PLAYER ANIMATIONS: the human MotionTable's own cycles & gestures ──
 // assets/acmotions.json (tools/ac_player_anims.py) carries idle/walk/run/ready
@@ -21461,6 +21475,7 @@ function ccInitPreview(){
   const fill=new THREE.DirectionalLight(0x88aaff,0.35); fill.position.set(-2,1,1.2); ccScene.add(fill);
   const rim=new THREE.DirectionalLight(0xffd0a0,0.32); rim.position.set(0,1.5,-2.5); ccScene.add(rim);
 }
+let _ccHeadTok=0;
 function ccBust_build(app){
   const g=new THREE.Group();
   const head=buildFaceGroup(app); head.position.y=1.6; g.add(head); g.userData.head=head;
@@ -21469,6 +21484,15 @@ function ccBust_build(app){
   const garb={aluvian:0x44506a,gharundim:0x6a3a8a,sho:0x6a4d33,viamontian:0x5a2a3a}[app.race]||0x44506a;
   const sh=new THREE.Mesh(new THREE.CylinderGeometry(0.33,0.42,0.5,18),new THREE.MeshStandardMaterial({color:garb})); sh.scale.z=0.7; sh.position.y=1.18; g.add(sh);
   const collar=new THREE.Mesh(new THREE.TorusGeometry(0.15,0.045,8,20),new THREE.MeshStandardMaterial({color:garb})); collar.rotation.x=Math.PI/2; collar.position.y=1.42; g.add(collar);
+  // swap in the REAL AC head when the pack is available — the creator becomes WYSIWYG
+  if(AC_HEADS){ const tok=++_ccHeadTok;
+    acHeadGroup(app, hgrp=>{
+      if(!hgrp||tok!==_ccHeadTok) return;
+      if(g.userData.head){ g.remove(g.userData.head); }        // retire the procedural bust head
+      hgrp.position.y=1.505; g.add(hgrp);                       // the bust's own sway turns the head to face the camera
+      g.userData.head=null; g.userData.acHead=hgrp;
+    });
+  }
   return g;
 }
 function ccShowModel(url){                                   // render the chosen rigged model full-body in the preview
