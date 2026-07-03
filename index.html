@@ -2075,15 +2075,32 @@ function encumbrance(){
   return {load,cap,ratio:clamp(load/cap,0,1.8)};
 }
 const GRAV=22;
-function jumpVelocity(){
-  const jv=skillValue("jump");                                   // trained & raised Jump → higher leaps
-  const skF=clamp(1+jv*0.010,1.0,1.45), encF=clamp(1.15-encumbrance().ratio*0.5,0.55,1.15);
-  return 7.6*skF*encF;                                           // height ≈ v²/2g (≈0.4 overloaded … ≈3.5 light & skilled)
+// AC jump (ACE MovementSystem): hold-to-charge power bar 0→1; height scales LINEARLY with power
+// (so velocity ∝ √power), with the skill term on AC's asymptote curve jump/(jump+1300) and the
+// burden modifier (≤100% free, linear to zero at 200%). At 0 stamina the skill counts as 0.
+function jumpVelocity(power){
+  power=(typeof power==="number")?clamp(power,0,1):1;
+  const jv=player.st>0?skillValue("jump"):0;
+  const enc=encumbrance().ratio, burdenMod=enc<1?1:Math.max(0,2-enc);
+  const skF=clamp(1+ (jv/(jv+1300))*6.0 ,1.0,1.9);               // AC's asymptote shape, tuned to this world's GRAV/geometry
+  return 7.6*skF*Math.max(0.28,Math.sqrt(burdenMod))*Math.sqrt(0.12+0.88*power);   // h ∝ power (AC), tap ≈ AC's minimum hop
 }
-function tryJump(){
+function tryJump(power){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
-  if(player.st<8){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
-  player.vy=jumpVelocity(); player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-8); if(SFX.step)SFX.step();
+  if(encumbrance().ratio>=2){ if(now()-lastBreath>1600){lastBreath=now();log("You are too encumbered to jump!","warn");} return; }   // AC: CantJumpLoadedDown
+  power=(typeof power==="number")?clamp(power,0,1):1;
+  const cost=Math.ceil((encumbrance().ratio+0.5)*power*8+2);     // ACE JumpStaminaCost: ceil((burden+0.5)×power×8+2)
+  if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
+  player.vy=jumpVelocity(power); player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.step)SFX.step();
+}
+// hold Space to charge (AC's jump bar: ~0.7s to full), release to leap; a tap gives the minimum hop
+let jumpChargeT=-1;
+function startJumpCharge(){ if(!player.alive||paused||!player.grounded) return; if(jumpChargeT<0) jumpChargeT=0; }
+function updateJumpCharge(dt){
+  if(jumpChargeT<0) return;
+  if(!player.alive||paused){ jumpChargeT=-1; return; }
+  if(held("jump")){ jumpChargeT=Math.min(1,jumpChargeT+dt/0.7); }
+  else { const p=jumpChargeT; jumpChargeT=-1; tryJump(p<0.08?0:p); }
 }
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
@@ -9022,9 +9039,9 @@ const WEAPON_TYPES={
   mace:    {mode:"melee",  cd:1.36, reach:0.95, dmg:1.42, stam:11, dt:"bludgeon", dvar:0.45, blurb:"crushing, slow"},
   staff:   {mode:"melee",  cd:1.05, reach:1.30, dmg:0.96, stam:8,  dt:"bludgeon", dvar:0.33, blurb:"staff — reach, steady"},
   twohand: {mode:"melee",  cd:1.45, reach:1.45, dmg:1.62, stam:14, dt:"slash",    dvar:0.50, blurb:"two-handed — devastating, slow"},
-  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, dt:"pierce",  dvar:0.33, blurb:"ranged"},
-  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, dt:"pierce",  dvar:0.42, blurb:"ranged, hard-hitting"},
-  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  dt:"pierce",  dvar:0.30, blurb:"thrown darts — fast"},
+  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, dt:"pierce",  dvar:0.33, pspd:78, blurb:"ranged"},
+  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, dt:"pierce",  dvar:0.42, pspd:84, blurb:"ranged, hard-hitting"},
+  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  dt:"pierce",  dvar:0.30, pspd:70, blurb:"thrown darts — fast"},
   focus:   {mode:"focus",   cd:1.00, reach:0.00, dmg:0.0,  stam:0,  blurb:"casting focus — empowers every school of magic"},
   unarmed: {mode:"melee",   cd:0.55, reach:0.70, dmg:0.66, stam:4,  dt:"bludgeon", dvar:0.20, blurb:"unarmed — fastest, very light"},
 };
@@ -11841,10 +11858,14 @@ function arriveAt(x,z){
 function fallDamage(drop){
   if(player.arriveGrace){ player.arriveGrace=false; return; }   // portal-arrival landing is free
   if(!player.alive||inDungeon||inNetwork||drop<=0) return;   // instances are flat — no meaningful drops
-  const safe=5.5+skillValue("jump")*0.04;   // higher Jump → land safely from farther (a 2-storey drop is free)
+  // ACE HandleFallingDamage: damage is LINEAR in landing speed past a safe threshold —
+  // dmg = (v/vSafe − 1) × 87.29, bludgeon-typed. AC's safe fall ≈ 12.7 m ≈ a 4-storey drop here
+  // (one storey H1F=4.4u ≈ 3 m). Retail reportedly let Jump ability soften landings (ACE left the
+  // damping commented out) — we keep a modest Jump bump on the threshold for that.
+  const safe=17+skillValue("jump")*0.02;
   if(drop<=safe) return;
-  const over=drop-safe;
-  let dmg=Math.round(over*over*0.8+over*3);   // gentle knee near the safe height, steep for real cliffs (which can kill)
+  const v=Math.sqrt(2*GRAV*drop), vSafe=Math.sqrt(2*GRAV*safe);
+  let dmg=Math.round((v/vSafe-1)*87.29*(1-resistVs("bludgeon")));   // bludgeon resistance mitigates, as in ACE
   if(dmg<=0) return;
   dmg=Math.min(dmg,player.mhp);
   player.hp-=dmg; if(SFX.hurt)SFX.hurt(); shake(clamp(dmg*0.02,0.1,0.5));
@@ -12136,8 +12157,11 @@ function executeSpell(id){
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
     halo.scale.setScalar((sp.r||0.28)*4.2); mesh.add(halo);   // additive glow so the bolt reads as energy, not a solid primitive
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
-    pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:oy,z:oz,vx:dx*sp.speed,vy:dir.y*sp.speed,vz:dz*sp.speed,
-      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:2.2});
+    // AC (ACE WorldObject_Magic): ARC spells are the only lobbed war geometry — launched from full
+    // caster height with an upward loft, falling under gravity; all other geometries fly flat.
+    const isArc=geom==="arc";
+    pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:isArc?EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,
+      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?4:2.2});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
@@ -12223,7 +12247,10 @@ function fireArrow(){
     new THREE.MeshStandardMaterial({color:0x8a6a3a}));
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
   mesh.position.set(ox,oy,oz);mesh.castShadow=true;scene.add(mesh);
-  pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*75,vy:dir.y*75,vz:dir.z*75,
+  // AC (ACE Creature_Missile): launch speed comes from the LAUNCHER (heavy launchers loose faster
+  // bolts than light ones), and missiles fly a true ballistic arc under gravity — loft to reach.
+  const pv=prof.pspd||75;
+  pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*pv,vy:dir.y*pv,vz:dir.z*pv,grav:true,
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(power){
@@ -12373,7 +12400,7 @@ const ACTIONS=[
   {id:"back",   label:"Move Back",   group:"Movement",def:"KeyS",held:true},
   {id:"left",   label:"Strafe Left", group:"Movement",def:"KeyA",held:true},
   {id:"right",  label:"Strafe Right",group:"Movement",def:"KeyD",held:true},
-  {id:"jump",   label:"Jump",        group:"Movement",def:"Space",run:()=>tryJump()},
+  {id:"jump",   label:"Jump",        group:"Movement",def:"Space",run:()=>startJumpCharge()},   // hold to charge (AC jump bar), release to leap
   {id:"dodge",  label:"Dodge Roll",  group:"Movement",def:"shift+Space",run:()=>dodge()},
   {id:"interact",  label:"Interact / Talk", group:"Actions",def:"KeyE",run:()=>interact()},
   {id:"weaponswap",label:"Swap Weapon",     group:"Actions",def:"KeyQ",run:()=>weaponSwap()},
@@ -12868,6 +12895,7 @@ function update(dt){
     }
   }
   // timers/regen
+  updateJumpCharge(dt);   // AC hold-to-charge jump: releases when Space is let go
   player.meleeCd=Math.max(0,player.meleeCd-dt);
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
   player.invuln=Math.max(0,player.invuln-dt);
@@ -12892,7 +12920,10 @@ function update(dt){
   updatePets(dt);
   // player projectiles
   for(let i=pProj.length-1;i>=0;i--){
-    const p=pProj[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
+    const p=pProj[i];
+    if(p.grav){ p.vy-=GRAV*dt;   // AC ballistics: arrows/bolts (and lobbed arcs) fall under gravity
+      if(p.arrow){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); } }  // nose follows the arc
+    p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
