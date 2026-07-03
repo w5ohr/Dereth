@@ -747,6 +747,9 @@ function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_W
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
 // AC: attributes are bought with unassigned XP on a steep escalating curve (not free level points).
 function attrCost(v){ return Math.round(25*Math.pow(Math.max(1,v-9),1.7)); }   // XP to raise from innate v → v+1
+// AC's cheaper secondary-attribute track: pour XP into Health / Stamina / Mana points (n → n+1). Cheaper
+// than primary attributes (retail pt-1 = 73 vs 110), capped at +200 like retail's ~196.
+function vitalCost(n){ return Math.round(16*Math.pow(Math.max(1,n+1),1.7)); }
 // credit economy: available = base(level) − spent; specialization capped at 70 credits' worth
 function creditBase(){ let fromLevels=0;
   if(AC_XP){ const ch=AC_XP.credits, top=Math.min(player.level,ch.length-1);   // the real chart: credits granted at each level (46 total to 275)
@@ -775,6 +778,7 @@ const ATTR_DESC={Strength:"Melee damage & burden",Endurance:"Health, stamina & r
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   attr:{Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10},
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
+  vitals:{hp:0,st:0,mn:0},   // AC secondary attributes: XP-raised Health/Stamina/Mana points, added to the derived base max
   level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},jewelry:{},gearSkill:{},
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,potStam:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
@@ -806,6 +810,7 @@ function derive(){
   player.mhp=60+a.Endurance*2+player.level*6;
   player.mst=50+a.Endurance*4;
   player.mmn=40+a.Self*6+player.level*2;
+  if(player.vitals){ player.mhp+=player.vitals.hp||0; player.mst+=player.vitals.st||0; player.mmn+=player.vitals.mn||0; }  // AC: XP-raised vital points add to the base max
   // THE authentic AC run formula (client GetRunRate, preserved in ACEmulator):
   //   rate = (burdenMod × (Run/(Run+200) × 11) + 4) / 4, hard-capped at 4.5× when Run ≥ 800.
   //   burdenMod: ≤100% carry capacity = 1.0, then linear down to 0 at 300% (AC EncumbranceSystem).
@@ -4595,6 +4600,53 @@ const ATTACK={
 };
 const ATK_DUR={pound:0.55,rear:0.6,spin:0.6,gore:0.5,bite:0.35,sting:0.35,swipe:0.4,grab:0.45,thrust:0.35};
 function startStrike(m){ const st=ATTACK[m.kind]; m.strikeDur=(st&&ATK_DUR[st])||0.3; m.strikeT=m.strikeDur; }
+// B1 — signature family attacks. Each creature family fights like its AC counterpart. Returns true when
+// the special OWNS the creature's action this frame (a charge dash or spin whirl), so the generic
+// move+attack is suppressed; ranged/utility specials (boulder, acid, drain) fire on cooldown and
+// return false so ordinary pursuit continues alongside them.
+const MONSTER_SPECIAL={ tusker:"charge", auroch:"charge", mattekar:"charge",
+  lugian:"boulder", golem:"boulder",
+  olthoi:"acid", olthoisoldier:"acid", olthoiworker:"acid",
+  skeleton:"drain", mummy:"drain", zombie:"drain",
+  armoredillo:"spin" };
+function monsterSpecial(m,b,d,dx,dz,dt){
+  const sp=MONSTER_SPECIAL[m.kind]; if(!sp||!player.alive) return false;
+  m.spCd=Math.max(0,(m.spCd||0)-dt);
+  if(m.chargeT>0){   // charge in progress → barrel forward, gore on contact
+    m.chargeT-=dt; const a=Math.atan2(dx,dz); m.ang=a;
+    m.x+=Math.sin(a)*b.spd*3.4*dt; m.z+=Math.cos(a)*b.spd*3.4*dt;
+    if(Math.random()<0.6) burst(m.x,1.1,m.z,0xffcf7a,1);
+    if(d<m.r+player.r+0.9){ playerHurt(m.dmg*2.3*(m.enraged?1.3:1),m.x,m.z,"melee","pierce");
+      floater(m.x,(m.headY||1.6)+2,m.z,"GORE!","#ff9a3a"); if(SFX.growl)SFX.growl(); shake(0.22); m.chargeT=0; m.spCd=6; }
+    else if(m.chargeT<=0) m.spCd=4;
+    return true; }
+  if(m.spinT>0){   // spin in progress → whirl, striking anything close (once)
+    m.spinT-=dt; m.ang+=dt*16;
+    if(Math.random()<0.5) burst(m.x,0.8,m.z,0xcdbf9a,1);
+    if(d<m.r+player.r+1.7 && !m._spinHit){ playerHurt(m.dmg*1.7,m.x,m.z,"melee","bludgeon"); floater(m.x,(m.headY||1.6)+2,m.z,"SPIN!","#ffd27a"); m._spinHit=1; }
+    if(m.spinT<=0){ m.spCd=5; m._spinHit=0; }
+    return true; }
+  if(m.spCd>0) return false;
+  if(sp==="charge" && d>4.5 && d<15){ m.chargeT=0.75; m.spCd=6; floater(m.x,(m.headY||1.6)+2,m.z,"lowers its head…","#ffd27a"); return true; }
+  if(sp==="spin"   && d<4.5){ m.spinT=0.85; m._spinHit=0; floater(m.x,(m.headY||1.6)+2,m.z,"curls up…","#ffd27a"); return true; }
+  if(sp==="boulder"&& d>6 && d<44){   // giants hurl an arcing rock even at melee ranges
+    const dirx=dx/d,dirz=dz/d,oy=1.5, spd=Math.min(40,16+d);
+    const mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(0.44,0),new THREE.MeshStandardMaterial({color:0x8a8276,roughness:1,flatShading:true}));
+    mesh.position.set(m.x,oy,m.z); scene.add(mesh);
+    eProj.push({mesh,x:m.x,y:oy,z:m.z,vx:dirx*spd,vy:0,vz:dirz*spd,dmg:Math.round(m.dmg*1.6*(m.enraged?1.3:1)),r:0.5,life:3,type:"missile",element:null});
+    m.spCd=5; floater(m.x,(m.headY||1.6)+2.2,m.z,"hurls a boulder!","#cdbfa0"); if(SFX.growl)SFX.growl(); return false; }
+  if(sp==="acid" && d<7){   // short-range acid spray cone + a clinging slow
+    const ax=dx/d,az=dz/d, fx=Math.sin(m.ang),fz=Math.cos(m.ang);
+    if(fx*ax+fz*az>0.35){ playerHurt(m.dmg*1.25,m.x,m.z,"missile","acid");
+      if(!(player.dispelImmune>0)){ player.debuffs=player.debuffs||{}; player.debuffs.slow={v:0.5,t:2.5}; floater(player.x,EYE+0.6,player.z,"Slowed!","#9af06a"); }
+      for(let i=0;i<12;i++) burst(m.x+ax*(1+Math.random()*2),0.9,m.z+az*(1+Math.random()*2),0x9af06a,1);
+      floater(m.x,(m.headY||1.6)+2,m.z,"acid spray!","#9af06a"); m.spCd=4.5; }
+    return false; }
+  if(sp==="drain" && d<m.r+player.r+1.0){   // undead sap your stamina & mana as they close
+    player.st=Math.max(0,player.st-10); player.mn=Math.max(0,player.mn-10);
+    floater(player.x,EYE+0.7,player.z,"drained!","#9b6bd0"); burst(player.x,EYE,player.z,0x9b6bd0,8); m.spCd=5; return false; }
+  return false;
+}
 // Drives one creature's rig for the frame. Sets body pitch/roll on m._pitch/m._roll and
 // returns the vertical bob offset (added to groundY by the caller). `moved` = it travelled this frame.
 function animateCreatureRig(m,dt,moved){
@@ -12573,6 +12625,15 @@ function buildSheet(){
       <div class="ctl"><button class="pmbtn" data-lower="${a}" title="lower (refund ${v>10?attrCost(v-1).toLocaleString():0} XP)" ${v<=10?'disabled':''}>−</button><span class="val" id="sv_${a}">${v}</span><button class="pmbtn" data-a="${a}" title="${v>=100?'at innate cap 100':(player.skillPts>0?'raise (free legacy point)':'raise: '+cost.toLocaleString()+' XP')}" ${canRaise?'':'disabled'}>+</button></div>`;
     attrRows.appendChild(row);
   }
+  // AC secondary attributes — pour XP into Health / Stamina / Mana (the cheaper vital track)
+  player.vitals=player.vitals||{hp:0,st:0,mn:0};
+  for(const [vk,vlab,mk] of [["hp","Health","mhp"],["st","Stamina","mst"],["mn","Mana","mmn"]]){
+    const n=player.vitals[vk]||0, cost=vitalCost(n), canR=n<200&&player.xpUnspent>=cost;
+    const row=document.createElement('div');row.className="row";
+    row.innerHTML=`<div><span class="lab">${vlab}</span> <span class="desc">— max ${player[mk]}${n>0?' ('+'+'+n+' raised)':''}</span></div>
+      <div class="ctl"><button class="pmbtn" data-vitlo="${vk}" title="lower (refund ${n>0?vitalCost(n-1).toLocaleString():0} XP)" ${n<=0?'disabled':''}>−</button><span class="val">${n}</span><button class="pmbtn" data-vit="${vk}" title="${n>=200?'at cap 200':'raise: '+cost.toLocaleString()+' XP'}" ${canR?'':'disabled'}>+</button></div>`;
+    attrRows.appendChild(row);
+  }
   document.getElementById('pts').textContent=player.xpUnspent.toLocaleString()+(player.skillPts>0?" (+"+player.skillPts+" free)":"");
   const ar=document.getElementById('achRows');
   ar.innerHTML=ACHIEVEMENTS.map(a=>{
@@ -12643,6 +12704,16 @@ function buildSheet(){
   attrRows.querySelectorAll('[data-lower]').forEach(btn=>btn.onclick=()=>{
     const a=btn.dataset.lower, v=player.attr[a]; if(v<=10) return;
     player.attr[a]--; player.xpUnspent+=attrCost(v-1); derive(); saveGame(); buildSheet();   // AC-style: lowering refunds the XP that point cost
+  });
+  attrRows.querySelectorAll('[data-vit]').forEach(btn=>btn.onclick=()=>{
+    const vk=btn.dataset.vit; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0;
+    if(n>=200){ log("Vital points cap at 200.","warn"); return; }
+    const cost=vitalCost(n); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise that vital.","warn"); return; }
+    player.xpUnspent-=cost; player.vitals[vk]=n+1; derive(); saveGame(); buildSheet();
+  });
+  attrRows.querySelectorAll('[data-vitlo]').forEach(btn=>btn.onclick=()=>{
+    const vk=btn.dataset.vitlo; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0; if(n<=0) return;
+    player.vitals[vk]=n-1; player.xpUnspent+=vitalCost(n-1); derive(); saveGame(); buildSheet();   // lowering refunds the XP that point cost
   });
 }
 function openSheet(){buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
@@ -12905,6 +12976,8 @@ function update(dt){
     if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0) m.state="wander"; } else if(d>b.sense*1.4) m.state="wander"; }
     if(m.state==="chase"&&player.alive){
       m.ang=Math.atan2(dx,dz);
+      const spActive=monsterSpecial(m,b,d,dx,dz,dt);   // B1: a charge/spin owns the frame; boulder/acid/drain layer on top
+      if(!spActive){
       const stopAt=b.range>0?b.range*0.7:m.r+player.r+0.2;
       if(d>stopAt){const es=m.enraged?1.35:1;m.x+=dx/d*b.spd*es*slowF*dt;m.z+=dz/d*b.spd*es*slowF*dt;}
       if(b.range>0){
@@ -12934,6 +13007,7 @@ function update(dt){
         }
       } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack");const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
+      }   // end B1 !spActive gate
     } else {
       if(m.t>rnd(1.5,3.5)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.4)m.idleT=rnd(0.8,1.8);}
       if(Math.hypot(m.x-m.wx,m.z-m.wz)>20) m.ang=Math.atan2(m.wx-m.x,m.wz-m.z);
@@ -19852,7 +19926,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -19878,6 +19952,7 @@ function applySave(){
 function applySaveObj(s){
   if(!s) return false;
   Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
+    vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
     kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,

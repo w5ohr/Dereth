@@ -699,20 +699,31 @@ async def resolve_attack(cl, mid, dmg):
         await broadcast(die_msg)
         if is_boss:
             await broadcast({"t": "system", "msg": f"{cl.charname or cl.username} has slain {m['name']}! Glory echoes across Dereth."})
-        # shared XP: everyone who damaged it earns full XP; the killer's nearby
-        # party members share it too (fellowship), even without tagging the mob.
-        recipients = set(m.get("dealt", {cl.username: dmg}).keys())
+        # shared XP. AC fellowship: the killer's party members within range split the kill with a
+        # size bonus (equal split + bonus). Solo damage-dealers outside the fellowship still earn
+        # full XP (tagging generosity), so no one is punished for helping.
+        fellows = []
         if cl.party in PARTIES:
             for acc in PARTIES[cl.party]["members"]:
                 c = CLIENTS.get(acc)
                 if c and c.in_world and math.hypot(c.x - m["x"], c.z - m["z"]) <= FELLOW_RANGE:
-                    recipients.add(acc)
-        for u in recipients:
+                    fellows.append(acc)
+        share = FELLOW_SHARE[min(len(fellows), 9)] if len(fellows) >= 2 else 1.0
+        sent = set()
+        for u in fellows:
+            c = CLIENTS.get(u)
+            if c:
+                await c.send({"t": "reward", "xp": int(round(m["xp"] * share)), "kind": m["kind"], "boss": is_boss})
+                sent.add(u)
+        for u in set(m.get("dealt", {cl.username: dmg}).keys()):
+            if u in sent:
+                continue
             c = CLIENTS.get(u)
             if c:
                 await c.send({"t": "reward", "xp": m["xp"], "kind": m["kind"], "boss": is_boss})
         # allegiance: each rewarded character's patron receives EXTRA pass-up XP
-        await alg_passup_kill([CLIENTS[u].charname for u in recipients
+        rewarded = set(fellows) | set(m.get("dealt", {cl.username: dmg}).keys())
+        await alg_passup_kill([CLIENTS[u].charname for u in rewarded
                                if CLIENTS.get(u) and CLIENTS[u].charname], m["xp"])
         # gold + items drop on the ground as shared, first-come loot
         await spawn_loot(m, is_boss)
@@ -843,7 +854,10 @@ EMOTES = {"wave": "waves.", "cheer": "cheers!", "dance": "breaks into a dance.",
           "kneel": "kneels.", "clap": "applauds."}
 PARTIES = {}           # pid -> {"leader": account, "members": [accounts]}
 _party_seq = 0
-PARTY_MAX = 6
+PARTY_MAX = 9          # AC fellowship cap (founder + 8)
+# AC fellowship XP: an equal split with a size bonus, so the shared pool grows (~1.5x the kill's
+# XP at 2 members up to ~3x at a full 9) — per-member fraction of the kill XP by fellowship size.
+FELLOW_SHARE = {1: 1.00, 2: 0.75, 3: 0.60, 4: 0.50, 5: 0.45, 6: 0.40, 7: 0.37, 8: 0.34, 9: 0.33}
 
 def party_names(pid):
     p = PARTIES.get(pid)
