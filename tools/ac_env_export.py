@@ -325,7 +325,8 @@ def main():
     envcache = {}
     index = {}
     print("dungeon                        lb    cells  used  tris     groups  file")
-    for name in SAMPLE:
+    ALL = sorted(lbmap)
+    for name in ALL:
         hexid = lbmap.get(name)
         if not hexid:
             print(f"  {name}: NOT IN dungeon-landblocks.json"); continue
@@ -350,8 +351,19 @@ def main():
             gout.append(entry)
 
         fn = name.replace(" ", "_") + ".json"
+        # cell origins in three-space for spawns / entry / hoard placement + BFS depth order
+        from collections import deque as _dq
+        seen={0x0100 if 0x0100 in cells else min(cells):0}
+        q=_dq(list(seen))
+        while q:
+            cur=q.popleft()
+            for o in cells[cur]["ports"]:
+                if o in cells and o not in seen: seen[o]=seen[cur]+1; q.append(o)
+        order=sorted(seen, key=lambda c: seen[c])
+        cellpos=[[round(cells[c]["x"],2), round(cells[c]["z"],2), round(-cells[c]["y"],2)] for c in order]
         payload = dict(name=name, landblock=hexid,
-                       cells=stats["cells_ok"], groups=gout)
+                       cells=stats["cells_ok"], entry=cellpos[0], far=cellpos[-1],
+                       cellPos=cellpos, groups=gout)
         json.dump(payload, open(os.path.join(OUT, fn), "w"), separators=(",", ":"))
         kb = os.path.getsize(os.path.join(OUT, fn)) // 1024
         index[name] = dict(file=fn, landblock=hexid, cells=stats["cells_ok"],

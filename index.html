@@ -18042,7 +18042,7 @@ const DUNGEON_SCRIPTS={
 // optional full-fidelity layout pack: drop a cell.dat-derived export (same schema, keyed by dungeon
 // name) at assets/dungeon-layouts.json and every entry merges over DUNGEON_SCRIPTS at boot.
 try{ fetch('assets/dungeon-layouts.json').then(r=>r&&r.ok?r.json():null).then(j=>{
-  if(j&&typeof j==="object"){ let n=0; for(const k in j){ DUNGEON_SCRIPTS[k]=j[k]; n++; }
+  if(j&&typeof j==="object"){ let n=0; for(const k in j){ j[k].pack=true; DUNGEON_SCRIPTS[k]=j[k]; n++; }
     if(n) console.log("Dungeon layout pack: "+n+" room-for-room layouts loaded."); } }).catch(()=>{}); }catch(e){}
 function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName){
   hpMul=hpMul||1;
@@ -18187,8 +18187,71 @@ function dungeonSlide(ox,oz,nx,nz){
 }
 function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
   if(!dungeonWalkable(ax+(bx-ax)*t,az+(bz-az)*t)) return false;} return true; }
+// ── REAL dungeon geometry (assets/acdungeons, tools/ac_env_export.py): the dungeon's true
+//    EnvCell room-piece meshes assembled at their real positions, with movement rects fed
+//    straight from the actual 10-unit cells (multi-level floors included). Used for pack
+//    dungeons; hand-scripted walkthrough dungeons keep the grid renderer with their gates. ──
+let AC_DGN=null,_acDgnCache={};
+try{ fetch('assets/acdungeons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_DGN=j;
+  console.log("AC dungeon geometry: "+Object.keys(j).length+" real dungeons available."); } }).catch(()=>{}); }catch(e){}
+function buildDungeonReal(def,dj){
+  const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
+  for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
+  const grp=new THREE.Group(), TL=new THREE.TextureLoader();
+  for(const g of dj.groups){
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(g.verts,3));
+    geo.setAttribute('normal',new THREE.Float32BufferAttribute(g.normals,3));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uvs,2));
+    geo.setIndex(g.idx);
+    let mat;
+    if(g.tex){ const t=TL.load('assets/acdungeons/tex/'+g.tex); t.encoding=THREE.sRGBEncoding;
+      t.wrapS=t.wrapT=THREE.RepeatWrapping; mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02,side:THREE.DoubleSide}); }
+    else mat=new THREE.MeshStandardMaterial({color:(g.color!=null?g.color:0x777788),roughness:0.85,side:THREE.DoubleSide});
+    const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
+  }
+  scene.add(grp); dungeonObjs.push(grp);
+  const amb=new THREE.AmbientLight(0x8a7a66,0.55); scene.add(amb); dungeonObjs.push(amb);
+  // torch props with pooled lights along the halls
+  for(let i=4;i<dj.cellPos.length;i+=Math.max(6,Math.floor(dj.cellPos.length/10))){
+    const c=dj.cellPos[i];
+    for(const o of buildProp(th.prop,c[0],c[2],th.light)){ o.position.y+=c[1]; scene.add(o); dungeonObjs.push(o); } }
+  // entry: spawn + exit archway at the true entrance cell
+  const en=dj.entry;
+  dungeonExit={x:en[0],z:en[2]+3.4}; dungeonSpawn={x:en[0],z:en[2]-1.5};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,en[1]+0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Leave the Delve — E","dungeons");elbl.position.set(dungeonExit.x,en[1]+3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+  const elt=new THREE.PointLight(0x6aa0ff,1.4,16);elt.position.set(dungeonExit.x,en[1]+2,dungeonExit.z);scene.add(elt);dungeonObjs.push(elt);
+  // treasure chest at the deepest cell
+  const far=dj.far, cm=new THREE.Group();
+  const cbase=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.8,1.0),new THREE.MeshStandardMaterial({color:0x8a5a2a,metalness:0.3,roughness:0.6}));
+  cbase.position.y=0.4;cbase.castShadow=true;cm.add(cbase);
+  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.46,0.34,1.05),new THREE.MeshStandardMaterial({color:0x6a4420,metalness:0.3,roughness:0.6}));
+  lid.position.y=0.95;cm.add(lid);
+  const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
+  cm.position.set(far[0],far[1],far[2]);scene.add(cm);dungeonObjs.push(cm);
+  dungeonChest={x:far[0],z:far[2],mesh:cm,lid,light:clt,opened:false};
+  dungeonLock=null;dungeonVault=null;
+  // denizens at real cell positions; the named warden guards the hoard
+  const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
+  const n=Math.min(38,Math.max(8,Math.floor(dj.cellPos.length/7)));
+  for(let i=0;i<n;i++){ const c=dj.cellPos[irnd(2,dj.cellPos.length-1)];
+    spawnDungeonMonster(kinds[irnd(0,kinds.length-1)],c[0]+rnd(-2.5,2.5),c[2]+rnd(-2.5,2.5),false,hpMul); dungeonMobs++; }
+  spawnDungeonMonster(th.warden,far[0]+rnd(-2,2),far[2]+rnd(-2,2),true,hpMul,sc&&sc.boss); dungeonMobs++;
+  if(sc&&sc.d) log(`<i style="color:#cdbf9a">${sc.d}</i>`,"sys");
+  log(`<i style="color:#8a9a6a">These halls stand exactly as the old world built them — ${dj.cells} chambers of true stone.</i>`,"sys");
+}
 function buildDungeon(def){
   dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+  { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
+    if(dgn&&(!sc0||sc0.pack)&&!_acDgnCache.disable){
+      const cached=_acDgnCache[def.name];
+      if(cached){ buildDungeonReal(def,cached); return; }
+      // not fetched yet: fall through to the grid build this visit; prefetch for next time
+      if(cached===undefined){ _acDgnCache[def.name]="loading";
+        fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).then(j=>{ _acDgnCache[def.name]=j; }).catch(()=>{ _acDgnCache[def.name]=null; }); }
+    } }
   const th=def.theme;
   const L=genDungeonLayout(def),wallMat=texMat(stoneFloorTex,th.wall);   // real masonry texture, tinted to the theme
   const floorMat=texMat(stoneFloorTex,th.floor),WH=7,Tw=1.0,gap=3.2;
