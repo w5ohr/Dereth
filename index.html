@@ -3275,8 +3275,8 @@ function gfxForestStream(){
 //    Turbine's own head meshes + hair/eye/nose/mouth strip textures, seeded per NPC
 //    (heritage follows the region), swapped onto the nearest few procedural bodies.
 //    Self-contained on purpose — the player's head attachment is a separate work lane. ──
-let AC_HEADS=null,_acHeadGeo={},_acHeadTexC={};
-fetch('assets/acheads/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.heritages)AC_HEADS=j; }).catch(()=>{});
+// (AC_HEADS itself is declared + fetched by the player-head system below — one shared index)
+let _acHeadGeo={},_acHeadTexC={};
 const _NPC_HERITAGE={0:"aluvian",1:"sho",2:"gharu'ndim",3:"viamontian"};
 function _acHeadTex(id){
   if(!_acHeadTexC[id]){ const t=new THREE.TextureLoader().load('assets/acheads/tex/'+id+'.png');
