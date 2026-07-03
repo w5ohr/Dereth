@@ -6738,8 +6738,9 @@ function damageMonster(m,dmg,crit){
     m.enraged=true;
     floater(m.x,(m.headY||1.6)+2,m.z,"ENRAGED","#ff5a5a",1.3);
     m.mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(0x6a1010); });
-    if(SFX.growl) SFX.growl();
+    if(SFX.growl) SFX.growl(m.kind);
   }
+  if(Math.random()<0.35&&typeof creatureSFX==="function") creatureSFX(m.kind,"wound");   // the creature's real pain cry
   if(m.hp<=0) killMonster(m);
 }
 // creature trophies (AC drops): a body-part token each creature may yield, sellable to any vendor
@@ -6792,7 +6793,7 @@ function killMonster(m){
   if(streak===5||streak===10||streak===20) toast(streak+" KILL STREAK!");
   const sMult=1+Math.min(streak-1,12)*0.08;
   if(m.isBoss){
-    burst(m.x,2,m.z,0xff5a5a,40);SFX.death();SFX.level();player.bossKills++;
+    burst(m.x,2,m.z,0xff5a5a,40);SFX.death(m.kind);SFX.level();player.bossKills++;
     gainXP(Math.round(m.xp*sMult));player.gold+=irnd(m.goldRange[0],m.goldRange[1]);
     for(let i=0;i<3;i++) addDrop(m.x+rnd(-2,2),m.z+rnd(-2,2),{type:"item",item:rollItem(true,5)});
     addDrop(m.x,m.z,{type:"gold",amt:irnd(80,160)});
@@ -6805,7 +6806,7 @@ function killMonster(m){
     else { boss=null; setTimeout(spawnBoss,45000); }
     saveGame();return;
   }
-  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death();
+  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death(m.kind);
   clog(`You have slain the <b>${m.name||b.name}</b>${m.isElite?" (champion)":""} — +${Math.round((m.xp||b.xp)*sMult)} XP.`);
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
@@ -12932,6 +12933,24 @@ for(const k in _SND_MAP){ const syn=_SFX[k], keys=_SND_MAP[k];
   SFX[k]=(...a)=>{ if(!playSample(keys)) syn&&syn(...a); }; }
 // authentic per-creature vocals (kind_idle/_attack/_wound/_death) — used by the monster AI where it has a kind
 function creatureSFX(kind,act){ return playSample((kind||"")+"_"+act); }
+{ const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
+  SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
+  SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
+// ── ambient music: the original client tracks (assets/acmusic, tools/ac_music_export.py) ──
+let MUSIC=null,_musEl=null,_musZone=null;
+fetch('assets/acmusic/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.tracks&&j.tracks.length)MUSIC=j.tracks; }).catch(()=>{});
+setInterval(()=>{ try{
+  if(!MUSIC||typeof running==="undefined"||!running||(typeof muted!=="undefined"&&muted)){ if(_musEl){_musEl.pause();_musZone=null;} return; }
+  const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon":
+    ((typeof nearestCapitalDist==="function"&&nearestCapitalDist(player.x,player.z)<160)?"town":"wild");
+  if(zone===_musZone&&_musEl&&!_musEl.paused) return;
+  if(zone!==_musZone){
+    const pick=zone==="dungeon"?MUSIC[1%MUSIC.length]:zone==="town"?MUSIC[0]:MUSIC[2+(Math.floor(now()/300000)%(Math.max(1,MUSIC.length-2)))];
+    if(_musEl) _musEl.pause();
+    _musEl=new Audio("assets/acmusic/"+pick.file); _musEl.loop=true; _musEl.volume=0.20; _musZone=zone;
+  }
+  _musEl.play().catch(()=>{});   // blocked until the first user gesture — retried each tick
+}catch(e){} },4000);
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -18975,8 +18994,8 @@ function onMobHit(msg){
 }
 function onMobDie(msg){
   const b=BESTIARY[msg.kind];
-  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
-  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(); }
+  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(msg.kind); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
+  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(msg.kind); }
   removeSharedMobAsDying(msg.id);
 }
 function removeSharedMobAsDying(id){
