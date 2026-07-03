@@ -2,15 +2,18 @@
 """Export real AC creatures as GLB models with their ORIGINAL animations.
 
 Reuses the portal.dat parsers from ac_model_export.py. For each bestiary kind, the ACE
-world DB names a representative weenie whose DIDs give the Setup (0x02 model) and
-MotionTable (0x09). The motion table's cycles yield the authentic Idle (Ready) and Walk
-/ Run animations (0x03 files: per-frame, per-part position+quaternion in setup space,
-with animation hooks skipped via a fixed payload-size table).
+world DB dump (acdata/ACE-World-Database-v0.9.294.sql) names a representative creature
+weenie whose DIDs give the Setup (0x02 model) and MotionTable (0x09). The motion table's
+cycles yield the authentic Idle (Ready) and Walk / Run loops; its links (keyed
+style<<16|fromMotion -> full MotionCommand) yield the one-shot melee Attack, Death and
+CastSpell animations (0x03 files: per-frame, per-part position+quaternion in setup
+space, with animation hooks skipped via a fixed payload-size table).
 
 Each creature becomes a self-contained GLB: one node per moving part (meshes with the
-original textures embedded as PNGs), plus AnimationClips named "Idle" and "Walk" whose
-TRS channels replay the original keyframes. These drop straight into the game's existing
-MONSTER_MODELS/GLTFLoader/AnimationMixer pipeline (clips are matched by /idle/ /walk/).
+original textures embedded as PNGs), plus AnimationClips named "Idle", "Walk", "Attack",
+"Death", "Cast" whose TRS channels replay the original keyframes. These drop straight
+into the game's existing MONSTER_MODELS/GLTFLoader/AnimationMixer pipeline (clips are
+matched by /idle/ /walk/ /attack/ /death|die/ /cast/).
 
 Output: assets/models/monsters/ac/<kind>.glb
 """
@@ -21,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location("ame", os.path.join(ROOT, "tools", "ac_model_export.py"))
 ame = importlib.util.module_from_spec(spec); spec.loader.exec_module(ame)
 Buf = ame.Buf
-ACE = os.path.join(ROOT, "ACE-World-16PY-master", "Database", "3-Core")
+ACEDB = os.path.join(ROOT, "acdata", "ACE-World-Database-v0.9.294.sql")
 OUT = os.path.join(ROOT, "assets", "models", "monsters", "ac")
 
 # kind -> representative weenie name (plain retail creatures; ACE DIDs 1=Setup, 2=MotionTable)
@@ -36,6 +39,11 @@ KINDS = {
  "moarsman":"Fetid Moarsman","sclavus":"Sata Sclavus","mite":"Mite Scamp",
  "niffis":"Niffis","carenzi":"Carenzi","armoredillo":"Armoredillo","siraluun":"Siraluun",
  "grievver":"Grievver","eater":"Eater","chittick":"Chittick","burun":"Burun Ruuk Lout",
+ # second wave: remaining bestiary kinds with a real (non-human-setup) retail model
+ "shadow":"Umbris Shadow","zefir":"Sufut Zefir","remoran":"Gold Remoran",
+ "mukkir":"Mukkir","rabbit":"White Rabbit",
+ # named bosses
+ "olthoiqueen":"Olthoi Queen","lichlord":"Lich Lord","virindidirector":"Virindi Director",
 }
 
 HOOK_PAYLOAD = {0:0,1:4,2:4,3:28,4:0,6:4,7:16,8:12,9:16,10:12,11:16,12:8,13:40,14:4,
@@ -79,35 +87,49 @@ def parse_motiontable(d):
     cycles = {}
     for _ in range(r.u32()):
         k = r.u32(); cycles[k] = motiondata()
-    return dict(default=default, styledef=styledef, cycles=cycles)
+    for _ in range(r.u32()):                         # modifiers (unused)
+        r.u32(); motiondata()
+    links = {}                                       # (style<<16|fromMotion) -> {MotionCommand: anims}
+    for _ in range(r.u32()):
+        k = r.u32(); sub = {}
+        for _ in range(r.u32()):
+            sk = r.u32(); sub[sk] = motiondata()
+        links[k] = sub
+    return dict(default=default, styledef=styledef, cycles=cycles, links=links)
 
 def creature_dids():
-    """kind -> (setupId, motionTableId): exact weenie name first, then 'Name ...' prefix variants."""
+    """kind -> (setupId, motionTableId) from the ACE world DB dump: creature weenies
+    (type 10) matched by display name — exact first, then 'Name ...' / '... Name'."""
+    re_weenie = re.compile(r"\((\d+),'(?:[^'\\]|\\.)*',(\d+),'[^']*'\)")
+    re_str = re.compile(r"\((\d+),(\d+),(\d+),'((?:[^'\\]|\\.)*)'\)")
+    re_did = re.compile(r"\((\d+),(\d+),(\d+),(\d+)\)")
+    creatures = set(); names = {}; setup = {}; mtab = {}
+    with open(ACEDB, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if line.startswith("INSERT INTO `weenie` "):
+                for wid, wtype in re_weenie.findall(line):
+                    if wtype == "10": creatures.add(int(wid))
+            elif line.startswith("INSERT INTO `weenie_properties_string` "):
+                for _, oid, t, val in re_str.findall(line):
+                    if t == "1": names[int(oid)] = val.replace("\\'", "'")
+            elif line.startswith("INSERT INTO `weenie_properties_d_i_d` "):
+                for _, oid, t, val in re_did.findall(line):
+                    if t == "1": setup[int(oid)] = int(val)
+                    elif t == "2": mtab[int(oid)] = int(val)
+    byname = {}                                     # display name -> lowest-wcid (setup, mt)
+    for wcid in sorted(creatures):
+        n = names.get(wcid); s = setup.get(wcid); m = mtab.get(wcid)
+        if not n or not s or not m: continue
+        if s == 0x02000001: continue                # human setup = not a real creature model
+        byname.setdefault(n, (s, m))
+    allnames = sorted(byname)
     out = {}
-    base = os.path.join(ACE, "9 WeenieDefaults", "SQL", "Creature")
-    allfiles = []
-    for root, _, files in os.walk(base):
-        for fn in files:
-            m = re.match(r"\d+ (.+)\.sql$", fn)
-            if m: allfiles.append((m.group(1), os.path.join(root, fn)))
-    def dids_of(path):
-        src = open(path, encoding="utf-8", errors="replace").read()
-        blk = re.search(r"weenie_properties_d_i_d.*?;", src, re.S)
-        d = dict(re.findall(r"\(\d+,\s*(\d+),\s*(0x[0-9A-Fa-f]+)\)", blk.group(0))) if blk else {}
-        if d.get("1") and d.get("2"):
-            s = int(d["1"], 16)
-            if s != 0x02000001:                    # human setup = not a real creature model
-                return (s, int(d["2"], 16))
-        return None
-    byname = {n: p for n, p in allfiles}
     for kind, pat in KINDS.items():
-        if kind in out: continue
-        got = byname.get(pat) and dids_of(byname[pat])
+        got = byname.get(pat)
         if not got:
-            for n, p in sorted(allfiles):
+            for n in allnames:
                 if n.startswith(pat + " ") or n.endswith(" " + pat):
-                    got = dids_of(p)
-                    if got: break
+                    got = byname[n]; break
         if got: out[kind] = got
     if "olthoisoldier" in out and "olthoi" not in out: out["olthoi"] = out["olthoisoldier"]
     return out
@@ -219,6 +241,7 @@ def export_creature(kind, setup_id, mt_id, portal, texbytes):
     if not glb.j["meshes"]:
         return None
     # animations from the motion table: Ready(3)=Idle, WalkForward(5)/RunForward(7)=Walk
+    # from cycles; melee attacks / Dead / CastSpell from links (one-shot actions).
     try:
         mt = parse_motiontable(portal.read(mt_id))
     except Exception:
@@ -228,30 +251,44 @@ def export_creature(kind, setup_id, mt_id, portal, texbytes):
         style = mt["default"] & 0xFFFF
         for key, anims in mt["cycles"].items():
             if (key & 0xFFFF) == motion and ((key >> 16) & 0xFFFF) == style and anims:
-                return anims[0]
+                return anims
         for key, anims in mt["cycles"].items():
             if (key & 0xFFFF) == motion and anims:
-                return anims[0]
+                return anims
         return None
-    for clip_name, motions in (("Idle", (3,)), ("Walk", (5, 7))):
-        ad = None
-        for mo in motions:
-            ad = cycle_for(mo)
-            if ad: break
-        if not ad: continue
-        try:
-            frames = parse_animation(portal.read(ad["a"]))
-        except Exception:
-            continue
-        lo, hi = ad["lo"], ad["hi"]
-        if hi < 0: hi = len(frames) - 1
-        lo = max(0, min(lo, len(frames)-1)); hi = max(0, min(hi, len(frames)-1))
-        seq = frames[lo:hi+1] if hi >= lo else list(reversed(frames[hi:lo+1]))
-        if len(seq) < 2: continue
+    def link_for(cmds, styles):
+        """MotionData for the first of cmds reachable from Ready, preferring styles order."""
+        if not mt: return None
+        for st in styles:
+            sub = mt["links"].get((st << 16) | 0x0003)
+            if not sub: continue
+            for c in cmds:
+                if sub.get(c): return sub[c]
+        for key in sorted(mt["links"]):
+            for c in cmds:
+                if mt["links"][key].get(c): return mt["links"][key][c]
+        return None
+    def seq_of(ad_list):
+        """AnimData chain -> (times, frames): each anim's lo..hi slice at its own fps."""
+        times = []; seq = []; t = 0.0
+        for ad in ad_list:
+            try:
+                frames = parse_animation(portal.read(ad["a"]))
+            except Exception:
+                continue
+            lo, hi = ad["lo"], ad["hi"]
+            if hi < 0: hi = len(frames) - 1
+            lo = max(0, min(lo, len(frames)-1)); hi = max(0, min(hi, len(frames)-1))
+            sub = frames[lo:hi+1] if hi >= lo else list(reversed(frames[hi:lo+1]))
+            fps = abs(ad["fps"]) or 15
+            for fr in sub:
+                seq.append(fr); times.append(t); t += 1.0/fps
+        return times, seq
+    def add_clip(clip_name, ad_list):
+        times, seq = seq_of(ad_list)
+        if len(seq) < 2: return
         step = max(1, len(seq)//20)
-        seq = seq[::step]
-        fps = abs(ad["fps"]) or 15
-        times = [i*step/fps for i in range(len(seq))]
+        seq = seq[::step]; times = times[::step]
         tacc = glb.floats(times, "SCALAR", minmax=True)
         anim = dict(name=clip_name, samplers=[], channels=[])
         for i in range(nparts):
@@ -267,6 +304,25 @@ def export_creature(kind, setup_id, mt_id, portal, texbytes):
             anim["channels"].append(dict(sampler=si+1, target=dict(node=node, path="rotation")))
         if anim["channels"]:
             glb.j["animations"].append(anim)
+    for clip_name, motions in (("Idle", (3,)), ("Walk", (5, 7))):
+        ad = None
+        for mo in motions:
+            ad = cycle_for(mo)
+            if ad: break
+        if ad: add_clip(clip_name, ad)
+    # full 32-bit MotionCommands as stored in link sub-keys
+    ATTACK = [0x10000063, 0x10000062, 0x10000064,    # unarmed AttackMed/High/Low 1
+              0x10000066, 0x10000065, 0x10000067,    # ...2
+              0x10000069, 0x10000068, 0x1000006A,    # ...3
+              0x10000059, 0x10000058, 0x1000005A,    # weapon swings (slash/backhand/thrust)
+              0x1000005B, 0x1000005C, 0x1000005D, 0x1000005E, 0x1000005F, 0x10000060]
+    style = (mt["default"] & 0xFFFF) if mt else 0
+    MELEE = [0x3C, 0x3E, 0x40, 0x44, 0x3F, 0x41, style]     # stances: unarmed first
+    for clip_name, cmds, styles in (("Attack", ATTACK, MELEE),
+                                    ("Death", [0x40000011], [style] + MELEE),
+                                    ("Cast", [0x400000D3], [0x47, style])):
+        ad = link_for(cmds, styles)
+        if ad: add_clip(clip_name, ad)
     if not glb.j["animations"]:
         del glb.j["animations"]
     path = os.path.join(OUT, kind + ".glb")
