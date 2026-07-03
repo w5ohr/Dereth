@@ -41,7 +41,8 @@ def parse_ext(path):
     return out
 
 def main():
-    client = json.load(open(os.path.join(ROOT, "assets", "acspells.json")))["spells"]
+    _cj = json.load(open(os.path.join(ROOT, "assets", "acspells.json")))
+    client = _cj["spells"]; compnames = _cj.get("components", {})
     out = {}
     n_dmg = n_boost = n_mod = 0
     for fn in os.listdir(EXT):
@@ -55,7 +56,10 @@ def main():
         o = {}
         if c.get("mana"): o["mana"] = c["mana"]
         if c.get("words"): o["words"] = c["words"]
-        if c.get("comps"): o["comps"] = c["comps"]
+        if c.get("comps"):
+            o["comps"] = c["comps"]
+            o["compn"] = [compnames.get(str(x), "?") for x in c["comps"]]
+        if c.get("icon"): o["icon"] = "%08x" % c["icon"]
         if c.get("d"): o["desc"] = c["d"]
         bi = e.get("base_Intensity"); var = e.get("variance")
         if isinstance(bi, (int, float)) and bi:

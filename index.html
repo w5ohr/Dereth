@@ -1089,7 +1089,9 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
     const a=j[s.name.toLowerCase()]; if(!a) continue;
     n++;
     if(a.mana) s.cost=a.mana;
-    if(a.words) s.acwords=a.words;
+    if(a.words){ s.acwords=a.words; s.words=a.words; }                      // spoken on cast + shown in the spellbook
+    if(a.compn) s.reagents=a.compn.map(c=>c.n).filter(n=>n&&n!=="?");       // the real component recipe
+    if(a.icon) s.acicon=a.icon;                                             // the spell's original icon
     if(a.desc) s.acdesc=a.desc;
     if(a.dmg&&typeof s.make==="function"){ const om=s.make,[lo,hi]=a.dmg;
       s.make=()=>{ const o=om(); o.dmg=lo+Math.random()*(hi-lo); return o; }; s.acdmg=a.dmg; nd++; }
@@ -10974,6 +10976,7 @@ function executeSpell(id){
   if(!player.alive||paused) return;
   const s=SPELLBOOK[id];if(!s) return;
   if(player.knownSpells.indexOf(id)<0){ log(`You have not learned <b>${s.name}</b> — scribe its scroll first.`,"warn"); return; }
+  if(s.acwords) floater(player.x,EYE+0.7,player.z,`“${s.acwords}”`,"#a98fd0",1.05);   // the caster speaks the words of power
   if((spellCd[id]||0)>now()) return;
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mk=MAGIC_SCHOOLS[s.school];
@@ -16098,7 +16101,7 @@ function buildSpellbook(){
       const row=document.createElement('div'); row.className="row";
       const eff=spellEffectText(s);
       const lore = s.words?`<div class="desc" style="margin-left:22px;color:#a98fd0;font-size:11px">⟡ <i>${esc(s.words)}</i>${s.reagents&&s.reagents.length?` · <span style="color:#8a9a6a">${s.reagents.map(esc).join(", ")}</span>`:""}</div>`:"";
-      row.innerHTML=`<div><span class="lab">${s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span>${lore}</div><div class="ctl">${ctl}</div>`;
+      row.innerHTML=`<div><span class="lab">${s.acicon?`<img src="assets/acicons/${s.acicon}.png" style="width:1.2em;height:1.2em;vertical-align:-0.25em;image-rendering:pixelated">`:s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span>${lore}</div><div class="ctl">${ctl}</div>`;
       root.appendChild(row);
     }
   }
