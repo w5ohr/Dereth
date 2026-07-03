@@ -21105,6 +21105,21 @@ function startGame(loadSaved,preset){
       :({aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],gharundim:["war","life","creature"],viamontian:["heavy","meleed","shield"]}[preset]||["heavy","meleed"]);
     for(const k of load){ if(SKILL_BY_KEY[k]) skillState(k).t=1; }
     const fs=freshSpells();player.knownSpells=fs.known;player.hotbar=fs.hotbar;buildSpellbar();
+    // AC starter kit (ToD): every new arrival carries a Calling Stone + a Letter From Home, and
+    // spawns HOLDING a Training Weapon matched to their profession (upgradeable at the Academy);
+    // casters get a component pouch, Life Casters two healing kits, Soldiers 30 quarrels (1999 kit).
+    { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
+      player.inv.push({name:"Calling Stone",stat:"quest",v:0});
+      player.inv.push({name:"Letter From Home",stat:"quest",v:10});
+      const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
+        bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
+        warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
+      const tw=TW[tpl]||{name:"Training Sword",wt:"sword",v:7};
+      player.weapon={name:tw.name,stat:"weapon",wt:tw.wt,v:tw.v,foc:tw.foc||0,mat:"Iron",tier:1,work:3};
+      if(tw.wt==="focus"){ player.tapers=(player.tapers||0)+20; player.prismTapers=(player.prismTapers||0)+20; }
+      if(tpl==="lifecaster") player.inv.push({name:"Healing Kit",stat:"hp",v:50,count:2});
+      if(tpl==="soldier") player.inv.push({name:"Steel Quarrel",stat:"ammo",for:"crossbow",dmg:4,v:4,count:30});
+    }
   }
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   buildWorld();
