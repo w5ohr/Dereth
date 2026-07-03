@@ -10,7 +10,7 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:#000;color:var(--ink);overflow:hidden;
-    font-family:"Trebuchet MS","Avenir Next",system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+    font-family:"Book Antiqua","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;-webkit-font-smoothing:antialiased;
     user-select:none;-webkit-user-select:none}
   #c{display:block;width:100vw;height:100vh}
 
@@ -450,7 +450,7 @@
 </div>
 
 <style>
-#charCreator{position:fixed;inset:0;z-index:60;display:none;background:radial-gradient(circle at 50% 22%,#1b1f14,#080a06 70%);color:#e8dcc0;font-family:'Trebuchet MS',Verdana,sans-serif;overflow:auto}
+#charCreator{position:fixed;inset:0;z-index:60;display:none;background:radial-gradient(circle at 50% 22%,#1b1f14,#080a06 70%);color:#e8dcc0;font-family:"Book Antiqua","Palatino Linotype",Palatino,Georgia,serif;overflow:auto}
 #charCreator .cc-wrap{max-width:1000px;margin:0 auto;padding:16px 20px 30px;display:flex;flex-direction:column;min-height:100%;box-sizing:border-box}
 #charCreator h2{font-size:25px;letter-spacing:4px;text-align:center;color:#ffd86b;margin:4px 0 12px;text-shadow:0 2px 10px #000}
 #charCreator .cc-main{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;flex:1}
@@ -1491,7 +1491,7 @@ function loadGltfMonsters(){
       }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
   }
 }
-let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
+let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
 let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
@@ -2383,6 +2383,15 @@ function buildMoon(){
   moonSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,fog:false,depthWrite:false}));
   moonSprite.scale.set(520,520,1);return moonSprite;
 }
+// AC's night sky has TWO moons — a smaller amber companion rides an offset arc beside the pale primary.
+function buildMoon2(){
+  const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
+  const grd=g.createRadialGradient(27,25,2,32,32,30);grd.addColorStop(0,"#ffe6c2");grd.addColorStop(0.65,"#e0a878");grd.addColorStop(1,"#9c6a48");
+  g.fillStyle=grd;g.beginPath();g.arc(32,32,30,0,6.28);g.fill();
+  g.fillStyle="rgba(120,80,55,0.5)";[[26,26,6],[41,34,5],[33,44,4]].forEach(m=>{g.beginPath();g.arc(m[0],m[1],m[2],0,6.28);g.fill();});
+  moon2Sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,fog:false,depthWrite:false}));
+  moon2Sprite.scale.set(340,340,1);return moon2Sprite;
+}
 function buildClouds(){
   cloudGroup=new THREE.Group();
   const ctex=softTex("rgba(255,255,255,0.95)","rgba(255,255,255,0)");
@@ -2555,6 +2564,9 @@ function updateDayNight(dt){
   if(sunHalo){sunHalo.position.copy(sunSprite.position);sunHalo.material.opacity=clamp(sunY*2+0.25,0,1)*0.4;sunHalo.material.color.copy(sunSprite.material.color);}
   if(moonSprite){moonSprite.position.set(player.x-sky.x*R,Math.max(-200,-sky.y*R*0.7),player.z-sky.z*R);
     moonSprite.material.opacity=clamp(-sunY*3+0.4,0,1);}
+  if(moon2Sprite){const perp=new THREE.Vector3(-sky.z,0,sky.x);   // the amber companion rides beside & above the primary
+    moon2Sprite.position.set(player.x-sky.x*R*0.86+perp.x*R*0.32,Math.max(-160,-sky.y*R*0.55+70),player.z-sky.z*R*0.86+perp.z*R*0.32);
+    moon2Sprite.material.opacity=clamp(-sunY*3+0.35,0,1);}
   // drifting clouds, fading at night, wrapping across the sky, following the player
   if(cloudGroup){
     const wcx=Math.cos(windDir), wcz=Math.sin(windDir);                 // clouds ride the wind vector (both axes)
@@ -2686,7 +2698,7 @@ function initThree(){
 
   const sky=skyDome();skyMat=sky.material;scene.add(sky);
   scene.add(buildStars());
-  scene.add(buildSun());scene.add(buildMoon());scene.add(buildClouds());
+  scene.add(buildSun());scene.add(buildMoon());scene.add(buildMoon2());scene.add(buildClouds());
   // soft sun halo for a god-ray glow
   sunHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,240,200,0.8)","rgba(255,200,120,0)"),transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
   sunHalo.scale.set(1700,1700,1);scene.add(sunHalo);
@@ -4910,8 +4922,8 @@ function buildLifestone(bound){
     const tusk=new THREE.Mesh(new THREE.ConeGeometry(0.3,1.3,5),rockMat);
     tusk.position.set(0.92,0.8,0);tusk.rotation.z=0.22;tusk.castShadow=true;holder.add(tusk);   // rock tusk leans slightly toward centre
     const boul=new THREE.Mesh(new THREE.DodecahedronGeometry(0.34,0),rockMat);boul.position.set(0.92,0.4,0);boul.rotation.set(seed*3+i,i,0);holder.add(boul); }
-  const crystal=buildCrystal(seed,col); crystal.position.y=1.55; g.add(crystal);   // spins INSIDE the three rocks (gem rises above them)
-  const light=new THREE.PointLight(col,1.2,16);light.position.y=1.9;g.add(light);
+  const crystal=buildCrystal(seed,col); crystal.scale.set(1.6,2.0,1.6); crystal.position.y=2.85; g.add(crystal);   // AC's lifestone is a tall glowing crystalline spire rising well above the framing rocks
+  const light=new THREE.PointLight(col,1.35,20);light.position.y=3.0;g.add(light);
   g.userData.crystal=crystal;g.userData.light=light;
   return g;
 }
@@ -8514,19 +8526,22 @@ const ITEM_PREFIX=["Rusty","Sturdy","Keen","Blessed","Singularity","Olthoi","Aci
 // distinct weapon types — speed (cd mult) vs damage vs reach tradeoffs so the equipped weapon's TYPE matters.
 // (Profile shapes are our design; AC's exact per-type numbers are still research-gated.)
 const WEAPON_TYPES={
-  dagger:  {mode:"melee",  cd:0.60, reach:0.85, dmg:0.78, stam:5,  dt:"pierce",   blurb:"very fast, light"},
-  sword:   {mode:"melee",  cd:1.00, reach:1.00, dmg:1.00, stam:8,  dt:"slash",    blurb:"balanced"},
-  spear:   {mode:"melee",  cd:1.12, reach:1.55, dmg:1.05, stam:9,  dt:"pierce",   blurb:"long reach"},
-  axe:     {mode:"melee",  cd:1.20, reach:0.95, dmg:1.28, stam:10, dt:"slash",    blurb:"heavy, slow"},
-  mace:    {mode:"melee",  cd:1.36, reach:0.95, dmg:1.42, stam:11, dt:"bludgeon", blurb:"crushing, slow"},
-  staff:   {mode:"melee",  cd:1.05, reach:1.30, dmg:0.96, stam:8,  dt:"bludgeon", blurb:"staff — reach, steady"},
-  twohand: {mode:"melee",  cd:1.45, reach:1.45, dmg:1.62, stam:14, dt:"slash",    blurb:"two-handed — devastating, slow"},
-  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, dt:"pierce",  blurb:"ranged"},
-  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, dt:"pierce",  blurb:"ranged, hard-hitting"},
-  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  dt:"pierce",  blurb:"thrown darts — fast"},
+  dagger:  {mode:"melee",  cd:0.60, reach:0.85, dmg:0.78, stam:5,  dt:"pierce",   dvar:0.20, blurb:"very fast, light"},
+  sword:   {mode:"melee",  cd:1.00, reach:1.00, dmg:1.00, stam:8,  dt:"slash",    dvar:0.30, blurb:"balanced"},
+  spear:   {mode:"melee",  cd:1.12, reach:1.55, dmg:1.05, stam:9,  dt:"pierce",   dvar:0.30, blurb:"long reach"},
+  axe:     {mode:"melee",  cd:1.20, reach:0.95, dmg:1.28, stam:10, dt:"slash",    dvar:0.42, blurb:"heavy, slow"},
+  mace:    {mode:"melee",  cd:1.36, reach:0.95, dmg:1.42, stam:11, dt:"bludgeon", dvar:0.45, blurb:"crushing, slow"},
+  staff:   {mode:"melee",  cd:1.05, reach:1.30, dmg:0.96, stam:8,  dt:"bludgeon", dvar:0.33, blurb:"staff — reach, steady"},
+  twohand: {mode:"melee",  cd:1.45, reach:1.45, dmg:1.62, stam:14, dt:"slash",    dvar:0.50, blurb:"two-handed — devastating, slow"},
+  bow:     {mode:"missile", cd:1.00, reach:1.00, dmg:1.00, stam:10, dt:"pierce",  dvar:0.33, blurb:"ranged"},
+  crossbow:{mode:"missile", cd:1.55, reach:1.00, dmg:1.46, stam:14, dt:"pierce",  dvar:0.42, blurb:"ranged, hard-hitting"},
+  atlatl:  {mode:"missile", cd:0.85, reach:1.00, dmg:0.92, stam:9,  dt:"pierce",  dvar:0.30, blurb:"thrown darts — fast"},
   focus:   {mode:"focus",   cd:1.00, reach:0.00, dmg:0.0,  stam:0,  blurb:"casting focus — empowers every school of magic"},
-  unarmed: {mode:"melee",   cd:0.55, reach:0.70, dmg:0.66, stam:4,  dt:"bludgeon", blurb:"unarmed — fastest, very light"},
+  unarmed: {mode:"melee",   cd:0.55, reach:0.70, dmg:0.66, stam:4,  dt:"bludgeon", dvar:0.20, blurb:"unarmed — fastest, very light"},
 };
+// AC weapons roll a damage RANGE each swing (retail rolls [max·(1−var), max]). We center the roll on the
+// tuned value so the average — and thus balance — is unchanged, while every hit varies like retail.
+function dmgVar(prof){ return 1 + (Math.random()-0.5)*((prof&&prof.dvar)||0.3); }
 // creature physical resistances — weapon damage type matters (AC): bones shrug off blades but shatter under maces, etc.
 const PHYS_RESIST={
   skeleton:{slash:0.65,pierce:0.5,bludgeon:1.45},   // undead bone: blades/arrows glance, crushing shatters
@@ -11545,7 +11560,7 @@ function fireArrow(){
   player.st-=prof.stam;
   const cdScale=Math.max(.4,1-player.attr.Coordination*0.02);
   player.meleeCd=0.55*prof.cd*cdScale*(1-itemBuff("haste")); player.bowDraw=1; SFX.arrow(); fovKick=Math.min(fovKick+3,4); // recoil punch on loose (Swift Killer hastens)
-  let dmg=(12+player.attr.Coordination*1.6+player.weaponTink+(ranged?player.weapon.v:0))*skillEff("missile",0.02)*prof.dmg;   // PHYSICAL (pierce) component
+  let dmg=(12+player.attr.Coordination*1.6+player.weaponTink+(ranged?player.weapon.v:0))*skillEff("missile",0.02)*prof.dmg*dmgVar(prof);   // PHYSICAL (pierce) component, per-shot damage roll
   // brand affixes add a SEPARATE elemental component — arrows carry BOTH physical and elemental damage
   const af=ranged?player.weapon.affix:null; let element,elemDmg=0,burn=false,pslow=0,stun=false,drain=0,col=0xffe6b0;
   if(af){ if(af.k==="brand"){ element=af.element; elemDmg=Math.max(2,Math.round(dmg*0.25));
@@ -11601,9 +11616,9 @@ function meleeAttack(power){
         const hm=heightMods(m);   // Cb2: attack height vs the target's size
         if(!rollToHit(bestMeleeSkillValue(),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
         const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
-        applyHit(m,dmg*hm.dmg*sneak,meleeOpts);
+        applyHit(m,dmg*hm.dmg*sneak*dmgVar(prof),meleeOpts);   // per-swing damage roll (AC weapon variance)
         dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
-        if(offhand){ applyHit(m,dmg*hm.dmg*(dualT===2?0.6:0.45),meleeOpts); floater(m.x,(m.headY||1.6)+2.2,m.z,"off-hand","#bfe6ff"); }   // Cb8 dual-wield follow-up strike
+        if(offhand){ applyHit(m,dmg*hm.dmg*(dualT===2?0.6:0.45)*dmgVar(prof),meleeOpts); floater(m.x,(m.headY||1.6)+2.2,m.z,"off-hand","#bfe6ff"); }   // Cb8 dual-wield follow-up strike
 
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
