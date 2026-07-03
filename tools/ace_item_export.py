@@ -51,6 +51,7 @@ def parse_item(path):
     if ints.get(160): o["wield"] = ints[160]
     if spells: o["spells"] = spells
     if dids.get(8): o["icon"] = "%08x" % dids[8]
+    if dids.get(1): o["setup"] = "%08x" % dids[1]   # the item's 3D model (Setup DID)
     return o
 
 def main():

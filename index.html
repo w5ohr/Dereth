@@ -8055,9 +8055,45 @@ function _hilt(g,gripLen,guardW,gold){
   const guard=new THREE.Mesh(new THREE.BoxGeometry(guardW,0.028,0.05),gold);g.add(guard);
   const pom=new THREE.Mesh(new THREE.SphereGeometry(0.026,10,8),gold);pom.position.y=-gripLen-0.008;g.add(pom);
 }
+// ── REAL ITEM MODELS (assets/acitemmodels/, tools/ac_item_models.py): 655 retail weapon/
+//    launcher/caster meshes baked from their Setup+GfxObjs. When a named item matches,
+//    buildItemModel returns Turbine's own model; the procedural silhouettes stay as the
+//    fallback for generated gear. First reference kicks off the fetch; a cached mesh is sync. ──
+let AC_ITEM_MODELS=null,_acItemMesh={};
+fetch('assets/acitemmodels/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_ITEM_MODELS=j; }).catch(()=>{});
+function acItemMesh(name){
+  const key=(name||"").toLowerCase(), shex=AC_ITEM_MODELS&&AC_ITEM_MODELS[key];
+  if(!shex) return null;
+  const got=_acItemMesh[shex];
+  if(got&&got!=="loading") return got;
+  if(got==="loading") return null;
+  _acItemMesh[shex]="loading";
+  fetch('assets/acitemmodels/'+shex+'.json').then(r=>r.json()).then(j=>{
+    const grp=new THREE.Group(), TL=new THREE.TextureLoader();
+    for(const g of j.groups){ const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(g.n,3));
+      geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
+      geo.setIndex(g.i);
+      let mat;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+        mat=new THREE.MeshStandardMaterial({map:t,roughness:0.5,metalness:0.25});
+        if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
+      else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.5,metalness:0.25});
+      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
+    _acItemMesh[shex]=grp;
+    // the equipped weapon may have been waiting on this mesh — rebuild the held models
+    if(player&&player.weapon&&(player.weapon.name||"").toLowerCase()===key){
+      if(typeof refreshAvatarWeapon==="function") refreshAvatarWeapon();
+      if(typeof refreshFPWeapon==="function") refreshFPWeapon(); }
+  }).catch(()=>{ _acItemMesh[shex]=null; });
+  return null;
+}
 function buildItemModel(it,opts){
   opts=opts||{}; const g=new THREE.Group();
   it=it||{};
+  { const real=it&&it.name&&acItemMesh(it.name);   // a retail item with its true client model
+    if(real){ const inst=real.clone(); g.add(inst); g.userData.acModel=true; return g; } }
   const tint=_matTint(it), steel=_imat(tint,0.85,0.3), gold=_imat(0xc69a3a,0.9,0.35), wood=_imat(0x6a4a2a,0.05,0.85);
   const gemCol=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||0x8ad0ff;
   const S=it.stat, wt=it.wt, nm=(it.name||"").toLowerCase();
