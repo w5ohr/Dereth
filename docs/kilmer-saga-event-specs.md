@@ -33,7 +33,7 @@ Frostfell (*Castle-Forged Keepsake*) · A Mask in the Snow (Holtburg notice boar
 
 ---
 
-## YEAR 2 — YEAR OF WHISPERS (Aerbax's Audit) — months 13–24
+## YEAR 2 — YEAR OF WHISPERS (Aerbax's Audit) — months 13–24 ✅ SHIPPED
 *Aerbax audits the new monarchy: counting, abducting, replacing. The year of paranoia — trust no face.*
 **Needs (built once, used all year):** `visits:N` goal · a "Virindi Abduction" `EVENT_TYPES` row
 (kinds: virindi/shadow) · the saga-boss spawner generalized from the Echo (any kind/scale/name/tint).
