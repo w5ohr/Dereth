@@ -141,6 +141,42 @@ def main():
     json.dump(dict(slots=SLOTS, heritages=index), open(os.path.join(OUT, "index.json"), "w"),
               separators=(",", ":"))
 
+    # ── stage 2: colour recolouring (runtime RGB-remap, not pre-baked) ────────
+    # Every head texture indexes the master palette 0400007E, and each skin/hair/eye
+    # "colour" is a full palette variant that differs from base only in its feature's
+    # entries. So a colour = a compact old-RGB -> new-RGB remap: the engine loads the
+    # default texture and re-maps the feature group's pixels (verified offline that a
+    # remap reproduces a direct re-decode). Tiny data, no combinatorial explosion.
+    base_pal = palettes(0x0400007E)
+    def rgb(c): return ((c >> 16) & 0xFF) << 16 | ((c >> 8) & 0xFF) << 8 | (c & 0xFF)
+    def remap_of(palhex):                # {oldRGBhex: newRGBhex} for entries that differ from base
+        try: p = palettes(int(palhex, 16))
+        except Exception: return None
+        m = {}
+        for i in range(min(len(base_pal), len(p))):
+            if base_pal[i] != p[i]:
+                m["%06x" % rgb(base_pal[i])] = "%06x" % rgb(p[i])
+        return m or None
+    def pset(did):
+        d = portal.read(int(did, 16)); r = ame.Buf(d); r.u32(); n = r.u32()
+        return ["%08X" % r.u32() for _ in range(n)]
+
+    remaps = {}                          # palette DID -> remap dict (shared across features)
+    for hn, gens in index.items():
+        for gn, g in gens.items():
+            g["skinTones"] = pset(g["skinPalSet"])                    # skin palette choices
+            g["hairPals"] = [pset(c)[0] for c in g["hairColors"]]     # first shade of each hair-colour set
+            for pd in g["skinTones"] + g["eyeColors"] + g["hairPals"]:
+                if pd not in remaps:
+                    rm = remap_of(pd)
+                    if rm: remaps[pd] = rm
+    json.dump(remaps, open(os.path.join(OUT, "palettes.json"), "w"), separators=(",", ":"))
+    # rewrite index now that it carries skinTones/hairPals
+    json.dump(dict(slots=SLOTS, heritages=index), open(os.path.join(OUT, "index.json"), "w"),
+              separators=(",", ":"))
+    psize = os.path.getsize(os.path.join(OUT, "palettes.json"))
+    print(f"colour remaps: {len(remaps)} palettes, palettes.json {psize//1024} KB")
+
     ntex = sum(1 for v in st_written.values() if v)
     total = 0
     for root, _, files in os.walk(OUT):

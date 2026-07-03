@@ -43,13 +43,18 @@ to return them), and `tools/ac_model_export.py` has GfxObj/Surface/Texture/Palet
   (hair 05000098, eyes 0500024C, nose 050002F5, mouth 0500025C) match mesh otex
   groups; textures decode to genuine AC facial art; indexed PNGs lossless (sources
   ≤256 colours).
-- **Phase 1 stage 2 — TODO: palette colour compositing.** The default textures carry
-  their own baked skin/hair tone, so heads render correctly now, but choosing skin/
-  hair/eye COLOUR variants needs subpalette compositing (see Risks). The palette DIDs
-  are already carried in `index.json`. Approach: PaletteSet 0x0F expands to a skin-tone
-  palette list; re-decode the skin-bearing face texture (`050030F0`-family) with the
-  chosen tone over the base range; hair textures × hairColors, eye strips × eyeColors.
-  Emit `<tex>_<pal>.png` variants, or fall back to per-group material-colour multiply.
+- **Phase 1 stage 2 — DONE (runtime RGB-remap).** Every head texture indexes the
+  master palette `0400007E`; each skin/hair/eye "colour" is a full palette that differs
+  from base only in its feature's entries. So a colour = a compact **old-RGB → new-RGB
+  remap**. `ac_head_export.py` emits `assets/acheads/palettes.json` (189 palette remaps,
+  1.7MB) and records per heritage/gender the `skinTones`, `hairPals`, `eyeColors` choices
+  in `index.json`. **Verified pixel-exact**: applying a remap to a default texture
+  reproduces a direct re-decode with the colour palette to 0/65536 pixels. Whole head
+  pack is 14MB. Pre-baking every (texture,palette) variant was tried and rejected
+  (223MB) — runtime remap is the right architecture and matches how the client composited.
+  - **Phase 2 uses this**: `acBuildHead` loads each group's default texture and, for the
+    group's feature (skin = non-slot/face groups + nose/mouth; hair = otex 05000098;
+    eyes = 0500024C), applies the chosen palette's remap via a canvas pass before use.
 - **Phase 2 — TODO: engine wiring / attachment** (see below).
 
 ## Phase 1 — Extraction (`tools/ac_head_export.py` + chargen upgrade)  ✅ core done
