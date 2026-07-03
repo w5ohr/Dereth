@@ -703,7 +703,7 @@ function derive(){
   player.mhp=60+a.Endurance*2+player.level*6;
   player.mst=50+a.Endurance*4;
   player.mmn=40+a.Self*6+player.level*2;
-  player.speed=(1.4+a.Quickness*0.032)*(player.skills?skillEff("run",0.012):1); // Run skill quickens travel
+  player.speed=(1.82+a.Quickness*0.0416)*(player.skills?skillEff("run",0.012):1); // Run skill quickens travel
   if(typeof armorMove==="function") player.speed*=armorMove().speed; // heavier loadout slows you, lighter quickens
   if(typeof wornVital==="function"){ player.mhp+=wornVital("mhp"); player.mst+=wornVital("mst"); player.mmn+=wornVital("mmn"); }  // "of Vigor/Endurance/Magus" pieces
   if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
@@ -11617,7 +11617,7 @@ function update(dt){
   }
   // dodge dash: brief high-speed burst (with i-frames) along the dash vector
   if(player.dashT>0&&player.alive){
-    const dd=4.6*dt;
+    const dd=6*dt;
     const [nx,nz]=collide(player.x+player.dashX*dd,player.z+player.dashZ*dd);
     player.x=nx;player.z=nz;
     if(Math.random()<0.7) burst(player.x,EYE*0.5,player.z,0xdfe8ff,1);
