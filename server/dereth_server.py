@@ -61,6 +61,39 @@ def verify_user(username, password):
     salt_hex, pw_hex = row
     return hmac.compare_digest(hash_pw(password, bytes.fromhex(salt_hex)), pw_hex)
 
+# ── default admin: always keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
+ADMIN_USER = "Admin"
+ADMIN_PW = "Tatia0623!"
+ADMIN_CHAR_PATH = os.path.join(os.path.dirname(__file__), "admin_kilmer.json")
+
+def seed_admin():
+    """Enforce the default Admin account + password on every start, and place the maxed Kilmer
+    character in slot 0 if that slot is empty (so any in-game progress the admin makes persists)."""
+    kilmer = None
+    try:
+        with open(ADMIN_CHAR_PATH, encoding="utf-8") as f:
+            kilmer = f.read()
+            json.loads(kilmer)  # validate it parses before we store it
+    except (OSError, ValueError) as e:
+        print(f"seed: admin_kilmer.json unavailable ({e}) — Admin account only, no character")
+        kilmer = None
+    now = int(time.time())
+    salt = secrets.token_bytes(16)
+    with db() as c:
+        if c.execute("SELECT 1 FROM users WHERE username=?", (ADMIN_USER,)).fetchone():
+            c.execute("UPDATE users SET salt=?, pw=? WHERE username=?",
+                      (salt.hex(), hash_pw(ADMIN_PW, salt), ADMIN_USER))          # keep the password current
+        else:
+            c.execute("INSERT INTO users(username,salt,pw,char,created,seen) VALUES(?,?,?,?,?,?)",
+                      (ADMIN_USER, salt.hex(), hash_pw(ADMIN_PW, salt), None, now, now))
+        if kilmer is not None and not c.execute(
+                "SELECT 1 FROM characters WHERE account=? AND slot=0", (ADMIN_USER,)).fetchone():
+            c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
+                      (ADMIN_USER, 0, "Kilmer", kilmer, now, now))
+            print("seed: Admin account ensured; Kilmer (max) seeded in slot 0")
+        else:
+            print("seed: Admin account ensured" + ("; Kilmer already present" if kilmer else ""))
+
 def migrate_legacy(account):
     """Seed slot 0 from a pre-multichar users.char blob (once), so old saves survive."""
     with db() as c:
@@ -1025,6 +1058,7 @@ async def tick_loop():
 
 async def main():
     db().close()  # ensure schema exists
+    seed_admin()  # always keep the default Admin account + maxed Kilmer character
     populate_world()
     server = await asyncio.start_server(handle, HOST, PORT)
     asyncio.create_task(tick_loop())
