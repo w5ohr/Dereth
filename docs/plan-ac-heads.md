@@ -55,7 +55,30 @@ to return them), and `tools/ac_model_export.py` has GfxObj/Surface/Texture/Palet
   - **Phase 2 uses this**: `acBuildHead` loads each group's default texture and, for the
     group's feature (skin = non-slot/face groups + nose/mouth; hair = otex 05000098;
     eyes = 0500024C), applies the chosen palette's remap via a canvas pass before use.
-- **Phase 2 — TODO: engine wiring / attachment** (see below).
+- **Phase 2 core — DONE (`0758127` attach, `b2ecae7` per-character variety).**
+  `acBuildHead(av)` builds the chosen head from the acheads pack and attaches it to the
+  neck joint with the same placement math as the AC body parts (part 16, p=[0,1.587,
+  -0.013] q=[0,-1,0,0]) — no more floating head; it faces forward and rides the body.
+  Per group it picks the texture by facial slot (hair style mesh + hair tex, eye/nose/
+  mouth strips, else face/skin) and recolours it via `acHeadTexture` (cached canvas RGB
+  remap from palettes.json). Procedural painted head hidden; `refreshAvatarAppearance`
+  rebuilds on any change (barber/creator), token-guarded against stale async loads.
+  `acHeadChoices(app)` resolves choices: explicit `app.acHead` wins, else DERIVED from
+  the existing creator appearance (skin/hair/eye colours map proportionally + seeded
+  style/eye/nose/mouth) so every character gets a stable varied head and it saves/loads
+  via player.appearance. Verified: distinct appearances → distinct heads, clean AC face
+  seated on the body, 0 console errors.
+- **Phase 2 remaining — POLISH (optional):** (a) the character-creator PREVIEW (ccBust)
+  still shows the procedural painted head, so the creator isn't WYSIWYG — build the AC
+  head in the preview scene too. (b) Explicit creator/barber rows to pick from the full
+  AC lists (50 hair styles, eye/nose/mouth strips, exact skin/hair/eye colours) writing
+  `app.acHead`, instead of only deriving from the legacy rows. (c) Optional: give the
+  ~40 nearest NPCs seeded AC heads (they use procedural `buildPerson`, so this needs the
+  AC body+head on NPCs — larger). (d) Under Dereth's bright top-down lighting light skin
+  washes pale (the known r128 linear-pipeline issue that drove the old painted-face
+  shading) — could add a subtle baked ambient-occlusion / tone on the face material.
+
+### Superseded design notes below (kept for reference)
 
 ## Phase 1 — Extraction (`tools/ac_head_export.py` + chargen upgrade)  ✅ core done
 
