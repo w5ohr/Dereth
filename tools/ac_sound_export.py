@@ -57,7 +57,18 @@ CREATURES = {
     "olthoisoldier": "olthoisoldier", "olthoiworker": "olthoiworker", "rat": "rat",
     "reedshark": "reedshark", "sclavus": "sclavus", "shreth": "shreth",
     "skeleton": "skeleton", "tumerok": "tumerok", "tusker": "tusker", "ursuin": "ursuin",
-    "virindi": "virindi", "wasp": "phyntoswasp", "wisp": "wisp", "zombie": "zombie",
+    "virindi": "virindi", "phyntoswasp": "phyntoswasp", "wisp": "wisp", "zombie": "zombie",
+    # the creature deep-dive: every remaining kind's SoundTable (class-name substring)
+    "shadow": "umbrisshadow", "zefir": "zefir", "remoran": "remoran", "mukkir": "mukkir",
+    "rabbit": "rabbit", "siraluun": "siraluun", "mummy": "mumiyah",
+    "wight": "frozenwight", "lich": "lich", "hollow": "hollowminion",
+    "thrungus": "thrungus", "ruschk": "ruschk", "gurog": "gurog", "sleech": "sleech",
+    "fiun": "fiun", "marionette": "marionette", "doll": "doll", "penguin": "penguin",
+    "crystalwisp": "crystallinewisp", "margul": "margul", "phantom": "phantom",
+    "elemental": "waterelemental", "snowman": "snowman", "chicken": "chicken",
+    "viamontian": "viamont", "falatacot": "falatacot", "tormented": "tormented",
+    "hea": "hea", "gearknight": "gearknight",
+    "olthoiqueen": "olthoiqueen", "lichlord": "lichlord", "virindidirector": "virindidirector",
 }
 # war spell school -> projectile weenie class-name prefix (weenie type 33)
 SPELLS = {"fire": "flamebolt", "frost": "frostbolt", "lightning": "lightningbolt",
@@ -109,10 +120,10 @@ def scan_world_db(creature_prefixes, spell_prefixes):
     # candidate class ids per label, shortest name first (canonical base weenie)
     cands = {}
     for label, prefix in creature_prefixes.items():
+        # ToD-era weenies are classnamed 'aceNNNNN-<name>' — strip that for matching
         cands[label] = [cid for cn, (cid, wt) in
                         sorted(names.items(), key=lambda x: (len(x[0]), x[0]))
-                        if cn.startswith(prefix) and wt in (10, 15)   # Creature or Cow (aurochs)
-                        and not cn.startswith("ace")][:8]
+                        if prefix in re.sub(r"^ace\d+-", "", cn) and wt in (10, 15)][:8]
     for label, prefix in spell_prefixes.items():
         cands["spell:" + label] = [cid for cn, (cid, wt) in
                                    sorted(names.items(), key=lambda x: (len(x[0]), x[0]))

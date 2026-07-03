@@ -102,10 +102,20 @@ KIND_PAT = [
     ("tumerok", r"tumerok"), ("mattekar", r"mattekar"), ("skeleton", r"skeleton"),
     ("virindi", r"virindi"), ("rat", r"\brat\b"), ("shreth", r"shreth"), ("mite", r"mite"),
     ("sclavus", r"sclavus"), ("zefir", r"zefir"), ("monouga", r"monouga"), ("ursuin", r"ursuin"),
-    ("moarsman", r"moarsman"), ("wisp", r"wisp"), ("golem", r"golem"), ("zombie", r"zombie"),
+    ("moarsman", r"moarsman"), ("crystalwisp", r"crystalline"), ("wisp", r"wisp"),
+    ("golem", r"golem"), ("zombie", r"zombie"),
     ("mummy", r"mumiyah|mummy"), ("grievver", r"grievver"), ("rabbit", r"rabbit"),
     ("cow", r"\bcow\b"), ("carenzi", r"carenzi"), ("niffis", r"niffis"),
     ("remoran", r"remoran"), ("burun", r"burun"), ("mukkir", r"mukkir"),
+    # the creature deep-dive wave (specific tokens; generic families last)
+    ("siraluun", r"siraluun"), ("eater", r"\beater\b"), ("chittick", r"chittick"),
+    ("wight", r"wight"), ("lich", r"\blich\b"), ("hollow", r"hollow minion"),
+    ("thrungus", r"thrungus"), ("ruschk", r"ruschk"), ("gurog", r"gurog"),
+    ("sleech", r"sleech"), ("fiun", r"\bfiun\b"), ("marionette", r"marionette"),
+    ("doll", r"\bdoll\b"), ("penguin", r"penguin"), ("margul", r"margul"),
+    ("phantom", r"phantom"), ("elemental", r"elemental"), ("snowman", r"snowman"),
+    ("chicken", r"chicken"), ("viamontian", r"viamontian"), ("falatacot", r"falatacot"),
+    ("tormented", r"tormented"), ("hea", r"\bhea\b"), ("gearknight", r"gear knight"),
 ]
 KIND_RE = [(k, re.compile(p)) for k, p in KIND_PAT]
 def kind_of(nm):
