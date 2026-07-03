@@ -532,7 +532,17 @@ Ten-year serialized storyline (design: `docs/kilmer-saga-storyline.md`; framewor
   (+ epilogue) specced with **crier rumor + clue lines verbatim**, the engine goal, rewards, world
   changes, and each year's "Needs" (new goal types land the month they're first used). This is the
   monthly implementation bible — **cadence: one chapter ships per real month** (workflow at the doc top).
-- ☐ **K2–K10. Years 2–10** — data drops on the K1 engine per the specs doc. New goal types by year:
+- ✅ **K2. Year 2 "Year of Whispers" (Aerbax's Audit)** (jsc + preview e2e all 12 chapters, 0 console
+  errors). Multi-year engine: `SAGA_YEAR_NAMES` + `sagaYear()` (parses the chapter id) drive year-aware
+  rollover messaging, `/story` header, and per-year chapter listing. New goal types built this year:
+  **`visits:N`** (multi-stop — nearest N towns or an explicit ordered `pts` list; per-stop progress,
+  persisted), the **Virindi Abduction** incursion type, and a **generalized saga-boss spawner**
+  (`SAGA_BOSSES`/`spawnSagaBoss`; `echo` kept as the legacy alias for `boss:"ember"`). Chapters M13–M24:
+  the empty-faced census → hollow abductions → **Aerbax's Prodigal Drudge** (boss) → the Zaikhal
+  simulacrum juggler → the White Laboratory (clear Virindi Complex) → false faces → the Puppet Court
+  (Yaraq→Shoushi) → **The Prodigal Monarch** (boss climax; title **True-Sighted**, *Mask of the Unmade*)
+  → the audit ends → crystal harvest → Frostfell → chitin in the Arwic mines (seeds Year 3).
+- ☐ **K3–K10. Years 3–10** — data drops on the K1 engine per the specs doc. New goal types by year:
   `visits:N`+saga-boss generalization (Y2) · siege+deliver (Y4) · relics+contribute+under-temple delve
   (Y5) · multi-boss+citadel (Y6) · season-lock+Frore (Y7) · rift spawner+ascent+Asheron NPC (Y8) ·
   drowned shores+underwater delve (Y9) · survive+stages+finale (Y10).
