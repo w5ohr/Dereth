@@ -20968,6 +20968,16 @@ function netHandle(m){
   if(m.t==="pvp") return onPvp(m);
   if(m.t==="rbuff") return onRemoteBuff(m);
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
+  if(m.t==="trade"){ // AC secure trade: invite / sync / done / cancel
+    if(m.act==="invite"){ TRADE.from=m.from; log(`<b>${esc(m.from)}</b> offers to trade with you — type <b>/trade accept</b>.`,"warn"); if(SFX.quest)SFX.quest(); }
+    else if(m.act==="sync"){ TRADE.open=true; TRADE.them=m.them||[]; TRADE.youOk=!!m.youOk; TRADE.themOk=!!m.themOk; TRADE.with=m.with||"?"; renderTradeWin(); }
+    else if(m.act==="done"){ // both accepted: my offered items leave, theirs arrive
+      for(const it of TRADE.mine){ const i=player.inv.indexOf(it); if(i>=0)player.inv.splice(i,1); }
+      for(const it of (m.give||[])) player.inv.push(it);
+      log(`<b>Trade complete</b> — ${TRADE.mine.length} given, ${(m.give||[]).length} received.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
+      closeTradeWin(); saveGame(); }
+    else if(m.act==="cancel"){ log(m.msg||"The trade was cancelled.","warn"); closeTradeWin(); }
+    return; }
   if(m.t==="snapshot"){ reconcileRemotes(m.players||[]); reconcileMobs(m.mobs||[]); reconcileEvent(m.event||null); return; }
   if(m.t==="chat"){
     if(m.channel==="party") chatMsg("party",`[Party] <b>${esc(m.from)}:</b> ${esc(m.msg)}`);
@@ -21231,6 +21241,38 @@ function sendChatLine(text){
   else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
     if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
 }
+// ── AC SECURE TRADE window: two columns (your offer | theirs), both must Accept,
+//    any change to either side clears both accepts (retail rule). Real item icons throughout. ──
+const TRADE={open:false,from:null,mine:[],them:[],youOk:false,themOk:false,"with":"?"};
+function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.youOk=TRADE.themOk=false;
+  const w=document.getElementById('tradeWin'); if(w)w.remove(); }
+function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
+function renderTradeWin(){
+  let w=document.getElementById('tradeWin');
+  if(!w){ w=document.createElement('div'); w.id='tradeWin';
+    w.style.cssText="position:fixed;left:50%;top:16%;transform:translateX(-50%);z-index:120;width:560px;max-width:94vw;background:linear-gradient(#191622,#100d16);border:1px solid var(--gold);border-radius:10px;padding:14px 16px;box-shadow:0 12px 44px rgba(0,0,0,.7)";
+    document.body.appendChild(w); }
+  const grid=items=>`<div style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;min-height:40px">${items.length?items.map((it,i)=>tradeSlotHTML(it,`data-i="${i}"`)).join(""):`<span style="color:var(--dim);font-size:11px;grid-column:1/-1">nothing offered</span>`}</div>`;
+  const ok=b=>`<span style="color:${b?'#7fe6a0':'#9a8a66'}">${b?'✓ accepted':'… considering'}</span>`;
+  // your satchel (offerable items — gear & goods; quest items stay bonded)
+  const offerable=player.inv.map((it,i)=>({it,i})).filter(o=>o.it.stat!=="quest"&&TRADE.mine.indexOf(o.it)<0).slice(0,60);
+  w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <b style="color:var(--gold);text-transform:uppercase;letter-spacing:.6px;font-size:12px">⇄ Secure Trade — ${esc(TRADE.with)}</b>
+      <button id="trCancel" class="tbtn">Cancel</button></div>
+    <div style="display:flex;gap:14px">
+      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">You offer ${ok(TRADE.youOk)}</div><div id="trMine">${grid(TRADE.mine)}</div></div>
+      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">${esc(TRADE.with)} offers ${ok(TRADE.themOk)}</div>${grid(TRADE.them)}</div>
+    </div>
+    <div style="margin:10px 0 4px;color:#cdbf9a;font-size:11px">Your satchel — click an item to offer it</div>
+    <div id="trInv" style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;max-height:120px;overflow:auto">${offerable.map(o=>tradeSlotHTML(o.it,`data-inv="${o.i}"`)).join("")}</div>
+    <div style="margin-top:10px;text-align:right"><button id="trOk" class="tbtn" ${TRADE.youOk?"disabled":""} style="background:#1e3a24;border-color:#3a6a44;color:#9be08a">Accept Trade</button></div>`;
+  w.querySelector('#trCancel').onclick=()=>{ netSend({t:"trade",act:"cancel"}); closeTradeWin(); };
+  w.querySelector('#trOk').onclick=()=>{ netSend({t:"trade",act:"ok"}); };
+  w.querySelectorAll('#trInv [data-inv]').forEach(b=>b.onclick=()=>{ const it=player.inv[+b.dataset.inv]; if(!it)return;
+    TRADE.mine.push(it); netSend({t:"trade",act:"add",item:it}); renderTradeWin(); });
+  w.querySelectorAll('#trMine [data-i]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i;
+    TRADE.mine.splice(i,1); netSend({t:"trade",act:"remove",idx:i}); renderTradeWin(); });
+}
 function updatePartyHUD(){
   const el=document.getElementById('partyHud'); if(!el) return;
   if(!NET.partyNames||NET.partyNames.size===0){ el.style.display="none"; return; }
@@ -21410,6 +21452,13 @@ function handleSlash(text){
       s2+=`<br>Commands: /allegiance join &lt;name&gt; · leave · motd &lt;text&gt; · info — /a speaks to the allegiance. Swear/recruit on the character sheet (C).`;
       log(s2,"sys"); }
     else log("Usage: /allegiance join &lt;name&gt; · leave · motd &lt;text&gt; · info","sys"); }
+  else if(cmd==="trade"){   // AC secure trade: /trade <name> · /trade accept · /trade cancel
+    if(!isOnline){ log("Trading needs another player — it lives on the online realm.","warn"); return; }
+    const sub=(parts[1]||"").toLowerCase();
+    if(sub==="accept") netSend({t:"trade",act:"accept_open"});
+    else if(sub==="cancel"){ netSend({t:"trade",act:"cancel"}); closeTradeWin(); }
+    else if(parts[1]) netSend({t:"trade",act:"open",name:parts.slice(1).join(" ")});
+    else log("Usage: <b>/trade &lt;player&gt;</b> to offer a trade · <b>/trade accept</b> · <b>/trade cancel</b>","sys"); }
   else if(cmd==="party"||cmd==="f"){
     const sub=(parts[1]||"").toLowerCase();
     if(sub==="invite"&&parts[2]) netSend({t:"party",act:"invite",name:parts[2]});
