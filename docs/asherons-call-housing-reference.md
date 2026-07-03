@@ -1,5 +1,16 @@
 # Asheron's Call Player Housing — Reference (researched 2026-07, asheron.fandom.com wiki)
 
+> **Implementation note (2026-07):** the game no longer uses these wiki numbers directly —
+> `tools/ac_housing_export.py` extracts the AUTHORITATIVE housing system from the retail
+> client dats + ACE world DB into `assets/achousing.json` + `assets/achouses/`:
+> 3,237 outdoor dwellings + 3,000 apartments, per-dwelling hand-placed typed hooks,
+> chests, covenant crystals, boot spots, purchase terms (pyreals/writs/trophies/level/
+> allegiance rank 6 for mansions), 30-day rent, villa & mansion private interior
+> landblocks, real building meshes, and both Residential Hall interiors. Where the DB
+> and this wiki page disagree (e.g. villa = 70 exterior + 19 interior hooks, mansion =
+> a 4-building compound of 100 hooks + a 41-hook/5-chest interior), the DB wins.
+> 13 dungeon-hosted dwellings (no outdoor presence, lbs 0x5146 etc.) are not placed.
+
 ## Dwelling types (canonical)
 | | Apartment | Cottage | Villa | Mansion |
 |---|---|---|---|---|

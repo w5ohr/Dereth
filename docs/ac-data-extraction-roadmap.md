@@ -23,7 +23,8 @@ no usable output.
 | 9 | Town building placement | **ASSET** | 811 real structures w/ offsets+DIDs; rendering needs building Setup meshes exported |
 | 10 | Region scenery + sky/fog | **ASSET** | per-terrain flora tables + day-night keyframes; kept as data — the tuned procedural sky/flora look better than raw client keyframes |
 | 11 | Dungeon environment meshes | **ASSET** | REAL geometry+textures for 8 dungeons; in-engine render needs a geometry-driven collision pass (meshes are in AC coords, not the room-graph) |
-| 12 | Chargen / particles / music / housing | **DONE** | music **WIRED** (ambient loops); chargen (13 heritages, credits, appearance palettes), particles (2051 emitter defs), housing (7062 houses, real prices) all extracted (**ASSET**) |
+| 12 | Chargen / particles / music / housing | **DONE** | music **WIRED** (ambient loops); chargen (13 heritages, credits, appearance palettes), particles (2051 emitter defs) extracted (**ASSET**); housing now **WIRED IN FULL** — see 12b |
+| 12b | **Player housing, complete** | **WIRED** | `ac_housing_export.py`: 3,237 dwellings + 3,000 apartments stream in with REAL building meshes (16 models incl. 4-building mansion compounds), hand-placed typed hooks, chests, covenant crystals, per-dwelling purchase terms (pyreals/writs/settlement trophies/level/rank-6 mansions), 30-day rent + eviction, villa/mansion private interior instances, both Residential Hall interiors, /house command family; 14/14 E2E checks pass |
 
 Every one of the 18 items was extracted this pass (all 12 tool families now exist under `tools/`);
 half are wired into gameplay and half are committed as reusable drop-in assets. The ASSET-state
