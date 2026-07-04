@@ -8199,11 +8199,15 @@ function setChatTab(t){
 document.querySelectorAll('#chatTabs .ctab').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); setChatTab(b.dataset.tab); }));
 // ── CHAT CHANNELS: every player-to-player line flows through chatMsg(), which applies the channel's
 //    colour (Settings-tunable), honours mutes, logs it, and runs it across the persistent chat bar ──
+// Retail 2017 channel colours (wiki-verified where sources survive): incoming tells BRIGHT
+// YELLOW / outgoing DULL YELLOW ("Mirror, Mirror" notes), allegiance GREEN (screenshot),
+// global channels "a kind of blue-grey" (Chat Interface page); local say white.
 const CHAT_CHANNELS={
-  say:       {n:"Say",       c:"#9fd0ff"},
-  party:     {n:"Party",     c:"#b6f0c0"},
-  allegiance:{n:"Allegiance",c:"#ffd08a"},
-  tell:      {n:"Tells",     c:"#e0a6ff"},
+  say:       {n:"Say",       c:"#e8e8e8"},
+  party:     {n:"Fellowship",c:"#8fa8c8"},
+  allegiance:{n:"Allegiance",c:"#3fd06a"},
+  tell:      {n:"Tells",     c:"#ffe23b"},
+  tell_out:  {n:"Tells (sent)",c:"#b8a63a"},
   emote:     {n:"Emotes",    c:"#d6c79b"},
 };
 function chatChan(ch){ const d=CHAT_CHANNELS[ch]||CHAT_CHANNELS.say, o=(settings.chat&&settings.chat[ch])||{}; return {n:d.n, c:o.c||d.c, m:!!o.m}; }
@@ -21552,7 +21556,7 @@ function netHandle(m){
     if(m.channel==="party") chatMsg("party",`[Party] <b>${esc(m.from)}:</b> ${esc(m.msg)}`);
     else if(m.channel==="allegiance") chatMsg("allegiance",`[Allegiance] <b>${esc(m.from)}:</b> ${esc(m.msg)}`);
     else if(m.channel==="tell"){ NET.lastWhisperFrom=m.from; chatMsg("tell",`[${esc(m.from)} whispers] ${esc(m.msg)}`); }
-    else if(m.channel==="tell_out") chatMsg("tell",`[to ${esc(m.from)}] ${esc(m.msg)}`);
+    else if(m.channel==="tell_out") chatMsg("tell_out",`[to ${esc(m.from)}] ${esc(m.msg)}`);   // retail: sent tells render DULL yellow
     else chatMsg("say",`<b>${esc(m.from)}:</b> ${esc(m.msg)}`);
     return; }
   if(m.t==="system"){ log(`<span style="color:#cdbb88">${esc(m.msg)}</span>`,"sys"); return; }
