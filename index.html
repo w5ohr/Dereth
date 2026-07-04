@@ -6042,7 +6042,7 @@ function addShell(g,W,H,D,wallMat,floorMat,trim){
     for(let p=0;p<3;p++){const pl=new THREE.Mesh(new THREE.BoxGeometry(0.05,dhh-0.1,0.12),solid(0x3a2616));pl.position.set(dw*(p+0.5)/3,0,0);door.add(pl);}
     for(const by of[-dhh*0.32,dhh*0.32]){const bd=new THREE.Mesh(new THREE.BoxGeometry(dw,0.08,0.13),iron);bd.position.set(dw/2,by,0);door.add(bd);}
     const knob=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,6),texMat(metalTex,0xb8902a));knob.position.set(dw-0.15,0,0.08);door.add(knob);
-    door.position.set(-dg/2+0.06,dh/2,D/2-0.02);door.rotation.y=-0.55;g.add(door); }
+    door.position.set(-dg/2+0.06,dh/2,D/2-0.02);door.rotation.y=-1.4;g.add(door); }   // swung wide so the doorway reads open
   addWindows(g,'-z',W,D,H*0.55,1.3,1.5); addWindows(g,'-x',W,D,H*0.55,1.3,1.5); addWindows(g,'+x',W,D,H*0.55,1.3,1.5);
   const col=[],step=1.0;
   for(let x=-W/2+0.5;x<=W/2-0.5;x+=step) col.push({x,z:-D/2,r:0.7});
@@ -6370,68 +6370,127 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
   }
   return g;
 }
-// build one town's real buildings, ring them with SOLID colliders, and station its vendors at the
-// street-facing shopfront. (AC town buildings are closed exterior shells — the door is a portal to
-// a separate interior cell we don't carry — so the authentic read is the shopkeeper at the door,
-// facing the plaza, rather than a vendor sealed inside an impassable box.)
+// build one town's real buildings and make the ROOMY ones enterable: the collider ring
+// leaves a plaza-facing DOORWAY, a warm-lit interior fit-out (floor + counter) sits inside,
+// and the town's vendors stand behind their counters. (Real AC buildings were facades whose
+// door was a portal to an interior cell — here the facade IS the room, lit and walk-in, so
+// no doorway reads black and no shopkeeper is sealed out on the step.) Long wall/fence
+// facades (not rooms) stay solid decoration.
+const TB_DOOR_HALF=1.7;   // half-width of the walk-through doorway gap
 function tbBuildTown(c,objs){
   const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
-  const obst=[], recs=[];
+  const obst=[], recs=[], lights=[];
+  // ── pass 1: build every facade, ring each with solid colliders, note the roomy ones ──
   for(const o of objs){
     if(o.kind!=='building') continue;
     const md=_tbModels[(''+o.did).toUpperCase()]; if(!md||!md.ready) continue;
     const wx=c.x+o.x, wz=c.z+o.z, gy=groundY(wx,wz), th=o.rot||0, cw=Math.cos(th), sw=Math.sin(th);
     const bm=tbBuildMesh(md); bm.position.set(wx,gy,wz); bm.rotation.y=th; g.add(bm);
     const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2;
+    const H=bb[4]-bb[1];
     const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;                // world footprint centre
-    recs.push({fcx,fcz,hx,hz,th});
-    // solid perimeter colliders around the oriented footprint (spacing≈2r so there are no gaps)
+    const enter=(hx>=2.6&&hz>=2.6&&H>=3.0);                          // a real ROOM, not a wall/fence
+    const rec={fcx,fcz,hx,hz,th,gy,H,enter,cols:[],per:0};
+    recs.push(rec);
     const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
       for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
-        const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw, ob={x:px,z:pz,r:0.8}; obstacles.push(ob); obst.push(ob); } };
+        const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw;
+        const ob={x:px,z:pz,r:0.8}; obstacles.push(ob); obst.push(ob); rec.cols.push(ob); } };
     const x0=lcx-hx,x1=lcx+hx,z0=lcz-hz,z1=lcz+hz;
     edge(x0,z0,x1,z0); edge(x1,z0,x1,z1); edge(x1,z1,x0,z1); edge(x0,z1,x0,z0);
   }
+  // ── pass 2: for each room, cut a doorway on the CLEAREST side (now every wall exists) ──
+  for(const rec of recs){
+    if(!rec.enter) continue;
+    const cw=Math.cos(rec.th), sw=Math.sin(rec.th);
+    // candidate door directions: toward the plaza first, then the four cardinal walls
+    const plaza=Math.atan2(c.z-rec.fcz, c.x-rec.fcx);
+    const cands=[plaza];
+    for(let s=0;s<4;s++) cands.push(rec.th+s*Math.PI/2);
+    let best=null, bestBlock=1e9;
+    for(const a of cands){
+      const dux=Math.cos(a), duz=Math.sin(a);
+      const lux=dux*cw-duz*sw, luz=dux*sw+duz*cw;                     // dir in footprint space
+      const we=Math.min(Math.abs(lux)>1e-3?rec.hx/Math.abs(lux):1e9, Math.abs(luz)>1e-3?rec.hz/Math.abs(luz):1e9);
+      const dx=rec.fcx+dux*we, dz=rec.fcz+duz*we;
+      // how blocked is the doorway line AND the approach just outside (by anything but our own wall)?
+      let blk=0;
+      for(const o of obstacles){ if(rec.cols.indexOf(o)>=0) continue;
+        for(const s of [0.0,1.4,2.6]){ const sx=dx+dux*s, sz=dz+duz*s;
+          if(((o.x-sx)**2+(o.z-sz)**2)<(o.r+TB_DOOR_HALF*0.9)**2){ blk++; break; } } }
+      if(blk<bestBlock){ bestBlock=blk; best={dux,duz,we,dx,dz,a}; if(blk===0) break; }
+    }
+    rec.dux=best.dux; rec.duz=best.duz; rec.wallExit=best.we; rec.doorX=best.dx; rec.doorZ=best.dz;
+    // clear the doorway of every collider in the gap (own wall, a neighbour, or a stray stall)
+    // so it always walks through; keep a small radius so we don't punch big holes elsewhere
+    for(let i=obstacles.length-1;i>=0;i--){ const o=obstacles[i];
+      if(((o.x-best.dx)**2+(o.z-best.dz)**2)<TB_DOOR_HALF*TB_DOOR_HALF){
+        obstacles.splice(i,1);
+        let j=obst.indexOf(o); if(j>=0)obst.splice(j,1);
+        for(const r2 of recs){ const k=r2.cols.indexOf(o); if(k>=0)r2.cols.splice(k,1); } } }
+    // interior fit-out: plank floor + rug, a warm pooled light, and a threshold glow so the
+    // doorway never reads black from the plaza
+    const fit=new THREE.Group(); fit.position.set(rec.fcx,rec.gy,rec.fcz); fit.rotation.y=rec.th; g.add(fit);
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry((rec.hx-0.35)*2,(rec.hz-0.35)*2),texMat(woodTex,0x5a4632));
+    fl.rotation.x=-Math.PI/2; fl.position.y=0.06; fl.receiveShadow=true; fit.add(fl);
+    const rug=new THREE.Mesh(new THREE.PlaneGeometry(Math.min(rec.hx,3),Math.min(rec.hz*0.9,3.4)),
+      new THREE.MeshStandardMaterial({color:0x6a3a2a,roughness:0.95}));
+    rug.rotation.x=-Math.PI/2; rug.position.y=0.09; fit.add(rug);
+    const lt=new THREE.PointLight(0xffd39a,1.7,Math.max(rec.hx,rec.hz)*2.4+9);
+    lt.position.set(rec.fcx,rec.gy+Math.min(rec.H*0.62,3.0),rec.fcz); g.add(lt); lights.push(lt);
+    const thr=new THREE.Mesh(new THREE.PlaneGeometry(TB_DOOR_HALF*2,Math.min(rec.H*0.8,3.4)),
+      new THREE.MeshBasicMaterial({color:0xffcf8a,transparent:true,opacity:0.16,depthWrite:false,side:THREE.DoubleSide,fog:false}));
+    thr.position.set(best.dx-best.dux*0.5,rec.gy+Math.min(rec.H*0.4,1.7),best.dz-best.duz*0.5);
+    thr.rotation.y=Math.atan2(best.dux,best.duz); g.add(thr);
+  }
   seatRealTownVendors(c,recs);
-  return {c,g,obst};
+  return {c,g,obst,lights,recs};
 }
 function seatRealTownVendors(c,recs){
   if(!recs.length) return;
-  const vObs=new Set(); for(const s of shops) if(s.obs) for(const o of s.obs) vObs.add(o);   // vendor colliders never block a vendor
+  const rooms=recs.filter(r=>r.enter); if(!rooms.length) return;    // vendors go INSIDE real rooms
   const placed=[];
-  const crowded=(x,z,gap)=>{ for(const o of obstacles){ if(vObs.has(o)) continue; if(((o.x-x)**2+(o.z-z)**2)<(o.r+gap)**2) return true; }
-    for(const p of placed){ if(((p.x-x)**2+(p.z-z)**2)<2.6) return true; } return false; };   // keep vendors ~1.6m apart
-  const pathClear=(ax,az,bx,bz)=>{ const n=Math.max(2,Math.ceil(Math.hypot(bx-ax,bz-az)/0.4));
-    for(let i=0;i<=n;i++){ const t=i/n, x=ax+(bx-ax)*t, z=az+(bz-az)*t;
-      for(const o of obstacles){ if(vObs.has(o)) continue; if(((o.x-x)**2+(o.z-z)**2)<(o.r+0.3)**2) return false; } } return true; };
-  const wallExit=(rec,ux,uz)=>{ const cw=Math.cos(rec.th),sw=Math.sin(rec.th), lux=ux*cw-uz*sw, luz=ux*sw+uz*cw;
-    return Math.min(Math.abs(lux)>1e-3?rec.hx/Math.abs(lux):1e9, Math.abs(luz)>1e-3?rec.hz/Math.abs(luz):1e9); };
-  const DIRS=[0,0.8,-0.8,1.6,-1.6,2.4,-2.4,Math.PI], STANDOFF=[1.3,1.9,2.7];
-  const per=new Map();
+  const crowded=(x,z)=>{ for(const p of placed){ if(((p.x-x)**2+(p.z-z)**2)<2.4) return true; } return false; };
+  // a vendor (and its colliders) must never sit in ANY room's doorway, or it seals its own /
+  // a neighbour's entrance
+  const nearDoor=(x,z)=>{ for(const r of rooms){ if(((x-r.doorX)**2+(z-r.doorZ)**2)<(TB_DOOR_HALF+1.0)**2) return true; } return false; };
   for(const sh of shops){
     if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;
     if(Math.hypot(sh.x-c.x,sh.z-c.z)>62) continue;                  // only this town's vendors
-    let rec=null,rd=1e9; for(const r of recs){ const d=Math.hypot(r.fcx-sh.x,r.fcz-sh.z); if(d<rd){rd=d;rec=r;} }
+    let rec=null,rd=1e9; for(const r of rooms){ const d=(r.fcx-sh.x)**2+(r.fcz-sh.z)**2; if(d<rd){rd=d;rec=r;} }
     if(!rec) continue;
-    const k=per.get(rec)||0; per.set(rec,k+1);
-    const base=Math.atan2(c.z-rec.fcz, c.x-rec.fcx);                // toward the plaza (its street front)
-    let spot=null;
-    for(let di=0; di<DIRS.length && !spot; di++){
-      const a=base+DIRS[(di+k)%DIRS.length], ux=Math.cos(a), uz=Math.sin(a);   // rotate start per vendor → shared buildings spread
-      for(const extra of STANDOFF){ const stand=wallExit(rec,ux,uz)+extra, nx=rec.fcx+ux*stand, nz=rec.fcz+uz*stand;
-        if(!crowded(nx,nz,0.5) && pathClear(nx+ux*3.5,nz+uz*3.5,nx,nz)){ spot={nx,nz,ux,uz}; break; } }
+    // stand back from the doorway, toward the room's interior; fan multiple vendors sideways
+    const k=rec.per++; const inx=-rec.dux, inz=-rec.duz;            // into the room (away from the door)
+    const latx=-inz, latz=inx, lat=(k%2?1:-1)*Math.ceil(k/2)*1.4;
+    let depth=rec.wallExit*0.5; if(depth<1.2) depth=1.2; if(depth>rec.wallExit-0.6) depth=Math.max(0.8,rec.wallExit-0.6);
+    let nx=rec.fcx+inx*depth+latx*lat, nz=rec.fcz+inz*depth+latz*lat;
+    if(crowded(nx,nz)){ nx+=latx*1.2; nz+=latz*1.2; }
+    // nudge deeper until the vendor AND its rear collider clear every doorway
+    for(let g=0; g<5 && (nearDoor(nx,nz)||nearDoor(nx+inx*0.9,nz+inz*0.9)); g++){
+      nx+=inx*0.8; nz+=inz*0.8;
+      // don't push through the back wall
+      const bx=nx-rec.fcx, bz=nz-rec.fcz, cw=Math.cos(-rec.th), sw=Math.sin(-rec.th);
+      const lx=bx*cw-bz*sw, lz=bx*sw+bz*cw;
+      if(Math.abs(lx)>rec.hx-0.6||Math.abs(lz)>rec.hz-0.6) break;
     }
-    if(!spot){ const ux=Math.cos(base),uz=Math.sin(base),stand=wallExit(rec,ux,uz)+1.4;
-      spot={nx:rec.fcx+ux*stand,nz:rec.fcz+uz*stand,ux,uz}; }        // last resort: plaza-facing wall
-    const fy=groundY(spot.nx,spot.nz);
-    sh.mesh.position.set(spot.nx,fy,spot.nz); sh.mesh.rotation.y=Math.atan2(-spot.ux,-spot.uz);   // face outward (buildPerson fronts -z)
-    sh.x=spot.nx; sh.z=spot.nz; sh._seated=true; placed.push({x:spot.nx,z:spot.nz});
-    if(sh.obs){ sh.obs[0].x=spot.nx; sh.obs[0].z=spot.nz; if(sh.obs[1]){ sh.obs[1].x=spot.nx-spot.ux*0.9; sh.obs[1].z=spot.nz-spot.uz*0.9; } }
+    const fy=groundY(nx,nz);
+    // a small counter in front of the shopkeeper, facing the door
+    if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
+    const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
+    counter.position.set(nx+rec.dux*0.85,fy+0.5,nz+rec.duz*0.85); counter.rotation.y=Math.atan2(rec.dux,rec.duz);
+    counter.castShadow=true; scene.add(counter); sh._counter=counter;
+    sh.mesh.position.set(nx,fy,nz); sh.mesh.rotation.y=Math.atan2(rec.dux,rec.duz);   // face the door (buildPerson fronts -z)
+    sh.x=nx; sh.z=nz; sh._seated=true; placed.push({x:nx,z:nz});
+    if(sh.obs){ sh.obs[0].x=nx; sh.obs[0].z=nz; if(sh.obs[1]){ sh.obs[1].x=nx+inx*0.9; sh.obs[1].z=nz+inz*0.9; } }
   }
 }
 function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
+  for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
+  // vendors reseat next time this town streams back in
+  for(const s of shops){ if(s._counter){ if(s._counter.parent)s._counter.parent.remove(s._counter); s._counter=null; }
+    if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<62) s._seated=false; }
   delete _tbBuilt[name];
 }
 let _tbBuilt={}, _tbAcc=0;
@@ -6529,6 +6588,8 @@ function buildCasino(region,town){
   chest.position.set(W/2-2.0,0.18,-D/2+1.4);g.add(chest);
   g.userData.chestLocal={x:W/2-2.0,z:-D/2+1.4};
   const lbl=labelSprite("The "+town+" Casino","cities");lbl.scale.set(9,2,1);lbl.position.y=H+2.6;g.add(lbl);
+  // warm interior light so the hall isn't black inside (pooled — costs nothing when far)
+  const inLt=new THREE.PointLight(0xffcf8a,1.9,22); inLt.position.set(0,H-0.5,-0.5); g.add(inLt);
   g.userData.surfaces=mergeSurf(null,{platforms:pyramidRoofPlats(W*1.15,D*1.15,H+0.2,2.4)});
   return g;
 }
@@ -6546,10 +6607,12 @@ function addCasinos(){
     for(const cc of (g.userData.colliders||[])) obstacles.push({x:cx+cc.x*ct+cc.z*st, z:cz-cc.x*st+cc.z*ct, r:cc.r});
     if(g.userData.surfaces) registerStructure(cx,cz,th,gy,g.userData.surfaces);
     const cl=g.userData.chestLocal;
-    casinoChests.push({x:cx+cl.x*ct+cl.z*st, z:cz-cl.x*st+cl.z*ct, town:tn});
-    // the owner waits by the door outside
-    const ox=cx+Math.sin(th)*(6.6), oz=cz+Math.cos(th)*(6.6);
-    addNPC(ox,oz,{role:"casino",name:CASINO_TOWNS[tn],town:tn});
+    casinoChests.push({x:cx+cl.x*ct+cl.z*st, z:cz-cl.x*st+cl.z*ct, town:tn, bx:cx, bz:cz});
+    // the owner stands INSIDE behind the counter, facing the door
+    const olx=-13/2+2.1, olz=10.5/2-3.0;                              // behind the counter (W=13,D=10.5)
+    const ox=cx+olx*ct+olz*st, oz=cz-olx*st+olz*ct;
+    const n=addNPC(ox,oz,{role:"casino",name:CASINO_TOWNS[tn],town:tn});
+    if(n&&n.mesh) n.mesh.rotation.y=th;                              // face the +z door
   }
 }
 // ── the games themselves ──
@@ -6691,6 +6754,8 @@ function addCity(c){
       const ct=Math.cos(th),st=Math.sin(th);
       for(const cc of arch.colliders){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
       if(arch.surfaces) registerStructure(hx,hz,th,gy,arch.surfaces);
+      // warm interior light so the hollow shell isn't black inside (pooled → cheap)
+      const bl=new THREE.PointLight(0xffd39a,1.5,20); bl.position.set(hx,gy+2.7,hz); scene.add(bl); scenery.push(bl);
     }
   }
   // paved plaza — a triangle-fan that CONFORMS to the ground (groundY) so townsfolk standing
@@ -7386,9 +7451,17 @@ function hsStreamHouses(dt){ if(!_hsPackOn||inDungeon||inNetwork) return;
 function hsDropHouse(k){ const e=_hsBuilt[k]; if(!e) return;
   for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0)obstacles.splice(i,1); }
   for(const s of e.structs){ const i=structures.indexOf(s); if(i>=0)structures.splice(i,1); }
+  for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes
   const ci=hsCrystals.indexOf(e.cr); if(ci>=0)hsCrystals.splice(ci,1);
   if(e.h&&player.homestead&&player.homestead.hid===e.h.hid) hsClearDecor();
   disposeObject3D(e.g); delete _hsBuilt[k];
+}
+// AC housing access: you may walk into any dwelling that is FOR SALE (unowned) or your own;
+// a dwelling held by someone else (online) is sealed — its door stays walled.
+function hsAccessible(h){
+  if(player.homestead && player.homestead.hid===h.hid) return true;   // your own deed
+  if(h.owner && h.owner!==(player.name||"")) return false;            // another player holds it
+  return true;                                                        // for sale → open to wander
 }
 function hsCrystalLabel(cr){   // (re)write a crystal's sprite after ownership changes
   if(!cr.lbl||!cr.lbl.parent) return;
@@ -7407,13 +7480,17 @@ function hsBuildHouse(h){
   const gy=groundY(h.x,h.z), lay=hsLayoutOf(h);
   const g=new THREE.Group(); g.position.set(h.x,gy,h.z); g.rotation.y=h.yaw;
   g.userData.noSettle=true; g.userData.cullR2=HS_DROP_R*HS_DROP_R; scene.add(g);
-  const obst=[],structs=[];
+  const obst=[],structs=[],lights=[];
+  const sealed=!hsAccessible(h);   // owned by someone else → wall the doorway
   // the dwelling's real buildings (mansions: the full 4-building compound)
   for(const b of h.blds){
     const M=hsModelReq(b[0]); if(!M) continue;
     const bg=new THREE.Group(); bg.position.set(b[1]*HS_SCALE,b[2]*HS_SCALE,b[3]*HS_SCALE);
     bg.rotation.y=b[4]; bg.scale.setScalar(HS_SCALE); g.add(bg);
     bg.add(M.ext.clone()); bg.add(M.int.clone());
+    // warm interior light so the walk-in rooms aren't black (pooled → cheap when far)
+    { const bb0=M.bb, il=new THREE.PointLight(0xffd7a2,1.5,Math.max(bb0[2]-bb0[0],bb0[3]-bb0[1])*HS_SCALE*1.6+8);
+      il.position.set(b[1]*HS_SCALE,gy+2.4,b[3]*HS_SCALE); g.add(il); lights.push(il); }
     // stone foundation skirt — retail houses stand on sloped ground
     const bb=M.bb, fw=(bb[2]-bb[0])+1.5, fd=(bb[3]-bb[1])+1.5;
     const fnd=new THREE.Mesh(new THREE.BoxGeometry(fw,6,fd),texMat(stoneFloorTex,0x8a8074));
@@ -7442,7 +7519,7 @@ function hsBuildHouse(h){
       if(t<W){ lx=bb[0]+t; lz=bb[1]; } else if(t<W+D){ lx=bb[2]; lz=bb[1]+(t-W); }
       else if(t<W*2+D){ lx=bb[2]-(t-W-D); lz=bb[3]; } else { lx=bb[0]; lz=bb[3]-(t-2*W-D); }
       const da=Math.atan2(lx,lz)-doorA;
-      if(Math.abs(Math.atan2(Math.sin(da),Math.cos(da)))<0.5) continue;   // the doorway gap
+      if(!sealed && Math.abs(Math.atan2(Math.sin(da),Math.cos(da)))<0.5) continue;   // the doorway gap (unless sealed)
       const w=hsWorld(h,[b[1]+lx,0,b[3]+lz,0],gy);
       const o={x:w.x,z:w.z,r:0.75}; obstacles.push(o); obst.push(o);
     }
@@ -7461,7 +7538,7 @@ function hsBuildHouse(h){
   cr.lbl.scale.set(8.5,1.8,1); cr.lbl.position.y=3.1; cg.add(cr.lbl);
   const o2={x:cw.x,z:cw.z,r:0.7}; obstacles.push(o2); obst.push(o2);
   hsCrystals.push(cr);
-  const built={x:h.x,z:h.z,g,obst,structs,cr,h};
+  const built={x:h.x,z:h.z,g,obst,structs,lights,cr,h};
   if(own) hsDecorate(h,built);   // the owner's hooks, chests, house portal, placed items
   return built;
 }
@@ -7806,6 +7883,7 @@ function hsInstDecorate(){
   }
 }
 function hsEnterInterior(h){
+  if(!hsAccessible(h)){ log("The house portal rebuffs you — this dwelling belongs to another.","warn"); if(SFX.err)SFX.err(); return; }
   const lay=hsLayoutOf(h); if(!lay||!lay.interior) return;
   const meshFile=AC_HOUSING.interiorMeshes[lay.interior.lb];
   if(!meshFile){ log("The house portal flickers — no interior beyond.","warn"); return; }
@@ -17194,6 +17272,7 @@ function addNPC(x,z,opts){
   else obstacles.push({x,z,r:0.8});   // strollers move, so they aren't fixed obstacles
   npcs.push(rec);
   updateNPCMarker();
+  return rec;
 }
 // a quest-bound NPC's marker colour reflects ITS quest: gold=offer, grey=in progress, green=turn in, dim=done
 function questNpcMarkerColor(qid){
