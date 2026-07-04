@@ -969,20 +969,32 @@ def alg_take_pending(name):
             return r[0]
     return 0
 
+async def _deliver_passup(patron, amount, from_name):
+    """route pass-up XP to a patron: live if online, else banked as pending for their next login"""
+    pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == patron), None)
+    if pc:
+        await pc.send({"t": "passup", "xp": amount, "from": from_name})
+    else:
+        alg_add_pending(patron, amount)
+
 async def alg_passup_kill(recipients_names, xp):
-    """extra free XP up the chain for each rewarded character's patron"""
+    """extra free XP up the chain for each rewarded character (patron loses nothing, vassal loses
+    nothing). Generation 1 (the direct patron) gets the time-scaled share; generation 2 (the
+    grand-patron) gets AC's small grand-vassal trickle — 0–10% of the kill, scaled by how long the
+    intermediate patron has stayed sworn (a loyalty proxy)."""
     for nm in set(recipients_names):
         r = alg_row(nm)
         if not r or not r["patron"]:
             continue
         share = int(xp * alg_passup_pct(nm))
-        if share <= 0:
-            continue
-        pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == r["patron"]), None)
-        if pc:
-            await pc.send({"t": "passup", "xp": share, "from": nm})
-        else:
-            alg_add_pending(r["patron"], share)
+        if share > 0:
+            await _deliver_passup(r["patron"], share, nm)
+        pr = alg_row(r["patron"])                    # is there a grand-patron above the direct patron?
+        if pr and pr["patron"]:
+            gpct = min(0.10, alg_passup_pct(r["patron"]) * 0.12)   # grand-vassal trickle, capped at 10%
+            gshare = int(xp * gpct)
+            if gshare > 0:
+                await _deliver_passup(pr["patron"], gshare, nm)
 
 def alg_info_pub(name):
     r = alg_row(name) or {}
