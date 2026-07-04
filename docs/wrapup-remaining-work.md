@@ -1,0 +1,160 @@
+# Dereth — Wrap-Up: Remaining Undone Work
+
+**Compiled 2026-07-04** (reconciled against `main` up to commit `b60536b`).
+
+This is a single consolidated list of everything still **undone** across the project's
+work-tracking docs, deduplicated across sources and cross-checked against what has actually
+shipped in git. It is the master "what's left" list.
+
+**Scope / exclusions:**
+- **EXCLUDED — Agent 1's "World & Graphics" dat-update lane** (per directive). That lane is the
+  8 re-extraction tasks in `docs/three-agent-dat-update.md` (terrain map+heights, Region
+  scenery+sky, flora models, dungeon layouts, dungeon geometry, town structures+building models,
+  particles, and the new-landblock sweep). It is being worked separately (branches
+  `ac-real-elevations`, `ac-time-and-moons`). A few *world-system* gaps below (weather, named
+  regions, authored landmarks, multi-level dungeons) lean on that lane's terrain/map data — they
+  are flagged **[needs A1 data]**.
+- **Agent 2 (Systems & Data) and Agent 3 (Creatures/NPCs/Items)** dat-update lanes are **COMPLETE**
+  (packs verified current; strings decoded + 873 titles wired; 66 creatures incl. the 5 former CC0
+  stand-ins; human bodies refreshed).
+
+**Sources merged:** `REMAINING-WORK.md`, `ac-remaining-gaps.md`, `fidelity-split.md`,
+`ac-newplayer-split.md`, `ac-data-extraction-roadmap.md`, `plan-ac-heads.md`,
+`asherons-call-authenticity-gaps.md`, `asherons-call-longtail-gaps.md`, `ROADMAP.md`.
+
+Size key: **S** ≈ 1–2 days · **M** ≈ 1–2 weeks · **L** ≈ 2+ weeks / architectural risk.
+
+---
+
+## 0. Already closed since the source docs were written (NOT outstanding)
+
+Removed from the lists below because git shows them shipped:
+- **The 5 CC0 monster stand-ins** (shadow, mummy, mukkir, remoran, zefir) — real extracts wired.
+- **client_local_English.dat string extractor** — decoded; 7,050 strings + 873 retail titles wired.
+- **Circular radar (heading-up, blip scheme)** — shipped in the AC-2017 UI pass.
+- **Seeded AC heads / procedural NPC bodies** — all humans (townsfolk **and** vendors) now use the
+  real AC jointed body + AC head; procedural `buildPerson` is retired.
+- **Real trees / flora scatter, enterable lit buildings, sky day-night + sun/moon discs** — shipped.
+- **Authentic vitals model (pure End/2 · End · Self) + XpTable vital/attribute raising** — shipped
+  (retail stats-parity pass). *(Closes fidelity-split B2 and the "vitals formula purity" gap.)*
+- **Monster signature attacks** (charge/spin/boulder/acid/drain via `monsterSpecial`) — shipped
+  (Milestone G). *(Closes fidelity-split B1 — verify VFX polish only.)*
+- **Lifestones (real AC crystal), NPC clothing, first-person real hands** — shipped this session.
+
+---
+
+## 1. Character Creation & New-Player Onboarding
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **AC creation wizard** | Rebuild as ToD staged wizard (Heritage → Profession → Attributes → Skills → Appearance+gender → Town → Name/Summary): wire `acchargen.json`, 330-pt pool, 52 skill credits, real per-heritage skin/hair palette ranges, 6 templates, specialize-at-creation, heritage free skills, lore blurbs, live vitals readout. | M–L | ac-remaining-gaps, ac-newplayer A1, REMAINING-WORK (CharGen) |
+| **Starting gear + letters** | Grant on creation: Calling Stone, per-heritage Letter From Home, template-matched training weapon, creation clothing; casters get wand+3 spells+components; Life caster +2 heal kits; Soldier crossbow +30 quarrels. | S | ac-newplayer A2, REMAINING-WORK |
+| **Post-Academy greeter chain** | Per starter town: Lifestone Greeter (7k XP + first Contract) → Bartender (9.3k XP + 500p) → named Pathwarden (12.5k XP + Supply Key → race armor + robe + +4% XP trinket). ~41k XP → ~L7. | M | ac-newplayer A3 |
+| **Training Academy tutorial dungeon** | Build the ToD Academy interior + courtyard (skippable): Society Greeter → Jonathan → Samuel → Training Master + Sparring Golem → Token → Foreman → Blacksmith → Researcher → Sentry (exit portal). Use real `acdialogue.json` lines. *(Overlaps "Facility Hub as real landblock" — the Academy currently uses grounds+NPCs, not the retail interior.)* | L | ac-newplayer B1, ac-remaining-gaps |
+| **Barber restrictions** | Hide race/gender rows in barber mode (retail barred heritage/gender change). | S | REMAINING-WORK |
+
+## 2. Combat & Physics
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Per-body-part combat** | Wire attack heights → per-part armor buckets; creatures roll per-part d_Val/d_Var; high/med/low HUD selector. | M | REMAINING-WORK, auth-gaps |
+| **Physics: ballistic projectiles** | Arrow/bolt gravity arc scaled by launcher speed + AC max range + terrain collision; per-spell projectile arcs; jump hold-to-charge with stamina scaling; fall-damage threshold/scaling calibration to ACE. | M | ac-newplayer B3, ac-remaining-gaps |
+| **Missile accuracy by range** | Hit chance falls with distance (currently fixed regardless of range). | S | auth-gaps Cb11 |
+| **Damage roll per-swing variance** | Roll top-end+variance each hit (currently deterministic, rolled once at item creation). | S | auth-gaps Cb13 |
+| **Stamina cost scaling** | Stamina cost from weapon+shield+power-bar; overload/penalty at low stamina (currently flat, free swings at 0). | S | auth-gaps Cb9 |
+| **Burden / encumbrance** | Burden Units vs Strength capacity → stamina/movement penalties (absent). | L | auth-gaps Cb10 |
+| **Per-element armor resistance** | Each armor piece resists a % per damage element (currently one scalar AL + separate ward stack). | M | auth-gaps Cb12 |
+| **Ammo-type strictness** | Block bow fire at 0 arrows / require matching ammo. | S | REMAINING-WORK |
+
+## 3. Magic & Spells
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Buff/debuff "Other" targeting** | CE/Item/Life/Protection spells need Self **and** Other forms for group support (most are self-only). | M | auth-gaps Mg1 |
+| **Recall spell set** | Portal Tie, Portal Recall/Sending, town-specific recalls (currently Lifestone + Sanctuary only). | M | auth-gaps Mg3/W6, ac-remaining-gaps |
+| **Spell projectile speeds & spreads** | Per-spell speeds to retail ratios (bolt 15 / streak 45 / arc 40 / ring 2 / wall 3–4 m/s); fix Blast (3×90°) and Volley (3×parallel) spreads. | S–M | ac-remaining-gaps |
+| **Spell range formula** | `min(BaseRangeConstant + magicSkill × BaseRangeMod, 75m)` from SpellTable. | M | ac-remaining-gaps |
+| **Mana Conversion / fizzle formula** | Authentic MC formula (25·diff × spell level, random save) + fizzle difficulty tiers (currently flat cost cut + ad-hoc fizzle). | M | auth-gaps Mg5 |
+| **Void curse DoT lines** | Nether curses with DoT + defense corruption — refinement of the shipped F7 void set. | S | auth-gaps Mg6 |
+
+## 4. Items, Loot & Tinkering
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Wield/level/skill requirements on loot** | Every drop rolls min-level/skill gates (currently instantly equippable). | M | auth-gaps I1 |
+| **Loot item-spells + mana + spellcraft** | Mutated cantrips (Minor/Major/Epic/Legendary), mana pools on gear, Spellcraft stat. | L | auth-gaps I2 |
+| **Salvage/tinker split + per-item cap** | 8 tinker skills, 10-tink-per-item cap, imbue-once-per-item (currently 2 skills, no per-item cap, stack on player). | M | auth-gaps I3 |
+| **Aetheria slot/level/surge system** | Slots unlock L75/150/225, leveled aetheria, set bonus + surge procs (currently 3 flat gems). | L | auth-gaps I5 |
+| **Item models for shields/clothing** | Extend `ac_item_models.py` to export Clothing/shield models (watch pack size). | S–M | REMAINING-WORK |
+| **Dye recipes via alchemy** | Alchemy recipes: dye plants → dye pots (currently vendor-bought only). | S | REMAINING-WORK |
+
+## 5. Social Systems (mostly server-side)
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Allegiance vassal tree + XP pass-up (server)** | Real patron/vassal graph with NPC vassals, XP pass-up driven by Loyalty/Leadership, grand-vassal 0–10% trickle, per-race gendered rank titles, ladder follower minimums. Client tree UI + direct pass-up already shipped; the multiplayer vassal receivers + formula depth remain. | L | fidelity-split A1, auth-gaps S1, REMAINING-WORK |
+| **Monarchy + allegiance chat** | Monarch rank atop the tree + server `/allegiance` channel. | M | auth-gaps S2 |
+| **PKing / PvP** | /pk NPK-PKL-PK states, Altars of Bael'Zharon/Asheron, 3-day PK keys, PK-death loot rules. | L | auth-gaps S3, ac-remaining-gaps |
+| **Death corpse + item loss** | Lootable corpse on death holding ceil(level/10) items (highest-value first), ½ pyreals lost, ~5-min decay, res invulnerability (currently XP/vitae penalty only). Optional "AC-authentic death" toggle. | M | fidelity-split A2, auth-gaps S4 |
+| **Society ranks + Test quests** | Initiate→Adept→Knight→Lord→Master ranks, ribbon unlocks, society quest gauntlets. | M | auth-gaps S6 |
+| **Player-to-player secure trade: coin** | Enable pyreal amounts in the secure-trade window (items already work). | S | auth-gaps S8, ac-remaining-gaps |
+| **Fellowship cap-9 + XP-split modes** | Raise `PARTY_MAX` 6→9; AC level-spread XP split (≤5 lvls equal+bonus, ≤10 proportional, 50+ equal no cap); share-bonus table; needs server level tracking. | S–M | fidelity-split B3, ac-remaining-gaps |
+| **Live-story Town Criers + quest timers** | Non-saga Crier rumor feed + server-side quest flagging/lockout timers (20h–7d) via `QuestDefDB` min_Delta, bridged to custom quest ids. (Kilmer saga K1–K10 already shipped.) | M–L | auth-gaps S9, REMAINING-WORK |
+
+## 6. World Systems  *(gameplay systems — distinct from A1's pack re-extraction)*
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Region-aware weather** | Snow in the frozen north, fog in mountains, aridity in desert, rain temperate (currently global rain only). | M | auth-gaps W4/W11, ac-remaining-gaps |
+| **Multi-level dungeons & in-dungeon portals** | Ye-Olde chains, drop portals, linked sub-instances (currently single flat level per dungeon). | L | auth-gaps W7 |
+| **Named regions + irregular continent** | Osteth/Aphus Lassel/Linvak/Ithaca regions + real ocean rim (currently a square 16000² map with trig noise terrain). **[needs A1 data]** | L | auth-gaps W8 |
+| **Authored landmarks + terrain barriers** | Landblock heightmap + named mountains that gate travel (currently procedural noise). **[needs A1 data]** | L | auth-gaps W12 |
+| **44 unmapped dungeons** | Verify canon names, find landblock ids or confirm no interior. | S each | REMAINING-WORK |
+| **Dungeon lighting tune (real hardware)** | Eyeball torch intensity on a live machine; bump if still dim. | S | REMAINING-WORK |
+
+## 7. UI & HUD  *(the AC-2017 UI pass is partly shipped — these remain)*
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Paperdoll panel layout** | Arrange panels per the PAGE-99 manual: icon rail toggle + Examine box + jewelry/container slots on the paperdoll. | M | ac-remaining-gaps |
+| **Real UI chrome** | Wire the remaining extracted chrome: framed-bar variants, portrait heads, panel corner/strut gold pieces (~50 uninspected contact sheets). | S–M | ac-remaining-gaps |
+
+## 8. Endgame & Housing
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Luminance / Aetheria / Enlightenment endgame** | Post-L275 progression auras + surges + reset; gate Enlightenment at L275 + Society Master + maxed lum auras + <5 enlightenments (currently L100, no society req). | L | auth-gaps C5, ac-remaining-gaps |
+| **Housing depth** | Cottage L20 / Villa L35 / Mansion L50 tiering, monthly upkeep, hooks, allegiance-gated access, yard/roof hooks. (Base housing shipped; these are the retail-depth gaps.) | M | auth-gaps S11 |
+
+## 9. Content
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Retail monthly live events** | Extract real monthly world-event names/timing from portal.dat GameEventDefDB + ACE event table onto the existing monthly framework. | M | REMAINING-WORK |
+| **Starter quests aligned to retail** | Fix mappings (Drudge Hideout=Holtburg, Braid=Shoushi, Sea Temple=Yaraq) + align rewards for ~10 quests. | S–M | ac-newplayer B2 |
+| **Book placement** | Place the 898 retail books at true locations (libraries, quest dungeons) vs. the scrivener shelf only. | S–M | REMAINING-WORK |
+| **Chess** | Playable chess boards in taverns/houses (Game/GamePiece weenies + 2D overlay). | M | REMAINING-WORK |
+| **Mana stone drain/store cycle** | Change to: destroy enchanted item → store its mana in the stone; use stone → refill worn items (currently a focus-battery recharge). | S–M | REMAINING-WORK |
+
+## 10. Character Heads — Phase 2 polish (all optional)
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **WYSIWYG creator preview** | Show the real AC head in the creation preview (ccBust still shows the procedural head). | S | plan-ac-heads |
+| **Explicit creator/barber head rows** | UI to pick from the full 50+ hair styles + eye/nose/mouth strips + exact skin/hair/eye colours (writes `app.acHead`); currently only derived from legacy rows. | M | plan-ac-heads |
+| **Face material tone/AO** | Subtle baked AO/tone on the face material to fight the pale skin-wash under bright top-down light. | S | plan-ac-heads |
+| **Female forehead band bug** | Dark under-hair band shows across the brow on female hair styles that don't cover the eye-strip's top rows. Diagnosed, non-blocking. | S | plan-ac-heads |
+
+## 11. Server parity & extraction follow-ups
+| Item | What's undone | Size | Source |
+|------|---------------|------|--------|
+| **Server-side item/spell mirror** | Mirror `acitems.json` + `acspellstats.json` server-side (currently client-only). | S | REMAINING-WORK |
+| **Non-PCM music track** | One MP3-format `0x55` resource skipped by the music exporter. | S | ac-remaining-gaps |
+| **Building/clothing Setup GfxObj export** | Export building + clothing Setup GfxObjs through the `ac_env` pipeline for deeper integration (data extracted; wiring deferred). | Follow-up | ac-data-extraction-roadmap |
+| **Geometry-driven dungeon/town renderer** | Render dungeons/towns from the extracted real meshes in AC coords (not the room-graph). Data is extracted. *(Overlaps A1 town-structures — the client-side renderer piece.)* | Follow-up | ac-data-extraction-roadmap |
+
+## 12. Blocked on external input
+| Item | Blocker |
+|------|---------|
+| **High-res texture upgrade** | `client_highres.dat` not in `acdata/`. Staged: user runs `acdata/ac1install.exe`; whoever's active copies the produced dat in and re-runs all `tex/` exports at the same TIDs (no engine change). |
+
+---
+
+### At a glance
+- **Biggest structural gaps:** the creation wizard + Academy onboarding, per-element/burden combat
+  depth, loot requirements + aetheria/spellcraft, the server-side social stack (allegiance/monarchy/
+  PK/society/crier timers), and world shape (named regions, authored terrain, multi-level dungeons).
+- **Quick wins (S):** missile range falloff, per-swing damage variance, stamina cost scaling, ammo
+  strictness, secure-trade coin, dye recipes, barber restrictions, non-PCM music, server item mirror,
+  and the head-creator polish items.
+- **Needs Agent 1's terrain/map data first:** named regions (W8), authored landmarks (W12).
