@@ -14784,6 +14784,19 @@ function camClampDist(tx,ty,tz,bx,by,bz,maxD){
   }
   return Math.max(0.7,d);
 }
+// AC first person shows your OWN hands: from the eyes you see your real arms + the weapon in your real
+// hand (real attack/cast animations), but NOT your head/torso/legs (you'd just be looking at the inside
+// of your own body). Toggle the AC-body/armour parts by joint: keep the arms (shoulder→hand) + held
+// weapon, hide head, torso, pelvis and legs.
+function avatarFP(av,on){
+  const u=av&&av.userData; if(!u||u._fp===on) return; u._fp=on;
+  const setJoint=(J,vis)=>{ if(!J)return; for(const ch of J.children){ const cu=ch.userData; if(cu&&(cu.acBody||cu.acHeadGrp||cu.npcCloth)) ch.visible=vis; } };
+  // hide head, torso, pelvis, legs AND the shoulders/upper-arms — keep only the forearms + hands + weapon
+  for(const jn of ["neck","spine","pelvisG","hipR","hipL","knR","knL","anR","anL","shR","shL"]) setJoint(u[jn],!on);
+  if(u.acHead) u.acHead.visible=!on;
+  if(u.armorRig) for(const k in u.armorRig){ if(k==="lowerarm"||k==="hands") continue;   // keep forearm+hand armour, hide the rest
+    for(const gr of u.armorRig[k].groups){ if(on){ if(gr.visible){ gr.userData._fpWas=true; gr.visible=false; } } else if(gr.userData._fpWas){ gr.visible=true; gr.userData._fpWas=false; } } }
+}
 function syncCamera(dt){
   const gy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;   // feet height (terrain, floor, ramp, or mid-jump)
   if(thirdPerson){
@@ -14809,15 +14822,34 @@ function syncCamera(dt){
         const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
         if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
     } else {                     // procedural avatar
+      avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
       playerAvatar.visible=player.alive&&!camTooClose;
       playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
       animateAvatar(dt);
       if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
     }
   } else {
-    cam.position.set(player.x, gy+EYE+Math.sin(player.bob)*0.06, player.z);
-    cam.rotation.set(player.pitch, player.yaw, 0);
-    weapon.visible=true; playerAvatar.visible=false; if(gltfAvatar)gltfAvatar.visible=false; camInit=false;
+    // AC-style TRUE first person: look out from the real body's eyes. The AC character body stays
+    // visible & animated, so you see your OWN hands/arms and the weapon in your real hand doing the
+    // real attack animations — only the head is hidden so you don't look inside your own skull.
+    // No fake FPS weapon viewmodel.
+    const yaw=player.yaw,pitch=player.pitch;
+    const ldx=-Math.sin(yaw)*Math.cos(pitch), ldz=-Math.cos(yaw)*Math.cos(pitch);
+    cam.position.set(player.x+ldx*0.12, gy+EYE+Math.sin(player.bob)*0.06, player.z+ldz*0.12);   // eye socket, a touch forward of head centre
+    cam.rotation.set(pitch,yaw,0);
+    weapon.visible=false; camInit=false;
+    if(gltfReady&&gltfAvatar){
+      playerAvatar.visible=false; gltfAvatar.visible=player.alive;
+      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=yaw+Math.PI;
+      if(gltfMixer){ gltfMixer.update(dt);
+        const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
+        if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
+    } else {
+      playerAvatar.visible=player.alive;
+      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
+      animateAvatar(dt);
+      avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
+    }
   }
   if(shakeT>0){
     shakeT-=dt; const m=shakeMag*clamp(shakeT/0.32,0,1);
