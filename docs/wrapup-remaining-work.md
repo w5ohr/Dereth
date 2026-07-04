@@ -50,7 +50,7 @@ Removed from the lists below because git shows them shipped:
 | **Starting gear + letters** | Grant on creation: Calling Stone, per-heritage Letter From Home, template-matched training weapon, creation clothing; casters get wand+3 spells+components; Life caster +2 heal kits; Soldier crossbow +30 quarrels. | S | ac-newplayer A2, REMAINING-WORK |
 | **Post-Academy greeter chain** | Per starter town: Lifestone Greeter (7k XP + first Contract) → Bartender (9.3k XP + 500p) → named Pathwarden (12.5k XP + Supply Key → race armor + robe + +4% XP trinket). ~41k XP → ~L7. | M | ac-newplayer A3 |
 | **Training Academy tutorial dungeon** | Build the ToD Academy interior + courtyard (skippable): Society Greeter → Jonathan → Samuel → Training Master + Sparring Golem → Token → Foreman → Blacksmith → Researcher → Sentry (exit portal). Use real `acdialogue.json` lines. *(Overlaps "Facility Hub as real landblock" — the Academy currently uses grounds+NPCs, not the retail interior.)* | L | ac-newplayer B1, ac-remaining-gaps |
-| **Barber restrictions** | Hide race/gender rows in barber mode (retail barred heritage/gender change). | S | REMAINING-WORK |
+| ✅ **Barber restrictions** | ~~Hide race/gender rows in barber mode.~~ DONE — `ccApplyBarberMode()` hides name/heritage/gender/body/profession/attributes/skills/town + lore in barber mode (only look-changing rows remain); title→"Visit the Barber", button→"Keep this look". | S | REMAINING-WORK |
 
 ## 2. Combat & Physics
 | Item | What's undone | Size | Source |
@@ -92,7 +92,7 @@ Removed from the lists below because git shows them shipped:
 | **PKing / PvP** | /pk NPK-PKL-PK states, Altars of Bael'Zharon/Asheron, 3-day PK keys, PK-death loot rules. | L | auth-gaps S3, ac-remaining-gaps |
 | **Death corpse + item loss** | Lootable corpse on death holding ceil(level/10) items (highest-value first), ½ pyreals lost, ~5-min decay, res invulnerability (currently XP/vitae penalty only). Optional "AC-authentic death" toggle. | M | fidelity-split A2, auth-gaps S4 |
 | **Society ranks + Test quests** | Initiate→Adept→Knight→Lord→Master ranks, ribbon unlocks, society quest gauntlets. | M | auth-gaps S6 |
-| **Player-to-player secure trade: coin** | Enable pyreal amounts in the secure-trade window (items already work). | S | auth-gaps S8, ac-remaining-gaps |
+| ✅ **Player-to-player secure trade: coin** | ~~Enable pyreal amounts in the secure-trade window.~~ DONE — pyreal input per side (capped to carried gold), server relays `coin` per offer (clears both accepts on change, retail rule), `done` transfers coin both ways. | S | auth-gaps S8, ac-remaining-gaps |
 | **Fellowship cap-9 + XP-split modes** | Raise `PARTY_MAX` 6→9; AC level-spread XP split (≤5 lvls equal+bonus, ≤10 proportional, 50+ equal no cap); share-bonus table; needs server level tracking. | S–M | fidelity-split B3, ac-remaining-gaps |
 | **Live-story Town Criers + quest timers** | Non-saga Crier rumor feed + server-side quest flagging/lockout timers (20h–7d) via `QuestDefDB` min_Delta, bridged to custom quest ids. (Kilmer saga K1–K10 already shipped.) | M–L | auth-gaps S9, REMAINING-WORK |
 
@@ -155,6 +155,6 @@ Removed from the lists below because git shows them shipped:
   depth, loot requirements + aetheria/spellcraft, the server-side social stack (allegiance/monarchy/
   PK/society/crier timers), and world shape (named regions, authored terrain, multi-level dungeons).
 - **Quick wins (S):** ~~missile range falloff, per-swing damage variance, stamina cost scaling, ammo
-  strictness~~ (✅ all four done), secure-trade coin, dye recipes, barber restrictions, non-PCM music,
+  strictness, secure-trade coin, barber restrictions~~ (✅ done), dye recipes, non-PCM music,
   server item mirror, and the head-creator polish items.
 - **Needs Agent 1's terrain/map data first:** named regions (W8), authored landmarks (W12).

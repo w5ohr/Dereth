@@ -21914,11 +21914,15 @@ function netHandle(m){
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
   if(m.t==="trade"){ // AC secure trade: invite / sync / done / cancel
     if(m.act==="invite"){ TRADE.from=m.from; log(`<b>${esc(m.from)}</b> offers to trade with you — type <b>/trade accept</b>.`,"warn"); if(SFX.quest)SFX.quest(); }
-    else if(m.act==="sync"){ TRADE.open=true; TRADE.them=m.them||[]; TRADE.youOk=!!m.youOk; TRADE.themOk=!!m.themOk; TRADE.with=m.with||"?"; renderTradeWin(); }
-    else if(m.act==="done"){ // both accepted: my offered items leave, theirs arrive
+    else if(m.act==="sync"){ TRADE.open=true; TRADE.them=m.them||[]; TRADE.youOk=!!m.youOk; TRADE.themOk=!!m.themOk; TRADE.with=m.with||"?";
+      TRADE.mineCoin=m.youCoin|0; TRADE.themCoin=m.themCoin|0; renderTradeWin(); }
+    else if(m.act==="done"){ // both accepted: my offered items+coin leave, theirs arrive
       for(const it of TRADE.mine){ const i=player.inv.indexOf(it); if(i>=0)player.inv.splice(i,1); }
       for(const it of (m.give||[])) player.inv.push(it);
-      log(`<b>Trade complete</b> — ${TRADE.mine.length} given, ${(m.give||[]).length} received.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
+      const paid=TRADE.mineCoin|0, got=m.coin|0;
+      if(paid) player.gold=Math.max(0,player.gold-paid);
+      if(got) player.gold+=got;
+      log(`<b>Trade complete</b> — ${TRADE.mine.length} item${TRADE.mine.length!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${(m.give||[]).length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
       closeTradeWin(); saveGame(); }
     else if(m.act==="cancel"){ log(m.msg||"The trade was cancelled.","warn"); closeTradeWin(); }
     return; }
@@ -22187,8 +22191,8 @@ function sendChatLine(text){
 }
 // ── AC SECURE TRADE window: two columns (your offer | theirs), both must Accept,
 //    any change to either side clears both accepts (retail rule). Real item icons throughout. ──
-const TRADE={open:false,from:null,mine:[],them:[],youOk:false,themOk:false,"with":"?"};
-function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.youOk=TRADE.themOk=false;
+const TRADE={open:false,from:null,mine:[],them:[],mineCoin:0,themCoin:0,youOk:false,themOk:false,"with":"?"};
+function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.mineCoin=TRADE.themCoin=0; TRADE.youOk=TRADE.themOk=false;
   const w=document.getElementById('tradeWin'); if(w)w.remove(); }
 function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
 function renderTradeWin(){
@@ -22204,8 +22208,12 @@ function renderTradeWin(){
       <b style="color:var(--gold);text-transform:uppercase;letter-spacing:.6px;font-size:12px">⇄ Secure Trade — ${esc(TRADE.with)}</b>
       <button id="trCancel" class="tbtn">Cancel</button></div>
     <div style="display:flex;gap:14px">
-      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">You offer ${ok(TRADE.youOk)}</div><div id="trMine">${grid(TRADE.mine)}</div></div>
-      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">${esc(TRADE.with)} offers ${ok(TRADE.themOk)}</div>${grid(TRADE.them)}</div>
+      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">You offer ${ok(TRADE.youOk)}</div><div id="trMine">${grid(TRADE.mine)}</div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:5px"><span style="color:#ffd86b;font-size:11px">🪙 Pyreals</span>
+          <input id="trCoin" type="number" min="0" max="${player.gold|0}" value="${TRADE.mineCoin|0}" style="width:96px;padding:3px 6px;background:#0c0e08;border:1px solid #3a3526;border-radius:4px;color:#ffe9b0;font-size:12px">
+          <span style="color:var(--dim);font-size:10px">of ${(player.gold|0).toLocaleString()}</span></div></div>
+      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">${esc(TRADE.with)} offers ${ok(TRADE.themOk)}</div>${grid(TRADE.them)}
+        <div style="margin-top:6px;color:#ffd86b;font-size:11px">🪙 Pyreals: <b>${(TRADE.themCoin|0).toLocaleString()}</b></div></div>
     </div>
     <div style="margin:10px 0 4px;color:#cdbf9a;font-size:11px">Your satchel — click an item to offer it</div>
     <div id="trInv" style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;max-height:120px;overflow:auto">${offerable.map(o=>tradeSlotHTML(o.it,`data-inv="${o.i}"`)).join("")}</div>
@@ -22216,6 +22224,9 @@ function renderTradeWin(){
     TRADE.mine.push(it); netSend({t:"trade",act:"add",item:it}); renderTradeWin(); });
   w.querySelectorAll('#trMine [data-i]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i;
     TRADE.mine.splice(i,1); netSend({t:"trade",act:"remove",idx:i}); renderTradeWin(); });
+  const ci=w.querySelector('#trCoin');
+  if(ci) ci.onchange=()=>{ const n=Math.max(0,Math.min(player.gold|0,Math.floor(+ci.value||0)));   // cap pyreal offer to what you carry
+    TRADE.mineCoin=n; ci.value=n; TRADE.youOk=false; netSend({t:"trade",act:"coin",amount:n}); renderTradeWin(); };
 }
 function updatePartyHUD(){
   const el=document.getElementById('partyHud'); if(!el) return;
@@ -22753,7 +22764,21 @@ function openCharCreator(race,onCreate){
   const nameI=document.getElementById('ccName'); nameI.value=(player.name&&player.name!=="Adventurer")?player.name:"";
   document.getElementById('ccMsg').textContent="";
   ccInitCreation(); ccInitPreview(); ccBuildOptions(); ccSyncSel(); ccRenderCreation(); ccSize(); ccRebuild();
+  ccApplyBarberMode();
   cancelAnimationFrame(ccRAF); ccAnim();
+}
+// AC's barber changed only your LOOK — heritage, gender, body model, name, and the creation
+// stats (profession/attributes/skills/town) were all locked once the character existed.
+function ccApplyBarberMode(){
+  const barber=(typeof ccBarber!=="undefined"&&ccBarber);
+  const rowOf=id=>{ const el=document.getElementById(id); return el&&el.closest('.cc-row'); };
+  const hide=[rowOf('ccName'),document.querySelector('.cc-row[data-cat="race"]'),
+    document.querySelector('.cc-row[data-cat="model"]'),rowOf('ccGender'),rowOf('ccProf'),
+    rowOf('ccAttrs'),rowOf('ccSkills'),rowOf('ccTown')];
+  hide.forEach(r=>{ if(r)r.style.display=barber?"none":""; });
+  const lore=document.getElementById('ccLore'); if(lore&&barber)lore.style.display="none";
+  const h2=document.querySelector('#charCreator h2'); if(h2)h2.textContent=barber?"✦ VISIT THE BARBER ✦":"✦ CREATE A CHARACTER ✦";
+  const cbtn=document.getElementById('ccCreate'); if(cbtn)cbtn.textContent=barber?"Keep this look →":"Enter Dereth →";
 }
 function closeCharCreator(){ ccVisible=false; cancelAnimationFrame(ccRAF); document.getElementById('charCreator').style.display="none"; }
 // ── the BARBER (AC's 2005 appearance-change service): reopen the creator on the living character ──

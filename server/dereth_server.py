@@ -940,8 +940,10 @@ async def trade_sync(tr):
         other = tr["b"] if acc == tr["a"] else tr["a"]
         oc = CLIENTS.get(other)
         if c:
+            coin = tr.get("coin", {})
             await c.send({"t": "trade", "act": "sync", "you": tr["offers"][acc], "them": tr["offers"][other],
                           "youOk": tr["ok"][acc], "themOk": tr["ok"][other],
+                          "youCoin": coin.get(acc, 0), "themCoin": coin.get(other, 0),
                           "with": oc.charname if oc else "?"})
 
 async def trade_cancel(acc, reason="The trade was cancelled."):
@@ -970,6 +972,7 @@ async def handle_trade(cl, msg):
         _trade_seq += 1
         TRADES["t%d" % _trade_seq] = {"a": cl.username, "b": target.username,
                                       "offers": {cl.username: [], target.username: []},
+                                      "coin": {cl.username: 0, target.username: 0},
                                       "ok": {cl.username: False, target.username: False}, "pending": True}
         await cl.send({"t": "system", "msg": f"You offer to trade with {name}."})
         await target.send({"t": "trade", "act": "invite", "from": cl.charname})
@@ -993,6 +996,17 @@ async def handle_trade(cl, msg):
                 tr["offers"][cl.username].pop(idx)
         tr["ok"][tr["a"]] = tr["ok"][tr["b"]] = False        # AC: ANY change clears both accepts
         await trade_sync(tr)
+    elif act == "coin":
+        tid, tr = trade_of(cl.username)
+        if not tr or tr.get("pending"):
+            return
+        try:
+            amt = max(0, min(2_000_000_000, int(msg.get("amount", 0))))
+        except (TypeError, ValueError):
+            amt = 0
+        tr.setdefault("coin", {})[cl.username] = amt
+        tr["ok"][tr["a"]] = tr["ok"][tr["b"]] = False        # AC: changing the coin offer clears both accepts
+        await trade_sync(tr)
     elif act == "ok":
         tid, tr = trade_of(cl.username)
         if not tr or tr.get("pending"):
@@ -1003,7 +1017,8 @@ async def handle_trade(cl, msg):
                 other = tr["b"] if acc == tr["a"] else tr["a"]
                 c = CLIENTS.get(acc)
                 if c:
-                    await c.send({"t": "trade", "act": "done", "give": tr["offers"][other]})
+                    await c.send({"t": "trade", "act": "done", "give": tr["offers"][other],
+                                  "coin": tr.get("coin", {}).get(other, 0)})
             del TRADES[tid]
         else:
             await trade_sync(tr)
