@@ -17891,25 +17891,39 @@ function addMerchant(x,z,vt,name,acStock){   // merged: heritage dressing (regio
   shops.push({x,z,mesh,vtype:vt,name:name||null,acStock:acStock||null,title:(VENDOR_TYPES[vt]||VENDOR_TYPES.provisioner).title,pyreals:irnd(14000,20000),pmax:20000,obs:[o1,o2]});
 }
 // Seat every town vendor inside the building it stands nearest to — merchants belong in shops,
-// not scattered across the plaza. Runs once after the world (buildings + vendors) is built.
+// not scattered across the plaza. For each, search the interior for a spot that is clear of walls
+// and furniture AND reachable in a straight walk from the doorway, so nobody ends up boxed in.
 function seatVendorsInBuildings(){
   if(!shops||!shops.length||!structures||!structures.length) return;
-  const perBuilding=new Map();
+  const vObs=new Set(); for(const s of shops) if(s.obs) for(const o of s.obs) vObs.add(o);   // vendor colliders — never block a vendor
+  const placed=[];
+  const crowded=(x,z,gap)=>{ for(const o of obstacles){ if(vObs.has(o)) continue; if(((o.x-x)**2+(o.z-z)**2)<(o.r+gap)**2) return true; }
+    for(const p of placed){ if(((p.x-x)**2+(p.z-z)**2)<4.0) return true; } return false; };
+  const pathClear=(ax,az,bx,bz)=>{ const n=Math.max(2,Math.ceil(Math.hypot(bx-ax,bz-az)/0.4));
+    for(let i=0;i<=n;i++){ const t=i/n, x=ax+(bx-ax)*t, z=az+(bz-az)*t;
+      for(const o of obstacles){ if(vObs.has(o)) continue; if(((o.x-x)**2+(o.z-z)**2)<(o.r+0.35)**2) return false; } } return true; };
+  const DEPTHS=[1.4,0.6,2.0,2.8,-0.2,-1.0], LATS=[0,1.3,-1.3,2.4,-2.4,0.7,-0.7];
   for(const sh of shops){
-    if(sh._seated) continue;
+    if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;   // never box in a roaming vendor
     let city=null,cd=1e9; for(const c of CITIES){ const d=Math.hypot(c.x-sh.x,c.z-sh.z); if(d<cd){cd=d;city=c;} }
     if(!city||cd>52) continue;                                   // only vendors actually standing in a town
     let st=null,sd=1e9; for(const s of structures){ const d=Math.hypot(s.bx-sh.x,s.bz-sh.z); if(d<sd){sd=d;st=s;} }
     if(!st||sd>55) continue;                                     // no building near enough — leave it be
     let ux=city.x-st.bx, uz=city.z-st.bz; const ul=Math.hypot(ux,uz)||1; ux/=ul; uz/=ul;   // toward the door (faces the centre)
-    const px=-uz, pz=ux;                                         // lateral (along the storefront)
-    const k=perBuilding.get(st)||0; perBuilding.set(st,k+1);
-    const lat=k===0?0:((k%2?1:-1)*Math.ceil(k/2)*1.7);          // fan several vendors across the same building
-    const nx=st.bx+ux*1.6+px*lat, nz=st.bz+uz*1.6+pz*lat, fy=groundY(nx,nz);
+    const lx=-uz, lz=ux;                                         // lateral (along the storefront)
+    const dmx=st.bx+ux*3.8, dmz=st.bz+uz*3.8;                    // a reference point just inside the doorway
+    // pick the first interior spot that is uncrowded AND reachable from the doorway; relax if needed
+    let spot=null;
+    for(const gap of [0.85,0.6,0.4]){ if(spot) break;
+      for(const fwd of DEPTHS){ if(spot) break;
+        for(const lat of LATS){ const x=st.bx+ux*fwd+lx*lat, z=st.bz+uz*fwd+lz*lat;
+          if(!crowded(x,z,gap) && pathClear(dmx,dmz,x,z)){ spot={x,z}; break; } } } }
+    if(!spot) spot={x:st.bx+ux*1.4, z:st.bz+uz*1.4};            // last resort: front-centre
+    const nx=spot.x, nz=spot.z, fy=groundY(nx,nz);
     sh.mesh.position.set(nx,fy,nz);
     sh.mesh.rotation.y=Math.atan2(-ux,-uz);                     // buildPerson fronts -z — turn it to face the door
-    sh.x=nx; sh.z=nz; sh._seated=true;
-    if(sh.obs){ sh.obs[0].x=nx; sh.obs[0].z=nz; if(sh.obs[1]){ sh.obs[1].x=nx+px*1.1; sh.obs[1].z=nz+pz*1.1; } }
+    sh.x=nx; sh.z=nz; sh._seated=true; placed.push({x:nx,z:nz});
+    if(sh.obs){ sh.obs[0].x=nx; sh.obs[0].z=nz; if(sh.obs[1]){ sh.obs[1].x=nx-ux*0.9; sh.obs[1].z=nz-uz*0.9; } }   // second collider sits behind, toward the back
   }
 }
 // ── The Wandering Caravan: an ox-drawn covered wagon that plies the winding road between Holtburg and
