@@ -407,7 +407,7 @@ def enrich(entry, lb, cellmap, catidx, name):
 # ─────────────────────────── main ───────────────────────────
 def main():
     lbmap = json.load(open(os.path.join(ROOT, "assets", "dungeon-landblocks.json")))
-    src = open(os.path.join(ROOT, "index.html")).read()
+    src = open(os.path.join(ROOT, "index.html"), encoding="utf-8", errors="replace").read()
     canon = re.findall(r'\["([^"]+)"', re.search(r'const CANON_DUNGEONS=\[(.*?)\n\];', src, re.S).group(1))
     block = src[src.index("const DUNGEON_SCRIPTS={"):]
     block = block[:block.index("\n};")]

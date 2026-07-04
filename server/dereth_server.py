@@ -20,6 +20,9 @@ DB_PATH = os.environ.get("DERETH_DB", os.path.join(os.path.dirname(__file__), "d
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 TICK_HZ = 10
 MAX_MSG = 1 << 20  # 1 MiB per message cap (character saves can be sizable)
+# WSCALE — world spatial scale; MUST match the client's WSCALE. At 3 the map is true 1:1 AC metre
+# spacing (towns 3× farther apart than the old compact map). Only POSITIONS scale — ranges stay metres.
+WSCALE = 3
 SCRYPT = dict(n=16384, r=8, p=1, dklen=32)
 PROTOCOL_VERSION = 2   # v2: accounts own up to 8 character slots (roster/play_char/create_char)
 
@@ -319,7 +322,7 @@ except Exception:
     pass
 # Monsters cluster near real Dereth towns (world coords = lon*80, -lat*80) so the shared
 # population is where players actually spawn/travel — not out at the empty origin.
-MOB_CLUSTERS = [
+MOB_CLUSTERS = [(x * WSCALE, z * WSCALE) for x, z in [
     (2640, -3488),  # Holtburg (Aluvian capital — common spawn)
     (3768, -2072),  # Cragstone
     (2048, -2424),  # Glenden Wood
@@ -328,12 +331,12 @@ MOB_CLUSTERS = [
     (3704, 968),    # Yaraq (Gharu'ndim capital)
     (1472, 128),    # Samsur
     (4824, 2296),   # Sawato
-]
+]]
 MOBS = {}              # id -> mob dict
 _mob_seq = 0
-WORLD_LIMIT = 7000     # keep mobs inside the playfield
+WORLD_LIMIT = 7000 * WSCALE   # keep mobs inside the (now 1:1) playfield
 # capitals are safe havens — creatures are pushed out of the town core (mirrors the client)
-CAPITALS = [(2640, -3488), (4744, -880), (3704, 968)]   # Holtburg, Shoushi, Yaraq
+CAPITALS = [(x * WSCALE, z * WSCALE) for x, z in [(2640, -3488), (4744, -880), (3704, 968)]]   # Holtburg, Shoushi, Yaraq
 TOWN_SAFE = 60.0
 ATTACK_RANGE = 16.0    # max client→mob distance accepted for an attack intent (melee+ranged+latency)
 FELLOW_RANGE = 150.0   # party members within this range of a kill share its XP
@@ -376,6 +379,8 @@ BOSS_DEFS = {
     "genFerah":{"name": "Black Ferah, Shadow General",  "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (5200, 600),   "respawn": 120.0, "tint": 0x4a3a6a},
     "genIsin": {"name": "Isin Dule, Shadow General",    "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (2800, 1800),  "respawn": 120.0, "tint": 0xc05fae},
 }
+for _b in BOSS_DEFS.values():   # boss anchor positions scale to the 1:1 world too
+    _hx, _hz = _b["home"]; _b["home"] = (_hx * WSCALE, _hz * WSCALE)
 
 def spawn_boss(key):
     b = BOSS_DEFS[key]
