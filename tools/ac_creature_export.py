@@ -53,7 +53,7 @@ KINDS = {
  "margul":"Stalking Margul","phantom":"Phantom","elemental":"Water Elemental",
  "snowman":"Snowman","chicken":"Chicken","viamontian":"Viamontian Knight",
  "falatacot":"Falatacot Consort","tormented":"Tormented Attendant","hea":"Hea Hunter",
- "gearknight":"Gold Gear Knight",
+ "gearknight":"Gold Gear Knight","cow":"Cow",
 }
 
 HOOK_PAYLOAD = {0:0,1:4,2:4,3:28,4:0,6:4,7:16,8:12,9:16,10:12,11:16,12:8,13:40,14:4,
@@ -120,7 +120,7 @@ def creature_dids():
         for line in f:
             if line.startswith("INSERT INTO `weenie` "):
                 for wid, wtype in re_weenie.findall(line):
-                    if wtype == "10": creatures.add(int(wid))
+                    if wtype in ("10", "15"): creatures.add(int(wid))   # Creature + Cow
             elif line.startswith("INSERT INTO `weenie_properties_string` "):
                 for _, oid, t, val in re_str.findall(line):
                     if t == "1": names[int(oid)] = val.replace("\\'", "'")
@@ -217,7 +217,10 @@ class Glb:
         out += struct.pack("<2I", len(s.bin), 0x004E4942) + bytes(s.bin)
         open(path, "wb").write(out)
 
-def export_creature(kind, setup_id, mt_id, portal, texbytes):
+def export_creature(kind, setup_id, mt_id, portal, texbytes, variant=None):
+    # variant (breeds, tools/ac_breed_export.py): {"swaps":{partIdx:gfxDID},
+    # "texmap":{oldSurfaceTex:newSurfaceTex}} — the palette recolor rides in via a
+    # composed texbytes["_pal"] (ClothingTable CloSubPalEffects over the base palette)
     setup = ame.parse_setup(portal.read(setup_id))
     nparts = len(setup["parts"])
     glb = Glb()
@@ -231,7 +234,9 @@ def export_creature(kind, setup_id, mt_id, portal, texbytes):
                 baseColorFactor=[((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255, 1], metallicFactor=0.0, roughnessFactor=0.8),
                 doubleSided=True)
         else:
-            tid = ame.parse_surfacetexture(portal.read(s["tex"]))[-1]
+            stex = s["tex"]
+            if variant and variant.get("texmap"): stex = variant["texmap"].get(stex, stex)
+            tid = ame.parse_surfacetexture(portal.read(stex))[-1]
             if tid not in texbytes:
                 dec = ame.decode_texture(portal.read(tid), texbytes["_pal"])
                 texbytes[tid] = None
@@ -259,6 +264,7 @@ def export_creature(kind, setup_id, mt_id, portal, texbytes):
     glb.j["nodes"].append(dict(name="root", children=[]))
     part_node = [None]*nparts
     for i, gid in enumerate(setup["parts"]):
+        if variant and variant.get("swaps") and i in variant["swaps"]: gid = variant["swaps"][i]
         try:
             gfx = ame.parse_gfxobj(portal.read(gid))
         except Exception:
