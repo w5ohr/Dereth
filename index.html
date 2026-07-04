@@ -2857,7 +2857,7 @@ function initThree(){
       const ty=acType(wx,wz), tc=AC_TYPE_COL[ty]||AC_TYPE_COL[1];
       const j=0.94+Math.sin(wx*0.37)*Math.sin(wz*0.41)*0.06;               // per-vertex jitter so fields never read flat
       rr=tc[0]*j; gg=tc[1]*j; bb=tc[2]*j;
-      if(acRoad(wx,wz)){ rr=0.46; gg=0.37; bb=0.26; }                      // the authentic AC road web, packed earth
+      if(acRoad(wx,wz)){ rr=0.55; gg=0.47; bb=0.36; }                      // the authentic AC road web — fresh-laid packed stone, uniform (no ragged jitter)
       return col.setRGB(rr,gg,bb);
     }
     // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
@@ -18614,16 +18614,86 @@ function cobbleTex(){
   return t;
 }
 // roads as a ribbon of quads that follow the terrain contours
+// ── Purpose-built roads: freshly-laid beds that follow the land closely (fine tessellation),
+//    end at the town edge instead of plowing into buildings, curve SMOOTHLY around any building
+//    on the route, and cross water on WALKABLE plank bridges (decks registered in `structures`
+//    so supportAt carries you over). ──
+let _bridgeWood=null;
+function buildBridgeRails(C,i,j,dy,hw){   // posts + handrails along a water span
+  if(!_bridgeWood) _bridgeWood=new THREE.MeshStandardMaterial({color:0x6b4a2a,roughness:0.9});
+  if(j-i>120) return;                                // ocean-length causeways go railless (draw-call budget)
+  for(const s of [-1,1]){
+    for(let k=i;k<j;k+=4){
+      const c=C[k], q=C[Math.min(C.length-1,k+1)], p0=C[Math.max(0,k-1)];
+      const nx=q.x-p0.x, nz=q.z-p0.z, nl=Math.hypot(nx,nz)||1;
+      const px=-nz/nl*(hw-0.25), pz=nx/nl*(hw-0.25);
+      const post=new THREE.Mesh(new THREE.BoxGeometry(0.22,1.15,0.22),_bridgeWood);
+      post.position.set(c.x+px*s,dy+0.55,c.z+pz*s); post.castShadow=true; scene.add(post); roadMeshes.push(post);
+      if(k+4<j){ const c2=C[Math.min(C.length-1,k+4)];
+        const rail=new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(c2.x-c.x,c2.z-c.z),0.12,0.14),_bridgeWood);
+        rail.position.set((c.x+c2.x)/2+px*s,dy+1.0,(c.z+c2.z)/2+pz*s);
+        rail.rotation.y=Math.atan2(-(c2.z-c.z),c2.x-c.x); scene.add(rail); roadMeshes.push(rail); }
+    }
+  }
+}
+function registerBridgeWalk(C,i,j,deck,hw){   // each deck panel becomes a walkable platform
+  for(let k=i;k<j;k++){
+    const pad=hw+0.6;
+    const x0=Math.min(C[k].x,C[k+1].x)-pad, x1=Math.max(C[k].x,C[k+1].x)+pad;
+    const z0=Math.min(C[k].z,C[k+1].z)-pad, z1=Math.max(C[k].z,C[k+1].z)+pad;
+    const bx=(x0+x1)/2, bz=(z0+z1)/2, rr=Math.hypot(x1-x0,z1-z0)/2+1;
+    structures.push({bx,bz,r2:rr*rr,cos:1,sin:0,baseY:0,ramps:[],
+      platforms:[{x0:x0-bx,x1:x1-bx,z0:z0-bz,z1:z1-bz,y:(deck[k]+deck[k+1])/2}]});
+  }
+}
 function buildRoads(){
   if(!roadMat) roadMat=new THREE.MeshStandardMaterial({map:cobbleTex()});
   for(const r of ROADS){
-    const dx=r.bx-r.ax,dz=r.bz-r.az,len=Math.hypot(dx,dz),ux=dx/len,uz=dz/len,pxn=-uz,pzn=ux,hw=r.w/2;
-    const n=Math.max(2,Math.ceil(len/10)),pos=[],uv=[],idx=[];
+    let ax=r.ax,az=r.az,bx=r.bx,bz=r.bz;
+    let dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz);
+    if(len>90){ const TRIM=16;                       // roads meet the town EDGE, not its buildings
+      ax+=dx/len*TRIM; az+=dz/len*TRIM; bx-=dx/len*TRIM; bz-=dz/len*TRIM;
+      dx=bx-ax; dz=bz-az; len=Math.hypot(dx,dz); }
+    const hw=r.w/2;
+    const n=Math.max(2,Math.ceil(len/4));            // fine bed: the road hugs every rise (was /10)
+    // centerline: straight survey line, bent smoothly around any building it would strike
+    const C=[];
     for(let i=0;i<=n;i++){
-      const t=i/n,cx=r.ax+dx*t,cz=r.az+dz*t;
-      const lx=cx-pxn*hw,lz=cz-pzn*hw,rx=cx+pxn*hw,rz=cz+pzn*hw;
-      pos.push(lx,groundY(lx,lz)+0.12,lz, rx,groundY(rx,rz)+0.12,rz);
-      const vv=(len*t)/r.w;uv.push(0,vv,1,vv);
+      const t=i/n; let cx=ax+dx*t, cz=az+dz*t;
+      for(const o of obstacles){ const or=(o.r||0); if(or<1.4) continue;
+        const odx=cx-o.x, odz=cz-o.z, d=Math.hypot(odx,odz), need=or+hw+2.5;
+        if(d<need&&d>0.01){ cx=o.x+odx/d*need; cz=o.z+odz/d*need; } }
+      C.push({x:cx,z:cz,h:0});
+    }
+    for(let i=1;i<n;i++){ C[i].x=(C[i-1].x+C[i].x*2+C[i+1].x)/4; C[i].z=(C[i-1].z+C[i].z*2+C[i+1].z)/4; }  // surveyed bends, not kinks
+    for(let i=0;i<=n;i++) C[i].h=groundY(C[i].x,C[i].z);
+    // deck heights: on land the bed rides the ground; over water it becomes a level bridge
+    const WATER=0.35, deck=[];
+    for(let i=0;i<=n;i++) deck[i]=C[i].h+0.15;
+    { let i=0;
+      while(i<=n){
+        if(C[i].h<WATER){ let j=i; while(j<=n&&C[j].h<WATER) j++;
+          const h0=i>0?C[i-1].h:(j<=n?C[j].h:1), h1=j<=n?C[j].h:h0;
+          const dy=Math.max(1.15,Math.max(h0,h1)+0.35);      // clear of the waterline
+          for(let k=i;k<j;k++) deck[k]=dy;
+          if(i>0) deck[i-1]=Math.max(deck[i-1],(dy+h0+0.15)/2);   // ramped approaches
+          if(j<=n) deck[j]=Math.max(deck[j],(dy+h1+0.15)/2);
+          if(j-i>=2){ buildBridgeRails(C,i,j,dy,hw); }
+          registerBridgeWalk(C,Math.max(0,i-1),Math.min(n,j),deck,hw);
+          i=j;
+        } else i++;
+      } }
+    // the strip itself
+    const pos=[],uv=[],idx=[];
+    for(let i=0;i<=n;i++){
+      const c=C[i], q=C[Math.min(n,i+1)], p0=C[Math.max(0,i-1)];
+      const nx=q.x-p0.x, nz=q.z-p0.z, nl=Math.hypot(nx,nz)||1, ppx=-nz/nl, ppz=nx/nl;
+      const lx=c.x-ppx*hw, lz=c.z-ppz*hw, rx=c.x+ppx*hw, rz=c.z+ppz*hw;
+      const bridging=deck[i]>c.h+0.16;               // raised deck = bridge: stays FLAT
+      const yl=bridging?deck[i]:groundY(lx,lz)+0.15; // on land each edge hugs ITS terrain (no digging into cross-slopes)
+      const yr=bridging?deck[i]:groundY(rx,rz)+0.15;
+      pos.push(lx,yl,lz, rx,yr,rz);
+      const vv=(len*(i/n))/r.w; uv.push(0,vv,1,vv);
       if(i<n){const a=i*2;idx.push(a,a+1,a+2, a+1,a+3,a+2);}
     }
     const geo=new THREE.BufferGeometry();
