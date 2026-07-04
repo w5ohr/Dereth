@@ -249,6 +249,15 @@
   <div style="width:100%;height:8px;background:rgba(0,0,0,.55);border:1px solid #4a80a8;border-radius:5px;overflow:hidden"><i id="breathFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#2a6a9a,#7fd0ff)"></i></div>
 </div>
 <div id="atkHeight" style="position:fixed;left:50%;bottom:132px;transform:translateX(-50%);font-size:11px;color:#ffd86b;text-shadow:0 1px 2px #000;z-index:40;display:none;pointer-events:none">Attack: Middle</div>
+<!-- AC 2017 COMBAT PANEL: the Speed↔Power slider + the three red attack-height pills -->
+<div id="combatPanel" class="panel" style="position:fixed;right:46px;bottom:64px;width:210px;padding:8px 10px;z-index:30">
+  <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:#cdbf9a">
+    <span>Speed</span>
+    <input id="pwrSlider" type="range" min="0" max="100" value="50" style="flex:1;accent-color:#3fd06a;height:14px">
+    <span id="pwrLabel">Power</span>
+  </div>
+  <div id="ahPills" style="display:flex;gap:5px;justify-content:center;margin-top:6px"></div>
+</div>
 <!-- ═══ Decal plugin HUDs (toggled in Settings → Decal plugins) — interfaces styled after the real
      AC plugin screenshots: GoArrow's arrow+coords HUD, VTank's parchment window with green LED
      toggles, Alinco's buff list, Mag-Tools' session tracker tab. ═══ -->
@@ -13254,7 +13263,7 @@ function updatePets(dt){
     }
   }
 }
-function primaryAttack(){ if(weaponMode==="bow") fireArrow(); else meleeAttack(); }
+function primaryAttack(){ if(weaponMode==="bow") fireArrow(); else meleeAttack(0.6+(player.powerBar==null?0.5:player.powerBar)); }   // tap attacks swing at the combat panel's set power (AC 2017)
 // dodge dash (Space): quick burst in the movement direction (or backward) with brief i-frames
 function dodge(){
   if(!player.alive||paused||player.dashT>0||player.dashCd>0||player.st<16) return;
@@ -13275,7 +13284,10 @@ function fireArrow(){
   player.st-=prof.stam;
   const cdScale=Math.max(.4,1-player.attr.Coordination*0.02);
   player.meleeCd=0.55*prof.cd*cdScale*(1-itemBuff("haste")); player.bowDraw=1; SFX.arrow(); fovKick=Math.min(fovKick+3,4); // recoil punch on loose (Swift Killer hastens)
-  let dmg=(12+player.attr.Coordination*1.6+player.weaponTink+(ranged?player.weapon.v:0))*skillEff("missile",0.02)*prof.dmg*dmgVar(prof);   // PHYSICAL (pierce) component, per-shot damage roll
+  // AC 2017 accuracy bar: far left = fastest/−40% effect, far right = slowest/+50% (retail missile tradeoff)
+  const pb=(player.powerBar==null?0.5:player.powerBar);
+  player.meleeCd*=(0.75+pb*0.55);
+  let dmg=(12+player.attr.Coordination*1.6+player.weaponTink+(ranged?player.weapon.v:0))*skillEff("missile",0.02)*prof.dmg*dmgVar(prof)*(0.72+pb*0.56);   // PHYSICAL (pierce) component, per-shot roll × accuracy
   // brand affixes add a SEPARATE elemental component — arrows carry BOTH physical and elemental damage
   const af=ranged?player.weapon.affix:null; let element,elemDmg=0,burn=false,pslow=0,stun=false,drain=0,col=0xffe6b0;
   if(af){ if(af.k==="brand"){ element=af.element; elemDmg=Math.max(2,Math.round(dmg*0.25));
@@ -13426,6 +13438,7 @@ cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse = shie
 const ATK_HEIGHTS=["low","mid","high"], ATK_LABEL={low:"Low",mid:"Middle",high:"High"};
 window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
   let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); i=clamp(i+(e.deltaY<0?1:-1),0,2); player.atkHeight=ATK_HEIGHTS[i];
+  if(typeof buildCombatPanel==="function") buildCombatPanel();   // the panel's red pills follow the wheel
   const el=document.getElementById('atkHeight'); if(el){ el.textContent="Attack: "+ATK_LABEL[player.atkHeight]; el.style.display="block"; el._t=now(); }
 },{passive:false});
 document.addEventListener('mousemove',e=>{
@@ -13503,6 +13516,29 @@ function buildPanelRail(){
   rail.innerHTML=""; for(const [ic,tt,fn] of B){ const b=document.createElement('button'); b.textContent=ic; b.title=tt; b.onclick=fn; rail.appendChild(b); }
 }
 buildPanelRail();
+// AC 2017 combat panel: the slider SETS your attack power/accuracy (tap attacks use it; the
+// hold-to-charge bar still overrides), the red pills pick the attack height, and a trained
+// Recklessness paints its active 10–90% span red on the track (retail).
+function buildCombatPanel(){
+  const sl=document.getElementById('pwrSlider'), pills=document.getElementById('ahPills'); if(!sl||!pills) return;
+  if(player.powerBar==null) player.powerBar=0.5;
+  sl.value=Math.round(player.powerBar*100);
+  sl.oninput=()=>{ player.powerBar=sl.value/100; };
+  const wp=(typeof weaponProfile==="function")?weaponProfile():null;
+  document.getElementById('pwrLabel').textContent=(wp&&wp.mode==="missile")?"Accuracy":"Power";
+  if(typeof skillTier==="function"&&skillTier("recklessness")>0)
+    sl.style.background="linear-gradient(90deg,transparent 10%,rgba(224,48,48,.45) 10%,rgba(224,48,48,.45) 90%,transparent 90%)";   // the Recklessness zone
+  pills.innerHTML="";
+  for(const [k,lab] of [["high","High"],["mid","Medium"],["low","Low"]]){
+    const on=(player.atkHeight||"mid")===k;
+    const b=document.createElement('button');
+    b.textContent=(on?"▸ ":"")+lab+(on?" ◂":"");
+    b.style.cssText=`flex:1;padding:2px 0;font-size:10px;border-radius:8px;cursor:pointer;border:1px solid ${on?'#ffd86b':'#5a2020'};background:${on?'#8a2020':'#4a1818'};color:${on?'#ffe6b0':'#d8a8a8'}`;
+    b.onclick=()=>{ player.atkHeight=k; buildCombatPanel(); };
+    pills.appendChild(b);
+  }
+}
+buildCombatPanel();
 const ROW1_DEF=["Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0","Minus","Equal"];
 for(let i=0;i<QB_PAGE;i++){ const idx=i; ACTIONS.push({id:"qb"+i,label:"Quick Slot R"+(i<QB_COLS?1:2)+"·"+((i%QB_COLS)+1),group:"Quick Slots",def:i<QB_COLS?ROW1_DEF[i]:"",run:()=>castSlot(hotbarPage*QB_PAGE+idx)}); }
 function defaultBinds(){ const b={}; for(const a of ACTIONS) b[a.id]=a.def?[a.def]:[]; return b; }
