@@ -10297,7 +10297,8 @@ function addDrop(x,z,data){
       new THREE.MeshStandardMaterial({color:0xcfc6b4,roughness:0.95}));
     shroud.rotation.z=Math.PI/2; shroud.position.y=0.28; shroud.scale.y=0.62; shroud.castShadow=true; mesh.add(shroud);
     const glow=new THREE.PointLight(0x9ab8ff,0.9,7); glow.position.y=1.0; mesh.add(glow);
-    const lbl=labelSprite(`${data.owner||"Your"} corpse — recover (E)`,"npcs");
+    const _cn=(data.items&&data.items.length)?` (${data.items.length} item${data.items.length!==1?"s":""}${data.amt?" + pyreals":""})`:(data.amt?" (pyreals)":"");
+    const lbl=labelSprite(`${data.owner||"Your"} corpse${_cn} — recover (E)`,"npcs");
     lbl.scale.set(7,1.5,1); lbl.position.y=2.0; mesh.add(lbl);
   }else{
     const model=buildItemModel(data.item||{},{drop:true}); mesh=new THREE.Group();
@@ -13119,7 +13120,10 @@ function die(){
       addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,
         owner:player.name||"Adventurer",ttl:Math.max(3600,300*player.level)});
       if(typeof recomputeGearSkill==="function") recomputeGearSkill();
-      corpseNote=` Your corpse holds <b>${dd.items.length}</b> item(s)${dd.gold?` and <b>${dd.gold.toLocaleString()}</b> pyreals`:""} where you fell — recover it before it decays (${Math.round(Math.max(3600,300*player.level)/60)} min).`;
+      // AC always named your losses — list them so you know exactly what to walk back for
+      const _nm=dd.items.slice(0,6).map(it=>it.name), _more=dd.items.length-_nm.length;
+      const _list=_nm.length?` — <i>${_nm.join(", ")}${_more>0?`, +${_more} more`:""}</i>`:"";
+      corpseNote=` Your corpse holds <b>${dd.items.length}</b> item(s)${_list}${dd.gold?` and <b>${dd.gold.toLocaleString()}</b> pyreals`:""} where you fell — recover it before it decays (${Math.round(Math.max(3600,300*player.level)/60)} min).`;
     }
   } else corpseNote=" (Soft death is on — nothing dropped. Settings → AC-authentic death.)";
   derive();   // apply the new Vitae to your vital pools before you respawn
