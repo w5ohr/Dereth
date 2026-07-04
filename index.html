@@ -1611,7 +1611,7 @@ fetch(GM_DIR+'ac/breeds.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   }
   console.log("AC breeds: "+Object.keys(j).length+" families, "+looks+" authentic looks.");
 }).catch(()=>{});
-let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
+let skyMat,skyDomeMesh,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
 let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
@@ -2492,7 +2492,7 @@ function skyDome(){
       "void main(){ vec3 d=normalize(vDir);\n"+
       " float h=clamp(d.y,0.0,1.0);\n"+
       " vec3 c=mix(uHor,uZen,pow(h,0.62));\n"+                       // Rayleigh-ish falloff
-      " if(d.y<0.0) c=mix(uHor,uGnd,clamp(-d.y*4.0,0.0,1.0));\n"+    // haze under the horizon line
+      " if(d.y<0.0) c=mix(uHor,uGnd,clamp(-d.y*1.6,0.0,1.0));\n"+    // gentle haze below the horizon (no harsh dark band hugging it when you look out over low terrain/sea)
       " float s=max(dot(d,normalize(uSunDir)),0.0);\n"+
       " c+=uSunCol*(pow(s,420.0)*1.1+pow(s,26.0)*0.34+pow(s,5.0)*0.16)*uGlow;\n"+ // sun disc + aureole + wider warm scatter
       " gl_FragColor=vec4(c,1.0); }"});
@@ -2713,7 +2713,9 @@ function updateDayNight(dt){
     seasonCur.sky.lerp(_tmp.setHex(S.sky),k);       if(skyU)skyU.uHor.value.lerp(seasonCur.sky,0.20);
   }
   if(starMat) starMat.opacity=clamp(1-daylight*1.6,0,1)*(0.85+0.15*Math.sin(now()/350)); // twinkle
-  if(starField) starField.position.set(player.x,0,player.z); // dome follows player
+  if(starField) starField.position.set(player.x,0,player.z);   // starfield follows the player
+  if(skyDomeMesh) skyDomeMesh.position.set(player.x,0,player.z); // keep the sky dome centred on the player so the
+  // horizon stays symmetric and you never roam out toward the dome's dark lower hemisphere
   // visible sun & moon discs ride the sky along the light's arc
   const R=WORLD*0.42,sky=new THREE.Vector3(sunX*0.62,sunY,0.4).normalize();
   if(skyU) skyU.uSunDir.value.copy(sky);
@@ -2860,7 +2862,7 @@ function initThree(){
   cam=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.05,WORLD*1.2);
   cam.rotation.order="YXZ";
 
-  const sky=skyDome();skyMat=sky.material;scene.add(sky);
+  const sky=skyDome();skyMat=sky.material;skyDomeMesh=sky;scene.add(sky);
   scene.add(buildStars());
   scene.add(buildSun());scene.add(buildMoon());scene.add(buildMoon2());scene.add(buildClouds());
   // soft sun halo for a god-ray glow
@@ -6387,34 +6389,41 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
   return g;
 }
 const TB_KINDS={building:1,scenery:1,fixture:1,statue:1};
-// build one town's real buildings AND scenery/fixtures/statues, collide them appropriately, and
-// station its vendors at the street-facing shopfront. (AC town buildings are closed exterior shells
-// — the door is a portal to a separate interior cell we don't carry — so the authentic read is the
-// shopkeeper at the door facing the plaza, rather than a vendor sealed inside an impassable box.)
+// colliders around an oriented rectangular footprint (into both obstacles[] and a drop list)
+function tbRingEdge(obst,wx,wz,cw,sw,lcx,lcz,hx,hz,r,sp){
+  const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/sp));
+    for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
+      const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw, ob={x:px,z:pz,r}; obstacles.push(ob); obst.push(ob); } };
+  edge(lcx-hx,lcz-hz,lcx+hx,lcz-hz); edge(lcx+hx,lcz-hz,lcx+hx,lcz+hz);
+  edge(lcx+hx,lcz+hz,lcx-hx,lcz+hz); edge(lcx-hx,lcz+hz,lcx-hx,lcz-hz);
+}
+// place ONE real structure (mesh + shape-appropriate colliders) at a world spot; used by both the
+// town builder and the open-world streamer. Returns a building footprint rec (for vendor seating) or null.
+function tbPlaceStructure(g,obst,kind,did,wx,wz,th){
+  const md=_tbModels[(''+did).toUpperCase()]; if(!md||!md.ready) return null;
+  const cw=Math.cos(th), sw=Math.sin(th), gy=groundY(wx,wz);
+  const bm=tbBuildMesh(md); bm.position.set(wx,gy,wz); bm.rotation.y=th; g.add(bm);
+  const bb=md.bb, W=bb[3]-bb[0], H=bb[4]-bb[1], D=bb[5]-bb[2];
+  const hx=W/2, hz=D/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2;
+  const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;                  // world footprint centre
+  if(kind==='building'){ tbRingEdge(obst,wx,wz,cw,sw,lcx,lcz,hx,hz,0.8,1.6); return {fcx,fcz,hx,hz,th}; }
+  // scenery / fixture / statue: collide only what's worth colliding
+  const horiz=Math.max(W,D), mn=Math.max(0.2,Math.min(W,D));
+  if(H<1.4 || horiz<1.1) return null;                                // small decorative prop → walk through
+  if(horiz>2.5 && horiz/mn>2.2 && H<12) tbRingEdge(obst,wx,wz,cw,sw,lcx,lcz,hx,hz,0.7,1.6);   // wall / fence
+  else { const r=Math.max(0.5,Math.min(1.6,horiz*0.32)), ob={x:fcx,z:fcz,r}; obstacles.push(ob); obst.push(ob); }   // statue/well/tree-trunk
+  return null;
+}
+// build one town's real buildings AND scenery/fixtures/statues, then station its vendors at the
+// street-facing shopfront. (AC town buildings are closed exterior shells — the door is a portal to a
+// separate interior cell we don't carry — so the authentic read is the shopkeeper at the door.)
 function tbBuildTown(c,objs){
   const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
   const obst=[], recs=[];
-  const ringEdge=(wx,wz,cw,sw,lcx,lcz,hx,hz,r,sp)=>{                 // colliders around an oriented footprint
-    const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/sp));
-      for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
-        const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw, ob={x:px,z:pz,r}; obstacles.push(ob); obst.push(ob); } };
-    edge(lcx-hx,lcz-hz,lcx+hx,lcz-hz); edge(lcx+hx,lcz-hz,lcx+hx,lcz+hz);
-    edge(lcx+hx,lcz+hz,lcx-hx,lcz+hz); edge(lcx-hx,lcz+hz,lcx-hx,lcz-hz);
-  };
   for(const o of objs){
     if(!TB_KINDS[o.kind]) continue;                                  // skip portals/lifestones/bindstones (the game places its own)
-    const md=_tbModels[(''+o.did).toUpperCase()]; if(!md||!md.ready) continue;
-    const wx=c.x+o.x, wz=c.z+o.z, gy=groundY(wx,wz), th=o.rot||0, cw=Math.cos(th), sw=Math.sin(th);
-    const bm=tbBuildMesh(md); bm.position.set(wx,gy,wz); bm.rotation.y=th; g.add(bm);
-    const bb=md.bb, W=bb[3]-bb[0], H=bb[4]-bb[1], D=bb[5]-bb[2];
-    const hx=W/2, hz=D/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2;
-    const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;                // world footprint centre
-    if(o.kind==='building'){ recs.push({fcx,fcz,hx,hz,th}); ringEdge(wx,wz,cw,sw,lcx,lcz,hx,hz,0.8,1.6); continue; }
-    // scenery / fixture / statue: collide only what's worth colliding
-    const horiz=Math.max(W,D), mn=Math.max(0.2,Math.min(W,D));
-    if(H<1.4 || horiz<1.1) continue;                                 // small decorative prop → walk through (no invisible walls)
-    if(horiz>2.5 && horiz/mn>2.2 && H<12) ringEdge(wx,wz,cw,sw,lcx,lcz,hx,hz,0.7,1.6);   // wall / fence: ring the thin footprint
-    else { const r=Math.max(0.5,Math.min(1.6,horiz*0.32)), ob={x:fcx,z:fcz,r}; obstacles.push(ob); obst.push(ob); }   // statue/well/tree-trunk: one central collider
+    const rec=tbPlaceStructure(g,obst,o.kind,o.did,c.x+o.x,c.z+o.z,o.rot||0);
+    if(rec) recs.push(rec);
   }
   seatRealTownVendors(c,recs);
   return {c,g,obst};
@@ -6472,6 +6481,36 @@ function tbStream(dt){
     for(const o of objs){ if(!TB_KINDS[o.kind]) continue; if(!tbModelReq(o.did)) ready=false; }
     if(_tbIndex===null){ tbIndexReq(); ready=false; }
     if(ready) _tbBuilt[c.name]=tbBuildTown(c,objs);
+  }
+}
+// ── the open world's REAL structures (assets/acworldstructs.json): every AC building that ISN'T in a
+//    town — isolated houses, keeps, ruins, dungeon-surface halls — streamed per landblock around the
+//    player at its authentic world spot (same actownmodels meshes + tbPlaceStructure as the towns). ──
+let AC_WORLD=null;
+try{ fetch('assets/acworldstructs.json').then(r=>r.ok?r.json():null).then(j=>{ AC_WORLD=(j&&j.blocks)||{}; }).catch(()=>{AC_WORLD={};}); }catch(e){ AC_WORLD={}; }
+let _wsBuilt={}, _wsAcc=0;
+const WS_BUILD_R=440, WS_DROP_R=580;
+function wsBuildBlock(lb,rec){
+  const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
+  const obst=[];
+  for(const b of rec.b) tbPlaceStructure(g,obst,'building',b[0],b[1],b[2],b[3]||0);   // b=[did,x,z,rot]
+  return {cx:rec.cx,cz:rec.cz,g,obst};
+}
+function wsDropBlock(lb){ const e=_wsBuilt[lb]; if(!e) return;
+  if(e.g) disposeObject3D(e.g);
+  for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
+  delete _wsBuilt[lb];
+}
+function wsStream(dt){
+  if(inDungeon||inNetwork||!AC_WORLD) return;
+  _wsAcc-=dt; if(_wsAcc>0) return; _wsAcc=0.5;
+  const px=player.x,pz=player.z;
+  for(const lb in _wsBuilt){ const e=_wsBuilt[lb]; if(Math.hypot(e.cx-px,e.cz-pz)>WS_DROP_R) wsDropBlock(lb); }
+  for(const lb in AC_WORLD){ if(_wsBuilt[lb]) continue;
+    const rec=AC_WORLD[lb]; if(Math.hypot(rec.cx-px,rec.cz-pz)>WS_BUILD_R) continue;
+    let ready=true; for(const b of rec.b){ if(!tbModelReq(b[0])) ready=false; }
+    if(_tbIndex===null){ tbIndexReq(); ready=false; }
+    if(ready) _wsBuilt[lb]=wsBuildBlock(lb,rec);
   }
 }
 function buildPlazaFeature(region,s){
@@ -14176,6 +14215,7 @@ function update(dt){
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
   tbStream(dt);          // stream the real AC town buildings in/out around the player
+  wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
