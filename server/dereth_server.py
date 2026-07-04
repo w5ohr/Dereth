@@ -955,12 +955,24 @@ def alg_rank_shallow(name):
             break
     return r
 
+# last-known Loyalty/Leadership per character (sent each input tick) — feeds the AC pass-up formula.
+# Runtime only: re-populated when a character logs in; an unseen patron falls back to untrained (0).
+SKILL_CACHE = {}
+
+def _alg_skill(name, which):
+    e = SKILL_CACHE.get(name)
+    return min(291, max(0, e.get(which, 0))) if e else 0
+
 def alg_passup_pct(vassal_name):
+    """AC direct pass-up: Generated%(vassal Loyalty) × Received%(patron Leadership), deepening with
+    time sworn, clamped 25%..90% — matching the client's offline formula so online/offline agree."""
     r = alg_row(vassal_name)
     if not r or not r["patron"]:
         return 0.0
-    days = min(730.0, max(0.0, (time.time() - (r["sworn_at"] or time.time())) / 86400.0))
-    return min(0.90, 0.25 + 0.65 * (days / 730.0))   # AC direct pass-up: 25% floor -> ~90% with time
+    tfac = min(1.0, max(0.0, (time.time() - (r["sworn_at"] or time.time())) / 86400.0 / 730.0))
+    gen = 0.50 + 0.225 * (_alg_skill(vassal_name, "loyalty") / 291.0) * (1.0 + tfac)
+    rec = 0.50 + 0.225 * (_alg_skill(r["patron"], "leadership") / 291.0) * (1.0 + tfac)
+    return round(min(0.90, max(0.25, gen * rec)), 4)
 
 def alg_add_pending(name, xp):
     with db() as c:
@@ -1345,6 +1357,11 @@ async def dispatch(cl, msg):
         ps = str(msg.get("pkState", "pk" if msg.get("pk") else getattr(cl, "pkState", "npk")))   # AC 3-state PvP
         cl.pkState = ps if ps in ("npk", "pkl", "pk") else "npk"
         cl.pk = cl.pkState != "npk"
+        if cl.charname and ("loyalty" in msg or "leadership" in msg):   # feed the allegiance pass-up formula
+            try:
+                SKILL_CACHE[cl.charname] = {"loyalty": int(msg.get("loyalty", 0)), "leadership": int(msg.get("leadership", 0))}
+            except (TypeError, ValueError):
+                pass
     elif t == "chat":
         text = str(msg.get("msg", ""))[:240].strip()
         if text and cl.in_world:
