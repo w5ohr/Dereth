@@ -72,12 +72,12 @@ Removed from the lists below because git shows them shipped:
 | ✅ **Spell projectile speeds & spreads** | ~~Fix Blast (3×90°) and Volley (3×parallel) spreads; per-spell speed ratios.~~ DONE — Blast now fires a true 3-bolt **90° cone** (±45°) and Volley fires **3 parallel bolts** offset sideways (a wall of shots, same heading) instead of the old narrow/converging fans; streak stays fast, arc lobbed-slow, ring/wall stationary. *(Absolute retail m/s aren't applied — the per-element base speeds are tuned to this world's ⅓ scale by design.)* | S–M | ac-remaining-gaps |
 | ✅ **Spell range formula** | ~~`min(BaseRangeConstant + magicSkill × BaseRangeMod, 75m)` from SpellTable.~~ DONE — `executeSpell` computes `spellRange=min(20+magicSkill×0.35, 95)` world units (≈ the 75m cap at this ⅓ scale) and sets each projectile's life to `range/speed`, so reach grows with the school skill up to the cap and a novice can't snipe. | M | ac-remaining-gaps |
 | **Mana Conversion / fizzle formula** | Authentic MC formula (25·diff × spell level, random save) + fizzle difficulty tiers (currently flat cost cut + ad-hoc fizzle). | M | auth-gaps Mg5 |
-| **Void curse DoT lines** | Nether curses with DoT + defense corruption — refinement of the shipped F7 void set. | S | auth-gaps Mg6 |
+| ✅ **Void curse DoT lines** | ~~Nether curses with DoT + defense corruption.~~ DONE (verified) — `VOID_CORRUPT` (Nether Corruption I–VIII) is a targeted nether DoT (`dps` rides the burn tick) that also corrodes the foe's defences (`cvuln`→`vulnV`, longer & stronger per tier). | S | auth-gaps Mg6 |
 
 ## 4. Items, Loot & Tinkering
 | Item | What's undone | Size | Source |
 |------|---------------|------|--------|
-| **Wield/level/skill requirements on loot** | Every drop rolls min-level/skill gates (currently instantly equippable). | M | auth-gaps I1 |
+| ✅ **Wield/level/skill requirements on loot** | ~~Every drop rolls min-level/skill gates.~~ DONE (verified) — `rollWield` gives procedural drops `reqLvl`/`reqVal`/`reqArcane` (scaling with tier/workmanship/magic); catalog items carry their retail `reqVal` from `a.wield`; `wieldFail`+`equipItem` block equipping until you meet the gate, and tooltips show it. Verified: tier-5 weapons roll reqVal 250–325, a L1 char is blocked, requirements clear as level/skill are met. | M | auth-gaps I1 |
 | **Loot item-spells + mana + spellcraft** | Mutated cantrips (Minor/Major/Epic/Legendary), mana pools on gear, Spellcraft stat. | L | auth-gaps I2 |
 | **Salvage/tinker split + per-item cap** | 8 tinker skills, 10-tink-per-item cap, imbue-once-per-item (currently 2 skills, no per-item cap, stack on player). | M | auth-gaps I3 |
 | **Aetheria slot/level/surge system** | Slots unlock L75/150/225, leveled aetheria, set bonus + surge procs (currently 3 flat gems). | L | auth-gaps I5 |
