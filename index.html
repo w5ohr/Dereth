@@ -607,12 +607,12 @@ const now=()=>performance.now();
 // only inter-location distance does. Set WSCALE=1 to return to the old compact map.
 const WSCALE=3;
 const WORLD=16000*WSCALE, HALF=WORLD/2, EYE=1.7;
-const GROUND_SEG=1600;  // terrain grid resolution (10u cells, near AC's native 8u) — groundY() and the mesh must agree
+const GROUND_SEG=2000;  // terrain grid resolution — groundY() and the mesh must agree
 const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled areas (must divide GROUND_SEG)
-// GROUND_SEG 1600 → 10u cells (AC's native height grid is 8u), up from the old 40u+blur. This
-// surfaces the real AC per-cell relief ("every pixel"). Heavier mesh (≈2.56M verts) by design —
-// the user chose maximum detail over framerate. Must stay divisible by TERRA_CHUNKS(16); bump to
-// 2000 for exact native resolution if the hardware allows.
+// GROUND_SEG 2000 over WORLD 48000 → exactly 24u cells = the heightmap's native AC_CELL at true 1:1
+// scale, so the mesh samples the real Dereth relief with NO under-sampling ("every cell"). Heaviest
+// mesh (≈4M verts, 2000/16=125 per chunk) by design — maximum terrain fidelity over framerate.
+// Frustum culling keeps only the visible chunks drawn. Must stay divisible by TERRA_CHUNKS(16).
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
 const TOWN_SAFE=60, DAYLEN=7620; // safe radius around each capital; DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
