@@ -107,9 +107,15 @@ acparticles.json (item 7). **Real deltas committed:**
 - **acdungeons/** (item 5) — 232 dungeons refreshed; committed packs had TRUNCATED cellPos
   (172/344 cells); new extraction is complete (344/344) and all geometry rebuilds clean.
 - **dungeon-layouts.json** (item 4) — minor refresh (same 129 dungeons).
-- **actownmodels/index.json** (item 6b) — re-baked metadata (483/483 baked; GLBs gitignored).
 - **tools/ac_dungeon_export.py** — read index.html as UTF-8 (cp1252 default crashed on a byte
   another lane added).
+
+**Also verified current (item 6b, actownmodels):** the shared actownmodels pack is byte-identical
+once BOTH tools run. NB: the pack is shared — `ac_town_models.py` OVERWRITES index.json with only
+town DIDs (483), then `ac_world_structures.py` READS + merges the open-world DIDs → the correct
+union is **846**. Run them in that order; running ac_town_models alone silently drops the 363
+open-world building models.
+
 Item 8 (new-in-final sweep): old dats overwritten in acdata → no BTree diff possible; the 5 new
 flora setups are the catalogued brand-new models. Verify: verify_a1.js 4/4, 0 console errors.
 
