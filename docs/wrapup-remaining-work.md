@@ -70,7 +70,7 @@ Removed from the lists below because git shows them shipped:
 | **Buff/debuff "Other" targeting** | CE/Item/Life/Protection spells need Self **and** Other forms for group support (most are self-only). | M | auth-gaps Mg1 |
 | **Recall spell set** | Portal Tie, Portal Recall/Sending, town-specific recalls (currently Lifestone + Sanctuary only). | M | auth-gaps Mg3/W6, ac-remaining-gaps |
 | ✅ **Spell projectile speeds & spreads** | ~~Fix Blast (3×90°) and Volley (3×parallel) spreads; per-spell speed ratios.~~ DONE — Blast now fires a true 3-bolt **90° cone** (±45°) and Volley fires **3 parallel bolts** offset sideways (a wall of shots, same heading) instead of the old narrow/converging fans; streak stays fast, arc lobbed-slow, ring/wall stationary. *(Absolute retail m/s aren't applied — the per-element base speeds are tuned to this world's ⅓ scale by design.)* | S–M | ac-remaining-gaps |
-| **Spell range formula** | `min(BaseRangeConstant + magicSkill × BaseRangeMod, 75m)` from SpellTable. | M | ac-remaining-gaps |
+| ✅ **Spell range formula** | ~~`min(BaseRangeConstant + magicSkill × BaseRangeMod, 75m)` from SpellTable.~~ DONE — `executeSpell` computes `spellRange=min(20+magicSkill×0.35, 95)` world units (≈ the 75m cap at this ⅓ scale) and sets each projectile's life to `range/speed`, so reach grows with the school skill up to the cap and a novice can't snipe. | M | ac-remaining-gaps |
 | **Mana Conversion / fizzle formula** | Authentic MC formula (25·diff × spell level, random save) + fizzle difficulty tiers (currently flat cost cut + ad-hoc fizzle). | M | auth-gaps Mg5 |
 | **Void curse DoT lines** | Nether curses with DoT + defense corruption — refinement of the shipped F7 void set. | S | auth-gaps Mg6 |
 
