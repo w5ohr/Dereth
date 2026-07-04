@@ -12,7 +12,7 @@ Env:   DERETH_HOST, DERETH_PORT, DERETH_DB         (override defaults)
 
 This is Phase M1 (foundation). Monsters/combat become server-authoritative in M3.
 """
-import asyncio, base64, hashlib, hmac, json, math, os, random, secrets, sqlite3, struct, time
+import asyncio, base64, hashlib, hmac, json, math, os, random, re, secrets, sqlite3, struct, time
 
 HOST = os.environ.get("DERETH_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DERETH_PORT", "8787"))
@@ -527,13 +527,117 @@ SCROLL_SPELLS = [s for s in (
     + ["item_recall_lifestone", "item_recall_sanctuary"]
 ) if s not in _STARTERS]
 
+# ---- Authentic retail catalog mirror (assets/acitems.json + acspellstats.json) ----
+# The SAME packs the browser loads, mirrored server-side so shared loot is real retail gear
+# with exact stats (damage/variance/speed/armor/value/burden/item-mana/spells/icon) — the
+# online drop is byte-identical to what the offline client would roll. If a pack is absent
+# we quietly fall back to the simplified ITEM_BASE generator below.
+AC_ITEMS = None
+AC_POOLS = None
+AC_SPELLSTATS = None
+try:
+    _ai = json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "acitems.json"), encoding="utf-8"))
+    _cls = {"weapon": [], "armor": [], "caster": []}
+    for _n, _a in _ai.items():
+        if _a.get("t") in ("MeleeWeapon", "MissileLauncher") and _a.get("dmg"):
+            _cls["weapon"].append((_n, _a.get("val", 0)))
+        elif _a.get("t") == "Clothing" and _a.get("al"):
+            _cls["armor"].append((_n, _a.get("val", 0)))
+        elif _a.get("t") == "Caster":
+            _cls["caster"].append((_n, _a.get("val", 0)))
+    AC_ITEMS = _ai
+    AC_POOLS = {}
+    for _c, _arr in _cls.items():
+        _s = [x[0] for x in sorted(_arr, key=lambda x: x[1])]      # by Value, cut into 5 tier bands
+        AC_POOLS[_c] = [_s[len(_s) * t // 5:len(_s) * (t + 1) // 5] for t in range(5)]
+    print("acitems pack: %d retail items mirrored (%d weapons, %d armor, %d casters in loot pools)"
+          % (len(_ai), len(_cls["weapon"]), len(_cls["armor"]), len(_cls["caster"])))
+except Exception as _e:
+    AC_ITEMS = AC_POOLS = None
+try:
+    AC_SPELLSTATS = json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "acspellstats.json"), encoding="utf-8"))
+    print("acspellstats pack: %d retail spells mirrored" % len(AC_SPELLSTATS))
+except Exception:
+    AC_SPELLSTATS = None
+
+_AC_TITLE_SMALL = {"of", "the", "a", "an", "and", "in", "to"}
+def _ac_title(n):
+    return " ".join(w if (i > 0 and w in _AC_TITLE_SMALL) else (w[:1].upper() + w[1:])
+                    for i, w in enumerate(n.split(" ")))
+AC_WT_BY_SKILL = {1: "axe", 4: "dagger", 5: "mace", 9: "spear", 10: "staff", 11: "sword",
+                  12: "atlatl", 2: "bow", 3: "crossbow", 8: "atlatl", 41: "twohand",
+                  44: "sword", 45: "dagger", 46: "dagger", 47: "bow"}
+
+def ac_itemize(it):   # stamp the exact retail specs onto an item built from a catalog name (mirrors index.html acItemize)
+    if not AC_ITEMS or not it or not it.get("name"):
+        return it
+    a = AC_ITEMS.get(it["name"].lower())
+    if not a:
+        return it
+    it["ac"] = 1
+    if a.get("dmg") and it.get("stat") == "weapon" and it.get("wt") != "focus":
+        it["v"] = a["dmg"]
+        if a.get("dvar") is not None: it["dvar"] = a["dvar"]
+        if a.get("spd"): it["spd"] = a["spd"]
+    if a.get("al") and it.get("stat") == "worn":
+        it["v"] = a["al"]
+    if a.get("val"): it["acval"] = a["val"]
+    if a.get("bur") is not None: it["bur"] = a["bur"]
+    if a.get("mana"):
+        it["itemMana"] = a["mana"]
+        if a.get("mrate"): it["manaRate"] = a["mrate"]
+    if a.get("spells"): it["acspells"] = a["spells"]
+    if a.get("icon"): it["acicon"] = a["icon"]
+    if a.get("wield") and it.get("stat") == "weapon" and it.get("wt") != "focus" and not it.get("reqVal"):
+        it["reqVal"] = a["wield"]        # the retail wield difficulty (skill gate)
+    return it
+
+def roll_ac_item(rare=False, tier=1):   # a REAL retail item of the right tier band (mirrors index.html rollACItem)
+    if not AC_POOLS:
+        return None
+    t = max(1, min(5, int(tier) or 1))
+    r = random.random()
+    cls = "weapon" if r < 0.55 else ("armor" if r < 0.9 else "caster")
+    band = AC_POOLS[cls][t - 1]
+    if not band:
+        return None
+    low = random.choice(band)
+    a = AC_ITEMS[low]
+    wr = WORK_TIER[t]
+    it = {"name": _ac_title(low), "tier": t, "work": random.randint(wr[0], wr[1])}
+    if cls == "weapon":
+        wt = AC_WT_BY_SKILL.get(a.get("skill"), "sword")
+        if re.search(r"bow\b", low) and "crossbow" not in low: wt = "bow"
+        elif re.search(r"crossbow|arbalest", low): wt = "crossbow"
+        elif re.search(r"two.?hand|great|zweihander|quadrelle", low): wt = "twohand"
+        it.update({"stat": "weapon", "wt": wt, "mat": "Steel", "v": a.get("dmg", 5)})
+    elif cls == "armor":
+        aslot = ("head" if re.search(r"helm|cap\b|basinet|coif|kabuton|crown|cowl", low)
+                 else "feet" if re.search(r"boots|shoes|sollerets|sandal", low)
+                 else "hands" if re.search(r"gauntlet|glove|mitt", low)
+                 else "legs" if re.search(r"legging|greave|pant|breeches|tasset|chiran leg", low)
+                 else "offhand" if re.search(r"shield|buckler|aegis", low)
+                 else "chest")
+        at = ("light" if re.search(r"leather|hide|cloth|silk|robe|quilt", low)
+              else "medium" if re.search(r"chain|scale|mail\b", low) else "heavy")
+        it.update({"stat": "worn", "at": at, "aslot": aslot, "mat": "Steel", "v": a.get("al", 6)})
+        if aslot == "offhand":
+            it["shield"] = "buckler" if "buckler" in low else ("tower" if "tower" in low else "kite")
+    else:
+        it.update({"stat": "weapon", "wt": "focus", "mat": "Diamond", "foc": 6 + t * 5, "v": 6 + t * 5})
+    return ac_itemize(it)
+
 def roll_item(rare=False, tier=1):
     if SCROLL_SPELLS and random.random() < (0.16 if rare else 0.10):   # sometimes a spell scroll
         return {"scroll": True, "spellId": random.choice(SCROLL_SPELLS), "name": "Spell Scroll"}
-    base = random.choice(ITEM_BASE)
     tier = max(1, min(5, int(tier) or (3 if rare else 1)))
     if rare:
         tier = max(1, min(5, tier + 2))
+    ac = roll_ac_item(rare, tier)       # authentic retail item when the catalog is mirrored
+    if ac:
+        return ac
+    # ---- fallback: simplified ITEM_BASE generator (acitems pack absent) ----
+    base = random.choice(ITEM_BASE)
     v = random.randint(base["v"][0], base["v"][1])
     if rare:
         v = math.ceil(v * 2.2)
