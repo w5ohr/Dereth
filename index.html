@@ -22475,6 +22475,9 @@ function handleSlash(text){
     if(!isOnline){ log("Solo world: swear fealty on the character sheet (C) — /swear &lt;name&gt; works on the online realm.","sys"); }
     else if(!who){ log("Usage: /swear &lt;name&gt; — swear fealty to an online equal-or-higher character.","warn"); }
     else netSend({t:"swear",name:who}); }
+  else if(cmd==="muster"){   // call a sworn NPC adventurer to your banner (online allegiances)
+    if(!isOnline){ log("Solo world: sworn adventurers already swear to you on the character sheet (C).","sys"); }
+    else netSend({t:"muster"}); }
   else if(cmd==="break"||cmd==="unswear"){
     if(!isOnline){ breakFromPatron(); }
     else netSend({t:"unswear"}); }

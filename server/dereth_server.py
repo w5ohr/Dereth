@@ -827,6 +827,12 @@ async def world_step():
     for did in [d for d, v in DROPS.items() if now >= v["expire"]]:
         DROPS.pop(did, None)
         await broadcast({"t": "drop_gone", "id": did})
+    # NPC vassals trickle pass-up XP to their online patrons on a slow cadence
+    global _npc_v_timer
+    _npc_v_timer += DT
+    if _npc_v_timer >= NPC_VASSAL_TICK:
+        _npc_v_timer = 0.0
+        await npc_vassal_tick()
     await step_events()
 
 async def resolve_attack(cl, mid, dmg):
@@ -1014,15 +1020,66 @@ async def alg_passup_kill(recipients_names, xp):
             if gshare > 0:
                 await _deliver_passup(pr["patron"], gshare, nm)
 
+# ── NPC vassals: sworn adventurers who populate an allegiance and trickle a little XP up (AC's
+#    populated allegiances). Runtime-only, capped by renown; they do NOT count toward rank/followers
+#    (no rank-inflation), only pad the tree and pass up a modest share of simulated deeds. ──
+NPC_VASSALS = {}   # patron charname -> [ {name, level, loyalty} ]
+_NPC_V_FIRST = ["Aldous", "Bryn", "Cael", "Dara", "Eryn", "Finn", "Gwen", "Hale", "Iva", "Joss", "Kira",
+                "Lund", "Mira", "Nyle", "Oren", "Pell", "Quinn", "Rhea", "Sten", "Tova", "Ulf", "Vesa", "Wyn", "Yara"]
+_NPC_V_LAST = ["the Bold", "the Swift", "Ironhand", "of Holtburg", "Stormborn", "the Quiet", "Redblade",
+               "of Yaraq", "the Sworn", "Hollowmoor", "Brightspear", "of Shoushi"]
+NPC_VASSAL_TICK = 30.0   # seconds between NPC pass-up trickles
+_npc_v_timer = 0.0
+
+def npc_vassal_cap(level):
+    return max(0, min(6, level // 12))   # a few sworn adventurers, growing with your renown (L12+)
+
+def npc_passup_pct(npc, patron):
+    """same shape as the player formula — the NPC's Loyalty × the patron's Leadership, mid time factor"""
+    tfac = 0.5
+    gen = 0.50 + 0.225 * (min(291, npc.get("loyalty", 0)) / 291.0) * (1.0 + tfac)
+    rec = 0.50 + 0.225 * (_alg_skill(patron, "leadership") / 291.0) * (1.0 + tfac)
+    return min(0.90, max(0.25, gen * rec))
+
+async def handle_muster(cl):
+    """call a sworn adventurer to your banner (an NPC vassal), capped by your renown"""
+    if not cl.in_world or not cl.charname:
+        return
+    cap = npc_vassal_cap(cl.level)
+    if cap <= 0:
+        return await cl.send({"t": "system", "msg": "You lack the renown to call sworn adventurers yet (reach level 12)."})
+    lst = NPC_VASSALS.setdefault(cl.charname, [])
+    if len(lst) >= cap:
+        return await cl.send({"t": "system", "msg": f"Your banner is full — {len(lst)}/{cap} sworn adventurers already follow you."})
+    name = random.choice(_NPC_V_FIRST) + " " + random.choice(_NPC_V_LAST)
+    lvl = max(1, cl.level - random.randint(2, 10))
+    lst.append({"name": name, "level": lvl, "loyalty": random.randint(80, 200)})
+    await cl.send({"t": "system", "msg": f"{name} (level {lvl}) swears to your banner — they adventure in your name, trickling XP up to you ({len(lst)}/{cap})."})
+    await cl.send(alg_info_pub(cl.charname))
+
+async def npc_vassal_tick():
+    """each NPC vassal 'adventures' and trickles a modest pass-up to its online patron"""
+    for patron, lst in list(NPC_VASSALS.items()):
+        if not lst:
+            continue
+        pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == patron), None)
+        if not pc:
+            continue
+        total = sum(int(npc["level"] * 4 * npc_passup_pct(npc, patron)) for npc in lst)   # low, steady simulated take
+        if total > 0:
+            await pc.send({"t": "passup", "xp": total, "from": "your sworn adventurers"})
+
 def alg_info_pub(name):
     r = alg_row(name) or {}
     mon = alg_monarch(name)
     vs = alg_vassals(name)
     online = {c.charname for c in CLIENTS.values() if c.in_world}
     mrow = alg_row(mon)
-    return {"t": "alg", "patron": r.get("patron"), "monarch": mon if (r.get("patron") or vs) else None,
-            "vassals": [{"name": v, "online": v in online, "passup": round(alg_passup_pct(v) * 100)} for v in vs],
-            "rank": alg_rank(name), "followers": alg_followers(name),
+    vlist = [{"name": v, "online": v in online, "passup": round(alg_passup_pct(v) * 100)} for v in vs]
+    for npc in NPC_VASSALS.get(name, []):   # sworn NPC adventurers ride along in the tree
+        vlist.append({"name": npc["name"], "online": True, "passup": round(npc_passup_pct(npc, name) * 100), "npc": True})
+    return {"t": "alg", "patron": r.get("patron"), "monarch": mon if (r.get("patron") or vs or NPC_VASSALS.get(name)) else None,
+            "vassals": vlist, "rank": alg_rank(name), "followers": alg_followers(name),
             "motd": (mrow or {}).get("motd")}
 
 # ---------------------------------------------------------------- parties (fellowships)
@@ -1377,6 +1434,9 @@ async def dispatch(cl, msg):
     elif t == "death":
         if cl.in_world:
             await handle_death(cl, msg)
+    elif t == "muster":
+        if cl.in_world:
+            await handle_muster(cl)
     elif t == "recover":
         did = msg.get("id")
         if isinstance(did, str) and cl.in_world:
