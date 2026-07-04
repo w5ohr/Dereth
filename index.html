@@ -6940,14 +6940,9 @@ function addCity(c){
   const stallN=c.capital?4:2;
   for(let i=0;i<stallN;i++){const a=i/stallN*6.28+1.0,sx=c.x+Math.cos(a)*ring*0.5,sz=c.z+Math.sin(a)*ring*0.5;
     const st=buildStall(sc,i);st.position.set(sx,0,sz);st.rotation.y=a;scene.add(st);scenery.push(st);obstacles.push({x:sx,z:sz,r:1.4*sc});}
-  // capital walls with a south gate
-  if(c.capital){const wr=ring+11,seg=26;
-    for(let i=0;i<seg;i++){const a=i/seg*6.28; if(a>Math.PI*0.42&&a<Math.PI*0.58) continue;
-      const wx=c.x+Math.cos(a)*wr,wz=c.z+Math.sin(a)*wr;
-      const w=new THREE.Mesh(new THREE.BoxGeometry(wr*2*Math.PI/seg*1.1,3.6*sc,1.3*sc),solid(0x8a8278,true));
-      w.position.set(wx,1.8*sc,wz);w.rotation.y=-a;w.castShadow=true;w.receiveShadow=true;scene.add(w);scenery.push(w);obstacles.push({x:wx,z:wz,r:1.3*sc});}
-    for(const ga of[Math.PI*0.42,Math.PI*0.58]){const gx=c.x+Math.cos(ga)*wr,gz=c.z+Math.sin(ga)*wr;
-      const gp=new THREE.Mesh(new THREE.BoxGeometry(1.7*sc,5.4*sc,1.7*sc),solid(0x9a9079));gp.position.set(gx,2.7*sc,gz);gp.castShadow=true;scene.add(gp);scenery.push(gp);obstacles.push({x:gx,z:gz,r:1.3*sc});}
+  // capital name banner (the procedural ring wall + south gate were NOT authentic AC — removed;
+  // any real AC town walls come in as extracted scenery via actowns/acworldstructs)
+  if(c.capital){
     const banner=labelSprite("★ "+c.name+" ★","cities");banner.scale.set(16,4,1);banner.position.set(c.x,13,c.z);banner.userData.float=13;scene.add(banner);scenery.push(banner);}
 }
 // ════════════════════════════════════════════════════════════════════════════
