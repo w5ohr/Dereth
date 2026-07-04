@@ -13472,6 +13472,10 @@ function dodge(){
 function fireArrow(){
   if(!player.alive||player.meleeCd>0||paused) return;
   const wp=weaponProfile(),ranged=wp&&wp.mode==="missile",prof=ranged?wp:WEAPON_TYPES.bow; // equipped ranged weapon or a plain bow
+  // AC: a bow/crossbow/atlatl needs matching ammunition loaded — no ammo, no shot
+  const wtype=(ranged&&player.weapon&&player.weapon.wt)||"bow";
+  if(ranged && player.inv.findIndex(x=>x.stat==="ammo"&&x.for===wtype)<0){
+    log("You have no "+(wtype==="crossbow"?"quarrels":wtype==="atlatl"?"darts":"arrows")+" to fire.","warn"); if(SFX.hit)SFX.hit(); return; }
   if(player.st<prof.stam){ log("Too tired to draw.","warn"); return; }
   player.st-=prof.stam;
   const cdScale=Math.max(.4,1-player.attr.Coordination*0.02);
@@ -13487,7 +13491,6 @@ function fireArrow(){
       else if(af.element==="shock"){stun=true;col=0xfff15a;} else if(af.element==="nether"){drain=0.3;col=0x9b30ff;} }
     else if(af.k==="crit") dmg=Math.round(dmg*1.2); else if(af.k==="lifesteal") drain=af.v; }
   // ammunition: elemental ammo adds an elemental component; plain ammo adds physical (brand takes the element slot)
-  const wtype=(ranged&&player.weapon&&player.weapon.wt)||"bow";
   const ai=player.inv.findIndex(x=>x.stat==="ammo"&&x.for===wtype);
   if(ai>=0){ const am=player.inv[ai];
     if(am.element&&!element){ element=am.element; elemDmg+=am.dmg||0;
@@ -13504,7 +13507,7 @@ function fireArrow(){
   // AC (ACE Creature_Missile): launch speed comes from the LAUNCHER (heavy launchers loose faster
   // bolts than light ones), and missiles fly a true ballistic arc under gravity — loft to reach.
   const pv=prof.pspd||75;
-  pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*pv,vy:dir.y*pv,vz:dir.z*pv,grav:true,
+  pProj.push({mesh,x:ox,y:oy,z:oz,x0:ox,z0:oz,vx:dir.x*pv,vy:dir.y*pv,vz:dir.z*pv,grav:true,   // x0/z0 = launch point for Cb11 range falloff
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(power){
@@ -13523,8 +13526,11 @@ function meleeAttack(power){
   { const SW_VAR={dagger:["stab","fan"],sword:["diag","horiz"],axe:["hew","chopdn"],mace:["smash","rising"],
       spear:["lunge","sweep"],staff:["sweep","lunge"],twohand:["chop","cleave"],unarmed:["cross","hook"]};
     const v=SW_VAR[wt]||SW_VAR.sword; player.swingAnim=offhand?"offhand":v[irnd(0,v.length-1)]; }
-  if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
-  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor());
+  // Cb9: stamina cost scales with swing power AND a worn shield; swinging while spent lands a weaker blow
+  const stamCost=prof.stam*power*(equippedShield()?1.2:1);
+  let winded=1;
+  if(player.st>=stamCost){ player.st-=stamCost; } else { player.st=0; winded=0.6; }   // exhausted → 40% weaker swing (no more free full-power swings at 0 stamina)
+  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor())*winded;
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
@@ -14252,10 +14258,13 @@ function update(dt){
       if(!!m.isDungeon!==inDungeon) continue;
       if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
-        if(p.arrow&&!rollToHit(skillValue("missile"),m)){ floater(m.x,(m.headY||1.6)+2.3,m.z,"miss","#b9c0cc"); gone=true; break; }  // missile accuracy vs defense
+        // Cb11: missile accuracy AND damage fall off with range — full to ~15m, down to ~50% by ~55m
+        const rng=(p.arrow&&p.x0!=null)?Math.hypot(p.x-p.x0,p.z-p.z0):0;
+        const rf=clamp(1-Math.max(0,rng-15)/80,0.5,1);
+        if(p.arrow&&!rollToHit(skillValue("missile"),m,rf)){ floater(m.x,(m.headY||1.6)+2.3,m.z,"miss","#b9c0cc"); gone=true; break; }  // missile accuracy vs defense × range
         if(p.slow)m.slow=Math.max(m.slow,p.slow);
         if(p.arrow){   // arrow: physical (pierce) + optional elemental component, each resisted independently
-          applyHit(m,p.dmg,{phys:p.phys,element:p.element,brandDmg:p.elemDmg,lifesteal:p.drain});
+          applyHit(m,p.dmg*rf,{phys:p.phys,element:p.element,brandDmg:p.elemDmg,lifesteal:p.drain});
         } else {   // spell projectile: pre-multiplied elemental damage, subject to magic resistance
           const em=elemMult(m.kind,p.element);
           if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");

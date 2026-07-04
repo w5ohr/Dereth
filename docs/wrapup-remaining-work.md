@@ -57,12 +57,12 @@ Removed from the lists below because git shows them shipped:
 |------|---------------|------|--------|
 | **Per-body-part combat** | Wire attack heights → per-part armor buckets; creatures roll per-part d_Val/d_Var; high/med/low HUD selector. | M | REMAINING-WORK, auth-gaps |
 | **Physics: ballistic projectiles** | Arrow/bolt gravity arc scaled by launcher speed + AC max range + terrain collision; per-spell projectile arcs; jump hold-to-charge with stamina scaling; fall-damage threshold/scaling calibration to ACE. | M | ac-newplayer B3, ac-remaining-gaps |
-| **Missile accuracy by range** | Hit chance falls with distance (currently fixed regardless of range). | S | auth-gaps Cb11 |
-| **Damage roll per-swing variance** | Roll top-end+variance each hit (currently deterministic, rolled once at item creation). | S | auth-gaps Cb13 |
-| **Stamina cost scaling** | Stamina cost from weapon+shield+power-bar; overload/penalty at low stamina (currently flat, free swings at 0). | S | auth-gaps Cb9 |
+| ✅ **Missile accuracy by range** | ~~Hit chance falls with distance.~~ DONE — arrows carry launch point `x0/z0`; accuracy AND damage scale by `rf=clamp(1-max(0,rng-15)/80,0.5,1)` (full ≤15m → 0.5 floor by ~55m). | S | auth-gaps Cb11 |
+| ✅ **Damage roll per-swing variance** | ~~Roll top-end+variance each hit.~~ DONE — `dmgVar(prof)` rolls `1+(rand-0.5)*dvar` per swing. | S | auth-gaps Cb13 |
+| ✅ **Stamina cost scaling** | ~~Stamina cost from weapon+shield+power-bar; penalty at low stamina.~~ DONE — `stamCost=prof.stam*power*(shield?1.2:1)`; swinging while spent zeroes stamina and lands a 0.6× winded blow. | S | auth-gaps Cb9 |
 | **Burden / encumbrance** | Burden Units vs Strength capacity → stamina/movement penalties (absent). | L | auth-gaps Cb10 |
 | **Per-element armor resistance** | Each armor piece resists a % per damage element (currently one scalar AL + separate ward stack). | M | auth-gaps Cb12 |
-| **Ammo-type strictness** | Block bow fire at 0 arrows / require matching ammo. | S | REMAINING-WORK |
+| ✅ **Ammo-type strictness** | ~~Block bow fire at 0 arrows / require matching ammo.~~ DONE — `fireArrow` blocks with a typed warning ("no arrows/quarrels/darts") unless matching `ammo` for the launcher `wt` is in inventory. | S | REMAINING-WORK |
 
 ## 3. Magic & Spells
 | Item | What's undone | Size | Source |
@@ -154,7 +154,7 @@ Removed from the lists below because git shows them shipped:
 - **Biggest structural gaps:** the creation wizard + Academy onboarding, per-element/burden combat
   depth, loot requirements + aetheria/spellcraft, the server-side social stack (allegiance/monarchy/
   PK/society/crier timers), and world shape (named regions, authored terrain, multi-level dungeons).
-- **Quick wins (S):** missile range falloff, per-swing damage variance, stamina cost scaling, ammo
-  strictness, secure-trade coin, dye recipes, barber restrictions, non-PCM music, server item mirror,
-  and the head-creator polish items.
+- **Quick wins (S):** ~~missile range falloff, per-swing damage variance, stamina cost scaling, ammo
+  strictness~~ (✅ all four done), secure-trade coin, dye recipes, barber restrictions, non-PCM music,
+  server item mirror, and the head-creator polish items.
 - **Needs Agent 1's terrain/map data first:** named regions (W8), authored landmarks (W12).
