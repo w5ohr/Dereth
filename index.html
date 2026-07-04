@@ -771,11 +771,24 @@ function skillValue(key){ const st=skillState(key),base=skillBase(key);
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
 function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_WEAPON_KEYS){ const e=skillEff(key,k); if(e>best)best=e; } return best; } // best of all melee weapon skills
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
-// AC: attributes are bought with unassigned XP on a steep escalating curve (not free level points).
-function attrCost(v){ return Math.round(25*Math.pow(Math.max(1,v-9),1.7)); }   // XP to raise from innate v → v+1
-// AC's cheaper secondary-attribute track: pour XP into Health / Stamina / Mana points (n → n+1). Cheaper
-// than primary attributes (retail pt-1 = 73 vs 110), capped at +200 like retail's ~196.
-function vitalCost(n){ return Math.round(16*Math.pow(Math.max(1,n+1),1.7)); }
+// ── RETAIL attribute/vital raising (the client XpTable, assets/acskills.json xp.attr/xp.vital):
+//    an attribute = INNATE (set at creation, 10–100) + XP-bought RANKS (max 190, pt-1 = 110 XP,
+//    all 190 ≈ 4.02 B); vitals raise on their own cheaper chart (max 196, pt-1 = 73 XP, ≈ 4.29 B).
+function attrInnate(a){ return (player.attrInnate&&player.attrInnate[a]!=null)?player.attrInnate[a]:Math.min(player.attr[a],100); }
+function attrRank(a){ return Math.max(0,player.attr[a]-attrInnate(a)); }
+function attrCost(a){ const r=attrRank(a);
+  if(AC_XP&&AC_XP.attr){ if(r>=AC_XP.attr.length-1) return Infinity; return AC_XP.attr[r+1]-AC_XP.attr[r]; }
+  return r>=190?Infinity:Math.round(110*Math.pow(1.0414,r)); }   // offline fallback fitted to the retail curve
+function attrRefund(a){ const r=attrRank(a); if(r<=0) return 0;
+  if(AC_XP&&AC_XP.attr) return AC_XP.attr[r]-AC_XP.attr[r-1];
+  return Math.round(110*Math.pow(1.0414,r-1)); }
+function vitalCost(n){ if(AC_XP&&AC_XP.vital){ if(n>=AC_XP.vital.length-1) return Infinity; return AC_XP.vital[n+1]-AC_XP.vital[n]; }
+  return n>=196?Infinity:Math.round(73*Math.pow(1.0428,n)); }
+function vitalRefund(n){ if(n<=0) return 0;
+  if(AC_XP&&AC_XP.vital) return AC_XP.vital[n]-AC_XP.vital[n-1];
+  return Math.round(73*Math.pow(1.0428,n-1)); }
+function attrMaxRanks(){ return AC_XP&&AC_XP.attr?AC_XP.attr.length-1:190; }
+function vitalMaxRanks(){ return AC_XP&&AC_XP.vital?AC_XP.vital.length-1:196; }
 // credit economy: available = base(level) − spent; specialization capped at 70 credits' worth
 function creditBase(){ let fromLevels=0;
   if(AC_XP){ const ch=AC_XP.credits, top=Math.min(player.level,ch.length-1);   // the real chart: credits granted at each level (46 total to 275)
@@ -832,10 +845,11 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
 
 function derive(){
   const a=player.attr;
-  // AC formula structure: Health from Endurance (half-rate), Stamina from Endurance (full-rate = 2x Health), Mana from Self
-  player.mhp=60+a.Endurance*2+player.level*6;
-  player.mst=50+a.Endurance*4;
-  player.mmn=40+a.Self*6+player.level*2;
+  // THE retail vital formulas (AC client): Health = Endurance/2 · Stamina = Endurance ·
+  // Mana = Self — plus the XP-raised vital ranks. No invented bases, no level terms.
+  player.mhp=Math.floor(a.Endurance/2);
+  player.mst=a.Endurance;
+  player.mmn=a.Self;
   if(player.vitals){ player.mhp+=player.vitals.hp||0; player.mst+=player.vitals.st||0; player.mmn+=player.vitals.mn||0; }  // AC: XP-raised vital points add to the base max
   // THE authentic AC run formula (client GetRunRate, preserved in ACEmulator):
   //   rate = (burdenMod × (Run/(Run+200) × 11) + 4) / 4, hard-capped at 4.5× when Run ≥ 800.
@@ -13659,19 +13673,19 @@ const sheet=document.getElementById('sheet'),attrRows=document.getElementById('a
 function buildSheet(){
   attrRows.innerHTML="";
   for(const a of ATTRS){
-    const v=player.attr[a], cost=attrCost(v), canRaise=v<100&&(player.skillPts>0||player.xpUnspent>=cost);
+    const v=player.attr[a], rk=attrRank(a), cost=attrCost(a), canRaise=rk<attrMaxRanks()&&(player.skillPts>0||player.xpUnspent>=cost);
     const row=document.createElement('div');row.className="row";
     row.innerHTML=`<div><span class="lab">${a}</span> <span class="desc">— ${ATTR_DESC[a]}</span></div>
-      <div class="ctl"><button class="pmbtn" data-lower="${a}" title="lower (refund ${v>10?attrCost(v-1).toLocaleString():0} XP)" ${v<=10?'disabled':''}>−</button><span class="val" id="sv_${a}">${v}</span><button class="pmbtn" data-a="${a}" title="${v>=100?'at innate cap 100':(player.skillPts>0?'raise (free legacy point)':'raise: '+cost.toLocaleString()+' XP')}" ${canRaise?'':'disabled'}>+</button></div>`;
+      <div class="ctl"><button class="pmbtn" data-lower="${a}" title="lower (refund ${attrRefund(a).toLocaleString()} XP)" ${rk<=0?'disabled':''}>−</button><span class="val" id="sv_${a}" title="innate ${attrInnate(a)} + ${rk} ranks">${v}</span><button class="pmbtn" data-a="${a}" title="${rk>=attrMaxRanks()?'at max ranks (+190, AC)':(player.skillPts>0?'raise (free legacy point)':'raise: '+cost.toLocaleString()+' XP')}" ${canRaise?'':'disabled'}>+</button></div>`;
     attrRows.appendChild(row);
   }
   // AC secondary attributes — pour XP into Health / Stamina / Mana (the cheaper vital track)
   player.vitals=player.vitals||{hp:0,st:0,mn:0};
   for(const [vk,vlab,mk] of [["hp","Health","mhp"],["st","Stamina","mst"],["mn","Mana","mmn"]]){
-    const n=player.vitals[vk]||0, cost=vitalCost(n), canR=n<200&&player.xpUnspent>=cost;
+    const n=player.vitals[vk]||0, cost=vitalCost(n), canR=n<vitalMaxRanks()&&player.xpUnspent>=cost;
     const row=document.createElement('div');row.className="row";
     row.innerHTML=`<div><span class="lab">${vlab}</span> <span class="desc">— max ${player[mk]}${n>0?' ('+'+'+n+' raised)':''}</span></div>
-      <div class="ctl"><button class="pmbtn" data-vitlo="${vk}" title="lower (refund ${n>0?vitalCost(n-1).toLocaleString():0} XP)" ${n<=0?'disabled':''}>−</button><span class="val">${n}</span><button class="pmbtn" data-vit="${vk}" title="${n>=200?'at cap 200':'raise: '+cost.toLocaleString()+' XP'}" ${canR?'':'disabled'}>+</button></div>`;
+      <div class="ctl"><button class="pmbtn" data-vitlo="${vk}" title="lower (refund ${vitalRefund(n).toLocaleString()} XP)" ${n<=0?'disabled':''}>−</button><span class="val">${n}</span><button class="pmbtn" data-vit="${vk}" title="${n>=vitalMaxRanks()?'at max ranks (+196, AC)':'raise: '+cost.toLocaleString()+' XP'}" ${canR?'':'disabled'}>+</button></div>`;
     attrRows.appendChild(row);
   }
   document.getElementById('pts').textContent=player.xpUnspent.toLocaleString()+(player.skillPts>0?" (+"+player.skillPts+" free)":"");
@@ -13735,25 +13749,25 @@ function buildSheet(){
     const eb=document.getElementById('enlightenBtn'); if(eb) eb.onclick=()=>enlighten();
   }
   attrRows.querySelectorAll('[data-a]').forEach(btn=>btn.onclick=()=>{
-    const a=btn.dataset.a, v=player.attr[a];
-    if(v>=100){ log("Innate attributes cap at 100 — raise further only with Augmentation gems.","warn"); return; }  // AC innate cap
+    const a=btn.dataset.a;
+    if(attrRank(a)>=attrMaxRanks()){ log("Attributes take at most <b>190 raises</b> above their innate value (AC).","warn"); return; }
     if(player.skillPts>0){ player.skillPts--; }                                   // spend a legacy free point first (old saves)
-    else { const cost=attrCost(v); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise "+a+".","warn"); return; } player.xpUnspent-=cost; }
+    else { const cost=attrCost(a); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise "+a+".","warn"); return; } player.xpUnspent-=cost; }
     player.attr[a]++; derive(); saveGame(); buildSheet();
   });
   attrRows.querySelectorAll('[data-lower]').forEach(btn=>btn.onclick=()=>{
-    const a=btn.dataset.lower, v=player.attr[a]; if(v<=10) return;
-    player.attr[a]--; player.xpUnspent+=attrCost(v-1); derive(); saveGame(); buildSheet();   // AC-style: lowering refunds the XP that point cost
+    const a=btn.dataset.lower; if(attrRank(a)<=0) return;                          // can lower only bought ranks, never the innate value
+    player.xpUnspent+=attrRefund(a); player.attr[a]--; derive(); saveGame(); buildSheet();
   });
   attrRows.querySelectorAll('[data-vit]').forEach(btn=>btn.onclick=()=>{
     const vk=btn.dataset.vit; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0;
-    if(n>=200){ log("Vital points cap at 200.","warn"); return; }
+    if(n>=vitalMaxRanks()){ log("Vitals take at most <b>196 raises</b> (AC).","warn"); return; }
     const cost=vitalCost(n); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise that vital.","warn"); return; }
     player.xpUnspent-=cost; player.vitals[vk]=n+1; derive(); saveGame(); buildSheet();
   });
   attrRows.querySelectorAll('[data-vitlo]').forEach(btn=>btn.onclick=()=>{
     const vk=btn.dataset.vitlo; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0; if(n<=0) return;
-    player.vitals[vk]=n-1; player.xpUnspent+=vitalCost(n-1); derive(); saveGame(); buildSheet();   // lowering refunds the XP that point cost
+    player.vitals[vk]=n-1; player.xpUnspent+=vitalRefund(n); derive(); saveGame(); buildSheet();
   });
 }
 function openSheet(){buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
@@ -17419,7 +17433,9 @@ function talkToNPC(n){
     const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0);
     if(allocated<=0){ log("<b>Chafulumisa:</b> Your spirit is already unwritten, traveller.","sys"); return; }
     // AC-style redistribution: unmake attributes back to 10 and refund all the XP spent on them
-    let refund=0; ATTRS.forEach(a=>{ for(let v=10;v<player.attr[a];v++) refund+=attrCost(v); player.attr[a]=10; });
+    let refund=0; ATTRS.forEach(a=>{ const r=attrRank(a);   // unmake the bought RANKS (innate creation values are permanent, as in AC)
+      refund+=(AC_XP&&AC_XP.attr)?AC_XP.attr[Math.min(r,AC_XP.attr.length-1)]:r*400;
+      player.attr[a]=attrInnate(a); });
     player.xpUnspent+=refund; derive();updateHUD();saveGame();if(SFX.quest)SFX.quest();
     log(`<b>Chafulumisa:</b> I unmake your attributes — <b>${refund.toLocaleString()} XP</b> returned to reallocate on your character sheet (C).`,"sys"); return;
   }
@@ -21255,7 +21271,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,attrInnate:player.attrInnate||null,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -21282,6 +21298,7 @@ function applySaveObj(s){
   if(!s) return false;
   Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
     vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
+    attrInnate:(s.attrInnate&&typeof s.attrInnate==="object")?s.attrInnate:null,   // pre-parity saves: current values become the innate line (attrInnate() falls back to min(attr,100))
     greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
     academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
     packs:Array.isArray(s.packs)?s.packs:[],
@@ -22000,7 +22017,7 @@ function startGame(loadSaved,preset){
     const p=PRESETS[preset]||{};
     player.armor+=p.armor||0;player.potHealth+=p.pot||0;player.potMana+=p.mana||0;player.title=p.title||"";player.heritage=preset||player.heritage;
     // attributes: from the creation allocation if the player made one, else the heritage bonus
-    if(player.createAttr){ for(const a of ATTRS) player.attr[a]=player.createAttr[a]||10; }
+    if(player.createAttr){ for(const a of ATTRS) player.attr[a]=player.createAttr[a]||10; player.attrInnate=Object.assign({},player.attr); }   // creation values are the permanent INNATE line (AC)
     else for(const a in (p.attr||{})) player.attr[a]+=p.attr[a];
     // skills: the trained set chosen at creation, else the heritage default loadout
     player.skills=freshSkills();
