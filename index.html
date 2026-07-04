@@ -1529,24 +1529,45 @@ for(const k of ["armoredillo","auroch","banderling","burun","carenzi","drudge","
   "skeleton","tumerok","tusker","ursuin","virindi","wisp","zefir","zombie",
   // the creature deep-dive wave (tools/ac_creature_export.py third wave)
   "rabbit","wight","lich","hollow","thrungus","ruschk","gurog","sleech","fiun","marionette",
-  "doll","penguin","crystalwisp","margul","phantom","elemental","snowman","chicken",
+  "doll","penguin","crystalwisp","margul","phantom","elemental","snowman","chicken","cow",
   "viamontian","falatacot","tormented","hea","gearknight",
   // named-boss extracts (spawners pick these up by boss kind)
   "olthoiqueen","lichlord","virindidirector"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
 MONSTER_MODELS.phyntoswasp=[{f:"ac/wasp.glb"}];
 MONSTER_MODELS.mummy=[{f:"ac/zombie.glb",tint:0xcabf9a}];   // mu-miyah: the undead body in sand-wrap tones
-let gltfMonsters={}, gltfMonstersStarted=false;   // kind → array of {scene,anims,h,tint,tints} loaded variants
+let gltfMonsters={}, gltfMonstersStarted=false, _gmL=null; const _gmReq=new Set();
+function gmLoadEntry(kind,ent){   // one variant file; safe to call again (deduped)
+  const key=kind+"|"+ent.f; if(_gmReq.has(key)||!_gmL) return; _gmReq.add(key);
+  _gmL.load(GM_DIR+ent.f, g=>{
+    const h=robustHeight(g.scene);
+    (gltfMonsters[kind]=gltfMonsters[kind]||[]).push({scene:g.scene, anims:g.animations||[], h,
+      tint:ent.tint, tints:ent.tints, vname:ent.vname, vscale:ent.vscale});
+    log("Loaded a monster model ("+kind+" "+gltfMonsters[kind].length+"/"+MONSTER_MODELS[kind].length+").","sys");
+  }, undefined, e=>console.log("monster model failed:",kind,(e&&e.message)||""));
+}
 function loadGltfMonsters(){
   if(gltfMonstersStarted||!USE_GLTF_MONSTERS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
-  gltfMonstersStarted=true; const L=new THREE.GLTFLoader();
+  gltfMonstersStarted=true; _gmL=new THREE.GLTFLoader();
   for(const kind in MONSTER_MODELS){ gltfMonsters[kind]=gltfMonsters[kind]||[];
-    for(const ent of MONSTER_MODELS[kind]){ (k=>L.load(GM_DIR+ent.f, g=>{
-        const h=robustHeight(g.scene);
-        gltfMonsters[k].push({scene:g.scene, anims:g.animations||[], h, tint:ent.tint, tints:ent.tints});
-        log("Loaded a monster model ("+k+" "+gltfMonsters[k].length+"/"+MONSTER_MODELS[k].length+").","sys");
-      }, undefined, e=>console.log("monster model failed:",k,(e&&e.message)||"")))(kind); }
+    for(const ent of MONSTER_MODELS[kind]) gmLoadEntry(kind,ent);
   }
 }
+// ── BREEDS (assets/models/monsters/ac/breeds.json, tools/ac_breed_export.py): the real
+//    retail colour variants — Ivory/Ash/Brass Gromnies, Frozen Wight Captains, regional
+//    Ursuins — with their breed display names and retail DefaultScale. Also carries the
+//    REAL Mu-miyah (human rig + burial wraps), retiring the tinted zombie stand-in. ──
+fetch(GM_DIR+'ac/breeds.json').then(r=>r&&r.ok?r.json():null).then(j=>{
+  if(!j) return;
+  let looks=0;
+  for(const key in j){
+    const k=key==="wasp"?"phyntoswasp":key;   // exporter file-kind → game kind
+    if(!MONSTER_MODELS[k]) continue;
+    MONSTER_MODELS[k]=j[key].map(e=>({f:"ac/"+e.f, vname:e.name, vscale:e.scale}));
+    looks+=j[key].length;
+    if(gltfMonstersStarted) for(const ent of MONSTER_MODELS[k]) gmLoadEntry(k,ent);
+  }
+  console.log("AC breeds: "+Object.keys(j).length+" families, "+looks+" authentic looks.");
+}).catch(()=>{});
 let skyMat,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
@@ -7849,6 +7870,7 @@ function spawnMonster(kind,x,z,elite){
   let mesh;
   if(gm){ mesh=new THREE.Group();                                   // rigged CDN creature model
     const clone=THREE.SkeletonUtils.clone(gm.scene); let msc=(b.size*1.5)/(gm.h>0.001?gm.h:1);
+    if(gm.vscale&&gm.vscale>0.05&&gm.vscale<10) msc*=gm.vscale;     // retail DefaultScale per breed
     if(!(msc>0.0001&&msc<1e4)) msc=1;   // guard against a degenerate native height producing a giant/invisible clone
     clone.scale.setScalar(msc);
     const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y; clone.rotation.y=Math.PI;
@@ -7880,6 +7902,7 @@ function spawnMonster(kind,x,z,elite){
   mesh.position.set(x,0,z);scene.add(mesh);
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul,ang:rnd(0,6.28),
     st:_mst,mst:_mst,mn:_mmn,mmn:_mmn,
+    name:(gm&&gm.vname&&gm.vname!==b.name)?gm.vname:undefined,   // the breed's retail display name
     state:"wander",t:0,atkCd:0,wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*(elite?1.4:1),
     isElite:!!elite,baseScale:elite?1.4:1,burnT:0,burnDps:0,burnAcc:0,gltf:!!gm});
   const m=monsters[monsters.length-1];
