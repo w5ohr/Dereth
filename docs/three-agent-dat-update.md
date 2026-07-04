@@ -84,3 +84,12 @@ every push. Do not touch another agent's asset dirs or tools.
   0x23 tables (catalog: sex/heritage labels, town names, UI enumerations).
 - The 101 0x21 tables use a DIFFERENT undocumented layout (not the StringTable format,
   not zlib) - still the open follow-up.
+
+## A2 lane COMPLETE (2026-07-04)
+- 873 retail titles WIRED: acstrings.json loads at boot; the character sheet's new Titles
+  section lists every held title with click-to-display and the retail-roster check mark.
+- The 101 0x21 local-dat tables are IDENTIFIED: every entry reads (id, 800, 600) - they are
+  the retail client's UI LAYOUT definitions at base 800x600, not strings. Full layout decode
+  = a future resource for pixel-perfect panel placement (out of A2 scope).
+- Remaining lane item: NONE. (client_highres.dat texture upgrade is staged but blocked on
+  the user running acdata/ac1install.exe - whoever is active takes it per the handoff note.)
