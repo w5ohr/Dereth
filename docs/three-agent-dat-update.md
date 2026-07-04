@@ -93,3 +93,15 @@ every push. Do not touch another agent's asset dirs or tools.
   = a future resource for pixel-perfect panel placement (out of A2 scope).
 - Remaining lane item: NONE. (client_highres.dat texture upgrade is staged but blocked on
   the user running acdata/ac1install.exe - whoever is active takes it per the handoff note.)
+
+## A3 lane status (worked by Agent 2, 2026-07-04)
+- Icons (3,960), sounds, music, player anims: re-exported BYTE-IDENTICAL - verified current.
+- Armor (842 meshes), clothing, item models (988): verified current.
+- Human bodies: REAL DELTA - human_male/female.json updated from the end-of-retail dats
+  (part-frame refinements); textures re-encoded pixel-identical were reverted.
+- Creatures: THE PRIZE - the exporter now yields 66 kinds (was 42) against the final dats,
+  including ALL FIVE former CC0 stand-ins: shadow, mummy, mukkir, remoran, zefir - each with
+  Idle/Walk/Attack/Death/Cast clips. Four auto-wire via the existing override list; mummy
+  re-pointed from the tinted-zombie stand-in to the real Mu-miyah extract. Gap #10 of
+  ac-remaining-gaps.md is CLOSED - zero non-AC creature models remain.
+- Item 7 (heads Phase 2) belongs to the original session's WIP pipeline - left untouched.

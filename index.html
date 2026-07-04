@@ -1645,7 +1645,7 @@ for(const k of ["armoredillo","auroch","banderling","burun","carenzi","drudge","
   // named-boss extracts (spawners pick these up by boss kind)
   "olthoiqueen","lichlord","virindidirector"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
 MONSTER_MODELS.phyntoswasp=[{f:"ac/wasp.glb"}];
-MONSTER_MODELS.mummy=[{f:"ac/zombie.glb",tint:0xcabf9a}];   // mu-miyah: the undead body in sand-wrap tones
+MONSTER_MODELS.mummy=[{f:"ac/mummy.glb"}];   // the REAL Mu-miyah extract (end-of-retail dats) — the tinted-zombie stand-in retires
 let gltfMonsters={}, gltfMonstersStarted=false, _gmL=null; const _gmReq=new Set();
 function gmLoadEntry(kind,ent){   // one variant file; safe to call again (deduped)
   const key=kind+"|"+ent.f; if(_gmReq.has(key)||!_gmL) return; _gmReq.add(key);
