@@ -602,8 +602,12 @@ const now=()=>performance.now();
 
 // ---------- world constants ----------
 const WORLD=16000, HALF=WORLD/2, EYE=1.7;
-const GROUND_SEG=400;   // terrain grid resolution (40u cells) — groundY() and the mesh must agree
+const GROUND_SEG=1600;  // terrain grid resolution (10u cells, near AC's native 8u) — groundY() and the mesh must agree
 const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled areas (must divide GROUND_SEG)
+// GROUND_SEG 1600 → 10u cells (AC's native height grid is 8u), up from the old 40u+blur. This
+// surfaces the real AC per-cell relief ("every pixel"). Heavier mesh (≈2.56M verts) by design —
+// the user chose maximum detail over framerate. Must stay divisible by TERRA_CHUNKS(16); bump to
+// 2000 for exact native resolution if the hardware allows.
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
 const TOWN_SAFE=60, DAYLEN=7620; // safe radius around each capital; DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
@@ -2019,19 +2023,8 @@ ACMAP.load=function(){
         const d=g.getImageData(0,0,W,W).data, n=W*W;
         ACMAP.H=new Float32Array(n); ACMAP.T=new Uint8Array(n); ACMAP.Rd=new Uint8Array(n);
         for(let i=0;i<n;i++){ ACMAP.H[i]=AC_HEIGHTS[d[i*4]]*AC_VSCALE; ACMAP.T[i]=d[i*4+1]; ACMAP.Rd[i]=d[i*4+2]; }
-        // low-pass the heights to the ground mesh's 40u resolution: the raw field carries 8u detail,
-        // and sampling that at 40u aliases into jagged shards. Two separable box passes ≈ gaussian.
-        for(let pass=0;pass<2;pass++){
-          const src=ACMAP.H, tmp=new Float32Array(n);
-          for(let r=0;r<W;r++){ const o=r*W;                      // horizontal
-            for(let c=0;c<W;c++){ let s=0,k=0;
-              for(let dx=-2;dx<=2;dx++){ const cc=c+dx; if(cc>=0&&cc<W){ s+=src[o+cc]; k++; } }
-              tmp[o+c]=s/k; } }
-          for(let c=0;c<W;c++){                                    // vertical
-            for(let r=0;r<W;r++){ let s=0,k=0;
-              for(let dy=-2;dy<=2;dy++){ const rr=r+dy; if(rr>=0&&rr<W){ s+=tmp[rr*W+c]; k++; } }
-              src[r*W+c]=s/k; } }
-        }
+        // NO low-pass any more: the mesh now samples at ~10u (GROUND_SEG 1600), close to the field's
+        // native 8u, so the raw per-cell relief is kept intact ("every pixel") instead of blurred away.
         ACMAP.on=true;
         for(const t of FLATTEN) t.h=Math.max(8,terrainBase(t.x,t.z));   // re-seat every town & castle plateau on the REAL ground
         console.log("ACMAP: the real Dereth is loaded");
@@ -2194,7 +2187,11 @@ function terrainBase(x,z){
   if(m<1000) h -= (1000-m)*0.9;                          // slope down into the surrounding ocean
   return h;
 }
-const FLATTEN=CITIES.map(c=>({x:c.x,z:c.z,core:c.capital?52:40,r:c.capital?96:80,h:Math.max(8,terrainBase(c.x,c.z))}));
+// Cities are NO LONGER flattened — every town sits on the REAL AC per-cell elevation (the user's
+// directive: "all cities should be adjusted to be the actual elevations for every pixel"). Buildings
+// conform to the resulting slopes via per-footprint foundations + walkable floor platforms
+// (tbRingBuilding). Only Kilmer's Castle — a non-AC addition — keeps a flattened plateau.
+const FLATTEN=[];
 // ── Castle Val Halla: Lord Kilmer's private castle on its own flattened plateau west of Holtburg
 //    (site chosen ≥600u clear of every town & dungeon entrance; the plateau gets its own FLATTEN ring) ──
 const KC={x:2100,z:-3230,wall:190,moatIn:205,moatOut:235,gateHalf:7,safeR:370,
@@ -3045,16 +3042,16 @@ function initThree(){
     for(let ci=0;ci<TERRA_CHUNKS;ci++)for(let ck=0;ck<TERRA_CHUNKS;ck++){
       const ccx=-HALF+(ci+0.5)*CS, ccz=-HALF+(ck+0.5)*CS;      // chunk centre (world)
       const geo=new THREE.PlaneGeometry(CS,CS,segs,segs);
-      const gp=geo.attributes.position, gcol=[], nrm=[];
-      for(let i=0;i<gp.count;i++){
-        const wx=ccx+gp.getX(i), wz=ccz-gp.getY(i), hh=terrainH(wx,wz);
-        gp.setZ(i,hh);                                          // displace into mountains/valleys
-        const e=6, dhx=(terrainH(wx+e,wz)-terrainH(wx-e,wz))/(2*e), dhz=(terrainH(wx,wz+e)-terrainH(wx,wz-e))/(2*e);
-        const nl=Math.hypot(dhx,1,dhz); nrm.push(-dhx/nl, dhz/nl, 1/nl);   // world gradient → plane-local normal
-        const c=groundVertColor(wx,wz,hh); gcol.push(c.r,c.g,c.b);
+      const pos=geo.attributes.position.array, cnt=geo.attributes.position.count;   // direct typed-array
+      const colArr=new Float32Array(cnt*3);                     // (2.56M verts at GROUND_SEG 1600 — hot loop)
+      for(let i=0,o=0;i<cnt;i++,o+=3){
+        const wx=ccx+pos[o], wz=ccz-pos[o+1], hh=terrainH(wx,wz);
+        pos[o+2]=hh;                                            // displace into mountains/valleys
+        const c=groundVertColor(wx,wz,hh); colArr[o]=c.r; colArr[o+1]=c.g; colArr[o+2]=c.b;
       }
-      geo.setAttribute('color',new THREE.Float32BufferAttribute(gcol,3));
-      geo.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+      geo.attributes.position.needsUpdate=true;
+      geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+      geo.computeVertexNormals();                               // smooth heightfield normals from the faces
       const chunk=new THREE.Mesh(geo,groundMat);
       chunk.rotation.x=-Math.PI/2; chunk.position.set(ccx,0,ccz);
       chunk.receiveShadow=true; groundMesh.add(chunk);
@@ -6547,7 +6544,7 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
   const cands=[];
   if(faceX!=null) cands.push(Math.atan2(faceZ-rec.fcz, faceX-rec.fcx));   // toward the plaza first
   for(let s=0;s<4;s++) cands.push(rec.th+s*Math.PI/2);                    // then the four cardinal walls
-  let best=null, bestBlock=1e9;
+  let best=null, bestScore=1e18;
   for(const a of cands){
     const dux=Math.cos(a), duz=Math.sin(a);
     const lux=dux*cw-duz*sw, luz=dux*sw+duz*cw;                           // dir in footprint space
@@ -6557,7 +6554,11 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
     for(const o of obstacles){ if(rec.cols.indexOf(o)>=0) continue;
       for(const s of [0.0,1.4,2.6]){ const sx=dx+dux*s, sz=dz+duz*s;
         if(((o.x-sx)**2+(o.z-sz)**2)<(o.r+TB_DOOR_HALF*0.9)**2){ blk++; break; } } }
-    if(blk<bestBlock){ bestBlock=blk; best={dux,duz,we,dx,dz}; if(blk===0) break; }
+    // clearest side first, then the HIGHEST-ground side (smallest step up to the floor) so the
+    // entrance sits near grade on the real, unflattened slope
+    const step=Math.max(0,rec.gy-groundY(dx+dux*1.2,dz+duz*1.2));
+    const score=blk*100+step;
+    if(score<bestScore){ bestScore=score; best={dux,duz,we,dx,dz}; }
   }
   rec.dux=best.dux; rec.duz=best.duz; rec.wallExit=best.we; rec.doorX=best.dx; rec.doorZ=best.dz;
   // clear the doorway of every collider in the gap (own wall, a neighbour, or a stray stall)
@@ -6579,22 +6580,49 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
     new THREE.MeshBasicMaterial({color:0xffcf8a,transparent:true,opacity:0.16,depthWrite:false,side:THREE.DoubleSide,fog:false}));
   thr.position.set(best.dx-best.dux*0.5,rec.gy+Math.min(rec.H*0.4,1.7),best.dz-best.duz*0.5);
   thr.rotation.y=Math.atan2(best.dux,best.duz); g.add(thr);
+  // entrance ramp: if the ground outside the door sits below the floor (downhill approach), lay a
+  // short stone ramp and register it walkable so you climb up into the doorway (rare — the door is
+  // biased to the high side, but keeps every building enterable on steep sites)
+  const gOut=groundY(best.dx+best.dux*1.2,best.dz+best.duz*1.2);
+  if(rec.gy-gOut>STEP_UP){
+    const rl=Math.max(2.4,(rec.gy-gOut)*1.7);
+    const st2={bx:best.dx,bz:best.dz,baseY:0,cos:best.dux,sin:-best.duz,r2:(rl+TB_DOOR_HALF)**2+4,
+      platforms:[],ramps:[{x0:0,x1:rl,z0:-TB_DOOR_HALF-0.3,z1:TB_DOOR_HALF+0.3,axis:'x',yLo:rec.gy,yHi:gOut,dir:1}]};
+    structures.push(st2); if(rec.structs) rec.structs.push(st2);
+    const rm=new THREE.Mesh(new THREE.BoxGeometry(TB_DOOR_HALF*2+0.4,0.35,rl),texMat(stoneFloorTex,0x8a8074));
+    rm.position.set(best.dx+best.dux*rl/2,(rec.gy+gOut)/2,best.dz+best.duz*rl/2);
+    rm.rotation.order='YXZ'; rm.rotation.y=Math.atan2(best.dux,best.duz); rm.rotation.x=Math.atan2(rec.gy-gOut,rl);
+    rm.receiveShadow=true; g.add(rm);
+  }
 }
 // ring a real building's footprint with colliders + return a room rec (for the doorway pass)
 function tbRingBuilding(g,obst,did,wx,wz,th){
   const md=_tbModels[(''+did).toUpperCase()]; if(!md||!md.ready) return null;
-  const cw=Math.cos(th), sw=Math.sin(th), gy=groundY(wx,wz);
-  const bm=tbBuildMesh(md); bm.position.set(wx,gy,wz); bm.rotation.y=th; g.add(bm);
+  const cw=Math.cos(th), sw=Math.sin(th);
   const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2, H=bb[4]-bb[1];
   const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;
+  // Cities are no longer flattened, so seat the building on the REAL terrain: sample the footprint
+  // corners+centre, stand it on the HIGHEST contact (base — nothing pokes up through the floor) and
+  // skirt a stone foundation down to the lowest so it never floats. "Part of the world" on any slope.
+  const corner=(sx,sz)=>groundY(fcx+sx*hx*cw+sz*hz*sw, fcz-sx*hx*sw+sz*hz*cw);
+  const c00=corner(-1,-1),c10=corner(1,-1),c11=corner(1,1),c01=corner(-1,1),cc=groundY(fcx,fcz);
+  const base=Math.max(c00,c10,c11,c01,cc), lo=Math.min(c00,c10,c11,c01,cc);
+  const bm=tbBuildMesh(md); bm.position.set(wx,base,wz); bm.rotation.y=th; g.add(bm);
+  if(base-lo>0.3){                                                    // stone foundation skirt fills the downhill gap
+    const fnd=new THREE.Mesh(new THREE.BoxGeometry(hx*2+0.6,base-lo+1.6,hz*2+0.6),texMat(stoneFloorTex,0x8a8074));
+    fnd.position.set(fcx,(base+lo-1.6)/2,fcz); fnd.rotation.y=th; fnd.receiveShadow=true; g.add(fnd); }
   const enter=(hx>=2.6&&hz>=2.6&&H>=3.0);
-  const rec={fcx,fcz,hx,hz,th,gy,H,enter,cols:[],per:0};
+  const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[]};
   const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
     for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
       const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw;
       const ob={x:px,z:pz,r:0.8}; obstacles.push(ob); obst.push(ob); rec.cols.push(ob); } };
   edge(lcx-hx,lcz-hz,lcx+hx,lcz-hz); edge(lcx+hx,lcz-hz,lcx+hx,lcz+hz);
   edge(lcx+hx,lcz+hz,lcx-hx,lcz+hz); edge(lcx-hx,lcz+hz,lcx-hx,lcz-hz);
+  if(enter){   // register the interior floor as a walkable platform so you stand ON it, not the sloped terrain beneath
+    const st={bx:wx,bz:wz,baseY:base,cos:cw,sin:sw,r2:(Math.max(hx,hz)+2)**2+4,
+      platforms:[{x0:lcx-hx+0.3,x1:lcx+hx-0.3,z0:lcz-hz+0.3,z1:lcz+hz-0.3,y:0}],ramps:[]};
+    structures.push(st); rec.structs.push(st); rec.struct=st; }
   return rec;
 }
 function seatRealTownVendors(c,recs){
@@ -6624,7 +6652,7 @@ function seatRealTownVendors(c,recs){
       const lx=bx*cw-bz*sw, lz=bx*sw+bz*cw;
       if(Math.abs(lx)>rec.hx-0.6||Math.abs(lz)>rec.hz-0.6) break;
     }
-    const fy=groundY(nx,nz);
+    const fy=rec.gy;   // stand on the room's floor platform (its real base height), not the slope beneath
     // a small counter in front of the shopkeeper, facing the door
     if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
     const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
@@ -6635,8 +6663,12 @@ function seatRealTownVendors(c,recs){
     if(sh.obs){ sh.obs[0].x=nx; sh.obs[0].z=nz; if(sh.obs[1]){ sh.obs[1].x=nx+inx*0.9; sh.obs[1].z=nz+inz*0.9; } }
   }
 }
+// release the walkable floor-platform / entrance-ramp structures a streamed group registered
+function tbReleaseStructs(recs){ for(const r of (recs||[])) for(const st of (r.structs||[])){
+  const i=structures.indexOf(st); if(i>=0) structures.splice(i,1); } }
 function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
+  tbReleaseStructs(e.recs);
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
@@ -6673,10 +6705,11 @@ function wsBuildBlock(lb,rec){
   // isolated houses/keeps are enterable too: ring, then cut a doorway on the clearest side
   for(const b of rec.b){ const r=tbRingBuilding(g,obst,b[0],b[1],b[2],b[3]||0); if(r) recs.push(r); }   // b=[did,x,z,rot]
   for(const r of recs){ if(r.enter) tbCutDoorway(g,obst,recs,r,lights,null,null); }
-  return {cx:rec.cx,cz:rec.cz,g,obst,lights};
+  return {cx:rec.cx,cz:rec.cz,g,obst,lights,recs};
 }
 function wsDropBlock(lb){ const e=_wsBuilt[lb]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
+  tbReleaseStructs(e.recs);
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }
   for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   delete _wsBuilt[lb];
@@ -14548,8 +14581,9 @@ function update(dt){
     if(b.t<=0){scene.remove(b.sp);bursts.splice(i,1);}}
   // lifestone shimmer
   for(const ls of lifestones){   // AC lifestones stand STILL — only the inner light breathes
-    ls.mesh.userData.light.intensity=1.1+0.35*Math.sin(now()/650);
-    ls.mesh.userData.crystal.material.emissiveIntensity=0.5+0.12*Math.sin(now()/650);}
+    const u=ls.mesh&&ls.mesh.userData; if(!u) continue;   // real AC crystal model may still be streaming in
+    if(u.light) u.light.intensity=1.1+0.35*Math.sin(now()/650);
+    if(u.crystal&&u.crystal.material) u.crystal.material.emissiveIntensity=0.5+0.12*Math.sin(now()/650);}
   // portal swirl (capital portals + every town's Town-Network portal + the hall portals)
   const swirlPulse=1.2+0.5*Math.sin(now()/250);
   for(const pt of portals){pt.mesh.userData.disc.rotation.z+=dt*0.5; if(pt.mesh.userData.disc2)pt.mesh.userData.disc2.rotation.z-=dt*0.85; pt.mesh.userData.light.intensity=swirlPulse;}
