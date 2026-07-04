@@ -5785,32 +5785,41 @@ function buildCrystal(seed,col){
   const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.35,metalness:0.0,roughness:0.6,flatShading:true}));
   m.castShadow=true; m.rotation.y=seed*6.28; return m;
 }
+// ── real AC fixture meshes (assets/acmisc: lifestone, bindstone) ──
+const _miscGeo={}, _miscTexCache={}, _miscTL=new THREE.TextureLoader();
+function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
+function acMiscMesh(name,cb){   // fetch + cache a misc fixture's groups, call cb(groups) when ready (or now if cached)
+  const c=_miscGeo[name];
+  if(c&&c!=="loading"){ cb(c); return; }
+  if(c==="loading") return;
+  _miscGeo[name]="loading";
+  fetch('assets/acmisc/'+name+'.json').then(r=>r.ok?r.json():null).then(j=>{ _miscGeo[name]=j?j.groups:null; if(j)cb(j.groups); }).catch(()=>{ _miscGeo[name]=null; });
+}
 function buildLifestone(bound){
-  // AC's lifestone: ONE tall pale-blue faceted crystal rising straight from the ground —
-  // no rock ring, no spinning gem — standing on a low stone dais in a cleared earth circle.
-  const g=new THREE.Group(), seed=Math.random();
-  const col=bound?0x9fe0ff:0x5a9ac8;                       // pale glowing cyan (bound = brighter/whiter)
-  // the cleared circle every lifestone stands in
+  // AC's lifestone: the real Turbine crystal (assets/acmisc/lifestone.json) — a blue-veined stone
+  // spire — standing in a cleared earth circle, lit from within.
+  const g=new THREE.Group(), col=bound?0x9fe0ff:0x6ab0e0;
   const clearing=new THREE.Mesh(new THREE.CircleGeometry(4.6,26),
     new THREE.MeshStandardMaterial({color:0x8a7a5f,roughness:1,metalness:0}));
   clearing.rotation.x=-Math.PI/2; clearing.position.y=0.03; clearing.receiveShadow=true; g.add(clearing);
-  // low round dais
-  const dais=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.85,0.26,12),
-    new THREE.MeshStandardMaterial({color:0x777b84,roughness:0.9,metalness:0.05}));
-  dais.position.y=0.13; dais.castShadow=true; dais.receiveShadow=true; g.add(dais);
-  // the crystal: a tapered hexagonal column + pyramidal tip, lightly jittered facets, one shared material
-  const cmat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.55,
-    transparent:true,opacity:0.94,roughness:0.25,metalness:0.1,flatShading:true});
-  const colGeo=new THREE.CylinderGeometry(0.34,0.66,2.7,6,1);
-  { const p=colGeo.attributes.position;
-    for(let i=0;i<p.count;i++){ p.setX(i,p.getX(i)+Math.sin(i*12.9+seed*47)*0.045); p.setZ(i,p.getZ(i)+Math.cos(i*7.7+seed*31)*0.045); }
-    colGeo.computeVertexNormals(); }
-  const crystal=new THREE.Mesh(colGeo,cmat);
-  crystal.position.y=0.26+1.35; crystal.rotation.y=seed*6.28; crystal.castShadow=true; g.add(crystal);
-  const tip=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.8,6),cmat);
-  tip.position.y=0.26+2.7+0.4; tip.rotation.y=crystal.rotation.y; tip.castShadow=true; g.add(tip);
-  const light=new THREE.PointLight(col,1.35,20);light.position.y=2.4;g.add(light);
-  g.userData.crystal=crystal;g.userData.light=light;   // shared material: tinting the crystal tints the tip too
+  const light=new THREE.PointLight(col,1.35,20); light.position.y=2.4; g.add(light);
+  g.userData.light=light;
+  // build the real crystal mesh (glowing blue veins via an emissive map of the same texture)
+  acMiscMesh("lifestone",groups=>{
+    const cg=new THREE.Group();
+    for(const gr of groups){
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(gr.v,3));
+      if(gr.n&&gr.n.length) geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
+      if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
+      geo.setIndex(gr.i); if(!gr.n||!gr.n.length) geo.computeVertexNormals();
+      const mm=gr.mat||{}, tex=mm.tex?_miscTex(mm.tex):null;
+      const mat=new THREE.MeshStandardMaterial({map:tex,color:tex?0xffffff:(mm.color!=null?mm.color:0x6a7a8a),
+        roughness:0.5,metalness:0.15,emissive:col,emissiveMap:tex,emissiveIntensity:bound?0.65:0.4});
+      const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; cg.add(me);
+    }
+    g.add(cg); g.userData.crystal=cg;
+  });
   return g;
 }
 
@@ -13933,10 +13942,10 @@ function recoverCorpse(d){
   if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
 }
 function recolorLifestone(ls){
-  const col=ls.bound?0x9fe0ff:0x5a9ac8;   // pale glowing cyan (matches buildLifestone; bound = brighter/whiter)
-  ls.mesh.userData.crystal.material.color.setHex(col);
-  ls.mesh.userData.crystal.material.emissive.setHex(col);
-  ls.mesh.userData.light.color.setHex(col);
+  const col=ls.bound?0x9fe0ff:0x6ab0e0;   // bound = brighter/whiter (matches buildLifestone)
+  const u=ls.mesh.userData;
+  if(u.crystal) u.crystal.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive){ o.material.emissive.setHex(col); o.material.emissiveIntensity=ls.bound?0.65:0.4; } });
+  if(u.light) u.light.color.setHex(col);
 }
 
 // ---------- character sheet ----------
