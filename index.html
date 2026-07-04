@@ -1196,6 +1196,46 @@ fetch('assets/acspells.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j)ret
 //    lowercase item name; itemIconHTML() returns an <img> when one matches, else the emoji glyph. ──
 let AC_ICONS=null;
 fetch('assets/acicons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.names)AC_ICONS=j; }).catch(()=>{});
+// ── THE REAL TREES (assets/acflora + acscenery.json): every scenery model the retail client
+//    scattered — trees, plants, rocks — with per-terrain frequencies from portal.dat Region. ──
+let AC_FLORA=null,AC_SCEN=null; const _floraProto={},_floraTex={},_scenPick={};
+fetch('assets/acflora/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_FLORA=j; }).catch(()=>{});
+fetch('assets/acscenery.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_SCEN=j; }).catch(()=>{});
+function floraTexture(fn){ if(_floraTex[fn]) return _floraTex[fn];
+  const t=new THREE.TextureLoader().load('assets/acflora/tex/'+fn); t.wrapS=t.wrapT=THREE.RepeatWrapping; _floraTex[fn]=t; return t; }
+function floraProto(shex){   // build (once) the shared prototype group for a scenery setup
+  if(_floraProto[shex]) return _floraProto[shex];
+  _floraProto[shex]=fetch('assets/acflora/'+shex+'.json').then(r=>r&&r.ok?r.json():null).then(d=>{
+    if(!d||!d.groups) return null;
+    const g=new THREE.Group();
+    for(const grp of d.groups){
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(grp.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(grp.n,3));
+      if(grp.uv&&grp.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(grp.uv,2));
+      geo.setIndex(grp.i);
+      const mp={roughness:0.9,metalness:0,side:THREE.DoubleSide};
+      if(grp.mat&&grp.mat.tex){ mp.map=floraTexture(grp.mat.tex); if(grp.mat.clip){mp.transparent=true;mp.alphaTest=0.45;} }
+      else mp.color=(grp.mat&&grp.mat.color)||0x6a7a4a;
+      const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial(mp)); m.castShadow=true; g.add(m);
+    }
+    return g;
+  }).catch(()=>null);
+  return _floraProto[shex];
+}
+function scenPickList(ty){   // flatten a terrain's scenes into one freq-weighted object list (cached)
+  if(_scenPick[ty]) return _scenPick[ty];
+  const t=AC_SCEN&&AC_SCEN.terrains&&AC_SCEN.terrains[ty]; if(!t) return (_scenPick[ty]=[]);
+  const L=[]; for(const sc of (t.scenes||[])) for(const o of (sc.objects||[]))
+    if(o.setup&&o.setup!=="00000000"&&AC_FLORA&&AC_FLORA.setups&&AC_FLORA.setups[o.setup]&&o.freq>0)
+      L.push({s:o.setup,w:o.freq*(sc.weight||1),lo:o.minScale||1,hi:o.maxScale||1});
+  return (_scenPick[ty]=L);
+}
+function placeFlora(shex,x,z,sc){   // async: the real model materializes when its mesh pack arrives
+  floraProto(shex).then(proto=>{ if(!proto) return;
+    const m=proto.clone(); m.position.set(x,groundY(x,z),z); m.scale.setScalar(sc); m.rotation.y=rnd(0,6.28);
+    scene.add(m); scenery.push(m); });
+}
 function itemIconDID(name){ if(!AC_ICONS||!name)return null; const n=name.toLowerCase();
   if(AC_ICONS.names[n])return AC_ICONS.names[n];
   for(const w of n.split(/\s+/).reverse()){ if(AC_ICONS.names[w])return AC_ICONS.names[w]; }   // fall back to the base noun ("… sword")
@@ -5938,6 +5978,16 @@ function buildWorld(){
     const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(45,460);
     const x=clamp(h.x+Math.cos(a)*rr,-HALF+5,HALF-5),z=clamp(h.z+Math.sin(a)*rr,-HALF+5,HALF-5);
     if(nearestCapitalDist(x,z)<TOWN_SAFE||terrainH(x,z)<1) continue; // not in town cores or water
+    // ── THE REAL TREES: sample the client's own terrain byte here and scatter THAT terrain's
+    //    scenery objects (real extracted models) at the client's own frequencies and scales. ──
+    if(AC_SCEN&&AC_FLORA&&ACMAP.on){
+      const L=scenPickList(String(acType(x,z)));
+      if(L.length){ let tw=0; for(const o of L) tw+=o.w; let rw=Math.random()*tw, pick=L[0];
+        for(const o of L){ rw-=o.w; if(rw<=0){ pick=o; break; } }
+        const sc2=rnd(pick.lo,pick.hi);
+        placeFlora(pick.s,x,z,sc2); obstacles.push({x,z,r:Math.max(0.5,1.1*sc2)});
+        continue; }
+    }
     const bm=biomeAt(x,z), s=rnd(0.8,1.8), roll=Math.random();
     let mesh,r;
     if(bm==="desert"){ if(roll<0.55) continue;                                   // mostly barren sand
