@@ -4384,32 +4384,35 @@ function buildPerson(o){
     const cowl=new THREE.Mesh(new THREE.SphereGeometry(0.215,14,12,0,6.28,0,Math.PI*0.72),cloth2);cowl.position.set(0,headY+0.015,0.02);g.add(cowl);
     const drape=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.27,0.42,12),cloth2);drape.position.set(0,headY-0.2,0.05);g.add(drape);
   }
-  if(o.hat==='cone'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.36,12),cloth2);h.position.y=headY+0.28;g.add(h);const br=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.27,0.035,12),cloth2);br.position.y=headY+0.13;g.add(br);}
-  if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.185,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=headY+0.1;g.add(h);const br=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.03,0.16),cloth2);br.position.set(0,headY+0.06,-0.14);g.add(br);}
-  if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.195,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=headY+0.05;h.castShadow=true;g.add(h);
-    const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,headY-0.02,-0.19);g.add(nz);}
+  // headwear rides the crown, which sits ~0.16 BELOW the head anchor (buildFaceGroup skull top);
+  // hats were floating above the head — reference the crown, not headY.
+  const hatY=headY-0.16;
+  if(o.hat==='cone'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.36,12),cloth2);h.position.y=hatY+0.28;g.add(h);const br=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.27,0.035,12),cloth2);br.position.y=hatY+0.13;g.add(br);}
+  if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.185,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=hatY+0.1;g.add(h);const br=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.03,0.16),cloth2);br.position.set(0,hatY+0.06,-0.14);g.add(br);}
+  if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.195,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=hatY+0.05;h.castShadow=true;g.add(h);
+    const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,hatY-0.02,-0.19);g.add(nz);}
   // ── AC-reference headwear (from wiki character-creation + NPC screenshots) ──
   if(o.hat==='beret'){   // the iconic Aluvian flat beret: squashed tilted dome on a band, with a stalk
     const hm=new THREE.MeshStandardMaterial({color:o.hatCol!=null?o.hatCol:0x28365a,roughness:0.9});
-    const br=new THREE.Mesh(new THREE.SphereGeometry(0.24,16,10),hm);br.scale.set(1,0.34,1);br.position.set(0.035,headY+0.155,0);br.rotation.z=-0.18;br.castShadow=true;g.add(br);
-    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.168,0.178,0.05,14),hm);band.position.y=headY+0.095;g.add(band);
-    const stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.05,5),hm);stalk.position.set(0.05,headY+0.245,0);g.add(stalk);
+    const br=new THREE.Mesh(new THREE.SphereGeometry(0.24,16,10),hm);br.scale.set(1,0.34,1);br.position.set(0.035,hatY+0.155,0);br.rotation.z=-0.18;br.castShadow=true;g.add(br);
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.168,0.178,0.05,14),hm);band.position.y=hatY+0.095;g.add(band);
+    const stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.05,5),hm);stalk.position.set(0.05,hatY+0.245,0);g.add(stalk);
   }
   if(o.hat==='turban'){  // Gharu'ndim wrap: stacked cloth coils + crown + a gold brooch at the brow
     const hm=new THREE.MeshStandardMaterial({color:o.hatCol!=null?o.hatCol:0xe8e0cc,roughness:0.92,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)});
     for(let i=0;i<3;i++){ const wrap=new THREE.Mesh(new THREE.TorusGeometry(0.152-i*0.02,0.056-i*0.009,8,18),hm);
-      wrap.rotation.x=Math.PI/2; wrap.rotation.z=(i%2?0.16:-0.12); wrap.position.y=headY+0.1+i*0.05; wrap.castShadow=true; g.add(wrap); }
-    const crown=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,9),hm);crown.scale.set(1,0.7,1);crown.position.y=headY+0.24;g.add(crown);
-    const brooch=new THREE.Mesh(new THREE.OctahedronGeometry(0.028),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3}));brooch.position.set(0,headY+0.13,-0.185);g.add(brooch);
+      wrap.rotation.x=Math.PI/2; wrap.rotation.z=(i%2?0.16:-0.12); wrap.position.y=hatY+0.1+i*0.05; wrap.castShadow=true; g.add(wrap); }
+    const crown=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,9),hm);crown.scale.set(1,0.7,1);crown.position.y=hatY+0.24;g.add(crown);
+    const brooch=new THREE.Mesh(new THREE.OctahedronGeometry(0.028),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3}));brooch.position.set(0,hatY+0.13,-0.185);g.add(brooch);
   }
   if(o.hat==='straw'){   // Sho field hat: wide shallow woven cone
     const hm=new THREE.MeshStandardMaterial({color:0xc8ae6a,roughness:0.95,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.8,0.8)});
-    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.17,18),hm);cone.position.y=headY+0.175;cone.castShadow=true;g.add(cone);
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.17,18),hm);cone.position.y=hatY+0.175;cone.castShadow=true;g.add(cone);
   }
   if(o.headband){        // Sho cloth headband, knotted at the back
     const hm=new THREE.MeshStandardMaterial({color:(o.headband===true?0x8a2a2a:o.headband),roughness:0.9});
-    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.176,0.176,0.045,14),hm);band.position.y=headY+0.055;g.add(band);
-    const knot=new THREE.Mesh(new THREE.SphereGeometry(0.032,7,6),hm);knot.position.set(0,headY+0.05,0.185);g.add(knot);
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.176,0.176,0.045,14),hm);band.position.y=hatY+0.055;g.add(band);
+    const knot=new THREE.Mesh(new THREE.SphereGeometry(0.032,7,6),hm);knot.position.set(0,hatY+0.05,0.185);g.add(knot);
   }
   g.userData={headY,torsoY:torso.position.y,headBaseY:head.position.y,lArm:arms[0],rArm:arms[1],lLeg,rLeg,torso,head,robed};
   return _normHumanMesh(g);   // uniform human height (feet on ground); inner-wrapper scale keeps gltf swaps safe
@@ -17430,7 +17433,7 @@ function pickColor(arr,seed,salt){ return arr[Math.abs(Math.imul((seed|0)+salt,2
 function _clothMat(c){ return new THREE.MeshStandardMaterial({color:c,roughness:0.9,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)}); }
 function dressAvatarHead(u,o){
   const neck=u.neck; if(!neck) return;
-  const hy=0.31;   // neck-local height of the crown (the AC head rides just above the neck)
+  const hy=0.21;   // neck-local crown of the AC head (measured: acHead top ≈ neck+0.224) — hats rest here, not float above
   const put=(geo,mat,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(0,y,z||0); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.userData.npcCloth=true; neck.add(m); return m; };
   const felt=c=>new THREE.MeshStandardMaterial({color:c,roughness:0.86,metalness:0.0});
   const kind=o.helm?"helm":o.hat;
