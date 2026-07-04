@@ -605,7 +605,7 @@ const GROUND_SEG=400;   // terrain grid resolution (40u cells) — groundY() and
 const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled areas (must divide GROUND_SEG)
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
-const TOWN_SAFE=60, DAYLEN=4200; // safe radius around each capital; seconds per full day/night (long, slow cycle)
+const TOWN_SAFE=60, DAYLEN=7620; // safe radius around each capital; DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
 
 // ---------- attributes (AC's six) ----------
 const ATTRS=["Strength","Endurance","Coordination","Quickness","Focus","Self"];
@@ -2597,27 +2597,26 @@ function buildStars(){
     vertexColors:true,sizeAttenuation:false,transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending});
   starField=new THREE.Points(geo,starMat);return starField;
 }
-function buildSun(){
-  const t=softTex(null,null,[[0,"rgba(255,250,235,1)"],[0.18,"rgba(255,240,190,1)"],[0.4,"rgba(255,190,90,0.7)"],[1,"rgba(255,150,60,0)"]]);
-  sunSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+// Sky bodies are the REAL AC discs from the Region file (DID 0x13000000) SkyInfo, extracted by
+// tools/ac_region_export.py to assets/sky/. Sizes are the client bbox spans (sun 600, green moon
+// 520, amber moon 245) so the moons keep AC's on-screen proportions. If the PNGs are missing the
+// loader just yields a blank sprite — the sky still runs.
+const _skyTL=new THREE.TextureLoader();
+function buildSun(){   // the sun disc (sky obj 0x01001348, tex 0600388D) — warm glow, additive
+  sunSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/sun.png'),
+    transparent:true,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
   sunSprite.scale.set(900,900,1);return sunSprite;
 }
-function buildMoon(){
-  const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
-  const grd=g.createRadialGradient(26,26,2,32,32,30);grd.addColorStop(0,"#ffffff");grd.addColorStop(0.7,"#dfe6f0");grd.addColorStop(1,"#9fb0c8");
-  g.fillStyle=grd;g.beginPath();g.arc(32,32,30,0,6.28);g.fill();
-  g.fillStyle="rgba(150,165,185,0.5)";[[24,22,5],[40,30,7],[30,42,4],[44,44,3]].forEach(m=>{g.beginPath();g.arc(m[0],m[1],m[2],0,6.28);g.fill();});
-  moonSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,fog:false,depthWrite:false}));
-  moonSprite.scale.set(520,520,1);return moonSprite;
+function buildMoon(){   // Dereth's great moon — the green storm-world (sky obj 0x01001F6A, tex 06003898)
+  moonSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_green.png'),
+    transparent:true,fog:false,depthWrite:false}));
+  moonSprite.scale.set(520,520,1);return moonSprite;   // AC bbox 520
 }
-// AC's night sky has TWO moons — a smaller amber companion rides an offset arc beside the pale primary.
-function buildMoon2(){
-  const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
-  const grd=g.createRadialGradient(27,25,2,32,32,30);grd.addColorStop(0,"#ffe6c2");grd.addColorStop(0.65,"#e0a878");grd.addColorStop(1,"#9c6a48");
-  g.fillStyle=grd;g.beginPath();g.arc(32,32,30,0,6.28);g.fill();
-  g.fillStyle="rgba(120,80,55,0.5)";[[26,26,6],[41,34,5],[33,44,4]].forEach(m=>{g.beginPath();g.arc(m[0],m[1],m[2],0,6.28);g.fill();});
-  moon2Sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,fog:false,depthWrite:false}));
-  moon2Sprite.scale.set(340,340,1);return moon2Sprite;
+// AC's night sky has TWO moons — the smaller amber cratered companion rides an offset arc beside the primary.
+function buildMoon2(){   // amber cratered moon (sky obj 0x01001F67, tex 06003894)
+  moon2Sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_amber.png'),
+    transparent:true,fog:false,depthWrite:false}));
+  moon2Sprite.scale.set(245,245,1);return moon2Sprite;   // AC bbox 245 (≈0.47× the green moon, matching retail)
 }
 function buildClouds(){
   cloudGroup=new THREE.Group();
@@ -2745,7 +2744,9 @@ const _stormGrey=new THREE.Color(0x484c56);   // dense storm/overcast cloud tint
 const _tmp=new THREE.Color();
 function updateDayNight(dt){
   gameTime=(gameTime+dt/DAYLEN)%1;
-  worldDays+=dt/DAYLEN; seasonTick();   // 90 full day/night cycles → the season turns
+  worldDays+=dt/DAYLEN; seasonTick();   // 30 day/night cycles → the month turns
+  { const _tt=Math.floor(gameTime*16); if(_tt!==_todIdx){ _todIdx=_tt;   // the tithe turned → refresh the clock HUD
+      if(typeof updateSeasonHUD==="function") updateSeasonHUD(); } }
   const t2=gameTime*Math.PI*2;
   const sunY=-Math.cos(t2);            // -1 midnight .. +1 noon
   const sunX=Math.sin(t2);
@@ -9331,24 +9332,41 @@ const SAGA_REST={id:"epilogue", mon:"Morningthaw", name:"The Age of the Free Rea
 let gameMonth=0, eventClock=0, calendarDone={}, sagaProg={};
 const seasonCur={ground:new THREE.Color(0xffffff),fog:new THREE.Color(0xffffff),sky:new THREE.Color(0xffffff)};
 function currentCalEvent(){ return EVENT_CALENDAR[gameMonth]||SAGA_REST; }
-// ── seasons follow the sun, not the story: one season lasts SEASON_DAYS full day/night cycles.
-//    worldDays accumulates in updateDayNight and is saved, so the year advances across sessions.
-//    A fresh world begins at worldDays=90 — the first morning of summer (Verdantine). ──
-const SEASON_ORDER=["thaw","growth","harvest","frost"];   // spring → summer → autumn → winter
-const SEASON_DAYS=90;
-let worldDays=SEASON_DAYS, _seasonIdx=-1;                 // 90 = start of summer
-function seasonTick(){
-  const si=Math.floor(worldDays/SEASON_DAYS);
-  if(si===_seasonIdx) return;
-  const first=_seasonIdx<0; _seasonIdx=si;
-  if(!first){ const S=currentSeason();
-    log(`<b>The season turns to ${S.name}</b> — ${S.blurb}.`,"warn");
-    toast("SEASON — "+S.name.toUpperCase()); if(SFX.quest)SFX.quest(); }
+// ── AC's authentic Dereth calendar (Region GameTime, DID 0x13000000; see tools/ac_region_export.py):
+//    a 360-day year of 12 months × 30 days, counted in P.Y. (Portal Year) from year 10. The day
+//    itself is 7620 real seconds (DAYLEN) and is split into 16 named tithes. worldDays accumulates
+//    in updateDayNight and is saved, so date + year advance across sessions.
+//    The 12 months map 3-to-a-tint onto the four visual seasons that reskin ground/fog/sky. ──
+const AC_MONTHS=["Morningthaw","Solclaim","Seedsow","Leafdawning","Verdantine","Thistledown",
+  "HarvestGain","Leafcull","Frostfell","Snowreap","Coldeve","Wintersebb"];
+const AC_ZERO_YEAR=10, AC_DAYS_PER_YEAR=360, AC_DAYS_PER_MONTH=30, AC_YEAR_SPEC="P.Y.";
+// the 16 tithes of the Dereth day (Region TimesOfDay). Midsong (t=0.5) is noon, Darktide (t=0) midnight.
+const TIMES_OF_DAY=["Darktide","Darktide and Half","Foredawn","Foredawn and Half",
+  "Dawnsong","Dawnsong and Half","Morntide","Morntide and Half",
+  "Midsong","Midsong and Half","Warmtide","Warmtide and Half",
+  "Evensong","Evensong and Half","Gloaming","Gloaming and Half"];
+function timeOfDayName(){ return TIMES_OF_DAY[Math.min(15,Math.max(0,Math.floor(gameTime*16)))]; }
+function acClock(){ const h=(gameTime*24)%24, hh=Math.floor(h), mm=Math.floor((h-hh)*60);   // Midsong=12:00, Darktide=00:00
+  return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
+const SEASON_ORDER=["thaw","growth","harvest","frost"];   // visual tint per 3 months: spring → summer → autumn → winter
+const SEASON_DAYS=90;                                       // one visual season = 3 AC months = 90 day/night cycles
+let worldDays=120, _seasonIdx=-1, _todIdx=-1;              // 120 = dawn of Verdantine (AC's launch high-summer)
+function acMonthIdx(){ return Math.floor(worldDays/AC_DAYS_PER_MONTH); }
+function acMonthName(){ return AC_MONTHS[((acMonthIdx()%12)+12)%12]; }
+function acYear(){ return AC_ZERO_YEAR+Math.floor(worldDays/AC_DAYS_PER_YEAR); }
+function seasonTick(){   // the month turns every 30 day/night cycles
+  const mi=acMonthIdx();
+  if(mi===_seasonIdx) return;
+  const first=_seasonIdx<0; _seasonIdx=mi;
+  if(!first){ const nm=acMonthName();
+    log(`<b>The month turns to ${nm}, ${acYear()} ${AC_YEAR_SPEC}</b> — ${currentSeason().blurb}.`,"warn");
+    toast("MONTH — "+nm.toUpperCase()); if(SFX.quest)SFX.quest(); }
   if(typeof updateSeasonHUD==="function") updateSeasonHUD();
 }
 function currentSeason(){ return SEASONS[SEASON_ORDER[Math.floor(worldDays/SEASON_DAYS)%SEASON_ORDER.length]]||SEASONS.growth; }
-function seasonDayInfo(){ const d=Math.floor(worldDays%SEASON_DAYS)+1; return `day ${d}/${SEASON_DAYS}`; }
-function updateSeasonHUD(){ const el=document.getElementById('sSeason'); if(el){ const S=currentSeason(),ce=currentCalEvent(); el.innerHTML=`${S.name} <span style="color:var(--dim)">· ${seasonDayInfo()} · ${ce.name}</span>`; } }
+function seasonDayInfo(){ const d=Math.floor(worldDays%AC_DAYS_PER_MONTH)+1; return `${acMonthName()} ${d}, ${acYear()} ${AC_YEAR_SPEC}`; }
+function updateSeasonHUD(){ const el=document.getElementById('sSeason'); if(el){ const ce=currentCalEvent();
+  el.innerHTML=`${timeOfDayName()} <span style="color:var(--dim)">· ${seasonDayInfo()} · ${ce.name}</span>`; } }
 function advanceMonth(){   // announce the CURRENT saga month (called on saga start + after each completion)
   const ce=currentCalEvent();
   log(`<b>The Kilmer Saga — ${ce.mon}: ${ce.name}.</b> ${ce.rumor}`,"warn");
@@ -21806,7 +21824,7 @@ function applySaveObj(s){
   gameMonth=s.gameMonth|0; eventClock=0; calendarDone=(s.calendarDone&&typeof s.calendarDone==="object")?s.calendarDone:{};
   sagaProg=(s.sagaProg&&typeof s.sagaProg==="object")?s.sagaProg:{};
   if(!s.sagaVer){ gameMonth=0; sagaProg={}; }   // pre-saga saves (the old "Fifth Sending" loop) begin the Kilmer Saga at the Coronation
-  worldDays=(typeof s.worldDays==="number"&&isFinite(s.worldDays))?s.worldDays:SEASON_DAYS;   // older saves join at the first morning of summer
+  worldDays=(typeof s.worldDays==="number"&&isFinite(s.worldDays))?s.worldDays:120;   // older saves join at the dawn of Verdantine
   _seasonIdx=-1; seasonTick();
   player.eventTitles=Array.isArray(s.eventTitles)?s.eventTitles.slice():[]; updateSeasonHUD();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
