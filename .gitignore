@@ -25,3 +25,7 @@ winter-onset*
 ace-world*.sql*
 ac_data.zip
 ACE-World-16PY-master/
+
+# hi-res client source archive (extracted into acdata/; never commit the 508MB blob)
+ac-updates.zip
+*.zip
