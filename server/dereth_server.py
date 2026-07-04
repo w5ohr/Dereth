@@ -855,12 +855,12 @@ async def resolve_attack(cl, mid, dmg):
                 c = CLIENTS.get(acc)
                 if c and c.in_world and math.hypot(c.x - m["x"], c.z - m["z"]) <= FELLOW_RANGE:
                     fellows.append(acc)
-        share = FELLOW_SHARE[min(len(fellows), 9)] if len(fellows) >= 2 else 1.0
+        per = fellowship_xp(fellows, m["xp"])
         sent = set()
         for u in fellows:
             c = CLIENTS.get(u)
             if c:
-                await c.send({"t": "reward", "xp": int(round(m["xp"] * share)), "kind": m["kind"], "boss": is_boss})
+                await c.send({"t": "reward", "xp": per[u], "kind": m["kind"], "boss": is_boss})
                 sent.add(u)
         for u in set(m.get("dealt", {cl.username: dmg}).keys()):
             if u in sent:
@@ -1017,6 +1017,24 @@ PARTY_MAX = 9          # AC fellowship cap (founder + 8)
 # AC fellowship XP: an equal split with a size bonus, so the shared pool grows (~1.5x the kill's
 # XP at 2 members up to ~3x at a full 9) — per-member fraction of the kill XP by fellowship size.
 FELLOW_SHARE = {1: 1.00, 2: 0.75, 3: 0.60, 4: 0.50, 5: 0.45, 6: 0.40, 7: 0.37, 8: 0.34, 9: 0.33}
+
+def fellowship_xp(fellows, base_xp):
+    """AC fellowship XP by LEVEL SPREAD, not just size → {account: xp}. A tight band shares equally
+    with the size bonus; a wide band splits proportionally by level so a low-level can't leech a
+    high-level kill; an extreme spread reverts to equal with the size reduction lifted."""
+    n = len(fellows)
+    if n < 2:
+        return {u: base_xp for u in fellows}                       # solo / single member: full XP
+    levels = {u: max(1, getattr(CLIENTS.get(u), "level", 1) or 1) for u in fellows}
+    spread = max(levels.values()) - min(levels.values())
+    base = FELLOW_SHARE[min(n, 9)]
+    if spread <= 5:
+        return {u: int(round(base_xp * base)) for u in fellows}    # equal split + size bonus
+    if spread >= 50:
+        return {u: base_xp for u in fellows}                       # extreme spread: equal, no size reduction
+    pool = base_xp * base * n                                      # same total pool, weighted by level
+    tot = sum(levels.values()) or 1
+    return {u: int(round(pool * levels[u] / tot)) for u in fellows}
 
 def party_names(pid):
     p = PARTIES.get(pid)
