@@ -62,3 +62,16 @@ every push. Do not touch another agent's asset dirs or tools.
   `client_highres.dat` will land in its install dir; whoever is active when the user reports
   it should copy it to acdata/ and run the high-res texture upgrade pass (all tex/ dirs,
   same TIDs, no engine changes).
+
+
+---
+## A2 status (2026-07-04, first pass)
+- Items 1/2/4/5 re-exported against the end-of-retail dats: **byte-identical** — acskills,
+  acspells, acchargen, and all 35 acui textures are VERIFIED CURRENT (the systems resources
+  didn't change in the final builds).
+- Item 3 (acspellstats): upstream acspells unchanged + 3-Core absent -> no action needed.
+- Item 6 (strings): local dat probed — 101x 0x21 StringTables + 15x 0x23. The payloads are
+  CIPHERED (not zlib; not plain UTF-16). tools/ac_strings_export.py is scaffolded with the
+  harvest pipeline; the decode must be ported from ACEmulator ACE.DatLoader/FileTypes/
+  StringTable.cs (follow-up). No pack committed until it decodes clean.
+- Item 7: nothing upstream changed -> tinkering/crafting stand as verified.
