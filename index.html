@@ -843,6 +843,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patronInfo:null,vassals:[],vassalXP:0,allegianceMOTD:null,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
+  societyRibbons:0,societyTest:null,societyTestsDone:[],   // Commendation Ribbons + rank Test-gauntlet progress
   luminance:0,lumUnlocked:false,auras:{},enlightenment:0,   // AC endgame: Luminance currency → permanent Auras; Enlightenment prestige resets
   arcsDone:[],                 // story arcs whose capstone reward has been granted
   augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,allskills:0,xpBonus:0,attrTotal:0,dropReduce:0,count:0,skillCredits:0,fam:{},owned:{}},    // permanent boosts: augmentation gems + Aetheria sigils
@@ -16188,6 +16189,48 @@ const SOCIETY_RANKS=[  // AC society rank ladder: Initiate→Adept→Knight→Lo
   {min:0,title:"Initiate"},{min:600,title:"Adept"},{min:1800,title:"Knight"},
   {min:4200,title:"Lord"},{min:9000,title:"Master"},
 ];
+// AC society rank TESTS: a themed slay-gauntlet you undertake to prove yourself for the next rank,
+// rewarding a Commendation Ribbon, standing, and a rank-locked prize. One per rank-up (tier 2→5).
+const SOCIETY_TESTS=[
+  {tier:2,name:"Test of the Adept",  foes:["drudge","mosswart","banderling"], need:12, rep:400,
+   reward:{name:"Society Signet",stat:"jewelry",jtype:"finger",v:12}},
+  {tier:3,name:"Test of the Knight", foes:["olthoi","skeleton","tusker"],     need:16, rep:900,
+   reward:{name:"Commendation Blade",stat:"weapon",wt:"sword",mat:"Steel",v:28}},
+  {tier:4,name:"Test of the Lord",   foes:["shadow","lugian","gromnie"],      need:20, rep:1800,
+   reward:{name:"Lord's Aegis",stat:"worn",aslot:"offhand",shield:"kite",mat:"Steel",v:34}},
+  {tier:5,name:"Test of the Master", foes:["virindi","golem","mummy"],        need:24, rep:3600,
+   reward:{name:"Master's Circlet",stat:"worn",aslot:"head",mat:"Pyreal",v:40}},
+];
+function societyTestByTier(t){ return SOCIETY_TESTS.find(x=>x.tier===t)||null; }
+function societyTestDone(t){ return (player.societyTestsDone||[]).indexOf(t)>=0; }
+// the next Test you're eligible to undertake: your rep has reached its rank AND you haven't passed it yet
+function societyNextTest(){ if(!player.society) return null;
+  const tier=societyRankInfo(player.societyRep).tier;
+  for(const T of SOCIETY_TESTS) if(T.tier<=tier && !societyTestDone(T.tier)) return T;
+  return null; }
+function undertakeSocietyTest(tier){ const T=societyTestByTier(tier); if(!T||societyTestDone(tier)) return;
+  player.societyTest={tier,have:0};
+  log(`<span style="color:${societyById(player.society).col}">You undertake the <b>${T.name}</b> — slay <b>${T.need}</b> of its named foes (${T.foes.join(", ")}) to earn your Commendation Ribbon.</span>`,"sys");
+  if(SFX.quest)SFX.quest(); saveGame(); }
+// hooked from questEvent("slay",kind): a matching kill advances your active society Test
+function societyTestKill(kind){ const st=player.societyTest; if(!st) return; const T=societyTestByTier(st.tier); if(!T) return;
+  if(T.foes.indexOf(kind)<0) return;
+  st.have=Math.min(T.need,(st.have||0)+1);
+  if(st.have>=T.need){ toast("TEST COMPLETE"); if(SFX.quest)SFX.quest();
+    log(`<span style="color:${societyById(player.society).col}">You have proven yourself — the <b>${T.name}</b> is complete. Claim your rank on the Society panel (C).</span>`,"loot"); }
+  else floater(player.x,EYE+1.0,player.z,`Test ${st.have}/${T.need}`,societyById(player.society).col,1.0);
+}
+function claimSocietyTest(){ const st=player.societyTest; if(!st) return; const T=societyTestByTier(st.tier); if(!T||(st.have||0)<T.need) return;
+  player.societyTestsDone=player.societyTestsDone||[]; if(player.societyTestsDone.indexOf(T.tier)<0) player.societyTestsDone.push(T.tier);
+  player.societyTest=null;
+  player.societyRibbons=(player.societyRibbons||0)+1;
+  grantSocietyRep(T.rep);
+  const so=societyById(player.society);
+  log(`<span style="color:${so.col}">The ${so.name} awards you a <b>Commendation Ribbon</b> (${player.societyRibbons} held) and <b>${T.reward.name}</b> for passing the ${T.name}.</span>`,"loot");
+  if(typeof addToInv==="function") addToInv(Object.assign({},T.reward),false);
+  toast("COMMENDATION RIBBON"); if(SFX.level)SFX.level(); saveGame();
+  if(typeof buildSheet==="function") buildSheet();
+}
 // ── AC endgame: Luminance Auras (permanent, bought with luminance) + Enlightenment prestige ──
 const LUM_AURAS=[
   {k:"valor",   name:"Aura of Valor",      max:5, cost:20000, desc:"+1% damage / level"},
@@ -18077,6 +18120,7 @@ function acDialogueLine(name,role){ if(!AC_DIALOGUE||!name&&!role) return null;
   if(role&&AC_DIA_ROLE&&AC_DIA_ROLE[role]) return AC_DIA_ROLE[role];
   return null; }
 function questEvent(type,kind){   // a world event advances the matching objective in EVERY active quest that needs it
+  if(type==="slay" && kind && typeof societyTestKill==="function") societyTestKill(kind);   // society rank Test-gauntlet
   let any=false;
   for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
     for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
@@ -18129,7 +18173,25 @@ function societyPanelHTML(){
       <div style="color:var(--gold);margin:3px 0">${societyTitle()} <span style="color:var(--dim)">· ${player.societyRep} total standing</span></div>
       <div style="height:8px;background:rgba(0,0,0,.4);border-radius:4px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${pct}%;background:${so.col}"></div></div>
       <div style="color:var(--dim);font-size:11px;margin-top:3px">${ri.next?`${ri.cur}/${ri.span} toward <b style="color:${so.col}">${ri.next.title}</b>`:`Highest rank attained — ${ri.title} of the ${so.name}.`}</div>
+      <div style="color:var(--gold);font-size:11px;margin-top:5px">🎗 Commendation Ribbons: <b>${player.societyRibbons||0}</b> <span style="color:var(--dim)">· earned by passing rank Tests</span></div>
     </div>`;
+    // ── rank Test gauntlet: undertake / track / claim ──
+    const st=player.societyTest, T=st?societyTestByTier(st.tier):societyNextTest();
+    if(st){ const TT=societyTestByTier(st.tier), done=(st.have||0)>=TT.need, pctT=Math.round((st.have||0)/TT.need*100);
+      h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,255,255,.03);border:1px solid ${so.col};border-radius:6px">
+        <div style="color:${so.col};font-weight:bold">${TT.name}</div>
+        <div style="color:#bcae8a;font-size:11px;margin:2px 0">Slay its named foes: <i>${TT.foes.join(", ")}</i></div>
+        <div style="height:8px;background:rgba(0,0,0,.4);border-radius:4px;overflow:hidden;margin:4px 0"><div style="height:100%;width:${pctT}%;background:${so.col}"></div></div>
+        <div style="color:var(--dim);font-size:11px">${st.have||0}/${TT.need} slain</div>
+        ${done?`<button id="socClaim" style="margin-top:6px;width:100%;background:${so.col};border:none;border-radius:5px;color:#1a1508;font-weight:bold;cursor:pointer;padding:6px">Claim your Ribbon & ${TT.reward.name} ▸</button>`:""}
+      </div>`;
+    } else if(T){
+      h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,255,255,.03);border:1px dashed ${so.col};border-radius:6px">
+        <div style="color:${so.col};font-weight:bold">${T.name} <span style="color:var(--dim);font-weight:normal">— available</span></div>
+        <div style="color:#bcae8a;font-size:11px;margin:2px 0">Prove yourself: slay ${T.need} of ${T.foes.join(", ")}. Rewards a Commendation Ribbon, ${T.rep} standing, and <b>${T.reward.name}</b>.</div>
+        <button id="socUndertake" data-tier="${T.tier}" style="margin-top:4px;width:100%;background:rgba(255,255,255,.05);border:1px solid ${so.col};border-radius:5px;color:${so.col};cursor:pointer;padding:6px">Undertake the Test ▸</button>
+      </div>`;
+    }
   }
   return h;
 }
@@ -18192,6 +18254,8 @@ function renderQuestLog(){
   body.querySelectorAll('[data-track]').forEach(b=>b.onclick=()=>{ tracked=b.dataset.track; renderQuestLog(); updateQuestHUD(); SFX.click&&SFX.click(); });
   body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
     if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+  { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
+  { const c=body.querySelector('#socClaim'); if(c) c.onclick=()=>{ claimSocietyTest(); buildSheet&&buildSheet(); }; }
 }
 function questStatus(id){ // status bucket used by the journal filter
   if(isActive(id)) return "active";
@@ -21890,7 +21954,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,
+      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
@@ -21945,6 +22009,7 @@ function applySaveObj(s){
   taskCooldown=(s.taskCooldown&&typeof s.taskCooldown==="object")?Object.assign({},s.taskCooldown):{};
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
+  player.societyRibbons=s.societyRibbons|0; player.societyTest=s.societyTest||null; player.societyTestsDone=Array.isArray(s.societyTestsDone)?s.societyTestsDone:[];
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
   player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
