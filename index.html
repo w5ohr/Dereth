@@ -15219,12 +15219,15 @@ function loop(ts){
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
 const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",
-  labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
+  labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,gaDest:"auto"};
 const SETTINGS_KEY="dereth_settings_v1";
-function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){} }
+function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
+  if(!settings._labelsOff){   // migrate: floating name labels are now OFF; force once for existing saves, then the Settings toggles work normally
+    settings.labels={players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false};
+    settings._labelsOff=true; saveSettings(); } }
 function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){} }
 function applySettings(){
   if(masterGain&&!muted) masterGain.gain.value=settings.vol;
