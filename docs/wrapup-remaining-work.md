@@ -82,7 +82,7 @@ Removed from the lists below because git shows them shipped:
 | **Salvage/tinker split + per-item cap** | 8 tinker skills, 10-tink-per-item cap, imbue-once-per-item (currently 2 skills, no per-item cap, stack on player). | M | auth-gaps I3 |
 | **Aetheria slot/level/surge system** | Slots unlock L75/150/225, leveled aetheria, set bonus + surge procs (currently 3 flat gems). | L | auth-gaps I5 |
 | **Item models for shields/clothing** | Extend `ac_item_models.py` to export Clothing/shield models (watch pack size). | S–M | REMAINING-WORK |
-| **Dye recipes via alchemy** | Alchemy recipes: dye plants → dye pots (currently vendor-bought only). | S | REMAINING-WORK |
+| ✅ **Dye recipes via alchemy** | ~~Alchemy recipes: dye plants → dye pots.~~ DONE — the 8 retail dye pots (Colban…Berimphur) are now Alchemy recipes (10 mat each) in `RECIPES`, brewed from gathered materials instead of only the 850-pyreal outfitter. | S | REMAINING-WORK |
 
 ## 5. Social Systems (mostly server-side)
 | Item | What's undone | Size | Source |
@@ -155,6 +155,6 @@ Removed from the lists below because git shows them shipped:
   depth, loot requirements + aetheria/spellcraft, the server-side social stack (allegiance/monarchy/
   PK/society/crier timers), and world shape (named regions, authored terrain, multi-level dungeons).
 - **Quick wins (S):** ~~missile range falloff, per-swing damage variance, stamina cost scaling, ammo
-  strictness, secure-trade coin, barber restrictions~~ (✅ done), dye recipes, non-PCM music,
+  strictness, secure-trade coin, barber restrictions, dye recipes~~ (✅ done), non-PCM music,
   server item mirror, and the head-creator polish items.
 - **Needs Agent 1's terrain/map data first:** named regions (W8), authored landmarks (W12).

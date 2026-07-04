@@ -12795,6 +12795,10 @@ const RECIPES=[
   {id:"alch_gem_str",  skill:"alchemy", name:"Gem of Strength",     cost:12, ico:"💎", out:()=>({name:"Gem of Strength",stat:"attrgem",attr:"Strength",v:10,dur:300}),         blurb:"cast +10 Strength for 5 min"},
   {id:"alch_gem_coord",skill:"alchemy", name:"Gem of Coordination", cost:12, ico:"💎", out:()=>({name:"Gem of Coordination",stat:"attrgem",attr:"Coordination",v:10,dur:300}), blurb:"cast +10 Coordination for 5 min"},
   {id:"alch_gem_focus",skill:"alchemy", name:"Gem of Focus",        cost:12, ico:"💎", out:()=>({name:"Gem of Focus",stat:"attrgem",attr:"Focus",v:10,dur:300}),               blurb:"cast +10 Focus for 5 min"},
+  // AC dye pots: the eight retail dye plants, brewed by Alchemy into pots (was outfitter-only at 850 pyreals).
+  ...DYE_POTS.map(d=>({ id:"dye_"+d.name.split(" ")[0].toLowerCase(), skill:"alchemy", name:d.name, cost:10, ico:"🎨",
+    out:()=>({name:d.name,stat:"dye",hex:d.hex,v:85}),
+    blurb:"an armour dye pot (<span style=\"color:#"+d.hex.toString(16).padStart(6,'0')+"\">■</span> — Use it, then pick the piece)" })),
 ];
 const RECIPE_BY_ID={}; for(const r of RECIPES) RECIPE_BY_ID[r.id]=r;
 function craftChance(skill){ const st=skillTier(skill); if(st<1) return 0; return clamp(0.55+skillRank(skill)*0.003+(st>1?0.1:0),0.4,0.97); } // trained scales w/ rank, spec +10%
