@@ -496,6 +496,13 @@
 #charCreator .cc-attr button{width:24px;height:24px;padding:0;font-size:15px;line-height:20px;background:#16210e;color:#cfe6b0;border:1px solid #3a3526;border-radius:5px;cursor:pointer}
 #charCreator .cc-attr button:disabled{opacity:.35;cursor:default}
 #charCreator .cc-budget{font-size:11.5px;color:#9a8a66;margin:2px 0 4px}
+#charCreator #ccLore{margin:2px 0 10px;padding:10px 13px;border:1px solid #3a3526;border-left:3px solid #c79a3a;border-radius:6px;background:rgba(20,16,8,.55)}
+#charCreator #ccLore .cl-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+#charCreator #ccLore .cl-name{color:#ffd86b;font-size:15px;letter-spacing:1px}
+#charCreator #ccLore .cl-aff{color:#9ac0e0;font-size:11px;letter-spacing:.5px}
+#charCreator #ccLore .cl-text{color:#cdbfa0;font-size:12.5px;line-height:1.55}
+#charCreator #ccLore .cl-town{color:#9a8a66;font-size:11.5px;margin-top:5px}
+#charCreator #ccLore .cl-town b{color:#cfe6b0}
 #charCreator #ccSkills button{font-size:11.5px;padding:4px 8px}
 /* Decal plugin HUDs — VTank's green LED toggles (per the real plugin screenshot) */
 .vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
@@ -531,12 +538,13 @@
 .idX{cursor:pointer;color:#f0d0b0;padding:0 3px}.idX:hover{color:#fff}
 </style>
 <div id="charCreator"><div class="cc-wrap">
-  <h2>✦ FORGE YOUR HERO ✦</h2>
+  <h2>✦ CREATE A CHARACTER ✦</h2>
   <div class="cc-main">
     <canvas id="ccPreview"></canvas>
     <div class="cc-controls">
       <div class="cc-row"><div class="cc-lab">Name</div><input id="ccName" placeholder="name (3-16 characters)" maxlength="16"></div>
       <div class="cc-row" data-cat="race"><div class="cc-lab">Race / Heritage</div><div class="cc-opts"></div></div>
+      <div id="ccLore"></div>
       <div class="cc-row"><div class="cc-lab">Gender</div><div class="cc-opts" id="ccGender"></div></div>
       <div class="cc-row"><div class="cc-lab">Profession — template</div><div class="cc-opts" id="ccProf"></div></div>
       <div class="cc-row"><div class="cc-lab" id="ccAttrLab">Attributes</div><div id="ccAttrs"></div></div>
@@ -22000,6 +22008,12 @@ function ccAttrSpent(){ let s=0; for(const a of ATTRS) s+=(ccWork.cattr[a]-10); 
 function ccCreditsSpent(){ let s=0; for(const k of ccWork.ctrained){ const sk=SKILL_BY_KEY[k]; if(sk)s+=sk.tc; }
   for(const k of (ccWork.cspec||[])){ const sk=SKILL_BY_KEY[k]; if(sk&&sk.sc>0)s+=sk.sc; } return s; }
 function ccRenderCreation(){
+  const lore=document.getElementById('ccLore'), h=HERITAGE_LORE[ccWork.race];
+  if(lore){ if(h){ lore.style.display="block";
+      lore.innerHTML=`<div class="cl-head"><span class="cl-name">${h.name}</span><span class="cl-aff">✦ ${h.affinity}</span></div>`
+        +`<div class="cl-text">${h.lore}</div>`
+        +`<div class="cl-town">Begins in <b>${h.town}</b></div>`;
+    } else lore.style.display="none"; }
   const gd=document.getElementById('ccGender');
   if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k;ccRenderCreation();}; gd.appendChild(b); }); }
   const pf=document.getElementById('ccProf');
