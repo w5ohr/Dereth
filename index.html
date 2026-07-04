@@ -3678,14 +3678,14 @@ function buildWand(){
 // feet ≈ 0; joints are nested groups so knees/elbows/ankles/wrists/neck/back all bend.
 const AV_HIP=0.94, AV_WAIST=0.97, AV_SH_LOCAL=0.53, AV_NECK_LOCAL=0.58, AV_HEAD_LOCAL=0.16, AV_HEADSCALE=0.62;
 const AV_THIGH=0.43, AV_SHIN=0.42, AV_UPARM=0.3, AV_FOREARM=0.27;
-function buildAvatarJointed(){
+function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted, the player's own
   const g=new THREE.Group();
   // forged plate: metallic + fairly smooth so the sky/env map gives it real steel highlights
   const bodyMat=texMat(armorTex); bodyMat.metalness=0.72; bodyMat.roughness=0.34; bodyMat.normalScale.set(0.45,0.45);
   const accent=new THREE.MeshStandardMaterial({color:0x39406a,roughness:0.9,metalness:0.02,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)});
   const dark=new THREE.MeshStandardMaterial({color:0x241a10,roughness:0.72,metalness:0.05});
   const gold=texMat(armorTex,0xc69a3a); gold.metalness=0.85; gold.roughness=0.3;
-  const app=player.appearance||{}, skinM=new THREE.MeshStandardMaterial({color:app.skin!=null?app.skin:0xe0b088,roughness:0.55,metalness:0.0});
+  const app=appOv||player.appearance||{}, skinM=new THREE.MeshStandardMaterial({color:app.skin!=null?app.skin:0xe0b088,roughness:0.55,metalness:0.0});
   const M=(geo,mat,x,y,z,sh)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x||0,y||0,z||0);if(sh)m.castShadow=true;return m;};
   const joint=(parent,y,x)=>{const j=new THREE.Group();j.position.set(x||0,y,0);parent.add(j);return j;};
   const bone=(parent,len,r0,r1,mat)=>{const m=M(new THREE.CylinderGeometry(r0*0.92,r1,len*0.96,14),mat,0,-len/2,0,true);parent.add(m);
@@ -3893,9 +3893,9 @@ function acRestPos(J,av){        // joint's avatar-local REST position: sum ance
   for(let p=J;p&&p!==av;p=p.parent) v.add(p.position);
   return v;
 }
-function applyACBody(av){
+function applyACBody(av,gender){
   const u=av&&av.userData; if(!u||!u.pelvisG||u.acBody) return;
-  const fem=player.appearance&&player.appearance.gender==="female";
+  const fem=(gender!=null)?gender==="female":(player.appearance&&player.appearance.gender==="female");
   const tpl=AC_BODY[fem?'f':'m']; if(!tpl) return;
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
@@ -16990,7 +16990,26 @@ function buildNPC(role,name,seedX,look,region){
       if(o.hood){o.hat=null;}               // hooded figures stay hooded
     }
   }
-  const g=buildPerson(o);
+  // Every human NPC wears THE PLAYER'S human model: the same jointed rig + the real extracted
+  // AC body (applyACBody) + the same sculpted face system — seeded per NPC so no two look alike.
+  const app={race:"aluvian",
+    gender:o.gender||(o.hairStyle?"female":(o.beard?"male":(((seed*3)%2)?"female":"male"))),
+    skin:o.skin!=null?o.skin:SKIN_TONES[seed%SKIN_TONES.length],
+    face:_PERSON_FACES[(seed*3)%6], hair:o.hood?"bald":(o.hairStyle||_PERSON_HAIRS[(seed*5)%6]),
+    hairColor:o.hair!=null?o.hair:HAIR_TONES[(seed*7+1)%HAIR_TONES.length],
+    beard:o.beard?["full","goatee","mustache","stubble"][seed%4]:"none",
+    tattoo:"none",eye:[0x4a6a3a,0x3a5a8a,0x5a3a1a,0x6a6a6a][seed%4],
+    eyeShape:["almond","round","narrow","hooded"][(seed*11)%4],
+    nose:["straight","button","aquiline","broad"][(seed*7)%4],
+    mouth:["medium","full","thin","wide"][(seed*13)%4],feature:"none",faceSeed:seed};
+  const g=buildAvatarJointed(app); applyACBody(g,app.gender); g.visible=true;
+  { const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
+    // identity headwear survives the model swap: crier cone, barkeep cap, guard helm
+    if(o.helm||o.hat==="cone"||o.hat==="cap"){
+      const hm=new THREE.Mesh(o.helm?new THREE.SphereGeometry(0.155,10,8,0,6.3,0,1.7)
+        :o.hat==="cone"?new THREE.ConeGeometry(0.16,0.34,10):new THREE.CylinderGeometry(0.15,0.16,0.1,10),
+        new THREE.MeshStandardMaterial({color:o.helm?0x8a8f98:0x4a3320,roughness:0.6,metalness:o.helm?0.7:0.02}));
+      hm.position.y=o.hat==="cone"?0.22:0.16; hm.castShadow=true; u.head.add(hm); } }
   const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
   if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
   return g;
