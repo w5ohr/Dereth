@@ -22174,6 +22174,10 @@ function applySaveObj(s){
   // their heritage-capital spawn, so this also fixes "reappear at the wrong town".
   if(typeof s.px==="number" && typeof s.pz==="number"){ const _m=WSCALE/(s.wscale||1); arriveAt(s.px*_m,s.pz*_m); if(typeof s.pyaw==="number") player.yaw=s.pyaw; }   // migrate saved coords to the current world scale
   updateNPCMarker();updateQuestHUD();
+  // refresh the HUD + character sheet NOW so the panels show the LOADED character immediately, rather
+  // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
+  if(typeof updateHUD==="function") updateHUD();
+  if(typeof buildSheet==="function") buildSheet();
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
