@@ -281,7 +281,7 @@ def snapshot():
     snap = {"t": "snapshot", "players": [
         {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
          "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
-         "pk": getattr(cl, "pk", False)}
+         "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk")}
         for u, cl in CLIENTS.items() if cl.in_world],
         "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
     if EVENT.get("active"):
@@ -674,7 +674,8 @@ def drop_pub(d):
     if d["type"] == "gold":
         o["amt"] = d["amt"]
     elif d["type"] == "corpse":
-        o["items"] = d.get("items", []); o["amt"] = d.get("amt", 0); o["owner"] = d.get("owner", "")
+        o["items"] = d.get("items", []); o["amt"] = d.get("amt", 0)
+        o["owner"] = d.get("owner", ""); o["open"] = d.get("open", False)
     else:
         o["item"] = d["item"]
     return o
@@ -704,7 +705,8 @@ async def handle_death(cl, msg):
     _drop_seq += 1
     did = "c%d" % _drop_seq
     DROPS[did] = {"id": did, "x": x, "z": z, "type": "corpse", "items": items, "amt": gold,
-                  "owner": cl.charname or cl.username, "owner_user": cl.username, "expire": time.time() + ttl}
+                  "owner": cl.charname or cl.username, "owner_user": cl.username,
+                  "open": bool(msg.get("open")), "expire": time.time() + ttl}
     await broadcast(drop_pub(DROPS[did]))
 
 async def do_recover(cl, did):
@@ -712,13 +714,13 @@ async def do_recover(cl, did):
     d = DROPS.get(did)
     if not d or d.get("type") != "corpse":
         return
-    if d.get("owner_user") != cl.username:
+    if not d.get("open") and d.get("owner_user") != cl.username:   # open (PK) corpses are free loot for anyone in range
         return await cl.send({"t": "system", "msg": "That corpse is not yours to loot."})
     if math.hypot(cl.x - d["x"], cl.z - d["z"]) > PICKUP_RANGE + 2:
         return
     DROPS.pop(did, None)
     await broadcast({"t": "drop_gone", "id": did})
-    await cl.send({"t": "corpse_loot", "items": d.get("items", []), "amt": d.get("amt", 0)})
+    await cl.send({"t": "corpse_loot", "items": d.get("items", []), "amt": d.get("amt", 0), "owner": d.get("owner", "")})
 
 async def spawn_loot(m, is_boss):
     """Roll a corpse's shared ground loot and broadcast it to everyone."""
@@ -743,6 +745,10 @@ async def do_pickup(cl, did):
         await cl.send({"t": "loot", "type": "gold", "amt": d["amt"]})
     else:
         await cl.send({"t": "loot", "type": "item", "item": d["item"]})
+
+def pk_compatible(a, b):
+    """AC PvP rulesets only fight their own: PK↔PK (full) or PKL↔PKL (no item loss). NPK never fights."""
+    return (a == "pk" and b == "pk") or (a == "pkl" and b == "pkl")
 
 def nearest_player(x, z, maxd):
     best, bd = None, maxd
@@ -1336,7 +1342,9 @@ async def dispatch(cl, msg):
         cl.mhp = int(msg.get("mhp", cl.mhp)); cl.level = int(msg.get("level", cl.level))
         cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
         cl.title = str(msg.get("title", cl.title))[:40]
-        cl.pk = bool(msg.get("pk", getattr(cl, "pk", False)))   # S3 PvP flag
+        ps = str(msg.get("pkState", "pk" if msg.get("pk") else getattr(cl, "pkState", "npk")))   # AC 3-state PvP
+        cl.pkState = ps if ps in ("npk", "pkl", "pk") else "npk"
+        cl.pk = cl.pkState != "npk"
     elif t == "chat":
         text = str(msg.get("msg", ""))[:240].strip()
         if text and cl.in_world:
@@ -1396,12 +1404,13 @@ async def dispatch(cl, msg):
             if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "pvp":
-        # S3 PvP: relay a hit to the target, only if BOTH players are PK-flagged and in range (target applies it)
+        # S3 PvP: relay a hit only if both players share a PvP ruleset (PK↔PK or PKL↔PKL) and are in range
         if cl.in_world and getattr(cl, "pk", False):
             tgt = CLIENTS.get(msg.get("target"))
             try: dmg = float(msg.get("dmg", 0))
             except Exception: dmg = 0
-            if tgt and tgt.in_world and getattr(tgt, "pk", False) and 0 < dmg <= 2000 and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 40:
+            if (tgt and tgt.in_world and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
+                    and 0 < dmg <= 2000 and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 40):
                 await tgt.send({"t": "pvp", "from": cl.charname, "dmg": round(dmg, 1), "element": str(msg.get("element", ""))[:12]})
     elif t == "spellfx":
         # relay a cosmetic spell visual to other in-world players (no damage authority here)

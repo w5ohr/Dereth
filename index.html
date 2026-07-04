@@ -10299,7 +10299,8 @@ function addDrop(x,z,data){
     const glow=new THREE.PointLight(0x9ab8ff,0.9,7); glow.position.y=1.0; mesh.add(glow);
     const _mine=!data.owner||(typeof player!=="undefined"&&player.name&&data.owner===player.name);
     const _cn=(data.items&&data.items.length)?` (${data.items.length} item${data.items.length!==1?"s":""}${data.amt?" + pyreals":""})`:(data.amt?" (pyreals)":"");
-    const lbl=labelSprite(`${_mine?"Your":data.owner+"'s"} corpse${_cn}${_mine?" — recover (E)":""}`,"npcs");
+    const _act=_mine?" — recover (E)":(data.open?" — loot (E)":"");
+    const lbl=labelSprite(`${_mine?"Your":data.owner+"'s"} corpse${_cn}${_act}`,"npcs");
     lbl.scale.set(7,1.5,1); lbl.position.y=2.0; mesh.add(lbl);
   }else{
     const model=buildItemModel(data.item||{},{drop:true}); mesh=new THREE.Group();
@@ -13120,7 +13121,8 @@ function die(){
     if(dd.items.length||dd.gold){
       const ttl=Math.max(3600,300*player.level);
       if(isOnline){   // online: the server stands up a SHARED corpse everyone sees (echoed back to us via onDrop)
-        netSend({t:"death",x:corpseX,z:corpseZ,items:dd.items,gold:dd.gold,ttl});
+        // a Player Killer's corpse is fair game for anyone (AC PK-death loot); NPK/PKL corpses stay owner-only
+        netSend({t:"death",x:corpseX,z:corpseZ,items:dd.items,gold:dd.gold,ttl,open:(player.pkState==="pk")});
       } else {
         addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,owner:player.name||"Adventurer",ttl});
       }
@@ -13885,7 +13887,7 @@ function currentPrompt(){
     return "";
   }
   for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
-    if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.owner+"'s corpse (theirs to recover)";
+    if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.open?("Loot "+d.owner+"'s corpse (E)"):(d.owner+"'s corpse (theirs to recover)");
     return "Recover your corpse (E)"; }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
@@ -14044,8 +14046,8 @@ function recoverCorpse(d){
   // a SHARED (multiplayer) corpse is server-brokered and owner-only — the server validates and
   // returns the contents via corpse_loot; other players can see the corpse but cannot loot it.
   if(d.shared){
-    if(d.owner && player.name && d.owner!==player.name){ log(`This is <b>${esc(d.owner)}</b>'s corpse — only they can recover it.`,"warn"); if(SFX.deny)SFX.deny(); return; }
-    if(!d.req){ d.req=true; netSend({t:"recover",id:d.id}); }   // server hands the bundle back + clears the corpse for everyone
+    if(!d.open && d.owner && player.name && d.owner!==player.name){ log(`This is <b>${esc(d.owner)}</b>'s corpse — only they can recover it.`,"warn"); if(SFX.deny)SFX.deny(); return; }
+    if(!d.req){ d.req=true; netSend({t:"recover",id:d.id}); }   // server validates (owner, or anyone for a PK corpse) + clears it for all
     return;
   }
   // pyreals always come home; items return to the satchel until it fills — the rest spills out
@@ -22099,7 +22101,7 @@ function onDrop(msg){
   if(!isOnline||NET.drops[msg.id]) return;
   let data;
   if(msg.type==="gold") data={type:"gold",amt:msg.amt};
-  else if(msg.type==="corpse") data={type:"corpse",items:msg.items||[],amt:msg.amt||0,owner:msg.owner||"",corpse:true};   // a fallen player's shared corpse
+  else if(msg.type==="corpse") data={type:"corpse",items:msg.items||[],amt:msg.amt||0,owner:msg.owner||"",open:!!msg.open,corpse:true};   // a fallen player's shared corpse (open = PK, free loot)
   else data={type:"item",item:msg.item};
   data.id=msg.id; data.shared=true;
   NET.drops[msg.id]=addDrop(msg.x,msg.z,data);
@@ -22122,7 +22124,8 @@ function onCorpseLoot(msg){
     if(addToInv(it,false)) taken++;
     else { addDrop(player.x+rnd(-1.2,1.2),player.z+rnd(-1.2,1.2),{type:"item",item:it,corpse:true}); spilled++; }
   }
-  log(`You recover your corpse — <b>${taken}</b> item(s)${msg.amt?` and <b>${msg.amt.toLocaleString()}</b> pyreals`:""} returned${spilled?`; <b>${spilled}</b> spilled beside it (satchel full)`:""}.`,"loot");
+  const whose=(msg.owner&&player.name&&msg.owner!==player.name)?`<b>${esc(msg.owner)}</b>'s corpse`:"your corpse";
+  log(`You loot ${whose} — <b>${taken}</b> item(s)${msg.amt?` and <b>${msg.amt.toLocaleString()}</b> pyreals`:""} taken${spilled?`; <b>${spilled}</b> spilled beside you (satchel full)`:""}.`,"loot");
   if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
 }
 // ---- shared, server-authoritative monsters (M3) ----
@@ -22541,8 +22544,20 @@ function handleSlash(text){
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
   else if(cmd==="story"||cmd==="arc"){ storyView(); }
-  else if(cmd==="pk"){ if(!isOnline){ log("PvP requires being online.","warn"); return; } player.pk=!player.pk;
-    log(player.pk?"⚔️ You raise your <b>PK flag</b> — you and other flagged players can now strike each other. <b>/pk</b> again to stand down.":"You lower your <b>PK flag</b> — you are no longer open to player combat.","warn"); if(SFX.growl)SFX.growl(); }
+  else if(cmd==="pk"){   // AC three-state PvP: NPK (safe) · PKL (PK-Lite, keeps goods) · PK (full, corpse lootable)
+    if(!isOnline){ log("PvP requires being online.","warn"); return; }
+    const want=(parts[1]||"").toLowerCase(), cur=player.pkState||"npk";
+    const target= want==="pk"?"pk" : (want==="pkl"||want==="lite")?"pkl" : (want==="npk"||want==="off"||want==="safe")?"npk"
+      : (cur==="npk"?"pk":"npk");   // no argument → toggle between safe and full PK
+    if(target===cur){ log(`You are already <b>${PK_LABEL[cur]}</b>. (<b>/pk pk</b> · <b>/pk pkl</b> · <b>/pk npk</b>)`,"sys"); return; }
+    if((player.pkLock||0)>now()){ const mins=Math.ceil((player.pkLock-now())/60000);
+      log(`Your combat oath still binds you for <b>${mins} min</b> — you cannot change your PvP standing yet.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+    player.pkState=target; player.pk=(target!=="npk");
+    if(target!=="npk") player.pkLock=now()+PK_LOCK_MS;   // committing to violence locks you in (AC's PK key)
+    log(({pk:"⚔️ You swear the <b>Blood Oath</b> — open to all Player Killers, and your corpse is theirs to loot. You cannot stand down for a time.",
+      pkl:"🗡️ You become a <b>PK-Lite</b> — you may duel other PK-Lites, but keep your goods on death.",
+      npk:"You lay down your arms — <b>no longer open to player combat</b>."})[target],"warn");
+    if(SFX.growl)SFX.growl(); saveGame(); }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
     if(!act) log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+" — e.g. <b>/emote clap</b>","sys");
     else doEmote(act); }
@@ -22568,7 +22583,7 @@ function reconcileRemotes(players){
     let r=NET.players[p.id];
     if(!r){ const mesh=buildAvatar(); const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
-    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk;
+    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
   }
   for(const id in NET.players){ if(!seen[id]){ scene.remove(NET.meshes[id]); delete NET.meshes[id]; delete NET.players[id]; } }
 }
@@ -22587,9 +22602,14 @@ function sendInput(dt){
   if(!isOnline||!NET.open) return;
   netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
   netSend({t:"input",x:player.x,z:player.z,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
-    level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk});
+    level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk,pkState:player.pkState||"npk"});
 }
-// S3 PvP: apply an incoming player hit (the server only relays it if we're both PK-flagged & in range)
+// AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
+// PK (Player Killer — fights other PKs, drops a lootable corpse). Same ruleset only; NPK never fights.
+const PK_LABEL={npk:"unflagged (safe)",pkl:"PK-Lite",pk:"Player Killer"};
+const PK_LOCK_MS=300000;   // 5-min combat-oath lock — a game-friendly stand-in for AC's 3-day PK key
+function pkCompatible(a,b){ return (a==="pk"&&b==="pk")||(a==="pkl"&&b==="pkl"); }
+// S3 PvP: apply an incoming player hit (the server only relays it if our rulesets match & we're in range)
 function onPvp(m){
   if(!player.pk||!player.alive||!running) return;
   const el=m.element||undefined, type=(el==="nether"||el==="fire"||el==="frost"||el==="shock"||el==="acid")?"magic":"melee";
@@ -22600,7 +22620,8 @@ function onPvp(m){
 function pvpStrike(dmg,element){
   if(!player.pk||!isOnline||inDungeon||inNetwork) return;
   const dir=new THREE.Vector3(); cam.getWorldDirection(dir); const fx=dir.x,fz=dir.z,fl=Math.hypot(fx,fz)||1;
-  for(const id in NET.players){ const r=NET.players[id]; if(!r||!r.pk) continue;
+  for(const id in NET.players){ const r=NET.players[id]; if(!r) continue;
+    if(!pkCompatible(player.pkState||"npk", r.pkState||(r.pk?"pk":"npk"))) continue;   // only same-ruleset foes
     const rx=(r.x!=null?r.x:r.tx), rz=(r.z!=null?r.z:r.tz); if(rx==null) continue;
     const dx=rx-player.x,dz=rz-player.z,d=Math.hypot(dx,dz); if(d>6) continue;
     if((dx*fx+dz*fz)/(d*fl)>0.4){ netSend({t:"pvp",target:id,dmg:Math.round(dmg),element:element||""}); floater(rx,EYE+1.4,rz,"-"+Math.round(dmg),"#ff7a7a"); } }
