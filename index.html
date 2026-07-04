@@ -44,6 +44,9 @@
   #qbPages{display:flex;flex-direction:column;gap:4px;pointer-events:auto}
   #qbPages button{width:26px;height:18px;padding:0;font-size:0;background:url(assets/acui/06001269.png) center/100% 100% no-repeat;border:none;border-radius:3px;cursor:pointer;filter:drop-shadow(0 1px 2px #000)}  /* the real client's curled-page-corner arrows */
   #qbPages button:last-child{background-image:url(assets/acui/06001266.png)}
+  #panelRail{position:fixed;right:6px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;z-index:30;pointer-events:auto}
+  #panelRail button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;background:linear-gradient(#241f14,#141008);color:var(--gold);border:1px solid var(--border);border-radius:5px;cursor:pointer;filter:drop-shadow(0 1px 2px #000)}
+  #panelRail button:hover{border-color:var(--gold);background:linear-gradient(#2e2718,#1a140a)}
   #qbPages button.on{filter:drop-shadow(0 0 4px #7fe6a0) brightness(1.25)}   /* active page: the page-corner art glows */
   #castbar{position:absolute;bottom:92px;left:50%;transform:translateX(-50%);width:220px;height:14px;border:1px solid var(--gold);
     border-radius:7px;background:rgba(8,6,3,.85);display:none;overflow:hidden;z-index:20}
@@ -176,6 +179,8 @@
     <div class="bar bxp"><i style="width:0%"></i><span id="xpT">0 / 500 XP</span></div>
   </div>
   <div id="compassPanel" class="panel"><canvas id="compass" width="460" height="34"></canvas></div>
+  <!-- AC's panel TOGGLE BAR (manual p.99): one small square button per panel, docked at the right edge -->
+  <div id="panelRail"></div>
   <div id="minimap" class="panel"><canvas id="mm" width="150" height="150"></canvas>
     <div id="mmCtrl"><button id="mmIn" title="Zoom in (centres on you)">+</button><button id="mmOut" title="Zoom out">−</button><button id="mmGear" title="Map filters">⚙</button></div>
     <div id="mmToggles"></div></div>
@@ -13440,6 +13445,21 @@ const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Com
   ["magtools","Mag-Tools","shift+F12"],["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
 for(const [id,label,def] of HUD_TOGGLES)
   ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
+// AC's on-screen panel TOGGLE BAR (manual p.99 roster order: Magic · Attributes & Skills ·
+// Use Item/Inventory · Social · Options · Map) — one small square button per panel.
+function buildPanelRail(){
+  const rail=document.getElementById('panelRail'); if(!rail) return;
+  const B=[["🔮","Magic — Spellbook (K)",()=>togglePanel('spellbook',openSpellbook,closeSpellbook)],
+    ["👤","Attributes & Skills (C)",()=>togglePanel('sheet',openSheet,closeSheet)],
+    ["🎒","Inventory (T)",()=>togglePanel('tinker',openTinker,closeTinker)],
+    ["🗺️","Map (Tab)",()=>togglePanel('worldmap',openMap,closeMap)],
+    ["📜","Quest Log (J)",()=>togglePanel('questlog',openQuestLog,closeQuestLog)],
+    ["📖","Codex (B)",()=>togglePanel('codex',openCodex,closeCodex)],
+    ["🏠","Estate (Y)",()=>togglePanel('housing',openHousing,closeHousing)],
+    ["⚙️","Options (O)",()=>togglePanel('settings',openSettings,closeSettings)]];
+  rail.innerHTML=""; for(const [ic,tt,fn] of B){ const b=document.createElement('button'); b.textContent=ic; b.title=tt; b.onclick=fn; rail.appendChild(b); }
+}
+buildPanelRail();
 const ROW1_DEF=["Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0","Minus","Equal"];
 for(let i=0;i<QB_PAGE;i++){ const idx=i; ACTIONS.push({id:"qb"+i,label:"Quick Slot R"+(i<QB_COLS?1:2)+"·"+((i%QB_COLS)+1),group:"Quick Slots",def:i<QB_COLS?ROW1_DEF[i]:"",run:()=>castSlot(hotbarPage*QB_PAGE+idx)}); }
 function defaultBinds(){ const b={}; for(const a of ACTIONS) b[a.id]=a.def?[a.def]:[]; return b; }
