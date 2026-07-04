@@ -105,3 +105,12 @@ every push. Do not touch another agent's asset dirs or tools.
   re-pointed from the tinted-zombie stand-in to the real Mu-miyah extract. Gap #10 of
   ac-remaining-gaps.md is CLOSED - zero non-AC creature models remain.
 - Item 7 (heads Phase 2) belongs to the original session's WIP pipeline - left untouched.
+
+## HIGHRES COMPLETE (2026-07-04, Agent 2)
+- The user ran ac1install.exe; client_highres.dat (133 MB) copied to acdata/.
+- Discovered the client's own mapping: each portal SurfaceTexture lists [highres_tid,
+  lowres_tid] - every exporter had resolved the LAST (lowres). tools/ac_highres_export.py
+  builds lowres->highres (2,283 pairs) and overwrites pack PNGs in place under the SAME
+  filenames: 1,224 textures upgraded to double resolution (455 bodies/creatures, 437
+  buildings, 321 dungeons, 11 flora) - ZERO engine changes. The LAST blocked item on the
+  graphics-extraction ledger is closed.
