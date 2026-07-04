@@ -15399,7 +15399,20 @@ function drawMinimap(){
 }
 
 // ---------- full world map ----------
-let _acMapBg=null;
+let _acMapBg=null, _acRoadOverlay=null;
+// The real AC road web as a bright map overlay, built once from the extracted road cells (thin roads
+// get subsampled to nothing at map resolution, so we mark every road cell's pixel with a small brush).
+function acRoadOverlay(S){
+  if(_acRoadOverlay||!ACMAP.on||!ACMAP.Rd) return _acRoadOverlay;
+  const c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d'), im=g.createImageData(S,S), d=im.data;
+  const W=ACMAP.W, Rd=ACMAP.Rd, cWX=cc=>(cc-1019.5)*AC_CELL, cWZ=rr=>(rr-1020.5)*AC_CELL;
+  const put=(px,py)=>{ if(px<0||px>=S||py<0||py>=S) return; const i=(py*S+px)*4; d[i]=200;d[i+1]=168;d[i+2]=108;d[i+3]=240; };
+  for(let r=0;r<W;r++){ const rw=r*W; for(let cc=0;cc<W;cc++){ if(!Rd[rw+cc]) continue;
+    const px=((cWX(cc)+HALF)/WORLD*S)|0, py=((cWZ(r)+HALF)/WORLD*S)|0;
+    put(px,py); put(px+1,py); put(px,py+1); } }                       // 2px brush so the network reads as continuous roads
+  g.putImageData(im,0,0); _acRoadOverlay=c; return c;
+}
 function acMapBackdrop(S){   // the real continent, painted once from the client's terrain bytes
   if(_acMapBg||!ACMAP.on) return _acMapBg;
   const c=document.createElement('canvas'); c.width=c.height=S;
@@ -15430,8 +15443,7 @@ function drawBigMap(){
     g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);return;
   }
   g.fillStyle="rgba(216,177,74,0.10)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
-  g.strokeStyle="rgba(160,150,128,0.7)";g.lineWidth=4;
-  for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
+  { const ro=acRoadOverlay(S); if(ro) g.drawImage(ro,0,0); }   // the authentic AC road web, matching the roads on the ground
   for(const m of monsters){if(m.isBoss||m.isDungeon)continue;g.fillStyle="rgba(176,58,58,0.55)";g.fillRect(cx(m.x)-1,cx(m.z)-1,2,2);}
   for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1.5,cx(n.z)-1.5,3,3);}
   g.textAlign="center";
