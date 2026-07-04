@@ -235,7 +235,7 @@ def _decode_dxt(data, w, h, dxt5):
                     px[o:o+4] = bytes((col[0], col[1], col[2], a))
     return bytes(px)
 
-def decode_texture(d, palettes):
+def decode_texture(d, palettes, clip=False):
     r = Buf(d)
     tid = r.u32(); r.i32()
     w = r.i32(); h = r.i32(); fmt = r.u32(); ln = r.i32()
@@ -249,6 +249,8 @@ def decode_texture(d, palettes):
         step = 2 if fmt == 101 else 1
         for i in range(w*h):
             v = data[i] if step == 1 else struct.unpack_from("<H", data, i*2)[0]
+            if clip and v == 0:            # AC clip/alpha convention: palette index 0 is the transparent key
+                continue                   # leave this pixel (0,0,0,0)
             c = pal[v] if v < len(pal) else 0
             a = (c >> 24) & 0xFF
             px[i*4:i*4+4] = bytes(((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, a if a else 255))

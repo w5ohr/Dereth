@@ -6378,33 +6378,43 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
     if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
     geo.setIndex(gr.i); if(!gr.n||!gr.n.length) geo.computeVertexNormals();
     const mm=gr.mat||{};
-    const mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0,transparent:!!mm.clip})
+    // clip groups (foliage/fences) use a crisp alpha-TEST cutout — not blended transparency, which
+    // sorts badly for overlapping leaf billboards; index-0 was keyed transparent at decode time
+    const mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0})
                     :new THREE.MeshStandardMaterial({color:(mm.color!=null?mm.color:0x8a8478),roughness:0.92,metalness:0.02,side:THREE.DoubleSide});
     const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; g.add(me);
   }
   return g;
 }
-// build one town's real buildings, ring them with SOLID colliders, and station its vendors at the
-// street-facing shopfront. (AC town buildings are closed exterior shells — the door is a portal to
-// a separate interior cell we don't carry — so the authentic read is the shopkeeper at the door,
-// facing the plaza, rather than a vendor sealed inside an impassable box.)
+const TB_KINDS={building:1,scenery:1,fixture:1,statue:1};
+// build one town's real buildings AND scenery/fixtures/statues, collide them appropriately, and
+// station its vendors at the street-facing shopfront. (AC town buildings are closed exterior shells
+// — the door is a portal to a separate interior cell we don't carry — so the authentic read is the
+// shopkeeper at the door facing the plaza, rather than a vendor sealed inside an impassable box.)
 function tbBuildTown(c,objs){
   const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
   const obst=[], recs=[];
+  const ringEdge=(wx,wz,cw,sw,lcx,lcz,hx,hz,r,sp)=>{                 // colliders around an oriented footprint
+    const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/sp));
+      for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
+        const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw, ob={x:px,z:pz,r}; obstacles.push(ob); obst.push(ob); } };
+    edge(lcx-hx,lcz-hz,lcx+hx,lcz-hz); edge(lcx+hx,lcz-hz,lcx+hx,lcz+hz);
+    edge(lcx+hx,lcz+hz,lcx-hx,lcz+hz); edge(lcx-hx,lcz+hz,lcx-hx,lcz-hz);
+  };
   for(const o of objs){
-    if(o.kind!=='building') continue;
+    if(!TB_KINDS[o.kind]) continue;                                  // skip portals/lifestones/bindstones (the game places its own)
     const md=_tbModels[(''+o.did).toUpperCase()]; if(!md||!md.ready) continue;
     const wx=c.x+o.x, wz=c.z+o.z, gy=groundY(wx,wz), th=o.rot||0, cw=Math.cos(th), sw=Math.sin(th);
     const bm=tbBuildMesh(md); bm.position.set(wx,gy,wz); bm.rotation.y=th; g.add(bm);
-    const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2;
+    const bb=md.bb, W=bb[3]-bb[0], H=bb[4]-bb[1], D=bb[5]-bb[2];
+    const hx=W/2, hz=D/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2;
     const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;                // world footprint centre
-    recs.push({fcx,fcz,hx,hz,th});
-    // solid perimeter colliders around the oriented footprint (spacing≈2r so there are no gaps)
-    const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
-      for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
-        const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw, ob={x:px,z:pz,r:0.8}; obstacles.push(ob); obst.push(ob); } };
-    const x0=lcx-hx,x1=lcx+hx,z0=lcz-hz,z1=lcz+hz;
-    edge(x0,z0,x1,z0); edge(x1,z0,x1,z1); edge(x1,z1,x0,z1); edge(x0,z1,x0,z0);
+    if(o.kind==='building'){ recs.push({fcx,fcz,hx,hz,th}); ringEdge(wx,wz,cw,sw,lcx,lcz,hx,hz,0.8,1.6); continue; }
+    // scenery / fixture / statue: collide only what's worth colliding
+    const horiz=Math.max(W,D), mn=Math.max(0.2,Math.min(W,D));
+    if(H<1.4 || horiz<1.1) continue;                                 // small decorative prop → walk through (no invisible walls)
+    if(horiz>2.5 && horiz/mn>2.2 && H<12) ringEdge(wx,wz,cw,sw,lcx,lcz,hx,hz,0.7,1.6);   // wall / fence: ring the thin footprint
+    else { const r=Math.max(0.5,Math.min(1.6,horiz*0.32)), ob={x:fcx,z:fcz,r}; obstacles.push(ob); obst.push(ob); }   // statue/well/tree-trunk: one central collider
   }
   seatRealTownVendors(c,recs);
   return {c,g,obst};
@@ -6458,8 +6468,8 @@ function tbStream(dt){
   for(const c of CITIES){ if(_tbBuilt[c.name]) continue;
     if(Math.hypot(c.x-px,c.z-pz)>TB_BUILD_R) continue;
     const objs=AC_TOWNS[c.name]; if(!objs){ _tbBuilt[c.name]={c,g:null,obst:[]}; seatVendorsInBuildings(); continue; }  // no real data → procedural fallback seating
-    let ready=true;                                                 // all this town's building meshes loaded?
-    for(const o of objs){ if(o.kind!=='building') continue; if(!tbModelReq(o.did)) ready=false; }
+    let ready=true;                                                 // all this town's building + scenery meshes loaded?
+    for(const o of objs){ if(!TB_KINDS[o.kind]) continue; if(!tbModelReq(o.did)) ready=false; }
     if(_tbIndex===null){ tbIndexReq(); ready=false; }
     if(ready) _tbBuilt[c.name]=tbBuildTown(c,objs);
   }
