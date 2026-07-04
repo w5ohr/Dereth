@@ -4171,7 +4171,10 @@ function acHeadGroup(app, cb){
       else if(g.otex==='050002F5'){ texDID=(nose&&nose.tex)||g.otex; remapDIDs=[skinDID]; slot="nose"; }        // nose
       else if(g.otex==='0500025C'){ texDID=(mouth&&mouth.tex)||g.otex; remapDIDs=[skinDID]; slot="mouth"; }      // mouth
       mm.userData.acSlot=slot;                                                                     // for face-direction detection
-      if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(0xffffff); mat.needsUpdate=true; });
+      // Face tone: skin strips take a subtle warm multiply (not pure white) so the head doesn't wash
+      // out pale under the bright top-down noon light; hair keeps its own texture at full white.
+      if(slot!=="hair"){ mat.roughness=0.72; }
+      if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(slot==="hair"?0xffffff:0xe8dfce); mat.needsUpdate=true; });
     }
     cb&&cb(grp);
   }).catch(()=>{ cb&&cb(null); });

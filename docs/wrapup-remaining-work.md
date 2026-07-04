@@ -130,9 +130,9 @@ Removed from the lists below because git shows them shipped:
 ## 10. Character Heads — Phase 2 polish (all optional)
 | Item | What's undone | Size | Source |
 |------|---------------|------|--------|
-| **WYSIWYG creator preview** | Show the real AC head in the creation preview (ccBust still shows the procedural head). | S | plan-ac-heads |
+| ✅ **WYSIWYG creator preview** | ~~Show the real AC head in the creation preview.~~ DONE — `ccBuildBody` builds the full AC jointed body + real AC head (via `buildAvatar`→`applyACBody`→`acBuildHead`) as the primary preview; the bust fallback also swaps in the real head. Verified: preview shows 18 AC body groups + attached AC head, no procedural fallback. | S | plan-ac-heads |
 | **Explicit creator/barber head rows** | UI to pick from the full 50+ hair styles + eye/nose/mouth strips + exact skin/hair/eye colours (writes `app.acHead`); currently only derived from legacy rows. | M | plan-ac-heads |
-| **Face material tone/AO** | Subtle baked AO/tone on the face material to fight the pale skin-wash under bright top-down light. | S | plan-ac-heads |
+| ✅ **Face material tone/AO** | ~~Subtle baked AO/tone on the face material.~~ DONE — `acHeadGroup` no longer resets skin strips to pure white after the RGB-remap texture loads; face/nose/eyes/mouth take a warm `0xe8dfce` multiply + roughness 0.72 (hair stays white), so heads read as natural skin instead of washing pale under bright top-down light. | S | plan-ac-heads |
 | **Female forehead band bug** | Dark under-hair band shows across the brow on female hair styles that don't cover the eye-strip's top rows. Diagnosed, non-blocking. | S | plan-ac-heads |
 
 ## 11. Server parity & extraction follow-ups
@@ -155,6 +155,7 @@ Removed from the lists below because git shows them shipped:
   depth, loot requirements + aetheria/spellcraft, the server-side social stack (allegiance/monarchy/
   PK/society/crier timers), and world shape (named regions, authored terrain, multi-level dungeons).
 - **Quick wins (S):** ~~missile range falloff, per-swing damage variance, stamina cost scaling, ammo
-  strictness, secure-trade coin, barber restrictions, dye recipes, server item mirror~~ (✅ done),
-  non-PCM music, and the head-creator polish items.
+  strictness, secure-trade coin, barber restrictions, dye recipes, server item mirror, WYSIWYG
+  head preview, face tone/AO~~ (✅ done), non-PCM music, and the remaining head-creator polish
+  (explicit head-choice rows, female forehead-band edge case).
 - **Needs Agent 1's terrain/map data first:** named regions (W8), authored landmarks (W12).
