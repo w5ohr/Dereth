@@ -1200,6 +1200,17 @@ fetch('assets/acicons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j
 //    scattered — trees, plants, rocks — with per-terrain frequencies from portal.dat Region. ──
 let AC_FLORA=null,AC_SCEN=null; const _floraProto={},_floraTex={},_scenPick={};
 fetch('assets/acflora/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_FLORA=j; }).catch(()=>{});
+// the client's OWN day-night light (portal.dat Region SkyInfo keyframes: sky/fog/sun/ambient by time)
+let AC_SKY=null;
+fetch('assets/acsky.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.times&&j.times.length)AC_SKY=j; }).catch(()=>{});
+function acSkyAt(t){
+  const K=AC_SKY.times; let a=K[K.length-1], b=K[0];
+  for(let i=0;i<K.length;i++){ if(K[i].t<=t){ a=K[i]; b=K[(i+1)%K.length]; } }
+  const span=((b.t-a.t)+1)%1||1, f=(((t-a.t)+1)%1)/span;
+  const L=(x,y)=>x+(y-x)*f, C3=(p,q)=>[L(p[0],q[0]),L(p[1],q[1]),L(p[2],q[2])];
+  return {fog:C3(a.fog,b.fog),fogNear:L(a.fogNear,b.fogNear),fogFar:L(a.fogFar,b.fogFar),
+    sun:C3(a.sun,b.sun),sunBright:L(a.sunBright,b.sunBright),amb:C3(a.ambient,b.ambient),ambBright:L(a.ambBright,b.ambBright)};
+}
 fetch('assets/acscenery.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_SCEN=j; }).catch(()=>{});
 function floraTexture(fn){ if(_floraTex[fn]) return _floraTex[fn];
   const t=new THREE.TextureLoader().load('assets/acflora/tex/'+fn); t.wrapS=t.wrapT=THREE.RepeatWrapping; _floraTex[fn]=t; return t; }
@@ -2747,6 +2758,17 @@ function updateDayNight(dt){
   updateEnvIntensity(daylight);
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
   scene.fog.color.copy(_cNight).lerp(_cDay,daylight).lerp(_cWarm,warm*0.5);
+  // ── the CLIENT'S OWN light of Dereth (Region SkyInfo): pull fog/sun/ambient strongly toward
+  //    the retail keyframes for this hour; weather/storm modifiers still apply downstream ──
+  if(AC_SKY&&!inDungeon&&!inNetwork){
+    const S=acSkyAt(gameTime);
+    _tmp.setRGB(S.fog[0]/255,S.fog[1]/255,S.fog[2]/255); scene.fog.color.lerp(_tmp,0.7);
+    _tmp.setRGB(S.sun[0]/255,S.sun[1]/255,S.sun[2]/255); sun.color.lerp(_tmp,0.6);
+    sun.intensity=Math.max(sun.intensity*0.35, S.sunBright*1.5*clamp(sunY+0.12,0,1));
+    _tmp.setRGB(S.amb[0]/255,S.amb[1]/255,S.amb[2]/255); hemi.color.lerp(_tmp,0.45);
+    amb.intensity=(amb.intensity+S.ambBright*0.5)/2;
+    scene.fog.far=clamp(60+S.fogFar/3,140,300);   // retail metres → this world's 1/3 scale
+  }
   const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm
   if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar(0.42+daylight*0.72); scene.fog.color.lerp(_tmp,_oc*0.6); }
   if(skyU){
