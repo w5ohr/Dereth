@@ -6025,6 +6025,7 @@ function buildWorld(){
   // the extracted map) — NOT invented cobblestone strips. genRoads() still lays the caravan's route;
   // buildRoads() (the procedural cobbled meshes) is retired so the true AC dirt roads stand on their own.
   genRoads();buildCaravan();
+  buildRoadBridges();   // span every river/sea the real AC road web crosses with a walkable plank bridge
   // gathering nodes scattered across the wilds
   for(let i=0;i<54;i++){let nx,nz,t=0;do{nx=rnd(-HALF+10,HALF-10);nz=rnd(-HALF+10,HALF-10);t++;}while(nearestCapitalDist(nx,nz)<TOWN_SAFE+10&&t<20);
     addNode(nx,nz,Math.random()<0.5?"ore":"herb");}
@@ -19628,6 +19629,60 @@ function registerBridgeWalk(C,i,j,deck,hw){   // each deck panel becomes a walka
     structures.push({bx,bz,r2:rr*rr,cos:1,sin:0,baseY:0,ramps:[],
       platforms:[{x0:x0-bx,x1:x1-bx,z0:z0-bz,z1:z1-bz,y:(deck[k]+deck[k+1])/2}]});
   }
+}
+// ── AC road BRIDGES: where the real road web (acRoad) crosses a river or sea (AC water types 16–20),
+//    span it with a plank deck you walk on. The road data has the crossings; AC had bridges there. ──
+let _bridgeDeck=null;
+function bridgeDeckMat(){ if(!_bridgeDeck) _bridgeDeck=new THREE.MeshStandardMaterial({color:0x7a5834,roughness:0.85}); return _bridgeDeck; }
+function buildBridgeDeckMesh(C,deck,hw){
+  const n=C.length-1, pos=[],idx=[],nor=[];
+  for(let i=0;i<C.length;i++){
+    const a=C[Math.max(0,i-1)], b=C[Math.min(n,i+1)], dx=b.x-a.x, dz=b.z-a.z, dl=Math.hypot(dx,dz)||1;
+    const px=-dz/dl*hw, pz=dx/dl*hw, y=deck[i]+0.06;
+    pos.push(C[i].x+px,y,C[i].z+pz, C[i].x-px,y,C[i].z-pz); nor.push(0,1,0,0,1,0);
+  }
+  for(let i=0;i<n;i++){ const b=i*2; idx.push(b,b+1,b+2, b+1,b+3,b+2); }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3)); g.setIndex(idx);
+  const m=new THREE.Mesh(g,bridgeDeckMat()); m.castShadow=true; m.receiveShadow=true; scene.add(m); roadMeshes.push(m);
+}
+function buildRoadBridges(){
+  if(!ACMAP.on||!ACMAP.Rd||!ACMAP.T) return 0;
+  const W=ACMAP.W, Rd=ACMAP.Rd, Tt=ACMAP.T, Hh=ACMAP.H;
+  const cWX=c=>(c-1019.5)*AC_CELL, cWZ=r=>(r-1020.5)*AC_CELL;          // inverse of acHeight's x/AC_CELL+1019.5
+  const isRoad=id=>Rd[id]>0, isWater=id=>(Tt[id]>=16&&Tt[id]<=20)||Hh[id]<0.1;
+  // AC roads route AROUND water and pick up again on the far bank — a bridge stood in the GAP. Find each
+  // gap: a road cell whose neighbour is water, with the road resuming across a short water span.
+  const dirs=[[1,0],[0,1],[1,1],[1,-1]], maxGap=14;
+  const spans=[], seenKey=new Set();
+  for(let r=2;r<W-2;r++){ const rw=r*W; for(let c=2;c<W-2;c++){ const id=rw+c; if(!isRoad(id)) continue;
+    for(const [dc,dr] of dirs){
+      if(isRoad((r+dr)*W+(c+dc)) || !isWater((r+dr)*W+(c+dc))) continue;   // first step must leave the road INTO water
+      let k=2, hit=false;
+      for(;k<=maxGap;k++){ const jr=r+dr*k, jc=c+dc*k; if(jr<2||jr>=W-2||jc<2||jc>=W-2) break; const jid=jr*W+jc;
+        if(isRoad(jid)){ hit=true; break; } if(!isWater(jid)) break; }               // road resumes across the water gap
+      if(!hit) continue;
+      const ax=cWX(c), az=cWZ(r), bx=cWX(c+dc*k), bz=cWZ(r+dr*k);
+      const key=Math.round((ax+bx)*0.5/(AC_CELL*4))+"_"+Math.round((az+bz)*0.5/(AC_CELL*4));   // dedupe parallel detections of one crossing
+      if(seenKey.has(key)) continue; seenKey.add(key);
+      spans.push({ax,az,bx,bz});
+    }
+  } }
+  let built=0;
+  for(const s of spans){
+    const gA=groundY(s.ax,s.az), gB=groundY(s.bx,s.bz);
+    if(gA<0.6||gB<0.6) continue;                                     // both ends are road cells on land (safety)
+    const span=Math.hypot(s.bx-s.ax,s.bz-s.az); if(span>280) continue;   // >280m isn't a river bridge (bay/sea)
+    const dy=Math.max(1.1, Math.max(gA,gB)+0.35);                    // deck arches above the water plane
+    const n=Math.max(2,Math.ceil(span/6)), C=[], deck=[];
+    for(let i=0;i<=n;i++){ const t=i/n; C.push({x:s.ax+(s.bx-s.ax)*t,z:s.az+(s.bz-s.az)*t});
+      deck[i]=(i===0)?gA+0.15:(i===n)?gB+0.15:dy; }                  // flat span at dy, ramped down to each road bank
+    const hw=AC_CELL*0.5;
+    buildBridgeDeckMesh(C,deck,hw); registerBridgeWalk(C,0,n,deck,hw); buildBridgeRails(C,0,n,dy,hw);
+    if(++built>=60) break;                                           // draw-call budget cap
+  }
+  return built;
 }
 function buildRoads(){
   if(!roadMat) roadMat=new THREE.MeshStandardMaterial({map:cobbleTex()});
