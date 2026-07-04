@@ -24,9 +24,15 @@
   .bar{height:15px;border-radius:7px;background:#000;margin:5px 0;position:relative;overflow:hidden;border:1px solid #000}
   .bar>i{position:absolute;left:0;top:0;bottom:0;display:block;border-radius:7px;transition:width .15s}
   .bar>span{position:absolute;inset:0;font-size:11px;line-height:15px;text-align:center;color:#fff;text-shadow:0 1px 1px #000}
-  .bhp i{background:linear-gradient(180deg,#e85d4d,#a32a1c)}
-  .bst i{background:linear-gradient(180deg,#46d784,#1e8a4a)}
-  .bmn i{background:linear-gradient(180deg,#5aa8ff,#2061c0)}
+  /* the REAL client vitals-bar art (assets/acui, portal.dat 0x06): red Health, gold Stamina,
+     blue Mana pill bars — the fill pins to the bar's full width so a shrinking bar CROPS the
+     art from the right, exactly as the retail client drew it */
+  .bhp{background:url(assets/acui/0600251d.png) center/100% 100% no-repeat}
+  .bhp i{background:url(assets/acui/0600251c.png) left/206px 100% no-repeat}
+  .bst{background:url(assets/acui/06002521.png) center/100% 100% no-repeat}
+  .bst i{background:url(assets/acui/06002520.png) left/206px 100% no-repeat}
+  .bmn{background:url(assets/acui/0600251f.png) center/100% 100% no-repeat}
+  .bmn i{background:url(assets/acui/0600251e.png) left/206px 100% no-repeat}
   .bxp i{background:linear-gradient(180deg,#b266e0,#6c2a9c)}
   #name{font-weight:bold;color:var(--gold);font-size:14px}
   #lvline{font-size:11px;color:var(--dim);margin-top:2px}
