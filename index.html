@@ -3014,7 +3014,10 @@ function initThree(){
       const ty=acType(wx,wz), tc=AC_TYPE_COL[ty]||AC_TYPE_COL[1];
       const j=0.94+Math.sin(wx*0.37)*Math.sin(wz*0.41)*0.06;               // per-vertex jitter so fields never read flat
       rr=tc[0]*j; gg=tc[1]*j; bb=tc[2]*j;
-      if(acRoad(wx,wz)){ rr=0.55; gg=0.47; bb=0.36; }                      // the authentic AC road web — fresh-laid packed stone, uniform (no ragged jitter)
+      if(acRoad(wx,wz)){                                                   // the authentic AC road web — packed-earth road worn into the land (AC roads were dirt, not cobble)
+        const rj=0.90+Math.sin(wx*0.21+wz*0.17)*0.10;                      // gentle worn variation (ruts, dust) so it reads as a used dirt road
+        rr=0.48*rj; gg=0.40*rj; bb=0.30*rj;                                // earthy packed dirt — reads as a tan road under the bright sun, not pale sand
+      }
       return col.setRGB(rr,gg,bb);
     }
     // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
@@ -6018,8 +6021,10 @@ function buildWorld(){
   for(const rl of RESIDENTIAL_LINES){ const d=CITIES.find(c=>c.name===rl.dest); if(!d) continue;
     for(const fn of rl.from){ const o=CITIES.find(c=>c.name===fn); if(!o) continue;
       addPortal(o.x-13,o.z+5,{x:d.x+13,z:d.z-5,name:rl.label}); } }
-  // roads linking every city to its capital, and the capitals to each other
-  genRoads();buildRoads();buildCaravan();
+  // Roads: Dereth's authentic road web is the real AC network, painted into the terrain (acRoad, from
+  // the extracted map) — NOT invented cobblestone strips. genRoads() still lays the caravan's route;
+  // buildRoads() (the procedural cobbled meshes) is retired so the true AC dirt roads stand on their own.
+  genRoads();buildCaravan();
   // gathering nodes scattered across the wilds
   for(let i=0;i<54;i++){let nx,nz,t=0;do{nx=rnd(-HALF+10,HALF-10);nz=rnd(-HALF+10,HALF-10);t++;}while(nearestCapitalDist(nx,nz)<TOWN_SAFE+10&&t<20);
     addNode(nx,nz,Math.random()<0.5?"ore":"herb");}
@@ -14665,7 +14670,7 @@ function update(dt){
   if(player.dispelImmune>0) player.dispelImmune-=dt;
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
-  {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
+  {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You take to the road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
   updateEvents(dt);
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
@@ -19707,13 +19712,9 @@ function placeSignposts(r){
 }
 function onRoad(x,z){
   if(inDungeon) return false;
-  if(typeof acRoad==="function"&&acRoad(x,z)) return true;   // the authentic AC road web grants road speed too
-  for(const r of ROADS){
-    const dx=r.bx-r.ax,dz=r.bz-r.az,len2=dx*dx+dz*dz;
-    let t=((x-r.ax)*dx+(z-r.az)*dz)/len2;t=clamp(t,0,1);
-    if(Math.hypot(x-(r.ax+dx*t),z-(r.az+dz*t))<r.w/2) return true;
-  }
-  return false;
+  // the road boost (and scenery avoidance) follows ONLY the authentic AC road web now, so it matches
+  // exactly the packed-dirt roads painted into the terrain — no invisible procedural lines.
+  return (typeof acRoad==="function") && !!acRoad(x,z);
 }
 function buildOre(){
   const g=new THREE.Group();
