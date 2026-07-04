@@ -4007,6 +4007,8 @@ function acHeadTexture(texDID, remapDIDs, cb){    // load a head texture, RGB-re
       tex=new THREE.CanvasTexture(cv);
     } else { tex=new THREE.Texture(img); tex.needsUpdate=true; }
     tex.encoding=THREE.sRGBEncoding;
+    tex.flipY=false;   // the head GfxObj UVs use the opposite V convention from the body parts —
+    tex.needsUpdate=true;  // without this the eye/nose/mouth strips land on the brow, chin and neck
     _acHeadTexCache[key]=tex; cb(tex);
   };
   img.onerror=()=>{ _acHeadTexCache[key]=null; };
