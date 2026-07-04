@@ -19664,36 +19664,44 @@ function buildRoadBridges(){
   const W=ACMAP.W, Rd=ACMAP.Rd, Tt=ACMAP.T, Hh=ACMAP.H;
   const cWX=c=>(c-1019.5)*AC_CELL, cWZ=r=>(r-1020.5)*AC_CELL;          // inverse of acHeight's x/AC_CELL+1019.5
   const isRoad=id=>Rd[id]>0, isWater=id=>(Tt[id]>=16&&Tt[id]<=20)||Hh[id]<0.1;
-  // AC roads route AROUND water and pick up again on the far bank — a bridge stood in the GAP. Find each
-  // gap: a road cell whose neighbour is water, with the road resuming across a short water span.
-  const dirs=[[1,0],[0,1],[1,1],[1,-1]], maxGap=14;
-  const spans=[], seenKey=new Set();
+  const isRiver=id=>Tt[id]===16||Tt[id]===17, isLand=id=>Tt[id]<16;    // types 16/17 = running/fresh water (rivers)
+  const seenKey=new Set(); let built=0;
+  const tryBridge=(ax,az,bx,bz,maxSpan)=>{                            // dedupe + validate + build one plank bridge
+    if(built>=64) return;
+    const key=Math.round((ax+bx)*0.5/(AC_CELL*4))+"_"+Math.round((az+bz)*0.5/(AC_CELL*4));
+    if(seenKey.has(key)) return; seenKey.add(key);
+    const gA=groundY(ax,az), gB=groundY(bx,bz); if(gA<0.6||gB<0.6) return;   // both banks on dry land
+    const span=Math.hypot(bx-ax,bz-az); if(span>(maxSpan||280)) return;
+    const dy=Math.max(1.1, Math.max(gA,gB)+0.35);                     // deck arches above the water plane
+    const n=Math.max(2,Math.ceil(span/6)), C=[], deck=[];
+    for(let i=0;i<=n;i++){ const t=i/n; C.push({x:ax+(bx-ax)*t,z:az+(bz-az)*t});
+      deck[i]=(i===0)?gA+0.15:(i===n)?gB+0.15:dy; }                   // flat span at dy, ramped down to each bank
+    const hw=AC_CELL*0.5;
+    buildBridgeDeckMesh(C,deck,hw); registerBridgeWalk(C,0,n,deck,hw); buildBridgeRails(C,0,n,dy,hw); built++;
+  };
+  // Pass 1 — road GAP over water: the road resumes on the far bank (sea inlets AND river gaps). AC roads
+  // route around water and pick up across the span; a bridge stood in that gap.
+  const dirs4=[[1,0],[0,1],[1,1],[1,-1]];
   for(let r=2;r<W-2;r++){ const rw=r*W; for(let c=2;c<W-2;c++){ const id=rw+c; if(!isRoad(id)) continue;
-    for(const [dc,dr] of dirs){
-      if(isRoad((r+dr)*W+(c+dc)) || !isWater((r+dr)*W+(c+dc))) continue;   // first step must leave the road INTO water
+    for(const [dc,dr] of dirs4){
+      if(isRoad((r+dr)*W+(c+dc)) || !isWater((r+dr)*W+(c+dc))) continue;
       let k=2, hit=false;
-      for(;k<=maxGap;k++){ const jr=r+dr*k, jc=c+dc*k; if(jr<2||jr>=W-2||jc<2||jc>=W-2) break; const jid=jr*W+jc;
-        if(isRoad(jid)){ hit=true; break; } if(!isWater(jid)) break; }               // road resumes across the water gap
-      if(!hit) continue;
-      const ax=cWX(c), az=cWZ(r), bx=cWX(c+dc*k), bz=cWZ(r+dr*k);
-      const key=Math.round((ax+bx)*0.5/(AC_CELL*4))+"_"+Math.round((az+bz)*0.5/(AC_CELL*4));   // dedupe parallel detections of one crossing
-      if(seenKey.has(key)) continue; seenKey.add(key);
-      spans.push({ax,az,bx,bz});
+      for(;k<=14;k++){ const jr=r+dr*k, jc=c+dc*k; if(jr<2||jr>=W-2||jc<2||jc>=W-2) break; const jid=jr*W+jc;
+        if(isRoad(jid)){ hit=true; break; } if(!isWater(jid)) break; }
+      if(hit) tryBridge(cWX(c),cWZ(r), cWX(c+dc*k),cWZ(r+dr*k));
     }
   } }
-  let built=0;
-  for(const s of spans){
-    const gA=groundY(s.ax,s.az), gB=groundY(s.bx,s.bz);
-    if(gA<0.6||gB<0.6) continue;                                     // both ends are road cells on land (safety)
-    const span=Math.hypot(s.bx-s.ax,s.bz-s.az); if(span>280) continue;   // >280m isn't a river bridge (bay/sea)
-    const dy=Math.max(1.1, Math.max(gA,gB)+0.35);                    // deck arches above the water plane
-    const n=Math.max(2,Math.ceil(span/6)), C=[], deck=[];
-    for(let i=0;i<=n;i++){ const t=i/n; C.push({x:s.ax+(s.bx-s.ax)*t,z:s.az+(s.bz-s.az)*t});
-      deck[i]=(i===0)?gA+0.15:(i===n)?gB+0.15:dy; }                  // flat span at dy, ramped down to each road bank
-    const hw=AC_CELL*0.5;
-    buildBridgeDeckMesh(C,deck,hw); registerBridgeWalk(C,0,n,deck,hw); buildBridgeRails(C,0,n,dy,hw);
-    if(++built>=60) break;                                           // draw-call budget cap
-  }
+  // Pass 2 — road DEAD-ENDS at a narrow RIVER (types 16/17): the road bitmap stops at the bank because the
+  // bridge was a separate object, so no road resumes. Bridge across to the far land bank anyway.
+  const dirs8=[[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  for(let r=3;r<W-3 && built<64;r++){ const rw=r*W; for(let c=3;c<W-3;c++){ if(!isRoad(rw+c)) continue;
+    for(const [dc,dr] of dirs8){ if(!isRiver((r+dr)*W+(c+dc))) continue;      // this road cell touches a river
+      let k=1, far=-1;
+      for(;k<=12;k++){ const jid=(r+dr*k)*W+(c+dc*k); if(isLand(jid)){ far=k; break; } if(!isWater(jid)) break; }
+      if(far<1 || far*AC_CELL>200) continue;                          // far bank reachable, river narrow enough (≤200m)
+      tryBridge(cWX(c),cWZ(r), cWX(c+dc*(far+1)),cWZ(r+dr*(far+1)), 220);   // +1 cell to plant the far end on land
+    }
+  } }
   return built;
 }
 function buildRoads(){
