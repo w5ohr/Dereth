@@ -66,11 +66,11 @@ every push. Do not touch another agent's asset dirs or tools.
 
 ---
 ## A2 status (2026-07-04, first pass)
-- Items 1/2/4/5 re-exported against the end-of-retail dats: **byte-identical** � acskills,
+- Items 1/2/4/5 re-exported against the end-of-retail dats: **byte-identical** � acskills,
   acspells, acchargen, and all 35 acui textures are VERIFIED CURRENT (the systems resources
   didn't change in the final builds).
 - Item 3 (acspellstats): upstream acspells unchanged + 3-Core absent -> no action needed.
-- Item 6 (strings): local dat probed � 101x 0x21 StringTables + 15x 0x23. The payloads are
+- Item 6 (strings): local dat probed � 101x 0x21 StringTables + 15x 0x23. The payloads are
   CIPHERED (not zlib; not plain UTF-16). tools/ac_strings_export.py is scaffolded with the
   harvest pipeline; the decode must be ported from ACEmulator ACE.DatLoader/FileTypes/
   StringTable.cs (follow-up). No pack committed until it decodes clean.
@@ -93,6 +93,31 @@ every push. Do not touch another agent's asset dirs or tools.
   = a future resource for pixel-perfect panel placement (out of A2 scope).
 - Remaining lane item: NONE. (client_highres.dat texture upgrade is staged but blocked on
   the user running acdata/ac1install.exe - whoever is active takes it per the handoff note.)
+
+## A1 lane COMPLETE (2026-07-04) — PR #66
+Re-ran every A1 exporter against the end-of-retail dats. **Verified current (byte-identical,
+no commit):** acmap.png + heights (item 1 — terrain/roads/minimap unchanged), acsky.json + sun/
+moon bodies + acscenery day/night curve (item 2), actowns.json building placement (item 6a),
+acparticles.json (item 7). **Real deltas committed:**
+- **acscenery.json** (item 2) — the final Scene tables are ~40% SPARSER (e.g. scene 0x120000A5 =
+  1 object, was 5; confirmed byte-exact vs the raw dat). Flora still scatters on all 32 terrains.
+  Visible effect: authentic final-build scenery density (fewer trees/rocks). Flagged to the user.
+- **acflora/** (item 3) — 5 NEW flora setups in the final dats (02000493/94, 020007A3/A4, 020007C4)
+  + tex 06006270.
+- **acdungeons/** (item 5) — 232 dungeons refreshed; committed packs had TRUNCATED cellPos
+  (172/344 cells); new extraction is complete (344/344) and all geometry rebuilds clean.
+- **dungeon-layouts.json** (item 4) — minor refresh (same 129 dungeons).
+- **tools/ac_dungeon_export.py** — read index.html as UTF-8 (cp1252 default crashed on a byte
+  another lane added).
+
+**Also verified current (item 6b, actownmodels):** the shared actownmodels pack is byte-identical
+once BOTH tools run. NB: the pack is shared — `ac_town_models.py` OVERWRITES index.json with only
+town DIDs (483), then `ac_world_structures.py` READS + merges the open-world DIDs → the correct
+union is **846**. Run them in that order; running ac_town_models alone silently drops the 363
+open-world building models.
+
+Item 8 (new-in-final sweep): old dats overwritten in acdata → no BTree diff possible; the 5 new
+flora setups are the catalogued brand-new models. Verify: verify_a1.js 4/4, 0 console errors.
 
 ## A3 lane status (worked by Agent 2, 2026-07-04)
 - Icons (3,960), sounds, music, player anims: re-exported BYTE-IDENTICAL - verified current.
