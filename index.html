@@ -14300,7 +14300,13 @@ function update(dt){
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});}
-    let gone=p.life<=0||p.y<0.1||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
+    // Terrain collision: a falling arrow/bolt/arc buries into the actual ground height (hillsides
+    // included), not just the sea-level plane — so a shot into a slope stops where it strikes it.
+    // Flat-flying spell bolts and cosmetics keep the old sea-level cull.
+    const gh=p.grav?((typeof groundY==="function")?groundY(p.x,p.z):0):0;
+    const hitGround=p.grav?(p.y<gh+0.08):(p.y<0.1);
+    if(hitGround && p.arrow){ burst(p.x,gh+0.1,p.z,0x8a7a5a,4); }   // little dirt puff where it lands
+    let gone=p.life<=0||hitGround||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
     if(!gone && !p.cosmetic) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
       if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
