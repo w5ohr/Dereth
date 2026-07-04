@@ -22977,12 +22977,39 @@ function ccBuildOptions(){
       else b.textContent=o.n;
       b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
         Object.assign(ccWork,HERITAGE_LOOK[o.k]||{});   // heritage look defaults (face/skin/hair/nose/eyes) — still overridable below
-        ccRenderCreation(); } ccSyncSel(); ccRebuild(); };
+        ccRenderCreation(); } ccSyncSel(); ccBuildACHead(); ccRebuild(); };
       box.appendChild(b); });
   });
+  ccBuildACHead();   // Phase 2b: the explicit retail-head steppers render under the appearance rows
 }
 function ccSyncSel(){ document.querySelectorAll('#charCreator .cc-row[data-cat]').forEach(row=>{
   const cat=row.dataset.cat; row.querySelectorAll('.cc-opts button').forEach(b=>b.classList.toggle("sel",String(ccWork[cat])===b.dataset.k)); }); }
+// ── Phase 2b: EXPLICIT retail-head rows — step through the client's own lists (51 hair styles,
+//    eye/nose/mouth strips, exact skin/hair/eye palettes) writing app.acHead; live in the bust. ──
+function ccBuildACHead(){
+  const last=[...document.querySelectorAll('#charCreator .cc-row[data-cat]')].pop(); if(!last) return;
+  let wrap=document.getElementById('ccACHead');
+  if(!wrap){ wrap=document.createElement('div'); wrap.id='ccACHead'; last.parentNode.insertBefore(wrap,last.nextSibling); }
+  const H=(typeof acHeadOpts==="function")&&acHeadOpts({race:ccWork.race||ccWork.heritage||"aluvian",gender:ccWork.gender||"male"});
+  if(!H){ wrap.innerHTML=""; return; }
+  if(!ccWork.acHead) ccWork.acHead=acHeadChoices({race:ccWork.race||"aluvian",gender:ccWork.gender||"male",
+    skin:ccWork.skin,hair:ccWork.hair,hairColor:ccWork.hairColor,eye:ccWork.eye,nose:ccWork.nose,mouth:ccWork.mouth})||{style:0,eyes:0,nose:0,mouth:0,skinTone:0,hairColor:0,eyeColor:0};
+  const F=[["style","Hair Style",H.hairStyles.length],["hairColor","Hair Colour",H.hairPals.length],
+    ["skinTone","Skin Tone",H.skinTones.length],["eyeColor","Eye Colour",H.eyeColors.length],
+    ["eyes","Eyes",H.eyes.length],["nose","Nose",H.noses.length],["mouth","Mouth",H.mouths.length]];
+  let h=`<div style="margin:8px 0 3px;color:var(--gold);font-size:11px;letter-spacing:.5px">RETAIL HEAD <span style="color:var(--dim)">— the client's own lists</span></div>`;
+  for(const [k,lab,n] of F){ if(!n) continue; const v=((ccWork.acHead[k]|0)%n+n)%n;
+    h+=`<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:11px"><span style="width:76px;color:#cdbf9a">${lab}</span>
+      <button data-achd="${k}" data-d="-1" style="width:22px;cursor:pointer">◀</button>
+      <span style="width:52px;text-align:center;color:#ffd86b">${v+1} / ${n}</span>
+      <button data-achd="${k}" data-d="1" style="width:22px;cursor:pointer">▶</button></div>`; }
+  wrap.innerHTML=h;
+  wrap.querySelectorAll('[data-achd]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.achd, d=+b.dataset.d, n=(F.find(f=>f[0]===k)||[0,0,1])[2];
+    ccWork.acHead[k]=(((ccWork.acHead[k]|0)+d)%n+n)%n;
+    ccBuildACHead(); ccRebuild();
+  });
+}
 // ── AC-style creation: profession template, attribute allocation, skill training, gender, starting town ──
 function ccTemplate(k){ return TEMPLATES.find(t=>t.k===k)||TEMPLATES[0]; }
 function ccInitCreation(){
@@ -23086,7 +23113,9 @@ document.getElementById('ccCreate').onclick=()=>{
   if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
   player.name=name; player.heritage=ccWork.race;
   const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo","model","gender"];
-  const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k]; player.appearance=app;
+  const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k];
+  if(ccWork.acHead) app.acHead=Object.assign({},ccWork.acHead);   // explicit retail head picks (Phase 2b) ride the appearance
+  player.appearance=app;
   // carry the AC creation choices into startGame
   player.createAttr=Object.assign({},ccWork.cattr); player.createSkills=(ccWork.ctrained||[]).slice();
   player.createTown=ccWork.town; player.createTemplate=ccWork.template; player.createSpec=(ccWork.cspec||[]).slice();
