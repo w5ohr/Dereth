@@ -1200,6 +1200,9 @@ fetch('assets/acicons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j
 //    scattered — trees, plants, rocks — with per-terrain frequencies from portal.dat Region. ──
 let AC_FLORA=null,AC_SCEN=null; const _floraProto={},_floraTex={},_scenPick={};
 fetch('assets/acflora/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_FLORA=j; }).catch(()=>{});
+// the retail STRING TABLES (client_local_English.dat): 7,050 strings incl. the 873 character titles
+let AC_STRINGS=null,AC_TITLESET=null;
+fetch('assets/acstrings.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.titles){ AC_STRINGS=j; AC_TITLESET=new Set(j.titles); } }).catch(()=>{});
 // the client's OWN day-night light (portal.dat Region SkyInfo keyframes: sky/fog/sun/ambient by time)
 let AC_SKY=null;
 fetch('assets/acsky.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.times&&j.times.length)AC_SKY=j; }).catch(()=>{});
@@ -13975,6 +13978,24 @@ function buildSheet(){
     return `<div class="attr" data-tt="${got?a.title:''}" style="opacity:${got?1:0.5};cursor:${got?'pointer':'default'}"><span>${got?"✓":"○"} ${a.name} <span style="color:var(--dim);font-size:10px">— ${a.desc}</span></span><b style="color:${active?'#ffd23b':got?'#7fe6a0':'#9a8a66'}">${got?(active?'★ '+a.title:a.title):"—"}</b></div>`;
   }).join("");
   ar.querySelectorAll('[data-tt]').forEach(el=>{const t=el.getAttribute('data-tt');if(t)el.onclick=()=>{player.title=t;saveGame();updateHUD();buildSheet();};});
+  // ── TITLES (AC 2017's Titles tab): every title you hold, click to Set as Display Title;
+  //    titles that appear in the client's own 873-entry roster carry the retail mark. ──
+  { let tr=document.getElementById('titleRows');
+    if(!tr){ tr=document.createElement('div'); tr.id='titleRows'; ar.parentNode.insertBefore(tr,ar.nextSibling); }
+    const held=[]; const seen=new Set();
+    const addT=t=>{ if(t&&!seen.has(t)){ seen.add(t); held.push(t); } };
+    addT(player.title);
+    for(const a of ACHIEVEMENTS) if(player.achievements.indexOf(a.id)>=0) addT(a.title);
+    for(const t of (player.eventTitles||[])) addT(t);
+    const rosterN=AC_TITLESET?AC_TITLESET.size:0, retailHeld=held.filter(t=>AC_TITLESET&&AC_TITLESET.has(t)).length;
+    let h=`<div class="desc" style="margin:10px 0 5px;color:var(--gold);font-weight:bold;font-size:12px">Titles <span style="color:var(--dim);font-weight:normal">— ${held.length} held${AC_TITLESET?` · ${retailHeld} retail · roster of ${rosterN.toLocaleString()} loaded`:""} · click to display</span></div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+    for(const t of held){ const on=player.title===t, retail=AC_TITLESET&&AC_TITLESET.has(t);
+      h+=`<span data-ttl="${esc(t)}" title="${retail?'an authentic retail title':'a Dereth title'}" style="cursor:pointer;padding:2px 8px;border-radius:9px;font-size:10.5px;border:1px solid ${on?'var(--gold)':'var(--border)'};background:${on?'#2a2438':'rgba(255,255,255,.04)'};color:${on?'#ffd86b':'#cdbf9a'}">${on?"★ ":""}${esc(t)}${retail?' <span style="color:#7fe6a0">✓</span>':""}</span>`; }
+    h+=`</div>`;
+    tr.innerHTML=h;
+    tr.querySelectorAll('[data-ttl]').forEach(el=>el.onclick=()=>{ player.title=el.getAttribute('data-ttl'); saveGame(); updateHUD(); buildSheet(); });
+  }
   // skills — train/specialize with skill credits, raise ranks with unspent XP
   const sr=document.getElementById('skillRows');
   const sb='style="font-size:10px;padding:2px 7px;margin-left:5px;cursor:pointer;background:#1e2742;color:#cfe0ff;border:1px solid #39507e;border-radius:4px"';
