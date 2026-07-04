@@ -8550,10 +8550,44 @@ function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYP
 // movement/stamina multipliers, averaged across all 5 slots (empty slot = no penalty) — partial armour = partial cost
 function armorMove(){ let sp=0,stm=0; for(const s of ARMOR_SLOTS){ const p=player.armorSlots&&player.armorSlots[s], at=p&&ARMOR_TYPES[p.at]; sp+=at?at.speedMul:1; stm+=at?at.stamMul:1; } const n=ARMOR_SLOTS.length; return {speed:sp/n, stam:stm/n}; }
 function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix; if(a&&a.k==="vital"&&a.stat===stat) n+=a.v; } return n; }
-// each armour material wards one damage element; worn pieces of that material stack a resistance (capped)
-const MAT_RESIST={Steel:"slash",Iron:"pierce",Bronze:"bludgeon",Brass:"slash",Copper:"acid",Granite:"bludgeon",Marble:"bludgeon",
-  Alabaster:"pierce",Ceramic:"fire",Leather:"slash",Hide:"pierce",Linen:"acid",Wool:"frost",Silk:"fire",Velvet:"nether",Satin:"shock"};
-function resistVs(el){ if(!el) return 0; let n=0; for(const p of wornPieces()){ if(MAT_RESIST[p.mat]===el) n+=0.16; }
+// Cb12 — per-material resistance PROFILE: each armour material resists a fraction of EVERY damage
+// element per worn piece (AC's material protection modifiers), not just one type. Its dominant
+// element gets the strong ward (~0.15); it still shrugs off a sliver of the others by its nature
+// (metal turns blades, stone eats bludgeons, ceramic drinks fire, weaves damp the elements).
+// Damage types: slash · pierce · bludgeon · fire · frost · acid · shock · nether.
+const ARMOR_MAT_RESIST={
+  // metals — strong vs physical, thin vs magic
+  Steel:  {slash:.15,pierce:.09,bludgeon:.05,fire:.02,frost:.02},
+  Iron:   {pierce:.15,slash:.07,bludgeon:.07,frost:.02},
+  Bronze: {bludgeon:.15,slash:.06,pierce:.05,fire:.02},
+  Brass:  {slash:.11,bludgeon:.06,pierce:.05,shock:.04},
+  Copper: {acid:.13,shock:.10,bludgeon:.05,slash:.03},
+  Silver: {slash:.09,nether:.10,frost:.04},
+  Gold:   {bludgeon:.08,fire:.06,acid:.06},
+  Pyreal: {fire:.10,shock:.06,slash:.05,pierce:.05,bludgeon:.05},
+  // stone — bludgeon & fire
+  Granite:{bludgeon:.15,fire:.08,slash:.05},
+  Marble: {bludgeon:.14,fire:.06,slash:.04},
+  Alabaster:{pierce:.12,frost:.06,bludgeon:.05},
+  Ceramic:{fire:.15,acid:.11,bludgeon:.04},
+  Quartz: {shock:.11,frost:.07,fire:.04},
+  Diamond:{slash:.10,pierce:.08,bludgeon:.06,fire:.04,frost:.04,acid:.04,shock:.04,nether:.04},
+  Amber:  {acid:.12,nether:.08,fire:.05},
+  Jet:    {nether:.13,shock:.07,frost:.04},
+  // organics — leather turns edges, hides warm
+  Leather:{slash:.10,bludgeon:.06,pierce:.04},
+  Hide:   {pierce:.10,bludgeon:.08,frost:.05},
+  // weaves — light armour & clothing, each damps one element
+  Linen:  {acid:.10,fire:.03},
+  Wool:   {frost:.12,fire:.03},
+  Cotton: {frost:.08,acid:.04},
+  Silk:   {fire:.12,nether:.05},
+  Velvet: {nether:.12,frost:.04},
+  Satin:  {shock:.12,fire:.04}};
+const _MAT_RESIST_DEFAULT={slash:.05,pierce:.05,bludgeon:.05};   // an unknown material still turns a little of a blow
+function matResistProfile(mat){ return ARMOR_MAT_RESIST[mat]||_MAT_RESIST_DEFAULT; }
+function resistVs(el){ if(!el) return 0; let n=0;
+  for(const p of wornPieces()){ const pr=matResistProfile(p.mat); if(pr[el]) n+=pr[el]; }   // every piece resists its profile fraction of this element
   if(typeof jewelryBonus==="function") n+=jewelryBonus("protect",el)/100;   // elemental Protection jewelry stacks with armour material wards
   if(player.augment&&player.augment.resist) n+=player.augment.resist;        // Blue Aetheria: permanent all-element resistance
   return Math.min(0.7,n); }

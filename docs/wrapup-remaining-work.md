@@ -61,7 +61,7 @@ Removed from the lists below because git shows them shipped:
 | ✅ **Damage roll per-swing variance** | ~~Roll top-end+variance each hit.~~ DONE — `dmgVar(prof)` rolls `1+(rand-0.5)*dvar` per swing. | S | auth-gaps Cb13 |
 | ✅ **Stamina cost scaling** | ~~Stamina cost from weapon+shield+power-bar; penalty at low stamina.~~ DONE — `stamCost=prof.stam*power*(shield?1.2:1)`; swinging while spent zeroes stamina and lands a 0.6× winded blow. | S | auth-gaps Cb9 |
 | **Burden / encumbrance** | Burden Units vs Strength capacity → stamina/movement penalties (absent). | L | auth-gaps Cb10 |
-| **Per-element armor resistance** | Each armor piece resists a % per damage element (currently one scalar AL + separate ward stack). | M | auth-gaps Cb12 |
+| ✅ **Per-element armor resistance** | ~~Each armor piece resists a % per damage element.~~ DONE — `ARMOR_MAT_RESIST` gives every material a resistance *profile* across all 8 damage types (slash/pierce/bludgeon/fire/frost/acid/shock/nether); `resistVs(el)` sums each worn piece's profile fraction for the incoming element (metal turns blades, ceramic drinks fire, weaves damp one element), blends mixed sets, defaults unknown mats, caps 0.70. | M | auth-gaps Cb12 |
 | ✅ **Ammo-type strictness** | ~~Block bow fire at 0 arrows / require matching ammo.~~ DONE — `fireArrow` blocks with a typed warning ("no arrows/quarrels/darts") unless matching `ammo` for the launcher `wt` is in inventory. | S | REMAINING-WORK |
 
 ## 3. Magic & Spells
