@@ -10297,8 +10297,9 @@ function addDrop(x,z,data){
       new THREE.MeshStandardMaterial({color:0xcfc6b4,roughness:0.95}));
     shroud.rotation.z=Math.PI/2; shroud.position.y=0.28; shroud.scale.y=0.62; shroud.castShadow=true; mesh.add(shroud);
     const glow=new THREE.PointLight(0x9ab8ff,0.9,7); glow.position.y=1.0; mesh.add(glow);
+    const _mine=!data.owner||(typeof player!=="undefined"&&player.name&&data.owner===player.name);
     const _cn=(data.items&&data.items.length)?` (${data.items.length} item${data.items.length!==1?"s":""}${data.amt?" + pyreals":""})`:(data.amt?" (pyreals)":"");
-    const lbl=labelSprite(`${data.owner||"Your"} corpse${_cn} — recover (E)`,"npcs");
+    const lbl=labelSprite(`${_mine?"Your":data.owner+"'s"} corpse${_cn}${_mine?" — recover (E)":""}`,"npcs");
     lbl.scale.set(7,1.5,1); lbl.position.y=2.0; mesh.add(lbl);
   }else{
     const model=buildItemModel(data.item||{},{drop:true}); mesh=new THREE.Group();
@@ -13117,8 +13118,12 @@ function die(){
     // one lootable corpse holding everything — decays after 5 min/level (min 1 hour)
     const dd=deathDrops();
     if(dd.items.length||dd.gold){
-      addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,
-        owner:player.name||"Adventurer",ttl:Math.max(3600,300*player.level)});
+      const ttl=Math.max(3600,300*player.level);
+      if(isOnline){   // online: the server stands up a SHARED corpse everyone sees (echoed back to us via onDrop)
+        netSend({t:"death",x:corpseX,z:corpseZ,items:dd.items,gold:dd.gold,ttl});
+      } else {
+        addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,owner:player.name||"Adventurer",ttl});
+      }
       if(typeof recomputeGearSkill==="function") recomputeGearSkill();
       // AC always named your losses — list them so you know exactly what to walk back for
       const _nm=dd.items.slice(0,6).map(it=>it.name), _more=dd.items.length-_nm.length;
@@ -13879,7 +13884,9 @@ function currentPrompt(){
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return "Leave the delve (E)";
     return "";
   }
-  for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4) return "Recover your corpse (E)";
+  for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
+    if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.owner+"'s corpse (theirs to recover)";
+    return "Recover your corpse (E)"; }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
     if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
@@ -14034,6 +14041,13 @@ function interact(){
   }
 }
 function recoverCorpse(d){
+  // a SHARED (multiplayer) corpse is server-brokered and owner-only — the server validates and
+  // returns the contents via corpse_loot; other players can see the corpse but cannot loot it.
+  if(d.shared){
+    if(d.owner && player.name && d.owner!==player.name){ log(`This is <b>${esc(d.owner)}</b>'s corpse — only they can recover it.`,"warn"); if(SFX.deny)SFX.deny(); return; }
+    if(!d.req){ d.req=true; netSend({t:"recover",id:d.id}); }   // server hands the bundle back + clears the corpse for everyone
+    return;
+  }
   // pyreals always come home; items return to the satchel until it fills — the rest spills out
   if(d.amt>0){ player.gold+=d.amt; floater(player.x,EYE+0.4,player.z,"+"+d.amt+" p","#ffd86b"); }
   let taken=0,spilled=0;
@@ -22036,6 +22050,7 @@ function netHandle(m){
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
   if(m.t==="loot")      return onLoot(m);
+  if(m.t==="corpse_loot") return onCorpseLoot(m);
   if(m.t==="event_start")  return onEventStart(m);
   if(m.t==="event_end")    return onEventEnd(m);
   if(m.t==="event_reward") return onEventReward(m);
@@ -22082,7 +22097,10 @@ function onEventReward(msg){
 // ---- shared ground loot (M3c): server owns drops; pickups are first-come, server-validated ----
 function onDrop(msg){
   if(!isOnline||NET.drops[msg.id]) return;
-  const data=msg.type==="gold"?{type:"gold",amt:msg.amt}:{type:"item",item:msg.item};
+  let data;
+  if(msg.type==="gold") data={type:"gold",amt:msg.amt};
+  else if(msg.type==="corpse") data={type:"corpse",items:msg.items||[],amt:msg.amt||0,owner:msg.owner||"",corpse:true};   // a fallen player's shared corpse
+  else data={type:"item",item:msg.item};
   data.id=msg.id; data.shared=true;
   NET.drops[msg.id]=addDrop(msg.x,msg.z,data);
 }
@@ -22095,6 +22113,17 @@ function onDropGone(msg){
 function onLoot(msg){
   if(msg.type==="gold"){ player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); SFX.gold(); if(typeof updateHUD==="function") updateHUD(); }
   else if(msg.type==="item"&&msg.item){ lootItem(msg.item); }
+}
+// server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
+function onCorpseLoot(msg){
+  if(msg.amt>0){ player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }
+  let taken=0,spilled=0;
+  for(const it of (msg.items||[])){
+    if(addToInv(it,false)) taken++;
+    else { addDrop(player.x+rnd(-1.2,1.2),player.z+rnd(-1.2,1.2),{type:"item",item:it,corpse:true}); spilled++; }
+  }
+  log(`You recover your corpse — <b>${taken}</b> item(s)${msg.amt?` and <b>${msg.amt.toLocaleString()}</b> pyreals`:""} returned${spilled?`; <b>${spilled}</b> spilled beside it (satchel full)`:""}.`,"loot");
+  if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
 }
 // ---- shared, server-authoritative monsters (M3) ----
 // Server mobs live in the same monsters[] array (so all combat/targeting/visuals reuse the

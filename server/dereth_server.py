@@ -673,9 +673,52 @@ def drop_pub(d):
     o = {"t": "drop", "id": d["id"], "x": round(d["x"], 2), "z": round(d["z"], 2), "type": d["type"]}
     if d["type"] == "gold":
         o["amt"] = d["amt"]
+    elif d["type"] == "corpse":
+        o["items"] = d.get("items", []); o["amt"] = d.get("amt", 0); o["owner"] = d.get("owner", "")
     else:
         o["item"] = d["item"]
     return o
+
+CORPSE_TTL = 1800.0    # a fallen player's corpse lingers far longer than mob loot (30 min default)
+
+async def handle_death(cl, msg):
+    """A player died with AC-authentic death on: stand up a shared, ownership-gated corpse that
+    every nearby player can see (and only the owner can loot). Mirrors the client's local corpse."""
+    global _drop_seq
+    items = msg.get("items")
+    items = [it for it in items if isinstance(it, dict)][:24] if isinstance(items, list) else []
+    try:
+        gold = max(0, int(msg.get("gold", 0)))
+    except (TypeError, ValueError):
+        gold = 0
+    if not items and not gold:
+        return
+    try:
+        x = float(msg.get("x", cl.x)); z = float(msg.get("z", cl.z))
+    except (TypeError, ValueError):
+        x, z = cl.x, cl.z
+    try:
+        ttl = min(7200.0, max(300.0, float(msg.get("ttl", CORPSE_TTL))))
+    except (TypeError, ValueError):
+        ttl = CORPSE_TTL
+    _drop_seq += 1
+    did = "c%d" % _drop_seq
+    DROPS[did] = {"id": did, "x": x, "z": z, "type": "corpse", "items": items, "amt": gold,
+                  "owner": cl.charname or cl.username, "owner_user": cl.username, "expire": time.time() + ttl}
+    await broadcast(drop_pub(DROPS[did]))
+
+async def do_recover(cl, did):
+    """Owner-only corpse recovery: hand the whole bundle back to its owner and clear it for everyone."""
+    d = DROPS.get(did)
+    if not d or d.get("type") != "corpse":
+        return
+    if d.get("owner_user") != cl.username:
+        return await cl.send({"t": "system", "msg": "That corpse is not yours to loot."})
+    if math.hypot(cl.x - d["x"], cl.z - d["z"]) > PICKUP_RANGE + 2:
+        return
+    DROPS.pop(did, None)
+    await broadcast({"t": "drop_gone", "id": did})
+    await cl.send({"t": "corpse_loot", "items": d.get("items", []), "amt": d.get("amt", 0)})
 
 async def spawn_loot(m, is_boss):
     """Roll a corpse's shared ground loot and broadcast it to everyone."""
@@ -1276,6 +1319,13 @@ async def dispatch(cl, msg):
         did = msg.get("id")
         if isinstance(did, str) and cl.in_world:
             await do_pickup(cl, did)
+    elif t == "death":
+        if cl.in_world:
+            await handle_death(cl, msg)
+    elif t == "recover":
+        did = msg.get("id")
+        if isinstance(did, str) and cl.in_world:
+            await do_recover(cl, did)
     elif t == "debuff":
         if cl.in_world:
             m = MOBS.get(msg.get("id")); eff = msg.get("eff")
