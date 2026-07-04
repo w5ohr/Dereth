@@ -69,7 +69,7 @@ Removed from the lists below because git shows them shipped:
 |------|---------------|------|--------|
 | **Buff/debuff "Other" targeting** | CE/Item/Life/Protection spells need Self **and** Other forms for group support (most are self-only). | M | auth-gaps Mg1 |
 | **Recall spell set** | Portal Tie, Portal Recall/Sending, town-specific recalls (currently Lifestone + Sanctuary only). | M | auth-gaps Mg3/W6, ac-remaining-gaps |
-| **Spell projectile speeds & spreads** | Per-spell speeds to retail ratios (bolt 15 / streak 45 / arc 40 / ring 2 / wall 3–4 m/s); fix Blast (3×90°) and Volley (3×parallel) spreads. | S–M | ac-remaining-gaps |
+| ✅ **Spell projectile speeds & spreads** | ~~Fix Blast (3×90°) and Volley (3×parallel) spreads; per-spell speed ratios.~~ DONE — Blast now fires a true 3-bolt **90° cone** (±45°) and Volley fires **3 parallel bolts** offset sideways (a wall of shots, same heading) instead of the old narrow/converging fans; streak stays fast, arc lobbed-slow, ring/wall stationary. *(Absolute retail m/s aren't applied — the per-element base speeds are tuned to this world's ⅓ scale by design.)* | S–M | ac-remaining-gaps |
 | **Spell range formula** | `min(BaseRangeConstant + magicSkill × BaseRangeMod, 75m)` from SpellTable. | M | ac-remaining-gaps |
 | **Mana Conversion / fizzle formula** | Authentic MC formula (25·diff × spell level, random save) + fizzle difficulty tiers (currently flat cost cut + ad-hoc fizzle). | M | auth-gaps Mg5 |
 | **Void curse DoT lines** | Nether curses with DoT + defense corruption — refinement of the shipped F7 void set. | S | auth-gaps Mg6 |

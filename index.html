@@ -13441,11 +13441,16 @@ function executeSpell(id){
     return;
   }
   castRings(player.x,player.z,sp.color);   // AC gathering-rings flourish as the bolt is loosed
-  // spread angles per geometry: single, fan (blast/wave), tight stream (volley)
-  const spread=geom==="blast"?[-0.26,0,0.26]:geom==="wave"?[-0.45,-0.22,0,0.22,0.45]:geom==="volley"?[-0.07,0,0.07]:[0];
-  for(const off of spread){
+  // AC spread patterns per geometry: Blast = a 3-bolt 90° cone (±45°), Volley = 3 PARALLEL bolts
+  // (offset sideways, same heading — a wall of shots), Wave = a wide 5-bolt fan, else a single bolt.
+  const perp={x:-dir.z,z:dir.x}; const pl=Math.hypot(perp.x,perp.z)||1; perp.x/=pl; perp.z/=pl;   // lateral axis for parallel offsets
+  const pattern=geom==="blast"?[{a:-0.785},{a:0},{a:0.785}]
+    :geom==="volley"?[{a:0,lat:-0.6},{a:0,lat:0},{a:0,lat:0.6}]
+    :geom==="wave"?[{a:-0.45},{a:-0.22},{a:0},{a:0.22},{a:0.45}]:[{a:0}];
+  for(const pt of pattern){
+    const off=pt.a||0, lat=pt.lat||0;
     const ca=Math.cos(off),sa=Math.sin(off), dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca;
-    const ox=player.x+dx*0.8, oz=player.z+dz*0.8, oy=EYE-0.15;
+    const ox=player.x+dx*0.8+perp.x*lat, oz=player.z+dz*0.8+perp.z*lat, oy=EYE-0.15;
     const mesh=new THREE.Mesh(projGeom(sp),new THREE.MeshBasicMaterial({color:sp.color}));
     mesh.position.set(ox,oy,oz);
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
