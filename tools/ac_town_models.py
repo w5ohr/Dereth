@@ -45,11 +45,12 @@ def main():
     def surface_material(sid):
         s = ame.parse_surface(portal.read(sid))
         if "color" in s: return dict(color=s["color"] & 0xFFFFFF)
+        clip = bool(s.get("clip"))
         tid = ame.parse_surfacetexture(portal.read(s["tex"]))[-1]
         if tid not in tex_written:
             fn = "%08X.png" % tid
             if not os.path.isfile(os.path.join(TEXOUT, fn)):
-                dec = ame.decode_texture(portal.read(tid), palettes)
+                dec = ame.decode_texture(portal.read(tid), palettes, clip=clip)
                 if dec is None: tex_written[tid] = None
                 else:
                     w, h, px = dec
