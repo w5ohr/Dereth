@@ -180,11 +180,42 @@ for w in crea:
     s = dids[w].get(1)
     if s: by_setup[s].append(w)
 
+def rep_weenie(setup_id, rep_name):
+    """the kind's representative weenie: exact display name on this setup, lowest level;
+    else name-prefix; else any on the setup"""
+    exact = [w for w in by_setup.get(setup_id, []) if names.get(w) == rep_name]
+    if exact: return min(exact, key=lambda w: lvl.get(w, 9999))
+    pref = [w for w in by_setup.get(setup_id, []) if (names.get(w, "") or "").startswith(rep_name)]
+    if pref: return min(pref, key=lambda w: lvl.get(w, 9999))
+    on = by_setup.get(setup_id, [])
+    return min(on, key=lambda w: lvl.get(w, 9999)) if on else None
+
 breeds = {}
+base_dressed = 0
 for kind in sorted(kind_dids):
     setup_id, mt_id = kind_dids[kind]
     rep_name = ace.KINDS.get(kind, kind)
-    entries = [dict(f=kind + ".glb", name=rep_name, scale=1.0)]
+    base_scale = 1.0
+    # FIDELITY: re-bake the BASE <kind>.glb with the representative weenie's OWN ObjDesc
+    # (ClothingBase part/texture swaps + PaletteTemplate·Shade palette). ac_creature_export
+    # renders only the raw GfxObj surfaces, so any creature whose retail look rides on a
+    # ClothingBase (48 of them — gromnie/rat/drudge/tusker/…) came out mis-skinned. Creatures
+    # with NO ClothingBase (skeleton, olthoi, wisp…) keep their correct plain GfxObj surfaces.
+    repW = rep_weenie(setup_id, rep_name)
+    if repW is not None:
+        base_scale = round(dscale.get(repW, 1.0), 3)
+        # variant_from returns non-None only when the weenie has real ClothingBase swaps or
+        # a palette overlay — so a plain (undressed) creature is left as its correct GfxObj bake
+        bv = variant_from(repW, setup_id)
+        if bv:
+            try:
+                if bake(kind, setup_id, mt_id, bv[0], bv[1]):
+                    base_dressed += 1
+                    print(f"  {kind} (base): {names.get(repW,rep_name)} dressed "
+                          f"(clothing {('%08X'%dids[repW][7]) if 7 in dids[repW] else '-'}, palT {palT.get(repW,'-')})")
+            except Exception as e:
+                print(f"  {kind} base re-bake failed ({e})")
+    entries = [dict(f=kind + ".glb", name=rep_name, scale=base_scale)]
     seen_looks = set()
     cands = []
     for w in by_setup.get(setup_id, []):
@@ -230,4 +261,4 @@ if mws:
 
 json.dump(breeds, open(os.path.join(OUT, "breeds.json"), "w"), separators=(",", ":"))
 tot = sum(len(v) for v in breeds.values())
-print(f"\nwrote breeds.json: {len(breeds)} kinds, {tot} looks total")
+print(f"\nwrote breeds.json: {len(breeds)} kinds, {tot} looks total; {base_dressed} base models re-skinned to their retail ClothingBase")
