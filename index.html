@@ -21,6 +21,8 @@
     border:1px solid var(--border);border-radius:6px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.5);
     backdrop-filter:blur(2px)}
   #vitals{top:12px;left:12px;width:230px}
+  /* the real client's gold strut ornament crowns the vitals panel */
+  #vitals::before{content:"";display:block;height:12px;margin:-4px -6px 2px;background:url(assets/acui/06001937.png) center/contain no-repeat;opacity:.9}
   .bar{height:15px;border-radius:7px;background:#000;margin:5px 0;position:relative;overflow:hidden;border:1px solid #000}
   .bar>i{position:absolute;left:0;top:0;bottom:0;display:block;border-radius:7px;transition:width .15s}
   .bar>span{position:absolute;inset:0;font-size:11px;line-height:15px;text-align:center;color:#fff;text-shadow:0 1px 1px #000}
@@ -40,8 +42,9 @@
   #spellbar{bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:flex-end;gap:8px;padding:8px;max-width:99vw}
   #qbGrid{display:grid;grid-template-columns:repeat(12,44px);grid-auto-rows:44px;gap:5px}
   #qbPages{display:flex;flex-direction:column;gap:4px;pointer-events:auto}
-  #qbPages button{width:22px;height:22px;padding:0;font-size:12px;background:#2a2110;color:var(--gold);border:1px solid var(--border);border-radius:5px;cursor:pointer}
-  #qbPages button.on{background:#3a5a22;color:#fff;border-color:#7fe6a0}
+  #qbPages button{width:26px;height:18px;padding:0;font-size:0;background:url(assets/acui/06001269.png) center/100% 100% no-repeat;border:none;border-radius:3px;cursor:pointer;filter:drop-shadow(0 1px 2px #000)}  /* the real client's curled-page-corner arrows */
+  #qbPages button:last-child{background-image:url(assets/acui/06001266.png)}
+  #qbPages button.on{filter:drop-shadow(0 0 4px #7fe6a0) brightness(1.25)}   /* active page: the page-corner art glows */
   #castbar{position:absolute;bottom:92px;left:50%;transform:translateX(-50%);width:220px;height:14px;border:1px solid var(--gold);
     border-radius:7px;background:rgba(8,6,3,.85);display:none;overflow:hidden;z-index:20}
   #castfill{height:100%;width:0%;background:linear-gradient(90deg,#7ec8ff,#9af0ff);transition:width .04s linear}
@@ -284,8 +287,8 @@
     <div id="idBody" style="margin-top:4px;line-height:1.45"></div>
   </div>
 </div>
-<div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:9px;background:rgba(0,0,0,.55);border:1px solid #666;border-radius:5px;display:none;z-index:40;overflow:hidden">
-  <i id="chargeFill" style="display:block;height:100%;width:0%;background:linear-gradient(90deg,#5aa,#fd6,#f64)"></i>
+<div id="chargeBar" style="position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:130px;height:12px;background:url(assets/acui/06002349.png) center/100% 100% no-repeat;border-radius:5px;display:none;z-index:40;overflow:hidden">
+  <i id="chargeFill" style="display:block;height:100%;width:0%;background:url(assets/acui/06002345.png) left/130px 100% no-repeat"></i>
   <span style="position:absolute;top:-2px;left:45%;width:2px;height:13px;background:#fff;opacity:.7"></span>
 </div>
 <div id="eprompt"></div>
