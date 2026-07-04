@@ -13647,12 +13647,32 @@ function updateChargeBar(){ const b=document.getElementById('chargeBar'); if(!b)
   else b.style.display="none";
   const ah=document.getElementById('atkHeight'); if(ah&&ah.style.display==="block"&&ah._t&&now()-ah._t>2500) ah.style.display="none"; }
 // Cb2: which attack height best fits a creature's size, and the accuracy/damage modifiers for a match/mismatch
+// Cb2 attack height → the body part you strike, each with its own armour bucket (AC per-part d_Val):
+// head = vital but small/mobile (big damage, easy to miss), torso = the armoured centre mass (reliable,
+// average), legs = low-value but easy to reach (less damage, better accuracy, sets up control). A target's
+// build still matters — a towering foe bares its high parts, a scuttling one its low.
+const PART_BUCKET={high:{part:"head", acc:0.86,dmg:1.25},   // dmg already folds in the part's typical armour (head soft, torso plated, legs lean)
+                   mid: {part:"torso",acc:1.00,dmg:1.00},
+                   low: {part:"legs", acc:1.12,dmg:0.85}};
+// per-kind body-part armour (AC d_Val): some creatures plate a region — learn where to strike. Multiplies that part's damage.
+const PART_ARMOR={
+  olthoi:{torso:0.6,legs:0.8}, olthoisoldier:{torso:0.55,legs:0.75}, olthoiworker:{torso:0.65},   // chitin carapace — the joints give
+  skeleton:{head:1.35,torso:0.9},                    // exposed skull shatters; the ribcage deflects
+  golem:{head:0.7,torso:0.7,legs:1.2},               // stone body all over; the leg-joints crack easier
+  lugian:{torso:0.7,head:1.15}, tusker:{head:0.7,legs:1.25},   // vast plated chest / thick skull-plate — hamstring instead
+  gromnie:{torso:0.65,head:1.2}, mattekar:{torso:0.7,head:1.15},   // scaled belly, softer crest
+  zombie:{head:1.3}, mummy:{head:1.3}, virindi:{head:1.25}};       // go for the head
 function heightMods(m){
+  const ah=player.atkHeight||"mid", b=PART_BUCKET[ah]||PART_BUCKET.mid;
   const sz=(typeof BESTIARY!=="undefined"&&BESTIARY[m.kind]&&BESTIARY[m.kind].size)||m.r||1;
-  const ideal=sz>=1.5?"high":sz<=0.7?"low":"mid", ah=player.atkHeight||"mid";
-  if(ah===ideal) return {acc:1.12,dmg:1.10};                       // right height for the target
-  if(ah==="mid"||ideal==="mid") return {acc:1.0,dmg:1.0};          // one step off — neutral
-  return {acc:0.80,dmg:1.0};                                       // opposite extreme (high vs a low target) — poor accuracy
+  const ideal=sz>=1.5?"high":sz<=0.7?"low":"mid";
+  let acc=b.acc, dmg=b.dmg;
+  // per-kind part armour (AC d_Val) scales that part's damage when a creature defines it; else the profile stands
+  const pa=PART_ARMOR[m.kind]&&PART_ARMOR[m.kind][b.part];
+  if(pa!=null) dmg*=pa;
+  if(ah===ideal){ acc+=0.10; dmg*=1.06; }                    // the target's build suits your line — cleaner strikes
+  else if(ah!=="mid"&&ideal!=="mid"){ acc-=0.14; }           // opposite extreme (high vs a low foe) — awkward, poorer accuracy
+  return {acc:clamp(acc,0.6,1.3), dmg:clamp(dmg,0.7,1.4), part:b.part};
 }
 // Cb5/skill activation: Recklessness (trade defence for damage) & Sneak Attack (bonus vs an unaware/flanked foe)
 function recklessFactor(){ const t=skillTier("recklessness"); return t===2?0.22:t===1?0.13:0; }   // +outgoing AND +incoming damage
