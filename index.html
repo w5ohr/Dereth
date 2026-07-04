@@ -14835,28 +14835,38 @@ function drawMinimap(){
   g.clearRect(0,0,S,S);
   g.save(); g.beginPath(); g.arc(C,C,R,0,6.28); g.clip();       // circular frame
   g.fillStyle="#0a0c07"; g.fillRect(0,0,S,S);
-  g.strokeStyle="rgba(150,140,120,0.5)";g.lineWidth=2;
-  for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(sx(r.ax),sy(r.az));g.lineTo(sx(r.bx),sy(r.bz));g.stroke();}
-  if(miniShow.monster) for(const m of monsters){if(m.isBoss||m.isDungeon)continue;dot(m.x,m.z,"#b03a3a",1);}
+  // AC's RADAR (2017): a plain dark disc — no terrain — HEADING-UP (the world rotates around
+  // you; the cardinal letters ride the ring), the field-of-view wedge fixed straight up.
+  g.fillStyle="rgba(216,200,150,0.10)";g.beginPath();g.moveTo(C,C);
+  g.arc(C,C,R,-Math.PI/2-0.63,-Math.PI/2+0.63);g.closePath();g.fill();
+  g.save(); g.translate(C,C); g.rotate(player.yaw); g.translate(-C,-C);   // heading-up: rotate the world's blips
+  if(miniShow.monster) for(const m of monsters){if(m.isBoss||m.isDungeon)continue;dot(m.x,m.z,"#e08830",1.5);}   // creatures: retail ORANGE
   if(miniShow.resource) for(const n of nodes) if(!n.depleted) dot(n.x,n.z,n.type==="ore"?"#7fd0d0":"#7fe6a0",1);
   if(miniShow.building&&typeof structures!=="undefined") for(const st of structures){ if(st&&st.x!=null) dot(st.x,st.z,"#a89878",1); }
   if(miniShow.portal) for(const pt of portals) dot(pt.x,pt.z,"#bf9bff",1.5);
-  if(miniShow.town) for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;dot(ls.x,ls.z,ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad"),rr);}
+  if(miniShow.town) for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;dot(ls.x,ls.z,"#4a7fe0",rr);}   // lifestones: retail BLUE
   if(miniShow.quest) for(const n of npcs){if(n.role==="townsfolk")continue;dot(n.x,n.z,"#ffd23b",2);}
   if(miniShow.vendor) for(const sh of shops) dot(sh.x,sh.z,"#7fe6a0",2);
   if(miniShow.dungeon) for(const e of dungeonEntrances) dot(e.x,e.z,player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff",1.5);
   if(boss) cir(boss.x,boss.z,"#ff3030",3.5);
   for(const m of monsters){ if(!m.isBoss||!m.shared)continue; cir(m.x,m.z,"#ff3030",3.5); }
   if(isOnline&&miniShow.players) for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
-    cir(rx,(r.z!=null?r.z:r.tz),NET.partyNames.has(r.name)?"#7fe6a0":"#5ad6ff",2.5); }
-  // player at centre + facing
-  g.save();g.translate(C,C);g.rotate(-player.yaw);
-  g.fillStyle="#ffd86b";g.beginPath();g.moveTo(0,-5);g.lineTo(3,4);g.lineTo(-3,4);g.closePath();g.fill();g.restore();
+    const rz=(r.z!=null?r.z:r.tz);
+    if(NET.partyNames.has(r.name)){ if(inR(rx,rz)){ const px=sx(rx),py=sy(rz), up=r.name===NET.partyLeader;   // fellows: GREEN TRIANGLES (up = leader, down = member)
+      g.fillStyle="#3fd06a"; g.beginPath();
+      if(up){g.moveTo(px,py-3.4);g.lineTo(px+3,py+2.6);g.lineTo(px-3,py+2.6);} else {g.moveTo(px,py+3.4);g.lineTo(px+3,py-2.6);g.lineTo(px-3,py-2.6);}
+      g.closePath(); g.fill(); } }
+    else cir(rx,rz,r.pk?"#e03030":"#ffffff",2.5); }   // players WHITE · player killers RED
+  // cardinal letters ride the rotating ring (heading-up); N is drawn GREEN, as retail
+  g.font="bold 10px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
+  g.fillStyle="#3fd06a"; g.fillText("N",C,9);
+  g.fillStyle="#cdbf9a"; g.fillText("S",C,S-9); g.fillText("E",S-9,C); g.fillText("W",9,C);
+  g.restore();   // end heading-up rotation
+  // SELF: the small green cross at exact centre (retail)
+  g.strokeStyle="#3fd06a"; g.lineWidth=1.6;
+  g.beginPath(); g.moveTo(C-4,C); g.lineTo(C+4,C); g.moveTo(C,C-4); g.lineTo(C,C+4); g.stroke();
   g.restore(); // unclip
-  // compass ring + cardinal letters (north up)
   g.strokeStyle="rgba(216,177,74,0.55)";g.lineWidth=2;g.beginPath();g.arc(C,C,R,0,6.28);g.stroke();
-  g.fillStyle="#ffd86b";g.font="bold 10px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
-  g.fillText("N",C,7); g.fillText("S",C,S-7); g.fillText("E",S-7,C); g.fillText("W",7,C);
   g.textBaseline="alphabetic";
 }
 
