@@ -195,6 +195,46 @@ def parse_palette(d):
     r.u32()
     return [r.u32() for _ in range(r.u32())]
 
+def _dxt_colors(block, o):
+    # two RGB565 endpoints + a 4-entry palette (mode depends on c0>c1); returns (colors, c0>c1)
+    c0 = struct.unpack_from("<H", block, o)[0]; c1 = struct.unpack_from("<H", block, o+2)[0]
+    def rgb(c): return ((c >> 11 & 31)*255//31, (c >> 5 & 63)*255//63, (c & 31)*255//31)
+    r0, g0, b0 = rgb(c0); r1, g1, b1 = rgb(c1)
+    cols = [(r0, g0, b0, 255), (r1, g1, b1, 255), None, None]
+    if c0 > c1:
+        cols[2] = ((2*r0+r1)//3, (2*g0+g1)//3, (2*b0+b1)//3, 255)
+        cols[3] = ((r0+2*r1)//3, (g0+2*g1)//3, (b0+2*b1)//3, 255)
+    else:
+        cols[2] = ((r0+r1)//2, (g0+g1)//2, (b0+b1)//2, 255)
+        cols[3] = (0, 0, 0, 0)           # DXT1 punch-through transparent
+    return cols
+
+def _decode_dxt(data, w, h, dxt5):
+    px = bytearray(w*h*4); bstride = 16 if dxt5 else 8; bi = 0
+    for by in range(0, h, 4):
+        for bx in range(0, w, 4):
+            b = data[bi:bi+bstride]; bi += bstride
+            if len(b) < bstride: break
+            if dxt5:
+                a0, a1 = b[0], b[1]
+                al = [a0, a1]
+                if a0 > a1: al += [((7-i)*a0 + i*a1)//7 for i in range(1, 7)]
+                else:       al += [((5-i)*a0 + i*a1)//5 for i in range(1, 5)] + [0, 255]
+                abits = int.from_bytes(b[2:8], "little")
+                cols = _dxt_colors(b, 8); lut = int.from_bytes(b[8:12], "little")
+            else:
+                cols = _dxt_colors(b, 0); lut = int.from_bytes(b[4:8], "little")
+            for py in range(4):
+                for pxx in range(4):
+                    x, y = bx+pxx, by+py
+                    if x >= w or y >= h: continue
+                    idx = py*4+pxx
+                    col = cols[(lut >> (idx*2)) & 3]
+                    a = al[(abits >> (idx*3)) & 7] if dxt5 else col[3]
+                    o = (y*w+x)*4
+                    px[o:o+4] = bytes((col[0], col[1], col[2], a))
+    return bytes(px)
+
 def decode_texture(d, palettes):
     r = Buf(d)
     tid = r.u32(); r.i32()
@@ -202,7 +242,9 @@ def decode_texture(d, palettes):
     data = r.d[r.o:r.o+ln]; r.o += ln
     pal_id = r.u32() if fmt in (40, 41, 101) else None
     px = bytearray(w*h*4)
-    if fmt == 41 or fmt == 101:          # P8 / INDEX16 paletted
+    if fmt in (0x31545844, 0x35545844):   # FourCC "DXT1" / "DXT5"
+        return w, h, _decode_dxt(data, w, h, fmt == 0x35545844)
+    elif fmt == 41 or fmt == 101:          # P8 / INDEX16 paletted
         pal = palettes(pal_id)
         step = 2 if fmt == 101 else 1
         for i in range(w*h):
