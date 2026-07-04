@@ -17402,6 +17402,81 @@ const REGION_DRESS=[
      if(!o.robed&&s%3===1){o.sash=true;o.sashCol=[0x6a2a4a,0x8a5a2a,0x2a4a6a][s%3];} if(s%4===1)o.cuffs=true; }},
 ];
 function pickColor(arr,seed,salt){ return arr[Math.abs(Math.imul((seed|0)+salt,2654435761)>>>0)%arr.length]; }
+// ── clothe an NPC's jointed avatar. Called AFTER applyACBody (which hides the placeholder body and
+//    retires the procedural head), so our cloth meshes are added last and stay visible. Everyone gets a
+//    shirt/tunic + pants + shoes + belt in their heritage palette; robed scholars/mystics get a long
+//    robe instead; job & culture add aprons, sashes, plackets, vests and headwear. Meshes are children
+//    of the joints, so they animate with the body. ──
+function _clothMat(c){ return new THREE.MeshStandardMaterial({color:c,roughness:0.9,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)}); }
+function dressAvatarHead(u,o){
+  const neck=u.neck; if(!neck) return;
+  const hy=0.31;   // neck-local height of the crown (the AC head rides just above the neck)
+  const put=(geo,mat,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(0,y,z||0); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.userData.npcCloth=true; neck.add(m); return m; };
+  const felt=c=>new THREE.MeshStandardMaterial({color:c,roughness:0.86,metalness:0.0});
+  const kind=o.helm?"helm":o.hat;
+  if(kind==="helm"){ put(new THREE.SphereGeometry(0.158,14,10,0,6.3,0,1.7),new THREE.MeshStandardMaterial({color:0x8a8f98,metalness:0.7,roughness:0.4}),hy-0.02);
+    const band=put(new THREE.TorusGeometry(0.152,0.016,8,18),new THREE.MeshStandardMaterial({color:0x6a6e76,metalness:0.7,roughness:0.4}),hy-0.07,0,Math.PI/2);
+    put(new THREE.BoxGeometry(0.024,0.11,0.03),new THREE.MeshStandardMaterial({color:0x6a6e76,metalness:0.7,roughness:0.4}),hy-0.09,-0.13); }   // nasal
+  else if(kind==="cone"){ put(new THREE.ConeGeometry(0.155,0.34,12),felt(0x4a3320),hy+0.13); put(new THREE.CylinderGeometry(0.205,0.205,0.025,16),felt(0x3a2716),hy-0.04); }
+  else if(kind==="cap"){ put(new THREE.CylinderGeometry(0.15,0.162,0.11,14),felt(o.hatCol!=null?o.hatCol:0x4a3320),hy+0.02); put(new THREE.CylinderGeometry(0.168,0.168,0.02,14),felt(0x3a2716),hy-0.035); }
+  else if(kind==="beret"){ const b=put(new THREE.CylinderGeometry(0.19,0.15,0.06,16),felt(o.hatCol!=null?o.hatCol:0x6a2a2a),hy+0.04,0,0,0.14); put(new THREE.SphereGeometry(0.022,6,5),felt(0x2a1810),hy+0.085); }
+  else if(kind==="straw"){ put(new THREE.ConeGeometry(0.3,0.13,16),felt(0xcaa860),hy+0.06); put(new THREE.CylinderGeometry(0.125,0.135,0.09,12),felt(0xb89850),hy); }
+  else if(kind==="turban"){ const tc=felt(o.hatCol!=null?o.hatCol:0xe0d6bc);
+    put(new THREE.SphereGeometry(0.145,14,10,0,6.3,0,1.5),tc,hy+0.01);
+    for(let i=0;i<3;i++){ const w=put(new THREE.TorusGeometry(0.152-i*0.006,0.05,8,20),tc,hy-0.03+i*0.05,0,Math.PI/2,i*0.5); } }
+  if(o.headband){ put(new THREE.TorusGeometry(0.148,0.02,8,20),felt(o.headband),hy-0.1,0,Math.PI/2); }
+}
+function dressAvatar(av,o,gender){
+  const u=av&&av.userData; if(!u||!u.spine) return; o=o||{};
+  const shirtM=_clothMat(o.robe!=null?o.robe:0x556070), pantsM=_clothMat(o.accent!=null?o.accent:0x2a3340);
+  const shoeM=new THREE.MeshStandardMaterial({color:o.shoeCol!=null?o.shoeCol:0x3a2818,roughness:0.72,metalness:0.05});
+  const soleM=new THREE.MeshStandardMaterial({color:0x18110a,roughness:0.85}), leatherM=new THREE.MeshStandardMaterial({color:0x2a1d10,roughness:0.6});
+  const add=(parent,geo,mat,x,y,z,sz)=>{ if(!parent)return null; const m=new THREE.Mesh(geo,mat); m.position.set(x||0,y||0,z||0); if(sz!=null)m.scale.z=sz; m.castShadow=true; m.userData.npcCloth=true; parent.add(m); return m; };
+  const robed=!!o.robed, fem=(gender==="female");
+  // sleeves (shoulder + forearm) + shoulder caps to close the neck/arm gap
+  for(const a of [["shR","elR"],["shL","elL"]]){
+    add(u[a[0]],new THREE.CylinderGeometry(0.08,0.063,0.28,10),shirtM,0,-0.15,0);
+    if(!o.shortSleeve) add(u[a[1]],new THREE.CylinderGeometry(0.06,0.048,0.24,10),shirtM,0,-0.12,0);
+  }
+  for(const s of ["shR","shL"]) add(u[s],new THREE.SphereGeometry(0.088,12,9,0,6.28,0,Math.PI*0.62),shirtM,0,0.02,0);
+  const zsc=fem?0.66:0.63;                                                                      // women a touch fuller front-to-back so the bust is covered
+  if(robed){
+    const prof=(fem?[[0.17,-0.02],[0.208,0.1],[0.238,0.3],[0.252,0.42],[0.235,0.5],[0.185,0.56],[0.11,0.575]]
+                   :[[0.17,-0.02],[0.205,0.1],[0.235,0.3],[0.238,0.44],[0.2,0.54],[0.115,0.575]]).map(p=>new THREE.Vector2(p[0],p[1]));
+    add(u.spine,new THREE.LatheGeometry(prof,20),shirtM,0,0,0,fem?0.68:0.64);
+    add(u.pelvisG,new THREE.CylinderGeometry(0.2,0.36,0.9,20,1,true),shirtM,0,-0.46,0,0.82);   // flowing skirt to the ankles
+  } else {
+    const prof=(fem?[[0.16,-0.04],[0.2,0.1],[0.232,0.26],[0.246,0.4],[0.255,0.47],[0.23,0.53],[0.135,0.57]]
+                   :[[0.16,-0.04],[0.198,0.1],[0.23,0.28],[0.24,0.42],[0.204,0.52],[0.125,0.56]]).map(p=>new THREE.Vector2(p[0],p[1]));
+    add(u.spine,new THREE.LatheGeometry(prof,20),shirtM,0,0,0,zsc);                             // tunic body (over the AC torso)
+    add(u.pelvisG,new THREE.CylinderGeometry(0.192,0.214,0.22,16,1,true),shirtM,0,-0.1,0,0.74); // shirt tail over the hips
+    for(const l of [["hipR","knR"],["hipL","knL"]]){
+      add(u[l[0]],new THREE.CylinderGeometry(0.104,0.081,0.38,12),pantsM,0,-0.2,0);             // thigh
+      add(u[l[1]],new THREE.CylinderGeometry(0.075,0.058,0.3,12),pantsM,0,-0.16,0);             // shin
+    }
+  }
+  add(u.pelvisG,new THREE.CylinderGeometry(0.2,0.194,0.06,16),leatherM,0,0.05,0,0.72);          // belt
+  add(u.pelvisG,new THREE.BoxGeometry(0.05,0.05,0.02),new THREE.MeshStandardMaterial({color:0xb0902a,metalness:0.6,roughness:0.35}),0,0.05,-0.158); // buckle
+  for(const f of [u.rFoot,u.lFoot]){ if(!f)continue;                                            // shoes over the AC feet
+    add(f,new THREE.BoxGeometry(0.128,0.088,0.2),shoeM,0,-0.05,-0.05);
+    add(f,new THREE.BoxGeometry(0.118,0.06,0.09),shoeM,0,-0.058,-0.155);
+    add(f,new THREE.BoxGeometry(0.138,0.028,0.25),soleM,0,-0.092,-0.05);
+  }
+  // ── job / culture overlays ──
+  if(o.apron){ const apM=new THREE.MeshStandardMaterial({color:o.apronCol!=null?o.apronCol:0x7a5a3a,roughness:0.9});
+    add(u.spine,new THREE.BoxGeometry(0.3,0.52,0.03),apM,0,0.12,-0.19);
+    const strap=add(u.spine,new THREE.TorusGeometry(0.1,0.014,6,16),apM,0,0.5,-0.04); strap.rotation.x=1.1; }
+  if(o.sash&&!robed){ const sc=_clothMat(o.sashCol!=null?o.sashCol:0x8a4a6a);
+    const s1=add(u.spine,new THREE.TorusGeometry(0.215,0.033,6,20),sc,0,0.02,0,0.62); s1.rotation.x=Math.PI/2;
+    add(u.spine,new THREE.BoxGeometry(0.055,0.24,0.03),sc,0.17,-0.09,-0.13); }
+  if(o.placket&&!robed){ const pm=_clothMat(o.placketCol!=null?o.placketCol:0xd8d0c0);
+    add(u.spine,new THREE.BoxGeometry(0.1,0.46,0.03),pm,0,0.28,-0.2);
+    const studM=new THREE.MeshStandardMaterial({color:0xb08030,metalness:0.6,roughness:0.35});
+    for(let i=0;i<5;i++) add(u.spine,new THREE.SphereGeometry(0.013,6,5),studM,0,0.12+i*0.09,-0.215); }
+  if(o.vest){ const vm=_clothMat(o.vestCol!=null?o.vestCol:0x3a2a1a);
+    for(const sx of[-1,1]) add(u.spine,new THREE.BoxGeometry(0.09,0.44,0.03),vm,sx*0.11,0.28,-0.192); }
+  dressAvatarHead(u,o);
+}
 function buildNPC(role,name,seedX,look,region){
   const R=NPC_ROLES[role]||NPC_ROLES.emissary;
   const seed=((name||role||"x").length+role.length+(seedX|0))|0;
@@ -17423,15 +17498,17 @@ function buildNPC(role,name,seedX,look,region){
   //    garb palettes + headwear/costume). Role headwear/silhouette wins over the regional hat. ──
   const RD=REGION_DRESS[region];
   if(RD){
-    o.skin=RD.skin[(seed*5+1)%RD.skin.length];
-    o.hair=RD.hair[(seed*7+2)%RD.hair.length];
-    o.robe=RD.shirts[(seed*3)%RD.shirts.length];
-    o.accent=RD.pants[(seed*11)%RD.pants.length];
-    if(role==="townsfolk"||role==="crier"||role==="barkeep"||role==="questgiver"){
-      const hadHat=o.hat,hadRobe=o.robed;
+    o.skin=pickColor(RD.skin,seed,29);
+    o.hair=pickColor(RD.hair,seed,41);
+    o.robe=pickColor(RD.shirts,seed,17);            // strong hash → neighbours don't share a colour
+    o.accent=pickColor(RD.pants,seed,53);
+    if(role!=="emissary"&&role!=="reset_attr"&&role!=="reset_skill"){   // civilians & town roles get full heritage garb (mystics keep their robe/hood)
+      const hadHat=o.hat,hadRobe=o.robed,hadHelm=o.helm;
       RD.dress(o,seed);
       if(hadHat)o.hat=hadHat;               // criers keep the cone, barkeeps the cap — their identity
+      if(hadHelm){o.helm=true;o.hat=null;}  // guards/gatekeepers keep the helm (heritage hat can't override it)
       if(hadRobe!==undefined&&role!=="townsfolk")o.robed=hadRobe;
+      if(role==="guard"||role==="attendant")o.robed=false;   // military & keep-women wear shirt+pants, not a robe
       if(o.hood){o.hat=null;}               // hooded figures stay hooded
     }
   }
@@ -17449,12 +17526,7 @@ function buildNPC(role,name,seedX,look,region){
     mouth:["medium","full","thin","wide"][(seed*13)%4],feature:"none",faceSeed:seed};
   const g=buildAvatarJointed(app); applyACBody(g,app.gender); g.visible=true;
   { const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
-    // identity headwear survives the model swap: crier cone, barkeep cap, guard helm
-    if(o.helm||o.hat==="cone"||o.hat==="cap"){
-      const hm=new THREE.Mesh(o.helm?new THREE.SphereGeometry(0.155,10,8,0,6.3,0,1.7)
-        :o.hat==="cone"?new THREE.ConeGeometry(0.16,0.34,10):new THREE.CylinderGeometry(0.15,0.16,0.1,10),
-        new THREE.MeshStandardMaterial({color:o.helm?0x8a8f98:0x4a3320,roughness:0.6,metalness:o.helm?0.7:0.02}));
-      hm.position.y=o.hat==="cone"?0.22:0.16; hm.castShadow=true; u.head.add(hm); } }
+    dressAvatar(g,o,app.gender); }   // clothe the nude AC body: shirt/tunic, pants, shoes, belt + job/culture garb & headwear
   const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
   if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
   return g;
