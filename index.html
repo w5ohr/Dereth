@@ -575,7 +575,7 @@
 "use strict";
 /* ============================================================================
    DERETH — first-person Asheron's Call homage (Three.js r128, bundled locally)
-   Pure local files; runs offline in Safari/Chrome on Apple Silicon, no install.
+   Pure local files; runs in any modern HTML5 browser on any OS — no install.
 ============================================================================ */
 if(typeof THREE==="undefined"){ document.body.innerHTML="<p style='color:#e8dcc0;padding:40px;font-family:sans-serif'>Could not load three.min.js — make sure it sits next to index.html.</p>"; }
 
@@ -2762,6 +2762,11 @@ function updateInstanceLight(){
     if(ls.flicker) inten*=0.84+0.16*Math.sin(now()/60)+0.06*Math.sin(now()/29); // torch/flame flicker
     playerLight.color.setHex(ls.color); playerLight.intensity=inten; playerLight.distance=ls.dist;
     playerLight.position.set(player.x,EYE+0.1,player.z); playerLight.visible=true;
+  } else if(inNetwork){
+    // the enclosed portal hall: no daylight — the portals (and the faint hub-orb) light it
+    hemi.intensity=0.05; amb.intensity=0.07; sun.intensity=0;
+    scene.fog.near=6; scene.fog.far=78; scene.fog.color.setHex(0x080610);
+    if(playerLight.visible){ playerLight.visible=false; playerLight.intensity=0; }
   } else {
     if(scene.fog.near!==40) scene.fog.near=40;       // restore overworld fog on exit
     if(player.lightBuff){ const ls=playerLightSource();  // conjured light still shines outdoors (handy at night)
@@ -20751,25 +20756,38 @@ function buildNetwork(){
   netObjs=[];netPortals=[];const R=48;   // wide hall so all ~56 town portals + labels spread out
   const fac=netMode==="facility";
   const floorCol=fac?0x202a33:0x2a2640,ringCol=fac?0x3a8a9a:0x6a5aa0,ringEm=fac?0x1a4a5a:0x3a2a6a,liteCol=fac?0x5ad0ff:0x9b6bff,orbCol=fac?0x40e0ff:0xc060ff;
-  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,44),new THREE.MeshStandardMaterial({color:floorCol,metalness:0.4,roughness:0.5}));
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,44),new THREE.MeshStandardMaterial({color:floorCol,metalness:0.08,roughness:0.88}));
   floor.rotation.x=-Math.PI/2;floor.position.set(DCEN.x,0.04,DCEN.z);floor.receiveShadow=true;scene.add(floor);netObjs.push(floor);
+  // ── the hall is an ENCLOSED chamber: dark stone walls + a roof, so the only real light
+  //    is the glow of the portals themselves (updateInstanceLight kills the daylight here) ──
+  const WALLH=18, wallMat=new THREE.MeshStandardMaterial({color:fac?0x0e141a:0x120e1c,roughness:0.95,metalness:0.05,side:THREE.BackSide});
+  const wall=new THREE.Mesh(new THREE.CylinderGeometry(R+3,R+3,WALLH,56,1,true),wallMat);
+  wall.position.set(DCEN.x,WALLH/2,DCEN.z);scene.add(wall);netObjs.push(wall);
+  const roof=new THREE.Mesh(new THREE.CylinderGeometry(R*0.18,R+3,7,56,1,true),wallMat);   // shallow cone ceiling
+  roof.position.set(DCEN.x,WALLH+3,DCEN.z);scene.add(roof);netObjs.push(roof);
+  const cap=new THREE.Mesh(new THREE.CircleGeometry(R*0.18,32),new THREE.MeshStandardMaterial({color:0x0a0810,roughness:1,side:THREE.DoubleSide}));
+  cap.rotation.x=Math.PI/2;cap.position.set(DCEN.x,WALLH+6.5,DCEN.z);scene.add(cap);netObjs.push(cap);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(R*0.9,0.4,8,48),new THREE.MeshStandardMaterial({color:ringCol,emissive:ringEm,emissiveIntensity:0.7}));
   ring.rotation.x=-Math.PI/2;ring.position.set(DCEN.x,0.3,DCEN.z);scene.add(ring);netObjs.push(ring);
-  const l1=new THREE.PointLight(liteCol,1.8,120);l1.position.set(DCEN.x,22,DCEN.z);scene.add(l1);netObjs.push(l1);
+  // the central hub-orb casts a faint portal-hued glow so the middle of the ring isn't pitch black —
+  // everything else is lit by the portals ringing the hall (each carries its own PointLight)
+  const l1=new THREE.PointLight(liteCol,0.32,34);l1.position.set(DCEN.x,4,DCEN.z);scene.add(l1);netObjs.push(l1);
   const ped=new THREE.Mesh(new THREE.CylinderGeometry(2,2.5,1.3,12),new THREE.MeshStandardMaterial({color:0x3a3656,metalness:0.5,roughness:0.4}));
   ped.position.set(DCEN.x,0.65,DCEN.z);ped.castShadow=true;scene.add(ped);netObjs.push(ped);
-  const orb=new THREE.Mesh(new THREE.SphereGeometry(1.1,16,12),new THREE.MeshBasicMaterial({color:orbCol}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
+  const orb=new THREE.Mesh(new THREE.SphereGeometry(0.9,16,12),new THREE.MeshBasicMaterial({color:new THREE.Color(orbCol).multiplyScalar(0.5),transparent:true,opacity:0.8}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
   const list=fac?FACILITY_PORTALS:CITIES;
   list.forEach((c,i)=>{const a=i/list.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
     const np=fac?{x:px,z:pz,kind:"facility",dungeon:c.def,req:c.req,name:c.def.name}:{x:px,z:pz,kind:"town",town:c,name:c.name};
     const m=buildPortal(fac?`${c.def.name} · Lv${c.req}`:(c.req?`${c.name} · Lv${c.req}`:c.name));m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
     m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
+    m.traverse(o=>{ if(o.isPointLight){ o.intensity=0.85; o.distance=14; } });   // dim each portal's glow so the enclosed hall stays moody, not washed out
     scene.add(m);netObjs.push(m);netPortals.push(np);});
   netExit={x:DCEN.x,z:DCEN.z+7};
-  const ex=buildPortal("Leave");ex.position.set(netExit.x,0,netExit.z);scene.add(ex);netObjs.push(ex);
+  const dimP=m=>m.traverse(o=>{ if(o.isPointLight){ o.intensity=0.85; o.distance=14; } });
+  const ex=buildPortal("Leave");ex.position.set(netExit.x,0,netExit.z);dimP(ex);scene.add(ex);netObjs.push(ex);
   // a portal toggling between the Town Network and the Facility Hub
   const sw={x:DCEN.x,z:DCEN.z-7},swName=fac?"Town Network":"Facility Hub";
-  const swm=buildPortal(swName);swm.position.set(sw.x,0,sw.z);scene.add(swm);netObjs.push(swm);
+  const swm=buildPortal(swName);swm.position.set(sw.x,0,sw.z);dimP(swm);scene.add(swm);netObjs.push(swm);
   netPortals.push({x:sw.x,z:sw.z,kind:"switch",to:fac?"towns":"facility",name:swName});
 }
 function netHallName(){ return netMode==="facility"?"Facility Hub":"Town Network"; }
