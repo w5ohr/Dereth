@@ -75,3 +75,12 @@ every push. Do not touch another agent's asset dirs or tools.
   harvest pipeline; the decode must be ported from ACEmulator ACE.DatLoader/FileTypes/
   StringTable.cs (follow-up). No pack committed until it decodes clean.
 - Item 7: nothing upstream changed -> tinkering/crafting stand as verified.
+
+## A2 status update (strings decoded)
+- Ported the exact ACE StringTable format (StringTable.cs + StringTableData.cs +
+  compressed-uint/unicode readers): ALL FIFTEEN 0x23 tables decode cleanly (0 failures) ->
+  assets/acstrings.json: 7,050 strings including the full 873-entry retail CHARACTER TITLE
+  table (0x2300000E). Wire-up candidates: the titles list (titles panel), plus the other
+  0x23 tables (catalog: sex/heritage labels, town names, UI enumerations).
+- The 101 0x21 tables use a DIFFERENT undocumented layout (not the StringTable format,
+  not zlib) - still the open follow-up.
