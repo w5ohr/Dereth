@@ -93,13 +93,13 @@ Removed from the lists below because git shows them shipped:
 | **Death corpse + item loss** | Lootable corpse on death holding ceil(level/10) items (highest-value first), ½ pyreals lost, ~5-min decay, res invulnerability (currently XP/vitae penalty only). Optional "AC-authentic death" toggle. | M | fidelity-split A2, auth-gaps S4 |
 | **Society ranks + Test quests** | Initiate→Adept→Knight→Lord→Master ranks, ribbon unlocks, society quest gauntlets. | M | auth-gaps S6 |
 | ✅ **Player-to-player secure trade: coin** | ~~Enable pyreal amounts in the secure-trade window.~~ DONE — pyreal input per side (capped to carried gold), server relays `coin` per offer (clears both accepts on change, retail rule), `done` transfers coin both ways. | S | auth-gaps S8, ac-remaining-gaps |
-| **Fellowship cap-9 + XP-split modes** | Raise `PARTY_MAX` 6→9; AC level-spread XP split (≤5 lvls equal+bonus, ≤10 proportional, 50+ equal no cap); share-bonus table; needs server level tracking. | S–M | fidelity-split B3, ac-remaining-gaps |
+| 🟡 **Fellowship cap-9 + XP-split modes** | Cap + size-split **DONE**: server `PARTY_MAX=9` (founder+8) with a size-scaled `FELLOW_SHARE` table (1.00→0.33 across 1–9 members, in-range sharing). **Remaining:** the AC *level-spread* split modes (≤5 lvls equal+bonus, ≤10 proportional, 50+ equal no cap) — needs server per-player level tracking. | S–M | fidelity-split B3, ac-remaining-gaps |
 | **Live-story Town Criers + quest timers** | Non-saga Crier rumor feed + server-side quest flagging/lockout timers (20h–7d) via `QuestDefDB` min_Delta, bridged to custom quest ids. (Kilmer saga K1–K10 already shipped.) | M–L | auth-gaps S9, REMAINING-WORK |
 
 ## 6. World Systems  *(gameplay systems — distinct from A1's pack re-extraction)*
 | Item | What's undone | Size | Source |
 |------|---------------|------|--------|
-| **Region-aware weather** | Snow in the frozen north, fog in mountains, aridity in desert, rain temperate (currently global rain only). | M | auth-gaps W4/W11, ac-remaining-gaps |
+| ✅ **Region-aware weather** | ~~Snow in the frozen north, aridity in desert, rain temperate (currently global rain only).~~ DONE (verified) — `updateWeather` branches on `coldZone`/`biomeAt`/`regionOf`: cold reaches snow instead of rain, the Gharu'ndim desert almost never precipitates, Blackmire swamp gets frequent rain/storms, temperate lands get rain. Monte-Carlo confirmed cold≈34% snow/0 rain, desert≈72% clear/0 precip, temperate≈27% rain+storm. | M | auth-gaps W4/W11, ac-remaining-gaps |
 | **Multi-level dungeons & in-dungeon portals** | Ye-Olde chains, drop portals, linked sub-instances (currently single flat level per dungeon). | L | auth-gaps W7 |
 | **Named regions + irregular continent** | Osteth/Aphus Lassel/Linvak/Ithaca regions + real ocean rim (currently a square 16000² map with trig noise terrain). **[needs A1 data]** | L | auth-gaps W8 |
 | **Authored landmarks + terrain barriers** | Landblock heightmap + named mountains that gate travel (currently procedural noise). **[needs A1 data]** | L | auth-gaps W12 |
