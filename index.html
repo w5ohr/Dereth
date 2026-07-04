@@ -5932,7 +5932,8 @@ function buildWorld(){
   if(sz.r>0){const pool=new THREE.Mesh(new THREE.CircleGeometry(300,32),new THREE.MeshPhongMaterial({color:0x2c3a26,specular:0x4a5a3a,shininess:40,transparent:true,opacity:0.82}));
     pool.rotation.x=-Math.PI/2;pool.position.set(sz.x,0,sz.z);pool.userData.float=0.3;pool.receiveShadow=true;scene.add(pool);scenery.push(pool);}
   settleY();
-  seatVendorsInBuildings();   // move each town vendor inside the building it stands nearest to
+  // vendor seating happens as towns stream in: real-data towns in tbBuildTown, procedural-fallback
+  // towns via seatVendorsInBuildings() (called from tbStream) — both run after AC_TOWNS has loaded.
   // monsters roam the realm (clustered near hubs).
   // Online, the overworld monsters are server-authoritative & shared — they arrive via
   // snapshots (reconcileMobs), so the client does not spawn its own local population.
@@ -6328,6 +6329,127 @@ function flushTownBatches(){
   }
   TOWN_BATCH=[];
 }
+// ════════════════════════════════════════════════════════════════════════════
+//  REAL AC TOWN BUILDINGS — the authentic Turbine architecture at its authentic
+//  spots. assets/actowns.json carries each town's real building placements (mesh
+//  DID + local x/z offset + yaw, read from client_cell_1.dat); the meshes those
+//  DIDs point at are baked in assets/actownmodels/<DID>.json (tools/ac_town_models.py).
+//  A town's buildings STREAM in around the player like the housing map: each is
+//  ringed with colliders that leave its doorway open (found by low raycasts), and
+//  that town's vendors are seated just inside their nearest shop, facing the door.
+// ════════════════════════════════════════════════════════════════════════════
+let AC_TOWNS=null, _tbIndex=null, _tbIndexReq=false;
+try{ fetch('assets/actowns.json').then(r=>r.ok?r.json():null).then(j=>{ AC_TOWNS=(j&&j.towns)||{}; }).catch(()=>{AC_TOWNS={};}); }catch(e){ AC_TOWNS={}; }
+function tbIndexReq(){ if(_tbIndex!==null) return _tbIndex; if(!_tbIndexReq){ _tbIndexReq=true;
+    fetch('assets/actownmodels/index.json').then(r=>r.ok?r.json():null).then(j=>{ _tbIndex=(j&&j.models)||{}; }).catch(()=>{_tbIndex={};}); }
+  return null; }
+const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
+function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
+const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
+function tbModelReq(did){ did=(''+did).toUpperCase();
+  if(_tbModels[did]!==undefined) return (_tbModels[did]&&_tbModels[did].ready)?_tbModels[did]:null;
+  const idx=tbIndexReq(); if(idx===null) return null;                 // index still loading
+  const m=idx[did]; if(!m){ _tbModels[did]=false; return null; }
+  _tbModels[did]={ready:false};
+  fetch('assets/actownmodels/'+m.file).then(r=>r.ok?r.json():null).then(j=>{
+    _tbModels[did]=j?{ready:true,groups:j.groups,bb:j.bb||m.bb}:false; }).catch(()=>{_tbModels[did]=false;});
+  return null;
+}
+function tbBuildMesh(md){   // one textured Group for a placement (textures shared via tbTex)
+  const g=new THREE.Group();
+  for(const gr of md.groups){
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(gr.v,3));
+    if(gr.n&&gr.n.length) geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
+    if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
+    geo.setIndex(gr.i); if(!gr.n||!gr.n.length) geo.computeVertexNormals();
+    const mm=gr.mat||{};
+    const mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0,transparent:!!mm.clip})
+                    :new THREE.MeshStandardMaterial({color:(mm.color!=null?mm.color:0x8a8478),roughness:0.92,metalness:0.02,side:THREE.DoubleSide});
+    const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; g.add(me);
+  }
+  return g;
+}
+// build one town's real buildings, ring them with SOLID colliders, and station its vendors at the
+// street-facing shopfront. (AC town buildings are closed exterior shells — the door is a portal to
+// a separate interior cell we don't carry — so the authentic read is the shopkeeper at the door,
+// facing the plaza, rather than a vendor sealed inside an impassable box.)
+function tbBuildTown(c,objs){
+  const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
+  const obst=[], recs=[];
+  for(const o of objs){
+    if(o.kind!=='building') continue;
+    const md=_tbModels[(''+o.did).toUpperCase()]; if(!md||!md.ready) continue;
+    const wx=c.x+o.x, wz=c.z+o.z, gy=groundY(wx,wz), th=o.rot||0, cw=Math.cos(th), sw=Math.sin(th);
+    const bm=tbBuildMesh(md); bm.position.set(wx,gy,wz); bm.rotation.y=th; g.add(bm);
+    const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2;
+    const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;                // world footprint centre
+    recs.push({fcx,fcz,hx,hz,th});
+    // solid perimeter colliders around the oriented footprint (spacing≈2r so there are no gaps)
+    const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
+      for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
+        const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw, ob={x:px,z:pz,r:0.8}; obstacles.push(ob); obst.push(ob); } };
+    const x0=lcx-hx,x1=lcx+hx,z0=lcz-hz,z1=lcz+hz;
+    edge(x0,z0,x1,z0); edge(x1,z0,x1,z1); edge(x1,z1,x0,z1); edge(x0,z1,x0,z0);
+  }
+  seatRealTownVendors(c,recs);
+  return {c,g,obst};
+}
+function seatRealTownVendors(c,recs){
+  if(!recs.length) return;
+  const vObs=new Set(); for(const s of shops) if(s.obs) for(const o of s.obs) vObs.add(o);   // vendor colliders never block a vendor
+  const placed=[];
+  const crowded=(x,z,gap)=>{ for(const o of obstacles){ if(vObs.has(o)) continue; if(((o.x-x)**2+(o.z-z)**2)<(o.r+gap)**2) return true; }
+    for(const p of placed){ if(((p.x-x)**2+(p.z-z)**2)<2.6) return true; } return false; };   // keep vendors ~1.6m apart
+  const pathClear=(ax,az,bx,bz)=>{ const n=Math.max(2,Math.ceil(Math.hypot(bx-ax,bz-az)/0.4));
+    for(let i=0;i<=n;i++){ const t=i/n, x=ax+(bx-ax)*t, z=az+(bz-az)*t;
+      for(const o of obstacles){ if(vObs.has(o)) continue; if(((o.x-x)**2+(o.z-z)**2)<(o.r+0.3)**2) return false; } } return true; };
+  const wallExit=(rec,ux,uz)=>{ const cw=Math.cos(rec.th),sw=Math.sin(rec.th), lux=ux*cw-uz*sw, luz=ux*sw+uz*cw;
+    return Math.min(Math.abs(lux)>1e-3?rec.hx/Math.abs(lux):1e9, Math.abs(luz)>1e-3?rec.hz/Math.abs(luz):1e9); };
+  const DIRS=[0,0.8,-0.8,1.6,-1.6,2.4,-2.4,Math.PI], STANDOFF=[1.3,1.9,2.7];
+  const per=new Map();
+  for(const sh of shops){
+    if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;
+    if(Math.hypot(sh.x-c.x,sh.z-c.z)>62) continue;                  // only this town's vendors
+    let rec=null,rd=1e9; for(const r of recs){ const d=Math.hypot(r.fcx-sh.x,r.fcz-sh.z); if(d<rd){rd=d;rec=r;} }
+    if(!rec) continue;
+    const k=per.get(rec)||0; per.set(rec,k+1);
+    const base=Math.atan2(c.z-rec.fcz, c.x-rec.fcx);                // toward the plaza (its street front)
+    let spot=null;
+    for(let di=0; di<DIRS.length && !spot; di++){
+      const a=base+DIRS[(di+k)%DIRS.length], ux=Math.cos(a), uz=Math.sin(a);   // rotate start per vendor → shared buildings spread
+      for(const extra of STANDOFF){ const stand=wallExit(rec,ux,uz)+extra, nx=rec.fcx+ux*stand, nz=rec.fcz+uz*stand;
+        if(!crowded(nx,nz,0.5) && pathClear(nx+ux*3.5,nz+uz*3.5,nx,nz)){ spot={nx,nz,ux,uz}; break; } }
+    }
+    if(!spot){ const ux=Math.cos(base),uz=Math.sin(base),stand=wallExit(rec,ux,uz)+1.4;
+      spot={nx:rec.fcx+ux*stand,nz:rec.fcz+uz*stand,ux,uz}; }        // last resort: plaza-facing wall
+    const fy=groundY(spot.nx,spot.nz);
+    sh.mesh.position.set(spot.nx,fy,spot.nz); sh.mesh.rotation.y=Math.atan2(-spot.ux,-spot.uz);   // face outward (buildPerson fronts -z)
+    sh.x=spot.nx; sh.z=spot.nz; sh._seated=true; placed.push({x:spot.nx,z:spot.nz});
+    if(sh.obs){ sh.obs[0].x=spot.nx; sh.obs[0].z=spot.nz; if(sh.obs[1]){ sh.obs[1].x=spot.nx-spot.ux*0.9; sh.obs[1].z=spot.nz-spot.uz*0.9; } }
+  }
+}
+function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
+  if(e.g) disposeObject3D(e.g);
+  for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
+  delete _tbBuilt[name];
+}
+let _tbBuilt={}, _tbAcc=0;
+const TB_BUILD_R=430, TB_DROP_R=560;
+function tbStream(dt){
+  if(inDungeon||inNetwork||!AC_TOWNS) return;
+  _tbAcc-=dt; if(_tbAcc>0) return; _tbAcc=0.5;
+  const px=player.x,pz=player.z;
+  for(const k in _tbBuilt){ const c=_tbBuilt[k].c; if(Math.hypot(c.x-px,c.z-pz)>TB_DROP_R) tbDropTown(k); }
+  for(const c of CITIES){ if(_tbBuilt[c.name]) continue;
+    if(Math.hypot(c.x-px,c.z-pz)>TB_BUILD_R) continue;
+    const objs=AC_TOWNS[c.name]; if(!objs){ _tbBuilt[c.name]={c,g:null,obst:[]}; seatVendorsInBuildings(); continue; }  // no real data → procedural fallback seating
+    let ready=true;                                                 // all this town's building meshes loaded?
+    for(const o of objs){ if(o.kind!=='building') continue; if(!tbModelReq(o.did)) ready=false; }
+    if(_tbIndex===null){ tbIndexReq(); ready=false; }
+    if(ready) _tbBuilt[c.name]=tbBuildTown(c,objs);
+  }
+}
 function buildPlazaFeature(region,s){
   const g=new THREE.Group();
   if(region===0){ // Aluvian well
@@ -6554,16 +6676,22 @@ function addCity(c){
   // a Town Network portal stands in every town
   const tpx=c.x,tpz=c.z-9,tp=buildPortal("Town Network");tp.position.set(tpx,0,tpz);scene.add(tp);scenery.push(tp);
   tnPortals.push({x:tpx,z:tpz,mesh:tp});obstacles.push({x:tpx,z:tpz,r:1.2});
-  const cnt=c.capital?9:5,ring=c.capital?40:24,sc=c.capital?1.4:1.0;  // wider ring for the larger (≈2×) buildings
-  for(let i=0;i<cnt;i++){
-    const a=i/cnt*6.28+c.region*0.7,hx=c.x+Math.cos(a)*ring,hz=c.z+Math.sin(a)*ring;
-    const kind=i===0?"hall":(i%3===0?"shop":"house");
-    const arch=buildingArchetype(c.region,kind,sc*(kind==="hall"?1.2:1));
-    const th=Math.atan2(c.x-hx,c.z-hz), gy=groundY(hx,hz); // door (+z) faces the plaza centre
-    queueBuilding(arch,hx,hz,th,gy,c);   // c = town centre → per-town culling cluster
-    const ct=Math.cos(th),st=Math.sin(th);
-    for(const cc of arch.colliders){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
-    if(arch.surfaces) registerStructure(hx,hz,th,gy,arch.surfaces);   // ramp + upstairs become walkable (base = ground the building sits on)
+  const ring=c.capital?40:24,sc=c.capital?1.4:1.0;
+  // the town's actual buildings are the REAL AC structures (assets/actowns.json placements +
+  // assets/actownmodels meshes), streamed in around the player by tbStream(). If a town has no
+  // real data, fall back to the procedural culture ring so it isn't left bare.
+  if(AC_TOWNS && !AC_TOWNS[c.name]){                                // real data loaded but this town lacks it
+    const cnt=c.capital?9:5;
+    for(let i=0;i<cnt;i++){
+      const a=i/cnt*6.28+c.region*0.7,hx=c.x+Math.cos(a)*ring,hz=c.z+Math.sin(a)*ring;
+      const kind=i===0?"hall":(i%3===0?"shop":"house");
+      const arch=buildingArchetype(c.region,kind,sc*(kind==="hall"?1.2:1));
+      const th=Math.atan2(c.x-hx,c.z-hz), gy=groundY(hx,hz); // door (+z) faces the plaza centre
+      queueBuilding(arch,hx,hz,th,gy,c);
+      const ct=Math.cos(th),st=Math.sin(th);
+      for(const cc of arch.colliders){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
+      if(arch.surfaces) registerStructure(hx,hz,th,gy,arch.surfaces);
+    }
   }
   // paved plaza — a triangle-fan that CONFORMS to the ground (groundY) so townsfolk standing
   // on it aren't half-buried: a flat disc mismatched the tilted town terrain by up to ~0.5u.
@@ -14023,6 +14151,7 @@ function update(dt){
   cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
+  tbStream(dt);          // stream the real AC town buildings in/out around the player
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
@@ -17907,6 +18036,7 @@ function seatVendorsInBuildings(){
     if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;   // never box in a roaming vendor
     let city=null,cd=1e9; for(const c of CITIES){ const d=Math.hypot(c.x-sh.x,c.z-sh.z); if(d<cd){cd=d;city=c;} }
     if(!city||cd>52) continue;                                   // only vendors actually standing in a town
+    if(!AC_TOWNS||AC_TOWNS[city.name]) continue;                 // only fallback towns here; real-data towns seat in tbBuildTown
     let st=null,sd=1e9; for(const s of structures){ const d=Math.hypot(s.bx-sh.x,s.bz-sh.z); if(d<sd){sd=d;st=s;} }
     if(!st||sd>55) continue;                                     // no building near enough — leave it be
     let ux=city.x-st.bx, uz=city.z-st.bz; const ul=Math.hypot(ux,uz)||1; ux/=ul; uz/=ul;   // toward the door (faces the centre)
