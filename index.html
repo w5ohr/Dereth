@@ -122,17 +122,24 @@
   #closeSheet{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}
   #closeSheet:hover{background:#3a2e16}
 
-  #overlay{position:absolute;inset:0;background:radial-gradient(circle at 50% 40%,#1a140a,#060503);
-    display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;z-index:40;pointer-events:auto}
-  #overlay h1{font-size:46px;margin:0;color:var(--gold);letter-spacing:2px;text-shadow:0 3px 0 #000,0 0 30px #6b4f17}
-  #overlay .tag{color:var(--dim);margin:8px 0 4px;font-style:italic}
-  #overlay .body{max-width:560px;color:var(--ink);font-size:13.5px;line-height:1.6;margin:14px 22px}
-  #overlay .keys{color:var(--dim);font-size:12px;margin-top:10px;line-height:1.9}
-  #overlay button{margin-top:22px;padding:12px 34px;border-radius:8px;border:1px solid var(--gold);
+  #overlay{position:absolute;inset:0;background:
+      radial-gradient(ellipse 120% 80% at 50% 8%,rgba(120,86,34,.16),transparent 60%),
+      radial-gradient(circle at 50% 42%,#14100a,#050403 78%);
+    display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;z-index:40;pointer-events:auto;overflow:auto}
+  #overlay .ac-crest{font-size:30px;color:#c79a3a;opacity:.85;margin-bottom:-2px;text-shadow:0 0 18px #6b4f17}
+  #overlay h1{font-size:54px;margin:0;color:var(--gold);letter-spacing:10px;font-weight:normal;
+    text-shadow:0 2px 0 #000,0 0 34px #8a6a1e;background:linear-gradient(180deg,#ffe9a8,#c79a3a);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  #overlay .tag{color:#b7a06a;margin:6px 0 2px;font-style:italic;letter-spacing:2px;font-size:14px}
+  #overlay .body{max-width:520px;color:var(--ink);font-size:13.5px;line-height:1.65;margin:12px 22px 4px}
+  #overlay .keys{color:var(--dim);font-size:12px;margin-top:10px;line-height:1.9;max-width:640px}
+  #overlay button{margin-top:0;padding:12px 34px;border-radius:8px;border:1px solid var(--gold);
     background:linear-gradient(180deg,#3a2e16,#221a0c);color:var(--gold);font-size:17px;cursor:pointer;letter-spacing:1px}
-  #overlay button:hover{background:#4a3a1c}
-  #overlay #paths{display:flex;gap:10px;margin-top:18px}
-  #overlay #paths button{margin-top:0;padding:10px 18px;font-size:15px}
+  #overlay button:hover{background:#4a3a1c;box-shadow:0 0 14px #6b4f1755}
+  #overlay #titleMenu{display:flex;flex-direction:column;gap:10px;margin-top:16px;align-items:center}
+  #overlay #titleLinks{display:flex;gap:22px;margin-top:16px}
+  #overlay #titleLinks span{color:#b7a06a;font-size:13px;cursor:pointer;letter-spacing:.5px;opacity:.9}
+  #overlay #titleLinks span:hover{color:var(--gold);text-decoration:underline}
+  #overlay #controlsBox{margin-top:12px;padding:12px 18px;border:1px solid var(--border);border-radius:8px;background:rgba(10,8,5,.5)}
   #overlay .plabel{color:var(--dim);font-size:12px;margin-top:18px;letter-spacing:1px}
   kbd{background:#2a2110;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:1px 6px;color:var(--gold);font-size:11px}
   #pausemsg{position:absolute;inset:0;z-index:37;display:none;align-items:center;justify-content:center;flex-direction:column;
@@ -407,19 +414,13 @@
 </div></div>
 
 <div id="overlay">
+  <div class="ac-crest">◈</div>
   <h1>DERETH</h1>
-  <div class="tag">A first-person Asheron's Call homage · for Apple Silicon Macs</div>
+  <div class="tag">A World of Asheron's Call</div>
   <div class="body">
-    You wake on the shores of a fractured world, summoned by the wizard <b>Asheron</b> through a
-    shimmering portal. There are no classes here — only the skills you choose to hone. Bind yourself
-    to a <b>Lifestone</b> so death is never the end, then hunt the drudges and mosswarts of the wilds.
-  </div>
-  <div class="keys">
-    <kbd>W A S D</kbd> move &nbsp;·&nbsp; <kbd>Mouse</kbd> look &nbsp;·&nbsp; <kbd>Click</kbd> attack &nbsp;·&nbsp; <kbd>Shift</kbd> sprint &nbsp;·&nbsp; <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>Shift</kbd>+<kbd>Space</kbd> dodge &nbsp;·&nbsp; <kbd>Q</kbd> swap sword/bow<br>
-    <kbd>1</kbd> Flame &nbsp; <kbd>2</kbd> Frost &nbsp; <kbd>3</kbd> Heal &nbsp; <kbd>4</kbd> Stam→Mana &nbsp; <kbd>5</kbd> Lightning &nbsp; <kbd>6</kbd> Flame Storm &nbsp; <kbd>7</kbd> Blade Lure &nbsp; <kbd>8</kbd> Quickening<br>
-    <kbd>C</kbd> sheet &nbsp; <kbd>T</kbd> inventory/tinker &nbsp; <kbd>B</kbd> bestiary &nbsp; <kbd>E</kbd> loot / bind / portal / talk / gather<br>
-    <kbd>R</kbd>/<kbd>G</kbd> health &nbsp; <kbd>F</kbd> mana &nbsp; <kbd>9</kbd>/<kbd>0</kbd> elixirs &nbsp; <kbd>Tab</kbd> map (click to travel) &nbsp; <kbd>O</kbd> settings &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>P</kbd> pause<br>
-    a day/night cycle &amp; changing weather sweep over Dereth, and a world boss roams the far reaches
+    Auberean turns, and the portals of Dereth open once more. Bind your soul to a <b>Lifestone</b>,
+    hone the skills you choose — no classes bind you here — and walk a fractured isle of ancient
+    ruins, wandering portals, and the insectoid <b>Olthoi</b>.
   </div>
   <div id="authBox" style="margin:6px auto 4px;max-width:360px">
     <div class="plabel">⚔ PLAY ONLINE — DERETH MMO</div>
@@ -451,15 +452,21 @@
     </div>
   </div>
   <div class="plabel" style="opacity:.7">— or play offline (solo) —</div>
-  <button id="continueBtn" style="display:none">Continue Your Saga</button>
-  <div class="plabel">CHOOSE YOUR PATH</div>
-  <div id="paths">
-    <button data-path="aluvian">⚔ Aluvian</button>
-    <button data-path="sho">🏹 Sho</button>
-    <button data-path="gharundim">✨ Gharu'ndim</button>
+  <div id="titleMenu">
+    <button id="continueBtn" style="display:none">Continue Your Saga</button>
+    <button id="startBtn">Create a New Character</button>
   </div>
-  <button id="startBtn">Create a New Hero</button>
-  <button id="titleSettingsBtn" style="margin-top:10px;font-size:13px;opacity:.85">⚙ Settings</button>
+  <div id="titleLinks">
+    <span id="titleSettingsBtn">⚙ Settings</span>
+    <span id="controlsToggle">⌨ Controls</span>
+  </div>
+  <div id="controlsBox" class="keys" style="display:none">
+    <kbd>W A S D</kbd> move &nbsp;·&nbsp; <kbd>Mouse</kbd> look &nbsp;·&nbsp; <kbd>Click</kbd> attack &nbsp;·&nbsp; <kbd>Shift</kbd> sprint &nbsp;·&nbsp; <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>Shift</kbd>+<kbd>Space</kbd> dodge &nbsp;·&nbsp; <kbd>Q</kbd> swap sword/bow<br>
+    <kbd>1</kbd> Flame &nbsp; <kbd>2</kbd> Frost &nbsp; <kbd>3</kbd> Heal &nbsp; <kbd>4</kbd> Stam→Mana &nbsp; <kbd>5</kbd> Lightning &nbsp; <kbd>6</kbd> Flame Storm &nbsp; <kbd>7</kbd> Blade Lure &nbsp; <kbd>8</kbd> Quickening<br>
+    <kbd>C</kbd> sheet &nbsp; <kbd>T</kbd> inventory/tinker &nbsp; <kbd>B</kbd> bestiary &nbsp; <kbd>E</kbd> loot / bind / portal / talk / gather<br>
+    <kbd>R</kbd>/<kbd>G</kbd> health &nbsp; <kbd>F</kbd> mana &nbsp; <kbd>9</kbd>/<kbd>0</kbd> elixirs &nbsp; <kbd>Tab</kbd> map (click to travel) &nbsp; <kbd>O</kbd> settings &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>P</kbd> pause<br>
+    a day/night cycle &amp; changing weather sweep over Dereth, and a world boss roams the far reaches
+  </div>
 </div>
 
 <style>
@@ -854,6 +861,17 @@ const PRESETS={
   sho:{attr:{Coordination:5,Quickness:3,Focus:2},pot:1,mana:1,title:"the Sho",town:"Shoushi"},
   gharundim:{attr:{Focus:6,Self:4},mana:3,title:"the Gharu'ndim",town:"Yaraq"},
   viamontian:{attr:{Strength:4,Coordination:4,Self:2},armor:5,pot:1,title:"the Viamontian",town:"Sanamar"},   // Throne of Destiny heritage
+};
+// AC heritage lore — shown when a heritage is chosen at character creation (the four playable peoples).
+const HERITAGE_LORE={
+  aluvian:{name:"Aluvian",town:"Holtburg",affinity:"Blade & Bow",
+    lore:"A hardy, self-reliant people from the island nation of Aluvia — farmers, hunters and soldiers whose blood runs to the frontier. The Aluvians favour cold steel and the longbow, taking readily to melee and missile skill. They begin their lives in the mountain garrison of Holtburg."},
+  sho:{name:"Sho",town:"Shoushi",affinity:"Discipline & Finesse",
+    lore:"A contemplative people of the eastern mountains who prize harmony, discipline and mastery of the self. Sho warriors are as deadly unarmed as armed, their scholars keen of mind. They favour finesse weapons and swift movement, and begin in the wooded town of Shoushi."},
+  gharundim:{name:"Gharu'ndim",town:"Yaraq",affinity:"The Arcane",
+    lore:"A learned people of the arid south who prize scholarship, tradition and the arts magical. The mages and merchants of the Gharu'ndim are renowned across Dereth. They favour the schools of magic, and begin in the desert city of Yaraq."},
+  viamontian:{name:"Viamontian",town:"Sanamar",affinity:"Knightly Steel",
+    lore:"A proud, chivalrous people ruled by a monarchy across the sea — knights, courtiers and crusaders sworn to blade and crown. The Viamontians favour heavy weapons and the sword, and arrive on Dereth's shores at the port of Sanamar."},
 };
 // AC creation: professions (templates) preset attributes + starting trained skills; "Custom" = free build.
 const CREATE_POOL=270;   // AC: 270 Attribute Credits above the six 10-point bases (330 total), max 100 each
@@ -22047,6 +22065,8 @@ function refreshAvatarAppearance(){
 
 startBtn.onclick=()=>{ isOnline=false; openCharCreator("",race=>{ wipeSave(); startGame(false,race); }); };
 { const tsb=document.getElementById('titleSettingsBtn'); if(tsb) tsb.onclick=openSettings; }
+{ const ct=document.getElementById('controlsToggle'), cb=document.getElementById('controlsBox');
+  if(ct&&cb) ct.onclick=()=>{ cb.style.display=cb.style.display==="none"?"block":"none"; }; }
 continueBtn.onclick=()=>{ isOnline=false; startGame(true); };
 document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{   // offline: pick a heritage → open the creator
   isOnline=false; openCharCreator(b.dataset.path,race=>{ wipeSave(); startGame(false,race); });
