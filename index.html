@@ -195,6 +195,7 @@
     <div class="attr"><span>Self</span><b id="aSelf">10</b></div>
     <h4 style="margin-top:8px">Status</h4>
     <div class="attr"><span>Armor</span><b id="sArmor">0</b></div>
+    <div class="attr"><span>Burden</span><b id="sBurden">0%</b></div>
     <div class="attr"><span>Kills</span><b id="sKills">0</b></div>
     <div class="attr"><span>Pyreals</span><b id="sGold">0</b></div>
     <div class="attr"><span>Materials</span><b id="sMats">0</b></div>
@@ -2257,7 +2258,8 @@ function encumbrance(){
   const as=player.armorSlots||{}; for(const k in as) load+=itemBurden(as[k]);
   const jw=player.jewelry||{}; for(const k in jw) load+=itemBurden(jw[k]);
   const cap=200+player.attr.Strength*18+player.attr.Endurance*6;
-  return {load,cap,ratio:clamp(load/cap,0,1.8)};
+  // ceiling 2.5 so the ≥200% "too encumbered to jump" (AC CantJumpLoadedDown) is reachable; you still crawl.
+  return {load,cap,ratio:clamp(load/cap,0,2.5)};
 }
 const GRAV=22;
 const ACADEMY_POS={x:2640,z:-3820};   // B1: the Training Academy grounds, north of Holtburg
@@ -14279,7 +14281,11 @@ function update(dt){
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
     player.regenT=0;checkAchievements();
-    { player.st=Math.min(player.mst,player.st+(1.5+player.attr.Endurance*0.05)*armorMove().stam); }
+    // Stamina regen scales with worn-armour weight AND overall burden — hauling past your capacity
+    // (ratio>1) leaves you winded and recovering slower, easing back to full once you drop weight.
+    { const encR=(typeof encumbrance==="function")?encumbrance().ratio:0;
+      const burdenStamMod=encR<=1?1:Math.max(0.4,2-encR);
+      player.st=Math.min(player.mst,player.st+(1.5+player.attr.Endurance*0.05)*armorMove().stam*burdenStamMod); }
     player.mn=Math.min(player.mmn,player.mn+0.8+player.attr.Self*0.04);
     if(player.hp<player.mhp) player.hp=Math.min(player.mhp,player.hp+0.6+player.attr.Endurance*0.03);
   }
@@ -14995,6 +15001,8 @@ function updateHUD(){
   document.getElementById("lvline").textContent=`Level ${player.level} · Unspent XP: ${player.xpUnspent}`;
   for(const a of ATTRS) document.getElementById("a"+a).textContent=player.attr[a];
   document.getElementById("sArmor").textContent=Math.round((player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01));
+  { const bt=document.getElementById("sBurden"); if(bt){ const r=(typeof encumbrance==="function")?encumbrance().ratio:0, pct=Math.round(r*100);
+      bt.textContent=pct+"%"+(r>=2?" ⚠":r>1?" ↓":""); bt.style.color=r>=2?"#e8704a":r>1?"#e8c24a":"#e8dcc0"; } }   // >100% slows you; ≥200% blocks jumping
   document.getElementById("sKills").textContent=player.kills;
   document.getElementById("sGold").textContent=player.gold;
   document.getElementById("sMats").textContent=player.materials;
