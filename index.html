@@ -15025,12 +15025,22 @@ function collide(nx,nz){
     const s=dungeonSlide(player.x,player.z,nx,nz);
     return [clamp(s[0],-HALF+1,HALF-1),clamp(s[1],-HALF+1,HALF-1)];
   }
-  for(const o of obstacles){
-    if(o.yMax!=null&&player.y>o.yMax) continue;   // low obstacles (ground-story walls, furniture) don't haunt upper floors
-    const dx=nx-o.x,dz=nz-o.z,d=Math.hypot(dx,dz),min=o.r+player.r;
-    if(d<min&&d>0.001){nx=o.x+dx/d*min;nz=o.z+dz/d*min;}
+  // Sub-step the move from the current position so a big per-frame step (fast run + low framerate)
+  // can't TUNNEL through a thin wall — resolve against the obstacle circles at each sub-step, sliding
+  // along whatever it hits. (Was: only the destination point was tested, so a long step skipped walls.)
+  const ox=player.x, oz=player.z, ddx=nx-ox, ddz=nz-oz, dist=Math.hypot(ddx,ddz);
+  const steps=Math.min(12,Math.max(1,Math.ceil(dist/(player.r||0.35))));
+  const sdx=ddx/steps, sdz=ddz/steps;
+  let cx=ox, cz=oz;
+  for(let st=0;st<steps;st++){
+    cx+=sdx; cz+=sdz;                                     // advance one sub-step from the resolved position
+    for(const o of obstacles){
+      if(o.yMax!=null&&player.y>o.yMax) continue;         // low obstacles (ground-story walls, furniture) don't haunt upper floors
+      const dx=cx-o.x,dz=cz-o.z,d=Math.hypot(dx,dz),min=o.r+player.r;
+      if(d<min&&d>0.001){ cx=o.x+dx/d*min; cz=o.z+dz/d*min; }
+    }
   }
-  nx=clamp(nx,-HALF+1,HALF-1);nz=clamp(nz,-HALF+1,HALF-1);
+  nx=clamp(cx,-HALF+1,HALF-1);nz=clamp(cz,-HALF+1,HALF-1);
   if(terrainH(nx,nz)<-6) return [player.x,player.z]; // W3: you can wade into deep water (and drown), but the ocean abyss stays a wall
   return [nx,nz];
 }
@@ -15072,13 +15082,11 @@ function update(dt){
   // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
   // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
   let f=0,s=0;
-  // ARROW KEYS move the CAMERA (orbit around the character); WASD moves the character
-  if(keys["arrowleft"])  camOrbYaw+=dt*2.2;
-  if(keys["arrowright"]) camOrbYaw-=dt*2.2;
-  if(keys["arrowup"])    camOrbPitch=clamp(camOrbPitch+dt*1.7,-1.35,1.35);
-  if(keys["arrowdown"])  camOrbPitch=clamp(camOrbPitch-dt*1.7,-1.35,1.35);
-  if(held("forward")||autoRun) f+=1;
-  if(held("back")||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
+  // ARROW KEYS (AC default): Left/Right TURN the character, Up/Down move forward/back
+  if(keys["arrowleft"])  player.yaw+=dt*2.6;
+  if(keys["arrowright"]) player.yaw-=dt*2.6;
+  if(held("forward")||keys["arrowup"]||autoRun) f+=1;
+  if(held("back")||keys["arrowdown"]||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
   if(held("right")||keys["keyc"]) s+=1;           // Z / C sidestep (AC)
   if(held("left")||keys["keyz"]) s-=1;
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
