@@ -7537,6 +7537,93 @@ function kcReadLectern(bk){
   };
   render(); document.body.appendChild(ov);
 }
+// ══════════════ The eternal festival of Val Halla: fireworks, a murmuring court, and lute-song ══════════════
+const KC_FW_COLS=[0xff4a4a,0x4affa0,0x4a9aff,0xffd23b,0xff6adf,0xffffff,0xffa030,0x9a6aff];
+const KC_ROOF_Y=45;               // launch height above the keep's own ground plane
+let kcRockets=[],kcFlashes=[],_kcFwT=0,_kcFwHugeT=0,_kcMusT=0,_kcMusI=0,kcCrowd=null;
+// spherical starburst that rides the existing bursts[] physics (gravity + fade)
+function kcFireBurst(x,y,z,col,n,speed,big){
+  for(let i=0;i<n;i++){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,depthWrite:false,fog:false}));
+    const sc=(big?rnd(1.4,2.4):rnd(0.9,1.6)); sp.scale.set(sc,sc,sc); sp.position.set(x,y,z); scene.add(sp);   // big enough to read against the sky from afar
+    const a=rnd(0,6.28), el=Math.acos(rnd(-1,1)), spd=speed*rnd(0.55,1.1);
+    bursts.push({sp,vx:Math.sin(el)*Math.cos(a)*spd,vy:Math.cos(el)*spd,vz:Math.sin(el)*Math.sin(a)*spd,t:rnd(1.1,1.8)});
+  }
+}
+function kcLaunchFirework(huge){
+  if(typeof KC==="undefined"||typeof CIRC==="undefined") return;
+  const gy=groundY(KC.x,KC.z);
+  const spots=[[0,-8],[-60,-100],[60,-100],[-60,90],[60,90]];   // roof crown + the four bastion tops
+  const s=spots[irnd(0,spots.length-1)], x=KC.x+s[0]+rnd(-4,4), z=KC.z+s[1]+rnd(-4,4), y0=gy+KC_ROOF_Y;
+  const col=KC_FW_COLS[irnd(0,KC_FW_COLS.length-1)];
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,depthWrite:false,fog:false}));
+  const sc=huge?1.0:0.6; sp.scale.set(sc,sc,sc); sp.position.set(x,y0,z); scene.add(sp);
+  const light=new THREE.PointLight(col,huge?1.6:0.8,huge?20:11); light.position.set(x,y0,z); scene.add(light);
+  kcRockets.push({sp,light,x,z,y:y0,vy:huge?24:19,fuse:huge?2.2:1.7,huge,col});
+  if(huge) kcBoomWhoosh();
+}
+// ── festival audio (WebAudio; no-ops until initAudio has run) ──
+function kcBoomWhoosh(){ if(typeof actx==="undefined"||!actx||muted) return; const t=actx.currentTime+0.02;
+  const o=actx.createOscillator(),g=actx.createGain(); o.type="sine"; o.frequency.setValueAtTime(900,t); o.frequency.exponentialRampToValueAtTime(1700,t+0.5);
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.04,t+0.1); g.gain.exponentialRampToValueAtTime(0.0001,t+0.55);
+  o.connect(g).connect(masterGain); o.start(t); o.stop(t+0.6); }
+function kcBoom(){ if(typeof actx==="undefined"||!actx||muted) return; const t=actx.currentTime;
+  const o=actx.createOscillator(),g=actx.createGain(); o.type="sine"; o.frequency.setValueAtTime(130,t); o.frequency.exponentialRampToValueAtTime(38,t+0.5);
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.55,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.95);
+  o.connect(g).connect(masterGain); o.start(t); o.stop(t+1.0);
+  const nb=actx.createBuffer(1,(actx.sampleRate*0.4)|0,actx.sampleRate); const d=nb.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2.2);
+  const ns=actx.createBufferSource(); ns.buffer=nb; const nf=actx.createBiquadFilter(); nf.type="bandpass"; nf.frequency.value=1400; const ng=actx.createGain(); ng.gain.value=0.28;
+  ns.connect(nf).connect(ng).connect(masterGain); ns.start(t+0.02); }
+// a plucked string (sawtooth = lute, triangle = harp) through a decaying low-pass
+function kcPluck(freq,harp){ if(typeof actx==="undefined"||!actx||muted) return; const t=actx.currentTime;
+  const o=actx.createOscillator(); o.type=harp?"triangle":"sawtooth"; o.frequency.value=freq;
+  const lp=actx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.setValueAtTime(harp?2800:1900,t); lp.frequency.exponentialRampToValueAtTime(560,t+0.5);
+  const g=actx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(harp?0.09:0.075,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+(harp?2.4:1.5));
+  o.connect(lp).connect(g).connect(masterGain); o.start(t); o.stop(t+(harp?2.5:1.6)); }
+const KC_HARP=[261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25];   // C-major pentatonic across two octaves
+function kcCrowdInit(){ if(kcCrowd||typeof actx==="undefined"||!actx) return;
+  const buf=actx.createBuffer(1,(actx.sampleRate*3)|0,actx.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  const src=actx.createBufferSource(); src.buffer=buf; src.loop=true;
+  const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=500; bp.Q.value=0.8;
+  const lp=actx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=1500;
+  const g=actx.createGain(); g.gain.value=0;
+  const lfo=actx.createOscillator(); lfo.type="sine"; lfo.frequency.value=0.6; const lg=actx.createGain(); lg.gain.value=190; lfo.connect(lg); lg.connect(bp.frequency);   // babble: shift the murmur band
+  src.connect(bp).connect(lp).connect(g).connect(masterGain); src.start(); lfo.start();
+  kcCrowd={g}; }
+function kcVoiceBlip(){ if(typeof actx==="undefined"||!actx||muted) return; const t=actx.currentTime;
+  const o=actx.createOscillator(); o.type="sawtooth"; o.frequency.value=90+Math.random()*90;
+  const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=500+Math.random()*900; bp.Q.value=4;
+  const g=actx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.03,t+0.03); g.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+  o.connect(bp).connect(g).connect(masterGain); o.start(t); o.stop(t+0.18); }
+// ── the festival tick: launches, particle rockets, the murmuring court and the lute-song ──
+function kcAmbience(dt){
+  if(typeof KC==="undefined"||inDungeon||inNetwork) return;
+  const near=Math.hypot(player.x-KC.x,player.z-KC.z)<440;
+  // advance rockets (rise, then burst) — even if you wander a little out of range mid-flight
+  for(let i=kcRockets.length-1;i>=0;i--){ const r=kcRockets[i];
+    r.y+=r.vy*dt; r.vy-=dt*7.2; r.fuse-=dt; r.sp.position.y=r.y; r.light.position.y=r.y; r.light.intensity*=Math.pow(0.985,dt*60);
+    if(r.fuse<=0){ const n=r.huge?52:24, cols=r.huge?[r.col,KC_FW_COLS[irnd(0,KC_FW_COLS.length-1)],0xffffff]:[r.col];
+      for(const c of cols) kcFireBurst(r.x,r.y,r.z,c,n,r.huge?11:7,r.huge);
+      const fl=new THREE.PointLight(r.col,r.huge?7:3,r.huge?46:24); fl.position.set(r.x,r.y,r.z); scene.add(fl); kcFlashes.push({l:fl,t:0.5});
+      if(r.huge) kcBoom();
+      scene.remove(r.sp); scene.remove(r.light); kcRockets.splice(i,1); } }
+  for(let i=kcFlashes.length-1;i>=0;i--){ const f=kcFlashes[i]; f.t-=dt; f.l.intensity=Math.max(0,f.l.intensity*Math.pow(0.9,dt*60)); if(f.t<=0){ scene.remove(f.l); kcFlashes.splice(i,1); } }
+  // crowd murmur gain follows courtyard proximity
+  if(typeof actx!=="undefined"&&actx){ kcCrowdInit(); if(kcCrowd) kcCrowd.g.gain.setTargetAtTime(near&&!muted?0.11:0,actx.currentTime,0.6); }
+  if(!near) return;
+  // occasional voices under the murmur
+  if(Math.random()<dt*1.4) kcVoiceBlip();
+  // launch fireworks at the requested rate — 120 + 20 huge per game hour (DAYLEN/24 s = a game hour)
+  const perHr=DAYLEN/24;
+  _kcFwT-=dt; if(_kcFwT<=0){ _kcFwT=(perHr/120)*rnd(0.6,1.4); kcLaunchFirework(false); }
+  _kcFwHugeT-=dt; if(_kcFwHugeT<=0){ _kcFwHugeT=(perHr/20)*rnd(0.7,1.3); kcLaunchFirework(true); }
+  // the castle's own lute & harp: a slow arpeggio (the zone-music manager mutes its track here)
+  if(typeof actx!=="undefined"&&actx&&!muted){
+    _kcMusT-=dt; if(_kcMusT<=0){ _kcMusT=0.44*rnd(0.9,1.15); const nt=KC_HARP[_kcMusI%KC_HARP.length]; kcPluck(nt,(_kcMusI%2)===0);
+      if(_kcMusI%8===0) kcPluck(130.81,false);   // a low lute root under the phrase
+      if(_kcMusI%8===4) kcPluck(196.00,true);    // a harp fifth mid-phrase
+      _kcMusI++; } }
+}
 // ── the valkyries: max-level buff bots + portal bots, sworn to Lord Kilmer ──
 function kcMaxBuffList(){   // the single highest tier of every beneficial enchantment family in the spellbook
   const best={};
@@ -15338,6 +15425,7 @@ function update(dt){
   enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
   updateKcGates(dt);       // the portcullis & keep doors glide open / shut
   updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
+  kcAmbience(dt);          // Val Halla's eternal festival: fireworks, a murmuring court & lute-song
   cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
   streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
   hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
@@ -16308,8 +16396,10 @@ let MUSIC=null,_musEl=null,_musZone=null;
 fetch('assets/acmusic/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.tracks&&j.tracks.length)MUSIC=j.tracks; }).catch(()=>{});
 setInterval(()=>{ try{
   if(!MUSIC||typeof running==="undefined"||!running||(typeof muted!=="undefined"&&muted)){ if(_musEl){_musEl.pause();_musZone=null;} return; }
-  const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon":
+  const kcNear=(typeof KC!=="undefined")&&!inDungeon&&Math.hypot(player.x-KC.x,player.z-KC.z)<260;
+  const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon": kcNear?"castle":
     ((typeof nearestCapitalDist==="function"&&nearestCapitalDist(player.x,player.z)<160)?"town":"wild");
+  if(zone==="castle"){ if(_musEl){_musEl.pause();} _musZone="castle"; return; }   // the castle plays its own live lute & harp (kcAmbience) — no track here
   if(zone===_musZone&&_musEl&&!_musEl.paused) return;
   if(zone!==_musZone){
     const pick=zone==="dungeon"?MUSIC[1%MUSIC.length]:zone==="town"?MUSIC[0]:MUSIC[2+(Math.floor(now()/300000)%(Math.max(1,MUSIC.length-2)))];
