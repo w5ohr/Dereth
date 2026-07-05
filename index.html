@@ -6533,6 +6533,15 @@ function tbModelReq(did){ did=(''+did).toUpperCase();
     _tbModels[did]=j?{ready:true,groups:j.groups,bb:j.bb||m.bb}:false; }).catch(()=>{_tbModels[did]=false;});
   return null;
 }
+// AC building models mark their openings with flat MARKER colours the retail client replaced
+// at runtime: pure red (0xff0000 family) = the DOOR surface, pure blue (0x0000ff) = window glass.
+// We do what the client did — doors become wooden doors, windows become glass — and remember the
+// door's local centroid so the walkable doorway cut aligns with the VISIBLE door.
+function _tbMarker(c){ if(c==null) return null;
+  const r=(c>>16)&255, g2=(c>>8)&255, b=c&255;
+  if(r>200&&g2<40&&b<40) return "door";
+  if(b>200&&r<40&&g2<80) return "window";
+  return null; }
 function tbBuildMesh(md){   // one textured Group for a placement (textures shared via tbTex)
   const g=new THREE.Group();
   for(const gr of md.groups){
@@ -6541,11 +6550,14 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
     if(gr.n&&gr.n.length) geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
     if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
     geo.setIndex(gr.i); if(!gr.n||!gr.n.length) geo.computeVertexNormals();
-    const mm=gr.mat||{};
-    // clip groups (foliage/fences) use a crisp alpha-TEST cutout — not blended transparency, which
-    // sorts badly for overlapping leaf billboards; index-0 was keyed transparent at decode time
-    const mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0})
-                    :new THREE.MeshStandardMaterial({color:(mm.color!=null?mm.color:0x8a8478),roughness:0.92,metalness:0.02,side:THREE.DoubleSide});
+    const mm=gr.mat||{}, marker=(!mm.tex)?_tbMarker(mm.color):null;
+    let mat;
+    if(marker==="door"){ mat=texMat(woodTex,0x6a4a2a); mat.side=THREE.DoubleSide;              // a real plank door where the client hung one
+      let sx=0,sy=0,sz=0,n=0; for(let i=0;i<gr.v.length;i+=3){ sx+=gr.v[i];sy+=gr.v[i+1];sz+=gr.v[i+2];n++; }
+      if(n){ g.userData.doorLocal=g.userData.doorLocal||{x:sx/n,y:sy/n,z:sz/n}; } }
+    else if(marker==="window"){ mat=new THREE.MeshStandardMaterial({color:0x2a3a4a,roughness:0.15,metalness:0.4,transparent:true,opacity:0.55,side:THREE.DoubleSide}); }
+    else mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0})
+                   :new THREE.MeshStandardMaterial({color:(mm.color!=null?mm.color:0x8a8478),roughness:0.92,metalness:0.02,side:THREE.DoubleSide});
     const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; g.add(me);
   }
   return g;
@@ -6593,17 +6605,19 @@ function tbBuildTown(c,objs){
   // ── pass 2: for each room, cut a doorway on the CLEAREST side (now every wall exists) ──
   for(const rec of recs){ if(rec.enter) tbCutDoorway(g,obst,recs,rec,lights,c.x,c.z); }
   seatRealTownVendors(c,recs);
+  tbSettleTownNpcs(c,recs);
   return {c,g,obst,lights,recs};
 }
 // cut a walk-through doorway on a room's clearest side + drop a lit interior fit-out.
 // faceX/faceZ (optional) biases the door toward a plaza; else the clearest cardinal wins.
 function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
   const cw=Math.cos(rec.th), sw=Math.sin(rec.th);
-  const cands=[];
-  if(faceX!=null) cands.push(Math.atan2(faceZ-rec.fcz, faceX-rec.fcx));   // toward the plaza first
-  for(let s=0;s<4;s++) cands.push(rec.th+s*Math.PI/2);                    // then the four cardinal walls
+  const cands=[];   // [angle, preference-penalty] — the model's VISIBLE door wins unless blocked
+  if(rec.doorMX!=null) cands.push([Math.atan2(rec.doorMZ-rec.fcz, rec.doorMX-rec.fcx),0]);
+  if(faceX!=null) cands.push([Math.atan2(faceZ-rec.fcz, faceX-rec.fcx),rec.doorMX!=null?50:0]);   // toward the plaza
+  for(let s=0;s<4;s++) cands.push([rec.th+s*Math.PI/2,rec.doorMX!=null?50:0]);                    // the four cardinal walls
   let best=null, bestScore=1e18;
-  for(const a of cands){
+  for(const [a,pen] of cands){
     const dux=Math.cos(a), duz=Math.sin(a);
     const lux=dux*cw-duz*sw, luz=dux*sw+duz*cw;                           // dir in footprint space
     const we=Math.min(Math.abs(lux)>1e-3?rec.hx/Math.abs(lux):1e9, Math.abs(luz)>1e-3?rec.hz/Math.abs(luz):1e9);
@@ -6615,7 +6629,7 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
     // clearest side first, then the HIGHEST-ground side (smallest step up to the floor) so the
     // entrance sits near grade on the real, unflattened slope
     const step=Math.max(0,rec.gy-groundY(dx+dux*1.2,dz+duz*1.2));
-    const score=blk*100+step;
+    const score=blk*100+step+pen;   // an unblocked marker door (pen 0) beats any other side; the entrance ramp covers its step
     if(score<bestScore){ bestScore=score; best={dux,duz,we,dx,dz}; }
   }
   rec.dux=best.dux; rec.duz=best.duz; rec.wallExit=best.we; rec.doorX=best.dx; rec.doorZ=best.dz;
@@ -6666,11 +6680,14 @@ function tbRingBuilding(g,obst,did,wx,wz,th){
   const c00=corner(-1,-1),c10=corner(1,-1),c11=corner(1,1),c01=corner(-1,1),cc=groundY(fcx,fcz);
   const base=Math.max(c00,c10,c11,c01,cc), lo=Math.min(c00,c10,c11,c01,cc);
   const bm=tbBuildMesh(md); bm.position.set(wx,base,wz); bm.rotation.y=th; g.add(bm);
+  let doorMX=null,doorMZ=null;
+  if(bm.userData.doorLocal){ const dl=bm.userData.doorLocal;   // the model's own DOOR marker → world
+    doorMX=wx+dl.x*cw+dl.z*sw; doorMZ=wz-dl.x*sw+dl.z*cw; }
   if(base-lo>0.3){                                                    // stone foundation skirt fills the downhill gap
     const fnd=new THREE.Mesh(new THREE.BoxGeometry(hx*2+0.6,base-lo+1.6,hz*2+0.6),texMat(stoneFloorTex,0x8a8074));
     fnd.position.set(fcx,(base+lo-1.6)/2,fcz); fnd.rotation.y=th; fnd.receiveShadow=true; g.add(fnd); }
   const enter=(hx>=2.6&&hz>=2.6&&H>=3.0);
-  const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[]};
+  const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[],doorMX,doorMZ};
   const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
     for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
       const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw;
@@ -6682,6 +6699,23 @@ function tbRingBuilding(g,obst,did,wx,wz,th){
       platforms:[{x0:lcx-hx+0.3,x1:lcx+hx-0.3,z0:lcz-hz+0.3,z1:lcz+hz-0.3,y:0}],ramps:[]};
     structures.push(st); rec.structs.push(st); rec.struct=st; }
   return rec;
+}
+// the highest interior floor covering (x,z) — building footprints in real towns OVERLAP, so
+// standing on your OWN room's floor can still leave you under a NEIGHBOUR's higher floor plane
+function tbFloorAt(recs,x,z,fallbackY){
+  let fy=fallbackY;
+  for(const r of recs){ if(!r.enter) continue;
+    const cw=Math.cos(r.th), sw=Math.sin(r.th), dx=x-r.fcx, dz=z-r.fcz;
+    const lx=dx*cw-dz*sw, lz=dx*sw+dz*cw;
+    if(Math.abs(lx)<=r.hx-0.3&&Math.abs(lz)<=r.hz-0.3&&r.gy>fy) fy=r.gy; }
+  return fy;
+}
+// after a town's buildings land, lift every NPC standing inside one onto its floor (settleY put
+// them at terrain height long before the town streamed in — heads through the floor otherwise)
+function tbSettleTownNpcs(c,recs){
+  if(typeof npcs==="undefined") return;
+  for(const np of npcs){ if(Math.hypot(np.x-c.x,np.z-c.z)>62) continue;
+    np.mesh.position.y=tbFloorAt(recs,np.x,np.z,groundY(np.x,np.z)); }
 }
 function seatRealTownVendors(c,recs){
   if(!recs.length) return;
@@ -6710,7 +6744,13 @@ function seatRealTownVendors(c,recs){
       const lx=bx*cw-bz*sw, lz=bx*sw+bz*cw;
       if(Math.abs(lx)>rec.hx-0.6||Math.abs(lz)>rec.hz-0.6) break;
     }
-    const fy=rec.gy;   // stand on the room's floor platform (its real base height), not the slope beneath
+    // clamp the spot INSIDE this room's footprint — the sideways fan on adjacent buildings can
+    // otherwise land a vendor under a NEIGHBOUR's (higher) floor, head poking through it
+    { const cw2=Math.cos(rec.th), sw2=Math.sin(rec.th), bx=nx-rec.fcx, bz=nz-rec.fcz;
+      let lx=bx*cw2-bz*sw2, lz=bx*sw2+bz*cw2;
+      lx=Math.max(-(rec.hx-0.7),Math.min(rec.hx-0.7,lx)); lz=Math.max(-(rec.hz-0.7),Math.min(rec.hz-0.7,lz));
+      nx=rec.fcx+lx*cw2+lz*sw2; nz=rec.fcz-lx*sw2+lz*cw2; }
+    const fy=tbFloorAt(recs,nx,nz,rec.gy);   // the room's floor — or a HIGHER overlapping neighbour's, so no floor plane cuts through the vendor
     // a small counter in front of the shopkeeper, facing the door
     if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
     const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
@@ -6732,6 +6772,8 @@ function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   // vendors reseat next time this town streams back in
   for(const s of shops){ if(s._counter){ if(s._counter.parent)s._counter.parent.remove(s._counter); s._counter=null; }
     if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<62) s._seated=false; }
+  if(typeof npcs!=="undefined") for(const np of npcs){   // floors are gone — NPCs back onto the terrain
+    if(Math.hypot(np.x-e.c.x,np.z-e.c.z)<62) np.mesh.position.y=groundY(np.x,np.z); }
   delete _tbBuilt[name];
 }
 let _tbBuilt={}, _tbAcc=0;
@@ -18794,7 +18836,13 @@ function seatVendorsInBuildings(){
         for(const lat of LATS){ const x=st.bx+ux*fwd+lx*lat, z=st.bz+uz*fwd+lz*lat;
           if(!crowded(x,z,gap) && pathClear(dmx,dmz,x,z)){ spot={x,z}; break; } } } }
     if(!spot) spot={x:st.bx+ux*1.4, z:st.bz+uz*1.4};            // last resort: front-centre
-    const nx=spot.x, nz=spot.z, fy=groundY(nx,nz);
+    const nx=spot.x, nz=spot.z;
+    // stand ON the highest interior floor platform covering the spot, not the slope buried beneath
+    let fy=groundY(nx,nz);
+    for(const s2 of structures){ const ddx=nx-s2.bx, ddz=nz-s2.bz; if(ddx*ddx+ddz*ddz>s2.r2) continue;
+      const slx=ddx*s2.cos-ddz*s2.sin, slz=ddx*s2.sin+ddz*s2.cos;
+      for(const p of (s2.platforms||[])){ const py=s2.baseY+p.y;
+        if(slx>=p.x0&&slx<=p.x1&&slz>=p.z0&&slz<=p.z1&&py>fy) fy=py; } }
     sh.mesh.position.set(nx,fy,nz);
     sh.mesh.rotation.y=Math.atan2(-ux,-uz);                     // buildPerson fronts -z — turn it to face the door
     sh.x=nx; sh.z=nz; sh._seated=true; placed.push({x:nx,z:nz});
