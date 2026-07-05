@@ -108,7 +108,7 @@ Driven end-to-end through real code paths; game state observed:
 
 <!-- newest first; append as found -->
 
-### P3-1 — `skillState()` / `trainSkill()` don't guard against an invalid skill key
+### P3-1 — `skillState()` / `trainSkill()` don't guard against an invalid skill key — ✅ FIXED (2026-07-05)
 `skillState(key)` does `player.skills[key] || (player.skills[key] = {t:0,xp:0})` — so calling it
 with a key not in `SKILL_BY_KEY` silently creates a junk skill entry in the save. `trainSkill(key)`
 then reads `SKILL_BY_KEY[key].tc` and throws `TypeError: Cannot read properties of undefined`.
@@ -118,6 +118,13 @@ skill key, or any future code path passing a bad key corrupts `player.skills` an
 Cheap fix: early-return/guard in `skillState`/`trainSkill` when `!SKILL_BY_KEY[key]`.
 (Found because my harness passed `'axe'`; the real weapon-skill keys are `heavy/light/finesse/
 twohand/missile`, there is no per-weapon `axe` skill.)
+
+**Fix applied:** guarded `skillState` (returns an inert, never-persisted `{t:0,xp:0}` for an unknown
+key so the save can't be polluted) plus `skillBase`/`skillValue`/`skillEff`/`trainSkill`/`specSkill`
+(each now checks `SKILL_BY_KEY[key]` before dereferencing `.d`/`.tc`/`.sc`/`.base0`/`.fam`). Verified:
+an invalid key now returns safe defaults (tier/rank/base/value→0, eff→1×, train/spec/raise→false) with
+no throw and no save pollution; valid keys are unaffected (heavy value 46 / eff 1.8× unchanged, train
+& raise still work, full grind→spend-XP path regression-clean).
 
 ### INFO-1 — Kill→respawn has no global monster cap (self-limiting in normal play)
 Each overworld kill schedules exactly one `spawnSomewhere` 2.5–6s later (`killMonster`, ~line 9005).
