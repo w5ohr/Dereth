@@ -78,8 +78,53 @@ No new issues found in burst 2. (The other agent's playtest-issues.md fixes — 
 overworld mobs, PK altars, lifestone scale, white panels — were all merged before this
 burst and held up.)
 
+## BURST 3 (2026-07-05) — fixes shipped + magic loop
+
+### 5. MAGIC — 881 vendor spell scrolls were unlearnable curios (HIGH) — **FIXED**
+Retail scroll items ("Scroll of Bafflement Other V" …) in the ACE vendor stock fell through
+`acItemRow` to 📦 trophy curios — 881 scroll items across all vendors, none scribeable, and
+since acStock REPLACES generic stock, ACE-stocked towns sold no learnable scrolls at all
+(magic progression only available from the wandering caravan).
+Fix: (a) `acItemRow` maps scroll names to real scribeable scrolls when the spell exists in
+SPELLBOOK; (b) every ACE archmage/scrivener also carries the standard 30-scroll shelf.
+**Verified end-to-end in play**: Cindrue now lists 30 scroll rows; bought Strength Self II
+(250p) → scribed → trained the school → cast: mana −70, +15 Strength buff (30 min).
+Correct refusals verified along the way (unknown spell / untrained school / skill below req).
+
+### Fixes #2 and #4 shipped (branch fix-playtest-findings)
+- interact() gated on player.alive — dead E no longer insta-loots your own corpse.
+- Quest items (stat==="quest") no longer appear in the vendor sell list.
+Both verified live; living interact unchanged.
+
+### bp sell-cap regression check
+Ginseng (comp, v=4): buy 2p → sells 1p. Pre-fix this was another +2p/cycle loop —
+the systemic bp cap caught an exploit class beyond the trade note that triggered it.
+
+## BURST 4 (2026-07-05) — quests end-to-end
+
+### 6. QUEST — boss quests offered at level 1 (MEDIUM)
+"Slay Bael'Zharon the Hopeslayer" and "Slay Martine the Fallen" appear UNLOCKED with
+questLvl 1 for a fresh character — a new player's quest list opens with endgame bosses.
+Either questLvl defaults to 1 when underivable or the gating chain is missing for these.
+Fix direction: derive questLvl from the target creature's bestiary level, or gate the
+boss quests behind their story arcs.
+
+### Verified working — the full quest loop
+- Accept: Alfrin (Holtburg) — intro dialogue, journal entry, HUD tracker.
+- Gating: Rowena's gnawvil correctly locked behind "Defense of Zaikhal" with in-character
+  directions to the prerequisite giver.
+- Slay objective: advanced by a REAL drudge kill (loot dropped: gold, a scroll, Drudge Ear).
+- Gather objective: advanced by real herb/ore node gathering.
+- Turn-in: quest completes, +90 pyreals, reward item, XP granted (leveled 3→6), journal
+  cleared, giver switches to post-quest dialogue.
+
+### Design shortcuts noted (not bugs, worth knowing)
+- ANY drudge kill satisfies "Slay the Drudge Robber Baron" (no named spawn).
+- ANY gather node satisfies "Recover Alfrin's seed-bags" (no specific item source).
+- Three NPCs named Rowena in Holtburg alone (Emissary / Town Crier / Barkeeper) —
+  name-pool collision, immersion nit.
+
 ## NEXT BURSTS (queued)
-- Scroll purchase from Archmage Cindrue → scribe → cast (war bolt + life heal), mana costs.
-- Quest giver dialog + turn-in; chest looting; corpse run (recover AFTER respawn).
-- Tinkering/salvage, armor equip visuals, allegiance/plugin panels, second town (Yaraq) sweep.
-- Fix candidates from findings: interact() alive-gate; quest items unsellable; footpath portals.
+- Corpse run (recover AFTER respawn, with the new alive-gate in place).
+- Tinkering/salvage, armor equip visuals, allegiance/plugin panels, Yaraq sweep.
+- Footpath-portals finding (#3) still open — needs a placement pass, larger change.
