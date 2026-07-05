@@ -139,3 +139,11 @@ flora setups are the catalogued brand-new models. Verify: verify_a1.js 4/4, 0 co
   filenames: 1,224 textures upgraded to double resolution (455 bodies/creatures, 437
   buildings, 321 dungeons, 11 flora) - ZERO engine changes. The LAST blocked item on the
   graphics-extraction ledger is closed.
+
+## Faces & highres — definitive finding (2026-07-04)
+- Audited all 511 face/head textures (assets/acheads/tex, named by 0x05 SurfaceTexture id):
+  every head surface lists exactly ONE texture and ZERO exist in client_highres.dat.
+  Turbine never shipped high-resolution face textures - the game's faces are already at
+  the retail client's absolute maximum detail (the identical textures 2017 rendered).
+- ac_highres_export.py now also resolves 0x05-named packs directly (future-proof if any
+  pack keys textures by surface id).

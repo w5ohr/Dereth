@@ -53,7 +53,15 @@ def main():
             m = HEXNAME.match(fn)
             if not m: continue
             tid = int(m.group(1), 16)
-            hi = lo2hi.get(tid)
+            hi = None
+            if (tid >> 24) == 0x05:   # named by SURFACE-TEXTURE id (the head/face pack) — resolve directly
+                try:
+                    ids = ame.parse_surfacetexture(portal.read(tid))
+                    if ids and ids[0] in hrset and (len(ids) < 2 or ids[-1] not in hrset): hi = ids[0]
+                except Exception:
+                    hi = None
+            else:
+                hi = lo2hi.get(tid)
             if not hi: continue
             try:
                 dec = ame.decode_texture(hr.read(hi), palettes)
