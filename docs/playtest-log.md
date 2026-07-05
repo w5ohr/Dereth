@@ -58,8 +58,28 @@ Fix direction: skip `stat==="quest"` in the sell list (like scrolls).
   (scroll-scribe loop not yet exercised — next burst).
 - No console errors across ~4 hours of simulated play actions.
 
+## BURST 2 (2026-07-05, after the exploit fix merged) — physics, dungeon
+
+Verified working:
+- **Jump**: tryJump(0.8) gains +3.2u and lands clean (charged-jump path; keydown → charge →
+  release wiring confirmed separately).
+- **Fall damage**: AC-authentic — safe threshold (17 + Jump×0.02) × WSCALE(3) ≈ 51.6u;
+  a 72u fall cost 16 hp; a 25u fall correctly free.
+- **Drowning**: breath drains ~14s submerged, then −6 hp/s ticks; verified through update()
+  and direct calls. (One 20s continuous-run early anomaly did not reproduce — worth one
+  eyeball on real hardware.)
+- **Slidecasting (PR #74)**: path-speed base 4.48 / casting 2.24 (half) / casting+turn-key
+  4.48 (full) — exactly as designed.
+- **Dungeon (Hunter's Leap)**: entered via E at the entrance, 11 mobs on proper descending
+  storey floors (−3.4/−6.8/−10.2 — NOT buried), hoard chest present, walkable, exited clean.
+- Vendor-bought-item sell cap (bp) live-verified post-merge: cider buy 2p → sell 1p.
+
+No new issues found in burst 2. (The other agent's playtest-issues.md fixes — buried
+overworld mobs, PK altars, lifestone scale, white panels — were all merged before this
+burst and held up.)
+
 ## NEXT BURSTS (queued)
 - Scroll purchase from Archmage Cindrue → scribe → cast (war bolt + life heal), mana costs.
-- Jump physics, fall damage, swimming/drowning (breath bar), slidecast (new PR #74).
-- Dungeon entry/exit, chest loot, quest giver dialog + turn-in.
+- Quest giver dialog + turn-in; chest looting; corpse run (recover AFTER respawn).
 - Tinkering/salvage, armor equip visuals, allegiance/plugin panels, second town (Yaraq) sweep.
+- Fix candidates from findings: interact() alive-gate; quest items unsellable; footpath portals.
