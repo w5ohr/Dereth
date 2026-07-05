@@ -3921,11 +3921,12 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
   const mkSlot=k=>{ const mat=new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.75,roughness:0.4}); const ent={mat,groups:[]}; armorRig[k]=ent; return ent; };
   const AG=(ent,parent,x,y,z)=>{ const gr=new THREE.Group(); gr.position.set(x||0,y||0,z||0); gr.visible=false; parent.add(gr); ent.groups.push(gr); return gr; };
   const AM=(ent,gr,geo,x,y,z)=>{ const m=new THREE.Mesh(geo,ent.mat); m.position.set(x||0,y||0,z||0); m.castShadow=true; gr.add(m); return m; };
-  { const e=mkSlot('head'); const hg=AG(e,neck,0,AV_HEAD_LOCAL+0.075,0);            // HELM: dome + brow band + nasal + cheek guards (band rides the brow, not the eyes)
-    AM(e,hg,new THREE.SphereGeometry(0.135,16,12,0,6.28,0,Math.PI*0.6),0,0.02,0.008);
-    const band=AM(e,hg,new THREE.TorusGeometry(0.132,0.018,8,18),0,-0.033,0.008); band.rotation.x=Math.PI/2;
-    AM(e,hg,new THREE.BoxGeometry(0.026,0.1,0.03),0,-0.068,-0.125);
-    for(const sx of[-1,1]) AM(e,hg,new THREE.BoxGeometry(0.03,0.09,0.09),sx*0.125,-0.085,0); }
+  { const e=mkSlot('head'); const hg=AG(e,neck,0,AV_HEAD_LOCAL+0.03,0);            // HELM: dome + brow band + nasal + cheek guards (band rides the brow, not the eyes)
+    const hi=new THREE.Group(); hi.scale.setScalar(0.68); hg.add(hi);              // shrink the helm to sit snugly on the AC head (it was ~1.5× too large)
+    AM(e,hi,new THREE.SphereGeometry(0.135,16,12,0,6.28,0,Math.PI*0.6),0,0.02,0.008);
+    const band=AM(e,hi,new THREE.TorusGeometry(0.132,0.018,8,18),0,-0.033,0.008); band.rotation.x=Math.PI/2;
+    AM(e,hi,new THREE.BoxGeometry(0.026,0.1,0.03),0,-0.068,-0.125);
+    for(const sx of[-1,1]) AM(e,hi,new THREE.BoxGeometry(0.03,0.09,0.09),sx*0.125,-0.085,0); }
   { const e=mkSlot('chest'); const cg=AG(e,spine,0,0,0);                            // BREASTPLATE: chest shell + torso wrap + over-gorget
     const bp=AM(e,cg,new THREE.SphereGeometry(0.21,18,14,0,6.28,0,Math.PI*0.55),0,0.35,-0.075); bp.scale.set(1.02,0.66,0.55);
     const wrap=AM(e,cg,new THREE.CylinderGeometry(0.235,0.205,0.3,18,1,true),0,0.22,0); wrap.scale.z=0.52;   // tucked inside the cloak plane (z<0.14)
