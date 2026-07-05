@@ -14250,6 +14250,7 @@ function openLockedCache(){
   if(SFX.quest)SFX.quest(); toast("CACHE OPENED");
 }
 function interact(){
+  if(!player.alive) return;   // the dead can't act — E during the death fade was insta-looting your own corpse
   // your corpse first — recover everything it holds in one motion
   for(const d of drops) if(d.type==="corpse"&&Math.hypot(d.x-player.x,d.z-player.z)<4){ recoverCorpse(d); return; }
   let best=null,bd=4;
@@ -19203,6 +19204,7 @@ function buildShop(){
   sell.insertAdjacentHTML("beforeend",`<div style="color:var(--dim);font-size:11px;padding:2px 0 6px">${isCollector?`The collector pays a <b>bounty</b> (gold + XP) for creature trophies.`:`Vendor coin: <b style="color:var(--gold)">${Math.round((activeShop&&activeShop.pyreals)||0)}</b>p (regenerates over time).`}</div>`);
   player.inv.forEach((it,i)=>{
     if(it.scroll) return;   // scrolls are scribed (T), not sold
+    if(it.stat==="quest") return;   // quest items are attuned (AC) — selling one would strand its quest
     const desc=gearDesc(it);
     const row=document.createElement('div');row.className="row";
     if(isCollector && it.stat==="trophy"){   // I7: turn a trophy in for a bounty
