@@ -78,8 +78,29 @@ No new issues found in burst 2. (The other agent's playtest-issues.md fixes — 
 overworld mobs, PK altars, lifestone scale, white panels — were all merged before this
 burst and held up.)
 
+## BURST 3 (2026-07-05) — fixes shipped + magic loop
+
+### 5. MAGIC — 881 vendor spell scrolls were unlearnable curios (HIGH) — **FIXED**
+Retail scroll items ("Scroll of Bafflement Other V" …) in the ACE vendor stock fell through
+`acItemRow` to 📦 trophy curios — 881 scroll items across all vendors, none scribeable, and
+since acStock REPLACES generic stock, ACE-stocked towns sold no learnable scrolls at all
+(magic progression only available from the wandering caravan).
+Fix: (a) `acItemRow` maps scroll names to real scribeable scrolls when the spell exists in
+SPELLBOOK; (b) every ACE archmage/scrivener also carries the standard 30-scroll shelf.
+**Verified end-to-end in play**: Cindrue now lists 30 scroll rows; bought Strength Self II
+(250p) → scribed → trained the school → cast: mana −70, +15 Strength buff (30 min).
+Correct refusals verified along the way (unknown spell / untrained school / skill below req).
+
+### Fixes #2 and #4 shipped (branch fix-playtest-findings)
+- interact() gated on player.alive — dead E no longer insta-loots your own corpse.
+- Quest items (stat==="quest") no longer appear in the vendor sell list.
+Both verified live; living interact unchanged.
+
+### bp sell-cap regression check
+Ginseng (comp, v=4): buy 2p → sells 1p. Pre-fix this was another +2p/cycle loop —
+the systemic bp cap caught an exploit class beyond the trade note that triggered it.
+
 ## NEXT BURSTS (queued)
-- Scroll purchase from Archmage Cindrue → scribe → cast (war bolt + life heal), mana costs.
 - Quest giver dialog + turn-in; chest looting; corpse run (recover AFTER respawn).
-- Tinkering/salvage, armor equip visuals, allegiance/plugin panels, second town (Yaraq) sweep.
-- Fix candidates from findings: interact() alive-gate; quest items unsellable; footpath portals.
+- Tinkering/salvage, armor equip visuals, allegiance/plugin panels, Yaraq sweep.
+- Footpath-portals finding (#3) still open — needs a placement pass, larger change.
