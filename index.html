@@ -195,6 +195,7 @@
     <div class="attr"><span>Self</span><b id="aSelf">10</b></div>
     <h4 style="margin-top:8px">Status</h4>
     <div class="attr"><span>Armor</span><b id="sArmor">0</b></div>
+    <div class="attr"><span>Burden</span><b id="sBurden">0%</b></div>
     <div class="attr"><span>Kills</span><b id="sKills">0</b></div>
     <div class="attr"><span>Pyreals</span><b id="sGold">0</b></div>
     <div class="attr"><span>Materials</span><b id="sMats">0</b></div>
@@ -600,12 +601,21 @@ const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const now=()=>performance.now();
 
 // ---------- world constants ----------
-const WORLD=16000, HALF=WORLD/2, EYE=1.7;
-const GROUND_SEG=400;   // terrain grid resolution (40u cells) — groundY() and the mesh must agree
+// WSCALE — the world's SPATIAL scale. The map used to be ~1/3 of AC's true size (towns 3× too close);
+// WSCALE=3 spreads every lat/long placement to AC's real metre spacing (1 world unit ≈ 1 metre), a
+// true 1:1 world. Characters/props/ranges are already ~1:1 (see EYE/TARGET_HUMAN_H) and DON'T scale —
+// only inter-location distance does. Set WSCALE=1 to return to the old compact map.
+const WSCALE=3;
+const WORLD=16000*WSCALE, HALF=WORLD/2, EYE=1.7;
+const GROUND_SEG=2000;  // terrain grid resolution — groundY() and the mesh must agree
 const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled areas (must divide GROUND_SEG)
+// GROUND_SEG 2000 over WORLD 48000 → exactly 24u cells = the heightmap's native AC_CELL at true 1:1
+// scale, so the mesh samples the real Dereth relief with NO under-sampling ("every cell"). Heaviest
+// mesh (≈4M verts, 2000/16=125 per chunk) by design — maximum terrain fidelity over framerate.
+// Frustum culling keeps only the visible chunks drawn. Must stay divisible by TERRA_CHUNKS(16).
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
-const TOWN_SAFE=60, DAYLEN=7620; // safe radius around each capital; DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
+const TOWN_SAFE=60*WSCALE, DAYLEN=7620; // safe radius around each capital (×WSCALE: real town extent at 1:1); DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
 
 // ---------- attributes (AC's six) ----------
 const ATTRS=["Strength","Endurance","Coordination","Quickness","Focus","Self"];
@@ -838,6 +848,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patronInfo:null,vassals:[],vassalXP:0,allegianceMOTD:null,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
+  societyRibbons:0,societyTest:null,societyTestsDone:[],   // Commendation Ribbons + rank Test-gauntlet progress
   luminance:0,lumUnlocked:false,auras:{},enlightenment:0,   // AC endgame: Luminance currency → permanent Auras; Enlightenment prestige resets
   arcsDone:[],                 // story arcs whose capstone reward has been granted
   augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,allskills:0,xpBonus:0,attrTotal:0,dropReduce:0,count:0,skillCredits:0,fam:{},owned:{}},    // permanent boosts: augmentation gems + Aetheria sigils
@@ -854,7 +865,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   lightBuff:null,             // active conjured light (Enlightenment/Foxfire) -> {t,intensity,dist,color}; falls on death
   debuffs:{},                 // hostile curses on you (slow/vuln) -> {v,t}; cleansed by Dispel, clear on death
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
-  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0,
+  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0,vx:0,vz:0,
   y:0,vy:0,grounded:true};   // vertical physics: feet height, vertical velocity, on-ground flag (for jumping & upper floors)
 
 function derive(){
@@ -868,12 +879,14 @@ function derive(){
   // THE authentic AC run formula (client GetRunRate, preserved in ACEmulator):
   //   rate = (burdenMod × (Run/(Run+200) × 11) + 4) / 4, hard-capped at 4.5× when Run ≥ 800.
   //   burdenMod: ≤100% carry capacity = 1.0, then linear down to 0 at 300% (AC EncumbranceSystem).
-  //   The base run animation covers 4 AC-units/s; Dereth is built at 1/3 AC's distance scale,
-  //   so base = 4/3 u/s → speed spans ~1.33 (Run 0) → 6.0 (Run 800, the cap). Burden slows you, as it did.
+  //   The base run animation covers ~4 m/s; ×(4/3)×WSCALE puts it in true-scale units/s (1 unit = 1 m
+  //   at WSCALE 3), so speed spans ~4 m/s (Run 0) → 18 m/s (Run 800 cap). Burden slows you, as it did.
   { const run=player.skills?skillValue("run"):0;
     const enc=(typeof encumbrance==="function")?encumbrance().ratio:0;
     const burdenMod=enc<=1?1:Math.max(0,(3-enc)/2);
-    player.speed=(4/3)*(run>=800?4.5:(burdenMod*(run/(run+200)*11)+4)/4); }
+    // exact ACE MovementSystem.GetRunRate, ×WSCALE so run speed is AC's real m/s at true 1:1 scale
+    // (1 world unit = 1 metre): base ≈ 4 m/s at Run 0 → 18 m/s at the Run 800 cap.
+    player.speed=(4/3)*WSCALE*(run>=800?4.5:(burdenMod*(run/(run+200)*11)+4)/4); }
   if(typeof armorMove==="function") player.speed*=armorMove().speed; // heavier loadout slows you, lighter quickens
   if(typeof wornVital==="function"){ player.mhp+=wornVital("mhp"); player.mst+=wornVital("mst"); player.mmn+=wornVital("mmn"); }  // "of Vigor/Endurance/Magus" pieces
   if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
@@ -1200,6 +1213,20 @@ fetch('assets/acicons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j
 //    scattered — trees, plants, rocks — with per-terrain frequencies from portal.dat Region. ──
 let AC_FLORA=null,AC_SCEN=null; const _floraProto={},_floraTex={},_scenPick={};
 fetch('assets/acflora/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_FLORA=j; }).catch(()=>{});
+// the retail STRING TABLES (client_local_English.dat): 7,050 strings incl. the 873 character titles
+let AC_STRINGS=null,AC_TITLESET=null;
+fetch('assets/acstrings.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.titles){ AC_STRINGS=j; AC_TITLESET=new Set(j.titles); } }).catch(()=>{});
+// the client's OWN day-night light (portal.dat Region SkyInfo keyframes: sky/fog/sun/ambient by time)
+let AC_SKY=null;
+fetch('assets/acsky.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.times&&j.times.length)AC_SKY=j; }).catch(()=>{});
+function acSkyAt(t){
+  const K=AC_SKY.times; let a=K[K.length-1], b=K[0];
+  for(let i=0;i<K.length;i++){ if(K[i].t<=t){ a=K[i]; b=K[(i+1)%K.length]; } }
+  const span=((b.t-a.t)+1)%1||1, f=(((t-a.t)+1)%1)/span;
+  const L=(x,y)=>x+(y-x)*f, C3=(p,q)=>[L(p[0],q[0]),L(p[1],q[1]),L(p[2],q[2])];
+  return {fog:C3(a.fog,b.fog),fogNear:L(a.fogNear,b.fogNear),fogFar:L(a.fogFar,b.fogFar),
+    sun:C3(a.sun,b.sun),sunBright:L(a.sunBright,b.sunBright),amb:C3(a.ambient,b.ambient),ambBright:L(a.ambBright,b.ambBright)};
+}
 fetch('assets/acscenery.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_SCEN=j; }).catch(()=>{});
 function floraTexture(fn){ if(_floraTex[fn]) return _floraTex[fn];
   const t=new THREE.TextureLoader().load('assets/acflora/tex/'+fn); t.wrapS=t.wrapT=THREE.RepeatWrapping; _floraTex[fn]=t; return t; }
@@ -1631,7 +1658,7 @@ for(const k of ["armoredillo","auroch","banderling","burun","carenzi","drudge","
   // named-boss extracts (spawners pick these up by boss kind)
   "olthoiqueen","lichlord","virindidirector"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
 MONSTER_MODELS.phyntoswasp=[{f:"ac/wasp.glb"}];
-MONSTER_MODELS.mummy=[{f:"ac/zombie.glb",tint:0xcabf9a}];   // mu-miyah: the undead body in sand-wrap tones
+MONSTER_MODELS.mummy=[{f:"ac/mummy.glb"}];   // the REAL Mu-miyah extract (end-of-retail dats) — the tinted-zombie stand-in retires
 let gltfMonsters={}, gltfMonstersStarted=false, _gmL=null; const _gmReq=new Set();
 function gmLoadEntry(kind,ent){   // one variant file; safe to call again (deduped)
   const key=kind+"|"+ent.f; if(_gmReq.has(key)||!_gmL) return; _gmReq.add(key);
@@ -1677,8 +1704,8 @@ function nearestOf(arr){let b=null,bd=Infinity;for(const o of arr){const d=Math.
 let scenery=[],nodes=[],dying=[],roadMeshes=[];
 // stone highways linking the towns (Cragstone — Holtburg — Yaraq are collinear)
 const ROAD_SPEED=1.5;
-const COORD=80;          // world units per AC lat/long degree
-const DIRE_DIST=2600;    // beyond this from any capital = the wild Direlands
+const COORD=80*WSCALE;   // world units per AC lat/long degree (240 at true 1:1 scale)
+const DIRE_DIST=2600*WSCALE;    // beyond this from any capital = the wild Direlands (×WSCALE: map zones at true 1:1 spacing)
 // The real cultures of Dereth. region index: 0 Aluvia, 1 Sho, 2 Gharu'ndim.
 const REGIONS=[
   {name:"Aluvia",       tint:[0.80,1.0,0.58]},
@@ -1994,7 +2021,8 @@ const HUBS=CITIES.concat(DUNGEONS); // content (scenery, monsters) clusters arou
 //     data texture is missing/unreadable, so the game still runs standalone. ═══
 const AC_HEIGHTS=[0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,104,106,108,110,112,114,116,118,120,122,124,126,128,130,132,134,136,138,140,142,144,146,148,150,152,154,156,158,160,162,164,166,168,170,172,174,176,178,180,182,184,186,188,190,192,194,196,198,200,202,204,206,208,210,212,214,216,218,220,222,224,226,228,230,232,234,236,238,240,242,244,246,248,250,252,254,256,258,260,262,264,266,268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298,300,302,304,306,308,310,312,314,316,318,320,322,324,326,328,330,332,334,336,338,340,342,344,346,348,350,352,354,356,358,360,362,364,366,368,370,372,374,376,378,380,382,384,386,388,390,392,394,396,398,400,404,408,412,416,420,424,428,432,436,440,444,448,452,456,460,464,468,472,476,480,484,488,492,496,500,504,508,512,516,520,524,528,532,536,540,544,548,552,556,560,568,576,584,592,600,608,616,624,632,640,650,660,670,680,700];
 const ACMAP={on:false,W:2041,H:null,T:null,Rd:null};
-const AC_VSCALE=1/3;   // AC metres → world units (24 m cells → 8 u grid, so 1/3 keeps slopes true)
+const AC_CELL=8*WSCALE;    // world units per heightmap cell: 8u (=24 AC-metre cell) at 1/3 scale → 24u at true 1:1
+const AC_VSCALE=WSCALE/3;  // AC metres → world units: 1/3 at the compact scale, 1 at true 1:1 (so vertical matches horizontal)
 ACMAP.load=function(){
   return new Promise(res=>{
     const img=new Image();
@@ -2004,19 +2032,8 @@ ACMAP.load=function(){
         const d=g.getImageData(0,0,W,W).data, n=W*W;
         ACMAP.H=new Float32Array(n); ACMAP.T=new Uint8Array(n); ACMAP.Rd=new Uint8Array(n);
         for(let i=0;i<n;i++){ ACMAP.H[i]=AC_HEIGHTS[d[i*4]]*AC_VSCALE; ACMAP.T[i]=d[i*4+1]; ACMAP.Rd[i]=d[i*4+2]; }
-        // low-pass the heights to the ground mesh's 40u resolution: the raw field carries 8u detail,
-        // and sampling that at 40u aliases into jagged shards. Two separable box passes ≈ gaussian.
-        for(let pass=0;pass<2;pass++){
-          const src=ACMAP.H, tmp=new Float32Array(n);
-          for(let r=0;r<W;r++){ const o=r*W;                      // horizontal
-            for(let c=0;c<W;c++){ let s=0,k=0;
-              for(let dx=-2;dx<=2;dx++){ const cc=c+dx; if(cc>=0&&cc<W){ s+=src[o+cc]; k++; } }
-              tmp[o+c]=s/k; } }
-          for(let c=0;c<W;c++){                                    // vertical
-            for(let r=0;r<W;r++){ let s=0,k=0;
-              for(let dy=-2;dy<=2;dy++){ const rr=r+dy; if(rr>=0&&rr<W){ s+=tmp[rr*W+c]; k++; } }
-              src[r*W+c]=s/k; } }
-        }
+        // NO low-pass any more: the mesh now samples at ~10u (GROUND_SEG 1600), close to the field's
+        // native 8u, so the raw per-cell relief is kept intact ("every pixel") instead of blurred away.
         ACMAP.on=true;
         for(const t of FLATTEN) t.h=Math.max(8,terrainBase(t.x,t.z));   // re-seat every town & castle plateau on the REAL ground
         console.log("ACMAP: the real Dereth is loaded");
@@ -2028,14 +2045,14 @@ ACMAP.load=function(){
 };
 // world → data-texture: column = x/8+1019.5 (west→east), row = z/8+1020.5 (image row 0 = north)
 function acType(x,z){ if(!ACMAP.on) return -1;
-  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  const W=ACMAP.W, c=Math.round(x/AC_CELL+1019.5), r=Math.round(z/AC_CELL+1020.5);
   if(c<0||c>=W||r<0||r>=W) return 20; return ACMAP.T[r*W+c]; }
 function acRoad(x,z){ if(!ACMAP.on) return 0;
-  const W=ACMAP.W, c=Math.round(x/8+1019.5), r=Math.round(z/8+1020.5);
+  const W=ACMAP.W, c=Math.round(x/AC_CELL+1019.5), r=Math.round(z/AC_CELL+1020.5);
   if(c<0||c>=W||r<0||r>=W) return 0; return ACMAP.Rd[r*W+c]; }
 const AC_WATER_DEPTH={16:-2.5,17:-2.5,18:-3.2,19:-3.2,20:-6.5};   // running/fresh · shallow sea · deep sea
 function acHeight(x,z){
-  const W=ACMAP.W, fc=x/8+1019.5, fr=z/8+1020.5;
+  const W=ACMAP.W, fc=x/AC_CELL+1019.5, fr=z/AC_CELL+1020.5;
   if(fc<0||fc>=W-1||fr<0||fr>=W-1) return -30;                    // beyond the charted world: open ocean
   const c0=Math.floor(fc), r0=Math.floor(fr), tc=fc-c0, tr=fr-r0, i=r0*W+c0;
   let h=ACMAP.H[i]*(1-tc)*(1-tr)+ACMAP.H[i+1]*tc*(1-tr)+ACMAP.H[i+W]*(1-tc)*tr+ACMAP.H[i+W+1]*tc*tr;
@@ -2119,7 +2136,8 @@ function acTownVendors(townName){
   if(!ACV.on||!ACV.towns[townName]) return null;
   return ACV.towns[townName].map(v=>{
     const st=v.stock.map(id=>ACV.catalog[id]).filter(Boolean);
-    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v))};
+    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v)),
+            x:(v.x!=null?v.x:null), z:(v.z!=null?v.z:null)};   // TRUE retail spot — 1:1 town-centre offset (same mapping as buildings)
   });
 }
 // ═══ RETAIL WORLD FACTS — the second ACE-World pass (assets/acworld.json · tools/ace_world_more.py):
@@ -2157,7 +2175,7 @@ function acLootCount(kind,rich){          // how many items a rich kill (elite/d
 }
 function acSpawnKinds(x,z){   // the creatures that REALLY lived here, per the retail encounter table
   if(!ACW.on) return null;
-  const bx=clamp(Math.floor((x/8+1019.5)/8),0,254), by=clamp(Math.floor((-z/8+1019.5)/8),0,254);
+  const bx=clamp(Math.floor((x/AC_CELL+1019.5)/8),0,254), by=clamp(Math.floor((-z/AC_CELL+1019.5)/8),0,254);
   const gx=Math.min(50,Math.floor(bx*51/255)), gy=Math.min(50,Math.floor(by*51/255));
   // retail only defined random-spawn tables on ~a quarter of the map — let real fauna
   // bleed over from neighbouring cells (nearest ring first) before falling back to legacy pools
@@ -2170,20 +2188,27 @@ function acSpawnKinds(x,z){   // the creatures that REALLY lived here, per the r
 function terrainBase(x,z){
   if(ACMAP.on) return acHeight(x,z);
   const d=Math.hypot(x,z);
+  // sample the noise at 1:1 wavelength (freqs ÷ WSCALE) so the whole terrain scales UP uniformly with the
+  // world — towns keep the exact ground they sat on, and hills/mountains grow to their true 1:1 metre size.
+  const xs=x/WSCALE, zs=z/WSCALE;
   let h = 24
-    + Math.sin(x*0.0009)*Math.cos(z*0.0011)*60          // broad hills & valleys (valleys dip below sea → lakes)
-    + Math.sin(x*0.0041+1.3)*Math.cos(z*0.0037)*18      // smaller bumps
-    + Math.abs(Math.sin(x*0.0015+0.5)*Math.sin(z*0.0016))*110 // jagged mountain ridges
-    + Math.max(0,120-d*0.03);                            // central Direlands highlands
+    + Math.sin(xs*0.0009)*Math.cos(zs*0.0011)*60        // broad hills & valleys (valleys dip below sea → lakes)
+    + Math.sin(xs*0.0041+1.3)*Math.cos(zs*0.0037)*18    // smaller bumps
+    + Math.abs(Math.sin(xs*0.0015+0.5)*Math.sin(zs*0.0016))*110 // jagged mountain ridges
+    + Math.max(0,120-d*(0.03/WSCALE));                   // central Direlands highlands (falloff scales with the map)
   const m=Math.min(HALF-Math.abs(x),HALF-Math.abs(z));  // distance to the map's edge
-  if(m<1000) h -= (1000-m)*0.9;                          // slope down into the surrounding ocean
+  if(m<1000*WSCALE) h -= (1000*WSCALE-m)*(0.9/WSCALE);   // slope down into the surrounding ocean (proportional coast)
   return h;
 }
-const FLATTEN=CITIES.map(c=>({x:c.x,z:c.z,core:c.capital?52:40,r:c.capital?96:80,h:Math.max(8,terrainBase(c.x,c.z))}));
+// Cities are NO LONGER flattened — every town sits on the REAL AC per-cell elevation (the user's
+// directive: "all cities should be adjusted to be the actual elevations for every pixel"). Buildings
+// conform to the resulting slopes via per-footprint foundations + walkable floor platforms
+// (tbRingBuilding). Only Kilmer's Castle — a non-AC addition — keeps a flattened plateau.
+const FLATTEN=[];
 // ── Castle Val Halla: Lord Kilmer's private castle on its own flattened plateau west of Holtburg
 //    (site chosen ≥600u clear of every town & dungeon entrance; the plateau gets its own FLATTEN ring) ──
-const KC={x:2100,z:-3230,wall:190,moatIn:205,moatOut:235,gateHalf:7,safeR:370,
-  name:"Castle Val Halla",lord:"Kilmer"};   // held by Lord Kilmer free of any tithe, rent or upkeep — in perpetuity
+const KC={x:2100*WSCALE,z:-3230*WSCALE,wall:190,moatIn:205,moatOut:235,gateHalf:7,safeR:370,
+  name:"Castle Val Halla",lord:"Kilmer"};   // position scales to 1:1; the castle's own dimensions stay real-size
 FLATTEN.push({x:KC.x,z:KC.z,core:300,r:420,h:Math.max(10,terrainBase(KC.x,KC.z))});
 function terrainH(x,z){
   let h=terrainBase(x,z);
@@ -2243,10 +2268,11 @@ function encumbrance(){
   const as=player.armorSlots||{}; for(const k in as) load+=itemBurden(as[k]);
   const jw=player.jewelry||{}; for(const k in jw) load+=itemBurden(jw[k]);
   const cap=200+player.attr.Strength*18+player.attr.Endurance*6;
-  return {load,cap,ratio:clamp(load/cap,0,1.8)};
+  // ceiling 2.5 so the ≥200% "too encumbered to jump" (AC CantJumpLoadedDown) is reachable; you still crawl.
+  return {load,cap,ratio:clamp(load/cap,0,2.5)};
 }
 const GRAV=22;
-const ACADEMY_POS={x:2640,z:-3820};   // B1: the Training Academy grounds, north of Holtburg
+const ACADEMY_POS={x:2640*WSCALE,z:-3820*WSCALE};   // B1: the Training Academy grounds, north of Holtburg
 // a felled Academy practice target pays its retail XP and drops its token into your pack
 function academyKill(m){
   const A=player.academy; if(!A||A[m.academyGoal]) return;
@@ -2271,7 +2297,9 @@ function jumpVelocity(power){
   const jv=player.st>0?skillValue("jump"):0;
   const enc=encumbrance().ratio, burdenMod=enc<1?1:Math.max(0,2-enc);
   const skF=clamp(1+ (jv/(jv+1300))*6.0 ,1.0,1.9);               // AC's asymptote shape, tuned to this world's GRAV/geometry
-  return 7.6*skF*Math.max(0.28,Math.sqrt(burdenMod))*Math.sqrt(0.12+0.88*power);   // h ∝ power (AC), tap ≈ AC's minimum hop
+  // ×WSCALE so the launch velocity is in true-scale units/s; with player gravity also ×WSCALE the
+  // arc height/airtime stay AC-constant in real metres/seconds at any WSCALE (h ∝ power, AC's curve).
+  return 7.6*WSCALE*skF*Math.max(0.28,Math.sqrt(burdenMod))*Math.sqrt(0.12+0.88*power);
 }
 function tryJump(power){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
@@ -2304,7 +2332,7 @@ let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
 const obstacles=[]; // {x,z,r}
-let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[];
+let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[];
 
 function texGround(){
   const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');
@@ -2748,6 +2776,17 @@ function updateDayNight(dt){
   updateEnvIntensity(daylight);
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
   scene.fog.color.copy(_cNight).lerp(_cDay,daylight).lerp(_cWarm,warm*0.5);
+  // ── the CLIENT'S OWN light of Dereth (Region SkyInfo): pull fog/sun/ambient strongly toward
+  //    the retail keyframes for this hour; weather/storm modifiers still apply downstream ──
+  if(AC_SKY&&!inDungeon&&!inNetwork){
+    const S=acSkyAt(gameTime);
+    _tmp.setRGB(S.fog[0]/255,S.fog[1]/255,S.fog[2]/255); scene.fog.color.lerp(_tmp,0.7);
+    _tmp.setRGB(S.sun[0]/255,S.sun[1]/255,S.sun[2]/255); sun.color.lerp(_tmp,0.6);
+    sun.intensity=Math.max(sun.intensity*0.35, S.sunBright*1.5*clamp(sunY+0.12,0,1));
+    _tmp.setRGB(S.amb[0]/255,S.amb[1]/255,S.amb[2]/255); hemi.color.lerp(_tmp,0.45);
+    amb.intensity=(amb.intensity+S.ambBright*0.5)/2;
+    scene.fog.far=clamp(60+S.fogFar*(WSCALE/3),140,300);   // retail metres at true 1:1 (was /3 for the old 1/3 scale); capped at AC's ~300m draw
+  }
   const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm
   if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar(0.42+daylight*0.72); scene.fog.color.lerp(_tmp,_oc*0.6); }
   if(skyU){
@@ -2980,7 +3019,10 @@ function initThree(){
       const ty=acType(wx,wz), tc=AC_TYPE_COL[ty]||AC_TYPE_COL[1];
       const j=0.94+Math.sin(wx*0.37)*Math.sin(wz*0.41)*0.06;               // per-vertex jitter so fields never read flat
       rr=tc[0]*j; gg=tc[1]*j; bb=tc[2]*j;
-      if(acRoad(wx,wz)){ rr=0.55; gg=0.47; bb=0.36; }                      // the authentic AC road web — fresh-laid packed stone, uniform (no ragged jitter)
+      if(acRoad(wx,wz)){                                                   // the authentic AC road web — packed-earth road worn into the land (AC roads were dirt, not cobble)
+        const rj=0.90+Math.sin(wx*0.21+wz*0.17)*0.10;                      // gentle worn variation (ruts, dust) so it reads as a used dirt road
+        rr=0.48*rj; gg=0.40*rj; bb=0.30*rj;                                // earthy packed dirt — reads as a tan road under the bright sun, not pale sand
+      }
       return col.setRGB(rr,gg,bb);
     }
     // biome ground colour so deserts read as sand, the frozen frontier as snow, the Direlands as barren rock
@@ -3018,16 +3060,16 @@ function initThree(){
     for(let ci=0;ci<TERRA_CHUNKS;ci++)for(let ck=0;ck<TERRA_CHUNKS;ck++){
       const ccx=-HALF+(ci+0.5)*CS, ccz=-HALF+(ck+0.5)*CS;      // chunk centre (world)
       const geo=new THREE.PlaneGeometry(CS,CS,segs,segs);
-      const gp=geo.attributes.position, gcol=[], nrm=[];
-      for(let i=0;i<gp.count;i++){
-        const wx=ccx+gp.getX(i), wz=ccz-gp.getY(i), hh=terrainH(wx,wz);
-        gp.setZ(i,hh);                                          // displace into mountains/valleys
-        const e=6, dhx=(terrainH(wx+e,wz)-terrainH(wx-e,wz))/(2*e), dhz=(terrainH(wx,wz+e)-terrainH(wx,wz-e))/(2*e);
-        const nl=Math.hypot(dhx,1,dhz); nrm.push(-dhx/nl, dhz/nl, 1/nl);   // world gradient → plane-local normal
-        const c=groundVertColor(wx,wz,hh); gcol.push(c.r,c.g,c.b);
+      const pos=geo.attributes.position.array, cnt=geo.attributes.position.count;   // direct typed-array
+      const colArr=new Float32Array(cnt*3);                     // (2.56M verts at GROUND_SEG 1600 — hot loop)
+      for(let i=0,o=0;i<cnt;i++,o+=3){
+        const wx=ccx+pos[o], wz=ccz-pos[o+1], hh=terrainH(wx,wz);
+        pos[o+2]=hh;                                            // displace into mountains/valleys
+        const c=groundVertColor(wx,wz,hh); colArr[o]=c.r; colArr[o+1]=c.g; colArr[o+2]=c.b;
       }
-      geo.setAttribute('color',new THREE.Float32BufferAttribute(gcol,3));
-      geo.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+      geo.attributes.position.needsUpdate=true;
+      geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+      geo.computeVertexNormals();                               // smooth heightfield normals from the faces
       const chunk=new THREE.Mesh(geo,groundMat);
       chunk.rotation.x=-Math.PI/2; chunk.position.set(ccx,0,ccz);
       chunk.receiveShadow=true; groundMesh.add(chunk);
@@ -3467,7 +3509,9 @@ function npcAcHead(n){
   n._acHeadTried=true;
   const app=body.userData.headApp||{}, sd=Math.abs(app.faceSeed|0)||((n.x*13+n.z*7)|0);
   const reg=Math.max(0,(typeof regionOf==="function")?regionOf(n.x,n.z):0);
-  const H=(AC_HEADS.heritages[_NPC_HERITAGE[reg]||"aluvian"]||{})[app.gender==="female"?"female":"male"];
+  // NPC heritage follows the REGION; remote players carry their broadcast heritage explicitly
+  const herKey=app.raceExplicit?((app.race==="gharundim")?"gharu'ndim":app.race):(_NPC_HERITAGE[reg]||"aluvian");
+  const H=(AC_HEADS.heritages[herKey]||AC_HEADS.heritages.aluvian||{})[app.gender==="female"?"female":"male"];
   if(!H||!H.hairStyles||!H.hairStyles.length) return;
   const style=H.hairStyles[sd%H.hairStyles.length];
   const eyes=H.eyes[(sd*7)%H.eyes.length], nose=H.noses[(sd*11)%H.noses.length], mouth=H.mouths[(sd*13)%H.mouths.length];
@@ -3512,7 +3556,7 @@ function gfxCullProps(){
   const px=player.x,pz=player.z;
   const near=(o,r)=>{ if(!o) return; const dx=(o.position?o.position.x:o.x)-px, dz=(o.position?o.position.z:o.z)-pz;
     o.visible=dx*dx+dz*dz<r*r; };
-  let acHeadBudget=[0,8,16,24][GFX.tier];
+  let acHeadBudget=[0,12,24,40][GFX.tier];   // more of the crowd wears the REAL head (still LOD-gated for draw calls)
   if(typeof npcs!=="undefined") for(const n of npcs){ if(n.mesh){ const dx=n.x-px,dz=n.z-pz, d2=dx*dx+dz*dz;
     n.mesh.visible=d2<110*110;
     // the nearest townsfolk wear Turbine's real heads (tier-budgeted; swap back when far)
@@ -4146,7 +4190,10 @@ function acHeadGroup(app, cb){
       else if(g.otex==='050002F5'){ texDID=(nose&&nose.tex)||g.otex; remapDIDs=[skinDID]; slot="nose"; }        // nose
       else if(g.otex==='0500025C'){ texDID=(mouth&&mouth.tex)||g.otex; remapDIDs=[skinDID]; slot="mouth"; }      // mouth
       mm.userData.acSlot=slot;                                                                     // for face-direction detection
-      if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(0xffffff); mat.needsUpdate=true; });
+      // Face tone: skin strips take a subtle warm multiply (not pure white) so the head doesn't wash
+      // out pale under the bright top-down noon light; hair keeps its own texture at full white.
+      if(slot!=="hair"){ mat.roughness=0.72; }
+      if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(slot==="hair"?0xffffff:0xe8dfce); mat.needsUpdate=true; });
     }
     cb&&cb(grp);
   }).catch(()=>{ cb&&cb(null); });
@@ -4363,32 +4410,35 @@ function buildPerson(o){
     const cowl=new THREE.Mesh(new THREE.SphereGeometry(0.215,14,12,0,6.28,0,Math.PI*0.72),cloth2);cowl.position.set(0,headY+0.015,0.02);g.add(cowl);
     const drape=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.27,0.42,12),cloth2);drape.position.set(0,headY-0.2,0.05);g.add(drape);
   }
-  if(o.hat==='cone'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.36,12),cloth2);h.position.y=headY+0.28;g.add(h);const br=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.27,0.035,12),cloth2);br.position.y=headY+0.13;g.add(br);}
-  if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.185,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=headY+0.1;g.add(h);const br=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.03,0.16),cloth2);br.position.set(0,headY+0.06,-0.14);g.add(br);}
-  if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.195,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=headY+0.05;h.castShadow=true;g.add(h);
-    const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,headY-0.02,-0.19);g.add(nz);}
+  // headwear rides the crown, which sits ~0.16 BELOW the head anchor (buildFaceGroup skull top);
+  // hats were floating above the head — reference the crown, not headY.
+  const hatY=headY-0.16;
+  if(o.hat==='cone'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.36,12),cloth2);h.position.y=hatY+0.28;g.add(h);const br=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.27,0.035,12),cloth2);br.position.y=hatY+0.13;g.add(br);}
+  if(o.hat==='cap'){const h=new THREE.Mesh(new THREE.SphereGeometry(0.185,12,9,0,6.28,0,Math.PI*0.5),cloth2);h.position.y=hatY+0.1;g.add(h);const br=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.03,0.16),cloth2);br.position.set(0,hatY+0.06,-0.14);g.add(br);}
+  if(o.helm){const h=new THREE.Mesh(new THREE.SphereGeometry(0.195,14,12,0,6.28,0,Math.PI*0.56),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));h.position.y=hatY+0.05;h.castShadow=true;g.add(h);
+    const nz=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.16,0.05),new THREE.MeshStandardMaterial({color:0x9aa0a8,metalness:0.6,roughness:0.4}));nz.position.set(0,hatY-0.02,-0.19);g.add(nz);}
   // ── AC-reference headwear (from wiki character-creation + NPC screenshots) ──
   if(o.hat==='beret'){   // the iconic Aluvian flat beret: squashed tilted dome on a band, with a stalk
     const hm=new THREE.MeshStandardMaterial({color:o.hatCol!=null?o.hatCol:0x28365a,roughness:0.9});
-    const br=new THREE.Mesh(new THREE.SphereGeometry(0.24,16,10),hm);br.scale.set(1,0.34,1);br.position.set(0.035,headY+0.155,0);br.rotation.z=-0.18;br.castShadow=true;g.add(br);
-    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.168,0.178,0.05,14),hm);band.position.y=headY+0.095;g.add(band);
-    const stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.05,5),hm);stalk.position.set(0.05,headY+0.245,0);g.add(stalk);
+    const br=new THREE.Mesh(new THREE.SphereGeometry(0.24,16,10),hm);br.scale.set(1,0.34,1);br.position.set(0.035,hatY+0.155,0);br.rotation.z=-0.18;br.castShadow=true;g.add(br);
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.168,0.178,0.05,14),hm);band.position.y=hatY+0.095;g.add(band);
+    const stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.05,5),hm);stalk.position.set(0.05,hatY+0.245,0);g.add(stalk);
   }
   if(o.hat==='turban'){  // Gharu'ndim wrap: stacked cloth coils + crown + a gold brooch at the brow
     const hm=new THREE.MeshStandardMaterial({color:o.hatCol!=null?o.hatCol:0xe8e0cc,roughness:0.92,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)});
     for(let i=0;i<3;i++){ const wrap=new THREE.Mesh(new THREE.TorusGeometry(0.152-i*0.02,0.056-i*0.009,8,18),hm);
-      wrap.rotation.x=Math.PI/2; wrap.rotation.z=(i%2?0.16:-0.12); wrap.position.y=headY+0.1+i*0.05; wrap.castShadow=true; g.add(wrap); }
-    const crown=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,9),hm);crown.scale.set(1,0.7,1);crown.position.y=headY+0.24;g.add(crown);
-    const brooch=new THREE.Mesh(new THREE.OctahedronGeometry(0.028),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3}));brooch.position.set(0,headY+0.13,-0.185);g.add(brooch);
+      wrap.rotation.x=Math.PI/2; wrap.rotation.z=(i%2?0.16:-0.12); wrap.position.y=hatY+0.1+i*0.05; wrap.castShadow=true; g.add(wrap); }
+    const crown=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,9),hm);crown.scale.set(1,0.7,1);crown.position.y=hatY+0.24;g.add(crown);
+    const brooch=new THREE.Mesh(new THREE.OctahedronGeometry(0.028),new THREE.MeshStandardMaterial({color:0xd8b03a,metalness:0.7,roughness:0.3}));brooch.position.set(0,hatY+0.13,-0.185);g.add(brooch);
   }
   if(o.hat==='straw'){   // Sho field hat: wide shallow woven cone
     const hm=new THREE.MeshStandardMaterial({color:0xc8ae6a,roughness:0.95,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.8,0.8)});
-    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.17,18),hm);cone.position.y=headY+0.175;cone.castShadow=true;g.add(cone);
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.17,18),hm);cone.position.y=hatY+0.175;cone.castShadow=true;g.add(cone);
   }
   if(o.headband){        // Sho cloth headband, knotted at the back
     const hm=new THREE.MeshStandardMaterial({color:(o.headband===true?0x8a2a2a:o.headband),roughness:0.9});
-    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.176,0.176,0.045,14),hm);band.position.y=headY+0.055;g.add(band);
-    const knot=new THREE.Mesh(new THREE.SphereGeometry(0.032,7,6),hm);knot.position.set(0,headY+0.05,0.185);g.add(knot);
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.176,0.176,0.045,14),hm);band.position.y=hatY+0.055;g.add(band);
+    const knot=new THREE.Mesh(new THREE.SphereGeometry(0.032,7,6),hm);knot.position.set(0,hatY+0.05,0.185);g.add(knot);
   }
   g.userData={headY,torsoY:torso.position.y,headBaseY:head.position.y,lArm:arms[0],rArm:arms[1],lLeg,rLeg,torso,head,robed};
   return _normHumanMesh(g);   // uniform human height (feet on ground); inner-wrapper scale keeps gltf swaps safe
@@ -5761,32 +5811,41 @@ function buildCrystal(seed,col){
   const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.35,metalness:0.0,roughness:0.6,flatShading:true}));
   m.castShadow=true; m.rotation.y=seed*6.28; return m;
 }
+// ── real AC fixture meshes (assets/acmisc: lifestone, bindstone) ──
+const _miscGeo={}, _miscTexCache={}, _miscTL=new THREE.TextureLoader();
+function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
+function acMiscMesh(name,cb){   // fetch + cache a misc fixture's groups, call cb(groups) when ready (or now if cached)
+  const c=_miscGeo[name];
+  if(c&&c!=="loading"){ cb(c); return; }
+  if(c==="loading") return;
+  _miscGeo[name]="loading";
+  fetch('assets/acmisc/'+name+'.json').then(r=>r.ok?r.json():null).then(j=>{ _miscGeo[name]=j?j.groups:null; if(j)cb(j.groups); }).catch(()=>{ _miscGeo[name]=null; });
+}
 function buildLifestone(bound){
-  // AC's lifestone: ONE tall pale-blue faceted crystal rising straight from the ground —
-  // no rock ring, no spinning gem — standing on a low stone dais in a cleared earth circle.
-  const g=new THREE.Group(), seed=Math.random();
-  const col=bound?0x9fe0ff:0x5a9ac8;                       // pale glowing cyan (bound = brighter/whiter)
-  // the cleared circle every lifestone stands in
+  // AC's lifestone: the real Turbine crystal (assets/acmisc/lifestone.json) — a blue-veined stone
+  // spire — standing in a cleared earth circle, lit from within.
+  const g=new THREE.Group(), col=bound?0x9fe0ff:0x6ab0e0;
   const clearing=new THREE.Mesh(new THREE.CircleGeometry(4.6,26),
     new THREE.MeshStandardMaterial({color:0x8a7a5f,roughness:1,metalness:0}));
   clearing.rotation.x=-Math.PI/2; clearing.position.y=0.03; clearing.receiveShadow=true; g.add(clearing);
-  // low round dais
-  const dais=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.85,0.26,12),
-    new THREE.MeshStandardMaterial({color:0x777b84,roughness:0.9,metalness:0.05}));
-  dais.position.y=0.13; dais.castShadow=true; dais.receiveShadow=true; g.add(dais);
-  // the crystal: a tapered hexagonal column + pyramidal tip, lightly jittered facets, one shared material
-  const cmat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.55,
-    transparent:true,opacity:0.94,roughness:0.25,metalness:0.1,flatShading:true});
-  const colGeo=new THREE.CylinderGeometry(0.34,0.66,2.7,6,1);
-  { const p=colGeo.attributes.position;
-    for(let i=0;i<p.count;i++){ p.setX(i,p.getX(i)+Math.sin(i*12.9+seed*47)*0.045); p.setZ(i,p.getZ(i)+Math.cos(i*7.7+seed*31)*0.045); }
-    colGeo.computeVertexNormals(); }
-  const crystal=new THREE.Mesh(colGeo,cmat);
-  crystal.position.y=0.26+1.35; crystal.rotation.y=seed*6.28; crystal.castShadow=true; g.add(crystal);
-  const tip=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.8,6),cmat);
-  tip.position.y=0.26+2.7+0.4; tip.rotation.y=crystal.rotation.y; tip.castShadow=true; g.add(tip);
-  const light=new THREE.PointLight(col,1.35,20);light.position.y=2.4;g.add(light);
-  g.userData.crystal=crystal;g.userData.light=light;   // shared material: tinting the crystal tints the tip too
+  const light=new THREE.PointLight(col,1.35,20); light.position.y=2.4; g.add(light);
+  g.userData.light=light;
+  // build the real crystal mesh (glowing blue veins via an emissive map of the same texture)
+  acMiscMesh("lifestone",groups=>{
+    const cg=new THREE.Group();
+    for(const gr of groups){
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(gr.v,3));
+      if(gr.n&&gr.n.length) geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
+      if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
+      geo.setIndex(gr.i); if(!gr.n||!gr.n.length) geo.computeVertexNormals();
+      const mm=gr.mat||{}, tex=mm.tex?_miscTex(mm.tex):null;
+      const mat=new THREE.MeshStandardMaterial({map:tex,color:tex?0xffffff:(mm.color!=null?mm.color:0x6a7a8a),
+        roughness:0.5,metalness:0.15,emissive:col,emissiveMap:tex,emissiveIntensity:bound?0.65:0.4});
+      const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; cg.add(me);
+    }
+    g.add(cg); g.userData.crystal=cg;
+  });
   return g;
 }
 
@@ -5817,7 +5876,7 @@ function buildWorld(){
   for(const n of nodes) scene.remove(n.mesh);
   for(const e of dungeonEntrances) scene.remove(e.mesh);
   for(const o of dungeonObjs) scene.remove(o);
-  monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];obstacles.length=0;
+  monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];pkAltars=[];obstacles.length=0;
   for(const d of dying) scene.remove(d.mesh); dying=[];
   for(const o of netObjs) scene.remove(o);
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];
@@ -5830,6 +5889,7 @@ function buildWorld(){
   for(const c of CITIES) addCity(c);
   flushTownBatches();   // all queued buildings → a few InstancedMeshes per archetype (like the forests)
   addCasinos();         // the Dens of Iniquity: Holtburg, Shoushi & Yaraq gambling halls
+  addPKAltars();        // the Altars of Bael'Zharon (PK) & Asheron (NPK) near Holtburg
   addKilmerCastle();    // Castle Val Halla — Lord Kilmer's moated castle & the town of Valstead
   addHousingSettlements(); // AC player housing: 3,237 retail dwellings stream in + 50 Residential Halls
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
@@ -5888,14 +5948,21 @@ function buildWorld(){
   CITIES.forEach((c,i)=>{
     const acv=(typeof acTownVendors==="function")?acTownVendors(c.name):null; let acvi=0;
     const place=(x,z,vt)=>{
-      if(acv&&!AC_KEEP[vt]&&acv[acvi]){ const av=acv[acvi++]; addMerchant(x,z,av.vt,av.name,av.acStock); }
+      if(acv&&!AC_KEEP[vt]&&acv[acvi]){ const av=acv[acvi++];
+        // 1:1 retail position when the data carries it (same town-offset mapping as the buildings)
+        const ax=(av.x!=null)?c.x+av.x:x, az=(av.z!=null)?c.z+av.z:z;
+        addMerchant(ax,az,av.vt,av.name,av.acStock);
+        if(av.x!=null) shops[shops.length-1]._acPos=true; }
       else addMerchant(x,z,vt);
     };
     if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
       all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; place(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
       // capitals were bustling in retail — seat up to three more of the town's real merchants
       for(let k=0;k<3&&acv&&acv[acvi];k++){ const a=(all.length+k)/(all.length+3)*6.28+0.9;
-        const av=acv[acvi++]; addMerchant(c.x+Math.cos(a)*19,c.z+Math.sin(a)*19,av.vt,av.name,av.acStock); }
+        const av=acv[acvi++];
+        const ax=(av.x!=null)?c.x+av.x:c.x+Math.cos(a)*19, az=(av.z!=null)?c.z+av.z:c.z+Math.sin(a)*19;
+        addMerchant(ax,az,av.vt,av.name,av.acStock);
+        if(av.x!=null) shops[shops.length-1]._acPos=true; }
     } else {
       place(c.x-9,c.z-7,"provisioner");
       place(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
@@ -5914,14 +5981,14 @@ function buildWorld(){
       const x=p.lng*COORD, z=-p.lat*COORD, dx=p.dlng*COORD, dz=-p.dlat*COORD;
       if(Math.abs(x)>HALF-40||Math.abs(z)>HALF-40||Math.abs(dx)>HALF-40||Math.abs(dz)>HALF-40) continue;
       if(terrainH(x,z)<1.5||terrainH(dx,dz)<1.5) continue;              // no drowned ends
-      if(!clearOf(portals,x,z,110)||nearestCapitalDist(x,z)<TOWN_SAFE) continue;
+      if(!clearOf(portals,x,z,110*WSCALE)||nearestCapitalDist(x,z)<TOWN_SAFE) continue;   // ×WSCALE: true-scale dedup spacing
       addPortal(x,z,{x:dx,z:dz,name:p.n}); np++;
     }
     for(const l of ACW.lifestones){
       if(nl>=160) break;
       const x=l.lng*COORD, z=-l.lat*COORD;
       if(Math.abs(x)>HALF-40||Math.abs(z)>HALF-40||terrainH(x,z)<1.5) continue;
-      if(!clearOf(lifestones,x,z,140)) continue;
+      if(!clearOf(lifestones,x,z,140*WSCALE)) continue;   // ×WSCALE: true-scale dedup spacing
       addLifestone(x,z,false,"Wayside Lifestone",false,Math.max(0,regionOf(x,z))); nl++;
     }
     console.log("ACW placed:",np,"retail portals ·",nl,"wayside lifestones");
@@ -5968,8 +6035,11 @@ function buildWorld(){
   for(const rl of RESIDENTIAL_LINES){ const d=CITIES.find(c=>c.name===rl.dest); if(!d) continue;
     for(const fn of rl.from){ const o=CITIES.find(c=>c.name===fn); if(!o) continue;
       addPortal(o.x-13,o.z+5,{x:d.x+13,z:d.z-5,name:rl.label}); } }
-  // roads linking every city to its capital, and the capitals to each other
-  genRoads();buildRoads();buildCaravan();
+  // Roads: Dereth's authentic road web is the real AC network, painted into the terrain (acRoad, from
+  // the extracted map) — NOT invented cobblestone strips. genRoads() still lays the caravan's route;
+  // buildRoads() (the procedural cobbled meshes) is retired so the true AC dirt roads stand on their own.
+  genRoads();buildCaravan();
+  buildRoadBridges();   // span every river/sea the real AC road web crosses with a walkable plank bridge
   // gathering nodes scattered across the wilds
   for(let i=0;i<54;i++){let nx,nz,t=0;do{nx=rnd(-HALF+10,HALF-10);nz=rnd(-HALF+10,HALF-10);t++;}while(nearestCapitalDist(nx,nz)<TOWN_SAFE+10&&t<20);
     addNode(nx,nz,Math.random()<0.5?"ore":"herb");}
@@ -6042,6 +6112,45 @@ function addLifestone(x,z,bound,name,capital,region){
   const lbl=labelSprite(name+" — E to bind","lifestones");lbl.position.y=4;mesh.add(lbl);
   scene.add(mesh);
   lifestones.push({x,z,bound,name,mesh,capital:!!capital,region});obstacles.push({x,z,r:1.2});
+}
+// ── PK ALTARS (AC): the Altar of Bael'Zharon swears you to the Blood Oath (PK); the Altar of
+//    Asheron lays down your arms (NPK). Interacting is the authentic, in-world way to change your
+//    PvP standing — the same oath-lock applies as /pk. Placed near Holtburg so newcomers find them. ──
+const PK_ALTAR_DEF={baelzharon:{name:"Altar of Bael'Zharon",state:"pk", col:0xb01020,glow:0xff2a2a},
+                    asheron:   {name:"Altar of Asheron",    state:"npk",col:0x3a5aa0,glow:0x8fbcff}};
+function buildPKAltar(type){
+  const d=PK_ALTAR_DEF[type], g=new THREE.Group();
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.35,0.5,8),new THREE.MeshStandardMaterial({color:0x4a4650,roughness:0.9}));
+  base.position.y=0.25;base.castShadow=true;g.add(base);
+  const top=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.28,1.5),new THREE.MeshStandardMaterial({color:0x3a3640,roughness:0.85}));
+  top.position.y=0.64;top.castShadow=true;g.add(top);
+  const orb=new THREE.Mesh(new THREE.IcosahedronGeometry(0.42,0),new THREE.MeshStandardMaterial({color:d.col,emissive:d.glow,emissiveIntensity:0.8,roughness:0.4}));
+  orb.position.y=1.15;g.add(orb); g.userData.orb=orb;
+  g.add(new THREE.PointLight(d.glow,1.4,9));
+  return g;
+}
+function addPKAltar(x,z,type){
+  const d=PK_ALTAR_DEF[type]; if(!d) return;
+  const mesh=buildPKAltar(type); mesh.position.set(x,0,z);
+  const lbl=labelSprite(d.name+" — E","lifestones"); lbl.position.y=3.2; mesh.add(lbl);
+  scene.add(mesh); pkAltars.push({x,z,type,name:d.name,state:d.state,mesh}); obstacles.push({x,z,r:1.4});
+}
+function addPKAltars(){   // one accessible pair near the Holtburg starter capital
+  addPKAltar(2560*WSCALE,-3420*WSCALE,"asheron");     // by town — lay down your arms
+  addPKAltar(2820*WSCALE,-3560*WSCALE,"baelzharon");  // out past the walls — swear the Blood Oath
+}
+function usePKAltar(a){
+  if(!isOnline){ log("The altar's power stirs only on the shared realm — PvP is an online matter.","warn"); return; }
+  const cur=player.pkState||"npk";
+  if(a.state===cur){ log(`You already stand at the ${a.state==="pk"?"Blood Oath":"peace"} the ${a.name} offers.`,"sys"); return; }
+  if((player.pkLock||0)>now()){ const mins=Math.ceil((player.pkLock-now())/60000);
+    log(`The altar rejects you — your combat oath still binds you for <b>${mins} min</b>.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+  player.pkState=a.state; player.pk=(a.state!=="npk");
+  if(a.state!=="npk") player.pkLock=now()+PK_LOCK_MS;
+  log(a.state==="pk"
+    ? "⚔️ You lay your hand on the <b>Altar of Bael'Zharon</b> and swear the <b>Blood Oath</b> — open to all Player Killers, your corpse theirs to loot. The oath binds you for a time."
+    : "🕊️ You kneel at the <b>Altar of Asheron</b> and lay down your arms — <b>no longer open to player combat</b>.","warn");
+  if(SFX.growl)SFX.growl(); toast(a.state==="pk"?"BLOOD OATH":"PEACE"); saveGame();
 }
 // procedural roof-tile/shingle texture — staggered rows with per-tile shading + shadowed gaps.
 // Kept light-grey so a building's roof colour tints it; baked into the per-town archetype (near-free).
@@ -6436,6 +6545,15 @@ function tbModelReq(did){ did=(''+did).toUpperCase();
     _tbModels[did]=j?{ready:true,groups:j.groups,bb:j.bb||m.bb}:false; }).catch(()=>{_tbModels[did]=false;});
   return null;
 }
+// AC building models mark their openings with flat MARKER colours the retail client replaced
+// at runtime: pure red (0xff0000 family) = the DOOR surface, pure blue (0x0000ff) = window glass.
+// We do what the client did — doors become wooden doors, windows become glass — and remember the
+// door's local centroid so the walkable doorway cut aligns with the VISIBLE door.
+function _tbMarker(c){ if(c==null) return null;
+  const r=(c>>16)&255, g2=(c>>8)&255, b=c&255;
+  if(r>200&&g2<40&&b<40) return "door";
+  if(b>200&&r<40&&g2<80) return "window";
+  return null; }
 function tbBuildMesh(md){   // one textured Group for a placement (textures shared via tbTex)
   const g=new THREE.Group();
   for(const gr of md.groups){
@@ -6444,11 +6562,14 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
     if(gr.n&&gr.n.length) geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
     if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
     geo.setIndex(gr.i); if(!gr.n||!gr.n.length) geo.computeVertexNormals();
-    const mm=gr.mat||{};
-    // clip groups (foliage/fences) use a crisp alpha-TEST cutout — not blended transparency, which
-    // sorts badly for overlapping leaf billboards; index-0 was keyed transparent at decode time
-    const mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0})
-                    :new THREE.MeshStandardMaterial({color:(mm.color!=null?mm.color:0x8a8478),roughness:0.92,metalness:0.02,side:THREE.DoubleSide});
+    const mm=gr.mat||{}, marker=(!mm.tex)?_tbMarker(mm.color):null;
+    let mat;
+    if(marker==="door"){ mat=texMat(woodTex,0x6a4a2a); mat.side=THREE.DoubleSide;              // a real plank door where the client hung one
+      let sx=0,sy=0,sz=0,n=0; for(let i=0;i<gr.v.length;i+=3){ sx+=gr.v[i];sy+=gr.v[i+1];sz+=gr.v[i+2];n++; }
+      if(n){ g.userData.doorLocal=g.userData.doorLocal||{x:sx/n,y:sy/n,z:sz/n}; } }
+    else if(marker==="window"){ mat=new THREE.MeshStandardMaterial({color:0x2a3a4a,roughness:0.15,metalness:0.4,transparent:true,opacity:0.55,side:THREE.DoubleSide}); }
+    else mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0})
+                   :new THREE.MeshStandardMaterial({color:(mm.color!=null?mm.color:0x8a8478),roughness:0.92,metalness:0.02,side:THREE.DoubleSide});
     const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; g.add(me);
   }
   return g;
@@ -6478,6 +6599,65 @@ function tbPlaceStructure(g,obst,kind,did,wx,wz,th){
   else { const r=Math.max(0.5,Math.min(1.6,horiz*0.32)), ob={x:fcx,z:fcz,r}; obstacles.push(ob); obst.push(ob); }   // statue/well/tree-trunk
   return null;
 }
+// The dat placements are authentic, but town offsets ride the 1/3-scale world map while the
+// building MESHES are full-size AC metres — retail spacing shrinks to a third and neighbouring
+// buildings interpenetrate (full-scale offsets are no fix: they'd drop buildings onto the wrong
+// terrain — rivers, cliffs — since the terrain itself is 1/3-scale). So: a minimal-displacement
+// SEPARATION SOLVE. Every building keeps its authentic spot unless it overlaps a neighbour, in
+// which case the pair is pushed apart along the smallest escape axis (OBB SAT), a hair past
+// touching. Deterministic (fixed order), capped, and vendors ride along with their shop.
+function tbSeparateBuildings(c,objs){
+  const B=[];
+  for(const o of objs){ if(o.kind!=='building') continue;
+    const md=_tbModels[(''+o.did).toUpperCase()]; if(!md||!md.ready) continue;
+    const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2;
+    const lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2, th=o.rot||0;
+    const cw=Math.cos(th), sw=Math.sin(th);
+    const cx0=o.x+lcx*cw+lcz*sw, cz0=o.z-lcx*sw+lcz*cw;   // ORIGINAL footprint centre (town-local)
+    B.push({o, hx, hz, cx0, cz0,
+      ax:[cw,-sw], az:[sw,cw],                        // local x/z axis directions in town space
+      dx:0, dz:0,
+      dry0:groundY(c.x+cx0,c.z+cz0)>=0});             // authentic waterfront piers may start wet — only DRY buildings are kept out of the water
+  }
+  const MARGIN=0.35, CAP=110;  // push only as far as needed; Linvak Tukal (densest) fully separates at 110
+  const proj=(b,a)=>b.hx*Math.abs(b.ax[0]*a[0]+b.ax[1]*a[1])+b.hz*Math.abs(b.az[0]*a[0]+b.az[1]*a[1]);
+  const penOf=(A,C)=>{                                              // SAT: min-penetration axis, or null if separated
+    const dcx=(C.cx0+C.dx)-(A.cx0+A.dx), dcz=(C.cz0+C.dz)-(A.cz0+A.dz);
+    let best=null, bestPen=1e9;
+    for(const a of [A.ax,A.az,C.ax,C.az]){
+      const d=dcx*a[0]+dcz*a[1];
+      const pen=proj(A,a)+proj(C,a)+MARGIN-Math.abs(d);
+      if(pen<=0) return null;
+      if(pen<bestPen){ bestPen=pen; best=(d<0)?[-a[0],-a[1]]:[a[0],a[1]]; }
+    }
+    return {pen:bestPen, ax:best};
+  };
+  for(let sweep=0;sweep<400;sweep++){
+    let moved=false;
+    for(let i=0;i<B.length;i++) for(let j=i+1;j<B.length;j++){
+      const A=B[i], C=B[j];
+      const hit=penOf(A,C); if(!hit) continue;
+      const half=hit.pen/2;
+      const push=(b,s)=>{ const nx=b.dx+hit.ax[0]*half*s, nz=b.dz+hit.ax[1]*half*s;
+        if(Math.hypot(nx,nz)>CAP) return false;
+        if(b.dry0 && groundY(c.x+b.cx0+nx,c.z+b.cz0+nz)<0) return false;   // never push a dry building into the water
+        b.dx=nx; b.dz=nz; return true; };
+      const mA=push(A,-1), mC=push(C,1);
+      if(mA||mC) moved=true;                                        // both stuck → leave for the cull pass
+    }
+    if(!moved) break;
+  }
+  // whatever STILL interpenetrates after bounded relaxation cannot fit (a dense retail block
+  // compressed to a third) — cull the smaller building of each stuck pair rather than render
+  // two buildings fused through each other
+  for(let i=0;i<B.length;i++) for(let j=i+1;j<B.length;j++){
+    const A=B[i], C=B[j];
+    if(A.cull||C.cull) continue;
+    const hit=penOf(A,C);
+    if(hit&&hit.pen>2.5) ((A.hx*A.hz<=C.hx*C.hz)?A:C).cull=true;
+  }
+  return B;
+}
 // build one town's real buildings + scenery/statues, make the ROOMY buildings ENTERABLE (a
 // plaza-facing doorway, a warm-lit interior fit-out, vendors behind counters inside), and let
 // scenery/fixtures collide by shape. (Real AC buildings were facades whose door was a portal to an
@@ -6486,27 +6666,33 @@ function tbPlaceStructure(g,obst,kind,did,wx,wz,th){
 function tbBuildTown(c,objs){
   const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
   const obst=[], recs=[], lights=[];
+  const seps=tbSeparateBuildings(c,objs);                            // de-interpenetration solve
   // ── pass 1: buildings → ringed room recs; scenery/fixtures/statues → shape colliders ──
   for(const o of objs){
     if(!TB_KINDS[o.kind]) continue;                                  // skip portals/lifestones/bindstones (the game places its own)
     if(o.kind!=='building'){ tbPlaceStructure(g,obst,o.kind,o.did,c.x+o.x,c.z+o.z,o.rot||0); continue; }
-    const rec=tbRingBuilding(g,obst,o.did,c.x+o.x,c.z+o.z,o.rot||0);
+    const s=seps.find(s=>s.o===o);
+    if(s&&s.cull) continue;                                          // unseparable in the dense block — culled
+    const dx=s?s.dx:0, dz=s?s.dz:0;
+    const rec=tbRingBuilding(g,obst,o.did,c.x+o.x+dx,c.z+o.z+dz,o.rot||0);
     if(rec) recs.push(rec);
   }
   // ── pass 2: for each room, cut a doorway on the CLEAREST side (now every wall exists) ──
   for(const rec of recs){ if(rec.enter) tbCutDoorway(g,obst,recs,rec,lights,c.x,c.z); }
-  seatRealTownVendors(c,recs);
+  seatRealTownVendors(c,recs,seps);
+  tbSettleTownNpcs(c,recs);
   return {c,g,obst,lights,recs};
 }
 // cut a walk-through doorway on a room's clearest side + drop a lit interior fit-out.
 // faceX/faceZ (optional) biases the door toward a plaza; else the clearest cardinal wins.
 function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
   const cw=Math.cos(rec.th), sw=Math.sin(rec.th);
-  const cands=[];
-  if(faceX!=null) cands.push(Math.atan2(faceZ-rec.fcz, faceX-rec.fcx));   // toward the plaza first
-  for(let s=0;s<4;s++) cands.push(rec.th+s*Math.PI/2);                    // then the four cardinal walls
-  let best=null, bestBlock=1e9;
-  for(const a of cands){
+  const cands=[];   // [angle, preference-penalty] — the model's VISIBLE door wins unless blocked
+  if(rec.doorMX!=null) cands.push([Math.atan2(rec.doorMZ-rec.fcz, rec.doorMX-rec.fcx),0]);
+  if(faceX!=null) cands.push([Math.atan2(faceZ-rec.fcz, faceX-rec.fcx),rec.doorMX!=null?50:0]);   // toward the plaza
+  for(let s=0;s<4;s++) cands.push([rec.th+s*Math.PI/2,rec.doorMX!=null?50:0]);                    // the four cardinal walls
+  let best=null, bestScore=1e18;
+  for(const [a,pen] of cands){
     const dux=Math.cos(a), duz=Math.sin(a);
     const lux=dux*cw-duz*sw, luz=dux*sw+duz*cw;                           // dir in footprint space
     const we=Math.min(Math.abs(lux)>1e-3?rec.hx/Math.abs(lux):1e9, Math.abs(luz)>1e-3?rec.hz/Math.abs(luz):1e9);
@@ -6515,7 +6701,11 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
     for(const o of obstacles){ if(rec.cols.indexOf(o)>=0) continue;
       for(const s of [0.0,1.4,2.6]){ const sx=dx+dux*s, sz=dz+duz*s;
         if(((o.x-sx)**2+(o.z-sz)**2)<(o.r+TB_DOOR_HALF*0.9)**2){ blk++; break; } } }
-    if(blk<bestBlock){ bestBlock=blk; best={dux,duz,we,dx,dz}; if(blk===0) break; }
+    // clearest side first, then the HIGHEST-ground side (smallest step up to the floor) so the
+    // entrance sits near grade on the real, unflattened slope
+    const step=Math.max(0,rec.gy-groundY(dx+dux*1.2,dz+duz*1.2));
+    const score=blk*100+step+pen;   // an unblocked marker door (pen 0) beats any other side; the entrance ramp covers its step
+    if(score<bestScore){ bestScore=score; best={dux,duz,we,dx,dz}; }
   }
   rec.dux=best.dux; rec.duz=best.duz; rec.wallExit=best.we; rec.doorX=best.dx; rec.doorZ=best.dz;
   // clear the doorway of every collider in the gap (own wall, a neighbour, or a stray stall)
@@ -6537,25 +6727,82 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
     new THREE.MeshBasicMaterial({color:0xffcf8a,transparent:true,opacity:0.16,depthWrite:false,side:THREE.DoubleSide,fog:false}));
   thr.position.set(best.dx-best.dux*0.5,rec.gy+Math.min(rec.H*0.4,1.7),best.dz-best.duz*0.5);
   thr.rotation.y=Math.atan2(best.dux,best.duz); g.add(thr);
+  // entrance ramp: if the ground outside the door sits below the floor (downhill approach), lay a
+  // short stone ramp and register it walkable so you climb up into the doorway (rare — the door is
+  // biased to the high side, but keeps every building enterable on steep sites)
+  const gOut=groundY(best.dx+best.dux*1.2,best.dz+best.duz*1.2);
+  if(rec.gy-gOut>STEP_UP){
+    const rl=Math.max(2.4,(rec.gy-gOut)*1.7);
+    const st2={bx:best.dx,bz:best.dz,baseY:0,cos:best.dux,sin:-best.duz,r2:(rl+TB_DOOR_HALF)**2+4,
+      platforms:[],ramps:[{x0:0,x1:rl,z0:-TB_DOOR_HALF-0.3,z1:TB_DOOR_HALF+0.3,axis:'x',yLo:rec.gy,yHi:gOut,dir:1}]};
+    structures.push(st2); if(rec.structs) rec.structs.push(st2);
+    const rm=new THREE.Mesh(new THREE.BoxGeometry(TB_DOOR_HALF*2+0.4,0.35,rl),texMat(stoneFloorTex,0x8a8074));
+    rm.position.set(best.dx+best.dux*rl/2,(rec.gy+gOut)/2,best.dz+best.duz*rl/2);
+    rm.rotation.order='YXZ'; rm.rotation.y=Math.atan2(best.dux,best.duz); rm.rotation.x=Math.atan2(rec.gy-gOut,rl);
+    rm.receiveShadow=true; g.add(rm);
+  }
 }
 // ring a real building's footprint with colliders + return a room rec (for the doorway pass)
 function tbRingBuilding(g,obst,did,wx,wz,th){
   const md=_tbModels[(''+did).toUpperCase()]; if(!md||!md.ready) return null;
-  const cw=Math.cos(th), sw=Math.sin(th), gy=groundY(wx,wz);
-  const bm=tbBuildMesh(md); bm.position.set(wx,gy,wz); bm.rotation.y=th; g.add(bm);
+  const cw=Math.cos(th), sw=Math.sin(th);
   const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2, H=bb[4]-bb[1];
   const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;
+  // Cities are no longer flattened, so seat the building on the REAL terrain: sample the footprint
+  // corners+centre, stand it on the HIGHEST contact (base — nothing pokes up through the floor) and
+  // skirt a stone foundation down to the lowest so it never floats. "Part of the world" on any slope.
+  const corner=(sx,sz)=>groundY(fcx+sx*hx*cw+sz*hz*sw, fcz-sx*hx*sw+sz*hz*cw);
+  const c00=corner(-1,-1),c10=corner(1,-1),c11=corner(1,1),c01=corner(-1,1),cc=groundY(fcx,fcz);
+  const base=Math.max(c00,c10,c11,c01,cc), lo=Math.min(c00,c10,c11,c01,cc);
+  const bm=tbBuildMesh(md); bm.position.set(wx,base,wz); bm.rotation.y=th; g.add(bm);
+  let doorMX=null,doorMZ=null;
+  if(bm.userData.doorLocal){ const dl=bm.userData.doorLocal;   // the model's own DOOR marker → world
+    doorMX=wx+dl.x*cw+dl.z*sw; doorMZ=wz-dl.x*sw+dl.z*cw; }
+  if(base-lo>0.3){                                                    // stone foundation skirt fills the downhill gap
+    const fnd=new THREE.Mesh(new THREE.BoxGeometry(hx*2+0.6,base-lo+1.6,hz*2+0.6),texMat(stoneFloorTex,0x8a8074));
+    fnd.position.set(fcx,(base+lo-1.6)/2,fcz); fnd.rotation.y=th; fnd.receiveShadow=true; g.add(fnd); }
   const enter=(hx>=2.6&&hz>=2.6&&H>=3.0);
-  const rec={fcx,fcz,hx,hz,th,gy,H,enter,cols:[],per:0};
+  const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[],doorMX,doorMZ};
   const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
     for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
       const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw;
       const ob={x:px,z:pz,r:0.8}; obstacles.push(ob); obst.push(ob); rec.cols.push(ob); } };
   edge(lcx-hx,lcz-hz,lcx+hx,lcz-hz); edge(lcx+hx,lcz-hz,lcx+hx,lcz+hz);
   edge(lcx+hx,lcz+hz,lcx-hx,lcz+hz); edge(lcx-hx,lcz+hz,lcx-hx,lcz-hz);
+  if(enter){   // register the interior floor as a walkable platform so you stand ON it, not the sloped terrain beneath
+    const st={bx:wx,bz:wz,baseY:base,cos:cw,sin:sw,r2:(Math.max(hx,hz)+2)**2+4,
+      platforms:[{x0:lcx-hx+0.3,x1:lcx+hx-0.3,z0:lcz-hz+0.3,z1:lcz+hz-0.3,y:0}],ramps:[]};
+    structures.push(st); rec.structs.push(st); rec.struct=st; }
   return rec;
 }
-function seatRealTownVendors(c,recs){
+// the highest interior floor covering (x,z) — building footprints in real towns OVERLAP, so
+// standing on your OWN room's floor can still leave you under a NEIGHBOUR's higher floor plane
+function tbFloorAt(recs,x,z,fallbackY){
+  let fy=fallbackY;
+  for(const r of recs){ if(!r.enter) continue;
+    const cw=Math.cos(r.th), sw=Math.sin(r.th), dx=x-r.fcx, dz=z-r.fcz;
+    const lx=dx*cw-dz*sw, lz=dx*sw+dz*cw;
+    if(Math.abs(lx)<=r.hx-0.3&&Math.abs(lz)<=r.hz-0.3&&r.gy>fy) fy=r.gy; }
+  return fy;
+}
+// the highest floor covering (x,z) across EVERY currently-built town — town radii overlap, so a
+// point can sit under a NEIGHBOUR town's building; settling against one town's recs alone would
+// clobber the lift the other town gave it
+function tbFloorAllTowns(x,z,fallbackY){
+  let fy=fallbackY;
+  for(const k in _tbBuilt){ const e=_tbBuilt[k]; if(e&&e.recs) fy=tbFloorAt(e.recs,x,z,fy); }
+  return fy;
+}
+// after a town's buildings land, lift every NPC standing inside one onto its floor (settleY put
+// them at terrain height long before the town streamed in — heads through the floor otherwise)
+function tbSettleTownNpcs(c,recs){
+  if(typeof npcs==="undefined") return;
+  for(const np of npcs){ if(Math.hypot(np.x-c.x,np.z-c.z)>190) continue;
+    let fy=tbFloorAt(recs,np.x,np.z,groundY(np.x,np.z));
+    fy=tbFloorAllTowns(np.x,np.z,fy);                               // a neighbouring town's floor may be higher
+    np.mesh.position.y=fy; }
+}
+function seatRealTownVendors(c,recs,seps){
   if(!recs.length) return;
   const rooms=recs.filter(r=>r.enter); if(!rooms.length) return;    // vendors go INSIDE real rooms
   const placed=[];
@@ -6565,7 +6812,43 @@ function seatRealTownVendors(c,recs){
   const nearDoor=(x,z)=>{ for(const r of rooms){ if(((x-r.doorX)**2+(z-r.doorZ)**2)<(TB_DOOR_HALF+1.0)**2) return true; } return false; };
   for(const sh of shops){
     if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;
-    if(Math.hypot(sh.x-c.x,sh.z-c.z)>62) continue;                  // only this town's vendors
+    if(Math.hypot(sh.x-c.x,sh.z-c.z)>190) continue;                 // only this town's vendors (margin for separation-shifted shops)
+    if(sh._acPos){
+      // TRUE retail position (1:1 town-offset mapping, same as the buildings) — never rearrange.
+      // If the separation solve displaced this vendor's shop, ride along with it (the spot stays
+      // 1:1 relative to the building). _acHome keeps the authentic point across town rebuilds.
+      if(!sh._acHome) sh._acHome={x:sh.x,z:sh.z};
+      let nx=sh._acHome.x, nz=sh._acHome.z, room=null, homeless=false;
+      if(seps){ const lx0=nx-c.x, lz0=nz-c.z;
+        for(const s of seps){
+          const px=lx0-s.cx0, pz=lz0-s.cz0;
+          const qx=px*s.ax[0]+pz*s.ax[1], qz=px*s.az[0]+pz*s.az[1];
+          if(Math.abs(qx)<=s.hx+0.5&&Math.abs(qz)<=s.hz+0.5){
+            if(s.cull) homeless=true;                                // shop was culled — fan-seat below instead
+            else { nx+=s.dx; nz+=s.dz; }
+            break; } } }
+      if(!homeless){
+      for(const r of rooms){ const cw=Math.cos(r.th),sw=Math.sin(r.th),dx=nx-r.fcx,dz=nz-r.fcz;
+        const lx=dx*cw-dz*sw, lz=dx*sw+dz*cw;
+        if(Math.abs(lx)<=r.hx-0.3&&Math.abs(lz)<=r.hz-0.3){ room=r; break; } }
+      if(room&&room.dux!=null){                                     // nudge INTO the room only if standing in the doorway
+        for(let g=0; g<4 && (nearDoor(nx,nz)||nearDoor(nx-room.dux*0.9,nz-room.duz*0.9)); g++){ nx-=room.dux*0.7; nz-=room.duz*0.7; } }
+      const fy=tbFloorAt(recs,nx,nz,groundY(nx,nz));
+      if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
+      if(room&&room.dux!=null){
+        sh.mesh.rotation.y=Math.atan2(room.dux,room.duz);           // face the room's door (buildPerson fronts -z)
+        const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
+        counter.position.set(nx+room.dux*0.85,fy+0.5,nz+room.duz*0.85); counter.rotation.y=Math.atan2(room.dux,room.duz);
+        counter.castShadow=true; scene.add(counter); sh._counter=counter;
+      } else sh.mesh.rotation.y=Math.atan2(c.x-nx,c.z-nz);          // roadside stand — face the town
+      sh.mesh.position.set(nx,fy,nz);
+      sh.x=nx; sh.z=nz; sh._seated=true; placed.push({x:nx,z:nz});
+      if(sh.obs){ sh.obs[0].x=nx; sh.obs[0].z=nz; if(sh.obs[1]){
+        const fx=Math.sin(sh.mesh.rotation.y), fz=Math.cos(sh.mesh.rotation.y);
+        sh.obs[1].x=nx-fx*0.9; sh.obs[1].z=nz-fz*0.9; } }            // rear collider behind the vendor
+      continue;
+      }
+    }
     let rec=null,rd=1e9; for(const r of rooms){ const d=(r.fcx-sh.x)**2+(r.fcz-sh.z)**2; if(d<rd){rd=d;rec=r;} }
     if(!rec) continue;
     // stand back from the doorway, toward the room's interior; fan multiple vendors sideways
@@ -6582,7 +6865,13 @@ function seatRealTownVendors(c,recs){
       const lx=bx*cw-bz*sw, lz=bx*sw+bz*cw;
       if(Math.abs(lx)>rec.hx-0.6||Math.abs(lz)>rec.hz-0.6) break;
     }
-    const fy=groundY(nx,nz);
+    // clamp the spot INSIDE this room's footprint — the sideways fan on adjacent buildings can
+    // otherwise land a vendor under a NEIGHBOUR's (higher) floor, head poking through it
+    { const cw2=Math.cos(rec.th), sw2=Math.sin(rec.th), bx=nx-rec.fcx, bz=nz-rec.fcz;
+      let lx=bx*cw2-bz*sw2, lz=bx*sw2+bz*cw2;
+      lx=Math.max(-(rec.hx-0.7),Math.min(rec.hx-0.7,lx)); lz=Math.max(-(rec.hz-0.7),Math.min(rec.hz-0.7,lz));
+      nx=rec.fcx+lx*cw2+lz*sw2; nz=rec.fcz-lx*sw2+lz*cw2; }
+    const fy=tbFloorAt(recs,nx,nz,rec.gy);   // the room's floor — or a HIGHER overlapping neighbour's, so no floor plane cuts through the vendor
     // a small counter in front of the shopkeeper, facing the door
     if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
     const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
@@ -6593,14 +6882,20 @@ function seatRealTownVendors(c,recs){
     if(sh.obs){ sh.obs[0].x=nx; sh.obs[0].z=nz; if(sh.obs[1]){ sh.obs[1].x=nx+inx*0.9; sh.obs[1].z=nz+inz*0.9; } }
   }
 }
+// release the walkable floor-platform / entrance-ramp structures a streamed group registered
+function tbReleaseStructs(recs){ for(const r of (recs||[])) for(const st of (r.structs||[])){
+  const i=structures.indexOf(st); if(i>=0) structures.splice(i,1); } }
 function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
+  tbReleaseStructs(e.recs);
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
   for(const s of shops){ if(s._counter){ if(s._counter.parent)s._counter.parent.remove(s._counter); s._counter=null; }
-    if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<62) s._seated=false; }
-  delete _tbBuilt[name];
+    if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<190) s._seated=false; }
+  delete _tbBuilt[name];                                 // deregister FIRST so the resettle below ignores this town's floors
+  if(typeof npcs!=="undefined") for(const np of npcs){   // floors are gone — back to terrain (or a still-built neighbour's floor)
+    if(Math.hypot(np.x-e.c.x,np.z-e.c.z)<190) np.mesh.position.y=tbFloorAllTowns(np.x,np.z,groundY(np.x,np.z)); }
 }
 let _tbBuilt={}, _tbAcc=0;
 const TB_BUILD_R=430, TB_DROP_R=560;
@@ -6631,10 +6926,11 @@ function wsBuildBlock(lb,rec){
   // isolated houses/keeps are enterable too: ring, then cut a doorway on the clearest side
   for(const b of rec.b){ const r=tbRingBuilding(g,obst,b[0],b[1],b[2],b[3]||0); if(r) recs.push(r); }   // b=[did,x,z,rot]
   for(const r of recs){ if(r.enter) tbCutDoorway(g,obst,recs,r,lights,null,null); }
-  return {cx:rec.cx,cz:rec.cz,g,obst,lights};
+  return {cx:rec.cx,cz:rec.cz,g,obst,lights,recs};
 }
 function wsDropBlock(lb){ const e=_wsBuilt[lb]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
+  tbReleaseStructs(e.recs);
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }
   for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   delete _wsBuilt[lb];
@@ -6919,14 +7215,9 @@ function addCity(c){
   const stallN=c.capital?4:2;
   for(let i=0;i<stallN;i++){const a=i/stallN*6.28+1.0,sx=c.x+Math.cos(a)*ring*0.5,sz=c.z+Math.sin(a)*ring*0.5;
     const st=buildStall(sc,i);st.position.set(sx,0,sz);st.rotation.y=a;scene.add(st);scenery.push(st);obstacles.push({x:sx,z:sz,r:1.4*sc});}
-  // capital walls with a south gate
-  if(c.capital){const wr=ring+11,seg=26;
-    for(let i=0;i<seg;i++){const a=i/seg*6.28; if(a>Math.PI*0.42&&a<Math.PI*0.58) continue;
-      const wx=c.x+Math.cos(a)*wr,wz=c.z+Math.sin(a)*wr;
-      const w=new THREE.Mesh(new THREE.BoxGeometry(wr*2*Math.PI/seg*1.1,3.6*sc,1.3*sc),solid(0x8a8278,true));
-      w.position.set(wx,1.8*sc,wz);w.rotation.y=-a;w.castShadow=true;w.receiveShadow=true;scene.add(w);scenery.push(w);obstacles.push({x:wx,z:wz,r:1.3*sc});}
-    for(const ga of[Math.PI*0.42,Math.PI*0.58]){const gx=c.x+Math.cos(ga)*wr,gz=c.z+Math.sin(ga)*wr;
-      const gp=new THREE.Mesh(new THREE.BoxGeometry(1.7*sc,5.4*sc,1.7*sc),solid(0x9a9079));gp.position.set(gx,2.7*sc,gz);gp.castShadow=true;scene.add(gp);scenery.push(gp);obstacles.push({x:gx,z:gz,r:1.3*sc});}
+  // capital name banner (the procedural ring wall + south gate were NOT authentic AC — removed;
+  // any real AC town walls come in as extracted scenery via actowns/acworldstructs)
+  if(c.capital){
     const banner=labelSprite("★ "+c.name+" ★","cities");banner.scale.set(16,4,1);banner.position.set(c.x,13,c.z);banner.userData.float=13;scene.add(banner);scenery.push(banner);}
 }
 // ════════════════════════════════════════════════════════════════════════════
@@ -8239,12 +8530,12 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
   // ambient fauna in settled/grassland areas — a rabbit or cow now and then
   if(reg>=0 && !coldZone(x,z) && d>60 && Math.random()<0.10) return Math.random()<0.7?"rabbit":"cow";
   // the RETAIL spawn table: if the encounter data says what lived here, spawn that (mostly)
-  if(d>=200){ const real=acSpawnKinds(x,z);
+  if(d>=200*WSCALE){ const real=acSpawnKinds(x,z);   // ×WSCALE: difficulty gradient at true 1:1 distance-from-town
     if(real&&real.length&&Math.random()<0.75) return pick(real); }
   if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin","ruschk","penguin","snowman","wight","elemental"]);   // frozen north/south — snowy spawns
   if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow","mukkir","remoran","hollow","margul","phantom","gurog","gearknight","falatacot","tormented","crystalwisp"]); // Direlands — deadliest frontier
   if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge","burun","remoran","sleech","thrungus"]);  // the Blackmire swamp
-  if(d<200) return pick(["drudge","mosswart","rat","rat","mite","carenzi"]);                   // town outskirts — weakest
+  if(d<200*WSCALE) return pick(["drudge","mosswart","rat","rat","mite","carenzi"]);            // town outskirts — weakest (×WSCALE)
   if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin","carenzi","marionette","lich","viamontian"]); // Aluvia — temperate forest
   if(reg===1) return pick(["shreth","drudge","phyntoswasp","banderling","mosswart","sclavus","wisp","mite","reedshark","burun","doll","hea","siraluun"]);   // Sho — wooded hills
   return pick(["skeleton","drudge","rat","shreth","monouga","mummy","zombie","tumerok","gromnie","armoredillo","niffis","fiun","thrungus","hea"]);   // Gharu'ndim — desert
@@ -8252,10 +8543,10 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
 function spawnSomewhere(){
   if(inDungeon||inNetwork||isOnline) return; // online overworld monsters are server-authoritative
   let x,z,d,t=0;
-  do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75,470);
+  do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75*WSCALE,470*WSCALE);   // spawn ring at true 1:1 spacing around hubs
     x=clamp(h.x+Math.cos(a)*rr,-HALF+6,HALF-6);z=clamp(h.z+Math.sin(a)*rr,-HALF+6,HALF-6);
     d=nearestCapitalDist(x,z);t++;}while((d<TOWN_SAFE+6||terrainH(x,z)<0)&&t<25);
-  spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500);
+  spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500*WSCALE);
 }
 function spawnMonster(kind,x,z,elite){
   const b=BESTIARY[kind];
@@ -8515,10 +8806,44 @@ function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYP
 // movement/stamina multipliers, averaged across all 5 slots (empty slot = no penalty) — partial armour = partial cost
 function armorMove(){ let sp=0,stm=0; for(const s of ARMOR_SLOTS){ const p=player.armorSlots&&player.armorSlots[s], at=p&&ARMOR_TYPES[p.at]; sp+=at?at.speedMul:1; stm+=at?at.stamMul:1; } const n=ARMOR_SLOTS.length; return {speed:sp/n, stam:stm/n}; }
 function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix; if(a&&a.k==="vital"&&a.stat===stat) n+=a.v; } return n; }
-// each armour material wards one damage element; worn pieces of that material stack a resistance (capped)
-const MAT_RESIST={Steel:"slash",Iron:"pierce",Bronze:"bludgeon",Brass:"slash",Copper:"acid",Granite:"bludgeon",Marble:"bludgeon",
-  Alabaster:"pierce",Ceramic:"fire",Leather:"slash",Hide:"pierce",Linen:"acid",Wool:"frost",Silk:"fire",Velvet:"nether",Satin:"shock"};
-function resistVs(el){ if(!el) return 0; let n=0; for(const p of wornPieces()){ if(MAT_RESIST[p.mat]===el) n+=0.16; }
+// Cb12 — per-material resistance PROFILE: each armour material resists a fraction of EVERY damage
+// element per worn piece (AC's material protection modifiers), not just one type. Its dominant
+// element gets the strong ward (~0.15); it still shrugs off a sliver of the others by its nature
+// (metal turns blades, stone eats bludgeons, ceramic drinks fire, weaves damp the elements).
+// Damage types: slash · pierce · bludgeon · fire · frost · acid · shock · nether.
+const ARMOR_MAT_RESIST={
+  // metals — strong vs physical, thin vs magic
+  Steel:  {slash:.15,pierce:.09,bludgeon:.05,fire:.02,frost:.02},
+  Iron:   {pierce:.15,slash:.07,bludgeon:.07,frost:.02},
+  Bronze: {bludgeon:.15,slash:.06,pierce:.05,fire:.02},
+  Brass:  {slash:.11,bludgeon:.06,pierce:.05,shock:.04},
+  Copper: {acid:.13,shock:.10,bludgeon:.05,slash:.03},
+  Silver: {slash:.09,nether:.10,frost:.04},
+  Gold:   {bludgeon:.08,fire:.06,acid:.06},
+  Pyreal: {fire:.10,shock:.06,slash:.05,pierce:.05,bludgeon:.05},
+  // stone — bludgeon & fire
+  Granite:{bludgeon:.15,fire:.08,slash:.05},
+  Marble: {bludgeon:.14,fire:.06,slash:.04},
+  Alabaster:{pierce:.12,frost:.06,bludgeon:.05},
+  Ceramic:{fire:.15,acid:.11,bludgeon:.04},
+  Quartz: {shock:.11,frost:.07,fire:.04},
+  Diamond:{slash:.10,pierce:.08,bludgeon:.06,fire:.04,frost:.04,acid:.04,shock:.04,nether:.04},
+  Amber:  {acid:.12,nether:.08,fire:.05},
+  Jet:    {nether:.13,shock:.07,frost:.04},
+  // organics — leather turns edges, hides warm
+  Leather:{slash:.10,bludgeon:.06,pierce:.04},
+  Hide:   {pierce:.10,bludgeon:.08,frost:.05},
+  // weaves — light armour & clothing, each damps one element
+  Linen:  {acid:.10,fire:.03},
+  Wool:   {frost:.12,fire:.03},
+  Cotton: {frost:.08,acid:.04},
+  Silk:   {fire:.12,nether:.05},
+  Velvet: {nether:.12,frost:.04},
+  Satin:  {shock:.12,fire:.04}};
+const _MAT_RESIST_DEFAULT={slash:.05,pierce:.05,bludgeon:.05};   // an unknown material still turns a little of a blow
+function matResistProfile(mat){ return ARMOR_MAT_RESIST[mat]||_MAT_RESIST_DEFAULT; }
+function resistVs(el){ if(!el) return 0; let n=0;
+  for(const p of wornPieces()){ const pr=matResistProfile(p.mat); if(pr[el]) n+=pr[el]; }   // every piece resists its profile fraction of this element
   if(typeof jewelryBonus==="function") n+=jewelryBonus("protect",el)/100;   // elemental Protection jewelry stacks with armour material wards
   if(player.augment&&player.augment.resist) n+=player.augment.resist;        // Blue Aetheria: permanent all-element resistance
   return Math.min(0.7,n); }
@@ -10226,7 +10551,10 @@ function addDrop(x,z,data){
       new THREE.MeshStandardMaterial({color:0xcfc6b4,roughness:0.95}));
     shroud.rotation.z=Math.PI/2; shroud.position.y=0.28; shroud.scale.y=0.62; shroud.castShadow=true; mesh.add(shroud);
     const glow=new THREE.PointLight(0x9ab8ff,0.9,7); glow.position.y=1.0; mesh.add(glow);
-    const lbl=labelSprite(`${data.owner||"Your"} corpse — recover (E)`,"npcs");
+    const _mine=!data.owner||(typeof player!=="undefined"&&player.name&&data.owner===player.name);
+    const _cn=(data.items&&data.items.length)?` (${data.items.length} item${data.items.length!==1?"s":""}${data.amt?" + pyreals":""})`:(data.amt?" (pyreals)":"");
+    const _act=_mine?" — recover (E)":(data.open?" — loot (E)":"");
+    const lbl=labelSprite(`${_mine?"Your":data.owner+"'s"} corpse${_cn}${_act}`,"npcs");
     lbl.scale.set(7,1.5,1); lbl.position.y=2.0; mesh.add(lbl);
   }else{
     const model=buildItemModel(data.item||{},{drop:true}); mesh=new THREE.Group();
@@ -12763,6 +13091,10 @@ const RECIPES=[
   {id:"alch_gem_str",  skill:"alchemy", name:"Gem of Strength",     cost:12, ico:"💎", out:()=>({name:"Gem of Strength",stat:"attrgem",attr:"Strength",v:10,dur:300}),         blurb:"cast +10 Strength for 5 min"},
   {id:"alch_gem_coord",skill:"alchemy", name:"Gem of Coordination", cost:12, ico:"💎", out:()=>({name:"Gem of Coordination",stat:"attrgem",attr:"Coordination",v:10,dur:300}), blurb:"cast +10 Coordination for 5 min"},
   {id:"alch_gem_focus",skill:"alchemy", name:"Gem of Focus",        cost:12, ico:"💎", out:()=>({name:"Gem of Focus",stat:"attrgem",attr:"Focus",v:10,dur:300}),               blurb:"cast +10 Focus for 5 min"},
+  // AC dye pots: the eight retail dye plants, brewed by Alchemy into pots (was outfitter-only at 850 pyreals).
+  ...DYE_POTS.map(d=>({ id:"dye_"+d.name.split(" ")[0].toLowerCase(), skill:"alchemy", name:d.name, cost:10, ico:"🎨",
+    out:()=>({name:d.name,stat:"dye",hex:d.hex,v:85}),
+    blurb:"an armour dye pot (<span style=\"color:#"+d.hex.toString(16).padStart(6,'0')+"\">■</span> — Use it, then pick the piece)" })),
 ];
 const RECIPE_BY_ID={}; for(const r of RECIPES) RECIPE_BY_ID[r.id]=r;
 function craftChance(skill){ const st=skillTier(skill); if(st<1) return 0; return clamp(0.55+skillRank(skill)*0.003+(st>1?0.1:0),0.4,0.97); } // trained scales w/ rank, spec +10%
@@ -13041,10 +13373,18 @@ function die(){
     // one lootable corpse holding everything — decays after 5 min/level (min 1 hour)
     const dd=deathDrops();
     if(dd.items.length||dd.gold){
-      addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,
-        owner:player.name||"Adventurer",ttl:Math.max(3600,300*player.level)});
+      const ttl=Math.max(3600,300*player.level);
+      if(isOnline){   // online: the server stands up a SHARED corpse everyone sees (echoed back to us via onDrop)
+        // a Player Killer's corpse is fair game for anyone (AC PK-death loot); NPK/PKL corpses stay owner-only
+        netSend({t:"death",x:corpseX,z:corpseZ,items:dd.items,gold:dd.gold,ttl,open:(player.pkState==="pk")});
+      } else {
+        addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,owner:player.name||"Adventurer",ttl});
+      }
       if(typeof recomputeGearSkill==="function") recomputeGearSkill();
-      corpseNote=` Your corpse holds <b>${dd.items.length}</b> item(s)${dd.gold?` and <b>${dd.gold.toLocaleString()}</b> pyreals`:""} where you fell — recover it before it decays (${Math.round(Math.max(3600,300*player.level)/60)} min).`;
+      // AC always named your losses — list them so you know exactly what to walk back for
+      const _nm=dd.items.slice(0,6).map(it=>it.name), _more=dd.items.length-_nm.length;
+      const _list=_nm.length?` — <i>${_nm.join(", ")}${_more>0?`, +${_more} more`:""}</i>`:"";
+      corpseNote=` Your corpse holds <b>${dd.items.length}</b> item(s)${_list}${dd.gold?` and <b>${dd.gold.toLocaleString()}</b> pyreals`:""} where you fell — recover it before it decays (${Math.round(Math.max(3600,300*player.level)/60)} min).`;
     }
   } else corpseNote=" (Soft death is on — nothing dropped. Settings → AC-authentic death.)";
   derive();   // apply the new Vitae to your vital pools before you respawn
@@ -13081,7 +13421,7 @@ function fallDamage(drop){
   // dmg = (v/vSafe − 1) × 87.29, bludgeon-typed. AC's safe fall ≈ 12.7 m ≈ a 4-storey drop here
   // (one storey H1F=4.4u ≈ 3 m). Retail reportedly let Jump ability soften landings (ACE left the
   // damping commented out) — we keep a modest Jump bump on the threshold for that.
-  const safe=17+skillValue("jump")*0.02;
+  const safe=(17+skillValue("jump")*0.02)*WSCALE;   // ×WSCALE: safe fall in true metres (drop is now real-scale too)
   if(drop<=safe) return;
   const v=Math.sqrt(2*GRAV*drop), vSafe=Math.sqrt(2*GRAV*safe);
   let dmg=Math.round((v/vSafe-1)*87.29*(1-resistVs("bludgeon")));   // bludgeon resistance mitigates, as in ACE
@@ -13230,14 +13570,14 @@ function executeSpell(id){
     :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
   if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
   if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
-    const m=pickMonsterTarget(28);
+    const m=pickMonsterTarget(30);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
     else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
     castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
   }
   if(s.special==="corrupt"){   // Mg6 Void curse — a nether DoT that also corrodes the foe's defences
-    const m=pickMonsterTarget(28);
+    const m=pickMonsterTarget(30);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     const dps=Math.round(s.dps*skillEff("void",0.02));
     m.burnT=Math.max(m.burnT||0,s.dur); m.burnDps=Math.max(m.burnDps||0,dps);   // nether DoT (rides the burn tick)
@@ -13246,7 +13586,7 @@ function executeSpell(id){
     log(`You wrack a foe with <b>${s.name}</b> — nether corruption festers.`,"heal"); return;
   }
   if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
-    const m=pickMonsterTarget(28);
+    const m=pickMonsterTarget(30);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(m.shared) netSend({t:"debuff",id:m.id,eff:s.debuff,v:s.dmag,dur:s.dur});
     else if(s.debuff==="spd") m.slow=Math.max(m.slow||0,1-s.dmag);
@@ -13366,11 +13706,23 @@ function executeSpell(id){
     return;
   }
   castRings(player.x,player.z,sp.color);   // AC gathering-rings flourish as the bolt is loosed
-  // spread angles per geometry: single, fan (blast/wave), tight stream (volley)
-  const spread=geom==="blast"?[-0.26,0,0.26]:geom==="wave"?[-0.45,-0.22,0,0.22,0.45]:geom==="volley"?[-0.07,0,0.07]:[0];
-  for(const off of spread){
+  // AC spell range (SpellTable BaseRangeConstant + magicSkill × BaseRangeMod, hard-capped): your reach
+  // grows with the school skill up to a ceiling, so a novice can't snipe from across the field.
+  const _mskill=skillValue(MAGIC_SCHOOLS[s.school]||"war");
+  // AC-exact: SpellTable BaseRangeConstant = 30 m for every war bolt (extracted from spell.dat via
+  // tools; Flame/Frost/Force/Acid/Blade all 30 m, waves 15 m), + magic-skill scaling to retail's ~75 m
+  // cap. World is 1:1 now, so these ARE metres.
+  const spellRange=Math.min(30+_mskill*0.4,75);
+  // AC spread patterns per geometry: Blast = a 3-bolt 90° cone (±45°), Volley = 3 PARALLEL bolts
+  // (offset sideways, same heading — a wall of shots), Wave = a wide 5-bolt fan, else a single bolt.
+  const perp={x:-dir.z,z:dir.x}; const pl=Math.hypot(perp.x,perp.z)||1; perp.x/=pl; perp.z/=pl;   // lateral axis for parallel offsets
+  const pattern=geom==="blast"?[{a:-0.785},{a:0},{a:0.785}]
+    :geom==="volley"?[{a:0,lat:-0.6},{a:0,lat:0},{a:0,lat:0.6}]
+    :geom==="wave"?[{a:-0.45},{a:-0.22},{a:0},{a:0.22},{a:0.45}]:[{a:0}];
+  for(const pt of pattern){
+    const off=pt.a||0, lat=pt.lat||0;
     const ca=Math.cos(off),sa=Math.sin(off), dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca;
-    const ox=player.x+dx*0.8, oz=player.z+dz*0.8, oy=EYE-0.15;
+    const ox=player.x+dx*0.8+perp.x*lat, oz=player.z+dz*0.8+perp.z*lat, oy=EYE-0.15;
     const mesh=new THREE.Mesh(projGeom(sp),new THREE.MeshBasicMaterial({color:sp.color}));
     mesh.position.set(ox,oy,oz);
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
@@ -13379,8 +13731,9 @@ function executeSpell(id){
     // AC (ACE WorldObject_Magic): ARC spells are the only lobbed war geometry — launched from full
     // caster height with an upward loft, falling under gravity; all other geometries fly flat.
     const isArc=geom==="arc";
+    const rlife=Math.max(0.5,spellRange/Math.max(1,sp.speed));   // travel time to reach the skill-gated range
     pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:isArc?EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,
-      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?4:2.2});
+      dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?Math.min(4,rlife):rlife});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
@@ -13440,6 +13793,10 @@ function dodge(){
 function fireArrow(){
   if(!player.alive||player.meleeCd>0||paused) return;
   const wp=weaponProfile(),ranged=wp&&wp.mode==="missile",prof=ranged?wp:WEAPON_TYPES.bow; // equipped ranged weapon or a plain bow
+  // AC: a bow/crossbow/atlatl needs matching ammunition loaded — no ammo, no shot
+  const wtype=(ranged&&player.weapon&&player.weapon.wt)||"bow";
+  if(ranged && player.inv.findIndex(x=>x.stat==="ammo"&&x.for===wtype)<0){
+    log("You have no "+(wtype==="crossbow"?"quarrels":wtype==="atlatl"?"darts":"arrows")+" to fire.","warn"); if(SFX.hit)SFX.hit(); return; }
   if(player.st<prof.stam){ log("Too tired to draw.","warn"); return; }
   player.st-=prof.stam;
   const cdScale=Math.max(.4,1-player.attr.Coordination*0.02);
@@ -13455,7 +13812,6 @@ function fireArrow(){
       else if(af.element==="shock"){stun=true;col=0xfff15a;} else if(af.element==="nether"){drain=0.3;col=0x9b30ff;} }
     else if(af.k==="crit") dmg=Math.round(dmg*1.2); else if(af.k==="lifesteal") drain=af.v; }
   // ammunition: elemental ammo adds an elemental component; plain ammo adds physical (brand takes the element slot)
-  const wtype=(ranged&&player.weapon&&player.weapon.wt)||"bow";
   const ai=player.inv.findIndex(x=>x.stat==="ammo"&&x.for===wtype);
   if(ai>=0){ const am=player.inv[ai];
     if(am.element&&!element){ element=am.element; elemDmg+=am.dmg||0;
@@ -13472,7 +13828,7 @@ function fireArrow(){
   // AC (ACE Creature_Missile): launch speed comes from the LAUNCHER (heavy launchers loose faster
   // bolts than light ones), and missiles fly a true ballistic arc under gravity — loft to reach.
   const pv=prof.pspd||75;
-  pProj.push({mesh,x:ox,y:oy,z:oz,vx:dir.x*pv,vy:dir.y*pv,vz:dir.z*pv,grav:true,
+  pProj.push({mesh,x:ox,y:oy,z:oz,x0:ox,z0:oz,vx:dir.x*pv,vy:dir.y*pv,vz:dir.z*pv,grav:true,   // x0/z0 = launch point for Cb11 range falloff
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(power){
@@ -13491,8 +13847,11 @@ function meleeAttack(power){
   { const SW_VAR={dagger:["stab","fan"],sword:["diag","horiz"],axe:["hew","chopdn"],mace:["smash","rising"],
       spear:["lunge","sweep"],staff:["sweep","lunge"],twohand:["chop","cleave"],unarmed:["cross","hook"]};
     const v=SW_VAR[wt]||SW_VAR.sword; player.swingAnim=offhand?"offhand":v[irnd(0,v.length-1)]; }
-  if(player.st>=prof.stam*power) player.st-=prof.stam*power;   // a harder swing costs more stamina
-  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor());
+  // Cb9: stamina cost scales with swing power AND a worn shield; swinging while spent lands a weaker blow
+  const stamCost=prof.stam*power*(equippedShield()?1.2:1);
+  let winded=1;
+  if(player.st>=stamCost){ player.st-=stamCost; } else { player.st=0; winded=0.6; }   // exhausted → 40% weaker swing (no more free full-power swings at 0 stamina)
+  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor())*winded;
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
@@ -13556,12 +13915,32 @@ function updateChargeBar(){ const b=document.getElementById('chargeBar'); if(!b)
   else b.style.display="none";
   const ah=document.getElementById('atkHeight'); if(ah&&ah.style.display==="block"&&ah._t&&now()-ah._t>2500) ah.style.display="none"; }
 // Cb2: which attack height best fits a creature's size, and the accuracy/damage modifiers for a match/mismatch
+// Cb2 attack height → the body part you strike, each with its own armour bucket (AC per-part d_Val):
+// head = vital but small/mobile (big damage, easy to miss), torso = the armoured centre mass (reliable,
+// average), legs = low-value but easy to reach (less damage, better accuracy, sets up control). A target's
+// build still matters — a towering foe bares its high parts, a scuttling one its low.
+const PART_BUCKET={high:{part:"head", acc:0.86,dmg:1.25},   // dmg already folds in the part's typical armour (head soft, torso plated, legs lean)
+                   mid: {part:"torso",acc:1.00,dmg:1.00},
+                   low: {part:"legs", acc:1.12,dmg:0.85}};
+// per-kind body-part armour (AC d_Val): some creatures plate a region — learn where to strike. Multiplies that part's damage.
+const PART_ARMOR={
+  olthoi:{torso:0.6,legs:0.8}, olthoisoldier:{torso:0.55,legs:0.75}, olthoiworker:{torso:0.65},   // chitin carapace — the joints give
+  skeleton:{head:1.35,torso:0.9},                    // exposed skull shatters; the ribcage deflects
+  golem:{head:0.7,torso:0.7,legs:1.2},               // stone body all over; the leg-joints crack easier
+  lugian:{torso:0.7,head:1.15}, tusker:{head:0.7,legs:1.25},   // vast plated chest / thick skull-plate — hamstring instead
+  gromnie:{torso:0.65,head:1.2}, mattekar:{torso:0.7,head:1.15},   // scaled belly, softer crest
+  zombie:{head:1.3}, mummy:{head:1.3}, virindi:{head:1.25}};       // go for the head
 function heightMods(m){
+  const ah=player.atkHeight||"mid", b=PART_BUCKET[ah]||PART_BUCKET.mid;
   const sz=(typeof BESTIARY!=="undefined"&&BESTIARY[m.kind]&&BESTIARY[m.kind].size)||m.r||1;
-  const ideal=sz>=1.5?"high":sz<=0.7?"low":"mid", ah=player.atkHeight||"mid";
-  if(ah===ideal) return {acc:1.12,dmg:1.10};                       // right height for the target
-  if(ah==="mid"||ideal==="mid") return {acc:1.0,dmg:1.0};          // one step off — neutral
-  return {acc:0.80,dmg:1.0};                                       // opposite extreme (high vs a low target) — poor accuracy
+  const ideal=sz>=1.5?"high":sz<=0.7?"low":"mid";
+  let acc=b.acc, dmg=b.dmg;
+  // per-kind part armour (AC d_Val) scales that part's damage when a creature defines it; else the profile stands
+  const pa=PART_ARMOR[m.kind]&&PART_ARMOR[m.kind][b.part];
+  if(pa!=null) dmg*=pa;
+  if(ah===ideal){ acc+=0.10; dmg*=1.06; }                    // the target's build suits your line — cleaner strikes
+  else if(ah!=="mid"&&ideal!=="mid"){ acc-=0.14; }           // opposite extreme (high vs a low foe) — awkward, poorer accuracy
+  return {acc:clamp(acc,0.6,1.3), dmg:clamp(dmg,0.7,1.4), part:b.part};
 }
 // Cb5/skill activation: Recklessness (trade defence for damage) & Sneak Attack (bonus vs an unaware/flanked foe)
 function recklessFactor(){ const t=skillTier("recklessness"); return t===2?0.22:t===1?0.13:0; }   // +outgoing AND +incoming damage
@@ -13764,7 +14143,10 @@ function currentPrompt(){
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return "Leave the delve (E)";
     return "";
   }
-  for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4) return "Recover your corpse (E)";
+  for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
+    if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.open?("Loot "+d.owner+"'s corpse (E)"):(d.owner+"'s corpse (theirs to recover)");
+    return "Recover your corpse (E)"; }
+  for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
   {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
     if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
@@ -13909,6 +14291,7 @@ function interact(){
       return;
     }
   }
+  for(const a of pkAltars){ if(Math.hypot(a.x-player.x,a.z-player.z)<3.5){ usePKAltar(a); return; } }
   for(const ls of lifestones){
     if(Math.hypot(ls.x-player.x,ls.z-player.z)<5){
       lifestones.forEach(l=>{l.bound=false;recolorLifestone(l);});
@@ -13919,6 +14302,13 @@ function interact(){
   }
 }
 function recoverCorpse(d){
+  // a SHARED (multiplayer) corpse is server-brokered and owner-only — the server validates and
+  // returns the contents via corpse_loot; other players can see the corpse but cannot loot it.
+  if(d.shared){
+    if(!d.open && d.owner && player.name && d.owner!==player.name){ log(`This is <b>${esc(d.owner)}</b>'s corpse — only they can recover it.`,"warn"); if(SFX.deny)SFX.deny(); return; }
+    if(!d.req){ d.req=true; netSend({t:"recover",id:d.id}); }   // server validates (owner, or anyone for a PK corpse) + clears it for all
+    return;
+  }
   // pyreals always come home; items return to the satchel until it fills — the rest spills out
   if(d.amt>0){ player.gold+=d.amt; floater(player.x,EYE+0.4,player.z,"+"+d.amt+" p","#ffd86b"); }
   let taken=0,spilled=0;
@@ -13931,10 +14321,10 @@ function recoverCorpse(d){
   if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
 }
 function recolorLifestone(ls){
-  const col=ls.bound?0x9fe0ff:0x5a9ac8;   // pale glowing cyan (matches buildLifestone; bound = brighter/whiter)
-  ls.mesh.userData.crystal.material.color.setHex(col);
-  ls.mesh.userData.crystal.material.emissive.setHex(col);
-  ls.mesh.userData.light.color.setHex(col);
+  const col=ls.bound?0x9fe0ff:0x6ab0e0;   // bound = brighter/whiter (matches buildLifestone)
+  const u=ls.mesh.userData;
+  if(u.crystal) u.crystal.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive){ o.material.emissive.setHex(col); o.material.emissiveIntensity=ls.bound?0.65:0.4; } });
+  if(u.light) u.light.color.setHex(col);
 }
 
 // ---------- character sheet ----------
@@ -13964,6 +14354,24 @@ function buildSheet(){
     return `<div class="attr" data-tt="${got?a.title:''}" style="opacity:${got?1:0.5};cursor:${got?'pointer':'default'}"><span>${got?"✓":"○"} ${a.name} <span style="color:var(--dim);font-size:10px">— ${a.desc}</span></span><b style="color:${active?'#ffd23b':got?'#7fe6a0':'#9a8a66'}">${got?(active?'★ '+a.title:a.title):"—"}</b></div>`;
   }).join("");
   ar.querySelectorAll('[data-tt]').forEach(el=>{const t=el.getAttribute('data-tt');if(t)el.onclick=()=>{player.title=t;saveGame();updateHUD();buildSheet();};});
+  // ── TITLES (AC 2017's Titles tab): every title you hold, click to Set as Display Title;
+  //    titles that appear in the client's own 873-entry roster carry the retail mark. ──
+  { let tr=document.getElementById('titleRows');
+    if(!tr){ tr=document.createElement('div'); tr.id='titleRows'; ar.parentNode.insertBefore(tr,ar.nextSibling); }
+    const held=[]; const seen=new Set();
+    const addT=t=>{ if(t&&!seen.has(t)){ seen.add(t); held.push(t); } };
+    addT(player.title);
+    for(const a of ACHIEVEMENTS) if(player.achievements.indexOf(a.id)>=0) addT(a.title);
+    for(const t of (player.eventTitles||[])) addT(t);
+    const rosterN=AC_TITLESET?AC_TITLESET.size:0, retailHeld=held.filter(t=>AC_TITLESET&&AC_TITLESET.has(t)).length;
+    let h=`<div class="desc" style="margin:10px 0 5px;color:var(--gold);font-weight:bold;font-size:12px">Titles <span style="color:var(--dim);font-weight:normal">— ${held.length} held${AC_TITLESET?` · ${retailHeld} retail · roster of ${rosterN.toLocaleString()} loaded`:""} · click to display</span></div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+    for(const t of held){ const on=player.title===t, retail=AC_TITLESET&&AC_TITLESET.has(t);
+      h+=`<span data-ttl="${esc(t)}" title="${retail?'an authentic retail title':'a Dereth title'}" style="cursor:pointer;padding:2px 8px;border-radius:9px;font-size:10.5px;border:1px solid ${on?'var(--gold)':'var(--border)'};background:${on?'#2a2438':'rgba(255,255,255,.04)'};color:${on?'#ffd86b':'#cdbf9a'}">${on?"★ ":""}${esc(t)}${retail?' <span style="color:#7fe6a0">✓</span>':""}</span>`; }
+    h+=`</div>`;
+    tr.innerHTML=h;
+    tr.querySelectorAll('[data-ttl]').forEach(el=>el.onclick=()=>{ player.title=el.getAttribute('data-ttl'); saveGame(); updateHUD(); buildSheet(); });
+  }
   // skills — train/specialize with skill credits, raise ranks with unspent XP
   const sr=document.getElementById('skillRows');
   const sb='style="font-size:10px;padding:2px 7px;margin-left:5px;cursor:pointer;background:#1e2742;color:#cfe0ff;border:1px solid #39507e;border-radius:4px"';
@@ -14124,6 +14532,8 @@ function update(dt){
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
+  // desired horizontal velocity (units/s) from input
+  let desVX=0,desVZ=0,moving=false;
   if((f||s)&&player.alive){
     const yaw=player.yaw;
     const fx=-Math.sin(yaw),fz=-Math.cos(yaw);   // forward
@@ -14132,17 +14542,34 @@ function update(dt){
     const l=Math.hypot(dx,dz);dx/=l;dz/=l;
     const roadBoost=onRoad(player.x,player.z)?ROAD_SPEED:1;
     const slowD=(player.debuffs&&player.debuffs.slow)?(1-player.debuffs.slow.v):1;  // enemy Slow curse
-    const castD=player.casting?0.5:1;   // committed mid-cast — you move at half pace
-    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD*dt;
-    const [nx,nz]=collide(player.x+dx*sp,player.z+dz*sp);
+    // AC SLIDECASTING: tapping/holding a TURN key during the cast animation "unlocks" movement — you
+    // slide at FULL speed instead of the rooted half-pace, the classic mage-kiting technique. Without
+    // the turn-key unlock, casting still slows you to half pace as before.
+    const slidecast=!!player.casting && (keys["arrowleft"]||keys["arrowright"]);
+    if(slidecast && !player._slidecastSeen){ player._slidecastSeen=1; log("<b>Slidecasting</b> — hold a turn key while casting to keep moving at full speed.","sys"); }
+    const castD=player.casting?(slidecast?1:0.5):1;
+    const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD; // units/sec
+    desVX=dx*spSec; desVZ=dz*spSec; moving=true;
+  }
+  // AC movement: on the ground you have full control; a JUMP launches with your run velocity and
+  // CARRIES that momentum through the air (Run skill → jump distance), with only light air-steering.
+  if(player.grounded){
+    player.vx=desVX; player.vz=desVZ;                      // immediate ground control
+  } else if(moving){
+    const AIR=0.8;                                          // limited mid-air steer toward input
+    player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
+  }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
+  if((player.vx||player.vz)&&player.alive){
+    const [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
     player.x=nx;player.z=nz;
-    player.bob+=dt*sp*1.1;
-    stepAcc+=sp; if(stepAcc>2.4){stepAcc=0;SFX.step();}
-    if(sprint>1) player.st=Math.max(0,player.st-dt*14);
+    const step=Math.hypot(player.vx,player.vz)*dt;
+    player.bob+=dt*step*1.1;
+    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;SFX.step();} }  // footfalls only on the ground
+    if(sprint>1&&player.grounded&&moving) player.st=Math.max(0,player.st-dt*14);
   }
   // dodge dash: brief high-speed burst (with i-frames) along the dash vector
   if(player.dashT>0&&player.alive){
-    const dd=6*dt;
+    const dd=6*WSCALE*dt;
     const [nx,nz]=collide(player.x+player.dashX*dd,player.z+player.dashZ*dd);
     player.x=nx;player.z=nz;
     if(Math.random()<0.7) burst(player.x,EYE*0.5,player.z,0xdfe8ff,1);
@@ -14154,7 +14581,7 @@ function update(dt){
       if(support>=player.y-STICK){ player.y=support; player.vy=0; }   // glue to slopes/ramps (up via STEP_UP, down via STICK)
       else { player.grounded=false; player.vy=0; player.fallPeak=player.y; }   // walked off a real ledge → fall
     } else {
-      player.vy-=GRAV*dt; player.y+=player.vy*dt;
+      player.vy-=GRAV*WSCALE*dt; player.y+=player.vy*dt;      // player gravity ×WSCALE → jump arc = real metres
       if(player.y>player.fallPeak) player.fallPeak=player.y;   // remember the apex so drop = apex − landing
       if(player.vy<=0 && player.y<=support){                   // land
         const drop=(player.fallPeak!==undefined?player.fallPeak:support)-support;
@@ -14182,7 +14609,11 @@ function update(dt){
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
     player.regenT=0;checkAchievements();
-    { player.st=Math.min(player.mst,player.st+(1.5+player.attr.Endurance*0.05)*armorMove().stam); }
+    // Stamina regen scales with worn-armour weight AND overall burden — hauling past your capacity
+    // (ratio>1) leaves you winded and recovering slower, easing back to full once you drop weight.
+    { const encR=(typeof encumbrance==="function")?encumbrance().ratio:0;
+      const burdenStamMod=encR<=1?1:Math.max(0.4,2-encR);
+      player.st=Math.min(player.mst,player.st+(1.5+player.attr.Endurance*0.05)*armorMove().stam*burdenStamMod); }
     player.mn=Math.min(player.mmn,player.mn+0.8+player.attr.Self*0.04);
     if(player.hp<player.mhp) player.hp=Math.min(player.mhp,player.hp+0.6+player.attr.Endurance*0.03);
   }
@@ -14197,15 +14628,24 @@ function update(dt){
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});}
-    let gone=p.life<=0||p.y<0.1||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
+    // Terrain collision: a falling arrow/bolt/arc buries into the actual ground height (hillsides
+    // included), not just the sea-level plane — so a shot into a slope stops where it strikes it.
+    // Flat-flying spell bolts and cosmetics keep the old sea-level cull.
+    const gh=p.grav?((typeof groundY==="function")?groundY(p.x,p.z):0):0;
+    const hitGround=p.grav?(p.y<gh+0.08):(p.y<0.1);
+    if(hitGround && p.arrow){ burst(p.x,gh+0.1,p.z,0x8a7a5a,4); }   // little dirt puff where it lands
+    let gone=p.life<=0||hitGround||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
     if(!gone && !p.cosmetic) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
       if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
-        if(p.arrow&&!rollToHit(skillValue("missile"),m)){ floater(m.x,(m.headY||1.6)+2.3,m.z,"miss","#b9c0cc"); gone=true; break; }  // missile accuracy vs defense
+        // Cb11: missile accuracy AND damage fall off with range — full to ~15m, down to ~50% by ~55m
+        const rng=(p.arrow&&p.x0!=null)?Math.hypot(p.x-p.x0,p.z-p.z0):0;
+        const rf=clamp(1-Math.max(0,rng-15)/80,0.5,1);
+        if(p.arrow&&!rollToHit(skillValue("missile"),m,rf)){ floater(m.x,(m.headY||1.6)+2.3,m.z,"miss","#b9c0cc"); gone=true; break; }  // missile accuracy vs defense × range
         if(p.slow)m.slow=Math.max(m.slow,p.slow);
         if(p.arrow){   // arrow: physical (pierce) + optional elemental component, each resisted independently
-          applyHit(m,p.dmg,{phys:p.phys,element:p.element,brandDmg:p.elemDmg,lifesteal:p.drain});
+          applyHit(m,p.dmg*rf,{phys:p.phys,element:p.element,brandDmg:p.elemDmg,lifesteal:p.drain});
         } else {   // spell projectile: pre-multiplied elemental damage, subject to magic resistance
           const em=elemMult(m.kind,p.element);
           if(em>1) floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!","#7fe6a0");
@@ -14386,8 +14826,9 @@ function update(dt){
     if(b.t<=0){scene.remove(b.sp);bursts.splice(i,1);}}
   // lifestone shimmer
   for(const ls of lifestones){   // AC lifestones stand STILL — only the inner light breathes
-    ls.mesh.userData.light.intensity=1.1+0.35*Math.sin(now()/650);
-    ls.mesh.userData.crystal.material.emissiveIntensity=0.5+0.12*Math.sin(now()/650);}
+    const u=ls.mesh&&ls.mesh.userData; if(!u) continue;   // real AC crystal model may still be streaming in
+    if(u.light) u.light.intensity=1.1+0.35*Math.sin(now()/650);
+    if(u.crystal&&u.crystal.material) u.crystal.material.emissiveIntensity=0.5+0.12*Math.sin(now()/650);}
   // portal swirl (capital portals + every town's Town-Network portal + the hall portals)
   const swirlPulse=1.2+0.5*Math.sin(now()/250);
   for(const pt of portals){pt.mesh.userData.disc.rotation.z+=dt*0.5; if(pt.mesh.userData.disc2)pt.mesh.userData.disc2.rotation.z-=dt*0.85; pt.mesh.userData.light.intensity=swirlPulse;}
@@ -14417,7 +14858,7 @@ function update(dt){
   if(player.dispelImmune>0) player.dispelImmune-=dt;
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
-  {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You tread the stone road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
+  {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You take to the road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
   updateEvents(dt);
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
   updateDayNight(dt);
@@ -14752,6 +15193,19 @@ function camClampDist(tx,ty,tz,bx,by,bz,maxD){
   }
   return Math.max(0.7,d);
 }
+// AC first person shows your OWN hands: from the eyes you see your real arms + the weapon in your real
+// hand (real attack/cast animations), but NOT your head/torso/legs (you'd just be looking at the inside
+// of your own body). Toggle the AC-body/armour parts by joint: keep the arms (shoulder→hand) + held
+// weapon, hide head, torso, pelvis and legs.
+function avatarFP(av,on){
+  const u=av&&av.userData; if(!u||u._fp===on) return; u._fp=on;
+  const setJoint=(J,vis)=>{ if(!J)return; for(const ch of J.children){ const cu=ch.userData; if(cu&&(cu.acBody||cu.acHeadGrp||cu.npcCloth)) ch.visible=vis; } };
+  // hide head, torso, pelvis, legs AND the shoulders/upper-arms — keep only the forearms + hands + weapon
+  for(const jn of ["neck","spine","pelvisG","hipR","hipL","knR","knL","anR","anL","shR","shL"]) setJoint(u[jn],!on);
+  if(u.acHead) u.acHead.visible=!on;
+  if(u.armorRig) for(const k in u.armorRig){ if(k==="lowerarm"||k==="hands") continue;   // keep forearm+hand armour, hide the rest
+    for(const gr of u.armorRig[k].groups){ if(on){ if(gr.visible){ gr.userData._fpWas=true; gr.visible=false; } } else if(gr.userData._fpWas){ gr.visible=true; gr.userData._fpWas=false; } } }
+}
 function syncCamera(dt){
   const gy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;   // feet height (terrain, floor, ramp, or mid-jump)
   if(thirdPerson){
@@ -14777,15 +15231,34 @@ function syncCamera(dt){
         const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
         if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
     } else {                     // procedural avatar
+      avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
       playerAvatar.visible=player.alive&&!camTooClose;
       playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
       animateAvatar(dt);
       if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
     }
   } else {
-    cam.position.set(player.x, gy+EYE+Math.sin(player.bob)*0.06, player.z);
-    cam.rotation.set(player.pitch, player.yaw, 0);
-    weapon.visible=true; playerAvatar.visible=false; if(gltfAvatar)gltfAvatar.visible=false; camInit=false;
+    // AC-style TRUE first person: look out from the real body's eyes. The AC character body stays
+    // visible & animated, so you see your OWN hands/arms and the weapon in your real hand doing the
+    // real attack animations — only the head is hidden so you don't look inside your own skull.
+    // No fake FPS weapon viewmodel.
+    const yaw=player.yaw,pitch=player.pitch;
+    const ldx=-Math.sin(yaw)*Math.cos(pitch), ldz=-Math.cos(yaw)*Math.cos(pitch);
+    cam.position.set(player.x+ldx*0.12, gy+EYE+Math.sin(player.bob)*0.06, player.z+ldz*0.12);   // eye socket, a touch forward of head centre
+    cam.rotation.set(pitch,yaw,0);
+    weapon.visible=false; camInit=false;
+    if(gltfReady&&gltfAvatar){
+      playerAvatar.visible=false; gltfAvatar.visible=player.alive;
+      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=yaw+Math.PI;
+      if(gltfMixer){ gltfMixer.update(dt);
+        const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
+        if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
+    } else {
+      playerAvatar.visible=player.alive;
+      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
+      animateAvatar(dt);
+      avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
+    }
   }
   if(shakeT>0){
     shakeT-=dt; const m=shakeMag*clamp(shakeT/0.32,0,1);
@@ -14863,6 +15336,8 @@ function updateHUD(){
   document.getElementById("lvline").textContent=`Level ${player.level} · Unspent XP: ${player.xpUnspent}`;
   for(const a of ATTRS) document.getElementById("a"+a).textContent=player.attr[a];
   document.getElementById("sArmor").textContent=Math.round((player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01));
+  { const bt=document.getElementById("sBurden"); if(bt){ const r=(typeof encumbrance==="function")?encumbrance().ratio:0, pct=Math.round(r*100);
+      bt.textContent=pct+"%"+(r>=2?" ⚠":r>1?" ↓":""); bt.style.color=r>=2?"#e8704a":r>1?"#e8c24a":"#e8dcc0"; } }   // >100% slows you; ≥200% blocks jumping
   document.getElementById("sKills").textContent=player.kills;
   document.getElementById("sGold").textContent=player.gold;
   document.getElementById("sMats").textContent=player.materials;
@@ -15111,7 +15586,20 @@ function drawMinimap(){
 }
 
 // ---------- full world map ----------
-let _acMapBg=null;
+let _acMapBg=null, _acRoadOverlay=null;
+// The real AC road web as a bright map overlay, built once from the extracted road cells (thin roads
+// get subsampled to nothing at map resolution, so we mark every road cell's pixel with a small brush).
+function acRoadOverlay(S){
+  if(_acRoadOverlay||!ACMAP.on||!ACMAP.Rd) return _acRoadOverlay;
+  const c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d'), im=g.createImageData(S,S), d=im.data;
+  const W=ACMAP.W, Rd=ACMAP.Rd, cWX=cc=>(cc-1019.5)*AC_CELL, cWZ=rr=>(rr-1020.5)*AC_CELL;
+  const put=(px,py)=>{ if(px<0||px>=S||py<0||py>=S) return; const i=(py*S+px)*4; d[i]=200;d[i+1]=168;d[i+2]=108;d[i+3]=240; };
+  for(let r=0;r<W;r++){ const rw=r*W; for(let cc=0;cc<W;cc++){ if(!Rd[rw+cc]) continue;
+    const px=((cWX(cc)+HALF)/WORLD*S)|0, py=((cWZ(r)+HALF)/WORLD*S)|0;
+    put(px,py); put(px+1,py); put(px,py+1); } }                       // 2px brush so the network reads as continuous roads
+  g.putImageData(im,0,0); _acRoadOverlay=c; return c;
+}
 function acMapBackdrop(S){   // the real continent, painted once from the client's terrain bytes
   if(_acMapBg||!ACMAP.on) return _acMapBg;
   const c=document.createElement('canvas'); c.width=c.height=S;
@@ -15142,8 +15630,7 @@ function drawBigMap(){
     g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);return;
   }
   g.fillStyle="rgba(216,177,74,0.10)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
-  g.strokeStyle="rgba(160,150,128,0.7)";g.lineWidth=4;
-  for(const r of ROADS){if(!r.major)continue;g.beginPath();g.moveTo(cx(r.ax),cx(r.az));g.lineTo(cx(r.bx),cx(r.bz));g.stroke();}
+  { const ro=acRoadOverlay(S); if(ro) g.drawImage(ro,0,0); }   // the authentic AC road web, matching the roads on the ground
   for(const m of monsters){if(m.isBoss||m.isDungeon)continue;g.fillStyle="rgba(176,58,58,0.55)";g.fillRect(cx(m.x)-1,cx(m.z)-1,2,2);}
   for(const n of nodes) if(!n.depleted){g.fillStyle=n.type==="ore"?"#7fd0d0":"#7fe6a0";g.fillRect(cx(n.x)-1.5,cx(n.z)-1.5,3,3);}
   g.textAlign="center";
@@ -15220,12 +15707,15 @@ function loop(ts){
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
 const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",
-  labels:{players:true,npcs:true,cities:true,portals:true,lifestones:true,dungeons:true,monsters:true},
+  labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,gaDest:"auto"};
 const SETTINGS_KEY="dereth_settings_v1";
-function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){} }
+function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
+  if(!settings._labelsOff){   // migrate: floating name labels are now OFF; force once for existing saves, then the Settings toggles work normally
+    settings.labels={players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false};
+    settings._labelsOff=true; saveSettings(); } }
 function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){} }
 function applySettings(){
   if(masterGain&&!muted) masterGain.gain.value=settings.vol;
@@ -15955,6 +16445,48 @@ const SOCIETY_RANKS=[  // AC society rank ladder: Initiate→Adept→Knight→Lo
   {min:0,title:"Initiate"},{min:600,title:"Adept"},{min:1800,title:"Knight"},
   {min:4200,title:"Lord"},{min:9000,title:"Master"},
 ];
+// AC society rank TESTS: a themed slay-gauntlet you undertake to prove yourself for the next rank,
+// rewarding a Commendation Ribbon, standing, and a rank-locked prize. One per rank-up (tier 2→5).
+const SOCIETY_TESTS=[
+  {tier:2,name:"Test of the Adept",  foes:["drudge","mosswart","banderling"], need:12, rep:400,
+   reward:{name:"Society Signet",stat:"jewelry",jtype:"finger",v:12}},
+  {tier:3,name:"Test of the Knight", foes:["olthoi","skeleton","tusker"],     need:16, rep:900,
+   reward:{name:"Commendation Blade",stat:"weapon",wt:"sword",mat:"Steel",v:28}},
+  {tier:4,name:"Test of the Lord",   foes:["shadow","lugian","gromnie"],      need:20, rep:1800,
+   reward:{name:"Lord's Aegis",stat:"worn",aslot:"offhand",shield:"kite",mat:"Steel",v:34}},
+  {tier:5,name:"Test of the Master", foes:["virindi","golem","mummy"],        need:24, rep:3600,
+   reward:{name:"Master's Circlet",stat:"worn",aslot:"head",mat:"Pyreal",v:40}},
+];
+function societyTestByTier(t){ return SOCIETY_TESTS.find(x=>x.tier===t)||null; }
+function societyTestDone(t){ return (player.societyTestsDone||[]).indexOf(t)>=0; }
+// the next Test you're eligible to undertake: your rep has reached its rank AND you haven't passed it yet
+function societyNextTest(){ if(!player.society) return null;
+  const tier=societyRankInfo(player.societyRep).tier;
+  for(const T of SOCIETY_TESTS) if(T.tier<=tier && !societyTestDone(T.tier)) return T;
+  return null; }
+function undertakeSocietyTest(tier){ const T=societyTestByTier(tier); if(!T||societyTestDone(tier)) return;
+  player.societyTest={tier,have:0};
+  log(`<span style="color:${societyById(player.society).col}">You undertake the <b>${T.name}</b> — slay <b>${T.need}</b> of its named foes (${T.foes.join(", ")}) to earn your Commendation Ribbon.</span>`,"sys");
+  if(SFX.quest)SFX.quest(); saveGame(); }
+// hooked from questEvent("slay",kind): a matching kill advances your active society Test
+function societyTestKill(kind){ const st=player.societyTest; if(!st) return; const T=societyTestByTier(st.tier); if(!T) return;
+  if(T.foes.indexOf(kind)<0) return;
+  st.have=Math.min(T.need,(st.have||0)+1);
+  if(st.have>=T.need){ toast("TEST COMPLETE"); if(SFX.quest)SFX.quest();
+    log(`<span style="color:${societyById(player.society).col}">You have proven yourself — the <b>${T.name}</b> is complete. Claim your rank on the Society panel (C).</span>`,"loot"); }
+  else floater(player.x,EYE+1.0,player.z,`Test ${st.have}/${T.need}`,societyById(player.society).col,1.0);
+}
+function claimSocietyTest(){ const st=player.societyTest; if(!st) return; const T=societyTestByTier(st.tier); if(!T||(st.have||0)<T.need) return;
+  player.societyTestsDone=player.societyTestsDone||[]; if(player.societyTestsDone.indexOf(T.tier)<0) player.societyTestsDone.push(T.tier);
+  player.societyTest=null;
+  player.societyRibbons=(player.societyRibbons||0)+1;
+  grantSocietyRep(T.rep);
+  const so=societyById(player.society);
+  log(`<span style="color:${so.col}">The ${so.name} awards you a <b>Commendation Ribbon</b> (${player.societyRibbons} held) and <b>${T.reward.name}</b> for passing the ${T.name}.</span>`,"loot");
+  if(typeof addToInv==="function") addToInv(Object.assign({},T.reward),false);
+  toast("COMMENDATION RIBBON"); if(SFX.level)SFX.level(); saveGame();
+  if(typeof buildSheet==="function") buildSheet();
+}
 // ── AC endgame: Luminance Auras (permanent, bought with luminance) + Enlightenment prestige ──
 const LUM_AURAS=[
   {k:"valor",   name:"Aura of Valor",      max:5, cost:20000, desc:"+1% damage / level"},
@@ -17428,7 +17960,7 @@ function pickColor(arr,seed,salt){ return arr[Math.abs(Math.imul((seed|0)+salt,2
 function _clothMat(c){ return new THREE.MeshStandardMaterial({color:c,roughness:0.9,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)}); }
 function dressAvatarHead(u,o){
   const neck=u.neck; if(!neck) return;
-  const hy=0.31;   // neck-local height of the crown (the AC head rides just above the neck)
+  const hy=0.21;   // neck-local crown of the AC head (measured: acHead top ≈ neck+0.224) — hats rest here, not float above
   const put=(geo,mat,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(0,y,z||0); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.userData.npcCloth=true; neck.add(m); return m; };
   const felt=c=>new THREE.MeshStandardMaterial({color:c,roughness:0.86,metalness:0.0});
   const kind=o.helm?"helm":o.hat;
@@ -17495,6 +18027,26 @@ function dressAvatar(av,o,gender){
     for(const sx of[-1,1]) add(u.spine,new THREE.BoxGeometry(0.09,0.44,0.03),vm,sx*0.11,0.28,-0.192); }
   dressAvatarHead(u,o);
 }
+// THE shared human model: a seeded appearance on the jointed rig + real AC body (applyACBody) + AC
+// head, then dressed (dressAvatar). Used by buildNPC AND buildMerchant so vendors are the same AC
+// character model as everyone else — no procedural buildPerson bodies for humans anymore.
+function buildDressedAvatar(o,seed){
+  seed=seed|0; o=o||{};
+  const app={race:"aluvian",
+    gender:o.gender||(o.hairStyle?"female":(o.beard?"male":(((seed*3)%2)?"female":"male"))),
+    skin:o.skin!=null?o.skin:SKIN_TONES[Math.abs(seed)%SKIN_TONES.length],
+    face:_PERSON_FACES[Math.abs(seed*3)%6], hair:o.hood?"bald":(o.hairStyle||_PERSON_HAIRS[Math.abs(seed*5)%6]),
+    hairColor:o.hair!=null?o.hair:HAIR_TONES[Math.abs(seed*7+1)%HAIR_TONES.length],
+    beard:o.beard?["full","goatee","mustache","stubble"][Math.abs(seed)%4]:"none",
+    tattoo:"none",eye:[0x4a6a3a,0x3a5a8a,0x5a3a1a,0x6a6a6a][Math.abs(seed)%4],
+    eyeShape:["almond","round","narrow","hooded"][Math.abs(seed*11)%4],
+    nose:["straight","button","aquiline","broad"][Math.abs(seed*7)%4],
+    mouth:["medium","full","thin","wide"][Math.abs(seed*13)%4],feature:"none",faceSeed:seed};
+  const g=buildAvatarJointed(app); applyACBody(g,app.gender); g.visible=true;
+  const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
+  dressAvatar(g,o,app.gender); g.userData._app=app;
+  return g;
+}
 function buildNPC(role,name,seedX,look,region){
   const R=NPC_ROLES[role]||NPC_ROLES.emissary;
   const seed=((name||role||"x").length+role.length+(seedX|0))|0;
@@ -17530,21 +18082,8 @@ function buildNPC(role,name,seedX,look,region){
       if(o.hood){o.hat=null;}               // hooded figures stay hooded
     }
   }
-  // Every human NPC wears THE PLAYER'S human model: the same jointed rig + the real extracted
-  // AC body (applyACBody) + the same sculpted face system — seeded per NPC so no two look alike.
-  const app={race:"aluvian",
-    gender:o.gender||(o.hairStyle?"female":(o.beard?"male":(((seed*3)%2)?"female":"male"))),
-    skin:o.skin!=null?o.skin:SKIN_TONES[seed%SKIN_TONES.length],
-    face:_PERSON_FACES[(seed*3)%6], hair:o.hood?"bald":(o.hairStyle||_PERSON_HAIRS[(seed*5)%6]),
-    hairColor:o.hair!=null?o.hair:HAIR_TONES[(seed*7+1)%HAIR_TONES.length],
-    beard:o.beard?["full","goatee","mustache","stubble"][seed%4]:"none",
-    tattoo:"none",eye:[0x4a6a3a,0x3a5a8a,0x5a3a1a,0x6a6a6a][seed%4],
-    eyeShape:["almond","round","narrow","hooded"][(seed*11)%4],
-    nose:["straight","button","aquiline","broad"][(seed*7)%4],
-    mouth:["medium","full","thin","wide"][(seed*13)%4],feature:"none",faceSeed:seed};
-  const g=buildAvatarJointed(app); applyACBody(g,app.gender); g.visible=true;
-  { const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
-    dressAvatar(g,o,app.gender); }   // clothe the nude AC body: shirt/tunic, pants, shoes, belt + job/culture garb & headwear
+  // Every human NPC wears the shared AC character model — seeded per NPC so no two look alike.
+  const g=buildDressedAvatar(o,seed), app=g.userData._app;
   const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
   if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
   return g;
@@ -17697,7 +18236,7 @@ function talkToNPC(n){
   if(n.role==="crier"){
     const here=n.town?`<b>${n.town}</b>`:"the open road";
     const near=CITIES.filter(c=>c.name!==n.town).map(c=>({c,d:Math.hypot(c.x-n.x,c.z-n.z)})).sort((a,b)=>a.d-b.d).slice(0,3);
-    const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/120))} leagues)`).join(" · ");
+    const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/(120*WSCALE)))} leagues)`).join(" · ");
     const ce=currentCalEvent(), S=currentSeason();
     log(`<b>Town Crier:</b> Hear ye! It is <b>${S.name}</b>. <b>${ce.name}</b> — ${ce.rumor} ${ce.clue}`,"sys");
     log(`<b>Town Crier:</b> You stand in ${here}. Nearest lie ${dirs}.`,"sys");
@@ -17837,6 +18376,7 @@ function acDialogueLine(name,role){ if(!AC_DIALOGUE||!name&&!role) return null;
   if(role&&AC_DIA_ROLE&&AC_DIA_ROLE[role]) return AC_DIA_ROLE[role];
   return null; }
 function questEvent(type,kind){   // a world event advances the matching objective in EVERY active quest that needs it
+  if(type==="slay" && kind && typeof societyTestKill==="function") societyTestKill(kind);   // society rank Test-gauntlet
   let any=false;
   for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
     for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
@@ -17889,7 +18429,25 @@ function societyPanelHTML(){
       <div style="color:var(--gold);margin:3px 0">${societyTitle()} <span style="color:var(--dim)">· ${player.societyRep} total standing</span></div>
       <div style="height:8px;background:rgba(0,0,0,.4);border-radius:4px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${pct}%;background:${so.col}"></div></div>
       <div style="color:var(--dim);font-size:11px;margin-top:3px">${ri.next?`${ri.cur}/${ri.span} toward <b style="color:${so.col}">${ri.next.title}</b>`:`Highest rank attained — ${ri.title} of the ${so.name}.`}</div>
+      <div style="color:var(--gold);font-size:11px;margin-top:5px">🎗 Commendation Ribbons: <b>${player.societyRibbons||0}</b> <span style="color:var(--dim)">· earned by passing rank Tests</span></div>
     </div>`;
+    // ── rank Test gauntlet: undertake / track / claim ──
+    const st=player.societyTest, T=st?societyTestByTier(st.tier):societyNextTest();
+    if(st){ const TT=societyTestByTier(st.tier), done=(st.have||0)>=TT.need, pctT=Math.round((st.have||0)/TT.need*100);
+      h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,255,255,.03);border:1px solid ${so.col};border-radius:6px">
+        <div style="color:${so.col};font-weight:bold">${TT.name}</div>
+        <div style="color:#bcae8a;font-size:11px;margin:2px 0">Slay its named foes: <i>${TT.foes.join(", ")}</i></div>
+        <div style="height:8px;background:rgba(0,0,0,.4);border-radius:4px;overflow:hidden;margin:4px 0"><div style="height:100%;width:${pctT}%;background:${so.col}"></div></div>
+        <div style="color:var(--dim);font-size:11px">${st.have||0}/${TT.need} slain</div>
+        ${done?`<button id="socClaim" style="margin-top:6px;width:100%;background:${so.col};border:none;border-radius:5px;color:#1a1508;font-weight:bold;cursor:pointer;padding:6px">Claim your Ribbon & ${TT.reward.name} ▸</button>`:""}
+      </div>`;
+    } else if(T){
+      h+=`<div style="margin-bottom:10px;padding:8px;background:rgba(255,255,255,.03);border:1px dashed ${so.col};border-radius:6px">
+        <div style="color:${so.col};font-weight:bold">${T.name} <span style="color:var(--dim);font-weight:normal">— available</span></div>
+        <div style="color:#bcae8a;font-size:11px;margin:2px 0">Prove yourself: slay ${T.need} of ${T.foes.join(", ")}. Rewards a Commendation Ribbon, ${T.rep} standing, and <b>${T.reward.name}</b>.</div>
+        <button id="socUndertake" data-tier="${T.tier}" style="margin-top:4px;width:100%;background:rgba(255,255,255,.05);border:1px solid ${so.col};border-radius:5px;color:${so.col};cursor:pointer;padding:6px">Undertake the Test ▸</button>
+      </div>`;
+    }
   }
   return h;
 }
@@ -17952,6 +18510,8 @@ function renderQuestLog(){
   body.querySelectorAll('[data-track]').forEach(b=>b.onclick=()=>{ tracked=b.dataset.track; renderQuestLog(); updateQuestHUD(); SFX.click&&SFX.click(); });
   body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
     if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+  { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
+  { const c=body.querySelector('#socClaim'); if(c) c.onclick=()=>{ claimSocietyTest(); buildSheet&&buildSheet(); }; }
 }
 function questStatus(id){ // status bucket used by the journal filter
   if(isActive(id)) return "active";
@@ -18299,7 +18859,7 @@ function buildMerchant(vt,name,region){
   if(vt==="armorer"){ po.shoulderRolls=true; po.rollCol=0x9aa0a8; }                 // wears his own quilted rolls
   if(vt==="outfitter"){ po.placket=true; po.placketCol=0xd8d0c0; po.puffSleeves=true; }   // dressed to sell dress
   if(vt==="healer"){ po.sash=true; po.sashCol=0xb03246; }                            // the healer's red sash
-  const g=buildPerson(po);
+  const g=buildDressedAvatar(po,seed);   // the real AC character model, dressed to the trade (was procedural buildPerson)
   // market stall beside the shopkeeper: counter, canopy on posts, a few wares
   const stall=new THREE.Group();stall.position.set(1.45,0,0);g.add(stall);
   const wood=texMat(woodTex,0x6a4a2a), wood2=texMat(woodTex,0x4a3318);
@@ -18319,8 +18879,9 @@ function addVendorKit(g,stall,vt){
   const metal=new THREE.MeshStandardMaterial({color:0x8a8f98,metalness:0.75,roughness:0.35});
   const dark=new THREE.MeshStandardMaterial({color:0x2a2620,metalness:0.55,roughness:0.5});
   const wood=texMat(woodTex,0x5a3f24), paper=new THREE.MeshStandardMaterial({color:0xe8dcc0,roughness:0.9});
-  const hand=g.userData.rArm;                       // held prop rides the right arm (hand sits at y≈-0.82)
-  const hold=(mesh,ry)=>{ if(hand){ mesh.position.y=-0.84; if(ry)mesh.rotation.y=ry; hand.add(mesh); } };
+  const hand=g.userData.wrR||g.userData.rArm;       // AC avatar: right wrist; buildPerson: right arm group
+  const holdY=g.userData.wrR?-0.12:-0.84;            // wrist is already at the hand on the avatar
+  const hold=(mesh,ry)=>{ if(hand){ mesh.position.y=holdY; if(ry)mesh.rotation.y=ry; hand.add(mesh); } };
   const P=(geo,mat,x,y,z,rx,ry,rz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);if(rx)m.rotation.x=rx;if(ry)m.rotation.y=ry;if(rz)m.rotation.z=rz;m.castShadow=true;stall.add(m);return m;};
   if(vt==="weaponsmith"){
     P(new THREE.BoxGeometry(0.42,0.3,0.24),dark,-1.15,0.62,0.55);                     // anvil on a stump
@@ -18403,6 +18964,7 @@ function seatVendorsInBuildings(){
   const DEPTHS=[1.4,0.6,2.0,2.8,-0.2,-1.0], LATS=[0,1.3,-1.3,2.4,-2.4,0.7,-0.7];
   for(const sh of shops){
     if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;   // never box in a roaming vendor
+    if(sh._acPos) continue;                                      // TRUE retail spot (1:1) — never drag into a procedural building
     let city=null,cd=1e9; for(const c of CITIES){ const d=Math.hypot(c.x-sh.x,c.z-sh.z); if(d<cd){cd=d;city=c;} }
     if(!city||cd>52) continue;                                   // only vendors actually standing in a town
     if(!AC_TOWNS||AC_TOWNS[city.name]) continue;                 // only fallback towns here; real-data towns seat in tbBuildTown
@@ -18418,7 +18980,13 @@ function seatVendorsInBuildings(){
         for(const lat of LATS){ const x=st.bx+ux*fwd+lx*lat, z=st.bz+uz*fwd+lz*lat;
           if(!crowded(x,z,gap) && pathClear(dmx,dmz,x,z)){ spot={x,z}; break; } } } }
     if(!spot) spot={x:st.bx+ux*1.4, z:st.bz+uz*1.4};            // last resort: front-centre
-    const nx=spot.x, nz=spot.z, fy=groundY(nx,nz);
+    const nx=spot.x, nz=spot.z;
+    // stand ON the highest interior floor platform covering the spot, not the slope buried beneath
+    let fy=groundY(nx,nz);
+    for(const s2 of structures){ const ddx=nx-s2.bx, ddz=nz-s2.bz; if(ddx*ddx+ddz*ddz>s2.r2) continue;
+      const slx=ddx*s2.cos-ddz*s2.sin, slz=ddx*s2.sin+ddz*s2.cos;
+      for(const p of (s2.platforms||[])){ const py=s2.baseY+p.y;
+        if(slx>=p.x0&&slx<=p.x1&&slz>=p.z0&&slz<=p.z1&&py>fy) fy=py; } }
     sh.mesh.position.set(nx,fy,nz);
     sh.mesh.rotation.y=Math.atan2(-ux,-uz);                     // buildPerson fronts -z — turn it to face the door
     sh.x=nx; sh.z=nz; sh._seated=true; placed.push({x:nx,z:nz});
@@ -18453,7 +19021,7 @@ function buildOxWagon(){
   for(const sx of[-1,1])for(const zz of[-0.55,0.55]){ const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.1,1.05,7),hide2); leg.position.set(sx*0.34,0.52,zz); leg.castShadow=true; ox.add(leg); }
   const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.02,0.8,5),hide2); tail.position.set(0,1.0,-0.98); tail.rotation.x=-0.5; ox.add(tail);
   // the keeper, seated on the bench driving the ox
-  const driver=buildPerson({robe:0x3a4a6a,accent:0x2a2438,hat:"cap",beard:true,seed:7717});
+  const driver=buildDressedAvatar({robe:0x3a4a6a,accent:0x2a2438,hat:"cap",beard:true,seed:7717},7717);
   driver.position.set(0,1.12,0.5); g.add(driver);
   const lbl=labelSprite("Wandering Caravan — E to trade, buff & portal","npcs"); lbl.position.set(0,3.0,-1.1); g.add(lbl);
   const marker=textSprite("🐂","#ffd86b"); marker.position.set(0,2.6,0.4); g.add(marker);
@@ -18464,7 +19032,7 @@ function isCapitalName(n){ return (typeof CAPITALS!=="undefined")&&CAPITALS.some
 // resting in each town for a full game day. Returns the ordered stop list.
 function caravanStops(){
   const cap=(typeof CAPITALS!=="undefined")?CAPITALS.slice():[];
-  const hb=cap.find(c=>c.name==="Holtburg")||cap[0]||{x:2664,z:-3384,name:"Holtburg"};
+  const hb=cap.find(c=>c.name==="Holtburg")||cap[0]||{x:2664*WSCALE,z:-3384*WSCALE,name:"Holtburg"};
   const stops=[];
   if(typeof KC!=="undefined"){ const dx=hb.x-KC.x,dz=hb.z-KC.z,dl=Math.hypot(dx,dz)||1; stops.push({x:KC.x+dx/dl*250,z:KC.z+dz/dl*250,name:"Castle Val Halla",town:false}); }
   stops.push({x:hb.x,z:hb.z,name:"Holtburg",town:true});
@@ -18543,7 +19111,7 @@ function caravanBless(){
 // vendor: every spell (scroll), every casting scarab, every taper — plus free portals & a blessing
 function caravanStock(){
   const list=[];
-  list.push({name:"Portal: Holtburg", warp:{x:2664,z:-3381,name:"Holtburg"}, cost:0, ico:"🌀", desc:"the keeper opens a portal to Holtburg"});
+  list.push({name:"Portal: Holtburg", warp:{x:2664*WSCALE,z:-3381*WSCALE,name:"Holtburg"}, cost:0, ico:"🌀", desc:"the keeper opens a portal to Holtburg"});
   if(typeof KC!=="undefined") list.push({name:"Portal: Castle Val Halla", warp:{x:KC.x,z:KC.z+150,name:"Castle Val Halla"}, cost:0, ico:"🌀", desc:"a portal to Lord Kilmer's castle"});
   list.push({name:"Caravan Blessing", blessing:true, cost:0, ico:"✨", desc:"level-8 Creature, Item & Life buffs (1 hour)"});
   for(const t of TAPER_STOCK) list.push(t);
@@ -19268,6 +19836,68 @@ function registerBridgeWalk(C,i,j,deck,hw){   // each deck panel becomes a walka
       platforms:[{x0:x0-bx,x1:x1-bx,z0:z0-bz,z1:z1-bz,y:(deck[k]+deck[k+1])/2}]});
   }
 }
+// ── AC road BRIDGES: where the real road web (acRoad) crosses a river or sea (AC water types 16–20),
+//    span it with a plank deck you walk on. The road data has the crossings; AC had bridges there. ──
+let _bridgeDeck=null;
+function bridgeDeckMat(){ if(!_bridgeDeck) _bridgeDeck=new THREE.MeshStandardMaterial({color:0x7a5834,roughness:0.85}); return _bridgeDeck; }
+function buildBridgeDeckMesh(C,deck,hw){
+  const n=C.length-1, pos=[],idx=[],nor=[];
+  for(let i=0;i<C.length;i++){
+    const a=C[Math.max(0,i-1)], b=C[Math.min(n,i+1)], dx=b.x-a.x, dz=b.z-a.z, dl=Math.hypot(dx,dz)||1;
+    const px=-dz/dl*hw, pz=dx/dl*hw, y=deck[i]+0.06;
+    pos.push(C[i].x+px,y,C[i].z+pz, C[i].x-px,y,C[i].z-pz); nor.push(0,1,0,0,1,0);
+  }
+  for(let i=0;i<n;i++){ const b=i*2; idx.push(b,b+1,b+2, b+1,b+3,b+2); }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3)); g.setIndex(idx);
+  const m=new THREE.Mesh(g,bridgeDeckMat()); m.castShadow=true; m.receiveShadow=true; scene.add(m); roadMeshes.push(m);
+}
+function buildRoadBridges(){
+  if(!ACMAP.on||!ACMAP.Rd||!ACMAP.T) return 0;
+  const W=ACMAP.W, Rd=ACMAP.Rd, Tt=ACMAP.T, Hh=ACMAP.H;
+  const cWX=c=>(c-1019.5)*AC_CELL, cWZ=r=>(r-1020.5)*AC_CELL;          // inverse of acHeight's x/AC_CELL+1019.5
+  const isRoad=id=>Rd[id]>0, isWater=id=>(Tt[id]>=16&&Tt[id]<=20)||Hh[id]<0.1;
+  const isRiver=id=>Tt[id]===16||Tt[id]===17, isLand=id=>Tt[id]<16;    // types 16/17 = running/fresh water (rivers)
+  const seenKey=new Set(); let built=0;
+  const tryBridge=(ax,az,bx,bz,maxSpan)=>{                            // dedupe + validate + build one plank bridge
+    if(built>=64) return;
+    const key=Math.round((ax+bx)*0.5/(AC_CELL*4))+"_"+Math.round((az+bz)*0.5/(AC_CELL*4));
+    if(seenKey.has(key)) return; seenKey.add(key);
+    const gA=groundY(ax,az), gB=groundY(bx,bz); if(gA<0.6||gB<0.6) return;   // both banks on dry land
+    const span=Math.hypot(bx-ax,bz-az); if(span>(maxSpan||280)) return;
+    const dy=Math.max(1.1, Math.max(gA,gB)+0.35);                     // deck arches above the water plane
+    const n=Math.max(2,Math.ceil(span/6)), C=[], deck=[];
+    for(let i=0;i<=n;i++){ const t=i/n; C.push({x:ax+(bx-ax)*t,z:az+(bz-az)*t});
+      deck[i]=(i===0)?gA+0.15:(i===n)?gB+0.15:dy; }                   // flat span at dy, ramped down to each bank
+    const hw=AC_CELL*0.5;
+    buildBridgeDeckMesh(C,deck,hw); registerBridgeWalk(C,0,n,deck,hw); buildBridgeRails(C,0,n,dy,hw); built++;
+  };
+  // Pass 1 — road GAP over water: the road resumes on the far bank (sea inlets AND river gaps). AC roads
+  // route around water and pick up across the span; a bridge stood in that gap.
+  const dirs4=[[1,0],[0,1],[1,1],[1,-1]];
+  for(let r=2;r<W-2;r++){ const rw=r*W; for(let c=2;c<W-2;c++){ const id=rw+c; if(!isRoad(id)) continue;
+    for(const [dc,dr] of dirs4){
+      if(isRoad((r+dr)*W+(c+dc)) || !isWater((r+dr)*W+(c+dc))) continue;
+      let k=2, hit=false;
+      for(;k<=14;k++){ const jr=r+dr*k, jc=c+dc*k; if(jr<2||jr>=W-2||jc<2||jc>=W-2) break; const jid=jr*W+jc;
+        if(isRoad(jid)){ hit=true; break; } if(!isWater(jid)) break; }
+      if(hit) tryBridge(cWX(c),cWZ(r), cWX(c+dc*k),cWZ(r+dr*k));
+    }
+  } }
+  // Pass 2 — road DEAD-ENDS at a narrow RIVER (types 16/17): the road bitmap stops at the bank because the
+  // bridge was a separate object, so no road resumes. Bridge across to the far land bank anyway.
+  const dirs8=[[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  for(let r=3;r<W-3 && built<64;r++){ const rw=r*W; for(let c=3;c<W-3;c++){ if(!isRoad(rw+c)) continue;
+    for(const [dc,dr] of dirs8){ if(!isRiver((r+dr)*W+(c+dc))) continue;      // this road cell touches a river
+      let k=1, far=-1;
+      for(;k<=12;k++){ const jid=(r+dr*k)*W+(c+dc*k); if(isLand(jid)){ far=k; break; } if(!isWater(jid)) break; }
+      if(far<1 || far*AC_CELL>200) continue;                          // far bank reachable, river narrow enough (≤200m)
+      tryBridge(cWX(c),cWZ(r), cWX(c+dc*(far+1)),cWZ(r+dr*(far+1)), 220);   // +1 cell to plant the far end on land
+    }
+  } }
+  return built;
+}
 function buildRoads(){
   if(!roadMat) roadMat=new THREE.MeshStandardMaterial({map:cobbleTex()});
   for(const r of ROADS){
@@ -19351,13 +19981,9 @@ function placeSignposts(r){
 }
 function onRoad(x,z){
   if(inDungeon) return false;
-  if(typeof acRoad==="function"&&acRoad(x,z)) return true;   // the authentic AC road web grants road speed too
-  for(const r of ROADS){
-    const dx=r.bx-r.ax,dz=r.bz-r.az,len2=dx*dx+dz*dz;
-    let t=((x-r.ax)*dx+(z-r.az)*dz)/len2;t=clamp(t,0,1);
-    if(Math.hypot(x-(r.ax+dx*t),z-(r.az+dz*t))<r.w/2) return true;
-  }
-  return false;
+  // the road boost (and scenery avoidance) follows ONLY the authentic AC road web now, so it matches
+  // exactly the packed-dirt roads painted into the terrain — no invisible procedural lines.
+  return (typeof acRoad==="function") && !!acRoad(x,z);
 }
 function buildOre(){
   const g=new THREE.Group();
@@ -21649,12 +22275,12 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,
+      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
-      px:player.x,pz:player.z,pyaw:player.yaw};   // log back in where you logged off (itemBuffs keep their timer)
+      px:player.x,pz:player.z,pyaw:player.yaw,wscale:WSCALE};   // log back in where you logged off (itemBuffs keep their timer)
     if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
   }catch(e){}
@@ -21704,10 +22330,12 @@ function applySaveObj(s){
   taskCooldown=(s.taskCooldown&&typeof s.taskCooldown==="object")?Object.assign({},s.taskCooldown):{};
   player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
   player.societyRep=s.societyRep|0;
+  player.societyRibbons=s.societyRibbons|0; player.societyTest=s.societyTest||null; player.societyTestsDone=Array.isArray(s.societyTestsDone)?s.societyTestsDone:[];
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
   player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
+  if(player.tiedPortal){ const _m=WSCALE/(s.wscale||1); if(_m!==1){ player.tiedPortal.x*=_m; player.tiedPortal.z*=_m; } }   // migrate tied-portal coords
   player.packBonus=s.packBonus|0;
   player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0; player.advColosseumClears=s.advColosseumClears|0;   // H7 armour dye + H16 clears
   player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
@@ -21746,8 +22374,12 @@ function applySaveObj(s){
   }
   // restore exact last position (takes precedence over the bind point); fresh chars saved
   // their heritage-capital spawn, so this also fixes "reappear at the wrong town".
-  if(typeof s.px==="number" && typeof s.pz==="number"){ arriveAt(s.px,s.pz); if(typeof s.pyaw==="number") player.yaw=s.pyaw; }
+  if(typeof s.px==="number" && typeof s.pz==="number"){ const _m=WSCALE/(s.wscale||1); arriveAt(s.px*_m,s.pz*_m); if(typeof s.pyaw==="number") player.yaw=s.pyaw; }   // migrate saved coords to the current world scale
   updateNPCMarker();updateQuestHUD();
+  // refresh the HUD + character sheet NOW so the panels show the LOADED character immediately, rather
+  // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
+  if(typeof updateHUD==="function") updateHUD();
+  if(typeof buildSheet==="function") buildSheet();
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
@@ -21812,11 +22444,15 @@ function netHandle(m){
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
   if(m.t==="trade"){ // AC secure trade: invite / sync / done / cancel
     if(m.act==="invite"){ TRADE.from=m.from; log(`<b>${esc(m.from)}</b> offers to trade with you — type <b>/trade accept</b>.`,"warn"); if(SFX.quest)SFX.quest(); }
-    else if(m.act==="sync"){ TRADE.open=true; TRADE.them=m.them||[]; TRADE.youOk=!!m.youOk; TRADE.themOk=!!m.themOk; TRADE.with=m.with||"?"; renderTradeWin(); }
-    else if(m.act==="done"){ // both accepted: my offered items leave, theirs arrive
+    else if(m.act==="sync"){ TRADE.open=true; TRADE.them=m.them||[]; TRADE.youOk=!!m.youOk; TRADE.themOk=!!m.themOk; TRADE.with=m.with||"?";
+      TRADE.mineCoin=m.youCoin|0; TRADE.themCoin=m.themCoin|0; renderTradeWin(); }
+    else if(m.act==="done"){ // both accepted: my offered items+coin leave, theirs arrive
       for(const it of TRADE.mine){ const i=player.inv.indexOf(it); if(i>=0)player.inv.splice(i,1); }
       for(const it of (m.give||[])) player.inv.push(it);
-      log(`<b>Trade complete</b> — ${TRADE.mine.length} given, ${(m.give||[]).length} received.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
+      const paid=TRADE.mineCoin|0, got=m.coin|0;
+      if(paid) player.gold=Math.max(0,player.gold-paid);
+      if(got) player.gold+=got;
+      log(`<b>Trade complete</b> — ${TRADE.mine.length} item${TRADE.mine.length!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${(m.give||[]).length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
       closeTradeWin(); saveGame(); }
     else if(m.act==="cancel"){ log(m.msg||"The trade was cancelled.","warn"); closeTradeWin(); }
     return; }
@@ -21841,6 +22477,7 @@ function netHandle(m){
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
   if(m.t==="loot")      return onLoot(m);
+  if(m.t==="corpse_loot") return onCorpseLoot(m);
   if(m.t==="event_start")  return onEventStart(m);
   if(m.t==="event_end")    return onEventEnd(m);
   if(m.t==="event_reward") return onEventReward(m);
@@ -21887,7 +22524,10 @@ function onEventReward(msg){
 // ---- shared ground loot (M3c): server owns drops; pickups are first-come, server-validated ----
 function onDrop(msg){
   if(!isOnline||NET.drops[msg.id]) return;
-  const data=msg.type==="gold"?{type:"gold",amt:msg.amt}:{type:"item",item:msg.item};
+  let data;
+  if(msg.type==="gold") data={type:"gold",amt:msg.amt};
+  else if(msg.type==="corpse") data={type:"corpse",items:msg.items||[],amt:msg.amt||0,owner:msg.owner||"",open:!!msg.open,corpse:true};   // a fallen player's shared corpse (open = PK, free loot)
+  else data={type:"item",item:msg.item};
   data.id=msg.id; data.shared=true;
   NET.drops[msg.id]=addDrop(msg.x,msg.z,data);
 }
@@ -21900,6 +22540,18 @@ function onDropGone(msg){
 function onLoot(msg){
   if(msg.type==="gold"){ player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); SFX.gold(); if(typeof updateHUD==="function") updateHUD(); }
   else if(msg.type==="item"&&msg.item){ lootItem(msg.item); }
+}
+// server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
+function onCorpseLoot(msg){
+  if(msg.amt>0){ player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }
+  let taken=0,spilled=0;
+  for(const it of (msg.items||[])){
+    if(addToInv(it,false)) taken++;
+    else { addDrop(player.x+rnd(-1.2,1.2),player.z+rnd(-1.2,1.2),{type:"item",item:it,corpse:true}); spilled++; }
+  }
+  const whose=(msg.owner&&player.name&&msg.owner!==player.name)?`<b>${esc(msg.owner)}</b>'s corpse`:"your corpse";
+  log(`You loot ${whose} — <b>${taken}</b> item(s)${msg.amt?` and <b>${msg.amt.toLocaleString()}</b> pyreals`:""} taken${spilled?`; <b>${spilled}</b> spilled beside you (satchel full)`:""}.`,"loot");
+  if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
 }
 // ---- shared, server-authoritative monsters (M3) ----
 // Server mobs live in the same monsters[] array (so all combat/targeting/visuals reuse the
@@ -22085,8 +22737,8 @@ function sendChatLine(text){
 }
 // ── AC SECURE TRADE window: two columns (your offer | theirs), both must Accept,
 //    any change to either side clears both accepts (retail rule). Real item icons throughout. ──
-const TRADE={open:false,from:null,mine:[],them:[],youOk:false,themOk:false,"with":"?"};
-function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.youOk=TRADE.themOk=false;
+const TRADE={open:false,from:null,mine:[],them:[],mineCoin:0,themCoin:0,youOk:false,themOk:false,"with":"?"};
+function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.mineCoin=TRADE.themCoin=0; TRADE.youOk=TRADE.themOk=false;
   const w=document.getElementById('tradeWin'); if(w)w.remove(); }
 function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
 function renderTradeWin(){
@@ -22102,8 +22754,12 @@ function renderTradeWin(){
       <b style="color:var(--gold);text-transform:uppercase;letter-spacing:.6px;font-size:12px">⇄ Secure Trade — ${esc(TRADE.with)}</b>
       <button id="trCancel" class="tbtn">Cancel</button></div>
     <div style="display:flex;gap:14px">
-      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">You offer ${ok(TRADE.youOk)}</div><div id="trMine">${grid(TRADE.mine)}</div></div>
-      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">${esc(TRADE.with)} offers ${ok(TRADE.themOk)}</div>${grid(TRADE.them)}</div>
+      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">You offer ${ok(TRADE.youOk)}</div><div id="trMine">${grid(TRADE.mine)}</div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:5px"><span style="color:#ffd86b;font-size:11px">🪙 Pyreals</span>
+          <input id="trCoin" type="number" min="0" max="${player.gold|0}" value="${TRADE.mineCoin|0}" style="width:96px;padding:3px 6px;background:#0c0e08;border:1px solid #3a3526;border-radius:4px;color:#ffe9b0;font-size:12px">
+          <span style="color:var(--dim);font-size:10px">of ${(player.gold|0).toLocaleString()}</span></div></div>
+      <div style="flex:1"><div style="color:#cdbf9a;font-size:11px;margin-bottom:4px">${esc(TRADE.with)} offers ${ok(TRADE.themOk)}</div>${grid(TRADE.them)}
+        <div style="margin-top:6px;color:#ffd86b;font-size:11px">🪙 Pyreals: <b>${(TRADE.themCoin|0).toLocaleString()}</b></div></div>
     </div>
     <div style="margin:10px 0 4px;color:#cdbf9a;font-size:11px">Your satchel — click an item to offer it</div>
     <div id="trInv" style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;max-height:120px;overflow:auto">${offerable.map(o=>tradeSlotHTML(o.it,`data-inv="${o.i}"`)).join("")}</div>
@@ -22114,6 +22770,9 @@ function renderTradeWin(){
     TRADE.mine.push(it); netSend({t:"trade",act:"add",item:it}); renderTradeWin(); });
   w.querySelectorAll('#trMine [data-i]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i;
     TRADE.mine.splice(i,1); netSend({t:"trade",act:"remove",idx:i}); renderTradeWin(); });
+  const ci=w.querySelector('#trCoin');
+  if(ci) ci.onchange=()=>{ const n=Math.max(0,Math.min(player.gold|0,Math.floor(+ci.value||0)));   // cap pyreal offer to what you carry
+    TRADE.mineCoin=n; ci.value=n; TRADE.youOk=false; netSend({t:"trade",act:"coin",amount:n}); renderTradeWin(); };
 }
 function updatePartyHUD(){
   const el=document.getElementById('partyHud'); if(!el) return;
@@ -22241,6 +22900,9 @@ function handleSlash(text){
     if(!isOnline){ log("Solo world: swear fealty on the character sheet (C) — /swear &lt;name&gt; works on the online realm.","sys"); }
     else if(!who){ log("Usage: /swear &lt;name&gt; — swear fealty to an online equal-or-higher character.","warn"); }
     else netSend({t:"swear",name:who}); }
+  else if(cmd==="muster"){   // call a sworn NPC adventurer to your banner (online allegiances)
+    if(!isOnline){ log("Solo world: sworn adventurers already swear to you on the character sheet (C).","sys"); }
+    else netSend({t:"muster"}); }
   else if(cmd==="break"||cmd==="unswear"){
     if(!isOnline){ breakFromPatron(); }
     else netSend({t:"unswear"}); }
@@ -22310,8 +22972,20 @@ function handleSlash(text){
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
   else if(cmd==="story"||cmd==="arc"){ storyView(); }
-  else if(cmd==="pk"){ if(!isOnline){ log("PvP requires being online.","warn"); return; } player.pk=!player.pk;
-    log(player.pk?"⚔️ You raise your <b>PK flag</b> — you and other flagged players can now strike each other. <b>/pk</b> again to stand down.":"You lower your <b>PK flag</b> — you are no longer open to player combat.","warn"); if(SFX.growl)SFX.growl(); }
+  else if(cmd==="pk"){   // AC three-state PvP: NPK (safe) · PKL (PK-Lite, keeps goods) · PK (full, corpse lootable)
+    if(!isOnline){ log("PvP requires being online.","warn"); return; }
+    const want=(parts[1]||"").toLowerCase(), cur=player.pkState||"npk";
+    const target= want==="pk"?"pk" : (want==="pkl"||want==="lite")?"pkl" : (want==="npk"||want==="off"||want==="safe")?"npk"
+      : (cur==="npk"?"pk":"npk");   // no argument → toggle between safe and full PK
+    if(target===cur){ log(`You are already <b>${PK_LABEL[cur]}</b>. (<b>/pk pk</b> · <b>/pk pkl</b> · <b>/pk npk</b>)`,"sys"); return; }
+    if((player.pkLock||0)>now()){ const mins=Math.ceil((player.pkLock-now())/60000);
+      log(`Your combat oath still binds you for <b>${mins} min</b> — you cannot change your PvP standing yet.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+    player.pkState=target; player.pk=(target!=="npk");
+    if(target!=="npk") player.pkLock=now()+PK_LOCK_MS;   // committing to violence locks you in (AC's PK key)
+    log(({pk:"⚔️ You swear the <b>Blood Oath</b> — open to all Player Killers, and your corpse is theirs to loot. You cannot stand down for a time.",
+      pkl:"🗡️ You become a <b>PK-Lite</b> — you may duel other PK-Lites, but keep your goods on death.",
+      npk:"You lay down your arms — <b>no longer open to player combat</b>."})[target],"warn");
+    if(SFX.growl)SFX.growl(); saveGame(); }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
     if(!act) log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+" — e.g. <b>/emote clap</b>","sys");
     else doEmote(act); }
@@ -22328,16 +23002,32 @@ function authAction(kind){
   if(NET.ws&&NET.open) go();
   else netConnect(go, ()=>{ st.textContent=""; msg.textContent="Could not reach the server. You can still play offline below."; });
 }
-// remote players: build/lerp/cull simple avatars from server snapshots
+// remote players: every one on the TRUE AC human body, individualized — their own heritage's
+// look with name-seeded gender/face/hair, not a clone of the local player.
+function remoteApp(p){
+  const seedStr=(p.name||p.id||"x"); let sd=2166136261;
+  for(let i=0;i<seedStr.length;i++){ sd^=seedStr.charCodeAt(i); sd=Math.imul(sd,16777619)>>>0; }
+  const R=n=>{ sd=(Math.imul(sd,1103515245)+12345)>>>0; return n>0?sd%n:0; };
+  const her=(p.heritage||"aluvian").toLowerCase();
+  const app=Object.assign({race:her,gender:R(2)?"female":"male"},HERITAGE_LOOK[her]||{});
+  app.face=_PERSON_FACES[R(6)]; app.hair=_PERSON_HAIRS[R(6)];
+  app.beard=(app.gender==="male"&&R(3)===0)?["full","goatee","mustache","stubble"][R(4)]:"none";
+  app.eyeShape=["almond","round","narrow","hooded"][R(4)]; app.nose=["straight","button","aquiline","broad"][R(4)];
+  app.mouth=["medium","full","thin","wide"][R(4)]; app.feature="none"; app.tattoo="none"; app.faceSeed=sd;
+  return app;
+}
 function reconcileRemotes(players){
   const seen={};
   for(const p of players){
     if(p.id===NET.me) continue;
     seen[p.id]=1;
     let r=NET.players[p.id];
-    if(!r){ const mesh=buildAvatar(); const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
+    if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); applyACBody(mesh,app.gender); mesh.visible=true;
+      mesh.userData.headApp=app;
+      if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
+      const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
-    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk;
+    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
   }
   for(const id in NET.players){ if(!seen[id]){ scene.remove(NET.meshes[id]); delete NET.meshes[id]; delete NET.players[id]; } }
 }
@@ -22346,6 +23036,8 @@ function updateRemotes(dt){
   for(const id in NET.players){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
     mesh.visible=!hide; if(hide) continue;
+    if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives
+      r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
     mesh.position.set(r.x, groundY(r.x,r.z), r.z); mesh.rotation.y=r.yaw||0;
@@ -22356,9 +23048,15 @@ function sendInput(dt){
   if(!isOnline||!NET.open) return;
   netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
   netSend({t:"input",x:player.x,z:player.z,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
-    level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk});
+    level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk,pkState:player.pkState||"npk",
+    loyalty:skillValue("loyalty"),leadership:skillValue("leadership")});
 }
-// S3 PvP: apply an incoming player hit (the server only relays it if we're both PK-flagged & in range)
+// AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
+// PK (Player Killer — fights other PKs, drops a lootable corpse). Same ruleset only; NPK never fights.
+const PK_LABEL={npk:"unflagged (safe)",pkl:"PK-Lite",pk:"Player Killer"};
+const PK_LOCK_MS=300000;   // 5-min combat-oath lock — a game-friendly stand-in for AC's 3-day PK key
+function pkCompatible(a,b){ return (a==="pk"&&b==="pk")||(a==="pkl"&&b==="pkl"); }
+// S3 PvP: apply an incoming player hit (the server only relays it if our rulesets match & we're in range)
 function onPvp(m){
   if(!player.pk||!player.alive||!running) return;
   const el=m.element||undefined, type=(el==="nether"||el==="fire"||el==="frost"||el==="shock"||el==="acid")?"magic":"melee";
@@ -22369,7 +23067,8 @@ function onPvp(m){
 function pvpStrike(dmg,element){
   if(!player.pk||!isOnline||inDungeon||inNetwork) return;
   const dir=new THREE.Vector3(); cam.getWorldDirection(dir); const fx=dir.x,fz=dir.z,fl=Math.hypot(fx,fz)||1;
-  for(const id in NET.players){ const r=NET.players[id]; if(!r||!r.pk) continue;
+  for(const id in NET.players){ const r=NET.players[id]; if(!r) continue;
+    if(!pkCompatible(player.pkState||"npk", r.pkState||(r.pk?"pk":"npk"))) continue;   // only same-ruleset foes
     const rx=(r.x!=null?r.x:r.tx), rz=(r.z!=null?r.z:r.tz); if(rx==null) continue;
     const dx=rx-player.x,dz=rz-player.z,d=Math.hypot(dx,dz); if(d>6) continue;
     if((dx*fx+dz*fz)/(d*fl)>0.4){ netSend({t:"pvp",target:id,dmg:Math.round(dmg),element:element||""}); floater(rx,EYE+1.4,rz,"-"+Math.round(dmg),"#ff7a7a"); } }
@@ -22580,12 +23279,39 @@ function ccBuildOptions(){
       else b.textContent=o.n;
       b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
         Object.assign(ccWork,HERITAGE_LOOK[o.k]||{});   // heritage look defaults (face/skin/hair/nose/eyes) — still overridable below
-        ccRenderCreation(); } ccSyncSel(); ccRebuild(); };
+        ccRenderCreation(); } ccSyncSel(); ccBuildACHead(); ccRebuild(); };
       box.appendChild(b); });
   });
+  ccBuildACHead();   // Phase 2b: the explicit retail-head steppers render under the appearance rows
 }
 function ccSyncSel(){ document.querySelectorAll('#charCreator .cc-row[data-cat]').forEach(row=>{
   const cat=row.dataset.cat; row.querySelectorAll('.cc-opts button').forEach(b=>b.classList.toggle("sel",String(ccWork[cat])===b.dataset.k)); }); }
+// ── Phase 2b: EXPLICIT retail-head rows — step through the client's own lists (51 hair styles,
+//    eye/nose/mouth strips, exact skin/hair/eye palettes) writing app.acHead; live in the bust. ──
+function ccBuildACHead(){
+  const last=[...document.querySelectorAll('#charCreator .cc-row[data-cat]')].pop(); if(!last) return;
+  let wrap=document.getElementById('ccACHead');
+  if(!wrap){ wrap=document.createElement('div'); wrap.id='ccACHead'; last.parentNode.insertBefore(wrap,last.nextSibling); }
+  const H=(typeof acHeadOpts==="function")&&acHeadOpts({race:ccWork.race||ccWork.heritage||"aluvian",gender:ccWork.gender||"male"});
+  if(!H){ wrap.innerHTML=""; return; }
+  if(!ccWork.acHead) ccWork.acHead=acHeadChoices({race:ccWork.race||"aluvian",gender:ccWork.gender||"male",
+    skin:ccWork.skin,hair:ccWork.hair,hairColor:ccWork.hairColor,eye:ccWork.eye,nose:ccWork.nose,mouth:ccWork.mouth})||{style:0,eyes:0,nose:0,mouth:0,skinTone:0,hairColor:0,eyeColor:0};
+  const F=[["style","Hair Style",H.hairStyles.length],["hairColor","Hair Colour",H.hairPals.length],
+    ["skinTone","Skin Tone",H.skinTones.length],["eyeColor","Eye Colour",H.eyeColors.length],
+    ["eyes","Eyes",H.eyes.length],["nose","Nose",H.noses.length],["mouth","Mouth",H.mouths.length]];
+  let h=`<div style="margin:8px 0 3px;color:var(--gold);font-size:11px;letter-spacing:.5px">RETAIL HEAD <span style="color:var(--dim)">— the client's own lists</span></div>`;
+  for(const [k,lab,n] of F){ if(!n) continue; const v=((ccWork.acHead[k]|0)%n+n)%n;
+    h+=`<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:11px"><span style="width:76px;color:#cdbf9a">${lab}</span>
+      <button data-achd="${k}" data-d="-1" style="width:22px;cursor:pointer">◀</button>
+      <span style="width:52px;text-align:center;color:#ffd86b">${v+1} / ${n}</span>
+      <button data-achd="${k}" data-d="1" style="width:22px;cursor:pointer">▶</button></div>`; }
+  wrap.innerHTML=h;
+  wrap.querySelectorAll('[data-achd]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.achd, d=+b.dataset.d, n=(F.find(f=>f[0]===k)||[0,0,1])[2];
+    ccWork.acHead[k]=(((ccWork.acHead[k]|0)+d)%n+n)%n;
+    ccBuildACHead(); ccRebuild();
+  });
+}
 // ── AC-style creation: profession template, attribute allocation, skill training, gender, starting town ──
 function ccTemplate(k){ return TEMPLATES.find(t=>t.k===k)||TEMPLATES[0]; }
 function ccInitCreation(){
@@ -22651,7 +23377,21 @@ function openCharCreator(race,onCreate){
   const nameI=document.getElementById('ccName'); nameI.value=(player.name&&player.name!=="Adventurer")?player.name:"";
   document.getElementById('ccMsg').textContent="";
   ccInitCreation(); ccInitPreview(); ccBuildOptions(); ccSyncSel(); ccRenderCreation(); ccSize(); ccRebuild();
+  ccApplyBarberMode();
   cancelAnimationFrame(ccRAF); ccAnim();
+}
+// AC's barber changed only your LOOK — heritage, gender, body model, name, and the creation
+// stats (profession/attributes/skills/town) were all locked once the character existed.
+function ccApplyBarberMode(){
+  const barber=(typeof ccBarber!=="undefined"&&ccBarber);
+  const rowOf=id=>{ const el=document.getElementById(id); return el&&el.closest('.cc-row'); };
+  const hide=[rowOf('ccName'),document.querySelector('.cc-row[data-cat="race"]'),
+    document.querySelector('.cc-row[data-cat="model"]'),rowOf('ccGender'),rowOf('ccProf'),
+    rowOf('ccAttrs'),rowOf('ccSkills'),rowOf('ccTown')];
+  hide.forEach(r=>{ if(r)r.style.display=barber?"none":""; });
+  const lore=document.getElementById('ccLore'); if(lore&&barber)lore.style.display="none";
+  const h2=document.querySelector('#charCreator h2'); if(h2)h2.textContent=barber?"✦ VISIT THE BARBER ✦":"✦ CREATE A CHARACTER ✦";
+  const cbtn=document.getElementById('ccCreate'); if(cbtn)cbtn.textContent=barber?"Keep this look →":"Enter Dereth →";
 }
 function closeCharCreator(){ ccVisible=false; cancelAnimationFrame(ccRAF); document.getElementById('charCreator').style.display="none"; }
 // ── the BARBER (AC's 2005 appearance-change service): reopen the creator on the living character ──
@@ -22675,7 +23415,9 @@ document.getElementById('ccCreate').onclick=()=>{
   if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
   player.name=name; player.heritage=ccWork.race;
   const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo","model","gender"];
-  const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k]; player.appearance=app;
+  const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k];
+  if(ccWork.acHead) app.acHead=Object.assign({},ccWork.acHead);   // explicit retail head picks (Phase 2b) ride the appearance
+  player.appearance=app;
   // carry the AC creation choices into startGame
   player.createAttr=Object.assign({},ccWork.cattr); player.createSkills=(ccWork.ctrained||[]).slice();
   player.createTown=ccWork.town; player.createTemplate=ccWork.template; player.createSpec=(ccWork.cspec||[]).slice();

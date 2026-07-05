@@ -12,7 +12,7 @@ Env:   DERETH_HOST, DERETH_PORT, DERETH_DB         (override defaults)
 
 This is Phase M1 (foundation). Monsters/combat become server-authoritative in M3.
 """
-import asyncio, base64, hashlib, hmac, json, math, os, random, secrets, sqlite3, struct, time
+import asyncio, base64, hashlib, hmac, json, math, os, random, re, secrets, sqlite3, struct, time
 
 HOST = os.environ.get("DERETH_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DERETH_PORT", "8787"))
@@ -20,6 +20,9 @@ DB_PATH = os.environ.get("DERETH_DB", os.path.join(os.path.dirname(__file__), "d
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 TICK_HZ = 10
 MAX_MSG = 1 << 20  # 1 MiB per message cap (character saves can be sizable)
+# WSCALE — world spatial scale; MUST match the client's WSCALE. At 3 the map is true 1:1 AC metre
+# spacing (towns 3× farther apart than the old compact map). Only POSITIONS scale — ranges stay metres.
+WSCALE = 3
 SCRYPT = dict(n=16384, r=8, p=1, dklen=32)
 PROTOCOL_VERSION = 2   # v2: accounts own up to 8 character slots (roster/play_char/create_char)
 
@@ -281,7 +284,7 @@ def snapshot():
     snap = {"t": "snapshot", "players": [
         {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
          "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
-         "pk": getattr(cl, "pk", False)}
+         "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk")}
         for u, cl in CLIENTS.items() if cl.in_world],
         "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
     if EVENT.get("active"):
@@ -319,7 +322,7 @@ except Exception:
     pass
 # Monsters cluster near real Dereth towns (world coords = lon*80, -lat*80) so the shared
 # population is where players actually spawn/travel — not out at the empty origin.
-MOB_CLUSTERS = [
+MOB_CLUSTERS = [(x * WSCALE, z * WSCALE) for x, z in [
     (2640, -3488),  # Holtburg (Aluvian capital — common spawn)
     (3768, -2072),  # Cragstone
     (2048, -2424),  # Glenden Wood
@@ -328,12 +331,12 @@ MOB_CLUSTERS = [
     (3704, 968),    # Yaraq (Gharu'ndim capital)
     (1472, 128),    # Samsur
     (4824, 2296),   # Sawato
-]
+]]
 MOBS = {}              # id -> mob dict
 _mob_seq = 0
-WORLD_LIMIT = 7000     # keep mobs inside the playfield
+WORLD_LIMIT = 7000 * WSCALE   # keep mobs inside the (now 1:1) playfield
 # capitals are safe havens — creatures are pushed out of the town core (mirrors the client)
-CAPITALS = [(2640, -3488), (4744, -880), (3704, 968)]   # Holtburg, Shoushi, Yaraq
+CAPITALS = [(x * WSCALE, z * WSCALE) for x, z in [(2640, -3488), (4744, -880), (3704, 968)]]   # Holtburg, Shoushi, Yaraq
 TOWN_SAFE = 60.0
 ATTACK_RANGE = 16.0    # max client→mob distance accepted for an attack intent (melee+ranged+latency)
 FELLOW_RANGE = 150.0   # party members within this range of a kill share its XP
@@ -376,6 +379,8 @@ BOSS_DEFS = {
     "genFerah":{"name": "Black Ferah, Shadow General",  "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (5200, 600),   "respawn": 120.0, "tint": 0x4a3a6a},
     "genIsin": {"name": "Isin Dule, Shadow General",    "kind": "shadow", "hp": 1800, "dmg": 42, "spd": 6.0, "xp": 11000, "gold": (260, 520),  "size": 1.0, "sense": 80, "atk": 1.4, "scale": 2.1, "home": (2800, 1800),  "respawn": 120.0, "tint": 0xc05fae},
 }
+for _b in BOSS_DEFS.values():   # boss anchor positions scale to the 1:1 world too
+    _hx, _hz = _b["home"]; _b["home"] = (_hx * WSCALE, _hz * WSCALE)
 
 def spawn_boss(key):
     b = BOSS_DEFS[key]
@@ -527,13 +532,117 @@ SCROLL_SPELLS = [s for s in (
     + ["item_recall_lifestone", "item_recall_sanctuary"]
 ) if s not in _STARTERS]
 
+# ---- Authentic retail catalog mirror (assets/acitems.json + acspellstats.json) ----
+# The SAME packs the browser loads, mirrored server-side so shared loot is real retail gear
+# with exact stats (damage/variance/speed/armor/value/burden/item-mana/spells/icon) — the
+# online drop is byte-identical to what the offline client would roll. If a pack is absent
+# we quietly fall back to the simplified ITEM_BASE generator below.
+AC_ITEMS = None
+AC_POOLS = None
+AC_SPELLSTATS = None
+try:
+    _ai = json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "acitems.json"), encoding="utf-8"))
+    _cls = {"weapon": [], "armor": [], "caster": []}
+    for _n, _a in _ai.items():
+        if _a.get("t") in ("MeleeWeapon", "MissileLauncher") and _a.get("dmg"):
+            _cls["weapon"].append((_n, _a.get("val", 0)))
+        elif _a.get("t") == "Clothing" and _a.get("al"):
+            _cls["armor"].append((_n, _a.get("val", 0)))
+        elif _a.get("t") == "Caster":
+            _cls["caster"].append((_n, _a.get("val", 0)))
+    AC_ITEMS = _ai
+    AC_POOLS = {}
+    for _c, _arr in _cls.items():
+        _s = [x[0] for x in sorted(_arr, key=lambda x: x[1])]      # by Value, cut into 5 tier bands
+        AC_POOLS[_c] = [_s[len(_s) * t // 5:len(_s) * (t + 1) // 5] for t in range(5)]
+    print("acitems pack: %d retail items mirrored (%d weapons, %d armor, %d casters in loot pools)"
+          % (len(_ai), len(_cls["weapon"]), len(_cls["armor"]), len(_cls["caster"])))
+except Exception as _e:
+    AC_ITEMS = AC_POOLS = None
+try:
+    AC_SPELLSTATS = json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "acspellstats.json"), encoding="utf-8"))
+    print("acspellstats pack: %d retail spells mirrored" % len(AC_SPELLSTATS))
+except Exception:
+    AC_SPELLSTATS = None
+
+_AC_TITLE_SMALL = {"of", "the", "a", "an", "and", "in", "to"}
+def _ac_title(n):
+    return " ".join(w if (i > 0 and w in _AC_TITLE_SMALL) else (w[:1].upper() + w[1:])
+                    for i, w in enumerate(n.split(" ")))
+AC_WT_BY_SKILL = {1: "axe", 4: "dagger", 5: "mace", 9: "spear", 10: "staff", 11: "sword",
+                  12: "atlatl", 2: "bow", 3: "crossbow", 8: "atlatl", 41: "twohand",
+                  44: "sword", 45: "dagger", 46: "dagger", 47: "bow"}
+
+def ac_itemize(it):   # stamp the exact retail specs onto an item built from a catalog name (mirrors index.html acItemize)
+    if not AC_ITEMS or not it or not it.get("name"):
+        return it
+    a = AC_ITEMS.get(it["name"].lower())
+    if not a:
+        return it
+    it["ac"] = 1
+    if a.get("dmg") and it.get("stat") == "weapon" and it.get("wt") != "focus":
+        it["v"] = a["dmg"]
+        if a.get("dvar") is not None: it["dvar"] = a["dvar"]
+        if a.get("spd"): it["spd"] = a["spd"]
+    if a.get("al") and it.get("stat") == "worn":
+        it["v"] = a["al"]
+    if a.get("val"): it["acval"] = a["val"]
+    if a.get("bur") is not None: it["bur"] = a["bur"]
+    if a.get("mana"):
+        it["itemMana"] = a["mana"]
+        if a.get("mrate"): it["manaRate"] = a["mrate"]
+    if a.get("spells"): it["acspells"] = a["spells"]
+    if a.get("icon"): it["acicon"] = a["icon"]
+    if a.get("wield") and it.get("stat") == "weapon" and it.get("wt") != "focus" and not it.get("reqVal"):
+        it["reqVal"] = a["wield"]        # the retail wield difficulty (skill gate)
+    return it
+
+def roll_ac_item(rare=False, tier=1):   # a REAL retail item of the right tier band (mirrors index.html rollACItem)
+    if not AC_POOLS:
+        return None
+    t = max(1, min(5, int(tier) or 1))
+    r = random.random()
+    cls = "weapon" if r < 0.55 else ("armor" if r < 0.9 else "caster")
+    band = AC_POOLS[cls][t - 1]
+    if not band:
+        return None
+    low = random.choice(band)
+    a = AC_ITEMS[low]
+    wr = WORK_TIER[t]
+    it = {"name": _ac_title(low), "tier": t, "work": random.randint(wr[0], wr[1])}
+    if cls == "weapon":
+        wt = AC_WT_BY_SKILL.get(a.get("skill"), "sword")
+        if re.search(r"bow\b", low) and "crossbow" not in low: wt = "bow"
+        elif re.search(r"crossbow|arbalest", low): wt = "crossbow"
+        elif re.search(r"two.?hand|great|zweihander|quadrelle", low): wt = "twohand"
+        it.update({"stat": "weapon", "wt": wt, "mat": "Steel", "v": a.get("dmg", 5)})
+    elif cls == "armor":
+        aslot = ("head" if re.search(r"helm|cap\b|basinet|coif|kabuton|crown|cowl", low)
+                 else "feet" if re.search(r"boots|shoes|sollerets|sandal", low)
+                 else "hands" if re.search(r"gauntlet|glove|mitt", low)
+                 else "legs" if re.search(r"legging|greave|pant|breeches|tasset|chiran leg", low)
+                 else "offhand" if re.search(r"shield|buckler|aegis", low)
+                 else "chest")
+        at = ("light" if re.search(r"leather|hide|cloth|silk|robe|quilt", low)
+              else "medium" if re.search(r"chain|scale|mail\b", low) else "heavy")
+        it.update({"stat": "worn", "at": at, "aslot": aslot, "mat": "Steel", "v": a.get("al", 6)})
+        if aslot == "offhand":
+            it["shield"] = "buckler" if "buckler" in low else ("tower" if "tower" in low else "kite")
+    else:
+        it.update({"stat": "weapon", "wt": "focus", "mat": "Diamond", "foc": 6 + t * 5, "v": 6 + t * 5})
+    return ac_itemize(it)
+
 def roll_item(rare=False, tier=1):
     if SCROLL_SPELLS and random.random() < (0.16 if rare else 0.10):   # sometimes a spell scroll
         return {"scroll": True, "spellId": random.choice(SCROLL_SPELLS), "name": "Spell Scroll"}
-    base = random.choice(ITEM_BASE)
     tier = max(1, min(5, int(tier) or (3 if rare else 1)))
     if rare:
         tier = max(1, min(5, tier + 2))
+    ac = roll_ac_item(rare, tier)       # authentic retail item when the catalog is mirrored
+    if ac:
+        return ac
+    # ---- fallback: simplified ITEM_BASE generator (acitems pack absent) ----
+    base = random.choice(ITEM_BASE)
     v = random.randint(base["v"][0], base["v"][1])
     if rare:
         v = math.ceil(v * 2.2)
@@ -569,9 +678,54 @@ def drop_pub(d):
     o = {"t": "drop", "id": d["id"], "x": round(d["x"], 2), "z": round(d["z"], 2), "type": d["type"]}
     if d["type"] == "gold":
         o["amt"] = d["amt"]
+    elif d["type"] == "corpse":
+        o["items"] = d.get("items", []); o["amt"] = d.get("amt", 0)
+        o["owner"] = d.get("owner", ""); o["open"] = d.get("open", False)
     else:
         o["item"] = d["item"]
     return o
+
+CORPSE_TTL = 1800.0    # a fallen player's corpse lingers far longer than mob loot (30 min default)
+
+async def handle_death(cl, msg):
+    """A player died with AC-authentic death on: stand up a shared, ownership-gated corpse that
+    every nearby player can see (and only the owner can loot). Mirrors the client's local corpse."""
+    global _drop_seq
+    items = msg.get("items")
+    items = [it for it in items if isinstance(it, dict)][:24] if isinstance(items, list) else []
+    try:
+        gold = max(0, int(msg.get("gold", 0)))
+    except (TypeError, ValueError):
+        gold = 0
+    if not items and not gold:
+        return
+    try:
+        x = float(msg.get("x", cl.x)); z = float(msg.get("z", cl.z))
+    except (TypeError, ValueError):
+        x, z = cl.x, cl.z
+    try:
+        ttl = min(7200.0, max(300.0, float(msg.get("ttl", CORPSE_TTL))))
+    except (TypeError, ValueError):
+        ttl = CORPSE_TTL
+    _drop_seq += 1
+    did = "c%d" % _drop_seq
+    DROPS[did] = {"id": did, "x": x, "z": z, "type": "corpse", "items": items, "amt": gold,
+                  "owner": cl.charname or cl.username, "owner_user": cl.username,
+                  "open": bool(msg.get("open")), "expire": time.time() + ttl}
+    await broadcast(drop_pub(DROPS[did]))
+
+async def do_recover(cl, did):
+    """Owner-only corpse recovery: hand the whole bundle back to its owner and clear it for everyone."""
+    d = DROPS.get(did)
+    if not d or d.get("type") != "corpse":
+        return
+    if not d.get("open") and d.get("owner_user") != cl.username:   # open (PK) corpses are free loot for anyone in range
+        return await cl.send({"t": "system", "msg": "That corpse is not yours to loot."})
+    if math.hypot(cl.x - d["x"], cl.z - d["z"]) > PICKUP_RANGE + 2:
+        return
+    DROPS.pop(did, None)
+    await broadcast({"t": "drop_gone", "id": did})
+    await cl.send({"t": "corpse_loot", "items": d.get("items", []), "amt": d.get("amt", 0), "owner": d.get("owner", "")})
 
 async def spawn_loot(m, is_boss):
     """Roll a corpse's shared ground loot and broadcast it to everyone."""
@@ -596,6 +750,10 @@ async def do_pickup(cl, did):
         await cl.send({"t": "loot", "type": "gold", "amt": d["amt"]})
     else:
         await cl.send({"t": "loot", "type": "item", "item": d["item"]})
+
+def pk_compatible(a, b):
+    """AC PvP rulesets only fight their own: PK↔PK (full) or PKL↔PKL (no item loss). NPK never fights."""
+    return (a == "pk" and b == "pk") or (a == "pkl" and b == "pkl")
 
 def nearest_player(x, z, maxd):
     best, bd = None, maxd
@@ -674,6 +832,12 @@ async def world_step():
     for did in [d for d, v in DROPS.items() if now >= v["expire"]]:
         DROPS.pop(did, None)
         await broadcast({"t": "drop_gone", "id": did})
+    # NPC vassals trickle pass-up XP to their online patrons on a slow cadence
+    global _npc_v_timer
+    _npc_v_timer += DT
+    if _npc_v_timer >= NPC_VASSAL_TICK:
+        _npc_v_timer = 0.0
+        await npc_vassal_tick()
     await step_events()
 
 async def resolve_attack(cl, mid, dmg):
@@ -708,12 +872,12 @@ async def resolve_attack(cl, mid, dmg):
                 c = CLIENTS.get(acc)
                 if c and c.in_world and math.hypot(c.x - m["x"], c.z - m["z"]) <= FELLOW_RANGE:
                     fellows.append(acc)
-        share = FELLOW_SHARE[min(len(fellows), 9)] if len(fellows) >= 2 else 1.0
+        per = fellowship_xp(fellows, m["xp"])
         sent = set()
         for u in fellows:
             c = CLIENTS.get(u)
             if c:
-                await c.send({"t": "reward", "xp": int(round(m["xp"] * share)), "kind": m["kind"], "boss": is_boss})
+                await c.send({"t": "reward", "xp": per[u], "kind": m["kind"], "boss": is_boss})
                 sent.add(u)
         for u in set(m.get("dealt", {cl.username: dmg}).keys()):
             if u in sent:
@@ -802,12 +966,24 @@ def alg_rank_shallow(name):
             break
     return r
 
+# last-known Loyalty/Leadership per character (sent each input tick) — feeds the AC pass-up formula.
+# Runtime only: re-populated when a character logs in; an unseen patron falls back to untrained (0).
+SKILL_CACHE = {}
+
+def _alg_skill(name, which):
+    e = SKILL_CACHE.get(name)
+    return min(291, max(0, e.get(which, 0))) if e else 0
+
 def alg_passup_pct(vassal_name):
+    """AC direct pass-up: Generated%(vassal Loyalty) × Received%(patron Leadership), deepening with
+    time sworn, clamped 25%..90% — matching the client's offline formula so online/offline agree."""
     r = alg_row(vassal_name)
     if not r or not r["patron"]:
         return 0.0
-    days = min(730.0, max(0.0, (time.time() - (r["sworn_at"] or time.time())) / 86400.0))
-    return min(0.90, 0.25 + 0.65 * (days / 730.0))   # AC direct pass-up: 25% floor -> ~90% with time
+    tfac = min(1.0, max(0.0, (time.time() - (r["sworn_at"] or time.time())) / 86400.0 / 730.0))
+    gen = 0.50 + 0.225 * (_alg_skill(vassal_name, "loyalty") / 291.0) * (1.0 + tfac)
+    rec = 0.50 + 0.225 * (_alg_skill(r["patron"], "leadership") / 291.0) * (1.0 + tfac)
+    return round(min(0.90, max(0.25, gen * rec)), 4)
 
 def alg_add_pending(name, xp):
     with db() as c:
@@ -822,20 +998,81 @@ def alg_take_pending(name):
             return r[0]
     return 0
 
+async def _deliver_passup(patron, amount, from_name):
+    """route pass-up XP to a patron: live if online, else banked as pending for their next login"""
+    pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == patron), None)
+    if pc:
+        await pc.send({"t": "passup", "xp": amount, "from": from_name})
+    else:
+        alg_add_pending(patron, amount)
+
 async def alg_passup_kill(recipients_names, xp):
-    """extra free XP up the chain for each rewarded character's patron"""
+    """extra free XP up the chain for each rewarded character (patron loses nothing, vassal loses
+    nothing). Generation 1 (the direct patron) gets the time-scaled share; generation 2 (the
+    grand-patron) gets AC's small grand-vassal trickle — 0–10% of the kill, scaled by how long the
+    intermediate patron has stayed sworn (a loyalty proxy)."""
     for nm in set(recipients_names):
         r = alg_row(nm)
         if not r or not r["patron"]:
             continue
         share = int(xp * alg_passup_pct(nm))
-        if share <= 0:
+        if share > 0:
+            await _deliver_passup(r["patron"], share, nm)
+        pr = alg_row(r["patron"])                    # is there a grand-patron above the direct patron?
+        if pr and pr["patron"]:
+            gpct = min(0.10, alg_passup_pct(r["patron"]) * 0.12)   # grand-vassal trickle, capped at 10%
+            gshare = int(xp * gpct)
+            if gshare > 0:
+                await _deliver_passup(pr["patron"], gshare, nm)
+
+# ── NPC vassals: sworn adventurers who populate an allegiance and trickle a little XP up (AC's
+#    populated allegiances). Runtime-only, capped by renown; they do NOT count toward rank/followers
+#    (no rank-inflation), only pad the tree and pass up a modest share of simulated deeds. ──
+NPC_VASSALS = {}   # patron charname -> [ {name, level, loyalty} ]
+_NPC_V_FIRST = ["Aldous", "Bryn", "Cael", "Dara", "Eryn", "Finn", "Gwen", "Hale", "Iva", "Joss", "Kira",
+                "Lund", "Mira", "Nyle", "Oren", "Pell", "Quinn", "Rhea", "Sten", "Tova", "Ulf", "Vesa", "Wyn", "Yara"]
+_NPC_V_LAST = ["the Bold", "the Swift", "Ironhand", "of Holtburg", "Stormborn", "the Quiet", "Redblade",
+               "of Yaraq", "the Sworn", "Hollowmoor", "Brightspear", "of Shoushi"]
+NPC_VASSAL_TICK = 30.0   # seconds between NPC pass-up trickles
+_npc_v_timer = 0.0
+
+def npc_vassal_cap(level):
+    return max(0, min(6, level // 12))   # a few sworn adventurers, growing with your renown (L12+)
+
+def npc_passup_pct(npc, patron):
+    """same shape as the player formula — the NPC's Loyalty × the patron's Leadership, mid time factor"""
+    tfac = 0.5
+    gen = 0.50 + 0.225 * (min(291, npc.get("loyalty", 0)) / 291.0) * (1.0 + tfac)
+    rec = 0.50 + 0.225 * (_alg_skill(patron, "leadership") / 291.0) * (1.0 + tfac)
+    return min(0.90, max(0.25, gen * rec))
+
+async def handle_muster(cl):
+    """call a sworn adventurer to your banner (an NPC vassal), capped by your renown"""
+    if not cl.in_world or not cl.charname:
+        return
+    cap = npc_vassal_cap(cl.level)
+    if cap <= 0:
+        return await cl.send({"t": "system", "msg": "You lack the renown to call sworn adventurers yet (reach level 12)."})
+    lst = NPC_VASSALS.setdefault(cl.charname, [])
+    if len(lst) >= cap:
+        return await cl.send({"t": "system", "msg": f"Your banner is full — {len(lst)}/{cap} sworn adventurers already follow you."})
+    name = random.choice(_NPC_V_FIRST) + " " + random.choice(_NPC_V_LAST)
+    lvl = max(1, cl.level - random.randint(2, 10))
+    lst.append({"name": name, "level": lvl, "loyalty": random.randint(80, 200)})
+    await cl.send({"t": "system", "msg": f"{name} (level {lvl}) swears to your banner — they adventure in your name, trickling XP up to you ({len(lst)}/{cap})."})
+    await cl.send(alg_info_pub(cl.charname))
+
+async def npc_vassal_tick():
+    """each NPC vassal 'adventures' and trickles a modest pass-up to its online patron"""
+    for patron, lst in list(NPC_VASSALS.items()):
+        if not lst:
             continue
-        pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == r["patron"]), None)
-        if pc:
-            await pc.send({"t": "passup", "xp": share, "from": nm})
-        else:
-            alg_add_pending(r["patron"], share)
+        pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == patron), None)
+        if not pc:
+            continue
+        total = sum(int(npc["level"] * 4 * npc_passup_pct(npc, patron)) for npc in lst)   # low, steady simulated take
+        if total > 0:
+            await pc.send({"t": "passup", "xp": total, "from": "your sworn adventurers"})
 
 def alg_info_pub(name):
     r = alg_row(name) or {}
@@ -843,9 +1080,11 @@ def alg_info_pub(name):
     vs = alg_vassals(name)
     online = {c.charname for c in CLIENTS.values() if c.in_world}
     mrow = alg_row(mon)
-    return {"t": "alg", "patron": r.get("patron"), "monarch": mon if (r.get("patron") or vs) else None,
-            "vassals": [{"name": v, "online": v in online, "passup": round(alg_passup_pct(v) * 100)} for v in vs],
-            "rank": alg_rank(name), "followers": alg_followers(name),
+    vlist = [{"name": v, "online": v in online, "passup": round(alg_passup_pct(v) * 100)} for v in vs]
+    for npc in NPC_VASSALS.get(name, []):   # sworn NPC adventurers ride along in the tree
+        vlist.append({"name": npc["name"], "online": True, "passup": round(npc_passup_pct(npc, name) * 100), "npc": True})
+    return {"t": "alg", "patron": r.get("patron"), "monarch": mon if (r.get("patron") or vs or NPC_VASSALS.get(name)) else None,
+            "vassals": vlist, "rank": alg_rank(name), "followers": alg_followers(name),
             "motd": (mrow or {}).get("motd")}
 
 # ---------------------------------------------------------------- parties (fellowships)
@@ -858,6 +1097,24 @@ PARTY_MAX = 9          # AC fellowship cap (founder + 8)
 # AC fellowship XP: an equal split with a size bonus, so the shared pool grows (~1.5x the kill's
 # XP at 2 members up to ~3x at a full 9) — per-member fraction of the kill XP by fellowship size.
 FELLOW_SHARE = {1: 1.00, 2: 0.75, 3: 0.60, 4: 0.50, 5: 0.45, 6: 0.40, 7: 0.37, 8: 0.34, 9: 0.33}
+
+def fellowship_xp(fellows, base_xp):
+    """AC fellowship XP by LEVEL SPREAD, not just size → {account: xp}. A tight band shares equally
+    with the size bonus; a wide band splits proportionally by level so a low-level can't leech a
+    high-level kill; an extreme spread reverts to equal with the size reduction lifted."""
+    n = len(fellows)
+    if n < 2:
+        return {u: base_xp for u in fellows}                       # solo / single member: full XP
+    levels = {u: max(1, getattr(CLIENTS.get(u), "level", 1) or 1) for u in fellows}
+    spread = max(levels.values()) - min(levels.values())
+    base = FELLOW_SHARE[min(n, 9)]
+    if spread <= 5:
+        return {u: int(round(base_xp * base)) for u in fellows}    # equal split + size bonus
+    if spread >= 50:
+        return {u: base_xp for u in fellows}                       # extreme spread: equal, no size reduction
+    pool = base_xp * base * n                                      # same total pool, weighted by level
+    tot = sum(levels.values()) or 1
+    return {u: int(round(pool * levels[u] / tot)) for u in fellows}
 
 def party_names(pid):
     p = PARTIES.get(pid)
@@ -940,8 +1197,10 @@ async def trade_sync(tr):
         other = tr["b"] if acc == tr["a"] else tr["a"]
         oc = CLIENTS.get(other)
         if c:
+            coin = tr.get("coin", {})
             await c.send({"t": "trade", "act": "sync", "you": tr["offers"][acc], "them": tr["offers"][other],
                           "youOk": tr["ok"][acc], "themOk": tr["ok"][other],
+                          "youCoin": coin.get(acc, 0), "themCoin": coin.get(other, 0),
                           "with": oc.charname if oc else "?"})
 
 async def trade_cancel(acc, reason="The trade was cancelled."):
@@ -970,6 +1229,7 @@ async def handle_trade(cl, msg):
         _trade_seq += 1
         TRADES["t%d" % _trade_seq] = {"a": cl.username, "b": target.username,
                                       "offers": {cl.username: [], target.username: []},
+                                      "coin": {cl.username: 0, target.username: 0},
                                       "ok": {cl.username: False, target.username: False}, "pending": True}
         await cl.send({"t": "system", "msg": f"You offer to trade with {name}."})
         await target.send({"t": "trade", "act": "invite", "from": cl.charname})
@@ -993,6 +1253,17 @@ async def handle_trade(cl, msg):
                 tr["offers"][cl.username].pop(idx)
         tr["ok"][tr["a"]] = tr["ok"][tr["b"]] = False        # AC: ANY change clears both accepts
         await trade_sync(tr)
+    elif act == "coin":
+        tid, tr = trade_of(cl.username)
+        if not tr or tr.get("pending"):
+            return
+        try:
+            amt = max(0, min(2_000_000_000, int(msg.get("amount", 0))))
+        except (TypeError, ValueError):
+            amt = 0
+        tr.setdefault("coin", {})[cl.username] = amt
+        tr["ok"][tr["a"]] = tr["ok"][tr["b"]] = False        # AC: changing the coin offer clears both accepts
+        await trade_sync(tr)
     elif act == "ok":
         tid, tr = trade_of(cl.username)
         if not tr or tr.get("pending"):
@@ -1003,7 +1274,8 @@ async def handle_trade(cl, msg):
                 other = tr["b"] if acc == tr["a"] else tr["a"]
                 c = CLIENTS.get(acc)
                 if c:
-                    await c.send({"t": "trade", "act": "done", "give": tr["offers"][other]})
+                    await c.send({"t": "trade", "act": "done", "give": tr["offers"][other],
+                                  "coin": tr.get("coin", {}).get(other, 0)})
             del TRADES[tid]
         else:
             await trade_sync(tr)
@@ -1144,7 +1416,14 @@ async def dispatch(cl, msg):
         cl.mhp = int(msg.get("mhp", cl.mhp)); cl.level = int(msg.get("level", cl.level))
         cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
         cl.title = str(msg.get("title", cl.title))[:40]
-        cl.pk = bool(msg.get("pk", getattr(cl, "pk", False)))   # S3 PvP flag
+        ps = str(msg.get("pkState", "pk" if msg.get("pk") else getattr(cl, "pkState", "npk")))   # AC 3-state PvP
+        cl.pkState = ps if ps in ("npk", "pkl", "pk") else "npk"
+        cl.pk = cl.pkState != "npk"
+        if cl.charname and ("loyalty" in msg or "leadership" in msg):   # feed the allegiance pass-up formula
+            try:
+                SKILL_CACHE[cl.charname] = {"loyalty": int(msg.get("loyalty", 0)), "leadership": int(msg.get("leadership", 0))}
+            except (TypeError, ValueError):
+                pass
     elif t == "chat":
         text = str(msg.get("msg", ""))[:240].strip()
         if text and cl.in_world:
@@ -1157,6 +1436,16 @@ async def dispatch(cl, msg):
         did = msg.get("id")
         if isinstance(did, str) and cl.in_world:
             await do_pickup(cl, did)
+    elif t == "death":
+        if cl.in_world:
+            await handle_death(cl, msg)
+    elif t == "muster":
+        if cl.in_world:
+            await handle_muster(cl)
+    elif t == "recover":
+        did = msg.get("id")
+        if isinstance(did, str) and cl.in_world:
+            await do_recover(cl, did)
     elif t == "debuff":
         if cl.in_world:
             m = MOBS.get(msg.get("id")); eff = msg.get("eff")
@@ -1197,12 +1486,13 @@ async def dispatch(cl, msg):
             if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "pvp":
-        # S3 PvP: relay a hit to the target, only if BOTH players are PK-flagged and in range (target applies it)
+        # S3 PvP: relay a hit only if both players share a PvP ruleset (PK↔PK or PKL↔PKL) and are in range
         if cl.in_world and getattr(cl, "pk", False):
             tgt = CLIENTS.get(msg.get("target"))
             try: dmg = float(msg.get("dmg", 0))
             except Exception: dmg = 0
-            if tgt and tgt.in_world and getattr(tgt, "pk", False) and 0 < dmg <= 2000 and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 40:
+            if (tgt and tgt.in_world and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
+                    and 0 < dmg <= 2000 and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 40):
                 await tgt.send({"t": "pvp", "from": cl.charname, "dmg": round(dmg, 1), "element": str(msg.get("element", ""))[:12]})
     elif t == "spellfx":
         # relay a cosmetic spell visual to other in-world players (no damage authority here)
