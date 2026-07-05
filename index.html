@@ -11003,8 +11003,11 @@ const WORK_TIER=[null,[1,4],[2,6],[3,7],[3,9],[4,10]]; // loot tier 1..5 → [mi
 // AC's real salvage materials — metals/woods make weapons, metals/leather/cloth/stone make armour,
 // gems are the "other" class (imbue weapons / theme consumables). The first word of a loot name is its material.
 const MATERIALS={
-  weapon:["Iron","Steel","Bronze","Brass","Copper","Silver","Gold","Pyreal","Platinum","Titanium","Oak","Mahogany","Teak","Ebony","Pine","Hickory","Bamboo","Yew","Ironwood"],
-  armor:["Bronze","Steel","Iron","Brass","Copper","Granite","Marble","Alabaster","Sandstone","Serpentine","Porcelain","Ceramic","Leather","Hide","Sharkskin","Snakeskin","Linen","Wool","Silk","Velvet","Satin"],
+  // NB: each material may appear in ONE list only — the armor loop below overwrites MAT_APPLY,
+  // which silently flipped Iron and Granite (retail's classic WEAPON salvages: Iron +1 dmg,
+  // Granite −variance) into armor materials.
+  weapon:["Iron","Granite","Silver","Gold","Pyreal","Platinum","Titanium","Oak","Mahogany","Teak","Ebony","Pine","Hickory","Bamboo","Yew","Ironwood"],
+  armor:["Bronze","Steel","Brass","Copper","Marble","Alabaster","Sandstone","Serpentine","Porcelain","Ceramic","Leather","Hide","Sharkskin","Snakeskin","Linen","Wool","Silk","Velvet","Satin"],
   other:["Amber","Quartz","Diamond","Ruby","Sapphire","Emerald","Jet","Onyx","Opal","Agate","Carnelian","Citrine","Peridot","Topaz","Zircon","Lapis Lazuli","Malachite","Hematite","Bloodstone","Moonstone","Tourmaline","Aquamarine","Imperial Topaz","Black Garnet","Amethyst","Azurite","Sunstone","Turquoise","Tiger Eye","Black Opal","Fire Opal","Green Garnet","Red Garnet","Yellow Garnet","Green Jade","White Jade","Lavender Jade","Rose Quartz","Smoky Quartz","White Quartz","White Sapphire","Sardonyx","Spinel","Jasper","Chrysoprase","Obsidian","Chalcedony","Chrysoberyl","Garnet"] };
 const MAT_APPLY={}; // material → which equipped slot a tink improves ("weapon" boosts damage, "armor" boosts defence)
 for(const m of MATERIALS.weapon) MAT_APPLY[m]="weapon";
