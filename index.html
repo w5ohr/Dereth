@@ -865,7 +865,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   lightBuff:null,             // active conjured light (Enlightenment/Foxfire) -> {t,intensity,dist,color}; falls on death
   debuffs:{},                 // hostile curses on you (slow/vuln) -> {v,t}; cleansed by Dispel, clear on death
   elixMight:0,elixSwift:0,buffMightT:0,buffSwiftT:0,
-  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0,
+  meleeCd:0,regenT:0,invuln:0,alive:true,swing:0,bob:0,bowDraw:0,drinkCd:0,dashT:0,dashCd:0,dashX:0,dashZ:0,vx:0,vz:0,
   y:0,vy:0,grounded:true};   // vertical physics: feet height, vertical velocity, on-ground flag (for jumping & upper floors)
 
 function derive(){
@@ -884,7 +884,9 @@ function derive(){
   { const run=player.skills?skillValue("run"):0;
     const enc=(typeof encumbrance==="function")?encumbrance().ratio:0;
     const burdenMod=enc<=1?1:Math.max(0,(3-enc)/2);
-    player.speed=(4/3)*(run>=800?4.5:(burdenMod*(run/(run+200)*11)+4)/4); }
+    // exact ACE MovementSystem.GetRunRate, ×WSCALE so run speed is AC's real m/s at true 1:1 scale
+    // (1 world unit = 1 metre): base ≈ 4 m/s at Run 0 → 18 m/s at the Run 800 cap.
+    player.speed=(4/3)*WSCALE*(run>=800?4.5:(burdenMod*(run/(run+200)*11)+4)/4); }
   if(typeof armorMove==="function") player.speed*=armorMove().speed; // heavier loadout slows you, lighter quickens
   if(typeof wornVital==="function"){ player.mhp+=wornVital("mhp"); player.mst+=wornVital("mst"); player.mmn+=wornVital("mmn"); }  // "of Vigor/Endurance/Magus" pieces
   if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
@@ -2294,7 +2296,9 @@ function jumpVelocity(power){
   const jv=player.st>0?skillValue("jump"):0;
   const enc=encumbrance().ratio, burdenMod=enc<1?1:Math.max(0,2-enc);
   const skF=clamp(1+ (jv/(jv+1300))*6.0 ,1.0,1.9);               // AC's asymptote shape, tuned to this world's GRAV/geometry
-  return 7.6*skF*Math.max(0.28,Math.sqrt(burdenMod))*Math.sqrt(0.12+0.88*power);   // h ∝ power (AC), tap ≈ AC's minimum hop
+  // ×WSCALE so the launch velocity is in true-scale units/s; with player gravity also ×WSCALE the
+  // arc height/airtime stay AC-constant in real metres/seconds at any WSCALE (h ∝ power, AC's curve).
+  return 7.6*WSCALE*skF*Math.max(0.28,Math.sqrt(burdenMod))*Math.sqrt(0.12+0.88*power);
 }
 function tryJump(power){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
@@ -13258,7 +13262,7 @@ function fallDamage(drop){
   // dmg = (v/vSafe − 1) × 87.29, bludgeon-typed. AC's safe fall ≈ 12.7 m ≈ a 4-storey drop here
   // (one storey H1F=4.4u ≈ 3 m). Retail reportedly let Jump ability soften landings (ACE left the
   // damping commented out) — we keep a modest Jump bump on the threshold for that.
-  const safe=17+skillValue("jump")*0.02;
+  const safe=(17+skillValue("jump")*0.02)*WSCALE;   // ×WSCALE: safe fall in true metres (drop is now real-scale too)
   if(drop<=safe) return;
   const v=Math.sqrt(2*GRAV*drop), vSafe=Math.sqrt(2*GRAV*safe);
   let dmg=Math.round((v/vSafe-1)*87.29*(1-resistVs("bludgeon")));   // bludgeon resistance mitigates, as in ACE
@@ -14366,6 +14370,8 @@ function update(dt){
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
+  // desired horizontal velocity (units/s) from input
+  let desVX=0,desVZ=0,moving=false;
   if((f||s)&&player.alive){
     const yaw=player.yaw;
     const fx=-Math.sin(yaw),fz=-Math.cos(yaw);   // forward
@@ -14375,16 +14381,28 @@ function update(dt){
     const roadBoost=onRoad(player.x,player.z)?ROAD_SPEED:1;
     const slowD=(player.debuffs&&player.debuffs.slow)?(1-player.debuffs.slow.v):1;  // enemy Slow curse
     const castD=player.casting?0.5:1;   // committed mid-cast — you move at half pace
-    const sp=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD*dt;
-    const [nx,nz]=collide(player.x+dx*sp,player.z+dz*sp);
+    const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD; // units/sec
+    desVX=dx*spSec; desVZ=dz*spSec; moving=true;
+  }
+  // AC movement: on the ground you have full control; a JUMP launches with your run velocity and
+  // CARRIES that momentum through the air (Run skill → jump distance), with only light air-steering.
+  if(player.grounded){
+    player.vx=desVX; player.vz=desVZ;                      // immediate ground control
+  } else if(moving){
+    const AIR=0.8;                                          // limited mid-air steer toward input
+    player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
+  }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
+  if((player.vx||player.vz)&&player.alive){
+    const [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
     player.x=nx;player.z=nz;
-    player.bob+=dt*sp*1.1;
-    stepAcc+=sp; if(stepAcc>2.4){stepAcc=0;SFX.step();}
-    if(sprint>1) player.st=Math.max(0,player.st-dt*14);
+    const step=Math.hypot(player.vx,player.vz)*dt;
+    player.bob+=dt*step*1.1;
+    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;SFX.step();} }  // footfalls only on the ground
+    if(sprint>1&&player.grounded&&moving) player.st=Math.max(0,player.st-dt*14);
   }
   // dodge dash: brief high-speed burst (with i-frames) along the dash vector
   if(player.dashT>0&&player.alive){
-    const dd=6*dt;
+    const dd=6*WSCALE*dt;
     const [nx,nz]=collide(player.x+player.dashX*dd,player.z+player.dashZ*dd);
     player.x=nx;player.z=nz;
     if(Math.random()<0.7) burst(player.x,EYE*0.5,player.z,0xdfe8ff,1);
@@ -14396,7 +14414,7 @@ function update(dt){
       if(support>=player.y-STICK){ player.y=support; player.vy=0; }   // glue to slopes/ramps (up via STEP_UP, down via STICK)
       else { player.grounded=false; player.vy=0; player.fallPeak=player.y; }   // walked off a real ledge → fall
     } else {
-      player.vy-=GRAV*dt; player.y+=player.vy*dt;
+      player.vy-=GRAV*WSCALE*dt; player.y+=player.vy*dt;      // player gravity ×WSCALE → jump arc = real metres
       if(player.y>player.fallPeak) player.fallPeak=player.y;   // remember the apex so drop = apex − landing
       if(player.vy<=0 && player.y<=support){                   // land
         const drop=(player.fallPeak!==undefined?player.fallPeak:support)-support;
