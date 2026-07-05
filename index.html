@@ -855,6 +855,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,allskills:0,xpBonus:0,attrTotal:0,dropReduce:0,count:0,skillCredits:0,fam:{},owned:{}},    // permanent boosts: augmentation gems + Aetheria sigils
   house:{tier:0,storage:[]},   // AC housing: 0=none, 1=Apartment…4=Mansion; storage[] persists forever
   homestead:null,              // a purchased settlement dwelling: {set,idx,type,hooks{}} (AC covenant housing)
+  ship:null,aboardShip:null,   // owned vessel {type,x,z,yaw} (Ultima-style deed) + the live ship being piloted (transient)
   name:"Adventurer",
   appearance:{race:"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"},
   knownSpells:[],hotbar:[],loadouts:[],   // initialised from freshSpells() once the SPELLBOOK is defined
@@ -2341,7 +2342,7 @@ let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
 const obstacles=[]; // {x,z,r}
-let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[];
+let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[],ships=[];
 
 function texGround(){
   const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');
@@ -5864,6 +5865,7 @@ function buildWorld(){
   monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];pkAltars=[];obstacles.length=0;
   for(const d of dying) scene.remove(d.mesh); dying=[];
   for(const o of netObjs) scene.remove(o);
+  for(const _s of ships){ if(_s.mesh) scene.remove(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
@@ -6082,6 +6084,8 @@ function buildWorld(){
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfPeople(); assignGltfNpcs();   // populate some townsfolk with real CDN people models (async; procedural fallback)
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
+  if(typeof seatShipwright==="function") seatShipwright();                 // dockside Shipwright at the most-coastal town
+  if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
 }
 function settleY(){ // drop every placed object onto the RENDERED ground surface (groundY, not raw terrainH)
   for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
@@ -14333,6 +14337,7 @@ function openLockedCache(){
 }
 function interact(){
   if(!player.alive) return;   // the dead can't act — E during the death fade was insta-looting your own corpse
+  if(player.aboardShip){ disembarkShip(); return; }   // aboard a ship → E puts you ashore
   // your corpse first — recover everything it holds in one motion
   for(const d of drops) if(d.type==="corpse"&&Math.hypot(d.x-player.x,d.z-player.z)<4){ recoverCorpse(d); return; }
   let best=null,bd=4;
@@ -14372,6 +14377,7 @@ function interact(){
   for(const dr of hsDoors){ if(Math.hypot(dr.x-player.x,dr.z-player.z)<2.6){ hsEnterInterior(dr.h); return; } }
   for(const gt of hsHallGates){ if(Math.hypot(gt.x-player.x,gt.z-player.z)<3){ hsEnterHall(gt); return; } }
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
+  for(const sh of ships){ if(Math.hypot(sh.x-player.x,sh.z-player.z) < sh.def.len*0.6+3){ boardShip(sh); return; } }   // step aboard your ship
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
   for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<3){ gatherNode(n); return; } }
@@ -14614,6 +14620,10 @@ function update(dt){
       const reach=cs.special==="wall"?7:12, rx=clamp(player.x+d.x*reach,-HALF+2,HALF-2), rz=clamp(player.z+d.z*reach,-HALF+2,HALF-2);
       showCastReticle(rx,rz, cs.special==="wall"?(cs.r||3.5):8, cs.color||0xff7a2a); }
     else hideCastReticle(); }
+  // ships bob on the swell every frame; when aboard, WASD + mouse/arrows pilot the ship over water
+  updateShips(dt);
+  if(player.aboardShip){ updateShipPilot(dt); }
+  else {
   // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
   // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
   let f=0,s=0;
@@ -14686,6 +14696,7 @@ function update(dt){
       }
     }
   }
+  }   // ← end of on-foot movement (skipped while aboard a ship)
   // timers/regen
   updateJumpCharge(dt);   // AC hold-to-charge jump: releases when Space is let go
   player.meleeCd=Math.max(0,player.meleeCd-dt);
@@ -18941,7 +18952,165 @@ function scrollStock(){ return SCRIVENER_SCROLLS.filter(id=>SPELLBOOK[id]).map(i
   return {name:"Scroll: "+sp.name, scroll:true, spellId:id, cost:scrollPrice(id), ico:"📜",
     desc:`learn ${(SCHOOLS[sp.school]||"Magic").split(" · ")[0]} L${sp.lvl} (T to scribe)`}; }); }
 // vendor archetypes — each town has one or more; stock differs by trade
+// ============================================================================
+//  SHIPS — Ultima-style ownable, boardable vessels for water travel.
+//  A Shipwright sells deeds (cheap shallow Skiff → costly deep-water Caravel);
+//  the owned ship waits on the water — board it (E) and pilot it across the sea.
+//  Period-correct hulls: open rowboat skiff, single-masted cog, three-masted caravel.
+// ============================================================================
+const SHIP_TYPES=[
+  {id:"skiff",   name:"Skiff",   cost:600,   len:5,  beam:2.0, deckY:0.7, speed:8,  minDepth:0.4,
+   blurb:"a small open rowboat — cheap, and shallow enough for rivers and coves"},
+  {id:"cog",     name:"Cog",     cost:6500,  len:11, beam:4.2, deckY:1.5, speed:13, minDepth:1.6,
+   blurb:"a single-masted merchant cog with fore & stern castles — needs open water"},
+  {id:"caravel", name:"Caravel", cost:24000, len:18, beam:6.0, deckY:2.0, speed:18, minDepth:3.0,
+   blurb:"a three-masted caravel, fast and ocean-going — for the deep sea"},
+];
+function shipDef(id){ return SHIP_TYPES.find(s=>s.id===id)||null; }
+function shipDeedStock(){ return SHIP_TYPES.map(s=>({name:s.name+" Deed",cost:s.cost,ico:"⛵",desc:s.blurb+" — the ship awaits at the nearest shore",shipdeed:true,shipType:s.id})); }
+
+// ---- procedural period-correct hulls (THREE.Group of primitives, matching the game's model style) ----
+function _shipHull(len,beam,hullH){
+  const g=new THREE.Group();
+  const wood=texMat(woodTex,0x5a3a22), trim=texMat(woodTex,0x6a4a2a), deckMat=texMat(woodTex,0x7a5a38);
+  const hull=new THREE.Mesh(new THREE.BoxGeometry(beam,hullH,len*0.8),wood); hull.position.y=hullH*0.5; g.add(hull);
+  for(const s of [-1,1]){ const pk=new THREE.Mesh(new THREE.BoxGeometry(beam*0.5,hullH,len*0.28),wood);   // toed-in bow planks → a prow
+    pk.position.set(s*beam*0.22,hullH*0.5,len*0.46); pk.rotation.y=s*0.5; g.add(pk); }
+  const stern=new THREE.Mesh(new THREE.BoxGeometry(beam,hullH*1.05,len*0.06),trim); stern.position.set(0,hullH*0.52,-len*0.4); g.add(stern);   // transom
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(beam*0.92,0.12,len*0.78),deckMat); deck.position.y=hullH; g.add(deck);
+  for(const s of [-1,1]){ const rail=new THREE.Mesh(new THREE.BoxGeometry(0.12,hullH*0.3,len*0.78),trim); rail.position.set(s*beam*0.46,hullH+hullH*0.15,0); g.add(rail); }
+  return g;
+}
+function _mast(g,x,z,h,r){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r*1.2,h,8),texMat(woodTex,0x4a3420)); m.position.set(x,h*0.5,z); g.add(m); return m; }
+function _squareSail(g,x,y,z,w,h){
+  const yard=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,w*1.06,6),texMat(woodTex,0x4a3420)); yard.rotation.z=Math.PI/2; yard.position.set(x,y+h*0.5,z); g.add(yard);
+  const sail=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshStandardMaterial({color:0xece3cf,roughness:0.92,metalness:0,side:THREE.DoubleSide})); sail.position.set(x,y,z); g.add(sail); return sail;
+}
+function _lateenSail(g,x,y,z,size){
+  const shp=new THREE.Shape(); shp.moveTo(0,size*0.6); shp.lineTo(0,-size*0.5); shp.lineTo(size*0.85,-size*0.15); shp.lineTo(0,size*0.6);
+  const sail=new THREE.Mesh(new THREE.ShapeGeometry(shp),new THREE.MeshStandardMaterial({color:0xe6dcc4,roughness:0.92,metalness:0,side:THREE.DoubleSide})); sail.position.set(x,y,z); sail.rotation.y=Math.PI/2; g.add(sail); return sail;
+}
+function _castle(g,z,w,h,d){ const c=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),texMat(woodTex,0x5a3a22)); c.position.set(0,h*0.5,z); g.add(c); return c; }
+function buildSkiff(){ const g=_shipHull(5,2.0,0.55);
+  for(const z of [-0.8,0.6]){ const t=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.1,0.35),texMat(woodTex,0x6a4a2a)); t.position.set(0,0.6,z); g.add(t); }   // thwarts
+  for(const s of [-1,1]){ const oar=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,3.2,6),texMat(woodTex,0x4a3420)); oar.rotation.z=Math.PI*0.28*s; oar.position.set(s*1.1,0.75,0); g.add(oar); }
+  return g; }
+function buildCog(){ const g=_shipHull(11,4.2,1.2);
+  _castle(g,-4.2,3.6,2.2,2.4); _castle(g,4.3,3.2,1.4,1.6);
+  _mast(g,0,0,7.5,0.12); _squareSail(g,0,4.8,0.15,3.6,3.2);
+  const rud=new THREE.Mesh(new THREE.BoxGeometry(0.14,1.6,0.7),texMat(woodTex,0x4a3420)); rud.position.set(0,0.2,-4.7); g.add(rud);
+  return g; }
+function buildCaravel(){ const g=_shipHull(18,6.0,1.6);
+  _castle(g,-7.0,5.2,3.2,3.6); _castle(g,7.2,4.4,1.8,2.2);
+  _mast(g,0,3.4,11,0.16); _squareSail(g,0,7.0,3.55,4.6,4.2);       // mainmast (square)
+  _mast(g,0,-2.2,8.5,0.13); _lateenSail(g,0,5.4,-2.05,3.6);        // mizzen (lateen)
+  _mast(g,0,6.0,7.5,0.12); _squareSail(g,0,5.2,6.15,3.2,3.0);      // foremast (square)
+  const bs=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,4,6),texMat(woodTex,0x4a3420)); bs.rotation.x=Math.PI/2-0.5; bs.position.set(0,2.2,9.2); g.add(bs);   // bowsprit
+  const rud=new THREE.Mesh(new THREE.BoxGeometry(0.18,2.2,0.9),texMat(woodTex,0x4a3420)); rud.position.set(0,0.2,-8.0); g.add(rud);
+  return g; }
+function buildShip(id){ const g=(id==="caravel")?buildCaravel():(id==="cog")?buildCog():buildSkiff();
+  g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } }); g.userData.isShip=true; return g; }
+
+// ---- water queries ----
+function shipNavigable(x,z,def){
+  if(x<-HALF+3||x>HALF-3||z<-HALF+3||z>HALF-3) return false;
+  return terrainH(x,z) <= -def.minDepth;   // deep enough for this hull's draft
+}
+function findWater(cx,cz,minDepth,maxR){   // nearest cell of navigable water, spiralling outward
+  for(let r=6; r<=maxR; r+=6){
+    for(let a=0;a<Math.PI*2;a+=Math.PI/12){
+      const x=cx+Math.cos(a)*r, z=cz+Math.sin(a)*r;
+      if(x<-HALF+6||x>HALF-6||z<-HALF+6||z>HALF-6) continue;
+      if(terrainH(x,z) <= -minDepth) return {x,z};
+    }
+  }
+  return null;
+}
+
+// ---- ownership / spawn ----
+function spawnOwnedShip(origin){
+  for(const s of ships){ if(s.mesh) scene.remove(s.mesh); } ships=[];
+  if(!player.ship) return;
+  const def=shipDef(player.ship.type); if(!def) return;
+  let x=player.ship.x, z=player.ship.z;
+  if(x==null||z==null||!shipNavigable(x,z,def)){
+    const o=origin||{x:player.x,z:player.z};
+    const w=findWater(o.x,o.z,def.minDepth,3000)||findWater(0,0,def.minDepth,HALF-40);
+    if(!w){ if(typeof log==="function") log("No open water could be found for your ship.","warn"); return; }
+    x=w.x; z=w.z; player.ship.x=x; player.ship.z=z;
+  }
+  const mesh=buildShip(def.id); mesh.position.set(x,0,z); mesh.rotation.y=player.ship.yaw||0; scene.add(mesh);
+  ships.push({def,x,z,yaw:player.ship.yaw||0,mesh});
+}
+function buyShip(type){
+  const def=shipDef(type); if(!def) return false;
+  if(player.gold<def.cost){ log(`You need <b>${def.cost.toLocaleString()}</b> pyreals for a ${def.name}.`,"sys"); if(SFX.err)SFX.err(); return false; }
+  player.gold-=def.cost;
+  player.ship={type:def.id,x:null,z:null,yaw:0};
+  const origin=(activeShop&&activeShop.vtype==="shipwright")?{x:activeShop.x,z:activeShop.z}:{x:player.x,z:player.z};
+  spawnOwnedShip(origin);
+  log(`You take the deed to a <b>${def.name}</b>. It awaits you at the nearest shore.`,"loot");
+  if(SFX.quest)SFX.quest(); if(typeof toast==="function") toast("SHIP ACQUIRED");
+  if(typeof updateHUD==="function") updateHUD(); saveGame();
+  return true;
+}
+
+// ---- boarding / piloting ----
+function boardShip(sh){
+  player.aboardShip=sh; player.grounded=true; player.vx=0; player.vz=0; player.vy=0; player.breath=1;
+  player.x=sh.x; player.z=sh.z; player.y=sh.def.deckY;
+  log(`You climb aboard the <b>${sh.def.name}</b>. Sail with W/S; steer with the mouse or ←/→. Press E near shore to disembark.`,"sys");
+  if(typeof toast==="function") toast("ABOARD THE "+sh.def.name.toUpperCase()); if(SFX.portal)SFX.portal();
+}
+function disembarkShip(){
+  const sh=player.aboardShip; if(!sh) return;
+  let land=null;
+  for(let r=2; r<=sh.def.len+10 && !land; r+=2){ for(let a=0;a<Math.PI*2;a+=Math.PI/8){ const x=sh.x+Math.cos(a)*r, z=sh.z+Math.sin(a)*r; if(x>-HALF&&x<HALF&&z>-HALF&&z<HALF&&terrainH(x,z)>=0.6){ land={x,z}; break; } } }
+  if(!land){ log("The water is too deep here — sail closer to shore to disembark.","warn"); if(SFX.err)SFX.err(); return; }
+  player.aboardShip=null;
+  player.ship.x=sh.x; player.ship.z=sh.z; player.ship.yaw=sh.yaw;   // the ship stays where it now floats
+  arriveAt(land.x,land.z); player.invuln=1.5;
+  log(`You step ashore from the <b>${sh.def.name}</b>.`,"sys"); if(SFX.portal)SFX.portal(); saveGame();
+}
+function updateShipPilot(dt){
+  const sh=player.aboardShip; if(!sh) return;
+  if(keys["arrowleft"])  player.yaw+=dt*1.1;   // arrows also turn (a ship is more ponderous than a runner)
+  if(keys["arrowright"]) player.yaw-=dt*1.1;
+  sh.yaw=player.yaw;
+  let f=0;
+  if(held("forward")||keys["arrowup"]||autoRun) f+=1;
+  if(held("back")||keys["arrowdown"]||keys["keyx"]) f-=1;
+  if(f!==0){
+    const dir=f>0?1:-1, rate=sh.def.speed*(f>0?1:0.6);
+    const fx=-Math.sin(sh.yaw), fz=-Math.cos(sh.yaw);
+    const nx=clamp(sh.x+fx*dir*rate*dt,-HALF+3,HALF-3), nz=clamp(sh.z+fz*dir*rate*dt,-HALF+3,HALF-3);
+    if(shipNavigable(nx,nz,sh.def)){ sh.x=nx; sh.z=nz; }
+    else if(now()-(sh._bumpT||0)>1600){ sh._bumpT=now(); log(`The ${sh.def.name} can go no further — shallower water lies ahead.`,"sys"); }
+  }
+  const bob=Math.sin(now()/1100)*0.12;
+  sh.mesh.position.set(sh.x,bob,sh.z); sh.mesh.rotation.y=sh.yaw;
+  // pin the pilot to the deck so the camera (which follows player.x/z/y/yaw) rides the ship
+  player.x=sh.x; player.z=sh.z; player.y=sh.def.deckY+bob; player.grounded=true; player.vx=0; player.vz=0; player.vy=0;
+}
+function updateShips(dt){
+  const bob=Math.sin(now()/1100)*0.12;
+  for(const s of ships){ if(s.mesh && s!==player.aboardShip){ s.mesh.position.set(s.x,bob,s.z); s.mesh.rotation.y=s.yaw; } }
+}
+// seat a dockside Shipwright at the most-coastal town, on the shore beside navigable water
+function seatShipwright(){
+  if(typeof addMerchant!=="function"||typeof CITIES==="undefined"||!CITIES.length) return;
+  if(shops.some(s=>s.vtype==="shipwright")) return;
+  let best=null,bestD=1e9;
+  for(const c of CITIES){ const w=findWater(c.x,c.z,1.6,600); if(w){ const d=Math.hypot(w.x-c.x,w.z-c.z); if(d<bestD){bestD=d;best={c,w};} } }
+  if(!best) return;
+  let dx=best.c.x-best.w.x, dz=best.c.z-best.w.z; const dl=Math.hypot(dx,dz)||1; dx/=dl; dz/=dl;   // toward the town = landward
+  let sx=best.w.x+dx*4, sz=best.w.z+dz*4;
+  for(let step=0;step<14;step++){ const tx=best.w.x+dx*step, tz=best.w.z+dz*step; if(terrainH(tx,tz)>=0.6){ sx=tx; sz=tz; break; } }
+  addMerchant(sx,sz,"shipwright","Dockmaster",shipDeedStock());
+}
+
 const VENDOR_TYPES={
+  shipwright:{title:"Shipwright",marker:"⚓",mcol:"#7fd0ff",robe:0x2a4a5a,stock:shipDeedStock},
   provisioner:{title:"Provisioner",marker:"🧪",mcol:"#7fe6a0",robe:0x2e7a4a,respec:true,stock:()=>[
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
     {name:"Health Elixir",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
@@ -19302,7 +19471,8 @@ function buildShop(){
     if(player.gold<it.cost) return;
     if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
     if(it.blessing){ caravanBless(); return; }
-    if(it.gear){ if(!addToInv(Object.assign({},it.gear,{bp:it.cost}))){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
+    if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
+    else if(it.gear){ if(!addToInv(Object.assign({},it.gear,{bp:it.cost}))){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
     else if(it.scroll){ if(!addToInv({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name})){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
     else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
@@ -22430,7 +22600,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,
+      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
@@ -22498,6 +22668,9 @@ function applySaveObj(s){
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   player.homestead=(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null;
   player.hsRebuyUntil=+s.hsRebuyUntil||0;
+  player.aboardShip=null;   // always start a session ashore
+  player.ship=(s.ship&&typeof s.ship==="object"&&shipDef(s.ship.type))?{type:s.ship.type,x:(typeof s.ship.x==="number")?s.ship.x:null,z:(typeof s.ship.z==="number")?s.ship.z:null,yaw:+s.ship.yaw||0}:null;
+  if(player.ship&&player.ship.x!=null){ const _sm=WSCALE/(s.wscale||1); if(_sm!==1){ player.ship.x*=_sm; player.ship.z*=_sm; } }   // migrate ship coords across a world-scale change
   if(typeof hsMigrateDeed==="function"&&_hsPackOn) hsMigrateDeed();
   if(typeof hsRefreshHomestead==="function"&&typeof hsCrystals!=="undefined"&&(hsCrystals.length||_hsPackOn)) hsRefreshHomestead();
   if(typeof hsRentTick==="function") hsRentTick();
@@ -22530,6 +22703,7 @@ function applySaveObj(s){
   // restore exact last position (takes precedence over the bind point); fresh chars saved
   // their heritage-capital spawn, so this also fixes "reappear at the wrong town".
   if(typeof s.px==="number" && typeof s.pz==="number"){ const _m=WSCALE/(s.wscale||1); arriveAt(s.px*_m,s.pz*_m); if(typeof s.pyaw==="number") player.yaw=s.pyaw; }   // migrate saved coords to the current world scale
+  if(player.ship && typeof spawnOwnedShip==="function") spawnOwnedShip();   // re-float the owned ship at its saved berth
   updateNPCMarker();updateQuestHUD();
   // refresh the HUD + character sheet NOW so the panels show the LOADED character immediately, rather
   // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
