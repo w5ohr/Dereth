@@ -2134,7 +2134,8 @@ function acTownVendors(townName){
   if(!ACV.on||!ACV.towns[townName]) return null;
   return ACV.towns[townName].map(v=>{
     const st=v.stock.map(id=>ACV.catalog[id]).filter(Boolean);
-    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v))};
+    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v)),
+            x:(v.x!=null?v.x:null), z:(v.z!=null?v.z:null)};   // TRUE retail spot — 1:1 town-centre offset (same mapping as buildings)
   });
 }
 // ═══ RETAIL WORLD FACTS — the second ACE-World pass (assets/acworld.json · tools/ace_world_more.py):
@@ -5943,14 +5944,21 @@ function buildWorld(){
   CITIES.forEach((c,i)=>{
     const acv=(typeof acTownVendors==="function")?acTownVendors(c.name):null; let acvi=0;
     const place=(x,z,vt)=>{
-      if(acv&&!AC_KEEP[vt]&&acv[acvi]){ const av=acv[acvi++]; addMerchant(x,z,av.vt,av.name,av.acStock); }
+      if(acv&&!AC_KEEP[vt]&&acv[acvi]){ const av=acv[acvi++];
+        // 1:1 retail position when the data carries it (same town-offset mapping as the buildings)
+        const ax=(av.x!=null)?c.x+av.x:x, az=(av.z!=null)?c.z+av.z:z;
+        addMerchant(ax,az,av.vt,av.name,av.acStock);
+        if(av.x!=null) shops[shops.length-1]._acPos=true; }
       else addMerchant(x,z,vt);
     };
     if(c.capital){ const all=["provisioner","weaponsmith","armorer","scrivener","outfitter","healer","jeweler"];
       all.forEach((vt,k)=>{ const a=k/all.length*6.28+0.5; place(c.x+Math.cos(a)*13,c.z+Math.sin(a)*13,vt); });
       // capitals were bustling in retail — seat up to three more of the town's real merchants
       for(let k=0;k<3&&acv&&acv[acvi];k++){ const a=(all.length+k)/(all.length+3)*6.28+0.9;
-        const av=acv[acvi++]; addMerchant(c.x+Math.cos(a)*19,c.z+Math.sin(a)*19,av.vt,av.name,av.acStock); }
+        const av=acv[acvi++];
+        const ax=(av.x!=null)?c.x+av.x:c.x+Math.cos(a)*19, az=(av.z!=null)?c.z+av.z:c.z+Math.sin(a)*19;
+        addMerchant(ax,az,av.vt,av.name,av.acStock);
+        if(av.x!=null) shops[shops.length-1]._acPos=true; }
     } else {
       place(c.x-9,c.z-7,"provisioner");
       place(c.x+9,c.z-7,SPECIALISTS[i%SPECIALISTS.length]);
@@ -6728,6 +6736,30 @@ function seatRealTownVendors(c,recs){
   for(const sh of shops){
     if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;
     if(Math.hypot(sh.x-c.x,sh.z-c.z)>62) continue;                  // only this town's vendors
+    if(sh._acPos){
+      // TRUE retail position (1:1 town-offset mapping, same as the buildings) — never rearrange.
+      // Just stand on the floor, keep the doorway clear, and face/counter toward the door.
+      let nx=sh.x, nz=sh.z, room=null;
+      for(const r of rooms){ const cw=Math.cos(r.th),sw=Math.sin(r.th),dx=nx-r.fcx,dz=nz-r.fcz;
+        const lx=dx*cw-dz*sw, lz=dx*sw+dz*cw;
+        if(Math.abs(lx)<=r.hx-0.3&&Math.abs(lz)<=r.hz-0.3){ room=r; break; } }
+      if(room&&room.dux!=null){                                     // nudge INTO the room only if standing in the doorway
+        for(let g=0; g<4 && (nearDoor(nx,nz)||nearDoor(nx-room.dux*0.9,nz-room.duz*0.9)); g++){ nx-=room.dux*0.7; nz-=room.duz*0.7; } }
+      const fy=tbFloorAt(recs,nx,nz,groundY(nx,nz));
+      if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
+      if(room&&room.dux!=null){
+        sh.mesh.rotation.y=Math.atan2(room.dux,room.duz);           // face the room's door (buildPerson fronts -z)
+        const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
+        counter.position.set(nx+room.dux*0.85,fy+0.5,nz+room.duz*0.85); counter.rotation.y=Math.atan2(room.dux,room.duz);
+        counter.castShadow=true; scene.add(counter); sh._counter=counter;
+      } else sh.mesh.rotation.y=Math.atan2(c.x-nx,c.z-nz);          // roadside stand — face the town
+      sh.mesh.position.set(nx,fy,nz);
+      sh.x=nx; sh.z=nz; sh._seated=true; placed.push({x:nx,z:nz});
+      if(sh.obs){ sh.obs[0].x=nx; sh.obs[0].z=nz; if(sh.obs[1]){
+        const fx=Math.sin(sh.mesh.rotation.y), fz=Math.cos(sh.mesh.rotation.y);
+        sh.obs[1].x=nx-fx*0.9; sh.obs[1].z=nz-fz*0.9; } }            // rear collider behind the vendor
+      continue;
+    }
     let rec=null,rd=1e9; for(const r of rooms){ const d=(r.fcx-sh.x)**2+(r.fcz-sh.z)**2; if(d<rd){rd=d;rec=r;} }
     if(!rec) continue;
     // stand back from the doorway, toward the room's interior; fan multiple vendors sideways
@@ -18821,6 +18853,7 @@ function seatVendorsInBuildings(){
   const DEPTHS=[1.4,0.6,2.0,2.8,-0.2,-1.0], LATS=[0,1.3,-1.3,2.4,-2.4,0.7,-0.7];
   for(const sh of shops){
     if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;   // never box in a roaming vendor
+    if(sh._acPos) continue;                                      // TRUE retail spot (1:1) — never drag into a procedural building
     let city=null,cd=1e9; for(const c of CITIES){ const d=Math.hypot(c.x-sh.x,c.z-sh.z); if(d<cd){cd=d;city=c;} }
     if(!city||cd>52) continue;                                   // only vendors actually standing in a town
     if(!AC_TOWNS||AC_TOWNS[city.name]) continue;                 // only fallback towns here; real-data towns seat in tbBuildTown
