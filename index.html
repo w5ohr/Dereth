@@ -2089,8 +2089,19 @@ function acVendorType(name,stockNames){
   return "outfitter";
 }
 function acPrice(v){ return clamp(Math.max(2,Math.round((v||20)/5)),2,6000); }
+let _spellIdByName=null;
 function acItemRow(nm,val){
   const n=nm.toLowerCase(), cost=acPrice(val), P=(g,ico,desc)=>({name:nm,cost,desc,ico,gear:g});
+  // retail spell scrolls: translate to REAL scribeable scrolls when the spell exists in our book
+  // (they fell through to 📦 curios before — 881 vendor scrolls were unlearnable)
+  const scrollM=nm.match(/^scroll of (.+)$/i);
+  if(scrollM && typeof SPELLBOOK!=="undefined"){
+    if(!_spellIdByName){ _spellIdByName={}; for(const id in SPELLBOOK) _spellIdByName[SPELLBOOK[id].name.toLowerCase()]=id; }
+    const sid=_spellIdByName[scrollM[1].toLowerCase()];
+    if(sid){ const sp=SPELLBOOK[sid];
+      return {name:"Scroll: "+sp.name, scroll:true, spellId:sid, cost:(typeof scrollPrice==="function")?scrollPrice(sid):cost, ico:"📜",
+              desc:`learn ${(SCHOOLS[sp.school]||"Magic").split(" · ")[0]} L${sp.lvl||1} (T to scribe)`}; }
+  }   // unknown spell name → falls through to the curio row (authentic shelf filler)
   const wep=(wt,base)=>P({name:nm,stat:"weapon",wt,v:clamp(Math.round((val||50)/40)+base,6,26)},"⚔️",(WEAPON_TYPES[wt]?wt:"melee")+" · authentic Dereth arms");
   const noteM=n.match(/trade note \(([\d,]+)\)/);
   if(noteM){ const amt=Math.round(+noteM[1].replace(/,/g,"")/50);
@@ -14250,6 +14261,7 @@ function openLockedCache(){
   if(SFX.quest)SFX.quest(); toast("CACHE OPENED");
 }
 function interact(){
+  if(!player.alive) return;   // the dead can't act — E during the death fade was insta-looting your own corpse
   // your corpse first — recover everything it holds in one motion
   for(const d of drops) if(d.type==="corpse"&&Math.hypot(d.x-player.x,d.z-player.z)<4){ recoverCorpse(d); return; }
   let best=null,bd=4;
@@ -19162,7 +19174,13 @@ function buildShop(){
   const def=VENDOR_TYPES[(activeShop&&activeShop.vtype)||"provisioner"]||VENDOR_TYPES.provisioner;
   if(activeShop){ if(activeShop.pyreals==null){activeShop.pyreals=irnd(14000,20000);activeShop.pmax=20000;}   // I4: coin regenerates ~150/s up to the vendor's max
     const t=now(); if(activeShop._pt) activeShop.pyreals=Math.min(activeShop.pmax||20000,(activeShop.pyreals||0)+(t-activeShop._pt)/1000*150); activeShop._pt=t; }
-  const SHOP=(activeShop&&activeShop.acStock)?activeShop.acStock:def.stock();   // retail vendors sell their REAL wares
+  let SHOP=(activeShop&&activeShop.acStock)?activeShop.acStock:def.stock();   // retail vendors sell their REAL wares
+  if(activeShop&&activeShop.acStock&&activeShop.vtype==="scrivener"){
+    // every archmage/scrivener also teaches the standard scroll shelf (retail magic vendors
+    // sold learnable scrolls; the ACE stock alone left magic progression unbuyable in real towns)
+    const have=new Set(SHOP.filter(i=>i.scroll).map(i=>i.spellId));
+    SHOP=SHOP.concat(scrollStock().filter(i=>!have.has(i.spellId)));
+  }
   const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
   const sub=document.querySelector('#shop .sub');
   if(sub) sub.textContent=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel.`;
@@ -19203,6 +19221,7 @@ function buildShop(){
   sell.insertAdjacentHTML("beforeend",`<div style="color:var(--dim);font-size:11px;padding:2px 0 6px">${isCollector?`The collector pays a <b>bounty</b> (gold + XP) for creature trophies.`:`Vendor coin: <b style="color:var(--gold)">${Math.round((activeShop&&activeShop.pyreals)||0)}</b>p (regenerates over time).`}</div>`);
   player.inv.forEach((it,i)=>{
     if(it.scroll) return;   // scrolls are scribed (T), not sold
+    if(it.stat==="quest") return;   // quest items are attuned (AC) — selling one would strand its quest
     const desc=gearDesc(it);
     const row=document.createElement('div');row.className="row";
     if(isCollector && it.stat==="trophy"){   // I7: turn a trophy in for a bounty
