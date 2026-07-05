@@ -6694,6 +6694,13 @@ function tbBuildTown(c,objs){
   tbSettleTownNpcs(c,recs);
   return {c,g,obst,lights,recs};
 }
+// shared doorway-assembly materials (one set for every cut door — no per-building material bloat)
+let _tbDoorMats=null;
+function tbDoorMats(){ if(_tbDoorMats) return _tbDoorMats;
+  const frame=texMat(stoneFloorTex,0x8a8074), door=texMat(woodTex,0x6a4a2a); door.side=THREE.DoubleSide;
+  _tbDoorMats={frame,door,dark:new THREE.MeshStandardMaterial({color:0x0b0908,roughness:1,metalness:0,side:THREE.DoubleSide})};
+  return _tbDoorMats;
+}
 // cut a walk-through doorway on a room's clearest side + drop a lit interior fit-out.
 // faceX/faceZ (optional) biases the door toward a plaza; else the clearest cardinal wins.
 function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
@@ -6738,6 +6745,30 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
     new THREE.MeshBasicMaterial({color:0xffcf8a,transparent:true,opacity:0.16,depthWrite:false,side:THREE.DoubleSide,fog:false}));
   thr.position.set(best.dx-best.dux*0.5,rec.gy+Math.min(rec.H*0.4,1.7),best.dz-best.duz*0.5);
   thr.rotation.y=Math.atan2(best.dux,best.duz); g.add(thr);
+  // ── proper DOORWAY at any cut that ISN'T on the model's own door art (offmarker fallbacks +
+  //    door-less walls): a stone frame + a recessed dark opening + an ajar plank door, so the entrance
+  //    READS as a doorway instead of a bare gap where you clip through a blank wall. The AC shell is
+  //    closed (no cell interior), so — exactly like the model's real door — you pass through the opening;
+  //    the frame + dark recess + interior light make it a doorway, not a wall you phase through. ──
+  const atMarker=(rec.doorMX!=null && Math.hypot(best.dx-rec.doorMX,best.dz-rec.doorMZ)<2.5);
+  if(!atMarker){
+    const M=tbDoorMats(), yaw=Math.atan2(best.dux,best.duz);
+    const Tx=-best.duz, Tz=best.dux;                                   // along-wall unit
+    const DW=TB_DOOR_HALF*0.82, DH=clamp(rec.H*0.6,2.3,3.1);           // opening half-width + height
+    const at=(t,o,y)=>[best.dx+Tx*t+best.dux*o, y, best.dz+Tz*t+best.duz*o];
+    const mk=(geo,mat,t,o,y,ry)=>{ const m=new THREE.Mesh(geo,mat); const p=at(t,o,y); m.position.set(p[0],p[1],p[2]); m.rotation.y=(ry!=null?ry:yaw); m.castShadow=true; m.receiveShadow=true; g.add(m); return m; };
+    // dark recess (the interior seen through the doorway) — set back into the wall so it reads as depth
+    const rec2=new THREE.Mesh(new THREE.PlaneGeometry(DW*2,DH),M.dark);
+    const rp=at(0,-0.35,rec.gy+DH/2); rec2.position.set(rp[0],rp[1],rp[2]); rec2.rotation.y=yaw; g.add(rec2);
+    // stone frame: two jambs + a lintel around the opening (sits on the wall face)
+    mk(new THREE.BoxGeometry(0.34,DH+0.5,0.6),M.frame,-(DW+0.17),0.02,rec.gy+(DH+0.5)/2-0.25);
+    mk(new THREE.BoxGeometry(0.34,DH+0.5,0.6),M.frame, (DW+0.17),0.02,rec.gy+(DH+0.5)/2-0.25);
+    mk(new THREE.BoxGeometry(DW*2+0.85,0.5,0.6),M.frame,0,0.02,rec.gy+DH+0.2);
+    // plank door, hinged on the left jamb and swung inward-ajar so the way reads OPEN
+    const door=mk(new THREE.BoxGeometry(DW*1.7,DH-0.18,0.08),M.door,0,-0.12,rec.gy+(DH-0.18)/2);
+    door.geometry.translate(DW*0.85,0,0);                              // hinge at the left edge
+    door.position.set(...at(-(DW*0.9),-0.12,rec.gy+(DH-0.18)/2)); door.rotation.y=yaw-1.15;
+  }
   // entrance ramp: if the ground outside the door sits below the floor (downhill approach), lay a
   // short stone ramp and register it walkable so you climb up into the doorway (rare — the door is
   // biased to the high side, but keeps every building enterable on steep sites)
