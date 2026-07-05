@@ -7398,8 +7398,29 @@ function kcVaultRender(){
 // ── castle hooks (real housing FLOOR hooks): current contents = player.kcHookItems[key] when the
 //    player has touched it (item or null=emptied), else the hook's default display piece (hk.def) ──
 function kcCurHookItem(hk){ const o=player.kcHookItems||{}; return (hk.key in o)?o[hk.key]:hk.def; }
+// a display pedestal bearing the item's REAL 3D model (buildItemModel — the same builder the
+// equipped weapon/held item uses, so a sword looks like a sword, a trophy like a trophy) — not a token
+function kcHookMesh(item){
+  const hg=new THREE.Group();
+  const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.34,1.0,10),texMat(stoneFloorTex,0x9a958c)); ped.position.y=0.5; ped.castShadow=true; hg.add(ped);
+  const cap=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.24,0.1,10),texMat(stoneFloorTex,0x8a857c)); cap.position.y=1.05; hg.add(cap);
+  const CAP_TOP=1.1;
+  if(item){
+    const m=buildItemModel(item); m.userData.kcItem=true;
+    const bb=new THREE.Box3().setFromObject(m), sz=bb.getSize(new THREE.Vector3());
+    const md=Math.max(sz.x,sz.y,sz.z)||1, s=clamp(1.1/md,0.5,4); m.scale.setScalar(s);   // scale to a visible display size
+    const c=bb.getCenter(new THREE.Vector3());
+    m.position.set(-c.x*s, CAP_TOP-bb.min.y*s, -c.z*s); m.rotation.y=0.5;   // stand it on the pedestal, angled for a 3/4 view
+    hg.add(m);
+    const l=labelSprite(item.name,"npcs"); l.scale.set(4.2,1.05,1); l.position.y=CAP_TOP+sz.y*s+0.55; hg.add(l);
+  } else {
+    const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.19,0.08,10),new THREE.MeshStandardMaterial({color:0x8a6a3a,roughness:0.7,metalness:0.3})); disc.position.y=CAP_TOP; hg.add(disc);
+    const l=labelSprite("floor hook (E)","npcs"); l.scale.set(3,0.8,1); l.position.y=1.6; hg.add(l);
+  }
+  return hg;
+}
 function kcRebuildHook(hk){ if(hk.grp&&hk.grp.parent) hk.grp.parent.remove(hk.grp);
-  const hg=hsBuildHookMesh("floor", kcCurHookItem(hk)||null); hg.position.set(hk.lx,0,hk.lz); hk.G.add(hg); hk.grp=hg; }
+  const hg=kcHookMesh(kcCurHookItem(hk)||null); hg.position.set(hk.lx,0,hk.lz); hk.G.add(hg); hk.grp=hg; }
 function kcRefreshDecor(){ for(const hk of kcHooks) kcRebuildHook(hk); }   // after load: rebuild meshes from restored state
 function kcUseHook(hk){
   if(!castleAccess()){ log("The hooks answer only to Lord Kilmer and his sworn guests.","warn"); if(SFX.hit)SFX.hit(); return; }
@@ -7787,7 +7808,7 @@ function addKilmerCastle(){
     for(let i=0;i<Math.min(20,items.length);i++){
       const it=items[i], [hx,hz]=pts[i], key=R.key+i;
       const placed=(key in player.kcHookItems)?player.kcHookItems[key]:it;   // a saved edit wins over the default display piece
-      const hg=hsBuildHookMesh("floor",placed||null); hg.position.set(hx,0,hz); G.add(hg);   // a real housing floor hook, item on it
+      const hg=kcHookMesh(placed||null); hg.position.set(hx,0,hz); G.add(hg);   // a floor hook bearing the item's real 3D model
       obst(hx,hz,0.5,2.2);
       kcHooks.push({key,def:it,lx:hx,lz:hz,x:KC.x+hx,z:KC.z+hz,room:R.label,grp:hg,G});
     }
