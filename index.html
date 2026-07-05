@@ -14578,10 +14578,13 @@ function update(dt){
   // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
   // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
   let f=0,s=0;
-  if(keys["arrowleft"])  player.yaw+=dt*2.6;      // AC: left/right arrows turn the character
-  if(keys["arrowright"]) player.yaw-=dt*2.6;
-  if(held("forward")||keys["arrowup"]||autoRun) f+=1;
-  if(held("back")||keys["arrowdown"]||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
+  // ARROW KEYS move the CAMERA (orbit around the character); WASD moves the character
+  if(keys["arrowleft"])  camOrbYaw+=dt*2.2;
+  if(keys["arrowright"]) camOrbYaw-=dt*2.2;
+  if(keys["arrowup"])    camOrbPitch=clamp(camOrbPitch+dt*1.7,-1.35,1.35);
+  if(keys["arrowdown"])  camOrbPitch=clamp(camOrbPitch-dt*1.7,-1.35,1.35);
+  if(held("forward")||autoRun) f+=1;
+  if(held("back")||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
   if(held("right")||keys["keyc"]) s+=1;           // Z / C sidestep (AC)
   if(held("left")||keys["keyz"]) s-=1;
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
@@ -15261,11 +15264,13 @@ function avatarFP(av,on){
   if(u.armorRig) for(const k in u.armorRig){ if(k==="lowerarm"||k==="hands") continue;   // keep forearm+hand armour, hide the rest
     for(const gr of u.armorRig[k].groups){ if(on){ if(gr.visible){ gr.userData._fpWas=true; gr.visible=false; } } else if(gr.userData._fpWas){ gr.visible=true; gr.userData._fpWas=false; } } }
 }
+let camOrbYaw=0, camOrbPitch=0;   // arrow-key camera orbit offset (added on top of the character's facing)
 function syncCamera(dt){
   const gy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;   // feet height (terrain, floor, ramp, or mid-jump)
   if(thirdPerson){
     // orbit camera behind the look direction, pulled in past walls/terrain, eased smoothly
-    const yaw=player.yaw,pitch=player.pitch;
+    // camera yaw/pitch = character facing + the arrow-key orbit offset (character itself does NOT turn with it)
+    const yaw=player.yaw+camOrbYaw,pitch=clamp(player.pitch+camOrbPitch,-1.35,1.35);
     const dx=-Math.sin(yaw)*Math.cos(pitch),dy=Math.sin(pitch),dz=-Math.cos(yaw)*Math.cos(pitch); // look dir
     // over-the-shoulder: shift the pivot to camera-right so the body sits left of the crosshair
     const rxv=-dz,rzv=dx,rl=Math.hypot(rxv,rzv)||1,SHOULDER=0.7;
@@ -15281,14 +15286,14 @@ function syncCamera(dt){
     weapon.visible=false;
     if(gltfReady&&gltfAvatar){   // external rigged model
       playerAvatar.visible=false; gltfAvatar.visible=player.alive&&!camTooClose;
-      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=yaw+Math.PI;   // glTF faces +z; our forward is -z
+      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=player.yaw+Math.PI;   // faces the character's own heading, not the camera orbit
       if(gltfMixer){ gltfMixer.update(dt);   // swap idle↔walk with movement (RPM bodies use loaded clips)
-        const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
+        const mv=held("forward")||held("back")||held("left")||held("right");
         if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
     } else {                     // procedural avatar
       avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
       playerAvatar.visible=player.alive&&!camTooClose;
-      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
+      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;   // character keeps its heading; the camera orbits around it
       animateAvatar(dt);
       if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
     }
@@ -15296,21 +15301,21 @@ function syncCamera(dt){
     // AC-style TRUE first person: look out from the real body's eyes. The AC character body stays
     // visible & animated, so you see your OWN hands/arms and the weapon in your real hand doing the
     // real attack animations — only the head is hidden so you don't look inside your own skull.
-    // No fake FPS weapon viewmodel.
-    const yaw=player.yaw,pitch=player.pitch;
+    // No fake FPS weapon viewmodel. Arrow keys free-look (add the camera orbit to the eye direction).
+    const yaw=player.yaw+camOrbYaw,pitch=clamp(player.pitch+camOrbPitch,-1.35,1.35);
     const ldx=-Math.sin(yaw)*Math.cos(pitch), ldz=-Math.cos(yaw)*Math.cos(pitch);
     cam.position.set(player.x+ldx*0.12, gy+EYE+Math.sin(player.bob)*0.06, player.z+ldz*0.12);   // eye socket, a touch forward of head centre
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false; camInit=false;
     if(gltfReady&&gltfAvatar){
       playerAvatar.visible=false; gltfAvatar.visible=player.alive;
-      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=yaw+Math.PI;
+      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=player.yaw+Math.PI;
       if(gltfMixer){ gltfMixer.update(dt);
-        const mv=held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"];
+        const mv=held("forward")||held("back")||held("left")||held("right");
         if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
     } else {
       playerAvatar.visible=player.alive;
-      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=yaw;
+      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;
       animateAvatar(dt);
       avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
     }
