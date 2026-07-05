@@ -879,8 +879,8 @@ function derive(){
   // THE authentic AC run formula (client GetRunRate, preserved in ACEmulator):
   //   rate = (burdenMod × (Run/(Run+200) × 11) + 4) / 4, hard-capped at 4.5× when Run ≥ 800.
   //   burdenMod: ≤100% carry capacity = 1.0, then linear down to 0 at 300% (AC EncumbranceSystem).
-  //   The base run animation covers 4 AC-units/s; Dereth is built at 1/3 AC's distance scale,
-  //   so base = 4/3 u/s → speed spans ~1.33 (Run 0) → 6.0 (Run 800, the cap). Burden slows you, as it did.
+  //   The base run animation covers ~4 m/s; ×(4/3)×WSCALE puts it in true-scale units/s (1 unit = 1 m
+  //   at WSCALE 3), so speed spans ~4 m/s (Run 0) → 18 m/s (Run 800 cap). Burden slows you, as it did.
   { const run=player.skills?skillValue("run"):0;
     const enc=(typeof encumbrance==="function")?encumbrance().ratio:0;
     const burdenMod=enc<=1?1:Math.max(0,(3-enc)/2);
@@ -2784,7 +2784,7 @@ function updateDayNight(dt){
     sun.intensity=Math.max(sun.intensity*0.35, S.sunBright*1.5*clamp(sunY+0.12,0,1));
     _tmp.setRGB(S.amb[0]/255,S.amb[1]/255,S.amb[2]/255); hemi.color.lerp(_tmp,0.45);
     amb.intensity=(amb.intensity+S.ambBright*0.5)/2;
-    scene.fog.far=clamp(60+S.fogFar/3,140,300);   // retail metres → this world's 1/3 scale
+    scene.fog.far=clamp(60+S.fogFar*(WSCALE/3),140,300);   // retail metres at true 1:1 (was /3 for the old 1/3 scale); capped at AC's ~300m draw
   }
   const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm
   if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar(0.42+daylight*0.72); scene.fog.color.lerp(_tmp,_oc*0.6); }
@@ -5973,14 +5973,14 @@ function buildWorld(){
       const x=p.lng*COORD, z=-p.lat*COORD, dx=p.dlng*COORD, dz=-p.dlat*COORD;
       if(Math.abs(x)>HALF-40||Math.abs(z)>HALF-40||Math.abs(dx)>HALF-40||Math.abs(dz)>HALF-40) continue;
       if(terrainH(x,z)<1.5||terrainH(dx,dz)<1.5) continue;              // no drowned ends
-      if(!clearOf(portals,x,z,110)||nearestCapitalDist(x,z)<TOWN_SAFE) continue;
+      if(!clearOf(portals,x,z,110*WSCALE)||nearestCapitalDist(x,z)<TOWN_SAFE) continue;   // ×WSCALE: true-scale dedup spacing
       addPortal(x,z,{x:dx,z:dz,name:p.n}); np++;
     }
     for(const l of ACW.lifestones){
       if(nl>=160) break;
       const x=l.lng*COORD, z=-l.lat*COORD;
       if(Math.abs(x)>HALF-40||Math.abs(z)>HALF-40||terrainH(x,z)<1.5) continue;
-      if(!clearOf(lifestones,x,z,140)) continue;
+      if(!clearOf(lifestones,x,z,140*WSCALE)) continue;   // ×WSCALE: true-scale dedup spacing
       addLifestone(x,z,false,"Wayside Lifestone",false,Math.max(0,regionOf(x,z))); nl++;
     }
     console.log("ACW placed:",np,"retail portals ·",nl,"wayside lifestones");
@@ -8371,12 +8371,12 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
   // ambient fauna in settled/grassland areas — a rabbit or cow now and then
   if(reg>=0 && !coldZone(x,z) && d>60 && Math.random()<0.10) return Math.random()<0.7?"rabbit":"cow";
   // the RETAIL spawn table: if the encounter data says what lived here, spawn that (mostly)
-  if(d>=200){ const real=acSpawnKinds(x,z);
+  if(d>=200*WSCALE){ const real=acSpawnKinds(x,z);   // ×WSCALE: difficulty gradient at true 1:1 distance-from-town
     if(real&&real.length&&Math.random()<0.75) return pick(real); }
   if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin","ruschk","penguin","snowman","wight","elemental"]);   // frozen north/south — snowy spawns
   if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow","mukkir","remoran","hollow","margul","phantom","gurog","gearknight","falatacot","tormented","crystalwisp"]); // Direlands — deadliest frontier
   if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge","burun","remoran","sleech","thrungus"]);  // the Blackmire swamp
-  if(d<200) return pick(["drudge","mosswart","rat","rat","mite","carenzi"]);                   // town outskirts — weakest
+  if(d<200*WSCALE) return pick(["drudge","mosswart","rat","rat","mite","carenzi"]);            // town outskirts — weakest (×WSCALE)
   if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin","carenzi","marionette","lich","viamontian"]); // Aluvia — temperate forest
   if(reg===1) return pick(["shreth","drudge","phyntoswasp","banderling","mosswart","sclavus","wisp","mite","reedshark","burun","doll","hea","siraluun"]);   // Sho — wooded hills
   return pick(["skeleton","drudge","rat","shreth","monouga","mummy","zombie","tumerok","gromnie","armoredillo","niffis","fiun","thrungus","hea"]);   // Gharu'ndim — desert
@@ -8384,10 +8384,10 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
 function spawnSomewhere(){
   if(inDungeon||inNetwork||isOnline) return; // online overworld monsters are server-authoritative
   let x,z,d,t=0;
-  do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75,470);
+  do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75*WSCALE,470*WSCALE);   // spawn ring at true 1:1 spacing around hubs
     x=clamp(h.x+Math.cos(a)*rr,-HALF+6,HALF-6);z=clamp(h.z+Math.sin(a)*rr,-HALF+6,HALF-6);
     d=nearestCapitalDist(x,z);t++;}while((d<TOWN_SAFE+6||terrainH(x,z)<0)&&t<25);
-  spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500);
+  spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500*WSCALE);
 }
 function spawnMonster(kind,x,z,elite){
   const b=BESTIARY[kind];
@@ -18069,7 +18069,7 @@ function talkToNPC(n){
   if(n.role==="crier"){
     const here=n.town?`<b>${n.town}</b>`:"the open road";
     const near=CITIES.filter(c=>c.name!==n.town).map(c=>({c,d:Math.hypot(c.x-n.x,c.z-n.z)})).sort((a,b)=>a.d-b.d).slice(0,3);
-    const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/120))} leagues)`).join(" · ");
+    const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/(120*WSCALE)))} leagues)`).join(" · ");
     const ce=currentCalEvent(), S=currentSeason();
     log(`<b>Town Crier:</b> Hear ye! It is <b>${S.name}</b>. <b>${ce.name}</b> — ${ce.rumor} ${ce.clue}`,"sys");
     log(`<b>Town Crier:</b> You stand in ${here}. Nearest lie ${dirs}.`,"sys");
