@@ -12773,6 +12773,81 @@ function refreshACArmor(){
     }
   }
 }
+// ── ClothingTable BASE CLOTHING (assets/acclothing_mesh, tools/ac_clothing_mesh_export.py):
+//    the loose shirt/trousers/robe/shoes NPCs wear by default. Same swap-the-body-part model as
+//    armor, but a plain garment's look is mostly its TEXTURE swap (bare-skin texture → fabric),
+//    baked into these meshes at export time. Replaces the old procedural cloth cylinders. ──
+let AC_CLOTH=null; const _acClothPart={}, _acClothCb={};
+// fixed AC ClothingBase DIDs (portal.dat) → mesh-pack basename. Hardcoded so dressing works the
+// instant a garment is fetched, without waiting on the index.
+const AC_CLOTH_BASE={shirt:"10000001",tunic:"10000003",trousers:"100000f4",breeches:"1000001b",
+  pantaloons:"100000f5",shoes:"1000001f",sandals:"10000104","faran robe":"1000018d",
+  "suikan robe":"10000198","gelidite robe":"1000018e","sleek dress":"100004f2",
+  "sasalia's dress":"1000026d","empyrean robe":"10000402","kiyafa robe":"1000026c","envoy's robe":"10000532"};
+fetch('assets/acclothing_mesh/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_CLOTH=j||false;
+  if(j) console.log("AC base clothing: "+Object.keys(j.bases||{}).length+" garments baked.");
+}).catch(()=>{ AC_CLOTH=false; });
+function acClothPart(baseHex,gk,cb){    // baseHex like "10000001", gk "m"|"f" → [{joint, group}]|null, cached
+  const key=baseHex+"_"+gk, c=_acClothPart[key];
+  if(c!==undefined&&c!=="loading"){ cb(c||null); return; }         // ready or known-404 (null)
+  (_acClothCb[key]||(_acClothCb[key]=[])).push(cb);                // queue EVERY caller (a garment is shared across many NPCs)
+  if(c==="loading") return;
+  _acClothPart[key]="loading";
+  const flush=v=>{ _acClothPart[key]=v; const q=_acClothCb[key]; _acClothCb[key]=null; if(q)for(const f of q)f(v||null); };
+  fetch('assets/acclothing_mesh/'+key+'.json').then(r=>r&&r.ok?r.json():Promise.reject()).then(j=>{
+    const TL=new THREE.TextureLoader(), parts=[];
+    for(const p of j.parts){ const grp=new THREE.Group();
+      for(const g of p.groups){ const geo=new THREE.BufferGeometry();
+        geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
+        geo.setAttribute('normal',new THREE.Float32BufferAttribute(g.n,3));
+        geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
+        geo.setIndex(g.i);
+        let mat;
+        if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+          mat=new THREE.MeshStandardMaterial({map:t,roughness:0.82,metalness:0.03});
+          if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
+        else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x9a8f7a),roughness:0.82,metalness:0.03});
+        const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
+      parts.push({joint:p.joint, group:grp}); }
+    flush(parts);
+  }).catch(()=>{ flush(null); });
+}
+// which garments an NPC wears, from its role opts + gender (deterministic per NPC seed)
+const AC_ROBE_BY_CULT={sho:"suikan robe","gharu'ndim":"kiyafa robe",gharundim:"kiyafa robe",
+  viamontian:"envoy's robe",empyrean:"empyrean robe",aluvian:"faran robe"};
+function acOutfitFor(o,gender){
+  const seed=Math.abs((o.seed|0)*2654435761>>>0), cult=(o.heritage||"aluvian").toLowerCase();
+  if(o.robed) return [AC_ROBE_BY_CULT[cult]||"faran robe","shoes"];
+  const top=(gender==="female"&&seed%5===0)?"sleek dress":((seed>>3)%4===0?"tunic":"shirt");
+  if(top==="sleek dress") return ["sleek dress","shoes"];          // dress is full-length, no separate legs
+  const legs=(seed>>6)%3===0?"breeches":"trousers";
+  const feet=(cult==="gharu'ndim"||cult==="gharundim")&&(seed>>9)%2?"sandals":"shoes";
+  return [top,legs,feet];
+}
+function dressAvatarAC(av,bases,gender){
+  const u=av.userData, gk=gender==="female"?"f":"m";
+  const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
+    hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
+  const claimed=new Set();                       // one garment per body part — earlier (outer) layer wins
+  let i=0;
+  const next=()=>{                               // apply garments strictly in list order (async fetches resolve out of order)
+    if(i>=bases.length||!u.acBody) return;       // stop if the avatar was torn down mid-fetch
+    const baseHex=AC_CLOTH_BASE[bases[i++]];
+    if(!baseHex){ next(); return; }
+    acClothPart(baseHex,gk,parts=>{
+      if(u.acBody&&parts) for(const pp of parts){ const J=joints[pp.joint]; if(!J||claimed.has(pp.joint)) continue;
+        claimed.add(pp.joint);
+        const inst=pp.group.clone(); inst.userData.npcCloth=true; inst.userData.acCloth=true;
+        let ref=null; for(const ch of J.children){ if(ch.userData&&ch.userData.acBody){ ref=ch; break; } }
+        if(ref){ inst.position.copy(ref.position); inst.quaternion.copy(ref.quaternion); inst.scale.copy(ref.scale);
+          ref.visible=false; }                   // the garment mesh replaces the bare body part
+        else inst.scale.setScalar(u.acScale||1);
+        J.add(inst); }
+      next();
+    });
+  };
+  next();
+}
 // Build the equipped weapon/focus as a real model (buildItemModel) in the avatar's hand, so a wand looks
 // like a wand, an orb like an orb, a scimitar curved — not a generic box blade. Melee + foci use aHeld;
 // bows keep the dedicated aBow. Called on every weapon swap + on load.
@@ -18000,7 +18075,36 @@ function dressAvatarHead(u,o){
     for(let i=0;i<3;i++){ const w=put(new THREE.TorusGeometry(0.152-i*0.006,0.05,8,20),tc,hy-0.03+i*0.05,0,Math.PI/2,i*0.5); } }
   if(o.headband){ put(new THREE.TorusGeometry(0.148,0.02,8,20),felt(o.headband),hy-0.1,0,Math.PI/2); }
 }
+// job / culture identity overlays worn OVER the authentic base garment (apron, sash, placket, vest).
+// The base clothing is real ClothingTable geometry now; these small front-of-torso pieces still read
+// the NPC's trade at a glance.
+function dressAvatarOverlays(av,o,gender){
+  const u=av&&av.userData; if(!u||!u.spine) return; const robed=!!o.robed;
+  const add=(parent,geo,mat,x,y,z)=>{ if(!parent)return null; const m=new THREE.Mesh(geo,mat); m.position.set(x||0,y||0,z||0); m.castShadow=true; m.userData.npcCloth=true; parent.add(m); return m; };
+  if(o.apron){ const apM=new THREE.MeshStandardMaterial({color:o.apronCol!=null?o.apronCol:0x7a5a3a,roughness:0.9});
+    add(u.spine,new THREE.BoxGeometry(0.3,0.52,0.03),apM,0,0.12,-0.19);
+    const strap=add(u.spine,new THREE.TorusGeometry(0.1,0.014,6,16),apM,0,0.5,-0.04); if(strap)strap.rotation.x=1.1; }
+  if(o.sash&&!robed){ const sc=_clothMat(o.sashCol!=null?o.sashCol:0x8a4a6a);
+    const s1=add(u.spine,new THREE.TorusGeometry(0.215,0.033,6,20),sc,0,0.02,0); if(s1){s1.scale.z=0.62; s1.rotation.x=Math.PI/2;}
+    add(u.spine,new THREE.BoxGeometry(0.055,0.24,0.03),sc,0.17,-0.09,-0.13); }
+  if(o.placket&&!robed){ const pm=_clothMat(o.placketCol!=null?o.placketCol:0xd8d0c0);
+    add(u.spine,new THREE.BoxGeometry(0.1,0.46,0.03),pm,0,0.28,-0.2);
+    const studM=new THREE.MeshStandardMaterial({color:0xb08030,metalness:0.6,roughness:0.35});
+    for(let i=0;i<5;i++) add(u.spine,new THREE.SphereGeometry(0.013,6,5),studM,0,0.12+i*0.09,-0.215); }
+  if(o.vest){ const vm=_clothMat(o.vestCol!=null?o.vestCol:0x3a2a1a);
+    for(const sx of[-1,1]) add(u.spine,new THREE.BoxGeometry(0.09,0.44,0.03),vm,sx*0.11,0.28,-0.192); }
+}
 function dressAvatar(av,o,gender){
+  const u=av&&av.userData; if(!u||!u.spine) return; o=o||{};
+  if(AC_CLOTH!==false){                                  // authentic ClothingTable base outfit (pack present or still loading)
+    dressAvatarAC(av,acOutfitFor(o,gender),gender);
+    dressAvatarOverlays(av,o,gender);
+    dressAvatarHead(u,o);
+    return;
+  }
+  _dressAvatarProc(av,o,gender);                          // pack absent → procedural cloth fallback
+}
+function _dressAvatarProc(av,o,gender){
   const u=av&&av.userData; if(!u||!u.spine) return; o=o||{};
   const shirtM=_clothMat(o.robe!=null?o.robe:0x556070), pantsM=_clothMat(o.accent!=null?o.accent:0x2a3340);
   const shoeM=new THREE.MeshStandardMaterial({color:o.shoeCol!=null?o.shoeCol:0x3a2818,roughness:0.72,metalness:0.05});
@@ -18069,6 +18173,7 @@ function buildDressedAvatar(o,seed){
   const g=buildAvatarJointed(app); g.userData._headApp=app;   // set BEFORE applyACBody so its acBuildHead uses this NPC's own head, not the player's
   applyACBody(g,app.gender); g.visible=true;
   const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
+  o.heritage=app.race;                                   // culture-appropriate robe/sandals in acOutfitFor
   dressAvatar(g,o,app.gender); g.userData._app=app;
   return g;
 }
