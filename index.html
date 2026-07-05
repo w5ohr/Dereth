@@ -3504,7 +3504,9 @@ function npcAcHead(n){
   n._acHeadTried=true;
   const app=body.userData.headApp||{}, sd=Math.abs(app.faceSeed|0)||((n.x*13+n.z*7)|0);
   const reg=Math.max(0,(typeof regionOf==="function")?regionOf(n.x,n.z):0);
-  const H=(AC_HEADS.heritages[_NPC_HERITAGE[reg]||"aluvian"]||{})[app.gender==="female"?"female":"male"];
+  // NPC heritage follows the REGION; remote players carry their broadcast heritage explicitly
+  const herKey=app.raceExplicit?((app.race==="gharundim")?"gharu'ndim":app.race):(_NPC_HERITAGE[reg]||"aluvian");
+  const H=(AC_HEADS.heritages[herKey]||AC_HEADS.heritages.aluvian||{})[app.gender==="female"?"female":"male"];
   if(!H||!H.hairStyles||!H.hairStyles.length) return;
   const style=H.hairStyles[sd%H.hairStyles.length];
   const eyes=H.eyes[(sd*7)%H.eyes.length], nose=H.noses[(sd*11)%H.noses.length], mouth=H.mouths[(sd*13)%H.mouths.length];
@@ -3549,7 +3551,7 @@ function gfxCullProps(){
   const px=player.x,pz=player.z;
   const near=(o,r)=>{ if(!o) return; const dx=(o.position?o.position.x:o.x)-px, dz=(o.position?o.position.z:o.z)-pz;
     o.visible=dx*dx+dz*dz<r*r; };
-  let acHeadBudget=[0,8,16,24][GFX.tier];
+  let acHeadBudget=[0,12,24,40][GFX.tier];   // more of the crowd wears the REAL head (still LOD-gated for draw calls)
   if(typeof npcs!=="undefined") for(const n of npcs){ if(n.mesh){ const dx=n.x-px,dz=n.z-pz, d2=dx*dx+dz*dz;
     n.mesh.visible=d2<110*110;
     // the nearest townsfolk wear Turbine's real heads (tier-budgeted; swap back when far)
@@ -22828,7 +22830,9 @@ function reconcileRemotes(players){
     if(p.id===NET.me) continue;
     seen[p.id]=1;
     let r=NET.players[p.id];
-    if(!r){ const app=remoteApp(p); const mesh=buildAvatarJointed(app); applyACBody(mesh,app.gender); mesh.visible=true;
+    if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); applyACBody(mesh,app.gender); mesh.visible=true;
+      mesh.userData.headApp=app;
+      if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
     r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
@@ -22840,6 +22844,8 @@ function updateRemotes(dt){
   for(const id in NET.players){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
     mesh.visible=!hide; if(hide) continue;
+    if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives
+      r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
     mesh.position.set(r.x, groundY(r.x,r.z), r.z); mesh.rotation.y=r.yaw||0;
