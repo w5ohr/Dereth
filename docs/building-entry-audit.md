@@ -1,5 +1,19 @@
 # Building Entry Audit (2026-07-05)
 
+> **UPDATE — fixes applied.** The underwater world structures (the real problem below) are
+> FIXED: `c76de9c` raises a flat island under each sunken cluster (`assets/acislands.json`,
+> 126 islands from grid-clustering the 1120 submerged buildings; `terrainH`→`islandLift`), so
+> terrain + `groundY` + building seating all lift together — verified buildings now sit at
+> +3.5 above the sea on a rendered sandy landmass, 0 of 56 towns affected. On follow-up the
+> **`floor_poke` (2)** turned out to be an **audit false-positive** — the check used
+> axis-aligned interior offsets, but those buildings are 90°-rotated, so it sampled terrain
+> *outside* the real footprint; within the true rotated footprint terrain never pierces the
+> floor (rotatedFootprintPoke = 0). The **`door_offmarker` (7)** remain a documented residual
+> (see below) — inherent to packing real AC footprints; a `tbCutDoorway` scoring tweak was
+> tried twice and reverted (regressed Sanamar), and the proper fix needs an actual mesh
+> doorway hole at the fallback wall, not a scoring change.
+
+
 Verifying that buildings can be entered without clipping or other issues. Method: an
 in-engine audit run against the REAL door/collision system (per streamed building: door
 gap clear, entry centreline walkable for the player radius, door aligned to the model's
