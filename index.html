@@ -2214,6 +2214,40 @@ function terrainH(x,z){
   let h=terrainBase(x,z);
   for(const t of FLATTEN){const d=Math.hypot(x-t.x,z-t.z);
     if(d<t.r){const k=clamp(1-(d-t.core)/(t.r-t.core),0,1);h=h*(1-k)+t.h*k;}}
+  if(_islBB) h=islandLift(x,z,h);   // raise sunken world-structure clusters out of the sea (AC's uncharted western isles)
+  return h;
+}
+// ── ISLANDS: AC's western isles (Aphus Lassel / Aerlinthe / Osteth) aren't in the heightmap, so their
+//    ~1120 world structures sat on the sea floor. Raise a flat plateau under each sunken cluster (same
+//    blend as FLATTEN, but grid-indexed for the ~126 of them) so terrain + groundY + building seating all
+//    lift together. assets/acislands.json = {h, islands:[[x,z,coreRadius,outerRadius],...]}. ──
+let ISLANDS=[], _islandGrid=null, _islBB=null, ISLAND_H=3.5;
+const ISLAND_GCELL=600;
+function loadIslands(){
+  return fetch('assets/acislands.json').then(r=>r&&r.ok?r.json():null).then(j=>{
+    if(!j||!j.islands||!j.islands.length) return;
+    ISLAND_H=(j.h!=null)?j.h:3.5;
+    ISLANDS=j.islands.map(a=>({x:a[0],z:a[1],core:a[2],r:a[3]}));
+    _islandGrid=new Map(); let minx=1e9,minz=1e9,maxx=-1e9,maxz=-1e9;
+    for(let n=0;n<ISLANDS.length;n++){ const is=ISLANDS[n];
+      minx=Math.min(minx,is.x-is.r); maxx=Math.max(maxx,is.x+is.r);
+      minz=Math.min(minz,is.z-is.r); maxz=Math.max(maxz,is.z+is.r);
+      const i0=Math.floor((is.x-is.r)/ISLAND_GCELL),i1=Math.floor((is.x+is.r)/ISLAND_GCELL);
+      const k0=Math.floor((is.z-is.r)/ISLAND_GCELL),k1=Math.floor((is.z+is.r)/ISLAND_GCELL);
+      for(let i=i0;i<=i1;i++)for(let k=k0;k<=k1;k++){ const kk=i+","+k; (_islandGrid.get(kk)||_islandGrid.set(kk,[]).get(kk)).push(n); } }
+    _islBB=[minx,minz,maxx,maxz];
+  }).catch(()=>{});
+}
+function islandLift(x,z,h){
+  const bb=_islBB; if(!bb||x<bb[0]||x>bb[2]||z<bb[1]||z>bb[3]) return h;   // cheap region reject (islands cluster in the western ocean)
+  const cell=_islandGrid.get(Math.floor(x/ISLAND_GCELL)+","+Math.floor(z/ISLAND_GCELL));
+  if(!cell) return h;
+  for(let n=0;n<cell.length;n++){ const is=ISLANDS[cell[n]]; const dx=x-is.x,dz=z-is.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d>=is.r) continue;
+    const k=(d<=is.core)?1:(is.r-d)/(is.r-is.core);   // flat plateau in the core, ramps to sea by outerRadius
+    const lifted=h+(ISLAND_H-h)*k;
+    if(lifted>h) h=lifted;   // islands only raise
+  }
   return h;
 }
 // Standing height that matches the RENDERED ground. The terrain mesh is a coarse 80u grid
@@ -23156,7 +23190,7 @@ window.addEventListener('resize',()=>{
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
 // (the retail-vendor data rides the same gate so towns build with their true merchants)
-Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
+Promise.all([ACMAP.load(),loadIslands(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
   initThree();
   applySettings();
   initMinimap();
