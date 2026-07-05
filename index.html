@@ -7382,8 +7382,10 @@ function kcVaultRender(){
     document.body.appendChild(ov); }
   const row=(lbl,btn)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:2px 0">${btn}<span style="flex:1">${lbl}</span></div>`;
   ov.innerHTML=`<div style="max-width:660px;width:94%;max-height:82vh;overflow:auto;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:16px 18px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
-    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">🗄 ${title} — Lord Kilmer's Chest</div>
-    <div style="color:var(--dim);margin:4px 0 10px;font-size:12px">A castle storage chest · ${st.length}/${KC_VAULT_CAP} stored — deposit &amp; withdraw freely</div>
+    <div style="position:sticky;top:-16px;background:#161821;padding-top:2px;margin:-2px 0 4px;z-index:1;display:flex;justify-content:space-between;align-items:flex-start">
+      <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">🗄 ${title} — Lord Kilmer's Chest</div>
+      <button id="kcVaultX" class="tbtn" style="padding:2px 9px;font-size:15px;line-height:1" title="Close (Esc, or walk away)">✕</button></div>
+    <div style="color:var(--dim);margin:4px 0 10px;font-size:12px">A castle storage chest · ${st.length}/${KC_VAULT_CAP} stored — deposit &amp; withdraw freely · <b>Esc</b> or walk away to close</div>
     <div style="display:flex;gap:12px">
       <div style="flex:1"><div style="color:var(--gold);margin-bottom:4px">Satchel (${inv.length}/${invCap()}) — deposit ▸</div>
         ${inv.length?inv.map((it,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:2px 0"><span style="flex:1">${_hItemLabel(it)}</span><button class="tbtn" data-dep="${i}">Store ▸</button></div>`).join(""):`<div style="color:var(--dim)">empty</div>`}</div>
@@ -7392,6 +7394,7 @@ function kcVaultRender(){
     </div>
     <button id="kcVaultClose" class="tbtn" style="margin-top:12px;width:100%">Close</button></div>`;
   ov.querySelector('#kcVaultClose').onclick=closeKcVault;
+  ov.querySelector('#kcVaultX').onclick=closeKcVault;
   ov.querySelectorAll('[data-dep]').forEach(b=>b.onclick=()=>kcVaultDeposit(+b.dataset.dep));
   ov.querySelectorAll('[data-wd]').forEach(b=>b.onclick=()=>kcVaultWithdraw(+b.dataset.wd));
 }
@@ -14638,6 +14641,8 @@ window.addEventListener('keydown',e=>{
   if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k)) e.preventDefault();
   if(k==="enter"){ if(running) openChat(); return; } // Enter opens chat (offline says aloud locally)
   if(k==="escape"){ closeAnyPanel(); return; }
+  // moving away from a castle chest closes its window (then the key walks you off)
+  if(document.getElementById('kcVaultPanel') && ["w","a","s","d","x","z","c","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){ closeKcVault(); }
   if(!running) return;
   const id=ACTION_BY_COMBO[evtCombo(e)];
   if(id){ e.preventDefault(); runAction(id); }
@@ -14645,6 +14650,10 @@ window.addEventListener('keydown',e=>{
 function runAction(id){ const f=ACTION_RUN[id]; if(f) f(); }
 function closeAnyPanel(){
   if(movingUI){ setUIMove(false); return; }
+  // dynamically-created modal overlays (chest vault, war table, book readers, covenant, attendant)
+  if(document.getElementById('kcVaultPanel')){ closeKcVault(); return; }
+  for(const id of ["kcWarPanel","kcBookReader","bookReader","hsPanel","kcPanel"]){
+    const el=document.getElementById(id); if(el){ el.remove(); paused=false; return; } }
   for(const [id,close] of [["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){
     const el=document.getElementById(id); if(el&&el.style.display==="flex"){ close(); return; } }
 }
