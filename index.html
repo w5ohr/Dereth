@@ -3503,52 +3503,18 @@ function _acHeadTex(id){
     t.encoding=THREE.sRGBEncoding; _acHeadTexC[id]=t; }   // same UV convention as the proven acmodels loaders
   return _acHeadTexC[id];
 }
+// Attach an NPC's / remote player's REAL AC head. All human forms are now the AC body
+// (buildAvatarJointed + applyACBody), so this routes through the SAME acBuildHead path the
+// player uses — neck-mounted, flipY-corrected texture, facing the body's forward — using the
+// avatar's own heritage/seeded appearance (_headApp). The old path attached to the body ROOT
+// via a `headY` anchor that only the retired procedural buildPerson body ever set, so on the AC
+// body it read undefined→NaN and floated a mis-oriented head off the model.
 function npcAcHead(n){
-  if(!AC_HEADS||n._acHeadTried) return;
-  const body=n.mesh; if(!body||!body.userData||!body.userData.head) return;
+  const body=n&&n.mesh, u=body&&body.userData; if(!u||n._acHeadTried) return;
+  if(u.acHead){ n._acHeadTried=true; return; }                      // already wearing its AC head (built by applyACBody)
+  if(!AC_HEADS||!u.acBody||!u.neck||!u.acHeadPlace) return;         // wait for the head pack + the AC rig to exist
   n._acHeadTried=true;
-  const app=body.userData.headApp||{}, sd=Math.abs(app.faceSeed|0)||((n.x*13+n.z*7)|0);
-  const reg=Math.max(0,(typeof regionOf==="function")?regionOf(n.x,n.z):0);
-  // NPC heritage follows the REGION; remote players carry their broadcast heritage explicitly
-  const herKey=app.raceExplicit?((app.race==="gharundim")?"gharu'ndim":app.race):(_NPC_HERITAGE[reg]||"aluvian");
-  const H=(AC_HEADS.heritages[herKey]||AC_HEADS.heritages.aluvian||{})[app.gender==="female"?"female":"male"];
-  if(!H||!H.hairStyles||!H.hairStyles.length) return;
-  const style=H.hairStyles[sd%H.hairStyles.length];
-  const eyes=H.eyes[(sd*7)%H.eyes.length], nose=H.noses[(sd*11)%H.noses.length], mouth=H.mouths[(sd*13)%H.mouths.length];
-  const gfx=style.gfx||H.defaultHead;
-  const attach=j=>{
-    const grp=new THREE.Group();
-    for(const gr of j.groups){
-      const slot=AC_HEADS.slots[gr.otex];
-      const texId=slot==="hair"?style.hairTex
-        :slot==="eyes"?((style.bald&&eyes.texBald)?eyes.texBald:eyes.tex)
-        :slot==="nose"?nose.tex
-        :slot==="mouth"?mouth.tex:gr.otex;
-      const geo=new THREE.BufferGeometry();
-      geo.setAttribute('position',new THREE.Float32BufferAttribute(gr.v,3));
-      geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
-      geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
-      geo.setIndex(gr.i);
-      const mat=new THREE.MeshStandardMaterial({map:_acHeadTex(texId),roughness:0.62,metalness:0.0,
-        transparent:true,alphaTest:0.4});
-      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm);
-    }
-    // fit the retail head over the procedural anchor: normalize height, chin at the neck
-    const box=new THREE.Box3().setFromObject(grp), size=box.getSize(new THREE.Vector3());
-    const s=0.46/Math.max(0.001,size.y);
-    grp.scale.setScalar(s);
-    const c=box.getCenter(new THREE.Vector3());
-    grp.position.set(-c.x*s,(body.userData.headY+0.16)-c.y*s,-c.z*s);
-    body.add(grp);
-    body.userData.acHead=grp;
-    body.userData.head.visible=false;   // the painted head yields to Turbine's
-  };
-  const cached=_acHeadGeo[gfx];
-  if(cached&&cached!=="loading") attach(cached);
-  else if(!cached){ _acHeadGeo[gfx]="loading";
-    fetch('assets/acheads/'+gfx+'.json').then(r=>r.json()).then(j=>{ _acHeadGeo[gfx]=j;
-      if(!n._acHeadDead) attach(j); }).catch(()=>{ _acHeadGeo[gfx]=null; });
-  } else n._acHeadTried=false;   // someone else is fetching this mesh — try again next pass
+  acBuildHead(body, u._headApp||u.headApp);                         // this avatar's own head, correctly mounted
 }
 // ── small-prop culling: NPC bodies, market stalls and lifestones are dozens of little
 //    meshes each (a draw call apiece) — past ~a hundred units they're sub-pixel. ──
@@ -4094,13 +4060,17 @@ let AC_HEADS=null, AC_HEAD_REMAP=null;
 fetch('assets/acheads/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_HEADS=j;
   if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.acBody) acBuildHead(playerAvatar); } }).catch(()=>{});
 fetch('assets/acheads/palettes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_HEAD_REMAP=j; }).catch(()=>{});
-const _acHeadTexCache={};
+const _acHeadTexCache={}, _acHeadTexCb={};
 function acHeadTexture(texDID, remapDIDs, cb){    // load a head texture, RGB-remapped through an ordered list of colour palettes
   const rms=(Array.isArray(remapDIDs)?remapDIDs:[remapDIDs]).filter(Boolean);
   const key=texDID+"|"+rms.join(",");
   const c=_acHeadTexCache[key];
-  if(c){ if(c!=="loading") cb(c); return; }
+  if(c==="failed") return;                        // known 404 — leave the skin placeholder
+  if(c&&c!=="loading"){ cb(c); return; }
+  (_acHeadTexCb[key]||(_acHeadTexCb[key]=[])).push(cb);   // queue EVERY caller — a shared texture (same skin/hair remap across 600 NPCs) must serve them all when it arrives, not just the first (the old code dropped every concurrent callback, leaving most heads untextured)
+  if(c==="loading") return;                       // a load is already in flight; our cb is now queued
   _acHeadTexCache[key]="loading";
+  const flush=tex=>{ const q=_acHeadTexCb[key]; _acHeadTexCb[key]=null; if(q) for(const f of q) f(tex); };
   const img=new Image();
   img.onload=()=>{
     let tex;
@@ -4124,9 +4094,9 @@ function acHeadTexture(texDID, remapDIDs, cb){    // load a head texture, RGB-re
     tex.encoding=THREE.sRGBEncoding;
     tex.flipY=false;   // the head GfxObj UVs use the opposite V convention from the body parts —
     tex.needsUpdate=true;  // without this the eye/nose/mouth strips land on the brow, chin and neck
-    _acHeadTexCache[key]=tex; cb(tex);
+    _acHeadTexCache[key]=tex; flush(tex);
   };
-  img.onerror=()=>{ _acHeadTexCache[key]=null; };
+  img.onerror=()=>{ _acHeadTexCache[key]="failed"; _acHeadTexCb[key]=null; };
   img.src='assets/acheads/tex/'+texDID+'.png';
 }
 function acHeadOpts(app){          // resolve the appearance's head choices against the heritage/gender lists
@@ -4198,10 +4168,11 @@ function acHeadGroup(app, cb){
     cb&&cb(grp);
   }).catch(()=>{ cb&&cb(null); });
 }
-function acBuildHead(av){
+function acBuildHead(av,app){
   const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return;
+  app=app||u._headApp||player.appearance;               // each avatar wears its OWN head (heritage + seeded features); player falls back to player.appearance
   const token=(u._acHeadToken=(u._acHeadToken||0)+1);
-  acHeadGroup(player.appearance, grp=>{
+  acHeadGroup(app, grp=>{
     if(!grp||u._acHeadToken!==token) return;
     if(u.acHead&&u.acHead.parent){ u.acHead.parent.remove(u.acHead); }
     grp.userData.acBody=true; grp.userData.acHeadGrp=true;
@@ -18038,7 +18009,7 @@ function dressAvatar(av,o,gender){
 // character model as everyone else — no procedural buildPerson bodies for humans anymore.
 function buildDressedAvatar(o,seed){
   seed=seed|0; o=o||{};
-  const app={race:"aluvian",
+  const app={race:o.heritage||"aluvian",                 // heritage drives the AC head bank (Aluvian/Sho/Gharu'ndim/Viamontian)
     gender:o.gender||(o.hairStyle?"female":(o.beard?"male":(((seed*3)%2)?"female":"male"))),
     skin:o.skin!=null?o.skin:SKIN_TONES[Math.abs(seed)%SKIN_TONES.length],
     face:_PERSON_FACES[Math.abs(seed*3)%6], hair:o.hood?"bald":(o.hairStyle||_PERSON_HAIRS[Math.abs(seed*5)%6]),
@@ -18048,7 +18019,8 @@ function buildDressedAvatar(o,seed){
     eyeShape:["almond","round","narrow","hooded"][Math.abs(seed*11)%4],
     nose:["straight","button","aquiline","broad"][Math.abs(seed*7)%4],
     mouth:["medium","full","thin","wide"][Math.abs(seed*13)%4],feature:"none",faceSeed:seed};
-  const g=buildAvatarJointed(app); applyACBody(g,app.gender); g.visible=true;
+  const g=buildAvatarJointed(app); g.userData._headApp=app;   // set BEFORE applyACBody so its acBuildHead uses this NPC's own head, not the player's
+  applyACBody(g,app.gender); g.visible=true;
   const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
   dressAvatar(g,o,app.gender); g.userData._app=app;
   return g;
@@ -18089,6 +18061,7 @@ function buildNPC(role,name,seedX,look,region){
     }
   }
   // Every human NPC wears the shared AC character model — seeded per NPC so no two look alike.
+  o.heritage=_NPC_HERITAGE[region]||"aluvian";          // town's people wear their heritage's AC head (Sho in Shoushi, etc.)
   const g=buildDressedAvatar(o,seed), app=g.userData._app;
   const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
   if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
@@ -23045,7 +23018,7 @@ function reconcileRemotes(players){
     if(p.id===NET.me) continue;
     seen[p.id]=1;
     let r=NET.players[p.id];
-    if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); applyACBody(mesh,app.gender); mesh.visible=true;
+    if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); mesh.userData._headApp=app; applyACBody(mesh,app.gender); mesh.visible=true;
       mesh.userData.headApp=app;
       if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
