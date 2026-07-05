@@ -15082,11 +15082,21 @@ function update(dt){
   // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
   // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
   let f=0,s=0;
-  // ARROW KEYS (AC default): Left/Right TURN the character, Up/Down move forward/back
-  if(keys["arrowleft"])  player.yaw+=dt*2.6;
-  if(keys["arrowright"]) player.yaw-=dt*2.6;
-  if(held("forward")||keys["arrowup"]||autoRun) f+=1;
-  if(held("back")||keys["arrowdown"]||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
+  // ARROW KEYS (AC default): Left/Right TURN the character, Up/Down move forward/back.
+  // Hold SHIFT with the arrows to free-look — they orbit the CAMERA instead (eases back on release).
+  const camLook=!!keys["shift"]; let camOrbiting=false;
+  if(camLook){
+    if(keys["arrowleft"]){  camOrbYaw+=dt*2.2; camOrbiting=true; }
+    if(keys["arrowright"]){ camOrbYaw-=dt*2.2; camOrbiting=true; }
+    if(keys["arrowup"]){    camOrbPitch=clamp(camOrbPitch+dt*1.7,-1.35,1.35); camOrbiting=true; }
+    if(keys["arrowdown"]){  camOrbPitch=clamp(camOrbPitch-dt*1.7,-1.35,1.35); camOrbiting=true; }
+  } else {
+    if(keys["arrowleft"])  player.yaw+=dt*2.6;
+    if(keys["arrowright"]) player.yaw-=dt*2.6;
+  }
+  if(!camOrbiting){ camOrbYaw-=camOrbYaw*Math.min(1,dt*5); camOrbPitch-=camOrbPitch*Math.min(1,dt*5); }   // camera returns behind the character
+  if(held("forward")||(keys["arrowup"]&&!camLook)||autoRun) f+=1;
+  if(held("back")||(keys["arrowdown"]&&!camLook)||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
   if(held("right")||keys["keyc"]) s+=1;           // Z / C sidestep (AC)
   if(held("left")||keys["keyz"]) s-=1;
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
