@@ -18717,7 +18717,24 @@ function gearIco(it){
   return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
-function gearSellPrice(it){ if(it.scroll) return 30; if(it.stat==="trophy"||it.stat==="note"||it.stat==="comp"||it.stat==="quest") return Math.max(3,it.v|0); if(it.stat==="pick"||it.stat==="key") return 6; if(it.stat==="ammo") return Math.max(2,(it.dmg||1)*2); if(it.stat==="oil") return Math.max(6,(it.v|0)); if(it.stat==="atlanstone") return Math.max(30,(it.v|0)); if(it.stat==="recall") return 15; if(it.stat==="cure") return 8; if(it.stat==="hot") return Math.max(8,(it.v|0)); if(it.stat==="skillpot"||it.stat==="attrpot") return Math.max(10,(it.v|0)*2); if(it.stat==="portalgem") return 12; if(it.stat==="pack") return 10+(it.cap|0)*6; if(it.stat==="furniture"||it.stat==="writ") return Math.max(10,it.v|0); return Math.max(5,Math.round(gearPrice(it)*0.4)); }
+function gearSellPrice(it){ let p;
+  if(it.scroll) p=30;
+  else if(it.stat==="note") p=Math.max(1,(it.v|0)-1);   // a note redeems at face value — vendors pay a sliver under it (the old 3p floor beat the 2p buy price: infinite money)
+  else if(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest") p=Math.max(3,it.v|0);
+  else if(it.stat==="pick"||it.stat==="key") p=6;
+  else if(it.stat==="ammo") p=Math.max(2,(it.dmg||1)*2);
+  else if(it.stat==="oil") p=Math.max(6,(it.v|0));
+  else if(it.stat==="atlanstone") p=Math.max(30,(it.v|0));
+  else if(it.stat==="recall") p=15;
+  else if(it.stat==="cure") p=8;
+  else if(it.stat==="hot") p=Math.max(8,(it.v|0));
+  else if(it.stat==="skillpot"||it.stat==="attrpot") p=Math.max(10,(it.v|0)*2);
+  else if(it.stat==="portalgem") p=12;
+  else if(it.stat==="pack") p=10+(it.cap|0)*6;
+  else if(it.stat==="furniture"||it.stat==="writ") p=Math.max(10,it.v|0);
+  else p=Math.max(5,Math.round(gearPrice(it)*0.4));
+  if(it.bp!=null) p=Math.min(p,Math.max(1,(it.bp|0)-1));   // NEVER above what a vendor charged for it — kills every buy-sell loop
+  return p; }
 function gearDesc(it){
   if(it.stat==="trophy") return `trophy · sells for ${it.v}p`;
   if(it.stat==="pick"||it.stat==="key") return `${it.stat==="key"?"key":"lockpick"} · opens a locked cache`;
@@ -19154,7 +19171,7 @@ function buildShop(){
     if(player.gold<it.cost) return;
     if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
     if(it.blessing){ caravanBless(); return; }
-    if(it.gear){ if(!addToInv(Object.assign({},it.gear))){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
+    if(it.gear){ if(!addToInv(Object.assign({},it.gear,{bp:it.cost}))){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
     else if(it.scroll){ if(!addToInv({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name})){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
     else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
