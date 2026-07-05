@@ -6595,6 +6595,65 @@ function tbPlaceStructure(g,obst,kind,did,wx,wz,th){
   else { const r=Math.max(0.5,Math.min(1.6,horiz*0.32)), ob={x:fcx,z:fcz,r}; obstacles.push(ob); obst.push(ob); }   // statue/well/tree-trunk
   return null;
 }
+// The dat placements are authentic, but town offsets ride the 1/3-scale world map while the
+// building MESHES are full-size AC metres — retail spacing shrinks to a third and neighbouring
+// buildings interpenetrate (full-scale offsets are no fix: they'd drop buildings onto the wrong
+// terrain — rivers, cliffs — since the terrain itself is 1/3-scale). So: a minimal-displacement
+// SEPARATION SOLVE. Every building keeps its authentic spot unless it overlaps a neighbour, in
+// which case the pair is pushed apart along the smallest escape axis (OBB SAT), a hair past
+// touching. Deterministic (fixed order), capped, and vendors ride along with their shop.
+function tbSeparateBuildings(c,objs){
+  const B=[];
+  for(const o of objs){ if(o.kind!=='building') continue;
+    const md=_tbModels[(''+o.did).toUpperCase()]; if(!md||!md.ready) continue;
+    const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2;
+    const lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2, th=o.rot||0;
+    const cw=Math.cos(th), sw=Math.sin(th);
+    const cx0=o.x+lcx*cw+lcz*sw, cz0=o.z-lcx*sw+lcz*cw;   // ORIGINAL footprint centre (town-local)
+    B.push({o, hx, hz, cx0, cz0,
+      ax:[cw,-sw], az:[sw,cw],                        // local x/z axis directions in town space
+      dx:0, dz:0,
+      dry0:groundY(c.x+cx0,c.z+cz0)>=0});             // authentic waterfront piers may start wet — only DRY buildings are kept out of the water
+  }
+  const MARGIN=0.35, CAP=110;  // push only as far as needed; Linvak Tukal (densest) fully separates at 110
+  const proj=(b,a)=>b.hx*Math.abs(b.ax[0]*a[0]+b.ax[1]*a[1])+b.hz*Math.abs(b.az[0]*a[0]+b.az[1]*a[1]);
+  const penOf=(A,C)=>{                                              // SAT: min-penetration axis, or null if separated
+    const dcx=(C.cx0+C.dx)-(A.cx0+A.dx), dcz=(C.cz0+C.dz)-(A.cz0+A.dz);
+    let best=null, bestPen=1e9;
+    for(const a of [A.ax,A.az,C.ax,C.az]){
+      const d=dcx*a[0]+dcz*a[1];
+      const pen=proj(A,a)+proj(C,a)+MARGIN-Math.abs(d);
+      if(pen<=0) return null;
+      if(pen<bestPen){ bestPen=pen; best=(d<0)?[-a[0],-a[1]]:[a[0],a[1]]; }
+    }
+    return {pen:bestPen, ax:best};
+  };
+  for(let sweep=0;sweep<400;sweep++){
+    let moved=false;
+    for(let i=0;i<B.length;i++) for(let j=i+1;j<B.length;j++){
+      const A=B[i], C=B[j];
+      const hit=penOf(A,C); if(!hit) continue;
+      const half=hit.pen/2;
+      const push=(b,s)=>{ const nx=b.dx+hit.ax[0]*half*s, nz=b.dz+hit.ax[1]*half*s;
+        if(Math.hypot(nx,nz)>CAP) return false;
+        if(b.dry0 && groundY(c.x+b.cx0+nx,c.z+b.cz0+nz)<0) return false;   // never push a dry building into the water
+        b.dx=nx; b.dz=nz; return true; };
+      const mA=push(A,-1), mC=push(C,1);
+      if(mA||mC) moved=true;                                        // both stuck → leave for the cull pass
+    }
+    if(!moved) break;
+  }
+  // whatever STILL interpenetrates after bounded relaxation cannot fit (a dense retail block
+  // compressed to a third) — cull the smaller building of each stuck pair rather than render
+  // two buildings fused through each other
+  for(let i=0;i<B.length;i++) for(let j=i+1;j<B.length;j++){
+    const A=B[i], C=B[j];
+    if(A.cull||C.cull) continue;
+    const hit=penOf(A,C);
+    if(hit&&hit.pen>2.5) ((A.hx*A.hz<=C.hx*C.hz)?A:C).cull=true;
+  }
+  return B;
+}
 // build one town's real buildings + scenery/statues, make the ROOMY buildings ENTERABLE (a
 // plaza-facing doorway, a warm-lit interior fit-out, vendors behind counters inside), and let
 // scenery/fixtures collide by shape. (Real AC buildings were facades whose door was a portal to an
@@ -6603,16 +6662,20 @@ function tbPlaceStructure(g,obst,kind,did,wx,wz,th){
 function tbBuildTown(c,objs){
   const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
   const obst=[], recs=[], lights=[];
+  const seps=tbSeparateBuildings(c,objs);                            // de-interpenetration solve
   // ── pass 1: buildings → ringed room recs; scenery/fixtures/statues → shape colliders ──
   for(const o of objs){
     if(!TB_KINDS[o.kind]) continue;                                  // skip portals/lifestones/bindstones (the game places its own)
     if(o.kind!=='building'){ tbPlaceStructure(g,obst,o.kind,o.did,c.x+o.x,c.z+o.z,o.rot||0); continue; }
-    const rec=tbRingBuilding(g,obst,o.did,c.x+o.x,c.z+o.z,o.rot||0);
+    const s=seps.find(s=>s.o===o);
+    if(s&&s.cull) continue;                                          // unseparable in the dense block — culled
+    const dx=s?s.dx:0, dz=s?s.dz:0;
+    const rec=tbRingBuilding(g,obst,o.did,c.x+o.x+dx,c.z+o.z+dz,o.rot||0);
     if(rec) recs.push(rec);
   }
   // ── pass 2: for each room, cut a doorway on the CLEAREST side (now every wall exists) ──
   for(const rec of recs){ if(rec.enter) tbCutDoorway(g,obst,recs,rec,lights,c.x,c.z); }
-  seatRealTownVendors(c,recs);
+  seatRealTownVendors(c,recs,seps);
   tbSettleTownNpcs(c,recs);
   return {c,g,obst,lights,recs};
 }
@@ -6718,14 +6781,24 @@ function tbFloorAt(recs,x,z,fallbackY){
     if(Math.abs(lx)<=r.hx-0.3&&Math.abs(lz)<=r.hz-0.3&&r.gy>fy) fy=r.gy; }
   return fy;
 }
+// the highest floor covering (x,z) across EVERY currently-built town — town radii overlap, so a
+// point can sit under a NEIGHBOUR town's building; settling against one town's recs alone would
+// clobber the lift the other town gave it
+function tbFloorAllTowns(x,z,fallbackY){
+  let fy=fallbackY;
+  for(const k in _tbBuilt){ const e=_tbBuilt[k]; if(e&&e.recs) fy=tbFloorAt(e.recs,x,z,fy); }
+  return fy;
+}
 // after a town's buildings land, lift every NPC standing inside one onto its floor (settleY put
 // them at terrain height long before the town streamed in — heads through the floor otherwise)
 function tbSettleTownNpcs(c,recs){
   if(typeof npcs==="undefined") return;
-  for(const np of npcs){ if(Math.hypot(np.x-c.x,np.z-c.z)>62) continue;
-    np.mesh.position.y=tbFloorAt(recs,np.x,np.z,groundY(np.x,np.z)); }
+  for(const np of npcs){ if(Math.hypot(np.x-c.x,np.z-c.z)>190) continue;
+    let fy=tbFloorAt(recs,np.x,np.z,groundY(np.x,np.z));
+    fy=tbFloorAllTowns(np.x,np.z,fy);                               // a neighbouring town's floor may be higher
+    np.mesh.position.y=fy; }
 }
-function seatRealTownVendors(c,recs){
+function seatRealTownVendors(c,recs,seps){
   if(!recs.length) return;
   const rooms=recs.filter(r=>r.enter); if(!rooms.length) return;    // vendors go INSIDE real rooms
   const placed=[];
@@ -6735,11 +6808,22 @@ function seatRealTownVendors(c,recs){
   const nearDoor=(x,z)=>{ for(const r of rooms){ if(((x-r.doorX)**2+(z-r.doorZ)**2)<(TB_DOOR_HALF+1.0)**2) return true; } return false; };
   for(const sh of shops){
     if(sh._seated||sh.caravan||sh.vtype==='caravan') continue;
-    if(Math.hypot(sh.x-c.x,sh.z-c.z)>62) continue;                  // only this town's vendors
+    if(Math.hypot(sh.x-c.x,sh.z-c.z)>190) continue;                 // only this town's vendors (margin for separation-shifted shops)
     if(sh._acPos){
       // TRUE retail position (1:1 town-offset mapping, same as the buildings) — never rearrange.
-      // Just stand on the floor, keep the doorway clear, and face/counter toward the door.
-      let nx=sh.x, nz=sh.z, room=null;
+      // If the separation solve displaced this vendor's shop, ride along with it (the spot stays
+      // 1:1 relative to the building). _acHome keeps the authentic point across town rebuilds.
+      if(!sh._acHome) sh._acHome={x:sh.x,z:sh.z};
+      let nx=sh._acHome.x, nz=sh._acHome.z, room=null, homeless=false;
+      if(seps){ const lx0=nx-c.x, lz0=nz-c.z;
+        for(const s of seps){
+          const px=lx0-s.cx0, pz=lz0-s.cz0;
+          const qx=px*s.ax[0]+pz*s.ax[1], qz=px*s.az[0]+pz*s.az[1];
+          if(Math.abs(qx)<=s.hx+0.5&&Math.abs(qz)<=s.hz+0.5){
+            if(s.cull) homeless=true;                                // shop was culled — fan-seat below instead
+            else { nx+=s.dx; nz+=s.dz; }
+            break; } } }
+      if(!homeless){
       for(const r of rooms){ const cw=Math.cos(r.th),sw=Math.sin(r.th),dx=nx-r.fcx,dz=nz-r.fcz;
         const lx=dx*cw-dz*sw, lz=dx*sw+dz*cw;
         if(Math.abs(lx)<=r.hx-0.3&&Math.abs(lz)<=r.hz-0.3){ room=r; break; } }
@@ -6759,6 +6843,7 @@ function seatRealTownVendors(c,recs){
         const fx=Math.sin(sh.mesh.rotation.y), fz=Math.cos(sh.mesh.rotation.y);
         sh.obs[1].x=nx-fx*0.9; sh.obs[1].z=nz-fz*0.9; } }            // rear collider behind the vendor
       continue;
+      }
     }
     let rec=null,rd=1e9; for(const r of rooms){ const d=(r.fcx-sh.x)**2+(r.fcz-sh.z)**2; if(d<rd){rd=d;rec=r;} }
     if(!rec) continue;
@@ -6803,10 +6888,10 @@ function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
   for(const s of shops){ if(s._counter){ if(s._counter.parent)s._counter.parent.remove(s._counter); s._counter=null; }
-    if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<62) s._seated=false; }
-  if(typeof npcs!=="undefined") for(const np of npcs){   // floors are gone — NPCs back onto the terrain
-    if(Math.hypot(np.x-e.c.x,np.z-e.c.z)<62) np.mesh.position.y=groundY(np.x,np.z); }
-  delete _tbBuilt[name];
+    if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<190) s._seated=false; }
+  delete _tbBuilt[name];                                 // deregister FIRST so the resettle below ignores this town's floors
+  if(typeof npcs!=="undefined") for(const np of npcs){   // floors are gone — back to terrain (or a still-built neighbour's floor)
+    if(Math.hypot(np.x-e.c.x,np.z-e.c.z)<190) np.mesh.position.y=tbFloorAllTowns(np.x,np.z,groundY(np.x,np.z)); }
 }
 let _tbBuilt={}, _tbAcc=0;
 const TB_BUILD_R=430, TB_DROP_R=560;
