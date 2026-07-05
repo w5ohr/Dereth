@@ -777,13 +777,14 @@ function skillCumXP(rank,spec){ if(rank<=0)return 0;
   return spec? Math.round(23*rank+0.192*rank*rank*rank) : Math.round(58*rank+0.48*rank*rank*rank); }
 function skillRankFromXP(xp,spec){ const cap=AC_XP?(spec?AC_XP.spec.length:AC_XP.trained.length)-1:260;
   let r=0; while(r<cap&&skillCumXP(r+1,spec)<=xp) r++; return r; }
-function skillState(key){ return player.skills[key]||(player.skills[key]={t:0,xp:0}); }
+// an unknown key returns an inert (never-persisted) state so a bad/renamed key can't pollute the save
+function skillState(key){ if(!SKILL_BY_KEY[key]) return {t:0,xp:0}; return player.skills[key]||(player.skills[key]={t:0,xp:0}); }
 function skillTier(key){ return skillState(key).t; } // 0 untrained, 1 trained, 2 specialized
 function skillRank(key){ const st=skillState(key); return st.t>0?skillRankFromXP(st.xp,st.t===2):0; }
-function skillBase(key){ const s=SKILL_BY_KEY[key]; if(!s.d)return 0; let sum=0; for(const a of s.a)sum+=player.attr[a]; return Math.floor(sum/s.d); }
+function skillBase(key){ const s=SKILL_BY_KEY[key]; if(!s||!s.d)return 0; let sum=0; for(const a of s.a)sum+=player.attr[a]; return Math.floor(sum/s.d); }
 // effective skill value: untrained = attribute base only (can't be raised); trained = base+ranks;
 // specialized = +10 bonus. (Faithful: untrained skills work at base; magic just can't be cast untrained.)
-function skillValue(key){ const st=skillState(key),base=skillBase(key);
+function skillValue(key){ if(!SKILL_BY_KEY[key]) return 0; const st=skillState(key),base=skillBase(key);
   const sb=(player.skillBuffs&&player.skillBuffs[key])?player.skillBuffs[key].v:0;   // Creature skill "Aptitude" buff
   const gj=(player.gearSkill&&player.gearSkill[key])?player.gearSkill[key]:0;        // jewelry skill cantrips
   let v=base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj
@@ -792,7 +793,7 @@ function skillValue(key){ const st=skillState(key),base=skillBase(key);
     +((player.augment&&player.augment.fam&&player.augment.fam[SKILL_BY_KEY[key].fam])||0);   // skill-family masteries: Steel Circle (melee) / Five Fold Path (magic) / Focused Eye (missile), +10 each
   if(player.vitae>0) v=Math.max(0,Math.round(v*(1-player.vitae)));   // Vitae death penalty saps ALL skills too (AC), not just vitals
   return v; }
-function skillEff(key,k){ const s=SKILL_BY_KEY[key]; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline
+function skillEff(key,k){ const s=SKILL_BY_KEY[key]; if(!s) return 1; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline; unknown key = neutral 1×
 function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_WEAPON_KEYS){ const e=skillEff(key,k); if(e>best)best=e; } return best; } // best of all melee weapon skills
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
 // ── RETAIL attribute/vital raising (the client XpTable, assets/acskills.json xp.attr/xp.vital):
@@ -822,8 +823,8 @@ function creditBase(){ let fromLevels=0;
 function creditsSpent(){ let n=0; for(const s of SKILLS_DEF){ const t=skillTier(s.k); if(t>=1&&s.tc>0)n+=s.tc; if(t>=2&&s.sc>0)n+=s.sc; } return n; }
 function creditsAvail(){ return creditBase()-creditsSpent(); }
 function specCreditsUsed(){ let n=0; for(const s of SKILLS_DEF){ if(skillTier(s.k)>=2){ if(s.tc>0)n+=s.tc; if(s.sc>0)n+=s.sc; } } return n; }
-function trainSkill(key){ const s=SKILL_BY_KEY[key],st=skillState(key); if(st.t!==0)return false; if(creditsAvail()<s.tc)return false; st.t=1; return true; }
-function specSkill(key){ const s=SKILL_BY_KEY[key],st=skillState(key); if(st.t!==1||s.sc<0)return false; if(creditsAvail()<s.sc)return false; if(specCreditsUsed()+s.tc+s.sc>70)return false; st.t=2; return true; }
+function trainSkill(key){ const s=SKILL_BY_KEY[key]; if(!s)return false; const st=skillState(key); if(st.t!==0)return false; if(creditsAvail()<s.tc)return false; st.t=1; return true; }
+function specSkill(key){ const s=SKILL_BY_KEY[key]; if(!s)return false; const st=skillState(key); if(st.t!==1||s.sc<0)return false; if(creditsAvail()<s.sc)return false; if(specCreditsUsed()+s.tc+s.sc>70)return false; st.t=2; return true; }
 function raiseSkillCost(key){ const st=skillState(key); if(st.t===0)return Infinity; const r=skillRank(key); return skillCumXP(r+1,st.t===2)-skillCumXP(r,st.t===2); }
 function raiseSkill(key){ const st=skillState(key); if(st.t===0)return false; const cost=raiseSkillCost(key); if(player.xpUnspent<cost)return false; player.xpUnspent-=cost; st.xp+=cost; return true; }
 function freshSkills(){ const o={}; for(const s of SKILLS_DEF)o[s.k]={t:0,xp:0}; return o; }
