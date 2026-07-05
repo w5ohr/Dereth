@@ -615,7 +615,7 @@ const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled are
 // Frustum culling keeps only the visible chunks drawn. Must stay divisible by TERRA_CHUNKS(16).
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
-const TOWN_SAFE=60*WSCALE, DAYLEN=7620; // safe radius around each capital (×WSCALE: real town extent at 1:1); DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s)
+const TOWN_SAFE=60*WSCALE, DAYLEN=7620; // safe radius around each capital (×WSCALE: real town extent at 1:1); DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
 
 // ---------- attributes (AC's six) ----------
 const ATTRS=["Strength","Endurance","Coordination","Quickness","Focus","Self"];
