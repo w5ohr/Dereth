@@ -5825,7 +5825,7 @@ function buildLifestone(bound){
   // AC's lifestone: the real Turbine crystal (assets/acmisc/lifestone.json) — a blue-veined stone
   // spire — standing in a cleared earth circle, lit from within.
   const g=new THREE.Group(), col=bound?0x9fe0ff:0x6ab0e0;
-  const clearing=new THREE.Mesh(new THREE.CircleGeometry(4.6,26),
+  const clearing=new THREE.Mesh(new THREE.CircleGeometry(3.0,26),   // tight earth ring around the spire (was 4.6 — its 9.2-wide footprint dwarfed the crystal and read as splayed "legs")
     new THREE.MeshStandardMaterial({color:0x8a7a5f,roughness:1,metalness:0}));
   clearing.rotation.x=-Math.PI/2; clearing.position.y=0.03; clearing.receiveShadow=true; g.add(clearing);
   const light=new THREE.PointLight(col,1.35,20); light.position.y=2.4; g.add(light);
@@ -5833,6 +5833,8 @@ function buildLifestone(bound){
   // build the real crystal mesh (glowing blue veins via an emissive map of the same texture)
   acMiscMesh("lifestone",groups=>{
     const cg=new THREE.Group();
+    let minY=Infinity,maxY=-Infinity;
+    for(const gr of groups) for(let i=1;i<gr.v.length;i+=3){ if(gr.v[i]<minY)minY=gr.v[i]; if(gr.v[i]>maxY)maxY=gr.v[i]; }
     for(const gr of groups){
       const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.Float32BufferAttribute(gr.v,3));
@@ -5844,6 +5846,8 @@ function buildLifestone(bound){
         roughness:0.5,metalness:0.15,emissive:col,emissiveMap:tex,emissiveIntensity:bound?0.65:0.4});
       const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; cg.add(me);
     }
+    // normalise the retail crystal to a consistent ~2.6m landmark spire standing base-on-ground
+    const h=(maxY>minY)?(maxY-minY):1, s=Math.min(1,2.6/h); cg.scale.setScalar(s); cg.position.y=-minY*s;
     g.add(cg); g.userData.crystal=cg;
   });
   return g;
@@ -6131,7 +6135,7 @@ function buildPKAltar(type){
 }
 function addPKAltar(x,z,type){
   const d=PK_ALTAR_DEF[type]; if(!d) return;
-  const mesh=buildPKAltar(type); mesh.position.set(x,0,z);
+  const mesh=buildPKAltar(type); mesh.position.set(x,groundY(x,z),z);   // seat the altar on the terrain (was y=0 → buried under 1:1-scale hills near Holtburg)
   const lbl=labelSprite(d.name+" — E","lifestones"); lbl.position.y=3.2; mesh.add(lbl);
   scene.add(mesh); pkAltars.push({x,z,type,name:d.name,state:d.state,mesh}); obstacles.push({x,z,r:1.4});
 }
@@ -6568,8 +6572,10 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
       let sx=0,sy=0,sz=0,n=0; for(let i=0;i<gr.v.length;i+=3){ sx+=gr.v[i];sy+=gr.v[i+1];sz+=gr.v[i+2];n++; }
       if(n){ g.userData.doorLocal=g.userData.doorLocal||{x:sx/n,y:sy/n,z:sz/n}; } }
     else if(marker==="window"){ mat=new THREE.MeshStandardMaterial({color:0x2a3a4a,roughness:0.15,metalness:0.4,transparent:true,opacity:0.55,side:THREE.DoubleSide}); }
-    else mat=mm.tex?new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0})
-                   :new THREE.MeshStandardMaterial({color:(mm.color!=null?mm.color:0x8a8478),roughness:0.92,metalness:0.02,side:THREE.DoubleSide});
+    else if(mm.tex) mat=new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0});
+    else { let c=(mm.color!=null?mm.color:0x8a8478);   // some AC building surfaces carry a bright "unset texture" placeholder colour that glares to a blank white panel under PBR sun — tone any near-white untextured wall down to muted stone/plaster
+      if(((c>>16)&255)>190&&((c>>8)&255)>190&&(c&255)>190) c=0x9c9078;
+      mat=new THREE.MeshStandardMaterial({color:c,roughness:0.94,metalness:0.02,side:THREE.DoubleSide}); }
     const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; g.add(me);
   }
   return g;
@@ -8584,7 +8590,7 @@ function spawnMonster(kind,x,z,elite){
     const aura=new THREE.PointLight(0xffae3a,1.5,11);aura.position.y=1.4;mesh.add(aura);
     const lbl=labelSprite("Champion "+b.name,"monsters");lbl.scale.set(6,1.5,1);lbl.position.y=mesh.userData.headY+1.2;mesh.add(lbl);
   }
-  mesh.position.set(x,0,z);scene.add(mesh);
+  mesh.position.set(x,groundY(x,z),z);scene.add(mesh);   // sit on the terrain at spawn — far, un-simulated mobs must not float at y=0 (buried under the 1:1-scale hills)
   monsters.push({kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul,ang:rnd(0,6.28),
     st:_mst,mst:_mst,mn:_mmn,mmn:_mmn,
     name:(gm&&gm.vname&&gm.vname!==b.name)?gm.vname:undefined,   // the breed's retail display name
@@ -14726,7 +14732,7 @@ function update(dt){
     const ox=m.x,oz=m.z; // pre-move (for dungeon wall-sliding)
     const dx=player.x-m.x,dz=player.z-m.z,d=Math.hypot(dx,dz);
     // freeze AI for far, non-chasing overworld creatures (streamMonsters/cull handles their mesh)
-    if(!inDungeon && d>SIM_RADIUS && m.state!=="chase") continue;
+    if(!inDungeon && d>SIM_RADIUS && m.state!=="chase"){ if(m.mesh) m.mesh.position.y=groundY(m.x,m.z); continue; }   // keep far idle mobs planted on the terrain (their sim is frozen, but the ground must have loaded/settled since spawn)
     if(m.gltfMixer){ m.gltfMixer.update(dt);   // animate rigged creature models that are close enough to simulate
       if(m.actWalk){ const moving=(m.state==="chase"||m.state==="wander"||m.state==="flee");   // blend idle ↔ walk with movement
         const tw=moving?1:0; m.actWalk.weight+=(tw-m.actWalk.weight)*Math.min(1,dt*6);

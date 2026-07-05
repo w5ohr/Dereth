@@ -8,31 +8,30 @@ Extended playthrough (2026-07-05) exercising every system a player touches, on t
 
 ---
 
-## Issues found
+## Issues found — ALL FIXED (2026-07-05, commit pending)
 
-### 🟠 G1 — Lifestones render oversized & mis-oriented (squat "insectoid" crystal)
-- **Where:** every lifestone (Holtburg capital + wayside). First seen dead-centre of Holtburg — reads as a big blue crystalline "creature with splayed legs."
-- **Evidence:** the lifestone mesh bounding box is **9.2w × 4.8h × 9.1d units** (human model is ~1.9u). It's *wider than tall*, yet `buildLifestone` comments call it "a blue-veined stone **spire**" — a spire should be tall & narrow. So it's both oversized (~5× too wide) and likely rotated onto its side (the AC z-up→y-up conversion may be off for this Setup).
-- **Fix later:** in `buildLifestone`, normalize the `acMiscMesh("lifestone")` crystal — scale it to ~2–3m tall and correct the up-axis. The clearing circle (radius 4.6) was sized to match the oversized crystal, so shrink that too. Same likely applies to `bindstone`.
+### ✅ G1 — Lifestone read as an oversized "insectoid" crystal — FIXED
+- **Where:** every lifestone. First seen dead-centre of Holtburg.
+- **Real cause (on inspection):** the crystal geometry was actually fine (native 3.6m tall, base at y=0 — a proper upright spire). The playtest's "9.2 × 4.8 × 9.1, wider than tall" was the **group bounding box contaminated by the flat clearing disc** (radius 4.6 → 9.2 diameter), which dwarfed the crystal and produced the wide "splayed" footprint. The crystal itself was never sideways.
+- **Fix (`buildLifestone`):** normalise the `acMiscMesh("lifestone")` crystal to a consistent ~2.6m landmark spire standing base-on-ground (`s=min(1,2.6/height); cg.scale=s; cg.position.y=-minY*s`), and **shrink the clearing disc from radius 4.6 → 3.0** so it no longer dominates the footprint. **Verified:** crystal now 2.15w × **2.6h** × 2.02d (taller than wide), base exactly on groundY; visually a correctly-sized blue crystal beside a 2-storey building. (The two dark angular base shards are part of the authentic AC model.)
 
-### 🟠 G2 — Most overworld monsters render buried ~90u underground (until you're close)
-- **Where:** everywhere — **19 of 32** overworld monsters sit ~88–95u *below* the terrain (mesh-y ≈ 0 while ground is ~90). Only the ~13 within the sim radius of the player are on the surface. All the buried ones are in "wander" state.
-- **Cause:** a monster's mesh-y is only set to `groundY` while it's being *simulated* (within `SIM_RADIUS` = 95u; the update loop `continue`s past far, non-chasing monsters). Un-simulated monsters keep a low/stale y ≈ 0. This was masked at the old ⅓ scale (terrain only ~26u high) but the **1:1 scale tripled terrain heights (~90u)**, so far monsters are now deeply underground and "rise from the ground" as you cross the 95u threshold.
-- **Fix later:** set a monster's mesh-y to `groundY(m.x,m.z)` at **spawn** (and when it drifts while un-simulated), not only during simulation — so distant monsters sit on the terrain even before they're in sim range. Cheap: one `groundY` call per monster per spawn/wander-step.
+### ✅ G2 — Overworld monsters rendered buried ~90u underground — FIXED
+- **Where:** everywhere — **19 of 32** far monsters sat ~88–95u below the terrain (mesh-y ≈ 0), rising from the ground as you crossed the 95u sim threshold.
+- **Cause:** a monster's mesh-y was only set to `groundY` while *simulated* (`SIM_RADIUS`=95); un-simulated ones kept spawn-y = 0. Masked at the old ⅓ scale (terrain ~26u), exposed at 1:1 (terrain ~90u).
+- **Fix:** spawn monsters on the terrain — `spawnMonster` now `mesh.position.set(x, groundY(x,z), z)` (was `,0,`) — plus a safety net in the sim-skip guard that plants far idle mobs at `groundY` each tick (covers mobs spawned before the heightmap settled). **Verified:** 32 mobs, 22 beyond sim-radius, **0 buried** (was 19).
 
-### 🟠 G3 — PK altars are buried underground
-- **Where:** the Altar of Asheron / Altar of Bael'Zharon near Holtburg. The altar base sits ~28u below ground.
-- **Cause:** `addPKAltar` does `mesh.position.set(x, 0, z)` — y=0 instead of `groundY(x,z)`. Lifestones get a separate `ls.mesh.position.y = groundY(...)` pass; altars never got one, so they sit at y=0 (buried, and worse at 1:1 scale where terrain near Holtburg is ~28–78u).
-- **Fix later:** in `addPKAltar`, set `mesh.position.set(x, groundY(x,z), z)` (my regression from the PK-altar feature).
+### ✅ G3 — PK altars buried underground — FIXED
+- **Where:** Altar of Asheron / Altar of Bael'Zharon near Holtburg (~28u below ground).
+- **Cause:** `addPKAltar` did `mesh.position.set(x, 0, z)` — y=0 instead of `groundY`.
+- **Fix:** `mesh.position.set(x, groundY(x,z), z)`. **Verified:** both altars now sit at `off: 0` (gy 28.5 and 83.3).
 
-### 🟡 GP1 — Health derives low relative to Stamina (verify balance)
-- Level-25 char with Endurance 100 → **mhp 50** but **mst 100** (HP ≈ Endurance/2, half of stamina). At base attributes (all 10) a level-25 char derived **mhp 4** and was one-shot by a drudge. HP feeling low vs incoming damage (drudges 7, tuskers 24) — verify the `derive()` HP formula against AC (in AC, Health ≈ Endurance, comparable to Stamina, not half). *(Note: the test character "Bob" was also corrupted by eval mutation — attrInnate null — so treat the base-10 case cautiously.)*
-- **Mitigation exists:** raising the **Health vital** on the character sheet gives **+1 mhp per rank** (verified: 50→53 for 3 ranks, XP-paid). So players *can* buy HP up independent of Endurance — the AC-authentic path. GP1 is a base-formula/starting-feel concern, not a hard cap.
+### ✅ GP1 — Health = Endurance/2 — VERIFIED AUTHENTIC, NOT A BUG (no change)
+- Level-25 char with Endurance 100 → mhp 50, mst 100. This is **the real retail AC formula** (Health = Endurance/2, Stamina = Endurance, Mana = Self), cited in the `derive()` comment from the AC client / ACEmulator. Changing it would break the project's authenticity mandate, so **left as-is**. Players raise HP the AC way: the **Health vital** gives +1 mhp/rank (verified 50→53), and Endurance itself climbs with XP. Working as intended.
 
-### 🔵 G4 — One untextured (flat-white) building at Shoushi
-- **Where:** Shoushi (Sho capital). A pale, unlit pagoda-shaped building stands out against the textured buildings around it.
-- **Evidence:** scanning 6,526 meshes within 400u of the player found exactly **1** with a white `MeshStandardMaterial` and **no `.map`** (texture) — the rest are textured. So it's an isolated building model that streamed its geometry but not its texture (bad/missing DXT decode for that one model, or a material built without its map).
-- **Fix later:** identify which AC building model at Shoushi lacks a map; check its texture-decode path. Low priority — cosmetic, single instance.
+### ✅ G4 — Untextured glaring-white building panel at Shoushi — FIXED
+- **Where:** a Sho gate/building — a large blank pure-white rectangular panel among textured buildings.
+- **Cause:** some AC building surfaces carry a bright "unset texture" placeholder colour (near-white, no `.map`); under PBR sun it rendered as a blank glaring panel. (`_tbMarker` only intercepts pure-red doors / pure-blue windows, so a white placeholder fell through to a flat white material.)
+- **Fix (`tbBuildMesh`):** tone any untextured near-white surface (all channels > 190) down to muted stone/plaster `0x9c9078`, roughness 0.94. **Verified:** 0 glaring-white surfaces remain at Shoushi; the former panel is now a muted grey sliding-door screen that fits the Sho architecture.
 
 ---
 
