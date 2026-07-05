@@ -8,6 +8,12 @@ Streams the SQL dump (acdata/ACE-World-Database-*.sql) and pulls:
   - weenie_properties_create_list: vendor shop stock (destination 4 = Shop)
   - landblock_instance:           world placements -> lat/long, so each vendor lands in a town
 
+NOTE on interior placements (cell index >= 0x0100): ACE's landblock_instance origins are
+LANDBLOCK-local even for interior cells (verified: Shopkeeper Renald the Elder, cell
+0xA9B40141, origin (139.2, 18.3) vs his EnvCell's own frame pos (130.5, 11.5) — the origin
+already includes the cell frame; the difference is just his in-room offset). So the plain
+landblock mapping below IS each vendor's true 1:1 position — do NOT compose EnvCell frames.
+
 Output: acdata/ace-vendors.json
   { "items":   { classId: {"n": name, "v": value, "it": itemType} },
     "vendors": [ {"n": name, "lat": .., "lng": .., "stock": [classId, ...]} ],
@@ -104,22 +110,22 @@ for m in re.finditer(r"INSERT INTO `([a-z_]+)`(?: \([^)]*\))? VALUES (.*?);\n", 
         for r in rows(body):
             fs = fields(r)
             # (guid, weenie_class_id, obj_cell_id, origin_x, origin_y, origin_z, ...)
-            placements[int(fs[1])].append((int(fs[2]), float(fs[3]), float(fs[4])))
+            placements[int(fs[1])].append((int(fs[2]), float(fs[3]), float(fs[4]), float(fs[5])))
 
 print(f"weenies {len(weenie):,} · names {len(names):,} · vendors-with-stock {len(stock):,} · placed classes {len(placements):,}")
 
-def cell_to_latlng(cellid, ox, oy):
+def cell_to_latlng(cellid, ox, oy, oz=0.0):
     bx, by = (cellid >> 24) & 0xFF, (cellid >> 16) & 0xFF
     gx, gy = bx*192.0 + ox, by*192.0 + oy      # AC east metres, north metres
     lng = (gx/24.0 - 1019.5) / 10.0
     lat = (gy/24.0 - 1019.5) / 10.0
-    return round(lat, 2), round(lng, 2)
+    return round(lat, 3), round(lng, 3)
 
 items, vendors, creatures = {}, [], {}
 for wid, (cname, wtype) in weenie.items():
     if wtype == VENDOR_TYPE and wid in stock and wid in placements:
-        cellid, ox, oy = placements[wid][0]
-        lat, lng = cell_to_latlng(cellid, ox, oy)
+        cellid, ox, oy, oz = placements[wid][0]
+        lat, lng = cell_to_latlng(cellid, ox, oy, oz)
         vendors.append({"n": names.get(wid, cname), "lat": lat, "lng": lng,
                         "stock": sorted(set(stock[wid]))})
         for it in stock[wid]:
