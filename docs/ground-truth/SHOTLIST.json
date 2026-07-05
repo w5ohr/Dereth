@@ -1,0 +1,951 @@
+{
+ "partLegend": {
+  "0": "abdomen/pelvis",
+  "1": "R-thigh",
+  "2": "R-shin",
+  "3": "R-foot",
+  "4": "R-toe",
+  "5": "L-thigh",
+  "6": "L-shin",
+  "7": "L-foot",
+  "8": "L-toe",
+  "9": "chest/torso",
+  "10": "R-upperarm",
+  "11": "R-forearm",
+  "12": "R-hand",
+  "13": "L-upperarm",
+  "14": "L-forearm",
+  "15": "L-hand",
+  "16": "head"
+ },
+ "items": [
+  {
+   "label": "shirt-upper-texture",
+   "item": "aerlinthe monarch shirt",
+   "clothingBase": "1000022b",
+   "parts": [
+    9,
+    10,
+    13
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "L-upperarm"
+   ],
+   "modelSwaps": 3,
+   "texSwaps": 4,
+   "dyeEffects": 1
+  },
+  {
+   "label": "breastplate-yoroi",
+   "item": "acid yoroi breastplate",
+   "clothingBase": "10000025",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ],
+   "modelSwaps": 1,
+   "texSwaps": 2,
+   "dyeEffects": 19
+  },
+  {
+   "label": "breastplate-koujia",
+   "item": "brilliant koujia breastplate",
+   "clothingBase": "1000018c",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ],
+   "modelSwaps": 1,
+   "texSwaps": 2,
+   "dyeEffects": 22
+  },
+  {
+   "label": "coat-amuli-fullupper",
+   "item": "amuli coat",
+   "clothingBase": "100001a1",
+   "parts": [
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ],
+   "modelSwaps": 5,
+   "texSwaps": 6,
+   "dyeEffects": 22
+  },
+  {
+   "label": "hauberk-platemail-full",
+   "item": "alatar's platemail hauberk",
+   "clothingBase": "100000a5",
+   "parts": [
+    0,
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ],
+   "modelSwaps": 6,
+   "texSwaps": 8,
+   "dyeEffects": 19
+  },
+  {
+   "label": "basinet-chainmail-head",
+   "item": "chainmail basinet",
+   "clothingBase": "1000003a",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ],
+   "modelSwaps": 1,
+   "texSwaps": 2,
+   "dyeEffects": 19
+  },
+  {
+   "label": "helm-alatar-head",
+   "item": "alatar's helm",
+   "clothingBase": "1000002c",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ],
+   "modelSwaps": 1,
+   "texSwaps": 1,
+   "dyeEffects": 19
+  },
+  {
+   "label": "gauntlets-hands",
+   "item": "alduressa gauntlets",
+   "clothingBase": "1000060e",
+   "parts": [
+    12,
+    15
+   ],
+   "regions": [
+    "R-hand",
+    "L-hand"
+   ],
+   "modelSwaps": 2,
+   "texSwaps": 0,
+   "dyeEffects": 19
+  },
+  {
+   "label": "leggings-lower",
+   "item": "alduressa leggings",
+   "clothingBase": "100005bf",
+   "parts": [
+    0,
+    1,
+    2,
+    5,
+    6
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "R-thigh",
+    "R-shin",
+    "L-thigh",
+    "L-shin"
+   ],
+   "modelSwaps": 5,
+   "texSwaps": 0,
+   "dyeEffects": 25
+  },
+  {
+   "label": "boots-feet",
+   "item": "a pair of explorer leather boots",
+   "clothingBase": "100004e6",
+   "parts": [
+    2,
+    3,
+    4,
+    6,
+    7,
+    8
+   ],
+   "regions": [
+    "R-shin",
+    "R-foot",
+    "R-toe",
+    "L-shin",
+    "L-foot",
+    "L-toe"
+   ],
+   "modelSwaps": 6,
+   "texSwaps": 8,
+   "dyeEffects": 29
+  }
+ ],
+ "shots": [
+  {
+   "file": "nude_m_front.png",
+   "clothingBase": null,
+   "item": "(nude base body)",
+   "gender": "m",
+   "angle": "front",
+   "parts": []
+  },
+  {
+   "file": "nude_m_back.png",
+   "clothingBase": null,
+   "item": "(nude base body)",
+   "gender": "m",
+   "angle": "back",
+   "parts": []
+  },
+  {
+   "file": "nude_f_front.png",
+   "clothingBase": null,
+   "item": "(nude base body)",
+   "gender": "f",
+   "angle": "front",
+   "parts": []
+  },
+  {
+   "file": "nude_f_back.png",
+   "clothingBase": null,
+   "item": "(nude base body)",
+   "gender": "f",
+   "angle": "back",
+   "parts": []
+  },
+  {
+   "file": "1000022b_m_front.png",
+   "clothingBase": "1000022b",
+   "item": "aerlinthe monarch shirt",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    9,
+    10,
+    13
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "L-upperarm"
+   ]
+  },
+  {
+   "file": "1000022b_m_back.png",
+   "clothingBase": "1000022b",
+   "item": "aerlinthe monarch shirt",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    9,
+    10,
+    13
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "L-upperarm"
+   ]
+  },
+  {
+   "file": "1000022b_f_front.png",
+   "clothingBase": "1000022b",
+   "item": "aerlinthe monarch shirt",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    9,
+    10,
+    13
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "L-upperarm"
+   ]
+  },
+  {
+   "file": "1000022b_f_back.png",
+   "clothingBase": "1000022b",
+   "item": "aerlinthe monarch shirt",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    9,
+    10,
+    13
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "L-upperarm"
+   ]
+  },
+  {
+   "file": "10000025_m_front.png",
+   "clothingBase": "10000025",
+   "item": "acid yoroi breastplate",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "10000025_m_back.png",
+   "clothingBase": "10000025",
+   "item": "acid yoroi breastplate",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "10000025_f_front.png",
+   "clothingBase": "10000025",
+   "item": "acid yoroi breastplate",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "10000025_f_back.png",
+   "clothingBase": "10000025",
+   "item": "acid yoroi breastplate",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "1000018c_m_front.png",
+   "clothingBase": "1000018c",
+   "item": "brilliant koujia breastplate",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "1000018c_m_back.png",
+   "clothingBase": "1000018c",
+   "item": "brilliant koujia breastplate",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "1000018c_f_front.png",
+   "clothingBase": "1000018c",
+   "item": "brilliant koujia breastplate",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "1000018c_f_back.png",
+   "clothingBase": "1000018c",
+   "item": "brilliant koujia breastplate",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    9
+   ],
+   "regions": [
+    "chest/torso"
+   ]
+  },
+  {
+   "file": "100001a1_m_front.png",
+   "clothingBase": "100001a1",
+   "item": "amuli coat",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "100001a1_m_back.png",
+   "clothingBase": "100001a1",
+   "item": "amuli coat",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "100001a1_f_front.png",
+   "clothingBase": "100001a1",
+   "item": "amuli coat",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "100001a1_f_back.png",
+   "clothingBase": "100001a1",
+   "item": "amuli coat",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "100000a5_m_front.png",
+   "clothingBase": "100000a5",
+   "item": "alatar's platemail hauberk",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    0,
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "100000a5_m_back.png",
+   "clothingBase": "100000a5",
+   "item": "alatar's platemail hauberk",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    0,
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "100000a5_f_front.png",
+   "clothingBase": "100000a5",
+   "item": "alatar's platemail hauberk",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    0,
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "100000a5_f_back.png",
+   "clothingBase": "100000a5",
+   "item": "alatar's platemail hauberk",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    0,
+    9,
+    10,
+    11,
+    13,
+    14
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "chest/torso",
+    "R-upperarm",
+    "R-forearm",
+    "L-upperarm",
+    "L-forearm"
+   ]
+  },
+  {
+   "file": "1000003a_m_front.png",
+   "clothingBase": "1000003a",
+   "item": "chainmail basinet",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000003a_m_back.png",
+   "clothingBase": "1000003a",
+   "item": "chainmail basinet",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000003a_f_front.png",
+   "clothingBase": "1000003a",
+   "item": "chainmail basinet",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000003a_f_back.png",
+   "clothingBase": "1000003a",
+   "item": "chainmail basinet",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000002c_m_front.png",
+   "clothingBase": "1000002c",
+   "item": "alatar's helm",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000002c_m_back.png",
+   "clothingBase": "1000002c",
+   "item": "alatar's helm",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000002c_f_front.png",
+   "clothingBase": "1000002c",
+   "item": "alatar's helm",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000002c_f_back.png",
+   "clothingBase": "1000002c",
+   "item": "alatar's helm",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    16
+   ],
+   "regions": [
+    "head"
+   ]
+  },
+  {
+   "file": "1000060e_m_front.png",
+   "clothingBase": "1000060e",
+   "item": "alduressa gauntlets",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    12,
+    15
+   ],
+   "regions": [
+    "R-hand",
+    "L-hand"
+   ]
+  },
+  {
+   "file": "1000060e_m_back.png",
+   "clothingBase": "1000060e",
+   "item": "alduressa gauntlets",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    12,
+    15
+   ],
+   "regions": [
+    "R-hand",
+    "L-hand"
+   ]
+  },
+  {
+   "file": "1000060e_f_front.png",
+   "clothingBase": "1000060e",
+   "item": "alduressa gauntlets",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    12,
+    15
+   ],
+   "regions": [
+    "R-hand",
+    "L-hand"
+   ]
+  },
+  {
+   "file": "1000060e_f_back.png",
+   "clothingBase": "1000060e",
+   "item": "alduressa gauntlets",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    12,
+    15
+   ],
+   "regions": [
+    "R-hand",
+    "L-hand"
+   ]
+  },
+  {
+   "file": "100005bf_m_front.png",
+   "clothingBase": "100005bf",
+   "item": "alduressa leggings",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    0,
+    1,
+    2,
+    5,
+    6
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "R-thigh",
+    "R-shin",
+    "L-thigh",
+    "L-shin"
+   ]
+  },
+  {
+   "file": "100005bf_m_back.png",
+   "clothingBase": "100005bf",
+   "item": "alduressa leggings",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    0,
+    1,
+    2,
+    5,
+    6
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "R-thigh",
+    "R-shin",
+    "L-thigh",
+    "L-shin"
+   ]
+  },
+  {
+   "file": "100005bf_f_front.png",
+   "clothingBase": "100005bf",
+   "item": "alduressa leggings",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    0,
+    1,
+    2,
+    5,
+    6
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "R-thigh",
+    "R-shin",
+    "L-thigh",
+    "L-shin"
+   ]
+  },
+  {
+   "file": "100005bf_f_back.png",
+   "clothingBase": "100005bf",
+   "item": "alduressa leggings",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    0,
+    1,
+    2,
+    5,
+    6
+   ],
+   "regions": [
+    "abdomen/pelvis",
+    "R-thigh",
+    "R-shin",
+    "L-thigh",
+    "L-shin"
+   ]
+  },
+  {
+   "file": "100004e6_m_front.png",
+   "clothingBase": "100004e6",
+   "item": "a pair of explorer leather boots",
+   "gender": "m",
+   "angle": "front",
+   "parts": [
+    2,
+    3,
+    4,
+    6,
+    7,
+    8
+   ],
+   "regions": [
+    "R-shin",
+    "R-foot",
+    "R-toe",
+    "L-shin",
+    "L-foot",
+    "L-toe"
+   ]
+  },
+  {
+   "file": "100004e6_m_back.png",
+   "clothingBase": "100004e6",
+   "item": "a pair of explorer leather boots",
+   "gender": "m",
+   "angle": "back",
+   "parts": [
+    2,
+    3,
+    4,
+    6,
+    7,
+    8
+   ],
+   "regions": [
+    "R-shin",
+    "R-foot",
+    "R-toe",
+    "L-shin",
+    "L-foot",
+    "L-toe"
+   ]
+  },
+  {
+   "file": "100004e6_f_front.png",
+   "clothingBase": "100004e6",
+   "item": "a pair of explorer leather boots",
+   "gender": "f",
+   "angle": "front",
+   "parts": [
+    2,
+    3,
+    4,
+    6,
+    7,
+    8
+   ],
+   "regions": [
+    "R-shin",
+    "R-foot",
+    "R-toe",
+    "L-shin",
+    "L-foot",
+    "L-toe"
+   ]
+  },
+  {
+   "file": "100004e6_f_back.png",
+   "clothingBase": "100004e6",
+   "item": "a pair of explorer leather boots",
+   "gender": "f",
+   "angle": "back",
+   "parts": [
+    2,
+    3,
+    4,
+    6,
+    7,
+    8
+   ],
+   "regions": [
+    "R-shin",
+    "R-foot",
+    "R-toe",
+    "L-shin",
+    "L-foot",
+    "L-toe"
+   ]
+  },
+  {
+   "file": "100000a5_m_front_dye-red.png",
+   "clothingBase": "100000a5",
+   "item": "alatar's platemail hauberk",
+   "gender": "m",
+   "angle": "front",
+   "dye": "red"
+  },
+  {
+   "file": "100000a5_m_front_dye-blue.png",
+   "clothingBase": "100000a5",
+   "item": "alatar's platemail hauberk",
+   "gender": "m",
+   "angle": "front",
+   "dye": "blue"
+  },
+  {
+   "file": "100000a5_m_front_dye-green.png",
+   "clothingBase": "100000a5",
+   "item": "alatar's platemail hauberk",
+   "gender": "m",
+   "angle": "front",
+   "dye": "green"
+  }
+ ]
+}
