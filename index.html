@@ -14542,7 +14542,12 @@ function update(dt){
     const l=Math.hypot(dx,dz);dx/=l;dz/=l;
     const roadBoost=onRoad(player.x,player.z)?ROAD_SPEED:1;
     const slowD=(player.debuffs&&player.debuffs.slow)?(1-player.debuffs.slow.v):1;  // enemy Slow curse
-    const castD=player.casting?0.5:1;   // committed mid-cast — you move at half pace
+    // AC SLIDECASTING: tapping/holding a TURN key during the cast animation "unlocks" movement — you
+    // slide at FULL speed instead of the rooted half-pace, the classic mage-kiting technique. Without
+    // the turn-key unlock, casting still slows you to half pace as before.
+    const slidecast=!!player.casting && (keys["arrowleft"]||keys["arrowright"]);
+    if(slidecast && !player._slidecastSeen){ player._slidecastSeen=1; log("<b>Slidecasting</b> — hold a turn key while casting to keep moving at full speed.","sys"); }
+    const castD=player.casting?(slidecast?1:0.5):1;
     const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD; // units/sec
     desVX=dx*spSec; desVZ=dz*spSec; moving=true;
   }
