@@ -7332,30 +7332,89 @@ function kcPokeBunny(){
   kcBunnyRec._line=((kcBunnyRec._line||0)+1)%lines.length;
   log(`<b>The Killer Bunny of Val Halla:</b> ${lines[kcBunnyRec._line]}`,"warn"); if(SFX.growl)SFX.growl();
 }
-function openKcChest(ch){
-  if(ch.kind==="storage"){
-    if(!castleAccess()){ log("The vault chest is sealed by Lord Kilmer's ward.","warn"); if(SFX.hit)SFX.hit(); return; }
-    log("The keep's vault chest swings open — your estate storage lies within.","sys"); openHousing(); return; }
-  if(!castleAccess()){ log("The chest is sealed by Lord Kilmer's ward.","warn"); if(SFX.hit)SFX.hit(); return; }
-  const give=(it,flavor)=>{ if(!addToInv(it)){ log("Your satchel is full — free a slot first.","warn"); if(SFX.hit)SFX.hit(); return false; }
-    log(`${flavor} — <b>${it.name}${(it.count||1)>1?" ×"+it.count:""}</b>.`,"loot"); if(SFX.gold)SFX.gold(); updateHUD(); saveGame(); return true; };
-  const pickOf=(pool)=>pool[irnd(0,pool.length-1)];
-  switch(ch.kind){
-    case "mmd": give({name:"Trade Note (MMD)",stat:"note",v:250000,count:5},"You lift out a crisp stack of MMD notes"); break;
-    case "jewelry": give(pickOf(kcTopNamed(t=>t.stat==="jewelry",20)),"From the finest jewels of Dereth you take"); break;
-    case "rings": give(pickOf(kcTopNamed(t=>t.stat==="jewelry"&&t.jtype==="finger",20)),"From the ring hoard you take"); break;
-    case "armor": give(pickOf(kcTopNamed(t=>t.stat==="worn"&&!t.shield,20)),"From the armoury chest you take"); break;
-    case "orbs": give(pickOf(kcRoomItems("orb")),"From the orb chest you take"); break;
-    case "staffs": give(pickOf(kcRoomItems("staff")),"From the staff chest you take"); break;
-    case "wands": give(pickOf(kcTopNamed(t=>t.wt==="focus"&&/wand|sceptre|scepter|baton|rod/i.test(t.name),20).concat(kcTopNamed(t=>t.wt==="focus",5))),"From the wand chest you take"); break;
-    case "portalgem": { let n=0; for(let i=0;i<3;i++){ if(addToInv(rollPortalGem())) n++; }
-      if(n){ log(`You scoop up <b>${n} portal gem${n>1?"s":""}</b> from the chest.`,"loot"); if(SFX.gold)SFX.gold(); updateHUD(); saveGame(); }
-      else { log("Your satchel is full — free a slot first.","warn"); if(SFX.hit)SFX.hit(); } break; }
-    case "keys": give({name:"Brass Key",stat:"key",v:1,count:5},"You pocket a handful of keys"); break;
-    case "scarabs": give({name:"Diamond Scarab",stat:"comp",v:150,count:5},"Level-8 casting scarabs — you take"); break;
-    case "tapers": player.prismTapers=(player.prismTapers||0)+50;
-      log("You gather <b>50 Prismatic Tapers</b> from the chest.","loot"); if(SFX.gold)SFX.gold(); updateHUD(); saveGame(); break;
+// ── Castle storage & hooks: every castle chest is a REAL persistent storage container for Lord
+//    Kilmer (deposit/withdraw like a housing chest), pre-filled once with the items its label
+//    names; every hook is a real housing FLOOR hook holding the piece it used to merely display.
+//    State lives in player.kcVault / player.kcHookItems (saved). Access is gated by castleAccess. ──
+const KC_VAULT_TITLE={vault:"Estate Vault",mmd:"MMD Notes",jewelry:"Finest Jewelry",rings:"Best Rings",
+  armor:"Best Armor",orbs:"Best Orbs",wands:"Best Wands",staffs:"Best Staffs",keys:"Chest of Keys",
+  scarabs:"Level-8 Scarabs",tapers:"Prismatic Tapers",portalgem:"Portal Gems"};
+const KC_VAULT_CAP=200;
+function kcChestFill(id){   // the items each labelled chest "says" it holds (materialized once)
+  const clone=a=>a.map(it=>Object.assign({},it));
+  switch(id){
+    case "mmd":      return [{name:"Trade Note (MMD)",stat:"note",v:250000,count:200}];
+    case "jewelry":  return clone(kcTopNamed(t=>t.stat==="jewelry",20));
+    case "rings":    return clone(kcTopNamed(t=>t.stat==="jewelry"&&t.jtype==="finger",20));
+    case "armor":    return clone(kcTopNamed(t=>t.stat==="worn"&&!t.shield,20));
+    case "orbs":     return clone(kcRoomItems("orb"));
+    case "staffs":   return clone(kcRoomItems("staff"));
+    case "wands":    return clone(kcTopNamed(t=>t.wt==="focus"&&/wand|sceptre|scepter|baton|rod/i.test(t.name),20).concat(kcTopNamed(t=>t.wt==="focus",5)).slice(0,20));
+    case "keys":     return [{name:"Brass Key",stat:"key",v:1,count:50}];
+    case "scarabs":  return [{name:"Diamond Scarab",stat:"comp",v:150,count:100}];
+    case "tapers":   return [{name:"Prismatic Taper",stat:"comp",v:100,count:100}];
+    case "portalgem":{ const g=[]; for(let i=0;i<Math.min(12,CITIES.length);i++) g.push(rollPortalGem()); return g; }
+    default:         return [];   // "vault": general estate storage, starts empty
   }
+}
+let _kcVaultId=null;
+function openKcChest(ch){
+  if(!castleAccess()){ log("The chest is sealed by Lord Kilmer's ward.","warn"); if(SFX.hit)SFX.hit(); return; }
+  const id=ch.kind==="storage"?"vault":ch.kind;
+  player.kcVault=player.kcVault||{};
+  if(!(id in player.kcVault)) player.kcVault[id]=kcChestFill(id);   // fill once; the player's edits persist thereafter
+  _kcVaultId=id; kcVaultRender();
+  paused=true; if(locked)document.exitPointerLock();
+}
+function closeKcVault(){ const ov=document.getElementById('kcVaultPanel'); if(ov) ov.remove(); paused=false; _kcVaultId=null; }
+function kcVaultDeposit(i){ const st=player.kcVault[_kcVaultId]; if(!st||!player.inv[i]) return;
+  if(st.length>=KC_VAULT_CAP){ log("This chest is full.","warn"); if(SFX.hit)SFX.hit(); return; }
+  st.push(player.inv.splice(i,1)[0]); saveGame(); updateHUD(); kcVaultRender(); }
+function kcVaultWithdraw(i){ const st=player.kcVault[_kcVaultId]; const it=st&&st[i]; if(!it) return;
+  if(!addToInv(it)){ log("Your satchel is full — free a slot first.","warn"); if(SFX.hit)SFX.hit(); return; }
+  st.splice(i,1); if(SFX.gold)SFX.gold(); saveGame(); updateHUD(); kcVaultRender(); }
+function kcVaultRender(){
+  const id=_kcVaultId; if(id==null) return;
+  const st=player.kcVault[id]||[], inv=player.inv, title=KC_VAULT_TITLE[id]||"Storage";
+  let ov=document.getElementById('kcVaultPanel');
+  if(!ov){ ov=document.createElement('div'); ov.id='kcVaultPanel';
+    ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+    document.body.appendChild(ov); }
+  const row=(lbl,btn)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:2px 0">${btn}<span style="flex:1">${lbl}</span></div>`;
+  ov.innerHTML=`<div style="max-width:660px;width:94%;max-height:82vh;overflow:auto;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:16px 18px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">🗄 ${title} — Lord Kilmer's Chest</div>
+    <div style="color:var(--dim);margin:4px 0 10px;font-size:12px">A castle storage chest · ${st.length}/${KC_VAULT_CAP} stored — deposit &amp; withdraw freely</div>
+    <div style="display:flex;gap:12px">
+      <div style="flex:1"><div style="color:var(--gold);margin-bottom:4px">Satchel (${inv.length}/${invCap()}) — deposit ▸</div>
+        ${inv.length?inv.map((it,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:2px 0"><span style="flex:1">${_hItemLabel(it)}</span><button class="tbtn" data-dep="${i}">Store ▸</button></div>`).join(""):`<div style="color:var(--dim)">empty</div>`}</div>
+      <div style="flex:1"><div style="color:var(--gold);margin-bottom:4px">◂ ${title} (${st.length}/${KC_VAULT_CAP})</div>
+        ${st.length?st.map((it,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:2px 0"><button class="tbtn" data-wd="${i}">◂ Take</button><span style="flex:1">${_hItemLabel(it)}</span></div>`).join(""):`<div style="color:var(--dim)">empty</div>`}</div>
+    </div>
+    <button id="kcVaultClose" class="tbtn" style="margin-top:12px;width:100%">Close</button></div>`;
+  ov.querySelector('#kcVaultClose').onclick=closeKcVault;
+  ov.querySelectorAll('[data-dep]').forEach(b=>b.onclick=()=>kcVaultDeposit(+b.dataset.dep));
+  ov.querySelectorAll('[data-wd]').forEach(b=>b.onclick=()=>kcVaultWithdraw(+b.dataset.wd));
+}
+// ── castle hooks (real housing FLOOR hooks): current contents = player.kcHookItems[key] when the
+//    player has touched it (item or null=emptied), else the hook's default display piece (hk.def) ──
+function kcCurHookItem(hk){ const o=player.kcHookItems||{}; return (hk.key in o)?o[hk.key]:hk.def; }
+function kcRebuildHook(hk){ if(hk.grp&&hk.grp.parent) hk.grp.parent.remove(hk.grp);
+  const hg=hsBuildHookMesh("floor", kcCurHookItem(hk)||null); hg.position.set(hk.lx,0,hk.lz); hk.G.add(hg); hk.grp=hg; }
+function kcRefreshDecor(){ for(const hk of kcHooks) kcRebuildHook(hk); }   // after load: rebuild meshes from restored state
+function kcUseHook(hk){
+  if(!castleAccess()){ log("The hooks answer only to Lord Kilmer and his sworn guests.","warn"); if(SFX.hit)SFX.hit(); return; }
+  player.kcHookItems=player.kcHookItems||{};
+  const cur=kcCurHookItem(hk);
+  if(cur){
+    if(!addToInv(cur)){ log("Your satchel is full — free a slot first.","warn"); if(SFX.hit)SFX.hit(); return; }
+    player.kcHookItems[hk.key]=null; kcRebuildHook(hk);
+    log(`You take the <b>${cur.name}</b> off the hook.`,"sys"); if(SFX.gold)SFX.gold(); saveGame(); updateHUD(); return;
+  }
+  let i=player.inv.findIndex(it=>it&&hsHookAccepts("floor",it)&&it.stat!=="writ"&&!it.scroll);
+  if(i<0){ log("Nothing you carry fits this hook.","sys"); return; }
+  const it=player.inv[i];
+  player.kcHookItems[hk.key]=Object.assign({},it,{count:1}); takeFromInv(i); kcRebuildHook(hk);
+  log(`You set the <b>${it.name}</b> on the hook.`,"loot"); if(SFX.quest)SFX.quest(); saveGame(); updateHUD();
 }
 // ── the valkyries: max-level buff bots + portal bots, sworn to Lord Kilmer ──
 function kcMaxBuffList(){   // the single highest tier of every beneficial enchantment family in the spellbook
@@ -7724,13 +7783,13 @@ function addKilmerCastle(){
     for(let i=0;i<5;i++) pts.push([inx0+(inx1-inx0)*(i+0.5)/5, inz0]);
     for(let i=0;i<5;i++) pts.push([inx0+(inx1-inx0)*(i+0.5)/5, inz1]);
     for(const f of [0.08,0.3,0.7,0.92]) pts.push([R.col<0?inx1:inx0, inz0+(inz1-inz0)*f]);
+    player.kcHookItems=player.kcHookItems||{};
     for(let i=0;i<Math.min(20,items.length);i++){
-      const it=items[i], [hx,hz]=pts[i];
-      const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.34,1.1,8),stoneDark); ped.position.set(hx,0.55,hz); ped.castShadow=true; G.add(ped);
-      const ic=textSprite(hookIco(it), it.stat==="trophy"?"#cdbf9a":"#ff6a5a"); ic.position.set(hx,1.6,hz); ic.scale.set(0.9,0.9,1); G.add(ic);
-      const nl=labelSprite(it.name,"npcs"); nl.scale.set(4.2,1.05,1); nl.position.set(hx,2.3,hz); G.add(nl);
+      const it=items[i], [hx,hz]=pts[i], key=R.key+i;
+      const placed=(key in player.kcHookItems)?player.kcHookItems[key]:it;   // a saved edit wins over the default display piece
+      const hg=hsBuildHookMesh("floor",placed||null); hg.position.set(hx,0,hz); G.add(hg);   // a real housing floor hook, item on it
       obst(hx,hz,0.5,2.2);
-      kcHooks.push({x:KC.x+hx,z:KC.z+hz,it,room:R.label});
+      kcHooks.push({key,def:it,lx:hx,lz:hz,x:KC.x+hx,z:KC.z+hz,room:R.label,grp:hg,G});
     }
   }
   { const zc=rowC[3];   // the throne, on a dais at the east wall of the Throne Room
@@ -14309,6 +14368,8 @@ function currentPrompt(){
       if(isDone(id)) return "Speak to "+gn+" (E)";
       return "Accept a quest from "+gn+" (E)"; }
     return "Speak (E)";}}
+  for(const ch of kcChests) if(nr(ch.x,ch.z)<2.6) return "Open "+(KC_VAULT_TITLE[ch.kind==="storage"?"vault":ch.kind]||"the chest")+" — castle storage (E)";
+  for(const hk of kcHooks) if(nr(hk.x,hk.z)<1.9) return (kcCurHookItem(hk)?"Take from the hook":"Use the hook")+" (E)";
   for(const cr of hsCrystals) if(nr(cr.x,cr.z)<3) return (player.homestead&&player.homestead.hid===cr.hid)?cr.name+" — your Covenant Crystal (E)":cr.name+" — Covenant Crystal (E)";
   for(const hk of hsHooks) if(nr(hk.x,hk.z)<2.2) return (player.homestead&&player.homestead.hooks[hk.key]?"Take down from the ":"Use the ")+hk.kind+" hook (E)";
   for(const ch of hsChests) if(nr(ch.x,ch.z)<2.6) return "Open your storage chest (E)";
@@ -14422,7 +14483,7 @@ function interact(){
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
   for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6){ openKcChest(ch); return; } }
   if(kcBunnyRec&&Math.hypot(kcBunnyRec.x-player.x,kcBunnyRec.z-player.z)<4){ kcPokeBunny(); return; }
-  for(const hk of kcHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<1.9){ kcInspectHook(hk); return; } }
+  for(const hk of kcHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<1.9){ kcUseHook(hk); return; } }
   for(const cr of hsCrystals){ if(Math.hypot(cr.x-player.x,cr.z-player.z)<3){ openCovenant(cr); return; } }
   for(const hk of hsHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<2.2){ hsUseHook(hk); return; } }
   for(const ch of hsChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6){ openHousing(); return; } }
@@ -22653,7 +22714,7 @@ function saveGame(){
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,
+      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,kcVault:player.kcVault||{},kcHookItems:player.kcHookItems||{},
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
@@ -22720,6 +22781,8 @@ function applySaveObj(s){
   player.focusMana=+s.focusMana||0;   // H15 focus mana battery
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   player.homestead=(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null;
+  player.kcVault=(s.kcVault&&typeof s.kcVault==="object")?s.kcVault:{};                 // Kilmer's castle chest contents
+  player.kcHookItems=(s.kcHookItems&&typeof s.kcHookItems==="object")?s.kcHookItems:{};  // castle hook placements (deviations from defaults)
   player.hsRebuyUntil=+s.hsRebuyUntil||0;
   player.aboardShip=null;   // always start a session ashore
   player.ship=(s.ship&&typeof s.ship==="object"&&shipDef(s.ship.type))?{type:s.ship.type,x:(typeof s.ship.x==="number")?s.ship.x:null,z:(typeof s.ship.z==="number")?s.ship.z:null,yaw:+s.ship.yaw||0}:null;
@@ -23502,6 +23565,7 @@ function startGame(loadSaved,preset){
   if(loadSaved){
     if(isOnline&&pendingServerChar){ applySaveObj(pendingServerChar); pendingServerChar=null; }
     else applySave();
+    if(typeof kcRefreshDecor==="function") kcRefreshDecor();   // castle is built before the save loads — rebuild hooks from the restored placements
     log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(NET.me)}.`:"Your saga continues in <b>Dereth</b>.","sys");
     toast(isOnline?"ENTERING DERETH ONLINE":"WELCOME BACK");
   } else {
