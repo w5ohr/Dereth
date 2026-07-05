@@ -10,8 +10,13 @@
 > *outside* the real footprint; within the true rotated footprint terrain never pierces the
 > floor (rotatedFootprintPoke = 0). The **`door_offmarker` (7)** remain a documented residual
 > (see below) — inherent to packing real AC footprints; a `tbCutDoorway` scoring tweak was
-> tried twice and reverted (regressed Sanamar), and the proper fix needs an actual mesh
-> doorway hole at the fallback wall, not a scoring change.
+> tried twice and reverted (regressed Sanamar). **The `door_offmarker` clip is now FIXED
+> (`e733eac`):** since the AC shells are closed with coarse whole-quad walls (no clean mesh
+> hole possible) and moving the door back to the marker regresses, `tbCutDoorway` instead
+> **builds a real doorway assembly at every cut that isn't on the model's own door art** — a
+> stone frame (jambs + lintel), a recessed dark opening, and an ajar plank door — so the
+> entrance READS as a doorway instead of a bare gap in a blank wall. Verified on Aluvian +
+> Sho buildings; marker-door buildings skip it; entry (collision) unchanged; shared materials.
 
 
 Verifying that buildings can be entered without clipping or other issues. Method: an
