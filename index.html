@@ -615,7 +615,7 @@ const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled are
 // Frustum culling keeps only the visible chunks drawn. Must stay divisible by TERRA_CHUNKS(16).
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
-const TOWN_SAFE=60, DAYLEN=7620; // safe radius around each capital; DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
+const TOWN_SAFE=60*WSCALE, DAYLEN=7620; // safe radius around each capital (×WSCALE: real town extent at 1:1); DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s)
 
 // ---------- attributes (AC's six) ----------
 const ATTRS=["Strength","Endurance","Coordination","Quickness","Focus","Self"];
@@ -1705,7 +1705,7 @@ let scenery=[],nodes=[],dying=[],roadMeshes=[];
 // stone highways linking the towns (Cragstone — Holtburg — Yaraq are collinear)
 const ROAD_SPEED=1.5;
 const COORD=80*WSCALE;   // world units per AC lat/long degree (240 at true 1:1 scale)
-const DIRE_DIST=2600;    // beyond this from any capital = the wild Direlands
+const DIRE_DIST=2600*WSCALE;    // beyond this from any capital = the wild Direlands (×WSCALE: map zones at true 1:1 spacing)
 // The real cultures of Dereth. region index: 0 Aluvia, 1 Sho, 2 Gharu'ndim.
 const REGIONS=[
   {name:"Aluvia",       tint:[0.80,1.0,0.58]},
