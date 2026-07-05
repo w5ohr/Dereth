@@ -13411,14 +13411,14 @@ function executeSpell(id){
     :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
   if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
   if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
-    const m=pickMonsterTarget(28);
+    const m=pickMonsterTarget(30);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
     else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
     castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
   }
   if(s.special==="corrupt"){   // Mg6 Void curse — a nether DoT that also corrodes the foe's defences
-    const m=pickMonsterTarget(28);
+    const m=pickMonsterTarget(30);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     const dps=Math.round(s.dps*skillEff("void",0.02));
     m.burnT=Math.max(m.burnT||0,s.dur); m.burnDps=Math.max(m.burnDps||0,dps);   // nether DoT (rides the burn tick)
@@ -13427,7 +13427,7 @@ function executeSpell(id){
     log(`You wrack a foe with <b>${s.name}</b> — nether corruption festers.`,"heal"); return;
   }
   if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
-    const m=pickMonsterTarget(28);
+    const m=pickMonsterTarget(30);
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(m.shared) netSend({t:"debuff",id:m.id,eff:s.debuff,v:s.dmag,dur:s.dur});
     else if(s.debuff==="spd") m.slow=Math.max(m.slow||0,1-s.dmag);
@@ -13550,7 +13550,10 @@ function executeSpell(id){
   // AC spell range (SpellTable BaseRangeConstant + magicSkill × BaseRangeMod, hard-capped): your reach
   // grows with the school skill up to a ceiling, so a novice can't snipe from across the field.
   const _mskill=skillValue(MAGIC_SCHOOLS[s.school]||"war");
-  const spellRange=Math.min(20+_mskill*0.35,95);   // world units (≈ retail's 75m cap at this ⅓ scale)
+  // AC-exact: SpellTable BaseRangeConstant = 30 m for every war bolt (extracted from spell.dat via
+  // tools; Flame/Frost/Force/Acid/Blade all 30 m, waves 15 m), + magic-skill scaling to retail's ~75 m
+  // cap. World is 1:1 now, so these ARE metres.
+  const spellRange=Math.min(30+_mskill*0.4,75);
   // AC spread patterns per geometry: Blast = a 3-bolt 90° cone (±45°), Volley = 3 PARALLEL bolts
   // (offset sideways, same heading — a wall of shots), Wave = a wide 5-bolt fan, else a single bolt.
   const perp={x:-dir.z,z:dir.x}; const pl=Math.hypot(perp.x,perp.z)||1; perp.x/=pl; perp.z/=pl;   // lateral axis for parallel offsets
