@@ -100,7 +100,31 @@ Both verified live; living interact unchanged.
 Ginseng (comp, v=4): buy 2p → sells 1p. Pre-fix this was another +2p/cycle loop —
 the systemic bp cap caught an exploit class beyond the trade note that triggered it.
 
+## BURST 4 (2026-07-05) — quests end-to-end
+
+### 6. QUEST — boss quests offered at level 1 (MEDIUM)
+"Slay Bael'Zharon the Hopeslayer" and "Slay Martine the Fallen" appear UNLOCKED with
+questLvl 1 for a fresh character — a new player's quest list opens with endgame bosses.
+Either questLvl defaults to 1 when underivable or the gating chain is missing for these.
+Fix direction: derive questLvl from the target creature's bestiary level, or gate the
+boss quests behind their story arcs.
+
+### Verified working — the full quest loop
+- Accept: Alfrin (Holtburg) — intro dialogue, journal entry, HUD tracker.
+- Gating: Rowena's gnawvil correctly locked behind "Defense of Zaikhal" with in-character
+  directions to the prerequisite giver.
+- Slay objective: advanced by a REAL drudge kill (loot dropped: gold, a scroll, Drudge Ear).
+- Gather objective: advanced by real herb/ore node gathering.
+- Turn-in: quest completes, +90 pyreals, reward item, XP granted (leveled 3→6), journal
+  cleared, giver switches to post-quest dialogue.
+
+### Design shortcuts noted (not bugs, worth knowing)
+- ANY drudge kill satisfies "Slay the Drudge Robber Baron" (no named spawn).
+- ANY gather node satisfies "Recover Alfrin's seed-bags" (no specific item source).
+- Three NPCs named Rowena in Holtburg alone (Emissary / Town Crier / Barkeeper) —
+  name-pool collision, immersion nit.
+
 ## NEXT BURSTS (queued)
-- Quest giver dialog + turn-in; chest looting; corpse run (recover AFTER respawn).
+- Corpse run (recover AFTER respawn, with the new alive-gate in place).
 - Tinkering/salvage, armor equip visuals, allegiance/plugin panels, Yaraq sweep.
 - Footpath-portals finding (#3) still open — needs a placement pass, larger change.
