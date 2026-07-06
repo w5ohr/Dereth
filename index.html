@@ -9931,7 +9931,7 @@ function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg")+aetheriaBonus("dmg"))*(1-player.vitae);  // Blood Drinker + Aetheria of Destruction
-  if(player.auras&&player.auras.valor) base*=(1+player.auras.valor*0.01);   // Luminance Aura of Valor (damage rating)
+  base*=(1+damageRating(m,opts));   // Cb5 Damage Rating: Aura of Valor + gear + Aetheria + rear-attack (+20 DR from behind)
   if(opts.phys&&player.gearFx&&player.gearFx.dmg) base+=player.gearFx.dmg;   // Blood Drinker / Strength item-spells: flat weapon damage
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
   if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
@@ -9951,7 +9951,12 @@ function applyHit(m,base,opts){ opts=opts||{};
   }
   if(opts.phys&&pm!==1) floater(m.x,(m.headY||1.6)+2.9,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0");
   dmg*=vgen;
-  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+((player.gearFx&&player.gearFx.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria, item-spell crit; Aura of Glory boosts crit damage
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+((player.gearFx&&player.gearFx.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+critDamageRating();  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria, item-spell crit; Critical-Damage Rating (Aura of Glory + gear + Aetheria) boosts crit damage
+  // Cb5 Crushing Blow: a chance a PHYSICAL hit crushes — favoured by maces/2h/unarmed (bludgeon) and helped by a crit —
+  // for +60% damage; a devastating strike distinct from a crit (both can stack).
+  if(opts.phys){ const cr=crushingRating(opts)+(crit?0.05:0); if(cr>0&&Math.random()<cr){ dmg*=1.6; opts._crush=true;
+      floater(m.x,(m.headY||1.6)+2.6,m.z,"CRUSHING!","#ff9a3a"); if(SFX.crit)SFX.crit(); shake(0.2); } }
+  if(opts._rear&&!crit) floater(m.x,(m.headY||1.6)+2.3,m.z,"rear +DR","#ffcf6b");   // show the backstab damage-rating bonus
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -15272,7 +15277,9 @@ function meleeAttack(power){
   let winded=1;
   if(player.st>=stamCost){ player.st-=stamCost; } else { player.st=0; winded=0.6; }   // exhausted → 40% weaker swing (no more free full-power swings at 0 stamina)
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*skillEff(weaponSkillKey(),0.02)*prof.dmg*power*(1+recklessFactor())*winded;
-  const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
+  const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon", melee:true};   // weapon's physical damage type (bare fists = bludgeon)
+  // Cb5 Crushing Blow chance by weapon: bludgeon (mace/staff/unarmed) crush hardest, 2h/axe next, blades least
+  meleeOpts.crushRating=(meleeOpts.phys==="bludgeon"?0.13:(wt==="twohand"||wt==="axe")?0.08:0.03);
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
@@ -15368,6 +15375,28 @@ function sneakFactor(m){ const t=skillTier("sneak"); if(t<1) return 1;
   const toP=Math.atan2(player.x-m.x,player.z-m.z), rel=Math.abs(Math.atan2(Math.sin(toP-(m.ang||0)),Math.cos(toP-(m.ang||0))));
   const behind=rel>2.0, unaware=m.state!=="chase";                 // rear arc, or a target not currently chasing you
   return (behind||unaware)? 1+(t===2?0.55:0.30) : 1;
+}
+// ── Cb5 Damage-Rating layer (AC endgame): a unified additive % on outgoing damage (Damage Rating),
+//    an additive bonus to the crit multiplier (Critical-Damage Rating), and Crushing Blow. Aggregates
+//    the Luminance auras + gear item-spells + Aetheria, plus the universal +20 DR for a REAR attack. ──
+function isBehind(m){ if(!m||typeof m.ang!=="number") return false;
+  const toP=Math.atan2(player.x-m.x,player.z-m.z);
+  return Math.abs(Math.atan2(Math.sin(toP-m.ang),Math.cos(toP-m.ang)))>2.0; }   // player in the target's rear arc
+function damageRating(m,opts){
+  let dr=((player.auras&&player.auras.valor)||0)*0.01;             // Luminance Aura of Valor
+  dr+=(player.gearFx&&player.gearFx.dr)||0;                        // gear damage-rating item-spells
+  dr+=(aetheriaBonus("dr")||0);                                   // Aetheria damage-rating (ready; 0 today)
+  if(opts&&opts.melee&&isBehind(m)){ dr+=0.20; opts._rear=true; }  // AC rear attack: +20 Damage Rating
+  return dr;
+}
+function critDamageRating(){
+  let c=((player.auras&&player.auras.glory)||0)*0.1;              // Luminance Aura of Glory
+  c+=(player.gearFx&&player.gearFx.cdr)||0;                        // gear crit-damage-rating item-spells
+  c+=(aetheriaBonus("cdr")||0);                                   // Aetheria crit-damage (ready; 0 today)
+  return c;
+}
+function crushingRating(opts){   // chance a physical hit lands a Crushing Blow — mace/2h/unarmed (bludgeon) favoured
+  return (opts&&opts.crushRating)||0;
 }
 // Cb5 Dirty Fighting: a chance on hit to debilitate — the effect depends on your attack height (AC).
 //   low → Exposed (takes more damage) · high → Staggered (its next attack is delayed) · middle → Bleeding (DoT).

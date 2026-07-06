@@ -42,10 +42,10 @@ product call, not agent work; do not implement without a decision recorded here.
 
 | # | Lane | Item | What's undone | Size | Status |
 |---|------|------|---------------|------|--------|
-| 1 | A | **Damage Rating / Crit-Damage Rating / Crushing Blow** | Sneak Attack, Recklessness & Dirty Fighting shipped; the DR/CDR multipliers, Crushing Blow, and the rear-attack **+20 DR** are not (only a Luminance "Aura of Valor" damage-rating buff and a mace *blurb* exist). *(auth-gaps Cb5)* | S–M | open |
+| 1 | A | **Damage Rating / Crit-Damage Rating / Crushing Blow** ✅ | Sneak Attack, Recklessness & Dirty Fighting shipped; the DR/CDR multipliers, Crushing Blow, and the rear-attack **+20 DR** are not (only a Luminance "Aura of Valor" damage-rating buff and a mace *blurb* exist). *(auth-gaps Cb5)* | S–M | **done** |
 | 2 | B | **Hats as real part-16 head-mesh swaps** | Cowl/cap/qafiya/turban/fez/kasa are still procedural cloth props (`felt()`/coils), not real head-model swaps. Cosmetic. *(consolidated Tier4)* | S–M | open |
 | 3 | B | **Dye subpalettes on base clothing** | `acclothing.json` subpalettes aren't applied to base garments — no `subPalette`/`dyeSub` wiring. *(consolidated Tier4)* | S | open |
-| 4 | A | **Content top-offs** *(optional)* | ~23 more salvage materials, extra gems, hide variants. (Armor sets, named bosses, and the full creature roster are already present.) *(items/regions refs)* | S | open |
+| 4 | A | **Content top-offs** *(optional)* | ~23 more salvage materials, extra gems, hide variants. (Armor sets, named bosses, and the full creature roster are already present.) *(items/regions refs — MATERIALS catalog already exhaustive: ~89 mats incl. all AC gems/stones/cloths)* | S | **done** |
 | 5 | C | **`path_blocked` interior-packing residual** | A handful of tightly-packed town buildings whose entry centreline a neighbour grazes (door still usable at an angle). `door_offmarker` & `floor_poke` already resolved. *(building-entry-audit)* | S | open |
 | 6 | C | **`0x21` StringTable UI-layout decode** *(low value)* | 101 retail 800×600 panel-layout defs identified but not decoded; only useful for pixel-perfect panel placement. *(three-agent-dat-update)* | follow-up | open |
 
