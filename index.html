@@ -205,6 +205,7 @@
     <div class="attr"><span>Delves</span><b id="sDelves">0/50</b></div>
     <div class="attr"><span>Vitae</span><b id="sVitae">—</b></div>
     <div class="attr"><span style="color:#9fd0ff">Season</span><b id="sSeason" style="color:#cfe0ee">—</b></div>
+    <div class="attr"><span style="color:#c8b06a">Region</span><b id="sRegion" style="color:#e6d6a8">—</b></div>
     <div class="attr" id="evRow" style="display:none"><span style="color:#ffb347">Incursion</span><b id="sEvent" style="color:#ffb347">—</b></div>
   </div>
   <div id="quest" class="panel" style="top:372px;right:12px;width:182px;font-size:11px;display:none">
@@ -1684,6 +1685,26 @@ const REGIONS=[
   {name:"Gharu'ndim",   tint:[1.0,0.88,0.50]},
 ];
 const DIRELANDS_TINT=[0.40,0.36,0.46];
+// ── Named regions of Dereth — the three cultural homelands, the frontier, and the special zones,
+//    surfaced as you travel (regionNameAt → HUD readout + a "you have entered …" toast on crossing),
+//    on the world map, and via /where. (The continent's true irregular coastline & authored barriers
+//    await the terrain-data lane; these NAME the world as it currently stands.) ──
+const REGION_META={
+  aluvia:   {key:"aluvia",   name:"Aluvia",           blurb:"The green Aluvian northlands — rolling farm country and the oldest human settlements in Dereth."},
+  sho:      {key:"sho",      name:"the Sho Lands",    blurb:"Wooded hills and terraced valleys where the Sho keep the old disciplines."},
+  gharu:    {key:"gharu",    name:"Gharu'ndim",       blurb:"The southern desert of the Gharu'ndim — sun-baked dunes, oases, and djinn-haunted ruins."},
+  blackmire:{key:"blackmire",name:"the Blackmire",    blurb:"A fetid swamp band between the Aluvian and Sho lands, thick with mosswarts and reedsharks."},
+  isles:    {key:"isles",    name:"the Outer Isles",  blurb:"The western isles — Aphus Lassel, Aerlinthe and their kin — ringed by deep water and older magic."},
+  dire:     {key:"dire",     name:"the Direlands",    blurb:"The untamed frontier beyond the settled lands, where the deadliest creatures of Dereth roam."},
+};
+const REGION_KEYS=["aluvia","sho","gharu"];   // REGIONS[] index → REGION_META key
+// The most SPECIFIC named region covering a point: isles → Direlands → the Blackmire → cultural homeland.
+function regionNameAt(x,z){
+  if(typeof islandLift==="function" && islandLift(x,z,0)>1.0) return REGION_META.isles;   // standing on an outer isle
+  if(typeof inSwamp==="function" && inSwamp(x,z)) return REGION_META.blackmire;           // the named swamp band wins over the generic frontier
+  if(regionOf(x,z)<0) return REGION_META.dire;                                            // beyond the settled lands
+  return REGION_META[REGION_KEYS[regionOf(x,z)]]||REGION_META.aluvia;                     // the three homelands
+}
 // Real Dereth towns placed by their actual in-game coordinates: [name, lat(N+/S-), lon(E+/W-), region, capital]
 // Canonical Asheron's Call town coordinates (Drunkapedia; see docs/asherons-call-world-reference.md).
 // Region 0 Aluvia (north), 1 Sho (south-east), 2 Gharu'ndim (west). New Viamont & Direlands frontier
@@ -1732,6 +1753,24 @@ function swampZone(){ if(_swamp) return _swamp;
   _swamp=(a&&b)?{x:(a.x+b.x)/2,z:(a.z+b.z)/2,r:900}:{x:0,z:0,r:0}; return _swamp; }
 function inSwamp(x,z){const s=swampZone();return s.r>0&&Math.hypot(x-s.x,z-s.z)<s.r;}
 function regionTint(x,z){const r=regionOf(x,z);return r<0?DIRELANDS_TINT:REGIONS[r].tint;}
+// Announce region crossings and keep the HUD's Region readout current. Debounced by a short dwell so a
+// fuzzy boundary doesn't spam the toast; silent on the very first frame (you don't "enter" where you spawn).
+let _regPend=null,_regDwell=0;
+function regionTick(dt){
+  if(inDungeon||inNetwork||!player.alive) return;
+  const rn=regionNameAt(player.x,player.z), key=rn.key;
+  const el=document.getElementById('sRegion'); if(el&&el.textContent!==rn.name) el.textContent=rn.name;
+  if(!player._regionKey){ player._regionKey=key; return; }        // init silently at spawn/load
+  if(key!==player._regionKey){
+    if(_regPend!==key){ _regPend=key; _regDwell=0; }
+    _regDwell+=dt;
+    if(_regDwell>=1.2){                                           // held long enough to count as a real crossing
+      player._regionKey=key; _regPend=null; _regDwell=0;
+      toast("Entered "+rn.name);
+      log(`<b>You have entered ${rn.name}.</b> <span style="color:var(--dim)">${rn.blurb}</span>`,"sys");
+    }
+  } else { _regPend=null; _regDwell=0; }
+}
 let ROADS=[], CARAVAN_PATH=null;
 function genRoads(){
   ROADS=[];
@@ -15784,6 +15823,7 @@ function update(dt){
   wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
   crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
+  regionTick(dt);        // announce region crossings + keep the HUD Region readout current
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
   updateHUD();
@@ -16574,7 +16614,10 @@ function drawBigMap(){
   g.textAlign="center";
   g.font="italic 13px Trebuchet MS";g.fillStyle="rgba(216,177,74,0.5)";
   for(const c of CAPITALS) g.fillText(REGIONS[c.region].name,cx(c.x),cx(c.z)-15);
-  g.fillStyle="rgba(190,160,210,0.55)";g.fillText("The Direlands",cx(0),cx(0));
+  // named sub-regions: the Blackmire swamp, the western Outer Isles, and the Direlands frontier
+  if(typeof swampZone==="function"){ const s=swampZone(); if(s.r>0){ g.fillStyle="rgba(150,190,140,0.55)"; g.fillText("the Blackmire",cx(s.x),cx(s.z)); } }
+  if(_islBB){ g.fillStyle="rgba(150,200,230,0.6)"; g.fillText("the Outer Isles",cx((_islBB[0]+_islBB[2])/2),cx((_islBB[1]+_islBB[3])/2)); }
+  g.fillStyle="rgba(190,160,210,0.6)";g.fillText("the Direlands",cx(-HALF*0.66),cx(-HALF*0.66));   // a corner in the outer wild (not dead-centre over the towns)
   g.font="11px Trebuchet MS";
   for(const ls of lifestones){const cap=ls.capital;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");
     g.beginPath();g.arc(cx(ls.x),cx(ls.z),cap?7:3.5,0,6.28);g.fill();
@@ -24369,6 +24412,14 @@ function handleSlash(text){
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
   else if(cmd==="story"||cmd==="arc"){ storyView(); }
+  else if(cmd==="where"||cmd==="loc"||cmd==="region"){   // name the region you stand in, its lore, and rough bearings
+    if(inDungeon){ log("You are delving beneath Dereth — no region reads down here.","sys"); return; }
+    const rn=regionNameAt(player.x,player.z);
+    log(`<b>${rn.name}.</b> <span style="color:var(--dim)">${rn.blurb}</span>`,"sys");
+    const near=CITIES.map(c=>({c,d:Math.hypot(c.x-player.x,c.z-player.z)})).sort((a,b)=>a.d-b.d).slice(0,2)
+      .map(o=>`${o.c.name} (${compassTo(o.c.x-player.x,o.c.z-player.z)}, ~${Math.max(1,Math.round(o.d/(120*WSCALE)))} leagues)`).join(" · ");
+    if(near) log(`Nearest settlements: ${near}.`,"sys");
+  }
   else if(cmd==="pk"){   // AC three-state PvP: NPK (safe) · PKL (PK-Lite, keeps goods) · PK (full, corpse lootable)
     if(!isOnline){ log("PvP requires being online.","warn"); return; }
     const want=(parts[1]||"").toLowerCase(), cur=player.pkState||"npk";
@@ -24388,7 +24439,7 @@ function handleSlash(text){
     else doEmote(act); }
   else if(EMOTE_CMDS[cmd]){ doEmote(cmd); }                                   // shorthand: /clap, /wave, …
   else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
-  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /a, /allegiance, /party, /emote clap","warn");
+  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /a, /allegiance, /party, /where, /emote clap","warn");
 }
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
