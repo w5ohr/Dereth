@@ -1,4 +1,4 @@
-# Dereth — Consolidated "Left To Do" (2026-07-06, rev 3 — Tier 1 complete)
+# Dereth — Consolidated "Left To Do" (2026-07-06, rev 6 — Tiers 1 AND 2 complete)
 
 Synthesized from every planning/gap/findings doc + memory + code TODOs (three parallel doc audits),
 then **reconciled against the current code** — several items the older gap-analysis docs list as
@@ -20,6 +20,31 @@ then **reconciled against the current code** — several items the older gap-ana
 > already-built by the parallel fix-wave: staged wizard with 4 heritages incl. Viamontian, 7
 > professions, 270 attr credits/52 skill credits with specialize-at-creation, ToD starter kit,
 > Training Academy, greeter chains — end-to-end creation test passed).
+
+> ✅ **TIER 2 COMPLETE (rev 5, branch tier2-systems):** built this pass — **weapon-skill tree**
+> (each weapon rolls ITS skill: heavy/light/finesse/twohand/missile), **missile to-hit** (lost roll
+> flies wide), **96 "Other" support spells** (retail names + real Other mana; ally via relay, else
+> your familiar, else refuse+refund), **Enlightenment true gates** (L275 + Society Master + maxed
+> auras), **Secondary Portal Tie/Recall + Portal/Lifestone Sending** (receiver-resolved over the
+> cast relay), **item-spells on loot** (Minor→Legendary cantrips with Spellcraft + item mana that
+> drains worn and re-wakes via Mana Stone). Verified already-built by parallel passes (not re-done):
+> melee to-hit contest, level cap 275, vitals raising, retail society ranks + ribbons + Test quests,
+> tinker per-item caps + imbue-once, limited vendor pyreals, fellowship cap 9 + proportional XP,
+> secure trade (/trade), AC housing gates/writs/rent. **Tier 2 is done — do not re-plan.**
+
+> ✅ **TIER 2 COMPLETE (PR #129, branch tier2-systems):** weapon-skill tree (each weapon rolls ITS
+> skill) · missile to-hit (lost roll flies wide) · 96 "Other" support spells (retail Other mana;
+> ally via relay, else familiar, else refuse+refund) · Enlightenment true gates (L275 + Society
+> Master + maxed auras) · Secondary Portal Tie/Recall + Portal/Lifestone Sending · item-spells on
+> loot (Minor→Legendary cantrips, Spellcraft, item mana + Mana-Stone re-wake). Verified already
+> built by parallel passes: melee to-hit, level cap 275, vitals raising, society ranks/ribbons/
+> Tests, tinker caps/imbue-once, limited vendor pyreals, fellowship cap 9 + proportional XP,
+> secure /trade, AC housing gates/Writs/rent. **Do not re-plan Tier 2.**
+
+> ✅ **Also complete (same-day parallel passes):** Chess (full legal engine + AI, tables in every
+> capital) · book placement · mana-stone retail semantics · starting-gear finish · "A History of
+> Dereth" chronicle · shield item models · UI-chrome accent (9-slice framing left as polish).
+> Strike these from Tier 3 below.
 
 Sources: `docs/REMAINING-WORK.md`, `wrapup-remaining-work.md`, `ac-remaining-gaps.md`,
 `ac-newplayer-split.md`, `fidelity-split.md`, `three-agent-dat-update.md`, `building-entry-audit.md`,

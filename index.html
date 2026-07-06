@@ -754,7 +754,7 @@ function rollACItem(rare,tier){   // a REAL retail item of the right tier, exact
     if(aslot==="offhand") it.shield=/buckler/.test(low)?"buckler":/tower/.test(low)?"tower":"kite";
   } else Object.assign(it,{stat:"weapon",wt:"focus",mat:"Diamond",foc:6+t*5,v:6+t*5});
   const out=acItemize(it);
-  rollCantrips(out,t,rare); initItemMagic(out,t,out.work,rare);   // retail spells + rolled cantrips get a live pool & Arcane gate
+  initItemMagic(out,t,out.work,rare);   // retail spells get a live pool & Arcane gate (rolled cantrips ride rollWield's own system)
   return out;
 }
 function acItemize(it){
@@ -836,6 +836,11 @@ function wornMagicItems(){ return [player.weapon].concat(Object.values(player.ar
 const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
 const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
 const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
+// Cb7 — every weapon type maps to ITS weapon skill (ToD): heavy blades/axes/maces/spears, light
+// staves/fists, finesse daggers, two-handers, missiles. Your equipped weapon rolls ITS OWN skill.
+const WEAPON_SKILL={sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",staff:"light",unarmed:"light",
+  dagger:"finesse",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile"};
+function weaponSkillKey(){ const wt=player.weapon&&player.weapon.wt; return WEAPON_SKILL[wt]||"light"; }   // bare fists fight with Light Weapons
 // Trained-vs-Specialized cumulative XP curves, fit to the two verified anchors (pt1: 23/58, pt70: 67504/168758)
 function skillCumXP(rank,spec){ if(rank<=0)return 0;
   if(AC_XP){ const ch=spec?AC_XP.spec:AC_XP.trained; return ch[Math.min(rank,ch.length-1)]; }   // the real chart
@@ -1102,6 +1107,10 @@ SPELLBOOK_LIST.push({id:"item_recall_lifestone",name:"Lifestone Recall",ico:"�
 SPELLBOOK_LIST.push({id:"item_recall_sanctuary",name:"Sanctuary Recall",ico:"🏛️",school:"item",lvl:3,req:60,cost:40,cd:30000,special:"recall",dest:"sanctuary"});
 SPELLBOOK_LIST.push({id:"item_portal_tie",name:"Portal Tie",ico:"🔗",school:"item",lvl:3,req:60,cost:35,cd:15000,special:"portaltie"});
 SPELLBOOK_LIST.push({id:"item_portal_recall",name:"Portal Recall",ico:"🌀",school:"item",lvl:4,req:95,cost:45,cd:30000,special:"recall",dest:"portal"});
+SPELLBOOK_LIST.push({id:"item_portal_tie2",name:"Secondary Portal Tie",ico:"🔗",school:"item",lvl:5,req:150,cost:50,cd:15000,special:"portaltie",slot2:true});
+SPELLBOOK_LIST.push({id:"item_portal_recall2",name:"Secondary Portal Recall",ico:"🌀",school:"item",lvl:5,req:150,cost:55,cd:30000,special:"recall",dest:"portal2"});
+SPELLBOOK_LIST.push({id:"item_portal_sending",name:"Portal Sending",ico:"📤",school:"item",lvl:6,req:205,cost:60,cd:30000,special:"sending",dest:"portal"});
+SPELLBOOK_LIST.push({id:"item_lifestone_sending",name:"Lifestone Sending",ico:"📩",school:"item",lvl:6,req:205,cost:60,cd:30000,special:"sending",dest:"lifestone"});
 const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115},
   {lvl:5,base:112,foc:2.8,drain:0.62,cost:100,req:155},{lvl:6,base:150,foc:3.2,drain:0.65,cost:130,req:200},{lvl:7,base:198,foc:3.6,drain:0.68,cost:166,req:255},{lvl:8,base:258,foc:4.0,drain:0.72,cost:208,req:305}];
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
@@ -1238,6 +1247,21 @@ for(const s of SPELLBOOK_LIST){
   // debuffs mirror buffs the opposite way — 10 per level (as %), same level-based timer:
   else if(s.debuff){ s.dmag=Math.round((1-0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }   // Weakness: enemy deals -10%/lvl · Slowness: -10%/lvl speed
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
+}
+// ── Mg1 "Other" forms: the classic support lines castable ON someone else — an online ally under
+//    the crosshair, or your summoned familiar. Generated from the Self lines with retail names
+//    ("Strength Other I", "Heal Other III"…) so the acspellstats merge applies the REAL Other costs. ──
+{ const gen=[];
+  for(const s of SPELLBOOK_LIST){
+    let nm=null;
+    if(s.buff==="attr"&&s.name.includes(" Self")) nm=s.name.replace(" Self"," Other");
+    else if(s.school==="life"&&typeof s.heal==="function"&&s.name.includes("Heal Self")) nm=s.name.replace("Heal Self","Heal Other");
+    else if(s.special==="revitalize"&&s.name.includes("Revitalize Self")) nm=s.name.replace("Revitalize Self","Revitalize Other");
+    else if(s.buff==="prot"&&s.name.includes("Protection Self")) nm=s.name.replace("Protection Self","Protection Other");
+    else if(s.special==="regen") nm=/ (VIII|VII|VI|V|IV|III|II|I)$/.test(s.name)?s.name.replace(/ (VIII|VII|VI|V|IV|III|II|I)$/," Other $1"):s.name+" Other";
+    if(nm) gen.push(Object.assign({},s,{id:s.id+"_other",name:nm,other:true}));
+  }
+  for(const g of gen) SPELLBOOK_LIST.push(g);
 }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 // ── THE authentic spell numbers (assets/acspellstats.json — client SpellTable mana/words/
@@ -11202,7 +11226,8 @@ function acItemMesh(name){
 function buildItemModel(it,opts){
   opts=opts||{}; const g=new THREE.Group();
   it=it||{};
-  { const real=it&&it.name&&acItemMesh(it.name);   // a retail item with its true client model
+  { const real=(it&&it.shield&&acItemMesh("shield:"+it.shield))   // real AC shield mesh by type (baked from the ACE-World Setup DIDs)
+        || (it&&it.name&&acItemMesh(it.name));                    // else the retail item's own client model
     if(real){ const inst=real.clone(); g.add(inst); g.userData.acModel=true; return g; } }
   const tint=_matTint(it), steel=_imat(tint,0.85,0.3), gold=_imat(0xc69a3a,0.9,0.35), wood=_imat(0x6a4a2a,0.05,0.85);
   const gemCol=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||0x8ad0ff;
@@ -13659,12 +13684,18 @@ function jewelrySlotFor(it){ const j=player.jewelry||{};
   return (!j[pair[0]])?pair[0]:(!j[pair[1]])?pair[1]:pair[0];
 }
 // sum a bonus kind across all equipped jewelry
+function cantripItems(){   // every spell-bearing piece: jewelry (manaless) + worn gear/weapon with mana left
+  const r=jewelryItems().slice();
+  for(const p of (typeof wornPieces==="function"?wornPieces():[])) if(p&&p.bonus&&(p.imana==null||p.imana>0)) r.push(p);
+  if(player.weapon&&player.weapon.bonus&&(player.weapon.imana==null||player.weapon.imana>0)) r.push(player.weapon);
+  return r;
+}
 function jewelryBonus(kind,arg){ let n=0;
-  for(const it of jewelryItems()){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
+  for(const it of cantripItems()){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
     if(kind==="vital"){ if(bj.vs===arg) n+=bj.v; } else if(kind==="skill"){ if(bj.key===arg) n+=bj.v; } else if(kind==="protect"){ if(bj.el===arg) n+=bj.v; } else n+=bj.v; }
   return n;
 }
-function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ const bj=it&&it.bonus;
+function recomputeGearSkill(){ const g={}; for(const it of cantripItems()){ const bj=it&&it.bonus;
   if(bj&&bj.kind==="skill") g[bj.key]=(g[bj.key]||0)+bj.v; }
   const sb=(typeof setBonus==="function")?setBonus():null; if(sb&&sb.skill) g[sb.skill]=(g[sb.skill]||0)+sb.skillV;   // full-set skill boon
   const w=player.weapon;   // an equipped casting focus lends its bonus to every magic school (+ mana & arcane)
@@ -13685,12 +13716,20 @@ function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ cons
   player.gearFx=fx;
   player.gearSkill=g; }
 // ── AC wield requirements: loot rolls skill/level/arcane gates you must meet before you can equip it ──
-const WEAPON_SKILL={dagger:"light",staff:"light",sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile",unarmed:"light"};
 function bestMeleeSkillValue(){ let b=0; for(const k of MELEE_WEAPON_KEYS){ const v=skillValue(k); if(v>b)b=v; } return b; }
 function rollWield(it,tier,work,rare){
-  rollCantrips(it,tier,rare); initItemMagic(it,tier,work,rare);   // cantrips first — a cantrip-bearing piece is magical below
-  // higher tier + workmanship + magic ⇒ steeper requirement (AC's core loot balance lever). Tier-1 gear stays freely wieldable.
-  const magical=!!(it.affix||it.bonus||it.foc||it.cantrips);
+  // I2 item-spells: tier-3+ weapons/armour can roll a CANTRIP (Minor/Major/Epic/Legendary) — a real
+  // worn bonus riding the piece, powered by the item's OWN mana pool (drains while worn; a Mana
+  // Stone refills it). Spellcraft records the enchantment's potency.
+  if((it.stat==="weapon"||it.stat==="worn")&&!it.bonus&&tier>=3&&Math.random()<(0.22+(rare?0.15:0))){
+    const roll=Math.random(), ct=tier>=5?(roll<0.15?"Legendary":roll<0.45?"Epic":"Major")
+                              :tier>=4?(roll<0.30?"Major":"Minor"):"Minor";
+    const mul={Minor:1,Major:1.5,Epic:2,Legendary:2.6}[ct];
+    const b=rollJewelryBonus(tier); b.v=Math.max(1,Math.round(b.v*mul));
+    it.bonus=b; it.cantrip=ct; it.name+=" "+b.suf;
+    it.spellcraft=tier*60+(work||1)*8; it.imanaMax=it.imana=tier*80;
+  }
+  const magical=!!(it.affix||it.bonus||it.foc);
   it.reqLvl=clamp(Math.round((tier-1)*11+Math.max(0,(work||1)-4)*2+(rare?8:0)),0,150);
   if(it.stat==="weapon"&&it.wt&&tier>=2){ it.reqVal=Math.round(25+(tier-2)*42+(work||1)*3+(it.affix?18:0)); }
   if(magical&&tier>=3){ it.reqArcane=Math.round(15+(tier-3)*22+(work||1)*2); }
@@ -13699,7 +13738,7 @@ function wieldFail(it){   // → a human string naming the first unmet requireme
   if(!it) return null;
   if(it.reqLvl&&player.level<it.reqLvl) return `level ${it.reqLvl}`;
   if(it.reqVal){ const missile=it.stat==="weapon"&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].mode==="missile";
-    const v=missile?skillValue("missile"):bestMeleeSkillValue();
+    const v=missile?skillValue("missile"):skillValue(WEAPON_SKILL[it.wt]||"heavy");   // the piece gates on ITS weapon's skill
     if(v<it.reqVal) return `${missile?"Missile Weapons":"a weapon skill of"} ${it.reqVal}`; }
   if(it.reqArcane&&skillValue("arcane")<it.reqArcane) return `Arcane Lore ${it.reqArcane}`;
   return null;
@@ -14211,12 +14250,15 @@ function applyItem(it){
     // worn spell-bearing gear first (its pools drain in play; a refill rekindles dormant enchantments),
     // then the focus battery, then your own reserve. Won't be spent if there's nothing to fill.
     let amt=it.charge||150; const parts=[]; const max=focusManaMax();
-    const thirsty=wornMagicItems().filter(w=>w.itemManaMax&&w.itemMana<w.itemManaMax)
-      .sort((a,b)=>(a.itemMana/a.itemManaMax)-(b.itemMana/b.itemManaMax))[0];
-    if(thirsty){ const was=thirsty.itemMana<=0; const g=Math.min(amt,thirsty.itemManaMax-thirsty.itemMana);
-      thirsty.itemMana+=g; amt-=g;
-      if(g>0) parts.push(`<b>${esc(thirsty.name)}</b> → <b>${Math.round(thirsty.itemMana)}/${thirsty.itemManaMax}</b>${was?" (its enchantments rekindle)":""}`);
-      if(was){ recomputeGearSkill(); derive(); } }
+    { const fill=p=>{ if(amt>0&&p&&p.bonus&&p.imanaMax&&p.imana<p.imanaMax){ const g=Math.min(amt,p.imanaMax-p.imana); const woke=p.imana===0; p.imana+=g; amt-=g; parts.push(`${p.name} <b>${Math.round(p.imana)}/${p.imanaMax}</b>`); if(woke){ recomputeGearSkill&&recomputeGearSkill(); derive&&derive(); } } };
+      if(typeof wornPieces==="function") for(const p of wornPieces()) fill(p);
+      fill(player.weapon); }
+    { const thirsty=wornMagicItems().filter(w=>w.itemManaMax&&w.itemMana<w.itemManaMax)   // retail-catalog spell pools (acspells) refill too
+        .sort((a,b)=>(a.itemMana/a.itemManaMax)-(b.itemMana/b.itemManaMax))[0];
+      if(amt>0&&thirsty){ const was=thirsty.itemMana<=0; const g=Math.min(amt,thirsty.itemManaMax-thirsty.itemMana);
+        thirsty.itemMana+=g; amt-=g;
+        if(g>0) parts.push(`<b>${esc(thirsty.name)}</b> → <b>${Math.round(thirsty.itemMana)}/${thirsty.itemManaMax}</b>${was?" (its enchantments rekindle)":""}`);
+        if(was){ recomputeGearSkill(); derive(); } } }
     if(amt>0 && max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
     if(amt>0 && player.mn<player.mmn){ const g=Math.min(amt,player.mmn-player.mn); player.mn+=g; amt-=g; if(g>0) parts.push(`your reserve <b>+${g}</b>`); }
     if(!parts.length){ log(`The <b>${it.name}</b>'s mana has nowhere to go — your gear, focus and reserve are already full.`,"warn"); return "keep"; }
@@ -14940,13 +14982,25 @@ function executeSpell(id){
     spellLandFX("creature",_slfMonsterPos(m),(m.headY||1.6)+0.4,m.r||0.8);   // creature magic lands: spirits spiral the foe, feet to crown
     castFlash(0x9b30ff); if(SFX.frost)SFX.frost(); log(`You afflict a foe with <b>${s.name}</b>.`,"heal"); return;
   }
-  // Creature/Life heals & buffs may be cast on an ally under the crosshair (online); else self.
-  // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
-  if((s.buff==="attr")||(s.school==="life"&&s.heal)){
+  // Creature/Life/Item support may be cast on an ally under the crosshair (online). Dedicated
+  // "Other" spells DEMAND someone else: an ally, else your summoned familiar, else the cast refunds.
+  if(s.other||(s.buff==="attr")||(s.school==="life"&&s.heal)||s.buff==="item"||s.buff==="bane"||s.buff==="prot"||s.special==="regen"||s.special==="revitalize"){
     const ally=pickAllyTarget(40);
     if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       if(ally.x!=null) spellLandFX(s.school,()=>[ally.x,ally.y||0,ally.z],2.0,0.75);   // the caster sees the spell land on their ally too
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
+    if(s.other){
+      const pet=pets.length?pets[0]:null;
+      if(pet){ castSelf=false; castKind="bestow"; castShow=castDur;
+        if(typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"){ pet.t+=10; }   // mending your familiar sustains it
+        else { pet.dmg=Math.round((pet.dmg||8)*1.2); pet.t+=4; }                                       // empowering it sharpens its sting
+        castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+        if(typeof spellLandFX==="function") spellLandFX(s.school,()=>[pet.x,0,pet.z],1.4,0.5);
+        floater(player.x,EYE+0.6,player.z,"→ your familiar","#bfe0ff");
+        log(`You cast <b>${s.name}</b> on your familiar — it ${typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"?"steadies and endures":"hums with borrowed power"}.`,"heal"); return; }
+      player.mn+=cost; spellCd[id]=0;
+      log(`No willing target for <b>${s.name}</b> — sight an ally, or keep a summoned familiar near.`,"warn"); return;
+    }
   }
   if(s.school==="life"&&s.heal){
     const pow=castEcon(id);
@@ -14964,6 +15018,8 @@ function executeSpell(id){
   if(s.special==="portaltie"){   // bind your return to the last portal you took (AC Portal Tie)
     if(inDungeon||inNetwork){ player.mn+=cost; spellCd[id]=0; log("You cannot tie a portal from here.","warn"); return; }
     const p=player.lastPortal; if(!p){ player.mn+=cost; spellCd[id]=0; log("Step through a portal first, then Portal Tie to bind your return to it.","warn"); return; }
+    if(s.slot2){ player.tiedPortal2={x:p.x,z:p.z,name:p.name}; castFlash(0x9b6bff); SFX.quest&&SFX.quest();
+      log(`You tie a SECOND thread to <b>${p.name}</b> — Secondary Portal Recall will return you there.`,"heal"); return; }
     player.tiedPortal={x:p.x,z:p.z,name:p.name}; castFlash(0x9b6bff); SFX.quest&&SFX.quest();
     log(`You tie a magical thread to <b>${p.name}</b> — Portal Recall will return you there.`,"heal"); return;
   }
@@ -14972,10 +15028,17 @@ function executeSpell(id){
     let dest,isLS=true;
     if(s.dest==="sanctuary") dest=lifestones.find(l=>l.name==="Holtburg")||lifestones[0];
     else if(s.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(!p){ player.mn+=cost; spellCd[id]=0; log("You have no portal tied — take a portal (or cast Portal Tie) first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
+    else if(s.dest==="portal2"){ const p=player.tiedPortal2; if(!p){ player.mn+=cost; spellCd[id]=0; log("You have no SECOND portal tied — cast Secondary Portal Tie at a portal first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ player.mn+=cost; spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
     teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
+  }
+  if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
+    const ally=(typeof pickAllyTarget==="function")?pickAllyTarget(40):null;
+    if(!ally){ player.mn+=cost; spellCd[id]=0; log(`No ally in your sights for <b>${s.name}</b>.`,"warn"); return; }
+    netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x5aa8ff); SFX.quest&&SFX.quest();
+    log(`You weave <b>${s.name}</b> about <b>${esc(ally.name)}</b> — the way home takes them.`,"heal"); return;
   }
   if(s.special==="dispel"){   // cleanse hostile curses on you, then brief immunity to re-application
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
@@ -15172,6 +15235,11 @@ function fireArrow(){
     else { dmg+=am.dmg||0; }   // non-elemental ammo just adds to the physical hit
     takeFromInv(ai); }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
+  { const tgt=(typeof pickMonsterTarget==="function")?pickMonsterTarget(60):null;      // Cb3 missile contest: Missile skill vs the mark's defense — a lost roll flies wide
+    if(tgt&&!rollToHit(skillValue("missile"),tgt,0.95)){
+      const sk=(Math.random()<0.5?-1:1)*(0.05+Math.random()*0.09), ca=Math.cos(sk), sa=Math.sin(sk);
+      const dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca; dir.x=dx; dir.z=dz;
+      floater(player.x,EYE+0.4,player.z,"wide!","#b9c0cc"); } }
   const ox=player.x+dir.x*0.8,oz=player.z+dir.z*0.8,oy=player.y+EYE-0.1;   // #11: eye height above the player's ACTUAL feet — not absolute sea level, so arrows don't spawn underground (and get ground-culled) on elevated terrain
   const mesh=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.8,6),
     new THREE.MeshStandardMaterial({color:0x8a6a3a}));
@@ -15203,7 +15271,7 @@ function meleeAttack(power){
   const stamCost=prof.stam*power*(equippedShield()?1.2:1)*(1-((player.gearFx&&player.gearFx.stam)||0));   // Swift Killer/Quickness item-spells lighten the swing
   let winded=1;
   if(player.st>=stamCost){ player.st-=stamCost; } else { player.st=0; winded=0.6; }   // exhausted → 40% weaker swing (no more free full-power swings at 0 stamina)
-  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor())*winded;
+  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*skillEff(weaponSkillKey(),0.02)*prof.dmg*power*(1+recklessFactor())*winded;
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
@@ -15216,7 +15284,7 @@ function meleeAttack(power){
       const dot=(dx*fx+dz*fz)/(d*fl);
       if(dot>0.5){
         const hm=heightMods(m);   // Cb2: attack height vs the target's size
-        if(!rollToHit(bestMeleeSkillValue(),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
+        if(!rollToHit(skillValue(weaponSkillKey()),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
         const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
         applyHit(m,dmg*hm.dmg*sneak*dmgVar(prof),meleeOpts);   // per-swing damage roll (AC weapon variance)
         dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
@@ -16297,6 +16365,10 @@ function update(dt){
     if(spent){ recomputeGearSkill(); derive(); } }
   if(player.lifeBuffs){ for(const k of Object.keys(player.lifeBuffs)){ const b=player.lifeBuffs[k]; b.t-=dt; if(b.t<=0) delete player.lifeBuffs[k]; } }
   if(player.banes){ for(const k of Object.keys(player.banes)){ const b=player.banes[k]; b.t-=dt; if(b.t<=0) delete player.banes[k]; } }   // Mg4 Banes expire
+  { let slept=false; const drain=p=>{ if(p&&p.bonus&&p.imana!=null&&p.imana>0){ p.imana=Math.max(0,p.imana-dt*0.35); if(p.imana===0) slept=p.name; } };
+    if(typeof wornPieces==="function") for(const p of wornPieces()) drain(p);
+    drain(player.weapon);
+    if(slept){ log(`The magic of your <b>${esc(slept)}</b> falls dormant — its mana is spent (a Mana Stone rouses it).`,"warn"); recomputeGearSkill&&recomputeGearSkill(); derive&&derive(); } }
   if(player.lightBuff){ player.lightBuff.t-=dt; if(player.lightBuff.t<=0){ player.lightBuff=null; floater(player.x,EYE+0.6,player.z,"light fades","#9fb0c0"); } }
   if(player.skillBuffs){ for(const k of Object.keys(player.skillBuffs)){ const b=player.skillBuffs[k]; b.t-=dt;
     if(b.t<=0){ delete player.skillBuffs[k]; floater(player.x,EYE+0.6,player.z,(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k)+" fades","#9fb0c0"); derive(); } } }
@@ -18022,7 +18094,11 @@ function buyAura(k){ const a=LUM_AURAS.find(x=>x.k===k); if(!a) return false;
   if(SFX.level)SFX.level(); log(`You bind the <b>${a.name}</b> (level ${lv+1}).`,"loot"); derive(); return true; }
 function enlighten(){
   if((player.enlightenment||0)>=5){ log("You are <b>Cosmic Conscious</b> — no further Enlightenment remains.","warn"); return; }
-  if(player.level<100){ log("Enlightenment demands a character level of at least <b>100</b>.","warn"); return; }
+  if(player.level<275){ log("Enlightenment demands the pinnacle — character level <b>275</b>.","warn"); return; }
+  { const sr=player.society?societyRankInfo(player.societyRep||0):null;
+    if(!sr||sr.title!=="Master"){ log("Enlightenment demands you stand a <b>Master</b> of your Society.","warn"); return; } }
+  { const maxed=LUM_AURAS.every(a=>((player.auras&&player.auras[a.k])||0)>=a.max);
+    if(!maxed){ log("Enlightenment demands every <b>Luminance Aura</b> raised to its height.","warn"); return; } }
   if(typeof confirm==="function" && !confirm("Enlightenment resets you to level 1 and clears your invested skill XP, but is PERMANENT: +1 to all skills and +2% vitals each time, keeping your augmentations & auras. Proceed?")) return;
   player.enlightenment=(player.enlightenment||0)+1;
   player.level=1; player.xp=0; player.xpUnspent=0; player.skillPts=0;
@@ -24911,6 +24987,15 @@ function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff
 //    you are holding (i.e. "all items held by the player"), exactly like AC item magic on your person. ──
 function applyBuffSelf(sp,fx){
   if(!sp) return false;
+  if(sp.special==="sending"){   // an ally cast Portal/Lifestone Sending ON YOU — travel to your own anchor
+    if(inDungeon||inNetwork) return false;
+    let dest=null;
+    if(sp.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(p) dest={x:p.x,z:p.z,name:p.name}; }
+    if(!dest){ const ls=lifestones.find(l=>l.bound)||lifestones[0]; if(ls) dest={x:ls.x,z:ls.z,name:ls.name+" Lifestone"}; }
+    if(!dest) return false;
+    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    if(SFX.portal)SFX.portal(); log(`A sending takes you — you arrive at <b>${esc(dest.name)}</b>.`,"heal");
+    return true; }
   if(fx) spellLandFX(sp.school,_slfPlayerPos,2.0,0.75);   // the spell lands on YOU (buff bot / ally): creature → spirits, life → crystals
   const dur=sp.dur||(typeof buffDurFor==="function"?buffDurFor(sp.lvl||1):120), mag=sp.mag;
   const flo=(txt,col)=>{ if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,txt,col||"#bfe0ff"); };
