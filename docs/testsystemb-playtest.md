@@ -107,6 +107,26 @@ page/console errors, 0 uncaught exceptions** (only 1 benign `info` note remains,
 
 ---
 
+## [TestSystemB] Pass 4 — 2026-07-06 ~23:46
+
+**Result: CLEAN.** `main` still unchanged (`c3232dc`) and the hardened full sweep was already proven
+clean in pass 3, so re-running it would only repeat "clean." Instead I **expanded coverage**
+(`tsb_expand.js`) to six subsystems the main sweep never touched — raising the odds of catching a
+latent bug. **All six pass: 0 findings, 0 page/console errors, 0 uncaught exceptions.**
+
+| New subsystem | Verified behavior |
+|---|---|
+| **Death / corpse / respawn** | Fatal hit → `alive:false`, hp 0 → **corpse drops** (0→1) → **vitae penalty** 0.05 applied → respawns **at lifestone**, hp 32/38, **invuln 60**. Full loop works. |
+| **Damage Rating / Crit-DR / Crushing / rear** (Lane A #1) | Rear attack **+0.20 DR** (front 0 → rear 0.20), Aura of Valor 50 → **+0.50**, gear dr 0.15 added, Aura of Glory raises crit-damage, bludgeon crush 0.13 > blade 0.03, `isBehind` geometry correct. |
+| **Mana Stone battery** (#17, incl. the custom player-mana→stone) | `manaConvRate` 0.30 (in [0.30,0.90]); **draw-from-own-mana banked exactly 60** of 200 reserve (200×0.30) into the stone — the "use a stone on nothing" conversion; discharge dispensed 150 into reserve; consume-item banked 120. |
+| **Ships** | Bought a skiff → **spawned on open water** → boarded (correct deck height) → disembarked to shore. |
+| **House recall** | Bought a tier-1 estate → `recallHome()` teleported the player across the map. |
+| **Chess** | Board opens without error. |
+
+**Cumulative coverage: 35 subsystems, still zero real game bugs.** (Main sweep 29 + expansion 6.)
+
+---
+
 ## Standing notes for future passes (avoid re-flagging these)
 
 *(All of the following are now handled by the hardened harness as of pass 3 — kept here as the record
