@@ -4501,6 +4501,7 @@ function acBuildHead(av,app){
     grp.scale.setScalar(s);
     u.neck.add(grp); u.acHead=grp;
     if(u.head) u.head.visible=false;                 // retire the procedural painted head
+    if(u.neck.children.some(c=>c.userData&&c.userData.acHat)) grp.visible=false;   // a worn hat replaces the head (retail part-16 swap) — even when the head arrives after the hat
   });
 }
 // ── REAL PLAYER ANIMATIONS: the human MotionTable's own cycles & gestures ──
@@ -19628,12 +19629,63 @@ function pickColor(arr,seed,salt){ return arr[Math.abs(Math.imul((seed|0)+salt,2
 //    robe instead; job & culture add aprons, sashes, plackets, vests and headwear. Meshes are children
 //    of the joints, so they animate with the body. ──
 function _clothMat(c){ return new THREE.MeshStandardMaterial({color:c,roughness:0.9,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)}); }
+// ── REAL HATS (Lane B #2): retail part-16 head swaps (tools/ac_hat_export.py). A hat's gfxobj
+//    replaces the whole head — retail's "bald under the hat" — so we attach it exactly like
+//    acBuildHead (acHeadPlace + the 180° flip) and hide the bare AC head while it's worn. ──
+let AC_HATS=null; const _acHatMesh={}, _acHatCb={};
+fetch('assets/acclothing_mesh/hats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_HATS=j||false; }).catch(()=>{ AC_HATS=false; });
+function acHatPart(name,gk,cb){
+  const rec=AC_HATS&&AC_HATS[name]; if(!rec||!rec[gk]){ cb(null); return; }
+  const key="hat_"+rec.base+"_"+gk, c=_acHatMesh[key];
+  if(c!==undefined&&c!=="loading"){ cb(c||null); return; }
+  (_acHatCb[key]||(_acHatCb[key]=[])).push(cb);
+  if(c==="loading") return;
+  _acHatMesh[key]="loading";
+  const flush=v=>{ _acHatMesh[key]=v; const q=_acHatCb[key]; _acHatCb[key]=null; if(q)for(const f of q)f(v||null); };
+  fetch('assets/acclothing_mesh/'+key+'.json').then(r=>r&&r.ok?r.json():Promise.reject()).then(j=>{
+    const TL=new THREE.TextureLoader(), grp=new THREE.Group();
+    for(const g of j.groups){ const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(g.n,3));
+      geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
+      geo.setIndex(g.i);
+      let mat;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+        mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02});
+        if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
+      else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a7a5a),roughness:0.85,metalness:0.02});
+      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
+    flush(grp);
+  }).catch(()=>flush(null));
+}
+function acAttachHat(av,name,gender){
+  const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return false;
+  if(u.neck.children.some(c=>c.userData&&c.userData.acHat)) return true;   // already hatted
+  const gk=gender==="female"?"f":"m";
+  if(!(AC_HATS&&AC_HATS[name]&&AC_HATS[name][gk])) return false;
+  acHatPart(name,gk,grp=>{
+    if(!grp||!u.acBody||!u.neck) return;
+    const inst=grp.clone(); inst.userData.npcCloth=true; inst.userData.acHat=true;
+    const sc=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
+    inst.position.set(P.p[0]*sc-jl.x, P.p[1]*sc-jl.y, P.p[2]*sc-jl.z);
+    inst.quaternion.set(P.q[0],P.q[1],P.q[2],P.q[3]);
+    inst.rotateY(Math.PI);                              // hat meshes front opposite the body, same as the heads
+    inst.scale.setScalar(sc);
+    u.neck.add(inst);
+    if(u.acHead) u.acHead.visible=false;                // retail: the hat's part-16 swap replaces the head beneath
+  });
+  return true;
+}
+const AC_HAT_FOR={cap:"cap",beret:"beret",straw:"kasa",turban:"turban",hood:"hood",fez:"fez",cowl:"cowl",qafiya:"qafiya"};
 function dressAvatarHead(u,o){
   const neck=u.neck; if(!neck) return;
   const hy=0.21;   // neck-local crown of the AC head (measured: acHead top ≈ neck+0.224) — hats rest here, not float above
   const put=(geo,mat,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(0,y,z||0); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.userData.npcCloth=true; neck.add(m); return m; };
   const felt=c=>new THREE.MeshStandardMaterial({color:c,roughness:0.86,metalness:0.0});
-  const kind=o.helm?"helm":o.hat;
+  const kind=o.helm?"helm":(o.hat||(o.hood?"hood":null));
+  if(kind&&kind!=="helm"&&AC_HAT_FOR[kind]&&u.acBody&&u.acHeadPlace&&u._dressAv){
+    if(acAttachHat(u._dressAv,AC_HAT_FOR[kind],o.gender)) return;   // the retail head-swap hat; procedural only as fallback
+  }
   if(kind==="helm"){ put(new THREE.SphereGeometry(0.158,14,10,0,6.3,0,1.7),new THREE.MeshStandardMaterial({color:0x8a8f98,metalness:0.7,roughness:0.4}),hy-0.02);
     const band=put(new THREE.TorusGeometry(0.152,0.016,8,18),new THREE.MeshStandardMaterial({color:0x6a6e76,metalness:0.7,roughness:0.4}),hy-0.07,0,Math.PI/2);
     put(new THREE.BoxGeometry(0.024,0.11,0.03),new THREE.MeshStandardMaterial({color:0x6a6e76,metalness:0.7,roughness:0.4}),hy-0.09,-0.13); }   // nasal
@@ -19667,6 +19719,7 @@ function dressAvatarOverlays(av,o,gender){
 }
 function dressAvatar(av,o,gender){
   const u=av&&av.userData; if(!u||!u.spine) return; o=o||{};
+  u._dressAv=av; o.gender=o.gender||gender;              // the head-dresser needs the avatar ref (real part-16 hats)
   if(AC_CLOTH!==false){                                  // authentic ClothingTable base outfit (pack present or still loading)
     dressAvatarAC(av,acOutfitFor(o,gender),gender,o.seed|0);
     dressAvatarOverlays(av,o,gender);
