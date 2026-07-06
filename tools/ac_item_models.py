@@ -74,6 +74,15 @@ def main():
         for name, shex in json.load(open(furn_path)).items():
             index[name] = shex
             setups.setdefault(shex, name)
+    # Shields — NOT in acitems.json (the upstream WeenieDefaults dump lacked them); their Setup DIDs
+    # were recovered from the ACE-World DB (weenie_properties_d_i_d type 1). One mesh per shield TYPE,
+    # keyed "shield:<type>" so the game resolves every named shield through its `shield:` field.
+    SHIELDS = {"shield:round":"02000162","shield:buckler":"02000162","shield:kite":"02000164",
+               "shield:large":"02000164","shield:tower":"02000161","shield:olthoi":"02000161",
+               "shield:covenant":"02001AB6","shield:aegis":"02001AB6"}
+    for name, shex in SHIELDS.items():
+        index[name] = shex
+        setups.setdefault(shex, name)
     done = fails = 0
     for shex in sorted(setups):
         path = os.path.join(OUT, shex + ".json")
