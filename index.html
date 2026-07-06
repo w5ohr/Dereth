@@ -21,8 +21,8 @@
     border:1px solid var(--border);border-radius:6px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.5);
     backdrop-filter:blur(2px)}
   #vitals{top:12px;left:12px;width:230px}
-  /* the real client's gold strut ornament crowns the vitals panel */
-  #vitals::before{content:"";display:block;height:12px;margin:-4px -6px 2px;background:url(assets/acui/06001937.png) center/contain no-repeat;opacity:.9}
+  /* the real client's gold strut ornament crowns the vitals panel — and the other always-on side panels */
+  #vitals::before,#quest::before{content:"";display:block;height:12px;margin:-4px -6px 2px;background:url(assets/acui/06001937.png) center/contain no-repeat;opacity:.9}
   .bar{height:15px;border-radius:7px;background:#000;margin:5px 0;position:relative;overflow:hidden;border:1px solid #000}
   .bar>i{position:absolute;left:0;top:0;bottom:0;display:block;border-radius:7px;transition:width .15s}
   .bar>span{position:absolute;inset:0;font-size:11px;line-height:15px;text-align:center;color:#fff;text-shadow:0 1px 1px #000}
@@ -918,6 +918,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   luminance:0,lumUnlocked:false,auras:{},enlightenment:0,   // AC endgame: Luminance currency → permanent Auras; Enlightenment prestige resets
   arcsDone:[],                 // story arcs whose capstone reward has been granted
   augment:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,allskills:0,xpBonus:0,attrTotal:0,dropReduce:0,count:0,skillCredits:0,fam:{},owned:{}},    // permanent boosts: augmentation gems + Aetheria sigils
+  aetheria:{blue:null,yellow:null,red:null},   // the three slotted Aetheria medallions (L75/150/225)
   house:{tier:0,storage:[]},   // AC housing: 0=none, 1=Apartment…4=Mansion; storage[] persists forever
   homestead:null,              // a purchased settlement dwelling: {set,idx,type,hooks{}} (AC covenant housing)
   ship:null,aboardShip:null,   // owned vessel {type,x,z,yaw} (Ultima-style deed) + the live ship being piloted (transient)
@@ -959,8 +960,8 @@ function derive(){
   if(typeof setBonus==="function") player.mhp+=setBonus().mhp;   // item-set max-health boon
   if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
   const ag=player.augment; if(ag){ player.mhp+=ag.hp||0; player.mst+=ag.st||0; player.mmn+=ag.mn||0; }   // permanent augmentation-gem boosts
+  if(player.aetheria){ player.mhp+=aetheriaBonus("hp"); player.mst+=aetheriaBonus("st"); player.mmn+=aetheriaBonus("mn"); }   // slotted Aetheria set bonuses (Growth/Vigor)
   if(player.enlightenment){ const e=1+player.enlightenment*0.02; player.mhp=Math.round(player.mhp*e);player.mst=Math.round(player.mst*e);player.mmn=Math.round(player.mmn*e); }  // Enlightenment: +2% vitals per tier, forever
-  if(player.aetheria){ player.mhp+=Math.round(aetheriaStat("hp")); const sm=Math.round(aetheriaStat("stmn")); player.mst+=sm; player.mmn+=sm; }  // Growth/Vigor aetheria sigils
   if(player.gearFx){ player.mhp+=Math.round(player.gearFx.hp||0); player.mst+=Math.round(player.gearFx.st||0); player.mmn+=Math.round(player.gearFx.mn||0); }  // Endurance/Willpower item-spells on worn gear
   if(player.vitae>0){ const vm=1-player.vitae;   // Vitae (death penalty): your vital pools shrink until worked off with XP
     player.mhp=Math.max(1,Math.round(player.mhp*vm)); player.mst=Math.max(1,Math.round(player.mst*vm)); player.mmn=Math.max(0,Math.round(player.mmn*vm)); }
@@ -2249,11 +2250,22 @@ function acItemRow(nm,val){
   if(/cheese|bread|pie\b|cake|egg|grape|apple|beef|chicken|fish|stew|ration|milk|wine|stout|\bale\b|cider|sake|\btea\b|mead|water\b|jerky|melon|pear|olive|carrot|mushroom|honey|noodle|rice\b|tofu/.test(n)) return P({name:nm,stat:"food",attr:"Endurance",v:2,dur:90},"🍖","hearty fare · +2 Endurance for 90 s");
   return P({name:nm,stat:"trophy",v:Math.max(3,Math.round((val||15)/6))},"📦","curio · an authentic Dereth trade good");
 }
+// tradeskill supplies every town can sell (the combine engine's entry ingredients), stocked by trade:
+// apothecaries carry the alchemy implements & reagents, provisioners the kitchen goods, smiths the
+// fletching bundles & ore. Names are exact acrecipes.json tool/target names, so they combine as-is.
+const CRAFT_SUPPLIES={
+  healer:["Mortar and Pestle","Alembic","Aqua Vitae","Aqua Incanta","Eye Dropper","Smelting Pot","Neutral Balm","Eyebright","Henbane","Amaranth"],
+  provisioner:["Dough","Egg","Carving Knife"],
+  weaponsmith:["Whittling Knife","Bundle of Arrowheads","Bundle of Arrowshafts","Bundle of Quarrelshafts","Bundle of Atlatl Dart Shafts"],
+  armorer:["Iron Ore","Smelting Pot"],
+};
 function acTownVendors(townName){
   if(!ACV.on||!ACV.towns[townName]) return null;
   return ACV.towns[townName].map(v=>{
     const st=v.stock.map(id=>ACV.catalog[id]).filter(Boolean);
-    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v)),
+    const vt=acVendorType(v.n,st.map(s=>s.n));
+    const sup=(CRAFT_SUPPLIES[vt]||[]).filter(nm=>!st.some(s=>s.n.toLowerCase()===nm.toLowerCase()));
+    return {name:v.n, vt, acStock:st.map(s=>acItemRow(s.n,s.v)).concat(sup.map(nm=>acItemRow(nm,15))),
             x:(v.x!=null?v.x:null), z:(v.z!=null?v.z:null)};   // TRUE retail spot — 1:1 town-centre offset (same mapping as buildings)
   });
 }
@@ -2555,13 +2567,15 @@ let stormBuild=0,stormPhase=0,stormCd=0; // H13 portal storms: build-up timer / 
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0,dungeonLock=null,dungeonVault=null;
 let dungeonBars=[],dungeonLevers=[],dungeonPortals=[],dungeonBoxes=[];   // walkthrough mechanics: doors/ledges, wall levers, internal portals, key strongboxes
-let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
+let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null,dungeonDepth=1,dungeonDescent=null;   // multi-level delves: current floor + this floor's descent stair
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
 const obstacles=[]; // {x,z,r}
+let bookStands=[];  // readable library stands placed at towns/landmarks (real AC lore books)
+let chessTables=[]; // playable chess boards placed in the towns (AC's tavern Game weenies)
 let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[],ships=[];
 
 function texGround(){
@@ -6135,7 +6149,7 @@ function buildWorld(){
   for(const d of dying) scene.remove(d.mesh); dying=[];
   for(const o of netObjs) scene.remove(o);
   for(const _s of ships){ if(_s.mesh) scene.remove(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
-  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];
+  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];chessTables=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
   usedNpcNames=new Set();
@@ -6310,6 +6324,8 @@ function buildWorld(){
   // Roads: Dereth's authentic road web is the real AC network, painted into the terrain (acRoad, from
   // the extracted map) — NOT invented cobblestone strips. genRoads() still lays the caravan's route;
   // buildRoads() (the procedural cobbled meshes) is retired so the true AC dirt roads stand on their own.
+  placeBookStands();   // library reading-stands in the towns + a couple of lore sites (real AC books)
+  placeChessTables();  // playable chess boards in the towns (tavern game)
   genRoads();buildCaravan();
   buildRoadBridges();   // span every river/sea the real AC road web crosses with a walkable plank bridge
   // gathering nodes scattered across the wilds
@@ -7471,6 +7487,130 @@ function openCasinoChest(ch){
     toast("CASINO PRIZE"); if(SFX.gold)SFX.gold();
   } else { log(`The <b>Grand Casino Chest</b> is locked tight. Win a key at the tables or the races.`,"warn"); if(SFX.hit)SFX.hit(); }
   updateHUD&&updateHUD(); saveGame&&saveGame();
+}
+// ══════════════════════════════════════════════════════════════════════════
+//  CHESS — a playable board in the towns (AC had chess as Game/GamePiece weenies).
+//  A real engine (full legal moves incl. castling, en passant, promotion; check /
+//  checkmate / stalemate) with an alpha-beta AI opponent, drawn as a 2D overlay.
+//  Board index = r*8+c, r=0 top (Black back rank), r=7 bottom (White = the player).
+// ══════════════════════════════════════════════════════════════════════════
+let _chess=null;
+const CH_GLYPH={K:"♔",Q:"♕",R:"♖",B:"♗",N:"♘",P:"♙",k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+const chW=p=>!!p&&p===p.toUpperCase(), chIN=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
+function chInit(){ return {bd:("rnbqkbnr".split("")).concat("pppppppp".split(""),Array(32).fill(""),"PPPPPPPP".split(""),"RNBQKBNR".split("")),
+  turn:"w", ep:-1, cr:{K:true,Q:true,k:true,q:true}}; }
+function chKing(bd,white){ const k=white?'K':'k'; for(let i=0;i<64;i++) if(bd[i]===k) return i; return -1; }
+function chAttacked(bd,r,c,byW){   // is square (r,c) attacked by the side whose pieces are byW(=White)?
+  for(const dc of[-1,1]){ const rr=r+(byW?1:-1),cc=c+dc; if(chIN(rr,cc)&&bd[rr*8+cc]===(byW?'P':'p')) return true; }   // pawns
+  for(const [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]){ const rr=r+dr,cc=c+dc; if(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q&&q.toLowerCase()==='n'&&chW(q)===byW) return true; } }
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){ if(!dr&&!dc)continue; const rr=r+dr,cc=c+dc; if(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q&&q.toLowerCase()==='k'&&chW(q)===byW) return true; } }
+  for(const [dr,dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]){ let rr=r+dr,cc=c+dc; while(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q){ if(chW(q)===byW&&(q.toLowerCase()==='b'||q.toLowerCase()==='q')) return true; break; } rr+=dr;cc+=dc; } }
+  for(const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]){ let rr=r+dr,cc=c+dc; while(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q){ if(chW(q)===byW&&(q.toLowerCase()==='r'||q.toLowerCase()==='q')) return true; break; } rr+=dr;cc+=dc; } }
+  return false;
+}
+function _chPawnAdd(out,from,to,promo){ if(promo){ for(const pc of ['q','r','b','n']) out.push({from,to,promo:pc}); } else out.push({from,to}); }
+function chPseudo(st){   // pseudo-legal moves for the side to move
+  const bd=st.bd, white=st.turn==="w", out=[];
+  const add=(from,to,ex)=>{ const q=bd[to]; if(q&&chW(q)===white) return false; out.push(Object.assign({from,to},ex||{})); return !q; };
+  for(let i=0;i<64;i++){ const p=bd[i]; if(!p||chW(p)!==white) continue; const r=i>>3,c=i&7,t=p.toLowerCase();
+    if(t==='p'){ const dir=white?-1:1, start=white?6:1, promo=white?0:7;
+      if(chIN(r+dir,c)&&!bd[(r+dir)*8+c]){ _chPawnAdd(out,i,(r+dir)*8+c,(r+dir)===promo);
+        if(r===start&&!bd[(r+2*dir)*8+c]) out.push({from:i,to:(r+2*dir)*8+c,dbl:true}); }
+      for(const dc of[-1,1]){ const rr=r+dir,cc=c+dc; if(!chIN(rr,cc))continue; const to=rr*8+cc,q=bd[to];
+        if(q&&chW(q)!==white) _chPawnAdd(out,i,to,rr===promo); else if(to===st.ep) out.push({from:i,to,epc:true}); } }
+    else if(t==='n'){ for(const [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]){ const rr=r+dr,cc=c+dc; if(chIN(rr,cc)) add(i,rr*8+cc); } }
+    else if(t==='k'){ for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){ if(!dr&&!dc)continue; const rr=r+dr,cc=c+dc; if(chIN(rr,cc)) add(i,rr*8+cc); }
+      const opp=!white;   // opponent colour (for castle-through-check tests)
+      if(white&&i===60){ if(st.cr.K&&!bd[61]&&!bd[62]&&bd[63]==='R'&&!chAttacked(bd,7,4,opp)&&!chAttacked(bd,7,5,opp)&&!chAttacked(bd,7,6,opp)) out.push({from:60,to:62,castle:'K'});
+        if(st.cr.Q&&!bd[59]&&!bd[58]&&!bd[57]&&bd[56]==='R'&&!chAttacked(bd,7,4,opp)&&!chAttacked(bd,7,3,opp)&&!chAttacked(bd,7,2,opp)) out.push({from:60,to:58,castle:'Q'}); }
+      else if(!white&&i===4){ if(st.cr.k&&!bd[5]&&!bd[6]&&bd[7]==='r'&&!chAttacked(bd,0,4,opp)&&!chAttacked(bd,0,5,opp)&&!chAttacked(bd,0,6,opp)) out.push({from:4,to:6,castle:'k'});
+        if(st.cr.q&&!bd[3]&&!bd[2]&&!bd[1]&&bd[0]==='r'&&!chAttacked(bd,0,4,opp)&&!chAttacked(bd,0,3,opp)&&!chAttacked(bd,0,2,opp)) out.push({from:4,to:2,castle:'q'}); } }
+    else { const dirs=t==='b'?[[-1,-1],[-1,1],[1,-1],[1,1]]:t==='r'?[[-1,0],[1,0],[0,-1],[0,1]]:[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]];
+      for(const [dr,dc] of dirs){ let rr=r+dr,cc=c+dc; while(chIN(rr,cc)&&add(i,rr*8+cc)){ rr+=dr;cc+=dc; } } }
+  }
+  return out;
+}
+function chMake(st,m){
+  const bd=st.bd.slice(), p=bd[m.from], white=chW(p); bd[m.from]="";
+  if(m.epc) bd[m.to+(white?8:-8)]="";                                   // en-passant: remove the passed pawn
+  bd[m.to]=m.promo?(white?m.promo.toUpperCase():m.promo):p;
+  if(m.castle==='K'){ bd[61]=bd[63]; bd[63]=""; } else if(m.castle==='Q'){ bd[59]=bd[56]; bd[56]=""; }
+  else if(m.castle==='k'){ bd[5]=bd[7]; bd[7]=""; } else if(m.castle==='q'){ bd[3]=bd[0]; bd[0]=""; }
+  const cr=Object.assign({},st.cr);
+  if(p==='K'){ cr.K=cr.Q=false; } if(p==='k'){ cr.k=cr.q=false; }
+  if(m.from===63||m.to===63) cr.K=false; if(m.from===56||m.to===56) cr.Q=false;
+  if(m.from===7||m.to===7) cr.k=false; if(m.from===0||m.to===0) cr.q=false;
+  return {bd, turn:white?"b":"w", ep:(m.dbl?(m.from+m.to)/2:-1), cr};
+}
+function chLegal(st){ const white=st.turn==="w", out=[];
+  for(const m of chPseudo(st)){ const ns=chMake(st,m), ks=chKing(ns.bd,white); if(ks<0||!chAttacked(ns.bd,ks>>3,ks&7,!white)) out.push(m); }
+  return out; }
+function chStatus(st){ const white=st.turn==="w", ks=chKing(st.bd,white), chk=ks>=0&&chAttacked(st.bd,ks>>3,ks&7,!white);
+  if(!chLegal(st).length) return chk?{over:"checkmate",winner:white?"b":"w"}:{over:"stalemate"};
+  return {over:null,check:chk}; }
+function chPerft(st,d){ if(d<=0) return 1; let n=0; for(const m of chLegal(st)) n+=chPerft(chMake(st,m),d-1); return n; }   // move-gen correctness self-test
+const CH_VAL={p:100,n:320,b:330,r:500,q:900,k:20000};
+function chEval(st){ let s=0; for(let i=0;i<64;i++){ const p=st.bd[i]; if(!p)continue; const v=CH_VAL[p.toLowerCase()]+ (p.toLowerCase()!=='k'? (3-Math.abs(3.5-(i>>3)))+(3-Math.abs(3.5-(i&7))) : 0); s+=chW(p)?v:-v; } return s; }
+function chNega(st,d,a,b){ const moves=chLegal(st);
+  if(!moves.length){ const white=st.turn==="w",ks=chKing(st.bd,white); return (ks>=0&&chAttacked(st.bd,ks>>3,ks&7,!white))? -100000-d : 0; }
+  if(d<=0){ const e=chEval(st); return st.turn==="w"?e:-e; }
+  moves.sort((x,y)=>(st.bd[y.to]?1:0)-(st.bd[x.to]?1:0));   // captures first
+  let best=-1e9;
+  for(const m of moves){ const sc=-chNega(chMake(st,m),d-1,-b,-a); if(sc>best)best=sc; if(best>a)a=best; if(a>=b)break; }
+  return best; }
+function chAIMove(st,d){ const moves=chLegal(st); if(!moves.length) return null;
+  for(let i=moves.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=moves[i];moves[i]=moves[j];moves[j]=t; }   // shuffle for variety
+  moves.sort((x,y)=>(st.bd[y.to]?1:0)-(st.bd[x.to]?1:0));
+  let best=moves[0],bs=-1e9;
+  for(const m of moves){ const sc=-chNega(chMake(st,m),d-1,-1e9,1e9); if(sc>bs){bs=sc;best=m;} }
+  return best; }
+function placeChessTables(){ chessTables=[];
+  if(typeof CAPITALS==="undefined"||!CAPITALS.length) return;
+  for(const c of CAPITALS){ const x=c.x+16, z=c.z+11, gy=(typeof groundY==="function")?groundY(x,z):0;
+    const g=new THREE.Group();
+    const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.15,0.85,8),solid(0x3a2c1c)); leg.position.y=0.42; g.add(leg);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.1,1.0),solid(0xe8dcc0)); top.position.y=0.9; g.add(top);
+    for(let r=0;r<8;r++)for(let cc=0;cc<8;cc++){ if((r+cc)%2)continue; const sq=new THREE.Mesh(new THREE.BoxGeometry(0.118,0.02,0.118),solid(0x2a2018)); sq.position.set(-0.44+cc*0.118+0.059,0.955,-0.44+r*0.118+0.059); g.add(sq); }
+    g.position.set(x,gy,z); g.castShadow=true; scene.add(g); scenery.push(g);
+    const lbl=labelSprite("♟ Chess Table","cities"); if(lbl){ lbl.position.set(x,gy+2.0,z); scene.add(lbl); scenery.push(lbl); }
+    obstacles.push({x,z,r:0.85}); chessTables.push({x,z});
+  }
+}
+function openChessBoard(){
+  _chess=_chess||chInit();
+  paused=true; if(locked)document.exitPointerLock();
+  const old=document.getElementById('chessBoard'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='chessBoard';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.66)";
+  let sel=-1, legal=[], thinking=false;
+  const render=()=>{ const st=_chess, s=chStatus(st);
+    let msg = s.over==="checkmate"?(s.winner==="w"?"Checkmate — you win! 🏆":"Checkmate — the house takes it."):
+      s.over==="stalemate"?"Stalemate — a draw.": thinking?"The house is thinking…": (st.turn==="w"?(s.check?"Your move — you are in check!":"Your move (White)."):"…");
+    let h=`<div style="background:#1a1710;border:1px solid var(--gold);border-radius:8px;padding:16px 18px;color:#e6d6a8">
+      <div style="color:var(--gold);text-transform:uppercase;letter-spacing:.5px;font-size:13px;margin-bottom:8px">♟ Tavern Chess</div>
+      <div style="display:grid;grid-template-columns:repeat(8,42px);grid-template-rows:repeat(8,42px);border:2px solid #5a4326">`;
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++){ const i=r*8+c, light=(r+c)%2===0, p=st.bd[i], isSel=i===sel, tgt=legal.some(m=>m.to===i);
+      const bg=isSel?"#c9a24a":tgt?(p?"#b05a3a":"#6a7a4a"):(light?"#d8c39a":"#8a6a44");
+      h+=`<div data-sq="${i}" style="display:flex;align-items:center;justify-content:center;font-size:29px;background:${bg};cursor:pointer;user-select:none;color:${chW(p)?'#fff':'#111'};text-shadow:0 1px 1px rgba(0,0,0,.35)">${p?CH_GLYPH[p]:(tgt?'<span style=\'font-size:11px;opacity:.55;color:#243\'>●</span>':'')}</div>`; }
+    h+=`</div><div style="margin-top:10px;font-size:12px;min-height:16px">${msg}</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button id="chNew" class="tbtn">New Game</button><button id="chResign" class="tbtn">Resign</button><button id="chClose" class="tbtn">Leave</button></div></div>`;
+    ov.innerHTML=h;
+    ov.querySelectorAll('[data-sq]').forEach(el=>el.onclick=()=>onSq(+el.dataset.sq));
+    ov.querySelector('#chNew').onclick=()=>{ _chess=chInit(); sel=-1;legal=[];thinking=false; render(); };
+    ov.querySelector('#chResign').onclick=()=>{ log("You tip your king — the house takes the game.","sys"); _chess=chInit(); sel=-1;legal=[];thinking=false; render(); };
+    ov.querySelector('#chClose').onclick=()=>{ ov.remove(); paused=false; };
+  };
+  const aiTurn=()=>{ thinking=true; render();
+    setTimeout(()=>{ if(!document.getElementById('chessBoard'))return; const m=chAIMove(_chess,3); if(m){ _chess=chMake(_chess,m); if(SFX.hit)SFX.hit(); } thinking=false; render();
+      const s=chStatus(_chess); if(s.over==="checkmate"&&s.winner==="b") log("The tavern chess-master checkmates you. Another round?","sys"); }, 380); };
+  const onSq=(i)=>{ const st=_chess; if(thinking||st.turn!=="w"||chStatus(st).over) return; const p=st.bd[i];
+    if(sel<0){ if(p&&chW(p)){ sel=i; legal=chLegal(st).filter(m=>m.from===i); render(); } return; }
+    const m=legal.find(mm=>mm.to===i&&(!mm.promo||mm.promo==='q'));   // player auto-queens on promotion
+    if(m){ _chess=chMake(st,m); sel=-1;legal=[]; if(SFX.quest)SFX.quest(); render();
+      const s=chStatus(_chess); if(s.over==="checkmate"&&s.winner==="w"){ log("You checkmate the tavern chess-master! 🏆","loot"); if(SFX.level)SFX.level(); }
+      else if(!s.over) aiTurn();
+    } else { if(p&&chW(p)){ sel=i; legal=chLegal(st).filter(mm=>mm.from===i); } else { sel=-1;legal=[]; } render(); } };
+  render(); document.body.appendChild(ov);
 }
 // ── the casino panel (opened by talking to the owner) ──
 let _casinoNpc=null;
@@ -9711,7 +9851,7 @@ function updateShieldModel(){   // reflect the equipped off-hand shield on the a
 }
 function armorTypeOf(){ const a=player.armorSlots&&player.armorSlots.chest; return (a&&a.at&&ARMOR_TYPES[a.at])||null; } // chest = overall "look"
 // total worn armour = sum of each equipped piece (its value + armour affix, scaled by class)
-function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); n+=Math.round(base*(at?at.armorMul:1)); } return n+setBonus().armor; }
+function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); n+=Math.round(base*(at?at.armorMul:1)); } return n+setBonus().armor+((typeof aetheriaBonus==="function")?aetheriaBonus("armor"):0); }
 // movement/stamina multipliers, averaged across all 5 slots (empty slot = no penalty) — partial armour = partial cost
 function armorMove(){ let sp=0,stm=0; for(const s of ARMOR_SLOTS){ const p=player.armorSlots&&player.armorSlots[s], at=p&&ARMOR_TYPES[p.at]; sp+=at?at.speedMul:1; stm+=at?at.stamMul:1; } const n=ARMOR_SLOTS.length; return {speed:sp/n, stam:stm/n}; }
 function wornVital(stat){ let n=0; for(const p of wornPieces()){ const a=p.affix; if(a&&a.k==="vital"&&a.stat===stat) n+=a.v; } return n; }
@@ -9766,9 +9906,8 @@ function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,
   return {count:d.count,set:d.set,armor,mhp,skill,skillV:skill?12:0}; }
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
-  if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
+  if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg")+aetheriaBonus("dmg"))*(1-player.vitae);  // Blood Drinker + Aetheria of Destruction
   if(player.auras&&player.auras.valor) base*=(1+player.auras.valor*0.01);   // Luminance Aura of Valor (damage rating)
-  base*=(1+aetheriaStat("dmg"));   // Destruction-set aetheria: passive damage rating
   if(opts.phys&&player.gearFx&&player.gearFx.dmg) base+=player.gearFx.dmg;   // Blood Drinker / Strength item-spells: flat weapon damage
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
   if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
@@ -9788,8 +9927,7 @@ function applyHit(m,base,opts){ opts=opts||{};
   }
   if(opts.phys&&pm!==1) floater(m.x,(m.headY||1.6)+2.9,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0");
   dmg*=vgen;
-  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0)+aetheriaStat("crit")+((player.gearFx&&player.gearFx.crit)||0),0,0.6); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria; Aura of Glory boosts crit damage
-  const sgh=aetheriaSurge("hit",m); if(sgh>0) dmg*=(1+sgh);   // Surge of Destruction (Affliction/Festering apply their own effects)
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+((player.gearFx&&player.gearFx.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria, item-spell crit; Aura of Glory boosts crit damage
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -13199,16 +13337,10 @@ const AUGMENT_ITEMS=[
   {name:"Gem of Perseverance",    aug:{st:25}, desc:"+25 max stamina, forever"},
   {name:"Gem of the Magus",       aug:{mn:25}, desc:"+25 max mana, forever"},
   {name:"Gem of Enlightenment",   aug:{skillpts:1}, desc:"+1 skill credit, forever"},
-  // Aetheria sigils (AC's permanent power growth) — three colours, bound forever when absorbed
-  {name:"Blue Aetheria",  aug:{resist:0.06}, desc:"+6% resistance to every element, forever", aetheria:true},
-  {name:"Red Aetheria",   aug:{magic:3},     desc:"+3 to every school of magic, forever",     aetheria:true},
-  {name:"Yellow Aetheria",aug:{crit:0.04},   desc:"+4% critical hit chance, forever",          aetheria:true},
   {name:"Gem of Fortification", aug:{hp:25}, desc:"+25 max health, forever"},
   {name:"Gem of Vigor",         aug:{st:25}, desc:"+25 max stamina, forever"},
   {name:"Gem of Concentration", aug:{mn:25}, desc:"+25 max mana, forever"},
   {name:"Gem of Mastery",       aug:{skillpts:1}, desc:"+1 skill credit, forever"},
-  {name:"Coalesced Blue Aetheria",aug:{resist:0.08}, desc:"+8% resistance to every element, forever", aetheria:true},
-  {name:"Coalesced Red Aetheria", aug:{magic:4},     desc:"+4 to every school of magic, forever",     aetheria:true},
   // AC innate-attribute augmentations (+5 each; the six are capped at +50 total innate augment bonus)
   {name:"Reinforcement of the Lugians", aug:{attr:5,attrName:"Strength"},     desc:"+5 innate Strength, forever"},
   {name:"Bleeargh's Fortitude",         aug:{attr:5,attrName:"Endurance"},    desc:"+5 innate Endurance, forever"},
@@ -13235,58 +13367,58 @@ const AUGMENT_ITEMS=[
   {name:"Celdiseth's Essence",          aug:{spec:"magictink"},      nonRepeat:true, desc:"specialize Magic Item Tinkering, forever"},
   {name:"Ciandra's Essence",            aug:{spec:"salvaging"},      nonRepeat:true, desc:"specialize Salvaging, forever"},
 ];
-function rollAugment(){ const pool=AUGMENT_ITEMS.filter(t=>!t.aetheria);   // absorb-type aetheria no longer drop — the wearable slot/level kind below replaces them (legacy absorbed sigils keep their power)
-  const t=pool[irnd(0,pool.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,nonRepeat:t.nonRepeat,tier:5,legendary:true}; }
-// ═══ AETHERIA — the retail slot/level/surge system: coalesced medallions worn in three colour
-//     slots (blue L75 · yellow L150 · red L225), levelled 1–5 by the XP you earn while they're
-//     worn, each bearing a set sigil (passive that scales with level, ×1.5 at 2 matching,
-//     ×2 at 3) and a surge that procs in combat. ═══
-const AETHERIA_SLOTS=[{k:"blue",lvl:75,ico:"🔵"},{k:"yellow",lvl:150,ico:"🟡"},{k:"red",lvl:225,ico:"🔴"}];
-const AETHERIA_SETS={
-  defense:    {name:"Defense",     surge:"Surge of Protection",   per:"+2 damage rating shaved per level"},
-  destruction:{name:"Destruction", surge:"Surge of Destruction",  per:"+0.7% damage per level"},
-  fury:       {name:"Fury",        surge:"Surge of Affliction",   per:"+0.6% critical chance per level"},
-  growth:     {name:"Growth",      surge:"Surge of Regeneration", per:"+7 max health per level"},
-  vigor:      {name:"Vigor",       surge:"Surge of Festering",    per:"+5 max stamina & mana per level"},
-};
-const AETHERIA_LVL_XP=[0,50000,180000,480000,1200000];   // total absorbed XP to reach level 2..5
-function rollAetheria(){ return {name:"Coalesced Aetheria",stat:"aetheria",revealed:false,tier:5,legendary:true}; }
-function revealAetheria(it){
-  it.color=["blue","yellow","red"][irnd(0,2)];
-  const sets=Object.keys(AETHERIA_SETS); it.set=sets[irnd(0,sets.length-1)];
-  it.alevel=Math.random()<0.12?2:1; it.axp=AETHERIA_LVL_XP[it.alevel-1]; it.revealed=true;
-  it.name=it.color[0].toUpperCase()+it.color.slice(1)+" Aetheria of "+AETHERIA_SETS[it.set].name;
+function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,nonRepeat:t.nonRepeat,tier:5,legendary:true}; }
+// ═══ AETHERIA (AC endgame growth): three medallion SLOTS unlock at L75 (blue), L150 (yellow),
+//     L225 (red). Aetheria drop from tier-4+ foes with a level (1–5), a SET sigil (a passive bonus
+//     while slotted) and a SURGE that can flare in combat — one surge at a time, 9s cooldown. ═══
+const AETHERIA_SLOTS=[["blue",75],["yellow",150],["red",225]];
+const AETHERIA_SETS=[
+  {k:"Growth",     d:l=>`+${l*6} max health`},
+  {k:"Vigor",      d:l=>`+${l*5} max stamina & mana`},
+  {k:"Defense",    d:l=>`+${l*8} armor`},
+  {k:"Destruction",d:l=>`+${l*2}% damage`},
+  {k:"Fury",       d:l=>`+${l}% critical chance`}];
+const AETHERIA_SURGES=[
+  {k:"Destruction", on:"hit",  d:"+25% damage, 8s"},
+  {k:"Fury",        on:"hit",  d:"+15% crit, 8s"},
+  {k:"Protection",  on:"hurt", d:"-25% damage taken, 8s"},
+  {k:"Regeneration",on:"hurt", d:"2%/s health, 6s"},
+  {k:"Affliction",  on:"hurt", d:"weakens your attacker, 8s"}];
+function aetheriaSlotLevel(color){ const s=AETHERIA_SLOTS.find(s=>s[0]===color); return s?s[1]:75; }
+function aetheriaDesc(a){ const set=AETHERIA_SETS.find(x=>x.k===a.aset), sg=AETHERIA_SURGES.find(x=>x.k===a.surge);
+  return `${set?set.d(a.alvl||1):a.aset} · Surge of ${a.surge} (${sg?sg.d:""} on ${sg&&sg.on==="hit"?"your strikes":"being struck"})`; }
+function rollAetheria(){
+  const open=AETHERIA_SLOTS.filter(s=>player.level>=s[1]).map(s=>s[0]);
+  const color=open.length?open[irnd(0,open.length-1)]:"blue";
+  const alvl=clamp(1+Math.floor(Math.pow(Math.random(),1.6)*5),1,5);        // higher levels rarer
+  const set=AETHERIA_SETS[irnd(0,AETHERIA_SETS.length-1)], surge=AETHERIA_SURGES[irnd(0,AETHERIA_SURGES.length-1)];
+  return {name:`${color[0].toUpperCase()+color.slice(1)} Aetheria of ${set.k} (level ${alvl})`,
+    stat:"aetheria",color,alvl,aset:set.k,surge:surge.k,tier:5,v:0};
 }
-function aetheriaWorn(){ const a=player.aetheria||{}; const r=[]; for(const s of AETHERIA_SLOTS){ if(a[s.k]) r.push(a[s.k]); } return r; }
-function aetheriaStat(kind){   // aggregate worn passives; matching sets multiply (2pc ×1.5 · 3pc ×2)
-  let v=0; const worn=aetheriaWorn(); if(!worn.length) return 0;
-  const sc={}; for(const w of worn) sc[w.set]=(sc[w.set]||0)+1;
-  for(const w of worn){ const mult=sc[w.set]>=3?2:sc[w.set]>=2?1.5:1, L=w.alevel||1;
-    if(kind==="dmg"&&w.set==="destruction") v+=0.007*L*mult;
-    else if(kind==="crit"&&w.set==="fury") v+=0.006*L*mult;
-    else if(kind==="armor"&&w.set==="defense") v+=2*L*mult;
-    else if(kind==="hp"&&w.set==="growth") v+=7*L*mult;
-    else if(kind==="stmn"&&w.set==="vigor") v+=5*L*mult; }
-  return v;
-}
-let _surgeCd=0;   // shared internal cooldown so surges punctuate a fight instead of firing every swing
-function aetheriaSurge(trigger,m){   // "hit": player landed a blow (m = target) → returns bonus-damage fraction
-  const worn=aetheriaWorn();          // "hurt": player is taking a blow → returns damage-reduction fraction
-  if(!worn.length||!player.alive||now()<_surgeCd) return 0;
-  const tl=worn.reduce((s,w)=>s+(w.alevel||1),0);
-  if(Math.random()>=0.02+tl*0.004) return 0;   // 2%..8% per eligible event at 3×L5
-  const want=trigger==="hit"?["destruction","fury","vigor"]:["defense","growth"];
-  const cands=worn.filter(w=>want.indexOf(w.set)>=0); if(!cands.length) return 0;
-  const w=cands[irnd(0,cands.length-1)], L=w.alevel||1; _surgeCd=now()+8;
-  const cry=AETHERIA_SETS[w.set].surge;
-  if(w.set==="destruction"){ floater(player.x,EYE+0.6,player.z,cry+"!","#ff9a4a",1.5); log(`<b>${cry}</b> — your aetheria flares and the blow lands twice as hard.`,"sys"); return 0.5+0.1*L; }
-  if(w.set==="fury"&&m){ m.weakUntil=now()+8; m.weakV=Math.max(0.5,0.8-0.05*L);
-    floater(m.x,(m.headY||1.6)+2.6,m.z,cry,"#c9a6ff"); log(`<b>${cry}</b> — the sigil saps your foe's strength.`,"sys"); return 0; }
-  if(w.set==="vigor"){ const g=6*L; player.st=Math.min(player.mst,player.st+g); player.mn=Math.min(player.mmn,player.mn+g);
-    floater(player.x,EYE+0.6,player.z,cry+" +"+g,"#9af0ff"); log(`<b>${cry}</b> — vitality festers back into you (+${g} stamina & mana).`,"sys"); return 0; }
-  if(w.set==="growth"){ const g=8*L; player.hp=Math.min(player.mhp,player.hp+g);
-    floater(player.x,EYE+0.6,player.z,cry+" +"+g,"#8fe6a0"); log(`<b>${cry}</b> — the sigil knits your wounds (+${g} health).`,"sys"); return 0; }
-  floater(player.x,EYE+0.6,player.z,cry+"!","#7fb0ff"); log(`<b>${cry}</b> — your aetheria turns the blow aside.`,"sys"); return 0.4+0.08*L;   // defense
+function aetheriaBonus(kind){ let n=0; const eq=player.aetheria||{};
+  for(const c in eq){ const a=eq[c]; if(!a) continue; const l=a.alvl||1;
+    if(kind==="hp"&&a.aset==="Growth") n+=l*6;
+    else if((kind==="st"||kind==="mn")&&a.aset==="Vigor") n+=l*5;
+    else if(kind==="armor"&&a.aset==="Defense") n+=l*8;
+    else if(kind==="dmg"&&a.aset==="Destruction") n+=l*0.02;
+    else if(kind==="crit"&&a.aset==="Fury") n+=l*0.01; }
+  return n; }
+let _surgeCd=0;
+function aetheriaSurge(on,attacker){
+  if(!player.aetheria||_surgeCd>now()) return;
+  for(const c in player.aetheria){ const a=player.aetheria[c]; if(!a) continue;
+    const def=AETHERIA_SURGES.find(x=>x.k===a.surge); if(!def||def.on!==on) continue;
+    if(Math.random()>=0.04+(a.alvl||1)*0.01) continue;                       // 5–9% per qualifying medallion
+    _surgeCd=now()+9000;
+    if(a.surge==="Destruction"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.dmg; player.itemBuffs.dmg={v:Math.max(0.25,cur?cur.v:0),t:8}; }
+    else if(a.surge==="Fury"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.crit; player.itemBuffs.crit={v:Math.max(0.15,cur?cur.v:0),t:8}; }
+    else if(a.surge==="Protection"){ player.lifeBuffs=player.lifeBuffs||{}; const cur=player.lifeBuffs.prot; player.lifeBuffs.prot={v:Math.max(0.25,cur?cur.v:0),t:Math.max(8,cur?cur.t:0)}; }
+    else if(a.surge==="Regeneration"){ player.hots=player.hots||{}; player.hots.hp={rate:Math.max(2,player.mhp*0.02),t:6}; }
+    else if(a.surge==="Affliction"&&attacker){ attacker.weakV=0.75; attacker.weakUntil=now()+8000; }
+    floater(player.x,EYE+0.8,player.z,"SURGE of "+a.surge+"!","#9af0ff");
+    log(`Your <b>${esc(a.name)}</b> flares — <b>Surge of ${a.surge}</b>!`,"heal"); if(SFX.quest)SFX.quest();
+    if(typeof selfCastFX==="function") selfCastFX(player.x,player.z,0x66c8ff);
+    break; }
 }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
 const PACK_ITEMS=[{name:"Belt Pouch",cap:2},{name:"Sack",cap:3},{name:"Backpack",cap:4},{name:"Portmanteau",cap:6}];
@@ -13581,13 +13713,13 @@ function wieldReqHTML(it){
 }
 function rollItem(rare,tier,noRare){
   if(!noRare && rareRoll()) return rollRare();   // I6: the pity-timed rare artifact drop (real drops only, not vendor stock)
+  if(!noRare && tier>=4 && player.level>=75 && Math.random()<0.035) return rollAetheria();   // Aetheria surface from tier-4+ foes once the first slot is open
   if(SCROLL_POOL.length && Math.random()<(rare?0.16:0.10)){   // sometimes a spell scroll instead of gear
     const id=SCROLL_POOL[irnd(0,SCROLL_POOL.length-1)];
     return {scroll:true,spellId:id,name:"Scroll: "+SPELLBOOK[id].name};
   }
   // rare chance at a named artifact (more likely on rich/deep loot)
   if(Math.random()<((rare?0.05:0)+((tier|0)>=5?0.03:0))) return rollNamedItem();
-  if((tier|0)>=4&&Math.random()<(rare?0.02:0.006)) return rollAetheria();   // coalesced aetheria seeps from tier-4+ foes (retail: L75+ hunting grounds)
   if(Math.random()<((rare?0.015:0)+((tier|0)>=5?0.01:0))) return rollAugment();   // very rare augmentation gem
   if(Math.random()<(rare?0.02:0.012)) return rollPack();   // a container to expand your satchel
   if(Math.random()<(rare?0.04:0.06)) return rollAmmo();    // a stack of arrows/quarrels/darts
@@ -13985,18 +14117,14 @@ function applyItem(it){
   else if(it.stat==="st"){player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
-  else if(it.stat==="aetheria"){
-    if(!it.revealed){ revealAetheria(it);
-      log(`The coalesced lump resolves into a <b>${it.name}</b> — a sigil of the <b>${AETHERIA_SETS[it.set].name}</b> set (${AETHERIA_SETS[it.set].per}; surges with ${AETHERIA_SETS[it.set].surge}). Use it again to set it into your ${it.color} slot.`,"loot");
-      if(SFX.quest)SFX.quest(); return "keep"; }
-    const slot=AETHERIA_SLOTS.find(s=>s.k===it.color);
-    if(player.level<slot.lvl){ log(`Your <b>${it.color}</b> aetheria slot awakens at <b>level ${slot.lvl}</b> — you cannot channel it yet.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
-    player.aetheria=player.aetheria||{};
-    const prevA=player.aetheria[it.color]; player.aetheria[it.color]=it;
-    if(prevA) addToInv(prevA,true);
+  else if(it.stat==="aetheria"){                                     // slot the medallion — swap out whatever sits in its colour slot
+    if(player.level<aetheriaSlotLevel(it.color)){ log(`The <b>${it.color}</b> aetheria slot opens at <b>level ${aetheriaSlotLevel(it.color)}</b>.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+    player.aetheria=player.aetheria||{blue:null,yellow:null,red:null};
+    const old=player.aetheria[it.color]; player.aetheria[it.color]=it;
+    if(old) addToInv(old,true);
     derive(); updateHUD&&updateHUD(); if(typeof buildPaperDoll==="function") buildPaperDoll();
-    log(`You set the <b>${it.name}</b> into your ${it.color} sigil slot${prevA?` (the ${prevA.name} returns to your satchel)`:""}.`,"loot");
-    if(SFX.level)SFX.level(); toast("AETHERIA EQUIPPED"); }
+    log(`You slot the <b>${esc(it.name)}</b> — ${aetheriaDesc(it)}.${old?` (the <b>${esc(old.name)}</b> returns to your pack)`:""}`,"loot");
+    if(SFX.level)SFX.level(); toast("AETHERIA SLOTTED"); }
   else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
     player.augment.count=player.augment.count||0;   // H17: a hard total-augmentation cap (Aetheria sigils are separate, uncapped)
     if(!it.aetheria && player.augment.count>=60){ log("You have reached the <b>augmentation limit</b> (60) — your body can bind no more.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
@@ -14079,16 +14207,20 @@ function applyItem(it){
     const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
     bag.work=(bag.work*bag.units+w*u)/Math.max(1,bag.units+u); bag.units+=u;
     log(`You empty <b>${u} ${mat}</b> salvage (wk ${w}) into your materials — ${mat}: <b>${bag.units}</b> units.`,"loot"); if(SFX.gold)SFX.gold(); }
-  else if(it.stat==="manastone"){   // H15: recharge worn enchanted gear first, then the focus battery, then yourself
-    const amt=it.charge||150, max=focusManaMax();
+  else if(it.stat==="manastone"){   // AC mana stone: pour the stone's stored mana back into your caster gear —
+    // worn spell-bearing gear first (its pools drain in play; a refill rekindles dormant enchantments),
+    // then the focus battery, then your own reserve. Won't be spent if there's nothing to fill.
+    let amt=it.charge||150; const parts=[]; const max=focusManaMax();
     const thirsty=wornMagicItems().filter(w=>w.itemManaMax&&w.itemMana<w.itemManaMax)
       .sort((a,b)=>(a.itemMana/a.itemManaMax)-(b.itemMana/b.itemManaMax))[0];
-    if(thirsty){ const was=thirsty.itemMana<=0; thirsty.itemMana=Math.min(thirsty.itemManaMax,(thirsty.itemMana||0)+amt);
-      log(`You channel the <b>${it.name}</b> into your <b>${thirsty.name}</b> — its pool charges to <b>${Math.round(thirsty.itemMana)}/${thirsty.itemManaMax}</b>${was?" and its enchantments rekindle":""}.`,"loot");
+    if(thirsty){ const was=thirsty.itemMana<=0; const g=Math.min(amt,thirsty.itemManaMax-thirsty.itemMana);
+      thirsty.itemMana+=g; amt-=g;
+      if(g>0) parts.push(`<b>${esc(thirsty.name)}</b> → <b>${Math.round(thirsty.itemMana)}/${thirsty.itemManaMax}</b>${was?" (its enchantments rekindle)":""}`);
       if(was){ recomputeGearSkill(); derive(); } }
-    else if(max>0){ player.focusMana=Math.min(max,(player.focusMana||0)+amt);
-      log(`You channel the <b>${it.name}</b> into your focus — its mana battery charges to <b>${Math.round(player.focusMana)}/${max}</b>.`,"loot"); }
-    else { player.mn=Math.min(player.mmn,player.mn+amt); log(`You drain the <b>${it.name}</b> — <b>+${amt}</b> mana. (Wield a casting focus to store it as a battery.)`,"loot"); }
+    if(amt>0 && max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
+    if(amt>0 && player.mn<player.mmn){ const g=Math.min(amt,player.mmn-player.mn); player.mn+=g; amt-=g; if(g>0) parts.push(`your reserve <b>+${g}</b>`); }
+    if(!parts.length){ log(`The <b>${it.name}</b>'s mana has nowhere to go — your gear, focus and reserve are already full.`,"warn"); return "keep"; }
+    log(`You channel the <b>${it.name}</b>: ${parts.join(" · ")}.`,"loot");
     if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
   else if(it.stat==="keyring"){   // consolidate every loose lockpick & key in the satchel onto the ring
     let np=0,nk=0;
@@ -14103,6 +14235,81 @@ function applyItem(it){
     log(`You clip the <b>${it.name}</b> to your belt — a new side pack with <b>${player.packs[player.packs.length-1].cap}</b> slots (${player.packs.length}/7).`,"loot"); if(SFX.gold)SFX.gold(); toast("SIDE PACK EQUIPPED"); updateHUD&&updateHUD(); }
   else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
   else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
+}
+// ═══ THE COMBINE ENGINE (AC tradeskills): assets/acrecipes.json carries 1,500 retail tool+target→result
+//     combines across Alchemy, Cooking, Fletching and tool assembly. Any two inventory items whose
+//     NAMES complete a recipe can be combined — a logistic skill roll vs the recipe difficulty (ACE's
+//     check) consumes the target (and the tool, unless it's a durable implement) and on success
+//     produces the result, itemized so potions/food/ammo/dyes come out usable while intermediate
+//     goods keep their names to chain into the next combine. ═══
+let _craftIx=null;
+function craftIx(){
+  if(_craftIx) return _craftIx;
+  if(!AC_RECIPES) return null;
+  const rows=Array.isArray(AC_RECIPES)?AC_RECIPES:(AC_RECIPES.recipes||[]);
+  const byPair={}, names=new Set();
+  for(const r of rows){ byPair[(r.tool+"|"+r.target).toLowerCase()]=r; names.add(r.tool.toLowerCase()); names.add(r.target.toLowerCase()); }
+  return _craftIx={byPair,names,rows};
+}
+const CRAFT_SKILL={alchemy:"alchemy",cooking:"cooking",fletching:"fletching",tinkering:"weapontink"};
+const CRAFT_DURABLE=/\b(knife|saw|mortar|alembic|eye dropper|smelting pot|skillet|pan|awl|shears|tongs|chisel|needle|press|crucible)\b/i;   // implements survive the combine; reagents/dye pots are used up
+const AC_DYE_HEX={verdalim:0x3f8f4f,hennacin:0xb04a2a,berimphur:0xd8b23a,thananim:0x2a4a9a,colban:0x3a6ad8,lapyan:0x6aa8d8,relanim:0x7a4a9a,argenory:0xd8d8e0,minalim:0x8fd08f,botched:0x8a8a8a};
+function craftCanCombine(it){ const ix=craftIx(); return !!(ix&&it&&it.name&&ix.names.has(it.name.toLowerCase())); }
+function craftRecipeFor(a,b){ const ix=craftIx(); if(!ix||!a||!b||!a.name||!b.name) return null;
+  return ix.byPair[(a.name+"|"+b.name).toLowerCase()]||ix.byPair[(b.name+"|"+a.name).toLowerCase()]||null; }
+function combineChance(rec){ const sk=skillValue(CRAFT_SKILL[rec.family]||"alchemy");
+  return clamp(1/(1+Math.exp((rec.difficulty-sk)*0.03)),0.03,0.98); }
+function craftResultItem(nm){
+  const dm=nm.toLowerCase().match(/^(\w+) dye pot$/);              // retail dye pots become REAL dye items (openDyePicker applies them)
+  if(dm&&AC_DYE_HEX[dm[1]]) return {name:nm,stat:"dye",hex:AC_DYE_HEX[dm[1]],v:85};
+  const row=(typeof acItemRow==="function")?acItemRow(nm,25):null; // the vendor-shelf classifier: potions/food/ammo/comps come out usable
+  if(row&&row.scroll) return {name:row.name,scroll:true,spellId:row.spellId};
+  return (row&&row.gear)?row.gear:{name:nm,stat:"trophy",v:8};
+}
+function craftTake(i){ const it=player.inv[i]; if(!it) return; if((it.count||1)>1) it.count--; else player.inv.splice(i,1); }
+function attemptCombine(ia,ib){
+  const A=player.inv[ia], B=player.inv[ib]; const rec=craftRecipeFor(A,B); if(!rec) return;
+  const aIsTool=A.name.toLowerCase()===rec.tool.toLowerCase();     // orient the pair: which one is the recipe's tool?
+  const iTool=aIsTool?ia:ib, iTarget=aIsTool?ib:ia;
+  const ch=combineChance(rec), skN=(SKILL_BY_KEY[CRAFT_SKILL[rec.family]]||{}).n||rec.family;
+  if(Math.random()<ch){
+    const keepTool=CRAFT_DURABLE.test(rec.tool);                   // success: consume target (+ tool unless durable) — splice higher index first
+    const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
+    for(const idx of order) craftTake(idx);
+    const out=craftResultItem(rec.result); addToInv(out,true);
+    log(`Your ${skN} succeeds — <b>${esc(rec.tool)}</b> + <b>${esc(rec.target)}</b> → <b>${esc(rec.result)}</b> <span style="color:var(--dim)">(${Math.round(ch*100)}%)</span>.`,"loot");
+    if(SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather");
+  } else {
+    const keepTool=CRAFT_DURABLE.test(rec.tool);                   // failure ruins the target; a non-durable tool is spent too
+    const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
+    for(const idx of order) craftTake(idx);
+    log(`Your ${skN} attempt fails — the <b>${esc(rec.target)}</b> is ruined <span style="color:var(--dim)">(${Math.round(ch*100)}% chance)</span>.`,"warn");
+    if(SFX.hit)SFX.hit();
+  }
+  updateHUD&&updateHUD(); saveGame(); if(typeof buildTinker==="function")buildTinker();
+}
+function openCombinePicker(i){
+  const it=player.inv[i]; if(!it) return;
+  const opts=[];
+  for(let j=0;j<player.inv.length;j++){ if(j===i) continue;
+    const rec=craftRecipeFor(it,player.inv[j]);
+    if(rec) opts.push({j,rec,partner:player.inv[j]});
+  }
+  if(!opts.length){ log(`Nothing in your satchel combines with the <b>${esc(it.name)}</b> — the right partner is named in a tradeskill recipe.`,"sys"); return; }
+  const old=document.getElementById('combinePick'); if(old) old.remove();
+  paused=true; if(locked)document.exitPointerLock();
+  const ov=document.createElement('div'); ov.id='combinePick';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  ov.innerHTML=`<div style="max-width:460px;width:92%;max-height:80vh;overflow:auto;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">⚗ Combine — ${esc(it.name)}</div>
+    <div style="color:var(--dim);margin:4px 0 4px;font-size:12px">Choose what to combine it with. Failure ruins the target material.</div>
+    ${opts.map((o,k)=>`<button data-k="${k}" style="${btn}"><b>${esc(o.partner.name)}</b> → <b style="color:#9be08a">${esc(o.rec.result)}</b> <span style="color:var(--dim)">(${o.rec.family} · ${Math.round(combineChance(o.rec)*100)}%)</span></button>`).join("")}
+    <button id="combineCancel" style="${btn};text-align:center">Cancel</button></div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ ov.remove(); paused=false; };
+  ov.querySelector('#combineCancel').onclick=close;
+  ov.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{ const o=opts[+b.dataset.k]; close(); attemptCombine(i,o.j); });
 }
 // ---- salvage & tinkering (AC-authentic; success-chance formula is our own — real one stays gated) ----
 function salvageItem(i){
@@ -14366,12 +14573,6 @@ function gainXP(amt,opts){
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
     if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
   player.xp+=amt;player.xpUnspent+=amt;
-  // worn aetheria drink a share of your deeds (retail: aetheria levels by XP earned while equipped)
-  if(player.aetheria) for(const w of aetheriaWorn()){ if((w.alevel||1)>=5) continue;
-    w.axp=(w.axp||0)+amt;
-    while((w.alevel||1)<5&&w.axp>=AETHERIA_LVL_XP[w.alevel||1]){ w.alevel=(w.alevel||1)+1;
-      log(`Your <b>${w.name}</b> brightens — <b>level ${w.alevel}</b>. Its sigil grows stronger.`,"sys");
-      toast("AETHERIA LEVEL "+w.alevel); if(SFX.level)SFX.level(); derive(); } }
   if(typeof PLUG!=="undefined"&&PLUG.mag) PLUG.mag.xp+=amt;   // Mag-Tools combat tracker
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
@@ -14412,8 +14613,6 @@ function playerHurt(dmg,sx,sz,type,element){
   dmg=Math.max(1,dmg*(1-dv/(dv+denom)));
   if(player.lifeBuffs&&player.lifeBuffs.prot) dmg=Math.max(1,dmg*(1-player.lifeBuffs.prot.v));  // Life Protection
   if(player.auras&&player.auras.protect) dmg=Math.max(1,dmg*(1-player.auras.protect*0.01));  // Luminance Aura of Protection (damage reduction)
-  { const ar=aetheriaStat("armor"); if(ar>0) dmg=Math.max(1,dmg*(1-Math.min(0.30,ar*0.01))); }   // Defense-set aetheria: passive damage-rating shave
-  { const sg=aetheriaSurge("hurt"); if(sg>0) dmg=Math.max(1,dmg*(1-sg)); }   // Surge of Protection (Regeneration heals inside the roll)
   if(player.debuffs&&player.debuffs.vuln) dmg*=player.debuffs.vuln.v;   // enemy Imperil curse — you take more
   // active shield block: cut frontal damage (scales with Shield skill), costs stamina — physical attacks only
   if(blocking&&player.st>4&&sx!==undefined&&type!=="magic"){
@@ -14432,6 +14631,7 @@ function playerHurt(dmg,sx,sz,type,element){
   { const cc=clamp(0.10-player.attr.Coordination*0.0008,0.03,0.12);
     if(Math.random()<cc){ _crit=true; const cr=Math.min(1,(player.augment&&player.augment.critReduce)||0); dmg=Math.round(dmg*(2-cr)); } }
   player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)*(_crit?1.8:1)); // combatT: recently-in-combat → Healing is less effective
+  if(typeof aetheriaSurge==="function"&&sx!==undefined){ let atk=null,bd=9; for(const m of monsters){ const d=Math.hypot(m.x-sx,m.z-sz); if(d<bd){bd=d;atk=m;} } aetheriaSurge("hurt",atk); }
   clog(`You take <b style="color:#ff6a5a">${Math.round(dmg)}</b> ${element||type} damage${_crit?' — <b style="color:#ff8f6b">a critical blow!</b>':'.'}`);
   if(_crit){ if(SFX.crit)SFX.crit(); if(sx!==undefined)floater(player.x,EYE+0.95,player.z,"CRIT!","#ff5a3a"); }
   // a solid hit can shatter a spell you're mid-cast on — high Focus steadies your concentration
@@ -15299,13 +15499,16 @@ function currentPrompt(){
     for(const b of dungeonBars) if(b.kind==="key"&&!b.open&&nr(b.x,b.z)<3.2) return hasNamedKey(b.need)?("Unlock with the "+b.need+" (E)"):("Locked — find the "+b.need);
     for(const b of dungeonBars) if(b.kind==="lever"&&!b.open&&nr(b.x,b.z)<3.2) return "A portcullis bars the way — find its lever";
     for(const pp of dungeonPortals) if(nr(pp.x,pp.z)<2.8) return pp.chainTo?("Descend into "+pp.chainTo.name+" (E)"):"Take the portal back (E)";
-    if(nr(dungeonExit.x,dungeonExit.z)<3.5) return (curDungeon&&curDungeon.academy&&!(player.academy&&player.academy.done))?"The Sentry holds the portal — finish your training":"Leave the delve (E)";
+    if(dungeonDescent&&nr(dungeonDescent.x,dungeonDescent.z)<3) return "Take Ye Olde Stair down — depth "+(dungeonDepth+1)+" (E)";
+    if(nr(dungeonExit.x,dungeonExit.z)<3.5) return (curDungeon&&curDungeon.academy&&!(player.academy&&player.academy.done))?"The Sentry holds the portal — finish your training":(dungeonDepth>1?"Climb back up (E)":"Leave the delve (E)");
     return "";
   }
   for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
     if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.open?("Loot "+d.owner+"'s corpse (E)"):(d.owner+"'s corpse (theirs to recover)");
     return "Recover your corpse (E)"; }
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
+  for(const bs of bookStands) if(nr(bs.x,bs.z)<3.2) return "Browse "+bs.name+" (E)";
+  for(const ct of chessTables) if(nr(ct.x,ct.z)<3.0) return "Play chess (E)";
   {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
     if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
@@ -15436,11 +15639,18 @@ function interact(){
         if(SFX.portal)SFX.portal(); log(`You step through — the way runs on into <b>${pp.chainTo.name}</b>.`,"sys");
         exitDungeon(false); enterDungeon(pp.chainTo, ret.x, ret.z); return; }
       teleportFX(player.x,player.z); player.y=(dungeonSpawn.y||0); arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=1.5; if(SFX.portal)SFX.portal(); log("The portal casts you back to the entrance.","sys"); return; }
+    if(dungeonDescent&&Math.hypot(dungeonDescent.x-player.x,dungeonDescent.z-player.z)<3){ const d=dungeonDepth+1;
+      teleportFX&&teleportFX(player.x,player.z); dungeonGoDepth(d); if(SFX.portal)SFX.portal();
+      log(`You take the old stair down — <b>depth ${d}</b>. The dark grows heavier.`,"warn"); return; }
     if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.5){
-      if(curDungeon&&curDungeon.academy){ log("The Sentry holds the portal — finish your training, or ask <b>Jonathan</b> to send you on at once.","warn"); return; }
+      if(curDungeon&&curDungeon.academy&&!(player.academy&&player.academy.done)){ log("The Sentry holds the portal — finish your training, or ask <b>Jonathan</b> to send you on at once.","warn"); return; }
+      if(dungeonDepth>1){ const d=dungeonDepth-1; dungeonGoDepth(d); if(SFX.portal)SFX.portal();
+        log(d>1?`You climb back up to <b>depth ${d}</b>.`:"You climb back up to the top floor.","sys"); return; }
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
+  for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
+  for(const ct of chessTables) if(Math.hypot(ct.x-player.x,ct.z-player.z)<3.0){ openChessBoard(); return; }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
@@ -20097,7 +20307,7 @@ function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
 function gearIco(it){
   if(it&&it.acicon) return `<img src="assets/acicons/${it.acicon}.png" style="width:1.25em;height:1.25em;vertical-align:-0.28em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('📦'))">`;   // the item's ORIGINAL inventory icon
-  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="aetheria"?"🧿":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ let p;
@@ -20171,6 +20381,84 @@ function bookStock(){   // four titles a day, rotating through the whole retail 
     out.push({name:b.n,cost:75,ico:"📖",desc:`a bound volume — ${b.pages.length} page${b.pages.length>1?"s":""} of Dereth's own lore (Use to read)`,
       gear:{name:b.n,stat:"book",v:35}}); }
   return out;
+}
+// ── Book PLACEMENT: reading-stands at the towns + a lore site, each a shelf of real AC books you can
+//    read in the world (not just buy from the scrivener). Placed in buildWorld; browsed with E. ──
+function placeBookStands(){
+  bookStands=[];
+  if(typeof CAPITALS==="undefined"||!CAPITALS.length) return;
+  const spots=[];
+  for(const c of CAPITALS) spots.push({name:c.name+" Library", x:c.x-16, z:c.z+11});   // a town library off the plaza centre
+  const hb=CITIES.find(c=>c.name==="Cragstone")||CITIES.find(c=>!c.capital); if(hb) spots.push({name:"the Scriptorium of "+hb.name, x:hb.x+9, z:hb.z-7});
+  for(const s of spots){
+    const gy=(typeof groundY==="function")?groundY(s.x,s.z):0;
+    const g=new THREE.Group();
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.0,0.62),solid(0x5a4326)); post.position.y=0.5; g.add(post);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(0.98,0.1,0.72),solid(0x6a4a2a)); top.position.set(0,1.06,0); top.rotation.x=-0.5; g.add(top);
+    const bk=new THREE.Mesh(new THREE.BoxGeometry(0.52,0.09,0.38),solid(0xe8dcbf)); bk.position.set(0,1.14,0.02); bk.rotation.x=-0.5; g.add(bk);
+    g.position.set(s.x,gy,s.z); g.castShadow=true; scene.add(g); scenery.push(g);
+    const lbl=labelSprite("📖 "+s.name,"cities"); if(lbl){ lbl.position.set(s.x,gy+2.3,s.z); scene.add(lbl); scenery.push(lbl); }
+    obstacles.push({x:s.x,z:s.z,r:0.95});
+    bookStands.push({name:s.name,x:s.x,z:s.z});
+  }
+  // A History of Dereth — the chronicle of the world's live events, at Kilmer's Castle. Seated just
+  // outside the moat (freely reachable, not behind the castle's guest-gate) on the castle forecourt.
+  if(typeof KC!=="undefined"&&KC){ const x=KC.x, z=KC.z+(KC.moatOut||235)+14, gy=(typeof groundY==="function")?groundY(x,z):0;
+    const g=new THREE.Group();
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.95,1.05,0.64),solid(0x4a3620)); post.position.y=0.52; g.add(post);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(1.04,0.1,0.76),solid(0x6a4a2a)); top.position.set(0,1.1,0); top.rotation.x=-0.5; g.add(top);
+    const bk=new THREE.Mesh(new THREE.BoxGeometry(0.58,0.1,0.42),solid(0xf0e6c8)); bk.position.set(0,1.19,0.02); bk.rotation.x=-0.5; g.add(bk);
+    g.position.set(x,gy,z); g.castShadow=true; scene.add(g); scenery.push(g);
+    const lbl=labelSprite("📖 A History of Dereth","cities"); if(lbl){ lbl.position.set(x,gy+2.4,z); scene.add(lbl); scenery.push(lbl); }
+    obstacles.push({x,z,r:0.95}); bookStands.push({name:"A History of Dereth",x,z,history:true});
+  }
+}
+// The living chronicle of Dereth's LIVE EVENTS (the Kilmer Saga arc). Authored framing + a per-event
+// record built from EVENT_CALENDAR up to the present month — the past is written history; the future
+// isn't lived yet. Grows as the calendar turns. Read via the stand at Kilmer's Castle.
+function openHistoryBook(){
+  const pages=["A HISTORY OF DERETH\n\nKept in the library of Castle Val Halla, that none forget how the Free Realms were forged.\n\nWhen Asheron Realaidain tore open the portal from Ispar, the sundered peoples — Aluvian, Gharu'ndim, and Sho — spilled onto this volcanic isle of Auberean and named it Dereth. What follows is the record of the great turnings since: the living history of the world, written as it comes to pass."];
+  const cal=(typeof EVENT_CALENDAR!=="undefined")?EVENT_CALENDAR:[];
+  const upto=(typeof gameMonth==="number")?gameMonth:cal.length-1;
+  let curYear=null, buf="", any=false; const flush=()=>{ if(buf.trim()){ pages.push(buf.trim()); buf=""; } };
+  for(let i=0;i<cal.length&&i<=upto;i++){ const e=cal[i]; if(!e||e.kind==="rest"||!e.name) continue;
+    const yr=(typeof sagaYearName==="function")?sagaYearName(e):("The Saga");
+    if(yr!==curYear){ flush(); curYear=yr; buf="── "+(""+yr).toUpperCase()+" ──\n\n"; }
+    const seen=(typeof calendarDone!=="undefined"&&calendarDone[e.id]);
+    buf+=`${e.mon}: ${e.name}${seen?" ✓":""}\n${e.rumor||""}\n\n`; any=true;
+    if(buf.length>640) flush();
+  }
+  flush();
+  pages.push(any?"Here the written record ends — the next age is not yet lived. This chronicle grows with every turning of the calendar; return, and read of what is yet to come to pass."
+    :"The chronicle is yet young — no great turning has passed since your arrival. Return when the calendar has turned, and read of the ages you helped shape.");
+  if(typeof kcReadLectern==="function") kcReadLectern({title:"A History of Dereth",pages});
+  else log("The tome's script blurs before your eyes.","warn");
+}
+function openBookShelf(stand){
+  if(!_acBookKeys||!_acBookKeys.length){ log("The shelves stand bare — the library's texts are still being catalogued.","warn"); return; }
+  paused=true; if(locked)document.exitPointerLock();
+  const old=document.getElementById('bookShelf'); if(old) old.remove();
+  const day=Math.floor(Date.now()/86400000);
+  let h=0; for(let i=0;i<stand.name.length;i++) h=(h*31+stand.name.charCodeAt(i))>>>0;   // a stable per-stand shelf that rotates daily
+  const N=Math.min(8,_acBookKeys.length), stride=Math.max(1,Math.floor(_acBookKeys.length/N)), picks=[];
+  for(let i=0;i<N;i++) picks.push(_acBookKeys[(h+day*3+i*stride)%_acBookKeys.length]);
+  const ov=document.createElement('div'); ov.id='bookShelf';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6)";
+  ov.innerHTML=`<div style="max-width:470px;width:90%;background:#1a1710;border:1px solid var(--gold);border-radius:8px;padding:20px 22px;color:#e6d6a8">
+    <div style="color:var(--gold);text-transform:uppercase;letter-spacing:.5px;font-size:13px;margin-bottom:4px">📖 ${esc(stand.name)}</div>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:12px">Take a volume down to read — Dereth's own lore, in the authors' words.</div>
+    <div id="bsList" style="display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow:auto"></div>
+    <button id="bsClose" style="margin-top:14px;width:100%;background:none;border:1px solid #8a7a52;border-radius:5px;padding:6px;color:#e6d6a8;cursor:pointer">Close</button></div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ ov.remove(); paused=false; };
+  const list=ov.querySelector('#bsList');
+  for(const k of picks){ const b=AC_BOOKS[k]; if(!b) continue;
+    const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="text-align:left;padding:7px 10px";
+    btn.innerHTML=`<b>${esc(b.n)}</b> <span style="color:var(--dim);font-size:11px">— ${b.pages.length} page${b.pages.length>1?"s":""}</span>`;
+    btn.onclick=()=>{ ov.remove(); openBookReader({name:b.n}); };   // reader owns pause from here; its Close unpauses
+    list.appendChild(btn); }
+  ov.querySelector('#bsClose').onclick=close;
+  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
 }
 function openBookReader(it){
   const b=AC_BOOKS&&AC_BOOKS[(it.name||"").toLowerCase()];
@@ -23004,7 +23292,7 @@ try{ fetch('assets/dungeon-layouts.json').then(r=>r&&r.ok?r.json():null).then(j=
   if(j&&typeof j==="object"){ let n=0; for(const k in j){ j[k].pack=true; DUNGEON_SCRIPTS[k]=j[k]; n++; }
     if(n) console.log("Dungeon layout pack: "+n+" room-for-room layouts loaded."); } }).catch(()=>{}); }catch(e){}
 function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName,fy){
-  hpMul=hpMul||1;
+  hpMul=(hpMul||1)*(1+0.35*((dungeonDepth||1)-1));   // deeper floors breed harder denizens
   const b=BESTIARY[kind];
   const cv=acCreatureMesh(kind), mesh=cv.mesh, gm=cv.gm;     // authentic AC model (+ breed) or procedural fallback
   let hp=Math.round(b.hp*1.3*settings.diff*hpMul),dmg=Math.round(b.dmg*1.15*settings.diff*hpMul),xp=Math.round(b.xp*1.2*hpMul),r=b.size*0.8,base=1;
@@ -23247,6 +23535,7 @@ function buildDungeonReal(def,dj){
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
   cm.position.set(far[0],far[1],far[2]);scene.add(cm);dungeonObjs.push(cm);
   dungeonChest={x:far[0],z:far[2],mesh:cm,lid,light:clt,opened:false};
+  if(dungeonDepth<dungeonMaxDepth(curDungeon)) placeDescentStair(far[0]+3.2,far[1],far[2]+2.6);   // the way down hides by the hoard
   dungeonLock=null;dungeonVault=null;
   // chain onward: the deepest chamber may carry the way down into the linked delve (retail chains)
   { const chain=dungeonChainFor(def.name), destDef=chain&&DUNGEONS.find(d=>d.name===chain.to);
@@ -23426,6 +23715,7 @@ function buildDungeon(def){
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
   cm.position.set(boss.cx,boss.fy,boss.cz);scene.add(cm);dungeonObjs.push(cm);
   dungeonChest={x:boss.cx,z:boss.cz,mesh:cm,lid,light:clt,opened:false};
+  if(dungeonDepth<dungeonMaxDepth(curDungeon)) placeDescentStair(boss.cx+3.2,boss.fy,boss.cz+2.6);   // the way down hides by the hoard
   // a locked cache (AC): needs a Lockpick or Key, gives bonus loot — appears in ~55% of delves, in a mid room
   dungeonLock=null;
   if(Math.random()<0.55){
@@ -23468,6 +23758,38 @@ function buildDungeon(def){
     else { const n=r.m!=null?r.m:(1+Math.floor(def.tier/2)+irnd(0,1)); for(let i=0;i<n;i++) spawnIn(r,kinds[irnd(0,kinds.length-1)],false); }
   }
 }
+// ═══ MULTI-LEVEL DELVES: deeper floors under the deepest room. Tier 2+ delves have a 2nd floor
+//     about half the time; tier 4+ can hide a 3rd. Floors below the first are generated with a
+//     depth-varied seed (the room-for-room scripted layout is the TOP floor), spawns grow +35%
+//     hp/dmg/xp per floor, and every floor keeps its own hoard chest. ═══
+function dungeonMaxDepth(def){ if(!def) return 1;
+  let d=1; if((def.tier||1)>=2 && (def.id%10)<5) d++; if((def.tier||1)>=4 && (def.id%7)<3) d++; return d; }
+function placeDescentStair(x,y,z){
+  const g=new THREE.Group();
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.15,0.12,8,24),
+    new THREE.MeshStandardMaterial({color:0x2a1a3a,emissive:0x9b30ff,emissiveIntensity:1.6}));
+  ring.position.y=1.5; g.add(ring);
+  const swirl=new THREE.Mesh(new THREE.CircleGeometry(1.0,24),
+    new THREE.MeshBasicMaterial({color:0x9b30ff,transparent:true,opacity:0.42,side:THREE.DoubleSide,depthWrite:false}));
+  swirl.position.y=1.5; g.add(swirl);
+  const lt=new THREE.PointLight(0x9b30ff,1.6,12); lt.position.y=1.8; g.add(lt);
+  const lbl=labelSprite("Ye Olde Stair — Descend (E)","dungeons"); lbl.position.y=3.2; g.add(lbl);
+  g.position.set(x,y,z); scene.add(g); dungeonObjs.push(g);
+  dungeonDescent={x,z};
+}
+function dungeonGoDepth(n){
+  const def=curDungeon; if(!def) return;
+  for(const o of dungeonObjs) scene.remove(o); dungeonObjs=[];
+  for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
+  clearDrops();clearProjectiles();clearDying();
+  dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;dungeonDescent=null;
+  dungeonDepth=n;
+  const shim=n>1?Object.assign({},def,{id:def.id+1000*n,name:def.name+" · depth "+n}):def;   // deeper floors: depth-varied seed, generator layout
+  buildDungeon(shim); markSceneSRGB();
+  player.y=(dungeonSpawn.y||0);   // seed the entry storey so the y-aware floor pick lands right
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=2;
+  toast(n>1?(def.name+" — DEPTH "+n).toUpperCase():def.name.toUpperCase());
+}
 function enterDungeon(def,ex,ez){
   if(inDungeon) return;
   if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
@@ -23483,7 +23805,7 @@ function enterDungeon(def,ex,ez){
           if(!inDungeon) enterDungeon(def,ex,ez); });             // resume the descent unless something intervened
       return;
     } }
-  inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};
+  inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
   buildDungeon(def);markSceneSRGB();
@@ -23505,7 +23827,7 @@ function exitDungeon(toEntrance){
   for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
-  dungeonChest=null;dungeonMobs=0;inDungeon=false;
+  dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;
   arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
   hideOverworld(true);
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
@@ -23798,8 +24120,8 @@ function buildPaperDoll(){
   const armorHTML=ARMOR_SLOT_DEFS.map(d=>slotTile(d.slot,d.ico,player.armorSlots&&player.armorSlots[d.slot],"armor",d.slot)).join("");
   const JW=[["lfinger","💍","L finger"],["rfinger","💍","R finger"],["lwrist","⌚","L wrist"],["rwrist","⌚","R wrist"],["neck","📿","necklace"]];
   const jewelHTML=JW.map(([s,ic,lab])=>slotTile(lab,ic,player.jewelry&&player.jewelry[s],"jewelry",s)).join("");
-  const aeHTML=AETHERIA_SLOTS.map(s=>{ const locked=player.level<s.lvl;
-    return slotTile(locked?(s.k+" 🔒L"+s.lvl):s.k,s.ico,player.aetheria&&player.aetheria[s.k],"aetheria",s.k); }).join("");
+  const aeHTML=AETHERIA_SLOTS.map(([k,lvl])=>{ const locked=player.level<lvl;
+    return slotTile(locked?(k+" 🔒L"+lvl):k,{blue:"🔵",yellow:"🟡",red:"🔴"}[k],player.aetheria&&player.aetheria[k],"aetheria",k); }).join("");
   el.innerHTML=`<div class="doll">${slotTile("weapon","⚔",player.weapon,"weapon","")}${armorHTML}</div>
     <div class="doll-grp">Jewelry</div><div class="doll">${jewelHTML}</div>
     <div class="doll-grp">Aetheria</div><div class="doll">${aeHTML}</div>`;
@@ -23948,8 +24270,7 @@ function buildTinker(){
       rows.appendChild(row); return;
     }
     const base=it.cape?`<span style="color:#9ab0ff">legendary cape · back slot · +${it.magicDef||0} Magic Defense · +${it.elemProt||0} protection vs all elements</span>`:
-    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?(it.revealed?`<span style="color:#9ad0ff">aetheria · <b>${AETHERIA_SETS[it.set].name}</b> set · level ${it.alevel||1}/5${(it.alevel||1)<5?` (${Math.round(((it.axp||0)-AETHERIA_LVL_XP[(it.alevel||1)-1])/(AETHERIA_LVL_XP[it.alevel||1]-AETHERIA_LVL_XP[(it.alevel||1)-1])*100)}% to next)`:""} · ${AETHERIA_SETS[it.set].per} · procs ${AETHERIA_SETS[it.set].surge} · ${it.color} slot (L${AETHERIA_SLOTS.find(s=>s.k===it.color).lvl})</span>`:`<span style="color:#9ad0ff">coalesced aetheria · Use to reveal its sigil</span>`)
-    :it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const spellsHTML=(()=>{ if(it.stat!=="weapon"&&it.stat!=="worn") return "";
       let h=""; if(it.cantrips&&it.cantrips.length) h+=` · <span style="color:#c9a6ff">${it.cantrips.map(c=>c.name).join(", ")}</span>`;
       const sn=itemSpellNames(it); if(sn.length){ const dormant=it.itemMana!=null&&it.itemMana<=0;
@@ -23961,16 +24282,17 @@ function buildTinker(){
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
       :(it.stat==="pick"||it.stat==="key")?`<span style="color:var(--dim);font-size:11px">use on a locked cache</span>`
       :it.stat==="ammo"?`<span style="color:var(--dim);font-size:11px">loosed with a matching ${it.for}</span>`
-      :it.stat==="aetheria"?`<button class="tbtn" data-eq="${i}">${it.revealed?"Equip":"Reveal"}</button>`
+      :it.stat==="aetheria"?`<button class="tbtn" data-eq="${i}">Slot</button>`
       :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
       :it.stat==="pack"?`<button class="tbtn" data-eq="${i}">Add</button>`
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil"||it.stat==="recall"||it.stat==="cure"||it.stat==="hot"||it.stat==="skillpot"||it.stat==="attrpot"||it.stat==="portalgem")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
-      <div class="ctl">${ctl}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
+      <div class="ctl">${ctl}${(typeof craftCanCombine==="function"&&craftCanCombine(it))?`<button class="tbtn" data-cb="${i}" title="tradeskill combine — use with another material">⚗ Combine</button>`:""}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
     rows.appendChild(row);
   });
   rows.querySelectorAll('[data-qb]').forEach(b=>b.onclick=()=>{ const it=player.inv[+b.dataset.qb]; if(it) qbAssignPick(hbItemEntry(it), it.name); });
+  rows.querySelectorAll('[data-cb]').forEach(b=>b.onclick=()=>openCombinePicker(+b.dataset.cb));
   if(player.inv.length&&(window._invSel==null||window._invSel<window._invLo||window._invSel>=window._invHi||!player.inv[window._invSel])){
     const hint=document.createElement('div'); hint.style.cssText="color:var(--dim);font-size:11.5px;padding:4px 0";
     hint.textContent="Click an item to examine it — double-click to use or equip (AC).";
@@ -24007,7 +24329,7 @@ function saveGame(){
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,attrInnate:player.attrInnate||null,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
+      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,aetheria:player.aetheria||null,attrInnate:player.attrInnate||null,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
       tapers:player.tapers,prismTapers:player.prismTapers,
@@ -24016,7 +24338,7 @@ function saveGame(){
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,kcVault:player.kcVault||{},kcHookItems:player.kcHookItems||{},
-      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,aetheria:player.aetheria||{},
+      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
@@ -24078,8 +24400,8 @@ function applySaveObj(s){
   player.societyRibbons=s.societyRibbons|0; player.societyTest=s.societyTest||null; player.societyTestsDone=Array.isArray(s.societyTestsDone)?s.societyTestsDone:[];
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
   player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}};
+  player.aetheria=(s.aetheria&&typeof s.aetheria==="object")?{blue:s.aetheria.blue||null,yellow:s.aetheria.yellow||null,red:s.aetheria.red||null}:{blue:null,yellow:null,red:null};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
-  player.aetheria=(s.aetheria&&typeof s.aetheria==="object")?s.aetheria:{};
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
   if(player.tiedPortal){ const _m=WSCALE/(s.wscale||1); if(_m!==1){ player.tiedPortal.x*=_m; player.tiedPortal.z*=_m; } }   // migrate tied-portal coords
   player.packBonus=s.packBonus|0;
@@ -24866,7 +25188,7 @@ function startGame(loadSaved,preset){
     // casters get a component pouch, Life Casters two healing kits, Soldiers 30 quarrels (1999 kit).
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
       player.inv.push({name:"Calling Stone",stat:"quest",v:0});
-      player.inv.push({name:"Letter From Home",stat:"quest",v:10});
+      player.inv.push({name:"Welcome Letter",stat:"book",v:10});   // the real AC starter letter — readable (Use) via openBookReader
       const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
         bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
         warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
@@ -24875,6 +25197,20 @@ function startGame(loadSaved,preset){
       if(tw.wt==="focus"){ player.tapers=(player.tapers||0)+20; player.prismTapers=(player.prismTapers||0)+20; }
       if(tpl==="lifecaster") player.inv.push({name:"Healing Kit",stat:"hp",v:50,count:2});
       if(tpl==="soldier") player.inv.push({name:"Steel Quarrel",stat:"ammo",for:"crossbow",dmg:4,v:4,count:30});
+      // creation clothing: a heritage-appropriate shirt & breeches, worn from the start (retail arrivals
+      // weren't naked). Cloth layer under any armour; equipped straight into the shirt/pants slots.
+      const CLOTH={aluvian:{sh:"Aluvian Shirt",pt:"Aluvian Breeches",tint:0x6a5a3a},
+        gharundim:{sh:"Gharu'ndim Tunic",pt:"Gharu'ndim Trousers",tint:0x8a6a30},
+        sho:{sh:"Sho Kimono Shirt",pt:"Sho Hakama",tint:0x3a4a5a},
+        viamontian:{sh:"Viamontian Doublet",pt:"Viamontian Hose",tint:0x5a2a3a}};
+      const cl=CLOTH[(player.heritage||"aluvian")]||CLOTH.aluvian;
+      player.armorSlots=player.armorSlots||{};
+      player.armorSlots.shirt={name:cl.sh,stat:"worn",at:"light",aslot:"shirt",v:1,tint:cl.tint,cloth:true};
+      player.armorSlots.pants={name:cl.pt,stat:"worn",at:"light",aslot:"pants",v:1,tint:cl.tint,cloth:true};
+      // a heritage word of welcome, echoing the Letter
+      const WELC={aluvian:"a kinsman's blessing from the green Aluvian shires",gharundim:"a blessing of Zaikhal and the shining sands",
+        sho:"the quiet counsel of the Sho masters",viamontian:"a noble's charge from the courts of Viamont"};
+      log(`You carry a <b>Welcome Letter</b> — ${WELC[(player.heritage||"aluvian")]||WELC.aluvian}. <span style="color:var(--dim)">(Use it from your satchel to read.)</span>`,"sys");
     }
   }
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
