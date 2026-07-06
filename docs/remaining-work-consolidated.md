@@ -46,10 +46,10 @@ product call, not agent work; do not implement without a decision recorded here.
 | 2 | B | **Hats as real part-16 head-mesh swaps** | Cowl/cap/qafiya/turban/fez/kasa are still procedural cloth props (`felt()`/coils), not real head-model swaps. Cosmetic. *(consolidated Tier4)* | S–M | open |
 | 3 | B | **Dye subpalettes on base clothing** | `acclothing.json` subpalettes aren't applied to base garments — no `subPalette`/`dyeSub` wiring. *(consolidated Tier4)* | S | open |
 | 4 | A | **Content top-offs** *(optional)* | ~23 more salvage materials, extra gems, hide variants. (Armor sets, named bosses, and the full creature roster are already present.) *(items/regions refs)* | S | open |
-| 5 | C | **`path_blocked` interior-packing residual** | A handful of tightly-packed town buildings whose entry centreline a neighbour grazes (door still usable at an angle). `door_offmarker` & `floor_poke` already resolved. *(building-entry-audit)* | S | open |
-| 6 | C | **`0x21` StringTable UI-layout decode** *(low value)* | 101 retail 800×600 panel-layout defs identified but not decoded; only useful for pixel-perfect panel placement. *(three-agent-dat-update)* | follow-up | open |
+| 5 | C | **`path_blocked` interior-packing residual** | A handful of tightly-packed town buildings whose entry centreline a neighbour grazes (door still usable at an angle). `door_offmarker` & `floor_poke` already resolved. *(building-entry-audit)* | S | WIP:agent2 |
+| 6 | C | **`0x21` StringTable UI-layout decode** *(low value)* | 101 retail 800×600 panel-layout defs identified but not decoded; only useful for pixel-perfect panel placement. *(three-agent-dat-update)* | follow-up | WIP:agent2 |
 | 18 | B | **Academy staff leak on death / generic exit** *(bug, medium)* | Dying inside the Training Academy interior (or any plain-`exitDungeon` path) skips `exitAcademyHall`, leaking the 8 interior staff NPCs + their obstacle entries into the overworld at world-origin coords; `curDungeon` also stays set. Self-heals only on hall re-entry. Fix: call `_clearAcademyNpcs()` from `exitDungeon` when `curDungeon.academy` (and null `curDungeon`). *(playtest 2026-07-06 #23, verified live)* | S | open |
-| 19 | C | **Shop rows omit wield reqs & item-magic info** *(polish)* | Gear vendors sell stock with unmet gates (e.g. Phantom weapons, wield 275, to an L5 buyer) showing only name+desc — no `wieldReqHTML`, no cantrip/spellcraft/mana. Fix: append `wieldReqHTML(it.gear)` + a short enchantment note to shop rows, or grey the Buy button with a "requires…" hint. *(playtest 2026-07-06 #24, verified live)* | S | open |
+| 19 | C | **Shop rows omit wield reqs & item-magic info** *(polish)* | Gear vendors sell stock with unmet gates (e.g. Phantom weapons, wield 275, to an L5 buyer) showing only name+desc — no `wieldReqHTML`, no cantrip/spellcraft/mana. Fix: append `wieldReqHTML(it.gear)` + a short enchantment note to shop rows, or grey the Buy button with a "requires…" hint. *(playtest 2026-07-06 #24, verified live)* | S | WIP:agent2 |
 
 ## 2 · Blocked — needs the excluded Agent-1 terrain re-extraction lane
 
@@ -65,8 +65,8 @@ product call, not agent work; do not implement without a decision recorded here.
 
 | # | Lane | Item | What's undone | Size | Status |
 |---|------|------|---------------|------|--------|
-| 10 | C | **Real UI window-frame chrome** | Apply the large plates (`06001b14`/`060011bb`/`06001343`) as 9-slice `border-image` on the draggable panels (needs per-plate slice tuning). Vitals/quickbar/charge-bar chrome + the gold strut on vitals & quest panels are already wired (11 of 37 plates). *(wrapup §7)* | S–M | open |
-| 11 | C | **Paperdoll panel layout** (PAGE-99 manual) | Icon-rail toggle + Examine box + jewelry/container slot arrangement. Contents exist; arrangement differs. *(ac-remaining-gaps A2)* | M | open |
+| 10 | C | **Real UI window-frame chrome** | Apply the large plates (`06001b14`/`060011bb`/`06001343`) as 9-slice `border-image` on the draggable panels (needs per-plate slice tuning). Vitals/quickbar/charge-bar chrome + the gold strut on vitals & quest panels are already wired (11 of 37 plates). *(wrapup §7)* | S–M | WIP:agent2 |
+| 11 | C | **Paperdoll panel layout** (PAGE-99 manual) | Icon-rail toggle + Examine box + jewelry/container slot arrangement. Contents exist; arrangement differs. *(ac-remaining-gaps A2)* | M | WIP:agent2 |
 | 12 | B | **Dungeon lighting final tune** | Eyeball torch/ambient intensity live; nudge amb/hemi or the ×1.35 factor. Pass 2 already landed. *(REMAINING-WORK)* | S | open |
 | 13 | B | **Equipped-shield arm mount + doorway/window transparency** | Real shield *meshes* now show on drops/examine, but the equipped-avatar shield stays procedural (arm orientation), the opaque-doorway recess is a warm-glow card, and windows are still baked-opaque — all need on-hardware iteration. *(playtest #21)* | S each | open |
 
