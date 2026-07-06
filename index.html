@@ -753,7 +753,9 @@ function rollACItem(rare,tier){   // a REAL retail item of the right tier, exact
     Object.assign(it,{stat:"worn",at,aslot,mat:"Steel",v:a.al});
     if(aslot==="offhand") it.shield=/buckler/.test(low)?"buckler":/tower/.test(low)?"tower":"kite";
   } else Object.assign(it,{stat:"weapon",wt:"focus",mat:"Diamond",foc:6+t*5,v:6+t*5});
-  return acItemize(it);
+  const out=acItemize(it);
+  initItemMagic(out,t,out.work,rare);   // retail spells get a live pool & Arcane gate (rolled cantrips ride rollWield's own system)
+  return out;
 }
 function acItemize(it){
   if(!AC_ITEMS||!it||!it.name) return it;
@@ -769,6 +771,68 @@ function acItemize(it){
   if(a.wield&&it.stat==="weapon"&&it.wt!=="focus"&&!it.reqVal) it.reqVal=a.wield;   // the RETAIL wield difficulty (skill gate)
   return it;
 }
+// ═══ ITEM SPELLS, CANTRIPS, MANA POOLS & SPELLCRAFT — retail loot magic made live.
+//     Catalog items carry their real spell ids (acspells); procedural gear now rolls tiered
+//     cantrips (Minor→Legendary). Cantrips are always-on and free; aura/buff spells run only
+//     while the item's mana pool holds out (it drains slowly; a mana stone refills it). ═══
+let _gearManaAcc=0;
+function _rnum(s){ const m=/\b([ivx]+)\s*$/i.exec(s); if(!m) return 4;   // trailing roman numeral → spell rank (default IV)
+  const R={i:1,v:5,x:10}; let n=0,p=0; const t=m[1].toLowerCase();
+  for(let i=t.length-1;i>=0;i--){ const v=R[t[i]]; n+=v<p?-v:v; if(v>p)p=v; } return clamp(n,1,8); }
+const _APT_SKILL={"heavy weapon":"heavy","light weapon":"light","finesse weapon":"finesse","two handed combat":"twohand","missile weapon":"missile","war magic":"war","life magic":"life","creature enchantment":"creature","item enchantment":"item","void magic":"void","melee defense":"meleed","missile defense":"missiled","invulnerability":"meleed","impregnability":"missiled","magic resistance":"magicd","healing":"healing","arcane lore":"arcane","mana conversion":"mana","lockpick":"lockpick","salvaging":"salvaging","shield":"shield"};
+function itemSpellFx(nm){   // one retail spell name → a typed worn effect (null = lore-only, shown but inert)
+  const n=nm.toLowerCase(), r=_rnum(n);
+  const apt=/(minor|moderate|major|epic|legendary)\s+(.+?)\s+(aptitude|prowess)/.exec(n);
+  if(apt){ const V={minor:3,moderate:5,major:8,epic:10,legendary:12}[apt[1]], K=_APT_SKILL[apt[2]];
+    return (K&&SKILL_BY_KEY[K])?{skill:K,v:V}:null; }
+  if(/blood drinker|murderous thirst/.test(n)) return {k:"dmg",v:r};                    // flat weapon damage
+  if(/heart seeker|hunter's mark/.test(n)) return {k:"crit",v:0.004*r};                 // finds the gaps
+  if(/swift killer|speedy hunter/.test(n)) return {k:"stam",v:0.05*r};                  // easier, faster swings
+  if(/aura of defender|\bdefender\b/.test(n)) return {skill:"meleed",v:r};
+  if(/impenetrability|armor (self|other)|brogard/.test(n)) return {k:"armor",v:2*r};
+  if(/(fire|cold|frost|flame|acid|corrosion|lightning|bludgeoning|piercing|blade|slashing) protection/.test(n))
+    return {protect:/fire|flame/.test(n)?"fire":/cold|frost/.test(n)?"frost":/acid|corrosion/.test(n)?"acid":/lightning/.test(n)?"shock":/blade|slash/.test(n)?"slash":/pierc/.test(n)?"pierce":"bludgeon",v:3+2*r};
+  if(/strength (self|other)/.test(n)) return {k:"dmg",v:Math.ceil(r/2)};
+  if(/endurance (self|other)/.test(n)) return {k:"hp",v:3*r};
+  if(/coordination (self|other)/.test(n)) return {k:"crit",v:0.002*r};
+  if(/quickness (self|other)/.test(n)) return {k:"stam",v:0.03*r};
+  if(/focus (self|other)/.test(n)) return {focus:true,v:Math.ceil(r/2)};
+  if(/willpower|self (self|other)/.test(n)) return {k:"mn",v:4*r};
+  if(/magic resistance/.test(n)) return {skill:"magicd",v:r};
+  if(/invulnerability/.test(n)) return {skill:"meleed",v:r};
+  if(/impregnability/.test(n)) return {skill:"missiled",v:r};
+  if(/mastery other|mastery self/.test(n)){ const mk=Object.keys(_APT_SKILL).find(k=>n.indexOf(k)>=0);
+    return (mk&&SKILL_BY_KEY[_APT_SKILL[mk]])?{skill:_APT_SKILL[mk],v:r}:null; }
+  return null;
+}
+function itemSpellNames(it){   // resolve an item's numeric acspells ids to their retail names
+  if(!it||!it.acspells||!it.acspells.length||typeof AC_SPELLS==="undefined"||!AC_SPELLS||!AC_SPELLS.spells) return [];
+  return it.acspells.map(id=>{ const e=AC_SPELLS.spells[String(id)]; return e?e.n:null; }).filter(Boolean);
+}
+const CANTRIP_TIERS=[["Minor",3],["Major",6],["Epic",9],["Legendary",12]];
+function rollCantrips(it,tier,rare){   // procedural gear rolls Minor→Legendary aptitude cantrips
+  if(!it||(it.stat!=="weapon"&&it.stat!=="worn")) return;
+  const t=clamp(tier|0,1,5);
+  if(Math.random()>= (t-1)*0.10+(rare?0.25:0)) return;
+  const keys=Object.keys(_APT_SKILL).filter(k=>SKILL_BY_KEY[_APT_SKILL[k]]);
+  const n=(t>=4&&Math.random()<(rare?0.35:0.15))?2:1;
+  it.cantrips=it.cantrips||[];
+  for(let i=0;i<n;i++){
+    const band=clamp(t-2+(Math.random()<0.25?1:0),0,3), [pre,v]=CANTRIP_TIERS[band];
+    const phrase=keys[irnd(0,keys.length-1)];
+    const label=phrase.replace(/\b\w/g,c=>c.toUpperCase());
+    it.cantrips.push({kind:"skill",key:_APT_SKILL[phrase],v,name:pre+" "+label+" Aptitude"});
+  }
+}
+function initItemMagic(it,tier,work,rare){   // spellcraft + mana pool + Arcane Lore gate for anything that carries magic
+  const n=(it.cantrips?it.cantrips.length:0)+(it.acspells?it.acspells.length:0);
+  if(!n) return;
+  it.spellcraft=it.spellcraft||Math.round(20+clamp(tier|0,1,5)*45+(work||1)*8+rnd(0,30));
+  if(it.acspells&&it.acspells.length&&it.itemMana==null) it.itemMana=Math.round(it.spellcraft*rnd(1.6,2.6));   // cantrips are free — only spell-bearing items carry a pool
+  if(it.itemMana!=null&&it.itemManaMax==null) it.itemManaMax=it.itemMana;
+  if(!it.reqArcane) it.reqArcane=Math.round(Math.max(10,it.spellcraft*0.5));   // retail: Arcane Lore tracks spellcraft
+}
+function wornMagicItems(){ return [player.weapon].concat(Object.values(player.armorSlots||{}),(typeof jewelryItems==="function")?jewelryItems():[]).filter(Boolean); }
 const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
 const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
 const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
@@ -903,6 +967,7 @@ function derive(){
   const ag=player.augment; if(ag){ player.mhp+=ag.hp||0; player.mst+=ag.st||0; player.mmn+=ag.mn||0; }   // permanent augmentation-gem boosts
   if(player.aetheria){ player.mhp+=aetheriaBonus("hp"); player.mst+=aetheriaBonus("st"); player.mmn+=aetheriaBonus("mn"); }   // slotted Aetheria set bonuses (Growth/Vigor)
   if(player.enlightenment){ const e=1+player.enlightenment*0.02; player.mhp=Math.round(player.mhp*e);player.mst=Math.round(player.mst*e);player.mmn=Math.round(player.mmn*e); }  // Enlightenment: +2% vitals per tier, forever
+  if(player.gearFx){ player.mhp+=Math.round(player.gearFx.hp||0); player.mst+=Math.round(player.gearFx.st||0); player.mmn+=Math.round(player.gearFx.mn||0); }  // Endurance/Willpower item-spells on worn gear
   if(player.vitae>0){ const vm=1-player.vitae;   // Vitae (death penalty): your vital pools shrink until worked off with XP
     player.mhp=Math.max(1,Math.round(player.mhp*vm)); player.mst=Math.max(1,Math.round(player.mst*vm)); player.mmn=Math.max(0,Math.round(player.mmn*vm)); }
   player.hp=Math.min(player.hp,player.mhp);
@@ -1797,6 +1862,36 @@ function regionTick(dt){
     }
   } else { _regPend=null; _regDwell=0; }
 }
+// ═══ AUTHORED LANDMARKS — the named shapes of the land. Anchored to REAL retail portal
+//     endpoints (assets/acworld.json), and peaks snap to the true local summit in the
+//     height data once the real terrain is loaded. ═══
+const LANDMARKS=[
+  {name:"Mount Esper",           lat:66.3, lng:14.3,  peak:true, r:0.45, blurb:"The storm-crowned peak of the far north — lightning worries its summit even under clear skies."},
+  {name:"the Marescent Plateau", lat:42.0, lng:-77.6, peak:true, r:0.55, blurb:"A wind-scoured tableland rising over the northern Direlands."},
+  {name:"the Obsidian Plains",   lat:-18.7,lng:-84.4,            r:0.60, blurb:"Black glass underfoot for miles — the cooled scar of some ancient burning."},
+  {name:"the Linvak Mountains",  lat:-77.4,lng:28.0,  peak:true, r:0.65, blurb:"The Lugians' high country; Linvak Tukal watches from the summit."},
+  {name:"South Osteth Peak",     lat:-52.8,lng:67.3,  peak:true, r:0.35, blurb:"The lone sentinel over the southern Sho coast."},
+  {name:"Lake Nemuel",           lat:69.6, lng:-20.2,            r:0.40, blurb:"A cold northern lake, still as a mirror."},
+  {name:"Lake Thrasyl",          lat:-82.9,lng:48.0,             r:0.40, blurb:"The far south's great water, ringed by pines."},
+  {name:"Scimitar Lake",         lat:-74.8,lng:17.9,             r:0.35, blurb:"A curved blade of water in the southern hills."},
+  {name:"Mount Alphus",          lat:20.8, lng:18.5,  peak:true, r:0.35, blurb:"A solitary rise watching over the central plains."},
+];
+for(const L of LANDMARKS){ L.x=L.lng*COORD; L.z=-L.lat*COORD; L.rw=L.r*COORD; }
+let _lmCur=null,_lmDwell=0,_lmSnapped=false;
+function landmarkTick(dt){
+  if(!_lmSnapped&&ACMAP.on){ _lmSnapped=true;   // one-shot: seat each peak on its true data-driven summit
+    for(const L of LANDMARKS){ if(!L.peak) continue; let bx=L.x,bz=L.z,bh=-1e9;
+      for(let dz=-16;dz<=16;dz+=2) for(let dx=-16;dx<=16;dx+=2){
+        const h=acHeight(L.x+dx*AC_CELL,L.z+dz*AC_CELL); if(h>bh){bh=h;bx=L.x+dx*AC_CELL;bz=L.z+dz*AC_CELL;} }
+      L.x=bx; L.z=bz; } }
+  if(inDungeon||inNetwork||!player.alive) return;
+  let at=null; for(const L of LANDMARKS){ if(Math.hypot(player.x-L.x,player.z-L.z)<L.rw){ at=L; break; } }
+  if(at&&at!==_lmCur){ _lmDwell+=dt;
+    if(_lmDwell>=1.0){ _lmCur=at; _lmDwell=0;
+      toast(at.name.toUpperCase());
+      log(`<b>${at.name.charAt(0).toUpperCase()+at.name.slice(1)}.</b> <span style="color:var(--dim)">${at.blurb}</span>`,"sys"); } }
+  else if(!at){ if(_lmCur&&Math.hypot(player.x-_lmCur.x,player.z-_lmCur.z)>_lmCur.rw*1.3) _lmCur=null; _lmDwell=0; }
+}
 let ROADS=[], CARAVAN_PATH=null;
 function genRoads(){
   ROADS=[];
@@ -2375,11 +2470,90 @@ function academyKill(m){
   saveGame();
 }
 function academyExit(){   // the single exit portal: one destination, the town you chose at creation
+  if(inDungeon&&curDungeon&&curDungeon.academy&&typeof exitAcademyHall==="function") exitAcademyHall();   // step out of the hall first
   const tn=player.createTown||"Holtburg", c=CITIES.find(x=>x.name===tn)||CAPITALS[0];
   if(typeof teleportFX==="function") teleportFX(player.x,player.z);
   arriveAt(c.x,(c.z||0)+4); player.academy.done=1;
   log(`You step through the Academy portal into <b>${c.name||tn}</b>. Seek out the town's greeters by the plaza — they'll see you settled.`,"sys");
   toast("WELCOME TO "+String(c.name||tn).toUpperCase()); saveGame();
+}
+// ═══ B1 — THE TRAINING ACADEMY INTERIOR (ToD tutorial): new arrivals wake INSIDE the
+//     Exploration Society's hall — Great Hall → open Courtyard (Sparring Golem) → Workshop and
+//     Library wings → Gatehouse. Same station chain and rewards as the grounds (the outdoor
+//     grounds remain for old saves mid-chain); Jonathan or the Sentry sends you out. ═══
+let _acadNpcs=[];
+function _clearAcademyNpcs(){
+  for(const rec of _acadNpcs){ const i=npcs.indexOf(rec); if(i>=0)npcs.splice(i,1);
+    for(let j=obstacles.length-1;j>=0;j--) if(obstacles[j].x===rec.x&&obstacles[j].z===rec.z) obstacles.splice(j,1);
+    scene.remove(rec.mesh); if(typeof disposeObject3D==="function")disposeObject3D(rec.mesh); }
+  _acadNpcs=[]; if(typeof updateNPCMarker==="function")updateNPCMarker();
+}
+function buildAcademyHall(){
+  const cx=DCEN.x, cz=DCEN.z;
+  _clearAcademyNpcs();   // idempotent: a re-entry never doubles the staff
+  dungeonObjs=[];dungeonMobs=0;dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+  dungeonChest=null;dungeonLock=null;dungeonVault=null;
+  dungeonRects=[
+    {x0:cx-14,z0:cz-12,x1:cx+14,z1:cz+2, fy:0,room:true},     // the Great Hall
+    {x0:cx-2.5,z0:cz+1.5,x1:cx+2.5,z1:cz+6.5,fy:0,room:true}, // hall doorway
+    {x0:cx-16,z0:cz+6,x1:cx+16,z1:cz+34,fy:0,room:true},      // the Courtyard (open air)
+    {x0:cx-34,z0:cz+12,x1:cx-15.5,z1:cz+26,fy:0,room:true},   // west wing — the Workshop
+    {x0:cx+15.5,z0:cz+12,x1:cx+34,z1:cz+26,fy:0,room:true},   // east wing — the Library
+    {x0:cx-6,z0:cz+33.5,x1:cx+6,z1:cz+42,fy:0,room:true},     // the Gatehouse
+  ];
+  const stone=new THREE.MeshStandardMaterial({color:0x8d8578,roughness:0.94});
+  const floorM=new THREE.MeshStandardMaterial({color:0x9a927e,roughness:0.96});
+  const courtM=new THREE.MeshStandardMaterial({color:0xb5a582,roughness:0.97});
+  for(const r of dungeonRects){ const w=r.x1-r.x0,d=r.z1-r.z0;
+    const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),(d>20&&w>20)?courtM:floorM);
+    f.position.set((r.x0+r.x1)/2,0,(r.z0+r.z1)/2); f.receiveShadow=true; scene.add(f); dungeonObjs.push(f); }
+  const wall=(x0,z0,x1,z1)=>{ const w=Math.max(Math.abs(x1-x0),0.6), d=Math.max(Math.abs(z1-z0),0.6);
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,4.4,d),stone);
+    m.position.set((x0+x1)/2,2.2,(z0+z1)/2); m.castShadow=true; scene.add(m); dungeonObjs.push(m); };
+  wall(cx-14,cz-12,cx+14,cz-12);                                   // Great Hall south
+  wall(cx-14,cz-12,cx-14,cz+2); wall(cx+14,cz-12,cx+14,cz+2);      // flanks
+  wall(cx-14,cz+2,cx-2.5,cz+2); wall(cx+2.5,cz+2,cx+14,cz+2);      // north, door gap
+  wall(cx-2.5,cz+2,cx-2.5,cz+6); wall(cx+2.5,cz+2,cx+2.5,cz+6);    // door jambs
+  wall(cx-16,cz+6,cx-2.5,cz+6); wall(cx+2.5,cz+6,cx+16,cz+6);      // courtyard south
+  wall(cx-16,cz+6,cx-16,cz+12); wall(cx-16,cz+26,cx-16,cz+34);     // west, wing gap
+  wall(cx+16,cz+6,cx+16,cz+12); wall(cx+16,cz+26,cx+16,cz+34);     // east, wing gap
+  wall(cx-16,cz+34,cx-6,cz+34); wall(cx+6,cz+34,cx+16,cz+34);      // north, gatehouse gap
+  wall(cx-34,cz+12,cx-16,cz+12); wall(cx-34,cz+26,cx-16,cz+26); wall(cx-34,cz+12,cx-34,cz+26);   // workshop
+  wall(cx+16,cz+12,cx+34,cz+12); wall(cx+16,cz+26,cx+34,cz+26); wall(cx+34,cz+12,cx+34,cz+26);   // library
+  wall(cx-6,cz+34,cx-6,cz+42); wall(cx+6,cz+34,cx+6,cz+42); wall(cx-6,cz+42,cx+6,cz+42);         // gatehouse
+  const ceil=new THREE.Mesh(new THREE.BoxGeometry(28,0.3,14),stone); ceil.position.set(cx,4.6,cz-5); scene.add(ceil); dungeonObjs.push(ceil);   // the courtyard stays open to the sky
+  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.85); scene.add(amb); dungeonObjs.push(amb);
+  const sun=new THREE.PointLight(0xfff2d8,1.3,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);
+  for(const [tx,tz] of [[cx-12,cz-10],[cx+12,cz-10],[cx-12,cz],[cx+12,cz],[cx-30,cz+14],[cx+30,cz+14],[cx,cz+40]]){
+    for(const o of buildProp("torch",tx,tz,0xffb060)){ scene.add(o); dungeonObjs.push(o); } }
+  const forge=new THREE.PointLight(0xff6a30,1.6,16); forge.position.set(cx-30,1.4,cz+22); scene.add(forge); dungeonObjs.push(forge);
+  for(let i=0;i<3;i++){ const sh=new THREE.Mesh(new THREE.BoxGeometry(0.5,2.6,4.2),new THREE.MeshStandardMaterial({color:0x5a4630,roughness:0.9}));
+    sh.position.set(cx+32.6,1.3,cz+15+i*4.4); scene.add(sh); dungeonObjs.push(sh); }
+  for(let i=0;i<2;i++){ const butt=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,0.4,12),new THREE.MeshStandardMaterial({color:0xd8c890,roughness:0.9}));
+    butt.rotation.x=Math.PI/2; butt.position.set(cx+9+i*3,1.4,cz+30); scene.add(butt); dungeonObjs.push(butt); }
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(cx,0.2,cz+40); scene.add(arch); dungeonObjs.push(arch);
+  const plt=new THREE.PointLight(0x6aa0ff,1.2,14); plt.position.set(cx,2,cz+40); scene.add(plt); dungeonObjs.push(plt);
+  dungeonSpawn={x:cx,z:cz-9}; dungeonExit={x:cx,z:cz+40};   // the arch answers only to the Sentry (or Jonathan)
+  _acadNpcs=[];
+  const ST=[["Society Greeter","greet",cx-2,cz-5],["Jonathan","skip",cx+3,cz-5],["Samuel","armor",cx-11,cz-1],
+    ["Training Master","master",cx-6,cz+9],["Academy Foreman","foreman",cx-22,cz+15],["Academy Blacksmith","smith",cx-30,cz+20],
+    ["Academy Researcher","research",cx+26,cz+17],["Academy Sentry","sentry",cx-2,cz+37]];
+  for(const [nm,key,x,z] of ST){ const rec=addNPC(x,z,{role:"academy",greet:key,town:"Training Academy",name:nm}); _acadNpcs.push(rec); }
+  const banner=labelSprite("THE TRAINING ACADEMY","dungeons"); banner.position.set(cx,5.6,cz-11.5); banner.scale.set(11,2.4,1); scene.add(banner); dungeonObjs.push(banner);
+}
+function enterAcademyHall(){
+  if(inDungeon) return;
+  inDungeon=true; curDungeon={name:"The Training Academy",tier:1,academy:true}; dungeonReturn={x:ACADEMY_POS.x,z:ACADEMY_POS.z};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.4";
+  buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
+  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=3;
+  toast("THE TRAINING ACADEMY");
+}
+function exitAcademyHall(){
+  _clearAcademyNpcs();
+  exitDungeon(false);
 }
 // AC jump (ACE MovementSystem): hold-to-charge power bar 0→1; height scales LINEARLY with power
 // (so velocity ∝ √power), with the skill term on AC's asymptote curve jump/(jump+1300) and the
@@ -9744,6 +9918,7 @@ function matResistProfile(mat){ return ARMOR_MAT_RESIST[mat]||_MAT_RESIST_DEFAUL
 function resistVs(el){ if(!el) return 0; let n=0;
   for(const p of wornPieces()){ const pr=matResistProfile(p.mat); if(pr[el]) n+=pr[el]; }   // every piece resists its profile fraction of this element
   if(typeof jewelryBonus==="function") n+=jewelryBonus("protect",el)/100;   // elemental Protection jewelry stacks with armour material wards
+  if(player.gearFx&&player.gearFx.protect&&player.gearFx.protect[el]) n+=player.gearFx.protect[el]/100;   // worn Protection item-spells
   if(player.augment&&player.augment.resist) n+=player.augment.resist;        // Blue Aetheria: permanent all-element resistance
   { const cp=player.armorSlots&&player.armorSlots.back; if(cp&&cp.elemProt) n+=cp.elemProt/100; }   // a cape's all-element protection (Kilmer's Cape: +100)
   return Math.min(0.7,n); }
@@ -9757,6 +9932,7 @@ function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg")+aetheriaBonus("dmg"))*(1-player.vitae);  // Blood Drinker + Aetheria of Destruction
   if(player.auras&&player.auras.valor) base*=(1+player.auras.valor*0.01);   // Luminance Aura of Valor (damage rating)
+  if(opts.phys&&player.gearFx&&player.gearFx.dmg) base+=player.gearFx.dmg;   // Blood Drinker / Strength item-spells: flat weapon damage
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
   if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
   const vgen=(m.vulnUntil>now())?m.vulnV:1;   // Life Vulnerability scales ALL incoming damage
@@ -9775,7 +9951,7 @@ function applyHit(m,base,opts){ opts=opts||{};
   }
   if(opts.phys&&pm!==1) floater(m.x,(m.headY||1.6)+2.9,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0");
   dmg*=vgen;
-  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Yellow Aetheria; Aura of Glory boosts crit damage
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+((player.gearFx&&player.gearFx.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria, item-spell crit; Aura of Glory boosts crit damage
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -11349,7 +11525,7 @@ function buildItemModel(it,opts){
     else if(S==="manastone"||(S==="mn"&&/stone|charge/.test(nm))){   // MANA STONE — a fist-sized faceted crystal, lit from within
       const cr=new THREE.Mesh(new THREE.IcosahedronGeometry(0.11),new THREE.MeshStandardMaterial({color:0x8a86a8,roughness:0.25,metalness:0.3,emissive:0x3a6aff,emissiveIntensity:0.55}));cr.position.y=0.1;g.add(cr);
       const lt=new THREE.PointLight(0x5a8aff,0.5,0.9);lt.position.y=0.1;g.add(lt); }
-    else if(S==="augment"&&/aetheria/.test(nm)){                     // AETHERIA — coalesced = raw crystal lump; revealed = medallion with a glowing sigil ring
+    else if((S==="augment"||S==="aetheria")&&/aetheria/.test(nm)){   // AETHERIA — coalesced = raw crystal lump; revealed = medallion with a glowing sigil ring
       const col=/blue/.test(nm)?0x4a8aff:/red/.test(nm)?0xff4a4a:0xffd23b;
       if(/coalesced/.test(nm)){ for(let i=0;i<3;i++){const sh=new THREE.Mesh(new THREE.OctahedronGeometry(0.07-i*0.014),_glowMat(col));sh.position.set(Math.sin(i*2.4)*0.04,0.07+i*0.02,Math.cos(i*2.4)*0.04);sh.rotation.set(i,i*2,0);g.add(sh);} }
       else{ const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.11,0.02,18),_imat(0x3a3a44,0.7,0.4));disc.rotation.x=Math.PI/2;g.add(disc);
@@ -13279,7 +13455,7 @@ function mainPackCap(){ return 12 + (player.packBonus||0); }
 function invCap(){ let n=mainPackCap(); for(const p of (player.packs||[])) n+=p.cap||0; return n; }
 // ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
 //    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
-function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry")); }
+function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry" && it.stat!=="aetheria")); }   // aetheria: each medallion levels independently
 function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):""].join("|"); }
 function addToInv(it, force){   // → true if added/stacked, false if the satchel was full
   if(stackable(it)){ const k=stackKey(it), ex=player.inv.find(x=>stackable(x)&&stackKey(x)===k);
@@ -13526,6 +13702,18 @@ function recomputeGearSkill(){ const g={}; for(const it of cantripItems()){ cons
   if(w&&w.wt==="focus"&&w.foc){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+w.foc; const h=Math.round(w.foc*0.5); g.mana=(g.mana||0)+h; g.arcane=(g.arcane||0)+h; }
   if(player.augment&&player.augment.magic){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+player.augment.magic; }   // Red Aetheria: permanent +all magic schools
   { const cp=player.armorSlots&&player.armorSlots.back; if(cp&&cp.magicDef) g.magicd=(g.magicd||0)+cp.magicDef; }   // a cape's Magic Defense bonus (Kilmer's Cape: +100)
+  // worn item-magic: cantrips are always-on; retail aura/buff spells run while the item's mana pool holds out
+  const fx={dmg:0,crit:0,armor:0,hp:0,st:0,mn:0,stam:0,protect:{}};
+  for(const it of wornMagicItems()){
+    for(const c of (it.cantrips||[])) if(c.kind==="skill") g[c.key]=(g[c.key]||0)+c.v;
+    if(it.acspells&&it.acspells.length&&(it.itemMana==null||it.itemMana>0)){
+      for(const nm of itemSpellNames(it)){ const e=itemSpellFx(nm); if(!e) continue;
+        if(e.skill) g[e.skill]=(g[e.skill]||0)+e.v;
+        else if(e.focus){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+e.v; }
+        else if(e.protect) fx.protect[e.protect]=(fx.protect[e.protect]||0)+e.v;
+        else if(e.k!=null) fx[e.k]+=e.v; } } }
+  fx.stam=Math.min(0.4,fx.stam);   // Swift Killer stacking cap
+  player.gearFx=fx;
   player.gearSkill=g; }
 // ── AC wield requirements: loot rolls skill/level/arcane gates you must meet before you can equip it ──
 function bestMeleeSkillValue(){ let b=0; for(const k of MELEE_WEAPON_KEYS){ const v=skillValue(k); if(v>b)b=v; } return b; }
@@ -13973,7 +14161,7 @@ function applyItem(it){
     player.aetheria=player.aetheria||{blue:null,yellow:null,red:null};
     const old=player.aetheria[it.color]; player.aetheria[it.color]=it;
     if(old) addToInv(old,true);
-    derive(); updateHUD&&updateHUD();
+    derive(); updateHUD&&updateHUD(); if(typeof buildPaperDoll==="function") buildPaperDoll();
     log(`You slot the <b>${esc(it.name)}</b> — ${aetheriaDesc(it)}.${old?` (the <b>${esc(old.name)}</b> returns to your pack)`:""}`,"loot");
     if(SFX.level)SFX.level(); toast("AETHERIA SLOTTED"); }
   else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
@@ -14058,17 +14246,22 @@ function applyItem(it){
     const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
     bag.work=(bag.work*bag.units+w*u)/Math.max(1,bag.units+u); bag.units+=u;
     log(`You empty <b>${u} ${mat}</b> salvage (wk ${w}) into your materials — ${mat}: <b>${bag.units}</b> units.`,"loot"); if(SFX.gold)SFX.gold(); }
-  else if(it.stat==="manastone"){   // AC mana stone: pour the stone's stored mana back into your caster gear.
-    // Retail also drained a doomed enchanted item INTO a stone to store its mana; in this game only the
-    // casting-focus battery is a live-consumed mana pool, so the stone FILLS (focus first, then your own
-    // reserve with the overflow) rather than destroying gear. Won't be spent if there's nothing to fill.
+  else if(it.stat==="manastone"){   // AC mana stone: pour the stone's stored mana back into your caster gear —
+    // worn spell-bearing gear first (its pools drain in play; a refill rekindles dormant enchantments),
+    // then the focus battery, then your own reserve. Won't be spent if there's nothing to fill.
     let amt=it.charge||150; const parts=[]; const max=focusManaMax();
     { const fill=p=>{ if(amt>0&&p&&p.bonus&&p.imanaMax&&p.imana<p.imanaMax){ const g=Math.min(amt,p.imanaMax-p.imana); const woke=p.imana===0; p.imana+=g; amt-=g; parts.push(`${p.name} <b>${Math.round(p.imana)}/${p.imanaMax}</b>`); if(woke){ recomputeGearSkill&&recomputeGearSkill(); derive&&derive(); } } };
       if(typeof wornPieces==="function") for(const p of wornPieces()) fill(p);
       fill(player.weapon); }
-    if(max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
+    { const thirsty=wornMagicItems().filter(w=>w.itemManaMax&&w.itemMana<w.itemManaMax)   // retail-catalog spell pools (acspells) refill too
+        .sort((a,b)=>(a.itemMana/a.itemManaMax)-(b.itemMana/b.itemManaMax))[0];
+      if(amt>0&&thirsty){ const was=thirsty.itemMana<=0; const g=Math.min(amt,thirsty.itemManaMax-thirsty.itemMana);
+        thirsty.itemMana+=g; amt-=g;
+        if(g>0) parts.push(`<b>${esc(thirsty.name)}</b> → <b>${Math.round(thirsty.itemMana)}/${thirsty.itemManaMax}</b>${was?" (its enchantments rekindle)":""}`);
+        if(was){ recomputeGearSkill(); derive(); } } }
+    if(amt>0 && max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
     if(amt>0 && player.mn<player.mmn){ const g=Math.min(amt,player.mmn-player.mn); player.mn+=g; amt-=g; if(g>0) parts.push(`your reserve <b>+${g}</b>`); }
-    if(!parts.length){ log(`The <b>${it.name}</b>'s mana has nowhere to go — your focus and reserve are already full.`,"warn"); return "keep"; }
+    if(!parts.length){ log(`The <b>${it.name}</b>'s mana has nowhere to go — your gear, focus and reserve are already full.`,"warn"); return "keep"; }
     log(`You channel the <b>${it.name}</b>: ${parts.join(" · ")}.`,"loot");
     if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
   else if(it.stat==="keyring"){   // consolidate every loose lockpick & key in the satchel onto the ring
@@ -14446,7 +14639,7 @@ function playerHurt(dmg,sx,sz,type,element){
     if(ev>0&&Math.random()<ev){ if(sx!==undefined)floater(player.x,EYE+0.5,player.z,"evade","#bfe6ff"); return; } }
   // Armour blunts physical hits, scaled by the matching Defense skill; it only half-applies to spells.
   const armScale=type==="missile"?"missiled":"meleed";
-  let armT=(player.armor+wornArmorV()+itemBuff("armor")+jewelryBonus("armor"))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense + jewelry
+  let armT=(player.armor+wornArmorV()+itemBuff("armor")+jewelryBonus("armor")+((player.gearFx&&player.gearFx.armor)||0))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense + jewelry + worn Armor item-spells
   if(type==="magic") armT*=0.5;
   dmg=Math.max(1,dmg*(1-armT/(armT+60)));
   // an Aegis (magic-absorbing shield) negates a slice of incoming magic, scaling with Shield skill
@@ -15075,7 +15268,7 @@ function meleeAttack(power){
       spear:["lunge","sweep"],staff:["sweep","lunge"],twohand:["chop","cleave"],unarmed:["cross","hook"]};
     const v=SW_VAR[wt]||SW_VAR.sword; player.swingAnim=offhand?"offhand":v[irnd(0,v.length-1)]; }
   // Cb9: stamina cost scales with swing power AND a worn shield; swinging while spent lands a weaker blow
-  const stamCost=prof.stam*power*(equippedShield()?1.2:1);
+  const stamCost=prof.stam*power*(equippedShield()?1.2:1)*(1-((player.gearFx&&player.gearFx.stam)||0));   // Swift Killer/Quickness item-spells lighten the swing
   let winded=1;
   if(player.st>=stamCost){ player.st-=stamCost; } else { player.st=0; winded=0.6; }   // exhausted → 40% weaker swing (no more free full-power swings at 0 stamina)
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*skillEff(weaponSkillKey(),0.02)*prof.dmg*power*(1+recklessFactor())*winded;
@@ -15365,6 +15558,7 @@ function currentPrompt(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house) return hsHintInside();
+    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs); if(n&&n.d<3.5) return "Speak with "+n.o.name+" (E)"; }
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&nr(dungeonChest.x,dungeonChest.z)<3.5) return "Open the hoard (E)";
     if(dungeonLock&&!dungeonLock.opened&&nr(dungeonLock.x,dungeonLock.z)<3.2) return hasLockOpener()?"Pick the locked cache (E)":"Locked — need a Lockpick or Key";
     if(dungeonVault&&!dungeonVault.opened&&nr(dungeonVault.x,dungeonVault.z)<3.2) return hasKey()?"Unlock the vault (E)":"Sealed Vault — needs a Key";
@@ -15374,7 +15568,7 @@ function currentPrompt(){
     for(const b of dungeonBars) if(b.kind==="lever"&&!b.open&&nr(b.x,b.z)<3.2) return "A portcullis bars the way — find its lever";
     for(const pp of dungeonPortals) if(nr(pp.x,pp.z)<2.8) return pp.chainTo?("Descend into "+pp.chainTo.name+" (E)"):"Take the portal back (E)";
     if(dungeonDescent&&nr(dungeonDescent.x,dungeonDescent.z)<3) return "Take Ye Olde Stair down — depth "+(dungeonDepth+1)+" (E)";
-    if(nr(dungeonExit.x,dungeonExit.z)<3.5) return dungeonDepth>1?"Climb back up (E)":"Leave the delve (E)";
+    if(nr(dungeonExit.x,dungeonExit.z)<3.5) return (curDungeon&&curDungeon.academy&&!(player.academy&&player.academy.done))?"The Sentry holds the portal — finish your training":(dungeonDepth>1?"Climb back up (E)":"Leave the delve (E)");
     return "";
   }
   for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
@@ -15501,6 +15695,7 @@ function interact(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house){ hsInteractInside(); return; }   // house interiors & residential halls
+    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; } }   // the Academy's instructors
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&Math.hypot(dungeonChest.x-player.x,dungeonChest.z-player.z)<3.5){ openChest(); return; }
     if(dungeonLock&&!dungeonLock.opened&&Math.hypot(dungeonLock.x-player.x,dungeonLock.z-player.z)<3.2){ openLockedCache(); return; }
     if(dungeonVault&&!dungeonVault.opened&&Math.hypot(dungeonVault.x-player.x,dungeonVault.z-player.z)<3.2){ openVault(); return; }
@@ -15516,6 +15711,7 @@ function interact(){
       teleportFX&&teleportFX(player.x,player.z); dungeonGoDepth(d); if(SFX.portal)SFX.portal();
       log(`You take the old stair down — <b>depth ${d}</b>. The dark grows heavier.`,"warn"); return; }
     if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.5){
+      if(curDungeon&&curDungeon.academy&&!(player.academy&&player.academy.done)){ log("The Sentry holds the portal — finish your training, or ask <b>Jonathan</b> to send you on at once.","warn"); return; }
       if(dungeonDepth>1){ const d=dungeonDepth-1; dungeonGoDepth(d); if(SFX.portal)SFX.portal();
         log(d>1?`You climb back up to <b>depth ${d}</b>.`:"You climb back up to the top floor.","sys"); return; }
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
@@ -15850,7 +16046,23 @@ function update(dt){
     player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
   }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
   if((player.vx||player.vz)&&player.alive){
-    const [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    let [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    // authored terrain barriers: mountainsides too steep to walk stop you (roads and town
+    // plateaus stay open — the real heightmap's switchbacks are the way up)
+    if(player.grounded&&!inDungeon&&ACMAP.on&&!onRoad(nx,nz)){
+      const SLOPE_MAX=1.7;   // ≈60°: everyday hills pass, sheer faces gate travel
+      const run=Math.hypot(nx-player.x,nz-player.z);
+      if(run>1e-4&&!FLATTEN.some(t=>Math.hypot(nx-t.x,nz-t.z)<(t.r||120*WSCALE))){
+        const rise=terrainH(nx,nz)-terrainH(player.x,player.z);
+        if(rise/run>SLOPE_MAX){
+          const tryX=terrainH(nx,player.z)-terrainH(player.x,player.z), runX=Math.abs(nx-player.x);
+          const tryZ=terrainH(player.x,nz)-terrainH(player.x,player.z), runZ=Math.abs(nz-player.z);
+          if(runX>1e-4&&tryX/runX<=SLOPE_MAX) nz=player.z;         // slide along the contour
+          else if(runZ>1e-4&&tryZ/runZ<=SLOPE_MAX) nx=player.x;
+          else { nx=player.x; nz=player.z;
+            if(now()-lastBreath>2500){ lastBreath=now(); log("The mountainside is too steep to climb here.","warn"); } }
+        } }
+    }
     player.x=nx;player.z=nz;
     const step=Math.hypot(player.vx,player.vz)*dt;
     player.bob+=dt*step*1.1;
@@ -16144,6 +16356,13 @@ function update(dt){
   if(player.spellBuffs){ for(const a of Object.keys(player.spellBuffs)){ const b=player.spellBuffs[a]; b.t-=dt;
     if(b.t<=0){ player.attr[a]-=b.v; delete player.spellBuffs[a]; floater(player.x,EYE+0.6,player.z,a+" fades","#9fb0c0"); derive(); } } }
   if(player.itemBuffs){ for(const k of Object.keys(player.itemBuffs)){ const b=player.itemBuffs[k]; b.t-=dt; if(b.t<=0) delete player.itemBuffs[k]; } }
+  // worn spell-bearing gear sips its mana pool while its auras run (a mana stone refills it; cantrips are free)
+  _gearManaAcc+=dt;
+  if(_gearManaAcc>=10){ const span=_gearManaAcc; _gearManaAcc=0; let spent=false;
+    for(const it of wornMagicItems()){ if(!it.acspells||!it.acspells.length||it.itemMana==null||it.itemMana<=0) continue;
+      it.itemMana=Math.max(0,it.itemMana-(it.manaRate?Math.abs(it.manaRate):0.05)*span);
+      if(it.itemMana<=0){ spent=true; log(`The enchantments on your <b>${it.name}</b> flicker and go <b>dormant</b> — its mana is spent. (A mana stone can rekindle it.)`,"warn"); } }
+    if(spent){ recomputeGearSkill(); derive(); } }
   if(player.lifeBuffs){ for(const k of Object.keys(player.lifeBuffs)){ const b=player.lifeBuffs[k]; b.t-=dt; if(b.t<=0) delete player.lifeBuffs[k]; } }
   if(player.banes){ for(const k of Object.keys(player.banes)){ const b=player.banes[k]; b.t-=dt; if(b.t<=0) delete player.banes[k]; } }   // Mg4 Banes expire
   { let slept=false; const drain=p=>{ if(p&&p.bonus&&p.imana!=null&&p.imana>0){ p.imana=Math.max(0,p.imana-dt*0.35); if(p.imana===0) slept=p.name; } };
@@ -16184,6 +16403,7 @@ function update(dt){
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
   crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
   regionTick(dt);        // announce region crossings + keep the HUD Region readout current
+  landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
   updateHUD();
@@ -16978,6 +17198,8 @@ function drawBigMap(){
   if(typeof swampZone==="function"){ const s=swampZone(); if(s.r>0){ g.fillStyle="rgba(150,190,140,0.55)"; g.fillText("the Blackmire",cx(s.x),cx(s.z)); } }
   if(_islBB){ g.fillStyle="rgba(150,200,230,0.6)"; g.fillText("the Outer Isles",cx((_islBB[0]+_islBB[2])/2),cx((_islBB[1]+_islBB[3])/2)); }
   g.fillStyle="rgba(190,160,210,0.6)";g.fillText("the Direlands",cx(-HALF*0.66),cx(-HALF*0.66));   // a corner in the outer wild (not dead-centre over the towns)
+  g.font="italic 10.5px Trebuchet MS";g.fillStyle="rgba(200,190,160,0.55)";
+  for(const L of LANDMARKS) g.fillText(L.name,cx(L.x),cx(L.z)-4);   // the named shapes of the land
   g.font="11px Trebuchet MS";
   for(const ls of lifestones){const cap=ls.capital;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");
     g.beginPath();g.arc(cx(ls.x),cx(ls.z),cap?7:3.5,0,6.28);g.fill();
@@ -19701,11 +19923,15 @@ function talkToNPC(n){
   if(n.role==="academy"){   // B1: the Training Academy station chain (ToD walkthrough)
     player.academy=player.academy||{}; const A=player.academy, k=n.greet, AP=ACADEMY_POS;
     const say=m=>log(`<b>${n.name}:</b> ${m}`,"sys");
-    const practice=(kind,nm,goal,hp)=>{ const m=spawnMonster(kind,AP.x+rnd(-4,4),AP.z+12+rnd(0,4),false);
+    const practice=(kind,nm,goal,hp)=>{ let m=null;
+      if(inDungeon&&curDungeon&&curDungeon.academy){ spawnDungeonMonster(kind,DCEN.x+rnd(-5,5),DCEN.z+18+rnd(-4,4),false,1); m=monsters[monsters.length-1]; }   // loose it in the courtyard
+      else m=spawnMonster(kind,AP.x+rnd(-4,4),AP.z+12+rnd(0,4),false);
       if(m){ m.name=nm; m.mhp=m.hp=hp; m.dmg=Math.min(m.dmg,6); m.academyGoal=goal; floater(m.x,2.5,m.z,nm,"#ffd27a"); } };
     if(k==="greet"){ if(!A.greet){ A.greet=1; const ci=player.inv.findIndex(i=>i.name==="Calling Stone"); if(ci>=0)takeFromInv(ci);
         say("Welcome to the Training Academy! I'll take that Calling Stone. Move with <b>W A S D</b>, speak to folk with <b>E</b>. Samuel waits with your armor, and the Training Master will test your arm. The Sentry keeps the portal out — or <b>Jonathan</b> can send you on at once."); }
-      else say("Samuel first, then the Training Master. The Sentry holds your way out."); }
+      else { say("Samuel first, then the Training Master. The Sentry holds your way out.");
+        const pool=typeof acDialogueLine==="function"?(acDialogueLine(n.name)||acDialogueLine("greeter")):null;   // her true retail tutorial lines
+        if(pool){ n._line=(n._line||0)+1; log(`<i style="color:#bcae8a">"${esc(pool[n._line%pool.length])}"</i>`,"sys"); } } }
     else if(k==="skip"){ if(A.done){ say("Once you leave, you cannot come back — and you have left, friend."); return; }
       A.done=1; gainXP(11000);
       if(!A.armor){ A.armor=1; for(const s of [["Leather Cap","head",8],["Leather Gauntlets","hands",8],["Leather Leggings","legs",8]]) player.inv.push({name:s[0],stat:"worn",at:"light",aslot:s[1],v:s[2],mat:"Leather",tier:1}); }
@@ -19723,12 +19949,12 @@ function talkToNPC(n){
     else if(k==="foreman"){ if(!A.golem) say("The Training Master's golem first, friend.");
       else if(A.wasp) say("Good wing-work. The Blacksmith is short a bellows, I hear.");
       else if(!A.waspUp){ A.waspUp=1; practice("phyntoswasp","Carpenter Wasp","wasp",26);
-        say("Pests! A <b>Carpenter Wasp</b> chews our scaffolds in the west passage. Bring me its wing."); }
+        say("Pests! A <b>Carpenter Wasp</b> chews our scaffolds out in the training yard. Bring me its wing."); }
       else say("The wasp still buzzes out there."); }
     else if(k==="smith"){ if(!A.wasp) say("Help the Foreman first — I'm mid-forging.");
       else if(A.thrungus) say("My bellows, returned! The Library stands open to you now.");
       else if(!A.thrungusUp){ A.thrungusUp=1; practice("shreth","Thieving Thrungus","thrungus",34);
-        say("A thieving <b>Thrungus</b> made off with my BELLOWS — south passage, by the vegetable gardens. Fetch it back!"); }
+        say("A thieving <b>Thrungus</b> made off with my BELLOWS — it's loose in the training yard. Fetch it back!"); }
       else say("The Thrungus still has my bellows."); }
     else if(k==="research"){ if(!A.thrungus) say("The Library opens to those the Blacksmith vouches for.");
       else if(!A.oil){ A.oil=1;
@@ -19744,7 +19970,7 @@ function talkToNPC(n){
         say("The orb recovered — the Academy thanks you. Take the <b>Academy Coat</b> and this <b>Facility Hub Portal Gem</b>. Your portal stands ready — seek out the greeters when you arrive!");
         academyExit(); }
       else if(!A.olthoiUp){ A.olthoiUp=1; practice("olthoiworker","Adolescent Olthoi","olthoi",50);
-        say("Olthoi breached the Outer Wall and stole our <b>Protection Orbs</b>! An adolescent skulks in the tunnels — recover an orb!"); }
+        say("Olthoi breached the Outer Wall and stole our <b>Protection Orbs</b>! An adolescent skulks in the training yard — recover an orb!"); }
       else say("Recover the Protection Orb from the Adolescent Olthoi!"); }
     if(SFX.quest)SFX.quest(); saveGame(); return;
   }
@@ -23970,8 +24196,11 @@ function buildPaperDoll(){
   const armorHTML=ARMOR_SLOT_DEFS.map(d=>slotTile(d.slot,d.ico,player.armorSlots&&player.armorSlots[d.slot],"armor",d.slot)).join("");
   const JW=[["lfinger","💍","L finger"],["rfinger","💍","R finger"],["lwrist","⌚","L wrist"],["rwrist","⌚","R wrist"],["neck","📿","necklace"]];
   const jewelHTML=JW.map(([s,ic,lab])=>slotTile(lab,ic,player.jewelry&&player.jewelry[s],"jewelry",s)).join("");
+  const aeHTML=AETHERIA_SLOTS.map(([k,lvl])=>{ const locked=player.level<lvl;
+    return slotTile(locked?(k+" 🔒L"+lvl):k,{blue:"🔵",yellow:"🟡",red:"🔴"}[k],player.aetheria&&player.aetheria[k],"aetheria",k); }).join("");
   el.innerHTML=`<div class="doll">${slotTile("weapon","⚔",player.weapon,"weapon","")}${armorHTML}</div>
-    <div class="doll-grp">Jewelry</div><div class="doll">${jewelHTML}</div>`;
+    <div class="doll-grp">Jewelry</div><div class="doll">${jewelHTML}</div>
+    <div class="doll-grp">Aetheria</div><div class="doll">${aeHTML}</div>`;
   el.querySelectorAll('.doll-slot.filled').forEach(t=>t.onclick=()=>unequipTile(t.dataset.kind,t.dataset.slot));
 }
 function unequipTile(kind,slot){
@@ -23980,6 +24209,7 @@ function unequipTile(kind,slot){
   if(kind==="weapon"){ it=player.weapon; if(!it)return; player.weapon=null; weaponMode="sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=true;bowModel.visible=false;} styleWeaponModel(); }
   else if(kind==="armor"){ it=player.armorSlots&&player.armorSlots[slot]; if(!it)return; delete player.armorSlots[slot]; refreshAvatarArmor(); }
+  else if(kind==="aetheria"){ it=player.aetheria&&player.aetheria[slot]; if(!it)return; delete player.aetheria[slot]; }
   else { it=player.jewelry&&player.jewelry[slot]; if(!it)return; delete player.jewelry[slot]; }
   player.inv.push(it);
   recomputeGearSkill(); derive();   // weapon too: removing a casting focus must drop its magic-skill bonus
@@ -24117,11 +24347,18 @@ function buildTinker(){
     }
     const base=it.cape?`<span style="color:#9ab0ff">legendary cape · back slot · +${it.magicDef||0} Magic Defense · +${it.elemProt||0} protection vs all elements</span>`:
     it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
-    const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
+    const spellsHTML=(()=>{ if(it.stat!=="weapon"&&it.stat!=="worn") return "";
+      let h=""; if(it.cantrips&&it.cantrips.length) h+=` · <span style="color:#c9a6ff">${it.cantrips.map(c=>c.name).join(", ")}</span>`;
+      const sn=itemSpellNames(it); if(sn.length){ const dormant=it.itemMana!=null&&it.itemMana<=0;
+        h+=` · <span style="color:${dormant?'#8a8a8a':'#9ad0ff'}">${sn.slice(0,3).join(", ")}${sn.length>3?" …":""}${dormant?" (dormant)":""}</span>`; }
+      if(it.spellcraft) h+=` · <span style="color:#8a9ad0">spellcraft ${it.spellcraft}${it.itemManaMax?` · mana ${Math.round(it.itemMana||0)}/${it.itemManaMax}`:""}</span>`;
+      return h; })();
+    const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+spellsHTML+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
       :(it.stat==="pick"||it.stat==="key")?`<span style="color:var(--dim);font-size:11px">use on a locked cache</span>`
       :it.stat==="ammo"?`<span style="color:var(--dim);font-size:11px">loosed with a matching ${it.for}</span>`
+      :it.stat==="aetheria"?`<button class="tbtn" data-eq="${i}">Slot</button>`
       :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
       :it.stat==="pack"?`<button class="tbtn" data-eq="${i}">Add</button>`
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
@@ -24287,6 +24524,7 @@ function applySaveObj(s){
   // restore exact last position (takes precedence over the bind point); fresh chars saved
   // their heritage-capital spawn, so this also fixes "reappear at the wrong town".
   if(typeof s.px==="number" && typeof s.pz==="number"){ const _m=WSCALE/(s.wscale||1); arriveAt(s.px*_m,s.pz*_m); if(typeof s.pyaw==="number") player.yaw=s.pyaw; }   // migrate saved coords to the current world scale
+  if(player.academy&&!player.academy.done&&!inDungeon) enterAcademyHall();   // still a recruit → wake back inside the Academy hall
   if(player.ship && typeof spawnOwnedShip==="function") spawnOwnedShip();   // re-float the owned ship at its saved berth
   updateNPCMarker();updateQuestHUD();
   // refresh the HUD + character sheet NOW so the panels show the LOADED character immediately, rather
@@ -25075,8 +25313,8 @@ function startGame(loadSaved,preset){
     // Greeter takes it from there (Jonathan offers the instant skip; the Sentry keeps the exit).
     player.academy=player.academy||{};
     if(!player.academy.done){
-      arriveAt(ACADEMY_POS.x-14,ACADEMY_POS.z);
-      log(`You awaken on the training grounds of the <b>Exploration Society's Academy</b>. A woman in Society colors beckons — <i>"Walk up to me using the 'W' key... I'll talk to you if you press 'E'. I promise."</i>`,"sys");
+      enterAcademyHall();
+      log(`You awaken in the great hall of the <b>Exploration Society's Training Academy</b>. A woman in Society colors beckons — <i>"Walk up to me using the 'W' key... I'll talk to you if you press 'E'. I promise."</i>`,"sys");
     } else {
       arriveAt(home.x,home.z+4);
       log(`You step through Asheron's portal into <b>${home.name}</b>.`,"sys");
