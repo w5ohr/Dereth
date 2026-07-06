@@ -2,6 +2,23 @@
 
 **Compiled 2026-07-04** (reconciled against `main` up to commit `b60536b`).
 
+> **2026-07-06 endgame lane (branch `feat-endgame-lane`, PR #127) — FOUR L-ITEMS COMPLETE, do not re-work:**
+> ✅ **Aetheria slot/level/surge (I5)** — retail 3-slot (L75/150/225) system, five set sigils, 2pc/3pc
+> multipliers, combat surges, XP-fed levels 1–5; the flat absorb-gems no longer drop.
+> ✅ **Loot item-spells + mana + spellcraft (I2)** — catalog `acspells` now apply live worn effects via
+> `itemSpellFx`; procedural gear rolls Minor→Legendary cantrips; spellcraft drives the Arcane Lore gate;
+> spell-bearing gear drains a mana pool (dormant at 0, mana stones rekindle worn gear first).
+> ✅ **Authored landmarks + terrain barriers (W12)** — the `[needs A1 data]` flag was STALE (acmap.png
+> elevations already live); nine landmarks anchored to real acworld.json portal endpoints, peaks snap to
+> data summits, >~60° slopes gate travel (roads/town plateaus exempt).
+> ✅ **Training Academy interior (B1)** — new arrivals wake inside an authored Society-hall instance;
+> full station chain + Sparring Golem indoors, Jonathan skip, Sentry-gated exit, real acdialogue.json
+> tutorial lines; mid-training saves re-enter on load; outdoor grounds kept for old saves.
+> Earlier same day (PR #121, merged): ✅ **multi-level dungeons (W7)** — y-aware `dungeonFloorAt`,
+> first-visit real geometry await, 11 retail dungeon chains with Descend portals.
+> ⚠️ Still open from this cluster: **Luminance/Enlightenment endgame (C5)** — withdrawn from this
+> lane's scope by the user; unclaimed.
+>
 > **2026-07-06 re-audit (clusters 5 & 6, branch `feat-social-systems-depth`):** grep-audited every
 > item in §3 (magic), §5 (social), §7 (UI), §8 (housing) and §11 against current main.
 > **Closed by audit (already shipped, entries below are stale):** Monarchy + allegiance chat (S2 —
