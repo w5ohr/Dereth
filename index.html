@@ -7062,6 +7062,21 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
       obstacles.splice(i,1);
       let j=obst.indexOf(o); if(j>=0)obst.splice(j,1);
       for(const r2 of recs){ const k=r2.cols.indexOf(o); if(k>=0)r2.cols.splice(k,1); } } }
+  // #5 path_blocked (interior): in packed blocks a NEIGHBOUR's collider can intrude past the
+  // threshold and wall-lock the entrance from just inside. Clear the entry corridor INWARD of
+  // the door: shrink intruders until a player-width corridor is free (those arcs are invisible
+  // wall inside THIS room), dropping only remnants too small to matter. Outward grazes are left
+  // alone — the street approach stays honest to the packed geometry (door usable at an angle).
+  { const CORR=0.9;   // corridor half-width: player radius + slack
+    for(let i=obstacles.length-1;i>=0;i--){ const o=obstacles[i];
+      if(rec.cols.indexOf(o)>=0) continue;
+      let minD=1e9;
+      for(let t=0.2;t<=1.9;t+=0.34){ const sx=best.dx-best.dux*t, sz=best.dz-best.duz*t;
+        const d=Math.hypot(o.x-sx,o.z-sz); if(d<minD)minD=d; }
+      if(minD<o.r+CORR){ const nr=minD-CORR;
+        if(nr>=0.5&&nr>=o.r*0.45) o.r=nr;
+        else { obstacles.splice(i,1); let j=obst.indexOf(o); if(j>=0)obst.splice(j,1);
+          for(const r2 of recs){ const k=r2.cols.indexOf(o); if(k>=0)r2.cols.splice(k,1); } } } } }
   // interior fit-out: plank floor + rug, a warm pooled light, and a threshold glow
   const fit=new THREE.Group(); fit.position.set(rec.fcx,rec.gy,rec.fcz); fit.rotation.y=rec.th; g.add(fit);
   const fl=new THREE.Mesh(new THREE.PlaneGeometry((rec.hx-0.35)*2,(rec.hz-0.35)*2),texMat(woodTex,0x5a4632));
@@ -15592,6 +15607,7 @@ function buildPanelRail(){
   rail.innerHTML=""; for(const [ic,tt,fn] of B){ const b=document.createElement('button'); b.textContent=ic; b.title=tt; b.onclick=fn; rail.appendChild(b); }
 }
 buildPanelRail();
+{ const rail=document.getElementById('panelRail'); if(rail&&localStorage.getItem("dereth_rail")==="off") rail.style.display="none"; }   // PAGE-99: the icon rail honours its saved toggle
 // AC 2017 combat panel: the slider SETS your attack power/accuracy (tap attacks use it; the
 // hold-to-charge bar still overrides), the red pills pick the attack height, and a trained
 // Recklessness paints its active 10–90% span red on the track (retail).
@@ -21253,8 +21269,18 @@ function buildShop(){
   SHOP.forEach((it,i)=>{
     const row=document.createElement('div');row.className="row";
     const have=it.field?` (have ${player[it.field]})`:(it.scroll&&player.knownSpells.indexOf(it.spellId)>=0?` <span style="color:#9a8a66">(known)</span>`:"");
-    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico)} ${it.name}</span> <span class="desc">— ${it.desc}${have}</span></div>
-      <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""}>Buy — ${it.cost}p</button></div>`;
+    // #19: gear wares show their wield gates + enchantments BEFORE you pay (no more blind Phantom-weapon buys)
+    let gearInfo="", unmet=null;
+    if(it.gear){
+      unmet=(typeof wieldFail==="function")?wieldFail(it.gear):null;
+      if(typeof wieldReqHTML==="function") gearInfo+=wieldReqHTML(it.gear);
+      if(it.gear.cantrip) gearInfo+=` · <span style="color:#c9a6ff">${it.gear.cantrip} enchantment</span>`;
+      const sn=(typeof itemSpellNames==="function")?itemSpellNames(it.gear):[];
+      if(sn.length) gearInfo+=` · <span style="color:#9ad0ff">${sn.slice(0,2).join(", ")}${sn.length>2?" …":""}</span>`;
+      if(it.gear.spellcraft) gearInfo+=` · <span style="color:#8a9ad0">spellcraft ${it.gear.spellcraft}</span>`;
+    }
+    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico)} ${it.name}</span> <span class="desc">— ${it.desc}${have}${gearInfo}</span></div>
+      <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""} ${unmet?`title="You cannot wield this yet — needs ${esc(unmet)}" style="border-color:#a06a3a;color:#d0a070"`:""}>Buy — ${it.cost}p${unmet?" ⚠":""}</button></div>`;
     buy.appendChild(row);
   });
   buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{const it=SHOP[+b.dataset.buy];
@@ -24366,17 +24392,67 @@ function slotTile(label,ico,item,kind,slot){
   return `<div class="doll-slot${filled?' filled':''}" data-kind="${kind}" data-slot="${slot||''}" title="${filled?esc(item.name)+' — click to unequip':label+' (empty)'}">
     <span class="ds-ico">${glyph} ${label}</span><span class="ds-lab" style="color:${col}">${filled?esc(item.name):"—"}</span></div>`;
 }
+// the Examine box (PAGE-99): full details of the slot under the cursor, one place, no tooltips needed
+function examineHTML(it){
+  if(!it) return `<span style="color:var(--dim)">Hover a worn piece to examine it.</span>`;
+  const col=itemRarity(it).c, bits=[];
+  if(it.stat==="weapon") bits.push(it.wt==="focus"?`+${it.foc||it.v} all magic · casting focus`:`+${it.v} dmg${it.dvar!=null?` (var ${it.dvar})`:""}${it.spd?` · spd ${it.spd}`:""} · ${(WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`);
+  if(it.stat==="worn") bits.push(`+${it.v} armor · ${it.aslot==="offhand"?"shield":(it.aslot||"chest")}${it.at?` · ${it.at}`:""}`);
+  if(it.stat==="jewelry"&&typeof jewelryDesc==="function") bits.push(jewelryDesc(it));
+  if(it.stat==="aetheria"&&typeof aetheriaDesc==="function") bits.push(aetheriaDesc(it));
+  if(it.mat) bits.push(it.mat); if(it.work) bits.push("wk "+it.work);
+  if(it.cantrip) bits.push(`<span style="color:#c9a6ff">${it.cantrip} enchantment${it.bonus&&it.bonus.suf?" — "+it.bonus.suf.replace(/^ of /,""):""}</span>`);
+  const sn=(typeof itemSpellNames==="function")?itemSpellNames(it):[];
+  if(sn.length) bits.push(`<span style="color:#9ad0ff">${sn.slice(0,3).join(", ")}${sn.length>3?" …":""}</span>`);
+  if(it.spellcraft) bits.push(`<span style="color:#8a9ad0">spellcraft ${it.spellcraft}</span>`);
+  if(it.imanaMax) bits.push(`mana ${Math.round(it.imana||0)}/${it.imanaMax}`);
+  else if(it.itemManaMax) bits.push(`mana ${Math.round(it.itemMana||0)}/${it.itemManaMax}`);
+  const req=(typeof wieldReqHTML==="function")?wieldReqHTML(it):"";
+  return `<b style="color:${col}">${esc(it.name)}</b><br><span style="color:#bcae8a">${bits.join(" · ")}</span>${req}`;
+}
 function buildPaperDoll(){
   const el=document.getElementById('tinkDoll'); if(!el) return;
-  const armorHTML=ARMOR_SLOT_DEFS.map(d=>slotTile(d.slot,d.ico,player.armorSlots&&player.armorSlots[d.slot],"armor",d.slot)).join("");
-  const JW=[["lfinger","💍","L finger"],["rfinger","💍","R finger"],["lwrist","⌚","L wrist"],["rwrist","⌚","R wrist"],["neck","📿","necklace"]];
-  const jewelHTML=JW.map(([s,ic,lab])=>slotTile(lab,ic,player.jewelry&&player.jewelry[s],"jewelry",s)).join("");
-  const aeHTML=AETHERIA_SLOTS.map(([k,lvl])=>{ const locked=player.level<lvl;
+  const A=s=>{ const d=ARMOR_SLOT_DEFS.find(x=>x.slot===s); return slotTile(s,d?d.ico:"·",player.armorSlots&&player.armorSlots[s],"armor",s); };
+  const J=(s,ic,lab)=>slotTile(lab,ic,player.jewelry&&player.jewelry[s],"jewelry",s);
+  const AE=AETHERIA_SLOTS.map(([k,lvl])=>{ const locked=player.level<lvl;
     return slotTile(locked?(k+" 🔒L"+lvl):k,{blue:"🔵",yellow:"🟡",red:"🔴"}[k],player.aetheria&&player.aetheria[k],"aetheria",k); }).join("");
-  el.innerHTML=`<div class="doll">${slotTile("weapon","⚔",player.weapon,"weapon","")}${armorHTML}</div>
-    <div class="doll-grp">Jewelry</div><div class="doll">${jewelHTML}</div>
-    <div class="doll-grp">Aetheria</div><div class="doll">${aeHTML}</div>`;
-  el.querySelectorAll('.doll-slot.filled').forEach(t=>t.onclick=()=>unequipTile(t.dataset.kind,t.dataset.slot));
+  // containers (PAGE-99: packs ride the doll): the main satchel + every side pack
+  const used=player.inv.length, cap=invCap();
+  let packsHTML=`<div class="doll-slot" style="width:auto;min-width:104px"><span class="ds-ico">🎒 main pack</span><span class="ds-lab" style="color:${used>=cap?'#e08a8a':'#cdbf9a'}">${used}/${cap} slots</span></div>`;
+  for(const p of (player.packs||[])) packsHTML+=`<div class="doll-slot" style="width:auto;min-width:88px"><span class="ds-ico">👝 ${esc(p.name||"pack")}</span><span class="ds-lab" style="color:#cdbf9a">+${p.cap} slots</span></div>`;
+  // PAGE-99 arrangement: hands & held things on the LEFT rail, the BODY down the centre,
+  // jewelry + aetheria on the RIGHT rail, containers along the bottom, Examine box beneath.
+  el.innerHTML=`
+    <div style="display:flex;gap:6px;align-items:flex-start">
+      <div class="doll" style="flex-direction:column;flex-wrap:nowrap;width:110px">
+        <div class="doll-grp" style="margin:0">Held</div>
+        ${slotTile("weapon","⚔",player.weapon,"weapon","")}${A("offhand")}${A("back")}
+        ${J("lfinger","💍","L finger")}${J("lwrist","⌚","L wrist")}
+      </div>
+      <div class="doll" style="flex-direction:column;flex-wrap:nowrap;width:110px">
+        <div class="doll-grp" style="margin:0">Body</div>
+        ${A("head")}${A("chest")}${A("upperarm")}${A("lowerarm")}${A("hands")}${A("legs")}${A("feet")}
+      </div>
+      <div class="doll" style="flex-direction:column;flex-wrap:nowrap;width:110px">
+        <div class="doll-grp" style="margin:0">Adornment</div>
+        ${J("neck","📿","necklace")}${J("rfinger","💍","R finger")}${J("rwrist","⌚","R wrist")}
+        ${A("shirt")}${A("pants")}
+        <div class="doll-grp" style="margin:4px 0 0">Aetheria</div>${AE}
+      </div>
+    </div>
+    <div class="doll-grp">Containers</div><div class="doll">${packsHTML}</div>
+    <div class="doll-grp">Examine</div>
+    <div id="dollExamine" style="border:1px solid var(--border);border-radius:6px;background:#0c0e08;padding:6px 9px;min-height:40px;font-size:11.5px;line-height:1.45">${examineHTML(null)}</div>
+    <div style="margin-top:6px"><button class="tbtn" id="railToggle" style="font-size:10.5px">⛭ ${localStorage.getItem("dereth_rail")==="off"?"Show":"Hide"} the icon rail</button></div>`;
+  const items={weapon:()=>player.weapon, armor:s=>player.armorSlots&&player.armorSlots[s], jewelry:s=>player.jewelry&&player.jewelry[s], aetheria:s=>player.aetheria&&player.aetheria[s]};
+  el.querySelectorAll('.doll-slot').forEach(t=>{ const get=items[t.dataset.kind];
+    if(t.classList.contains('filled')) t.onclick=()=>unequipTile(t.dataset.kind,t.dataset.slot);
+    if(get) t.onmouseenter=()=>{ const ex=document.getElementById('dollExamine'); if(ex) ex.innerHTML=examineHTML(get(t.dataset.slot)); }; });
+  const rt=document.getElementById('railToggle');
+  if(rt) rt.onclick=()=>{ const rail=document.getElementById('panelRail'); if(!rail) return;
+    const off=localStorage.getItem("dereth_rail")==="off";
+    rail.style.display=off?"":"none"; localStorage.setItem("dereth_rail",off?"on":"off");
+    rt.textContent=`⛭ ${off?"Hide":"Show"} the icon rail`; };
 }
 function unequipTile(kind,slot){
   if(player.inv.length>=invCap()){ log("Your satchel is full — salvage or sell something first.","warn"); SFX.hit&&SFX.hit(); return; }
@@ -25522,6 +25598,29 @@ window.addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
   resizePost();
 });
+// ── Lane C #10: REAL AC window-frame chrome — compose a 9-slice border sheet from the extracted
+//    gold plates (06001922 corner · 06001921 bar · 06001920 strut) and frame every draggable panel.
+//    Composed at boot because the pieces ship separately; missing pack → the plain border stands.
+function acChromeInit(){
+  const load=s=>new Promise(r=>{ const i=new Image(); i.onload=()=>r(i); i.onerror=()=>r(null); i.src="assets/acui/"+s+".png"; });
+  Promise.all([load("06001921"),load("06001920")]).then(([bar,strut])=>{
+    if(!bar||!strut) return;
+    const S=32, C=document.createElement('canvas'); C.width=C.height=S*3;
+    const g=C.getContext('2d');
+    // the frame is two clean hammered-gold strips: the bar's top ridge run horizontally, the
+    // strut vertically; the horizontal strip laps the vertical at the corners (a mitred look)
+    const dv=(x,flip)=>{ g.save(); if(flip){ g.translate(x+S,0); g.scale(-1,1); g.drawImage(strut,0,4,10,56, 0,0,S,S*3); }
+      else g.drawImage(strut,0,4,10,56, x,0,S,S*3); g.restore(); };
+    dv(0,false); dv(S*2,true);                                              // left + right struts, full height
+    const dh=(y,flip)=>{ g.save(); if(flip){ g.translate(0,y+S); g.scale(1,-1); g.drawImage(bar,6,4,81,16, 0,0,S*3,S); }
+      else g.drawImage(bar,6,4,81,16, 0,y,S*3,S); g.restore(); };
+    dh(0,false); dh(S*2,true);                                              // top + bottom bands, lapping the struts
+    const st=document.createElement('style');
+    st.textContent=`.panel{border:9px solid transparent;border-image:url(${C.toDataURL()}) 32 / 9px stretch;border-radius:0}`;
+    document.head.appendChild(st);
+  });
+}
+acChromeInit();
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
 // (the retail-vendor data rides the same gate so towns build with their true merchants)
