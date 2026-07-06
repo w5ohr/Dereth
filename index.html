@@ -15584,11 +15584,15 @@ function update(dt){
     if(dp.type==="gold"&&dd<2){
       if(dp.shared){ if(!dp.req){ dp.req=true; netSend({t:"pickup",id:dp.id}); } continue; } // server-validated; server removes it
       player.gold+=dp.amt;floater(player.x,EYE+0.4,player.z,"+"+dp.amt+" p","#ffd86b");
-      SFX.gold();scene.remove(dp.mesh);drops.splice(i,1);continue;}
+      SFX.gold();disposeObject3D(dp.mesh);drops.splice(i,1);continue;}   // #22: dispose, don't leak the sphere geo/mat
     if(dp.type==="corpse"&&dp.t>(dp.ttl||3600)){   // corpses decay after 5 min/level (min 1 hr)
       log("Far away, your corpse crumbles to dust — what it held is lost.","warn");
-      scene.remove(dp.mesh);drops.splice(i,1);continue;}
-    if(dp.type==="item"&&!dp.shared&&dp.t>(dp.corpse?600:45)){scene.remove(dp.mesh);drops.splice(i,1);} // stray corpse spill lingers ~10min; other loot 45s
+      disposeObject3D(dp.mesh);drops.splice(i,1);continue;}
+    // Unlooted ground loot decays so a cleared battlefield can't accumulate drop meshes without bound
+    // (the adjacent gap flagged by the #22 soak — 105 stray gold piles after 4 rounds): loose gold & item
+    // loot linger 45s, a stray corpse-spill item ~10min. Shared/online drops are server-authoritative
+    // (never client-despawned). Dispose the mesh so the timed expiry itself doesn't leak GPU resources.
+    if(!dp.shared&&(dp.type==="item"||dp.type==="gold")&&dp.t>(dp.corpse?600:45)){ disposeObject3D(dp.mesh);drops.splice(i,1); }
   }
   // floaters & bursts
   for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.sp.position.y+=f.vy*dt;f.t-=dt;
