@@ -47,13 +47,16 @@
    "sampleRate": 44100,
    "seconds": 10.4,
    "bytes": 917754
-  }
- ],
- "needs_conversion": [
+  },
   {
    "did": "0A000393",
-   "formatTag": 85,
-   "note": "MPEG layer-3 (0x55) \u2014 needs external MP3 decode"
+   "file": "0A000393.mp3",
+   "channels": 1,
+   "sampleRate": 11025,
+   "seconds": 2.0,
+   "bytes": 5120,
+   "format": "mp3"
   }
- ]
+ ],
+ "needs_conversion": []
 }
