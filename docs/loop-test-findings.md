@@ -216,3 +216,19 @@ Deeper than pass 1, all on HEAD with the 2 merged fixes:
 - All 6 war-spell geometries cast without error (Blast/Volley/Ring/Arc/Wall/Streak), 56 spells each (7 elements × 8 levels). Weapon elemental branding (Atlan stone) applies element + damage + renames correctly.
 
 **End of overnight sweep pass 2.** Two full deep passes complete: every quest, every dungeon (fully built), every town, plus MMO backend, save/load, bosses, arena, combat — 0 real new bugs. Two prior real bugs already fixed (PR #100 ship disembark, PR #104 index case).
+
+## 2026-07-06 09:34 — OVERNIGHT SWEEP pass 3 (new-player perspective + edge/stress)
+
+### New-player / low-level — PASS (+ 2 design observations, not bugs)
+- Fresh level-1 "Adventurer" (cleared save): all attrs 10, HP 5, 10 starting spells (Flame/Frost/Lightning/Nether Bolt I, Heal Self I, Flame Storm I, Blade Lure, Quickening, Stam→Mana, Summon Wisp), unarmed attack available — playable.
+- **HP 5 is correct**, not a bug: health = Endurance/2 (5 @ End 10, 50 @ End 100) — AC-authentic.
+- Wield gates work: a tier-5 blade requires Lv 64 and is blocked for a low-level char (reason "level 64"); tier-1 gear is free.
+- Leveling: fresh char 1→6 on 20k XP, XP banks to xpUnspent for spending. Skill spend via trainSkill/raiseSkill; attribute spend via the character sheet.
+- OBSERVATIONS (confirm intended, NOT bugs): (1) fresh char starts with no weapon/armor/gold — playable via spells+unarmed, but a lean start; may be granted in the creation flow I bypassed by auto-entering. (2) level-8 incantation skill-300 gate (from pass 1) still stands.
+
+### Edge / stress — PASS
+- 60-monster spawn: created + added to scene with no crash; real game loop processed 65 monsters for several seconds with 0 console errors.
+- Map boundaries (±24000 corners + center): terrainH finite (no NaN), collide() returns valid results — no crash at extremes.
+- Inventory cap (12): over-cap addToInv correctly rejected (42 rejected). (Forced quest-reward grants can exceed the visible cap by design.)
+
+**End of overnight sweep pass 3.** Three deep passes (endgame Kilmer + fresh new-player + edge/stress) — 0 real new bugs beyond the 2 already fixed. Remaining items are design confirmations, not defects.
