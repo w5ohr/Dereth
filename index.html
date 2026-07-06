@@ -1158,9 +1158,15 @@ for(const s of SPELLBOOK_LIST){ if(s.lvl===8 && / VIII$/.test(s.name)) s.name="I
 //   duration = 15 min at level 1, +10 min per level above 1;  stat/skill magnitude = 10 × level.
 function buffDurFor(lvl){ lvl=Math.max(1,lvl|0); return (15+(lvl-1)*10)*60; }   // seconds (900 … 5100)
 function buffMagFor(lvl){ lvl=Math.max(1,lvl|0); return lvl*10; }               // flat skill/stat points
+// Authentic AC Item Enchantment durations (retail client SpellTable): I–V = 30 min, VI = 45 min, VII–VIII = 60 min.
+// Verified vs assets/acspellstats.json — I–V 1800s, VI 2700s, "spirit drinker vii" 3600s; the level-8 incantations
+// plateau at the same 60-min top tier. Blood Drinker / Heart Seeker / Impenetrability / Swift Killer / the seven Banes.
+const ITEM_ENCHANT_DUR=[1800,1800,1800,1800,1800,2700,3600,3600];
+function itemEnchantDur(lvl){ return ITEM_ENCHANT_DUR[Math.max(1,Math.min(8,lvl|0))-1]; }
 for(const s of SPELLBOOK_LIST){
   if(s.buff==="attr"||s.buff==="skill"){ s.mag=buffMagFor(s.lvl); s.dur=buffDurFor(s.lvl); }   // flat stat/skill → +10/level
-  else if(s.buff==="item"||s.buff==="prot"){ s.dur=buffDurFor(s.lvl); }                        // %/special buff mag kept, timer unified
+  else if(s.buff==="item"||s.buff==="bane"){ s.dur=itemEnchantDur(s.lvl); }                     // weapon/armour enchantments & elemental banes → real AC timers at EVERY level (banes used to fall through the loop → 4–5 min at VII/VIII)
+  else if(s.buff==="prot"){ s.dur=buffDurFor(s.lvl); }                                          // Life protection keeps the unified session timer
   // debuffs mirror buffs the opposite way — 10 per level (as %), same level-based timer:
   else if(s.debuff){ s.dmag=Math.round((1-0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }   // Weakness: enemy deals -10%/lvl · Slowness: -10%/lvl speed
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
@@ -1187,7 +1193,7 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
     if(a.boost&&typeof s.heal==="function"){ const [lo,hi]=a.boost;
       s.heal=()=>lo+Math.random()*(hi-lo); s.acboost=a.boost; nb++; }
     if(a.boost&&s.special==="revitalize"){ s.amt=a.boost[0]; s.foc=0; s.acboost=a.boost; nb++; }
-    if(a.mod&&typeof s.mag==="number"){ s.mag=a.mod; nm++; }
+    if(a.mod&&typeof s.mag==="number"&&s.buff!=="item"&&s.buff!=="bane"){ s.mag=a.mod; nm++; }   // NOT item/bane buffs: their mags are our own fractional weapon/armour scale (dmg/crit/haste %, flat AL, bane fraction), not AC's raw mod (flat damage-rating, armour points, negative haste deltas) — clobbering them made Blood Drinker I = +200%, Impen non-monotonic, Swift Killer VI = -60
     if(a.dur&&s.buff){ s.dur=Math.round(a.dur); ndur++; }                   // real enchantment duration (Str I = 30 min)
     if(a.closs) s.closs=a.closs;                                            // component-loss base for the burn roll
     if(a.compn) s.accomps=a.compn.map(c=>({n:c.n,cdm:c.cdm==null?1:c.cdm}));
