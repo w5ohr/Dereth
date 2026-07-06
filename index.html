@@ -9354,9 +9354,9 @@ function spiritSwirlFX(pos,h,girth){
     const s=rnd(0.16,0.3); wisp.scale.set(s,s*2.4,s); g.add(wisp);                       // elongated: a wisp, not a mote
     const tail=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:0x6fd0a8,transparent:true,opacity:0,depthWrite:false,fog:false}));
     tail.scale.set(s*0.6,s*1.5,s*0.6); g.add(tail);                                      // a fainter trailing shade behind each spirit
-    parts.push({m:wisp,tail,a:rnd(0,6.28),spd:rnd(4.5,6.5),delay:i*0.05,s});
+    parts.push({m:wisp,tail,a:rnd(0,6.28),spd:rnd(5.5,7.5),delay:i*0.03,s});
   }
-  spellLandFXs.push({kind:"spirits",g,t:0,dur:1.5,parts,pos,h,girth});
+  spellLandFXs.push({kind:"spirits",g,t:0,dur:1.0,parts,pos,h,girth});
 }
 function crystalSpinFX(pos,h,girth){
   h=h||2.0; girth=Math.min(girth||0.75,2.2);
@@ -9370,7 +9370,7 @@ function crystalSpinFX(pos,h,girth){
       new THREE.MeshBasicMaterial({color:0x36c274,transparent:true,opacity:0,depthWrite:false,fog:false}));   // solid deep life-green gems — additive washed white over bright ground
     c.scale.y=1.6; g.add(c); parts.push({m:c,a0:i/7*Math.PI*2,ph:rnd(0,6.28)});           // gem-cut tall octahedra, the game's crystal silhouette
   }
-  spellLandFXs.push({kind:"crystals",g,t:0,dur:1.35,parts,ring,pos,R,yMid});
+  spellLandFXs.push({kind:"crystals",g,t:0,dur:1.0,parts,ring,pos,R,yMid});
 }
 function updateSpellLandFX(dt){
   for(let i=spellLandFXs.length-1;i>=0;i--){ const c=spellLandFXs[i]; c.t+=dt;
