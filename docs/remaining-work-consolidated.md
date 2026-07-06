@@ -18,9 +18,10 @@ below (and everything marked `done`) is shipped — see **Confirmed shipped** at
 
 > **Current status (2026-07-06):** **Lane A ✅ done** (#1 Damage/Crit Rating + Crushing Blow, #4 content) ·
 > **Lane B ✅ done** (#2 hats, #3 dye subpalettes, #12 dungeon-lighting slider, #13 shield mesh) ·
-> **Lane C — open** (#5 packing residual, #6 StringTable, #10 UI chrome, #11 paperdoll) · **#14 decided**
-> (keep the incantation gate). **Still genuinely open:** Lane C's 4 items · the terrain-lane blockers
-> (#7–#9) · the design calls #15 (component formula), #16 (vitals purity), #17 (ratify timers).
+> **Lane C — open** (#5 packing residual, #6 StringTable, #10 UI chrome, #11 paperdoll) ·
+> **All 4 design decisions resolved** — #14 keep incantation gate · #15 keep soft casting · #16 keep
+> vitals model · #17 go retail (3-day PK key, retail quest lockouts, mana-stone battery + draw-from-mana).
+> **Still genuinely open:** only **Lane C's 4 items** and the **terrain-lane blockers (#7–#9, needs A1 data)**.
 
 ---
 
