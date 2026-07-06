@@ -896,6 +896,7 @@ function derive(){
   if(typeof jewelryBonus==="function"){ player.mhp+=jewelryBonus("vital","mhp"); player.mst+=jewelryBonus("vital","mst"); player.mmn+=jewelryBonus("vital","mmn"); }
   const ag=player.augment; if(ag){ player.mhp+=ag.hp||0; player.mst+=ag.st||0; player.mmn+=ag.mn||0; }   // permanent augmentation-gem boosts
   if(player.enlightenment){ const e=1+player.enlightenment*0.02; player.mhp=Math.round(player.mhp*e);player.mst=Math.round(player.mst*e);player.mmn=Math.round(player.mmn*e); }  // Enlightenment: +2% vitals per tier, forever
+  if(player.aetheria){ player.mhp+=Math.round(aetheriaStat("hp")); const sm=Math.round(aetheriaStat("stmn")); player.mst+=sm; player.mmn+=sm; }  // Growth/Vigor aetheria sigils
   if(player.vitae>0){ const vm=1-player.vitae;   // Vitae (death penalty): your vital pools shrink until worked off with XP
     player.mhp=Math.max(1,Math.round(player.mhp*vm)); player.mst=Math.max(1,Math.round(player.mst*vm)); player.mmn=Math.max(0,Math.round(player.mmn*vm)); }
   player.hp=Math.min(player.hp,player.mhp);
@@ -9592,6 +9593,7 @@ function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg"))*(1-player.vitae);  // Blood Drinker
   if(player.auras&&player.auras.valor) base*=(1+player.auras.valor*0.01);   // Luminance Aura of Valor (damage rating)
+  base*=(1+aetheriaStat("dmg"));   // Destruction-set aetheria: passive damage rating
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
   if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
   const vgen=(m.vulnUntil>now())?m.vulnV:1;   // Life Vulnerability scales ALL incoming damage
@@ -9610,7 +9612,8 @@ function applyHit(m,base,opts){ opts=opts||{};
   }
   if(opts.phys&&pm!==1) floater(m.x,(m.headY||1.6)+2.9,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0");
   dmg*=vgen;
-  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0),0,0.6); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Yellow Aetheria; Aura of Glory boosts crit damage
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+((player.augment&&player.augment.crit)||0)+aetheriaStat("crit"),0,0.6); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria; Aura of Glory boosts crit damage
+  const sgh=aetheriaSurge("hit",m); if(sgh>0) dmg*=(1+sgh);   // Surge of Destruction (Affliction/Festering apply their own effects)
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -11183,7 +11186,7 @@ function buildItemModel(it,opts){
     else if(S==="manastone"||(S==="mn"&&/stone|charge/.test(nm))){   // MANA STONE — a fist-sized faceted crystal, lit from within
       const cr=new THREE.Mesh(new THREE.IcosahedronGeometry(0.11),new THREE.MeshStandardMaterial({color:0x8a86a8,roughness:0.25,metalness:0.3,emissive:0x3a6aff,emissiveIntensity:0.55}));cr.position.y=0.1;g.add(cr);
       const lt=new THREE.PointLight(0x5a8aff,0.5,0.9);lt.position.y=0.1;g.add(lt); }
-    else if(S==="augment"&&/aetheria/.test(nm)){                     // AETHERIA — coalesced = raw crystal lump; revealed = medallion with a glowing sigil ring
+    else if((S==="augment"||S==="aetheria")&&/aetheria/.test(nm)){   // AETHERIA — coalesced = raw crystal lump; revealed = medallion with a glowing sigil ring
       const col=/blue/.test(nm)?0x4a8aff:/red/.test(nm)?0xff4a4a:0xffd23b;
       if(/coalesced/.test(nm)){ for(let i=0;i<3;i++){const sh=new THREE.Mesh(new THREE.OctahedronGeometry(0.07-i*0.014),_glowMat(col));sh.position.set(Math.sin(i*2.4)*0.04,0.07+i*0.02,Math.cos(i*2.4)*0.04);sh.rotation.set(i,i*2,0);g.add(sh);} }
       else{ const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.11,0.02,18),_imat(0x3a3a44,0.7,0.4));disc.rotation.x=Math.PI/2;g.add(disc);
@@ -13056,7 +13059,59 @@ const AUGMENT_ITEMS=[
   {name:"Celdiseth's Essence",          aug:{spec:"magictink"},      nonRepeat:true, desc:"specialize Magic Item Tinkering, forever"},
   {name:"Ciandra's Essence",            aug:{spec:"salvaging"},      nonRepeat:true, desc:"specialize Salvaging, forever"},
 ];
-function rollAugment(){ const t=AUGMENT_ITEMS[irnd(0,AUGMENT_ITEMS.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,aetheria:t.aetheria,nonRepeat:t.nonRepeat,tier:5,legendary:true}; }
+function rollAugment(){ const pool=AUGMENT_ITEMS.filter(t=>!t.aetheria);   // absorb-type aetheria no longer drop — the wearable slot/level kind below replaces them (legacy absorbed sigils keep their power)
+  const t=pool[irnd(0,pool.length-1)]; return {name:t.name,stat:"augment",aug:t.aug,augDesc:t.desc,nonRepeat:t.nonRepeat,tier:5,legendary:true}; }
+// ═══ AETHERIA — the retail slot/level/surge system: coalesced medallions worn in three colour
+//     slots (blue L75 · yellow L150 · red L225), levelled 1–5 by the XP you earn while they're
+//     worn, each bearing a set sigil (passive that scales with level, ×1.5 at 2 matching,
+//     ×2 at 3) and a surge that procs in combat. ═══
+const AETHERIA_SLOTS=[{k:"blue",lvl:75,ico:"🔵"},{k:"yellow",lvl:150,ico:"🟡"},{k:"red",lvl:225,ico:"🔴"}];
+const AETHERIA_SETS={
+  defense:    {name:"Defense",     surge:"Surge of Protection",   per:"+2 damage rating shaved per level"},
+  destruction:{name:"Destruction", surge:"Surge of Destruction",  per:"+0.7% damage per level"},
+  fury:       {name:"Fury",        surge:"Surge of Affliction",   per:"+0.6% critical chance per level"},
+  growth:     {name:"Growth",      surge:"Surge of Regeneration", per:"+7 max health per level"},
+  vigor:      {name:"Vigor",       surge:"Surge of Festering",    per:"+5 max stamina & mana per level"},
+};
+const AETHERIA_LVL_XP=[0,50000,180000,480000,1200000];   // total absorbed XP to reach level 2..5
+function rollAetheria(){ return {name:"Coalesced Aetheria",stat:"aetheria",revealed:false,tier:5,legendary:true}; }
+function revealAetheria(it){
+  it.color=["blue","yellow","red"][irnd(0,2)];
+  const sets=Object.keys(AETHERIA_SETS); it.set=sets[irnd(0,sets.length-1)];
+  it.alevel=Math.random()<0.12?2:1; it.axp=AETHERIA_LVL_XP[it.alevel-1]; it.revealed=true;
+  it.name=it.color[0].toUpperCase()+it.color.slice(1)+" Aetheria of "+AETHERIA_SETS[it.set].name;
+}
+function aetheriaWorn(){ const a=player.aetheria||{}; const r=[]; for(const s of AETHERIA_SLOTS){ if(a[s.k]) r.push(a[s.k]); } return r; }
+function aetheriaStat(kind){   // aggregate worn passives; matching sets multiply (2pc ×1.5 · 3pc ×2)
+  let v=0; const worn=aetheriaWorn(); if(!worn.length) return 0;
+  const sc={}; for(const w of worn) sc[w.set]=(sc[w.set]||0)+1;
+  for(const w of worn){ const mult=sc[w.set]>=3?2:sc[w.set]>=2?1.5:1, L=w.alevel||1;
+    if(kind==="dmg"&&w.set==="destruction") v+=0.007*L*mult;
+    else if(kind==="crit"&&w.set==="fury") v+=0.006*L*mult;
+    else if(kind==="armor"&&w.set==="defense") v+=2*L*mult;
+    else if(kind==="hp"&&w.set==="growth") v+=7*L*mult;
+    else if(kind==="stmn"&&w.set==="vigor") v+=5*L*mult; }
+  return v;
+}
+let _surgeCd=0;   // shared internal cooldown so surges punctuate a fight instead of firing every swing
+function aetheriaSurge(trigger,m){   // "hit": player landed a blow (m = target) → returns bonus-damage fraction
+  const worn=aetheriaWorn();          // "hurt": player is taking a blow → returns damage-reduction fraction
+  if(!worn.length||!player.alive||now()<_surgeCd) return 0;
+  const tl=worn.reduce((s,w)=>s+(w.alevel||1),0);
+  if(Math.random()>=0.02+tl*0.004) return 0;   // 2%..8% per eligible event at 3×L5
+  const want=trigger==="hit"?["destruction","fury","vigor"]:["defense","growth"];
+  const cands=worn.filter(w=>want.indexOf(w.set)>=0); if(!cands.length) return 0;
+  const w=cands[irnd(0,cands.length-1)], L=w.alevel||1; _surgeCd=now()+8;
+  const cry=AETHERIA_SETS[w.set].surge;
+  if(w.set==="destruction"){ floater(player.x,EYE+0.6,player.z,cry+"!","#ff9a4a",1.5); log(`<b>${cry}</b> — your aetheria flares and the blow lands twice as hard.`,"sys"); return 0.5+0.1*L; }
+  if(w.set==="fury"&&m){ m.weakUntil=now()+8; m.weakV=Math.max(0.5,0.8-0.05*L);
+    floater(m.x,(m.headY||1.6)+2.6,m.z,cry,"#c9a6ff"); log(`<b>${cry}</b> — the sigil saps your foe's strength.`,"sys"); return 0; }
+  if(w.set==="vigor"){ const g=6*L; player.st=Math.min(player.mst,player.st+g); player.mn=Math.min(player.mmn,player.mn+g);
+    floater(player.x,EYE+0.6,player.z,cry+" +"+g,"#9af0ff"); log(`<b>${cry}</b> — vitality festers back into you (+${g} stamina & mana).`,"sys"); return 0; }
+  if(w.set==="growth"){ const g=8*L; player.hp=Math.min(player.mhp,player.hp+g);
+    floater(player.x,EYE+0.6,player.z,cry+" +"+g,"#8fe6a0"); log(`<b>${cry}</b> — the sigil knits your wounds (+${g} health).`,"sys"); return 0; }
+  floater(player.x,EYE+0.6,player.z,cry+"!","#7fb0ff"); log(`<b>${cry}</b> — your aetheria turns the blow aside.`,"sys"); return 0.4+0.08*L;   // defense
+}
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
 const PACK_ITEMS=[{name:"Belt Pouch",cap:2},{name:"Sack",cap:3},{name:"Backpack",cap:4},{name:"Portmanteau",cap:6}];
 const PACK_MAX=88;   // stack many packs — each adds slots (12 base → up to 100)
@@ -13067,7 +13122,7 @@ function mainPackCap(){ return 12 + (player.packBonus||0); }
 function invCap(){ let n=mainPackCap(); for(const p of (player.packs||[])) n+=p.cap||0; return n; }
 // ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
 //    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
-function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry")); }
+function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry" && it.stat!=="aetheria")); }   // aetheria: each medallion levels independently
 function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):""].join("|"); }
 function addToInv(it, force){   // → true if added/stacked, false if the satchel was full
   if(stackable(it)){ const k=stackKey(it), ex=player.inv.find(x=>stackable(x)&&stackKey(x)===k);
@@ -13343,6 +13398,7 @@ function rollItem(rare,tier,noRare){
   }
   // rare chance at a named artifact (more likely on rich/deep loot)
   if(Math.random()<((rare?0.05:0)+((tier|0)>=5?0.03:0))) return rollNamedItem();
+  if((tier|0)>=4&&Math.random()<(rare?0.02:0.006)) return rollAetheria();   // coalesced aetheria seeps from tier-4+ foes (retail: L75+ hunting grounds)
   if(Math.random()<((rare?0.015:0)+((tier|0)>=5?0.01:0))) return rollAugment();   // very rare augmentation gem
   if(Math.random()<(rare?0.02:0.012)) return rollPack();   // a container to expand your satchel
   if(Math.random()<(rare?0.04:0.06)) return rollAmmo();    // a stack of arrows/quarrels/darts
@@ -13740,6 +13796,18 @@ function applyItem(it){
   else if(it.stat==="st"){player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
+  else if(it.stat==="aetheria"){
+    if(!it.revealed){ revealAetheria(it);
+      log(`The coalesced lump resolves into a <b>${it.name}</b> — a sigil of the <b>${AETHERIA_SETS[it.set].name}</b> set (${AETHERIA_SETS[it.set].per}; surges with ${AETHERIA_SETS[it.set].surge}). Use it again to set it into your ${it.color} slot.`,"loot");
+      if(SFX.quest)SFX.quest(); return "keep"; }
+    const slot=AETHERIA_SLOTS.find(s=>s.k===it.color);
+    if(player.level<slot.lvl){ log(`Your <b>${it.color}</b> aetheria slot awakens at <b>level ${slot.lvl}</b> — you cannot channel it yet.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+    player.aetheria=player.aetheria||{};
+    const prevA=player.aetheria[it.color]; player.aetheria[it.color]=it;
+    if(prevA) addToInv(prevA,true);
+    derive(); updateHUD&&updateHUD(); if(typeof buildPaperDoll==="function") buildPaperDoll();
+    log(`You set the <b>${it.name}</b> into your ${it.color} sigil slot${prevA?` (the ${prevA.name} returns to your satchel)`:""}.`,"loot");
+    if(SFX.level)SFX.level(); toast("AETHERIA EQUIPPED"); }
   else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
     player.augment.count=player.augment.count||0;   // H17: a hard total-augmentation cap (Aetheria sigils are separate, uncapped)
     if(!it.aetheria && player.augment.count>=60){ log("You have reached the <b>augmentation limit</b> (60) — your body can bind no more.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
@@ -14104,6 +14172,12 @@ function gainXP(amt,opts){
     if(Math.floor(was*100)!==Math.floor(player.vitae*100)) derive();   // vital pools grow back as Vitae recovers
     if(player.vitae<=0) log("The chill of death lifts — your Vitae is fully recovered.","sys"); }
   player.xp+=amt;player.xpUnspent+=amt;
+  // worn aetheria drink a share of your deeds (retail: aetheria levels by XP earned while equipped)
+  if(player.aetheria) for(const w of aetheriaWorn()){ if((w.alevel||1)>=5) continue;
+    w.axp=(w.axp||0)+amt;
+    while((w.alevel||1)<5&&w.axp>=AETHERIA_LVL_XP[w.alevel||1]){ w.alevel=(w.alevel||1)+1;
+      log(`Your <b>${w.name}</b> brightens — <b>level ${w.alevel}</b>. Its sigil grows stronger.`,"sys");
+      toast("AETHERIA LEVEL "+w.alevel); if(SFX.level)SFX.level(); derive(); } }
   if(typeof PLUG!=="undefined"&&PLUG.mag) PLUG.mag.xp+=amt;   // Mag-Tools combat tracker
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
@@ -14144,6 +14218,8 @@ function playerHurt(dmg,sx,sz,type,element){
   dmg=Math.max(1,dmg*(1-dv/(dv+denom)));
   if(player.lifeBuffs&&player.lifeBuffs.prot) dmg=Math.max(1,dmg*(1-player.lifeBuffs.prot.v));  // Life Protection
   if(player.auras&&player.auras.protect) dmg=Math.max(1,dmg*(1-player.auras.protect*0.01));  // Luminance Aura of Protection (damage reduction)
+  { const ar=aetheriaStat("armor"); if(ar>0) dmg=Math.max(1,dmg*(1-Math.min(0.30,ar*0.01))); }   // Defense-set aetheria: passive damage-rating shave
+  { const sg=aetheriaSurge("hurt"); if(sg>0) dmg=Math.max(1,dmg*(1-sg)); }   // Surge of Protection (Regeneration heals inside the roll)
   if(player.debuffs&&player.debuffs.vuln) dmg*=player.debuffs.vuln.v;   // enemy Imperil curse — you take more
   // active shield block: cut frontal damage (scales with Shield skill), costs stamina — physical attacks only
   if(blocking&&player.st>4&&sx!==undefined&&type!=="magic"){
@@ -23494,8 +23570,11 @@ function buildPaperDoll(){
   const armorHTML=ARMOR_SLOT_DEFS.map(d=>slotTile(d.slot,d.ico,player.armorSlots&&player.armorSlots[d.slot],"armor",d.slot)).join("");
   const JW=[["lfinger","💍","L finger"],["rfinger","💍","R finger"],["lwrist","⌚","L wrist"],["rwrist","⌚","R wrist"],["neck","📿","necklace"]];
   const jewelHTML=JW.map(([s,ic,lab])=>slotTile(lab,ic,player.jewelry&&player.jewelry[s],"jewelry",s)).join("");
+  const aeHTML=AETHERIA_SLOTS.map(s=>{ const locked=player.level<s.lvl;
+    return slotTile(locked?(s.k+" 🔒L"+s.lvl):s.k,s.ico,player.aetheria&&player.aetheria[s.k],"aetheria",s.k); }).join("");
   el.innerHTML=`<div class="doll">${slotTile("weapon","⚔",player.weapon,"weapon","")}${armorHTML}</div>
-    <div class="doll-grp">Jewelry</div><div class="doll">${jewelHTML}</div>`;
+    <div class="doll-grp">Jewelry</div><div class="doll">${jewelHTML}</div>
+    <div class="doll-grp">Aetheria</div><div class="doll">${aeHTML}</div>`;
   el.querySelectorAll('.doll-slot.filled').forEach(t=>t.onclick=()=>unequipTile(t.dataset.kind,t.dataset.slot));
 }
 function unequipTile(kind,slot){
@@ -23504,6 +23583,7 @@ function unequipTile(kind,slot){
   if(kind==="weapon"){ it=player.weapon; if(!it)return; player.weapon=null; weaponMode="sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=true;bowModel.visible=false;} styleWeaponModel(); }
   else if(kind==="armor"){ it=player.armorSlots&&player.armorSlots[slot]; if(!it)return; delete player.armorSlots[slot]; refreshAvatarArmor(); }
+  else if(kind==="aetheria"){ it=player.aetheria&&player.aetheria[slot]; if(!it)return; delete player.aetheria[slot]; }
   else { it=player.jewelry&&player.jewelry[slot]; if(!it)return; delete player.jewelry[slot]; }
   player.inv.push(it);
   recomputeGearSkill(); derive();   // weapon too: removing a casting focus must drop its magic-skill bonus
@@ -23640,12 +23720,14 @@ function buildTinker(){
       rows.appendChild(row); return;
     }
     const base=it.cape?`<span style="color:#9ab0ff">legendary cape · back slot · +${it.magicDef||0} Magic Defense · +${it.elemProt||0} protection vs all elements</span>`:
-    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?(it.revealed?`<span style="color:#9ad0ff">aetheria · <b>${AETHERIA_SETS[it.set].name}</b> set · level ${it.alevel||1}/5${(it.alevel||1)<5?` (${Math.round(((it.axp||0)-AETHERIA_LVL_XP[(it.alevel||1)-1])/(AETHERIA_LVL_XP[it.alevel||1]-AETHERIA_LVL_XP[(it.alevel||1)-1])*100)}% to next)`:""} · ${AETHERIA_SETS[it.set].per} · procs ${AETHERIA_SETS[it.set].surge} · ${it.color} slot (L${AETHERIA_SLOTS.find(s=>s.k===it.color).lvl})</span>`:`<span style="color:#9ad0ff">coalesced aetheria · Use to reveal its sigil</span>`)
+    :it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
       :(it.stat==="pick"||it.stat==="key")?`<span style="color:var(--dim);font-size:11px">use on a locked cache</span>`
       :it.stat==="ammo"?`<span style="color:var(--dim);font-size:11px">loosed with a matching ${it.for}</span>`
+      :it.stat==="aetheria"?`<button class="tbtn" data-eq="${i}">${it.revealed?"Equip":"Reveal"}</button>`
       :it.stat==="augment"?`<button class="tbtn" data-eq="${i}">Absorb</button>`
       :it.stat==="pack"?`<button class="tbtn" data-eq="${i}">Add</button>`
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
@@ -23700,7 +23782,7 @@ function saveGame(){
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,kcVault:player.kcVault||{},kcHookItems:player.kcHookItems||{},
-      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
+      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,aetheria:player.aetheria||{},
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
@@ -23763,6 +23845,7 @@ function applySaveObj(s){
   player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
   player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
+  player.aetheria=(s.aetheria&&typeof s.aetheria==="object")?s.aetheria:{};
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
   if(player.tiedPortal){ const _m=WSCALE/(s.wscale||1); if(_m!==1){ player.tiedPortal.x*=_m; player.tiedPortal.z*=_m; } }   // migrate tied-portal coords
   player.packBonus=s.packBonus|0;
