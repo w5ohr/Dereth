@@ -1019,10 +1019,40 @@ const TEMPLATES=[
 // place known spells on a 10-slot hotbar (player.hotbar, keyed by HOTKEYS).
 const SPELLBOOK_LIST=[
   {id:"life_stam2mana",name:"Stam→Mana",ico:"🔷",cost:0,cd:900,school:"life",lvl:1,req:0,special:"stam2mana"},
+];
+// ── the FULL retail Life vital suite: six transfer lines (Self + Other), Infuse (give yours to an
+//    ally), Mana Boost (the mana Heal), and the Stamina/Mana drains — retail names, so the
+//    acspellstats merge applies the true mana costs, words and components. ──
+{ const RN=["","I","II","III","IV","V","VI"];
+  const XT=[{lvl:1,req:0,cost:10},{lvl:2,req:30,cost:20},{lvl:3,req:60,cost:30},{lvl:4,req:95,cost:40},{lvl:5,req:135,cost:50},{lvl:6,req:180,cost:60}];
+  const PAIRS=[["st","mn","Stamina to Mana"],["st","hp","Stamina to Health"],["mn","hp","Mana to Health"],
+               ["mn","st","Mana to Stamina"],["hp","mn","Health to Mana"],["hp","st","Health to Stamina"]];
+  for(const [from,to,nm] of PAIRS) for(const t of XT){
+    SPELLBOOK_LIST.push({id:`life_x_${from}${to}_${t.lvl}`,name:`${nm} Self ${RN[t.lvl]}`,ico:"🔁",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"xfer",from,to});
+    SPELLBOOK_LIST.push({id:`life_x_${from}${to}_${t.lvl}_other`,name:`${nm} Other ${RN[t.lvl]}`,ico:"🔁",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"xfer",from,to,other:true});
+  }
+  for(const [pool,nm] of [["hp","Infuse Health"],["st","Infuse Stamina"],["mn","Infuse Mana"]])
+    for(const t of XT) SPELLBOOK_LIST.push({id:`life_inf_${pool}_${t.lvl}_other`,name:`${nm} Other ${RN[t.lvl]}`,ico:"💠",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"infuse",pool,other:true});
+  for(const t of XT){
+    SPELLBOOK_LIST.push({id:`life_mnboost_${t.lvl}`,name:`Mana Boost Self ${RN[t.lvl]}`,ico:"🔹",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost+10,cd:1500,special:"mnboost",amt:30+t.lvl*28});
+    SPELLBOOK_LIST.push({id:`life_mnboost_${t.lvl}_other`,name:`Mana Boost Other ${RN[t.lvl]}`,ico:"🔹",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost+10,cd:1500,special:"mnboost",amt:30+t.lvl*28,other:true});
+    SPELLBOOK_LIST.push({id:`life_vdrain_st_${t.lvl}`,name:`Drain Stamina Other ${RN[t.lvl]}`,ico:"🌀",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"vdrain",pool:"st"});
+    SPELLBOOK_LIST.push({id:`life_vdrain_mn_${t.lvl}`,name:`Drain Mana Other ${RN[t.lvl]}`,ico:"🌀",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"vdrain",pool:"mn"});
+  }
+}
+const _SPELLBOOK_APPEND=[
   {id:"item_might_1",name:"Blade Lure",ico:"⚔️",cost:20,cd:11000,school:"item",lvl:1,req:0,buff:"might"},
   {id:"creature_swift_1",name:"Quickening",ico:"💨",cost:20,cd:11000,school:"creature",lvl:1,req:0,buff:"swift"},
   {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
+for(const e of _SPELLBOOK_APPEND) SPELLBOOK_LIST.push(e);
 const ROMAN=["","I","II","III","IV","V","VI","VII","VIII"];
 // AC has 8 spell levels with rising skill requirements; we scale to 6 here. Buffs last
 // a level-scaled duration (AC's 30-min buffs are shortened for our minutes-long sessions).
@@ -1256,6 +1286,7 @@ for(const s of SPELLBOOK_LIST){
   for(const s of SPELLBOOK_LIST){
     let nm=null;
     if(s.buff==="attr"&&s.name.includes(" Self")) nm=s.name.replace(" Self"," Other");
+    else if(s.buff==="skill") nm=/ (VIII|VII|VI|V|IV|III|II|I)$/.test(s.name)?s.name.replace(/ (VIII|VII|VI|V|IV|III|II|I)$/," Other $1"):s.name+" Other";   // retail had researchable skill-buff Others (Arcane Enlightenment Other …)
     else if(s.school==="life"&&typeof s.heal==="function"&&s.name.includes("Heal Self")) nm=s.name.replace("Heal Self","Heal Other");
     else if(s.special==="revitalize"&&s.name.includes("Revitalize Self")) nm=s.name.replace("Revitalize Self","Revitalize Other");
     else if(s.buff==="prot"&&s.name.includes("Protection Self")) nm=s.name.replace("Protection Self","Protection Other");
@@ -1286,6 +1317,7 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
     if(a.boost&&typeof s.heal==="function"){ const [lo,hi]=a.boost;
       s.heal=()=>lo+Math.random()*(hi-lo); s.acboost=a.boost; nb++; }
     if(a.boost&&s.special==="revitalize"){ s.amt=a.boost[0]; s.foc=0; s.acboost=a.boost; nb++; }
+    if(a.boost&&s.special==="mnboost"){ s.amt=Math.round((a.boost[0]+a.boost[1])/2); s.acboost=a.boost; nb++; }
     if(a.mod&&typeof s.mag==="number"&&s.buff!=="item"&&s.buff!=="bane"){ s.mag=a.mod; nm++; }   // NOT item/bane buffs: their mags are our own fractional weapon/armour scale (dmg/crit/haste %, flat AL, bane fraction), not AC's raw mod (flat damage-rating, armour points, negative haste deltas) — clobbering them made Blood Drinker I = +200%, Impen non-monotonic, Swift Killer VI = -60
     if(a.dur&&s.buff){ s.dur=Math.round(a.dur); ndur++; }                   // real enchantment duration (Str I = 30 min)
     if(a.closs) s.closs=a.closs;                                            // component-loss base for the burn roll
@@ -15047,7 +15079,10 @@ function executeSpell(id){
   // "Other" spells DEMAND someone else: an ally, else your summoned familiar, else the cast refunds.
   if(s.other||(s.buff==="attr")||(s.school==="life"&&s.heal)||s.buff==="item"||s.buff==="bane"||s.buff==="prot"||s.special==="regen"||s.special==="revitalize"){
     const ally=pickAllyTarget(40);
-    if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+    if(ally){ castSelf=false; castKind="bestow"; castShow=castDur;
+      if(s.special==="xfer"){ const F={hp:"hp",st:"st",mn:"mn"}[s.from]; player[F]=Math.max(1,player[F]*0.5); }      // the transfer still drains YOUR source
+      else if(s.special==="infuse"){ const F={hp:"hp",st:"st",mn:"mn"}[s.pool]; player[F]=Math.max(1,player[F]*0.75); }   // infusing gives of yourself
+      netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       if(ally.x!=null) spellLandFX(s.school,()=>[ally.x,ally.y||0,ally.z],2.0,0.75);   // the caster sees the spell land on their ally too
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
     if(s.other){
@@ -15094,6 +15129,36 @@ function executeSpell(id){
     if(!dest){ player.mn+=cost; spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
     teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
+  }
+  if(s.special==="xfer"){   // Life vital transfer (Self): drain half the source pool → 105%+5%/lvl to the dest, capped 50/lvl (retail curve)
+    const P={hp:["hp","mhp","health"],st:["st","mst","stamina"],mn:["mn","mmn","mana"]};
+    const F=P[s.from],T=P[s.to];
+    const drained=player[F[0]]*0.5;
+    if(drained<4){ player.mn+=cost; spellCd[id]=0; log(`Your ${F[2]} is too low to draw upon.`,"warn"); return; }
+    const gain=Math.min(drained*(1.0+0.05*s.lvl), 50*s.lvl, player[T[1]]-player[T[0]]);
+    player[F[0]]-=drained; player[T[0]]=Math.min(player[T[1]],player[T[0]]+Math.max(0,gain));
+    floater(player.x,EYE+0.5,player.z,`${F[2]} → +${Math.round(gain)} ${T[2]}`,"#9ad0ff");
+    spellLandFX&&spellLandFX("life",_slfPlayerPos,2.0,0.75);
+    castFlash(0x7fe6a0); SFX.heal&&SFX.heal(); log(`You cast <b>${s.name}</b> — ${Math.round(drained)} ${F[2]} becomes ${Math.round(gain)} ${T[2]}.`,"heal"); updateHUD&&updateHUD(); return;
+  }
+  if(s.special==="mnboost"){   // Mana Boost: the mana Heal
+    const amt=(s.amt||60)*skillEff("life",0.02)*castEcon(id);
+    player.mn=Math.min(player.mmn,player.mn+amt);
+    floater(player.x,EYE+0.5,player.z,"+"+Math.round(amt)+" mana","#7fb0ff");
+    spellLandFX&&spellLandFX("life",_slfPlayerPos,2.0,0.75);
+    castFlash(0x7fb0ff); SFX.heal&&SFX.heal(); log(`You cast <b>${s.name}</b>, restoring ${Math.round(amt)} mana.`,"heal"); updateHUD&&updateHUD(); return;
+  }
+  if(s.special==="vdrain"){   // Drain Stamina/Mana Other: siphon a fifth of the foe's pool
+    const m=pickMonsterTarget(30);
+    if(!m){ player.mn+=cost; spellCd[id]=0; log(`No foe in your sights for <b>${s.name}</b>.`,"warn"); return; }
+    const frac=0.05+0.05*Math.min(3,s.lvl)+0.02*Math.max(0,s.lvl-3);
+    const pool=s.pool, maxK=pool==="st"?"mst":"mmn";
+    const avail=(m[pool]!=null?m[pool]:(m[maxK]||40)), take=Math.max(3,Math.round(avail*frac));
+    if(m[pool]!=null) m[pool]=Math.max(0,m[pool]-take);
+    if(pool==="st"){ player.st=Math.min(player.mst,player.st+take); } else { player.mn=Math.min(player.mmn,player.mn+take); }
+    floater(m.x,(m.headY||1.6)+2,m.z,"-"+take+(pool==="st"?" stam":" mana"),"#b08aff");
+    floater(player.x,EYE+0.5,player.z,"+"+take+(pool==="st"?" stam":" mana"),"#9ad0ff");
+    castFlash(0x9b6bff); SFX.frost&&SFX.frost(); log(`You cast <b>${s.name}</b>, siphoning <b>${take}</b> ${pool==="st"?"stamina":"mana"} from a foe.`,"heal"); updateHUD&&updateHUD(); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
     const ally=(typeof pickAllyTarget==="function")?pickAllyTarget(40):null;
@@ -25130,6 +25195,13 @@ function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff
 //    you are holding (i.e. "all items held by the player"), exactly like AC item magic on your person. ──
 function applyBuffSelf(sp,fx){
   if(!sp) return false;
+  if(sp.special==="xfer"||sp.special==="infuse"||sp.special==="mnboost"){   // an ally channels a vital INTO you
+    const pool=sp.special==="xfer"?sp.to:(sp.pool||"mn");
+    const K={hp:["hp","mhp","health"],st:["st","mst","stamina"],mn:["mn","mmn","mana"]}[pool];
+    const amt=Math.min((sp.amt||30*(sp.lvl||1)), player[K[1]]-player[K[0]]);
+    if(amt>0){ player[K[0]]+=amt; if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,"+"+Math.round(amt)+" "+K[2],"#9ad0ff"); }
+    updateHUD&&updateHUD(); return true;
+  }
   if(sp.special==="sending"){   // an ally cast Portal/Lifestone Sending ON YOU — travel to your own anchor
     if(inDungeon||inNetwork) return false;
     let dest=null;
