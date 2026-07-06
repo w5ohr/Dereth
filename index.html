@@ -4863,7 +4863,7 @@ function labelSprite(txt,cat){
 function applyLabelSettings(){
   const L=settings.labels||{};
   for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
-    if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); continue; }
+    if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); if(sp.material){ if(sp.material.map)sp.material.map.dispose(); sp.material.dispose(); } continue; }   // #22: orphaned labels free their CanvasTexture
     sp.visible=L[sp.userData.labelCat]!==false; }
 }
 // every sprite is its own draw call — the census found 1,500 name labels drawing from
@@ -4873,7 +4873,7 @@ const _lblV=new THREE.Vector3();
 function gfxCullLabels(){
   const L=settings.labels||{};
   for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
-    if(!sp.parent){ LABELS.splice(i,1); continue; }
+    if(!sp.parent){ LABELS.splice(i,1); if(sp.material){ if(sp.material.map)sp.material.map.dispose(); sp.material.dispose(); } continue; }   // #22: orphaned labels free their CanvasTexture
     const cat=sp.userData.labelCat||"npcs";
     if(L[cat]===false){ sp.visible=false; continue; }
     sp.getWorldPosition(_lblV);
@@ -7686,7 +7686,7 @@ function kcAmbience(dt){
       for(const c of cols) kcFireBurst(r.x,r.y,r.z,c,n,r.huge?11:7,r.huge);
       const fl=new THREE.PointLight(r.col,r.huge?7:3,r.huge?46:24); fl.position.set(r.x,r.y,r.z); scene.add(fl); kcFlashes.push({l:fl,t:0.5});
       if(r.huge) kcBoom();
-      scene.remove(r.sp); scene.remove(r.light); kcRockets.splice(i,1); } }
+      scene.remove(r.sp); r.sp.material.dispose(); scene.remove(r.light); kcRockets.splice(i,1); } }   // #22: material only — CIRC map is shared
   for(let i=kcFlashes.length-1;i>=0;i--){ const f=kcFlashes[i]; f.t-=dt; f.l.intensity=Math.max(0,f.l.intensity*Math.pow(0.9,dt*60)); if(f.t<=0){ scene.remove(f.l); kcFlashes.splice(i,1); } }
   // crowd murmur gain follows courtyard proximity
   if(typeof actx!=="undefined"&&actx){ kcCrowdInit(); if(kcCrowd) kcCrowd.g.gain.setTargetAtTime(near&&!muted?0.11:0,actx.currentTime,0.6); }
@@ -9572,7 +9572,7 @@ function killMonster(m){
   if(!m.isDungeon) setTimeout(spawnSomewhere,irnd(2500,6000));
 }
 function retire(m){ dying.push({mesh:m.mesh,t:0.4,base:m.baseScale||1}); }
-function clearDying(){ for(const d of dying) scene.remove(d.mesh); dying=[]; }
+function clearDying(){ for(const d of dying) disposeObject3D(d.mesh); dying=[]; }   // #22
 // a named boss wears its own retail extract when the pack has one (olthoiqueen, lichlord,
 // virindidirector — or its family's body); procedural fallback keeps the old look
 function bossMesh(kind,fallbackKind,scale,tint){
@@ -14938,7 +14938,7 @@ function interact(){
       if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
       netSend({t:"pickup",id:best.id}); return;
     }
-    lootItem(best.item);scene.remove(best.mesh);drops.splice(drops.indexOf(best),1);return;}
+    lootItem(best.item);disposeObject3D(best.mesh);drops.splice(drops.indexOf(best),1);return;}   // #22: looted drops leaked their item models
   if(inNetwork){
     for(const np of netPortals){if(Math.hypot(np.x-player.x,np.z-player.z)<3){activateNetPortal(np);return;}}
     if(Math.hypot(netExit.x-player.x,netExit.z-player.z)<3){exitNetwork(netReturn);log("You leave the "+netHallName()+".","sys");SFX.portal();}
@@ -15402,7 +15402,7 @@ function update(dt){
       }
       shake(0.16);
     }
-    if(gone){scene.remove(p.mesh);pProj.splice(i,1);}
+    if(gone){disposeObject3D(p.mesh);pProj.splice(i,1);}   // #22: every arrow/bolt carried its own SphereGeometry
   }
   // persistent War "Wall" zones — tick damage to foes standing inside, then expire
   for(let i=walls.length-1;i>=0;i--){
@@ -15419,7 +15419,7 @@ function update(dt){
         }
       }
     }
-    if(w.t<=0){ scene.remove(w.mesh); walls.splice(i,1); }
+    if(w.t<=0){ disposeObject3D(w.mesh); walls.splice(i,1); }   // #22
   }
   // enemy projectiles
   for(let i=eProj.length-1;i>=0;i--){
@@ -15431,7 +15431,7 @@ function update(dt){
       if(p.curse&&player.alive&&!(player.dispelImmune>0)){ player.debuffs[p.curse.type]={v:p.curse.v,t:p.curse.dur};
         floater(player.x,EYE+0.6,player.z,p.curse.type==="slow"?"Slowed!":"Imperiled!","#ff8f6b"); }
     }
-    if(gone){scene.remove(p.mesh);eProj.splice(i,1);}
+    if(gone){disposeObject3D(p.mesh);eProj.splice(i,1);}   // #22
   }
   // monsters AI
   const burned=[];
@@ -15544,13 +15544,13 @@ function update(dt){
   }
   // floaters & bursts
   for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.sp.position.y+=f.vy*dt;f.t-=dt;
-    f.sp.material.opacity=clamp(f.t,0,1);if(f.t<=0){scene.remove(f.sp);floaters.splice(i,1);}}
+    f.sp.material.opacity=clamp(f.t,0,1);if(f.t<=0){disposeObject3D(f.sp);floaters.splice(i,1);}}   // #22: each floater owns a CanvasTexture — free it
   for(let i=dying.length-1;i>=0;i--){const d=dying[i];d.t-=dt;const k=Math.max(0,d.t/0.4);
     d.mesh.scale.setScalar(d.base*k);d.mesh.position.y=-(1-k)*1.6;d.mesh.rotation.z=(1-k)*1.2;
-    if(d.t<=0){scene.remove(d.mesh);dying.splice(i,1);}}
+    if(d.t<=0){disposeObject3D(d.mesh);dying.splice(i,1);}}   // #22: dead mobs leaked their geometry + skin texture (same teardown as streamMonsters despawn)
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];b.sp.position.x+=b.vx*dt;b.sp.position.y+=b.vy*dt;
     b.sp.position.z+=b.vz*dt;b.vy-=dt*6;b.t-=dt;b.sp.material.opacity=clamp(b.t*2.5,0,1);
-    if(b.t<=0){scene.remove(b.sp);bursts.splice(i,1);}}
+    if(b.t<=0){scene.remove(b.sp);b.sp.material.dispose();bursts.splice(i,1);}}   // #22: material only — the CIRC map is shared
   // lifestone shimmer
   for(const ls of lifestones){   // AC lifestones stand STILL — only the inner light breathes
     const u=ls.mesh&&ls.mesh.userData; if(!u) continue;   // real AC crystal model may still be streaming in
@@ -15909,7 +15909,8 @@ function cullWorld(dt){
 const MOB_TARGET=32, MOB_SPAWN_MIN=70, MOB_SPAWN_MAX=150, MOB_DESPAWN=215;
 let _mobStreamAcc=0;
 function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
-  o.traverse(c=>{ if(c.geometry)c.geometry.dispose(); const m=c.material; if(m){ (Array.isArray(m)?m:[m]).forEach(x=>{ if(x&&x.map)x.map.dispose(); if(x&&x.dispose)x.dispose(); }); } }); }
+  o.traverse(c=>{ if(c.geometry)c.geometry.dispose(); const m=c.material; if(m){ (Array.isArray(m)?m:[m]).forEach(x=>{ if(x&&x.map)x.map.dispose(); if(x&&x.dispose)x.dispose(); }); }
+    if(c.isSprite){ const li=LABELS.indexOf(c); if(li>=0) LABELS.splice(li,1); } }); }   // #22: keep the label registry from holding disposed nametags
 function streamMonsters(dt){
   if(inDungeon||inNetwork||isOnline) return;
   _mobStreamAcc+=dt; if(_mobStreamAcc<0.4) return; _mobStreamAcc=0;
@@ -21075,8 +21076,8 @@ function hideOverworld(v){
   if(grassMesh) grassMesh.visible=v;
   applyLabelSettings();   // scenery banners were force-shown above — re-hide any the user toggled off
 }
-function clearDrops(){ for(const d of drops) scene.remove(d.mesh); drops=[]; }
-function clearProjectiles(){ for(const p of pProj) scene.remove(p.mesh); for(const p of eProj) scene.remove(p.mesh); for(const w of walls) scene.remove(w.mesh); pProj=[];eProj=[];walls=[]; }
+function clearDrops(){ for(const d of drops) disposeObject3D(d.mesh); drops=[]; }   // #22
+function clearProjectiles(){ for(const p of pProj) disposeObject3D(p.mesh); for(const p of eProj) disposeObject3D(p.mesh); for(const w of walls) disposeObject3D(w.mesh); pProj=[];eProj=[];walls=[]; }   // #22
 // ── per-dungeon WALKTHROUGH SCRIPTS — ROOM-FOR-ROOM graphs encoded from the documented AC
 //    walkthroughs (acpedia/fandom). rooms: [id, col(east+), depth(north+), floorY, opts] where opts
 //    = {t:"entry"/"boss", round, big, small, cells (prison bars), portal (way-out portal), m:mobCount}.
