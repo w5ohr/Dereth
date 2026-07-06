@@ -1019,10 +1019,40 @@ const TEMPLATES=[
 // place known spells on a 10-slot hotbar (player.hotbar, keyed by HOTKEYS).
 const SPELLBOOK_LIST=[
   {id:"life_stam2mana",name:"Stam→Mana",ico:"🔷",cost:0,cd:900,school:"life",lvl:1,req:0,special:"stam2mana"},
+];
+// ── the FULL retail Life vital suite: six transfer lines (Self + Other), Infuse (give yours to an
+//    ally), Mana Boost (the mana Heal), and the Stamina/Mana drains — retail names, so the
+//    acspellstats merge applies the true mana costs, words and components. ──
+{ const RN=["","I","II","III","IV","V","VI"];
+  const XT=[{lvl:1,req:0,cost:10},{lvl:2,req:30,cost:20},{lvl:3,req:60,cost:30},{lvl:4,req:95,cost:40},{lvl:5,req:135,cost:50},{lvl:6,req:180,cost:60}];
+  const PAIRS=[["st","mn","Stamina to Mana"],["st","hp","Stamina to Health"],["mn","hp","Mana to Health"],
+               ["mn","st","Mana to Stamina"],["hp","mn","Health to Mana"],["hp","st","Health to Stamina"]];
+  for(const [from,to,nm] of PAIRS) for(const t of XT){
+    SPELLBOOK_LIST.push({id:`life_x_${from}${to}_${t.lvl}`,name:`${nm} Self ${RN[t.lvl]}`,ico:"🔁",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"xfer",from,to});
+    SPELLBOOK_LIST.push({id:`life_x_${from}${to}_${t.lvl}_other`,name:`${nm} Other ${RN[t.lvl]}`,ico:"🔁",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"xfer",from,to,other:true});
+  }
+  for(const [pool,nm] of [["hp","Infuse Health"],["st","Infuse Stamina"],["mn","Infuse Mana"]])
+    for(const t of XT) SPELLBOOK_LIST.push({id:`life_inf_${pool}_${t.lvl}_other`,name:`${nm} Other ${RN[t.lvl]}`,ico:"💠",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"infuse",pool,other:true});
+  for(const t of XT){
+    SPELLBOOK_LIST.push({id:`life_mnboost_${t.lvl}`,name:`Mana Boost Self ${RN[t.lvl]}`,ico:"🔹",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost+10,cd:1500,special:"mnboost",amt:30+t.lvl*28});
+    SPELLBOOK_LIST.push({id:`life_mnboost_${t.lvl}_other`,name:`Mana Boost Other ${RN[t.lvl]}`,ico:"🔹",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost+10,cd:1500,special:"mnboost",amt:30+t.lvl*28,other:true});
+    SPELLBOOK_LIST.push({id:`life_vdrain_st_${t.lvl}`,name:`Drain Stamina Other ${RN[t.lvl]}`,ico:"🌀",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"vdrain",pool:"st"});
+    SPELLBOOK_LIST.push({id:`life_vdrain_mn_${t.lvl}`,name:`Drain Mana Other ${RN[t.lvl]}`,ico:"🌀",
+      school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:2500,special:"vdrain",pool:"mn"});
+  }
+}
+const _SPELLBOOK_APPEND=[
   {id:"item_might_1",name:"Blade Lure",ico:"⚔️",cost:20,cd:11000,school:"item",lvl:1,req:0,buff:"might"},
   {id:"creature_swift_1",name:"Quickening",ico:"💨",cost:20,cd:11000,school:"creature",lvl:1,req:0,buff:"swift"},
   {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
+for(const e of _SPELLBOOK_APPEND) SPELLBOOK_LIST.push(e);
 const ROMAN=["","I","II","III","IV","V","VI","VII","VIII"];
 // AC has 8 spell levels with rising skill requirements; we scale to 6 here. Buffs last
 // a level-scaled duration (AC's 30-min buffs are shortened for our minutes-long sessions).
@@ -1256,6 +1286,7 @@ for(const s of SPELLBOOK_LIST){
   for(const s of SPELLBOOK_LIST){
     let nm=null;
     if(s.buff==="attr"&&s.name.includes(" Self")) nm=s.name.replace(" Self"," Other");
+    else if(s.buff==="skill") nm=/ (VIII|VII|VI|V|IV|III|II|I)$/.test(s.name)?s.name.replace(/ (VIII|VII|VI|V|IV|III|II|I)$/," Other $1"):s.name+" Other";   // retail had researchable skill-buff Others (Arcane Enlightenment Other …)
     else if(s.school==="life"&&typeof s.heal==="function"&&s.name.includes("Heal Self")) nm=s.name.replace("Heal Self","Heal Other");
     else if(s.special==="revitalize"&&s.name.includes("Revitalize Self")) nm=s.name.replace("Revitalize Self","Revitalize Other");
     else if(s.buff==="prot"&&s.name.includes("Protection Self")) nm=s.name.replace("Protection Self","Protection Other");
@@ -1286,6 +1317,7 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
     if(a.boost&&typeof s.heal==="function"){ const [lo,hi]=a.boost;
       s.heal=()=>lo+Math.random()*(hi-lo); s.acboost=a.boost; nb++; }
     if(a.boost&&s.special==="revitalize"){ s.amt=a.boost[0]; s.foc=0; s.acboost=a.boost; nb++; }
+    if(a.boost&&s.special==="mnboost"){ s.amt=Math.round((a.boost[0]+a.boost[1])/2); s.acboost=a.boost; nb++; }
     if(a.mod&&typeof s.mag==="number"&&s.buff!=="item"&&s.buff!=="bane"){ s.mag=a.mod; nm++; }   // NOT item/bane buffs: their mags are our own fractional weapon/armour scale (dmg/crit/haste %, flat AL, bane fraction), not AC's raw mod (flat damage-rating, armour points, negative haste deltas) — clobbering them made Blood Drinker I = +200%, Impen non-monotonic, Swift Killer VI = -60
     if(a.dur&&s.buff){ s.dur=Math.round(a.dur); ndur++; }                   // real enchantment duration (Str I = 30 min)
     if(a.closs) s.closs=a.closs;                                            // component-loss base for the burn roll
@@ -1293,6 +1325,59 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
   }
   AC_COMP_CDM=j._components||null;
   console.log("AC spell stats: "+n+" spellbook entries matched retail ("+nd+" damage rolls, "+nb+" heals, "+nm+" buff magnitudes, "+ndur+" real durations).");
+  // ═══ THE MATERIALIZER: every retail SpellTable entry NOT already in the book takes its
+  //     authentic role — quest/dungeon portal spells become castable travel magic (destination
+  //     fuzzy-matched to the real dungeon/town), wards/masteries/one-off buffs become spells in
+  //     their own schools with retail damage/boost/mana, and the item-cantrip name families feed
+  //     the loot roller. Acquired the retail way: vendor shelves already stock their scrolls. ═══
+  try{
+    const have=new Set(SPELLBOOK_LIST.map(x=>(x.name||"").toLowerCase()));
+    const R2N={i:1,ii:2,iii:3,iv:4,v:5,vi:6,vii:7,viii:8};
+    const lvlOf=k=>{ const m=k.match(/ (viii|vii|vi|v|iv|iii|ii|i)$/); return m?R2N[m[1]]:3; };
+    const tc=k=>k.replace(/(^| )([a-z])/g,(m,a,b)=>a+b.toUpperCase()).replace(/ (i{1,3}|iv|vi{0,3}|viii)$/i,m=>m.toUpperCase());
+    const STOP=new Set(["the","of","to","a","an","entry","center","recall","portal","sending","gateway","antechamber"]);
+    const toks=str=>str.toLowerCase().replace(/[^a-z ]/g," ").split(/\s+/).filter(w=>w&&!STOP.has(w));
+    const resolveDest=k=>{ const kt=toks(k); let best=null,bs=0;
+      const scan=(arr,get)=>{ for(const d of arr){ const dt=toks(get(d)); let hit=0; for(const w of kt) if(dt.includes(w)) hit++;
+        if(hit>bs&&hit>=Math.min(2,kt.length)){ bs=hit; best=d; } } };
+      if(typeof DUNGEONS!=="undefined") scan(DUNGEONS,d=>d.name);
+      if(typeof CITIES!=="undefined") scan(CITIES,c=>c.name);
+      return best; };
+    const elemOf=k=>/acid|corrosive/.test(k)?"acid":/flame|fire|incendiary/.test(k)?"fire":/frost|cold|frore|winter/.test(k)?"frost":/lightning|shock|astyrrian/.test(k)?"shock":/blade|slash|swordsman/.test(k)?"slash":/bludgeon|crush/.test(k)?"bludgeon":/pierc|arrow|puncture/.test(k)?"pierce":null;
+    const SKW={sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",dagger:"finesse",staff:"light",unarmed:"light",bow:"missile",crossbow:"missile",thrown:"missile",
+      war:"war",life:"life",creature:"creature",item:"item",void:"void",mana:"mana",arcane:"arcane",healing:"healing",alchemical:"alchemy",alchemy:"alchemy",cooking:"cooking",fletching:"fletching",lockpick:"lockpick",salvaging:"salvaging",
+      deception:"dirty",jump:"run",run:"run",leadership:"leadership",fealty:"leadership",magic:"magicd",melee:"meleed",missile:"missiled"};
+    const skillOf=k=>{ for(const w in SKW) if(k.includes(w)) return SKW[w]; return null; };
+    window.AC_CANTRIP_TIERS={minor:1,moderate:1,lesser:1,major:2,greater:2,epic:3,legendary:4};
+    let addPortal=0,addDmg=0,addBoost=0,addWard=0,addSkill=0,skipped=0;
+    for(const key in j){ if(key==="_components") continue; if(have.has(key)) continue;
+      const a=j[key], lvl=lvlOf(key), nm=tc(key);
+      const base={id:"ac_"+key.replace(/[^a-z0-9]+/g,"_"),name:nm,recovered:true,lvl,req:Math.max(0,(lvl-1)*40),
+        cost:a.mana||30, cd:2500, words:a.words, acicon:a.icon, acdesc:a.desc, reagents:(a.compn||[]).map(c=>c.n).filter(x=>x&&x!=="?"), closs:a.closs, accomps:(a.compn||[]).map(c=>({n:c.n,cdm:c.cdm==null?1:c.cdm}))};
+      if(/portal|recall|entry to|center of|antechamber|gateway/.test(key)){
+        const d=resolveDest(key); if(!d){ skipped++; continue; }
+        SPELLBOOK_LIST.push(Object.assign(base,{ico:"🌀",school:"item",special:"acportal",dx:d.x,dz:d.z,dname:d.name})); addPortal++; continue; }
+      if(a.dmg){ const el=elemOf(key)||"fire", nether=/nether|void|dark|shadow/.test(key);
+        SPELLBOOK_LIST.push(Object.assign(base,{ico:"☄️",school:nether?"void":"war",cd:1200,
+          make:()=>({dmg:a.dmg[0]+Math.random()*(a.dmg[1]-a.dmg[0]),speed:55,color:0xcc8844,r:0.3,element:nether?"nether":el,drain:nether?0.3:0}) })); addDmg++; continue; }
+      if(a.boost){ const mn=/mana/.test(key), st2=/stamina/.test(key);
+        SPELLBOOK_LIST.push(Object.assign(base,{ico:mn?"🔹":st2?"🌿":"✨",school:"life",
+          special:mn?"mnboost":(st2?"revitalize":undefined), amt:Math.round((a.boost[0]+a.boost[1])/2), foc:0,
+          heal:st2||mn?undefined:()=>a.boost[0]+Math.random()*(a.boost[1]-a.boost[0])})); addBoost++; continue; }
+      if(a.mod!=null&&a.dur){
+        const el=elemOf(key);
+        if(el&&/ward|protection|durance/.test(key)){ SPELLBOOK_LIST.push(Object.assign(base,{ico:"🛡",school:"life",buff:"bane",element:el,mag:clamp(0.15+0.06*lvl,0.1,0.55),dur:Math.round(a.dur)})); addWard++; continue; }
+        const sk=skillOf(key);
+        if(sk&&SKILL_BY_KEY[sk]&&!/ineptitude|bafflement|clumsiness|self/.test(key)===false){}
+        if(sk&&SKILL_BY_KEY[sk]&&!/ineptitude|bafflement|clumsiness/.test(key)){
+          SPELLBOOK_LIST.push(Object.assign(base,{ico:"📜",school:"creature",buff:"skill",skillKey:sk,mag:Math.abs(a.mod)||10,dur:Math.round(a.dur),other:/ other( |$)/.test(key)})); addSkill++; continue; }
+      }
+      skipped++;
+    }
+    for(const sp2 of SPELLBOOK_LIST) if(sp2.recovered&&!SPELLBOOK[sp2.id]) SPELLBOOK[sp2.id]=sp2;
+    _spellIdByName=null;   // vendor "Scroll of X" resolution re-indexes to include the recovered spells
+    console.log(`AC materializer: +${addPortal} travel, +${addDmg} war/void, +${addBoost} restorative, +${addWard} wards, +${addSkill} masteries recovered (${skipped} inert/no-effect left out).`);
+  }catch(e){ console.warn("materializer:",e); }
 }).catch(()=>{}); }catch(e){}
 // ── authentic spell data (assets/acspells.json · tools/ac_spell_export.py): the real client
 //    SpellTable — names, cast WORDS, and component formulas. Matched to our spells by name so
@@ -1368,8 +1453,39 @@ function itemIconDID(name){ if(!AC_ICONS||!name)return null; const n=name.toLowe
   if(AC_ICONS.names[n])return AC_ICONS.names[n];
   for(const w of n.split(/\s+/).reverse()){ if(AC_ICONS.names[w])return AC_ICONS.names[w]; }   // fall back to the base noun ("… sword")
   return null; }
-function itemIconHTML(name,emoji,px){ const did=itemIconDID(name); const s=px||18;
-  if(did&&AC_ICONS.icons[did]) return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`;
+// ── EVERY item gets a real icon: name → base-noun → item TYPE (category) → a representative retail bitmap.
+//    So named/epic/quest items whose name doesn't match still show a real icon of the right kind, never an emoji. ──
+const _ICON_CAT_KW={ sword:["sword"],axe:["axe"],mace:["mace","club"],dagger:["dagger","knife"],spear:["spear"],staff:["staff"],
+  bow:["bow"],crossbow:["crossbow","arbalest"],atlatl:["atlatl"],unarmed:["cestus","katar"],focus:["orb","wand","sceptre"],
+  twohand:["greatsword","great sword","two handed","zweihander","maul","glaive","sword"],
+  shieldb:["buckler"],shieldk:["kite shield","shield"],shieldt:["tower shield","shield"],shielda:["aegis","shield"],shield:["shield","buckler"],
+  head:["helm","coif","cap"],chest:["breastplate","cuirass","hauberk","coat"],upperarm:["pauldron","sleeve"],lowerarm:["vambrace","bracer"],
+  hands:["gauntlet","glove"],legs:["legging","greave","tasset"],feet:["boot","solleret"],back:["cloak","cape"],shirt:["shirt","tunic"],pants:["breeches","trousers"],
+  finger:["ring"],neck:["necklace","amulet"],wrist:["bracelet"],
+  hp:["health kit","potion"],mn:["mana","potion"],st:["stamina","potion"],hot:["potion"],cure:["antidote","potion"],skillpot:["elixir","potion"],attrpot:["philtre","potion"],
+  scroll:["scroll"],book:["parchment","book"],quest:["stone","letter"],writ:["letter","parchment"],comp:["scarab","peas"],note:["trade note","note"],
+  key:["key"],pick:["lockpick"],keyring:["key"],gem:["gem"],food:["bread","pie"],trophy:["gem"],salvage:["gem"],
+  ammo:["arrow","quarrel","dart"],atlanstone:["atlan"],contract:["contract"],portalgem:["portal gem"],recall:["recall","stone"],
+  augment:["aetheria"],aetheria:["aetheria"],pack:["sack","pouch"],dye:["dye"],ticket:["ticket","token"],oil:["oil"],manastone:["mana stone"],furniture:["chair","table"] };
+let _catIconCache={};
+function catIconDID(cat){ if(!AC_ICONS||!cat) return null; if(_catIconCache[cat]!==undefined) return _catIconCache[cat];
+  const kws=_ICON_CAT_KW[cat]; if(!kws) return _catIconCache[cat]=null;
+  for(const k of kws){ if(AC_ICONS.names[k]) return _catIconCache[cat]=AC_ICONS.names[k]; }              // exact single-word icon
+  for(const nm in AC_ICONS.names){ for(const k of kws){ if(nm.indexOf(k)>=0) return _catIconCache[cat]=AC_ICONS.names[nm]; } }  // else first icon whose name contains the keyword
+  return _catIconCache[cat]=null; }
+function itemCat(it){ if(!it) return null; const S=it.stat;
+  if(it.scroll||it.spellId!=null) return "scroll";                                                            // spell scrolls flag via .scroll, not stat
+  if(["Strength","Endurance","Coordination","Quickness","Focus","Self"].indexOf(S)>=0) return "gem";          // attribute/aetheria attunement stones
+  if(S==="weapon") return (it.wt==="focus"||it.foc)?"focus":(it.wt||"sword");
+  if(S==="worn"){ if(it.shield) return ({buckler:"shieldb",kite:"shieldk",large:"shieldk",tower:"shieldt",covenant:"shieldk",olthoi:"shieldt",round:"shieldb",aegis:"shielda"})[it.shield]||"shield"; return it.aslot||"chest"; }
+  if(S==="jewelry") return it.jtype||"finger";
+  return S; }   // consumables/quest/comp/etc. map straight through by stat
+function itemIconImg(did,s){ return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`; }
+function itemIconHTML(name,emoji,px,it){ const s=px||18;
+  if(it&&it.acicon&&AC_ICONS&&AC_ICONS.icons&&AC_ICONS.icons[it.acicon]) return itemIconImg(it.acicon,s);   // the item's OWN retail icon (catalog gear)
+  let did=itemIconDID(name);                                                                                // exact name / base noun
+  if(!did&&it){ const c=itemCat(it); did=catIconDID(c); }                                                   // else a real icon for its TYPE
+  if(did&&AC_ICONS&&AC_ICONS.icons&&AC_ICONS.icons[did]) return itemIconImg(did,s);
   return emoji||""; }
 // ── crafting recipes (assets/acrecipes.json) surfaced as an in-game reference. (Retail loot tiers
 //    are handled by the ACLOOT system below — acLootTier/acLootCount.) ──
@@ -15094,7 +15210,10 @@ function executeSpell(id){
   // "Other" spells DEMAND someone else: an ally, else your summoned familiar, else the cast refunds.
   if(s.other||(s.buff==="attr")||(s.school==="life"&&s.heal)||s.buff==="item"||s.buff==="bane"||s.buff==="prot"||s.special==="regen"||s.special==="revitalize"){
     const ally=pickAllyTarget(40);
-    if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+    if(ally){ castSelf=false; castKind="bestow"; castShow=castDur;
+      if(s.special==="xfer"){ const F={hp:"hp",st:"st",mn:"mn"}[s.from]; player[F]=Math.max(1,player[F]*0.5); }      // the transfer still drains YOUR source
+      else if(s.special==="infuse"){ const F={hp:"hp",st:"st",mn:"mn"}[s.pool]; player[F]=Math.max(1,player[F]*0.75); }   // infusing gives of yourself
+      netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       if(ally.x!=null) spellLandFX(s.school,()=>[ally.x,ally.y||0,ally.z],2.0,0.75);   // the caster sees the spell land on their ally too
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
     if(s.other){
@@ -15141,6 +15260,41 @@ function executeSpell(id){
     if(!dest){ player.mn+=cost; spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
     teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
+  }
+  if(s.special==="xfer"){   // Life vital transfer (Self): drain half the source pool → 105%+5%/lvl to the dest, capped 50/lvl (retail curve)
+    const P={hp:["hp","mhp","health"],st:["st","mst","stamina"],mn:["mn","mmn","mana"]};
+    const F=P[s.from],T=P[s.to];
+    const drained=player[F[0]]*0.5;
+    if(drained<4){ player.mn+=cost; spellCd[id]=0; log(`Your ${F[2]} is too low to draw upon.`,"warn"); return; }
+    const gain=Math.min(drained*(1.0+0.05*s.lvl), 50*s.lvl, player[T[1]]-player[T[0]]);
+    player[F[0]]-=drained; player[T[0]]=Math.min(player[T[1]],player[T[0]]+Math.max(0,gain));
+    floater(player.x,EYE+0.5,player.z,`${F[2]} → +${Math.round(gain)} ${T[2]}`,"#9ad0ff");
+    spellLandFX&&spellLandFX("life",_slfPlayerPos,2.0,0.75);
+    castFlash(0x7fe6a0); SFX.heal&&SFX.heal(); log(`You cast <b>${s.name}</b> — ${Math.round(drained)} ${F[2]} becomes ${Math.round(gain)} ${T[2]}.`,"heal"); updateHUD&&updateHUD(); return;
+  }
+  if(s.special==="mnboost"){   // Mana Boost: the mana Heal
+    const amt=(s.amt||60)*skillEff("life",0.02)*castEcon(id);
+    player.mn=Math.min(player.mmn,player.mn+amt);
+    floater(player.x,EYE+0.5,player.z,"+"+Math.round(amt)+" mana","#7fb0ff");
+    spellLandFX&&spellLandFX("life",_slfPlayerPos,2.0,0.75);
+    castFlash(0x7fb0ff); SFX.heal&&SFX.heal(); log(`You cast <b>${s.name}</b>, restoring ${Math.round(amt)} mana.`,"heal"); updateHUD&&updateHUD(); return;
+  }
+  if(s.special==="vdrain"){   // Drain Stamina/Mana Other: siphon a fifth of the foe's pool
+    const m=pickMonsterTarget(30);
+    if(!m){ player.mn+=cost; spellCd[id]=0; log(`No foe in your sights for <b>${s.name}</b>.`,"warn"); return; }
+    const frac=0.05+0.05*Math.min(3,s.lvl)+0.02*Math.max(0,s.lvl-3);
+    const pool=s.pool, maxK=pool==="st"?"mst":"mmn";
+    const avail=(m[pool]!=null?m[pool]:(m[maxK]||40)), take=Math.max(3,Math.round(avail*frac));
+    if(m[pool]!=null) m[pool]=Math.max(0,m[pool]-take);
+    if(pool==="st"){ player.st=Math.min(player.mst,player.st+take); } else { player.mn=Math.min(player.mmn,player.mn+take); }
+    floater(m.x,(m.headY||1.6)+2,m.z,"-"+take+(pool==="st"?" stam":" mana"),"#b08aff");
+    floater(player.x,EYE+0.5,player.z,"+"+take+(pool==="st"?" stam":" mana"),"#9ad0ff");
+    castFlash(0x9b6bff); SFX.frost&&SFX.frost(); log(`You cast <b>${s.name}</b>, siphoning <b>${take}</b> ${pool==="st"?"stamina":"mana"} from a foe.`,"heal"); updateHUD&&updateHUD(); return;
+  }
+  if(s.special==="acportal"){   // a recovered retail travel spell: the way opens to its true place
+    if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); player.mn+=cost; spellCd[id]=0; return; }
+    teleportFX(player.x,player.z); arriveAt(s.dx,s.dz+3); player.invuln=2; teleportFX(player.x,player.z);
+    if(SFX.portal)SFX.portal(); log(`You cast <b>${s.name}</b> — the way opens to <b>${esc(s.dname)}</b>.`,"heal"); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
     const ally=(typeof pickAllyTarget==="function")?pickAllyTarget(40):null;
@@ -21279,7 +21433,7 @@ function buildShop(){
       if(sn.length) gearInfo+=` · <span style="color:#9ad0ff">${sn.slice(0,2).join(", ")}${sn.length>2?" …":""}</span>`;
       if(it.gear.spellcraft) gearInfo+=` · <span style="color:#8a9ad0">spellcraft ${it.gear.spellcraft}</span>`;
     }
-    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico)} ${it.name}</span> <span class="desc">— ${it.desc}${have}${gearInfo}</span></div>
+    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico,null,it.gear||it)} ${it.name}</span> <span class="desc">— ${it.desc}${have}${gearInfo}</span></div>
       <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""} ${unmet?`title="You cannot wield this yet — needs ${esc(unmet)}" style="border-color:#a06a3a;color:#d0a070"`:""}>Buy — ${it.cost}p${unmet?" ⚠":""}</button></div>`;
     buy.appendChild(row);
   });
@@ -24099,12 +24253,15 @@ function enterDungeon(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
+  // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
+  // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
+  if(curDungeon&&curDungeon.academy&&typeof _clearAcademyNpcs==="function") _clearAcademyNpcs();
   for(const o of dungeonObjs) scene.remove(o);
   dungeonObjs=[];
   for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
-  dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;
+  dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;curDungeon=null;
   arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
   hideOverworld(true);
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
@@ -24388,7 +24545,7 @@ function itemCompare(it){
 // ---- equipment paper-doll: every worn slot as a tile; click a filled tile to unequip ----
 function slotTile(label,ico,item,kind,slot){
   const filled=!!item, col=filled?itemRarity(item).c:"#5a5346";
-  const glyph=filled?itemIconHTML(item.name,ico,20):ico;
+  const glyph=filled?itemIconHTML(item.name,ico,20,item):ico;
   return `<div class="doll-slot${filled?' filled':''}" data-kind="${kind}" data-slot="${slot||''}" title="${filled?esc(item.name)+' — click to unequip':label+' (empty)'}">
     <span class="ds-ico">${glyph} ${label}</span><span class="ds-lab" style="color:${col}">${filled?esc(item.name):"—"}</span></div>`;
 }
@@ -24559,12 +24716,12 @@ function buildTinker(){
     const tabS=on=>`background:${on?'#2a2438':'rgba(255,255,255,.05)'};border:1px solid ${on?'var(--gold)':'var(--border)'};border-radius:5px;color:${on?'#ffd86b':'#cdbf9a'};cursor:pointer;padding:3px 8px;font-size:11px`;
     let bar=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px"><button data-pk="0" style="${tabS(ap===0)}">Main Pack ${Math.min(player.inv.length,caps[0])}/${caps[0]}</button>`;
     player.packs.forEach((p,k)=>{ const n=Math.max(0,Math.min(player.inv.length-lows[k+1],p.cap));
-      bar+=`<button data-pk="${k+1}" style="${tabS(ap===k+1)}" title="${esc(p.name)}">${itemIconHTML(p.name,"🎒",14)} ${n}/${p.cap}</button>`; });
+      bar+=`<button data-pk="${k+1}" style="${tabS(ap===k+1)}" title="${esc(p.name)}">${itemIconHTML(p.name,"🎒",14,{stat:"pack"})} ${n}/${p.cap}</button>`; });
     bar+=`</div>`;
     // the active pack's slot grid — AC's square cells, real inventory icons, count badges
     let grid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;margin-bottom:8px">`;
     for(let s=lo;s<hi;s++){ const it=player.inv[s];
-      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — click to inspect · drag to rearrange" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
+      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — click to inspect · drag to rearrange" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
               :`<div data-slot="${s}" style="width:34px;height:34px;border:1px solid #2c2820;border-radius:4px;background:rgba(0,0,0,.35)"></div>`; }
     grid+=`</div>`;
     const hdr=document.createElement('div'); hdr.innerHTML=bar+grid; rows.appendChild(hdr);
@@ -25146,7 +25303,7 @@ function sendChatLine(text){
 const TRADE={open:false,from:null,mine:[],them:[],mineCoin:0,themCoin:0,youOk:false,themOk:false,"with":"?"};
 function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.mineCoin=TRADE.themCoin=0; TRADE.youOk=TRADE.themOk=false;
   const w=document.getElementById('tradeWin'); if(w)w.remove(); }
-function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
+function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
 function renderTradeWin(){
   let w=document.getElementById('tradeWin');
   if(!w){ w=document.createElement('div'); w.id='tradeWin';
@@ -25238,6 +25395,13 @@ function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff
 //    you are holding (i.e. "all items held by the player"), exactly like AC item magic on your person. ──
 function applyBuffSelf(sp,fx){
   if(!sp) return false;
+  if(sp.special==="xfer"||sp.special==="infuse"||sp.special==="mnboost"){   // an ally channels a vital INTO you
+    const pool=sp.special==="xfer"?sp.to:(sp.pool||"mn");
+    const K={hp:["hp","mhp","health"],st:["st","mst","stamina"],mn:["mn","mmn","mana"]}[pool];
+    const amt=Math.min((sp.amt||30*(sp.lvl||1)), player[K[1]]-player[K[0]]);
+    if(amt>0){ player[K[0]]+=amt; if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,"+"+Math.round(amt)+" "+K[2],"#9ad0ff"); }
+    updateHUD&&updateHUD(); return true;
+  }
   if(sp.special==="sending"){   // an ally cast Portal/Lifestone Sending ON YOU — travel to your own anchor
     if(inDungeon||inNetwork) return false;
     let dest=null;

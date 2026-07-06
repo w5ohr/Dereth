@@ -19,17 +19,18 @@ below (and everything marked `done`) is shipped — see **Confirmed shipped** at
 > **Current status (2026-07-06, post PR #137):** **Lane A ✅ done** (#1 Damage/Crit Rating + Crushing
 > Blow, #4 content) · **Lane B ✅ done** (#2 hats, #3 dye subpalettes, #12 dungeon-lighting slider,
 > #13 shield mesh) · **Lane C ✅ done** (#5 entry corridors, #6 0x21 layout decode → `aclayouts.json`,
-> #10 gold window chrome, #11 PAGE-99 paperdoll, #19 shop wield gates) · **#14 decided** (keep the
-> incantation gate). **Still genuinely open:** **#18** Academy staff leak (lane B, bug) · the
-> terrain-lane blockers (#7–#9) · the design calls #15 (component formula), #16 (vitals purity),
-> #17 (ratify timers) · on-hardware eyeballs (#10 chrome look, #13 window/doorway).
+> #10 gold window chrome, #11 PAGE-99 paperdoll, #19 shop wield gates) · **all 4 design decisions
+> resolved** (#14 keep incantation gate · #15 keep soft casting · #16 keep vitals model · #17 go retail:
+> 3-day PK key, retail quest lockouts, mana-stone battery + draw-from-mana). **Still genuinely open:**
+> **#18** Academy staff leak (lane B, bug) · the terrain-lane blockers (#7–#9, needs A1 data) ·
+> on-hardware eyeballs (#10 chrome look, #13 window/doorway).
 >
 > **Playtest sweep (2026-07-06 night, main @ 46bf62d — post-#137 merged whole): CLEAN, no new findings.**
 > Exercised: rear-attack DR geometry (chasing mobs face the player — no false rear bonus), Crushing
 > Blow (~12% on bludgeon, damage spikes verified), the #14 incantation buff-up nudge, hats/dye-subpalette/
 > dglight code paths, real-geometry dungeon run (kill/XP/drops/exit), death→vitae→half-gold, save fields
 > (aetheria/academy), region+landmark+weather ticks across 5 regions, chrome/paperdoll/shop post-merge.
-> Zero console errors. #18 remains the only open buildable item.
+> Zero console errors. (#18, then the only open buildable item, has since been FIXED in PR #145.)
 
 ---
 
@@ -67,7 +68,7 @@ product call, not agent work; do not implement without a decision recorded here.
 | 4 | A | **Content top-offs** *(optional)* | ~23 more salvage materials, extra gems, hide variants. (Armor sets, named bosses, and the full creature roster are already present.) *(items/regions refs — MATERIALS catalog already exhaustive: ~89 mats incl. all AC gems/stones/cloths)* | S | **done** |
 | 5 | C | **`path_blocked` interior-packing residual** ✅ | ~~Entry centreline grazes.~~ `tbCutDoorway` clears a player-width corridor inward of every cut door; 56-town in-engine re-audit: interior wall-locks 14→0, pass 95.5%→97.5%, no regressions. *(building-entry-audit; PR #137)* | S | **done** |
 | 6 | C | **`0x21` StringTable UI-layout decode** ✅ | ~~Undocumented.~~ Framing reversed (layoutId/800×600 header, element declaration+body pairs, five-u32 x/y/w/h/z geometry + 0x06 texture refs); `tools/ac_layout_export.py` → `assets/aclayouts.json` (101 layouts, 2,901 elements, 76% validated geometry). *(PR #137)* | follow-up | **done** |
-| 18 | B | **Academy staff leak on death / generic exit** *(bug, medium)* | Dying inside the Training Academy interior (or any plain-`exitDungeon` path) skips `exitAcademyHall`, leaking the 8 interior staff NPCs + their obstacle entries into the overworld at world-origin coords; `curDungeon` also stays set. Self-heals only on hall re-entry. Fix: call `_clearAcademyNpcs()` from `exitDungeon` when `curDungeon.academy` (and null `curDungeon`). *(playtest 2026-07-06 #23, verified live)* | S | open |
+| 18 | B | **Academy staff leak on death / generic exit** *(bug, medium)* | Dying inside the Training Academy interior (or any plain-`exitDungeon` path) skips `exitAcademyHall`, leaking the 8 interior staff NPCs + their obstacle entries into the overworld at world-origin coords; `curDungeon` also stays set. Self-heals only on hall re-entry. Fix: call `_clearAcademyNpcs()` from `exitDungeon` when `curDungeon.academy` (and null `curDungeon`). *(playtest #23 — FIXED in PR: exitDungeon strikes the staff on every exit path + nulls curDungeon; verified: die-inside → 0 leaks/0 origin obstacles, re-entry idempotent, chain/regular exits unaffected)* | S | **done** |
 | 19 | C | **Shop rows omit wield reqs & item-magic info** ✅ | ~~Blind gear buys.~~ Shop rows render wield gates (red when unmet), cantrip tier, resolved retail spells, spellcraft; unwieldable stock gets an amber ⚠ Buy button + "needs …" tooltip. *(playtest 2026-07-06 #24; PR #137)* | S | **done** |
 
 ## 2 · Blocked — needs the excluded Agent-1 terrain re-extraction lane
@@ -84,10 +85,10 @@ product call, not agent work; do not implement without a decision recorded here.
 
 | # | Lane | Item | What's undone | Size | Status |
 |---|------|------|---------------|------|--------|
-| 10 | C | **Real UI window-frame chrome** ✅ | ~~9-slice on draggable panels.~~ `acChromeInit` composes the 9-slice sheet at boot and border-images all 11 draggable panels (graceful fallback). *(Corrected: `06001b14`/`06001343` are the Turbine/AC logos and `060011bb` a stone field — the real frame family is `06001920`/`21`/`22`.)* Final look: on-hardware eyeball. *(wrapup §7; PR #137)* | S–M | **done** |
+| 10 | C | **Real UI window-frame chrome** ✅ | ~~9-slice on draggable panels.~~ `acChromeInit` composes the 9-slice sheet at boot and border-images all 11 draggable panels (graceful fallback). *(Corrected: `06001b14`/`06001343` are the Turbine/AC logos and `060011bb` a stone field — the real frame family is `06001920`/`21`/`22`.)* Final look: on-hardware eyeball. *(wrapup §7; PR #137)* | S–M | **done** (final look: on-hardware eyeball) |
 | 11 | C | **Paperdoll panel layout** (PAGE-99 manual) ✅ | ~~Arrangement differs.~~ Held/Body/Adornment rails, Containers row (satchel + side packs), live Examine box on hover, persisted icon-rail toggle. *(ac-remaining-gaps A2; PR #137)* | M | **done** |
 | 12 | B | **Dungeon lighting final tune** | Eyeball torch/ambient intensity live; nudge amb/hemi or the ×1.35 factor. Pass 2 already landed. *(REMAINING-WORK)* | S | done (user-tunable slider) |
-| 13 | B | **Equipped-shield arm mount + doorway/window transparency** | Real shield *meshes* now show on drops/examine, but the equipped-avatar shield stays procedural (arm orientation), the opaque-doorway recess is a warm-glow card, and windows are still baked-opaque — all need on-hardware iteration. *(playtest #21)* | S each | done (shield; window/doorway = on-hardware iteration w/ new brightness knob) |
+| 13 | B | **Equipped-shield arm mount + doorway/window transparency** | Real shield *meshes* now show on drops/examine, but the equipped-avatar shield stays procedural (arm orientation), the opaque-doorway recess is a warm-glow card, and windows are still baked-opaque — all need on-hardware iteration. *(playtest #21)* | S each | done (shield mount verified structurally — real mesh engages on async load, procedural hides; window/doorway + arm-orientation look = on-hardware iteration w/ brightness knob) |
 
 ## 4 · Design decisions — a human product call, not code
 
@@ -129,6 +130,11 @@ Old lists still mark many of these open; they are done:
 - **Extraction/assets:** high-res textures (1,224), non-PCM music, **shield & clothing item models**,
   server-side item/spell mirror, building/clothing GfxObjs wired, all 66 creature kinds, 873 retail titles,
   **NPCs on real AC bodies + heads** (`buildPerson` retired to fallback).
+- **Item icons — 100% coverage (PR #143, Lane A):** every item (normal loot, named/epic weapons, quest
+  rewards, spell scrolls, attunement stones) renders its real AC icon, never an emoji. `itemIconHTML`
+  gained a category-type fallback (`_ICON_CAT_KW`/`catIconDID`/`itemCat`) after own-icon and name lookup;
+  fixed the two-handed-weapon, scroll (`.scroll`/`.spellId`), and attribute-stone gaps. Verified 2091/2091
+  by the `iconaudit` harness (named/epic 1353/1353, quest 226/226, 0 emoji).
 - **Heads/UI:** WYSIWYG creator preview, explicit head-choice rows (creator + barber), face tone/AO,
   **female forehead-band fix**, barber restrictions, circular radar.
 - **Ships:** ownable/boardable skiff/cog/caravel water travel.
