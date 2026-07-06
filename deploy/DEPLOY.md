@@ -81,6 +81,19 @@ Player accounts + characters live in **`/var/lib/dereth/dereth.db`** (SQLite). B
 sqlite3 /var/lib/dereth/dereth.db ".backup '/var/backups/dereth-$(date +%F).db'"
 ```
 
+## Alternative: Docker
+Prefer a container over systemd? `deploy/Dockerfile` builds the game server on `python:3.12-slim`
+(no dependencies to install):
+```bash
+docker build -t dereth-server -f deploy/Dockerfile .
+docker run -d --name dereth --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 -v dereth-data:/data dereth-server
+```
+Accounts persist in the `dereth-data` volume (`/data/dereth.db`). Keep the nginx front end from
+steps 5–6 exactly as-is — the container publishes 8787 loopback-only, same as the systemd unit.
+Back up with `docker run --rm -v dereth-data:/data -v "$PWD":/out python:3.12-slim \
+  python -c "import sqlite3;sqlite3.connect('/data/dereth.db').backup(sqlite3.connect('/out/dereth-backup.db'))"`.
+
 ## Scaling notes (later)
 - The server is a single asyncio process (one core). For more players, run multiple instances
   behind nginx with sticky routing + a shared DB, or shard by zone. Move SQLite → Postgres when
