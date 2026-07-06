@@ -13947,6 +13947,8 @@ const AC_CLOTH_BASE={shirt:"10000001",tunic:"10000003",trousers:"100000f4",breec
   pantaloons:"100000f5",shoes:"1000001f",sandals:"10000104","faran robe":"1000018d",
   "suikan robe":"10000198","gelidite robe":"1000018e","sleek dress":"100004f2",
   "sasalia's dress":"1000026d","empyrean robe":"10000402","kiyafa robe":"1000026c","envoy's robe":"10000532"};
+let AC_CLOTH_DYES=null;
+fetch('assets/acclothing_mesh/dyes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_CLOTH_DYES=j||false; }).catch(()=>{ AC_CLOTH_DYES=false; });
 fetch('assets/acclothing_mesh/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_CLOTH=j||false;
   if(j) console.log("AC base clothing: "+Object.keys(j.bases||{}).length+" garments baked.");
 }).catch(()=>{ AC_CLOTH=false; });
@@ -13970,10 +13972,35 @@ function acClothPart(baseHex,gk,cb){    // baseHex like "10000001", gk "m"|"f" �
           mat=new THREE.MeshStandardMaterial({map:t,roughness:0.82,metalness:0.03});
           if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
         else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x9a8f7a),roughness:0.82,metalness:0.03});
-        const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
+        const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; if(g.mat.tex) mm.userData.texFile=g.mat.tex; grp.add(mm); }
       parts.push({joint:p.joint, group:grp}); }
     flush(parts);
   }).catch(()=>{ flush(null); });
+}
+// ── dye subpalettes: recolor a garment texture by its ClothingSubPalEffects remap ({oldRGB:newRGB},
+//    baked by tools/ac_clothing_dyes.py from the retail PaletteSets). Cached per texture+dye key;
+//    every waiting caller is queued (one garment dresses hundreds of NPCs). ──
+const _acClothDyeTex={}, _acClothDyeCb={};
+function acClothDyeTex(fn,key,remap,cb){
+  const ck=fn+"|"+key, c=_acClothDyeTex[ck];
+  if(c!==undefined&&c!=="loading"){ cb(c||null); return; }
+  (_acClothDyeCb[ck]||(_acClothDyeCb[ck]=[])).push(cb);
+  if(c==="loading") return;
+  _acClothDyeTex[ck]="loading";
+  const flush=v=>{ _acClothDyeTex[ck]=v; const q=_acClothDyeCb[ck]; _acClothDyeCb[ck]=null; if(q)for(const f of q)f(v||null); };
+  const img=new Image();
+  img.onload=()=>{ try{
+    const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height;
+    const ctx=cv.getContext('2d'); ctx.drawImage(img,0,0);
+    const id=ctx.getImageData(0,0,cv.width,cv.height), px=id.data;
+    const map={}; for(const k in remap) map[parseInt(k,16)]=parseInt(remap[k],16);
+    for(let i=0;i<px.length;i+=4){ const v=(px[i]<<16)|(px[i+1]<<8)|px[i+2]; const nv=map[v];
+      if(nv!==undefined){ px[i]=nv>>16&255; px[i+1]=nv>>8&255; px[i+2]=nv&255; } }
+    ctx.putImageData(id,0,0);
+    const t=new THREE.CanvasTexture(cv); t.encoding=THREE.sRGBEncoding; flush(t);
+  }catch(e){ flush(null); } };
+  img.onerror=()=>flush(null);
+  img.src='assets/acmodels/tex/'+fn;
 }
 // which garments an NPC wears, from its role opts + gender (deterministic per NPC seed)
 const AC_ROBE_BY_CULT={sho:"suikan robe","gharu'ndim":"kiyafa robe",gharundim:"kiyafa robe",
@@ -13987,7 +14014,8 @@ function acOutfitFor(o,gender){
   const feet=(cult==="gharu'ndim"||cult==="gharundim")&&(seed>>9)%2?"sandals":"shoes";
   return [top,legs,feet];
 }
-function dressAvatarAC(av,bases,gender){
+function dressAvatarAC(av,bases,gender,seed){
+  seed=Math.abs(seed|0);
   const u=av.userData, gk=gender==="female"?"f":"m";
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
@@ -13997,10 +14025,18 @@ function dressAvatarAC(av,bases,gender){
     if(i>=bases.length||!u.acBody) return;       // stop if the avatar was torn down mid-fetch
     const baseHex=AC_CLOTH_BASE[bases[i++]];
     if(!baseHex){ next(); return; }
+    // authentic dye: about two NPCs in three wear a ClothingSubPal colour of this garment, seeded
+    let dyeRemap=null, dyeKey="";
+    { const dyes=AC_CLOTH_DYES&&AC_CLOTH_DYES[baseHex];
+      if(dyes&&(seed%3)!==0){ const keys=Object.keys(dyes);
+        if(keys.length){ dyeKey=keys[(((seed>>>3)^(i*2654435761))>>>0)%keys.length]; dyeRemap=dyes[dyeKey]; } } }
     acClothPart(baseHex,gk,parts=>{
       if(u.acBody&&parts) for(const pp of parts){ const J=joints[pp.joint]; if(!J||claimed.has(pp.joint)) continue;
         claimed.add(pp.joint);
         const inst=pp.group.clone(); inst.userData.npcCloth=true; inst.userData.acCloth=true;
+        if(dyeRemap) inst.traverse(o2=>{ if(o2.isMesh&&o2.userData&&o2.userData.texFile){
+          acClothDyeTex(o2.userData.texFile,baseHex+"·"+dyeKey,dyeRemap,t=>{
+            if(!t||!o2.parent) return; const m2=o2.material.clone(); m2.map=t; o2.material=m2; }); } });
         let ref=null; for(const ch of J.children){ if(ch.userData&&ch.userData.acBody){ ref=ch; break; } }
         if(ref){ inst.position.copy(ref.position); inst.quaternion.copy(ref.quaternion); inst.scale.copy(ref.scale);
           ref.visible=false; }                   // the garment mesh replaces the bare body part
@@ -19632,7 +19668,7 @@ function dressAvatarOverlays(av,o,gender){
 function dressAvatar(av,o,gender){
   const u=av&&av.userData; if(!u||!u.spine) return; o=o||{};
   if(AC_CLOTH!==false){                                  // authentic ClothingTable base outfit (pack present or still loading)
-    dressAvatarAC(av,acOutfitFor(o,gender),gender);
+    dressAvatarAC(av,acOutfitFor(o,gender),gender,o.seed|0);
     dressAvatarOverlays(av,o,gender);
     dressAvatarHead(u,o);
     return;
