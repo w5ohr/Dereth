@@ -9333,6 +9333,73 @@ function updateCastRings(dt){
     if(!alive){ scene.remove(c.g); c.rings.forEach(r=>{r.m.geometry.dispose();r.m.material.dispose();}); castRingFX.splice(i,1); }
   }
 }
+// ── spell-LANDING effects: the flourish that plays ON the target as a spell takes hold.
+//    Creature magic: spirit-wisps rise from the target's feet, spiral the body to above the head, fade.
+//    Life magic: a ring of glinting crystals forms about the target and spins around them, then fades.
+//    pos is a closure ()=>[x,y,z] so the effect RIDES a moving target (monster, player, remote ally). ──
+let spellLandFXs=[]; const _slfLast={creature:0,life:0};
+function spellLandFX(school,pos,h,girth){
+  if(school!=="creature"&&school!=="life") return;
+  const tn=performance.now(); if(tn-(_slfLast[school]||0)<250) return; _slfLast[school]=tn;   // a volley of buffs (buff-bot blessing) lands as one flourish, not thirty
+  if(school==="creature") spiritSwirlFX(pos,h,girth); else crystalSpinFX(pos,h,girth);
+}
+const _slfPlayerPos=()=>[player.x,player.y||0,player.z];
+const _slfMonsterPos=m=>()=>[m.x,(m.mesh&&m.mesh.position.y)||0,m.z];
+function spiritSwirlFX(pos,h,girth){
+  h=h||2.0; girth=Math.min(girth||0.75,2.2);
+  const g=new THREE.Group(); const [px,py,pz]=pos(); g.position.set(px,py,pz); scene.add(g);
+  const parts=[];
+  for(let i=0;i<12;i++){
+    const wisp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:0xbdeed8,transparent:true,opacity:0,depthWrite:false,fog:false}));
+    const s=rnd(0.16,0.3); wisp.scale.set(s,s*2.4,s); g.add(wisp);                       // elongated: a wisp, not a mote
+    const tail=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:0x6fd0a8,transparent:true,opacity:0,depthWrite:false,fog:false}));
+    tail.scale.set(s*0.6,s*1.5,s*0.6); g.add(tail);                                      // a fainter trailing shade behind each spirit
+    parts.push({m:wisp,tail,a:rnd(0,6.28),spd:rnd(4.5,6.5),delay:i*0.05,s});
+  }
+  spellLandFXs.push({kind:"spirits",g,t:0,dur:1.5,parts,pos,h,girth});
+}
+function crystalSpinFX(pos,h,girth){
+  h=h||2.0; girth=Math.min(girth||0.75,2.2);
+  const g=new THREE.Group(); const [px,py,pz]=pos(); g.position.set(px,py,pz); scene.add(g);
+  const R=girth+0.55, yMid=h*0.55, parts=[];
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(R,0.02,6,36),
+    new THREE.MeshBasicMaterial({color:0x46d885,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+  ring.rotation.x=Math.PI/2; ring.position.y=yMid; g.add(ring);                          // a faint lattice-band ties the crystals into one structure
+  for(let i=0;i<7;i++){
+    const c=new THREE.Mesh(new THREE.OctahedronGeometry(0.13),
+      new THREE.MeshBasicMaterial({color:0x36c274,transparent:true,opacity:0,depthWrite:false,fog:false}));   // solid deep life-green gems — additive washed white over bright ground
+    c.scale.y=1.6; g.add(c); parts.push({m:c,a0:i/7*Math.PI*2,ph:rnd(0,6.28)});           // gem-cut tall octahedra, the game's crystal silhouette
+  }
+  spellLandFXs.push({kind:"crystals",g,t:0,dur:1.35,parts,ring,pos,R,yMid});
+}
+function updateSpellLandFX(dt){
+  for(let i=spellLandFXs.length-1;i>=0;i--){ const c=spellLandFXs[i]; c.t+=dt;
+    const [px,py,pz]=c.pos(); c.g.position.set(px,py,pz);
+    const k=Math.min(1,c.t/c.dur);
+    if(c.kind==="spirits"){
+      for(const p of c.parts){ const lt=c.t-p.delay;
+        if(lt<0){ p.m.material.opacity=0; p.tail.material.opacity=0; continue; }
+        const q=Math.min(1,lt/(c.dur-p.delay));
+        p.a+=p.spd*dt*(1+q*0.5);                                                          // spin quickens as the spirit climbs
+        const r=c.girth*(1-q*0.35)+0.15, y=q*(c.h+0.7);                                   // feet → above the head
+        p.m.position.set(Math.cos(p.a)*r,y,Math.sin(p.a)*r);
+        p.tail.position.set(Math.cos(p.a-0.5)*r,y-0.22,Math.sin(p.a-0.5)*r);
+        const fade=q<0.12?q/0.12:q>0.7?(1-q)/0.3:1;                                       // swell in, fade away past the crown
+        p.m.material.opacity=0.9*fade; p.tail.material.opacity=0.45*fade;
+      }
+    } else {
+      const spin=k*Math.PI*4, fade=k<0.15?k/0.15:k>0.7?(1-k)/0.3:1;                       // two revolutions about the body, then gone
+      for(const p of c.parts){ const a=p.a0+spin;
+        p.m.position.set(Math.cos(a)*c.R,c.yMid+Math.sin(c.t*7+p.ph)*0.16+k*0.35,Math.sin(a)*c.R);
+        p.m.rotation.y+=dt*6; p.m.material.opacity=0.95*fade;
+      }
+      c.ring.position.y=c.yMid+k*0.35; c.ring.rotation.z=spin*0.5; c.ring.material.opacity=0.4*fade;
+    }
+    if(c.t>=c.dur){ scene.remove(c.g);
+      c.g.traverse(o=>{ if(o.material)o.material.dispose(); if(o.geometry)o.geometry.dispose(); });
+      spellLandFXs.splice(i,1); }
+  }
+}
 // portal-travel effect: a swirling column of motes + a flash of light + a whoosh
 function teleportFX(x,z){
   const gy=groundY(x,z),col=0x9b6bff;
@@ -14310,6 +14377,7 @@ function executeSpell(id){
     if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
     else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
+    spellLandFX("life",_slfMonsterPos(m),(m.headY||1.6)+0.4,m.r||0.8);   // life magic lands: crystals spin about the foe
     castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
   }
   if(s.special==="corrupt"){   // Mg6 Void curse — a nether DoT that also corrodes the foe's defences
@@ -14328,6 +14396,7 @@ function executeSpell(id){
     else if(s.debuff==="spd") m.slow=Math.max(m.slow||0,1-s.dmag);
     else { m.weakV=s.dmag; m.weakUntil=now()+s.dur*1000; }
     floater(m.x,(m.headY||1.6)+2,m.z,s.debuff==="spd"?"Slowed":"Weakened","#c9a6ff");
+    spellLandFX("creature",_slfMonsterPos(m),(m.headY||1.6)+0.4,m.r||0.8);   // creature magic lands: spirits spiral the foe, feet to crown
     castFlash(0x9b30ff); if(SFX.frost)SFX.frost(); log(`You afflict a foe with <b>${s.name}</b>.`,"heal"); return;
   }
   // Creature/Life heals & buffs may be cast on an ally under the crosshair (online); else self.
@@ -14335,17 +14404,20 @@ function executeSpell(id){
   if((s.buff==="attr")||(s.school==="life"&&s.heal)){
     const ally=pickAllyTarget(40);
     if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+      if(ally.x!=null) spellLandFX(s.school,()=>[ally.x,ally.y||0,ally.z],2.0,0.75);   // the caster sees the spell land on their ally too
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
   }
   if(s.school==="life"&&s.heal){
     const pow=castEcon(id);
     const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01)*pow;player.hp=Math.min(player.mhp,player.hp+h);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(h)+(pow>1?" ✦":""),"#7fe6a0");
+    spellLandFX("life",_slfPlayerPos,2.0,0.75);
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, healing ${Math.round(h)}.`,"heal");return;
   }
   if(s.special==="revitalize"){
     const v=(s.amt+player.attr.Self*s.foc)*skillEff("life",0.02)*castEcon(id);player.st=Math.min(player.mst,player.st+v);
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(v)+" stam","#7fe6a0");
+    spellLandFX("life",_slfPlayerPos,2.0,0.75);
     castFlash(0x7fe6a0);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
   }
   if(s.special==="portaltie"){   // bind your return to the last portal you took (AC Portal Tie)
@@ -14368,16 +14440,19 @@ function executeSpell(id){
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
     player.debuffs={}; player.dispelImmune=Math.max(player.dispelImmune||0,s.immune||0);
     floater(player.x,EYE+0.5,player.z,n?"cleansed!":"no curse","#7fe6a0");
+    spellLandFX("life",_slfPlayerPos,2.0,0.75);
     castFlash(0x7fe6a0);SFX.quest&&SFX.quest();log(`You cast <b>${s.name}</b>${n?`, cleansing ${n} curse(s)`:" — nothing to cleanse"}.`,"heal");return;
   }
   if(s.special==="regen"){   // Life over-time renewal: trickle the chosen pool back up for a duration
     player.hots=player.hots||{}; player.hots[s.pool]={rate:s.rate,t:s.dur};
     const lbl={hp:"health",st:"stamina",mn:"mana"}[s.pool];
     floater(player.x,EYE+0.5,player.z,"renewing "+lbl,"#7fe6a0");
+    spellLandFX("life",_slfPlayerPos,2.0,0.75);
     castFlash(0x7fe6a0);SFX.heal();log(`You invoke <b>${s.name}</b> — ${lbl} renews for ${s.dur}s.`,"heal");return;
   }
   if(s.buff){
     const dur=s.dur||25, mag=s.mag;
+    spellLandFX(s.school,_slfPlayerPos,2.0,0.75);   // the enchantment takes hold: creature → spirit swirl, life → crystal ring (other schools: none)
     if(s.buff==="might"){player.buffMightT=dur;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
     else if(s.buff==="swift"){player.buffSwiftT=dur;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
     else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
@@ -15389,6 +15464,7 @@ function update(dt){
   castShow=Math.max(0,castShow-dt);
   if(castSwirls.length) updateCastSwirls(dt);
   if(castRingFX.length) updateCastRings(dt);
+  if(spellLandFXs.length) updateSpellLandFX(dt);
   if(portalTransit) updatePortalTransit(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
@@ -23986,6 +24062,7 @@ function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff
 //    you are holding (i.e. "all items held by the player"), exactly like AC item magic on your person. ──
 function applyBuffSelf(sp,fx){
   if(!sp) return false;
+  if(fx) spellLandFX(sp.school,_slfPlayerPos,2.0,0.75);   // the spell lands on YOU (buff bot / ally): creature → spirits, life → crystals
   const dur=sp.dur||(typeof buffDurFor==="function"?buffDurFor(sp.lvl||1):120), mag=sp.mag;
   const flo=(txt,col)=>{ if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,txt,col||"#bfe0ff"); };
   if(typeof sp.heal==="function"){ const h=sp.heal(); player.hp=Math.min(player.mhp,player.hp+h); flo("+"+Math.round(h),"#7fe6a0"); }
