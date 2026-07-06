@@ -13507,12 +13507,18 @@ function jewelrySlotFor(it){ const j=player.jewelry||{};
   return (!j[pair[0]])?pair[0]:(!j[pair[1]])?pair[1]:pair[0];
 }
 // sum a bonus kind across all equipped jewelry
+function cantripItems(){   // every spell-bearing piece: jewelry (manaless) + worn gear/weapon with mana left
+  const r=jewelryItems().slice();
+  for(const p of (typeof wornPieces==="function"?wornPieces():[])) if(p&&p.bonus&&(p.imana==null||p.imana>0)) r.push(p);
+  if(player.weapon&&player.weapon.bonus&&(player.weapon.imana==null||player.weapon.imana>0)) r.push(player.weapon);
+  return r;
+}
 function jewelryBonus(kind,arg){ let n=0;
-  for(const it of jewelryItems()){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
+  for(const it of cantripItems()){ const bj=it&&it.bonus; if(!bj||bj.kind!==kind) continue;
     if(kind==="vital"){ if(bj.vs===arg) n+=bj.v; } else if(kind==="skill"){ if(bj.key===arg) n+=bj.v; } else if(kind==="protect"){ if(bj.el===arg) n+=bj.v; } else n+=bj.v; }
   return n;
 }
-function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ const bj=it&&it.bonus;
+function recomputeGearSkill(){ const g={}; for(const it of cantripItems()){ const bj=it&&it.bonus;
   if(bj&&bj.kind==="skill") g[bj.key]=(g[bj.key]||0)+bj.v; }
   const sb=(typeof setBonus==="function")?setBonus():null; if(sb&&sb.skill) g[sb.skill]=(g[sb.skill]||0)+sb.skillV;   // full-set skill boon
   const w=player.weapon;   // an equipped casting focus lends its bonus to every magic school (+ mana & arcane)
@@ -13523,7 +13529,17 @@ function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ cons
 // ── AC wield requirements: loot rolls skill/level/arcane gates you must meet before you can equip it ──
 function bestMeleeSkillValue(){ let b=0; for(const k of MELEE_WEAPON_KEYS){ const v=skillValue(k); if(v>b)b=v; } return b; }
 function rollWield(it,tier,work,rare){
-  // higher tier + workmanship + magic ⇒ steeper requirement (AC's core loot balance lever). Tier-1 gear stays freely wieldable.
+  // I2 item-spells: tier-3+ weapons/armour can roll a CANTRIP (Minor/Major/Epic/Legendary) — a real
+  // worn bonus riding the piece, powered by the item's OWN mana pool (drains while worn; a Mana
+  // Stone refills it). Spellcraft records the enchantment's potency.
+  if((it.stat==="weapon"||it.stat==="worn")&&!it.bonus&&tier>=3&&Math.random()<(0.22+(rare?0.15:0))){
+    const roll=Math.random(), ct=tier>=5?(roll<0.15?"Legendary":roll<0.45?"Epic":"Major")
+                              :tier>=4?(roll<0.30?"Major":"Minor"):"Minor";
+    const mul={Minor:1,Major:1.5,Epic:2,Legendary:2.6}[ct];
+    const b=rollJewelryBonus(tier); b.v=Math.max(1,Math.round(b.v*mul));
+    it.bonus=b; it.cantrip=ct; it.name+=" "+b.suf;
+    it.spellcraft=tier*60+(work||1)*8; it.imanaMax=it.imana=tier*80;
+  }
   const magical=!!(it.affix||it.bonus||it.foc);
   it.reqLvl=clamp(Math.round((tier-1)*11+Math.max(0,(work||1)-4)*2+(rare?8:0)),0,150);
   if(it.stat==="weapon"&&it.wt&&tier>=2){ it.reqVal=Math.round(25+(tier-2)*42+(work||1)*3+(it.affix?18:0)); }
@@ -14046,6 +14062,9 @@ function applyItem(it){
     // casting-focus battery is a live-consumed mana pool, so the stone FILLS (focus first, then your own
     // reserve with the overflow) rather than destroying gear. Won't be spent if there's nothing to fill.
     let amt=it.charge||150; const parts=[]; const max=focusManaMax();
+    { const fill=p=>{ if(amt>0&&p&&p.bonus&&p.imanaMax&&p.imana<p.imanaMax){ const g=Math.min(amt,p.imanaMax-p.imana); const woke=p.imana===0; p.imana+=g; amt-=g; parts.push(`${p.name} <b>${Math.round(p.imana)}/${p.imanaMax}</b>`); if(woke){ recomputeGearSkill&&recomputeGearSkill(); derive&&derive(); } } };
+      if(typeof wornPieces==="function") for(const p of wornPieces()) fill(p);
+      fill(player.weapon); }
     if(max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
     if(amt>0 && player.mn<player.mmn){ const g=Math.min(amt,player.mmn-player.mn); player.mn+=g; amt-=g; if(g>0) parts.push(`your reserve <b>+${g}</b>`); }
     if(!parts.length){ log(`The <b>${it.name}</b>'s mana has nowhere to go — your focus and reserve are already full.`,"warn"); return "keep"; }
@@ -16126,6 +16145,10 @@ function update(dt){
   if(player.itemBuffs){ for(const k of Object.keys(player.itemBuffs)){ const b=player.itemBuffs[k]; b.t-=dt; if(b.t<=0) delete player.itemBuffs[k]; } }
   if(player.lifeBuffs){ for(const k of Object.keys(player.lifeBuffs)){ const b=player.lifeBuffs[k]; b.t-=dt; if(b.t<=0) delete player.lifeBuffs[k]; } }
   if(player.banes){ for(const k of Object.keys(player.banes)){ const b=player.banes[k]; b.t-=dt; if(b.t<=0) delete player.banes[k]; } }   // Mg4 Banes expire
+  { let slept=false; const drain=p=>{ if(p&&p.bonus&&p.imana!=null&&p.imana>0){ p.imana=Math.max(0,p.imana-dt*0.35); if(p.imana===0) slept=p.name; } };
+    if(typeof wornPieces==="function") for(const p of wornPieces()) drain(p);
+    drain(player.weapon);
+    if(slept){ log(`The magic of your <b>${esc(slept)}</b> falls dormant — its mana is spent (a Mana Stone rouses it).`,"warn"); recomputeGearSkill&&recomputeGearSkill(); derive&&derive(); } }
   if(player.lightBuff){ player.lightBuff.t-=dt; if(player.lightBuff.t<=0){ player.lightBuff=null; floater(player.x,EYE+0.6,player.z,"light fades","#9fb0c0"); } }
   if(player.skillBuffs){ for(const k of Object.keys(player.skillBuffs)){ const b=player.skillBuffs[k]; b.t-=dt;
     if(b.t<=0){ delete player.skillBuffs[k]; floater(player.x,EYE+0.6,player.z,(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k)+" fades","#9fb0c0"); derive(); } } }
