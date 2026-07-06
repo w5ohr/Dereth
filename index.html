@@ -9446,6 +9446,7 @@ function applyHit(m,base,opts){ opts=opts||{};
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
 function damageMonster(m,dmg,crit){
+  dmg=Math.max(0,+dmg||0);   // #16: guard NaN/negative damage — never heal a mob or leave it at un-killable NaN HP
   if(m.shared){ // server-authoritative: claim the hit, let the server apply HP/death/XP
     m.flash=.12; crit?SFX.crit():SFX.hit();
     if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
@@ -14075,6 +14076,7 @@ function breakResProt(){ if(player.resProt){ player.resProt=false; player.invuln
 // the gentle float-down out of a portal never deals fall damage.
 function arriveAt(x,z){
   if(typeof GFX!=="undefined") GFX._grace=2.0;   // don't let arrival stutter trip the quality governor
+  player.aboardShip=null;   // #17: any teleport (death-respawn, recall, portal, map-travel) disembarks — else updateShipPilot re-pins you to the ship at sea
   player.x=clamp(x,-HALF+2,HALF-2); player.z=clamp(z,-HALF+2,HALF-2);
   const g=groundY(player.x,player.z), lift=(inDungeon||inNetwork)?0.5:2;
   player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
@@ -14494,7 +14496,7 @@ function fireArrow(){
     else { dmg+=am.dmg||0; }   // non-elemental ammo just adds to the physical hit
     takeFromInv(ai); }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
-  const ox=player.x+dir.x*0.8,oz=player.z+dir.z*0.8,oy=EYE-0.1;
+  const ox=player.x+dir.x*0.8,oz=player.z+dir.z*0.8,oy=player.y+EYE-0.1;   // #11: eye height above the player's ACTUAL feet — not absolute sea level, so arrows don't spawn underground (and get ground-culled) on elevated terrain
   const mesh=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.8,6),
     new THREE.MeshStandardMaterial({color:0x8a6a3a}));
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
@@ -15341,8 +15343,11 @@ function update(dt){
   }
   updatePets(dt);
   // player projectiles
+  // #11: swept segment-vs-circle test so a fast projectile can't tunnel past a monster between frames
+  const _segHit=(ax,az,bx,bz,cx,cz,rad)=>{ const dx=bx-ax,dz=bz-az,L2=dx*dx+dz*dz; let t=L2>0?((cx-ax)*dx+(cz-az)*dz)/L2:0; t=t<0?0:t>1?1:t; const qx=ax+dx*t,qz=az+dz*t; return (qx-cx)*(qx-cx)+(qz-cz)*(qz-cz)<rad*rad; };
   for(let i=pProj.length-1;i>=0;i--){
     const p=pProj[i];
+    const _px0=p.x,_pz0=p.z;   // #11: travel-segment start (pre-move) for swept collision
     if(p.grav){ p.vy-=GRAV*dt;   // AC ballistics: arrows/bolts (and lobbed arcs) fall under gravity
       if(p.arrow){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); } }  // nose follows the arc
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
@@ -15359,7 +15364,7 @@ function update(dt){
     let gone=p.life<=0||hitGround||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
     if(!gone && !p.cosmetic) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
-      if(Math.hypot(p.x-m.x,p.z-m.z)<m.r+p.r && Math.abs(p.y-1)<1.8){
+      if(_segHit(_px0,_pz0,p.x,p.z,m.x,m.z,m.r+p.r) && Math.abs(p.y-(gh+1))<1.8){   // #11: hit-band relative to LOCAL ground (gh=0 for flat spell bolts → unchanged sea-level behaviour)
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
         // Cb11: missile accuracy AND damage fall off with range — full to ~15m, down to ~50% by ~55m
         const rng=(p.arrow&&p.x0!=null)?Math.hypot(p.x-p.x0,p.z-p.z0):0;
@@ -19728,6 +19733,7 @@ function disembarkShip(){
 }
 function updateShipPilot(dt){
   const sh=player.aboardShip; if(!sh) return;
+  if(!player.alive){ player.aboardShip=null; return; }   // #17: a dead pilot disembarks — don't pin the corpse (or the respawn) to the ship
   if(keys["arrowleft"])  player.yaw+=dt*1.1;   // arrows also turn (a ship is more ponderous than a runner)
   if(keys["arrowright"]) player.yaw-=dt*1.1;
   sh.yaw=player.yaw;
@@ -23321,17 +23327,22 @@ function saveGame(){
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 function applySave(){
   let s; try{ s=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ return false; }
-  return applySaveObj(s);
+  try{ return applySaveObj(s); }catch(e){ if(typeof console!=="undefined")console.warn("save load failed — starting fresh:",e&&e.message); return false; }   // #15: a malformed save can't hard-crash the load
 }
 function applySaveObj(s){
-  if(!s) return false;
-  Object.assign(player,{attr:s.attr,level:s.level,xp:s.xp,xpUnspent:s.xpUnspent,skillPts:s.skillPts,
+  if(!s||typeof s!=="object") return false;
+  // #15: default/sanitize the core fields so a corrupt, truncated, or old-schema save (missing/wrong
+  //      `attr`/`level`/`xp`/…) degrades gracefully instead of crashing the load with an unrecoverable
+  //      undefined-attr state. Newer fields below already default; these ancient ones didn't.
+  const _attr=(()=>{ const b={Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10};
+    if(s.attr&&typeof s.attr==="object") for(const k in b){ const v=+s.attr[k]; if(isFinite(v)&&v>0) b[k]=v; } return b; })();
+  Object.assign(player,{attr:_attr,level:(+s.level>0?Math.floor(+s.level):1),xp:+s.xp||0,xpUnspent:+s.xpUnspent||0,skillPts:+s.skillPts||0,
     vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
     attrInnate:(s.attrInnate&&typeof s.attrInnate==="object")?s.attrInnate:null,   // pre-parity saves: current values become the innate line (attrInnate() falls back to min(attr,100))
     greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
     academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
     packs:Array.isArray(s.packs)?s.packs:[],
-    kills:s.kills,gold:s.gold,armor:s.armor,inv:s.inv||[],materials:s.materials||0,salvage:s.salvage||{},
+    kills:s.kills|0,gold:s.gold|0,armor:s.armor|0,inv:Array.isArray(s.inv)?s.inv:[],materials:s.materials||0,salvage:(s.salvage&&typeof s.salvage==="object")?s.salvage:{},
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
     tapers:s.tapers||0,prismTapers:s.prismTapers||0,
