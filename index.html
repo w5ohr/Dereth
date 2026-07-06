@@ -7367,16 +7367,44 @@ function kcChestFill(id){   // the items each labelled chest "says" it holds (ma
     default:         return [];   // "vault": general estate storage, starts empty
   }
 }
-let _kcVaultId=null;
+// the 3rd-floor treasury mega-chests: every one is a full hoard of the best of everything Dereth has
+const KC_TOP_GEMS=[
+  {name:"Black Opal",v:5000},{name:"Fire Opal",v:4000},{name:"Imperial Topaz",v:2500},
+  {name:"Jet",v:2000},{name:"Diamond",v:1800},{name:"Emerald",v:1600},{name:"Ruby",v:1500},
+  {name:"Black Garnet",v:1400},{name:"White Sapphire",v:1300},{name:"Aquamarine",v:1200},
+  {name:"Sapphire",v:1100},{name:"Zircon",v:1000}];
+function kcMegaFill(variant){
+  const out=[], push=o=>out.push(o), add=arr=>{ for(const it of arr) out.push(Object.assign({},it)); };
+  const pantsPred=t=>t.stat==="worn"&&(t.aslot==="pants"||t.aslot==="legs"||/pants|legging|breeches|greaves|trouser|pantaloon|tasset|cuisse|chausse/i.test(t.name||""));
+  const shirtPred=t=>t.stat==="worn"&&(t.aslot==="shirt"||t.aslot==="chest"||/shirt|tunic|hauberk|cuirass|breastplate|coat|jerkin|doublet|\brobe\b/i.test(t.name||""));
+  push({name:"Trade Note (MMD)",stat:"note",v:250000,count:100});          // 100 MMDs in one slot
+  push({name:"Prismatic Taper",stat:"comp",v:100,count:1000});             // 1000 prismatic tapers
+  push({name:"Diamond Scarab",stat:"comp",v:150,count:1000});              // 1000 diamond scarabs
+  for(const g of KC_TOP_GEMS) push({name:g.name,stat:"gem",mat:g.name,v:g.v,count:100});   // the most expensive gems
+  add(kcTopNamed(t=>t.stat==="worn"&&!t.shield&&!pantsPred(t)&&!shirtPred(t),12));   // the top armor of every slot
+  add(kcTopNamed(pantsPred,6)); add(kcTopNamed(shirtPred,6));               // top pants & shirts
+  add(kcTopNamed(t=>t.stat==="worn"&&t.shield,4));                         // top shields
+  for(const wt of ["sword","axe","mace","dagger","spear","twohand","unarmed","bow","crossbow","atlatl"])
+    add(kcTopNamed(t=>t.stat==="weapon"&&t.wt===wt,3));                     // top weapon of every type — swords, axes, maces, bows…
+  add(kcTopNamed(t=>t.wt==="focus"&&/orb/i.test(t.name),3));               // top orbs
+  add(kcTopNamed(t=>t.wt==="focus"&&/wand|sceptre|scepter|baton|rod/i.test(t.name),3));   // top wands
+  add(kcTopNamed(t=>t.wt==="staff"||(t.wt==="focus"&&/staff/i.test(t.name)),3));          // top staffs
+  add(kcTopNamed(t=>t.stat==="jewelry",8));                                // finest rings, necklaces, bracelets
+  if(variant==="dye") for(const d of DYE_POTS) push({name:d.name,stat:"dye",hex:d.hex,v:85,count:100});   // some chests: the top dyes
+  if(variant==="salvage"){ const mats=[...new Set([...MATERIALS.weapon,...MATERIALS.armor,...MATERIALS.other])];   // some: top-level salvage
+    for(const m of mats) push({name:`${m} Salvage`,stat:"salvage",mat:m,units:100,work:10,v:200}); }
+  return out.slice(0,KC_VAULT_CAP);
+}
+let _kcVaultId=null,_kcVaultTitle=null;
 function openKcChest(ch){
   if(!castleAccess()){ log("The chest is sealed by Lord Kilmer's ward.","warn"); if(SFX.hit)SFX.hit(); return; }
-  const id=ch.kind==="storage"?"vault":ch.kind;
+  const id=ch.vid||(ch.kind==="storage"?"vault":ch.kind);
   player.kcVault=player.kcVault||{};
-  if(!(id in player.kcVault)) player.kcVault[id]=kcChestFill(id);   // fill once; the player's edits persist thereafter
-  _kcVaultId=id; kcVaultRender();
+  if(!(id in player.kcVault)) player.kcVault[id]=ch.kind==="mega"?kcMegaFill(ch.variant):kcChestFill(id);   // fill once; the player's edits persist thereafter
+  _kcVaultId=id; _kcVaultTitle=ch.title||KC_VAULT_TITLE[id]||null; kcVaultRender();
   paused=true; if(locked)document.exitPointerLock();
 }
-function closeKcVault(){ const ov=document.getElementById('kcVaultPanel'); if(ov) ov.remove(); paused=false; _kcVaultId=null; }
+function closeKcVault(){ const ov=document.getElementById('kcVaultPanel'); if(ov) ov.remove(); paused=false; _kcVaultId=null; _kcVaultTitle=null; }
 function kcVaultDeposit(i){ const st=player.kcVault[_kcVaultId]; if(!st||!player.inv[i]) return;
   if(st.length>=KC_VAULT_CAP){ log("This chest is full.","warn"); if(SFX.hit)SFX.hit(); return; }
   st.push(player.inv.splice(i,1)[0]); saveGame(); updateHUD(); kcVaultRender(); }
@@ -7385,7 +7413,7 @@ function kcVaultWithdraw(i){ const st=player.kcVault[_kcVaultId]; const it=st&&s
   st.splice(i,1); if(SFX.gold)SFX.gold(); saveGame(); updateHUD(); kcVaultRender(); }
 function kcVaultRender(){
   const id=_kcVaultId; if(id==null) return;
-  const st=player.kcVault[id]||[], inv=player.inv, title=KC_VAULT_TITLE[id]||"Storage";
+  const st=player.kcVault[id]||[], inv=player.inv, title=_kcVaultTitle||KC_VAULT_TITLE[id]||"Storage";
   let ov=document.getElementById('kcVaultPanel');
   if(!ov){ ov=document.createElement('div'); ov.id='kcVaultPanel';
     ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
@@ -8079,6 +8107,25 @@ function addKilmerCastle(){
   { const zc=rowC[1];
     themed(-12,zc-13,"salvage","Top Salvage — all types",0x2a2a2a,0xd8d8d0);
     themed(-16,zc-13,"dye","Every Dye ×100",0x3a2a3a,0xd0a0d0); }
+  // ═══ 3rd-floor treasury (The Great Library): a grid of evenly-spaced mega-chests, each a full hoard ═══
+  { const FY=2*ST;   // floor 3 walking surface
+    const mkFloorChest=(lx,lz,tint,band)=>{ const ch=new THREE.Group();
+      const bxm=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.8,0.85),texMat(woodTex,tint)); bxm.position.y=0.4; bxm.castShadow=true; ch.add(bxm);
+      const lid=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.3,10,1,false,0,Math.PI),new THREE.MeshStandardMaterial({color:band,metalness:0.7,roughness:0.35}));
+      lid.rotation.z=Math.PI/2; lid.position.y=0.8; ch.add(lid);
+      ch.position.set(lx,FY+0.18,lz); G.add(ch); };
+    const cols=[-46,-23,0,23,46], zrows=[-92,-66,-40,12,38,64,88];   // 5×7 grid, skipping the bookshelf row at z≈-24
+    let mi=0;
+    for(const lz of zrows) for(const lx of cols){
+      const variant=(mi%5===0)?"salvage":(mi%5===2)?"dye":"base";
+      const tint=variant==="salvage"?0x2a2a2a:variant==="dye"?0x3a2a3a:0x4a3a1a;
+      const band=variant==="salvage"?0xd8d8d0:variant==="dye"?0xd0a0d0:0xffd23b;
+      mkFloorChest(lx,lz,tint,band);
+      const ttl=variant==="salvage"?"Treasury Chest — with Salvage":variant==="dye"?"Treasury Chest — with Dyes":"Treasury Chest";
+      const l=labelSprite(variant==="salvage"?"Treasury · Salvage":variant==="dye"?"Treasury · Dyes":"Treasury","npcs"); l.scale.set(4.6,1.15,1); l.position.set(lx,FY+1.9,lz); G.add(l);
+      kcChests.push({x:KC.x+lx,z:KC.z+lz,y:FY,kind:"mega",variant,vid:"mega"+mi,title:ttl}); mi++;
+    }
+  }
   // ═══ the killer bunny, caged at the corridor's north end ═══
   { const bx=0,bz=KZ0+5;
     const plinth=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.3,4.6),stoneDark); plinth.position.set(bx,0.15,bz); G.add(plinth);
@@ -14749,7 +14796,7 @@ function currentPrompt(){
       if(isDone(id)) return "Speak to "+gn+" (E)";
       return "Accept a quest from "+gn+" (E)"; }
     return "Speak (E)";}}
-  for(const ch of kcChests) if(nr(ch.x,ch.z)<2.6) return "Open "+(KC_VAULT_TITLE[ch.kind==="storage"?"vault":ch.kind]||"the chest")+" — castle storage (E)";
+  for(const ch of kcChests) if(nr(ch.x,ch.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)) return "Open "+(ch.title||KC_VAULT_TITLE[ch.kind==="storage"?"vault":ch.kind]||"the chest")+" — castle storage (E)";
   for(const hk of kcHooks) if(nr(hk.x,hk.z)<1.9) return (kcCurHookItem(hk)?"Take from the hook":"Use the hook")+" (E)";
   for(const p of kcPortals) if(nr(p.x,p.z)<2.6) return "Gateway to "+p.dest.name+" (E)";
   if(kcWarTable&&nr(kcWarTable.x,kcWarTable.z)<4&&Math.abs(player.y-kcWarTable.y)<4) return "Survey the realm at the War Table (E)";
@@ -14866,7 +14913,7 @@ function interact(){
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
-  for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6){ openKcChest(ch); return; } }
+  for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)){ openKcChest(ch); return; } }
   if(kcBunnyRec&&Math.hypot(kcBunnyRec.x-player.x,kcBunnyRec.z-player.z)<4){ kcPokeBunny(); return; }
   for(const hk of kcHooks){ if(Math.hypot(hk.x-player.x,hk.z-player.z)<1.9){ kcUseHook(hk); return; } }
   for(const p of kcPortals){ if(Math.hypot(p.x-player.x,p.z-player.z)<2.6){ kcPortalUse(p); return; } }
