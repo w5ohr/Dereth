@@ -21,8 +21,8 @@
     border:1px solid var(--border);border-radius:6px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.5);
     backdrop-filter:blur(2px)}
   #vitals{top:12px;left:12px;width:230px}
-  /* the real client's gold strut ornament crowns the vitals panel */
-  #vitals::before{content:"";display:block;height:12px;margin:-4px -6px 2px;background:url(assets/acui/06001937.png) center/contain no-repeat;opacity:.9}
+  /* the real client's gold strut ornament crowns the vitals panel — and the other always-on side panels */
+  #vitals::before,#quest::before{content:"";display:block;height:12px;margin:-4px -6px 2px;background:url(assets/acui/06001937.png) center/contain no-repeat;opacity:.9}
   .bar{height:15px;border-radius:7px;background:#000;margin:5px 0;position:relative;overflow:hidden;border:1px solid #000}
   .bar>i{position:absolute;left:0;top:0;bottom:0;display:block;border-radius:7px;transition:width .15s}
   .bar>span{position:absolute;inset:0;font-size:11px;line-height:15px;text-align:center;color:#fff;text-shadow:0 1px 1px #000}
@@ -2401,6 +2401,7 @@ function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEn
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
 const obstacles=[]; // {x,z,r}
 let bookStands=[];  // readable library stands placed at towns/landmarks (real AC lore books)
+let chessTables=[]; // playable chess boards placed in the towns (AC's tavern Game weenies)
 let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[],ships=[];
 
 function texGround(){
@@ -5974,7 +5975,7 @@ function buildWorld(){
   for(const d of dying) scene.remove(d.mesh); dying=[];
   for(const o of netObjs) scene.remove(o);
   for(const _s of ships){ if(_s.mesh) scene.remove(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
-  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];
+  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];chessTables=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
   usedNpcNames=new Set();
@@ -6150,6 +6151,7 @@ function buildWorld(){
   // the extracted map) — NOT invented cobblestone strips. genRoads() still lays the caravan's route;
   // buildRoads() (the procedural cobbled meshes) is retired so the true AC dirt roads stand on their own.
   placeBookStands();   // library reading-stands in the towns + a couple of lore sites (real AC books)
+  placeChessTables();  // playable chess boards in the towns (tavern game)
   genRoads();buildCaravan();
   buildRoadBridges();   // span every river/sea the real AC road web crosses with a walkable plank bridge
   // gathering nodes scattered across the wilds
@@ -7311,6 +7313,130 @@ function openCasinoChest(ch){
     toast("CASINO PRIZE"); if(SFX.gold)SFX.gold();
   } else { log(`The <b>Grand Casino Chest</b> is locked tight. Win a key at the tables or the races.`,"warn"); if(SFX.hit)SFX.hit(); }
   updateHUD&&updateHUD(); saveGame&&saveGame();
+}
+// ══════════════════════════════════════════════════════════════════════════
+//  CHESS — a playable board in the towns (AC had chess as Game/GamePiece weenies).
+//  A real engine (full legal moves incl. castling, en passant, promotion; check /
+//  checkmate / stalemate) with an alpha-beta AI opponent, drawn as a 2D overlay.
+//  Board index = r*8+c, r=0 top (Black back rank), r=7 bottom (White = the player).
+// ══════════════════════════════════════════════════════════════════════════
+let _chess=null;
+const CH_GLYPH={K:"♔",Q:"♕",R:"♖",B:"♗",N:"♘",P:"♙",k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+const chW=p=>!!p&&p===p.toUpperCase(), chIN=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
+function chInit(){ return {bd:("rnbqkbnr".split("")).concat("pppppppp".split(""),Array(32).fill(""),"PPPPPPPP".split(""),"RNBQKBNR".split("")),
+  turn:"w", ep:-1, cr:{K:true,Q:true,k:true,q:true}}; }
+function chKing(bd,white){ const k=white?'K':'k'; for(let i=0;i<64;i++) if(bd[i]===k) return i; return -1; }
+function chAttacked(bd,r,c,byW){   // is square (r,c) attacked by the side whose pieces are byW(=White)?
+  for(const dc of[-1,1]){ const rr=r+(byW?1:-1),cc=c+dc; if(chIN(rr,cc)&&bd[rr*8+cc]===(byW?'P':'p')) return true; }   // pawns
+  for(const [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]){ const rr=r+dr,cc=c+dc; if(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q&&q.toLowerCase()==='n'&&chW(q)===byW) return true; } }
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){ if(!dr&&!dc)continue; const rr=r+dr,cc=c+dc; if(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q&&q.toLowerCase()==='k'&&chW(q)===byW) return true; } }
+  for(const [dr,dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]){ let rr=r+dr,cc=c+dc; while(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q){ if(chW(q)===byW&&(q.toLowerCase()==='b'||q.toLowerCase()==='q')) return true; break; } rr+=dr;cc+=dc; } }
+  for(const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]){ let rr=r+dr,cc=c+dc; while(chIN(rr,cc)){ const q=bd[rr*8+cc]; if(q){ if(chW(q)===byW&&(q.toLowerCase()==='r'||q.toLowerCase()==='q')) return true; break; } rr+=dr;cc+=dc; } }
+  return false;
+}
+function _chPawnAdd(out,from,to,promo){ if(promo){ for(const pc of ['q','r','b','n']) out.push({from,to,promo:pc}); } else out.push({from,to}); }
+function chPseudo(st){   // pseudo-legal moves for the side to move
+  const bd=st.bd, white=st.turn==="w", out=[];
+  const add=(from,to,ex)=>{ const q=bd[to]; if(q&&chW(q)===white) return false; out.push(Object.assign({from,to},ex||{})); return !q; };
+  for(let i=0;i<64;i++){ const p=bd[i]; if(!p||chW(p)!==white) continue; const r=i>>3,c=i&7,t=p.toLowerCase();
+    if(t==='p'){ const dir=white?-1:1, start=white?6:1, promo=white?0:7;
+      if(chIN(r+dir,c)&&!bd[(r+dir)*8+c]){ _chPawnAdd(out,i,(r+dir)*8+c,(r+dir)===promo);
+        if(r===start&&!bd[(r+2*dir)*8+c]) out.push({from:i,to:(r+2*dir)*8+c,dbl:true}); }
+      for(const dc of[-1,1]){ const rr=r+dir,cc=c+dc; if(!chIN(rr,cc))continue; const to=rr*8+cc,q=bd[to];
+        if(q&&chW(q)!==white) _chPawnAdd(out,i,to,rr===promo); else if(to===st.ep) out.push({from:i,to,epc:true}); } }
+    else if(t==='n'){ for(const [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]){ const rr=r+dr,cc=c+dc; if(chIN(rr,cc)) add(i,rr*8+cc); } }
+    else if(t==='k'){ for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){ if(!dr&&!dc)continue; const rr=r+dr,cc=c+dc; if(chIN(rr,cc)) add(i,rr*8+cc); }
+      const opp=!white;   // opponent colour (for castle-through-check tests)
+      if(white&&i===60){ if(st.cr.K&&!bd[61]&&!bd[62]&&bd[63]==='R'&&!chAttacked(bd,7,4,opp)&&!chAttacked(bd,7,5,opp)&&!chAttacked(bd,7,6,opp)) out.push({from:60,to:62,castle:'K'});
+        if(st.cr.Q&&!bd[59]&&!bd[58]&&!bd[57]&&bd[56]==='R'&&!chAttacked(bd,7,4,opp)&&!chAttacked(bd,7,3,opp)&&!chAttacked(bd,7,2,opp)) out.push({from:60,to:58,castle:'Q'}); }
+      else if(!white&&i===4){ if(st.cr.k&&!bd[5]&&!bd[6]&&bd[7]==='r'&&!chAttacked(bd,0,4,opp)&&!chAttacked(bd,0,5,opp)&&!chAttacked(bd,0,6,opp)) out.push({from:4,to:6,castle:'k'});
+        if(st.cr.q&&!bd[3]&&!bd[2]&&!bd[1]&&bd[0]==='r'&&!chAttacked(bd,0,4,opp)&&!chAttacked(bd,0,3,opp)&&!chAttacked(bd,0,2,opp)) out.push({from:4,to:2,castle:'q'}); } }
+    else { const dirs=t==='b'?[[-1,-1],[-1,1],[1,-1],[1,1]]:t==='r'?[[-1,0],[1,0],[0,-1],[0,1]]:[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]];
+      for(const [dr,dc] of dirs){ let rr=r+dr,cc=c+dc; while(chIN(rr,cc)&&add(i,rr*8+cc)){ rr+=dr;cc+=dc; } } }
+  }
+  return out;
+}
+function chMake(st,m){
+  const bd=st.bd.slice(), p=bd[m.from], white=chW(p); bd[m.from]="";
+  if(m.epc) bd[m.to+(white?8:-8)]="";                                   // en-passant: remove the passed pawn
+  bd[m.to]=m.promo?(white?m.promo.toUpperCase():m.promo):p;
+  if(m.castle==='K'){ bd[61]=bd[63]; bd[63]=""; } else if(m.castle==='Q'){ bd[59]=bd[56]; bd[56]=""; }
+  else if(m.castle==='k'){ bd[5]=bd[7]; bd[7]=""; } else if(m.castle==='q'){ bd[3]=bd[0]; bd[0]=""; }
+  const cr=Object.assign({},st.cr);
+  if(p==='K'){ cr.K=cr.Q=false; } if(p==='k'){ cr.k=cr.q=false; }
+  if(m.from===63||m.to===63) cr.K=false; if(m.from===56||m.to===56) cr.Q=false;
+  if(m.from===7||m.to===7) cr.k=false; if(m.from===0||m.to===0) cr.q=false;
+  return {bd, turn:white?"b":"w", ep:(m.dbl?(m.from+m.to)/2:-1), cr};
+}
+function chLegal(st){ const white=st.turn==="w", out=[];
+  for(const m of chPseudo(st)){ const ns=chMake(st,m), ks=chKing(ns.bd,white); if(ks<0||!chAttacked(ns.bd,ks>>3,ks&7,!white)) out.push(m); }
+  return out; }
+function chStatus(st){ const white=st.turn==="w", ks=chKing(st.bd,white), chk=ks>=0&&chAttacked(st.bd,ks>>3,ks&7,!white);
+  if(!chLegal(st).length) return chk?{over:"checkmate",winner:white?"b":"w"}:{over:"stalemate"};
+  return {over:null,check:chk}; }
+function chPerft(st,d){ if(d<=0) return 1; let n=0; for(const m of chLegal(st)) n+=chPerft(chMake(st,m),d-1); return n; }   // move-gen correctness self-test
+const CH_VAL={p:100,n:320,b:330,r:500,q:900,k:20000};
+function chEval(st){ let s=0; for(let i=0;i<64;i++){ const p=st.bd[i]; if(!p)continue; const v=CH_VAL[p.toLowerCase()]+ (p.toLowerCase()!=='k'? (3-Math.abs(3.5-(i>>3)))+(3-Math.abs(3.5-(i&7))) : 0); s+=chW(p)?v:-v; } return s; }
+function chNega(st,d,a,b){ const moves=chLegal(st);
+  if(!moves.length){ const white=st.turn==="w",ks=chKing(st.bd,white); return (ks>=0&&chAttacked(st.bd,ks>>3,ks&7,!white))? -100000-d : 0; }
+  if(d<=0){ const e=chEval(st); return st.turn==="w"?e:-e; }
+  moves.sort((x,y)=>(st.bd[y.to]?1:0)-(st.bd[x.to]?1:0));   // captures first
+  let best=-1e9;
+  for(const m of moves){ const sc=-chNega(chMake(st,m),d-1,-b,-a); if(sc>best)best=sc; if(best>a)a=best; if(a>=b)break; }
+  return best; }
+function chAIMove(st,d){ const moves=chLegal(st); if(!moves.length) return null;
+  for(let i=moves.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=moves[i];moves[i]=moves[j];moves[j]=t; }   // shuffle for variety
+  moves.sort((x,y)=>(st.bd[y.to]?1:0)-(st.bd[x.to]?1:0));
+  let best=moves[0],bs=-1e9;
+  for(const m of moves){ const sc=-chNega(chMake(st,m),d-1,-1e9,1e9); if(sc>bs){bs=sc;best=m;} }
+  return best; }
+function placeChessTables(){ chessTables=[];
+  if(typeof CAPITALS==="undefined"||!CAPITALS.length) return;
+  for(const c of CAPITALS){ const x=c.x+16, z=c.z+11, gy=(typeof groundY==="function")?groundY(x,z):0;
+    const g=new THREE.Group();
+    const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.15,0.85,8),solid(0x3a2c1c)); leg.position.y=0.42; g.add(leg);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.1,1.0),solid(0xe8dcc0)); top.position.y=0.9; g.add(top);
+    for(let r=0;r<8;r++)for(let cc=0;cc<8;cc++){ if((r+cc)%2)continue; const sq=new THREE.Mesh(new THREE.BoxGeometry(0.118,0.02,0.118),solid(0x2a2018)); sq.position.set(-0.44+cc*0.118+0.059,0.955,-0.44+r*0.118+0.059); g.add(sq); }
+    g.position.set(x,gy,z); g.castShadow=true; scene.add(g); scenery.push(g);
+    const lbl=labelSprite("♟ Chess Table","cities"); if(lbl){ lbl.position.set(x,gy+2.0,z); scene.add(lbl); scenery.push(lbl); }
+    obstacles.push({x,z,r:0.85}); chessTables.push({x,z});
+  }
+}
+function openChessBoard(){
+  _chess=_chess||chInit();
+  paused=true; if(locked)document.exitPointerLock();
+  const old=document.getElementById('chessBoard'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='chessBoard';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.66)";
+  let sel=-1, legal=[], thinking=false;
+  const render=()=>{ const st=_chess, s=chStatus(st);
+    let msg = s.over==="checkmate"?(s.winner==="w"?"Checkmate — you win! 🏆":"Checkmate — the house takes it."):
+      s.over==="stalemate"?"Stalemate — a draw.": thinking?"The house is thinking…": (st.turn==="w"?(s.check?"Your move — you are in check!":"Your move (White)."):"…");
+    let h=`<div style="background:#1a1710;border:1px solid var(--gold);border-radius:8px;padding:16px 18px;color:#e6d6a8">
+      <div style="color:var(--gold);text-transform:uppercase;letter-spacing:.5px;font-size:13px;margin-bottom:8px">♟ Tavern Chess</div>
+      <div style="display:grid;grid-template-columns:repeat(8,42px);grid-template-rows:repeat(8,42px);border:2px solid #5a4326">`;
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++){ const i=r*8+c, light=(r+c)%2===0, p=st.bd[i], isSel=i===sel, tgt=legal.some(m=>m.to===i);
+      const bg=isSel?"#c9a24a":tgt?(p?"#b05a3a":"#6a7a4a"):(light?"#d8c39a":"#8a6a44");
+      h+=`<div data-sq="${i}" style="display:flex;align-items:center;justify-content:center;font-size:29px;background:${bg};cursor:pointer;user-select:none;color:${chW(p)?'#fff':'#111'};text-shadow:0 1px 1px rgba(0,0,0,.35)">${p?CH_GLYPH[p]:(tgt?'<span style=\'font-size:11px;opacity:.55;color:#243\'>●</span>':'')}</div>`; }
+    h+=`</div><div style="margin-top:10px;font-size:12px;min-height:16px">${msg}</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button id="chNew" class="tbtn">New Game</button><button id="chResign" class="tbtn">Resign</button><button id="chClose" class="tbtn">Leave</button></div></div>`;
+    ov.innerHTML=h;
+    ov.querySelectorAll('[data-sq]').forEach(el=>el.onclick=()=>onSq(+el.dataset.sq));
+    ov.querySelector('#chNew').onclick=()=>{ _chess=chInit(); sel=-1;legal=[];thinking=false; render(); };
+    ov.querySelector('#chResign').onclick=()=>{ log("You tip your king — the house takes the game.","sys"); _chess=chInit(); sel=-1;legal=[];thinking=false; render(); };
+    ov.querySelector('#chClose').onclick=()=>{ ov.remove(); paused=false; };
+  };
+  const aiTurn=()=>{ thinking=true; render();
+    setTimeout(()=>{ if(!document.getElementById('chessBoard'))return; const m=chAIMove(_chess,3); if(m){ _chess=chMake(_chess,m); if(SFX.hit)SFX.hit(); } thinking=false; render();
+      const s=chStatus(_chess); if(s.over==="checkmate"&&s.winner==="b") log("The tavern chess-master checkmates you. Another round?","sys"); }, 380); };
+  const onSq=(i)=>{ const st=_chess; if(thinking||st.turn!=="w"||chStatus(st).over) return; const p=st.bd[i];
+    if(sel<0){ if(p&&chW(p)){ sel=i; legal=chLegal(st).filter(m=>m.from===i); render(); } return; }
+    const m=legal.find(mm=>mm.to===i&&(!mm.promo||mm.promo==='q'));   // player auto-queens on promotion
+    if(m){ _chess=chMake(st,m); sel=-1;legal=[]; if(SFX.quest)SFX.quest(); render();
+      const s=chStatus(_chess); if(s.over==="checkmate"&&s.winner==="w"){ log("You checkmate the tavern chess-master! 🏆","loot"); if(SFX.level)SFX.level(); }
+      else if(!s.over) aiTurn();
+    } else { if(p&&chW(p)){ sel=i; legal=chLegal(st).filter(mm=>mm.from===i); } else { sel=-1;legal=[]; } render(); } };
+  render(); document.body.appendChild(ov);
 }
 // ── the casino panel (opened by talking to the owner) ──
 let _casinoNpc=null;
@@ -15187,6 +15313,7 @@ function currentPrompt(){
     return "Recover your corpse (E)"; }
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
   for(const bs of bookStands) if(nr(bs.x,bs.z)<3.2) return "Browse "+bs.name+" (E)";
+  for(const ct of chessTables) if(nr(ct.x,ct.z)<3.0) return "Play chess (E)";
   {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
     if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
@@ -15325,7 +15452,8 @@ function interact(){
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
-  for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ openBookShelf(bs); return; }
+  for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
+  for(const ct of chessTables) if(Math.hypot(ct.x-player.x,ct.z-player.z)<3.0){ openChessBoard(); return; }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
@@ -20046,6 +20174,38 @@ function placeBookStands(){
     obstacles.push({x:s.x,z:s.z,r:0.95});
     bookStands.push({name:s.name,x:s.x,z:s.z});
   }
+  // A History of Dereth — the chronicle of the world's live events, at Kilmer's Castle. Seated just
+  // outside the moat (freely reachable, not behind the castle's guest-gate) on the castle forecourt.
+  if(typeof KC!=="undefined"&&KC){ const x=KC.x, z=KC.z+(KC.moatOut||235)+14, gy=(typeof groundY==="function")?groundY(x,z):0;
+    const g=new THREE.Group();
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.95,1.05,0.64),solid(0x4a3620)); post.position.y=0.52; g.add(post);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(1.04,0.1,0.76),solid(0x6a4a2a)); top.position.set(0,1.1,0); top.rotation.x=-0.5; g.add(top);
+    const bk=new THREE.Mesh(new THREE.BoxGeometry(0.58,0.1,0.42),solid(0xf0e6c8)); bk.position.set(0,1.19,0.02); bk.rotation.x=-0.5; g.add(bk);
+    g.position.set(x,gy,z); g.castShadow=true; scene.add(g); scenery.push(g);
+    const lbl=labelSprite("📖 A History of Dereth","cities"); if(lbl){ lbl.position.set(x,gy+2.4,z); scene.add(lbl); scenery.push(lbl); }
+    obstacles.push({x,z,r:0.95}); bookStands.push({name:"A History of Dereth",x,z,history:true});
+  }
+}
+// The living chronicle of Dereth's LIVE EVENTS (the Kilmer Saga arc). Authored framing + a per-event
+// record built from EVENT_CALENDAR up to the present month — the past is written history; the future
+// isn't lived yet. Grows as the calendar turns. Read via the stand at Kilmer's Castle.
+function openHistoryBook(){
+  const pages=["A HISTORY OF DERETH\n\nKept in the library of Castle Val Halla, that none forget how the Free Realms were forged.\n\nWhen Asheron Realaidain tore open the portal from Ispar, the sundered peoples — Aluvian, Gharu'ndim, and Sho — spilled onto this volcanic isle of Auberean and named it Dereth. What follows is the record of the great turnings since: the living history of the world, written as it comes to pass."];
+  const cal=(typeof EVENT_CALENDAR!=="undefined")?EVENT_CALENDAR:[];
+  const upto=(typeof gameMonth==="number")?gameMonth:cal.length-1;
+  let curYear=null, buf="", any=false; const flush=()=>{ if(buf.trim()){ pages.push(buf.trim()); buf=""; } };
+  for(let i=0;i<cal.length&&i<=upto;i++){ const e=cal[i]; if(!e||e.kind==="rest"||!e.name) continue;
+    const yr=(typeof sagaYearName==="function")?sagaYearName(e):("The Saga");
+    if(yr!==curYear){ flush(); curYear=yr; buf="── "+(""+yr).toUpperCase()+" ──\n\n"; }
+    const seen=(typeof calendarDone!=="undefined"&&calendarDone[e.id]);
+    buf+=`${e.mon}: ${e.name}${seen?" ✓":""}\n${e.rumor||""}\n\n`; any=true;
+    if(buf.length>640) flush();
+  }
+  flush();
+  pages.push(any?"Here the written record ends — the next age is not yet lived. This chronicle grows with every turning of the calendar; return, and read of what is yet to come to pass."
+    :"The chronicle is yet young — no great turning has passed since your arrival. Return when the calendar has turned, and read of the ages you helped shape.");
+  if(typeof kcReadLectern==="function") kcReadLectern({title:"A History of Dereth",pages});
+  else log("The tome's script blurs before your eyes.","warn");
 }
 function openBookShelf(stand){
   if(!_acBookKeys||!_acBookKeys.length){ log("The shelves stand bare — the library's texts are still being catalogued.","warn"); return; }
