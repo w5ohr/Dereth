@@ -2,6 +2,24 @@
 
 **Compiled 2026-07-04** (reconciled against `main` up to commit `b60536b`).
 
+> **2026-07-06 re-audit (clusters 5 & 6, branch `feat-social-systems-depth`):** grep-audited every
+> item in §3 (magic), §5 (social), §7 (UI), §8 (housing) and §11 against current main.
+> **Closed by audit (already shipped, entries below are stale):** Monarchy + allegiance chat (S2 —
+> `/a`→`achat` relay, monarch mechanics, MOTD all live), Housing depth (S11 — L20/35/50 tiers,
+> monarch-gated mansions rank 6, 30-day rent incl. writs, typed hooks), Salvage/tinker split (I3 —
+> the 4-skill Tinkering family exists in SKILLS_DEF, skill-gated `applyTinker`, per-item 10-cap,
+> imbue-once, Salvaging scales yield), Buff "Other" targeting online (Mg1 — ally-cast → server
+> `rbuff`, in the server test suite), and the server M4 deploy milestone (full systemd + nginx
+> TLS/wss kit in `deploy/`; a `Dockerfile` added this pass for the container option).
+> **Implemented this pass:** authentic Mana Conversion + fizzle (Mg5 — ACE `GetSkillChance`
+> sigmoid vs the spell's own req; MC rolls up to a (1−diff/skill) cut, capped 60%, trained-only;
+> fizzles consume no mana but burn components; spellbook % display mirrors the same curve) and
+> retail quest lockout tiers (S9's timer half — `questCdMs`: L45+ weekly / L30+ the classic
+> 20-hour daily / L15+ 4h / starters keep the 2–10 min contract loop; explicit `q.cd`/`q.lockH`
+> honored; `fmtCd` speaks hours/days). **Still genuinely open from these clusters:** the
+> live-story crier *feed* half of S9 (retail GameEventDefDB names/timing), the paperdoll panel
+> layout (§7 — deferred, needs on-hardware visual iteration), and Mg1's offline-ally sliver.
+
 This is a single consolidated list of everything still **undone** across the project's
 work-tracking docs, deduplicated across sources and cross-checked against what has actually
 shipped in git. It is the master "what's left" list.
