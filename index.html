@@ -24099,12 +24099,15 @@ function enterDungeon(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
+  // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
+  // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
+  if(curDungeon&&curDungeon.academy&&typeof _clearAcademyNpcs==="function") _clearAcademyNpcs();
   for(const o of dungeonObjs) scene.remove(o);
   dungeonObjs=[];
   for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
-  dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;
+  dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;curDungeon=null;
   arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
   hideOverworld(true);
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
