@@ -14028,7 +14028,14 @@ function pickMonsterTarget(range){
     if(d<0.1||d>range) continue; const dot=(dx*dir.x+dz*dir.z)/(d*fl); if(dot>bd){bd=dot;best=m;} }
   return best;
 }
-function castSlot(slot){ const id=player.hotbar[slot]; if(id) castSpellById(id); }
+// a quickbar slot holds either a spell id (string) or an item shortcut ({item:true,name,...})
+function hbIsItem(e){ return !!(e&&typeof e==="object"&&e.item); }
+function hbItemCount(e){ let n=0; for(const it of player.inv) if(it&&it.name===e.name) n+=(it.count||1); return n; }
+function castSlot(slot){ const e=player.hotbar[slot]; if(!e) return;
+  if(hbIsItem(e)){ const i=player.inv.findIndex(it=>it&&it.name===e.name);
+    if(i<0){ log(`You have no <b>${esc(e.name)}</b> to use.`,"warn"); if(SFX.deny)SFX.deny(); return; }
+    invUseItem(i); buildSpellbar(); return; }
+  castSpellById(e); }
 // how long a spell winds up before it fires — scales with spell level, eased by high school skill
 function castTimeFor(s){
   if(!s||s.special==="stam2mana") return 0;
@@ -14667,7 +14674,7 @@ function closeAnyPanel(){
   if(movingUI){ setUIMove(false); return; }
   // dynamically-created modal overlays (chest vault, war table, book readers, covenant, attendant)
   if(document.getElementById('kcVaultPanel')){ closeKcVault(); return; }
-  for(const id of ["hookPicker","kcWarPanel","kcBookReader","bookReader","hsPanel","kcPanel"]){
+  for(const id of ["qbPick","hookPicker","kcWarPanel","kcBookReader","bookReader","hsPanel","kcPanel"]){
     const el=document.getElementById(id); if(el){ el.remove(); paused=false; return; } }
   for(const [id,close] of [["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){
     const el=document.getElementById(id); if(el&&el.style.display==="flex"){ close(); return; } }
@@ -15027,12 +15034,15 @@ function buildSpellbar(){
   const grid=document.createElement('div'); grid.id="qbGrid";
   const base=hotbarPage*QB_PAGE;
   for(let i=0;i<QB_PAGE;i++){
-    const abs=base+i, id=player.hotbar[abs], s=id&&SPELLBOOK[id];
+    const abs=base+i, e=player.hotbar[abs], isItem=hbIsItem(e), s=(!isItem&&e)?SPELLBOOK[e]:null;
     const key=i<QB_COLS?ROW1_KEYS[i]:"";   // row 1 shows number-key labels; row 2 is click-only
+    const ico=isItem?((typeof gearIco==="function")?gearIco(e):"📦"):(s?s.ico:"");
     const d=document.createElement('div'); d.className="slot"; d.dataset.abs=abs;
-    d.title=s?`${s.name} — ${SCHOOLS[s.school]||"Magic"}`:"empty — assign a spell in the Spellbook (K)";
-    d.innerHTML=`<span class="cdsweep"></span><span class="key">${key}</span><span class="ico">${s?s.ico:""}</span><span class="nm"></span><span class="cd"></span>`;
-    d.onclick=()=>castSlot(abs); grid.appendChild(d);
+    d.title=isItem?`${e.name} — item (click to use)`:(s?`${s.name} — ${SCHOOLS[s.school]||"Magic"}`:"empty — assign a spell (Spellbook K) or an item (Inventory ⚡)");
+    d.innerHTML=`<span class="cdsweep"></span><span class="key">${key}</span><span class="ico">${ico}</span><span class="nm"></span><span class="cd"></span>`;
+    d.onclick=()=>castSlot(abs);
+    d.oncontextmenu=(ev)=>{ ev.preventDefault(); if(player.hotbar[abs]!=null){ player.hotbar[abs]=null; buildSpellbar(); saveGame(); } };   // right-click a slot to clear it
+    grid.appendChild(d);
   }
   spellbar.appendChild(grid);
   const pages=document.createElement('div'); pages.id="qbPages";
@@ -15966,7 +15976,11 @@ function updateHUD(){
   else if(isOnline&&NET.event){ evr.style.display=""; const a=netEventAlive(); document.getElementById("sEvent").textContent=`${NET.event.name} · ${NET.event.total-a}/${NET.event.total} cleared`; }
   else evr.style.display="none";
   spellbar.querySelectorAll(".slot").forEach((el)=>{
-    const abs=+el.dataset.abs, id=player.hotbar[abs], s=id&&SPELLBOOK[id], cd=id?((spellCd[id]||0)-now()):0;
+    const abs=+el.dataset.abs, e=player.hotbar[abs];
+    if(hbIsItem(e)){ const n=hbItemCount(e); el.classList.remove("cool"); el.style.opacity=n?"":"0.4";
+      const c=el.querySelector(".cd"); if(c) c.textContent=n>1?n:""; const sw=el.querySelector(".cdsweep"); if(sw) sw.style.background=""; return; }
+    el.style.opacity="";
+    const id=e, s=id&&SPELLBOOK[id], cd=id?((spellCd[id]||0)-now()):0;
     if(cd>0){el.classList.add("cool");el.querySelector(".cd").textContent=(cd/1000).toFixed(1);
       const frac=s&&s.cd?clamp(cd/s.cd,0,1):0, deg=Math.round(frac*360);   // radial sweep depletes clockwise as it recharges
       const sw=el.querySelector(".cdsweep"); if(sw) sw.style.background=`conic-gradient(rgba(6,4,1,.62) ${deg}deg, transparent ${deg}deg)`;}
@@ -20045,6 +20059,36 @@ function assignHotbar(slot,id){
 }
 // slot label like "P2 R1·3" for the assign dropdown
 function qbSlotLabel(abs){ const p=Math.floor(abs/QB_PAGE), r=Math.floor((abs%QB_PAGE)/QB_COLS), c=abs%QB_COLS; return `P${p+1} R${r+1}·${c+1}`; }
+// ── assign ANYTHING (a spell id or an item shortcut) to a quickbar slot via a slot-picker overlay ──
+function hbItemEntry(it){ return {item:true, name:it.name, stat:it.stat, wt:it.wt, jtype:it.jtype, acicon:it.acicon, ico:it.ico}; }
+function assignHotbarEntry(slot, entry){
+  if(slot<0||slot>=QB_TOTAL) return;
+  for(let i=0;i<player.hotbar.length;i++){ const h=player.hotbar[i];   // a given spell/item occupies one slot
+    if(hbIsItem(entry)&&hbIsItem(h)&&h.name===entry.name) player.hotbar[i]=null;
+    else if(!hbIsItem(entry)&&h===entry) player.hotbar[i]=null; }
+  player.hotbar[slot]=entry; buildSpellbar(); if(typeof buildSpellbook==="function") buildSpellbook(); saveGame();
+  log(`Assigned <b>${esc(hbIsItem(entry)?entry.name:((SPELLBOOK[entry]||{}).name||entry))}</b> to quickbar page ${Math.floor(slot/QB_PAGE)+1}, slot ${slot%QB_PAGE+1}.`,"sys");
+}
+function qbAssignPick(entry, label){
+  const iconOf=(e)=> hbIsItem(e)?((typeof gearIco==="function")?gearIco(e):"📦"):((e&&SPELLBOOK[e])?SPELLBOOK[e].ico:"");
+  const old=document.getElementById('qbPick'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='qbPick';
+  ov.style.cssText="position:fixed;inset:0;z-index:301;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  let grid="";
+  for(let p=0;p<QB_PAGES;p++){ grid+=`<div style="color:var(--dim);font-size:11px;margin:6px 0 3px">Page ${p+1}</div><div style="display:grid;grid-template-columns:repeat(${QB_COLS},1fr);gap:3px">`;
+    for(let i=0;i<QB_PAGE;i++){ const abs=p*QB_PAGE+i, cur=player.hotbar[abs];
+      grid+=`<div class="qbps" data-abs="${abs}" title="assign here" style="aspect-ratio:1;border:1px solid #4a4030;border-radius:4px;background:#14121c;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px">${iconOf(cur)}</div>`; }
+    grid+=`</div>`; }
+  ov.innerHTML=`<div style="max-width:520px;width:94%;max-height:82vh;overflow:auto;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:16px 18px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">⚡ Assign to Quickbar — ${esc(label)}</div><button id="qbpX" class="tbtn" style="padding:2px 9px;font-size:15px;line-height:1">✕</button></div>
+    <div style="color:var(--dim);margin:4px 0 6px;font-size:12px">Click a slot to place it there · <b>Esc</b> to cancel · right-click a bar slot to clear it</div>
+    ${grid}
+    <button id="qbpClose" class="tbtn" style="width:100%;margin-top:10px">Cancel</button></div>`;
+  document.body.appendChild(ov); paused=true; if(locked)document.exitPointerLock();
+  const close=()=>{ ov.remove(); paused=false; };
+  ov.querySelector('#qbpX').onclick=close; ov.querySelector('#qbpClose').onclick=close;
+  ov.querySelectorAll('.qbps').forEach(b=>b.onclick=()=>{ assignHotbarEntry(+b.dataset.abs, entry); close(); });
+}
 // ---- hotbar loadouts: save/swap named spell sets (the bar holds 10 of 800+ spells) ----
 function saveLoadout(name){
   name=(name||"").trim().slice(0,24); if(!name) return;
@@ -20056,7 +20100,7 @@ function saveLoadout(name){
 function loadLoadout(i){
   const l=player.loadouts&&player.loadouts[i]; if(!l) return;
   player._loIdx=i;   // keep the \-cycle in sync with manual picks
-  player.hotbar=l.bar.slice(0,QB_TOTAL).map(id=>SPELLBOOK[id]&&player.knownSpells.indexOf(id)>=0?id:null);
+  player.hotbar=l.bar.slice(0,QB_TOTAL).map(e=>(e&&typeof e==="object"&&e.item)?e:(SPELLBOOK[e]&&player.knownSpells.indexOf(e)>=0?e:null));
   while(player.hotbar.length<QB_TOTAL) player.hotbar.push(null);
   buildSpellbar(); buildSpellbook(); toast("LOADOUT: "+l.name.toUpperCase()); if(SFX.quest)SFX.quest(); saveGame();
 }
@@ -23065,9 +23109,10 @@ function buildTinker(){
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil"||it.stat==="recall"||it.stat==="cure"||it.stat==="hot"||it.stat==="skillpot"||it.stat==="attrpot"||it.stat==="portalgem")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
-      <div class="ctl">${ctl}</div>`;
+      <div class="ctl">${ctl}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
     rows.appendChild(row);
   });
+  rows.querySelectorAll('[data-qb]').forEach(b=>b.onclick=()=>{ const it=player.inv[+b.dataset.qb]; if(it) qbAssignPick(hbItemEntry(it), it.name); });
   if(player.inv.length&&(window._invSel==null||window._invSel<window._invLo||window._invSel>=window._invHi||!player.inv[window._invSel])){
     const hint=document.createElement('div'); hint.style.cssText="color:var(--dim);font-size:11.5px;padding:4px 0";
     hint.textContent="Click an item to examine it — double-click to use or equip (AC).";
@@ -23156,7 +23201,7 @@ function applySaveObj(s){
   // spells: known set + hotbar (older saves predate spells → seed defaults). Drop any unknown ids.
   player.knownSpells=(s.knownSpells==="all")?Object.keys(SPELLBOOK)              // admin/testing: know every spell
     :(Array.isArray(s.knownSpells)&&s.knownSpells.length?s.knownSpells:DEFAULT_KNOWN.slice()).filter(id=>SPELLBOOK[id]);
-  player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,QB_TOTAL):freshHotbar()).map(id=>SPELLBOOK[id]?id:null);
+  player.hotbar=(Array.isArray(s.hotbar)&&s.hotbar.length?s.hotbar.slice(0,QB_TOTAL):freshHotbar()).map(e=>(e&&typeof e==="object"&&e.item)?e:(SPELLBOOK[e]?e:null));
   player.loadouts=Array.isArray(s.loadouts)?s.loadouts.filter(l=>l&&l.name&&Array.isArray(l.bar)).slice(0,8):[];
   while(player.hotbar.length<QB_TOTAL) player.hotbar.push(null);
   buildSpellbar();
