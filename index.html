@@ -5687,7 +5687,7 @@ function buildGrass(){
 function _mergeColored(parts){       // [{geo,color,translate?}] → single vertex-colored geometry
   const pos=[],nrm=[],col=[],c=new THREE.Color();
   for(const p of parts){
-    const g=p.geo.toNonIndexed();
+    const g=p.geo.index?p.geo.toNonIndexed():p.geo.clone();   // #10: skip toNonIndexed() on already-non-indexed geo (it warns per call — 384+ during the castle's 160 hook models); clone so translate() doesn't mutate the shared source
     if(p.translate)g.translate(p.translate[0],p.translate[1],p.translate[2]);
     const pa=g.attributes.position.array,na=g.attributes.normal.array;
     c.setHex(p.color).convertSRGBToLinear();   // hex values are picked as seen on screen (sRGB)
@@ -7294,6 +7294,7 @@ function addCity(c){
 //  Access: Kilmer + guests he names with /grant (see castleAccess/enforce).
 // ════════════════════════════════════════════════════════════════════════════
 let kcChests=[],kcHooks=[],kcBunnyRec=null,kcPortals=[],kcWarTable=null,kcArena=null,kcBooks=[],kcMenagerie=[];
+let _guardKill=false;   // #12: set while a castle guard deals damage → its kills award the player no XP/kills/quest/loot
 const KC_VALKYRIES=["Sigrun","Brynhild","Eir","Gondul","Hildr","Kara","Mist","Rota","Skuld","Thrud"];
 const KC_VENDORS=[["provisioner","Valga"],["weaponsmith","Hallbrand"],["armorer","Valgard"],["scrivener","Hallwyn"],
   ["outfitter","Valfen"],["healer","Hallveig"],["jeweler","Valdis"],["collector","Hallrik"]];
@@ -7304,6 +7305,7 @@ function castleAccess(){ const nm=((player&&player.name)||"").trim().toLowerCase
 let _kcWarnT=0;
 function enforceCastleAccess(dt){   // strangers are turned back at the moat — the castle admits Kilmer + sworn guests
   if(inDungeon||inNetwork||!player.alive||castleAccess()) return;
+  if(typeof hsMine==="function"){ const _h=hsMine(); if(_h&&_h.castle) return; }   // #13: a Valstead deed-holder may pass the moat to reach their OWN home even without a castle guest-grant (their cottage's storage/hooks stay gated by deed ownership; Kilmer's private chests stay lord/guest-only)
   const dx=player.x-KC.x,dz=player.z-KC.z,ch=Math.max(Math.abs(dx),Math.abs(dz));
   if(ch>=KC.moatOut+4) return;
   const k=(KC.moatOut+6)/Math.max(ch,0.1);
@@ -7530,9 +7532,9 @@ function kcAddBeast(wx,wz,kind,name,scale,rot){
   for(const ry of[0.55,1.45]){ const ring=new THREE.Mesh(new THREE.TorusGeometry(R,0.03,6,28),iron); ring.rotation.x=Math.PI/2; ring.position.y=ry; pen.add(ring); }
   for(let i=0;i<8;i++){ const a=i/8*6.283; obstacles.push({x:wx+Math.cos(a)*R,z:wz+Math.sin(a)*R,r:0.45,yMax:gy+1.6}); }
   const lbl=labelSprite(name,"cities"); lbl.scale.set(Math.max(6,scale*5),1.6,1); lbl.position.set(0,2.6+scale*0.8,0); pen.add(lbl);
-  let tries=0;
+  let tries=0, placed=false;
   const place=()=>{
-    if(!pen.parent) return;   // castle rebuilt meanwhile
+    if(placed||kcMenagerie.indexOf(pen)<0) return;   // #8: bail only on a true teardown (pen removed from kcMenagerie = castle rebuilt). A mere cull (pen.parent===null while the player is far) must NOT abort — the beast is added to the pen GROUP and rides it back in when cullWorld re-attaches it on approach.
     const gv=(typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
     let beast;
     if(gv&&typeof THREE.SkeletonUtils!=="undefined"){
@@ -7541,9 +7543,9 @@ function kcAddBeast(wx,wz,kind,name,scale,rot){
       beast.scale.setScalar(msc*scale);
       const b3=new THREE.Box3().setFromObject(beast); beast.position.y=0.3-b3.min.y;
       beast.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
-    } else if(tries++<10){ setTimeout(place,700); return; }
-    else { beast=buildCreature(kind); beast.scale.setScalar(scale); beast.position.y=0.3; }
-    beast.rotation.y=(rot!=null?rot:0); pen.add(beast);
+    } else if(tries++<40){ setTimeout(place,700); return; }   // #8: wait longer (~28s) for the CDN model pack (was 10×700≈7s, shorter than a typical load)
+    else { beast=buildCreature(kind); beast.scale.setScalar(scale); beast.position.y=0.3; }   // fallback: the procedural creature so the pen is never empty
+    beast.rotation.y=(rot!=null?rot:0); pen.add(beast); placed=true;
   };
   place();
   return pen;
@@ -7589,7 +7591,7 @@ function kcArenaStart(){
   const live=(typeof monsters!=="undefined")&&monsters.some(m=>m&&m._kcArena&&m.hp>0);
   if(live){ log("A champion already stands in the ring — face it first.","warn"); return; }
   const KINDS=["drudge","banderling","tumerok","lugian","olthoisoldier","mattekar","gromnie","shadow","lich","gearknight"];
-  const kind=KINDS[Math.min(KINDS.length-1,Math.floor((player.level||1)/8))+ (Math.random()<0.5?0:1)]||"drudge";
+  const kind=KINDS[Math.min(KINDS.length-1,Math.floor((player.level||1)/8)+(Math.random()<0.5?0:1))]||"drudge";   // #7: clamp AFTER the +1 so a high-level roll can't overflow past KINDS[9] and fall back to a drudge
   const cx=kcArena.x+rnd(-3,3), cz=kcArena.z+rnd(-3,3);
   const m=(typeof spawnMonster==="function")?spawnMonster(kind,cx,cz, player.level>=25):null;
   if(m){ m._kcArena=true; m.state="chase"; m.hp=Math.round(m.hp*1.4); m.mhp=m.hp;
@@ -7846,7 +7848,10 @@ function updateKcGuards(dt){
     const ln=new THREE.Line(geo,new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9}));
     scene.add(ln); setTimeout(()=>{scene.remove(ln);geo.dispose();},90);
     burst(best.x,1.2,best.z,col,10);
-    applyHit(best,dmg,{element:el,brandDmg:60});
+    // #12: neutral guard damage — bypass applyHit's PLAYER modifiers (crit off Coordination, item buffs,
+    //      and the player's Vitae penalty all used to leak onto guard shots); _guardKill blanks kill credit.
+    const em=(typeof elemMult==="function")?elemMult(best.kind,el):1;
+    _guardKill=true; damageMonster(best,(dmg+60)*em,false); _guardKill=false;
   }
 }
 function addKilmerCastle(){
@@ -8659,6 +8664,7 @@ const HOOK_COLORS={floor:0x8a6a3a,wall:0x7a8aa0,ceiling:0x9a7aa0,yard:0x6a9a5a,r
 // what an AC hook of each type accepts (kind buckets for this game's items)
 function hsHookAccepts(hookKind,it){
   if(!it) return false;
+  if(it.stat==="quest"||it.stat==="writ"||it.scroll) return false;   // #9: never hang a quest item / writ / scroll on a hook (same class as the quest-items-sellable fix)
   const k=it.stat==="furniture"?(it.kind||"pedestal"):"display";
   const WALL={banner:1,painting:1,lamp:1,shelf:1,display:1,rug:1};
   const CEIL={lamp:1};
@@ -9512,6 +9518,14 @@ function findScarabFor(spellLvl){   // index of the lowest-level scarab in the s
 }
 function killMonster(m){
   const b=BESTIARY[m.kind];
+  if(_guardKill){   // #12: a castle guard felled this foe — despawn + respawn as normal, but award the PLAYER nothing (no kills/XP/streak/quest/loot). Stops AFK farming inside the walls.
+    burst(m.x,1,m.z,(b&&b.c)||0xffae3a,16); if(SFX.death)SFX.death(m.kind);
+    if(m.isDungeon) dungeonMobs=Math.max(0,dungeonMobs-1);
+    retire(m); const gi=monsters.indexOf(m); if(gi>=0) monsters.splice(gi,1);
+    if(m.isBoss){ boss=null; setTimeout(spawnBoss,45000); }
+    else if(!m.isDungeon) setTimeout(spawnSomewhere,irnd(2500,6000));
+    return;
+  }
   player.kills++;
   if(player.bestiary.indexOf(m.kind)<0){ player.bestiary.push(m.kind);
     log(`<b>Bestiary:</b> you have learned the nature of the ${b.name}. (press B)`,"loot");
@@ -13471,6 +13485,16 @@ function equipItem(it){
   else if(it.stat==="worn"){ const asl=ARMOR_SLOTS.indexOf(it.aslot)>=0?it.aslot:"chest"; player.armorSlots=player.armorSlots||{}; prev=player.armorSlots[asl]; player.armorSlots[asl]=it; }
   else { prev=player.weapon; player.weapon=it; }
   if(prev) player.inv.push(prev);
+  // #22: a two-handed weapon and an off-hand shield can never be wielded together (AC: both hands on the weapon)
+  if(isWeapon && it.wt==="twohand" && player.armorSlots && player.armorSlots.offhand && player.armorSlots.offhand.shield){
+    const sh=player.armorSlots.offhand; player.armorSlots.offhand=null; player.inv.push(sh);
+    if(typeof updateShieldModel==="function") updateShieldModel(); if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();
+    log(`You sling your <b>${sh.name}</b> — a two-handed weapon needs both hands.`,"sys");
+  } else if(it.stat==="worn" && it.aslot==="offhand" && it.shield && player.weapon && player.weapon.wt==="twohand"){
+    const w=player.weapon; player.weapon=null; weaponMode="sword"; player.inv.push(w);
+    if(typeof styleWeaponModel==="function") styleWeaponModel();
+    log(`You lower your <b>${w.name}</b> — you can't raise a shield with a two-handed weapon.`,"sys");
+  }
   if(isWeapon){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
     const wp=WEAPON_TYPES[it.wt]; weaponMode=(wp&&wp.mode==="missile")?"bow":"sword";
     if(typeof weaponHand!=="undefined"&&weaponHand){weaponHand.visible=weaponMode==="sword";bowModel.visible=weaponMode==="bow";}
@@ -14848,6 +14872,7 @@ function currentPrompt(){
   if(kcWarTable&&nr(kcWarTable.x,kcWarTable.z)<4&&Math.abs(player.y-kcWarTable.y)<4) return "Survey the realm at the War Table (E)";
   if(kcArena&&nr(kcArena.px,kcArena.pz)<2.6) return "Summon a champion into the ring (E)";
   for(const bk of kcBooks) if(nr(bk.x,bk.z)<2.2&&Math.abs(player.y-bk.y)<4) return "Read "+bk.title+" (E)";
+  if(kcBunnyRec&&nr(kcBunnyRec.x,kcBunnyRec.z)<4) return "Poke the Killer Bunny (E)";   // #14: the interact()-side poke had no on-screen prompt
   for(const cr of hsCrystals) if(nr(cr.x,cr.z)<3) return (player.homestead&&player.homestead.hid===cr.hid)?cr.name+" — your Covenant Crystal (E)":cr.name+" — Covenant Crystal (E)";
   for(const hk of hsHooks) if(nr(hk.x,hk.z)<2.2) return (player.homestead&&player.homestead.hooks[hk.key]?"Take down from the ":"Use the ")+hk.kind+" hook (E)";
   for(const ch of hsChests) if(nr(ch.x,ch.z)<2.6) return "Open your storage chest (E)";
@@ -17170,7 +17195,22 @@ const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan
   olthoi_weapons:17, neftet_golem:18, neftet_mumiyah:18, curator:19,
   tou_drudge:3, sawato_fort:4, coral_caverns:8, ulgrim:11, smid:6, lost_garden:13, aun_tumerok:14,
   caul_darkness:15, lugian_forge:16, ayan_olthoi:17, tusker_king:18, hoshino:19 };
-function questLvl(id){ return QUEST_LVL[id]||1; }
+function questLvl(id){
+  if(QUEST_LVL[id]) return QUEST_LVL[id];
+  // #6: derive a recommended level for quests without a QUEST_LVL entry (the hand-authored early
+  //     quests have one; the bulk — incl. endgame boss bounties like Bael'Zharon — used to fall to 1,
+  //     so "Slay Bael'Zharon the Hopeslayer" advertised as a level-1 quest). Derived from the quest's
+  //     own objectives; feeds the existing "grim work for one so green" under-level warning on offer.
+  const q=(typeof questById==="function")?questById(id):null;
+  if(!q||!q.obj) return 1;
+  let lvl=1;
+  for(const o of q.obj){
+    if(o.type==="boss") lvl=Math.max(lvl,50);                               // endgame world/saga bosses
+    else if(o.type==="delve") lvl=Math.max(lvl,18);                          // dungeon delves
+    else if(o.type==="slay"&&o.kind&&typeof BESTIARY!=="undefined"&&BESTIARY[o.kind]) lvl=Math.max(lvl,clamp(Math.round((BESTIARY[o.kind].hp||30)/10),1,120));   // scale off the target's toughness
+  }
+  return lvl;
+}
 // ── quest chains: some bounties only open once their prerequisite is complete ──
 function questReq(id){ const q=questById(id); return (q&&q.req)||null; }
 function questUnlocked(id){ const r=questReq(id); return !r || isDone(r); }
@@ -17244,7 +17284,7 @@ function claimSocietyTest(){ const st=player.societyTest; if(!st) return; const 
   grantSocietyRep(T.rep);
   const so=societyById(player.society);
   log(`<span style="color:${so.col}">The ${so.name} awards you a <b>Commendation Ribbon</b> (${player.societyRibbons} held) and <b>${T.reward.name}</b> for passing the ${T.name}.</span>`,"loot");
-  if(typeof addToInv==="function") addToInv(Object.assign({},T.reward),false);
+  if(typeof addToInv==="function") addToInv(Object.assign({},T.reward),true);   // #20: force-grant (AC overweight) the one-time rank prize — the test can't be retaken, so a full satchel must never silently eat it
   toast("COMMENDATION RIBBON"); if(SFX.level)SFX.level(); saveGame();
   if(typeof buildSheet==="function") buildSheet();
 }
@@ -22923,8 +22963,10 @@ function arenaWin(){
   toast(adv?"ADVANCED COLOSSEUM CLEARED":"COLOSSEUM CLEARED");
   // vault loot: tier-5 items + guaranteed Empyrean Ring(s) — the Advanced gauntlet pays out richer
   const nItems=adv?3:2, nRings=adv?2:1;
-  for(let i=0;i<nItems;i++){ const it=rollItem(true,5); if(!addToInv(it)) addDrop(cx+rnd(-2,2),cz+rnd(-2,2),{type:"item",item:it}); }
-  for(let i=0;i<nRings;i++){ const ring=rollEmpyreanRing(); if(!addToInv(ring)) addDrop(cx+rnd(-1.5,1.5),cz,{type:"item",item:ring});
+  // #18: force-grant the guaranteed capstone prizes (AC-style overweight) — a full satchel used to drop
+  //      them to the sand, then the 4s auto-exit's clearDrops() destroyed them before pickup.
+  for(let i=0;i<nItems;i++){ const it=rollItem(true,5); addToInv(it,true); }
+  for(let i=0;i<nRings;i++){ const ring=rollEmpyreanRing(); addToInv(ring,true);
     log(`You claim the <b>${ring.name}</b> from the vault!`,"loot"); }
   player.colosseumClears=(player.colosseumClears||0)+1;
   if(adv) player.advColosseumClears=(player.advColosseumClears||0)+1;
