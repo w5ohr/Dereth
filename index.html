@@ -2354,7 +2354,7 @@ let stormBuild=0,stormPhase=0,stormCd=0; // H13 portal storms: build-up timer / 
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0,dungeonLock=null,dungeonVault=null;
 let dungeonBars=[],dungeonLevers=[],dungeonPortals=[],dungeonBoxes=[];   // walkthrough mechanics: doors/ledges, wall levers, internal portals, key strongboxes
-let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null;
+let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null,dungeonDepth=1,dungeonDescent=null;   // multi-level delves: current floor + this floor's descent stair
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
@@ -15133,7 +15133,8 @@ function currentPrompt(){
     for(const b of dungeonBars) if(b.kind==="key"&&!b.open&&nr(b.x,b.z)<3.2) return hasNamedKey(b.need)?("Unlock with the "+b.need+" (E)"):("Locked — find the "+b.need);
     for(const b of dungeonBars) if(b.kind==="lever"&&!b.open&&nr(b.x,b.z)<3.2) return "A portcullis bars the way — find its lever";
     for(const pp of dungeonPortals) if(nr(pp.x,pp.z)<2.8) return "Take the portal back (E)";
-    if(nr(dungeonExit.x,dungeonExit.z)<3.5) return "Leave the delve (E)";
+    if(dungeonDescent&&nr(dungeonDescent.x,dungeonDescent.z)<3) return "Take Ye Olde Stair down — depth "+(dungeonDepth+1)+" (E)";
+    if(nr(dungeonExit.x,dungeonExit.z)<3.5) return dungeonDepth>1?"Climb back up (E)":"Leave the delve (E)";
     return "";
   }
   for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
@@ -15265,7 +15266,13 @@ function interact(){
     for(const bx of dungeonBoxes) if(!bx.opened&&Math.hypot(bx.x-player.x,bx.z-player.z)<2.8){ openStrongbox(bx); return; }
     for(const b of dungeonBars) if(b.kind==="key"&&!b.open&&Math.hypot(b.x-player.x,b.z-player.z)<3.2){ unlockDungeonDoor(b); return; }
     for(const pp of dungeonPortals) if(Math.hypot(pp.x-player.x,pp.z-player.z)<2.8){ teleportFX(player.x,player.z); arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=1.5; if(SFX.portal)SFX.portal(); log("The portal casts you back to the entrance.","sys"); return; }
-    if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.5){ exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
+    if(dungeonDescent&&Math.hypot(dungeonDescent.x-player.x,dungeonDescent.z-player.z)<3){ const d=dungeonDepth+1;
+      teleportFX&&teleportFX(player.x,player.z); dungeonGoDepth(d); if(SFX.portal)SFX.portal();
+      log(`You take the old stair down — <b>depth ${d}</b>. The dark grows heavier.`,"warn"); return; }
+    if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.5){
+      if(dungeonDepth>1){ const d=dungeonDepth-1; dungeonGoDepth(d); if(SFX.portal)SFX.portal();
+        log(d>1?`You climb back up to <b>depth ${d}</b>.`:"You climb back up to the top floor.","sys"); return; }
+      exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
@@ -22797,7 +22804,7 @@ try{ fetch('assets/dungeon-layouts.json').then(r=>r&&r.ok?r.json():null).then(j=
   if(j&&typeof j==="object"){ let n=0; for(const k in j){ j[k].pack=true; DUNGEON_SCRIPTS[k]=j[k]; n++; }
     if(n) console.log("Dungeon layout pack: "+n+" room-for-room layouts loaded."); } }).catch(()=>{}); }catch(e){}
 function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName){
-  hpMul=hpMul||1;
+  hpMul=(hpMul||1)*(1+0.35*((dungeonDepth||1)-1));   // deeper floors breed harder denizens
   const b=BESTIARY[kind];
   const cv=acCreatureMesh(kind), mesh=cv.mesh, gm=cv.gm;     // authentic AC model (+ breed) or procedural fallback
   let hp=Math.round(b.hp*1.3*settings.diff*hpMul),dmg=Math.round(b.dmg*1.15*settings.diff*hpMul),xp=Math.round(b.xp*1.2*hpMul),r=b.size*0.8,base=1;
@@ -22992,6 +22999,7 @@ function buildDungeonReal(def,dj){
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
   cm.position.set(far[0],far[1],far[2]);scene.add(cm);dungeonObjs.push(cm);
   dungeonChest={x:far[0],z:far[2],mesh:cm,lid,light:clt,opened:false};
+  if(dungeonDepth<dungeonMaxDepth(curDungeon)) placeDescentStair(far[0]+3.2,far[1],far[2]+2.6);   // the way down hides by the hoard
   dungeonLock=null;dungeonVault=null;
   // denizens at real cell positions; the named warden guards the hoard
   const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
@@ -23158,6 +23166,7 @@ function buildDungeon(def){
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
   cm.position.set(boss.cx,boss.fy,boss.cz);scene.add(cm);dungeonObjs.push(cm);
   dungeonChest={x:boss.cx,z:boss.cz,mesh:cm,lid,light:clt,opened:false};
+  if(dungeonDepth<dungeonMaxDepth(curDungeon)) placeDescentStair(boss.cx+3.2,boss.fy,boss.cz+2.6);   // the way down hides by the hoard
   // a locked cache (AC): needs a Lockpick or Key, gives bonus loot — appears in ~55% of delves, in a mid room
   dungeonLock=null;
   if(Math.random()<0.55){
@@ -23200,10 +23209,41 @@ function buildDungeon(def){
     else { const n=r.m!=null?r.m:(1+Math.floor(def.tier/2)+irnd(0,1)); for(let i=0;i<n;i++) spawnIn(r,kinds[irnd(0,kinds.length-1)],false); }
   }
 }
+// ═══ MULTI-LEVEL DELVES: deeper floors under the deepest room. Tier 2+ delves have a 2nd floor
+//     about half the time; tier 4+ can hide a 3rd. Floors below the first are generated with a
+//     depth-varied seed (the room-for-room scripted layout is the TOP floor), spawns grow +35%
+//     hp/dmg/xp per floor, and every floor keeps its own hoard chest. ═══
+function dungeonMaxDepth(def){ if(!def) return 1;
+  let d=1; if((def.tier||1)>=2 && (def.id%10)<5) d++; if((def.tier||1)>=4 && (def.id%7)<3) d++; return d; }
+function placeDescentStair(x,y,z){
+  const g=new THREE.Group();
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.15,0.12,8,24),
+    new THREE.MeshStandardMaterial({color:0x2a1a3a,emissive:0x9b30ff,emissiveIntensity:1.6}));
+  ring.position.y=1.5; g.add(ring);
+  const swirl=new THREE.Mesh(new THREE.CircleGeometry(1.0,24),
+    new THREE.MeshBasicMaterial({color:0x9b30ff,transparent:true,opacity:0.42,side:THREE.DoubleSide,depthWrite:false}));
+  swirl.position.y=1.5; g.add(swirl);
+  const lt=new THREE.PointLight(0x9b30ff,1.6,12); lt.position.y=1.8; g.add(lt);
+  const lbl=labelSprite("Ye Olde Stair — Descend (E)","dungeons"); lbl.position.y=3.2; g.add(lbl);
+  g.position.set(x,y,z); scene.add(g); dungeonObjs.push(g);
+  dungeonDescent={x,z};
+}
+function dungeonGoDepth(n){
+  const def=curDungeon; if(!def) return;
+  for(const o of dungeonObjs) scene.remove(o); dungeonObjs=[];
+  for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
+  clearDrops();clearProjectiles();clearDying();
+  dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;dungeonDescent=null;
+  dungeonDepth=n;
+  const shim=n>1?Object.assign({},def,{id:def.id+1000*n,name:def.name+" · depth "+n}):def;   // deeper floors: depth-varied seed, generator layout
+  buildDungeon(shim); markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=2;
+  toast(n>1?(def.name+" — DEPTH "+n).toUpperCase():def.name.toUpperCase());
+}
 function enterDungeon(def,ex,ez){
   if(inDungeon) return;
   if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
-  inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};
+  inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
   buildDungeon(def);markSceneSRGB();
@@ -23224,7 +23264,7 @@ function exitDungeon(toEntrance){
   for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
-  dungeonChest=null;dungeonMobs=0;inDungeon=false;
+  dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;
   arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
   hideOverworld(true);
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
