@@ -1,4 +1,4 @@
-# Dereth — Consolidated "Left To Do" (2026-07-06, rev 3 — Tier 1 complete)
+# Dereth — Consolidated "Left To Do" (2026-07-06, rev 4 — Tier 1 complete + Tier 2/3 quick wins)
 
 Synthesized from every planning/gap/findings doc + memory + code TODOs (three parallel doc audits),
 then **reconciled against the current code** — several items the older gap-analysis docs list as
@@ -20,6 +20,11 @@ then **reconciled against the current code** — several items the older gap-ana
 > already-built by the parallel fix-wave: staged wizard with 4 heritages incl. Viamontian, 7
 > professions, 270 attr credits/52 skill credits with specialize-at-creation, ToD starter kit,
 > Training Academy, greeter chains — end-to-end creation test passed).
+
+> ✅ **Also complete (rev 4, same-day parallel passes):** **Chess** (full legal engine + alpha-beta AI,
+> perft-validated, tables in every capital) · **book placement** · **mana-stone retail semantics** ·
+> **starting-gear finish** · **"A History of Dereth"** chronicle stand · UI-chrome accent (partial —
+> 9-slice framing left as on-hardware polish). Strike these from Tier 3 below.
 
 Sources: `docs/REMAINING-WORK.md`, `wrapup-remaining-work.md`, `ac-remaining-gaps.md`,
 `ac-newplayer-split.md`, `fidelity-split.md`, `three-agent-dat-update.md`, `building-entry-audit.md`,
