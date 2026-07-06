@@ -146,7 +146,7 @@ Removed from the lists below because git shows them shipped:
 ## 12. Blocked on external input
 | Item | Blocker |
 |------|---------|
-| **High-res texture upgrade** | `client_highres.dat` not in `acdata/`. Staged: user runs `acdata/ac1install.exe`; whoever's active copies the produced dat in and re-runs all `tex/` exports at the same TIDs (no engine change). |
+| ✅ **High-res texture upgrade** | ~~`client_highres.dat` not in `acdata/`.~~ **RESOLVED — already done.** The dat is present (`C:\turbine\Asheron's Call\client_highres.dat`, byte-identical to the `acdata/` copy) and the upgrade shipped in commit `18867be` (**1,224 textures** doubled) + faces audit `ef75f93` ("retail never had hi-res faces; already at max"). Re-running `tools/ac_highres_export.py --dry` on 2026-07-06 finds **0** further upgrades across all 8 tex dirs (spot-check: 455/455 `acmodels/tex` textures already at their highres-dat dimensions). No engine change; nothing outstanding unless a NEWER `client_highres.dat` ships. |
 
 ---
 
