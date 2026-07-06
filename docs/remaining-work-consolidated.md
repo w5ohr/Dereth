@@ -1,163 +1,116 @@
-# Dereth — Consolidated "Left To Do" (2026-07-06, rev 6 — Tiers 1 AND 2 complete)
+# Dereth — Remaining Work (THE authoritative list)
 
-Synthesized from every planning/gap/findings doc + memory + code TODOs (three parallel doc audits),
-then **reconciled against the current code** — several items the older gap-analysis docs list as
-"missing" are in fact already implemented (see "Already done" below), so they're excluded here.
+**This is the single source of truth for outstanding work.** It supersedes and retires every other
+to-do / gaps / roadmap document — those files now redirect here:
 
+> `wrapup-remaining-work.md` · `REMAINING-WORK.md` · `ac-remaining-gaps.md` · `fidelity-split.md` ·
+> `ac-newplayer-split.md` · `ac-data-extraction-roadmap.md` · `plan-ac-heads.md` ·
+> `asherons-call-authenticity-gaps.md` · `asherons-call-longtail-gaps.md` · `three-agent-dat-update.md` ·
+> `playtest-2026-07-05.md` · `loop-test-findings.md` · `building-entry-audit.md` · `../ROADMAP.md`
 
-> ✅ **Completed since rev 1 (the 2026-07-06 fix wave + spell FX):** Mana Conversion / fizzle formula
-> (authentic, PR #118) · retail quest lockout timers (PR #118) · Town Crier live rumor feed +
-> monarchy & allegiance chat verified (PR #119) · female forehead band fix · non-PCM music track
-> (extracted, in assets/acmusic) · building-base collision fix · window transparency (#113) ·
-> dungeon lighting pass 2 (#114) · drop-expiry despawn (#112) · high-res texture upgrade (resolved) ·
-> deploy Dockerfile · spell-landing FX (creature spirit swirl + life gem, PR #120 — new feature).
+The `asherons-call-*-reference.md`, `kilmer-saga-*`, `ships.md`, and `asherons-call-housing-reference.md`
+files are **design reference**, not to-do lists — they stay as-is.
 
-> ✅ **TIER 1 COMPLETE (rev 3):** all four flagship items are done —
-> **Combine/tradeskill engine** (1,500 recipes live: ⚗ Combine in the satchel, logistic skill roll,
-> durable tools, dye pots→dyes, vendor supplies by trade) · **Aetheria** (slots L75/150/225, leveled
-> drops, 5 set sigils, 5 combat surges) · **Multi-level delves** (Ye Olde Stair, 153 two-floor + 31
-> three-floor, +35%/floor scaling, floor-aware exit) · **Character creation + onboarding** (verified
-> already-built by the parallel fix-wave: staged wizard with 4 heritages incl. Viamontian, 7
-> professions, 270 attr credits/52 skill credits with specialize-at-creation, ToD starter kit,
-> Training Academy, greeter chains — end-to-end creation test passed).
-
-> ✅ **TIER 2 COMPLETE (rev 5, branch tier2-systems):** built this pass — **weapon-skill tree**
-> (each weapon rolls ITS skill: heavy/light/finesse/twohand/missile), **missile to-hit** (lost roll
-> flies wide), **96 "Other" support spells** (retail names + real Other mana; ally via relay, else
-> your familiar, else refuse+refund), **Enlightenment true gates** (L275 + Society Master + maxed
-> auras), **Secondary Portal Tie/Recall + Portal/Lifestone Sending** (receiver-resolved over the
-> cast relay), **item-spells on loot** (Minor→Legendary cantrips with Spellcraft + item mana that
-> drains worn and re-wakes via Mana Stone). Verified already-built by parallel passes (not re-done):
-> melee to-hit contest, level cap 275, vitals raising, retail society ranks + ribbons + Test quests,
-> tinker per-item caps + imbue-once, limited vendor pyreals, fellowship cap 9 + proportional XP,
-> secure trade (/trade), AC housing gates/writs/rent. **Tier 2 is done — do not re-plan.**
-
-> ✅ **TIER 2 COMPLETE (PR #129, branch tier2-systems):** weapon-skill tree (each weapon rolls ITS
-> skill) · missile to-hit (lost roll flies wide) · 96 "Other" support spells (retail Other mana;
-> ally via relay, else familiar, else refuse+refund) · Enlightenment true gates (L275 + Society
-> Master + maxed auras) · Secondary Portal Tie/Recall + Portal/Lifestone Sending · item-spells on
-> loot (Minor→Legendary cantrips, Spellcraft, item mana + Mana-Stone re-wake). Verified already
-> built by parallel passes: melee to-hit, level cap 275, vitals raising, society ranks/ribbons/
-> Tests, tinker caps/imbue-once, limited vendor pyreals, fellowship cap 9 + proportional XP,
-> secure /trade, AC housing gates/Writs/rent. **Do not re-plan Tier 2.**
-
-> ✅ **Also complete (same-day parallel passes):** Chess (full legal engine + AI, tables in every
-> capital) · book placement · mana-stone retail semantics · starting-gear finish · "A History of
-> Dereth" chronicle · shield item models · UI-chrome accent (9-slice framing left as polish).
-> Strike these from Tier 3 below.
-
-Sources: `docs/REMAINING-WORK.md`, `wrapup-remaining-work.md`, `ac-remaining-gaps.md`,
-`ac-newplayer-split.md`, `fidelity-split.md`, `three-agent-dat-update.md`, `building-entry-audit.md`,
-`asherons-call-authenticity-gaps.md`, `asherons-call-longtail-gaps.md`, `loop-test-findings.md`,
-`playtest-2026-07-05.md`, `plan-ac-heads.md`, `ships.md`, `kilmer-saga-event-specs.md`, memory files.
-Code TODOs in index.html: **0**.
-
-> ⚠️ **Staleness note:** the `asherons-call-*-gaps.md` docs are historical. Spot-checks confirm many
-> listed "gaps" are done. Verified-done, excluded from the open list: **wield requirements** on loot
-> (`wieldFail`/`reqLvl`/`reqVal`/`reqArcane`), **MMD currency**, **casting foci** (orbs/wands/staffs
-> `wt:"focus"`), **recall contracts** (`stat:"contract"`), **unarmed weapons** (`wt:"unarmed"`),
-> **burden/encumbrance** (in HUD), **magic-defense evade**, **1500-recipe data + salvage/tinker**,
-> **56/56-town lifestones**, **ambient fauna creatures** (rabbit/penguin exist). Items below that
-> touch these areas are the *remaining depth*, not the whole feature.
+**Reconciled + code-verified 2026-07-06.** Every item below was re-checked against `index.html` /
+`assets/` / `tools/` and confirmed *still undone*. Everything from the old lists that is **not** here is
+shipped — see **Confirmed shipped** at the bottom. Effort key: **S** ≈ 1–2 days · **M** ≈ 1–2 weeks ·
+**L** ≈ 2+ weeks / architectural risk.
 
 ---
 
-## TIER 1 — Flagship features (biggest, most-referenced)
+## Lane assignments — 3 agents (claim before you build)
 
-- **AC-authentic character creation + new-player onboarding.** The single largest cluster (5 docs agree):
-  - Staged creation wizard (Heritage → Profession → Attributes(330-pt) → Skills(52 credits, specialize) → Appearance/gender → Town → Name) wired to `acchargen.json`.
-  - Starting gear/letters on creation (Calling Stone, Letter From Home, training weapon, caster kit).
-  - **Training Academy tutorial dungeon** (interior + NPC chain, skippable) using real `acdialogue.json`.
-  - Post-Academy greeter chain (Lifestone Greeter → Bartender → Pathwarden, ~41k XP → L7).
-  - Align ~10 starter quests to retail town mappings/rewards.
-  - Size: **L**. Sources: wrapup §1, ac-newplayer-split, ac-remaining-gaps A4/C14.
+Lanes are split **by code domain** so the three agents rarely touch the same region of `index.html`
+and never the same item. **Rules:** (1) work **only** your lane's items; (2) before starting an item,
+change its **Status** in the tables below from `open` to `WIP:<agent>`, and to `done` when merged;
+(3) if you finish your lane, take the next `open` item from the **shared backlog** (§ Blocked / Design)
+and mark it WIP first; (4) never edit an item another agent has marked `WIP`.
 
-- **Combine / tradeskill engine (currently inert).** `AC_RECIPES` (1500) is loaded but there's no
-  drag-item→item combine action, so **Alchemy, Cooking, Fletching, Dyeing** train but do nothing.
-  Build the combine roll (skill vs difficulty, consume/produce, failure). Size: **L**.
-  Sources: longtail L1–L4/L7/L8.
+| Lane | Agent | Domain (why these don't collide) | Items |
+|------|-------|----------------------------------|-------|
+| **A — Combat & item data** | Agent 1 | combat math + item/loot tables | **#1** Damage/Crit Rating + Crushing Blow · **#4** content data top-offs |
+| **B — Avatar, clothing & rendering** | Agent 2 | avatar rig, mesh/clothing render, in-world visuals | **#2** hats as head-mesh · **#3** dye subpalettes · **#12** dungeon lighting tune · **#13** equipped-shield arm + doorway/window |
+| **C — UI/HUD, town & tooling** | Agent 3 | HUD/CSS panels, town building placement, Python extractors | **#5** path_blocked packing · **#6** 0x21 StringTable decode · **#10** UI window-frame chrome · **#11** paperdoll layout |
 
-- **Multi-level dungeons + in-dungeon portals.** Currently one flat level + chest per dungeon.
-  AC had "Ye Olde…" chains, drop portals, linked sub-instances. Size: **L**.
-  Sources: wrapup §6, ac-remaining-gaps C10, gaps W7.
-
-- **Aetheria slot/level/surge system.** Currently 3 flat permanent gems. AC: slots unlock at
-  L75/150/225, leveled aetheria, set bonus + surge procs. Size: **L**. Sources: wrapup §4, gaps I5.
+**Not assigned to the 3 working agents:** items **#7–#9** are the **excluded Agent-1 terrain
+re-extraction lane** (blocked — leave alone). Items **#14–#17** are **design decisions** — a human
+product call, not agent work; do not implement without a decision recorded here.
 
 ---
 
-## TIER 2 — Systems depth (each meaningful, mostly M)
+## 1 · Buildable now (present data & tools)
 
-- **Buff/debuff "Other" targeting** — CE/Item/Life/Protection buffs are self-only; add Other forms for group support. (M) — wrapup §3, gaps Mg1.
-- **Loot item-spells + mana + Spellcraft** — mutated cantrips (Minor/Major/Epic/Legendary), mana pools on gear, Spellcraft stat. (L) — wrapup §4, gaps I2.
-- **Salvage/tinker split + per-item cap** — 8 tinker skills, 10-tink-per-item cap, imbue-once, units ≤ workmanship (currently 2 skills, no per-item cap). (M) — wrapup §4, gaps I3.
-- **Mana Conversion / fizzle formula** — authentic `25·diff × spell level` + fizzle tiers (currently flat cost cut + ad-hoc fizzle). (M) — wrapup §3, gaps Mg5.
-- **Weapon-skill tree meaningful** — `bestMeleeEff` takes best of all skills, so Heavy/Light/Finesse distinction is vestigial; map each weapon to its skill. (M) — gaps Cb7.
-- **To-hit / evade contest** — attacks currently always hit in reach (only magic has evade); add attack-skill-vs-defense miss rolls. (M) — gaps Cb3.
-- **Monarchy + `/allegiance` chat channel** — monarch rank atop the tree + server allegiance channel. (M) — wrapup §5, gaps S2.
-- **Player-to-player secure trade window.** (M) — gaps S8.
-- **Fellowship depth** — cap 9 (not 6), equal/proportional-by-level-spread XP modes, over-level penalty. (M) — gaps S7.
-- **Housing depth** — level gates (Cottage L20/Villa L35/Mansion L50), Writs, monthly upkeep, hooks, allegiance-gated access. (M) — wrapup §8, gaps S11.
-- **Society ranks/ribbons/test-quests/halls** — retail rank ladder + ribbon thresholds + Test quests. (M) — gaps S6.
-- **Server-side quest lockout timers** (20h–7d via QuestDefDB min_Delta) + non-saga live-story Town Criers. (M–L) — wrapup §5, ac-remaining-gaps B12.
-- **Full augmentation tree + hard cap** — Jack of All Trades, skill/spec-credit augs, XP augs, innate-attribute reinforcements, Asheron's-Castle aug quests, total-aug cap. (M) — gaps E2/C6.
-- **Recall spell set** — Primary/Secondary Portal Tie + Recall, Portal Recall (last portal), Portal Sending, town recalls (only Lifestone + Sanctuary now). (M) — gaps Mg3.
-- **Endgame progression tuning** — gate Enlightenment at L275 + Society Master + maxed lum auras (currently L100, no society req); no hard **level cap 275**; vitals separately raisable (Health=End/2, Stam=End, Mana=Self). (M–L) — wrapup §8, gaps C1/C2/C3/D22.
+| # | Lane | Item | What's undone | Size | Status |
+|---|------|------|---------------|------|--------|
+| 1 | A | **Damage Rating / Crit-Damage Rating / Crushing Blow** | Sneak Attack, Recklessness & Dirty Fighting shipped; the DR/CDR multipliers, Crushing Blow, and the rear-attack **+20 DR** are not (only a Luminance "Aura of Valor" damage-rating buff and a mace *blurb* exist). *(auth-gaps Cb5)* | S–M | open |
+| 2 | B | **Hats as real part-16 head-mesh swaps** | Cowl/cap/qafiya/turban/fez/kasa are still procedural cloth props (`felt()`/coils), not real head-model swaps. Cosmetic. *(consolidated Tier4)* | S–M | open |
+| 3 | B | **Dye subpalettes on base clothing** | `acclothing.json` subpalettes aren't applied to base garments — no `subPalette`/`dyeSub` wiring. *(consolidated Tier4)* | S | open |
+| 4 | A | **Content top-offs** *(optional)* | ~23 more salvage materials, extra gems, hide variants. (Armor sets, named bosses, and the full creature roster are already present.) *(items/regions refs)* | S | open |
+| 5 | C | **`path_blocked` interior-packing residual** | A handful of tightly-packed town buildings whose entry centreline a neighbour grazes (door still usable at an angle). `door_offmarker` & `floor_poke` already resolved. *(building-entry-audit)* | S | open |
+| 6 | C | **`0x21` StringTable UI-layout decode** *(low value)* | 101 retail 800×600 panel-layout defs identified but not decoded; only useful for pixel-perfect panel placement. *(three-agent-dat-update)* | follow-up | open |
 
----
+## 2 · Blocked — needs the excluded Agent-1 terrain re-extraction lane
 
-## TIER 3 — World & content
+*(Agent-1 terrain lane — not assigned to the 3 working agents.)*
 
-- **Underwater world structures (~1128 bldgs / 102 landblocks)** submerged in the western ocean (Aphus Lassel, Aerlinthe, Osteth/Linvak isles). Partially fixed with `islandLift`; full solution pending. (L) — building-entry-audit 🔴.
-- **Named regions + irregular continent + authored terrain** (Osteth/Aphus Lassel/Linvak, real ocean rim, named mountains that gate travel) — currently a square 16000² trig-noise map. **Blocked on landblock heightmap data extraction.** (L) — wrapup §6, gaps W8/W12.
-- **Retail monthly live-event extraction** — pull real event names/timing from `GameEventDefDB` onto the existing monthly framework. (M) — REMAINING-WORK #2, wrapup §9.
-- **Instanced/repeatable event dungeons** (tickets, vault keys, timed) as a template for live content. (L) — gaps E3.
-- **44 unmapped dungeons** — verify canon names + landblock ids or confirm no interior. (S each) — REMAINING-WORK, ac-remaining-gaps C15.
-- **279/331 dungeons room-for-room from cell.dat**; remaining ~52 use the beat generator — finish scripting. (S each) — session-checkpoint.
-- **Book placement** — place 898 retail books at true locations (currently scrivener shelf only). (S–M) — wrapup §9.
-- **Chess** — playable boards in taverns/houses. (M) — REMAINING-WORK #6.
-- **Weather depth** — snow/fog/storm states, region/latitude-tied (frozen north snowy, desert arid). (M) — gaps W4/W11.
-- **Content gaps vs catalogue** — missing armor sets (Diforsa/Sedgemail/Tenassa/Knorr/Empyrean/Hieromancer…), ~23 more salvage materials, more gems, hide variants; named bosses (Gaerlan/Aerbax/Grael/Martine) + creature roster (niffis, carenzi, gear knight, elementals, burun, mukkir…). (M–L) — items/regions references.
-- **Level-gated overworld portals** (Eastwatch 80+, Olthoi 40/60/80/100) — only the Facility Hub is gated. (S) — gaps W5.
-- **Mana stone drain/store retail semantics** — destroy enchanted item → store mana → refill worn items (currently recharges focus battery). (S–M) — REMAINING-WORK #4.
+| # | Item | What's undone | Size | Status |
+|---|------|---------------|------|--------|
+| 7 | **Authored landmarks + terrain barriers** | Named mountains that gate travel; terrain is currently procedural trig-noise. Needs the landblock heightmap. *(auth-gaps W12)* | L | blocked |
+| 8 | **Irregular continent + real ocean rim** | The terrain-*shape* sliver of Named Regions — region names/lore/HUD already shipped; only the true coastline & island landmasses remain (underwater structures currently mitigated by `islandLift`). *(auth-gaps W8)* | L | blocked |
+| 9 | **Geometry-driven *town* renderer** | Largely closed — dungeons render real EnvCell meshes and towns already stream real AC building meshes (`tbBuildMesh`). Only true EnvCell *town-layout* geometry remains, and it overlaps the A1 lane. *(ac-data-extraction-roadmap)* | follow-up | blocked |
 
----
+## 3 · On-hardware — visual changes that can't be verified headless (SwiftShader); need a real-GPU eyeball
 
-## TIER 4 — Known bugs & polish (small)
+| # | Lane | Item | What's undone | Size | Status |
+|---|------|------|---------------|------|--------|
+| 10 | C | **Real UI window-frame chrome** | Apply the large plates (`06001b14`/`060011bb`/`06001343`) as 9-slice `border-image` on the draggable panels (needs per-plate slice tuning). Vitals/quickbar/charge-bar chrome + the gold strut on vitals & quest panels are already wired (11 of 37 plates). *(wrapup §7)* | S–M | open |
+| 11 | C | **Paperdoll panel layout** (PAGE-99 manual) | Icon-rail toggle + Examine box + jewelry/container slot arrangement. Contents exist; arrangement differs. *(ac-remaining-gaps A2)* | M | open |
+| 12 | B | **Dungeon lighting final tune** | Eyeball torch/ambient intensity live; nudge amb/hemi or the ×1.35 factor. Pass 2 already landed. *(REMAINING-WORK)* | S | open |
+| 13 | B | **Equipped-shield arm mount + doorway/window transparency** | Real shield *meshes* now show on drops/examine, but the equipped-avatar shield stays procedural (arm orientation), the opaque-doorway recess is a warm-glow card, and windows are still baked-opaque — all need on-hardware iteration. *(playtest #21)* | S each | open |
 
-- **Female forehead band** — dark under-hair band shows across brow on female hair styles that don't cover the eye-strip's top rows. Diagnosed, non-blocking. (S) — plan-ac-heads Phase 2c.
-- **Skin tone washes pale** under the bright r128 pipeline; add baked AO/tone on the face material. (S) — plan-ac-heads (d).
-- **Hats as part-16 head swaps** — cowl/cap/qafiya/turban/fez/kasa still procedural, not real head-model swaps. (S–M) — dereth-ac-clothing.
-- **Dye subpalettes** in `acclothing.json` not applied to base clothing. (S) — dereth-ac-clothing.
-- **Creator preview not WYSIWYG** — `ccBust` still shows the procedural painted head; swap in `acHeadGroup(app)` on option change. (S) — plan-ac-heads 2a.
-- **Explicit creator/barber head rows** — pick from full AC lists (50 hair styles, eye/nose/mouth strips, exact colours) writing `app.acHead`. (M) — plan-ac-heads 2b.
-- **NPC AC heads** — townsfolk still use procedural `buildPerson` heads (perf); optionally give nearest ~40 NPCs seeded AC heads. (M) — plan-ac-heads 2c.
-- **`door_offmarker` (7 town buildings)** — cut a real doorway hole at the fallback wall (cut is 5–13m from the visible door). Prior fix regressed Sanamar; needs a deeper fix. (S–M) — building-entry-audit.
-- **`path_blocked` interior (few) + `floor_poke` (2)** — tighten interior floor over terrain bumps; nudge overlapping neighbours. (S) — building-entry-audit.
-- **Level-8 Incantation skill-300 gate** — a maxed specialized caster tops ~272, so L8 incantations are uncastable unbuffed. Confirm intended vs lower the req. (S) — loop-test-findings.
-- **Non-PCM music track** — one MP3-format 0x55 resource skipped by the music exporter. (S) — wrapup §11.
-- **Item models for shields/clothing** — extend `ac_item_models.py` to export them (watch pack size). (S–M) — REMAINING-WORK.
-- **Real UI chrome / paperdoll layout** — wire ~50 uninspected extracted chrome contact sheets; arrange paperdoll per the manual. (S–M) — wrapup §7, ac-remaining-gaps A2/A3.
-- **`0x21` StringTables** — 101 retail UI-layout definitions identified but format still undocumented (0x23 titles already wired). (follow-up) — three-agent-dat-update.
+## 4 · Design decisions — a human product call, not code
+
+| # | Item | The question |
+|---|------|--------------|
+| 14 | **Level-8 Incantation skill-300 gate** | A maxed *specialized* caster tops ~272, so L8 non-War incantations are uncastable unbuffed (War at 302 clears it). Intended (buff/gear to 300), or lower the req / raise the specialized max? *(the one standing playtest observation)* |
+| 15 | **Full component-casting formula** | Keep the current soft scarab/taper model, or adopt the authentic exact-component "wrong → fizzle" formula (judged punishing for a homage)? *(auth-gaps Mg2)* |
+| 16 | **Vitals-formula purity** | Move max HP/Stam/Mana to pure End/2 · End · Self (drop the +level terms)? Requires rebalancing every retail-statted creature. Deliberately deferred. *(auth-gaps C3)* |
+| 17 | **Ratify the game-scaled timers** | Quest lockouts 2–10 min (vs 20h–7d), PK 5-min oath (vs 3-day key), mana-stone focus-battery (vs destroy-item-to-charge) — all intentional compressed-clock/model choices. Listed only for sign-off. |
 
 ---
 
-## Saga content (design, not code)
+## Confirmed shipped (do NOT re-open — verified in code 2026-07-06)
 
-- **Saga Years 1–6 (months 1–60) SHIPPED.** The spec doc (`kilmer-saga-event-specs.md`) extends the
-  calendar to **Year 10 (months 61–120)** — Years **7–10 are not yet designed/specified**.
+Old lists still mark many of these open; they are done:
 
----
+- **Onboarding & creation:** ToD staged creation wizard, starting gear + Welcome Letter + heritage
+  clothing, post-Academy greeter chain (7k/9.3k+500p/12.5k + Pathwarden suit + +4% XP), **Training
+  Academy tutorial-dungeon interior** (`buildAcademyHall` — Great Hall / Courtyard / Workshop, Sentry-gated).
+- **Tier-1/2 flagships:** combine/tradeskill engine (1,500 recipes), Aetheria slots/levels/sets/surges,
+  multi-level dungeons (`buildDungeonReal`, y-aware storeys, descend portals), weapon-skill tree,
+  melee+missile to-hit contests, **per-element armor** (`ARMOR_MAT_RESIST`), **weapon damage types**
+  (`dt` pierce/slash/bludgeon), loot item-spells + Spellcraft + item mana, tinker per-item caps/imbue-once,
+  **Enlightenment gates** (L275 + Society Master + auras), full recall set (Tie/Recall/Secondary/Sending),
+  fellowship cap-9 proportional XP, secure trade + coin.
+- **Combat/magic depth:** per-body-part combat, ballistic projectiles + terrain collision, missile range
+  falloff, per-swing variance, stamina scaling, burden/encumbrance, Mana Conversion/fizzle, Void DoT
+  curses, wield/level/skill loot requirements, banes.
+- **Social:** allegiance patron/vassal tree + XP pass-up + NPC vassals, monarchy + `/allegiance` chat,
+  3-state PK + altars + PK-loot, corpse/item-loss death (+ shared corpses), society ranks/ribbons/Test
+  quests, live Town Crier feed.
+- **World:** region-aware weather, **level-gated overworld portals** (Facility Hub + frontier), **named
+  regions** (`regionNameAt` + HUD + `/where`), ambient fauna, organic roads, drowning, portal storms,
+  Colosseum/instanced events.
+- **Content:** **Chess** (perft-validated engine + AI), book placement + library stands, **"A History of
+  Dereth"** (Dereth runs its *own* live events — retail GameEventDefDB extraction intentionally dropped),
+  starter quests aligned to retail, all armor sets + named bosses (Aerbax/Gaerlan/Martine) + creature roster,
+  **the full 10-year Kilmer Saga incl. Years 7–10** (Year of Bone … Year of the Crown).
+- **Extraction/assets:** high-res textures (1,224), non-PCM music, **shield & clothing item models**,
+  server-side item/spell mirror, building/clothing GfxObjs wired, all 66 creature kinds, 873 retail titles,
+  **NPCs on real AC bodies + heads** (`buildPerson` retired to fallback).
+- **Heads/UI:** WYSIWYG creator preview, explicit head-choice rows (creator + barber), face tone/AO,
+  **female forehead-band fix**, barber restrictions, circular radar.
+- **Ships:** ownable/boardable skiff/cog/caravel water travel.
 
-## Explicitly deferred by design (not "todo")
-
-- Server-authoritative player HP/position/death (currently client-trusted — friendly-homage choice; porting the full derive/armor/heal/vitae math to Python is huge scope, low benefit).
-- Shared (vs instanced) bosses/events/dungeons/loot beyond the M3 slices already shared.
-- Multiplayer server **deployment** is the user's to do (via `deploy/DEPLOY.md`).
-
----
-
-### Rough tally
-~4 flagship (Tier 1) · ~15 systems-depth (Tier 2) · ~14 world/content (Tier 3) · ~14 polish/bugs (Tier 4)
-· Saga Y7–10 design · plus deferred-by-design items. **0 code TODOs.** The game itself is verified
-solid across ~45 systems; everything here is *added depth/authenticity/content*, not broken behavior.
+*Maintenance note: when an item here is completed, move it into "Confirmed shipped" with a one-line code
+reference — keep this the single, honest, reconciled list. Do not resurrect the retired docs.*
