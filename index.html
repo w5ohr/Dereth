@@ -2808,6 +2808,9 @@ function updateDayNight(dt){
   sun.color.copy(_sunNoon).lerp(_sunWarm,clamp(1-sunY,0,1)*0.8);
   hemi.intensity=0.16+daylight*0.46;   // less flat sky-fill so the sun defines form + shadow
   amb.intensity=0.12+daylight*0.22;
+  // #21 (windows): glass panes glow warm as lamps come on — full lamplight at night, a faint sheen by day
+  { const wglow=0.05+(1-daylight)*0.7;
+    for(let i=0;i<tbWindowMats.length;i++) tbWindowMats[i].emissiveIntensity=wglow; }
   updateEnvIntensity(daylight);
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
   scene.fog.color.copy(_cNight).lerp(_cDay,daylight).lerp(_cWarm,warm*0.5);
@@ -6582,6 +6585,7 @@ function tbIndexReq(){ if(_tbIndex!==null) return _tbIndex; if(!_tbIndexReq){ _t
 const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
+const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
 function tbModelReq(did){ did=(''+did).toUpperCase();
   if(_tbModels[did]!==undefined) return (_tbModels[did]&&_tbModels[did].ready)?_tbModels[did]:null;
   const idx=tbIndexReq(); if(idx===null) return null;                 // index still loading
@@ -6599,6 +6603,11 @@ function _tbMarker(c){ if(c==null) return null;
   const r=(c>>16)&255, g2=(c>>8)&255, b=c&255;
   if(r>200&&g2<40&&b<40) return "door";
   if(b>200&&r<40&&g2<80) return "window";
+  // #21 (windows): the client replaced a whole FAMILY of saturated placeholder hues at runtime —
+  // indigo/violet (0x4a4ff0, 0x3100db, 0x9a5eec…) and green (0x00ea00, 0x57c133, 0x96ff91…) panes
+  // were falling through to the raw-colour path and rendering as neon quads on the walls.
+  if(b>180&&b>r+60&&b>g2+60) return "window";
+  if(g2>170&&g2>r+50&&g2>b+50) return "window";
   return null; }
 function tbBuildMesh(md){   // one textured Group for a placement (textures shared via tbTex)
   const g=new THREE.Group();
@@ -6613,7 +6622,11 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
     if(marker==="door"){ mat=texMat(woodTex,0x6a4a2a); mat.side=THREE.DoubleSide;              // a real plank door where the client hung one
       let sx=0,sy=0,sz=0,n=0; for(let i=0;i<gr.v.length;i+=3){ sx+=gr.v[i];sy+=gr.v[i+1];sz+=gr.v[i+2];n++; }
       if(n){ g.userData.doorLocal=g.userData.doorLocal||{x:sx/n,y:sy/n,z:sz/n}; } }
-    else if(marker==="window"){ mat=new THREE.MeshStandardMaterial({color:0x2a3a4a,roughness:0.15,metalness:0.4,transparent:true,opacity:0.55,side:THREE.DoubleSide}); }
+    else if(marker==="window"){   // #21 (windows): real glass — see-through by day, warm lamplit glow at night
+      mat=new THREE.MeshStandardMaterial({color:0x3a4c5e,roughness:0.08,metalness:0.45,transparent:true,opacity:0.42,
+        side:THREE.DoubleSide,emissive:0xffc97a,emissiveIntensity:0.05});
+      tbWindowMats.push(mat);
+      mat.addEventListener('dispose',()=>{ const i=tbWindowMats.indexOf(mat); if(i>=0) tbWindowMats.splice(i,1); }); }
     else if(mm.tex) mat=new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0});
     else { let c=(mm.color!=null?mm.color:0x8a8478);   // some AC building surfaces carry a bright "unset texture" placeholder colour that glares to a blank white panel under PBR sun — tone any near-white untextured wall down to muted stone/plaster
       if(((c>>16)&255)>190&&((c>>8)&255)>190&&(c&255)>190) c=0x9c9078;
