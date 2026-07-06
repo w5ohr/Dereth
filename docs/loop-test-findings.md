@@ -184,3 +184,35 @@ Systems exhaustively tested as Kilmer, all on HEAD 015e1c1 (main):
 **Finding 2 (town-model index case) — FIXED.** `tbIndexReq` now uppercases all index keys at load (index.html ~6560), so every DID is reachable regardless of the index's mixed `0x`/`0X` prefixes. Verified: 0 lowercase keys remain, 691 unique DIDs reachable (was 483 — recovered ~208 previously-unreachable models; case-duplicate keys safely collapse since same DID → same file). Town streaming: 0 model-load failures, 228 structures at Holtburg, 0 console errors.
 
 **Finding 1 (537 "missing" town placements) — FALSE POSITIVE, no fix needed.** On investigation the 12 DIDs are all `kind` = **portal / lifestone / bindstone**, NOT buildings. The town builder intentionally skips them (`if(!TB_KINDS[o.kind]) continue; // the game places its own`, index.html ~6704) because the game renders portals/lifestones/bindstones with its OWN systems. Verified: the game spawns 185 lifestones covering **56/56 towns** (+ its 1728-portal network). Extracting the raw AC Setup meshes would wrongly duplicate the game's own visuals. My earlier MEDIUM flag was an over-call — corrected here.
+
+## 2026-07-06 09:18 — OVERNIGHT SWEEP pass 2 (HEAD 821ad73, post index-fix)
+
+### Dungeons — ALL 331 FULLY BUILT (deeper than pass 1)
+- Built every dungeon's full mesh via enterDungeon + exitDungeon teardown, in 3 batches: 330 mazes built + 1 Advanced Colosseum (correctly routes to the arena, not a maze). **0 build errors, 0 empty-object builds, 0 console errors.** (Pass 1 only full-built 16; this covers all 331.)
+
+### Towns — ALL 56 building placements resolve (index-fix regression PASS)
+- Validated every town-model placement against the (uppercased) index: 2441 building/scenery/fixture/statue placements across 56 towns, **0 unresolved, 0 towns with missing buildings**. (811 building, 1567 scenery, 41 fixture, 22 statue; the 434 portal + 80 lifestone + 23 bindstone placements correctly excluded — game renders those.) Confirms PR #104's index-case fix works town-wide.
+
+### World bosses, arena, combat loop — PASS
+- Gnawvil (Olthoi Queen, 2000hp) + Bael'Zharon (Hopeslayer, 6000hp, apex): both spawn, take damage, die; boss kill grants XP (51750 for the pair) and advances/completes the gnawvil quest (validates the Emissary quest chain).
+- Colosseum arena gauntlet: enters, wave 1/5 spawns 3 mobs. Works.
+
+### Save/load — PASS
+- Roundtrip: saveGame writes to localStorage `dereth_save_v1` capturing level/gold/society/inventory/house/quest-progress; applySave restores them exactly after live state was mutated. Persistence intact.
+
+### MMO server backend — 47/47 PASS
+- Ran server/test_client.py end-to-end: auth/register, 8 character slots (create/reject-occupied/reject-9th/delete), persistence (save/restore all 8, level restore, kills persist), chat/whisper/emote, party+fellowship (invite/accept/roster/chat/shared-XP/leave), shared mobs + world boss sync, attack/hit/die + shared kill rewards, ground drops (broadcast/late-joiner/pickup/double-pickup-reject), login pw check.
+- The lone "FAIL active Incursion synced to late joiner" against the LIVE game server was a **false positive**: that server runs the default 60s event cooldown so no Incursion was active during the brief test. Re-ran against a throwaway server with DERETH_EVENT_CD=1 → **47 passed, 0 failed** (incursion syncs correctly). Not a bug.
+
+### ===== PASS 2 SUMMARY (2026-07-06 09:25) =====
+Deeper than pass 1, all on HEAD with the 2 merged fixes:
+- All **331 dungeons** fully mesh-built (was 16) — 0 errors.
+- All **56 towns**: 2441 building placements resolve, 0 missing (index-fix regression PASS).
+- World bosses (Gnawvil + Bael'Zharon) spawn/die/reward + quest-chain advance.
+- Arena gauntlet, save/load roundtrip, MMO backend (47/47) all PASS.
+- **0 console errors, 0 real new bugs.** (2 investigated "failures" — Advanced Colosseum arena routing, MMO incursion cooldown — were both false positives.)
+
+### Combat depth — PASS
+- All 6 war-spell geometries cast without error (Blast/Volley/Ring/Arc/Wall/Streak), 56 spells each (7 elements × 8 levels). Weapon elemental branding (Atlan stone) applies element + damage + renames correctly.
+
+**End of overnight sweep pass 2.** Two full deep passes complete: every quest, every dungeon (fully built), every town, plus MMO backend, save/load, bosses, arena, combat — 0 real new bugs. Two prior real bugs already fixed (PR #100 ship disembark, PR #104 index case).
