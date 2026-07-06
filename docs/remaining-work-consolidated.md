@@ -19,10 +19,11 @@ below (and everything marked `done`) is shipped — see **Confirmed shipped** at
 > **Current status (2026-07-06, post PR #137):** **Lane A ✅ done** (#1 Damage/Crit Rating + Crushing
 > Blow, #4 content) · **Lane B ✅ done** (#2 hats, #3 dye subpalettes, #12 dungeon-lighting slider,
 > #13 shield mesh) · **Lane C ✅ done** (#5 entry corridors, #6 0x21 layout decode → `aclayouts.json`,
-> #10 gold window chrome, #11 PAGE-99 paperdoll, #19 shop wield gates) · **#14 decided** (keep the
-> incantation gate). **Still genuinely open:** **#18** Academy staff leak (lane B, bug) · the
-> terrain-lane blockers (#7–#9) · the design calls #15 (component formula), #16 (vitals purity),
-> #17 (ratify timers) · on-hardware eyeballs (#10 chrome look, #13 window/doorway).
+> #10 gold window chrome, #11 PAGE-99 paperdoll, #19 shop wield gates) · **all 4 design decisions
+> resolved** (#14 keep incantation gate · #15 keep soft casting · #16 keep vitals model · #17 go retail:
+> 3-day PK key, retail quest lockouts, mana-stone battery + draw-from-mana). **Still genuinely open:**
+> **#18** Academy staff leak (lane B, bug) · the terrain-lane blockers (#7–#9, needs A1 data) ·
+> on-hardware eyeballs (#10 chrome look, #13 window/doorway).
 
 ---
 
