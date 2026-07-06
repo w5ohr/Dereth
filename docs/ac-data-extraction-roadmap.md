@@ -94,8 +94,11 @@ through the ac_env pipeline, then a geometry-driven dungeon/town renderer.
     audio, region ambient loops (wind, swamp, town murmur).
 17. **Housing (ACE `house` + slumlord data).** Real housing locations, types, purchase costs —
     the settlements are currently hand-placed approximations.
-18. **client_highres.dat textures.** Higher-resolution versions of terrain/creature/armor textures
-    for everything above.
+18. ✅ **client_highres.dat textures.** DONE — higher-resolution versions of terrain/creature/armor/
+    UI/icon textures were swept in via `tools/ac_highres_export.py` (lowres→highres TID map from the
+    0x05 SurfaceTexture entries, overwriting matching PNGs in place at larger dims). Shipped in
+    `18867be` (1,224 upgraded) + `ef75f93` (faces audit — retail had no hi-res faces). A 2026-07-06
+    re-run finds 0 further upgrades: every matched texture is already at its highres-dat dimension.
 
 ## Notes
 - Formats are all documented by ACEmulator's DatLoader / ACViewer (BSD) — the repo's tools
