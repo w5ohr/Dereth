@@ -24,6 +24,13 @@ below (and everything marked `done`) is shipped — see **Confirmed shipped** at
 > 3-day PK key, retail quest lockouts, mana-stone battery + draw-from-mana). **Still genuinely open:**
 > **#18** Academy staff leak (lane B, bug) · the terrain-lane blockers (#7–#9, needs A1 data) ·
 > on-hardware eyeballs (#10 chrome look, #13 window/doorway).
+>
+> **Playtest sweep (2026-07-06 night, main @ 46bf62d — post-#137 merged whole): CLEAN, no new findings.**
+> Exercised: rear-attack DR geometry (chasing mobs face the player — no false rear bonus), Crushing
+> Blow (~12% on bludgeon, damage spikes verified), the #14 incantation buff-up nudge, hats/dye-subpalette/
+> dglight code paths, real-geometry dungeon run (kill/XP/drops/exit), death→vitae→half-gold, save fields
+> (aetheria/academy), region+landmark+weather ticks across 5 regions, chrome/paperdoll/shop post-merge.
+> Zero console errors. (#18, then the only open buildable item, has since been FIXED in PR #145.)
 
 ---
 
