@@ -1325,6 +1325,59 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
   }
   AC_COMP_CDM=j._components||null;
   console.log("AC spell stats: "+n+" spellbook entries matched retail ("+nd+" damage rolls, "+nb+" heals, "+nm+" buff magnitudes, "+ndur+" real durations).");
+  // ═══ THE MATERIALIZER: every retail SpellTable entry NOT already in the book takes its
+  //     authentic role — quest/dungeon portal spells become castable travel magic (destination
+  //     fuzzy-matched to the real dungeon/town), wards/masteries/one-off buffs become spells in
+  //     their own schools with retail damage/boost/mana, and the item-cantrip name families feed
+  //     the loot roller. Acquired the retail way: vendor shelves already stock their scrolls. ═══
+  try{
+    const have=new Set(SPELLBOOK_LIST.map(x=>(x.name||"").toLowerCase()));
+    const R2N={i:1,ii:2,iii:3,iv:4,v:5,vi:6,vii:7,viii:8};
+    const lvlOf=k=>{ const m=k.match(/ (viii|vii|vi|v|iv|iii|ii|i)$/); return m?R2N[m[1]]:3; };
+    const tc=k=>k.replace(/(^| )([a-z])/g,(m,a,b)=>a+b.toUpperCase()).replace(/ (i{1,3}|iv|vi{0,3}|viii)$/i,m=>m.toUpperCase());
+    const STOP=new Set(["the","of","to","a","an","entry","center","recall","portal","sending","gateway","antechamber"]);
+    const toks=str=>str.toLowerCase().replace(/[^a-z ]/g," ").split(/\s+/).filter(w=>w&&!STOP.has(w));
+    const resolveDest=k=>{ const kt=toks(k); let best=null,bs=0;
+      const scan=(arr,get)=>{ for(const d of arr){ const dt=toks(get(d)); let hit=0; for(const w of kt) if(dt.includes(w)) hit++;
+        if(hit>bs&&hit>=Math.min(2,kt.length)){ bs=hit; best=d; } } };
+      if(typeof DUNGEONS!=="undefined") scan(DUNGEONS,d=>d.name);
+      if(typeof CITIES!=="undefined") scan(CITIES,c=>c.name);
+      return best; };
+    const elemOf=k=>/acid|corrosive/.test(k)?"acid":/flame|fire|incendiary/.test(k)?"fire":/frost|cold|frore|winter/.test(k)?"frost":/lightning|shock|astyrrian/.test(k)?"shock":/blade|slash|swordsman/.test(k)?"slash":/bludgeon|crush/.test(k)?"bludgeon":/pierc|arrow|puncture/.test(k)?"pierce":null;
+    const SKW={sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",dagger:"finesse",staff:"light",unarmed:"light",bow:"missile",crossbow:"missile",thrown:"missile",
+      war:"war",life:"life",creature:"creature",item:"item",void:"void",mana:"mana",arcane:"arcane",healing:"healing",alchemical:"alchemy",alchemy:"alchemy",cooking:"cooking",fletching:"fletching",lockpick:"lockpick",salvaging:"salvaging",
+      deception:"dirty",jump:"run",run:"run",leadership:"leadership",fealty:"leadership",magic:"magicd",melee:"meleed",missile:"missiled"};
+    const skillOf=k=>{ for(const w in SKW) if(k.includes(w)) return SKW[w]; return null; };
+    window.AC_CANTRIP_TIERS={minor:1,moderate:1,lesser:1,major:2,greater:2,epic:3,legendary:4};
+    let addPortal=0,addDmg=0,addBoost=0,addWard=0,addSkill=0,skipped=0;
+    for(const key in j){ if(key==="_components") continue; if(have.has(key)) continue;
+      const a=j[key], lvl=lvlOf(key), nm=tc(key);
+      const base={id:"ac_"+key.replace(/[^a-z0-9]+/g,"_"),name:nm,recovered:true,lvl,req:Math.max(0,(lvl-1)*40),
+        cost:a.mana||30, cd:2500, words:a.words, acicon:a.icon, acdesc:a.desc, reagents:(a.compn||[]).map(c=>c.n).filter(x=>x&&x!=="?"), closs:a.closs, accomps:(a.compn||[]).map(c=>({n:c.n,cdm:c.cdm==null?1:c.cdm}))};
+      if(/portal|recall|entry to|center of|antechamber|gateway/.test(key)){
+        const d=resolveDest(key); if(!d){ skipped++; continue; }
+        SPELLBOOK_LIST.push(Object.assign(base,{ico:"🌀",school:"item",special:"acportal",dx:d.x,dz:d.z,dname:d.name})); addPortal++; continue; }
+      if(a.dmg){ const el=elemOf(key)||"fire", nether=/nether|void|dark|shadow/.test(key);
+        SPELLBOOK_LIST.push(Object.assign(base,{ico:"☄️",school:nether?"void":"war",cd:1200,
+          make:()=>({dmg:a.dmg[0]+Math.random()*(a.dmg[1]-a.dmg[0]),speed:55,color:0xcc8844,r:0.3,element:nether?"nether":el,drain:nether?0.3:0}) })); addDmg++; continue; }
+      if(a.boost){ const mn=/mana/.test(key), st2=/stamina/.test(key);
+        SPELLBOOK_LIST.push(Object.assign(base,{ico:mn?"🔹":st2?"🌿":"✨",school:"life",
+          special:mn?"mnboost":(st2?"revitalize":undefined), amt:Math.round((a.boost[0]+a.boost[1])/2), foc:0,
+          heal:st2||mn?undefined:()=>a.boost[0]+Math.random()*(a.boost[1]-a.boost[0])})); addBoost++; continue; }
+      if(a.mod!=null&&a.dur){
+        const el=elemOf(key);
+        if(el&&/ward|protection|durance/.test(key)){ SPELLBOOK_LIST.push(Object.assign(base,{ico:"🛡",school:"life",buff:"bane",element:el,mag:clamp(0.15+0.06*lvl,0.1,0.55),dur:Math.round(a.dur)})); addWard++; continue; }
+        const sk=skillOf(key);
+        if(sk&&SKILL_BY_KEY[sk]&&!/ineptitude|bafflement|clumsiness|self/.test(key)===false){}
+        if(sk&&SKILL_BY_KEY[sk]&&!/ineptitude|bafflement|clumsiness/.test(key)){
+          SPELLBOOK_LIST.push(Object.assign(base,{ico:"📜",school:"creature",buff:"skill",skillKey:sk,mag:Math.abs(a.mod)||10,dur:Math.round(a.dur),other:/ other( |$)/.test(key)})); addSkill++; continue; }
+      }
+      skipped++;
+    }
+    for(const sp2 of SPELLBOOK_LIST) if(sp2.recovered&&!SPELLBOOK[sp2.id]) SPELLBOOK[sp2.id]=sp2;
+    _spellIdByName=null;   // vendor "Scroll of X" resolution re-indexes to include the recovered spells
+    console.log(`AC materializer: +${addPortal} travel, +${addDmg} war/void, +${addBoost} restorative, +${addWard} wards, +${addSkill} masteries recovered (${skipped} inert/no-effect left out).`);
+  }catch(e){ console.warn("materializer:",e); }
 }).catch(()=>{}); }catch(e){}
 // ── authentic spell data (assets/acspells.json · tools/ac_spell_export.py): the real client
 //    SpellTable — names, cast WORDS, and component formulas. Matched to our spells by name so
@@ -15159,6 +15212,11 @@ function executeSpell(id){
     floater(m.x,(m.headY||1.6)+2,m.z,"-"+take+(pool==="st"?" stam":" mana"),"#b08aff");
     floater(player.x,EYE+0.5,player.z,"+"+take+(pool==="st"?" stam":" mana"),"#9ad0ff");
     castFlash(0x9b6bff); SFX.frost&&SFX.frost(); log(`You cast <b>${s.name}</b>, siphoning <b>${take}</b> ${pool==="st"?"stamina":"mana"} from a foe.`,"heal"); updateHUD&&updateHUD(); return;
+  }
+  if(s.special==="acportal"){   // a recovered retail travel spell: the way opens to its true place
+    if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); player.mn+=cost; spellCd[id]=0; return; }
+    teleportFX(player.x,player.z); arriveAt(s.dx,s.dz+3); player.invuln=2; teleportFX(player.x,player.z);
+    if(SFX.portal)SFX.portal(); log(`You cast <b>${s.name}</b> — the way opens to <b>${esc(s.dname)}</b>.`,"heal"); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
     const ally=(typeof pickAllyTarget==="function")?pickAllyTarget(40):null;
