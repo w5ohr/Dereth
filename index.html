@@ -22643,12 +22643,18 @@ function buildDungeonReal(def,dj){
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
   scene.add(grp); dungeonObjs.push(grp);
-  const amb=new THREE.AmbientLight(0x9a8a72,0.85); scene.add(amb); dungeonObjs.push(amb);
-  const hemi=new THREE.HemisphereLight(0x6a6a7a,0x2a2218,0.35); scene.add(hemi); dungeonObjs.push(hemi);
-  // torch props with pooled lights along the halls
-  for(let i=3;i<dj.cellPos.length;i+=Math.max(4,Math.floor(dj.cellPos.length/16))){
+  const amb=new THREE.AmbientLight(0x9a8a72,0.95); scene.add(amb); dungeonObjs.push(amb);
+  const hemi=new THREE.HemisphereLight(0x6a6a7a,0x2a2218,0.45); scene.add(hemi); dungeonObjs.push(hemi);
+  // Torch props with pooled lights along the halls. EVEN coverage (≈1 per few cells, capped at 20 so the
+  // one big dungeon mesh isn't lit by an unbounded light count) so no chamber sits in ambient-only gloom —
+  // the old "every ~4th cell" left far cells dark between torches. Dungeon torches also burn brighter and
+  // reach further than their overworld cousins (buildProp's default is tuned for town torches).
+  const _nCells=dj.cellPos.length, _step=Math.max(3,Math.floor(_nCells/20)); let _torches=0;
+  for(let i=2;i<_nCells && _torches<20;i+=_step){ _torches++;
     const c=dj.cellPos[i];
-    for(const o of buildProp(th.prop,c[0],c[2],th.light)){ o.position.y+=c[1]; scene.add(o); dungeonObjs.push(o); } }
+    for(const o of buildProp(th.prop,c[0],c[2],th.light)){ o.position.y+=c[1];
+      if(o.isPointLight){ o.intensity*=1.35; o.distance+=6; }   // stronger underground than a town torch
+      scene.add(o); dungeonObjs.push(o); } }
   // entry: spawn + exit archway at the true entrance cell
   const en=dj.entry;
   dungeonExit={x:en[0],z:en[2]+3.4}; dungeonSpawn={x:en[0],z:en[2]-1.5};

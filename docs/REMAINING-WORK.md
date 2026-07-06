@@ -75,10 +75,16 @@ lists what remains, with enough context for a fresh session to pick any item up 
   high charm. No engine dependencies.
 
 ### 7. Smaller polish items
-- **Dungeon lighting (real mode)**: values were raised (amb 0.85 + hemi 0.35, torches
-  every ~4th cell in `buildDungeonReal`) but ONLY verifiable in live play — headless
-  renders stay black (light pool + textures need the running loop). Eyeball on the
-  real machine; tune `th.light` torch intensity if still dim.
+- **Dungeon lighting (real mode)**: *(pass 2, 2026-07-06)* amb raised 0.85→0.95, hemi
+  0.35→0.45, and the torch placement reworked in `buildDungeonReal` for **even coverage**
+  (≈1 per few cells, capped at 20 so the one big dungeon mesh isn't lit by an unbounded
+  light count) instead of the old "every ~4th cell" that left far cells dark between
+  torches; each dungeon prop-light now burns **brighter (×1.35) and reaches +6u further**
+  than its overworld cousin (`buildProp`'s default is tuned for town torches). Verified by
+  state (rig built correctly, ×1.35/+6 applied, the global daylight-kill does NOT clobber
+  the dungeon's own local amb/hemi, carried torch on, 0 errors). **Still not visually
+  verifiable headless** (SwiftShader renders dungeons black) — worth a final eyeball on the
+  real machine; nudge amb/hemi or the ×1.35 factor if still dim or now too bright.
 - **Item models for shields/clothing drops**: `tools/ac_item_models.py` currently
   exports MeleeWeapon/MissileLauncher/Caster setups (655 meshes). Add "Clothing"
   (shields live there) if shield drops should use real meshes too — mind pack size.
