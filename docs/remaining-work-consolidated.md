@@ -21,6 +21,17 @@ then **reconciled against the current code** — several items the older gap-ana
 > professions, 270 attr credits/52 skill credits with specialize-at-creation, ToD starter kit,
 > Training Academy, greeter chains — end-to-end creation test passed).
 
+> ✅ **TIER 2 COMPLETE (rev 5, branch tier2-systems):** built this pass — **weapon-skill tree**
+> (each weapon rolls ITS skill: heavy/light/finesse/twohand/missile), **missile to-hit** (lost roll
+> flies wide), **96 "Other" support spells** (retail names + real Other mana; ally via relay, else
+> your familiar, else refuse+refund), **Enlightenment true gates** (L275 + Society Master + maxed
+> auras), **Secondary Portal Tie/Recall + Portal/Lifestone Sending** (receiver-resolved over the
+> cast relay), **item-spells on loot** (Minor→Legendary cantrips with Spellcraft + item mana that
+> drains worn and re-wakes via Mana Stone). Verified already-built by parallel passes (not re-done):
+> melee to-hit contest, level cap 275, vitals raising, retail society ranks + ribbons + Test quests,
+> tinker per-item caps + imbue-once, limited vendor pyreals, fellowship cap 9 + proportional XP,
+> secure trade (/trade), AC housing gates/writs/rent. **Tier 2 is done — do not re-plan.**
+
 Sources: `docs/REMAINING-WORK.md`, `wrapup-remaining-work.md`, `ac-remaining-gaps.md`,
 `ac-newplayer-split.md`, `fidelity-split.md`, `three-agent-dat-update.md`, `building-entry-audit.md`,
 `asherons-call-authenticity-gaps.md`, `asherons-call-longtail-gaps.md`, `loop-test-findings.md`,
