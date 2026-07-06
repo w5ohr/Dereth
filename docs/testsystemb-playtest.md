@@ -63,7 +63,55 @@ noise above.
 
 ---
 
+## [TestSystemB] Pass 3 — 2026-07-06 ~23:25
+
+**Result: CLEAN.** `main` still unchanged (`c3232dc`). Rather than log the same artifacts a third time,
+I **hardened the harness** to kill the false positives and — importantly — investigated the one flag
+that looked like it might be real. After hardening: **29 subsystems, 0 assertion findings, 0
+page/console errors, 0 uncaught exceptions** (only 1 benign `info` note remains, by design).
+
+### Investigated and cleared (was NOT a bug)
+- **`elemental: fire-brand added no elemental dmg`** (pass 3 first run showed brand 480 ≈ plain 481).
+  Ran a dedicated isolation probe (`tsb_brand.js`) across three paths — **all confirm the brand works**:
+  - direct `applyHit`: 160 → **353** with brand (fire-weak ×1.5, brandDmg=100 adds ~+193)
+  - hand-assigned weapon via `meleeAttack`: 406 → **457**
+  - real `equipItem` path via `meleeAttack`: 308 → **436**
+  - `meleeAttack` correctly translates the affix (`index.html:15540`) and `applyHit` applies `elemMult`
+    to it (`index.html:10097`). The earlier "flake" was **crit variance** (2× on ~11% of hits) swamping
+    a 25%-of-hit signal at n=8. Fixed the test to average `applyHit` over N=120 → now a clean
+    **123 → 316** signal every run.
+
+### Newly exercised end to end (previously never reached)
+- **Enlightenment endgame** now fully driven: the test satisfies all real prerequisites
+  (level **275** + Society **Master** + all Luminance Auras maxed) and `enlighten()` fires correctly —
+  **level 275 → reset to 1**, `enlightenment` 0 → 1, title **"Awakened"**, 5 auras retained. The full
+  prestige-reset path is confirmed working; earlier passes only reached L100 and hit the gate as designed.
+
+### Harness improvements applied (test tooling only — no game code touched)
+- `probeSystems` world counts (shops/portals/lifestones/NPCs) now checked **after** create (`worldSeeded`
+  step) — post-create the world is fully populated (206/218/185/694).
+- Missile test strips pre-existing ammo (soldiers carry Steel Quarrels) and empties the stack for the
+  no-ammo guard the way `takeFromInv` really does (removes the stack at 0, not a lingering count:0).
+- Elemental integration → deterministic large-N direct `applyHit` comparison.
+- Progression climbs to the real L275 cap with large XP chunks and sets up every enlighten prerequisite.
+- `skillKeyGuard` asserts the true P3-1 invariants (no throw / no save-pollution / credits intact /
+  bad-key returns false / valid `heavy` still resolves); the fresh-train-returns-false case is logged
+  as `info`, since it only reflects skill credits already spent by the `progression` step.
+
+### Minor observation (not a bug — for a human glance)
+- `fireArrow`'s no-ammo guard checks for the **existence** of a matching ammo item, not `count > 0`
+  (`index.html:15475`). In normal play this is safe because `takeFromInv` splices a stack when it hits
+  0, so a `count:0` stack never lingers. But if any future code path ever leaves a zero-count ammo
+  stack in inventory, a shot could fire "for free." A defensive `&& x.count > 0` in the guard would
+  harden it. Very low risk today.
+
+---
+
 ## Standing notes for future passes (avoid re-flagging these)
+
+*(All of the following are now handled by the hardened harness as of pass 3 — kept here as the record
+of WHY each test does what it does.)*
+
 - **Run `probeSystems` AFTER `create`** — the world (shops/portals/lifestones/NPCs) is empty until a
   character enters.
 - **New characters start INSIDE the Training Academy tutorial dungeon** (`inDungeon=true`, intended).
