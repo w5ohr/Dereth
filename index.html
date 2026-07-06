@@ -1453,8 +1453,39 @@ function itemIconDID(name){ if(!AC_ICONS||!name)return null; const n=name.toLowe
   if(AC_ICONS.names[n])return AC_ICONS.names[n];
   for(const w of n.split(/\s+/).reverse()){ if(AC_ICONS.names[w])return AC_ICONS.names[w]; }   // fall back to the base noun ("… sword")
   return null; }
-function itemIconHTML(name,emoji,px){ const did=itemIconDID(name); const s=px||18;
-  if(did&&AC_ICONS.icons[did]) return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`;
+// ── EVERY item gets a real icon: name → base-noun → item TYPE (category) → a representative retail bitmap.
+//    So named/epic/quest items whose name doesn't match still show a real icon of the right kind, never an emoji. ──
+const _ICON_CAT_KW={ sword:["sword"],axe:["axe"],mace:["mace","club"],dagger:["dagger","knife"],spear:["spear"],staff:["staff"],
+  bow:["bow"],crossbow:["crossbow","arbalest"],atlatl:["atlatl"],unarmed:["cestus","katar"],focus:["orb","wand","sceptre"],
+  twohand:["greatsword","great sword","two handed","zweihander","maul","glaive","sword"],
+  shieldb:["buckler"],shieldk:["kite shield","shield"],shieldt:["tower shield","shield"],shielda:["aegis","shield"],shield:["shield","buckler"],
+  head:["helm","coif","cap"],chest:["breastplate","cuirass","hauberk","coat"],upperarm:["pauldron","sleeve"],lowerarm:["vambrace","bracer"],
+  hands:["gauntlet","glove"],legs:["legging","greave","tasset"],feet:["boot","solleret"],back:["cloak","cape"],shirt:["shirt","tunic"],pants:["breeches","trousers"],
+  finger:["ring"],neck:["necklace","amulet"],wrist:["bracelet"],
+  hp:["health kit","potion"],mn:["mana","potion"],st:["stamina","potion"],hot:["potion"],cure:["antidote","potion"],skillpot:["elixir","potion"],attrpot:["philtre","potion"],
+  scroll:["scroll"],book:["parchment","book"],quest:["stone","letter"],writ:["letter","parchment"],comp:["scarab","peas"],note:["trade note","note"],
+  key:["key"],pick:["lockpick"],keyring:["key"],gem:["gem"],food:["bread","pie"],trophy:["gem"],salvage:["gem"],
+  ammo:["arrow","quarrel","dart"],atlanstone:["atlan"],contract:["contract"],portalgem:["portal gem"],recall:["recall","stone"],
+  augment:["aetheria"],aetheria:["aetheria"],pack:["sack","pouch"],dye:["dye"],ticket:["ticket","token"],oil:["oil"],manastone:["mana stone"],furniture:["chair","table"] };
+let _catIconCache={};
+function catIconDID(cat){ if(!AC_ICONS||!cat) return null; if(_catIconCache[cat]!==undefined) return _catIconCache[cat];
+  const kws=_ICON_CAT_KW[cat]; if(!kws) return _catIconCache[cat]=null;
+  for(const k of kws){ if(AC_ICONS.names[k]) return _catIconCache[cat]=AC_ICONS.names[k]; }              // exact single-word icon
+  for(const nm in AC_ICONS.names){ for(const k of kws){ if(nm.indexOf(k)>=0) return _catIconCache[cat]=AC_ICONS.names[nm]; } }  // else first icon whose name contains the keyword
+  return _catIconCache[cat]=null; }
+function itemCat(it){ if(!it) return null; const S=it.stat;
+  if(it.scroll||it.spellId!=null) return "scroll";                                                            // spell scrolls flag via .scroll, not stat
+  if(["Strength","Endurance","Coordination","Quickness","Focus","Self"].indexOf(S)>=0) return "gem";          // attribute/aetheria attunement stones
+  if(S==="weapon") return (it.wt==="focus"||it.foc)?"focus":(it.wt||"sword");
+  if(S==="worn"){ if(it.shield) return ({buckler:"shieldb",kite:"shieldk",large:"shieldk",tower:"shieldt",covenant:"shieldk",olthoi:"shieldt",round:"shieldb",aegis:"shielda"})[it.shield]||"shield"; return it.aslot||"chest"; }
+  if(S==="jewelry") return it.jtype||"finger";
+  return S; }   // consumables/quest/comp/etc. map straight through by stat
+function itemIconImg(did,s){ return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`; }
+function itemIconHTML(name,emoji,px,it){ const s=px||18;
+  if(it&&it.acicon&&AC_ICONS&&AC_ICONS.icons&&AC_ICONS.icons[it.acicon]) return itemIconImg(it.acicon,s);   // the item's OWN retail icon (catalog gear)
+  let did=itemIconDID(name);                                                                                // exact name / base noun
+  if(!did&&it){ const c=itemCat(it); did=catIconDID(c); }                                                   // else a real icon for its TYPE
+  if(did&&AC_ICONS&&AC_ICONS.icons&&AC_ICONS.icons[did]) return itemIconImg(did,s);
   return emoji||""; }
 // ── crafting recipes (assets/acrecipes.json) surfaced as an in-game reference. (Retail loot tiers
 //    are handled by the ACLOOT system below — acLootTier/acLootCount.) ──
@@ -21402,7 +21433,7 @@ function buildShop(){
       if(sn.length) gearInfo+=` · <span style="color:#9ad0ff">${sn.slice(0,2).join(", ")}${sn.length>2?" …":""}</span>`;
       if(it.gear.spellcraft) gearInfo+=` · <span style="color:#8a9ad0">spellcraft ${it.gear.spellcraft}</span>`;
     }
-    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico)} ${it.name}</span> <span class="desc">— ${it.desc}${have}${gearInfo}</span></div>
+    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico,null,it.gear||it)} ${it.name}</span> <span class="desc">— ${it.desc}${have}${gearInfo}</span></div>
       <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""} ${unmet?`title="You cannot wield this yet — needs ${esc(unmet)}" style="border-color:#a06a3a;color:#d0a070"`:""}>Buy — ${it.cost}p${unmet?" ⚠":""}</button></div>`;
     buy.appendChild(row);
   });
@@ -24511,7 +24542,7 @@ function itemCompare(it){
 // ---- equipment paper-doll: every worn slot as a tile; click a filled tile to unequip ----
 function slotTile(label,ico,item,kind,slot){
   const filled=!!item, col=filled?itemRarity(item).c:"#5a5346";
-  const glyph=filled?itemIconHTML(item.name,ico,20):ico;
+  const glyph=filled?itemIconHTML(item.name,ico,20,item):ico;
   return `<div class="doll-slot${filled?' filled':''}" data-kind="${kind}" data-slot="${slot||''}" title="${filled?esc(item.name)+' — click to unequip':label+' (empty)'}">
     <span class="ds-ico">${glyph} ${label}</span><span class="ds-lab" style="color:${col}">${filled?esc(item.name):"—"}</span></div>`;
 }
@@ -24682,12 +24713,12 @@ function buildTinker(){
     const tabS=on=>`background:${on?'#2a2438':'rgba(255,255,255,.05)'};border:1px solid ${on?'var(--gold)':'var(--border)'};border-radius:5px;color:${on?'#ffd86b':'#cdbf9a'};cursor:pointer;padding:3px 8px;font-size:11px`;
     let bar=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px"><button data-pk="0" style="${tabS(ap===0)}">Main Pack ${Math.min(player.inv.length,caps[0])}/${caps[0]}</button>`;
     player.packs.forEach((p,k)=>{ const n=Math.max(0,Math.min(player.inv.length-lows[k+1],p.cap));
-      bar+=`<button data-pk="${k+1}" style="${tabS(ap===k+1)}" title="${esc(p.name)}">${itemIconHTML(p.name,"🎒",14)} ${n}/${p.cap}</button>`; });
+      bar+=`<button data-pk="${k+1}" style="${tabS(ap===k+1)}" title="${esc(p.name)}">${itemIconHTML(p.name,"🎒",14,{stat:"pack"})} ${n}/${p.cap}</button>`; });
     bar+=`</div>`;
     // the active pack's slot grid — AC's square cells, real inventory icons, count badges
     let grid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;margin-bottom:8px">`;
     for(let s=lo;s<hi;s++){ const it=player.inv[s];
-      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — click to inspect · drag to rearrange" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
+      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — click to inspect · drag to rearrange" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
               :`<div data-slot="${s}" style="width:34px;height:34px;border:1px solid #2c2820;border-radius:4px;background:rgba(0,0,0,.35)"></div>`; }
     grid+=`</div>`;
     const hdr=document.createElement('div'); hdr.innerHTML=bar+grid; rows.appendChild(hdr);
@@ -25269,7 +25300,7 @@ function sendChatLine(text){
 const TRADE={open:false,from:null,mine:[],them:[],mineCoin:0,themCoin:0,youOk:false,themOk:false,"with":"?"};
 function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.mineCoin=TRADE.themCoin=0; TRADE.youOk=TRADE.themOk=false;
   const w=document.getElementById('tradeWin'); if(w)w.remove(); }
-function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
+function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
 function renderTradeWin(){
   let w=document.getElementById('tradeWin');
   if(!w){ w=document.createElement('div'); w.id='tradeWin';
