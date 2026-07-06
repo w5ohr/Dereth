@@ -25370,6 +25370,29 @@ window.addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
   resizePost();
 });
+// ── Lane C #10: REAL AC window-frame chrome — compose a 9-slice border sheet from the extracted
+//    gold plates (06001922 corner · 06001921 bar · 06001920 strut) and frame every draggable panel.
+//    Composed at boot because the pieces ship separately; missing pack → the plain border stands.
+function acChromeInit(){
+  const load=s=>new Promise(r=>{ const i=new Image(); i.onload=()=>r(i); i.onerror=()=>r(null); i.src="assets/acui/"+s+".png"; });
+  Promise.all([load("06001921"),load("06001920")]).then(([bar,strut])=>{
+    if(!bar||!strut) return;
+    const S=32, C=document.createElement('canvas'); C.width=C.height=S*3;
+    const g=C.getContext('2d');
+    // the frame is two clean hammered-gold strips: the bar's top ridge run horizontally, the
+    // strut vertically; the horizontal strip laps the vertical at the corners (a mitred look)
+    const dv=(x,flip)=>{ g.save(); if(flip){ g.translate(x+S,0); g.scale(-1,1); g.drawImage(strut,0,4,10,56, 0,0,S,S*3); }
+      else g.drawImage(strut,0,4,10,56, x,0,S,S*3); g.restore(); };
+    dv(0,false); dv(S*2,true);                                              // left + right struts, full height
+    const dh=(y,flip)=>{ g.save(); if(flip){ g.translate(0,y+S); g.scale(1,-1); g.drawImage(bar,6,4,81,16, 0,0,S*3,S); }
+      else g.drawImage(bar,6,4,81,16, 0,y,S*3,S); g.restore(); };
+    dh(0,false); dh(S*2,true);                                              // top + bottom bands, lapping the struts
+    const st=document.createElement('style');
+    st.textContent=`.panel{border:9px solid transparent;border-image:url(${C.toDataURL()}) 32 / 9px stretch;border-radius:0}`;
+    document.head.appendChild(st);
+  });
+}
+acChromeInit();
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
 // (the retail-vendor data rides the same gate so towns build with their true merchants)

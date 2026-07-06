@@ -65,7 +65,7 @@ product call, not agent work; do not implement without a decision recorded here.
 
 | # | Lane | Item | What's undone | Size | Status |
 |---|------|------|---------------|------|--------|
-| 10 | C | **Real UI window-frame chrome** | Apply the large plates (`06001b14`/`060011bb`/`06001343`) as 9-slice `border-image` on the draggable panels (needs per-plate slice tuning). Vitals/quickbar/charge-bar chrome + the gold strut on vitals & quest panels are already wired (11 of 37 plates). *(wrapup §7)* | S–M | WIP:agent2 |
+| 10 | C | **Real UI window-frame chrome** | Apply the gold frame plates as 9-slice `border-image` on the draggable panels. *(Corrected: `06001b14`/`06001343` are the Turbine/AC logos and `060011bb` a stone field — the real frame family is `06001920`/`21`/`22`.)* Vitals/quickbar/charge-bar chrome + the gold strut on vitals & quest panels are already wired (11 of 37 plates). *(wrapup §7)* | S–M | WIP:agent2 |
 | 11 | C | **Paperdoll panel layout** (PAGE-99 manual) | Icon-rail toggle + Examine box + jewelry/container slot arrangement. Contents exist; arrangement differs. *(ac-remaining-gaps A2)* | M | WIP:agent2 |
 | 12 | B | **Dungeon lighting final tune** | Eyeball torch/ambient intensity live; nudge amb/hemi or the ×1.35 factor. Pass 2 already landed. *(REMAINING-WORK)* | S | open |
 | 13 | B | **Equipped-shield arm mount + doorway/window transparency** | Real shield *meshes* now show on drops/examine, but the equipped-avatar shield stays procedural (arm orientation), the opaque-doorway recess is a warm-glow card, and windows are still baked-opaque — all need on-hardware iteration. *(playtest #21)* | S each | open |
