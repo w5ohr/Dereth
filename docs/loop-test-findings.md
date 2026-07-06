@@ -232,3 +232,17 @@ Deeper than pass 1, all on HEAD with the 2 merged fixes:
 - Inventory cap (12): over-cap addToInv correctly rejected (42 rejected). (Forced quest-reward grants can exceed the visible cap by design.)
 
 **End of overnight sweep pass 3.** Three deep passes (endgame Kilmer + fresh new-player + edge/stress) — 0 real new bugs beyond the 2 already fixed. Remaining items are design confirmations, not defects.
+
+## 2026-07-06 09:43 — MMO registration process (focused)
+
+### Registration — PASS (server 20/20 edge cases + client flow)
+**Server-side** (throwaway server, fresh DB) — 20/20:
+- Valid register → auth_ok with session token + protocol version.
+- Duplicate name → auth_err "already taken". Name length bounds (3–16) enforced (2-char and 17-char rejected). Invalid chars rejected (space, "!"). Password <4 rejected. Min-valid (3-char name / 4-char pw) accepted. Names with _ and - accepted. Names case-sensitive (Case vs case both register). Empty name/password rejected. Non-string name handled without crash.
+- Login roundtrip: correct pw → auth_ok, wrong pw → auth_err, unknown account → auth_err. No server errors/tracebacks on any malformed input.
+
+**Client-side** (browser → live :8787 → browser):
+- Valid registration authenticates, receives token, and transitions to the character-select roster (0/8 empty "+ Create" slots). Confirmed by screenshot.
+- Duplicate name → shows "That name is already taken." and stays at login.
+- Short password → shows "Password must be at least 4 characters." and stays at login.
+- Cleanup: removed the test account + earlier test-harness accounts from the real dereth.db (only Admin/Kilmer remains). No registration bugs found.
