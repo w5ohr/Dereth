@@ -205,6 +205,7 @@
     <div class="attr"><span>Delves</span><b id="sDelves">0/50</b></div>
     <div class="attr"><span>Vitae</span><b id="sVitae">—</b></div>
     <div class="attr"><span style="color:#9fd0ff">Season</span><b id="sSeason" style="color:#cfe0ee">—</b></div>
+    <div class="attr"><span style="color:#c8b06a">Region</span><b id="sRegion" style="color:#e6d6a8">—</b></div>
     <div class="attr" id="evRow" style="display:none"><span style="color:#ffb347">Incursion</span><b id="sEvent" style="color:#ffb347">—</b></div>
   </div>
   <div id="quest" class="panel" style="top:372px;right:12px;width:182px;font-size:11px;display:none">
@@ -1686,6 +1687,26 @@ const REGIONS=[
   {name:"Gharu'ndim",   tint:[1.0,0.88,0.50]},
 ];
 const DIRELANDS_TINT=[0.40,0.36,0.46];
+// ── Named regions of Dereth — the three cultural homelands, the frontier, and the special zones,
+//    surfaced as you travel (regionNameAt → HUD readout + a "you have entered …" toast on crossing),
+//    on the world map, and via /where. (The continent's true irregular coastline & authored barriers
+//    await the terrain-data lane; these NAME the world as it currently stands.) ──
+const REGION_META={
+  aluvia:   {key:"aluvia",   name:"Aluvia",           blurb:"The green Aluvian northlands — rolling farm country and the oldest human settlements in Dereth."},
+  sho:      {key:"sho",      name:"the Sho Lands",    blurb:"Wooded hills and terraced valleys where the Sho keep the old disciplines."},
+  gharu:    {key:"gharu",    name:"Gharu'ndim",       blurb:"The southern desert of the Gharu'ndim — sun-baked dunes, oases, and djinn-haunted ruins."},
+  blackmire:{key:"blackmire",name:"the Blackmire",    blurb:"A fetid swamp band between the Aluvian and Sho lands, thick with mosswarts and reedsharks."},
+  isles:    {key:"isles",    name:"the Outer Isles",  blurb:"The western isles — Aphus Lassel, Aerlinthe and their kin — ringed by deep water and older magic."},
+  dire:     {key:"dire",     name:"the Direlands",    blurb:"The untamed frontier beyond the settled lands, where the deadliest creatures of Dereth roam."},
+};
+const REGION_KEYS=["aluvia","sho","gharu"];   // REGIONS[] index → REGION_META key
+// The most SPECIFIC named region covering a point: isles → Direlands → the Blackmire → cultural homeland.
+function regionNameAt(x,z){
+  if(typeof islandLift==="function" && islandLift(x,z,0)>1.0) return REGION_META.isles;   // standing on an outer isle
+  if(typeof inSwamp==="function" && inSwamp(x,z)) return REGION_META.blackmire;           // the named swamp band wins over the generic frontier
+  if(regionOf(x,z)<0) return REGION_META.dire;                                            // beyond the settled lands
+  return REGION_META[REGION_KEYS[regionOf(x,z)]]||REGION_META.aluvia;                     // the three homelands
+}
 // Real Dereth towns placed by their actual in-game coordinates: [name, lat(N+/S-), lon(E+/W-), region, capital]
 // Canonical Asheron's Call town coordinates (Drunkapedia; see docs/asherons-call-world-reference.md).
 // Region 0 Aluvia (north), 1 Sho (south-east), 2 Gharu'ndim (west). New Viamont & Direlands frontier
@@ -1734,6 +1755,24 @@ function swampZone(){ if(_swamp) return _swamp;
   _swamp=(a&&b)?{x:(a.x+b.x)/2,z:(a.z+b.z)/2,r:900}:{x:0,z:0,r:0}; return _swamp; }
 function inSwamp(x,z){const s=swampZone();return s.r>0&&Math.hypot(x-s.x,z-s.z)<s.r;}
 function regionTint(x,z){const r=regionOf(x,z);return r<0?DIRELANDS_TINT:REGIONS[r].tint;}
+// Announce region crossings and keep the HUD's Region readout current. Debounced by a short dwell so a
+// fuzzy boundary doesn't spam the toast; silent on the very first frame (you don't "enter" where you spawn).
+let _regPend=null,_regDwell=0;
+function regionTick(dt){
+  if(inDungeon||inNetwork||!player.alive) return;
+  const rn=regionNameAt(player.x,player.z), key=rn.key;
+  const el=document.getElementById('sRegion'); if(el&&el.textContent!==rn.name) el.textContent=rn.name;
+  if(!player._regionKey){ player._regionKey=key; return; }        // init silently at spawn/load
+  if(key!==player._regionKey){
+    if(_regPend!==key){ _regPend=key; _regDwell=0; }
+    _regDwell+=dt;
+    if(_regDwell>=1.2){                                           // held long enough to count as a real crossing
+      player._regionKey=key; _regPend=null; _regDwell=0;
+      toast("Entered "+rn.name);
+      log(`<b>You have entered ${rn.name}.</b> <span style="color:var(--dim)">${rn.blurb}</span>`,"sys");
+    }
+  } else { _regPend=null; _regDwell=0; }
+}
 let ROADS=[], CARAVAN_PATH=null;
 function genRoads(){
   ROADS=[];
@@ -2249,8 +2288,8 @@ function islandLift(x,z,h){
 // (PlaneGeometry 200x200 over WORLD) whose flat triangles deviate from the smooth terrainH by up
 // to ~1u — sampling terrainH directly sank characters to the waist (or floated them). So sample
 // terrainH at the 4 surrounding grid vertices and bilinear-interpolate → the actual drawn surface.
-function groundY(x,z){
-  if(inDungeon) return (typeof dungeonFloorAt==="function")?dungeonFloorAt(x,z):0;   // dungeons are multi-level (ramps & pit-drops)
+function groundY(x,z,refY){
+  if(inDungeon) return (typeof dungeonFloorAt==="function")?dungeonFloorAt(x,z,refY):0;   // dungeons are multi-level (ramps & pit-drops); refY picks the storey
   if(inNetwork) return 0;                            // the Town Network stays flat
   const STEP=WORLD/GROUND_SEG;                       // grid cell size (matches the ground mesh's segments)
   const gx=(x+HALF)/STEP, gz=(z+HALF)/STEP;
@@ -2361,6 +2400,7 @@ let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
 const obstacles=[]; // {x,z,r}
+let bookStands=[];  // readable library stands placed at towns/landmarks (real AC lore books)
 let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[],ships=[];
 
 function texGround(){
@@ -5934,7 +5974,7 @@ function buildWorld(){
   for(const d of dying) scene.remove(d.mesh); dying=[];
   for(const o of netObjs) scene.remove(o);
   for(const _s of ships){ if(_s.mesh) scene.remove(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
-  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];
+  npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
   usedNpcNames=new Set();
@@ -6109,6 +6149,7 @@ function buildWorld(){
   // Roads: Dereth's authentic road web is the real AC network, painted into the terrain (acRoad, from
   // the extracted map) — NOT invented cobblestone strips. genRoads() still lays the caravan's route;
   // buildRoads() (the procedural cobbled meshes) is retired so the true AC dirt roads stand on their own.
+  placeBookStands();   // library reading-stands in the towns + a couple of lore sites (real AC books)
   genRoads();buildCaravan();
   buildRoadBridges();   // span every river/sea the real AC road web crosses with a walkable plank bridge
   // gathering nodes scattered across the wilds
@@ -13851,11 +13892,15 @@ function applyItem(it){
     const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
     bag.work=(bag.work*bag.units+w*u)/Math.max(1,bag.units+u); bag.units+=u;
     log(`You empty <b>${u} ${mat}</b> salvage (wk ${w}) into your materials — ${mat}: <b>${bag.units}</b> units.`,"loot"); if(SFX.gold)SFX.gold(); }
-  else if(it.stat==="manastone"){   // H15: recharge the equipped focus's mana battery (or, with no focus, your own mana)
-    const amt=it.charge||150, max=focusManaMax();
-    if(max>0){ player.focusMana=Math.min(max,(player.focusMana||0)+amt);
-      log(`You channel the <b>${it.name}</b> into your focus — its mana battery charges to <b>${Math.round(player.focusMana)}/${max}</b>.`,"loot"); }
-    else { player.mn=Math.min(player.mmn,player.mn+amt); log(`You drain the <b>${it.name}</b> — <b>+${amt}</b> mana. (Wield a casting focus to store it as a battery.)`,"loot"); }
+  else if(it.stat==="manastone"){   // AC mana stone: pour the stone's stored mana back into your caster gear.
+    // Retail also drained a doomed enchanted item INTO a stone to store its mana; in this game only the
+    // casting-focus battery is a live-consumed mana pool, so the stone FILLS (focus first, then your own
+    // reserve with the overflow) rather than destroying gear. Won't be spent if there's nothing to fill.
+    let amt=it.charge||150; const parts=[]; const max=focusManaMax();
+    if(max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
+    if(amt>0 && player.mn<player.mmn){ const g=Math.min(amt,player.mmn-player.mn); player.mn+=g; amt-=g; if(g>0) parts.push(`your reserve <b>+${g}</b>`); }
+    if(!parts.length){ log(`The <b>${it.name}</b>'s mana has nowhere to go — your focus and reserve are already full.`,"warn"); return "keep"; }
+    log(`You channel the <b>${it.name}</b>: ${parts.join(" · ")}.`,"loot");
     if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
   else if(it.stat==="keyring"){   // consolidate every loose lockpick & key in the satchel onto the ring
     let np=0,nk=0;
@@ -15132,7 +15177,7 @@ function currentPrompt(){
     for(const bx of dungeonBoxes) if(!bx.opened&&nr(bx.x,bx.z)<2.8) return "Open the strongbox (E)";
     for(const b of dungeonBars) if(b.kind==="key"&&!b.open&&nr(b.x,b.z)<3.2) return hasNamedKey(b.need)?("Unlock with the "+b.need+" (E)"):("Locked — find the "+b.need);
     for(const b of dungeonBars) if(b.kind==="lever"&&!b.open&&nr(b.x,b.z)<3.2) return "A portcullis bars the way — find its lever";
-    for(const pp of dungeonPortals) if(nr(pp.x,pp.z)<2.8) return "Take the portal back (E)";
+    for(const pp of dungeonPortals) if(nr(pp.x,pp.z)<2.8) return pp.chainTo?("Descend into "+pp.chainTo.name+" (E)"):"Take the portal back (E)";
     if(dungeonDescent&&nr(dungeonDescent.x,dungeonDescent.z)<3) return "Take Ye Olde Stair down — depth "+(dungeonDepth+1)+" (E)";
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return dungeonDepth>1?"Climb back up (E)":"Leave the delve (E)";
     return "";
@@ -15141,6 +15186,7 @@ function currentPrompt(){
     if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.open?("Loot "+d.owner+"'s corpse (E)"):(d.owner+"'s corpse (theirs to recover)");
     return "Recover your corpse (E)"; }
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
+  for(const bs of bookStands) if(nr(bs.x,bs.z)<3.2) return "Browse "+bs.name+" (E)";
   {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
     if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
@@ -15265,7 +15311,11 @@ function interact(){
     for(const lv of dungeonLevers) if(!lv.pulled&&Math.hypot(lv.x-player.x,lv.z-player.z)<2.8){ pullDungeonLever(lv); return; }
     for(const bx of dungeonBoxes) if(!bx.opened&&Math.hypot(bx.x-player.x,bx.z-player.z)<2.8){ openStrongbox(bx); return; }
     for(const b of dungeonBars) if(b.kind==="key"&&!b.open&&Math.hypot(b.x-player.x,b.z-player.z)<3.2){ unlockDungeonDoor(b); return; }
-    for(const pp of dungeonPortals) if(Math.hypot(pp.x-player.x,pp.z-player.z)<2.8){ teleportFX(player.x,player.z); arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=1.5; if(SFX.portal)SFX.portal(); log("The portal casts you back to the entrance.","sys"); return; }
+    for(const pp of dungeonPortals) if(Math.hypot(pp.x-player.x,pp.z-player.z)<2.8){
+      if(pp.chainTo){ const ret=dungeonReturn; teleportFX(player.x,player.z);   // chained delve: carry on DOWN, keeping the original overworld return
+        if(SFX.portal)SFX.portal(); log(`You step through — the way runs on into <b>${pp.chainTo.name}</b>.`,"sys");
+        exitDungeon(false); enterDungeon(pp.chainTo, ret.x, ret.z); return; }
+      teleportFX(player.x,player.z); player.y=(dungeonSpawn.y||0); arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=1.5; if(SFX.portal)SFX.portal(); log("The portal casts you back to the entrance.","sys"); return; }
     if(dungeonDescent&&Math.hypot(dungeonDescent.x-player.x,dungeonDescent.z-player.z)<3){ const d=dungeonDepth+1;
       teleportFX&&teleportFX(player.x,player.z); dungeonGoDepth(d); if(SFX.portal)SFX.portal();
       log(`You take the old stair down — <b>depth ${d}</b>. The dark grows heavier.`,"warn"); return; }
@@ -15275,6 +15325,7 @@ function interact(){
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
+  for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ openBookShelf(bs); return; }
   {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
@@ -15784,7 +15835,7 @@ function update(dt){
       else { if(m.t>rnd(2,4)){m.t=0;m.ang=rnd(0,6.28);if(Math.random()<0.5)m.idleT=rnd(1,2.5);} if(m.idleT>0)m.idleT-=dt; else {m.x+=Math.sin(m.ang)*b.spd*0.35*slowF*dt;m.z+=Math.cos(m.ang)*b.spd*0.35*slowF*dt;} }
       m.x=clamp(m.x,-HALF+1,HALF-1);m.z=clamp(m.z,-HALF+1,HALF-1);
       const aby=animateCreatureRig(m,dt,Math.hypot(m.x-oax,m.z-oaz)>1e-4);
-      m.mesh.position.set(m.x,groundY(m.x,m.z)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
+      m.mesh.position.set(m.x,groundY(m.x,m.z,m.mesh.position.y)+aby,m.z); m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);   // refY: a mob stays on ITS storey
       m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.2:1)); if(m.flash>0)m.flash-=dt;
       continue;
     }
@@ -15841,7 +15892,7 @@ function update(dt){
     let lx=m.x,lz=m.z;
     if(m.lungeT>0){m.lungeT-=dt;const la=Math.atan2(player.x-m.x,player.z-m.z),lf=Math.sin(Math.max(0,m.lungeT)/0.18*Math.PI)*0.6;lx+=Math.sin(la)*lf;lz+=Math.cos(la)*lf;}
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-ox,m.z-oz)>1e-4);
-    m.mesh.position.set(lx,groundY(lx,lz)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);
+    m.mesh.position.set(lx,groundY(lx,lz,m.mesh.position.y)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);   // refY: a mob stays on ITS storey
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb&&(m.hp<m.mhp||m.isBoss||m.isElite)){hb.visible=true;hb.quaternion.copy(cam.quaternion);
@@ -15931,6 +15982,7 @@ function update(dt){
   wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
   crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
+  regionTick(dt);        // announce region crossings + keep the HUD Region readout current
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
   updateHUD();
@@ -16721,7 +16773,10 @@ function drawBigMap(){
   g.textAlign="center";
   g.font="italic 13px Trebuchet MS";g.fillStyle="rgba(216,177,74,0.5)";
   for(const c of CAPITALS) g.fillText(REGIONS[c.region].name,cx(c.x),cx(c.z)-15);
-  g.fillStyle="rgba(190,160,210,0.55)";g.fillText("The Direlands",cx(0),cx(0));
+  // named sub-regions: the Blackmire swamp, the western Outer Isles, and the Direlands frontier
+  if(typeof swampZone==="function"){ const s=swampZone(); if(s.r>0){ g.fillStyle="rgba(150,190,140,0.55)"; g.fillText("the Blackmire",cx(s.x),cx(s.z)); } }
+  if(_islBB){ g.fillStyle="rgba(150,200,230,0.6)"; g.fillText("the Outer Isles",cx((_islBB[0]+_islBB[2])/2),cx((_islBB[1]+_islBB[3])/2)); }
+  g.fillStyle="rgba(190,160,210,0.6)";g.fillText("the Direlands",cx(-HALF*0.66),cx(-HALF*0.66));   // a corner in the outer wild (not dead-centre over the towns)
   g.font="11px Trebuchet MS";
   for(const ls of lifestones){const cap=ls.capital;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");
     g.beginPath();g.arc(cx(ls.x),cx(ls.z),cap?7:3.5,0,6.28);g.fill();
@@ -19972,6 +20027,52 @@ function bookStock(){   // four titles a day, rotating through the whole retail 
       gear:{name:b.n,stat:"book",v:35}}); }
   return out;
 }
+// ── Book PLACEMENT: reading-stands at the towns + a lore site, each a shelf of real AC books you can
+//    read in the world (not just buy from the scrivener). Placed in buildWorld; browsed with E. ──
+function placeBookStands(){
+  bookStands=[];
+  if(typeof CAPITALS==="undefined"||!CAPITALS.length) return;
+  const spots=[];
+  for(const c of CAPITALS) spots.push({name:c.name+" Library", x:c.x-16, z:c.z+11});   // a town library off the plaza centre
+  const hb=CITIES.find(c=>c.name==="Cragstone")||CITIES.find(c=>!c.capital); if(hb) spots.push({name:"the Scriptorium of "+hb.name, x:hb.x+9, z:hb.z-7});
+  for(const s of spots){
+    const gy=(typeof groundY==="function")?groundY(s.x,s.z):0;
+    const g=new THREE.Group();
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.0,0.62),solid(0x5a4326)); post.position.y=0.5; g.add(post);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(0.98,0.1,0.72),solid(0x6a4a2a)); top.position.set(0,1.06,0); top.rotation.x=-0.5; g.add(top);
+    const bk=new THREE.Mesh(new THREE.BoxGeometry(0.52,0.09,0.38),solid(0xe8dcbf)); bk.position.set(0,1.14,0.02); bk.rotation.x=-0.5; g.add(bk);
+    g.position.set(s.x,gy,s.z); g.castShadow=true; scene.add(g); scenery.push(g);
+    const lbl=labelSprite("📖 "+s.name,"cities"); if(lbl){ lbl.position.set(s.x,gy+2.3,s.z); scene.add(lbl); scenery.push(lbl); }
+    obstacles.push({x:s.x,z:s.z,r:0.95});
+    bookStands.push({name:s.name,x:s.x,z:s.z});
+  }
+}
+function openBookShelf(stand){
+  if(!_acBookKeys||!_acBookKeys.length){ log("The shelves stand bare — the library's texts are still being catalogued.","warn"); return; }
+  paused=true; if(locked)document.exitPointerLock();
+  const old=document.getElementById('bookShelf'); if(old) old.remove();
+  const day=Math.floor(Date.now()/86400000);
+  let h=0; for(let i=0;i<stand.name.length;i++) h=(h*31+stand.name.charCodeAt(i))>>>0;   // a stable per-stand shelf that rotates daily
+  const N=Math.min(8,_acBookKeys.length), stride=Math.max(1,Math.floor(_acBookKeys.length/N)), picks=[];
+  for(let i=0;i<N;i++) picks.push(_acBookKeys[(h+day*3+i*stride)%_acBookKeys.length]);
+  const ov=document.createElement('div'); ov.id='bookShelf';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6)";
+  ov.innerHTML=`<div style="max-width:470px;width:90%;background:#1a1710;border:1px solid var(--gold);border-radius:8px;padding:20px 22px;color:#e6d6a8">
+    <div style="color:var(--gold);text-transform:uppercase;letter-spacing:.5px;font-size:13px;margin-bottom:4px">📖 ${esc(stand.name)}</div>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:12px">Take a volume down to read — Dereth's own lore, in the authors' words.</div>
+    <div id="bsList" style="display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow:auto"></div>
+    <button id="bsClose" style="margin-top:14px;width:100%;background:none;border:1px solid #8a7a52;border-radius:5px;padding:6px;color:#e6d6a8;cursor:pointer">Close</button></div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ ov.remove(); paused=false; };
+  const list=ov.querySelector('#bsList');
+  for(const k of picks){ const b=AC_BOOKS[k]; if(!b) continue;
+    const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="text-align:left;padding:7px 10px";
+    btn.innerHTML=`<b>${esc(b.n)}</b> <span style="color:var(--dim);font-size:11px">— ${b.pages.length} page${b.pages.length>1?"s":""}</span>`;
+    btn.onclick=()=>{ ov.remove(); openBookReader({name:b.n}); };   // reader owns pause from here; its Close unpauses
+    list.appendChild(btn); }
+  ov.querySelector('#bsClose').onclick=close;
+  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+}
 function openBookReader(it){
   const b=AC_BOOKS&&AC_BOOKS[(it.name||"").toLowerCase()];
   if(!b){ log(`You leaf through <b>${it.name}</b>, but its script defeats you.`,"sys"); return; }
@@ -22803,7 +22904,7 @@ const DUNGEON_SCRIPTS={
 try{ fetch('assets/dungeon-layouts.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   if(j&&typeof j==="object"){ let n=0; for(const k in j){ j[k].pack=true; DUNGEON_SCRIPTS[k]=j[k]; n++; }
     if(n) console.log("Dungeon layout pack: "+n+" room-for-room layouts loaded."); } }).catch(()=>{}); }catch(e){}
-function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName){
+function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName,fy){
   hpMul=(hpMul||1)*(1+0.35*((dungeonDepth||1)-1));   // deeper floors breed harder denizens
   const b=BESTIARY[kind];
   const cv=acCreatureMesh(kind), mesh=cv.mesh, gm=cv.gm;     // authentic AC model (+ breed) or procedural fallback
@@ -22813,7 +22914,7 @@ function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName){
     const aura=new THREE.PointLight(0xff5a3a,1.8,14);aura.position.y=1.6;mesh.add(aura);
     const lbl=labelSprite(bossName||("Warden — "+b.name),"monsters");lbl.scale.set(7,1.8,1);lbl.position.y=mesh.userData.headY+1.4;mesh.add(lbl);
   }
-  mesh.position.set(x,(typeof dungeonFloorAt==="function"&&inDungeon)?dungeonFloorAt(x,z):0,z);scene.add(mesh);
+  mesh.position.set(x,(typeof dungeonFloorAt==="function"&&inDungeon)?dungeonFloorAt(x,z,fy):0,z);scene.add(mesh);   // fy: spawn on the intended storey
   const m={kind,x,z,r,hp,mhp:hp,dmg,xp,goldMul:elite?4:1,ang:rnd(0,6.28),state:"chase",t:0,atkCd:0,
     wx:x,wz:z,slow:0,flash:0,mesh,headY:mesh.userData.headY*base,isDungeon:true,isElite:!!elite,baseScale:base,
     name:(gm&&gm.vname&&gm.vname!==b.name)?gm.vname:undefined,burnT:0,burnDps:0,burnAcc:0,gltf:!!gm};
@@ -22909,14 +23010,37 @@ function genDungeonLayout(def){
 function roomExtent(room,dir){ return room.round?room.rad:(dir==="N"||dir==="S"?room.hz:room.hx); }
 // floor height at a point: rooms first (flat per-room fy), then corridors (ramps interpolate).
 // dungeonRects entries carry fy; ramp rects carry {ramp:{vert,lo,hi,fyHi,fyLo}}.
-function dungeonFloorAt(x,z){
-  let cor=null;
+// Multi-level: the floor at (x,z) depends on which STOREY you're on. refY (default: the player's
+// current height) picks among vertically stacked cells — the highest floor at or below you (+ a
+// step allowance); if you're below every floor (falling down a pit-drop) you land on the lowest.
+// A short "stair band" eases the height toward an ADJACENT higher cell so the baked staircases of
+// real EnvCell dungeons are walkable both ways (overlapping cells are storeys, never blended).
+function dungeonFloorAt(x,z,refY){
+  const ry=(refY!=null)?refY:((typeof player!=="undefined"&&typeof player.y==="number")?player.y:0);
+  const CLIMB=1.25, BAND=2.8;
+  let rooms=null, cor=null;
   for(const c of dungeonRects){
-    if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad) return c.fy||0; }
+    if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad){ (rooms=rooms||[]).push(c); } }
     else if(x>=c.x0&&x<=c.x1&&z>=c.z0&&z<=c.z1){
-      if(c.room) return c.fy||0;                       // room floors win over overlapping corridors
-      if(!cor) cor=c;
+      if(c.room){ (rooms=rooms||[]).push(c); }
+      else if(!cor) cor=c;
     }
+  }
+  if(rooms){
+    let cur=null;
+    for(const c of rooms){ const fy=c.fy||0;
+      if(fy<=ry+CLIMB && (!cur||fy>(cur.fy||0))) cur=c; }
+    if(!cur){ cur=rooms[0]; for(const c of rooms) if((c.fy||0)<(cur.fy||0)) cur=c; }   // below every floor → the lowest storey catches you
+    let fy=cur.fy||0;
+    if(!cur.round){   // stair band: ease up toward an adjacent (non-overlapping) higher cell you're walking into
+      for(const c of dungeonRects){ if(c===cur||!c.room||c.round) continue;
+        const dfy=(c.fy||0)-fy; if(dfy<=0||dfy>7.2) continue;
+        if(x>=c.x0&&x<=c.x1&&z>=c.z0&&z<=c.z1) continue;                 // overlap = a storey above, not a stair
+        const dx=Math.max(c.x0-x,x-c.x1,0), dz=Math.max(c.z0-z,z-c.z1,0);
+        const d=Math.hypot(dx,dz);
+        if(d<BAND) fy=Math.max(fy,(cur.fy||0)+dfy*(1-d/BAND)); }   // linear: reaches the full height AT the edge, so the y-pick accepts the upper storey as you cross
+    }
+    return fy;
   }
   if(!cor) return 0;
   if(cor.ramp){ const rp=cor.ramp, t=clamp(((rp.vert?z:x)-rp.p0)/(rp.p1-rp.p0),0,1);
@@ -22954,6 +23078,31 @@ function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
 let AC_DGN=null,_acDgnCache={};
 try{ fetch('assets/acdungeons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_DGN=j;
   console.log("AC dungeon geometry: "+Object.keys(j).length+" real dungeons available."); } }).catch(()=>{}); }catch(e){}
+// ── Dungeon CHAINS (retail linked dungeons): a world portal whose surface origin sits at dungeon
+//    A's doorstep and whose destination lands at dungeon B is a retail chain edge A→B — descend A
+//    to its deepest chamber and a portal carries you onward into B (Ye-Olde style linked delves).
+//    Derived once from the extracted retail portal list; nearest-dungeon match within 0.8°.
+let _dgnChains=null;
+function dungeonChainFor(name){
+  if(_dgnChains===null){
+    _dgnChains={};
+    if(typeof ACW!=="undefined"&&ACW.on&&ACW.portals){
+      const R=0.8, spots=CANON_DUNGEONS.map(d=>({name:d[0],lat:d[1],lng:d[2]}));
+      for(const p of ACW.portals){
+        if(p.dlat==null) continue;
+        let a=null,b=null,ad=R,bd=R;
+        for(const s of spots){
+          const d0=Math.hypot(p.lat-s.lat,p.lng-s.lng); if(d0<ad){ad=d0;a=s;}
+          const d1=Math.hypot(p.dlat-s.lat,p.dlng-s.lng); if(d1<bd){bd=d1;b=s;}
+        }
+        if(a&&b&&a.name!==b.name&&!_dgnChains[a.name]&&DUNGEONS.some(d=>d.name===b.name))
+          _dgnChains[a.name]={to:b.name,via:p.n||"an ancient portal"};
+      }
+      console.log("Dungeon chains: "+Object.keys(_dgnChains).length+" retail links derived.");
+    }
+  }
+  return _dgnChains[name]||null;
+}
 function buildDungeonReal(def,dj){
   const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
   for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
@@ -22985,7 +23134,7 @@ function buildDungeonReal(def,dj){
       scene.add(o); dungeonObjs.push(o); } }
   // entry: spawn + exit archway at the true entrance cell
   const en=dj.entry;
-  dungeonExit={x:en[0],z:en[2]+3.4}; dungeonSpawn={x:en[0],z:en[2]-1.5};
+  dungeonExit={x:en[0],z:en[2]+3.4,y:en[1]}; dungeonSpawn={x:en[0],z:en[2]-1.5,y:en[1]};
   const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
   arch.position.set(dungeonExit.x,en[1]+0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
   const elbl=labelSprite("Leave the Delve — E","dungeons");elbl.position.set(dungeonExit.x,en[1]+3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
@@ -23001,12 +23150,25 @@ function buildDungeonReal(def,dj){
   dungeonChest={x:far[0],z:far[2],mesh:cm,lid,light:clt,opened:false};
   if(dungeonDepth<dungeonMaxDepth(curDungeon)) placeDescentStair(far[0]+3.2,far[1],far[2]+2.6);   // the way down hides by the hoard
   dungeonLock=null;dungeonVault=null;
+  // chain onward: the deepest chamber may carry the way down into the linked delve (retail chains)
+  { const chain=dungeonChainFor(def.name), destDef=chain&&DUNGEONS.find(d=>d.name===chain.to);
+    if(destDef){
+      const pg=new THREE.Group(); pg.position.set(far[0]+2.8,far[1],far[2]+2.8);
+      const disc=new THREE.Mesh(new THREE.CircleGeometry(1.25,24),
+        new THREE.MeshBasicMaterial({color:0x9a5aff,transparent:true,opacity:0.55,side:THREE.DoubleSide,depthWrite:false}));
+      disc.position.y=1.7; pg.add(disc);
+      const plt=new THREE.PointLight(0x9a5aff,1.6,14); plt.position.y=1.8; pg.add(plt);
+      const pl=labelSprite("Descend — "+destDef.name+" (E)","dungeons"); pl.position.y=3.6; pg.add(pl);
+      scene.add(pg); dungeonObjs.push(pg);
+      dungeonPortals.push({x:pg.position.x,z:pg.position.z,chainTo:destDef});
+      log(`<i style="color:#b09aff">The old links run deeper here — a way stands open to <b>${destDef.name}</b>.</i>`,"sys");
+    } }
   // denizens at real cell positions; the named warden guards the hoard
   const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
   const n=Math.min(38,Math.max(8,Math.floor(dj.cellPos.length/7)));
   for(let i=0;i<n;i++){ const c=dj.cellPos[irnd(2,dj.cellPos.length-1)];
-    spawnDungeonMonster(kinds[irnd(0,kinds.length-1)],c[0]+rnd(-2.5,2.5),c[2]+rnd(-2.5,2.5),false,hpMul); dungeonMobs++; }
-  spawnDungeonMonster(th.warden,far[0]+rnd(-2,2),far[2]+rnd(-2,2),true,hpMul,sc&&sc.boss); dungeonMobs++;
+    spawnDungeonMonster(kinds[irnd(0,kinds.length-1)],c[0]+rnd(-2.5,2.5),c[2]+rnd(-2.5,2.5),false,hpMul,null,c[1]); dungeonMobs++; }
+  spawnDungeonMonster(th.warden,far[0]+rnd(-2,2),far[2]+rnd(-2,2),true,hpMul,sc&&sc.boss,far[1]); dungeonMobs++;
   if(sc&&sc.d) log(`<i style="color:#cdbf9a">${sc.d}</i>`,"sys");
   log(`<i style="color:#8a9a6a">These halls stand exactly as the old world built them — ${dj.cells} chambers of true stone.</i>`,"sys");
 }
@@ -23237,16 +23399,30 @@ function dungeonGoDepth(n){
   dungeonDepth=n;
   const shim=n>1?Object.assign({},def,{id:def.id+1000*n,name:def.name+" · depth "+n}):def;   // deeper floors: depth-varied seed, generator layout
   buildDungeon(shim); markSceneSRGB();
+  player.y=(dungeonSpawn.y||0);   // seed the entry storey so the y-aware floor pick lands right
   arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=2;
   toast(n>1?(def.name+" — DEPTH "+n).toUpperCase():def.name.toUpperCase());
 }
 function enterDungeon(def,ex,ez){
   if(inDungeon) return;
   if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
+  // First visit to a real-geometry dungeon: fetch its EnvCell pack BEFORE building (capped wait),
+  // so the first descent is the true dungeon — not the grid stand-in with a prefetch for next time.
+  { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
+    if(dgn&&(!sc0||sc0.pack)&&!_acDgnCache.disable&&_acDgnCache[def.name]===undefined){
+      _acDgnCache[def.name]="loading";
+      log(`You step into the dark of the <b>${def.name}</b>…`,"sys");
+      const timeout=new Promise(r=>setTimeout(()=>r(null),4000));
+      Promise.race([fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).catch(()=>null),timeout])
+        .then(j=>{ _acDgnCache[def.name]=j||null;                 // null → grid fallback (and no refetch loop)
+          if(!inDungeon) enterDungeon(def,ex,ez); });             // resume the descent unless something intervened
+      return;
+    } }
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="1";
   buildDungeon(def);markSceneSRGB();
+  player.y=(dungeonSpawn.y||0);   // seed the entry storey so the y-aware floor pick lands right
   arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=2.5;
   toast(def.name.toUpperCase());
   log(`You descend into the <b>${def.name}</b> (tier ${def.tier}). Slay the guardians, then claim the hoard.`,"sys");
@@ -24104,7 +24280,7 @@ function updateSharedMobs(dt){
       if(m.actWalk){ const moving=Math.hypot(m.x-smx,m.z-smz)>2e-3||m.state==="chase";
         const tw=moving?1:0; m.actWalk.weight+=(tw-m.actWalk.weight)*Math.min(1,dt*6); m.actIdle.weight=1-m.actWalk.weight; } }
     const by=animateCreatureRig(m,dt,Math.hypot(m.x-smx,m.z-smz)>2e-3);
-    m.mesh.position.set(m.x,groundY(m.x,m.z)+by,m.z); m.mesh.rotation.set(m._pitch||0,(m.yaw||0)+(m._yawOff||0),m._roll||0);
+    m.mesh.position.set(m.x,groundY(m.x,m.z,m.mesh.position.y)+by,m.z); m.mesh.rotation.set(m._pitch||0,(m.yaw||0)+(m._yawOff||0),m._roll||0);   // refY: keep shared mobs on their storey
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
     if(hb){ if(m.hp<m.mhp){ hb.visible=true; hb.quaternion.copy(cam.quaternion);
@@ -24477,6 +24653,14 @@ function handleSlash(text){
     else log("Usage: /party invite &lt;name&gt; · accept · leave · list","warn");
   }
   else if(cmd==="story"||cmd==="arc"){ storyView(); }
+  else if(cmd==="where"||cmd==="loc"||cmd==="region"){   // name the region you stand in, its lore, and rough bearings
+    if(inDungeon){ log("You are delving beneath Dereth — no region reads down here.","sys"); return; }
+    const rn=regionNameAt(player.x,player.z);
+    log(`<b>${rn.name}.</b> <span style="color:var(--dim)">${rn.blurb}</span>`,"sys");
+    const near=CITIES.map(c=>({c,d:Math.hypot(c.x-player.x,c.z-player.z)})).sort((a,b)=>a.d-b.d).slice(0,2)
+      .map(o=>`${o.c.name} (${compassTo(o.c.x-player.x,o.c.z-player.z)}, ~${Math.max(1,Math.round(o.d/(120*WSCALE)))} leagues)`).join(" · ");
+    if(near) log(`Nearest settlements: ${near}.`,"sys");
+  }
   else if(cmd==="pk"){   // AC three-state PvP: NPK (safe) · PKL (PK-Lite, keeps goods) · PK (full, corpse lootable)
     if(!isOnline){ log("PvP requires being online.","warn"); return; }
     const want=(parts[1]||"").toLowerCase(), cur=player.pkState||"npk";
@@ -24496,7 +24680,7 @@ function handleSlash(text){
     else doEmote(act); }
   else if(EMOTE_CMDS[cmd]){ doEmote(cmd); }                                   // shorthand: /clap, /wave, …
   else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
-  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /a, /allegiance, /party, /emote clap","warn");
+  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /a, /allegiance, /party, /where, /emote clap","warn");
 }
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
@@ -24605,7 +24789,7 @@ function startGame(loadSaved,preset){
     // casters get a component pouch, Life Casters two healing kits, Soldiers 30 quarrels (1999 kit).
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
       player.inv.push({name:"Calling Stone",stat:"quest",v:0});
-      player.inv.push({name:"Letter From Home",stat:"quest",v:10});
+      player.inv.push({name:"Welcome Letter",stat:"book",v:10});   // the real AC starter letter — readable (Use) via openBookReader
       const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
         bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
         warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
@@ -24614,6 +24798,20 @@ function startGame(loadSaved,preset){
       if(tw.wt==="focus"){ player.tapers=(player.tapers||0)+20; player.prismTapers=(player.prismTapers||0)+20; }
       if(tpl==="lifecaster") player.inv.push({name:"Healing Kit",stat:"hp",v:50,count:2});
       if(tpl==="soldier") player.inv.push({name:"Steel Quarrel",stat:"ammo",for:"crossbow",dmg:4,v:4,count:30});
+      // creation clothing: a heritage-appropriate shirt & breeches, worn from the start (retail arrivals
+      // weren't naked). Cloth layer under any armour; equipped straight into the shirt/pants slots.
+      const CLOTH={aluvian:{sh:"Aluvian Shirt",pt:"Aluvian Breeches",tint:0x6a5a3a},
+        gharundim:{sh:"Gharu'ndim Tunic",pt:"Gharu'ndim Trousers",tint:0x8a6a30},
+        sho:{sh:"Sho Kimono Shirt",pt:"Sho Hakama",tint:0x3a4a5a},
+        viamontian:{sh:"Viamontian Doublet",pt:"Viamontian Hose",tint:0x5a2a3a}};
+      const cl=CLOTH[(player.heritage||"aluvian")]||CLOTH.aluvian;
+      player.armorSlots=player.armorSlots||{};
+      player.armorSlots.shirt={name:cl.sh,stat:"worn",at:"light",aslot:"shirt",v:1,tint:cl.tint,cloth:true};
+      player.armorSlots.pants={name:cl.pt,stat:"worn",at:"light",aslot:"pants",v:1,tint:cl.tint,cloth:true};
+      // a heritage word of welcome, echoing the Letter
+      const WELC={aluvian:"a kinsman's blessing from the green Aluvian shires",gharundim:"a blessing of Zaikhal and the shining sands",
+        sho:"the quiet counsel of the Sho masters",viamontian:"a noble's charge from the courts of Viamont"};
+      log(`You carry a <b>Welcome Letter</b> — ${WELC[(player.heritage||"aluvian")]||WELC.aluvian}. <span style="color:var(--dim)">(Use it from your satchel to read.)</span>`,"sys");
     }
   }
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
