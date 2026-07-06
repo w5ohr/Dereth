@@ -11,10 +11,16 @@ to-do / gaps / roadmap document — those files now redirect here:
 The `asherons-call-*-reference.md`, `kilmer-saga-*`, `ships.md`, and `asherons-call-housing-reference.md`
 files are **design reference**, not to-do lists — they stay as-is.
 
-**Reconciled + code-verified 2026-07-06.** Every item below was re-checked against `index.html` /
-`assets/` / `tools/` and confirmed *still undone*. Everything from the old lists that is **not** here is
-shipped — see **Confirmed shipped** at the bottom. Effort key: **S** ≈ 1–2 days · **M** ≈ 1–2 weeks ·
-**L** ≈ 2+ weeks / architectural risk.
+**Live tracker — reconciled + code-verified, statuses current as of 2026-07-06.** This is a working
+list: each item carries a **Status** (`open` / `WIP:<agent>` / `done` / `blocked`). Anything not listed
+below (and everything marked `done`) is shipped — see **Confirmed shipped** at the bottom. Effort key:
+**S** ≈ 1–2 days · **M** ≈ 1–2 weeks · **L** ≈ 2+ weeks / architectural risk.
+
+> **Current status (2026-07-06):** **Lane A ✅ done** (#1 Damage/Crit Rating + Crushing Blow, #4 content) ·
+> **Lane B ✅ done** (#2 hats, #3 dye subpalettes, #12 dungeon-lighting slider, #13 shield mesh) ·
+> **Lane C — open** (#5 packing residual, #6 StringTable, #10 UI chrome, #11 paperdoll) · **#14 decided**
+> (keep the incantation gate). **Still genuinely open:** Lane C's 4 items · the terrain-lane blockers
+> (#7–#9) · the design calls #15 (component formula), #16 (vitals purity), #17 (ratify timers).
 
 ---
 
