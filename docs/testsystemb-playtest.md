@@ -6,7 +6,18 @@ via `playlib`, captures page + console errors (these are treated as bugs), and a
 assertions so anything not working as expected is auto-flagged.
 
 **This is a LOG ONLY — findings here are not fixed by the test runner.** Fixes are a separate task.
-Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (+ `tsb_verify.js` for isolating ambiguous flags).
+Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand.js` (extra subsystems) +
+`tsb_verify.js`/`tsb_brand.js` (isolating ambiguous flags).
+
+**Standing directive (user, pass 4):** while `main` is unchanged and the existing sweep is clean, each
+new pass should **extend coverage** to subsystems not yet tested rather than repeat a clean run. When an
+agent merges a change, run the sweep against the changed area too.
+
+**Still-untested targets for upcoming passes:** fellowship (cap-9 proportional XP share) · 3-state PK +
+altars + PK-loot + 3-day lock timer · region-aware weather + portal storms + drowning · overworld
+portals / recall set (Tie/Primary/Secondary/Sending) · sky & time (day length, 12-month calendar,
+sun/2-moon discs) · dye system · title system (873 titles) · Aetheria surges/sets · crafting combine
+engine (1,500 recipes) · Colosseum/instanced events · Town Crier feed · barber/creator head choices.
 
 Every entry is tagged **[TestSystemB]**. Verify a flag before trusting it — several "failures" are
 test-ordering / setup artifacts, not game bugs (see the standing notes at the bottom).
