@@ -14875,7 +14875,7 @@ function castSpellById(id){
   if((spellCd[id]||0)>now()) return;
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mkc=MAGIC_SCHOOLS[s.school];
-  if(s.req>0 && mkc && skillValue(mkc)<s.req){ log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).`,"warn"); SFX.hit&&SFX.hit(); return; }
+  if(s.req>0 && mkc && skillValue(mkc)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
   if(s.words) log(`You intone the words of power: <i style="color:#c9a6ff">${esc(s.words)}</i>`,"sys");   // authentic AC cast words
   const ct=castTimeFor(s);
   if(ct<=0){ executeSpell(id); return; }            // instant utility (Stam→Mana) skips the cast bar
@@ -14914,7 +14914,7 @@ function executeSpell(id){
   if((spellCd[id]||0)>now()) return;
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mk=MAGIC_SCHOOLS[s.school];
-  if(s.req>0 && mk && skillValue(mk)<s.req){ log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).`,"warn"); SFX.hit&&SFX.hit(); return; }
+  if(s.req>0 && mk && skillValue(mk)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
   if(s.special==="stam2mana"){
     if(player.st<25){log("Not enough stamina.","warn");return;}
     player.st-=25;player.mn=Math.min(player.mmn,player.mn+22);
