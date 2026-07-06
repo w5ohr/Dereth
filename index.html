@@ -21083,8 +21083,18 @@ function buildShop(){
   SHOP.forEach((it,i)=>{
     const row=document.createElement('div');row.className="row";
     const have=it.field?` (have ${player[it.field]})`:(it.scroll&&player.knownSpells.indexOf(it.spellId)>=0?` <span style="color:#9a8a66">(known)</span>`:"");
-    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico)} ${it.name}</span> <span class="desc">— ${it.desc}${have}</span></div>
-      <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""}>Buy — ${it.cost}p</button></div>`;
+    // #19: gear wares show their wield gates + enchantments BEFORE you pay (no more blind Phantom-weapon buys)
+    let gearInfo="", unmet=null;
+    if(it.gear){
+      unmet=(typeof wieldFail==="function")?wieldFail(it.gear):null;
+      if(typeof wieldReqHTML==="function") gearInfo+=wieldReqHTML(it.gear);
+      if(it.gear.cantrip) gearInfo+=` · <span style="color:#c9a6ff">${it.gear.cantrip} enchantment</span>`;
+      const sn=(typeof itemSpellNames==="function")?itemSpellNames(it.gear):[];
+      if(sn.length) gearInfo+=` · <span style="color:#9ad0ff">${sn.slice(0,2).join(", ")}${sn.length>2?" …":""}</span>`;
+      if(it.gear.spellcraft) gearInfo+=` · <span style="color:#8a9ad0">spellcraft ${it.gear.spellcraft}</span>`;
+    }
+    row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico)} ${it.name}</span> <span class="desc">— ${it.desc}${have}${gearInfo}</span></div>
+      <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""} ${unmet?`title="You cannot wield this yet — needs ${esc(unmet)}" style="border-color:#a06a3a;color:#d0a070"`:""}>Buy — ${it.cost}p${unmet?" ⚠":""}</button></div>`;
     buy.appendChild(row);
   });
   buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{const it=SHOP[+b.dataset.buy];
