@@ -7434,11 +7434,28 @@ function kcUseHook(hk){
     player.kcHookItems[hk.key]=null; kcRebuildHook(hk);
     log(`You take the <b>${cur.name}</b> off the hook.`,"sys"); if(SFX.gold)SFX.gold(); saveGame(); updateHUD(); return;
   }
-  let i=player.inv.findIndex(it=>it&&hsHookAccepts("floor",it)&&it.stat!=="writ"&&!it.scroll);
-  if(i<0){ log("Nothing you carry fits this hook.","sys"); return; }
-  const it=player.inv[i];
-  player.kcHookItems[hk.key]=Object.assign({},it,{count:1}); takeFromInv(i); kcRebuildHook(hk);
-  log(`You set the <b>${it.name}</b> on the hook.`,"loot"); if(SFX.quest)SFX.quest(); saveGame(); updateHUD();
+  openHookPicker("Place on the display hook", it=>hsHookAccepts("floor",it)&&it.stat!=="writ"&&!it.scroll,
+    (i)=>{ const it=player.inv[i]; if(!it) return;
+      player.kcHookItems[hk.key]=Object.assign({},it,{count:1}); takeFromInv(i); kcRebuildHook(hk);
+      log(`You set the <b>${it.name}</b> on the hook.`,"loot"); if(SFX.quest)SFX.quest(); saveGame(); updateHUD(); });
+}
+// ── a picker overlay: choose which carried item to hang on a hook (was: auto-pick the first that fits) ──
+function openHookPicker(title, acceptFn, placeFn){
+  const items=[]; player.inv.forEach((it,i)=>{ if(it&&acceptFn(it)) items.push({it,i}); });
+  if(!items.length){ log("Nothing you carry fits this hook — an <b>Apprentice Craftsman</b> sells furnishings.","sys"); return; }
+  const old=document.getElementById('hookPicker'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='hookPicker';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:8px 12px;margin-top:6px;font-size:13px";
+  ov.innerHTML=`<div style="max-width:460px;width:92%;max-height:80vh;overflow:auto;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:16px 18px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">🪝 ${title}</div><button id="hkX" class="tbtn" style="padding:2px 9px;font-size:15px;line-height:1">✕</button></div>
+    <div style="color:var(--dim);margin:4px 0 8px;font-size:12px">Choose an item to set on the hook · <b>Esc</b> to cancel</div>
+    ${items.map(x=>`<button class="hkPick tbtn" data-i="${x.i}" style="${btn}"><span style="flex:1">${_hItemLabel(x.it)}</span><span style="color:var(--gold)">Place ▸</span></button>`).join("")}
+    <button id="hkClose" class="tbtn" style="width:100%;margin-top:10px">Cancel</button></div>`;
+  document.body.appendChild(ov); paused=true; if(locked)document.exitPointerLock();
+  const close=()=>{ ov.remove(); paused=false; };
+  ov.querySelector('#hkClose').onclick=close; ov.querySelector('#hkX').onclick=close;
+  ov.querySelectorAll('.hkPick').forEach(b=>b.onclick=()=>{ close(); placeFn(+b.dataset.i); });
 }
 // ══════════════ THE GRAND EXPANSION of Castle Val Halla ══════════════
 // ── Royal Menagerie: a warded pen bearing a real AC creature model (deferred so the pack has time
@@ -8615,7 +8632,7 @@ function hsDecorate(h,built){
     const w=hsWorld(h,hk.slice(1),gy);
     const hg=hsBuildHookMesh(hk[0],placed);
     hg.position.set(w.x,w.y,w.z); hg.rotation.y=w.yaw; scene.add(hg); hsFurnMeshes.push(hg);
-    hsHooks.push({key:"e"+i,kind:hk[0],x:w.x,z:w.z,y:w.y});
+    hsHooks.push({key:"e"+i,kind:hk[0],x:w.x,z:w.z,y:w.y,mesh:hg});
   });
   // storage chests at their true spots
   lay.chests.forEach((c,i)=>{
@@ -8660,14 +8677,12 @@ function hsUseHook(hk){
   }
   if(hsHookCount()>=HOUSING_TYPES[hs.type].usable){
     log(`Your ${HOUSING_TYPES[hs.type].n.toLowerCase()} allows <b>${HOUSING_TYPES[hs.type].usable} items on hooks</b> — take something down first.`,"warn"); return; }
-  // choose what to hang: prefer furniture the hook accepts, else any accepted item
-  let i=player.inv.findIndex(it=>it&&it.stat==="furniture"&&hsHookAccepts(hk.kind,it));
-  if(i<0) i=player.inv.findIndex(it=>it&&hsHookAccepts(hk.kind,it)&&it.stat!=="writ"&&!it.scroll);
-  if(i<0){ log(`Nothing you carry fits a <b>${hk.kind} hook</b> — an <b>Apprentice Craftsman</b> sells furnishings.`,"sys"); return; }
-  const it=player.inv[i];
-  hs.hooks[hk.key]=Object.assign({},it,{count:1}); takeFromInv(i);
-  log(`You set the <b>${it.name}</b> on the ${hk.kind} hook.`,"loot"); if(SFX.quest)SFX.quest();
-  hsRefreshHomestead(); saveGame(); updateHUD();
+  // let the player choose which carried item to hang on this hook
+  openHookPicker(`Place on the ${hk.kind} hook`, it=>hsHookAccepts(hk.kind,it)&&it.stat!=="writ"&&!it.scroll,
+    (i)=>{ const it=player.inv[i]; if(!it) return;
+      hs.hooks[hk.key]=Object.assign({},it,{count:1}); takeFromInv(i);
+      log(`You set the <b>${it.name}</b> on the ${hk.kind} hook.`,"loot"); if(SFX.quest)SFX.quest();
+      hsRefreshHomestead(); saveGame(); updateHUD(); });
 }
 // ── house-interior & residential-hall instances (the dungeon-instance shell) ──
 function hsEnterInstance(meshFile,setup){
@@ -14652,7 +14667,7 @@ function closeAnyPanel(){
   if(movingUI){ setUIMove(false); return; }
   // dynamically-created modal overlays (chest vault, war table, book readers, covenant, attendant)
   if(document.getElementById('kcVaultPanel')){ closeKcVault(); return; }
-  for(const id of ["kcWarPanel","kcBookReader","bookReader","hsPanel","kcPanel"]){
+  for(const id of ["hookPicker","kcWarPanel","kcBookReader","bookReader","hsPanel","kcPanel"]){
     const el=document.getElementById(id); if(el){ el.remove(); paused=false; return; } }
   for(const [id,close] of [["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){
     const el=document.getElementById(id); if(el&&el.style.display==="flex"){ close(); return; } }
@@ -20179,6 +20194,11 @@ function pickables(){
   for(const n of npcs){ if(n.mesh){ n.mesh._pickRef={type:"npc",ref:n}; out.push(n.mesh); } }
   for(const s of shops){ if(s.mesh){ s.mesh._pickRef={type:"vendor",ref:s}; out.push(s.mesh); } }
   for(const d of drops){ if(d.mesh&&d.type==="item"){ d.mesh._pickRef={type:"item",ref:d}; out.push(d.mesh); } }
+  // items ON display: castle pedestal hooks + house hooks — right-click to inspect them like a ground drop
+  if(typeof kcHooks!=="undefined") for(const hk of kcHooks){ const it=(typeof kcCurHookItem==="function")&&kcCurHookItem(hk);
+    if(it&&hk.grp){ hk.grp._pickRef={type:"item",ref:{item:it,x:hk.x,z:hk.z,mesh:hk.grp}}; out.push(hk.grp); } }
+  if(typeof hsHooks!=="undefined") for(const hk of hsHooks){ const it=player.homestead&&player.homestead.hooks&&player.homestead.hooks[hk.key];
+    if(it&&hk.mesh){ hk.mesh._pickRef={type:"item",ref:{item:it,x:hk.x,z:hk.z,mesh:hk.mesh}}; out.push(hk.mesh); } }
   return out;
 }
 function raycastPick(ev){
@@ -23002,15 +23022,23 @@ function buildTinker(){
     // the active pack's slot grid — AC's square cells, real inventory icons, count badges
     let grid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;margin-bottom:8px">`;
     for(let s=lo;s<hi;s++){ const it=player.inv[s];
-      grid+=it?`<div data-slot="${s}" title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
-              :`<div style="width:34px;height:34px;border:1px solid #2c2820;border-radius:4px;background:rgba(0,0,0,.35)"></div>`; }
+      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — click to inspect · drag to rearrange" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
+              :`<div data-slot="${s}" style="width:34px;height:34px;border:1px solid #2c2820;border-radius:4px;background:rgba(0,0,0,.35)"></div>`; }
     grid+=`</div>`;
     const hdr=document.createElement('div'); hdr.innerHTML=bar+grid; rows.appendChild(hdr);
     hdr.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>{ window._activePack=+b.dataset.pk; buildTinker(); });
-    // AC 2017: single click SELECTS the item into the examine strip; DOUBLE-CLICK uses/equips it
+    // single click SELECTS the item into the examine strip; DOUBLE-CLICK uses/equips it; DRAG rearranges
     hdr.querySelectorAll('[data-slot]').forEach(b=>{
-      b.onclick=()=>{ window._invSel=+b.dataset.slot; buildTinker(); };
-      b.ondblclick=()=>{ window._invSel=+b.dataset.slot; invUseItem(+b.dataset.slot); };
+      const s=+b.dataset.slot;
+      if(player.inv[s]){
+        b.onclick=()=>{ window._invSel=s; buildTinker(); };
+        b.ondblclick=()=>{ window._invSel=s; invUseItem(s); };
+        b.ondragstart=(e)=>{ window._invDrag=s; b.style.opacity="0.4"; try{e.dataTransfer.effectAllowed="move";}catch(_){} };
+        b.ondragend=()=>{ b.style.opacity=""; window._invDrag=null; };
+      }
+      b.ondragover=(e)=>{ if(window._invDrag!=null){ e.preventDefault(); b.style.outline="2px solid var(--gold)"; } };
+      b.ondragleave=()=>{ b.style.outline=""; };
+      b.ondrop=(e)=>{ e.preventDefault(); b.style.outline=""; if(window._invDrag!=null&&window._invDrag!==s){ invMove(window._invDrag,s); window._invDrag=null; buildTinker(); } };
     });
     window._invLo=lo; window._invHi=hi;
   }
@@ -23047,6 +23075,14 @@ function buildTinker(){
   rows.querySelectorAll('[data-eq]').forEach(b=>b.onclick=()=>invUseItem(+b.dataset.eq));
   rows.querySelectorAll('[data-sv]').forEach(b=>b.onclick=()=>{salvageItem(+b.dataset.sv);buildTinker();updateHUD();saveGame();});
   rows.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sc;if(learnSpell(player.inv[i].spellId)){takeFromInv(i);buildTinker();updateHUD();}});
+}
+// rearrange the pack: drop one item onto another to SWAP them, or onto an empty slot to move it there
+function invMove(from,to){
+  const inv=player.inv; if(from<0||from>=inv.length||from===to) return;
+  if(to<inv.length && inv[to]){ const t=inv[to]; inv[to]=inv[from]; inv[from]=t; }   // swap two filled slots
+  else { const it=inv.splice(from,1)[0]; inv.splice(Math.min(to,inv.length),0,it); } // onto an empty slot → move to the end
+  if(window._invSel===from) window._invSel=(to<player.inv.length?to:player.inv.length-1);
+  saveGame();
 }
 // AC 2017: the double-click action — use / equip / read whatever is under the cursor
 function invUseItem(i){
