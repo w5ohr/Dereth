@@ -6559,7 +6559,9 @@ function flushTownBatches(){
 let AC_TOWNS=null, _tbIndex=null, _tbIndexReq=false;
 try{ fetch('assets/actowns.json').then(r=>r.ok?r.json():null).then(j=>{ AC_TOWNS=(j&&j.towns)||{}; }).catch(()=>{AC_TOWNS={};}); }catch(e){ AC_TOWNS={}; }
 function tbIndexReq(){ if(_tbIndex!==null) return _tbIndex; if(!_tbIndexReq){ _tbIndexReq=true;
-    fetch('assets/actownmodels/index.json').then(r=>r.ok?r.json():null).then(j=>{ _tbIndex=(j&&j.models)||{}; }).catch(()=>{_tbIndex={};}); }
+    fetch('assets/actownmodels/index.json').then(r=>r.ok?r.json():null).then(j=>{
+      const m=(j&&j.models)||{}, up={}; for(const k in m) up[k.toUpperCase()]=m[k];   // normalize keys — the index mixes 0x/0X prefixes; tbModelReq uppercases its query, so uppercase the keys to match (else the ~363 lowercase-0x entries are unreachable)
+      _tbIndex=up; }).catch(()=>{_tbIndex={};}); }
   return null; }
 const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
