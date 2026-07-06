@@ -123,6 +123,11 @@ Old lists still mark many of these open; they are done:
 - **Extraction/assets:** high-res textures (1,224), non-PCM music, **shield & clothing item models**,
   server-side item/spell mirror, building/clothing GfxObjs wired, all 66 creature kinds, 873 retail titles,
   **NPCs on real AC bodies + heads** (`buildPerson` retired to fallback).
+- **Item icons — 100% coverage (PR #143, Lane A):** every item (normal loot, named/epic weapons, quest
+  rewards, spell scrolls, attunement stones) renders its real AC icon, never an emoji. `itemIconHTML`
+  gained a category-type fallback (`_ICON_CAT_KW`/`catIconDID`/`itemCat`) after own-icon and name lookup;
+  fixed the two-handed-weapon, scroll (`.scroll`/`.spellId`), and attribute-stone gaps. Verified 2091/2091
+  by the `iconaudit` harness (named/epic 1353/1353, quest 226/226, 0 emoji).
 - **Heads/UI:** WYSIWYG creator preview, explicit head-choice rows (creator + barber), face tone/AO,
   **female forehead-band fix**, barber restrictions, circular radar.
 - **Ships:** ownable/boardable skiff/cog/caravel water travel.
