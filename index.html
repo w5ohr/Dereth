@@ -3958,6 +3958,20 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
   for(const ax of[-0.03,0,0.03]){const sh=M(new THREE.CylinderGeometry(0.008,0.008,0.27,4),new THREE.MeshStandardMaterial({color:0x8a6a3a}),ax,0.29,-0.08);sh.rotation.x=0.4;quiver.add(sh);
     quiver.add(M(new THREE.ConeGeometry(0.026,0.05,4),new THREE.MeshBasicMaterial({color:0xe8e0c8}),ax,0.4,-0.11));}
   quiver.position.set(0.1,AV_SH_LOCAL-0.18,0.14);quiver.visible=false;spine.add(quiver);
+  // ---- animated cloth cape (a segmented pendulum chain on the upper back; shown for cape-flagged back items,
+  //      swayed each frame by movement/jump/combat in animateAvatar) ----
+  const capeSim=new THREE.Group(); capeSim.position.set(0,AV_SH_LOCAL+0.06,0.12); capeSim.visible=false; spine.add(capeSim);
+  const CAPE_N=6, CAPE_SEG=0.175, CAPE_W0=0.36, CAPE_W1=0.56;
+  const capeMat=new THREE.MeshStandardMaterial({color:0x1c2c6c,roughness:0.8,metalness:0.05,side:THREE.DoubleSide});
+  const capeSegs=[]; let capeParent=capeSim;
+  for(let i=0;i<CAPE_N;i++){
+    const sg=new THREE.Group(); sg.position.y=(i===0?0:-CAPE_SEG); capeParent.add(sg); capeParent=sg;
+    const w0=CAPE_W0+(CAPE_W1-CAPE_W0)*(i/CAPE_N), w1=CAPE_W0+(CAPE_W1-CAPE_W0)*((i+1)/CAPE_N);
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array([-w0/2,0,0, w0/2,0,0, w1/2,-CAPE_SEG,0, -w1/2,-CAPE_SEG,0]),3));
+    geo.setIndex([0,2,1,0,3,2]); geo.computeVertexNormals();
+    const m=new THREE.Mesh(geo,capeMat); m.castShadow=true; sg.add(m); capeSegs.push(sg);
+  }
   // ---- held weapon in the right wrist ----
   const hand=new THREE.Group();hand.position.set(0,-0.07,0);arms[0].wr.add(hand);
   const aSword=new THREE.Group();
@@ -3986,7 +4000,7 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
     shR:arms[0].sh,shL:arms[1].sh,elR:arms[0].el,elL:arms[1].el,wrR:arms[0].wr,wrL:arms[1].wr,
     hipR:legs[0].hip,hipL:legs[1].hip,knR:legs[0].knee,knL:legs[1].knee,anR:legs[0].ankle,anL:legs[1].ankle,
     rArm:arms[0].sh,lArm:arms[1].sh,rLeg:legs[0].hip,lLeg:legs[1].hip,rFoot:feet[0],lFoot:feet[1],
-    aSword,aBow,aWand,aHeld,cape,quiver,armorRig};
+    aSword,aBow,aWand,aHeld,cape,quiver,capeSim,capeSegs,capeMat,armorRig};
   g.visible=false;
   return g;
 }
@@ -4071,7 +4085,7 @@ function applyACBody(av,gender){
   }
   u.acDrive=drive;
   // hide the plate placeholder; the face, armor shells, shield, weapons, cape and quiver stay
-  const keep=new Set([u.head,u.aSword,u.aBow,u.aWand,u.aHeld,u.cape,u.quiver].filter(Boolean));
+  const keep=new Set([u.head,u.aSword,u.aBow,u.aWand,u.aHeld,u.cape,u.quiver,u.capeSim].filter(Boolean));
   av.traverse(o=>{ if(o.userData&&o.userData.plate!==undefined) keep.add(o); });   // aShield
   if(u.armorRig) for(const k in u.armorRig) for(const gr of u.armorRig[k].groups) keep.add(gr);
   av.traverse(o=>{
@@ -9395,6 +9409,7 @@ function resistVs(el){ if(!el) return 0; let n=0;
   for(const p of wornPieces()){ const pr=matResistProfile(p.mat); if(pr[el]) n+=pr[el]; }   // every piece resists its profile fraction of this element
   if(typeof jewelryBonus==="function") n+=jewelryBonus("protect",el)/100;   // elemental Protection jewelry stacks with armour material wards
   if(player.augment&&player.augment.resist) n+=player.augment.resist;        // Blue Aetheria: permanent all-element resistance
+  { const cp=player.armorSlots&&player.armorSlots.back; if(cp&&cp.elemProt) n+=cp.elemProt/100; }   // a cape's all-element protection (Kilmer's Cape: +100)
   return Math.min(0.7,n); }
 // Item-set bonus (AC Item Sets): the dominant matching set among equipped pieces grants tiered boons.
 // 3 pieces → +armour & +max-health; 5 pieces → bigger, plus the set's themed skill (folded into gearSkill).
@@ -13112,6 +13127,7 @@ function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ cons
   const w=player.weapon;   // an equipped casting focus lends its bonus to every magic school (+ mana & arcane)
   if(w&&w.wt==="focus"&&w.foc){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+w.foc; const h=Math.round(w.foc*0.5); g.mana=(g.mana||0)+h; g.arcane=(g.arcane||0)+h; }
   if(player.augment&&player.augment.magic){ for(const k of FOCUS_SCHOOLS) g[k]=(g[k]||0)+player.augment.magic; }   // Red Aetheria: permanent +all magic schools
+  { const cp=player.armorSlots&&player.armorSlots.back; if(cp&&cp.magicDef) g.magicd=(g.magicd||0)+cp.magicDef; }   // a cape's Magic Defense bonus (Kilmer's Cape: +100)
   player.gearSkill=g; }
 // ── AC wield requirements: loot rolls skill/level/arcane gates you must meet before you can equip it ──
 const WEAPON_SKILL={dagger:"light",staff:"light",sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile",unarmed:"light"};
@@ -13250,6 +13266,11 @@ function refreshAvatarArmor(){
   }
   u.capeArmored=!!slots.back;
   if(u.cape&&u.capeArmored) u.cape.visible=false;   // the worn cloak replaces the heritage cape
+  // a cape-flagged back item (e.g. Kilmer's Cape) shows the ANIMATED cloth cape and hides the static back shell
+  if(u.capeSim){ const bc=slots.back, isCape=!!(bc&&bc.cape);
+    u.capeSim.visible=isCape;
+    if(isCape){ u.capeMat.color.setHex(bc.tint!=null?bc.tint:0x1c2c6c);
+      if(u.armorRig.back) for(const gr of u.armorRig.back.groups) gr.visible=false; } }
   if(typeof refreshACArmor==="function") refreshACArmor();   // retail pieces swap the real body-part meshes
 }
 // ── ClothingTable armor-on-body (assets/acarmor, tools/ac_armor_export.py): equipping a
@@ -15796,6 +15817,31 @@ function animateAvatar(dt){
   if(u.aShield&&u.aShield.visible) u.aShield.rotation.set(-(lX+lE)+0.12, 0, -lZ*0.6);
   // real AC body present → the human MotionTable's own cycles override the procedural pose
   acMotionTick(u,dt,moving,rN>0.5,blk||actGesture);
+  // ---- cape cloth: a damped pendulum chain driven by movement, jumping & combat ----
+  if(u.capeSim&&u.capeSim.visible&&u.capeSegs){
+    const segs=u.capeSegs, N=segs.length, cdt=Math.min(dt,0.05);   // clamp dt so the spring stays stable at low fps
+    const th=player.yaw, ct=Math.cos(th), stn=Math.sin(th);
+    const fwd=-((player.vx||0)*stn+(player.vz||0)*ct);             // + when moving the way you face
+    const lat=((player.vx||0)*ct-(player.vz||0)*stn);              // + when sliding to your right
+    const spd=Math.hypot(player.vx||0,player.vz||0);
+    const DIR=-1;                                                  // sign so the hem billows BEHIND the back
+    const rest=0.14;                                              // gentle drape over the back
+    const billow=clamp(Math.max(0,fwd)*0.04,0,0.5)+rN*0.10+spd*0.003;   // forward motion streams it back (≈45° at a full run)
+    const lift=(player.grounded?0:1)*clamp((player.vy||0)*0.015,-0.15,0.3); // jump/fall flare
+    const flutter=(0.5*cW+0.15+rN*0.4)*Math.sin(idleT*(7+rN*7));   // combat/run ripple
+    const swayZ=clamp(lat*0.05,-0.4,0.4)+(1-w)*Math.sin(idleT*1.0)*0.03;
+    u._capeAX=u._capeAX||new Array(N).fill(0); u._capeVX=u._capeVX||new Array(N).fill(0);
+    u._capeAZ=u._capeAZ||new Array(N).fill(0); u._capeVZ=u._capeVZ||new Array(N).fill(0);
+    const stiff=46, damp=9.5; let prevX=0, prevZ=0;
+    for(let i=0;i<N;i++){ const share=(i+1)/N;
+      const tX=DIR*((rest+billow+lift)*(0.5+share*0.55) + flutter*0.04*share);
+      const tZ=swayZ*(0.4+share) + Math.sin(idleT*5+i*0.8)*flutter*0.02;
+      u._capeVX[i]+=((tX-u._capeAX[i])*stiff-u._capeVX[i]*damp)*cdt; u._capeAX[i]+=u._capeVX[i]*cdt;
+      u._capeVZ[i]+=((tZ-u._capeAZ[i])*stiff-u._capeVZ[i]*damp)*cdt; u._capeAZ[i]+=u._capeVZ[i]*cdt;
+      segs[i].rotation.x=u._capeAX[i]-prevX; segs[i].rotation.z=u._capeAZ[i]-prevZ;   // relative to parent → the chain curves
+      prevX=u._capeAX[i]; prevZ=u._capeAZ[i];
+    }
+  }
 }
 // ---- townsfolk life: idle breathing/glancing for everyone, plus a gentle stroll for wanderers ----
 function animateOnePerson(p,dt){
@@ -23192,7 +23238,8 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-sc="${i}" ${known?"disabled":""}>Scribe</button></div>`;
       rows.appendChild(row); return;
     }
-    const base=it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    const base=it.cape?`<span style="color:#9ab0ff">legendary cape · back slot · +${it.magicDef||0} Magic Defense · +${it.elemProt||0} protection vs all elements</span>`:
+    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const desc=(it.work?`${base} · wk ${it.work}`:base)+(ARMOR_TYPES[it.at]?` · ${ARMOR_TYPES[it.at].blurb.split(" — ")[0]}`:"")+(it.affix?` · <span style="color:#c9a6ff">${it.affix.desc}</span>`:"")+wieldReqHTML(it);
     const cmp=itemCompare(it), cmpHTML=cmp?` <span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:10.5px">${cmp.txt}</span>`:"";
     const ctl=(it.stat==="trophy"||it.stat==="comp"||it.stat==="quest")?`<span style="color:var(--dim);font-size:11px">${it.stat==="quest"?"quest item — turn in or sell":"sell at a vendor"}</span>`
