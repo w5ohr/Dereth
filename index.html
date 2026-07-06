@@ -19708,8 +19708,16 @@ function boardShip(sh){
 }
 function disembarkShip(){
   const sh=player.aboardShip; if(!sh) return;
-  let land=null;
-  for(let r=2; r<=sh.def.len+10 && !land; r+=2){ for(let a=0;a<Math.PI*2;a+=Math.PI/8){ const x=sh.x+Math.cos(a)*r, z=sh.z+Math.sin(a)*r; if(x>-HALF&&x<HALF&&z>-HALF&&z<HALF&&terrainH(x,z)>=0.6){ land={x,z}; break; } } }
+  // Find the nearest dry footing just above the waterline. The old test demanded terrainH>=0.6
+  // within only len+10 units — but a hull halts at its draft line (terrainH ≤ -minDepth), and a
+  // gently sloping beach can put terrainH>=0.6 far beyond that, so "water too deep" fired even with
+  // walkable shore one step away. Accept any point just above the waterline (>=0.2), search a
+  // shore-reaching radius, and prefer the closest/highest so you step onto the beach, not the surf.
+  let land=null; const maxR=Math.max(60, sh.def.len*4+40);
+  for(let r=2; r<=maxR && !land; r+=2){ let bestH=-Infinity,bx,bz;
+    for(let a=0;a<Math.PI*2;a+=Math.PI/16){ const x=sh.x+Math.cos(a)*r, z=sh.z+Math.sin(a)*r;
+      if(x>-HALF&&x<HALF&&z>-HALF&&z<HALF){ const h=terrainH(x,z); if(h>bestH){ bestH=h; bx=x; bz=z; } } }
+    if(bestH>=0.2) land={x:bx,z:bz}; }
   if(!land){ log("The water is too deep here — sail closer to shore to disembark.","warn"); if(SFX.err)SFX.err(); return; }
   player.aboardShip=null;
   player.ship.x=sh.x; player.ship.z=sh.z; player.ship.yaw=sh.yaw;   // the ship stays where it now floats
