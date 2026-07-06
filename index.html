@@ -13279,6 +13279,19 @@ function acArmorPart(gid,cb){
     _acArmorMesh[gid]=grp; cb(grp);
   }).catch(()=>{ _acArmorMesh[gid]=null; });
 }
+// Named/legendary pieces (e.g. "Aegis Cuirass of the Tenfold") aren't in the retail ClothingTable,
+// so they had NO body-part swap and fell back to the ill-fitting procedural shell. Map each such
+// piece to a real retail mesh of the same body slot & armour class — diforsa (heavy) / leather
+// (light) both cover every slot cleanly, and the swap aligns to the body exactly like a retail piece.
+const AC_ARMOR_FALLBACK={
+  heavy:{chest:"platemail cuirass",upperarm:"platemail pauldrons",lowerarm:"platemail vambraces",
+         hands:"platemail gauntlets",legs:"platemail leggings",feet:"sollerets"},   // solid plate — matches Kilmer's cuirass/pauldrons/vambraces/gauntlets/greaves/sabatons naming; plain "sollerets" share the platemail texture family
+  light:{chest:"leather cuirass",upperarm:"leather pauldrons",lowerarm:"leather bracers",
+         hands:"leather gauntlets",legs:"leather leggings",feet:"sollerets"}};
+function acArmorFallback(it,slot){
+  const tbl=AC_ARMOR_FALLBACK[(it.at==="light"||it.at==="cloth")?"light":"heavy"];   // default heavy
+  return tbl[it.aslot]||tbl[slot]||null;   // only the 6 body slots map; head/shirt/pants/offhand → null (skipped)
+}
 function refreshACArmor(){
   const av=(typeof playerAvatar!=="undefined")&&playerAvatar, u=av&&av.userData;
   if(!u||!u.acBody||!AC_ARMOR) return;
@@ -13289,7 +13302,9 @@ function refreshACArmor(){
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
   const as=player.armorSlots||{};
   for(const slot in as){ const it=as[slot]; if(!it||!it.name) continue;
-    const swaps=AC_ARMOR.items[it.name.toLowerCase()]; if(!swaps) continue;
+    let swaps=AC_ARMOR.items[it.name.toLowerCase()];
+    if(!swaps){ const fb=acArmorFallback(it,slot); swaps=fb?AC_ARMOR.items[fb]:null; }   // named/legendary → real retail mesh of the same slot & class
+    if(!swaps) continue;
     if(u.armorRig&&u.armorRig[slot]) for(const gr of u.armorRig[slot].groups) gr.visible=false;   // the real mesh replaces the shell
     for(const s of swaps){ const jk=AC_ARMOR.partJoint[s.p], J=jk&&joints[jk]; if(!J) continue;
       acArmorPart(s.g, grp=>{
