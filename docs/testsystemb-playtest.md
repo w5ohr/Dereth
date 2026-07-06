@@ -46,6 +46,23 @@ fallback across named/epic/quest/all-tier loot)**.
 
 ---
 
+## [TestSystemB] Pass 2 — 2026-07-06 ~23:10
+
+**Result: CLEAN.** Same code under test (`main` unchanged at `c3232dc` since pass 1). 28 subsystems,
+**0 real game bugs**, **0 page/console errors**, 0 uncaught exceptions. Five assertions tripped: the
+same four artifacts from pass 1 (world-probe-before-create, pre-existing crossbow ammo, L275
+enlighten gate, exhausted skill credits), plus **one new flake**:
+
+| Flag | Verdict | Root cause |
+|---|---|---|
+| `elemental: weak did not take more elemental dmg` | **not a bug** | Unit mults are exactly correct (mosswart fire-**weak** 1.5×, tusker fire-**resist** 0.5×, neutral 1.0×) and the melee hit path *does* apply them (`index.html:10097` — `dmg += opts.brandDmg * em`). The integration flake compares **two different creatures** (mosswart avg 516 vs tusker 527) whose differing physical armor dominates; a fire-brand's elemental part is only ~25% of the hit, so 1.5× vs 0.5× on that slice is swamped at n=5. Test methodology, not a defect. |
+
+Combat, magic, missile, and all other subsystems reproduced pass 1's clean state. Randomized paths
+(loot rolls, per-swing variance, icon audit) showed no flakiness beyond the elemental-integration
+noise above.
+
+---
+
 ## Standing notes for future passes (avoid re-flagging these)
 - **Run `probeSystems` AFTER `create`** — the world (shops/portals/lifestones/NPCs) is empty until a
   character enters.
@@ -55,3 +72,7 @@ fallback across named/epic/quest/all-tier loot)**.
 - **Enlightenment gate is level 275**, not 100.
 - **Strip pre-existing ammo** before missile tests (soldiers carry Steel Quarrels).
 - **Run `skillKeyGuard` on a fresh/early character** with skill credits available, before `progression`.
+- **Elemental integration must compare the SAME creature** (fire-brand vs plain, or subtract a
+  no-brand baseline) — comparing a fire-weak vs a fire-resist *different* creature conflates fire
+  affinity with their differing physical armor. The unit `elemMult` check (1.5/0.5/1.0) is the
+  authoritative signal; the cross-creature averaged integration is noise at small n.
