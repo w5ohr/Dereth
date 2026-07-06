@@ -7338,18 +7338,28 @@ function kcPokeBunny(){
 //    State lives in player.kcVault / player.kcHookItems (saved). Access is gated by castleAccess. ──
 const KC_VAULT_TITLE={vault:"Estate Vault",mmd:"MMD Notes",jewelry:"Finest Jewelry",rings:"Best Rings",
   armor:"Best Armor",orbs:"Best Orbs",wands:"Best Wands",staffs:"Best Staffs",keys:"Chest of Keys",
-  scarabs:"Level-8 Scarabs",tapers:"Prismatic Tapers",portalgem:"Portal Gems"};
-const KC_VAULT_CAP=200;
+  scarabs:"Level-8 Scarabs",tapers:"Prismatic Tapers",portalgem:"Portal Gems",
+  pants:"Best Pants",shirts:"Best Shirts",shields:"Best Shields",weapons:"Best Weapons",bows:"Best Bows",
+  salvage:"Top Salvage — All Types",dye:"Every Dye ×100"};
+const KC_VAULT_CAP=300;
 function kcChestFill(id){   // the items each labelled chest "says" it holds (materialized once)
   const clone=a=>a.map(it=>Object.assign({},it));
   switch(id){
-    case "mmd":      return [{name:"Trade Note (MMD)",stat:"note",v:250000,count:200}];
-    case "jewelry":  return clone(kcTopNamed(t=>t.stat==="jewelry",20));
-    case "rings":    return clone(kcTopNamed(t=>t.stat==="jewelry"&&t.jtype==="finger",20));
-    case "armor":    return clone(kcTopNamed(t=>t.stat==="worn"&&!t.shield,20));
+    case "mmd":      { const s=[]; for(let i=0;i<8;i++) s.push({name:"Trade Note (MMD)",stat:"note",v:250000,count:100}); return s; }  // 8 stacks of 100
+    case "pants":    return clone(kcTopNamed(t=>t.stat==="worn"&&(t.aslot==="pants"||t.aslot==="legs"||/pants|legging|breeches|greaves|trouser|pantaloon|tasset|cuisse|chausse/i.test(t.name||"")),30));
+    case "shirts":   return clone(kcTopNamed(t=>t.stat==="worn"&&(t.aslot==="shirt"||t.aslot==="chest"||/shirt|tunic|hauberk|cuirass|breastplate|coat|jerkin|doublet|\brobe\b/i.test(t.name||"")),30));
+    case "jewelry":  return clone(kcTopNamed(t=>t.stat==="jewelry",30));
+    case "rings":    return clone(kcTopNamed(t=>t.stat==="jewelry"&&t.jtype==="finger",30));
+    case "armor":    return clone(kcTopNamed(t=>t.stat==="worn"&&!t.shield,30));
+    case "shields":  return clone(kcTopNamed(t=>t.stat==="worn"&&(t.shield||t.aslot==="offhand"),20));
+    case "weapons":  return clone(kcTopNamed(t=>t.stat==="weapon"&&t.wt&&!/focus|bow|crossbow|atlatl/.test(t.wt),30));
+    case "bows":     return clone(kcTopNamed(t=>t.stat==="weapon"&&/bow|crossbow|atlatl/.test(t.wt||""),20));
     case "orbs":     return clone(kcRoomItems("orb"));
     case "staffs":   return clone(kcRoomItems("staff"));
     case "wands":    return clone(kcTopNamed(t=>t.wt==="focus"&&/wand|sceptre|scepter|baton|rod/i.test(t.name),20).concat(kcTopNamed(t=>t.wt==="focus",5)).slice(0,20));
+    case "salvage":  { const mats=[...new Set([...MATERIALS.weapon,...MATERIALS.armor,...MATERIALS.other])];  // 100 units of EVERY material, top workmanship
+                       return mats.map(m=>({name:`${m} Salvage`,stat:"salvage",mat:m,units:100,work:10,v:200})); }
+    case "dye":      return DYE_POTS.map(d=>({name:d.name,stat:"dye",hex:d.hex,v:85,count:100}));   // 100 of every dye colour
     case "keys":     return [{name:"Brass Key",stat:"key",v:1,count:50}];
     case "scarabs":  return [{name:"Diamond Scarab",stat:"comp",v:150,count:100}];
     case "tapers":   return [{name:"Prismatic Taper",stat:"comp",v:100,count:100}];
@@ -8058,6 +8068,17 @@ function addKilmerCastle(){
     themed(14,zc+13,"scarabs","Level-8 Scarabs",0x2a2a3a,0xcf9bea);
     themed(18,zc+13,"tapers","Prismatic Tapers",0x3a2a3a,0xff8aa0);
     themed(22,zc+13,"portalgem","Portal Gems",0x2a3a3a,0xc7a6ff); }
+  // ═══ the west-corridor hoard: the rest of the top-tier stores ═══
+  { const zc=rowC[3];
+    themed(-10,zc-13,"pants","Best Pants",0x2a3a2a,0x9fd0a0);
+    themed(-14,zc-13,"shirts","Best Shirts",0x2a3a2a,0xa0d0ff);
+    themed(-18,zc-13,"weapons","Best Weapons",0x3a2a1a,0xff9a6a); }
+  { const zc=rowC[2];
+    themed(-12,zc-13,"bows","Best Bows",0x2a3a1a,0xc9e08a);
+    themed(-16,zc-13,"shields","Best Shields",0x2a3a3a,0x9ab0d8); }
+  { const zc=rowC[1];
+    themed(-12,zc-13,"salvage","Top Salvage — all types",0x2a2a2a,0xd8d8d0);
+    themed(-16,zc-13,"dye","Every Dye ×100",0x3a2a3a,0xd0a0d0); }
   // ═══ the killer bunny, caged at the corridor's north end ═══
   { const bx=0,bz=KZ0+5;
     const plinth=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.3,4.6),stoneDark); plinth.position.set(bx,0.15,bz); G.add(plinth);
@@ -13517,6 +13538,11 @@ function applyItem(it){
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
   else if(it.stat==="dye"){ return openDyePicker(it); }             // AC dye pots recolor a worn piece
+  else if(it.stat==="salvage"){                                      // a bag of salvaged material → pours into your materials
+    player.salvage=player.salvage||{}; const mat=it.mat||"Steel", u=it.units||100, w=it.work||10;
+    const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
+    bag.work=(bag.work*bag.units+w*u)/Math.max(1,bag.units+u); bag.units+=u;
+    log(`You empty <b>${u} ${mat}</b> salvage (wk ${w}) into your materials — ${mat}: <b>${bag.units}</b> units.`,"loot"); if(SFX.gold)SFX.gold(); }
   else if(it.stat==="manastone"){   // H15: recharge the equipped focus's mana battery (or, with no focus, your own mana)
     const amt=it.charge||150, max=focusManaMax();
     if(max>0){ player.focusMana=Math.min(max,(player.focusMana||0)+amt);
