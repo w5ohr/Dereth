@@ -6459,8 +6459,8 @@ function usePKAltar(a){
   if(!isOnline){ log("The altar's power stirs only on the shared realm — PvP is an online matter.","warn"); return; }
   const cur=player.pkState||"npk";
   if(a.state===cur){ log(`You already stand at the ${a.state==="pk"?"Blood Oath":"peace"} the ${a.name} offers.`,"sys"); return; }
-  if((player.pkLock||0)>now()){ const mins=Math.ceil((player.pkLock-now())/60000);
-    log(`The altar rejects you — your combat oath still binds you for <b>${mins} min</b>.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+  if((player.pkLock||0)>now()){
+    log(`The altar rejects you — your combat oath (AC's 3-day PK key) still binds you for <b>${fmtLockLeft(player.pkLock-now())}</b>.`,"warn"); if(SFX.hit)SFX.hit(); return; }
   player.pkState=a.state; player.pk=(a.state!=="npk");
   if(a.state!=="npk") player.pkLock=now()+PK_LOCK_MS;
   log(a.state==="pk"
@@ -13660,7 +13660,56 @@ function rollPortalGem(){ const c=CITIES[irnd(0,CITIES.length-1)]; return {name:
 function rollContract(){ const c=CITIES[irnd(0,CITIES.length-1)]; return {name:`Contract: ${c.name}`,stat:"contract",town:c.name,ico:"📜",v:0}; }
 // H15 Mana Stones: a casting focus stores mana (a battery tapped when your own runs short); stones recharge it
 function focusManaMax(){ const w=player.weapon; return (w&&w.wt==="focus"&&w.foc)? w.foc*14 : 0; }
-function rollManaStone(){ return {name:"Mana Stone",stat:"manastone",charge:irnd(120,220),v:0}; }
+function rollManaStone(){ const cap=irnd(260,440); return {name:"Mana Stone",stat:"manastone",stored:irnd(120,Math.min(cap,240)),cap,v:0}; }
+// ── AC Mana Stone as a rechargeable battery (charge ⇄ discharge). Retail let you DESTROY an enchanted
+//    item to bank its mana in a stone, then release the stone into your gear. Dereth adds a third path
+//    (not in retail): draw from your OWN reserve — the amount scales with the stone's quality (cap) and
+//    your Mana Conversion skill. Opened by Using a stone; the stone is never consumed. ──
+function manaConvRate(){ return clamp(0.30 + (skillTier("mana")>0?skillValue("mana"):0)*0.002, 0.30, 0.90); }
+function manaFromItem(x){ if(x.itemManaMax) return Math.round(x.itemManaMax); if(x.imanaMax) return Math.round(x.imanaMax);
+  return Math.round(20 + (x.tier||1)*20 + (x.legendary?60:0) + (x.affix?30:0)); }   // no pool → value/tier estimate
+function manaStoneDischarge(it){   // release stored mana: worn enchantments → focus battery → your reserve
+  let amt=(it.stored!=null?it.stored:(it.charge||0)); const start=amt, parts=[], max=focusManaMax();
+  { const fill=p=>{ if(amt>0&&p&&p.bonus&&p.imanaMax&&p.imana<p.imanaMax){ const g=Math.min(amt,p.imanaMax-p.imana),woke=p.imana===0; p.imana+=g; amt-=g; parts.push(`${p.name} <b>${Math.round(p.imana)}/${p.imanaMax}</b>`); if(woke){ recomputeGearSkill&&recomputeGearSkill(); derive&&derive(); } } };
+    if(typeof wornPieces==="function") for(const p of wornPieces()) fill(p); fill(player.weapon); }
+  { const thirsty=(typeof wornMagicItems==="function"?wornMagicItems():[]).filter(w=>w.itemManaMax&&w.itemMana<w.itemManaMax).sort((a,b)=>(a.itemMana/a.itemManaMax)-(b.itemMana/b.itemManaMax))[0];
+    if(amt>0&&thirsty){ const was=thirsty.itemMana<=0,g=Math.min(amt,thirsty.itemManaMax-thirsty.itemMana); thirsty.itemMana+=g; amt-=g;
+      if(g>0) parts.push(`<b>${esc(thirsty.name)}</b> → <b>${Math.round(thirsty.itemMana)}/${thirsty.itemManaMax}</b>${was?" (enchantments rekindle)":""}`);
+      if(was){ recomputeGearSkill(); derive(); } } }
+  if(amt>0 && max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
+  if(amt>0 && player.mn<player.mmn){ const g=Math.min(amt,player.mmn-player.mn); player.mn+=g; amt-=g; if(g>0) parts.push(`your reserve <b>+${g}</b>`); }
+  it.stored=amt; delete it.charge; return {used:start-amt, parts};
+}
+function openManaStone(it){
+  it.stored=(it.stored!=null?it.stored:(it.charge||0)); delete it.charge; it.cap=it.cap||Math.max(300,it.stored+150);
+  paused=true; if(locked)document.exitPointerLock();
+  const old=document.getElementById('manaStone'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='manaStone';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const render=()=>{ const rate=manaConvRate(), drawable=Math.max(0,Math.min(it.cap-it.stored,Math.floor(player.mn*rate)));
+    const ench=player.inv.filter(x=>x&&x!==it&&((x.itemManaMax>0)||(x.imanaMax>0)||x.affix||x.legendary||(x.bonus&&x.stat==="jewelry")));
+    ov.innerHTML=`<div style="max-width:450px;width:90%;background:#12101a;border:1px solid #6a5aa0;border-radius:8px;padding:20px 22px;color:#d8d0ee">
+      <div style="color:#9af0ff;text-transform:uppercase;letter-spacing:.5px;font-size:13px">🔷 ${esc(it.name)}</div>
+      <div style="font-size:12px;color:var(--dim);margin:4px 0 12px">Stored <b style="color:#9af0ff">${Math.round(it.stored)}/${it.cap}</b> · your Mana Conversion draw rate <b>${Math.round(rate*100)}%</b></div>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        <button class="tbtn" id="msDis" ${it.stored<=0?"disabled":""} style="text-align:left">⬇ <b>Release into your gear</b> <span style="color:var(--dim);font-size:11px">— worn enchantments → focus → reserve</span></button>
+        <button class="tbtn" id="msDraw" ${drawable<=0?"disabled":""} style="text-align:left">⬆ <b>Draw from your own mana</b> <span style="color:var(--dim);font-size:11px">— bank ~${drawable} of your ${Math.round(player.mn)} reserve</span></button>
+        <button class="tbtn" id="msEat" ${(ench.length===0||it.stored>=it.cap)?"disabled":""} style="text-align:left">✖ <b>Consume an enchanted item</b> <span style="color:var(--dim);font-size:11px">— destroy a magic item to bank its mana (${ench.length})</span></button>
+      </div>
+      <div id="msList" style="margin-top:10px;display:none;flex-direction:column;gap:5px;max-height:38vh;overflow:auto"></div>
+      <button class="tbtn" id="msClose" style="margin-top:12px;width:100%;text-align:center">Close</button></div>`;
+    const close=()=>{ ov.remove(); paused=false; };
+    ov.querySelector('#msClose').onclick=close; ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+    ov.querySelector('#msDis').onclick=()=>{ const r=manaStoneDischarge(it); if(r.used>0){ log(`You release the <b>${esc(it.name)}</b>: ${r.parts.join(" · ")}.`,"loot"); if(SFX.quest)SFX.quest(); } else log("Your gear, focus and reserve are already full.","warn"); updateHUD&&updateHUD(); saveGame&&saveGame(); render(); };
+    ov.querySelector('#msDraw').onclick=()=>{ const g=Math.max(0,Math.min(it.cap-it.stored,Math.floor(player.mn*manaConvRate()))); if(g>0){ player.mn-=g; it.stored=Math.min(it.cap,it.stored+g); log(`You channel <b>${g}</b> of your own mana into the <b>${esc(it.name)}</b> — now <b>${Math.round(it.stored)}/${it.cap}</b>.`,"loot"); if(SFX.gold)SFX.gold(); } updateHUD&&updateHUD(); saveGame&&saveGame(); render(); };
+    ov.querySelector('#msEat').onclick=()=>{ const list=ov.querySelector('#msList'); list.style.display=list.style.display==='none'?'flex':'none'; list.innerHTML='';
+      for(const x of ench){ const gain=Math.min(it.cap-it.stored,manaFromItem(x)); const b=document.createElement('button'); b.className='tbtn'; b.style.cssText='text-align:left;font-size:12px';
+        b.innerHTML=`✖ ${esc(x.name)} <span style="color:var(--dim)">→ +${gain}</span>`;
+        b.onclick=()=>{ const i=player.inv.indexOf(x); if(i>=0) player.inv.splice(i,1); it.stored=Math.min(it.cap,it.stored+manaFromItem(x)); log(`The <b>${esc(x.name)}</b> is unmade — its mana bled into the <b>${esc(it.name)}</b> (<b>${Math.round(it.stored)}/${it.cap}</b>).`,"loot"); if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); saveGame&&saveGame(); render(); };
+        list.appendChild(b); } };
+  };
+  render(); document.body.appendChild(ov);
+}
 // Keyrings (AC): a carved ring that holds your lockpicks & keys in one slot; the lock functions draw from it
 function rollKeyring(){ return {name:"Keyring",stat:"keyring",picks:0,keys:0,v:0}; }
 function findKeyring(needKey){ return player.inv.find(it=>it&&it.stat==="keyring" && (needKey?it.keys>0:(it.picks>0||it.keys>0))); }
@@ -14307,24 +14356,7 @@ function applyItem(it){
     const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
     bag.work=(bag.work*bag.units+w*u)/Math.max(1,bag.units+u); bag.units+=u;
     log(`You empty <b>${u} ${mat}</b> salvage (wk ${w}) into your materials — ${mat}: <b>${bag.units}</b> units.`,"loot"); if(SFX.gold)SFX.gold(); }
-  else if(it.stat==="manastone"){   // AC mana stone: pour the stone's stored mana back into your caster gear —
-    // worn spell-bearing gear first (its pools drain in play; a refill rekindles dormant enchantments),
-    // then the focus battery, then your own reserve. Won't be spent if there's nothing to fill.
-    let amt=it.charge||150; const parts=[]; const max=focusManaMax();
-    { const fill=p=>{ if(amt>0&&p&&p.bonus&&p.imanaMax&&p.imana<p.imanaMax){ const g=Math.min(amt,p.imanaMax-p.imana); const woke=p.imana===0; p.imana+=g; amt-=g; parts.push(`${p.name} <b>${Math.round(p.imana)}/${p.imanaMax}</b>`); if(woke){ recomputeGearSkill&&recomputeGearSkill(); derive&&derive(); } } };
-      if(typeof wornPieces==="function") for(const p of wornPieces()) fill(p);
-      fill(player.weapon); }
-    { const thirsty=wornMagicItems().filter(w=>w.itemManaMax&&w.itemMana<w.itemManaMax)   // retail-catalog spell pools (acspells) refill too
-        .sort((a,b)=>(a.itemMana/a.itemManaMax)-(b.itemMana/b.itemManaMax))[0];
-      if(amt>0&&thirsty){ const was=thirsty.itemMana<=0; const g=Math.min(amt,thirsty.itemManaMax-thirsty.itemMana);
-        thirsty.itemMana+=g; amt-=g;
-        if(g>0) parts.push(`<b>${esc(thirsty.name)}</b> → <b>${Math.round(thirsty.itemMana)}/${thirsty.itemManaMax}</b>${was?" (its enchantments rekindle)":""}`);
-        if(was){ recomputeGearSkill(); derive(); } } }
-    if(amt>0 && max>0 && (player.focusMana||0)<max){ const g=Math.min(amt,max-(player.focusMana||0)); player.focusMana=(player.focusMana||0)+g; amt-=g; if(g>0) parts.push(`focus battery → <b>${Math.round(player.focusMana)}/${max}</b>`); }
-    if(amt>0 && player.mn<player.mmn){ const g=Math.min(amt,player.mmn-player.mn); player.mn+=g; amt-=g; if(g>0) parts.push(`your reserve <b>+${g}</b>`); }
-    if(!parts.length){ log(`The <b>${it.name}</b>'s mana has nowhere to go — your gear, focus and reserve are already full.`,"warn"); return "keep"; }
-    log(`You channel the <b>${it.name}</b>: ${parts.join(" · ")}.`,"loot");
-    if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); }
+  else if(it.stat==="manastone"){ openManaStone(it); return "keep"; }   // charge/discharge battery (release · draw from your mana · consume an item)
   else if(it.stat==="keyring"){   // consolidate every loose lockpick & key in the satchel onto the ring
     let np=0,nk=0;
     for(let i=player.inv.length-1;i>=0;i--){ const x=player.inv[i]; if(x===it) continue;
@@ -24489,7 +24521,7 @@ function buildTinker(){
       rows.appendChild(row); return;
     }
     const base=it.cape?`<span style="color:#9ab0ff">legendary cape · back slot · +${it.magicDef||0} Magic Defense · +${it.elemProt||0} protection vs all elements</span>`:
-    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · Use to recharge your casting focus's mana battery (+${it.charge||150})</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · ${Math.round(it.stored!=null?it.stored:(it.charge||0))}/${it.cap||300} stored · Use: release into gear · draw from your mana · consume an enchanted item</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const spellsHTML=(()=>{ if(it.stat!=="weapon"&&it.stat!=="worn") return "";
       let h=""; if(it.cantrips&&it.cantrips.length) h+=` · <span style="color:#c9a6ff">${it.cantrips.map(c=>c.name).join(", ")}</span>`;
       const sn=itemSpellNames(it); if(sn.length){ const dormant=it.itemMana!=null&&it.itemMana<=0;
@@ -25294,8 +25326,8 @@ function handleSlash(text){
     const target= want==="pk"?"pk" : (want==="pkl"||want==="lite")?"pkl" : (want==="npk"||want==="off"||want==="safe")?"npk"
       : (cur==="npk"?"pk":"npk");   // no argument → toggle between safe and full PK
     if(target===cur){ log(`You are already <b>${PK_LABEL[cur]}</b>. (<b>/pk pk</b> · <b>/pk pkl</b> · <b>/pk npk</b>)`,"sys"); return; }
-    if((player.pkLock||0)>now()){ const mins=Math.ceil((player.pkLock-now())/60000);
-      log(`Your combat oath still binds you for <b>${mins} min</b> — you cannot change your PvP standing yet.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+    if((player.pkLock||0)>now()){
+      log(`Your combat oath (AC's 3-day PK key) still binds you for <b>${fmtLockLeft(player.pkLock-now())}</b> — you cannot change your PvP standing yet.`,"warn"); if(SFX.hit)SFX.hit(); return; }
     player.pkState=target; player.pk=(target!=="npk");
     if(target!=="npk") player.pkLock=now()+PK_LOCK_MS;   // committing to violence locks you in (AC's PK key)
     log(({pk:"⚔️ You swear the <b>Blood Oath</b> — open to all Player Killers, and your corpse is theirs to loot. You cannot stand down for a time.",
@@ -25370,7 +25402,9 @@ function sendInput(dt){
 // AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
 // PK (Player Killer — fights other PKs, drops a lootable corpse). Same ruleset only; NPK never fights.
 const PK_LABEL={npk:"unflagged (safe)",pkl:"PK-Lite",pk:"Player Killer"};
-const PK_LOCK_MS=300000;   // 5-min combat-oath lock — a game-friendly stand-in for AC's 3-day PK key
+const PK_LOCK_MS=3*24*3600*1000;   // AC's authentic 3-day PK key — committing to a combat state binds you for 3 real days
+function fmtLockLeft(ms){ const s=Math.max(0,Math.ceil(ms/1000)),d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.ceil((s%3600)/60);
+  return d>0?`${d}d ${h}h`:h>0?`${h}h ${m}m`:`${m} min`; }
 function pkCompatible(a,b){ return (a==="pk"&&b==="pk")||(a==="pkl"&&b==="pkl"); }
 // S3 PvP: apply an incoming player hit (the server only relays it if our rulesets match & we're in range)
 function onPvp(m){
