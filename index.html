@@ -1837,6 +1837,36 @@ function regionTick(dt){
     }
   } else { _regPend=null; _regDwell=0; }
 }
+// ═══ AUTHORED LANDMARKS — the named shapes of the land. Anchored to REAL retail portal
+//     endpoints (assets/acworld.json), and peaks snap to the true local summit in the
+//     height data once the real terrain is loaded. ═══
+const LANDMARKS=[
+  {name:"Mount Esper",           lat:66.3, lng:14.3,  peak:true, r:0.45, blurb:"The storm-crowned peak of the far north — lightning worries its summit even under clear skies."},
+  {name:"the Marescent Plateau", lat:42.0, lng:-77.6, peak:true, r:0.55, blurb:"A wind-scoured tableland rising over the northern Direlands."},
+  {name:"the Obsidian Plains",   lat:-18.7,lng:-84.4,            r:0.60, blurb:"Black glass underfoot for miles — the cooled scar of some ancient burning."},
+  {name:"the Linvak Mountains",  lat:-77.4,lng:28.0,  peak:true, r:0.65, blurb:"The Lugians' high country; Linvak Tukal watches from the summit."},
+  {name:"South Osteth Peak",     lat:-52.8,lng:67.3,  peak:true, r:0.35, blurb:"The lone sentinel over the southern Sho coast."},
+  {name:"Lake Nemuel",           lat:69.6, lng:-20.2,            r:0.40, blurb:"A cold northern lake, still as a mirror."},
+  {name:"Lake Thrasyl",          lat:-82.9,lng:48.0,             r:0.40, blurb:"The far south's great water, ringed by pines."},
+  {name:"Scimitar Lake",         lat:-74.8,lng:17.9,             r:0.35, blurb:"A curved blade of water in the southern hills."},
+  {name:"Mount Alphus",          lat:20.8, lng:18.5,  peak:true, r:0.35, blurb:"A solitary rise watching over the central plains."},
+];
+for(const L of LANDMARKS){ L.x=L.lng*COORD; L.z=-L.lat*COORD; L.rw=L.r*COORD; }
+let _lmCur=null,_lmDwell=0,_lmSnapped=false;
+function landmarkTick(dt){
+  if(!_lmSnapped&&ACMAP.on){ _lmSnapped=true;   // one-shot: seat each peak on its true data-driven summit
+    for(const L of LANDMARKS){ if(!L.peak) continue; let bx=L.x,bz=L.z,bh=-1e9;
+      for(let dz=-16;dz<=16;dz+=2) for(let dx=-16;dx<=16;dx+=2){
+        const h=acHeight(L.x+dx*AC_CELL,L.z+dz*AC_CELL); if(h>bh){bh=h;bx=L.x+dx*AC_CELL;bz=L.z+dz*AC_CELL;} }
+      L.x=bx; L.z=bz; } }
+  if(inDungeon||inNetwork||!player.alive) return;
+  let at=null; for(const L of LANDMARKS){ if(Math.hypot(player.x-L.x,player.z-L.z)<L.rw){ at=L; break; } }
+  if(at&&at!==_lmCur){ _lmDwell+=dt;
+    if(_lmDwell>=1.0){ _lmCur=at; _lmDwell=0;
+      toast(at.name.toUpperCase());
+      log(`<b>${at.name.charAt(0).toUpperCase()+at.name.slice(1)}.</b> <span style="color:var(--dim)">${at.blurb}</span>`,"sys"); } }
+  else if(!at){ if(_lmCur&&Math.hypot(player.x-_lmCur.x,player.z-_lmCur.z)>_lmCur.rw*1.3) _lmCur=null; _lmDwell=0; }
+}
 let ROADS=[], CARAVAN_PATH=null;
 function genRoads(){
   ROADS=[];
@@ -15655,7 +15685,23 @@ function update(dt){
     player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
   }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
   if((player.vx||player.vz)&&player.alive){
-    const [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    let [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    // authored terrain barriers: mountainsides too steep to walk stop you (roads and town
+    // plateaus stay open — the real heightmap's switchbacks are the way up)
+    if(player.grounded&&!inDungeon&&ACMAP.on&&!onRoad(nx,nz)){
+      const SLOPE_MAX=1.7;   // ≈60°: everyday hills pass, sheer faces gate travel
+      const run=Math.hypot(nx-player.x,nz-player.z);
+      if(run>1e-4&&!FLATTEN.some(t=>Math.hypot(nx-t.x,nz-t.z)<(t.r||120*WSCALE))){
+        const rise=terrainH(nx,nz)-terrainH(player.x,player.z);
+        if(rise/run>SLOPE_MAX){
+          const tryX=terrainH(nx,player.z)-terrainH(player.x,player.z), runX=Math.abs(nx-player.x);
+          const tryZ=terrainH(player.x,nz)-terrainH(player.x,player.z), runZ=Math.abs(nz-player.z);
+          if(runX>1e-4&&tryX/runX<=SLOPE_MAX) nz=player.z;         // slide along the contour
+          else if(runZ>1e-4&&tryZ/runZ<=SLOPE_MAX) nx=player.x;
+          else { nx=player.x; nz=player.z;
+            if(now()-lastBreath>2500){ lastBreath=now(); log("The mountainside is too steep to climb here.","warn"); } }
+        } }
+    }
     player.x=nx;player.z=nz;
     const step=Math.hypot(player.vx,player.vz)*dt;
     player.bob+=dt*step*1.1;
@@ -15992,6 +16038,7 @@ function update(dt){
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
   crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
   regionTick(dt);        // announce region crossings + keep the HUD Region readout current
+  landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
   updateHUD();
@@ -16786,6 +16833,8 @@ function drawBigMap(){
   if(typeof swampZone==="function"){ const s=swampZone(); if(s.r>0){ g.fillStyle="rgba(150,190,140,0.55)"; g.fillText("the Blackmire",cx(s.x),cx(s.z)); } }
   if(_islBB){ g.fillStyle="rgba(150,200,230,0.6)"; g.fillText("the Outer Isles",cx((_islBB[0]+_islBB[2])/2),cx((_islBB[1]+_islBB[3])/2)); }
   g.fillStyle="rgba(190,160,210,0.6)";g.fillText("the Direlands",cx(-HALF*0.66),cx(-HALF*0.66));   // a corner in the outer wild (not dead-centre over the towns)
+  g.font="italic 10.5px Trebuchet MS";g.fillStyle="rgba(200,190,160,0.55)";
+  for(const L of LANDMARKS) g.fillText(L.name,cx(L.x),cx(L.z)-4);   // the named shapes of the land
   g.font="11px Trebuchet MS";
   for(const ls of lifestones){const cap=ls.capital;g.fillStyle=ls.bound?"#5aa8ff":(cap?"#ffd23b":"#8e44ad");
     g.beginPath();g.arc(cx(ls.x),cx(ls.z),cap?7:3.5,0,6.28);g.fill();
