@@ -409,6 +409,7 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Mouse sensitivity</span><input id="setSens" type="range" min="0.3" max="2.5" step="0.1"><span id="setSensV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Master volume</span><input id="setVol" type="range" min="0" max="1" step="0.05"><span id="setVolV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Field of view</span><input id="setFov" type="range" min="60" max="100" step="1"><span id="setFovV"></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Dungeon brightness</span><input id="setDgl" type="range" min="0.5" max="2.2" step="0.05"><span id="setDglV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Difficulty</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="AC's iconic risk: death leaves a lootable corpse holding your most valuable items + half your pyreals — walk back to recover it">AC-authentic death</span><span style="display:flex;gap:6px">
@@ -2522,7 +2523,7 @@ function buildAcademyHall(){
   wall(cx+16,cz+12,cx+34,cz+12); wall(cx+16,cz+26,cx+34,cz+26); wall(cx+34,cz+12,cx+34,cz+26);   // library
   wall(cx-6,cz+34,cx-6,cz+42); wall(cx+6,cz+34,cx+6,cz+42); wall(cx-6,cz+42,cx+6,cz+42);         // gatehouse
   const ceil=new THREE.Mesh(new THREE.BoxGeometry(28,0.3,14),stone); ceil.position.set(cx,4.6,cz-5); scene.add(ceil); dungeonObjs.push(ceil);   // the courtyard stays open to the sky
-  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.85); scene.add(amb); dungeonObjs.push(amb);
+  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.85*(settings.dglight||1)); amb.userData.dgBase=0.85; scene.add(amb); dungeonObjs.push(amb);
   const sun=new THREE.PointLight(0xfff2d8,1.3,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);
   for(const [tx,tz] of [[cx-12,cz-10],[cx+12,cz-10],[cx-12,cz],[cx+12,cz],[cx-30,cz+14],[cx+30,cz+14],[cx,cz+40]]){
     for(const o of buildProp("torch",tx,tz,0xffb060)){ scene.add(o); dungeonObjs.push(o); } }
@@ -4255,7 +4256,7 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
     shR:arms[0].sh,shL:arms[1].sh,elR:arms[0].el,elL:arms[1].el,wrR:arms[0].wr,wrL:arms[1].wr,
     hipR:legs[0].hip,hipL:legs[1].hip,knR:legs[0].knee,knL:legs[1].knee,anR:legs[0].ankle,anL:legs[1].ankle,
     rArm:arms[0].sh,lArm:arms[1].sh,rLeg:legs[0].hip,lLeg:legs[1].hip,rFoot:feet[0],lFoot:feet[1],
-    aSword,aBow,aWand,aHeld,cape,quiver,capeSim,capeSegs,capeMat,armorRig};
+    aSword,aBow,aWand,aHeld,aShield,cape,quiver,capeSim,capeSegs,capeMat,armorRig};   // aShield registered — updateShieldModel had been silently no-oping without it
   g.visible=false;
   return g;
 }
@@ -4501,6 +4502,7 @@ function acBuildHead(av,app){
     grp.scale.setScalar(s);
     u.neck.add(grp); u.acHead=grp;
     if(u.head) u.head.visible=false;                 // retire the procedural painted head
+    if(u.neck.children.some(c=>c.userData&&c.userData.acHat)) grp.visible=false;   // a worn hat replaces the head (retail part-16 swap) — even when the head arrives after the hat
   });
 }
 // ── REAL PLAYER ANIMATIONS: the human MotionTable's own cycles & gestures ──
@@ -9239,8 +9241,8 @@ function hsEnterInstance(meshFile,setup){
     dungeonChest=null;dungeonLock=null;dungeonVault=null;
     for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
     const grp=hsGroupsToProto(dj.groups); scene.add(grp); dungeonObjs.push(grp);
-    const amb=new THREE.AmbientLight(0xa89878,1.0); scene.add(amb); dungeonObjs.push(amb);
-    const hemi=new THREE.HemisphereLight(0x8a8a9a,0x3a3228,0.5); scene.add(hemi); dungeonObjs.push(hemi);
+    const amb=new THREE.AmbientLight(0xa89878,1.0*(settings.dglight||1)); amb.userData.dgBase=1.0; scene.add(amb); dungeonObjs.push(amb);
+    const hemi=new THREE.HemisphereLight(0x8a8a9a,0x3a3228,0.5*(settings.dglight||1)); hemi.userData.dgBase=0.5; scene.add(hemi); dungeonObjs.push(hemi);
     hsInst=Object.assign({rects:dj.cellPos},setup);
     const en=setup.entry||dj.cellPos[0];
     dungeonExit={x:en[0],z:en[2]}; dungeonSpawn={x:en[0],z:en[2]-1.2};
@@ -9882,7 +9884,25 @@ const SHIELD_SCALE={buckler:[0.62,0.6,0.62],round:[0.86,0.78,0.86],kite:[1,1,1],
 function updateShieldModel(){   // reflect the equipped off-hand shield on the avatar's left arm (size/tint by type)
   const av=(typeof playerAvatar!=="undefined")?playerAvatar:null; if(!av||!av.userData||!av.userData.aShield) return;
   const sh=av.userData.aShield, it=equippedShield();
-  if(!it){ sh.visible=false; return; }
+  let realGrp=av.userData.aShieldReal;
+  if(!it){ sh.visible=false; if(realGrp) realGrp.visible=false; return; }
+  // Lane B #13: the RETAIL shield mesh (acitemmodels shield:<type>) rides the forearm; procedural plate is the fallback
+  const real=(typeof acItemMesh==="function")?acItemMesh("shield:"+(it.shield||"kite")):null;
+  if(real){
+    if(!realGrp){ realGrp=new THREE.Group(); realGrp.position.copy(sh.position); realGrp.rotation.copy(sh.rotation);
+      sh.parent.add(realGrp); av.userData.aShieldReal=realGrp; }
+    if(realGrp.userData._for!==(it.shield||"kite")){
+      realGrp.userData._for=(it.shield||"kite");
+      while(realGrp.children.length) realGrp.remove(realGrp.children[0]);
+      const inst=real.clone();
+      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3()), c=bb.getCenter(new THREE.Vector3());
+      const sc=0.62/Math.max(sz.x,sz.y,0.001); inst.scale.setScalar(sc);
+      inst.position.set(-c.x*sc,-c.y*sc,-c.z*sc);
+      realGrp.add(inst);
+    }
+    realGrp.visible=true; sh.visible=false; return;
+  }
+  if(realGrp) realGrp.visible=false;
   sh.visible=true;
   const ty=it.shield||"kite", S=SHIELD_SCALE[ty]||[1,1,1]; sh.scale.set(S[0],S[1],S[2]);
   const tint=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||SHIELD_TINT[ty]||0x9aa0a8;
@@ -9946,7 +9966,7 @@ function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
   if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg")+aetheriaBonus("dmg"))*(1-player.vitae);  // Blood Drinker + Aetheria of Destruction
-  if(player.auras&&player.auras.valor) base*=(1+player.auras.valor*0.01);   // Luminance Aura of Valor (damage rating)
+  base*=(1+damageRating(m,opts));   // Cb5 Damage Rating: Aura of Valor + gear + Aetheria + rear-attack (+20 DR from behind)
   if(opts.phys&&player.gearFx&&player.gearFx.dmg) base+=player.gearFx.dmg;   // Blood Drinker / Strength item-spells: flat weapon damage
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
   if(opts.spell){ const mr=(BESTIARY[m.kind]&&BESTIARY[m.kind].mres)||(m.isBoss?0.3:0); if(mr>0) base*=(1-mr); }
@@ -9966,7 +9986,12 @@ function applyHit(m,base,opts){ opts=opts||{};
   }
   if(opts.phys&&pm!==1) floater(m.x,(m.headY||1.6)+2.9,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0");
   dmg*=vgen;
-  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+((player.gearFx&&player.gearFx.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+((player.auras&&player.auras.glory)||0)*0.1;  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria, item-spell crit; Aura of Glory boosts crit damage
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+((player.gearFx&&player.gearFx.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+critDamageRating();  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria, item-spell crit; Critical-Damage Rating (Aura of Glory + gear + Aetheria) boosts crit damage
+  // Cb5 Crushing Blow: a chance a PHYSICAL hit crushes — favoured by maces/2h/unarmed (bludgeon) and helped by a crit —
+  // for +60% damage; a devastating strike distinct from a crit (both can stack).
+  if(opts.phys){ const cr=crushingRating(opts)+(crit?0.05:0); if(cr>0&&Math.random()<cr){ dmg*=1.6; opts._crush=true;
+      floater(m.x,(m.headY||1.6)+2.6,m.z,"CRUSHING!","#ff9a3a"); if(SFX.crit)SFX.crit(); shake(0.2); } }
+  if(opts._rear&&!crit) floater(m.x,(m.headY||1.6)+2.3,m.z,"rear +DR","#ffcf6b");   // show the backstab damage-rating bonus
   damageMonster(m,dmg,crit);
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
@@ -13962,6 +13987,8 @@ const AC_CLOTH_BASE={shirt:"10000001",tunic:"10000003",trousers:"100000f4",breec
   pantaloons:"100000f5",shoes:"1000001f",sandals:"10000104","faran robe":"1000018d",
   "suikan robe":"10000198","gelidite robe":"1000018e","sleek dress":"100004f2",
   "sasalia's dress":"1000026d","empyrean robe":"10000402","kiyafa robe":"1000026c","envoy's robe":"10000532"};
+let AC_CLOTH_DYES=null;
+fetch('assets/acclothing_mesh/dyes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_CLOTH_DYES=j||false; }).catch(()=>{ AC_CLOTH_DYES=false; });
 fetch('assets/acclothing_mesh/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_CLOTH=j||false;
   if(j) console.log("AC base clothing: "+Object.keys(j.bases||{}).length+" garments baked.");
 }).catch(()=>{ AC_CLOTH=false; });
@@ -13985,10 +14012,35 @@ function acClothPart(baseHex,gk,cb){    // baseHex like "10000001", gk "m"|"f" �
           mat=new THREE.MeshStandardMaterial({map:t,roughness:0.82,metalness:0.03});
           if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
         else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x9a8f7a),roughness:0.82,metalness:0.03});
-        const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
+        const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; if(g.mat.tex) mm.userData.texFile=g.mat.tex; grp.add(mm); }
       parts.push({joint:p.joint, group:grp}); }
     flush(parts);
   }).catch(()=>{ flush(null); });
+}
+// ── dye subpalettes: recolor a garment texture by its ClothingSubPalEffects remap ({oldRGB:newRGB},
+//    baked by tools/ac_clothing_dyes.py from the retail PaletteSets). Cached per texture+dye key;
+//    every waiting caller is queued (one garment dresses hundreds of NPCs). ──
+const _acClothDyeTex={}, _acClothDyeCb={};
+function acClothDyeTex(fn,key,remap,cb){
+  const ck=fn+"|"+key, c=_acClothDyeTex[ck];
+  if(c!==undefined&&c!=="loading"){ cb(c||null); return; }
+  (_acClothDyeCb[ck]||(_acClothDyeCb[ck]=[])).push(cb);
+  if(c==="loading") return;
+  _acClothDyeTex[ck]="loading";
+  const flush=v=>{ _acClothDyeTex[ck]=v; const q=_acClothDyeCb[ck]; _acClothDyeCb[ck]=null; if(q)for(const f of q)f(v||null); };
+  const img=new Image();
+  img.onload=()=>{ try{
+    const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height;
+    const ctx=cv.getContext('2d'); ctx.drawImage(img,0,0);
+    const id=ctx.getImageData(0,0,cv.width,cv.height), px=id.data;
+    const map={}; for(const k in remap) map[parseInt(k,16)]=parseInt(remap[k],16);
+    for(let i=0;i<px.length;i+=4){ const v=(px[i]<<16)|(px[i+1]<<8)|px[i+2]; const nv=map[v];
+      if(nv!==undefined){ px[i]=nv>>16&255; px[i+1]=nv>>8&255; px[i+2]=nv&255; } }
+    ctx.putImageData(id,0,0);
+    const t=new THREE.CanvasTexture(cv); t.encoding=THREE.sRGBEncoding; flush(t);
+  }catch(e){ flush(null); } };
+  img.onerror=()=>flush(null);
+  img.src='assets/acmodels/tex/'+fn;
 }
 // which garments an NPC wears, from its role opts + gender (deterministic per NPC seed)
 const AC_ROBE_BY_CULT={sho:"suikan robe","gharu'ndim":"kiyafa robe",gharundim:"kiyafa robe",
@@ -14002,7 +14054,8 @@ function acOutfitFor(o,gender){
   const feet=(cult==="gharu'ndim"||cult==="gharundim")&&(seed>>9)%2?"sandals":"shoes";
   return [top,legs,feet];
 }
-function dressAvatarAC(av,bases,gender){
+function dressAvatarAC(av,bases,gender,seed){
+  seed=Math.abs(seed|0);
   const u=av.userData, gk=gender==="female"?"f":"m";
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
@@ -14012,10 +14065,18 @@ function dressAvatarAC(av,bases,gender){
     if(i>=bases.length||!u.acBody) return;       // stop if the avatar was torn down mid-fetch
     const baseHex=AC_CLOTH_BASE[bases[i++]];
     if(!baseHex){ next(); return; }
+    // authentic dye: about two NPCs in three wear a ClothingSubPal colour of this garment, seeded
+    let dyeRemap=null, dyeKey="";
+    { const dyes=AC_CLOTH_DYES&&AC_CLOTH_DYES[baseHex];
+      if(dyes&&(seed%3)!==0){ const keys=Object.keys(dyes);
+        if(keys.length){ dyeKey=keys[(((seed>>>3)^(i*2654435761))>>>0)%keys.length]; dyeRemap=dyes[dyeKey]; } } }
     acClothPart(baseHex,gk,parts=>{
       if(u.acBody&&parts) for(const pp of parts){ const J=joints[pp.joint]; if(!J||claimed.has(pp.joint)) continue;
         claimed.add(pp.joint);
         const inst=pp.group.clone(); inst.userData.npcCloth=true; inst.userData.acCloth=true;
+        if(dyeRemap) inst.traverse(o2=>{ if(o2.isMesh&&o2.userData&&o2.userData.texFile){
+          acClothDyeTex(o2.userData.texFile,baseHex+"·"+dyeKey,dyeRemap,t=>{
+            if(!t||!o2.parent) return; const m2=o2.material.clone(); m2.map=t; o2.material=m2; }); } });
         let ref=null; for(const ch of J.children){ if(ch.userData&&ch.userData.acBody){ ref=ch; break; } }
         if(ref){ inst.position.copy(ref.position); inst.quaternion.copy(ref.quaternion); inst.scale.copy(ref.scale);
           ref.visible=false; }                   // the garment mesh replaces the bare body part
@@ -14885,7 +14946,7 @@ function castSpellById(id){
   if((spellCd[id]||0)>now()) return;
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mkc=MAGIC_SCHOOLS[s.school];
-  if(s.req>0 && mkc && skillValue(mkc)<s.req){ log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).`,"warn"); SFX.hit&&SFX.hit(); return; }
+  if(s.req>0 && mkc && skillValue(mkc)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
   if(s.words) log(`You intone the words of power: <i style="color:#c9a6ff">${esc(s.words)}</i>`,"sys");   // authentic AC cast words
   const ct=castTimeFor(s);
   if(ct<=0){ executeSpell(id); return; }            // instant utility (Stam→Mana) skips the cast bar
@@ -14924,7 +14985,7 @@ function executeSpell(id){
   if((spellCd[id]||0)>now()) return;
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mk=MAGIC_SCHOOLS[s.school];
-  if(s.req>0 && mk && skillValue(mk)<s.req){ log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).`,"warn"); SFX.hit&&SFX.hit(); return; }
+  if(s.req>0 && mk && skillValue(mk)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
   if(s.special==="stam2mana"){
     if(player.st<25){log("Not enough stamina.","warn");return;}
     player.st-=25;player.mn=Math.min(player.mmn,player.mn+22);
@@ -15287,7 +15348,9 @@ function meleeAttack(power){
   let winded=1;
   if(player.st>=stamCost){ player.st-=stamCost; } else { player.st=0; winded=0.6; }   // exhausted → 40% weaker swing (no more free full-power swings at 0 stamina)
   const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*skillEff(weaponSkillKey(),0.02)*prof.dmg*power*(1+recklessFactor())*winded;
-  const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
+  const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon", melee:true};   // weapon's physical damage type (bare fists = bludgeon)
+  // Cb5 Crushing Blow chance by weapon: bludgeon (mace/staff/unarmed) crush hardest, 2h/axe next, blades least
+  meleeOpts.crushRating=(meleeOpts.phys==="bludgeon"?0.13:(wt==="twohand"||wt==="axe")?0.08:0.03);
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
@@ -15383,6 +15446,28 @@ function sneakFactor(m){ const t=skillTier("sneak"); if(t<1) return 1;
   const toP=Math.atan2(player.x-m.x,player.z-m.z), rel=Math.abs(Math.atan2(Math.sin(toP-(m.ang||0)),Math.cos(toP-(m.ang||0))));
   const behind=rel>2.0, unaware=m.state!=="chase";                 // rear arc, or a target not currently chasing you
   return (behind||unaware)? 1+(t===2?0.55:0.30) : 1;
+}
+// ── Cb5 Damage-Rating layer (AC endgame): a unified additive % on outgoing damage (Damage Rating),
+//    an additive bonus to the crit multiplier (Critical-Damage Rating), and Crushing Blow. Aggregates
+//    the Luminance auras + gear item-spells + Aetheria, plus the universal +20 DR for a REAR attack. ──
+function isBehind(m){ if(!m||typeof m.ang!=="number") return false;
+  const toP=Math.atan2(player.x-m.x,player.z-m.z);
+  return Math.abs(Math.atan2(Math.sin(toP-m.ang),Math.cos(toP-m.ang)))>2.0; }   // player in the target's rear arc
+function damageRating(m,opts){
+  let dr=((player.auras&&player.auras.valor)||0)*0.01;             // Luminance Aura of Valor
+  dr+=(player.gearFx&&player.gearFx.dr)||0;                        // gear damage-rating item-spells
+  dr+=(aetheriaBonus("dr")||0);                                   // Aetheria damage-rating (ready; 0 today)
+  if(opts&&opts.melee&&isBehind(m)){ dr+=0.20; opts._rear=true; }  // AC rear attack: +20 Damage Rating
+  return dr;
+}
+function critDamageRating(){
+  let c=((player.auras&&player.auras.glory)||0)*0.1;              // Luminance Aura of Glory
+  c+=(player.gearFx&&player.gearFx.cdr)||0;                        // gear crit-damage-rating item-spells
+  c+=(aetheriaBonus("cdr")||0);                                   // Aetheria crit-damage (ready; 0 today)
+  return c;
+}
+function crushingRating(opts){   // chance a physical hit lands a Crushing Blow — mace/2h/unarmed (bludgeon) favoured
+  return (opts&&opts.crushRating)||0;
 }
 // Cb5 Dirty Fighting: a chance on hit to debilitate — the effect depends on your attack height (AC).
 //   low → Exposed (takes more damage) · high → Staggered (its next attack is delayed) · middle → Bleeding (DoT).
@@ -16636,6 +16721,7 @@ function animateAvatar(dt){
   u.shL.rotation.x=lX; u.shL.rotation.z=lZ; u.elL.rotation.x=lE;
   // keep the forearm shield roughly upright & facing forward regardless of arm pose (counter the arm's pitch/roll)
   if(u.aShield&&u.aShield.visible) u.aShield.rotation.set(-(lX+lE)+0.12, 0, -lZ*0.6);
+  if(u.aShieldReal&&u.aShieldReal.visible) u.aShieldReal.rotation.set(-(lX+lE)+0.12, 0, -lZ*0.6);
   // real AC body present → the human MotionTable's own cycles override the procedural pose
   acMotionTick(u,dt,moving,rN>0.5,blk||actGesture);
   // ---- cape cloth: a damped pendulum chain driven by movement, jumping & combat ----
@@ -17285,7 +17371,7 @@ function loop(ts){
 //  AUDIO — synthesized via WebAudio (no asset files; works fully offline)
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
-const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",
+const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight:1.0,   // dungeon brightness multiplier (Settings slider — tuned on real hardware)
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
@@ -19608,12 +19694,63 @@ function pickColor(arr,seed,salt){ return arr[Math.abs(Math.imul((seed|0)+salt,2
 //    robe instead; job & culture add aprons, sashes, plackets, vests and headwear. Meshes are children
 //    of the joints, so they animate with the body. ──
 function _clothMat(c){ return new THREE.MeshStandardMaterial({color:c,roughness:0.9,metalness:0.0,normalMap:weaveNrm(),normalScale:new THREE.Vector2(0.5,0.5)}); }
+// ── REAL HATS (Lane B #2): retail part-16 head swaps (tools/ac_hat_export.py). A hat's gfxobj
+//    replaces the whole head — retail's "bald under the hat" — so we attach it exactly like
+//    acBuildHead (acHeadPlace + the 180° flip) and hide the bare AC head while it's worn. ──
+let AC_HATS=null; const _acHatMesh={}, _acHatCb={};
+fetch('assets/acclothing_mesh/hats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_HATS=j||false; }).catch(()=>{ AC_HATS=false; });
+function acHatPart(name,gk,cb){
+  const rec=AC_HATS&&AC_HATS[name]; if(!rec||!rec[gk]){ cb(null); return; }
+  const key="hat_"+rec.base+"_"+gk, c=_acHatMesh[key];
+  if(c!==undefined&&c!=="loading"){ cb(c||null); return; }
+  (_acHatCb[key]||(_acHatCb[key]=[])).push(cb);
+  if(c==="loading") return;
+  _acHatMesh[key]="loading";
+  const flush=v=>{ _acHatMesh[key]=v; const q=_acHatCb[key]; _acHatCb[key]=null; if(q)for(const f of q)f(v||null); };
+  fetch('assets/acclothing_mesh/'+key+'.json').then(r=>r&&r.ok?r.json():Promise.reject()).then(j=>{
+    const TL=new THREE.TextureLoader(), grp=new THREE.Group();
+    for(const g of j.groups){ const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(g.n,3));
+      geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
+      geo.setIndex(g.i);
+      let mat;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+        mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02});
+        if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
+      else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a7a5a),roughness:0.85,metalness:0.02});
+      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
+    flush(grp);
+  }).catch(()=>flush(null));
+}
+function acAttachHat(av,name,gender){
+  const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return false;
+  if(u.neck.children.some(c=>c.userData&&c.userData.acHat)) return true;   // already hatted
+  const gk=gender==="female"?"f":"m";
+  if(!(AC_HATS&&AC_HATS[name]&&AC_HATS[name][gk])) return false;
+  acHatPart(name,gk,grp=>{
+    if(!grp||!u.acBody||!u.neck) return;
+    const inst=grp.clone(); inst.userData.npcCloth=true; inst.userData.acHat=true;
+    const sc=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
+    inst.position.set(P.p[0]*sc-jl.x, P.p[1]*sc-jl.y, P.p[2]*sc-jl.z);
+    inst.quaternion.set(P.q[0],P.q[1],P.q[2],P.q[3]);
+    inst.rotateY(Math.PI);                              // hat meshes front opposite the body, same as the heads
+    inst.scale.setScalar(sc);
+    u.neck.add(inst);
+    if(u.acHead) u.acHead.visible=false;                // retail: the hat's part-16 swap replaces the head beneath
+  });
+  return true;
+}
+const AC_HAT_FOR={cap:"cap",beret:"beret",straw:"kasa",turban:"turban",hood:"hood",fez:"fez",cowl:"cowl",qafiya:"qafiya"};
 function dressAvatarHead(u,o){
   const neck=u.neck; if(!neck) return;
   const hy=0.21;   // neck-local crown of the AC head (measured: acHead top ≈ neck+0.224) — hats rest here, not float above
   const put=(geo,mat,y,z,rx,rz)=>{ const m=new THREE.Mesh(geo,mat); m.position.set(0,y,z||0); if(rx)m.rotation.x=rx; if(rz)m.rotation.z=rz; m.castShadow=true; m.userData.npcCloth=true; neck.add(m); return m; };
   const felt=c=>new THREE.MeshStandardMaterial({color:c,roughness:0.86,metalness:0.0});
-  const kind=o.helm?"helm":o.hat;
+  const kind=o.helm?"helm":(o.hat||(o.hood?"hood":null));
+  if(kind&&kind!=="helm"&&AC_HAT_FOR[kind]&&u.acBody&&u.acHeadPlace&&u._dressAv){
+    if(acAttachHat(u._dressAv,AC_HAT_FOR[kind],o.gender)) return;   // the retail head-swap hat; procedural only as fallback
+  }
   if(kind==="helm"){ put(new THREE.SphereGeometry(0.158,14,10,0,6.3,0,1.7),new THREE.MeshStandardMaterial({color:0x8a8f98,metalness:0.7,roughness:0.4}),hy-0.02);
     const band=put(new THREE.TorusGeometry(0.152,0.016,8,18),new THREE.MeshStandardMaterial({color:0x6a6e76,metalness:0.7,roughness:0.4}),hy-0.07,0,Math.PI/2);
     put(new THREE.BoxGeometry(0.024,0.11,0.03),new THREE.MeshStandardMaterial({color:0x6a6e76,metalness:0.7,roughness:0.4}),hy-0.09,-0.13); }   // nasal
@@ -19647,8 +19784,9 @@ function dressAvatarOverlays(av,o,gender){
 }
 function dressAvatar(av,o,gender){
   const u=av&&av.userData; if(!u||!u.spine) return; o=o||{};
+  u._dressAv=av; o.gender=o.gender||gender;              // the head-dresser needs the avatar ref (real part-16 hats)
   if(AC_CLOTH!==false){                                  // authentic ClothingTable base outfit (pack present or still loading)
-    dressAvatarAC(av,acOutfitFor(o,gender),gender);
+    dressAvatarAC(av,acOutfitFor(o,gender),gender,o.seed|0);
     dressAvatarOverlays(av,o,gender);
     dressAvatarHead(u,o);
     return;
@@ -21661,9 +21799,14 @@ function updatePlugins(dt){
 function openSettings(){
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
   const sens=document.getElementById('setSens'),vol=document.getElementById('setVol'),fov=document.getElementById('setFov');
+  const dgl=document.getElementById('setDgl');
   sens.value=settings.sens;vol.value=settings.vol;fov.value=settings.fov;
+  if(dgl){ dgl.value=settings.dglight||1;
+    dgl.oninput=()=>{ settings.dglight=+dgl.value; lbl(); saveSettings();
+      for(const o of (typeof dungeonObjs!=="undefined"?dungeonObjs:[])) if(o.isLight&&o.userData&&o.userData.dgBase!=null) o.intensity=o.userData.dgBase*settings.dglight; }; }   // live-retune the current delve
   const lbl=()=>{document.getElementById('setSensV').textContent=(+settings.sens).toFixed(1);
     document.getElementById('setVolV').textContent=Math.round(settings.vol*100)+"%";
+    if(document.getElementById('setDglV')) document.getElementById('setDglV').textContent=Math.round((settings.dglight||1)*100)+"%";
     document.getElementById('setFovV').textContent=settings.fov;};
   lbl();
   sens.oninput=()=>{settings.sens=+sens.value;lbl();saveSettings();};
@@ -23609,8 +23752,8 @@ function buildDungeonReal(def,dj){
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
   scene.add(grp); dungeonObjs.push(grp);
-  const amb=new THREE.AmbientLight(0x9a8a72,0.95); scene.add(amb); dungeonObjs.push(amb);
-  const hemi=new THREE.HemisphereLight(0x6a6a7a,0x2a2218,0.45); scene.add(hemi); dungeonObjs.push(hemi);
+  const amb=new THREE.AmbientLight(0x9a8a72,0.95*(settings.dglight||1)); amb.userData.dgBase=0.95; scene.add(amb); dungeonObjs.push(amb);
+  const hemi=new THREE.HemisphereLight(0x6a6a7a,0x2a2218,0.45*(settings.dglight||1)); hemi.userData.dgBase=0.45; scene.add(hemi); dungeonObjs.push(hemi);
   // Torch props with pooled lights along the halls. EVEN coverage (≈1 per few cells, capped at 20 so the
   // one big dungeon mesh isn't lit by an unbounded light count) so no chamber sits in ambient-only gloom —
   // the old "every ~4th cell" left far cells dark between torches. Dungeon torches also burn brighter and
