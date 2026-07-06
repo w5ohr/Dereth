@@ -1,5 +1,17 @@
 # AC New-Player Experience + Physics — Two-Client Split
 
+> **⚠️ STATUS UPDATE (2026-07-06): several items in this document are now COMPLETE.**
+> The four Tier-1 flagship features shipped in PR #124 — **combine/tradeskill engine** (Alchemy/
+> Cooking/Fletching/Dyeing live via 1,500 acrecipes.json combines), **Aetheria** (slots L75/150/225,
+> leveled drops, set sigils, combat surges), **multi-level dungeons** ("Ye Olde Stair" descents,
+> 153 two-floor + 31 three-floor delves, +35%/floor scaling), and **AC character creation +
+> onboarding** (staged wizard incl. Viamontian, 270/52 credit pools, specialize-at-creation, ToD
+> starter kit, Training Academy, greeter chains — verified end-to-end).
+> Also complete from the 2026-07-06 fix wave: authentic MC/fizzle, retail quest lockouts, Town
+> Crier rumor feed, monarchy & allegiance chat, dungeon lighting, window transparency, drop expiry,
+> forehead-band fix, non-PCM music. **Do not re-plan these.** The maintained source of truth for
+> what's left is `docs/remaining-work-consolidated.md`.
+
 **2026-07-03.** Three research reports (verified vs the AC manual, ToD manual, wiki screenshots,
 GameSpot/Sybex guides, Drunkapedia/Levistras) + a repo audit define the work below. Full details
 live in the session research; key numbers are inlined here. Effort-balanced: ~11 pts each.
