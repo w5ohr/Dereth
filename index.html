@@ -15689,6 +15689,7 @@ function update(dt){
   tbStream(dt);          // stream the real AC town buildings in/out around the player
   wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
   algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
+  crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
   updateHUD();
@@ -18774,6 +18775,45 @@ const RUMORS=[
   "The Tumeroks of the Direlands do not bargain. Go armed, or not at all.",
   "Carve a foe with the right element and watch them wither twice as fast.",
 ];
+// The Town Crier's LIVE news feed: current world events, the running Kilmer-saga beat, and news of the
+// player's own deeds, ahead of colour rumours — rotated so repeat visits cry fresh headlines (retail
+// criers cried the day's news, not one fixed line). Ordered most-urgent first; every line HTML-safe.
+function crierRumors(){
+  const R=[], nm=(player.name||"a wanderer");
+  if(typeof worldEvent!=="undefined"&&worldEvent&&worldEvent.active){          // a live Incursion / Siege — the loudest cry
+    const tn=(worldEvent.town&&worldEvent.town.name)||"the frontier";
+    R.push(`⚔ ${worldEvent.siege?"A siege batters":"An incursion tears at"} <b>${esc(tn)}</b> — ${Math.max(0,(worldEvent.total||0)-(worldEvent.alive||0))}/${worldEvent.total||0} thrown back. To arms!`);
+  }
+  const ce=(typeof currentCalEvent==="function")&&currentCalEvent();            // the saga beat
+  if(ce&&ce.rumor) R.push(`<b>${esc(ce.name||"The season turns")}</b> — ${esc(ce.rumor)}`);
+  if(typeof algIsMonarch==="function"&&algIsMonarch())                          // news of the player's renown
+    R.push(`Hail a <b>Monarch</b>! ${player.allegianceName?("The "+esc(player.allegianceName)):"An allegiance"} rallies ${(typeof algFollowerCount==="function"?algFollowerCount():(player.vassals||[]).length)} sworn under ${esc(nm)}.`);
+  else if(player.patronInfo&&player.patronInfo.name) R.push(`${esc(nm)} is sworn to <b>${esc(player.patronInfo.name)}</b> — loyalty is the coin of the realm.`);
+  if(player.title) R.push(`Make way for <b>${esc(nm)}</b>, ${esc(player.title)} — level ${player.level|0} and rising.`);
+  if((player.colosseumClears||0)>0) R.push(`The Colosseum still echoes ${esc(nm)}'s name — champion ${player.colosseumClears}× over${(player.advColosseumClears||0)>0?", and master of the Advanced gauntlet":""}.`);
+  if(typeof hsMine==="function"){ const h=hsMine(); if(h&&h.name) R.push(`${esc(nm)} keeps a home at <b>${esc(h.name)}</b>.`); }
+  if((player.societyRibbons||0)>0) R.push(`The societies mark ${esc(nm)} with ${player.societyRibbons} commendation${player.societyRibbons!==1?"s":""}.`);
+  if((player.kills||0)>=50) R.push(`They tally near ${Math.floor(player.kills/10)*10} foes fallen to ${esc(nm)}'s hand.`);
+  if(player.pkState==="pk") R.push(`Beware — ${esc(nm)} walks as a <b>Player Killer</b>. Cross blades at your peril.`);
+  for(let i=0;i<2;i++) R.push(RUMORS[irnd(0,RUMORS.length-1)]);                 // colour filler (always available)
+  return R;
+}
+// Ambient town life: while you linger near a Town Crier (in a town, out of combat), the crier calls a
+// live headline every few minutes so the feed feels alive without being interacted with. Local flavour
+// only (never networked); routed to the normal log so classifyLog files it on the crier/quest tab.
+let _crierAcc=90, _crierMi=0;
+function crierTick(dt){
+  if(inDungeon||inNetwork||!player.alive) { _crierAcc=Math.max(_crierAcc,60); return; }
+  _crierAcc-=dt; if(_crierAcc>0) return;
+  _crierAcc=rnd(150,240);                                        // a headline every 2.5–4 min while in town
+  if(typeof combatTimer!=="undefined"&&combatTimer>0) return;    // don't cry mid-fight
+  let cr=null,bd=44;
+  for(const o of (npcs||[])){ if(o.role!=="crier") continue; const d=Math.hypot(o.x-player.x,o.z-player.z); if(d<bd){bd=d;cr=o;} }
+  if(!cr) return;
+  const feed=crierRumors(); if(!feed.length) return;
+  log(`<b>Town Crier of ${esc(cr.town||"Dereth")}:</b> ${feed[(_crierMi++)%feed.length]}`,"sys");
+  if(SFX.quest&&bd<16) SFX.quest();                              // a soft chime only if you're right there
+}
 const NPC_FLAVOR={
   gatekeep:["None pass the gate of Timaru without the Aun's leave. State your purpose.",
             "The Tumeroks beyond these walls do not parley. Tread carefully."],
@@ -19131,11 +19171,16 @@ function talkToNPC(n){
     const here=n.town?`<b>${n.town}</b>`:"the open road";
     const near=CITIES.filter(c=>c.name!==n.town).map(c=>({c,d:Math.hypot(c.x-n.x,c.z-n.z)})).sort((a,b)=>a.d-b.d).slice(0,3);
     const dirs=near.map(o=>`${o.c.name} (${compassTo(o.c.x-n.x,o.c.z-n.z)}, ~${Math.max(1,Math.round(o.d/(120*WSCALE)))} leagues)`).join(" · ");
-    const ce=currentCalEvent(), S=currentSeason();
-    log(`<b>Town Crier:</b> Hear ye! It is <b>${S.name}</b>. <b>${ce.name}</b> — ${ce.rumor} ${ce.clue}`,"sys");
+    const S=currentSeason();
+    // Cry two headlines off the LIVE feed, rotating from where this crier left off, so repeat visits
+    // give fresh news (world events → saga beat → your own deeds → colour rumours).
+    const feed=crierRumors(), i0=(n._line=(n._line||0));
+    log(`<b>Town Crier:</b> Hear ye! It is <b>${S.name}</b>. ${feed[i0%feed.length]}`,"sys");
+    if(feed.length>1) log(`<b>Town Crier:</b> ${feed[(i0+1)%feed.length]}`,"sys");
+    n._line=i0+2;
     log(`<b>Town Crier:</b> You stand in ${here}. Nearest lie ${dirs}.`,"sys");
     const cl=acDialogueLine(null,"crier");   // one real retail crier rumor on top of the directions
-    if(cl) log(`<b>Town Crier:</b> ${esc(cl[(n._line=(n._line||0)+1)%cl.length])}`,"sys");
+    if(cl) log(`<b>Town Crier:</b> ${esc(cl[(n._cl=(n._cl||0)+1)%cl.length])}`,"sys");
     if(SFX.quest)SFX.quest();
     return;
   }
