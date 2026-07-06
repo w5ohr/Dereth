@@ -772,6 +772,11 @@ function acItemize(it){
 const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
 const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
 const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
+// Cb7 — every weapon type maps to ITS weapon skill (ToD): heavy blades/axes/maces/spears, light
+// staves/fists, finesse daggers, two-handers, missiles. Your equipped weapon rolls ITS OWN skill.
+const WEAPON_SKILL={sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",staff:"light",unarmed:"light",
+  dagger:"finesse",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile"};
+function weaponSkillKey(){ const wt=player.weapon&&player.weapon.wt; return WEAPON_SKILL[wt]||"light"; }   // bare fists fight with Light Weapons
 // Trained-vs-Specialized cumulative XP curves, fit to the two verified anchors (pt1: 23/58, pt70: 67504/168758)
 function skillCumXP(rank,spec){ if(rank<=0)return 0;
   if(AC_XP){ const ch=spec?AC_XP.spec:AC_XP.trained; return ch[Math.min(rank,ch.length-1)]; }   // the real chart
@@ -1173,6 +1178,21 @@ for(const s of SPELLBOOK_LIST){
   // debuffs mirror buffs the opposite way — 10 per level (as %), same level-based timer:
   else if(s.debuff){ s.dmag=Math.round((1-0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }   // Weakness: enemy deals -10%/lvl · Slowness: -10%/lvl speed
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
+}
+// ── Mg1 "Other" forms: the classic support lines castable ON someone else — an online ally under
+//    the crosshair, or your summoned familiar. Generated from the Self lines with retail names
+//    ("Strength Other I", "Heal Other III"…) so the acspellstats merge applies the REAL Other costs. ──
+{ const gen=[];
+  for(const s of SPELLBOOK_LIST){
+    let nm=null;
+    if(s.buff==="attr"&&s.name.includes(" Self")) nm=s.name.replace(" Self"," Other");
+    else if(s.school==="life"&&typeof s.heal==="function"&&s.name.includes("Heal Self")) nm=s.name.replace("Heal Self","Heal Other");
+    else if(s.special==="revitalize"&&s.name.includes("Revitalize Self")) nm=s.name.replace("Revitalize Self","Revitalize Other");
+    else if(s.buff==="prot"&&s.name.includes("Protection Self")) nm=s.name.replace("Protection Self","Protection Other");
+    else if(s.special==="regen") nm=/ (VIII|VII|VI|V|IV|III|II|I)$/.test(s.name)?s.name.replace(/ (VIII|VII|VI|V|IV|III|II|I)$/," Other $1"):s.name+" Other";
+    if(nm) gen.push(Object.assign({},s,{id:s.id+"_other",name:nm,other:true}));
+  }
+  for(const g of gen) SPELLBOOK_LIST.push(g);
 }
 const SPELLBOOK={}; for(const s of SPELLBOOK_LIST) SPELLBOOK[s.id]=s;
 // ── THE authentic spell numbers (assets/acspellstats.json — client SpellTable mana/words/
@@ -13497,7 +13517,6 @@ function recomputeGearSkill(){ const g={}; for(const it of jewelryItems()){ cons
   { const cp=player.armorSlots&&player.armorSlots.back; if(cp&&cp.magicDef) g.magicd=(g.magicd||0)+cp.magicDef; }   // a cape's Magic Defense bonus (Kilmer's Cape: +100)
   player.gearSkill=g; }
 // ── AC wield requirements: loot rolls skill/level/arcane gates you must meet before you can equip it ──
-const WEAPON_SKILL={dagger:"light",staff:"light",sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile",unarmed:"light"};
 function bestMeleeSkillValue(){ let b=0; for(const k of MELEE_WEAPON_KEYS){ const v=skillValue(k); if(v>b)b=v; } return b; }
 function rollWield(it,tier,work,rare){
   // higher tier + workmanship + magic ⇒ steeper requirement (AC's core loot balance lever). Tier-1 gear stays freely wieldable.
@@ -13510,7 +13529,7 @@ function wieldFail(it){   // → a human string naming the first unmet requireme
   if(!it) return null;
   if(it.reqLvl&&player.level<it.reqLvl) return `level ${it.reqLvl}`;
   if(it.reqVal){ const missile=it.stat==="weapon"&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].mode==="missile";
-    const v=missile?skillValue("missile"):bestMeleeSkillValue();
+    const v=missile?skillValue("missile"):skillValue(WEAPON_SKILL[it.wt]||"heavy");   // the piece gates on ITS weapon's skill
     if(v<it.reqVal) return `${missile?"Missile Weapons":"a weapon skill of"} ${it.reqVal}`; }
   if(it.reqArcane&&skillValue("arcane")<it.reqArcane) return `Arcane Lore ${it.reqArcane}`;
   return null;
@@ -14746,13 +14765,25 @@ function executeSpell(id){
     spellLandFX("creature",_slfMonsterPos(m),(m.headY||1.6)+0.4,m.r||0.8);   // creature magic lands: spirits spiral the foe, feet to crown
     castFlash(0x9b30ff); if(SFX.frost)SFX.frost(); log(`You afflict a foe with <b>${s.name}</b>.`,"heal"); return;
   }
-  // Creature/Life heals & buffs may be cast on an ally under the crosshair (online); else self.
-  // (Item magic is gear-only — never on another person; harm/drain stay forward-targeted at monsters.)
-  if((s.buff==="attr")||(s.school==="life"&&s.heal)){
+  // Creature/Life/Item support may be cast on an ally under the crosshair (online). Dedicated
+  // "Other" spells DEMAND someone else: an ally, else your summoned familiar, else the cast refunds.
+  if(s.other||(s.buff==="attr")||(s.school==="life"&&s.heal)||s.buff==="item"||s.buff==="bane"||s.buff==="prot"||s.special==="regen"||s.special==="revitalize"){
     const ally=pickAllyTarget(40);
     if(ally){ castSelf=false; castKind="bestow"; castShow=castDur; netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
       if(ally.x!=null) spellLandFX(s.school,()=>[ally.x,ally.y||0,ally.z],2.0,0.75);   // the caster sees the spell land on their ally too
       floater(player.x,EYE+0.6,player.z,"→ "+ally.name,"#bfe0ff"); log(`You cast <b>${s.name}</b> on <b>${esc(ally.name)}</b>.`,"heal"); return; }
+    if(s.other){
+      const pet=pets.length?pets[0]:null;
+      if(pet){ castSelf=false; castKind="bestow"; castShow=castDur;
+        if(typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"){ pet.t+=10; }   // mending your familiar sustains it
+        else { pet.dmg=Math.round((pet.dmg||8)*1.2); pet.t+=4; }                                       // empowering it sharpens its sting
+        castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
+        if(typeof spellLandFX==="function") spellLandFX(s.school,()=>[pet.x,0,pet.z],1.4,0.5);
+        floater(player.x,EYE+0.6,player.z,"→ your familiar","#bfe0ff");
+        log(`You cast <b>${s.name}</b> on your familiar — it ${typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"?"steadies and endures":"hums with borrowed power"}.`,"heal"); return; }
+      player.mn+=cost; spellCd[id]=0;
+      log(`No willing target for <b>${s.name}</b> — sight an ally, or keep a summoned familiar near.`,"warn"); return;
+    }
   }
   if(s.school==="life"&&s.heal){
     const pow=castEcon(id);
@@ -14978,6 +15009,11 @@ function fireArrow(){
     else { dmg+=am.dmg||0; }   // non-elemental ammo just adds to the physical hit
     takeFromInv(ai); }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
+  { const tgt=(typeof pickMonsterTarget==="function")?pickMonsterTarget(60):null;      // Cb3 missile contest: Missile skill vs the mark's defense — a lost roll flies wide
+    if(tgt&&!rollToHit(skillValue("missile"),tgt,0.95)){
+      const sk=(Math.random()<0.5?-1:1)*(0.05+Math.random()*0.09), ca=Math.cos(sk), sa=Math.sin(sk);
+      const dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca; dir.x=dx; dir.z=dz;
+      floater(player.x,EYE+0.4,player.z,"wide!","#b9c0cc"); } }
   const ox=player.x+dir.x*0.8,oz=player.z+dir.z*0.8,oy=player.y+EYE-0.1;   // #11: eye height above the player's ACTUAL feet — not absolute sea level, so arrows don't spawn underground (and get ground-culled) on elevated terrain
   const mesh=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.8,6),
     new THREE.MeshStandardMaterial({color:0x8a6a3a}));
@@ -15009,7 +15045,7 @@ function meleeAttack(power){
   const stamCost=prof.stam*power*(equippedShield()?1.2:1);
   let winded=1;
   if(player.st>=stamCost){ player.st-=stamCost; } else { player.st=0; winded=0.6; }   // exhausted → 40% weaker swing (no more free full-power swings at 0 stamina)
-  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*bestMeleeEff(0.02)*prof.dmg*power*(1+recklessFactor())*winded;
+  const reach=3.4*prof.reach,dmg=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*skillEff(weaponSkillKey(),0.02)*prof.dmg*power*(1+recklessFactor())*winded;
   const af=melee?player.weapon.affix:null, meleeOpts={phys:melee?(prof.dt||"bludgeon"):"bludgeon"};   // weapon's physical damage type (bare fists = bludgeon)
   if(af){ if(af.k==="brand"){meleeOpts.element=af.element;meleeOpts.brandDmg=Math.max(2,Math.round(dmg*0.25));}
     else if(af.k==="crit")meleeOpts.crit=af.v; else if(af.k==="lifesteal")meleeOpts.lifesteal=af.v; }
@@ -15022,7 +15058,7 @@ function meleeAttack(power){
       const dot=(dx*fx+dz*fz)/(d*fl);
       if(dot>0.5){
         const hm=heightMods(m);   // Cb2: attack height vs the target's size
-        if(!rollToHit(bestMeleeSkillValue(),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
+        if(!rollToHit(skillValue(weaponSkillKey()),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
         const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
         applyHit(m,dmg*hm.dmg*sneak*dmgVar(prof),meleeOpts);   // per-swing damage roll (AC weapon variance)
         dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
