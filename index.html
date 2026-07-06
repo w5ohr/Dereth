@@ -2114,11 +2114,22 @@ function acItemRow(nm,val){
   if(/cheese|bread|pie\b|cake|egg|grape|apple|beef|chicken|fish|stew|ration|milk|wine|stout|\bale\b|cider|sake|\btea\b|mead|water\b|jerky|melon|pear|olive|carrot|mushroom|honey|noodle|rice\b|tofu/.test(n)) return P({name:nm,stat:"food",attr:"Endurance",v:2,dur:90},"🍖","hearty fare · +2 Endurance for 90 s");
   return P({name:nm,stat:"trophy",v:Math.max(3,Math.round((val||15)/6))},"📦","curio · an authentic Dereth trade good");
 }
+// tradeskill supplies every town can sell (the combine engine's entry ingredients), stocked by trade:
+// apothecaries carry the alchemy implements & reagents, provisioners the kitchen goods, smiths the
+// fletching bundles & ore. Names are exact acrecipes.json tool/target names, so they combine as-is.
+const CRAFT_SUPPLIES={
+  healer:["Mortar and Pestle","Alembic","Aqua Vitae","Aqua Incanta","Eye Dropper","Smelting Pot","Neutral Balm","Eyebright","Henbane","Amaranth"],
+  provisioner:["Dough","Egg","Carving Knife"],
+  weaponsmith:["Whittling Knife","Bundle of Arrowheads","Bundle of Arrowshafts","Bundle of Quarrelshafts","Bundle of Atlatl Dart Shafts"],
+  armorer:["Iron Ore","Smelting Pot"],
+};
 function acTownVendors(townName){
   if(!ACV.on||!ACV.towns[townName]) return null;
   return ACV.towns[townName].map(v=>{
     const st=v.stock.map(id=>ACV.catalog[id]).filter(Boolean);
-    return {name:v.n, vt:acVendorType(v.n,st.map(s=>s.n)), acStock:st.map(s=>acItemRow(s.n,s.v)),
+    const vt=acVendorType(v.n,st.map(s=>s.n));
+    const sup=(CRAFT_SUPPLIES[vt]||[]).filter(nm=>!st.some(s=>s.n.toLowerCase()===nm.toLowerCase()));
+    return {name:v.n, vt, acStock:st.map(s=>acItemRow(s.n,s.v)).concat(sup.map(nm=>acItemRow(nm,15))),
             x:(v.x!=null?v.x:null), z:(v.z!=null?v.z:null)};   // TRUE retail spot — 1:1 town-centre offset (same mapping as buildings)
   });
 }
@@ -13803,6 +13814,81 @@ function applyItem(it){
   else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
   else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
 }
+// ═══ THE COMBINE ENGINE (AC tradeskills): assets/acrecipes.json carries 1,500 retail tool+target→result
+//     combines across Alchemy, Cooking, Fletching and tool assembly. Any two inventory items whose
+//     NAMES complete a recipe can be combined — a logistic skill roll vs the recipe difficulty (ACE's
+//     check) consumes the target (and the tool, unless it's a durable implement) and on success
+//     produces the result, itemized so potions/food/ammo/dyes come out usable while intermediate
+//     goods keep their names to chain into the next combine. ═══
+let _craftIx=null;
+function craftIx(){
+  if(_craftIx) return _craftIx;
+  if(!AC_RECIPES) return null;
+  const rows=Array.isArray(AC_RECIPES)?AC_RECIPES:(AC_RECIPES.recipes||[]);
+  const byPair={}, names=new Set();
+  for(const r of rows){ byPair[(r.tool+"|"+r.target).toLowerCase()]=r; names.add(r.tool.toLowerCase()); names.add(r.target.toLowerCase()); }
+  return _craftIx={byPair,names,rows};
+}
+const CRAFT_SKILL={alchemy:"alchemy",cooking:"cooking",fletching:"fletching",tinkering:"weapontink"};
+const CRAFT_DURABLE=/\b(knife|saw|mortar|alembic|eye dropper|smelting pot|skillet|pan|awl|shears|tongs|chisel|needle|press|crucible)\b/i;   // implements survive the combine; reagents/dye pots are used up
+const AC_DYE_HEX={verdalim:0x3f8f4f,hennacin:0xb04a2a,berimphur:0xd8b23a,thananim:0x2a4a9a,colban:0x3a6ad8,lapyan:0x6aa8d8,relanim:0x7a4a9a,argenory:0xd8d8e0,minalim:0x8fd08f,botched:0x8a8a8a};
+function craftCanCombine(it){ const ix=craftIx(); return !!(ix&&it&&it.name&&ix.names.has(it.name.toLowerCase())); }
+function craftRecipeFor(a,b){ const ix=craftIx(); if(!ix||!a||!b||!a.name||!b.name) return null;
+  return ix.byPair[(a.name+"|"+b.name).toLowerCase()]||ix.byPair[(b.name+"|"+a.name).toLowerCase()]||null; }
+function combineChance(rec){ const sk=skillValue(CRAFT_SKILL[rec.family]||"alchemy");
+  return clamp(1/(1+Math.exp((rec.difficulty-sk)*0.03)),0.03,0.98); }
+function craftResultItem(nm){
+  const dm=nm.toLowerCase().match(/^(\w+) dye pot$/);              // retail dye pots become REAL dye items (openDyePicker applies them)
+  if(dm&&AC_DYE_HEX[dm[1]]) return {name:nm,stat:"dye",hex:AC_DYE_HEX[dm[1]],v:85};
+  const row=(typeof acItemRow==="function")?acItemRow(nm,25):null; // the vendor-shelf classifier: potions/food/ammo/comps come out usable
+  if(row&&row.scroll) return {name:row.name,scroll:true,spellId:row.spellId};
+  return (row&&row.gear)?row.gear:{name:nm,stat:"trophy",v:8};
+}
+function craftTake(i){ const it=player.inv[i]; if(!it) return; if((it.count||1)>1) it.count--; else player.inv.splice(i,1); }
+function attemptCombine(ia,ib){
+  const A=player.inv[ia], B=player.inv[ib]; const rec=craftRecipeFor(A,B); if(!rec) return;
+  const aIsTool=A.name.toLowerCase()===rec.tool.toLowerCase();     // orient the pair: which one is the recipe's tool?
+  const iTool=aIsTool?ia:ib, iTarget=aIsTool?ib:ia;
+  const ch=combineChance(rec), skN=(SKILL_BY_KEY[CRAFT_SKILL[rec.family]]||{}).n||rec.family;
+  if(Math.random()<ch){
+    const keepTool=CRAFT_DURABLE.test(rec.tool);                   // success: consume target (+ tool unless durable) — splice higher index first
+    const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
+    for(const idx of order) craftTake(idx);
+    const out=craftResultItem(rec.result); addToInv(out,true);
+    log(`Your ${skN} succeeds — <b>${esc(rec.tool)}</b> + <b>${esc(rec.target)}</b> → <b>${esc(rec.result)}</b> <span style="color:var(--dim)">(${Math.round(ch*100)}%)</span>.`,"loot");
+    if(SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather");
+  } else {
+    const keepTool=CRAFT_DURABLE.test(rec.tool);                   // failure ruins the target; a non-durable tool is spent too
+    const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
+    for(const idx of order) craftTake(idx);
+    log(`Your ${skN} attempt fails — the <b>${esc(rec.target)}</b> is ruined <span style="color:var(--dim)">(${Math.round(ch*100)}% chance)</span>.`,"warn");
+    if(SFX.hit)SFX.hit();
+  }
+  updateHUD&&updateHUD(); saveGame(); if(typeof buildTinker==="function")buildTinker();
+}
+function openCombinePicker(i){
+  const it=player.inv[i]; if(!it) return;
+  const opts=[];
+  for(let j=0;j<player.inv.length;j++){ if(j===i) continue;
+    const rec=craftRecipeFor(it,player.inv[j]);
+    if(rec) opts.push({j,rec,partner:player.inv[j]});
+  }
+  if(!opts.length){ log(`Nothing in your satchel combines with the <b>${esc(it.name)}</b> — the right partner is named in a tradeskill recipe.`,"sys"); return; }
+  const old=document.getElementById('combinePick'); if(old) old.remove();
+  paused=true; if(locked)document.exitPointerLock();
+  const ov=document.createElement('div'); ov.id='combinePick';
+  ov.style.cssText="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const btn="display:block;width:100%;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:#e8dcc0;cursor:pointer;padding:9px 12px;margin-top:8px;font-size:13px";
+  ov.innerHTML=`<div style="max-width:460px;width:92%;max-height:80vh;overflow:auto;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px">
+    <div style="color:var(--gold);text-transform:uppercase;font-size:12px;letter-spacing:.6px">⚗ Combine — ${esc(it.name)}</div>
+    <div style="color:var(--dim);margin:4px 0 4px;font-size:12px">Choose what to combine it with. Failure ruins the target material.</div>
+    ${opts.map((o,k)=>`<button data-k="${k}" style="${btn}"><b>${esc(o.partner.name)}</b> → <b style="color:#9be08a">${esc(o.rec.result)}</b> <span style="color:var(--dim)">(${o.rec.family} · ${Math.round(combineChance(o.rec)*100)}%)</span></button>`).join("")}
+    <button id="combineCancel" style="${btn};text-align:center">Cancel</button></div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ ov.remove(); paused=false; };
+  ov.querySelector('#combineCancel').onclick=close;
+  ov.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{ const o=opts[+b.dataset.k]; close(); attemptCombine(i,o.j); });
+}
 // ---- salvage & tinkering (AC-authentic; success-chance formula is our own — real one stays gated) ----
 function salvageItem(i){
   const it=player.inv[i]; if(!it) return;
@@ -23530,10 +23616,11 @@ function buildTinker(){
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil"||it.stat==="recall"||it.stat==="cure"||it.stat==="hot"||it.stat==="skillpot"||it.stat==="attrpot"||it.stat==="portalgem")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
-      <div class="ctl">${ctl}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
+      <div class="ctl">${ctl}${(typeof craftCanCombine==="function"&&craftCanCombine(it))?`<button class="tbtn" data-cb="${i}" title="tradeskill combine — use with another material">⚗ Combine</button>`:""}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
     rows.appendChild(row);
   });
   rows.querySelectorAll('[data-qb]').forEach(b=>b.onclick=()=>{ const it=player.inv[+b.dataset.qb]; if(it) qbAssignPick(hbItemEntry(it), it.name); });
+  rows.querySelectorAll('[data-cb]').forEach(b=>b.onclick=()=>openCombinePicker(+b.dataset.cb));
   if(player.inv.length&&(window._invSel==null||window._invSel<window._invLo||window._invSel>=window._invHi||!player.inv[window._invSel])){
     const hint=document.createElement('div'); hint.style.cssText="color:var(--dim);font-size:11.5px;padding:4px 0";
     hint.textContent="Click an item to examine it — double-click to use or equip (AC).";
