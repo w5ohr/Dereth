@@ -139,7 +139,7 @@ Removed from the lists below because git shows them shipped:
 | Item | What's undone | Size | Source |
 |------|---------------|------|--------|
 | ✅ **Server-side item/spell mirror** | ~~Mirror `acitems.json` + `acspellstats.json` server-side.~~ DONE — server loads both packs at boot (4,338 items → 5-tier loot pools, 3,294 spells); ported `roll_ac_item`/`ac_itemize` so shared loot is real retail gear with exact stats (dmg/dvar/spd/al/val/bur/mana/spells/icon/wield), falling back to the simplified generator only if a pack is absent. | S | REMAINING-WORK |
-| **Non-PCM music track** | One MP3-format `0x55` resource skipped by the music exporter. | S | ac-remaining-gaps |
+| ✅ **Non-PCM music track** | ~~One MP3-format `0x55` resource skipped by the music exporter.~~ DONE — the `0x55` payload is raw MPEG-3 (browsers decode it natively), so `ac_music_export.py` now dumps its frames to `<did>.mp3` and adds it to the manifest (`needs_conversion` is now empty). The looping zone player filters to tracks ≥8s so the 2s stinger never loops jarringly; the one-shot `playAcAmbient` pool can still play it. Verified: valid MPEG frame-sync, in `AC_MUSIC` (7), excluded from the loop list (6). | S | ac-remaining-gaps |
 | **Building/clothing Setup GfxObj export** | Export building + clothing Setup GfxObjs through the `ac_env` pipeline for deeper integration (data extracted; wiring deferred). | Follow-up | ac-data-extraction-roadmap |
 | **Geometry-driven dungeon/town renderer** | Render dungeons/towns from the extracted real meshes in AC coords (not the room-graph). Data is extracted. *(Overlaps A1 town-structures — the client-side renderer piece.)* | Follow-up | ac-data-extraction-roadmap |
 

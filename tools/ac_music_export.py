@@ -83,22 +83,45 @@ def main():
         tracks.append({"did": "%08X" % oid, "file": fn, "channels": ch,
                        "sampleRate": sr, "seconds": round(seconds, 1), "bytes": len(wav)})
 
-    needs = [{"did": "%08X" % oid,
-              "formatTag": tag,
-              "note": ("MPEG layer-3 (0x55) — needs external MP3 decode"
-                       if tag == FMT_MP3 else "non-PCM format 0x%02X — needs external decode" % tag)}
-             for oid, tag, dsz in non_pcm]
+    # Non-PCM tracks: the 0x55 payload is already MPEG layer-3 (raw MP3 frames after the
+    # WAVEFORMATEX header) — browsers decode MP3 natively (WebAudio decodeAudioData + <audio>),
+    # so no external tool is needed. Dump the raw frames to <did>.mp3 and add to the manifest.
+    # (Previously these were only LISTED as "needs_conversion" and left unextracted.)
+    exported_nonpcm, still_needs = [], []
+    for oid, tag, dsz in non_pcm:
+        d = portal.read(oid)
+        m = wave_meta(d)
+        if not m:
+            continue
+        _t, ch, sr, hsz, _dsz = m
+        payload = d[12 + hsz:12 + hsz + dsz]
+        avg = struct.unpack_from("<I", d, 12 + 8)[0] if hsz >= 12 else 0   # WAVEFORMATEX nAvgBytesPerSec
+        seconds = round(dsz / avg, 1) if avg else 0
+        # only 0x55 (MPEG-3) is browser-native; anything else we still can't play, so list it
+        if tag == FMT_MP3 and len(payload) >= 2 and payload[0] == 0xFF and (payload[1] & 0xE0) == 0xE0:
+            if total + len(payload) <= SIZE_BUDGET:
+                fn = "%08X.mp3" % oid
+                with open(os.path.join(OUT, fn), "wb") as f:
+                    f.write(payload)
+                total += len(payload)
+                exported_nonpcm.append({"did": "%08X" % oid, "file": fn, "channels": ch,
+                                        "sampleRate": sr, "seconds": seconds, "bytes": len(payload),
+                                        "format": "mp3"})
+                continue
+        still_needs.append({"did": "%08X" % oid, "formatTag": tag,
+                            "note": "non-PCM format 0x%02X — needs external decode" % tag})
 
-    manifest = {"tracks": tracks, "needs_conversion": needs}
+    # PCM WAV beds first (longest → the loopable zone music), then the browser-native MP3 tracks.
+    manifest = {"tracks": tracks + exported_nonpcm, "needs_conversion": still_needs}
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=1)
 
     print(f"PCM waves scanned: {len(waves)}  non-PCM: {len(non_pcm)}")
-    print(f"exported {len(tracks)} ambient/music tracks, {total/2**20:.1f} MB")
-    for t in tracks:
-        print(f"  {t['did']}  {t['seconds']}s  {t['channels']}ch {t['sampleRate']}Hz  {t['bytes']//1024} KB")
-    for n in needs:
-        print(f"  needs conversion: {n['did']} (fmt 0x{n['formatTag']:02X})")
+    print(f"exported {len(tracks)} PCM + {len(exported_nonpcm)} MP3 tracks, {total/2**20:.1f} MB")
+    for t in tracks + exported_nonpcm:
+        print(f"  {t['did']}  {t.get('format','wav')}  {t['seconds']}s  {t['channels']}ch {t['sampleRate']}Hz  {t['bytes']//1024} KB")
+    for n in still_needs:
+        print(f"  STILL needs conversion: {n['did']} (fmt 0x{n['formatTag']:02X})")
 
 if __name__ == "__main__":
     main()
