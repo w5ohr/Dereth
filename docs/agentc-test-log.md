@@ -147,3 +147,20 @@ Systematic audit of ALL remaining client net-message handlers (to close out the 
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.**
+
+## AgentC pass 13 (ship physics + weather/day-night + emotes) — ALL GREEN, no defects
+
+- **Ship physics: solid.** Board sets deck position; sailing moves the hull (48u under forward
+  input) and is guarded by `shipNavigable(nx,nz,def)` so it stops at shallows ("can go no further")
+  — proper land-collision, no clipping onto terrain; player rides the deck; no NaN. Disembark lands
+  on dry shore; dead pilot auto-disembarks (#17); open-ocean disembark handled without NaN.
+- **Day/night: clean.** A full multi-day cycle keeps `gameTime` in [0,1], covers all four quarters
+  (dawn/noon/dusk/night), no NaN.
+- **Weather / portal storm / emotes: clean.** Weather transitions across states (clear/fog/cloudy)
+  with no throw; portal-storm trigger+update no throw; all 5 emote anims run.
+- **Self-caught test error (NOT a game bug):** first ship run showed "didn't move" — I'd set
+  `keys["w"]`, but `updateShipPilot` reads `held("forward")||keys["arrowup"]`. Corrected → sails
+  fine. (Second self-caught harness error in as many passes; game systems remain robust.)
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
