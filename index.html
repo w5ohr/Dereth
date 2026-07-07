@@ -17459,6 +17459,15 @@ function drawMinimap(){
   const inR=(x,z)=>{const dx=sx(x)-C,dy=sy(z)-C;return dx*dx+dy*dy<=(R-1)*(R-1);};
   const dot=(x,z,col,rr)=>{ if(!inR(x,z))return; g.fillStyle=col; g.fillRect(sx(x)-rr,sy(z)-rr,rr*2,rr*2); };
   const cir=(x,z,col,rr)=>{ if(!inR(x,z))return; g.fillStyle=col; g.beginPath();g.arc(sx(x),sy(z),rr,0,6.28);g.fill(); };
+  // #245: give the common blip types distinct SHAPES, not just colours, so colourblind players can
+  // tell a vendor from a resource node from a nearby creature. shapes: sq · tri · dia · plus · ring · cir
+  const mark=(x,z,col,rr,shape)=>{ if(!inR(x,z))return; const X=sx(x),Y=sy(z); g.fillStyle=col; g.strokeStyle=col;
+    if(shape==="tri"){ g.beginPath();g.moveTo(X,Y-rr);g.lineTo(X+rr,Y+rr);g.lineTo(X-rr,Y+rr);g.closePath();g.fill(); }
+    else if(shape==="dia"){ g.beginPath();g.moveTo(X,Y-rr);g.lineTo(X+rr,Y);g.lineTo(X,Y+rr);g.lineTo(X-rr,Y);g.closePath();g.fill(); }
+    else if(shape==="plus"){ const w=Math.max(1,rr*0.7); g.fillRect(X-w/2,Y-rr,w,rr*2); g.fillRect(X-rr,Y-w/2,rr*2,w); }
+    else if(shape==="ring"){ g.lineWidth=Math.max(1,rr*0.5); g.beginPath();g.arc(X,Y,rr,0,6.28);g.stroke(); }
+    else if(shape==="cir"){ g.beginPath();g.arc(X,Y,rr,0,6.28);g.fill(); }
+    else { g.fillRect(X-rr,Y-rr,rr*2,rr*2); } };   // "sq"
   g.clearRect(0,0,S,S);
   g.save(); g.beginPath(); g.arc(C,C,R,0,6.28); g.clip();       // circular frame
   g.fillStyle="#0a0c07"; g.fillRect(0,0,S,S);
@@ -17467,14 +17476,14 @@ function drawMinimap(){
   g.fillStyle="rgba(216,200,150,0.10)";g.beginPath();g.moveTo(C,C);
   g.arc(C,C,R,-Math.PI/2-0.63,-Math.PI/2+0.63);g.closePath();g.fill();
   g.save(); g.translate(C,C); g.rotate(player.yaw); g.translate(-C,-C);   // heading-up: rotate the world's blips
-  if(miniShow.monster) for(const m of monsters){if(m.isBoss||m.isDungeon)continue;dot(m.x,m.z,"#e08830",1.5);}   // creatures: retail ORANGE
-  if(miniShow.resource) for(const n of nodes) if(!n.depleted) dot(n.x,n.z,n.type==="ore"?"#7fd0d0":"#7fe6a0",1);
-  if(miniShow.building&&typeof structures!=="undefined") for(const st of structures){ if(st&&st.x!=null) dot(st.x,st.z,"#a89878",1); }
-  if(miniShow.portal) for(const pt of portals) dot(pt.x,pt.z,"#bf9bff",1.5);
-  if(miniShow.town) for(const ls of lifestones){const cap=ls.capital,rr=cap?3:1.5;dot(ls.x,ls.z,"#4a7fe0",rr);}   // lifestones: retail BLUE
-  if(miniShow.quest) for(const n of npcs){if(n.role==="townsfolk")continue;dot(n.x,n.z,"#ffd23b",2);}
-  if(miniShow.vendor) for(const sh of shops) dot(sh.x,sh.z,"#7fe6a0",2);
-  if(miniShow.dungeon) for(const e of dungeonEntrances) dot(e.x,e.z,player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff",1.5);
+  if(miniShow.monster) for(const m of monsters){if(m.isBoss||m.isDungeon)continue;mark(m.x,m.z,"#e08830",2,"tri");}   // creatures: retail ORANGE ▲
+  if(miniShow.resource) for(const n of nodes) if(!n.depleted) mark(n.x,n.z,n.type==="ore"?"#7fd0d0":"#7fe6a0",2,"plus");   // resource nodes ✚
+  if(miniShow.building&&typeof structures!=="undefined") for(const st of structures){ if(st&&st.x!=null) dot(st.x,st.z,"#a89878",1); }   // structures: tiny square (minor)
+  if(miniShow.portal) for(const pt of portals) mark(pt.x,pt.z,"#bf9bff",2.4,"ring");   // portals: hollow ring ◌
+  if(miniShow.town) for(const ls of lifestones){const cap=ls.capital,rr=cap?3.2:2;mark(ls.x,ls.z,"#4a7fe0",rr,"dia");}   // lifestones: retail BLUE ◆
+  if(miniShow.quest) for(const n of npcs){if(n.role==="townsfolk")continue;mark(n.x,n.z,"#ffd23b",2.2,"cir");}   // quest NPCs: filled circle ●
+  if(miniShow.vendor) for(const sh of shops) mark(sh.x,sh.z,"#7fe6a0",2,"sq");   // vendors: square ■
+  if(miniShow.dungeon) for(const e of dungeonEntrances) mark(e.x,e.z,player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff",2.2,"dia");   // dungeon entrances: diamond (cleared green / uncleared violet)
   if(boss) cir(boss.x,boss.z,"#ff3030",3.5);
   for(const m of monsters){ if(!m.isBoss||!m.shared)continue; cir(m.x,m.z,"#ff3030",3.5); }
   if(isOnline&&miniShow.players) for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
