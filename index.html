@@ -21947,9 +21947,10 @@ function initPluginUI(){
 function gaTarget(){
   const mode=settings.gaDest||"auto";
   if(mode==="auto"){
+    // #195: an un-recovered corpse is urgent + time-limited — it outranks the (persistent) saga.
+    for(const d of drops) if(d.corpse) return {x:d.x,z:d.z,label:"Your corpse"};
     const ce=(typeof currentCalEvent==="function")?currentCalEvent():null;
     if(ce&&ce.goal&&ce.goal.v&&!calendarDone[ce.id]){ const p=sagaGoalPoint(ce.goal); if(p) return {x:p.x,z:p.z,label:"Saga: "+ce.name}; }
-    for(const d of drops) if(d.corpse) return {x:d.x,z:d.z,label:"Your corpse"};
     const ls=lifestones.find(l=>l.bound); if(ls) return {x:ls.x,z:ls.z,label:ls.name+" Lifestone"};
     return null;
   }
