@@ -142,6 +142,27 @@ def main():
     dids = {icon[w] for w in group_wcids}
     print(f"  selected weenies: {len(group_wcids)}, unique icon DIDs: {len(dids)}")
 
+    # Union in every icon DID the GAME actually references (assets/acitems.json), so the export
+    # is complete regardless of the ItemType-flag group selection above. Without this, items whose
+    # weenie ItemType isn't in INCLUDE_FLAGS (torches, wands, sceptres, staves, ingots, shafts, …)
+    # reference an icon DID that never gets exported and fall back to a generic category icon.
+    items_path = os.path.join(ROOT, "assets", "acitems.json")
+    ref_extra = set()
+    try:
+        with open(items_path, encoding="utf-8") as fh:
+            for e in json.load(fh).values():
+                ic = (e.get("icon") or "").strip()
+                if ic:
+                    try:
+                        ref_extra.add(int(ic, 16))
+                    except ValueError:
+                        pass
+        added = ref_extra - dids
+        dids |= ref_extra
+        print(f"  + {len(added)} extra icon DIDs referenced by acitems.json ({len(dids)} total)")
+    except FileNotFoundError:
+        print("  (assets/acitems.json not found — exporting weenie-group icons only)")
+
     portal = ame.DatReader(PORTAL)
     pal_cache = {}
     def palettes(pid):
