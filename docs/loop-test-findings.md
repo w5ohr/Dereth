@@ -153,3 +153,17 @@ authoritative list.
 - **Minimap:** init + draw run clean; **dungeon locks:** hasNamedKey/unlockDungeonDoor work;
   **arena:** start/wave/win/fail/update machinery all present.
 - **No new findings this pass.**
+
+## 2026-07-06 20:32 — TestSystemC pass 11 (HEAD c3232dc, still unchanged — varied coverage round 11)
+
+- 0 console errors · MMO harness 47/47 · no drift. Fresh level-1 character (post-reload) used.
+- **Natural leveling:** 50k XP takes the fresh char level 1→8; xpUnspent accrues 1:1.
+- **XP spending:** vitalCost curve AC-authentic (73 at rank 0 → 4,708 at 50 → 329M at 195,
+  hard cap 196); attribute raise (cost 110) works; raiseSkill invests xp and grants rank 1
+  ("heavy" @ 58 xp). 37 skills in SKILL_BY_KEY. ("axe" is a weapon TYPE not a skill key —
+  probe error en route, logged for reference.)
+- **Food buffs:** +5 Strength roast chicken applies timed attr buff.
+- **Mana stones:** Use opens the openManaStone chooser (release/draw/consume) — panel verified.
+- **Keyrings:** stow loose keys and picks (1+1 stowed on Use).
+- **Greeters:** fresh char starts with no greeter state — populated by chargen flow (by design).
+- **No new findings this pass.**
