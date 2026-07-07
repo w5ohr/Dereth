@@ -2576,16 +2576,20 @@ function supportAt(wx,wz,feetY){
   return best;
 }
 // encumbrance: carried burden vs a Strength/Endurance capacity → ratio 0 (empty) … >1 (overloaded)
+// #200: rebalanced — the old chest-170/base-200 numbers meant the Academy's own starter kit (485)
+// OVERLOADED every STR-10 build (War Mage/Life Caster templates read 114–120% → permanently slowed
+// from the tutorial onward). Armor lightened + base capacity raised so the kit fits every template
+// with headroom, while a genuinely stuffed satchel still slows you.
 function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
-  if(it.stat==="weapon") return 90; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
-  if(it.stat==="worn") return ({head:55,chest:170,hands:40,legs:130,feet:50})[it.aslot]||110;
+  if(it.stat==="weapon") return 75; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
+  if(it.stat==="worn") return ({head:45,chest:120,hands:35,legs:95,feet:45})[it.aslot]||85;
   return 22; }
 function encumbrance(){
   let load=0; for(const it of player.inv) load+=itemBurden(it);
   load+=itemBurden(player.weapon);
   const as=player.armorSlots||{}; for(const k in as) load+=itemBurden(as[k]);
   const jw=player.jewelry||{}; for(const k in jw) load+=itemBurden(jw[k]);
-  const cap=200+player.attr.Strength*18+player.attr.Endurance*6;
+  const cap=300+player.attr.Strength*18+player.attr.Endurance*6;
   // ceiling 2.5 so the ≥200% "too encumbered to jump" (AC CantJumpLoadedDown) is reachable; you still crawl.
   return {load,cap,ratio:clamp(load/cap,0,2.5)};
 }
@@ -17218,7 +17222,10 @@ function updateHUD(){
   for(const a of ATTRS) document.getElementById("a"+a).textContent=player.attr[a];
   document.getElementById("sArmor").textContent=Math.round((player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01));
   { const bt=document.getElementById("sBurden"); if(bt){ const r=(typeof encumbrance==="function")?encumbrance().ratio:0, pct=Math.round(r*100);
-      bt.textContent=pct+"%"+(r>=2?" ⚠":r>1?" ↓":""); bt.style.color=r>=2?"#e8704a":r>1?"#e8c24a":"#e8dcc0"; } }   // >100% slows you; ≥200% blocks jumping
+      bt.textContent=pct+"%"+(r>=2?" ⚠":r>1?" ↓":""); bt.style.color=r>=2?"#e8704a":r>1?"#e8c24a":"#e8dcc0";
+      // #200: say it out loud the moment you cross into overload (the sheet's tiny ↓ was the only cue)
+      if(r>=1&&!player._overloadWarned){ player._overloadWarned=true; log("You are <b>overloaded</b> — you move slower until you lighten your load (T → Salvage All, or stash at home).","warn"); }
+      else if(r<0.97&&player._overloadWarned) player._overloadWarned=false; } }   // >100% slows you; ≥200% blocks jumping
   document.getElementById("sKills").textContent=player.kills;
   document.getElementById("sGold").textContent=player.gold;
   document.getElementById("sMats").textContent=player.materials;
