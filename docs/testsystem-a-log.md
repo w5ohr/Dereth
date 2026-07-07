@@ -10,6 +10,30 @@ depend on visuals are marked as needing on-hardware confirmation.
 
 ---
 
+## NIGHT SUMMARY (runs 1–8, all on main @ c3232dc)
+
+**5 findings, nothing fixed** — filed as items **#20–#24** in `remaining-work-consolidated.md`:
+
+| Tag | Item # | Severity | One-liner |
+|-----|--------|----------|-----------|
+| TSA-1 | #20 | low/latent | `craftResultItem` declared twice (merge artifact); newer wins, older is dead |
+| TSA-2 | #21 | minor/cosmetic | 292/4,338 items reference unexported icon DIDs → generic category icons |
+| TSA-3 | #22 | cleanup | 20 dead top-level functions; check `ccRandomize`/`resetUIPos` for lost UX first |
+| TSA-4 | #23 | minor/protocol | deleting your actively-played character slot is refused SILENTLY |
+| TSA-5 | #24 | medium-low | remote players' equipped weapon/shield never syncs — everyone looks bare-handed online |
+
+**Everything else green** across: in-game pass (boot/academy/spells/icons/stairs/combine/combat/
+death/save — run 1, before the browser harness dropped) · server stock 47/47 · extended
+scenarios 16/16 (trade-with-coin, 3-state PK, allegiance, corpse gating) · fuzz 9/9 ·
+concurrency soak ×2 (~6k ops each, 0 errors; memory non-monotonic = no leak) · persistence
+deep-equal + token resume + slot lifecycle · Incursion event start→clear→end ·
+all three fellowship XP spread rules · muster + monarch MOTD · cosmetic relay matrix ·
+1 MiB frame cap · all asset packs parsed + cross-referenced (vendors/spells/dungeons/towns/
+world-structs/housing/books/acmap bounds) · `node --check` + `py_compile` gates ·
+SQLite integrity. Reusable harnesses committed: `server/tsa_extended.py`, `tsa_fuzz.py`,
+`tsa_soak.py`, `tsa_persist.py`, `tsa_fellow.py`.
+
+
 ## TestSystemA — Run 1 (2026-07-06 late night, main @ c3232dc)
 
 **Result: CLEAN — no defects found.** Coverage this run:
