@@ -6,8 +6,21 @@ via `playlib`, captures page + console errors (these are treated as bugs), and a
 assertions so anything not working as expected is auto-flagged.
 
 **This is a LOG ONLY — findings here are not fixed by the test runner.** Fixes are a separate task.
-Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand.js` (extra subsystems) +
-`tsb_verify.js`/`tsb_brand.js` (isolating ambiguous flags).
+Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand*.js` (extra subsystems) +
+`tsb_depth.js` (boundary/edge) + `tsb_verify.js`/`tsb_brand.js`/`tsb_dw.js` (isolating/confirming flags).
+
+## ⚠️ OPEN BUGS (confirmed, awaiting fix)
+
+1. **[HIGH] Dual-wield double-kill / double-loot (pass 8, `combatEdges` + `tsb_dw.js` repro).**
+   `applyHit` has no `if(m.hp<=0) return` guard and `killMonster` (index.html ~10179) has no
+   already-dead re-entry guard. `meleeAttack` fires `applyHit(m,…)` **twice** per dual-wield swing
+   (main ~15553 + off-hand ~15555) with no hp check between, so when the **main strike is the killing
+   blow** the off-hand strike hits the corpse and **re-invokes `killMonster`** → **doubled kill count,
+   XP, gold, and a full second loot drop.** Confirmed via the real dual-wield path: 60 one-shot swings
+   → **97 kills** (37 excess), **62% of swings double-counted**, 2–6 extra drops each. Same root cause
+   can double-award when multiple projectiles/AoE spell hits land on one dying target in a frame.
+   *Suggested fix (do not apply here):* `if(m.hp<=0) return;` at the top of `applyHit`, or a one-shot
+   guard in `killMonster` (`if(m.dead) return; m.dead=true;` — covers every vector).
 
 **Standing directive (user, pass 4):** while `main` is unchanged and the existing sweep is clean, each
 new pass should **extend coverage** to subsystems not yet tested rather than repeat a clean run. When an
@@ -202,6 +215,34 @@ Four more subsystems — **0 findings, 0 errors** — completing the enumerable-
 **Cumulative coverage: 52 subsystems, still zero real game bugs across 7 passes.** The breadth sweep of
 every enumerable major system is complete — see the coverage note at the top for how future passes pivot
 to depth/regression.
+
+---
+
+## [TestSystemB] Pass 8 — 2026-07-07 ~01:16 — **FIRST REAL BUG FOUND**
+
+**Result: 1 CONFIRMED bug.** `main` unchanged (`c3232dc`); pivoted from breadth to **depth** — boundary
+and error-path testing (`tsb_depth.js`), per the repo's testing philosophy. 9 boundary steps; 8 clean,
+one surfaced a genuine defect (then confirmed via the real gameplay path).
+
+### 🐞 CONFIRMED BUG — dual-wield double-kill / double-loot (see OPEN BUGS #1 at top)
+`combatEdges` flagged "hitting a corpse counted extra kills." Investigated: `applyHit`→`damageMonster`
+fires `killMonster` on `m.hp<=0` with **no re-entry guard**, and `meleeAttack` calls `applyHit(m,…)`
+twice per dual-wield swing. Reproduced through the **real dual-wield path** (`tsb_dw.js`): 60 swings
+that each one-shot a monster produced **97 kills (37 excess)** — **62% of killing swings double-counted**,
+each dropping a **full second loot roll (2–6 extra drops)**. Player-reachable and economy-affecting
+(dual-wielders get ~1.6× XP/loot on killing blows). Logged, not fixed.
+
+### Boundary steps that passed (correctly clamped/guarded)
+| Edge | Verified |
+|---|---|
+| **Vitals clamp** | hp/st/mn clamp to max after `derive`; heal at full doesn't overflow; massive damage floors hp at 0 (not negative). |
+| **Inventory** | fills exactly to `invCap`, overflow `addToInv` refused, `force` bypasses; stackables merge (5+3→8); `takeFromInv` decrements a stack / splices a single / is safe on a bad index. |
+| **Progression caps** | `raiseSkill` with 0 XP → false + no change; level hard-caps at **275** (excess banks as unspent); attribute cap reached and the raise button disables at cap. |
+| **Economy** | `buyHouse` with insufficient gold refused; gold unchanged and never negative. |
+| **Mana-stone edges** | draw from 0 reserve banks nothing; stored never exceeds cap; discharging an empty stone dispenses nothing. |
+| **Save migration** | `migrateSkills(null/legacy/garbage)` never throws and returns valid tiered skills; save writes. |
+
+**Cumulative: 52 subsystems + a boundary pass; 1 confirmed bug (dual-wield double-loot), 0 others.**
 
 ---
 
