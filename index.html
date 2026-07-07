@@ -9655,6 +9655,9 @@ function attachCreatureAnims(m, gm){
   m.actIdle=m.gltfMixer.clipAction(idleC); m.actIdle.play();
   if(walkC!==idleC){ m.actWalk=m.gltfMixer.clipAction(walkC); m.actWalk.play(); m.actWalk.weight=0; }
   if(atkC){ m.actAtk=m.gltfMixer.clipAction(atkC); m.actAtk.setLoop(THREE.LoopOnce,1); }
+  const deathC=find(/death|die|dead/i), castC=find(/cast|spell|summon|conjure/i);   // #177: wire the authored Death + Cast one-shots (were never referenced)
+  if(deathC){ m.actDeath=m.gltfMixer.clipAction(deathC); m.actDeath.setLoop(THREE.LoopOnce,1); m.actDeath.clampWhenFinished=true; }
+  if(castC){ m.actCast=m.gltfMixer.clipAction(castC); m.actCast.setLoop(THREE.LoopOnce,1); }
   m.gltf=true;
 }
 function spawnMonster(kind,x,z,elite){
@@ -10190,7 +10193,14 @@ function killMonster(m){
   monsters.splice(monsters.indexOf(m),1);
   if(!m.isDungeon) setTimeout(spawnSomewhere,irnd(2500,6000));
 }
-function retire(m){ dying.push({mesh:m.mesh,t:0.4,base:m.baseScale||1}); }
+function retire(m){
+  if(m.gltf&&m.actDeath&&m.gltfMixer){                        // #177: play the model's authored Death collapse, then let the corpse sink (no shrink-to-zero)
+    try{ if(m.actIdle)m.actIdle.stop(); if(m.actWalk)m.actWalk.stop(); if(m.actAtk)m.actAtk.stop(); if(m.actCast)m.actCast.stop(); }catch(e){}
+    m.actDeath.reset(); m.actDeath.weight=1; m.actDeath.play();
+    const clip=m.actDeath.getClip?m.actDeath.getClip():m.actDeath._clip; const dur=(clip&&clip.duration)||1.2;
+    dying.push({mesh:m.mesh,mixer:m.gltfMixer,gltfDeath:true,t:dur+0.7,sink:0.7});
+  } else dying.push({mesh:m.mesh,t:0.4,base:m.baseScale||1});
+}
 function clearDying(){ for(const d of dying) disposeObject3D(d.mesh); dying=[]; }   // #22
 // a named boss wears its own retail extract when the pack has one (olthoiqueen, lichlord,
 // virindidirector — or its family's body); procedural fallback keeps the old look
@@ -10230,6 +10240,9 @@ function attachBossAnims(m){   // the retail clips drive the boss exactly like a
   m.actIdle=m.gltfMixer.clipAction(idleC); m.actIdle.play();
   if(walkC!==idleC){ m.actWalk=m.gltfMixer.clipAction(walkC); m.actWalk.play(); m.actWalk.weight=0; }
   if(atkC){ m.actAtk=m.gltfMixer.clipAction(atkC); m.actAtk.setLoop(THREE.LoopOnce,1); }
+  const deathC=find(/death|die|dead/i), castC=find(/cast|spell|summon|conjure/i);   // #177: wire the authored Death + Cast one-shots (were never referenced)
+  if(deathC){ m.actDeath=m.gltfMixer.clipAction(deathC); m.actDeath.setLoop(THREE.LoopOnce,1); m.actDeath.clampWhenFinished=true; }
+  if(castC){ m.actCast=m.gltfMixer.clipAction(castC); m.actCast.setLoop(THREE.LoopOnce,1); }
   m.gltf=true;
 }
 function spawnBoss(){
@@ -16518,7 +16531,7 @@ function update(dt){
           if((m.kind==="shadow"||m.kind==="virindi")&&m.hp<m.mhp*0.5&&Math.random()<0.3){
             const heal=Math.round(m.mhp*0.18); m.hp=Math.min(m.mhp,m.hp+heal); m.atkCd=2.6;
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
-          } else m.charging=0.45;
+          } else { m.charging=0.45; if(m.actCast){ m.actCast.reset(); m.actCast.weight=1; m.actCast.play(); } }   // #177: play the model's real Cast wind-up
         }
       } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack");const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
@@ -16566,7 +16579,11 @@ function update(dt){
   // floaters & bursts
   for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.sp.position.y+=f.vy*dt;f.t-=dt;
     f.sp.material.opacity=clamp(f.t,0,1);if(f.t<=0){disposeObject3D(f.sp);floaters.splice(i,1);}}   // #22: each floater owns a CanvasTexture — free it
-  for(let i=dying.length-1;i>=0;i--){const d=dying[i];d.t-=dt;const k=Math.max(0,d.t/0.4);
+  for(let i=dying.length-1;i>=0;i--){const d=dying[i];d.t-=dt;
+    if(d.gltfDeath){ if(d.mixer)d.mixer.update(dt);                 // #177: the authored Death clip plays out (clamped on its last frame),
+      if(d.t<(d.sink||0.7)) d.mesh.position.y-=dt*2.2;              // then the collapsed corpse sinks into the ground — no shrink-to-zero pop
+      if(d.t<=0){disposeObject3D(d.mesh);dying.splice(i,1);} continue; }
+    const k=Math.max(0,d.t/0.4);
     d.mesh.scale.setScalar(d.base*k);d.mesh.position.y=-(1-k)*1.6;d.mesh.rotation.z=(1-k)*1.2;
     if(d.t<=0){disposeObject3D(d.mesh);dying.splice(i,1);}}   // #22: dead mobs leaked their geometry + skin texture (same teardown as streamMonsters despawn)
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];b.sp.position.x+=b.vx*dt;b.sp.position.y+=b.vy*dt;
