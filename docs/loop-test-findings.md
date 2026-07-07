@@ -350,3 +350,34 @@ a prior note-price bug is noted in-code at index.html:20731).
 - **Normal gear round-trip is a loss:** buy 400 → sell back 86.
 
 No new findings. MMO harness 47/47 · 0 console errors · no drift.
+
+## 2026-07-06 21:43 — TestSystemC pass 21 (HEAD c3232dc) — ⚠ FINDING: focus-mana battery not refunded on fizzle/abort
+
+Audited the spell cast economy (mana cost / mana-conversion / fizzle / component burn / scarab / focus
+battery). Mana-conversion cut, fizzle sigmoid, component burn, and the scarab path are all internally
+consistent. **One real bug in the focus-mana battery refund:**
+
+- ⚠ **Focus-mana battery (H15) is NOT refunded on a fizzle or a target-required abort** — its share is
+  silently transferred into the personal mana pool instead.
+  - **Where:** `executeSpell` (index.html:15128+). When `player.mn < cost`, the focus battery covers
+    the shortfall: index.html:15152 does `player.focusMana -= need; focusPaid = need; player.mn = cost;`
+    then index.html:15159 `player.mn -= cost` → pool 0. On a fizzle (index.html:15169) or any
+    target-abort (the `player.mn += cost` sites at :15184/15192/15201/15228/15246-15260…), the code
+    refunds the FULL `cost` to `player.mn` but never restores `player.focusMana`.
+  - **Smoking gun:** `focusPaid` is captured (index.html:15152) but NEVER used anywhere, and there is
+    NO `player.focusMana +=` refund anywhere in the file. The refund was clearly intended but unwired.
+  - **Runtime proof:** focus equipped (battery 1400), war skill = spell req (fizzle 40%), Math.random
+    pinned to force a fizzle, personal mana 2 < cost 5 (need 3 from battery). After the fizzle:
+    personal mana **2 → 5** (+3), battery **1400 → 1397** (−3). Total conserved, but the battery lost
+    its share and the pool gained it — on a cast that "consumes no mana" per the code's own comment
+    (index.html:15165).
+  - **Impact:** (1) violates the fizzle = no-mana-consumed invariant for the battery; (2) a free
+    battery→pool mana transfer via deliberately-fizzled or no-target casts; low severity (mana-
+    conserving, not infinite), but incorrect.
+  - **Fix:** on every fizzle/abort refund, restore the battery first using the already-captured
+    `focusPaid`: e.g. `if(focusPaid>0){ player.focusMana+=focusPaid; player.mn-=focusPaid; }`
+    alongside (or folded into) the `player.mn+=cost` refunds — so the pool regains only what it
+    actually paid and the battery regains its share.
+- **Verified GREEN:** mana-conversion reduction, fizzle sigmoid (fz cap 0.40), component burn on both
+  hit and fizzle, scarab substitution path (self-consistent: not deducted, not refunded).
+- NOT FIXED per loop policy — logged only. MMO harness 47/47 · 0 console errors · no drift.
