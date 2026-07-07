@@ -16313,9 +16313,9 @@ function update(dt){
   }
   if(!camOrbiting){ camOrbYaw-=camOrbYaw*Math.min(1,dt*5); camOrbPitch-=camOrbPitch*Math.min(1,dt*5); }   // camera returns behind the character
   if(held("forward")||(keys["arrowup"]&&!camLook)||autoRun) f+=1;
-  if(held("back")||(keys["arrowdown"]&&!camLook)||keys["keyx"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run
-  if(held("right")||keys["keyc"]) s+=1;           // Z / C sidestep (AC)
-  if(held("left")||keys["keyz"]) s-=1;
+  if(held("back")||(keys["arrowdown"]&&!camLook)||keys["KeyX"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run (#201: keys stores e.code "KeyX", not "keyx")
+  if(held("right")) s+=1;                          // D sidesteps right (C belongs to the Character Sheet)
+  if(held("left")||keys["KeyZ"]) s-=1;             // A or Z sidestep left (AC's Z strafe)
   const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
@@ -21062,7 +21062,7 @@ function updateShipPilot(dt){
   sh.yaw=player.yaw;
   let f=0;
   if(held("forward")||keys["arrowup"]||autoRun) f+=1;
-  if(held("back")||keys["arrowdown"]||keys["keyx"]) f-=1;
+  if(held("back")||keys["arrowdown"]||keys["KeyX"]) f-=1;   // #201: ship reverse — e.code form
   if(f!==0){
     const dir=f>0?1:-1, rate=sh.def.speed*(f>0?1:0.6);
     const fx=-Math.sin(sh.yaw), fz=-Math.cos(sh.yaw);
