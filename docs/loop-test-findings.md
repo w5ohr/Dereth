@@ -252,3 +252,27 @@ authoritative list.
     or split oil into its own weapon-only buff slot. Flag for design decision, not a blind gate.
   - **Severity:** low-moderate (minor unintended power buff; balance, not a crash).
 - NOT FIXED per loop policy — logged only.
+
+## 2026-07-06 21:27 — TestSystemC pass 17 (HEAD c3232dc) — ⚠ SIBLING FINDING: Might elixir leaks onto spell damage
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- ⚠ **BUG (same root cause as the pass-16 oil bug): the Might elixir boosts SPELL damage.**
+  `buffMightT` (Elixir of Might / Blade-Lure "might" buff, intended +50% WEAPON damage) is applied
+  at index.html:10084 (`if(player.buffMightT>0)base*=1.5;`) — UNCONDITIONALLY, before applyHit
+  branches on `opts.spell` (index.html:10087). Runtime proof: a 1000 war-magic spell hit → 1500
+  with Might active (ratio 1.50); physical hit also 1.50 (correct). A melee/weapon damage elixir
+  should not buff spellcasting.
+  - **Repro:** drink an Elixir of Might (or receive Blade Lure), then cast a damage spell → +50%.
+  - **Consolidated root cause:** index.html:10084 applies BOTH weapon buffs (`buffMightT` ×1.5 AND
+    `itemBuff("dmg")` = oil) in the shared pre-branch multiplier. Both leak onto `{spell:true}`
+    hits. The correct-by-comparison sibling is `gearFx.dmg` (Blood Drinker) at index.html:10086,
+    gated behind `opts.phys`. Fix direction: move the buffMightT ×1.5 and the oil portion of
+    `itemBuff("dmg")` into the `opts.phys` path — but preserve the Aetheria "Destruction" surge
+    (also writes player.itemBuffs.dmg, index.html:13594) and `aetheriaBonus("dmg")` universality
+    if those are intended to boost all damage (design call).
+  - **Severity:** low-moderate (unintended mage power buff from melee consumables; balance).
+- **Also verified GREEN this pass:** antidote/cure cleanses debuffs; attribute philtre (+10 Str
+  timed); skillpot (→ player.skillBuffs, not the skillPots field my probe guessed — non-defect);
+  portal gem teleports + consumes; manastone discharge fn present; Aetheria on-hit surge (Fury/
+  Festering) fires.
+- Findings logged only — NOT fixed, per loop policy.
