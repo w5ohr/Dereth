@@ -9528,7 +9528,7 @@ function openCovenant(cr){
     const trTxt=(term.trophies&&term.trophies.length)?`<br>Settlement trophies: ${term.trophies.map(t=>`<b style="color:${player.inv.some(it=>it&&(it.name===t||it.stat==="trophy"))?'#7fe6a0':'#ff8a6a'}">${t}</b>`).join(", ")} <span style="color:var(--dim)">(a spare creature trophy may substitute)</span>`:"";
     const rankTxt=rank?`<br>Allegiance: <b style="color:${okRank?'#7fe6a0':'#ff8a6a'}">Monarch, rank ${rank}+</b> (you: ${algIsMonarch()?"Monarch, ":""}rank ${allegianceRank()})`:"";
     body=`<div style="margin:8px 0;color:#cfc0a0">Price: <b style="color:${okGold?'#7fe6a0':'#ff8a6a'}">${price.toLocaleString()} pyreals</b>
-      + <b style="color:${okWrit?'#7fe6a0':'#ff8a6a'}">${writs} Writ${writs>1?"s":""} of Refuge</b> (you hold ${writCount()})
+      + <b style="color:${okWrit?'#7fe6a0':'#ff8a6a'}">${writs} Writ${writs>1?"s":""} of Refuge</b> (you hold ${writCount()})${okWrit?"":` <span style="color:var(--dim);font-size:11px">— an <b>Agent of the Arcanum</b> issues writs for creature trophies, one per trophy</span>`}
       · Level <b style="color:${okLvl?'#7fe6a0':'#ff8a6a'}">${lvl}+</b>${trTxt}${rankTxt}
       <br>Maintenance: ${(term.rentPy||T.rentPy).toLocaleString()} py${(term.rentWrits||0)?` + ${term.rentWrits} Writ${term.rentWrits>1?"s":""}`:""} / 30 days<br>
       <span style="color:var(--dim);font-size:11px">${T.hooks} hooks (${T.usable} usable) · ${T.chests} storage chest${T.chests>1?"s":""} · House Recall · one dwelling per account</span></div>
