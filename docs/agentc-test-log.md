@@ -73,3 +73,23 @@ Loaded a character touching **every persisted subsystem** with distinctive value
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.** (Finding #31 from pass 3 remains open in PR #157, pending review.)
+
+## AgentC pass 6 (status-effect / buff-timer lifecycle) — ALL GREEN, no defects
+
+Applied every timed effect, drove `update()` past expiry, and asserted the character returns to
+EXACT baseline (the classic leak: a buff that expires without un-applying its delta).
+
+- **Attribute buffs:** apply (+40 Str), fully expire back to base; **re-apply does NOT double-stack**
+  (`applyAttrBuff` drops the old stack first); no residual after reapply→expire.
+- **Skill buffs:** raise the skill, expire clean, no residual (derive re-runs).
+- **prot / banes / itemBuffs (dmg+oildmg) / buffMightT / buffSwiftT:** all decrement and delete on
+  expiry — 0 leaks.
+- **HoTs:** tick + heal, don't overheal past max, then expire.
+- **Monster burn DoT:** damages, stops at `burnT<=0`, no NaN.
+- **Enemy debuffs on the player (slow/vuln/imperil):** decremented + deleted at index.html:16602
+  (2→0 confirmed). Not missed by the update loop.
+- Final character state = exact baseline (Strength 77→77, mhp unchanged). No drift, no leak, no NaN.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (The buff/debuff/DoT/HoT lifecycle is sound — symmetric apply/expire
+throughout.)
