@@ -435,6 +435,8 @@
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="AC's iconic risk: death leaves a lootable corpse holding your most valuable items + half your pyreals — walk back to recover it">AC-authentic death</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-acdeath="1">Corpse &amp; item drop</button><button class="tbtn" data-acdeath="0">Soft (Vitae only)</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Suppress camera shake and fullscreen lightning/spell flashes (for motion sensitivity or photosensitivity). Defaults to your OS 'reduce motion' setting.">Reduce motion &amp; flashes</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
@@ -3148,7 +3150,7 @@ function updateWeather(dt){
   // storms: periodic lightning flash (screen + a burst of light) with thunder delayed by "distance"
   if(storming && wetness>0.5){
     boltCd-=dt;
-    if(boltCd<=0){ boltCd=rnd(3.5,11); stormFlash=1;
+    if(boltCd<=0){ boltCd=rnd(3.5,11); stormFlash=settings.reduceMotion?0:1;   // #244: no fullscreen lightning brightening under reduce-motion (thunder still rolls)
       if(typeof castFlash==="function") castFlash(0xe6f0ff);
       const dist=rnd(0.3,3.2); setTimeout(()=>{ if(weather==="storm"||wetness>0.3) playThunder(dist>1.5); }, dist*1000);
     }
@@ -15423,7 +15425,7 @@ function executeSpell(id){
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
   netSpellFx("proj",player.x,player.z,dir.x,dir.z,sp.color,sp.r,sp.speed);
 }
-function castFlash(color){weaponLight.color.setHex(color);weaponLight.intensity=2.5;}
+function castFlash(color){weaponLight.color.setHex(color);weaponLight.intensity=settings.reduceMotion?1.0:2.5;}   // #244: subdued glow (no bright pop) under reduce-motion
 // ---------- summoned pets (Summoning skill) ----------
 function spawnPet(){
   const g=new THREE.Group();
@@ -16754,7 +16756,7 @@ function update(dt){
   updateHUD();
 }
 
-function shake(m){ shakeMag=Math.max(shakeMag,m); shakeT=0.32; }
+function shake(m){ if(settings.reduceMotion) return; shakeMag=Math.max(shakeMag,m); shakeT=0.32; }   // #244: no camera shake when reduce-motion is on
 // third-person body animation: walk cycle + attack/cast on the right arm
 let idleT=0;
 function animateAvatar(dt){
@@ -17633,7 +17635,8 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
-  vtankBuff:true,vtankLoot:true,gaDest:"auto"};
+  vtankBuff:true,vtankLoot:true,gaDest:"auto",
+  reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
   if(!settings._labelsOff){   // migrate: floating name labels are now OFF; force once for existing saves, then the Settings toggles work normally
@@ -22126,6 +22129,11 @@ function openSettings(){
   adHi();
   adBtns.forEach(b=>b.onclick=()=>{settings.acDeath=+b.dataset.acdeath===1;saveSettings();adHi();
     log(settings.acDeath?"Death now leaves a <b>lootable corpse</b> with dropped items + half your pyreals (AC-authentic).":"Death softened — Vitae only, no items or pyreals drop.","sys");});
+  const rmBtns=document.querySelectorAll('#settings [data-reducemotion]');   // #244
+  const rmHi=()=>rmBtns.forEach(b=>b.style.opacity=((+b.dataset.reducemotion===1)===(settings.reduceMotion===true))?1:0.45);
+  rmHi();
+  rmBtns.forEach(b=>b.onclick=()=>{settings.reduceMotion=+b.dataset.reducemotion===1;saveSettings();rmHi();
+    log(settings.reduceMotion?"Reduce motion <b>on</b> — camera shake and fullscreen flashes are suppressed.":"Reduce motion off — full camera shake and flashes restored.","sys");});
   const gxBtns=document.querySelectorAll('#settings [data-gfx]');
   const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
   gxHi();
