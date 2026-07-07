@@ -25623,14 +25623,34 @@ function reconcileRemotes(players){
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
     r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
   }
   for(const id in NET.players){ if(!seen[id]){ scene.remove(NET.meshes[id]); delete NET.meshes[id]; delete NET.players[id]; } }
+}
+// Dress a remote player's avatar with their relayed wield (weapon/shield). The jointed avatar already
+// carries aHeld/aBow/aWand/aShield sub-meshes (built by buildAvatarJointed); we just toggle/fill them
+// from the synced wt/wmode/shield so other players no longer look bare-handed online.
+function dressRemoteWield(mesh,wt,wmode,shield){
+  const u=mesh&&mesh.userData; if(!u) return;
+  const sig=(wt||"")+"|"+(wmode||"")+"|"+(shield||"");
+  if(u._wieldSig===sig) return;   // only rebuild on change
+  u._wieldSig=sig;
+  const prof=wt&&(typeof WEAPON_TYPES!=="undefined")&&WEAPON_TYPES[wt], missile=(prof&&prof.mode==="missile")||wmode==="bow";
+  try{
+    if(u.aHeld){ while(u.aHeld.children.length){ const c=u.aHeld.children[0]; u.aHeld.remove(c); if(c.traverse)c.traverse(o=>{if(o.isMesh&&o.geometry&&o.geometry.dispose)o.geometry.dispose();}); }
+      if(wt&&prof&&prof.mode==="melee"&&typeof buildItemModel==="function"){ const m=buildItemModel({wt,stat:"weapon"},{hand:true}); m.rotation.set(-Math.PI/2,0,0); m.position.set(0,-0.02,0.02); u.aHeld.add(m); } }
+    if(u.aBow) u.aBow.visible=!!missile;
+    if(u.aWand) u.aWand.visible=(wt==="focus");
+    if(u.aSword) u.aSword.visible=false;   // superseded by the aHeld model
+    if(u.aShield) u.aShield.visible=!!shield && wt!=="twohand";
+  }catch(e){}
 }
 function updateRemotes(dt){
   const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
   for(const id in NET.players){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
     mesh.visible=!hide; if(hide) continue;
+    dressRemoteWield(mesh, r.wt, r.wmode, r.shield);   // reflect their wielded weapon/shield
     if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives
       r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
@@ -25644,7 +25664,9 @@ function sendInput(dt){
   netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
   netSend({t:"input",x:player.x,z:player.z,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
     level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk,pkState:player.pkState||"npk",
-    loyalty:skillValue("loyalty"),leadership:skillValue("leadership")});
+    loyalty:skillValue("loyalty"),leadership:skillValue("leadership"),
+    wt:(player.weapon&&player.weapon.wt)||null, wmode:weaponMode,   // so other players see our wielded weapon/shield
+    shield:(player.armorSlots&&player.armorSlots.offhand&&player.armorSlots.offhand.shield)||null});
 }
 // AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
 // PK (Player Killer — fights other PKs, drops a lootable corpse). Same ruleset only; NPK never fights.

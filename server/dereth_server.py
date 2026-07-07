@@ -246,6 +246,7 @@ class Client:
         # presence state (last reported by the client; M3 will make this authoritative)
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self.level = 1; self.heritage = "aluvian"; self.title = ""
+        self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
 
     async def send(self, obj):
         if not self.alive:
@@ -284,7 +285,8 @@ def snapshot():
     snap = {"t": "snapshot", "players": [
         {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
          "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
-         "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk")}
+         "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
+         "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
         for u, cl in CLIENTS.items() if cl.in_world],
         "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
     if EVENT.get("active"):
@@ -1409,6 +1411,10 @@ async def dispatch(cl, msg):
         if isinstance(slot, int) and not (cl.in_world and cl.slot == slot):
             delete_char_slot(cl.username, slot)
             await cl.send({"t": "roster", "chars": roster(cl.username), "max": MAX_CHARS})
+        elif isinstance(slot, int):
+            # Refuse deleting the slot you're currently playing — but SAY SO, so the client can tell a
+            # refusal from packet loss (create_char auto-plays the new slot, so create->delete hits this).
+            await cl.send({"t": "play_err", "msg": "You can't delete the character you're currently playing — leave the world first."})
         return
     if t == "input":
         cl.x = float(msg.get("x", cl.x)); cl.z = float(msg.get("z", cl.z))
@@ -1416,6 +1422,9 @@ async def dispatch(cl, msg):
         cl.mhp = int(msg.get("mhp", cl.mhp)); cl.level = int(msg.get("level", cl.level))
         cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
         cl.title = str(msg.get("title", cl.title))[:40]
+        cl.wt = (str(msg.get("wt"))[:16] if msg.get("wt") else None)          # so remotes render the right weapon
+        cl.wmode = str(msg.get("wmode", cl.wmode))[:8]
+        cl.shield = (str(msg.get("shield"))[:16] if msg.get("shield") else None)
         ps = str(msg.get("pkState", "pk" if msg.get("pk") else getattr(cl, "pkState", "npk")))   # AC 3-state PvP
         cl.pkState = ps if ps in ("npk", "pkl", "pk") else "npk"
         cl.pk = cl.pkState != "npk"
@@ -1595,6 +1604,17 @@ async def dispatch(cl, msg):
                     await c.send({"t": "chat", "from": cl.charname, "msg": text, "channel": "allegiance", "ts": int(time.time())})
         elif cl.in_world:
             await cl.send({"t": "system", "msg": "You are sworn to no allegiance (/allegiance join <name>)."})
+    elif t == "houseboot":
+        # /house boot <name>: notify the booted guest if they're online (the client already logged the
+        # boot locally). Houses aren't server-instanced yet, so the real cross-player effect is the
+        # notice; if the target isn't online, correct the client's optimistic "X is booted" log.
+        name = str(msg.get("name", "")).strip()[:32]
+        if cl.in_world and name:
+            target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
+            if target and target is not cl:
+                await target.send({"t": "system", "msg": f"{cl.charname} has removed you from their dwelling."})
+            else:
+                await cl.send({"t": "system", "msg": f"'{name}' is not online — no one was booted from your dwelling."})
     elif t == "ping":
         await cl.send({"t": "pong"})
 
