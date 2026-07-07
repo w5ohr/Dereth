@@ -297,3 +297,18 @@ deterministic functions and unit-tested them in node — a surface reachable wit
   areas parse. (AC_XP is sourced from acskills.json at boot, confirmed.)
 
 No changes to the findings list (#20–#24 stand).
+
+
+## TestSystemA — Run 11 (2026-07-07, main @ c3232dc)
+
+**Result: one finding (TSA-6). Net-message symmetry otherwise clean.**
+
+- **TSA-6 (multiplayer, low) — filed as item #25.** Client/server message-type symmetry audit:
+  of 28 client→server message types, **`houseboot` is the only one the server does not
+  handle** (index.html:9624 sends it for `/house boot <name>`; no case in dereth_server.py).
+  The message is silently dropped online, so booting a guest has no multiplayer effect while
+  the local log claims success. Every OTHER client send has a server handler, and **every
+  server send type is handled by the client** (0 gaps the other direction). Fix noted in #25.
+- Clean: 27/28 client sends handled; 0 unhandled server→client types; no orphan relays.
+
+Findings list now spans items **#20–#25** (TSA-1..TSA-6).
