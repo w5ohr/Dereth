@@ -97,7 +97,7 @@
     color:var(--gold);background:rgba(8,6,3,.7);padding:8px 16px;border-radius:8px;border:1px solid var(--border);
     font-size:14px;pointer-events:none;display:none}
 
-  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook{position:absolute;inset:0;background:rgba(4,3,1,.82);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50}
+  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook{position:absolute;inset:0;background:rgba(4,3,1,.86);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50;backdrop-filter:blur(3px)}
   #sheet .card,#tinker .card,#shop .card,#settings .card,#worldmap .card,#codex .card,#spellbook .card{width:560px;max-width:92vw;background:linear-gradient(180deg,#1b1509,#0e0a05);
     border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 20px 60px #000;max-height:92vh;overflow:auto}
   #sheet h2,#tinker h2,#shop h2,#settings h2,#worldmap h2,#codex h2,#spellbook h2{margin:0 0 2px;color:var(--gold)}#sheet .sub,#tinker .sub,#shop .sub,#settings .sub,#worldmap .sub,#codex .sub,#spellbook .sub{color:var(--dim);font-size:12px;margin-bottom:14px}
@@ -16169,7 +16169,10 @@ function buildSheet(){
     player.vitals[vk]=n-1; player.xpUnspent+=vitalRefund(n); derive(); saveGame(); buildSheet();
   });
 }
-function openSheet(){buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
+// #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
+const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing"];
+function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
+function openSheet(){closeOtherModals("sheet");buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
 
@@ -17497,7 +17500,7 @@ function drawBigMap(){
   g.save();g.translate(cx(player.x),cx(player.z));g.rotate(-player.yaw);
   g.fillStyle="#ffd86b";g.beginPath();g.moveTo(0,-8);g.lineTo(5,7);g.lineTo(-5,7);g.closePath();g.fill();g.restore();
 }
-function openMap(){ document.getElementById('worldmap').style.display="flex";paused=true;if(locked)document.exitPointerLock();drawBigMap(); }
+function openMap(){ closeOtherModals("worldmap"); document.getElementById('worldmap').style.display="flex";paused=true;if(locked)document.exitPointerLock();drawBigMap(); }
 function closeMap(){ document.getElementById('worldmap').style.display="none";paused=false; }
 document.getElementById('closeMap').onclick=closeMap;
 // click a town on the full map to fast-travel there
@@ -17526,7 +17529,7 @@ function buildCodex(){
     return `<div class="row"><div><span class="lab"><span style="display:inline-block;width:10px;height:10px;background:${sw};border-radius:2px;margin-right:6px;vertical-align:middle"></span>${b.name}</span> <span style="color:${tt.c};font-size:11px;font-weight:bold;margin-left:6px">[${tt.t}]</span> <span class="desc">— HP ${b.hp} · dmg ${b.dmg} · ${b.xp} XP</span><div style="font-size:11px;margin-top:2px">${aff}</div></div></div>`;
   }).join("");
 }
-function openCodex(){ buildCodex();document.getElementById('codex').style.display="flex";paused=true;if(locked)document.exitPointerLock(); }
+function openCodex(){ closeOtherModals("codex"); buildCodex();document.getElementById('codex').style.display="flex";paused=true;if(locked)document.exitPointerLock(); }
 function closeCodex(){ document.getElementById('codex').style.display="none";paused=false; }
 document.getElementById('closeCodex').onclick=closeCodex;
 
@@ -21383,7 +21386,7 @@ function caravanStock(){
   return list;
 }
 VENDOR_TYPES.caravan={title:"Wandering Caravan",marker:"🐂",mcol:"#ffd86b",robe:0x3a4a6a,caravan:true,stock:caravanStock};
-function openShop(){ buildShop(); document.getElementById('shop').style.display="flex"; paused=true; if(locked)document.exitPointerLock();
+function openShop(){ closeOtherModals("shop"); buildShop(); document.getElementById('shop').style.display="flex"; paused=true; if(locked)document.exitPointerLock();
   // the shopkeeper greets you with a real retail line for their trade
   if(activeShop&&typeof acDialogueLine==="function"){
     const pool=acDialogueLine(activeShop.name,activeShop.vtype);
@@ -21500,7 +21503,7 @@ function useElixir(field,buff,sec,label,color){
 document.getElementById('closeShop').onclick=closeShop;
 
 // ---- Spellbook (view known spells, assign to hotbar) ----
-function openSpellbook(){ buildSpellbook(); document.getElementById('spellbook').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+function openSpellbook(){ closeOtherModals("spellbook"); buildSpellbook(); document.getElementById('spellbook').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 // rebuild the list as any filter changes (wired once)
 for(const id of ["sbSearch","sbSchool","sbLevel","sbKnown","sbReady"]){ const el=document.getElementById(id); if(el) el[id==="sbSearch"?"oninput":"onchange"]=()=>buildSpellbook(); }
 function closeSpellbook(){ document.getElementById('spellbook').style.display="none"; paused=false; }
@@ -21985,6 +21988,7 @@ function updatePlugins(dt){
   }
 }
 function openSettings(){
+  closeOtherModals("settings");
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
   const sens=document.getElementById('setSens'),vol=document.getElementById('setVol'),fov=document.getElementById('setFov');
   const dgl=document.getElementById('setDgl');
@@ -24533,7 +24537,7 @@ function lootItem(it){
   SFX.gold();
   log(it.scroll?`You find a <b>${it.name}</b>. (T to scribe it)`:`You pick up a <b>${it.name}</b>. (T to equip or salvage)`,"loot");
 }
-function openTinker(){ buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+function openTinker(){ closeOtherModals("tinker"); buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
 // armour rating a single piece contributes (value + armour affix, scaled by its class)
 function pieceArmorV(p){ if(!p) return 0; const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); return Math.round(base*(at?at.armorMul:1)); }
