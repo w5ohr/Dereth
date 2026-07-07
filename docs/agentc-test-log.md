@@ -164,3 +164,23 @@ Systematic audit of ALL remaining client net-message handlers (to close out the 
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.**
+
+## AgentC pass 14 (cross-system state-transition edges) — ALL GREEN, no defects
+
+Probed actions in incompatible states (dead / in-dungeon / aboard-ship / not-in-dungeon) for missing
+combined-state guards — throws, NaN, or invalid dual states.
+
+- **All reachable combinations guarded:** cast-while-dead blocked (no mana corruption); recall/teleport
+  while aboard ship → no NaN; enter-dungeon-while-already-in early-returns (`if(inDungeon) return`);
+  use-item/attack while dead → no throw, no hp corruption; exitDungeon when not in a dungeon → no
+  throw/NaN.
+- **Investigated & cleared (NOT a bug): "in dungeon AND aboard ship".** Only occurs in the ARTIFICIAL
+  order enter-dungeon→then-boardShip, which is **unreachable** (no ships exist inside dungeon
+  instances to board). The REALISTIC order board→enter-dungeon correctly clears `aboardShip` via the
+  existing **#17 guard** (index.html:14935 — "any teleport disembarks"), so dungeon entry (a
+  teleport-class move) disembarks you; verified: board→enter → aboardShip=false, no yank, no NaN.
+- Third self-caught near-miss in a row (rollItem args, ship keys, now this artificial order) — the
+  game's state machine is robust; the flags were test-constructed unreachable states.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
