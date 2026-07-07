@@ -106,6 +106,10 @@
   #potions{bottom:14px;left:calc(50% + 285px);display:flex;gap:8px;padding:8px;font-size:11px}
   #potions .pot{display:flex;flex-direction:column;align-items:center;min-width:46px;color:var(--dim)}
   #potions .pot b{color:#fff;font-size:14px}#potions .pot .k{color:var(--gold)}
+  /* #170: on narrower viewports the belt at 50%+285 runs off the right edge and overlaps the centered
+     quickbar — reflow it to the right edge, lifted above the quickbar so it never clips or collides. */
+  @media (max-width:1280px){ #potions{left:auto;right:12px;bottom:158px} }
+  @media (max-width:1280px) and (max-height:760px){ #potions{bottom:150px} }
   .tbtn{padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:#2a2110;color:var(--gold);font-size:12px;cursor:pointer}
   .doll{display:flex;flex-wrap:wrap;gap:5px}
   .doll-grp{font-size:10px;color:var(--dim);width:100%;margin:6px 0 2px;text-transform:uppercase;letter-spacing:.6px}
