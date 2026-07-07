@@ -82,17 +82,21 @@ async def main():
     await b.close()
 
     # ── slot lifecycle: fill several, delete middle, recreate ──
+    # create_char emits a `roster` and THEN a `play_ok` (it auto-plays the new slot). Wait for the
+    # play_ok on every step so exactly one trailing frame is drained per create and the stream stays
+    # in sync — otherwise those play_oks buffer on the wire and a later read returns a STALE blob
+    # (the original pred matched `roster` first, leaving the play_ok queued for the next assertion).
     d = await mk("slots")
     okc = True
     for s in (1, 2, 3):
         await d.send({"t": "create_char", "slot": s, "name": f"alt{s}_{secrets.token_hex(2)}"[:14], "char": {"level": s}})
-        r = await d.recv_until(lambda x: x["t"] in ("play_ok", "roster", "char_ok", "create_ok", "system"), timeout=4)
+        r = await d.recv_until(lambda x: x["t"] == "play_ok", timeout=4)
         okc = okc and bool(r)
     check("create 3 extra slots", okc)
     await d.send({"t": "delete_char", "slot": 2})
-    await asyncio.sleep(0.3)
+    await d.recv_until(lambda x: x["t"] == "roster", timeout=4)   # delete acks with a fresh roster — sync on it, no blind sleep
     await d.send({"t": "create_char", "slot": 2, "name": f"re2_{secrets.token_hex(2)}"[:14], "char": {"level": 99}})
-    r = await d.recv_until(lambda x: x["t"] in ("play_ok", "roster", "char_ok", "create_ok"), timeout=4)
+    r = await d.recv_until(lambda x: x["t"] == "play_ok", timeout=4)
     check("deleted slot is reusable", r)
     await d.send({"t": "play_char", "slot": 2})
     pd2 = await d.recv_until(lambda x: x["t"] == "play_ok", timeout=4)
@@ -100,27 +104,27 @@ async def main():
           f"char={pd2.get('char') if pd2 else None}")
     await d.close()
 
-    # ── event lifecycle: with DERETH_EVENT_CD=2 an Incursion starts; kill its mobs -> event_end ──
+    # ── event lifecycle: with a short DERETH_EVENT_CD an Incursion starts; kill its mobs -> event_end ──
+    # The event mobs ring out 90–440 units from the anchor (spawn_mob), FAR past ATTACK_RANGE (16),
+    # so teleporting to the anchor and attacking guessed ids `m1..m199` can never land a hit. Read
+    # the event mobs' REAL ids + positions from the snapshot (mob_pub tags them with `event`),
+    # teleport onto each, and strike it by its real id — re-snapshotting until the horde is cleared.
     e = await mk("evt")
     ev = await e.recv_until(lambda x: x["t"] == "event_start", timeout=8)
     check("Incursion starts", ev and ev.get("count", 0) > 0)
     if ev:
-        # snapshot mobs tagged to the event, walk to them, kill them all
-        await e.send({"t": "input", "x": ev["x"], "z": ev["z"], "yaw": 0})
-        await asyncio.sleep(0.6)
-        killed = 0
-        for i in range(1, 200):
-            await e.send({"t": "attack", "id": f"m{i}", "dmg": 2000})
-        deadline = time.time() + 12
+        eid = ev.get("id")
+        deadline = time.time() + 25
         ended = None
         while time.time() < deadline and not ended:
-            m = await e.recv_until(lambda x: x["t"] in ("event_end", "mob_die"), timeout=3)
-            if m and m["t"] == "event_end":
-                ended = m
-            elif m is None:
-                # sweep again — respawns/other ids
-                for i in range(1, 200):
-                    await e.send({"t": "attack", "id": f"m{i}", "dmg": 2000})
+            snap = await e.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"), timeout=4)
+            emobs = [m for m in (snap or {}).get("mobs", [])
+                     if m.get("event") == eid and m.get("hp", 0) > 0]
+            for mob in emobs:
+                # walk onto the mob (dist ~0, well inside ATTACK_RANGE) then hit it by its real id
+                await e.send({"t": "input", "x": mob["x"], "z": mob["z"], "yaw": 0})
+                await e.send({"t": "attack", "id": mob["id"], "dmg": 4000})
+            ended = await e.recv_until(lambda x: x["t"] == "event_end", timeout=2)
         check("event ends after clearing mobs", ended, "no event_end within window")
         if ended:
             check("event_end reports success", ended.get("success") in (True, 1))

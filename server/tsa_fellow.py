@@ -62,16 +62,18 @@ async def main():
         vals = list(r.values())
         check("tight level band splits equally", vals[0] == vals[1], r)
 
-    # wide band: add a level-80 → proportional; low-level must get LESS than high-level
-    c = await mk("fc", 80)
+    # moderate band: add a level-60 → level spread 40, which lands in the 6–49 PROPORTIONAL band
+    # (not the ≥50 extreme-spread reversion that pays everyone equally), so the high-level fellow
+    # must earn strictly MORE than the low-level ones.
+    c = await mk("fc", 60)
     await party_up(a, c)
     r2 = await kill_shared_mob(c, [a, b])
     check("3-way fellowship XP delivered", r2 and all(v for v in r2.values()), r2)
     if r2 and all(r2.values()):
         hi = r2[c.charname]; lo = min(r2[a.charname], r2[b.charname])
-        check("wide spread pays high level more", hi > lo, r2)
+        check("moderate spread pays high level more", hi > lo, r2)
 
-    # muster: level 5 refused; level 80 grants an NPC vassal
+    # muster: level 5 refused; a high-level char grants an NPC vassal
     low = await mk("mu", 5)
     await low.send({"t": "muster"})
     ref = await low.recv_until(lambda x: "renown" in x.get("msg", "").lower(), timeout=3)
@@ -80,14 +82,18 @@ async def main():
     got = await c.recv_until(lambda x: x["t"] == "system" and
                              ("swear" in x.get("msg", "").lower() or "banner" in x.get("msg", "").lower()
                               or "answers" in x.get("msg", "").lower()), timeout=3)
-    check("muster grants an NPC vassal at level 80", got, )
+    check("muster grants an NPC vassal at high level", got)
 
-    # monarch MOTD: b swears to a, a (monarch) sets MOTD, b receives it
+    # monarch MOTD: swear the LOWER-level char UP to the higher one. AC only lets you swear to an
+    # equal-or-higher patron (dereth_server rejects target.level < your level), so a(20)→b(22) is
+    # valid where the reverse is refused. b becomes Monarch and sets the MOTD; a, now its sworn
+    # vassal, receives it.
     await b.send({"t": "party", "act": "leave"})
-    await b.send({"t": "swear", "name": a.charname})
-    await b.recv_until(lambda x: "swear" in x.get("msg", "").lower(), timeout=3)
-    await a.send({"t": "alg_motd", "text": "TSA banner day"})
-    motd = await b.recv_until(lambda x: "TSA banner day" in x.get("msg", ""), timeout=3)
+    await a.send({"t": "swear", "name": b.charname})
+    sw = await a.recv_until(lambda x: "swear fealty to" in x.get("msg", "").lower(), timeout=3)
+    check("lower-level swears fealty to higher", sw)
+    await b.send({"t": "alg_motd", "text": "TSA banner day"})
+    motd = await a.recv_until(lambda x: "TSA banner day" in x.get("msg", ""), timeout=3)
     check("monarch MOTD pushed to sworn vassal", motd)
 
     for cl in (a, b, c, low):
