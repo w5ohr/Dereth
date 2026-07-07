@@ -1494,7 +1494,7 @@ function itemCat(it){ if(!it) return null; const S=it.stat;
   if(S==="worn"){ if(it.shield) return ({buckler:"shieldb",kite:"shieldk",large:"shieldk",tower:"shieldt",covenant:"shieldk",olthoi:"shieldt",round:"shieldb",aegis:"shielda"})[it.shield]||"shield"; return it.aslot||"chest"; }
   if(S==="jewelry") return it.jtype||"finger";
   return S; }   // consumables/quest/comp/etc. map straight through by stat
-function itemIconImg(did,s){ return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="">`; }
+function itemIconImg(did,s){ return `<img src="assets/acicons/${AC_ICONS.icons[did]}" width="${s}" height="${s}" style="vertical-align:middle;image-rendering:pixelated" alt="" onerror="this.replaceWith(document.createTextNode('📦'))">`; }   // #243: emoji fallback if the PNG is missing/corrupt (matches the sibling icon path), instead of a broken-image glyph
 function itemIconHTML(name,emoji,px,it){ const s=px||18;
   if(it&&it.acicon&&AC_ICONS&&AC_ICONS.icons&&AC_ICONS.icons[it.acicon]) return itemIconImg(it.acicon,s);   // the item's OWN retail icon (catalog gear)
   let did=itemIconDID(name);                                                                                // exact name / base noun
