@@ -114,3 +114,42 @@ test-harness artifact. Two non-blocking, non-reachable hardening notes remain:
    with the fixed `#28` `drinkPotion` clamp. Not reachable via any kill/quest/network path today.
 2. **[polish] `equipItem` return symmetry** — `return true` on success (currently `undefined`) so the
    contract matches the `false`-on-refusal case. No live caller is affected (`applyItem` uses `===false`).
+
+---
+
+## Run 2026-07-07 (~04:55, loop pass 2), HEAD `cbce433` (unchanged)
+
+`main` unchanged since pass 1. AgentC had pushed `agentc-finding-31`; per the standing directive I
+**independently verified their finding** and extended coverage to previously-untouched mechanics.
+
+### ✅ Corroborated AgentC finding #31 (attribute gems uncapped) — REAL & reachable
+- **Confirmed:** `applyItem`'s catch-all `else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;…}`
+  (index.html:14435) has **no ceiling**. 50 Strength Gems → Strength **70 → 320** (+250), far past
+  `attrMaxRanks()` = 190, and it survives `derive()`.
+- **Reachability quantified:** attribute-stat gems roll from normal loot at ~**11 per 4,000 rolls**
+  (Focusing Stone, Coordination/Strength/Quickness/Willpower Gems). So a player can farm them to inflate
+  an attribute without bound — a real balance exploit, exactly as AgentC filed. (Filed by AgentC as
+  authoritative-list #31; logged here as independent confirmation, not a duplicate filing.)
+
+### 🔎 Value-add: the uncapped-permanent-consumable *class* is otherwise closed
+Audited every `applyItem` branch that writes a **permanent** stat. Only two do:
+- **attribute gems** — the #31 exploit (real, reachable).
+- **`it.stat==="armor"`** → `player.armor+=it.v` (index.html:14320): also uncapped, BUT **dead code** —
+  the only `stat:"armor"` literal in the codebase (index.html:1109) is the *Impenetrability item-buff's*
+  target field, not an inventory item. **0** `stat:"armor"` items in 4,000 loot rolls; no vendor/quest/
+  named source. So this branch never fires in real play — latent, not an exploit.
+- Everything else is bounded: hp/mn/st clamp to max; food/attrpot/attrgem/skillpot are **timed** buffs;
+  augments are capped (`attrTotal`+50, `count` 60, per-field caps); aetheria is slot-bounded; packs
+  capped at 7. **So #31 is the sole reachable member of its class** — fixing it (mirror `attrMaxRanks`
+  in the gem path) closes the category.
+- *Defensive note (not reachable):* a negative-`v` gem would *drain* an attribute (`+= it.v` with v<0),
+  but no negative-`v` gem is generated — same non-reachable robustness class as the `gainXP` note.
+
+### Depth sweep #4 (`ab_depth4.js`) — CLEAN (new mechanics)
+- **Salvage-bag math:** work-average stays in [0,10] (9.9999 after 1e9 units; no NaN even from a
+  0-unit/0-work bag).
+- **Real combine engine:** recipe index loads **1,500** retail recipes; end-to-end craft
+  (Smelting Pot + Iron Ore → Slag) consumes/produces correctly (inv 5→6), no throw.
+- **Mana stone** charge/discharge and **dye picker** open without throwing.
+
+**Net for loop pass 2: 0 new bugs; independently confirmed + bounded AgentC #31.** Loop continues.
