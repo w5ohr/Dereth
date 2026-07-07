@@ -1102,8 +1102,12 @@ FELLOW_SHARE = {1: 1.00, 2: 0.75, 3: 0.60, 4: 0.50, 5: 0.45, 6: 0.40, 7: 0.37, 8
 
 def fellowship_xp(fellows, base_xp):
     """AC fellowship XP by LEVEL SPREAD, not just size → {account: xp}. A tight band shares equally
-    with the size bonus; a wide band splits proportionally by level so a low-level can't leech a
-    high-level kill; an extreme spread reverts to equal with the size reduction lifted."""
+    with the size bonus; any wider band splits the SAME pool proportionally by level so a low-level
+    can't leech a high-level kill. (#249: the old `spread>=50` carve-out returned FULL base_xp to
+    every member — it inverted the anti-leech split, handed a low-level the entire kill, minted n×
+    inflationary XP, and made the low-level's share JUMP UP as the partner's level rose past the
+    threshold. Removed so the proportional split governs every spread>5 and the low-level's share
+    only ever decreases as the gap widens.)"""
     n = len(fellows)
     if n < 2:
         return {u: base_xp for u in fellows}                       # solo / single member: full XP
@@ -1111,9 +1115,7 @@ def fellowship_xp(fellows, base_xp):
     spread = max(levels.values()) - min(levels.values())
     base = FELLOW_SHARE[min(n, 9)]
     if spread <= 5:
-        return {u: int(round(base_xp * base)) for u in fellows}    # equal split + size bonus
-    if spread >= 50:
-        return {u: base_xp for u in fellows}                       # extreme spread: equal, no size reduction
+        return {u: int(round(base_xp * base)) for u in fellows}    # tight band: equal split + size bonus
     pool = base_xp * base * n                                      # same total pool, weighted by level
     tot = sum(levels.values()) or 1
     return {u: int(round(pool * levels[u] / tot)) for u in fellows}
