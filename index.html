@@ -20526,7 +20526,10 @@ function renderQuestLog(){
       return `<div style="margin-bottom:8px;padding:8px;background:${isTrk?'rgba(255,210,59,.10)':'rgba(255,255,255,.03)'};border:1px solid ${isTrk?'var(--gold)':'var(--border)'};border-radius:6px">
         <div style="display:flex;justify-content:space-between;gap:8px">
           <div style="color:var(--gold);font-weight:bold">${isTrk?'▸ ':''}${q.name} <span style="color:#9fd0ff;font-weight:normal">· Lv ${questLvl(a.id)}</span> <span style="color:var(--dim);font-weight:normal">— ${giverLabel(q)}</span></div>
-          <button class="qtrack" data-track="${a.id}" title="Track with the compass" style="background:none;border:1px solid var(--border);border-radius:4px;color:${isTrk?'var(--gold)':'var(--dim)'};cursor:pointer;font-size:12px;padding:1px 6px">${isTrk?'★ tracking':'☆ track'}</button>
+          <span style="display:flex;gap:4px;align-items:flex-start">
+            <button class="qtrack" data-track="${a.id}" title="Track with the compass" style="background:none;border:1px solid var(--border);border-radius:4px;color:${isTrk?'var(--gold)':'var(--dim)'};cursor:pointer;font-size:12px;padding:1px 6px">${isTrk?'★ tracking':'☆ track'}</button>
+            <button class="qdrop" data-abandon="${a.id}" title="Abandon this quest — the giver will offer it again" style="background:none;border:1px solid var(--border);border-radius:4px;color:#c07a6a;cursor:pointer;font-size:12px;padding:1px 6px">✕</button>
+          </span>
         </div>
         <div style="color:#bcae8a;font-style:italic;margin:4px 0">“${q.intro}”</div>
         ${a.deadline?`<div style="color:${timeLeft(a.id)<30000?'#e06a6a':'#e0c070'};margin:2px 0">⏳ Time remaining: <b>${fmtCd(timeLeft(a.id))}</b></div>`:""}
@@ -20556,6 +20559,17 @@ function renderQuestLog(){
   if(so){ so.value=questFilter.sort; so.onchange=()=>{ questFilter.sort=so.value; renderBountyList(); }; }
   renderBountyList();
   body.querySelectorAll('[data-track]').forEach(b=>b.onclick=()=>{ tracked=b.dataset.track; renderQuestLog(); updateQuestHUD(); SFX.click&&SFX.click(); });
+  // #197: abandon an active quest — two clicks (arm, then confirm) so a stray click can't drop progress
+  body.querySelectorAll('[data-abandon]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.abandon;
+    if(b.dataset.armed!=="1"){ b.dataset.armed="1"; b.textContent="abandon?"; b.style.color="#e06a5a"; b.style.borderColor="#a05a4a"; setTimeout(()=>{ if(b.isConnected){ b.dataset.armed=""; b.textContent="✕"; b.style.color="#c07a6a"; b.style.borderColor="var(--border)"; } },3000); return; }
+    const i=activeQuests.findIndex(a=>a.id===id); if(i<0) return;
+    const q=questById(id);
+    activeQuests.splice(i,1);
+    if(tracked===id) tracked=trackedId();
+    log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
+    renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
+  });
   body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
     if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
   { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
