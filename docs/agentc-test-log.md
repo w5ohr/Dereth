@@ -94,17 +94,17 @@ EXACT baseline (the classic leak: a buff that expires without un-applying its de
 **No issues found this pass.** (The buff/debuff/DoT/HoT lifecycle is sound — symmetric apply/expire
 throughout.)
 
-## AgentC pass 8 (snapshot reconcilers + dungeon lifecycle) — 1 FINDING (snapshot-tick abort)
+## AgentC pass 9 (quest lifecycle + secure trade) — 1 FINDING (trade dupe, most severe)
 
-- **Dungeon lifecycle: CLEAN.** enter → descend to depth 2 → exit, no throws. (The test's
-  `backNear:false` was a TEST artifact — `exitDungeon(false)` is the death/teardown variant that
-  deliberately skips repositioning; `exitDungeon(true)` does `arriveAt(dungeonReturn)`. Not a bug.)
-- ⚠ **FINDING (filed as authoritative-list #34, AgentC AC-4): one malformed snapshot mob aborts the
-  whole snapshot tick.** The snapshot handler (index.html:24951) runs reconcileRemotes/reconcileMobs/
-  reconcileEvent unguarded on one line; `reconcileMobs` throws on an unknown mob kind (`spawnSharedMob`
-  passes the raw kind to `acCreatureMesh` despite its `||BESTIARY.drudge` guard → reads `.size` on
-  undefined) or a `null` entry (`.id` of null), so `reconcileEvent` never runs — proven: bad-mob
-  snapshot → `NET.event` never set. Repeats every tick → networked-entity/event freeze. M3-multiplayer
-  resilience; needs server malformation/version-skew to trigger. Full detail + fix in #34.
-- **Also confirmed:** NaN/Infinity snapshot coords do NOT throw (slip through as NaN positions — minor
-  render concern only). jsc clean · 0 console errors · MMO harness 47/47.
+- **Quest lifecycle: CLEAN (no reward-farm).** Accept → over-fire the objective (13 kills on an
+  8-count quest) caps progress at exactly 8 → turn-in pays out **once** (120g/1900xp), sets the
+  repeatable cooldown, splices from active. Double-turn-in = 0 reward (cooldown branch); re-accept
+  on cooldown = blocked. Accept branch correctly gates isDone / onCooldown / society / prereq.
+- ⚠ **FINDING (filed as authoritative-list #35, AgentC AC-5): secure-trade `done` is not idempotent
+  → item + coin DUPE.** The `netHandle` trade-`done` branch (index.html:24937) has no `if(!TRADE.open)`
+  guard; after the first `done` clears `TRADE.mine`, a **duplicate `done` re-adds `m.give` items and
+  re-credits `m.coin`** while you give nothing. Runtime-proven: dup `done` → gem count 1→2, gold
+  1100→1200. Economy-critical (item/gold duplication); the guard state (`TRADE.open`) already exists.
+  Moderate–high. Full detail + fix in authoritative list #35.
+- jsc clean · 0 console errors · MMO harness **47/47** (one first-run failure was a transient
+  server-startup timing flake; clean re-run confirmed 47/47 — not a regression).
