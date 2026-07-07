@@ -64,3 +64,31 @@ harness returns; Run 1's in-game pass stands as the browser baseline for this bu
 - **Asset integrity**: every JSON pack under assets/ parses; all 232 indexed dungeon files
   exist on disk; no duplicate top-level const/let (1 duplicate function = TSA-1 above; 1,162
   top-level functions total).
+
+## TestSystemA — Run 3 (2026-07-07 early, main @ c3232dc)
+
+**Result: CLEAN — 16/16 extended server scenarios pass; no new defects.**
+
+The chrome-browser MCP reconnected briefly but the extension itself stayed unreachable (Chrome
+closed), so in-browser coverage remains paused. Run 3 went DEEP on the multiplayer server with a
+new scenario harness (`server/tsa_extended.py`, kept in-repo for reuse) covering flows the stock
+suite skips:
+
+- **Secure trade with coin (full lifecycle)**: open → invite delivered → accept_open → window
+  sync → item offer syncs to partner → coin offer syncs (and clears both accepts, AC rule) →
+  ok+ok → done both sides → **coin lands with the item-giver (250p), item lands with the
+  coin-giver** ✓
+- **3-state PK gating over the wire**: PK→NPK hit does NOT land · PK→PK lands (dmg intact) ·
+  PK→PKL does NOT land (rulesets fight their own) ✓
+- **Allegiance**: swear (equal-level rule honoured) → patron notified → `alg_info` returns →
+  `/a` allegiance chat reaches the patron on the allegiance channel ✓
+- **Shared corpses**: death stands up a broadcast corpse; **non-owner recovery rejected**;
+  owner recovery grants the full bundle (items + gold) ✓
+
+Harness notes (my errors, fixed in the harness — NOT server bugs): register requires a
+password ≥ 4 chars (short password → silent-looking auth_err and everything downstream times
+out); trade protocol is act:"open"/"ok" with field `amount`; PvP hits target the account
+username and PK state rides the `input` tick (`pkState`). First drafts of the harness produced
+11-13 false failures from these — all resolved to protocol fidelity, zero server defects.
+
+Also re-ran the stock suite against the same instance mid-diagnosis: 47/47.
