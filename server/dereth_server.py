@@ -927,6 +927,21 @@ def alg_monarch(name, _seen=None):
         cur = r["patron"]
     return cur
 
+def alg_reaches_up(start, target):
+    """True if `target` sits anywhere on `start`'s patron chain (start itself counts). Used to
+    reject a swear that would close a cycle: swearing start->target is a circle iff target can
+    already reach start going up — i.e. start is an ancestor of target (call alg_reaches_up(target,
+    start)). The crown-only check (alg_monarch==) missed mid-chain ancestors."""
+    seen = set()
+    cur = start
+    while cur and cur not in seen:
+        if cur == target:
+            return True
+        seen.add(cur)
+        r = alg_row(cur)
+        cur = r["patron"] if r else None
+    return False
+
 def alg_followers(name, _seen=None):
     """size of the whole subtree under a character"""
     _seen = _seen or {name}
@@ -1560,7 +1575,7 @@ async def dispatch(cl, msg):
             return await cl.send({"t": "system", "msg": f"No online character named '{name}' to swear to."})
         if target.level < cl.level:
             return await cl.send({"t": "system", "msg": f"{name} (level {target.level}) is beneath your level {cl.level} — AC lets you swear only to an equal or higher."})
-        if alg_monarch(name) == cl.charname:
+        if alg_reaches_up(name, cl.charname):   # #250: full upward-walk — reject if you're ANYWHERE on the target's chain (crown OR mid-chain), else a patron could swear to its own descendant and close a loop
             return await cl.send({"t": "system", "msg": "They stand beneath you in your own tree — that fealty would be a circle."})
         if len(alg_vassals(name)) >= max(1, target.level):
             return await cl.send({"t": "system", "msg": f"{name}'s patronage is full (AC caps vassals at character level)."})
