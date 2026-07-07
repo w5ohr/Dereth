@@ -326,13 +326,20 @@
 <div id="sheet"><div class="card">
   <h2>Character Sheet</h2>
   <div class="sub">Asheron's Call has no classes — you are what you train. Spend points to grow.</div>
-  <div id="attrRows"></div>
-  <div style="text-align:center;margin-top:14px;font-size:14px">Unspent XP: <span id="pts">0</span> <span style="color:var(--dim);font-size:10px">(spend to raise attributes & skills; lower an attribute to refund it)</span></div>
-  <div style="color:var(--gold);font-weight:bold;font-size:13px;margin:14px 0 6px">Skills <span style="color:var(--dim);font-weight:normal;font-size:10px">— Train / Specialize with skill credits, then raise ranks with unspent XP</span></div>
-  <div id="skillRows"></div>
-  <div id="allegianceRow" style="margin:8px 0"></div>
-  <div style="color:var(--gold);font-weight:bold;font-size:13px;margin:14px 0 6px">Achievements <span style="color:var(--dim);font-weight:normal;font-size:10px">— click an earned title to wear it</span></div>
-  <div id="achRows"></div>
+  <div id="sheetTabs" style="display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap"></div>
+  <div style="text-align:center;margin-bottom:12px;font-size:13px">Unspent XP: <span id="pts">0</span> <span style="color:var(--dim);font-size:10px">(raise attributes, vitals &amp; skills; lower to refund)</span></div>
+  <div class="sheetPane" data-pane="attr">
+    <div id="attrRows"></div>
+    <div id="allegianceRow" style="margin:10px 0"></div>
+  </div>
+  <div class="sheetPane" data-pane="skills" style="display:none">
+    <div style="color:var(--gold);font-weight:bold;font-size:13px;margin:4px 0 6px">Skills <span style="color:var(--dim);font-weight:normal;font-size:10px">— Train / Specialize with skill credits, then raise ranks with unspent XP</span></div>
+    <div id="skillRows"></div>
+  </div>
+  <div class="sheetPane" data-pane="titles" style="display:none">
+    <div style="color:var(--gold);font-weight:bold;font-size:13px;margin:4px 0 6px">Achievements <span style="color:var(--dim);font-weight:normal;font-size:10px">— click an earned title to wear it</span></div>
+    <div id="achRows"></div>
+  </div>
   <button id="closeSheet">Return to Dereth  (C)</button>
 </div></div>
 
@@ -16055,7 +16062,23 @@ function recolorLifestone(ls){
 
 // ---------- character sheet ----------
 const sheet=document.getElementById('sheet'),attrRows=document.getElementById('attrRows');
+// #168: the character sheet is split into tabs (Attributes & Vitals / Skills / Achievements & Titles)
+function sheetTabStyle(on){ return `font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;border:1px solid ${on?'var(--gold)':'var(--border)'};background:${on?'#2a2214':'rgba(255,255,255,.03)'};color:${on?'#ffd86b':'#cdbf9a'}`; }
+function applySheetTab(){
+  const cur=window._sheetTab||"attr";
+  document.querySelectorAll('#sheet .sheetPane').forEach(p=>{ p.style.display=(p.dataset.pane===cur)?"":"none"; });
+  document.querySelectorAll('#sheetTabs [data-stab]').forEach(b=>{ b.style.cssText=sheetTabStyle(b.dataset.stab===cur); });
+}
+function buildSheetTabs(){
+  const tb=document.getElementById('sheetTabs'); if(!tb) return;
+  window._sheetTab=window._sheetTab||"attr";
+  const tabs=[["attr","Attributes & Vitals"],["skills","Skills"],["titles","Achievements & Titles"]];
+  tb.innerHTML=tabs.map(([k,lbl])=>`<button data-stab="${k}" style="${sheetTabStyle(k===window._sheetTab)}">${lbl}</button>`).join("");
+  tb.querySelectorAll('[data-stab]').forEach(b=>b.onclick=()=>{ window._sheetTab=b.dataset.stab; applySheetTab(); });
+  applySheetTab();
+}
 function buildSheet(){
+  buildSheetTabs();
   attrRows.innerHTML="";
   for(const a of ATTRS){
     const v=player.attr[a], rk=attrRank(a), cost=attrCost(a), canRaise=rk<attrMaxRanks()&&(player.skillPts>0||player.xpUnspent>=cost);
