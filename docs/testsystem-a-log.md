@@ -312,3 +312,23 @@ No changes to the findings list (#20–#24 stand).
 - Clean: 27/28 client sends handled; 0 unhandled server→client types; no orphan relays.
 
 Findings list now spans items **#20–#25** (TSA-1..TSA-6).
+
+## TestSystemA — Run 12 (2026-07-07, main @ c3232dc)
+
+**Result: CLEAN — no new findings.** Content-table reference integrity + spellbook resolution.
+
+- **Reference integrity (static)**: QUESTS = 119 unique ids, 0 dupes, all 9 `req:` prereq refs
+  resolve to real quests · BESTIARY 61 kinds; every dungeon warden (17), theme spawn-pool kind
+  (37 distinct), and literal spawn arg resolves to a real creature — **0 dangling** · armor-set
+  skill keys resolve.
+- **DEFAULT_SPELLS resolution (executed, not guessed)**: a static pass flagged 6 of the 10
+  default-hotbar spell ids (`war_flame_1`, `life_heal_1`, `void_nether_1`, …) as "undefined" —
+  because SPELLBOOK is built from ~30 template-literal generator loops (`war_${code}_${lvl}`
+  etc.) that no regex can see. Rather than log a guess, I **extracted and ran the real
+  SPELLBOOK builder in node**: it produces **1,233 spells and all 10 DEFAULT_SPELLS resolve**.
+  False alarm — the default quickbar is intact. (New reusable capability: the spellbook builder
+  runs standalone in node for future spell-id regression.)
+
+No changes to the findings list (#20–#25 stand). This run is a good caution: static
+"missing id" scans over a template-generated table produce false positives — execute the
+builder to confirm.
