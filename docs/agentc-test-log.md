@@ -272,3 +272,13 @@ Drove the game loop 5000 frames with continuous combat, watching for slow leaks 
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.** (Passes 11–20 all clean.)
+
+## 2026-07-07 08:02 — AgentC pass 21 (regression sentinel) — ALL GREEN
+
+Main unchanged (cbce433, 11 passes running). Light core-loop confirmation (deep systems exhausted &
+verified in passes 1–20).
+- Boot (2265 spells / 331 dungeons), combat one-shot kill, life-heal cast, save/load gold roundtrip,
+  loot roll, all core fns present — 0 errors. jsc clean · 0 console errors · MMO harness 47/47.
+- PR #157 (findings #31–#35) open & MERGEABLE — the complete finding set, awaiting review.
+
+**No issues found.** (Passes 11–21 all clean.)
