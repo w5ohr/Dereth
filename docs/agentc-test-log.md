@@ -115,3 +115,21 @@ Systematic audit of ALL remaining client net-message handlers (to close out the 
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.**
+
+## AgentC pass 11 (loot-tier scaling + targeting) — ALL GREEN, no defects (caught a false alarm)
+
+- **Loot-tier scaling: CORRECT & well-designed.** Avg gear value rises **21.8 → 84.3** across tiers
+  1→9 (**3.87×**), climbing steeply through tier 5 then plateauing (the AC_POOLS have 5 value bands).
+  Legendaries are gated: **0 at tiers 1–4**, appearing only at tier 5+ (38/47/39/29/50). Progression
+  loot works as intended.
+- **⚠ Near-miss (my error, NOT a game bug):** a first run showed FLAT value across tiers and I almost
+  filed "loot doesn't scale." Root cause was a TEST bug: `rollItem`'s signature is
+  **`rollItem(rare, tier, noRare)`** — tier is the SECOND arg. I'd called `rollItem(tier, false)`, so
+  every roll used `rare=<my tier>` (truthy) and `tier=false` (0). Corrected to `rollItem(false, tier,
+  true)` → clean 3.87× scaling. **Lesson for future passes: rollItem tier is arg #2.** (Earlier passes'
+  malformed-item checks are unaffected — those are valid for any args; finding #31 stands.)
+- **Targeting: CLEAN.** `pickMonsterTarget` returns null with no mobs, picks the monster in the aim
+  direction (not the one behind), and does not throw on a NaN-position mob.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
