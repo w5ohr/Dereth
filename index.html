@@ -15366,7 +15366,9 @@ function executeSpell(id){
   // #175: crosshair aim still wins when it's on a foe; otherwise steer the bolt at your locked target
   if(!pickMonsterTarget(34) && TARGET&&TARGET.type==="monster"&&TARGET.ref&&TARGET.ref.hp>0){
     const r=TARGET.ref, ax=r.x-player.x, az=r.z-player.z, al=Math.hypot(ax,az);
-    if(al>0.5 && al<=34 && !!r.isDungeon===!!inDungeon){ dir.x=ax/al; dir.z=az/al; dir.y=0; dir.normalize(); }
+    if(al>0.5 && al<=34 && !!r.isDungeon===!!inDungeon){
+      const _eyeY=((inDungeon||inNetwork)?groundY(player.x,player.z):player.y)+EYE-0.15;   // #228: steer VERTICALLY too, so slope shots at a locked target connect
+      dir.x=ax/al; dir.z=az/al; dir.y=r.mesh?((r.mesh.position.y+1)-_eyeY)/al:0; dir.normalize(); }
   }
   const geom=s.geom||"bolt";
   if(geom==="ring"){   // point-blank ring: strike every nearby foe around you
@@ -15395,7 +15397,8 @@ function executeSpell(id){
   for(const pt of pattern){
     const off=pt.a||0, lat=pt.lat||0;
     const ca=Math.cos(off),sa=Math.sin(off), dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca;
-    const ox=player.x+dx*0.8+perp.x*lat, oz=player.z+dz*0.8+perp.z*lat, oy=EYE-0.15;
+    const _footY=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;   // #228: bolts launch from the caster's REAL eye — not absolute sea-level height (they flew ~70u underground on hills)
+    const ox=player.x+dx*0.8+perp.x*lat, oz=player.z+dz*0.8+perp.z*lat, oy=_footY+EYE-0.15;
     const mesh=new THREE.Mesh(projGeom(sp),new THREE.MeshBasicMaterial({color:sp.color}));
     mesh.position.set(ox,oy,oz);
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
@@ -15405,7 +15408,7 @@ function executeSpell(id){
     // caster height with an upward loft, falling under gravity; all other geometries fly flat.
     const isArc=geom==="arc";
     const rlife=Math.max(0.5,spellRange/Math.max(1,sp.speed));   // travel time to reach the skill-gated range
-    pProj.push({mesh,spin:sp.element==="slash"?1:0,orient:sp.element==="pierce"?1:0,x:ox,y:isArc?EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // #196: the Force spike flies nose-first
+    pProj.push({mesh,spin:sp.element==="slash"?1:0,orient:sp.element==="pierce"?1:0,x:ox,y:isArc?_footY+EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // #196: the Force spike flies nose-first · #228: arc lofts from the real eye too
       dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?Math.min(4,rlife):rlife});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
@@ -16449,16 +16452,16 @@ function update(dt){
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
     if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});}
-    // Terrain collision: a falling arrow/bolt/arc buries into the actual ground height (hillsides
-    // included), not just the sea-level plane — so a shot into a slope stops where it strikes it.
-    // Flat-flying spell bolts and cosmetics keep the old sea-level cull.
-    const gh=p.grav?((typeof groundY==="function")?groundY(p.x,p.z):0):0;
-    const hitGround=p.grav?(p.y<gh+0.08):(p.y<0.1);
-    if(hitGround && p.arrow){ burst(p.x,gh+0.1,p.z,0x8a7a5a,4); }   // little dirt puff where it lands
-    let gone=p.life<=0||hitGround||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
+    // Terrain collision: EVERY projectile buries into the actual ground height (hillsides included) —
+    // #228: flat bolts used a sea-level cull, so on hills they tunneled straight through ridges.
+    // The monster hit-test below runs FIRST for the frame where a bolt reaches a foe standing ON the
+    // slope face — the ground only claims the bolt if nothing was struck.
+    const gh=(typeof groundY==="function")?groundY(p.x,p.z):0;
+    const hitGround=p.y<gh+(p.grav?0.08:0.02);
+    let gone=p.life<=0||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
     if(!gone && !p.cosmetic) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
-      if(_segHit(_px0,_pz0,p.x,p.z,m.x,m.z,m.r+p.r) && Math.abs(p.y-(gh+1))<1.8){   // #11: hit-band relative to LOCAL ground (gh=0 for flat spell bolts → unchanged sea-level behaviour)
+      if(_segHit(_px0,_pz0,p.x,p.z,m.x,m.z,m.r+p.r) && Math.abs(p.y-(m.mesh.position.y+1))<2.2){   // #228: hit-band vs the TARGET'S OWN body height (was an absolute |y−1|<1.8 relic that pet bolts could never enter)
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
         // Cb11: missile accuracy AND damage fall off with range — full to ~15m, down to ~50% by ~55m
         const rng=(p.arrow&&p.x0!=null)?Math.hypot(p.x-p.x0,p.z-p.z0):0;
@@ -16480,6 +16483,7 @@ function update(dt){
         gone=true;break;
       }
     }
+    if(!gone && hitGround){ gone=true; if(p.arrow) burst(p.x,gh+0.1,p.z,0x8a7a5a,4); }   // #228: the ground claims the bolt only if no foe was struck this frame (dirt puff for arrows)
     if(gone && p.splash && !p._done){ p._done=true;   // Arc detonation: splash every foe in radius
       const ix=p.x,iz=p.z,iy=Math.max(0.5,Math.min(p.y,2));
       burst(ix,iy,iz,p.color,26);
@@ -16519,7 +16523,8 @@ function update(dt){
     const p=eProj[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     let gone=p.life<=0;
-    if(Math.hypot(p.x-player.x,p.z-player.z)<player.r+p.r && Math.abs(p.y-EYE)<1.4){
+    const _peY=((inDungeon||inNetwork)?groundY(player.x,player.z):player.y)+EYE*0.85;   // #228: the player's REAL torso height, not absolute EYE
+    if(Math.hypot(p.x-player.x,p.z-player.z)<player.r+p.r && Math.abs(p.y-_peY)<2.0){
       playerHurt(p.dmg,p.x,p.z,p.type||"magic",p.element);burst(p.x,p.y,p.z,0xb266e0,8);gone=true;
       if(p.curse&&player.alive&&!(player.dispelImmune>0)){ player.debuffs[p.curse.type]={v:p.curse.v,t:p.curse.dur};
         floater(player.x,EYE+0.6,player.z,p.curse.type==="slow"?"Slowed!":"Imperiled!","#ff8f6b"); }
@@ -16585,7 +16590,7 @@ function update(dt){
           m.charging-=dt;
           if(Math.random()<0.6) burst(m.x,1.5,m.z,col,1); // wind-up tell
           if(m.charging<=0){
-            const dirx=dx/d,dirz=dz/d,ox=m.x,oz=m.z,oy=1.4;
+            const dirx=dx/d,dirz=dz/d,ox=m.x,oz=m.z,oy=m.mesh.position.y+1.4;   // #228: the bolt leaves the caster's body, not absolute sea level
             const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),new THREE.MeshBasicMaterial({color:col}));
             const lt=new THREE.PointLight(col,1.2,6);mesh.add(lt);
             mesh.position.set(ox,oy,oz);scene.add(mesh);
