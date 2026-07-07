@@ -13,11 +13,11 @@ Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand.js` (extra
 new pass should **extend coverage** to subsystems not yet tested rather than repeat a clean run. When an
 agent merges a change, run the sweep against the changed area too.
 
-**Still-untested targets for upcoming passes:** fellowship (cap-9 proportional XP share) · 3-state PK +
-altars + PK-loot + 3-day lock timer · region-aware weather + portal storms + drowning · overworld
-portals / recall set (Tie/Primary/Secondary/Sending) · sky & time (day length, 12-month calendar,
-sun/2-moon discs) · dye system · title system (873 titles) · Aetheria surges/sets · crafting combine
-engine (1,500 recipes) · Colosseum/instanced events · Town Crier feed · barber/creator head choices.
+**Still-untested targets for upcoming passes:** overworld portals + the recall set (Tie/Primary/
+Secondary/Sending) · portal storms · drowning mechanic (breath meter drives it) · Colosseum/instanced
+events · Town Crier feed · barber/creator head choices · Aetheria *surges* (proc side; set bonuses done).
+*(Covered through pass 5: PK+3-day-lock, sky/time+calendar, weather, combine engine, dye, titles,
+Aetheria set bonuses. Fellowship dropped — it's a chat channel only, no XP-share API to test.)*
 
 Every entry is tagged **[TestSystemB]**. Verify a flag before trusting it — several "failures" are
 test-ordering / setup artifacts, not game bugs (see the standing notes at the bottom).
@@ -135,6 +135,25 @@ latent bug. **All six pass: 0 findings, 0 page/console errors, 0 uncaught except
 | **Chess** | Board opens without error. |
 
 **Cumulative coverage: 35 subsystems, still zero real game bugs.** (Main sweep 29 + expansion 6.)
+
+---
+
+## [TestSystemB] Pass 5 — 2026-07-07 ~00:11
+
+**Result: CLEAN.** `main` still unchanged (`c3232dc`); continued extending coverage per the standing
+directive. Batch 2 (`tsb_expand2.js`) adds **7 more subsystems — all pass, 0 findings, 0 errors.**
+
+| New subsystem | Verified behavior |
+|---|---|
+| **3-state PK + 3-day lock** | `PK_LOCK_MS` = 3 days; `fmtLockLeft` → "3d 0h" / "1h 30m"; swearing at the Bael'Zharon altar sets `pkState=pk`, `pk=true`, lock; while bound the Asheron altar **refuses the switch to npk**; after the lock expires the switch succeeds. |
+| **Sky / time / AC calendar** | 12 months, 16 tithes, `DAYLEN`=7620s; noon → **Midsong / 12:00**, midnight → **Darktide / 00:00**; `updateDayNight` advances time; **P.Y.**, 360-day year, zero-year 10, month "Morningthaw". |
+| **Weather cycle** | `updateWeather` rotates through valid states (clear/cloudy/fog…); drowning breath meter present. |
+| **Combine engine** | **1,500 recipes loaded**; Smelting Pot + Iron Ore → **Slag** combined on the first try (chance 0.98); `craftCanCombine` true for a real tool. |
+| **Dye** | `applyDye` succeeds with Cooking + materials and sets `player.dye`; refused at 0 materials. |
+| **Title system** | `acTitle` capitalizes ("Lord of the Northern Reach"); allegiance titles Yeoman→**High King**, female rank-10 → **High Queen** (distinct), rank-0 → null. |
+| **Aetheria set bonuses** | Growth **+18 hp** (3×6), Vigor **+10 st/mn** (2×5), Defense **+32 armor** (4×8), Destruction **+0.10 dmg** (5×0.02); empty medallions → 0. |
+
+**Cumulative coverage: 42 subsystems, still zero real game bugs.** (Sweep 29 + expand 6 + expand2 7.)
 
 ---
 
