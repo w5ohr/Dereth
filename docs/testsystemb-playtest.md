@@ -309,6 +309,33 @@ gap with a one-line fix (`amt = Math.max(0, amt)`), kept distinct from the HIGH 
 
 ---
 
+## [TestSystemB] Passes 11–13 — 2026-07-07 ~02:14–02:30
+
+**Result: no new player-reachable bugs** across a full regression + two more depth batches. `main`
+unchanged (`c3232dc`); both OPEN bugs still present/unfixed.
+
+- **Pass 11 — full regression sweep:** 29 subsystems, **0 findings, 0 errors** (only the standing
+  skill-credit info note). Confirms the whole game still green.
+- **Pass 12 — depth batch 4** (`tsb_depth4.js`): summon/pet **cap holds at 2**; spell **components
+  consume** correctly (1343 burned/300 casts) and casting with none doesn't crash; **save-corruption
+  resilience** — garbage / null / truncated / wrong-type / empty-object saves all degrade gracefully
+  (no throw, attrs intact, game coherent); **Aetheria slots** = 3 (blue L75 / yellow L150 / red L225),
+  ascending gates. Two initial flags were **test flaws** (a `stam2mana` spell bypasses the component
+  burn; `aetheriaSlotLevel` returns the slot's unlock level, not the medallion's).
+- **Pass 13 — depth batch 5** (`tsb_depth5.js`): **wield requirements** (level / weapon-skill / arcane
+  gates all correctly block equipping); **pack/container cap** (base 12, packs stack their cap, overflow
+  refused, `packBonus` applies); **loadouts** (save/load/update-in-place/8-cap/delete). One flag was a
+  **test flaw** — `equipItem` returns `undefined` (not `true`) on success; the valid item did equip.
+
+**Shipped since:** the spell/effect **FX colour palette** (PR #149, MERGED) — fire=red · acid=green ·
+frost=white · lightning=blue · health=red · stamina=yellow · mana=blue, across war bolts, Flame Storm,
+brand/elemental arrows, weak/resist floaters, elemental banes, and vital spells.
+
+**Tally: 52 subsystems + 5 depth batches; still 2 open findings (see OPEN BUGS at top) — 1 HIGH
+player-reachable (dual-wield double-loot), 1 LOW robustness (negative potion amount).**
+
+---
+
 ## Standing notes for future passes (avoid re-flagging these)
 
 *(All of the following are now handled by the hardened harness as of pass 3 — kept here as the record
