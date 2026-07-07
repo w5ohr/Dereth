@@ -255,3 +255,20 @@ Wide regression net rather than a deep dive (systems exhausted). Main unchanged 
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.** (Passes 11–19 all clean.)
+
+## AgentC pass 20 (soak test — 5000-frame stability) — ALL GREEN, no defects
+
+Drove the game loop 5000 frames with continuous combat, watching for slow leaks single-op tests miss.
+
+- **No NaN** in player.hp/x or gameTime over 5000 frames.
+- **No FX/array leaks:** pProj, floaters, bursts, drops, spellLandFXs, sceneChildren all stable
+  mid→end (deltas 0 / -3 / +59 scene — noise, no growth).
+- **Monster population is BOUNDED** by the spawn manager (`MOB_TARGET=32`, `MOB_DESPAWN=215`,
+  index.html:16931/16942). Verified: after the soak's stationary pile reached 156, moving the player
+  2000u away culled it to **exactly 32** (= MOB_TARGET) in ~6s. The soak's apparent monster "growth"
+  (5→55→117) was a TEST artifact — a stationary player + manual close-spawns never trip the 215u
+  distant-despawn, and a direct `m.hp=0` doesn't call `killMonster` (only `applyHit`-to-death does).
+  6th self-caught test artifact. No leak.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–20 all clean.)
