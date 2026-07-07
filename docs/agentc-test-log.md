@@ -53,3 +53,23 @@ latent edge cases.
 
 **No issues found this pass.** (Two combat/spell subsystems now deep-verified; the applyHit/executeSpell
 merges from Lane A are clean.)
+
+## AgentC pass 4 (deep save/load roundtrip) — ALL GREEN, no defects
+
+Loaded a character touching **every persisted subsystem** with distinctive values, saved via
+`saveGame()`, corrupted live state, reloaded via `applySave()`, and diffed field-by-field.
+
+- **Roundtrip: 100% CLEAN** (0 changed fields) once test values use the real shapes. Verified
+  persisted intact: level/xp/gold/kills, attributes, vitals (raised), vitae, heritage, title,
+  **aetheria** (slot obj), **augment** (hp/st/mn/attrTotal/count/crit/owned all survive the load
+  normalizer), **society** (id + rep + ribbons-count + testsDone), equipped **weapon** with its
+  brand affix + `bp`, **inventory** incl. scrolls, pkState, focusMana, enlightenment. Save blob = 92 keys.
+- **Investigation note (non-defect):** a first pass flagged 4 "changed" fields — all were the TEST
+  using wrong value SHAPES, not save bugs: `society` is stored as a validated **id string**
+  (`SOCIETIES.some(o=>o.id===s.society)`, index.html:24815), not an object; `societyRibbons` is a
+  **count number** coerced with `|0` (index.html:24817), not an array; and the `homestead` "change"
+  was the legacy-hid **migration** (`hsPackInit`) correctly remapping a fake `"h123"` to a real
+  cottage. Re-run with correct shapes → 0 diffs. Save/load is sound.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Finding #31 from pass 3 remains open in PR #157, pending review.)
