@@ -180,3 +180,24 @@ authoritative list.
 - **Quest slay-credit:** questEvent("slay","drudge") ticks the matching objective in activeQuests
   (alfrin prog [0,1]). (Objective type is "slay", not "kill" — earlier miss was the probe.)
 - **No new findings this pass.**
+
+## 2026-07-06 21:10 — TestSystemC pass 13 (HEAD c3232dc, still unchanged — varied coverage round 13)
+
+- MMO harness 47/47 · no drift · no console errors.
+- **Harness state discovery:** since the pass-10 reload the game had been sitting at the TITLE
+  MENU (running=false), so update()-gated systems read as dead in passes 11-12 probes that
+  relied on update() — direct-call tests (damageMonster, fireArrow, applyItem, raiseSkill etc.)
+  were unaffected and remain valid. Re-entered the world via startGame(true). NOTE (harness,
+  not game): preview_click on #continueBtn reported success but never fired its onclick in
+  headless Chrome — invoke the handler directly in future passes.
+- **Vital regen (functional, in-world):** hp/st/mn all tick every 0.5s per the End/Self
+  formulas and filled their pools over 10 simulated seconds.
+- **Day/night:** updateDayNight advances gameTime at dt/DAYLEN (7620s AC-authentic day).
+- **Slash commands:** handleSlash expects the leading "/" (probe initially sent "where" which
+  parsed as "/here" — non-defect). /where reports region + lore + nearest settlements with
+  bearings ("Gharu'ndim… Al-Jalima NE ~6 leagues · Zaikhal N ~9"); in-dungeon it correctly
+  says no region reads; /emote clap and /who run clean; unknown commands are flagged.
+- **Colosseum tickets:** rollColosseumTicket yields a valid stat:"ticket" item.
+- **Char select:** renderCharSelect/createChar present; client keeps a single local save slot
+  (multi-slot lives server-side — proven by the MMO harness roster tests).
+- **No new findings this pass.**
