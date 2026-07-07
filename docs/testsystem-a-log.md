@@ -277,3 +277,23 @@ regression this pass.
   probes; not new defects, not drift.
 
 No changes to the findings list (#20–#24 stand).
+
+## TestSystemA — Run 10 (2026-07-07, main @ c3232dc)
+
+**Result: CLEAN — no new findings.** Pure game-logic formula fidelity this pass (extracted the
+deterministic functions and unit-tested them in node — a surface reachable without a browser).
+
+- **ACE formula invariants (14/14, node)**: `skillCheck` sigmoid = exactly 0.5 at skill==diff,
+  monotonic, symmetric (f(+50)+f(−50)=1), bounded (0,1) · `clamp` low/mid/high · `mulberry32`
+  PRNG deterministic per seed, in [0,1), spreads across >90/100 buckets · fitted-poly
+  `skillCumXP` rank-1 = 58 trained / 23 spec, strictly monotonic to rank 260, spec cheaper ·
+  `skillRankFromXP` round-trips cumXP at ranks 1/5/20/50/100 and returns 0 at xp 0.
+- **Real XP charts (7/7, node) vs documented anchors**: `assets/acskills.json` xp charts hit
+  **rank-1 = 58/23** and **rank-70 = 168758/67504** exactly (the two anchors the code comments
+  cite); both trained[209] and spec[227] strictly monotonic; spec ≤ trained at every shared
+  rank.
+- **Data-table sanity**: AC_HEIGHTS 256 entries strictly monotonic 0→700 · acspellstats 3,294
+  spells with 0 negative-mana and 0 inverted dmg-ranges · acchargen 13 heritages + 5 starter
+  areas parse. (AC_XP is sourced from acskills.json at boot, confirmed.)
+
+No changes to the findings list (#20–#24 stand).
