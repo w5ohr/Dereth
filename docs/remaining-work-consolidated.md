@@ -31,6 +31,16 @@ below (and everything marked `done`) is shipped — see **Confirmed shipped** at
 > dglight code paths, real-geometry dungeon run (kill/XP/drops/exit), death→vitae→half-gold, save fields
 > (aetheria/academy), region+landmark+weather ticks across 5 regions, chrome/paperdoll/shop post-merge.
 > Zero console errors. (#18, then the only open buildable item, has since been FIXED in PR #145.)
+>
+> **⚠️ TestSystemA overnight sweep (2026-07-07, 15 runs, main @ c3232dc) — 7 NEW findings, filed as
+> items #20–#26 below (log-only, nothing fixed). Agents: claim by lane before fixing.**
+> **#20** (A) duplicate `craftResultItem` · **#21** (C) 292 items → unexported icon DIDs ·
+> **#22** (C) 20 dead functions (check `ccRandomize`/`resetUIPos` first) · **#23** (A) silent
+> `delete_char` of active slot · **#24** (B) remote wield never syncs (players look bare-handed
+> online) · **#25** (A) client `houseboot` has no server handler · **#26** (C) Docker image omits
+> the server's runtime data files (loot catalog degrades). Full detail + reusable server harnesses
+> (`server/tsa_*.py`) and per-run notes in `docs/testsystem-a-log.md`. Server/data/static layers
+> exhaustively covered & green; only the live in-browser 3D/UI lane is untested (Chrome extension down).
 
 ---
 
