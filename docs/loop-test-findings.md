@@ -276,3 +276,37 @@ authoritative list.
   portal gem teleports + consumes; manastone discharge fn present; Aetheria on-hit surge (Fury/
   Festering) fires.
 - Findings logged only — NOT fixed, per loop policy.
+
+## 2026-07-06 21:31 — TestSystemC pass 18 (HEAD c3232dc) — applyHit audit: 3rd weapon→spell leak (crit)
+
+Full line-by-line audit of `applyHit` (index.html:10083–10113). Most modifiers are correctly
+gated: gearFx.dmg/Blood Drinker (:10086 opts.phys), magic-resist (:10088 opts.spell), physMult
+(:10091 opts.phys), brand elemental (:10096 opts.brandDmg), Crushing Blow (:10108 opts.phys).
+Damage Rating (:10085) and Life Vulnerability (:10111 `vgen`) apply to both — AC-correct (universal).
+
+- ⚠ **3rd leak (same root class, LOW severity): weapon crit enchant boosts SPELL crit.** The crit
+  line (index.html:10105) sums `gearFx.crit` into spell crit chance unconditionally. `gearFx.crit`
+  includes **Heart Seeker / Hunter's Mark** (index.html:790, `{k:"crit",v:0.004*r}`), a WEAPON
+  enchant. Runtime proof: with Math.random pinned at 0.30, a spell hit stays 1000 (no crit) with
+  no gear, but crits to 2000 (×2) when a Heart Seeker gearFx.crit is present. So a weapon's
+  Heart Seeker raises your spellcasting crit rate.
+  - Milder than the oil/Might multiplier bugs: spells legitimately crit, gearFx.crit also holds
+    Coordination item-spells (universal, fine), and Heart Seeker's contribution is small
+    (0.004/rank). But it is the same weapon-enchant-leaks-onto-spells pattern.
+  - `itemBuffs.crit` (also on this line) comes only from the Aetheria "Fury" surge (:13595) —
+    plausibly intended universal, NOT flagged. `buffSwiftT` only affects movement (:16324),
+    not spell/attack timing — NOT a leak.
+
+**CONSOLIDATED — the applyHit weapon→spell leak family (all same root: modifiers applied before the
+opts.spell/opts.phys branch):**
+  1. Oil (`itemBuff("dmg")`, :10084) → +X% spell damage.        [pass 16, low-moderate]
+  2. Might elixir (`buffMightT`×1.5, :10084) → +50% spell damage. [pass 17, low-moderate]
+  3. Heart Seeker (`gearFx.crit`, :10105) → +spell crit chance.   [pass 18, low]
+  Suggested fix: apply weapon-only offense (buffMightT, oil-portion of itemBuff("dmg"), the
+  Heart-Seeker portion of gearFx.crit) inside the `opts.phys` path, mirroring gearFx.dmg at :10086;
+  keep Damage Rating, Vulnerability, Aetheria surges/sets universal.
+
+- **Also verified GREEN:** book reader fn present + Use never consumes the book (synthetic-book
+  render inconclusive — probe used a raw `pages` field, likely needs a real book id; not a defect);
+  recall contract recalls + is reusable (keep) + sets its cooldown. MMO harness 47/47, 0 console errors.
+- Logged only — NOT fixed, per loop policy.
