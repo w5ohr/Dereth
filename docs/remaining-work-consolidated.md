@@ -78,7 +78,7 @@ region. **Claim your whole lane; mark each item `WIP:<agent>` before you start i
 
 | Lane | Agent | Domain (why these don't collide) | Items (priority order) | Effort |
 |------|-------|----------------------------------|------------------------|--------|
-| **A — Combat & magic core** | **Agent 1** | `index.html` damage/kill/cast math: `applyHit`, `killMonster`, `executeSpell`, `drinkPotion` | **#27** dual-wield double-loot 🔴HIGH · **#29** weapon buffs leak onto spell dmg · **#30** focus-mana not refunded on fizzle · **#28** potion negative-clamp | 3×S + 1×S–M |
+| **A — Combat & magic core** | **Agent 1** | `index.html` damage/kill/cast math: `applyHit`, `killMonster`, `executeSpell`, `drinkPotion` | **#27** dual-wield double-loot 🔴HIGH · **#29** weapon buffs leak onto spell dmg · **#30** focus-mana not refunded on fizzle · **#28** potion negative-clamp | 3×S + 1×S–M · **WIP:agent1** |
 | **B — Server, netcode & deploy** | **Agent 2** | `server/dereth_server.py` handlers, client↔server sync, `deploy/Dockerfile` | **#24** remote wield never syncs online · **#23** silent `delete_char` refusal · **#25** `houseboot` has no server handler · **#26** Docker omits runtime data files | 3×S + 1×S–M |
 | **C — Assets, extractors & code hygiene** | **Agent 3** | Python extractors + `index.html` **non-combat** cleanup only | **#21** 292 items → unexported icon DIDs (extractor) · **#20** duplicate `craftResultItem` · **#22** 20 dead functions (check `ccRandomize`/`resetUIPos` first) | 3×S |
 
@@ -130,82 +130,4 @@ On-hardware eyeball passes (#10 look, #13 window/doorway) await a real-GPU sessi
 | 25 | B | **TestSystemA TSA-6 — client sends `houseboot`, server has no handler** | index.html:9624 `/house boot <name>` does `netSend({t:"houseboot",...})` online, but dereth_server.py has NO `houseboot` case — the message is silently dropped, so booting a guest from your dwelling has no multiplayer effect (the local log lies "X is booted"). Net-symmetry audit found this is the ONLY client→server type without a server handler. Fix: add a `houseboot` handler (evict the named guest from the house instance) or make the command offline-only. *(TestSystemA run 11)* | S | open |
 | 26 | B | **TestSystemA TSA-7 — Docker image omits the server's runtime data files** | `deploy/Dockerfile` COPYs only `server/dereth_server.py`, but the server reads FOUR sibling/relative files at boot: `admin_kilmer.json` (admin char seed) and `../assets/{acrewards,acitems,acspellstats}.json` (the retail item/spell catalog mirror). All have graceful try/except fallbacks so the container still boots — but a **Docker-deployed server silently loses the retail loot catalog**, so shared/online loot falls back to the simplified generator (real retail gear stats gone) and the Admin account gets no seeded character. The systemd path (`git clone` whole repo → /opt/dereth) is unaffected. Fix: COPY `server/admin_kilmer.json` + the needed `assets/*.json` into the image (or document the degraded mode). *(TestSystemA run 14)* | S | open |
 | 27 | A | **TestSystemB TSB-1 — dual-wield double-kill / double-loot (HIGH, player-reachable)** | `applyHit` (index.html ~10083) has no `if(m.hp<=0) return` guard and `killMonster` (~10179) has no already-dead re-entry guard. `meleeAttack` fires `applyHit(m,…)` **twice** per dual-wield swing (main ~15553 + off-hand ~15555) with no hp check between, so a **killing main strike lets the off-hand strike re-kill the corpse** → doubled kill count, XP, gold, and a **full second loot roll**. Confirmed via the real dual-wield path (`tsb_dw.js`): 60 one-shot swings → **97 kills (37 excess), 62% double-counted, 2–6 extra drops each** (~1.6× loot/XP on killing blows). **Blast radius = dual-wield only** — AoE/ring/projectile/splash/wall re-query `monsters[]` and splice the corpse, so a localized fix resolves it. Fix: `if(m.hp<=0) return;` atop `applyHit`, **or** `if(m.dead) return; m.dead=true;` in `killMonster`. *(TestSystemB pass 8–9)* | S | open |
-| 28 | A | **TestSystemB TSB-2 — `drinkPotion` doesn't clamp a negative heal amount (LOW, not player-reachable)** | `player.hp = Math.min(player.mhp, player.hp + healScale(amt))` — a negative `amt` *reduces* hp. Every in-game potion call passes a positive constant, so this is a defensive/robustness gap, not a live bug. Fix: `amt = Math.max(0, amt)` in `drinkPotion`. *(TestSystemB pass 10)* | S | open |
-| 29 | A | **TestSystemC TSC-1 — weapon-only offense buffs leak onto SPELL damage (3 sources, one root cause)** | `applyHit` (index.html:10084) applies the weapon-damage multiplier `if(player.buffMightT>0)base*=1.5;` **and** `base*=(1+itemBuff("dmg")+aetheriaBonus("dmg"))` **before** it branches on `opts.spell` (:10087) vs `opts.phys`. So three weapon-only sources boost war-magic spell damage: **(a)** weapon **oil** (`itemBuff("dmg")`, set at :14448) → runtime-proven a 1000 spell hit → **1120** with a +12% Honing Oil; **(b)** **Might elixir** (`buffMightT`, +50% *weapon* dmg) → spell 1000 → **1500**; **(c)** low-sev: **Heart Seeker** weapon crit enchant (`gearFx.crit`, from :790) feeds the crit line :10105 → raises **spell crit chance** (pinned-random spell 1000 → 2000/crit only with Heart Seeker). The correctly-gated sibling is `gearFx.dmg`/Blood Drinker at :10086 (behind `opts.phys`). **Defensive side audited CLEAN** — no mirror leak (Life Prot cuts both; fire bane cuts ONLY fire). **NOTE: touches the same `applyHit` head as #27 (TSB-1) — coordinate the two edits.** Fix: apply buffMightT×1.5, the oil portion of `itemBuff("dmg")`, and the Heart-Seeker portion of `gearFx.crit` inside the `opts.phys` path — but KEEP Damage Rating, Life Vulnerability, and the Aetheria "Destruction"/Fury surges universal (those write the same slots and may be intended all-damage; design call). *(TestSystemC passes 16–19)* | S–M | open |
-| 30 | A | **TestSystemC TSC-2 — focus-mana battery not refunded on fizzle/abort (silent battery→pool transfer)** | In `executeSpell` (index.html:15128+), when `player.mn < cost` the H15 focus-mana battery covers the shortfall: :15152 does `player.focusMana -= need; focusPaid = need; player.mn = cost;` then :15159 `player.mn -= cost`. On a **fizzle** (:15169) or any **target-required abort** (the `player.mn += cost` refunds at :15184/15192/15201/15228/15246–15260) the FULL `cost` is refunded to `player.mn` but `player.focusMana` is **never restored**. Smoking gun: `focusPaid` is captured (:15152) but used NOWHERE, and there is NO `player.focusMana +=` anywhere in the file — the refund was intended but unwired. Runtime-proven: forced fizzle with battery engaged → personal mana **2→5** (+3), battery **1400→1397** (−3): total conserved but a free battery→pool transfer, violating the code's own "a fizzle consumes NO mana" comment (:15165). Low severity (mana-conserving, not infinite). Fix: on every fizzle/abort refund, restore the battery using the captured `focusPaid`, e.g. `if(focusPaid>0){ player.focusMana+=focusPaid; player.mn-=focusPaid; }`. *(TestSystemC pass 21)* | S | open |
-
-## 2 · Blocked — needs the excluded Agent-1 terrain re-extraction lane
-
-*(Agent-1 terrain lane — not assigned to the 3 working agents.)*
-
-| # | Item | What's undone | Size | Status |
-|---|------|---------------|------|--------|
-| 7 | **Authored landmarks + terrain barriers** | Named mountains that gate travel; terrain is currently procedural trig-noise. Needs the landblock heightmap. *(auth-gaps W12)* | L | blocked |
-| 8 | **Irregular continent + real ocean rim** | The terrain-*shape* sliver of Named Regions — region names/lore/HUD already shipped; only the true coastline & island landmasses remain (underwater structures currently mitigated by `islandLift`). *(auth-gaps W8)* | L | blocked |
-| 9 | **Geometry-driven *town* renderer** | Largely closed — dungeons render real EnvCell meshes and towns already stream real AC building meshes (`tbBuildMesh`). Only true EnvCell *town-layout* geometry remains, and it overlaps the A1 lane. *(ac-data-extraction-roadmap)* | follow-up | blocked |
-
-## 3 · On-hardware — visual changes that can't be verified headless (SwiftShader); need a real-GPU eyeball
-
-| # | Lane | Item | What's undone | Size | Status |
-|---|------|------|---------------|------|--------|
-| 10 | C | **Real UI window-frame chrome** ✅ | ~~9-slice on draggable panels.~~ `acChromeInit` composes the 9-slice sheet at boot and border-images all 11 draggable panels (graceful fallback). *(Corrected: `06001b14`/`06001343` are the Turbine/AC logos and `060011bb` a stone field — the real frame family is `06001920`/`21`/`22`.)* Final look: on-hardware eyeball. *(wrapup §7; PR #137)* | S–M | **done** (final look: on-hardware eyeball) |
-| 11 | C | **Paperdoll panel layout** (PAGE-99 manual) ✅ | ~~Arrangement differs.~~ Held/Body/Adornment rails, Containers row (satchel + side packs), live Examine box on hover, persisted icon-rail toggle. *(ac-remaining-gaps A2; PR #137)* | M | **done** |
-| 12 | B | **Dungeon lighting final tune** | Eyeball torch/ambient intensity live; nudge amb/hemi or the ×1.35 factor. Pass 2 already landed. *(REMAINING-WORK)* | S | done (user-tunable slider) |
-| 13 | B | **Equipped-shield arm mount + doorway/window transparency** | Real shield *meshes* now show on drops/examine, but the equipped-avatar shield stays procedural (arm orientation), the opaque-doorway recess is a warm-glow card, and windows are still baked-opaque — all need on-hardware iteration. *(playtest #21)* | S each | done (shield mount verified structurally — real mesh engages on async load, procedural hides; window/doorway + arm-orientation look = on-hardware iteration w/ brightness knob) |
-
-## 4 · Design decisions — a human product call, not code
-
-| # | Item | The question |
-|---|------|--------------|
-| 14 | ✅ **Level-8 Incantation skill-300 gate — DECIDED: keep it (authentic).** | In retail AC, level-8 "Incantations" had a difficulty ≈ **350–400** — *higher* than an unbuffed specialized caster's cap (~290–300). Casting the top tier **required** stacking Item-Enchantment **Aptitude** self-buffs + gear **cantrips** ("buff up, then cast") — a core, intended part of AC endgame magic. The game's **300** gate vs a ~272 unbuffed max is therefore authentic *and gentler* than retail, and reachable via the existing `skillBuffs` (Aptitude), `gearSkill` (cantrips), Five Fold Path (+10) and Enlightenment — **not a dead end**. **No req change.** Added a UX nudge: high-tier cast-blocks (req ≥ 240) now tell you to buff/gear your skill to reach the incantation. |
-| 15 | ✅ **Full component-casting formula — DECIDED: keep the soft model.** | Stays on the current scarab/taper reagent model; the authentic exact-component "wrong → fizzle" formula is intentionally *not* adopted (too punishing for a homage). No change. *(auth-gaps Mg2)* |
-| 16 | ✅ **Vitals-formula purity — DECIDED: keep the current model.** | Confirmed players already raise Health/Stamina/Mana **directly with XP** (`player.vitals` on the character sheet — `vitalCost`/`xpUnspent`, added to max in `derive()`), *plus* the attribute-derived base *plus* the +level term. Since players have direct control, the pure End/2·End·Self change (which would force a full creature rebalance) is **not pursued**. No change. *(auth-gaps C3)* |
-| 17 | ✅ **Timers — DECIDED: go retail. DONE.** | **PK oath → the authentic 3-day key** (`PK_LOCK_MS`=3d; messages show d/h via `fmtLockLeft`). **Quest lockouts already retail-tiered** (`questCdMs`: L45+ = 7-day weekly, L30+ = 20-hour daily — no change needed). **Mana stone reworked to the retail battery:** *release into gear* + *consume an enchanted item to bank its mana* (retail destroy-to-store) + a Dereth-only *draw from your own reserve* (amount = stone quality/`cap` × your Mana-Conversion rate) — via a new `openManaStone` action menu; legacy `charge` stones migrate. |
-
----
-
-## Confirmed shipped (do NOT re-open — verified in code 2026-07-06)
-
-Old lists still mark many of these open; they are done:
-
-- **Onboarding & creation:** ToD staged creation wizard, starting gear + Welcome Letter + heritage
-  clothing, post-Academy greeter chain (7k/9.3k+500p/12.5k + Pathwarden suit + +4% XP), **Training
-  Academy tutorial-dungeon interior** (`buildAcademyHall` — Great Hall / Courtyard / Workshop, Sentry-gated).
-- **Tier-1/2 flagships:** combine/tradeskill engine (1,500 recipes), Aetheria slots/levels/sets/surges,
-  multi-level dungeons (`buildDungeonReal`, y-aware storeys, descend portals), weapon-skill tree,
-  melee+missile to-hit contests, **per-element armor** (`ARMOR_MAT_RESIST`), **weapon damage types**
-  (`dt` pierce/slash/bludgeon), loot item-spells + Spellcraft + item mana, tinker per-item caps/imbue-once,
-  **Enlightenment gates** (L275 + Society Master + auras), full recall set (Tie/Recall/Secondary/Sending),
-  fellowship cap-9 proportional XP, secure trade + coin.
-- **Combat/magic depth:** per-body-part combat, ballistic projectiles + terrain collision, missile range
-  falloff, per-swing variance, stamina scaling, burden/encumbrance, Mana Conversion/fizzle, Void DoT
-  curses, wield/level/skill loot requirements, banes.
-- **Social:** allegiance patron/vassal tree + XP pass-up + NPC vassals, monarchy + `/allegiance` chat,
-  3-state PK + altars + PK-loot, corpse/item-loss death (+ shared corpses), society ranks/ribbons/Test
-  quests, live Town Crier feed.
-- **World:** region-aware weather, **level-gated overworld portals** (Facility Hub + frontier), **named
-  regions** (`regionNameAt` + HUD + `/where`), ambient fauna, organic roads, drowning, portal storms,
-  Colosseum/instanced events.
-- **Content:** **Chess** (perft-validated engine + AI), book placement + library stands, **"A History of
-  Dereth"** (Dereth runs its *own* live events — retail GameEventDefDB extraction intentionally dropped),
-  starter quests aligned to retail, all armor sets + named bosses (Aerbax/Gaerlan/Martine) + creature roster,
-  **the full 10-year Kilmer Saga incl. Years 7–10** (Year of Bone … Year of the Crown).
-- **Extraction/assets:** high-res textures (1,224), non-PCM music, **shield & clothing item models**,
-  server-side item/spell mirror, building/clothing GfxObjs wired, all 66 creature kinds, 873 retail titles,
-  **NPCs on real AC bodies + heads** (`buildPerson` retired to fallback).
-- **Item icons — 100% coverage (PR #143, Lane A):** every item (normal loot, named/epic weapons, quest
-  rewards, spell scrolls, attunement stones) renders its real AC icon, never an emoji. `itemIconHTML`
-  gained a category-type fallback (`_ICON_CAT_KW`/`catIconDID`/`itemCat`) after own-icon and name lookup;
-  fixed the two-handed-weapon, scroll (`.scroll`/`.spellId`), and attribute-stone gaps. Verified 2091/2091
-  by the `iconaudit` harness (named/epic 1353/1353, quest 226/226, 0 emoji).
-- **Heads/UI:** WYSIWYG creator preview, explicit head-choice rows (creator + barber), face tone/AO,
-  **female forehead-band fix**, barber restrictions, circular radar.
-- **Ships:** ownable/boardable skiff/cog/caravel water travel.
-- **Lane B (Agent 2, 2026-07-06):** authentic dye subpalettes on base clothing (tools/ac_clothing_dyes.py
-  + acClothDyeTex canvas remaps — ~half of all NPC cloth meshes dyed) · real part-16 hats (tools/
-  ac_hat_export.py, 9 hats ×m/f, head swapped beneath — retail bald-under-hat) · equipped shields show
-  the RETAIL mesh on the forearm (plus the fix for aShield never being registered — the equipped shield
-  had silently never displayed) · Settings "Dungeon brightness" slider (persisted, live-retunes the delve).
-
-*Maintenance note: when an item here is completed, move it into "Confirmed shipped" with a one-line code
-reference — keep this the single, honest, reconciled list. Do not resurrect the retired docs.*
+| 28 | A | **TestSystemB TSB-2 — `drinkPotion` doesn't clamp a negative heal amount (LOW, not player-reachable)** | `player.hp = Math.min(player.mhp, player.hp + healScale(amt))` — a negative `amt` *reduces* hp. Every in-game potion call passes a positive constant, so this is a defensive/robustness gap, not a live bug. Fix: `amt = Math.max(0, amt)` in `drinkPotion`. *(TestSystemB pass 10)* TSB-2 — `drinkPotion` doesn't clamp a negative heal amount (LOW, not player-reachable)** | `player.hp = Math.min(player.mhp, player.hp + healScale(amt))` — a negative `amt` *reduces* hp. Every in-game potion call passes a positive constant, so this is a defensive/robustness gap, not a live bug. Fix: `amt = Math.max(0, amt)` in `drinkPotion`. *(TestSystemB pass 10)* | S | open |
