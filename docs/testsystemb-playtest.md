@@ -26,6 +26,11 @@ Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand*.js` (extr
    clustered foes, arrow volley did not double-count, damage-wall/splash loop `monsters[]` fresh. A
    localized guard in `applyHit`/`killMonster` fully resolves it — no other live exploit path.
 
+2. **[LOW — not player-reachable] `drinkPotion(field, amt, "hp")` doesn't clamp a negative `amt` (pass 10).**
+   `player.hp = Math.min(player.mhp, player.hp + healScale(amt))` — a negative `amt` *reduces* hp. **Not
+   reachable in normal play** (every in-game potion call passes a positive constant), so this is a
+   defensive/robustness gap, not a live bug. *Suggested fix:* `amt = Math.max(0, amt)` in `drinkPotion`.
+
 **Standing directive (user, pass 4):** while `main` is unchanged and the existing sweep is clean, each
 new pass should **extend coverage** to subsystems not yet tested rather than repeat a clean run. When an
 agent merges a change, run the sweep against the changed area too.
@@ -275,6 +280,32 @@ Confirmed empirically that the sibling multi-hit paths do **not** share the defe
 
 **Tally: 52 subsystems + 2 boundary passes; 1 confirmed bug (dual-wield double-loot, blast radius now
 bounded), 0 others.**
+
+---
+
+## [TestSystemB] Pass 10 — 2026-07-07 ~02:04
+
+**Result: no new player-reachable bugs.** `main` unchanged (`c3232dc`). Continued depth testing
+(`tsb_depth3.js`) — 8 boundary steps, 7 fully clean; one surfaced a **LOW / not-player-reachable**
+robustness gap (now OPEN #2).
+
+### Correctly guarded edges
+| Edge | Verified |
+|---|---|
+| **Spell cooldown** | First cast sets the cd; an immediate re-cast during cooldown is a no-op (mana not spent again). |
+| **Fizzle (ACE sigmoid)** | Fizzle rate falls with skill — req 30: skill 85 → 17%, skill 270 → **0%**; low-skill capped under the ~40% ceiling; a master effectively never fizzles. Mana refunded on a fizzle. |
+| **Vitae cap** | +5% per death, series 0.05→0.40 then **holds at 0.40** over 10 deaths (never exceeds). |
+| **Encumbrance / jump** | ratio 0 empty → **2.5 ceiling** loaded; jump **blocked at ≥200%** (AC CantJumpLoadedDown); jumps again when unloaded. |
+| **Potion cooldown** | First drink consumes one + sets the 0.6 s cd; a second drink during the cd is blocked; drinking with 0 potions doesn't heal. |
+| **Negative inputs** | `playerHurt(-500)` does **not** heal (clamped to ≥1 dmg); `gainXP(0)` and `gainXP(-1000)` don't crash or corrupt level. |
+
+### Robustness gap (LOW, not reachable in play) — OPEN #2
+`drinkPotion(field, -50, "hp")` **reduced** hp — no clamp on a negative heal amount. Every in-game
+potion call passes a positive constant, so this can't happen in normal play; logged as a defensive
+gap with a one-line fix (`amt = Math.max(0, amt)`), kept distinct from the HIGH dual-wield bug.
+
+**Tally: 52 subsystems + 3 boundary passes; 1 HIGH player-reachable bug (dual-wield double-loot),
+1 LOW robustness gap (negative potion amount), 0 other issues.**
 
 ---
 
