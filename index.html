@@ -15938,14 +15938,20 @@ function interact(){
   if(player.aboardShip){ disembarkShip(); return; }   // aboard a ship → E puts you ashore
   // your corpse first — recover everything it holds in one motion
   for(const d of drops) if(d.type==="corpse"&&Math.hypot(d.x-player.x,d.z-player.z)<4){ recoverCorpse(d); return; }
-  let best=null,bd=4;
-  for(const d of drops) if(d.type==="item"){const dd=Math.hypot(d.x-player.x,d.z-player.z);if(dd<bd){bd=dd;best=d;}}
-  if(best){
-    if(best.shared){ // server-validated pickup; the server grants it and broadcasts drop_gone
-      if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
-      netSend({t:"pickup",id:best.id}); return;
+  // #174: one press loots the WHOLE pile within reach (nearest first) — no more E-mashing one item at a time
+  const near=drops.filter(d=>d.type==="item"&&Math.hypot(d.x-player.x,d.z-player.z)<4)
+    .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+  if(near.length){
+    if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
+    let left=0;
+    for(const d of near){
+      if(d.shared){ netSend({t:"pickup",id:d.id}); continue; }   // server validates each, grants & broadcasts drop_gone (removes the mesh)
+      if(player.inv.length>=invCap()){ left++; continue; }        // satchel filled mid-pile — leave the rest on the ground
+      lootItem(d.item); disposeObject3D(d.mesh); const idx=drops.indexOf(d); if(idx>=0) drops.splice(idx,1);   // #22: dispose the item model
     }
-    lootItem(best.item);disposeObject3D(best.mesh);drops.splice(drops.indexOf(best),1);return;}   // #22: looted drops leaked their item models
+    if(left) log(`Your satchel is full — <b>${left}</b> item(s) left on the ground.`,"warn");
+    return;
+  }
   if(inNetwork){
     for(const np of netPortals){if(Math.hypot(np.x-player.x,np.z-player.z)<3){activateNetPortal(np);return;}}
     if(Math.hypot(netExit.x-player.x,netExit.z-player.z)<3){exitNetwork(netReturn);log("You leave the "+netHallName()+".","sys");SFX.portal();}
