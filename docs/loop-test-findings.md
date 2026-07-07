@@ -68,3 +68,17 @@ authoritative list.
   (full traversal already proven in pass 1).
 - **Chargen:** createChar present, CREATE_POOL=270 / CREATE_CREDITS=52 (ToD-authentic).
 - **No new findings this pass.**
+
+## 2026-07-06 19:03 — TestSystemC pass 5 (HEAD c3232dc, still unchanged — varied coverage round 5)
+
+- 0 console errors · MMO harness 47/47 · no drift · PR #147 (log passes 1-4) open & mergeable.
+- **Aetheria set stacking:** Growth pieces stack cleanly — +30/+60/+90 mhp for 1/2/3 slotted.
+- **Chained delves:** 11 retail chains derive from ACW portal data (Mausoleum of the Fallen,
+  Penguin Den, Colosseum, …); every chain target resolves to a real DUNGEONS def.
+- **Valkyrie buff bot:** buffBotCast("me") applies the full castable list — verified all 5
+  landed in their real stores (Strength→spellBuffs, Corrosive Ward→banes.acid, Quickening→swift,
+  Blade Lure→might-type, Heal transient). Earlier "0 applied" readings were probe accounting
+  (wrong store names + leftover buffs), not defects.
+- **Quest givers:** all 323 QUEST_GIVERS resolve — towns exist in CITIES, quest ids pair up.
+- **Live wardrobe:** 893 built avatars in scene, 416 hats attached (heads swapped).
+- **No new findings this pass.**
