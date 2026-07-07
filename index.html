@@ -15883,7 +15883,7 @@ function currentPrompt(){
   for(const dr of hsDoors) if(nr(dr.x,dr.z)<2.6) return "Enter your "+HOUSING_TYPES[dr.h.type].n.toLowerCase()+" (E)";
   for(const gt of hsHallGates) if(nr(gt.x,gt.z)<3) return "Enter the "+gt.name+" (E)";
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8) return "Trade with the "+(sh.o.title||"Vendor")+" (E)";}
-  {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4) return "Descend into "+ne.e.def.name+" (E)";}
+  {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ const t=ne.e.def.tier; return "Descend into "+ne.e.def.name+(t?" — Tier "+t+", ~Lv "+t*10:"")+" (E)"; }}
   for(const tp of tnPortals) if(nr(tp.x,tp.z)<3.2) return "Enter the Town Network (E)";
   for(const n of nodes) if(!n.depleted&&nr(n.x,n.z)<3) return n.type==="ore"?"Mine ore (E)":"Gather herbs (E)";
   for(const pt of portals) if(nr(pt.x,pt.z)<3.2) return "Portal to "+pt.dest.name+" (E)";
@@ -22445,7 +22445,7 @@ function addEntrance(def){
   for(const [rx,rz,rs] of [[-2.9,1.1,0.7],[2.7,1.4,0.55],[1.9,-1.8,0.8]]){    // tumbled stones half-buried around the mouth
     const rb=new THREE.Mesh(new THREE.DodecahedronGeometry(rs,0),stoneM); rb.position.set(rx,rs*0.4,rz); rb.rotation.set(rx,rz,0); rb.castShadow=true; g.add(rb); }
   // (no per-entrance PointLight: the emissive arch carries the glow; 70+ lights would blow the GPU shader uniform cap)
-  const lbl=labelSprite(def.name+" — E to delve","dungeons");lbl.scale.set(8,1.8,1);lbl.position.y=4.2;g.add(lbl);
+  const lbl=labelSprite(def.name+(def.tier?" · Tier "+def.tier+" (~Lv "+def.tier*10+")":"")+" — E to delve","dungeons");lbl.scale.set(9,1.8,1);lbl.position.y=4.2;g.add(lbl);   // #207: the danger is on the door
   g.position.set(def.x,0,def.z);scene.add(g);
   dungeonEntrances.push({x:def.x,z:def.z,mesh:g,def});obstacles.push({x:def.x,z:def.z-1.6,r:1.6});
 }
@@ -24298,6 +24298,9 @@ function dungeonGoDepth(n){
 function enterDungeon(def,ex,ez){
   if(inDungeon) return;
   if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
+  // #207: no gate (AC let you walk in) — but an under-levelled explorer gets told before the first room does it
+  if(def.tier && player.level < def.tier*10-2)
+    log(`<span style="color:#e0a070">This delve is meant for an adventurer of about level <b>${def.tier*10}</b> — you are level ${player.level}. Tread carefully.</span>`,"warn");
   // First visit to a real-geometry dungeon: fetch its EnvCell pack BEFORE building (capped wait),
   // so the first descent is the true dungeon — not the grid stand-in with a prefetch for next time.
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
