@@ -744,6 +744,8 @@ async def do_pickup(cl, did):
     d = DROPS.get(did)
     if not d:
         return
+    if d["type"] == "corpse":   # #251: corpses are ownership-gated — route through do_recover, never the open pickup path (which had no owner/type check and would DESTROY another player's corpse, plus KeyError on d["item"])
+        return await do_recover(cl, did)
     if math.hypot(cl.x - d["x"], cl.z - d["z"]) > PICKUP_RANGE:
         return
     DROPS.pop(did, None)
@@ -1658,7 +1660,12 @@ async def handle(reader, writer):
             except Exception:
                 continue
             if isinstance(msg, dict):
-                await dispatch(cl, msg)
+                try:
+                    await dispatch(cl, msg)   # #251: per-message isolation — a single handler exception (bad field, edge case) logs and continues instead of tearing down the client's connection
+                except (asyncio.IncompleteReadError, ConnectionResetError):
+                    raise
+                except Exception as de:
+                    print(f"[dispatch err] {getattr(cl,'username',None)} t={msg.get('t')!r}: {de}")
     except (asyncio.IncompleteReadError, ConnectionResetError):
         pass
     except Exception as e:
