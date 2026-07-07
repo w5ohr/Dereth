@@ -330,3 +330,23 @@ Symmetric follow-up to the offensive applyHit audit. Full read of `playerHurt`
 **Conclusion:** the weapon→spell leak family (passes 16–18) is ISOLATED to applyHit's offensive
 pre-branch multiplier; the defensive mitigation chain does not mirror it. No new findings this pass.
 MMO harness 47/47 · 0 console errors · no drift.
+
+## 2026-07-06 21:38 — TestSystemC pass 20 (HEAD c3232dc) — economy arbitrage audit: CLEAN (no money loops)
+
+Audited the vendor economy for buy-low/sell-high infinite-money loops (the historical exploit class —
+a prior note-price bug is noted in-code at index.html:20731).
+
+- **Systematic scan:** built the real stock of all 11 VENDOR_TYPES and, for every buyable item that
+  becomes a sellable inventory item (2,306 across armorer/weaponsmith/outfitter/scrivener/jeweler/
+  furnisher/provisioner/healer/shipwright/caravan), simulated the buy (attaching `bp` exactly as the
+  buy handler does at index.html:21445) and compared `gearSellPrice` back. **Result: 0 arbitrage loops.**
+- **The bp guard (index.html:20745) is robust:** `if(it.bp!=null) p=Math.min(p,bp-1)`. Verified — a
+  Legendary Blade (natural sell 1542) bought for 50 resells for only 49. Every shop-bought gear
+  carries bp, so its resale is always < cost.
+- **The one un-bp'd buyable (scrolls, index.html:21447) is safe:** `scrollPrice = 90 + lvl*80` (≥170)
+  vs a flat 30 sell — a large loss, no loop.
+- **Trade notes (historical exploit spot):** redeem for v (250) but sell for v-1 (249), and are
+  loot/reward-only (never vendor-buyable) — no loop.
+- **Normal gear round-trip is a loss:** buy 400 → sell back 86.
+
+No new findings. MMO harness 47/47 · 0 console errors · no drift.
