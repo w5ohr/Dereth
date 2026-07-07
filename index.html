@@ -25651,7 +25651,14 @@ function handleSlash(text){
     else doEmote(act); }
   else if(EMOTE_CMDS[cmd]){ doEmote(cmd); }                                   // shorthand: /clap, /wave, …
   else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
-  else log("Unknown command: <b>/"+esc(cmd)+"</b> — try /who, /tell, /p, /a, /allegiance, /party, /where, /emote clap","warn");
+  else if(cmd==="help"||cmd==="commands"||cmd==="?"){   // #203: the full command list, grouped as the code groups them
+    log(`<b>Chat:</b> /tell (/w) &lt;name&gt; &lt;msg&gt; · /r reply · /p party · /f fellowship · /a allegiance · /who`,"sys");
+    log(`<b>World:</b> /loc coordinates · /where · /region · /story saga recap · /arc story arcs`,"sys");
+    log(`<b>Allegiance:</b> /swear &lt;name&gt; · /break (/unswear) · /muster · /allegiance join|leave|hometown`,"sys");
+    log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");
+    log(`<b>Combat &amp; social:</b> /pk pk|pkl|npk · /trade &lt;name&gt; · /buff [spell] · /me &lt;action&gt; · /emote — or /${Object.keys(EMOTE_CMDS).join(", /")}`,"sys");
+  }
+  else log("Unknown command: <b>/"+esc(cmd)+"</b> — type <b>/help</b> for the full list.","warn");
 }
 function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
