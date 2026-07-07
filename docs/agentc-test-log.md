@@ -28,3 +28,28 @@ and confirm Lane C (#20/#21/#22) survived the merges.
   pre-merge index.json; the on-disk/served file is 4148. Fresh sessions load the current file.
 
 **No issues found this pass.**
+
+## AgentC pass 2 (deep spell-catalog integrity) — ALL GREEN, no defects
+
+Exhaustive scan of the entire 2,265-spell catalog — the kind of brute-force pass that surfaces
+latent edge cases.
+
+- **Generators:** invoked **625** projectile `make()` and **63** `heal()` generators — **0 throws,
+  0 NaN/Infinity** damage/heal. Every `cost` finite & non-negative; every `dur` finite. No spell has
+  an unknown school→skill mapping that breaks casting.
+- **Map integrity:** all **2,265** `SPELLBOOK_LIST` entries are present in the `SPELLBOOK` id-map
+  (0 missing) — so no spell is silently uncastable via `executeSpell`'s `if(!s) return`.
+- **Two investigations resolved as NON-defects (documented so future passes don't re-chase):**
+  1. *"Summon Wisp — school 'summon' not in MAGIC_SCHOOLS."* Intentional: summon spells are gated by
+     their `special:"summon"` handler + the Summoning skill (index.html:15302), not the standard
+     school→skill map; `canCast` returns true for an unmapped school by design. Not a defect.
+  2. *"Summon Wisp cast summoned no pet."* Purely a TEST-HARNESS artifact: the fresh test character's
+     max mana (`mmn`) is 10 but the spell costs 30, so it correctly hit the "not enough mana" branch
+     and refunded (0 mana spent, no pet). With max mana raised it spends 30 and summons a valid pet
+     (dmg>0). Working as intended.
+  - **Harness note for future passes:** `derive()` recomputes `player.mmn` from `player.vitals.mn` +
+    attributes, so setting `player.mn`/`player.mmn` and *then* calling `derive()` wipes it. To give a
+    test char mana, set `player.vitals.mn` BEFORE `derive()`, then `player.mn=player.mmn`.
+
+**No issues found this pass.** (Two combat/spell subsystems now deep-verified; the applyHit/executeSpell
+merges from Lane A are clean.)
