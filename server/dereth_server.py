@@ -1347,6 +1347,15 @@ async def handle_party(cl, msg):
 def valid_name(u):
     return isinstance(u, str) and 3 <= len(u) <= 16 and all(ch.isalnum() or ch in "_-" for ch in u)
 
+def clean_relay(s, maxlen):
+    """#240: server-side defense-in-depth for free text relayed to other clients (chat/emote/tell/
+    party/MOTD). Coerce to str, drop control chars, neutralize markup by removing angle brackets,
+    then cap + trim. The shipped client escapes on render, so stripping <> here is invisible to it
+    but protects any other/older/future client that forgets to escape."""
+    s = str(s).replace("<", "").replace(">", "")
+    s = "".join(ch for ch in s if ch >= " ")   # drop control chars incl. newlines/tabs (single-line relay)
+    return s[:maxlen].strip()
+
 async def do_auth_success(cl, username):
     # one session per account: kick a prior connection
     old = CLIENTS.get(username)
@@ -1453,7 +1462,7 @@ async def dispatch(cl, msg):
             except (TypeError, ValueError):
                 pass
     elif t == "chat":
-        text = str(msg.get("msg", ""))[:240].strip()
+        text = clean_relay(msg.get("msg", ""), 240)
         if text and cl.in_world:
             await broadcast({"t": "chat", "from": cl.charname or cl.username, "msg": text, "ts": int(time.time())})
     elif t == "attack":
@@ -1499,7 +1508,7 @@ async def dispatch(cl, msg):
         if cl.in_world:
             act = str(msg.get("act", ""))
             if act == "me":
-                text = str(msg.get("text", ""))[:80].strip()
+                text = clean_relay(msg.get("text", ""), 80)
                 line = f"{cl.charname} {text}" if text else None
             else:
                 verb = EMOTES.get(act)
@@ -1537,7 +1546,7 @@ async def dispatch(cl, msg):
             await broadcast(fx, exclude=cl)
     elif t == "tell":
         name = str(msg.get("name", ""))
-        text = str(msg.get("msg", ""))[:240].strip()
+        text = clean_relay(msg.get("msg", ""), 240)
         if cl.in_world and text:
             target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
             if not target or target is cl:
@@ -1552,7 +1561,7 @@ async def dispatch(cl, msg):
         if cl.in_world:
             await handle_trade(cl, msg)
     elif t == "pchat":
-        text = str(msg.get("msg", ""))[:240].strip()
+        text = clean_relay(msg.get("msg", ""), 240)
         if cl.in_world and cl.party in PARTIES and text:
             for acc in PARTIES[cl.party]["members"]:
                 c = CLIENTS.get(acc)
@@ -1604,7 +1613,7 @@ async def dispatch(cl, msg):
         if cl.in_world and cl.charname:
             await cl.send(alg_info_pub(cl.charname))
     elif t == "alg_motd":
-        text = str(msg.get("text", ""))[:200].strip()
+        text = clean_relay(msg.get("text", ""), 200)
         if cl.in_world and cl.charname:
             if alg_monarch(cl.charname) != cl.charname or not alg_vassals(cl.charname):
                 return await cl.send({"t": "system", "msg": "Only a Monarch (the crown of a tree) sets the allegiance MOTD."})
@@ -1615,7 +1624,7 @@ async def dispatch(cl, msg):
                 if c2.in_world and getattr(c2, "allegiance", None) == cl.charname:
                     await c2.send({"t": "system", "msg": f"[Allegiance MOTD] {text}"})
     elif t == "achat":
-        text = str(msg.get("msg", ""))[:240].strip()
+        text = clean_relay(msg.get("msg", ""), 240)
         alg = getattr(cl, "allegiance", None)
         if cl.in_world and text and alg:
             for c in CLIENTS.values():
