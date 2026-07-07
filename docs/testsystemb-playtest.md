@@ -13,10 +13,11 @@ Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand.js` (extra
 new pass should **extend coverage** to subsystems not yet tested rather than repeat a clean run. When an
 agent merges a change, run the sweep against the changed area too.
 
-**Still-untested targets for upcoming passes:** walking into an overworld *portal* to transit (recall
-set is done) · portal storms · Portal/Lifestone *Sending* spells (special:"sending") · creator head
-choices (barber done). *(Covered through pass 6: + recall set, drowning, Colosseum arena, Town Crier,
-barber, Aetheria surges. Fellowship dropped — chat channel only.)*
+**Coverage of enumerable subsystems is now COMPLETE (52, through pass 7).** No untested major system
+remains on the list. If `main` stays unchanged, upcoming passes should shift from breadth to **depth**:
+boundary/error-path cases per the repo's testing philosophy (empty/max/off-by-one, every guard clause),
+or a periodic re-run of the full sweep to catch regressions. When an agent merges a change, test the
+changed area directly. *(Fellowship remains out of scope — chat channel only, no XP-share API.)*
 
 Every entry is tagged **[TestSystemB]**. Verify a flag before trusting it — several "failures" are
 test-ordering / setup artifacts, not game bugs (see the standing notes at the bottom).
@@ -183,6 +184,24 @@ Six more subsystems verified — **0 real game bugs**, **0 page/console errors**
   run the Colosseum/arena step in its own short session, never before eval-dependent steps.**
 
 **Cumulative coverage: 48 subsystems, still zero real game bugs.**
+
+---
+
+## [TestSystemB] Pass 7 — 2026-07-07 ~00:49
+
+**Result: CLEAN.** `main` still unchanged (`c3232dc`); finished the coverage queue (`tsb_expand4.js`).
+Four more subsystems — **0 findings, 0 errors** — completing the enumerable-subsystem sweep.
+
+| New subsystem | Verified behavior |
+|---|---|
+| **Overworld portal walk-in** | Stepping within 2.4 u of a portal auto-starts the transit tube; `updatePortalTransit` fires `arrive()` mid-tunnel → player lands at the destination, tube cleared, and `lastPortal` is remembered for Portal Recall/Tie. |
+| **Portal storm** | `triggerPortalStorm()` scatters the player 44–72 u with post-scatter invuln; correctly refuses (returns false, no move) inside a dungeon/instance. |
+| **Sending spells** | Portal/Lifestone Sending present; outgoing with no ally in sight **refunds mana and doesn't move** the caster; an **incoming** sending (`applyBuffSelf`) carries the player to their own anchor. |
+| **Creator head data** | Retail head option lists populate for both genders — 51 hair styles, 19 eyes, 20 noses, 42 mouths, 5 skin tones; `acHeadChoices` returns a valid default. |
+
+**Cumulative coverage: 52 subsystems, still zero real game bugs across 7 passes.** The breadth sweep of
+every enumerable major system is complete — see the coverage note at the top for how future passes pivot
+to depth/regression.
 
 ---
 
