@@ -15022,6 +15022,16 @@ function pickMonsterTarget(range){
     if(d<0.1||d>range) continue; const dot=(dx*dir.x+dz*dir.z)/(d*fl); if(dot>bd){bd=dot;best=m;} }
   return best;
 }
+// #175: the foe your crosshair is on, else your LOCKED target if it's a living creature in range — so
+// targeting an enemy actually drives your spells instead of fizzling "No foe in your sights".
+function pickCastTarget(range){
+  const m=pickMonsterTarget(range); if(m) return m;
+  if(TARGET&&TARGET.type==="monster"&&TARGET.ref&&TARGET.ref.hp>0){
+    const r=TARGET.ref;
+    if(!!r.isDungeon===!!inDungeon && Math.hypot(r.x-player.x,r.z-player.z)<=range) return r;
+  }
+  return null;
+}
 // a quickbar slot holds either a spell id (string) or an item shortcut ({item:true,name,...})
 function hbIsItem(e){ return !!(e&&typeof e==="object"&&e.item); }
 function hbItemCount(e){ let n=0; for(const it of player.inv) if(it&&it.name===e.name) n+=(it.count||1); return n; }
@@ -15137,7 +15147,7 @@ function executeSpell(id){
     :s.buff==="might"?0xff8f6b:(s.school==="life"||s.buff==="prot")?0x7fe6a0:0x9af0ff;
   if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
   if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
-    const m=pickMonsterTarget(30);
+    const m=pickCastTarget(30);
     if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
     else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
@@ -15145,7 +15155,7 @@ function executeSpell(id){
     castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
   }
   if(s.special==="corrupt"){   // Mg6 Void curse — a nether DoT that also corrodes the foe's defences
-    const m=pickMonsterTarget(30);
+    const m=pickCastTarget(30);
     if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     const dps=Math.round(s.dps*skillEff("void",0.02));
     m.burnT=Math.max(m.burnT||0,s.dur); m.burnDps=Math.max(m.burnDps||0,dps);   // nether DoT (rides the burn tick)
@@ -15154,7 +15164,7 @@ function executeSpell(id){
     log(`You wrack a foe with <b>${s.name}</b> — nether corruption festers.`,"heal"); return;
   }
   if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
-    const m=pickMonsterTarget(30);
+    const m=pickCastTarget(30);
     if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(m.shared) netSend({t:"debuff",id:m.id,eff:s.debuff,v:s.dmag,dur:s.dur});
     else if(s.debuff==="spd") m.slow=Math.max(m.slow||0,1-s.dmag);
@@ -15237,7 +15247,7 @@ function executeSpell(id){
     castFlash(FX_VITAL.mn); SFX.heal&&SFX.heal(); log(`You cast <b>${s.name}</b>, restoring ${Math.round(amt)} mana.`,"heal"); updateHUD&&updateHUD(); return;
   }
   if(s.special==="vdrain"){   // Drain Stamina/Mana Other: siphon a fifth of the foe's pool
-    const m=pickMonsterTarget(30);
+    const m=pickCastTarget(30);
     if(!m){ refundCast(); spellCd[id]=0; log(`No foe in your sights for <b>${s.name}</b>.`,"warn"); return; }
     const frac=0.05+0.05*Math.min(3,s.lvl)+0.02*Math.max(0,s.lvl-3);
     const pool=s.pool, maxK=pool==="st"?"mst":"mmn";
@@ -15329,6 +15339,11 @@ function executeSpell(id){
   const sp=s.make();
   const dmg=sp.dmg*skillEff(MAGIC_SCHOOLS[s.school]||"war",0.02)*pow;
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
+  // #175: crosshair aim still wins when it's on a foe; otherwise steer the bolt at your locked target
+  if(!pickMonsterTarget(34) && TARGET&&TARGET.type==="monster"&&TARGET.ref&&TARGET.ref.hp>0){
+    const r=TARGET.ref, ax=r.x-player.x, az=r.z-player.z, al=Math.hypot(ax,az);
+    if(al>0.5 && al<=34 && !!r.isDungeon===!!inDungeon){ dir.x=ax/al; dir.z=az/al; dir.y=0; dir.normalize(); }
+  }
   const geom=s.geom||"bolt";
   if(geom==="ring"){   // point-blank ring: strike every nearby foe around you
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<7.5);
