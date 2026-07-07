@@ -93,3 +93,25 @@ EXACT baseline (the classic leak: a buff that expires without un-applying its de
 
 **No issues found this pass.** (The buff/debuff/DoT/HoT lifecycle is sound — symmetric apply/expire
 throughout.)
+
+## AgentC pass 10 (net-handler completeness sweep + housing persistence) — ALL GREEN, no new defects
+
+Systematic audit of ALL remaining client net-message handlers (to close out the surface behind
+#32/#33/#34/#35) + housing/vault storage persistence.
+
+- **Net-handler surface — now fully audited.** Read + malformed-message-tested every remaining
+  state-mutating handler; **no NEW player-state corruption** beyond the three already filed
+  (#32 onMobDmg, #33 onLoot, #35 trade-done):
+  - **Well-guarded (good):** `onSpellFx` is EXEMPLARY — clamps/coerces every field (`+m.x||0`,
+    `clamp(+m.r||0.3,…)`, `typeof m.c==="number"`); `onDropGone`/`onRemoteBuff`/`onCorpseLoot`/
+    `onReward`/`onWho`/`onEmote`(esc'd) all validate or are display-only.
+  - **Cosmetic-only unvalidated (low):** `onMobHit` (sets shared-mob hp → display NaN only),
+    `onDrop` (stores amt in a drop; surfaces via `onLoot`=#33), `onMobDie` (guarded `b?b.c:…`).
+  - `onPvp` clamps NaN dmg; any string-dmg edge is **subsumed by the #32 `playerHurt` fix**.
+  - **Takeaway:** onSpellFx proves the codebase knows how to validate net input, so #32/#33/#35 are
+    genuine omissions, not a systemic absence. No new finding warranted here.
+- **Housing / vault persistence: CLEAN.** A hooked item (`homestead.hooks["1"]`) survives
+  save→wipe→load; `hsHookCount`=1; all hook fns present. `kcVault` (castle hoard) item also survives.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
