@@ -24722,7 +24722,7 @@ function buildTinker(){
     // the active pack's slot grid — AC's square cells, real inventory icons, count badges
     let grid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;margin-bottom:8px">`;
     for(let s=lo;s<hi;s++){ const it=player.inv[s];
-      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — click to inspect · drag to rearrange" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
+      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — hover to examine · click to select · double-click to use · drag to move" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
               :`<div data-slot="${s}" style="width:34px;height:34px;border:1px solid #2c2820;border-radius:4px;background:rgba(0,0,0,.35)"></div>`; }
     grid+=`</div>`;
     const hdr=document.createElement('div'); hdr.innerHTML=bar+grid; rows.appendChild(hdr);
@@ -24731,6 +24731,11 @@ function buildTinker(){
     hdr.querySelectorAll('[data-slot]').forEach(b=>{
       const s=+b.dataset.slot;
       if(player.inv[s]){
+        // #171: hover an item to examine it in the doll box (like equipment slots) — instant, no click needed
+        b.onmouseenter=()=>{ const ex=document.getElementById('dollExamine'); if(!ex) return; const it=player.inv[s]; if(!it) return;
+          const cmp=(typeof itemCompare==="function")?itemCompare(it):null;
+          ex.innerHTML=examineHTML(it)+(cmp?`<br><span style="color:${cmp.up?'#7fe6a0':'#e08a8a'};font-size:11px">${cmp.txt}</span>`:""); };
+        b.onmouseleave=()=>{ const ex=document.getElementById('dollExamine'); if(ex) ex.innerHTML=examineHTML(window._invSel!=null?player.inv[window._invSel]:null); };
         b.onclick=()=>{ window._invSel=s; buildTinker(); };
         b.ondblclick=()=>{ window._invSel=s; invUseItem(s); };
         b.ondragstart=(e)=>{ window._invDrag=s; b.style.opacity="0.4"; try{e.dataTransfer.effectAllowed="move";}catch(_){} };
