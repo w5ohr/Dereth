@@ -211,3 +211,16 @@ Number-heavy crafting economy, only lightly touched before.
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.** (Passes 11–16 all clean.)
+
+## AgentC pass 17 (allegiance pass-up chain) — ALL GREEN, no defects
+
+- **Pass-up math bounded & correct.** `algPassupPct = clamp(gen×recv/100, 25, 90)` — always ≤90%,
+  so the patron's share never exceeds what a vassal generated (no duplication). Over 50 settle-cycles:
+  player.xp +1579 == vassalXP +1579 (received tally matches XP added exactly); no NaN, no runaway;
+  `gainXP(up,{passup:true})` doesn't recurse. Vassal cap = `player.level` (recruited exactly 50, not
+  more); vassals never outlevel the patron.
+- **Net `passup` handler guarded:** `gainXP(m.xp|0,{passup:true})` coerces with `|0` (NaN-safe) —
+  consistent with the pass-10 net-handler audit.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–17 all clean.)
