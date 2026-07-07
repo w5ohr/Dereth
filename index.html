@@ -462,6 +462,10 @@
     hone the skills you choose — no classes bind you here — and walk a fractured isle of ancient
     ruins, wandering portals, and the insectoid <b>Olthoi</b>.
   </div>
+  <div id="touchWarn" style="display:none;margin:8px auto;max-width:380px;padding:10px 14px;background:#3a1e0e;border:1px solid #a5602a;border-radius:8px;color:#ffcf9a;font-size:12.5px;line-height:1.5">
+    <b>⌨ Desktop controls required.</b> Dereth is played with a <b>keyboard &amp; mouse</b> (WASD to move, mouse to look) — on-screen touch controls aren't supported yet, so it won't be playable on a phone or tablet. If you have a keyboard and mouse attached, tap <b>Continue anyway</b>.
+    <div style="text-align:center;margin-top:8px"><button id="touchWarnGo" style="font-size:12px;padding:5px 12px">Continue anyway</button></div>
+  </div>
   <div id="authBox" style="margin:6px auto 4px;max-width:360px">
     <div class="plabel">⚔ PLAY ONLINE — DERETH MMO</div>
     <div style="display:flex;flex-direction:column;gap:6px;align-items:center">
@@ -26341,6 +26345,16 @@ document.getElementById('registerBtn').onclick=()=>authAction('register');
 document.getElementById('authPass').addEventListener('keydown',e=>{ if(e.key==='Enter')authAction('login'); });
 // prefill last username for convenience
 try{ const lu=localStorage.getItem('dereth_user'); if(lu) document.getElementById('authUser').value=lu; }catch(e){}
+// #246: a touch-only device (no fine pointer) can't play — WASD+mouse-look with pointer-lock has no
+// touch equivalent yet. Rather than drop the player into a silent, unresponsive dead screen, warn on
+// the title screen. Non-blocking: a touchscreen laptop WITH a mouse/trackpad reports a fine pointer
+// and never sees this; anyone else can still "Continue anyway".
+(function(){ try{
+  const touchOnly = ((('ontouchstart' in window)||(navigator.maxTouchPoints|0)>0)
+    && window.matchMedia && !window.matchMedia('(pointer:fine)').matches);
+  if(touchOnly){ const tw=document.getElementById('touchWarn'); if(tw){ tw.style.display='block';
+    const go=document.getElementById('touchWarnGo'); if(go) go.onclick=()=>{ tw.style.display='none'; }; } }
+}catch(e){} })();
 </script>
 </body>
 </html>
