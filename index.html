@@ -20303,7 +20303,7 @@ function talkToNPC(n){
       say("Very well — everything you would have earned, and the way out. Remember: once you leave the Training Academy, you cannot come back! <span style=\"color:#7fe6a0\">+11,000 XP</span>");
       academyExit(); }
     else if(k==="armor"){ if(!A.armor){ A.armor=1; for(const s of [["Leather Cap","head",8],["Leather Gauntlets","hands",8],["Leather Leggings","legs",8]]) player.inv.push({name:s[0],stat:"worn",at:"light",aslot:s[1],v:s[2],mat:"Leather",tier:1});
-        say("Your kit: cap, gauntlets, leggings. Press <b>I</b> and drag them on — and examine anything with a right-click."); }
+        say("Your kit: cap, gauntlets, leggings. Press <b>T</b> and <b>double-click</b> each piece to wear it — and examine anything with a right-click."); }   // #202: T opens the satchel; equip is double-click (no drag-equip exists; I quaffs an elixir)
       else say("Wearing it well! The Training Master is next."); }
     else if(k==="master"){ if(A.golem) say("Well fought! The Foreman has honest work for you.");
       else if(!A.golemUp){ A.golemUp=1; practice("golem","Sparring Golem","golem",40);
@@ -21099,8 +21099,8 @@ const VENDOR_TYPES={
     {name:"Health Elixir",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
     {name:"Mana Potion",field:"potMana",cost:30,desc:"Restores 60 mana.",ico:"🔷"},
     {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"},
-    {name:"Elixir of Might",field:"elixMight",cost:60,desc:"+50% damage for 30s (key 9).",ico:"⚔"},
-    {name:"Elixir of Swiftness",field:"elixSwift",cost:60,desc:"+40% move speed for 30s (key 0).",ico:"💨"},
+    {name:"Elixir of Might",field:"elixMight",cost:60,desc:"+50% damage for 30s (key I).",ico:"⚔"},
+    {name:"Elixir of Swiftness",field:"elixSwift",cost:60,desc:"+40% move speed for 30s (key L).",ico:"💨"},
     {name:"Sack",cost:120,desc:"Adds +3 satchel slots (Use it from your pack).",ico:"🎒",gear:{name:"Sack",stat:"pack",cap:3,v:3}},
     {name:"Backpack",cost:220,desc:"Adds +4 satchel slots (Use it from your pack).",ico:"🎒",gear:{name:"Backpack",stat:"pack",cap:4,v:4}},
     {name:"Recall Stone",cost:90,desc:"Crush to teleport to your bound Lifestone.",ico:"🔵",gear:{name:"Recall Stone",stat:"recall",v:0}},
@@ -25831,7 +25831,7 @@ function startGame(loadSaved,preset){
     setTimeout(()=>{if(running)log("Tip: bind to the blue Lifestone (E) — death returns you there.","sys");},7000);
     setTimeout(()=>{if(running)log("Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $.","sys");},14000);
     setTimeout(()=>{if(running)log("Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);
-    setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). Q swaps weapon.","sys");},28000);
+    setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). <b>Shift+Q</b> swaps weapon; Q toggles auto-run.","sys");},28000);
     setTimeout(()=>{if(running)log("Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);
     setTimeout(()=>{if(running)log("Tip: press <b>N</b> to rearrange your HUD (drag any panel). Your <b>quickbar</b> has 4 pages — the <b>1–4</b> buttons (or <b>[ ]</b>) switch pages; assign spells to any of its 96 slots in the Spellbook (K).","sys");},42000);
   }
