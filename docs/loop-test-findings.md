@@ -124,3 +124,16 @@ authoritative list.
 - **Weather:** state machine present (clear), updateWeather runs; portal-storm trigger present.
 - **Quickbar:** spellbar panel present with 4 slots.
 - **No new findings this pass.**
+
+## 2026-07-06 19:32 — TestSystemC pass 9 (HEAD c3232dc, still unchanged — varied coverage round 9)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Loadouts:** quickbar loadouts (by design — they snapshot player.hotbar, not gear) verified:
+  save → clear → load restores all slots; delete removes; 8-loadout cap enforced.
+- **Bounty turn-in:** trophyBounty prices a Drudge Scalp at 40 gold + 350 xp — sane.
+- **Academy:** enter/exit/kill-credit functions present; ACADEMY_POS placed.
+- **Allegiance swearing:** swearToPatron() is a no-arg net-targeted op (aimed player online);
+  surface + rank math verified in passes 4/7.
+- **Housing hooks:** hsHookCount() counts hooks USED in your homestead — 0 for the houseless
+  test character is correct, not a defect.
+- **No new findings this pass.**
