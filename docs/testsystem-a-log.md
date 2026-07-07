@@ -92,3 +92,32 @@ username and PK state rides the `input` tick (`pkState`). First drafts of the ha
 11-13 false failures from these — all resolved to protocol fidelity, zero server defects.
 
 Also re-ran the stock suite against the same instance mid-diagnosis: 47/47.
+
+## TestSystemA — Run 4 (2026-07-07, main @ c3232dc)
+
+**Result: one minor cosmetic finding (TSA-2); server robustness and pack integrity otherwise clean.**
+Chrome still closed — browser coverage paused; this run: server fuzzing + pack cross-reference audit.
+
+### FINDINGS (log only)
+
+- **TSA-2 (minor, cosmetic) — 292 of 4,338 acitems reference icon DIDs with no exported PNG**
+  in `assets/acicons/` (3,961 icon files present). Breakdown: 281 misc items, 10 weapons
+  (`torch`, `wand`, `sceptre`, `sceptre of syliph`, `branith's staff`, …), 1 armor. In-game
+  impact is soft: `itemIconHTML` falls through to the item's CATEGORY icon (still a real AC
+  icon, just generic) — no emoji regression (Run 1's 100/100 sample was band-limited loot,
+  which is why it missed these). Fix later: re-run `ac_icon_export.py` for the missing DIDs
+  (some may be palette-variant DIDs needing the base icon fallback in the exporter).
+
+### Clean checks
+
+- **Server fuzz suite 9/9** (`server/tsa_fuzz.py`, kept in-repo): survives non-JSON frames,
+  6 malformed-JSON shapes, oversized register names (rejected politely), hostile in-world
+  fields (1e308 coords, negative damage, null ids, string coin, non-dict save), pre-auth world
+  messages ignored, a 500-message input burst, and an abrupt mid-trade socket yank (partner
+  notified, server healthy after every probe).
+- **Pack cross-references**: acvendors 16,185 stock refs → 0 dangling catalog ids ·
+  acspells 6,266 spells → 0 dangling component ids (163 components) · CANON dungeons 331 =
+  232 real-geometry + 99 scripted/procedural (matches the documented split) · actownmodels
+  covers every mesh-rendered town object — the 537 placements without meshes are all
+  portal/lifestone/bindstone kinds, which use the game's bespoke visuals by design (audit
+  false alarm, cleared).
