@@ -14808,6 +14808,7 @@ function algTick(dt){
 }
 function gainXP(amt,opts){
   opts=opts||{};
+  amt=+amt; if(!isFinite(amt)||amt<=0) return;   // #242: reject NaN/non-finite/≤0 (mirrors playerHurt) — a NaN amt would make player.xp NaN forever and silently stop all leveling (NaN>=need is false)
   if(player.augment&&player.augment.xpBonus) amt=Math.round(amt*(1+player.augment.xpBonus)); // H17 XP augmentation (Ciandra's Essence)
   // Vitae recovers through your OWN deeds — allegiance pass-up does not burn it (AC)
   if(player.vitae>0&&!opts.passup){ const was=player.vitae; player.vitae=Math.max(0,player.vitae-amt/40000);
@@ -14818,6 +14819,7 @@ function gainXP(amt,opts){
   floater(player.x,EYE+0.5,player.z,"+"+amt+" XP","#cf9bea");
   let need=xpForLevel(player.level);
   while(player.level<275&&player.xp>=need){   // AC hard level cap of 275 (XP past it still banks as unspent for skills/attributes)
+    if(need<=0) break;   // #242: a non-increasing XP table (need≤0) would never reduce player.xp — spin-freeze guard
     player.xp-=need;player.level++;
     derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
     log(`<b>Level ${player.level}!</b> Spend unspent XP on attributes & skills${player.level-1<=46?", and +1 skill credit":""} — press C.`,"sys");
