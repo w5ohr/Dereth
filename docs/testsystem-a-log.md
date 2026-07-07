@@ -205,3 +205,28 @@ packs, and a Python hazard scan all green.
   meshes · achousing 5 mesh refs → all present · acbooks 898 entries parse.
 - **AST hazard scan** (server + test client): no mutable default args, no bare excepts,
   no eval/exec.
+
+## TestSystemA — Run 8 (2026-07-07, main @ c3232dc)
+
+**Result: one feature-gap finding (TSA-5); relay matrix, frame caps, map data, and DB clean.**
+
+### FINDINGS (log only)
+
+- **TSA-5 (multiplayer feature gap, medium-low) — remote players' equipped weapon/shield never
+  syncs.** The client's `input` tick sends position/vitals/level/heritage/title/pkState —
+  no wield fields; the server snapshot carries none; `remoteApp`/`reconcileRemotes` build
+  remote avatars with heritage-seeded clothing but no equipment. Net effect: **other players
+  always render bare-handed and shield-less online**, whatever they wield. (The run-2 protocol
+  census listed "weapon"/"offhand" message types — those matches were item-code strings, not
+  dispatch handlers; corrected here.) Fix later: add `weapon`/`offhand` kind fields to the
+  input tick + snapshot, and hand them to the remote-avatar dresser.
+
+### Clean checks
+
+- **Cosmetic relay matrix**: spellfx projectile relays to nearby players ✓ · emote broadcast ✓ ·
+  who lists all in-world ✓ (completes the server message-type coverage).
+- **Frame-size cap**: MAX_MSG 1 MiB enforced — a 2 MiB frame drops that connection only;
+  server healthy after ✓.
+- **acmap.png data sanity**: 2041² · height indexes ≤250 (table has 255) · terrain types ≤30
+  (≤31 spec) · road bits present · 24 extreme-peak sample px (the named summits) ✓.
+- **SQLite**: `integrity_check ok` on the twice-soaked DB (19 users / 17 chars) ✓.
