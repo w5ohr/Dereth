@@ -14930,12 +14930,15 @@ function die(){
   // where the corpse falls: at your feet overworld, or at the instance's overworld return point (instances are torn down)
   const corpseX=inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x;
   const corpseZ=inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z;
-  if(inDungeon) exitDungeon(false);
-  if(inNetwork) exitNetwork(netReturn);
+  // #227: do NOT tear the instance down here — die() is called from inside update()'s projectile/monster
+  // loops, and exitDungeon's clearProjectiles() reassigned eProj mid-iteration → TypeError → the exception
+  // killed loop()'s requestAnimationFrame chain and froze the game on the death fade. The teardown (and the
+  // corpse drop, which must come AFTER clearDrops) now happens in the respawn timeout below.
+  const _wasDungeon=inDungeon, _wasNetwork=inNetwork;
   document.getElementById('deathmsg').style.display="flex";
   log("You have died. Your spirit drifts toward your bound Lifestone…","warn");
   player.vitae=Math.min(0.40,player.vitae+0.05); // Vitae: +5% penalty per death, capped at -40% (AC); recovers as you earn XP
-  let corpseNote="";
+  let corpseNote="", _corpseDrop=null;
   if(settings.acDeath!==false){
     // one lootable corpse holding everything — decays after 5 min/level (min 1 hour)
     const dd=deathDrops();
@@ -14945,7 +14948,7 @@ function die(){
         // a Player Killer's corpse is fair game for anyone (AC PK-death loot); NPK/PKL corpses stay owner-only
         netSend({t:"death",x:corpseX,z:corpseZ,items:dd.items,gold:dd.gold,ttl,open:(player.pkState==="pk")});
       } else {
-        addDrop(corpseX,corpseZ,{type:"corpse",items:dd.items,amt:dd.gold,corpse:true,owner:player.name||"Adventurer",ttl});
+        _corpseDrop={items:dd.items,gold:dd.gold,ttl};   // #227: dropped in the respawn timeout, after the deferred teardown's clearDrops
       }
       if(typeof recomputeGearSkill==="function") recomputeGearSkill();
       // AC always named your losses — list them so you know exactly what to walk back for
@@ -14956,6 +14959,9 @@ function die(){
   } else corpseNote=" (Soft death is on — nothing dropped. Settings → AC-authentic death.)";
   derive();   // apply the new Vitae to your vital pools before you respawn
   setTimeout(()=>{
+    if(_wasDungeon&&inDungeon) exitDungeon(false);            // #227: instance teardown deferred out of the update() call stack
+    if(_wasNetwork&&inNetwork) exitNetwork(netReturn);
+    if(_corpseDrop) addDrop(corpseX,corpseZ,{type:"corpse",items:_corpseDrop.items,amt:_corpseDrop.gold,corpse:true,owner:player.name||"Adventurer",ttl:_corpseDrop.ttl});
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
     arriveAt(ls.x,ls.z+3);player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
     // AC: vitals restore to 75% of the (Vitae-reduced) max; ~1 min of protection, broken by offensive action
@@ -16443,7 +16449,7 @@ function update(dt){
   // #11: swept segment-vs-circle test so a fast projectile can't tunnel past a monster between frames
   const _segHit=(ax,az,bx,bz,cx,cz,rad)=>{ const dx=bx-ax,dz=bz-az,L2=dx*dx+dz*dz; let t=L2>0?((cx-ax)*dx+(cz-az)*dz)/L2:0; t=t<0?0:t>1?1:t; const qx=ax+dx*t,qz=az+dz*t; return (qx-cx)*(qx-cx)+(qz-cz)*(qz-cz)<rad*rad; };
   for(let i=pProj.length-1;i>=0;i--){
-    const p=pProj[i];
+    const p=pProj[i]; if(!p) continue;   // #227: same re-entrancy guard as eProj
     const _px0=p.x,_pz0=p.z;   // #11: travel-segment start (pre-move) for swept collision
     if(p.grav) p.vy-=GRAV*dt;   // AC ballistics: arrows/bolts (and lobbed arcs) fall under gravity
     if(p.arrow||p.orient){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); }  // #196: nose follows the flight (arrows + elongated spell spikes)
@@ -16520,7 +16526,8 @@ function update(dt){
   }
   // enemy projectiles
   for(let i=eProj.length-1;i>=0;i--){
-    const p=eProj[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
+    const p=eProj[i]; if(!p) continue;   // #227: guard against a re-entrant clear (death teardown) emptying the array mid-iteration
+    p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     let gone=p.life<=0;
     const _peY=((inDungeon||inNetwork)?groundY(player.x,player.z):player.y)+EYE*0.85;   // #228: the player's REAL torso height, not absolute EYE
@@ -17610,7 +17617,7 @@ document.getElementById('closeCodex').onclick=closeCodex;
 let lastTs=0;
 function loop(ts){
   if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;dt=Math.min(dt,0.05);
-  update(dt);
+  try{ update(dt); }catch(e){ console.error("update() failed:",e); }   // #227: no single-frame exception may ever kill the rAF chain (a thrown update froze the game permanently)
   updateLightPool();
   renderComposite();
   requestAnimationFrame(loop);
