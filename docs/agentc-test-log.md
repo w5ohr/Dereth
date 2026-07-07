@@ -199,3 +199,15 @@ Number-heavy crafting economy, only lightly touched before.
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.** (Passes 11–15 all clean — the game's number-heavy systems are solid.)
+
+## AgentC pass 16 (inventory/pack capacity + regression watch) — ALL GREEN, no defects
+
+- **Regression watch:** main unchanged (cbce433); nothing new to re-verify. PR #157 (#31–#35) still open.
+- **Inventory capacity: enforced.** Filled to exactly `invCap()` (12); `addToInv` refuses when full,
+  `force` bypasses for rewards; `inv.length` never exceeds cap.
+- **Stacking:** 3×20 arrows merge into one entry (count 60), no duplicate entries; `takeFromInv`
+  decrements the stack (60→59) rather than removing.
+- **Pack limit:** 12 packs attempted → capped at 7 (AC limit); `invCap` grew to 68, no NaN.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–16 all clean.)
