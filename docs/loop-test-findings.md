@@ -82,3 +82,17 @@ authoritative list.
 - **Quest givers:** all 323 QUEST_GIVERS resolve — towns exist in CITIES, quest ids pair up.
 - **Live wardrobe:** 893 built avatars in scene, 416 hats attached (heads swapped).
 - **No new findings this pass.**
+
+## 2026-07-06 19:12 — TestSystemC pass 6 (HEAD c3232dc, still unchanged — varied coverage round 6)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Death & Vitae:** die() verified live — vitae +5%/death, creature/life enchantments fall,
+  a named-loss corpse drops, respawn works, and gainXP burns vitae off (amt/40000, passup exempt).
+- **Encumbrance:** encumbrance() returns {load,cap,ratio} with the AC ≥200% can't-jump ceiling
+  modeled (cap from Str×18 + End×6); loading 60 anvils raised ratio 0→1.42 as expected.
+- **Vendor pricing:** per-stat gearSellPrice formulas sane on rolled weapon/worn gear.
+- **Portal tie/recall:** Tie Portal binds player.tiedPortal; Portal Recall present.
+- **Monster aggro (functional):** in wilderness a drudge senses (34u), switches to chase and
+  closes 11.3→1.6u driving update() directly. Two "failures" en route were the TOWN_SAFE ring
+  (60×WSCALE=180u) correctly re-seating mobs out of capital safe zones — by design, not defects.
+- **No new findings this pass.**
