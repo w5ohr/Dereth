@@ -14432,7 +14432,12 @@ function applyItem(it){
     if(player.packs.length>=7){ log(`You already wear <b>seven side packs</b> — AC's limit. Drop one to make room.`,"warn"); return "keep"; }
     player.packs.push({name:it.name,cap:Math.max(3,(it.cap||3)+3)});   // a real AC side pack: its own container on your belt
     log(`You clip the <b>${it.name}</b> to your belt — a new side pack with <b>${player.packs[player.packs.length-1].cap}</b> slots (${player.packs.length}/7).`,"loot"); if(SFX.gold)SFX.gold(); toast("SIDE PACK EQUIPPED"); updateHUD&&updateHUD(); }
-  else if(player.attr[it.stat]!==undefined){player.attr[it.stat]+=it.v;derive();log(`Attuned <b>${it.name}</b> (+${it.v} ${it.stat}).`,"loot");}
+  else if(player.attr[it.stat]!==undefined){                          // #31: attribute gems raise a stat, but never past the same ceiling the XP path enforces (innate ≤100 + attrMaxRanks() ranks) — otherwise loot gems inflate an attribute without bound
+    const cap=attrInnate(it.stat)+attrMaxRanks();
+    if(player.attr[it.stat]>=cap){ log(`Your <b>${it.stat}</b> is already at its natural peak (${cap}) — the <b>${it.name}</b> cannot raise it further.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+    const gain=Math.min(Math.max(0,+it.v||0),cap-player.attr[it.stat]); player.attr[it.stat]+=gain; derive();
+    log(`Attuned <b>${it.name}</b> (+${gain} ${it.stat}${gain<(+it.v||0)?" — capped at its natural peak":""}).`,"loot");
+  }
   else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
 }
 // ═══ THE COMBINE ENGINE (AC tradeskills): assets/acrecipes.json carries 1,500 retail tool+target→result
@@ -14788,6 +14793,7 @@ function gainXP(amt,opts){
   }
 }
 function playerHurt(dmg,sx,sz,type,element){
+  dmg=+dmg; if(!isFinite(dmg)||dmg<=0) return;   // #32: guard NaN/non-finite/≤0 damage (mirrors damageMonster) — the inner Math.max(1,…) steps catch negatives but NOT NaN (Math.max(1,NaN)===NaN), which would flow to player.hp and leave an unhealable/undyable soft-brick; e.g. a malformed server dmg-message via onMobDmg
   if(player.invuln>0||!player.alive||inNetwork) return;
   type=type||"melee";   // "melee" | "missile" | "magic" — selects which Defense skill mitigates
   // AC: a trained Defense skill can make an incoming attack MISS outright (evade), on top of its mitigation
