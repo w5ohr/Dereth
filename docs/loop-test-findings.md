@@ -137,3 +137,19 @@ authoritative list.
 - **Housing hooks:** hsHookCount() counts hooks USED in your homestead — 0 for the houseless
   test character is correct, not a defect.
 - **No new findings this pass.**
+
+## 2026-07-06 20:04 — TestSystemC pass 10 (HEAD c3232dc, still unchanged — varied coverage round 10)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Healing kits:** verified end-to-end after a false alarm — a v:60 kit heals 60 untrained and
+  97 with specialized Healing (healScale: rank×0.004, spec +10%, 0.6× in combat). The initial
+  "heals only 8" reading was the probe's own doing: hours of level=275 hacks without raising
+  vitals left the test character at mhp≈13, so heals were correctly capping at full health.
+  Confirmed on a fresh reload + properly raised vitals. NOT a defect. (Probe lesson: raise
+  player.vitals when faking level.)
+- **Spell components:** burnSpellComponents live; 163 retail component defs (AC_COMP_CDM);
+  rollComponent yields valid comps ("Motherwort").
+- **Settings:** save/load roundtrip preserves values (dglight tested).
+- **Minimap:** init + draw run clean; **dungeon locks:** hasNamedKey/unlockDungeonDoor work;
+  **arena:** start/wave/win/fail/update machinery all present.
+- **No new findings this pass.**
