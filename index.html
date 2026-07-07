@@ -1713,7 +1713,7 @@ function loadGltfPeople(){
     const h=robustHeight(scene);
     // models face +z; our bodies face -z and NPC yaw aims -z at travel, so clones need a +PI flip (else moonwalk).
     gltfPeople.push({scene, anims:anims||[], scale:TARGET_HUMAN_H/h, faceOffset:Math.PI, w:(p.w>0?p.w:1), sex:p.sex||"n"});
-    log("Loaded a person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+").","sys"); assignGltfNpcs();
+    console.log("Loaded a person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+")."); assignGltfNpcs();   // #163: dev console, not player chat
   };
   for(const p of GLTF_PEOPLE){
     if(p.mesh){                                        // modular: static mesh + external animation clips
@@ -1839,7 +1839,7 @@ function gmLoadEntry(kind,ent){   // one variant file; safe to call again (dedup
     const h=robustHeight(g.scene);
     (gltfMonsters[kind]=gltfMonsters[kind]||[]).push({scene:g.scene, anims:g.animations||[], h,
       tint:ent.tint, tints:ent.tints, vname:ent.vname, vscale:ent.vscale});
-    log("Loaded a monster model ("+kind+" "+gltfMonsters[kind].length+"/"+MONSTER_MODELS[kind].length+").","sys");
+    console.log("Loaded a monster model ("+kind+" "+gltfMonsters[kind].length+"/"+MONSTER_MODELS[kind].length+").");   // #163: dev console, not player chat
   }, undefined, e=>console.log("monster model failed:",kind,(e&&e.message)||""));
 }
 function loadGltfMonsters(){
