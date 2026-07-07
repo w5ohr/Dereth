@@ -15822,7 +15822,12 @@ window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;keys[e.code]
 
 function currentPrompt(){
   const nr=(x,z)=>Math.hypot(x-player.x,z-player.z);
-  for(const d of drops) if(d.type==="item"&&nr(d.x,d.z)<3.5) return "Take "+d.item.name+" (E)";
+  // #204: mirror interact()'s exact order & radii — corpse first (within 4), then items (within 4) —
+  // so the prompt always names the action E will actually perform.
+  for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
+    if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.open?("Loot "+d.owner+"'s corpse (E)"):(d.owner+"'s corpse (theirs to recover)");
+    return "Recover your corpse (E)"; }
+  for(const d of drops) if(d.type==="item"&&nr(d.x,d.z)<4) return "Take "+d.item.name+" (E)";
   if(inNetwork){
     for(const np of netPortals) if(nr(np.x,np.z)<3){
       if(np.kind==="switch") return "Enter the "+np.name+" (E)";
@@ -15847,9 +15852,6 @@ function currentPrompt(){
     if(nr(dungeonExit.x,dungeonExit.z)<3.5) return (curDungeon&&curDungeon.academy&&!(player.academy&&player.academy.done))?"The Sentry holds the portal — finish your training":(dungeonDepth>1?"Climb back up (E)":"Leave the delve (E)");
     return "";
   }
-  for(const d of drops) if(d.type==="corpse"&&nr(d.x,d.z)<4){
-    if(d.shared&&d.owner&&player.name&&d.owner!==player.name) return d.open?("Loot "+d.owner+"'s corpse (E)"):(d.owner+"'s corpse (theirs to recover)");
-    return "Recover your corpse (E)"; }
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
   for(const bs of bookStands) if(nr(bs.x,bs.z)<3.2) return "Browse "+bs.name+" (E)";
   for(const ct of chessTables) if(nr(ct.x,ct.z)<3.0) return "Play chess (E)";
