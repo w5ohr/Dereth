@@ -184,3 +184,24 @@ complementary lane: server depth + static analysis + pack audits. No duplicated 
   walked to each mob (attacks are range-gated, correctly) → 8/8 mob_die → **event_end
   success:true broadcast** ✓.
 - **Python compile gate**: `py_compile` over all tools/*.py + server/*.py — pass.
+
+## TestSystemA — Run 7 (2026-07-07, main @ c3232dc)
+
+**Result: CLEAN — no new defects.** Fellowship/allegiance wire mechanics, remaining asset
+packs, and a Python hazard scan all green.
+
+- **Fellowship over the wire** (`server/tsa_fellow.py`, kept in-repo): party invite/accept,
+  party chat channel, shared-kill XP for every fellow. **All three level-spread rules verified
+  live**: tight band (L20/L22) splits equally with the size bonus (882/882) · proportional
+  band (L20/L50, spread 30) pays by level — 48 vs 121, high > low ✓ · extreme spread
+  (L20/L22/L80, spread 60 ≥ 50) reverts to equal full shares (882 each) — the first probe
+  flagged this as a failure until re-read against the documented rule; harness expectation
+  fixed, not the server.
+- **Muster**: refused below level 12 with the renown message; grants a named NPC vassal at
+  L80 ✓. **Monarch MOTD**: pushed to sworn vassals ✓ — after an initially ILLEGAL probe
+  (L22 swearing to L20 is correctly refused; the refusal text contains the word "swear",
+  which fooled the first regex — harness note).
+- **Pack integrity (remaining)**: acworldstructs 1,431 blocks / 6,076 buildings → 0 missing
+  meshes · achousing 5 mesh refs → all present · acbooks 898 entries parse.
+- **AST hazard scan** (server + test client): no mutable default args, no bare excepts,
+  no eval/exec.
