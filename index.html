@@ -25907,6 +25907,27 @@ function ccInitPreview(){
   const fill=new THREE.DirectionalLight(0x88aaff,0.35); fill.position.set(-2,1,1.2); ccScene.add(fill);
   const rim=new THREE.DirectionalLight(0xffd0a0,0.32); rim.position.set(0,1.5,-2.5); ccScene.add(rim);
 }
+// #172: Face / Full-body preview framing — facial edits are invisible when the camera frames the whole body
+function ccApplyView(){
+  if(!ccCam) return;
+  const v=window._ccView||"face";
+  if(v==="face"){ ccCam.position.set(0,1.5,1.05); ccCam.lookAt(0,1.5,0); }   // portrait framing on the head
+  else { ccCam.position.set(0,0.98,3.35); ccCam.lookAt(0,0.94,0); }          // the whole figure
+  document.querySelectorAll('#ccViewToggle [data-ccv]').forEach(b=>{ const on=b.dataset.ccv===v;
+    b.style.background=on?"#2a3a18":"#16210e"; b.style.borderColor=on?"#ffd86b":"#3a3526"; b.style.color=on?"#ffd86b":"#cfe6b0"; });
+}
+function ccSetView(v){ window._ccView=v; ccApplyView(); }
+function ccEnsureViewToggle(){
+  const pv=document.getElementById('ccPreview'); if(!pv||!pv.parentNode) return;
+  let t=document.getElementById('ccViewToggle');
+  if(!t){ t=document.createElement('div'); t.id='ccViewToggle';
+    t.style.cssText="display:flex;gap:6px;justify-content:center;margin-top:8px";
+    const btn=(k,lbl)=>`<button data-ccv="${k}" style="padding:4px 15px;font-size:12px;border-radius:6px;cursor:pointer">${lbl}</button>`;
+    t.innerHTML=btn("face","Face")+btn("body","Full body");
+    pv.parentNode.insertBefore(t, pv.nextSibling);
+    t.querySelectorAll('[data-ccv]').forEach(b=>b.onclick=()=>ccSetView(b.dataset.ccv)); }
+  t.style.display="";
+}
 let _ccHeadTok=0;
 function ccBust_build(app){
   const g=new THREE.Group();
@@ -25968,7 +25989,7 @@ function ccRebuild(){ if(!ccScene) return;
   else {
     ccModelToken++; if(ccModel){ccScene.remove(ccModel);ccModel=null;}
     ccBody=ccBuildBody(ccWork);                              // the whole player model, head included
-    if(ccBody){ ccScene.add(ccBody); if(ccCam){ccCam.position.set(0,0.98,3.35);ccCam.lookAt(0,0.94,0);} }
+    if(ccBody){ ccScene.add(ccBody); ccEnsureViewToggle(); ccApplyView(); }   // #172: Face/Body toggle, defaults to Face so head edits are visible
     else { if(ccCam){ccCam.position.set(0,1.62,1.45);ccCam.lookAt(0,1.6,0);} ccBust=ccBust_build(ccWork); ccScene.add(ccBust); }   // fallback: head-and-shoulders bust
   }
 }
@@ -26016,13 +26037,19 @@ function ccBuildACHead(){
   const F=[["style","Hair Style",H.hairStyles.length],["hairColor","Hair Colour",H.hairPals.length],
     ["skinTone","Skin Tone",H.skinTones.length],["eyeColor","Eye Colour",H.eyeColors.length],
     ["eyes","Eyes",H.eyes.length],["nose","Nose",H.noses.length],["mouth","Mouth",H.mouths.length]];
-  let h=`<div style="margin:8px 0 3px;color:var(--gold);font-size:11px;letter-spacing:.5px">RETAIL HEAD <span style="color:var(--dim)">— the client's own lists</span></div>`;
+  // #172: nest the raw retail-index steppers under a collapsed "Advanced" disclosure so they don't
+  //        compete with the friendly named controls above — one obvious set, fine-tuning one click away.
+  const open=!!window._ccAdvHead;
+  let h=`<div id="ccAdvToggle" style="margin:10px 0 3px;color:var(--gold);font-size:11px;letter-spacing:.5px;cursor:pointer;user-select:none">${open?"▾":"▸"} ADVANCED — fine-tune face <span style="color:var(--dim)">— the client's own retail lists</span></div>`;
+  h+=`<div id="ccAdvBody" style="display:${open?"block":"none"}">`;
   for(const [k,lab,n] of F){ if(!n) continue; const v=((ccWork.acHead[k]|0)%n+n)%n;
     h+=`<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-size:11px"><span style="width:76px;color:#cdbf9a">${lab}</span>
       <button data-achd="${k}" data-d="-1" style="width:22px;cursor:pointer">◀</button>
       <span style="width:52px;text-align:center;color:#ffd86b">${v+1} / ${n}</span>
       <button data-achd="${k}" data-d="1" style="width:22px;cursor:pointer">▶</button></div>`; }
+  h+=`</div>`;
   wrap.innerHTML=h;
+  const tg=document.getElementById('ccAdvToggle'); if(tg) tg.onclick=()=>{ window._ccAdvHead=!window._ccAdvHead; ccBuildACHead(); };
   wrap.querySelectorAll('[data-achd]').forEach(b=>b.onclick=()=>{
     const k=b.dataset.achd, d=+b.dataset.d, n=(F.find(f=>f[0]===k)||[0,0,1])[2];
     ccWork.acHead[k]=(((ccWork.acHead[k]|0)+d)%n+n)%n;
