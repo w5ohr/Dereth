@@ -121,3 +121,35 @@ Chrome still closed — browser coverage paused; this run: server fuzzing + pack
   covers every mesh-rendered town object — the 537 placements without meshes are all
   portal/lifestone/bindstone kinds, which use the game's bespoke visuals by design (audit
   false alarm, cleared).
+
+## TestSystemA — Run 5 (2026-07-07, main @ c3232dc)
+
+**Result: one cleanup finding (TSA-3); soak + memory + static invariants otherwise clean.**
+Coordination note: a sibling **TestSystemC** (another session, WITH a live browser) is running
+in-game functional passes on `origin/testsystemc-log` (casino, pets, ships, dispel, rares,
+imbues, loadouts — 9 passes, all green so far). TestSystemA therefore stays on its
+complementary lane: server depth + static analysis + pack audits. No duplicated coverage.
+
+### FINDINGS (log only)
+
+- **TSA-3 (cleanup, low) — 20 genuinely dead top-level functions** (never referenced from JS
+  or HTML): `_acHeadTex, acClock, addFeature, addTattoo, armorTypeOf, bestMeleeEff,
+  bestMeleeSkillValue, buildCrystal, ccRandomize, hsType, isCapitalName, kcInspectHook,
+  primaryAttack, resetUIPos, rollCantrips, rollCrit, rollFurniture, salvageValue,
+  spawnEmberEcho, talkEmissary`. Most are superseded remnants of this week's reworks
+  (`bestMeleeSkillValue` → lane-A weapon-skill tree; `rollCantrips` → orphaned when the #127
+  merge adopted main's cantrip system — same family as TSA-1). **Two worth a second look
+  rather than blind deletion:** `ccRandomize` (did the character-creator lose its Randomize
+  button?) and `resetUIPos` (HUD-reset entry point) — possible small UX regressions.
+
+### Clean checks
+
+- **Concurrency soak ×2** (`server/tsa_soak.py`, kept in-repo): 8 concurrent clients, mixed
+  ops (movement broadcast fan-out, chat/emote/who, attacks, saves, ping, open/cancel trades)
+  — 5,958 then 6,211 ops at ~130 ops/s, **0 client errors**, server responsive after both.
+- **Memory observation (watch, not defect):** working set 45→104 MB during soak 1, held ~104
+  through 20s idle, then **fell to 53 MB during/after soak 2** — non-monotonic across
+  identical load cycles ⇒ allocator retention/reuse, not a leak. Re-check under longer soaks
+  if the server ever runs for days.
+- TODO/FIXME markers in the game script: 0. Console noise: 25 log / 7 warn (all boot-path
+  informational, unchanged).
