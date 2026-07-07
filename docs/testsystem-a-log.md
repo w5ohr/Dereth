@@ -347,3 +347,21 @@ invariants across all 1,233 generated spells (7/7):
   DEFAULT_SPELLS check worked only because it lived inside the same eval'd string.)
 
 No changes to the findings list (#20–#25 stand).
+
+
+## TestSystemA — Run 14 (2026-07-07, main @ c3232dc)
+
+**Result: one deploy finding (TSA-7, item #26). DOM ids + config sanity otherwise clean.**
+
+- **TSA-7 (deploy, low-medium) — filed as item #26.** `deploy/Dockerfile` copies ONLY
+  `dereth_server.py`, but the server opens four data files at boot (admin_kilmer.json +
+  ../assets/{acrewards,acitems,acspellstats}.json). Graceful fallbacks keep the container
+  running, but Docker deploys silently lose the retail item/spell catalog → shared loot
+  degrades to the simplified generator, and no admin character seeds. systemd deploy
+  (git-clone the repo) is fine. Fix in #26.
+- **DOM integrity (clean)**: 208 static DOM ids, all unique — **0 duplicate ids** (the class
+  of bug that silently breaks getElementById). All 211 getElementById targets resolve to a
+  defined id (the lone "a" is a dynamic variable, not a literal — false positive).
+- **Deploy config sanity (clean)**: nginx proxies /ws → 127.0.0.1:8787 with a deny rule on
+  /server//deploy//.git; Dockerfile runs as non-root `dereth`, loopback-only publish, /data
+  volume for SQLite — posture matches the systemd unit.
