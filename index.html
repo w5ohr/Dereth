@@ -21713,7 +21713,7 @@ function selectTarget(pick,silent){
   if(TARGET&&TARGET.type==="monster") detachTargetBars(TARGET.ref);
   TARGET=pick||null;
   const tf=document.getElementById('targetFrame');
-  if(!TARGET){ if(tf&&!uiHiddenIs("targetFrame")) tf.style.display="none"; return; }
+  if(!TARGET){ hideTargetRing(); if(tf&&!uiHiddenIs("targetFrame")) tf.style.display="none"; return; }
   if(TARGET.type==="monster") attachTargetBars(TARGET.ref);
   if(!silent) log(`Target: <b>${targetName(TARGET)}</b>`,"sys");
   updateTargetUI(0,true);
@@ -21727,9 +21727,19 @@ function cycleTarget(dir){
   selectTarget({type:"monster",ref:cand[i]});
 }
 function uiHiddenIs(id){ return !!(settings.uiHidden&&settings.uiHidden[id]); }
+// #173: a world-space ground ring under the locked target so you can see WHICH creature is targeted
+let _tgtRing=null;
+function targetRing(){
+  if(_tgtRing) return _tgtRing;
+  const g=new THREE.RingGeometry(0.62,0.98,44);
+  const mt=new THREE.MeshBasicMaterial({color:0xffbf2a,transparent:true,opacity:0.9,side:THREE.DoubleSide,fog:false,depthWrite:false});
+  _tgtRing=new THREE.Mesh(g,mt); _tgtRing.rotation.x=-Math.PI/2; _tgtRing.renderOrder=4; _tgtRing.visible=false;
+  scene.add(_tgtRing); return _tgtRing;
+}
+function hideTargetRing(){ if(_tgtRing) _tgtRing.visible=false; }
 function updateTargetUI(dt,force){
   const tf=document.getElementById('targetFrame'); if(!tf) return;
-  if(!TARGET){ tf.style.display="none"; return; }
+  if(!TARGET){ hideTargetRing(); tf.style.display="none"; return; }
   const t=TARGET;
   if(t.type==="monster"){ const m=t.ref;
     if(m.hp<=0||monsters.indexOf(m)<0){ selectTarget(null,true); return; }     // fell or despawned
@@ -21737,7 +21747,13 @@ function updateTargetUI(dt,force){
     const tb=m.mesh&&m.mesh.userData.tfBars;
     if(tb){ tb.st.scale.x=Math.max(0.001,(m.st!=null?m.st/m.mst:1)); tb.mn.scale.x=Math.max(0.001,(m.mn!=null?m.mn/m.mmn:1)); }
     tfSetBar(tf,"tfHp","bhp",m.hp,m.mhp); tfSetBar(tf,"tfSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(tf,"tfMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
+    const ring=targetRing();                                                    // #173: ground ring tracks the locked creature
+    if(m.mesh){ ring.position.set(m.x,groundY(m.x,m.z,m.mesh.position.y)+0.06,m.z);
+      ring.scale.setScalar(Math.max(0.5,(m.r||0.8))*1.4/0.80);
+      ring.material.opacity=0.62+0.3*Math.sin(now()/200); ring.visible=!uiHiddenIs("targetFrame"); }
+    else hideTargetRing();
   } else {                                                                      // npc / vendor / item: name only
+    hideTargetRing();
     ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="none"; });
   }
   if(t.type==="monster") ["bhp","bst","bmn"].forEach(c=>{ const b=tf.querySelector("."+c); if(b) b.style.display="block"; });
