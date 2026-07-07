@@ -201,3 +201,13 @@ authoritative list.
 - **Char select:** renderCharSelect/createChar present; client keeps a single local save slot
   (multi-slot lives server-side — proven by the MMO harness roster tests).
 - **No new findings this pass.**
+
+## 2026-07-06 21:15 — TestSystemC pass 14 (HEAD c3232dc — new 15-min loop cadence)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Portal storm:** triggerPortalStorm scatter-teleports the player (~44u toward town outskirts).
+- **Drowning:** submerged 20s — breath depletes then health drains; surfacing restores breath to full.
+- **Charge attack:** power accumulates with held charge; releaseCharge present.
+- **Achievements:** checkAchievements grants on thresholds (1 → 3 badges at 1,000 kills).
+- **Dash:** dashT/dashCd state fields tracked on the player.
+- **No new findings this pass.**
