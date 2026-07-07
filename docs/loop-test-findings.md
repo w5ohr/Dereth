@@ -310,3 +310,23 @@ opts.spell/opts.phys branch):**
   render inconclusive — probe used a raw `pages` field, likely needs a real book id; not a defect);
   recall contract recalls + is reusable (keep) + sets its cooldown. MMO harness 47/47, 0 console errors.
 - Logged only — NOT fixed, per loop policy.
+
+## 2026-07-06 21:33 — TestSystemC pass 19 (HEAD c3232dc) — defensive audit: playerHurt CLEAN (no leaks)
+
+Symmetric follow-up to the offensive applyHit audit. Full read of `playerHurt`
+(index.html:14857–14905): every mitigation is correctly type-gated —
+- evade / flat Defense avoidance use the per-type skill (magicd/missiled/meleed);
+- armor + shield-block are physical-favored (armor half-applies to magic, block is type!=="magic");
+- Aegis magic-absorb is magic-only; Life Protection / Vulnerability / Recklessness / creature-crit
+  are universal (AC-correct).
+
+**Runtime verification (Math.random pinned to kill evade/crit noise, defenses stripped to isolate each):**
+- Baseline: 1000 → ~985 phys / ~984 magic (small innate attribute-defense).
+- **Life Protection 25%** cuts BOTH: phys 985→739 (×0.75) · magic 984→738 (×0.75). ✓ correctly universal.
+- **Fire bane 30%**: vs fire 984→**689** (×0.70) ✓ · vs frost **984** (untouched) ✓ · vs physical **985**
+  (untouched) ✓ — **NO cross-element leak** (the exact opposite of the offensive weapon→spell bug).
+- **Imperil (vuln ×1.5)**: 985→**1478** ✓ correctly amplifies.
+
+**Conclusion:** the weapon→spell leak family (passes 16–18) is ISOLATED to applyHit's offensive
+pre-branch multiplier; the defensive mitigation chain does not mirror it. No new findings this pass.
+MMO harness 47/47 · 0 console errors · no drift.
