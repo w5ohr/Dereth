@@ -225,3 +225,30 @@ authoritative list.
 - **Set + jewelry bonuses:** setBonus() returns {count,set,armor,mhp,skill,skillV}; jewelryBonus present.
 - **Scarabs:** isScarab/findScarabFor present; 9 SCARAB_LEVEL tiers (mana-substitute reagents).
 - **No new findings this pass.**
+
+## 2026-07-06 21:24 — TestSystemC pass 16 (HEAD c3232dc) — ⚠ FINDING: weapon oil leaks onto spell damage
+
+**User-reported check:** "oil applies to bolts, arrows, darts, any projectile weapon."
+
+- ✅ **CONFIRMED CORRECT — oil DOES apply to all projectile weapons.** Every projectile (arrow/
+  bolt/dart) resolves its hit through `applyHit` (index.html:16442), which applies the oil buff
+  `itemBuff("dmg")` at index.html:10084. Runtime proof: a 1000 physical arrow component → 1120
+  with a +12% Honing Oil (ratio 1.12). No change needed for projectiles.
+
+- ⚠ **BUG found while verifying: weapon oil ALSO boosts SPELL damage.** `applyHit` (index.html:10084)
+  runs `base*=(1+itemBuff("dmg")+aetheriaBonus("dmg"))*(1-vitae)` UNCONDITIONALLY, before it
+  branches on `opts.spell` (index.html:10087) vs `opts.phys`. So a weapon oil (a physical-weapon
+  consumable, index.html:14448 → player.itemBuffs.dmg) multiplies war-magic bolt damage too.
+  Runtime proof: a 1000 war-magic spell hit → 1120 with a +12% oil active (ratio 1.12). A weapon
+  oil should never buff spellcasting.
+  - **Repro:** apply any weapon oil (Honing Oil +12%), then cast a damage spell → spell hits ~12%
+    harder for the oil's duration.
+  - **Root cause:** `itemBuff("dmg")` is applied in the shared pre-branch multiplier, not the
+    physical-only path. (Note: `gearFx.dmg` (Blood Drinker) is correctly gated behind `opts.phys`
+    at index.html:10086 — oil should follow the same pattern.)
+  - **Fix caution:** `player.itemBuffs.dmg` is ALSO set by the Aetheria "Destruction" surge
+    (index.html:13594), which may be INTENDED to boost all damage. A fix should move oil to a
+    weapon-only (opts.phys) application without disabling the Destruction surge's universality —
+    or split oil into its own weapon-only buff slot. Flag for design decision, not a blind gate.
+  - **Severity:** low-moderate (minor unintended power buff; balance, not a crash).
+- NOT FIXED per loop policy — logged only.
