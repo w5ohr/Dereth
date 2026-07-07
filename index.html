@@ -25080,7 +25080,7 @@ function applySaveObj(s){
   }
   // restore exact last position (takes precedence over the bind point); fresh chars saved
   // their heritage-capital spawn, so this also fixes "reappear at the wrong town".
-  if(typeof s.px==="number" && typeof s.pz==="number"){ const _m=WSCALE/(s.wscale||1); arriveAt(s.px*_m,s.pz*_m); if(typeof s.pyaw==="number") player.yaw=s.pyaw; }   // migrate saved coords to the current world scale
+  if(isFinite(s.px) && isFinite(s.pz)){ const _m=WSCALE/(s.wscale||1); arriveAt(s.px*_m,s.pz*_m); if(isFinite(s.pyaw)) player.yaw=s.pyaw; }   // #241: isFinite rejects NaN/Infinity (typeof passes them) — a corrupt saved coord would set player.x=NaN (clamp(NaN)=NaN) and permanently soft-brick the character; overflow-to-Infinity is still caught by arriveAt's clamp
   if(player.academy&&!player.academy.done&&!inDungeon) enterAcademyHall();   // still a recruit → wake back inside the Academy hall
   if(player.ship && typeof spawnOwnedShip==="function") spawnOwnedShip();   // re-float the owned ship at its saved berth
   updateNPCMarker();updateQuestHUD();
