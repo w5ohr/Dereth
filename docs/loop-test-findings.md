@@ -110,3 +110,17 @@ authoritative list.
 - **Allegiance:** 1 vassal → rank 1; vassalXP pool tracked; pass-up path (gainXP passup-exempt)
   verified in code.
 - **No new findings this pass.**
+
+## 2026-07-06 19:25 — TestSystemC pass 8 (HEAD c3232dc, still unchanged — varied coverage round 8)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Dispel:** planted slow+imperil debuffs; Dispel Self I cleanses both.
+- **Rares:** gate rareRoll() ≈ 1-in-900 (pity-timed); rollRare() materializes valid legendary
+  rares from a 10-entry table ("Storm Amuli Coat" sampled). The 100%-hit first reading was
+  probing the materializer, not the gate — non-defect.
+- **Imbues:** tinker path verified live — Amber salvage (100 units) on an equipped sword with
+  trained skill → "of Flame" fire brand, imbued flag, tink 1/10, bag consumed. Imbues are
+  salvage-applied by design (never on raw loot rolls).
+- **Weather:** state machine present (clear), updateWeather runs; portal-storm trigger present.
+- **Quickbar:** spellbar panel present with 4 slots.
+- **No new findings this pass.**
