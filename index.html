@@ -16462,7 +16462,15 @@ function update(dt){
     const ox=m.x,oz=m.z; // pre-move (for dungeon wall-sliding)
     const dx=player.x-m.x,dz=player.z-m.z,d=Math.hypot(dx,dz);
     // freeze AI for far, non-chasing overworld creatures (streamMonsters/cull handles their mesh)
-    if(!inDungeon && d>SIM_RADIUS && m.state!=="chase"){ if(m.mesh) m.mesh.position.y=groundY(m.x,m.z); continue; }   // keep far idle mobs planted on the terrain (their sim is frozen, but the ground must have loaded/settled since spawn)
+    if(!inDungeon && d>SIM_RADIUS && m.state!=="chase"){   // #178: AI is frozen, but keep the CHEAP idle animation alive so visible-but-unsimulated
+      if(m.mesh){                                          // creatures (95–215u) aren't frozen statues — they animate in place, no AI
+        if(m.gltfMixer){ m.gltfMixer.update(dt);           // rigged: idle clip is already weighted; ease any walk blend back to idle
+          if(m.actWalk){ m.actWalk.weight+=(0-m.actWalk.weight)*Math.min(1,dt*6); m.actIdle.weight=1-m.actWalk.weight; }
+          m.mesh.position.y=groundY(m.x,m.z); }
+        else { const aby=animateCreatureRig(m,dt,false);   // procedural: idle sway only (moved=false) — tail/arm drift, breathing bob
+          m.mesh.position.set(m.x,groundY(m.x,m.z,m.mesh.position.y)+aby,m.z);
+          m.mesh.rotation.set(m._pitch||0,(m.ang||0)+(m._yawOff||0),m._roll||0); } }
+      continue; }
     if(m.gltfMixer){ m.gltfMixer.update(dt);   // animate rigged creature models that are close enough to simulate
       if(m.actWalk){ const moving=(m.state==="chase"||m.state==="wander"||m.state==="flee");   // blend idle ↔ walk with movement
         const tw=moving?1:0; m.actWalk.weight+=(tw-m.actWalk.weight)*Math.min(1,dt*6);
