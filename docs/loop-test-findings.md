@@ -211,3 +211,17 @@ authoritative list.
 - **Achievements:** checkAchievements grants on thresholds (1 → 3 badges at 1,000 kills).
 - **Dash:** dashT/dashCd state fields tracked on the player.
 - **No new findings this pass.**
+
+## 2026-07-06 21:21 — TestSystemC pass 15 (HEAD c3232dc — item/magic depth)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Atlan stones:** Stinging Stone brands an equipped sword → "of Corrosion" (acid) permanently.
+- **Void school:** 32 void spells incl. "Nether Corruption II"; monster DoT support present.
+- **Weapon oils:** Honing Oil applies +12% weapon damage for 100s → player.itemBuffs.dmg;
+  itemBuff("dmg") reads 0.12; 30 rolled oils all carry dmg/dur.
+- **Worn item enchants:** a real Blood Drinker acspells id on gear populates player.gearFx.dmg
+  (via wornMagicItems → itemSpellNames → itemSpellFx aggregation). Works with numeric acspells
+  ids + itemMana pool — NOT the invented itemV field my first probe used (non-defect).
+- **Set + jewelry bonuses:** setBonus() returns {count,set,armor,mhp,skill,skillV}; jewelryBonus present.
+- **Scarabs:** isScarab/findScarabFor present; 9 SCARAB_LEVEL tiers (mana-substitute reagents).
+- **No new findings this pass.**
