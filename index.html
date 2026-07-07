@@ -25435,6 +25435,7 @@ function createChar(preset){
 }
 function onPlayOk(m){
   document.getElementById('charSelect').style.display="none";
+  if(m.name) player.name=m.name;   // #234: adopt the server's authoritative charname — a freshly created online char sent its name to the server but never set player.name locally, so it showed as "Adventurer". Set it BEFORE the branch's saveGame so the correct name persists to the slot.
   if(creatingChar){ creatingChar=false; const preset=pendingPreset; pendingPreset=null;
     startGame(false, preset||undefined); saveGame();   // persist the fresh character to its slot
   } else { pendingServerChar=m.char; startGame(true); }
