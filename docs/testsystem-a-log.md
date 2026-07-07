@@ -153,3 +153,34 @@ complementary lane: server depth + static analysis + pack audits. No duplicated 
   if the server ever runs for days.
 - TODO/FIXME markers in the game script: 0. Console noise: 25 log / 7 warn (all boot-path
   informational, unchanged).
+
+## TestSystemA — Run 6 (2026-07-07, main @ c3232dc)
+
+**Result: one protocol-gap finding (TSA-4); persistence, sessions, events, and tooling clean.**
+
+### FINDINGS (log only)
+
+- **TSA-4 (protocol gap, minor) — `delete_char` of the actively-played slot is SILENTLY
+  ignored.** dereth_server.py:1407-1412: the guard `not (cl.in_world and cl.slot == slot)`
+  correctly refuses deleting the character you're playing, but the refusal branch sends
+  NOTHING back — no error, no roster — so a client cannot distinguish refusal from lag/loss.
+  (This also masked itself in testing: `create_char` auto-enters the world on the new slot,
+  so a create→delete sequence on the same slot always hits the silent refusal.) Fix later:
+  send `{"t":"system"|"play_err", msg:"You cannot delete the character you are playing."}`
+  in the refusal branch.
+
+### Clean checks (`server/tsa_persist.py`, kept in-repo)
+
+- **Deep save/load fidelity**: a complex char blob (nested dicts/lists, floats like
+  itemMana 380.5, unicode incl. CJK + symbols, aetheria/academy/knownSpells fields)
+  round-trips **deep-equal** through save → disconnect → login → play_char.
+- **Sessions**: auth token from login resumes a fresh socket (`resume` → auth_ok);
+  bogus token politely rejected.
+- **Slot lifecycle (correct order)**: create extra slots → switch to another slot →
+  delete → recreate → plays the NEW blob (level 99). The two failures in the first
+  scripted pass were harness ordering (auto-play-on-create + offset ack reads), triaged
+  down to TSA-4 as the only real issue.
+- **Event lifecycle end-to-end**: Incursion "Olthoi Swarm" starts (8 mobs, ttl 132s) →
+  walked to each mob (attacks are range-gated, correctly) → 8/8 mob_die → **event_end
+  success:true broadcast** ✓.
+- **Python compile gate**: `py_compile` over all tools/*.py + server/*.py — pass.
