@@ -13576,7 +13576,7 @@ function aetheriaSurge(on,attacker){
     if(a.surge==="Destruction"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.dmg; player.itemBuffs.dmg={v:Math.max(0.25,cur?cur.v:0),t:8}; }
     else if(a.surge==="Fury"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.crit; player.itemBuffs.crit={v:Math.max(0.15,cur?cur.v:0),t:8}; }
     else if(a.surge==="Protection"){ player.lifeBuffs=player.lifeBuffs||{}; const cur=player.lifeBuffs.prot; player.lifeBuffs.prot={v:Math.max(0.25,cur?cur.v:0),t:Math.max(8,cur?cur.t:0)}; }
-    else if(a.surge==="Regeneration"){ player.hots=player.hots||{}; player.hots.hp={rate:Math.max(2,player.mhp*0.02),t:6}; }
+    else if(a.surge==="Regeneration"){ player.hots=player.hots||{}; hotSet(player.hots,"hp",Math.max(2,player.mhp*0.02),6); }
     else if(a.surge==="Affliction"&&attacker){ attacker.weakV=0.75; attacker.weakUntil=now()+8000; }
     floater(player.x,EYE+0.8,player.z,"SURGE of "+a.surge+"!","#9af0ff");
     log(`Your <b>${esc(a.name)}</b> flares — <b>Surge of ${a.surge}</b>!`,"heal"); if(SFX.quest)SFX.quest();
@@ -14429,10 +14429,10 @@ function applyItem(it){
     styleWeaponModel();
     log(`You set the <b>${it.name}</b> into your <b>${esc(w.name)}</b> — it hums with ${it.element==="frost"?"biting cold":it.element==="shock"?"crackling lightning":it.element==="acid"?"seething acid":"living flame"}.`,"loot");
     if(SFX.level)SFX.level(); }
-  else if(it.stat==="hot"){ player.hots=player.hots||{}; player.hots[it.pool]={rate:it.rate,t:it.dur};
+  else if(it.stat==="hot"){ player.hots=player.hots||{}; hotSet(player.hots,it.pool,it.rate,it.dur);
     const nm={hp:"health",st:"stamina",mn:"mana"}[it.pool]||it.pool;
     log(`You drink the <b>${it.name}</b> — ${nm} regenerates ${it.rate}/s for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
-  else if(it.stat==="skillpot"){ player.skillBuffs=player.skillBuffs||{}; player.skillBuffs[it.skillKey]={v:it.v,t:it.dur}; if(typeof derive==="function")derive();
+  else if(it.stat==="skillpot"){ player.skillBuffs=player.skillBuffs||{}; buffSet(player.skillBuffs,it.skillKey,it.v,it.dur); if(typeof derive==="function")derive();
     const nm=(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey;
     log(`You drink the <b>${it.name}</b> — +${it.v} ${nm} for ${Math.round(it.dur/60)} min.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="attrpot"){ applyAttrBuff(it.attr,it.v,it.dur);
@@ -15012,10 +15012,17 @@ function fallDamage(drop){
 }
 
 // ---------- casting & melee ----------
-// Creature-Enchantment attribute buff: raise an attribute for a duration (refreshes, never stacks).
+// #267: keep-strongest buff apply. A same-family buff replaces the active one only if it's at least
+// as strong; a WEAKER cast is refused (it just extends the stronger buff's timer, AC-style) so an
+// ally/bot/low-tier cast can't downgrade your stronger enchantment. buffSet compares .v, hotSet .rate.
+function buffSet(map,key,v,t){ const c=map[key]; if(c&&c.v>v){ c.t=Math.max(c.t,t); return false; } map[key]={v,t}; return true; }
+function hotSet(map,key,rate,t){ const c=map[key]; if(c&&c.rate>rate){ c.t=Math.max(c.t,t); return false; } map[key]={rate,t}; return true; }
+// Creature-Enchantment attribute buff: raise an attribute for a duration (keep-strongest, never stacks).
 function applyAttrBuff(attr,v,dur){
   player.spellBuffs=player.spellBuffs||{};
-  const cur=player.spellBuffs[attr]; if(cur) player.attr[attr]-=cur.v;   // drop the old stack before re-applying
+  const cur=player.spellBuffs[attr];
+  if(cur&&cur.v>=v){ cur.t=Math.max(cur.t,dur); return; }   // #267: a weaker/equal cast keeps the stronger active buff (just refreshes its timer) — no downgrade
+  if(cur) player.attr[attr]-=cur.v;                          // replacing with a STRONGER one: drop the old first
   player.attr[attr]+=v; player.spellBuffs[attr]={v,t:dur};
   derive();
 }
@@ -15311,7 +15318,7 @@ function executeSpell(id){
     castFlash(0x7fe6a0);SFX.quest&&SFX.quest();log(`You cast <b>${s.name}</b>${n?`, cleansing ${n} curse(s)`:" — nothing to cleanse"}.`,"heal");return;
   }
   if(s.special==="regen"){   // Life over-time renewal: trickle the chosen pool back up for a duration
-    player.hots=player.hots||{}; player.hots[s.pool]={rate:s.rate,t:s.dur};
+    player.hots=player.hots||{}; hotSet(player.hots,s.pool,s.rate,s.dur);
     const lbl={hp:"health",st:"stamina",mn:"mana"}[s.pool];
     floater(player.x,EYE+0.5,player.z,"renewing "+lbl,"#7fe6a0");
     spellLandFX("life",_slfPlayerPos,2.0,0.75);
@@ -15323,10 +15330,10 @@ function executeSpell(id){
     if(s.buff==="might"){player.buffMightT=dur;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
     else if(s.buff==="swift"){player.buffSwiftT=dur;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
     else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
-    else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};player.itemBuffs[s.stat]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
-    else if(s.buff==="prot"){player.lifeBuffs=player.lifeBuffs||{};player.lifeBuffs.prot={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% dmg taken`,"#7fe6a0");}
-    else if(s.buff==="bane"&&s.element){player.banes=player.banes||{};player.banes[s.element]={v:mag,t:dur};floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% ${s.element}`,fxHex(fxElem(s.element,0x8fd0ff)));}   // elemental protection tinted to its element
-    else if(s.buff==="skill"&&mag){player.skillBuffs=player.skillBuffs||{};player.skillBuffs[s.skillKey]={v:mag,t:dur};derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${SKILL_BY_KEY[s.skillKey]?SKILL_BY_KEY[s.skillKey].n:s.skillKey}`,"#bfe0ff");}
+    else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};buffSet(player.itemBuffs,s.stat,mag,dur);floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
+    else if(s.buff==="prot"){player.lifeBuffs=player.lifeBuffs||{};buffSet(player.lifeBuffs,"prot",mag,dur);floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% dmg taken`,"#7fe6a0");}
+    else if(s.buff==="bane"&&s.element){player.banes=player.banes||{};buffSet(player.banes,s.element,mag,dur);floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% ${s.element}`,fxHex(fxElem(s.element,0x8fd0ff)));}   // elemental protection tinted to its element
+    else if(s.buff==="skill"&&mag){player.skillBuffs=player.skillBuffs||{};buffSet(player.skillBuffs,s.skillKey,mag,dur);derive();floater(player.x,EYE+0.5,player.z,`+${mag} ${SKILL_BY_KEY[s.skillKey]?SKILL_BY_KEY[s.skillKey].n:s.skillKey}`,"#bfe0ff");}
     else if(s.buff==="light"){player.lightBuff={t:dur,intensity:s.intensity,dist:s.dist,color:s.lightColor};
       const cs='#'+(s.lightColor||0xffffff).toString(16).padStart(6,'0');
       floater(player.x,EYE+0.5,player.z,"✦ light","#fff2cf");castFlash(s.lightColor||0xfff2cf);SFX.quest();
@@ -25601,14 +25608,14 @@ function applyBuffSelf(sp,fx){
   const dur=sp.dur||(typeof buffDurFor==="function"?buffDurFor(sp.lvl||1):120), mag=sp.mag;
   const flo=(txt,col)=>{ if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,txt,col||"#bfe0ff"); };
   if(typeof sp.heal==="function"){ const h=sp.heal(); player.hp=Math.min(player.mhp,player.hp+h); flo("+"+Math.round(h),"#7fe6a0"); }
-  else if(sp.special==="regen"){ player.hots=player.hots||{}; player.hots[sp.pool]={rate:sp.rate,t:sp.dur}; flo("regen "+sp.pool,"#8fe6a0"); }
+  else if(sp.special==="regen"){ player.hots=player.hots||{}; hotSet(player.hots,sp.pool,sp.rate,sp.dur); flo("regen "+sp.pool,"#8fe6a0"); }
   else if(sp.buff==="might"){ player.buffMightT=dur; flo("+50% dmg","#ff8f6b"); }
   else if(sp.buff==="swift"){ player.buffSwiftT=dur; flo("+speed","#7fe6a0"); }
   else if(sp.buff==="attr"&&mag){ applyAttrBuff(sp.attr,mag,dur); flo(`+${mag} ${sp.attr}`); }
-  else if(sp.buff==="item"){ player.itemBuffs=player.itemBuffs||{}; player.itemBuffs[sp.stat]={v:mag,t:dur}; flo(sp.name,"#ffd86b"); }
-  else if(sp.buff==="prot"){ player.lifeBuffs=player.lifeBuffs||{}; player.lifeBuffs.prot={v:mag,t:dur}; flo(`-${Math.round(mag*100)}% dmg`,"#7fe6a0"); }
-  else if(sp.buff==="bane"&&sp.element){ player.banes=player.banes||{}; player.banes[sp.element]={v:mag,t:dur}; flo(`-${Math.round(mag*100)}% ${sp.element}`,"#8fd0ff"); }
-  else if(sp.buff==="skill"&&mag){ player.skillBuffs=player.skillBuffs||{}; player.skillBuffs[sp.skillKey]={v:mag,t:dur}; derive(); flo(`+${mag} ${SKILL_BY_KEY[sp.skillKey]?SKILL_BY_KEY[sp.skillKey].n:sp.skillKey}`); }
+  else if(sp.buff==="item"){ player.itemBuffs=player.itemBuffs||{}; buffSet(player.itemBuffs,sp.stat,mag,dur); flo(sp.name,"#ffd86b"); }
+  else if(sp.buff==="prot"){ player.lifeBuffs=player.lifeBuffs||{}; buffSet(player.lifeBuffs,"prot",mag,dur); flo(`-${Math.round(mag*100)}% dmg`,"#7fe6a0"); }
+  else if(sp.buff==="bane"&&sp.element){ player.banes=player.banes||{}; buffSet(player.banes,sp.element,mag,dur); flo(`-${Math.round(mag*100)}% ${sp.element}`,"#8fd0ff"); }
+  else if(sp.buff==="skill"&&mag){ player.skillBuffs=player.skillBuffs||{}; buffSet(player.skillBuffs,sp.skillKey,mag,dur); derive(); flo(`+${mag} ${SKILL_BY_KEY[sp.skillKey]?SKILL_BY_KEY[sp.skillKey].n:sp.skillKey}`); }
   else return false;
   return true;
 }
