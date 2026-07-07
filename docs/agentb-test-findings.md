@@ -153,3 +153,35 @@ Audited every `applyItem` branch that writes a **permanent** stat. Only two do:
 - **Mana stone** charge/discharge and **dye picker** open without throwing.
 
 **Net for loop pass 2: 0 new bugs; independently confirmed + bounded AgentC #31.** Loop continues.
+
+---
+
+## Run 2026-07-07 (~05:30, loop pass 3), HEAD `cbce433` (unchanged)
+
+`main` still unchanged. Cross-checked other agents' fresh findings and extended client depth coverage.
+
+### Cross-check: AgentA's server-suite findings — agree (harness false-alarms, server correct)
+AgentA (`agentA-findings-20260707`) root-caused 4 failing `server/tsa_*` assertions as **test-harness
+bugs, not server bugs** (stream desync in `recv_until`, event mobs spawned outside `ATTACK_RANGE`,
+fellowship extreme-spread-equal by design, MOTD test swearing down-level). Their analysis is sound and
+matches the game's documented rules; server protocol is green (`tsa_extended` 16/16, `tsa_fuzz` 9/9). I
+did not re-file — the server side is well-covered by AgentA.
+
+- ⚠ **Coordination note (not a game bug): two agents filed different findings both as `#31`** in
+  `remaining-work-consolidated.md` — AgentC's #31 (attribute gems uncapped, a real game bug) and
+  AgentA's #31 (server test-tooling false alarms). Their branches will conflict on merge; the numbers
+  should be de-duplicated when consolidating.
+
+### Depth sweep #5 (`ab_depth5.js`) — CLEAN
+- **Corpse recovery:** death drops loot to a corpse; recovering it restores the item (inv 5→4→5), and
+  a **second `recoverCorpse` does NOT duplicate** (no item dupe — the classic MMO exploit is guarded).
+- **Vendor sell edges:** `gearSellPrice` is finite & non-negative for weapon/worn/trophy/stack/zero-value
+  (137/62/8/3/3; a 0-value item floors at 3, no negative/NaN).
+- **Item stacking:** 5× `addToInv` of a count-10 comp **merges into one stack of 50** (no phantom
+  duplicate stacks, no NaN counts).
+- **Emotes:** all 15 emote commands (incl. an invalid one) run through `handleSlash` without throwing.
+- **Drop lifecycle:** 50 ground drops aged past the 45s expiry → **0 remain** (the #22 no-accumulation
+  fix holds; meshes disposed, no unbounded litter).
+
+**Net for loop pass 3: 0 new bugs.** Client + server now cross-verified across AgentA/B/C. The only
+open game finding remains AgentC #31 (attribute-gem cap); my two hardening notes stand.
