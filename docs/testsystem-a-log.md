@@ -10,6 +10,60 @@ depend on visuals are marked as needing on-hardware confirmation.
 
 ---
 
+## AgentA pass — 2026-07-07 (main @ cbce433, post PR #155 Lane-A + Lane-B/C merges)
+
+**Product surface CLEAN. 0 new game findings.** Four server-suite assertions FAILED but all four
+are **harness bugs (false alarms), not game/server bugs** — root-caused below with proof the
+server is correct. Recording them so no agent re-chases them, and filed once as a low-priority
+**Lane C test-tooling** cleanup (**#31**) in `remaining-work-consolidated.md`.
+
+**Green this pass:**
+- **Syntax gates:** `node --check` on the extracted 2.34 MB game script → OK; `py_compile`
+  all `server/*.py` + `tools/*.py` → OK.
+- **Data packs:** all 27 JSON packs parse (acitems 4,338 · acspellstats 3,294 · acbooks 898 …),
+  0 malformed.
+- **Server protocol:** `tsa_extended` 16/16 (secure trade w/ coin, 3-state PK gating, allegiance
+  swear/achat, shared-corpse owner gating), `tsa_fuzz` 9/9 (non-JSON, malformed shapes, hostile
+  fields, pre-auth, 500-burst, mid-trade disconnect). Re-ran the two "failing" suites against a
+  FRESH server + FRESH DB to rule out cross-suite state pollution — same 4 failures ⇒ reproducible,
+  then root-caused each to the harness (not the server).
+
+**The 4 harness false alarms (server verified CORRECT in each):**
+
+1. **`tsa_persist` "recreated slot plays with new blob" (reads level 3, expects 99)** — HARNESS
+   STREAM DESYNC. `create_char` replies with **roster + play_ok + broadcast** per call, but the
+   loop's `recv_until` pred (`server/tsa_persist.py:89`) matches `roster`/`system` too, so it
+   consumes the roster and leaves each `play_ok` buffered. By the `play_char` assertion (:98) it
+   reads a **stale buffered `play_ok` from creating slot 3** (level 3). **Proof server is correct:**
+   a clean-room repro that consumes exactly one `play_ok` per step returns **level 99**. Server
+   persistence (`create_char_slot`→DB, `load_char_slot`) is sound (`dereth_server.py:127-148,1392-1408`).
+2. **`tsa_persist` "event ends after clearing mobs" (no event_end in window)** — HARNESS CAN'T
+   REACH THE MOBS. Event mobs spawn in a ring **90–440 units** from the anchor
+   (`dereth_server.py:353`) but `ATTACK_RANGE` is **16** (`:343`); the harness teleports to the exact
+   anchor (`tsa_persist.py:109`) and every `attack` is range-rejected, so `event_alive()` never hits
+   0 and `end_event` only fires on TTL (past the 12 s window). Server event-clear logic
+   (`step_events`→`end_event`, `:459-462,437-457`) is correct — the harness would need each mob's
+   real position and to walk within 16 units of each.
+3. **`tsa_fellow` "wide spread pays high level more" (all equal)** — WORKING AS DESIGNED. Levels
+   20/22/**80** = spread 60; `fellowship_xp` documents **spread ≥ 50 ⇒ extreme-spread equal, no size
+   reduction** (`dereth_server.py:1115-1116`). The proportional bucket is spread 6–49. The harness
+   asserts `hi > lo` for a combo that is intentionally equal (`tsa_fellow.py:72`). (Matches the prior
+   sweep's "spread-rule expectations" false-alarm note.)
+4. **`tsa_fellow` "monarch MOTD pushed to sworn vassal" (not received)** — HARNESS SWEARS
+   DOWN-LEVEL. It sets `a`=lvl 20, `b`=lvl 22, then has **b swear to a** (`tsa_fellow.py:87`); the AC
+   rule correctly rejects swearing to a *lower* level (`dereth_server.py:1559-1560`). The swear
+   `recv_until` filter (`"swear" in msg`, `:88`) false-matches the **rejection** message ("...swear
+   only to an equal or higher"), so the test proceeds; `a` then has no vassals so its MOTD is
+   correctly refused (`:1590`) and `b` never receives it. Server behaves correctly.
+
+**Suggested harness fixes (Lane C, low pri):** (1) tighten `recv_until` preds to the exact expected
+`t` and drain intervening frames; (2) event test must read event-mob positions from the snapshot and
+walk within `ATTACK_RANGE`; (3) fellowship spread test should use spread 6–49 to hit the proportional
+bucket (or assert equal for ≥50); (4) MOTD test must swear the LOWER-level char to the higher one and
+match the confirmation, not the rejection.
+
+---
+
 ## NIGHT SUMMARY (runs 1–8, all on main @ c3232dc)
 
 **5 findings, nothing fixed** — filed as items **#20–#24** in `remaining-work-consolidated.md`:
