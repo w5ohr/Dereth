@@ -254,3 +254,26 @@ packs, and a Python hazard scan all green.
 - **acmap.png data sanity**: 2041² · height indexes ≤250 (table has 255) · terrain types ≤30
   (≤31 spec) · road bits present · 24 extreme-peak sample px (the named summits) ✓.
 - **SQLite**: `integrity_check ok` on the twice-soaked DB (19 users / 17 chars) ✓.
+
+## TestSystemA — Run 9 (2026-07-07, main @ c3232dc — new /loop, 15-min cadence)
+
+**Result: CLEAN — no new findings.** Chrome still down; save-symmetry, admin seed, and full
+regression this pass.
+
+- **Save/load key symmetry** (static): every non-migration save key is read back on load. The
+  "saved-not-read" set is all sub-fields reconstructed via their parent object (`attr.*`,
+  `appearance.*`, `academy.done`); the "read-not-saved" set is all legacy-migration fallbacks
+  (`armorItem`→armorSlots.chest, `questActive/questIdx`→activeQuests, etc.) — intentional
+  back-compat, not data loss. No asymmetry defect.
+- **Admin seed + auth**: fresh DB → `seed_admin` ensures the Admin account and seeds the maxed
+  Kilmer in slot 0 (level 275, 250M gold, STR 100 via admin_kilmer.json); correct-password
+  login succeeds, wrong-password login rejected. (Credential read from source at runtime, never
+  echoed — the auto-mode classifier correctly blocked a first attempt that would have put the
+  admin password on a command line; re-run avoided materializing it.)
+- **Full harness regression vs current main**: stock 47/47 · extended 16/16 · fuzz 9/9 — **no
+  drift** since the findings were filed. tsa_persist "10/2" and tsa_fellow "7/2" are the SAME
+  known harness-ordering artifacts triaged in runs 6–7 (silent-refusal masking + swear-regex +
+  spread-rule expectation) — the underlying features all pass in the corrected sequential
+  probes; not new defects, not drift.
+
+No changes to the findings list (#20–#24 stand).
