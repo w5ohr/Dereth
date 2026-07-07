@@ -355,7 +355,10 @@
     <div id="invRows"></div>
   </div>
   <div class="tinkPane" data-pane="salvage" style="display:none">
-    <div style="color:var(--gold);font-weight:bold;font-size:13px;margin-bottom:6px">Salvaged Materials <span style="color:var(--dim);font-weight:normal;font-size:11px">— salvage loot (from the Satchel) into these materials, then tinker your gear</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="color:var(--gold);font-weight:bold;font-size:13px">Salvaged Materials <span style="color:var(--dim);font-weight:normal;font-size:11px">— salvage loot (from the Satchel) into these materials, then tinker your gear</span></div>
+      <button id="salvageAllBtn" class="tbtn" title="Salvage every weapon, armor piece &amp; trinket in your satchel (upgrades over your worn gear are kept)">Salvage All</button>
+    </div>
     <div id="tinkBags" style="margin-bottom:12px"></div>
   </div>
   <div class="tinkPane" data-pane="craft" style="display:none">
@@ -14547,7 +14550,7 @@ function openCombinePicker(i){
   ov.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{ const o=opts[+b.dataset.k]; close(); attemptCombine(i,o.j); });
 }
 // ---- salvage & tinkering (AC-authentic; success-chance formula is our own — real one stays gated) ----
-function salvageItem(i){
+function salvageItem(i,quiet){   // #205: quiet suppresses the per-item line during Salvage All (one summary instead)
   const it=player.inv[i]; if(!it) return;
   const work=it.work||rollWork(1), mat=it.mat||MATERIALS[matClass(it.stat)][0];
   const sk=skillTier("salvaging");                         // Salvaging skill lets units exceed workmanship
@@ -14557,8 +14560,7 @@ function salvageItem(i){
   bag.units+=units;
   takeFromInv(i);
   player.materials+=Math.max(1,Math.round(work*0.4));        // a little generic material too (back-compat path)
-  log(`Salvaged <b>${it.name}</b> → +${units} ${mat} (wk ${work}). ${mat} bag: ${bag.units}/100 @ wk ${bag.work.toFixed(1)}.`,"loot");
-  SFX.gold();
+  if(!quiet){ log(`Salvaged <b>${it.name}</b> → +${units} ${mat} (wk ${work}). ${mat} bag: ${bag.units}/100 @ wk ${bag.work.toFixed(1)}.`,"loot"); SFX.gold(); }
 }
 function tinkSkillFor(mat){ return MAT_APPLY[mat]==="armor"?"armortink":"weapontink"; }
 // AC: tinkering lives ON THE ITEM — each tink raises the difficulty of the next; ten tinks max.
@@ -24745,6 +24747,25 @@ function buildTinker(){
         <div class="ctl"><button class="tbtn" data-ap="${m}" ${ready?"":"disabled"}>Apply (100 u)</button></div></div>`;
     }).join("");
     bagWrap.querySelectorAll('[data-ap]').forEach(btn=>btn.onclick=()=>{applyTinker(btn.dataset.ap);buildTinker();updateHUD();saveGame();});
+  }
+  // #205: Salvage All — every gear piece in the satchel in one press (upgrades over worn gear are kept)
+  { const sa=document.getElementById('salvageAllBtn');
+    if(sa) sa.onclick=()=>{
+      const gained={}; let n=0, kept=0;
+      for(let i=player.inv.length-1;i>=0;i--){ const it=player.inv[i]; if(!it) continue;
+        if(it.stat!=="weapon"&&it.stat!=="worn"&&it.stat!=="jewelry") continue;       // gear only — consumables/quest/etc. untouched
+        const cmp=(typeof itemCompare==="function")?itemCompare(it):null;
+        const slotFilled=it.stat==="weapon"?!!player.weapon:it.stat==="worn"?!!(player.armorSlots&&player.armorSlots[it.aslot||"chest"]):false;
+        if(cmp&&cmp.up&&slotFilled){ kept++; continue; }                              // strictly better than a piece you actually WEAR — keep it (empty-slot "upgrades" salvage)
+        const before={}; for(const m in player.salvage) before[m]=player.salvage[m].units;   // snapshot units (bags are mutated in place)
+        salvageItem(i,true); n++;
+        for(const m in player.salvage){ const d=player.salvage[m].units-(before[m]||0); if(d>0) gained[m]=(gained[m]||0)+d; }
+      }
+      if(!n){ log(kept?`Nothing salvaged — <b>${kept}</b> piece(s) kept as upgrades over your worn gear.`:"Nothing in the satchel to salvage.","sys"); return; }
+      const parts=Object.keys(gained).sort().map(m=>`+${gained[m]} ${m}`).join(", ");
+      log(`Salvaged <b>${n}</b> item(s) → ${parts}.${kept?` <span style="color:var(--dim)">(${kept} kept as upgrades)</span>`:""}`,"loot");
+      SFX.gold(); buildTinker(); updateHUD(); saveGame();
+    };
   }
   // crafting: recipes grouped by trade skill; craftable when the skill is Trained and you hold enough materials
   const craftWrap=document.getElementById('tinkCraft');
