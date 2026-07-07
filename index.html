@@ -21382,7 +21382,7 @@ function buildShop(){
   }
   const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
   const sub=document.querySelector('#shop .sub');
-  if(sub) sub.textContent=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel.`;
+  if(sub) sub.innerHTML=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel. &nbsp;·&nbsp; <b style="color:var(--gold)">Your purse: ${player.gold.toLocaleString()}p</b>`;   // #166: show the player's own gold, not just the vendor's coin
   const buy=document.getElementById('shopBuy');buy.innerHTML="";
   SHOP.forEach((it,i)=>{
     const row=document.createElement('div');row.className="row";
