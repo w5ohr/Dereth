@@ -96,3 +96,17 @@ authoritative list.
   closes 11.3→1.6u driving update() directly. Two "failures" en route were the TOWN_SAFE ring
   (60×WSCALE=180u) correctly re-seating mobs out of capital safe zones — by design, not defects.
 - **No new findings this pass.**
+
+## 2026-07-06 19:14 — TestSystemC pass 7 (HEAD c3232dc, still unchanged — varied coverage round 7)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Casino:** 300 low-stake plays — 1 golden key, 32 pack dolls, 98 gold payouts, 169 misses;
+  house nets 16,899 pyreals. Edge and prize tables behave. (First probe passed a number where
+  casinoPlay wants a CASINO_STAKES key — probe error, not a defect.)
+- **Pets:** spawnPet works, pet stays near the player under update(), despawnPets clears.
+- **PK altars:** 2 altars present (one npk, one pk); player pkState tracked.
+- **Ships:** skiff def resolves, findWater locates navigable water, shipNavigable(x,z,def) true
+  there, pilot updater present (board/disembark already proven in pass 2).
+- **Allegiance:** 1 vassal → rank 1; vassalXP pool tracked; pass-up path (gainXP passup-exempt)
+  verified in code.
+- **No new findings this pass.**
