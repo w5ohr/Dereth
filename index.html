@@ -14467,7 +14467,7 @@ function applyItem(it){
     log(np||nk?`You slip ${np} lockpick(s) and ${nk} key(s) onto the <b>Keyring</b> — it now holds <b>${it.picks}</b> picks &amp; <b>${it.keys}</b> keys.`:`Your <b>Keyring</b> holds <b>${it.picks}</b> picks &amp; <b>${it.keys}</b> keys. Loot picks/keys, then use this to stow them.`,"loot");
     if(SFX.gold)SFX.gold(); updateHUD&&updateHUD(); return "keep"; }
   else if(it.stat==="pack"){ player.packs=player.packs||[];
-    if(player.packs.length>=7){ log(`You already wear <b>seven side packs</b> — AC's limit. Drop one to make room.`,"warn"); return "keep"; }
+    if(player.packs.length>=7){ log(`You already wear <b>seven side packs</b> — AC's limit. This one stays in your satchel; sell or drop it.`,"warn"); return "keep"; }   // #237: side packs can't be un-equipped, so don't tell the player to "drop one to make room"
     player.packs.push({name:it.name,cap:Math.max(3,(it.cap||3)+3)});   // a real AC side pack: its own container on your belt
     log(`You clip the <b>${it.name}</b> to your belt — a new side pack with <b>${player.packs[player.packs.length-1].cap}</b> slots (${player.packs.length}/7).`,"loot"); if(SFX.gold)SFX.gold(); toast("SIDE PACK EQUIPPED"); updateHUD&&updateHUD(); }
   else if(player.attr[it.stat]!==undefined){                          // #31: attribute gems raise a stat, but never past the same ceiling the XP path enforces (innate ≤100 + attrMaxRanks() ranks) — otherwise loot gems inflate an attribute without bound
