@@ -332,3 +332,18 @@ Findings list now spans items **#20–#25** (TSA-1..TSA-6).
 No changes to the findings list (#20–#25 stand). This run is a good caution: static
 "missing id" scans over a template-generated table produce false positives — execute the
 builder to confirm.
+
+## TestSystemA — Run 13 (2026-07-07, main @ c3232dc)
+
+**Result: CLEAN — no new findings.** Executed the spellbook builder and validated mechanics
+invariants across all 1,233 generated spells (7/7):
+
+- Every spell has id/name/school/lvl · **no duplicate ids** (across ~30 generator loops) ·
+  levels all within 1–8 · reqs & costs non-negative · **req is non-decreasing within every
+  tiered family** (id minus trailing _N) — a level-N spell never costs less skill than level-(N−1) ·
+  all 7 schools (war/life/creature/item/void/summon/aoe) represented.
+- Harness note: `eval()` of a `const`-declaring string does NOT leak the binding to module
+  scope — concatenate the generator segment + test tail into ONE module and run that. (Run 12's
+  DEFAULT_SPELLS check worked only because it lived inside the same eval'd string.)
+
+No changes to the findings list (#20–#25 stand).
