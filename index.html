@@ -16295,7 +16295,7 @@ function update(dt){
     }
     player.x=nx;player.z=nz;
     const step=Math.hypot(player.vx,player.vz)*dt;
-    player.bob+=dt*step*1.1;
+    player.bob+=step*1.1;   // #176: stride phase advances with DISTANCE moved (step already = speed*dt), not distance*dt — the old dt*step made the gait framerate-dependent and ~60x too slow (feet glided)
     if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;SFX.step();} }  // footfalls only on the ground
     if(sprint>1&&player.grounded&&moving) player.st=Math.max(0,player.st-dt*14);
   }
