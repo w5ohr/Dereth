@@ -411,10 +411,10 @@
 
 <div id="worldmap"><div class="card">
   <h2>Map of Dereth</h2>
-  <div class="sub">The lands of Dereth — click any town to fast-travel.</div>
+  <div class="sub">The lands of Dereth — click a <b style="color:#5aa8ff">◆ Lifestone</b> to journey there.</div>
   <canvas id="bigmap" width="520" height="520" style="display:block;margin:0 auto;border:1px solid var(--border);border-radius:6px;background:#0a0c07"></canvas>
   <div class="sub" style="margin-top:10px;line-height:1.7">
-    <span style="color:#5aa8ff">◆</span> bound Lifestone &nbsp; <span style="color:#8e44ad">◆</span> Lifestone &nbsp;
+    <span style="color:#5aa8ff">◆</span> bound Lifestone &nbsp; <span style="color:#8e44ad">◆</span> Lifestone <span style="color:var(--dim)">(click to travel)</span> &nbsp;
     <span style="color:#bf9bff">■</span> Portal / Mine &nbsp; <span style="color:#ffd23b">■</span> Emissary &nbsp;
     <span style="color:#7fe6a0">■</span> Vendor &nbsp; <span style="color:#ff3030">●</span> Boss &nbsp; <span style="color:#ffd86b">▲</span> You
   </div>
@@ -17547,6 +17547,8 @@ document.getElementById('bigmap').addEventListener('click',e=>{
     arriveAt(best.x,best.z+4);player.invuln=2;
     teleportFX(player.x,player.z);
     toast(best.name.toUpperCase());log(`You journey to <b>${best.name}</b>.`,"sys");closeMap();
+  } else {   // #194: a missed click must not fail silently — say what travels, and point at the nearest
+    log(`No Lifestone there — click a <b>◆ Lifestone</b> to journey${best?` (nearest: <b>${best.name}</b>)`:""}.`,"warn");
   }
 });
 
