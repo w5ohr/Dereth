@@ -16630,11 +16630,17 @@ function update(dt){
     if(dp.type==="corpse"&&dp.t>(dp.ttl||3600)){   // corpses decay after 5 min/level (min 1 hr)
       log("Far away, your corpse crumbles to dust — what it held is lost.","warn");
       disposeObject3D(dp.mesh);drops.splice(i,1);continue;}
-    // Unlooted ground loot decays so a cleared battlefield can't accumulate drop meshes without bound
-    // (the adjacent gap flagged by the #22 soak — 105 stray gold piles after 4 rounds): loose gold & item
-    // loot linger 45s, a stray corpse-spill item ~10min. Shared/online drops are server-authoritative
-    // (never client-despawned). Dispose the mesh so the timed expiry itself doesn't leak GPU resources.
-    if(!dp.shared&&(dp.type==="item"||dp.type==="gold")&&dp.t>(dp.corpse?600:45)){ disposeObject3D(dp.mesh);drops.splice(i,1); }
+    // Unlooted ground loot decays so a cleared battlefield can't accumulate drop meshes without bound.
+    // #209: ITEMS now linger 4 min — longer than the game's own long fights (Colosseum 5–8 waves on a
+    // 300–480s clock, world-boss HP pools) so kill rewards survive the encounter; loose GOLD keeps the
+    // short 45s (it auto-vacuums on walk-over anyway), corpse-spill items ~10 min. The final 4s shrink
+    // the mesh so the despawn is legible, not a pop. Shared/online drops are server-authoritative.
+    { const ttl=dp.corpse?600:(dp.type==="item"?240:45);
+      if(!dp.shared&&(dp.type==="item"||dp.type==="gold")){
+        const left=ttl-dp.t;
+        if(left<=0){ disposeObject3D(dp.mesh);drops.splice(i,1); }
+        else if(left<4){ const k=Math.max(0.05,left/4); if(dp._bs==null)dp._bs=dp.mesh.scale.x||1; dp.mesh.scale.setScalar(dp._bs*k); }
+      } }
   }
   // floaters & bursts
   for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.sp.position.y+=f.vy*dt;f.t-=dt;
