@@ -231,6 +231,13 @@ def ws_frame(payload: bytes, opcode=0x1) -> bytes:
 TOKENS = {}            # token -> username
 CLIENTS = {}           # username -> Client (one active session per account)
 
+# #239: rate-limit config (token buckets, per connection)
+RL_GEN_RATE = 30.0    # sustained messages/sec (input/attack/etc.)
+RL_GEN_BURST = 60.0   # burst capacity
+RL_CHAT_RATE = 2.0    # sustained "chatty" broadcast messages/sec
+RL_CHAT_BURST = 6.0   # burst capacity for chat/emote/tell/party/allegiance
+CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd"}   # messages that fan out to others
+
 class Client:
     def __init__(self, reader, writer):
         self.reader = reader
@@ -247,6 +254,13 @@ class Client:
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
+        # #239: per-connection token buckets (refilled by elapsed time in the read loop). One general
+        # bucket caps total message rate; a tighter one caps "chatty" broadcast messages (chat/emote/
+        # tell/party/allegiance) that fan out to every client. Start full so a normal session never trips.
+        self.rl_gen = RL_GEN_BURST
+        self.rl_chat = RL_CHAT_BURST
+        self.rl_t = time.time()
+        self.rl_warned = 0.0     # last time we told this client it was thottled (rate-limit the warning too)
 
     async def send(self, obj):
         if not self.alive:
@@ -1669,6 +1683,27 @@ async def handle(reader, writer):
             except Exception:
                 continue
             if isinstance(msg, dict):
+                # #239: token-bucket rate limit. Refill by elapsed time, then spend one general token
+                # (and one chat token for broadcast messages). Over-rate messages are dropped, not
+                # disconnected, with an occasional throttle notice.
+                _nowt = time.time()
+                _dt = max(0.0, _nowt - cl.rl_t); cl.rl_t = _nowt
+                cl.rl_gen = min(RL_GEN_BURST, cl.rl_gen + _dt * RL_GEN_RATE)
+                cl.rl_chat = min(RL_CHAT_BURST, cl.rl_chat + _dt * RL_CHAT_RATE)
+                _mt = msg.get("t")
+                _limited = False
+                if cl.rl_gen < 1.0:
+                    _limited = True
+                elif _mt in CHATTY and cl.rl_chat < 1.0:
+                    _limited = True
+                if _limited:
+                    if _nowt - cl.rl_warned > 3.0:
+                        cl.rl_warned = _nowt
+                        await cl.send({"t": "system", "msg": "You are sending messages too quickly — slow down."})
+                    continue
+                cl.rl_gen -= 1.0
+                if _mt in CHATTY:
+                    cl.rl_chat -= 1.0
                 try:
                     await dispatch(cl, msg)   # #251: per-message isolation — a single handler exception (bad field, edge case) logs and continues instead of tearing down the client's connection
                 except (asyncio.IncompleteReadError, ConnectionResetError):
