@@ -42,7 +42,7 @@
   #spellbar{bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:flex-end;gap:8px;padding:8px;max-width:99vw}
   #qbGrid{display:grid;grid-template-columns:repeat(12,44px);grid-auto-rows:44px;gap:5px}
   #qbPages{display:flex;flex-direction:column;gap:4px;pointer-events:auto}
-  #qbPages button{width:26px;height:18px;padding:0;font-size:0;background:url(assets/acui/06001269.png) center/100% 100% no-repeat;border:none;border-radius:3px;cursor:pointer;filter:drop-shadow(0 1px 2px #000)}  /* the real client's curled-page-corner arrows */
+  #qbPages button{width:26px;height:24px;padding:0;font-size:0;background:url(assets/acui/06001269.png) center/100% 100% no-repeat;border:none;border-radius:3px;cursor:pointer;filter:drop-shadow(0 1px 2px #000)}  /* the real client's curled-page-corner arrows */
   #qbPages button:last-child{background-image:url(assets/acui/06001266.png)}
   #panelRail{position:fixed;right:6px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;z-index:30;pointer-events:auto}
   #panelRail button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;background:linear-gradient(#241f14,#141008);color:var(--gold);border:1px solid var(--border);border-radius:5px;cursor:pointer;filter:drop-shadow(0 1px 2px #000)}
@@ -76,7 +76,7 @@
   #minimap{top:12px;right:12px;width:150px;height:150px;padding:0;overflow:visible;background:none;border:none;box-shadow:none}
   #mm{display:block;width:150px;height:150px}
   #mmCtrl{position:absolute;right:-3px;bottom:-3px;display:flex;gap:3px}
-  #mmCtrl button{width:20px;height:20px;padding:0;font-size:13px;line-height:16px;background:rgba(22,33,14,.9);color:#cfe6b0;border:1px solid #3a3526;border-radius:4px;cursor:pointer;pointer-events:auto}
+  #mmCtrl button{width:24px;height:24px;padding:0;font-size:14px;line-height:22px;background:rgba(22,33,14,.9);color:#cfe6b0;border:1px solid #3a3526;border-radius:4px;cursor:pointer;pointer-events:auto}   /* #248: >=24px tap target */
   #mmCtrl button:hover{border-color:#7fe6a0;color:#fff}
   #mmToggles{position:absolute;top:100%;right:0;margin-top:5px;background:rgba(10,12,7,.96);border:1px solid #3a3526;border-radius:6px;padding:7px 10px;font-size:12px;color:#cfe6b0;min-width:118px;z-index:6;display:none;pointer-events:auto}
   #mmToggles label{display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer;white-space:nowrap}
@@ -290,7 +290,7 @@
     <div style="border-top:1px solid #a08a5a;margin-top:4px;padding-top:3px;color:#5a4a2e">State: <b id="vtState">Idle</b></div>
   </div>
 </div>
-<div id="magtools" style="display:none;position:fixed;left:14px;top:196px;z-index:40;min-width:168px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+<div id="magtools" style="display:none;position:fixed;left:14px;top:388px;z-index:40;min-width:168px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
   <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Mag-Tools <span style="font-weight:normal;opacity:.75">· Combat Tracker</span></div>
   <div id="magRows" style="padding:4px 8px 5px"></div>
 </div>
@@ -571,7 +571,7 @@
 /* Target frame + right-click appraisal window — vital bars share the character's .bhp/.bst/.bmn gradients */
 #targetFrame .bar,#idPanel .bar{height:11px;margin:2px 0;background:#1a140c;border:1px solid #4a3a20;border-radius:3px;position:relative;overflow:hidden}
 #targetFrame .bar i,#idPanel .bar i{display:block;height:100%}
-#targetFrame .bar span,#idPanel .bar span{position:absolute;inset:0;text-align:center;font-size:9px;line-height:11px;color:#fff;text-shadow:0 1px 2px #000}
+#targetFrame .bar span,#idPanel .bar span{position:absolute;inset:0;text-align:center;font-size:10px;line-height:11px;color:#fff;text-shadow:0 1px 2px #000}
 .idHead{background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px;display:flex;justify-content:space-between;cursor:move}
 .idX{cursor:pointer;color:#f0d0b0;padding:0 3px}.idX:hover{color:#fff}
 </style>
@@ -15837,7 +15837,7 @@ function closeAnyPanel(){
   if(document.getElementById('kcVaultPanel')){ closeKcVault(); return; }
   for(const id of ["qbPick","hookPicker","kcWarPanel","kcBookReader","bookReader","hsPanel","kcPanel"]){
     const el=document.getElementById(id); if(el){ el.remove(); paused=false; return; } }
-  for(const [id,close] of [["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){
+  for(const [id,close] of [["shop",closeShop],["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){   // #248: shop was the one BIG_MODAL Esc didn't close
     const el=document.getElementById(id); if(el&&el.style.display==="flex"){ close(); return; } }
 }
 window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;keys[e.code]=false;});
@@ -17693,6 +17693,15 @@ function musicTick(){
   });
 }
 function toggleMute(){ muted=!muted; if(masterGain) masterGain.gain.value=muted?0:settings.vol; log(muted?"Sound muted.":"Sound on.","sys"); }
+// #248: auto-suspend audio while the tab is backgrounded (and resume on return, unless manually muted),
+// so music/ambience don't keep playing at full volume in a hidden tab. Tracks its own suspend so it
+// never resumes a context that was suspended for another reason (e.g. pre-gesture autoplay policy).
+let _blurSuspended=false;
+document.addEventListener("visibilitychange",()=>{
+  if(!actx) return;
+  if(document.hidden){ if(actx.state==="running"){ actx.suspend(); _blurSuspended=true; } }
+  else if(_blurSuspended){ _blurSuspended=false; if(!muted) actx.resume(); }
+});
 function blip(freq,dur,type="sine",vol=0.18,slideTo){
   if(!actx) return;
   const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
@@ -22170,7 +22179,7 @@ function openSettings(){
       const conf=()=>chatChan(ch);
       const wrap=document.createElement('span'); wrap.style.cssText="display:inline-flex;align-items:center;gap:3px";
       const col=document.createElement('input'); col.type="color"; col.value=conf().c;
-      col.style.cssText="width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer";
+      col.style.cssText="width:24px;height:24px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer";
       col.oninput=()=>{ settings.chat[ch]=settings.chat[ch]||{}; settings.chat[ch].c=col.value; saveSettings(); paint(); };
       const b=document.createElement('button'); b.className="tbtn"; b.style.cssText="font-size:11px;padding:3px 8px";
       const paint=()=>{ const c=conf(); b.textContent=c.m?CHAT_CHANNELS[ch].n+" 🔇":CHAT_CHANNELS[ch].n; b.style.opacity=c.m?0.35:1; b.style.color=c.c; };
@@ -24867,7 +24876,7 @@ function buildTinker(){
     // the active pack's slot grid — AC's square cells, real inventory icons, count badges
     let grid=`<div style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;margin-bottom:8px">`;
     for(let s=lo;s<hi;s++){ const it=player.inv[s];
-      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — hover to examine · click to select · double-click to use · drag to move" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`
+      grid+=it?`<div data-slot="${s}" draggable="true" title="${esc(it.name)} — hover to examine · click to select · double-click to use · drag to move" style="width:34px;height:34px;border:1px solid ${s===window._invSel?'var(--gold)':'#4a4030'};border-radius:4px;background:radial-gradient(circle at 40% 35%,${s===window._invSel?'#2c2438':'#1c1a26'},#0c0b12);display:flex;align-items:center;justify-content:center;cursor:grab;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:10px;color:#ffd86b">${it.count}</span>`:""}</div>`
               :`<div data-slot="${s}" style="width:34px;height:34px;border:1px solid #2c2820;border-radius:4px;background:rgba(0,0,0,.35)"></div>`; }
     grid+=`</div>`;
     const hdr=document.createElement('div'); hdr.innerHTML=bar+grid; rows.appendChild(hdr);
@@ -25462,7 +25471,7 @@ function sendChatLine(text){
 const TRADE={open:false,from:null,mine:[],them:[],mineCoin:0,themCoin:0,youOk:false,themOk:false,"with":"?"};
 function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.mineCoin=TRADE.themCoin=0; TRADE.youOk=TRADE.themOk=false;
   const w=document.getElementById('tradeWin'); if(w)w.remove(); }
-function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:9px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
+function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:10px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
 function renderTradeWin(){
   let w=document.getElementById('tradeWin');
   if(!w){ w=document.createElement('div'); w.id='tradeWin';
