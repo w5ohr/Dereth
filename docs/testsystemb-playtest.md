@@ -13,11 +13,10 @@ Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand.js` (extra
 new pass should **extend coverage** to subsystems not yet tested rather than repeat a clean run. When an
 agent merges a change, run the sweep against the changed area too.
 
-**Still-untested targets for upcoming passes:** overworld portals + the recall set (Tie/Primary/
-Secondary/Sending) · portal storms · drowning mechanic (breath meter drives it) · Colosseum/instanced
-events · Town Crier feed · barber/creator head choices · Aetheria *surges* (proc side; set bonuses done).
-*(Covered through pass 5: PK+3-day-lock, sky/time+calendar, weather, combine engine, dye, titles,
-Aetheria set bonuses. Fellowship dropped — it's a chat channel only, no XP-share API to test.)*
+**Still-untested targets for upcoming passes:** walking into an overworld *portal* to transit (recall
+set is done) · portal storms · Portal/Lifestone *Sending* spells (special:"sending") · creator head
+choices (barber done). *(Covered through pass 6: + recall set, drowning, Colosseum arena, Town Crier,
+barber, Aetheria surges. Fellowship dropped — chat channel only.)*
 
 Every entry is tagged **[TestSystemB]**. Verify a flag before trusting it — several "failures" are
 test-ordering / setup artifacts, not game bugs (see the standing notes at the bottom).
@@ -154,6 +153,36 @@ directive. Batch 2 (`tsb_expand2.js`) adds **7 more subsystems — all pass, 0 f
 | **Aetheria set bonuses** | Growth **+18 hp** (3×6), Vigor **+10 st/mn** (2×5), Defense **+32 armor** (4×8), Destruction **+0.10 dmg** (5×0.02); empty medallions → 0. |
 
 **Cumulative coverage: 42 subsystems, still zero real game bugs.** (Sweep 29 + expand 6 + expand2 7.)
+
+---
+
+## [TestSystemB] Pass 6 — 2026-07-07 ~00:45
+
+**Result: CLEAN.** `main` still unchanged (`c3232dc`); continued extending coverage (`tsb_expand3.js`).
+Six more subsystems verified — **0 real game bugs**, **0 page/console errors**.
+
+| New subsystem | Verified behavior |
+|---|---|
+| **Recall set** (Item Enchantment) | With Item magic trained (skill 344): **Lifestone Recall teleports**; **Portal Recall** refuses with no tie and **teleports to the tied portal** when one is set; **Secondary Portal Recall** refuses with no secondary tie. All four spells present (Lifestone/Portal/Secondary + Sending exists). |
+| **Drowning** | Underwater (`y<-1.5`) breath drains to 0 in ~14 s → **drown damage** ticks (ignores armour) → **breath refills** at the surface. |
+| **Colosseum arena** | `enterColosseum` sets `inDungeon`+`arenaActive=true`, 5 waves, spawns wave-1 mobs; `exitDungeon` resets both to false. *(Verified in an isolated session — see the artifact note below.)* |
+| **Town Crier** | `crierRumors()` returns a live rumor list (count 4); the PK-flagged line appears when `pkState==="pk"`. |
+| **Barber** | Opens without error. |
+| **Aetheria surges** (proc side) | A Destruction-surge medallion **procs** an item damage buff (`itemBuffs.dmg` = 0.25); 5 surge defs present. |
+
+### Two flags investigated → both NOT game bugs
+- **`recallSet` first showed "Lifestone Recall did not teleport"** — **test-setup flaw.** Recall spells are
+  `school:"item"`, `req` 30/95/150; `executeSpell` bails at `canCast("item")`/skill-req before the
+  teleport, which also made the "no-tie blocked" checks pass *vacuously* (the player never moved for any
+  reason). Fixed the probe to train Item Enchantment (skill→344) → all recalls teleport correctly.
+- **A `crierRumors()` call HUNG when it ran right after the Colosseum** (batch-3 first attempt) — **headless
+  artifact, NOT a logic loop.** Decisive isolation (`tsb_decide.js`): a **pure-compute eval** (no game
+  code) *also* times out after the arena, and the *same* loop ran in 11 s *before* it — while
+  enter/exit state stays correct and fast (arenaActive true→false in ~0.4 s). `buildArena`'s heavy scene
+  saturates the SwiftShader render loop and starves every subsequent eval in that session. **Harness rule:
+  run the Colosseum/arena step in its own short session, never before eval-dependent steps.**
+
+**Cumulative coverage: 48 subsystems, still zero real game bugs.**
 
 ---
 
