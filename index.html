@@ -15399,7 +15399,7 @@ function executeSpell(id){
     // caster height with an upward loft, falling under gravity; all other geometries fly flat.
     const isArc=geom==="arc";
     const rlife=Math.max(0.5,spellRange/Math.max(1,sp.speed));   // travel time to reach the skill-gated range
-    pProj.push({mesh,spin:sp.element==="slash"?1:0,x:ox,y:isArc?EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,
+    pProj.push({mesh,spin:sp.element==="slash"?1:0,orient:sp.element==="pierce"?1:0,x:ox,y:isArc?EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // #196: the Force spike flies nose-first
       dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?Math.min(4,rlife):rlife});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
@@ -16429,8 +16429,8 @@ function update(dt){
   for(let i=pProj.length-1;i>=0;i--){
     const p=pProj[i];
     const _px0=p.x,_pz0=p.z;   // #11: travel-segment start (pre-move) for swept collision
-    if(p.grav){ p.vy-=GRAV*dt;   // AC ballistics: arrows/bolts (and lobbed arcs) fall under gravity
-      if(p.arrow){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); } }  // nose follows the arc
+    if(p.grav) p.vy-=GRAV*dt;   // AC ballistics: arrows/bolts (and lobbed arcs) fall under gravity
+    if(p.arrow||p.orient){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); }  // #196: nose follows the flight (arrows + elongated spell spikes)
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
