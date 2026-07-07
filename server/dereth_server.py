@@ -1357,6 +1357,23 @@ async def handle_party(cl, msg):
         else:
             await cl.send({"t": "system", "msg": "You are not in a party. /party invite <name> to form one."})
 
+# #238 (incremental): safe parse+clamp for client-reported presence values. These reject only
+# IMPOSSIBLE inputs (NaN/Inf positions, hp/level far outside any legit range) — they don't make the
+# server authoritative, but they stop a client from broadcasting a NaN position (which corrupts other
+# clients' rendering) or a forged level>275 (which gates fealty/vassal-cap) or god-HP display values.
+def _finitef(v, default):
+    try:
+        f = float(v)
+        return f if math.isfinite(f) else default
+    except (TypeError, ValueError):
+        return default
+
+def _clampi(v, lo, hi, default):
+    try:
+        return max(lo, min(hi, int(v)))
+    except (TypeError, ValueError):
+        return default
+
 # ---------------------------------------------------------------- auth + dispatch
 def valid_name(u):
     return isinstance(u, str) and 3 <= len(u) <= 16 and all(ch.isalnum() or ch in "_-" for ch in u)
@@ -1459,9 +1476,11 @@ async def dispatch(cl, msg):
             await cl.send({"t": "play_err", "msg": "You can't delete the character you're currently playing — leave the world first."})
         return
     if t == "input":
-        cl.x = float(msg.get("x", cl.x)); cl.z = float(msg.get("z", cl.z))
-        cl.yaw = float(msg.get("yaw", cl.yaw)); cl.hp = int(msg.get("hp", cl.hp))
-        cl.mhp = int(msg.get("mhp", cl.mhp)); cl.level = int(msg.get("level", cl.level))
+        cl.x = _finitef(msg.get("x"), cl.x); cl.z = _finitef(msg.get("z"), cl.z)   # #238: reject NaN/Inf so a bad coord can't be broadcast to (and corrupt) other clients
+        cl.yaw = _finitef(msg.get("yaw"), cl.yaw)
+        cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
+        cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
+        cl.level = _clampi(msg.get("level"), 1, 275, cl.level)   # AC hard cap — blocks forged level>275 that would gate unlimited vassals/fealty
         cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
         cl.title = str(msg.get("title", cl.title))[:40]
         cl.wt = (str(msg.get("wt"))[:16] if msg.get("wt") else None)          # so remotes render the right weapon
