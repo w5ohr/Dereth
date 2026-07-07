@@ -184,3 +184,18 @@ combined-state guards — throws, NaN, or invalid dual states.
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.**
+
+## AgentC pass 15 (tinkering / salvage economy) — ALL GREEN, no defects
+
+Number-heavy crafting economy, only lightly touched before.
+
+- **10-tink cap: exact.** 15 forced-success tinkers → capped at exactly 10 (`if((it.tinks||0)>=10)`
+  precedes salvage consumption, so a capped item consumes no salvage — verified units unchanged).
+  Value rose 20→90 (10 × +7 bonus at workmanship 10) — correct scaling. No NaN.
+- **Salvage workmanship averaging: bounded.** 200 varied salvages → units-weighted `bag.work`=6.78,
+  2122 units, never out of [0,11], no NaN. First-salvage division edge (empty bag, `bag.units=0`
+  denominator) handled — `(0*0 + work*units)/units = work` (=5), no divide-by-zero.
+- **Imbue path:** one-imbue-ever guard + counts toward the 10 cap (verified in TestSystemC pass 8).
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–15 all clean — the game's number-heavy systems are solid.)
