@@ -365,3 +365,37 @@ No changes to the findings list (#20–#25 stand).
 - **Deploy config sanity (clean)**: nginx proxies /ws → 127.0.0.1:8787 with a deny rule on
   /server//deploy//.git; Dockerfile runs as non-root `dereth`, loopback-only publish, /data
   volume for SQLite — posture matches the systemd unit.
+
+## TestSystemA — Run 15 (2026-07-07, main @ c3232dc)
+
+**Result: CLEAN — no new findings.** Deploy-kit cross-consistency audit (the vein that found
+#25/#26) — this time it holds up.
+
+- **User/port/paths consistent**: `dereth` service user matches Dockerfile + DEPLOY.md;
+  port 8787 identical across all 4 deploy files; DB paths correct per path
+  (systemd /var/lib/dereth, Docker /data) and each is writable.
+- **Bind posture correct on BOTH prod paths**: server default is `0.0.0.0` (dev convenience,
+  documented), but the systemd unit pins `DERETH_HOST=127.0.0.1` and the Docker run publishes
+  `-p 127.0.0.1:8787` — so production is loopback-only either way, matching the nginx-proxy
+  design. Not a finding.
+- **systemd hardening sound**: `ProtectSystem=strict` + `ReadWritePaths=/var/lib/dereth`
+  matches the server's actual write set (SQLite only; assets/admin_kilmer read-only under
+  /opt/dereth). `NoNewPrivileges`, `PrivateTmp`, `ProtectHome` all set.
+- **nginx**: `root /opt/dereth` serves the static client; `deny` on `/server|/deploy|/.git`
+  (so admin_kilmer.json + .git are NOT web-exposed); `/ws` proxied to 127.0.0.1:8787 with
+  3600s websocket timeouts. Consistent.
+
+No changes to the findings list (#20–#26 stand).
+
+---
+
+### Coverage note (after 15 runs)
+
+The headless-reachable surface is now **deeply covered**: server (stock 47 + extended 16 +
+fuzz 9 + 2 soaks + persistence + events + fellowship), all asset packs (parse +
+cross-reference), static analysis (dead code, dup ids, net symmetry, save symmetry),
+executed builders (spellbook 1,233-spell mechanics, ACE formulas + XP charts), and the deploy
+kit. 7 findings (#20–#26). Remaining marginal value per headless run is mostly no-drift
+re-confirmation. The one genuinely unlit lane is the **live in-browser 3D/UI** (avatar/head
+rendering, dungeon geometry, particles, day-night, the week's paperdoll/chrome UI, and a live
+2-client check of the TSA-5 wield-sync gap) — blocked on the Chrome extension reconnecting.
