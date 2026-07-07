@@ -238,3 +238,20 @@ Number-heavy crafting economy, only lightly touched before.
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.** (Passes 11–18 all clean.)
+
+## AgentC pass 19 (broad 15-system smoke test + regression watch) — ALL GREEN, no defects
+
+Wide regression net rather than a deep dive (systems exhausted). Main unchanged (cbce433).
+
+- **15 systems all functional, 0 errors:** data integrity (2265 spells / 331 dungeons / 56 cities /
+  324 quests / 61 bestiary / 500 item bases), combat one-shot kill, loot roll (50/50 valid),
+  life-heal cast, vendor pricing, save/load gold roundtrip, lockpicking (skillCheck), crafting/
+  combine, aetheria slotting, housing, quest events (323 givers), achievements/bestiary, ships,
+  society (3/5 ranks), allegiance (cap=level, algTick).
+- **Aetheria flag resolved as NON-bug:** below L75 the blue slot correctly refuses the gem
+  (`applyItem`→"keep", no mhp change — level-gating works); at L75 it slots for **+31** mhp. The
+  smoke test's `===+30` assertion was too strict (+31 is the correct Growth bonus after derive's
+  rounding at that level) AND the test char was below 75. 5th self-caught test artifact.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–19 all clean.)
