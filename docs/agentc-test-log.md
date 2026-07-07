@@ -94,20 +94,17 @@ EXACT baseline (the classic leak: a buff that expires without un-applying its de
 **No issues found this pass.** (The buff/debuff/DoT/HoT lifecycle is sound — symmetric apply/expire
 throughout.)
 
-## AgentC pass 7 (netcode client message-handler robustness) — 1 FINDING (onLoot gold NaN)
+## AgentC pass 8 (snapshot reconcilers + dungeon lifecycle) — 1 FINDING (snapshot-tick abort)
 
-Audited every client-side net-message handler for the #32 class (unvalidated server field →
-corrupted game state). Mapped the dispatcher (index.html ~24926) and stress-tested the
-state-mutating handlers.
-
-- **Safe / correctly guarded:** `onRemoteBuff` validates `SPELLBOOK[m.spell]` and applies effects
-  from trusted client-side spell data (message only picks WHICH known spell — solid design);
-  `onCorpseLoot` gates gold on `msg.amt>0` (NaN + negative both rejected); `onReward` gates on
-  `if(msg.gold)`/`if(msg.xp)` (NaN rejected — `gainXP(NaN)` never runs).
-- ⚠ **FINDING (filed as authoritative-list #33, AgentC AC-3): `onLoot` gold path corrupts
-  `player.gold` to NaN.** `onLoot` (index.html:25032) does `player.gold+=msg.amt` with NO guard —
-  `onLoot({type:"gold"})` / `{amt:NaN}` / `{amt:"oops"}` all NaN the gold (proven), while its
-  siblings `onCorpseLoot`/`onReward` correctly guard theirs. NaN gold = economy soft-brick (breaks
-  buy/sell, persists to save). Player-reachable online. Third member of the "unvalidated net field
-  → NaN player state" cluster (#32 HP, #33 gold). Full detail + fix in authoritative list #33.
-- jsc clean · 0 console errors · MMO harness 47/47.
+- **Dungeon lifecycle: CLEAN.** enter → descend to depth 2 → exit, no throws. (The test's
+  `backNear:false` was a TEST artifact — `exitDungeon(false)` is the death/teardown variant that
+  deliberately skips repositioning; `exitDungeon(true)` does `arriveAt(dungeonReturn)`. Not a bug.)
+- ⚠ **FINDING (filed as authoritative-list #34, AgentC AC-4): one malformed snapshot mob aborts the
+  whole snapshot tick.** The snapshot handler (index.html:24951) runs reconcileRemotes/reconcileMobs/
+  reconcileEvent unguarded on one line; `reconcileMobs` throws on an unknown mob kind (`spawnSharedMob`
+  passes the raw kind to `acCreatureMesh` despite its `||BESTIARY.drudge` guard → reads `.size` on
+  undefined) or a `null` entry (`.id` of null), so `reconcileEvent` never runs — proven: bad-mob
+  snapshot → `NET.event` never set. Repeats every tick → networked-entity/event freeze. M3-multiplayer
+  resilience; needs server malformation/version-skew to trigger. Full detail + fix in #34.
+- **Also confirmed:** NaN/Infinity snapshot coords do NOT throw (slip through as NaN positions — minor
+  render concern only). jsc clean · 0 console errors · MMO harness 47/47.
