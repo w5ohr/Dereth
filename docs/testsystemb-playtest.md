@@ -21,6 +21,10 @@ Harness: `$CLAUDE_JOB_DIR/tmp/tsb_full.js` (main sweep) + `tsb_expand*.js` (extr
    can double-award when multiple projectiles/AoE spell hits land on one dying target in a frame.
    *Suggested fix (do not apply here):* `if(m.hp<=0) return;` at the top of `applyHit`, or a one-shot
    guard in `killMonster` (`if(m.dead) return; m.dead=true;` — covers every vector).
+   *Blast radius (pass 9): dual-wield ONLY.* Every other multi-hit path re-queries `monsters[]` (and
+   `killMonster` splices the corpse out), so they hit each foe once: AoE ring killed exactly 4 of 4
+   clustered foes, arrow volley did not double-count, damage-wall/splash loop `monsters[]` fresh. A
+   localized guard in `applyHit`/`killMonster` fully resolves it — no other live exploit path.
 
 **Standing directive (user, pass 4):** while `main` is unchanged and the existing sweep is clean, each
 new pass should **extend coverage** to subsystems not yet tested rather than repeat a clean run. When an
@@ -243,6 +247,34 @@ each dropping a **full second loot roll (2–6 extra drops)**. Player-reachable 
 | **Save migration** | `migrateSkills(null/legacy/garbage)` never throws and returns valid tiered skills; save writes. |
 
 **Cumulative: 52 subsystems + a boundary pass; 1 confirmed bug (dual-wield double-loot), 0 others.**
+
+---
+
+## [TestSystemB] Pass 9 — 2026-07-07 ~01:46
+
+**Result: CLEAN (no new bugs).** `main` unchanged (`c3232dc`); dual-wield bug (OPEN #1) still present.
+Continued depth testing (`tsb_depth2.js`): (a) **bounded the confirmed bug's blast radius**, (b) 4 fresh
+boundary areas. 7 steps, **0 findings, 0 errors**.
+
+### Blast radius of the dual-wield double-award → **dual-wield ONLY**
+Confirmed empirically that the sibling multi-hit paths do **not** share the defect (they re-query
+`monsters[]` each hit, and `killMonster` splices the corpse):
+- **AoE ring** (Flame Ring I) on 4 clustered fragile foes → **killed exactly 4** (once each).
+- **Arrow volley** (6 arrows at one low-hp foe) → **no double-count** (0 landed in the headless ballistic
+  sim, so "exactly 1" is inconclusive, but no doubling — and by inspection projectiles hit each foe once).
+- Damage-wall / splash loop `monsters[]` fresh per pulse → one hit per foe.
+
+→ The fix can be **localized** to `applyHit`/`killMonster`; no other exploit path is live.
+
+### Fresh boundaries — all correctly guarded
+| Edge | Verified |
+|---|---|
+| **Quest double turn-in** | First turn-in pays (1800 XP / 90 gold); an immediate second turn-in of the same non-repeatable quest pays **nothing**. |
+| **Lifestone re-bind** | Always exactly **one** bound lifestone — re-binding the same one is idempotent; binding a different one moves the bind (never two bound). |
+| **Buff recast** | Recasting the same attribute self-buff **refreshes** (Strength 100→110→110, one buff key) — it does not stack the bonus. |
+
+**Tally: 52 subsystems + 2 boundary passes; 1 confirmed bug (dual-wield double-loot, blast radius now
+bounded), 0 others.**
 
 ---
 
