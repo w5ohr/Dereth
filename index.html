@@ -811,20 +811,6 @@ function itemSpellNames(it){   // resolve an item's numeric acspells ids to thei
   return it.acspells.map(id=>{ const e=AC_SPELLS.spells[String(id)]; return e?e.n:null; }).filter(Boolean);
 }
 const CANTRIP_TIERS=[["Minor",3],["Major",6],["Epic",9],["Legendary",12]];
-function rollCantrips(it,tier,rare){   // procedural gear rolls Minor→Legendary aptitude cantrips
-  if(!it||(it.stat!=="weapon"&&it.stat!=="worn")) return;
-  const t=clamp(tier|0,1,5);
-  if(Math.random()>= (t-1)*0.10+(rare?0.25:0)) return;
-  const keys=Object.keys(_APT_SKILL).filter(k=>SKILL_BY_KEY[_APT_SKILL[k]]);
-  const n=(t>=4&&Math.random()<(rare?0.35:0.15))?2:1;
-  it.cantrips=it.cantrips||[];
-  for(let i=0;i<n;i++){
-    const band=clamp(t-2+(Math.random()<0.25?1:0),0,3), [pre,v]=CANTRIP_TIERS[band];
-    const phrase=keys[irnd(0,keys.length-1)];
-    const label=phrase.replace(/\b\w/g,c=>c.toUpperCase());
-    it.cantrips.push({kind:"skill",key:_APT_SKILL[phrase],v,name:pre+" "+label+" Aptitude"});
-  }
-}
 function initItemMagic(it,tier,work,rare){   // spellcraft + mana pool + Arcane Lore gate for anything that carries magic
   const n=(it.cantrips?it.cantrips.length:0)+(it.acspells?it.acspells.length:0);
   if(!n) return;
@@ -865,7 +851,6 @@ function skillValue(key){ if(!SKILL_BY_KEY[key]) return 0; const st=skillState(k
   if(player.vitae>0) v=Math.max(0,Math.round(v*(1-player.vitae)));   // Vitae death penalty saps ALL skills too (AC), not just vitals
   return v; }
 function skillEff(key,k){ const s=SKILL_BY_KEY[key]; if(!s) return 1; return 1+Math.max(-0.4,(skillValue(key)-s.base0)*k); } // ≥0.6, ==1 at creation baseline; unknown key = neutral 1×
-function bestMeleeEff(k){ let best=skillEff("heavy",k); for(const key of MELEE_WEAPON_KEYS){ const e=skillEff(key,k); if(e>best)best=e; } return best; } // best of all melee weapon skills
 function canCast(school){ const key=MAGIC_SCHOOLS[school]; return !key||skillTier(key)>0; }
 // ── RETAIL attribute/vital raising (the client XpTable, assets/acskills.json xp.attr/xp.vital):
 //    an attribute = INNATE (set at creation, 10–100) + XP-bought RANKS (max 190, pt-1 = 110 XP,
@@ -3913,11 +3898,6 @@ function gfxForestStream(){
 // (AC_HEADS itself is declared + fetched by the player-head system below — one shared index)
 let _acHeadGeo={},_acHeadTexC={};
 const _NPC_HERITAGE={0:"aluvian",1:"sho",2:"gharu'ndim",3:"viamontian"};
-function _acHeadTex(id){
-  if(!_acHeadTexC[id]){ const t=new THREE.TextureLoader().load('assets/acheads/tex/'+id+'.png');
-    t.encoding=THREE.sRGBEncoding; _acHeadTexC[id]=t; }   // same UV convention as the proven acmodels loaders
-  return _acHeadTexC[id];
-}
 // Attach an NPC's / remote player's REAL AC head. All human forms are now the AC body
 // (buildAvatarJointed + applyACBody), so this routes through the SAME acBuildHead path the
 // player uses — neck-mounted, flipY-corrected texture, facing the body's forward — using the
@@ -4944,15 +4924,6 @@ function addBeard(g,style,col,fs){
     const h=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.03,0.3,10),mat);h.position.set(0,-0.27,-z*0.6);h.castShadow=true;g.add(h);
     const tp=new THREE.Mesh(new THREE.SphereGeometry(0.032,8,6),mat);tp.position.set(0,-0.42,-z*0.6);tp.scale.set(0.95,1.2,0.95);g.add(tp);}
 }
-function addTattoo(g,style,fs){
-  if(!style||style==="none") return;
-  const col=style==="warpaint"?0xc02424:style==="runes"?0x3a8ae0:style==="tribal"?0x14110c:0x8a3ac0;
-  const mat=new THREE.MeshBasicMaterial({color:col,side:THREE.DoubleSide}), z=-0.198*fs.sz;   // DoubleSide: decal planes face +z, the face fronts -z
-  if(style==="warpaint"){ // a bold band across the upper cheeks (kept off the eyes) + brow dabs
-    for(const sx of[-1,1]){const b=new THREE.Mesh(new THREE.PlaneGeometry(0.13,0.04),mat);b.position.set(sx*0.09,-0.05,z);b.rotation.y=sx*0.32;g.add(b);}
-    const fr=new THREE.Mesh(new THREE.PlaneGeometry(0.16,0.025,3,1),mat);fr.position.set(0,0.11,z);g.add(fr);
-  } else { for(const sx of[-1,1]) for(let i=0;i<3;i++){const m=new THREE.Mesh(new THREE.PlaneGeometry(0.02,0.05),mat);m.position.set(sx*0.105,-0.04-i*0.045,z);m.rotation.y=sx*0.32;g.add(m);} }
-}
 // Sculpt a sphere into a real head: cranium, flattened face plane, brow ridge, eye sockets,
 // cheekbones, tapering jaw and a chin ball — classic portrait proportions (eye line at the head's
 // vertical middle, face in equal thirds). Female skulls get a softer jaw, higher cheeks, lighter brow.
@@ -5170,29 +5141,6 @@ function buildFaceGroup(app){
   return g;
 }
 // skin character: freckles across the nose & cheeks, an old blade scar, age creases, a beauty mark
-function addFeature(g,style,skinCol,fs,z){
-  if(!style||style==="none") return;
-  const R=(s)=>{ let h=s*2654435761>>>0; return ((h>>8)&1023)/1023; };   // deterministic per-index jitter
-  const DS=THREE.DoubleSide;   // decal planes face +z, the face fronts -z — draw both sides
-  const zAt=(fx,fy)=>-z*Math.max(0.5,0.92-14*fx*fx-10*(fy||0)*(fy||0));   // hug the head's curve — the face falls away past the cheeks and toward brow/jaw
-  if(style==="freckles"){ const mat=new THREE.MeshBasicMaterial({color:_shade(skinCol,-0.17),transparent:true,opacity:0.6,side:DS});
-    for(let i=0;i<16;i++){ const fx=(R(i)-0.5)*0.21, fy=-0.075+R(i+31)*0.075;
-      if(Math.abs(fx)<0.028&&fy<-0.03) continue;   // keep them off the nose tip/lips
-      const d=new THREE.Mesh(new THREE.CircleGeometry(0.0035+R(i+77)*0.0025,6),mat);
-      d.position.set(fx*fs.sx,fy,zAt(fx,fy)); d.rotation.y=fx*4; g.add(d); } }
-  else if(style==="scar"){ const mat=new THREE.MeshBasicMaterial({color:_shade(skinCol,0.09),transparent:true,opacity:0.9,side:DS});
-    const s1=new THREE.Mesh(new THREE.PlaneGeometry(0.01,0.06),mat); s1.position.set(-0.09*fs.sx,-0.04,zAt(-0.09,-0.04)); s1.rotation.set(0,-0.42,0.38); g.add(s1);
-    const s2=new THREE.Mesh(new THREE.PlaneGeometry(0.008,0.05),mat); s2.position.set(-0.072*fs.sx,-0.095,zAt(-0.072,-0.095)); s2.rotation.set(0,-0.3,0.34); g.add(s2); }   // old slash down the left cheek, below the eye
-  else if(style==="age"){ const mat=new THREE.MeshBasicMaterial({color:_shade(skinCol,-0.2),transparent:true,opacity:0.5,side:DS});
-    for(const sx of[-1,1]){ for(let i=0;i<3;i++){ const cf=new THREE.Mesh(new THREE.PlaneGeometry(0.028,0.0028),mat);   // crow's feet
-        cf.position.set(sx*0.108*fs.sx,0.03-i*0.013,zAt(0.108,0.02)); cf.rotation.set(0,sx*0.6,sx*(i-1)*0.3); g.add(cf); }
-      const nl=new THREE.Mesh(new THREE.PlaneGeometry(0.0035,0.055),mat);   // nasolabial crease
-      nl.position.set(sx*0.045*fs.sx,-0.082,zAt(0.045,-0.082)); nl.rotation.set(0,sx*0.25,sx*0.35); g.add(nl); }
-    for(let i=0;i<2;i++){ const fl=new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.003),mat);   // forehead lines
-      fl.position.set(0,0.095+i*0.022,zAt(0,0.095+i*0.022)); fl.rotation.x=0.15; g.add(fl); } }
-  else if(style==="beauty"){ const d=new THREE.Mesh(new THREE.CircleGeometry(0.005,8),new THREE.MeshBasicMaterial({color:0x2a1a10,side:DS}));
-    d.position.set(0.047*fs.sx,-0.093,zAt(0.047,-0.093)); d.rotation.y=0.25; g.add(d); }
-}
 // blink tick — call with any buildFaceGroup head each frame; cheap (2 lids, one sin)
 function tickFace(head,dt){
   const b=head&&head.userData&&head.userData.blink; if(!b) return;
@@ -6217,15 +6165,6 @@ function glyphStoneTex(seed){
   const t=new THREE.CanvasTexture(c);t.wrapS=THREE.RepeatWrapping;t.repeat.x=3;cache[key]=t;return t;
 }
 // a longer jagged crystal — elongated faceted bipyramid, jittered uniquely per seed
-function buildCrystal(seed,col){
-  const geo=new THREE.OctahedronGeometry(0.52,0), p=geo.attributes.position, elong=2.6+seed*1.0, j=0.11;
-  for(let i=0;i<p.count;i++){ let x=p.getX(i),y=p.getY(i),z=p.getZ(i);
-    y*=elong; x+=Math.sin(i*12.9+seed*47)*j; z+=Math.cos(i*7.7+seed*33)*j;      // longer + jagged (unique)
-    p.setXYZ(i,x,y,z); }
-  geo.computeVertexNormals();
-  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.35,metalness:0.0,roughness:0.6,flatShading:true}));
-  m.castShadow=true; m.rotation.y=seed*6.28; return m;
-}
 // ── real AC fixture meshes (assets/acmisc: lifestone, bindstone) ──
 const _miscGeo={}, _miscTexCache={}, _miscTL=new THREE.TextureLoader();
 function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
@@ -7918,9 +7857,6 @@ function kcDescribe(it){
   if(it.stat==="trophy") return `trophy · worth ${it.v}p`;
   return "treasure of Val Halla";
 }
-function kcInspectHook(hk){
-  log(`<b>${hk.it.name}</b> — ${kcDescribe(hk.it)} <span style="color:var(--dim)">(on display in the ${hk.room})</span>`,"loot");
-}
 function kcPokeBunny(){
   const lines=["The bunny's nose twitches. Somewhere far away, a drudge screams.",
     "A tiny sign reads: <b>Property of Lord Kilmer. DO NOT OPEN. EVER.</b>",
@@ -9128,7 +9064,6 @@ const FURNITURE_ITEMS=[
 ];
 let hsCrystals=[],hsHooks=[],hsChests=[],hsDoors=[],hsHallGates=[],hsFurnMeshes=[];
 let hsInst=null;   // active house-interior / residential-hall instance state
-function hsType(){ return player.homestead?HOUSING_TYPES[player.homestead.type]:null; }
 function hsMine(){ return player.homestead&&HS_BY_HID?HS_BY_HID[player.homestead.hid]:null; }
 function writCount(){ let n=0; for(const it of player.inv) if(it&&it.stat==="writ") n+=(it.count||1); return n; }
 function takeWrits(n){ for(let i=player.inv.length-1;i>=0&&n>0;i--){ const it=player.inv[i]; if(!it||it.stat!=="writ") continue;
@@ -9163,7 +9098,6 @@ function buildFurniture(kind){
   else { bx(0.5,0.5,0.5,0,0.25,0); }
   return g;
 }
-function rollFurniture(){ const t=FURNITURE_ITEMS[irnd(0,FURNITURE_ITEMS.length-1)]; return {name:t.name,stat:"furniture",kind:t.kind,v:Math.round(t.cost/10)}; }
 // ── construction: the retail map streams in via hsStreamHouses; here we place the
 //    housing NPCs and the Residential Hall entrances ──
 function addHousingSettlements(){
@@ -10000,7 +9934,6 @@ function projGeom(sp){
   if(el==="bludgeon") return new THREE.SphereGeometry(r*1.25,10,8);
   return new THREE.SphereGeometry(r,10,8);
 }
-function rollCrit(){ return Math.random() < clamp(0.07+player.attr.Coordination*0.004,0,0.45); }
 function wornPieces(){ const o=player.armorSlots||{}; const r=[]; for(const s of ARMOR_SLOTS){ if(o[s]) r.push(o[s]); } return r; }
 function equippedShield(){ return (player.armorSlots&&player.armorSlots.offhand)||null; }   // off-hand shield, or null
 const SHIELD_TINT={covenant:0x39406a,olthoi:0x5a6a3a,aegis:0x6a86d8};
@@ -10032,7 +9965,6 @@ function updateShieldModel(){   // reflect the equipped off-hand shield on the a
   const tint=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||SHIELD_TINT[ty]||0x9aa0a8;
   const m=sh.userData.plate; if(m){ m.color.setHex(tint); m.emissive.setHex(ty==="aegis"?0x22336a:0x000000); }
 }
-function armorTypeOf(){ const a=player.armorSlots&&player.armorSlots.chest; return (a&&a.at&&ARMOR_TYPES[a.at])||null; } // chest = overall "look"
 // total worn armour = sum of each equipped piece (its value + armour affix, scaled by class)
 function wornArmorV(){ let n=0; for(const p of wornPieces()){ const at=ARMOR_TYPES[p.at], base=p.v+((p.affix&&p.affix.k==="armorbonus")?p.affix.v:0); n+=Math.round(base*(at?at.armorMul:1)); } return n+setBonus().armor+((typeof aetheriaBonus==="function")?aetheriaBonus("armor"):0); }
 // movement/stamina multipliers, averaged across all 5 slots (empty slot = no penalty) — partial armour = partial cost
@@ -10893,8 +10825,6 @@ const TIMES_OF_DAY=["Darktide","Darktide and Half","Foredawn","Foredawn and Half
   "Midsong","Midsong and Half","Warmtide","Warmtide and Half",
   "Evensong","Evensong and Half","Gloaming","Gloaming and Half"];
 function timeOfDayName(){ return TIMES_OF_DAY[Math.min(15,Math.max(0,Math.floor(gameTime*16)))]; }
-function acClock(){ const h=(gameTime*24)%24, hh=Math.floor(h), mm=Math.floor((h-hh)*60);   // Midsong=12:00, Darktide=00:00
-  return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
 const SEASON_ORDER=["thaw","growth","harvest","frost"];   // visual tint per 3 months: spring → summer → autumn → winter
 const SEASON_DAYS=90;                                       // one visual season = 3 AC months = 90 day/night cycles
 let worldDays=120, _seasonIdx=-1, _todIdx=-1;              // 120 = dawn of Verdantine (AC's launch high-summer)
@@ -11050,7 +10980,6 @@ function spawnSagaBoss(bossId){
   monsters.push(m);attachBossAnims(m);
   log(d.rise,"warn"); toast(d.toast); if(SFX.growl)SFX.growl();
 }
-function spawnEmberEcho(){ spawnSagaBoss("ember"); }   // back-compat for Year 1's g.echo chapter
 // resolve a named saga place → a world point. "capital"/"3 nearest towns" resolve relative to the player.
 function sagaPlace(name){
   if(name==="valstead") return {x:KC.x,z:KC.z+138,r:70,name:"Valstead"};
@@ -13934,7 +13863,6 @@ function recomputeGearSkill(){ const g={}; for(const it of cantripItems()){ cons
   player.gearFx=fx;
   player.gearSkill=g; }
 // ── AC wield requirements: loot rolls skill/level/arcane gates you must meet before you can equip it ──
-function bestMeleeSkillValue(){ let b=0; for(const k of MELEE_WEAPON_KEYS){ const v=skillValue(k); if(v>b)b=v; } return b; }
 function rollWield(it,tier,work,rare){
   // I2 item-spells: tier-3+ weapons/armour can roll a CANTRIP (Minor/Major/Epic/Legendary) — a real
   // worn bonus riding the piece, powered by the item's OWN mana pool (drains while worn; a Mana
@@ -14364,14 +14292,6 @@ function craftTargetsFor(srcName){
   for(const r of rs){ const idx=player.inv.findIndex(t=>t&&t.name&&t.name.toLowerCase()===r.target.toLowerCase());
     if(idx>=0) out.push({r,idx}); }
   return out;
-}
-function craftResultItem(name){
-  const a=(typeof AC_ITEMS!=="undefined")&&AC_ITEMS&&AC_ITEMS[name.toLowerCase()];
-  let it={name,stat:"trophy",v:a&&a.val?Math.max(2,Math.round(a.val/2)):25};
-  if(a){ if(a.t==="Food") it={name,stat:"food",v:8,attr:"Endurance",dur:60};
-    else if(a.dmg) it={name,stat:"weapon",wt:"sword",mat:"Steel",v:a.dmg};
-    else if(a.al) it={name,stat:"worn",at:"light",aslot:"chest",mat:"Steel",v:a.al}; }
-  return (typeof acItemize==="function")?acItemize(it):it;
 }
 function tryCraft(src){
   const cands=craftTargetsFor(src.name); if(!cands.length) return false;
@@ -15471,7 +15391,6 @@ function updatePets(dt){
     }
   }
 }
-function primaryAttack(){ if(weaponMode==="bow") fireArrow(); else meleeAttack(0.6+(player.powerBar==null?0.5:player.powerBar)); }   // tap attacks swing at the combat panel's set power (AC 2017)
 // dodge dash (Space): quick burst in the movement direction (or backward) with brief i-frames
 function dodge(){
   if(!player.alive||paused||player.dashT>0||player.dashCd>0||player.st<16) return;
@@ -17329,7 +17248,6 @@ function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_
 function saveUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(el&&el.style.left){ p[id]={x:parseInt(el.style.left),y:parseInt(el.style.top)}; } }
   try{ localStorage.setItem("dereth_ui",JSON.stringify(p)); }catch(e){} }
-function resetUIPos(){ try{ localStorage.removeItem("dereth_ui"); }catch(e){} location.reload(); }
 function setUIMove(on){ movingUI=!!on; document.getElementById('hud').classList.toggle('uimove',movingUI);
   const h=document.getElementById('uimoveHint'); if(h) h.style.display=movingUI?"block":"none";
   if(movingUI&&locked) document.exitPointerLock(); }
@@ -20252,7 +20170,6 @@ function talkQuestGiver(n){
   }
   updateNPCMarker(); updateQuestHUD(); renderQuestLog();
 }
-function talkEmissary(){ talkQuestGiver({questId:"gnawvil",name:"Asheron's Emissary"}); }  // legacy entry point
 function talkToNPC(n){
   if(!n) return;
   if(n.role==="emissary"||n.role==="questgiver"){ talkQuestGiver(n); return; }
@@ -21321,7 +21238,6 @@ function buildOxWagon(){
   const marker=textSprite("🐂","#ffd86b"); marker.position.set(0,2.6,0.4); g.add(marker);
   return g;
 }
-function isCapitalName(n){ return (typeof CAPITALS!=="undefined")&&CAPITALS.some(c=>c.name===n); }
 // the caravan's circuit: Lord Kilmer's castle + the three great capitals; it shuttles between them,
 // resting in each town for a full game day. Returns the ordered stop list.
 function caravanStops(){
@@ -24549,7 +24465,6 @@ function lootItem(it){
   SFX.gold();
   log(it.scroll?`You find a <b>${it.name}</b>. (T to scribe it)`:`You pick up a <b>${it.name}</b>. (T to equip or salvage)`,"loot");
 }
-function salvageValue(it){ if(it.scroll) return 20; return Math.max(3,Math.round(it.v*(it.stat==="armor"?1.0:0.8))); }
 function openTinker(){ buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
 // armour rating a single piece contributes (value + armour affix, scaled by its class)
@@ -25634,14 +25549,34 @@ function reconcileRemotes(players){
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
     r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
   }
   for(const id in NET.players){ if(!seen[id]){ scene.remove(NET.meshes[id]); delete NET.meshes[id]; delete NET.players[id]; } }
+}
+// Dress a remote player's avatar with their relayed wield (weapon/shield). The jointed avatar already
+// carries aHeld/aBow/aWand/aShield sub-meshes (built by buildAvatarJointed); we just toggle/fill them
+// from the synced wt/wmode/shield so other players no longer look bare-handed online.
+function dressRemoteWield(mesh,wt,wmode,shield){
+  const u=mesh&&mesh.userData; if(!u) return;
+  const sig=(wt||"")+"|"+(wmode||"")+"|"+(shield||"");
+  if(u._wieldSig===sig) return;   // only rebuild on change
+  u._wieldSig=sig;
+  const prof=wt&&(typeof WEAPON_TYPES!=="undefined")&&WEAPON_TYPES[wt], missile=(prof&&prof.mode==="missile")||wmode==="bow";
+  try{
+    if(u.aHeld){ while(u.aHeld.children.length){ const c=u.aHeld.children[0]; u.aHeld.remove(c); if(c.traverse)c.traverse(o=>{if(o.isMesh&&o.geometry&&o.geometry.dispose)o.geometry.dispose();}); }
+      if(wt&&prof&&prof.mode==="melee"&&typeof buildItemModel==="function"){ const m=buildItemModel({wt,stat:"weapon"},{hand:true}); m.rotation.set(-Math.PI/2,0,0); m.position.set(0,-0.02,0.02); u.aHeld.add(m); } }
+    if(u.aBow) u.aBow.visible=!!missile;
+    if(u.aWand) u.aWand.visible=(wt==="focus");
+    if(u.aSword) u.aSword.visible=false;   // superseded by the aHeld model
+    if(u.aShield) u.aShield.visible=!!shield && wt!=="twohand";
+  }catch(e){}
 }
 function updateRemotes(dt){
   const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
   for(const id in NET.players){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
     mesh.visible=!hide; if(hide) continue;
+    dressRemoteWield(mesh, r.wt, r.wmode, r.shield);   // reflect their wielded weapon/shield
     if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives
       r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
@@ -25655,7 +25590,9 @@ function sendInput(dt){
   netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
   netSend({t:"input",x:player.x,z:player.z,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
     level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk,pkState:player.pkState||"npk",
-    loyalty:skillValue("loyalty"),leadership:skillValue("leadership")});
+    loyalty:skillValue("loyalty"),leadership:skillValue("leadership"),
+    wt:(player.weapon&&player.weapon.wt)||null, wmode:weaponMode,   // so other players see our wielded weapon/shield
+    shield:(player.armorSlots&&player.armorSlots.offhand&&player.armorSlots.offhand.shield)||null});
 }
 // AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
 // PK (Player Killer — fights other PKs, drops a lootable corpse). Same ruleset only; NPK never fights.
@@ -26052,7 +25989,6 @@ function openBarber(n){
     log("The barber's work is done — <b>you wear a new look</b>.","loot"); toast("A NEW FACE"); if(SFX.quest)SFX.quest(); saveGame();
   });
 }
-function ccRandomize(){ for(const cat of ["face","skin","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo"]){ const a=APPEARANCE[cat]; ccWork[cat]=a[Math.floor(Math.random()*a.length)].k; } ccSyncSel(); ccRebuild(); }
 document.getElementById('ccBack').onclick=()=>{ closeCharCreator();
   if(ccBarber){ ccBarber=false; ccOnCreate=null; paused=false; return; }   // barber visit: back to the world, not the title
   document.getElementById('overlay').style.display=""; };
