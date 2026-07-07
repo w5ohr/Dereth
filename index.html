@@ -10089,7 +10089,12 @@ function setBonus(){ const d=dominantSet(); if(d.count<3) return {count:d.count,
   return {count:d.count,set:d.set,armor,mhp,skill,skillV:skill?12:0}; }
 // opts: {element, brandDmg, crit (bonus chance), lifesteal} — used by weapon affixes / branded attacks
 function applyHit(m,base,opts){ opts=opts||{};
-  if(player.buffMightT>0)base*=1.5; base*=(1+itemBuff("dmg")+aetheriaBonus("dmg"))*(1-player.vitae);  // Blood Drinker + Aetheria of Destruction
+  if(!m||m.hp<=0) return;   // #27: a corpse can't be re-hit — a dual-wield off-hand follow-up must not re-kill it (which doubled kills/XP/gold/loot)
+  // #29: weapon-only offence stays on PHYSICAL hits (never boosts a spell). Might elixir (buffMightT) and
+  //      weapon oil (itemBuff("oildmg")) are gated on opts.phys; Aetheria Destruction (itemBuff("dmg") +
+  //      aetheriaBonus("dmg")) stays universal by design.
+  if(opts.phys&&player.buffMightT>0)base*=1.5;
+  base*=(1+itemBuff("dmg")+aetheriaBonus("dmg")+(opts.phys?itemBuff("oildmg"):0))*(1-player.vitae);
   base*=(1+damageRating(m,opts));   // Cb5 Damage Rating: Aura of Valor + gear + Aetheria + rear-attack (+20 DR from behind)
   if(opts.phys&&player.gearFx&&player.gearFx.dmg) base+=player.gearFx.dmg;   // Blood Drinker / Strength item-spells: flat weapon damage
   // creature magic resistance blunts spell damage (set per-kind in BESTIARY.mres; bosses resist most)
@@ -10110,7 +10115,7 @@ function applyHit(m,base,opts){ opts=opts||{};
   }
   if(opts.phys&&pm!==1) floater(m.x,(m.headY||1.6)+2.9,m.z,pm>1?"weak!":"resist",pm>1?"#7fe6a0":"#9fb0c0");
   dmg*=vgen;
-  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+((player.gearFx&&player.gearFx.crit)||0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+critDamageRating();  // AC base crit 10% ×2; +Coord, Heart Seeker/Biting Strike, Fury aetheria, item-spell crit; Critical-Damage Rating (Aura of Glory + gear + Aetheria) boosts crit damage
+  const crit=Math.random()<clamp(0.10+player.attr.Coordination*0.003+(opts.crit||0)+itemBuff("crit")+aetheriaBonus("crit")+((player.augment&&player.augment.crit)||0)+(opts.phys?((player.gearFx&&player.gearFx.crit)||0):0),0,0.6); aetheriaSurge("hit"); if(crit)dmg*=2+critDamageRating();  // AC base crit 10% ×2; +Coord, Fury aetheria; #29: Heart-Seeker gearFx.crit is a WEAPON enchant — physical hits only (base Coord crit stays universal); Critical-Damage Rating (Aura of Glory + gear + Aetheria) boosts crit damage
   // Cb5 Crushing Blow: a chance a PHYSICAL hit crushes — favoured by maces/2h/unarmed (bludgeon) and helped by a crit —
   // for +60% damage; a devastating strike distinct from a crit (both can stack).
   if(opts.phys){ const cr=crushingRating(opts)+(crit?0.05:0); if(cr>0&&Math.random()<cr){ dmg*=1.6; opts._crush=true;
@@ -14453,8 +14458,8 @@ function applyItem(it){
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
     if(!n){ log(`<b>${it.name}</b> — you have no curse to cleanse.`,"sys"); return "keep"; }
     player.debuffs={}; log(`You drink the <b>${it.name}</b>, cleansing ${n} curse(s).`,"loot"); if(SFX.quest)SFX.quest(); }
-  else if(it.stat==="oil"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.dmg;
-    player.itemBuffs.dmg={v:Math.max(it.dmg,cur?cur.v:0),t:it.dur};
+  else if(it.stat==="oil"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.oildmg;   // #29: oil rides its OWN slot (weapon-only) so it never shares the universal Aetheria-Destruction "dmg" slot
+    player.itemBuffs.oildmg={v:Math.max(it.dmg,cur?cur.v:0),t:it.dur};
     log(`You apply <b>${it.name}</b> — +${Math.round(it.dmg*100)}% weapon damage for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="atlanstone"){ const w=player.weapon;
     if(!w||w.wt==="focus"||w.wt==="unarmed"){ log("You need a martial weapon in hand to set an Atlan stone.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
@@ -15155,6 +15160,11 @@ function executeSpell(id){
   const cost=Math.max(1,Math.round(s.cost*(1-_mcCut)));
   if(_mcCut>0.25) floater(player.x,EYE+0.4,player.z,"mana saved","#5aa8ff");
   let usedScarab=false, focusPaid=0;
+  // #30: snapshot mana + focus-battery BEFORE paying, so a fizzle or a no-target abort restores BOTH
+  //      exactly (the old `player.mn+=cost` refunded only the pool — it silently moved battery mana
+  //      into the player's mana and never returned focusPaid to the battery).
+  const _mn0=player.mn, _fm0=player.focusMana||0;
+  const refundCast=()=>{ player.mn=_mn0; player.focusMana=_fm0; };   // scarab stays consumed by design (a reagent burns like a component)
   if(player.mn<cost){   // out of mana — first tap the casting focus's mana battery (H15), then channel a scarab (AC reagent)
     const need=cost-player.mn;
     if((player.focusMana||0)>0 && focusManaMax()>0 && player.focusMana>=need){ player.focusMana-=need; focusPaid=need; player.mn=cost;   // battery covers the shortfall
@@ -15174,7 +15184,7 @@ function executeSpell(id){
   { const mk2=MAGIC_SCHOOLS[s.school]; const sk2=mk2?skillValue(mk2):999, diff2=Math.max(20,s.req||20);
     const castChance=1/(1+Math.exp(0.03*(diff2-sk2)));
     const fz=clamp(1-castChance,0,0.40);   // no artificial floor — a master simply doesn't fizzle (ACE)
-    if(Math.random()<fz){ if(!usedScarab) player.mn+=cost; spellCd[id]=now()+600;
+    if(Math.random()<fz){ refundCast(); spellCd[id]=now()+600;   // #30: fizzle consumes no mana — restore pool AND focus battery
       burnSpellComponents(s);   // retail: the components burn even on a fizzle
       floater(player.x,EYE+0.5,player.z,"fizzle!","#c9a6ff"); if(SFX.hit)SFX.hit();
       log(`Your <b>${s.name}</b> fizzles — the weave slips.`,"warn"); castShow=0.3; return; } }
@@ -15189,7 +15199,7 @@ function executeSpell(id){
   if(wandModel){const cc=s.school==="war"?(s.make&&s.make().color||0xff7a2a):0x9af0ff;wandModel.userData.gem.material.color.setHex(cc);wandModel.userData.light.color.setHex(cc);}
   if(s.vuln){   // Life Vulnerability — the foe under the crosshair takes more damage from your attacks
     const m=pickMonsterTarget(30);
-    if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
+    if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
     else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
     spellLandFX("life",_slfMonsterPos(m),(m.headY||1.6)+0.4,m.r||0.8);   // life magic lands: crystals spin about the foe
@@ -15197,7 +15207,7 @@ function executeSpell(id){
   }
   if(s.special==="corrupt"){   // Mg6 Void curse — a nether DoT that also corrodes the foe's defences
     const m=pickMonsterTarget(30);
-    if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
+    if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     const dps=Math.round(s.dps*skillEff("void",0.02));
     m.burnT=Math.max(m.burnT||0,s.dur); m.burnDps=Math.max(m.burnDps||0,dps);   // nether DoT (rides the burn tick)
     m.vulnV=Math.max(m.vulnV||1,s.cvuln); m.vulnUntil=now()+s.dur*1000;          // corruption weakens its defences
@@ -15206,7 +15216,7 @@ function executeSpell(id){
   }
   if(s.debuff){   // enemy-targeted Creature curse — afflict the monster under the crosshair
     const m=pickMonsterTarget(30);
-    if(!m){ player.mn+=cost; spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
+    if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(m.shared) netSend({t:"debuff",id:m.id,eff:s.debuff,v:s.dmag,dur:s.dur});
     else if(s.debuff==="spd") m.slow=Math.max(m.slow||0,1-s.dmag);
     else { m.weakV=s.dmag; m.weakUntil=now()+s.dur*1000; }
@@ -15233,7 +15243,7 @@ function executeSpell(id){
         if(typeof spellLandFX==="function") spellLandFX(s.school,()=>[pet.x,0,pet.z],1.4,0.5);
         floater(player.x,EYE+0.6,player.z,"→ your familiar","#bfe0ff");
         log(`You cast <b>${s.name}</b> on your familiar — it ${typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"?"steadies and endures":"hums with borrowed power"}.`,"heal"); return; }
-      player.mn+=cost; spellCd[id]=0;
+      refundCast(); spellCd[id]=0;
       log(`No willing target for <b>${s.name}</b> — sight an ally, or keep a summoned familiar near.`,"warn"); return;
     }
   }
@@ -15251,21 +15261,21 @@ function executeSpell(id){
     castFlash(FX_VITAL.st);SFX.heal();log(`You cast <b>${s.name}</b>, restoring ${Math.round(v)} stamina.`,"heal");return;
   }
   if(s.special==="portaltie"){   // bind your return to the last portal you took (AC Portal Tie)
-    if(inDungeon||inNetwork){ player.mn+=cost; spellCd[id]=0; log("You cannot tie a portal from here.","warn"); return; }
-    const p=player.lastPortal; if(!p){ player.mn+=cost; spellCd[id]=0; log("Step through a portal first, then Portal Tie to bind your return to it.","warn"); return; }
+    if(inDungeon||inNetwork){ refundCast(); spellCd[id]=0; log("You cannot tie a portal from here.","warn"); return; }
+    const p=player.lastPortal; if(!p){ refundCast(); spellCd[id]=0; log("Step through a portal first, then Portal Tie to bind your return to it.","warn"); return; }
     if(s.slot2){ player.tiedPortal2={x:p.x,z:p.z,name:p.name}; castFlash(0x9b6bff); SFX.quest&&SFX.quest();
       log(`You tie a SECOND thread to <b>${p.name}</b> — Secondary Portal Recall will return you there.`,"heal"); return; }
     player.tiedPortal={x:p.x,z:p.z,name:p.name}; castFlash(0x9b6bff); SFX.quest&&SFX.quest();
     log(`You tie a magical thread to <b>${p.name}</b> — Portal Recall will return you there.`,"heal"); return;
   }
   if(s.special==="recall"){   // teleport to your bound Lifestone, the Holtburg sanctuary, or your tied/last portal
-    if(inDungeon||inNetwork){ player.mn+=cost; spellCd[id]=0; log("You cannot recall from here.","warn"); return; }
+    if(inDungeon||inNetwork){ refundCast(); spellCd[id]=0; log("You cannot recall from here.","warn"); return; }
     let dest,isLS=true;
     if(s.dest==="sanctuary") dest=lifestones.find(l=>l.name==="Holtburg")||lifestones[0];
-    else if(s.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(!p){ player.mn+=cost; spellCd[id]=0; log("You have no portal tied — take a portal (or cast Portal Tie) first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
-    else if(s.dest==="portal2"){ const p=player.tiedPortal2; if(!p){ player.mn+=cost; spellCd[id]=0; log("You have no SECOND portal tied — cast Secondary Portal Tie at a portal first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
+    else if(s.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(!p){ refundCast(); spellCd[id]=0; log("You have no portal tied — take a portal (or cast Portal Tie) first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
+    else if(s.dest==="portal2"){ const p=player.tiedPortal2; if(!p){ refundCast(); spellCd[id]=0; log("You have no SECOND portal tied — cast Secondary Portal Tie at a portal first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
-    if(!dest){ player.mn+=cost; spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
+    if(!dest){ refundCast(); spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
     teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
   }
@@ -15273,7 +15283,7 @@ function executeSpell(id){
     const P={hp:["hp","mhp","health"],st:["st","mst","stamina"],mn:["mn","mmn","mana"]};
     const F=P[s.from],T=P[s.to];
     const drained=player[F[0]]*0.5;
-    if(drained<4){ player.mn+=cost; spellCd[id]=0; log(`Your ${F[2]} is too low to draw upon.`,"warn"); return; }
+    if(drained<4){ refundCast(); spellCd[id]=0; log(`Your ${F[2]} is too low to draw upon.`,"warn"); return; }
     const gain=Math.min(drained*(1.0+0.05*s.lvl), 50*s.lvl, player[T[1]]-player[T[0]]);
     player[F[0]]-=drained; player[T[0]]=Math.min(player[T[1]],player[T[0]]+Math.max(0,gain));
     floater(player.x,EYE+0.5,player.z,`${F[2]} → +${Math.round(gain)} ${T[2]}`,"#9ad0ff");
@@ -15289,7 +15299,7 @@ function executeSpell(id){
   }
   if(s.special==="vdrain"){   // Drain Stamina/Mana Other: siphon a fifth of the foe's pool
     const m=pickMonsterTarget(30);
-    if(!m){ player.mn+=cost; spellCd[id]=0; log(`No foe in your sights for <b>${s.name}</b>.`,"warn"); return; }
+    if(!m){ refundCast(); spellCd[id]=0; log(`No foe in your sights for <b>${s.name}</b>.`,"warn"); return; }
     const frac=0.05+0.05*Math.min(3,s.lvl)+0.02*Math.max(0,s.lvl-3);
     const pool=s.pool, maxK=pool==="st"?"mst":"mmn";
     const avail=(m[pool]!=null?m[pool]:(m[maxK]||40)), take=Math.max(3,Math.round(avail*frac));
@@ -15300,13 +15310,13 @@ function executeSpell(id){
     castFlash(0x9b6bff); SFX.frost&&SFX.frost(); log(`You cast <b>${s.name}</b>, siphoning <b>${take}</b> ${pool==="st"?"stamina":"mana"} from a foe.`,"heal"); updateHUD&&updateHUD(); return;
   }
   if(s.special==="acportal"){   // a recovered retail travel spell: the way opens to its true place
-    if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); player.mn+=cost; spellCd[id]=0; return; }
+    if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); refundCast(); spellCd[id]=0; return; }
     teleportFX(player.x,player.z); arriveAt(s.dx,s.dz+3); player.invuln=2; teleportFX(player.x,player.z);
     if(SFX.portal)SFX.portal(); log(`You cast <b>${s.name}</b> — the way opens to <b>${esc(s.dname)}</b>.`,"heal"); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
     const ally=(typeof pickAllyTarget==="function")?pickAllyTarget(40):null;
-    if(!ally){ player.mn+=cost; spellCd[id]=0; log(`No ally in your sights for <b>${s.name}</b>.`,"warn"); return; }
+    if(!ally){ refundCast(); spellCd[id]=0; log(`No ally in your sights for <b>${s.name}</b>.`,"warn"); return; }
     netSend({t:"cast",target:ally.id,spell:id}); castFlash(0x5aa8ff); SFX.quest&&SFX.quest();
     log(`You weave <b>${s.name}</b> about <b>${esc(ally.name)}</b> — the way home takes them.`,"heal"); return;
   }
@@ -15369,7 +15379,7 @@ function executeSpell(id){
     return;
   }
   if(s.special==="summon"){
-    if(skillTier("summon")===0){ player.mn+=cost; log("You are untrained in <b>Summoning</b> — train it on the character sheet (C).","warn"); spellCd[id]=0; return; }
+    if(skillTier("summon")===0){ refundCast(); log("You are untrained in <b>Summoning</b> — train it on the character sheet (C).","warn"); spellCd[id]=0; return; }
     if(pets.length>=2){ const old=pets.shift(); scene.remove(old.mesh); } // cap at 2; replace oldest
     spawnPet();
     castFlash(0x9b30ff);SFX.quest();log(`You conjure a <b>spectral wisp</b> to fight beside you.`,"heal");
@@ -17199,7 +17209,7 @@ function updateHUD(){
   document.getElementById("pSwift").textContent=player.elixSwift;
   const bf=[];if(player.buffMightT>0)bf.push("Might "+Math.ceil(player.buffMightT)+"s");if(player.buffSwiftT>0)bf.push("Swift "+Math.ceil(player.buffSwiftT)+"s");
   if(player.spellBuffs) for(const a in player.spellBuffs) bf.push(`+${player.spellBuffs[a].v} ${a}`);
-  if(player.itemBuffs){ const IB={dmg:"+dmg",crit:"+crit",armor:"+armor",haste:"+haste"}; for(const k in player.itemBuffs) bf.push(IB[k]||k); }
+  if(player.itemBuffs){ const IB={dmg:"+dmg",oildmg:"+dmg",crit:"+crit",armor:"+armor",haste:"+haste"}; for(const k in player.itemBuffs) bf.push(IB[k]||k); }
   if(player.skillBuffs) for(const k in player.skillBuffs) bf.push(`+${player.skillBuffs[k].v} ${SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k}`);
   if(player.hots){ const HP={hp:"♥ regen",st:"⚡ regen",mn:"✦ regen"}; for(const k in player.hots) bf.push(HP[k]||k); }
   if(player.lifeBuffs&&player.lifeBuffs.prot) bf.push(`-${Math.round(player.lifeBuffs.prot.v*100)}% dmg`);
@@ -21506,6 +21516,7 @@ function healScale(base){   // AC: the Healing skill boosts kit/potion potency; 
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
   if(player[field]<=0){ log("You have none of that potion.","warn"); return; }
+  amt=Math.max(0,+amt||0);   // #28: a potion never DRAINS a vital — clamp a stray negative/NaN amount to 0
   player[field]--;player.drinkCd=0.6;
   if(kind==="hp"){amt=healScale(amt);player.hp=Math.min(player.mhp,player.hp+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#7fe6a0");}
   else if(kind==="st"){player.st=Math.min(player.mst,player.st+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#ffd86b");}
