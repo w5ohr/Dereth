@@ -17059,9 +17059,13 @@ function streamMonsters(dt){
 // how far the 3rd-person camera can sit behind the pivot before terrain/walls block it
 function camClampDist(tx,ty,tz,bx,by,bz,maxD){
   let d=maxD;
-  if(!inDungeon&&!inNetwork){
-    for(let s=0.5;s<=maxD;s+=0.5){const py=ty+by*s; if(py<terrainH(tx+bx*s,tz+bz*s)+0.3){ d=Math.min(d,s-0.3); break; }}
-    for(const o of obstacles){if(o.yMax!=null&&ty>o.yMax+0.6) continue; const ex=tx-o.x,ez=tz-o.z,rr=o.r+0.4;
+  if(inDungeon){   // #199: indoors the camera respects the real walls — step the camera-back ray through the cell grid
+    if(typeof dungeonWalkable==="function")
+      for(let s=0.6;s<=maxD;s+=0.35){ if(!dungeonWalkable(tx+bx*s,tz+bz*s)){ d=Math.min(d,s-0.35); break; } }
+  } else {
+    if(!inNetwork)   // terrain only exists overworld
+      for(let s=0.5;s<=maxD;s+=0.5){const py=ty+by*s; if(py<terrainH(tx+bx*s,tz+bz*s)+0.3){ d=Math.min(d,s-0.3); break; }}
+    for(const o of obstacles){if(o.yMax!=null&&ty>o.yMax+0.6) continue; const ex=tx-o.x,ez=tz-o.z,rr=o.r+0.4;   // #199: obstacle clamp now runs in the Town Network too (its walls live in obstacles)
       const A=bx*bx+bz*bz; if(A<1e-6) continue;
       const B=2*(ex*bx+ez*bz),C=ex*ex+ez*ez-rr*rr,disc=B*B-4*A*C; if(disc<0) continue;
       const t1=(-B-Math.sqrt(disc))/(2*A); if(t1>0.2&&t1<d) d=t1-0.2;}
