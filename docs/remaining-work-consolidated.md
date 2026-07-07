@@ -41,6 +41,15 @@ below (and everything marked `done`) is shipped — see **Confirmed shipped** at
 > the server's runtime data files (loot catalog degrades). Full detail + reusable server harnesses
 > (`server/tsa_*.py`) and per-run notes in `docs/testsystem-a-log.md`. Server/data/static layers
 > exhaustively covered & green; only the live in-browser 3D/UI lane is untested (Chrome extension down).
+>
+> **⚠️ TestSystemB overnight sweep (2026-07-07, 13 runs, main @ c3232dc) — 1 HIGH + 1 LOW finding, filed
+> as items #27–#28 below (log-only, nothing fixed). Agents: claim by lane before fixing.**
+> **#27** (A) **dual-wield double-kill / double-loot** — a dual-wield killing blow re-kills the corpse
+> via the unguarded off-hand `applyHit`, doubling kills/XP/gold/loot (~62% of killing swings; confirmed
+> repro). · **#28** (A, LOW/not-reachable) `drinkPotion` doesn't clamp a negative heal amount.
+> 52 subsystems + 5 boundary/depth batches otherwise **green** (breadth exhaustive; the FX-colour
+> palette shipped in PR #149). Full detail + reusable harnesses (`$CLAUDE_JOB_DIR/tmp/tsb_*.js`) and
+> per-run notes in `docs/testsystemb-playtest.md` (PR #146).
 
 ---
 
@@ -87,6 +96,8 @@ product call, not agent work; do not implement without a decision recorded here.
 | 24 | B | **TestSystemA TSA-5 — remote players' wield never syncs online** | The client input tick carries no weapon/offhand fields, the snapshot relays none, and `remoteApp`/`reconcileRemotes` dress remotes without equipment — other players always render bare-handed/shield-less in multiplayer. Fix: add wield kinds to the input tick + snapshot and hand them to the remote-avatar dresser. *(TestSystemA run 8)* | S–M | open |
 | 25 | A | **TestSystemA TSA-6 — client sends `houseboot`, server has no handler** | index.html:9624 `/house boot <name>` does `netSend({t:"houseboot",...})` online, but dereth_server.py has NO `houseboot` case — the message is silently dropped, so booting a guest from your dwelling has no multiplayer effect (the local log lies "X is booted"). Net-symmetry audit found this is the ONLY client→server type without a server handler. Fix: add a `houseboot` handler (evict the named guest from the house instance) or make the command offline-only. *(TestSystemA run 11)* | S | open |
 | 26 | C | **TestSystemA TSA-7 — Docker image omits the server's runtime data files** | `deploy/Dockerfile` COPYs only `server/dereth_server.py`, but the server reads FOUR sibling/relative files at boot: `admin_kilmer.json` (admin char seed) and `../assets/{acrewards,acitems,acspellstats}.json` (the retail item/spell catalog mirror). All have graceful try/except fallbacks so the container still boots — but a **Docker-deployed server silently loses the retail loot catalog**, so shared/online loot falls back to the simplified generator (real retail gear stats gone) and the Admin account gets no seeded character. The systemd path (`git clone` whole repo → /opt/dereth) is unaffected. Fix: COPY `server/admin_kilmer.json` + the needed `assets/*.json` into the image (or document the degraded mode). *(TestSystemA run 14)* | S | open |
+| 27 | A | **TestSystemB TSB-1 — dual-wield double-kill / double-loot (HIGH, player-reachable)** | `applyHit` (index.html ~10083) has no `if(m.hp<=0) return` guard and `killMonster` (~10179) has no already-dead re-entry guard. `meleeAttack` fires `applyHit(m,…)` **twice** per dual-wield swing (main ~15553 + off-hand ~15555) with no hp check between, so a **killing main strike lets the off-hand strike re-kill the corpse** → doubled kill count, XP, gold, and a **full second loot roll**. Confirmed via the real dual-wield path (`tsb_dw.js`): 60 one-shot swings → **97 kills (37 excess), 62% double-counted, 2–6 extra drops each** (~1.6× loot/XP on killing blows). **Blast radius = dual-wield only** — AoE/ring/projectile/splash/wall re-query `monsters[]` and splice the corpse, so a localized fix resolves it. Fix: `if(m.hp<=0) return;` atop `applyHit`, **or** `if(m.dead) return; m.dead=true;` in `killMonster`. *(TestSystemB pass 8–9)* | S | open |
+| 28 | A | **TestSystemB TSB-2 — `drinkPotion` doesn't clamp a negative heal amount (LOW, not player-reachable)** | `player.hp = Math.min(player.mhp, player.hp + healScale(amt))` — a negative `amt` *reduces* hp. Every in-game potion call passes a positive constant, so this is a defensive/robustness gap, not a live bug. Fix: `amt = Math.max(0, amt)` in `drinkPotion`. *(TestSystemB pass 10)* | S | open |
 
 ## 2 · Blocked — needs the excluded Agent-1 terrain re-extraction lane
 
