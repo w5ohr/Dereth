@@ -54,21 +54,38 @@ latent edge cases.
 **No issues found this pass.** (Two combat/spell subsystems now deep-verified; the applyHit/executeSpell
 merges from Lane A are clean.)
 
-## AgentC pass 3 (deep item-roll validation) — 1 FINDING (attribute gems uncapped)
+## AgentC pass 4 (deep save/load roundtrip) — ALL GREEN, no defects
 
-Exhaustive item-roll scan: **4,000 rolls across all 10 tiers**, validating every field + running the
-description/icon renderers on each.
+Loaded a character touching **every persisted subsystem** with distinctive values, saved via
+`saveGame()`, corrupted live state, reloaded via `applySave()`, and diffed field-by-field.
 
-- **Roll integrity: CLEAN.** 0 throws, 0 missing names, 0 NaN/negative values, 0 weapons missing
-  damage, 0 unknown weapon types; `gearDesc`/`gearIco` never threw. Scrolls (619) all valid
-  (scroll+spellId). MMO harness 47/47 · 0 console errors · jsc clean.
-- ⚠ **FINDING (filed as authoritative-list #31, AgentC AC-1): attribute gems raise attributes with
-  NO cap.** The 4,000-roll scan surfaced ~10 items whose `stat` is an attribute name (Strength Gem,
-  Focusing Stone, Willpower Gem, …). They ARE handled — `applyItem` (index.html:14435) does
-  `player.attr[it.stat]+=it.v` — but with **no ceiling**, unlike the XP-raise (`attrMaxRanks`) and
-  augmentation (`attrTotal` +50) paths. They roll from normal loot (`ITEM_BASE` 11828–11831), so a
-  player can farm them and inflate an attribute without bound. Runtime-proven: 50 gems → Strength
-  13→263, survives `derive()`. Low-moderate. Full detail + fix in the authoritative list #31.
-  - *Investigation note:* the gem first read as "does nothing on Use" — that was a TEST artifact
-    (I checked `player.attr.Strength` while the sampled gem boosted Coordination). With the matching
-    attribute it works; the real issue is the missing cap, not brokenness.
+- **Roundtrip: 100% CLEAN** (0 changed fields) once test values use the real shapes. Verified
+  persisted intact: level/xp/gold/kills, attributes, vitals (raised), vitae, heritage, title,
+  **aetheria** (slot obj), **augment** (hp/st/mn/attrTotal/count/crit/owned all survive the load
+  normalizer), **society** (id + rep + ribbons-count + testsDone), equipped **weapon** with its
+  brand affix + `bp`, **inventory** incl. scrolls, pkState, focusMana, enlightenment. Save blob = 92 keys.
+- **Investigation note (non-defect):** a first pass flagged 4 "changed" fields — all were the TEST
+  using wrong value SHAPES, not save bugs: `society` is stored as a validated **id string**
+  (`SOCIETIES.some(o=>o.id===s.society)`, index.html:24815), not an object; `societyRibbons` is a
+  **count number** coerced with `|0` (index.html:24817), not an array; and the `homestead` "change"
+  was the legacy-hid **migration** (`hsPackInit`) correctly remapping a fake `"h123"` to a real
+  cottage. Re-run with correct shapes → 0 diffs. Save/load is sound.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Finding #31 from pass 3 remains open in PR #157, pending review.)
+
+## AgentC pass 5 (combat boundary conditions) — 1 FINDING (playerHurt NaN soft-brick)
+
+Fed `applyHit`/`playerHurt`/`damageMonster` degenerate inputs — 0, negative, NaN, ±Infinity,
+tiny, huge, string, null, undefined — plus overkill and brand+vuln+crit+lifesteal stacking.
+
+- **Monster side: CLEAN.** All 11 degenerate `applyHit` bases handled — no NaN HP, never healed a
+  monster, no throws. Overkill (1e9) kills cleanly (exactly 1 kill). `damageMonster` NaN/neg guard
+  works. Brand+vuln×3+crit+lifesteal extreme stack: no NaN. (The `damageMonster` `#16` clamp holds.)
+- ⚠ **FINDING (filed as authoritative-list #32, AgentC AC-2): `playerHurt` has no NaN input guard →
+  NaN-HP soft-brick.** `playerHurt(NaN)` sets `player.hp=NaN`; its internal `Math.max(1,…)` clamps
+  catch negative but not NaN. Network-reachable via `onMobDmg` (index.html:25123) which passes
+  `msg.amt` unvalidated — `{t:"dmg"}` / `{amt:NaN}` / `{amt:"oops"}` all NaN the HP (proven).
+  NaN HP is unhealable AND undyable (`NaN<=0` false) — a permanent stuck state. It's the missing
+  twin of the monster side's explicit `#16` guard. Full detail + fix in authoritative list #32.
+- jsc clean · 0 console errors · MMO harness 47/47.
