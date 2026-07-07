@@ -15543,7 +15543,7 @@ function meleeAttack(power){
       const dot=(dx*fx+dz*fz)/(d*fl);
       if(dot>0.5){
         const hm=heightMods(m);   // Cb2: attack height vs the target's size
-        if(!rollToHit(skillValue(weaponSkillKey()),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,"miss","#b9c0cc"); continue; }  // attack-skill vs defense (× charge accuracy × height fit)
+        if(!rollToHit(skillValue(weaponSkillKey()),m,acc*hm.acc)){ floater(m.x,(m.headY||1.6)+1.6,m.z,hm.off==="high"?"too high!":hm.off==="low"?"too low!":"miss","#b9c0cc"); continue; }  // #206: a height-mismatched miss says so — play teaches the line
         const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
         applyHit(m,dmg*hm.dmg*sneak*dmgVar(prof),meleeOpts);   // per-swing damage roll (AC weapon variance)
         dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
@@ -15619,7 +15619,8 @@ function heightMods(m){
   if(pa!=null) dmg*=pa;
   if(ah===ideal){ acc+=0.10; dmg*=1.06; }                    // the target's build suits your line — cleaner strikes
   else if(ah!=="mid"&&ideal!=="mid"){ acc-=0.14; }           // opposite extreme (high vs a low foe) — awkward, poorer accuracy
-  return {acc:clamp(acc,0.6,1.3), dmg:clamp(dmg,0.7,1.4), part:b.part};
+  // #206: report a real height mismatch so the miss floater can say WHY ("too high!" / "too low!") — mid is never penalized
+  return {acc:clamp(acc,0.6,1.3), dmg:clamp(dmg,0.7,1.4), part:b.part, off:(ah!==ideal&&ah!=="mid")?ah:null};
 }
 // Cb5/skill activation: Recklessness (trade defence for damage) & Sneak Attack (bonus vs an unaware/flanked foe)
 function recklessFactor(){ const t=skillTier("recklessness"); return t===2?0.22:t===1?0.13:0; }   // +outgoing AND +incoming damage
@@ -15770,9 +15771,13 @@ function buildCombatPanel(){
   if(typeof skillTier==="function"&&skillTier("recklessness")>0)
     sl.style.background="linear-gradient(90deg,transparent 10%,rgba(224,48,48,.45) 10%,rgba(224,48,48,.45) 90%,transparent 90%)";   // the Recklessness zone
   pills.innerHTML="";
+  const HTIP={high:"Strikes the HEAD — harder to land, hits harder. Suits towering foes (lugians, golems).",
+    mid:"Strikes the TORSO — reliable, average damage. Suits man-sized foes.",
+    low:"Strikes the LEGS — easier to land, lighter hits. Suits small scuttlers (rats, mites)."};   // #206
   for(const [k,lab] of [["high","High"],["mid","Medium"],["low","Low"]]){
     const on=(player.atkHeight||"mid")===k;
     const b=document.createElement('button');
+    b.title=HTIP[k];
     b.textContent=(on?"▸ ":"")+lab+(on?" ◂":"");
     b.style.cssText=`flex:1;padding:2px 0;font-size:10px;border-radius:8px;cursor:pointer;border:1px solid ${on?'#ffd86b':'#5a2020'};background:${on?'#8a2020':'#4a1818'};color:${on?'#ffe6b0':'#d8a8a8'}`;
     b.onclick=()=>{ player.atkHeight=k; buildCombatPanel(); };
@@ -17583,7 +17588,13 @@ function buildCodex(){
     if(!seen) return `<div class="row" style="opacity:.5"><div><span class="lab">??? </span><span class="desc">— defeat one to learn its nature</span></div></div>`;
     const sw="#"+b.c.toString(16).padStart(6,"0"),a=AFFINITY[k]||{},tt=threatTier(b);
     const aff=[a.weak?`<span style="color:#7fe6a0">weak: ${a.weak}</span>`:"",a.resist?`<span style="color:#ff8f6b">resist: ${a.resist}</span>`:""].filter(Boolean).join(" · ")||`<span style="color:var(--dim)">no elemental affinity</span>`;
-    return `<div class="row"><div><span class="lab"><span style="display:inline-block;width:10px;height:10px;background:${sw};border-radius:2px;margin-right:6px;vertical-align:middle"></span>${b.name}</span> <span style="color:${tt.c};font-size:11px;font-weight:bold;margin-left:6px">[${tt.t}]</span> <span class="desc">— HP ${b.hp} · dmg ${b.dmg} · ${b.xp} XP</span><div style="font-size:11px;margin-top:2px">${aff}</div></div></div>`;
+    // #206: what you've learned includes WHERE to strike — the ideal attack line (from its build) + any plated/soft parts
+    const ideal=(b.size>=1.5?"High":b.size<=0.7?"Low":"Mid");
+    const pa=(typeof PART_ARMOR!=="undefined")&&PART_ARMOR[k]; let paTxt="";
+    if(pa){ const soft=Object.keys(pa).filter(p=>pa[p]>1), hard=Object.keys(pa).filter(p=>pa[p]<1);
+      paTxt=[soft.length?`<span style="color:#7fe6a0">soft: ${soft.join(", ")}</span>`:"",hard.length?`<span style="color:#ff8f6b">plated: ${hard.join(", ")}</span>`:""].filter(Boolean).join(" · "); }
+    const line=`<span style="color:#e0c070">strike ${ideal}</span>${paTxt?` · ${paTxt}`:""}`;
+    return `<div class="row"><div><span class="lab"><span style="display:inline-block;width:10px;height:10px;background:${sw};border-radius:2px;margin-right:6px;vertical-align:middle"></span>${b.name}</span> <span style="color:${tt.c};font-size:11px;font-weight:bold;margin-left:6px">[${tt.t}]</span> <span class="desc">— HP ${b.hp} · dmg ${b.dmg} · ${b.xp} XP</span><div style="font-size:11px;margin-top:2px">${aff} · ${line}</div></div></div>`;
   }).join("");
 }
 function openCodex(){ closeOtherModals("codex"); buildCodex();document.getElementById('codex').style.display="flex";paused=true;if(locked)document.exitPointerLock(); }
