@@ -133,3 +133,17 @@ Systematic audit of ALL remaining client net-message handlers (to close out the 
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.**
+
+## AgentC pass 12 (chargen budget + bestiary/achievement tracking) — ALL GREEN, no defects
+
+- **Character-creation budget: enforced.** Attribute pool caps at exactly **270** (never exceeds
+  after 2,000 simulated inc-clicks); per-attribute caps at **100**; skill credits never go negative
+  (`trainSkill`/`specSkill` reject over-spend); the **70 spec-credit cap** holds (and can't even be
+  reached — the per-skill credit gate fires first). The final commit trusts `ccWork` but every UI
+  path is guarded, so normal creation can't over-allocate.
+- **Bestiary: dedups** — killing/learning a kind twice adds it once (`indexOf<0` guard).
+- **Achievements: no double-grant** — `checkAchievements()` run twice grants each id once
+  (`indexOf<0 && check()` guard).
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
