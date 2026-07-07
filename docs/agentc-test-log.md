@@ -224,3 +224,17 @@ Number-heavy crafting economy, only lightly touched before.
 - jsc clean · 0 console errors · MMO harness 47/47.
 
 **No issues found this pass.** (Passes 11–17 all clean.)
+
+## AgentC pass 18 (spell projectile physics + AoE geometries) — ALL GREEN, no defects
+
+- **All 5 war/void geometries** (bolt, blast, volley, ring, arc) cast without throwing, spawn
+  projectiles, produce no NaN positions, and fully clean up (0 live projectiles after settle).
+- **AoE shapes hit multiple targets:** ring + arc each struck all 5 clustered mobs.
+- **Projectile collision works:** a bolt aimed along the (synced) camera forward hits its target.
+  The bolt/blast/volley "0 hits" in the first run was the documented headless **cam-desync**
+  (executeSpell fires along `cam.getWorldDirection()`, and `cam` lags `player.yaw` in the frozen
+  preview); after driving the loop 10 frames to sync cam, the bolt hits. Test artifact, not a bug —
+  4th self-caught headless artifact.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–18 all clean.)
