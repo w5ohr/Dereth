@@ -167,3 +167,16 @@ authoritative list.
 - **Keyrings:** stow loose keys and picks (1+1 stowed on Use).
 - **Greeters:** fresh char starts with no greeter state — populated by chargen flow (by design).
 - **No new findings this pass.**
+
+## 2026-07-06 21:02 — TestSystemC pass 12 (HEAD c3232dc, still unchanged — varied coverage round 12)
+
+- 0 console errors · MMO harness 47/47 · no drift.
+- **Melee kill chain (functional):** damageMonster applies exact damage; killing a drudge grants
+  XP, increments the kill counter, and leaves loot/corpse.
+- **Armor:** wornArmorV 0 → 120 with a breastplate equipped.
+- **Bow (functional):** fireArrow() is the ranged entry — 10 stamina per bow profile, cooldown +
+  draw animation set, exactly 1 arrow consumed per shot, refuses to fire without matching ammo.
+- **War projectiles:** Flame Bolt I make() yields dmg 24, fire element, projectile speed.
+- **Quest slay-credit:** questEvent("slay","drudge") ticks the matching objective in activeQuests
+  (alfrin prog [0,1]). (Objective type is "slay", not "kill" — earlier miss was the probe.)
+- **No new findings this pass.**
