@@ -21480,11 +21480,18 @@ function buildShop(){
       if(it.gear.spellcraft) gearInfo+=` · <span style="color:#8a9ad0">spellcraft ${it.gear.spellcraft}</span>`;
     }
     row.innerHTML=`<div><span class="lab">${itemIconHTML(it.name,it.ico,null,it.gear||it)} ${it.name}</span> <span class="desc">— ${it.desc}${have}${gearInfo}</span></div>
-      <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""} ${unmet?`title="You cannot wield this yet — needs ${esc(unmet)}" style="border-color:#a06a3a;color:#d0a070"`:""}>Buy — ${it.cost}p${unmet?" ⚠":""}</button></div>`;
+      <div class="ctl"><button class="tbtn" data-buy="${i}" ${player.gold<it.cost?"disabled":""} ${unmet?`title="You cannot wield this yet — needs ${esc(unmet)}" style="border-color:#a06a3a;color:#d0a070"`:(it.field&&!it.gear&&!it.scroll&&!it.shipdeed&&!it.warp&&!it.blessing?`title="Shift-click to buy ×10"`:"")}>Buy — ${it.cost}p${unmet?" ⚠":""}</button></div>`;
     buy.appendChild(row);
   });
-  buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{const it=SHOP[+b.dataset.buy];
+  buy.querySelectorAll('[data-buy]').forEach(b=>b.onclick=(ev)=>{const it=SHOP[+b.dataset.buy];
     if(player.gold<it.cost) return;
+    // #198: shift-click a belt-consumable's Buy = buy ×10 (capped by what you can afford) — no more click-spam restocking
+    if(ev&&ev.shiftKey&&it.field&&!it.gear&&!it.scroll&&!it.shipdeed&&!it.warp&&!it.blessing){
+      const n=Math.min(10,Math.floor(player.gold/it.cost));
+      player.gold-=it.cost*n; player[it.field]+=(it.amt||1)*n;
+      log(`You buy <b>${n}× ${it.name}</b>.`,"loot");
+      SFX.gold();buildShop();updateHUD();saveGame();return;
+    }
     if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
     if(it.blessing){ caravanBless(); return; }
     if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
