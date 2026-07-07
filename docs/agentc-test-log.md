@@ -74,18 +74,40 @@ Loaded a character touching **every persisted subsystem** with distinctive value
 
 **No issues found this pass.** (Finding #31 from pass 3 remains open in PR #157, pending review.)
 
-## AgentC pass 5 (combat boundary conditions) — 1 FINDING (playerHurt NaN soft-brick)
+## AgentC pass 6 (status-effect / buff-timer lifecycle) — ALL GREEN, no defects
 
-Fed `applyHit`/`playerHurt`/`damageMonster` degenerate inputs — 0, negative, NaN, ±Infinity,
-tiny, huge, string, null, undefined — plus overkill and brand+vuln+crit+lifesteal stacking.
+Applied every timed effect, drove `update()` past expiry, and asserted the character returns to
+EXACT baseline (the classic leak: a buff that expires without un-applying its delta).
 
-- **Monster side: CLEAN.** All 11 degenerate `applyHit` bases handled — no NaN HP, never healed a
-  monster, no throws. Overkill (1e9) kills cleanly (exactly 1 kill). `damageMonster` NaN/neg guard
-  works. Brand+vuln×3+crit+lifesteal extreme stack: no NaN. (The `damageMonster` `#16` clamp holds.)
-- ⚠ **FINDING (filed as authoritative-list #32, AgentC AC-2): `playerHurt` has no NaN input guard →
-  NaN-HP soft-brick.** `playerHurt(NaN)` sets `player.hp=NaN`; its internal `Math.max(1,…)` clamps
-  catch negative but not NaN. Network-reachable via `onMobDmg` (index.html:25123) which passes
-  `msg.amt` unvalidated — `{t:"dmg"}` / `{amt:NaN}` / `{amt:"oops"}` all NaN the HP (proven).
-  NaN HP is unhealable AND undyable (`NaN<=0` false) — a permanent stuck state. It's the missing
-  twin of the monster side's explicit `#16` guard. Full detail + fix in authoritative list #32.
+- **Attribute buffs:** apply (+40 Str), fully expire back to base; **re-apply does NOT double-stack**
+  (`applyAttrBuff` drops the old stack first); no residual after reapply→expire.
+- **Skill buffs:** raise the skill, expire clean, no residual (derive re-runs).
+- **prot / banes / itemBuffs (dmg+oildmg) / buffMightT / buffSwiftT:** all decrement and delete on
+  expiry — 0 leaks.
+- **HoTs:** tick + heal, don't overheal past max, then expire.
+- **Monster burn DoT:** damages, stops at `burnT<=0`, no NaN.
+- **Enemy debuffs on the player (slow/vuln/imperil):** decremented + deleted at index.html:16602
+  (2→0 confirmed). Not missed by the update loop.
+- Final character state = exact baseline (Strength 77→77, mhp unchanged). No drift, no leak, no NaN.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (The buff/debuff/DoT/HoT lifecycle is sound — symmetric apply/expire
+throughout.)
+
+## AgentC pass 7 (netcode client message-handler robustness) — 1 FINDING (onLoot gold NaN)
+
+Audited every client-side net-message handler for the #32 class (unvalidated server field →
+corrupted game state). Mapped the dispatcher (index.html ~24926) and stress-tested the
+state-mutating handlers.
+
+- **Safe / correctly guarded:** `onRemoteBuff` validates `SPELLBOOK[m.spell]` and applies effects
+  from trusted client-side spell data (message only picks WHICH known spell — solid design);
+  `onCorpseLoot` gates gold on `msg.amt>0` (NaN + negative both rejected); `onReward` gates on
+  `if(msg.gold)`/`if(msg.xp)` (NaN rejected — `gainXP(NaN)` never runs).
+- ⚠ **FINDING (filed as authoritative-list #33, AgentC AC-3): `onLoot` gold path corrupts
+  `player.gold` to NaN.** `onLoot` (index.html:25032) does `player.gold+=msg.amt` with NO guard —
+  `onLoot({type:"gold"})` / `{amt:NaN}` / `{amt:"oops"}` all NaN the gold (proven), while its
+  siblings `onCorpseLoot`/`onReward` correctly guard theirs. NaN gold = economy soft-brick (breaks
+  buy/sell, persists to save). Player-reachable online. Third member of the "unvalidated net field
+  → NaN player state" cluster (#32 HP, #33 gold). Full detail + fix in authoritative list #33.
 - jsc clean · 0 console errors · MMO harness 47/47.
