@@ -26429,6 +26429,10 @@ document.getElementById('ccBack').onclick=()=>{ closeCharCreator();
 document.getElementById('ccCreate').onclick=()=>{
   const name=document.getElementById('ccName').value.trim();
   if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
+  // #331: re-validate the budget at commit — the UI only disables the +buttons, so a seeded/tampered
+  // over-budget ccWork would otherwise bake a permanent over-statted character (innate can't be lowered).
+  if(ccAttrSpent()>CREATE_POOL || ccCreditsSpent()>CREATE_CREDITS || ATTRS.some(a=>ccWork.cattr[a]<10||ccWork.cattr[a]>100)){
+    document.getElementById('ccMsg').textContent="Character exceeds the creation budget — adjust attributes/skills."; return; }
   player.name=name; player.heritage=ccWork.race;
   const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo","model","gender"];
   const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k];
