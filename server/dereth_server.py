@@ -431,7 +431,7 @@ RL_GEN_RATE = 30.0    # sustained messages/sec (input/attack/etc.)
 RL_GEN_BURST = 60.0   # burst capacity
 RL_CHAT_RATE = 2.0    # sustained "chatty" broadcast messages/sec
 RL_CHAT_BURST = 6.0   # burst capacity for chat/emote/tell/party/allegiance
-CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd"}   # messages that fan out to others
+CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd", "spellfx"}   # messages that fan out to others. #312: spellfx is a purely-cosmetic broadcast-to-all — throttle it on the scarcer chat budget (2/s) so a client can't blast FX to every player 30×/s (attack/debuff stay on the general bucket since they fire at legitimate combat rate)
 
 class Client:
     def __init__(self, reader, writer):
@@ -1665,6 +1665,7 @@ async def do_auth_success(cl, username):
 
 async def enter_world(cl, slot, name, data):
     """Bring a selected/created character into the shared world."""
+    was_in_world = cl.in_world   # #312: a repeated play_char shouldn't re-broadcast "entered Dereth" to everyone
     cl.slot = slot; cl.charname = name; cl.in_world = True
     load_econ(cl, data)   # M3 (#238): adopt authoritative coin + inventory from the save
     await cl.send({"t": "play_ok", "slot": slot, "name": name, "char": data})
@@ -1681,7 +1682,8 @@ async def enter_world(cl, slot, name, data):
         await cl.send(drop_pub(d))
     if EVENT.get("active"):
         await cl.send(event_pub())
-    await broadcast({"t": "system", "msg": f"{name} has entered Dereth."}, exclude=cl)
+    if not was_in_world:
+        await broadcast({"t": "system", "msg": f"{name} has entered Dereth."}, exclude=cl)   # #312: only on the first entry
 
 async def dispatch(cl, msg):
     t = msg.get("t")
