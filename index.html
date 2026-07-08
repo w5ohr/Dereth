@@ -13600,7 +13600,7 @@ function invCap(){ let n=mainPackCap(); for(const p of (player.packs||[])) n+=p.
 // ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
 //    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
 function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry" && it.stat!=="aetheria")); }   // aetheria: each medallion levels independently
-function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):"",it.bp||0,it.uses==null?"":it.uses].join("|"); }   // #290: include bp (buy-price resale clamp mustn't be stripped by merging into a bp-less stack). #305: include uses so a fresh multi-use kit can't merge into a partly-spent stack and inherit its lower use count
+function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):"",it.bp||0,it.uses==null?"":it.uses,it.stored==null?"":it.stored].join("|"); }   // #290: include bp (buy-price resale clamp mustn't be stripped by merging into a bp-less stack). #305: include uses so a fresh multi-use kit can't merge into a partly-spent stack. #318: include stored so merging two mana stones can't discard the incoming stone's banked mana
 function addToInv(it, force){   // → true if added/stacked, false if the satchel was full
   if(stackable(it)){ const k=stackKey(it), ex=player.inv.find(x=>stackable(x)&&stackKey(x)===k);
     if(ex){ ex.count=(ex.count||1)+(it.count||1); return true; } }
@@ -14364,7 +14364,8 @@ function applyItem(it){
   if(AC_RCP_BYSRC&&it.name&&AC_RCP_BYSRC[it.name.toLowerCase()]&&craftTargetsFor(it.name).length){ tryCraft(it); return "keep"; }
   if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ return equipItem(it)===false?"keep":undefined; }  // "keep" leaves an un-wieldable item in the satchel
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
-  else if(it.stat==="hp"){const h=healScale(it.v);player.hp=Math.min(player.mhp,player.hp+h);
+  else if(it.stat==="hp"){ if(player.hp>=player.mhp){ log("Your health is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }   // #318: don't burn a heal/kit at full HP
+    const h=healScale(it.v);player.hp=Math.min(player.mhp,player.hp+h);
     if(/healing kit/i.test(it.name)){   // retail kits carry multiple uses (Crude 5 … Treated 100), each a Healing-skill application
       const full=/crude/i.test(it.name)?5:/plain/i.test(it.name)?10:/good/i.test(it.name)?15:/excellent/i.test(it.name)?20:/peerless/i.test(it.name)?25:/treated/i.test(it.name)?100:10;
       if(it.uses==null) it.uses=full;
@@ -14374,8 +14375,8 @@ function applyItem(it){
       if((it.count||1)>1) it.uses=full;   // #305: uses lived on the shared stack object — re-seed the NEXT unit to full so it isn't inherited at 0 (a stack of N kits gave N-1 fewer uses); invUseItem then decrements the count
       log(`The <b>${it.name}</b> is used up.`,"sys");
     } else log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""}).`,"loot");}
-  else if(it.stat==="mn"){player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}
-  else if(it.stat==="st"){player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}
+  else if(it.stat==="mn"){ if(player.mn>=player.mmn){ log("Your mana is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; } player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}   // #318: no waste at full
+  else if(it.stat==="st"){ if(player.st>=player.mst){ log("Your stamina is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; } player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}   // #318: no waste at full
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="aetheria"){                                     // slot the medallion — swap out whatever sits in its colour slot
@@ -14433,8 +14434,9 @@ function applyItem(it){
     log(`You apply <b>${it.name}</b> — +${Math.round(it.dmg*100)}% weapon damage for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="atlanstone"){ const w=player.weapon;
     if(!w||w.wt==="focus"||w.wt==="unarmed"){ log("You need a martial weapon in hand to set an Atlan stone.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+    if(w.atlan){ log(`Your <b>${esc(w.name)}</b> already bears an Atlan brand — a second stone will not take (AC: stones swap, they don't stack).`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }   // #318: once-only per weapon (like the #272 imbue guard) — repeated stones were stacking +vplus damage without bound and concatenating name suffixes
     w.affix={k:"brand",element:it.element,suffix:it.suffix,desc:it.element+" damage"};   // the stone sets a permanent elemental brand
-    if(it.vplus){ w.v+=it.vplus; }
+    if(it.vplus){ w.v+=it.vplus; } w.atlan=true;
     if(w.name.indexOf(it.suffix)<0) w.name=w.name.replace(/ of (Flame|Frost|Storms|Corrosion|Black Fire)$/,"")+it.suffix;
     styleWeaponModel();
     log(`You set the <b>${it.name}</b> into your <b>${esc(w.name)}</b> — it hums with ${it.element==="frost"?"biting cold":it.element==="shock"?"crackling lightning":it.element==="acid"?"seething acid":"living flame"}.`,"loot");
