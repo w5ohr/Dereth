@@ -303,6 +303,18 @@ def take_owned_filter(cl, items):
     cl.inv = work
     return kept
 
+def catalog_val(it):
+    """Best-effort ceiling on an item's worth, to cap the pyreals a vendor pays for it (so a client
+    can't claim a huge sell price). Uses the retail catalog value when the item is known, else a
+    bound derived from the item's own (already-sanitized, <=1e6) value field."""
+    try:
+        a = AC_ITEMS.get(str(it.get("name", "")).lower()) if AC_ITEMS else None
+        if a and a.get("val"):
+            return max(1, int(a["val"]))
+    except Exception:
+        pass
+    return max(1, int(_svnum(it.get("v", 0), 0, 1_000_000, 0)) * 4)
+
 def save_char_slot(account, slot, data):
     data = sanitize_save(data)
     with db() as c:
@@ -1717,6 +1729,39 @@ async def dispatch(cl, msg):
         did = msg.get("id")
         if isinstance(did, str) and cl.in_world:
             await do_recover(cl, did)
+    elif t == "vendor_sell":
+        # M3 (#238): the server, not the client, credits the pyreals. The item must be OWNED (removed
+        # from cl.inv) and the credit is capped at the retail catalog value — no phantom-sell minting.
+        if cl.in_world and cl.econ_ready:
+            item = msg.get("item")
+            try:
+                price = max(0, int(msg.get("price", 0)))
+            except (TypeError, ValueError):
+                price = 0
+            if isinstance(item, dict):
+                ok, removed = take_owned(cl, [item])
+                if ok and removed:
+                    price = min(price, catalog_val(item))
+                    cl.coin = max(0, min(2_000_000_000, cl.coin + price))
+                    await cl.send({"t": "vendor_ok", "act": "sell", "coin": int(cl.coin)})
+                else:
+                    await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "That item isn't in your inventory."})
+    elif t == "vendor_buy":
+        # M3 (#238): debit pyreals authoritatively; can't buy without the coin. (Item validation vs.
+        # shop stock is Stage 3; here we take the client's item but bound its stats.)
+        if cl.in_world and cl.econ_ready:
+            try:
+                cost = max(0, int(msg.get("cost", 0)))
+            except (TypeError, ValueError):
+                cost = 0
+            item = msg.get("item")
+            if cost <= cl.coin:
+                cl.coin -= cost
+                if isinstance(item, dict) and len(cl.inv) < 500:
+                    cl.inv.append(sanitize_item(item))
+                await cl.send({"t": "vendor_ok", "act": "buy", "coin": int(cl.coin)})
+            else:
+                await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "Not enough pyreals."})
     elif t == "debuff":
         if cl.in_world:
             m = MOBS.get(msg.get("id")); eff = msg.get("eff")

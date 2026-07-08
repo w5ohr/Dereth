@@ -21565,16 +21565,17 @@ function buildShop(){
     if(ev&&ev.shiftKey&&it.field&&!it.gear&&!it.scroll&&!it.shipdeed&&!it.warp&&!it.blessing){
       const n=Math.min(10,Math.floor(player.gold/it.cost));
       player.gold-=it.cost*n; player[it.field]+=(it.amt||1)*n;
+      if(isOnline) netSend({t:"vendor_buy",cost:it.cost*n});   // M3 (#238): authoritative coin debit
       log(`You buy <b>${n}× ${it.name}</b>.`,"loot");
       SFX.gold();buildShop();updateHUD();saveGame();return;
     }
     if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
     if(it.blessing){ caravanBless(); return; }
     if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
-    else if(it.gear){ if(!addToInv(Object.assign({},it.gear,{bp:it.cost}))){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
+    else if(it.gear){ const g=Object.assign({},it.gear,{bp:it.cost}); if(!addToInv(g)){log("Your satchel is full.","warn");return;} player.gold-=it.cost; if(isOnline) netSend({t:"vendor_buy",cost:it.cost,item:g}); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
-    else if(it.scroll){ if(!addToInv({scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name})){log("Your satchel is full.","warn");return;} player.gold-=it.cost; log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
-    else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
+    else if(it.scroll){ const sc={scroll:true,spellId:it.spellId,name:"Scroll: "+SPELLBOOK[it.spellId].name}; if(!addToInv(sc)){log("Your satchel is full.","warn");return;} player.gold-=it.cost; if(isOnline) netSend({t:"vendor_buy",cost:it.cost,item:sc}); log(`You buy a <b>${it.name}</b>. (T to scribe)`,"loot"); }
+    else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(isOnline) netSend({t:"vendor_buy",cost:it.cost}); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
     SFX.gold();buildShop();updateHUD();saveGame();});
   // services: respec (provisioners) and full healing (healers)
   const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0),rcost=100;
@@ -21613,6 +21614,7 @@ function buildShop(){
   sell.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sell; const it=player.inv[i]; if(!it)return; const price=gearSellPrice(it);
     if(activeShop && (activeShop.pyreals||0) < price){ log("The vendor hasn't the coin for that — sell smaller items, come back later, or try another merchant.","warn"); if(SFX.hit)SFX.hit(); return; }
     if(activeShop) activeShop.pyreals-=price;
+    if(isOnline) netSend({t:"vendor_sell",item:it,price});   // M3 (#238): server credits pyreals authoritatively (validates ownership, caps at catalog value); vendor_ok reconciles
     player.gold+=price;takeFromInv(i);SFX.gold();buildShop();updateHUD();saveGame();});
   sell.querySelectorAll('[data-turnin]').forEach(b=>b.onclick=()=>{const i=+b.dataset.turnin; const it=player.inv[i]; if(!it||it.stat!=="trophy")return;
     const bt=trophyBounty(it); player.gold+=bt.gold; if(typeof gainXP==="function")gainXP(bt.xp); takeFromInv(i);
@@ -25236,6 +25238,7 @@ function netHandle(m){
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
   if(m.t==="coin"){ if(isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance
+  if(m.t==="vendor_ok"){ if(isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } if(m.act==="reject"&&m.reason) log(m.reason,"warn"); return; }   // M3 (#238): vendor result — adopt the authoritative balance
   if(m.t==="loot")      return onLoot(m);
   if(m.t==="corpse_loot") return onCorpseLoot(m);
   if(m.t==="event_start")  return onEventStart(m);
