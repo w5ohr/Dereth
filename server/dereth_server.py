@@ -135,12 +135,22 @@ def load_char_slot(account, slot):
         data = None
     return {"name": row[0], "data": data}
 
+RESERVED_NAMES = {"kilmer"}   # #354: admin/castle names only the ADMIN_USER account may hold (the client grants Castle Val Halla ownership purely on player.name === "Kilmer")
+
 def create_char_slot(account, slot, name, data):
     if not isinstance(slot, int) or slot < 0 or slot >= MAX_CHARS:
         return False, "Invalid character slot."
+    # #354: reserve admin/system names — otherwise any account could create a "Kilmer" character and
+    # the client's castleAccess() would hand it full Castle Val Halla ownership + its materialized hoard.
+    if name.strip().lower() in RESERVED_NAMES and account != ADMIN_USER:
+        return False, "That name is reserved."
     with db() as c:
         if c.execute("SELECT 1 FROM characters WHERE account=? AND slot=?", (account, slot)).fetchone():
             return False, "That slot is already occupied."
+        # #354/#310: character names are globally unique — a name held by ANY other account is taken
+        # (allegiance/skill state is keyed by charname, and castle ownership keys on it).
+        if c.execute("SELECT 1 FROM characters WHERE LOWER(name)=LOWER(?) AND account!=?", (name, account)).fetchone():
+            return False, "That name is already taken."
         if c.execute("SELECT 1 FROM characters WHERE account=? AND name=?", (account, name)).fetchone():
             return False, "You already have a character with that name."
         c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
