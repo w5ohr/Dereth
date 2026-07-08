@@ -1297,7 +1297,7 @@ for(const s of SPELLBOOK_LIST){
   else if(s.buff==="prot"){ s.dur=buffDurFor(s.lvl); }                                          // Life protection keeps the unified session timer
   else if(s.buff==="might"||s.buff==="swift"){ s.dur=buffDurFor(s.lvl); }                        // #350: Blade Lure / Quickening had no dur field → executeSpell fell back to a hardcoded 25s regardless of level; scale it on the standard buff timer like the other stat buffs
   // debuffs mirror buffs the opposite way — 10 per level (as %), same level-based timer:
-  else if(s.debuff){ s.dmag=Math.round((1-0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }   // Weakness: enemy deals -10%/lvl · Slowness: -10%/lvl speed
+  else if(s.debuff){ const _dt=(typeof DEBUFF_TIERS!=="undefined")&&DEBUFF_TIERS.find(t=>t.lvl===s.lvl); s.dmag=_dt?_dt.v:Math.round((1-0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }   // #351: use the authored DEBUFF_TIERS.v ladder (0.85…0.12) — the linear 1-0.1·lvl ramp was silently overriding the hand-tuned curve, weakening high-tier Weakness/Slowness; fall back to the ramp only if a tier is missing
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
 }
 // ── Mg1 "Other" forms: the classic support lines castable ON someone else — an online ally under
@@ -16608,7 +16608,8 @@ function update(dt){
     // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
     const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
     if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle"))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
-    if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0) m.state="wander"; } else if(d>b.sense*1.4) m.state="wander"; }
+    if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0){ m.state="wander"; m.charging=0; } } else if(d>b.sense*1.4){ m.state="wander"; m.charging=0; } }   // #351: clear a mid-wind-up m.charging on de-aggro so it can't resume and loose a stale bolt (with no fresh tell) on the next aggro
+    const _mox=m.x,_moz=m.z;   // #351: remember pre-move position to revert a step into deep water
     if(m.state==="chase"&&player.alive){
       m.ang=Math.atan2(dx,dz);
       const spActive=monsterSpecial(m,b,d,dx,dz,dt);   // B1: a charge/spin owns the frame; boulder/acid/drain layer on top
@@ -16650,6 +16651,7 @@ function update(dt){
       else {m.x+=Math.sin(m.ang)*b.spd*0.4*slowF*dt;m.z+=Math.cos(m.ang)*b.spd*0.4*slowF*dt;}
     }
     m.x=clamp(m.x,-HALF+1,HALF-1);m.z=clamp(m.z,-HALF+1,HALF-1);
+    if(!inDungeon&&!inNetwork&&terrainH(m.x,m.z)<-1.5){ m.x=_mox; m.z=_moz; if(m.state==="wander")m.ang=rnd(0,6.28); }   // #351: don't wander/chase down into the ocean and stand on the negative-height seabed — revert the step (and pick a fresh heading if idly wandering)
     if(inDungeon){ const s=dungeonSlide(ox,oz,m.x,m.z); m.x=s[0]; m.z=s[1]; } // keep creatures in the rooms/halls
     // capitals are safe havens — creatures cannot enter (overworld only)
     if(!inDungeon&&!m.isBoss){for(const c of CAPITALS){const dx2=m.x-c.x,dz2=m.z-c.z,dc=Math.hypot(dx2,dz2);
@@ -16740,9 +16742,9 @@ function update(dt){
   if(player.skillBuffs){ for(const k of Object.keys(player.skillBuffs)){ const b=player.skillBuffs[k]; b.t-=dt;
     if(b.t<=0){ delete player.skillBuffs[k]; floater(player.x,EYE+0.6,player.z,(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k)+" fades","#9fb0c0"); derive(); } } }
   if(player.hots){ for(const k of Object.keys(player.hots)){ const b=player.hots[k]; b.t-=dt;
+    if(b.t<=0){ delete player.hots[k]; continue; }   // #351: no bonus heal on the frame the HoT expires (was decrement→heal→delete, granting one extra tick past zero) — matches the other buff loops
     const mx=k==="hp"?player.mhp:k==="st"?player.mst:player.mmn;
-    player[k]=Math.min(mx,player[k]+b.rate*dt);
-    if(b.t<=0) delete player.hots[k]; } }
+    player[k]=Math.min(mx,player[k]+b.rate*dt); } }
   if(player.debuffs){ for(const k of Object.keys(player.debuffs)){ const b=player.debuffs[k]; b.t-=dt; if(b.t<=0) delete player.debuffs[k]; } }
   if(player.dispelImmune>0) player.dispelImmune-=dt;
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
@@ -17118,6 +17120,7 @@ function streamMonsters(dt){
     const x=clamp(px+Math.cos(a)*rr,-HALF+6,HALF-6), z=clamp(pz+Math.sin(a)*rr,-HALF+6,HALF-6);
     const d=nearestCapitalDist(x,z);
     if(d<TOWN_SAFE+6 || terrainH(x,z)<0) continue;          // not in town-safe rings or water
+    if(obstacles.some(o=>{const ex=x-o.x,ez=z-o.z,rr2=(o.r+1);return ex*ex+ez*ez<rr2*rr2;})) continue;   // #351: don't spawn inside a building/structure/tree footprint (overworld pathing is straight-line with no collision, so a mob spawned in a wall is stuck)
     if(Math.hypot(x-KC.x,z-KC.z)<KC.safeR) continue;        // Castle Val Halla's grounds are guarded — no spawns
     spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500);
     live++;
