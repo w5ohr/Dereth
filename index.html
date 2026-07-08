@@ -17711,7 +17711,7 @@ function closeCodex(){ document.getElementById('codex').style.display="none";pau
 document.getElementById('closeCodex').onclick=closeCodex;
 
 // ---------- loop ----------
-let lastTs=0;
+let lastTs=0,_loopRunning=false;   // #334: single-rAF-chain guard
 function loop(ts){
   if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;dt=Math.min(dt,0.05);
   try{ update(dt); }catch(e){ console.error("update() failed:",e); }   // #227: no single-frame exception may ever kill the rAF chain (a thrown update froze the game permanently)
@@ -26115,7 +26115,7 @@ function startGame(loadSaved,preset){
   if(autosaveTimer) clearInterval(autosaveTimer);
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
-  requestAnimationFrame(loop);
+  if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
 }
 window.addEventListener('resize',()=>{
   cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();
