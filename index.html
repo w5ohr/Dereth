@@ -16225,13 +16225,15 @@ function buildSheet(){
   attrRows.querySelectorAll('[data-a]').forEach(btn=>btn.onclick=()=>{
     const a=btn.dataset.a;
     if(attrRank(a)>=attrMaxRanks()){ log("Attributes take at most <b>190 raises</b> above their innate value (AC).","warn"); return; }
-    if(player.skillPts>0){ player.skillPts--; }                                   // spend a legacy free point first (old saves)
+    if(player.skillPts>0){ player.skillPts--; player.freeRank=player.freeRank||{}; player.freeRank[a]=(player.freeRank[a]||0)+1; }   // #287: legacy free point (old saves) — remember this rank was free so lowering refunds a POINT, not XP
     else { const cost=attrCost(a); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise "+a+".","warn"); return; } player.xpUnspent-=cost; }
     player.attr[a]++; derive(); saveGame(); buildSheet();
   });
   attrRows.querySelectorAll('[data-lower]').forEach(btn=>btn.onclick=()=>{
     const a=btn.dataset.lower; if(attrRank(a)<=0) return;                          // can lower only bought ranks, never the innate value
-    player.xpUnspent+=attrRefund(a); player.attr[a]--; derive(); saveGame(); buildSheet();
+    if(player.freeRank&&player.freeRank[a]>0){ player.freeRank[a]--; player.skillPts=(player.skillPts||0)+1; }   // #287: this rank was funded by a free point → refund the POINT (symmetric with raise); NOT XP, which would mint XP from a free point
+    else player.xpUnspent+=attrRefund(a);
+    player.attr[a]--; derive(); saveGame(); buildSheet();
   });
   attrRows.querySelectorAll('[data-vit]').forEach(btn=>btn.onclick=()=>{
     const vk=btn.dataset.vit; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0;
@@ -21598,7 +21600,7 @@ function buildShop(){
     else { player.gold-=it.cost; player[it.field]+=(it.amt||1); if(isOnline) netSend({t:"vendor_buy",cost:it.cost}); if(it.amt) log(`You buy <b>${it.name}</b>.`,"loot"); }
     SFX.gold();buildShop();updateHUD();saveGame();});
   // services: respec (provisioners) and full healing (healers)
-  const allocated=ATTRS.reduce((s,a)=>s+(player.attr[a]-10),0),rcost=100;
+  const allocated=ATTRS.reduce((s,a)=>s+attrRank(a),0),rcost=100;   // #287: count XP-BOUGHT ranks (above innate), the only thing a respec refunds — not attr-minus-10
   const rwrap=document.getElementById('shopRespec');
   let svc="";
   if(def.respec) svc+=`<div class="row"><div><span class="lab">⟳ Respec Attributes</span> <span class="desc">— refund ${allocated} allocated points to reallocate</span></div><div class="ctl"><button class="tbtn" id="respecBtn" ${(allocated<=0||player.gold<rcost)?"disabled":""}>Respec — ${rcost}p</button></div></div>`;
@@ -21606,7 +21608,13 @@ function buildShop(){
     svc+=`<div class="row"><div><span class="lab">✚ Mend Wounds</span> <span class="desc">— restore health, stamina &amp; mana to full</span></div><div class="ctl"><button class="tbtn" id="healBtn" ${(need<=0||player.gold<hcost)?"disabled":""}>Heal — ${hcost}p</button></div></div>`; }
   rwrap.innerHTML=svc;
   const rb=document.getElementById('respecBtn');
-  if(rb) rb.onclick=()=>{ if(player.gold>=rcost&&allocated>0){player.gold-=rcost;ATTRS.forEach(a=>{player.skillPts+=(player.attr[a]-10);player.attr[a]=10;});derive();SFX.quest();buildShop();updateHUD();saveGame();log("Your attributes are unmade — reallocate via the character sheet (C).","sys");} };
+  if(rb) rb.onclick=()=>{ if(player.gold>=rcost&&allocated>0){ player.gold-=rcost;
+      // #287: refund the XP-bought ranks as XP and reset each attribute to its INNATE value — mirroring
+      // the correct NPC reset_attr path. Do NOT mint free skillPts (the old code granted attr-10 free
+      // points AND kept the invested XP, and the character sheet's lower button then re-refunded XP for
+      // those free ranks — a ~4.02B-XP mint for 100 gold).
+      let refund=0; ATTRS.forEach(a=>{ const r=attrRank(a); refund+=(AC_XP&&AC_XP.attr)?AC_XP.attr[Math.min(r,AC_XP.attr.length-1)]:Math.round(110*(Math.pow(1.0414,r)-1)/0.0414); if(player.freeRank)player.freeRank[a]=0; player.attr[a]=attrInnate(a); });
+      player.xpUnspent+=refund; derive();SFX.quest();buildShop();updateHUD();saveGame();log(`Your attributes are unmade — <b>${refund.toLocaleString()} XP</b> returned to reallocate via the character sheet (C).`,"sys"); } };
   const hb=document.getElementById('healBtn');
   if(hb) hb.onclick=()=>{ const need=Math.max(0,Math.round(player.mhp-player.hp)+Math.round(player.mmn-player.mn)+Math.round(player.mst-player.st)),hcost=Math.max(10,Math.ceil(need*0.25));
     if(need>0&&player.gold>=hcost){player.gold-=hcost;player.hp=player.mhp;player.mn=player.mmn;player.st=player.mst;floater(player.x,EYE+0.5,player.z,"Mended","#ff8aa0");SFX.heal();buildShop();updateHUD();saveGame();log("The Healer mends your wounds — you are restored to full.","heal");} };
@@ -25038,7 +25046,7 @@ function saveGame(){
   try{
     const baseAttr={}; for(const a in player.attr) baseAttr[a]=player.attr[a]-((player.spellBuffs&&player.spellBuffs[a])?player.spellBuffs[a].v:0);
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
-      skillPts:player.skillPts,kills:player.kills,gold:player.gold,armor:player.armor,
+      skillPts:player.skillPts,freeRank:player.freeRank||null,kills:player.kills,gold:player.gold,armor:player.armor,
       inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
       weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,aetheria:player.aetheria||null,attrInnate:player.attrInnate||null,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
       name:player.name,appearance:player.appearance,
@@ -25070,7 +25078,7 @@ function applySaveObj(s){
   //      undefined-attr state. Newer fields below already default; these ancient ones didn't.
   const _attr=(()=>{ const b={Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10};
     if(s.attr&&typeof s.attr==="object") for(const k in b){ const v=+s.attr[k]; if(isFinite(v)&&v>0) b[k]=v; } return b; })();
-  Object.assign(player,{attr:_attr,level:(+s.level>0?Math.floor(+s.level):1),xp:+s.xp||0,xpUnspent:+s.xpUnspent||0,skillPts:+s.skillPts||0,
+  Object.assign(player,{attr:_attr,level:(+s.level>0?Math.floor(+s.level):1),xp:+s.xp||0,xpUnspent:+s.xpUnspent||0,skillPts:+s.skillPts||0,freeRank:(s.freeRank&&typeof s.freeRank==="object")?s.freeRank:{},
     vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
     attrInnate:(s.attrInnate&&typeof s.attrInnate==="object")?s.attrInnate:null,   // pre-parity saves: current values become the innate line (attrInnate() falls back to min(attr,100))
     greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
