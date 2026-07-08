@@ -14482,8 +14482,9 @@ function applyItem(it){
     log(`You clip the <b>${it.name}</b> to your belt — a new side pack with <b>${player.packs[player.packs.length-1].cap}</b> slots (${player.packs.length}/7).`,"loot"); if(SFX.gold)SFX.gold(); toast("SIDE PACK EQUIPPED"); updateHUD&&updateHUD(); }
   else if(player.attr[it.stat]!==undefined){                          // #31: attribute gems raise a stat, but never past the same ceiling the XP path enforces (innate ≤100 + attrMaxRanks() ranks) — otherwise loot gems inflate an attribute without bound
     const cap=attrInnate(it.stat)+attrMaxRanks();
-    if(player.attr[it.stat]>=cap){ log(`Your <b>${it.stat}</b> is already at its natural peak (${cap}) — the <b>${it.name}</b> cannot raise it further.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
-    const gain=Math.min(Math.max(0,+it.v||0),cap-player.attr[it.stat]); player.attr[it.stat]+=gain; derive();
+    const _sb=(player.spellBuffs&&player.spellBuffs[it.stat])?(player.spellBuffs[it.stat].v||0):0, _base=player.attr[it.stat]-_sb;   // #316: cap against the UNBUFFED attribute — a live +attr spell buff was making the gem cap early (or refuse), silently burning it
+    if(_base>=cap){ log(`Your <b>${it.stat}</b> is already at its natural peak (${cap}) — the <b>${it.name}</b> cannot raise it further.`,"warn"); if(SFX.deny)SFX.deny(); return "keep"; }
+    const gain=Math.min(Math.max(0,+it.v||0),cap-_base); player.attr[it.stat]+=gain; derive();
     log(`Attuned <b>${it.name}</b> (+${gain} ${it.stat}${gain<(+it.v||0)?" — capped at its natural peak":""}).`,"loot");
   }
   else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
@@ -15200,7 +15201,7 @@ function executeSpell(id){
     const m=pickCastTarget(30);
     if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(s.vulnElem){ m.vulnElem=s.vulnElem; m.vulnElemV=s.vuln; m.vulnElemUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,s.vulnElem+" weak","#ff9a6b"); }
-    else { m.vulnV=s.vuln; m.vulnUntil=now()+s.dur*1000; floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }
+    else { m.vulnV=Math.max(m.vulnV||1,s.vuln); m.vulnUntil=Math.max(m.vulnUntil||0,now()+s.dur*1000); floater(m.x,(m.headY||1.6)+2,m.z,"Vulnerable","#ff9a6b"); }   // #316: keep-strongest/keep-longest — a weaker Vulnerability cast must not downgrade a stronger active one (matches corrupt/dirtyStrike)
     spellLandFX("life",_slfMonsterPos(m),(m.headY||1.6)+0.4,m.r||0.8);   // life magic lands: crystals spin about the foe
     castFlash(0xff9a6b); log(`You curse a foe with <b>${s.name}</b>.`,"heal"); return;
   }
@@ -15336,8 +15337,8 @@ function executeSpell(id){
   if(s.buff){
     const dur=s.dur||25, mag=s.mag;
     spellLandFX(s.school,_slfPlayerPos,2.0,0.75);   // the enchantment takes hold: creature → spirit swirl, life → crystal ring (other schools: none)
-    if(s.buff==="might"){player.buffMightT=dur;floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}
-    else if(s.buff==="swift"){player.buffSwiftT=dur;floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
+    if(s.buff==="might"){player.buffMightT=Math.max(player.buffMightT||0,dur);floater(player.x,EYE+0.5,player.z,"+50% dmg","#ff8f6b");}   // #316: keep-longest — a re-cast/shorter source can't shorten an active buff
+    else if(s.buff==="swift"){player.buffSwiftT=Math.max(player.buffSwiftT||0,dur);floater(player.x,EYE+0.5,player.z,"+speed","#7fe6a0");}
     else if(s.buff==="attr"&&mag){applyAttrBuff(s.attr,mag,dur);floater(player.x,EYE+0.5,player.z,`+${mag} ${s.attr}`,"#bfe0ff");}
     else if(s.buff==="item"){player.itemBuffs=player.itemBuffs||{};buffSet(player.itemBuffs,s.stat,mag,dur);floater(player.x,EYE+0.5,player.z,s.name,"#ffd86b");}
     else if(s.buff==="prot"){player.lifeBuffs=player.lifeBuffs||{};buffSet(player.lifeBuffs,"prot",mag,dur);floater(player.x,EYE+0.5,player.z,`-${Math.round(mag*100)}% dmg taken`,"#7fe6a0");}
@@ -21675,7 +21676,7 @@ function drinkPotion(field,amt,kind){
 function useElixir(field,buff,sec,label,color){
   if(!player.alive||player.drinkCd>0) return;
   if(player[field]<=0){ log("You have no "+label+".","warn"); return; }
-  player[field]--;player.drinkCd=0.6;player[buff]=sec;
+  player[field]--;player.drinkCd=0.6;player[buff]=Math.max(player[buff]||0,sec);   // #316: keep-longest — drinking a shorter elixir must not shorten a longer active buff
   floater(player.x,EYE+0.5,player.z,label,color);log(`You quaff an <b>${label}</b>.`,"heal");SFX.quest();updateHUD();
 }
 document.getElementById('closeShop').onclick=closeShop;
@@ -25687,8 +25688,8 @@ function applyBuffSelf(sp,fx){
   const flo=(txt,col)=>{ if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,txt,col||"#bfe0ff"); };
   if(typeof sp.heal==="function"){ const h=sp.heal(); player.hp=Math.min(player.mhp,player.hp+h); flo("+"+Math.round(h),"#7fe6a0"); }
   else if(sp.special==="regen"){ player.hots=player.hots||{}; hotSet(player.hots,sp.pool,sp.rate,sp.dur); flo("regen "+sp.pool,"#8fe6a0"); }
-  else if(sp.buff==="might"){ player.buffMightT=dur; flo("+50% dmg","#ff8f6b"); }
-  else if(sp.buff==="swift"){ player.buffSwiftT=dur; flo("+speed","#7fe6a0"); }
+  else if(sp.buff==="might"){ player.buffMightT=Math.max(player.buffMightT||0,dur); flo("+50% dmg","#ff8f6b"); }   // #316: keep-longest
+  else if(sp.buff==="swift"){ player.buffSwiftT=Math.max(player.buffSwiftT||0,dur); flo("+speed","#7fe6a0"); }
   else if(sp.buff==="attr"&&mag){ applyAttrBuff(sp.attr,mag,dur); flo(`+${mag} ${sp.attr}`); }
   else if(sp.buff==="item"){ player.itemBuffs=player.itemBuffs||{}; buffSet(player.itemBuffs,sp.stat,mag,dur); flo(sp.name,"#ffd86b"); }
   else if(sp.buff==="prot"){ player.lifeBuffs=player.lifeBuffs||{}; buffSet(player.lifeBuffs,"prot",mag,dur); flo(`-${Math.round(mag*100)}% dmg`,"#7fe6a0"); }
