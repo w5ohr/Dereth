@@ -25953,7 +25953,7 @@ function reconcileRemotes(players){
     r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
   }
-  for(const id in NET.players){ if(!seen[id]){ scene.remove(NET.meshes[id]); delete NET.meshes[id]; delete NET.players[id]; } }
+  for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
 }
 // Dress a remote player's avatar with their relayed wield (weapon/shield). The jointed avatar already
 // carries aHeld/aBow/aWand/aShield sub-meshes (built by buildAvatarJointed); we just toggle/fill them
