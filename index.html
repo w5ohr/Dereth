@@ -25071,7 +25071,7 @@ function applySaveObj(s){
     greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
     academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
     packs:Array.isArray(s.packs)?s.packs:[],
-    kills:s.kills|0,gold:s.gold|0,armor:s.armor|0,inv:Array.isArray(s.inv)?s.inv:[],materials:s.materials||0,salvage:(s.salvage&&typeof s.salvage==="object")?s.salvage:{},
+    kills:s.kills|0,gold:Math.max(0,Math.min(2e9,Math.floor(+s.gold||0))),armor:s.armor|0,inv:Array.isArray(s.inv)?s.inv:[],materials:s.materials||0,salvage:(s.salvage&&typeof s.salvage==="object")?s.salvage:{},   // #292: gold via clamp not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR; clamp to [0,2e9] to match the server's coin ceiling
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
     tapers:s.tapers||0,prismTapers:s.prismTapers||0,
