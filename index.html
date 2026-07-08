@@ -3185,6 +3185,7 @@ const _gndDay=new THREE.Color(0x59524a), _gndNight=new THREE.Color(0x05070d);
 const _sunWarm=new THREE.Color(0xffb15a), _sunNoon=new THREE.Color(0xfff2d8);
 const _stormGrey=new THREE.Color(0x484c56);   // dense storm/overcast cloud tint
 const _tmp=new THREE.Color();
+const _ddDir=new THREE.Vector3(),_ddSky=new THREE.Vector3(),_ddPerp=new THREE.Vector3();   // #344: reused scratch — updateDayNight is the hottest per-frame function; these were 2-3 new Vector3 allocations every frame (all value-copied downstream, so reuse is safe)
 function updateDayNight(dt){
   gameTime=(gameTime+dt/DAYLEN)%1;
   worldDays+=dt/DAYLEN; seasonTick();   // 30 day/night cycles → the month turns
@@ -3195,7 +3196,7 @@ function updateDayNight(dt){
   const sunX=Math.sin(t2);
   const daylight=clamp(sunY*1.15+0.4,0,1);
   // sun direction (follows player horizontally so shadows stay tight near you)
-  const dir=new THREE.Vector3(sunX*0.7,Math.max(0.12,sunY),0.45).normalize();
+  const dir=_ddDir.set(sunX*0.7,Math.max(0.12,sunY),0.45).normalize();
   sun.position.set(player.x+dir.x*110,dir.y*110+8,player.z+dir.z*110);
   sun.target.position.set(player.x,0,player.z);sun.target.updateMatrixWorld();
   sun.intensity=clamp(sunY,0,1)*1.25;   // stronger key light → clear directional shaping (AC's sunlit look)
@@ -3243,7 +3244,7 @@ function updateDayNight(dt){
   if(skyDomeMesh) skyDomeMesh.position.set(player.x,0,player.z); // keep the sky dome centred on the player so the
   // horizon stays symmetric and you never roam out toward the dome's dark lower hemisphere
   // visible sun & moon discs ride the sky along the light's arc
-  const R=WORLD*0.42,sky=new THREE.Vector3(sunX*0.62,sunY,0.4).normalize();
+  const R=WORLD*0.42,sky=_ddSky.set(sunX*0.62,sunY,0.4).normalize();
   if(skyU) skyU.uSunDir.value.copy(sky);
   if(sunSprite){sunSprite.position.set(player.x+sky.x*R,Math.max(-200,sky.y*R*0.7),player.z+sky.z*R);
     sunSprite.material.opacity=clamp(sunY*3+0.4,0,1);
@@ -3251,7 +3252,7 @@ function updateDayNight(dt){
   if(sunHalo){sunHalo.position.copy(sunSprite.position);sunHalo.material.opacity=clamp(sunY*2+0.25,0,1)*0.4;sunHalo.material.color.copy(sunSprite.material.color);}
   if(moonSprite){moonSprite.position.set(player.x-sky.x*R,Math.max(-200,-sky.y*R*0.7),player.z-sky.z*R);
     moonSprite.material.opacity=clamp(-sunY*3+0.4,0,1);}
-  if(moon2Sprite){const perp=new THREE.Vector3(-sky.z,0,sky.x);   // the amber companion rides beside & above the primary
+  if(moon2Sprite){const perp=_ddPerp.set(-sky.z,0,sky.x);   // the amber companion rides beside & above the primary
     moon2Sprite.position.set(player.x-sky.x*R*0.86+perp.x*R*0.32,Math.max(-160,-sky.y*R*0.55+70),player.z-sky.z*R*0.86+perp.z*R*0.32);
     moon2Sprite.material.opacity=clamp(-sunY*3+0.35,0,1);}
   // drifting clouds, fading at night, wrapping across the sky, following the player
