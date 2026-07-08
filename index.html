@@ -25228,12 +25228,22 @@ function netHandle(m){
       TRADE.mineCoin=m.youCoin|0; TRADE.themCoin=m.themCoin|0; renderTradeWin(); }
     else if(m.act==="done"){ // both accepted: my offered items+coin leave, theirs arrive
       if(!TRADE.open) return;   // #35: idempotent — a duplicate/replayed 'done' must not re-credit items+coin (dupe). closeTradeWin() below clears TRADE.open, so a second 'done' bails here.
-      TRADE.mine.length=0;   // #295: offered items were escrowed OUT of player.inv when offered — they are now given away, so drop them from TRADE.mine before closeTradeWin (which restores any leftover offered items). No inv-splice needed.
+      // #296: reconcile to the SERVER's authoritative record instead of trusting the local offer list.
+      // Undo all client escrow (restore offered items to the satchel), then remove exactly what the
+      // server says I gave (m.gave) and add what it gives me (m.give). Correct under a dropped 'add'
+      // (escrowed locally but never taken server-side → the undo keeps it) and a dropped 'remove'
+      // (restored locally but still taken server-side → m.gave removes it). Match by (name,stat,v),
+      // one entry per gave-item, mirroring the server's take_owned signature.
+      const _tsig=it=>it?[it.name||"",it.stat||"",it.v||0].join("|"):"";
+      for(const it of TRADE.mine) player.inv.push(it);   // undo escrow → satchel is "as if no offer was made"
+      TRADE.mine.length=0;
+      const gaveN=(m.gave||[]).length;
+      for(const g of (m.gave||[])){ const s=_tsig(g), i=player.inv.findIndex(x=>_tsig(x)===s); if(i>=0) player.inv.splice(i,1); }   // remove exactly what the server took
       for(const it of (m.give||[])) player.inv.push(it);
       const paid=TRADE.mineCoin|0, got=m.coin|0;
       if(typeof m.authCoin==="number"&&isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance (#315: isFinite(null)===true — a null authCoin must fall through to the additive branch, not zero gold)
       else { if(paid) player.gold=Math.max(0,player.gold-paid); if(got) player.gold+=got; }
-      log(`<b>Trade complete</b> — ${TRADE.mine.length} item${TRADE.mine.length!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${(m.give||[]).length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
+      log(`<b>Trade complete</b> — ${gaveN} item${gaveN!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${(m.give||[]).length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
       closeTradeWin(); saveGame(); }
     else if(m.act==="cancel"){ log(m.msg||"The trade was cancelled.","warn"); closeTradeWin(); }
     return; }

@@ -1526,6 +1526,7 @@ async def handle_trade(cl, msg):
                 c = CLIENTS.get(acc)
                 if c:
                     done_msgs.append((c, {"t": "trade", "act": "done", "give": tr["offers"][other],
+                                          "gave": tr["offers"][acc],   # #296: the offerer's OWN authoritative offer, so the client can reconcile against dropped add/remove messages instead of trusting its local list
                                           "coin": (coin_b if acc == tr["a"] else coin_a),
                                           "authCoin": (int(c.coin) if c.econ_ready else None)}))   # M3: authoritative balance to adopt
             del TRADES[tid]
