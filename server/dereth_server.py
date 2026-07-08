@@ -144,10 +144,76 @@ def create_char_slot(account, slot, name, data):
         if c.execute("SELECT 1 FROM characters WHERE account=? AND name=?", (account, name)).fetchone():
             return False, "You already have a character with that name."
         c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
-                  (account, slot, name, json.dumps(data) if data is not None else None, int(time.time()), int(time.time())))
+                  (account, slot, name, json.dumps(sanitize_save(data)) if data is not None else None, int(time.time()), int(time.time())))
     return True, None
 
+def _svnum(v, lo, hi, default):
+    """parse a number and clamp to [lo,hi]; NaN/Inf/garbage -> default."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(f):
+        return default
+    return max(lo, min(hi, f))
+
+# #238: bound the economy-critical fields of a client-supplied character save so the crudest
+# forgeries — infinite/NaN gold, level>275, maxed skills, oversized inventory, giant stacks — can't be
+# persisted. This is anti-tamper hardening, NOT full server authority: a cheater can still save
+# PLAUSIBLE forged values (that needs server-side simulation, tracked in #238). Clamps in place, never
+# raises, and leaves cosmetic / progression / unknown fields untouched.
+_SV_INT = {"level": (1, 275), "skillPts": (0, 1e9), "kills": (0, 1e9), "bossKills": (0, 1e9),
+           "championKills": (0, 1e9), "delves": (0, 1e9), "materials": (0, 1e8), "luminance": (0, 1e6)}
+_SV_FLOAT = {"xp": (0, 1e13), "xpUnspent": (0, 1e13), "gold": (0, 2e9), "vitae": (0.0, 0.40)}
+
+def sanitize_save(data):
+    if not isinstance(data, dict):
+        return data
+    d = data
+    try:
+        for k, (lo, hi) in _SV_INT.items():
+            if k in d:
+                d[k] = int(_svnum(d[k], lo, hi, lo))
+        for k, (lo, hi) in _SV_FLOAT.items():
+            if k in d:
+                d[k] = _svnum(d[k], lo, hi, lo)
+        sk = d.get("skills")
+        if isinstance(sk, dict):
+            for key, e in list(sk.items()):
+                if isinstance(e, dict):
+                    e["t"] = int(_svnum(e.get("t", 0), 0, 2, 0))          # untrained/trained/specialized
+                    e["xp"] = _svnum(e.get("xp", 0), 0, 1e11, 0)
+                else:
+                    sk.pop(key, None)
+        elif sk is not None:
+            d["skills"] = {}
+        for akey in ("attr", "attrInnate"):
+            at = d.get(akey)
+            if isinstance(at, dict):
+                for a in list(at.keys()):
+                    at[a] = _svnum(at[a], 1, 1000, 10)
+        vit = d.get("vitals")
+        if isinstance(vit, dict):
+            for a in list(vit.keys()):
+                vit[a] = int(_svnum(vit.get(a, 0), 0, 1e6, 0))
+        inv = d.get("inv")
+        if isinstance(inv, list):
+            if len(inv) > 500:
+                d["inv"] = inv = inv[:500]                                 # cap satchel + packs generously
+            for it in inv:
+                if isinstance(it, dict) and "count" in it:
+                    it["count"] = int(_svnum(it["count"], 1, 100000, 1))   # no giant stacks
+        elif inv is not None:
+            d["inv"] = []
+        packs = d.get("packs")
+        if isinstance(packs, list) and len(packs) > 7:
+            d["packs"] = packs[:7]                                         # AC caps side packs at 7
+    except Exception as e:
+        print(f"[sanitize_save] {e}")
+    return d
+
 def save_char_slot(account, slot, data):
+    data = sanitize_save(data)
     with db() as c:
         c.execute("UPDATE characters SET data=?, seen=? WHERE account=? AND slot=?",
                   (json.dumps(data), int(time.time()), account, slot))
