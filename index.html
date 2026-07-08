@@ -16676,8 +16676,10 @@ function update(dt){
     m.x=clamp(m.x,-HALF+1,HALF-1);m.z=clamp(m.z,-HALF+1,HALF-1);
     if(!inDungeon&&!inNetwork&&terrainH(m.x,m.z)<-1.5){ m.x=_mox; m.z=_moz; if(m.state==="wander")m.ang=rnd(0,6.28); }   // #351: don't wander/chase down into the ocean and stand on the negative-height seabed — revert the step (and pick a fresh heading if idly wandering)
     if(inDungeon){ const s=dungeonSlide(ox,oz,m.x,m.z); m.x=s[0]; m.z=s[1]; } // keep creatures in the rooms/halls
-    // capitals are safe havens — creatures cannot enter (overworld only)
-    if(!inDungeon&&!m.isBoss){for(const c of CAPITALS){const dx2=m.x-c.x,dz2=m.z-c.z,dc=Math.hypot(dx2,dz2);
+    // capitals are safe havens — creatures cannot enter (overworld only). #347: bosses are NO LONGER
+    // exempt — a chasing boss (bosses never de-aggro to a leash) could be kited straight into a capital
+    // plaza, breaking the safe-haven guarantee every other creature obeys.
+    if(!inDungeon){for(const c of CAPITALS){const dx2=m.x-c.x,dz2=m.z-c.z,dc=Math.hypot(dx2,dz2);
       if(dc<TOWN_SAFE&&dc>0.01){m.x=c.x+dx2/dc*TOWN_SAFE;m.z=c.z+dz2/dc*TOWN_SAFE;break;}}}
     // sync mesh
     let lx=m.x,lz=m.z;
