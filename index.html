@@ -14955,11 +14955,11 @@ function die(){
     const dd=deathDrops();
     if(dd.items.length||dd.gold){
       const ttl=Math.max(3600,300*player.level);
-      if(isOnline){   // online: the server stands up a SHARED corpse everyone sees (echoed back to us via onDrop)
+      if(isOnline&&NET.open){   // online: the server stands up a SHARED corpse everyone sees (echoed back to us via onDrop)
         // a Player Killer's corpse is fair game for anyone (AC PK-death loot); NPK/PKL corpses stay owner-only
         netSend({t:"death",x:corpseX,z:corpseZ,items:dd.items,gold:dd.gold,ttl,open:(player.pkState==="pk")});
       } else {
-        _corpseDrop={items:dd.items,gold:dd.gold,ttl};   // #227: dropped in the respawn timeout, after the deferred teardown's clearDrops
+        _corpseDrop={items:dd.items,gold:dd.gold,ttl};   // #227: dropped in the respawn timeout, after the deferred teardown's clearDrops. #289: also the fallback when the online socket is down — otherwise the netSend is silently dropped and the items (already spliced out of inv) vanish with no corpse anywhere.
       }
       if(typeof recomputeGearSkill==="function") recomputeGearSkill();
       // AC always named your losses — list them so you know exactly what to walk back for
@@ -25047,8 +25047,8 @@ function saveGame(){
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:player.x,pz:player.z,pyaw:player.yaw,wscale:WSCALE};   // log back in where you logged off (itemBuffs keep their timer)
-    if(isOnline) netSend({t:"save",char:s});       // persist server-side when playing online
-    else localStorage.setItem(SAVE_KEY,JSON.stringify(s));
+    if(isOnline&&NET.open) netSend({t:"save",char:s});       // persist server-side when playing online
+    else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
   }catch(e){}
 }
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
