@@ -16255,7 +16255,7 @@ function buildSheet(){
   if(player.lumUnlocked||player.enlightenment){
     let lh=`<div style="margin-top:8px;border-top:1px solid #3a3550;padding-top:6px"><div class="desc" style="color:#ffd23b">✦ Luminance <b>${(player.luminance||0).toLocaleString()}</b> / 1,000,000${player.enlightenment?` · <span style="color:#c9a6ff">${ENLIGHTEN_TITLES[player.enlightenment-1]}</span> (+${player.enlightenment} to all skills)`:""}</div>`;
     for(const a of LUM_AURAS){ const lv=auraLevel(a.k); lh+=`<div class="row"><span class="desc">${a.name} <b>${lv}</b>/${a.max} — ${a.desc}</span> <button class="pmbtn" data-aura="${a.k}" ${(lv>=a.max||(player.luminance||0)<a.cost)?'disabled':''}>${a.cost.toLocaleString()} lum</button></div>`; }
-    if(player.level>=100&&(player.enlightenment||0)<5) lh+=`<div class="row"><button class="tbtn" id="enlightenBtn">Attain Enlightenment — reset for permanent power</button></div>`;
+    if(player.level>=275&&(player.enlightenment||0)<5) lh+=`<div class="row"><button class="tbtn" id="enlightenBtn">Attain Enlightenment — reset for permanent power</button></div>`;   // #332: enlighten() requires level 275 — don't offer the button 175 levels early (it just warned)
     lh+=`</div>`; al.innerHTML+=lh;
     al.querySelectorAll('[data-aura]').forEach(b=>b.onclick=()=>{ if(buyAura(b.dataset.aura)){saveGame();if(typeof updateHUD==="function")updateHUD();buildSheet();} });
     const eb=document.getElementById('enlightenBtn'); if(eb) eb.onclick=()=>enlighten();
