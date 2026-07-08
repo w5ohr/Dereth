@@ -265,6 +265,29 @@ async def push_coin(cl):
     if cl.econ_ready:
         await cl.send({"t": "coin", "coin": int(cl.coin)})
 
+def _item_sig(it):
+    """A coarse identity for matching an offered item against the authoritative inventory."""
+    if not isinstance(it, dict):
+        return ("", "", 0)
+    return (str(it.get("name", "")), str(it.get("stat", "")), int(_svnum(it.get("v", 0), -1e9, 1e9, 0)))
+
+def take_owned(cl, offered):
+    """Try to remove each offered item from cl.inv by signature (one entry per offered item).
+    Returns (ok, removed_items). On failure (an offered item isn't owned = fabricated) removes
+    nothing. When econ isn't loaded, allows the offer unchanged (legacy)."""
+    if not cl or not getattr(cl, "econ_ready", False):
+        return True, list(offered)
+    work = list(cl.inv)
+    removed = []
+    for off in offered:
+        sig = _item_sig(off)
+        idx = next((i for i, it in enumerate(work) if _item_sig(it) == sig), -1)
+        if idx < 0:
+            return False, []          # not in the authoritative inventory → fabricated
+        removed.append(work.pop(idx))
+    cl.inv = work
+    return True, removed
+
 def save_char_slot(account, slot, data):
     data = sanitize_save(data)
     with db() as c:
@@ -1437,15 +1460,27 @@ async def handle_trade(cl, msg):
             return
         tr["ok"][cl.username] = True
         if tr["ok"][tr["a"]] and tr["ok"][tr["b"]]:
-            # M3 (#238): move pyreals through the authoritative balances. Re-clamp each offer to the
-            # offerer's CURRENT coin (it may have changed since the offer) so nobody goes negative.
             ca = CLIENTS.get(tr["a"]); cb = CLIENTS.get(tr["b"])
+            # M3 (#238): validate offered ITEMS against the authoritative inventories and remove them
+            # (escrow). If either side offered something it doesn't own (fabricated), roll back and
+            # abort — no item can be minted into the other player's satchel.
+            okA, remA = take_owned(ca, tr["offers"].get(tr["a"], []))
+            okB, remB = take_owned(cb, tr["offers"].get(tr["b"], []))
+            if not (okA and okB):
+                if okA and ca and ca.econ_ready: ca.inv = ca.inv + remA
+                if okB and cb and cb.econ_ready: cb.inv = cb.inv + remB
+                return await trade_cancel(cl.username, "Trade aborted — an offered item could not be verified against your inventory.")
+            # move pyreals through the authoritative balances. Re-clamp each offer to the offerer's
+            # CURRENT coin (it may have changed since the offer) so nobody goes negative.
             coin_a = int(tr.get("coin", {}).get(tr["a"], 0))
             coin_b = int(tr.get("coin", {}).get(tr["b"], 0))
             if ca and ca.econ_ready: coin_a = max(0, min(coin_a, int(ca.coin)))
             if cb and cb.econ_ready: coin_b = max(0, min(coin_b, int(cb.coin)))
             if ca and ca.econ_ready: ca.coin = max(0, min(2_000_000_000, ca.coin - coin_a + coin_b))
             if cb and cb.econ_ready: cb.coin = max(0, min(2_000_000_000, cb.coin - coin_b + coin_a))
+            # deposit received items into each authoritative inventory (A gets B's, B gets A's)
+            if ca and ca.econ_ready: ca.inv = (ca.inv + remB)[:500]
+            if cb and cb.econ_ready: cb.inv = (cb.inv + remA)[:500]
             for acc in (tr["a"], tr["b"]):
                 other = tr["b"] if acc == tr["a"] else tr["a"]
                 c = CLIENTS.get(acc)
