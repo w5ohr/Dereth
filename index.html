@@ -2938,7 +2938,7 @@ function lumNormalTex(tex,strength){
     const i=(y*W+x)*4;d[i]=(nx*0.5+0.5)*255;d[i+1]=(ny*0.5+0.5)*255;d[i+2]=(nz*0.5+0.5)*255;d[i+3]=255;
   }
   g.putImageData(img,0,0);
-  const t=new THREE.CanvasTexture(c);t.wrapS=tex.wrapS;t.wrapT=tex.wrapT;t.repeat.copy(tex.repeat);
+  const t=new THREE.CanvasTexture(c);t.wrapS=tex.wrapS;t.wrapT=tex.wrapT;t.repeat.copy(tex.repeat);t._acShared=true;   // #326: this normal map is cached + shared across every material derived from `tex` — never dispose on eviction
   _lumNrmCache.set(tex,t);return t;
 }
 // bundled-straw thatch (ceilings): overlapping horizontal straw courses, sun-bleached gold
@@ -2956,7 +2956,7 @@ function thatchTex(){if(_thatch)return _thatch;const c=document.createElement('c
 let _stoneFloor;
 function stoneFloorTex(){ return _stoneFloor||(_stoneFloor=cobbleTex()); }
 function texMat(texFn,tint){
-  const tex=texFn(); tex.encoding=THREE.sRGBEncoding;
+  const tex=texFn(); tex.encoding=THREE.sRGBEncoding; tex._acShared=true;   // #326: texFn returns a memoized shared canvas texture — never dispose it when one material using it is evicted
   const m=new THREE.MeshStandardMaterial({map:tex,roughness:0.82,metalness:0.03,
     normalMap:lumNormalTex(tex),normalScale:new THREE.Vector2(0.7,0.7)});
   if(tint)m.color.setHex(tint);return m;
@@ -6901,6 +6901,7 @@ function buildingArchetype(region,kind,s){
     // instances sit up to ~75u from their town centre — override the sphere used for culling
     geo.boundingSphere=new THREE.Sphere(new THREE.Vector3(0,7,0),110);
     const mat=gr.mat.clone(); mat.vertexColors=true; if(mat.color)mat.color.setRGB(1,1,1);
+    geo._acShared=true; mat._acShared=true;   // #326: this archetype's merged geometry + material are shared by EVERY town using it — never dispose on a per-town eviction
     parts.push({geo,mat});
   }
   const arch={parts,surfaces:proto.userData.surfaces||null,colliders:proto.userData.colliders||[],placements:[]};
@@ -17140,10 +17141,17 @@ function cullWorld(dt){
 // region-appropriate kinds just inside view and disposing (geometry+material freed) those left behind.
 const MOB_TARGET=32, MOB_SPAWN_MIN=70, MOB_SPAWN_MAX=150, MOB_DESPAWN=215;
 let _mobStreamAcc=0;
+// #326: per-RESOURCE shared-cache guards. ARCH_CACHE geometry/materials and texMat/lumNormalTex
+// textures are shared across every town/object that uses that archetype, so disposing them when one
+// far object is evicted frees buffers a VISIBLE object still references (three.js re-uploads next
+// frame → churn, no real reclaim). Skip any geometry/material/texture flagged _acShared.
+function _dispTex(t){ if(t&&!t._acShared&&t.dispose) t.dispose(); }
+function _dispGeo(g){ if(g&&!g._acShared&&g.dispose) g.dispose(); }
+function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose)x.dispose(); } }
 function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
   o.traverse(c=>{ if(c.isSprite){ const li=LABELS.indexOf(c); if(li>=0) LABELS.splice(li,1); }   // #22: keep the label registry from holding disposed nametags
     if(c.userData&&c.userData.acShared) return;   // #232: gltf-clone subtrees share geometry/materials with the model cache — never dispose those
-    if(c.geometry)c.geometry.dispose(); const m=c.material; if(m){ (Array.isArray(m)?m:[m]).forEach(x=>{ if(x&&x.map)x.map.dispose(); if(x&&x.dispose)x.dispose(); }); } }); }
+    _dispGeo(c.geometry); _dispMat(c.material); }); }
 // #232: free an object's GPU copies (geometry buffers, textures, programs) WITHOUT retiring the
 // object — it stays in its world array and keeps its CPU-side attribute/canvas data, so three.js
 // re-uploads everything automatically the next time the object is attached and rendered. Used by
@@ -17151,8 +17159,7 @@ function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
 // disposeObject3D it neither detaches nor touches the LABELS registry.
 function releaseObjectGPU(o){ if(!o) return;
   o.traverse(c=>{ if(c.userData&&c.userData.acShared) return;
-    if(c.geometry)c.geometry.dispose(); const m=c.material;
-    if(m)(Array.isArray(m)?m:[m]).forEach(x=>{ if(!x)return; if(x.map)x.map.dispose(); if(x.normalMap)x.normalMap.dispose(); if(x.dispose)x.dispose(); }); }); }
+    _dispGeo(c.geometry); _dispMat(c.material); }); }   // #326: skip shared cache resources (see _dispGeo/_dispMat)
 function streamMonsters(dt){
   if(inDungeon||inNetwork||isOnline) return;
   _mobStreamAcc+=dt; if(_mobStreamAcc<0.4) return; _mobStreamAcc=0;
