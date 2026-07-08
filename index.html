@@ -15497,7 +15497,7 @@ function fireArrow(){
   const wp=weaponProfile(),ranged=wp&&wp.mode==="missile",prof=ranged?wp:WEAPON_TYPES.bow; // equipped ranged weapon or a plain bow
   // AC: a bow/crossbow/atlatl needs matching ammunition loaded — no ammo, no shot
   const wtype=(ranged&&player.weapon&&player.weapon.wt)||"bow";
-  if(ranged && player.inv.findIndex(x=>x.stat==="ammo"&&x.for===wtype)<0){
+  if(player.inv.findIndex(x=>x.stat==="ammo"&&x.for===wtype)<0){   // #317: ALWAYS require matching ammo — the old `ranged &&` skipped the gate for the plain-bow fallback (no launcher equipped), so unequipping your bow let you fire forever for stamina only
     log("You have no "+(wtype==="crossbow"?"quarrels":wtype==="atlatl"?"darts":"arrows")+" to fire.","warn"); if(SFX.hit)SFX.hit(); return; }
   if(player.st<prof.stam){ log("Too tired to draw.","warn"); return; }
   player.st-=prof.stam;
@@ -15575,7 +15575,8 @@ function meleeAttack(power){
         const sneak=sneakFactor(m); if(sneak>1) floater(m.x,(m.headY||1.6)+1.9,m.z,"sneak!","#ffd23b");   // Sneak Attack bonus vs an unaware/flanked foe
         applyHit(m,dmg*hm.dmg*sneak*dmgVar(prof),meleeOpts);   // per-swing damage roll (AC weapon variance)
         dirtyStrike(m);   // Cb5 Dirty Fighting: chance to debilitate, keyed to attack height
-        if(offhand){ applyHit(m,dmg*hm.dmg*(dualT===2?0.6:0.45)*dmgVar(prof),meleeOpts); floater(m.x,(m.headY||1.6)+2.2,m.z,"off-hand","#bfe6ff"); }   // Cb8 dual-wield follow-up strike
+        if(offhand){ const ohs=(dualT===2?0.6:0.45); const offOpts=Object.assign({},meleeOpts,{brandDmg:meleeOpts.brandDmg?Math.round(meleeOpts.brandDmg*ohs):meleeOpts.brandDmg,_rear:false,_crush:false});   // #317: scale the elemental brand to the weaker off-hand blow (was riding at 100% of the main-hand brand) and drop the main-hand's rear/crush floater flags
+          applyHit(m,dmg*hm.dmg*ohs*dmgVar(prof),offOpts); floater(m.x,(m.headY||1.6)+2.2,m.z,"off-hand","#bfe6ff"); }   // Cb8 dual-wield follow-up strike
 
         m.x+=dx/d*0.6;m.z+=dz/d*0.6; // knockback
         fovKick=Math.min(fovKick+4.5,5.5); // punch-out on a connecting hit
@@ -16456,7 +16457,7 @@ function update(dt){
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
-    player.regenT=0;checkAchievements();
+    player.regenT-=0.5;checkAchievements();   // #317: subtract the period, don't zero it — zeroing discarded the sub-frame overshoot, making the effective regen tick framerate-dependent (~0.52s at 60fps vs ~0.6s at 10fps)
     // Stamina regen scales with worn-armour weight AND overall burden — hauling past your capacity
     // (ratio>1) leaves you winded and recovering slower, easing back to full once you drop weight.
     { const encR=(typeof encumbrance==="function")?encumbrance().ratio:0;
@@ -16555,7 +16556,7 @@ function update(dt){
     const _peY=((inDungeon||inNetwork)?groundY(player.x,player.z):player.y)+EYE*0.85;   // #228: the player's REAL torso height, not absolute EYE
     if(Math.hypot(p.x-player.x,p.z-player.z)<player.r+p.r && Math.abs(p.y-_peY)<2.0){
       playerHurt(p.dmg,p.x,p.z,p.type||"magic",p.element);burst(p.x,p.y,p.z,0xb266e0,8);gone=true;
-      if(p.curse&&player.alive&&!(player.dispelImmune>0)){ player.debuffs[p.curse.type]={v:p.curse.v,t:p.curse.dur};
+      if(p.curse&&player.alive&&!(player.dispelImmune>0)&&!(player.invuln>0)){ player.debuffs[p.curse.type]={v:p.curse.v,t:p.curse.dur};   // #317: a curse must respect invulnerability / resurrection protection, like the damage does — no Slow/Imperil landing during the post-death protection window
         floater(player.x,EYE+0.6,player.z,p.curse.type==="slow"?"Slowed!":"Imperiled!","#ff8f6b"); }
     }
     if(gone){disposeObject3D(p.mesh);eProj.splice(i,1);}   // #22
