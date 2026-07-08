@@ -59,13 +59,32 @@ def create_user(username, password):
         except sqlite3.IntegrityError:
             return False
 
+_DUMMY_SALT = b"\x00" * 16   # #320: fixed salt for the decoy hash on unknown users
 def verify_user(username, password):
+    if not isinstance(password, str) or len(password) > 128:   # #320: never scrypt an oversized password (CPU-DoS lever)
+        return False
     with db() as c:
         row = c.execute("SELECT salt,pw FROM users WHERE username=?", (username,)).fetchone()
     if not row:
+        hash_pw(password, _DUMMY_SALT)   # #320: decoy scrypt so an unknown user takes ~the same time as a wrong password — closes the timing oracle for account enumeration
         return False
     salt_hex, pw_hex = row
     return hmac.compare_digest(hash_pw(password, bytes.fromhex(salt_hex)), pw_hex)
+
+_LOGIN_FAILS = {}   # #320: username -> (fail_count, window_start) — coarse per-account brute-force throttle
+def login_throttled(username):
+    rec = _LOGIN_FAILS.get(username)
+    if not rec:
+        return False
+    n, t0 = rec
+    if time.time() - t0 > 60:
+        _LOGIN_FAILS.pop(username, None); return False
+    return n >= 10   # >10 failed attempts within a minute → locked for the rest of the window
+def note_login_fail(username):
+    n, t0 = _LOGIN_FAILS.get(username, (0, time.time()))
+    if time.time() - t0 > 60:
+        n, t0 = 0, time.time()
+    _LOGIN_FAILS[username] = (n + 1, t0)
 
 # ── default admin: always keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
 ADMIN_USER = "Admin"
@@ -1706,8 +1725,12 @@ async def dispatch(cl, msg):
         return await do_auth_success(cl, u)
     if t == "login":
         u, p = msg.get("user", ""), msg.get("pass", "")
+        if login_throttled(u):   # #320: brute-force lockout after too many recent failures
+            return await cl.send({"t": "auth_err", "msg": "Too many attempts — wait a minute and try again."})
         if not verify_user(u, p):
+            note_login_fail(u)
             return await cl.send({"t": "auth_err", "msg": "Wrong name or password."})
+        _LOGIN_FAILS.pop(u, None)   # #320: clear the counter on success
         return await do_auth_success(cl, u)
     if t == "resume":
         _tk = msg.get("token", ""); _rec = TOKENS.get(_tk)
