@@ -25468,7 +25468,7 @@ function reconcileMobs(serverMobs){
   if(!isOnline) return;
   const seen={};
   for(const sm of serverMobs){
-    if(!sm||sm.id==null) continue;   // #34: skip a malformed/null snapshot entry — don't let it abort the rest
+    if(!sm||sm.id==null||!isFinite(sm.x)||!isFinite(sm.z)) continue;   // #34/#319: skip a malformed/null/NaN-coord snapshot entry — a non-finite x/z would set mesh.position to NaN (an invisible-but-targetable mob) and propagate through groundY every frame
     seen[sm.id]=1;
     let m=NET.mobs[sm.id]||spawnSharedMob(sm);
     m.tx=sm.x; m.tz=sm.z; m.yaw=sm.yaw; m.hp=sm.hp; m.mhp=sm.mhp; m.state=sm.st; m.eventId=sm.event||null;
@@ -25571,14 +25571,14 @@ function renderCharSelect(){
   slots.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deleteChar(+b.dataset.del));
   slots.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>openCreate(+b.dataset.new));
 }
-let pendingSlot=null,pendingPreset=null,creatingChar=false;
+let pendingSlot=null,pendingPreset=null,creatingChar=false,_playPending=false;
 function openCreate(slot){
   pendingSlot=slot;
   const cc=document.getElementById('csCreate'); cc.style.display="flex";
   document.getElementById('csCreateMsg').textContent="";
   const ni=document.getElementById('csName'); ni.value=""; ni.focus();
 }
-function playChar(slot){ creatingChar=false; netSend({t:"play_char",slot}); }
+function playChar(slot){ if(_playPending)return; _playPending=true; creatingChar=false; netSend({t:"play_char",slot}); }   // #319: pending guard — a double-click no longer sends two play_char (server enter_world twice + client startGame twice)
 function deleteChar(slot){
   const c=NET.roster.find(x=>x.slot===slot); if(!c) return;
   if(!confirm(`Delete ${c.name} (Lv ${c.level||1})? This cannot be undone.`)) return;
@@ -25592,6 +25592,7 @@ function createChar(preset){
   netSend({t:"create_char",slot:pendingSlot,name,char:null});   // wait for play_ok before entering
 }
 function onPlayOk(m){
+  _playPending=false;   // #319: clear the play pending-guard
   document.getElementById('charSelect').style.display="none";
   if(m.name) player.name=m.name;   // #234: adopt the server's authoritative charname — a freshly created online char sent its name to the server but never set player.name locally, so it showed as "Adventurer". Set it BEFORE the branch's saveGame so the correct name persists to the slot.
   if(creatingChar){ creatingChar=false; const preset=pendingPreset; pendingPreset=null;
@@ -25600,7 +25601,7 @@ function onPlayOk(m){
   setTimeout(()=>{ if(isOnline&&player.allegianceName) netSend({t:"allegiance",name:player.allegianceName}); },1500);   // re-announce allegiance for /a routing
 }
 function onPlayErr(m){
-  creatingChar=false;
+  creatingChar=false; _playPending=false;   // #319: clear the play pending-guard so the player can retry
   const msg=document.getElementById('csCreateMsg'); if(msg) msg.textContent=m.msg||"Could not start that character.";
 }
 // ---- chat input + slash commands (/who, /p, /party) ----
