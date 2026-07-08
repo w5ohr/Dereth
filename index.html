@@ -25180,7 +25180,8 @@ const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[
 function netConnect(onOpen,onFail){
   try{ NET.ws=new WebSocket(SERVER_URL); }catch(e){ onFail&&onFail(); return; }
   NET.ws.onopen=()=>{ NET.open=true; onOpen&&onOpen(); };
-  NET.ws.onclose=()=>{ NET.open=false; if(running&&isOnline) log("Disconnected from the server.","warn"); };
+  NET.ws.onclose=()=>{ NET.open=false; if(running&&isOnline) log("Disconnected from the server.","warn");
+    if(TRADE.open){ closeTradeWin(); if(running) log("Trade closed — your offered items are back in your satchel.","warn"); } };   // #295: a disconnect mid-trade must return escrowed offered items (closeTradeWin restores them), not strand them out of the satchel
   NET.ws.onerror=()=>{ if(!NET.open) onFail&&onFail(); };
   NET.ws.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch(e){return;} netHandle(m); };
 }
@@ -25227,7 +25228,7 @@ function netHandle(m){
       TRADE.mineCoin=m.youCoin|0; TRADE.themCoin=m.themCoin|0; renderTradeWin(); }
     else if(m.act==="done"){ // both accepted: my offered items+coin leave, theirs arrive
       if(!TRADE.open) return;   // #35: idempotent — a duplicate/replayed 'done' must not re-credit items+coin (dupe). closeTradeWin() below clears TRADE.open, so a second 'done' bails here.
-      for(const it of TRADE.mine){ const i=player.inv.indexOf(it); if(i>=0)player.inv.splice(i,1); }
+      TRADE.mine.length=0;   // #295: offered items were escrowed OUT of player.inv when offered — they are now given away, so drop them from TRADE.mine before closeTradeWin (which restores any leftover offered items). No inv-splice needed.
       for(const it of (m.give||[])) player.inv.push(it);
       const paid=TRADE.mineCoin|0, got=m.coin|0;
       if(typeof m.authCoin==="number"&&isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance (#315: isFinite(null)===true — a null authCoin must fall through to the additive branch, not zero gold)
@@ -25535,7 +25536,8 @@ function sendChatLine(text){
 // ── AC SECURE TRADE window: two columns (your offer | theirs), both must Accept,
 //    any change to either side clears both accepts (retail rule). Real item icons throughout. ──
 const TRADE={open:false,from:null,mine:[],them:[],mineCoin:0,themCoin:0,youOk:false,themOk:false,"with":"?"};
-function closeTradeWin(){ TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.mineCoin=TRADE.themCoin=0; TRADE.youOk=TRADE.themOk=false;
+function closeTradeWin(){ if(TRADE.mine&&TRADE.mine.length){ for(const it of TRADE.mine) player.inv.push(it); }   // #295: an aborted/cancelled/disconnected trade returns escrowed offered items to the satchel (the successful 'done' path empties TRADE.mine first, so nothing is restored there)
+  TRADE.open=false; TRADE.mine=[]; TRADE.them=[]; TRADE.mineCoin=TRADE.themCoin=0; TRADE.youOk=TRADE.themOk=false;
   const w=document.getElementById('tradeWin'); if(w)w.remove(); }
 function tradeSlotHTML(it,attr){ return `<div ${attr||""} title="${esc(it.name)}" style="width:34px;height:34px;border:1px solid #4a4030;border-radius:4px;background:radial-gradient(circle at 40% 35%,#1c1a26,#0c0b12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">${itemIconHTML(it.name,it.ico||"📦",26,it)}${(it.count||1)>1?`<span style="position:absolute;right:1px;bottom:0;font-size:10px;color:#ffd86b">${it.count}</span>`:""}</div>`; }
 function renderTradeWin(){
@@ -25563,10 +25565,10 @@ function renderTradeWin(){
     <div style="margin-top:10px;text-align:right"><button id="trOk" class="tbtn" ${TRADE.youOk?"disabled":""} style="background:#1e3a24;border-color:#3a6a44;color:#9be08a">Accept Trade</button></div>`;
   w.querySelector('#trCancel').onclick=()=>{ netSend({t:"trade",act:"cancel"}); closeTradeWin(); };
   w.querySelector('#trOk').onclick=()=>{ netSend({t:"trade",act:"ok"}); };
-  w.querySelectorAll('#trInv [data-inv]').forEach(b=>b.onclick=()=>{ const it=player.inv[+b.dataset.inv]; if(!it)return;
-    TRADE.mine.push(it); netSend({t:"trade",act:"add",item:it}); renderTradeWin(); });
-  w.querySelectorAll('#trMine [data-i]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i;
-    TRADE.mine.splice(i,1); netSend({t:"trade",act:"remove",idx:i}); renderTradeWin(); });
+  w.querySelectorAll('#trInv [data-inv]').forEach(b=>b.onclick=()=>{ const idx=+b.dataset.inv, it=player.inv[idx]; if(!it)return;
+    player.inv.splice(idx,1); TRADE.mine.push(it); netSend({t:"trade",act:"add",item:it}); renderTradeWin(); });   // #295: escrow the offered item OUT of the satchel so it can't be equipped/used/sold while the offer is pending (the dupe vector)
+  w.querySelectorAll('#trMine [data-i]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i, it=TRADE.mine[i]; if(!it)return;
+    TRADE.mine.splice(i,1); player.inv.push(it); netSend({t:"trade",act:"remove",idx:i}); renderTradeWin(); });   // #295: withdrawing an offer returns the escrowed item to the satchel
   const ci=w.querySelector('#trCoin');
   if(ci) ci.onchange=()=>{ const n=Math.max(0,Math.min(player.gold|0,Math.floor(+ci.value||0)));   // cap pyreal offer to what you carry
     TRADE.mineCoin=n; ci.value=n; TRADE.youOk=false; netSend({t:"trade",act:"coin",amount:n}); renderTradeWin(); };
