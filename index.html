@@ -14409,7 +14409,8 @@ function applyItem(it){
   else if(it.stat==="writ"){ log(`A <b>Writ of Refuge</b> — the Arcanum's housing scrip. Spend it at a Covenant Crystal when buying a dwelling.`,"sys"); return "keep"; }
   else if(it.stat==="quest"){ log(`<b>${it.name}</b> is a quest collectible — turn it in to the right quest-giver, or sell it.`,"sys"); }
   else if(it.stat==="comp"){ if(isScarab(it)) log(`<b>${it.name}</b> is a casting scarab (level ${SCARAB_LEVEL[it.name]}) — held in your satchel, it powers a spell automatically when your mana runs dry. Or sell it to a Scrivener.`,"sys"); else log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
-  else if(it.stat==="note"){ player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
+  else if(it.stat==="note"){ if(isOnline) netSend({t:"vendor_sell",item:it,price:it.v|0});   // M3 (#238): redeeming a note = selling it for face value; the server credits authoritatively
+    player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
   else if(it.stat==="ammo"){ log(`<b>${it.name}</b> is loosed automatically when you fire a matching ${it.for}.`,"sys"); return "keep"; }
   else if(it.stat==="recall"){
