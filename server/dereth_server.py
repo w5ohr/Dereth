@@ -1516,14 +1516,21 @@ async def handle_trade(cl, msg):
             # deposit received items into each authoritative inventory (A gets B's, B gets A's)
             if ca and ca.econ_ready: ca.inv = (ca.inv + remB)[:500]
             if cb and cb.econ_ready: cb.inv = (cb.inv + remA)[:500]
+            # #313: retire the trade BEFORE the (awaiting) send loop. Everything above is synchronous,
+            # so removing it here means a replayed {"act":"ok"} arriving while a send's drain() yields
+            # under backpressure finds no live trade (trade_of → None) and returns — no double-escrow/
+            # double-deposit. Build the payloads first, then delete, then send.
+            done_msgs = []
             for acc in (tr["a"], tr["b"]):
                 other = tr["b"] if acc == tr["a"] else tr["a"]
                 c = CLIENTS.get(acc)
                 if c:
-                    await c.send({"t": "trade", "act": "done", "give": tr["offers"][other],
-                                  "coin": (coin_b if acc == tr["a"] else coin_a),
-                                  "authCoin": (int(c.coin) if c.econ_ready else None)})   # M3: authoritative balance to adopt
+                    done_msgs.append((c, {"t": "trade", "act": "done", "give": tr["offers"][other],
+                                          "coin": (coin_b if acc == tr["a"] else coin_a),
+                                          "authCoin": (int(c.coin) if c.econ_ready else None)}))   # M3: authoritative balance to adopt
             del TRADES[tid]
+            for c, msg in done_msgs:
+                await c.send(msg)
         else:
             await trade_sync(tr)
     elif act == "cancel":
