@@ -17884,7 +17884,15 @@ setInterval(()=>{ try{
   if(zone!==_musZone){
     const pick=zone==="dungeon"?MUSIC[1%MUSIC.length]:zone==="town"?MUSIC[0]:MUSIC[2+(Math.floor(now()/300000)%(Math.max(1,MUSIC.length-2)))];
     if(_musEl) _musEl.pause();
-    _musEl=new Audio("assets/acmusic/"+pick.file); _musEl.loop=true; _musEl.volume=0.20; _musZone=zone;
+    _musEl=new Audio("assets/acmusic/"+pick.file); _musEl.loop=true; _musZone=zone;
+    // #353: route the zone track through masterGain so it obeys the volume slider AND is silenced by the
+    // #248 visibilitychange suspend (a raw HTMLAudioElement ignored both). createMediaElementSource is
+    // once-per-element and these are fresh elements; fall back to element .volume if Web Audio is absent.
+    let _routed=false;
+    if(typeof actx!=="undefined"&&actx&&typeof masterGain!=="undefined"&&masterGain){
+      try{ const _src=actx.createMediaElementSource(_musEl), _g=actx.createGain(); _g.gain.value=0.20; _src.connect(_g); _g.connect(masterGain); _routed=true; }catch(e){}
+    }
+    if(!_routed) _musEl.volume=0.20;
   }
   _musEl.play().catch(()=>{});   // blocked until the first user gesture — retried each tick
 }catch(e){} },4000);
