@@ -345,10 +345,17 @@ async def ws_handshake(reader, writer) -> bool:
     if not line.startswith(b"GET"):
         return False
     headers = {}
+    hdr_count = 0
     while True:
-        h = await reader.readline()
+        try:
+            h = await asyncio.wait_for(reader.readline(), timeout=10)   # #298: bound each header read — a client that dribbles headers (never the blank line) could otherwise pin a task forever
+        except asyncio.TimeoutError:
+            return False
         if h in (b"\r\n", b"\n", b""):
             break
+        hdr_count += 1
+        if hdr_count > 60 or len(h) > 8192:   # #298: cap header count + line length
+            return False
         k, _, v = h.decode("latin1").partition(":")
         headers[k.strip().lower()] = v.strip()
     key = headers.get("sec-websocket-key")
@@ -373,14 +380,21 @@ async def ws_read(reader):
         opcode = b0 & 0x0F
         masked = b1 & 0x80
         length = b1 & 0x7F
-        if length == 126:
-            length = struct.unpack(">H", await reader.readexactly(2))[0]
-        elif length == 127:
-            length = struct.unpack(">Q", await reader.readexactly(8))[0]
-        if length > MAX_MSG or len(data) + length > MAX_MSG:
+        # #298: once a frame header has arrived, the rest of that frame must arrive promptly — a
+        # slowloris that advertises a large length then feeds the body one byte at a time would
+        # otherwise pin the connection. (No timeout on the 2-byte header read above: an idle
+        # connection legitimately blocks there waiting for the next message.)
+        try:
+            if length == 126:
+                length = struct.unpack(">H", await asyncio.wait_for(reader.readexactly(2), timeout=30))[0]
+            elif length == 127:
+                length = struct.unpack(">Q", await asyncio.wait_for(reader.readexactly(8), timeout=30))[0]
+            if length > MAX_MSG or len(data) + length > MAX_MSG:
+                return None
+            mask = (await asyncio.wait_for(reader.readexactly(4), timeout=30)) if masked else b"\x00\x00\x00\x00"
+            payload = bytearray(await asyncio.wait_for(reader.readexactly(length), timeout=30))
+        except asyncio.TimeoutError:
             return None
-        mask = await reader.readexactly(4) if masked else b"\x00\x00\x00\x00"
-        payload = bytearray(await reader.readexactly(length))
         if masked:
             for i in range(length):
                 payload[i] ^= mask[i & 3]
