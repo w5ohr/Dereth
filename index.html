@@ -21620,7 +21620,7 @@ function buildShop(){
     if(it.stat==="quest") return;   // quest items are attuned (AC) — selling one would strand its quest
     const desc=gearDesc(it);
     const row=document.createElement('div');row.className="row";
-    if(isCollector && it.stat==="trophy"){   // I7: turn a trophy in for a bounty
+    if(isCollector && isCreatureTrophy(it)){   // I7/#291: bounty only for genuine (kill-dropped, un-bought) creature trophies
       const b=trophyBounty(it);
       row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— creature trophy · bounty</span></div>
         <div class="ctl"><button class="tbtn" data-turnin="${i}">Turn In — ${b.gold}p +${b.xp}xp</button></div>`;
@@ -21637,11 +21637,16 @@ function buildShop(){
     if(isOnline){ NET.pendingSell=NET.pendingSell||[]; NET.pendingSell.push(Object.assign({},it,{count:1}));   // #297: remember a single unit for rollback if the server rejects
       netSend({t:"vendor_sell",item:it,price}); }   // M3 (#238): server credits pyreals authoritatively (validates ownership, caps at catalog value); vendor_ok reconciles/rolls back
     player.gold+=price;takeFromInv(i);SFX.gold();buildShop();updateHUD();saveGame();});
-  sell.querySelectorAll('[data-turnin]').forEach(b=>b.onclick=()=>{const i=+b.dataset.turnin; const it=player.inv[i]; if(!it||it.stat!=="trophy")return;
+  sell.querySelectorAll('[data-turnin]').forEach(b=>b.onclick=()=>{const i=+b.dataset.turnin; const it=player.inv[i]; if(!isCreatureTrophy(it))return;   // #291: re-check at click time — never pay the XP bounty for a bought curio
     const bt=trophyBounty(it); player.gold+=bt.gold; if(typeof gainXP==="function")gainXP(bt.xp); takeFromInv(i);
     log(`You turn in a <b>${it.name}</b> for a bounty — <b>${bt.gold}</b> pyreals and <b>${bt.xp}</b> XP.`,"loot"); SFX.gold(); buildShop(); updateHUD(); saveGame();});
 }
 function trophyBounty(it){ const v=it.v|0; return {gold:Math.round(v*1.6), xp:Math.max(25,v*14)}; }   // I7 collector bounty — beats a plain sell
+// #291: the XP-paying bounty is ONLY for a genuine creature trophy (dropped by a kill — carries `kind`
+// in TROPHY_BY_KIND) that you did NOT buy (no bp). Vendor "curio" wares are also stat:"trophy" but have
+// no kind, so without this gate you could buy a curio for v/5 and turn it in for 1.6·v gold + v·14 XP —
+// an infinite XP/gold loop. Bought curios still sell for plain gold (no XP) via the normal sell path.
+function isCreatureTrophy(it){ return !!(it && it.stat==="trophy" && it.kind && typeof TROPHY_BY_KIND!=="undefined" && TROPHY_BY_KIND[it.kind] && !it.bp); }
 function healScale(base){   // AC: the Healing skill boosts kit/potion potency; healing is less effective in combat
   const st=skillTier("healing");
   let m=1+(st>0? skillRank("healing")*0.004 : 0)+(st>1?0.10:0);   // trained scales with rank (~+40% at rank 100), spec +10%
