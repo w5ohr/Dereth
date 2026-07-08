@@ -21897,7 +21897,7 @@ function buildSpellbook(){
       const row=document.createElement('div'); row.className="row";
       const eff=spellEffectText(s);
       const lore = s.words?`<div class="desc" style="margin-left:22px;color:#a98fd0;font-size:11px">⟡ <i>${esc(s.words)}</i>${s.reagents&&s.reagents.length?` · <span style="color:#8a9a6a">${s.reagents.map(esc).join(", ")}</span>`:""}</div>`:"";
-      row.innerHTML=`<div><span class="lab">${s.acicon?`<img src="assets/acicons/${s.acicon}.png" style="width:1.2em;height:1.2em;vertical-align:-0.25em;image-rendering:pixelated">`:s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span>${lore}</div><div class="ctl">${ctl}</div>`;
+      row.innerHTML=`<div><span class="lab">${s.acicon?`<img src="assets/acicons/${s.acicon}.png" style="width:1.2em;height:1.2em;vertical-align:-0.25em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('✨'))">`:s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span>${lore}</div><div class="ctl">${ctl}</div>`;
       root.appendChild(row);
     }
   }

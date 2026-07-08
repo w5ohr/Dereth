@@ -163,6 +163,32 @@ def main():
     except FileNotFoundError:
         print("  (assets/acitems.json not found — exporting weenie-group icons only)")
 
+    # #339: ALSO union the spell icon DIDs (acspellstats.json + acspells.json). The acitems union above
+    # covers items only, so without this the spellbook renders nearly every spell with a missing icon.
+    spell_extra = set()
+    def _walk_icons(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k == "icon" and v not in (None, ""):
+                    try:
+                        spell_extra.add(int(str(v).replace("0x", "").replace("0X", ""), 16))
+                    except ValueError:
+                        pass
+                else:
+                    _walk_icons(v)
+        elif isinstance(o, list):
+            for x in o:
+                _walk_icons(x)
+    for spath in ("acspellstats.json", "acspells.json"):
+        try:
+            with open(os.path.join(ROOT, "assets", spath), encoding="utf-8") as fh:
+                _walk_icons(json.load(fh))
+        except FileNotFoundError:
+            pass
+    added_sp = spell_extra - dids
+    dids |= spell_extra
+    print(f"  + {len(added_sp)} extra spell icon DIDs referenced by acspellstats/acspells ({len(dids)} total)")
+
     portal = ame.DatReader(PORTAL)
     pal_cache = {}
     def palettes(pid):
