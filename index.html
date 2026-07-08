@@ -14586,6 +14586,7 @@ function tinkItem(mat,it,label){
   const bag=player.salvage[mat]; if(!bag||bag.units<100) return;
   const apply=MAT_APPLY[mat], imbueEl=IMBUE_MAT[mat];
   if((it.tinks||0)>=10){ log(`${it.name} already carries <b>ten tinkerings</b> — AC's limit.`,"warn"); SFX.hit(); return; }
+  if(imbueEl && it.imbued){ log(`${it.name} is already imbued — an imbue is permanent (AC).`,"warn"); SFX.hit&&SFX.hit(); return; }   // #272: imbue lands once, ever — refuse a second before it wastes salvage + a tink slot
   const p=tinkSuccess(mat,it), work=Math.round(bag.work); bag.units-=100;
   if(imbueEl){
     if(Math.random()<p){
