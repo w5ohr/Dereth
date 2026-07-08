@@ -1426,6 +1426,8 @@ async def handle_trade(cl, msg):
             amt = max(0, min(2_000_000_000, int(msg.get("amount", 0))))
         except (TypeError, ValueError):
             amt = 0
+        if cl.econ_ready:
+            amt = min(amt, int(cl.coin))   # M3 (#238): can't offer more pyreals than you actually hold
         tr.setdefault("coin", {})[cl.username] = amt
         tr["ok"][tr["a"]] = tr["ok"][tr["b"]] = False        # AC: changing the coin offer clears both accepts
         await trade_sync(tr)
@@ -1435,12 +1437,22 @@ async def handle_trade(cl, msg):
             return
         tr["ok"][cl.username] = True
         if tr["ok"][tr["a"]] and tr["ok"][tr["b"]]:
+            # M3 (#238): move pyreals through the authoritative balances. Re-clamp each offer to the
+            # offerer's CURRENT coin (it may have changed since the offer) so nobody goes negative.
+            ca = CLIENTS.get(tr["a"]); cb = CLIENTS.get(tr["b"])
+            coin_a = int(tr.get("coin", {}).get(tr["a"], 0))
+            coin_b = int(tr.get("coin", {}).get(tr["b"], 0))
+            if ca and ca.econ_ready: coin_a = max(0, min(coin_a, int(ca.coin)))
+            if cb and cb.econ_ready: coin_b = max(0, min(coin_b, int(cb.coin)))
+            if ca and ca.econ_ready: ca.coin = max(0, min(2_000_000_000, ca.coin - coin_a + coin_b))
+            if cb and cb.econ_ready: cb.coin = max(0, min(2_000_000_000, cb.coin - coin_b + coin_a))
             for acc in (tr["a"], tr["b"]):
                 other = tr["b"] if acc == tr["a"] else tr["a"]
                 c = CLIENTS.get(acc)
                 if c:
                     await c.send({"t": "trade", "act": "done", "give": tr["offers"][other],
-                                  "coin": tr.get("coin", {}).get(other, 0)})
+                                  "coin": (coin_b if acc == tr["a"] else coin_a),
+                                  "authCoin": (int(c.coin) if c.econ_ready else None)})   # M3: authoritative balance to adopt
             del TRADES[tid]
         else:
             await trade_sync(tr)

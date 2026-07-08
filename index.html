@@ -25205,8 +25205,8 @@ function netHandle(m){
       for(const it of TRADE.mine){ const i=player.inv.indexOf(it); if(i>=0)player.inv.splice(i,1); }
       for(const it of (m.give||[])) player.inv.push(it);
       const paid=TRADE.mineCoin|0, got=m.coin|0;
-      if(paid) player.gold=Math.max(0,player.gold-paid);
-      if(got) player.gold+=got;
+      if(isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance
+      else { if(paid) player.gold=Math.max(0,player.gold-paid); if(got) player.gold+=got; }
       log(`<b>Trade complete</b> — ${TRADE.mine.length} item${TRADE.mine.length!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${(m.give||[]).length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
       closeTradeWin(); saveGame(); }
     else if(m.act==="cancel"){ log(m.msg||"The trade was cancelled.","warn"); closeTradeWin(); }
