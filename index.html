@@ -11377,7 +11377,8 @@ function acItemMesh(name){
   if(got&&got!=="loading") return got;
   if(got==="loading") return null;
   _acItemMesh[shex]="loading";
-  fetch('assets/acitemmodels/'+shex+'.json').then(r=>r.json()).then(j=>{
+  fetch('assets/acitemmodels/'+shex.toLowerCase()+'.json').then(r=>r&&r.ok?r.json():null).then(j=>{   // #338: lowercase the DID (index has 24 uppercase values but the files on disk are lowercase → 404 on case-sensitive Linux/Docker) + tolerate a missing model without an unhandled rejection
+    if(!j||!j.groups){ _acItemMesh[shex]=null; return; }
     const grp=new THREE.Group(), TL=new THREE.TextureLoader();
     for(const g of j.groups){ const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));

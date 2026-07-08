@@ -122,6 +122,10 @@ def main():
             done += 1
         except Exception:
             fails += 1
+    # #338: normalize every DID to lowercase — the furnishings pass merged some in uppercase (%08X),
+    # but mesh files are written lowercase, so an uppercase index value 404s on a case-sensitive
+    # filesystem. Lowercase both the values and the on-disk-existence test.
+    index = {n: s.lower() for n, s in index.items()}
     # only index items whose mesh actually exported
     index = {n: s for n, s in index.items() if os.path.isfile(os.path.join(OUT, s + ".json"))}
     json.dump(index, open(os.path.join(OUT, "index.json"), "w"), separators=(",", ":"))
