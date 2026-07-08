@@ -9335,6 +9335,7 @@ function hsUseHook(hk){
 function hsEnterInstance(meshFile,setup){
   fetch('assets/achouses/'+meshFile).then(r=>r.ok?r.json():null).then(dj=>{
     if(!dj){ log("The doorway wavers — the interior is missing.","warn"); return; }
+    if(inDungeon||inNetwork){ return; }   // #327: if the player entered another instance while this house JSON was loading, don't hijack it (the old resolve reset dungeonObjs=[], orphaning the live dungeon's meshes and capturing a bogus dungeonReturn)
     inDungeon=true; curDungeon={name:setup.name,tier:1,house:true};
     dungeonReturn={x:player.x,z:player.z};
     clearDrops();clearProjectiles();clearDying();hideOverworld(false);
@@ -24478,8 +24479,8 @@ function placeDescentStair(x,y,z){
 }
 function dungeonGoDepth(n){
   const def=curDungeon; if(!def) return;
-  for(const o of dungeonObjs) scene.remove(o); dungeonObjs=[];
-  for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
+  for(const o of dungeonObjs) disposeObject3D(o); dungeonObjs=[];   // #327: dispose (not just detach) — this floor-change path was the one teardown #232 missed, so a multi-depth delve leaked a whole floor's merged meshes + decoded textures per descent/ascent
+  for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){disposeObject3D(monsters[i].mesh);monsters.splice(i,1);}   // #327: dispose the floor's monster meshes + prune their LABELS too
   clearDrops();clearProjectiles();clearDying();
   dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;dungeonDescent=null;
   dungeonDepth=n;
@@ -24504,7 +24505,7 @@ function enterDungeon(def,ex,ez){
       const timeout=new Promise(r=>setTimeout(()=>r(null),4000));
       Promise.race([fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).catch(()=>null),timeout])
         .then(j=>{ _acDgnCache[def.name]=j||null;                 // null → grid fallback (and no refetch loop)
-          if(!inDungeon) enterDungeon(def,ex,ez); });             // resume the descent unless something intervened
+          if(!inDungeon&&!inNetwork) enterDungeon(def,ex,ez); });             // #327: resume the descent unless something intervened — also skip if we've since stepped into the Town Network (a dungeon built inside the network left inNetwork=true stuck in the overworld)
       return;
     } }
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
