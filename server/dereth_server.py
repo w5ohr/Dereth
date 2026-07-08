@@ -423,7 +423,8 @@ def ws_frame(payload: bytes, opcode=0x1) -> bytes:
     return bytes(out)
 
 # ---------------------------------------------------------------- game state
-TOKENS = {}            # token -> username
+TOKENS = {}            # #309: token -> (username, expiry_epoch). Tokens must outlive a disconnect (that's what `resume` is for), so the fix for unbounded growth is a TTL + a size cap, not deletion on close.
+TOKEN_TTL = 7 * 24 * 3600   # a resume token is valid for 7 days
 CLIENTS = {}           # username -> Client (one active session per account)
 
 # #239: rate-limit config (token buckets, per connection)
@@ -1657,7 +1658,14 @@ async def do_auth_success(cl, username):
     cl.username = username
     cl.token = secrets.token_hex(24)
     cl.in_world = False; cl.charname = None; cl.slot = None
-    TOKENS[cl.token] = username
+    _nowt = time.time()
+    if len(TOKENS) > 5000:   # #309: prune expired (then oldest) so the map can't grow without bound
+        for k in [k for k, v in TOKENS.items() if v[1] < _nowt]:
+            TOKENS.pop(k, None)
+        if len(TOKENS) > 5000:
+            for k in sorted(TOKENS, key=lambda k: TOKENS[k][1])[:len(TOKENS) - 4000]:
+                TOKENS.pop(k, None)
+    TOKENS[cl.token] = (username, _nowt + TOKEN_TTL)
     CLIENTS[username] = cl
     # Auth lands the player at the character-select screen, not the world.
     await cl.send({"t": "auth_ok", "id": username, "token": cl.token, "pv": PROTOCOL_VERSION})
@@ -1702,7 +1710,10 @@ async def dispatch(cl, msg):
             return await cl.send({"t": "auth_err", "msg": "Wrong name or password."})
         return await do_auth_success(cl, u)
     if t == "resume":
-        u = TOKENS.get(msg.get("token", ""))
+        _tk = msg.get("token", ""); _rec = TOKENS.get(_tk)
+        if _rec and _rec[1] < time.time():   # #309: expired token
+            TOKENS.pop(_tk, None); _rec = None
+        u = _rec[0] if _rec else None
         if not u:
             return await cl.send({"t": "auth_err", "msg": "Session expired — please log in."})
         return await do_auth_success(cl, u)
