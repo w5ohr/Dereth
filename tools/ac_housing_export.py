@@ -247,7 +247,7 @@ def lb_cells(lb):
                 if cid > 0x0100 and (cid - 0x0100) > len(cells) + 32: break
                 continue
             try: cells[cid] = dung.parse_envcell(cell_dat.read(fid))
-            except Exception: pass
+            except Exception as _e: print(f"  warn: envcell {cid:#x} parse failed: {_e}")   # #340: don't silently drop a building interior — surface the failure
         _lb_cells_cache[lb] = cells
     return _lb_cells_cache[lb]
 

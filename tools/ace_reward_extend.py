@@ -96,7 +96,7 @@ for b in stmts("weenie_properties_body_part"):
         f = fields(r); wid = int(f[1])
         if wid in crea:
             try: bp[wid].append((int(f[4]), float(f[5]), int(f[6])))   # d_Val, d_Var, base_Armor
-            except Exception: pass
+            except Exception as _e: print(f"  warn: body-part row for wid {wid} parse failed: {_e}")   # #340: surface a malformed row instead of silently dropping it
 
 rew = json.load(open(REW))
 killxp = rew.setdefault("killxp", {})

@@ -551,7 +551,8 @@ MOB_BESTIARY = {
 # offline client uses — online and offline kills pay identically.
 try:
     import json as _json
-    _rw = _json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "acrewards.json")))
+    with open(os.path.join(os.path.dirname(__file__), "..", "assets", "acrewards.json"), encoding="utf-8") as _rwf:   # #340: explicit utf-8 + closed handle (siblings pass encoding; a non-UTF-8 locale could otherwise misparse)
+        _rw = _json.load(_rwf)
     for _k, _e in _rw.get("killxp", {}).items():
         if _k in MOB_BESTIARY:
             MOB_BESTIARY[_k]["xp"] = _e["xp"]
