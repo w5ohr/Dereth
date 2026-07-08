@@ -14930,8 +14930,8 @@ function playerHurt(dmg,sx,sz,type,element){
   if(player.casting){ const ic=clamp(0.55-player.attr.Focus*0.004,0.18,0.6);
     if(Math.random()<ic){ const nm=SPELLBOOK[player.casting.id]; player.casting=null; spellCd[nm.id]=now()+500;
       floater(player.x,EYE+0.6,player.z,"interrupted!","#ff8f6b"); log(`Your <b>${nm.name}</b> is interrupted!`,"warn"); } }
-  const v=document.getElementById('dmgvig');v.style.opacity=clamp(dmg/35,.25,.9);
-  setTimeout(()=>v.style.opacity=0,140);
+  if(!settings.reduceMotion){ const v=document.getElementById('dmgvig');v.style.opacity=clamp(dmg/35,.25,.9);   // #352: the per-hit fullscreen red flash strobes under sustained fire — suppress it when Reduce Motion is on (the toggle promises "fullscreen flashes are suppressed")
+    setTimeout(()=>v.style.opacity=0,140); }
   if(sx!==undefined){const rel=Math.atan2(sx-player.x,-(sz-player.z))+player.yaw;
     const dd=document.getElementById('dmgdir');dd.style.transform=`rotate(${rel}rad)`;dd.style.opacity="1";
     setTimeout(()=>dd.style.opacity="0",420);}
@@ -17382,7 +17382,7 @@ function updateHUD(){
   else cb.style.display="none";
   document.getElementById('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
   const dv=document.getElementById('dmgvig');
-  if(player.alive&&player.hp/player.mhp<0.25){dv.style.opacity=0.22+0.22*Math.abs(Math.sin(now()/240));dv.dataset.low="1";}
+  if(player.alive&&player.hp/player.mhp<0.25){dv.style.opacity=settings.reduceMotion?0.3:(0.22+0.22*Math.abs(Math.sin(now()/240)));dv.dataset.low="1";}   // #352: static low-HP border under Reduce Motion instead of a ~2Hz pulse
   else if(dv.dataset.low){dv.style.opacity=0;dv.dataset.low="";}
   drawMinimap();
   drawCompass();
