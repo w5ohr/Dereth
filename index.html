@@ -13600,7 +13600,7 @@ function invCap(){ let n=mainPackCap(); for(const p of (player.packs||[])) n+=p.
 // ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
 //    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
 function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry" && it.stat!=="aetheria")); }   // aetheria: each medallion levels independently
-function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):"",it.bp||0].join("|"); }   // #290: include bp — a vendor-bought item (carries bp = its buy price, resale clamped below it) must NOT merge into a bp-less looted/crafted stack, or the merge strips the clamp and reopens a buy-low/sell-high gold loop
+function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):"",it.bp||0,it.uses==null?"":it.uses].join("|"); }   // #290: include bp (buy-price resale clamp mustn't be stripped by merging into a bp-less stack). #305: include uses so a fresh multi-use kit can't merge into a partly-spent stack and inherit its lower use count
 function addToInv(it, force){   // → true if added/stacked, false if the satchel was full
   if(stackable(it)){ const k=stackKey(it), ex=player.inv.find(x=>stackable(x)&&stackKey(x)===k);
     if(ex){ ex.count=(ex.count||1)+(it.count||1); return true; } }
@@ -14366,10 +14366,12 @@ function applyItem(it){
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
   else if(it.stat==="hp"){const h=healScale(it.v);player.hp=Math.min(player.mhp,player.hp+h);
     if(/healing kit/i.test(it.name)){   // retail kits carry multiple uses (Crude 5 … Treated 100), each a Healing-skill application
-      if(it.uses==null) it.uses=/crude/i.test(it.name)?5:/plain/i.test(it.name)?10:/good/i.test(it.name)?15:/excellent/i.test(it.name)?20:/peerless/i.test(it.name)?25:/treated/i.test(it.name)?100:10;
+      const full=/crude/i.test(it.name)?5:/plain/i.test(it.name)?10:/good/i.test(it.name)?15:/excellent/i.test(it.name)?20:/peerless/i.test(it.name)?25:/treated/i.test(it.name)?100:10;
+      if(it.uses==null) it.uses=full;
       it.uses--;
       log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""} · ${it.uses} use${it.uses===1?"":"s"} left).`,"loot");
       if(it.uses>0) return "keep";
+      if((it.count||1)>1) it.uses=full;   // #305: uses lived on the shared stack object — re-seed the NEXT unit to full so it isn't inherited at 0 (a stack of N kits gave N-1 fewer uses); invUseItem then decrements the count
       log(`The <b>${it.name}</b> is used up.`,"sys");
     } else log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""}).`,"loot");}
   else if(it.stat==="mn"){player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}
