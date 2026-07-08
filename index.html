@@ -15520,11 +15520,9 @@ function fireArrow(){
     else { dmg+=am.dmg||0; }   // non-elemental ammo just adds to the physical hit
     takeFromInv(ai); }
   const dir=new THREE.Vector3();cam.getWorldDirection(dir);
-  { const tgt=(typeof pickMonsterTarget==="function")?pickMonsterTarget(60):null;      // Cb3 missile contest: Missile skill vs the mark's defense — a lost roll flies wide
-    if(tgt&&!rollToHit(skillValue("missile"),tgt,0.95)){
-      const sk=(Math.random()<0.5?-1:1)*(0.05+Math.random()*0.09), ca=Math.cos(sk), sa=Math.sin(sk);
-      const dx=dir.x*ca-dir.z*sa, dz=dir.x*sa+dir.z*ca; dir.x=dx; dir.z=dz;
-      floater(player.x,EYE+0.4,player.z,"wide!","#b9c0cc"); } }
+  // #293: the Missile to-hit contest is rolled ONCE, at impact (pProj, with range falloff). The old
+  // launch-time contest here was a SECOND independent roll against the same defense, so per-shot hit
+  // chance was P(launch)×P(impact) — squaring archery's miss rate. Fire straight; the impact roll decides.
   const ox=player.x+dir.x*0.8,oz=player.z+dir.z*0.8,oy=player.y+EYE-0.1;   // #11: eye height above the player's ACTUAL feet — not absolute sea level, so arrows don't spawn underground (and get ground-culled) on elevated terrain
   const mesh=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.8,6),
     new THREE.MeshStandardMaterial({color:0x8a6a3a}));
