@@ -15892,7 +15892,7 @@ function closeAnyPanel(){
   if(document.getElementById('kcVaultPanel')){ closeKcVault(); return; }
   for(const id of ["qbPick","hookPicker","kcWarPanel","kcBookReader","bookReader","hsPanel","kcPanel"]){
     const el=document.getElementById(id); if(el){ el.remove(); paused=false; return; } }
-  for(const [id,close] of [["shop",closeShop],["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){   // #248: shop was the one BIG_MODAL Esc didn't close
+  for(const [id,close] of [["keymap",closeKeymap],["shop",closeShop],["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){   // #248: shop was the one BIG_MODAL Esc didn't close. #333: keymap first so Esc closes it (layered over Settings) before Settings
     const el=document.getElementById(id); if(el&&el.style.display==="flex"){ close(); return; } }
 }
 window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;keys[e.code]=false;});
@@ -22311,7 +22311,8 @@ function closeSettings(){ document.getElementById('settings').style.display="non
 document.getElementById('closeSettings').onclick=closeSettings;
 // ── Map Keys panel ──
 function openKeymap(){ document.getElementById('keymap').style.display="flex"; buildKeymap(); if(locked)document.exitPointerLock(); paused=true; }
-function closeKeymap(){ rebindCapture=null; document.getElementById('keymap').style.display="none"; }
+function closeKeymap(){ rebindCapture=null; document.getElementById('keymap').style.display="none";
+  const st=document.getElementById('settings'); if(!st||st.style.display==="none") paused=false; }   // #333: clear paused when closing the Keymap — unless Settings (which opened it and owns the pause) is still up
 function buildKeymap(){
   const body=document.getElementById('keymapBody'); if(!body) return; body.innerHTML="";
   const groups={}; for(const a of ACTIONS){ (groups[a.group]=groups[a.group]||[]).push(a); }
