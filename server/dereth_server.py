@@ -212,6 +212,45 @@ def sanitize_save(data):
         print(f"[sanitize_save] {e}")
     return d
 
+# #238: bound an untrusted item dict that will be relayed to ANOTHER player (trade offers, corpse
+# loot). Not schema-aware — legendaries/tinkered items carry custom stats — so it just clamps every
+# numeric leaf to a sane range, truncates strings, and caps depth/key/list sizes, so a fabricated item
+# can't ship absurd stats or giant strings to an honest client. Returns a fresh sanitized copy.
+_ITEM_STRMAX = 64
+def _clampleaf(v, key=None):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        f = float(v)
+        if not math.isfinite(f):
+            return 0
+        if key == "count":
+            return int(max(1, min(100000, f)))
+        if key == "tinks":
+            return int(max(0, min(10, f)))
+        return max(-1e6, min(1e6, f))
+    if isinstance(v, str):
+        return v[:_ITEM_STRMAX]
+    return None
+
+def sanitize_item(it, _depth=0):
+    if not isinstance(it, dict) or _depth > 4:
+        return {} if isinstance(it, dict) else it
+    out = {}
+    for k, v in list(it.items())[:60]:                      # cap key count
+        if not isinstance(k, str) or len(k) > 40:
+            continue
+        if isinstance(v, dict):
+            out[k] = sanitize_item(v, _depth + 1)
+        elif isinstance(v, list):
+            out[k] = [sanitize_item(x, _depth + 1) if isinstance(x, dict) else _clampleaf(x)
+                      for x in v[:60]]
+        else:
+            lv = _clampleaf(v, k)
+            if lv is not None:
+                out[k] = lv
+    return out
+
 def save_char_slot(account, slot, data):
     data = sanitize_save(data)
     with db() as c:
@@ -774,7 +813,7 @@ async def handle_death(cl, msg):
     every nearby player can see (and only the owner can loot). Mirrors the client's local corpse."""
     global _drop_seq
     items = msg.get("items")
-    items = [it for it in items if isinstance(it, dict)][:24] if isinstance(items, list) else []
+    items = [sanitize_item(it) for it in items if isinstance(it, dict)][:24] if isinstance(items, list) else []   # #238: bound corpse loot relayed to other players
     try:
         gold = max(0, int(msg.get("gold", 0)))
     except (TypeError, ValueError):
@@ -1347,7 +1386,7 @@ async def handle_trade(cl, msg):
         if act == "add":
             item = msg.get("item")
             if isinstance(item, dict) and len(tr["offers"][cl.username]) < 12:
-                tr["offers"][cl.username].append(item)
+                tr["offers"][cl.username].append(sanitize_item(item))   # #238: bound stats of an item offered to another player
         else:
             idx = int(msg.get("idx", -1))
             if 0 <= idx < len(tr["offers"][cl.username]):
