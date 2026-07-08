@@ -12,7 +12,7 @@ Env:   DERETH_HOST, DERETH_PORT, DERETH_DB         (override defaults)
 
 This is Phase M1 (foundation). Monsters/combat become server-authoritative in M3.
 """
-import asyncio, base64, hashlib, hmac, json, math, os, random, re, secrets, sqlite3, struct, time
+import asyncio, base64, hashlib, hmac, json, math, os, random, re, secrets, sqlite3, struct, time, traceback
 
 HOST = os.environ.get("DERETH_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DERETH_PORT", "8787"))
@@ -23,6 +23,15 @@ MAX_MSG = 1 << 20  # 1 MiB per message cap (character saves can be sizable)
 # WSCALE — world spatial scale; MUST match the client's WSCALE. At 3 the map is true 1:1 AC metre
 # spacing (towns 3× farther apart than the old compact map). Only POSITIONS scale — ranges stay metres.
 WSCALE = 3
+# Area-of-interest: the snapshot used to broadcast EVERY player + EVERY mob to EVERY client at
+# TICK_HZ, so egress grew as O(N^2) and each client burned ~8 KB/tick on ~77 mobs scattered across a
+# 48 km world — nearly all of them unrenderable. The client's fog far is 235 units, so nothing beyond
+# that is ever visible. We send only entities within AOI_IN, and keep sending an already-sent entity
+# until it passes AOI_OUT (hysteresis) so an entity hovering on the boundary doesn't spawn/despawn
+# every tick. That matters: reconcileRemotes() fully disposes a remote avatar (jointed body + AC head
+# + label sprite) on despawn and rebuilds it on respawn, so boundary churn would thrash the GPU.
+AOI_IN = 300.0     # send entities within this radius (> fog far 235, so no pop-in inside view)
+AOI_OUT = 380.0    # keep sending an already-sent entity until it passes this (hysteresis band)
 SCRYPT = dict(n=16384, r=8, p=1, dklen=32)
 PROTOCOL_VERSION = 2   # v2: accounts own up to 8 character slots (roster/play_char/create_char)
 
@@ -486,6 +495,10 @@ class Client:
         self.coin = 0
         self.inv = []
         self.econ_ready = False   # True once loaded from a save; gates authoritative bookkeeping
+        # AOI: ids this client currently has spawned (from the last snapshot we sent it). Used for the
+        # AOI_IN/AOI_OUT hysteresis band so boundary-hugging entities don't spawn/despawn every tick.
+        self.aoi_p = set()   # remote player usernames
+        self.aoi_m = set()   # mob ids
 
     async def send(self, obj):
         if not self.alive:
@@ -520,18 +533,87 @@ def mob_pub(m):
         d["event"] = m["event"]
     return d
 
-def snapshot():
-    snap = {"t": "snapshot", "players": [
-        {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
-         "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
-         "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
-         "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
-        for u, cl in CLIENTS.items() if cl.in_world],
-        "mobs": [mob_pub(m) for m in MOBS.values() if m["hp"] > 0]}
-    if EVENT.get("active"):
-        snap["event"] = {"id": EVENT["id"], "name": EVENT["name"], "x": EVENT["x"], "z": EVENT["z"],
-                         "col": EVENT["col"], "total": EVENT["total"]}
+def player_pub(u, cl):
+    return {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
+            "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
+            "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
+            "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
+
+def world_pubs():
+    """Build every public record ONCE per tick, not once per (viewer, entity) pair.
+
+    Each entry is (id, x, z, record) so snapshot_for() can range-test without re-deriving the dict.
+    """
+    ps = [(u, cl.x, cl.z, player_pub(u, cl)) for u, cl in CLIENTS.items() if cl.in_world]
+    ms = [(m["id"], m["x"], m["z"], mob_pub(m)) for m in MOBS.values() if m["hp"] > 0]
+    return ps, ms
+
+def event_snap():
+    """The `event` field embedded in a snapshot. NOT event_pub() — that one (defined below) builds the
+    separate `event_start` message and has no `active` guard."""
+    if not EVENT.get("active"):
+        return None
+    # The Incursion beacon is a 220-unit pillar meant to be seen from across the region, so it is
+    # deliberately NOT range-filtered. Its mobs are (they ring out 90-440 units from the anchor).
+    return {"id": EVENT["id"], "name": EVENT["name"], "x": EVENT["x"], "z": EVENT["z"],
+            "col": EVENT["col"], "total": EVENT["total"]}
+
+def _in_aoi(px, pz, ex, ez, was_sent):
+    lim = AOI_OUT if was_sent else AOI_IN
+    # Reject on an axis-aligned box BEFORE squaring. Two reasons:
+    #  1) Overflow. `_finitef` only rejects NaN/Inf on the input tick, so a client may legitimately
+    #     report a huge-but-finite coord (1e300). `(ex-px)**2` then raises OverflowError -- and since
+    #     px/pz are the *viewer's* own coords, one such client would abort the snapshot broadcast for
+    #     every client after it in dict order, every tick. That is a remote denial of service.
+    #  2) Speed. Most entities are far away, and the box test rejects them without any multiply.
+    dx = ex - px
+    if dx > lim or dx < -lim:
+        return False
+    dz = ez - pz
+    if dz > lim or dz < -lim:
+        return False
+    return dx * dx + dz * dz <= lim * lim   # |dx|,|dz| <= lim here, so this cannot overflow
+
+def snapshot_for(cl, ps, ms, ev):
+    """The slice of the world this client can actually see (see AOI_IN/AOI_OUT).
+
+    `cl` itself is omitted: the client's reconcileRemotes() explicitly skips `p.id === NET.me`, and
+    nothing else reads msg.players, so its own record was always dead weight on the wire.
+    """
+    px, pz = cl.x, cl.z
+    seen_p, seen_m = cl.aoi_p, cl.aoi_m
+    keep_p, keep_m = set(), set()
+    players, mobs = [], []
+    # Party members are ALWAYS sent, at any distance: the world map (Tab) draws fellows as named green
+    # dots so you can find each other across Dereth, and a fellowship caps at 9, so the cost is bounded.
+    party = set(PARTIES[cl.party]["members"]) if cl.party in PARTIES else ()
+    for u, x, z, rec in ps:
+        if u == cl.username:
+            continue
+        if u in party or _in_aoi(px, pz, x, z, u in seen_p):
+            keep_p.add(u); players.append(rec)
+    for mid, x, z, rec in ms:
+        if _in_aoi(px, pz, x, z, mid in seen_m):
+            keep_m.add(mid); mobs.append(rec)
+    cl.aoi_p, cl.aoi_m = keep_p, keep_m
+    snap = {"t": "snapshot", "players": players, "mobs": mobs}
+    if ev:
+        snap["event"] = ev
     return snap
+
+async def broadcast_snapshots():
+    """Per-client AOI snapshots. Mirrors broadcast()'s dead-client reaping."""
+    ps, ms = world_pubs()
+    ev = event_snap()
+    dead = []
+    for u, cl in list(CLIENTS.items()):
+        if not cl.in_world:
+            continue
+        await cl.send(snapshot_for(cl, ps, ms, ev))
+        if not cl.alive:
+            dead.append(u)
+    for u in dead:
+        CLIENTS.pop(u, None)
 
 # ---------------------------------------------------------------- world: shared monsters
 # Server-authoritative monster sim (M3). Stats mirror the client BESTIARY subset so the
@@ -2105,9 +2187,17 @@ async def tick_loop():
     interval = 1.0 / TICK_HZ
     while True:
         await asyncio.sleep(interval)
-        if CLIENTS:
+        if not CLIENTS:
+            continue
+        try:
             await world_step()
-            await broadcast(snapshot())
+            await broadcast_snapshots()
+        except Exception:
+            # A single raising tick used to kill this task outright — asyncio only whispers
+            # "Task exception was never retrieved" at GC — and with it the whole shared world:
+            # no snapshots, no mob AI, no Incursions, for every connected player, until restart.
+            # Log the tick and keep the world alive.
+            traceback.print_exc()
 
 async def main():
     db().close()  # ensure schema exists

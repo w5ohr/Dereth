@@ -8,6 +8,11 @@ import asyncio, base64, hashlib, json, os, secrets, struct, sys, time
 HOST = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8787
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+# The server only snapshots entities within AOI_IN (~300u) of the viewer, so a harness must stand
+# where the entities are. These mirror dereth_server.py's MOB_CLUSTERS / BOSS_DEFS homes.
+WSCALE = 3
+HOLTBURG = (2640 * WSCALE, -3488 * WSCALE)     # a mob cluster (its mobs ring 90-440u out)
+QUEEN_LAIR = (4200 * WSCALE, -1400 * WSCALE)   # Gnawvil the Olthoi Queen -- bosses lair far from towns
 
 class WS:
     def __init__(self, reader, writer):
@@ -102,13 +107,16 @@ async def main():
     await b.recv_until(lambda x: x["t"] == "play_ok")
     check("alice sees bob join", bool(await a.recv_until(lambda x: x["t"] == "system" and bob in x.get("msg", ""))))
 
-    # movement input -> snapshot reflects both players
+    # movement input -> snapshot reflects the OTHER player. AOI: the viewer's own record is no longer
+    # echoed back (the client always discarded it), and only entities within AOI_IN are sent -- these
+    # two stand ~212u apart, inside it.
     await a.send({"t": "input", "x": 100, "z": 200, "yaw": 1.5, "hp": 90, "level": 7})
     await b.send({"t": "input", "x": -50, "z": 50, "yaw": 0.2, "hp": 80, "level": 3})
-    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and len(x.get("players", [])) >= 2)
+    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and any(p["id"] == bob for p in x.get("players", [])))
     ids = {p["id"]: p for p in (snap["players"] if snap else [])}
-    check("snapshot lists both players", alice in ids and bob in ids)
-    check("snapshot carries alice position", snap and abs(ids.get(alice, {}).get("x", 0) - 100) < 1)
+    check("snapshot lists the nearby other player", bob in ids)
+    check("snapshot omits the viewer's own record (AOI)", snap is not None and alice not in ids)
+    check("snapshot carries the other player's position", snap and abs(ids.get(bob, {}).get("x", 0) - (-50)) < 1)
     check("snapshot shows character name, not account", ids.get(bob, {}).get("name") == f"{bob}0")
 
     # chat from bob reaches alice, tagged with his character name
@@ -160,9 +168,15 @@ async def main():
     await a.send({"t": "pchat", "msg": "group up"})
     pc = await b.recv_until(lambda x: x["t"] == "chat" and x.get("channel") == "party")
     check("party chat reaches members", bool(pc) and "group up" in pc.get("msg", "") and pc.get("from") == f"{alice}7")
-    # fellowship XP: a partied member near a kill shares its XP without tagging the mob
-    fsnap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"))
-    fmob = next((mm for mm in fsnap["mobs"] if not mm.get("boss")), None)
+    # fellowship XP: a partied member near a kill shares its XP without tagging the mob.
+    # AOI: mobs are only snapshot within ~300u, so stand in a mob cluster first (a real player spawns
+    # in a town, which IS a cluster; this harness otherwise sits ~10,500u from the nearest one).
+    await a.send({"t": "input", "x": HOLTBURG[0], "z": HOLTBURG[1], "yaw": 0, "hp": 100})
+    await b.send({"t": "input", "x": HOLTBURG[0], "z": HOLTBURG[1], "yaw": 0, "hp": 100})
+    await asyncio.sleep(0.4)
+    fsnap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"), timeout=6)
+    check("snapshot carries mobs once inside a cluster (AOI)", bool(fsnap))
+    fmob = next((mm for mm in (fsnap or {}).get("mobs", []) if not mm.get("boss")), None)
     if fmob:
         await a.send({"t": "input", "x": fmob["x"], "z": fmob["z"], "yaw": 0, "hp": 100})
         await b.send({"t": "input", "x": fmob["x"] + 4, "z": fmob["z"], "yaw": 0, "hp": 100})  # bob doesn't attack
@@ -176,11 +190,18 @@ async def main():
     check("party leave notifies members", bool(left))
 
     # --- M3: server-authoritative shared monsters ---
-    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"))
+    # AOI: ordinary mobs are only visible from inside a cluster...
+    await a.send({"t": "input", "x": HOLTBURG[0], "z": HOLTBURG[1], "yaw": 0, "hp": 100})
+    await asyncio.sleep(0.4)
+    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"), timeout=6)
     mobs = snap.get("mobs", []) if snap else []
     check("snapshot carries shared mobs", len(mobs) > 0)
     check("mob has id/kind/hp fields", bool(mobs) and all(k in mobs[0] for k in ("id", "kind", "hp", "mhp")))
-    boss = next((x for x in mobs if x.get("boss")), None)
+    # ...and bosses only from their wilderness lair, which is nowhere near a town cluster.
+    await a.send({"t": "input", "x": QUEEN_LAIR[0], "z": QUEEN_LAIR[1], "yaw": 0, "hp": 100})
+    await asyncio.sleep(0.4)
+    bsnap = await a.recv_until(lambda x: x["t"] == "snapshot" and any(m.get("boss") for m in x.get("mobs", [])), timeout=6)
+    boss = next((x for x in (bsnap or {}).get("mobs", []) if x.get("boss")), None)
     check("snapshot carries a shared world boss", bool(boss) and boss.get("name") and boss.get("mhp", 0) >= 1000)
 
     if mobs:

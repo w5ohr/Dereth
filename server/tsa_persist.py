@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TestSystemA persistence & lifecycle scenarios: deep save/load fidelity, slot
 lifecycle, token resume, event start->end. Usage: python tsa_persist.py [host] [port]"""
-import asyncio, json, secrets, sys, time
+import asyncio, json, math, secrets, sys, time
 sys.path.insert(0, ".")
 from test_client import WS
 
@@ -114,17 +114,33 @@ async def main():
     check("Incursion starts", ev and ev.get("count", 0) > 0)
     if ev:
         eid = ev.get("id")
-        deadline = time.time() + 25
+        # AOI: the snapshot only carries mobs within ~300u of the viewer, but the horde rings out
+        # 90-440u from the anchor -- so no single standpoint sees them all. Sweep the ring: sit at the
+        # anchor, then at 8 points 300u out, clearing whatever is in view from each.
+        ax, az = float(ev.get("x", 0.0)), float(ev.get("z", 0.0))
+        sweep = [(ax, az)] + [(ax + math.cos(i * math.pi / 4) * 300.0,
+                               az + math.sin(i * math.pi / 4) * 300.0) for i in range(8)]
+        deadline = time.time() + 45
         ended = None
         while time.time() < deadline and not ended:
-            snap = await e.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"), timeout=4)
-            emobs = [m for m in (snap or {}).get("mobs", [])
-                     if m.get("event") == eid and m.get("hp", 0) > 0]
-            for mob in emobs:
-                # walk onto the mob (dist ~0, well inside ATTACK_RANGE) then hit it by its real id
-                await e.send({"t": "input", "x": mob["x"], "z": mob["z"], "yaw": 0})
-                await e.send({"t": "attack", "id": mob["id"], "dmg": 4000})
-            ended = await e.recv_until(lambda x: x["t"] == "event_end", timeout=2)
+            for sx, sz in sweep:
+                if ended or time.time() >= deadline:
+                    break
+                await e.send({"t": "input", "x": sx, "z": sz, "yaw": 0})
+                # drain a few frames so the snapshot we read reflects the move we just made
+                snap = None
+                for _ in range(4):
+                    s = await e.recv_until(lambda x: x["t"] == "snapshot", timeout=2)
+                    if s is None:
+                        break
+                    snap = s
+                emobs = [m for m in (snap or {}).get("mobs", [])
+                         if m.get("event") == eid and m.get("hp", 0) > 0]
+                for mob in emobs:
+                    # walk onto the mob (dist ~0, well inside ATTACK_RANGE) then hit it by its real id
+                    await e.send({"t": "input", "x": mob["x"], "z": mob["z"], "yaw": 0})
+                    await e.send({"t": "attack", "id": mob["id"], "dmg": 4000})
+                ended = await e.recv_until(lambda x: x["t"] == "event_end", timeout=0.6)
         check("event ends after clearing mobs", ended, "no event_end within window")
         if ended:
             check("event_end reports success", ended.get("success") in (True, 1))

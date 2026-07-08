@@ -3,7 +3,7 @@
 party chat, muster cap, monarch MOTD. Usage: python tsa_fellow.py [host] [port]"""
 import asyncio, secrets, sys
 sys.path.insert(0, ".")
-from test_client import WS
+from test_client import WS, HOLTBURG
 
 RESULTS = []
 def check(name, ok, note=""):
@@ -31,6 +31,10 @@ async def party_up(leader, member):
 
 async def kill_shared_mob(killer, others):
     """find a mob near the party via snapshot, kill it, collect xp rewards for everyone"""
+    # AOI: the snapshot only carries mobs within ~300u, so move the party into a mob cluster first.
+    for c in (killer, *others):
+        await c.send({"t": "input", "x": HOLTBURG[0], "z": HOLTBURG[1], "yaw": 0, "level": c.level})
+    await asyncio.sleep(0.4)
     snap = await killer.recv_until(lambda x: x["t"] == "snapshot" and x.get("mobs"), timeout=8)
     mobs = (snap or {}).get("mobs", [])
     if not mobs:
