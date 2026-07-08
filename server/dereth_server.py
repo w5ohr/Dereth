@@ -634,7 +634,10 @@ async def end_event(success):
         await broadcast({"t": "system", "msg": f"The {name} has been repelled! Defenders share a bounty of {xp} XP."})
         for cl in list(CLIENTS.values()):
             if cl.in_world:
-                await cl.send({"t": "event_reward", "xp": xp, "gold": gold, "name": name})
+                if cl.econ_ready:
+                    cl.coin = min(2_000_000_000, cl.coin + gold)   # #297: credit the reward to the authoritative balance so a later absolute coin push (e.g. picking up the ground spoils) can't erase it
+                await cl.send({"t": "event_reward", "xp": xp, "gold": gold, "name": name,
+                               "authCoin": (int(cl.coin) if cl.econ_ready else None)})
         # spoils on the ground at the breach
         for d in (make_drop(ex, ez, "gold", amt=gold),
                   make_drop(ex + 2, ez, "item", item=roll_item(True, 5)),

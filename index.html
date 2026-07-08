@@ -14410,7 +14410,8 @@ function applyItem(it){
   else if(it.stat==="writ"){ log(`A <b>Writ of Refuge</b> — the Arcanum's housing scrip. Spend it at a Covenant Crystal when buying a dwelling.`,"sys"); return "keep"; }
   else if(it.stat==="quest"){ log(`<b>${it.name}</b> is a quest collectible — turn it in to the right quest-giver, or sell it.`,"sys"); }
   else if(it.stat==="comp"){ if(isScarab(it)) log(`<b>${it.name}</b> is a casting scarab (level ${SCARAB_LEVEL[it.name]}) — held in your satchel, it powers a spell automatically when your mana runs dry. Or sell it to a Scrivener.`,"sys"); else log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
-  else if(it.stat==="note"){ if(isOnline) netSend({t:"vendor_sell",item:it,price:it.v|0});   // M3 (#238): redeeming a note = selling it for face value; the server credits authoritatively
+  else if(it.stat==="note"){ if(isOnline){ NET.pendingSell=NET.pendingSell||[]; NET.pendingSell.push(Object.assign({},it,{count:1}));   // #297: redeeming a note = selling it; queue one unit so a server reject restores the consumed note instead of destroying it
+      netSend({t:"vendor_sell",item:it,price:it.v|0}); }   // M3 (#238): the server credits authoritatively and vendor_ok reconciles/rolls back
     player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
   else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
   else if(it.stat==="ammo"){ log(`<b>${it.name}</b> is loosed automatically when you fire a matching ${it.for}.`,"sys"); return "keep"; }
@@ -21633,7 +21634,8 @@ function buildShop(){
   sell.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{const i=+b.dataset.sell; const it=player.inv[i]; if(!it)return; const price=gearSellPrice(it);
     if(activeShop && (activeShop.pyreals||0) < price){ log("The vendor hasn't the coin for that — sell smaller items, come back later, or try another merchant.","warn"); if(SFX.hit)SFX.hit(); return; }
     if(activeShop) activeShop.pyreals-=price;
-    if(isOnline) netSend({t:"vendor_sell",item:it,price});   // M3 (#238): server credits pyreals authoritatively (validates ownership, caps at catalog value); vendor_ok reconciles
+    if(isOnline){ NET.pendingSell=NET.pendingSell||[]; NET.pendingSell.push(Object.assign({},it,{count:1}));   // #297: remember a single unit for rollback if the server rejects
+      netSend({t:"vendor_sell",item:it,price}); }   // M3 (#238): server credits pyreals authoritatively (validates ownership, caps at catalog value); vendor_ok reconciles/rolls back
     player.gold+=price;takeFromInv(i);SFX.gold();buildShop();updateHUD();saveGame();});
   sell.querySelectorAll('[data-turnin]').forEach(b=>b.onclick=()=>{const i=+b.dataset.turnin; const it=player.inv[i]; if(!it||it.stat!=="trophy")return;
     const bt=trophyBounty(it); player.gold+=bt.gold; if(typeof gainXP==="function")gainXP(bt.xp); takeFromInv(i);
@@ -25272,7 +25274,15 @@ function netHandle(m){
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
   if(m.t==="coin"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance (#315: reject null/non-number, never zero gold)
-  if(m.t==="vendor_ok"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } if(m.act==="reject"&&m.reason) log(m.reason,"warn"); return; }   // M3 (#238): vendor result — adopt the authoritative balance (#315: reject null/non-number)
+  if(m.t==="vendor_ok"){
+    // #297: the client sold/redeemed OPTIMISTICALLY (item already removed) and queued the item in
+    // NET.pendingSell. On a server REJECT (item wasn't in the authoritative inventory), restore that
+    // item instead of letting it vanish; acks arrive in send order so shift() matches the right one.
+    if(m.act==="reject"){ const back=(NET.pendingSell&&NET.pendingSell.shift())||null; if(back) addToInv(back); if(m.reason) log(m.reason,"warn"); }
+    else if(m.act==="sell"){ if(NET.pendingSell) NET.pendingSell.shift(); }   // confirmed sold
+    if(typeof m.coin==="number"&&isFinite(m.coin)) player.gold=m.coin;   // M3 (#238): adopt the authoritative balance (#315: reject null/non-number)
+    if(typeof updateHUD==="function") updateHUD(); if(typeof buildShop==="function"&&document.getElementById('shop')&&document.getElementById('shop').style.display!=="none") buildShop();
+    return; }
   if(m.t==="loot")      return onLoot(m);
   if(m.t==="corpse_loot") return onCorpseLoot(m);
   if(m.t==="event_start")  return onEventStart(m);
@@ -25314,7 +25324,8 @@ function onEventEnd(msg){
 }
 function onEventReward(msg){
   if(msg.xp) gainXP(msg.xp);
-  if(msg.gold){ player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); if(SFX.gold)SFX.gold(); }
+  if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin;   // #297: adopt the server's authoritative balance (event gold is now credited to cl.coin server-side) so the next absolute loot push can't erase the reward
+    else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); if(SFX.gold)SFX.gold(); }
   player.incursions=(player.incursions||0)+1;
   if(typeof checkAchievements==="function") checkAchievements();
 }
@@ -25434,7 +25445,7 @@ function removeSharedMobAsDying(id){
 function onMobDmg(msg){ playerHurt(msg.amt, msg.x, msg.z); }
 function onReward(msg){
   if(msg.xp) gainXP(msg.xp);
-  if(msg.gold){ player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); SFX.gold(); }
+  if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); SFX.gold(); }   // #297: finite guard + adopt authoritative balance when present
   player.kills++;
   if(msg.boss){ player.bossKills=(player.bossKills||0)+1; if(typeof questEvent==="function") questEvent("boss"); }
   const b=BESTIARY[msg.kind];
