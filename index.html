@@ -15399,7 +15399,7 @@ function executeSpell(id){
   if(geom==="ring"){   // point-blank ring: strike every nearby foe around you
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<7.5);
     burst(player.x,1,player.z,sp.color,30); castRings(player.x,player.z,sp.color);
-    for(const m of targets){ if(sp.element){const em=elemMult(m.kind,sp.element); if(em>1)floater(m.x,(m.headY||1.6)+2.3,m.z,"weak!",fxHex(fxElem(sp.element,0x7fe6a0)));} applyHit(m,dmg,{element:sp.element,spell:true}); }
+    for(const m of targets){ let dm=dmg; if(sp.element){ const em=elemMult(m.kind,sp.element); dm*=em; if(em!==1) floater(m.x,(m.headY||1.6)+2.3,m.z,em>1?"weak!":"resist",fxHex(fxElem(sp.element,em>1?0x7fe6a0:0x9fb0c0))); } applyHit(m,dm,{element:sp.element,spell:true}); }   // #302: actually APPLY the elemental multiplier (opts.element alone is inert without brandDmg) — matches the bolt/wall/line paths; ring no longer shows "weak!" while dealing neutral damage
     castFlash(sp.color);SFX.flame();shake(0.2);
     if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
     netSpellFx("ring",player.x,player.z,0,0,sp.color,7.5,0);
