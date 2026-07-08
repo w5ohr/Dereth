@@ -1748,7 +1748,15 @@ async def dispatch(cl, msg):
             if isinstance(item, dict):
                 ok, removed = take_owned(cl, [item])
                 if ok and removed:
-                    price = min(price, catalog_val(item))
+                    # #288: cap the credit at the retail catalog value AND — for anything the player
+                    # BOUGHT from a vendor — below its recorded buy price, so buy->sell can never net a
+                    # profit (closes the vendor_buy@0 -> vendor_sell coin-mint loop). Use the SERVER's
+                    # own inventory copy (removed[0]), never the client-supplied bp, which can be forged.
+                    server_item = removed[0]
+                    price = min(price, catalog_val(server_item))
+                    bp = server_item.get("bp")
+                    if isinstance(bp, (int, float)):
+                        price = min(price, max(0, int(bp) - 1))
                     cl.coin = max(0, min(2_000_000_000, cl.coin + price))
                     await cl.send({"t": "vendor_ok", "act": "sell", "coin": int(cl.coin)})
                 else:
@@ -1765,7 +1773,9 @@ async def dispatch(cl, msg):
             if cost <= cl.coin:
                 cl.coin -= cost
                 if isinstance(item, dict) and len(cl.inv) < 500:
-                    cl.inv.append(sanitize_item(item))
+                    bought = sanitize_item(item)
+                    bought["bp"] = cost   # #288: stamp the authoritative buy price so vendor_sell can clamp resale below it — a bought item can never be sold back for a profit (kills the buy@0 coin-mint loop)
+                    cl.inv.append(bought)
                 await cl.send({"t": "vendor_ok", "act": "buy", "coin": int(cl.coin)})
             else:
                 await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "Not enough pyreals."})
