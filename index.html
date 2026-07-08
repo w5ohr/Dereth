@@ -23952,7 +23952,7 @@ function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName,fy){
   const cv=acCreatureMesh(kind), mesh=cv.mesh, gm=cv.gm;     // authentic AC model (+ breed) or procedural fallback
   let hp=Math.round(b.hp*1.3*settings.diff*hpMul),dmg=Math.round(b.dmg*1.15*settings.diff*hpMul),xp=Math.round(b.xp*1.2*hpMul),r=b.size*0.8,base=1;
   if(elite){
-    hp=Math.round(b.hp*3.5*hpMul);dmg=Math.round(b.dmg*1.8*Math.sqrt(hpMul));xp=Math.round(b.xp*3*hpMul);r*=1.5;base=1.5;mesh.scale.setScalar(1.5);
+    hp=Math.round(b.hp*3.5*settings.diff*hpMul);dmg=Math.round(b.dmg*1.8*settings.diff*hpMul);xp=Math.round(b.xp*3*hpMul);r*=1.5;base=1.5;mesh.scale.setScalar(1.5);   // #348: apply settings.diff (and linear hpMul) like the trash-mob branch — elites were flat-scaled, so higher difficulty never reached the tougher enemy
     const aura=new THREE.PointLight(0xff5a3a,1.8,14);aura.position.y=1.6;mesh.add(aura);
     const lbl=labelSprite(bossName||("Warden — "+b.name),"monsters");lbl.scale.set(7,1.8,1);lbl.position.y=mesh.userData.headY+1.4;mesh.add(lbl);
   }
