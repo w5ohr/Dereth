@@ -25235,6 +25235,7 @@ function netHandle(m){
     log(`Allegiance — rank <b>${m.rank}</b>${m.monarch?` under Monarch <b>${esc(m.monarch)}</b>`:""} · ${m.followers} follower${m.followers!==1?"s":""}${m.vassals&&m.vassals.length?`<br>Vassals: ${m.vassals.map(v=>`${esc(v.name)}${v.online?"":" (away)"} — passes up ${v.passup}%`).join(" · ")}`:""}${m.motd?`<br>MOTD: <i>${esc(m.motd)}</i>`:""}`,"sys"); return; }
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
+  if(m.t==="coin"){ if(isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance
   if(m.t==="loot")      return onLoot(m);
   if(m.t==="corpse_loot") return onCorpseLoot(m);
   if(m.t==="event_start")  return onEventStart(m);
@@ -25298,7 +25299,9 @@ function onDropGone(msg){
 }
 function onLoot(msg){
   if(msg.type==="gold"){ const amt=+msg.amt; if(!isFinite(amt)||amt<=0) return;   // #33: validate the server amount — a missing/NaN/non-numeric amt must not corrupt player.gold to NaN (economy soft-brick)
-    player.gold+=amt; floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); SFX.gold(); if(typeof updateHUD==="function") updateHUD(); }
+    if(isFinite(msg.coin)) player.gold=msg.coin;   // M3 (#238): adopt the server's authoritative balance when it sends one, else fall back to additive (older server)
+    else player.gold+=amt;
+    floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); SFX.gold(); if(typeof updateHUD==="function") updateHUD(); }
   else if(msg.type==="item"&&msg.item){ lootItem(msg.item); }
 }
 // server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
