@@ -17056,9 +17056,14 @@ function cullWorld(dt){
   const px=player.x,pz=player.z;
   const toggle=(obj,x,z,r2)=>{ if(!obj) return; const inR=((x-px)*(x-px)+(z-pz)*(z-pz))<(r2||VIS_R2);
     if(inR){ if(!obj.parent) scene.add(obj); } else if(obj.parent) scene.remove(obj); };
+  // #233: scenery (rocks/trees/flora) beyond the fog wall is drawn but 100% fog-occluded — a huge
+  // waste of draw calls in dense areas. Cull it to the CURRENT fog distance + a 40u anti-pop margin
+  // instead of the fixed VIS_RADIUS (380). Distant TERRAIN is the ground mesh, not scenery, so AC's
+  // long fogged vistas are untouched. Adaptive: the radius rises again as weather clears.
+  const _fogCullR = scene.fog ? Math.max(150, scene.fog.far + 40) : VIS_RADIUS, _fogCullR2 = _fogCullR*_fogCullR;
   for(const n of npcs) toggle(n.mesh,n.x,n.z);
   for(const s of shops) toggle(s.mesh,s.x,s.z);
-  for(const o of scenery) if(o&&!(o.userData&&o.userData.noCull)) toggle(o,o.position.x,o.position.z,o.userData&&o.userData.cullR2);
+  for(const o of scenery) if(o&&!(o.userData&&o.userData.noCull)) toggle(o,o.position.x,o.position.z,(o.userData&&o.userData.cullR2)||_fogCullR2);
   for(const nd of nodes) toggle(nd.mesh,nd.x,nd.z);
   // overworld monsters are streamed (built/disposed) by streamMonsters, not just toggled
 }
