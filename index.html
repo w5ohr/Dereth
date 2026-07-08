@@ -16390,7 +16390,9 @@ function update(dt){
   // ships bob on the swell every frame; when aboard, WASD + mouse/arrows pilot the ship over water
   if(!inDungeon&&!inNetwork){ updateShips(dt);   // #359: don't reposition/bob (or pilot) overworld ships while in an instance — wasted work, and they're hidden anyway
     if(player.aboardShip){ updateShipPilot(dt); } }
-  else {
+  if(!player.aboardShip){   // #359 REGRESSION FIX: this was the `else` of the !inDungeon&&!inNetwork guard above,
+                            // which froze ALL overworld on-foot movement (movement then ran only inside instances).
+                            // Movement must run whenever you are NOT piloting a ship — overworld and instances alike.
   // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
   // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
   let f=0,s=0;
