@@ -1768,7 +1768,7 @@ function applyGltfToNpc(n,m){   // clone model m onto townsfolk n (also used to 
   clone.scale.setScalar(m.scale);
   const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y;     // feet to 0
   clone.rotation.y=(m.faceOffset!=null?m.faceOffset:Math.PI);                       // per-model front alignment
-  clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
+  clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true; } });   // #232: geometry/materials belong to the gltfPeople cache
   if(n.gltf){ if(n.gltfMixer&&n.gltfMixer.stopAllAction)n.gltfMixer.stopAllAction(); n.mesh.remove(n.gltf); n.gltfMixer=n.gltfIdle=n.gltfWalk=null; }
   else { for(const ch of n.mesh.children) ch.visible=false; }                        // first time: hide the procedural body
   n.mesh.add(clone); n.gltf=clone; n._gw=undefined; n.sex=m.sex||"n";   // record sex (gendered names/voices later)
@@ -6250,25 +6250,26 @@ function textSprite(txt,color){
 
 // ---------- world build ----------
 function buildWorld(){
-  // clear dynamic objects
-  for(const m of monsters) scene.remove(m.mesh);
-  for(const p of pProj) scene.remove(p.mesh);
-  for(const p of eProj) scene.remove(p.mesh);
-  for(const d of drops) scene.remove(d.mesh);
-  for(const ls of lifestones) scene.remove(ls.mesh);
-  for(const pt of portals) scene.remove(pt.mesh);
-  for(const f of floaters) scene.remove(f.sp);
-  for(const n of npcs) scene.remove(n.mesh);
-  for(const sh of shops) scene.remove(sh.mesh);
-  for(const s of scenery) scene.remove(s);
-  for(const rm of roadMeshes) scene.remove(rm);
-  for(const n of nodes) scene.remove(n.mesh);
-  for(const e of dungeonEntrances) scene.remove(e.mesh);
-  for(const o of dungeonObjs) scene.remove(o);
+  // clear dynamic objects — #232: DISPOSE the old world, don't just detach it; everything below is
+  // rebuilt fresh, so a mere scene.remove would leave the whole previous world resident on the GPU
+  for(const m of monsters) disposeObject3D(m.mesh);
+  for(const p of pProj) disposeObject3D(p.mesh);
+  for(const p of eProj) disposeObject3D(p.mesh);
+  for(const d of drops) disposeObject3D(d.mesh);
+  for(const ls of lifestones) disposeObject3D(ls.mesh);
+  for(const pt of portals) disposeObject3D(pt.mesh);
+  for(const f of floaters) disposeObject3D(f.sp);
+  for(const n of npcs) disposeObject3D(n.mesh);
+  for(const sh of shops) disposeObject3D(sh.mesh);
+  for(const s of scenery) disposeObject3D(s);
+  for(const rm of roadMeshes) disposeObject3D(rm);
+  for(const n of nodes) disposeObject3D(n.mesh);
+  for(const e of dungeonEntrances) disposeObject3D(e.mesh);
+  for(const o of dungeonObjs) disposeObject3D(o);
   monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];pkAltars=[];obstacles.length=0;
-  for(const d of dying) scene.remove(d.mesh); dying=[];
-  for(const o of netObjs) scene.remove(o);
-  for(const _s of ships){ if(_s.mesh) scene.remove(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
+  for(const d of dying) disposeObject3D(d.mesh); dying=[];
+  for(const o of netObjs) disposeObject3D(o);
+  for(const _s of ships){ if(_s.mesh) disposeObject3D(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];chessTables=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
@@ -7355,7 +7356,7 @@ function seatRealTownVendors(c,recs,seps){
       nx=rec.fcx+lx*cw2+lz*sw2; nz=rec.fcz-lx*sw2+lz*cw2; }
     const fy=tbFloorAt(recs,nx,nz,rec.gy);   // the room's floor — or a HIGHER overlapping neighbour's, so no floor plane cuts through the vendor
     // a small counter in front of the shopkeeper, facing the door
-    if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
+    if(sh._counter) disposeObject3D(sh._counter);   // #232: reseating builds a fresh counter — free the old one's geometry
     const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
     counter.position.set(nx+rec.dux*0.85,fy+0.5,nz+rec.duz*0.85); counter.rotation.y=Math.atan2(rec.dux,rec.duz);
     counter.castShadow=true; scene.add(counter); sh._counter=counter;
@@ -7373,7 +7374,7 @@ function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
-  for(const s of shops){ if(s._counter){ if(s._counter.parent)s._counter.parent.remove(s._counter); s._counter=null; }
+  for(const s of shops){ if(s._counter){ disposeObject3D(s._counter); s._counter=null; }   // #232: counters are rebuilt fresh on reseat — dropping without disposing ratcheted one BoxGeometry per shop per revisit
     if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<190) s._seated=false; }
   delete _tbBuilt[name];                                 // deregister FIRST so the resettle below ignores this town's floors
   if(typeof npcs!=="undefined") for(const np of npcs){   // floors are gone — back to terrain (or a still-built neighbour's floor)
@@ -8082,7 +8083,7 @@ function kcAddBeast(wx,wz,kind,name,scale,rot){
       beast=THREE.SkeletonUtils.clone(gm.scene); let msc=(b.size*1.5)/(gm.h>0.001?gm.h:1); if(!(msc>0.0001&&msc<1e4))msc=1;
       beast.scale.setScalar(msc*scale);
       const b3=new THREE.Box3().setFromObject(beast); beast.position.y=0.3-b3.min.y;
-      beast.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
+      beast.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true; } });   // #232: geometry/materials belong to the gltfMonsters cache
     } else if(tries++<40){ setTimeout(place,700); return; }   // #8: wait longer (~28s) for the CDN model pack (was 10×700≈7s, shorter than a typical load)
     else { beast=buildCreature(kind); beast.scale.setScalar(scale); beast.position.y=0.3; }   // fallback: the procedural creature so the pen is never empty
     beast.rotation.y=(rot!=null?rot:0); pen.add(beast); placed=true;
@@ -9664,7 +9665,7 @@ function acCreatureMesh(kind){
   const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y; clone.rotation.y=Math.PI;
   const tintHex=gm.tints?gm.tints[irnd(0,gm.tints.length-1)]:gm.tint;                             // AC breed hue (Ivory/Ash/Jade…) when set
   const tintCol=tintHex!=null?new THREE.Color(tintHex):null;
-  clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false;
+  clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true;   // #232: geometry (and the untinted materials) belong to the gltfMonsters cache — dispose helpers skip these nodes
     if(tintCol&&o.material){ o.material=o.material.clone(); if(o.material.color) o.material.color.lerp(tintCol,0.72); } } });
   mesh.add(clone); mesh.userData={headY:b.size*1.5, gm};
   const hbg=new THREE.Group();                                                                    // billboard health bar (update()/boss code deref userData.hb unguarded)
@@ -10246,7 +10247,7 @@ function bossMesh(kind,fallbackKind,scale,tint){
     clone.scale.setScalar(msc);
     const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y; clone.rotation.y=Math.PI;
     const tintCol=tint!=null?new THREE.Color(tint):null;
-    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false;
+    clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true;   // #232
       if(tintCol&&o.material){ o.material=o.material.clone(); if(o.material.color) o.material.color.lerp(tintCol,0.55); } } });
     mesh.add(clone);
     mesh.userData={headY:b.size*1.5,gm};   // unscaled — spawners multiply by their own scale
@@ -15376,7 +15377,7 @@ function executeSpell(id){
   }
   if(s.special==="summon"){
     if(skillTier("summon")===0){ refundCast(); log("You are untrained in <b>Summoning</b> — train it on the character sheet (C).","warn"); spellCd[id]=0; return; }
-    if(pets.length>=2){ const old=pets.shift(); scene.remove(old.mesh); } // cap at 2; replace oldest
+    if(pets.length>=2){ const old=pets.shift(); if(old.gltfMixer&&old.gltfMixer.stopAllAction)old.gltfMixer.stopAllAction(); disposeObject3D(old.mesh); } // cap at 2; replace oldest (#232: free the old rig)
     spawnPet();
     castFlash(0x9b30ff);SFX.quest();log(`You conjure a <b>spectral wisp</b> to fight beside you.`,"heal");
     return;
@@ -15450,12 +15451,12 @@ function spawnPet(){
   const val=skillValue("summon");
   pets.push({mesh:g,x:player.x,z:player.z,t:18+val*0.7,atkCd:0,dmg:8+val*1.2,dungeon:!!inDungeon,bob:Math.random()*6});
 }
-function despawnPets(){ for(const p of pets) scene.remove(p.mesh); pets=[]; }
+function despawnPets(){ for(const p of pets){ if(p.gltfMixer&&p.gltfMixer.stopAllAction)p.gltfMixer.stopAllAction(); disposeObject3D(p.mesh); } pets=[]; }   // #232
 function updatePets(dt){
   if(inNetwork){ if(pets.length)despawnPets(); return; }
   for(let i=pets.length-1;i>=0;i--){
     const p=pets[i]; p.t-=dt; p.bob+=dt*3;
-    if(p.t<=0||!!p.dungeon!==inDungeon){ scene.remove(p.mesh); pets.splice(i,1); continue; }
+    if(p.t<=0||!!p.dungeon!==inDungeon){ if(p.gltfMixer&&p.gltfMixer.stopAllAction)p.gltfMixer.stopAllAction(); disposeObject3D(p.mesh); pets.splice(i,1); continue; }   // #232
     // float toward a point just behind/right of the player
     const tx=player.x-Math.sin(player.yaw)*1.6+Math.cos(player.yaw)*1.4, tz=player.z-Math.cos(player.yaw)*1.6-Math.sin(player.yaw)*1.4;
     p.x+=(tx-p.x)*Math.min(1,dt*3); p.z+=(tz-p.z)*Math.min(1,dt*3);
@@ -16095,7 +16096,7 @@ function recoverCorpse(d){
     if(addToInv(it,false)) taken++;
     else { addDrop(d.x+rnd(-1.2,1.2),d.z+rnd(-1.2,1.2),{type:"item",item:it,corpse:true}); spilled++; }
   }
-  scene.remove(d.mesh); const i=drops.indexOf(d); if(i>=0)drops.splice(i,1);
+  disposeObject3D(d.mesh); const i=drops.indexOf(d); if(i>=0)drops.splice(i,1);   // #232: corpses carry a label sprite — dispose prunes it from LABELS too
   log(`You recover your corpse — <b>${taken}</b> item(s)${d.amt?` and <b>${d.amt.toLocaleString()}</b> pyreals`:""} returned${spilled?`; <b>${spilled}</b> spilled beside it (satchel full)`:""}.`,"loot");
   if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
 }
@@ -17050,13 +17051,21 @@ function updatePeople(dt){
 }
 // region streaming: keep only nearby objects IN the scene graph so the renderer doesn't walk/matrix-update the
 // whole world every frame. Objects beyond VIS are detached (scene.remove) and re-attached when you return.
+// #232: detaching alone leaves the GPU copies resident forever — every region you visit ratchets
+// renderer memory up permanently. Eviction tier: once an object has sat detached for CULL_EVICT_S
+// AND the player is beyond CULL_EVICT_R, releaseObjectGPU frees its geometry/textures; the CPU data
+// stays, so returning simply re-uploads (a rebuild-free fast-revisit cache for the recent neighborhood).
+let CULL_EVICT_S=300, CULL_EVICT_R=800, CULL_EVICT_R2=CULL_EVICT_R*CULL_EVICT_R;   // let: the #232 harness tunes these
 let _cullAcc=0;
 function cullWorld(dt){
   if(inDungeon||inNetwork) return;
   _cullAcc+=dt; if(_cullAcc<0.25) return; _cullAcc=0;
-  const px=player.x,pz=player.z;
-  const toggle=(obj,x,z,r2)=>{ if(!obj) return; const inR=((x-px)*(x-px)+(z-pz)*(z-pz))<(r2||VIS_R2);
-    if(inR){ if(!obj.parent) scene.add(obj); } else if(obj.parent) scene.remove(obj); };
+  const px=player.x,pz=player.z, nowS=performance.now()*0.001;
+  const toggle=(obj,x,z,r2)=>{ if(!obj) return; const d2=(x-px)*(x-px)+(z-pz)*(z-pz), inR=d2<(r2||VIS_R2);
+    if(inR){ if(!obj.parent){ scene.add(obj); obj.userData._evT=0; obj.userData._evD=false; } }
+    else if(obj.parent){ scene.remove(obj); obj.userData._evT=nowS; obj.userData._evD=false; }
+    else if(!obj.userData._evD && obj.userData._evT && (nowS-obj.userData._evT)>CULL_EVICT_S && d2>CULL_EVICT_R2){
+      releaseObjectGPU(obj); obj.userData._evD=true; } };
   // #233: scenery (rocks/trees/flora) beyond the fog wall is drawn but 100% fog-occluded — a huge
   // waste of draw calls in dense areas. Cull it to the CURRENT fog distance + a 40u anti-pop margin
   // instead of the fixed VIS_RADIUS (380). Distant TERRAIN is the ground mesh, not scenery, so AC's
@@ -17073,8 +17082,18 @@ function cullWorld(dt){
 const MOB_TARGET=32, MOB_SPAWN_MIN=70, MOB_SPAWN_MAX=150, MOB_DESPAWN=215;
 let _mobStreamAcc=0;
 function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
-  o.traverse(c=>{ if(c.geometry)c.geometry.dispose(); const m=c.material; if(m){ (Array.isArray(m)?m:[m]).forEach(x=>{ if(x&&x.map)x.map.dispose(); if(x&&x.dispose)x.dispose(); }); }
-    if(c.isSprite){ const li=LABELS.indexOf(c); if(li>=0) LABELS.splice(li,1); } }); }   // #22: keep the label registry from holding disposed nametags
+  o.traverse(c=>{ if(c.isSprite){ const li=LABELS.indexOf(c); if(li>=0) LABELS.splice(li,1); }   // #22: keep the label registry from holding disposed nametags
+    if(c.userData&&c.userData.acShared) return;   // #232: gltf-clone subtrees share geometry/materials with the model cache — never dispose those
+    if(c.geometry)c.geometry.dispose(); const m=c.material; if(m){ (Array.isArray(m)?m:[m]).forEach(x=>{ if(x&&x.map)x.map.dispose(); if(x&&x.dispose)x.dispose(); }); } }); }
+// #232: free an object's GPU copies (geometry buffers, textures, programs) WITHOUT retiring the
+// object — it stays in its world array and keeps its CPU-side attribute/canvas data, so three.js
+// re-uploads everything automatically the next time the object is attached and rendered. Used by
+// cullWorld's eviction tier on things that will come back when the player returns; unlike
+// disposeObject3D it neither detaches nor touches the LABELS registry.
+function releaseObjectGPU(o){ if(!o) return;
+  o.traverse(c=>{ if(c.userData&&c.userData.acShared) return;
+    if(c.geometry)c.geometry.dispose(); const m=c.material;
+    if(m)(Array.isArray(m)?m:[m]).forEach(x=>{ if(!x)return; if(x.map)x.map.dispose(); if(x.normalMap)x.normalMap.dispose(); if(x.dispose)x.dispose(); }); }); }
 function streamMonsters(dt){
   if(inDungeon||inNetwork||isOnline) return;
   _mobStreamAcc+=dt; if(_mobStreamAcc<0.4) return; _mobStreamAcc=0;
@@ -17082,9 +17101,8 @@ function streamMonsters(dt){
   // dispose creatures left far behind (frees their meshes/skeletons entirely — real unload)
   for(let i=monsters.length-1;i>=0;i--){ const m=monsters[i]; if(m.isDungeon||m.shared) continue;
     if((m.x-px)*(m.x-px)+(m.z-pz)*(m.z-pz) > MOB_DESPAWN*MOB_DESPAWN){
-      if(m.gltf){ if(m.gltfMixer&&m.gltfMixer.stopAllAction)m.gltfMixer.stopAllAction();   // skinned clone shares geometry with the cache — don't dispose it, just detach
-        if(m.mesh&&m.mesh.parent)m.mesh.parent.remove(m.mesh); }
-      else disposeObject3D(m.mesh);
+      if(m.gltfMixer&&m.gltfMixer.stopAllAction)m.gltfMixer.stopAllAction();
+      disposeObject3D(m.mesh);   // #232: acShared skip keeps the cache's skinned geometry safe, while the per-spawn extras (health bar, nametag) are freed and pruned from LABELS
       monsters.splice(i,1); } }
   // refill up to the target with region-appropriate kinds, spawned just inside view around the player
   let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
@@ -21104,7 +21122,7 @@ function findWater(cx,cz,minDepth,maxR){   // nearest cell of navigable water, s
 
 // ---- ownership / spawn ----
 function spawnOwnedShip(origin){
-  for(const s of ships){ if(s.mesh) scene.remove(s.mesh); } ships=[];
+  for(const s of ships){ if(s.mesh) disposeObject3D(s.mesh); } ships=[];   // #232: the fleet is rebuilt fresh below
   if(!player.ship) return;
   const def=shipDef(player.ship.type); if(!def) return;
   let x=player.ship.x, z=player.ship.z;
@@ -21456,7 +21474,7 @@ function caravanStartLeg(){
 }
 function buildCaravan(){
   const stops=caravanStops(); if(stops.length<2) return;
-  if(caravan&&caravan.mesh) scene.remove(caravan.mesh);
+  if(caravan&&caravan.mesh) disposeObject3D(caravan.mesh);   // #232: a fresh wagon is built just below
   if(caravan&&caravan.shop){ const i=shops.indexOf(caravan.shop); if(i>=0) shops.splice(i,1); }
   const mesh=buildOxWagon(); scene.add(mesh);
   const start=stops[1];   // begin at Holtburg
@@ -22083,7 +22101,7 @@ function updatePlugins(dt){
       for(const d of drops){ if(d.type!=="item"||(d.shared&&!isOnline)) continue;
         const dd=Math.hypot(d.x-player.x,d.z-player.z); if(dd<bd){bd=dd;best=d;} }
       if(best){ if(best.shared){ netSend({t:"pickup",id:best.id}); }
-        else { lootItem(best.item); scene.remove(best.mesh); drops.splice(drops.indexOf(best),1); }
+        else { lootItem(best.item); disposeObject3D(best.mesh); drops.splice(drops.indexOf(best),1); }   // #232
         PLUG.vtMsg="Looting…"; PLUG.vtMsgT=2; }
     }
     if(settings.vtankBuff&&player.alive&&!paused&&!player.combatT){   // "Rebuff when idle"
@@ -24415,9 +24433,13 @@ function exitDungeon(toEntrance){
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
   if(curDungeon&&curDungeon.academy&&typeof _clearAcademyNpcs==="function") _clearAcademyNpcs();
-  for(const o of dungeonObjs) scene.remove(o);
+  // #232: dispose, don't just detach — the per-dungeon merged meshes + their decoded texture sets are
+  // among the game's largest allocations and re-entry rebuilds them from the cached JSON pack anyway.
+  for(const o of dungeonObjs) disposeObject3D(o);
   dungeonObjs=[];
-  for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){scene.remove(monsters[i].mesh);monsters.splice(i,1);}
+  for(let i=monsters.length-1;i>=0;i--) if(monsters[i].isDungeon){ const m=monsters[i];
+    if(m.gltfMixer&&m.gltfMixer.stopAllAction)m.gltfMixer.stopAllAction();
+    disposeObject3D(m.mesh); monsters.splice(i,1);}
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
   dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;curDungeon=null;
@@ -24593,12 +24615,12 @@ function enterNetwork(ex,ez){
   toast("THE TOWN NETWORK");log("You enter the <b>Town Network</b> — portals to every town ring the hall (E to travel). Step to the <b>Facility Hub</b> portal for level-gated delves.","sys");
 }
 function switchHub(mode){
-  for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];
+  for(const o of netObjs) disposeObject3D(o);netObjs=[];netPortals=[];   // #232
   netMode=mode;buildNetwork();markSceneSRGB();
   arriveAt(DCEN.x,DCEN.z-2);player.invuln=1;teleportFX(player.x,player.z);
 }
 function netToDungeon(def){
-  for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];inNetwork=false;
+  for(const o of netObjs) disposeObject3D(o);netObjs=[];netPortals=[];inNetwork=false;   // #232
   enterDungeon(def,netReturn.x,netReturn.z);
 }
 function activateNetPortal(np){
@@ -24614,7 +24636,7 @@ function activateNetPortal(np){
   }
 }
 function exitNetwork(dest){
-  for(const o of netObjs) scene.remove(o);netObjs=[];netPortals=[];
+  for(const o of netObjs) disposeObject3D(o);netObjs=[];netPortals=[];   // #232: free the hub's geometry/textures, not just detach — switchHub rebuilds it fresh every entry
   clearDrops();clearProjectiles();
   document.getElementById('dvig').style.opacity="0";
   inNetwork=false;hideOverworld(true);
@@ -25346,7 +25368,8 @@ function spawnSharedMob(sm){
 function removeSharedMob(id){
   const m=NET.mobs[id]; if(!m) return;
   const i=monsters.indexOf(m); if(i>=0) monsters.splice(i,1);
-  scene.remove(m.mesh); delete NET.mobs[id];
+  if(m.gltfMixer&&m.gltfMixer.stopAllAction)m.gltfMixer.stopAllAction();
+  disposeObject3D(m.mesh); delete NET.mobs[id];   // #232: acShared skip protects the cache rig; frees the per-spawn extras
 }
 function reconcileMobs(serverMobs){
   if(!isOnline) return;
