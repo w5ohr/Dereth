@@ -11290,8 +11290,14 @@ function crowdNear(radius){
 function warnPortalStorm(){ log("The air crackles and warps — a <b>portal storm</b> is building. Move apart or be swept away!","warn"); toast("PORTAL STORM"); if(SFX.growl)SFX.growl(); }
 function triggerPortalStorm(){   // scatter the player to a town's outskirts (exposed for testing)
   if(inDungeon||inNetwork||!player.alive) return false;
-  const ang=rnd(0,6.28), dist=rnd(44,72);
-  const nx=clamp(player.x+Math.cos(ang)*dist,-HALF+6,HALF-6), nz=clamp(player.z+Math.sin(ang)*dist,-HALF+6,HALF-6);
+  // #328: vet the scatter target for walkable land — the old code arriveAt'd a blind ring point, so a
+  // storm on a pier/coast could drop you into the deep-water "wall" where collide() blocks every move
+  // and you drown with no escape. Try several angles/distances; keep the highest-ground candidate.
+  let nx=player.x, nz=player.z, bestH=-Infinity;
+  for(let i=0;i<24;i++){ const ang=rnd(0,6.28), dist=rnd(44,72);
+    const cx=clamp(player.x+Math.cos(ang)*dist,-HALF+6,HALF-6), cz=clamp(player.z+Math.sin(ang)*dist,-HALF+6,HALF-6);
+    const h=terrainH(cx,cz); if(h>bestH){ bestH=h; nx=cx; nz=cz; if(h>=1.5) break; } }
+  if(bestH<0.5){ return false; }   // nowhere dry within reach — don't scatter into the sea
   teleportFX(player.x,player.z); arriveAt(nx,nz); player.invuln=1.5; player.combatT=0;
   stormPhase=0; stormBuild=0; stormCd=110; teleportFX(player.x,player.z);
   log("A <b>portal storm</b> sweeps you away to the outskirts.","sys"); if(SFX.quest)SFX.quest();
