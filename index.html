@@ -9353,7 +9353,7 @@ function hsExitInstance(){
 // decorations inside the active instance (hooks/chests/unit crystals), owner-aware
 function hsInstDecorate(){
   if(!hsInst) return;
-  for(const m of hsInst.decor||[]){ scene.remove(m); const i=dungeonObjs.indexOf(m); if(i>=0)dungeonObjs.splice(i,1); }
+  for(const m of hsInst.decor||[]){ const i=dungeonObjs.indexOf(m); if(i>=0)dungeonObjs.splice(i,1); if(typeof disposeObject3D==="function") disposeObject3D(m); else scene.remove(m); }   // #360: dispose old decor (freshly built each re-decorate) instead of only detaching — repeated hook toggling was leaking geometry/materials
   hsInst.decor=[]; hsInst.hooks=[]; hsInst.chests=[]; hsInst.crystals=[];
   const hs=player.homestead;
   const addM=m=>{ scene.add(m); dungeonObjs.push(m); hsInst.decor.push(m); };
@@ -9484,7 +9484,10 @@ function hsRentTick(){
 }
 function hsEvict(msg){
   const hs=player.homestead; if(!hs) return;
-  for(const k in (hs.hooks||{})) if(hs.hooks[k]) player.house.storage.push(hs.hooks[k]);
+  if(!player.house) player.house={tier:0,storage:[]};
+  for(const k in (hs.hooks||{})) if(hs.hooks[k]){ const it=hs.hooks[k];   // #360: respect the storage cap on eviction — fill storage up to cap, then overflow to the satchel, then (only if both are full) into storage rather than lose the item
+    if(player.house.storage.length<houseCap()) player.house.storage.push(it);
+    else if(!addToInv(it)) player.house.storage.push(it); }
   player.homestead=null;
   if(hs.type!=="apartment") player.hsRebuyUntil=Date.now()+HS_RENT_MS;   // 30-day rebuy bar (apartments exempt)
   log(`${msg} Your hook items were moved to estate storage — nothing is lost.`,"warn");
@@ -20740,8 +20743,9 @@ let HOUSE_LOC=null;   // world position of the player's estate (a manor near Hol
 function houseTier(){ return (player.house&&player.house.tier)|0; }
 function houseCap(){
   // an AC dwelling's storage = its real chests × 102 items each (retail chest capacity)
-  if(player.homestead&&HOUSING_TYPES[player.homestead.type]) return HOUSING_TYPES[player.homestead.type].chests*102;
-  const t=houseTier(); return t>0?HOUSE_TIERS[t-1].storage:0;
+  const t=houseTier(), legacy=t>0?HOUSE_TIERS[t-1].storage:0;
+  const home=(player.homestead&&HOUSING_TYPES[player.homestead.type])?HOUSING_TYPES[player.homestead.type].chests*102:0;
+  return Math.max(legacy,home);   // #360: legacy estate & homestead share one storage array — return the MAX cap so buying a small dwelling doesn't shrink the cap below already-stored items (which stranded them as un-depositable-against)
 }
 function houseName(){
   if(player.homestead&&HOUSING_TYPES[player.homestead.type]) return HOUSING_TYPES[player.homestead.type].n;
