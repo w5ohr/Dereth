@@ -3361,7 +3361,7 @@ function updateLightPool(){
   for(let i=VLIGHTS.length-1;i>=0;i--){ const l=VLIGHTS[i];
     let root=l, vis=l.visible, o=l.parent;
     while(o){ if(o.visible===false) vis=false; root=o; o=o.parent; }
-    if(root!==scene){ if(tNow-l._vT>5000) VLIGHTS.splice(i,1); continue; }  // detached (muzzle flashes etc.) — prune once stale
+    if(root!==scene){ if(l._transient) VLIGHTS.splice(i,1); continue; }  // #325/#343: a detached TRANSIENT flash is dead (no other ref) → prune immediately; a detached PERSISTENT scenery light is only culled and WILL re-attach → keep it in VLIGHTS (the old `_vT>5000` prune used CREATION time, so it permanently dropped culled scenery lamps and never re-registered them → plazas went dark for the session)
     if(!vis||l.intensity<=0.01) continue;
     l.getWorldPosition(_lpV);
     const d=Math.hypot(_lpV.x-px,_lpV.y-py,_lpV.z-pz);
@@ -8235,7 +8235,7 @@ function kcAmbience(dt){
     r.y+=r.vy*dt; r.vy-=dt*7.2; r.fuse-=dt; r.sp.position.y=r.y; r.light.position.y=r.y; r.light.intensity*=Math.pow(0.985,dt*60);
     if(r.fuse<=0){ const n=r.huge?52:24, cols=r.huge?[r.col,KC_FW_COLS[irnd(0,KC_FW_COLS.length-1)],0xffffff]:[r.col];
       for(const c of cols) kcFireBurst(r.x,r.y,r.z,c,n,r.huge?11:7,r.huge);
-      const fl=new THREE.PointLight(r.col,r.huge?7:3,r.huge?46:24); fl.position.set(r.x,r.y,r.z); scene.add(fl); kcFlashes.push({l:fl,t:0.5});
+      const fl=new THREE.PointLight(r.col,r.huge?7:3,r.huge?46:24); fl._transient=1; fl.position.set(r.x,r.y,r.z); scene.add(fl); kcFlashes.push({l:fl,t:0.5});
       if(r.huge) kcBoom();
       scene.remove(r.sp); r.sp.material.dispose(); scene.remove(r.light); kcRockets.splice(i,1); } }   // #22: material only — CIRC map is shared
   for(let i=kcFlashes.length-1;i>=0;i--){ const f=kcFlashes[i]; f.t-=dt; f.l.intensity=Math.max(0,f.l.intensity*Math.pow(0.9,dt*60)); if(f.t<=0){ scene.remove(f.l); kcFlashes.splice(i,1); } }
@@ -9941,7 +9941,7 @@ function teleportFX(x,z){
     const a=rnd(0,6.28),rr=rnd(0.2,2.4);sp.position.set(x+Math.cos(a)*rr,gy+rnd(0,0.5),z+Math.sin(a)*rr);scene.add(sp);
     bursts.push({sp,vx:Math.cos(a)*1.5,vy:rnd(5,11),vz:Math.sin(a)*1.5,t:rnd(.5,.9)});
   }
-  const fl=new THREE.PointLight(col,3,16);fl.position.set(x,gy+2,z);scene.add(fl);setTimeout(()=>scene.remove(fl),220);
+  const fl=new THREE.PointLight(col,3,16);fl._transient=1;fl.position.set(x,gy+2,z);scene.add(fl);setTimeout(()=>scene.remove(fl),220);   // #343: transient flash — prune from VLIGHTS on removal
   SFX.whoosh();
 }
 // ── PORTAL SPACE (AC): stepping through a portal wraps you in the swirling blue tube that
@@ -15409,7 +15409,7 @@ function executeSpell(id){
     const cx=clamp(player.x+dir.x*12,-HALF+2,HALF-2),cz=clamp(player.z+dir.z*12,-HALF+2,HALF-2);
     const col=s.color||0xff7a2a, el=s.element||"fire";
     burst(cx,0.6,cz,col,42);
-    const fl=new THREE.PointLight(col,3.5,22);fl.position.set(cx,2.5,cz);scene.add(fl);
+    const fl=new THREE.PointLight(col,3.5,22);fl._transient=1;fl.position.set(cx,2.5,cz);scene.add(fl);
     setTimeout(()=>scene.remove(fl),350);
     const dmg=s.dmg()*skillEff("war",0.02)*castEcon(id);
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
@@ -16554,7 +16554,7 @@ function update(dt){
           if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
         }
         burst(p.x,p.y,p.z,p.color,8);
-        const ifl=new THREE.PointLight(p.color,2.2,7);ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
+        const ifl=new THREE.PointLight(p.color,2.2,7);ifl._transient=1;ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
         gone=true;break;
       }
     }
@@ -16562,7 +16562,7 @@ function update(dt){
     if(gone && p.splash && !p._done){ p._done=true;   // Arc detonation: splash every foe in radius
       const ix=p.x,iz=p.z,iy=Math.max(0.5,Math.min(p.y,2));
       burst(ix,iy,iz,p.color,26);
-      const fl=new THREE.PointLight(p.color,3,16);fl.position.set(ix,iy,iz);scene.add(fl);setTimeout(()=>scene.remove(fl),200);
+      const fl=new THREE.PointLight(p.color,3,16);fl._transient=1;fl.position.set(ix,iy,iz);scene.add(fl);setTimeout(()=>scene.remove(fl),200);
       for(const m of monsters){ if(!!m.isDungeon!==inDungeon) continue;
         if(Math.hypot(ix-m.x,iz-m.z)<p.splash){
           const em=elemMult(m.kind,p.element);
@@ -25301,7 +25301,7 @@ function onSpellFx(m){
     walls.push({x,z,r,dps:0,element:null,color:col,burn:false,slow:0,t:6,acc:0,isDungeon:!!inDungeon,mesh:g,disc,cosmetic:true});
   } else { // aoe / ring / blast burst
     if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
-    const fl=new THREE.PointLight(col,3,18); fl.position.set(x,gy+1.5,z); scene.add(fl); setTimeout(()=>scene.remove(fl),300);
+    const fl=new THREE.PointLight(col,3,18); fl._transient=1; fl.position.set(x,gy+1.5,z); scene.add(fl); setTimeout(()=>scene.remove(fl),300);
   }
 }
 function netHandle(m){
