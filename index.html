@@ -6271,6 +6271,7 @@ function buildWorld(){
   for(const d of dying) disposeObject3D(d.mesh); dying=[];
   for(const o of netObjs) disposeObject3D(o);
   for(const _s of ships){ if(_s.mesh) disposeObject3D(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
+  if(typeof despawnPets==="function") despawnPets();   // #361: pets[] was neither disposed nor cleared on a world rebuild (every other entity array is) — a latent leak the moment a mid-session rebuild is added
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];chessTables=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
@@ -15482,7 +15483,8 @@ function updatePets(dt){
     p.atkCd-=dt;
     if(p.atkCd<=0){
       let best=null,bd=14;
-      for(const m of monsters){ if(!!m.isDungeon!==inDungeon)continue; const d=Math.hypot(m.x-p.x,m.z-p.z); if(d<bd){bd=d;best=m;} }
+      for(const m of monsters){ if(!!m.isDungeon!==inDungeon)continue; if(inDungeon&&typeof dungeonLoS==="function"&&!dungeonLoS(p.x,p.z,m.x,m.z))continue;   // #361: the familiar needs line of sight — no firing nether bolts through dungeon walls
+        const d=Math.hypot(m.x-p.x,m.z-p.z); if(d<bd){bd=d;best=m;} }
       if(best){
         p.atkCd=1.1;
         const b=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,6),new THREE.MeshBasicMaterial({color:0xc59bff}));
@@ -21194,7 +21196,7 @@ function disembarkShip(){
     if(bestH>=0.2) land={x:bx,z:bz}; }
   if(!land){ log("The water is too deep here — sail closer to shore to disembark.","warn"); if(SFX.err)SFX.err(); return; }
   player.aboardShip=null;
-  player.ship.x=sh.x; player.ship.z=sh.z; player.ship.yaw=sh.yaw;   // the ship stays where it now floats
+  if(player.ship){ player.ship.x=sh.x; player.ship.z=sh.z; player.ship.yaw=sh.yaw; }   // #361: null-guard — if aboardShip were ever set with player.ship null, this threw mid-disembark and stranded a floating non-piloting player
   arriveAt(land.x,land.z); player.invuln=1.5;
   log(`You step ashore from the <b>${sh.def.name}</b>.`,"sys"); if(SFX.portal)SFX.portal(); saveGame();
 }
