@@ -1295,6 +1295,7 @@ for(const s of SPELLBOOK_LIST){
   if(s.buff==="attr"||s.buff==="skill"){ s.mag=buffMagFor(s.lvl); s.dur=buffDurFor(s.lvl); }   // flat stat/skill → +10/level
   else if(s.buff==="item"||s.buff==="bane"){ s.dur=itemEnchantDur(s.lvl); }                     // weapon/armour enchantments & elemental banes → real AC timers at EVERY level (banes used to fall through the loop → 4–5 min at VII/VIII)
   else if(s.buff==="prot"){ s.dur=buffDurFor(s.lvl); }                                          // Life protection keeps the unified session timer
+  else if(s.buff==="might"||s.buff==="swift"){ s.dur=buffDurFor(s.lvl); }                        // #350: Blade Lure / Quickening had no dur field → executeSpell fell back to a hardcoded 25s regardless of level; scale it on the standard buff timer like the other stat buffs
   // debuffs mirror buffs the opposite way — 10 per level (as %), same level-based timer:
   else if(s.debuff){ s.dmag=Math.round((1-0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }   // Weakness: enemy deals -10%/lvl · Slowness: -10%/lvl speed
   else if(s.vuln){ s.vuln=Math.round((1+0.1*s.lvl)*100)/100; s.dur=buffDurFor(s.lvl); }     // Vulnerability: foe takes +10%/lvl damage
