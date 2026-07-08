@@ -25656,7 +25656,7 @@ function renderTradeWin(){
     <div id="trInv" style="display:grid;grid-template-columns:repeat(auto-fill,36px);gap:3px;max-height:120px;overflow:auto">${offerable.map(o=>tradeSlotHTML(o.it,`data-inv="${o.i}"`)).join("")}</div>
     <div style="margin-top:10px;text-align:right"><button id="trOk" class="tbtn" ${TRADE.youOk?"disabled":""} style="background:#1e3a24;border-color:#3a6a44;color:#9be08a">Accept Trade</button></div>`;
   w.querySelector('#trCancel').onclick=()=>{ netSend({t:"trade",act:"cancel"}); closeTradeWin(); };
-  w.querySelector('#trOk').onclick=()=>{ netSend({t:"trade",act:"ok"}); };
+  w.querySelector('#trOk').onclick=(e)=>{ if(e&&e.currentTarget)e.currentTarget.disabled=true; netSend({t:"trade",act:"ok"}); };   // #322: disable on click until the next sync re-renders — no duplicate 'ok' spam before the round-trip
   w.querySelectorAll('#trInv [data-inv]').forEach(b=>b.onclick=()=>{ const idx=+b.dataset.inv, it=player.inv[idx]; if(!it)return;
     player.inv.splice(idx,1); TRADE.mine.push(it); netSend({t:"trade",act:"add",item:it}); renderTradeWin(); });   // #295: escrow the offered item OUT of the satchel so it can't be equipped/used/sold while the offer is pending (the dupe vector)
   w.querySelectorAll('#trMine [data-i]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i, it=TRADE.mine[i]; if(!it)return;

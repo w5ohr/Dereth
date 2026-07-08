@@ -1566,12 +1566,16 @@ async def handle_trade(cl, msg):
                 if okA and ca and ca.econ_ready: ca.inv = ca.inv + remA
                 if okB and cb and cb.econ_ready: cb.inv = cb.inv + remB
                 return await trade_cancel(cl.username, "Trade aborted — an offered item could not be verified against your inventory.")
-            # move pyreals through the authoritative balances. Re-clamp each offer to the offerer's
-            # CURRENT coin (it may have changed since the offer) so nobody goes negative.
+            # move pyreals through the authoritative balances.
             coin_a = int(tr.get("coin", {}).get(tr["a"], 0))
             coin_b = int(tr.get("coin", {}).get(tr["b"], 0))
-            if ca and ca.econ_ready: coin_a = max(0, min(coin_a, int(ca.coin)))
-            if cb and cb.econ_ready: coin_b = max(0, min(coin_b, int(cb.coin)))
+            # #322: if an offerer can no longer cover their accepted coin (spent it since accepting),
+            # ABORT rather than silently deliver LESS than both sides accepted. Escrowed items were
+            # already removed above, so restore them on the abort path (trade_cancel re-adds remA/remB).
+            if (ca and ca.econ_ready and coin_a > int(ca.coin)) or (cb and cb.econ_ready and coin_b > int(cb.coin)):
+                if ca and ca.econ_ready: ca.inv = ca.inv + remA
+                if cb and cb.econ_ready: cb.inv = cb.inv + remB
+                return await trade_cancel(cl.username, "Trade aborted — a coin offer could no longer be covered. Re-confirm the amounts.")
             if ca and ca.econ_ready: ca.coin = max(0, min(2_000_000_000, ca.coin - coin_a + coin_b))
             if cb and cb.econ_ready: cb.coin = max(0, min(2_000_000_000, cb.coin - coin_b + coin_a))
             # deposit received items into each authoritative inventory (A gets B's, B gets A's)
