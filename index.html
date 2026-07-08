@@ -5848,14 +5848,14 @@ function monsterSpecial(m,b,d,dx,dz,dt){
     m.chargeT-=dt; const a=Math.atan2(dx,dz); m.ang=a;
     m.x+=Math.sin(a)*b.spd*3.4*dt; m.z+=Math.cos(a)*b.spd*3.4*dt;
     if(Math.random()<0.6) burst(m.x,1.1,m.z,0xffcf7a,1);
-    if(d<m.r+player.r+0.9){ playerHurt(m.dmg*2.3*(m.enraged?1.3:1),m.x,m.z,"melee","pierce");
+    if(d<m.r+player.r+0.9){ playerHurt(m.dmg*2.3*(m.enraged?1.3:1)*(m.weakUntil>now()?m.weakV:1),m.x,m.z,"melee","pierce");   // #301: Weakness reduces this special too, not just the basic swing
       floater(m.x,(m.headY||1.6)+2,m.z,"GORE!","#ff9a3a"); if(SFX.growl)SFX.growl(); shake(0.22); m.chargeT=0; m.spCd=6; }
     else if(m.chargeT<=0) m.spCd=4;
     return true; }
   if(m.spinT>0){   // spin in progress → whirl, striking anything close (once)
     m.spinT-=dt; m.ang+=dt*16;
     if(Math.random()<0.5) burst(m.x,0.8,m.z,0xcdbf9a,1);
-    if(d<m.r+player.r+1.7 && !m._spinHit){ playerHurt(m.dmg*1.7,m.x,m.z,"melee","bludgeon"); floater(m.x,(m.headY||1.6)+2,m.z,"SPIN!","#ffd27a"); m._spinHit=1; }
+    if(d<m.r+player.r+1.7 && !m._spinHit){ playerHurt(m.dmg*1.7*(m.weakUntil>now()?m.weakV:1),m.x,m.z,"melee","bludgeon"); floater(m.x,(m.headY||1.6)+2,m.z,"SPIN!","#ffd27a"); m._spinHit=1; }   // #301: Weakness applies
     if(m.spinT<=0){ m.spCd=5; m._spinHit=0; }
     return true; }
   if(m.spCd>0) return false;
@@ -5865,11 +5865,11 @@ function monsterSpecial(m,b,d,dx,dz,dt){
     const dirx=dx/d,dirz=dz/d,oy=1.5, spd=Math.min(40,16+d);
     const mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(0.44,0),new THREE.MeshStandardMaterial({color:0x8a8276,roughness:1,flatShading:true}));
     mesh.position.set(m.x,oy,m.z); scene.add(mesh);
-    eProj.push({mesh,x:m.x,y:oy,z:m.z,vx:dirx*spd,vy:0,vz:dirz*spd,dmg:Math.round(m.dmg*1.6*(m.enraged?1.3:1)),r:0.5,life:3,type:"missile",element:null});
+    eProj.push({mesh,x:m.x,y:oy,z:m.z,vx:dirx*spd,vy:0,vz:dirz*spd,dmg:Math.round(m.dmg*1.6*(m.enraged?1.3:1)*(m.weakUntil>now()?m.weakV:1)),r:0.5,life:3,type:"missile",element:null});   // #301: Weakness applies to the thrown boulder
     m.spCd=5; floater(m.x,(m.headY||1.6)+2.2,m.z,"hurls a boulder!","#cdbfa0"); if(SFX.growl)SFX.growl(); return false; }
   if(sp==="acid" && d<7){   // short-range acid spray cone + a clinging slow
     const ax=dx/d,az=dz/d, fx=Math.sin(m.ang),fz=Math.cos(m.ang);
-    if(fx*ax+fz*az>0.35){ playerHurt(m.dmg*1.25,m.x,m.z,"missile","acid");
+    if(fx*ax+fz*az>0.35){ playerHurt(m.dmg*1.25*(m.weakUntil>now()?m.weakV:1),m.x,m.z,"missile","acid");   // #301: Weakness applies to the acid spray
       if(!(player.dispelImmune>0)){ player.debuffs=player.debuffs||{}; player.debuffs.slow={v:0.5,t:2.5}; floater(player.x,EYE+0.6,player.z,"Slowed!","#9af06a"); }
       for(let i=0;i<12;i++) burst(m.x+ax*(1+Math.random()*2),0.9,m.z+az*(1+Math.random()*2),0x9af06a,1);
       floater(m.x,(m.headY||1.6)+2,m.z,"acid spray!","#9af06a"); m.spCd=4.5; }
@@ -16626,7 +16626,7 @@ function update(dt){
             // casters sometimes weave a curse into the bolt: Shadow Casters Imperil (you take more), Virindi Slow you
             let curse=null;
             if(atkType==="magic"&&Math.random()<0.5) curse=(m.kind==="virindi")?{type:"slow",v:0.4,dur:4}:{type:"vuln",v:1.3,dur:5};
-            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)),r:0.28,life:2.5,type:atkType,element:atkEl,curse});
+            eProj.push({mesh,x:ox,y:oy,z:oz,vx:dirx*34,vy:0,vz:dirz*34,dmg:Math.round(m.dmg*(m.enraged?1.4:1)*(m.weakUntil>now()?m.weakV:1)),r:0.28,life:2.5,type:atkType,element:atkEl,curse});   // #301: Weakness applies to caster bolts
             m.atkCd=1.6;m.charging=0;
           }
         } else if(m.atkCd<=0&&d<b.range){
