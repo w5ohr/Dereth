@@ -3354,11 +3354,11 @@ function initLightPool(){
   for(let i=0;i<LPOOL_N;i++){ const l=new THREE.PointLight(0xffffff,0,1,2); scene.add(l); LPOOL.push(l); }
   _poolBuilding=false;
 }
-const _lpV=new THREE.Vector3();
+const _lpV=new THREE.Vector3(); const _lpCand=[]; let _lpLidSeq=1;   // #342: reused light-pool candidate array + stable-id counter
 function updateLightPool(){
   if(!LPOOL) return;
   const px=player.x, py=(player.y||0)+1.2, pz=player.z, tNow=performance.now();
-  const cand=[];
+  const cand=_lpCand; cand.length=0;   // #342: reuse the candidate array instead of allocating one every frame
   for(let i=VLIGHTS.length-1;i>=0;i--){ const l=VLIGHTS[i];
     let root=l, vis=l.visible, o=l.parent;
     while(o){ if(o.visible===false) vis=false; root=o; o=o.parent; }
@@ -3367,15 +3367,17 @@ function updateLightPool(){
     l.getWorldPosition(_lpV);
     const d=Math.hypot(_lpV.x-px,_lpV.y-py,_lpV.z-pz);
     if(d>Math.max(l.distance||20,40)+170) continue;               // beyond reach + fog — can't matter
-    cand.push({l,score:d-Math.min(l.intensity,3)*6,x:_lpV.x,y:_lpV.y,z:_lpV.z});
+    if(l._lid==null) l._lid=_lpLidSeq++;                           // #342: stable id for a deterministic sort tiebreak
+    cand.push({l,score:d-Math.min(l.intensity,3)*6-(l._wasActive?5:0),x:_lpV.x,y:_lpV.y,z:_lpV.z});   // #342: hysteresis — a currently-lit light gets a small bonus so it isn't evicted by a marginally-closer newcomer (kills the frame-to-frame pop in dense-light plazas)
   }
-  cand.sort((a,b)=>a.score-b.score);
+  cand.sort((a,b)=> (a.score-b.score) || (a.l._lid-b.l._lid));     // #342: stable tiebreak so equal-score lights don't swap slots each frame
   for(let i=0;i<LPOOL_N;i++){ const p=LPOOL[i];
     if(i<cand.length){ const c=cand[i];
       p.position.set(c.x,c.y,c.z); p.color.copy(c.l.color);
-      p.intensity=c.l.intensity; p.distance=c.l.distance||20; p.decay=c.l.decay; }
+      p.intensity=c.l.intensity; p.distance=c.l.distance||20; p.decay=c.l.decay; c.l._wasActive=true; }
     else if(p.intensity!==0) p.intensity=0;
   }
+  for(let i=LPOOL_N;i<cand.length;i++) cand[i].l._wasActive=false;  // #342: clear the hysteresis bonus for lights that didn't make the cut
 }
 function initThree(){
   renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
