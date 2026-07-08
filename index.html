@@ -25230,7 +25230,7 @@ function netHandle(m){
       for(const it of TRADE.mine){ const i=player.inv.indexOf(it); if(i>=0)player.inv.splice(i,1); }
       for(const it of (m.give||[])) player.inv.push(it);
       const paid=TRADE.mineCoin|0, got=m.coin|0;
-      if(isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance
+      if(typeof m.authCoin==="number"&&isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance (#315: isFinite(null)===true — a null authCoin must fall through to the additive branch, not zero gold)
       else { if(paid) player.gold=Math.max(0,player.gold-paid); if(got) player.gold+=got; }
       log(`<b>Trade complete</b> — ${TRADE.mine.length} item${TRADE.mine.length!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${(m.give||[]).length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
       closeTradeWin(); saveGame(); }
@@ -25260,8 +25260,8 @@ function netHandle(m){
     log(`Allegiance — rank <b>${m.rank}</b>${m.monarch?` under Monarch <b>${esc(m.monarch)}</b>`:""} · ${m.followers} follower${m.followers!==1?"s":""}${m.vassals&&m.vassals.length?`<br>Vassals: ${m.vassals.map(v=>`${esc(v.name)}${v.online?"":" (away)"} — passes up ${v.passup}%`).join(" · ")}`:""}${m.motd?`<br>MOTD: <i>${esc(m.motd)}</i>`:""}`,"sys"); return; }
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
-  if(m.t==="coin"){ if(isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance
-  if(m.t==="vendor_ok"){ if(isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } if(m.act==="reject"&&m.reason) log(m.reason,"warn"); return; }   // M3 (#238): vendor result — adopt the authoritative balance
+  if(m.t==="coin"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance (#315: reject null/non-number, never zero gold)
+  if(m.t==="vendor_ok"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } if(m.act==="reject"&&m.reason) log(m.reason,"warn"); return; }   // M3 (#238): vendor result — adopt the authoritative balance (#315: reject null/non-number)
   if(m.t==="loot")      return onLoot(m);
   if(m.t==="corpse_loot") return onCorpseLoot(m);
   if(m.t==="event_start")  return onEventStart(m);
@@ -25332,7 +25332,7 @@ function onLoot(msg){
 }
 // server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
 function onCorpseLoot(msg){
-  if(msg.amt>0){ if(isFinite(msg.authCoin)) player.gold=msg.authCoin; else player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }   // M3 (#238): adopt authoritative balance on recovery
+  if(msg.amt>0){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }   // M3 (#238): adopt authoritative balance on recovery (#315: guard against a null authCoin zeroing gold)
   let taken=0,spilled=0;
   for(const it of (msg.items||[])){
     if(addToInv(it,false)) taken++;
