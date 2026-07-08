@@ -288,6 +288,21 @@ def take_owned(cl, offered):
     cl.inv = work
     return True, removed
 
+def take_owned_filter(cl, items):
+    """Forgiving variant for death drops: keep only the items actually in cl.inv (removing them),
+    silently drop any that aren't owned (fabricated). Returns the kept list."""
+    if not cl or not getattr(cl, "econ_ready", False):
+        return list(items)
+    work = list(cl.inv)
+    kept = []
+    for it in items:
+        sig = _item_sig(it)
+        idx = next((i for i, x in enumerate(work) if _item_sig(x) == sig), -1)
+        if idx >= 0:
+            kept.append(work.pop(idx))
+    cl.inv = work
+    return kept
+
 def save_char_slot(account, slot, data):
     data = sanitize_save(data)
     with db() as c:
@@ -858,10 +873,13 @@ async def handle_death(cl, msg):
     global _drop_seq
     items = msg.get("items")
     items = [sanitize_item(it) for it in items if isinstance(it, dict)][:24] if isinstance(items, list) else []   # #238: bound corpse loot relayed to other players
+    items = take_owned_filter(cl, items)   # M3 (#238): a corpse can only hold items the player actually OWNED (removed from cl.inv); fabricated items are dropped
     try:
         gold = max(0, int(msg.get("gold", 0)))
     except (TypeError, ValueError):
         gold = 0
+    if cl.econ_ready:
+        gold = min(gold, int(cl.coin)); cl.coin -= gold   # M3 (#238): corpse gold is debited from the authoritative balance (can't drop coin you don't hold)
     if not items and not gold:
         return
     try:
@@ -890,7 +908,12 @@ async def do_recover(cl, did):
         return
     DROPS.pop(did, None)
     await broadcast({"t": "drop_gone", "id": did})
-    await cl.send({"t": "corpse_loot", "items": d.get("items", []), "amt": d.get("amt", 0), "owner": d.get("owner", "")})
+    ritems = d.get("items", []); ramt = int(d.get("amt", 0))
+    auth = None
+    if cl.econ_ready:   # M3 (#238): the recovered loot enters the recoverer's authoritative state (conserved from the fallen player)
+        cl.inv = (cl.inv + [it for it in ritems if isinstance(it, dict)])[:500]
+        cl.coin = max(0, min(2_000_000_000, cl.coin + ramt)); auth = int(cl.coin)
+    await cl.send({"t": "corpse_loot", "items": ritems, "amt": ramt, "owner": d.get("owner", ""), "authCoin": auth})
 
 async def spawn_loot(m, is_boss):
     """Roll a corpse's shared ground loot and broadcast it to everyone."""

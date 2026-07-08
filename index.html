@@ -25306,7 +25306,7 @@ function onLoot(msg){
 }
 // server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
 function onCorpseLoot(msg){
-  if(msg.amt>0){ player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }
+  if(msg.amt>0){ if(isFinite(msg.authCoin)) player.gold=msg.authCoin; else player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }   // M3 (#238): adopt authoritative balance on recovery
   let taken=0,spilled=0;
   for(const it of (msg.items||[])){
     if(addToInv(it,false)) taken++;
