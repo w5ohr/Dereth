@@ -9653,10 +9653,16 @@ function pickKind(d,x,z){ // by region, climate & distance from the nearest capi
 }
 function spawnSomewhere(){
   if(inDungeon||inNetwork||isOnline) return; // online overworld monsters are server-authoritative
+  // #349: streamMonsters already keeps ~MOB_TARGET mobs around the player. Don't build a throwaway
+  // creature mesh when we're already at target, and never spawn one beyond the despawn radius (it
+  // would be disposed on the very next streamMonsters tick — pure per-kill allocation churn).
+  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
+  if(live>=MOB_TARGET) return;
   let x,z,d,t=0;
   do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75*WSCALE,470*WSCALE);   // spawn ring at true 1:1 spacing around hubs
     x=clamp(h.x+Math.cos(a)*rr,-HALF+6,HALF-6);z=clamp(h.z+Math.sin(a)*rr,-HALF+6,HALF-6);
     d=nearestCapitalDist(x,z);t++;}while((d<TOWN_SAFE+6||terrainH(x,z)<0)&&t<25);
+  if(Math.hypot(x-player.x,z-player.z)>MOB_DESPAWN) return;
   spawnMonster(pickKind(d,x,z),x,z, Math.random()<0.09 && d>500*WSCALE);
 }
 // ── THE creature visual: every spawn path (overworld, dungeon, multiplayer) routes through
