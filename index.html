@@ -415,7 +415,7 @@
 <div id="worldmap"><div class="card">
   <h2>Map of Dereth</h2>
   <div class="sub">The lands of Dereth — click a <b style="color:#5aa8ff">◆ Lifestone</b> to journey there.</div>
-  <canvas id="bigmap" width="520" height="520" style="display:block;margin:0 auto;border:1px solid var(--border);border-radius:6px;background:#0a0c07"></canvas>
+  <canvas id="bigmap" width="520" height="520" style="display:block;margin:0 auto;max-width:100%;height:auto;border:1px solid var(--border);border-radius:6px;background:#0a0c07"></canvas>
   <div class="sub" style="margin-top:10px;line-height:1.7">
     <span style="color:#5aa8ff">◆</span> bound Lifestone &nbsp; <span style="color:#8e44ad">◆</span> Lifestone <span style="color:var(--dim)">(click to travel)</span> &nbsp;
     <span style="color:#bf9bff">■</span> Portal / Mine &nbsp; <span style="color:#ffd23b">■</span> Emissary &nbsp;
@@ -15753,6 +15753,7 @@ document.addEventListener('mousemove',e=>{
     // free-look: the mouse looks around even without pointer lock, whenever it rides the world
     // itself (over a HUD panel or menu the cursor behaves normally so buttons stay clickable)
     if(!running||paused||movingUI||_uiDrag||e.target!==cEl) return;
+    { const _ci=document.getElementById('chatInput'); if(_ci&&_ci.style.display!=="none") return; }   // #337: don't free-look-rotate the camera while typing in chat
     if(typeof sheet!=="undefined"&&sheet.style.display==="flex") return;
   }
   player.yaw-=e.movementX*0.0022*settings.sens;
@@ -15882,6 +15883,9 @@ window.addEventListener('keydown',e=>{
   // moving away from a castle chest closes its window (then the key walks you off)
   if(document.getElementById('kcVaultPanel') && ["w","a","s","d","x","z","c","arrowup","arrowdown","arrowleft","arrowright"].includes(k)){ closeKcVault(); }
   if(!running) return;
+  // #337: while a full-screen modal is open, let Tab do native focus traversal instead of hijacking it
+  // to open the world map (keyboard/AT users need Tab to move between the panel's controls).
+  if(e.key==="Tab"){ const _mOpen=(typeof BIG_MODALS!=="undefined"&&BIG_MODALS.some(id=>{const el=document.getElementById(id);return el&&el.style.display!=="none";}))||(document.getElementById('keymap')&&document.getElementById('keymap').style.display!=="none"); if(_mOpen) return; }
   const id=ACTION_BY_COMBO[evtCombo(e)];
   if(id){ e.preventDefault(); runAction(id); }
 });
@@ -17676,7 +17680,8 @@ document.getElementById('closeMap').onclick=closeMap;
 document.getElementById('bigmap').style.cursor="pointer";
 document.getElementById('bigmap').addEventListener('click',e=>{
   if(!running||inDungeon||!player.alive) return;
-  const S=520,sc=S/WORLD,wx=e.offsetX/sc-HALF,wz=e.offsetY/sc-HALF;
+  // #337: the canvas may now be CSS-scaled (max-width:100%), so map offsetX/Y from RENDERED px to world coords via the element's clientWidth/Height (not the fixed 520 internal resolution) — otherwise a fast-travel click on a shrunk map lands on the wrong lifestone
+  const _rw=e.target.clientWidth||520,_rh=e.target.clientHeight||520,wx=(e.offsetX/_rw)*WORLD-HALF,wz=(e.offsetY/_rh)*WORLD-HALF;
   let best=null,bd=Infinity;for(const ls of lifestones){const d=Math.hypot(ls.x-wx,ls.z-wz);if(d<bd){bd=d;best=ls;}}
   if(best&&bd<WORLD*0.05){
     arriveAt(best.x,best.z+4);player.invuln=2;
@@ -17743,6 +17748,7 @@ function applySettings(){
 function initAudio(){
   if(actx) return;
   try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+  if(actx.state==="suspended") actx.resume();   // #337: explicitly resume — under stricter autoplay policies the context can be created suspended, leaving the whole session silent with no recovery path
   masterGain=actx.createGain();masterGain.gain.value=settings.vol;masterGain.connect(actx.destination);
   // ambient wind: looping low-passed noise
   const buf=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);
