@@ -6328,8 +6328,8 @@ function buildWorld(){
         addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:shown, town:tn, questId:ids[0], questIds:ids, look:QUEST_GIVERS[ids[0]].look}); }); }
   }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
-  addNPC(69.3*80-3,-21.2*80,{role:"reset_attr",name:"Chafulumisa"});
-  addNPC(69.3*80+3,-21.2*80,{role:"reset_skill",name:"Fianhe"});
+  addNPC(69.3*COORD-3,-21.2*COORD,{role:"reset_attr",name:"Chafulumisa"});   // #329: place at Asheron's Castle (21.2N 69.3E) at the true COORD scale — the hardcoded *80 left them ~11km off, lost in the wilderness
+  addNPC(69.3*COORD+3,-21.2*COORD,{role:"reset_skill",name:"Fianhe"});
   {const tm=CITIES.find(c=>c.name==="Timaru"); if(tm) addNPC(tm.x,tm.z-12,{role:"gatekeep",name:"Aun Firanauri",town:"Timaru"});}
   // vendors in every town: capitals host a full market (one of each trade), smaller
   // towns get a provisioner plus one rotating specialist (weaponsmith/armorer/scrivener).
@@ -7376,8 +7376,9 @@ function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
-  for(const s of shops){ if(s._counter){ disposeObject3D(s._counter); s._counter=null; }   // #232: counters are rebuilt fresh on reseat — dropping without disposing ratcheted one BoxGeometry per shop per revisit
-    if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<190) s._seated=false; }
+  for(const s of shops){ if(Math.hypot(s.x-e.c.x,s.z-e.c.z)<190){   // #329: only THIS town's vendors — the counter dispose was outside the distance gate, so dropping town A scrapped EVERY town's counters (incl. a visible town B whose vendors then had no counter until it re-streamed)
+    if(s._counter){ disposeObject3D(s._counter); s._counter=null; }   // #232: counters are rebuilt fresh on reseat — dropping without disposing ratcheted one BoxGeometry per shop per revisit
+    s._seated=false; } }
   delete _tbBuilt[name];                                 // deregister FIRST so the resettle below ignores this town's floors
   if(typeof npcs!=="undefined") for(const np of npcs){   // floors are gone — back to terrain (or a still-built neighbour's floor)
     if(Math.hypot(np.x-e.c.x,np.z-e.c.z)<190) np.mesh.position.y=tbFloorAllTowns(np.x,np.z,groundY(np.x,np.z)); }
@@ -24492,6 +24493,7 @@ function enterDungeon(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
+  hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
   if(curDungeon&&curDungeon.academy&&typeof _clearAcademyNpcs==="function") _clearAcademyNpcs();
