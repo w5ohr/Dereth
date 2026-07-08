@@ -21150,6 +21150,8 @@ function spawnOwnedShip(origin){
 }
 function buyShip(type){
   const def=shipDef(type); if(!def) return false;
+  if(player.ship){   // #356: you already own a vessel — buying another silently destroyed the first (single ship slot + spawnOwnedShip disposes all) with no refund. Refuse; require selling/abandoning the current one first.
+    const cur=shipDef(player.ship.type); log(`You already own a <b>${cur?cur.name:"ship"}</b>. Abandon it at a Dockmaster before taking a new deed — buying now would scuttle it with no refund.`,"warn"); if(SFX.err)SFX.err(); return false; }
   if(player.gold<def.cost){ log(`You need <b>${def.cost.toLocaleString()}</b> pyreals for a ${def.name}.`,"sys"); if(SFX.err)SFX.err(); return false; }
   player.gold-=def.cost;
   player.ship={type:def.id,x:null,z:null,yaw:0};
