@@ -16486,7 +16486,8 @@ function update(dt){
     let gone=p.life<=0||Math.abs(p.x)>HALF||Math.abs(p.z)>HALF;
     if(!gone && !p.cosmetic) for(const m of monsters){   // War magic only ever collides with monsters — never players/party members
       if(!!m.isDungeon!==inDungeon) continue;
-      if(_segHit(_px0,_pz0,p.x,p.z,m.x,m.z,m.r+p.r) && Math.abs(p.y-(m.mesh.position.y+1))<2.2){   // #228: hit-band vs the TARGET'S OWN body height (was an absolute |y−1|<1.8 relic that pet bolts could never enter)
+      const _bandC=m.mesh.position.y+Math.max(1,(m.headY||2)*0.5), _bandH=Math.max(2.2,(m.headY||2)*0.6*(m.baseScale||1));   // #303: center the hit-band on mid-body and scale its half-height to the creature's size, so shots at a big boss's chest/head no longer whiff through a human-sized band
+      if(_segHit(_px0,_pz0,p.x,p.z,m.x,m.z,m.r+p.r) && Math.abs(p.y-_bandC)<_bandH){   // #228: hit-band vs the TARGET'S OWN body height (was an absolute |y−1|<1.8 relic that pet bolts could never enter)
         if(p.splash){ gone=true; break; }   // Arc detonates on contact; AoE damage applied below
         // Cb11: missile accuracy AND damage fall off with range — full to ~15m, down to ~50% by ~55m
         const rng=(p.arrow&&p.x0!=null)?Math.hypot(p.x-p.x0,p.z-p.z0):0;
