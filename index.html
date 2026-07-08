@@ -3703,7 +3703,7 @@ function renderReflection(){
   rc.position.set(p.x,-p.y,p.z);
   rc.up.set(up.x,-up.y,up.z);
   rc.lookAt(REFL._t.set(p.x+fwd.x,-(p.y+fwd.y),p.z+fwd.z));
-  rc.fov=cam.fov; rc.aspect=cam.aspect; rc.near=cam.near; rc.far=Math.min(cam.far,900); rc.updateProjectionMatrix();   // fog swallows the mirror's horizon anyway
+  rc.fov=cam.fov; rc.aspect=cam.aspect; rc.near=cam.near; rc.far=Math.min(cam.far, scene.fog?scene.fog.far+40:900); rc.updateProjectionMatrix();   // #345: couple the reflection far to the fog far — fog swallows the mirror's horizon, so rasterizing scenery past it (the old hardcoded 900) was wasted reflection-pass draws that partly undid #233's cull savings
   rc.updateMatrixWorld();
   REFL.mat.set(0.5,0,0,0.5, 0,0.5,0,0.5, 0,0,0.5,0.5, 0,0,0,1);
   REFL.mat.multiply(rc.projectionMatrix).multiply(rc.matrixWorldInverse);
@@ -26142,6 +26142,7 @@ window.addEventListener('resize',()=>{
   if(typeof cam==="undefined"||!cam||typeof renderer==="undefined"||!renderer) return;   // #335: cam/renderer are undefined until initThree() resolves (inside the async asset Promise.all) — a resize during the load screen would otherwise throw
   cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  if(typeof GFX!=="undefined"){ renderer.setPixelRatio(Math.min(devicePixelRatio,[0.85,1,1.25,2][GFX.tier|0])); GFX._grace=Math.max(GFX._grace||0,1.0); }   // #345: re-apply the current tier's pixelRatio cap (setSize alone doesn't) and arm a grace window so the resize's MSAA-realloc stall doesn't trip a spurious governor downshift
   resizePost();
 });
 // ── Lane C #10: REAL AC window-frame chrome — compose a 9-slice border sheet from the extracted
