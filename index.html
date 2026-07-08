@@ -26119,6 +26119,7 @@ function startGame(loadSaved,preset){
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
 }
 window.addEventListener('resize',()=>{
+  if(typeof cam==="undefined"||!cam||typeof renderer==="undefined"||!renderer) return;   // #335: cam/renderer are undefined until initThree() resolves (inside the async asset Promise.all) — a resize during the load screen would otherwise throw
   cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
   resizePost();
