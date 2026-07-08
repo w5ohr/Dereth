@@ -10304,9 +10304,17 @@ function spawnBoss(){
   toast("A WORLD BOSS STIRS");
 }
 // Bael'Zharon, the Hopeslayer — apex terror of the central Direlands
+// #346: a random overworld point genuinely IN the Direlands (nearestCapitalDist > DIRE_DIST, on land).
+// The old boss spawns used a small radius (300-1500) from world ORIGIN — which sits in settled land, so
+// nearestCapitalDist never reached DIRE_DIST (7800) and the "Direlands" apex/generals spawned ~4-6km from
+// a capital. Sample outward and keep the point farthest from any capital (guaranteed Direlands if reachable).
+function direlandsPoint(){ let best=null,bestD=-1;
+  for(let i=0;i<60;i++){ const ang=rnd(0,6.28), r=DIRE_DIST+rnd(0,HALF*0.4), x=clamp(Math.cos(ang)*r,-HALF+40,HALF-40), z=clamp(Math.sin(ang)*r,-HALF+40,HALF-40);
+    const d=(typeof nearestCapitalDist==="function")?nearestCapitalDist(x,z):r; if(d>bestD&&terrainH(x,z)>0.2){ bestD=d; best={x,z}; if(d>DIRE_DIST) break; } }
+  return best||{x:0,z:0}; }
 function spawnApex(){
   if(inDungeon){ setTimeout(spawnApex,8000); return; }
-  const ang=rnd(0,6.28),r=rnd(300,900),x=Math.cos(ang)*r,z=Math.sin(ang)*r; // the Direlands centre
+  const {x,z}=direlandsPoint(); // #346: spawn in the true Direlands, not a small ring around origin
   const mesh=bossMesh("shadow","shadow",3.6,0x7a4fae);mesh.position.set(x,0,z);scene.add(mesh);
   const lbl=labelSprite("Bael'Zharon, the Hopeslayer","monsters");lbl.scale.set(13,3,1);lbl.position.y=mesh.userData.headY+2;mesh.add(lbl);
   const hp=Math.round(6000*settings.diff);
@@ -10322,7 +10330,7 @@ function spawnApex(){
 const SHADOW_GENERALS=[{name:"Ler Rhan",tint:0x8a5fc8},{name:"Black Ferah",tint:0x4a3a6a},{name:"Isin Dule",tint:0xc05fae}];
 function spawnShadowGeneral(idx){
   if(inDungeon){ setTimeout(()=>spawnShadowGeneral(idx),8000); return; }
-  const gd=SHADOW_GENERALS[idx],ang=rnd(0,6.28),r=rnd(500,1500),x=Math.cos(ang)*r,z=Math.sin(ang)*r;
+  const gd=SHADOW_GENERALS[idx],{x,z}=direlandsPoint();   // #346: Shadow Generals roam the true Direlands, not a ring around origin
   const sc=2.1,mesh=bossMesh("shadow","shadow",sc,gd.tint);mesh.position.set(x,0,z);
   scene.add(mesh);
   const lbl=labelSprite(gd.name+", Shadow General","monsters");lbl.scale.set(10,2.4,1);lbl.position.y=mesh.userData.headY+1.8;mesh.add(lbl);
