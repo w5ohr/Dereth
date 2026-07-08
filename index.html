@@ -20751,7 +20751,7 @@ function renderBountyList(){
     return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)"><span><span style="color:#9fd0ff">Lv ${questLvl(q.id)}</span> ${q.name} <span style="color:var(--dim)">— ${giverLabel(q)}</span></span><span style="white-space:nowrap">${tag}</span></div>`;
   }).join("");
 }
-function openQuestLog(){ renderQuestLog(); document.getElementById('questlog').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+function openQuestLog(){ closeOtherModals("questlog"); renderQuestLog(); document.getElementById('questlog').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }   // #336: close other BIG_MODALS so panels don't stack (closing one wouldn't unpause with another still on screen)
 function closeQuestLog(){ document.getElementById('questlog').style.display="none"; paused=false; }
 
 // ============================================================================
@@ -20870,7 +20870,7 @@ function wireHousing(){
   body.querySelectorAll('[data-wd]').forEach(b=>b.onclick=()=>houseWithdraw(+b.dataset.wd));
   body.querySelectorAll('[data-home]').forEach(b=>b.onclick=()=>recallHome());
 }
-function openHousing(){ renderHousing(); document.getElementById('housing').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
+function openHousing(){ closeOtherModals("housing"); renderHousing(); document.getElementById('housing').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }   // #336: close other BIG_MODALS so panels don't stack
 function closeHousing(){ document.getElementById('housing').style.display="none"; paused=false; }
 
 // ============================================================================
