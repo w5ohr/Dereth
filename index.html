@@ -25104,9 +25104,10 @@ function saveGame(){
       elixMight:player.elixMight,elixSwift:player.elixSwift,
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
       championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
-      boundLS:lifestones.findIndex(l=>l.bound),activeQuests,questDone,tracked,taskReps,
+      boundLS:lifestones.findIndex(l=>l.bound),boundLSAt:(()=>{const l=lifestones.find(x=>x.bound);return l?{name:l.name,x:l.x,z:l.z}:null;})(),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,kcVault:player.kcVault||{},kcHookItems:player.kcHookItems||{},
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
+      tiedPortal2:player.tiedPortal2||null,createTown:player.createTown||null,createTemplate:player.createTemplate||null,createSpec:player.createSpec||null,   // #330: these were set but never persisted — Secondary Portal Tie evaporated on relog, and a relog mid-Academy rerouted every heritage to Holtburg
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
@@ -25171,6 +25172,8 @@ function applySaveObj(s){
   player.aetheria=(s.aetheria&&typeof s.aetheria==="object")?{blue:s.aetheria.blue||null,yellow:s.aetheria.yellow||null,red:s.aetheria.red||null}:{blue:null,yellow:null,red:null};
   player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
   player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
+  player.tiedPortal2=(s.tiedPortal2&&typeof s.tiedPortal2==="object")?s.tiedPortal2:null;   // #330: restore the Secondary Portal Tie
+  if(s.createTown) player.createTown=s.createTown; if(s.createTemplate) player.createTemplate=s.createTemplate; if(Array.isArray(s.createSpec)) player.createSpec=s.createSpec;   // #330: restore chargen routing (Academy exit / greeter / welcome all key on createTown)
   if(player.tiedPortal){ const _m=WSCALE/(s.wscale||1); if(_m!==1){ player.tiedPortal.x*=_m; player.tiedPortal.z*=_m; } }   // migrate tied-portal coords
   player.packBonus=s.packBonus|0;
   player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0; player.advColosseumClears=s.advColosseumClears|0;   // H7 armour dye + H16 clears
@@ -25207,10 +25210,16 @@ function applySaveObj(s){
   if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
   if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // show the loaded armour on the body
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
-  // restore bound lifestone + spawn there
-  if(s.boundLS>=0 && lifestones[s.boundLS]){
+  // restore bound lifestone + spawn there. #330: the raw index is fragile (the lifestones array's
+  // composition depends on an async, failable acworld*.json fetch), so prefer matching the saved
+  // name/coord descriptor and fall back to the index only if that fails.
+  let ls=null;
+  if(s.boundLSAt&&typeof s.boundLSAt==="object"){ ls=lifestones.find(l=>l.name===s.boundLSAt.name&&Math.abs(l.x-s.boundLSAt.x)<2&&Math.abs(l.z-s.boundLSAt.z)<2)
+      || lifestones.reduce((best,l)=>{const d=Math.hypot(l.x-s.boundLSAt.x,l.z-s.boundLSAt.z); return (best&&Math.hypot(best.x-s.boundLSAt.x,best.z-s.boundLSAt.z)<=d)?best:l;},null); }
+  if(!ls && s.boundLS>=0 && lifestones[s.boundLS]) ls=lifestones[s.boundLS];
+  if(ls){
     lifestones.forEach(l=>{l.bound=false;recolorLifestone(l);});
-    const ls=lifestones[s.boundLS];ls.bound=true;recolorLifestone(ls);
+    ls.bound=true;recolorLifestone(ls);
     arriveAt(ls.x,ls.z+3);
   }
   // restore exact last position (takes precedence over the bind point); fresh chars saved
