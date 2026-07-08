@@ -13578,8 +13578,8 @@ function aetheriaSurge(on,attacker){
     const def=AETHERIA_SURGES.find(x=>x.k===a.surge); if(!def||def.on!==on) continue;
     if(Math.random()>=0.04+(a.alvl||1)*0.01) continue;                       // 5–9% per qualifying medallion
     _surgeCd=now()+9000;
-    if(a.surge==="Destruction"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.dmg; player.itemBuffs.dmg={v:Math.max(0.25,cur?cur.v:0),t:8}; }
-    else if(a.surge==="Fury"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.crit; player.itemBuffs.crit={v:Math.max(0.15,cur?cur.v:0),t:8}; }
+    if(a.surge==="Destruction"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.dmg; player.itemBuffs.dmg={v:Math.max(0.25,cur?cur.v:0),t:Math.max(8,cur?cur.t:0)}; }   // #300: keep-longest on t (like Protection below) — was hard-setting t:8, truncating an active 300s Blood Drinker to 8s
+    else if(a.surge==="Fury"){ player.itemBuffs=player.itemBuffs||{}; const cur=player.itemBuffs.crit; player.itemBuffs.crit={v:Math.max(0.15,cur?cur.v:0),t:Math.max(8,cur?cur.t:0)}; }   // #300: keep-longest on t — was truncating an active Heart Seeker to 8s
     else if(a.surge==="Protection"){ player.lifeBuffs=player.lifeBuffs||{}; const cur=player.lifeBuffs.prot; player.lifeBuffs.prot={v:Math.max(0.25,cur?cur.v:0),t:Math.max(8,cur?cur.t:0)}; }
     else if(a.surge==="Regeneration"){ player.hots=player.hots||{}; hotSet(player.hots,"hp",Math.max(2,player.mhp*0.02),6); }
     else if(a.surge==="Affliction"&&attacker){ attacker.weakV=0.75; attacker.weakUntil=now()+8000; }
