@@ -346,9 +346,12 @@ def catalog_val(it):
 
 def save_char_slot(account, slot, data):
     data = sanitize_save(data)
+    blob = json.dumps(data)
+    if len(blob) > 262144:   # #321: explicit per-slot save cap (256 KiB). sanitize_save bounds inv/packs but left other keys unbounded — a client could otherwise persist ~1 MiB of arbitrary JSON per slot x 8 slots.
+        return   # refuse an oversized blob rather than persist it (keeps the prior good save)
     with db() as c:
         c.execute("UPDATE characters SET data=?, seen=? WHERE account=? AND slot=?",
-                  (json.dumps(data), int(time.time()), account, slot))
+                  (blob, int(time.time()), account, slot))
 
 def delete_char_slot(account, slot):
     with db() as c:
