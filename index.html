@@ -7602,7 +7602,7 @@ function invCountDolls(){ return player.inv.filter(it=>it&&/Pack Doll$/.test(it.
 function casinoDollTurnIn(ownerName){
   const i=player.inv.findIndex(it=>it&&/Pack Doll$/.test(it.name||""));
   if(i<0) return;
-  const doll=player.inv[i].name; player.inv.splice(i,1);
+  const doll=player.inv[i].name; takeFromInv(i);   // #304: consume ONE doll, not the whole stack (dolls stack via stat:"ticket")
   const r=Math.random();
   if(r<0.5){ const it=rollItem(true,5,false); addToInv(it,true);
     log(`${ownerName} cradles the <b>${doll}</b> like a lost child, and presses <b>${it.name}</b> into your hands.`,"loot"); }
@@ -7612,13 +7612,13 @@ function casinoDollTurnIn(ownerName){
 }
 function openCasinoChest(ch){
   const gi=invFindIdx("Grand Casino Key"), yi=invFindIdx("Golden Casino Key");
-  if(gi>=0){ player.inv.splice(gi,1);
+  if(gi>=0){ takeFromInv(gi);   // #304: spend ONE key, not the whole stack
     const it=rollItem(true,5,false), won=irnd(1500,4000); addToInv(it,true); player.gold+=won;
     log(`The Grand Casino Chest swings wide — <b>${it.name}</b> and <b>${won} pyreals</b>!`,"loot");
     if(Math.random()<0.5){ const doll=PACK_DOLLS[irnd(0,PACK_DOLLS.length-1)]+" Pack Doll";
       addToInv({name:doll,stat:"ticket",v:0,ico:"🧸"},true); log(`Tucked in the corner: a <b>${doll}</b>.`,"loot"); }
     toast("GRAND PRIZE"); if(SFX.quest)SFX.quest();
-  } else if(yi>=0){ player.inv.splice(yi,1);
+  } else if(yi>=0){ takeFromInv(yi);   // #304: spend ONE key, not the whole stack
     const it=rollItem(false,4,false), won=irnd(400,1200); addToInv(it,true); player.gold+=won;
     log(`Your Golden Key clicks — the chest yields <b>${it.name}</b> and <b>${won} pyreals</b>.`,"loot");
     toast("CASINO PRIZE"); if(SFX.gold)SFX.gold();
@@ -13824,7 +13824,7 @@ function openManaStone(it){
     ov.querySelector('#msEat').onclick=()=>{ const list=ov.querySelector('#msList'); list.style.display=list.style.display==='none'?'flex':'none'; list.innerHTML='';
       for(const x of ench){ const gain=Math.min(it.cap-it.stored,manaFromItem(x)); const b=document.createElement('button'); b.className='tbtn'; b.style.cssText='text-align:left;font-size:12px';
         b.innerHTML=`✖ ${esc(x.name)} <span style="color:var(--dim)">→ +${gain}</span>`;
-        b.onclick=()=>{ const i=player.inv.indexOf(x); if(i>=0) player.inv.splice(i,1); it.stored=Math.min(it.cap,it.stored+manaFromItem(x)); log(`The <b>${esc(x.name)}</b> is unmade — its mana bled into the <b>${esc(it.name)}</b> (<b>${Math.round(it.stored)}/${it.cap}</b>).`,"loot"); if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); saveGame&&saveGame(); render(); };
+        b.onclick=()=>{ const i=player.inv.indexOf(x); if(i>=0) takeFromInv(i); /* #304: consume ONE enchanted item, not the whole stack (e.g. stacked augment gems) */ it.stored=Math.min(it.cap,it.stored+manaFromItem(x)); log(`The <b>${esc(x.name)}</b> is unmade — its mana bled into the <b>${esc(it.name)}</b> (<b>${Math.round(it.stored)}/${it.cap}</b>).`,"loot"); if(SFX.quest)SFX.quest(); updateHUD&&updateHUD(); saveGame&&saveGame(); render(); };
         list.appendChild(b); } };
   };
   render(); document.body.appendChild(ov);
@@ -14345,8 +14345,8 @@ function tryCraft(src){
   const key=AC_RCP_SKILL[r.skill]||"alchemy";
   const chance=r.difficulty>0?skillCheck(skillValue(key),r.difficulty):1;
   const ok=Math.random()<chance;
-  const tgt=player.inv[idx]; player.inv.splice(idx,1);
-  if(!AC_PERSISTENT_TOOL.test(src.name.toLowerCase())){ const si=player.inv.indexOf(src); if(si>=0) player.inv.splice(si,1); }
+  const tgt=player.inv[idx]; takeFromInv(idx);   // #304: consume ONE target unit, not the whole stack (reagents/dough/bundles stack)
+  if(!AC_PERSISTENT_TOOL.test(src.name.toLowerCase())){ const si=player.inv.indexOf(src); if(si>=0) takeFromInv(si); }   // #304: consume ONE tool unit, not the whole stack
   const sk=SKILL_BY_KEY[key]?SKILL_BY_KEY[key].n:key;
   if(ok){ const res=craftResultItem(r.result);
     if(!addToInv(res)) addDrop(player.x,player.z,{type:"item",item:res});
