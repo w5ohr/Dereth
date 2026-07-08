@@ -14349,7 +14349,7 @@ function tryCraft(src){
   if(ok){ const res=craftResultItem(r.result);
     if(!addToInv(res)) addDrop(player.x,player.z,{type:"item",item:res});
     log(`You use the <b>${esc(src.name)}</b> on the <b>${esc(tgt.name)}</b> — <b>${esc(r.result)}</b>! <i>(${sk} ${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"loot");
-    if(SFX.quest)SFX.quest(); if(typeof questEvent==="function")questEvent("gather");
+    if(SFX.quest)SFX.quest(); if(typeof questEvent==="function")questEvent("gather","craft");   // #236: crafting matches no gather objective — was spuriously advancing every fetch quest
   } else {
     log(`Your ${sk} attempt fails — the <b>${esc(tgt.name)}</b> is ruined. <i>(${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"warn");
     if(SFX.hit)SFX.hit();
@@ -14526,7 +14526,7 @@ function attemptCombine(ia,ib){
     for(const idx of order) craftTake(idx);
     const out=craftResultItem(rec.result); addToInv(out,true);
     log(`Your ${skN} succeeds — <b>${esc(rec.tool)}</b> + <b>${esc(rec.target)}</b> → <b>${esc(rec.result)}</b> <span style="color:var(--dim)">(${Math.round(ch*100)}%)</span>.`,"loot");
-    if(SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather");
+    if(SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather","craft");   // #236: crafting matches no gather objective
   } else {
     const keepTool=CRAFT_DURABLE.test(rec.tool);                   // failure ruins the target; a non-durable tool is spent too
     const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
@@ -18093,7 +18093,7 @@ const QUESTS=[
     xp:2200, gold:140, item:{name:"Mana Stone",stat:"mn",v:80} },
   { id:"smid", name:"Smid the Smithy", giver:"Smid the Smith (Stonehold)",
     intro:"I can forge you a proper blade — but I need clean ore and a banderling war-hilt to study their cursed metallurgy. Bring me both and the work is yours.",
-    obj:[{type:"gather",count:2,label:"Mine clean iron ore"},
+    obj:[{type:"gather",kind:"ore",count:2,label:"Mine clean iron ore"},
          {type:"slay",kind:"banderling",count:4,label:"Recover a banderling war-hilt"}],
     xp:2000, gold:140, item:{name:"Smid's Tempered Longsword",stat:"weapon",wt:"sword",mat:"Steel",v:16} },
   { id:"lost_garden", name:"The Lost Garden of Khayyaban", giver:"Falatacot scholar Imir (Khayyaban)",
@@ -18248,7 +18248,7 @@ const QUESTS=[
     xp:1500, gold:110, item:null },
   { id:"gather_ore", name:"Ore for the Smith", giver:"a town provisioner (Candeth Keep)",
     intro:"I'll trade coin and training for veins of rich ore. Bring me 8 and we have a deal.",
-    obj:[{type:"gather",count:8,label:"Gather veins of rich ore"}],
+    obj:[{type:"gather",kind:"ore",count:8,label:"Gather veins of rich ore"}],
     xp:1500, gold:110, item:null },
   { id:"gather_lilies", name:"Lilies of the Silent Lake", giver:"a town provisioner (Holtburg)",
     intro:"I'll trade coin and training for pale lake lilies. Bring me 6 and we have a deal.",
@@ -20505,7 +20505,7 @@ function questEvent(type,kind){   // a world event advances the matching objecti
   for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
     for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
       if(o.type!==type) continue;
-      if(type==="slay" && kind!==o.kind) continue;
+      if((type==="slay"||type==="gather") && kind!==o.kind) continue;   // #236: gather objectives are kind-gated too — a default "recover X" fetch advances on loot pickup (kind-less), NOT on mining ("ore")/crafting ("craft")
       if(a.prog[i]<o.count){
         a.prog[i]++; any=true;
         if(a.prog[i]>=o.count) log(`Objective complete: <b>${o.label}</b> <span style="color:var(--dim)">(${q.name})</span>.`,"sys");
@@ -22502,7 +22502,7 @@ function gatherNode(n){
   if(n.type==="ore"){const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot");}
   else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
     if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
-  gainXP(30);SFX.gold();questEvent("gather");updateHUD();
+  gainXP(30);SFX.gold();questEvent("gather", n.type==="ore"?"ore":"harvest");updateHUD();   // #236: mining advances only "ore"-kind objectives, not generic fetch quests
 }
 function addEntrance(def){
   const g=new THREE.Group(),col=def.theme.light;
@@ -24686,6 +24686,7 @@ function lootItem(it){
   if(!addToInv(it)){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
   SFX.gold();
   log(it.scroll?`You find a <b>${it.name}</b>. (T to scribe it)`:`You pick up a <b>${it.name}</b>. (T to equip or salvage)`,"loot");
+  if(typeof questEvent==="function") questEvent("gather");   // #236: picking up loot is the natural advance for "recover X" fetch objectives (kind-less)
 }
 function openTinker(){ closeOtherModals("tinker"); buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
