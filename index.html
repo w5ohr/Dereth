@@ -13599,7 +13599,7 @@ function invCap(){ let n=mainPackCap(); for(const p of (player.packs||[])) n+=p.
 // ── inventory stacking: like items merge into one slot with a count; a stack carries the weight of ONE
 //    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
 function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry" && it.stat!=="aetheria")); }   // aetheria: each medallion levels independently
-function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):""].join("|"); }
+function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):"",it.bp||0].join("|"); }   // #290: include bp — a vendor-bought item (carries bp = its buy price, resale clamped below it) must NOT merge into a bp-less looted/crafted stack, or the merge strips the clamp and reopens a buy-low/sell-high gold loop
 function addToInv(it, force){   // → true if added/stacked, false if the satchel was full
   if(stackable(it)){ const k=stackKey(it), ex=player.inv.find(x=>stackable(x)&&stackKey(x)===k);
     if(ex){ ex.count=(ex.count||1)+(it.count||1); return true; } }
