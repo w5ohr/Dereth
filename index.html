@@ -9551,6 +9551,11 @@ function openCovenant(cr){
   ov.querySelector('#hsClose').onclick=closeCovenant;
   const b=ov.querySelector('#hsBuy'); if(b) b.onclick=()=>{
     const tr=hsTrophyCheck(term);
+    // #358: re-validate at CLICK time — the button's render-time `disabled` is the only other guard, so
+    // a stale/forced click (gold spent elsewhere between render and click, too few writs, level/rank not
+    // met) could otherwise drive gold negative and grant the deed for fewer writs than required.
+    if(player.homestead||player.level<lvl||player.gold<price||writCount()<writs||!tr.ok||(rank&&!(allegianceRank()>=rank&&algIsMonarch()))){
+      log("You no longer meet the requirements for that deed.","warn"); if(SFX.err)SFX.err(); return; }
     player.gold-=price; takeWrits(writs);
     tr.plan.sort((a,b2)=>b2-a).forEach(i=>player.inv.splice(i,1));
     player.homestead=hsNewDeed(cr.hid,cr.type);
