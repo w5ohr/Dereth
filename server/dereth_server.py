@@ -923,6 +923,15 @@ async def handle_death(cl, msg):
         gold = min(gold, int(cl.coin)); cl.coin -= gold   # M3 (#238): corpse gold is debited from the authoritative balance (can't drop coin you don't hold)
     if not items and not gold:
         return
+    # #311: cooldown + per-player corpse cap so a client can't spam DROPS entries and broadcasts.
+    _nowt = time.time()
+    if _nowt - getattr(cl, "last_death", 0.0) < 8.0:
+        return
+    cl.last_death = _nowt
+    _mine = [k for k, d in DROPS.items() if d.get("type") == "corpse" and d.get("owner_user") == cl.username]
+    if len(_mine) >= 6:   # evict this player's oldest corpse rather than let them accumulate unboundedly
+        _old = min(_mine, key=lambda k: DROPS[k].get("expire", 0))
+        DROPS.pop(_old, None)
     try:
         x = float(msg.get("x", cl.x)); z = float(msg.get("z", cl.z))
     except (TypeError, ValueError):
@@ -935,7 +944,7 @@ async def handle_death(cl, msg):
     did = "c%d" % _drop_seq
     DROPS[did] = {"id": did, "x": x, "z": z, "type": "corpse", "items": items, "amt": gold,
                   "owner": cl.charname or cl.username, "owner_user": cl.username,
-                  "open": bool(msg.get("open")), "expire": time.time() + ttl}
+                  "open": (getattr(cl, "pkState", "npk") == "pk"), "expire": time.time() + ttl}   # #311: free-loot flag derives from the SERVER's PK state, not client-supplied — a PK can't set open:false to dodge the PK-death loot penalty
     await broadcast(drop_pub(DROPS[did]))
 
 async def do_recover(cl, did):
