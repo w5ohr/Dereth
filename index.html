@@ -25990,7 +25990,8 @@ function updateRemotes(dt){
 function sendInput(dt){
   if(!isOnline||!NET.open) return;
   netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
-  netSend({t:"input",x:player.x,z:player.z,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
+  const _inst=inDungeon||inNetwork;   // #307: while in an instance, player.x/z are instance-LOCAL coords built around origin — broadcast the OVERWORLD return point (your entrance) instead, so remotes/server AI/PvP don't target a phantom near map origin; the inst flag lets peers hide the avatar
+  netSend({t:"input",x:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),z:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),inst:_inst?1:0,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
     level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk,pkState:player.pkState||"npk",
     loyalty:skillValue("loyalty"),leadership:skillValue("leadership"),
     wt:(player.weapon&&player.weapon.wt)||null, wmode:weaponMode,   // so other players see our wielded weapon/shield
@@ -26005,7 +26006,7 @@ function fmtLockLeft(ms){ const s=Math.max(0,Math.ceil(ms/1000)),d=Math.floor(s/
 function pkCompatible(a,b){ return (a==="pk"&&b==="pk")||(a==="pkl"&&b==="pkl"); }
 // S3 PvP: apply an incoming player hit (the server only relays it if our rulesets match & we're in range)
 function onPvp(m){
-  if(!player.pk||!player.alive||!running) return;
+  if(!player.pk||!player.alive||!running||inDungeon||inNetwork) return;   // #307: you can't be PvP'd while inside a private instance (a PK at your phantom overworld spot must not land hits on you underground)
   const el=m.element||undefined, type=(el==="nether"||el==="fire"||el==="frost"||el==="shock"||el==="acid")?"magic":"melee";
   playerHurt(Math.max(1,Math.round(m.dmg||0)),undefined,undefined,type,el);
   log(`<b>${esc(m.from||"A foe")}</b> strikes you for <b>${Math.round(m.dmg||0)}</b> in combat!`,"warn");
