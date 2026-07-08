@@ -29,3 +29,7 @@ ACE-World-16PY-master/
 # hi-res client source archive (extracted into acdata/; never commit the 508MB blob)
 ac-updates.zip
 *.zip
+
+# local DB backups
+server/*.db.bak-*
+server/dereth.db
