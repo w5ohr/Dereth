@@ -1785,6 +1785,9 @@ async def dispatch(cl, msg):
         await cl.send({"t": "pong"})
 
 # ---------------------------------------------------------------- connection
+def _reject_const(_c):   # #238: json.loads calls this for NaN/Infinity/-Infinity literals — refuse them
+    raise ValueError("non-finite literal")
+
 async def handle(reader, writer):
     peer = writer.get_extra_info("peername")
     cl = Client(reader, writer)
@@ -1803,7 +1806,7 @@ async def handle(reader, writer):
             if opcode == 0xA:
                 continue
             try:
-                msg = json.loads(payload.decode("utf-8"))
+                msg = json.loads(payload.decode("utf-8"), parse_constant=_reject_const)   # #238: reject non-standard NaN/Infinity literals (Python's json accepts them) so no float field can receive a non-finite value; legit clients never send them
             except Exception:
                 continue
             if isinstance(msg, dict):
