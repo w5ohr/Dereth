@@ -251,6 +251,20 @@ def sanitize_item(it, _depth=0):
                 out[k] = lv
     return out
 
+# ── M3 (#238) authoritative economy helpers ──────────────────────────────────────────────────────
+def load_econ(cl, data):
+    """Adopt coin + inventory from a character save as the server's authoritative baseline."""
+    d = data if isinstance(data, dict) else {}
+    cl.coin = int(_svnum(d.get("gold", 0), 0, 2e9, 0))
+    inv = d.get("inv")
+    cl.inv = [sanitize_item(it) for it in inv if isinstance(it, dict)][:500] if isinstance(inv, list) else []
+    cl.econ_ready = True
+
+async def push_coin(cl):
+    """Tell a client its authoritative pyreal balance (client mirrors it into player.gold)."""
+    if cl.econ_ready:
+        await cl.send({"t": "coin", "coin": int(cl.coin)})
+
 def save_char_slot(account, slot, data):
     data = sanitize_save(data)
     with db() as c:
@@ -366,6 +380,13 @@ class Client:
         self.rl_chat = RL_CHAT_BURST
         self.rl_t = time.time()
         self.rl_warned = 0.0     # last time we told this client it was thottled (rate-limit the warning too)
+        # M3 (#238) server-authoritative economy state. Loaded from the character's save on enter_world,
+        # credited by server-controlled events (loot pickup, kill gold, trade), resynced from the save
+        # while the intent stages are still being built, and (at cutover) the sole source of truth the
+        # server persists. `coin` = pyreals; `inv` = the authoritative inventory list.
+        self.coin = 0
+        self.inv = []
+        self.econ_ready = False   # True once loaded from a save; gates authoritative bookkeeping
 
     async def send(self, obj):
         if not self.alive:
@@ -870,8 +891,12 @@ async def do_pickup(cl, did):
     DROPS.pop(did, None)
     await broadcast({"t": "drop_gone", "id": did, "by": cl.username})
     if d["type"] == "gold":
-        await cl.send({"t": "loot", "type": "gold", "amt": d["amt"]})
+        amt = int(d["amt"])
+        cl.coin = min(2_000_000_000, cl.coin + amt)   # M3 (#238): server credits the authoritative balance
+        await cl.send({"t": "loot", "type": "gold", "amt": amt, "coin": int(cl.coin)})
     else:
+        if cl.econ_ready and len(cl.inv) < 500:
+            cl.inv.append(sanitize_item(d["item"]))   # M3 (#238): the item enters the server's authoritative inventory
         await cl.send({"t": "loot", "type": "item", "item": d["item"]})
 
 def pk_compatible(a, b):
@@ -1513,6 +1538,7 @@ async def do_auth_success(cl, username):
 async def enter_world(cl, slot, name, data):
     """Bring a selected/created character into the shared world."""
     cl.slot = slot; cl.charname = name; cl.in_world = True
+    load_econ(cl, data)   # M3 (#238): adopt authoritative coin + inventory from the save
     await cl.send({"t": "play_ok", "slot": slot, "name": name, "char": data})
     # allegiance: the graph decides the /a channel (everyone under one Monarch); deliver
     # any pass-up XP your vassals earned while you were away
@@ -1639,6 +1665,7 @@ async def dispatch(cl, msg):
         char = msg.get("char")
         if isinstance(char, dict) and cl.slot is not None:
             save_char_slot(cl.username, cl.slot, char)
+            load_econ(cl, char)   # M3 (#238): resync authoritative coin+inv from the save while the intent stages are still being built (client remains the source of truth until cutover)
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
         await cl.send({"t": "who", "players": players})
