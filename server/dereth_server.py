@@ -391,6 +391,8 @@ async def ws_read(reader):
                 length = struct.unpack(">Q", await asyncio.wait_for(reader.readexactly(8), timeout=30))[0]
             if length > MAX_MSG or len(data) + length > MAX_MSG:
                 return None
+            if opcode >= 0x8 and length > 125:   # #299: RFC6455 caps control frames (close/ping/pong) at 125 bytes — reject oversized ones so a ~1MiB "ping" can't be reflected as a ~1MiB pong
+                return None
             mask = (await asyncio.wait_for(reader.readexactly(4), timeout=30)) if masked else b"\x00\x00\x00\x00"
             payload = bytearray(await asyncio.wait_for(reader.readexactly(length), timeout=30))
         except asyncio.TimeoutError:
@@ -1988,7 +1990,21 @@ async def handle(reader, writer):
             opcode, payload = frame
             if opcode == 0x8:
                 break
-            if opcode == 0x9:  # ping -> pong
+            # #239/#299: token-bucket rate limit applied to EVERY frame — including ping (0x9) and
+            # unparseable payloads, which previously bypassed the limiter entirely (a ping/garbage flood
+            # was reflected unbounded as pongs). Refill by elapsed time, spend one general token per
+            # frame; drop (don't echo/parse) when empty.
+            _nowt = time.time()
+            _dt = max(0.0, _nowt - cl.rl_t); cl.rl_t = _nowt
+            cl.rl_gen = min(RL_GEN_BURST, cl.rl_gen + _dt * RL_GEN_RATE)
+            cl.rl_chat = min(RL_CHAT_BURST, cl.rl_chat + _dt * RL_CHAT_RATE)
+            if cl.rl_gen < 1.0:
+                if opcode not in (0x9, 0xA) and _nowt - cl.rl_warned > 3.0:
+                    cl.rl_warned = _nowt
+                    await cl.send({"t": "system", "msg": "You are sending messages too quickly — slow down."})
+                continue
+            cl.rl_gen -= 1.0
+            if opcode == 0x9:  # ping -> pong (now rate-limited above)
                 writer.write(ws_frame(payload, 0xA)); await writer.drain(); continue
             if opcode == 0xA:
                 continue
@@ -1997,26 +2013,13 @@ async def handle(reader, writer):
             except Exception:
                 continue
             if isinstance(msg, dict):
-                # #239: token-bucket rate limit. Refill by elapsed time, then spend one general token
-                # (and one chat token for broadcast messages). Over-rate messages are dropped, not
-                # disconnected, with an occasional throttle notice.
-                _nowt = time.time()
-                _dt = max(0.0, _nowt - cl.rl_t); cl.rl_t = _nowt
-                cl.rl_gen = min(RL_GEN_BURST, cl.rl_gen + _dt * RL_GEN_RATE)
-                cl.rl_chat = min(RL_CHAT_BURST, cl.rl_chat + _dt * RL_CHAT_RATE)
                 _mt = msg.get("t")
-                _limited = False
-                if cl.rl_gen < 1.0:
-                    _limited = True
-                elif _mt in CHATTY and cl.rl_chat < 1.0:
-                    _limited = True
-                if _limited:
-                    if _nowt - cl.rl_warned > 3.0:
-                        cl.rl_warned = _nowt
-                        await cl.send({"t": "system", "msg": "You are sending messages too quickly — slow down."})
-                    continue
-                cl.rl_gen -= 1.0
-                if _mt in CHATTY:
+                if _mt in CHATTY:   # broadcast-type messages also spend a (scarcer) chat token
+                    if cl.rl_chat < 1.0:
+                        if _nowt - cl.rl_warned > 3.0:
+                            cl.rl_warned = _nowt
+                            await cl.send({"t": "system", "msg": "You are sending messages too quickly — slow down."})
+                        continue
                     cl.rl_chat -= 1.0
                 try:
                     await dispatch(cl, msg)   # #251: per-message isolation — a single handler exception (bad field, edge case) logs and continues instead of tearing down the client's connection
