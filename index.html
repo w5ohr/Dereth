@@ -15216,7 +15216,7 @@ function executeSpell(id){
     const m=pickCastTarget(30);
     if(!m){ refundCast(); spellCd[id]=0; log("No foe in your sights for <b>"+s.name+"</b>.","warn"); return; }
     if(m.shared) netSend({t:"debuff",id:m.id,eff:s.debuff,v:s.dmag,dur:s.dur});
-    else if(s.debuff==="spd") m.slow=Math.max(m.slow||0,1-s.dmag);
+    else if(s.debuff==="spd"){ m.slowSpellV=Math.max(m.slowSpellV||0,1-s.dmag); m.slowUntil=now()+s.dur*1000; }   // #294: Slowness lasts its full s.dur (like Weakness's weakUntil) instead of decaying to 0 in ~1.6s via the transient-slow path
     else { m.weakV=s.dmag; m.weakUntil=now()+s.dur*1000; }
     floater(m.x,(m.headY||1.6)+2,m.z,s.debuff==="spd"?"Slowed":"Weakened","#c9a6ff");
     spellLandFX("creature",_slfMonsterPos(m),(m.headY||1.6)+0.4,m.r||0.8);   // creature magic lands: spirits spiral the foe, feet to crown
@@ -16572,8 +16572,9 @@ function update(dt){
         floater(m.x,(m.headY||1.6)+1.4,m.z,dd,"#ff7a2a");
         if(m.hp<=0){burned.push(m);continue;}}
     }
-    if(m.slow>0)m.slow=Math.max(0,m.slow-dt*0.5);
-    const slowF=m.slow>0?(1-m.slow):1;
+    if(m.slow>0)m.slow=Math.max(0,m.slow-dt*0.5);   // transient combat slow (frost proc / projectile) — decays fast, as intended
+    const _slowSpell=(m.slowUntil>now())?(m.slowSpellV||0):0;   // #294: the Slowness SPELL is a durable debuff (its own timer), not the fast-decaying transient slow
+    const slowEff=Math.max(m.slow>0?m.slow:0,_slowSpell), slowF=slowEff>0?(1-slowEff):1;
     const ox=m.x,oz=m.z; // pre-move (for dungeon wall-sliding)
     const dx=player.x-m.x,dz=player.z-m.z,d=Math.hypot(dx,dz);
     // freeze AI for far, non-chasing overworld creatures (streamMonsters/cull handles their mesh)
