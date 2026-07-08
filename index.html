@@ -4054,6 +4054,11 @@ const GFX={tier:3,rays:true,motesOn:true,mistOn:true,auroraOn:true,fps:60,_lo:0,
   TIERS:["Low","Medium","High","Ultra"]};
 function applyGfxTier(t,quiet){
   t=clamp(t|0,0,3); GFX.tier=t;
+  // #341: a tier change stalls one frame (shadow realloc + MSAA resize + forest restream) and the slow
+  // FPS EMA still reads the old low value — so a governor downshift immediately re-triggered another,
+  // ratcheting down through tiers. Arm a grace window, seed the EMA to neutral, and clear the up/down
+  // accumulators so the post-change stall doesn't feed the next decision.
+  if(typeof GFX!=="undefined"){ GFX._grace=Math.max(GFX._grace||0,1.5); GFX.fps=45; GFX._lo=0; GFX._hi=0; }
   if(typeof renderer==="undefined"||!renderer) return;
   // Low renders SUB-native and upscales — fill rate is what integrated GPUs drown in
   renderer.setPixelRatio(Math.min(devicePixelRatio,[0.85,1,1.25,2][t]));
