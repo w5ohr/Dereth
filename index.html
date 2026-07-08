@@ -16124,7 +16124,7 @@ function recoverCorpse(d){
   // returns the contents via corpse_loot; other players can see the corpse but cannot loot it.
   if(d.shared){
     if(!d.open && d.owner && player.name && d.owner!==player.name){ log(`This is <b>${esc(d.owner)}</b>'s corpse — only they can recover it.`,"warn"); if(SFX.deny)SFX.deny(); return; }
-    if(!d.req){ d.req=true; netSend({t:"recover",id:d.id}); }   // server validates (owner, or anyone for a PK corpse) + clears it for all
+    { const _t=now(); if(!d.reqAt||_t-d.reqAt>2000){ d.reqAt=_t; netSend({t:"recover",id:d.id}); } }   // #306: retry every 2s instead of a one-shot flag — a dropped/rate-limited/range-rejected intent no longer locks the corpse until reload (a successful recover removes the drop via onDropGone, so no further retry)
     return;
   }
   // pyreals always come home; items return to the satchel until it fills — the rest spills out
@@ -16711,7 +16711,7 @@ function update(dt){
     dp.mesh.position.y=(dp.baseY||0)+0.55+Math.sin(now()/250+dp.x)*0.12;
     const dd=Math.hypot(dp.x-player.x,dp.z-player.z);
     if(dp.type==="gold"&&dd<2){
-      if(dp.shared){ if(!dp.req){ dp.req=true; netSend({t:"pickup",id:dp.id}); } continue; } // server-validated; server removes it
+      if(dp.shared){ const _t=now(); if(!dp.reqAt||_t-dp.reqAt>2000){ dp.reqAt=_t; netSend({t:"pickup",id:dp.id}); } continue; } // #306: retry every 2s (was a one-shot flag that stuck the drop unlootable on a dropped/rejected intent); server removes it on success
       player.gold+=dp.amt;floater(player.x,EYE+0.4,player.z,"+"+dp.amt+" p","#ffd86b");
       SFX.gold();disposeObject3D(dp.mesh);drops.splice(i,1);continue;}   // #22: dispose, don't leak the sphere geo/mat
     if(dp.type==="corpse"&&dp.t>(dp.ttl||3600)){   // corpses decay after 5 min/level (min 1 hr)
