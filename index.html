@@ -9555,8 +9555,9 @@ function openCovenant(cr){
     tr.plan.sort((a,b2)=>b2-a).forEach(i=>player.inv.splice(i,1));
     player.homestead=hsNewDeed(cr.hid,cr.type);
     if(cr.hall) player.homestead.hall=cr.hall;
-    const hTier=cr.type==="mansion"?4:cr.type==="villa"?3:cr.type==="cottage"?2:1;
-    if(player.house&&player.house.tier<hTier) player.house.tier=hTier;
+    // #357: buying an AC Covenant dwelling no longer silently bumps the separate legacy abstract-estate
+    // tier (up to 120k pyreals of value, and it persisted after eviction). The homestead is its own
+    // system (its own /house recall + chest/hook storage); the legacy estate must be bought on its own.
     log(`The Covenant Crystal flares — <b>${cr.name} is yours</b>. /house recall returns you to its door; maintenance is due every 30 days.`,"loot");
     toast("HOME SWEET HOME"); if(SFX.quest)SFX.quest(); closeCovenant();
     hsCrystalLabel(cr); hsRefreshHomestead(); if(hsInst)hsInstDecorate(); updateHUD(); saveGame();
