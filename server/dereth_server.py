@@ -91,6 +91,45 @@ async def broadcast_house(hid):
     # a released plot is sent as {hid: None} so clients delete their local seal
     await broadcast({"t": "house_sync", "houses": {hid: HOUSES.get(hid)}})
 
+# #451: server-known set of REAL dwelling plot ids. A `house set` claim is only honoured for an hid in
+# this set, so a client cannot inject arbitrary/junk house rows (which would grow the DB unbounded and
+# amplify a broadcast-to-all on every claim). Built from the SAME assets/achousing.json the client uses:
+# every outdoor dwelling hid (houses[i][0]), every residential-hall apartment hid (halls[*].units[k][7]),
+# plus the ten Valstead castle cottages the client injects (hids 990001..990010). Stored as strings
+# because HOUSES is keyed by str(hid). If the pack is unavailable (a stripped deploy), VALID_PLOTS stays
+# None and is_valid_plot falls back to a bounded numeric check so housing still works without re-opening
+# unbounded injection.
+VALID_PLOTS = None
+def load_valid_plots():
+    global VALID_PLOTS
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "..", "assets", "achousing.json"), encoding="utf-8") as f:
+            j = json.load(f)
+        plots = set()
+        for h in j.get("houses", []):
+            if h:
+                plots.add(str(h[0]))
+        for hall in (j.get("halls") or {}).values():
+            for u in (hall.get("units") or []):
+                if len(u) > 7:
+                    plots.add(str(u[7]))
+        for n in range(990001, 990011):   # Valstead castle cottages (client hsAddCastleDwellings)
+            plots.add(str(n))
+        if plots:
+            VALID_PLOTS = plots
+            print(f"housing: {len(VALID_PLOTS)} authentic dwelling plots loaded for claim validation")
+    except Exception as e:
+        VALID_PLOTS = None
+        print("housing: achousing.json unavailable — claim validation falls back to bounded numeric hids:", e)
+
+def is_valid_plot(hid):
+    """True if `hid` (a str) is a real dwelling plot. Uses the authentic plot set when loaded; otherwise a
+    bounded numeric fallback (integer 1..999999, covering every real plot id incl. the 990001+ castle
+    cottages) so a missing pack degrades gracefully without allowing unbounded junk-id injection."""
+    if VALID_PLOTS is not None:
+        return hid in VALID_PLOTS
+    return hid.isdigit() and 1 <= int(hid) <= 999999
+
 def create_user(username, password):
     salt = secrets.token_bytes(16)
     with db() as c:
@@ -2346,7 +2385,16 @@ async def dispatch(cl, msg):
                     if cur and cur.get("owner") == cl.charname:
                         HOUSES.pop(hid, None); save_house(hid); await broadcast_house(hid)
                 elif act == "set":
-                    if cur is None or cur.get("owner") == cl.charname:
+                    # #451: only a REAL plot (is_valid_plot) may be claimed/edited — junk hids can no
+                    # longer inject persisted/broadcast rows; and you may only claim an unowned plot or
+                    # edit one you already own (no house-stealing).
+                    if is_valid_plot(hid) and (cur is None or cur.get("owner") == cl.charname):
+                        if cur is None:
+                            # #451: one dwelling per character (retail) — release any OTHER plot this
+                            # character already owns before taking this one, so a client can't claim
+                            # (and seal) every dwelling on the server.
+                            for other in [k for k, h in HOUSES.items() if k != hid and h.get("owner") == cl.charname]:
+                                HOUSES.pop(other, None); save_house(other); await broadcast_house(other)
                         HOUSES[hid] = {
                             "owner": cl.charname,
                             "open": bool(msg.get("open", True)),
@@ -2354,7 +2402,7 @@ async def dispatch(cl, msg):
                             "storagePerm": bool(msg.get("storagePerm", False)),
                         }
                         save_house(hid); await broadcast_house(hid)
-                    # else: hid already owned by someone else — ignore (no house-stealing)
+                    # else: invalid hid, or plot owned by someone else — ignore
     elif t == "ping":
         await cl.send({"t": "pong"})
 
@@ -2492,6 +2540,7 @@ async def main():
     db().close()  # ensure schema exists
     seed_admin()  # always keep the default Admin account + maxed Kilmer character
     load_houses()  # #355: restore dwelling ownership registry
+    load_valid_plots()  # #451: authentic plot-id set for claim validation
     populate_world()
     server = await asyncio.start_server(handle, HOST, PORT)
     asyncio.create_task(tick_loop())
