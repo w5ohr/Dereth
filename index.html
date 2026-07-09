@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dereth">
+<meta name="theme-color" content="#07080a">
 <title>Dereth — A First-Person Asheron's Call Homage</title>
 <style>
   :root{
@@ -165,56 +170,128 @@
   #dmgvig{position:absolute;inset:0;z-index:9;pointer-events:none;opacity:0;
     box-shadow:inset 0 0 160px 40px rgba(180,20,20,.9);transition:opacity .15s}
 
-  /* ══ MOBILE / TOUCH INTERFACE (Lane B): on-screen controls for phones & tablets.
+  /* ══ MOBILE / TOUCH INTERFACE v2 (Lane B): high-end mobile-MMO controls for phones & tablets.
      Everything is gated behind body.touchui so the desktop interface is untouched. ══ */
-  #touchUI{position:absolute;inset:0;pointer-events:none;z-index:24;display:none}
+  #touchUI{position:absolute;inset:0;pointer-events:none;z-index:24;display:none;font-family:inherit}
   body.touchui #touchUI{display:block}
-  #tcJoy{position:absolute;left:calc(16px + env(safe-area-inset-left,0px));bottom:calc(86px + env(safe-area-inset-bottom,0px));
-    width:128px;height:128px;border-radius:50%;pointer-events:auto;touch-action:none;
-    background:radial-gradient(circle,rgba(30,24,12,.28) 30%,rgba(30,24,12,.55) 72%);border:2px solid rgba(216,177,74,.4)}
-  #tcJoy.run{border-color:#7fe6a0;box-shadow:0 0 12px rgba(127,230,160,.35)}
-  #tcKnob{position:absolute;left:50%;top:50%;width:54px;height:54px;border-radius:50%;transform:translate(-50%,-50%);
-    background:radial-gradient(circle at 40% 35%,#4a3c1c,#241c0a);border:2px solid rgba(216,177,74,.7);box-shadow:0 2px 8px rgba(0,0,0,.6)}
-  #tcBtns{position:absolute;right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(80px + env(safe-area-inset-bottom,0px));
-    width:212px;height:200px;pointer-events:none}
+  /* dynamic joystick: touch anywhere in the left zone and the stick appears under your thumb */
+  #tcZone{position:absolute;left:0;top:14%;bottom:0;width:46%;pointer-events:auto;touch-action:none;z-index:1}
+  #tcJoy{position:absolute;left:110px;top:70%;width:calc(128px*var(--tcscale,1));height:calc(128px*var(--tcscale,1));
+    border-radius:50%;pointer-events:none;touch-action:none;transform:translate(-50%,-50%);z-index:2;opacity:.5;
+    transition:opacity .18s;background:radial-gradient(circle,rgba(30,24,12,.22) 30%,rgba(30,24,12,.5) 72%);
+    border:2px solid rgba(216,177,74,.4)}
+  #tcJoy.live{opacity:1}
+  #tcJoy.run{border-color:#7fe6a0;box-shadow:0 0 14px rgba(127,230,160,.4)}
+  #tcKnob{position:absolute;left:50%;top:50%;width:42%;height:42%;border-radius:50%;transform:translate(-50%,-50%);
+    background:radial-gradient(circle at 40% 35%,#4a3c1c,#241c0a);border:2px solid rgba(216,177,74,.7);
+    box-shadow:0 2px 8px rgba(0,0,0,.6);transition:transform .16s}
+  #tcJoy.live #tcKnob{transition:none}
+  #tcRunLock{position:absolute;left:50%;top:-24px;transform:translateX(-50%);font-size:10px;font-weight:bold;
+    color:#7fe6a0;background:rgba(8,12,6,.85);border:1px solid rgba(127,230,160,.5);border-radius:9px;
+    padding:2px 9px;white-space:nowrap;display:none}
+  #tcRunLock.arm{display:block;opacity:.65}
+  #tcRunLock.on{display:block;opacity:1;box-shadow:0 0 10px rgba(127,230,160,.5)}
+  /* action cluster: big charge-attack + inner ring (block/dodge/jump) + outer spell arc */
+  #tcBtns{position:absolute;right:calc(10px + env(safe-area-inset-right,0px));bottom:calc(74px + env(safe-area-inset-bottom,0px));
+    width:240px;height:240px;pointer-events:none;transform:scale(var(--tcscale,1));transform-origin:bottom right;z-index:3}
   .tcBtn{position:absolute;pointer-events:auto;touch-action:none;display:flex;align-items:center;justify-content:center;
-    border-radius:50%;background:radial-gradient(circle at 40% 35%,rgba(46,38,18,.85),rgba(18,14,6,.85));
+    border-radius:50%;background:radial-gradient(circle at 40% 35%,rgba(46,38,18,.88),rgba(18,14,6,.88));
     border:2px solid rgba(216,177,74,.55);color:#ffd86b;font-size:22px;user-select:none;-webkit-user-select:none;
-    box-shadow:0 3px 10px rgba(0,0,0,.55);text-shadow:0 1px 2px #000}
-  .tcBtn.on{background:radial-gradient(circle at 40% 35%,#6a5420,#2a2008);border-color:#ffd86b}
-  .tcBtn .sub{position:absolute;bottom:1px;left:0;right:0;text-align:center;font-size:8px;color:var(--dim);text-shadow:none;pointer-events:none}
-  #tcAtk{width:78px;height:78px;right:0;bottom:0;font-size:32px}
-  #tcBlk{width:56px;height:56px;right:90px;bottom:-4px}
-  #tcJmp{width:56px;height:56px;right:8px;bottom:90px}
-  #tcDdg{width:48px;height:48px;right:96px;bottom:64px;font-size:18px}
-  #tcHt{width:46px;height:46px;right:158px;bottom:16px;font-size:11px;border-radius:12px;font-weight:bold}
-  #tcTgt{width:46px;height:46px;right:70px;bottom:138px;font-size:18px}
-  #tcAct{position:absolute;left:50%;bottom:calc(148px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+    box-shadow:0 3px 10px rgba(0,0,0,.55);text-shadow:0 1px 2px #000;transition:transform .08s,border-color .08s}
+  .tcBtn.on{background:radial-gradient(circle at 40% 35%,#6a5420,#2a2008);border-color:#ffd86b;transform:scale(.9)}
+  .tcBtn .sub{position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:8px;color:var(--dim);text-shadow:none;pointer-events:none}
+  #tcAtk{width:88px;height:88px;right:0;bottom:0;font-size:36px}
+  #tcAtk.on{transform:scale(.94)}
+  #tcAtkRing{position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);transform:rotate(-90deg);pointer-events:none}
+  #tcAtkRing circle{fill:none;stroke:#ffd86b;stroke-width:5;stroke-linecap:round;
+    stroke-dasharray:239;stroke-dashoffset:239;filter:drop-shadow(0 0 4px rgba(255,216,107,.8))}
+  #tcJmp{width:56px;height:56px;right:16px;bottom:124px}
+  #tcDdg{width:50px;height:50px;right:86px;bottom:86px;font-size:19px}
+  #tcBlk{width:56px;height:56px;right:124px;bottom:16px}
+  #tcHt{width:46px;height:46px;right:186px;bottom:-6px;font-size:11px;border-radius:12px;font-weight:bold}
+  #tcPg{width:40px;height:40px;right:196px;bottom:52px;font-size:14px;border-radius:11px;font-weight:bold;opacity:.9}
+  /* outer spell arc: 5 slots rendered from the current quickbar page, radial cooldown sweeps */
+  .tcSlot{position:absolute;pointer-events:auto;touch-action:none;width:46px;height:46px;border-radius:12px;
+    background:radial-gradient(circle at 50% 35%,#241a0c,#0c0905);border:2px solid rgba(216,177,74,.5);
+    display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 3px 9px rgba(0,0,0,.5);
+    color:#ffd86b;overflow:hidden;transition:transform .08s}
+  .tcSlot.on{transform:scale(.88);border-color:#ffd86b}
+  .tcSlot .sweep{position:absolute;inset:0;display:none;pointer-events:none}
+  .tcSlot .cds{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    font-size:12px;font-weight:bold;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none}
+  .tcSlot.cool .sweep,.tcSlot.cool .cds{display:flex}
+  .tcSlot.empty{opacity:.35;border-style:dashed}
+  /* utility row: target / weapon / view / quick-chat / menu — top edge between compass and minimap */
+  #tcCol{position:absolute;top:calc(8px + env(safe-area-inset-top,0px));right:174px;display:flex;gap:6px;
+    pointer-events:none;z-index:4;flex-wrap:wrap;justify-content:flex-end;max-width:44vw}
+  .tcMini{position:relative;width:42px;height:42px;font-size:18px;flex:none}
+  #tcSheet{position:absolute;top:calc(56px + env(safe-area-inset-top,0px));right:12px;display:none;z-index:45;
+    pointer-events:auto;background:linear-gradient(180deg,rgba(28,22,9,.96),rgba(16,12,6,.96));border:1px solid var(--gold);
+    border-radius:10px;padding:10px;grid-template-columns:repeat(4,64px);gap:8px;box-shadow:0 8px 26px rgba(0,0,0,.7)}
+  #tcSheet.open{display:grid}
+  #tcSheet button{width:64px;height:58px;border-radius:8px;background:linear-gradient(#241f14,#141008);color:var(--gold);
+    border:1px solid var(--border);font-size:19px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer}
+  #tcSheet button small{font-size:8.5px;color:var(--dim)}
+  /* context interact pill (above the castbar & charge zone) */
+  #tcAct{position:absolute;left:50%;bottom:calc(212px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
     pointer-events:auto;touch-action:manipulation;display:none;padding:10px 18px;border-radius:20px;
-    background:linear-gradient(#2e2718,#1a140a);border:1px solid var(--gold);color:#ffe6b0;font-size:13px;max-width:72vw;
+    background:linear-gradient(#2e2718,#1a140a);border:1px solid var(--gold);color:#ffe6b0;font-size:13px;max-width:64vw;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 3px 10px rgba(0,0,0,.55);
-    font-family:inherit;cursor:pointer}
+    font-family:inherit;cursor:pointer;z-index:26}
+  /* quick-chat & emote wheel */
+  #tcWheel{position:absolute;inset:0;display:none;pointer-events:auto;background:rgba(4,3,1,.55);z-index:70;backdrop-filter:blur(2px)}
+  #tcWheel.open{display:block}
+  #tcWheelTabs{position:absolute;left:50%;top:14%;transform:translateX(-50%);display:flex;gap:8px}
+  #tcWheelTabs button{padding:8px 18px;border-radius:16px;border:1px solid var(--border);background:#17120a;color:var(--dim);font-size:14px;font-family:inherit}
+  #tcWheelTabs button.on{border-color:var(--gold);color:#ffe6b0;background:#2e2718}
+  #tcWheelOpts{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);width:min(86vw,560px);
+    display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+  #tcWheelOpts button{padding:11px 16px;border-radius:20px;border:1.5px solid rgba(216,177,74,.55);font-family:inherit;
+    background:radial-gradient(circle at 40% 30%,rgba(46,38,18,.95),rgba(18,14,6,.95));color:#ffe6b0;font-size:14px;box-shadow:0 3px 10px rgba(0,0,0,.5)}
+  /* player radial menu (MMO): tap another player */
+  #tcPMenu{position:absolute;display:none;z-index:72;pointer-events:auto;width:232px;
+    background:linear-gradient(180deg,rgba(28,22,9,.97),rgba(14,10,5,.97));border:1.5px solid var(--gold);
+    border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.75);padding:10px}
+  #tcPMenu.open{display:block}
+  #tcPMHead{font-size:14px;color:#ffe6b0;font-weight:bold;margin-bottom:8px;line-height:1.5}
+  #tcPMHead .pk{font-size:10px;padding:1px 7px;border-radius:8px;border:1px solid #a04040;color:#ff9a9a;margin-left:6px;vertical-align:1px}
+  #tcPMHead .bar{height:9px}
+  #tcPMBtns{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  #tcPMBtns button{padding:9px 6px;border-radius:8px;border:1px solid var(--border);background:linear-gradient(#241f14,#141008);
+    color:#ffd86b;font-size:12.5px;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:5px}
+  #tcPMBtns button.warn{border-color:#7a3a20;color:#ffb08a}
+  /* first-run onboarding */
+  #tcBoard{position:absolute;inset:0;display:none;pointer-events:auto;background:rgba(3,2,1,.6);z-index:80}
+  #tcBoard.open{display:block}
+  .tcTip{position:absolute;color:#ffe6b0;font-size:16px;font-weight:bold;text-shadow:0 2px 6px #000;line-height:1.5;text-align:center}
+  .tcTip small{font-weight:normal;font-size:12px;color:#e8dcc0}
+  #tcBoardGo{position:absolute;left:50%;bottom:8%;transform:translateX(-50%);padding:12px 26px;border-radius:22px;
+    background:linear-gradient(#3a2f18,#1e160a);border:1.5px solid var(--gold);color:#ffe6b0;font-size:16px;box-shadow:0 4px 16px rgba(0,0,0,.6)}
   #tcRotate{position:absolute;left:50%;top:calc(8px + env(safe-area-inset-top,0px));transform:translateX(-50%);display:none;
     pointer-events:auto;padding:6px 12px;border-radius:8px;background:rgba(8,6,3,.92);border:1px solid var(--border);
     color:#ffcf9a;font-size:11.5px;white-space:nowrap;z-index:61}
   body.touchui #c{touch-action:none}
   body.touchui{-webkit-touch-callout:none}
   body.touchui #hint,body.touchui #uimoveHint{display:none!important}
-  body.touchui #panelRail button{width:42px;height:42px;font-size:19px}
+  body.touchui #panelRail{display:none!important}   /* replaced by the ☰ menu sheet */
+  body.touchui #chargeBar{display:none!important}   /* the attack button's ring IS the charge bar */
   body.touchui button,body.touchui .tbtn,body.touchui .slot{touch-action:manipulation}
   @supports (height:100dvh){ body.touchui #c{height:100dvh} }
-  /* the quickbar scales to the viewport via --qbscale (set from JS on resize) and anchors beside
-     the joystick so it never slides under the right-hand action cluster */
+  /* the quickbar scales via --qbscale and anchors beside the joystick zone, clear of the cluster */
   body.touchui #spellbar{left:calc(148px + env(safe-area-inset-left,0px));transform:scale(var(--qbscale,1));transform-origin:bottom left}
-  /* keep the play space clear: the combat panel's jobs move to the touch cluster (HEIGHT button;
-     hold-to-charge sets power), the potion belt rides top-centre, chat lifts clear of the joystick */
   body.touchui #combatPanel{display:none!important}
-  body.touchui #potions{left:50%!important;right:auto!important;top:42px!important;bottom:auto!important;transform:translateX(-50%)}
+  body.touchui #potions{left:50%!important;right:auto!important;top:58px!important;bottom:auto!important;transform:translateX(-50%)}
+  body.touchui #potions .pot{cursor:pointer;pointer-events:auto}
   body.touchui #log{bottom:calc(238px + env(safe-area-inset-bottom,0px));width:min(320px,38vw)}
+  /* native-keyboard typing: ≥16px font stops the iOS focus auto-zoom, and the chat line moves to
+     the TOP of the screen while typing so the on-screen keyboard never covers what you're writing */
+  body.touchui input{font-size:16px!important}
+  body.touchui #chatInput{top:calc(52px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+    left:50%!important;transform:translateX(-50%);width:min(72vw,460px)!important}
   @media (max-width:900px){
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
-    /* a phone has no room for the side info panels — the panel rail still opens everything */
+    body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
     body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
   }
 </style>
@@ -287,7 +364,7 @@
     <div class="panel2" id="logInner"></div>
     <div id="chatBar" title="Click to chat — plain text speaks to the active tab; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
   </div>
-  <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
+  <input id="chatInput" maxlength="200" autocomplete="off" enterkeyhint="send" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
     style="position:absolute;left:12px;bottom:56px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
   <div id="castbar"><div id="castfill"></div><span id="castlabel"></span></div>
   <div id="spellbar" class="panel"></div>
@@ -303,18 +380,39 @@
 
 <div id="hint"></div>
 
-<!-- ══ MOBILE / TOUCH INTERFACE: joystick + action cluster (shown only under body.touchui) ══ -->
+<!-- ══ MOBILE / TOUCH INTERFACE v2: dynamic joystick, skill arc, MMO social wheels (body.touchui only) ══ -->
 <div id="touchUI">
   <div id="tcRotate">📱 Rotate to landscape for the best view &nbsp;<button id="tcRotateX" style="font-size:11px;padding:1px 7px">✕</button></div>
+  <div id="tcZone"></div>
   <button id="tcAct"></button>
-  <div id="tcJoy"><div id="tcKnob"></div></div>
+  <div id="tcJoy"><div id="tcRunLock">AUTO-RUN</div><div id="tcKnob"></div></div>
   <div id="tcBtns">
-    <div class="tcBtn" id="tcAtk" title="Attack — hold to charge">⚔</div>
+    <div class="tcBtn" id="tcAtk" title="Attack — hold to charge"><svg id="tcAtkRing" viewBox="0 0 84 84"><circle cx="42" cy="42" r="38"/></svg><span id="tcAtkIco">⚔</span></div>
     <div class="tcBtn" id="tcBlk" title="Hold to block">🛡</div>
     <div class="tcBtn" id="tcJmp" title="Jump — hold to charge">⤴<span class="sub">JUMP</span></div>
     <div class="tcBtn" id="tcDdg" title="Dodge roll">💨</div>
     <div class="tcBtn" id="tcHt" title="Attack height">MID<span class="sub">HEIGHT</span></div>
-    <div class="tcBtn" id="tcTgt" title="Next target">🎯</div>
+    <div class="tcBtn" id="tcPg" title="Spell page">1<span class="sub">PAGE</span></div>
+    <div id="tcArc"></div>
+  </div>
+  <div id="tcCol">
+    <div class="tcBtn tcMini" id="tcTgt" title="Next target">🎯</div>
+    <div class="tcBtn tcMini" id="tcSwp" title="Swap weapon">🏹</div>
+    <div class="tcBtn tcMini" id="tcEye" title="Toggle view">👁</div>
+    <div class="tcBtn tcMini" id="tcQC" title="Quick chat & emotes">💬</div>
+    <div class="tcBtn tcMini" id="tcMenu" title="Menu">☰</div>
+  </div>
+  <div id="tcSheet"></div>
+  <div id="tcWheel">
+    <div id="tcWheelTabs"><button id="tcWSay" class="on">💬 Say</button><button id="tcWEmo">🎭 Emote</button></div>
+    <div id="tcWheelOpts"></div>
+  </div>
+  <div id="tcPMenu"><div id="tcPMHead"></div><div id="tcPMBtns"></div></div>
+  <div id="tcBoard">
+    <div class="tcTip" style="left:12%;bottom:38%">◉ MOVE<br><small>touch anywhere on this side<br>full tilt = sprint · hold up = auto-run</small></div>
+    <div class="tcTip" style="right:26%;top:30%">👆 LOOK — drag the world<br><small>tap = target · long-press = appraise<br>tap a player for trade &amp; more · pinch = zoom</small></div>
+    <div class="tcTip" style="right:6%;bottom:44%">⚔ FIGHT<br><small>hold to charge · spells on the arc</small></div>
+    <div id="tcBoardGo">⚔ Got it — enter Dereth</div>
   </div>
 </div>
 <div id="drownTint" style="position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(20,70,120,0) 30%,rgba(12,50,90,.62) 100%);z-index:35;display:none;pointer-events:none"></div>
@@ -509,6 +607,11 @@
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-tui="auto">Auto</button><button class="tbtn" data-tui="on">📱 Touch</button><button class="tbtn" data-tui="off">⌨ Desktop</button></span></div>
+  <div class="srow" id="tsSensRow"><span style="min-width:auto;text-align:left;color:var(--ink)">Touch look speed</span><input id="tsSens" type="range" min="40" max="200" value="100" style="flex:1"></div>
+  <div class="srow" id="tsRow2"><span style="min-width:auto;text-align:left;color:var(--ink)">Touch options</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+    <button class="tbtn" id="tsHaptic" title="Vibrate on hits &amp; buttons (Android)">📳 Haptics</button>
+    <button class="tbtn" id="tsAutoFace" title="Attacking turns you toward your target">🎯 Auto-face</button>
+    <button class="tbtn" data-tscale="0.85">Small</button><button class="tbtn" data-tscale="1">Med</button><button class="tbtn" data-tscale="1.18">Large</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
@@ -16566,7 +16669,8 @@ function update(dt){
     const slidecast=!!player.casting && (keys["arrowleft"]||keys["arrowright"]);
     if(slidecast && !player._slidecastSeen){ player._slidecastSeen=1; log("<b>Slidecasting</b> — hold a turn key while casting to keep moving at full speed.","sys"); }
     const castD=player.casting?(slidecast?1:0.5):1;
-    const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD; // units/sec
+    const tmag=(TOUCH.on&&TOUCH.mag>0)?(0.35+0.65*Math.min(1,TOUCH.mag)):1;   // analog joystick: partial tilt walks
+    const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD*tmag; // units/sec
     desVX=dx*spSec; desVZ=dz*spSec; moving=true;
   }
   // AC movement: on the ground you have full control; a JUMP launches with your run velocity and
@@ -17362,7 +17466,7 @@ function syncCamera(dt){
     // over-the-shoulder: shift the pivot to camera-right so the body sits left of the crosshair
     const rxv=-dz,rzv=dx,rl=Math.hypot(rxv,rzv)||1,SHOULDER=0.7;
     const tx=player.x+rxv/rl*SHOULDER,ty=gy+EYE*0.95,tz=player.z+rzv/rl*SHOULDER; // pivot near the shoulders
-    const dist=camClampDist(tx,ty,tz,-dx,-dy,-dz,4.2);                  // collision: shorten if blocked
+    const dist=camClampDist(tx,ty,tz,-dx,-dy,-dz,(typeof TOUCH!=="undefined"&&TOUCH.camDist)||4.2);   // collision: shorten if blocked (TOUCH.camDist = mobile pinch zoom)
     const camTooClose=dist<1.7;                                         // camera inside the body/back-gear — hide the avatar
     const desX=tx-dx*dist, desY=Math.max(gy+0.6, ty-dy*dist), desZ=tz-dz*dist;
     if(!camCur) camCur=new THREE.Vector3(desX,desY,desZ);
@@ -17887,6 +17991,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,gaDest:"auto",
+  touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
@@ -26677,17 +26782,22 @@ document.getElementById('registerBtn').onclick=()=>authAction('register');
 document.getElementById('authPass').addEventListener('keydown',e=>{ if(e.key==='Enter')authAction('login'); });
 // prefill last username for convenience
 try{ const lu=localStorage.getItem('dereth_user'); if(lu) document.getElementById('authUser').value=lu; }catch(e){}
-// ══ MOBILE / TOUCH INTERFACE (Lane B, supersedes the #246 "can't play on touch" warning) ═══════════
-// Phones and tablets get a real on-screen interface instead of a turn-away notice: a virtual move
-// joystick (full tilt = sprint), drag-the-world-to-look, tap-to-target (long-press = appraise), and
-// an action cluster — ⚔ attack (hold to charge), 🛡 block, ⤴ jump (hold to charge), 💨 dodge,
-// attack-height cycle, 🎯 next target — plus a context Interact pill that mirrors the desktop
-// E-prompt. The device is detected when the page loads (coarse-pointer touch device with no fine
-// pointer → touch UI); Settings → Interface and the title-screen notice override it either way.
+// ══ MOBILE / TOUCH INTERFACE v2 (Lane B) ══════════════════════════════════════════════════════════
+// A high-end mobile-MMO interface for phones & tablets, auto-selected when the player loads the
+// page on a coarse-pointer touch device (Settings → Interface and the title notice override it).
+// v2 over v1: DYNAMIC joystick (spawns under the thumb anywhere in the left zone, analog walk
+// speed, hold-forward auto-run lock) · camera look INERTIA + pinch zoom (first↔third person,
+// continuous distance via TOUCH.camDist) · a Genshin-style SPELL ARC (5 slots of the current
+// quickbar page, live radial cooldown sweeps, page chip) · charge ring on the attack button +
+// auto-face assist · tappable potion belt · MMO SOCIAL layer: tap another player for a radial
+// menu (wave/whisper/trade/party-invite/swear/examine) and a 💬 quick-chat + emote wheel · ☰ menu
+// sheet replacing the panel rail · haptics, first-run onboarding, fullscreen + orientation lock,
+// and touch settings (look speed, haptics, auto-face, control size).
 // Design notes: the joystick feeds TOUCH.held, which held() consults ahead of the keyboard, so
 // every existing consumer (walking, ships, footsteps, jump charge, emote cancel) works unchanged;
-// look writes player.yaw/pitch directly (no pointer lock in touch mode — see the !TOUCH.on gates).
-const TOUCH={on:false,pref:"auto",held:{},sprint:false};
+// TOUCH.mag drives analog speed in update(); TOUCH.camDist drives the third-person camera length.
+const TOUCH={on:false,pref:"auto",held:{},sprint:false,mag:0,camDist:4.2};
+function buzz(ms){ if(TOUCH.on&&settings.touchHaptics!==false&&navigator.vibrate){ try{ navigator.vibrate(ms); }catch(e){} } }
 function touchDeviceIs(){ try{
   return ((('ontouchstart' in window)||(navigator.maxTouchPoints|0)>0)
     && window.matchMedia && !window.matchMedia('(pointer:fine)').matches);
@@ -26697,24 +26807,45 @@ function setTouchPref(p){ TOUCH.pref=p; try{ localStorage.setItem("dereth_touchu
 function applyTouchUI(){
   TOUCH.on = TOUCH.pref==="on" || (TOUCH.pref==="auto" && touchDeviceIs());
   document.body.classList.toggle("touchui",TOUCH.on);
-  if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; blocking=false;
-    const j=document.getElementById('tcJoy'); if(j) j.classList.remove('run'); }
+  if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; blocking=false;
+    const j=document.getElementById('tcJoy'); if(j) j.classList.remove('run','live');
+    for(const id of ['tcWheel','tcPMenu','tcBoard']){ const el=document.getElementById(id); if(el) el.classList.remove('open'); }
+    const sh=document.getElementById('tcSheet'); if(sh) sh.classList.remove('open'); }
   if(TOUCH.on&&document.pointerLockElement) document.exitPointerLock();
+  try{ document.documentElement.style.setProperty('--tcscale',String(settings.touchBtnScale||1)); }catch(e){}
+  if(TOUCH.on&&typeof tcArcRender==="function") tcArcRender();
   tcFitHud(); tcRotateCheck(); tcPaintSettings(); tcPaintNotice();
 }
 // quickbar scale + rotate hint track the viewport
-function tcFitHud(){ try{   // quickbar fits between the joystick (≈148px) and the action cluster (≈236px)
-  document.documentElement.style.setProperty('--qbscale', String(Math.max(0.5,Math.min(1,(innerWidth-392)/640))));
+function tcFitHud(){ try{   // tablet quickbar fits between the joystick zone and the spell-arc cluster
+  document.documentElement.style.setProperty('--qbscale', String(Math.max(0.55,Math.min(1,(innerWidth-660)/640))));
 }catch(e){} }
 let _tcRotDismiss=false;
 function tcRotateCheck(){ const r=document.getElementById('tcRotate'); if(!r) return;
   r.style.display=(TOUCH.on&&!_tcRotDismiss&&innerHeight>innerWidth&&Math.min(innerWidth,innerHeight)<700)?"block":"none"; }
 window.addEventListener('resize',()=>{ tcFitHud(); tcRotateCheck(); });
 { const rx=document.getElementById('tcRotateX'); if(rx) rx.onclick=()=>{ _tcRotDismiss=true; tcRotateCheck(); }; }
-// Settings → Interface buttons (static HTML, wired once)
-function tcPaintSettings(){ document.querySelectorAll('#settings [data-tui]').forEach(b=>{ b.style.opacity=(b.dataset.tui===TOUCH.pref)?1:0.45; }); }
+// Settings → Interface + touch-option rows (static HTML, wired once)
+function tcPaintSettings(){
+  document.querySelectorAll('#settings [data-tui]').forEach(b=>{ b.style.opacity=(b.dataset.tui===TOUCH.pref)?1:0.45; });
+  const sl=document.getElementById('tsSens'); if(sl) sl.value=Math.round((settings.touchSens||1)*100);
+  const hp=document.getElementById('tsHaptic'); if(hp) hp.style.opacity=settings.touchHaptics!==false?1:0.45;
+  const af=document.getElementById('tsAutoFace'); if(af) af.style.opacity=settings.touchAutoFace!==false?1:0.45;
+  document.querySelectorAll('#settings [data-tscale]').forEach(b=>{ b.style.opacity=(Math.abs((+b.dataset.tscale)-(settings.touchBtnScale||1))<0.01)?1:0.45; });
+  for(const id of ['tsSensRow','tsRow2']){ const r=document.getElementById(id); if(r) r.style.display=TOUCH.on?"flex":"none"; }
+}
 document.querySelectorAll('#settings [data-tui]').forEach(b=>b.onclick=()=>{ setTouchPref(b.dataset.tui);
   log(TOUCH.on?"Interface: <b>touch controls</b> — on-screen joystick and buttons.":"Interface: <b>keyboard & mouse</b>.","sys"); });
+{ const sl=document.getElementById('tsSens');
+  if(sl) sl.oninput=()=>{ settings.touchSens=(+sl.value)/100; saveSettings(); }; }
+{ const hp=document.getElementById('tsHaptic');
+  if(hp) hp.onclick=()=>{ settings.touchHaptics=settings.touchHaptics===false; saveSettings(); tcPaintSettings(); buzz(15); }; }
+{ const af=document.getElementById('tsAutoFace');
+  if(af) af.onclick=()=>{ settings.touchAutoFace=settings.touchAutoFace===false; saveSettings(); tcPaintSettings(); }; }
+document.querySelectorAll('#settings [data-tscale]').forEach(b=>b.onclick=()=>{
+  settings.touchBtnScale=+b.dataset.tscale; saveSettings();
+  try{ document.documentElement.style.setProperty('--tcscale',String(settings.touchBtnScale)); }catch(e){}
+  tcPaintSettings(); });
 // title-screen notice: tell touch-capable devices which interface they got, with a one-tap switch
 function tcPaintNotice(){
   const tw=document.getElementById('touchWarn'), msg=document.getElementById('touchWarnMsg'), go=document.getElementById('touchWarnGo');
@@ -26727,84 +26858,185 @@ function tcPaintNotice(){
   go.textContent = TOUCH.on ? "Use keyboard & mouse instead" : "Use touch controls";
   go.onclick=()=>{ setTouchPref(TOUCH.on?"off":"on"); };
 }
-// ── virtual joystick: 8-way into TOUCH.held (the held() choke point), full tilt = sprint ──
+// ── dynamic virtual joystick: spawns under the thumb anywhere in the left zone; analog magnitude
+//    (TOUCH.mag → walk/run in update()), full tilt = sprint, hold full-forward 0.6s = auto-run lock ──
 (function(){
-  const joy=document.getElementById('tcJoy'), knob=document.getElementById('tcKnob'); if(!joy||!knob) return;
-  let jid=null;
+  const zone=document.getElementById('tcZone'), joy=document.getElementById('tcJoy'),
+        knob=document.getElementById('tcKnob'), lock=document.getElementById('tcRunLock');
+  if(!zone||!joy||!knob) return;
+  let jid=null, cx=0, cy=0, lockT=0;
+  const home=()=>{ joy.style.left='110px'; joy.style.top='70%'; };
   const clearMove=()=>{ delete TOUCH.held.forward; delete TOUCH.held.back; delete TOUCH.held.left; delete TOUCH.held.right;
-    TOUCH.sprint=false; joy.classList.remove('run'); knob.style.transform="translate(-50%,-50%)"; };
+    TOUCH.sprint=false; TOUCH.mag=0; lockT=0; joy.classList.remove('run','live');
+    if(lock){ lock.classList.remove('arm'); if(!autoRun) lock.classList.remove('on'); }
+    knob.style.transform="translate(-50%,-50%)"; };
   function steer(t){
-    const r=joy.getBoundingClientRect(), R=r.width/2;
-    let dx=t.clientX-(r.left+R), dy=t.clientY-(r.top+R);
-    const d=Math.hypot(dx,dy), lim=R-10;
+    const lim=joy.getBoundingClientRect().width/2-8;
+    let dx=t.clientX-cx, dy=t.clientY-cy;
+    const d=Math.hypot(dx,dy);
     if(d>lim){ dx*=lim/d; dy*=lim/d; }
     knob.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;
     const m=Math.hypot(dx,dy)/lim;
-    if(m<0.22){ clearMove(); return; }
+    if(m<0.18){ delete TOUCH.held.forward; delete TOUCH.held.back; delete TOUCH.held.left; delete TOUCH.held.right;
+      TOUCH.mag=0; TOUCH.sprint=false; joy.classList.remove('run'); lockT=0; if(lock)lock.classList.remove('arm'); return; }
     const ang=Math.atan2(-dy,dx);                       // screen-up = forward
     TOUCH.held.forward = Math.sin(ang)> 0.38;
     TOUCH.held.back    = Math.sin(ang)<-0.38;
     TOUCH.held.right   = Math.cos(ang)> 0.38;
     TOUCH.held.left    = Math.cos(ang)<-0.38;
-    TOUCH.sprint = m>0.92;
+    TOUCH.mag=m; TOUCH.sprint=m>0.92;
     joy.classList.toggle('run',TOUCH.sprint);
+    // auto-run lock: keep the stick pinned full-forward and it latches (release keeps running)
+    if(lock){
+      if(m>0.94&&Math.sin(ang)>0.72){
+        if(!lockT) lockT=now();
+        lock.classList.add('arm');
+        if(!autoRun&&now()-lockT>600){ autoRun=true; lock.classList.add('on'); buzz(20);
+          log("<b>Auto-run</b> — grab the stick (or back up) to stop.","sys"); }
+      } else { lockT=0; lock.classList.remove('arm'); }
+    }
   }
-  joy.addEventListener('touchstart',e=>{ e.preventDefault(); e.stopPropagation();
-    if(jid===null){ jid=e.changedTouches[0].identifier; steer(e.changedTouches[0]); } },{passive:false});
-  joy.addEventListener('touchmove',e=>{ e.preventDefault();
-    for(const t of e.changedTouches) if(t.identifier===jid) steer(t); },{passive:false});
-  const end=e=>{ for(const t of e.changedTouches) if(t.identifier===jid){ jid=null; clearMove(); } };
-  joy.addEventListener('touchend',end); joy.addEventListener('touchcancel',end);
-})();
-// ── canvas: drag to look, tap to target, long-press to appraise ──
-(function(){
-  let lk=null;   // {id,x,y,t0,moved}
-  cEl.addEventListener('touchstart',e=>{ if(!TOUCH.on) return; e.preventDefault();
-    if(!running||lk!==null) return;
-    const t=e.changedTouches[0]; lk={id:t.identifier,x:t.clientX,y:t.clientY,t0:now(),moved:false};
+  zone.addEventListener('touchstart',e=>{ e.preventDefault();
+    if(!TOUCH.on||jid!==null) return;
+    const t=e.changedTouches[0]; jid=t.identifier;
+    if(autoRun){ autoRun=false; log("Auto-run off.","sys"); if(lock)lock.classList.remove('on'); }
+    cx=t.clientX; cy=t.clientY;
+    joy.style.left=cx+'px'; joy.style.top=cy+'px'; joy.classList.add('live');
+    lockT=0; steer(t);
   },{passive:false});
-  cEl.addEventListener('touchmove',e=>{ if(!TOUCH.on||lk===null) return; e.preventDefault();
+  zone.addEventListener('touchmove',e=>{ e.preventDefault();
+    for(const t of e.changedTouches) if(t.identifier===jid) steer(t); },{passive:false});
+  const end=e=>{ for(const t of e.changedTouches) if(t.identifier===jid){ jid=null; clearMove(); home(); } };
+  zone.addEventListener('touchend',end); zone.addEventListener('touchcancel',end);
+  home();
+})();
+// ── remote-player screen pick (the world pick system doesn't register remotes — project instead) ──
+function tcPickPlayer(sx,sy){
+  try{
+    if(!isOnline||typeof NET==="undefined"||!NET.players||typeof cam==="undefined"||!cam) return null;
+    let best=null,bd=48;
+    for(const id in NET.players){ const r=NET.players[id];
+      if(!r||!r.mesh||!r.mesh.visible) continue;
+      if(Math.hypot((r.x||0)-player.x,(r.z||0)-player.z)>45) continue;
+      const v=new THREE.Vector3(r.mesh.position.x, r.mesh.position.y+1.4, r.mesh.position.z); v.project(cam);
+      if(v.z>1) continue;   // behind the camera
+      const px=(v.x+1)/2*innerWidth, py=(1-v.y)/2*innerHeight;
+      const d=Math.hypot(px-sx,py-sy); if(d<bd){ bd=d; best={id,r}; } }
+    return best;
+  }catch(e){ return null; }
+}
+// ── canvas: drag to look (with release inertia), tap = target / tap a PLAYER = social radial menu,
+//    long-press = appraise, two-finger pinch = zoom (first ↔ third person, continuous distance) ──
+(function(){
+  let lk=null, lpTimer=null, ids=[], pinch=null, vX=0, vY=0, inOn=false;
+  const sens=()=>0.0055*settings.sens*(settings.touchSens||1);
+  const byId=(e,id)=>{ for(const t of e.touches) if(t.identifier===id) return t; return null; };
+  const clearLp=()=>{ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } };
+  function inertia(){ if(inOn) return; inOn=true;
+    (function step(){ if(!inOn) return;
+      vX*=0.88; vY*=0.88;
+      if(Math.hypot(vX,vY)<0.35||!TOUCH.on||paused||!running){ inOn=false; return; }
+      player.yaw-=vX*sens(); player.pitch=clamp(player.pitch-vY*sens(),-1.2,1.2);
+      requestAnimationFrame(step); })(); }
+  cEl.addEventListener('touchstart',e=>{ if(!TOUCH.on) return; e.preventDefault();
+    tcClosePMenu(); tcSheetClose();
+    if(!_fsTried&&touchDeviceIs()&&running){ _fsTried=true; tcFullscreen(true); }   // one polite fullscreen attempt on the first world touch
+    if(!running) return;
+    inOn=false; vX=vY=0;
+    for(const t of e.changedTouches) ids.push(t.identifier);
+    if(lk===null&&ids.length===1){
+      const t=e.changedTouches[0]; lk={id:t.identifier,x:t.clientX,y:t.clientY,t0:now(),moved:false,used:false};
+      clearLp();
+      lpTimer=setTimeout(()=>{ lpTimer=null;
+        if(lk&&!lk.moved&&!paused&&player.alive){ lk.used=true;
+          const rp=tcPickPlayer(lk.x,lk.y);
+          if(rp){ tcOpenPMenu(rp,lk.x,lk.y); buzz(14); return; }
+          const hit=raycastPick({clientX:lk.x,clientY:lk.y});
+          if(hit){ openIdPanel(hit); buzz(14); } }
+      },480);
+    } else if(lk!==null&&ids.length===2){                 // second finger → pinch zoom
+      clearLp(); lk.moved=true;
+      const a=byId(e,ids[0]), b=byId(e,ids[1]);
+      if(a&&b) pinch={d0:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY), dist0:TOUCH.camDist||4.2};
+    }
+  },{passive:false});
+  cEl.addEventListener('touchmove',e=>{ if(!TOUCH.on) return; e.preventDefault();
+    if(pinch&&ids.length>=2){
+      const a=byId(e,ids[0]), b=byId(e,ids[1]); if(!a||!b) return;
+      const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      if(!thirdPerson){ if(d<pinch.d0-42){ thirdPerson=true; TOUCH.camDist=2.8; pinch.d0=d; pinch.dist0=2.8; buzz(10); } return; }
+      const nd=clamp(pinch.dist0*pinch.d0/Math.max(30,d),1.35,7.5);
+      if(nd<=1.5){ thirdPerson=false; TOUCH.camDist=4.2; pinch=null; buzz(10); }
+      else TOUCH.camDist=nd;
+      return;
+    }
+    if(lk===null) return;
     for(const t of e.changedTouches){ if(t.identifier!==lk.id) continue;
       const dx=t.clientX-lk.x, dy=t.clientY-lk.y;
-      if(Math.hypot(dx,dy)>7) lk.moved=true;
+      if(Math.hypot(dx,dy)>7&&!lk.moved){ lk.moved=true; clearLp(); }
       if(lk.moved&&!paused&&player.alive){
-        player.yaw-=dx*0.0055*settings.sens;
-        player.pitch=clamp(player.pitch-dy*0.0055*settings.sens,-1.2,1.2);
+        player.yaw-=dx*sens();
+        player.pitch=clamp(player.pitch-dy*sens(),-1.2,1.2);
+        vX=0.65*vX+0.35*dx; vY=0.65*vY+0.35*dy;          // release momentum
       }
       lk.x=t.clientX; lk.y=t.clientY;
     }
   },{passive:false});
-  const fin=e=>{ if(!TOUCH.on||lk===null) return;
-    for(const t of e.changedTouches){ if(t.identifier!==lk.id) continue;
-      const dt=now()-lk.t0;
-      if(!lk.moved&&running&&!paused&&player.alive){
-        const hit=raycastPick({clientX:t.clientX,clientY:t.clientY});
-        if(dt>=450){ if(hit) openIdPanel(hit); }          // long-press = appraise (desktop right-tap)
-        else selectTarget(hit,!hit);                       // tap = select / clear
+  const fin=e=>{ if(!TOUCH.on) return;
+    for(const t of e.changedTouches){
+      const ix=ids.indexOf(t.identifier); if(ix>=0) ids.splice(ix,1);
+      if(pinch&&ids.length<2) pinch=null;
+      if(lk&&t.identifier===lk.id){
+        clearLp();
+        const dur=now()-lk.t0;
+        if(!lk.moved&&!lk.used&&dur<300&&running&&!paused&&player.alive){
+          const rp=tcPickPlayer(t.clientX,t.clientY);
+          if(rp){ tcOpenPMenu(rp,t.clientX,t.clientY); buzz(10); }
+          else{ const hit=raycastPick({clientX:t.clientX,clientY:t.clientY});
+            selectTarget(hit,!hit); if(hit) buzz(6); }
+        } else if(lk.moved&&Math.hypot(vX,vY)>2.5) inertia();   // flick → camera glide
+        lk=null;
       }
-      lk=null;
     } };
   cEl.addEventListener('touchend',fin); cEl.addEventListener('touchcancel',fin);
 })();
-// ── action cluster ──
+// ── fullscreen + orientation (Android locks landscape; iOS politely ignores) ──
+let _fsTried=false;
+function tcFullscreen(auto){
+  try{
+    if(document.fullscreenElement){ if(!auto) document.exitFullscreen(); return; }
+    const el=document.documentElement, rq=el.requestFullscreen||el.webkitRequestFullscreen;
+    if(rq) rq.call(el);
+    if(screen.orientation&&screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
+  }catch(e){}
+}
+// ── action cluster: charge-ring attack (+auto-face assist), block, charge-jump, dodge, height, page ──
 (function(){
   const btn=(id,down,up)=>{ const el=document.getElementById(id); if(!el) return;
     el.addEventListener('touchstart',e=>{ e.preventDefault(); e.stopPropagation();
-      if(!TOUCH.on||!running||paused||!player.alive) return; el.classList.add('on'); if(down) down(); },{passive:false});
+      if(!TOUCH.on||!running||paused||!player.alive) return; el.classList.add('on'); buzz(7); if(down) down(); },{passive:false});
     const end=e=>{ e.preventDefault(); el.classList.remove('on'); if(up) up(); };
     el.addEventListener('touchend',end); el.addEventListener('touchcancel',end); };
-  btn('tcAtk',()=>{ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } },
-              ()=>{ if(chargeActive) releaseCharge(); });
+  btn('tcAtk',()=>{
+      if(settings.touchAutoFace!==false&&TARGET&&TARGET.type==="monster"&&TARGET.ref&&TARGET.ref.hp>0){
+        const m=TARGET.ref,dx=m.x-player.x,dz=m.z-player.z;                    // face the locked target
+        if(Math.hypot(dx,dz)<30) player.yaw=Math.atan2(-dx,-dz);
+      }
+      if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } },
+    ()=>{ if(chargeActive) releaseCharge(); });
   btn('tcBlk',()=>{ blocking=true; },()=>{ blocking=false; });
   btn('tcJmp',()=>{ TOUCH.held.jump=true; startJumpCharge(); },()=>{ delete TOUCH.held.jump; });
   btn('tcDdg',()=>dodge());
   btn('tcTgt',()=>cycleTarget(1));
+  btn('tcSwp',()=>weaponSwap());
+  btn('tcEye',()=>toggleView());
   btn('tcHt',()=>{ let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); player.atkHeight=ATK_HEIGHTS[(i+1)%3];
     const el=document.getElementById('tcHt'); if(el) el.firstChild.textContent=player.atkHeight.toUpperCase();
     if(typeof buildCombatPanel==="function") buildCombatPanel();
     const ah=document.getElementById('atkHeight'); if(ah){ ah.textContent="Attack: "+ATK_LABEL[player.atkHeight]; ah.style.display="block"; ah._t=now(); } });
+  btn('tcPg',()=>{ hotbarPage=(hotbarPage+1)%QB_PAGES; if(typeof buildSpellbar==="function") buildSpellbar(); tcArcRender(); });
   const act=document.getElementById('tcAct');
-  if(act) act.addEventListener('touchstart',e=>{ e.preventDefault(); if(TOUCH.on&&running&&!paused&&player.alive) interact(); },{passive:false});
+  if(act) act.addEventListener('touchstart',e=>{ e.preventDefault(); if(TOUCH.on&&running&&!paused&&player.alive){ interact(); buzz(9); } },{passive:false});
   // the Interact pill mirrors the desktop E-prompt (currentPrompt already names the exact action)
   setInterval(()=>{ if(!act) return;
     if(!TOUCH.on||!running||paused||!player.alive){ act.style.display="none"; return; }
@@ -26812,6 +27044,155 @@ function tcPaintNotice(){
     if(pr){ act.textContent="✦ "+pr.replace(/\s*\(E\)\s*$/,""); act.style.display="block"; }
     else act.style.display="none";
   },200);
+  // attack-button charge ring (replaces #chargeBar on touch) + weapon-mode icons
+  const ringC=document.querySelector('#tcAtkRing circle'), RING=239;
+  (function ringLoop(){ requestAnimationFrame(ringLoop);
+    if(!ringC||!TOUCH.on) return;
+    const f=chargeActive?Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX:0;
+    ringC.style.strokeDashoffset=String((RING*(1-f)).toFixed(0)); })();
+  setInterval(()=>{ if(!TOUCH.on) return;
+    const ico=document.getElementById('tcAtkIco'), swp=document.getElementById('tcSwp');
+    if(ico) ico.textContent=weaponMode==="bow"?"🏹":"⚔";
+    if(swp) swp.textContent=weaponMode==="bow"?"⚔":"🏹";
+  },400);
+})();
+// ── spell arc: 5 slots of the current quickbar page around the attack button, radial CD sweeps ──
+const TC_ARC_N=5;
+function tcArcRender(){
+  const arc=document.getElementById('tcArc'); if(!arc) return;
+  let sig=String(hotbarPage)+"|"+String(weaponMode);                 // rebuild only when the page/slots change
+  for(let i=0;i<TC_ARC_N;i++){ const e=player.hotbar&&player.hotbar[hotbarPage*QB_PAGE+i];
+    sig+="|"+(e?(typeof e==="string"?e:(e.name||"item")):""); }
+  if(arc.dataset.sig===sig) return;
+  arc.dataset.sig=sig;
+  arc.innerHTML="";
+  const cx=196,cy=196,rad=160;
+  for(let i=0;i<TC_ARC_N;i++){
+    const abs=hotbarPage*QB_PAGE+i;
+    const a=Math.PI*(1-i*0.125);                          // 180° → 90° fan, up and over the cluster
+    const x=cx+Math.cos(a)*rad, y=cy-Math.sin(a)*rad;
+    const e=player.hotbar&&player.hotbar[abs];
+    const isIt=e&&typeof hbIsItem==="function"&&hbIsItem(e);
+    const s=(e&&!isIt)?SPELLBOOK[e]:null;
+    const d=document.createElement('div');
+    d.className='tcSlot'+(e?'':' empty'); d.dataset.abs=abs; d.dataset.id=(s&&typeof e==="string")?e:'';
+    d.style.left=Math.round(x-23)+'px'; d.style.top=Math.round(y-23)+'px';
+    const ico=e?(isIt?((typeof gearIco==="function"&&gearIco(e))||"📦"):((s&&s.ico)||"✦")):String(i+1);
+    d.innerHTML=`<span class="ico">${ico}</span><div class="sweep"></div><div class="cds"></div>`;
+    d.addEventListener('touchstart',ev=>{ ev.preventDefault(); ev.stopPropagation();
+      if(!TOUCH.on||!running||paused||!player.alive) return;
+      d.classList.add('on'); castSlot(abs); buzz(8); setTimeout(()=>d.classList.remove('on'),140); },{passive:false});
+    arc.appendChild(d);
+  }
+  const pg=document.getElementById('tcPg'); if(pg) pg.firstChild.textContent=String(hotbarPage+1);
+}
+setInterval(()=>{ if(TOUCH.on&&running) tcArcRender(); },1500);   // pick up hotbar edits cheaply (5 nodes)
+setInterval(()=>{ if(!TOUCH.on||!running) return;                 // live cooldown sweeps
+  document.querySelectorAll('#tcArc .tcSlot').forEach(d=>{
+    const id=d.dataset.id; if(!id){ d.classList.remove('cool'); return; }
+    const s=SPELLBOOK[id], rem=(spellCd[id]||0)-now();
+    if(s&&s.cd&&rem>0){ d.classList.add('cool');
+      const deg=Math.round(clamp(rem/s.cd,0,1)*360);
+      const sw=d.querySelector('.sweep'), cd=d.querySelector('.cds');
+      if(sw) sw.style.background=`conic-gradient(rgba(6,4,1,.74) ${deg}deg, transparent ${deg}deg)`;
+      if(cd) cd.textContent=rem>9500?Math.ceil(rem/1000)+"s":(rem/1000).toFixed(1);
+    } else d.classList.remove('cool');
+  });
+},150);
+// ── MMO social: tap a player → radial menu (wave / whisper / trade / invite / swear / examine) ──
+function tcClosePMenu(){ const m=document.getElementById('tcPMenu'); if(m) m.classList.remove('open'); }
+function tcOpenPMenu(p,x,y){
+  const m=document.getElementById('tcPMenu'), head=document.getElementById('tcPMHead'), btns=document.getElementById('tcPMBtns');
+  if(!m||!head||!btns) return;
+  const nm=(p.r&&p.r.name)||"Adventurer";
+  const hpf=Math.round(100*clamp(((p.r&&p.r.hp)||1)/((p.r&&p.r.mhp)||1),0,1));
+  head.innerHTML=`👤 ${nm}${p.r&&p.r.pk?`<span class="pk">${String((p.r.pkState||"pk")).toUpperCase()}</span>`:""}
+    <div class="bar bhp" style="margin-top:5px"><i style="width:${hpf}%"></i></div>`;
+  btns.innerHTML="";
+  const mk=(ico,label,fn)=>{ const b=document.createElement('button'); b.textContent=ico+" "+label;
+    b.onclick=()=>{ fn(); tcClosePMenu(); buzz(8); }; btns.appendChild(b); return b; };
+  mk("👋","Wave",()=>doEmote("wave"));
+  mk("💬","Whisper",()=>{ openChat(); const ci=document.getElementById('chatInput'); if(ci) ci.value="/tell "+nm+" "; });
+  mk("🤝","Trade",()=>sendChatLine("/trade "+nm));
+  mk("👥","Invite",()=>sendChatLine("/party invite "+nm));
+  { const b=document.createElement('button'); let armed=false;               // swearing fealty is a commitment — two taps
+    b.textContent="🛡 Swear fealty";
+    b.onclick=()=>{ if(!armed){ armed=true; b.textContent="⚠ Confirm swear?"; b.className="warn"; return; }
+      sendChatLine("/swear "+nm); tcClosePMenu(); buzz(8); };
+    btns.appendChild(b); }
+  mk("🔍","Examine",()=>log(`<b>${nm}</b> — ${hpf}% health, ${p.r&&p.r.pk?"a <b>Player Killer</b>":"peaceable"}${p.r&&p.r.shield?", shield raised":""}.`,"sys"));
+  m.style.left=Math.round(clamp(x-116,8,innerWidth-248))+"px";
+  m.style.top=Math.round(clamp(y-40,8,innerHeight-236))+"px";
+  m.classList.add('open');
+}
+// ── quick-chat & emote wheel ──
+const TC_SAY=["Hail!","Group? Invite me!","Trade? Tap me!","Thanks!","Help!","Yes","No","Follow me","On my way!","Well fought!","For sale — ask me","Ready?"];
+let tcWheelMode="say";
+function tcWheelBuild(){
+  const opts=document.getElementById('tcWheelOpts'); if(!opts) return;
+  opts.innerHTML="";
+  const close=()=>{ const w=document.getElementById('tcWheel'); if(w) w.classList.remove('open'); };
+  if(tcWheelMode==="say"){
+    for(const s of TC_SAY){ const b=document.createElement('button'); b.textContent=s;
+      b.onclick=()=>{ sendChatLine(s); close(); buzz(8); }; opts.appendChild(b); }
+  } else {
+    const ems=(typeof EMOTE_CMDS!=="undefined")?Object.keys(EMOTE_CMDS):["wave","bow","cheer","dance","laugh","salute"];
+    for(const k of ems){ const b=document.createElement('button'); b.textContent="🎭 "+k;
+      b.onclick=()=>{ doEmote(k); close(); buzz(8); }; opts.appendChild(b); }
+  }
+  const ws=document.getElementById('tcWSay'), we=document.getElementById('tcWEmo');
+  if(ws) ws.className=tcWheelMode==="say"?"on":""; if(we) we.className=tcWheelMode==="say"?"":"on";
+}
+(function(){
+  const w=document.getElementById('tcWheel'); if(!w) return;
+  const qc=document.getElementById('tcQC');
+  if(qc) qc.addEventListener('touchstart',e=>{ e.preventDefault(); e.stopPropagation();
+    if(!TOUCH.on||!running) return; tcWheelBuild(); w.classList.add('open'); buzz(8); },{passive:false});
+  w.addEventListener('touchstart',e=>{ if(e.target===w){ e.preventDefault(); w.classList.remove('open'); } },{passive:false});
+  const ws=document.getElementById('tcWSay'), we=document.getElementById('tcWEmo');
+  if(ws) ws.onclick=()=>{ tcWheelMode="say"; tcWheelBuild(); };
+  if(we) we.onclick=()=>{ tcWheelMode="emote"; tcWheelBuild(); };
+})();
+// ── ☰ menu sheet (replaces the desktop panel rail on touch) ──
+function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.classList.remove('open'); }
+(function(){
+  const sh=document.getElementById('tcSheet'), mb=document.getElementById('tcMenu'); if(!sh||!mb) return;
+  const items=[["🔮","Spells",()=>togglePanel('spellbook',openSpellbook,closeSpellbook)],
+    ["👤","Character",()=>togglePanel('sheet',openSheet,closeSheet)],
+    ["🎒","Packs",()=>togglePanel('tinker',openTinker,closeTinker)],
+    ["🗺️","Map",()=>togglePanel('worldmap',openMap,closeMap)],
+    ["📜","Quests",()=>togglePanel('questlog',openQuestLog,closeQuestLog)],
+    ["📖","Codex",()=>togglePanel('codex',openCodex,closeCodex)],
+    ["🏠","Estate",()=>togglePanel('housing',openHousing,closeHousing)],
+    ["⚙️","Options",()=>togglePanel('settings',openSettings,closeSettings)],
+    ["⛶","Fullscreen",()=>tcFullscreen(false)]];
+  for(const [ic,lab,fn] of items){ const b=document.createElement('button');
+    b.innerHTML=`${ic}<small>${lab}</small>`;
+    b.onclick=()=>{ tcSheetClose(); fn(); buzz(7); }; sh.appendChild(b); }
+  mb.addEventListener('touchstart',e=>{ e.preventDefault(); e.stopPropagation();
+    if(!TOUCH.on) return; sh.classList.toggle('open'); buzz(7); },{passive:false});
+})();
+// ── tappable potion belt (desktop drinks by keybind; thumbs need taps) ──
+(function(){
+  const map={pHealth:()=>drinkPotion("potHealth",60,"hp"), pGreat:()=>drinkPotion("potGreat",150,"hp"),
+             pMana:()=>drinkPotion("potMana",60,"mn"),     pStam:()=>drinkPotion("potStam",60,"st"),
+             pMight:()=>useElixir("elixMight","buffMightT",30,"Elixir of Might","#ff8f6b"),
+             pSwift:()=>useElixir("elixSwift","buffSwiftT",30,"Elixir of Swiftness","#7fe6a0")};
+  document.querySelectorAll('#potions .pot').forEach(el=>{
+    const b=el.querySelector('b'); const fn=b&&map[b.id]; if(!fn) return;
+    el.addEventListener('click',()=>{ if(TOUCH.on&&running&&!paused&&player.alive){ fn(); buzz(8); } });
+  });
+})();
+// ── first-run onboarding: label the zones once, then get out of the way ──
+(function(){
+  const bd=document.getElementById('tcBoard'), go=document.getElementById('tcBoardGo'); if(!bd||!go) return;
+  let shown=false;
+  const done=()=>{ try{ return localStorage.getItem("dereth_touch_onboard")==="1"; }catch(e){ return true; } };
+  setInterval(()=>{ if(shown||!TOUCH.on||!running||done()) return;
+    shown=true; bd.classList.add('open'); },800);
+  go.addEventListener('touchstart',e=>{ e.preventDefault();
+    bd.classList.remove('open'); buzz(12); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} },{passive:false});
+  go.addEventListener('click',()=>{ bd.classList.remove('open'); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} });
 })();
 // touch mode: tapping away from the on-screen keyboard closes chat (no Esc key on a phone)
 { const ci=document.getElementById('chatInput');
