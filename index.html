@@ -27867,7 +27867,7 @@ function tcArcRender(){
   const cx=196,cy=196,rad=160;
   for(let i=0;i<TC_ARC_N;i++){
     const abs=hotbarPage*QB_PAGE+i;
-    const a=Math.PI*(1-i*0.125);                          // 180° → 90° fan, up and over the cluster
+    const a=(150-i*17)*Math.PI/180;                       // #469: 150°→82° fan (was 180°→90°) so the lowest slots clear the HEIGHT/PAGE buttons and the last slot stays on-screen; 17° step at r=160 still spaces the 46px slots
     const x=cx+Math.cos(a)*rad, y=cy-Math.sin(a)*rad;
     const e=player.hotbar&&player.hotbar[abs];
     const isIt=e&&typeof hbIsItem==="function"&&hbIsItem(e);
