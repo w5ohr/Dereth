@@ -399,36 +399,46 @@ def load_econ(cl, data):
     cl.level = cl.level_auth                                                     #        gates work even before the first input arrives
     cl.econ_ready = True
 
-# #314: cap the per-autosave coin INCREASE a client may inject. The server credits its own authoritative
-# balance for shared events (loot/kill/trade/vendor); a client also earns coin from purely client-side
-# sources (quests, gambling, redemption), so we must still adopt those — but a client that saves
-# gold:2_000_000_000 must NOT be able to set an arbitrary balance. Clamping the per-save gain admits every
-# realistic gain (a genuinely larger one simply catches up over the next few autosaves) while making an
-# instant mint impossible; spends adopt fully (reducing your own coin is never an exploit).
-ECON_MAX_GAIN_PER_SAVE = 1_000_000
 # #238: same clamp-the-jump discipline for character level. The swear/vassal/muster gates read the level,
 # so a client that saves level:275 must not be able to set it in one shot. Legit play never gains 10 levels
-# between two autosaves; a genuinely faster climb simply catches up over the next few saves. (Full XP-based
-# level authority — the server owning every kill's XP — is the larger remaining M3 residual.)
+# between two autosaves; a genuinely faster climb simply catches up over the next few saves.
 LEVEL_MAX_GAIN_PER_SAVE = 10
 
-# #238: proportionate mitigation for the forged-inventory coin mint. Because the client mints ALL items
-# locally (even online — dungeon/instanced loot, crafting, quests, chargen never touch the server), the
-# server cannot tell a forged item from a legit one, so it cannot selectively refuse a sale. What it CAN
-# do is meter the one server-credited coin exit forged items reach: vendor_sell. This token bucket caps
-# how fast a client can turn items into pyreals. A legit loot dump — already bounded client-side by each
-# vendor's finite coin (~20k, regenerating ~150/s) — clears the generous burst instantly; a scripted bulk
-# forged-sell is throttled from ~50M/session to the refill rate (a strong deterrent, not a hard close —
-# the hard close requires server-authoritative loot/crafting/combat, a separate rebuild).
-SELL_BUCKET_MAX = 200_000       # burst a legit seller can extract before metering bites
-SELL_BUCKET_REFILL = 200.0      # pyreals/sec sustained sell-coin rate once the burst is spent
-def sell_allowance(cl):
-    """Refill and return this client's current vendor-sell coin allowance (token bucket)."""
+# #238: authoritative coin-CREATION rate limiter — the definitive close of the forged-item coin mint.
+# Because the client mints ALL items locally (even online — dungeon/instanced loot, crafting, quests,
+# chargen never touch the server), the server cannot tell a forged item from a legit one, so it cannot
+# refuse an individual sale. What it CAN do is own the rate at which coin comes into existence. EVERY path
+# that CREATES coin — loot-gold pickup, event-reward gold, vendor_sell, and client-side save gains
+# (quests/gambling/redemption) — flows through one per-client token bucket, so no path can mint faster than
+# a (generous) legit earning rate. Conserved TRANSFERS between players (trade, corpse recovery — the coin
+# was already debited from someone) and SPENDS bypass it. Net effect: a fully-modified client can forge
+# items for personal use, but it cannot turn them (or a save-gold jump, or anything else) into coin faster
+# than a legitimate player could earn it — the confirmed ~50M/session mint collapses to the legit rate.
+COIN_GAIN_BURST  = 1_000_000    # coin a client may create in a burst before metering bites (covers a big legit loot dump)
+COIN_GAIN_REFILL = 250.0        # pyreals/sec sustained creation rate once the burst is spent (~900k/hr; well above legit, far below a mint)
+def coin_gain_allowance(cl):
+    """Refill and return this client's current coin-creation allowance (token bucket)."""
     now = time.time()
-    last = getattr(cl, "sell_bucket_t", now)
-    cl.sell_bucket = min(SELL_BUCKET_MAX, getattr(cl, "sell_bucket", SELL_BUCKET_MAX) + max(0.0, now - last) * SELL_BUCKET_REFILL)
-    cl.sell_bucket_t = now
-    return cl.sell_bucket
+    last = getattr(cl, "coin_bucket_t", now)
+    cl.coin_bucket = min(COIN_GAIN_BURST, getattr(cl, "coin_bucket", COIN_GAIN_BURST) + max(0.0, now - last) * COIN_GAIN_REFILL)
+    cl.coin_bucket_t = now
+    return cl.coin_bucket
+def credit_coin_created(cl, gain):
+    """Credit newly-CREATED coin (loot/event/sell/client-side), bounded by the creation-rate bucket. Returns
+    the amount actually credited (may be < gain when throttled). Use ONLY for coin coming into existence —
+    transfers (trade, corpse recovery) and spends set cl.coin directly, since they conserve total coin."""
+    try:
+        gain = int(gain)
+    except (TypeError, ValueError):
+        return 0
+    if gain <= 0:
+        return 0
+    g = int(min(gain, coin_gain_allowance(cl)))
+    if g <= 0:
+        return 0
+    cl.coin_bucket -= g
+    cl.coin = max(0, min(2_000_000_000, int(cl.coin) + g))
+    return g
 
 def reconcile_econ(cl, data):
     """On autosave (not first load): adopt the client's economy but clamp an implausible coin/level jump."""
@@ -436,7 +446,10 @@ def reconcile_econ(cl, data):
         load_econ(cl, data); return
     d = data if isinstance(data, dict) else {}
     want = int(_svnum(d.get("gold", 0), 0, 2e9, 0))
-    cl.coin = min(want, int(cl.coin) + ECON_MAX_GAIN_PER_SAVE) if want > cl.coin else want
+    if want > cl.coin:
+        credit_coin_created(cl, want - int(cl.coin))   # #238: client-side coin gains (quests/gambling/redemption) are CREATION — bounded by the same rate bucket, so save-gold spam can't mint
+    else:
+        cl.coin = want                                 # spends (a lower balance) adopt fully — reducing your own coin is never an exploit
     # #238: reconcile the authoritative XP accumulator. Kills already credited cl.xp_total in real time
     # (unthrottled — the server owns the kill). Here we adopt the client's NON-kill XP (quests, etc.) up
     # to a per-save ceiling of +LEVEL_MAX_GAIN_PER_SAVE levels' worth, and never let the total fall
@@ -652,8 +665,8 @@ class Client:
         # input.level so the swear/vassal/muster gates can't be gamed by a one-shot forged level.
         self.level_auth = 1
         self.xp_total = 0   # #238: authoritative cumulative lifetime XP — level_auth is derived from this, credited on every server-resolved kill
-        self.sell_bucket = SELL_BUCKET_MAX   # #238: vendor-sell coin allowance (token bucket); throttles turning items into pyreals
-        self.sell_bucket_t = 0.0
+        self.coin_bucket = COIN_GAIN_BURST   # #238: coin-CREATION allowance (token bucket); bounds how fast ANY path can mint coin (loot/event/sell/save-side)
+        self.coin_bucket_t = 0.0
         # AOI: ids this client currently has spawned (from the last snapshot we sent it). Used for the
         # AOI_IN/AOI_OUT hysteresis band so boundary-hugging entities don't spawn/despawn every tick.
         self.aoi_p = set()   # remote player usernames
@@ -926,7 +939,7 @@ async def end_event(success):
         for cl in list(CLIENTS.values()):
             if cl.in_world:
                 if cl.econ_ready:
-                    cl.coin = min(2_000_000_000, cl.coin + gold)   # #297: credit the reward to the authoritative balance so a later absolute coin push (e.g. picking up the ground spoils) can't erase it
+                    credit_coin_created(cl, gold)   # #297/#238: credit the event bounty to the authoritative balance, bounded by the coin-creation rate
                 await cl.send({"t": "event_reward", "xp": xp, "gold": gold, "name": name,
                                "authCoin": (int(cl.coin) if cl.econ_ready else None)})
         # spoils on the ground at the breach
@@ -1253,7 +1266,7 @@ async def do_pickup(cl, did):
     await broadcast({"t": "drop_gone", "id": did, "by": cl.username})
     if d["type"] == "gold":
         amt = int(d["amt"])
-        cl.coin = min(2_000_000_000, cl.coin + amt)   # M3 (#238): server credits the authoritative balance
+        credit_coin_created(cl, amt)   # M3 (#238): server credits the authoritative balance, bounded by the coin-creation rate
         await cl.send({"t": "loot", "type": "gold", "amt": amt, "coin": int(cl.coin)})
     else:
         if cl.econ_ready and len(cl.inv) < 500:
@@ -2085,15 +2098,15 @@ async def dispatch(cl, msg):
                     bp = server_item.get("bp")
                     if isinstance(bp, (int, float)):
                         price = min(price, max(0, int(bp) - 1))
-                    # #238: meter the sell-coin exit. If the credit exceeds the current allowance, roll the
-                    # item back into the inventory and refuse — the client re-adds it from NET.pendingSell,
-                    # so no item or coin is lost; the seller just waits for the bucket to refill.
-                    if price > sell_allowance(cl):
+                    # #238: the sale CREATES coin — meter it through the coin-creation bucket. If the price
+                    # exceeds the current allowance, roll the item back into the inventory and refuse (the
+                    # client re-adds it from NET.pendingSell), so no item or coin is lost; the seller just
+                    # waits for the bucket to refill. All-or-nothing so a partial credit never eats an item.
+                    if price > coin_gain_allowance(cl):
                         cl.inv = (cl.inv + [server_item])[:500]
                         await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "The vendor hasn't the coin for that just now — sell smaller items or come back shortly."})
                     else:
-                        cl.sell_bucket -= price
-                        cl.coin = max(0, min(2_000_000_000, cl.coin + price))
+                        credit_coin_created(cl, price)
                         await cl.send({"t": "vendor_ok", "act": "sell", "coin": int(cl.coin)})
                 else:
                     await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "That item isn't in your inventory."})
