@@ -34,6 +34,13 @@ AOI_IN = 300.0     # send entities within this radius (> fog far 235, so no pop-
 AOI_OUT = 380.0    # keep sending an already-sent entity until it passes this (hysteresis band)
 SCRYPT = dict(n=16384, r=8, p=1, dklen=32)
 PROTOCOL_VERSION = 2   # v2: accounts own up to 8 character slots (roster/play_char/create_char)
+# #441: admission control against unauthenticated connection exhaustion. A completed WS handshake
+# that never authenticates must not pin a coroutine + Client + socket forever, and a single host must
+# not be able to open unbounded sockets. Cap total and per-IP concurrent connections, and give every
+# pre-auth connection a hard deadline to log in (the header read is otherwise untimed by design).
+MAX_CONNECTIONS   = int(os.environ.get("DERETH_MAX_CONNS", "400"))       # global concurrent sockets
+MAX_CONNS_PER_IP  = int(os.environ.get("DERETH_MAX_CONNS_PER_IP", "16")) # concurrent sockets per peer IP
+AUTH_TIMEOUT      = float(os.environ.get("DERETH_AUTH_TIMEOUT", "30"))   # seconds to authenticate before drop
 
 # ---------------------------------------------------------------- persistence
 # An *account* (users row: username+password) owns up to MAX_CHARS *characters*
@@ -2333,14 +2340,45 @@ async def dispatch(cl, msg):
 def _reject_const(_c):   # #238: json.loads calls this for NaN/Infinity/-Infinity literals — refuse them
     raise ValueError("non-finite literal")
 
+# #441: live connection accounting for admission control. `_CONN_TOTAL` is the global count;
+# `_CONN_BY_IP` maps peer IP -> concurrent connection count. Both are maintained across the whole
+# lifetime of handle() (incremented before the handshake, decremented in its finally).
+_CONN_TOTAL = 0
+_CONN_BY_IP = {}
+
 async def handle(reader, writer):
+    global _CONN_TOTAL
     peer = writer.get_extra_info("peername")
+    ip = peer[0] if peer else "?"
+    # #441: reject BEFORE allocating a Client / running the handshake, so an unauthenticated flood can't
+    # exhaust FDs/memory/coroutines. Cap total and per-IP concurrent connections.
+    if _CONN_TOTAL >= MAX_CONNECTIONS or _CONN_BY_IP.get(ip, 0) >= MAX_CONNS_PER_IP:
+        try:
+            writer.close()
+        except Exception:
+            pass
+        return
+    _CONN_TOTAL += 1
+    _CONN_BY_IP[ip] = _CONN_BY_IP.get(ip, 0) + 1
     cl = Client(reader, writer)
-    if not await ws_handshake(reader, writer):
-        writer.close(); return
     try:
+        if not await ws_handshake(reader, writer):
+            writer.close(); return
+        # #441: a connection that completes the handshake but never authenticates is dropped after
+        # AUTH_TIMEOUT. The deadline is absolute (from accept), so a pre-auth client can't hold the
+        # socket open forever by trickling pings/frames just under the per-read timeouts.
+        auth_deadline = time.monotonic() + AUTH_TIMEOUT
         while cl.alive:
-            frame = await ws_read(reader)
+            if cl.username is None:
+                remaining = auth_deadline - time.monotonic()
+                if remaining <= 0:
+                    break   # never authenticated in time — reap it
+                try:
+                    frame = await asyncio.wait_for(ws_read(reader), timeout=remaining)
+                except asyncio.TimeoutError:
+                    break
+            else:
+                frame = await ws_read(reader)
             if frame is None:
                 break
             opcode, payload = frame
@@ -2389,6 +2427,13 @@ async def handle(reader, writer):
         print(f"[conn err] {peer}: {e}")
     finally:
         cl.alive = False
+        # #441: release this connection's slot from the global + per-IP accounting no matter how we exit
+        _CONN_TOTAL -= 1
+        _n = _CONN_BY_IP.get(ip, 0) - 1
+        if _n > 0:
+            _CONN_BY_IP[ip] = _n
+        else:
+            _CONN_BY_IP.pop(ip, None)
         if cl.username and CLIENTS.get(cl.username) is cl:
             was_in_world = cl.in_world
             who = cl.charname or cl.username
