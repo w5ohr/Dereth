@@ -324,6 +324,23 @@ def load_econ(cl, data):
     cl.inv = [sanitize_item(it) for it in inv if isinstance(it, dict)][:500] if isinstance(inv, list) else []
     cl.econ_ready = True
 
+# #314: cap the per-autosave coin INCREASE a client may inject. The server credits its own authoritative
+# balance for shared events (loot/kill/trade/vendor); a client also earns coin from purely client-side
+# sources (quests, gambling, redemption), so we must still adopt those — but a client that saves
+# gold:2_000_000_000 must NOT be able to set an arbitrary balance. Clamping the per-save gain admits every
+# realistic gain (a genuinely larger one simply catches up over the next few autosaves) while making an
+# instant mint impossible; spends adopt fully (reducing your own coin is never an exploit).
+ECON_MAX_GAIN_PER_SAVE = 1_000_000
+def reconcile_econ(cl, data):
+    """On autosave (not first load): adopt the client's economy but clamp an implausible coin jump."""
+    if not cl.econ_ready:
+        load_econ(cl, data); return
+    d = data if isinstance(data, dict) else {}
+    want = int(_svnum(d.get("gold", 0), 0, 2e9, 0))
+    cl.coin = min(want, int(cl.coin) + ECON_MAX_GAIN_PER_SAVE) if want > cl.coin else want
+    inv = d.get("inv")
+    cl.inv = [sanitize_item(it) for it in inv if isinstance(it, dict)][:500] if isinstance(inv, list) else []
+
 async def push_coin(cl):
     """Tell a client its authoritative pyreal balance (client mirrors it into player.gold)."""
     if cl.econ_ready:
@@ -1989,8 +2006,11 @@ async def dispatch(cl, msg):
     elif t == "save":
         char = msg.get("char")
         if isinstance(char, dict) and cl.slot is not None:
+            reconcile_econ(cl, char)          # #314: clamp an implausible coin jump before it becomes authoritative
+            char["gold"] = int(cl.coin)       # #314: PERSIST the authoritative (clamped) coin, not the client's raw claim,
+                                              #       so a "gold:2e9" save can neither hold nor survive a reload
             save_char_slot(cl.username, cl.slot, char)
-            load_econ(cl, char)   # M3 (#238): resync authoritative coin+inv from the save while the intent stages are still being built (client remains the source of truth until cutover)
+            await push_coin(cl)               # correct the client's mirror if we clamped its claim
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
         await cl.send({"t": "who", "players": players})
