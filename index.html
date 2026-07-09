@@ -2930,7 +2930,7 @@ function enterAcademyHall(){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.4";
   buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
-  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=3;
+  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #511: face INTO the Great Hall (the greeter/room lie north of the spawn point) — the old default (yaw 0, forward=-z) wedged a fresh recruit nose-first into the south wall behind them
   toast("THE TRAINING ACADEMY");
 }
 function exitAcademyHall(){
