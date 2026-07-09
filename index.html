@@ -22565,6 +22565,7 @@ function healScale(base){   // AC: the Healing skill boosts kit/potion potency; 
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
   if(player[field]<=0){ log("You have none of that potion.","warn"); return; }
+  if(kind==="hp"&&player.hp>=player.mhp){ log("You are already at full health.","warn"); return; }   // #515: don't waste a potion (and belt count) on a no-op heal
   amt=Math.max(0,+amt||0);   // #28: a potion never DRAINS a vital — clamp a stray negative/NaN amount to 0
   player[field]--;player.drinkCd=0.6;
   if(kind==="hp"){amt=healScale(amt);player.hp=Math.min(player.mhp,player.hp+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#7fe6a0");}
