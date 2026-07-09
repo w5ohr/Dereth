@@ -283,6 +283,11 @@
   body.touchui #potions{left:50%!important;right:auto!important;top:58px!important;bottom:auto!important;transform:translateX(-50%)}
   body.touchui #potions .pot{cursor:pointer;pointer-events:auto}
   body.touchui #log{bottom:calc(238px + env(safe-area-inset-bottom,0px));width:min(320px,38vw)}
+  /* native-keyboard typing: ≥16px font stops the iOS focus auto-zoom, and the chat line moves to
+     the TOP of the screen while typing so the on-screen keyboard never covers what you're writing */
+  body.touchui input{font-size:16px!important}
+  body.touchui #chatInput{top:calc(52px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+    left:50%!important;transform:translateX(-50%);width:min(72vw,460px)!important}
   @media (max-width:900px){
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
@@ -359,7 +364,7 @@
     <div class="panel2" id="logInner"></div>
     <div id="chatBar" title="Click to chat — plain text speaks to the active tab; /p party · /a allegiance · /tell"><span id="chatBarText" style="opacity:.5">· click here or press Enter to chat ·</span></div>
   </div>
-  <input id="chatInput" maxlength="200" autocomplete="off" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
+  <input id="chatInput" maxlength="200" autocomplete="off" enterkeyhint="send" placeholder="say aloud… or /p party · /a allegiance · /tell name · /who · /emote clap"
     style="position:absolute;left:12px;bottom:56px;width:340px;padding:6px 9px;background:rgba(8,6,3,.94);border:1px solid var(--border);border-radius:6px;color:#e8dcc0;font-size:12px;display:none;z-index:30;pointer-events:auto">
   <div id="castbar"><div id="castfill"></div><span id="castlabel"></span></div>
   <div id="spellbar" class="panel"></div>
