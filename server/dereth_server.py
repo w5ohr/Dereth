@@ -2192,6 +2192,7 @@ async def dispatch(cl, msg):
                                               #       can neither hold nor survive a reload and the reloaded save stays consistent
             save_char_slot(cl.username, cl.slot, char)
             await push_coin(cl)               # correct the client's mirror if we clamped its claim
+            await cl.send({"t": "save_ok"})   # #457: ack the persisted save so a client logging out can gate the session end on it
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
         await cl.send({"t": "who", "players": players})
