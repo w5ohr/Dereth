@@ -603,6 +603,8 @@
     <button class="tbtn" data-acdeath="1">Corpse &amp; item drop</button><button class="tbtn" data-acdeath="0">Soft (Vitae only)</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Suppress camera shake and fullscreen lightning/spell flashes (for motion sensitivity or photosensitivity). Defaults to your OS 'reduce motion' setting.">Reduce motion &amp; flashes</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware score: festive in the castle, aggressive in a fight, suspenseful in a dungeon, a crowd murmur in town, dark on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-dynmusic="1">On</button><button class="tbtn" data-dynmusic="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -18002,6 +18004,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,gaDest:"auto",
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
+  dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
@@ -18051,6 +18054,7 @@ function playAcAmbient(){
 }
 function musicTick(){
   if(!actx||muted) return;
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&MUSICDIR.mode&&MUSICDIR.mode!=="wild") return;   // the dynamic music director owns non-wild moods; don't layer the synth pad under it
   if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
   if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
@@ -18143,6 +18147,7 @@ let MUSIC=null,_musEl=null,_musZone=null;
 // stingers (e.g. the 2s MPEG-3 track) would loop jarringly. They still play one-shot via playAcAmbient.
 fetch('assets/acmusic/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.tracks&&j.tracks.length){ const loopable=j.tracks.filter(t=>(t.seconds||0)>=8); MUSIC=loopable.length?loopable:j.tracks; } }).catch(()=>{});
 setInterval(()=>{ try{
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on){ if(_musEl){_musEl.pause();_musZone=null;} return; }   // the dynamic music director supersedes the legacy zone loop
   if(!MUSIC||typeof running==="undefined"||!running||(typeof muted!=="undefined"&&muted)){ if(_musEl){_musEl.pause();_musZone=null;} return; }
   const kcNear=(typeof KC!=="undefined")&&!inDungeon&&Math.hypot(player.x-KC.x,player.z-KC.z)<260;
   const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon": kcNear?"castle":
@@ -18164,6 +18169,121 @@ setInterval(()=>{ try{
   }
   _musEl.play().catch(()=>{});   // blocked until the first user gesture — retried each tick
 }catch(e){} },4000);
+
+// ══ DYNAMIC MUSIC DIRECTOR ═══════════════════════════════════════════════════════════════════════
+// Context-aware procedural score, synthesized through WebAudio (works fully offline like the SFX).
+// It picks a MOOD from game state each beat and plays a matching bed, crossfading on change:
+//   death  → dark   (somber descending minor drone + slow toll)
+//   combat → aggressive (fast driving minor bass pulse + noise drum + dissonant stabs)
+//   dungeon→ suspense (sparse low drone + eerie minor-2nd + slow heartbeat)
+//   castle → festive (bright major lute/harp arpeggio + bouncy bass)
+//   town   → crowd  (the murmur of people talking: layered band-passed noise babble, no melody)
+//   else   → wild   (silent here; the legacy ambient pad/zone loop carries the wilds)
+// Priority is death > combat > dungeon > castle > town > wild. The director owns all non-wild moods,
+// so the legacy zone loop + synth pad are gated off above while MUSICDIR.on. A `dynMusic` setting
+// toggles it; kcAmbience (the castle's live court murmur/fireworks) is left untouched and layers under.
+const MUSICDIR={on:true,mode:null,_t:0,_bus:null,_next:0,_beat:0};
+// scales / helpers
+const _MAJ=[0,2,4,7,9], _MINP=[0,3,5,7,10];                 // major & minor-pentatonic degrees
+function _hz(semi){ return 220*Math.pow(2, semi/12); }
+function mdBus(){
+  if(!actx) return null;
+  if(!MUSICDIR._bus){ const g=actx.createGain(); g.gain.value=0.0; g.connect(masterGain||actx.destination); MUSICDIR._bus=g; }
+  return MUSICDIR._bus;
+}
+// one synth voice into the music bus (own ADSR); type/detune/filter tuned per call
+function mdNote(freq,t,dur,type,peak,glideTo){
+  const bus=mdBus(); if(!bus) return;
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type=type||"triangle"; o.frequency.setValueAtTime(freq,t);
+  if(glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,glideTo),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(peak||0.14,t+Math.min(0.06,dur*0.3));
+  g.gain.exponentialRampToValueAtTime(0.0006,t+dur);
+  o.connect(g).connect(bus); o.start(t); o.stop(t+dur+0.02);
+}
+function mdDrum(t,peak,freq,dur){   // percussive noise burst into the music bus (aggressive-mood beat)
+  const bus=mdBus(); if(!bus||!actx) return;
+  const n=Math.max(1,Math.floor(actx.sampleRate*(dur||0.12))), buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const s=actx.createBufferSource(); s.buffer=buf;
+  const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=freq||180; bp.Q.value=0.7;
+  const g=actx.createGain(); g.gain.value=peak||0.18;
+  s.connect(bp).connect(g).connect(bus); s.start(t);
+}
+// crowd babble: a bank of band-passed noise loops whose gains wander, mimicking overlapping talk
+let _mdCrowd=null;
+function mdCrowdStart(){
+  const bus=mdBus(); if(!bus||!actx||_mdCrowd) return;
+  const secs=4, n=actx.sampleRate*secs, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1);
+  const nodes=[];
+  for(const f of [360,620,900,1500]){                        // vocal-ish formant bands
+    const s=actx.createBufferSource(); s.buffer=buf; s.loop=true;
+    const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=4.5;
+    const g=actx.createGain(); g.gain.value=0.02;
+    const lfo=actx.createOscillator(), lg=actx.createGain();  // slow wander → the "murmur" swell
+    lfo.type="sine"; lfo.frequency.value=0.13+Math.random()*0.5; lg.gain.value=0.02;
+    lfo.connect(lg).connect(g.gain);
+    s.connect(bp).connect(g).connect(bus); s.start(); lfo.start();
+    nodes.push(s,lfo);
+  }
+  _mdCrowd={nodes};
+}
+function mdCrowdStop(){ if(!_mdCrowd) return; for(const n of _mdCrowd.nodes){ try{ n.stop(); }catch(e){} } _mdCrowd=null; }
+// per-mood one-bar generators: schedule a bar starting at time t, return seconds until the next bar
+const MD_MOODS={
+  festive(t){ const beat=0.34, root=_hz(7);                   // bright major lute — bouncy, upbeat
+    for(let i=0;i<8;i++){ const deg=_MAJ[(i*2)%_MAJ.length], oct=i>=4?12:0;
+      mdNote(root*Math.pow(2,(deg+oct)/12), t+i*beat, beat*1.4, i%2?"triangle":"square", 0.11); }
+    for(let i=0;i<4;i++) mdNote(root/2*Math.pow(2,(_MAJ[i%_MAJ.length])/12), t+i*beat*2, beat*1.2, "sine", 0.10);  // bouncy bass
+    return beat*8; },
+  aggressive(t){ const beat=0.19, root=_hz(-5);               // fast driving minor — urgent
+    for(let i=0;i<8;i++){ mdNote(root, t+i*beat, beat*0.9, "sawtooth", 0.12); mdDrum(t+i*beat, i%2?0.10:0.2, i%2?900:150, 0.1); }
+    if(Math.random()<0.7){ const d=_MINP[irnd(1,4)]; mdNote(_hz(7+d), t+beat*4, beat*3, "sawtooth", 0.10); mdNote(_hz(7+d+1), t+beat*4, beat*3, "square", 0.05); }  // dissonant stab
+    return beat*8; },
+  suspense(t){ const bar=6.0, root=_hz(-12);                  // sparse eerie drone — slow
+    mdNote(root, t, bar*0.95, "sine", 0.13); mdNote(root*1.001, t, bar*0.95, "triangle", 0.05);   // detuned low drone
+    if(Math.random()<0.6){ const at=t+2+Math.random()*2.5; mdNote(_hz(3), at, 1.6, "triangle", 0.06); mdNote(_hz(4), at, 1.6, "sine", 0.045); }  // minor-2nd unease
+    mdDrum(t+bar*0.5, 0.06, 70, 0.4);                         // slow heartbeat thump
+    return bar; },
+  crowd(t){ mdCrowdStart(); return 2.0; },                    // babble runs continuously; just keep the mood alive
+  dark(t){ const bar=5.0, root=_hz(-17);                      // somber descending minor + toll
+    [0,-3,-5].forEach((s,i)=> mdNote(_hz(-5+s), t+i*1.1, 2.4, "triangle", 0.12-i*0.02, _hz(-8+s)));  // descending, gliding down
+    mdNote(root, t, bar, "sine", 0.14);                       // deep drone
+    mdNote(root*2, t+0.2, 3.0, "sine", 0.05);                 // faint toll overtone
+    return bar; },
+};
+function mdMode(){
+  if(typeof running==="undefined"||!running) return "wild";
+  if(typeof player!=="undefined"&&player&&player.alive===false) return "dark";
+  let inCombat=(typeof player!=="undefined"&&player&&(player.combatT||0)>0);
+  if(!inCombat&&typeof monsters!=="undefined"&&monsters&&player){        // or a hostile is on you
+    for(const m of monsters){ if(m&&m.hp>0&&m.state==="chase"&&Math.hypot((m.x||0)-player.x,(m.z||0)-player.z)<22){ inCombat=true; break; } } }
+  if(inCombat) return "aggressive";
+  if(typeof inDungeon!=="undefined"&&inDungeon) return "suspense";
+  if(typeof KC!=="undefined"&&player&&Math.hypot(player.x-KC.x,player.z-KC.z)<KC.safeR) return "festive";
+  if(typeof nearestCapitalDist==="function"&&player&&nearestCapitalDist(player.x,player.z)<160) return "crowd";
+  return "wild";
+}
+setInterval(()=>{ try{
+  MUSICDIR.on = (typeof settings==="undefined") || settings.dynMusic!==false;   // authoritative from the setting (survives load order)
+  if(!MUSICDIR.on||!actx||muted||typeof running==="undefined"||!running){
+    if(MUSICDIR._bus) MUSICDIR._bus.gain.setTargetAtTime(0.0001,actx?actx.currentTime:0,0.3);
+    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    MUSICDIR.mode=null; MUSICDIR._next=0; return; }
+  const bus=mdBus(); if(!bus) return;
+  const target=mdMode(), tnow=actx.currentTime;
+  if(target!==MUSICDIR.mode){                                 // crossfade: duck out, switch, swell in
+    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    MUSICDIR.mode=target; MUSICDIR._next=0;
+    const vol=target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34));
+    bus.gain.cancelScheduledValues(tnow); bus.gain.setValueAtTime(Math.max(0.0001,bus.gain.value),tnow);
+    bus.gain.linearRampToValueAtTime(vol, tnow+1.2);
+  }
+  if(target==="wild"){ MUSICDIR._next=0; return; }
+  if(tnow>=MUSICDIR._next-0.05){                              // schedule the next bar just before the last ends
+    const gen=MD_MOODS[target]; if(gen){ const dur=gen(tnow+0.05); MUSICDIR._next=tnow+0.05+dur; } }
+}catch(e){} },350);
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -22560,6 +22680,11 @@ function openSettings(){
   rmHi();
   rmBtns.forEach(b=>b.onclick=()=>{settings.reduceMotion=+b.dataset.reducemotion===1;saveSettings();rmHi();
     log(settings.reduceMotion?"Reduce motion <b>on</b> — camera shake and fullscreen flashes are suppressed.":"Reduce motion off — full camera shake and flashes restored.","sys");});
+  const dmBtns=document.querySelectorAll('#settings [data-dynmusic]');
+  const dmHi=()=>dmBtns.forEach(b=>b.style.opacity=((+b.dataset.dynmusic===1)===(settings.dynMusic!==false))?1:0.45);
+  dmHi();
+  dmBtns.forEach(b=>b.onclick=()=>{settings.dynMusic=+b.dataset.dynmusic===1;if(typeof MUSICDIR!=="undefined")MUSICDIR.on=settings.dynMusic;saveSettings();dmHi();
+    log(settings.dynMusic?"Dynamic music <b>on</b> — the score follows where you are and what you're doing.":"Dynamic music off — classic ambient loops restored.","sys");});
   const gxBtns=document.querySelectorAll('#settings [data-gfx]');
   const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
   gxHi();
