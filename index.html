@@ -4890,6 +4890,12 @@ function acHeadChoices(app){
 function acHeadGroup(app, cb){
   const H=acHeadOpts(app); if(!H){ cb&&cb(null); return; }
   const ah=acHeadChoices(app)||{};
+  // Default HAIR colour comes from the character's own (per-race) hair-colour choice, not a shared tint:
+  // the retail hair textures are greyscale and their palettes only recolour non-grey pixels, so left on
+  // the skin remap alone the hair reads as an identical skin-tan "ginger" for every race. Tinting by the
+  // appearance's hairColour (which defaults per heritage — dark for Sho/Gharu'ndim, brown/auburn for
+  // Aluvian/Viamontian, via HERITAGE_LOOK) gives each race its own retail default and follows any explicit pick.
+  const hairHex=(app&&app.hairColor!=null)?app.hairColor:0x3a2416;
   const pick=(arr,i)=>arr&&arr.length?arr[clamp(i|0,0,arr.length-1)]:null;
   const style=pick(H.hairStyles,ah.style)||H.hairStyles[0];
   const eye=pick(H.eyes,ah.eyes), nose=pick(H.noses,ah.nose), mouth=pick(H.mouths,ah.mouth);
@@ -4914,13 +4920,24 @@ function acHeadGroup(app, cb){
       else if(g.otex==='0500025C'){ texDID=(mouth&&mouth.tex)||g.otex; remapDIDs=[skinDID]; slot="mouth"; }      // mouth
       mm.userData.acSlot=slot;                                                                     // for face-direction detection
       // Face tone: skin strips take a subtle warm multiply (not pure white) so the head doesn't wash
-      // out pale under the bright top-down noon light; hair keeps its own texture at full white.
+      // out pale under the bright top-down noon light; hair carries the race hair colour (see hairHex).
       if(slot!=="hair"){ mat.roughness=0.72; }
+      else{ mat.color.setHex(hairHex); }                                                           // race hair colour even before the texture arrives (no shared-ginger placeholder flash)
       // #forehead: the eye strip FILLS the eye-region hole, and its top ~40% is a dark-brown under-hair
       // band meant to sit beneath the hair. Female styles don't cover it → it shows across the brow.
       // Recolour that dark band to the strip's own forehead-skin tone (males are unaffected — hair hides it).
-      if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(slot==="hair"?0xffffff:0xe8dfce); mat.needsUpdate=true; }, slot==="eyes"?{foreheadFix:true}:null);
+      if(texDID) acHeadTexture(texDID, remapDIDs, tex=>{ mat.map=tex; mat.color.setHex(slot==="hair"?hairHex:0xe8dfce); mat.needsUpdate=true; }, slot==="eyes"?{foreheadFix:true}:null);
     }
+    // NECK-SEAM fill: the retail head's neck is an open stub, so at the head↔torso junction a bright lit
+    // jaw/neck edge shows as a white wedge under the chin (females) and the hollow opening reads as a hard
+    // dark seam ring (males) on every race/gender. Cover it with a skin-toned collar over the throat-to-
+    // neck-base; it rides the head group (local space, origin at the neck joint) so it tracks head motion.
+    const skinHex=(app&&app.skin!=null)?app.skin:0xe8b890;
+    const nd=sh=>Math.round(((skinHex>>sh)&255)*0.42);                                               // a flat, LIT collar washes pale under the scene's bright bluish fill light + IBL, so paint it
+    const neckCol=(nd(16)<<16)|(nd(8)<<8)|nd(0);                                                     // UNLIT at a fixed skin tone (≈ the neck's shaded value): it always reads as neck skin, never a white gap
+    const nmat=new THREE.MeshBasicMaterial(); nmat.color.setHex(neckCol).convertSRGBToLinear(); nmat.toneMapped=false;   // convert to linear so the sRGB output pass renders the intended tone (not a washed-out one)
+    const nfill=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.088,0.1,20),nmat);                 // a skin collar over the throat-to-neck-base: covers the bright lit jaw/neck edge (white wedge under the chin on females) and the dark hollow seam (males), so the head meets the body cleanly
+    nfill.position.y=-0.054; nfill.userData.acNeckFill=true; grp.add(nfill);
     cb&&cb(grp);
   }).catch(()=>{ cb&&cb(null); });
 }
