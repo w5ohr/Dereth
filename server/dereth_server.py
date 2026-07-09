@@ -411,6 +411,25 @@ ECON_MAX_GAIN_PER_SAVE = 1_000_000
 # between two autosaves; a genuinely faster climb simply catches up over the next few saves. (Full XP-based
 # level authority — the server owning every kill's XP — is the larger remaining M3 residual.)
 LEVEL_MAX_GAIN_PER_SAVE = 10
+
+# #238: proportionate mitigation for the forged-inventory coin mint. Because the client mints ALL items
+# locally (even online — dungeon/instanced loot, crafting, quests, chargen never touch the server), the
+# server cannot tell a forged item from a legit one, so it cannot selectively refuse a sale. What it CAN
+# do is meter the one server-credited coin exit forged items reach: vendor_sell. This token bucket caps
+# how fast a client can turn items into pyreals. A legit loot dump — already bounded client-side by each
+# vendor's finite coin (~20k, regenerating ~150/s) — clears the generous burst instantly; a scripted bulk
+# forged-sell is throttled from ~50M/session to the refill rate (a strong deterrent, not a hard close —
+# the hard close requires server-authoritative loot/crafting/combat, a separate rebuild).
+SELL_BUCKET_MAX = 200_000       # burst a legit seller can extract before metering bites
+SELL_BUCKET_REFILL = 200.0      # pyreals/sec sustained sell-coin rate once the burst is spent
+def sell_allowance(cl):
+    """Refill and return this client's current vendor-sell coin allowance (token bucket)."""
+    now = time.time()
+    last = getattr(cl, "sell_bucket_t", now)
+    cl.sell_bucket = min(SELL_BUCKET_MAX, getattr(cl, "sell_bucket", SELL_BUCKET_MAX) + max(0.0, now - last) * SELL_BUCKET_REFILL)
+    cl.sell_bucket_t = now
+    return cl.sell_bucket
+
 def reconcile_econ(cl, data):
     """On autosave (not first load): adopt the client's economy but clamp an implausible coin/level jump."""
     if not cl.econ_ready:
@@ -633,6 +652,8 @@ class Client:
         # input.level so the swear/vassal/muster gates can't be gamed by a one-shot forged level.
         self.level_auth = 1
         self.xp_total = 0   # #238: authoritative cumulative lifetime XP — level_auth is derived from this, credited on every server-resolved kill
+        self.sell_bucket = SELL_BUCKET_MAX   # #238: vendor-sell coin allowance (token bucket); throttles turning items into pyreals
+        self.sell_bucket_t = 0.0
         # AOI: ids this client currently has spawned (from the last snapshot we sent it). Used for the
         # AOI_IN/AOI_OUT hysteresis band so boundary-hugging entities don't spawn/despawn every tick.
         self.aoi_p = set()   # remote player usernames
@@ -2064,8 +2085,16 @@ async def dispatch(cl, msg):
                     bp = server_item.get("bp")
                     if isinstance(bp, (int, float)):
                         price = min(price, max(0, int(bp) - 1))
-                    cl.coin = max(0, min(2_000_000_000, cl.coin + price))
-                    await cl.send({"t": "vendor_ok", "act": "sell", "coin": int(cl.coin)})
+                    # #238: meter the sell-coin exit. If the credit exceeds the current allowance, roll the
+                    # item back into the inventory and refuse — the client re-adds it from NET.pendingSell,
+                    # so no item or coin is lost; the seller just waits for the bucket to refill.
+                    if price > sell_allowance(cl):
+                        cl.inv = (cl.inv + [server_item])[:500]
+                        await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "The vendor hasn't the coin for that just now — sell smaller items or come back shortly."})
+                    else:
+                        cl.sell_bucket -= price
+                        cl.coin = max(0, min(2_000_000_000, cl.coin + price))
+                        await cl.send({"t": "vendor_ok", "act": "sell", "coin": int(cl.coin)})
                 else:
                     await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "That item isn't in your inventory."})
     elif t == "vendor_buy":
