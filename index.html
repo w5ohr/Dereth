@@ -2151,6 +2151,7 @@ function buildCityList(){
 const CITIES=buildCityList();
 const CAPITALS=CITIES.filter(c=>c.capital);
 function nearestCapitalDist(x,z){let m=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<m)m=d;}return m;}
+function nearestCapital(x,z){let best=null,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c;}}return best;}
 function regionOf(x,z){ // -1 = Direlands
   if(nearestCapitalDist(x,z)>DIRE_DIST) return -1;
   let best=0,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c.region;}}return best;
@@ -18397,12 +18398,12 @@ function mdDrum(t,peak,freq,dur){   // percussive noise burst into the music bus
 }
 // crowd babble: a bank of band-passed noise loops whose gains wander, mimicking overlapping talk
 let _mdCrowd=null;
-function mdCrowdStart(){
+function mdCrowdStart(formants){
   const bus=mdBus(); if(!bus||!actx||_mdCrowd) return;
   const secs=4, n=actx.sampleRate*secs, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
   for(let i=0;i<n;i++) d[i]=(Math.random()*2-1);
   const nodes=[];
-  for(const f of [360,620,900,1500]){                        // vocal-ish formant bands
+  for(const f of (formants||[360,620,900,1500])){            // vocal-ish formant bands (per-culture timbre)
     const s=actx.createBufferSource(); s.buffer=buf; s.loop=true;
     const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=4.5;
     const g=actx.createGain(); g.gain.value=0.02;
@@ -18415,6 +18416,35 @@ function mdCrowdStart(){
   _mdCrowd={nodes};
 }
 function mdCrowdStop(){ if(!_mdCrowd) return; for(const n of _mdCrowd.nodes){ try{ n.stop(); }catch(e){} } _mdCrowd=null; }
+// ── city themes: the town crowd + melodic bed match the capital's racial culture ──
+//   Holtburg (Aluvian) → Western medieval lute · Shoushi (Sho) → East-Asian pentatonic koto + chimes ·
+//   Yaraq (Gharu'ndim) → Middle-Eastern oud (Phrygian-dominant) + darbuka · Sanamar (Viamontian) →
+//   Iberian/knightly harmonic-minor guitar over a drone. Culture picks the scale, instrument voice,
+//   tempo, and the crowd-babble formant bank (so even the murmur is tinted).
+let _mdCity="__unset";
+function _cityCulture(name){ const n=(name||"").toLowerCase();
+  if(/holtburg/.test(n)) return "aluvian";
+  if(/shoushi/.test(n))  return "sho";
+  if(/yaraq/.test(n))    return "gharundim";
+  if(/sanamar/.test(n))  return "viamontian";
+  return null; }
+const MD_CITY={
+  aluvian:   {scale:[0,2,4,5,7,9,10],   wave:"triangle", beat:0.30, root:5,  pat:[0,2,4,2,5,4,2,0], octUp:true,  mel:0.10, formants:[360,620,900,1500]},
+  sho:       {scale:[0,3,5,7,10],       wave:"triangle", beat:0.46, root:2,  pat:[0,2,4,3,4,2,1,0], chimes:true, mel:0.08, formants:[440,720,1150,1850]},
+  gharundim: {scale:[0,1,4,5,7,8,10],   wave:"sawtooth", beat:0.24, root:-3, pat:[0,1,4,3,4,1,0,1], darbuka:true,mel:0.08, formants:[300,560,820,1300]},
+  viamontian:{scale:[0,2,3,5,7,8,11],   wave:"triangle", beat:0.30, root:0,  pat:[0,4,3,2,4,7,3,0], drone:true,  mel:0.09, formants:[340,600,880,1450]},
+  _default:  {scale:[0,2,4,5,7,9,11],   wave:"triangle", beat:0.32, root:3,  pat:[0,2,4,2,4,2,0,0],              mel:0.08, formants:[360,620,900,1500]},
+};
+function _mdScaleNote(spec,root,degIdx,oct){ const sc=spec.scale, i=((degIdx%sc.length)+sc.length)%sc.length; return root*Math.pow(2,(sc[i]+12*(oct||0))/12); }
+function _mdCityMotif(spec,t){
+  const beat=spec.beat, root=_hz(spec.root||0), N=8;
+  for(let i=0;i<N;i++) mdNote(_mdScaleNote(spec,root,spec.pat[i%spec.pat.length],(i>=N/2&&spec.octUp)?1:0), t+i*beat, beat*1.5, spec.wave, spec.mel);   // melody
+  if(spec.drone) mdNote(root/2,t,beat*N,"sine",0.07);                                        // Viamontian pedal drone
+  else for(let i=0;i<N/2;i++) mdNote(root/2, t+i*beat*2, beat*1.2, "sine", 0.06);            // gentle bass
+  if(spec.chimes) for(let i=0;i<3;i++){ if(Math.random()<0.6) mdNote(_mdScaleNote(spec,root*2,irnd(0,spec.scale.length-1),1), t+Math.random()*beat*N, 1.3, "sine", 0.045); }  // wind-chime tings
+  if(spec.darbuka){ const p=[1,0,1,1,0,1,0,1]; for(let i=0;i<N;i++) if(p[i]) mdDrum(t+i*beat, i%4===0?0.14:0.07, i%4===0?150:1000, 0.09); }   // dum-tek hand drum
+  return beat*N;
+}
 // per-mood one-bar generators: schedule a bar starting at time t, return seconds until the next bar
 const MD_MOODS={
   festive(t){ const beat=0.34, root=_hz(7);                   // bright major lute — bouncy, upbeat
@@ -18431,7 +18461,14 @@ const MD_MOODS={
     if(Math.random()<0.6){ const at=t+2+Math.random()*2.5; mdNote(_hz(3), at, 1.6, "triangle", 0.06); mdNote(_hz(4), at, 1.6, "sine", 0.045); }  // minor-2nd unease
     mdDrum(t+bar*0.5, 0.06, 70, 0.4);                         // slow heartbeat thump
     return bar; },
-  crowd(t){ mdCrowdStart(); return 2.0; },                    // babble runs continuously; just keep the mood alive
+  crowd(t){                                                   // town: the crowd + a musical bed matching the CITY's culture
+    const cap=(typeof nearestCapital==="function"&&typeof player!=="undefined"&&player)?nearestCapital(player.x,player.z):null;
+    const cult=cap?_cityCulture(cap.name):null;
+    const spec=MD_CITY[cult]||MD_CITY._default;
+    if(_mdCity!==cult){ _mdCity=cult; mdCrowdStop(); }         // culture changed → rebuild the babble with its formants
+    mdCrowdStart(spec.formants);                              // (no-op if already running with this culture's bank)
+    return _mdCityMotif(spec,t);
+  },
   dark(t){ const bar=5.0, root=_hz(-17);                      // somber descending minor + toll
     [0,-3,-5].forEach((s,i)=> mdNote(_hz(-5+s), t+i*1.1, 2.4, "triangle", 0.12-i*0.02, _hz(-8+s)));  // descending, gliding down
     mdNote(root, t, bar, "sine", 0.14);                       // deep drone
@@ -18454,12 +18491,12 @@ setInterval(()=>{ try{
   MUSICDIR.on = (typeof settings==="undefined") || settings.dynMusic!==false;   // authoritative from the setting (survives load order)
   if(!MUSICDIR.on||!actx||muted||typeof running==="undefined"||!running){
     if(MUSICDIR._bus) MUSICDIR._bus.gain.setTargetAtTime(0.0001,actx?actx.currentTime:0,0.3);
-    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
     MUSICDIR.mode=null; MUSICDIR._next=0; return; }
   const bus=mdBus(); if(!bus) return;
   const target=mdMode(), tnow=actx.currentTime;
   if(target!==MUSICDIR.mode){                                 // crossfade: duck out, switch, swell in
-    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
     MUSICDIR.mode=target; MUSICDIR._next=0;
     const vol=target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34));
     bus.gain.cancelScheduledValues(tnow); bus.gain.setValueAtTime(Math.max(0.0001,bus.gain.value),tnow);
