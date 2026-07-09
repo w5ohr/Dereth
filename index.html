@@ -16656,7 +16656,11 @@ function buildSheet(){
   if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
   { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
-  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{ breakFromPatron(); buildSheet(); }; }
+  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{   // #518: confirm (breaking severs the pass-up chain + resets sworn-time) and use the SAME path as /break
+    const who=(player.patronInfo&&player.patronInfo.name)?esc(player.patronInfo.name):"your patron";
+    uiConfirm(`Break fealty with <b>${who}</b>?<br><span style="color:var(--dim);font-size:12px">This severs your pass-up chain and resets your accrued sworn-time — the only pass-up decay in AC.</span>`,
+      ()=>{ if(!isOnline){ breakFromPatron(); } else { netSend({t:"unswear"}); }   // mirror handleSlash /break: offline model vs server-authoritative
+        if(SFX.click)SFX.click(); buildSheet(); }, "Break fealty"); }; }
   { const rb=document.getElementById('recruitBtn'); if(rb) rb.onclick=()=>{ if(recruitVassal()){ SFX.quest(); saveGame(); buildSheet(); } }; }
   // Luminance / Enlightenment endgame
   if(player.lumUnlocked||player.enlightenment){
@@ -21563,8 +21567,11 @@ function renderQuestLog(){
     log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
     renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
   });
-  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
-    if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge); if(!s) return;
+    // #516: a styled, touch-safe confirm (native confirm() is unreliable/blocked on touch, and this is a
+    // permanent, mutually-exclusive choice — a mis-tap while scrolling the panel must not swear you in)
+    uiConfirm(`Pledge yourself to the <b>${esc(s.name)}</b>?<br><span style="color:var(--dim);font-size:12px">You may swear to only ONE society, and the choice is <b>permanent</b> — it locks out the other two, for good.</span>`,
+      ()=>{ pledgeSociety(s.id); }, "Pledge"); });
   { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
   { const c=body.querySelector('#socClaim'); if(c) c.onclick=()=>{ claimSocietyTest(); buildSheet&&buildSheet(); }; }
 }
