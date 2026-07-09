@@ -25566,6 +25566,11 @@ function serverUrl(loc){ loc=loc||location;
   return 'ws://127.0.0.1:8787';
 }
 const SERVER_URL = serverUrl();
+// #442: a transport is safe iff it's TLS (wss) or a loopback host — never send credentials in cleartext otherwise.
+function transportSecure(url, loc){ loc=loc||location; url=url||SERVER_URL;
+  if(String(url).indexOf('wss://')===0) return true;
+  const h=loc.hostname; return h==='localhost'||h==='127.0.0.1'||h==='[::1]';
+}
 let isOnline=false, creatingOnline=false, netInputT=0;
 const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{}, partyNames:new Set(), partyLeader:null, lastWhisperFrom:null };
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -26245,6 +26250,7 @@ function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
   const msg=document.getElementById('authMsg'), st=document.getElementById('authStatus');
   if(!u||!p){ msg.textContent="Enter a name and password."; return; }
+  if(!transportSecure()){ st.textContent=""; msg.textContent="This deployment is insecure: account credentials would be sent in cleartext. It must be served over HTTPS (wss://) to log in or register. You can still play offline below."; return; }  // #442: refuse to send credentials over plaintext ws:// — require wss:// (or localhost dev)
   msg.textContent=""; st.textContent="Connecting…";
   const go=()=>{ st.textContent="Connected."; netSend({t:kind,user:u,pass:p}); };
   if(NET.ws&&NET.open) go();
