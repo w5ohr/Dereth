@@ -2772,7 +2772,8 @@ function supportAt(wx,wz,feetY){
 // OVERLOADED every STR-10 build (War Mage/Life Caster templates read 114–120% → permanently slowed
 // from the tutorial onward). Armor lightened + base capacity raised so the kit fits every template
 // with headroom, while a genuinely stuffed satchel still slows you.
-function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
+function itemBurden(it){ if(!it) return 0; if(it.tut) return 0;   // #465: pure tutorial keepsakes (Calling Stone, Welcome Letter) weigh nothing — the fresh recruit is never slowed by the kit they wake up holding
+  if(it.scroll) return 2;
   if(it.stat==="weapon") return 75; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
   // #472: a cloth garment (shirt/pants — the light under-layer) was falling through to the heavy 85
   // default because "shirt"/"pants" aren't armour slots, so a fresh char's starting clothes weighed as
@@ -16788,7 +16789,8 @@ function update(dt){
     player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
   }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
   if((player.vx||player.vz)&&player.alive){
-    let [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    const px0=player.x, pz0=player.z;   // #465: remember where we started so we can tell if a wall ate the move
+    let [nx,nz]=collide(px0+player.vx*dt,pz0+player.vz*dt);
     // authored terrain barriers: mountainsides too steep to walk stop you (roads and town
     // plateaus stay open — the real heightmap's switchbacks are the way up)
     if(player.grounded&&!inDungeon&&ACMAP.on&&!onRoad(nx,nz)){
@@ -16806,6 +16808,19 @@ function update(dt){
         } }
     }
     player.x=nx;player.z=nz;
+    // #465: wedged-on-geometry feedback. Sliding above already salvages a partial move; but if you're
+    // deliberately pushing into a wall (often INVISIBLE interior geometry) and almost nothing gets
+    // through, give a throttled bump so the stop isn't silent, and — after a full second of being
+    // pinned — a one-time nudge toward /unstuck (which frees you even while delving).
+    if(moving){
+      const want=Math.hypot(player.vx,player.vz)*dt, got=Math.hypot(nx-px0,nz-pz0);
+      if(want>0.02 && got<want*0.25){
+        if(now()-(player._blockT||0)>420){ player._blockT=now(); if(SFX.bump)SFX.bump(); }
+        player._blockRun=(player._blockRun||0)+dt;
+        if(player._blockRun>1.0 && !player._unstuckHintSeen){ player._unstuckHintSeen=1;
+          log("You are wedged against something you can't push past. Type <b>/unstuck</b> to free yourself"+(inDungeon?" — it works even while delving.":"."),"warn"); }
+      } else player._blockRun=0;
+    }
     const step=Math.hypot(player.vx,player.vz)*dt;
     player.bob+=step*1.1;   // #176: stride phase advances with DISTANCE moved (step already = speed*dt), not distance*dt — the old dt*step made the gait framerate-dependent and ~60x too slow (feet glided)
     if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;footstep();} }  // footfalls only on the ground — surface-aware
@@ -18009,7 +18024,9 @@ function drawBigMap(){
   for(let i=1;i<8;i++){const p=i/8*S;g.beginPath();g.moveTo(p,0);g.lineTo(p,S);g.moveTo(0,p);g.lineTo(S,p);g.stroke();}
   if(inDungeon){
     g.fillStyle="#9a8a66";g.font="15px Trebuchet MS";g.textAlign="center";
-    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);return;
+    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);
+    g.fillStyle="#7fae7f";g.font="12px Trebuchet MS";   // #465: but you're never trapped — the escape hatch works down here
+    g.fillText("Wedged or lost? Type  /unstuck  to free yourself.",S/2,S/2+22);return;
   }
   g.fillStyle="rgba(216,177,74,0.10)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
   { const ro=acRoadOverlay(S); if(ro) g.drawImage(ro,0,0); }   // the authentic AC road web, matching the roads on the ground
@@ -18213,6 +18230,7 @@ const SFX={
   gold:()=>blip(1000,0.10,"square",0.10,1500),
   quest:()=>{blip(660,0.14,"triangle",0.16);setTimeout(()=>blip(880,0.2,"triangle",0.16),130);},
   step:()=>noiseHit(0.06,0.06,200+irnd(-40,50)),
+  bump:()=>{noiseHit(0.05,0.08,120);blip(84,0.07,"sine",0.06,58);},   // #465: soft, low thud when you walk into a wall — feedback so a blocked move isn't silent
   growl:()=>blip(92,0.34,"sawtooth",0.11,58),
   click:()=>blip(680,0.05,"square",0.07,900),
 };
@@ -24861,8 +24879,15 @@ function dungeonWalkable(x,z){ const r=player.r*0.6;
 }
 function dungeonSlide(ox,oz,nx,nz){
   if(dungeonWalkable(nx,nz))return[nx,nz];
-  if(dungeonWalkable(nx,oz))return[nx,oz];
-  if(dungeonWalkable(ox,nz))return[ox,nz];
+  // #465: wall-slide. Keep the blocked axis pinned and advance along the other; try the full step
+  // first, then partial steps, so grazing a wall or nosing into a corner CREEPS along instead of
+  // dead-stopping. (Was: only a full-magnitude single-axis move — a diagonal into a corner wedged
+  // solid with zero displacement and no sliding.)
+  for(const f of [1,0.6,0.3]){
+    const sx=ox+(nx-ox)*f, sz=oz+(nz-oz)*f;
+    if(sx!==ox&&dungeonWalkable(sx,oz))return[sx,oz];   // slide along X, Z pinned to the wall
+    if(sz!==oz&&dungeonWalkable(ox,sz))return[ox,sz];   // slide along Z, X pinned to the wall
+  }
   return[ox,oz];
 }
 function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
@@ -26623,10 +26648,48 @@ function onWho(m){
   const ps=m.players||[];
   log(`<b>Online (${ps.length}):</b> `+(ps.length?ps.map(p=>`${esc(p.name)} <span style="color:var(--dim)">L${p.level||1}</span>`).join(", "):"just you"),"sys");
 }
+// #465: the always-available escape hatch. A new player wedged on unseen geometry (and refused the
+// surface map while delving) needs a way out that WORKS EVERYWHERE — including inside the Academy
+// and any delve. It teleports you to a guaranteed-walkable anchor for wherever you stand.
+function doUnstuck(){
+  if(!player.alive){ log("You cannot free yourself while fallen — you will return at the Lifestone.","warn"); return; }
+  if((player._unstuckCd||0)>now()){ log("The world is still resettling — try <b>/unstuck</b> again in a moment.","sys"); return; }
+  player._unstuckCd=now()+4000;
+  player._blockRun=0; player._unstuckHintSeen=1;
+  if(inDungeon){   // works EVEN WHILE DELVING — the whole point of the affordance
+    let sp=(dungeonSpawn&&(typeof dungeonWalkable!=="function"||dungeonWalkable(dungeonSpawn.x,dungeonSpawn.z)))?dungeonSpawn:null;
+    if(!sp){ const r=(dungeonRects||[]).find(c=>c.room)||(dungeonRects||[])[0];
+      if(r) sp=r.round?{x:r.cx,z:r.cz}:{x:(r.x0+r.x1)/2,z:(r.z0+r.z1)/2}; }
+    if(!sp) sp={x:DCEN.x,z:DCEN.z};
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    player.y=(dungeonSpawn&&dungeonSpawn.y)||0; arriveAt(sp.x,sp.z); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log((curDungeon&&curDungeon.academy)?"You step back to the Academy's entry hall. Walk to the <b>Society Greeter</b> and press <b>E</b> to speak.":"You wrench free and reappear at the delve's entrance.","sys");
+    toast("UNSTUCK"); return;
+  }
+  if(inNetwork){
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    arriveAt(DCEN.x,DCEN.z-2); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log("You pull free and step back to the hub's entrance.","sys"); toast("UNSTUCK"); return;
+  }
+  // overworld: hop to the nearest clear footing; if there truly is none, recall to your Lifestone
+  const clearAt=(x,z)=>{ if(terrainH(x,z)<-2) return false;
+    for(const o of obstacles){ if(Math.hypot(x-o.x,z-o.z)<(o.r+player.r+0.15)) return false; } return true; };
+  let best=null;
+  for(let ring=1; ring<=8 && !best; ring++){ const rad=ring*1.5;
+    for(let a=0;a<12 && !best;a++){ const an=a/12*6.2832, x=player.x+Math.cos(an)*rad, z=player.z+Math.sin(an)*rad;
+      if(clearAt(x,z)) best={x,z}; } }
+  if(best){ warpTo(best.x,best.z,{invuln:2}); log("You shrug free and step onto clear ground.","sys"); toast("UNSTUCK"); return; }
+  const ls=(typeof lifestones!=="undefined")?(lifestones.find(l=>l.bound)||lifestones[0]):null;
+  if(ls){ warpTo(ls.x,ls.z+2,{invuln:2}); log("No clear footing nearby — you recall to the <b>Lifestone</b>.","sys"); toast("LIFESTONE RECALL"); }
+  else { warpTo(0,0,{invuln:2}); log("You recall to safe ground.","sys"); toast("UNSTUCK"); }
+}
 function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
-  if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
+  if(cmd==="unstuck"||cmd==="stuck"||cmd==="free"){ doUnstuck(); }   // #465: escape hatch — works even while delving
+  else if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="house"){ hsHouseCmd(parts); }
   else if(cmd==="hor"||cmd==="house_recall"){ recallHome(); }
@@ -26737,6 +26800,7 @@ function handleSlash(text){
   else if(cmd==="help"||cmd==="commands"||cmd==="?"){   // #203: the full command list, grouped as the code groups them
     log(`<b>Chat:</b> /tell (/w) &lt;name&gt; &lt;msg&gt; · /r reply · /p party · /f fellowship · /a allegiance · /who`,"sys");
     log(`<b>World:</b> /loc coordinates · /where · /region · /story saga recap · /arc story arcs`,"sys");
+    log(`<b>Stuck?</b> /unstuck (/stuck, /free) — teleport to clear ground; works even while delving`,"sys");
     log(`<b>Allegiance:</b> /swear &lt;name&gt; · /break (/unswear) · /muster · /allegiance join|leave|hometown`,"sys");
     log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");
     log(`<b>Combat &amp; social:</b> /pk pk|pkl|npk · /trade &lt;name&gt; · /buff [spell] · /me &lt;action&gt; · /emote — or /${Object.keys(EMOTE_CMDS).join(", /")}`,"sys");
@@ -26877,8 +26941,8 @@ function startGame(loadSaved,preset){
     // spawns HOLDING a Training Weapon matched to their profession (upgradeable at the Academy);
     // casters get a component pouch, Life Casters two healing kits, Soldiers 30 quarrels (1999 kit).
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
-      player.inv.push({name:"Calling Stone",stat:"quest",v:0});
-      player.inv.push({name:"Welcome Letter",stat:"book",v:10});   // the real AC starter letter — readable (Use) via openBookReader
+      player.inv.push({name:"Calling Stone",stat:"quest",v:0,tut:true});
+      player.inv.push({name:"Welcome Letter",stat:"book",v:10,tut:true});   // the real AC starter letter — readable (Use) via openBookReader
       const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
         bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
         warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
