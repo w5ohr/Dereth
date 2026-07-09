@@ -25791,7 +25791,10 @@ function reconcileMobs(serverMobs){
     if(!sm||sm.id==null||!isFinite(sm.x)||!isFinite(sm.z)) continue;   // #34/#319: skip a malformed/null/NaN-coord snapshot entry — a non-finite x/z would set mesh.position to NaN (an invisible-but-targetable mob) and propagate through groundY every frame
     seen[sm.id]=1;
     let m=NET.mobs[sm.id]||spawnSharedMob(sm);
-    m.tx=sm.x; m.tz=sm.z; m.yaw=sm.yaw; m.hp=sm.hp; m.mhp=sm.mhp; m.state=sm.st; m.eventId=sm.event||null;
+    m.tx=sm.x; m.tz=sm.z; m.state=sm.st; m.eventId=sm.event||null;
+    m.yaw=isFinite(sm.yaw)?sm.yaw:(m.yaw||0);   // #443: coerce hp/mhp/yaw before render math — a garbage mhp=0/NaN would make updateSharedMobs' r=hp/mhp go Infinity/NaN into fill.scale.x
+    m.mhp=(isFinite(sm.mhp)&&sm.mhp>=1)?sm.mhp:1;
+    m.hp=isFinite(sm.hp)?Math.max(0,Math.min(sm.hp,m.mhp)):m.mhp;
   }
   for(const id in NET.mobs){ if(!seen[id]) removeSharedMob(id); }
 }
@@ -26263,7 +26266,7 @@ function remoteApp(p){
 function reconcileRemotes(players){
   const seen={};
   for(const p of players){
-    if(!p||p.id==null||p.id===NET.me) continue;   // #34: skip a malformed/null snapshot entry
+    if(!p||p.id==null||p.id===NET.me||!isFinite(p.x)||!isFinite(p.z)) continue;   // #34: skip a malformed/null snapshot entry; #443: also skip non-finite coords — a NaN x/z would set mesh.position to NaN and propagate through groundY every frame
     seen[p.id]=1;
     let r=NET.players[p.id];
     if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); mesh.userData._headApp=app; applyACBody(mesh,app.gender); mesh.visible=true;
@@ -26271,7 +26274,8 @@ function reconcileRemotes(players){
       if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
-    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
