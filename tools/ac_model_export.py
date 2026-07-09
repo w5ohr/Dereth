@@ -91,12 +91,16 @@ CULL_NONE, CULL_CW = 1, 2
 def read_polygon(r):
     n = r.u8(); stip = r.u8(); sides = r.i32(); pos = r.i16(); neg = r.i16()
     vids = [r.i16() for _ in range(n)]
-    posuv = None
+    posuv = neguv = None
     if not stip & STIP_NO_POS_UV:
         posuv = [r.u8() for _ in range(n)]
     if sides == CULL_CW and not stip & STIP_NO_NEG_UV:
-        [r.u8() for _ in range(n)]
-    return dict(v=vids, uv=posuv, surf=pos, dbl=(sides == CULL_NONE))
+        neguv = [r.u8() for _ in range(n)]     # the BACK side's own UVs (was read-and-discarded)
+    # sides==CULL_CW ("Both" in ACE terms) carries a distinct NEGATIVE surface: the reverse-wound
+    # back face with its own texture+UVs (eye/nose/mouth strips, hair sheets, cloth). Dropping it
+    # left those polys invisible from the outside once the winding bug was fixed.
+    return dict(v=vids, uv=posuv, surf=pos, dbl=(sides == CULL_NONE),
+                nsurf=(neg if sides == CULL_CW else None), nuv=neguv)
 
 def read_bsp(r, tree):
     t = r.tag()
@@ -280,24 +284,54 @@ def tx_pos(v):  return [round(v[0], 4), round(v[2], 4), round(-v[1], 4)]     # A
 def tx_quat(q): return [round(q[1], 5), round(q[3], 5), round(-q[2], 5), round(q[0], 5)]  # (x,z,-y,w)
 
 def build_part(gfx):
-    """polygons -> per-surface triangle groups with (vertexId, uvIndex)-split vertices."""
+    """polygons -> per-surface triangle groups with (vertexId, uvIndex)-split vertices.
+
+    Winding: the client culls by polygon plane/NORMAL, not vertex order — the dat's vertex
+    order is arbitrary and MIXED between polygons (the human head's skull group winds one way,
+    its eye/nose/mouth strips the other). Any winding-based culler (three.js FrontSide) will
+    therefore cull a random subset inside-out. Every emitted triangle is re-wound so its
+    geometric (cross-product) normal agrees with its authored vertex normals: what the client
+    showed, FrontSide shows. (The old blanket "reverse winding for the axis flip" was doubly
+    wrong: (x,z,-y) is a proper rotation, det=+1, and it left the mixed-winding problem in
+    place — bodies read as 180° off / depth-mirrored, ears/thumbs/elbows mirrored, and it
+    forced compensating hacks like the old head rotateY(PI).)
+    Sides: CULL_NONE polys are emitted with both windings (double-sided, like the client);
+    CULL_CW ("both") polys also emit their NEGATIVE side — negated normals, the neg surface's
+    texture and its own UVs (cloth backs, reversible sheets)."""
     groups = defaultdict(lambda: dict(vmap={}, verts=[], norms=[], uvs=[], idx=[]))
-    for poly in gfx["polys"].values():
-        g = groups[poly["surf"]]
+
+    def emit(surfkey, vids, uvis, negn):
+        g = groups[surfkey]
         corner = []
-        for i, vid in enumerate(poly["v"]):
-            uvi = poly["uv"][i] if poly["uv"] else 0
-            key = (vid, uvi)
+        for i, vid in enumerate(vids):
+            uvi = uvis[i] if uvis else 0
+            key = (vid, uvi, negn)
             if key not in g["vmap"]:
                 v = gfx["verts"][vid & 0xFFFF]
                 g["vmap"][key] = len(g["verts"]) // 3
                 g["verts"] += tx_pos(v["o"])
-                g["norms"] += tx_pos(v["n"])
+                n = tx_pos(v["n"])
+                g["norms"] += [-n[0], -n[1], -n[2]] if negn else n
                 uv = v["uv"][uvi] if uvi < len(v["uv"]) else (0, 0)
                 g["uvs"] += [round(uv[0], 4), round(uv[1], 4)]
             corner.append(g["vmap"][key])
-        for i in range(1, len(corner) - 1):          # fan-triangulate (reverse winding for the axis flip)
-            g["idx"] += [corner[0], corner[i+1], corner[i]]
+        V, N = g["verts"], g["norms"]
+        for i in range(1, len(corner) - 1):
+            a, b, c = corner[0], corner[i], corner[i+1]
+            # geometric normal of (a,b,c) vs the summed vertex normals -> orient the winding
+            ax, ay, az = V[a*3], V[a*3+1], V[a*3+2]
+            ux, uy, uz = V[b*3]-ax, V[b*3+1]-ay, V[b*3+2]-az
+            wx, wy, wz = V[c*3]-ax, V[c*3+1]-ay, V[c*3+2]-az
+            gx, gy, gz = uy*wz-uz*wy, uz*wx-ux*wz, ux*wy-uy*wx
+            nx = N[a*3]+N[b*3]+N[c*3]; ny = N[a*3+1]+N[b*3+1]+N[c*3+1]; nz = N[a*3+2]+N[b*3+2]+N[c*3+2]
+            g["idx"] += [a, b, c] if gx*nx+gy*ny+gz*nz >= 0 else [a, c, b]
+
+    for poly in gfx["polys"].values():
+        emit(poly["surf"], poly["v"], poly["uv"], False)
+        if poly["dbl"]:                                    # CULL_NONE: back face, same surface/UVs
+            emit(poly["surf"], poly["v"], poly["uv"], True)
+        elif poly.get("nsurf") is not None:                # CULL_CW/"both": distinct back surface
+            emit(poly["nsurf"], poly["v"], poly.get("nuv") or poly["uv"], True)
     return groups
 
 def main():
