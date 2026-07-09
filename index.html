@@ -2770,7 +2770,10 @@ function supportAt(wx,wz,feetY){
 // with headroom, while a genuinely stuffed satchel still slows you.
 function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
   if(it.stat==="weapon") return 75; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
-  if(it.stat==="worn") return ({head:45,chest:120,hands:35,legs:95,feet:45})[it.aslot]||85;
+  // #472: a cloth garment (shirt/pants — the light under-layer) was falling through to the heavy 85
+  // default because "shirt"/"pants" aren't armour slots, so a fresh char's starting clothes weighed as
+  // much as plate (54% burden at spawn). Cloth is light; only real armour keeps the armour weights.
+  if(it.stat==="worn") return it.cloth ? 10 : (({head:45,chest:120,hands:35,legs:95,feet:45})[it.aslot]||85);
   return 22; }
 function encumbrance(){
   let load=0; for(const it of player.inv) load+=itemBurden(it);
@@ -26695,7 +26698,7 @@ Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
   try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));
-    if(s) continueBtn.textContent=`Continue — Level ${s.level||1} · ${s.kills||0} kills${s.title?" · "+s.title:""}`;}catch(e){}
+    if(s) continueBtn.textContent=`Continue — ${s.name||"Adventurer"} · Level ${s.level||1} · ${s.kills||0} kills${s.title?" · "+s.title:""}`;}catch(e){}   // #472: lead with the character's name (it's in the save) — the label read as broken English without it
 }
 // ============================================================================
 //  CHARACTER CREATOR — live 3D face/hair/beard/tattoo customization
