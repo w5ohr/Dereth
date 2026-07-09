@@ -21793,8 +21793,12 @@ const ACHIEVEMENTS=[
 function checkAchievements(){
   for(const a of ACHIEVEMENTS){
     if(player.achievements.indexOf(a.id)<0 && a.check()){
-      player.achievements.push(a.id);player.title=a.title;
-      toast("ACHIEVEMENT");log(`<b>Achievement unlocked:</b> ${a.name} — you are now <b>${a.title}</b>.`,"sys");
+      player.achievements.push(a.id);
+      // #545: an earned achievement no longer silently overwrites the player's chosen
+      // display title. It's recorded (and wearable from Character Sheet → Achievements
+      // & Titles); we only auto-wear it when the character has no title yet.
+      const worn=!player.title; if(worn) player.title=a.title;
+      toast("ACHIEVEMENT");log(`<b>Achievement unlocked:</b> ${a.name} — title <b>${a.title}</b> earned${worn?" and worn":". Wear it from your Character Sheet (Achievements &amp; Titles)"}.`,"sys");
       SFX.quest();saveGame();
     }
   }
