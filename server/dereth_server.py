@@ -133,15 +133,23 @@ def note_login_fail(username):
 # literal. With no such secret we do not seed the account at all, and we NEVER overwrite an
 # existing Admin password on startup (seed only when the row is absent), so an operator can rotate
 # the credential and it survives restarts.
+# #459: because #440 never clobbers an existing password, an already-deployed server keeps whatever
+# hash it was seeded with (including the leaked default on old DBs). Setting DERETH_ADMIN_PW_ROTATE=1
+# for a SINGLE restart re-writes the Admin password to the current DERETH_ADMIN_PW — a one-shot
+# rotation so operators can retire the compromised credential without hand-editing the DB. Unset it
+# again afterward so normal restarts stay non-destructive. See docs/security-440-credential-rotation.md.
 ADMIN_USER = "Admin"
 ADMIN_PW = os.environ.get("DERETH_ADMIN_PW")
+ADMIN_PW_ROTATE = os.environ.get("DERETH_ADMIN_PW_ROTATE", "").strip().lower() in ("1", "true", "yes", "on")
 ADMIN_CHAR_PATH = os.path.join(os.path.dirname(__file__), "admin_kilmer.json")
 
 def seed_admin():
     """Ensure the default Admin account exists and place the maxed Kilmer character in slot 0 if that
     slot is empty (so any in-game progress the admin makes persists). The password comes from
     DERETH_ADMIN_PW and is written ONLY when the account is first created — an existing Admin password
-    is never clobbered. With no DERETH_ADMIN_PW set, the account is not seeded."""
+    is never clobbered (#440). With no DERETH_ADMIN_PW set, the account is not seeded. As a one-shot
+    escape hatch, DERETH_ADMIN_PW_ROTATE=1 re-writes an existing Admin password to the current
+    DERETH_ADMIN_PW (#459 credential rotation), then should be unset."""
     if not ADMIN_PW:
         print("seed: DERETH_ADMIN_PW is unset — Admin account not seeded (set the env var to enable it)")
         return
@@ -159,6 +167,10 @@ def seed_admin():
             salt = secrets.token_bytes(16)
             c.execute("INSERT INTO users(username,salt,pw,char,created,seen) VALUES(?,?,?,?,?,?)",
                       (ADMIN_USER, salt.hex(), hash_pw(ADMIN_PW, salt), None, now, now))   # #440: created only when absent
+        elif ADMIN_PW_ROTATE:
+            salt = secrets.token_bytes(16)   # #459: opt-in one-shot rotation of an existing deployment's Admin password
+            c.execute("UPDATE users SET salt=?, pw=? WHERE username=?", (salt.hex(), hash_pw(ADMIN_PW, salt), ADMIN_USER))
+            print("seed: DERETH_ADMIN_PW_ROTATE set — Admin password rotated to the current DERETH_ADMIN_PW (unset the flag now)")
         if kilmer is not None and not c.execute(
                 "SELECT 1 FROM characters WHERE account=? AND slot=0", (ADMIN_USER,)).fetchone():
             c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
