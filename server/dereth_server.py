@@ -528,8 +528,25 @@ def save_char_slot(account, slot, data):
                   (blob, int(time.time()), account, slot))
 
 def delete_char_slot(account, slot):
+    """Delete a character AND the charname-keyed state that would otherwise be orphaned and inherited by
+    whoever reuses the freed name (#446): its own allegiance row (patron link, pending_xp, MOTD, sworn_at)
+    and its vassals' now-dangling patron pointers. Dwellings are charname-keyed too but live in the async
+    HOUSES registry, so this returns the deleted character's name for the caller to release them (or None
+    if the slot was empty). Done in one transaction so a name never frees up with live state still hanging
+    off it."""
     with db() as c:
+        row = c.execute("SELECT name FROM characters WHERE account=? AND slot=?", (account, slot)).fetchone()
+        name = row[0] if row else None
         c.execute("DELETE FROM characters WHERE account=? AND slot=?", (account, slot))
+        if name:
+            # the character's own allegiance row (would otherwise deliver the victim's pending_xp / MOTD /
+            # monarchy to a new same-named character on alg_take_pending / alg_row)
+            c.execute("DELETE FROM allegiance WHERE charname=?", (name,))
+            # its vassals cleanly become monarchs (patron cleared) instead of pointing at a ghost name that
+            # a new character could reclaim to inherit the whole sub-tree; alg_monarch would otherwise walk
+            # up to a non-existent crown.
+            c.execute("UPDATE allegiance SET patron=NULL, sworn_at=? WHERE patron=?", (int(time.time()), name))
+    return name
 
 # ---------------------------------------------------------------- websocket
 async def ws_handshake(reader, writer) -> bool:
@@ -2029,7 +2046,14 @@ async def dispatch(cl, msg):
     if t == "delete_char":
         slot = msg.get("slot")
         if isinstance(slot, int) and not (cl.in_world and cl.slot == slot):
-            delete_char_slot(cl.username, slot)
+            freed = delete_char_slot(cl.username, slot)
+            if freed:
+                # #446: release the deleted character's dwellings so the plot doesn't stay sealed under a
+                # now-gone owner (and can't be inherited by a new same-named character). save_house(hid)
+                # persists the removal; broadcast_house tells every client to drop the local seal.
+                for hid in [h for h, v in list(HOUSES.items()) if v.get("owner") == freed]:
+                    HOUSES.pop(hid, None); save_house(hid); await broadcast_house(hid)
+                SKILL_CACHE.pop(freed, None)   # drop cached loyalty/leadership keyed by the freed charname
             await cl.send({"t": "roster", "chars": roster(cl.username), "max": MAX_CHARS})
         elif isinstance(slot, int):
             # Refuse deleting the slot you're currently playing — but SAY SO, so the client can tell a
