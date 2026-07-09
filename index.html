@@ -27138,13 +27138,36 @@ function refreshAvatarAppearance(){
   if(u.acBody){ if(u.acHead&&u.acHead.parent) u.acHead.parent.remove(u.acHead); u.acHead=null; acBuildHead(playerAvatar); }  // rebuild the real AC head from the new choices
 }
 
-startBtn.onclick=()=>{ isOnline=false; openCharCreator("",race=>{ wipeSave(); startGame(false,race); }); };
+// #478: a lightweight in-game confirm modal (the game has no native-dialog helper) — used to guard the
+// destructive single-slot save overwrite when starting a new character.
+function uiConfirm(html,onYes,yesLabel){
+  const ov=document.createElement('div');
+  ov.style.cssText="position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  ov.innerHTML=`<div style="max-width:420px;width:90%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:20px 22px;box-shadow:0 8px 40px rgba(0,0,0,.6);text-align:center">
+    <div style="color:#e8dcc0;font-size:14px;line-height:1.55">${html}</div>
+    <div style="display:flex;gap:10px;margin-top:16px;justify-content:center">
+      <button id="_ucNo" class="tbtn">Cancel</button>
+      <button id="_ucYes" class="tbtn" style="border-color:var(--gold);color:var(--gold)">${yesLabel||"Confirm"}</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_ucNo').onclick=()=>ov.remove();
+  ov.querySelector('#_ucYes').onclick=()=>{ ov.remove(); try{onYes();}catch(e){} };
+}
+// #478: creating a new character wipes the ONLY save slot — warn first (naming the character that would
+// be lost) instead of silently overwriting it. No save → straight through.
+function newCharGuard(proceed){
+  if(!hasSave()){ proceed(); return; }
+  let nm="your saved character", lv=1;
+  try{ const s=JSON.parse(localStorage.getItem(SAVE_KEY)); if(s){ nm=esc(s.name||nm); lv=s.level||1; } }catch(e){}
+  uiConfirm(`You already have a saved character — <b>${nm}</b> (Level ${lv}). There is only one save slot, so creating a new character will <b style="color:#e08a6a">permanently overwrite</b> it. Continue?`,proceed,"Overwrite &amp; Create");
+}
+startBtn.onclick=()=>{ isOnline=false; newCharGuard(()=>openCharCreator("",race=>{ wipeSave(); startGame(false,race); })); };   // #478: guard the overwrite
 { const tsb=document.getElementById('titleSettingsBtn'); if(tsb) tsb.onclick=openSettings; }
 { const ct=document.getElementById('controlsToggle'), cb=document.getElementById('controlsBox');
   if(ct&&cb) ct.onclick=()=>{ cb.style.display=cb.style.display==="none"?"block":"none"; }; }
 continueBtn.onclick=()=>{ isOnline=false; startGame(true); };
 document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{   // offline: pick a heritage → open the creator
-  isOnline=false; openCharCreator(b.dataset.path,race=>{ wipeSave(); startGame(false,race); });
+  isOnline=false; newCharGuard(()=>openCharCreator(b.dataset.path,race=>{ wipeSave(); startGame(false,race); }));   // #478: guard the overwrite
 });
 // online character creation (within the character-select screen) — name+heritage carry through the creator
 document.querySelectorAll('#csPaths button').forEach(b=>b.onclick=()=>{
