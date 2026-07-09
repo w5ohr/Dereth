@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Dereth — A First-Person Asheron's Call Homage</title>
 <style>
   :root{
@@ -164,6 +164,59 @@
   #dvig{position:absolute;inset:0;z-index:8;pointer-events:none;opacity:0;transition:opacity .8s;box-shadow:inset 0 0 220px 80px rgba(0,0,0,.85)}
   #dmgvig{position:absolute;inset:0;z-index:9;pointer-events:none;opacity:0;
     box-shadow:inset 0 0 160px 40px rgba(180,20,20,.9);transition:opacity .15s}
+
+  /* ══ MOBILE / TOUCH INTERFACE (Lane B): on-screen controls for phones & tablets.
+     Everything is gated behind body.touchui so the desktop interface is untouched. ══ */
+  #touchUI{position:absolute;inset:0;pointer-events:none;z-index:24;display:none}
+  body.touchui #touchUI{display:block}
+  #tcJoy{position:absolute;left:calc(16px + env(safe-area-inset-left,0px));bottom:calc(86px + env(safe-area-inset-bottom,0px));
+    width:128px;height:128px;border-radius:50%;pointer-events:auto;touch-action:none;
+    background:radial-gradient(circle,rgba(30,24,12,.28) 30%,rgba(30,24,12,.55) 72%);border:2px solid rgba(216,177,74,.4)}
+  #tcJoy.run{border-color:#7fe6a0;box-shadow:0 0 12px rgba(127,230,160,.35)}
+  #tcKnob{position:absolute;left:50%;top:50%;width:54px;height:54px;border-radius:50%;transform:translate(-50%,-50%);
+    background:radial-gradient(circle at 40% 35%,#4a3c1c,#241c0a);border:2px solid rgba(216,177,74,.7);box-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #tcBtns{position:absolute;right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    width:212px;height:200px;pointer-events:none}
+  .tcBtn{position:absolute;pointer-events:auto;touch-action:none;display:flex;align-items:center;justify-content:center;
+    border-radius:50%;background:radial-gradient(circle at 40% 35%,rgba(46,38,18,.85),rgba(18,14,6,.85));
+    border:2px solid rgba(216,177,74,.55);color:#ffd86b;font-size:22px;user-select:none;-webkit-user-select:none;
+    box-shadow:0 3px 10px rgba(0,0,0,.55);text-shadow:0 1px 2px #000}
+  .tcBtn.on{background:radial-gradient(circle at 40% 35%,#6a5420,#2a2008);border-color:#ffd86b}
+  .tcBtn .sub{position:absolute;bottom:1px;left:0;right:0;text-align:center;font-size:8px;color:var(--dim);text-shadow:none;pointer-events:none}
+  #tcAtk{width:78px;height:78px;right:0;bottom:0;font-size:32px}
+  #tcBlk{width:56px;height:56px;right:90px;bottom:-4px}
+  #tcJmp{width:56px;height:56px;right:8px;bottom:90px}
+  #tcDdg{width:48px;height:48px;right:96px;bottom:64px;font-size:18px}
+  #tcHt{width:46px;height:46px;right:158px;bottom:16px;font-size:11px;border-radius:12px;font-weight:bold}
+  #tcTgt{width:46px;height:46px;right:70px;bottom:138px;font-size:18px}
+  #tcAct{position:absolute;left:50%;bottom:calc(148px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+    pointer-events:auto;touch-action:manipulation;display:none;padding:10px 18px;border-radius:20px;
+    background:linear-gradient(#2e2718,#1a140a);border:1px solid var(--gold);color:#ffe6b0;font-size:13px;max-width:72vw;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 3px 10px rgba(0,0,0,.55);
+    font-family:inherit;cursor:pointer}
+  #tcRotate{position:absolute;left:50%;top:calc(8px + env(safe-area-inset-top,0px));transform:translateX(-50%);display:none;
+    pointer-events:auto;padding:6px 12px;border-radius:8px;background:rgba(8,6,3,.92);border:1px solid var(--border);
+    color:#ffcf9a;font-size:11.5px;white-space:nowrap;z-index:61}
+  body.touchui #c{touch-action:none}
+  body.touchui{-webkit-touch-callout:none}
+  body.touchui #hint,body.touchui #uimoveHint{display:none!important}
+  body.touchui #panelRail button{width:42px;height:42px;font-size:19px}
+  body.touchui button,body.touchui .tbtn,body.touchui .slot{touch-action:manipulation}
+  @supports (height:100dvh){ body.touchui #c{height:100dvh} }
+  /* the quickbar scales to the viewport via --qbscale (set from JS on resize) and anchors beside
+     the joystick so it never slides under the right-hand action cluster */
+  body.touchui #spellbar{left:calc(148px + env(safe-area-inset-left,0px));transform:scale(var(--qbscale,1));transform-origin:bottom left}
+  /* keep the play space clear: the combat panel's jobs move to the touch cluster (HEIGHT button;
+     hold-to-charge sets power), the potion belt rides top-centre, chat lifts clear of the joystick */
+  body.touchui #combatPanel{display:none!important}
+  body.touchui #potions{left:50%!important;right:auto!important;top:42px!important;bottom:auto!important;transform:translateX(-50%)}
+  body.touchui #log{bottom:calc(238px + env(safe-area-inset-bottom,0px));width:min(320px,38vw)}
+  @media (max-width:900px){
+    body.touchui #vitals{transform:scale(.85);transform-origin:top left}
+    body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
+    /* a phone has no room for the side info panels — the panel rail still opens everything */
+    body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
+  }
 </style>
 </head>
 <body>
@@ -249,6 +302,21 @@
 </div>
 
 <div id="hint"></div>
+
+<!-- ══ MOBILE / TOUCH INTERFACE: joystick + action cluster (shown only under body.touchui) ══ -->
+<div id="touchUI">
+  <div id="tcRotate">📱 Rotate to landscape for the best view &nbsp;<button id="tcRotateX" style="font-size:11px;padding:1px 7px">✕</button></div>
+  <button id="tcAct"></button>
+  <div id="tcJoy"><div id="tcKnob"></div></div>
+  <div id="tcBtns">
+    <div class="tcBtn" id="tcAtk" title="Attack — hold to charge">⚔</div>
+    <div class="tcBtn" id="tcBlk" title="Hold to block">🛡</div>
+    <div class="tcBtn" id="tcJmp" title="Jump — hold to charge">⤴<span class="sub">JUMP</span></div>
+    <div class="tcBtn" id="tcDdg" title="Dodge roll">💨</div>
+    <div class="tcBtn" id="tcHt" title="Attack height">MID<span class="sub">HEIGHT</span></div>
+    <div class="tcBtn" id="tcTgt" title="Next target">🎯</div>
+  </div>
+</div>
 <div id="drownTint" style="position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(20,70,120,0) 30%,rgba(12,50,90,.62) 100%);z-index:35;display:none;pointer-events:none"></div>
 <div id="breathBar" style="position:fixed;left:50%;bottom:224px;transform:translateX(-50%);width:130px;z-index:40;display:none;pointer-events:none;text-align:center">
   <div style="font-size:11px;color:#bfe6ff;text-shadow:0 1px 2px #000;margin-bottom:2px">Breath</div>
@@ -439,6 +507,8 @@
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+    <button class="tbtn" data-tui="auto">Auto</button><button class="tbtn" data-tui="on">📱 Touch</button><button class="tbtn" data-tui="off">⌨ Desktop</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Name labels</span><span id="setLabels" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
@@ -462,9 +532,9 @@
     hone the skills you choose — no classes bind you here — and walk a fractured isle of ancient
     ruins, wandering portals, and the insectoid <b>Olthoi</b>.
   </div>
-  <div id="touchWarn" style="display:none;margin:8px auto;max-width:380px;padding:10px 14px;background:#3a1e0e;border:1px solid #a5602a;border-radius:8px;color:#ffcf9a;font-size:12.5px;line-height:1.5">
-    <b>⌨ Desktop controls required.</b> Dereth is played with a <b>keyboard &amp; mouse</b> (WASD to move, mouse to look) — on-screen touch controls aren't supported yet, so it won't be playable on a phone or tablet. If you have a keyboard and mouse attached, tap <b>Continue anyway</b>.
-    <div style="text-align:center;margin-top:8px"><button id="touchWarnGo" style="font-size:12px;padding:5px 12px">Continue anyway</button></div>
+  <div id="touchWarn" style="display:none;margin:8px auto;max-width:380px;padding:10px 14px;background:#1e2a12;border:1px solid #5a8a2a;border-radius:8px;color:#d8f0b0;font-size:12.5px;line-height:1.5">
+    <span id="touchWarnMsg"></span>
+    <div style="text-align:center;margin-top:8px"><button id="touchWarnGo" style="font-size:12px;padding:5px 12px"></button></div>
   </div>
   <div id="authBox" style="margin:6px auto 4px;max-width:360px">
     <div class="plabel">⚔ PLAY ONLINE — DERETH MMO</div>
@@ -15698,10 +15768,10 @@ const keys={};let locked=false,paused=false,running=false;
 const cEl=document.getElementById('c');
 document.addEventListener('pointerlockchange',()=>{
   locked=document.pointerLockElement===cEl; if(!locked){ blocking=false; chargeActive=false; chargeT=0; }
-  document.getElementById('hint').style.display=(running&&!locked&&player.alive&&sheet.style.display!=="flex")?"block":"none";
+  document.getElementById('hint').style.display=(running&&!locked&&!TOUCH.on&&player.alive&&sheet.style.display!=="flex")?"block":"none";   // "Click to look around" means nothing on touch
   if(running&&!locked&&sheet.style.display!=="flex") document.getElementById('hint').textContent="Click to look around";
 });
-cEl.addEventListener('click',()=>{ if(running&&!locked&&!movingUI&&sheet.style.display!=="flex") cEl.requestPointerLock(); });
+cEl.addEventListener('click',()=>{ if(running&&!locked&&!movingUI&&!TOUCH.on&&sheet.style.display!=="flex") cEl.requestPointerLock(); });   // touch mode never pointer-locks
 // Cb1 power/accuracy bar: hold left-mouse to charge a melee swing (bows fire instantly on press)
 let chargeActive=false,chargeT=0; const CHARGE_MAX=1.0;
 function chargePower(){ return clamp(0.6+Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX*1.0,0.6,1.6); }
@@ -15932,7 +16002,7 @@ function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_ke
 function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
 function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
 function evtCombo(e){ let m=""; if(e.ctrlKey)m+="ctrl+"; if(e.altKey)m+="alt+"; if(e.metaKey)m+="meta+"; if(e.shiftKey)m+="shift+"; return m+e.code; }
-function held(id){ const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }
+function held(id){ if(TOUCH.held[id]) return true; const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }   // TOUCH.held: the mobile joystick/buttons feed the same choke point the keyboard does
 function codeLabel(c){ if(!c)return ""; if(c.startsWith("Key"))return c.slice(3); if(c.startsWith("Digit"))return c.slice(5);
   const map={Space:"Space",Minus:"-",Equal:"=",BracketLeft:"[",BracketRight:"]",Backslash:"\\",Escape:"Esc",Tab:"Tab",Enter:"Enter",Backquote:"`",Semicolon:";",Quote:"'",Comma:",",Period:".",Slash:"/",ArrowUp:"↑",ArrowDown:"↓",ArrowLeft:"←",ArrowRight:"→",ShiftLeft:"Shift",ShiftRight:"Shift"}; return map[c]||c; }
 function comboLabel(combo){ if(!combo)return "—"; const p=combo.split("+"),code=p.pop(),mods={ctrl:"Ctrl",alt:"Alt/Opt",meta:"Cmd",shift:"Shift"};
@@ -16430,7 +16500,7 @@ function update(dt){
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
   if(player.contractCd>0) player.contractCd=Math.max(0,player.contractCd-dt);   // H14 recall-contract cooldown
-  if(chargeActive){ if(!player.alive||!locked){ chargeActive=false; chargeT=0; } else { chargeT+=dt; if(chargeT>=CHARGE_MAX) releaseCharge(); } }   // Cb1 charge accumulate + auto-release at max
+  if(chargeActive){ if(!player.alive||(!locked&&!TOUCH.on)){ chargeActive=false; chargeT=0; } else { chargeT+=dt; if(chargeT>=CHARGE_MAX) releaseCharge(); } }   // Cb1 charge accumulate + auto-release at max (touch mode charges without pointer lock)
   updateChargeBar();
   if(player.emoteT>0){ player.emoteT=Math.max(0,player.emoteT-dt);   // emote gesture ends early if you move or attack
     if(chargeActive||held("forward")||held("back")||held("left")||held("right")) player.emoteT=0; }
@@ -16473,7 +16543,7 @@ function update(dt){
   if(held("back")||(keys["arrowdown"]&&!camLook)||keys["KeyX"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run (#201: keys stores e.code "KeyX", not "keyx")
   if(held("right")) s+=1;                          // D sidesteps right (C belongs to the Character Sheet)
   if(held("left")||keys["KeyZ"]) s-=1;             // A or Z sidestep left (AC's Z strafe)
-  const sprint=(keys["shift"]&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised
+  const sprint=((keys["shift"]||TOUCH.sprint)&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised (TOUCH.sprint = joystick at full tilt)
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
   // desired horizontal velocity (units/s) from input
@@ -26603,16 +26673,148 @@ document.getElementById('registerBtn').onclick=()=>authAction('register');
 document.getElementById('authPass').addEventListener('keydown',e=>{ if(e.key==='Enter')authAction('login'); });
 // prefill last username for convenience
 try{ const lu=localStorage.getItem('dereth_user'); if(lu) document.getElementById('authUser').value=lu; }catch(e){}
-// #246: a touch-only device (no fine pointer) can't play — WASD+mouse-look with pointer-lock has no
-// touch equivalent yet. Rather than drop the player into a silent, unresponsive dead screen, warn on
-// the title screen. Non-blocking: a touchscreen laptop WITH a mouse/trackpad reports a fine pointer
-// and never sees this; anyone else can still "Continue anyway".
-(function(){ try{
-  const touchOnly = ((('ontouchstart' in window)||(navigator.maxTouchPoints|0)>0)
+// ══ MOBILE / TOUCH INTERFACE (Lane B, supersedes the #246 "can't play on touch" warning) ═══════════
+// Phones and tablets get a real on-screen interface instead of a turn-away notice: a virtual move
+// joystick (full tilt = sprint), drag-the-world-to-look, tap-to-target (long-press = appraise), and
+// an action cluster — ⚔ attack (hold to charge), 🛡 block, ⤴ jump (hold to charge), 💨 dodge,
+// attack-height cycle, 🎯 next target — plus a context Interact pill that mirrors the desktop
+// E-prompt. The device is detected when the page loads (coarse-pointer touch device with no fine
+// pointer → touch UI); Settings → Interface and the title-screen notice override it either way.
+// Design notes: the joystick feeds TOUCH.held, which held() consults ahead of the keyboard, so
+// every existing consumer (walking, ships, footsteps, jump charge, emote cancel) works unchanged;
+// look writes player.yaw/pitch directly (no pointer lock in touch mode — see the !TOUCH.on gates).
+const TOUCH={on:false,pref:"auto",held:{},sprint:false};
+function touchDeviceIs(){ try{
+  return ((('ontouchstart' in window)||(navigator.maxTouchPoints|0)>0)
     && window.matchMedia && !window.matchMedia('(pointer:fine)').matches);
-  if(touchOnly){ const tw=document.getElementById('touchWarn'); if(tw){ tw.style.display='block';
-    const go=document.getElementById('touchWarnGo'); if(go) go.onclick=()=>{ tw.style.display='none'; }; } }
-}catch(e){} })();
+}catch(e){ return false; } }
+function touchCapableIs(){ try{ return ('ontouchstart' in window)||(navigator.maxTouchPoints|0)>0; }catch(e){ return false; } }
+function setTouchPref(p){ TOUCH.pref=p; try{ localStorage.setItem("dereth_touchui",p); }catch(e){} applyTouchUI(); }
+function applyTouchUI(){
+  TOUCH.on = TOUCH.pref==="on" || (TOUCH.pref==="auto" && touchDeviceIs());
+  document.body.classList.toggle("touchui",TOUCH.on);
+  if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; blocking=false;
+    const j=document.getElementById('tcJoy'); if(j) j.classList.remove('run'); }
+  if(TOUCH.on&&document.pointerLockElement) document.exitPointerLock();
+  tcFitHud(); tcRotateCheck(); tcPaintSettings(); tcPaintNotice();
+}
+// quickbar scale + rotate hint track the viewport
+function tcFitHud(){ try{   // quickbar fits between the joystick (≈148px) and the action cluster (≈236px)
+  document.documentElement.style.setProperty('--qbscale', String(Math.max(0.5,Math.min(1,(innerWidth-392)/640))));
+}catch(e){} }
+let _tcRotDismiss=false;
+function tcRotateCheck(){ const r=document.getElementById('tcRotate'); if(!r) return;
+  r.style.display=(TOUCH.on&&!_tcRotDismiss&&innerHeight>innerWidth&&Math.min(innerWidth,innerHeight)<700)?"block":"none"; }
+window.addEventListener('resize',()=>{ tcFitHud(); tcRotateCheck(); });
+{ const rx=document.getElementById('tcRotateX'); if(rx) rx.onclick=()=>{ _tcRotDismiss=true; tcRotateCheck(); }; }
+// Settings → Interface buttons (static HTML, wired once)
+function tcPaintSettings(){ document.querySelectorAll('#settings [data-tui]').forEach(b=>{ b.style.opacity=(b.dataset.tui===TOUCH.pref)?1:0.45; }); }
+document.querySelectorAll('#settings [data-tui]').forEach(b=>b.onclick=()=>{ setTouchPref(b.dataset.tui);
+  log(TOUCH.on?"Interface: <b>touch controls</b> — on-screen joystick and buttons.":"Interface: <b>keyboard & mouse</b>.","sys"); });
+// title-screen notice: tell touch-capable devices which interface they got, with a one-tap switch
+function tcPaintNotice(){
+  const tw=document.getElementById('touchWarn'), msg=document.getElementById('touchWarnMsg'), go=document.getElementById('touchWarnGo');
+  if(!tw||!msg||!go) return;
+  if(!touchCapableIs()&&!TOUCH.on){ tw.style.display="none"; return; }
+  tw.style.display="block";
+  msg.innerHTML = TOUCH.on
+    ? "📱 <b>Touch controls enabled.</b> Move with the on-screen joystick (full tilt to sprint), drag the world to look, tap a creature to target it — <b>⚔ attacks</b> (hold to charge), long-press to appraise."
+    : "⌨ <b>Keyboard &amp; mouse controls.</b> This device has a touchscreen — you can switch to the on-screen touch interface instead.";
+  go.textContent = TOUCH.on ? "Use keyboard & mouse instead" : "Use touch controls";
+  go.onclick=()=>{ setTouchPref(TOUCH.on?"off":"on"); };
+}
+// ── virtual joystick: 8-way into TOUCH.held (the held() choke point), full tilt = sprint ──
+(function(){
+  const joy=document.getElementById('tcJoy'), knob=document.getElementById('tcKnob'); if(!joy||!knob) return;
+  let jid=null;
+  const clearMove=()=>{ delete TOUCH.held.forward; delete TOUCH.held.back; delete TOUCH.held.left; delete TOUCH.held.right;
+    TOUCH.sprint=false; joy.classList.remove('run'); knob.style.transform="translate(-50%,-50%)"; };
+  function steer(t){
+    const r=joy.getBoundingClientRect(), R=r.width/2;
+    let dx=t.clientX-(r.left+R), dy=t.clientY-(r.top+R);
+    const d=Math.hypot(dx,dy), lim=R-10;
+    if(d>lim){ dx*=lim/d; dy*=lim/d; }
+    knob.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;
+    const m=Math.hypot(dx,dy)/lim;
+    if(m<0.22){ clearMove(); return; }
+    const ang=Math.atan2(-dy,dx);                       // screen-up = forward
+    TOUCH.held.forward = Math.sin(ang)> 0.38;
+    TOUCH.held.back    = Math.sin(ang)<-0.38;
+    TOUCH.held.right   = Math.cos(ang)> 0.38;
+    TOUCH.held.left    = Math.cos(ang)<-0.38;
+    TOUCH.sprint = m>0.92;
+    joy.classList.toggle('run',TOUCH.sprint);
+  }
+  joy.addEventListener('touchstart',e=>{ e.preventDefault(); e.stopPropagation();
+    if(jid===null){ jid=e.changedTouches[0].identifier; steer(e.changedTouches[0]); } },{passive:false});
+  joy.addEventListener('touchmove',e=>{ e.preventDefault();
+    for(const t of e.changedTouches) if(t.identifier===jid) steer(t); },{passive:false});
+  const end=e=>{ for(const t of e.changedTouches) if(t.identifier===jid){ jid=null; clearMove(); } };
+  joy.addEventListener('touchend',end); joy.addEventListener('touchcancel',end);
+})();
+// ── canvas: drag to look, tap to target, long-press to appraise ──
+(function(){
+  let lk=null;   // {id,x,y,t0,moved}
+  cEl.addEventListener('touchstart',e=>{ if(!TOUCH.on) return; e.preventDefault();
+    if(!running||lk!==null) return;
+    const t=e.changedTouches[0]; lk={id:t.identifier,x:t.clientX,y:t.clientY,t0:now(),moved:false};
+  },{passive:false});
+  cEl.addEventListener('touchmove',e=>{ if(!TOUCH.on||lk===null) return; e.preventDefault();
+    for(const t of e.changedTouches){ if(t.identifier!==lk.id) continue;
+      const dx=t.clientX-lk.x, dy=t.clientY-lk.y;
+      if(Math.hypot(dx,dy)>7) lk.moved=true;
+      if(lk.moved&&!paused&&player.alive){
+        player.yaw-=dx*0.0055*settings.sens;
+        player.pitch=clamp(player.pitch-dy*0.0055*settings.sens,-1.2,1.2);
+      }
+      lk.x=t.clientX; lk.y=t.clientY;
+    }
+  },{passive:false});
+  const fin=e=>{ if(!TOUCH.on||lk===null) return;
+    for(const t of e.changedTouches){ if(t.identifier!==lk.id) continue;
+      const dt=now()-lk.t0;
+      if(!lk.moved&&running&&!paused&&player.alive){
+        const hit=raycastPick({clientX:t.clientX,clientY:t.clientY});
+        if(dt>=450){ if(hit) openIdPanel(hit); }          // long-press = appraise (desktop right-tap)
+        else selectTarget(hit,!hit);                       // tap = select / clear
+      }
+      lk=null;
+    } };
+  cEl.addEventListener('touchend',fin); cEl.addEventListener('touchcancel',fin);
+})();
+// ── action cluster ──
+(function(){
+  const btn=(id,down,up)=>{ const el=document.getElementById(id); if(!el) return;
+    el.addEventListener('touchstart',e=>{ e.preventDefault(); e.stopPropagation();
+      if(!TOUCH.on||!running||paused||!player.alive) return; el.classList.add('on'); if(down) down(); },{passive:false});
+    const end=e=>{ e.preventDefault(); el.classList.remove('on'); if(up) up(); };
+    el.addEventListener('touchend',end); el.addEventListener('touchcancel',end); };
+  btn('tcAtk',()=>{ if(weaponMode==="bow") fireArrow(); else { chargeActive=true; chargeT=0; } },
+              ()=>{ if(chargeActive) releaseCharge(); });
+  btn('tcBlk',()=>{ blocking=true; },()=>{ blocking=false; });
+  btn('tcJmp',()=>{ TOUCH.held.jump=true; startJumpCharge(); },()=>{ delete TOUCH.held.jump; });
+  btn('tcDdg',()=>dodge());
+  btn('tcTgt',()=>cycleTarget(1));
+  btn('tcHt',()=>{ let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); player.atkHeight=ATK_HEIGHTS[(i+1)%3];
+    const el=document.getElementById('tcHt'); if(el) el.firstChild.textContent=player.atkHeight.toUpperCase();
+    if(typeof buildCombatPanel==="function") buildCombatPanel();
+    const ah=document.getElementById('atkHeight'); if(ah){ ah.textContent="Attack: "+ATK_LABEL[player.atkHeight]; ah.style.display="block"; ah._t=now(); } });
+  const act=document.getElementById('tcAct');
+  if(act) act.addEventListener('touchstart',e=>{ e.preventDefault(); if(TOUCH.on&&running&&!paused&&player.alive) interact(); },{passive:false});
+  // the Interact pill mirrors the desktop E-prompt (currentPrompt already names the exact action)
+  setInterval(()=>{ if(!act) return;
+    if(!TOUCH.on||!running||paused||!player.alive){ act.style.display="none"; return; }
+    let pr=""; try{ pr=currentPrompt(); }catch(e){}
+    if(pr){ act.textContent="✦ "+pr.replace(/\s*\(E\)\s*$/,""); act.style.display="block"; }
+    else act.style.display="none";
+  },200);
+})();
+// touch mode: tapping away from the on-screen keyboard closes chat (no Esc key on a phone)
+{ const ci=document.getElementById('chatInput');
+  if(ci) ci.addEventListener('blur',()=>{ if(TOUCH.on) closeChat(false); }); }
+// boot: load the saved preference (default auto = device detection at page load)
+(function(){ try{ const p=localStorage.getItem("dereth_touchui"); if(p==="on"||p==="off"||p==="auto") TOUCH.pref=p; }catch(e){}
+  applyTouchUI(); })();
 </script>
 </body>
 </html>
