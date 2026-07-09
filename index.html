@@ -15475,7 +15475,7 @@ function castSpellById(id){
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
   castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   if(!castSelf&&typeof breakResProt==="function") breakResProt();   // offensive casting ends res protection
-  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
+  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; spellCast(s.school);   // per-school casting wind-up
 }
 // retail component destruction: each formula component you CARRY burns with probability
 // componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
@@ -15505,6 +15505,7 @@ function executeSpell(id){
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mk=MAGIC_SCHOOLS[s.school];
   if(s.req>0 && mk && skillValue(mk)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
+  spellRelease(s.school,s);   // per-school discharge voice (the spell is now committed to firing)
   if(s.special==="stam2mana"){
     if(player.st<25){log("Not enough stamina.","warn");return;}
     player.st-=25;player.mn=Math.min(player.mmn,player.mn+22);
@@ -18323,6 +18324,46 @@ function footstep(){
   const s=footSurface();
   if(playSample("footstep_"+s)) return;                                          // a surface-tagged sample if the pack has one
   stepSynth(s);
+}
+// ── per-magic-school spell audio: each school has its own casting wind-up and release voice, so War,
+//    Life, Item Enchantment, Creature Enchantment and Void magic each SOUND different. War is further
+//    flavoured by the bolt's element (fire crackle / ice shimmer / shock zap / acid hiss / force thud). ──
+function _spellEl(s){ const e=(s&&(s.element||s.el||s.vulnElem))||"";
+  if(/fire|flame/.test(e)) return "fire"; if(/ice|frost|cold/.test(e)) return "frost";
+  if(/shock|light/.test(e)) return "shock"; if(/acid/.test(e)) return "acid";
+  const n=(s&&s.name||"").toLowerCase();
+  if(/flame|fire/.test(n)) return "fire"; if(/frost|ice|cold/.test(n)) return "frost";
+  if(/lightning|shock/.test(n)) return "shock"; if(/acid/.test(n)) return "acid"; return "force"; }
+function spellCast(school){                                   // the WIND-UP — energy gathering, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war":      blip(200,0.45,"sawtooth",0.11,900); blip(1200,0.4,"triangle",0.045,2100); break;   // rising charge
+    case "life":     blip(440,0.5,"sine",0.10,720); setTimeout(()=>blip(880,0.4,"sine",0.05,1100),90); break;  // warm swell
+    case "item":     [660,880,1170].forEach((f,i)=>setTimeout(()=>blip(f,0.28,"triangle",0.08,f*1.3),i*70)); break;  // crystalline rise
+    case "creature": { blip(500,0.5,"sawtooth",0.08,560); blip(503,0.5,"triangle",0.05,566); break; }   // detuned arcane warble
+    case "void":     blip(70,0.6,"sine",0.11,120); blip(150,0.5,"sawtooth",0.05,190); break;            // dark low rise
+    default:         blip(500,0.4,"triangle",0.08,760);
+  }
+}
+function spellRelease(school,s){                             // the DISCHARGE when the spell fires, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war": { const el=_spellEl(s);                      // element-flavoured blast
+      if(el==="fire"){ for(let i=0;i<4;i++) noiseHit(0.06,0.10,700+irnd(-150,600)); blip(360,0.4,"sawtooth",0.14,90); }
+      else if(el==="frost"){ blip(1500,0.5,"triangle",0.12,600); blip(2200,0.4,"sine",0.06,1400); }
+      else if(el==="shock"){ blip(2600,0.08,"square",0.16,900); setTimeout(()=>blip(1700,0.07,"square",0.12,700),45); noiseHit(0.05,0.10,2000); }
+      else if(el==="acid"){ noiseHit(0.5,0.12,2500); blip(480,0.4,"sawtooth",0.08,220); }
+      else { noiseHit(0.12,0.16,220); blip(300,0.4,"sine",0.14,80); }   // force/bludgeon thud
+      break; }
+    case "life": { const drain=/drain|vdrain|siphon|harm|vuln/.test((s&&(s.special+"|"+s.name)||"").toLowerCase());
+      if(drain){ blip(620,0.5,"sine",0.11,180); blip(300,0.5,"triangle",0.06,120); }               // downward siphon
+      else { [523,659,784].forEach((f,i)=>setTimeout(()=>blip(f,0.45,"sine",0.11,f*1.05),i*70)); } // uplifting bell triad
+      break; }
+    case "item":     blip(1046,0.6,"triangle",0.11,1046); blip(1568,0.5,"sine",0.05,1568); noiseHit(0.04,0.05,3000); break;  // metallic ring
+    case "creature": blip(360,0.42,"sawtooth",0.11,300); blip(372,0.42,"triangle",0.06,312); noiseHit(0.05,0.05,700); break; // eerie stab
+    case "void":     blip(90,0.6,"sine",0.13,50); blip(190,0.5,"sawtooth",0.07,150); noiseHit(0.4,0.08,140); break;          // dark dissonant pulse
+    default:         blip(700,0.3,"triangle",0.10,500);
+  }
 }
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
   SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
