@@ -12,7 +12,7 @@ Env:   DERETH_HOST, DERETH_PORT, DERETH_DB         (override defaults)
 
 This is Phase M1 (foundation). Monsters/combat become server-authoritative in M3.
 """
-import asyncio, base64, hashlib, hmac, json, math, os, random, re, secrets, sqlite3, struct, time, traceback
+import asyncio, base64, hashlib, hmac, json, math, os, random, re, secrets, sqlite3, struct, threading, time, traceback
 
 HOST = os.environ.get("DERETH_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DERETH_PORT", "8787"))
@@ -48,22 +48,64 @@ AUTH_TIMEOUT      = float(os.environ.get("DERETH_AUTH_TIMEOUT", "30"))   # secon
 # character has its own in-world name and save blob.
 MAX_CHARS = 8
 
-def db():
-    c = sqlite3.connect(DB_PATH)
-    c.execute("""CREATE TABLE IF NOT EXISTS users(
-        username TEXT PRIMARY KEY, salt TEXT NOT NULL, pw TEXT NOT NULL,
-        char TEXT, created INTEGER, seen INTEGER)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS characters(
-        account TEXT NOT NULL, slot INTEGER NOT NULL, name TEXT,
-        data TEXT, created INTEGER, seen INTEGER,
-        PRIMARY KEY(account, slot))""")
-    c.execute("""CREATE TABLE IF NOT EXISTS allegiance(
-        charname TEXT PRIMARY KEY, patron TEXT, motd TEXT,
-        sworn_at INTEGER, pending_xp INTEGER DEFAULT 0)""")
-    # #355: authoritative per-dwelling ownership + access settings, keyed by the world plot id (hid),
-    # so every client can seal/allow another player's house (owner-only claim; first-come on unowned plots).
-    c.execute("""CREATE TABLE IF NOT EXISTS houses(hid TEXT PRIMARY KEY, data TEXT)""")
+# #449: DB access must never stall the single asyncio event-loop thread. Two changes work together:
+#   (1) the schema is created ONCE at startup (init_db), and each thread keeps ONE persistent connection
+#       for its lifetime — previously every db() call opened a fresh connection AND re-ran four
+#       CREATE TABLE statements, pure per-call overhead paid on the loop thread; and
+#   (2) every client-driven query runs off the loop via `await dbq(fn, ...)` (asyncio.to_thread), so the
+#       loop keeps processing messages + broadcasting snapshots for all players while a query/write runs.
+# WAL + a busy_timeout let the loop thread's connection and the to_thread workers' connections hit the
+# same file concurrently (readers never block the single brief writer; a contended writer waits in its
+# worker thread, never on the loop). A thread-local connection is only ever touched by its owning thread,
+# so the default check_same_thread guard stays valid.
+_DB_LOCAL = threading.local()
+
+def _new_conn():
+    c = sqlite3.connect(DB_PATH, timeout=30)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=30000")
     return c
+
+def db():
+    """This thread's persistent SQLite connection (created lazily, reused for the thread's lifetime).
+    `with db() as c:` still commits per transaction — a connection context manager commits/rolls back but
+    does NOT close, so the shared connection survives."""
+    c = getattr(_DB_LOCAL, "conn", None)
+    if c is None:
+        c = _new_conn()
+        _DB_LOCAL.conn = c
+    return c
+
+def init_db():
+    """Create the schema + hot-path indexes once, at startup."""
+    c = _new_conn()
+    with c:
+        c.execute("""CREATE TABLE IF NOT EXISTS users(
+            username TEXT PRIMARY KEY, salt TEXT NOT NULL, pw TEXT NOT NULL,
+            char TEXT, created INTEGER, seen INTEGER)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS characters(
+            account TEXT NOT NULL, slot INTEGER NOT NULL, name TEXT,
+            data TEXT, created INTEGER, seen INTEGER,
+            PRIMARY KEY(account, slot))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS allegiance(
+            charname TEXT PRIMARY KEY, patron TEXT, motd TEXT,
+            sworn_at INTEGER, pending_xp INTEGER DEFAULT 0)""")
+        # #355: authoritative per-dwelling ownership + access settings, keyed by the world plot id (hid),
+        # so every client can seal/allow another player's house (owner-only claim; first-come on unowned plots).
+        c.execute("""CREATE TABLE IF NOT EXISTS houses(hid TEXT PRIMARY KEY, data TEXT)""")
+        # #449: index the case-folded name so create_char_slot's global-uniqueness check
+        # (WHERE LOWER(name)=LOWER(?)) is an index probe, not an O(n) scan of every character on the server.
+        c.execute("CREATE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
+        # allegiance vassal lookups (WHERE patron=?) run on enter_world / swear / alg_info
+        c.execute("CREATE INDEX IF NOT EXISTS idx_alg_patron ON allegiance(patron)")
+    c.close()
+
+async def dbq(fn, *args, **kwargs):
+    """Run a synchronous DB function OFF the event loop (#449). A single client could otherwise drive
+    expensive-but-rate-allowed DB work (a 256 KiB save serialize+write, a roster scan) that stalls message
+    processing and the 10 Hz snapshot broadcast for every connected player. The work runs in a worker
+    thread on that thread's own connection; the loop stays free."""
+    return await asyncio.to_thread(fn, *args, **kwargs)
 
 def hash_pw(password: str, salt: bytes) -> str:
     return hashlib.scrypt(password.encode("utf-8"), salt=salt, **SCRYPT).hex()
@@ -739,6 +781,7 @@ RL_GEN_BURST = 60.0   # burst capacity
 RL_CHAT_RATE = 2.0    # sustained "chatty" broadcast messages/sec
 RL_CHAT_BURST = 6.0   # burst capacity for chat/emote/tell/party/allegiance
 CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd", "spellfx"}   # messages that fan out to others. #312: spellfx is a purely-cosmetic broadcast-to-all — throttle it on the scarcer chat budget (2/s) so a client can't blast FX to every player 30×/s (attack/debuff stay on the general bucket since they fire at legitimate combat rate)
+SAVE_MIN_INTERVAL = 1.0   # #449: min seconds between persisted saves per character — a cost-aware cap on the 256 KiB serialize+write beyond the flat message bucket (client autosaves every ~10s, so this drops no real state)
 
 class Client:
     def __init__(self, reader, writer):
@@ -1554,6 +1597,11 @@ def alg_set_patron(name, patron):
                   "ON CONFLICT(charname) DO UPDATE SET patron=?, sworn_at=?",
                   (name, patron, int(time.time()), patron, int(time.time())))
 
+def alg_set_motd(name, text):
+    with db() as c:
+        c.execute("INSERT INTO allegiance(charname,motd) VALUES(?,?) "
+                  "ON CONFLICT(charname) DO UPDATE SET motd=?", (name, text, text))
+
 def alg_vassals(name):
     with db() as c:
         return [r[0] for r in c.execute("SELECT charname FROM allegiance WHERE patron=?", (name,)).fetchall()]
@@ -1664,7 +1712,7 @@ async def _deliver_passup(patron, amount, from_name):
     if pc:
         await pc.send({"t": "passup", "xp": amount, "from": from_name})
     else:
-        alg_add_pending(patron, amount)
+        await dbq(alg_add_pending, patron, amount)
 
 async def alg_passup_kill(recipients_names, xp):
     """extra free XP up the chain for each rewarded character (patron loses nothing, vassal loses
@@ -1672,15 +1720,15 @@ async def alg_passup_kill(recipients_names, xp):
     grand-patron) gets AC's small grand-vassal trickle — 0–10% of the kill, scaled by how long the
     intermediate patron has stayed sworn (a loyalty proxy)."""
     for nm in set(recipients_names):
-        r = alg_row(nm)
+        r = await dbq(alg_row, nm)
         if not r or not r["patron"]:
             continue
-        share = int(xp * alg_passup_pct(nm))
+        share = int(xp * await dbq(alg_passup_pct, nm))
         if share > 0:
             await _deliver_passup(r["patron"], share, nm)
-        pr = alg_row(r["patron"])                    # is there a grand-patron above the direct patron?
+        pr = await dbq(alg_row, r["patron"])         # is there a grand-patron above the direct patron?
         if pr and pr["patron"]:
-            gpct = min(0.10, alg_passup_pct(r["patron"]) * 0.12)   # grand-vassal trickle, capped at 10%
+            gpct = min(0.10, await dbq(alg_passup_pct, r["patron"]) * 0.12)   # grand-vassal trickle, capped at 10%
             gshare = int(xp * gpct)
             if gshare > 0:
                 await _deliver_passup(pr["patron"], gshare, nm)
@@ -1720,7 +1768,7 @@ async def handle_muster(cl):
     lvl = max(1, cl.level - random.randint(2, 10))
     lst.append({"name": name, "level": lvl, "loyalty": random.randint(80, 200)})
     await cl.send({"t": "system", "msg": f"{name} (level {lvl}) swears to your banner — they adventure in your name, trickling XP up to you ({len(lst)}/{cap})."})
-    await cl.send(alg_info_pub(cl.charname))
+    await cl.send(await dbq(alg_info_pub, cl.charname))
 
 async def npc_vassal_tick():
     """each NPC vassal 'adventures' and trickles a modest pass-up to its online patron"""
@@ -2073,7 +2121,7 @@ async def do_auth_success(cl, username):
     CLIENTS[username] = cl
     # Auth lands the player at the character-select screen, not the world.
     await cl.send({"t": "auth_ok", "id": username, "token": cl.token, "pv": PROTOCOL_VERSION})
-    await cl.send({"t": "roster", "chars": roster(username), "max": MAX_CHARS})
+    await cl.send({"t": "roster", "chars": await dbq(roster, username), "max": MAX_CHARS})
 
 async def enter_world(cl, slot, name, data):
     """Bring a selected/created character into the shared world."""
@@ -2086,10 +2134,10 @@ async def enter_world(cl, slot, name, data):
     await cl.send({"t": "play_ok", "slot": slot, "name": name, "netid": cl.netid, "char": data})
     # allegiance: the graph decides the /a channel (everyone under one Monarch); deliver
     # any pass-up XP your vassals earned while you were away
-    r = alg_row(name)
-    if r and (r["patron"] or alg_vassals(name)):
-        cl.allegiance = alg_monarch(name)
-    pending = alg_take_pending(name)
+    r = await dbq(alg_row, name)
+    if r and (r["patron"] or await dbq(alg_vassals, name)):
+        cl.allegiance = await dbq(alg_monarch, name)
+    pending = await dbq(alg_take_pending, name)
     if pending > 0:
         await cl.send({"t": "passup", "xp": pending, "from": "your vassals (while away)"})
     # sync current ground loot + any active Incursion to the entering player
@@ -2110,14 +2158,14 @@ async def dispatch(cl, msg):
             return await cl.send({"t": "auth_err", "msg": "Name: 3-16 letters/numbers/_-."})
         if not isinstance(p, str) or len(p) < 4:
             return await cl.send({"t": "auth_err", "msg": "Password must be at least 4 characters."})
-        if not create_user(u, p):
+        if not await dbq(create_user, u, p):
             return await cl.send({"t": "auth_err", "msg": "That name is already taken."})
         return await do_auth_success(cl, u)
     if t == "login":
         u, p = msg.get("user", ""), msg.get("pass", "")
         if login_throttled(u):   # #320: brute-force lockout after too many recent failures
             return await cl.send({"t": "auth_err", "msg": "Too many attempts — wait a minute and try again."})
-        if not verify_user(u, p):
+        if not await dbq(verify_user, u, p):   # #449: scrypt + DB lookup off the loop
             note_login_fail(u)
             return await cl.send({"t": "auth_err", "msg": "Wrong name or password."})
         _LOGIN_FAILS.pop(u, None)   # #320: clear the counter on success
@@ -2137,7 +2185,7 @@ async def dispatch(cl, msg):
         slot = msg.get("slot")
         if not isinstance(slot, int):
             return
-        ch = load_char_slot(cl.username, slot)
+        ch = await dbq(load_char_slot, cl.username, slot)
         if not ch:
             return await cl.send({"t": "play_err", "msg": "No character in that slot."})
         return await enter_world(cl, slot, ch["name"], ch["data"])
@@ -2145,23 +2193,23 @@ async def dispatch(cl, msg):
         slot, name, char = msg.get("slot"), msg.get("name", ""), msg.get("char")
         if not valid_name(name):
             return await cl.send({"t": "play_err", "msg": "Name: 3-16 letters/numbers/_-."})
-        ok, err = create_char_slot(cl.username, slot, name, char if isinstance(char, dict) else None)
+        ok, err = await dbq(create_char_slot, cl.username, slot, name, char if isinstance(char, dict) else None)
         if not ok:
             return await cl.send({"t": "play_err", "msg": err})
-        await cl.send({"t": "roster", "chars": roster(cl.username), "max": MAX_CHARS})
+        await cl.send({"t": "roster", "chars": await dbq(roster, cl.username), "max": MAX_CHARS})
         return await enter_world(cl, slot, name, char if isinstance(char, dict) else None)
     if t == "delete_char":
         slot = msg.get("slot")
         if isinstance(slot, int) and not (cl.in_world and cl.slot == slot):
-            freed = delete_char_slot(cl.username, slot)
+            freed = await dbq(delete_char_slot, cl.username, slot)
             if freed:
                 # #446: release the deleted character's dwellings so the plot doesn't stay sealed under a
                 # now-gone owner (and can't be inherited by a new same-named character). save_house(hid)
                 # persists the removal; broadcast_house tells every client to drop the local seal.
                 for hid in [h for h, v in list(HOUSES.items()) if v.get("owner") == freed]:
-                    HOUSES.pop(hid, None); save_house(hid); await broadcast_house(hid)
+                    HOUSES.pop(hid, None); await dbq(save_house, hid); await broadcast_house(hid)
                 SKILL_CACHE.pop(freed, None)   # drop cached loyalty/leadership keyed by the freed charname
-            await cl.send({"t": "roster", "chars": roster(cl.username), "max": MAX_CHARS})
+            await cl.send({"t": "roster", "chars": await dbq(roster, cl.username), "max": MAX_CHARS})
         elif isinstance(slot, int):
             # Refuse deleting the slot you're currently playing — but SAY SO, so the client can tell a
             # refusal from packet loss (create_char auto-plays the new slot, so create->delete hits this).
@@ -2292,7 +2340,15 @@ async def dispatch(cl, msg):
             char["level"] = int(cl.level_auth)  # #238: persist the authoritative level (derived from server-accounted XP),
             char["xp"] = int(cl.xp_total - _xp_to_reach(cl.level_auth))  # + its within-level progress, so a forged level/xp
                                               #       can neither hold nor survive a reload and the reloaded save stays consistent
-            save_char_slot(cl.username, cl.slot, char)
+            # #449: cost-aware save limit beyond the flat 30/s message bucket. A save serializes+writes up
+            # to 256 KiB; the client autosaves every ~10s (plus on discrete events), so accepting at most
+            # one persist per SAVE_MIN_INTERVAL per character caps the disk/CPU a client can drive without
+            # dropping any real state (each save is a full snapshot — the next accepted one carries the
+            # latest). The authoritative-coin correction below still runs so authority never drifts.
+            now_t = time.time()
+            if now_t - getattr(cl, "_save_t", 0.0) >= SAVE_MIN_INTERVAL:
+                cl._save_t = now_t
+                await dbq(save_char_slot, cl.username, cl.slot, char)   # #449: 256 KiB dumps + write off the loop
             await push_coin(cl)               # correct the client's mirror if we clamped its claim
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
@@ -2366,8 +2422,8 @@ async def dispatch(cl, msg):
         # set/clear this character's allegiance name (the client persists it in its save;
         # the server only needs it live to route /a chat). The sworn GRAPH channel wins.
         name = str(msg.get("name", ""))[:40].strip()
-        r = alg_row(cl.charname or "")
-        if not (r and (r["patron"] or alg_vassals(cl.charname))):
+        r = await dbq(alg_row, cl.charname or "")
+        if not (r and (r["patron"] or await dbq(alg_vassals, cl.charname))):
             cl.allegiance = name or None
     elif t == "swear":
         # swear fealty to an online equal-or-higher character (AC rule)
@@ -2379,23 +2435,23 @@ async def dispatch(cl, msg):
             return await cl.send({"t": "system", "msg": f"No online character named '{name}' to swear to."})
         if target.level < cl.level:
             return await cl.send({"t": "system", "msg": f"{name} (level {target.level}) is beneath your level {cl.level} — AC lets you swear only to an equal or higher."})
-        if alg_reaches_up(name, cl.charname):   # #250: full upward-walk — reject if you're ANYWHERE on the target's chain (crown OR mid-chain), else a patron could swear to its own descendant and close a loop
+        if await dbq(alg_reaches_up, name, cl.charname):   # #250: full upward-walk — reject if you're ANYWHERE on the target's chain (crown OR mid-chain), else a patron could swear to its own descendant and close a loop
             return await cl.send({"t": "system", "msg": "They stand beneath you in your own tree — that fealty would be a circle."})
-        if len(alg_vassals(name)) >= max(1, target.level):
+        if len(await dbq(alg_vassals, name)) >= max(1, target.level):
             return await cl.send({"t": "system", "msg": f"{name}'s patronage is full (AC caps vassals at character level)."})
-        alg_set_patron(cl.charname, name)
-        mon = alg_monarch(cl.charname)
+        await dbq(alg_set_patron, cl.charname, name)
+        mon = await dbq(alg_monarch, cl.charname)
         cl.allegiance = mon; target.allegiance = mon
         await cl.send({"t": "system", "msg": f"You swear fealty to {name}. Your allegiance stands under Monarch {mon}; your kill XP passes up as extra XP for your patron (you lose nothing)."})
         await target.send({"t": "system", "msg": f"{cl.charname} has sworn fealty to you — their deeds now pass XP up to you."})
-        await cl.send(alg_info_pub(cl.charname))
-        await target.send(alg_info_pub(name))
+        await cl.send(await dbq(alg_info_pub, cl.charname))
+        await target.send(await dbq(alg_info_pub, name))
     elif t == "unswear":
         if cl.in_world and cl.charname:
-            r = alg_row(cl.charname)
+            r = await dbq(alg_row, cl.charname)
             if r and r["patron"]:
                 old = r["patron"]
-                alg_set_patron(cl.charname, None)
+                await dbq(alg_set_patron, cl.charname, None)
                 await cl.send({"t": "system", "msg": f"You break fealty with {old}. Accrued sworn-time resets."})
                 pc = next((c for c in CLIENTS.values() if c.in_world and c.charname == old), None)
                 if pc:
@@ -2404,15 +2460,13 @@ async def dispatch(cl, msg):
                 await cl.send({"t": "system", "msg": "You are sworn to no patron."})
     elif t == "alg_info":
         if cl.in_world and cl.charname:
-            await cl.send(alg_info_pub(cl.charname))
+            await cl.send(await dbq(alg_info_pub, cl.charname))
     elif t == "alg_motd":
         text = clean_relay(msg.get("text", ""), 200)
         if cl.in_world and cl.charname:
-            if alg_monarch(cl.charname) != cl.charname or not alg_vassals(cl.charname):
+            if await dbq(alg_monarch, cl.charname) != cl.charname or not await dbq(alg_vassals, cl.charname):
                 return await cl.send({"t": "system", "msg": "Only a Monarch (the crown of a tree) sets the allegiance MOTD."})
-            with db() as c:
-                c.execute("INSERT INTO allegiance(charname,motd) VALUES(?,?) "
-                          "ON CONFLICT(charname) DO UPDATE SET motd=?", (cl.charname, text, text))
+            await dbq(alg_set_motd, cl.charname, text)
             for c2 in CLIENTS.values():
                 if c2.in_world and getattr(c2, "allegiance", None) == cl.charname:
                     await c2.send({"t": "system", "msg": f"[Allegiance MOTD] {text}"})
@@ -2446,7 +2500,7 @@ async def dispatch(cl, msg):
                 cur = HOUSES.get(hid)
                 if act == "release":
                     if cur and cur.get("owner") == cl.charname:
-                        HOUSES.pop(hid, None); save_house(hid); await broadcast_house(hid)
+                        HOUSES.pop(hid, None); await dbq(save_house, hid); await broadcast_house(hid)
                 elif act == "set":
                     # #451: only a REAL plot (is_valid_plot) may be claimed/edited — junk hids can no
                     # longer inject persisted/broadcast rows; and you may only claim an unowned plot or
@@ -2457,14 +2511,14 @@ async def dispatch(cl, msg):
                             # character already owns before taking this one, so a client can't claim
                             # (and seal) every dwelling on the server.
                             for other in [k for k, h in HOUSES.items() if k != hid and h.get("owner") == cl.charname]:
-                                HOUSES.pop(other, None); save_house(other); await broadcast_house(other)
+                                HOUSES.pop(other, None); await dbq(save_house, other); await broadcast_house(other)   # #449: off-loop persist
                         HOUSES[hid] = {
                             "owner": cl.charname,
                             "open": bool(msg.get("open", True)),
                             "guests": [str(g)[:32] for g in (msg.get("guests") or []) if g][:128],
                             "storagePerm": bool(msg.get("storagePerm", False)),
                         }
-                        save_house(hid); await broadcast_house(hid)
+                        await dbq(save_house, hid); await broadcast_house(hid)   # #449: 256 KiB write off the loop
                     # else: invalid hid, or plot owned by someone else — ignore
     elif t == "ping":
         await cl.send({"t": "pong"})
@@ -2600,7 +2654,7 @@ async def tick_loop():
             traceback.print_exc()
 
 async def main():
-    db().close()  # ensure schema exists
+    init_db()     # #449: create the schema + hot-path indexes once, up front (not on every db() call)
     seed_admin()  # always keep the default Admin account + maxed Kilmer character
     load_houses()  # #355: restore dwelling ownership registry
     load_valid_plots()  # #451: authentic plot-id set for claim validation
