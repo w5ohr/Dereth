@@ -783,6 +783,23 @@ RL_CHAT_BURST = 6.0   # burst capacity for chat/emote/tell/party/allegiance
 CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd", "spellfx"}   # messages that fan out to others. #312: spellfx is a purely-cosmetic broadcast-to-all — throttle it on the scarcer chat budget (2/s) so a client can't blast FX to every player 30×/s (attack/debuff stay on the general bucket since they fire at legitimate combat rate)
 SAVE_MIN_INTERVAL = 1.0   # #449: min seconds between persisted saves per character — a cost-aware cap on the 256 KiB serialize+write beyond the flat message bucket (client autosaves every ~10s, so this drops no real state)
 
+# #468: per-(sender→target) cooldown for targeted, consent-style notifications (party invite, trade
+# open, cast-on-other). The message-rate limiter caps a client's TOTAL msg/s but not how many land on
+# ONE victim, so a griefer could aim ~30 invite/trade/cast popups per second at a single player. A short
+# per-(sender,target,action) cooldown caps that per-target notification pressure without hampering a
+# legitimate one-off invite/trade/buff.
+_TARGET_CD = {}   # (sender, target_key, action) -> monotonic time the next one is allowed
+def target_action_ok(sender, target_key, action, cooldown):
+    now = time.monotonic()
+    if len(_TARGET_CD) > 4096:                                    # opportunistic prune so the map can't grow unbounded
+        for k in [k for k, t in _TARGET_CD.items() if t <= now]:
+            del _TARGET_CD[k]
+    key = (sender, target_key, action)
+    if _TARGET_CD.get(key, 0.0) > now:
+        return False
+    _TARGET_CD[key] = now + cooldown
+    return True
+
 class Client:
     def __init__(self, reader, writer):
         self.reader = reader
@@ -1936,6 +1953,8 @@ async def handle_trade(cl, msg):
         t1, _ = trade_of(cl.username); t2, _ = trade_of(target.username)
         if t1 or t2:
             return await cl.send({"t": "system", "msg": "One of you is already trading."})
+        if not target_action_ok(cl.username, name, "trade_open", 4.0):   # #468: throttle an open→cancel→open loop that re-spams the victim's trade popup + chime
+            return await cl.send({"t": "system", "msg": f"You just sent {name} a trade request — wait a moment."})
         _trade_seq += 1
         TRADES["t%d" % _trade_seq] = {"a": cl.username, "b": target.username,
                                       "offers": {cl.username: [], target.username: []},
@@ -2040,6 +2059,8 @@ async def handle_party(cl, msg):
             return await cl.send({"t": "system", "msg": f"{name} is already in your party."})
         if target.party:
             return await cl.send({"t": "system", "msg": f"{name} is already in a party."})
+        if not target_action_ok(cl.username, name, "party_invite", 6.0):   # #468: no invite-spam (per-target cooldown; the SENDER hears the throttle, the victim sees nothing extra)
+            return await cl.send({"t": "system", "msg": f"You recently invited {name} — give them a moment to respond."})
         target.invite_from = cl.username
         await cl.send({"t": "system", "msg": f"You invite {name} to your party."})
         await target.send({"t": "system", "msg": f"{cl.charname} invites you to a party — type /party accept."})
@@ -2369,7 +2390,8 @@ async def dispatch(cl, msg):
         if cl.in_world:
             tgt = SESSIONS.get(msg.get("target"))   # #438: targets are opaque netids, not account names
             spell = msg.get("spell")
-            if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
+            if (tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45
+                    and target_action_ok(cl.username, msg.get("target"), "cast", 1.5)):   # #468: no "X casts on you" spam (buffs last far longer than 1.5s, so a legit re-buff is never this frequent)
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "pvp":
         # S3 PvP: relay a hit only if both players share a PvP ruleset (PK↔PK or PKL↔PKL) and are in range
