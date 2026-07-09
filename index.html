@@ -25835,6 +25835,21 @@ function applySaveObj(s){
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+// #478: "Create a New Character" used to silently overwrite the offline game's ONE save slot — no
+// warning, no way back, so a stray click on the primary-styled button (right under Continue) could
+// permanently erase a high-level character in seconds. Two-part fix: (1) stash the outgoing save
+// under a backup key right before it's wiped, so a mistake is still recoverable, and (2) a blunt
+// confirm() naming the existing character + level before chargen even opens, mirroring the tone of
+// the online character-delete confirm above. confirm()'s own Esc/Cancel path aborts with the save
+// untouched — chargen never opens, so wipeSave/backupSave never run.
+const SAVE_BACKUP_KEY="dereth_save_backup";
+function backupSave(){ try{ const s=localStorage.getItem(SAVE_KEY); if(s) localStorage.setItem(SAVE_BACKUP_KEY,s); }catch(e){} }
+function confirmNewCharacterOverwrite(){
+  if(!hasSave()) return true;
+  let s=null; try{ s=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){}
+  const label=s?`${s.name||"Adventurer"} (Level ${s.level||1})`:"your existing character";
+  return confirm(`You already have a saved character — ${label}. Creating a new one will ERASE this save (a backup will be kept, but your active game will be gone). Continue?`);
+}
 
 // ============================================================================
 //  MULTIPLAYER — network layer (connects to the Dereth MMO server; offline fallback)
@@ -27138,13 +27153,14 @@ function refreshAvatarAppearance(){
   if(u.acBody){ if(u.acHead&&u.acHead.parent) u.acHead.parent.remove(u.acHead); u.acHead=null; acBuildHead(playerAvatar); }  // rebuild the real AC head from the new choices
 }
 
-startBtn.onclick=()=>{ isOnline=false; openCharCreator("",race=>{ wipeSave(); startGame(false,race); }); };
+startBtn.onclick=()=>{ if(!confirmNewCharacterOverwrite()) return; isOnline=false; openCharCreator("",race=>{ backupSave(); wipeSave(); startGame(false,race); }); };
 { const tsb=document.getElementById('titleSettingsBtn'); if(tsb) tsb.onclick=openSettings; }
 { const ct=document.getElementById('controlsToggle'), cb=document.getElementById('controlsBox');
   if(ct&&cb) ct.onclick=()=>{ cb.style.display=cb.style.display==="none"?"block":"none"; }; }
 continueBtn.onclick=()=>{ isOnline=false; startGame(true); };
 document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{   // offline: pick a heritage → open the creator
-  isOnline=false; openCharCreator(b.dataset.path,race=>{ wipeSave(); startGame(false,race); });
+  if(!confirmNewCharacterOverwrite()) return;
+  isOnline=false; openCharCreator(b.dataset.path,race=>{ backupSave(); wipeSave(); startGame(false,race); });
 });
 // online character creation (within the character-select screen) — name+heritage carry through the creator
 document.querySelectorAll('#csPaths button').forEach(b=>b.onclick=()=>{
