@@ -121,14 +121,23 @@ def note_login_fail(username):
         n, t0 = 0, time.time()
     _LOGIN_FAILS[username] = (n + 1, t0)
 
-# ── default admin: always keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
+# ── default admin: keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
+# #440: the Admin password is an operator secret sourced from DERETH_ADMIN_PW — NEVER a committed
+# literal. With no such secret we do not seed the account at all, and we NEVER overwrite an
+# existing Admin password on startup (seed only when the row is absent), so an operator can rotate
+# the credential and it survives restarts.
 ADMIN_USER = "Admin"
-ADMIN_PW = "Tatia0623!"
+ADMIN_PW = os.environ.get("DERETH_ADMIN_PW")
 ADMIN_CHAR_PATH = os.path.join(os.path.dirname(__file__), "admin_kilmer.json")
 
 def seed_admin():
-    """Enforce the default Admin account + password on every start, and place the maxed Kilmer
-    character in slot 0 if that slot is empty (so any in-game progress the admin makes persists)."""
+    """Ensure the default Admin account exists and place the maxed Kilmer character in slot 0 if that
+    slot is empty (so any in-game progress the admin makes persists). The password comes from
+    DERETH_ADMIN_PW and is written ONLY when the account is first created — an existing Admin password
+    is never clobbered. With no DERETH_ADMIN_PW set, the account is not seeded."""
+    if not ADMIN_PW:
+        print("seed: DERETH_ADMIN_PW is unset — Admin account not seeded (set the env var to enable it)")
+        return
     kilmer = None
     try:
         with open(ADMIN_CHAR_PATH, encoding="utf-8") as f:
@@ -138,14 +147,11 @@ def seed_admin():
         print(f"seed: admin_kilmer.json unavailable ({e}) — Admin account only, no character")
         kilmer = None
     now = int(time.time())
-    salt = secrets.token_bytes(16)
     with db() as c:
-        if c.execute("SELECT 1 FROM users WHERE username=?", (ADMIN_USER,)).fetchone():
-            c.execute("UPDATE users SET salt=?, pw=? WHERE username=?",
-                      (salt.hex(), hash_pw(ADMIN_PW, salt), ADMIN_USER))          # keep the password current
-        else:
+        if not c.execute("SELECT 1 FROM users WHERE username=?", (ADMIN_USER,)).fetchone():
+            salt = secrets.token_bytes(16)
             c.execute("INSERT INTO users(username,salt,pw,char,created,seen) VALUES(?,?,?,?,?,?)",
-                      (ADMIN_USER, salt.hex(), hash_pw(ADMIN_PW, salt), None, now, now))
+                      (ADMIN_USER, salt.hex(), hash_pw(ADMIN_PW, salt), None, now, now))   # #440: created only when absent
         if kilmer is not None and not c.execute(
                 "SELECT 1 FROM characters WHERE account=? AND slot=0", (ADMIN_USER,)).fetchone():
             c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
