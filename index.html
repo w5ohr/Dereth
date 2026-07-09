@@ -10503,7 +10503,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
-  if(Math.random()<0.35) creatureSFX(m.kind,"wound");   // the creature's own retail pain vocal
+  if(Math.random()<0.35) creatureSFX(m.kind,"wound",m.x,m.z);   // the creature's own retail pain vocal (spatialized)
   clog(`You ${crit?'<b style="color:#ff8f6b">critically strike</b>':'hit'} the ${m.name||((BESTIARY[m.kind]||{}).name||m.kind)} for <b>${Math.round(dmg)}</b>.`);
   if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
@@ -10513,9 +10513,9 @@ function damageMonster(m,dmg,crit){
     m.enraged=true;
     floater(m.x,(m.headY||1.6)+2,m.z,"ENRAGED","#ff5a5a",1.3);
     m.mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(0x6a1010); });
-    if(SFX.growl) SFX.growl(m.kind);
+    if(SFX.growl) SFX.growl(m.kind,m.x,m.z);
   }
-  if(Math.random()<0.35&&typeof creatureSFX==="function") creatureSFX(m.kind,"wound");   // the creature's real pain cry
+  if(Math.random()<0.35&&typeof creatureSFX==="function") creatureSFX(m.kind,"wound",m.x,m.z);   // the creature's real pain cry (spatialized)
   if(m.hp<=0) killMonster(m);
 }
 // creature trophies (AC drops): a body-part token each creature may yield, sellable to any vendor
@@ -10560,7 +10560,7 @@ function findScarabFor(spellLvl){   // index of the lowest-level scarab in the s
 function killMonster(m){
   const b=BESTIARY[m.kind];
   if(_guardKill){   // #12: a castle guard felled this foe — despawn + respawn as normal, but award the PLAYER nothing (no kills/XP/streak/quest/loot). Stops AFK farming inside the walls.
-    burst(m.x,1,m.z,(b&&b.c)||0xffae3a,16); if(SFX.death)SFX.death(m.kind);
+    burst(m.x,1,m.z,(b&&b.c)||0xffae3a,16); if(SFX.death)SFX.death(m.kind,m.x,m.z);
     if(m.isDungeon) dungeonMobs=Math.max(0,dungeonMobs-1);
     retire(m); const gi=monsters.indexOf(m); if(gi>=0) monsters.splice(gi,1);
     if(m.isBoss){ boss=null; setTimeout(spawnBoss,45000); }
@@ -10576,7 +10576,7 @@ function killMonster(m){
   if(streak===5||streak===10||streak===20) toast(streak+" KILL STREAK!");
   const sMult=1+Math.min(streak-1,12)*0.08;
   if(m.isBoss){
-    burst(m.x,2,m.z,0xff5a5a,40);SFX.death(m.kind);SFX.level();player.bossKills++;
+    burst(m.x,2,m.z,0xff5a5a,40);SFX.death(m.kind,m.x,m.z);SFX.level();player.bossKills++;
     gainXP(Math.round(m.xp*sMult));player.gold+=irnd(m.goldRange[0],m.goldRange[1]);
     for(let i=0;i<3;i++) addDrop(m.x+rnd(-2,2),m.z+rnd(-2,2),{type:"item",item:rollItem(true,5)});
     addDrop(m.x,m.z,{type:"gold",amt:irnd(80,160)});
@@ -10589,7 +10589,7 @@ function killMonster(m){
     else { boss=null; setTimeout(spawnBoss,45000); }
     saveGame();return;
   }
-  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death(m.kind);
+  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death(m.kind,m.x,m.z);
   clog(`You have slain the <b>${m.name||b.name}</b>${m.isElite?" (champion)":""} — +${Math.round((m.xp||b.xp)*sMult)} XP.`);
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
@@ -17081,7 +17081,7 @@ function update(dt){
     }
     // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
     const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
-    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle"))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
+    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle",m.x,m.z))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
     if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0){ m.state="wander"; m.charging=0; } } else if(d>b.sense*1.4){ m.state="wander"; m.charging=0; } }   // #351: clear a mid-wind-up m.charging on de-aggro so it can't resume and loose a stale bolt (with no fresh tell) on the next aggro
     const _mox=m.x,_moz=m.z;   // #351: remember pre-move position to revert a step into deep water
     if(m.state==="chase"&&player.alive){
@@ -17115,7 +17115,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else { m.charging=0.45; if(m.actCast){ m.actCast.reset(); m.actCast.weight=1; m.actCast.play(); } }   // #177: play the model's real Cast wind-up
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack");const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack",m.x,m.z);const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
       }   // end B1 !spActive gate
     } else {
@@ -18258,22 +18258,38 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden){ if(actx.state==="running"){ actx.suspend(); _blurSuspended=true; } }
   else if(_blurSuspended){ _blurSuspended=false; if(!muted) actx.resume(); }
 });
-function blip(freq,dur,type="sine",vol=0.18,slideTo){
+function blip(freq,dur,type="sine",vol=0.18,slideTo,dest){   // dest: optional destination node (else the master bus) — used to route through a spatial insert
   if(!actx) return;
   const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
   o.type=type;o.frequency.setValueAtTime(freq,t);
   if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
-  o.connect(g).connect(masterGain||actx.destination);o.start(t);o.stop(t+dur);
+  o.connect(g).connect(dest||masterGain||actx.destination);o.start(t);o.stop(t+dur);
 }
-function noiseHit(dur,vol,freq){
+function noiseHit(dur,vol,freq,dest){
   if(!actx) return;
   const buf=actx.createBuffer(1,Math.max(1,actx.sampleRate*dur),actx.sampleRate);
   const d=buf.getChannelData(0);for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
   const src=actx.createBufferSource();src.buffer=buf;
   const filt=actx.createBiquadFilter();filt.type="bandpass";filt.frequency.value=freq;
   const g=actx.createGain();g.gain.value=vol;
-  src.connect(filt).connect(g).connect(masterGain||actx.destination);src.start();
+  src.connect(filt).connect(g).connect(dest||masterGain||actx.destination);src.start();
+}
+// spatial insert: a StereoPanner+Gain that positions & attenuates a sound by a world point relative
+// to the player's facing. Returns a node to use as `dest`, or null (→ master bus) when off-range/unsupported.
+function spatialBus(x,z){
+  if(!actx||x==null||z==null||typeof player==="undefined"||!player) return null;
+  const dx=x-player.x, dz=z-player.z, dist=Math.hypot(dx,dz), maxD=60;
+  if(dist>maxD) return {node:null,silent:true};                          // out of earshot
+  const g=actx.createGain(); g.gain.value=Math.pow(clamp((maxD-dist)/maxD,0,1),1.3);   // distance falloff
+  let head=g;
+  if(actx.createStereoPanner){                                           // pan L/R by the bearing off your facing
+    const fx=-Math.sin(player.yaw||0), fz=-Math.cos(player.yaw||0), rx=-fz, rz=fx, l=dist||1;
+    const pan=actx.createStereoPanner(); pan.pan.value=clamp((dx*rx+dz*rz)/l,-1,1);
+    pan.connect(g); head=pan;
+  }
+  g.connect(masterGain||actx.destination);
+  return {node:head,silent:false};
 }
 const SFX={
   swing:()=>noiseHit(0.12,0.16,800),
@@ -18337,18 +18353,19 @@ function _cvFamily(kind){
   return "beast";
 }
 // element overlay: a short flavour layer that rides an ATTACK cry (fire crackle, frost shimmer, …)
-function _cvElement(el,t,dur,pk){
-  if(!actx||!el) return; const bus=masterGain||actx.destination;
-  if(el==="fire"){ for(let i=0;i<5;i++){ const tt=t+i*0.03; noiseHit(0.05,pk*0.5,700+irnd(-200,600)); } blip(340,dur*0.7,"sawtooth",pk*0.5,110); }
-  else if(el==="frost"){ blip(1400,dur*0.8,"triangle",pk*0.4,700); blip(2100,dur*0.5,"sine",pk*0.25,1500); }
-  else if(el==="acid"){ noiseHit(dur*0.9,pk*0.5,2600); blip(500,dur*0.6,"sawtooth",pk*0.3,240); }
-  else if(el==="shock"){ blip(2600,0.07,"square",pk*0.5,900); setTimeout(()=>blip(1800,0.06,"square",pk*0.4,700),40); }
-  else if(el==="nether"){ blip(70,dur,"sine",pk*0.5,40); blip(190,dur*0.8,"triangle",pk*0.25,150); }
-  else if(el==="pierce"||el==="slash"){ noiseHit(0.06,pk*0.4,1800); }
+function _cvElement(el,t,dur,pk,dest){
+  if(!actx||!el) return;
+  if(el==="fire"){ for(let i=0;i<5;i++){ const tt=t+i*0.03; noiseHit(0.05,pk*0.5,700+irnd(-200,600),dest); } blip(340,dur*0.7,"sawtooth",pk*0.5,110,dest); }
+  else if(el==="frost"){ blip(1400,dur*0.8,"triangle",pk*0.4,700,dest); blip(2100,dur*0.5,"sine",pk*0.25,1500,dest); }
+  else if(el==="acid"){ noiseHit(dur*0.9,pk*0.5,2600,dest); blip(500,dur*0.6,"sawtooth",pk*0.3,240,dest); }
+  else if(el==="shock"){ blip(2600,0.07,"square",pk*0.5,900,dest); setTimeout(()=>blip(1800,0.06,"square",pk*0.4,700,dest),40); }
+  else if(el==="nether"){ blip(70,dur,"sine",pk*0.5,40,dest); blip(190,dur*0.8,"triangle",pk*0.25,150,dest); }
+  else if(el==="pierce"||el==="slash"){ noiseHit(0.06,pk*0.4,1800,dest); }
 }
-function creatureVoice(kind,act){
+function creatureVoice(kind,act,x,z){
   if(!actx||muted) return false;
-  const bus=masterGain||actx.destination, t=actx.currentTime;
+  const sp=spatialBus(x,z); if(sp&&sp.silent) return true;         // out of earshot → count as "handled", make no sound
+  const bus=(sp&&sp.node)||masterGain||actx.destination, t=actx.currentTime;
   const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, size=Math.max(0.4,b.size||1), fam=_cvFamily(kind), el=b.dmgEl||"";
   // size → pitch (a Lugian is an octave-plus below a Rat); death drops & lengthens, wound is quick & high
   const p=1/Math.pow(size,0.9);                                   // pitch multiplier: small=high, big=low
@@ -18364,14 +18381,14 @@ function creatureVoice(kind,act){
   const gliss=death?0.45:wound?1.25:1.0;                          // death falls, wound rises a touch
   switch(fam){
     case "insect":                                                // dry chittering clicks + high buzz
-      { const clicks=death?10:wound?2:5; for(let i=0;i<clicks;i++) noiseHit(0.03,pk*0.7,2200*p+irnd(-300,300));
+      { const clicks=death?10:wound?2:5; for(let i=0;i<clicks;i++) noiseHit(0.03,pk*0.7,2200*p+irnd(-300,300),bus);
         tone(1300*p,"square",pk*0.5,dur,death?0.5:1.15); if(!wound) tone(2600*p,"sawtooth",pk*0.25,dur*0.6,gliss,0.02); break; }
     case "undead":                                                // dry bone rattle + a hollow moan
-      { const rat=death?12:wound?3:6; for(let i=0;i<rat;i++) noiseHit(0.035,pk*0.5,900*p+irnd(-150,250));
+      { const rat=death?12:wound?3:6; for(let i=0;i<rat;i++) noiseHit(0.035,pk*0.5,900*p+irnd(-150,250),bus);
         tone(150*p,"triangle",pk*0.7,dur*(death?1.2:1),gliss); tone(300*p,"sine",pk*0.3,dur,gliss,0.03); break; }
     case "giant":                                                 // deep grinding rumble + gravel
       { tone(58*p,"sawtooth",pk,dur*1.2,death?0.5:0.9); tone(87*p,"square",pk*0.4,dur,death?0.55:1.0,0.02);
-        noiseHit(dur*0.8,pk*0.4,120); break; }
+        noiseHit(dur*0.8,pk*0.4,120,bus); break; }
     case "ethereal":                                              // eerie detuned warble / ghostly tone
       { const f=520*p; tone(f,"sine",pk*0.8,dur*1.2,death?0.4:1.0); tone(f*1.007,"triangle",pk*0.5,dur*1.2,death?0.4:1.05,0.01);
         // tremolo shimmer
@@ -18380,22 +18397,23 @@ function creatureVoice(kind,act){
         lfo.connect(lg).connect(g.gain); o.connect(g).connect(bus); o.start(t); o.stop(t+dur*1.1); lfo.start(t); lfo.stop(t+dur*1.1); break; }
     case "gel":                                                   // wet squelch / gurgle
       { tone(120*p,"sine",pk*0.8,dur,death?0.5:0.8); tone(120*p,"sine",pk*0.5,dur*0.8,death?2.2:1.6,0.04);  // wobble up/down
-        noiseHit(dur*0.7,pk*0.35,420); break; }
+        noiseHit(dur*0.7,pk*0.35,420,bus); break; }
     case "bellow":                                                // low brassy roar
       { tone(150*p,"sawtooth",pk,dur*1.1,death?0.55:1.15); tone(224*p,"triangle",pk*0.5,dur,death?0.6:1.1,0.02); break; }
     case "brute":                                                 // guttural grunt / shout
       { tone(200*p,"sawtooth",pk,dur,death?0.5:(wound?1.3:0.95)); tone(120*p,"square",pk*0.4,dur,death?0.55:1.0);
-        noiseHit(0.05,pk*0.3,500); break; }
+        noiseHit(0.05,pk*0.3,500,bus); break; }
     default:                                                      // beast: growl → snarl (rising) / roar
       { tone(180*p,"sawtooth",pk,dur,death?0.5:(wound?1.4:1.5)); tone(90*p,"triangle",pk*0.5,dur,death?0.55:1.2,0.01);
-        if(!wound) noiseHit(dur*0.5,pk*0.3,700); break; }
+        if(!wound) noiseHit(dur*0.5,pk*0.3,700,bus); break; }
   }
-  if(act==="attack") _cvElement(el,t,dur,pk);                     // the element only colours an ATTACK
+  if(act==="attack") _cvElement(el,t,dur,pk,bus);                 // the element only colours an ATTACK
   return true;
 }
 // authentic per-creature vocals (kind_idle/_attack/_wound/_death) — a recorded sample if the SoundTable
 // has one, else the procedural creatureVoice above so EVERY creature still has a distinct cry.
-function creatureSFX(kind,act){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act); }
+// Optional (x,z) spatializes the synth voice (distance falloff + stereo pan by bearing).
+function creatureSFX(kind,act,x,z){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act,x,z); }
 // ── surface-aware footsteps: the footfall matches what you walk on (stone in a dungeon, a snow
 //    crunch in a blizzard, a splash at the waterline, firm cobble on a road, a soft thud on grass) ──
 function footSurface(){
@@ -18462,8 +18480,8 @@ function spellRelease(school,s){                             // the DISCHARGE wh
   }
 }
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
-  SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
-  SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
+  SFX.death=(kind,x,z)=>{ if(kind&&creatureSFX(kind,"death",x,z)) return; if(!playSample(["player_death"])) synD&&synD(); };
+  SFX.growl=(kind,x,z)=>{ if(kind&&creatureSFX(kind,"idle",x,z)) return; synG&&synG(); }; }
 // ── ambient music: the original client tracks (assets/acmusic, tools/ac_music_export.py) ──
 let MUSIC=null,_musEl=null,_musZone=null;
 // The LOOPING zone player only uses tracks long enough to loop cleanly (>=8s) — short client
@@ -26418,8 +26436,8 @@ function onMobHit(msg){
 }
 function onMobDie(msg){
   const b=BESTIARY[msg.kind];
-  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(msg.kind); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
-  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(msg.kind); }
+  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(msg.kind,msg.x,msg.z); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
+  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(msg.kind,msg.x,msg.z); }
   removeSharedMobAsDying(msg.id);
 }
 function removeSharedMobAsDying(id){
