@@ -3542,8 +3542,20 @@ function playerLightSource(){
 function updateInstanceLight(){
   if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); scene.add(playerLight); }
   if(inDungeon){
-    hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;        // kill daylight inside
-    scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
+    if(curDungeon&&curDungeon.academy){
+      // #464: the Training Academy is a BIG, torch-lit hall opening onto a sky-lit courtyard — not a
+      // cramped, pitch-dark delve. The generic near-black far=30 dungeon fog (the else-branch below)
+      // buried the whole hall in a void the exact tone of the fill: its courtyard, both wings, the
+      // gatehouse, the exit arch and most of the tutorial staff (the greeter included) stand 30–55m
+      // from the arrival spot, so everything past a few metres fogged out to a flat fill and a new
+      // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: warm stone-toned
+      // fog that reaches clear across the room, and enough fill light that its surfaces read at once.
+      hemi.intensity=0.5; amb.intensity=0.3; sun.intensity=0;
+      scene.fog.near=14; scene.fog.far=130; scene.fog.color.setHex(0x9a9078);
+    } else {
+      hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;      // kill daylight inside
+      scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
+    }
     const ls=playerLightSource(); let inten=ls.intensity;
     if(ls.flicker) inten*=0.84+0.16*Math.sin(now()/60)+0.06*Math.sin(now()/29); // torch/flame flicker
     playerLight.color.setHex(ls.color); playerLight.intensity=inten; playerLight.distance=ls.dist;
