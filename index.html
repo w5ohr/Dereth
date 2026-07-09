@@ -4861,6 +4861,19 @@ function acHeadOpts(app){          // resolve the appearance's head choices agai
   const H=HB[gen]||HB.male; if(!H||!H.hairStyles||!H.hairStyles.length) return null;
   return H;
 }
+// #532: map the friendly HAIR + FACE-SHAPE choices onto a spread retail head-mesh (hairStyle) index.
+// Each heritage/gender has ~50 distinct head meshes (one per hairStyle .gfx), so offsetting the hair
+// base by a well-separated per-shape stride makes the 6 FACE SHAPE options resolve to 6 DISTINCT retail
+// heads instead of the identical head they used to share. Explicitly-set app.acHead still wins upstream.
+function acDerivedStyle(app, nStyles){
+  if(!nStyles) return 0;
+  const HL=APPEARANCE.hair, FL=APPEARANCE.face;
+  let hi=HL?HL.findIndex(o=>o.k===(app&&app.hair)):-1; if(hi<0)hi=0;
+  const base=Math.min(nStyles-1,Math.floor(hi/(HL&&HL.length||1)*nStyles));   // hair contribution (as before)
+  let fi=FL?FL.findIndex(o=>o.k===(app&&app.face)):-1; if(fi<0)fi=0;
+  const off=Math.round(fi*nStyles/(FL&&FL.length||6));                        // shape stride, spread across the mesh list
+  return (base+off)%nStyles;
+}
 // resolve a character's AC head choices: explicit app.acHead wins; otherwise DERIVE from the
 // existing creator appearance (skin/hair/eye colours map proportionally so the creator's choices
 // visibly drive the AC head) plus a per-character seed for the style/eye/nose/mouth strips — so
@@ -4878,7 +4891,7 @@ function acHeadChoices(app){
   const rnd=n=>{ sd=(Math.imul(sd,1103515245)+12345)>>>0; return n>0?sd%n:0; };
   const prop=(cat,key,len)=>{ const a=APPEARANCE[cat]; if(!a||!len) return 0; let i=a.findIndex(o=>o.k===key); if(i<0)i=0; return Math.min(len-1,Math.floor(i/a.length*len)); };
   return {
-    style: prop("hair", app.hair, H.hairStyles.length),
+    style: acDerivedStyle(app, H.hairStyles.length),   // #532: hair base + face-shape stride → distinct head mesh per shape
     hairColor: prop("hairColor", app.hairColor, H.hairPals.length),
     skinTone: prop("skin", app.skin, H.skinTones.length),
     eyeColor: prop("eye", app.eye, H.eyeColors.length),
@@ -27386,7 +27399,13 @@ function ccBuildOptions(){
       else b.textContent=o.n;
       b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
         Object.assign(ccWork,HERITAGE_LOOK[o.k]||{});   // heritage look defaults (face/skin/hair/nose/eyes) — still overridable below
-        ccRenderCreation(); } ccSyncSel(); ccBuildACHead(); ccRebuild(); };
+        ccRenderCreation(); } ccSyncSel(); ccBuildACHead();
+        // #532: the FACE SHAPE row must actually swap the retail head. The creator caches an explicit
+        // ccWork.acHead, so re-derive its head-mesh (style) from the new shape+hair here — otherwise the
+        // cached acHead wins and all six shapes render the identical head. (Advanced eye/nose/mouth kept.)
+        if(cat==="face"&&ccWork.acHead){ const HH=(typeof acHeadOpts==="function")&&acHeadOpts(ccWork);
+          if(HH&&HH.hairStyles){ ccWork.acHead.style=acDerivedStyle(ccWork,HH.hairStyles.length); ccBuildACHead(); } }
+        ccRebuild(); };
       box.appendChild(b); });
   });
   ccBuildACHead();   // Phase 2b: the explicit retail-head steppers render under the appearance rows
