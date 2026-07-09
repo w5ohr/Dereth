@@ -174,6 +174,12 @@
      Everything is gated behind body.touchui so the desktop interface is untouched. ══ */
   #touchUI{position:absolute;inset:0;pointer-events:none;z-index:24;display:none;font-family:inherit}
   body.touchui #touchUI{display:block}
+  /* #517: #touchUI's z-index(24) sits ABOVE #hud(10), so full-screen panels that live inside #hud
+     (Quest Log, Housing — z-index:25, but only within #hud's own stacking context) get drawn UNDER
+     the touch buttons/joystick and the buttons keep swallowing taps meant for the panel. Panels that
+     live outside #hud (sheet/spellbook/etc., z-index:50) already paint above #touchUI, but hide the
+     whole layer for ANY BIG_MODALS panel so the behavior doesn't depend on each panel's DOM position. */
+  body.touchui.tcModalOpen #touchUI{display:none}
   /* dynamic joystick: touch anywhere in the left zone and the stick appears under your thumb */
   #tcZone{position:absolute;left:0;top:14%;bottom:0;width:46%;pointer-events:auto;touch-action:none;z-index:1}
   #tcJoy{position:absolute;left:110px;top:70%;width:calc(128px*var(--tcscale,1));height:calc(128px*var(--tcscale,1));
@@ -319,6 +325,51 @@
        and JUMP button clear the minimap and its +/−/⚙ toolbar */
     body.touchui #minimap,body.touchui #minimap #mm{width:98px;height:98px}
     body.touchui #tcBtns{transform:scale(calc(var(--tcscale,1) * .82))}
+  }
+  /* ══ #467: DESKTOP HUD on phone-sized viewports ══
+     Every HUD panel uses an absolute desktop-tuned position, so on a narrow phone
+     viewport they pile on top of one another and bury the 3D view (minimap over
+     vitals, compass overflowing the width, attributes over the panel rail, potions
+     over chat, speed/power over the quickbar, quickbar clipped off-screen). Touch
+     mode (#469) supplies its own layout, so this reflow is scoped to the DEFAULT
+     desktop interface — body:not(.touchui) — and only kicks in on small screens.
+     The panels are re-anchored into non-overlapping corners and scaled down so the
+     core readouts (vitals · compass · minimap · chat · quickbar) stay clear, with
+     the tall/secondary panels (attributes, quest, potions, speed-power) tucked out
+     of the way and capped so they never cover the whole viewport. */
+  @media (max-width:480px){
+    body:not(.touchui) #compassPanel{top:6px;transform:translateX(-50%) scale(.7);transform-origin:top center}
+    body:not(.touchui) #vitals{top:40px;left:6px;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #minimap{top:40px;right:6px;width:118px;height:118px}
+    body:not(.touchui) #mm{width:118px;height:118px}
+    body:not(.touchui) #right{top:166px;right:44px;transform:scale(.82);transform-origin:top right;
+      max-height:calc(100vh - 320px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:auto!important;bottom:170px!important;left:auto!important;right:44px!important;
+      width:150px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #potions{left:6px;right:auto;top:158px;bottom:auto;transform:scale(.62);transform-origin:top left}
+    body:not(.touchui) #log{left:6px;bottom:96px;width:min(300px,62vw)}
+    body:not(.touchui) #chatInput{left:6px!important;width:min(300px,62vw)!important}
+    body:not(.touchui) #spellbar{bottom:12px;transform:translateX(-50%) scale(.58);transform-origin:bottom center}
+    body:not(.touchui) #combatPanel{right:6px!important;bottom:96px!important;width:150px!important;
+      transform:scale(.8);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.9);transform-origin:center right}
+  }
+  /* short landscape phones (e.g. 812×375): more width but very little height — cap the
+     tall panels, keep the top row (vitals · compass · minimap) from colliding, and move
+     quest/potions/speed-power clear of the centred quickbar. */
+  @media (max-width:900px) and (max-height:500px){
+    body:not(.touchui) #vitals{transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #compassPanel{transform:translateX(-50%) scale(.82);transform-origin:top center}
+    body:not(.touchui) #minimap{right:44px}
+    body:not(.touchui) #right{top:168px;right:44px;transform:scale(.8);transform-origin:top right;
+      max-height:calc(100vh - 210px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:130px!important;bottom:auto!important;right:auto!important;left:12px!important;
+      width:200px!important;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #log{bottom:110px;max-height:130px;overflow:hidden}
+    body:not(.touchui) #spellbar{transform:translateX(-50%) scale(.66);transform-origin:bottom center}
+    body:not(.touchui) #potions{right:12px;bottom:150px}
+    body:not(.touchui) #combatPanel{right:12px!important;bottom:12px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.85);transform-origin:center right}
   }
 </style>
 </head>
@@ -631,6 +682,8 @@
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware score: festive in the castle, aggressive in a fight, suspenseful in a dungeon, a crowd murmur in town, dark on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-dynmusic="1">On</button><button class="tbtn" data-dynmusic="0">Off</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Living environmental sound: wind &amp; surf, dungeon drips and groans, birdsong by day and crickets &amp; owls by night.">Ambient sound</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-ambience="1">On</button><button class="tbtn" data-ambience="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -650,10 +703,16 @@
 </div></div>
 <div id="keymap"><div class="card" style="text-align:left;display:flex;flex-direction:column;overflow:hidden">
   <h2>Map Keys</h2>
-  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind.</div>
-  <div id="keymapBody" style="font-size:13px;overflow:auto;flex:1;min-height:0"></div>
-  <div style="display:flex;gap:10px;margin-top:14px;flex-shrink:0"><button id="keymapReset" class="tbtn">Reset to defaults</button><button id="keymapClose">Done</button></div>
-</div></div>   <!-- #484: card is a flex column so the binding list scrolls on its own and the Reset/Done footer stays pinned + reachable on any viewport -->
+  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind. Rebinds aren't kept until you Save — closing without saving discards them.</div>
+  <div id="keymapBody" style="font-size:13px;overflow:auto;flex:1;min-height:0"></div>   <!-- #484: scrollable body -->
+  <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center;flex-shrink:0">   <!-- #484: pinned footer + #483: Save affordances -->
+    <button id="keymapReset" class="tbtn">Reset to defaults</button>
+    <button id="keymapSaveChar" class="tbtn" style="border-color:var(--gold);color:var(--gold)" title="Keep these bindings on this character only">💾 Save for This Character</button>
+    <button id="keymapSaveDefault" class="tbtn" title="Keep these bindings as the fallback for any character with no bindings of its own">Save as Default (All Characters)</button>
+    <span id="keymapStatus" style="font-size:11px;color:var(--dim);flex:1 1 auto;text-align:right"></span>
+    <button id="keymapClose">Done</button>
+  </div>
+</div></div>
 
 <div id="overlay">
   <div class="ac-crest">◈</div>
@@ -2173,6 +2232,7 @@ function buildCityList(){
 const CITIES=buildCityList();
 const CAPITALS=CITIES.filter(c=>c.capital);
 function nearestCapitalDist(x,z){let m=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<m)m=d;}return m;}
+function nearestCapital(x,z){let best=null,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c;}}return best;}
 function regionOf(x,z){ // -1 = Direlands
   if(nearestCapitalDist(x,z)>DIRE_DIST) return -1;
   let best=0,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c.region;}}return best;
@@ -2793,7 +2853,8 @@ function supportAt(wx,wz,feetY){
 // OVERLOADED every STR-10 build (War Mage/Life Caster templates read 114–120% → permanently slowed
 // from the tutorial onward). Armor lightened + base capacity raised so the kit fits every template
 // with headroom, while a genuinely stuffed satchel still slows you.
-function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
+function itemBurden(it){ if(!it) return 0; if(it.tut) return 0;   // #465: pure tutorial keepsakes (Calling Stone, Welcome Letter) weigh nothing — the fresh recruit is never slowed by the kit they wake up holding
+  if(it.scroll) return 2;
   if(it.stat==="weapon") return 75; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
   // #472: a cloth garment (shirt/pants — the light under-layer) was falling through to the heavy 85
   // default because "shirt"/"pants" aren't armour slots, so a fresh char's starting clothes weighed as
@@ -2899,7 +2960,7 @@ function enterAcademyHall(){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.4";
   buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
-  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=3;
+  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #511: face INTO the Great Hall (the greeter/room lie north of the spawn point) — the old default (yaw 0, forward=-z) wedged a fresh recruit nose-first into the south wall behind them
   toast("THE TRAINING ACADEMY");
 }
 function exitAcademyHall(){
@@ -3511,8 +3572,20 @@ function playerLightSource(){
 function updateInstanceLight(){
   if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); scene.add(playerLight); }
   if(inDungeon){
-    hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;        // kill daylight inside
-    scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
+    if(curDungeon&&curDungeon.academy){
+      // #464: the Training Academy is a BIG, torch-lit hall opening onto a sky-lit courtyard — not a
+      // cramped, pitch-dark delve. The generic near-black far=30 dungeon fog (the else-branch below)
+      // buried the whole hall in a void the exact tone of the fill: its courtyard, both wings, the
+      // gatehouse, the exit arch and most of the tutorial staff (the greeter included) stand 30–55m
+      // from the arrival spot, so everything past a few metres fogged out to a flat fill and a new
+      // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: warm stone-toned
+      // fog that reaches clear across the room, and enough fill light that its surfaces read at once.
+      hemi.intensity=0.5; amb.intensity=0.3; sun.intensity=0;
+      scene.fog.near=14; scene.fog.far=130; scene.fog.color.setHex(0x9a9078);
+    } else {
+      hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;      // kill daylight inside
+      scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
+    }
     const ls=playerLightSource(); let inten=ls.intensity;
     if(ls.flicker) inten*=0.84+0.16*Math.sin(now()/60)+0.06*Math.sin(now()/29); // torch/flame flicker
     playerLight.color.setHex(ls.color); playerLight.intensity=inten; playerLight.distance=ls.dist;
@@ -4305,6 +4378,14 @@ function applyGfxTier(t,quiet){
 }
 function gfxGovern(dt){
   if(dt<=0||dt>0.5||typeof paused!=="undefined"&&paused) return;
+  // #466: a fresh/reloaded/Continue'd character streams in monster models, dungeon packs & clothing
+  // tables over several seconds, and the load-gated portal transit holds the camera in empty portal
+  // space (nothing rendered yet) until the surrounding area finishes streaming in. Both are one-time
+  // load hitches, not steady-state render cost — burn down the warm-up window and skip the governor
+  // entirely while either is active, and pin the EMA to neutral so a stale stall reading can't fire
+  // the instant warm-up ends.
+  if(GFX._warm>0) GFX._warm=Math.max(0,GFX._warm-dt);
+  if(GFX._warm>0||(typeof portalTransit!=="undefined"&&portalTransit)){ GFX.fps=45; GFX._lo=0; GFX._hi=0; return; }
   GFX.fps+=(1/dt-GFX.fps)*0.06;
   if(settings.gfx!=="auto") return;
   if(GFX._grace>0){ GFX._grace-=dt; GFX._lo=0; return; }   // teleport/stream churn doesn't count
@@ -10346,9 +10427,12 @@ function updateShieldModel(){   // reflect the equipped off-hand shield on the a
       realGrp.userData._for=(it.shield||"kite");
       while(realGrp.children.length) realGrp.remove(realGrp.children[0]);
       const inst=real.clone();
-      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3()), c=bb.getCenter(new THREE.Vector3());
+      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3());
       const sc=0.62/Math.max(sz.x,sz.y,0.001); inst.scale.setScalar(sc);
-      inst.position.set(-c.x*sc,-c.y*sc,-c.z*sc);
+      // #482: DON'T recentre on the bounding-box middle — that discards the model's own local origin,
+      // which (like the hand-held weapon meshes) is the retail placement-frame point Turbine attached
+      // to the forearm bone, i.e. the shield's handle/strap. Scale only; keep that origin at realGrp's
+      // origin so the shield rides the arm by its grip instead of floating from its geometric centre.
       realGrp.add(inst);
     }
     realGrp.visible=true; sh.visible=false; return;
@@ -10461,7 +10545,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
-  if(Math.random()<0.35) creatureSFX(m.kind,"wound");   // the creature's own retail pain vocal
+  if(Math.random()<0.35) creatureSFX(m.kind,"wound",m.x,m.z);   // the creature's own retail pain vocal (spatialized)
   clog(`You ${crit?'<b style="color:#ff8f6b">critically strike</b>':'hit'} the ${m.name||((BESTIARY[m.kind]||{}).name||m.kind)} for <b>${Math.round(dmg)}</b>.`);
   if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
@@ -10471,9 +10555,9 @@ function damageMonster(m,dmg,crit){
     m.enraged=true;
     floater(m.x,(m.headY||1.6)+2,m.z,"ENRAGED","#ff5a5a",1.3);
     m.mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(0x6a1010); });
-    if(SFX.growl) SFX.growl(m.kind);
+    if(SFX.growl) SFX.growl(m.kind,m.x,m.z);
   }
-  if(Math.random()<0.35&&typeof creatureSFX==="function") creatureSFX(m.kind,"wound");   // the creature's real pain cry
+  if(Math.random()<0.35&&typeof creatureSFX==="function") creatureSFX(m.kind,"wound",m.x,m.z);   // the creature's real pain cry (spatialized)
   if(m.hp<=0) killMonster(m);
 }
 // creature trophies (AC drops): a body-part token each creature may yield, sellable to any vendor
@@ -10518,7 +10602,7 @@ function findScarabFor(spellLvl){   // index of the lowest-level scarab in the s
 function killMonster(m){
   const b=BESTIARY[m.kind];
   if(_guardKill){   // #12: a castle guard felled this foe — despawn + respawn as normal, but award the PLAYER nothing (no kills/XP/streak/quest/loot). Stops AFK farming inside the walls.
-    burst(m.x,1,m.z,(b&&b.c)||0xffae3a,16); if(SFX.death)SFX.death(m.kind);
+    burst(m.x,1,m.z,(b&&b.c)||0xffae3a,16); if(SFX.death)SFX.death(m.kind,m.x,m.z);
     if(m.isDungeon) dungeonMobs=Math.max(0,dungeonMobs-1);
     retire(m); const gi=monsters.indexOf(m); if(gi>=0) monsters.splice(gi,1);
     if(m.isBoss){ boss=null; setTimeout(spawnBoss,45000); }
@@ -10534,7 +10618,7 @@ function killMonster(m){
   if(streak===5||streak===10||streak===20) toast(streak+" KILL STREAK!");
   const sMult=1+Math.min(streak-1,12)*0.08;
   if(m.isBoss){
-    burst(m.x,2,m.z,0xff5a5a,40);SFX.death(m.kind);SFX.level();player.bossKills++;
+    burst(m.x,2,m.z,0xff5a5a,40);SFX.death(m.kind,m.x,m.z);SFX.level();player.bossKills++;
     gainXP(Math.round(m.xp*sMult));player.gold+=irnd(m.goldRange[0],m.goldRange[1]);
     for(let i=0;i<3;i++) addDrop(m.x+rnd(-2,2),m.z+rnd(-2,2),{type:"item",item:rollItem(true,5)});
     addDrop(m.x,m.z,{type:"gold",amt:irnd(80,160)});
@@ -10547,7 +10631,7 @@ function killMonster(m){
     else { boss=null; setTimeout(spawnBoss,45000); }
     saveGame();return;
   }
-  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death(m.kind);
+  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death(m.kind,m.x,m.z);
   clog(`You have slain the <b>${m.name||b.name}</b>${m.isElite?" (champion)":""} — +${Math.round((m.xp||b.xp)*sMult)} XP.`);
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
@@ -11750,6 +11834,8 @@ function buildItemModel(it,opts){
   const gemCol=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||0x8ad0ff;
   const S=it.stat, wt=it.wt, nm=(it.name||"").toLowerCase();
   const brand=(it.affix&&it.affix.k==='brand'&&typeof BRAND_GLOW!=="undefined")?BRAND_GLOW[it.affix.element]:null;
+  let gripY=0;   // #482: local-Y of the item's GRIP centre (set by the blade branch below) — when opts.hand,
+                 // everything is shifted so this point (not the mesh's build origin) lands at the hand
   if(S==="weapon"&&wt==="focus"){                                   // CASTING FOCI — the user's callout
     if(/orb/.test(nm)){                                             // ORB — a round glowing sphere in a pronged holder on a short handle
       const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.022,0.2,8),wood);handle.position.y=-0.1;g.add(handle);
@@ -11939,14 +12025,19 @@ function buildItemModel(it,opts){
       if(brand){blade.material=blade.material.clone();blade.material.color.multiplyScalar(0.3);   // darken the steel so the glow colour dominates
         blade.material.emissive.setHex(brand);blade.material.emissiveIntensity=0.95;}   // the bonus GLOWS
       if(/rondel/.test(nm)){ for(const yy of[0,-0.11]){const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.014,12),gold);disc.position.y=yy;g.add(disc);}
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); }
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); gripY=grip.position.y; }
       else if(/katana|wakizashi|tachi|no.?dachi|nodachi|odachi|ken\b/.test(nm)){   // tsuba disc guard + wrapped grip
         const tsuba=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.012,12),new THREE.MeshStandardMaterial({color:0x3a3430,metalness:0.6,roughness:0.5}));g.add(tsuba);
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip);
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip); gripY=grip.position.y;
         for(let i=0;i<(twoH?5:3);i++){const wrapX=new THREE.Mesh(new THREE.TorusGeometry(0.019,0.004,4,8),gold);wrapX.rotation.x=Math.PI/2;wrapX.position.y=-0.035-i*0.05;g.add(wrapX);} }
-      else _hilt(g,twoH?0.2:0.15,twoH?0.24:0.18,gold);
+      else { const gripLen=twoH?0.2:0.15; _hilt(g,gripLen,twoH?0.24:0.18,gold); gripY=-gripLen/2; }
     }
     if(brand){ const gl=new THREE.PointLight(brand,0.7,1.3);gl.position.y=0.5;g.add(gl); }
+    // #482: grip point → hand attach origin. The blade branch above builds with the GUARD at local
+    // y=0 (blade grows +y, hilt/pommel grow -y), so a bare hand-attach centred a fist on the guard —
+    // the whole grip+pommel dangled below the fist while the blade ran straight through it. Re-centre
+    // the group on the authored grip's mid-point so the palm bone lands on the HANDLE, not the guard.
+    if(opts.hand&&gripY){ g.children.forEach(c=>{ if(c.position) c.position.y-=gripY; }); }
   } else if(S==="worn"&&it.aslot==="offhand"){                      // SHIELDS — shaped per type, not just scaled
     const ty=it.shield||"kite", plate=_imat(tint,0.7,0.4), rimM=gold;
     if(ty==="buckler"||ty==="round"){ const r=ty==="buckler"?0.16:0.24;
@@ -12490,15 +12581,13 @@ const NAMED_ITEMS=[
   {name:"Atlan Wand",          stat:"weapon",wt:"focus",foc:true, mat:"Pyreal", v:[14,20]},   // the caster of the Atlan line (wiki: 6 weapon types)
   {name:"Atlan Bow",           stat:"weapon",wt:"bow",    mat:"Pyreal",  v:[26,34],affix:()=>_wbrand("frost")},
   {name:"Atlan Axe",           stat:"weapon",wt:"axe",    mat:"Pyreal",  v:[28,36],affix:()=>_wbrand("acid")},
-  {name:"Atlan Dagger",        stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[22,30],affix:()=>_waff("crit")},
-  {name:"Atlan War Mace",      stat:"weapon",wt:"mace",   mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("shock")},
-  {name:"Sword of Lost Light", stat:"weapon",wt:"sword",  mat:"Gold",    v:[30,42],affix:()=>_wbrand("shock")},
-  {name:"Frostreaver",         stat:"weapon",wt:"axe",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
+  {name:"Atlan Dagger",        stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[22,30],affix:()=>_wbrand("frost")},   // #513: Atlan lines are element-craftable — "crit" is not an Atlan element
+  {name:"Atlan Mace",          stat:"weapon",wt:"mace",   mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("shock")},   // #513: real name is "Atlan Mace" (no "War")
+  {name:"Sword of Lost Light", stat:"weapon",wt:"sword",  mat:"Gold",    v:[30,42],affix:()=>_wbrand("fire")},    // #513: volcanic infusions = fire, not shock
   {name:"Shadowfire",          stat:"weapon",wt:"sword",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
-  {name:"Ace of Eyes",         stat:"weapon",wt:"dagger", mat:"Onyx",    v:[24,32],affix:()=>_waff("lifesteal")},
-  {name:"Isparian Bow",        stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
+  {name:"Isparian Bow",        stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},   // #513: removed "Ace of Eyes" — the real item is a playing-card trophy (Deck of Eyes), not a dagger
   {name:"Singularity Edge",    stat:"weapon",wt:"twohand",mat:"Platinum",v:[40,54],affix:()=>_wbrand("nether")},
-  {name:"Dericost Brand",      stat:"weapon",wt:"sword",  mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("fire")},
+  {name:"Dericost Blade",      stat:"weapon",wt:"sword",  mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("fire")},   // #513: real name is "Dericost Blade"
   {name:"Singularity Caul",    stat:"worn",  at:"light",  aslot:"head", mat:"Velvet",  v:[30,42],affix:()=>_oaff("of the Magus")},
   {name:"Empyrean Platemail",  stat:"worn",  at:"heavy",  aslot:"chest",mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
   {name:"Olthoi Helm",         stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
@@ -12510,7 +12599,7 @@ const NAMED_ITEMS=[
   {name:"Hieromancer's Bow",   stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
   {name:"Heartseeker Arbalest",stat:"weapon",wt:"crossbow",mat:"Platinum",v:[34,46],affix:()=>_waff("crit")},
   {name:"Trident of the Depths",stat:"weapon",wt:"spear", mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
-  {name:"Death's Grip",        stat:"weapon",wt:"mace",   mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Death's Grip",        stat:"weapon",wt:"staff",  mat:"Jet",     v:[32,42],affix:()=>_wbrand("frost")},   // #513: real item is Death's Grip Staff, Cold (Rare #287)
   {name:"Staff of All Aspects",stat:"weapon",wt:"staff",  mat:"Ebony",   v:[28,38],affix:()=>_wbrand("shock")},
   {name:"Stormblade Atlatl",   stat:"weapon",wt:"atlatl", mat:"Diamond", v:[26,36],affix:()=>_wbrand("shock")},
   {name:"Cestus of the Adept", stat:"weapon",wt:"unarmed",mat:"Pyreal",  v:[24,32],affix:()=>_waff("lifesteal")},
@@ -12533,7 +12622,7 @@ const NAMED_ITEMS=[
   {name:"Diforsa Helm",        stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[32,44],affix:()=>_oaff("of Vigor")},
   {name:"Sedgemail Leggings",  stat:"worn",  at:"medium", aslot:"legs", mat:"Steel",   v:[26,36],affix:()=>_oaff("of Endurance")},
   // ── further iconic artifacts (more type & element coverage) ──
-  {name:"Bael'Zharon's Hope",  stat:"weapon",wt:"dagger",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
+  {name:"Sword of Lost Hope",   stat:"weapon",wt:"sword",   mat:"Jet",     v:[30,42],affix:()=>_wbrand("acid")},   // #513: real item is an acid SWORD (Sword of Lost Hope Quest); was fabricated "Bael'Zharon's Hope"
   {name:"Sword of Jojii",      stat:"weapon",wt:"sword",   mat:"Pyreal",  v:[30,42],affix:()=>_wbrand("fire")},
   {name:"Gelidite Greatsword", stat:"weapon",wt:"twohand", mat:"Diamond", v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Coraline Longbow",    stat:"weapon",wt:"bow",     mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
@@ -12553,9 +12642,7 @@ const NAMED_ITEMS=[
   {name:"Dericost Dagger",     stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[24,32],affix:()=>_wbrand("fire")},
   {name:"Knorr Battle Axe",    stat:"weapon",wt:"axe",    mat:"Diamond", v:[32,42],affix:()=>_wbrand("frost")},
   {name:"Tumerok Crusher",     stat:"weapon",wt:"mace",   mat:"Ebony",   v:[32,42],affix:()=>_waff("crit")},
-  {name:"Blade of Elysa",      stat:"weapon",wt:"sword",  mat:"Gold",    v:[32,44],affix:()=>_wbrand("shock")},
   {name:"Aun Ralirea Spear",   stat:"weapon",wt:"spear",  mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
-  {name:"Shard of the Herald", stat:"weapon",wt:"dagger", mat:"Jet",     v:[26,36],affix:()=>_wbrand("nether")},
   {name:"Prismatic Wand",      stat:"weapon",wt:"focus",  mat:"Opal",    v:[24,32]},
   {name:"Falatacot Talisman",  stat:"weapon",wt:"focus",  mat:"Onyx",    v:[24,32]},
   {name:"Warmount Lance",      stat:"weapon",wt:"spear",  mat:"Steel",   v:[30,40],affix:()=>_waff("crit")},
@@ -12579,9 +12666,7 @@ const NAMED_ITEMS=[
   {name:"Koujia Pauldrons",    stat:"worn",  at:"medium", aslot:"upperarm",mat:"Steel", v:[22,30],affix:()=>_oaff("of Warding")},
   {name:"Celdon Gauntlets",    stat:"worn",  at:"medium", aslot:"hands", mat:"Steel",   v:[20,28],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 5 ──
-  {name:"Riftmaker",           stat:"weapon",wt:"twohand", mat:"Platinum",v:[42,56],affix:()=>_wbrand("nether")},
   {name:"Emberfang",           stat:"weapon",wt:"dagger",  mat:"Ruby",    v:[24,32],affix:()=>_wbrand("fire")},
-  {name:"Glacius",             stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
   {name:"Voidpiercer",         stat:"weapon",wt:"spear",   mat:"Jet",     v:[30,40],affix:()=>_wbrand("nether")},
   {name:"Sandstorm Cutlass",   stat:"weapon",wt:"sword",   mat:"Emerald", v:[30,42],affix:()=>_wbrand("acid")},
   {name:"Galestrike Bow",      stat:"weapon",wt:"bow",     mat:"Diamond", v:[28,38],affix:()=>_wbrand("shock")},
@@ -12591,26 +12676,21 @@ const NAMED_ITEMS=[
   {name:"Wand of Ruin",        stat:"weapon",wt:"focus",   mat:"Onyx",    v:[24,32]},
   {name:"Sceptre of Frost",    stat:"weapon",wt:"focus",   mat:"Sapphire",v:[24,32]},
   {name:"Warden's Plate",      stat:"worn",  at:"heavy",  aslot:"chest", mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
-  {name:"Shroud of the Virindi",stat:"worn", at:"light",  aslot:"head",  mat:"Velvet",  v:[28,38],affix:()=>_oaff("of the Magus")},
+  {name:"Shroud of the Virindi",stat:"worn", at:"light",  aslot:"chest", mat:"Velvet",  v:[28,38],affix:()=>_oaff("of the Magus")},   // #513: the Virindi Shroud is a full-body cloth robe (chest slot), not headwear
   {name:"Gauntlets of Sundering",stat:"worn",at:"heavy",  aslot:"hands", mat:"Steel",   v:[26,34],affix:()=>_oaff("of Warding")},
   {name:"Greaves of the Lugian",stat:"worn", at:"heavy",  aslot:"legs",  mat:"Granite", v:[32,44],affix:()=>_oaff("of Vigor")},
   // ── artifact batch 6 ──
-  {name:"Frostbrand",          stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
   {name:"Doomhammer",          stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_wbrand("shock")},
   {name:"Widowmaker",          stat:"weapon",wt:"crossbow",mat:"Ebony",   v:[34,46],affix:()=>_waff("crit")},
   {name:"Soulrender",          stat:"weapon",wt:"twohand", mat:"Jet",     v:[42,56],affix:()=>_wbrand("nether")},
   {name:"Sunflare Bow",        stat:"weapon",wt:"bow",     mat:"Ruby",    v:[28,38],affix:()=>_wbrand("fire")},
   {name:"Corrosive Fang",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
   {name:"Thornwhip Atlatl",    stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
-  {name:"Stormcaller Staff",   stat:"weapon",wt:"focus",   mat:"Diamond", v:[24,32]},
   {name:"Aegis of the Empyrean",stat:"worn", at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.24,mat:"Pyreal",v:[28,40],affix:()=>_oaff("of Impregnability")},
   {name:"Vestments of the Undying",stat:"worn",at:"light", aslot:"chest", mat:"Velvet",  v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Helm of the Warmaster",stat:"worn", at:"heavy",  aslot:"head",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
   {name:"Boots of the Wanderer",stat:"worn", at:"light",  aslot:"feet",  mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 7 ──
-  {name:"Kingslayer",          stat:"weapon",wt:"sword",   mat:"Platinum",v:[32,44],affix:()=>_waff("crit")},
-  {name:"Ashbringer",          stat:"weapon",wt:"twohand", mat:"Ruby",    v:[42,56],affix:()=>_wbrand("fire")},
-  {name:"Rimeclaw",            stat:"weapon",wt:"unarmed", mat:"Sapphire",v:[24,32],affix:()=>_wbrand("frost")},
   {name:"Gutripper",           stat:"weapon",wt:"axe",     mat:"Steel",   v:[30,40],affix:()=>_waff("lifesteal")},
   {name:"Nightfall Bow",       stat:"weapon",wt:"bow",     mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
   {name:"Skullcracker",        stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_waff("crit")},
@@ -12626,7 +12706,6 @@ const NAMED_ITEMS=[
   // ── artifact batch 8 ──
   {name:"Heartpiercer",        stat:"weapon",wt:"dagger",  mat:"Diamond", v:[24,32],affix:()=>_waff("crit")},
   {name:"Bloodthorn",          stat:"weapon",wt:"sword",   mat:"Ruby",    v:[30,42],affix:()=>_waff("lifesteal")},
-  {name:"Earthshaker",         stat:"weapon",wt:"twohand", mat:"Granite", v:[42,56],affix:()=>_wbrand("shock")},
   {name:"Venom Reaver",        stat:"weapon",wt:"axe",     mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
   {name:"Glimmerfrost Bow",    stat:"weapon",wt:"bow",     mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
   {name:"Cindercleaver",       stat:"weapon",wt:"axe",     mat:"Ruby",    v:[30,40],affix:()=>_wbrand("fire")},
@@ -12637,7 +12716,6 @@ const NAMED_ITEMS=[
   {name:"Grips of the Bloodletter",stat:"worn",at:"medium",aslot:"hands",mat:"Leather", v:[20,28],affix:()=>_oaff("of Endurance")},
   {name:"Crown of the Undying",stat:"worn",  at:"light",  aslot:"head",  mat:"Gold",    v:[28,38],affix:()=>_oaff("of Vigor")},
   // ── artifact batch 9 ──
-  {name:"Dawnbreaker",         stat:"weapon",wt:"sword",   mat:"Gold",    v:[32,44],affix:()=>_wbrand("fire")},
   {name:"Permafrost Maul",     stat:"weapon",wt:"twohand", mat:"Sapphire",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Gravemaker",          stat:"weapon",wt:"mace",    mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
   {name:"Wasp's Sting",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
@@ -12648,7 +12726,6 @@ const NAMED_ITEMS=[
   {name:"Girth of the Titan",  stat:"worn",  at:"heavy",  aslot:"chest", mat:"Steel",   v:[42,56],affix:()=>_oaff("of Vigor")},
   {name:"Bracers of the Adept",stat:"worn",  at:"light",  aslot:"lowerarm",mat:"Silk",  v:[20,28],affix:()=>_oaff("of the Magus")},
   // ── artifact batch 10 ──
-  {name:"Worldcleaver",        stat:"weapon",wt:"twohand", mat:"Platinum",v:[44,58],affix:()=>_wbrand("shock")},
   {name:"Serpentongue",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
   {name:"Ember Cutlass",       stat:"weapon",wt:"sword",   mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
   {name:"Frosthowl Axe",       stat:"weapon",wt:"axe",     mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
@@ -12680,7 +12757,6 @@ const NAMED_ITEMS=[
   {name:"Aetherium Cloak",     stat:"worn", at:"light", aslot:"back", mat:"Satin",  v:[24,32],affix:()=>_oaff("of Warding")},
   {name:"Shroud of the Virindi Masker",stat:"worn",at:"light",aslot:"back",mat:"Velvet",v:[24,32],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 12 ──
-  {name:"Sliver of Bael'Zharon",stat:"weapon",wt:"dagger", mat:"Onyx",    v:[26,36],affix:()=>_wbrand("nether")},
   {name:"Cleaver of the Tusker",stat:"weapon",wt:"axe",     mat:"Ebony",   v:[30,40],affix:()=>_waff("crit")},
   {name:"Molten Greatsword",   stat:"weapon",wt:"twohand",  mat:"Ruby",    v:[42,56],affix:()=>_wbrand("fire")},
   {name:"Rime Spear",          stat:"weapon",wt:"spear",    mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
@@ -12718,11 +12794,8 @@ const NAMED_ITEMS=[
   {name:"Vestments of Knorr",  stat:"worn", at:"light", aslot:"chest",  mat:"Silk",    v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Wanderer's Cloak",    stat:"worn", at:"light", aslot:"back",   mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 15 ──
-  {name:"Reaper of Souls",     stat:"weapon",wt:"twohand",  mat:"Jet",     v:[44,58],affix:()=>_wbrand("nether")},
   {name:"Embertongue",         stat:"weapon",wt:"sword",    mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
-  {name:"Frostmourn",          stat:"weapon",wt:"axe",      mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Venomtooth",          stat:"weapon",wt:"dagger",   mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
-  {name:"Stormpike",           stat:"weapon",wt:"spear",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("shock")},
   {name:"Skullpiercer Bow",    stat:"weapon",wt:"bow",      mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
   {name:"Acid Repeater",       stat:"weapon",wt:"crossbow", mat:"Emerald", v:[34,46],affix:()=>_wbrand("acid")},
   {name:"Firebrand Baton",     stat:"weapon",wt:"focus",    mat:"Ruby",    v:[24,32]},
@@ -12731,10 +12804,9 @@ const NAMED_ITEMS=[
   {name:"Sabatons of Ruin",    stat:"worn", at:"heavy", aslot:"feet",   mat:"Steel",   v:[24,32],affix:()=>_oaff("of Endurance")},
   {name:"Mantle of the Undying",stat:"worn",at:"light", aslot:"back",   mat:"Velvet",  v:[24,32],affix:()=>_oaff("of Vigor")},
   // ── quest-reward artifacts ──
-  {name:"Oswald's Nightmare",  stat:"weapon",wt:"mace",     mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Oswald's Dirk",        stat:"weapon",wt:"dagger",  mat:"Jet",     v:[24,32],affix:()=>_waff("crit")},   // #513: real item is a physical multi-strike DAGGER; was fabricated "Oswald's Nightmare"
   {name:"Frore Greatsword",    stat:"weapon",wt:"twohand",  mat:"Sapphire",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Blade of the Nostrum",stat:"weapon",wt:"sword",    mat:"Pyreal",  v:[32,44],affix:()=>_wbrand("fire")},
-  {name:"Gaerlan's Citadel Key",stat:"weapon",wt:"dagger",  mat:"Gold",    v:[24,32],affix:()=>_waff("crit")},
   {name:"Aun Ralirea's Bow",   stat:"weapon",wt:"bow",      mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
   {name:"Hoeshala's Crafted Axe",stat:"weapon",wt:"axe",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Spear of the Hopeslayer",stat:"weapon",wt:"spear", mat:"Onyx",    v:[32,42],affix:()=>_wbrand("nether")},
@@ -12745,7 +12817,7 @@ const NAMED_ITEMS=[
   {name:"Cloak of the Arcanum",stat:"worn", at:"light", aslot:"back",   mat:"Satin",   v:[24,32],affix:()=>_oaff("of the Magus")},
   // ── further iconic artifacts (batch) ──
   {name:"Ghassan al Sayf",     stat:"weapon",wt:"sword",   mat:"Pyreal",  v:[32,44],affix:()=>_wbrand("fire")},
-  {name:"Fist of Three Principles",stat:"weapon",wt:"unarmed",mat:"Diamond",v:[26,34],affix:()=>_wbrand("shock")},
+  {name:"Fist of Three Principles",stat:"weapon",wt:"unarmed",mat:"Diamond",v:[26,34],affix:()=>_waff("lifesteal")},   // #513: real item is piercing + Blood Drinker (lifesteal), not shock (Rare #204)
   {name:"Nib of the Scrivener",stat:"weapon",wt:"dagger",  mat:"Gold",    v:[24,32],affix:()=>_waff("crit")},
   {name:"Yanshi's Fervor",     stat:"weapon",wt:"mace",    mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
   {name:"Coruscating War Spear",stat:"weapon",wt:"spear",  mat:"Sapphire",v:[32,42],affix:()=>_wbrand("frost")},
@@ -12864,7 +12936,7 @@ const NAMED_ITEMS=[
   {name:"Pendant of the Undying",stat:"jewelry",jtype:"neck",mat:"Jet",     v:[0,0],bonus:{kind:"vital",vs:"mhp",  v:45}},
   // ── gap-fill batch 3: remaining AC artifacts from the diff (weapons, armour, jewelry) ──
   {name:"Zharalim Crossbow",   stat:"weapon",wt:"crossbow",mat:"Platinum",v:[34,46],affix:()=>_wbrand("acid")},
-  {name:"Chef's Knife",        stat:"weapon",wt:"dagger",  mat:"Steel",   v:[22,30],affix:()=>_waff("crit")},
+  {name:"Moriharu's Kitchen Knife",stat:"weapon",wt:"dagger",mat:"Steel",  v:[22,30],affix:()=>_waff("crit")},   // #513: real rare dagger (Crushing Blow); was "Chef's Knife"
   {name:"Perfect Sword",       stat:"weapon",wt:"sword",   mat:"Diamond", v:[32,44],affix:()=>_wbrand("shock")},
   {name:"Perfect Dagger",      stat:"weapon",wt:"dagger",  mat:"Diamond", v:[24,32],affix:()=>_waff("crit")},
   {name:"Serpent's Fang",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
@@ -12958,13 +13030,13 @@ const NAMED_ITEMS=[
   {name:"Gelidite Sceptre",stat:"weapon",wt:"focus",mat:"Aquamarine",v:[26,34]},
   {name:"Gelidite Staff",stat:"weapon",wt:"staff",mat:"Aquamarine",v:[28,38],affix:()=>_wbrand("frost")},
   {name:"Gelidite Cestus",stat:"weapon",wt:"unarmed",mat:"Aquamarine",v:[24,32],affix:()=>_wbrand("frost")},
-  {name:"Spectral Longsword",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_wbrand("frost")},
-  {name:"Spectral Broadblade",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_wbrand("frost")},
-  {name:"Spectral Poniard",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_wbrand("frost")},
-  {name:"Spectral Dirk",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_wbrand("frost")},
-  {name:"Spectral Warhammer",stat:"weapon",wt:"mace",mat:"Diamond",v:[32,42],affix:()=>_wbrand("frost")},
-  {name:"Spectral Cudgel",stat:"weapon",wt:"mace",mat:"Diamond",v:[30,40],affix:()=>_wbrand("frost")},
-  {name:"Spectral Greatsword",stat:"weapon",wt:"twohand",mat:"Diamond",v:[42,56],affix:()=>_wbrand("frost")},
+  {name:"Spectral Longsword",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_waff("crit")},   // #513: Spectral/Ghost-Slayer weapons are PHYSICAL (Crushing Blow/Armor Cleaving), not frost
+  {name:"Spectral Broadblade",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_waff("crit")},
+  {name:"Spectral Poniard",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_waff("crit")},
+  {name:"Spectral Dirk",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_waff("crit")},
+  {name:"Spectral Warhammer",stat:"weapon",wt:"mace",mat:"Diamond",v:[32,42],affix:()=>_waff("crit")},
+  {name:"Spectral Cudgel",stat:"weapon",wt:"mace",mat:"Diamond",v:[30,40],affix:()=>_waff("crit")},
+  {name:"Spectral Greatsword",stat:"weapon",wt:"twohand",mat:"Diamond",v:[42,56],affix:()=>_waff("crit")},
   {name:"Spectral Maul",stat:"weapon",wt:"twohand",mat:"Diamond",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Spectral Battle Axe",stat:"weapon",wt:"axe",mat:"Diamond",v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Spectral Hatchet",stat:"weapon",wt:"axe",mat:"Diamond",v:[28,38],affix:()=>_wbrand("frost")},
@@ -14417,7 +14489,7 @@ function refreshAvatarArmor(){
   for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
     if(!it) continue;
-    const tint=it.dye||(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
+    const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8));
     const cls=CLS[it.at]||CLS.medium;
     ent.mat.color.setHex(tint);
     if(/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||"")){ ent.mat.metalness=0.04; ent.mat.roughness=0.82; }
@@ -15496,7 +15568,7 @@ function castSpellById(id){
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
   castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   if(!castSelf&&typeof breakResProt==="function") breakResProt();   // offensive casting ends res protection
-  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
+  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; spellCast(s.school);   // per-school casting wind-up
 }
 // retail component destruction: each formula component you CARRY burns with probability
 // componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
@@ -15526,6 +15598,7 @@ function executeSpell(id){
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mk=MAGIC_SCHOOLS[s.school];
   if(s.req>0 && mk && skillValue(mk)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
+  spellRelease(s.school,s);   // per-school discharge voice (the spell is now committed to firing)
   if(s.special==="stam2mana"){
     if(player.st<25){log("Not enough stamina.","warn");return;}
     player.st-=25;player.mn=Math.min(player.mmn,player.mn+22);
@@ -16206,6 +16279,15 @@ function rebuildComboMap(){ ACTION_BY_COMBO={}; for(const a of ACTIONS){ if(a.he
 function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_keys")); if(s) for(const a of ACTIONS) if(Array.isArray(s[a.id])) KEYBINDS[a.id]=s[a.id]; }catch(e){} rebuildComboMap(); }
 function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
 function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
+// #483: per-character keybinds — a loaded character's own map (saved in its character save) wins;
+// with none saved, fall back to the global default (dereth_keys) so a fresh/legacy character isn't stranded.
+function applyCharKeymap(s){
+  KEYBINDS=defaultBinds();
+  if(s&&s.keymap&&typeof s.keymap==="object"){ for(const a of ACTIONS) if(Array.isArray(s.keymap[a.id])) KEYBINDS[a.id]=s.keymap[a.id]; }
+  else loadKeybinds();
+  rebuildComboMap();
+  const km=document.getElementById('keymap'); if(km&&km.style.display==="flex"&&typeof buildKeymap==="function") buildKeymap();
+}
 function evtCombo(e){ let m=""; if(e.ctrlKey)m+="ctrl+"; if(e.altKey)m+="alt+"; if(e.metaKey)m+="meta+"; if(e.shiftKey)m+="shift+"; return m+e.code; }
 function held(id){ if(typeof LOGOUT!=="undefined"&&LOGOUT.active) return false;   // #457: movement/actions are locked during the recall-away logout
   if(TOUCH.held[id]) return true; const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }   // TOUCH.held: the mobile joystick/buttons feed the same choke point the keyboard does
@@ -16604,7 +16686,11 @@ function buildSheet(){
   if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
   { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
-  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{ breakFromPatron(); buildSheet(); }; }
+  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{   // #518: confirm (breaking severs the pass-up chain + resets sworn-time) and use the SAME path as /break
+    const who=(player.patronInfo&&player.patronInfo.name)?esc(player.patronInfo.name):"your patron";
+    uiConfirm(`Break fealty with <b>${who}</b>?<br><span style="color:var(--dim);font-size:12px">This severs your pass-up chain and resets your accrued sworn-time — the only pass-up decay in AC.</span>`,
+      ()=>{ if(!isOnline){ breakFromPatron(); } else { netSend({t:"unswear"}); }   // mirror handleSlash /break: offline model vs server-authoritative
+        if(SFX.click)SFX.click(); buildSheet(); }, "Break fealty"); }; }
   { const rb=document.getElementById('recruitBtn'); if(rb) rb.onclick=()=>{ if(recruitVassal()){ SFX.quest(); saveGame(); buildSheet(); } }; }
   // Luminance / Enlightenment endgame
   if(player.lumUnlocked||player.enlightenment){
@@ -16642,6 +16728,22 @@ function buildSheet(){
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
 const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing"];
 function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
+// #517: in touch mode, #touchUI (spell-arc, JUMP, attack, HEIGHT/PAGE, joystick, …) floats above #hud
+// in z-order, so any BIG_MODALS panel that lives inside #hud (Quest Log, Housing) gets drawn under the
+// touch buttons and taps meant for the panel land on a control instead. Watch every BIG_MODALS panel's
+// `style` from one place — same pattern as closeOtherModals' shared list — and toggle a body class that
+// hides the whole touch layer (display:none, so it's also unreachable to taps) for as long as ANY of
+// them is open; restored the instant the last one closes. Scoped to body.touchui via CSS, so desktop
+// play is untouched.
+function refreshTouchModalState(){
+  const anyOpen=BIG_MODALS.some(id=>{ const el=document.getElementById(id); return el&&getComputedStyle(el).display!=="none"; });
+  document.body.classList.toggle("tcModalOpen",anyOpen);
+}
+(function(){
+  const mo=new MutationObserver(refreshTouchModalState);
+  BIG_MODALS.forEach(id=>{ const el=document.getElementById(id); if(el) mo.observe(el,{attributes:true,attributeFilter:['style']}); });
+  refreshTouchModalState();
+})();
 function openSheet(){closeOtherModals("sheet");buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
@@ -16708,6 +16810,10 @@ function showCastReticle(x,z,r,col){
 function hideCastReticle(){ if(castReticle) castReticle.visible=false; }
 function update(dt){
   if(typeof LOGOUT!=="undefined"&&LOGOUT.active) updateLogout(dt);   // #457: the recall-away logout advances even while otherwise idle
+  // #501: the portal tube (incl. the login "WELCOME BACK" arrival) must advance even while paused —
+  // otherwise anything that pauses during the transit (e.g. the academy greeter on a delve-saved login)
+  // freezes the tube forever, so maxHold never fires and the character is permanently stuck in the warp.
+  if(portalTransit) updatePortalTransit(dt);
   if(paused||!running) return;
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
@@ -16787,7 +16893,8 @@ function update(dt){
     player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
   }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
   if((player.vx||player.vz)&&player.alive){
-    let [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    const px0=player.x, pz0=player.z;   // #465: remember where we started so we can tell if a wall ate the move
+    let [nx,nz]=collide(px0+player.vx*dt,pz0+player.vz*dt);
     // authored terrain barriers: mountainsides too steep to walk stop you (roads and town
     // plateaus stay open — the real heightmap's switchbacks are the way up)
     if(player.grounded&&!inDungeon&&ACMAP.on&&!onRoad(nx,nz)){
@@ -16805,9 +16912,22 @@ function update(dt){
         } }
     }
     player.x=nx;player.z=nz;
+    // #465: wedged-on-geometry feedback. Sliding above already salvages a partial move; but if you're
+    // deliberately pushing into a wall (often INVISIBLE interior geometry) and almost nothing gets
+    // through, give a throttled bump so the stop isn't silent, and — after a full second of being
+    // pinned — a one-time nudge toward /unstuck (which frees you even while delving).
+    if(moving){
+      const want=Math.hypot(player.vx,player.vz)*dt, got=Math.hypot(nx-px0,nz-pz0);
+      if(want>0.02 && got<want*0.25){
+        if(now()-(player._blockT||0)>420){ player._blockT=now(); if(SFX.bump)SFX.bump(); }
+        player._blockRun=(player._blockRun||0)+dt;
+        if(player._blockRun>1.0 && !player._unstuckHintSeen){ player._unstuckHintSeen=1;
+          log("You are wedged against something you can't push past. Type <b>/unstuck</b> to free yourself"+(inDungeon?" — it works even while delving.":"."),"warn"); }
+      } else player._blockRun=0;
+    }
     const step=Math.hypot(player.vx,player.vz)*dt;
     player.bob+=step*1.1;   // #176: stride phase advances with DISTANCE moved (step already = speed*dt), not distance*dt — the old dt*step made the gait framerate-dependent and ~60x too slow (feet glided)
-    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;SFX.step();} }  // footfalls only on the ground
+    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;footstep();} }  // footfalls only on the ground — surface-aware
     if(sprint>1&&player.grounded&&moving) player.st=Math.max(0,player.st-dt*14);
   }
   // dodge dash: brief high-speed burst (with i-frames) along the dash vector
@@ -16850,7 +16970,6 @@ function update(dt){
   if(levelUps.length) updateLevelUps(dt);
   if(castRingFX.length) updateCastRings(dt);
   if(spellLandFXs.length) updateSpellLandFX(dt);
-  if(portalTransit) updatePortalTransit(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
@@ -17005,7 +17124,7 @@ function update(dt){
     }
     // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
     const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
-    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle"))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
+    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle",m.x,m.z))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
     if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0){ m.state="wander"; m.charging=0; } } else if(d>b.sense*1.4){ m.state="wander"; m.charging=0; } }   // #351: clear a mid-wind-up m.charging on de-aggro so it can't resume and loose a stale bolt (with no fresh tell) on the next aggro
     const _mox=m.x,_moz=m.z;   // #351: remember pre-move position to revert a step into deep water
     if(m.state==="chase"&&player.alive){
@@ -17039,7 +17158,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else { m.charging=0.45; if(m.actCast){ m.actCast.reset(); m.actCast.weight=1; m.actCast.play(); } }   // #177: play the model's real Cast wind-up
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack");const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack",m.x,m.z);const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
       }   // end B1 !spActive gate
     } else {
@@ -18009,7 +18128,9 @@ function drawBigMap(){
   for(let i=1;i<8;i++){const p=i/8*S;g.beginPath();g.moveTo(p,0);g.lineTo(p,S);g.moveTo(0,p);g.lineTo(S,p);g.stroke();}
   if(inDungeon){
     g.fillStyle="#9a8a66";g.font="15px Trebuchet MS";g.textAlign="center";
-    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);return;
+    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);
+    g.fillStyle="#7fae7f";g.font="12px Trebuchet MS";   // #465: but you're never trapped — the escape hatch works down here
+    g.fillText("Wedged or lost? Type  /unstuck  to free yourself.",S/2,S/2+22);return;
   }
   g.fillStyle="rgba(216,177,74,0.10)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
   { const ro=acRoadOverlay(S); if(ro) g.drawImage(ro,0,0); }   // the authentic AC road web, matching the roads on the ground
@@ -18108,6 +18229,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   vtankBuff:true,vtankLoot:true,gaDest:"auto",
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
   dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
+  ambience:true,   // environmental soundscape: wind/surf/dungeon-drips + day birds / night crickets & owls
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
@@ -18179,22 +18301,38 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden){ if(actx.state==="running"){ actx.suspend(); _blurSuspended=true; } }
   else if(_blurSuspended){ _blurSuspended=false; if(!muted) actx.resume(); }
 });
-function blip(freq,dur,type="sine",vol=0.18,slideTo){
+function blip(freq,dur,type="sine",vol=0.18,slideTo,dest){   // dest: optional destination node (else the master bus) — used to route through a spatial insert
   if(!actx) return;
   const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
   o.type=type;o.frequency.setValueAtTime(freq,t);
   if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
-  o.connect(g).connect(masterGain||actx.destination);o.start(t);o.stop(t+dur);
+  o.connect(g).connect(dest||masterGain||actx.destination);o.start(t);o.stop(t+dur);
 }
-function noiseHit(dur,vol,freq){
+function noiseHit(dur,vol,freq,dest){
   if(!actx) return;
   const buf=actx.createBuffer(1,Math.max(1,actx.sampleRate*dur),actx.sampleRate);
   const d=buf.getChannelData(0);for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
   const src=actx.createBufferSource();src.buffer=buf;
   const filt=actx.createBiquadFilter();filt.type="bandpass";filt.frequency.value=freq;
   const g=actx.createGain();g.gain.value=vol;
-  src.connect(filt).connect(g).connect(masterGain||actx.destination);src.start();
+  src.connect(filt).connect(g).connect(dest||masterGain||actx.destination);src.start();
+}
+// spatial insert: a StereoPanner+Gain that positions & attenuates a sound by a world point relative
+// to the player's facing. Returns a node to use as `dest`, or null (→ master bus) when off-range/unsupported.
+function spatialBus(x,z){
+  if(!actx||x==null||z==null||typeof player==="undefined"||!player) return null;
+  const dx=x-player.x, dz=z-player.z, dist=Math.hypot(dx,dz), maxD=60;
+  if(dist>maxD) return {node:null,silent:true};                          // out of earshot
+  const g=actx.createGain(); g.gain.value=Math.pow(clamp((maxD-dist)/maxD,0,1),1.3);   // distance falloff
+  let head=g;
+  if(actx.createStereoPanner){                                           // pan L/R by the bearing off your facing
+    const fx=-Math.sin(player.yaw||0), fz=-Math.cos(player.yaw||0), rx=-fz, rz=fx, l=dist||1;
+    const pan=actx.createStereoPanner(); pan.pan.value=clamp((dx*rx+dz*rz)/l,-1,1);
+    pan.connect(g); head=pan;
+  }
+  g.connect(masterGain||actx.destination);
+  return {node:head,silent:false};
 }
 const SFX={
   swing:()=>noiseHit(0.12,0.16,800),
@@ -18212,6 +18350,7 @@ const SFX={
   gold:()=>blip(1000,0.10,"square",0.10,1500),
   quest:()=>{blip(660,0.14,"triangle",0.16);setTimeout(()=>blip(880,0.2,"triangle",0.16),130);},
   step:()=>noiseHit(0.06,0.06,200+irnd(-40,50)),
+  bump:()=>{noiseHit(0.05,0.08,120);blip(84,0.07,"sine",0.06,58);},   // #465: soft, low thud when you walk into a wall — feedback so a blocked move isn't silent
   growl:()=>blip(92,0.34,"sawtooth",0.11,58),
   click:()=>blip(680,0.05,"square",0.07,900),
 };
@@ -18257,18 +18396,19 @@ function _cvFamily(kind){
   return "beast";
 }
 // element overlay: a short flavour layer that rides an ATTACK cry (fire crackle, frost shimmer, …)
-function _cvElement(el,t,dur,pk){
-  if(!actx||!el) return; const bus=masterGain||actx.destination;
-  if(el==="fire"){ for(let i=0;i<5;i++){ const tt=t+i*0.03; noiseHit(0.05,pk*0.5,700+irnd(-200,600)); } blip(340,dur*0.7,"sawtooth",pk*0.5,110); }
-  else if(el==="frost"){ blip(1400,dur*0.8,"triangle",pk*0.4,700); blip(2100,dur*0.5,"sine",pk*0.25,1500); }
-  else if(el==="acid"){ noiseHit(dur*0.9,pk*0.5,2600); blip(500,dur*0.6,"sawtooth",pk*0.3,240); }
-  else if(el==="shock"){ blip(2600,0.07,"square",pk*0.5,900); setTimeout(()=>blip(1800,0.06,"square",pk*0.4,700),40); }
-  else if(el==="nether"){ blip(70,dur,"sine",pk*0.5,40); blip(190,dur*0.8,"triangle",pk*0.25,150); }
-  else if(el==="pierce"||el==="slash"){ noiseHit(0.06,pk*0.4,1800); }
+function _cvElement(el,t,dur,pk,dest){
+  if(!actx||!el) return;
+  if(el==="fire"){ for(let i=0;i<5;i++){ const tt=t+i*0.03; noiseHit(0.05,pk*0.5,700+irnd(-200,600),dest); } blip(340,dur*0.7,"sawtooth",pk*0.5,110,dest); }
+  else if(el==="frost"){ blip(1400,dur*0.8,"triangle",pk*0.4,700,dest); blip(2100,dur*0.5,"sine",pk*0.25,1500,dest); }
+  else if(el==="acid"){ noiseHit(dur*0.9,pk*0.5,2600,dest); blip(500,dur*0.6,"sawtooth",pk*0.3,240,dest); }
+  else if(el==="shock"){ blip(2600,0.07,"square",pk*0.5,900,dest); setTimeout(()=>blip(1800,0.06,"square",pk*0.4,700,dest),40); }
+  else if(el==="nether"){ blip(70,dur,"sine",pk*0.5,40,dest); blip(190,dur*0.8,"triangle",pk*0.25,150,dest); }
+  else if(el==="pierce"||el==="slash"){ noiseHit(0.06,pk*0.4,1800,dest); }
 }
-function creatureVoice(kind,act){
+function creatureVoice(kind,act,x,z){
   if(!actx||muted) return false;
-  const bus=masterGain||actx.destination, t=actx.currentTime;
+  const sp=spatialBus(x,z); if(sp&&sp.silent) return true;         // out of earshot → count as "handled", make no sound
+  const bus=(sp&&sp.node)||masterGain||actx.destination, t=actx.currentTime;
   const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, size=Math.max(0.4,b.size||1), fam=_cvFamily(kind), el=b.dmgEl||"";
   // size → pitch (a Lugian is an octave-plus below a Rat); death drops & lengthens, wound is quick & high
   const p=1/Math.pow(size,0.9);                                   // pitch multiplier: small=high, big=low
@@ -18284,14 +18424,14 @@ function creatureVoice(kind,act){
   const gliss=death?0.45:wound?1.25:1.0;                          // death falls, wound rises a touch
   switch(fam){
     case "insect":                                                // dry chittering clicks + high buzz
-      { const clicks=death?10:wound?2:5; for(let i=0;i<clicks;i++) noiseHit(0.03,pk*0.7,2200*p+irnd(-300,300));
+      { const clicks=death?10:wound?2:5; for(let i=0;i<clicks;i++) noiseHit(0.03,pk*0.7,2200*p+irnd(-300,300),bus);
         tone(1300*p,"square",pk*0.5,dur,death?0.5:1.15); if(!wound) tone(2600*p,"sawtooth",pk*0.25,dur*0.6,gliss,0.02); break; }
     case "undead":                                                // dry bone rattle + a hollow moan
-      { const rat=death?12:wound?3:6; for(let i=0;i<rat;i++) noiseHit(0.035,pk*0.5,900*p+irnd(-150,250));
+      { const rat=death?12:wound?3:6; for(let i=0;i<rat;i++) noiseHit(0.035,pk*0.5,900*p+irnd(-150,250),bus);
         tone(150*p,"triangle",pk*0.7,dur*(death?1.2:1),gliss); tone(300*p,"sine",pk*0.3,dur,gliss,0.03); break; }
     case "giant":                                                 // deep grinding rumble + gravel
       { tone(58*p,"sawtooth",pk,dur*1.2,death?0.5:0.9); tone(87*p,"square",pk*0.4,dur,death?0.55:1.0,0.02);
-        noiseHit(dur*0.8,pk*0.4,120); break; }
+        noiseHit(dur*0.8,pk*0.4,120,bus); break; }
     case "ethereal":                                              // eerie detuned warble / ghostly tone
       { const f=520*p; tone(f,"sine",pk*0.8,dur*1.2,death?0.4:1.0); tone(f*1.007,"triangle",pk*0.5,dur*1.2,death?0.4:1.05,0.01);
         // tremolo shimmer
@@ -18300,25 +18440,91 @@ function creatureVoice(kind,act){
         lfo.connect(lg).connect(g.gain); o.connect(g).connect(bus); o.start(t); o.stop(t+dur*1.1); lfo.start(t); lfo.stop(t+dur*1.1); break; }
     case "gel":                                                   // wet squelch / gurgle
       { tone(120*p,"sine",pk*0.8,dur,death?0.5:0.8); tone(120*p,"sine",pk*0.5,dur*0.8,death?2.2:1.6,0.04);  // wobble up/down
-        noiseHit(dur*0.7,pk*0.35,420); break; }
+        noiseHit(dur*0.7,pk*0.35,420,bus); break; }
     case "bellow":                                                // low brassy roar
       { tone(150*p,"sawtooth",pk,dur*1.1,death?0.55:1.15); tone(224*p,"triangle",pk*0.5,dur,death?0.6:1.1,0.02); break; }
     case "brute":                                                 // guttural grunt / shout
       { tone(200*p,"sawtooth",pk,dur,death?0.5:(wound?1.3:0.95)); tone(120*p,"square",pk*0.4,dur,death?0.55:1.0);
-        noiseHit(0.05,pk*0.3,500); break; }
+        noiseHit(0.05,pk*0.3,500,bus); break; }
     default:                                                      // beast: growl → snarl (rising) / roar
       { tone(180*p,"sawtooth",pk,dur,death?0.5:(wound?1.4:1.5)); tone(90*p,"triangle",pk*0.5,dur,death?0.55:1.2,0.01);
-        if(!wound) noiseHit(dur*0.5,pk*0.3,700); break; }
+        if(!wound) noiseHit(dur*0.5,pk*0.3,700,bus); break; }
   }
-  if(act==="attack") _cvElement(el,t,dur,pk);                     // the element only colours an ATTACK
+  if(act==="attack") _cvElement(el,t,dur,pk,bus);                 // the element only colours an ATTACK
   return true;
 }
 // authentic per-creature vocals (kind_idle/_attack/_wound/_death) — a recorded sample if the SoundTable
 // has one, else the procedural creatureVoice above so EVERY creature still has a distinct cry.
-function creatureSFX(kind,act){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act); }
+// Optional (x,z) spatializes the synth voice (distance falloff + stereo pan by bearing).
+function creatureSFX(kind,act,x,z){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act,x,z); }
+// ── surface-aware footsteps: the footfall matches what you walk on (stone in a dungeon, a snow
+//    crunch in a blizzard, a splash at the waterline, firm cobble on a road, a soft thud on grass) ──
+function footSurface(){
+  if((typeof inDungeon!=="undefined"&&inDungeon)||(typeof inNetwork!=="undefined"&&inNetwork)) return "stone";
+  if(typeof snowAmt!=="undefined"&&snowAmt>0.4) return "snow";
+  if(player&&player.y!=null&&player.y<0.6) return "water";                      // at/under the waterline outdoors = shallow splash
+  if(typeof onRoad==="function"&&player&&onRoad(player.x,player.z)) return "road";
+  return "grass";
+}
+function stepSynth(s){
+  const j=irnd(-40,50);                                                          // per-step jitter so it isn't robotic
+  switch(s){
+    case "stone": noiseHit(0.035,0.06,880+j); blip(1150+j,0.02,"square",0.03,700); break;   // sharp click-scuff
+    case "road":  noiseHit(0.045,0.055,560+j); break;                            // firm cobble
+    case "snow":  noiseHit(0.10,0.05,120+Math.abs(j)); break;                    // muffled low crunch
+    case "water": noiseHit(0.07,0.06,1500+j); blip(1200,0.05,"sine",0.03,400); break;   // wet splash
+    default:      noiseHit(0.055,0.05,220+j);                                    // grass/dirt soft thud
+  }
+}
+function footstep(){
+  if(!actx||muted) return;
+  const s=footSurface();
+  if(playSample("footstep_"+s)) return;                                          // a surface-tagged sample if the pack has one
+  stepSynth(s);
+}
+// ── per-magic-school spell audio: each school has its own casting wind-up and release voice, so War,
+//    Life, Item Enchantment, Creature Enchantment and Void magic each SOUND different. War is further
+//    flavoured by the bolt's element (fire crackle / ice shimmer / shock zap / acid hiss / force thud). ──
+function _spellEl(s){ const e=(s&&(s.element||s.el||s.vulnElem))||"";
+  if(/fire|flame/.test(e)) return "fire"; if(/ice|frost|cold/.test(e)) return "frost";
+  if(/shock|light/.test(e)) return "shock"; if(/acid/.test(e)) return "acid";
+  const n=(s&&s.name||"").toLowerCase();
+  if(/flame|fire/.test(n)) return "fire"; if(/frost|ice|cold/.test(n)) return "frost";
+  if(/lightning|shock/.test(n)) return "shock"; if(/acid/.test(n)) return "acid"; return "force"; }
+function spellCast(school){                                   // the WIND-UP — energy gathering, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war":      blip(200,0.45,"sawtooth",0.11,900); blip(1200,0.4,"triangle",0.045,2100); break;   // rising charge
+    case "life":     blip(440,0.5,"sine",0.10,720); setTimeout(()=>blip(880,0.4,"sine",0.05,1100),90); break;  // warm swell
+    case "item":     [660,880,1170].forEach((f,i)=>setTimeout(()=>blip(f,0.28,"triangle",0.08,f*1.3),i*70)); break;  // crystalline rise
+    case "creature": { blip(500,0.5,"sawtooth",0.08,560); blip(503,0.5,"triangle",0.05,566); break; }   // detuned arcane warble
+    case "void":     blip(70,0.6,"sine",0.11,120); blip(150,0.5,"sawtooth",0.05,190); break;            // dark low rise
+    default:         blip(500,0.4,"triangle",0.08,760);
+  }
+}
+function spellRelease(school,s){                             // the DISCHARGE when the spell fires, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war": { const el=_spellEl(s);                      // element-flavoured blast
+      if(el==="fire"){ for(let i=0;i<4;i++) noiseHit(0.06,0.10,700+irnd(-150,600)); blip(360,0.4,"sawtooth",0.14,90); }
+      else if(el==="frost"){ blip(1500,0.5,"triangle",0.12,600); blip(2200,0.4,"sine",0.06,1400); }
+      else if(el==="shock"){ blip(2600,0.08,"square",0.16,900); setTimeout(()=>blip(1700,0.07,"square",0.12,700),45); noiseHit(0.05,0.10,2000); }
+      else if(el==="acid"){ noiseHit(0.5,0.12,2500); blip(480,0.4,"sawtooth",0.08,220); }
+      else { noiseHit(0.12,0.16,220); blip(300,0.4,"sine",0.14,80); }   // force/bludgeon thud
+      break; }
+    case "life": { const drain=/drain|vdrain|siphon|harm|vuln/.test((s&&(s.special+"|"+s.name)||"").toLowerCase());
+      if(drain){ blip(620,0.5,"sine",0.11,180); blip(300,0.5,"triangle",0.06,120); }               // downward siphon
+      else { [523,659,784].forEach((f,i)=>setTimeout(()=>blip(f,0.45,"sine",0.11,f*1.05),i*70)); } // uplifting bell triad
+      break; }
+    case "item":     blip(1046,0.6,"triangle",0.11,1046); blip(1568,0.5,"sine",0.05,1568); noiseHit(0.04,0.05,3000); break;  // metallic ring
+    case "creature": blip(360,0.42,"sawtooth",0.11,300); blip(372,0.42,"triangle",0.06,312); noiseHit(0.05,0.05,700); break; // eerie stab
+    case "void":     blip(90,0.6,"sine",0.13,50); blip(190,0.5,"sawtooth",0.07,150); noiseHit(0.4,0.08,140); break;          // dark dissonant pulse
+    default:         blip(700,0.3,"triangle",0.10,500);
+  }
+}
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
-  SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
-  SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
+  SFX.death=(kind,x,z)=>{ if(kind&&creatureSFX(kind,"death",x,z)) return; if(!playSample(["player_death"])) synD&&synD(); };
+  SFX.growl=(kind,x,z)=>{ if(kind&&creatureSFX(kind,"idle",x,z)) return; synG&&synG(); }; }
 // ── ambient music: the original client tracks (assets/acmusic, tools/ac_music_export.py) ──
 let MUSIC=null,_musEl=null,_musZone=null;
 // The LOOPING zone player only uses tracks long enough to loop cleanly (>=8s) — short client
@@ -18390,12 +18596,12 @@ function mdDrum(t,peak,freq,dur){   // percussive noise burst into the music bus
 }
 // crowd babble: a bank of band-passed noise loops whose gains wander, mimicking overlapping talk
 let _mdCrowd=null;
-function mdCrowdStart(){
+function mdCrowdStart(formants){
   const bus=mdBus(); if(!bus||!actx||_mdCrowd) return;
   const secs=4, n=actx.sampleRate*secs, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
   for(let i=0;i<n;i++) d[i]=(Math.random()*2-1);
   const nodes=[];
-  for(const f of [360,620,900,1500]){                        // vocal-ish formant bands
+  for(const f of (formants||[360,620,900,1500])){            // vocal-ish formant bands (per-culture timbre)
     const s=actx.createBufferSource(); s.buffer=buf; s.loop=true;
     const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=4.5;
     const g=actx.createGain(); g.gain.value=0.02;
@@ -18408,6 +18614,35 @@ function mdCrowdStart(){
   _mdCrowd={nodes};
 }
 function mdCrowdStop(){ if(!_mdCrowd) return; for(const n of _mdCrowd.nodes){ try{ n.stop(); }catch(e){} } _mdCrowd=null; }
+// ── city themes: the town crowd + melodic bed match the capital's racial culture ──
+//   Holtburg (Aluvian) → Western medieval lute · Shoushi (Sho) → East-Asian pentatonic koto + chimes ·
+//   Yaraq (Gharu'ndim) → Middle-Eastern oud (Phrygian-dominant) + darbuka · Sanamar (Viamontian) →
+//   Iberian/knightly harmonic-minor guitar over a drone. Culture picks the scale, instrument voice,
+//   tempo, and the crowd-babble formant bank (so even the murmur is tinted).
+let _mdCity="__unset";
+function _cityCulture(name){ const n=(name||"").toLowerCase();
+  if(/holtburg/.test(n)) return "aluvian";
+  if(/shoushi/.test(n))  return "sho";
+  if(/yaraq/.test(n))    return "gharundim";
+  if(/sanamar/.test(n))  return "viamontian";
+  return null; }
+const MD_CITY={
+  aluvian:   {scale:[0,2,4,5,7,9,10],   wave:"triangle", beat:0.30, root:5,  pat:[0,2,4,2,5,4,2,0], octUp:true,  mel:0.10, formants:[360,620,900,1500]},
+  sho:       {scale:[0,3,5,7,10],       wave:"triangle", beat:0.46, root:2,  pat:[0,2,4,3,4,2,1,0], chimes:true, mel:0.08, formants:[440,720,1150,1850]},
+  gharundim: {scale:[0,1,4,5,7,8,10],   wave:"sawtooth", beat:0.24, root:-3, pat:[0,1,4,3,4,1,0,1], darbuka:true,mel:0.08, formants:[300,560,820,1300]},
+  viamontian:{scale:[0,2,3,5,7,8,11],   wave:"triangle", beat:0.30, root:0,  pat:[0,4,3,2,4,7,3,0], drone:true,  mel:0.09, formants:[340,600,880,1450]},
+  _default:  {scale:[0,2,4,5,7,9,11],   wave:"triangle", beat:0.32, root:3,  pat:[0,2,4,2,4,2,0,0],              mel:0.08, formants:[360,620,900,1500]},
+};
+function _mdScaleNote(spec,root,degIdx,oct){ const sc=spec.scale, i=((degIdx%sc.length)+sc.length)%sc.length; return root*Math.pow(2,(sc[i]+12*(oct||0))/12); }
+function _mdCityMotif(spec,t){
+  const beat=spec.beat, root=_hz(spec.root||0), N=8;
+  for(let i=0;i<N;i++) mdNote(_mdScaleNote(spec,root,spec.pat[i%spec.pat.length],(i>=N/2&&spec.octUp)?1:0), t+i*beat, beat*1.5, spec.wave, spec.mel);   // melody
+  if(spec.drone) mdNote(root/2,t,beat*N,"sine",0.07);                                        // Viamontian pedal drone
+  else for(let i=0;i<N/2;i++) mdNote(root/2, t+i*beat*2, beat*1.2, "sine", 0.06);            // gentle bass
+  if(spec.chimes) for(let i=0;i<3;i++){ if(Math.random()<0.6) mdNote(_mdScaleNote(spec,root*2,irnd(0,spec.scale.length-1),1), t+Math.random()*beat*N, 1.3, "sine", 0.045); }  // wind-chime tings
+  if(spec.darbuka){ const p=[1,0,1,1,0,1,0,1]; for(let i=0;i<N;i++) if(p[i]) mdDrum(t+i*beat, i%4===0?0.14:0.07, i%4===0?150:1000, 0.09); }   // dum-tek hand drum
+  return beat*N;
+}
 // per-mood one-bar generators: schedule a bar starting at time t, return seconds until the next bar
 const MD_MOODS={
   festive(t){ const beat=0.34, root=_hz(7);                   // bright major lute — bouncy, upbeat
@@ -18424,7 +18659,14 @@ const MD_MOODS={
     if(Math.random()<0.6){ const at=t+2+Math.random()*2.5; mdNote(_hz(3), at, 1.6, "triangle", 0.06); mdNote(_hz(4), at, 1.6, "sine", 0.045); }  // minor-2nd unease
     mdDrum(t+bar*0.5, 0.06, 70, 0.4);                         // slow heartbeat thump
     return bar; },
-  crowd(t){ mdCrowdStart(); return 2.0; },                    // babble runs continuously; just keep the mood alive
+  crowd(t){                                                   // town: the crowd + a musical bed matching the CITY's culture
+    const cap=(typeof nearestCapital==="function"&&typeof player!=="undefined"&&player)?nearestCapital(player.x,player.z):null;
+    const cult=cap?_cityCulture(cap.name):null;
+    const spec=MD_CITY[cult]||MD_CITY._default;
+    if(_mdCity!==cult){ _mdCity=cult; mdCrowdStop(); }         // culture changed → rebuild the babble with its formants
+    mdCrowdStart(spec.formants);                              // (no-op if already running with this culture's bank)
+    return _mdCityMotif(spec,t);
+  },
   dark(t){ const bar=5.0, root=_hz(-17);                      // somber descending minor + toll
     [0,-3,-5].forEach((s,i)=> mdNote(_hz(-5+s), t+i*1.1, 2.4, "triangle", 0.12-i*0.02, _hz(-8+s)));  // descending, gliding down
     mdNote(root, t, bar, "sine", 0.14);                       // deep drone
@@ -18447,12 +18689,12 @@ setInterval(()=>{ try{
   MUSICDIR.on = (typeof settings==="undefined") || settings.dynMusic!==false;   // authoritative from the setting (survives load order)
   if(!MUSICDIR.on||!actx||muted||typeof running==="undefined"||!running){
     if(MUSICDIR._bus) MUSICDIR._bus.gain.setTargetAtTime(0.0001,actx?actx.currentTime:0,0.3);
-    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
     MUSICDIR.mode=null; MUSICDIR._next=0; return; }
   const bus=mdBus(); if(!bus) return;
   const target=mdMode(), tnow=actx.currentTime;
   if(target!==MUSICDIR.mode){                                 // crossfade: duck out, switch, swell in
-    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
     MUSICDIR.mode=target; MUSICDIR._next=0;
     const vol=target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34));
     bus.gain.cancelScheduledValues(tnow); bus.gain.setValueAtTime(Math.max(0.0001,bus.gain.value),tnow);
@@ -18462,6 +18704,62 @@ setInterval(()=>{ try{
   if(tnow>=MUSICDIR._next-0.05){                              // schedule the next bar just before the last ends
     const gen=MD_MOODS[target]; if(gen){ const dur=gen(tnow+0.05); MUSICDIR._next=tnow+0.05+dur; } }
 }catch(e){} },350);
+// ══ ENVIRONMENTAL SOUNDSCAPE ═════════════════════════════════════════════════════════════════════
+// A living ambient layer UNDER the music/SFX, keyed to place and time of day (all synth, offline):
+//   outdoors → gusting wind (scaled by weather) · shore/river/ocean → surf wash ·
+//   dungeon  → low air rumble + occasional water drips + a distant groan ·
+//   day wilds→ scattered birdsong · night wilds → cricket shimmer + the odd owl hoot.
+// Rain already has its own hiss bed (rainGain, driven by weather/wetness). Gated by the `ambience`
+// setting; ducked while muted / not running / backgrounded (rides masterGain like everything else).
+const AMBIENCE={on:true,_init:false,n:{},_owl:0,_bird:0,_drip:0};
+function ambInit(){
+  if(AMBIENCE._init||!actx) return; AMBIENCE._init=true;
+  const bus=masterGain||actx.destination;
+  const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate), d=nb.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  const loop=(type,freq,q,g0)=>{ const s=actx.createBufferSource(); s.buffer=nb; s.loop=true;
+    const f=actx.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q)f.Q.value=q;
+    const g=actx.createGain(); g.gain.value=g0||0; s.connect(f).connect(g).connect(bus); s.start(); return g; };
+  AMBIENCE.n.wind    = loop("lowpass", 520, 0, 0);     // outdoor gusts (on top of initAudio's faint constant bed)
+  AMBIENCE.n.surf    = loop("lowpass", 700, 0, 0);     // shoreline wash
+  AMBIENCE.n.rumble  = loop("lowpass", 110, 0, 0);     // dungeon air rumble
+  AMBIENCE.n.crickets= loop("bandpass",5200, 7, 0);    // night insects (high shimmer)
+  // a slow LFO gives the wind & surf their swell
+  const lfo=actx.createOscillator(), lg=actx.createGain(); lfo.type="sine"; lfo.frequency.value=0.12; lg.gain.value=0.5;
+  lfo.connect(lg); lg.connect(AMBIENCE.n.wind.gain); lfo.start(); AMBIENCE._lfo=lfo;
+}
+function _ambRamp(g,to){ if(g&&actx) g.gain.setTargetAtTime(Math.max(0,to),actx.currentTime,0.6); }
+setInterval(()=>{ try{
+  const off=(typeof settings!=="undefined"&&settings.ambience===false);
+  AMBIENCE.on=!off;
+  if(off||!actx||muted||typeof running==="undefined"||!running||typeof player==="undefined"||!player){
+    if(AMBIENCE._init){ for(const k in AMBIENCE.n) _ambRamp(AMBIENCE.n[k],0); } return; }
+  ambInit();
+  const dungeon=(typeof inDungeon!=="undefined"&&inDungeon), net=(typeof inNetwork!=="undefined"&&inNetwork);
+  const indoors=dungeon||net;
+  const inTown=(typeof nearestCapitalDist==="function")&&nearestCapitalDist(player.x,player.z)<150;
+  const nearWater=!indoors&&(player.y!=null&&player.y<1.2);         // low feet height outdoors = shore/river/ocean
+  const sunY=-Math.cos((typeof gameTime!=="undefined"?gameTime:0.35)*Math.PI*2);   // +1 noon … −1 midnight
+  const night=sunY<-0.05, day=sunY>0.12;
+  const wtr=(typeof weather!=="undefined")?weather:"clear";
+  const windBase=wtr==="storm"?0.16:wtr==="rain"?0.10:wtr==="cloudy"?0.07:wtr==="snow"?0.06:0.045;
+  // targets
+  _ambRamp(AMBIENCE.n.wind,    indoors?0.008: windBase*(inTown?0.6:1));
+  _ambRamp(AMBIENCE.n.surf,    nearWater?clamp(0.10*(1.2-player.y)/1.2,0.02,0.11):0);
+  _ambRamp(AMBIENCE.n.rumble,  dungeon?0.06:0);
+  _ambRamp(AMBIENCE.n.crickets,(!indoors&&!inTown&&night)?0.03:0);
+  // one-shots (probabilistic; each ~ every few seconds when its context holds)
+  const T=now();
+  if(dungeon){ if(T-AMBIENCE._drip>1400&&Math.random()<0.5){ AMBIENCE._drip=T;                    // water drip
+      blip(1600+irnd(-200,300),0.09,"sine",0.05,700); setTimeout(()=>blip(900,0.12,"sine",0.03,500),70); }
+    if(T-AMBIENCE._owl>9000&&Math.random()<0.25){ AMBIENCE._owl=T; blip(150,0.7,"sine",0.05,110); } // distant groan
+  } else if(!inTown){
+    if(day&&T-AMBIENCE._bird>2600&&Math.random()<0.45){ AMBIENCE._bird=T;                          // birdsong
+      const f=1800+irnd(0,900); blip(f,0.08,"triangle",0.05,f*1.3); setTimeout(()=>blip(f*1.25,0.07,"triangle",0.045,f*0.9),90); setTimeout(()=>blip(f*1.5,0.06,"triangle",0.04),180); }
+    if(night&&T-AMBIENCE._owl>7000&&Math.random()<0.3){ AMBIENCE._owl=T;                            // owl hoot
+      blip(420,0.22,"sine",0.06,360); setTimeout(()=>blip(360,0.3,"sine",0.06,300),260); }
+  }
+}catch(e){} },550);
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -21315,8 +21613,11 @@ function renderQuestLog(){
     log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
     renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
   });
-  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
-    if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge); if(!s) return;
+    // #516: a styled, touch-safe confirm (native confirm() is unreliable/blocked on touch, and this is a
+    // permanent, mutually-exclusive choice — a mis-tap while scrolling the panel must not swear you in)
+    uiConfirm(`Pledge yourself to the <b>${esc(s.name)}</b>?<br><span style="color:var(--dim);font-size:12px">You may swear to only ONE society, and the choice is <b>permanent</b> — it locks out the other two, for good.</span>`,
+      ()=>{ pledgeSociety(s.id); }, "Pledge"); });
   { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
   { const c=body.querySelector('#socClaim'); if(c) c.onclick=()=>{ claimSocietyTest(); buildSheet&&buildSheet(); }; }
 }
@@ -22310,6 +22611,7 @@ function healScale(base){   // AC: the Healing skill boosts kit/potion potency; 
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
   if(player[field]<=0){ log("You have none of that potion.","warn"); return; }
+  if(kind==="hp"&&player.hp>=player.mhp){ log("You are already at full health.","warn"); return; }   // #515: don't waste a potion (and belt count) on a no-op heal
   amt=Math.max(0,+amt||0);   // #28: a potion never DRAINS a vital — clamp a stray negative/NaN amount to 0
   player[field]--;player.drinkCd=0.6;
   if(kind==="hp"){amt=healScale(amt);player.hp=Math.min(player.mhp,player.hp+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#7fe6a0");}
@@ -22859,6 +23161,11 @@ function openSettings(){
   dmHi();
   dmBtns.forEach(b=>b.onclick=()=>{settings.dynMusic=+b.dataset.dynmusic===1;if(typeof MUSICDIR!=="undefined")MUSICDIR.on=settings.dynMusic;saveSettings();dmHi();
     log(settings.dynMusic?"Dynamic music <b>on</b> — the score follows where you are and what you're doing.":"Dynamic music off — classic ambient loops restored.","sys");});
+  const amBtns=document.querySelectorAll('#settings [data-ambience]');
+  const amHi=()=>amBtns.forEach(b=>b.style.opacity=((+b.dataset.ambience===1)===(settings.ambience!==false))?1:0.45);
+  amHi();
+  amBtns.forEach(b=>b.onclick=()=>{settings.ambience=+b.dataset.ambience===1;saveSettings();amHi();
+    log(settings.ambience?"Ambient sound <b>on</b> — wind, water, wildlife and dungeon airs.":"Ambient sound off.","sys");});
   const gxBtns=document.querySelectorAll('#settings [data-gfx]');
   const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
   gxHi();
@@ -22926,18 +23233,28 @@ function closeSettings(){ document.getElementById('settings').style.display="non
 document.getElementById('closeSettings').onclick=closeSettings;
 { const lb=document.getElementById('logoutBtn'); if(lb) lb.onclick=()=>{ closeSettings(); beginLogout(); }; }   // #457: desktop Options → Log Out
 // ── Map Keys panel ──
-function openKeymap(){ document.getElementById('keymap').style.display="flex"; buildKeymap(); if(locked)document.exitPointerLock(); paused=true; }
-function closeKeymap(){ rebindCapture=null; document.getElementById('keymap').style.display="none";
+// #483: while the dialog is open, rebinds only edit keymapDraft (a scratch copy) — the real KEYBINDS
+// (and anything that reads it, including the autosave timer via saveGame()'s `keymap:KEYBINDS`) is
+// untouched until an explicit Save button commits the draft. Done/Esc/losing focus just drops the draft.
+let keymapDraft=null;
+function openKeymap(){ document.getElementById('keymap').style.display="flex"; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap(); if(locked)document.exitPointerLock(); paused=true;
+  const sc=document.getElementById('keymapSaveChar');
+  if(sc){ sc.disabled=!running; sc.style.opacity=running?"1":"0.5"; sc.title=running?"Keep these bindings on this character only":"Load or start a character first"; }
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent=""; }
+function closeKeymap(){ rebindCapture=null; keymapDraft=null;   // discard any unsaved rebinds — KEYBINDS was never touched
+  document.getElementById('keymap').style.display="none";
   const st=document.getElementById('settings'); if(!st||st.style.display==="none") paused=false; }   // #333: clear paused when closing the Keymap — unless Settings (which opened it and owns the pause) is still up
 function buildKeymap(){
   const body=document.getElementById('keymapBody'); if(!body) return; body.innerHTML="";
+  const draft=keymapDraft||KEYBINDS;
   const groups={}; for(const a of ACTIONS){ (groups[a.group]=groups[a.group]||[]).push(a); }
   for(const g of Object.keys(groups)){
     const h=document.createElement('div'); h.style.cssText="color:var(--gold);font-weight:bold;margin:12px 0 4px;text-transform:uppercase;font-size:11px;letter-spacing:.5px"; h.textContent=g; body.appendChild(h);
     for(const a of groups[g]){
       const row=document.createElement('div'); row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)";
       const nm=document.createElement('span'); nm.style.color="var(--ink)"; nm.textContent=a.label; row.appendChild(nm);
-      const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="min-width:130px;font-size:12px"; btn.textContent=bindLabel(a.id);
+      const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="min-width:130px;font-size:12px";
+      const arr=draft[a.id]; btn.textContent=(arr&&arr.length)?arr.map(comboLabel).join(", "):"—";
       btn.onclick=()=>startRebind(a.id,btn); row.appendChild(btn); body.appendChild(row);
     }
   }
@@ -22949,14 +23266,31 @@ function startRebind(id,btn){
     if(kk==="escape"){ rebindCapture=null; buildKeymap(); return; }
     if(["shift","control","alt","meta"].includes(kk)) return;   // wait for the actual (non-modifier) key
     const combo=evtCombo(e);
-    for(const aid in KEYBINDS) KEYBINDS[aid]=(KEYBINDS[aid]||[]).filter(c=>c!==combo);   // a combo maps to one action
-    KEYBINDS[id]=[combo];
-    rebindCapture=null; saveKeybinds(); rebuildComboMap(); buildKeymap();
+    const draft=keymapDraft||(keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)));
+    for(const aid in draft) draft[aid]=(draft[aid]||[]).filter(c=>c!==combo);   // a combo maps to one action
+    draft[id]=[combo];
+    rebindCapture=null; buildKeymap();   // draft only — Save is what commits + persists it
+    const st=document.getElementById('keymapStatus'); if(st) st.textContent="Unsaved changes — click a Save button to keep them.";
   };
+}
+function commitKeymapDraft(){ if(!keymapDraft) return; KEYBINDS=keymapDraft; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); rebuildComboMap(); }
+function saveKeymapForChar(){
+  if(!running) return;
+  commitKeymapDraft(); saveGame();
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent=`Saved for ${player.name||"this character"}.`;
+  toast("Keybindings saved for "+(player.name||"this character"));
+}
+function saveKeymapAsDefault(){
+  commitKeymapDraft(); saveKeybinds();
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent="Saved as the default for all characters.";
+  toast("Keybindings saved as default for all characters");
 }
 { const b=document.getElementById('openKeymapBtn'); if(b) b.onclick=openKeymap;
   const c=document.getElementById('keymapClose'); if(c) c.onclick=closeKeymap;
-  const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); buildKeymap(); }; }
+  const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap();
+    const st=document.getElementById('keymapStatus'); if(st) st.textContent="Reset to the global default — click Save for This Character to also keep it on this character."; };
+  const sc=document.getElementById('keymapSaveChar'); if(sc) sc.onclick=saveKeymapForChar;
+  const sd=document.getElementById('keymapSaveDefault'); if(sd) sd.onclick=saveKeymapAsDefault; }
 
 // ============================================================================
 //  DUNGEONS / DELVES  (instanced: overworld hidden + gated while inside)
@@ -24738,8 +25072,15 @@ function dungeonWalkable(x,z){ const r=player.r*0.6;
 }
 function dungeonSlide(ox,oz,nx,nz){
   if(dungeonWalkable(nx,nz))return[nx,nz];
-  if(dungeonWalkable(nx,oz))return[nx,oz];
-  if(dungeonWalkable(ox,nz))return[ox,nz];
+  // #465: wall-slide. Keep the blocked axis pinned and advance along the other; try the full step
+  // first, then partial steps, so grazing a wall or nosing into a corner CREEPS along instead of
+  // dead-stopping. (Was: only a full-magnitude single-axis move — a diagonal into a corner wedged
+  // solid with zero displacement and no sliding.)
+  for(const f of [1,0.6,0.3]){
+    const sx=ox+(nx-ox)*f, sz=oz+(nz-oz)*f;
+    if(sx!==ox&&dungeonWalkable(sx,oz))return[sx,oz];   // slide along X, Z pinned to the wall
+    if(sz!==oz&&dungeonWalkable(ox,sz))return[ox,sz];   // slide along Z, X pinned to the wall
+  }
   return[ox,oz];
 }
 function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
@@ -25734,6 +26075,7 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
       tiedPortal2:player.tiedPortal2||null,createTown:player.createTown||null,createTemplate:player.createTemplate||null,createSpec:player.createSpec||null,   // #330: these were set but never persisted — Secondary Portal Tie evaporated on relog, and a relog mid-Academy rerouted every heritage to Holtburg
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
+      keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
     if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
@@ -25858,6 +26200,7 @@ function applySaveObj(s){
   // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
   if(typeof updateHUD==="function") updateHUD();
   if(typeof buildSheet==="function") buildSheet();
+  if(typeof applyCharKeymap==="function") applyCharKeymap(s);   // #483: this character's saved keybinds, else the global default
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
@@ -26140,8 +26483,8 @@ function onMobHit(msg){
 }
 function onMobDie(msg){
   const b=BESTIARY[msg.kind];
-  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(msg.kind); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
-  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(msg.kind); }
+  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(msg.kind,msg.x,msg.z); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
+  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(msg.kind,msg.x,msg.z); }
   removeSharedMobAsDying(msg.id);
 }
 function removeSharedMobAsDying(id){
@@ -26500,10 +26843,48 @@ function onWho(m){
   const ps=m.players||[];
   log(`<b>Online (${ps.length}):</b> `+(ps.length?ps.map(p=>`${esc(p.name)} <span style="color:var(--dim)">L${p.level||1}</span>`).join(", "):"just you"),"sys");
 }
+// #465: the always-available escape hatch. A new player wedged on unseen geometry (and refused the
+// surface map while delving) needs a way out that WORKS EVERYWHERE — including inside the Academy
+// and any delve. It teleports you to a guaranteed-walkable anchor for wherever you stand.
+function doUnstuck(){
+  if(!player.alive){ log("You cannot free yourself while fallen — you will return at the Lifestone.","warn"); return; }
+  if((player._unstuckCd||0)>now()){ log("The world is still resettling — try <b>/unstuck</b> again in a moment.","sys"); return; }
+  player._unstuckCd=now()+4000;
+  player._blockRun=0; player._unstuckHintSeen=1;
+  if(inDungeon){   // works EVEN WHILE DELVING — the whole point of the affordance
+    let sp=(dungeonSpawn&&(typeof dungeonWalkable!=="function"||dungeonWalkable(dungeonSpawn.x,dungeonSpawn.z)))?dungeonSpawn:null;
+    if(!sp){ const r=(dungeonRects||[]).find(c=>c.room)||(dungeonRects||[])[0];
+      if(r) sp=r.round?{x:r.cx,z:r.cz}:{x:(r.x0+r.x1)/2,z:(r.z0+r.z1)/2}; }
+    if(!sp) sp={x:DCEN.x,z:DCEN.z};
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    player.y=(dungeonSpawn&&dungeonSpawn.y)||0; arriveAt(sp.x,sp.z); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log((curDungeon&&curDungeon.academy)?"You step back to the Academy's entry hall. Walk to the <b>Society Greeter</b> and press <b>E</b> to speak.":"You wrench free and reappear at the delve's entrance.","sys");
+    toast("UNSTUCK"); return;
+  }
+  if(inNetwork){
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    arriveAt(DCEN.x,DCEN.z-2); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log("You pull free and step back to the hub's entrance.","sys"); toast("UNSTUCK"); return;
+  }
+  // overworld: hop to the nearest clear footing; if there truly is none, recall to your Lifestone
+  const clearAt=(x,z)=>{ if(terrainH(x,z)<-2) return false;
+    for(const o of obstacles){ if(Math.hypot(x-o.x,z-o.z)<(o.r+player.r+0.15)) return false; } return true; };
+  let best=null;
+  for(let ring=1; ring<=8 && !best; ring++){ const rad=ring*1.5;
+    for(let a=0;a<12 && !best;a++){ const an=a/12*6.2832, x=player.x+Math.cos(an)*rad, z=player.z+Math.sin(an)*rad;
+      if(clearAt(x,z)) best={x,z}; } }
+  if(best){ warpTo(best.x,best.z,{invuln:2}); log("You shrug free and step onto clear ground.","sys"); toast("UNSTUCK"); return; }
+  const ls=(typeof lifestones!=="undefined")?(lifestones.find(l=>l.bound)||lifestones[0]):null;
+  if(ls){ warpTo(ls.x,ls.z+2,{invuln:2}); log("No clear footing nearby — you recall to the <b>Lifestone</b>.","sys"); toast("LIFESTONE RECALL"); }
+  else { warpTo(0,0,{invuln:2}); log("You recall to safe ground.","sys"); toast("UNSTUCK"); }
+}
 function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
-  if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
+  if(cmd==="unstuck"||cmd==="stuck"||cmd==="free"){ doUnstuck(); }   // #465: escape hatch — works even while delving
+  else if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="house"){ hsHouseCmd(parts); }
   else if(cmd==="hor"||cmd==="house_recall"){ recallHome(); }
@@ -26614,6 +26995,7 @@ function handleSlash(text){
   else if(cmd==="help"||cmd==="commands"||cmd==="?"){   // #203: the full command list, grouped as the code groups them
     log(`<b>Chat:</b> /tell (/w) &lt;name&gt; &lt;msg&gt; · /r reply · /p party · /f fellowship · /a allegiance · /who`,"sys");
     log(`<b>World:</b> /loc coordinates · /where · /region · /story saga recap · /arc story arcs`,"sys");
+    log(`<b>Stuck?</b> /unstuck (/stuck, /free) — teleport to clear ground; works even while delving`,"sys");
     log(`<b>Allegiance:</b> /swear &lt;name&gt; · /break (/unswear) · /muster · /allegiance join|leave|hometown`,"sys");
     log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");
     log(`<b>Combat &amp; social:</b> /pk pk|pkl|npk · /trade &lt;name&gt; · /buff [spell] · /me &lt;action&gt; · /emote — or /${Object.keys(EMOTE_CMDS).join(", /")}`,"sys");
@@ -26754,8 +27136,8 @@ function startGame(loadSaved,preset){
     // spawns HOLDING a Training Weapon matched to their profession (upgradeable at the Academy);
     // casters get a component pouch, Life Casters two healing kits, Soldiers 30 quarrels (1999 kit).
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
-      player.inv.push({name:"Calling Stone",stat:"quest",v:0});
-      player.inv.push({name:"Welcome Letter",stat:"book",v:10});   // the real AC starter letter — readable (Use) via openBookReader
+      player.inv.push({name:"Calling Stone",stat:"quest",v:0,tut:true});
+      player.inv.push({name:"Welcome Letter",stat:"book",v:10,tut:true});   // the real AC starter letter — readable (Use) via openBookReader
       const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
         bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
         warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
@@ -26813,6 +27195,7 @@ function startGame(loadSaved,preset){
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
+  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
   applyPlayerModel();          // if the player chose a rigged body model at creation, load it as their avatar
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
@@ -26821,6 +27204,11 @@ function startGame(loadSaved,preset){
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
+  // #466: arm a 6s warm-up before the auto-tuner starts sampling FPS — every entry into the world (fresh
+  // character, reload, Continue) hits a burst of monster model / dungeon pack / clothing table streaming
+  // that stalls frames without reflecting steady-state render cost; gfxGovern also ignores frames for as
+  // long as the portal transit below is still holding.
+  if(typeof GFX!=="undefined") GFX._warm=6;
   // Materialize into the world through portal space (AC's arrival): the world is already built and the
   // player placed, so arrive() is a no-op — the tube just holds until the surrounding area has streamed in.
   startPortalTransit(null,{ready:overworldAreaLoaded,minHold:1.2,maxHold:10});
@@ -27515,7 +27903,7 @@ function tcArcRender(){
   const cx=196,cy=196,rad=160;
   for(let i=0;i<TC_ARC_N;i++){
     const abs=hotbarPage*QB_PAGE+i;
-    const a=Math.PI*(1-i*0.125);                          // 180° → 90° fan, up and over the cluster
+    const a=(150-i*17)*Math.PI/180;                       // #469: 150°→82° fan (was 180°→90°) so the lowest slots clear the HEIGHT/PAGE buttons and the last slot stays on-screen; 17° step at r=160 still spaces the 46px slots
     const x=cx+Math.cos(a)*rad, y=cy-Math.sin(a)*rad;
     const e=player.hotbar&&player.hotbar[abs];
     const isIt=e&&typeof hbIsItem==="function"&&hbIsItem(e);
