@@ -44,7 +44,11 @@ def yaw(qw, qz):
 # ─────────────── town list, read straight from index.html (never modified) ───────────────
 html = open(os.path.join(ROOT, "index.html"), encoding="utf-8", errors="replace").read()
 tblk = re.search(r"const TOWN_DATA=\[(.*?)\n\];", html, re.S).group(1)
-COORD = int(re.search(r"const COORD=(\d+)", html).group(1))          # world units per degree
+# COORD is `const COORD=80*WSCALE;` — an expression, not a literal. Reading just the leading integer
+# bakes offsets at WSCALE=1 (unit 80), so at the game's WSCALE=3 every town's buildings pack into 1/3
+# of their true footprint. Resolve WSCALE and evaluate the product (matches ac_world_structures.py).
+WSCALE = int(re.search(r"const WSCALE\s*=\s*(\d+)", html).group(1))
+COORD = int(re.search(r"const COORD\s*=\s*(\d+)\s*\*\s*WSCALE", html).group(1)) * WSCALE   # world units per degree
 TOWNS = [(m.group(1), float(m.group(2)), float(m.group(3)))          # name, lat, lng
          for m in re.finditer(r'\["([^"]+)",\s*(-?[\d.]+),\s*(-?[\d.]+)', tblk)]
 print(f"towns {len(TOWNS)} · COORD {COORD}/deg")

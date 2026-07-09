@@ -123,8 +123,8 @@
   .doll-slot .ds-ico{font-size:10px;color:var(--dim)}
   .doll-slot .ds-lab{font-size:10.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tbtn:hover{background:#3a2e16}.tbtn:disabled{opacity:.35;cursor:default}
-  #closeTink,#closeSettings,#closeMap,#closeCodex{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}
-  #closeTink:hover,#closeSettings:hover,#closeMap:hover,#closeCodex:hover{background:#3a2e16}
+  #closeTink,#closeSettings,#closeMap,#closeCodex,#closeSpellbook{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}   /* #481: #closeSpellbook was missing here, so its "Return to Dereth" rendered as a small default chip overlapping the last spell row instead of a full-width footer */
+  #closeTink:hover,#closeSettings:hover,#closeMap:hover,#closeCodex:hover,#closeSpellbook:hover{background:#3a2e16}
   .row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #241c0e}
   .row .lab{font-weight:bold}.row .desc{color:var(--dim);font-size:11px;font-weight:normal}
   .row .ctl{display:flex;align-items:center;gap:8px}.row .val{min-width:30px;text-align:right;color:#fff;font-weight:bold}
@@ -174,6 +174,12 @@
      Everything is gated behind body.touchui so the desktop interface is untouched. ══ */
   #touchUI{position:absolute;inset:0;pointer-events:none;z-index:24;display:none;font-family:inherit}
   body.touchui #touchUI{display:block}
+  /* #517: #touchUI's z-index(24) sits ABOVE #hud(10), so full-screen panels that live inside #hud
+     (Quest Log, Housing — z-index:25, but only within #hud's own stacking context) get drawn UNDER
+     the touch buttons/joystick and the buttons keep swallowing taps meant for the panel. Panels that
+     live outside #hud (sheet/spellbook/etc., z-index:50) already paint above #touchUI, but hide the
+     whole layer for ANY BIG_MODALS panel so the behavior doesn't depend on each panel's DOM position. */
+  body.touchui.tcModalOpen #touchUI{display:none}
   /* dynamic joystick: touch anywhere in the left zone and the stick appears under your thumb */
   #tcZone{position:absolute;left:0;top:14%;bottom:0;width:46%;pointer-events:auto;touch-action:none;z-index:1}
   #tcJoy{position:absolute;left:110px;top:70%;width:calc(128px*var(--tcscale,1));height:calc(128px*var(--tcscale,1));
@@ -208,8 +214,10 @@
   #tcJmp{width:56px;height:56px;right:16px;bottom:124px}
   #tcDdg{width:50px;height:50px;right:86px;bottom:86px;font-size:19px}
   #tcBlk{width:56px;height:56px;right:124px;bottom:16px}
-  #tcHt{width:46px;height:46px;right:186px;bottom:-6px;font-size:11px;border-radius:12px;font-weight:bold}
-  #tcPg{width:40px;height:40px;right:196px;bottom:52px;font-size:14px;border-radius:11px;font-weight:bold;opacity:.9}
+  /* #469: attack-height + spell-page selectors sit in a row BELOW the spell arc so they no longer
+     share a hit area with the arc's first slots (🔥 fire / ❄ frost) or the quickbar "1" */
+  #tcHt{width:46px;height:46px;right:186px;bottom:-28px;font-size:11px;border-radius:12px;font-weight:bold}
+  #tcPg{width:40px;height:40px;right:144px;bottom:-30px;font-size:14px;border-radius:11px;font-weight:bold;opacity:.9}
   /* outer spell arc: 5 slots rendered from the current quickbar page, radial cooldown sweeps */
   .tcSlot{position:absolute;pointer-events:auto;touch-action:none;width:46px;height:46px;border-radius:12px;
     background:radial-gradient(circle at 50% 35%,#241a0c,#0c0905);border:2px solid rgba(216,177,74,.5);
@@ -280,6 +288,9 @@
   /* the quickbar scales via --qbscale and anchors beside the joystick zone, clear of the cluster */
   body.touchui #spellbar{left:calc(148px + env(safe-area-inset-left,0px));transform:scale(var(--qbscale,1));transform-origin:bottom left}
   body.touchui #combatPanel{display:none!important}
+  /* #452: hide the desktop HUD panels in touch mode at EVERY viewport (tablets included), not just
+     phones — on landscape tablet #quest otherwise overlaps the on-screen spell-arc/attack cluster */
+  body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
   body.touchui #potions{left:50%!important;right:auto!important;top:58px!important;bottom:auto!important;transform:translateX(-50%)}
   body.touchui #potions .pot{cursor:pointer;pointer-events:auto}
   body.touchui #log{bottom:calc(238px + env(safe-area-inset-bottom,0px));width:min(320px,38vw)}
@@ -292,7 +303,73 @@
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
     body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
-    body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
+  }
+  /* ══ #469: touch-control collision fixes (scoped to touch mode; desktop layout unchanged — that's #467) ══ */
+  /* the first-run onboarding overlay dims the desktop HUD so its bright panels can't bleed through the
+     tips and leave them half-unreadable */
+  #tcBoard{background:rgba(3,2,1,.8)}
+  body.tcOnboard #hud{opacity:.1;pointer-events:none;transition:opacity .2s}
+  @media (orientation:portrait) and (max-width:560px){
+    /* keep the movement joystick's touch zone clear of the chat: dock the read-only log to the
+       top-left (under the vitals) and start the joystick zone below it */
+    body.touchui #log{top:calc(140px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+      left:8px;width:min(56vw,214px);max-height:22vh;overflow:hidden}
+    body.touchui #tcZone{top:40%}
+  }
+  @media (orientation:landscape) and (max-height:500px){
+    /* landscape: log docked top-left below the vitals, joystick zone starts below it */
+    body.touchui #log{top:calc(134px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+      left:8px;width:min(34vw,280px);max-height:62px;overflow:hidden}
+    body.touchui #tcZone{top:62%}
+    /* compact the top-right minimap and tuck the action cluster into the corner so the spell arc
+       and JUMP button clear the minimap and its +/−/⚙ toolbar */
+    body.touchui #minimap,body.touchui #minimap #mm{width:98px;height:98px}
+    body.touchui #tcBtns{transform:scale(calc(var(--tcscale,1) * .82))}
+  }
+  /* ══ #467: DESKTOP HUD on phone-sized viewports ══
+     Every HUD panel uses an absolute desktop-tuned position, so on a narrow phone
+     viewport they pile on top of one another and bury the 3D view (minimap over
+     vitals, compass overflowing the width, attributes over the panel rail, potions
+     over chat, speed/power over the quickbar, quickbar clipped off-screen). Touch
+     mode (#469) supplies its own layout, so this reflow is scoped to the DEFAULT
+     desktop interface — body:not(.touchui) — and only kicks in on small screens.
+     The panels are re-anchored into non-overlapping corners and scaled down so the
+     core readouts (vitals · compass · minimap · chat · quickbar) stay clear, with
+     the tall/secondary panels (attributes, quest, potions, speed-power) tucked out
+     of the way and capped so they never cover the whole viewport. */
+  @media (max-width:480px){
+    body:not(.touchui) #compassPanel{top:6px;transform:translateX(-50%) scale(.7);transform-origin:top center}
+    body:not(.touchui) #vitals{top:40px;left:6px;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #minimap{top:40px;right:6px;width:118px;height:118px}
+    body:not(.touchui) #mm{width:118px;height:118px}
+    body:not(.touchui) #right{top:166px;right:44px;transform:scale(.82);transform-origin:top right;
+      max-height:calc(100vh - 320px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:auto!important;bottom:170px!important;left:auto!important;right:44px!important;
+      width:150px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #potions{left:6px;right:auto;top:158px;bottom:auto;transform:scale(.62);transform-origin:top left}
+    body:not(.touchui) #log{left:6px;bottom:96px;width:min(300px,62vw)}
+    body:not(.touchui) #chatInput{left:6px!important;width:min(300px,62vw)!important}
+    body:not(.touchui) #spellbar{bottom:12px;transform:translateX(-50%) scale(.58);transform-origin:bottom center}
+    body:not(.touchui) #combatPanel{right:6px!important;bottom:96px!important;width:150px!important;
+      transform:scale(.8);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.9);transform-origin:center right}
+  }
+  /* short landscape phones (e.g. 812×375): more width but very little height — cap the
+     tall panels, keep the top row (vitals · compass · minimap) from colliding, and move
+     quest/potions/speed-power clear of the centred quickbar. */
+  @media (max-width:900px) and (max-height:500px){
+    body:not(.touchui) #vitals{transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #compassPanel{transform:translateX(-50%) scale(.82);transform-origin:top center}
+    body:not(.touchui) #minimap{right:44px}
+    body:not(.touchui) #right{top:168px;right:44px;transform:scale(.8);transform-origin:top right;
+      max-height:calc(100vh - 210px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:130px!important;bottom:auto!important;right:auto!important;left:12px!important;
+      width:200px!important;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #log{bottom:110px;max-height:130px;overflow:hidden}
+    body:not(.touchui) #spellbar{transform:translateX(-50%) scale(.66);transform-origin:bottom center}
+    body:not(.touchui) #potions{right:12px;bottom:150px}
+    body:not(.touchui) #combatPanel{right:12px!important;bottom:12px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.85);transform-origin:center right}
   }
 </style>
 </head>
@@ -603,6 +680,10 @@
     <button class="tbtn" data-acdeath="1">Corpse &amp; item drop</button><button class="tbtn" data-acdeath="0">Soft (Vitae only)</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Suppress camera shake and fullscreen lightning/spell flashes (for motion sensitivity or photosensitivity). Defaults to your OS 'reduce motion' setting.">Reduce motion &amp; flashes</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware score: festive in the castle, aggressive in a fight, suspenseful in a dungeon, a crowd murmur in town, dark on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-dynmusic="1">On</button><button class="tbtn" data-dynmusic="0">Off</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Living environmental sound: wind &amp; surf, dungeon drips and groans, birdsong by day and crickets &amp; owls by night.">Ambient sound</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-ambience="1">On</button><button class="tbtn" data-ambience="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -617,13 +698,20 @@
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Show or hide any on-screen interface (each also has an ✕ and a keybind — see Map Keys → HUD Toggles)">Interfaces</span><span id="setHud" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Sync your character to the server, then depart Dereth through a recall portal back to the title screen">Session</span><button id="logoutBtn" class="tbtn" style="border-color:var(--gold);color:var(--gold)">🚪 Log Out…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
-<div id="keymap"><div class="card" style="text-align:left">
+<div id="keymap"><div class="card" style="text-align:left;display:flex;flex-direction:column;overflow:hidden">
   <h2>Map Keys</h2>
-  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind.</div>
-  <div id="keymapBody" style="font-size:13px"></div>
-  <div style="display:flex;gap:10px;margin-top:14px"><button id="keymapReset" class="tbtn">Reset to defaults</button><button id="keymapClose">Done</button></div>
+  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind. Rebinds aren't kept until you Save — closing without saving discards them.</div>
+  <div id="keymapBody" style="font-size:13px;overflow:auto;flex:1;min-height:0"></div>   <!-- #484: scrollable body -->
+  <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center;flex-shrink:0">   <!-- #484: pinned footer + #483: Save affordances -->
+    <button id="keymapReset" class="tbtn">Reset to defaults</button>
+    <button id="keymapSaveChar" class="tbtn" style="border-color:var(--gold);color:var(--gold)" title="Keep these bindings on this character only">💾 Save for This Character</button>
+    <button id="keymapSaveDefault" class="tbtn" title="Keep these bindings as the fallback for any character with no bindings of its own">Save as Default (All Characters)</button>
+    <span id="keymapStatus" style="font-size:11px;color:var(--dim);flex:1 1 auto;text-align:right"></span>
+    <button id="keymapClose">Done</button>
+  </div>
 </div></div>
 
 <div id="overlay">
@@ -2144,6 +2232,7 @@ function buildCityList(){
 const CITIES=buildCityList();
 const CAPITALS=CITIES.filter(c=>c.capital);
 function nearestCapitalDist(x,z){let m=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<m)m=d;}return m;}
+function nearestCapital(x,z){let best=null,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c;}}return best;}
 function regionOf(x,z){ // -1 = Direlands
   if(nearestCapitalDist(x,z)>DIRE_DIST) return -1;
   let best=0,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c.region;}}return best;
@@ -2764,9 +2853,13 @@ function supportAt(wx,wz,feetY){
 // OVERLOADED every STR-10 build (War Mage/Life Caster templates read 114–120% → permanently slowed
 // from the tutorial onward). Armor lightened + base capacity raised so the kit fits every template
 // with headroom, while a genuinely stuffed satchel still slows you.
-function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
+function itemBurden(it){ if(!it) return 0; if(it.tut) return 0;   // #465: pure tutorial keepsakes (Calling Stone, Welcome Letter) weigh nothing — the fresh recruit is never slowed by the kit they wake up holding
+  if(it.scroll) return 2;
   if(it.stat==="weapon") return 75; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
-  if(it.stat==="worn") return ({head:45,chest:120,hands:35,legs:95,feet:45})[it.aslot]||85;
+  // #472: a cloth garment (shirt/pants — the light under-layer) was falling through to the heavy 85
+  // default because "shirt"/"pants" aren't armour slots, so a fresh char's starting clothes weighed as
+  // much as plate (54% burden at spawn). Cloth is light; only real armour keeps the armour weights.
+  if(it.stat==="worn") return it.cloth ? 10 : (({head:45,chest:120,hands:35,legs:95,feet:45})[it.aslot]||85);
   return 22; }
 function encumbrance(){
   let load=0; for(const it of player.inv) load+=itemBurden(it);
@@ -2867,7 +2960,7 @@ function enterAcademyHall(){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.4";
   buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
-  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #464: face +z INTO the Great Hall (toward the Society Greeter and the courtyard). The spawn sits ~3m off the south wall; the default yaw 0 faced that near wall head-on, so a new arrival stared at a single over-lit blank wall — read as "an invisible beige void" (1st AND 3rd person, since the follow-cam looks the same way) while the whole rendered hall stood behind them.
+  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #511: face INTO the Great Hall (the greeter/room lie north of the spawn point) — the old default (yaw 0, forward=-z) wedged a fresh recruit nose-first into the south wall behind them
   toast("THE TRAINING ACADEMY");
 }
 function exitAcademyHall(){
@@ -3287,7 +3380,10 @@ function updateWeather(dt){
     else if(arid) w=r<0.74?"clear":r<0.95?"cloudy":"fog";                               // Gharu'ndim desert: almost never rains
     else if(wet)  w=r<0.14?"clear":r<0.34?"cloudy":r<0.70?"rain":r<0.90?"storm":"fog";  // Blackmire wetlands: frequent rain & storms
     else          w=r<0.42?"clear":r<0.64?"cloudy":r<0.82?"rain":r<0.90?"storm":"fog";  // temperate lands
-    if(w!==weather){ weather=w; windDirTarget=rnd(0,6.283); log(({rain:"Rain sweeps across the land.",storm:"A tempest breaks — thunder rolls across Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
+    if(w!==weather){ weather=w; windDirTarget=rnd(0,6.283);
+      // #471: keep the weather STATE current (so the sky is right the moment you surface), but only
+      // ANNOUNCE the change when you're actually under the open sky — no "the sky grows overcast" while delving.
+      if(!inDungeon&&!inNetwork) log(({rain:"Rain sweeps across the land.",storm:"A tempest breaks — thunder rolls across Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
     weatherT=rnd(35,75);
   }
   const raining=(weather==="rain"||weather==="storm"), storming=(weather==="storm");
@@ -3476,8 +3572,20 @@ function playerLightSource(){
 function updateInstanceLight(){
   if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); scene.add(playerLight); }
   if(inDungeon){
-    hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;        // kill daylight inside
-    scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
+    if(curDungeon&&curDungeon.academy){
+      // #464: the Training Academy is a BIG, torch-lit hall opening onto a sky-lit courtyard — not a
+      // cramped, pitch-dark delve. The generic near-black far=30 dungeon fog (the else-branch below)
+      // buried the whole hall in a void the exact tone of the fill: its courtyard, both wings, the
+      // gatehouse, the exit arch and most of the tutorial staff (the greeter included) stand 30–55m
+      // from the arrival spot, so everything past a few metres fogged out to a flat fill and a new
+      // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: warm stone-toned
+      // fog that reaches clear across the room, and enough fill light that its surfaces read at once.
+      hemi.intensity=0.5; amb.intensity=0.3; sun.intensity=0;
+      scene.fog.near=14; scene.fog.far=130; scene.fog.color.setHex(0x9a9078);
+    } else {
+      hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;      // kill daylight inside
+      scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
+    }
     const ls=playerLightSource(); let inten=ls.intensity;
     if(ls.flicker) inten*=0.84+0.16*Math.sin(now()/60)+0.06*Math.sin(now()/29); // torch/flame flicker
     playerLight.color.setHex(ls.color); playerLight.intensity=inten; playerLight.distance=ls.dist;
@@ -4270,6 +4378,14 @@ function applyGfxTier(t,quiet){
 }
 function gfxGovern(dt){
   if(dt<=0||dt>0.5||typeof paused!=="undefined"&&paused) return;
+  // #466: a fresh/reloaded/Continue'd character streams in monster models, dungeon packs & clothing
+  // tables over several seconds, and the load-gated portal transit holds the camera in empty portal
+  // space (nothing rendered yet) until the surrounding area finishes streaming in. Both are one-time
+  // load hitches, not steady-state render cost — burn down the warm-up window and skip the governor
+  // entirely while either is active, and pin the EMA to neutral so a stale stall reading can't fire
+  // the instant warm-up ends.
+  if(GFX._warm>0) GFX._warm=Math.max(0,GFX._warm-dt);
+  if(GFX._warm>0||(typeof portalTransit!=="undefined"&&portalTransit)){ GFX.fps=45; GFX._lo=0; GFX._hi=0; return; }
   GFX.fps+=(1/dt-GFX.fps)*0.06;
   if(settings.gfx!=="auto") return;
   if(GFX._grace>0){ GFX._grace-=dt; GFX._lo=0; return; }   // teleport/stream churn doesn't count
@@ -4867,7 +4983,9 @@ function acMotionPose(u,clip,tt,loop){
 function acMotionTick(u,dt,moving,running,guarded){
   if(!AC_MOTION||!u.acBody||!u.acDrive) return;
   let posed=false;
-  if(player.alive){
+  // #457: during the recall-away logout, release the MotionTable so the procedural arms-overhead pose
+  // (u.shR/shL — the same joints that drive the AC body) is not overwritten by the idle clip.
+  if(player.alive&&!(typeof LOGOUT!=="undefined"&&LOGOUT.active)){
     const sw=player.swing;
     if(sw>0&&weaponMode==="sword"){
       const clip=player.weapon?"attack":"punch", c=AC_MOTION.clips[clip]||AC_MOTION.clips.attack;
@@ -8285,7 +8403,7 @@ function kcAddBeast(wx,wz,kind,name,scale,rot){
 function kcPortalUse(p){
   if(inDungeon||inNetwork) return;
   if(!castleAccess()){ log("The gateways open only for Lord Kilmer and his sworn guests.","warn"); if(SFX.hit)SFX.hit(); return; }
-  teleportFX(player.x,player.z); arriveAt(p.dest.x,p.dest.z); player.invuln=2; teleportFX(player.x,player.z);
+  warpTo(p.dest.x,p.dest.z,{invuln:2});
   if(typeof toast==="function") toast(p.dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The gateway flares — you step through to <b>${p.dest.name}</b>.`,"sys");
 }
@@ -8311,7 +8429,7 @@ function kcOpenWarTable(){
   document.body.appendChild(ov); paused=true; if(locked)document.exitPointerLock();
   ov.querySelector('#kcWarClose').onclick=()=>{ ov.remove(); paused=false; };
   ov.querySelectorAll('[data-rally]').forEach(b=>b.onclick=()=>{ const t=threats[+b.dataset.rally]; ov.remove(); paused=false;
-    if(inDungeon||inNetwork) return; teleportFX(player.x,player.z); arriveAt(t.x+4,t.z+4); player.invuln=2; teleportFX(player.x,player.z);
+    if(inDungeon||inNetwork) return; warpTo(t.x+4,t.z+4,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`You rally to <b>${t.name}</b>.`,"warn"); });
 }
 // ── The Trial Ground: summon a champion foe scaled to your might for a private duel ──
@@ -8472,7 +8590,7 @@ function kcPortalTo(name){
   else { const c=CITIES.find(ct=>ct.name===name); if(c) dest={x:c.x,z:c.z+3,name:c.name}; }
   if(!dest) return;
   closeAttendant();
-  teleportFX(player.x,player.z); arriveAt(dest.x,dest.z); player.invuln=2; teleportFX(player.x,player.z);
+  warpTo(dest.x,dest.z,{invuln:2});
   if(typeof toast==="function")toast(dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The valkyrie opens a shimmering way — you step through to <b>${dest.name}</b>.`,"sys");
 }
@@ -10203,25 +10321,74 @@ function portalTubeTex(){
   g.globalAlpha=1;
   const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,2); _tubeTex=t; return t;
 }
-function startPortalTransit(arrive){
-  if(portalTransit){ arrive(); return; }                            // never stack transits
+// The tube is now LOAD-GATED: it fades in, switches the world mid-tunnel, then HOLDS you inside the
+// swirling portal space until the destination has finished streaming in (opts.ready), and only then
+// sets you down. minHold keeps the effect from flickering past on an instant load; maxHold is a hard
+// safety cap so a never-satisfied ready() can never trap the player (the tube always dissolves).
+// opts = {ready:()=>bool, minHold, maxHold, freeze}. No opts → the classic ~1.3s fixed transit.
+const _PT_IN=0.22, _PT_OUT=0.5;
+function startPortalTransit(arrive,opts){
+  opts=opts||{};
+  if(portalTransit){ try{arrive&&arrive();}catch(e){} return; }     // never stack transits — just perform the arrival
+  if(typeof cam==="undefined"||!cam||typeof scene==="undefined"||!scene){ try{arrive&&arrive();}catch(e){} return; }   // renderer not up yet (pre-initThree): arrive without the overlay
   scene.add(cam);                                                    // camera-attached overlay (idempotent)
   const mat=new THREE.MeshBasicMaterial({map:portalTubeTex(),side:THREE.BackSide,transparent:true,opacity:0,fog:false,depthTest:false,depthWrite:false});
   const tube=new THREE.Mesh(new THREE.CylinderGeometry(5,5,90,24,1,true),mat);
   tube.rotation.x=Math.PI/2; tube.renderOrder=999; cam.add(tube);
-  portalTransit={tube,mat,t:0,dur:2.0,arrive,fired:false};
-  player.invuln=Math.max(player.invuln,2.2);
+  portalTransit={tube,mat,t:0,hold:0,outT:0,phase:"in",arrive:arrive||null,fired:false,pinned:false,ax:0,az:0,
+    ready:(typeof opts.ready==="function")?opts.ready:null,
+    minHold:(opts.minHold!=null)?opts.minHold:1.3,
+    maxHold:(opts.maxHold!=null)?opts.maxHold:8,
+    freeze:(opts.freeze!==false)};
+  player.invuln=Math.max(player.invuln||0,2.2);
   if(SFX.whoosh)SFX.whoosh();
 }
 function updatePortalTransit(dt){
   const p=portalTransit; if(!p) return;
   p.t+=dt;
-  const tex=p.mat.map; tex.offset.y-=dt*1.6; tex.offset.x+=dt*0.12;  // streaks rush past, tunnel slowly twists
-  p.tube.rotation.z+=dt*0.9;
-  const k=p.t/p.dur;
-  p.mat.opacity=k<0.15?k/0.15:(k>0.8?Math.max(0,(1-k)/0.2):1);      // fade in, hold, fade out on arrival
-  if(!p.fired&&k>=0.45){ p.fired=true; try{p.arrive();}catch(e){} } // the world switches WHILE you're inside the tube
-  if(k>=1){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
+  const slow=(typeof settings!=="undefined"&&settings.reduceMotion)?0.4:1;   // #244: gentler swirl under Reduce Motion (still gated on load)
+  const tex=p.mat.map; if(tex){ tex.offset.y-=dt*1.6*slow; tex.offset.x+=dt*0.12*slow; }  // streaks rush past, tunnel twists
+  p.tube.rotation.z+=dt*0.9*slow;
+  // once the tube fully covers the view, switch the world — you're inside the tunnel when it happens
+  if(!p.fired && p.t>=_PT_IN){ p.fired=true;
+    try{ p.arrive&&p.arrive(); }catch(e){ console.error("portal arrive() failed:",e); }
+    p.pinned=true; p.ax=player.x; p.az=player.z; }   // pin here; arriveAt re-syncs the target on any later hop (e.g. dungeon build completing)
+  if(p.freeze && p.pinned){ player.x=p.ax; player.z=p.az; player.vx=0; player.vz=0; }   // held in portal space — no wandering blind
+  if(p.phase==="in"){
+    p.mat.opacity=Math.min(1,p.t/_PT_IN);
+    if(p.t>=_PT_IN) p.phase="hold";
+  } else if(p.phase==="hold"){
+    p.mat.opacity=1; p.hold+=dt;
+    let ok=true; if(p.ready){ try{ ok=!!p.ready(); }catch(e){ ok=false; } }
+    if(p.fired && ((p.hold>=p.minHold && ok) || p.t>=p.maxHold)){ p.phase="out"; p.outT=0; }
+  } else {   // "out"
+    p.outT+=dt;
+    p.mat.opacity=Math.max(0,1-p.outT/_PT_OUT);
+    if(p.outT>=_PT_OUT){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
+  }
+}
+// "Has the area around the player finished streaming in?" — the gate for every overworld arrival.
+// True in an instance (those build synchronously in their own arrive()). In the open world it waits
+// for the ground mesh plus every town / world-structure block within streaming range to be built.
+function overworldAreaLoaded(){
+  if(inDungeon||inNetwork) return true;
+  if(typeof groundMesh==="undefined"||!groundMesh||!groundMesh.visible) return false;
+  const px=player.x,pz=player.z;
+  if(typeof AC_TOWNS!=="undefined"&&AC_TOWNS&&typeof CITIES!=="undefined")
+    for(const c of CITIES){ if(AC_TOWNS[c.name]&&Math.hypot(c.x-px,c.z-pz)<TB_BUILD_R&&!(_tbBuilt&&_tbBuilt[c.name])) return false; }
+  if(typeof AC_WORLD!=="undefined"&&AC_WORLD)
+    for(const lb in AC_WORLD){ const r=AC_WORLD[lb]; if(Math.hypot(r.cx-px,r.cz-pz)<WS_BUILD_R&&!(_wsBuilt&&_wsBuilt[lb])) return false; }
+  return true;
+}
+// Overworld teleport wrapped in the load-gated portal tube — the shared path for recalls, portal gems,
+// spell portals and map travel. Holds you in portal space until the destination has streamed in.
+function warpTo(x,z,opts){
+  opts=opts||{};
+  startPortalTransit(()=>{
+    arriveAt(x,z);
+    player.invuln=Math.max(player.invuln||0,opts.invuln||2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  },{ready:overworldAreaLoaded,minHold:(opts.minHold!=null)?opts.minHold:1.0,maxHold:opts.maxHold||8});
 }
 
 // ---------- combat ----------
@@ -10260,9 +10427,12 @@ function updateShieldModel(){   // reflect the equipped off-hand shield on the a
       realGrp.userData._for=(it.shield||"kite");
       while(realGrp.children.length) realGrp.remove(realGrp.children[0]);
       const inst=real.clone();
-      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3()), c=bb.getCenter(new THREE.Vector3());
+      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3());
       const sc=0.62/Math.max(sz.x,sz.y,0.001); inst.scale.setScalar(sc);
-      inst.position.set(-c.x*sc,-c.y*sc,-c.z*sc);
+      // #482: DON'T recentre on the bounding-box middle — that discards the model's own local origin,
+      // which (like the hand-held weapon meshes) is the retail placement-frame point Turbine attached
+      // to the forearm bone, i.e. the shield's handle/strap. Scale only; keep that origin at realGrp's
+      // origin so the shield rides the arm by its grip instead of floating from its geometric centre.
       realGrp.add(inst);
     }
     realGrp.visible=true; sh.visible=false; return;
@@ -10375,7 +10545,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
-  if(Math.random()<0.35) creatureSFX(m.kind,"wound");   // the creature's own retail pain vocal
+  if(Math.random()<0.35) creatureSFX(m.kind,"wound",m.x,m.z);   // the creature's own retail pain vocal (spatialized)
   clog(`You ${crit?'<b style="color:#ff8f6b">critically strike</b>':'hit'} the ${m.name||((BESTIARY[m.kind]||{}).name||m.kind)} for <b>${Math.round(dmg)}</b>.`);
   if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
   floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
@@ -10385,9 +10555,9 @@ function damageMonster(m,dmg,crit){
     m.enraged=true;
     floater(m.x,(m.headY||1.6)+2,m.z,"ENRAGED","#ff5a5a",1.3);
     m.mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive) o.material.emissive.setHex(0x6a1010); });
-    if(SFX.growl) SFX.growl(m.kind);
+    if(SFX.growl) SFX.growl(m.kind,m.x,m.z);
   }
-  if(Math.random()<0.35&&typeof creatureSFX==="function") creatureSFX(m.kind,"wound");   // the creature's real pain cry
+  if(Math.random()<0.35&&typeof creatureSFX==="function") creatureSFX(m.kind,"wound",m.x,m.z);   // the creature's real pain cry (spatialized)
   if(m.hp<=0) killMonster(m);
 }
 // creature trophies (AC drops): a body-part token each creature may yield, sellable to any vendor
@@ -10432,7 +10602,7 @@ function findScarabFor(spellLvl){   // index of the lowest-level scarab in the s
 function killMonster(m){
   const b=BESTIARY[m.kind];
   if(_guardKill){   // #12: a castle guard felled this foe — despawn + respawn as normal, but award the PLAYER nothing (no kills/XP/streak/quest/loot). Stops AFK farming inside the walls.
-    burst(m.x,1,m.z,(b&&b.c)||0xffae3a,16); if(SFX.death)SFX.death(m.kind);
+    burst(m.x,1,m.z,(b&&b.c)||0xffae3a,16); if(SFX.death)SFX.death(m.kind,m.x,m.z);
     if(m.isDungeon) dungeonMobs=Math.max(0,dungeonMobs-1);
     retire(m); const gi=monsters.indexOf(m); if(gi>=0) monsters.splice(gi,1);
     if(m.isBoss){ boss=null; setTimeout(spawnBoss,45000); }
@@ -10448,7 +10618,7 @@ function killMonster(m){
   if(streak===5||streak===10||streak===20) toast(streak+" KILL STREAK!");
   const sMult=1+Math.min(streak-1,12)*0.08;
   if(m.isBoss){
-    burst(m.x,2,m.z,0xff5a5a,40);SFX.death(m.kind);SFX.level();player.bossKills++;
+    burst(m.x,2,m.z,0xff5a5a,40);SFX.death(m.kind,m.x,m.z);SFX.level();player.bossKills++;
     gainXP(Math.round(m.xp*sMult));player.gold+=irnd(m.goldRange[0],m.goldRange[1]);
     for(let i=0;i<3;i++) addDrop(m.x+rnd(-2,2),m.z+rnd(-2,2),{type:"item",item:rollItem(true,5)});
     addDrop(m.x,m.z,{type:"gold",amt:irnd(80,160)});
@@ -10461,7 +10631,7 @@ function killMonster(m){
     else { boss=null; setTimeout(spawnBoss,45000); }
     saveGame();return;
   }
-  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death(m.kind);
+  burst(m.x,1,m.z,m.isElite?0xffae3a:b.c,m.isElite?28:18);SFX.death(m.kind,m.x,m.z);
   clog(`You have slain the <b>${m.name||b.name}</b>${m.isElite?" (champion)":""} — +${Math.round((m.xp||b.xp)*sMult)} XP.`);
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
@@ -11554,8 +11724,8 @@ function triggerPortalStorm(){   // scatter the player to a town's outskirts (ex
     const cx=clamp(player.x+Math.cos(ang)*dist,-HALF+6,HALF-6), cz=clamp(player.z+Math.sin(ang)*dist,-HALF+6,HALF-6);
     const h=terrainH(cx,cz); if(h>bestH){ bestH=h; nx=cx; nz=cz; if(h>=1.5) break; } }
   if(bestH<0.5){ return false; }   // nowhere dry within reach — don't scatter into the sea
-  teleportFX(player.x,player.z); arriveAt(nx,nz); player.invuln=1.5; player.combatT=0;
-  stormPhase=0; stormBuild=0; stormCd=110; teleportFX(player.x,player.z);
+  warpTo(nx,nz,{invuln:1.5}); player.combatT=0;
+  stormPhase=0; stormBuild=0; stormCd=110;
   log("A <b>portal storm</b> sweeps you away to the outskirts.","sys"); if(SFX.quest)SFX.quest();
   return true;
 }
@@ -11664,6 +11834,8 @@ function buildItemModel(it,opts){
   const gemCol=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||0x8ad0ff;
   const S=it.stat, wt=it.wt, nm=(it.name||"").toLowerCase();
   const brand=(it.affix&&it.affix.k==='brand'&&typeof BRAND_GLOW!=="undefined")?BRAND_GLOW[it.affix.element]:null;
+  let gripY=0;   // #482: local-Y of the item's GRIP centre (set by the blade branch below) — when opts.hand,
+                 // everything is shifted so this point (not the mesh's build origin) lands at the hand
   if(S==="weapon"&&wt==="focus"){                                   // CASTING FOCI — the user's callout
     if(/orb/.test(nm)){                                             // ORB — a round glowing sphere in a pronged holder on a short handle
       const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.022,0.2,8),wood);handle.position.y=-0.1;g.add(handle);
@@ -11853,14 +12025,19 @@ function buildItemModel(it,opts){
       if(brand){blade.material=blade.material.clone();blade.material.color.multiplyScalar(0.3);   // darken the steel so the glow colour dominates
         blade.material.emissive.setHex(brand);blade.material.emissiveIntensity=0.95;}   // the bonus GLOWS
       if(/rondel/.test(nm)){ for(const yy of[0,-0.11]){const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.014,12),gold);disc.position.y=yy;g.add(disc);}
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); }
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); gripY=grip.position.y; }
       else if(/katana|wakizashi|tachi|no.?dachi|nodachi|odachi|ken\b/.test(nm)){   // tsuba disc guard + wrapped grip
         const tsuba=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.012,12),new THREE.MeshStandardMaterial({color:0x3a3430,metalness:0.6,roughness:0.5}));g.add(tsuba);
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip);
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip); gripY=grip.position.y;
         for(let i=0;i<(twoH?5:3);i++){const wrapX=new THREE.Mesh(new THREE.TorusGeometry(0.019,0.004,4,8),gold);wrapX.rotation.x=Math.PI/2;wrapX.position.y=-0.035-i*0.05;g.add(wrapX);} }
-      else _hilt(g,twoH?0.2:0.15,twoH?0.24:0.18,gold);
+      else { const gripLen=twoH?0.2:0.15; _hilt(g,gripLen,twoH?0.24:0.18,gold); gripY=-gripLen/2; }
     }
     if(brand){ const gl=new THREE.PointLight(brand,0.7,1.3);gl.position.y=0.5;g.add(gl); }
+    // #482: grip point → hand attach origin. The blade branch above builds with the GUARD at local
+    // y=0 (blade grows +y, hilt/pommel grow -y), so a bare hand-attach centred a fist on the guard —
+    // the whole grip+pommel dangled below the fist while the blade ran straight through it. Re-centre
+    // the group on the authored grip's mid-point so the palm bone lands on the HANDLE, not the guard.
+    if(opts.hand&&gripY){ g.children.forEach(c=>{ if(c.position) c.position.y-=gripY; }); }
   } else if(S==="worn"&&it.aslot==="offhand"){                      // SHIELDS — shaped per type, not just scaled
     const ty=it.shield||"kite", plate=_imat(tint,0.7,0.4), rimM=gold;
     if(ty==="buckler"||ty==="round"){ const r=ty==="buckler"?0.16:0.24;
@@ -12404,15 +12581,13 @@ const NAMED_ITEMS=[
   {name:"Atlan Wand",          stat:"weapon",wt:"focus",foc:true, mat:"Pyreal", v:[14,20]},   // the caster of the Atlan line (wiki: 6 weapon types)
   {name:"Atlan Bow",           stat:"weapon",wt:"bow",    mat:"Pyreal",  v:[26,34],affix:()=>_wbrand("frost")},
   {name:"Atlan Axe",           stat:"weapon",wt:"axe",    mat:"Pyreal",  v:[28,36],affix:()=>_wbrand("acid")},
-  {name:"Atlan Dagger",        stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[22,30],affix:()=>_waff("crit")},
-  {name:"Atlan War Mace",      stat:"weapon",wt:"mace",   mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("shock")},
-  {name:"Sword of Lost Light", stat:"weapon",wt:"sword",  mat:"Gold",    v:[30,42],affix:()=>_wbrand("shock")},
-  {name:"Frostreaver",         stat:"weapon",wt:"axe",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
+  {name:"Atlan Dagger",        stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[22,30],affix:()=>_wbrand("frost")},   // #513: Atlan lines are element-craftable — "crit" is not an Atlan element
+  {name:"Atlan Mace",          stat:"weapon",wt:"mace",   mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("shock")},   // #513: real name is "Atlan Mace" (no "War")
+  {name:"Sword of Lost Light", stat:"weapon",wt:"sword",  mat:"Gold",    v:[30,42],affix:()=>_wbrand("fire")},    // #513: volcanic infusions = fire, not shock
   {name:"Shadowfire",          stat:"weapon",wt:"sword",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
-  {name:"Ace of Eyes",         stat:"weapon",wt:"dagger", mat:"Onyx",    v:[24,32],affix:()=>_waff("lifesteal")},
-  {name:"Isparian Bow",        stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
+  {name:"Isparian Bow",        stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},   // #513: removed "Ace of Eyes" — the real item is a playing-card trophy (Deck of Eyes), not a dagger
   {name:"Singularity Edge",    stat:"weapon",wt:"twohand",mat:"Platinum",v:[40,54],affix:()=>_wbrand("nether")},
-  {name:"Dericost Brand",      stat:"weapon",wt:"sword",  mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("fire")},
+  {name:"Dericost Blade",      stat:"weapon",wt:"sword",  mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("fire")},   // #513: real name is "Dericost Blade"
   {name:"Singularity Caul",    stat:"worn",  at:"light",  aslot:"head", mat:"Velvet",  v:[30,42],affix:()=>_oaff("of the Magus")},
   {name:"Empyrean Platemail",  stat:"worn",  at:"heavy",  aslot:"chest",mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
   {name:"Olthoi Helm",         stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
@@ -12424,7 +12599,7 @@ const NAMED_ITEMS=[
   {name:"Hieromancer's Bow",   stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
   {name:"Heartseeker Arbalest",stat:"weapon",wt:"crossbow",mat:"Platinum",v:[34,46],affix:()=>_waff("crit")},
   {name:"Trident of the Depths",stat:"weapon",wt:"spear", mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
-  {name:"Death's Grip",        stat:"weapon",wt:"mace",   mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Death's Grip",        stat:"weapon",wt:"staff",  mat:"Jet",     v:[32,42],affix:()=>_wbrand("frost")},   // #513: real item is Death's Grip Staff, Cold (Rare #287)
   {name:"Staff of All Aspects",stat:"weapon",wt:"staff",  mat:"Ebony",   v:[28,38],affix:()=>_wbrand("shock")},
   {name:"Stormblade Atlatl",   stat:"weapon",wt:"atlatl", mat:"Diamond", v:[26,36],affix:()=>_wbrand("shock")},
   {name:"Cestus of the Adept", stat:"weapon",wt:"unarmed",mat:"Pyreal",  v:[24,32],affix:()=>_waff("lifesteal")},
@@ -12447,7 +12622,7 @@ const NAMED_ITEMS=[
   {name:"Diforsa Helm",        stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[32,44],affix:()=>_oaff("of Vigor")},
   {name:"Sedgemail Leggings",  stat:"worn",  at:"medium", aslot:"legs", mat:"Steel",   v:[26,36],affix:()=>_oaff("of Endurance")},
   // ── further iconic artifacts (more type & element coverage) ──
-  {name:"Bael'Zharon's Hope",  stat:"weapon",wt:"dagger",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
+  {name:"Sword of Lost Hope",   stat:"weapon",wt:"sword",   mat:"Jet",     v:[30,42],affix:()=>_wbrand("acid")},   // #513: real item is an acid SWORD (Sword of Lost Hope Quest); was fabricated "Bael'Zharon's Hope"
   {name:"Sword of Jojii",      stat:"weapon",wt:"sword",   mat:"Pyreal",  v:[30,42],affix:()=>_wbrand("fire")},
   {name:"Gelidite Greatsword", stat:"weapon",wt:"twohand", mat:"Diamond", v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Coraline Longbow",    stat:"weapon",wt:"bow",     mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
@@ -12467,9 +12642,7 @@ const NAMED_ITEMS=[
   {name:"Dericost Dagger",     stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[24,32],affix:()=>_wbrand("fire")},
   {name:"Knorr Battle Axe",    stat:"weapon",wt:"axe",    mat:"Diamond", v:[32,42],affix:()=>_wbrand("frost")},
   {name:"Tumerok Crusher",     stat:"weapon",wt:"mace",   mat:"Ebony",   v:[32,42],affix:()=>_waff("crit")},
-  {name:"Blade of Elysa",      stat:"weapon",wt:"sword",  mat:"Gold",    v:[32,44],affix:()=>_wbrand("shock")},
   {name:"Aun Ralirea Spear",   stat:"weapon",wt:"spear",  mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
-  {name:"Shard of the Herald", stat:"weapon",wt:"dagger", mat:"Jet",     v:[26,36],affix:()=>_wbrand("nether")},
   {name:"Prismatic Wand",      stat:"weapon",wt:"focus",  mat:"Opal",    v:[24,32]},
   {name:"Falatacot Talisman",  stat:"weapon",wt:"focus",  mat:"Onyx",    v:[24,32]},
   {name:"Warmount Lance",      stat:"weapon",wt:"spear",  mat:"Steel",   v:[30,40],affix:()=>_waff("crit")},
@@ -12493,9 +12666,7 @@ const NAMED_ITEMS=[
   {name:"Koujia Pauldrons",    stat:"worn",  at:"medium", aslot:"upperarm",mat:"Steel", v:[22,30],affix:()=>_oaff("of Warding")},
   {name:"Celdon Gauntlets",    stat:"worn",  at:"medium", aslot:"hands", mat:"Steel",   v:[20,28],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 5 ──
-  {name:"Riftmaker",           stat:"weapon",wt:"twohand", mat:"Platinum",v:[42,56],affix:()=>_wbrand("nether")},
   {name:"Emberfang",           stat:"weapon",wt:"dagger",  mat:"Ruby",    v:[24,32],affix:()=>_wbrand("fire")},
-  {name:"Glacius",             stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
   {name:"Voidpiercer",         stat:"weapon",wt:"spear",   mat:"Jet",     v:[30,40],affix:()=>_wbrand("nether")},
   {name:"Sandstorm Cutlass",   stat:"weapon",wt:"sword",   mat:"Emerald", v:[30,42],affix:()=>_wbrand("acid")},
   {name:"Galestrike Bow",      stat:"weapon",wt:"bow",     mat:"Diamond", v:[28,38],affix:()=>_wbrand("shock")},
@@ -12505,26 +12676,21 @@ const NAMED_ITEMS=[
   {name:"Wand of Ruin",        stat:"weapon",wt:"focus",   mat:"Onyx",    v:[24,32]},
   {name:"Sceptre of Frost",    stat:"weapon",wt:"focus",   mat:"Sapphire",v:[24,32]},
   {name:"Warden's Plate",      stat:"worn",  at:"heavy",  aslot:"chest", mat:"Pyreal",  v:[42,56],affix:()=>_oaff("of Impregnability")},
-  {name:"Shroud of the Virindi",stat:"worn", at:"light",  aslot:"head",  mat:"Velvet",  v:[28,38],affix:()=>_oaff("of the Magus")},
+  {name:"Shroud of the Virindi",stat:"worn", at:"light",  aslot:"chest", mat:"Velvet",  v:[28,38],affix:()=>_oaff("of the Magus")},   // #513: the Virindi Shroud is a full-body cloth robe (chest slot), not headwear
   {name:"Gauntlets of Sundering",stat:"worn",at:"heavy",  aslot:"hands", mat:"Steel",   v:[26,34],affix:()=>_oaff("of Warding")},
   {name:"Greaves of the Lugian",stat:"worn", at:"heavy",  aslot:"legs",  mat:"Granite", v:[32,44],affix:()=>_oaff("of Vigor")},
   // ── artifact batch 6 ──
-  {name:"Frostbrand",          stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
   {name:"Doomhammer",          stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_wbrand("shock")},
   {name:"Widowmaker",          stat:"weapon",wt:"crossbow",mat:"Ebony",   v:[34,46],affix:()=>_waff("crit")},
   {name:"Soulrender",          stat:"weapon",wt:"twohand", mat:"Jet",     v:[42,56],affix:()=>_wbrand("nether")},
   {name:"Sunflare Bow",        stat:"weapon",wt:"bow",     mat:"Ruby",    v:[28,38],affix:()=>_wbrand("fire")},
   {name:"Corrosive Fang",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
   {name:"Thornwhip Atlatl",    stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
-  {name:"Stormcaller Staff",   stat:"weapon",wt:"focus",   mat:"Diamond", v:[24,32]},
   {name:"Aegis of the Empyrean",stat:"worn", at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.24,mat:"Pyreal",v:[28,40],affix:()=>_oaff("of Impregnability")},
   {name:"Vestments of the Undying",stat:"worn",at:"light", aslot:"chest", mat:"Velvet",  v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Helm of the Warmaster",stat:"worn", at:"heavy",  aslot:"head",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
   {name:"Boots of the Wanderer",stat:"worn", at:"light",  aslot:"feet",  mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 7 ──
-  {name:"Kingslayer",          stat:"weapon",wt:"sword",   mat:"Platinum",v:[32,44],affix:()=>_waff("crit")},
-  {name:"Ashbringer",          stat:"weapon",wt:"twohand", mat:"Ruby",    v:[42,56],affix:()=>_wbrand("fire")},
-  {name:"Rimeclaw",            stat:"weapon",wt:"unarmed", mat:"Sapphire",v:[24,32],affix:()=>_wbrand("frost")},
   {name:"Gutripper",           stat:"weapon",wt:"axe",     mat:"Steel",   v:[30,40],affix:()=>_waff("lifesteal")},
   {name:"Nightfall Bow",       stat:"weapon",wt:"bow",     mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
   {name:"Skullcracker",        stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_waff("crit")},
@@ -12540,7 +12706,6 @@ const NAMED_ITEMS=[
   // ── artifact batch 8 ──
   {name:"Heartpiercer",        stat:"weapon",wt:"dagger",  mat:"Diamond", v:[24,32],affix:()=>_waff("crit")},
   {name:"Bloodthorn",          stat:"weapon",wt:"sword",   mat:"Ruby",    v:[30,42],affix:()=>_waff("lifesteal")},
-  {name:"Earthshaker",         stat:"weapon",wt:"twohand", mat:"Granite", v:[42,56],affix:()=>_wbrand("shock")},
   {name:"Venom Reaver",        stat:"weapon",wt:"axe",     mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
   {name:"Glimmerfrost Bow",    stat:"weapon",wt:"bow",     mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
   {name:"Cindercleaver",       stat:"weapon",wt:"axe",     mat:"Ruby",    v:[30,40],affix:()=>_wbrand("fire")},
@@ -12551,7 +12716,6 @@ const NAMED_ITEMS=[
   {name:"Grips of the Bloodletter",stat:"worn",at:"medium",aslot:"hands",mat:"Leather", v:[20,28],affix:()=>_oaff("of Endurance")},
   {name:"Crown of the Undying",stat:"worn",  at:"light",  aslot:"head",  mat:"Gold",    v:[28,38],affix:()=>_oaff("of Vigor")},
   // ── artifact batch 9 ──
-  {name:"Dawnbreaker",         stat:"weapon",wt:"sword",   mat:"Gold",    v:[32,44],affix:()=>_wbrand("fire")},
   {name:"Permafrost Maul",     stat:"weapon",wt:"twohand", mat:"Sapphire",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Gravemaker",          stat:"weapon",wt:"mace",    mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
   {name:"Wasp's Sting",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
@@ -12562,7 +12726,6 @@ const NAMED_ITEMS=[
   {name:"Girth of the Titan",  stat:"worn",  at:"heavy",  aslot:"chest", mat:"Steel",   v:[42,56],affix:()=>_oaff("of Vigor")},
   {name:"Bracers of the Adept",stat:"worn",  at:"light",  aslot:"lowerarm",mat:"Silk",  v:[20,28],affix:()=>_oaff("of the Magus")},
   // ── artifact batch 10 ──
-  {name:"Worldcleaver",        stat:"weapon",wt:"twohand", mat:"Platinum",v:[44,58],affix:()=>_wbrand("shock")},
   {name:"Serpentongue",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
   {name:"Ember Cutlass",       stat:"weapon",wt:"sword",   mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
   {name:"Frosthowl Axe",       stat:"weapon",wt:"axe",     mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
@@ -12594,7 +12757,6 @@ const NAMED_ITEMS=[
   {name:"Aetherium Cloak",     stat:"worn", at:"light", aslot:"back", mat:"Satin",  v:[24,32],affix:()=>_oaff("of Warding")},
   {name:"Shroud of the Virindi Masker",stat:"worn",at:"light",aslot:"back",mat:"Velvet",v:[24,32],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 12 ──
-  {name:"Sliver of Bael'Zharon",stat:"weapon",wt:"dagger", mat:"Onyx",    v:[26,36],affix:()=>_wbrand("nether")},
   {name:"Cleaver of the Tusker",stat:"weapon",wt:"axe",     mat:"Ebony",   v:[30,40],affix:()=>_waff("crit")},
   {name:"Molten Greatsword",   stat:"weapon",wt:"twohand",  mat:"Ruby",    v:[42,56],affix:()=>_wbrand("fire")},
   {name:"Rime Spear",          stat:"weapon",wt:"spear",    mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
@@ -12632,11 +12794,8 @@ const NAMED_ITEMS=[
   {name:"Vestments of Knorr",  stat:"worn", at:"light", aslot:"chest",  mat:"Silk",    v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Wanderer's Cloak",    stat:"worn", at:"light", aslot:"back",   mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 15 ──
-  {name:"Reaper of Souls",     stat:"weapon",wt:"twohand",  mat:"Jet",     v:[44,58],affix:()=>_wbrand("nether")},
   {name:"Embertongue",         stat:"weapon",wt:"sword",    mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
-  {name:"Frostmourn",          stat:"weapon",wt:"axe",      mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Venomtooth",          stat:"weapon",wt:"dagger",   mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
-  {name:"Stormpike",           stat:"weapon",wt:"spear",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("shock")},
   {name:"Skullpiercer Bow",    stat:"weapon",wt:"bow",      mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
   {name:"Acid Repeater",       stat:"weapon",wt:"crossbow", mat:"Emerald", v:[34,46],affix:()=>_wbrand("acid")},
   {name:"Firebrand Baton",     stat:"weapon",wt:"focus",    mat:"Ruby",    v:[24,32]},
@@ -12645,10 +12804,9 @@ const NAMED_ITEMS=[
   {name:"Sabatons of Ruin",    stat:"worn", at:"heavy", aslot:"feet",   mat:"Steel",   v:[24,32],affix:()=>_oaff("of Endurance")},
   {name:"Mantle of the Undying",stat:"worn",at:"light", aslot:"back",   mat:"Velvet",  v:[24,32],affix:()=>_oaff("of Vigor")},
   // ── quest-reward artifacts ──
-  {name:"Oswald's Nightmare",  stat:"weapon",wt:"mace",     mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Oswald's Dirk",        stat:"weapon",wt:"dagger",  mat:"Jet",     v:[24,32],affix:()=>_waff("crit")},   // #513: real item is a physical multi-strike DAGGER; was fabricated "Oswald's Nightmare"
   {name:"Frore Greatsword",    stat:"weapon",wt:"twohand",  mat:"Sapphire",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Blade of the Nostrum",stat:"weapon",wt:"sword",    mat:"Pyreal",  v:[32,44],affix:()=>_wbrand("fire")},
-  {name:"Gaerlan's Citadel Key",stat:"weapon",wt:"dagger",  mat:"Gold",    v:[24,32],affix:()=>_waff("crit")},
   {name:"Aun Ralirea's Bow",   stat:"weapon",wt:"bow",      mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
   {name:"Hoeshala's Crafted Axe",stat:"weapon",wt:"axe",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Spear of the Hopeslayer",stat:"weapon",wt:"spear", mat:"Onyx",    v:[32,42],affix:()=>_wbrand("nether")},
@@ -12659,7 +12817,7 @@ const NAMED_ITEMS=[
   {name:"Cloak of the Arcanum",stat:"worn", at:"light", aslot:"back",   mat:"Satin",   v:[24,32],affix:()=>_oaff("of the Magus")},
   // ── further iconic artifacts (batch) ──
   {name:"Ghassan al Sayf",     stat:"weapon",wt:"sword",   mat:"Pyreal",  v:[32,44],affix:()=>_wbrand("fire")},
-  {name:"Fist of Three Principles",stat:"weapon",wt:"unarmed",mat:"Diamond",v:[26,34],affix:()=>_wbrand("shock")},
+  {name:"Fist of Three Principles",stat:"weapon",wt:"unarmed",mat:"Diamond",v:[26,34],affix:()=>_waff("lifesteal")},   // #513: real item is piercing + Blood Drinker (lifesteal), not shock (Rare #204)
   {name:"Nib of the Scrivener",stat:"weapon",wt:"dagger",  mat:"Gold",    v:[24,32],affix:()=>_waff("crit")},
   {name:"Yanshi's Fervor",     stat:"weapon",wt:"mace",    mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
   {name:"Coruscating War Spear",stat:"weapon",wt:"spear",  mat:"Sapphire",v:[32,42],affix:()=>_wbrand("frost")},
@@ -12778,7 +12936,7 @@ const NAMED_ITEMS=[
   {name:"Pendant of the Undying",stat:"jewelry",jtype:"neck",mat:"Jet",     v:[0,0],bonus:{kind:"vital",vs:"mhp",  v:45}},
   // ── gap-fill batch 3: remaining AC artifacts from the diff (weapons, armour, jewelry) ──
   {name:"Zharalim Crossbow",   stat:"weapon",wt:"crossbow",mat:"Platinum",v:[34,46],affix:()=>_wbrand("acid")},
-  {name:"Chef's Knife",        stat:"weapon",wt:"dagger",  mat:"Steel",   v:[22,30],affix:()=>_waff("crit")},
+  {name:"Moriharu's Kitchen Knife",stat:"weapon",wt:"dagger",mat:"Steel",  v:[22,30],affix:()=>_waff("crit")},   // #513: real rare dagger (Crushing Blow); was "Chef's Knife"
   {name:"Perfect Sword",       stat:"weapon",wt:"sword",   mat:"Diamond", v:[32,44],affix:()=>_wbrand("shock")},
   {name:"Perfect Dagger",      stat:"weapon",wt:"dagger",  mat:"Diamond", v:[24,32],affix:()=>_waff("crit")},
   {name:"Serpent's Fang",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
@@ -12872,13 +13030,13 @@ const NAMED_ITEMS=[
   {name:"Gelidite Sceptre",stat:"weapon",wt:"focus",mat:"Aquamarine",v:[26,34]},
   {name:"Gelidite Staff",stat:"weapon",wt:"staff",mat:"Aquamarine",v:[28,38],affix:()=>_wbrand("frost")},
   {name:"Gelidite Cestus",stat:"weapon",wt:"unarmed",mat:"Aquamarine",v:[24,32],affix:()=>_wbrand("frost")},
-  {name:"Spectral Longsword",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_wbrand("frost")},
-  {name:"Spectral Broadblade",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_wbrand("frost")},
-  {name:"Spectral Poniard",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_wbrand("frost")},
-  {name:"Spectral Dirk",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_wbrand("frost")},
-  {name:"Spectral Warhammer",stat:"weapon",wt:"mace",mat:"Diamond",v:[32,42],affix:()=>_wbrand("frost")},
-  {name:"Spectral Cudgel",stat:"weapon",wt:"mace",mat:"Diamond",v:[30,40],affix:()=>_wbrand("frost")},
-  {name:"Spectral Greatsword",stat:"weapon",wt:"twohand",mat:"Diamond",v:[42,56],affix:()=>_wbrand("frost")},
+  {name:"Spectral Longsword",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_waff("crit")},   // #513: Spectral/Ghost-Slayer weapons are PHYSICAL (Crushing Blow/Armor Cleaving), not frost
+  {name:"Spectral Broadblade",stat:"weapon",wt:"sword",mat:"Diamond",v:[30,42],affix:()=>_waff("crit")},
+  {name:"Spectral Poniard",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_waff("crit")},
+  {name:"Spectral Dirk",stat:"weapon",wt:"dagger",mat:"Diamond",v:[24,32],affix:()=>_waff("crit")},
+  {name:"Spectral Warhammer",stat:"weapon",wt:"mace",mat:"Diamond",v:[32,42],affix:()=>_waff("crit")},
+  {name:"Spectral Cudgel",stat:"weapon",wt:"mace",mat:"Diamond",v:[30,40],affix:()=>_waff("crit")},
+  {name:"Spectral Greatsword",stat:"weapon",wt:"twohand",mat:"Diamond",v:[42,56],affix:()=>_waff("crit")},
   {name:"Spectral Maul",stat:"weapon",wt:"twohand",mat:"Diamond",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Spectral Battle Axe",stat:"weapon",wt:"axe",mat:"Diamond",v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Spectral Hatchet",stat:"weapon",wt:"axe",mat:"Diamond",v:[28,38],affix:()=>_wbrand("frost")},
@@ -14331,7 +14489,7 @@ function refreshAvatarArmor(){
   for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
     if(!it) continue;
-    const tint=it.dye||(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
+    const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8));
     const cls=CLS[it.at]||CLS.medium;
     ent.mat.color.setHex(tint);
     if(/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||"")){ ent.mat.metalness=0.04; ent.mat.roughness=0.82; }
@@ -14710,7 +14868,7 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot recall from here.","warn"); return "keep"; }
     const dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ log("You have no Lifestone to recall to.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You crush the <b>${it.name}</b> and recall to the <b>${dest.name}</b> Lifestone.`,"heal"); }
   else if(it.stat==="cure"){
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
@@ -14742,14 +14900,14 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot open a portal from here.","warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The gem's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(c.x,c.z+3,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You shatter the <b>${it.name}</b> and step through to <b>${c.name}</b>.`,"heal"); }
   else if(it.stat==="contract"){
     if(inDungeon||inNetwork){ log("You cannot invoke a contract from here.","warn"); return "keep"; }
     if((player.contractCd||0)>0){ log(`The contract must recharge (${Math.ceil(player.contractCd)}s).`,"warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The contract's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
+    warpTo(c.x,c.z+3,{invuln:2}); player.contractCd=120;
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
@@ -15027,7 +15185,7 @@ function algTitle(rank){
   const fem=player.appearance&&player.appearance.gender==="female";
   return (fem?t.f:t.m)[Math.min(10,rank)-1];
 }
-function vassalCap(){ return player.level; }   // AC: vassal cap = your character level
+function vassalCap(){ return player.level>=5 ? player.level : 0; }   // AC: vassal cap = character level — but #479: NO vassals before level 5, symmetric with the level-5 patron gate (an ungated vassal is a free instant passive-XP stream at level 1)
 function vassalName(){ return (typeof townName==="function")? townName(irnd(0,3), irnd(1,99999)) : "Vassal "+irnd(100,999); }
 // followers = everyone under you in the tree (vassals + their own simulated subtrees)
 function algFollowerCount(){ let n=0; for(const v of (player.vassals||[])) n+=1+(v.followers||0); return n; }
@@ -15056,6 +15214,7 @@ function algReceived(v){    // patron side: your (buffed) Leadership
 function algPassupPct(v){ return clamp(algGenerated(v)*algReceived(v)/100,25,90); }
 function recruitVassal(){
   player.vassals=player.vassals||[];
+  if(player.level<5){ log("Sworn adventurers won't follow your banner until <b>level 5</b> — the same rank at which you may swear to a Patron. Earn your renown first.","warn"); if(SFX.hit)SFX.hit(); return false; }   // #479: no free instant level-1 Monarch + passive-XP vassal
   if(player.vassals.length>=vassalCap()){ log(`Your patronage is full — AC caps vassals at your <b>character level</b> (${vassalCap()}).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
   // AC: you swear to an equal-or-HIGHER character, so vassals join at your level or below
   const lvl=Math.max(1,player.level-irnd(0,Math.min(12,player.level-1)));
@@ -15292,6 +15451,7 @@ function arriveAt(x,z){
   player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
   player.arriveGrace=true;   // the float-down out of the portal never deals fall damage
   camInit=false;   // snap the third-person camera to the new location instead of easing across the map
+  if(typeof portalTransit!=="undefined"&&portalTransit&&portalTransit.pinned){ portalTransit.ax=player.x; portalTransit.az=player.z; }   // keep the in-tube freeze anchored to the newest destination (e.g. a dungeon whose build finishes mid-hold)
 }
 function fallDamage(drop){
   if(player.arriveGrace){ player.arriveGrace=false; return; }   // portal-arrival landing is free
@@ -15408,7 +15568,7 @@ function castSpellById(id){
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
   castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   if(!castSelf&&typeof breakResProt==="function") breakResProt();   // offensive casting ends res protection
-  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
+  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; spellCast(s.school);   // per-school casting wind-up
 }
 // retail component destruction: each formula component you CARRY burns with probability
 // componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
@@ -15438,6 +15598,7 @@ function executeSpell(id){
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mk=MAGIC_SCHOOLS[s.school];
   if(s.req>0 && mk && skillValue(mk)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
+  spellRelease(s.school,s);   // per-school discharge voice (the spell is now committed to firing)
   if(s.special==="stam2mana"){
     if(player.st<25){log("Not enough stamina.","warn");return;}
     player.st-=25;player.mn=Math.min(player.mmn,player.mn+22);
@@ -15567,7 +15728,7 @@ function executeSpell(id){
     else if(s.dest==="portal2"){ const p=player.tiedPortal2; if(!p){ refundCast(); spellCd[id]=0; log("You have no SECOND portal tied — cast Secondary Portal Tie at a portal first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ refundCast(); spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
   }
   if(s.special==="xfer"){   // Life vital transfer (Self): drain half the source pool → 105%+5%/lvl to the dest, capped 50/lvl (retail curve)
@@ -15602,7 +15763,7 @@ function executeSpell(id){
   }
   if(s.special==="acportal"){   // a recovered retail travel spell: the way opens to its true place
     if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); refundCast(); spellCd[id]=0; return; }
-    teleportFX(player.x,player.z); arriveAt(s.dx,s.dz+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(s.dx,s.dz+3,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`You cast <b>${s.name}</b> — the way opens to <b>${esc(s.dname)}</b>.`,"heal"); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
@@ -15985,6 +16146,7 @@ function dirtyStrike(m){
 let _rmbT=0;
 cEl.addEventListener('mousedown',e=>{
   if(!running) return;
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active) return;   // #457: no attack/appraise while logging out
   if(e.button===0){                                    // left: select what's under the cursor, then attack
     const hit=raycastPick(locked?null:e); if(hit) selectTarget(hit,true); else if(!locked) selectTarget(null,true);
     if(!locked) return;                                // (unlocked click still locks via the click handler)
@@ -16117,8 +16279,18 @@ function rebuildComboMap(){ ACTION_BY_COMBO={}; for(const a of ACTIONS){ if(a.he
 function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_keys")); if(s) for(const a of ACTIONS) if(Array.isArray(s[a.id])) KEYBINDS[a.id]=s[a.id]; }catch(e){} rebuildComboMap(); }
 function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
 function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
+// #483: per-character keybinds — a loaded character's own map (saved in its character save) wins;
+// with none saved, fall back to the global default (dereth_keys) so a fresh/legacy character isn't stranded.
+function applyCharKeymap(s){
+  KEYBINDS=defaultBinds();
+  if(s&&s.keymap&&typeof s.keymap==="object"){ for(const a of ACTIONS) if(Array.isArray(s.keymap[a.id])) KEYBINDS[a.id]=s.keymap[a.id]; }
+  else loadKeybinds();
+  rebuildComboMap();
+  const km=document.getElementById('keymap'); if(km&&km.style.display==="flex"&&typeof buildKeymap==="function") buildKeymap();
+}
 function evtCombo(e){ let m=""; if(e.ctrlKey)m+="ctrl+"; if(e.altKey)m+="alt+"; if(e.metaKey)m+="meta+"; if(e.shiftKey)m+="shift+"; return m+e.code; }
-function held(id){ if(TOUCH.held[id]) return true; const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }   // TOUCH.held: the mobile joystick/buttons feed the same choke point the keyboard does
+function held(id){ if(typeof LOGOUT!=="undefined"&&LOGOUT.active) return false;   // #457: movement/actions are locked during the recall-away logout
+  if(TOUCH.held[id]) return true; const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }   // TOUCH.held: the mobile joystick/buttons feed the same choke point the keyboard does
 function codeLabel(c){ if(!c)return ""; if(c.startsWith("Key"))return c.slice(3); if(c.startsWith("Digit"))return c.slice(5);
   const map={Space:"Space",Minus:"-",Equal:"=",BracketLeft:"[",BracketRight:"]",Backslash:"\\",Escape:"Esc",Tab:"Tab",Enter:"Enter",Backquote:"`",Semicolon:";",Quote:"'",Comma:",",Period:".",Slash:"/",ArrowUp:"↑",ArrowDown:"↓",ArrowLeft:"←",ArrowRight:"→",ShiftLeft:"Shift",ShiftRight:"Shift"}; return map[c]||c; }
 function comboLabel(combo){ if(!combo)return "—"; const p=combo.split("+"),code=p.pop(),mods={ctrl:"Ctrl",alt:"Alt/Opt",meta:"Cmd",shift:"Shift"};
@@ -16130,6 +16302,7 @@ let rebindCapture=null;   // when set, the next keydown captures a new binding
 window.addEventListener('keydown',e=>{
   const ce=document.getElementById('chatInput');
   if(ce && ce.style.display!=="none") return; // typing in chat — the input owns the keyboard
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active){ e.preventDefault(); return; }   // #457: input locked while the logout sequence plays
   const k=e.key.toLowerCase();
   keys[k]=true; keys[e.code]=true;   // record by both e.key and e.code so held()/movement work
   if(rebindCapture){ e.preventDefault(); rebindCapture(e); return; }   // capturing a new keybind
@@ -16244,7 +16417,7 @@ function portalTouch(){
       teleportFX(player.x,player.z);
       player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};   // remembered for Portal Recall / Portal Tie
       log(`…and out, into <b>${pt.dest.name}</b>.`,"sys");toast(pt.dest.name.toUpperCase());
-    });
+    },{ready:overworldAreaLoaded,minHold:1.0,maxHold:8});   // stay in the tube until the destination has streamed in
     return;
   } }
 }
@@ -16362,11 +16535,14 @@ function interact(){
   for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<3){ gatherNode(n); return; } }
   for(const pt of portals){
     if(Math.hypot(pt.x-player.x,pt.z-player.z)<3.2){
-      teleportFX(player.x,player.z);
-      arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
-      teleportFX(player.x,player.z);
-      log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");
-      toast(pt.dest.name.toUpperCase());
+      log(`You step into the portal…`,"sys");
+      startPortalTransit(()=>{
+        arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
+        teleportFX(player.x,player.z);
+        player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};
+        log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");
+        toast(pt.dest.name.toUpperCase());
+      },{ready:overworldAreaLoaded,minHold:1.0,maxHold:8});
       return;
     }
   }
@@ -16505,11 +16681,16 @@ function buildSheet(){
     ah+=`<div class="desc" style="margin-left:8px">• <b>${esc(v.name)}</b> — level ${v.level}, rank ${vr}${v.followers?`, court of ${v.followers}`:""} · passes up <b>${Math.round(algPassupPct(v))}%</b>${v.xpUp?` <span style="color:#9be08a">(${v.xpUp.toLocaleString()} XP to date)</span>`:""}</div>`;
   }
   if(vN) ah+=`<div class="desc" style="color:#9be08a">Pass-up is EXTRA XP generated by your vassals' own deeds — Loyalty (theirs) × Leadership (yours), deepening with time sworn${player.vassalXP?` · <b>${player.vassalXP.toLocaleString()}</b> lifetime received`:""}.</div>`;
-  ah+=`<button class="tbtn" id="recruitBtn" ${vN>=vCap?"disabled":""} style="margin-top:4px">Swear in a Vassal${vN>=vCap?" (at your level cap)":""}</button>`;
+  const recruitLbl=player.level<5?"Swear in a Vassal (reach level 5)":(vN>=vCap?"Swear in a Vassal (at your level cap)":"Swear in a Vassal");   // #479: gated to level 5, like the patron oath
+  ah+=`<button class="tbtn" id="recruitBtn" ${(player.level>=5&&vN<vCap)?"":"disabled"} style="margin-top:4px">${recruitLbl}</button>`;
   if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
   { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
-  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{ breakFromPatron(); buildSheet(); }; }
+  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{   // #518: confirm (breaking severs the pass-up chain + resets sworn-time) and use the SAME path as /break
+    const who=(player.patronInfo&&player.patronInfo.name)?esc(player.patronInfo.name):"your patron";
+    uiConfirm(`Break fealty with <b>${who}</b>?<br><span style="color:var(--dim);font-size:12px">This severs your pass-up chain and resets your accrued sworn-time — the only pass-up decay in AC.</span>`,
+      ()=>{ if(!isOnline){ breakFromPatron(); } else { netSend({t:"unswear"}); }   // mirror handleSlash /break: offline model vs server-authoritative
+        if(SFX.click)SFX.click(); buildSheet(); }, "Break fealty"); }; }
   { const rb=document.getElementById('recruitBtn'); if(rb) rb.onclick=()=>{ if(recruitVassal()){ SFX.quest(); saveGame(); buildSheet(); } }; }
   // Luminance / Enlightenment endgame
   if(player.lumUnlocked||player.enlightenment){
@@ -16547,6 +16728,22 @@ function buildSheet(){
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
 const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing"];
 function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
+// #517: in touch mode, #touchUI (spell-arc, JUMP, attack, HEIGHT/PAGE, joystick, …) floats above #hud
+// in z-order, so any BIG_MODALS panel that lives inside #hud (Quest Log, Housing) gets drawn under the
+// touch buttons and taps meant for the panel land on a control instead. Watch every BIG_MODALS panel's
+// `style` from one place — same pattern as closeOtherModals' shared list — and toggle a body class that
+// hides the whole touch layer (display:none, so it's also unreachable to taps) for as long as ANY of
+// them is open; restored the instant the last one closes. Scoped to body.touchui via CSS, so desktop
+// play is untouched.
+function refreshTouchModalState(){
+  const anyOpen=BIG_MODALS.some(id=>{ const el=document.getElementById(id); return el&&getComputedStyle(el).display!=="none"; });
+  document.body.classList.toggle("tcModalOpen",anyOpen);
+}
+(function(){
+  const mo=new MutationObserver(refreshTouchModalState);
+  BIG_MODALS.forEach(id=>{ const el=document.getElementById(id); if(el) mo.observe(el,{attributes:true,attributeFilter:['style']}); });
+  refreshTouchModalState();
+})();
 function openSheet(){closeOtherModals("sheet");buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
@@ -16612,6 +16809,11 @@ function showCastReticle(x,z,r,col){
 }
 function hideCastReticle(){ if(castReticle) castReticle.visible=false; }
 function update(dt){
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active) updateLogout(dt);   // #457: the recall-away logout advances even while otherwise idle
+  // #501: the portal tube (incl. the login "WELCOME BACK" arrival) must advance even while paused —
+  // otherwise anything that pauses during the transit (e.g. the academy greeter on a delve-saved login)
+  // freezes the tube forever, so maxHold never fires and the character is permanently stuck in the warp.
+  if(portalTransit) updatePortalTransit(dt);
   if(paused||!running) return;
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
@@ -16691,7 +16893,8 @@ function update(dt){
     player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
   }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
   if((player.vx||player.vz)&&player.alive){
-    let [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    const px0=player.x, pz0=player.z;   // #465: remember where we started so we can tell if a wall ate the move
+    let [nx,nz]=collide(px0+player.vx*dt,pz0+player.vz*dt);
     // authored terrain barriers: mountainsides too steep to walk stop you (roads and town
     // plateaus stay open — the real heightmap's switchbacks are the way up)
     if(player.grounded&&!inDungeon&&ACMAP.on&&!onRoad(nx,nz)){
@@ -16709,9 +16912,22 @@ function update(dt){
         } }
     }
     player.x=nx;player.z=nz;
+    // #465: wedged-on-geometry feedback. Sliding above already salvages a partial move; but if you're
+    // deliberately pushing into a wall (often INVISIBLE interior geometry) and almost nothing gets
+    // through, give a throttled bump so the stop isn't silent, and — after a full second of being
+    // pinned — a one-time nudge toward /unstuck (which frees you even while delving).
+    if(moving){
+      const want=Math.hypot(player.vx,player.vz)*dt, got=Math.hypot(nx-px0,nz-pz0);
+      if(want>0.02 && got<want*0.25){
+        if(now()-(player._blockT||0)>420){ player._blockT=now(); if(SFX.bump)SFX.bump(); }
+        player._blockRun=(player._blockRun||0)+dt;
+        if(player._blockRun>1.0 && !player._unstuckHintSeen){ player._unstuckHintSeen=1;
+          log("You are wedged against something you can't push past. Type <b>/unstuck</b> to free yourself"+(inDungeon?" — it works even while delving.":"."),"warn"); }
+      } else player._blockRun=0;
+    }
     const step=Math.hypot(player.vx,player.vz)*dt;
     player.bob+=step*1.1;   // #176: stride phase advances with DISTANCE moved (step already = speed*dt), not distance*dt — the old dt*step made the gait framerate-dependent and ~60x too slow (feet glided)
-    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;SFX.step();} }  // footfalls only on the ground
+    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;footstep();} }  // footfalls only on the ground — surface-aware
     if(sprint>1&&player.grounded&&moving) player.st=Math.max(0,player.st-dt*14);
   }
   // dodge dash: brief high-speed burst (with i-frames) along the dash vector
@@ -16754,7 +16970,6 @@ function update(dt){
   if(levelUps.length) updateLevelUps(dt);
   if(castRingFX.length) updateCastRings(dt);
   if(spellLandFXs.length) updateSpellLandFX(dt);
-  if(portalTransit) updatePortalTransit(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
@@ -16909,7 +17124,7 @@ function update(dt){
     }
     // in dungeons creatures wake only with line of sight, then pursue briefly after losing it (room-pull feel)
     const see=player.alive&&d<b.sense&&(!inDungeon||dungeonLoS(m.x,m.z,player.x,player.z));
-    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle"))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
+    if(see){ if(m.state!=="chase"&&d<40&&now()-lastGrowl>650){lastGrowl=now(); if(!creatureSFX(m.kind,"idle",m.x,m.z))SFX.growl();} m.state="chase"; m.chaseMem=2.2; }
     if(m.state==="chase"){ if(inDungeon){ m.chaseMem=(m.chaseMem||0)-dt; if(m.chaseMem<=0){ m.state="wander"; m.charging=0; } } else if(d>b.sense*1.4){ m.state="wander"; m.charging=0; } }   // #351: clear a mid-wind-up m.charging on de-aggro so it can't resume and loose a stale bolt (with no fresh tell) on the next aggro
     const _mox=m.x,_moz=m.z;   // #351: remember pre-move position to revert a step into deep water
     if(m.state==="chase"&&player.alive){
@@ -16943,7 +17158,7 @@ function update(dt){
             floater(m.x,(m.headY||1.6)+1.8,m.z,"+"+heal,"#7fe6a0"); burst(m.x,1.4,m.z,0x7fe6a0,10);
           } else { m.charging=0.45; if(m.actCast){ m.actCast.reset(); m.actCast.weight=1; m.actCast.play(); } }   // #177: play the model's real Cast wind-up
         }
-      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack");const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
+      } else if(d<m.r+player.r+0.6&&m.atkCd<=0){m.atkCd=1.0;m.lungeT=0.18;startStrike(m);creatureSFX(m.kind,"attack",m.x,m.z);const wk=(m.weakUntil>now()?m.weakV:1);playerHurt(m.dmg*(m.enraged?1.4:1)*wk,m.x,m.z,"melee",b.dmgEl||"bludgeon");
         if(m.actAtk){ m.actAtk.reset(); m.actAtk.weight=1; m.actAtk.play(); }}   // swing the model's real attack clip
       }   // end B1 !spActive gate
     } else {
@@ -17139,7 +17354,17 @@ function animateAvatar(dt){
     u.hipR.rotation.x+=q*0.3; u.hipL.rotation.x+=q*0.3;
     u.knR.rotation.x-=q*0.62; u.knL.rotation.x-=q*0.62;
     u.anR.rotation.x+=q*0.32; u.anL.rotation.x+=q*0.32; };
-  if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active){   // #457: recall-away — stand tall; both arms rise until the hands meet overhead
+    const rise=LOGOUT.rise;
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.rotation.x=0; u.spine.rotation.z=0; u.spine.position.y=AV_WAIST;
+    u.neck.rotation.set(-rise*0.28,0,0);                 // head tips up toward the meeting hands
+    const up=-Math.PI*0.98*rise;                         // shoulders swing from rest to straight overhead
+    sX=up; lX=up; sZ=0.12*rise; lZ=-0.12*rise;           // draw both hands inward so they meet at centre overhead
+    eX=-(1-rise)*0.30; lE=-(1-rise)*0.30;                // elbows straighten as the arms reach up
+    twist=0;
+  }
+  else if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
     const kind=player.swingAnim||(twoH?"chop":"diag");
     const drive=k=>{ u.spine.rotation.x+=k*0.2; u.hipR.rotation.x+=k*0.26; u.knR.rotation.x-=k*0.5; u.anR.rotation.x+=k*0.24; };  // footwork: the lead leg plants & drives into the blow
     switch(kind){
@@ -17903,7 +18128,9 @@ function drawBigMap(){
   for(let i=1;i<8;i++){const p=i/8*S;g.beginPath();g.moveTo(p,0);g.lineTo(p,S);g.moveTo(0,p);g.lineTo(S,p);g.stroke();}
   if(inDungeon){
     g.fillStyle="#9a8a66";g.font="15px Trebuchet MS";g.textAlign="center";
-    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);return;
+    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);
+    g.fillStyle="#7fae7f";g.font="12px Trebuchet MS";   // #465: but you're never trapped — the escape hatch works down here
+    g.fillText("Wedged or lost? Type  /unstuck  to free yourself.",S/2,S/2+22);return;
   }
   g.fillStyle="rgba(216,177,74,0.10)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
   { const ro=acRoadOverlay(S); if(ro) g.drawImage(ro,0,0); }   // the authentic AC road web, matching the roads on the ground
@@ -17951,8 +18178,7 @@ document.getElementById('bigmap').addEventListener('click',e=>{
   const _rw=e.target.clientWidth||520,_rh=e.target.clientHeight||520,wx=(e.offsetX/_rw)*WORLD-HALF,wz=(e.offsetY/_rh)*WORLD-HALF;
   let best=null,bd=Infinity;for(const ls of lifestones){const d=Math.hypot(ls.x-wx,ls.z-wz);if(d<bd){bd=d;best=ls;}}
   if(best&&bd<WORLD*0.05){
-    arriveAt(best.x,best.z+4);player.invuln=2;
-    teleportFX(player.x,player.z);
+    warpTo(best.x,best.z+4,{invuln:2});
     toast(best.name.toUpperCase());log(`You journey to <b>${best.name}</b>.`,"sys");closeMap();
   } else {   // #194: a missed click must not fail silently — say what travels, and point at the nearest
     log(`No Lifestone there — click a <b>◆ Lifestone</b> to journey${best?` (nearest: <b>${best.name}</b>)`:""}.`,"warn");
@@ -18002,6 +18228,8 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,gaDest:"auto",
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
+  dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
+  ambience:true,   // environmental soundscape: wind/surf/dungeon-drips + day birds / night crickets & owls
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
@@ -18051,6 +18279,7 @@ function playAcAmbient(){
 }
 function musicTick(){
   if(!actx||muted) return;
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&MUSICDIR.mode&&MUSICDIR.mode!=="wild") return;   // the dynamic music director owns non-wild moods; don't layer the synth pad under it
   if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
   if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
@@ -18072,22 +18301,38 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden){ if(actx.state==="running"){ actx.suspend(); _blurSuspended=true; } }
   else if(_blurSuspended){ _blurSuspended=false; if(!muted) actx.resume(); }
 });
-function blip(freq,dur,type="sine",vol=0.18,slideTo){
+function blip(freq,dur,type="sine",vol=0.18,slideTo,dest){   // dest: optional destination node (else the master bus) — used to route through a spatial insert
   if(!actx) return;
   const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
   o.type=type;o.frequency.setValueAtTime(freq,t);
   if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
-  o.connect(g).connect(masterGain||actx.destination);o.start(t);o.stop(t+dur);
+  o.connect(g).connect(dest||masterGain||actx.destination);o.start(t);o.stop(t+dur);
 }
-function noiseHit(dur,vol,freq){
+function noiseHit(dur,vol,freq,dest){
   if(!actx) return;
   const buf=actx.createBuffer(1,Math.max(1,actx.sampleRate*dur),actx.sampleRate);
   const d=buf.getChannelData(0);for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
   const src=actx.createBufferSource();src.buffer=buf;
   const filt=actx.createBiquadFilter();filt.type="bandpass";filt.frequency.value=freq;
   const g=actx.createGain();g.gain.value=vol;
-  src.connect(filt).connect(g).connect(masterGain||actx.destination);src.start();
+  src.connect(filt).connect(g).connect(dest||masterGain||actx.destination);src.start();
+}
+// spatial insert: a StereoPanner+Gain that positions & attenuates a sound by a world point relative
+// to the player's facing. Returns a node to use as `dest`, or null (→ master bus) when off-range/unsupported.
+function spatialBus(x,z){
+  if(!actx||x==null||z==null||typeof player==="undefined"||!player) return null;
+  const dx=x-player.x, dz=z-player.z, dist=Math.hypot(dx,dz), maxD=60;
+  if(dist>maxD) return {node:null,silent:true};                          // out of earshot
+  const g=actx.createGain(); g.gain.value=Math.pow(clamp((maxD-dist)/maxD,0,1),1.3);   // distance falloff
+  let head=g;
+  if(actx.createStereoPanner){                                           // pan L/R by the bearing off your facing
+    const fx=-Math.sin(player.yaw||0), fz=-Math.cos(player.yaw||0), rx=-fz, rz=fx, l=dist||1;
+    const pan=actx.createStereoPanner(); pan.pan.value=clamp((dx*rx+dz*rz)/l,-1,1);
+    pan.connect(g); head=pan;
+  }
+  g.connect(masterGain||actx.destination);
+  return {node:head,silent:false};
 }
 const SFX={
   swing:()=>noiseHit(0.12,0.16,800),
@@ -18105,6 +18350,7 @@ const SFX={
   gold:()=>blip(1000,0.10,"square",0.10,1500),
   quest:()=>{blip(660,0.14,"triangle",0.16);setTimeout(()=>blip(880,0.2,"triangle",0.16),130);},
   step:()=>noiseHit(0.06,0.06,200+irnd(-40,50)),
+  bump:()=>{noiseHit(0.05,0.08,120);blip(84,0.07,"sine",0.06,58);},   // #465: soft, low thud when you walk into a wall — feedback so a blocked move isn't silent
   growl:()=>blip(92,0.34,"sawtooth",0.11,58),
   click:()=>blip(680,0.05,"square",0.07,900),
 };
@@ -18132,17 +18378,160 @@ const _SND_MAP={ swing:["swing1","swing2","swing3"],hit:["hit_flesh"],heal:["hea
   flame:["cast_fire","explode_fire"],frost:["cast_frost","explode_frost"] };
 for(const k in _SND_MAP){ const syn=_SFX[k], keys=_SND_MAP[k];
   SFX[k]=(...a)=>{ if(!playSample(keys)) syn&&syn(...a); }; }
-// authentic per-creature vocals (kind_idle/_attack/_wound/_death) — used by the monster AI where it has a kind
-function creatureSFX(kind,act){ return playSample((kind||"")+"_"+act); }
+// ══ PROCEDURAL CREATURE VOICES ═══════════════════════════════════════════════════════════════════
+// A synthesized attack/death/wound/idle cry, UNIQUE PER CREATURE, derived from the bestiary
+// description — the creature's shape, name, size and damage element pick a voice family and pitch,
+// so an Olthoi chitters, a Skeleton rattles, a Lugian rumbles, a Wisp warbles, a Mosswart squelches.
+// Runs on the same WebAudio graph as SFX (fully offline); used as the fallback in creatureSFX when no
+// recorded sample exists, so every creature — even ones without a real SoundTable — has its own voice.
+function _cvFamily(kind){
+  const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, n=(b.name||kind||"").toLowerCase(), sh=b.shape||"beast";
+  if(sh==="insect"||/olthoi|wasp|mite|phyntos|beetle|chitin/.test(n)) return "insect";
+  if(sh==="skeleton"||/skeleton|skelet|wight|hollow|lich|mummy|zombie|undead|bone|grave/.test(n)) return "undead";
+  if(sh==="lugian"||/golem|lugian|gurog|stone|rock|granite|colossus/.test(n)) return "giant";
+  if(sh==="caster"||/virindi|wisp|phantom|shadow|element|spectr|ghost|doll|marionette|lich/.test(n)) return "ethereal";
+  if(sh==="blob"||/blob|jelly|slime|mosswart|thrungus|sleech|ooze|snowman|sludge/.test(n)) return "gel";
+  if(sh==="tusker"||sh==="horns"||/tusker|auroch|cow|bull|ursuin|ox|remoran/.test(n)) return "bellow";
+  if(sh==="humanoid"||sh==="tumerok"||/drudge|banderling|tumerok|mukkir|burun|monouga|ruschk|human/.test(n)) return "brute";
+  return "beast";
+}
+// element overlay: a short flavour layer that rides an ATTACK cry (fire crackle, frost shimmer, …)
+function _cvElement(el,t,dur,pk,dest){
+  if(!actx||!el) return;
+  if(el==="fire"){ for(let i=0;i<5;i++){ const tt=t+i*0.03; noiseHit(0.05,pk*0.5,700+irnd(-200,600),dest); } blip(340,dur*0.7,"sawtooth",pk*0.5,110,dest); }
+  else if(el==="frost"){ blip(1400,dur*0.8,"triangle",pk*0.4,700,dest); blip(2100,dur*0.5,"sine",pk*0.25,1500,dest); }
+  else if(el==="acid"){ noiseHit(dur*0.9,pk*0.5,2600,dest); blip(500,dur*0.6,"sawtooth",pk*0.3,240,dest); }
+  else if(el==="shock"){ blip(2600,0.07,"square",pk*0.5,900,dest); setTimeout(()=>blip(1800,0.06,"square",pk*0.4,700,dest),40); }
+  else if(el==="nether"){ blip(70,dur,"sine",pk*0.5,40,dest); blip(190,dur*0.8,"triangle",pk*0.25,150,dest); }
+  else if(el==="pierce"||el==="slash"){ noiseHit(0.06,pk*0.4,1800,dest); }
+}
+function creatureVoice(kind,act,x,z){
+  if(!actx||muted) return false;
+  const sp=spatialBus(x,z); if(sp&&sp.silent) return true;         // out of earshot → count as "handled", make no sound
+  const bus=(sp&&sp.node)||masterGain||actx.destination, t=actx.currentTime;
+  const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, size=Math.max(0.4,b.size||1), fam=_cvFamily(kind), el=b.dmgEl||"";
+  // size → pitch (a Lugian is an octave-plus below a Rat); death drops & lengthens, wound is quick & high
+  const p=1/Math.pow(size,0.9);                                   // pitch multiplier: small=high, big=low
+  const death=act==="death", wound=act==="wound", idle=act==="idle";
+  const dur=(death?0.7:idle?0.4:wound?0.18:0.32)*(fam==="giant"?1.4:1);
+  const pk=(idle?0.10:wound?0.16:0.20)*(b.isBossKind?1.2:1);      // peak gain
+  // a voiced tone into the bus with its own ADSR + optional pitch glide (down for death)
+  const tone=(freq,type,peak,d,glide,delay)=>{ const tt=t+(delay||0);
+    const o=actx.createOscillator(),g=actx.createGain(); o.type=type; o.frequency.setValueAtTime(Math.max(24,freq),tt);
+    if(glide) o.frequency.exponentialRampToValueAtTime(Math.max(20,freq*glide),tt+d);
+    g.gain.setValueAtTime(0.0001,tt); g.gain.linearRampToValueAtTime(peak,tt+Math.min(0.05,d*0.25));
+    g.gain.exponentialRampToValueAtTime(0.0006,tt+d); o.connect(g).connect(bus); o.start(tt); o.stop(tt+d+0.03); };
+  const gliss=death?0.45:wound?1.25:1.0;                          // death falls, wound rises a touch
+  switch(fam){
+    case "insect":                                                // dry chittering clicks + high buzz
+      { const clicks=death?10:wound?2:5; for(let i=0;i<clicks;i++) noiseHit(0.03,pk*0.7,2200*p+irnd(-300,300),bus);
+        tone(1300*p,"square",pk*0.5,dur,death?0.5:1.15); if(!wound) tone(2600*p,"sawtooth",pk*0.25,dur*0.6,gliss,0.02); break; }
+    case "undead":                                                // dry bone rattle + a hollow moan
+      { const rat=death?12:wound?3:6; for(let i=0;i<rat;i++) noiseHit(0.035,pk*0.5,900*p+irnd(-150,250),bus);
+        tone(150*p,"triangle",pk*0.7,dur*(death?1.2:1),gliss); tone(300*p,"sine",pk*0.3,dur,gliss,0.03); break; }
+    case "giant":                                                 // deep grinding rumble + gravel
+      { tone(58*p,"sawtooth",pk,dur*1.2,death?0.5:0.9); tone(87*p,"square",pk*0.4,dur,death?0.55:1.0,0.02);
+        noiseHit(dur*0.8,pk*0.4,120,bus); break; }
+    case "ethereal":                                              // eerie detuned warble / ghostly tone
+      { const f=520*p; tone(f,"sine",pk*0.8,dur*1.2,death?0.4:1.0); tone(f*1.007,"triangle",pk*0.5,dur*1.2,death?0.4:1.05,0.01);
+        // tremolo shimmer
+        const o=actx.createOscillator(),lfo=actx.createOscillator(),lg=actx.createGain(),g=actx.createGain();
+        o.type="sine";o.frequency.value=f*2; lfo.type="sine";lfo.frequency.value=death?7:14; lg.gain.value=pk*0.3; g.gain.value=pk*0.3;
+        lfo.connect(lg).connect(g.gain); o.connect(g).connect(bus); o.start(t); o.stop(t+dur*1.1); lfo.start(t); lfo.stop(t+dur*1.1); break; }
+    case "gel":                                                   // wet squelch / gurgle
+      { tone(120*p,"sine",pk*0.8,dur,death?0.5:0.8); tone(120*p,"sine",pk*0.5,dur*0.8,death?2.2:1.6,0.04);  // wobble up/down
+        noiseHit(dur*0.7,pk*0.35,420,bus); break; }
+    case "bellow":                                                // low brassy roar
+      { tone(150*p,"sawtooth",pk,dur*1.1,death?0.55:1.15); tone(224*p,"triangle",pk*0.5,dur,death?0.6:1.1,0.02); break; }
+    case "brute":                                                 // guttural grunt / shout
+      { tone(200*p,"sawtooth",pk,dur,death?0.5:(wound?1.3:0.95)); tone(120*p,"square",pk*0.4,dur,death?0.55:1.0);
+        noiseHit(0.05,pk*0.3,500,bus); break; }
+    default:                                                      // beast: growl → snarl (rising) / roar
+      { tone(180*p,"sawtooth",pk,dur,death?0.5:(wound?1.4:1.5)); tone(90*p,"triangle",pk*0.5,dur,death?0.55:1.2,0.01);
+        if(!wound) noiseHit(dur*0.5,pk*0.3,700,bus); break; }
+  }
+  if(act==="attack") _cvElement(el,t,dur,pk,bus);                 // the element only colours an ATTACK
+  return true;
+}
+// authentic per-creature vocals (kind_idle/_attack/_wound/_death) — a recorded sample if the SoundTable
+// has one, else the procedural creatureVoice above so EVERY creature still has a distinct cry.
+// Optional (x,z) spatializes the synth voice (distance falloff + stereo pan by bearing).
+function creatureSFX(kind,act,x,z){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act,x,z); }
+// ── surface-aware footsteps: the footfall matches what you walk on (stone in a dungeon, a snow
+//    crunch in a blizzard, a splash at the waterline, firm cobble on a road, a soft thud on grass) ──
+function footSurface(){
+  if((typeof inDungeon!=="undefined"&&inDungeon)||(typeof inNetwork!=="undefined"&&inNetwork)) return "stone";
+  if(typeof snowAmt!=="undefined"&&snowAmt>0.4) return "snow";
+  if(player&&player.y!=null&&player.y<0.6) return "water";                      // at/under the waterline outdoors = shallow splash
+  if(typeof onRoad==="function"&&player&&onRoad(player.x,player.z)) return "road";
+  return "grass";
+}
+function stepSynth(s){
+  const j=irnd(-40,50);                                                          // per-step jitter so it isn't robotic
+  switch(s){
+    case "stone": noiseHit(0.035,0.06,880+j); blip(1150+j,0.02,"square",0.03,700); break;   // sharp click-scuff
+    case "road":  noiseHit(0.045,0.055,560+j); break;                            // firm cobble
+    case "snow":  noiseHit(0.10,0.05,120+Math.abs(j)); break;                    // muffled low crunch
+    case "water": noiseHit(0.07,0.06,1500+j); blip(1200,0.05,"sine",0.03,400); break;   // wet splash
+    default:      noiseHit(0.055,0.05,220+j);                                    // grass/dirt soft thud
+  }
+}
+function footstep(){
+  if(!actx||muted) return;
+  const s=footSurface();
+  if(playSample("footstep_"+s)) return;                                          // a surface-tagged sample if the pack has one
+  stepSynth(s);
+}
+// ── per-magic-school spell audio: each school has its own casting wind-up and release voice, so War,
+//    Life, Item Enchantment, Creature Enchantment and Void magic each SOUND different. War is further
+//    flavoured by the bolt's element (fire crackle / ice shimmer / shock zap / acid hiss / force thud). ──
+function _spellEl(s){ const e=(s&&(s.element||s.el||s.vulnElem))||"";
+  if(/fire|flame/.test(e)) return "fire"; if(/ice|frost|cold/.test(e)) return "frost";
+  if(/shock|light/.test(e)) return "shock"; if(/acid/.test(e)) return "acid";
+  const n=(s&&s.name||"").toLowerCase();
+  if(/flame|fire/.test(n)) return "fire"; if(/frost|ice|cold/.test(n)) return "frost";
+  if(/lightning|shock/.test(n)) return "shock"; if(/acid/.test(n)) return "acid"; return "force"; }
+function spellCast(school){                                   // the WIND-UP — energy gathering, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war":      blip(200,0.45,"sawtooth",0.11,900); blip(1200,0.4,"triangle",0.045,2100); break;   // rising charge
+    case "life":     blip(440,0.5,"sine",0.10,720); setTimeout(()=>blip(880,0.4,"sine",0.05,1100),90); break;  // warm swell
+    case "item":     [660,880,1170].forEach((f,i)=>setTimeout(()=>blip(f,0.28,"triangle",0.08,f*1.3),i*70)); break;  // crystalline rise
+    case "creature": { blip(500,0.5,"sawtooth",0.08,560); blip(503,0.5,"triangle",0.05,566); break; }   // detuned arcane warble
+    case "void":     blip(70,0.6,"sine",0.11,120); blip(150,0.5,"sawtooth",0.05,190); break;            // dark low rise
+    default:         blip(500,0.4,"triangle",0.08,760);
+  }
+}
+function spellRelease(school,s){                             // the DISCHARGE when the spell fires, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war": { const el=_spellEl(s);                      // element-flavoured blast
+      if(el==="fire"){ for(let i=0;i<4;i++) noiseHit(0.06,0.10,700+irnd(-150,600)); blip(360,0.4,"sawtooth",0.14,90); }
+      else if(el==="frost"){ blip(1500,0.5,"triangle",0.12,600); blip(2200,0.4,"sine",0.06,1400); }
+      else if(el==="shock"){ blip(2600,0.08,"square",0.16,900); setTimeout(()=>blip(1700,0.07,"square",0.12,700),45); noiseHit(0.05,0.10,2000); }
+      else if(el==="acid"){ noiseHit(0.5,0.12,2500); blip(480,0.4,"sawtooth",0.08,220); }
+      else { noiseHit(0.12,0.16,220); blip(300,0.4,"sine",0.14,80); }   // force/bludgeon thud
+      break; }
+    case "life": { const drain=/drain|vdrain|siphon|harm|vuln/.test((s&&(s.special+"|"+s.name)||"").toLowerCase());
+      if(drain){ blip(620,0.5,"sine",0.11,180); blip(300,0.5,"triangle",0.06,120); }               // downward siphon
+      else { [523,659,784].forEach((f,i)=>setTimeout(()=>blip(f,0.45,"sine",0.11,f*1.05),i*70)); } // uplifting bell triad
+      break; }
+    case "item":     blip(1046,0.6,"triangle",0.11,1046); blip(1568,0.5,"sine",0.05,1568); noiseHit(0.04,0.05,3000); break;  // metallic ring
+    case "creature": blip(360,0.42,"sawtooth",0.11,300); blip(372,0.42,"triangle",0.06,312); noiseHit(0.05,0.05,700); break; // eerie stab
+    case "void":     blip(90,0.6,"sine",0.13,50); blip(190,0.5,"sawtooth",0.07,150); noiseHit(0.4,0.08,140); break;          // dark dissonant pulse
+    default:         blip(700,0.3,"triangle",0.10,500);
+  }
+}
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
-  SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
-  SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
+  SFX.death=(kind,x,z)=>{ if(kind&&creatureSFX(kind,"death",x,z)) return; if(!playSample(["player_death"])) synD&&synD(); };
+  SFX.growl=(kind,x,z)=>{ if(kind&&creatureSFX(kind,"idle",x,z)) return; synG&&synG(); }; }
 // ── ambient music: the original client tracks (assets/acmusic, tools/ac_music_export.py) ──
 let MUSIC=null,_musEl=null,_musZone=null;
 // The LOOPING zone player only uses tracks long enough to loop cleanly (>=8s) — short client
 // stingers (e.g. the 2s MPEG-3 track) would loop jarringly. They still play one-shot via playAcAmbient.
 fetch('assets/acmusic/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.tracks&&j.tracks.length){ const loopable=j.tracks.filter(t=>(t.seconds||0)>=8); MUSIC=loopable.length?loopable:j.tracks; } }).catch(()=>{});
 setInterval(()=>{ try{
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on){ if(_musEl){_musEl.pause();_musZone=null;} return; }   // the dynamic music director supersedes the legacy zone loop
   if(!MUSIC||typeof running==="undefined"||!running||(typeof muted!=="undefined"&&muted)){ if(_musEl){_musEl.pause();_musZone=null;} return; }
   const kcNear=(typeof KC!=="undefined")&&!inDungeon&&Math.hypot(player.x-KC.x,player.z-KC.z)<260;
   const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon": kcNear?"castle":
@@ -18164,6 +18553,213 @@ setInterval(()=>{ try{
   }
   _musEl.play().catch(()=>{});   // blocked until the first user gesture — retried each tick
 }catch(e){} },4000);
+
+// ══ DYNAMIC MUSIC DIRECTOR ═══════════════════════════════════════════════════════════════════════
+// Context-aware procedural score, synthesized through WebAudio (works fully offline like the SFX).
+// It picks a MOOD from game state each beat and plays a matching bed, crossfading on change:
+//   death  → dark   (somber descending minor drone + slow toll)
+//   combat → aggressive (fast driving minor bass pulse + noise drum + dissonant stabs)
+//   dungeon→ suspense (sparse low drone + eerie minor-2nd + slow heartbeat)
+//   castle → festive (bright major lute/harp arpeggio + bouncy bass)
+//   town   → crowd  (the murmur of people talking: layered band-passed noise babble, no melody)
+//   else   → wild   (silent here; the legacy ambient pad/zone loop carries the wilds)
+// Priority is death > combat > dungeon > castle > town > wild. The director owns all non-wild moods,
+// so the legacy zone loop + synth pad are gated off above while MUSICDIR.on. A `dynMusic` setting
+// toggles it; kcAmbience (the castle's live court murmur/fireworks) is left untouched and layers under.
+const MUSICDIR={on:true,mode:null,_t:0,_bus:null,_next:0,_beat:0};
+// scales / helpers
+const _MAJ=[0,2,4,7,9], _MINP=[0,3,5,7,10];                 // major & minor-pentatonic degrees
+function _hz(semi){ return 220*Math.pow(2, semi/12); }
+function mdBus(){
+  if(!actx) return null;
+  if(!MUSICDIR._bus){ const g=actx.createGain(); g.gain.value=0.0; g.connect(masterGain||actx.destination); MUSICDIR._bus=g; }
+  return MUSICDIR._bus;
+}
+// one synth voice into the music bus (own ADSR); type/detune/filter tuned per call
+function mdNote(freq,t,dur,type,peak,glideTo){
+  const bus=mdBus(); if(!bus) return;
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type=type||"triangle"; o.frequency.setValueAtTime(freq,t);
+  if(glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,glideTo),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(peak||0.14,t+Math.min(0.06,dur*0.3));
+  g.gain.exponentialRampToValueAtTime(0.0006,t+dur);
+  o.connect(g).connect(bus); o.start(t); o.stop(t+dur+0.02);
+}
+function mdDrum(t,peak,freq,dur){   // percussive noise burst into the music bus (aggressive-mood beat)
+  const bus=mdBus(); if(!bus||!actx) return;
+  const n=Math.max(1,Math.floor(actx.sampleRate*(dur||0.12))), buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const s=actx.createBufferSource(); s.buffer=buf;
+  const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=freq||180; bp.Q.value=0.7;
+  const g=actx.createGain(); g.gain.value=peak||0.18;
+  s.connect(bp).connect(g).connect(bus); s.start(t);
+}
+// crowd babble: a bank of band-passed noise loops whose gains wander, mimicking overlapping talk
+let _mdCrowd=null;
+function mdCrowdStart(formants){
+  const bus=mdBus(); if(!bus||!actx||_mdCrowd) return;
+  const secs=4, n=actx.sampleRate*secs, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1);
+  const nodes=[];
+  for(const f of (formants||[360,620,900,1500])){            // vocal-ish formant bands (per-culture timbre)
+    const s=actx.createBufferSource(); s.buffer=buf; s.loop=true;
+    const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=4.5;
+    const g=actx.createGain(); g.gain.value=0.02;
+    const lfo=actx.createOscillator(), lg=actx.createGain();  // slow wander → the "murmur" swell
+    lfo.type="sine"; lfo.frequency.value=0.13+Math.random()*0.5; lg.gain.value=0.02;
+    lfo.connect(lg).connect(g.gain);
+    s.connect(bp).connect(g).connect(bus); s.start(); lfo.start();
+    nodes.push(s,lfo);
+  }
+  _mdCrowd={nodes};
+}
+function mdCrowdStop(){ if(!_mdCrowd) return; for(const n of _mdCrowd.nodes){ try{ n.stop(); }catch(e){} } _mdCrowd=null; }
+// ── city themes: the town crowd + melodic bed match the capital's racial culture ──
+//   Holtburg (Aluvian) → Western medieval lute · Shoushi (Sho) → East-Asian pentatonic koto + chimes ·
+//   Yaraq (Gharu'ndim) → Middle-Eastern oud (Phrygian-dominant) + darbuka · Sanamar (Viamontian) →
+//   Iberian/knightly harmonic-minor guitar over a drone. Culture picks the scale, instrument voice,
+//   tempo, and the crowd-babble formant bank (so even the murmur is tinted).
+let _mdCity="__unset";
+function _cityCulture(name){ const n=(name||"").toLowerCase();
+  if(/holtburg/.test(n)) return "aluvian";
+  if(/shoushi/.test(n))  return "sho";
+  if(/yaraq/.test(n))    return "gharundim";
+  if(/sanamar/.test(n))  return "viamontian";
+  return null; }
+const MD_CITY={
+  aluvian:   {scale:[0,2,4,5,7,9,10],   wave:"triangle", beat:0.30, root:5,  pat:[0,2,4,2,5,4,2,0], octUp:true,  mel:0.10, formants:[360,620,900,1500]},
+  sho:       {scale:[0,3,5,7,10],       wave:"triangle", beat:0.46, root:2,  pat:[0,2,4,3,4,2,1,0], chimes:true, mel:0.08, formants:[440,720,1150,1850]},
+  gharundim: {scale:[0,1,4,5,7,8,10],   wave:"sawtooth", beat:0.24, root:-3, pat:[0,1,4,3,4,1,0,1], darbuka:true,mel:0.08, formants:[300,560,820,1300]},
+  viamontian:{scale:[0,2,3,5,7,8,11],   wave:"triangle", beat:0.30, root:0,  pat:[0,4,3,2,4,7,3,0], drone:true,  mel:0.09, formants:[340,600,880,1450]},
+  _default:  {scale:[0,2,4,5,7,9,11],   wave:"triangle", beat:0.32, root:3,  pat:[0,2,4,2,4,2,0,0],              mel:0.08, formants:[360,620,900,1500]},
+};
+function _mdScaleNote(spec,root,degIdx,oct){ const sc=spec.scale, i=((degIdx%sc.length)+sc.length)%sc.length; return root*Math.pow(2,(sc[i]+12*(oct||0))/12); }
+function _mdCityMotif(spec,t){
+  const beat=spec.beat, root=_hz(spec.root||0), N=8;
+  for(let i=0;i<N;i++) mdNote(_mdScaleNote(spec,root,spec.pat[i%spec.pat.length],(i>=N/2&&spec.octUp)?1:0), t+i*beat, beat*1.5, spec.wave, spec.mel);   // melody
+  if(spec.drone) mdNote(root/2,t,beat*N,"sine",0.07);                                        // Viamontian pedal drone
+  else for(let i=0;i<N/2;i++) mdNote(root/2, t+i*beat*2, beat*1.2, "sine", 0.06);            // gentle bass
+  if(spec.chimes) for(let i=0;i<3;i++){ if(Math.random()<0.6) mdNote(_mdScaleNote(spec,root*2,irnd(0,spec.scale.length-1),1), t+Math.random()*beat*N, 1.3, "sine", 0.045); }  // wind-chime tings
+  if(spec.darbuka){ const p=[1,0,1,1,0,1,0,1]; for(let i=0;i<N;i++) if(p[i]) mdDrum(t+i*beat, i%4===0?0.14:0.07, i%4===0?150:1000, 0.09); }   // dum-tek hand drum
+  return beat*N;
+}
+// per-mood one-bar generators: schedule a bar starting at time t, return seconds until the next bar
+const MD_MOODS={
+  festive(t){ const beat=0.34, root=_hz(7);                   // bright major lute — bouncy, upbeat
+    for(let i=0;i<8;i++){ const deg=_MAJ[(i*2)%_MAJ.length], oct=i>=4?12:0;
+      mdNote(root*Math.pow(2,(deg+oct)/12), t+i*beat, beat*1.4, i%2?"triangle":"square", 0.11); }
+    for(let i=0;i<4;i++) mdNote(root/2*Math.pow(2,(_MAJ[i%_MAJ.length])/12), t+i*beat*2, beat*1.2, "sine", 0.10);  // bouncy bass
+    return beat*8; },
+  aggressive(t){ const beat=0.19, root=_hz(-5);               // fast driving minor — urgent
+    for(let i=0;i<8;i++){ mdNote(root, t+i*beat, beat*0.9, "sawtooth", 0.12); mdDrum(t+i*beat, i%2?0.10:0.2, i%2?900:150, 0.1); }
+    if(Math.random()<0.7){ const d=_MINP[irnd(1,4)]; mdNote(_hz(7+d), t+beat*4, beat*3, "sawtooth", 0.10); mdNote(_hz(7+d+1), t+beat*4, beat*3, "square", 0.05); }  // dissonant stab
+    return beat*8; },
+  suspense(t){ const bar=6.0, root=_hz(-12);                  // sparse eerie drone — slow
+    mdNote(root, t, bar*0.95, "sine", 0.13); mdNote(root*1.001, t, bar*0.95, "triangle", 0.05);   // detuned low drone
+    if(Math.random()<0.6){ const at=t+2+Math.random()*2.5; mdNote(_hz(3), at, 1.6, "triangle", 0.06); mdNote(_hz(4), at, 1.6, "sine", 0.045); }  // minor-2nd unease
+    mdDrum(t+bar*0.5, 0.06, 70, 0.4);                         // slow heartbeat thump
+    return bar; },
+  crowd(t){                                                   // town: the crowd + a musical bed matching the CITY's culture
+    const cap=(typeof nearestCapital==="function"&&typeof player!=="undefined"&&player)?nearestCapital(player.x,player.z):null;
+    const cult=cap?_cityCulture(cap.name):null;
+    const spec=MD_CITY[cult]||MD_CITY._default;
+    if(_mdCity!==cult){ _mdCity=cult; mdCrowdStop(); }         // culture changed → rebuild the babble with its formants
+    mdCrowdStart(spec.formants);                              // (no-op if already running with this culture's bank)
+    return _mdCityMotif(spec,t);
+  },
+  dark(t){ const bar=5.0, root=_hz(-17);                      // somber descending minor + toll
+    [0,-3,-5].forEach((s,i)=> mdNote(_hz(-5+s), t+i*1.1, 2.4, "triangle", 0.12-i*0.02, _hz(-8+s)));  // descending, gliding down
+    mdNote(root, t, bar, "sine", 0.14);                       // deep drone
+    mdNote(root*2, t+0.2, 3.0, "sine", 0.05);                 // faint toll overtone
+    return bar; },
+};
+function mdMode(){
+  if(typeof running==="undefined"||!running) return "wild";
+  if(typeof player!=="undefined"&&player&&player.alive===false) return "dark";
+  let inCombat=(typeof player!=="undefined"&&player&&(player.combatT||0)>0);
+  if(!inCombat&&typeof monsters!=="undefined"&&monsters&&player){        // or a hostile is on you
+    for(const m of monsters){ if(m&&m.hp>0&&m.state==="chase"&&Math.hypot((m.x||0)-player.x,(m.z||0)-player.z)<22){ inCombat=true; break; } } }
+  if(inCombat) return "aggressive";
+  if(typeof inDungeon!=="undefined"&&inDungeon) return "suspense";
+  if(typeof KC!=="undefined"&&player&&Math.hypot(player.x-KC.x,player.z-KC.z)<KC.safeR) return "festive";
+  if(typeof nearestCapitalDist==="function"&&player&&nearestCapitalDist(player.x,player.z)<160) return "crowd";
+  return "wild";
+}
+setInterval(()=>{ try{
+  MUSICDIR.on = (typeof settings==="undefined") || settings.dynMusic!==false;   // authoritative from the setting (survives load order)
+  if(!MUSICDIR.on||!actx||muted||typeof running==="undefined"||!running){
+    if(MUSICDIR._bus) MUSICDIR._bus.gain.setTargetAtTime(0.0001,actx?actx.currentTime:0,0.3);
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
+    MUSICDIR.mode=null; MUSICDIR._next=0; return; }
+  const bus=mdBus(); if(!bus) return;
+  const target=mdMode(), tnow=actx.currentTime;
+  if(target!==MUSICDIR.mode){                                 // crossfade: duck out, switch, swell in
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
+    MUSICDIR.mode=target; MUSICDIR._next=0;
+    const vol=target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34));
+    bus.gain.cancelScheduledValues(tnow); bus.gain.setValueAtTime(Math.max(0.0001,bus.gain.value),tnow);
+    bus.gain.linearRampToValueAtTime(vol, tnow+1.2);
+  }
+  if(target==="wild"){ MUSICDIR._next=0; return; }
+  if(tnow>=MUSICDIR._next-0.05){                              // schedule the next bar just before the last ends
+    const gen=MD_MOODS[target]; if(gen){ const dur=gen(tnow+0.05); MUSICDIR._next=tnow+0.05+dur; } }
+}catch(e){} },350);
+// ══ ENVIRONMENTAL SOUNDSCAPE ═════════════════════════════════════════════════════════════════════
+// A living ambient layer UNDER the music/SFX, keyed to place and time of day (all synth, offline):
+//   outdoors → gusting wind (scaled by weather) · shore/river/ocean → surf wash ·
+//   dungeon  → low air rumble + occasional water drips + a distant groan ·
+//   day wilds→ scattered birdsong · night wilds → cricket shimmer + the odd owl hoot.
+// Rain already has its own hiss bed (rainGain, driven by weather/wetness). Gated by the `ambience`
+// setting; ducked while muted / not running / backgrounded (rides masterGain like everything else).
+const AMBIENCE={on:true,_init:false,n:{},_owl:0,_bird:0,_drip:0};
+function ambInit(){
+  if(AMBIENCE._init||!actx) return; AMBIENCE._init=true;
+  const bus=masterGain||actx.destination;
+  const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate), d=nb.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  const loop=(type,freq,q,g0)=>{ const s=actx.createBufferSource(); s.buffer=nb; s.loop=true;
+    const f=actx.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q)f.Q.value=q;
+    const g=actx.createGain(); g.gain.value=g0||0; s.connect(f).connect(g).connect(bus); s.start(); return g; };
+  AMBIENCE.n.wind    = loop("lowpass", 520, 0, 0);     // outdoor gusts (on top of initAudio's faint constant bed)
+  AMBIENCE.n.surf    = loop("lowpass", 700, 0, 0);     // shoreline wash
+  AMBIENCE.n.rumble  = loop("lowpass", 110, 0, 0);     // dungeon air rumble
+  AMBIENCE.n.crickets= loop("bandpass",5200, 7, 0);    // night insects (high shimmer)
+  // a slow LFO gives the wind & surf their swell
+  const lfo=actx.createOscillator(), lg=actx.createGain(); lfo.type="sine"; lfo.frequency.value=0.12; lg.gain.value=0.5;
+  lfo.connect(lg); lg.connect(AMBIENCE.n.wind.gain); lfo.start(); AMBIENCE._lfo=lfo;
+}
+function _ambRamp(g,to){ if(g&&actx) g.gain.setTargetAtTime(Math.max(0,to),actx.currentTime,0.6); }
+setInterval(()=>{ try{
+  const off=(typeof settings!=="undefined"&&settings.ambience===false);
+  AMBIENCE.on=!off;
+  if(off||!actx||muted||typeof running==="undefined"||!running||typeof player==="undefined"||!player){
+    if(AMBIENCE._init){ for(const k in AMBIENCE.n) _ambRamp(AMBIENCE.n[k],0); } return; }
+  ambInit();
+  const dungeon=(typeof inDungeon!=="undefined"&&inDungeon), net=(typeof inNetwork!=="undefined"&&inNetwork);
+  const indoors=dungeon||net;
+  const inTown=(typeof nearestCapitalDist==="function")&&nearestCapitalDist(player.x,player.z)<150;
+  const nearWater=!indoors&&(player.y!=null&&player.y<1.2);         // low feet height outdoors = shore/river/ocean
+  const sunY=-Math.cos((typeof gameTime!=="undefined"?gameTime:0.35)*Math.PI*2);   // +1 noon … −1 midnight
+  const night=sunY<-0.05, day=sunY>0.12;
+  const wtr=(typeof weather!=="undefined")?weather:"clear";
+  const windBase=wtr==="storm"?0.16:wtr==="rain"?0.10:wtr==="cloudy"?0.07:wtr==="snow"?0.06:0.045;
+  // targets
+  _ambRamp(AMBIENCE.n.wind,    indoors?0.008: windBase*(inTown?0.6:1));
+  _ambRamp(AMBIENCE.n.surf,    nearWater?clamp(0.10*(1.2-player.y)/1.2,0.02,0.11):0);
+  _ambRamp(AMBIENCE.n.rumble,  dungeon?0.06:0);
+  _ambRamp(AMBIENCE.n.crickets,(!indoors&&!inTown&&night)?0.03:0);
+  // one-shots (probabilistic; each ~ every few seconds when its context holds)
+  const T=now();
+  if(dungeon){ if(T-AMBIENCE._drip>1400&&Math.random()<0.5){ AMBIENCE._drip=T;                    // water drip
+      blip(1600+irnd(-200,300),0.09,"sine",0.05,700); setTimeout(()=>blip(900,0.12,"sine",0.03,500),70); }
+    if(T-AMBIENCE._owl>9000&&Math.random()<0.25){ AMBIENCE._owl=T; blip(150,0.7,"sine",0.05,110); } // distant groan
+  } else if(!inTown){
+    if(day&&T-AMBIENCE._bird>2600&&Math.random()<0.45){ AMBIENCE._bird=T;                          // birdsong
+      const f=1800+irnd(0,900); blip(f,0.08,"triangle",0.05,f*1.3); setTimeout(()=>blip(f*1.25,0.07,"triangle",0.045,f*0.9),90); setTimeout(()=>blip(f*1.5,0.06,"triangle",0.04),180); }
+    if(night&&T-AMBIENCE._owl>7000&&Math.random()<0.3){ AMBIENCE._owl=T;                            // owl hoot
+      blip(420,0.22,"sine",0.06,360); setTimeout(()=>blip(360,0.3,"sine",0.06,300),260); }
+  }
+}catch(e){} },550);
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -21017,8 +21613,11 @@ function renderQuestLog(){
     log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
     renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
   });
-  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
-    if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge); if(!s) return;
+    // #516: a styled, touch-safe confirm (native confirm() is unreliable/blocked on touch, and this is a
+    // permanent, mutually-exclusive choice — a mis-tap while scrolling the panel must not swear you in)
+    uiConfirm(`Pledge yourself to the <b>${esc(s.name)}</b>?<br><span style="color:var(--dim);font-size:12px">You may swear to only ONE society, and the choice is <b>permanent</b> — it locks out the other two, for good.</span>`,
+      ()=>{ pledgeSociety(s.id); }, "Pledge"); });
   { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
   { const c=body.querySelector('#socClaim'); if(c) c.onclick=()=>{ claimSocietyTest(); buildSheet&&buildSheet(); }; }
 }
@@ -21085,17 +21684,13 @@ function recallHome(){
   if(inDungeon||inNetwork){ log("You can't recall to your estate from here — return to the surface first.","warn"); if(SFX.err)SFX.err(); return; }
   // AC House Recall: a purchased settlement dwelling takes precedence over the abstract estate
   if(player.homestead&&typeof hsDwellingSpot==="function"){ const sp=hsDwellingSpot();
-    if(sp){ if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-      arriveAt(sp.x,sp.z+4); player.invuln=2;
-      if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    if(sp){ warpTo(sp.x,sp.z+4,{invuln:2});
       if(typeof toast==="function") toast("HOME"); if(SFX.quest)SFX.quest();
       log(`You recall to your <b>${HOUSING_TYPES[player.homestead.type].n.toLowerCase()}</b> in ${sp.S.name}.`,"sys");
       if(document.getElementById('housing').style.display==="flex") closeHousing(); return; } }
   if(houseTier()<1){ log("You own no estate to recall to — buy one first (press Y).","sys"); if(SFX.err)SFX.err(); return; }
   if(!HOUSE_LOC){ log("Your estate is not ready.","warn"); return; }
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-  arriveAt(HOUSE_LOC.x,HOUSE_LOC.z+6); player.invuln=2;
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  warpTo(HOUSE_LOC.x,HOUSE_LOC.z+6,{invuln:2});
   if(typeof toast==="function") toast("ESTATE"); if(SFX.quest)SFX.quest();
   log(`You recall to your <b>${houseName()}</b> near Holtburg.`,"sys");
   if(document.getElementById('housing').style.display==="flex") closeHousing();
@@ -21943,7 +22538,7 @@ function buildShop(){
       log(`You buy <b>${n}× ${it.name}</b>.`,"loot");
       SFX.gold();buildShop();updateHUD();saveGame();return;
     }
-    if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
+    if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); warpTo(it.warp.x,it.warp.z,{invuln:2}); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
     if(it.blessing){ caravanBless(); return; }
     if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
     else if(it.gear){ const g=Object.assign({},it.gear,{bp:it.cost}); if(!addToInv(g)){log("Your satchel is full.","warn");return;} player.gold-=it.cost; if(isOnline) netSend({t:"vendor_buy",cost:it.cost,item:g}); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
@@ -22016,6 +22611,7 @@ function healScale(base){   // AC: the Healing skill boosts kit/potion potency; 
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
   if(player[field]<=0){ log("You have none of that potion.","warn"); return; }
+  if(kind==="hp"&&player.hp>=player.mhp){ log("You are already at full health.","warn"); return; }   // #515: don't waste a potion (and belt count) on a no-op heal
   amt=Math.max(0,+amt||0);   // #28: a potion never DRAINS a vital — clamp a stray negative/NaN amount to 0
   player[field]--;player.drinkCd=0.6;
   if(kind==="hp"){amt=healScale(amt);player.hp=Math.min(player.mhp,player.hp+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#7fe6a0");}
@@ -22560,6 +23156,16 @@ function openSettings(){
   rmHi();
   rmBtns.forEach(b=>b.onclick=()=>{settings.reduceMotion=+b.dataset.reducemotion===1;saveSettings();rmHi();
     log(settings.reduceMotion?"Reduce motion <b>on</b> — camera shake and fullscreen flashes are suppressed.":"Reduce motion off — full camera shake and flashes restored.","sys");});
+  const dmBtns=document.querySelectorAll('#settings [data-dynmusic]');
+  const dmHi=()=>dmBtns.forEach(b=>b.style.opacity=((+b.dataset.dynmusic===1)===(settings.dynMusic!==false))?1:0.45);
+  dmHi();
+  dmBtns.forEach(b=>b.onclick=()=>{settings.dynMusic=+b.dataset.dynmusic===1;if(typeof MUSICDIR!=="undefined")MUSICDIR.on=settings.dynMusic;saveSettings();dmHi();
+    log(settings.dynMusic?"Dynamic music <b>on</b> — the score follows where you are and what you're doing.":"Dynamic music off — classic ambient loops restored.","sys");});
+  const amBtns=document.querySelectorAll('#settings [data-ambience]');
+  const amHi=()=>amBtns.forEach(b=>b.style.opacity=((+b.dataset.ambience===1)===(settings.ambience!==false))?1:0.45);
+  amHi();
+  amBtns.forEach(b=>b.onclick=()=>{settings.ambience=+b.dataset.ambience===1;saveSettings();amHi();
+    log(settings.ambience?"Ambient sound <b>on</b> — wind, water, wildlife and dungeon airs.":"Ambient sound off.","sys");});
   const gxBtns=document.querySelectorAll('#settings [data-gfx]');
   const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
   gxHi();
@@ -22625,19 +23231,30 @@ function openSettings(){
 }
 function closeSettings(){ document.getElementById('settings').style.display="none";paused=false; }
 document.getElementById('closeSettings').onclick=closeSettings;
+{ const lb=document.getElementById('logoutBtn'); if(lb) lb.onclick=()=>{ closeSettings(); beginLogout(); }; }   // #457: desktop Options → Log Out
 // ── Map Keys panel ──
-function openKeymap(){ document.getElementById('keymap').style.display="flex"; buildKeymap(); if(locked)document.exitPointerLock(); paused=true; }
-function closeKeymap(){ rebindCapture=null; document.getElementById('keymap').style.display="none";
+// #483: while the dialog is open, rebinds only edit keymapDraft (a scratch copy) — the real KEYBINDS
+// (and anything that reads it, including the autosave timer via saveGame()'s `keymap:KEYBINDS`) is
+// untouched until an explicit Save button commits the draft. Done/Esc/losing focus just drops the draft.
+let keymapDraft=null;
+function openKeymap(){ document.getElementById('keymap').style.display="flex"; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap(); if(locked)document.exitPointerLock(); paused=true;
+  const sc=document.getElementById('keymapSaveChar');
+  if(sc){ sc.disabled=!running; sc.style.opacity=running?"1":"0.5"; sc.title=running?"Keep these bindings on this character only":"Load or start a character first"; }
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent=""; }
+function closeKeymap(){ rebindCapture=null; keymapDraft=null;   // discard any unsaved rebinds — KEYBINDS was never touched
+  document.getElementById('keymap').style.display="none";
   const st=document.getElementById('settings'); if(!st||st.style.display==="none") paused=false; }   // #333: clear paused when closing the Keymap — unless Settings (which opened it and owns the pause) is still up
 function buildKeymap(){
   const body=document.getElementById('keymapBody'); if(!body) return; body.innerHTML="";
+  const draft=keymapDraft||KEYBINDS;
   const groups={}; for(const a of ACTIONS){ (groups[a.group]=groups[a.group]||[]).push(a); }
   for(const g of Object.keys(groups)){
     const h=document.createElement('div'); h.style.cssText="color:var(--gold);font-weight:bold;margin:12px 0 4px;text-transform:uppercase;font-size:11px;letter-spacing:.5px"; h.textContent=g; body.appendChild(h);
     for(const a of groups[g]){
       const row=document.createElement('div'); row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)";
       const nm=document.createElement('span'); nm.style.color="var(--ink)"; nm.textContent=a.label; row.appendChild(nm);
-      const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="min-width:130px;font-size:12px"; btn.textContent=bindLabel(a.id);
+      const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="min-width:130px;font-size:12px";
+      const arr=draft[a.id]; btn.textContent=(arr&&arr.length)?arr.map(comboLabel).join(", "):"—";
       btn.onclick=()=>startRebind(a.id,btn); row.appendChild(btn); body.appendChild(row);
     }
   }
@@ -22649,14 +23266,31 @@ function startRebind(id,btn){
     if(kk==="escape"){ rebindCapture=null; buildKeymap(); return; }
     if(["shift","control","alt","meta"].includes(kk)) return;   // wait for the actual (non-modifier) key
     const combo=evtCombo(e);
-    for(const aid in KEYBINDS) KEYBINDS[aid]=(KEYBINDS[aid]||[]).filter(c=>c!==combo);   // a combo maps to one action
-    KEYBINDS[id]=[combo];
-    rebindCapture=null; saveKeybinds(); rebuildComboMap(); buildKeymap();
+    const draft=keymapDraft||(keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)));
+    for(const aid in draft) draft[aid]=(draft[aid]||[]).filter(c=>c!==combo);   // a combo maps to one action
+    draft[id]=[combo];
+    rebindCapture=null; buildKeymap();   // draft only — Save is what commits + persists it
+    const st=document.getElementById('keymapStatus'); if(st) st.textContent="Unsaved changes — click a Save button to keep them.";
   };
+}
+function commitKeymapDraft(){ if(!keymapDraft) return; KEYBINDS=keymapDraft; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); rebuildComboMap(); }
+function saveKeymapForChar(){
+  if(!running) return;
+  commitKeymapDraft(); saveGame();
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent=`Saved for ${player.name||"this character"}.`;
+  toast("Keybindings saved for "+(player.name||"this character"));
+}
+function saveKeymapAsDefault(){
+  commitKeymapDraft(); saveKeybinds();
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent="Saved as the default for all characters.";
+  toast("Keybindings saved as default for all characters");
 }
 { const b=document.getElementById('openKeymapBtn'); if(b) b.onclick=openKeymap;
   const c=document.getElementById('keymapClose'); if(c) c.onclick=closeKeymap;
-  const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); buildKeymap(); }; }
+  const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap();
+    const st=document.getElementById('keymapStatus'); if(st) st.textContent="Reset to the global default — click Save for This Character to also keep it on this character."; };
+  const sc=document.getElementById('keymapSaveChar'); if(sc) sc.onclick=saveKeymapForChar;
+  const sd=document.getElementById('keymapSaveDefault'); if(sd) sd.onclick=saveKeymapAsDefault; }
 
 // ============================================================================
 //  DUNGEONS / DELVES  (instanced: overworld hidden + gated while inside)
@@ -24438,8 +25072,15 @@ function dungeonWalkable(x,z){ const r=player.r*0.6;
 }
 function dungeonSlide(ox,oz,nx,nz){
   if(dungeonWalkable(nx,nz))return[nx,nz];
-  if(dungeonWalkable(nx,oz))return[nx,oz];
-  if(dungeonWalkable(ox,nz))return[ox,nz];
+  // #465: wall-slide. Keep the blocked axis pinned and advance along the other; try the full step
+  // first, then partial steps, so grazing a wall or nosing into a corner CREEPS along instead of
+  // dead-stopping. (Was: only a full-magnitude single-axis move — a diagonal into a corner wedged
+  // solid with zero displacement and no sliding.)
+  for(const f of [1,0.6,0.3]){
+    const sx=ox+(nx-ox)*f, sz=oz+(nz-oz)*f;
+    if(sx!==ox&&dungeonWalkable(sx,oz))return[sx,oz];   // slide along X, Z pinned to the wall
+    if(sz!==oz&&dungeonWalkable(ox,sz))return[ox,sz];   // slide along Z, X pinned to the wall
+  }
   return[ox,oz];
 }
 function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
@@ -24777,11 +25418,17 @@ function dungeonGoDepth(n){
   toast(n>1?(def.name+" — DEPTH "+n).toUpperCase():def.name.toUpperCase());
 }
 function enterDungeon(def,ex,ez){
-  if(inDungeon) return;
+  if(inDungeon||portalTransit) return;   // already below, or a transit is already carrying you
   if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
   // #207: no gate (AC let you walk in) — but an under-levelled explorer gets told before the first room does it
   if(def.tier && player.level < def.tier*10-2)
     log(`<span style="color:#e0a070">This delve is meant for an adventurer of about level <b>${def.tier*10}</b> — you are level ${player.level}. Tread carefully.</span>`,"warn");
+  // Portal space carries you down: the tube holds until the dungeon geometry is actually built (its
+  // EnvCell pack may need fetching first), then sets you at the entry. maxHold is the hard safety cap.
+  startPortalTransit(()=>_dungeonEnter(def,ex,ez),{ready:()=>inDungeon&&dungeonObjs.length>0,minHold:0.7,maxHold:9});
+}
+function _dungeonEnter(def,ex,ez){
+  if(inDungeon) return;
   // First visit to a real-geometry dungeon: fetch its EnvCell pack BEFORE building (capped wait),
   // so the first descent is the true dungeon — not the grid stand-in with a prefetch for next time.
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
@@ -24791,7 +25438,7 @@ function enterDungeon(def,ex,ez){
       const timeout=new Promise(r=>setTimeout(()=>r(null),4000));
       Promise.race([fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).catch(()=>null),timeout])
         .then(j=>{ _acDgnCache[def.name]=j||null;                 // null → grid fallback (and no refetch loop)
-          if(!inDungeon&&!inNetwork) enterDungeon(def,ex,ez); });             // #327: resume the descent unless something intervened — also skip if we've since stepped into the Town Network (a dungeon built inside the network left inNetwork=true stuck in the overworld)
+          if(!inDungeon&&!inNetwork) _dungeonEnter(def,ex,ez); });             // #327: resume the descent (still inside the tube) unless something intervened — also skip if we've since stepped into the Town Network
       return;
     } }
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
@@ -25409,7 +26056,7 @@ document.getElementById('closeTink').onclick=closeTinker;
 //  SAVE / LOAD  (localStorage)
 // ============================================================================
 const SAVE_KEY="dereth_save_v1";
-function saveGame(){
+function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the localStorage safety-net even while online
   try{
     const baseAttr={}; for(const a in player.attr) baseAttr[a]=player.attr[a]-((player.spellBuffs&&player.spellBuffs[a])?player.spellBuffs[a].v:0);
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
@@ -25428,9 +26075,11 @@ function saveGame(){
       tiedPortal2:player.tiedPortal2||null,createTown:player.createTown||null,createTemplate:player.createTemplate||null,createSpec:player.createSpec||null,   // #330: these were set but never persisted — Secondary Portal Tie evaporated on relog, and a relog mid-Academy rerouted every heritage to Holtburg
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
+      keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
-    if(isOnline&&NET.open) netSend({t:"save",char:s});       // persist server-side when playing online
+    if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
+      if(alsoLocal){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(s)); }catch(e){} } }   // #457: logout also writes the local safety-net so a socket drop mid-logout can't black-hole progress
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
   }catch(e){}
 }
@@ -25551,6 +26200,7 @@ function applySaveObj(s){
   // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
   if(typeof updateHUD==="function") updateHUD();
   if(typeof buildSheet==="function") buildSheet();
+  if(typeof applyCharKeymap==="function") applyCharKeymap(s);   // #483: this character's saved keybinds, else the global default
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
@@ -25566,6 +26216,11 @@ function serverUrl(loc){ loc=loc||location;
   return 'ws://127.0.0.1:8787';
 }
 const SERVER_URL = serverUrl();
+// #442: a transport is safe iff it's TLS (wss) or a loopback host — never send credentials in cleartext otherwise.
+function transportSecure(url, loc){ loc=loc||location; url=url||SERVER_URL;
+  if(String(url).indexOf('wss://')===0) return true;
+  const h=loc.hostname; return h==='localhost'||h==='127.0.0.1'||h==='[::1]';
+}
 let isOnline=false, creatingOnline=false, netInputT=0;
 const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{}, partyNames:new Set(), partyLeader:null, lastWhisperFrom:null };
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -25611,6 +26266,7 @@ function netHandle(m){
   if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="who") return onWho(m);
   if(m.t==="house_sync") return onHouseSync(m);   // #355: authoritative dwelling ownership + access settings
+  if(m.t==="save_ok") return onSaveOk(m);         // #457: server confirmed the save landed — a pending logout can now finish
   if(m.t==="emote") return onEmote(m);
   if(m.t==="pvp") return onPvp(m);
   if(m.t==="rbuff") return onRemoteBuff(m);
@@ -25791,7 +26447,10 @@ function reconcileMobs(serverMobs){
     if(!sm||sm.id==null||!isFinite(sm.x)||!isFinite(sm.z)) continue;   // #34/#319: skip a malformed/null/NaN-coord snapshot entry — a non-finite x/z would set mesh.position to NaN (an invisible-but-targetable mob) and propagate through groundY every frame
     seen[sm.id]=1;
     let m=NET.mobs[sm.id]||spawnSharedMob(sm);
-    m.tx=sm.x; m.tz=sm.z; m.yaw=sm.yaw; m.hp=sm.hp; m.mhp=sm.mhp; m.state=sm.st; m.eventId=sm.event||null;
+    m.tx=sm.x; m.tz=sm.z; m.state=sm.st; m.eventId=sm.event||null;
+    m.yaw=isFinite(sm.yaw)?sm.yaw:(m.yaw||0);   // #443: coerce hp/mhp/yaw before render math — a garbage mhp=0/NaN would make updateSharedMobs' r=hp/mhp go Infinity/NaN into fill.scale.x
+    m.mhp=(isFinite(sm.mhp)&&sm.mhp>=1)?sm.mhp:1;
+    m.hp=isFinite(sm.hp)?Math.max(0,Math.min(sm.hp,m.mhp)):m.mhp;
   }
   for(const id in NET.mobs){ if(!seen[id]) removeSharedMob(id); }
 }
@@ -25824,8 +26483,8 @@ function onMobHit(msg){
 }
 function onMobDie(msg){
   const b=BESTIARY[msg.kind];
-  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(msg.kind); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
-  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(msg.kind); }
+  if(msg.boss){ burst(msg.x,2,msg.z,0xff5a5a,44); SFX.death(msg.kind,msg.x,msg.z); SFX.level&&SFX.level(); shake(0.5); toast("WORLD BOSS SLAIN"); }
+  else { burst(msg.x,1,msg.z,b?b.c:0xffd86b,18); SFX.death(msg.kind,msg.x,msg.z); }
   removeSharedMobAsDying(msg.id);
 }
 function removeSharedMobAsDying(id){
@@ -25914,6 +26573,7 @@ function createChar(preset){
 function onPlayOk(m){
   _playPending=false;   // #319: clear the play pending-guard
   document.getElementById('charSelect').style.display="none";
+  if(m.netid) NET.me=m.netid;   // #438: our world identity is the opaque session id (not the account login name) — it keys our own broadcasts (mob_hit/emote self-echo) and our snapshot record
   if(m.name) player.name=m.name;   // #234: adopt the server's authoritative charname — a freshly created online char sent its name to the server but never set player.name locally, so it showed as "Adventurer". Set it BEFORE the branch's saveGame so the correct name persists to the slot.
   if(creatingChar){ creatingChar=false; const preset=pendingPreset; pendingPreset=null;
     startGame(false, preset||undefined); saveGame();   // persist the fresh character to its slot
@@ -25993,6 +26653,71 @@ function updatePartyHUD(){
   el.innerHTML=`<div style="color:var(--gold);font-weight:bold;margin-bottom:3px">Party (${NET.partyNames.size})</div>${rows}`;
   el.style.display="";
 }
+// ── #457: in-world LOGOUT — an AC portal-recall departure ───────────────────────────────────────
+// A deliberate Logout that (1) syncs the character to the server and (2) plays a recall-away: the
+// avatar stands, raises both arms until the hands meet overhead, and slowly fades out inside the same
+// swirling purple portal the game shows on portal use (teleportFX + buildPortal). The session ends
+// ONLY after the server confirms the save landed (a `save_ok` ack) — or a timeout fallback fires so a
+// slow/dropped socket can never trap the player — then returns to the title / character-select screen.
+// Input is locked and the character is made briefly invulnerable so a deliberate logout reliably
+// completes (a product choice over AC's optional interrupt-on-damage, stated in the PR).
+const LOGOUT={active:false,t:0,rise:0,fade:0,portal:null,online:false,saveAcked:false,saveDeadline:0,done:false};
+const LOGOUT_RISE=1.1, LOGOUT_FADE=1.6, LOGOUT_SAVE_TIMEOUT=6.0;   // seconds: arms-up ramp · hold+fade · save-ack grace
+function canLogout(){ return !!running && !LOGOUT.active && player.alive; }
+function beginLogout(){
+  if(!canLogout()){ if(running&&!player.alive) log("You cannot log out while dead — release to a lifestone first.","warn"); return; }
+  LOGOUT.active=true; LOGOUT.t=0; LOGOUT.rise=0; LOGOUT.fade=0; LOGOUT.done=false;
+  LOGOUT.saveAcked=false; LOGOUT.saveDeadline=LOGOUT_RISE+LOGOUT_FADE+LOGOUT_SAVE_TIMEOUT;
+  LOGOUT.online=!!(isOnline&&NET.open);
+  // lock input: drop any in-flight keys/joystick/charge so nothing carries into the locked sequence
+  for(const k in keys) delete keys[k];
+  if(typeof TOUCH!=="undefined"){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; }
+  chargeActive=false; blocking=false; player.casting=null; player.emoteT=0;
+  if(typeof closeAnyPanel==="function") closeAnyPanel();
+  if(locked&&document.exitPointerLock) document.exitPointerLock();
+  player.invuln=Math.max(player.invuln||0, LOGOUT.saveDeadline+2);   // a deliberate logout is not cancelled by a stray hit
+  // portal visuals at the player's feet — the SAME swirl/flash the game uses when entering a portal
+  try{ teleportFX(player.x,player.z); }catch(e){}
+  try{ const g=buildPortal("Logout"); g.position.set(player.x,groundY(player.x,player.z),player.z);
+       g.traverse(o=>{ if(o.userData&&o.userData.labelCat) o.visible=false; });   // a departure, not a travel portal — hide the name label
+       scene.add(g); LOGOUT.portal=g; }catch(e){}
+  // kick the server sync: online → {t:"save"} (+ localStorage safety-net); offline → localStorage only
+  try{ saveGame(true); }catch(e){}
+  if(!LOGOUT.online) LOGOUT.saveAcked=true;   // offline safety-net write is synchronous → already persisted
+  try{ log("You raise your arms and portal energies gather about you — departing Dereth…","sys"); }catch(e){}
+  if(typeof SFX!=="undefined"&&SFX.portal) SFX.portal();
+}
+function onSaveOk(){ if(LOGOUT.active) LOGOUT.saveAcked=true; }   // the pending logout may now finish once the fade completes
+function updateLogout(dt){
+  if(!LOGOUT.active) return;
+  LOGOUT.t+=dt;
+  LOGOUT.rise=clamp(LOGOUT.t/LOGOUT_RISE,0,1);
+  LOGOUT.fade=clamp((LOGOUT.t-LOGOUT_RISE)/LOGOUT_FADE,0,1);
+  const g=LOGOUT.portal;   // churn the departure portal (its disc/counter-disc), like a live portal
+  if(g&&g.userData){ if(g.userData.disc) g.userData.disc.rotation.z+=dt*1.4;
+    if(g.userData.disc2) g.userData.disc2.rotation.z-=dt*2.0; }
+  _logoutFadeAvatar(1-LOGOUT.fade);   // avatar opacity → 0 in time with the animation
+  const animDone=LOGOUT.fade>=1, saveDone=LOGOUT.saveAcked||LOGOUT.t>=LOGOUT.saveDeadline;
+  if(animDone&&saveDone&&!LOGOUT.done){ LOGOUT.done=true; finishLogout(); }
+}
+function _logoutFadeAvatar(op){
+  const av=(typeof playerAvatar!=="undefined")&&playerAvatar; if(!av||!av.traverse) return;
+  op=clamp(op,0,1);
+  av.traverse(o=>{ if(!o.isMesh||!o.material) return;
+    const arr=Array.isArray(o.material)?o.material:null, list=arr||[o.material];
+    for(let i=0;i<list.length;i++){ let m=list[i];
+      // clone each material once so we fade ONLY the local avatar — never a material shared with the
+      // gltfPeople cache (which would fade remote players too). We reload after, so no restore is needed.
+      if(!m._logoutOwned){ m=m.clone(); m._logoutOwned=true; m.transparent=true; m.depthWrite=false;
+        if(arr) o.material[i]=m; else o.material=m; }
+      m.opacity=op; }
+  });
+}
+function finishLogout(){
+  try{ if(NET&&NET.ws) NET.ws.close(); }catch(e){}   // only now — the save is confirmed (or the timeout fired)
+  logoutReturnToTitle();
+}
+function logoutReturnToTitle(){ try{ location.reload(); }catch(e){} }   // a clean slate → title screen (online: re-login → char-select; offline: Continue)
 const EMOTE_CMDS={wave:1,cheer:1,dance:1,bow:1,laugh:1,point:1,salute:1,flex:1,kneel:1,clap:1};
 const EMOTE_VERB={wave:"wave.",cheer:"cheer!",dance:"break into a dance.",bow:"bow solemnly.",laugh:"burst out laughing.",point:"point.",salute:"salute.",flex:"flex.",kneel:"kneel.",clap:"applaud."};
 const EMOTE_DUR=2.2;
@@ -26057,7 +26782,7 @@ function applyBuffSelf(sp,fx){
     if(sp.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(p) dest={x:p.x,z:p.z,name:p.name}; }
     if(!dest){ const ls=lifestones.find(l=>l.bound)||lifestones[0]; if(ls) dest={x:ls.x,z:ls.z,name:ls.name+" Lifestone"}; }
     if(!dest) return false;
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`A sending takes you — you arrive at <b>${esc(dest.name)}</b>.`,"heal");
     return true; }
   if(fx) spellLandFX(sp.school,_slfPlayerPos,2.0,0.75);   // the spell lands on YOU (buff bot / ally): creature → spirits, life → crystals
@@ -26118,10 +26843,48 @@ function onWho(m){
   const ps=m.players||[];
   log(`<b>Online (${ps.length}):</b> `+(ps.length?ps.map(p=>`${esc(p.name)} <span style="color:var(--dim)">L${p.level||1}</span>`).join(", "):"just you"),"sys");
 }
+// #465: the always-available escape hatch. A new player wedged on unseen geometry (and refused the
+// surface map while delving) needs a way out that WORKS EVERYWHERE — including inside the Academy
+// and any delve. It teleports you to a guaranteed-walkable anchor for wherever you stand.
+function doUnstuck(){
+  if(!player.alive){ log("You cannot free yourself while fallen — you will return at the Lifestone.","warn"); return; }
+  if((player._unstuckCd||0)>now()){ log("The world is still resettling — try <b>/unstuck</b> again in a moment.","sys"); return; }
+  player._unstuckCd=now()+4000;
+  player._blockRun=0; player._unstuckHintSeen=1;
+  if(inDungeon){   // works EVEN WHILE DELVING — the whole point of the affordance
+    let sp=(dungeonSpawn&&(typeof dungeonWalkable!=="function"||dungeonWalkable(dungeonSpawn.x,dungeonSpawn.z)))?dungeonSpawn:null;
+    if(!sp){ const r=(dungeonRects||[]).find(c=>c.room)||(dungeonRects||[])[0];
+      if(r) sp=r.round?{x:r.cx,z:r.cz}:{x:(r.x0+r.x1)/2,z:(r.z0+r.z1)/2}; }
+    if(!sp) sp={x:DCEN.x,z:DCEN.z};
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    player.y=(dungeonSpawn&&dungeonSpawn.y)||0; arriveAt(sp.x,sp.z); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log((curDungeon&&curDungeon.academy)?"You step back to the Academy's entry hall. Walk to the <b>Society Greeter</b> and press <b>E</b> to speak.":"You wrench free and reappear at the delve's entrance.","sys");
+    toast("UNSTUCK"); return;
+  }
+  if(inNetwork){
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    arriveAt(DCEN.x,DCEN.z-2); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log("You pull free and step back to the hub's entrance.","sys"); toast("UNSTUCK"); return;
+  }
+  // overworld: hop to the nearest clear footing; if there truly is none, recall to your Lifestone
+  const clearAt=(x,z)=>{ if(terrainH(x,z)<-2) return false;
+    for(const o of obstacles){ if(Math.hypot(x-o.x,z-o.z)<(o.r+player.r+0.15)) return false; } return true; };
+  let best=null;
+  for(let ring=1; ring<=8 && !best; ring++){ const rad=ring*1.5;
+    for(let a=0;a<12 && !best;a++){ const an=a/12*6.2832, x=player.x+Math.cos(an)*rad, z=player.z+Math.sin(an)*rad;
+      if(clearAt(x,z)) best={x,z}; } }
+  if(best){ warpTo(best.x,best.z,{invuln:2}); log("You shrug free and step onto clear ground.","sys"); toast("UNSTUCK"); return; }
+  const ls=(typeof lifestones!=="undefined")?(lifestones.find(l=>l.bound)||lifestones[0]):null;
+  if(ls){ warpTo(ls.x,ls.z+2,{invuln:2}); log("No clear footing nearby — you recall to the <b>Lifestone</b>.","sys"); toast("LIFESTONE RECALL"); }
+  else { warpTo(0,0,{invuln:2}); log("You recall to safe ground.","sys"); toast("UNSTUCK"); }
+}
 function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
-  if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
+  if(cmd==="unstuck"||cmd==="stuck"||cmd==="free"){ doUnstuck(); }   // #465: escape hatch — works even while delving
+  else if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="house"){ hsHouseCmd(parts); }
   else if(cmd==="hor"||cmd==="house_recall"){ recallHome(); }
@@ -26143,7 +26906,7 @@ function handleSlash(text){
     else log("Your allegiance holds no mansion — when your monarch buys one, <b>/hoa</b> recalls you there.","sys"); }
   else if(cmd==="castle"){ if(inDungeon||inNetwork){ log("You cannot recall to the castle from here.","warn"); }
     else if(!castleAccess()){ log("Castle Val Halla admits only Lord Kilmer and his sworn guests.","warn"); }
-    else { teleportFX(player.x,player.z); arriveAt(KC.x,KC.z+138); player.invuln=2; teleportFX(player.x,player.z);
+    else { warpTo(KC.x,KC.z+138,{invuln:2});
       toast("CASTLE VAL HALLA"); log("You recall to <b>Castle Val Halla</b>.","sys"); if(SFX.portal)SFX.portal(); } }
   else if(cmd==="grant"||cmd==="revoke"){ const who=parts.slice(1).join(" ").trim();
     if((player.name||"")!==KC.lord){ log("Only Lord Kilmer commands the castle rolls.","warn"); }
@@ -26152,6 +26915,7 @@ function handleSlash(text){
       if(cmd==="grant"){ g.push(who); log(`<b>${esc(who)}</b> is granted the freedom of Castle Val Halla.`,"sys"); }
       else log(`<b>${esc(who)}</b> is struck from the castle rolls.`,"sys");
       kcSaveGuests(g); if(SFX.quest)SFX.quest(); } }
+  else if(cmd==="logout"||cmd==="camp"){ beginLogout(); }   // #457: recall-away logout (syncs to the server, then returns to the title screen)
   else if(cmd==="who"){ netSend({t:"who"}); }
   else if(cmd==="tell"||cmd==="w"){ const name=parts[1], msg=parts.slice(2).join(" ").trim();
     if(name&&msg) netSend({t:"tell",name,msg}); else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
@@ -26231,9 +26995,11 @@ function handleSlash(text){
   else if(cmd==="help"||cmd==="commands"||cmd==="?"){   // #203: the full command list, grouped as the code groups them
     log(`<b>Chat:</b> /tell (/w) &lt;name&gt; &lt;msg&gt; · /r reply · /p party · /f fellowship · /a allegiance · /who`,"sys");
     log(`<b>World:</b> /loc coordinates · /where · /region · /story saga recap · /arc story arcs`,"sys");
+    log(`<b>Stuck?</b> /unstuck (/stuck, /free) — teleport to clear ground; works even while delving`,"sys");
     log(`<b>Allegiance:</b> /swear &lt;name&gt; · /break (/unswear) · /muster · /allegiance join|leave|hometown`,"sys");
     log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");
     log(`<b>Combat &amp; social:</b> /pk pk|pkl|npk · /trade &lt;name&gt; · /buff [spell] · /me &lt;action&gt; · /emote — or /${Object.keys(EMOTE_CMDS).join(", /")}`,"sys");
+    log(`<b>Session:</b> /logout (/camp) — sync to the server and depart Dereth through a recall portal`,"sys");
   }
   else log("Unknown command: <b>/"+esc(cmd)+"</b> — type <b>/help</b> for the full list.","warn");
 }
@@ -26241,6 +27007,7 @@ function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
   const msg=document.getElementById('authMsg'), st=document.getElementById('authStatus');
   if(!u||!p){ msg.textContent="Enter a name and password."; return; }
+  if(!transportSecure()){ st.textContent=""; msg.textContent="This deployment is insecure: account credentials would be sent in cleartext. It must be served over HTTPS (wss://) to log in or register. You can still play offline below."; return; }  // #442: refuse to send credentials over plaintext ws:// — require wss:// (or localhost dev)
   msg.textContent=""; st.textContent="Connecting…";
   const go=()=>{ st.textContent="Connected."; netSend({t:kind,user:u,pass:p}); };
   if(NET.ws&&NET.open) go();
@@ -26263,7 +27030,7 @@ function remoteApp(p){
 function reconcileRemotes(players){
   const seen={};
   for(const p of players){
-    if(!p||p.id==null||p.id===NET.me) continue;   // #34: skip a malformed/null snapshot entry
+    if(!p||p.id==null||p.id===NET.me||!isFinite(p.x)||!isFinite(p.z)) continue;   // #34: skip a malformed/null snapshot entry; #443: also skip non-finite coords — a NaN x/z would set mesh.position to NaN and propagate through groundY every frame
     seen[p.id]=1;
     let r=NET.players[p.id];
     if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); mesh.userData._headApp=app; applyACBody(mesh,app.gender); mesh.visible=true;
@@ -26271,7 +27038,8 @@ function reconcileRemotes(players){
       if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
-    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
@@ -26368,8 +27136,8 @@ function startGame(loadSaved,preset){
     // spawns HOLDING a Training Weapon matched to their profession (upgradeable at the Academy);
     // casters get a component pouch, Life Casters two healing kits, Soldiers 30 quarrels (1999 kit).
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
-      player.inv.push({name:"Calling Stone",stat:"quest",v:0});
-      player.inv.push({name:"Welcome Letter",stat:"book",v:10});   // the real AC starter letter — readable (Use) via openBookReader
+      player.inv.push({name:"Calling Stone",stat:"quest",v:0,tut:true});
+      player.inv.push({name:"Welcome Letter",stat:"book",v:10,tut:true});   // the real AC starter letter — readable (Use) via openBookReader
       const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
         bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
         warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
@@ -26400,7 +27168,7 @@ function startGame(loadSaved,preset){
     if(isOnline&&pendingServerChar){ applySaveObj(pendingServerChar); pendingServerChar=null; }
     else applySave();
     if(typeof kcRefreshDecor==="function") kcRefreshDecor();   // castle is built before the save loads — rebuild hooks from the restored placements
-    log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(NET.me)}.`:"Your saga continues in <b>Dereth</b>.","sys");
+    log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(player.name||"Adventurer")}.`:"Your saga continues in <b>Dereth</b>.","sys");   // #438: greet by character name — NET.me is now an opaque session id, not the account name
     toast(isOnline?"ENTERING DERETH ONLINE":"WELCOME BACK");
   } else {
     const homeName=player.createTown||(preset&&PRESETS[preset]&&PRESETS[preset].town)||"Holtburg";
@@ -26427,6 +27195,7 @@ function startGame(loadSaved,preset){
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
+  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
   applyPlayerModel();          // if the player chose a rigged body model at creation, load it as their avatar
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
@@ -26435,6 +27204,14 @@ function startGame(loadSaved,preset){
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
+  // #466: arm a 6s warm-up before the auto-tuner starts sampling FPS — every entry into the world (fresh
+  // character, reload, Continue) hits a burst of monster model / dungeon pack / clothing table streaming
+  // that stalls frames without reflecting steady-state render cost; gfxGovern also ignores frames for as
+  // long as the portal transit below is still holding.
+  if(typeof GFX!=="undefined") GFX._warm=6;
+  // Materialize into the world through portal space (AC's arrival): the world is already built and the
+  // player placed, so arrive() is a no-op — the tube just holds until the surrounding area has streamed in.
+  startPortalTransit(null,{ready:overworldAreaLoaded,minHold:1.2,maxHold:10});
 }
 window.addEventListener('resize',()=>{
   if(typeof cam==="undefined"||!cam||typeof renderer==="undefined"||!renderer) return;   // #335: cam/renderer are undefined until initThree() resolves (inside the async asset Promise.all) — a resize during the load screen would otherwise throw
@@ -26479,7 +27256,7 @@ Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
   try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));
-    if(s) continueBtn.textContent=`Continue — Level ${s.level||1} · ${s.kills||0} kills${s.title?" · "+s.title:""}`;}catch(e){}
+    if(s) continueBtn.textContent=`Continue — ${s.name||"Adventurer"} · Level ${s.level||1} · ${s.kills||0} kills${s.title?" · "+s.title:""}`;}catch(e){}   // #472: lead with the character's name (it's in the save) — the label read as broken English without it
 }
 // ============================================================================
 //  CHARACTER CREATOR — live 3D face/hair/beard/tattoo customization
@@ -26745,13 +27522,24 @@ function openBarber(n){
 document.getElementById('ccBack').onclick=()=>{ closeCharCreator();
   if(ccBarber){ ccBarber=false; ccOnCreate=null; paused=false; return; }   // barber visit: back to the world, not the title
   document.getElementById('overlay').style.display=""; };
+// #480: surface a creation error where it's actually SEEN — the #ccMsg line sits below the action
+// buttons, so on a short/portrait viewport it's off-screen and "Enter Dereth" reads as a dead button.
+// Set the inline message AND scroll+pulse it into view AND toast it (always visible, centre-screen).
+function ccErr(msg){
+  const m=document.getElementById('ccMsg');
+  if(m){ m.textContent=msg;
+    try{ m.scrollIntoView({block:"center",behavior:"smooth"}); }catch(e){}
+    m.style.transition="none"; m.style.opacity="0.25";
+    requestAnimationFrame(()=>{ m.style.transition="opacity .3s"; m.style.opacity="1"; }); }
+  if(typeof toast==="function") toast(msg);
+}
 document.getElementById('ccCreate').onclick=()=>{
   const name=document.getElementById('ccName').value.trim();
-  if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
+  if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ ccErr("Name must be 3-16 letters, numbers or spaces."); return; }
   // #331: re-validate the budget at commit — the UI only disables the +buttons, so a seeded/tampered
   // over-budget ccWork would otherwise bake a permanent over-statted character (innate can't be lowered).
   if(ccAttrSpent()>CREATE_POOL || ccCreditsSpent()>CREATE_CREDITS || ATTRS.some(a=>ccWork.cattr[a]<10||ccWork.cattr[a]>100)){
-    document.getElementById('ccMsg').textContent="Character exceeds the creation budget — adjust attributes/skills."; return; }
+    ccErr("Character exceeds the creation budget — adjust attributes/skills."); return; }
   player.name=name; player.heritage=ccWork.race;
   const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo","model","gender"];
   const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k];
@@ -26775,13 +27563,36 @@ function refreshAvatarAppearance(){
   if(u.acBody){ if(u.acHead&&u.acHead.parent) u.acHead.parent.remove(u.acHead); u.acHead=null; acBuildHead(playerAvatar); }  // rebuild the real AC head from the new choices
 }
 
-startBtn.onclick=()=>{ isOnline=false; openCharCreator("",race=>{ wipeSave(); startGame(false,race); }); };
+// #478: a lightweight in-game confirm modal (the game has no native-dialog helper) — used to guard the
+// destructive single-slot save overwrite when starting a new character.
+function uiConfirm(html,onYes,yesLabel){
+  const ov=document.createElement('div');
+  ov.style.cssText="position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  ov.innerHTML=`<div style="max-width:420px;width:90%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:20px 22px;box-shadow:0 8px 40px rgba(0,0,0,.6);text-align:center">
+    <div style="color:#e8dcc0;font-size:14px;line-height:1.55">${html}</div>
+    <div style="display:flex;gap:10px;margin-top:16px;justify-content:center">
+      <button id="_ucNo" class="tbtn">Cancel</button>
+      <button id="_ucYes" class="tbtn" style="border-color:var(--gold);color:var(--gold)">${yesLabel||"Confirm"}</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_ucNo').onclick=()=>ov.remove();
+  ov.querySelector('#_ucYes').onclick=()=>{ ov.remove(); try{onYes();}catch(e){} };
+}
+// #478: creating a new character wipes the ONLY save slot — warn first (naming the character that would
+// be lost) instead of silently overwriting it. No save → straight through.
+function newCharGuard(proceed){
+  if(!hasSave()){ proceed(); return; }
+  let nm="your saved character", lv=1;
+  try{ const s=JSON.parse(localStorage.getItem(SAVE_KEY)); if(s){ nm=esc(s.name||nm); lv=s.level||1; } }catch(e){}
+  uiConfirm(`You already have a saved character — <b>${nm}</b> (Level ${lv}). There is only one save slot, so creating a new character will <b style="color:#e08a6a">permanently overwrite</b> it. Continue?`,proceed,"Overwrite &amp; Create");
+}
+startBtn.onclick=()=>{ isOnline=false; newCharGuard(()=>openCharCreator("",race=>{ wipeSave(); startGame(false,race); })); };   // #478: guard the overwrite
 { const tsb=document.getElementById('titleSettingsBtn'); if(tsb) tsb.onclick=openSettings; }
 { const ct=document.getElementById('controlsToggle'), cb=document.getElementById('controlsBox');
   if(ct&&cb) ct.onclick=()=>{ cb.style.display=cb.style.display==="none"?"block":"none"; }; }
 continueBtn.onclick=()=>{ isOnline=false; startGame(true); };
 document.querySelectorAll('#paths button').forEach(b=>b.onclick=()=>{   // offline: pick a heritage → open the creator
-  isOnline=false; openCharCreator(b.dataset.path,race=>{ wipeSave(); startGame(false,race); });
+  isOnline=false; newCharGuard(()=>openCharCreator(b.dataset.path,race=>{ wipeSave(); startGame(false,race); }));   // #478: guard the overwrite
 });
 // online character creation (within the character-select screen) — name+heritage carry through the creator
 document.querySelectorAll('#csPaths button').forEach(b=>b.onclick=()=>{
@@ -26832,6 +27643,7 @@ function applyTouchUI(){
   if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; blocking=false;
     const j=document.getElementById('tcJoy'); if(j) j.classList.remove('run','live');
     for(const id of ['tcWheel','tcPMenu','tcBoard']){ const el=document.getElementById(id); if(el) el.classList.remove('open'); }
+    document.body.classList.remove('tcOnboard');
     const sh=document.getElementById('tcSheet'); if(sh) sh.classList.remove('open'); }
   if(TOUCH.on&&document.pointerLockElement) document.exitPointerLock();
   try{ document.documentElement.style.setProperty('--tcscale',String(settings.touchBtnScale||1)); }catch(e){}
@@ -27091,7 +27903,7 @@ function tcArcRender(){
   const cx=196,cy=196,rad=160;
   for(let i=0;i<TC_ARC_N;i++){
     const abs=hotbarPage*QB_PAGE+i;
-    const a=Math.PI*(1-i*0.125);                          // 180° → 90° fan, up and over the cluster
+    const a=(150-i*17)*Math.PI/180;                       // #469: 150°→82° fan (was 180°→90°) so the lowest slots clear the HEIGHT/PAGE buttons and the last slot stays on-screen; 17° step at r=160 still spaces the 46px slots
     const x=cx+Math.cos(a)*rad, y=cy-Math.sin(a)*rad;
     const e=player.hotbar&&player.hotbar[abs];
     const isIt=e&&typeof hbIsItem==="function"&&hbIsItem(e);
@@ -27187,6 +27999,7 @@ function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.
     ["📖","Codex",()=>togglePanel('codex',openCodex,closeCodex)],
     ["🏠","Estate",()=>togglePanel('housing',openHousing,closeHousing)],
     ["⚙️","Options",()=>togglePanel('settings',openSettings,closeSettings)],
+    ["🚪","Log Out",()=>beginLogout()],   // #457: touch ☰ → Log Out (recall-away departure)
     ["⛶","Fullscreen",()=>tcFullscreen(false)]];
   for(const [ic,lab,fn] of items){ const b=document.createElement('button');
     b.innerHTML=`${ic}<small>${lab}</small>`;
@@ -27210,11 +28023,12 @@ function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.
   const bd=document.getElementById('tcBoard'), go=document.getElementById('tcBoardGo'); if(!bd||!go) return;
   let shown=false;
   const done=()=>{ try{ return localStorage.getItem("dereth_touch_onboard")==="1"; }catch(e){ return true; } };
+  const close=()=>{ bd.classList.remove('open'); document.body.classList.remove('tcOnboard'); };
   setInterval(()=>{ if(shown||!TOUCH.on||!running||done()) return;
-    shown=true; bd.classList.add('open'); },800);
+    shown=true; bd.classList.add('open'); document.body.classList.add('tcOnboard'); },800);
   go.addEventListener('touchstart',e=>{ e.preventDefault();
-    bd.classList.remove('open'); buzz(12); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} },{passive:false});
-  go.addEventListener('click',()=>{ bd.classList.remove('open'); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} });
+    close(); buzz(12); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} },{passive:false});
+  go.addEventListener('click',()=>{ close(); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} });
 })();
 // touch mode: tapping away from the on-screen keyboard closes chat (no Esc key on a phone)
 { const ci=document.getElementById('chatInput');
