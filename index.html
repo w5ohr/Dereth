@@ -280,6 +280,9 @@
   /* the quickbar scales via --qbscale and anchors beside the joystick zone, clear of the cluster */
   body.touchui #spellbar{left:calc(148px + env(safe-area-inset-left,0px));transform:scale(var(--qbscale,1));transform-origin:bottom left}
   body.touchui #combatPanel{display:none!important}
+  /* #452: hide the desktop HUD panels in touch mode at EVERY viewport (tablets included), not just
+     phones — on landscape tablet #quest otherwise overlaps the on-screen spell-arc/attack cluster */
+  body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
   body.touchui #potions{left:50%!important;right:auto!important;top:58px!important;bottom:auto!important;transform:translateX(-50%)}
   body.touchui #potions .pot{cursor:pointer;pointer-events:auto}
   body.touchui #log{bottom:calc(238px + env(safe-area-inset-bottom,0px));width:min(320px,38vw)}
@@ -292,7 +295,6 @@
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
     body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
-    body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
   }
 </style>
 </head>
@@ -603,6 +605,8 @@
     <button class="tbtn" data-acdeath="1">Corpse &amp; item drop</button><button class="tbtn" data-acdeath="0">Soft (Vitae only)</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Suppress camera shake and fullscreen lightning/spell flashes (for motion sensitivity or photosensitivity). Defaults to your OS 'reduce motion' setting.">Reduce motion &amp; flashes</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware score: festive in the castle, aggressive in a fight, suspenseful in a dungeon, a crowd murmur in town, dark on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-dynmusic="1">On</button><button class="tbtn" data-dynmusic="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -2767,7 +2771,10 @@ function supportAt(wx,wz,feetY){
 // with headroom, while a genuinely stuffed satchel still slows you.
 function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
   if(it.stat==="weapon") return 75; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
-  if(it.stat==="worn") return ({head:45,chest:120,hands:35,legs:95,feet:45})[it.aslot]||85;
+  // #472: a cloth garment (shirt/pants — the light under-layer) was falling through to the heavy 85
+  // default because "shirt"/"pants" aren't armour slots, so a fresh char's starting clothes weighed as
+  // much as plate (54% burden at spawn). Cloth is light; only real armour keeps the armour weights.
+  if(it.stat==="worn") return it.cloth ? 10 : (({head:45,chest:120,hands:35,legs:95,feet:45})[it.aslot]||85);
   return 22; }
 function encumbrance(){
   let load=0; for(const it of player.inv) load+=itemBurden(it);
@@ -3288,7 +3295,10 @@ function updateWeather(dt){
     else if(arid) w=r<0.74?"clear":r<0.95?"cloudy":"fog";                               // Gharu'ndim desert: almost never rains
     else if(wet)  w=r<0.14?"clear":r<0.34?"cloudy":r<0.70?"rain":r<0.90?"storm":"fog";  // Blackmire wetlands: frequent rain & storms
     else          w=r<0.42?"clear":r<0.64?"cloudy":r<0.82?"rain":r<0.90?"storm":"fog";  // temperate lands
-    if(w!==weather){ weather=w; windDirTarget=rnd(0,6.283); log(({rain:"Rain sweeps across the land.",storm:"A tempest breaks — thunder rolls across Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
+    if(w!==weather){ weather=w; windDirTarget=rnd(0,6.283);
+      // #471: keep the weather STATE current (so the sky is right the moment you surface), but only
+      // ANNOUNCE the change when you're actually under the open sky — no "the sky grows overcast" while delving.
+      if(!inDungeon&&!inNetwork) log(({rain:"Rain sweeps across the land.",storm:"A tempest breaks — thunder rolls across Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
     weatherT=rnd(35,75);
   }
   const raining=(weather==="rain"||weather==="storm"), storming=(weather==="storm");
@@ -8288,7 +8298,7 @@ function kcAddBeast(wx,wz,kind,name,scale,rot){
 function kcPortalUse(p){
   if(inDungeon||inNetwork) return;
   if(!castleAccess()){ log("The gateways open only for Lord Kilmer and his sworn guests.","warn"); if(SFX.hit)SFX.hit(); return; }
-  teleportFX(player.x,player.z); arriveAt(p.dest.x,p.dest.z); player.invuln=2; teleportFX(player.x,player.z);
+  warpTo(p.dest.x,p.dest.z,{invuln:2});
   if(typeof toast==="function") toast(p.dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The gateway flares — you step through to <b>${p.dest.name}</b>.`,"sys");
 }
@@ -8314,7 +8324,7 @@ function kcOpenWarTable(){
   document.body.appendChild(ov); paused=true; if(locked)document.exitPointerLock();
   ov.querySelector('#kcWarClose').onclick=()=>{ ov.remove(); paused=false; };
   ov.querySelectorAll('[data-rally]').forEach(b=>b.onclick=()=>{ const t=threats[+b.dataset.rally]; ov.remove(); paused=false;
-    if(inDungeon||inNetwork) return; teleportFX(player.x,player.z); arriveAt(t.x+4,t.z+4); player.invuln=2; teleportFX(player.x,player.z);
+    if(inDungeon||inNetwork) return; warpTo(t.x+4,t.z+4,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`You rally to <b>${t.name}</b>.`,"warn"); });
 }
 // ── The Trial Ground: summon a champion foe scaled to your might for a private duel ──
@@ -8475,7 +8485,7 @@ function kcPortalTo(name){
   else { const c=CITIES.find(ct=>ct.name===name); if(c) dest={x:c.x,z:c.z+3,name:c.name}; }
   if(!dest) return;
   closeAttendant();
-  teleportFX(player.x,player.z); arriveAt(dest.x,dest.z); player.invuln=2; teleportFX(player.x,player.z);
+  warpTo(dest.x,dest.z,{invuln:2});
   if(typeof toast==="function")toast(dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The valkyrie opens a shimmering way — you step through to <b>${dest.name}</b>.`,"sys");
 }
@@ -10206,25 +10216,74 @@ function portalTubeTex(){
   g.globalAlpha=1;
   const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,2); _tubeTex=t; return t;
 }
-function startPortalTransit(arrive){
-  if(portalTransit){ arrive(); return; }                            // never stack transits
+// The tube is now LOAD-GATED: it fades in, switches the world mid-tunnel, then HOLDS you inside the
+// swirling portal space until the destination has finished streaming in (opts.ready), and only then
+// sets you down. minHold keeps the effect from flickering past on an instant load; maxHold is a hard
+// safety cap so a never-satisfied ready() can never trap the player (the tube always dissolves).
+// opts = {ready:()=>bool, minHold, maxHold, freeze}. No opts → the classic ~1.3s fixed transit.
+const _PT_IN=0.22, _PT_OUT=0.5;
+function startPortalTransit(arrive,opts){
+  opts=opts||{};
+  if(portalTransit){ try{arrive&&arrive();}catch(e){} return; }     // never stack transits — just perform the arrival
+  if(typeof cam==="undefined"||!cam||typeof scene==="undefined"||!scene){ try{arrive&&arrive();}catch(e){} return; }   // renderer not up yet (pre-initThree): arrive without the overlay
   scene.add(cam);                                                    // camera-attached overlay (idempotent)
   const mat=new THREE.MeshBasicMaterial({map:portalTubeTex(),side:THREE.BackSide,transparent:true,opacity:0,fog:false,depthTest:false,depthWrite:false});
   const tube=new THREE.Mesh(new THREE.CylinderGeometry(5,5,90,24,1,true),mat);
   tube.rotation.x=Math.PI/2; tube.renderOrder=999; cam.add(tube);
-  portalTransit={tube,mat,t:0,dur:2.0,arrive,fired:false};
-  player.invuln=Math.max(player.invuln,2.2);
+  portalTransit={tube,mat,t:0,hold:0,outT:0,phase:"in",arrive:arrive||null,fired:false,pinned:false,ax:0,az:0,
+    ready:(typeof opts.ready==="function")?opts.ready:null,
+    minHold:(opts.minHold!=null)?opts.minHold:1.3,
+    maxHold:(opts.maxHold!=null)?opts.maxHold:8,
+    freeze:(opts.freeze!==false)};
+  player.invuln=Math.max(player.invuln||0,2.2);
   if(SFX.whoosh)SFX.whoosh();
 }
 function updatePortalTransit(dt){
   const p=portalTransit; if(!p) return;
   p.t+=dt;
-  const tex=p.mat.map; tex.offset.y-=dt*1.6; tex.offset.x+=dt*0.12;  // streaks rush past, tunnel slowly twists
-  p.tube.rotation.z+=dt*0.9;
-  const k=p.t/p.dur;
-  p.mat.opacity=k<0.15?k/0.15:(k>0.8?Math.max(0,(1-k)/0.2):1);      // fade in, hold, fade out on arrival
-  if(!p.fired&&k>=0.45){ p.fired=true; try{p.arrive();}catch(e){} } // the world switches WHILE you're inside the tube
-  if(k>=1){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
+  const slow=(typeof settings!=="undefined"&&settings.reduceMotion)?0.4:1;   // #244: gentler swirl under Reduce Motion (still gated on load)
+  const tex=p.mat.map; if(tex){ tex.offset.y-=dt*1.6*slow; tex.offset.x+=dt*0.12*slow; }  // streaks rush past, tunnel twists
+  p.tube.rotation.z+=dt*0.9*slow;
+  // once the tube fully covers the view, switch the world — you're inside the tunnel when it happens
+  if(!p.fired && p.t>=_PT_IN){ p.fired=true;
+    try{ p.arrive&&p.arrive(); }catch(e){ console.error("portal arrive() failed:",e); }
+    p.pinned=true; p.ax=player.x; p.az=player.z; }   // pin here; arriveAt re-syncs the target on any later hop (e.g. dungeon build completing)
+  if(p.freeze && p.pinned){ player.x=p.ax; player.z=p.az; player.vx=0; player.vz=0; }   // held in portal space — no wandering blind
+  if(p.phase==="in"){
+    p.mat.opacity=Math.min(1,p.t/_PT_IN);
+    if(p.t>=_PT_IN) p.phase="hold";
+  } else if(p.phase==="hold"){
+    p.mat.opacity=1; p.hold+=dt;
+    let ok=true; if(p.ready){ try{ ok=!!p.ready(); }catch(e){ ok=false; } }
+    if(p.fired && ((p.hold>=p.minHold && ok) || p.t>=p.maxHold)){ p.phase="out"; p.outT=0; }
+  } else {   // "out"
+    p.outT+=dt;
+    p.mat.opacity=Math.max(0,1-p.outT/_PT_OUT);
+    if(p.outT>=_PT_OUT){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
+  }
+}
+// "Has the area around the player finished streaming in?" — the gate for every overworld arrival.
+// True in an instance (those build synchronously in their own arrive()). In the open world it waits
+// for the ground mesh plus every town / world-structure block within streaming range to be built.
+function overworldAreaLoaded(){
+  if(inDungeon||inNetwork) return true;
+  if(typeof groundMesh==="undefined"||!groundMesh||!groundMesh.visible) return false;
+  const px=player.x,pz=player.z;
+  if(typeof AC_TOWNS!=="undefined"&&AC_TOWNS&&typeof CITIES!=="undefined")
+    for(const c of CITIES){ if(AC_TOWNS[c.name]&&Math.hypot(c.x-px,c.z-pz)<TB_BUILD_R&&!(_tbBuilt&&_tbBuilt[c.name])) return false; }
+  if(typeof AC_WORLD!=="undefined"&&AC_WORLD)
+    for(const lb in AC_WORLD){ const r=AC_WORLD[lb]; if(Math.hypot(r.cx-px,r.cz-pz)<WS_BUILD_R&&!(_wsBuilt&&_wsBuilt[lb])) return false; }
+  return true;
+}
+// Overworld teleport wrapped in the load-gated portal tube — the shared path for recalls, portal gems,
+// spell portals and map travel. Holds you in portal space until the destination has streamed in.
+function warpTo(x,z,opts){
+  opts=opts||{};
+  startPortalTransit(()=>{
+    arriveAt(x,z);
+    player.invuln=Math.max(player.invuln||0,opts.invuln||2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  },{ready:overworldAreaLoaded,minHold:(opts.minHold!=null)?opts.minHold:1.0,maxHold:opts.maxHold||8});
 }
 
 // ---------- combat ----------
@@ -11557,8 +11616,8 @@ function triggerPortalStorm(){   // scatter the player to a town's outskirts (ex
     const cx=clamp(player.x+Math.cos(ang)*dist,-HALF+6,HALF-6), cz=clamp(player.z+Math.sin(ang)*dist,-HALF+6,HALF-6);
     const h=terrainH(cx,cz); if(h>bestH){ bestH=h; nx=cx; nz=cz; if(h>=1.5) break; } }
   if(bestH<0.5){ return false; }   // nowhere dry within reach — don't scatter into the sea
-  teleportFX(player.x,player.z); arriveAt(nx,nz); player.invuln=1.5; player.combatT=0;
-  stormPhase=0; stormBuild=0; stormCd=110; teleportFX(player.x,player.z);
+  warpTo(nx,nz,{invuln:1.5}); player.combatT=0;
+  stormPhase=0; stormBuild=0; stormCd=110;
   log("A <b>portal storm</b> sweeps you away to the outskirts.","sys"); if(SFX.quest)SFX.quest();
   return true;
 }
@@ -14713,7 +14772,7 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot recall from here.","warn"); return "keep"; }
     const dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ log("You have no Lifestone to recall to.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You crush the <b>${it.name}</b> and recall to the <b>${dest.name}</b> Lifestone.`,"heal"); }
   else if(it.stat==="cure"){
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
@@ -14745,14 +14804,14 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot open a portal from here.","warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The gem's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(c.x,c.z+3,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You shatter the <b>${it.name}</b> and step through to <b>${c.name}</b>.`,"heal"); }
   else if(it.stat==="contract"){
     if(inDungeon||inNetwork){ log("You cannot invoke a contract from here.","warn"); return "keep"; }
     if((player.contractCd||0)>0){ log(`The contract must recharge (${Math.ceil(player.contractCd)}s).`,"warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The contract's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
+    warpTo(c.x,c.z+3,{invuln:2}); player.contractCd=120;
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
@@ -15295,6 +15354,7 @@ function arriveAt(x,z){
   player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
   player.arriveGrace=true;   // the float-down out of the portal never deals fall damage
   camInit=false;   // snap the third-person camera to the new location instead of easing across the map
+  if(typeof portalTransit!=="undefined"&&portalTransit&&portalTransit.pinned){ portalTransit.ax=player.x; portalTransit.az=player.z; }   // keep the in-tube freeze anchored to the newest destination (e.g. a dungeon whose build finishes mid-hold)
 }
 function fallDamage(drop){
   if(player.arriveGrace){ player.arriveGrace=false; return; }   // portal-arrival landing is free
@@ -15570,7 +15630,7 @@ function executeSpell(id){
     else if(s.dest==="portal2"){ const p=player.tiedPortal2; if(!p){ refundCast(); spellCd[id]=0; log("You have no SECOND portal tied — cast Secondary Portal Tie at a portal first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ refundCast(); spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
   }
   if(s.special==="xfer"){   // Life vital transfer (Self): drain half the source pool → 105%+5%/lvl to the dest, capped 50/lvl (retail curve)
@@ -15605,7 +15665,7 @@ function executeSpell(id){
   }
   if(s.special==="acportal"){   // a recovered retail travel spell: the way opens to its true place
     if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); refundCast(); spellCd[id]=0; return; }
-    teleportFX(player.x,player.z); arriveAt(s.dx,s.dz+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(s.dx,s.dz+3,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`You cast <b>${s.name}</b> — the way opens to <b>${esc(s.dname)}</b>.`,"heal"); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
@@ -16250,7 +16310,7 @@ function portalTouch(){
       teleportFX(player.x,player.z);
       player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};   // remembered for Portal Recall / Portal Tie
       log(`…and out, into <b>${pt.dest.name}</b>.`,"sys");toast(pt.dest.name.toUpperCase());
-    });
+    },{ready:overworldAreaLoaded,minHold:1.0,maxHold:8});   // stay in the tube until the destination has streamed in
     return;
   } }
 }
@@ -16368,11 +16428,14 @@ function interact(){
   for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<3){ gatherNode(n); return; } }
   for(const pt of portals){
     if(Math.hypot(pt.x-player.x,pt.z-player.z)<3.2){
-      teleportFX(player.x,player.z);
-      arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
-      teleportFX(player.x,player.z);
-      log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");
-      toast(pt.dest.name.toUpperCase());
+      log(`You step into the portal…`,"sys");
+      startPortalTransit(()=>{
+        arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
+        teleportFX(player.x,player.z);
+        player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};
+        log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");
+        toast(pt.dest.name.toUpperCase());
+      },{ready:overworldAreaLoaded,minHold:1.0,maxHold:8});
       return;
     }
   }
@@ -17968,8 +18031,7 @@ document.getElementById('bigmap').addEventListener('click',e=>{
   const _rw=e.target.clientWidth||520,_rh=e.target.clientHeight||520,wx=(e.offsetX/_rw)*WORLD-HALF,wz=(e.offsetY/_rh)*WORLD-HALF;
   let best=null,bd=Infinity;for(const ls of lifestones){const d=Math.hypot(ls.x-wx,ls.z-wz);if(d<bd){bd=d;best=ls;}}
   if(best&&bd<WORLD*0.05){
-    arriveAt(best.x,best.z+4);player.invuln=2;
-    teleportFX(player.x,player.z);
+    warpTo(best.x,best.z+4,{invuln:2});
     toast(best.name.toUpperCase());log(`You journey to <b>${best.name}</b>.`,"sys");closeMap();
   } else {   // #194: a missed click must not fail silently — say what travels, and point at the nearest
     log(`No Lifestone there — click a <b>◆ Lifestone</b> to journey${best?` (nearest: <b>${best.name}</b>)`:""}.`,"warn");
@@ -18019,6 +18081,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,gaDest:"auto",
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
+  dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
@@ -18068,6 +18131,7 @@ function playAcAmbient(){
 }
 function musicTick(){
   if(!actx||muted) return;
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&MUSICDIR.mode&&MUSICDIR.mode!=="wild") return;   // the dynamic music director owns non-wild moods; don't layer the synth pad under it
   if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
   if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
@@ -18149,8 +18213,83 @@ const _SND_MAP={ swing:["swing1","swing2","swing3"],hit:["hit_flesh"],heal:["hea
   flame:["cast_fire","explode_fire"],frost:["cast_frost","explode_frost"] };
 for(const k in _SND_MAP){ const syn=_SFX[k], keys=_SND_MAP[k];
   SFX[k]=(...a)=>{ if(!playSample(keys)) syn&&syn(...a); }; }
-// authentic per-creature vocals (kind_idle/_attack/_wound/_death) — used by the monster AI where it has a kind
-function creatureSFX(kind,act){ return playSample((kind||"")+"_"+act); }
+// ══ PROCEDURAL CREATURE VOICES ═══════════════════════════════════════════════════════════════════
+// A synthesized attack/death/wound/idle cry, UNIQUE PER CREATURE, derived from the bestiary
+// description — the creature's shape, name, size and damage element pick a voice family and pitch,
+// so an Olthoi chitters, a Skeleton rattles, a Lugian rumbles, a Wisp warbles, a Mosswart squelches.
+// Runs on the same WebAudio graph as SFX (fully offline); used as the fallback in creatureSFX when no
+// recorded sample exists, so every creature — even ones without a real SoundTable — has its own voice.
+function _cvFamily(kind){
+  const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, n=(b.name||kind||"").toLowerCase(), sh=b.shape||"beast";
+  if(sh==="insect"||/olthoi|wasp|mite|phyntos|beetle|chitin/.test(n)) return "insect";
+  if(sh==="skeleton"||/skeleton|skelet|wight|hollow|lich|mummy|zombie|undead|bone|grave/.test(n)) return "undead";
+  if(sh==="lugian"||/golem|lugian|gurog|stone|rock|granite|colossus/.test(n)) return "giant";
+  if(sh==="caster"||/virindi|wisp|phantom|shadow|element|spectr|ghost|doll|marionette|lich/.test(n)) return "ethereal";
+  if(sh==="blob"||/blob|jelly|slime|mosswart|thrungus|sleech|ooze|snowman|sludge/.test(n)) return "gel";
+  if(sh==="tusker"||sh==="horns"||/tusker|auroch|cow|bull|ursuin|ox|remoran/.test(n)) return "bellow";
+  if(sh==="humanoid"||sh==="tumerok"||/drudge|banderling|tumerok|mukkir|burun|monouga|ruschk|human/.test(n)) return "brute";
+  return "beast";
+}
+// element overlay: a short flavour layer that rides an ATTACK cry (fire crackle, frost shimmer, …)
+function _cvElement(el,t,dur,pk){
+  if(!actx||!el) return; const bus=masterGain||actx.destination;
+  if(el==="fire"){ for(let i=0;i<5;i++){ const tt=t+i*0.03; noiseHit(0.05,pk*0.5,700+irnd(-200,600)); } blip(340,dur*0.7,"sawtooth",pk*0.5,110); }
+  else if(el==="frost"){ blip(1400,dur*0.8,"triangle",pk*0.4,700); blip(2100,dur*0.5,"sine",pk*0.25,1500); }
+  else if(el==="acid"){ noiseHit(dur*0.9,pk*0.5,2600); blip(500,dur*0.6,"sawtooth",pk*0.3,240); }
+  else if(el==="shock"){ blip(2600,0.07,"square",pk*0.5,900); setTimeout(()=>blip(1800,0.06,"square",pk*0.4,700),40); }
+  else if(el==="nether"){ blip(70,dur,"sine",pk*0.5,40); blip(190,dur*0.8,"triangle",pk*0.25,150); }
+  else if(el==="pierce"||el==="slash"){ noiseHit(0.06,pk*0.4,1800); }
+}
+function creatureVoice(kind,act){
+  if(!actx||muted) return false;
+  const bus=masterGain||actx.destination, t=actx.currentTime;
+  const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, size=Math.max(0.4,b.size||1), fam=_cvFamily(kind), el=b.dmgEl||"";
+  // size → pitch (a Lugian is an octave-plus below a Rat); death drops & lengthens, wound is quick & high
+  const p=1/Math.pow(size,0.9);                                   // pitch multiplier: small=high, big=low
+  const death=act==="death", wound=act==="wound", idle=act==="idle";
+  const dur=(death?0.7:idle?0.4:wound?0.18:0.32)*(fam==="giant"?1.4:1);
+  const pk=(idle?0.10:wound?0.16:0.20)*(b.isBossKind?1.2:1);      // peak gain
+  // a voiced tone into the bus with its own ADSR + optional pitch glide (down for death)
+  const tone=(freq,type,peak,d,glide,delay)=>{ const tt=t+(delay||0);
+    const o=actx.createOscillator(),g=actx.createGain(); o.type=type; o.frequency.setValueAtTime(Math.max(24,freq),tt);
+    if(glide) o.frequency.exponentialRampToValueAtTime(Math.max(20,freq*glide),tt+d);
+    g.gain.setValueAtTime(0.0001,tt); g.gain.linearRampToValueAtTime(peak,tt+Math.min(0.05,d*0.25));
+    g.gain.exponentialRampToValueAtTime(0.0006,tt+d); o.connect(g).connect(bus); o.start(tt); o.stop(tt+d+0.03); };
+  const gliss=death?0.45:wound?1.25:1.0;                          // death falls, wound rises a touch
+  switch(fam){
+    case "insect":                                                // dry chittering clicks + high buzz
+      { const clicks=death?10:wound?2:5; for(let i=0;i<clicks;i++) noiseHit(0.03,pk*0.7,2200*p+irnd(-300,300));
+        tone(1300*p,"square",pk*0.5,dur,death?0.5:1.15); if(!wound) tone(2600*p,"sawtooth",pk*0.25,dur*0.6,gliss,0.02); break; }
+    case "undead":                                                // dry bone rattle + a hollow moan
+      { const rat=death?12:wound?3:6; for(let i=0;i<rat;i++) noiseHit(0.035,pk*0.5,900*p+irnd(-150,250));
+        tone(150*p,"triangle",pk*0.7,dur*(death?1.2:1),gliss); tone(300*p,"sine",pk*0.3,dur,gliss,0.03); break; }
+    case "giant":                                                 // deep grinding rumble + gravel
+      { tone(58*p,"sawtooth",pk,dur*1.2,death?0.5:0.9); tone(87*p,"square",pk*0.4,dur,death?0.55:1.0,0.02);
+        noiseHit(dur*0.8,pk*0.4,120); break; }
+    case "ethereal":                                              // eerie detuned warble / ghostly tone
+      { const f=520*p; tone(f,"sine",pk*0.8,dur*1.2,death?0.4:1.0); tone(f*1.007,"triangle",pk*0.5,dur*1.2,death?0.4:1.05,0.01);
+        // tremolo shimmer
+        const o=actx.createOscillator(),lfo=actx.createOscillator(),lg=actx.createGain(),g=actx.createGain();
+        o.type="sine";o.frequency.value=f*2; lfo.type="sine";lfo.frequency.value=death?7:14; lg.gain.value=pk*0.3; g.gain.value=pk*0.3;
+        lfo.connect(lg).connect(g.gain); o.connect(g).connect(bus); o.start(t); o.stop(t+dur*1.1); lfo.start(t); lfo.stop(t+dur*1.1); break; }
+    case "gel":                                                   // wet squelch / gurgle
+      { tone(120*p,"sine",pk*0.8,dur,death?0.5:0.8); tone(120*p,"sine",pk*0.5,dur*0.8,death?2.2:1.6,0.04);  // wobble up/down
+        noiseHit(dur*0.7,pk*0.35,420); break; }
+    case "bellow":                                                // low brassy roar
+      { tone(150*p,"sawtooth",pk,dur*1.1,death?0.55:1.15); tone(224*p,"triangle",pk*0.5,dur,death?0.6:1.1,0.02); break; }
+    case "brute":                                                 // guttural grunt / shout
+      { tone(200*p,"sawtooth",pk,dur,death?0.5:(wound?1.3:0.95)); tone(120*p,"square",pk*0.4,dur,death?0.55:1.0);
+        noiseHit(0.05,pk*0.3,500); break; }
+    default:                                                      // beast: growl → snarl (rising) / roar
+      { tone(180*p,"sawtooth",pk,dur,death?0.5:(wound?1.4:1.5)); tone(90*p,"triangle",pk*0.5,dur,death?0.55:1.2,0.01);
+        if(!wound) noiseHit(dur*0.5,pk*0.3,700); break; }
+  }
+  if(act==="attack") _cvElement(el,t,dur,pk);                     // the element only colours an ATTACK
+  return true;
+}
+// authentic per-creature vocals (kind_idle/_attack/_wound/_death) — a recorded sample if the SoundTable
+// has one, else the procedural creatureVoice above so EVERY creature still has a distinct cry.
+function creatureSFX(kind,act){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act); }
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
   SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
   SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
@@ -18160,6 +18299,7 @@ let MUSIC=null,_musEl=null,_musZone=null;
 // stingers (e.g. the 2s MPEG-3 track) would loop jarringly. They still play one-shot via playAcAmbient.
 fetch('assets/acmusic/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.tracks&&j.tracks.length){ const loopable=j.tracks.filter(t=>(t.seconds||0)>=8); MUSIC=loopable.length?loopable:j.tracks; } }).catch(()=>{});
 setInterval(()=>{ try{
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on){ if(_musEl){_musEl.pause();_musZone=null;} return; }   // the dynamic music director supersedes the legacy zone loop
   if(!MUSIC||typeof running==="undefined"||!running||(typeof muted!=="undefined"&&muted)){ if(_musEl){_musEl.pause();_musZone=null;} return; }
   const kcNear=(typeof KC!=="undefined")&&!inDungeon&&Math.hypot(player.x-KC.x,player.z-KC.z)<260;
   const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon": kcNear?"castle":
@@ -18181,6 +18321,121 @@ setInterval(()=>{ try{
   }
   _musEl.play().catch(()=>{});   // blocked until the first user gesture — retried each tick
 }catch(e){} },4000);
+
+// ══ DYNAMIC MUSIC DIRECTOR ═══════════════════════════════════════════════════════════════════════
+// Context-aware procedural score, synthesized through WebAudio (works fully offline like the SFX).
+// It picks a MOOD from game state each beat and plays a matching bed, crossfading on change:
+//   death  → dark   (somber descending minor drone + slow toll)
+//   combat → aggressive (fast driving minor bass pulse + noise drum + dissonant stabs)
+//   dungeon→ suspense (sparse low drone + eerie minor-2nd + slow heartbeat)
+//   castle → festive (bright major lute/harp arpeggio + bouncy bass)
+//   town   → crowd  (the murmur of people talking: layered band-passed noise babble, no melody)
+//   else   → wild   (silent here; the legacy ambient pad/zone loop carries the wilds)
+// Priority is death > combat > dungeon > castle > town > wild. The director owns all non-wild moods,
+// so the legacy zone loop + synth pad are gated off above while MUSICDIR.on. A `dynMusic` setting
+// toggles it; kcAmbience (the castle's live court murmur/fireworks) is left untouched and layers under.
+const MUSICDIR={on:true,mode:null,_t:0,_bus:null,_next:0,_beat:0};
+// scales / helpers
+const _MAJ=[0,2,4,7,9], _MINP=[0,3,5,7,10];                 // major & minor-pentatonic degrees
+function _hz(semi){ return 220*Math.pow(2, semi/12); }
+function mdBus(){
+  if(!actx) return null;
+  if(!MUSICDIR._bus){ const g=actx.createGain(); g.gain.value=0.0; g.connect(masterGain||actx.destination); MUSICDIR._bus=g; }
+  return MUSICDIR._bus;
+}
+// one synth voice into the music bus (own ADSR); type/detune/filter tuned per call
+function mdNote(freq,t,dur,type,peak,glideTo){
+  const bus=mdBus(); if(!bus) return;
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type=type||"triangle"; o.frequency.setValueAtTime(freq,t);
+  if(glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,glideTo),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(peak||0.14,t+Math.min(0.06,dur*0.3));
+  g.gain.exponentialRampToValueAtTime(0.0006,t+dur);
+  o.connect(g).connect(bus); o.start(t); o.stop(t+dur+0.02);
+}
+function mdDrum(t,peak,freq,dur){   // percussive noise burst into the music bus (aggressive-mood beat)
+  const bus=mdBus(); if(!bus||!actx) return;
+  const n=Math.max(1,Math.floor(actx.sampleRate*(dur||0.12))), buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const s=actx.createBufferSource(); s.buffer=buf;
+  const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=freq||180; bp.Q.value=0.7;
+  const g=actx.createGain(); g.gain.value=peak||0.18;
+  s.connect(bp).connect(g).connect(bus); s.start(t);
+}
+// crowd babble: a bank of band-passed noise loops whose gains wander, mimicking overlapping talk
+let _mdCrowd=null;
+function mdCrowdStart(){
+  const bus=mdBus(); if(!bus||!actx||_mdCrowd) return;
+  const secs=4, n=actx.sampleRate*secs, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1);
+  const nodes=[];
+  for(const f of [360,620,900,1500]){                        // vocal-ish formant bands
+    const s=actx.createBufferSource(); s.buffer=buf; s.loop=true;
+    const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=4.5;
+    const g=actx.createGain(); g.gain.value=0.02;
+    const lfo=actx.createOscillator(), lg=actx.createGain();  // slow wander → the "murmur" swell
+    lfo.type="sine"; lfo.frequency.value=0.13+Math.random()*0.5; lg.gain.value=0.02;
+    lfo.connect(lg).connect(g.gain);
+    s.connect(bp).connect(g).connect(bus); s.start(); lfo.start();
+    nodes.push(s,lfo);
+  }
+  _mdCrowd={nodes};
+}
+function mdCrowdStop(){ if(!_mdCrowd) return; for(const n of _mdCrowd.nodes){ try{ n.stop(); }catch(e){} } _mdCrowd=null; }
+// per-mood one-bar generators: schedule a bar starting at time t, return seconds until the next bar
+const MD_MOODS={
+  festive(t){ const beat=0.34, root=_hz(7);                   // bright major lute — bouncy, upbeat
+    for(let i=0;i<8;i++){ const deg=_MAJ[(i*2)%_MAJ.length], oct=i>=4?12:0;
+      mdNote(root*Math.pow(2,(deg+oct)/12), t+i*beat, beat*1.4, i%2?"triangle":"square", 0.11); }
+    for(let i=0;i<4;i++) mdNote(root/2*Math.pow(2,(_MAJ[i%_MAJ.length])/12), t+i*beat*2, beat*1.2, "sine", 0.10);  // bouncy bass
+    return beat*8; },
+  aggressive(t){ const beat=0.19, root=_hz(-5);               // fast driving minor — urgent
+    for(let i=0;i<8;i++){ mdNote(root, t+i*beat, beat*0.9, "sawtooth", 0.12); mdDrum(t+i*beat, i%2?0.10:0.2, i%2?900:150, 0.1); }
+    if(Math.random()<0.7){ const d=_MINP[irnd(1,4)]; mdNote(_hz(7+d), t+beat*4, beat*3, "sawtooth", 0.10); mdNote(_hz(7+d+1), t+beat*4, beat*3, "square", 0.05); }  // dissonant stab
+    return beat*8; },
+  suspense(t){ const bar=6.0, root=_hz(-12);                  // sparse eerie drone — slow
+    mdNote(root, t, bar*0.95, "sine", 0.13); mdNote(root*1.001, t, bar*0.95, "triangle", 0.05);   // detuned low drone
+    if(Math.random()<0.6){ const at=t+2+Math.random()*2.5; mdNote(_hz(3), at, 1.6, "triangle", 0.06); mdNote(_hz(4), at, 1.6, "sine", 0.045); }  // minor-2nd unease
+    mdDrum(t+bar*0.5, 0.06, 70, 0.4);                         // slow heartbeat thump
+    return bar; },
+  crowd(t){ mdCrowdStart(); return 2.0; },                    // babble runs continuously; just keep the mood alive
+  dark(t){ const bar=5.0, root=_hz(-17);                      // somber descending minor + toll
+    [0,-3,-5].forEach((s,i)=> mdNote(_hz(-5+s), t+i*1.1, 2.4, "triangle", 0.12-i*0.02, _hz(-8+s)));  // descending, gliding down
+    mdNote(root, t, bar, "sine", 0.14);                       // deep drone
+    mdNote(root*2, t+0.2, 3.0, "sine", 0.05);                 // faint toll overtone
+    return bar; },
+};
+function mdMode(){
+  if(typeof running==="undefined"||!running) return "wild";
+  if(typeof player!=="undefined"&&player&&player.alive===false) return "dark";
+  let inCombat=(typeof player!=="undefined"&&player&&(player.combatT||0)>0);
+  if(!inCombat&&typeof monsters!=="undefined"&&monsters&&player){        // or a hostile is on you
+    for(const m of monsters){ if(m&&m.hp>0&&m.state==="chase"&&Math.hypot((m.x||0)-player.x,(m.z||0)-player.z)<22){ inCombat=true; break; } } }
+  if(inCombat) return "aggressive";
+  if(typeof inDungeon!=="undefined"&&inDungeon) return "suspense";
+  if(typeof KC!=="undefined"&&player&&Math.hypot(player.x-KC.x,player.z-KC.z)<KC.safeR) return "festive";
+  if(typeof nearestCapitalDist==="function"&&player&&nearestCapitalDist(player.x,player.z)<160) return "crowd";
+  return "wild";
+}
+setInterval(()=>{ try{
+  MUSICDIR.on = (typeof settings==="undefined") || settings.dynMusic!==false;   // authoritative from the setting (survives load order)
+  if(!MUSICDIR.on||!actx||muted||typeof running==="undefined"||!running){
+    if(MUSICDIR._bus) MUSICDIR._bus.gain.setTargetAtTime(0.0001,actx?actx.currentTime:0,0.3);
+    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    MUSICDIR.mode=null; MUSICDIR._next=0; return; }
+  const bus=mdBus(); if(!bus) return;
+  const target=mdMode(), tnow=actx.currentTime;
+  if(target!==MUSICDIR.mode){                                 // crossfade: duck out, switch, swell in
+    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    MUSICDIR.mode=target; MUSICDIR._next=0;
+    const vol=target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34));
+    bus.gain.cancelScheduledValues(tnow); bus.gain.setValueAtTime(Math.max(0.0001,bus.gain.value),tnow);
+    bus.gain.linearRampToValueAtTime(vol, tnow+1.2);
+  }
+  if(target==="wild"){ MUSICDIR._next=0; return; }
+  if(tnow>=MUSICDIR._next-0.05){                              // schedule the next bar just before the last ends
+    const gen=MD_MOODS[target]; if(gen){ const dur=gen(tnow+0.05); MUSICDIR._next=tnow+0.05+dur; } }
+}catch(e){} },350);
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -21102,17 +21357,13 @@ function recallHome(){
   if(inDungeon||inNetwork){ log("You can't recall to your estate from here — return to the surface first.","warn"); if(SFX.err)SFX.err(); return; }
   // AC House Recall: a purchased settlement dwelling takes precedence over the abstract estate
   if(player.homestead&&typeof hsDwellingSpot==="function"){ const sp=hsDwellingSpot();
-    if(sp){ if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-      arriveAt(sp.x,sp.z+4); player.invuln=2;
-      if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    if(sp){ warpTo(sp.x,sp.z+4,{invuln:2});
       if(typeof toast==="function") toast("HOME"); if(SFX.quest)SFX.quest();
       log(`You recall to your <b>${HOUSING_TYPES[player.homestead.type].n.toLowerCase()}</b> in ${sp.S.name}.`,"sys");
       if(document.getElementById('housing').style.display==="flex") closeHousing(); return; } }
   if(houseTier()<1){ log("You own no estate to recall to — buy one first (press Y).","sys"); if(SFX.err)SFX.err(); return; }
   if(!HOUSE_LOC){ log("Your estate is not ready.","warn"); return; }
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-  arriveAt(HOUSE_LOC.x,HOUSE_LOC.z+6); player.invuln=2;
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  warpTo(HOUSE_LOC.x,HOUSE_LOC.z+6,{invuln:2});
   if(typeof toast==="function") toast("ESTATE"); if(SFX.quest)SFX.quest();
   log(`You recall to your <b>${houseName()}</b> near Holtburg.`,"sys");
   if(document.getElementById('housing').style.display==="flex") closeHousing();
@@ -21960,7 +22211,7 @@ function buildShop(){
       log(`You buy <b>${n}× ${it.name}</b>.`,"loot");
       SFX.gold();buildShop();updateHUD();saveGame();return;
     }
-    if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
+    if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); warpTo(it.warp.x,it.warp.z,{invuln:2}); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
     if(it.blessing){ caravanBless(); return; }
     if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
     else if(it.gear){ const g=Object.assign({},it.gear,{bp:it.cost}); if(!addToInv(g)){log("Your satchel is full.","warn");return;} player.gold-=it.cost; if(isOnline) netSend({t:"vendor_buy",cost:it.cost,item:g}); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
@@ -22577,6 +22828,11 @@ function openSettings(){
   rmHi();
   rmBtns.forEach(b=>b.onclick=()=>{settings.reduceMotion=+b.dataset.reducemotion===1;saveSettings();rmHi();
     log(settings.reduceMotion?"Reduce motion <b>on</b> — camera shake and fullscreen flashes are suppressed.":"Reduce motion off — full camera shake and flashes restored.","sys");});
+  const dmBtns=document.querySelectorAll('#settings [data-dynmusic]');
+  const dmHi=()=>dmBtns.forEach(b=>b.style.opacity=((+b.dataset.dynmusic===1)===(settings.dynMusic!==false))?1:0.45);
+  dmHi();
+  dmBtns.forEach(b=>b.onclick=()=>{settings.dynMusic=+b.dataset.dynmusic===1;if(typeof MUSICDIR!=="undefined")MUSICDIR.on=settings.dynMusic;saveSettings();dmHi();
+    log(settings.dynMusic?"Dynamic music <b>on</b> — the score follows where you are and what you're doing.":"Dynamic music off — classic ambient loops restored.","sys");});
   const gxBtns=document.querySelectorAll('#settings [data-gfx]');
   const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
   gxHi();
@@ -24795,11 +25051,17 @@ function dungeonGoDepth(n){
   toast(n>1?(def.name+" — DEPTH "+n).toUpperCase():def.name.toUpperCase());
 }
 function enterDungeon(def,ex,ez){
-  if(inDungeon) return;
+  if(inDungeon||portalTransit) return;   // already below, or a transit is already carrying you
   if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
   // #207: no gate (AC let you walk in) — but an under-levelled explorer gets told before the first room does it
   if(def.tier && player.level < def.tier*10-2)
     log(`<span style="color:#e0a070">This delve is meant for an adventurer of about level <b>${def.tier*10}</b> — you are level ${player.level}. Tread carefully.</span>`,"warn");
+  // Portal space carries you down: the tube holds until the dungeon geometry is actually built (its
+  // EnvCell pack may need fetching first), then sets you at the entry. maxHold is the hard safety cap.
+  startPortalTransit(()=>_dungeonEnter(def,ex,ez),{ready:()=>inDungeon&&dungeonObjs.length>0,minHold:0.7,maxHold:9});
+}
+function _dungeonEnter(def,ex,ez){
+  if(inDungeon) return;
   // First visit to a real-geometry dungeon: fetch its EnvCell pack BEFORE building (capped wait),
   // so the first descent is the true dungeon — not the grid stand-in with a prefetch for next time.
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
@@ -24809,7 +25071,7 @@ function enterDungeon(def,ex,ez){
       const timeout=new Promise(r=>setTimeout(()=>r(null),4000));
       Promise.race([fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).catch(()=>null),timeout])
         .then(j=>{ _acDgnCache[def.name]=j||null;                 // null → grid fallback (and no refetch loop)
-          if(!inDungeon&&!inNetwork) enterDungeon(def,ex,ez); });             // #327: resume the descent unless something intervened — also skip if we've since stepped into the Town Network (a dungeon built inside the network left inNetwork=true stuck in the overworld)
+          if(!inDungeon&&!inNetwork) _dungeonEnter(def,ex,ez); });             // #327: resume the descent (still inside the tube) unless something intervened — also skip if we've since stepped into the Town Network
       return;
     } }
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
@@ -25585,6 +25847,11 @@ function serverUrl(loc){ loc=loc||location;
   return 'ws://127.0.0.1:8787';
 }
 const SERVER_URL = serverUrl();
+// #442: a transport is safe iff it's TLS (wss) or a loopback host — never send credentials in cleartext otherwise.
+function transportSecure(url, loc){ loc=loc||location; url=url||SERVER_URL;
+  if(String(url).indexOf('wss://')===0) return true;
+  const h=loc.hostname; return h==='localhost'||h==='127.0.0.1'||h==='[::1]';
+}
 let isOnline=false, creatingOnline=false, netInputT=0;
 const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{}, partyNames:new Set(), partyLeader:null, lastWhisperFrom:null };
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -25811,7 +26078,10 @@ function reconcileMobs(serverMobs){
     if(!sm||sm.id==null||!isFinite(sm.x)||!isFinite(sm.z)) continue;   // #34/#319: skip a malformed/null/NaN-coord snapshot entry — a non-finite x/z would set mesh.position to NaN (an invisible-but-targetable mob) and propagate through groundY every frame
     seen[sm.id]=1;
     let m=NET.mobs[sm.id]||spawnSharedMob(sm);
-    m.tx=sm.x; m.tz=sm.z; m.yaw=sm.yaw; m.hp=sm.hp; m.mhp=sm.mhp; m.state=sm.st; m.eventId=sm.event||null;
+    m.tx=sm.x; m.tz=sm.z; m.state=sm.st; m.eventId=sm.event||null;
+    m.yaw=isFinite(sm.yaw)?sm.yaw:(m.yaw||0);   // #443: coerce hp/mhp/yaw before render math — a garbage mhp=0/NaN would make updateSharedMobs' r=hp/mhp go Infinity/NaN into fill.scale.x
+    m.mhp=(isFinite(sm.mhp)&&sm.mhp>=1)?sm.mhp:1;
+    m.hp=isFinite(sm.hp)?Math.max(0,Math.min(sm.hp,m.mhp)):m.mhp;
   }
   for(const id in NET.mobs){ if(!seen[id]) removeSharedMob(id); }
 }
@@ -26143,7 +26413,7 @@ function applyBuffSelf(sp,fx){
     if(sp.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(p) dest={x:p.x,z:p.z,name:p.name}; }
     if(!dest){ const ls=lifestones.find(l=>l.bound)||lifestones[0]; if(ls) dest={x:ls.x,z:ls.z,name:ls.name+" Lifestone"}; }
     if(!dest) return false;
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`A sending takes you — you arrive at <b>${esc(dest.name)}</b>.`,"heal");
     return true; }
   if(fx) spellLandFX(sp.school,_slfPlayerPos,2.0,0.75);   // the spell lands on YOU (buff bot / ally): creature → spirits, life → crystals
@@ -26229,7 +26499,7 @@ function handleSlash(text){
     else log("Your allegiance holds no mansion — when your monarch buys one, <b>/hoa</b> recalls you there.","sys"); }
   else if(cmd==="castle"){ if(inDungeon||inNetwork){ log("You cannot recall to the castle from here.","warn"); }
     else if(!castleAccess()){ log("Castle Val Halla admits only Lord Kilmer and his sworn guests.","warn"); }
-    else { teleportFX(player.x,player.z); arriveAt(KC.x,KC.z+138); player.invuln=2; teleportFX(player.x,player.z);
+    else { warpTo(KC.x,KC.z+138,{invuln:2});
       toast("CASTLE VAL HALLA"); log("You recall to <b>Castle Val Halla</b>.","sys"); if(SFX.portal)SFX.portal(); } }
   else if(cmd==="grant"||cmd==="revoke"){ const who=parts.slice(1).join(" ").trim();
     if((player.name||"")!==KC.lord){ log("Only Lord Kilmer commands the castle rolls.","warn"); }
@@ -26329,6 +26599,7 @@ function authAction(kind){
   const u=document.getElementById('authUser').value.trim(), p=document.getElementById('authPass').value;
   const msg=document.getElementById('authMsg'), st=document.getElementById('authStatus');
   if(!u||!p){ msg.textContent="Enter a name and password."; return; }
+  if(!transportSecure()){ st.textContent=""; msg.textContent="This deployment is insecure: account credentials would be sent in cleartext. It must be served over HTTPS (wss://) to log in or register. You can still play offline below."; return; }  // #442: refuse to send credentials over plaintext ws:// — require wss:// (or localhost dev)
   msg.textContent=""; st.textContent="Connecting…";
   const go=()=>{ st.textContent="Connected."; netSend({t:kind,user:u,pass:p}); };
   if(NET.ws&&NET.open) go();
@@ -26351,7 +26622,7 @@ function remoteApp(p){
 function reconcileRemotes(players){
   const seen={};
   for(const p of players){
-    if(!p||p.id==null||p.id===NET.me) continue;   // #34: skip a malformed/null snapshot entry
+    if(!p||p.id==null||p.id===NET.me||!isFinite(p.x)||!isFinite(p.z)) continue;   // #34: skip a malformed/null snapshot entry; #443: also skip non-finite coords — a NaN x/z would set mesh.position to NaN and propagate through groundY every frame
     seen[p.id]=1;
     let r=NET.players[p.id];
     if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); mesh.userData._headApp=app; applyACBody(mesh,app.gender); mesh.visible=true;
@@ -26359,7 +26630,8 @@ function reconcileRemotes(players){
       if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh}; }
-    r.tx=p.x; r.tz=p.z; r.yaw=p.yaw; r.hp=p.hp; r.mhp=p.mhp; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
+    r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
@@ -26523,6 +26795,9 @@ function startGame(loadSaved,preset){
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
+  // Materialize into the world through portal space (AC's arrival): the world is already built and the
+  // player placed, so arrive() is a no-op — the tube just holds until the surrounding area has streamed in.
+  startPortalTransit(null,{ready:overworldAreaLoaded,minHold:1.2,maxHold:10});
 }
 window.addEventListener('resize',()=>{
   if(typeof cam==="undefined"||!cam||typeof renderer==="undefined"||!renderer) return;   // #335: cam/renderer are undefined until initThree() resolves (inside the async asset Promise.all) — a resize during the load screen would otherwise throw
@@ -26567,7 +26842,7 @@ Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
 const startBtn=document.getElementById('startBtn'),continueBtn=document.getElementById('continueBtn');
 if(hasSave()){ continueBtn.style.display="block";
   try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));
-    if(s) continueBtn.textContent=`Continue — Level ${s.level||1} · ${s.kills||0} kills${s.title?" · "+s.title:""}`;}catch(e){}
+    if(s) continueBtn.textContent=`Continue — ${s.name||"Adventurer"} · Level ${s.level||1} · ${s.kills||0} kills${s.title?" · "+s.title:""}`;}catch(e){}   // #472: lead with the character's name (it's in the save) — the label read as broken English without it
 }
 // ============================================================================
 //  CHARACTER CREATOR — live 3D face/hair/beard/tattoo customization
