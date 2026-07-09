@@ -22450,7 +22450,13 @@ function updateCaravan(dt){
   if(c.shop){ c.shop.x=c.x; c.shop.z=c.z; }
 }
 // the keeper's blessing (buff bot): weave a broad set of enchantments over the player for 10 minutes
-function caravanBless(){
+// #547: the keeper's blessing is a paid service, not a free click. Priced to scale with
+// level so hour-long level-8 buff coverage never trivializes the buff economy / mage identity
+// (a starter character spends most of a modest purse for it; it stays a real sink at endgame).
+function caravanBlessCost(){ return 1500 + (player.level||1)*350; }
+function caravanBless(cost){
+  cost=cost||0;
+  if(cost>0){ if((player.gold||0)<cost) return; player.gold-=cost; if(isOnline) netSend({t:"vendor_buy",cost:cost}); }   // authoritative coin debit online, same as other vendor buys
   const DUR=3600;   // one hour
   // the single highest circle (level 8) of every Creature, Item and Life buff family
   const fams={};
@@ -22473,15 +22479,16 @@ function caravanBless(){
   if(typeof derive==="function") derive(); updateHUD&&updateHUD();
   if(SFX.quest)SFX.quest(); if(typeof castFlash==="function")castFlash(0x9af0ff);
   floater(player.x,EYE+0.6,player.z,"BLESSED","#9af0ff");
-  log(`<b>The caravan keeper</b> weaves <b>${n}</b> level-8 Creature, Item &amp; Life enchantments over you — blessed for one hour.`,"heal");
+  log(`<b>The caravan keeper</b> weaves <b>${n}</b> level-8 Creature, Item &amp; Life enchantments over you — blessed for one hour${cost>0?` for <b>${cost.toLocaleString()}p</b>`:""}.`,"heal");
   if(typeof buildShop==="function") buildShop();
+  if(cost>0&&typeof saveGame==="function") saveGame();   // persist the coin spend
 }
 // vendor: every spell (scroll), every casting scarab, every taper — plus free portals & a blessing
 function caravanStock(){
   const list=[];
   list.push({name:"Portal: Holtburg", warp:{x:2664*WSCALE,z:-3381*WSCALE,name:"Holtburg"}, cost:0, ico:"🌀", desc:"the keeper opens a portal to Holtburg"});
   if(typeof KC!=="undefined") list.push({name:"Portal: Castle Val Halla", warp:{x:KC.x,z:KC.z+150,name:"Castle Val Halla"}, cost:0, ico:"🌀", desc:"a portal to Lord Kilmer's castle"});
-  list.push({name:"Caravan Blessing", blessing:true, cost:0, ico:"✨", desc:"level-8 Creature, Item & Life buffs (1 hour)"});
+  list.push({name:"Caravan Blessing", blessing:true, cost:caravanBlessCost(), ico:"✨", desc:"level-8 Creature, Item & Life buffs (1 hour)"});   // #547: priced, not free
   for(const t of TAPER_STOCK) list.push(t);
   for(const nm in SCARAB_LEVEL) list.push({name:nm+" (×3)", gear:{name:nm,stat:"comp",count:3}, cost:60+SCARAB_LEVEL[nm]*45, ico:"🪲", desc:`level ${SCARAB_LEVEL[nm]} casting scarab (channels mana when dry)`});
   for(const id in SPELLBOOK){ const sp=SPELLBOOK[id]; if(!sp||sp.dmag!=null||sp.vuln!=null) continue;   // skip debuff mirrors
@@ -22539,7 +22546,7 @@ function buildShop(){
       SFX.gold();buildShop();updateHUD();saveGame();return;
     }
     if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); warpTo(it.warp.x,it.warp.z,{invuln:2}); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
-    if(it.blessing){ caravanBless(); return; }
+    if(it.blessing){ caravanBless(it.cost); return; }
     if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
     else if(it.gear){ const g=Object.assign({},it.gear,{bp:it.cost}); if(!addToInv(g)){log("Your satchel is full.","warn");return;} player.gold-=it.cost; if(isOnline) netSend({t:"vendor_buy",cost:it.cost,item:g}); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
