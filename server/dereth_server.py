@@ -1392,8 +1392,13 @@ async def resolve_attack(cl, mid, dmg):
         return
     dmg = max(0.0, min(float(dmg), m["mhp"] * 1.5))  # clamp absurd claims
     m["hp"] -= dmg
-    dealt = m.setdefault("dealt", {})
-    dealt[cl.username] = dealt.get(cl.username, 0) + dmg
+    # #439: only a real contribution tags you as a damage-dealer. A zero-damage "attack" must NOT
+    # enter `dealt`, or the sender collects full kill XP + allegiance pass-up when someone else lands
+    # the killing blow (AFK/scripted leeching off other players' kills). Genuine hits keep the tagging
+    # generosity: any dmg > 0 earns the full shared XP on the kill.
+    if dmg > 0:
+        dealt = m.setdefault("dealt", {})
+        dealt[cl.username] = dealt.get(cl.username, 0) + dmg
     await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.netid})  # #438: opaque netid, not the account name
     if m["hp"] <= 0:
         m["hp"] = 0.0
