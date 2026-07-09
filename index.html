@@ -2931,6 +2931,7 @@ function enterAcademyHall(){
   document.getElementById('dvig').style.opacity="0.4";
   buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
   player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=3;
+  player.yaw=Math.PI;   // #511: face +z into the Great Hall (toward the Society Greeter) — default yaw 0 faced the south wall, so the greeter's "walk up using W" put the recruit nose-first into the wall
   toast("THE TRAINING ACADEMY");
 }
 function exitAcademyHall(){
@@ -19419,6 +19420,11 @@ function grantSocietyRep(n){ if(!player.society||n<=0) return;
   if(typeof checkAchievements==="function") checkAchievements();
 }
 function pledgeSociety(id){ const so=societyById(id); if(!so||player.society) return;
+  // #516: pledging is permanent and locks out the other two orders — confirm before the one click commits (style matches #478/#479)
+  uiConfirm(`Pledging to the <b style="color:${so.col}">${so.name}</b> is <b style="color:#e08a6a">permanent</b> and locks out the other two societies for this character. Continue?`,
+    ()=>_doPledgeSociety(id),"Pledge, for good");
+}
+function _doPledgeSociety(id){ const so=societyById(id); if(!so||player.society) return;
   player.society=id; player.societyRep=0;
   toast("SOCIETY PLEDGE");
   log(`<span style="color:${so.col}">You pledge yourself to the <b>${so.name}</b>. ${so.blurb} You rise as an <b>Initiate</b> — complete bounties to earn your standing.</span>`,"sys");
@@ -22558,6 +22564,9 @@ function healScale(base){   // AC: the Healing skill boosts kit/potion potency; 
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
   if(player[field]<=0){ log("You have none of that potion.","warn"); return; }
+  // #515: refuse the quaff at a full vital instead of silently wasting the potion (classic AC also refused)
+  const _cur=kind==="hp"?player.hp:kind==="st"?player.st:player.mn, _max=kind==="hp"?player.mhp:kind==="st"?player.mst:player.mmn;
+  if(_cur>=_max){ log(`You are already at full ${kind==="hp"?"health":kind==="st"?"stamina":"mana"}.`,"warn"); return; }
   amt=Math.max(0,+amt||0);   // #28: a potion never DRAINS a vital — clamp a stray negative/NaN amount to 0
   player[field]--;player.drinkCd=0.6;
   if(kind==="hp"){amt=healScale(amt);player.hp=Math.min(player.mhp,player.hp+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#7fe6a0");}
