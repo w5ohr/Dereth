@@ -18141,8 +18141,83 @@ const _SND_MAP={ swing:["swing1","swing2","swing3"],hit:["hit_flesh"],heal:["hea
   flame:["cast_fire","explode_fire"],frost:["cast_frost","explode_frost"] };
 for(const k in _SND_MAP){ const syn=_SFX[k], keys=_SND_MAP[k];
   SFX[k]=(...a)=>{ if(!playSample(keys)) syn&&syn(...a); }; }
-// authentic per-creature vocals (kind_idle/_attack/_wound/_death) — used by the monster AI where it has a kind
-function creatureSFX(kind,act){ return playSample((kind||"")+"_"+act); }
+// ══ PROCEDURAL CREATURE VOICES ═══════════════════════════════════════════════════════════════════
+// A synthesized attack/death/wound/idle cry, UNIQUE PER CREATURE, derived from the bestiary
+// description — the creature's shape, name, size and damage element pick a voice family and pitch,
+// so an Olthoi chitters, a Skeleton rattles, a Lugian rumbles, a Wisp warbles, a Mosswart squelches.
+// Runs on the same WebAudio graph as SFX (fully offline); used as the fallback in creatureSFX when no
+// recorded sample exists, so every creature — even ones without a real SoundTable — has its own voice.
+function _cvFamily(kind){
+  const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, n=(b.name||kind||"").toLowerCase(), sh=b.shape||"beast";
+  if(sh==="insect"||/olthoi|wasp|mite|phyntos|beetle|chitin/.test(n)) return "insect";
+  if(sh==="skeleton"||/skeleton|skelet|wight|hollow|lich|mummy|zombie|undead|bone|grave/.test(n)) return "undead";
+  if(sh==="lugian"||/golem|lugian|gurog|stone|rock|granite|colossus/.test(n)) return "giant";
+  if(sh==="caster"||/virindi|wisp|phantom|shadow|element|spectr|ghost|doll|marionette|lich/.test(n)) return "ethereal";
+  if(sh==="blob"||/blob|jelly|slime|mosswart|thrungus|sleech|ooze|snowman|sludge/.test(n)) return "gel";
+  if(sh==="tusker"||sh==="horns"||/tusker|auroch|cow|bull|ursuin|ox|remoran/.test(n)) return "bellow";
+  if(sh==="humanoid"||sh==="tumerok"||/drudge|banderling|tumerok|mukkir|burun|monouga|ruschk|human/.test(n)) return "brute";
+  return "beast";
+}
+// element overlay: a short flavour layer that rides an ATTACK cry (fire crackle, frost shimmer, …)
+function _cvElement(el,t,dur,pk){
+  if(!actx||!el) return; const bus=masterGain||actx.destination;
+  if(el==="fire"){ for(let i=0;i<5;i++){ const tt=t+i*0.03; noiseHit(0.05,pk*0.5,700+irnd(-200,600)); } blip(340,dur*0.7,"sawtooth",pk*0.5,110); }
+  else if(el==="frost"){ blip(1400,dur*0.8,"triangle",pk*0.4,700); blip(2100,dur*0.5,"sine",pk*0.25,1500); }
+  else if(el==="acid"){ noiseHit(dur*0.9,pk*0.5,2600); blip(500,dur*0.6,"sawtooth",pk*0.3,240); }
+  else if(el==="shock"){ blip(2600,0.07,"square",pk*0.5,900); setTimeout(()=>blip(1800,0.06,"square",pk*0.4,700),40); }
+  else if(el==="nether"){ blip(70,dur,"sine",pk*0.5,40); blip(190,dur*0.8,"triangle",pk*0.25,150); }
+  else if(el==="pierce"||el==="slash"){ noiseHit(0.06,pk*0.4,1800); }
+}
+function creatureVoice(kind,act){
+  if(!actx||muted) return false;
+  const bus=masterGain||actx.destination, t=actx.currentTime;
+  const b=(typeof BESTIARY!=="undefined"&&BESTIARY[kind])||{}, size=Math.max(0.4,b.size||1), fam=_cvFamily(kind), el=b.dmgEl||"";
+  // size → pitch (a Lugian is an octave-plus below a Rat); death drops & lengthens, wound is quick & high
+  const p=1/Math.pow(size,0.9);                                   // pitch multiplier: small=high, big=low
+  const death=act==="death", wound=act==="wound", idle=act==="idle";
+  const dur=(death?0.7:idle?0.4:wound?0.18:0.32)*(fam==="giant"?1.4:1);
+  const pk=(idle?0.10:wound?0.16:0.20)*(b.isBossKind?1.2:1);      // peak gain
+  // a voiced tone into the bus with its own ADSR + optional pitch glide (down for death)
+  const tone=(freq,type,peak,d,glide,delay)=>{ const tt=t+(delay||0);
+    const o=actx.createOscillator(),g=actx.createGain(); o.type=type; o.frequency.setValueAtTime(Math.max(24,freq),tt);
+    if(glide) o.frequency.exponentialRampToValueAtTime(Math.max(20,freq*glide),tt+d);
+    g.gain.setValueAtTime(0.0001,tt); g.gain.linearRampToValueAtTime(peak,tt+Math.min(0.05,d*0.25));
+    g.gain.exponentialRampToValueAtTime(0.0006,tt+d); o.connect(g).connect(bus); o.start(tt); o.stop(tt+d+0.03); };
+  const gliss=death?0.45:wound?1.25:1.0;                          // death falls, wound rises a touch
+  switch(fam){
+    case "insect":                                                // dry chittering clicks + high buzz
+      { const clicks=death?10:wound?2:5; for(let i=0;i<clicks;i++) noiseHit(0.03,pk*0.7,2200*p+irnd(-300,300));
+        tone(1300*p,"square",pk*0.5,dur,death?0.5:1.15); if(!wound) tone(2600*p,"sawtooth",pk*0.25,dur*0.6,gliss,0.02); break; }
+    case "undead":                                                // dry bone rattle + a hollow moan
+      { const rat=death?12:wound?3:6; for(let i=0;i<rat;i++) noiseHit(0.035,pk*0.5,900*p+irnd(-150,250));
+        tone(150*p,"triangle",pk*0.7,dur*(death?1.2:1),gliss); tone(300*p,"sine",pk*0.3,dur,gliss,0.03); break; }
+    case "giant":                                                 // deep grinding rumble + gravel
+      { tone(58*p,"sawtooth",pk,dur*1.2,death?0.5:0.9); tone(87*p,"square",pk*0.4,dur,death?0.55:1.0,0.02);
+        noiseHit(dur*0.8,pk*0.4,120); break; }
+    case "ethereal":                                              // eerie detuned warble / ghostly tone
+      { const f=520*p; tone(f,"sine",pk*0.8,dur*1.2,death?0.4:1.0); tone(f*1.007,"triangle",pk*0.5,dur*1.2,death?0.4:1.05,0.01);
+        // tremolo shimmer
+        const o=actx.createOscillator(),lfo=actx.createOscillator(),lg=actx.createGain(),g=actx.createGain();
+        o.type="sine";o.frequency.value=f*2; lfo.type="sine";lfo.frequency.value=death?7:14; lg.gain.value=pk*0.3; g.gain.value=pk*0.3;
+        lfo.connect(lg).connect(g.gain); o.connect(g).connect(bus); o.start(t); o.stop(t+dur*1.1); lfo.start(t); lfo.stop(t+dur*1.1); break; }
+    case "gel":                                                   // wet squelch / gurgle
+      { tone(120*p,"sine",pk*0.8,dur,death?0.5:0.8); tone(120*p,"sine",pk*0.5,dur*0.8,death?2.2:1.6,0.04);  // wobble up/down
+        noiseHit(dur*0.7,pk*0.35,420); break; }
+    case "bellow":                                                // low brassy roar
+      { tone(150*p,"sawtooth",pk,dur*1.1,death?0.55:1.15); tone(224*p,"triangle",pk*0.5,dur,death?0.6:1.1,0.02); break; }
+    case "brute":                                                 // guttural grunt / shout
+      { tone(200*p,"sawtooth",pk,dur,death?0.5:(wound?1.3:0.95)); tone(120*p,"square",pk*0.4,dur,death?0.55:1.0);
+        noiseHit(0.05,pk*0.3,500); break; }
+    default:                                                      // beast: growl → snarl (rising) / roar
+      { tone(180*p,"sawtooth",pk,dur,death?0.5:(wound?1.4:1.5)); tone(90*p,"triangle",pk*0.5,dur,death?0.55:1.2,0.01);
+        if(!wound) noiseHit(dur*0.5,pk*0.3,700); break; }
+  }
+  if(act==="attack") _cvElement(el,t,dur,pk);                     // the element only colours an ATTACK
+  return true;
+}
+// authentic per-creature vocals (kind_idle/_attack/_wound/_death) — a recorded sample if the SoundTable
+// has one, else the procedural creatureVoice above so EVERY creature still has a distinct cry.
+function creatureSFX(kind,act){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act); }
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
   SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
   SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
