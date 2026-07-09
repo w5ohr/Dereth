@@ -2080,9 +2080,19 @@ async def dispatch(cl, msg):
             if cost <= cl.coin:
                 cl.coin -= cost
                 if isinstance(item, dict) and len(cl.inv) < 500:
-                    bought = sanitize_item(item)
-                    bought["bp"] = cost   # #288: stamp the authoritative buy price so vendor_sell can clamp resale below it — a bought item can never be sold back for a profit (kills the buy@0 coin-mint loop)
-                    cl.inv.append(bought)
+                    # #238: a bought item must be paid for at (at least) its retail catalog worth. Retail
+                    # vendors sell at a markup >= the item's value, so a legit purchase always clears this;
+                    # it blocks the "vendor_buy a catalog-named valuable item for 1 coin" injection of a
+                    # server-blessed item into the authoritative inventory. Procedural (non-catalog) wares
+                    # have no known value here (floor 0) so they are unaffected.
+                    known = AC_ITEMS.get(str(item.get("name", "")).lower()) if AC_ITEMS else None
+                    floor = int(known["val"]) if (known and known.get("val")) else 0
+                    if cost + 1 >= floor:
+                        bought = sanitize_item(item)
+                        bought["bp"] = cost   # #288: stamp the authoritative buy price so vendor_sell can clamp resale below it — a bought item can never be sold back for a profit (kills the buy@0 coin-mint loop)
+                        cl.inv.append(bought)
+                    else:
+                        await cl.send({"t": "system", "msg": "The vendor refuses — that is worth far more than you offered."})
                 await cl.send({"t": "vendor_ok", "act": "buy", "coin": int(cl.coin)})
             else:
                 await cl.send({"t": "vendor_ok", "act": "reject", "coin": int(cl.coin), "reason": "Not enough pyreals."})
