@@ -626,9 +626,15 @@
 </div></div>
 <div id="keymap"><div class="card" style="text-align:left">
   <h2>Map Keys</h2>
-  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind.</div>
+  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind. Rebinds aren't kept until you Save — closing without saving discards them.</div>
   <div id="keymapBody" style="font-size:13px"></div>
-  <div style="display:flex;gap:10px;margin-top:14px"><button id="keymapReset" class="tbtn">Reset to defaults</button><button id="keymapClose">Done</button></div>
+  <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center">
+    <button id="keymapReset" class="tbtn">Reset to defaults</button>
+    <button id="keymapSaveChar" class="tbtn" style="border-color:var(--gold);color:var(--gold)" title="Keep these bindings on this character only">💾 Save for This Character</button>
+    <button id="keymapSaveDefault" class="tbtn" title="Keep these bindings as the fallback for any character with no bindings of its own">Save as Default (All Characters)</button>
+    <span id="keymapStatus" style="font-size:11px;color:var(--dim);flex:1 1 auto;text-align:right"></span>
+    <button id="keymapClose">Done</button>
+  </div>
 </div></div>
 
 <div id="overlay">
@@ -16181,6 +16187,15 @@ function rebuildComboMap(){ ACTION_BY_COMBO={}; for(const a of ACTIONS){ if(a.he
 function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_keys")); if(s) for(const a of ACTIONS) if(Array.isArray(s[a.id])) KEYBINDS[a.id]=s[a.id]; }catch(e){} rebuildComboMap(); }
 function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
 function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
+// #483: per-character keybinds — a loaded character's own map (saved in its character save) wins;
+// with none saved, fall back to the global default (dereth_keys) so a fresh/legacy character isn't stranded.
+function applyCharKeymap(s){
+  KEYBINDS=defaultBinds();
+  if(s&&s.keymap&&typeof s.keymap==="object"){ for(const a of ACTIONS) if(Array.isArray(s.keymap[a.id])) KEYBINDS[a.id]=s.keymap[a.id]; }
+  else loadKeybinds();
+  rebuildComboMap();
+  const km=document.getElementById('keymap'); if(km&&km.style.display==="flex"&&typeof buildKeymap==="function") buildKeymap();
+}
 function evtCombo(e){ let m=""; if(e.ctrlKey)m+="ctrl+"; if(e.altKey)m+="alt+"; if(e.metaKey)m+="meta+"; if(e.shiftKey)m+="shift+"; return m+e.code; }
 function held(id){ if(typeof LOGOUT!=="undefined"&&LOGOUT.active) return false;   // #457: movement/actions are locked during the recall-away logout
   if(TOUCH.held[id]) return true; const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }   // TOUCH.held: the mobile joystick/buttons feed the same choke point the keyboard does
@@ -22900,18 +22915,28 @@ function closeSettings(){ document.getElementById('settings').style.display="non
 document.getElementById('closeSettings').onclick=closeSettings;
 { const lb=document.getElementById('logoutBtn'); if(lb) lb.onclick=()=>{ closeSettings(); beginLogout(); }; }   // #457: desktop Options → Log Out
 // ── Map Keys panel ──
-function openKeymap(){ document.getElementById('keymap').style.display="flex"; buildKeymap(); if(locked)document.exitPointerLock(); paused=true; }
-function closeKeymap(){ rebindCapture=null; document.getElementById('keymap').style.display="none";
+// #483: while the dialog is open, rebinds only edit keymapDraft (a scratch copy) — the real KEYBINDS
+// (and anything that reads it, including the autosave timer via saveGame()'s `keymap:KEYBINDS`) is
+// untouched until an explicit Save button commits the draft. Done/Esc/losing focus just drops the draft.
+let keymapDraft=null;
+function openKeymap(){ document.getElementById('keymap').style.display="flex"; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap(); if(locked)document.exitPointerLock(); paused=true;
+  const sc=document.getElementById('keymapSaveChar');
+  if(sc){ sc.disabled=!running; sc.style.opacity=running?"1":"0.5"; sc.title=running?"Keep these bindings on this character only":"Load or start a character first"; }
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent=""; }
+function closeKeymap(){ rebindCapture=null; keymapDraft=null;   // discard any unsaved rebinds — KEYBINDS was never touched
+  document.getElementById('keymap').style.display="none";
   const st=document.getElementById('settings'); if(!st||st.style.display==="none") paused=false; }   // #333: clear paused when closing the Keymap — unless Settings (which opened it and owns the pause) is still up
 function buildKeymap(){
   const body=document.getElementById('keymapBody'); if(!body) return; body.innerHTML="";
+  const draft=keymapDraft||KEYBINDS;
   const groups={}; for(const a of ACTIONS){ (groups[a.group]=groups[a.group]||[]).push(a); }
   for(const g of Object.keys(groups)){
     const h=document.createElement('div'); h.style.cssText="color:var(--gold);font-weight:bold;margin:12px 0 4px;text-transform:uppercase;font-size:11px;letter-spacing:.5px"; h.textContent=g; body.appendChild(h);
     for(const a of groups[g]){
       const row=document.createElement('div'); row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)";
       const nm=document.createElement('span'); nm.style.color="var(--ink)"; nm.textContent=a.label; row.appendChild(nm);
-      const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="min-width:130px;font-size:12px"; btn.textContent=bindLabel(a.id);
+      const btn=document.createElement('button'); btn.className="tbtn"; btn.style.cssText="min-width:130px;font-size:12px";
+      const arr=draft[a.id]; btn.textContent=(arr&&arr.length)?arr.map(comboLabel).join(", "):"—";
       btn.onclick=()=>startRebind(a.id,btn); row.appendChild(btn); body.appendChild(row);
     }
   }
@@ -22923,14 +22948,31 @@ function startRebind(id,btn){
     if(kk==="escape"){ rebindCapture=null; buildKeymap(); return; }
     if(["shift","control","alt","meta"].includes(kk)) return;   // wait for the actual (non-modifier) key
     const combo=evtCombo(e);
-    for(const aid in KEYBINDS) KEYBINDS[aid]=(KEYBINDS[aid]||[]).filter(c=>c!==combo);   // a combo maps to one action
-    KEYBINDS[id]=[combo];
-    rebindCapture=null; saveKeybinds(); rebuildComboMap(); buildKeymap();
+    const draft=keymapDraft||(keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)));
+    for(const aid in draft) draft[aid]=(draft[aid]||[]).filter(c=>c!==combo);   // a combo maps to one action
+    draft[id]=[combo];
+    rebindCapture=null; buildKeymap();   // draft only — Save is what commits + persists it
+    const st=document.getElementById('keymapStatus'); if(st) st.textContent="Unsaved changes — click a Save button to keep them.";
   };
+}
+function commitKeymapDraft(){ if(!keymapDraft) return; KEYBINDS=keymapDraft; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); rebuildComboMap(); }
+function saveKeymapForChar(){
+  if(!running) return;
+  commitKeymapDraft(); saveGame();
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent=`Saved for ${player.name||"this character"}.`;
+  toast("Keybindings saved for "+(player.name||"this character"));
+}
+function saveKeymapAsDefault(){
+  commitKeymapDraft(); saveKeybinds();
+  const st=document.getElementById('keymapStatus'); if(st) st.textContent="Saved as the default for all characters.";
+  toast("Keybindings saved as default for all characters");
 }
 { const b=document.getElementById('openKeymapBtn'); if(b) b.onclick=openKeymap;
   const c=document.getElementById('keymapClose'); if(c) c.onclick=closeKeymap;
-  const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); buildKeymap(); }; }
+  const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap();
+    const st=document.getElementById('keymapStatus'); if(st) st.textContent="Reset to the global default — click Save for This Character to also keep it on this character."; };
+  const sc=document.getElementById('keymapSaveChar'); if(sc) sc.onclick=saveKeymapForChar;
+  const sd=document.getElementById('keymapSaveDefault'); if(sd) sd.onclick=saveKeymapAsDefault; }
 
 // ============================================================================
 //  DUNGEONS / DELVES  (instanced: overworld hidden + gated while inside)
@@ -25708,6 +25750,7 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
       tiedPortal2:player.tiedPortal2||null,createTown:player.createTown||null,createTemplate:player.createTemplate||null,createSpec:player.createSpec||null,   // #330: these were set but never persisted — Secondary Portal Tie evaporated on relog, and a relog mid-Academy rerouted every heritage to Holtburg
       gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
+      keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
     if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
@@ -25832,6 +25875,7 @@ function applySaveObj(s){
   // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
   if(typeof updateHUD==="function") updateHUD();
   if(typeof buildSheet==="function") buildSheet();
+  if(typeof applyCharKeymap==="function") applyCharKeymap(s);   // #483: this character's saved keybinds, else the global default
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
