@@ -10,11 +10,12 @@ FROM python:3.12-slim
 
 RUN useradd --system --home /app dereth
 WORKDIR /app
-# The server reads admin_kilmer.json (beside it) and ../assets/{acrewards,acitems,acspellstats}.json
-# at boot; without them a Docker-deployed server silently loses the retail loot/spell catalog and the
-# seeded Admin character. Ship them so the container matches the systemd (whole-repo) deployment.
+# The server reads admin_kilmer.json (beside it) and ../assets/{acrewards,acitems,acspellstats,achousing}.json
+# at boot; without them a Docker-deployed server silently loses the retail loot/spell catalog, the seeded
+# Admin character, and (achousing) the authentic dwelling-plot set used to validate house claims (#451).
+# Ship them so the container matches the systemd (whole-repo) deployment.
 COPY server/dereth_server.py server/admin_kilmer.json ./
-COPY assets/acrewards.json assets/acitems.json assets/acspellstats.json /assets/
+COPY assets/acrewards.json assets/acitems.json assets/acspellstats.json assets/achousing.json /assets/
 
 ENV DERETH_HOST=0.0.0.0 \
     DERETH_PORT=8787 \
