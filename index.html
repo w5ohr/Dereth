@@ -929,7 +929,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},jewelry:{},gearSkill:{},
   inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,potStam:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
-  achievements:[],title:"",bossKills:0,championKills:0,delves:0,bestiary:[],clearedDungeons:[],hasTorch:true,
+  achievements:[],title:"",bossKills:0,championKills:0,delves:0,delveCredited:[],bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patronInfo:null,vassals:[],vassalXP:0,allegianceMOTD:null,vitae:0,heritage:"aluvian",
   society:null,societyRep:0,   // AC societies: pledge to one, earn standing by completing bounties
   societyRibbons:0,societyTest:null,societyTestsDone:[],   // Commendation Ribbons + rank Test-gauntlet progress
@@ -20627,6 +20627,28 @@ function acDialogueLine(name,role){ if(!AC_DIALOGUE||!name&&!role) return null;
 function questEvent(type,kind){   // a world event advances the matching objective in EVERY active quest that needs it
   if(type==="slay" && kind && typeof societyTestKill==="function") societyTestKill(kind);   // society rank Test-gauntlet
   let any=false;
+  // #324: delve objectives carry no per-quest dungeon identity, so a naive "advance every active quest"
+  // let ONE hoard claim complete every delve bounty at once (and re-claiming one easy dungeon farm a
+  // multi-count objective). Gate it: each DISTINCT dungeon (curDungeon.id, passed as `kind`) credits at
+  // most ONE delve objective, ever — so N delve bounties require N distinct delves (retail-authentic),
+  // and re-clearing the same dungeon never re-credits.
+  if(type==="delve"){
+    player.delveCredited=player.delveCredited||[];
+    if(kind && player.delveCredited.indexOf(kind)>=0) return;   // this dungeon already paid out a delve step
+    for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
+      let adv=false;
+      for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
+        if(o.type!=="delve" || a.prog[i]>=o.count) continue;
+        a.prog[i]++; adv=true;
+        if(a.prog[i]>=o.count) log(`Objective complete: <b>${o.label}</b> <span style="color:var(--dim)">(${q.name})</span>.`,"sys");
+        if(questCompleteId(a.id)) log(`<b>${q.name}</b> ready to turn in — return to ${(QUEST_GIVERS[a.id]||{}).name||"the giver"}.`,"sys");
+        break;
+      }
+      if(adv){ any=true; if(kind) player.delveCredited.push(kind); break; }   // one quest step per hoard claim; mark this dungeon consumed
+    }
+    if(any){ updateNPCMarker(); updateQuestHUD(); renderQuestLog(); }
+    return;
+  }
   for(const a of activeQuests){ const q=questById(a.id); if(!q) continue;
     for(let i=0;i<q.obj.length;i++){ const o=q.obj[i];
       if(o.type!==type) continue;
@@ -24824,7 +24846,7 @@ function openChest(){
     addDrop(dungeonChest.x+rnd(-2,2),dungeonChest.z+rnd(-2,2),{type:"item",item:questLootItem(nm,tier)});
     log(`Among the hoard lies the <b>${esc(nm)}</b>!`,"loot"); }
   player.gold+=irnd(120,260)*tier;player.materials+=irnd(8,18)*tier;player.delves++;gainXP(1800*tier);
-  SFX.level();toast("HOARD CLAIMED");log(`You plunder the hoard of the <b>${curDungeon?curDungeon.name:"delve"}</b> — rare treasures spill forth!`,"loot");questEvent("delve");checkAchievements();saveGame();
+  SFX.level();toast("HOARD CLAIMED");log(`You plunder the hoard of the <b>${curDungeon?curDungeon.name:"delve"}</b> — rare treasures spill forth!`,"loot");questEvent("delve",curDungeon?curDungeon.id:null);checkAchievements();saveGame();   // #324: pass the dungeon identity so one claim can't clear every delve bounty
 }
 
 // ============================================================================
@@ -25163,7 +25185,7 @@ function saveGame(){
       tapers:player.tapers,prismTapers:player.prismTapers,
       elixMight:player.elixMight,elixSwift:player.elixSwift,
       achievements:player.achievements,title:player.title,bossKills:player.bossKills,
-      championKills:player.championKills,delves:player.delves,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
+      championKills:player.championKills,delves:player.delves,delveCredited:player.delveCredited,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
       boundLS:lifestones.findIndex(l=>l.bound),boundLSAt:(()=>{const l=lifestones.find(x=>x.bound);return l?{name:l.name,x:l.x,z:l.z}:null;})(),activeQuests,questDone,tracked,taskReps,
       society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,kcVault:player.kcVault||{},kcHookItems:player.kcHookItems||{},
       luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
@@ -25200,7 +25222,7 @@ function applySaveObj(s){
     tapers:s.tapers||0,prismTapers:s.prismTapers||0,
     elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
     achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
-    championKills:s.championKills||0,delves:s.delves||0,bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
+    championKills:s.championKills||0,delves:s.delves||0,delveCredited:Array.isArray(s.delveCredited)?s.delveCredited:[],bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
     weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
     jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
     skills:migrateSkills(s.skills),patronInfo:(s.patronInfo&&typeof s.patronInfo==="object")?s.patronInfo:null,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,allegianceMOTD:s.allegianceMOTD||null,vitae:s.vitae||0,heritage:s.heritage||"aluvian",allegianceName:s.allegianceName||null,
