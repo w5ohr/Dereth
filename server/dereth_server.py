@@ -635,6 +635,8 @@ def ws_frame(payload: bytes, opcode=0x1) -> bytes:
 TOKENS = {}            # #309: token -> (username, expiry_epoch). Tokens must outlive a disconnect (that's what `resume` is for), so the fix for unbounded growth is a TTL + a size cap, not deletion on close.
 TOKEN_TTL = 7 * 24 * 3600   # a resume token is valid for 7 days
 CLIENTS = {}           # username -> Client (one active session per account)
+SESSIONS = {}          # #438: netid -> Client. The opaque public id clients use to target each other
+                       # (cast/pvp) and the key remotes are stored under, so the account name never leaks.
 
 # #239: rate-limit config (token buckets, per connection)
 RL_GEN_RATE = 30.0    # sustained messages/sec (input/attack/etc.)
@@ -647,7 +649,11 @@ class Client:
     def __init__(self, reader, writer):
         self.reader = reader
         self.writer = writer
-        self.username = None    # account (login) name
+        self.username = None    # account (login) name — NEVER sent in any broadcast (#438)
+        # #438: opaque per-session network id. The account login name is half a credential; it must
+        # never cross the auth boundary. This non-sensitive token is the public id used as the
+        # snapshot/broadcast key and the cast/pvp target — the account name stays server-side only.
+        self.netid = secrets.token_hex(8)
         self.token = None
         self.alive = True
         self.charname = None    # active character's in-world name
@@ -719,7 +725,9 @@ def mob_pub(m):
     return d
 
 def player_pub(u, cl):
-    return {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
+    # #438: the public "id" is the opaque session netid, NOT the account login name `u`. Display uses
+    # the in-world charname. `u` (the account name) is never placed on the wire.
+    return {"id": cl.netid, "name": cl.charname or "Adventurer", "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
             "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
             "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
             "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
@@ -1276,7 +1284,7 @@ async def do_pickup(cl, did):
     if math.hypot(cl.x - d["x"], cl.z - d["z"]) > PICKUP_RANGE:
         return
     DROPS.pop(did, None)
-    await broadcast({"t": "drop_gone", "id": did, "by": cl.username})
+    await broadcast({"t": "drop_gone", "id": did, "by": cl.netid})   # #438: opaque netid, not the account name (client ignores `by`)
     if d["type"] == "gold":
         amt = int(d["amt"])
         credit_coin_created(cl, amt)   # M3 (#238): server credits the authoritative balance, bounded by the coin-creation rate
@@ -1386,12 +1394,12 @@ async def resolve_attack(cl, mid, dmg):
     m["hp"] -= dmg
     dealt = m.setdefault("dealt", {})
     dealt[cl.username] = dealt.get(cl.username, 0) + dmg
-    await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.username})
+    await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.netid})  # #438: opaque netid, not the account name
     if m["hp"] <= 0:
         m["hp"] = 0.0
         is_boss = bool(m.get("boss"))
         m["respawn_at"] = time.time() + (BOSS_DEFS[m["bosskey"]]["respawn"] if is_boss else 8.0)
-        die_msg = {"t": "mob_die", "id": mid, "by": cl.username, "kind": m["kind"],
+        die_msg = {"t": "mob_die", "id": mid, "by": cl.netid, "kind": m["kind"],   # #438: opaque netid, not the account name
                    "x": round(m["x"], 2), "z": round(m["z"], 2)}
         if is_boss:
             die_msg["boss"] = True; die_msg["name"] = m["name"]
@@ -1971,8 +1979,11 @@ async def enter_world(cl, slot, name, data):
     """Bring a selected/created character into the shared world."""
     was_in_world = cl.in_world   # #312: a repeated play_char shouldn't re-broadcast "entered Dereth" to everyone
     cl.slot = slot; cl.charname = name; cl.in_world = True
+    SESSIONS[cl.netid] = cl   # #438: register the opaque id so other players' cast/pvp can reach this session
     load_econ(cl, data)   # M3 (#238): adopt authoritative coin + inventory from the save
-    await cl.send({"t": "play_ok", "slot": slot, "name": name, "char": data})
+    # #438: tell the client its own opaque netid so it can recognise its own broadcasts (mob_hit/emote
+    # self-echo) and skip its own snapshot record — the account name is never used as a network id.
+    await cl.send({"t": "play_ok", "slot": slot, "name": name, "netid": cl.netid, "char": data})
     # allegiance: the graph decides the /a channel (everyone under one Monarch); deliver
     # any pass-up XP your vassals earned while you were away
     r = alg_row(name)
@@ -2189,18 +2200,18 @@ async def dispatch(cl, msg):
                 verb = EMOTES.get(act)
                 line = f"{cl.charname} {verb}" if verb else None
             if line:
-                await broadcast({"t": "emote", "id": cl.username, "from": cl.charname, "act": act, "msg": line})
+                await broadcast({"t": "emote", "id": cl.netid, "from": cl.charname, "act": act, "msg": line})   # #438: opaque netid for the self-echo check; display uses `from`/charname
     elif t == "cast":
         # relay a Creature/Life heal or buff to another in-world player near the caster
         if cl.in_world:
-            tgt = CLIENTS.get(msg.get("target"))
+            tgt = SESSIONS.get(msg.get("target"))   # #438: targets are opaque netids, not account names
             spell = msg.get("spell")
             if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "pvp":
         # S3 PvP: relay a hit only if both players share a PvP ruleset (PK↔PK or PKL↔PKL) and are in range
         if cl.in_world and getattr(cl, "pk", False):
-            tgt = CLIENTS.get(msg.get("target"))
+            tgt = SESSIONS.get(msg.get("target"))   # #438: targets are opaque netids, not account names
             try: dmg = float(msg.get("dmg", 0))
             except Exception: dmg = 0
             if (tgt and tgt.in_world and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
@@ -2440,6 +2451,7 @@ async def handle(reader, writer):
             _CONN_BY_IP[ip] = _n
         else:
             _CONN_BY_IP.pop(ip, None)
+        SESSIONS.pop(cl.netid, None)   # #438: release the opaque session id
         if cl.username and CLIENTS.get(cl.username) is cl:
             was_in_world = cl.in_world
             who = cl.charname or cl.username

@@ -25914,6 +25914,7 @@ function createChar(preset){
 function onPlayOk(m){
   _playPending=false;   // #319: clear the play pending-guard
   document.getElementById('charSelect').style.display="none";
+  if(m.netid) NET.me=m.netid;   // #438: our world identity is the opaque session id (not the account login name) — it keys our own broadcasts (mob_hit/emote self-echo) and our snapshot record
   if(m.name) player.name=m.name;   // #234: adopt the server's authoritative charname — a freshly created online char sent its name to the server but never set player.name locally, so it showed as "Adventurer". Set it BEFORE the branch's saveGame so the correct name persists to the slot.
   if(creatingChar){ creatingChar=false; const preset=pendingPreset; pendingPreset=null;
     startGame(false, preset||undefined); saveGame();   // persist the fresh character to its slot
@@ -26400,7 +26401,7 @@ function startGame(loadSaved,preset){
     if(isOnline&&pendingServerChar){ applySaveObj(pendingServerChar); pendingServerChar=null; }
     else applySave();
     if(typeof kcRefreshDecor==="function") kcRefreshDecor();   // castle is built before the save loads — rebuild hooks from the restored placements
-    log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(NET.me)}.`:"Your saga continues in <b>Dereth</b>.","sys");
+    log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(player.name||"Adventurer")}.`:"Your saga continues in <b>Dereth</b>.","sys");   // #438: greet by character name — NET.me is now an opaque session id, not the account name
     toast(isOnline?"ENTERING DERETH ONLINE":"WELCOME BACK");
   } else {
     const homeName=player.createTown||(preset&&PRESETS[preset]&&PRESETS[preset].town)||"Holtburg";
