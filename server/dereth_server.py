@@ -2371,6 +2371,7 @@ async def dispatch(cl, msg):
                 cl._save_t = now_t
                 await dbq(save_char_slot, cl.username, cl.slot, char)   # #449: 256 KiB dumps + write off the loop
             await push_coin(cl)               # correct the client's mirror if we clamped its claim
+            await cl.send({"t": "save_ok"})   # #457: ack the persisted save so a client logging out can gate the session end on it
     elif t == "who":
         players = [{"name": c.charname or u, "level": c.level} for u, c in CLIENTS.items() if c.in_world]
         await cl.send({"t": "who", "players": players})

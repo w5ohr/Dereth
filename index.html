@@ -621,6 +621,7 @@
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Show or hide any on-screen interface (each also has an ✕ and a keybind — see Map Keys → HUD Toggles)">Interfaces</span><span id="setHud" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Sync your character to the server, then depart Dereth through a recall portal back to the title screen">Session</span><button id="logoutBtn" class="tbtn" style="border-color:var(--gold);color:var(--gold)">🚪 Log Out…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
 <div id="keymap"><div class="card" style="text-align:left">
@@ -4877,7 +4878,9 @@ function acMotionPose(u,clip,tt,loop){
 function acMotionTick(u,dt,moving,running,guarded){
   if(!AC_MOTION||!u.acBody||!u.acDrive) return;
   let posed=false;
-  if(player.alive){
+  // #457: during the recall-away logout, release the MotionTable so the procedural arms-overhead pose
+  // (u.shR/shL — the same joints that drive the AC body) is not overwritten by the idle clip.
+  if(player.alive&&!(typeof LOGOUT!=="undefined"&&LOGOUT.active)){
     const sw=player.swing;
     if(sw>0&&weaponMode==="sword"){
       const clip=player.weapon?"attack":"punch", c=AC_MOTION.clips[clip]||AC_MOTION.clips.attack;
@@ -16045,6 +16048,7 @@ function dirtyStrike(m){
 let _rmbT=0;
 cEl.addEventListener('mousedown',e=>{
   if(!running) return;
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active) return;   // #457: no attack/appraise while logging out
   if(e.button===0){                                    // left: select what's under the cursor, then attack
     const hit=raycastPick(locked?null:e); if(hit) selectTarget(hit,true); else if(!locked) selectTarget(null,true);
     if(!locked) return;                                // (unlocked click still locks via the click handler)
@@ -16178,7 +16182,8 @@ function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_ke
 function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
 function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
 function evtCombo(e){ let m=""; if(e.ctrlKey)m+="ctrl+"; if(e.altKey)m+="alt+"; if(e.metaKey)m+="meta+"; if(e.shiftKey)m+="shift+"; return m+e.code; }
-function held(id){ if(TOUCH.held[id]) return true; const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }   // TOUCH.held: the mobile joystick/buttons feed the same choke point the keyboard does
+function held(id){ if(typeof LOGOUT!=="undefined"&&LOGOUT.active) return false;   // #457: movement/actions are locked during the recall-away logout
+  if(TOUCH.held[id]) return true; const arr=KEYBINDS[id]; if(arr) for(const c of arr){ if(keys[c.split("+").pop()]) return true; } return false; }   // TOUCH.held: the mobile joystick/buttons feed the same choke point the keyboard does
 function codeLabel(c){ if(!c)return ""; if(c.startsWith("Key"))return c.slice(3); if(c.startsWith("Digit"))return c.slice(5);
   const map={Space:"Space",Minus:"-",Equal:"=",BracketLeft:"[",BracketRight:"]",Backslash:"\\",Escape:"Esc",Tab:"Tab",Enter:"Enter",Backquote:"`",Semicolon:";",Quote:"'",Comma:",",Period:".",Slash:"/",ArrowUp:"↑",ArrowDown:"↓",ArrowLeft:"←",ArrowRight:"→",ShiftLeft:"Shift",ShiftRight:"Shift"}; return map[c]||c; }
 function comboLabel(combo){ if(!combo)return "—"; const p=combo.split("+"),code=p.pop(),mods={ctrl:"Ctrl",alt:"Alt/Opt",meta:"Cmd",shift:"Shift"};
@@ -16190,6 +16195,7 @@ let rebindCapture=null;   // when set, the next keydown captures a new binding
 window.addEventListener('keydown',e=>{
   const ce=document.getElementById('chatInput');
   if(ce && ce.style.display!=="none") return; // typing in chat — the input owns the keyboard
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active){ e.preventDefault(); return; }   // #457: input locked while the logout sequence plays
   const k=e.key.toLowerCase();
   keys[k]=true; keys[e.code]=true;   // record by both e.key and e.code so held()/movement work
   if(rebindCapture){ e.preventDefault(); rebindCapture(e); return; }   // capturing a new keybind
@@ -16675,6 +16681,7 @@ function showCastReticle(x,z,r,col){
 }
 function hideCastReticle(){ if(castReticle) castReticle.visible=false; }
 function update(dt){
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active) updateLogout(dt);   // #457: the recall-away logout advances even while otherwise idle
   if(paused||!running) return;
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
@@ -17202,7 +17209,17 @@ function animateAvatar(dt){
     u.hipR.rotation.x+=q*0.3; u.hipL.rotation.x+=q*0.3;
     u.knR.rotation.x-=q*0.62; u.knL.rotation.x-=q*0.62;
     u.anR.rotation.x+=q*0.32; u.anL.rotation.x+=q*0.32; };
-  if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
+  if(typeof LOGOUT!=="undefined"&&LOGOUT.active){   // #457: recall-away — stand tall; both arms rise until the hands meet overhead
+    const rise=LOGOUT.rise;
+    u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false; if(u.aHeld)u.aHeld.visible=false;
+    u.spine.rotation.x=0; u.spine.rotation.z=0; u.spine.position.y=AV_WAIST;
+    u.neck.rotation.set(-rise*0.28,0,0);                 // head tips up toward the meeting hands
+    const up=-Math.PI*0.98*rise;                         // shoulders swing from rest to straight overhead
+    sX=up; lX=up; sZ=0.12*rise; lZ=-0.12*rise;           // draw both hands inward so they meet at centre overhead
+    eX=-(1-rise)*0.30; lE=-(1-rise)*0.30;                // elbows straighten as the arms reach up
+    twist=0;
+  }
+  else if(sw>0){ const t=1-sw, raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
     const kind=player.swingAnim||(twoH?"chop":"diag");
     const drive=k=>{ u.spine.rotation.x+=k*0.2; u.hipR.rotation.x+=k*0.26; u.knR.rotation.x-=k*0.5; u.anR.rotation.x+=k*0.24; };  // footwork: the lead leg plants & drives into the blow
     switch(kind){
@@ -22881,6 +22898,7 @@ function openSettings(){
 }
 function closeSettings(){ document.getElementById('settings').style.display="none";paused=false; }
 document.getElementById('closeSettings').onclick=closeSettings;
+{ const lb=document.getElementById('logoutBtn'); if(lb) lb.onclick=()=>{ closeSettings(); beginLogout(); }; }   // #457: desktop Options → Log Out
 // ── Map Keys panel ──
 function openKeymap(){ document.getElementById('keymap').style.display="flex"; buildKeymap(); if(locked)document.exitPointerLock(); paused=true; }
 function closeKeymap(){ rebindCapture=null; document.getElementById('keymap').style.display="none";
@@ -25671,7 +25689,7 @@ document.getElementById('closeTink').onclick=closeTinker;
 //  SAVE / LOAD  (localStorage)
 // ============================================================================
 const SAVE_KEY="dereth_save_v1";
-function saveGame(){
+function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the localStorage safety-net even while online
   try{
     const baseAttr={}; for(const a in player.attr) baseAttr[a]=player.attr[a]-((player.spellBuffs&&player.spellBuffs[a])?player.spellBuffs[a].v:0);
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
@@ -25692,7 +25710,8 @@ function saveGame(){
       knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
       dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
-    if(isOnline&&NET.open) netSend({t:"save",char:s});       // persist server-side when playing online
+    if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
+      if(alsoLocal){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(s)); }catch(e){} } }   // #457: logout also writes the local safety-net so a socket drop mid-logout can't black-hole progress
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
   }catch(e){}
 }
@@ -25878,6 +25897,7 @@ function netHandle(m){
   if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="who") return onWho(m);
   if(m.t==="house_sync") return onHouseSync(m);   // #355: authoritative dwelling ownership + access settings
+  if(m.t==="save_ok") return onSaveOk(m);         // #457: server confirmed the save landed — a pending logout can now finish
   if(m.t==="emote") return onEmote(m);
   if(m.t==="pvp") return onPvp(m);
   if(m.t==="rbuff") return onRemoteBuff(m);
@@ -26264,6 +26284,71 @@ function updatePartyHUD(){
   el.innerHTML=`<div style="color:var(--gold);font-weight:bold;margin-bottom:3px">Party (${NET.partyNames.size})</div>${rows}`;
   el.style.display="";
 }
+// ── #457: in-world LOGOUT — an AC portal-recall departure ───────────────────────────────────────
+// A deliberate Logout that (1) syncs the character to the server and (2) plays a recall-away: the
+// avatar stands, raises both arms until the hands meet overhead, and slowly fades out inside the same
+// swirling purple portal the game shows on portal use (teleportFX + buildPortal). The session ends
+// ONLY after the server confirms the save landed (a `save_ok` ack) — or a timeout fallback fires so a
+// slow/dropped socket can never trap the player — then returns to the title / character-select screen.
+// Input is locked and the character is made briefly invulnerable so a deliberate logout reliably
+// completes (a product choice over AC's optional interrupt-on-damage, stated in the PR).
+const LOGOUT={active:false,t:0,rise:0,fade:0,portal:null,online:false,saveAcked:false,saveDeadline:0,done:false};
+const LOGOUT_RISE=1.1, LOGOUT_FADE=1.6, LOGOUT_SAVE_TIMEOUT=6.0;   // seconds: arms-up ramp · hold+fade · save-ack grace
+function canLogout(){ return !!running && !LOGOUT.active && player.alive; }
+function beginLogout(){
+  if(!canLogout()){ if(running&&!player.alive) log("You cannot log out while dead — release to a lifestone first.","warn"); return; }
+  LOGOUT.active=true; LOGOUT.t=0; LOGOUT.rise=0; LOGOUT.fade=0; LOGOUT.done=false;
+  LOGOUT.saveAcked=false; LOGOUT.saveDeadline=LOGOUT_RISE+LOGOUT_FADE+LOGOUT_SAVE_TIMEOUT;
+  LOGOUT.online=!!(isOnline&&NET.open);
+  // lock input: drop any in-flight keys/joystick/charge so nothing carries into the locked sequence
+  for(const k in keys) delete keys[k];
+  if(typeof TOUCH!=="undefined"){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; }
+  chargeActive=false; blocking=false; player.casting=null; player.emoteT=0;
+  if(typeof closeAnyPanel==="function") closeAnyPanel();
+  if(locked&&document.exitPointerLock) document.exitPointerLock();
+  player.invuln=Math.max(player.invuln||0, LOGOUT.saveDeadline+2);   // a deliberate logout is not cancelled by a stray hit
+  // portal visuals at the player's feet — the SAME swirl/flash the game uses when entering a portal
+  try{ teleportFX(player.x,player.z); }catch(e){}
+  try{ const g=buildPortal("Logout"); g.position.set(player.x,groundY(player.x,player.z),player.z);
+       g.traverse(o=>{ if(o.userData&&o.userData.labelCat) o.visible=false; });   // a departure, not a travel portal — hide the name label
+       scene.add(g); LOGOUT.portal=g; }catch(e){}
+  // kick the server sync: online → {t:"save"} (+ localStorage safety-net); offline → localStorage only
+  try{ saveGame(true); }catch(e){}
+  if(!LOGOUT.online) LOGOUT.saveAcked=true;   // offline safety-net write is synchronous → already persisted
+  try{ log("You raise your arms and portal energies gather about you — departing Dereth…","sys"); }catch(e){}
+  if(typeof SFX!=="undefined"&&SFX.portal) SFX.portal();
+}
+function onSaveOk(){ if(LOGOUT.active) LOGOUT.saveAcked=true; }   // the pending logout may now finish once the fade completes
+function updateLogout(dt){
+  if(!LOGOUT.active) return;
+  LOGOUT.t+=dt;
+  LOGOUT.rise=clamp(LOGOUT.t/LOGOUT_RISE,0,1);
+  LOGOUT.fade=clamp((LOGOUT.t-LOGOUT_RISE)/LOGOUT_FADE,0,1);
+  const g=LOGOUT.portal;   // churn the departure portal (its disc/counter-disc), like a live portal
+  if(g&&g.userData){ if(g.userData.disc) g.userData.disc.rotation.z+=dt*1.4;
+    if(g.userData.disc2) g.userData.disc2.rotation.z-=dt*2.0; }
+  _logoutFadeAvatar(1-LOGOUT.fade);   // avatar opacity → 0 in time with the animation
+  const animDone=LOGOUT.fade>=1, saveDone=LOGOUT.saveAcked||LOGOUT.t>=LOGOUT.saveDeadline;
+  if(animDone&&saveDone&&!LOGOUT.done){ LOGOUT.done=true; finishLogout(); }
+}
+function _logoutFadeAvatar(op){
+  const av=(typeof playerAvatar!=="undefined")&&playerAvatar; if(!av||!av.traverse) return;
+  op=clamp(op,0,1);
+  av.traverse(o=>{ if(!o.isMesh||!o.material) return;
+    const arr=Array.isArray(o.material)?o.material:null, list=arr||[o.material];
+    for(let i=0;i<list.length;i++){ let m=list[i];
+      // clone each material once so we fade ONLY the local avatar — never a material shared with the
+      // gltfPeople cache (which would fade remote players too). We reload after, so no restore is needed.
+      if(!m._logoutOwned){ m=m.clone(); m._logoutOwned=true; m.transparent=true; m.depthWrite=false;
+        if(arr) o.material[i]=m; else o.material=m; }
+      m.opacity=op; }
+  });
+}
+function finishLogout(){
+  try{ if(NET&&NET.ws) NET.ws.close(); }catch(e){}   // only now — the save is confirmed (or the timeout fired)
+  logoutReturnToTitle();
+}
+function logoutReturnToTitle(){ try{ location.reload(); }catch(e){} }   // a clean slate → title screen (online: re-login → char-select; offline: Continue)
 const EMOTE_CMDS={wave:1,cheer:1,dance:1,bow:1,laugh:1,point:1,salute:1,flex:1,kneel:1,clap:1};
 const EMOTE_VERB={wave:"wave.",cheer:"cheer!",dance:"break into a dance.",bow:"bow solemnly.",laugh:"burst out laughing.",point:"point.",salute:"salute.",flex:"flex.",kneel:"kneel.",clap:"applaud."};
 const EMOTE_DUR=2.2;
@@ -26423,6 +26508,7 @@ function handleSlash(text){
       if(cmd==="grant"){ g.push(who); log(`<b>${esc(who)}</b> is granted the freedom of Castle Val Halla.`,"sys"); }
       else log(`<b>${esc(who)}</b> is struck from the castle rolls.`,"sys");
       kcSaveGuests(g); if(SFX.quest)SFX.quest(); } }
+  else if(cmd==="logout"||cmd==="camp"){ beginLogout(); }   // #457: recall-away logout (syncs to the server, then returns to the title screen)
   else if(cmd==="who"){ netSend({t:"who"}); }
   else if(cmd==="tell"||cmd==="w"){ const name=parts[1], msg=parts.slice(2).join(" ").trim();
     if(name&&msg) netSend({t:"tell",name,msg}); else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
@@ -26505,6 +26591,7 @@ function handleSlash(text){
     log(`<b>Allegiance:</b> /swear &lt;name&gt; · /break (/unswear) · /muster · /allegiance join|leave|hometown`,"sys");
     log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");
     log(`<b>Combat &amp; social:</b> /pk pk|pkl|npk · /trade &lt;name&gt; · /buff [spell] · /me &lt;action&gt; · /emote — or /${Object.keys(EMOTE_CMDS).join(", /")}`,"sys");
+    log(`<b>Session:</b> /logout (/camp) — sync to the server and depart Dereth through a recall portal`,"sys");
   }
   else log("Unknown command: <b>/"+esc(cmd)+"</b> — type <b>/help</b> for the full list.","warn");
 }
@@ -27463,6 +27550,7 @@ function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.
     ["📖","Codex",()=>togglePanel('codex',openCodex,closeCodex)],
     ["🏠","Estate",()=>togglePanel('housing',openHousing,closeHousing)],
     ["⚙️","Options",()=>togglePanel('settings',openSettings,closeSettings)],
+    ["🚪","Log Out",()=>beginLogout()],   // #457: touch ☰ → Log Out (recall-away departure)
     ["⛶","Fullscreen",()=>tcFullscreen(false)]];
   for(const [ic,lab,fn] of items){ const b=document.createElement('button');
     b.innerHTML=`${ic}<small>${lab}</small>`;
