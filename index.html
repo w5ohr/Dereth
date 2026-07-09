@@ -10322,9 +10322,12 @@ function updateShieldModel(){   // reflect the equipped off-hand shield on the a
       realGrp.userData._for=(it.shield||"kite");
       while(realGrp.children.length) realGrp.remove(realGrp.children[0]);
       const inst=real.clone();
-      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3()), c=bb.getCenter(new THREE.Vector3());
+      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3());
       const sc=0.62/Math.max(sz.x,sz.y,0.001); inst.scale.setScalar(sc);
-      inst.position.set(-c.x*sc,-c.y*sc,-c.z*sc);
+      // #482: DON'T recentre on the bounding-box middle — that discards the model's own local origin,
+      // which (like the hand-held weapon meshes) is the retail placement-frame point Turbine attached
+      // to the forearm bone, i.e. the shield's handle/strap. Scale only; keep that origin at realGrp's
+      // origin so the shield rides the arm by its grip instead of floating from its geometric centre.
       realGrp.add(inst);
     }
     realGrp.visible=true; sh.visible=false; return;
@@ -11726,6 +11729,8 @@ function buildItemModel(it,opts){
   const gemCol=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||0x8ad0ff;
   const S=it.stat, wt=it.wt, nm=(it.name||"").toLowerCase();
   const brand=(it.affix&&it.affix.k==='brand'&&typeof BRAND_GLOW!=="undefined")?BRAND_GLOW[it.affix.element]:null;
+  let gripY=0;   // #482: local-Y of the item's GRIP centre (set by the blade branch below) — when opts.hand,
+                 // everything is shifted so this point (not the mesh's build origin) lands at the hand
   if(S==="weapon"&&wt==="focus"){                                   // CASTING FOCI — the user's callout
     if(/orb/.test(nm)){                                             // ORB — a round glowing sphere in a pronged holder on a short handle
       const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.022,0.2,8),wood);handle.position.y=-0.1;g.add(handle);
@@ -11915,14 +11920,19 @@ function buildItemModel(it,opts){
       if(brand){blade.material=blade.material.clone();blade.material.color.multiplyScalar(0.3);   // darken the steel so the glow colour dominates
         blade.material.emissive.setHex(brand);blade.material.emissiveIntensity=0.95;}   // the bonus GLOWS
       if(/rondel/.test(nm)){ for(const yy of[0,-0.11]){const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.014,12),gold);disc.position.y=yy;g.add(disc);}
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); }
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); gripY=grip.position.y; }
       else if(/katana|wakizashi|tachi|no.?dachi|nodachi|odachi|ken\b/.test(nm)){   // tsuba disc guard + wrapped grip
         const tsuba=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.012,12),new THREE.MeshStandardMaterial({color:0x3a3430,metalness:0.6,roughness:0.5}));g.add(tsuba);
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip);
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip); gripY=grip.position.y;
         for(let i=0;i<(twoH?5:3);i++){const wrapX=new THREE.Mesh(new THREE.TorusGeometry(0.019,0.004,4,8),gold);wrapX.rotation.x=Math.PI/2;wrapX.position.y=-0.035-i*0.05;g.add(wrapX);} }
-      else _hilt(g,twoH?0.2:0.15,twoH?0.24:0.18,gold);
+      else { const gripLen=twoH?0.2:0.15; _hilt(g,gripLen,twoH?0.24:0.18,gold); gripY=-gripLen/2; }
     }
     if(brand){ const gl=new THREE.PointLight(brand,0.7,1.3);gl.position.y=0.5;g.add(gl); }
+    // #482: grip point → hand attach origin. The blade branch above builds with the GUARD at local
+    // y=0 (blade grows +y, hilt/pommel grow -y), so a bare hand-attach centred a fist on the guard —
+    // the whole grip+pommel dangled below the fist while the blade ran straight through it. Re-centre
+    // the group on the authored grip's mid-point so the palm bone lands on the HANDLE, not the guard.
+    if(opts.hand&&gripY){ g.children.forEach(c=>{ if(c.position) c.position.y-=gripY; }); }
   } else if(S==="worn"&&it.aslot==="offhand"){                      // SHIELDS — shaped per type, not just scaled
     const ty=it.shield||"kite", plate=_imat(tint,0.7,0.4), rimM=gold;
     if(ty==="buckler"||ty==="round"){ const r=ty==="buckler"?0.16:0.24;
