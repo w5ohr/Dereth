@@ -16349,7 +16349,7 @@ function currentPrompt(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house) return hsHintInside();
-    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs); if(n&&n.d<3.5) return "Speak with "+n.o.name+" (E)"; }
+    if(curDungeon&&curDungeon.academy){ const n=talkTarget(); if(n&&n.d<TALK_R) return "Speak with "+n.o.name+" (E)"; }
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&nr(dungeonChest.x,dungeonChest.z)<3.5) return "Open the hoard (E)";
     if(dungeonLock&&!dungeonLock.opened&&nr(dungeonLock.x,dungeonLock.z)<3.2) return hasLockOpener()?"Pick the locked cache (E)":"Locked — need a Lockpick or Key";
     if(dungeonVault&&!dungeonVault.opened&&nr(dungeonVault.x,dungeonVault.z)<3.2) return hasKey()?"Unlock the vault (E)":"Sealed Vault — needs a Key";
@@ -16365,7 +16365,7 @@ function currentPrompt(){
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
   for(const bs of bookStands) if(nr(bs.x,bs.z)<3.2) return "Browse "+bs.name+" (E)";
   for(const ct of chessTables) if(nr(ct.x,ct.z)<3.0) return "Play chess (E)";
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
+  {const n=talkTarget(); if(n&&n.d<TALK_R){const o=n.o;
     if(o.role==="crier") return "Ask the Town Crier for directions (E)";
     if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
     if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
@@ -16463,6 +16463,27 @@ function openLockedCache(){
   log(`You ${opener.stat==="key"?"unlock":"pick open"} the cache with your <b>${opener.name}</b> — treasure spills out!`,"loot");
   if(SFX.quest)SFX.quest(); toast("CACHE OPENED");
 }
+// #535: the talk-to-NPC picker. E used to key on nearestOf(npcs) alone, so a tap-targeted NPC was
+// ignored and the tight range gate no-op'd in silence. Now E (and its HUD prompt) prefer the NPC you
+// have TARGETed, falling back to the nearest — and whichever is actually in range wins.
+const TALK_R=3.5;
+function talkTarget(){
+  const cands=[];
+  if(TARGET&&TARGET.type==="npc"&&TARGET.ref&&npcs.indexOf(TARGET.ref)>=0){ const o=TARGET.ref; cands.push({o,d:Math.hypot(o.x-player.x,o.z-player.z)}); }
+  const nr=nearestOf(npcs); if(nr&&(!cands.length||nr.o!==cands[0].o)) cands.push(nr);
+  const inR=cands.filter(c=>c.d<TALK_R);
+  if(inR.length) return inR[0];                       // cands[0] is your target, so an in-range lock wins
+  return cands.sort((a,b)=>a.d-b.d)[0]||null;         // else the closest talkable NPC (may be out of range)
+}
+let _talkNudgeAt=0;
+// Reached only when E consumed nothing else — nudge toward a talkable NPC instead of dead silence.
+function talkNudge(){
+  const n=talkTarget(); if(!n||n.d<TALK_R) return;    // in range would already have opened dialog
+  if(now()-_talkNudgeAt<1200) return;                 // don't spam on E-mashing
+  const targeted=!!(TARGET&&TARGET.type==="npc");
+  if(n.d<12){ _talkNudgeAt=now(); log(`Move closer to <b>${n.o.name}</b> to speak.`,"sys"); }
+  else if(targeted){ _talkNudgeAt=now(); log("There is no one close enough to talk to.","sys"); }
+}
 function interact(){
   if(!player.alive) return;   // the dead can't act — E during the death fade was insta-looting your own corpse
   if(player.aboardShip){ disembarkShip(); return; }   // aboard a ship → E puts you ashore
@@ -16489,7 +16510,7 @@ function interact(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house){ hsInteractInside(); return; }   // house interiors & residential halls
-    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; } }   // the Academy's instructors
+    if(curDungeon&&curDungeon.academy){ const n=talkTarget(); if(n&&n.d<TALK_R){ talkToNPC(n.o); return; } }   // the Academy's instructors (E prefers your tap-target)
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&Math.hypot(dungeonChest.x-player.x,dungeonChest.z-player.z)<3.5){ openChest(); return; }
     if(dungeonLock&&!dungeonLock.opened&&Math.hypot(dungeonLock.x-player.x,dungeonLock.z-player.z)<3.2){ openLockedCache(); return; }
     if(dungeonVault&&!dungeonVault.opened&&Math.hypot(dungeonVault.x-player.x,dungeonVault.z-player.z)<3.2){ openVault(); return; }
@@ -16509,11 +16530,12 @@ function interact(){
       if(dungeonDepth>1){ const d=dungeonDepth-1; dungeonGoDepth(d); if(SFX.portal)SFX.portal();
         log(d>1?`You climb back up to <b>depth ${d}</b>.`:"You climb back up to the top floor.","sys"); return; }
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
+    if(curDungeon&&curDungeon.academy) talkNudge();   // #535: nothing else consumed E — nudge toward the Academy staff
     return;
   }
   for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
   for(const ct of chessTables) if(Math.hypot(ct.x-player.x,ct.z-player.z)<3.0){ openChessBoard(); return; }
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
+  {const n=talkTarget(); if(n&&n.d<TALK_R){ talkToNPC(n.o); return; }}   // #535: E prefers your tap-targeted NPC, then the nearest
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
   for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)){ openKcChest(ch); return; } }
@@ -16555,6 +16577,7 @@ function interact(){
       toast("BOUND");SFX.quest();saveGame();return;
     }
   }
+  talkNudge();   // #535: E consumed nothing — if a talkable NPC is targeted or just out of reach, say so
 }
 function recoverCorpse(d){
   // a SHARED (multiplayer) corpse is server-brokered and owner-only — the server validates and
