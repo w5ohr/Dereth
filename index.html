@@ -21563,8 +21563,11 @@ function renderQuestLog(){
     log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
     renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
   });
+  // #516: pledging is permanent and mutually-exclusive ("you may swear to only one, for good") — guard it
+  // with the same in-game confirm modal #478 uses for the save-overwrite, not a bare native confirm() (which
+  // headless/touch browsers can silently auto-accept, letting a stray tap swear the character in for good).
   body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
-    if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+    if(s) uiConfirm(`Pledging to the <b style="color:${s.col}">${s.name}</b> is <b style="color:#e08a6a">permanent</b> and locks out the other societies. Continue?`,()=>pledgeSociety(s.id),"Pledge"); });
   { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
   { const c=body.querySelector('#socClaim'); if(c) c.onclick=()=>{ claimSocietyTest(); buildSheet&&buildSheet(); }; }
 }
