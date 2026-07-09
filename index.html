@@ -280,6 +280,9 @@
   /* the quickbar scales via --qbscale and anchors beside the joystick zone, clear of the cluster */
   body.touchui #spellbar{left:calc(148px + env(safe-area-inset-left,0px));transform:scale(var(--qbscale,1));transform-origin:bottom left}
   body.touchui #combatPanel{display:none!important}
+  /* #452: hide the desktop HUD panels in touch mode at EVERY viewport (tablets included), not just
+     phones — on landscape tablet #quest otherwise overlaps the on-screen spell-arc/attack cluster */
+  body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
   body.touchui #potions{left:50%!important;right:auto!important;top:58px!important;bottom:auto!important;transform:translateX(-50%)}
   body.touchui #potions .pot{cursor:pointer;pointer-events:auto}
   body.touchui #log{bottom:calc(238px + env(safe-area-inset-bottom,0px));width:min(320px,38vw)}
@@ -292,7 +295,6 @@
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
     body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
-    body.touchui #right,body.touchui #quest,body.touchui #alinco,body.touchui #vtank,body.touchui #magtools{display:none!important}
   }
 </style>
 </head>
