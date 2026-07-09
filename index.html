@@ -123,8 +123,8 @@
   .doll-slot .ds-ico{font-size:10px;color:var(--dim)}
   .doll-slot .ds-lab{font-size:10.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tbtn:hover{background:#3a2e16}.tbtn:disabled{opacity:.35;cursor:default}
-  #closeTink,#closeSettings,#closeMap,#closeCodex{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}
-  #closeTink:hover,#closeSettings:hover,#closeMap:hover,#closeCodex:hover{background:#3a2e16}
+  #closeTink,#closeSettings,#closeMap,#closeCodex,#closeSpellbook,#closeShop{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}
+  #closeTink:hover,#closeSettings:hover,#closeMap:hover,#closeCodex:hover,#closeSpellbook:hover,#closeShop:hover{background:#3a2e16}
   .row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #241c0e}
   .row .lab{font-weight:bold}.row .desc{color:var(--dim);font-size:11px;font-weight:normal}
   .row .ctl{display:flex;align-items:center;gap:8px}.row .val{min-width:30px;text-align:right;color:#fff;font-weight:bold}
@@ -16616,6 +16616,24 @@ function buildSheet(){
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
 const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing"];
 function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
+// #481: every one of these full-screen panels already paints its own backdrop above the HUD, but a
+// visual backdrop alone doesn't stop the HUD's own buttons underneath (minimap zoom, panel-rail, …)
+// from still being reachable by a stray click, a synthetic click, or Tab/assistive-tech focus — the
+// HUD keeps its normal pointer-events/tabindex the whole time a modal sits on top of it. Rather than
+// bolt a "don't click me" flag onto each panel's own open()/close(), watch every modal's `style`
+// attribute from one place and mark the HUD `inert` (unclickable, unfocusable, hidden from a11y
+// trees) for as long as ANY of them is showing — restored the instant the last one closes.
+const HUD_INERT_WATCH=[...BIG_MODALS,"charCreator"];
+function refreshHudInert(){
+  const hud=document.getElementById('hud'); if(!hud) return;
+  const anyOpen=HUD_INERT_WATCH.some(id=>{ const el=document.getElementById(id); return el&&getComputedStyle(el).display!=="none"; });
+  if(anyOpen) hud.setAttribute('inert',''); else hud.removeAttribute('inert');
+}
+(function(){
+  const mo=new MutationObserver(refreshHudInert);
+  HUD_INERT_WATCH.forEach(id=>{ const el=document.getElementById(id); if(el) mo.observe(el,{attributes:true,attributeFilter:['style']}); });
+  refreshHudInert();
+})();
 function openSheet(){closeOtherModals("sheet");buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
