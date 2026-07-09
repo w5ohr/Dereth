@@ -3291,7 +3291,10 @@ function updateWeather(dt){
     else if(arid) w=r<0.74?"clear":r<0.95?"cloudy":"fog";                               // Gharu'ndim desert: almost never rains
     else if(wet)  w=r<0.14?"clear":r<0.34?"cloudy":r<0.70?"rain":r<0.90?"storm":"fog";  // Blackmire wetlands: frequent rain & storms
     else          w=r<0.42?"clear":r<0.64?"cloudy":r<0.82?"rain":r<0.90?"storm":"fog";  // temperate lands
-    if(w!==weather){ weather=w; windDirTarget=rnd(0,6.283); log(({rain:"Rain sweeps across the land.",storm:"A tempest breaks — thunder rolls across Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
+    if(w!==weather){ weather=w; windDirTarget=rnd(0,6.283);
+      // #471: keep the weather STATE current (so the sky is right the moment you surface), but only
+      // ANNOUNCE the change when you're actually under the open sky — no "the sky grows overcast" while delving.
+      if(!inDungeon&&!inNetwork) log(({rain:"Rain sweeps across the land.",storm:"A tempest breaks — thunder rolls across Dereth.",snow:"Snow begins to fall.",fog:"A thick fog rolls across the land.",cloudy:"The sky grows overcast.",clear:"The skies clear once more."})[w],"sys"); }
     weatherT=rnd(35,75);
   }
   const raining=(weather==="rain"||weather==="storm"), storming=(weather==="storm");
