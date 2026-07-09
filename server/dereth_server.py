@@ -53,10 +53,36 @@ def db():
     c.execute("""CREATE TABLE IF NOT EXISTS allegiance(
         charname TEXT PRIMARY KEY, patron TEXT, motd TEXT,
         sworn_at INTEGER, pending_xp INTEGER DEFAULT 0)""")
+    # #355: authoritative per-dwelling ownership + access settings, keyed by the world plot id (hid),
+    # so every client can seal/allow another player's house (owner-only claim; first-come on unowned plots).
+    c.execute("""CREATE TABLE IF NOT EXISTS houses(hid TEXT PRIMARY KEY, data TEXT)""")
     return c
 
 def hash_pw(password: str, salt: bytes) -> str:
     return hashlib.scrypt(password.encode("utf-8"), salt=salt, **SCRYPT).hex()
+
+# #355: dwelling ownership registry — hid -> {"owner","open","guests":[...],"storagePerm"}. Loaded at boot,
+# persisted on every change, and synced to clients so a stranger's house is sealed unless open/guest-listed.
+HOUSES = {}
+def load_houses():
+    try:
+        with db() as c:
+            for hid, data in c.execute("SELECT hid, data FROM houses").fetchall():
+                try: HOUSES[str(hid)] = json.loads(data)
+                except Exception: pass
+    except Exception:
+        pass
+def save_house(hid):
+    with db() as c:
+        h = HOUSES.get(hid)
+        if h is None:
+            c.execute("DELETE FROM houses WHERE hid=?", (hid,))
+        else:
+            c.execute("INSERT INTO houses(hid,data) VALUES(?,?) "
+                      "ON CONFLICT(hid) DO UPDATE SET data=excluded.data", (hid, json.dumps(h)))
+async def broadcast_house(hid):
+    # a released plot is sent as {hid: None} so clients delete their local seal
+    await broadcast({"t": "house_sync", "houses": {hid: HOUSES.get(hid)}})
 
 def create_user(username, password):
     salt = secrets.token_bytes(16)
@@ -1799,6 +1825,8 @@ async def enter_world(cl, slot, name, data):
         await cl.send(drop_pub(d))
     if EVENT.get("active"):
         await cl.send(event_pub())
+    if HOUSES:   # #355: seal/allow other players' dwellings on this client
+        await cl.send({"t": "house_sync", "houses": HOUSES})
     if not was_in_world:
         await broadcast({"t": "system", "msg": f"{name} has entered Dereth."}, exclude=cl)   # #312: only on the first entry
 
@@ -2105,6 +2133,27 @@ async def dispatch(cl, msg):
                 await target.send({"t": "system", "msg": f"{cl.charname} has removed you from their dwelling."})
             else:
                 await cl.send({"t": "system", "msg": f"'{name}' is not online — no one was booted from your dwelling."})
+    elif t == "house":
+        # #355: claim/update/release a dwelling. Authority: you may CLAIM an unowned plot (first-come) or
+        # update settings on a plot you already own; you can never seize or edit another player's house.
+        if cl.in_world and cl.charname:
+            hid = str(msg.get("hid", ""))[:64]
+            act = str(msg.get("act", ""))
+            if hid:
+                cur = HOUSES.get(hid)
+                if act == "release":
+                    if cur and cur.get("owner") == cl.charname:
+                        HOUSES.pop(hid, None); save_house(hid); await broadcast_house(hid)
+                elif act == "set":
+                    if cur is None or cur.get("owner") == cl.charname:
+                        HOUSES[hid] = {
+                            "owner": cl.charname,
+                            "open": bool(msg.get("open", True)),
+                            "guests": [str(g)[:32] for g in (msg.get("guests") or []) if g][:128],
+                            "storagePerm": bool(msg.get("storagePerm", False)),
+                        }
+                        save_house(hid); await broadcast_house(hid)
+                    # else: hid already owned by someone else — ignore (no house-stealing)
     elif t == "ping":
         await cl.send({"t": "pong"})
 
@@ -2202,6 +2251,7 @@ async def tick_loop():
 async def main():
     db().close()  # ensure schema exists
     seed_admin()  # always keep the default Admin account + maxed Kilmer character
+    load_houses()  # #355: restore dwelling ownership registry
     populate_world()
     server = await asyncio.start_server(handle, HOST, PORT)
     asyncio.create_task(tick_loop())

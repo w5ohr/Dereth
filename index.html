@@ -8927,6 +8927,7 @@ function hsMigrateDeed(){
     if(d<bd){bd=d;best=h;} }
   const hooks=hs.hooks||{};
   player.homestead=best?hsNewDeed(best.hid,t):null;
+  if(player.homestead){ hsClaimLocal(player.homestead.hid); hsSyncHouse(); }   // #355: seal the plot as ours + sync to other clients
   if(player.homestead) for(const k in hooks) player.homestead.hooks[k]=(typeof hooks[k]==="string")?{name:hooks[k],stat:"furniture",kind:(FURNITURE_ITEMS.find(f=>f.name===hooks[k])||{}).kind,v:200}:hooks[k];
   if(best) log(`The Agents of the Arcanum have re-surveyed Dereth — your ${HOUSING_TYPES[t].n.toLowerCase()} deed now names its true plot: <b>${best.name}</b>.`,"sys");
 }
@@ -9008,8 +9009,30 @@ function hsDropHouse(k){ const e=_hsBuilt[k]; if(!e) return;
 // a dwelling held by someone else (online) is sealed — its door stays walled.
 function hsAccessible(h){
   if(player.homestead && player.homestead.hid===h.hid) return true;   // your own deed
-  if(h.owner && h.owner!==(player.name||"")) return false;            // another player holds it
-  return true;                                                        // for sale → open to wander
+  if(h.owner && h.owner!==(player.name||"")){                         // #355: held by ANOTHER player
+    if(h.open) return true;                                           // owner left the door open to all
+    const me=(player.name||"").toLowerCase();
+    if(Array.isArray(h.guests) && h.guests.some(g=>(g||"").toLowerCase()===me)) return true;   // you are on the guest list
+    return false;                                                     // sealed — the door stays walled
+  }
+  return true;                                                        // unowned / for sale → open to wander
+}
+// #355: dwelling ownership + access settings live on the shared world plot (HS_BY_HID) so EVERY client can
+// seal/allow it. hsClaimLocal marks it ours; hsSyncHouse pushes owner+open+guests+storagePerm to the server,
+// which persists it and relays to other players' clients (hsReleaseLocal / hsSyncRelease undo it on abandon).
+function hsClaimLocal(hid){ const w=(HS_BY_HID&&hid!=null)?HS_BY_HID[hid]:null; if(w) w.owner=player.name||"you"; }
+function hsReleaseLocal(hid){ const w=(HS_BY_HID&&hid!=null)?HS_BY_HID[hid]:null; if(w){ delete w.owner; delete w.open; delete w.guests; delete w.storagePerm; } }
+function hsSyncHouse(){ if(!isOnline) return; const hs=player.homestead; if(!hs) return;
+  netSend({t:"house",act:"set",hid:hs.hid,owner:player.name||"",open:hs.open!==false,guests:(hs.guests||[]).slice(0,128),storagePerm:!!hs.storagePerm}); }
+function hsSyncRelease(hid){ if(isOnline&&hid!=null) netSend({t:"house",act:"release",hid:hid}); }
+// apply an authoritative house registry from the server: seal/allow other players' plots on this client.
+function onHouseSync(m){ if(!HS_BY_HID||!m||!m.houses) return;
+  for(const hid in m.houses){ const w=HS_BY_HID[hid]; if(!w) continue; const s=m.houses[hid]||{};
+    if(s.owner){ w.owner=s.owner; w.open=s.open!==false; w.guests=Array.isArray(s.guests)?s.guests:[]; w.storagePerm=!!s.storagePerm; }
+    else { delete w.owner; delete w.open; delete w.guests; delete w.storagePerm; } }
+  // our OWN homestead's settings always win locally (the server echo may lag our latest toggle)
+  if(player.homestead){ hsClaimLocal(player.homestead.hid); const w=HS_BY_HID[player.homestead.hid];
+    if(w){ w.open=player.homestead.open!==false; w.guests=(player.homestead.guests||[]).slice(); w.storagePerm=!!player.homestead.storagePerm; } }
 }
 function hsCrystalLabel(cr){   // (re)write a crystal's sprite after ownership changes
   if(!cr.lbl||!cr.lbl.parent) return;
@@ -9500,6 +9523,7 @@ function hsEvict(msg){
   for(const k in (hs.hooks||{})) if(hs.hooks[k]){ const it=hs.hooks[k];   // #360: respect the storage cap on eviction — fill storage up to cap, then overflow to the satchel, then (only if both are full) into storage rather than lose the item
     if(player.house.storage.length<houseCap()) player.house.storage.push(it);
     else if(!addToInv(it)) player.house.storage.push(it); }
+  hsReleaseLocal(hs.hid); hsSyncRelease(hs.hid);   // #355: unseal the plot + tell other clients it is for sale again
   player.homestead=null;
   if(hs.type!=="apartment") player.hsRebuyUntil=Date.now()+HS_RENT_MS;   // 30-day rebuy bar (apartments exempt)
   log(`${msg} Your hook items were moved to estate storage — nothing is lost.`,"warn");
@@ -9575,6 +9599,7 @@ function openCovenant(cr){
     tr.plan.sort((a,b2)=>b2-a).forEach(i=>player.inv.splice(i,1));
     player.homestead=hsNewDeed(cr.hid,cr.type);
     if(cr.hall) player.homestead.hall=cr.hall;
+    hsClaimLocal(player.homestead.hid); hsSyncHouse();   // #355: seal the plot as ours + sync to other clients
     // #357: buying an AC Covenant dwelling no longer silently bumps the separate legacy abstract-estate
     // tier (up to 120k pyreals of value, and it persisted after eviction). The homestead is its own
     // system (its own /house recall + chest/hook storage); the legacy estate must be bought on its own.
@@ -9588,6 +9613,7 @@ function openCovenant(cr){
   const ab=ov.querySelector('#hsAbandon'); if(ab) ab.onclick=()=>{
     const hs=player.homestead;
     for(const k in (hs.hooks||{})) if(hs.hooks[k]) addToInv(hs.hooks[k],true);
+    hsReleaseLocal(hs.hid); hsSyncRelease(hs.hid);   // #355: unseal + sync
     player.homestead=null;
     if(cr.type!=="apartment") player.hsRebuyUntil=Date.now()+HS_RENT_MS;
     log("You tear up the deed. The Covenant Crystal dims, awaiting its next holder."+(cr.type!=="apartment"?" The Arcanum bars a new purchase for 30 days.":""),"sys");
@@ -9607,20 +9633,20 @@ function hsHouseCmd(parts){
     if(act==="add"&&who){
       if(hs.guests.length>=128){ log("Your guest list is full — AC allows <b>128 guests</b>.","warn"); return; }
       if(!hs.guests.some(g=>g.toLowerCase()===who.toLowerCase())){ hs.guests.push(who); }
-      log(`<b>${esc(who)}</b> is added to your house guest list (${hs.guests.length}/128).`,"sys"); saveGame();
+      log(`<b>${esc(who)}</b> is added to your house guest list (${hs.guests.length}/128).`,"sys"); saveGame(); hsSyncHouse();
     } else if((act==="remove"||act==="delete")&&who){
       hs.guests=hs.guests.filter(g=>g.toLowerCase()!==who.toLowerCase());
-      log(`<b>${esc(who)}</b> is removed from your guest list.`,"sys"); saveGame();
-    } else if(act==="remove_all"){ hs.guests=[]; log("Your guest list is cleared.","sys"); saveGame(); }
+      log(`<b>${esc(who)}</b> is removed from your guest list.`,"sys"); saveGame(); hsSyncHouse();
+    } else if(act==="remove_all"){ hs.guests=[]; log("Your guest list is cleared.","sys"); saveGame(); hsSyncHouse(); }
     else log("Usage: /house guest add &lt;name&gt; · remove &lt;name&gt; · remove_all","sys");
   }
   else if(sub==="guests"){ log(`House guests (${(hs.guests||[]).length}/128): <b>${(hs.guests||[]).map(esc).join(", ")||"none"}</b>`,"sys"); }
-  else if(sub==="open"){ hs.open=true; log("Your house is <b>open</b> — anyone may enter.","sys"); saveGame(); }
-  else if(sub==="close"){ hs.open=false; log("Your house is <b>closed</b> — only you and your guests may enter.","sys"); saveGame(); }
+  else if(sub==="open"){ hs.open=true; log("Your house is <b>open</b> — anyone may enter.","sys"); saveGame(); hsSyncHouse(); }
+  else if(sub==="close"){ hs.open=false; log("Your house is <b>closed</b> — only you and your guests may enter.","sys"); saveGame(); hsSyncHouse(); }
   else if(sub==="boot"&&rest){ if(isOnline) netSend({t:"houseboot",name:rest});
     log(`<b>${esc(rest)}</b> is booted from your dwelling.`,"sys"); }
   else if(sub==="storage"){ const on=(parts[2]||"").toLowerCase()==="on";
-    hs.storagePerm=on; log(`Guests may ${on?"now":"no longer"} use your storage chests.`,"sys"); saveGame(); }
+    hs.storagePerm=on; log(`Guests may ${on?"now":"no longer"} use your storage chests.`,"sys"); saveGame(); hsSyncHouse(); }
   else if(sub==="hooks"){ const on=(parts[2]||"").toLowerCase()!=="off";
     hs.hooksOn=on; log(`Empty hooks are now <b>${on?"shown":"hidden"}</b> (placed items always show).`,"sys");
     hsRefreshHomestead(); if(hsInst)hsInstDecorate(); saveGame(); }
@@ -25215,6 +25241,7 @@ function applySaveObj(s){
   player.focusMana=+s.focusMana||0;   // H15 focus mana battery
   player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
   player.homestead=(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null;
+  if(player.homestead&&player.homestead.hid!=null){ hsClaimLocal(player.homestead.hid); hsSyncHouse(); }   // #355: re-assert ownership of our plot on load (+ re-sync online)
   player.kcVault=(s.kcVault&&typeof s.kcVault==="object")?s.kcVault:{};                 // Kilmer's castle chest contents
   player.kcHookItems=(s.kcHookItems&&typeof s.kcHookItems==="object")?s.kcHookItems:{};  // castle hook placements (deviations from defaults)
   player.hsRebuyUntil=+s.hsRebuyUntil||0;
@@ -25325,6 +25352,7 @@ function netHandle(m){
   if(m.t==="play_ok") return onPlayOk(m);
   if(m.t==="play_err") return onPlayErr(m);
   if(m.t==="who") return onWho(m);
+  if(m.t==="house_sync") return onHouseSync(m);   // #355: authoritative dwelling ownership + access settings
   if(m.t==="emote") return onEmote(m);
   if(m.t==="pvp") return onPvp(m);
   if(m.t==="rbuff") return onRemoteBuff(m);
