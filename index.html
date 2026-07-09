@@ -15116,12 +15116,17 @@ function algReceived(v){    // patron side: your (buffed) Leadership
   return 50+22.5*(Math.min(291,skillValue("leadership"))/291)*(1+V*(rt/730)*(ig/720));
 }
 function algPassupPct(v){ return clamp(algGenerated(v)*algReceived(v)/100,25,90); }
+// #479: acquiring a vassal makes you a Monarch and opens a lasting passive-XP stream — gate it
+// behind the SAME level-5 bar as swearing UP to a patron (was ungated: a fresh level-1 character
+// could conjure a free vassal on their very first click), and always confirm the Monarch step.
 function recruitVassal(){
   player.vassals=player.vassals||[];
+  if(player.level<5){ log("You must reach <b>level 5</b> before anyone will swear fealty to you as their liege.","warn"); if(SFX.hit)SFX.hit(); return false; }
   if(player.vassals.length>=vassalCap()){ log(`Your patronage is full — AC caps vassals at your <b>character level</b> (${vassalCap()}).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
+  if(typeof confirm==="function" && !confirm("Swear in a Vassal? This makes you their liege — if you have no patron of your own, that makes you a MONARCH at the top of an allegiance. Their deeds will pass a share of XP up to you, but only from XP THEY earn through your own active play (no free XP from standing idle). Proceed?")) return false;
   // AC: you swear to an equal-or-HIGHER character, so vassals join at your level or below
   const lvl=Math.max(1,player.level-irnd(0,Math.min(12,player.level-1)));
-  const v={name:vassalName(),level:lvl,loyalty:irnd(60,140)+lvl,sworn:Date.now(),ig:0,followers:0,xpUp:0,xpAcc:0};
+  const v={name:vassalName(),level:lvl,loyalty:irnd(60,140)+lvl,sworn:Date.now(),ig:0,followers:0,xpUp:0};
   player.vassals.push(v);
   log(`<b>${v.name}</b> (level ${v.level}) swears fealty to you — their deeds now pass XP up to you at <b>${Math.round(algPassupPct(v))}%</b> (Loyalty × your Leadership; deepens with time sworn).`,"sys");
   if(typeof toast==="function")toast("VASSAL SWORN");
@@ -15144,8 +15149,10 @@ function breakFromPatron(){
   player.patronInfo=null; player.monarch=null;
   saveGame();
 }
-// ── the solo fabric: sworn NPC vassals adventure on their own and pass XP up.
-//    Their subtrees also grow (followers), which is what raises YOUR rank. ──
+// ── the solo fabric: sworn NPC vassals' subtrees grow with time sworn (which is what raises
+//    YOUR rank), and their bond with you (sworn-time/in-game hours) deepens their pass-up rate.
+//    #479: this tick NO LONGER MINTS XP FROM NOTHING — standing idle earns nothing. Actual
+//    pass-up XP is a share of XP YOU earn through your own play; see vassalPassUpFromXP below. ──
 let _algT=0;
 function algTick(dt){
   if(isOnline) return;                       // online: the server owns pass-up
@@ -15153,13 +15160,8 @@ function algTick(dt){
   _algT+=dt; if(_algT<30) return;            // settle up every 30s of play
   const step=_algT/3600; _algT=0;            // hours of in-game time this step
   if(player.patronInfo) player.patronInfo.ig=Math.min(720,(player.patronInfo.ig||0)+step);
-  let up=0;
   for(const v of vs){
     v.ig=Math.min(720,(v.ig||0)+step);
-    // the vassal adventures: XP generated scales with their level
-    v.xpAcc=(v.xpAcc||0)+v.level*3*(step*60);          // ~lvl·3 XP per minute afield
-    const gen=Math.floor(v.xpAcc); v.xpAcc-=gen;
-    if(gen>0){ const share=Math.round(gen*algPassupPct(v)/100); v.xpUp=(v.xpUp||0)+share; up+=share; }
     // their own court grows with time (and your Leadership sets the example)
     if(Math.random()<step*(0.9+skillTier("leadership")*0.5)*Math.min(3,v.level/12)){
       v.followers=(v.followers||0)+1;
@@ -15169,6 +15171,19 @@ function algTick(dt){
     // vassals level slowly on their own (never past you — they swore to an equal-or-higher)
     if(v.level<player.level&&Math.random()<step*0.35) v.level++;
   }
+}
+// #479: your vassals share in YOUR fortune, not their own imagined one — pass-up is a modest cut
+// of the XP you actually earn (kills, quests, crafting…), scaled by each vassal's Loyalty × your
+// Leadership. Nothing is generated while you're idle: no calls to gainXP means no pass-up either.
+function vassalPassUpFromXP(amt){
+  if(isOnline) return;                       // online: the server owns pass-up
+  const vs=player.vassals||[]; if(!vs.length) return;
+  let up=0;
+  for(const v of vs){
+    const share=amt*(algPassupPct(v)/100)*0.05;   // each vassal supplements a modest slice of your own deeds
+    v.xpUp=(v.xpUp||0)+Math.round(share); up+=share;
+  }
+  up=Math.min(Math.round(up),amt);             // vassals can at most match your own earnings — never manufacture more
   if(up>0){ player.vassalXP=(player.vassalXP||0)+up; gainXP(up,{passup:true}); }
 }
 function gainXP(amt,opts){
@@ -15195,6 +15210,7 @@ function gainXP(amt,opts){
     if(!player.lumUnlocked){ player.lumUnlocked=true; log("You have grown powerful enough to draw <b>Luminance</b> — spend it on permanent Auras in the character sheet (C).","sys"); }
     player.luminance=Math.min(1000000,(player.luminance||0)+Math.round(amt*0.2));
   }
+  if(!opts.passup) vassalPassUpFromXP(amt);   // #479: vassals only ever share in XP YOU actually earned this call — never from idling
 }
 function playerHurt(dmg,sx,sz,type,element){
   dmg=+dmg; if(!isFinite(dmg)||dmg<=0) return;   // #32: guard NaN/non-finite/≤0 damage (mirrors damageMonster) — the inner Math.max(1,…) steps catch negatives but NOT NaN (Math.max(1,NaN)===NaN), which would flow to player.hp and leave an unhealable/undyable soft-brick; e.g. a malformed server dmg-message via onMobDmg
@@ -16573,8 +16589,9 @@ function buildSheet(){
     const vr=algVassalRank(v);
     ah+=`<div class="desc" style="margin-left:8px">• <b>${esc(v.name)}</b> — level ${v.level}, rank ${vr}${v.followers?`, court of ${v.followers}`:""} · passes up <b>${Math.round(algPassupPct(v))}%</b>${v.xpUp?` <span style="color:#9be08a">(${v.xpUp.toLocaleString()} XP to date)</span>`:""}</div>`;
   }
-  if(vN) ah+=`<div class="desc" style="color:#9be08a">Pass-up is EXTRA XP generated by your vassals' own deeds — Loyalty (theirs) × Leadership (yours), deepening with time sworn${player.vassalXP?` · <b>${player.vassalXP.toLocaleString()}</b> lifetime received`:""}.</div>`;
-  ah+=`<button class="tbtn" id="recruitBtn" ${vN>=vCap?"disabled":""} style="margin-top:4px">Swear in a Vassal${vN>=vCap?" (at your level cap)":""}</button>`;
+  if(vN) ah+=`<div class="desc" style="color:#9be08a">Pass-up is EXTRA XP skimmed from YOUR OWN earned XP — Loyalty (theirs) × Leadership (yours), deepening with time sworn. Nothing accrues while you're idle${player.vassalXP?` · <b>${player.vassalXP.toLocaleString()}</b> lifetime received`:""}.</div>`;
+  if(player.level>=5) ah+=`<button class="tbtn" id="recruitBtn" ${vN>=vCap?"disabled":""} style="margin-top:4px">Swear in a Vassal${vN>=vCap?" (at your level cap)":""}</button>`;
+  else ah+=`<div class="desc" style="color:var(--dim);margin-top:4px">Reach level 5 to swear in a Vassal — becoming a liege (and, without a patron of your own, a Monarch) is gated the same as swearing fealty above.</div>`;
   if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
   { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
