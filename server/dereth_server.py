@@ -322,6 +322,8 @@ def load_econ(cl, data):
     cl.coin = int(_svnum(d.get("gold", 0), 0, 2e9, 0))
     inv = d.get("inv")
     cl.inv = [sanitize_item(it) for it in inv if isinstance(it, dict)][:500] if isinstance(inv, list) else []
+    cl.level_auth = _clampi(d.get("level"), 1, 275, cl.level_auth)   # #238: adopt the character's level as authoritative
+    cl.level = cl.level_auth                                         #        so gates work even before the first input arrives
     cl.econ_ready = True
 
 # #314: cap the per-autosave coin INCREASE a client may inject. The server credits its own authoritative
@@ -331,13 +333,20 @@ def load_econ(cl, data):
 # realistic gain (a genuinely larger one simply catches up over the next few autosaves) while making an
 # instant mint impossible; spends adopt fully (reducing your own coin is never an exploit).
 ECON_MAX_GAIN_PER_SAVE = 1_000_000
+# #238: same clamp-the-jump discipline for character level. The swear/vassal/muster gates read the level,
+# so a client that saves level:275 must not be able to set it in one shot. Legit play never gains 10 levels
+# between two autosaves; a genuinely faster climb simply catches up over the next few saves. (Full XP-based
+# level authority — the server owning every kill's XP — is the larger remaining M3 residual.)
+LEVEL_MAX_GAIN_PER_SAVE = 10
 def reconcile_econ(cl, data):
-    """On autosave (not first load): adopt the client's economy but clamp an implausible coin jump."""
+    """On autosave (not first load): adopt the client's economy but clamp an implausible coin/level jump."""
     if not cl.econ_ready:
         load_econ(cl, data); return
     d = data if isinstance(data, dict) else {}
     want = int(_svnum(d.get("gold", 0), 0, 2e9, 0))
     cl.coin = min(want, int(cl.coin) + ECON_MAX_GAIN_PER_SAVE) if want > cl.coin else want
+    want_lvl = _clampi(d.get("level"), 1, 275, cl.level_auth)
+    cl.level_auth = min(want_lvl, cl.level_auth + LEVEL_MAX_GAIN_PER_SAVE) if want_lvl > cl.level_auth else want_lvl
     inv = d.get("inv")
     cl.inv = [sanitize_item(it) for it in inv if isinstance(it, dict)][:500] if isinstance(inv, list) else []
 
@@ -538,6 +547,10 @@ class Client:
         self.coin = 0
         self.inv = []
         self.econ_ready = False   # True once loaded from a save; gates authoritative bookkeeping
+        # #238: authoritative character level. Seeded from the save on enter_world, raised at most
+        # LEVEL_MAX_GAIN_PER_SAVE per autosave, and used as the ceiling for the client-reported
+        # input.level so the swear/vassal/muster gates can't be gamed by a one-shot forged level.
+        self.level_auth = 1
         # AOI: ids this client currently has spawned (from the last snapshot we sent it). Used for the
         # AOI_IN/AOI_OUT hysteresis band so boundary-hugging entities don't spawn/despawn every tick.
         self.aoi_p = set()   # remote player usernames
@@ -1910,7 +1923,7 @@ async def dispatch(cl, msg):
         cl.yaw = _finitef(msg.get("yaw"), cl.yaw)
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
-        cl.level = _clampi(msg.get("level"), 1, 275, cl.level)   # AC hard cap — blocks forged level>275 that would gate unlimited vassals/fealty
+        cl.level = min(_clampi(msg.get("level"), 1, 275, cl.level), cl.level_auth)   # #238: bound the client-reported level to the character's AUTHORITATIVE level (seeded from the save, rate-limited on save) — closes the forged-level → unlimited-vassals / swear-over-anyone exploit
         cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
         cl.title = str(msg.get("title", cl.title))[:40]
         cl.wt = (str(msg.get("wt"))[:16] if msg.get("wt") else None)          # so remotes render the right weapon
@@ -2009,6 +2022,8 @@ async def dispatch(cl, msg):
             reconcile_econ(cl, char)          # #314: clamp an implausible coin jump before it becomes authoritative
             char["gold"] = int(cl.coin)       # #314: PERSIST the authoritative (clamped) coin, not the client's raw claim,
                                               #       so a "gold:2e9" save can neither hold nor survive a reload
+            char["level"] = int(cl.level_auth)  # #238: likewise persist the authoritative (rate-limited) level, so a
+                                              #       forged "level:275" save can neither hold nor survive a reload
             save_char_slot(cl.username, cl.slot, char)
             await push_coin(cl)               # correct the client's mirror if we clamped its claim
     elif t == "who":
