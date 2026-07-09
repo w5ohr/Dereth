@@ -8182,7 +8182,7 @@ function kcAddBeast(wx,wz,kind,name,scale,rot){
 function kcPortalUse(p){
   if(inDungeon||inNetwork) return;
   if(!castleAccess()){ log("The gateways open only for Lord Kilmer and his sworn guests.","warn"); if(SFX.hit)SFX.hit(); return; }
-  teleportFX(player.x,player.z); arriveAt(p.dest.x,p.dest.z); player.invuln=2; teleportFX(player.x,player.z);
+  warpTo(p.dest.x,p.dest.z,{invuln:2});
   if(typeof toast==="function") toast(p.dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The gateway flares — you step through to <b>${p.dest.name}</b>.`,"sys");
 }
@@ -8208,7 +8208,7 @@ function kcOpenWarTable(){
   document.body.appendChild(ov); paused=true; if(locked)document.exitPointerLock();
   ov.querySelector('#kcWarClose').onclick=()=>{ ov.remove(); paused=false; };
   ov.querySelectorAll('[data-rally]').forEach(b=>b.onclick=()=>{ const t=threats[+b.dataset.rally]; ov.remove(); paused=false;
-    if(inDungeon||inNetwork) return; teleportFX(player.x,player.z); arriveAt(t.x+4,t.z+4); player.invuln=2; teleportFX(player.x,player.z);
+    if(inDungeon||inNetwork) return; warpTo(t.x+4,t.z+4,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`You rally to <b>${t.name}</b>.`,"warn"); });
 }
 // ── The Trial Ground: summon a champion foe scaled to your might for a private duel ──
@@ -8369,7 +8369,7 @@ function kcPortalTo(name){
   else { const c=CITIES.find(ct=>ct.name===name); if(c) dest={x:c.x,z:c.z+3,name:c.name}; }
   if(!dest) return;
   closeAttendant();
-  teleportFX(player.x,player.z); arriveAt(dest.x,dest.z); player.invuln=2; teleportFX(player.x,player.z);
+  warpTo(dest.x,dest.z,{invuln:2});
   if(typeof toast==="function")toast(dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The valkyrie opens a shimmering way — you step through to <b>${dest.name}</b>.`,"sys");
 }
@@ -10100,25 +10100,74 @@ function portalTubeTex(){
   g.globalAlpha=1;
   const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,2); _tubeTex=t; return t;
 }
-function startPortalTransit(arrive){
-  if(portalTransit){ arrive(); return; }                            // never stack transits
+// The tube is now LOAD-GATED: it fades in, switches the world mid-tunnel, then HOLDS you inside the
+// swirling portal space until the destination has finished streaming in (opts.ready), and only then
+// sets you down. minHold keeps the effect from flickering past on an instant load; maxHold is a hard
+// safety cap so a never-satisfied ready() can never trap the player (the tube always dissolves).
+// opts = {ready:()=>bool, minHold, maxHold, freeze}. No opts → the classic ~1.3s fixed transit.
+const _PT_IN=0.22, _PT_OUT=0.5;
+function startPortalTransit(arrive,opts){
+  opts=opts||{};
+  if(portalTransit){ try{arrive&&arrive();}catch(e){} return; }     // never stack transits — just perform the arrival
+  if(typeof cam==="undefined"||!cam||typeof scene==="undefined"||!scene){ try{arrive&&arrive();}catch(e){} return; }   // renderer not up yet (pre-initThree): arrive without the overlay
   scene.add(cam);                                                    // camera-attached overlay (idempotent)
   const mat=new THREE.MeshBasicMaterial({map:portalTubeTex(),side:THREE.BackSide,transparent:true,opacity:0,fog:false,depthTest:false,depthWrite:false});
   const tube=new THREE.Mesh(new THREE.CylinderGeometry(5,5,90,24,1,true),mat);
   tube.rotation.x=Math.PI/2; tube.renderOrder=999; cam.add(tube);
-  portalTransit={tube,mat,t:0,dur:2.0,arrive,fired:false};
-  player.invuln=Math.max(player.invuln,2.2);
+  portalTransit={tube,mat,t:0,hold:0,outT:0,phase:"in",arrive:arrive||null,fired:false,pinned:false,ax:0,az:0,
+    ready:(typeof opts.ready==="function")?opts.ready:null,
+    minHold:(opts.minHold!=null)?opts.minHold:1.3,
+    maxHold:(opts.maxHold!=null)?opts.maxHold:8,
+    freeze:(opts.freeze!==false)};
+  player.invuln=Math.max(player.invuln||0,2.2);
   if(SFX.whoosh)SFX.whoosh();
 }
 function updatePortalTransit(dt){
   const p=portalTransit; if(!p) return;
   p.t+=dt;
-  const tex=p.mat.map; tex.offset.y-=dt*1.6; tex.offset.x+=dt*0.12;  // streaks rush past, tunnel slowly twists
-  p.tube.rotation.z+=dt*0.9;
-  const k=p.t/p.dur;
-  p.mat.opacity=k<0.15?k/0.15:(k>0.8?Math.max(0,(1-k)/0.2):1);      // fade in, hold, fade out on arrival
-  if(!p.fired&&k>=0.45){ p.fired=true; try{p.arrive();}catch(e){} } // the world switches WHILE you're inside the tube
-  if(k>=1){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
+  const slow=(typeof settings!=="undefined"&&settings.reduceMotion)?0.4:1;   // #244: gentler swirl under Reduce Motion (still gated on load)
+  const tex=p.mat.map; if(tex){ tex.offset.y-=dt*1.6*slow; tex.offset.x+=dt*0.12*slow; }  // streaks rush past, tunnel twists
+  p.tube.rotation.z+=dt*0.9*slow;
+  // once the tube fully covers the view, switch the world — you're inside the tunnel when it happens
+  if(!p.fired && p.t>=_PT_IN){ p.fired=true;
+    try{ p.arrive&&p.arrive(); }catch(e){ console.error("portal arrive() failed:",e); }
+    p.pinned=true; p.ax=player.x; p.az=player.z; }   // pin here; arriveAt re-syncs the target on any later hop (e.g. dungeon build completing)
+  if(p.freeze && p.pinned){ player.x=p.ax; player.z=p.az; player.vx=0; player.vz=0; }   // held in portal space — no wandering blind
+  if(p.phase==="in"){
+    p.mat.opacity=Math.min(1,p.t/_PT_IN);
+    if(p.t>=_PT_IN) p.phase="hold";
+  } else if(p.phase==="hold"){
+    p.mat.opacity=1; p.hold+=dt;
+    let ok=true; if(p.ready){ try{ ok=!!p.ready(); }catch(e){ ok=false; } }
+    if(p.fired && ((p.hold>=p.minHold && ok) || p.t>=p.maxHold)){ p.phase="out"; p.outT=0; }
+  } else {   // "out"
+    p.outT+=dt;
+    p.mat.opacity=Math.max(0,1-p.outT/_PT_OUT);
+    if(p.outT>=_PT_OUT){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
+  }
+}
+// "Has the area around the player finished streaming in?" — the gate for every overworld arrival.
+// True in an instance (those build synchronously in their own arrive()). In the open world it waits
+// for the ground mesh plus every town / world-structure block within streaming range to be built.
+function overworldAreaLoaded(){
+  if(inDungeon||inNetwork) return true;
+  if(typeof groundMesh==="undefined"||!groundMesh||!groundMesh.visible) return false;
+  const px=player.x,pz=player.z;
+  if(typeof AC_TOWNS!=="undefined"&&AC_TOWNS&&typeof CITIES!=="undefined")
+    for(const c of CITIES){ if(AC_TOWNS[c.name]&&Math.hypot(c.x-px,c.z-pz)<TB_BUILD_R&&!(_tbBuilt&&_tbBuilt[c.name])) return false; }
+  if(typeof AC_WORLD!=="undefined"&&AC_WORLD)
+    for(const lb in AC_WORLD){ const r=AC_WORLD[lb]; if(Math.hypot(r.cx-px,r.cz-pz)<WS_BUILD_R&&!(_wsBuilt&&_wsBuilt[lb])) return false; }
+  return true;
+}
+// Overworld teleport wrapped in the load-gated portal tube — the shared path for recalls, portal gems,
+// spell portals and map travel. Holds you in portal space until the destination has streamed in.
+function warpTo(x,z,opts){
+  opts=opts||{};
+  startPortalTransit(()=>{
+    arriveAt(x,z);
+    player.invuln=Math.max(player.invuln||0,opts.invuln||2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  },{ready:overworldAreaLoaded,minHold:(opts.minHold!=null)?opts.minHold:1.0,maxHold:opts.maxHold||8});
 }
 
 // ---------- combat ----------
@@ -11443,8 +11492,8 @@ function triggerPortalStorm(){   // scatter the player to a town's outskirts (ex
     const cx=clamp(player.x+Math.cos(ang)*dist,-HALF+6,HALF-6), cz=clamp(player.z+Math.sin(ang)*dist,-HALF+6,HALF-6);
     const h=terrainH(cx,cz); if(h>bestH){ bestH=h; nx=cx; nz=cz; if(h>=1.5) break; } }
   if(bestH<0.5){ return false; }   // nowhere dry within reach — don't scatter into the sea
-  teleportFX(player.x,player.z); arriveAt(nx,nz); player.invuln=1.5; player.combatT=0;
-  stormPhase=0; stormBuild=0; stormCd=110; teleportFX(player.x,player.z);
+  warpTo(nx,nz,{invuln:1.5}); player.combatT=0;
+  stormPhase=0; stormBuild=0; stormCd=110;
   log("A <b>portal storm</b> sweeps you away to the outskirts.","sys"); if(SFX.quest)SFX.quest();
   return true;
 }
@@ -14599,7 +14648,7 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot recall from here.","warn"); return "keep"; }
     const dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ log("You have no Lifestone to recall to.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You crush the <b>${it.name}</b> and recall to the <b>${dest.name}</b> Lifestone.`,"heal"); }
   else if(it.stat==="cure"){
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
@@ -14631,14 +14680,14 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot open a portal from here.","warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The gem's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(c.x,c.z+3,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You shatter the <b>${it.name}</b> and step through to <b>${c.name}</b>.`,"heal"); }
   else if(it.stat==="contract"){
     if(inDungeon||inNetwork){ log("You cannot invoke a contract from here.","warn"); return "keep"; }
     if((player.contractCd||0)>0){ log(`The contract must recharge (${Math.ceil(player.contractCd)}s).`,"warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The contract's destination is lost to you.","warn"); return "keep"; }
-    teleportFX(player.x,player.z); arriveAt(c.x,c.z+3); player.invuln=2; player.contractCd=120; teleportFX(player.x,player.z);
+    warpTo(c.x,c.z+3,{invuln:2}); player.contractCd=120;
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
@@ -15181,6 +15230,7 @@ function arriveAt(x,z){
   player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
   player.arriveGrace=true;   // the float-down out of the portal never deals fall damage
   camInit=false;   // snap the third-person camera to the new location instead of easing across the map
+  if(typeof portalTransit!=="undefined"&&portalTransit&&portalTransit.pinned){ portalTransit.ax=player.x; portalTransit.az=player.z; }   // keep the in-tube freeze anchored to the newest destination (e.g. a dungeon whose build finishes mid-hold)
 }
 function fallDamage(drop){
   if(player.arriveGrace){ player.arriveGrace=false; return; }   // portal-arrival landing is free
@@ -15456,7 +15506,7 @@ function executeSpell(id){
     else if(s.dest==="portal2"){ const p=player.tiedPortal2; if(!p){ refundCast(); spellCd[id]=0; log("You have no SECOND portal tied — cast Secondary Portal Tie at a portal first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ refundCast(); spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
   }
   if(s.special==="xfer"){   // Life vital transfer (Self): drain half the source pool → 105%+5%/lvl to the dest, capped 50/lvl (retail curve)
@@ -15491,7 +15541,7 @@ function executeSpell(id){
   }
   if(s.special==="acportal"){   // a recovered retail travel spell: the way opens to its true place
     if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); refundCast(); spellCd[id]=0; return; }
-    teleportFX(player.x,player.z); arriveAt(s.dx,s.dz+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(s.dx,s.dz+3,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`You cast <b>${s.name}</b> — the way opens to <b>${esc(s.dname)}</b>.`,"heal"); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
@@ -16132,7 +16182,7 @@ function portalTouch(){
       teleportFX(player.x,player.z);
       player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};   // remembered for Portal Recall / Portal Tie
       log(`…and out, into <b>${pt.dest.name}</b>.`,"sys");toast(pt.dest.name.toUpperCase());
-    });
+    },{ready:overworldAreaLoaded,minHold:1.0,maxHold:8});   // stay in the tube until the destination has streamed in
     return;
   } }
 }
@@ -16250,11 +16300,14 @@ function interact(){
   for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<3){ gatherNode(n); return; } }
   for(const pt of portals){
     if(Math.hypot(pt.x-player.x,pt.z-player.z)<3.2){
-      teleportFX(player.x,player.z);
-      arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
-      teleportFX(player.x,player.z);
-      log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");
-      toast(pt.dest.name.toUpperCase());
+      log(`You step into the portal…`,"sys");
+      startPortalTransit(()=>{
+        arriveAt(pt.dest.x,pt.dest.z);player.invuln=1.5;
+        teleportFX(player.x,player.z);
+        player.lastPortal={x:pt.dest.x,z:pt.dest.z,name:pt.dest.name};
+        log(`You step through the portal to <b>${pt.dest.name}</b>.`,"sys");
+        toast(pt.dest.name.toUpperCase());
+      },{ready:overworldAreaLoaded,minHold:1.0,maxHold:8});
       return;
     }
   }
@@ -17837,8 +17890,7 @@ document.getElementById('bigmap').addEventListener('click',e=>{
   const _rw=e.target.clientWidth||520,_rh=e.target.clientHeight||520,wx=(e.offsetX/_rw)*WORLD-HALF,wz=(e.offsetY/_rh)*WORLD-HALF;
   let best=null,bd=Infinity;for(const ls of lifestones){const d=Math.hypot(ls.x-wx,ls.z-wz);if(d<bd){bd=d;best=ls;}}
   if(best&&bd<WORLD*0.05){
-    arriveAt(best.x,best.z+4);player.invuln=2;
-    teleportFX(player.x,player.z);
+    warpTo(best.x,best.z+4,{invuln:2});
     toast(best.name.toUpperCase());log(`You journey to <b>${best.name}</b>.`,"sys");closeMap();
   } else {   // #194: a missed click must not fail silently — say what travels, and point at the nearest
     log(`No Lifestone there — click a <b>◆ Lifestone</b> to journey${best?` (nearest: <b>${best.name}</b>)`:""}.`,"warn");
@@ -20970,17 +21022,13 @@ function recallHome(){
   if(inDungeon||inNetwork){ log("You can't recall to your estate from here — return to the surface first.","warn"); if(SFX.err)SFX.err(); return; }
   // AC House Recall: a purchased settlement dwelling takes precedence over the abstract estate
   if(player.homestead&&typeof hsDwellingSpot==="function"){ const sp=hsDwellingSpot();
-    if(sp){ if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-      arriveAt(sp.x,sp.z+4); player.invuln=2;
-      if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    if(sp){ warpTo(sp.x,sp.z+4,{invuln:2});
       if(typeof toast==="function") toast("HOME"); if(SFX.quest)SFX.quest();
       log(`You recall to your <b>${HOUSING_TYPES[player.homestead.type].n.toLowerCase()}</b> in ${sp.S.name}.`,"sys");
       if(document.getElementById('housing').style.display==="flex") closeHousing(); return; } }
   if(houseTier()<1){ log("You own no estate to recall to — buy one first (press Y).","sys"); if(SFX.err)SFX.err(); return; }
   if(!HOUSE_LOC){ log("Your estate is not ready.","warn"); return; }
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-  arriveAt(HOUSE_LOC.x,HOUSE_LOC.z+6); player.invuln=2;
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  warpTo(HOUSE_LOC.x,HOUSE_LOC.z+6,{invuln:2});
   if(typeof toast==="function") toast("ESTATE"); if(SFX.quest)SFX.quest();
   log(`You recall to your <b>${houseName()}</b> near Holtburg.`,"sys");
   if(document.getElementById('housing').style.display==="flex") closeHousing();
@@ -21828,7 +21876,7 @@ function buildShop(){
       log(`You buy <b>${n}× ${it.name}</b>.`,"loot");
       SFX.gold();buildShop();updateHUD();saveGame();return;
     }
-    if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); teleportFX&&teleportFX(player.x,player.z); arriveAt(it.warp.x,it.warp.z); player.invuln=2; teleportFX&&teleportFX(player.x,player.z); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
+    if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); warpTo(it.warp.x,it.warp.z,{invuln:2}); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
     if(it.blessing){ caravanBless(); return; }
     if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
     else if(it.gear){ const g=Object.assign({},it.gear,{bp:it.cost}); if(!addToInv(g)){log("Your satchel is full.","warn");return;} player.gold-=it.cost; if(isOnline) netSend({t:"vendor_buy",cost:it.cost,item:g}); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
@@ -24650,11 +24698,17 @@ function dungeonGoDepth(n){
   toast(n>1?(def.name+" — DEPTH "+n).toUpperCase():def.name.toUpperCase());
 }
 function enterDungeon(def,ex,ez){
-  if(inDungeon) return;
+  if(inDungeon||portalTransit) return;   // already below, or a transit is already carrying you
   if(def.name==="Colosseum"||def.name==="Advanced Colosseum"){ enterColosseum(def,ex,ez,def.name.indexOf("Advanced")>=0); return; }   // H16: the Colosseum runs a wave-gauntlet, not a maze
   // #207: no gate (AC let you walk in) — but an under-levelled explorer gets told before the first room does it
   if(def.tier && player.level < def.tier*10-2)
     log(`<span style="color:#e0a070">This delve is meant for an adventurer of about level <b>${def.tier*10}</b> — you are level ${player.level}. Tread carefully.</span>`,"warn");
+  // Portal space carries you down: the tube holds until the dungeon geometry is actually built (its
+  // EnvCell pack may need fetching first), then sets you at the entry. maxHold is the hard safety cap.
+  startPortalTransit(()=>_dungeonEnter(def,ex,ez),{ready:()=>inDungeon&&dungeonObjs.length>0,minHold:0.7,maxHold:9});
+}
+function _dungeonEnter(def,ex,ez){
+  if(inDungeon) return;
   // First visit to a real-geometry dungeon: fetch its EnvCell pack BEFORE building (capped wait),
   // so the first descent is the true dungeon — not the grid stand-in with a prefetch for next time.
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
@@ -24664,7 +24718,7 @@ function enterDungeon(def,ex,ez){
       const timeout=new Promise(r=>setTimeout(()=>r(null),4000));
       Promise.race([fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).catch(()=>null),timeout])
         .then(j=>{ _acDgnCache[def.name]=j||null;                 // null → grid fallback (and no refetch loop)
-          if(!inDungeon&&!inNetwork) enterDungeon(def,ex,ez); });             // #327: resume the descent unless something intervened — also skip if we've since stepped into the Town Network (a dungeon built inside the network left inNetwork=true stuck in the overworld)
+          if(!inDungeon&&!inNetwork) _dungeonEnter(def,ex,ez); });             // #327: resume the descent (still inside the tube) unless something intervened — also skip if we've since stepped into the Town Network
       return;
     } }
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
@@ -25930,7 +25984,7 @@ function applyBuffSelf(sp,fx){
     if(sp.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(p) dest={x:p.x,z:p.z,name:p.name}; }
     if(!dest){ const ls=lifestones.find(l=>l.bound)||lifestones[0]; if(ls) dest={x:ls.x,z:ls.z,name:ls.name+" Lifestone"}; }
     if(!dest) return false;
-    teleportFX(player.x,player.z); arriveAt(dest.x,dest.z+3); player.invuln=2; teleportFX(player.x,player.z);
+    warpTo(dest.x,dest.z+3,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`A sending takes you — you arrive at <b>${esc(dest.name)}</b>.`,"heal");
     return true; }
   if(fx) spellLandFX(sp.school,_slfPlayerPos,2.0,0.75);   // the spell lands on YOU (buff bot / ally): creature → spirits, life → crystals
@@ -26016,7 +26070,7 @@ function handleSlash(text){
     else log("Your allegiance holds no mansion — when your monarch buys one, <b>/hoa</b> recalls you there.","sys"); }
   else if(cmd==="castle"){ if(inDungeon||inNetwork){ log("You cannot recall to the castle from here.","warn"); }
     else if(!castleAccess()){ log("Castle Val Halla admits only Lord Kilmer and his sworn guests.","warn"); }
-    else { teleportFX(player.x,player.z); arriveAt(KC.x,KC.z+138); player.invuln=2; teleportFX(player.x,player.z);
+    else { warpTo(KC.x,KC.z+138,{invuln:2});
       toast("CASTLE VAL HALLA"); log("You recall to <b>Castle Val Halla</b>.","sys"); if(SFX.portal)SFX.portal(); } }
   else if(cmd==="grant"||cmd==="revoke"){ const who=parts.slice(1).join(" ").trim();
     if((player.name||"")!==KC.lord){ log("Only Lord Kilmer commands the castle rolls.","warn"); }
@@ -26308,6 +26362,9 @@ function startGame(loadSaved,preset){
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
+  // Materialize into the world through portal space (AC's arrival): the world is already built and the
+  // player placed, so arrive() is a no-op — the tube just holds until the surrounding area has streamed in.
+  startPortalTransit(null,{ready:overworldAreaLoaded,minHold:1.2,maxHold:10});
 }
 window.addEventListener('resize',()=>{
   if(typeof cam==="undefined"||!cam||typeof renderer==="undefined"||!renderer) return;   // #335: cam/renderer are undefined until initThree() resolves (inside the async asset Promise.all) — a resize during the load screen would otherwise throw
