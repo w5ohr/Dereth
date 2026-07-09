@@ -3571,6 +3571,11 @@ function playerLightSource(){
 }
 function updateInstanceLight(){
   if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); scene.add(playerLight); }
+  // #534: pull the filmic exposure down a notch inside the academy so the sky-lit courtyard seen through
+  // the Great Hall doorway rolls off instead of clipping to a white void — ACES compresses the highlights
+  // far more than the readable interior mids, so the hall stays lit while the blown doorway comes back.
+  // Restated every frame (default 1.04 elsewhere) so leaving the academy restores the world exposure.
+  if(typeof renderer!=="undefined"&&renderer) renderer.toneMappingExposure=(inDungeon&&curDungeon&&curDungeon.academy)?0.92:1.04;
   if(inDungeon){
     if(curDungeon&&curDungeon.academy){
       // #464: the Training Academy is a BIG, torch-lit hall opening onto a sky-lit courtyard — not a
@@ -3578,10 +3583,16 @@ function updateInstanceLight(){
       // buried the whole hall in a void the exact tone of the fill: its courtyard, both wings, the
       // gatehouse, the exit arch and most of the tutorial staff (the greeter included) stand 30–55m
       // from the arrival spot, so everything past a few metres fogged out to a flat fill and a new
-      // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: warm stone-toned
-      // fog that reaches clear across the room, and enough fill light that its surfaces read at once.
+      // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: fog that reaches
+      // clear across the room, and enough fill light that its surfaces read at once.
+      // #534: the previous warm fog 0x9a9078 was the exact tone of the floor albedo (0x9a927e) and near
+      // the walls (0x8d8578) — so past a few metres wall/floor/ceiling all bled into an identical beige
+      // haze (no edges, one flat field) and that bright warm haze behind the door clipped to a white void.
+      // Fix: a cool, darker slate haze that CONTRASTS the warm stone — distant surfaces now shade toward
+      // it (aerial perspective) so edges and depth read, and the doorway frames readable slate not white.
+      // A farther far-plane (130→150) also keeps mid-room detail from washing out.
       hemi.intensity=0.5; amb.intensity=0.3; sun.intensity=0;
-      scene.fog.near=14; scene.fog.far=130; scene.fog.color.setHex(0x9a9078);
+      scene.fog.near=14; scene.fog.far=150; scene.fog.color.setHex(0x424a56);
     } else {
       hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;      // kill daylight inside
       scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
