@@ -133,6 +133,45 @@ async def broadcast_house(hid):
     # a released plot is sent as {hid: None} so clients delete their local seal
     await broadcast({"t": "house_sync", "houses": {hid: HOUSES.get(hid)}})
 
+# #451: server-known set of REAL dwelling plot ids. A `house set` claim is only honoured for an hid in
+# this set, so a client cannot inject arbitrary/junk house rows (which would grow the DB unbounded and
+# amplify a broadcast-to-all on every claim). Built from the SAME assets/achousing.json the client uses:
+# every outdoor dwelling hid (houses[i][0]), every residential-hall apartment hid (halls[*].units[k][7]),
+# plus the ten Valstead castle cottages the client injects (hids 990001..990010). Stored as strings
+# because HOUSES is keyed by str(hid). If the pack is unavailable (a stripped deploy), VALID_PLOTS stays
+# None and is_valid_plot falls back to a bounded numeric check so housing still works without re-opening
+# unbounded injection.
+VALID_PLOTS = None
+def load_valid_plots():
+    global VALID_PLOTS
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "..", "assets", "achousing.json"), encoding="utf-8") as f:
+            j = json.load(f)
+        plots = set()
+        for h in j.get("houses", []):
+            if h:
+                plots.add(str(h[0]))
+        for hall in (j.get("halls") or {}).values():
+            for u in (hall.get("units") or []):
+                if len(u) > 7:
+                    plots.add(str(u[7]))
+        for n in range(990001, 990011):   # Valstead castle cottages (client hsAddCastleDwellings)
+            plots.add(str(n))
+        if plots:
+            VALID_PLOTS = plots
+            print(f"housing: {len(VALID_PLOTS)} authentic dwelling plots loaded for claim validation")
+    except Exception as e:
+        VALID_PLOTS = None
+        print("housing: achousing.json unavailable — claim validation falls back to bounded numeric hids:", e)
+
+def is_valid_plot(hid):
+    """True if `hid` (a str) is a real dwelling plot. Uses the authentic plot set when loaded; otherwise a
+    bounded numeric fallback (integer 1..999999, covering every real plot id incl. the 990001+ castle
+    cottages) so a missing pack degrades gracefully without allowing unbounded junk-id injection."""
+    if VALID_PLOTS is not None:
+        return hid in VALID_PLOTS
+    return hid.isdigit() and 1 <= int(hid) <= 999999
+
 def create_user(username, password):
     salt = secrets.token_bytes(16)
     with db() as c:
@@ -175,15 +214,23 @@ def note_login_fail(username):
 # literal. With no such secret we do not seed the account at all, and we NEVER overwrite an
 # existing Admin password on startup (seed only when the row is absent), so an operator can rotate
 # the credential and it survives restarts.
+# #459: because #440 never clobbers an existing password, an already-deployed server keeps whatever
+# hash it was seeded with (including the leaked default on old DBs). Setting DERETH_ADMIN_PW_ROTATE=1
+# for a SINGLE restart re-writes the Admin password to the current DERETH_ADMIN_PW — a one-shot
+# rotation so operators can retire the compromised credential without hand-editing the DB. Unset it
+# again afterward so normal restarts stay non-destructive. See docs/security-440-credential-rotation.md.
 ADMIN_USER = "Admin"
 ADMIN_PW = os.environ.get("DERETH_ADMIN_PW")
+ADMIN_PW_ROTATE = os.environ.get("DERETH_ADMIN_PW_ROTATE", "").strip().lower() in ("1", "true", "yes", "on")
 ADMIN_CHAR_PATH = os.path.join(os.path.dirname(__file__), "admin_kilmer.json")
 
 def seed_admin():
     """Ensure the default Admin account exists and place the maxed Kilmer character in slot 0 if that
     slot is empty (so any in-game progress the admin makes persists). The password comes from
     DERETH_ADMIN_PW and is written ONLY when the account is first created — an existing Admin password
-    is never clobbered. With no DERETH_ADMIN_PW set, the account is not seeded."""
+    is never clobbered (#440). With no DERETH_ADMIN_PW set, the account is not seeded. As a one-shot
+    escape hatch, DERETH_ADMIN_PW_ROTATE=1 re-writes an existing Admin password to the current
+    DERETH_ADMIN_PW (#459 credential rotation), then should be unset."""
     if not ADMIN_PW:
         print("seed: DERETH_ADMIN_PW is unset — Admin account not seeded (set the env var to enable it)")
         return
@@ -201,6 +248,10 @@ def seed_admin():
             salt = secrets.token_bytes(16)
             c.execute("INSERT INTO users(username,salt,pw,char,created,seen) VALUES(?,?,?,?,?,?)",
                       (ADMIN_USER, salt.hex(), hash_pw(ADMIN_PW, salt), None, now, now))   # #440: created only when absent
+        elif ADMIN_PW_ROTATE:
+            salt = secrets.token_bytes(16)   # #459: opt-in one-shot rotation of an existing deployment's Admin password
+            c.execute("UPDATE users SET salt=?, pw=? WHERE username=?", (salt.hex(), hash_pw(ADMIN_PW, salt), ADMIN_USER))
+            print("seed: DERETH_ADMIN_PW_ROTATE set — Admin password rotated to the current DERETH_ADMIN_PW (unset the flag now)")
         if kilmer is not None and not c.execute(
                 "SELECT 1 FROM characters WHERE account=? AND slot=0", (ADMIN_USER,)).fetchone():
             c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
@@ -2451,15 +2502,24 @@ async def dispatch(cl, msg):
                     if cur and cur.get("owner") == cl.charname:
                         HOUSES.pop(hid, None); await dbq(save_house, hid); await broadcast_house(hid)
                 elif act == "set":
-                    if cur is None or cur.get("owner") == cl.charname:
+                    # #451: only a REAL plot (is_valid_plot) may be claimed/edited — junk hids can no
+                    # longer inject persisted/broadcast rows; and you may only claim an unowned plot or
+                    # edit one you already own (no house-stealing).
+                    if is_valid_plot(hid) and (cur is None or cur.get("owner") == cl.charname):
+                        if cur is None:
+                            # #451: one dwelling per character (retail) — release any OTHER plot this
+                            # character already owns before taking this one, so a client can't claim
+                            # (and seal) every dwelling on the server.
+                            for other in [k for k, h in HOUSES.items() if k != hid and h.get("owner") == cl.charname]:
+                                HOUSES.pop(other, None); await dbq(save_house, other); await broadcast_house(other)   # #449: off-loop persist
                         HOUSES[hid] = {
                             "owner": cl.charname,
                             "open": bool(msg.get("open", True)),
                             "guests": [str(g)[:32] for g in (msg.get("guests") or []) if g][:128],
                             "storagePerm": bool(msg.get("storagePerm", False)),
                         }
-                        await dbq(save_house, hid); await broadcast_house(hid)
-                    # else: hid already owned by someone else — ignore (no house-stealing)
+                        await dbq(save_house, hid); await broadcast_house(hid)   # #449: 256 KiB write off the loop
+                    # else: invalid hid, or plot owned by someone else — ignore
     elif t == "ping":
         await cl.send({"t": "pong"})
 
@@ -2597,6 +2657,7 @@ async def main():
     init_db()     # #449: create the schema + hot-path indexes once, up front (not on every db() call)
     seed_admin()  # always keep the default Admin account + maxed Kilmer character
     load_houses()  # #355: restore dwelling ownership registry
+    load_valid_plots()  # #451: authentic plot-id set for claim validation
     populate_world()
     server = await asyncio.start_server(handle, HOST, PORT)
     asyncio.create_task(tick_loop())
