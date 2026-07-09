@@ -16785,7 +16785,7 @@ function update(dt){
     player.x=nx;player.z=nz;
     const step=Math.hypot(player.vx,player.vz)*dt;
     player.bob+=step*1.1;   // #176: stride phase advances with DISTANCE moved (step already = speed*dt), not distance*dt — the old dt*step made the gait framerate-dependent and ~60x too slow (feet glided)
-    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;SFX.step();} }  // footfalls only on the ground
+    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;footstep();} }  // footfalls only on the ground — surface-aware
     if(sprint>1&&player.grounded&&moving) player.st=Math.max(0,player.st-dt*14);
   }
   // dodge dash: brief high-speed burst (with i-frames) along the dash vector
@@ -18295,6 +18295,31 @@ function creatureVoice(kind,act){
 // authentic per-creature vocals (kind_idle/_attack/_wound/_death) — a recorded sample if the SoundTable
 // has one, else the procedural creatureVoice above so EVERY creature still has a distinct cry.
 function creatureSFX(kind,act){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act); }
+// ── surface-aware footsteps: the footfall matches what you walk on (stone in a dungeon, a snow
+//    crunch in a blizzard, a splash at the waterline, firm cobble on a road, a soft thud on grass) ──
+function footSurface(){
+  if((typeof inDungeon!=="undefined"&&inDungeon)||(typeof inNetwork!=="undefined"&&inNetwork)) return "stone";
+  if(typeof snowAmt!=="undefined"&&snowAmt>0.4) return "snow";
+  if(player&&player.y!=null&&player.y<0.6) return "water";                      // at/under the waterline outdoors = shallow splash
+  if(typeof onRoad==="function"&&player&&onRoad(player.x,player.z)) return "road";
+  return "grass";
+}
+function stepSynth(s){
+  const j=irnd(-40,50);                                                          // per-step jitter so it isn't robotic
+  switch(s){
+    case "stone": noiseHit(0.035,0.06,880+j); blip(1150+j,0.02,"square",0.03,700); break;   // sharp click-scuff
+    case "road":  noiseHit(0.045,0.055,560+j); break;                            // firm cobble
+    case "snow":  noiseHit(0.10,0.05,120+Math.abs(j)); break;                    // muffled low crunch
+    case "water": noiseHit(0.07,0.06,1500+j); blip(1200,0.05,"sine",0.03,400); break;   // wet splash
+    default:      noiseHit(0.055,0.05,220+j);                                    // grass/dirt soft thud
+  }
+}
+function footstep(){
+  if(!actx||muted) return;
+  const s=footSurface();
+  if(playSample("footstep_"+s)) return;                                          // a surface-tagged sample if the pack has one
+  stepSynth(s);
+}
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
   SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
   SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
