@@ -1104,8 +1104,8 @@ const WAR_BOLTS=[
   {code:"frost",name:"Frost Bolt",   ico:"❄️",color:FX_ELEM.frost,r:0.32,element:"ice",     slow:.45,  base:24,foc:1.7,speed:46, cost:18,cd:760},
   {code:"light",name:"Lightning Bolt",ico:"⚡",color:FX_ELEM.shock,r:0.2, element:"shock",   stun:true, base:30,foc:1.8,speed:120,cost:20,cd:600},
   {code:"acid", name:"Acid Stream",  ico:"🟢",color:FX_ELEM.acid, r:0.26,element:"acid",                base:20,foc:1.5,speed:52, cost:16,cd:560},
-  {code:"force",name:"Force Bolt",   ico:"⚪",color:0xd8d8e0,r:0.3, element:"bludgeon",            base:22,foc:1.5,speed:60, cost:16,cd:560},
-  {code:"blade",name:"Whirling Blade",ico:"🌀",color:0xc0c8d0,r:0.28,element:"slash",              base:21,foc:1.5,speed:58, cost:16,cd:560},
+  {code:"force",name:"Force Bolt",   ico:"⚪",color:0x141418,r:0.3, element:"bludgeon",            base:22,foc:1.5,speed:60, cost:16,cd:560},
+  {code:"blade",name:"Whirling Blade",ico:"🌀",color:0xd6dbe4,r:0.28,element:"slash",              base:21,foc:1.5,speed:58, cost:16,cd:560},
   {code:"pierce",name:"Force Arrow", ico:"🏹",color:0xb0e0ff,r:0.18,element:"pierce",             base:23,foc:1.6,speed:72, cost:16,cd:540},
 ];
 const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},
@@ -10050,12 +10050,19 @@ function updatePortalTransit(dt){
 // ---------- combat ----------
 // distinct projectile silhouettes per element: blades are spinning shards, bolts/orbs are spheres,
 // piercing shots are slim darts, bludgeon a fat orb — small touch that reads at a glance
+function shurikenGeom(r){   // a flat 4-pointed ninja throwing star; face-normal rotated to +Y so it spins in its own plane along flight
+  const s=new THREE.Shape(); const outer=r*2.7, inner=r*0.9, pts=4;
+  for(let i=0;i<pts*2;i++){ const a=(i/(pts*2))*Math.PI*2-Math.PI/2, rad=(i%2===0)?outer:inner, x=Math.cos(a)*rad, y=Math.sin(a)*rad; i?s.lineTo(x,y):s.moveTo(x,y); }
+  s.closePath();
+  const g=new THREE.ExtrudeGeometry(s,{depth:r*0.12,bevelEnabled:false}); g.center(); g.rotateX(-Math.PI/2);
+  return g;
+}
 function projGeom(sp){
   const r=sp.r||0.28, el=sp.element;
+  if(el==="slash") return shurikenGeom(r);                                                    // blade → silver ninja throwing star (checked before streak so blade streaks are stars too)
+  if(el==="bludgeon"){ const g=new THREE.TorusGeometry(r*1.7,r*0.42,8,22); g.rotateX(-Math.PI/2); return g; }   // force → black ring (hole-axis rotated to +Y → the ring faces its flight)
   if(sp.streak) return new THREE.CylinderGeometry(r*0.14,r*0.5,r*6.5,7);   // a long tapered light-streak (oriented nose-forward to its flight)
-  if(el==="slash") return new THREE.BoxGeometry(r*2.4,r*0.5,r*0.5);
   if(el==="pierce") return new THREE.ConeGeometry(r*0.7,r*3,8);
-  if(el==="bludgeon") return new THREE.SphereGeometry(r*1.25,10,8);
   return new THREE.SphereGeometry(r,10,8);
 }
 function wornPieces(){ const o=player.armorSlots||{}; const r=[]; for(const s of ARMOR_SLOTS){ if(o[s]) r.push(o[s]); } return r; }
@@ -15541,9 +15548,9 @@ function executeSpell(id){
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
     // AC (ACE WorldObject_Magic): ARC spells are the only lobbed war geometry — launched from full
     // caster height with an upward loft, falling under gravity; all other geometries fly flat.
-    const isArc=geom==="arc", isStreak=!!sp.streak;
+    const isArc=geom==="arc", isStreak=!!sp.streak, isShuriken=sp.element==="slash", isRing=sp.element==="bludgeon";
     const rlife=Math.max(0.5,spellRange/Math.max(1,sp.speed));   // travel time to reach the skill-gated range
-    pProj.push({mesh,spin:sp.element==="slash"?1:0,orient:(isStreak||sp.element==="pierce")?1:0,streak:isStreak,x:ox,y:isArc?_footY+EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.55:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // #196: the Force spike & the streak fly nose-first · #228: arc lofts from the real eye · arc loft raised so the lob visibly arcs
+    pProj.push({mesh,spin:0,shuriken:isShuriken,orient:(isStreak||sp.element==="pierce"||isRing)?1:0,streak:isStreak,x:ox,y:isArc?_footY+EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.55:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // blade = spinning ninja star · force = ring facing its flight · streak/pierce fly nose-first · arc lofts & falls
       dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?Math.min(4,rlife):rlife});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
@@ -16590,7 +16597,8 @@ function update(dt){
     const p=pProj[i]; if(!p) continue;   // #227: same re-entrancy guard as eProj
     const _px0=p.x,_pz0=p.z;   // #11: travel-segment start (pre-move) for swept collision
     if(p.grav) p.vy-=GRAV*dt;   // AC ballistics: arrows/bolts (and lobbed arcs) fall under gravity
-    if(p.arrow||p.orient){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); }  // #196: nose follows the flight (arrows + elongated spell spikes)
+    if(p.shuriken){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); p.roll=(p.roll||0)+dt*20; p.mesh.rotateY(p.roll); }   // ninja star: face along flight + spin fast in its own plane
+    else if(p.arrow||p.orient){ const vl=Math.hypot(p.vx,p.vy,p.vz)||1; p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.vx/vl,p.vy/vl,p.vz/vl)); }  // #196: nose (or ring face) follows the flight (arrows, streaks, force rings)
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
