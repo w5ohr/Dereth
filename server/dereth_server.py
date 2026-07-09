@@ -34,6 +34,13 @@ AOI_IN = 300.0     # send entities within this radius (> fog far 235, so no pop-
 AOI_OUT = 380.0    # keep sending an already-sent entity until it passes this (hysteresis band)
 SCRYPT = dict(n=16384, r=8, p=1, dklen=32)
 PROTOCOL_VERSION = 2   # v2: accounts own up to 8 character slots (roster/play_char/create_char)
+# #441: admission control against unauthenticated connection exhaustion. A completed WS handshake
+# that never authenticates must not pin a coroutine + Client + socket forever, and a single host must
+# not be able to open unbounded sockets. Cap total and per-IP concurrent connections, and give every
+# pre-auth connection a hard deadline to log in (the header read is otherwise untimed by design).
+MAX_CONNECTIONS   = int(os.environ.get("DERETH_MAX_CONNS", "400"))       # global concurrent sockets
+MAX_CONNS_PER_IP  = int(os.environ.get("DERETH_MAX_CONNS_PER_IP", "16")) # concurrent sockets per peer IP
+AUTH_TIMEOUT      = float(os.environ.get("DERETH_AUTH_TIMEOUT", "30"))   # seconds to authenticate before drop
 
 # ---------------------------------------------------------------- persistence
 # An *account* (users row: username+password) owns up to MAX_CHARS *characters*
@@ -121,14 +128,23 @@ def note_login_fail(username):
         n, t0 = 0, time.time()
     _LOGIN_FAILS[username] = (n + 1, t0)
 
-# ── default admin: always keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
+# ── default admin: keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
+# #440: the Admin password is an operator secret sourced from DERETH_ADMIN_PW — NEVER a committed
+# literal. With no such secret we do not seed the account at all, and we NEVER overwrite an
+# existing Admin password on startup (seed only when the row is absent), so an operator can rotate
+# the credential and it survives restarts.
 ADMIN_USER = "Admin"
-ADMIN_PW = "Tatia0623!"
+ADMIN_PW = os.environ.get("DERETH_ADMIN_PW")
 ADMIN_CHAR_PATH = os.path.join(os.path.dirname(__file__), "admin_kilmer.json")
 
 def seed_admin():
-    """Enforce the default Admin account + password on every start, and place the maxed Kilmer
-    character in slot 0 if that slot is empty (so any in-game progress the admin makes persists)."""
+    """Ensure the default Admin account exists and place the maxed Kilmer character in slot 0 if that
+    slot is empty (so any in-game progress the admin makes persists). The password comes from
+    DERETH_ADMIN_PW and is written ONLY when the account is first created — an existing Admin password
+    is never clobbered. With no DERETH_ADMIN_PW set, the account is not seeded."""
+    if not ADMIN_PW:
+        print("seed: DERETH_ADMIN_PW is unset — Admin account not seeded (set the env var to enable it)")
+        return
     kilmer = None
     try:
         with open(ADMIN_CHAR_PATH, encoding="utf-8") as f:
@@ -138,14 +154,11 @@ def seed_admin():
         print(f"seed: admin_kilmer.json unavailable ({e}) — Admin account only, no character")
         kilmer = None
     now = int(time.time())
-    salt = secrets.token_bytes(16)
     with db() as c:
-        if c.execute("SELECT 1 FROM users WHERE username=?", (ADMIN_USER,)).fetchone():
-            c.execute("UPDATE users SET salt=?, pw=? WHERE username=?",
-                      (salt.hex(), hash_pw(ADMIN_PW, salt), ADMIN_USER))          # keep the password current
-        else:
+        if not c.execute("SELECT 1 FROM users WHERE username=?", (ADMIN_USER,)).fetchone():
+            salt = secrets.token_bytes(16)
             c.execute("INSERT INTO users(username,salt,pw,char,created,seen) VALUES(?,?,?,?,?,?)",
-                      (ADMIN_USER, salt.hex(), hash_pw(ADMIN_PW, salt), None, now, now))
+                      (ADMIN_USER, salt.hex(), hash_pw(ADMIN_PW, salt), None, now, now))   # #440: created only when absent
         if kilmer is not None and not c.execute(
                 "SELECT 1 FROM characters WHERE account=? AND slot=0", (ADMIN_USER,)).fetchone():
             c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
@@ -622,6 +635,8 @@ def ws_frame(payload: bytes, opcode=0x1) -> bytes:
 TOKENS = {}            # #309: token -> (username, expiry_epoch). Tokens must outlive a disconnect (that's what `resume` is for), so the fix for unbounded growth is a TTL + a size cap, not deletion on close.
 TOKEN_TTL = 7 * 24 * 3600   # a resume token is valid for 7 days
 CLIENTS = {}           # username -> Client (one active session per account)
+SESSIONS = {}          # #438: netid -> Client. The opaque public id clients use to target each other
+                       # (cast/pvp) and the key remotes are stored under, so the account name never leaks.
 
 # #239: rate-limit config (token buckets, per connection)
 RL_GEN_RATE = 30.0    # sustained messages/sec (input/attack/etc.)
@@ -634,7 +649,11 @@ class Client:
     def __init__(self, reader, writer):
         self.reader = reader
         self.writer = writer
-        self.username = None    # account (login) name
+        self.username = None    # account (login) name — NEVER sent in any broadcast (#438)
+        # #438: opaque per-session network id. The account login name is half a credential; it must
+        # never cross the auth boundary. This non-sensitive token is the public id used as the
+        # snapshot/broadcast key and the cast/pvp target — the account name stays server-side only.
+        self.netid = secrets.token_hex(8)
         self.token = None
         self.alive = True
         self.charname = None    # active character's in-world name
@@ -706,7 +725,9 @@ def mob_pub(m):
     return d
 
 def player_pub(u, cl):
-    return {"id": u, "name": cl.charname or u, "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
+    # #438: the public "id" is the opaque session netid, NOT the account login name `u`. Display uses
+    # the in-world charname. `u` (the account name) is never placed on the wire.
+    return {"id": cl.netid, "name": cl.charname or "Adventurer", "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
             "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
             "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
             "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
@@ -1263,7 +1284,7 @@ async def do_pickup(cl, did):
     if math.hypot(cl.x - d["x"], cl.z - d["z"]) > PICKUP_RANGE:
         return
     DROPS.pop(did, None)
-    await broadcast({"t": "drop_gone", "id": did, "by": cl.username})
+    await broadcast({"t": "drop_gone", "id": did, "by": cl.netid})   # #438: opaque netid, not the account name (client ignores `by`)
     if d["type"] == "gold":
         amt = int(d["amt"])
         credit_coin_created(cl, amt)   # M3 (#238): server credits the authoritative balance, bounded by the coin-creation rate
@@ -1378,12 +1399,12 @@ async def resolve_attack(cl, mid, dmg):
     if dmg > 0:
         dealt = m.setdefault("dealt", {})
         dealt[cl.username] = dealt.get(cl.username, 0) + dmg
-    await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.username})
+    await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.netid})  # #438: opaque netid, not the account name
     if m["hp"] <= 0:
         m["hp"] = 0.0
         is_boss = bool(m.get("boss"))
         m["respawn_at"] = time.time() + (BOSS_DEFS[m["bosskey"]]["respawn"] if is_boss else 8.0)
-        die_msg = {"t": "mob_die", "id": mid, "by": cl.username, "kind": m["kind"],
+        die_msg = {"t": "mob_die", "id": mid, "by": cl.netid, "kind": m["kind"],   # #438: opaque netid, not the account name
                    "x": round(m["x"], 2), "z": round(m["z"], 2)}
         if is_boss:
             die_msg["boss"] = True; die_msg["name"] = m["name"]
@@ -1963,8 +1984,11 @@ async def enter_world(cl, slot, name, data):
     """Bring a selected/created character into the shared world."""
     was_in_world = cl.in_world   # #312: a repeated play_char shouldn't re-broadcast "entered Dereth" to everyone
     cl.slot = slot; cl.charname = name; cl.in_world = True
+    SESSIONS[cl.netid] = cl   # #438: register the opaque id so other players' cast/pvp can reach this session
     load_econ(cl, data)   # M3 (#238): adopt authoritative coin + inventory from the save
-    await cl.send({"t": "play_ok", "slot": slot, "name": name, "char": data})
+    # #438: tell the client its own opaque netid so it can recognise its own broadcasts (mob_hit/emote
+    # self-echo) and skip its own snapshot record — the account name is never used as a network id.
+    await cl.send({"t": "play_ok", "slot": slot, "name": name, "netid": cl.netid, "char": data})
     # allegiance: the graph decides the /a channel (everyone under one Monarch); deliver
     # any pass-up XP your vassals earned while you were away
     r = alg_row(name)
@@ -2181,18 +2205,18 @@ async def dispatch(cl, msg):
                 verb = EMOTES.get(act)
                 line = f"{cl.charname} {verb}" if verb else None
             if line:
-                await broadcast({"t": "emote", "id": cl.username, "from": cl.charname, "act": act, "msg": line})
+                await broadcast({"t": "emote", "id": cl.netid, "from": cl.charname, "act": act, "msg": line})   # #438: opaque netid for the self-echo check; display uses `from`/charname
     elif t == "cast":
         # relay a Creature/Life heal or buff to another in-world player near the caster
         if cl.in_world:
-            tgt = CLIENTS.get(msg.get("target"))
+            tgt = SESSIONS.get(msg.get("target"))   # #438: targets are opaque netids, not account names
             spell = msg.get("spell")
             if tgt and tgt.in_world and isinstance(spell, str) and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 45:
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "pvp":
         # S3 PvP: relay a hit only if both players share a PvP ruleset (PK↔PK or PKL↔PKL) and are in range
         if cl.in_world and getattr(cl, "pk", False):
-            tgt = CLIENTS.get(msg.get("target"))
+            tgt = SESSIONS.get(msg.get("target"))   # #438: targets are opaque netids, not account names
             try: dmg = float(msg.get("dmg", 0))
             except Exception: dmg = 0
             if (tgt and tgt.in_world and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
@@ -2338,14 +2362,45 @@ async def dispatch(cl, msg):
 def _reject_const(_c):   # #238: json.loads calls this for NaN/Infinity/-Infinity literals — refuse them
     raise ValueError("non-finite literal")
 
+# #441: live connection accounting for admission control. `_CONN_TOTAL` is the global count;
+# `_CONN_BY_IP` maps peer IP -> concurrent connection count. Both are maintained across the whole
+# lifetime of handle() (incremented before the handshake, decremented in its finally).
+_CONN_TOTAL = 0
+_CONN_BY_IP = {}
+
 async def handle(reader, writer):
+    global _CONN_TOTAL
     peer = writer.get_extra_info("peername")
+    ip = peer[0] if peer else "?"
+    # #441: reject BEFORE allocating a Client / running the handshake, so an unauthenticated flood can't
+    # exhaust FDs/memory/coroutines. Cap total and per-IP concurrent connections.
+    if _CONN_TOTAL >= MAX_CONNECTIONS or _CONN_BY_IP.get(ip, 0) >= MAX_CONNS_PER_IP:
+        try:
+            writer.close()
+        except Exception:
+            pass
+        return
+    _CONN_TOTAL += 1
+    _CONN_BY_IP[ip] = _CONN_BY_IP.get(ip, 0) + 1
     cl = Client(reader, writer)
-    if not await ws_handshake(reader, writer):
-        writer.close(); return
     try:
+        if not await ws_handshake(reader, writer):
+            writer.close(); return
+        # #441: a connection that completes the handshake but never authenticates is dropped after
+        # AUTH_TIMEOUT. The deadline is absolute (from accept), so a pre-auth client can't hold the
+        # socket open forever by trickling pings/frames just under the per-read timeouts.
+        auth_deadline = time.monotonic() + AUTH_TIMEOUT
         while cl.alive:
-            frame = await ws_read(reader)
+            if cl.username is None:
+                remaining = auth_deadline - time.monotonic()
+                if remaining <= 0:
+                    break   # never authenticated in time — reap it
+                try:
+                    frame = await asyncio.wait_for(ws_read(reader), timeout=remaining)
+                except asyncio.TimeoutError:
+                    break
+            else:
+                frame = await ws_read(reader)
             if frame is None:
                 break
             opcode, payload = frame
@@ -2394,6 +2449,14 @@ async def handle(reader, writer):
         print(f"[conn err] {peer}: {e}")
     finally:
         cl.alive = False
+        # #441: release this connection's slot from the global + per-IP accounting no matter how we exit
+        _CONN_TOTAL -= 1
+        _n = _CONN_BY_IP.get(ip, 0) - 1
+        if _n > 0:
+            _CONN_BY_IP[ip] = _n
+        else:
+            _CONN_BY_IP.pop(ip, None)
+        SESSIONS.pop(cl.netid, None)   # #438: release the opaque session id
         if cl.username and CLIENTS.get(cl.username) is cl:
             was_in_world = cl.in_world
             who = cl.charname or cl.username
