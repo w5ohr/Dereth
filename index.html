@@ -3578,10 +3578,16 @@ function updateInstanceLight(){
       // buried the whole hall in a void the exact tone of the fill: its courtyard, both wings, the
       // gatehouse, the exit arch and most of the tutorial staff (the greeter included) stand 30–55m
       // from the arrival spot, so everything past a few metres fogged out to a flat fill and a new
-      // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: warm stone-toned
-      // fog that reaches clear across the room, and enough fill light that its surfaces read at once.
+      // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: fog that reaches
+      // clear across the room, and enough fill light that its surfaces read at once.
+      // #534: the old academy fog (near=14/far=130, colour 0x9a9078) was still unreadable — 0x9a9078 IS
+      // the floor/wall albedo (floor 0x9a927e, walls 0x8d8578), so past ~14m every surface flattened
+      // into one depthless beige field. Push the fog well beyond the ~50m room (Great Hall walls ≤20m,
+      // wings ~34m, exit arch/gatehouse ~50m all now clear of the wash) and tint it a cool slate that
+      // CONTRASTS the warm stone — the faint haze left at the far gatehouse reads as receding depth,
+      // not a blank fill.
       hemi.intensity=0.5; amb.intensity=0.3; sun.intensity=0;
-      scene.fog.near=14; scene.fog.far=130; scene.fog.color.setHex(0x9a9078);
+      scene.fog.near=26; scene.fog.far=260; scene.fog.color.setHex(0x2b3340);
     } else {
       hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;      // kill daylight inside
       scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
@@ -3602,6 +3608,10 @@ function updateInstanceLight(){
       playerLight.position.set(player.x,EYE+0.1,player.z); playerLight.visible=true;
     } else if(playerLight.visible){ playerLight.visible=false; playerLight.intensity=0; }
   }
+  // #534: the Academy courtyard is open to the daylit sky and its exit arch frames that sky, so at the
+  // overworld exposure (1.04) the doorway clipped to a pure-white void. Ease the exposure indoors here
+  // so the bright sky reads as sky, not a blown-out portal; everything else keeps the overworld value.
+  renderer.toneMappingExposure=(inDungeon&&curDungeon&&curDungeon.academy)?0.9:1.04;
 }
 
 // procedural creature skin: mottled / scaled / spotted texture tinted to base color
