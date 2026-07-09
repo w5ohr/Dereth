@@ -4281,6 +4281,14 @@ function applyGfxTier(t,quiet){
 }
 function gfxGovern(dt){
   if(dt<=0||dt>0.5||typeof paused!=="undefined"&&paused) return;
+  // #466: a fresh/reloaded/Continue'd character streams in monster models, dungeon packs & clothing
+  // tables over several seconds, and the load-gated portal transit holds the camera in empty portal
+  // space (nothing rendered yet) until the surrounding area finishes streaming in. Both are one-time
+  // load hitches, not steady-state render cost — burn down the warm-up window and skip the governor
+  // entirely while either is active, and pin the EMA to neutral so a stale stall reading can't fire
+  // the instant warm-up ends.
+  if(GFX._warm>0) GFX._warm=Math.max(0,GFX._warm-dt);
+  if(GFX._warm>0||(typeof portalTransit!=="undefined"&&portalTransit)){ GFX.fps=45; GFX._lo=0; GFX._hi=0; return; }
   GFX.fps+=(1/dt-GFX.fps)*0.06;
   if(settings.gfx!=="auto") return;
   if(GFX._grace>0){ GFX._grace-=dt; GFX._lo=0; return; }   // teleport/stream churn doesn't count
@@ -26795,6 +26803,11 @@ function startGame(loadSaved,preset){
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
+  // #466: arm a 6s warm-up before the auto-tuner starts sampling FPS — every entry into the world (fresh
+  // character, reload, Continue) hits a burst of monster model / dungeon pack / clothing table streaming
+  // that stalls frames without reflecting steady-state render cost; gfxGovern also ignores frames for as
+  // long as the portal transit below is still holding.
+  if(typeof GFX!=="undefined") GFX._warm=6;
   // Materialize into the world through portal space (AC's arrival): the world is already built and the
   // player placed, so arrive() is a no-op — the tube just holds until the surrounding area has streamed in.
   startPortalTransit(null,{ready:overworldAreaLoaded,minHold:1.2,maxHold:10});
