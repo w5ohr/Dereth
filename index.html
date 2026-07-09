@@ -624,11 +624,11 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Sync your character to the server, then depart Dereth through a recall portal back to the title screen">Session</span><button id="logoutBtn" class="tbtn" style="border-color:var(--gold);color:var(--gold)">🚪 Log Out…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
-<div id="keymap"><div class="card" style="text-align:left">
-  <h2>Map Keys</h2>
-  <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind.</div>
-  <div id="keymapBody" style="font-size:13px"></div>
-  <div style="display:flex;gap:10px;margin-top:14px"><button id="keymapReset" class="tbtn">Reset to defaults</button><button id="keymapClose">Done</button></div>
+<div id="keymap"><div class="card" style="text-align:left;display:flex;flex-direction:column;max-height:90vh">
+  <h2 style="flex-shrink:0">Map Keys</h2>
+  <div class="sub" style="flex-shrink:0">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind.</div>
+  <div id="keymapBody" style="font-size:13px;overflow-y:auto;flex:1;min-height:0"></div>
+  <div style="display:flex;gap:10px;margin-top:14px;flex-shrink:0"><button id="keymapReset" class="tbtn">Reset to defaults</button><button id="keymapClose">Done</button></div>
 </div></div>
 
 <div id="overlay">
