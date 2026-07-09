@@ -16509,7 +16509,7 @@ function buildSheet(){
   if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
   { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
-  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{ breakFromPatron(); buildSheet(); }; }
+  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{ const pn=player.patronInfo&&player.patronInfo.name; if(!pn){ breakFromPatron(); return; } if(typeof confirm==="function" && !confirm(`Break fealty with ${pn}? This severs the pass-up chain and cannot be undone.`)) return; breakFromPatron(); buildSheet(); }; }
   { const rb=document.getElementById('recruitBtn'); if(rb) rb.onclick=()=>{ if(recruitVassal()){ SFX.quest(); saveGame(); buildSheet(); } }; }
   // Luminance / Enlightenment endgame
   if(player.lumUnlocked||player.enlightenment){
