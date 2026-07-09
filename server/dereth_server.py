@@ -155,14 +155,41 @@ def seed_admin():
             print("seed: Admin account ensured" + ("; Kilmer already present" if kilmer else ""))
 
 def migrate_legacy(account):
-    """Seed slot 0 from a pre-multichar users.char blob (once), so old saves survive."""
+    """Seed slot 0 from a pre-multichar users.char blob (once), so old saves survive.
+    #447: route the legacy insert through the SAME guards as create_char_slot/save_char_slot —
+    reserved-name gate, global name uniqueness, sanitize_save, and the 256 KiB cap — so a legacy
+    blob can't bypass them (duplicate charname, reserved name, or unsanitized/oversized save)."""
     with db() as c:
         if c.execute("SELECT COUNT(*) FROM characters WHERE account=?", (account,)).fetchone()[0]:
             return
         row = c.execute("SELECT char FROM users WHERE username=?", (account,)).fetchone()
-        if row and row[0]:
-            c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
-                      (account, 0, account, row[0], int(time.time()), int(time.time())))
+        if not (row and row[0]):
+            return
+        # #447: parse + sanitize + cap the legacy blob exactly like save_char_slot — never persist
+        # unparseable, unsanitized, or oversized data as-is.
+        try:
+            data = json.loads(row[0])
+        except Exception:
+            data = None
+        blob = json.dumps(sanitize_save(data)) if data is not None else None
+        if blob is not None and len(blob) > 262144:   # #321/#447: 256 KiB per-slot save cap
+            blob = None   # store a safe empty payload rather than the oversized legacy blob
+        # #447/#354: pick a SAFE character name — never grant a RESERVED name (unless ADMIN_USER)
+        # and never duplicate a name held by ANY other account. Derive a deterministic unique
+        # fallback (numeric suffix) if the account name is reserved or already taken elsewhere.
+        def _taken(n):
+            return c.execute("SELECT 1 FROM characters WHERE LOWER(name)=LOWER(?) AND account!=?",
+                             (n, account)).fetchone() is not None
+        def _reserved(n):
+            return n.strip().lower() in RESERVED_NAMES and account != ADMIN_USER
+        name = account
+        if _reserved(name) or _taken(name):
+            i = 1
+            while _reserved(f"{account}{i}") or _taken(f"{account}{i}"):
+                i += 1
+            name = f"{account}{i}"
+        c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
+                  (account, 0, name, blob, int(time.time()), int(time.time())))
 
 def _char_summary(name, data_str):
     try:
