@@ -607,6 +607,8 @@
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware score: festive in the castle, aggressive in a fight, suspenseful in a dungeon, a crowd murmur in town, dark on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-dynmusic="1">On</button><button class="tbtn" data-dynmusic="0">Off</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Living environmental sound: wind &amp; surf, dungeon drips and groans, birdsong by day and crickets &amp; owls by night.">Ambient sound</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-ambience="1">On</button><button class="tbtn" data-ambience="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -18084,6 +18086,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   vtankBuff:true,vtankLoot:true,gaDest:"auto",
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
   dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
+  ambience:true,   // environmental soundscape: wind/surf/dungeon-drips + day birds / night crickets & owls
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
@@ -18438,6 +18441,62 @@ setInterval(()=>{ try{
   if(tnow>=MUSICDIR._next-0.05){                              // schedule the next bar just before the last ends
     const gen=MD_MOODS[target]; if(gen){ const dur=gen(tnow+0.05); MUSICDIR._next=tnow+0.05+dur; } }
 }catch(e){} },350);
+// ══ ENVIRONMENTAL SOUNDSCAPE ═════════════════════════════════════════════════════════════════════
+// A living ambient layer UNDER the music/SFX, keyed to place and time of day (all synth, offline):
+//   outdoors → gusting wind (scaled by weather) · shore/river/ocean → surf wash ·
+//   dungeon  → low air rumble + occasional water drips + a distant groan ·
+//   day wilds→ scattered birdsong · night wilds → cricket shimmer + the odd owl hoot.
+// Rain already has its own hiss bed (rainGain, driven by weather/wetness). Gated by the `ambience`
+// setting; ducked while muted / not running / backgrounded (rides masterGain like everything else).
+const AMBIENCE={on:true,_init:false,n:{},_owl:0,_bird:0,_drip:0};
+function ambInit(){
+  if(AMBIENCE._init||!actx) return; AMBIENCE._init=true;
+  const bus=masterGain||actx.destination;
+  const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate), d=nb.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  const loop=(type,freq,q,g0)=>{ const s=actx.createBufferSource(); s.buffer=nb; s.loop=true;
+    const f=actx.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q)f.Q.value=q;
+    const g=actx.createGain(); g.gain.value=g0||0; s.connect(f).connect(g).connect(bus); s.start(); return g; };
+  AMBIENCE.n.wind    = loop("lowpass", 520, 0, 0);     // outdoor gusts (on top of initAudio's faint constant bed)
+  AMBIENCE.n.surf    = loop("lowpass", 700, 0, 0);     // shoreline wash
+  AMBIENCE.n.rumble  = loop("lowpass", 110, 0, 0);     // dungeon air rumble
+  AMBIENCE.n.crickets= loop("bandpass",5200, 7, 0);    // night insects (high shimmer)
+  // a slow LFO gives the wind & surf their swell
+  const lfo=actx.createOscillator(), lg=actx.createGain(); lfo.type="sine"; lfo.frequency.value=0.12; lg.gain.value=0.5;
+  lfo.connect(lg); lg.connect(AMBIENCE.n.wind.gain); lfo.start(); AMBIENCE._lfo=lfo;
+}
+function _ambRamp(g,to){ if(g&&actx) g.gain.setTargetAtTime(Math.max(0,to),actx.currentTime,0.6); }
+setInterval(()=>{ try{
+  const off=(typeof settings!=="undefined"&&settings.ambience===false);
+  AMBIENCE.on=!off;
+  if(off||!actx||muted||typeof running==="undefined"||!running||typeof player==="undefined"||!player){
+    if(AMBIENCE._init){ for(const k in AMBIENCE.n) _ambRamp(AMBIENCE.n[k],0); } return; }
+  ambInit();
+  const dungeon=(typeof inDungeon!=="undefined"&&inDungeon), net=(typeof inNetwork!=="undefined"&&inNetwork);
+  const indoors=dungeon||net;
+  const inTown=(typeof nearestCapitalDist==="function")&&nearestCapitalDist(player.x,player.z)<150;
+  const nearWater=!indoors&&(player.y!=null&&player.y<1.2);         // low feet height outdoors = shore/river/ocean
+  const sunY=-Math.cos((typeof gameTime!=="undefined"?gameTime:0.35)*Math.PI*2);   // +1 noon … −1 midnight
+  const night=sunY<-0.05, day=sunY>0.12;
+  const wtr=(typeof weather!=="undefined")?weather:"clear";
+  const windBase=wtr==="storm"?0.16:wtr==="rain"?0.10:wtr==="cloudy"?0.07:wtr==="snow"?0.06:0.045;
+  // targets
+  _ambRamp(AMBIENCE.n.wind,    indoors?0.008: windBase*(inTown?0.6:1));
+  _ambRamp(AMBIENCE.n.surf,    nearWater?clamp(0.10*(1.2-player.y)/1.2,0.02,0.11):0);
+  _ambRamp(AMBIENCE.n.rumble,  dungeon?0.06:0);
+  _ambRamp(AMBIENCE.n.crickets,(!indoors&&!inTown&&night)?0.03:0);
+  // one-shots (probabilistic; each ~ every few seconds when its context holds)
+  const T=now();
+  if(dungeon){ if(T-AMBIENCE._drip>1400&&Math.random()<0.5){ AMBIENCE._drip=T;                    // water drip
+      blip(1600+irnd(-200,300),0.09,"sine",0.05,700); setTimeout(()=>blip(900,0.12,"sine",0.03,500),70); }
+    if(T-AMBIENCE._owl>9000&&Math.random()<0.25){ AMBIENCE._owl=T; blip(150,0.7,"sine",0.05,110); } // distant groan
+  } else if(!inTown){
+    if(day&&T-AMBIENCE._bird>2600&&Math.random()<0.45){ AMBIENCE._bird=T;                          // birdsong
+      const f=1800+irnd(0,900); blip(f,0.08,"triangle",0.05,f*1.3); setTimeout(()=>blip(f*1.25,0.07,"triangle",0.045,f*0.9),90); setTimeout(()=>blip(f*1.5,0.06,"triangle",0.04),180); }
+    if(night&&T-AMBIENCE._owl>7000&&Math.random()<0.3){ AMBIENCE._owl=T;                            // owl hoot
+      blip(420,0.22,"sine",0.06,360); setTimeout(()=>blip(360,0.3,"sine",0.06,300),260); }
+  }
+}catch(e){} },550);
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -22835,6 +22894,11 @@ function openSettings(){
   dmHi();
   dmBtns.forEach(b=>b.onclick=()=>{settings.dynMusic=+b.dataset.dynmusic===1;if(typeof MUSICDIR!=="undefined")MUSICDIR.on=settings.dynMusic;saveSettings();dmHi();
     log(settings.dynMusic?"Dynamic music <b>on</b> — the score follows where you are and what you're doing.":"Dynamic music off — classic ambient loops restored.","sys");});
+  const amBtns=document.querySelectorAll('#settings [data-ambience]');
+  const amHi=()=>amBtns.forEach(b=>b.style.opacity=((+b.dataset.ambience===1)===(settings.ambience!==false))?1:0.45);
+  amHi();
+  amBtns.forEach(b=>b.onclick=()=>{settings.ambience=+b.dataset.ambience===1;saveSettings();amHi();
+    log(settings.ambience?"Ambient sound <b>on</b> — wind, water, wildlife and dungeon airs.":"Ambient sound off.","sys");});
   const gxBtns=document.querySelectorAll('#settings [data-gfx]');
   const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
   gxHi();
