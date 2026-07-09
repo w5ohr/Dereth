@@ -16684,6 +16684,10 @@ function showCastReticle(x,z,r,col){
 function hideCastReticle(){ if(castReticle) castReticle.visible=false; }
 function update(dt){
   if(typeof LOGOUT!=="undefined"&&LOGOUT.active) updateLogout(dt);   // #457: the recall-away logout advances even while otherwise idle
+  // #501: the portal tube (incl. the login "WELCOME BACK" arrival) must advance even while paused —
+  // otherwise anything that pauses during the transit (e.g. the academy greeter on a delve-saved login)
+  // freezes the tube forever, so maxHold never fires and the character is permanently stuck in the warp.
+  if(portalTransit) updatePortalTransit(dt);
   if(paused||!running) return;
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
@@ -16826,7 +16830,6 @@ function update(dt){
   if(levelUps.length) updateLevelUps(dt);
   if(castRingFX.length) updateCastRings(dt);
   if(spellLandFXs.length) updateSpellLandFX(dt);
-  if(portalTransit) updatePortalTransit(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
