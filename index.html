@@ -208,8 +208,10 @@
   #tcJmp{width:56px;height:56px;right:16px;bottom:124px}
   #tcDdg{width:50px;height:50px;right:86px;bottom:86px;font-size:19px}
   #tcBlk{width:56px;height:56px;right:124px;bottom:16px}
-  #tcHt{width:46px;height:46px;right:186px;bottom:-6px;font-size:11px;border-radius:12px;font-weight:bold}
-  #tcPg{width:40px;height:40px;right:196px;bottom:52px;font-size:14px;border-radius:11px;font-weight:bold;opacity:.9}
+  /* #469: attack-height + spell-page selectors sit in a row BELOW the spell arc so they no longer
+     share a hit area with the arc's first slots (🔥 fire / ❄ frost) or the quickbar "1" */
+  #tcHt{width:46px;height:46px;right:186px;bottom:-28px;font-size:11px;border-radius:12px;font-weight:bold}
+  #tcPg{width:40px;height:40px;right:144px;bottom:-30px;font-size:14px;border-radius:11px;font-weight:bold;opacity:.9}
   /* outer spell arc: 5 slots rendered from the current quickbar page, radial cooldown sweeps */
   .tcSlot{position:absolute;pointer-events:auto;touch-action:none;width:46px;height:46px;border-radius:12px;
     background:radial-gradient(circle at 50% 35%,#241a0c,#0c0905);border:2px solid rgba(216,177,74,.5);
@@ -295,6 +297,28 @@
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
     body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
+  }
+  /* ══ #469: touch-control collision fixes (scoped to touch mode; desktop layout unchanged — that's #467) ══ */
+  /* the first-run onboarding overlay dims the desktop HUD so its bright panels can't bleed through the
+     tips and leave them half-unreadable */
+  #tcBoard{background:rgba(3,2,1,.8)}
+  body.tcOnboard #hud{opacity:.1;pointer-events:none;transition:opacity .2s}
+  @media (orientation:portrait) and (max-width:560px){
+    /* keep the movement joystick's touch zone clear of the chat: dock the read-only log to the
+       top-left (under the vitals) and start the joystick zone below it */
+    body.touchui #log{top:calc(140px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+      left:8px;width:min(56vw,214px);max-height:22vh;overflow:hidden}
+    body.touchui #tcZone{top:40%}
+  }
+  @media (orientation:landscape) and (max-height:500px){
+    /* landscape: log docked top-left below the vitals, joystick zone starts below it */
+    body.touchui #log{top:calc(134px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+      left:8px;width:min(34vw,280px);max-height:62px;overflow:hidden}
+    body.touchui #tcZone{top:62%}
+    /* compact the top-right minimap and tuck the action cluster into the corner so the spell arc
+       and JUMP button clear the minimap and its +/−/⚙ toolbar */
+    body.touchui #minimap,body.touchui #minimap #mm{width:98px;height:98px}
+    body.touchui #tcBtns{transform:scale(calc(var(--tcscale,1) * .82))}
   }
 </style>
 </head>
@@ -27231,6 +27255,7 @@ function applyTouchUI(){
   if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; blocking=false;
     const j=document.getElementById('tcJoy'); if(j) j.classList.remove('run','live');
     for(const id of ['tcWheel','tcPMenu','tcBoard']){ const el=document.getElementById(id); if(el) el.classList.remove('open'); }
+    document.body.classList.remove('tcOnboard');
     const sh=document.getElementById('tcSheet'); if(sh) sh.classList.remove('open'); }
   if(TOUCH.on&&document.pointerLockElement) document.exitPointerLock();
   try{ document.documentElement.style.setProperty('--tcscale',String(settings.touchBtnScale||1)); }catch(e){}
@@ -27610,11 +27635,12 @@ function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.
   const bd=document.getElementById('tcBoard'), go=document.getElementById('tcBoardGo'); if(!bd||!go) return;
   let shown=false;
   const done=()=>{ try{ return localStorage.getItem("dereth_touch_onboard")==="1"; }catch(e){ return true; } };
+  const close=()=>{ bd.classList.remove('open'); document.body.classList.remove('tcOnboard'); };
   setInterval(()=>{ if(shown||!TOUCH.on||!running||done()) return;
-    shown=true; bd.classList.add('open'); },800);
+    shown=true; bd.classList.add('open'); document.body.classList.add('tcOnboard'); },800);
   go.addEventListener('touchstart',e=>{ e.preventDefault();
-    bd.classList.remove('open'); buzz(12); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} },{passive:false});
-  go.addEventListener('click',()=>{ bd.classList.remove('open'); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} });
+    close(); buzz(12); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} },{passive:false});
+  go.addEventListener('click',()=>{ close(); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} });
 })();
 // touch mode: tapping away from the on-screen keyboard closes chat (no Esc key on a phone)
 { const ci=document.getElementById('chatInput');
