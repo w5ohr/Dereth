@@ -16371,7 +16371,7 @@ function currentPrompt(){
     if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
     if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
     if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
-    if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
+    if(o.role==="townsfolk") return "Greet "+o.name+" (E)";   // #546: townsfolk carry proper names — no stray "the" before "Rolf Holt"
     // quest-giver (named NPC or the Emissary): the hint reflects THIS giver's quest state
     if(o.questId){ const id=o.questId, gn=o.name||"the Emissary";
       if(isActive(id)) return (questCompleteId(id)?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
@@ -22507,7 +22507,7 @@ function buildShop(){
     const have=new Set(SHOP.filter(i=>i.scroll).map(i=>i.spellId));
     SHOP=SHOP.concat(scrollStock().filter(i=>!have.has(i.spellId)));
   }
-  const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
+  const h=document.querySelector('#shop h2'); if(h){ const nm=activeShop&&activeShop.name; h.textContent=(nm&&nm!==def.title)?nm+" — "+def.title:def.title; }   // #546: don't render "Name — Name" when the vendor's name IS its role (e.g. the Wandering Caravan)
   const sub=document.querySelector('#shop .sub');
   if(sub) sub.innerHTML=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel. &nbsp;·&nbsp; <b style="color:var(--gold)">Your purse: ${player.gold.toLocaleString()}p</b>`;   // #166: show the player's own gold, not just the vendor's coin
   const buy=document.getElementById('shopBuy');buy.innerHTML="";
