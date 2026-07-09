@@ -316,14 +316,87 @@ def sanitize_item(it, _depth=0):
     return out
 
 # ── M3 (#238) authoritative economy helpers ──────────────────────────────────────────────────────
+# Character LEVEL is derived from an authoritative XP accumulator, not taken from the client. The XP
+# curve (cumulative XP to reach each level) is the SAME table the client uses (assets/acskills.json
+# xp.level), so the server owns `cl.xp_total`, credits it on every kill it already resolves (the server
+# owns mob HP — unforgeable), and derives level from it. Purely client-side XP (quests, exploration) is
+# adopted from the save, rate-limited to +LEVEL_MAX_GAIN_PER_SAVE levels' worth per autosave.
+MAX_LEVEL = 275
+AC_XP_LEVEL = None
+try:
+    _xs = json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "acskills.json"), encoding="utf-8"))
+    _lv = _xs.get("xp", {}).get("level")
+    if isinstance(_lv, list) and len(_lv) >= MAX_LEVEL + 1 and all(isinstance(v, (int, float)) for v in _lv[:MAX_LEVEL + 1]):
+        AC_XP_LEVEL = [int(v) for v in _lv[:MAX_LEVEL + 1]]
+        print("acskills XP curve: %d authentic level thresholds (level 275 = %d XP)" % (len(AC_XP_LEVEL), AC_XP_LEVEL[MAX_LEVEL]))
+except Exception as _e:
+    AC_XP_LEVEL = None
+    print("acskills XP curve missing — using analytic fallback:", _e)
+
+def _xp_to_reach(level):
+    """Cumulative lifetime XP required to reach `level` (1..275)."""
+    level = max(1, min(MAX_LEVEL, int(level)))
+    if AC_XP_LEVEL:
+        return AC_XP_LEVEL[level]
+    return int(sum(int(450 * (l ** 1.55)) for l in range(1, level)))   # mirrors the client's xpForLevel fallback, summed
+
+def total_xp_from(level, xp):
+    """Cumulative lifetime XP implied by a save's (level, within-level progress xp)."""
+    try:
+        lvl = max(1, min(MAX_LEVEL, int(level)))
+    except (TypeError, ValueError):
+        lvl = 1
+    try:
+        prog = max(0, int(xp))
+    except (TypeError, ValueError):
+        prog = 0
+    return _xp_to_reach(lvl) + prog
+
+def level_from_total_xp(total):
+    """Highest level whose reach-threshold is <= total lifetime XP (1..275)."""
+    try:
+        total = max(0, int(total))
+    except (TypeError, ValueError):
+        return 1
+    if AC_XP_LEVEL:
+        lo, hi = 1, MAX_LEVEL
+        while lo < hi:                      # binary-search the cumulative table
+            mid = (lo + hi + 1) // 2
+            if AC_XP_LEVEL[mid] <= total:
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
+    lvl = 1
+    while lvl < MAX_LEVEL and _xp_to_reach(lvl + 1) <= total:
+        lvl += 1
+    return lvl
+
+def credit_xp(c, amt):
+    """#238: add server-resolved kill XP to the authoritative accumulator and raise the derived level.
+    Never lowers the level (a kill is a floor); gated on econ_ready (only in-world characters kill)."""
+    if not getattr(c, "econ_ready", False):
+        return
+    try:
+        amt = max(0, int(amt))
+    except (TypeError, ValueError):
+        return
+    if amt <= 0:
+        return
+    c.xp_total += amt
+    lv = level_from_total_xp(c.xp_total)
+    if lv > c.level_auth:
+        c.level_auth = lv
+
 def load_econ(cl, data):
-    """Adopt coin + inventory from a character save as the server's authoritative baseline."""
+    """Adopt coin + inventory + authoritative XP/level from a character save as the server's baseline."""
     d = data if isinstance(data, dict) else {}
     cl.coin = int(_svnum(d.get("gold", 0), 0, 2e9, 0))
     inv = d.get("inv")
     cl.inv = [sanitize_item(it) for it in inv if isinstance(it, dict)][:500] if isinstance(inv, list) else []
-    cl.level_auth = _clampi(d.get("level"), 1, 275, cl.level_auth)   # #238: adopt the character's level as authoritative
-    cl.level = cl.level_auth                                         #        so gates work even before the first input arrives
+    cl.xp_total = total_xp_from(d.get("level", cl.level_auth), d.get("xp", 0))   # #238: seed the authoritative XP accumulator
+    cl.level_auth = level_from_total_xp(cl.xp_total)                             #        level is ALWAYS derived from it
+    cl.level = cl.level_auth                                                     #        gates work even before the first input arrives
     cl.econ_ready = True
 
 # #314: cap the per-autosave coin INCREASE a client may inject. The server credits its own authoritative
@@ -345,8 +418,16 @@ def reconcile_econ(cl, data):
     d = data if isinstance(data, dict) else {}
     want = int(_svnum(d.get("gold", 0), 0, 2e9, 0))
     cl.coin = min(want, int(cl.coin) + ECON_MAX_GAIN_PER_SAVE) if want > cl.coin else want
-    want_lvl = _clampi(d.get("level"), 1, 275, cl.level_auth)
-    cl.level_auth = min(want_lvl, cl.level_auth + LEVEL_MAX_GAIN_PER_SAVE) if want_lvl > cl.level_auth else want_lvl
+    # #238: reconcile the authoritative XP accumulator. Kills already credited cl.xp_total in real time
+    # (unthrottled — the server owns the kill). Here we adopt the client's NON-kill XP (quests, etc.) up
+    # to a per-save ceiling of +LEVEL_MAX_GAIN_PER_SAVE levels' worth, and never let the total fall
+    # (monotonic). A larger legit gain simply catches up over the next few autosaves.
+    want_total = total_xp_from(d.get("level", cl.level_auth), d.get("xp", 0))
+    if want_total > cl.xp_total:
+        cur_lvl = level_from_total_xp(cl.xp_total)
+        cap_total = _xp_to_reach(min(MAX_LEVEL, cur_lvl + LEVEL_MAX_GAIN_PER_SAVE))
+        cl.xp_total = min(want_total, max(cl.xp_total, cap_total))
+    cl.level_auth = level_from_total_xp(cl.xp_total)
     inv = d.get("inv")
     cl.inv = [sanitize_item(it) for it in inv if isinstance(it, dict)][:500] if isinstance(inv, list) else []
 
@@ -551,6 +632,7 @@ class Client:
         # LEVEL_MAX_GAIN_PER_SAVE per autosave, and used as the ceiling for the client-reported
         # input.level so the swear/vassal/muster gates can't be gamed by a one-shot forged level.
         self.level_auth = 1
+        self.xp_total = 0   # #238: authoritative cumulative lifetime XP — level_auth is derived from this, credited on every server-resolved kill
         # AOI: ids this client currently has spawned (from the last snapshot we sent it). Used for the
         # AOI_IN/AOI_OUT hysteresis band so boundary-hugging entities don't spawn/despawn every tick.
         self.aoi_p = set()   # remote player usernames
@@ -1284,6 +1366,7 @@ async def resolve_attack(cl, mid, dmg):
             c = CLIENTS.get(u)
             if c:
                 await c.send({"t": "reward", "xp": per[u], "kind": m["kind"], "boss": is_boss})
+                credit_xp(c, per[u])      # #238: accumulate the authoritative kill XP → derived level
                 sent.add(u)
         for u in set(m.get("dealt", {cl.username: dmg}).keys()):
             if u in sent:
@@ -1291,6 +1374,7 @@ async def resolve_attack(cl, mid, dmg):
             c = CLIENTS.get(u)
             if c:
                 await c.send({"t": "reward", "xp": m["xp"], "kind": m["kind"], "boss": is_boss})
+                credit_xp(c, m["xp"])     # #238: same — a client's level can't outrun the XP the server saw it earn
         # allegiance: each rewarded character's patron receives EXTRA pass-up XP
         rewarded = set(fellows) | set(m.get("dealt", {cl.username: dmg}).keys())
         await alg_passup_kill([CLIENTS[u].charname for u in rewarded
@@ -2022,8 +2106,9 @@ async def dispatch(cl, msg):
             reconcile_econ(cl, char)          # #314: clamp an implausible coin jump before it becomes authoritative
             char["gold"] = int(cl.coin)       # #314: PERSIST the authoritative (clamped) coin, not the client's raw claim,
                                               #       so a "gold:2e9" save can neither hold nor survive a reload
-            char["level"] = int(cl.level_auth)  # #238: likewise persist the authoritative (rate-limited) level, so a
-                                              #       forged "level:275" save can neither hold nor survive a reload
+            char["level"] = int(cl.level_auth)  # #238: persist the authoritative level (derived from server-accounted XP),
+            char["xp"] = int(cl.xp_total - _xp_to_reach(cl.level_auth))  # + its within-level progress, so a forged level/xp
+                                              #       can neither hold nor survive a reload and the reloaded save stays consistent
             save_char_slot(cl.username, cl.slot, char)
             await push_coin(cl)               # correct the client's mirror if we clamped its claim
     elif t == "who":
