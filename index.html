@@ -296,6 +296,51 @@
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
     body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
   }
+  /* ══ #467: DESKTOP HUD on phone-sized viewports ══
+     Every HUD panel uses an absolute desktop-tuned position, so on a narrow phone
+     viewport they pile on top of one another and bury the 3D view (minimap over
+     vitals, compass overflowing the width, attributes over the panel rail, potions
+     over chat, speed/power over the quickbar, quickbar clipped off-screen). Touch
+     mode (#469) supplies its own layout, so this reflow is scoped to the DEFAULT
+     desktop interface — body:not(.touchui) — and only kicks in on small screens.
+     The panels are re-anchored into non-overlapping corners and scaled down so the
+     core readouts (vitals · compass · minimap · chat · quickbar) stay clear, with
+     the tall/secondary panels (attributes, quest, potions, speed-power) tucked out
+     of the way and capped so they never cover the whole viewport. */
+  @media (max-width:480px){
+    body:not(.touchui) #compassPanel{top:6px;transform:translateX(-50%) scale(.7);transform-origin:top center}
+    body:not(.touchui) #vitals{top:40px;left:6px;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #minimap{top:40px;right:6px;width:118px;height:118px}
+    body:not(.touchui) #mm{width:118px;height:118px}
+    body:not(.touchui) #right{top:166px;right:44px;transform:scale(.82);transform-origin:top right;
+      max-height:calc(100vh - 320px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:auto!important;bottom:170px!important;left:auto!important;right:44px!important;
+      width:150px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #potions{left:6px;right:auto;top:158px;bottom:auto;transform:scale(.62);transform-origin:top left}
+    body:not(.touchui) #log{left:6px;bottom:96px;width:min(300px,62vw)}
+    body:not(.touchui) #chatInput{left:6px!important;width:min(300px,62vw)!important}
+    body:not(.touchui) #spellbar{bottom:12px;transform:translateX(-50%) scale(.58);transform-origin:bottom center}
+    body:not(.touchui) #combatPanel{right:6px!important;bottom:96px!important;width:150px!important;
+      transform:scale(.8);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.9);transform-origin:center right}
+  }
+  /* short landscape phones (e.g. 812×375): more width but very little height — cap the
+     tall panels, keep the top row (vitals · compass · minimap) from colliding, and move
+     quest/potions/speed-power clear of the centred quickbar. */
+  @media (max-width:900px) and (max-height:500px){
+    body:not(.touchui) #vitals{transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #compassPanel{transform:translateX(-50%) scale(.82);transform-origin:top center}
+    body:not(.touchui) #minimap{right:44px}
+    body:not(.touchui) #right{top:168px;right:44px;transform:scale(.8);transform-origin:top right;
+      max-height:calc(100vh - 210px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:130px!important;bottom:auto!important;right:auto!important;left:12px!important;
+      width:200px!important;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #log{bottom:110px;max-height:130px;overflow:hidden}
+    body:not(.touchui) #spellbar{transform:translateX(-50%) scale(.66);transform-origin:bottom center}
+    body:not(.touchui) #potions{right:12px;bottom:150px}
+    body:not(.touchui) #combatPanel{right:12px!important;bottom:12px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.85);transform-origin:center right}
+  }
 </style>
 </head>
 <body>
