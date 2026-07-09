@@ -14393,7 +14393,7 @@ function refreshAvatarArmor(){
   for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
     if(!it) continue;
-    const tint=it.dye||(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
+    const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8));
     const cls=CLS[it.at]||CLS.medium;
     ent.mat.color.setHex(tint);
     if(/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||"")){ ent.mat.metalness=0.04; ent.mat.roughness=0.82; }
@@ -26787,6 +26787,7 @@ function startGame(loadSaved,preset){
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
+  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
   applyPlayerModel();          // if the player chose a rigged body model at creation, load it as their avatar
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
