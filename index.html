@@ -1176,7 +1176,7 @@ for(const t of VOID_TIERS) SPELLBOOK_LIST.push({id:`void_nether_${t.lvl}`,name:`
 for(const t of VOID_TIERS){
   SPELLBOOK_LIST.push({id:`void_streak_${t.lvl}`,name:`Nether Streak ${ROMAN[t.lvl]}`,ico:"🌑",school:"void",lvl:t.lvl,req:t.req,
     cost:Math.round(18*(1+(t.lvl-1)*0.45)),cd:640,
-    make:()=>({dmg:(20+player.attr.Focus*1.5)*t.mult,speed:78,color:0x7a30c0,r:0.22,burn:true,element:"nether",drain:0.3})});
+    make:()=>({dmg:(20+player.attr.Focus*1.5)*t.mult*0.78,speed:100,color:0x7a30c0,r:0.22,streak:true,burn:true,element:"nether",drain:0.3})});   // Nether Streak: 2× the Nether Bolt's speed, less damage
   SPELLBOOK_LIST.push({id:`void_blast_${t.lvl}`,name:`Nether Blast ${ROMAN[t.lvl]}`,ico:"🟣",school:"void",lvl:t.lvl,req:t.req,
     cost:Math.round(34*(1+(t.lvl-1)*0.45)),cd:1100,geom:"blast",
     make:()=>({dmg:(24+player.attr.Focus*1.6)*t.mult*0.7,speed:46,color:0x9b30ff,r:0.32,burn:true,element:"nether",drain:0.35})});
@@ -1256,7 +1256,7 @@ for(const b of WAR_BOLTS) for(const g of WAR_GEOMS) for(const t of GEOM_TIERS) S
 for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_streak_${t.lvl}`,name:`${WAR_ROOT[b.code]} Streak ${ROMAN[t.lvl]}`,ico:"✴️",school:"war",lvl:t.lvl,req:t.req,
   cost:Math.round(b.cost*0.75*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*0.7),
-  make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult*0.68,speed:b.speed*1.5,color:b.color,r:b.r*0.8,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
+  make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult*0.55,speed:b.speed*2,color:b.color,r:b.r*0.8,streak:true,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});   // streak: 2× projectile speed, less damage — a fast elongated light-streak
 // ── War Magic Arc: a slow, heavy projectile that detonates with a splash radius on impact (I–VIII) ──
 for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_arc_${t.lvl}`,name:`${WAR_ROOT[b.code]} Arc ${ROMAN[t.lvl]}`,ico:"☄️",school:"war",lvl:t.lvl,req:t.req,
@@ -10052,6 +10052,7 @@ function updatePortalTransit(dt){
 // piercing shots are slim darts, bludgeon a fat orb — small touch that reads at a glance
 function projGeom(sp){
   const r=sp.r||0.28, el=sp.element;
+  if(sp.streak) return new THREE.CylinderGeometry(r*0.14,r*0.5,r*6.5,7);   // a long tapered light-streak (oriented nose-forward to its flight)
   if(el==="slash") return new THREE.BoxGeometry(r*2.4,r*0.5,r*0.5);
   if(el==="pierce") return new THREE.ConeGeometry(r*0.7,r*3,8);
   if(el==="bludgeon") return new THREE.SphereGeometry(r*1.25,10,8);
@@ -15539,9 +15540,9 @@ function executeSpell(id){
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
     // AC (ACE WorldObject_Magic): ARC spells are the only lobbed war geometry — launched from full
     // caster height with an upward loft, falling under gravity; all other geometries fly flat.
-    const isArc=geom==="arc";
+    const isArc=geom==="arc", isStreak=!!sp.streak;
     const rlife=Math.max(0.5,spellRange/Math.max(1,sp.speed));   // travel time to reach the skill-gated range
-    pProj.push({mesh,spin:sp.element==="slash"?1:0,orient:sp.element==="pierce"?1:0,x:ox,y:isArc?_footY+EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.32:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // #196: the Force spike flies nose-first · #228: arc lofts from the real eye too
+    pProj.push({mesh,spin:sp.element==="slash"?1:0,orient:(isStreak||sp.element==="pierce")?1:0,streak:isStreak,x:ox,y:isArc?_footY+EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.55:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // #196: the Force spike & the streak fly nose-first · #228: arc lofts from the real eye · arc loft raised so the lob visibly arcs
       dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?Math.min(4,rlife):rlife});
   }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
@@ -16592,8 +16593,8 @@ function update(dt){
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
-    if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false}));
-      const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});}
+    if(p.streak||Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false,blending:p.streak?THREE.AdditiveBlending:THREE.NormalBlending}));
+      const sc=p.r*(p.streak?2.6:1.7);sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:p.streak?0.3:0.2});}   // streak leaves a continuous bright additive trail
     // Terrain collision: EVERY projectile buries into the actual ground height (hillsides included) —
     // #228: flat bolts used a sea-level cull, so on hills they tunneled straight through ridges.
     // The monster hit-test below runs FIRST for the frame where a bolt reaches a foe standing ON the
@@ -21950,7 +21951,19 @@ function spellEffectText(s){ try{
   if(s.special==="recall") return s.dest==="portal"?"recall to your tied portal":"teleport home";
   if(s.special==="stam2mana") return "stam→mana";
   if(s.special==="summon") return "summon pet";
-  if(s.make){ const mk=s.make(); let t=`${Math.round(mk.dmg)} dmg`; if(mk.splash)t+=" splash"; if(mk.drain)t+=`, ${Math.round(mk.drain*100)}% leech`; return t; }
+  if(s.make){ const mk=s.make(); let t=`${Math.round(mk.dmg)} dmg`;
+    const anim = s.geom==="arc" ? "high arc · splash on impact"
+      : mk.streak ? "streak · 2× speed"
+      : s.geom==="blast" ? "blast · cone of bolts"
+      : s.geom==="volley" ? "volley · parallel bolts"
+      : s.geom==="ring" ? "ring · point-blank burst"
+      : s.geom==="wave" ? "wave · wide fan"
+      : s.geom==="wall" ? "wall · ground zone"
+      : "bolt";   // the spellbook's description matches the cast animation (bolt vs streak vs arc vs …)
+    t += ` · ${anim}`;
+    if(mk.splash && s.geom!=="arc") t+=" splash";
+    if(mk.drain) t+=`, ${Math.round(mk.drain*100)}% leech`;
+    return t; }
   if(s.school==="aoe"&&s.dmg) return `${Math.round(s.dmg())} dmg AoE`;
   if(s.vuln) return s.vulnElem?`+${Math.round((s.vuln-1)*100)}% ${s.vulnElem} taken`:`+${Math.round((s.vuln-1)*100)}% dmg taken`;
   if(s.buff==="prot") return `-${Math.round(s.mag*100)}% dmg taken`;
