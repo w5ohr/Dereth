@@ -123,8 +123,8 @@
   .doll-slot .ds-ico{font-size:10px;color:var(--dim)}
   .doll-slot .ds-lab{font-size:10.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tbtn:hover{background:#3a2e16}.tbtn:disabled{opacity:.35;cursor:default}
-  #closeTink,#closeSettings,#closeMap,#closeCodex{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}
-  #closeTink:hover,#closeSettings:hover,#closeMap:hover,#closeCodex:hover{background:#3a2e16}
+  #closeTink,#closeSettings,#closeMap,#closeCodex,#closeSpellbook{margin-top:16px;width:100%;padding:10px;border-radius:7px;border:1px solid var(--gold);background:#2a2110;color:var(--gold);font-size:14px;cursor:pointer}   /* #481: #closeSpellbook was missing here, so its "Return to Dereth" rendered as a small default chip overlapping the last spell row instead of a full-width footer */
+  #closeTink:hover,#closeSettings:hover,#closeMap:hover,#closeCodex:hover,#closeSpellbook:hover{background:#3a2e16}
   .row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #241c0e}
   .row .lab{font-weight:bold}.row .desc{color:var(--dim);font-size:11px;font-weight:normal}
   .row .ctl{display:flex;align-items:center;gap:8px}.row .val{min-width:30px;text-align:right;color:#fff;font-weight:bold}
@@ -295,6 +295,51 @@
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
     body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
+  }
+  /* ══ #467: DESKTOP HUD on phone-sized viewports ══
+     Every HUD panel uses an absolute desktop-tuned position, so on a narrow phone
+     viewport they pile on top of one another and bury the 3D view (minimap over
+     vitals, compass overflowing the width, attributes over the panel rail, potions
+     over chat, speed/power over the quickbar, quickbar clipped off-screen). Touch
+     mode (#469) supplies its own layout, so this reflow is scoped to the DEFAULT
+     desktop interface — body:not(.touchui) — and only kicks in on small screens.
+     The panels are re-anchored into non-overlapping corners and scaled down so the
+     core readouts (vitals · compass · minimap · chat · quickbar) stay clear, with
+     the tall/secondary panels (attributes, quest, potions, speed-power) tucked out
+     of the way and capped so they never cover the whole viewport. */
+  @media (max-width:480px){
+    body:not(.touchui) #compassPanel{top:6px;transform:translateX(-50%) scale(.7);transform-origin:top center}
+    body:not(.touchui) #vitals{top:40px;left:6px;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #minimap{top:40px;right:6px;width:118px;height:118px}
+    body:not(.touchui) #mm{width:118px;height:118px}
+    body:not(.touchui) #right{top:166px;right:44px;transform:scale(.82);transform-origin:top right;
+      max-height:calc(100vh - 320px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:auto!important;bottom:170px!important;left:auto!important;right:44px!important;
+      width:150px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #potions{left:6px;right:auto;top:158px;bottom:auto;transform:scale(.62);transform-origin:top left}
+    body:not(.touchui) #log{left:6px;bottom:96px;width:min(300px,62vw)}
+    body:not(.touchui) #chatInput{left:6px!important;width:min(300px,62vw)!important}
+    body:not(.touchui) #spellbar{bottom:12px;transform:translateX(-50%) scale(.58);transform-origin:bottom center}
+    body:not(.touchui) #combatPanel{right:6px!important;bottom:96px!important;width:150px!important;
+      transform:scale(.8);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.9);transform-origin:center right}
+  }
+  /* short landscape phones (e.g. 812×375): more width but very little height — cap the
+     tall panels, keep the top row (vitals · compass · minimap) from colliding, and move
+     quest/potions/speed-power clear of the centred quickbar. */
+  @media (max-width:900px) and (max-height:500px){
+    body:not(.touchui) #vitals{transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #compassPanel{transform:translateX(-50%) scale(.82);transform-origin:top center}
+    body:not(.touchui) #minimap{right:44px}
+    body:not(.touchui) #right{top:168px;right:44px;transform:scale(.8);transform-origin:top right;
+      max-height:calc(100vh - 210px);overflow:auto;pointer-events:auto}
+    body:not(.touchui) #quest{top:130px!important;bottom:auto!important;right:auto!important;left:12px!important;
+      width:200px!important;transform:scale(.8);transform-origin:top left}
+    body:not(.touchui) #log{bottom:110px;max-height:130px;overflow:hidden}
+    body:not(.touchui) #spellbar{transform:translateX(-50%) scale(.66);transform-origin:bottom center}
+    body:not(.touchui) #potions{right:12px;bottom:150px}
+    body:not(.touchui) #combatPanel{right:12px!important;bottom:12px!important;transform:scale(.85);transform-origin:bottom right}
+    body:not(.touchui) #panelRail{transform:translateY(-50%) scale(.85);transform-origin:center right}
   }
 </style>
 </head>
@@ -607,6 +652,8 @@
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware score: festive in the castle, aggressive in a fight, suspenseful in a dungeon, a crowd murmur in town, dark on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-dynmusic="1">On</button><button class="tbtn" data-dynmusic="0">Off</button></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Living environmental sound: wind &amp; surf, dungeon drips and groans, birdsong by day and crickets &amp; owls by night.">Ambient sound</span><span style="display:flex;gap:6px">
+    <button class="tbtn" data-ambience="1">On</button><button class="tbtn" data-ambience="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -624,11 +671,11 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Sync your character to the server, then depart Dereth through a recall portal back to the title screen">Session</span><button id="logoutBtn" class="tbtn" style="border-color:var(--gold);color:var(--gold)">🚪 Log Out…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
-<div id="keymap"><div class="card" style="text-align:left">
+<div id="keymap"><div class="card" style="text-align:left;display:flex;flex-direction:column;overflow:hidden">
   <h2>Map Keys</h2>
   <div class="sub">Click a binding, then press the new key — hold <b>Shift/Ctrl/Alt(Opt)/Cmd</b> to add a modifier. Esc cancels a rebind. Rebinds aren't kept until you Save — closing without saving discards them.</div>
-  <div id="keymapBody" style="font-size:13px"></div>
-  <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center">
+  <div id="keymapBody" style="font-size:13px;overflow:auto;flex:1;min-height:0"></div>   <!-- #484: scrollable body -->
+  <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center;flex-shrink:0">   <!-- #484: pinned footer + #483: Save affordances -->
     <button id="keymapReset" class="tbtn">Reset to defaults</button>
     <button id="keymapSaveChar" class="tbtn" style="border-color:var(--gold);color:var(--gold)" title="Keep these bindings on this character only">💾 Save for This Character</button>
     <button id="keymapSaveDefault" class="tbtn" title="Keep these bindings as the fallback for any character with no bindings of its own">Save as Default (All Characters)</button>
@@ -2155,6 +2202,7 @@ function buildCityList(){
 const CITIES=buildCityList();
 const CAPITALS=CITIES.filter(c=>c.capital);
 function nearestCapitalDist(x,z){let m=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<m)m=d;}return m;}
+function nearestCapital(x,z){let best=null,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c;}}return best;}
 function regionOf(x,z){ // -1 = Direlands
   if(nearestCapitalDist(x,z)>DIRE_DIST) return -1;
   let best=0,bd=Infinity;for(const c of CAPITALS){const d=Math.hypot(x-c.x,z-c.z);if(d<bd){bd=d;best=c.region;}}return best;
@@ -2775,7 +2823,8 @@ function supportAt(wx,wz,feetY){
 // OVERLOADED every STR-10 build (War Mage/Life Caster templates read 114–120% → permanently slowed
 // from the tutorial onward). Armor lightened + base capacity raised so the kit fits every template
 // with headroom, while a genuinely stuffed satchel still slows you.
-function itemBurden(it){ if(!it) return 0; if(it.scroll) return 2;
+function itemBurden(it){ if(!it) return 0; if(it.tut) return 0;   // #465: pure tutorial keepsakes (Calling Stone, Welcome Letter) weigh nothing — the fresh recruit is never slowed by the kit they wake up holding
+  if(it.scroll) return 2;
   if(it.stat==="weapon") return 75; if(it.stat==="food") return 6; if(it.stat==="jewelry") return 14;
   // #472: a cloth garment (shirt/pants — the light under-layer) was falling through to the heavy 85
   // default because "shirt"/"pants" aren't armour slots, so a fresh char's starting clothes weighed as
@@ -4287,6 +4336,14 @@ function applyGfxTier(t,quiet){
 }
 function gfxGovern(dt){
   if(dt<=0||dt>0.5||typeof paused!=="undefined"&&paused) return;
+  // #466: a fresh/reloaded/Continue'd character streams in monster models, dungeon packs & clothing
+  // tables over several seconds, and the load-gated portal transit holds the camera in empty portal
+  // space (nothing rendered yet) until the surrounding area finishes streaming in. Both are one-time
+  // load hitches, not steady-state render cost — burn down the warm-up window and skip the governor
+  // entirely while either is active, and pin the EMA to neutral so a stale stall reading can't fire
+  // the instant warm-up ends.
+  if(GFX._warm>0) GFX._warm=Math.max(0,GFX._warm-dt);
+  if(GFX._warm>0||(typeof portalTransit!=="undefined"&&portalTransit)){ GFX.fps=45; GFX._lo=0; GFX._hi=0; return; }
   GFX.fps+=(1/dt-GFX.fps)*0.06;
   if(settings.gfx!=="auto") return;
   if(GFX._grace>0){ GFX._grace-=dt; GFX._lo=0; return; }   // teleport/stream churn doesn't count
@@ -10328,9 +10385,12 @@ function updateShieldModel(){   // reflect the equipped off-hand shield on the a
       realGrp.userData._for=(it.shield||"kite");
       while(realGrp.children.length) realGrp.remove(realGrp.children[0]);
       const inst=real.clone();
-      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3()), c=bb.getCenter(new THREE.Vector3());
+      const bb=new THREE.Box3().setFromObject(inst), sz=bb.getSize(new THREE.Vector3());
       const sc=0.62/Math.max(sz.x,sz.y,0.001); inst.scale.setScalar(sc);
-      inst.position.set(-c.x*sc,-c.y*sc,-c.z*sc);
+      // #482: DON'T recentre on the bounding-box middle — that discards the model's own local origin,
+      // which (like the hand-held weapon meshes) is the retail placement-frame point Turbine attached
+      // to the forearm bone, i.e. the shield's handle/strap. Scale only; keep that origin at realGrp's
+      // origin so the shield rides the arm by its grip instead of floating from its geometric centre.
       realGrp.add(inst);
     }
     realGrp.visible=true; sh.visible=false; return;
@@ -11732,6 +11792,8 @@ function buildItemModel(it,opts){
   const gemCol=(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||0x8ad0ff;
   const S=it.stat, wt=it.wt, nm=(it.name||"").toLowerCase();
   const brand=(it.affix&&it.affix.k==='brand'&&typeof BRAND_GLOW!=="undefined")?BRAND_GLOW[it.affix.element]:null;
+  let gripY=0;   // #482: local-Y of the item's GRIP centre (set by the blade branch below) — when opts.hand,
+                 // everything is shifted so this point (not the mesh's build origin) lands at the hand
   if(S==="weapon"&&wt==="focus"){                                   // CASTING FOCI — the user's callout
     if(/orb/.test(nm)){                                             // ORB — a round glowing sphere in a pronged holder on a short handle
       const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.022,0.2,8),wood);handle.position.y=-0.1;g.add(handle);
@@ -11921,14 +11983,19 @@ function buildItemModel(it,opts){
       if(brand){blade.material=blade.material.clone();blade.material.color.multiplyScalar(0.3);   // darken the steel so the glow colour dominates
         blade.material.emissive.setHex(brand);blade.material.emissiveIntensity=0.95;}   // the bonus GLOWS
       if(/rondel/.test(nm)){ for(const yy of[0,-0.11]){const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.014,12),gold);disc.position.y=yy;g.add(disc);}
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); }
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.018,0.1,8),new THREE.MeshStandardMaterial({color:0x2a1a10,roughness:0.7}));grip.position.y=-0.055;g.add(grip); gripY=grip.position.y; }
       else if(/katana|wakizashi|tachi|no.?dachi|nodachi|odachi|ken\b/.test(nm)){   // tsuba disc guard + wrapped grip
         const tsuba=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.012,12),new THREE.MeshStandardMaterial({color:0x3a3430,metalness:0.6,roughness:0.5}));g.add(tsuba);
-        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip);
+        const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.019,twoH?0.26:0.17,8),new THREE.MeshStandardMaterial({color:0x1a1a2a,roughness:0.8}));grip.position.y=-(twoH?0.13:0.085);g.add(grip); gripY=grip.position.y;
         for(let i=0;i<(twoH?5:3);i++){const wrapX=new THREE.Mesh(new THREE.TorusGeometry(0.019,0.004,4,8),gold);wrapX.rotation.x=Math.PI/2;wrapX.position.y=-0.035-i*0.05;g.add(wrapX);} }
-      else _hilt(g,twoH?0.2:0.15,twoH?0.24:0.18,gold);
+      else { const gripLen=twoH?0.2:0.15; _hilt(g,gripLen,twoH?0.24:0.18,gold); gripY=-gripLen/2; }
     }
     if(brand){ const gl=new THREE.PointLight(brand,0.7,1.3);gl.position.y=0.5;g.add(gl); }
+    // #482: grip point → hand attach origin. The blade branch above builds with the GUARD at local
+    // y=0 (blade grows +y, hilt/pommel grow -y), so a bare hand-attach centred a fist on the guard —
+    // the whole grip+pommel dangled below the fist while the blade ran straight through it. Re-centre
+    // the group on the authored grip's mid-point so the palm bone lands on the HANDLE, not the guard.
+    if(opts.hand&&gripY){ g.children.forEach(c=>{ if(c.position) c.position.y-=gripY; }); }
   } else if(S==="worn"&&it.aslot==="offhand"){                      // SHIELDS — shaped per type, not just scaled
     const ty=it.shield||"kite", plate=_imat(tint,0.7,0.4), rimM=gold;
     if(ty==="buckler"||ty==="round"){ const r=ty==="buckler"?0.16:0.24;
@@ -14399,7 +14466,7 @@ function refreshAvatarArmor(){
   for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
     if(!it) continue;
-    const tint=it.dye||(typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8;
+    const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8));
     const cls=CLS[it.at]||CLS.medium;
     ent.mat.color.setHex(tint);
     if(/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||"")){ ent.mat.metalness=0.04; ent.mat.roughness=0.82; }
@@ -15095,7 +15162,7 @@ function algTitle(rank){
   const fem=player.appearance&&player.appearance.gender==="female";
   return (fem?t.f:t.m)[Math.min(10,rank)-1];
 }
-function vassalCap(){ return player.level; }   // AC: vassal cap = your character level
+function vassalCap(){ return player.level>=5 ? player.level : 0; }   // AC: vassal cap = character level — but #479: NO vassals before level 5, symmetric with the level-5 patron gate (an ungated vassal is a free instant passive-XP stream at level 1)
 function vassalName(){ return (typeof townName==="function")? townName(irnd(0,3), irnd(1,99999)) : "Vassal "+irnd(100,999); }
 // followers = everyone under you in the tree (vassals + their own simulated subtrees)
 function algFollowerCount(){ let n=0; for(const v of (player.vassals||[])) n+=1+(v.followers||0); return n; }
@@ -15124,6 +15191,7 @@ function algReceived(v){    // patron side: your (buffed) Leadership
 function algPassupPct(v){ return clamp(algGenerated(v)*algReceived(v)/100,25,90); }
 function recruitVassal(){
   player.vassals=player.vassals||[];
+  if(player.level<5){ log("Sworn adventurers won't follow your banner until <b>level 5</b> — the same rank at which you may swear to a Patron. Earn your renown first.","warn"); if(SFX.hit)SFX.hit(); return false; }   // #479: no free instant level-1 Monarch + passive-XP vassal
   if(player.vassals.length>=vassalCap()){ log(`Your patronage is full — AC caps vassals at your <b>character level</b> (${vassalCap()}).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
   // AC: you swear to an equal-or-HIGHER character, so vassals join at your level or below
   const lvl=Math.max(1,player.level-irnd(0,Math.min(12,player.level-1)));
@@ -15477,7 +15545,7 @@ function castSpellById(id){
     ||s.buff==="might"||s.buff==="swift"||s.buff==="attr"||s.buff==="prot"||s.buff==="skill"||s.buff==="light"||s.buff==="bane";
   castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   if(!castSelf&&typeof breakResProt==="function") breakResProt();   // offensive casting ends res protection
-  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; if(SFX.cast)SFX.cast();
+  castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; spellCast(s.school);   // per-school casting wind-up
 }
 // retail component destruction: each formula component you CARRY burns with probability
 // componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
@@ -15507,6 +15575,7 @@ function executeSpell(id){
   if(!canCast(s.school)){ const mk=MAGIC_SCHOOLS[s.school]; if(mk&&SKILL_BY_KEY[mk]) log(`You are untrained in <b>${SKILL_BY_KEY[mk].n}</b> — train it on the character sheet (C).`,"warn"); return; }
   const mk=MAGIC_SCHOOLS[s.school];
   if(s.req>0 && mk && skillValue(mk)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mk].n} skill ${s.req} (you have ${skillValue(mk)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
+  spellRelease(s.school,s);   // per-school discharge voice (the spell is now committed to firing)
   if(s.special==="stam2mana"){
     if(player.st<25){log("Not enough stamina.","warn");return;}
     player.st-=25;player.mn=Math.min(player.mmn,player.mn+22);
@@ -16589,7 +16658,8 @@ function buildSheet(){
     ah+=`<div class="desc" style="margin-left:8px">• <b>${esc(v.name)}</b> — level ${v.level}, rank ${vr}${v.followers?`, court of ${v.followers}`:""} · passes up <b>${Math.round(algPassupPct(v))}%</b>${v.xpUp?` <span style="color:#9be08a">(${v.xpUp.toLocaleString()} XP to date)</span>`:""}</div>`;
   }
   if(vN) ah+=`<div class="desc" style="color:#9be08a">Pass-up is EXTRA XP generated by your vassals' own deeds — Loyalty (theirs) × Leadership (yours), deepening with time sworn${player.vassalXP?` · <b>${player.vassalXP.toLocaleString()}</b> lifetime received`:""}.</div>`;
-  ah+=`<button class="tbtn" id="recruitBtn" ${vN>=vCap?"disabled":""} style="margin-top:4px">Swear in a Vassal${vN>=vCap?" (at your level cap)":""}</button>`;
+  const recruitLbl=player.level<5?"Swear in a Vassal (reach level 5)":(vN>=vCap?"Swear in a Vassal (at your level cap)":"Swear in a Vassal");   // #479: gated to level 5, like the patron oath
+  ah+=`<button class="tbtn" id="recruitBtn" ${(player.level>=5&&vN<vCap)?"":"disabled"} style="margin-top:4px">${recruitLbl}</button>`;
   if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
   { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
@@ -16697,6 +16767,10 @@ function showCastReticle(x,z,r,col){
 function hideCastReticle(){ if(castReticle) castReticle.visible=false; }
 function update(dt){
   if(typeof LOGOUT!=="undefined"&&LOGOUT.active) updateLogout(dt);   // #457: the recall-away logout advances even while otherwise idle
+  // #501: the portal tube (incl. the login "WELCOME BACK" arrival) must advance even while paused —
+  // otherwise anything that pauses during the transit (e.g. the academy greeter on a delve-saved login)
+  // freezes the tube forever, so maxHold never fires and the character is permanently stuck in the warp.
+  if(portalTransit) updatePortalTransit(dt);
   if(paused||!running) return;
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
@@ -16776,7 +16850,8 @@ function update(dt){
     player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
   }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
   if((player.vx||player.vz)&&player.alive){
-    let [nx,nz]=collide(player.x+player.vx*dt,player.z+player.vz*dt);
+    const px0=player.x, pz0=player.z;   // #465: remember where we started so we can tell if a wall ate the move
+    let [nx,nz]=collide(px0+player.vx*dt,pz0+player.vz*dt);
     // authored terrain barriers: mountainsides too steep to walk stop you (roads and town
     // plateaus stay open — the real heightmap's switchbacks are the way up)
     if(player.grounded&&!inDungeon&&ACMAP.on&&!onRoad(nx,nz)){
@@ -16794,9 +16869,22 @@ function update(dt){
         } }
     }
     player.x=nx;player.z=nz;
+    // #465: wedged-on-geometry feedback. Sliding above already salvages a partial move; but if you're
+    // deliberately pushing into a wall (often INVISIBLE interior geometry) and almost nothing gets
+    // through, give a throttled bump so the stop isn't silent, and — after a full second of being
+    // pinned — a one-time nudge toward /unstuck (which frees you even while delving).
+    if(moving){
+      const want=Math.hypot(player.vx,player.vz)*dt, got=Math.hypot(nx-px0,nz-pz0);
+      if(want>0.02 && got<want*0.25){
+        if(now()-(player._blockT||0)>420){ player._blockT=now(); if(SFX.bump)SFX.bump(); }
+        player._blockRun=(player._blockRun||0)+dt;
+        if(player._blockRun>1.0 && !player._unstuckHintSeen){ player._unstuckHintSeen=1;
+          log("You are wedged against something you can't push past. Type <b>/unstuck</b> to free yourself"+(inDungeon?" — it works even while delving.":"."),"warn"); }
+      } else player._blockRun=0;
+    }
     const step=Math.hypot(player.vx,player.vz)*dt;
     player.bob+=step*1.1;   // #176: stride phase advances with DISTANCE moved (step already = speed*dt), not distance*dt — the old dt*step made the gait framerate-dependent and ~60x too slow (feet glided)
-    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;SFX.step();} }  // footfalls only on the ground
+    if(player.grounded){ stepAcc+=step; if(stepAcc>2.4*WSCALE){stepAcc=0;footstep();} }  // footfalls only on the ground — surface-aware
     if(sprint>1&&player.grounded&&moving) player.st=Math.max(0,player.st-dt*14);
   }
   // dodge dash: brief high-speed burst (with i-frames) along the dash vector
@@ -16839,7 +16927,6 @@ function update(dt){
   if(levelUps.length) updateLevelUps(dt);
   if(castRingFX.length) updateCastRings(dt);
   if(spellLandFXs.length) updateSpellLandFX(dt);
-  if(portalTransit) updatePortalTransit(dt);
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
@@ -17998,7 +18085,9 @@ function drawBigMap(){
   for(let i=1;i<8;i++){const p=i/8*S;g.beginPath();g.moveTo(p,0);g.lineTo(p,S);g.moveTo(0,p);g.lineTo(S,p);g.stroke();}
   if(inDungeon){
     g.fillStyle="#9a8a66";g.font="15px Trebuchet MS";g.textAlign="center";
-    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);return;
+    g.fillText("You are delving — the surface map is unavailable.",S/2,S/2);
+    g.fillStyle="#7fae7f";g.font="12px Trebuchet MS";   // #465: but you're never trapped — the escape hatch works down here
+    g.fillText("Wedged or lost? Type  /unstuck  to free yourself.",S/2,S/2+22);return;
   }
   g.fillStyle="rgba(216,177,74,0.10)";g.beginPath();g.arc(cx(0),cx(0),TOWN_SAFE*sc,0,6.28);g.fill();
   { const ro=acRoadOverlay(S); if(ro) g.drawImage(ro,0,0); }   // the authentic AC road web, matching the roads on the ground
@@ -18097,6 +18186,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   vtankBuff:true,vtankLoot:true,gaDest:"auto",
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
   dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
+  ambience:true,   // environmental soundscape: wind/surf/dungeon-drips + day birds / night crickets & owls
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
@@ -18201,6 +18291,7 @@ const SFX={
   gold:()=>blip(1000,0.10,"square",0.10,1500),
   quest:()=>{blip(660,0.14,"triangle",0.16);setTimeout(()=>blip(880,0.2,"triangle",0.16),130);},
   step:()=>noiseHit(0.06,0.06,200+irnd(-40,50)),
+  bump:()=>{noiseHit(0.05,0.08,120);blip(84,0.07,"sine",0.06,58);},   // #465: soft, low thud when you walk into a wall — feedback so a blocked move isn't silent
   growl:()=>blip(92,0.34,"sawtooth",0.11,58),
   click:()=>blip(680,0.05,"square",0.07,900),
 };
@@ -18305,6 +18396,71 @@ function creatureVoice(kind,act){
 // authentic per-creature vocals (kind_idle/_attack/_wound/_death) — a recorded sample if the SoundTable
 // has one, else the procedural creatureVoice above so EVERY creature still has a distinct cry.
 function creatureSFX(kind,act){ if(playSample((kind||"")+"_"+act)) return true; return creatureVoice(kind,act); }
+// ── surface-aware footsteps: the footfall matches what you walk on (stone in a dungeon, a snow
+//    crunch in a blizzard, a splash at the waterline, firm cobble on a road, a soft thud on grass) ──
+function footSurface(){
+  if((typeof inDungeon!=="undefined"&&inDungeon)||(typeof inNetwork!=="undefined"&&inNetwork)) return "stone";
+  if(typeof snowAmt!=="undefined"&&snowAmt>0.4) return "snow";
+  if(player&&player.y!=null&&player.y<0.6) return "water";                      // at/under the waterline outdoors = shallow splash
+  if(typeof onRoad==="function"&&player&&onRoad(player.x,player.z)) return "road";
+  return "grass";
+}
+function stepSynth(s){
+  const j=irnd(-40,50);                                                          // per-step jitter so it isn't robotic
+  switch(s){
+    case "stone": noiseHit(0.035,0.06,880+j); blip(1150+j,0.02,"square",0.03,700); break;   // sharp click-scuff
+    case "road":  noiseHit(0.045,0.055,560+j); break;                            // firm cobble
+    case "snow":  noiseHit(0.10,0.05,120+Math.abs(j)); break;                    // muffled low crunch
+    case "water": noiseHit(0.07,0.06,1500+j); blip(1200,0.05,"sine",0.03,400); break;   // wet splash
+    default:      noiseHit(0.055,0.05,220+j);                                    // grass/dirt soft thud
+  }
+}
+function footstep(){
+  if(!actx||muted) return;
+  const s=footSurface();
+  if(playSample("footstep_"+s)) return;                                          // a surface-tagged sample if the pack has one
+  stepSynth(s);
+}
+// ── per-magic-school spell audio: each school has its own casting wind-up and release voice, so War,
+//    Life, Item Enchantment, Creature Enchantment and Void magic each SOUND different. War is further
+//    flavoured by the bolt's element (fire crackle / ice shimmer / shock zap / acid hiss / force thud). ──
+function _spellEl(s){ const e=(s&&(s.element||s.el||s.vulnElem))||"";
+  if(/fire|flame/.test(e)) return "fire"; if(/ice|frost|cold/.test(e)) return "frost";
+  if(/shock|light/.test(e)) return "shock"; if(/acid/.test(e)) return "acid";
+  const n=(s&&s.name||"").toLowerCase();
+  if(/flame|fire/.test(n)) return "fire"; if(/frost|ice|cold/.test(n)) return "frost";
+  if(/lightning|shock/.test(n)) return "shock"; if(/acid/.test(n)) return "acid"; return "force"; }
+function spellCast(school){                                   // the WIND-UP — energy gathering, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war":      blip(200,0.45,"sawtooth",0.11,900); blip(1200,0.4,"triangle",0.045,2100); break;   // rising charge
+    case "life":     blip(440,0.5,"sine",0.10,720); setTimeout(()=>blip(880,0.4,"sine",0.05,1100),90); break;  // warm swell
+    case "item":     [660,880,1170].forEach((f,i)=>setTimeout(()=>blip(f,0.28,"triangle",0.08,f*1.3),i*70)); break;  // crystalline rise
+    case "creature": { blip(500,0.5,"sawtooth",0.08,560); blip(503,0.5,"triangle",0.05,566); break; }   // detuned arcane warble
+    case "void":     blip(70,0.6,"sine",0.11,120); blip(150,0.5,"sawtooth",0.05,190); break;            // dark low rise
+    default:         blip(500,0.4,"triangle",0.08,760);
+  }
+}
+function spellRelease(school,s){                             // the DISCHARGE when the spell fires, per school
+  if(!actx||muted) return;
+  switch(school){
+    case "war": { const el=_spellEl(s);                      // element-flavoured blast
+      if(el==="fire"){ for(let i=0;i<4;i++) noiseHit(0.06,0.10,700+irnd(-150,600)); blip(360,0.4,"sawtooth",0.14,90); }
+      else if(el==="frost"){ blip(1500,0.5,"triangle",0.12,600); blip(2200,0.4,"sine",0.06,1400); }
+      else if(el==="shock"){ blip(2600,0.08,"square",0.16,900); setTimeout(()=>blip(1700,0.07,"square",0.12,700),45); noiseHit(0.05,0.10,2000); }
+      else if(el==="acid"){ noiseHit(0.5,0.12,2500); blip(480,0.4,"sawtooth",0.08,220); }
+      else { noiseHit(0.12,0.16,220); blip(300,0.4,"sine",0.14,80); }   // force/bludgeon thud
+      break; }
+    case "life": { const drain=/drain|vdrain|siphon|harm|vuln/.test((s&&(s.special+"|"+s.name)||"").toLowerCase());
+      if(drain){ blip(620,0.5,"sine",0.11,180); blip(300,0.5,"triangle",0.06,120); }               // downward siphon
+      else { [523,659,784].forEach((f,i)=>setTimeout(()=>blip(f,0.45,"sine",0.11,f*1.05),i*70)); } // uplifting bell triad
+      break; }
+    case "item":     blip(1046,0.6,"triangle",0.11,1046); blip(1568,0.5,"sine",0.05,1568); noiseHit(0.04,0.05,3000); break;  // metallic ring
+    case "creature": blip(360,0.42,"sawtooth",0.11,300); blip(372,0.42,"triangle",0.06,312); noiseHit(0.05,0.05,700); break; // eerie stab
+    case "void":     blip(90,0.6,"sine",0.13,50); blip(190,0.5,"sawtooth",0.07,150); noiseHit(0.4,0.08,140); break;          // dark dissonant pulse
+    default:         blip(700,0.3,"triangle",0.10,500);
+  }
+}
 { const synD=_SFX.death, synG=_SFX.growl;   // kind-aware: a dying drudge sounds like a drudge, not the player
   SFX.death=(kind)=>{ if(kind&&creatureSFX(kind,"death")) return; if(!playSample(["player_death"])) synD&&synD(); };
   SFX.growl=(kind)=>{ if(kind&&creatureSFX(kind,"idle")) return; synG&&synG(); }; }
@@ -18379,12 +18535,12 @@ function mdDrum(t,peak,freq,dur){   // percussive noise burst into the music bus
 }
 // crowd babble: a bank of band-passed noise loops whose gains wander, mimicking overlapping talk
 let _mdCrowd=null;
-function mdCrowdStart(){
+function mdCrowdStart(formants){
   const bus=mdBus(); if(!bus||!actx||_mdCrowd) return;
   const secs=4, n=actx.sampleRate*secs, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
   for(let i=0;i<n;i++) d[i]=(Math.random()*2-1);
   const nodes=[];
-  for(const f of [360,620,900,1500]){                        // vocal-ish formant bands
+  for(const f of (formants||[360,620,900,1500])){            // vocal-ish formant bands (per-culture timbre)
     const s=actx.createBufferSource(); s.buffer=buf; s.loop=true;
     const bp=actx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=f; bp.Q.value=4.5;
     const g=actx.createGain(); g.gain.value=0.02;
@@ -18397,6 +18553,35 @@ function mdCrowdStart(){
   _mdCrowd={nodes};
 }
 function mdCrowdStop(){ if(!_mdCrowd) return; for(const n of _mdCrowd.nodes){ try{ n.stop(); }catch(e){} } _mdCrowd=null; }
+// ── city themes: the town crowd + melodic bed match the capital's racial culture ──
+//   Holtburg (Aluvian) → Western medieval lute · Shoushi (Sho) → East-Asian pentatonic koto + chimes ·
+//   Yaraq (Gharu'ndim) → Middle-Eastern oud (Phrygian-dominant) + darbuka · Sanamar (Viamontian) →
+//   Iberian/knightly harmonic-minor guitar over a drone. Culture picks the scale, instrument voice,
+//   tempo, and the crowd-babble formant bank (so even the murmur is tinted).
+let _mdCity="__unset";
+function _cityCulture(name){ const n=(name||"").toLowerCase();
+  if(/holtburg/.test(n)) return "aluvian";
+  if(/shoushi/.test(n))  return "sho";
+  if(/yaraq/.test(n))    return "gharundim";
+  if(/sanamar/.test(n))  return "viamontian";
+  return null; }
+const MD_CITY={
+  aluvian:   {scale:[0,2,4,5,7,9,10],   wave:"triangle", beat:0.30, root:5,  pat:[0,2,4,2,5,4,2,0], octUp:true,  mel:0.10, formants:[360,620,900,1500]},
+  sho:       {scale:[0,3,5,7,10],       wave:"triangle", beat:0.46, root:2,  pat:[0,2,4,3,4,2,1,0], chimes:true, mel:0.08, formants:[440,720,1150,1850]},
+  gharundim: {scale:[0,1,4,5,7,8,10],   wave:"sawtooth", beat:0.24, root:-3, pat:[0,1,4,3,4,1,0,1], darbuka:true,mel:0.08, formants:[300,560,820,1300]},
+  viamontian:{scale:[0,2,3,5,7,8,11],   wave:"triangle", beat:0.30, root:0,  pat:[0,4,3,2,4,7,3,0], drone:true,  mel:0.09, formants:[340,600,880,1450]},
+  _default:  {scale:[0,2,4,5,7,9,11],   wave:"triangle", beat:0.32, root:3,  pat:[0,2,4,2,4,2,0,0],              mel:0.08, formants:[360,620,900,1500]},
+};
+function _mdScaleNote(spec,root,degIdx,oct){ const sc=spec.scale, i=((degIdx%sc.length)+sc.length)%sc.length; return root*Math.pow(2,(sc[i]+12*(oct||0))/12); }
+function _mdCityMotif(spec,t){
+  const beat=spec.beat, root=_hz(spec.root||0), N=8;
+  for(let i=0;i<N;i++) mdNote(_mdScaleNote(spec,root,spec.pat[i%spec.pat.length],(i>=N/2&&spec.octUp)?1:0), t+i*beat, beat*1.5, spec.wave, spec.mel);   // melody
+  if(spec.drone) mdNote(root/2,t,beat*N,"sine",0.07);                                        // Viamontian pedal drone
+  else for(let i=0;i<N/2;i++) mdNote(root/2, t+i*beat*2, beat*1.2, "sine", 0.06);            // gentle bass
+  if(spec.chimes) for(let i=0;i<3;i++){ if(Math.random()<0.6) mdNote(_mdScaleNote(spec,root*2,irnd(0,spec.scale.length-1),1), t+Math.random()*beat*N, 1.3, "sine", 0.045); }  // wind-chime tings
+  if(spec.darbuka){ const p=[1,0,1,1,0,1,0,1]; for(let i=0;i<N;i++) if(p[i]) mdDrum(t+i*beat, i%4===0?0.14:0.07, i%4===0?150:1000, 0.09); }   // dum-tek hand drum
+  return beat*N;
+}
 // per-mood one-bar generators: schedule a bar starting at time t, return seconds until the next bar
 const MD_MOODS={
   festive(t){ const beat=0.34, root=_hz(7);                   // bright major lute — bouncy, upbeat
@@ -18413,7 +18598,14 @@ const MD_MOODS={
     if(Math.random()<0.6){ const at=t+2+Math.random()*2.5; mdNote(_hz(3), at, 1.6, "triangle", 0.06); mdNote(_hz(4), at, 1.6, "sine", 0.045); }  // minor-2nd unease
     mdDrum(t+bar*0.5, 0.06, 70, 0.4);                         // slow heartbeat thump
     return bar; },
-  crowd(t){ mdCrowdStart(); return 2.0; },                    // babble runs continuously; just keep the mood alive
+  crowd(t){                                                   // town: the crowd + a musical bed matching the CITY's culture
+    const cap=(typeof nearestCapital==="function"&&typeof player!=="undefined"&&player)?nearestCapital(player.x,player.z):null;
+    const cult=cap?_cityCulture(cap.name):null;
+    const spec=MD_CITY[cult]||MD_CITY._default;
+    if(_mdCity!==cult){ _mdCity=cult; mdCrowdStop(); }         // culture changed → rebuild the babble with its formants
+    mdCrowdStart(spec.formants);                              // (no-op if already running with this culture's bank)
+    return _mdCityMotif(spec,t);
+  },
   dark(t){ const bar=5.0, root=_hz(-17);                      // somber descending minor + toll
     [0,-3,-5].forEach((s,i)=> mdNote(_hz(-5+s), t+i*1.1, 2.4, "triangle", 0.12-i*0.02, _hz(-8+s)));  // descending, gliding down
     mdNote(root, t, bar, "sine", 0.14);                       // deep drone
@@ -18436,12 +18628,12 @@ setInterval(()=>{ try{
   MUSICDIR.on = (typeof settings==="undefined") || settings.dynMusic!==false;   // authoritative from the setting (survives load order)
   if(!MUSICDIR.on||!actx||muted||typeof running==="undefined"||!running){
     if(MUSICDIR._bus) MUSICDIR._bus.gain.setTargetAtTime(0.0001,actx?actx.currentTime:0,0.3);
-    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
     MUSICDIR.mode=null; MUSICDIR._next=0; return; }
   const bus=mdBus(); if(!bus) return;
   const target=mdMode(), tnow=actx.currentTime;
   if(target!==MUSICDIR.mode){                                 // crossfade: duck out, switch, swell in
-    if(MUSICDIR.mode==="crowd") mdCrowdStop();
+    if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
     MUSICDIR.mode=target; MUSICDIR._next=0;
     const vol=target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34));
     bus.gain.cancelScheduledValues(tnow); bus.gain.setValueAtTime(Math.max(0.0001,bus.gain.value),tnow);
@@ -18451,6 +18643,62 @@ setInterval(()=>{ try{
   if(tnow>=MUSICDIR._next-0.05){                              // schedule the next bar just before the last ends
     const gen=MD_MOODS[target]; if(gen){ const dur=gen(tnow+0.05); MUSICDIR._next=tnow+0.05+dur; } }
 }catch(e){} },350);
+// ══ ENVIRONMENTAL SOUNDSCAPE ═════════════════════════════════════════════════════════════════════
+// A living ambient layer UNDER the music/SFX, keyed to place and time of day (all synth, offline):
+//   outdoors → gusting wind (scaled by weather) · shore/river/ocean → surf wash ·
+//   dungeon  → low air rumble + occasional water drips + a distant groan ·
+//   day wilds→ scattered birdsong · night wilds → cricket shimmer + the odd owl hoot.
+// Rain already has its own hiss bed (rainGain, driven by weather/wetness). Gated by the `ambience`
+// setting; ducked while muted / not running / backgrounded (rides masterGain like everything else).
+const AMBIENCE={on:true,_init:false,n:{},_owl:0,_bird:0,_drip:0};
+function ambInit(){
+  if(AMBIENCE._init||!actx) return; AMBIENCE._init=true;
+  const bus=masterGain||actx.destination;
+  const nb=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate), d=nb.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  const loop=(type,freq,q,g0)=>{ const s=actx.createBufferSource(); s.buffer=nb; s.loop=true;
+    const f=actx.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q)f.Q.value=q;
+    const g=actx.createGain(); g.gain.value=g0||0; s.connect(f).connect(g).connect(bus); s.start(); return g; };
+  AMBIENCE.n.wind    = loop("lowpass", 520, 0, 0);     // outdoor gusts (on top of initAudio's faint constant bed)
+  AMBIENCE.n.surf    = loop("lowpass", 700, 0, 0);     // shoreline wash
+  AMBIENCE.n.rumble  = loop("lowpass", 110, 0, 0);     // dungeon air rumble
+  AMBIENCE.n.crickets= loop("bandpass",5200, 7, 0);    // night insects (high shimmer)
+  // a slow LFO gives the wind & surf their swell
+  const lfo=actx.createOscillator(), lg=actx.createGain(); lfo.type="sine"; lfo.frequency.value=0.12; lg.gain.value=0.5;
+  lfo.connect(lg); lg.connect(AMBIENCE.n.wind.gain); lfo.start(); AMBIENCE._lfo=lfo;
+}
+function _ambRamp(g,to){ if(g&&actx) g.gain.setTargetAtTime(Math.max(0,to),actx.currentTime,0.6); }
+setInterval(()=>{ try{
+  const off=(typeof settings!=="undefined"&&settings.ambience===false);
+  AMBIENCE.on=!off;
+  if(off||!actx||muted||typeof running==="undefined"||!running||typeof player==="undefined"||!player){
+    if(AMBIENCE._init){ for(const k in AMBIENCE.n) _ambRamp(AMBIENCE.n[k],0); } return; }
+  ambInit();
+  const dungeon=(typeof inDungeon!=="undefined"&&inDungeon), net=(typeof inNetwork!=="undefined"&&inNetwork);
+  const indoors=dungeon||net;
+  const inTown=(typeof nearestCapitalDist==="function")&&nearestCapitalDist(player.x,player.z)<150;
+  const nearWater=!indoors&&(player.y!=null&&player.y<1.2);         // low feet height outdoors = shore/river/ocean
+  const sunY=-Math.cos((typeof gameTime!=="undefined"?gameTime:0.35)*Math.PI*2);   // +1 noon … −1 midnight
+  const night=sunY<-0.05, day=sunY>0.12;
+  const wtr=(typeof weather!=="undefined")?weather:"clear";
+  const windBase=wtr==="storm"?0.16:wtr==="rain"?0.10:wtr==="cloudy"?0.07:wtr==="snow"?0.06:0.045;
+  // targets
+  _ambRamp(AMBIENCE.n.wind,    indoors?0.008: windBase*(inTown?0.6:1));
+  _ambRamp(AMBIENCE.n.surf,    nearWater?clamp(0.10*(1.2-player.y)/1.2,0.02,0.11):0);
+  _ambRamp(AMBIENCE.n.rumble,  dungeon?0.06:0);
+  _ambRamp(AMBIENCE.n.crickets,(!indoors&&!inTown&&night)?0.03:0);
+  // one-shots (probabilistic; each ~ every few seconds when its context holds)
+  const T=now();
+  if(dungeon){ if(T-AMBIENCE._drip>1400&&Math.random()<0.5){ AMBIENCE._drip=T;                    // water drip
+      blip(1600+irnd(-200,300),0.09,"sine",0.05,700); setTimeout(()=>blip(900,0.12,"sine",0.03,500),70); }
+    if(T-AMBIENCE._owl>9000&&Math.random()<0.25){ AMBIENCE._owl=T; blip(150,0.7,"sine",0.05,110); } // distant groan
+  } else if(!inTown){
+    if(day&&T-AMBIENCE._bird>2600&&Math.random()<0.45){ AMBIENCE._bird=T;                          // birdsong
+      const f=1800+irnd(0,900); blip(f,0.08,"triangle",0.05,f*1.3); setTimeout(()=>blip(f*1.25,0.07,"triangle",0.045,f*0.9),90); setTimeout(()=>blip(f*1.5,0.06,"triangle",0.04),180); }
+    if(night&&T-AMBIENCE._owl>7000&&Math.random()<0.3){ AMBIENCE._owl=T;                            // owl hoot
+      blip(420,0.22,"sine",0.06,360); setTimeout(()=>blip(360,0.3,"sine",0.06,300),260); }
+  }
+}catch(e){} },550);
 let stepAcc=0,lastGrowl=0;
 
 // ============================================================================
@@ -22848,6 +23096,11 @@ function openSettings(){
   dmHi();
   dmBtns.forEach(b=>b.onclick=()=>{settings.dynMusic=+b.dataset.dynmusic===1;if(typeof MUSICDIR!=="undefined")MUSICDIR.on=settings.dynMusic;saveSettings();dmHi();
     log(settings.dynMusic?"Dynamic music <b>on</b> — the score follows where you are and what you're doing.":"Dynamic music off — classic ambient loops restored.","sys");});
+  const amBtns=document.querySelectorAll('#settings [data-ambience]');
+  const amHi=()=>amBtns.forEach(b=>b.style.opacity=((+b.dataset.ambience===1)===(settings.ambience!==false))?1:0.45);
+  amHi();
+  amBtns.forEach(b=>b.onclick=()=>{settings.ambience=+b.dataset.ambience===1;saveSettings();amHi();
+    log(settings.ambience?"Ambient sound <b>on</b> — wind, water, wildlife and dungeon airs.":"Ambient sound off.","sys");});
   const gxBtns=document.querySelectorAll('#settings [data-gfx]');
   const gxHi=()=>gxBtns.forEach(b=>b.style.opacity=(String(settings.gfx)===b.dataset.gfx)?1:0.45);
   gxHi();
@@ -24754,8 +25007,15 @@ function dungeonWalkable(x,z){ const r=player.r*0.6;
 }
 function dungeonSlide(ox,oz,nx,nz){
   if(dungeonWalkable(nx,nz))return[nx,nz];
-  if(dungeonWalkable(nx,oz))return[nx,oz];
-  if(dungeonWalkable(ox,nz))return[ox,nz];
+  // #465: wall-slide. Keep the blocked axis pinned and advance along the other; try the full step
+  // first, then partial steps, so grazing a wall or nosing into a corner CREEPS along instead of
+  // dead-stopping. (Was: only a full-magnitude single-axis move — a diagonal into a corner wedged
+  // solid with zero displacement and no sliding.)
+  for(const f of [1,0.6,0.3]){
+    const sx=ox+(nx-ox)*f, sz=oz+(nz-oz)*f;
+    if(sx!==ox&&dungeonWalkable(sx,oz))return[sx,oz];   // slide along X, Z pinned to the wall
+    if(sz!==oz&&dungeonWalkable(ox,sz))return[ox,sz];   // slide along Z, X pinned to the wall
+  }
   return[ox,oz];
 }
 function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
@@ -26518,10 +26778,48 @@ function onWho(m){
   const ps=m.players||[];
   log(`<b>Online (${ps.length}):</b> `+(ps.length?ps.map(p=>`${esc(p.name)} <span style="color:var(--dim)">L${p.level||1}</span>`).join(", "):"just you"),"sys");
 }
+// #465: the always-available escape hatch. A new player wedged on unseen geometry (and refused the
+// surface map while delving) needs a way out that WORKS EVERYWHERE — including inside the Academy
+// and any delve. It teleports you to a guaranteed-walkable anchor for wherever you stand.
+function doUnstuck(){
+  if(!player.alive){ log("You cannot free yourself while fallen — you will return at the Lifestone.","warn"); return; }
+  if((player._unstuckCd||0)>now()){ log("The world is still resettling — try <b>/unstuck</b> again in a moment.","sys"); return; }
+  player._unstuckCd=now()+4000;
+  player._blockRun=0; player._unstuckHintSeen=1;
+  if(inDungeon){   // works EVEN WHILE DELVING — the whole point of the affordance
+    let sp=(dungeonSpawn&&(typeof dungeonWalkable!=="function"||dungeonWalkable(dungeonSpawn.x,dungeonSpawn.z)))?dungeonSpawn:null;
+    if(!sp){ const r=(dungeonRects||[]).find(c=>c.room)||(dungeonRects||[])[0];
+      if(r) sp=r.round?{x:r.cx,z:r.cz}:{x:(r.x0+r.x1)/2,z:(r.z0+r.z1)/2}; }
+    if(!sp) sp={x:DCEN.x,z:DCEN.z};
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    player.y=(dungeonSpawn&&dungeonSpawn.y)||0; arriveAt(sp.x,sp.z); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log((curDungeon&&curDungeon.academy)?"You step back to the Academy's entry hall. Walk to the <b>Society Greeter</b> and press <b>E</b> to speak.":"You wrench free and reappear at the delve's entrance.","sys");
+    toast("UNSTUCK"); return;
+  }
+  if(inNetwork){
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    arriveAt(DCEN.x,DCEN.z-2); player.invuln=Math.max(player.invuln||0,2);
+    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    log("You pull free and step back to the hub's entrance.","sys"); toast("UNSTUCK"); return;
+  }
+  // overworld: hop to the nearest clear footing; if there truly is none, recall to your Lifestone
+  const clearAt=(x,z)=>{ if(terrainH(x,z)<-2) return false;
+    for(const o of obstacles){ if(Math.hypot(x-o.x,z-o.z)<(o.r+player.r+0.15)) return false; } return true; };
+  let best=null;
+  for(let ring=1; ring<=8 && !best; ring++){ const rad=ring*1.5;
+    for(let a=0;a<12 && !best;a++){ const an=a/12*6.2832, x=player.x+Math.cos(an)*rad, z=player.z+Math.sin(an)*rad;
+      if(clearAt(x,z)) best={x,z}; } }
+  if(best){ warpTo(best.x,best.z,{invuln:2}); log("You shrug free and step onto clear ground.","sys"); toast("UNSTUCK"); return; }
+  const ls=(typeof lifestones!=="undefined")?(lifestones.find(l=>l.bound)||lifestones[0]):null;
+  if(ls){ warpTo(ls.x,ls.z+2,{invuln:2}); log("No clear footing nearby — you recall to the <b>Lifestone</b>.","sys"); toast("LIFESTONE RECALL"); }
+  else { warpTo(0,0,{invuln:2}); log("You recall to safe ground.","sys"); toast("UNSTUCK"); }
+}
 function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
-  if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
+  if(cmd==="unstuck"||cmd==="stuck"||cmd==="free"){ doUnstuck(); }   // #465: escape hatch — works even while delving
+  else if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="house"){ hsHouseCmd(parts); }
   else if(cmd==="hor"||cmd==="house_recall"){ recallHome(); }
@@ -26632,6 +26930,7 @@ function handleSlash(text){
   else if(cmd==="help"||cmd==="commands"||cmd==="?"){   // #203: the full command list, grouped as the code groups them
     log(`<b>Chat:</b> /tell (/w) &lt;name&gt; &lt;msg&gt; · /r reply · /p party · /f fellowship · /a allegiance · /who`,"sys");
     log(`<b>World:</b> /loc coordinates · /where · /region · /story saga recap · /arc story arcs`,"sys");
+    log(`<b>Stuck?</b> /unstuck (/stuck, /free) — teleport to clear ground; works even while delving`,"sys");
     log(`<b>Allegiance:</b> /swear &lt;name&gt; · /break (/unswear) · /muster · /allegiance join|leave|hometown`,"sys");
     log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");
     log(`<b>Combat &amp; social:</b> /pk pk|pkl|npk · /trade &lt;name&gt; · /buff [spell] · /me &lt;action&gt; · /emote — or /${Object.keys(EMOTE_CMDS).join(", /")}`,"sys");
@@ -26772,8 +27071,8 @@ function startGame(loadSaved,preset){
     // spawns HOLDING a Training Weapon matched to their profession (upgradeable at the Academy);
     // casters get a component pouch, Life Casters two healing kits, Soldiers 30 quarrels (1999 kit).
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
-      player.inv.push({name:"Calling Stone",stat:"quest",v:0});
-      player.inv.push({name:"Welcome Letter",stat:"book",v:10});   // the real AC starter letter — readable (Use) via openBookReader
+      player.inv.push({name:"Calling Stone",stat:"quest",v:0,tut:true});
+      player.inv.push({name:"Welcome Letter",stat:"book",v:10,tut:true});   // the real AC starter letter — readable (Use) via openBookReader
       const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
         bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
         warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
@@ -26831,6 +27130,7 @@ function startGame(loadSaved,preset){
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
+  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
   applyPlayerModel();          // if the player chose a rigged body model at creation, load it as their avatar
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
@@ -26839,6 +27139,11 @@ function startGame(loadSaved,preset){
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
+  // #466: arm a 6s warm-up before the auto-tuner starts sampling FPS — every entry into the world (fresh
+  // character, reload, Continue) hits a burst of monster model / dungeon pack / clothing table streaming
+  // that stalls frames without reflecting steady-state render cost; gfxGovern also ignores frames for as
+  // long as the portal transit below is still holding.
+  if(typeof GFX!=="undefined") GFX._warm=6;
   // Materialize into the world through portal space (AC's arrival): the world is already built and the
   // player placed, so arrive() is a no-op — the tube just holds until the surrounding area has streamed in.
   startPortalTransit(null,{ready:overworldAreaLoaded,minHold:1.2,maxHold:10});
@@ -27152,13 +27457,24 @@ function openBarber(n){
 document.getElementById('ccBack').onclick=()=>{ closeCharCreator();
   if(ccBarber){ ccBarber=false; ccOnCreate=null; paused=false; return; }   // barber visit: back to the world, not the title
   document.getElementById('overlay').style.display=""; };
+// #480: surface a creation error where it's actually SEEN — the #ccMsg line sits below the action
+// buttons, so on a short/portrait viewport it's off-screen and "Enter Dereth" reads as a dead button.
+// Set the inline message AND scroll+pulse it into view AND toast it (always visible, centre-screen).
+function ccErr(msg){
+  const m=document.getElementById('ccMsg');
+  if(m){ m.textContent=msg;
+    try{ m.scrollIntoView({block:"center",behavior:"smooth"}); }catch(e){}
+    m.style.transition="none"; m.style.opacity="0.25";
+    requestAnimationFrame(()=>{ m.style.transition="opacity .3s"; m.style.opacity="1"; }); }
+  if(typeof toast==="function") toast(msg);
+}
 document.getElementById('ccCreate').onclick=()=>{
   const name=document.getElementById('ccName').value.trim();
-  if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ document.getElementById('ccMsg').textContent="Name must be 3-16 letters, numbers or spaces."; return; }
+  if(!/^[A-Za-z0-9 _'-]{3,16}$/.test(name)){ ccErr("Name must be 3-16 letters, numbers or spaces."); return; }
   // #331: re-validate the budget at commit — the UI only disables the +buttons, so a seeded/tampered
   // over-budget ccWork would otherwise bake a permanent over-statted character (innate can't be lowered).
   if(ccAttrSpent()>CREATE_POOL || ccCreditsSpent()>CREATE_CREDITS || ATTRS.some(a=>ccWork.cattr[a]<10||ccWork.cattr[a]>100)){
-    document.getElementById('ccMsg').textContent="Character exceeds the creation budget — adjust attributes/skills."; return; }
+    ccErr("Character exceeds the creation budget — adjust attributes/skills."); return; }
   player.name=name; player.heritage=ccWork.race;
   const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo","model","gender"];
   const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k];
