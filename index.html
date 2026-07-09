@@ -2841,8 +2841,8 @@ function buildAcademyHall(){
   wall(cx+16,cz+12,cx+34,cz+12); wall(cx+16,cz+26,cx+34,cz+26); wall(cx+34,cz+12,cx+34,cz+26);   // library
   wall(cx-6,cz+34,cx-6,cz+42); wall(cx+6,cz+34,cx+6,cz+42); wall(cx-6,cz+42,cx+6,cz+42);         // gatehouse
   const ceil=new THREE.Mesh(new THREE.BoxGeometry(28,0.3,14),stone); ceil.position.set(cx,4.6,cz-5); scene.add(ceil); dungeonObjs.push(ceil);   // the courtyard stays open to the sky
-  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.85*(settings.dglight||1)); amb.userData.dgBase=0.85; scene.add(amb); dungeonObjs.push(amb);
-  const sun=new THREE.PointLight(0xfff2d8,1.3,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);
+  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.5*(settings.dglight||1)); amb.userData.dgBase=0.5; scene.add(amb); dungeonObjs.push(amb);   // #464: was 0.85 — with the light tan hall stone + the courtyard torches/sun feeding the 14-light pool, the old value drove every surface past the ACES clip point, flat-beige and featureless
+  const sun=new THREE.PointLight(0xfff2d8,0.9,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);   // #464: was 1.3 — overhead sun compounded the blow-out on the ceiling/upper walls
   for(const [tx,tz] of [[cx-12,cz-10],[cx+12,cz-10],[cx-12,cz],[cx+12,cz],[cx-30,cz+14],[cx+30,cz+14],[cx,cz+40]]){
     for(const o of buildProp("torch",tx,tz,0xffb060)){ scene.add(o); dungeonObjs.push(o); } }
   const forge=new THREE.PointLight(0xff6a30,1.6,16); forge.position.set(cx-30,1.4,cz+22); scene.add(forge); dungeonObjs.push(forge);
@@ -2867,7 +2867,7 @@ function enterAcademyHall(){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.4";
   buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
-  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=3;
+  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #464: face +z INTO the Great Hall (toward the Society Greeter and the courtyard). The spawn sits ~3m off the south wall; the default yaw 0 faced that near wall head-on, so a new arrival stared at a single over-lit blank wall — read as "an invisible beige void" (1st AND 3rd person, since the follow-cam looks the same way) while the whole rendered hall stood behind them.
   toast("THE TRAINING ACADEMY");
 }
 function exitAcademyHall(){
