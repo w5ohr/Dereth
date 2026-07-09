@@ -24,7 +24,11 @@ ame = importlib.util.module_from_spec(ame_spec); ame_spec.loader.exec_module(ame
 
 # ── world coords (same convention as ace_building_export.py / index.html buildCityList) ──
 html = open(os.path.join(ROOT, "index.html"), encoding="utf-8", errors="replace").read()
-COORD = int(re.search(r"const COORD=(\d+)", html).group(1))
+# COORD is declared as `const COORD=80*WSCALE;` — an expression, not a literal. Reading just the
+# leading integer bakes coords at WSCALE=1 (unit 80), so at the game's WSCALE=3 every structure lands
+# at 1/3 of its true world position (out in the ocean). Resolve WSCALE and evaluate the product.
+WSCALE = int(re.search(r"const WSCALE\s*=\s*(\d+)", html).group(1))
+COORD = int(re.search(r"const COORD\s*=\s*(\d+)\s*\*\s*WSCALE", html).group(1)) * WSCALE
 tblk = re.search(r"const TOWN_DATA=\[(.*?)\n\];", html, re.S).group(1)
 TOWNS = [(float(m.group(2)), float(m.group(3)))
          for m in re.finditer(r'\["([^"]+)",\s*(-?[\d.]+),\s*(-?[\d.]+)', tblk)]

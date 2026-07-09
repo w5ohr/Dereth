@@ -6,6 +6,12 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "python3 -m http.server ${PORT:-8765}"],
       "autoPort": true
+    },
+    {
+      "name": "dereth2",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8799", "--directory", "C:/Users/user/source/repos/dereth2"],
+      "port": 8799
     }
   ]
 }
