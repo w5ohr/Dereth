@@ -12554,7 +12554,6 @@ const NAMED_ITEMS=[
   {name:"Atlan Dagger",        stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[22,30],affix:()=>_wbrand("frost")},   // #513: Atlan lines are element-craftable — "crit" is not an Atlan element
   {name:"Atlan Mace",          stat:"weapon",wt:"mace",   mat:"Pyreal",  v:[30,40],affix:()=>_wbrand("shock")},   // #513: real name is "Atlan Mace" (no "War")
   {name:"Sword of Lost Light", stat:"weapon",wt:"sword",  mat:"Gold",    v:[30,42],affix:()=>_wbrand("fire")},    // #513: volcanic infusions = fire, not shock
-  {name:"Frostreaver",         stat:"weapon",wt:"axe",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Shadowfire",          stat:"weapon",wt:"sword",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
   {name:"Isparian Bow",        stat:"weapon",wt:"bow",    mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},   // #513: removed "Ace of Eyes" — the real item is a playing-card trophy (Deck of Eyes), not a dagger
   {name:"Singularity Edge",    stat:"weapon",wt:"twohand",mat:"Platinum",v:[40,54],affix:()=>_wbrand("nether")},
@@ -12593,7 +12592,7 @@ const NAMED_ITEMS=[
   {name:"Diforsa Helm",        stat:"worn",  at:"heavy",  aslot:"head", mat:"Steel",   v:[32,44],affix:()=>_oaff("of Vigor")},
   {name:"Sedgemail Leggings",  stat:"worn",  at:"medium", aslot:"legs", mat:"Steel",   v:[26,36],affix:()=>_oaff("of Endurance")},
   // ── further iconic artifacts (more type & element coverage) ──
-  {name:"Bael'Zharon's Hope",  stat:"weapon",wt:"dagger",  mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
+  {name:"Sword of Lost Hope",   stat:"weapon",wt:"sword",   mat:"Jet",     v:[30,42],affix:()=>_wbrand("acid")},   // #513: real item is an acid SWORD (Sword of Lost Hope Quest); was fabricated "Bael'Zharon's Hope"
   {name:"Sword of Jojii",      stat:"weapon",wt:"sword",   mat:"Pyreal",  v:[30,42],affix:()=>_wbrand("fire")},
   {name:"Gelidite Greatsword", stat:"weapon",wt:"twohand", mat:"Diamond", v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Coraline Longbow",    stat:"weapon",wt:"bow",     mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
@@ -12613,9 +12612,7 @@ const NAMED_ITEMS=[
   {name:"Dericost Dagger",     stat:"weapon",wt:"dagger", mat:"Pyreal",  v:[24,32],affix:()=>_wbrand("fire")},
   {name:"Knorr Battle Axe",    stat:"weapon",wt:"axe",    mat:"Diamond", v:[32,42],affix:()=>_wbrand("frost")},
   {name:"Tumerok Crusher",     stat:"weapon",wt:"mace",   mat:"Ebony",   v:[32,42],affix:()=>_waff("crit")},
-  {name:"Blade of Elysa",      stat:"weapon",wt:"sword",  mat:"Gold",    v:[32,44],affix:()=>_wbrand("shock")},
   {name:"Aun Ralirea Spear",   stat:"weapon",wt:"spear",  mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
-  {name:"Shard of the Herald", stat:"weapon",wt:"dagger", mat:"Jet",     v:[26,36],affix:()=>_wbrand("nether")},
   {name:"Prismatic Wand",      stat:"weapon",wt:"focus",  mat:"Opal",    v:[24,32]},
   {name:"Falatacot Talisman",  stat:"weapon",wt:"focus",  mat:"Onyx",    v:[24,32]},
   {name:"Warmount Lance",      stat:"weapon",wt:"spear",  mat:"Steel",   v:[30,40],affix:()=>_waff("crit")},
@@ -12639,9 +12636,7 @@ const NAMED_ITEMS=[
   {name:"Koujia Pauldrons",    stat:"worn",  at:"medium", aslot:"upperarm",mat:"Steel", v:[22,30],affix:()=>_oaff("of Warding")},
   {name:"Celdon Gauntlets",    stat:"worn",  at:"medium", aslot:"hands", mat:"Steel",   v:[20,28],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 5 ──
-  {name:"Riftmaker",           stat:"weapon",wt:"twohand", mat:"Platinum",v:[42,56],affix:()=>_wbrand("nether")},
   {name:"Emberfang",           stat:"weapon",wt:"dagger",  mat:"Ruby",    v:[24,32],affix:()=>_wbrand("fire")},
-  {name:"Glacius",             stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
   {name:"Voidpiercer",         stat:"weapon",wt:"spear",   mat:"Jet",     v:[30,40],affix:()=>_wbrand("nether")},
   {name:"Sandstorm Cutlass",   stat:"weapon",wt:"sword",   mat:"Emerald", v:[30,42],affix:()=>_wbrand("acid")},
   {name:"Galestrike Bow",      stat:"weapon",wt:"bow",     mat:"Diamond", v:[28,38],affix:()=>_wbrand("shock")},
@@ -12655,22 +12650,17 @@ const NAMED_ITEMS=[
   {name:"Gauntlets of Sundering",stat:"worn",at:"heavy",  aslot:"hands", mat:"Steel",   v:[26,34],affix:()=>_oaff("of Warding")},
   {name:"Greaves of the Lugian",stat:"worn", at:"heavy",  aslot:"legs",  mat:"Granite", v:[32,44],affix:()=>_oaff("of Vigor")},
   // ── artifact batch 6 ──
-  {name:"Frostbrand",          stat:"weapon",wt:"sword",   mat:"Sapphire",v:[30,42],affix:()=>_wbrand("frost")},
   {name:"Doomhammer",          stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_wbrand("shock")},
   {name:"Widowmaker",          stat:"weapon",wt:"crossbow",mat:"Ebony",   v:[34,46],affix:()=>_waff("crit")},
   {name:"Soulrender",          stat:"weapon",wt:"twohand", mat:"Jet",     v:[42,56],affix:()=>_wbrand("nether")},
   {name:"Sunflare Bow",        stat:"weapon",wt:"bow",     mat:"Ruby",    v:[28,38],affix:()=>_wbrand("fire")},
   {name:"Corrosive Fang",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
   {name:"Thornwhip Atlatl",    stat:"weapon",wt:"atlatl",  mat:"Emerald", v:[26,36],affix:()=>_wbrand("acid")},
-  {name:"Stormcaller Staff",   stat:"weapon",wt:"focus",   mat:"Diamond", v:[24,32]},
   {name:"Aegis of the Empyrean",stat:"worn", at:"medium", aslot:"offhand",shield:"aegis",magicAbsorb:0.24,mat:"Pyreal",v:[28,40],affix:()=>_oaff("of Impregnability")},
   {name:"Vestments of the Undying",stat:"worn",at:"light", aslot:"chest", mat:"Velvet",  v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Helm of the Warmaster",stat:"worn", at:"heavy",  aslot:"head",  mat:"Steel",   v:[34,46],affix:()=>_oaff("of Vigor")},
   {name:"Boots of the Wanderer",stat:"worn", at:"light",  aslot:"feet",  mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 7 ──
-  {name:"Kingslayer",          stat:"weapon",wt:"sword",   mat:"Platinum",v:[32,44],affix:()=>_waff("crit")},
-  {name:"Ashbringer",          stat:"weapon",wt:"twohand", mat:"Ruby",    v:[42,56],affix:()=>_wbrand("fire")},
-  {name:"Rimeclaw",            stat:"weapon",wt:"unarmed", mat:"Sapphire",v:[24,32],affix:()=>_wbrand("frost")},
   {name:"Gutripper",           stat:"weapon",wt:"axe",     mat:"Steel",   v:[30,40],affix:()=>_waff("lifesteal")},
   {name:"Nightfall Bow",       stat:"weapon",wt:"bow",     mat:"Jet",     v:[28,38],affix:()=>_wbrand("nether")},
   {name:"Skullcracker",        stat:"weapon",wt:"mace",    mat:"Steel",   v:[32,42],affix:()=>_waff("crit")},
@@ -12686,7 +12676,6 @@ const NAMED_ITEMS=[
   // ── artifact batch 8 ──
   {name:"Heartpiercer",        stat:"weapon",wt:"dagger",  mat:"Diamond", v:[24,32],affix:()=>_waff("crit")},
   {name:"Bloodthorn",          stat:"weapon",wt:"sword",   mat:"Ruby",    v:[30,42],affix:()=>_waff("lifesteal")},
-  {name:"Earthshaker",         stat:"weapon",wt:"twohand", mat:"Granite", v:[42,56],affix:()=>_wbrand("shock")},
   {name:"Venom Reaver",        stat:"weapon",wt:"axe",     mat:"Emerald", v:[30,40],affix:()=>_wbrand("acid")},
   {name:"Glimmerfrost Bow",    stat:"weapon",wt:"bow",     mat:"Sapphire",v:[28,38],affix:()=>_wbrand("frost")},
   {name:"Cindercleaver",       stat:"weapon",wt:"axe",     mat:"Ruby",    v:[30,40],affix:()=>_wbrand("fire")},
@@ -12697,7 +12686,6 @@ const NAMED_ITEMS=[
   {name:"Grips of the Bloodletter",stat:"worn",at:"medium",aslot:"hands",mat:"Leather", v:[20,28],affix:()=>_oaff("of Endurance")},
   {name:"Crown of the Undying",stat:"worn",  at:"light",  aslot:"head",  mat:"Gold",    v:[28,38],affix:()=>_oaff("of Vigor")},
   // ── artifact batch 9 ──
-  {name:"Dawnbreaker",         stat:"weapon",wt:"sword",   mat:"Gold",    v:[32,44],affix:()=>_wbrand("fire")},
   {name:"Permafrost Maul",     stat:"weapon",wt:"twohand", mat:"Sapphire",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Gravemaker",          stat:"weapon",wt:"mace",    mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
   {name:"Wasp's Sting",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
@@ -12708,7 +12696,6 @@ const NAMED_ITEMS=[
   {name:"Girth of the Titan",  stat:"worn",  at:"heavy",  aslot:"chest", mat:"Steel",   v:[42,56],affix:()=>_oaff("of Vigor")},
   {name:"Bracers of the Adept",stat:"worn",  at:"light",  aslot:"lowerarm",mat:"Silk",  v:[20,28],affix:()=>_oaff("of the Magus")},
   // ── artifact batch 10 ──
-  {name:"Worldcleaver",        stat:"weapon",wt:"twohand", mat:"Platinum",v:[44,58],affix:()=>_wbrand("shock")},
   {name:"Serpentongue",        stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
   {name:"Ember Cutlass",       stat:"weapon",wt:"sword",   mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
   {name:"Frosthowl Axe",       stat:"weapon",wt:"axe",     mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
@@ -12740,7 +12727,6 @@ const NAMED_ITEMS=[
   {name:"Aetherium Cloak",     stat:"worn", at:"light", aslot:"back", mat:"Satin",  v:[24,32],affix:()=>_oaff("of Warding")},
   {name:"Shroud of the Virindi Masker",stat:"worn",at:"light",aslot:"back",mat:"Velvet",v:[24,32],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 12 ──
-  {name:"Sliver of Bael'Zharon",stat:"weapon",wt:"dagger", mat:"Onyx",    v:[26,36],affix:()=>_wbrand("nether")},
   {name:"Cleaver of the Tusker",stat:"weapon",wt:"axe",     mat:"Ebony",   v:[30,40],affix:()=>_waff("crit")},
   {name:"Molten Greatsword",   stat:"weapon",wt:"twohand",  mat:"Ruby",    v:[42,56],affix:()=>_wbrand("fire")},
   {name:"Rime Spear",          stat:"weapon",wt:"spear",    mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
@@ -12778,11 +12764,8 @@ const NAMED_ITEMS=[
   {name:"Vestments of Knorr",  stat:"worn", at:"light", aslot:"chest",  mat:"Silk",    v:[32,44],affix:()=>_oaff("of the Magus")},
   {name:"Wanderer's Cloak",    stat:"worn", at:"light", aslot:"back",   mat:"Leather", v:[22,30],affix:()=>_oaff("of Endurance")},
   // ── artifact batch 15 ──
-  {name:"Reaper of Souls",     stat:"weapon",wt:"twohand",  mat:"Jet",     v:[44,58],affix:()=>_wbrand("nether")},
   {name:"Embertongue",         stat:"weapon",wt:"sword",    mat:"Ruby",    v:[30,42],affix:()=>_wbrand("fire")},
-  {name:"Frostmourn",          stat:"weapon",wt:"axe",      mat:"Sapphire",v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Venomtooth",          stat:"weapon",wt:"dagger",   mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},
-  {name:"Stormpike",           stat:"weapon",wt:"spear",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("shock")},
   {name:"Skullpiercer Bow",    stat:"weapon",wt:"bow",      mat:"Ebony",   v:[28,38],affix:()=>_waff("crit")},
   {name:"Acid Repeater",       stat:"weapon",wt:"crossbow", mat:"Emerald", v:[34,46],affix:()=>_wbrand("acid")},
   {name:"Firebrand Baton",     stat:"weapon",wt:"focus",    mat:"Ruby",    v:[24,32]},
@@ -12791,10 +12774,9 @@ const NAMED_ITEMS=[
   {name:"Sabatons of Ruin",    stat:"worn", at:"heavy", aslot:"feet",   mat:"Steel",   v:[24,32],affix:()=>_oaff("of Endurance")},
   {name:"Mantle of the Undying",stat:"worn",at:"light", aslot:"back",   mat:"Velvet",  v:[24,32],affix:()=>_oaff("of Vigor")},
   // ── quest-reward artifacts ──
-  {name:"Oswald's Nightmare",  stat:"weapon",wt:"mace",     mat:"Jet",     v:[32,42],affix:()=>_wbrand("nether")},
+  {name:"Oswald's Dirk",        stat:"weapon",wt:"dagger",  mat:"Jet",     v:[24,32],affix:()=>_waff("crit")},   // #513: real item is a physical multi-strike DAGGER; was fabricated "Oswald's Nightmare"
   {name:"Frore Greatsword",    stat:"weapon",wt:"twohand",  mat:"Sapphire",v:[42,56],affix:()=>_wbrand("frost")},
   {name:"Blade of the Nostrum",stat:"weapon",wt:"sword",    mat:"Pyreal",  v:[32,44],affix:()=>_wbrand("fire")},
-  {name:"Gaerlan's Citadel Key",stat:"weapon",wt:"dagger",  mat:"Gold",    v:[24,32],affix:()=>_waff("crit")},
   {name:"Aun Ralirea's Bow",   stat:"weapon",wt:"bow",      mat:"Ebony",   v:[28,38],affix:()=>_wbrand("acid")},
   {name:"Hoeshala's Crafted Axe",stat:"weapon",wt:"axe",    mat:"Diamond", v:[30,40],affix:()=>_wbrand("frost")},
   {name:"Spear of the Hopeslayer",stat:"weapon",wt:"spear", mat:"Onyx",    v:[32,42],affix:()=>_wbrand("nether")},
@@ -12924,7 +12906,7 @@ const NAMED_ITEMS=[
   {name:"Pendant of the Undying",stat:"jewelry",jtype:"neck",mat:"Jet",     v:[0,0],bonus:{kind:"vital",vs:"mhp",  v:45}},
   // ── gap-fill batch 3: remaining AC artifacts from the diff (weapons, armour, jewelry) ──
   {name:"Zharalim Crossbow",   stat:"weapon",wt:"crossbow",mat:"Platinum",v:[34,46],affix:()=>_wbrand("acid")},
-  {name:"Chef's Knife",        stat:"weapon",wt:"dagger",  mat:"Steel",   v:[22,30],affix:()=>_waff("crit")},
+  {name:"Moriharu's Kitchen Knife",stat:"weapon",wt:"dagger",mat:"Steel",  v:[22,30],affix:()=>_waff("crit")},   // #513: real rare dagger (Crushing Blow); was "Chef's Knife"
   {name:"Perfect Sword",       stat:"weapon",wt:"sword",   mat:"Diamond", v:[32,44],affix:()=>_wbrand("shock")},
   {name:"Perfect Dagger",      stat:"weapon",wt:"dagger",  mat:"Diamond", v:[24,32],affix:()=>_waff("crit")},
   {name:"Serpent's Fang",      stat:"weapon",wt:"dagger",  mat:"Emerald", v:[24,32],affix:()=>_wbrand("acid")},

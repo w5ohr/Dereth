@@ -61,3 +61,23 @@ real-item mis-tags should be fixed regardless.
 
 *Full per-item evidence: workflow run `wf_518d8ce6-aa0`; spot-check agent transcripts; scraped acpedia
 pages under `.firecrawl/`.*
+
+## Resolution (issue #513)
+
+- **Part A — real-item mis-tags** (PR #514, merged): all 9 unambiguous fixes from the table above
+  applied to `NAMED_ITEMS` (Death's Grip, Sword of Lost Light, Fist of Three Principles, the 7
+  Spectral Ghost-Slayers, Shroud of the Virindi, Atlan Mace, Dericost Blade, Atlan Dagger, and the
+  Ace of Eyes removal).
+- **Part B — option 2** ("fix clearly-wrong, keep generic Dereth flavor"):
+  - **Removed 14 cross-franchise borrows** — Ashbringer, Frostmourn, Glacius, Reaper of Souls,
+    Riftmaker, Rimeclaw, Earthshaker, Dawnbreaker, Stormpike, Frostbrand, Frostreaver, Worldcleaver,
+    Kingslayer, Stormcaller Staff.
+  - **Renamed 3 lore-hijacks to their verified real AC items** (type/element corrected from acpedia):
+    Bael'Zharon's Hope → **Sword of Lost Hope** (acid sword), Oswald's Nightmare → **Oswald's Dirk**
+    (physical multi-strike dagger), Chef's Knife → **Moriharu's Kitchen Knife** (rare dagger, Crushing Blow).
+  - **Removed 4 lore-hijacks of specific famous figures / mis-classified items** — Gaerlan's Citadel
+    Key (real item is a quest *key*), Shard of the Herald, Blade of Elysa, Sliver of Bael'Zharon.
+  - **Kept as Dereth-original flavor** — Sword of Jojii ("Koji's Sword" unverifiable; "Jojii" is not a
+    real AC figure) and Corruptor (generic name), plus the ~80 generic invented items and ~129
+    invented-set items, which option 2 preserves. Option 3 (remove + regenerate the invented sets from
+    a verified AC list) remains available as a follow-up if desired.
