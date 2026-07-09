@@ -2742,7 +2742,7 @@ const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overwor
 const obstacles=[]; // {x,z,r}
 let bookStands=[];  // readable library stands placed at towns/landmarks (real AC lore books)
 let chessTables=[]; // playable chess boards placed in the towns (AC's tavern Game weenies)
-let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[],ships=[];
+let monsters=[],pProj=[],eProj=[],floaters=[],bursts=[],drops=[],lifestones=[],portals=[],pets=[],walls=[],pkAltars=[],ships=[],levelUps=[];
 
 function texGround(){
   const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');
@@ -6276,6 +6276,7 @@ function buildWorld(){
   for(const e of dungeonEntrances) disposeObject3D(e.mesh);
   for(const o of dungeonObjs) disposeObject3D(o);
   monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];pkAltars=[];obstacles.length=0;
+  for(const c of levelUps){ scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); } levelUps=[];   // clear any in-progress level-up swirl
   for(const d of dying) disposeObject3D(d.mesh); dying=[];
   for(const o of netObjs) disposeObject3D(o);
   for(const _s of ships){ if(_s.mesh) disposeObject3D(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
@@ -9866,6 +9867,39 @@ function updateCastSwirls(dt){
       p.m.scale.setScalar(p.s*(1+k*0.6));
     }
     if(c.t>=c.dur){ scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); castSwirls.splice(i,1); }
+  }
+}
+// LEVEL-UP celebration: a multicolored starburst above the head + small multicolored balls that swirl
+// around the player for 3 seconds. `follow` (default the local player) keeps the swirl centered on them
+// as they move. Colors cycle a bright rainbow palette so it reads against any sky/terrain.
+const LEVELUP_PALETTE=[0xff3b3b,0xff8a1b,0xffe23b,0x49ff5a,0x3bd0ff,0x5b6bff,0xc85bff,0xff5bd0];
+function levelUpFX(x,z,follow){
+  // multicolored explosion above the head — several bursts, one per palette color
+  LEVELUP_PALETTE.forEach(c=>burst(x, EYE+0.75, z, c, 9));
+  // swirling orbit of small multicolored balls
+  const g=new THREE.Group(); g.position.set(x,0,z); scene.add(g);
+  const parts=[];
+  for(let i=0;i<30;i++){
+    const col=LEVELUP_PALETTE[i%LEVELUP_PALETTE.length];
+    const bright=new THREE.Color(col).lerp(new THREE.Color(0xffffff),0.35).getHex();
+    const m=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:bright,transparent:true,opacity:0,depthWrite:false,depthTest:false,fog:false}));
+    const s=rnd(0.14,0.30); m.scale.set(s,s,s); g.add(m);
+    parts.push({m,a:rnd(0,6.28),r:rnd(0.85,1.3),y0:rnd(0.25,1.95),spd:rnd(3.4,6.2)*(Math.random()<0.5?1:-1),bob:rnd(0.1,0.28),bs:rnd(2,4),ph:rnd(0,6.28),s});
+  }
+  levelUps.push({g,t:0,dur:3.0,parts,follow:follow!==false});
+}
+function updateLevelUps(dt){
+  for(let i=levelUps.length-1;i>=0;i--){ const c=levelUps[i]; c.t+=dt;
+    if(c.follow && typeof player!=="undefined") c.g.position.set(player.x,0,player.z);   // keep the swirl centered on the player
+    const fadeIn=Math.min(1,c.t/0.25), fadeOut=Math.max(0,Math.min(1,(c.dur-c.t)/0.6));
+    for(const p of c.parts){
+      p.a+=p.spd*dt;                                                     // spin around the player
+      const y=p.y0+Math.sin(c.t*p.bs+p.ph)*p.bob;                        // gentle bob up/down
+      p.m.position.set(Math.cos(p.a)*p.r, y, Math.sin(p.a)*p.r);
+      p.m.material.opacity=fadeIn*fadeOut*(0.78+0.22*Math.sin(c.t*14+p.ph));
+      p.m.scale.setScalar(p.s*(1+0.18*Math.sin(c.t*8+p.ph)));
+    }
+    if(c.t>=c.dur){ scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); levelUps.splice(i,1); }
   }
 }
 // AC's signature spell-cast animation: concentric rings of light that contract inward and rise up
@@ -14905,9 +14939,9 @@ function gainXP(amt,opts){
   while(player.level<275&&player.xp>=need){   // AC hard level cap of 275 (XP past it still banks as unspent for skills/attributes)
     if(need<=0) break;   // #242: a non-increasing XP table (need≤0) would never reduce player.xp — spin-freeze guard
     player.xp-=need;player.level++;
-    derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
+    derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;   // full restore of health, stamina & mana on level-up
     log(`<b>Level ${player.level}!</b> Spend unspent XP on attributes & skills${player.level-1<=46?", and +1 skill credit":""} — press C.`,"sys");
-    toast("LEVEL "+player.level);SFX.level();burst(player.x,EYE,player.z,0xffd23b,28);saveGame();need=xpForLevel(player.level);
+    toast("LEVEL "+player.level);SFX.level();levelUpFX(player.x,player.z);saveGame();need=xpForLevel(player.level);   // multicolored explosion + 3s swirl of multicolored balls
   }
   // AC endgame: once powerful enough you also draw Luminance from your deeds (held cap 1,000,000)
   if(player.level>=50){
@@ -16530,6 +16564,7 @@ function update(dt){
   if(castShow<=0) castSwirlActive=false;
   castShow=Math.max(0,castShow-dt);
   if(castSwirls.length) updateCastSwirls(dt);
+  if(levelUps.length) updateLevelUps(dt);
   if(castRingFX.length) updateCastRings(dt);
   if(spellLandFXs.length) updateSpellLandFX(dt);
   if(portalTransit) updatePortalTransit(dt);
