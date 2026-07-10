@@ -10111,7 +10111,7 @@ function spawnSomewhere(){
   // #349: streamMonsters already keeps ~MOB_TARGET mobs around the player. Don't build a throwaway
   // creature mesh when we're already at target, and never spawn one beyond the despawn radius (it
   // would be disposed on the very next streamMonsters tick — pure per-kill allocation churn).
-  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
+  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared&&!m.event) live++;   // #570: event mobs cluster at the far town — don't let them count against the near-player ambient target
   if(live>=MOB_TARGET) return;
   let x,z,d,t=0;
   do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75*WSCALE,470*WSCALE);   // spawn ring at true 1:1 spacing around hubs
@@ -17772,13 +17772,13 @@ function streamMonsters(dt){
   _mobStreamAcc+=dt; if(_mobStreamAcc<0.4) return; _mobStreamAcc=0;
   const px=player.x,pz=player.z;
   // dispose creatures left far behind (frees their meshes/skeletons entirely — real unload)
-  for(let i=monsters.length-1;i>=0;i--){ const m=monsters[i]; if(m.isDungeon||m.shared) continue;
+  for(let i=monsters.length-1;i>=0;i--){ const m=monsters[i]; if(m.isDungeon||m.shared||m.event) continue;   // #570: event mobs live at the (distant) besieged town, not near the player — culling them made distant Incursions read as alive=0 → auto-success + full bounty to AFK players. Keep them alive for the 240s timer so unattended events correctly FAIL.
     if((m.x-px)*(m.x-px)+(m.z-pz)*(m.z-pz) > MOB_DESPAWN*MOB_DESPAWN){
       if(m.gltfMixer&&m.gltfMixer.stopAllAction)m.gltfMixer.stopAllAction();
       disposeObject3D(m.mesh);   // #232: acShared skip keeps the cache's skinned geometry safe, while the per-spawn extras (health bar, nametag) are freed and pruned from LABELS
       monsters.splice(i,1); } }
   // refill up to the target with region-appropriate kinds, spawned just inside view around the player
-  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
+  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared&&!m.event) live++;   // #570: event mobs are no longer culled, but they shouldn't count toward the ambient population target either (they cluster at the far town), or refill of nearby wildlife would starve
   let tries=0;
   while(live<MOB_TARGET && tries++<40){
     const a=rnd(0,6.28), rr=rnd(MOB_SPAWN_MIN,MOB_SPAWN_MAX);
