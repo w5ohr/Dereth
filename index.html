@@ -22890,7 +22890,13 @@ function selectTarget(pick,silent){
   updateTargetUI(0,true);
 }
 function cycleTarget(dir){
-  const cand=monsters.filter(m=>m.hp>0&&!m.isDungeon===!inDungeon&&Math.hypot(m.x-player.x,m.z-player.z)<70)
+  // #580: the overworld streamer (streamMonsters) spawns creatures on a 70–150u ring and keeps ~32
+  // of them alive out to MOB_DESPAWN (215u). Scanning only <70u meant a stationary player who had
+  // just arrived — every streamed creature sitting at ≥70u — always got "No targets in range" and
+  // could never lock the first fight. Target anything the streamer maintains around us (indoors keep
+  // the old close radius so Next Target still reads the current room, not mobs through walls).
+  const R=(inDungeon||inNetwork)?70:MOB_DESPAWN;
+  const cand=monsters.filter(m=>m.hp>0&&(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<R)
     .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
   if(!cand.length){ selectTarget(null); log("No targets in range.","sys"); return; }
   let i=TARGET&&TARGET.type==="monster"?cand.indexOf(TARGET.ref):-1;
