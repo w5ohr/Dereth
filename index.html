@@ -26873,7 +26873,7 @@ function spawnSharedMob(sm){
   scene.add(mesh);
   const m={shared:true,id:sm.id,kind:sm.kind,x:sm.x,z:sm.z,tx:sm.x,tz:sm.z,yaw:sm.yaw||0,
     r:b.size*0.8*scale,hp:sm.hp,mhp:sm.mhp,dmg:b.dmg,xp:b.xp,ang:sm.yaw||0,state:sm.st||"wander",
-    mesh,headY:mesh.userData.headY*scale,isDungeon:false,baseScale:scale,flash:0,slow:0,burnT:0,t:0,atkCd:0,
+    mesh,headY:mesh.userData.headY*scale,isDungeon:false,baseScale:scale,flash:0,slow:0,burnT:0,burnDps:0,burnAcc:0,dotSendT:0,t:0,atkCd:0,
     isBoss:!!sm.boss,name:sm.name||(gm&&gm.vname&&gm.vname!==b.name?gm.vname:undefined),gltf:!!gm};
   monsters.push(m); NET.mobs[sm.id]=m; attachCreatureAnims(m, gm); return m;
 }
@@ -26906,6 +26906,18 @@ function updateSharedMobs(dt){
     const m=NET.mobs[id]; if(!m.mesh) continue;
     m.mesh.visible=!hide; if(hide) continue;
     m.flash=Math.max(0,m.flash-dt);
+    // #642: shared mobs are server-authoritative, so the monster-AI loop skips them entirely (m.shared continue)
+    // and their fire/nether DoT (burnT/burnDps) would otherwise never tick. Tick it here instead, and convert
+    // the accumulated damage into the same claim message a direct hit uses — throttled to ~1/sec so a
+    // multi-second burn doesn't spam "attack" messages — letting the server apply it authoritatively.
+    if(m.burnT>0&&m.hp>0){
+      m.burnT=Math.max(0,m.burnT-dt); m.burnAcc+=(m.burnDps||0)*dt; m.dotSendT=(m.dotSendT||0)+dt;
+      if(Math.random()<0.16) burst(m.x,rnd(0.5,1.6),m.z,0xff7a2a,1);   // mirror the offline burn particle — otherwise a burning shared mob "looks dead"
+      if(m.dotSendT>=1&&m.burnAcc>=1){   // throttle claims to ~1/sec, matching the server's attack rate limiter
+        const dd=Math.floor(m.burnAcc); m.burnAcc-=dd; m.dotSendT=0;
+        damageMonster(m,dd,false);   // reuses the shared-mob claim path: netSend({t:"attack",...}) — server validates range/rate and applies HP
+      }
+    }
     const smx=m.x,smz=m.z; m.x+=(m.tx-m.x)*k; m.z+=(m.tz-m.z)*k;
     if(m.gltfMixer){ m.gltfMixer.update(dt);                       // animate the rigged AC model (server-driven mobs get their own mixer tick)
       if(m.actWalk){ const moving=Math.hypot(m.x-smx,m.z-smz)>2e-3||m.state==="chase";
