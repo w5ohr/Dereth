@@ -10420,13 +10420,15 @@ function startPortalTransit(arrive,opts){
   if(typeof cam==="undefined"||!cam||typeof scene==="undefined"||!scene){ try{arrive&&arrive();}catch(e){} return; }   // renderer not up yet (pre-initThree): arrive without the overlay
   scene.add(cam);                                                    // camera-attached overlay (idempotent)
   const mat=new THREE.MeshBasicMaterial({map:portalTubeTex(),side:THREE.BackSide,transparent:true,opacity:0,fog:false,depthTest:false,depthWrite:false});
-  // The tunnel is a long cone that converges to a sub-pixel tip far AHEAD of the camera, so the
-  // streaks vanish into a single point and the destination is never visible through the far end
-  // (the old constant-radius open cylinder framed the world through its exit). Geometry is shifted
-  // so the camera sits in the wide section: tip ~98 ahead (radius 0.01), open ring ~22 behind —
-  // and since the tube is camera-attached, the rear opening is always exactly behind the view.
-  const tubeGeo=new THREE.CylinderGeometry(5.5,0.01,120,24,1,true);   // top(+Y)=behind, bottom(−Y)=tip ahead
-  tubeGeo.translate(0,-38,0);                                          // camera at radius ≈4.5, inside the cone
+  // The tunnel is a long closed SPINDLE: both ends converge to a sub-pixel tip 180 units out, so
+  // the streaks vanish into a single point ahead AND behind — nothing outside portal space is ever
+  // visible from any angle (the old constant-radius open cylinder framed the world through its
+  // exit). The camera sits at the widest waist (r≈5.5), and the whole thing is camera-attached.
+  const TUBE_LEN=360, TUBE_R=5.5, _pts=[];
+  for(let i=0;i<=16;i++){ const y=-TUBE_LEN/2+TUBE_LEN*i/16;
+    const f=Math.max(0,1-Math.pow(Math.abs(y)/(TUBE_LEN/2),2));        // rounded taper to each tip
+    _pts.push(new THREE.Vector2(Math.max(0.005,TUBE_R*Math.pow(f,0.6)),y)); }
+  const tubeGeo=new THREE.LatheGeometry(_pts,24);
   const tube=new THREE.Mesh(tubeGeo,mat);
   tube.rotation.x=Math.PI/2; tube.renderOrder=999; cam.add(tube);
   portalTransit={tube,mat,t:0,hold:0,outT:0,phase:"in",arrive:arrive||null,fired:false,pinned:false,ax:0,az:0,
