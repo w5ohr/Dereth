@@ -3736,9 +3736,24 @@ function updateLightPool(){
   }
   for(let i=LPOOL_N;i<cand.length;i++) cand[i].l._wasActive=false;  // #342: clear the hysteresis bonus for lights that didn't make the cut
 }
+// ── Mobile render resolution: on mobile devices the game renders at the DEVICE'S real screen
+//    resolution (CSS viewport × devicePixelRatio, uncapped by the GFX tier), and never below
+//    2532×1170 (landscape; 1170×2532 portrait) — the interface stays panel-sharp on phones.
+//    Desktop keeps the GFX-tier pixelRatio caps (the fill-rate governor is a desktop concern; on
+//    mobile the resolution directive wins and the tier still governs shadows/MSAA/light budgets).
+//    Orientation changes re-enter through the window resize handler, which recomputes this.
+const MOBILE_MIN_LONG=2532, MOBILE_MIN_SHORT=1170;
+function mobilePixelRatio(tierCap){
+  const dpr=window.devicePixelRatio||1;
+  const mobile=(typeof TOUCH!=="undefined"&&TOUCH.on)||(typeof touchDeviceIs==="function"&&touchDeviceIs());
+  if(!mobile) return Math.min(dpr,tierCap);
+  const w=Math.max(1,innerWidth), h=Math.max(1,innerHeight);
+  const minW=w>=h?MOBILE_MIN_LONG:MOBILE_MIN_SHORT, minH=w>=h?MOBILE_MIN_SHORT:MOBILE_MIN_LONG;
+  return Math.max(dpr, minW/w, minH/h);   // native panel resolution, raised to the minimum when the panel (or a small in-app viewport) is lower
+}
 function initThree(){
   renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setPixelRatio(mobilePixelRatio(2));
   renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -4421,7 +4436,8 @@ function applyGfxTier(t,quiet){
   if(typeof GFX!=="undefined"){ GFX._grace=Math.max(GFX._grace||0,1.5); GFX.fps=45; GFX._lo=0; GFX._hi=0; }
   if(typeof renderer==="undefined"||!renderer) return;
   // Low renders SUB-native and upscales — fill rate is what integrated GPUs drown in
-  renderer.setPixelRatio(Math.min(devicePixelRatio,[0.85,1,1.25,2][t]));
+  // (desktop only: on mobile, mobilePixelRatio() renders at the device's real resolution regardless of tier)
+  renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][t]));
   renderer.setSize(innerWidth,innerHeight);
   if(typeof resizePost==="function") resizePost();
   renderer.shadowMap.enabled=t>=1;
@@ -27744,7 +27760,7 @@ window.addEventListener('resize',()=>{
   if(typeof cam==="undefined"||!cam||typeof renderer==="undefined"||!renderer) return;   // #335: cam/renderer are undefined until initThree() resolves (inside the async asset Promise.all) — a resize during the load screen would otherwise throw
   cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
-  if(typeof GFX!=="undefined"){ renderer.setPixelRatio(Math.min(devicePixelRatio,[0.85,1,1.25,2][GFX.tier|0])); GFX._grace=Math.max(GFX._grace||0,1.0); }   // #345: re-apply the current tier's pixelRatio cap (setSize alone doesn't) and arm a grace window so the resize's MSAA-realloc stall doesn't trip a spurious governor downshift
+  if(typeof GFX!=="undefined"){ renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][GFX.tier|0])); GFX._grace=Math.max(GFX._grace||0,1.0); }   // #345: re-apply the current tier's pixelRatio cap (setSize alone doesn't; on mobile this is the device's native/min resolution instead) and arm a grace window so the resize's MSAA-realloc stall doesn't trip a spurious governor downshift
   resizePost();
 });
 // ── Lane C #10: REAL AC window-frame chrome — compose a 9-slice border sheet from the extracted
@@ -28208,6 +28224,13 @@ function setTouchPref(p){ TOUCH.pref=p; try{ localStorage.setItem("dereth_touchu
 function applyTouchUI(){
   TOUCH.on = TOUCH.pref==="on" || (TOUCH.pref==="auto" && touchDeviceIs());
   document.body.classList.toggle("touchui",TOUCH.on);
+  // mobile-resolution directive keys on TOUCH.on — re-apply the render resolution when the mode flips
+  if(typeof renderer!=="undefined"&&renderer&&typeof mobilePixelRatio==="function"){
+    renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][(typeof GFX!=="undefined"?GFX.tier:3)|0]));
+    renderer.setSize(innerWidth,innerHeight);
+    if(typeof resizePost==="function") resizePost();
+    if(typeof GFX!=="undefined") GFX._grace=Math.max(GFX._grace||0,1.0);   // #345: realloc stall must not trip the governor
+  }
   if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; blocking=false;
     const j=document.getElementById('tcJoy'); if(j) j.classList.remove('run','live');
     for(const id of ['tcWheel','tcPMenu','tcBoard']){ const el=document.getElementById(id); if(el) el.classList.remove('open'); }
