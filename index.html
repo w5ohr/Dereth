@@ -563,6 +563,7 @@
 </div>
 <div id="eprompt"></div>
 <div id="toast"></div>
+<div id="reconnBanner" style="display:none;position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:200;padding:9px 20px;background:linear-gradient(#5a1414,#3a0d0d);border:1px solid #b45a5a;border-radius:8px;color:#ffe0d0;font-size:14px;font-weight:bold;letter-spacing:.4px;box-shadow:0 6px 22px rgba(0,0,0,.6);text-shadow:0 1px 2px #000;pointer-events:none;max-width:92vw;text-align:center"></div>
 <div id="pausemsg">PAUSED<div class="ds">Press P to resume</div></div>
 <div id="deathmsg">You have fallen…<div class="ds">Your spirit drifts back to the Lifestone</div></div>
 
@@ -10760,6 +10761,10 @@ function applyHit(m,base,opts){ opts=opts||{};
 function damageMonster(m,dmg,crit){
   dmg=Math.max(0,+dmg||0);   // #16: guard NaN/negative damage — never heal a mob or leave it at un-killable NaN HP
   if(m.shared){ // server-authoritative: claim the hit, let the server apply HP/death/XP
+    if(!NET.open){ // #636: disconnected — the mob is frozen and the netSend is a no-op; refuse instead of faking flash/hit-SFX/health-bar feedback on an unkillable mob
+      const _t=now(); if(_t-NET._noConnWarnT>2500){ NET._noConnWarnT=_t; log("You are not connected — reconnecting…","warn"); }
+      return;
+    }
     m.flash=.12; crit?SFX.crit():SFX.hit();
     if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
     floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
@@ -26626,15 +26631,48 @@ function transportSecure(url, loc){ loc=loc||location; url=url||SERVER_URL;
   const h=loc.hostname; return h==='localhost'||h==='127.0.0.1'||h==='[::1]';
 }
 let isOnline=false, creatingOnline=false, netInputT=0;
-const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{}, partyNames:new Set(), partyLeader:null, lastWhisperFrom:null };
+const NET={ ws:null, open:false, me:null, token:null, players:{}, meshes:{}, mobs:{}, drops:{}, partyNames:new Set(), partyLeader:null, lastWhisperFrom:null,
+  reconnecting:false, reconnTimer:null, reconnTries:0, playSlot:null, leaving:false, _noConnWarnT:0 };   // #636: online auto-reconnect + resume state
+// #636: prominent, persistent connection-lost banner (see reconnect loop) — not just a chat line
+function showReconnBanner(text){ const b=document.getElementById('reconnBanner'); if(b){ b.textContent=text; b.style.display="block"; } }
+function hideReconnBanner(){ const b=document.getElementById('reconnBanner'); if(b) b.style.display="none"; }
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function netConnect(onOpen,onFail){
   try{ NET.ws=new WebSocket(SERVER_URL); }catch(e){ onFail&&onFail(); return; }
   NET.ws.onopen=()=>{ NET.open=true; onOpen&&onOpen(); };
-  NET.ws.onclose=()=>{ NET.open=false; if(running&&isOnline) log("Disconnected from the server.","warn");
-    if(TRADE.open){ closeTradeWin(); if(running) log("Trade closed — your offered items are back in your satchel.","warn"); } };   // #295: a disconnect mid-trade must return escrowed offered items (closeTradeWin restores them), not strand them out of the satchel
+  NET.ws.onclose=()=>{ NET.open=false; if(running&&isOnline&&!NET.leaving&&!NET.reconnecting) log("Disconnected from the server.","warn");
+    if(TRADE.open){ closeTradeWin(); if(running) log("Trade closed — your offered items are back in your satchel.","warn"); }   // #295: a disconnect mid-trade must return escrowed offered items (closeTradeWin restores them), not strand them out of the satchel
+    if(running&&isOnline&&!NET.leaving) scheduleReconnect(); };   // #636: an in-world socket drop is no longer a silent dead end — kick off auto-reconnect + resume
   NET.ws.onerror=()=>{ if(!NET.open) onFail&&onFail(); };
   NET.ws.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch(e){return;} netHandle(m); };
+}
+// #636: auto-reconnect loop with exponential backoff. onclose (in-world) → banner + schedule → on
+// reconnect send {t:"resume",token} → server restores the session → we re-enter the world we were in
+// (keeping live post-drop state) and flush it up. Token dead → fall back to the auth screen.
+function scheduleReconnect(){
+  if(NET.leaving||NET.reconnTimer) return;
+  if(!NET.reconnecting){ NET.reconnecting=true; saveGame(); }   // snapshot progress to the local safety-net the instant we drop (#289 path: online socket down → localStorage)
+  showReconnBanner("Connection lost — reconnecting…");
+  if(NET.reconnTries>=10){ reconnectFailed("Lost connection to Dereth — please log in again."); return; }
+  const delay=Math.min(1000*Math.pow(2,NET.reconnTries), 15000);   // 1s,2s,4s… capped at 15s
+  NET.reconnTries++;
+  NET.reconnTimer=setTimeout(tryReconnect, delay);
+}
+function tryReconnect(){
+  NET.reconnTimer=null;
+  if(NET.leaving||!NET.reconnecting) return;
+  showReconnBanner("Reconnecting to Dereth… (attempt "+NET.reconnTries+")");
+  let tok=NET.token; if(!tok){ try{ tok=localStorage.getItem("dereth_token")||""; }catch(e){ tok=""; } }
+  if(!tok){ reconnectFailed("Session expired — please log in again."); return; }
+  netConnect(()=>{ netSend({t:"resume",token:tok}); }, ()=>{ scheduleReconnect(); });   // onopen → resume; couldn't reach the server → back off and retry
+}
+function reconnectFailed(msg){
+  if(NET.reconnTimer){ clearTimeout(NET.reconnTimer); NET.reconnTimer=null; }
+  NET.reconnecting=false; NET.leaving=true;   // stop the loop — we're bailing to the title/auth screen
+  try{ localStorage.setItem("dereth_token",""); }catch(e){}          // the token is dead; don't reuse it
+  try{ sessionStorage.setItem("dereth_expiredMsg", msg||"Session expired — please log in."); }catch(e){}
+  try{ if(NET.ws) NET.ws.close(); }catch(e){}
+  location.reload();   // clean slate → title/auth; dereth_user prefills the account name (see load-time prefill)
 }
 function netSend(o){ if(NET.ws&&NET.open){ try{ NET.ws.send(JSON.stringify(o)); }catch(e){} } }
 // broadcast a cosmetic spell effect so nearby players SEE your magic (the server relays it on)
@@ -26664,7 +26702,8 @@ function onSpellFx(m){
 function netHandle(m){
   if(m.t==="spellfx") return onSpellFx(m);
   if(m.t==="auth_ok") return onAuthOk(m);
-  if(m.t==="auth_err"){ const e=document.getElementById('authMsg'); if(e)e.textContent=m.msg||"Authentication failed."; return; }
+  if(m.t==="auth_err"){ if(NET.reconnecting){ reconnectFailed(m.msg||"Session expired — please log in."); return; }   // #636: resume rejected (token expired/invalid) → fall back to the auth screen
+    const e=document.getElementById('authMsg'); if(e)e.textContent=m.msg||"Authentication failed."; return; }
   if(m.t==="roster") return onRoster(m);
   if(m.t==="play_ok") return onPlayOk(m);
   if(m.t==="play_err") return onPlayErr(m);
@@ -26923,6 +26962,7 @@ function hideTitleSections(){ // collapse the title's offline/auth UI while choo
 }
 function onRoster(m){
   NET.roster=m.chars||[]; NET.maxChars=m.max||8;
+  if(NET.reconnecting&&NET.playSlot!=null){ netSend({t:"play_char",slot:NET.playSlot}); return; }   // #636: resuming an in-world session — re-enter the character we were playing, skip char-select
   hideTitleSections();
   document.getElementById('charSelect').style.display="";
   renderCharSelect();
@@ -26976,6 +27016,16 @@ function createChar(preset){
 }
 function onPlayOk(m){
   _playPending=false;   // #319: clear the play pending-guard
+  if(typeof m.slot==="number") NET.playSlot=m.slot;   // #636: remember which slot we're in so a reconnect can re-enter it
+  if(NET.reconnecting){   // #636: session restored — KEEP our live (post-drop) state; do NOT reload the server's older blob, which would black-hole progress earned after the drop
+    NET.reconnecting=false; NET.reconnTries=0;
+    if(m.netid) NET.me=m.netid;   // #438: adopt the new opaque session id from the fresh connection
+    hideReconnBanner();
+    saveGame();   // #636: flush the local safety-net (newer than the server blob by construction) up via the normal online save path so post-drop XP/kills/etc. persist
+    log("Reconnected to Dereth.","sys"); if(typeof toast==="function") toast("RECONNECTED"); if(typeof SFX!=="undefined"&&SFX.quest) SFX.quest();
+    setTimeout(()=>{ if(isOnline&&player.allegianceName) netSend({t:"allegiance",name:player.allegianceName}); },800);   // re-announce allegiance for /a routing
+    return;
+  }
   document.getElementById('charSelect').style.display="none";
   if(m.netid) NET.me=m.netid;   // #438: our world identity is the opaque session id (not the account login name) — it keys our own broadcasts (mob_hit/emote self-echo) and our snapshot record
   if(m.name) player.name=m.name;   // #234: adopt the server's authoritative charname — a freshly created online char sent its name to the server but never set player.name locally, so it showed as "Adventurer". Set it BEFORE the branch's saveGame so the correct name persists to the slot.
@@ -27006,7 +27056,8 @@ function sendChatLine(text){
   if(text[0]==="/"){ handleSlash(text); return; }
   if(chatTab==="group"){ handleSlash("/p "+text); return; }   // the active tab routes plain text
   if(chatTab==="team"){ handleSlash("/a "+text); return; }
-  if(isOnline) netSend({t:"chat",msg:text});
+  if(isOnline){ if(!NET.open){ log("Not connected — message not sent. (reconnecting…)","warn"); return; }   // #636: don't silently eat the line while the socket is down
+    netSend({t:"chat",msg:text}); }
   else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
     if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
 }
@@ -27118,6 +27169,7 @@ function _logoutFadeAvatar(op){
   });
 }
 function finishLogout(){
+  NET.leaving=true;   // #636: an intentional logout must not trigger the auto-reconnect loop on close
   try{ if(NET&&NET.ws) NET.ws.close(); }catch(e){}   // only now — the save is confirmed (or the timeout fired)
   logoutReturnToTitle();
 }
@@ -28069,6 +28121,8 @@ document.getElementById('registerBtn').onclick=()=>authAction('register');
 document.getElementById('authPass').addEventListener('keydown',e=>{ if(e.key==='Enter')authAction('login'); });
 // prefill last username for convenience
 try{ const lu=localStorage.getItem('dereth_user'); if(lu) document.getElementById('authUser').value=lu; }catch(e){}
+// #636: after a resume failure the client reloads to the title — surface why (session expired) on the auth screen
+try{ const em=sessionStorage.getItem('dereth_expiredMsg'); if(em){ sessionStorage.removeItem('dereth_expiredMsg'); const e=document.getElementById('authMsg'); if(e) e.textContent=em; } }catch(e){}
 // ══ MOBILE / TOUCH INTERFACE v2 (Lane B) ══════════════════════════════════════════════════════════
 // A high-end mobile-MMO interface for phones & tablets, auto-selected when the player loads the
 // page on a coarse-pointer touch device (Settings → Interface and the title notice override it).
