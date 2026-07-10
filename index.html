@@ -4935,7 +4935,11 @@ function acBuildHead(av,app){
     const s=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
     grp.position.set(P.p[0]*s-jl.x, P.p[1]*s-jl.y, P.p[2]*s-jl.z);
     grp.quaternion.set(P.q[0],P.q[1],P.q[2],P.q[3]);
-    grp.rotateY(Math.PI);   // the acheads mesh fronts opposite the AC body parts — turn the face to the body forward
+    // NO extra yaw: head GfxObjs front +z in mesh-local space exactly like every body part, and part 16's
+    // own placement quat (a 180° yaw, same as the rest of the setup) already turns the face to the body's
+    // forward (-z). The old rotateY(PI) here double-flipped the head — face/eye/nose/mouth strips rendered
+    // on the BACK of the skull with the hair over the face, so ears sat mirrored ("moved opposite") and
+    // the whole body read as 180° off against the visible face.
     grp.scale.setScalar(s);
     u.neck.add(grp); u.acHead=grp;
     if(u.head) u.head.visible=false;                 // retire the procedural painted head
@@ -20975,7 +20979,8 @@ function acAttachHat(av,name,gender){
     const sc=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
     inst.position.set(P.p[0]*sc-jl.x, P.p[1]*sc-jl.y, P.p[2]*sc-jl.z);
     inst.quaternion.set(P.q[0],P.q[1],P.q[2],P.q[3]);
-    inst.rotateY(Math.PI);                              // hat meshes front opposite the body, same as the heads
+    // no extra yaw — hat GfxObjs are part-16 swaps with the same +z mesh-local front as the heads;
+    // the placement quat alone faces them forward (see acBuildHead)
     inst.scale.setScalar(sc);
     u.neck.add(inst);
     if(u.acHead) u.acHead.visible=false;                // retail: the hat's part-16 swap replaces the head beneath
@@ -27311,7 +27316,8 @@ function ccBust_build(app){
     acHeadGroup(app, hgrp=>{
       if(!hgrp||tok!==_ccHeadTok) return;
       if(g.userData.head){ g.remove(g.userData.head); }        // retire the procedural bust head
-      hgrp.position.y=1.505; g.add(hgrp);                       // the bust's own sway turns the head to face the camera
+      hgrp.position.y=1.505; hgrp.rotation.y=Math.PI;           // head mesh fronts +z; half-turn matches the bust's -z convention so the sway shows the face
+      g.add(hgrp);
       g.userData.head=null; g.userData.acHead=hgrp;
     });
   }
