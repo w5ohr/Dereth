@@ -25623,12 +25623,17 @@ function arenaFail(){
 function buildNetwork(){
   netObjs=[];netPortals=[];const R=48;   // wide hall so all ~56 town portals + labels spread out
   const fac=netMode==="facility";
-  const floorCol=fac?0x202a33:0x2a2640,ringCol=fac?0x3a8a9a:0x6a5aa0,ringEm=fac?0x1a4a5a:0x3a2a6a,liteCol=fac?0x5ad0ff:0x9b6bff,orbCol=fac?0x40e0ff:0xc060ff;
+  // #577: facility floor nudged up from 0x202a33 — too close to the fog color to read past a few metres
+  const floorCol=fac?0x24303c:0x2a2640,ringCol=fac?0x3a8a9a:0x6a5aa0,ringEm=fac?0x1a4a5a:0x3a2a6a,liteCol=fac?0x5ad0ff:0x9b6bff,orbCol=fac?0x40e0ff:0xc060ff;
   const floor=new THREE.Mesh(new THREE.CircleGeometry(R,44),new THREE.MeshStandardMaterial({color:floorCol,metalness:0.08,roughness:0.88}));
   floor.rotation.x=-Math.PI/2;floor.position.set(DCEN.x,0.04,DCEN.z);floor.receiveShadow=true;scene.add(floor);netObjs.push(floor);
   // ── the hall is an ENCLOSED chamber: dark stone walls + a roof, so the only real light
   //    is the glow of the portals themselves (updateInstanceLight kills the daylight here) ──
-  const WALLH=18, wallMat=new THREE.MeshStandardMaterial({color:fac?0x0e141a:0x120e1c,roughness:0.95,metalness:0.05,side:THREE.BackSide});
+  // #577: these used to sit at 0x0e141a/0x120e1c — within ~18 RGB units of the inNetwork fog color
+  // (0x080610), so the walls visually "melted" into the fog a few metres out (same class of bug as
+  // the Academy's #534). Lifted enough to stay clearly distinct from the fog while still reading as
+  // a dark, moody enclosed hall.
+  const WALLH=18, wallMat=new THREE.MeshStandardMaterial({color:fac?0x223240:0x2e2444,roughness:0.95,metalness:0.05,side:THREE.BackSide});
   const wall=new THREE.Mesh(new THREE.CylinderGeometry(R+3,R+3,WALLH,56,1,true),wallMat);
   wall.position.set(DCEN.x,WALLH/2,DCEN.z);scene.add(wall);netObjs.push(wall);
   const roof=new THREE.Mesh(new THREE.CylinderGeometry(R*0.18,R+3,7,56,1,true),wallMat);   // shallow cone ceiling
@@ -25644,10 +25649,19 @@ function buildNetwork(){
   ped.position.set(DCEN.x,0.65,DCEN.z);ped.castShadow=true;scene.add(ped);netObjs.push(ped);
   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.9,16,12),new THREE.MeshBasicMaterial({color:new THREE.Color(orbCol).multiplyScalar(0.5),transparent:true,opacity:0.8}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
   const list=fac?FACILITY_PORTALS:CITIES;
-  list.forEach((c,i)=>{const a=i/list.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
+  // #577: plain list order could land a high-level frontier portal (e.g. Redspire, level 35) right
+  // beside a fresh arrival's spawn point — low-req and high-req destinations were interleaved with no
+  // regard for the hall's layout. Sort by level requirement and fan outward from ENTRANCE_A alternating
+  // left/right, so req-0 destinations cluster nearest the entrance side of the ring and the steepest
+  // level requirements end up as far around as possible, at ENTRANCE_A+PI.
+  const ENTRANCE_A=Math.PI/2, RING_STEP=2*Math.PI/list.length;
+  const ordered=list.slice().sort((a,b)=>(a.req||0)-(b.req||0));
+  ordered.forEach((c,k)=>{
+    const half=Math.ceil(k/2), sign=k===0?0:(k%2===1?1:-1), a=ENTRANCE_A+sign*half*RING_STEP;
+    const px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
     const np=fac?{x:px,z:pz,kind:"facility",dungeon:c.def,req:c.req,name:c.def.name}:{x:px,z:pz,kind:"town",town:c,name:c.name};
     const m=buildPortal(fac?`${c.def.name} · Lv${c.req}`:(c.req?`${c.name} · Lv${c.req}`:c.name));m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
-    m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
+    m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(k%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
     m.traverse(o=>{ if(o.isPointLight){ o.intensity=0.85; o.distance=14; } });   // dim each portal's glow so the enclosed hall stays moody, not washed out
     scene.add(m);netObjs.push(m);netPortals.push(np);});
   netExit={x:DCEN.x,z:DCEN.z+7};
