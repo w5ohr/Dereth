@@ -4988,7 +4988,11 @@ function acBuildHead(av,app){
   if(acAvail&&u.head&&!u.acHead) u.head.visible=false;
   acHeadGroup(app, grp=>{
     if(u._acHeadToken!==token) return;                 // superseded by a newer build — don't touch its state
-    if(!grp){ if(u.head) u.head.visible=!u.acHead; return; }   // no retail asset resolved → fall back to the procedural head
+    // No retail head resolved (old/appearance-less save, acheads pack absent, or a fetch hiccup): fall
+    // back to the procedural painted head so the avatar is never left headless (#555) — unless a retail
+    // head from an earlier successful build is already attached, in which case a later transient miss
+    // must not flash the placeholder back in over it (u.acHead is that earlier group).
+    if(!grp){ if(u.head) u.head.visible=!u.acHead; return; }
     if(u.acHead&&u.acHead.parent){ u.acHead.parent.remove(u.acHead); }
     grp.userData.acBody=true; grp.userData.acHeadGrp=true;
     const s=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
