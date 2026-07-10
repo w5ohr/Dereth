@@ -82,11 +82,13 @@ async def main():
     check("new account roster empty (max 8)", bool(ros) and ros.get("chars") == [] and ros.get("max") == 8)
 
     # create 8 characters (slots 0..7); slot 0's create enters the world
+    aid = None   # #438: alice's opaque netid, captured off play_ok -- the wire never uses the account name as an id
     for i in range(8):
         await a.send({"t": "create_char", "slot": i, "name": f"{alice}{i}", "char": {"level": i + 1, "kills": i, "heritage": "sho"}})
         po = await a.recv_until(lambda x: x["t"] in ("play_ok", "play_err"))
         if i == 0:
             check("create_char -> play_ok (enters world)", bool(po) and po["t"] == "play_ok" and po.get("char", {}).get("level") == 1)
+            aid = po.get("netid") if po else None
     check("created all 8 characters", True)
     await a.send({"t": "create_char", "slot": 0, "name": f"{alice}d", "char": {}})
     e1 = await a.recv_until(lambda x: x["t"] == "play_err")
@@ -104,7 +106,8 @@ async def main():
     check("register bob -> auth_ok", mb and mb["t"] == "auth_ok")
     await b.recv_until(lambda x: x["t"] == "roster")
     await b.send({"t": "create_char", "slot": 0, "name": f"{bob}0", "char": {"level": 3, "heritage": "aluvian"}})
-    await b.recv_until(lambda x: x["t"] == "play_ok")
+    pob = await b.recv_until(lambda x: x["t"] == "play_ok")
+    bid = pob.get("netid") if pob else None   # #438: bob's opaque netid -- the wire never uses the account name as an id
     check("alice sees bob join", bool(await a.recv_until(lambda x: x["t"] == "system" and bob in x.get("msg", ""))))
 
     # movement input -> snapshot reflects the OTHER player. AOI: the viewer's own record is no longer
@@ -112,12 +115,14 @@ async def main():
     # two stand ~212u apart, inside it.
     await a.send({"t": "input", "x": 100, "z": 200, "yaw": 1.5, "hp": 90, "level": 7})
     await b.send({"t": "input", "x": -50, "z": 50, "yaw": 0.2, "hp": 80, "level": 3})
-    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and any(p["id"] == bob for p in x.get("players", [])))
+    # #438: snapshot player "id" is the opaque netid (bid/aid), NOT the account name -- only the
+    # "name" field carries the character's display name.
+    snap = await a.recv_until(lambda x: x["t"] == "snapshot" and any(p["id"] == bid for p in x.get("players", [])))
     ids = {p["id"]: p for p in (snap["players"] if snap else [])}
-    check("snapshot lists the nearby other player", bob in ids)
-    check("snapshot omits the viewer's own record (AOI)", snap is not None and alice not in ids)
-    check("snapshot carries the other player's position", snap and abs(ids.get(bob, {}).get("x", 0) - (-50)) < 1)
-    check("snapshot shows character name, not account", ids.get(bob, {}).get("name") == f"{bob}0")
+    check("snapshot lists the nearby other player", bid in ids)
+    check("snapshot omits the viewer's own record (AOI)", snap is not None and aid not in ids)
+    check("snapshot carries the other player's position", snap and abs(ids.get(bid, {}).get("x", 0) - (-50)) < 1)
+    check("snapshot shows character name, not account", ids.get(bid, {}).get("name") == f"{bob}0")
 
     # chat from bob reaches alice, tagged with his character name
     await b.send({"t": "chat", "msg": "hail, adventurer!"})
@@ -139,13 +144,13 @@ async def main():
     await a.send({"t": "input", "x": 100, "z": 200, "yaw": 0, "hp": 100})
     await b.send({"t": "input", "x": 102, "z": 200, "yaw": 0, "hp": 100})
     await asyncio.sleep(0.2)
-    await a.send({"t": "cast", "target": bob, "spell": "life_heal_1"})
+    await a.send({"t": "cast", "target": bid, "spell": "life_heal_1"})   # #438: cast targets are opaque netids, not account names
     rb = await b.recv_until(lambda x: x["t"] == "rbuff")
     check("cast on ally relays an rbuff", bool(rb) and rb.get("spell") == "life_heal_1" and rb.get("from") == f"{alice}7")
     # out of range -> no relay
     await a.send({"t": "input", "x": 9000, "z": 200, "yaw": 0, "hp": 100})
     await asyncio.sleep(0.2)
-    await a.send({"t": "cast", "target": bob, "spell": "life_heal_1"})
+    await a.send({"t": "cast", "target": bid, "spell": "life_heal_1"})
     rb2 = await b.recv_until(lambda x: x["t"] == "rbuff", timeout=1.0)
     check("out-of-range ally cast is rejected", rb2 is None)
 
@@ -215,14 +220,21 @@ async def main():
         await a.send({"t": "attack", "id": target["id"], "dmg": 5})
         far = await a.recv_until(lambda x: x["t"] == "mob_hit" and x.get("id") == target["id"], timeout=1.0)
         check("out-of-range attack rejected", far is None)
-        # back in range: a big hit should kill it and yield a reward + mob_die broadcast
+        # back in range: a big hit should kill it and yield a reward + mob_die broadcast. The mob
+        # wanders (and may have briefly chased/leashed off the out-of-range probe above), so resync
+        # its live position from a fresh snapshot before the finishing blow instead of trusting the
+        # stale mobs[0] coords -- otherwise the attack can silently miss ATTACK_RANGE and this
+        # assertion flakes on a timeout rather than a real failure.
         await a.send({"t": "input", "x": target["x"], "z": target["z"], "yaw": 0, "hp": 100})
+        rsnap = await a.recv_until(lambda x: x["t"] == "snapshot" and any(mm.get("id") == target["id"] for mm in x.get("mobs", [])), timeout=3.0)
+        cur = next((mm for mm in (rsnap or {}).get("mobs", []) if mm.get("id") == target["id"]), target)
+        await a.send({"t": "input", "x": cur["x"], "z": cur["z"], "yaw": 0, "hp": 100})
         await asyncio.sleep(0.25)
         await a.send({"t": "attack", "id": target["id"], "dmg": 99999})
         hit = await a.recv_until(lambda x: x["t"] == "mob_hit" and x.get("id") == target["id"])
         check("in-range attack -> mob_hit", bool(hit))
         die = await a.recv_until(lambda x: x["t"] == "mob_die" and x.get("id") == target["id"])
-        check("lethal attack -> mob_die", bool(die) and die.get("by") == alice)
+        check("lethal attack -> mob_die", bool(die) and die.get("by") == aid)   # #438: opaque netid, not the account name
         rew = await a.recv_until(lambda x: x["t"] == "reward")
         check("kill -> reward with shared xp", bool(rew) and rew.get("xp", 0) > 0)
 
@@ -260,16 +272,19 @@ async def main():
             check("double pickup yields no second loot", again is None)
 
     # --- M3d: shared world event (Incursion) ---
-    # the test server is started with a short DERETH_EVENT_CD, so an Incursion is active by
-    # now; a freshly-joined player should be synced the active event, and alice should have
-    # seen the event_start broadcast.
+    # REQUIRES the test server to be started with a short DERETH_EVENT_CD (e.g. `DERETH_EVENT_CD=2`)
+    # -- event_cd only ticks down once a client is connected, and by the time we get here several
+    # seconds of harness round-trips have already elapsed, so a short CD should long since have
+    # fired. enter_world syncs an already-active event directly (dereth_server.py enter_world), and
+    # a CD that fires just after dave joins is still caught by the subsequent event_start broadcast,
+    # so a generous timeout absorbs scheduler jitter without masking a real regression.
     dave = await WS.connect()
     await dave.send({"t": "register", "user": f"dave_{uniq}", "pass": "secret4"})
     await dave.recv_until(lambda x: x["t"] == "auth_ok")
     await dave.recv_until(lambda x: x["t"] == "roster")
     await dave.send({"t": "create_char", "slot": 0, "name": f"dave{uniq}", "char": {}})
     await dave.recv_until(lambda x: x["t"] == "play_ok")
-    ev = await dave.recv_until(lambda x: x["t"] == "event_start", timeout=5.0)
+    ev = await dave.recv_until(lambda x: x["t"] == "event_start", timeout=10.0)
     check("active Incursion synced to late joiner", bool(ev) and ev.get("name") and ev.get("count", 0) > 0)
     await dave.close()
 
