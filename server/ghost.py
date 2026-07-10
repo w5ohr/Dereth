@@ -19,6 +19,22 @@ async def main():
     if m and m["t"] == "auth_err":
         await w.send({"t": "login", "user": name, "pass": "ghostpw"})
         await w.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
+    await w.recv_until(lambda x: x["t"] == "roster")
+    # Enter the world: create a character in slot 0 (mirrors test_client.py's proven entry
+    # sequence). If the slot is already occupied from a previous run of this ghost, fall
+    # back to playing that existing character instead. Without this handshake cl.in_world
+    # stays False forever and broadcast_snapshots (dereth_server.py) never shows the ghost
+    # to anyone -- it just silently streams "input" into the void.
+    await w.send({"t": "create_char", "slot": 0, "name": name,
+                  "char": {"level": 4, "heritage": "sho"}})
+    po = await w.recv_until(lambda x: x["t"] in ("play_ok", "play_err"))
+    if po and po["t"] == "play_err":
+        await w.send({"t": "play_char", "slot": 0})
+        po = await w.recv_until(lambda x: x["t"] in ("play_ok", "play_err"))
+    if not po or po["t"] != "play_ok":
+        print(f"ghost {name} failed to enter world: {po}")
+        await w.close()
+        return
     print(f"ghost {name} online at ({x},{z}) for {secs}s")
     for _ in range(int(secs * 5)):
         await w.send({"t": "input", "x": x, "z": z, "yaw": 1.0, "hp": 77, "mhp": 100, "level": 4, "heritage": "sho"})
