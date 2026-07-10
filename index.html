@@ -16498,7 +16498,10 @@ function interact(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house){ hsInteractInside(); return; }   // house interiors & residential halls
-    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; } }   // the Academy's instructors
+    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs);   // the Academy's instructors
+      if(n&&n.d<3.5){ talkToNPC(n.o); return; }
+      if(n&&n.d<9){ log(`You need to get closer to talk to <b>${esc(n.o.name)}</b>.`,"warn"); return; }   // #535: E gave no feedback at all when a target was near but just out of talk range
+    }
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&Math.hypot(dungeonChest.x-player.x,dungeonChest.z-player.z)<3.5){ openChest(); return; }
     if(dungeonLock&&!dungeonLock.opened&&Math.hypot(dungeonLock.x-player.x,dungeonLock.z-player.z)<3.2){ openLockedCache(); return; }
     if(dungeonVault&&!dungeonVault.opened&&Math.hypot(dungeonVault.x-player.x,dungeonVault.z-player.z)<3.2){ openVault(); return; }
@@ -16518,11 +16521,15 @@ function interact(){
       if(dungeonDepth>1){ const d=dungeonDepth-1; dungeonGoDepth(d); if(SFX.portal)SFX.portal();
         log(d>1?`You climb back up to <b>depth ${d}</b>.`:"You climb back up to the top floor.","sys"); return; }
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
+    else log("There is nothing here to interact with.","warn");   // #535: E must never be silent, including plain dungeons/the Academy with nothing in reach
     return;
   }
   for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
   for(const ct of chessTables) if(Math.hypot(ct.x-player.x,ct.z-player.z)<3.0){ openChessBoard(); return; }
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
+  {const n=nearestOf(npcs);
+    if(n&&n.d<3.5){ talkToNPC(n.o); return; }
+    if(n&&n.d<9){ log(`You need to get closer to talk to <b>${esc(n.o.name)}</b>.`,"warn"); return; }   // #535: same "too far, but not silent" feedback in the open world
+  }
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
   for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)){ openKcChest(ch); return; } }
@@ -16564,6 +16571,7 @@ function interact(){
       toast("BOUND");SFX.quest();saveGame();return;
     }
   }
+  log("There is nothing here to interact with.","warn");   // #535: E must never be silent — every branch above returns early on a hit, so reaching here means E genuinely found nothing at all
 }
 function recoverCorpse(d){
   // a SHARED (multiplayer) corpse is server-brokered and owner-only — the server validates and
