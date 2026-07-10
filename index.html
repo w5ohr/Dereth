@@ -4881,9 +4881,26 @@ fetch('assets/acheads/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j
 fetch('assets/acheads/palettes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_HEAD_REMAP=j;
   // #533: heads built before the palettes arrived were textured RAW (the shared ginger hair). Drop any
   //   uncached-raw placeholders and rebuild the player + live creator so hair recolours per heritage.
+  // #604: rebuilding only covers the player and an OPEN creator — every other head (NPCs, a creator
+  //   preview nobody clicks) keeps the raw texture it was handed. Replay those serves and swap
+  //   mat.map in place, so no head is left auburn.
+  try{ acHeadRemapArrived(); }catch(e){}
   if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.acBody) acBuildHead(playerAvatar);
   if(typeof ccVisible!=="undefined"&&ccVisible&&typeof ccRebuild==="function"){ try{ ccRebuild(); }catch(e){} } } }).catch(()=>{});
 const _acHeadTexCache={}, _acHeadTexCb={};
+// #604: heads built before palettes.json lands are handed the RAW texture. #533 stopped us CACHING
+// that raw texture, but the material it was already handed keeps it until something rebuilds the
+// head — so an NPC (or a creator preview nobody clicks) shows the raw auburn hair forever. Record
+// every raw serve and replay it once AC_HEAD_REMAP arrives, swapping mat.map in place. The player
+// avatar and the open creator are also rebuilt (below); this covers everything else.
+const _acHeadPending=[]; const _AC_HEAD_PENDING_CAP=3000;   // cap: a bad network shouldn't grow this without bound
+function acHeadRemapArrived(){
+  if(!AC_HEAD_REMAP||!_acHeadPending.length) return 0;
+  const q=_acHeadPending.splice(0,_acHeadPending.length);   // drain first: each replay may re-enter acHeadTexture
+  let n=0;
+  for(const r of q) for(const cb of r.cbs){ acHeadTexture(r.texDID,r.rms,cb,r.opts); n++; }
+  return n;
+}
 function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, RGB-remapped through an ordered list of colour palettes
   const rms=(Array.isArray(remapDIDs)?remapDIDs:[remapDIDs]).filter(Boolean);
   const key=texDID+"|"+rms.join(",")+(opts&&opts.foreheadFix?"|ff":"");
@@ -4932,6 +4949,12 @@ function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, 
     //   next rebuild (once AC_HEAD_REMAP is in) re-remaps to the real per-heritage hair colour.
     const remapPending = rms.length>0 && !AC_HEAD_REMAP;
     if(remapPending) delete _acHeadTexCache[key]; else _acHeadTexCache[key]=tex;
+    // #604: remember who we just handed a raw texture to. Snapshot the callback queue BEFORE
+    // flush() drains it — flush() nulls _acHeadTexCb[key] on its way out.
+    if(remapPending && _acHeadPending.length<_AC_HEAD_PENDING_CAP){
+      const cbs=(_acHeadTexCb[key]||[]).slice();
+      if(cbs.length) _acHeadPending.push({texDID,rms:rms.slice(),opts,cbs});
+    }
     flush(tex);
   };
   img.onerror=()=>{ _acHeadTexCache[key]="failed"; _acHeadTexCb[key]=null; };
