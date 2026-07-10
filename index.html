@@ -16493,7 +16493,9 @@ function interact(){
   }
   if(inNetwork){
     for(const np of netPortals){if(Math.hypot(np.x-player.x,np.z-player.z)<3){activateNetPortal(np);return;}}
-    if(Math.hypot(netExit.x-player.x,netExit.z-player.z)<3){exitNetwork(netReturn);log("You leave the "+netHallName()+".","sys");SFX.portal();}
+    if(Math.hypot(netExit.x-player.x,netExit.z-player.z)<3){exitNetwork(netReturn);log("You leave the "+netHallName()+".","sys");SFX.portal();return;}
+    // #577: the centre pedestal/orb is decorative — don't let E fall silent there. Point the player at the ring.
+    log("Step onto one of the glowing portals ringing the hall to travel (E).","sys");
     return;
   }
   if(inDungeon){
@@ -25627,8 +25629,16 @@ function buildNetwork(){
   const ped=new THREE.Mesh(new THREE.CylinderGeometry(2,2.5,1.3,12),new THREE.MeshStandardMaterial({color:0x3a3656,metalness:0.5,roughness:0.4}));
   ped.position.set(DCEN.x,0.65,DCEN.z);ped.castShadow=true;scene.add(ped);netObjs.push(ped);
   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.9,16,12),new THREE.MeshBasicMaterial({color:new THREE.Color(orbCol).multiplyScalar(0.5),transparent:true,opacity:0.8}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
-  const list=fac?FACILITY_PORTALS:CITIES;
-  list.forEach((c,i)=>{const a=i/list.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
+  // #577: seat LOW-level destinations by the entrance and prestige frontiers at the back — a level-4
+  // player used to meet the Lv35 Redspire portal first (it fell on the entrance-facing slot). Sort by
+  // required level ascending, then assign each to a ring slot ordered by how close it sits to the
+  // entrance: the player arrives at DCEN.z-2, so the -z direction (ENTRY_A) is straight ahead, and the
+  // back of the hall (+z, by the Leave portal) takes the highest-level frontiers.
+  const list=(fac?FACILITY_PORTALS:CITIES).slice().sort((a,b)=>((a.req||0)-(b.req||0)));
+  const N=list.length||1, ENTRY_A=Math.PI*1.5;   // -z, directly ahead of the arrival point
+  // slot k (angle ENTRY_A + k·2π/N) ordered by circular distance from the entrance (front → back)
+  const slots=Array.from({length:N},(_,k)=>({k,d:Math.min(k,N-k)})).sort((a,b)=>(a.d-b.d)||(a.k-b.k));
+  list.forEach((c,i)=>{const a=ENTRY_A+slots[i].k/N*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
     const np=fac?{x:px,z:pz,kind:"facility",dungeon:c.def,req:c.req,name:c.def.name}:{x:px,z:pz,kind:"town",town:c,name:c.name};
     const m=buildPortal(fac?`${c.def.name} · Lv${c.req}`:(c.req?`${c.name} · Lv${c.req}`:c.name));m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
     m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
