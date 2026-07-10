@@ -3396,7 +3396,7 @@ function updateWeather(dt){
   cloudCover+=clamp(coverTgt-cloudCover,-dt*0.3,dt*0.3);
   wetness+=clamp((raining?1:0)-wetness,-dt*0.4,dt*0.4);
   snowAmt+=clamp((weather==="snow"?1:0)-snowAmt,-dt*0.35,dt*0.35);
-  const targetFar=weather==="fog"?55:storming?110:weather==="rain"?150:weather==="snow"?175:weather==="cloudy"?235:350;
+  const targetFar=weather==="fog"?55:storming?160:weather==="rain"?150:weather==="snow"?175:weather==="cloudy"?235:350;   // #569: storms cut visibility but must stay LEGIBLE — the old 110u far-plane (closer than rain's 150) fogged out the whole town square. 160u keeps the immediate town/NPCs readable while the dark storm-grey fog + rain VFX still read as dramatic.
   fogFar+=(targetFar-fogFar)*Math.min(1,dt*0.5);scene.fog.far=fogFar;
   const precip=Math.max(wetness,snowAmt), snowing=snowAmt>wetness+0.01;
   if(rainSegs){
@@ -3493,8 +3493,12 @@ function updateDayNight(dt){
     amb.intensity=(amb.intensity+S.ambBright*0.5)/2;
     scene.fog.far=clamp(60+S.fogFar*(WSCALE/3),140,300);   // retail metres at true 1:1 (was /3 for the old 1/3 scale); capped at AC's ~300m draw
   }
-  const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm
-  if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar(0.42+daylight*0.72); scene.fog.color.lerp(_tmp,_oc*0.6); }
+  const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm (1.0 only under a full storm)
+  // #569: overcast/storm drives the fog toward a dark, saturated storm-grey. The blend has to be
+  //   strong at full storm (_oc→1) so the grey actually WINS — otherwise the retail-sky fog above
+  //   and the (warm/pale) seasonal fog tint below re-brighten it into a flat salmon/beige wash that
+  //   erases the whole viewport. Darken with _oc so a storm reads as a gloom, not a bright field.
+  if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar((0.42+daylight*0.72)*(1-_oc*0.35)); scene.fog.color.lerp(_tmp,_oc*0.85); }
   if(skyU){
     skyU.uZen.value.copy(_zenNight).lerp(_zenDay,daylight);
     skyU.uHor.value.copy(_horNight).lerp(_horDay,daylight).lerp(_cWarm,warm*0.75);
@@ -3509,7 +3513,7 @@ function updateDayNight(dt){
   if(groundMat && !inDungeon && !inNetwork && typeof currentSeason==="function"){
     const S=currentSeason(), k=Math.min(1,dt*0.5);
     seasonCur.ground.lerp(_tmp.setHex(S.ground),k); groundMat.color.copy(seasonCur.ground);
-    seasonCur.fog.lerp(_tmp.setHex(S.fog),k);       scene.fog.color.lerp(seasonCur.fog,0.30);
+    seasonCur.fog.lerp(_tmp.setHex(S.fog),k);       scene.fog.color.lerp(seasonCur.fog,0.30*(1-_oc));   // #569: don't re-tint the fog toward the (warm/pale) seasonal colour under overcast/storm — that pulled the dark storm-grey back toward Harvestgain's salmon-tan (0xdcc492) and washed the tempest out to a flat pink field. Season fog only colours CLEAR/light weather now.
     seasonCur.sky.lerp(_tmp.setHex(S.sky),k);       if(skyU)skyU.uHor.value.lerp(seasonCur.sky,0.20);
   }
   if(starMat) starMat.opacity=clamp(1-daylight*1.6,0,1)*(0.85+0.15*Math.sin(now()/350)); // twinkle
