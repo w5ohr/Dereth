@@ -2830,6 +2830,19 @@ function groundY(x,z,refY){
   if(fx+fz<=1) return h00 + fx*(h10-h00) + fz*(h01-h00);
   return h01 + (fx+fz-1)*(h11-h01) + (1-fz)*(h10-h01);
 }
+// #648: a handful of coastal towns (Wai Jhou, Lin, Kryst, Samsur, Greenspire, Bluespire, Beach Fort,
+// Fiun Outpost) sit at or below the waterline at their real AC coordinate — any arrival that lands the
+// player on the RAW town coord (fast-travel, a town portal, academy-exit) dropped them in the sea.
+// Snap to the nearest dry tile (groundY clearly above the waterline, not merely awash) before placing
+// the player; mirrors the dungeon-entrance relocation spiral search above (landNear in buildWorld) and
+// the loot-scatter dry guard (bestH<0.5). A town already on dry land snaps to itself — capitals unaffected.
+function nearestDryLand(x,z){
+  if(groundY(x,z)>1.5) return {x,z};
+  for(let rad=6; rad<=400; rad+=10){ for(let a=0;a<16;a++){ const ang=a/16*Math.PI*2,
+      nx=clamp(x+Math.cos(ang)*rad,-HALF+2,HALF-2), nz=clamp(z+Math.sin(ang)*rad,-HALF+2,HALF-2);
+      if(groundY(nx,nz)>1.5) return {x:nx,z:nz}; } }
+  return {x,z};   // nothing dry within reach — fall back to the raw spot rather than strand the caller
+}
 // ── walkable structures: buildings register upper-floor platforms + ramps (local coords + world transform)
 //    so the player can climb to a second story and stand on it. ──
 let structures=[];
@@ -2892,7 +2905,8 @@ function academyExit(){   // the single exit portal: one destination, the town y
   if(inDungeon&&curDungeon&&curDungeon.academy&&typeof exitAcademyHall==="function") exitAcademyHall();   // step out of the hall first
   const tn=player.createTown||"Holtburg", c=CITIES.find(x=>x.name===tn)||CAPITALS[0];
   if(typeof teleportFX==="function") teleportFX(player.x,player.z);
-  arriveAt(c.x,(c.z||0)+4); player.academy.done=1;
+  const land=nearestDryLand(c.x,(c.z||0)+4);
+  arriveAt(land.x,land.z); player.academy.done=1;
   log(`You step through the Academy portal into <b>${c.name||tn}</b>. Seek out the town's greeters by the plaza — they'll see you settled.`,"sys");
   toast("WELCOME TO "+String(c.name||tn).toUpperCase()); saveGame();
 }
@@ -8618,7 +8632,8 @@ function kcAddBeast(wx,wz,kind,name,scale,rot){
 function kcPortalUse(p){
   if(inDungeon||inNetwork) return;
   if(!castleAccess()){ log("The gateways open only for Lord Kilmer and his sworn guests.","warn"); if(SFX.hit)SFX.hit(); return; }
-  warpTo(p.dest.x,p.dest.z,{invuln:2});
+  const land=nearestDryLand(p.dest.x,p.dest.z);
+  warpTo(land.x,land.z,{invuln:2});
   if(typeof toast==="function") toast(p.dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The gateway flares — you step through to <b>${p.dest.name}</b>.`,"sys");
 }
@@ -8805,7 +8820,8 @@ function kcPortalTo(name){
   else { const c=CITIES.find(ct=>ct.name===name); if(c) dest={x:c.x,z:c.z+3,name:c.name}; }
   if(!dest) return;
   closeAttendant();
-  warpTo(dest.x,dest.z,{invuln:2});
+  const land=nearestDryLand(dest.x,dest.z);
+  warpTo(land.x,land.z,{invuln:2});
   if(typeof toast==="function")toast(dest.name.toUpperCase()); if(SFX.portal)SFX.portal();
   log(`The valkyrie opens a shimmering way — you step through to <b>${dest.name}</b>.`,"sys");
 }
@@ -15096,7 +15112,8 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot recall from here.","warn"); return "keep"; }
     const dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ log("You have no Lifestone to recall to.","warn"); return "keep"; }
-    warpTo(dest.x,dest.z+3,{invuln:2});
+    const land=nearestDryLand(dest.x,dest.z+3);
+    warpTo(land.x,land.z,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You crush the <b>${it.name}</b> and recall to the <b>${dest.name}</b> Lifestone.`,"heal"); }
   else if(it.stat==="cure"){
     const n=player.debuffs?Object.keys(player.debuffs).length:0;
@@ -15128,14 +15145,16 @@ function applyItem(it){
     if(inDungeon||inNetwork){ log("You cannot open a portal from here.","warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The gem's destination is lost to you.","warn"); return "keep"; }
-    warpTo(c.x,c.z+3,{invuln:2});
+    const land=nearestDryLand(c.x,c.z+3);
+    warpTo(land.x,land.z,{invuln:2});
     if(SFX.quest)SFX.quest(); log(`You shatter the <b>${it.name}</b> and step through to <b>${c.name}</b>.`,"heal"); }
   else if(it.stat==="contract"){
     if(inDungeon||inNetwork){ log("You cannot invoke a contract from here.","warn"); return "keep"; }
     if((player.contractCd||0)>0){ log(`The contract must recharge (${Math.ceil(player.contractCd)}s).`,"warn"); return "keep"; }
     const c=(typeof CITIES!=="undefined")&&CITIES.find(ct=>ct.name===it.town);
     if(!c){ log("The contract's destination is lost to you.","warn"); return "keep"; }
-    warpTo(c.x,c.z+3,{invuln:2}); player.contractCd=120;
+    const land=nearestDryLand(c.x,c.z+3);
+    warpTo(land.x,land.z,{invuln:2}); player.contractCd=120;
     if(SFX.quest)SFX.quest(); log(`You invoke your <b>${it.name}</b> and recall to <b>${c.name}</b>.`,"heal"); return "keep"; }  // reusable
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
@@ -15680,7 +15699,8 @@ function die(){
     if(_wasNetwork&&inNetwork) exitNetwork(netReturn);
     if(_corpseDrop) addDrop(corpseX,corpseZ,{type:"corpse",items:_corpseDrop.items,amt:_corpseDrop.gold,corpse:true,owner:player.name||"Adventurer",ttl:_corpseDrop.ttl});
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
-    arriveAt(ls.x,ls.z+3);player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
+    const land=nearestDryLand(ls.x,ls.z+3);
+    arriveAt(land.x,land.z);player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
     // AC: vitals restore to 75% of the (Vitae-reduced) max; ~1 min of protection, broken by offensive action
     player.hp=Math.round(player.mhp*0.75);player.st=Math.round(player.mst*0.75);player.mn=Math.round(player.mmn*0.75);
     player.invuln=60;player.resProt=true;
@@ -15981,7 +16001,8 @@ function executeSpell(id){
     else if(s.dest==="portal2"){ const p=player.tiedPortal2; if(!p){ refundCast(); spellCd[id]=0; log("You have no SECOND portal tied — cast Secondary Portal Tie at a portal first.","warn"); return; } dest={x:p.x,z:p.z,name:p.name}; isLS=false; }
     else dest=lifestones.find(l=>l.bound)||lifestones[0];
     if(!dest){ refundCast(); spellCd[id]=0; log("You have no Lifestone to recall to.","warn"); return; }
-    warpTo(dest.x,dest.z+3,{invuln:2});
+    const land=nearestDryLand(dest.x,dest.z+3);
+    warpTo(land.x,land.z,{invuln:2});
     SFX.quest&&SFX.quest(); castFlash(0x5aa8ff); log(`You recall to <b>${dest.name}</b>${isLS?" Lifestone":""}.`,"heal"); return;
   }
   if(s.special==="xfer"){   // Life vital transfer (Self): drain half the source pool → 105%+5%/lvl to the dest, capped 50/lvl (retail curve)
@@ -16016,7 +16037,8 @@ function executeSpell(id){
   }
   if(s.special==="acportal"){   // a recovered retail travel spell: the way opens to its true place
     if(inDungeon||inNetwork){ log("You cannot open that way from here.","warn"); refundCast(); spellCd[id]=0; return; }
-    warpTo(s.dx,s.dz+3,{invuln:2});
+    const land=nearestDryLand(s.dx,s.dz+3);
+    warpTo(land.x,land.z,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`You cast <b>${s.name}</b> — the way opens to <b>${esc(s.dname)}</b>.`,"heal"); return;
   }
   if(s.special==="sending"){   // Portal/Lifestone Sending: dispatch a sighted ALLY to their own anchor (relayed; their client resolves it)
@@ -18505,7 +18527,8 @@ document.getElementById('bigmap').addEventListener('click',e=>{
   const _rw=e.target.clientWidth||520,_rh=e.target.clientHeight||520,wx=(e.offsetX/_rw)*WORLD-HALF,wz=(e.offsetY/_rh)*WORLD-HALF;
   let best=null,bd=Infinity;for(const ls of lifestones){const d=Math.hypot(ls.x-wx,ls.z-wz);if(d<bd){bd=d;best=ls;}}
   if(best&&bd<WORLD*0.05){
-    warpTo(best.x,best.z+4,{invuln:2});
+    const land=nearestDryLand(best.x,best.z+4);
+    warpTo(land.x,land.z,{invuln:2});
     toast(best.name.toUpperCase());log(`You journey to <b>${best.name}</b>.`,"sys");closeMap();
   } else {   // #194: a missed click must not fail silently — say what travels, and point at the nearest
     log(`No Lifestone there — click a <b>◆ Lifestone</b> to journey${best?` (nearest: <b>${best.name}</b>)`:""}.`,"warn");
@@ -26079,7 +26102,8 @@ function exitNetwork(dest){
   clearDrops();clearProjectiles();
   document.getElementById('dvig').style.opacity="0";
   inNetwork=false;hideOverworld(true);
-  arriveAt(dest.x,dest.z+4);player.invuln=2;
+  const land=nearestDryLand(dest.x,dest.z+4);
+  arriveAt(land.x,land.z);player.invuln=2;
   teleportFX(player.x,player.z);
 }
 // turn a walkthrough treasure NAME into real gear — keyword-mapped so the Fiery Shield is a shield,
@@ -27290,7 +27314,8 @@ function applyBuffSelf(sp,fx){
     if(sp.dest==="portal"){ const p=player.tiedPortal||player.lastPortal; if(p) dest={x:p.x,z:p.z,name:p.name}; }
     if(!dest){ const ls=lifestones.find(l=>l.bound)||lifestones[0]; if(ls) dest={x:ls.x,z:ls.z,name:ls.name+" Lifestone"}; }
     if(!dest) return false;
-    warpTo(dest.x,dest.z+3,{invuln:2});
+    const land=nearestDryLand(dest.x,dest.z+3);
+    warpTo(land.x,land.z,{invuln:2});
     if(SFX.portal)SFX.portal(); log(`A sending takes you — you arrive at <b>${esc(dest.name)}</b>.`,"heal");
     return true; }
   if(fx) spellLandFX(sp.school,_slfPlayerPos,2.0,0.75);   // the spell lands on YOU (buff bot / ally): creature → spirits, life → crystals
@@ -27396,7 +27421,7 @@ function doUnstuck(){
       if(clearAt(x,z)) best={x,z}; } }
   if(best){ warpTo(best.x,best.z,{invuln:2}); log("You shrug free and step onto clear ground.","sys"); toast("UNSTUCK"); return; }
   const ls=(typeof lifestones!=="undefined")?(lifestones.find(l=>l.bound)||lifestones[0]):null;
-  if(ls){ warpTo(ls.x,ls.z+2,{invuln:2}); log("No clear footing nearby — you recall to the <b>Lifestone</b>.","sys"); toast("LIFESTONE RECALL"); }
+  if(ls){ const land=nearestDryLand(ls.x,ls.z+2); warpTo(land.x,land.z,{invuln:2}); log("No clear footing nearby — you recall to the <b>Lifestone</b>.","sys"); toast("LIFESTONE RECALL"); }
   else { warpTo(0,0,{invuln:2}); log("You recall to safe ground.","sys"); toast("UNSTUCK"); }
 }
 function handleSlash(text){
@@ -27707,7 +27732,8 @@ function startGame(loadSaved,preset){
       enterAcademyHall();
       log(`You awaken in the great hall of the <b>Exploration Society's Training Academy</b>. A woman in Society colors beckons — <i>"Walk up to me using the 'W' key... I'll talk to you if you press 'E'. I promise."</i>`,"sys");
     } else {
-      arriveAt(home.x,home.z+4);
+      const land=nearestDryLand(home.x,home.z+4);
+      arriveAt(land.x,land.z);
       log(`You step through Asheron's portal into <b>${home.name}</b>.`,"sys");
     }
     log("You have crossed to <b>Dereth</b>, a volcanic isle on the world of <b>Auberean</b> — a land of portals, ancient ruins, and the insectoid Olthoi.","sys");
