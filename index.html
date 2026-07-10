@@ -26931,16 +26931,19 @@ const NET_ATTACK_RANGE=16;   // mirrors ATTACK_RANGE in server/dereth_server.py 
 const NET_BURN_MIN_MS=1000;  // throttle: at most one burn claim per second per mob
 function sharedStatusTick(m,dt){
   if(m.slow>0) m.slow=Math.max(0,m.slow-dt*0.5);   // decay the transient slow so it can't stick forever (still cosmetic online — the server drives movement)
-  if(!(m.burnT>0)) return;
-  m.burnT-=dt; m.burnAcc=(m.burnAcc||0)+(m.burnDps||0)*dt;
-  if(Math.random()<0.16) burst(m.x,rnd(0.5,1.6),m.z,0xff7a2a,1);   // the flames render for shared mobs too now
+  if(m.burnT>0){
+    m.burnT-=dt; m.burnAcc=(m.burnAcc||0)+(m.burnDps||0)*dt;
+    if(Math.random()<0.16) burst(m.x,rnd(0.5,1.6),m.z,0xff7a2a,1);   // the flames render for shared mobs too now
+  }
+  if(!(m.burnAcc>=1)) return;   // nothing accrued, or nothing left over to flush
   // The server drops any claim from beyond ATTACK_RANGE. Rather than fire into the void (silent damage
   // loss — the very bug being fixed) hold the tick. The backlog is capped at ONE SECOND of burn, so
   // stepping back into range lands at most a single second's worth in one claim (what you'd have taken
   // standing still) rather than everything accrued while you kited.
   if(Math.hypot(player.x-m.x,player.z-m.z)>NET_ATTACK_RANGE){ m.burnAcc=Math.min(m.burnAcc,(m.burnDps||0)); return; }
   const t=now();
-  if(m.burnAcc>=1 && t-(m._burnSendT||0)>=NET_BURN_MIN_MS){
+  const expired=!(m.burnT>0);   // #650: burnT already hit 0 — flush the tail now instead of stranding it behind the throttle
+  if(expired || t-(m._burnSendT||0)>=NET_BURN_MIN_MS){
     const dd=Math.floor(m.burnAcc);
     if(!NET.open) return;                       // disconnected: keep accumulating, don't fake feedback (#636)
     m.burnAcc-=dd; m._burnSendT=t;
