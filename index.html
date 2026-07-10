@@ -8396,7 +8396,14 @@ let _guardKill=false;   // #12: set while a castle guard deals damage → its ki
 const KC_VALKYRIES=["Sigrun","Brynhild","Eir","Gondul","Hildr","Kara","Mist","Rota","Skuld","Thrud"];
 const KC_VENDORS=[["provisioner","Valga"],["weaponsmith","Hallbrand"],["armorer","Valgard"],["scrivener","Hallwyn"],
   ["outfitter","Valfen"],["healer","Hallveig"],["jeweler","Valdis"],["collector","Hallrik"]];
-function kcGuests(){ try{ return JSON.parse(localStorage.getItem("kcGuests")||"[]"); }catch(e){ return []; } }
+// Sworn guests Kilmer has granted the freedom of Castle Val Halla by decree. These are admitted on
+// EVERY client (unlike the /grant list, which is otherwise per-browser localStorage), so a named guest
+// can actually enter the castle on their own machine in the shared world.
+const KC_DEFAULT_GUESTS=["David"];
+function kcGuests(){ let saved=[]; try{ saved=JSON.parse(localStorage.getItem("kcGuests")||"[]"); }catch(e){}
+  const out=KC_DEFAULT_GUESTS.slice();
+  for(const g of (Array.isArray(saved)?saved:[])) if(g&&!out.some(x=>(""+x).toLowerCase()===(""+g).toLowerCase())) out.push(g);
+  return out; }
 function kcSaveGuests(a){ try{ localStorage.setItem("kcGuests",JSON.stringify(a)); }catch(e){} }
 function castleAccess(){ const nm=((player&&player.name)||"").trim().toLowerCase(); if(!nm) return false;
   if(nm===KC.lord.toLowerCase()) return true; return kcGuests().some(g=>(g||"").toLowerCase()===nm); }
