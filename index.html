@@ -4807,7 +4807,11 @@ function applyACBody(av,gender){
 let AC_HEADS=null, AC_HEAD_REMAP=null;
 fetch('assets/acheads/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_HEADS=j;
   if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.acBody) acBuildHead(playerAvatar); } }).catch(()=>{});
-fetch('assets/acheads/palettes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_HEAD_REMAP=j; }).catch(()=>{});
+fetch('assets/acheads/palettes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_HEAD_REMAP=j;
+  // #533: heads built before the palettes arrived were textured RAW (the shared ginger hair). Drop any
+  //   uncached-raw placeholders and rebuild the player + live creator so hair recolours per heritage.
+  if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.acBody) acBuildHead(playerAvatar);
+  if(typeof ccVisible!=="undefined"&&ccVisible&&typeof ccRebuild==="function"){ try{ ccRebuild(); }catch(e){} } } }).catch(()=>{});
 const _acHeadTexCache={}, _acHeadTexCb={};
 function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, RGB-remapped through an ordered list of colour palettes
   const rms=(Array.isArray(remapDIDs)?remapDIDs:[remapDIDs]).filter(Boolean);
@@ -4852,7 +4856,12 @@ function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, 
     tex.encoding=THREE.sRGBEncoding;
     tex.flipY=false;   // the head GfxObj UVs use the opposite V convention from the body parts —
     tex.needsUpdate=true;  // without this the eye/nose/mouth strips land on the brow, chin and neck
-    _acHeadTexCache[key]=tex; flush(tex);
+    // #533: if a colour remap was requested but palettes.json hadn't loaded yet, we just served the
+    //   RAW texture — that's the ginger hair every race showed. Don't cache it permanently, so the
+    //   next rebuild (once AC_HEAD_REMAP is in) re-remaps to the real per-heritage hair colour.
+    const remapPending = rms.length>0 && !AC_HEAD_REMAP;
+    if(remapPending) delete _acHeadTexCache[key]; else _acHeadTexCache[key]=tex;
+    flush(tex);
   };
   img.onerror=()=>{ _acHeadTexCache[key]="failed"; _acHeadTexCb[key]=null; };
   img.src='assets/acheads/tex/'+texDID+'.png';
@@ -4992,6 +5001,18 @@ function acBuildHead(av,app){
     // the whole body read as 180° off against the visible face.
     grp.scale.setScalar(s);
     u.neck.add(grp); u.acHead=grp;
+    // #533: NECK SEAM — the retail head base (y≈1.525) and the torso neck rim (y≈1.44–1.55) don't
+    //   quite meet at the collar, so the transparent canvas / untextured underside shows through as
+    //   bright wedges under the chin (female) or a dark crease ring (male). Bridge the join with a
+    //   slim skin-tinted collar seated INSIDE both necks (retail space, same placement math as the
+    //   head) so the gap always reads as skin, never as background.
+    if(u.acNeck&&u.acNeck.parent){ u.acNeck.parent.remove(u.acNeck); u.acNeck=null; }
+    { const skin=(app&&app.skin!=null)?app.skin:0xe8b890;
+      const nm=new THREE.MeshStandardMaterial({color:skin,roughness:0.62,metalness:0.0});
+      const nk=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.078,0.13,14),nm);   // retail units: top r at neck, wider base into the collar
+      const ng=new THREE.Group(); ng.userData.acBody=true; ng.userData.acNeck=true;
+      ng.position.set(0-jl.x, 1.492*s-jl.y, 0-jl.z); ng.scale.setScalar(s); ng.add(nk);
+      u.neck.add(ng); u.acNeck=ng; }
     if(u.head) u.head.visible=false;                 // retire the procedural painted head
     if(u.neck.children.some(c=>c.userData&&c.userData.acHat)) grp.visible=false;   // a worn hat replaces the head (retail part-16 swap) — even when the head arrives after the hat
   });
@@ -27485,6 +27506,7 @@ function ccBuildOptions(){
       else b.textContent=o.n;
       b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
         Object.assign(ccWork,HERITAGE_LOOK[o.k]||{});   // heritage look defaults (face/skin/hair/nose/eyes) — still overridable below
+        ccWork.acHead=null;                             // #533: re-derive the retail head for THIS heritage — else acHead stays frozen on the first race/gender and every race reads as the same ginger default (skin+hair indices never re-picked per heritage)
         ccRenderCreation(); } ccSyncSel(); ccBuildACHead(); ccRebuild(); };
       box.appendChild(b); });
   });
@@ -27551,7 +27573,7 @@ function ccRenderCreation(){
         +`<div class="cl-town">Begins in <b>${h.town}</b></div>`;
     } else lore.style.display="none"; }
   const gd=document.getElementById('ccGender');
-  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k;ccRenderCreation();}; gd.appendChild(b); }); }
+  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null; ccRenderCreation(); if(typeof ccBuildACHead==="function")ccBuildACHead(); if(typeof ccRebuild==="function")ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
   const pf=document.getElementById('ccProf');
   if(pf){ pf.innerHTML=""; TEMPLATES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.name; b.className=ccWork.template===t.k?"sel":""; b.onclick=()=>ccApplyTemplate(t.k); pf.appendChild(b); }); }
   const at=document.getElementById('ccAttrs');
