@@ -26190,8 +26190,11 @@ function buildTinker(){
     craftWrap.innerHTML=RECIPES.map(r=>{
       const trained=skillTier(r.skill)>0, enough=player.materials>=r.cost, ok=trained&&enough, pct=Math.round(craftChance(r.skill)*100);
       const req=!trained?`<span style="color:#e0a0a0">needs ${SKILL_BY_KEY[r.skill].n} trained</span>`:!enough?`<span style="color:#e0a0a0">needs ${r.cost} mat</span>`:`<span style="color:#9be08a">${pct}% success</span>`;
+      // #595: a disabled Craft button still needs to explain WHY on hover — list every unmet requirement, not just the first
+      const missing=[]; if(!trained) missing.push(`${SKILL_BY_KEY[r.skill].n} trained`); if(!enough) missing.push(`${r.cost} materials`);
+      const title=missing.length?`Requires ${missing.join(" + ")}`:`${pct}% success chance`;
       return `<div class="row"><div><span class="lab">${r.ico} ${r.name}</span> <span class="desc">— ${r.blurb} · ${r.cost} mat · ${SKILL_BY_KEY[r.skill].n} · ${req}</span></div>
-        <div class="ctl"><button class="tbtn" data-craft="${r.id}" ${ok?"":"disabled"}>Craft</button></div></div>`;
+        <div class="ctl"><button class="tbtn" data-craft="${r.id}" ${ok?"":"disabled"} title="${esc(title)}">Craft</button></div></div>`;
     }).join("");
     // H12: Level-VIII scroll scribing (Arcane Lore + a Diamond Scarab + materials)
     { const r=l8ScrollReady(), ok=r.arcane&&r.scarab&&r.mats&&r.cand;
@@ -26218,7 +26221,9 @@ function buildTinker(){
   const dyeWrap=document.getElementById('tinkDye');
   if(dyeWrap){
     const canDye=skillTier("cooking")>0&&player.materials>=6;
-    const swatches=DYES.map(d=>`<button class="tbtn" data-dye="${d.hex}" data-dyen="${esc(d.name)}" ${canDye?"":"disabled"} title="${esc(d.name)}"
+    // #595: swatches disable correctly when Cooking/materials are missing, but need a tooltip spelling out WHY
+    const dyeMissing=[]; if(skillTier("cooking")<1) dyeMissing.push("Cooking trained"); if(player.materials<6) dyeMissing.push("6 materials");
+    const swatches=DYES.map(d=>`<button class="tbtn" data-dye="${d.hex}" data-dyen="${esc(d.name)}" ${canDye?"":"disabled"} title="${esc(canDye?d.name:`Requires ${dyeMissing.join(" + ")}`)}"
         style="background:#${d.hex.toString(16).padStart(6,'0')};color:#fff;min-width:34px;text-shadow:0 0 3px #000">▧</button>`).join("");
     const note=skillTier("cooking")<1?`<span style="color:#e0a0a0">needs Cooking trained</span>`:player.materials<6?`<span style="color:#e0a0a0">needs 6 mat</span>`:`<span style="color:#9be08a">${Math.round(clamp(0.55+skillRank("cooking")*0.003+(skillTier("alchemy")>0?0.1:0),0.4,0.97)*100)}% clean dye</span>`;
     dyeWrap.innerHTML=`<div class="row"><div><span class="desc">Current: ${player.dye!=null?`<span style="color:#${(player.dye).toString(16).padStart(6,'0')}">■</span> dyed`:"undyed (heritage colour)"} · ${note}</span></div>
