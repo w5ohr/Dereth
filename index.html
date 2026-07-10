@@ -3270,6 +3270,17 @@ function thatchTex(){if(_thatch)return _thatch;const c=document.createElement('c
 // flagstone floor texture (memoized reuse of the road cobbles)
 let _stoneFloor;
 function stoneFloorTex(){ return _stoneFloor||(_stoneFloor=cobbleTex()); }
+// Red sandstone cobbles for the town plazas. The plaza used to be a flat untextured solid(0x8f8a7e),
+// which the noon sun washed out to a featureless white/cream disc in the middle of every town
+// (most visible at Holtburg). Baked-in tint, not a material colour multiply — see cobbleTex().
+// ONE texture serves all 56 towns (the plaza UVs are world-scaled, so it tiles at any ring size);
+// flag it _acShared so a town/scenery eviction never disposes it out from under the others (#326).
+let _plazaCobble;
+function plazaCobbleTex(){
+  if(!_plazaCobble){ _plazaCobble=cobbleTex({r:1.62,g:0.58,b:0.46});   // stone rgb(114,108,101) -> ~rgb(185,63,46)
+    _plazaCobble._acShared=true; }
+  return _plazaCobble;
+}
 function texMat(texFn,tint){
   const tex=texFn(); tex.encoding=THREE.sRGBEncoding; tex._acShared=true;   // #326: texFn returns a memoized shared canvas texture — never dispose it when one material using it is evicted
   const m=new THREE.MeshStandardMaterial({map:tex,roughness:0.82,metalness:0.03,
@@ -8280,15 +8291,20 @@ function addCity(c){
   }
   // paved plaza — a triangle-fan that CONFORMS to the ground (groundY) so townsfolk standing
   // on it aren't half-buried: a flat disc mismatched the tilted town terrain by up to ~0.5u.
-  { const pr=ring*0.74, PSEG=40, pos=[],uv=[],idx=[];
-    pos.push(0, groundY(c.x,c.z)+0.05, 0); uv.push(0.5,0.5);
+  // UVs are WORLD-scaled (one texture tile per PLAZA_TILE metres) rather than the old 0..1 disc
+  // stretch, so a cobble is the same physical size in a capital as in a hamlet and one shared,
+  // RepeatWrapping texture serves every town.
+  { const pr=ring*0.74, PSEG=40, PLAZA_TILE=4, pos=[],uv=[],idx=[];
+    const uvAt=(lx,lz)=>uv.push(lx/PLAZA_TILE+0.5, lz/PLAZA_TILE+0.5);
+    pos.push(0, groundY(c.x,c.z)+0.05, 0); uvAt(0,0);
     for(let i=0;i<=PSEG;i++){ const a=i/PSEG*6.283, lx=Math.cos(a)*pr, lz=Math.sin(a)*pr;
-      pos.push(lx, groundY(c.x+lx,c.z+lz)+0.05, lz); uv.push((Math.cos(a)+1)/2,(Math.sin(a)+1)/2);
+      pos.push(lx, groundY(c.x+lx,c.z+lz)+0.05, lz); uvAt(lx,lz);
       if(i<PSEG) idx.push(0,i+2,i+1); }   // wind CCW so the plaza faces up
     const pgeo=new THREE.BufferGeometry();
     pgeo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     pgeo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); pgeo.setIndex(idx); pgeo.computeVertexNormals();
-    const plaza=new THREE.Mesh(pgeo,solid(0x8f8a7e)); plaza.position.set(c.x,0,c.z); plaza.receiveShadow=true;
+    const pmat=new THREE.MeshStandardMaterial({map:plazaCobbleTex(),roughness:0.9,metalness:0.02});
+    const plaza=new THREE.Mesh(pgeo,pmat); plaza.position.set(c.x,0,c.z); plaza.receiveShadow=true;
     plaza.userData.noSettle=true; scene.add(plaza); scenery.push(plaza); }
   // central culture feature (offset from the lifestone)
   const fx=c.x+ring*0.34,fz=c.z;
@@ -23538,9 +23554,13 @@ function saveKeymapAsDefault(){
 //  DUNGEONS / DELVES  (instanced: overworld hidden + gated while inside)
 // ============================================================================
 let roadMat=null;
-function cobbleTex(){
+function cobbleTex(tint){
   // Voronoi cobbles: jittered stone cells packed edge-to-edge with thin mortar seams,
   // each stone rounded (darker toward its rim) — reads as fitted stones, not scattered circles.
+  // `tint` scales the per-channel output so a caller can bake a stone colour straight into the
+  // texture (the town plazas want red sandstone). A colour MULTIPLY on the material can't do this:
+  // the cobbles sit at ~45% luminance, so any tint dark enough to read as red comes out near-black.
+  const T=tint||{r:1,g:1,b:1};
   const N=256, cell=16, cols=N/cell;
   const sites=[];
   for(let cy=0;cy<cols;cy++)for(let cx=0;cx<cols;cx++)
@@ -23561,7 +23581,7 @@ function cobbleTex(){
     else { const shade=1-Math.min(1,f1/(cell*0.62))*0.34;          // rounded cobble (darker rim)
       let b=s1.b*shade + Math.sin(px*1.7)*Math.cos(py*1.3)*3;      // + subtle grain
       r=b; gg=b-6; bb=b-13; }
-    const i=(py*N+px)*4; d[i]=r; d[i+1]=gg; d[i+2]=bb; d[i+3]=255;  // Uint8Clamped auto-clamps
+    const i=(py*N+px)*4; d[i]=r*T.r; d[i+1]=gg*T.g; d[i+2]=bb*T.b; d[i+3]=255;  // Uint8Clamped auto-clamps
   }
   g.putImageData(img,0,0);
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
