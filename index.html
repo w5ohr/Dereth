@@ -4929,7 +4929,12 @@ function acBuildHead(av,app){
   app=app||u._headApp||player.appearance;               // each avatar wears its OWN head (heritage + seeded features); player falls back to player.appearance
   const token=(u._acHeadToken=(u._acHeadToken||0)+1);
   acHeadGroup(app, grp=>{
-    if(!grp||u._acHeadToken!==token) return;
+    if(u._acHeadToken!==token) return;                 // superseded by a newer rebuild
+    // No retail head resolved (old/appearance-less save, acheads pack absent, or a fetch hiccup):
+    // keep the procedural painted head visible so the avatar is never left headless (#555). NPCs get
+    // this guarantee via their per-frame head reconciliation; the player avatar had no equivalent, so a
+    // null resolve after an earlier successful build left a clean neck stump.
+    if(!grp){ if(u.head) u.head.visible=true; return; }
     if(u.acHead&&u.acHead.parent){ u.acHead.parent.remove(u.acHead); }
     grp.userData.acBody=true; grp.userData.acHeadGrp=true;
     const s=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
