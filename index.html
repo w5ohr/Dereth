@@ -4763,7 +4763,12 @@ function applyACBody(av,gender){
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
   const hipT=tpl.find(t=>acJointFor(t.p)==='pelvisG');
-  const s=AV_HIP/((hipT&&hipT.p[1])||0.95);
+  // Scale is the ONLY size authority for every AC-bodied human (NPCs and the player). It's derived from
+  // the pelvis joint's height, so a degenerate or partially-loaded template (tiny hipT.p[1]) would scale
+  // the body into a 2–3× giant with its clothing flung off the mis-scaled parts (bare legs) — the #556
+  // barkeeper symptom. The real human templates yield s≈0.98, so clamp to a tight human band: normal
+  // bodies are untouched, but no bad/raced hip value can ever produce a giant (or a dwarf).
+  const s=Math.max(0.8,Math.min(1.25, AV_HIP/((hipT&&hipT.p[1])||0.95) ));
   const drive={};   // joint key -> the lowest-index part that pivots there, for MotionTable playback
   for(const t of tpl){
     const jk=acJointFor(t.p); const J=jk&&joints[jk]; if(!J) continue;
