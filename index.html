@@ -27705,19 +27705,19 @@ function startGame(loadSaved,preset){
     player.academy=player.academy||{};
     if(!player.academy.done){
       enterAcademyHall();
-      log(`You awaken in the great hall of the <b>Exploration Society's Training Academy</b>. A woman in Society colors beckons — <i>"Walk up to me using the 'W' key... I'll talk to you if you press 'E'. I promise."</i>`,"sys");
+      log(`You awaken in the great hall of the <b>Exploration Society's Training Academy</b>. A woman in Society colors beckons — <i>"${TOUCH.on?"Walk up to me with the on-screen joystick, then tap the Interact pill to talk.":"Walk up to me using the 'W' key... I'll talk to you if you press 'E'. I promise."}"</i>`,"sys");   // #652: touch has no WASD/E, so the very first tutorial line gets touch-equivalent instructions
     } else {
       arriveAt(home.x,home.z+4);
       log(`You step through Asheron's portal into <b>${home.name}</b>.`,"sys");
     }
     log("You have crossed to <b>Dereth</b>, a volcanic isle on the world of <b>Auberean</b> — a land of portals, ancient ruins, and the insectoid Olthoi.","sys");
-    log("Bind to the Lifestone (E), and open the map (Tab) to fast-travel between towns.","sys");
+    log(TOUCH.on?"Tap the Interact pill at the Lifestone to bind; open the ☰ menu → Map to fast-travel.":"Bind to the Lifestone (E), and open the map (Tab) to fast-travel between towns.","sys");   // #652: touch equivalents for the bind/map hint
     toast("WELCOME TO DERETH");
     setTimeout(()=>{if(running)log("Tip: bind to the blue Lifestone (E) — death returns you there.","sys");},7000);
-    setTimeout(()=>{if(running)log("Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $.","sys");},14000);
-    setTimeout(()=>{if(running)log("Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);
-    setTimeout(()=>{if(running)log("Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). <b>Shift+Q</b> swaps weapon; Q toggles auto-run.","sys");},28000);
-    setTimeout(()=>{if(running)log("Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);
+    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (☰ menu → Quests). Vendors are green $.":"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $.","sys");},14000);   // #652: touch equivalent for the quest-log hint
+    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: ☰ menu: Character, Packs, Codex/Bestiary, Quests, Map. Match spell elements to a foe's weakness!":"Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);   // #652: touch panel access has no B/C/T/Tab keys
+    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: hold the <b>attack</b> button to charge; the <b>shield</b>/<b>JUMP</b> buttons are on the right cluster.":"Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). <b>Shift+Q</b> swaps weapon; Q toggles auto-run.","sys");},28000);   // #652: touch has no right-click/Shift+Q
+    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: tap the <b>JUMP</b> button to jump (train <b>Jump</b> & travel light to leap higher) — the <b>dodge</b> button dodges. Climb the ramps inside town halls to the upper floor.":"Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);   // #652: touch has no Space/Shift+Space
     setTimeout(()=>{if(running)log("Tip: press <b>N</b> to rearrange your HUD (drag any panel). Your <b>quickbar</b> has 4 pages — the <b>1–4</b> buttons (or <b>[ ]</b>) switch pages; assign spells to any of its 96 slots in the Spellbook (K).","sys");},42000);
   }
   applyHeritageLook(player.heritage);
@@ -28217,6 +28217,11 @@ function applyTouchUI(){
   try{ document.documentElement.style.setProperty('--tcscale',String(settings.touchBtnScale||1)); }catch(e){}
   if(TOUCH.on&&typeof tcArcRender==="function") tcArcRender();
   tcFitHud(); tcRotateCheck(); tcPaintSettings(); tcPaintNotice();
+  // #652: cosmetic siblings of the onboarding hints — chat-bar placeholder & the map's close button
+  // reference keys (Enter/Tab) that don't exist on touch; only touch the placeholder while it's still
+  // showing the default text (not a live chat-line preview, which owns chatBarText once one appears)
+  { const cbt=document.getElementById('chatBarText'); if(cbt&&_chatBarT<=0) cbt.textContent=TOUCH.on?"· tap here to chat ·":"· click here or press Enter to chat ·"; }
+  { const cm=document.getElementById('closeMap'); if(cm) cm.textContent=TOUCH.on?"Close Map":"Close Map  (Tab)"; }
 }
 // quickbar scale + rotate hint track the viewport
 function tcFitHud(){ try{   // tablet quickbar fits between the joystick zone and the spell-arc cluster
