@@ -23338,7 +23338,7 @@ function updatePlugins(dt){
     const t=gaTarget(), ar=document.getElementById('gaArrow'), de=document.getElementById('gaDest'), inf=document.getElementById('gaInfo');
     if(ar&&de&&inf){ if(t){ const dx=t.x-player.x,dz=t.z-player.z,d=Math.hypot(dx,dz);
         ar.style.transform="rotate("+(player.yaw-Math.atan2(-dx,-dz))+"rad)";   // forward = (-sin yaw, -cos yaw)
-        de.textContent=t.label; inf.textContent=Math.round(d)+" m · "+acCoordStr(t.x,t.z);
+        de.textContent=t.label; inf.textContent=Math.round(d)+" m · "+acCoordStr(player.x,player.z);   // #605: live player position, not the (fixed) destination
       } else { de.textContent="No destination"; inf.textContent="—"; ar.style.transform="rotate(0rad)"; } }
   }
   // ── 1 Hz panels ──
