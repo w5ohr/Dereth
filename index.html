@@ -2961,6 +2961,19 @@ function enterAcademyHall(){
   document.getElementById('dvig').style.opacity="0.4";
   buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
   player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #511: face INTO the Great Hall (the greeter/room lie north of the spawn point) — the old default (yaw 0, forward=-z) wedged a fresh recruit nose-first into the south wall behind them
+  // #464 (REOPEN): the interior is built AND attached to the scene synchronously above — but the very
+  // first render after entry still has to lazily compile the shader PROGRAMS for these freshly-added
+  // lit materials (new floor/wall/prop MeshStandardMaterials + a new HemisphereLight change the light
+  // config, forcing a recompile). On some drivers (ANGLE/Metal on Apple silicon) that lazy first-frame
+  // compile — landing mid cold-start streaming burst — silently DROPS the draws for those materials
+  // until a later state change (e.g. an Options round-trip) forces the recompile. The result was the
+  // nondeterministic "beige void": the whole interior is present in the scene graph yet nothing draws
+  // for 10-30s+. (Normal delves dodge this because they build inside the portal-tube's arrive() and get
+  // covered warm-up frames; the Academy reveals synchronously at spawn, so its first frame IS the
+  // reveal.) PR #504's per-Academy fog/light profile was a separate, secondary tweak and did not touch
+  // this. Fix the RACE at its root: compile the scene's programs NOW, synchronously, so the interior is
+  // render-ready before the first frame is ever drawn instead of racing a lazy mid-stall compile.
+  if(typeof renderer!=="undefined"&&renderer&&typeof cam!=="undefined"&&cam){ try{ renderer.compile(scene,cam); }catch(e){} }
   toast("THE TRAINING ACADEMY");
 }
 function exitAcademyHall(){
