@@ -16372,21 +16372,29 @@ function currentPrompt(){
     return "";
   }
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
-  for(const bs of bookStands) if(nr(bs.x,bs.z)<3.2) return "Browse "+bs.name+" (E)";
-  for(const ct of chessTables) if(nr(ct.x,ct.z)<3.0) return "Play chess (E)";
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
-    if(o.role==="crier") return "Ask the Town Crier for directions (E)";
-    if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
-    if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
-    if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
-    if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
-    if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
-    // quest-giver (named NPC or the Emissary): the hint reflects THIS giver's quest state
-    if(o.questId){ const id=o.questId, gn=o.name||"the Emissary";
-      if(isActive(id)) return (questCompleteId(id)?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
-      if(isDone(id)) return "Speak to "+gn+" (E)";
-      return "Accept a quest from "+gn+" (E)"; }
-    return "Speak (E)";}}
+  // #583: mirror interact()'s NPC-vs-furniture priority so the E-prompt matches what E will actually
+  // do — otherwise the prompt reads "Browse …" over a quest-giver the keypress now talks to.
+  {
+    const n=nearestOf(npcs);
+    let bs=null,bsd=Infinity; for(const s of bookStands){ const d=nr(s.x,s.z); if(d<bsd){ bsd=d; bs=s; } }
+    let hasCt=false,ctd=Infinity; for(const t of chessTables){ const d=nr(t.x,t.z); if(d<ctd){ ctd=d; hasCt=true; } }
+    const npcOK=!!(n&&n.d<3.5), bsOK=!!(bs&&bsd<3.2), ctOK=hasCt&&ctd<3.0;
+    if(npcOK&&(!bsOK||n.d<=bsd+0.8)&&(!ctOK||n.d<=ctd+0.8)){ const o=n.o;
+      if(o.role==="crier") return "Ask the Town Crier for directions (E)";
+      if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
+      if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
+      if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
+      if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
+      if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
+      // quest-giver (named NPC or the Emissary): the hint reflects THIS giver's quest state
+      if(o.questId){ const id=o.questId, gn=o.name||"the Emissary";
+        if(isActive(id)) return (questCompleteId(id)?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
+        if(isDone(id)) return "Speak to "+gn+" (E)";
+        return "Accept a quest from "+gn+" (E)"; }
+      return "Speak (E)"; }
+    if(bsOK&&(!ctOK||bsd<=ctd)) return "Browse "+bs.name+" (E)";
+    if(ctOK) return "Play chess (E)";
+  }
   for(const ch of kcChests) if(nr(ch.x,ch.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)) return "Open "+(ch.title||KC_VAULT_TITLE[ch.kind==="storage"?"vault":ch.kind]||"the chest")+" — castle storage (E)";
   for(const hk of kcHooks) if(nr(hk.x,hk.z)<1.9) return (kcCurHookItem(hk)?"Take from the hook":"Use the hook")+" (E)";
   for(const p of kcPortals) if(nr(p.x,p.z)<2.6) return "Gateway to "+p.dest.name+" (E)";
@@ -16520,9 +16528,21 @@ function interact(){
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
     return;
   }
-  for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
-  for(const ct of chessTables) if(Math.hypot(ct.x-player.x,ct.z-player.z)<3.0){ openChessBoard(); return; }
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
+  // #583: resolve ambient furniture (book stands, chess tables) vs an NPC by NEAREST distance with a
+  // modest NPC bias — a book stand's 3.2u / chess table's 3.0u browse radius used to always shadow a
+  // quest-giver standing beside it (Cragstone's Armiger Wendel sits 2.4u from the Scriptorium stand,
+  // so every talk-radius position was inside the stand's radius and he could never be addressed).
+  // Talking is the deliberate, rarer act, so an in-range NPC wins unless the furniture is clearly
+  // closer (>0.8u), which still lets you browse a stand you're standing right at.
+  {
+    const npc=nearestOf(npcs);
+    let bs=null,bsd=Infinity; for(const s of bookStands){ const d=Math.hypot(s.x-player.x,s.z-player.z); if(d<bsd){ bsd=d; bs=s; } }
+    let hasCt=false,ctd=Infinity; for(const t of chessTables){ const d=Math.hypot(t.x-player.x,t.z-player.z); if(d<ctd){ ctd=d; hasCt=true; } }
+    const npcOK=!!(npc&&npc.d<3.5), bsOK=!!(bs&&bsd<3.2), ctOK=hasCt&&ctd<3.0;
+    if(npcOK&&(!bsOK||npc.d<=bsd+0.8)&&(!ctOK||npc.d<=ctd+0.8)){ talkToNPC(npc.o); return; }
+    if(bsOK&&(!ctOK||bsd<=ctd)){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
+    if(ctOK){ openChessBoard(); return; }
+  }
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
   for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)){ openKcChest(ch); return; } }
