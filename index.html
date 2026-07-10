@@ -7329,7 +7329,13 @@ function tbIndexReq(){ if(_tbIndex!==null) return _tbIndex; if(!_tbIndexReq){ _t
       _tbIndex=up; }).catch(()=>{_tbIndex={};}); }
   return null; }
 const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
-function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
+// #554: these town-building textures are a SESSION-SHARED cache — the SAME texture object backs every
+// building in every town (and the open-world structs), reused each time a town streams back in. Per-build
+// materials ARE disposed on tbDropTown/wsDropBlock (correct), but _dispMat also frees each material's .map;
+// without _acShared that disposed the shared texture out from under still-visible neighbours and left the
+// reused copy GPU-incomplete — which ANGLE/Metal samples as flat WHITE (the featureless white town). The
+// _acShared flag makes _dispTex skip it, exactly as it already does for shared canvas/normal/archetype (#326).
+function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
 function tbModelReq(did){ did=(''+did).toUpperCase();
