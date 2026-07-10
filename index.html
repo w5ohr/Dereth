@@ -174,6 +174,12 @@
      Everything is gated behind body.touchui so the desktop interface is untouched. ══ */
   #touchUI{position:absolute;inset:0;pointer-events:none;z-index:24;display:none;font-family:inherit}
   body.touchui #touchUI{display:block}
+  /* #517: #touchUI's z-index(24) sits ABOVE #hud(10), so full-screen panels that live inside #hud
+     (Quest Log, Housing — z-index:25, but only within #hud's own stacking context) get drawn UNDER
+     the touch buttons/joystick and the buttons keep swallowing taps meant for the panel. Panels that
+     live outside #hud (sheet/spellbook/etc., z-index:50) already paint above #touchUI, but hide the
+     whole layer for ANY BIG_MODALS panel so the behavior doesn't depend on each panel's DOM position. */
+  body.touchui.tcModalOpen #touchUI{display:none}
   /* dynamic joystick: touch anywhere in the left zone and the stick appears under your thumb */
   #tcZone{position:absolute;left:0;top:14%;bottom:0;width:46%;pointer-events:auto;touch-action:none;z-index:1}
   #tcJoy{position:absolute;left:110px;top:70%;width:calc(128px*var(--tcscale,1));height:calc(128px*var(--tcscale,1));
@@ -208,8 +214,10 @@
   #tcJmp{width:56px;height:56px;right:16px;bottom:124px}
   #tcDdg{width:50px;height:50px;right:86px;bottom:86px;font-size:19px}
   #tcBlk{width:56px;height:56px;right:124px;bottom:16px}
-  #tcHt{width:46px;height:46px;right:186px;bottom:-6px;font-size:11px;border-radius:12px;font-weight:bold}
-  #tcPg{width:40px;height:40px;right:196px;bottom:52px;font-size:14px;border-radius:11px;font-weight:bold;opacity:.9}
+  /* #469: attack-height + spell-page selectors sit in a row BELOW the spell arc so they no longer
+     share a hit area with the arc's first slots (🔥 fire / ❄ frost) or the quickbar "1" */
+  #tcHt{width:46px;height:46px;right:186px;bottom:-28px;font-size:11px;border-radius:12px;font-weight:bold}
+  #tcPg{width:40px;height:40px;right:144px;bottom:-30px;font-size:14px;border-radius:11px;font-weight:bold;opacity:.9}
   /* outer spell arc: 5 slots rendered from the current quickbar page, radial cooldown sweeps */
   .tcSlot{position:absolute;pointer-events:auto;touch-action:none;width:46px;height:46px;border-radius:12px;
     background:radial-gradient(circle at 50% 35%,#241a0c,#0c0905);border:2px solid rgba(216,177,74,.5);
@@ -295,6 +303,28 @@
     body.touchui #vitals{transform:scale(.85);transform-origin:top left}
     body.touchui .card{max-width:96vw!important;max-height:92dvh!important;overflow:auto!important}
     body.touchui #spellbar{display:none}   /* the spell arc + pages replaces it on phones */
+  }
+  /* ══ #469: touch-control collision fixes (scoped to touch mode; desktop layout unchanged — that's #467) ══ */
+  /* the first-run onboarding overlay dims the desktop HUD so its bright panels can't bleed through the
+     tips and leave them half-unreadable */
+  #tcBoard{background:rgba(3,2,1,.8)}
+  body.tcOnboard #hud{opacity:.1;pointer-events:none;transition:opacity .2s}
+  @media (orientation:portrait) and (max-width:560px){
+    /* keep the movement joystick's touch zone clear of the chat: dock the read-only log to the
+       top-left (under the vitals) and start the joystick zone below it */
+    body.touchui #log{top:calc(140px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+      left:8px;width:min(56vw,214px);max-height:22vh;overflow:hidden}
+    body.touchui #tcZone{top:40%}
+  }
+  @media (orientation:landscape) and (max-height:500px){
+    /* landscape: log docked top-left below the vitals, joystick zone starts below it */
+    body.touchui #log{top:calc(134px + env(safe-area-inset-top,0px))!important;bottom:auto!important;
+      left:8px;width:min(34vw,280px);max-height:62px;overflow:hidden}
+    body.touchui #tcZone{top:62%}
+    /* compact the top-right minimap and tuck the action cluster into the corner so the spell arc
+       and JUMP button clear the minimap and its +/−/⚙ toolbar */
+    body.touchui #minimap,body.touchui #minimap #mm{width:98px;height:98px}
+    body.touchui #tcBtns{transform:scale(calc(var(--tcscale,1) * .82))}
   }
   /* ══ #467: DESKTOP HUD on phone-sized viewports ══
      Every HUD panel uses an absolute desktop-tuned position, so on a narrow phone
@@ -570,7 +600,7 @@
   <div class="tinkPane" data-pane="salvage" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="color:var(--gold);font-weight:bold;font-size:13px">Salvaged Materials <span style="color:var(--dim);font-weight:normal;font-size:11px">— salvage loot (from the Satchel) into these materials, then tinker your gear</span></div>
-      <button id="salvageAllBtn" class="tbtn" title="Salvage every weapon, armor piece &amp; trinket in your satchel (upgrades over your worn gear are kept)">Salvage All</button>
+      <button id="salvageAllBtn" class="tbtn" title="Salvage every weapon, armor piece &amp; trinket in your satchel (upgrades over your worn gear — and gear for an empty slot — are kept)">Salvage All</button>
     </div>
     <div id="tinkBags" style="margin-bottom:12px"></div>
   </div>
@@ -2930,7 +2960,7 @@ function enterAcademyHall(){
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.4";
   buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
-  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.invuln=3;
+  player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #511: face INTO the Great Hall (the greeter/room lie north of the spawn point) — the old default (yaw 0, forward=-z) wedged a fresh recruit nose-first into the south wall behind them
   // #464 (REOPEN): the interior is built AND attached to the scene synchronously above — but the very
   // first render after entry still has to lazily compile the shader PROGRAMS for these freshly-added
   // lit materials (new floor/wall/prop MeshStandardMaterials + a new HemisphereLight change the light
@@ -3379,7 +3409,7 @@ function updateWeather(dt){
   cloudCover+=clamp(coverTgt-cloudCover,-dt*0.3,dt*0.3);
   wetness+=clamp((raining?1:0)-wetness,-dt*0.4,dt*0.4);
   snowAmt+=clamp((weather==="snow"?1:0)-snowAmt,-dt*0.35,dt*0.35);
-  const targetFar=weather==="fog"?55:storming?110:weather==="rain"?150:weather==="snow"?175:weather==="cloudy"?235:350;
+  const targetFar=weather==="fog"?55:storming?160:weather==="rain"?150:weather==="snow"?175:weather==="cloudy"?235:350;   // #569: storms cut visibility but must stay LEGIBLE — the old 110u far-plane (closer than rain's 150) fogged out the whole town square. 160u keeps the immediate town/NPCs readable while the dark storm-grey fog + rain VFX still read as dramatic.
   fogFar+=(targetFar-fogFar)*Math.min(1,dt*0.5);scene.fog.far=fogFar;
   const precip=Math.max(wetness,snowAmt), snowing=snowAmt>wetness+0.01;
   if(rainSegs){
@@ -3476,8 +3506,12 @@ function updateDayNight(dt){
     amb.intensity=(amb.intensity+S.ambBright*0.5)/2;
     scene.fog.far=clamp(60+S.fogFar*(WSCALE/3),140,300);   // retail metres at true 1:1 (was /3 for the old 1/3 scale); capped at AC's ~300m draw
   }
-  const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm
-  if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar(0.42+daylight*0.72); scene.fog.color.lerp(_tmp,_oc*0.6); }
+  const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm (1.0 only under a full storm)
+  // #569: overcast/storm drives the fog toward a dark, saturated storm-grey. The blend has to be
+  //   strong at full storm (_oc→1) so the grey actually WINS — otherwise the retail-sky fog above
+  //   and the (warm/pale) seasonal fog tint below re-brighten it into a flat salmon/beige wash that
+  //   erases the whole viewport. Darken with _oc so a storm reads as a gloom, not a bright field.
+  if(_oc>0){ _tmp.copy(_stormGrey).multiplyScalar((0.42+daylight*0.72)*(1-_oc*0.35)); scene.fog.color.lerp(_tmp,_oc*0.85); }
   if(skyU){
     skyU.uZen.value.copy(_zenNight).lerp(_zenDay,daylight);
     skyU.uHor.value.copy(_horNight).lerp(_horDay,daylight).lerp(_cWarm,warm*0.75);
@@ -3492,7 +3526,7 @@ function updateDayNight(dt){
   if(groundMat && !inDungeon && !inNetwork && typeof currentSeason==="function"){
     const S=currentSeason(), k=Math.min(1,dt*0.5);
     seasonCur.ground.lerp(_tmp.setHex(S.ground),k); groundMat.color.copy(seasonCur.ground);
-    seasonCur.fog.lerp(_tmp.setHex(S.fog),k);       scene.fog.color.lerp(seasonCur.fog,0.30);
+    seasonCur.fog.lerp(_tmp.setHex(S.fog),k);       scene.fog.color.lerp(seasonCur.fog,0.30*(1-_oc));   // #569: don't re-tint the fog toward the (warm/pale) seasonal colour under overcast/storm — that pulled the dark storm-grey back toward Harvestgain's salmon-tan (0xdcc492) and washed the tempest out to a flat pink field. Season fog only colours CLEAR/light weather now.
     seasonCur.sky.lerp(_tmp.setHex(S.sky),k);       if(skyU)skyU.uHor.value.lerp(seasonCur.sky,0.20);
   }
   if(starMat) starMat.opacity=clamp(1-daylight*1.6,0,1)*(0.85+0.15*Math.sin(now()/350)); // twinkle
@@ -3564,7 +3598,12 @@ function updateInstanceLight(){
       // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: warm stone-toned
       // fog that reaches clear across the room, and enough fill light that its surfaces read at once.
       hemi.intensity=0.5; amb.intensity=0.3; sun.intensity=0;
-      scene.fog.near=14; scene.fog.far=130; scene.fog.color.setHex(0x9a9078);
+      // #534: the fog color used to sit almost on top of the wall/floor albedo (0x9a9078 vs stone
+      // 0x8d8578 / floor 0x9a927e) — visually indistinguishable, so the whole hall behind the first
+      // few metres "melted" into one flat beige field with no readable edges. Use a darker, receding
+      // shadow tone (same warm-stone family, roughly half the luminance) so lit surfaces stay legible
+      // against it instead of blending in, and push far out a bit further across the whole complex.
+      scene.fog.near=14; scene.fog.far=170; scene.fog.color.setHex(0x4a4438);
     } else {
       hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;      // kill daylight inside
       scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
@@ -4741,7 +4780,12 @@ function applyACBody(av,gender){
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
   const hipT=tpl.find(t=>acJointFor(t.p)==='pelvisG');
-  const s=AV_HIP/((hipT&&hipT.p[1])||0.95);
+  // Scale is the ONLY size authority for every AC-bodied human (NPCs and the player). It's derived from
+  // the pelvis joint's height, so a degenerate or partially-loaded template (tiny hipT.p[1]) would scale
+  // the body into a 2–3× giant with its clothing flung off the mis-scaled parts (bare legs) — the #556
+  // barkeeper symptom. The real human templates yield s≈0.98, so clamp to a tight human band: normal
+  // bodies are untouched, but no bad/raced hip value can ever produce a giant (or a dwarf).
+  const s=Math.max(0.8,Math.min(1.25, AV_HIP/((hipT&&hipT.p[1])||0.95) ));
   const drive={};   // joint key -> the lowest-index part that pivots there, for MotionTable playback
   for(const t of tpl){
     const jk=acJointFor(t.p); const J=jk&&joints[jk]; if(!J) continue;
@@ -4785,7 +4829,11 @@ function applyACBody(av,gender){
 let AC_HEADS=null, AC_HEAD_REMAP=null;
 fetch('assets/acheads/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_HEADS=j;
   if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.acBody) acBuildHead(playerAvatar); } }).catch(()=>{});
-fetch('assets/acheads/palettes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_HEAD_REMAP=j; }).catch(()=>{});
+fetch('assets/acheads/palettes.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_HEAD_REMAP=j;
+  // #533: heads built before the palettes arrived were textured RAW (the shared ginger hair). Drop any
+  //   uncached-raw placeholders and rebuild the player + live creator so hair recolours per heritage.
+  if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.acBody) acBuildHead(playerAvatar);
+  if(typeof ccVisible!=="undefined"&&ccVisible&&typeof ccRebuild==="function"){ try{ ccRebuild(); }catch(e){} } } }).catch(()=>{});
 const _acHeadTexCache={}, _acHeadTexCb={};
 function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, RGB-remapped through an ordered list of colour palettes
   const rms=(Array.isArray(remapDIDs)?remapDIDs:[remapDIDs]).filter(Boolean);
@@ -4830,7 +4878,12 @@ function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, 
     tex.encoding=THREE.sRGBEncoding;
     tex.flipY=false;   // the head GfxObj UVs use the opposite V convention from the body parts —
     tex.needsUpdate=true;  // without this the eye/nose/mouth strips land on the brow, chin and neck
-    _acHeadTexCache[key]=tex; flush(tex);
+    // #533: if a colour remap was requested but palettes.json hadn't loaded yet, we just served the
+    //   RAW texture — that's the ginger hair every race showed. Don't cache it permanently, so the
+    //   next rebuild (once AC_HEAD_REMAP is in) re-remaps to the real per-heritage hair colour.
+    const remapPending = rms.length>0 && !AC_HEAD_REMAP;
+    if(remapPending) delete _acHeadTexCache[key]; else _acHeadTexCache[key]=tex;
+    flush(tex);
   };
   img.onerror=()=>{ _acHeadTexCache[key]="failed"; _acHeadTexCb[key]=null; };
   img.src='assets/acheads/tex/'+texDID+'.png';
@@ -4843,6 +4896,49 @@ function acHeadOpts(app){          // resolve the appearance's head choices agai
   const HB=AC_HEADS.heritages[her]||AC_HEADS.heritages.aluvian; if(!HB) return null;
   const H=HB[gen]||HB.male; if(!H||!H.hairStyles||!H.hairStyles.length) return null;
   return H;
+}
+// #561: map the friendly basic Hair Style row (Short/Long/Ponytail/Topknot/Mohawk/Braids/Bald) to a
+// real retail head-swap index. The old proportional prop("hair",…) scattered the 7 basics blindly
+// across the ~51-entry retail list, landing "Short" on a BALD head-swap for every male and "Bald" on a
+// HAIRED one for every female — so the basic row neither removed hair (Bald kept the hair) nor varied
+// it (many buttons collapsed to bald). Instead: the six hairy buttons pick six DISTINCT non-bald retail
+// styles (evenly spread across the pack's non-bald swaps), and "Bald" picks an actually-bald swap. The
+// per-mesh orientation of specific retail styles is a separate concern (see #560).
+function basicHairStyleIdx(H, hairKey){
+  const styles=(H&&H.hairStyles)||[]; if(!styles.length) return 0;
+  const bald=[], hair=[];
+  for(let i=0;i<styles.length;i++){ (styles[i]&&styles[i].bald?bald:hair).push(i); }
+  if(hairKey==="bald") return bald.length?bald[0]:0;
+  const hairy=(typeof APPEARANCE!=="undefined"&&APPEARANCE.hair||[]).filter(o=>o.k!=="bald");   // the six hairstyle buttons
+  let pos=hairy.findIndex(o=>o.k===hairKey); if(pos<0) pos=0;
+  if(!hair.length) return bald.length?bald[0]:0;               // pack has only bald swaps — nothing haired to show
+  return hair[Math.min(hair.length-1, Math.floor(pos/Math.max(1,hairy.length)*hair.length))];
+}
+// representative luminance of a head skin palette (mean of its remapped output colours).
+const _acPalLum={};
+function acPalMeanLum(did){
+  if(did in _acPalLum) return _acPalLum[did];
+  const e=AC_HEAD_REMAP&&AC_HEAD_REMAP[did]; if(!e) return null;   // palettes.json not loaded yet — don't cache
+  let s=0,n=0; for(const k in e){ const v=parseInt(e[k],16); s+=0.299*((v>>16)&255)+0.587*((v>>8)&255)+0.114*(v&255); n++; }
+  return _acPalLum[did]=(n?s/n:null);
+}
+// Pick the heritage skin palette whose TONE matches the creator's body skin (app.skin hex).
+// APPEARANCE.skin runs light→dark (index 0 = Fair) but every heritage's skinTones palette runs
+// dark→light (index 0 = darkest), so the old proportional same-index map INVERTED the tone —
+// the palest race (Viamontian, Fair) got the darkest head palette (near-black). See #531.
+// Match by luminance against the body hex so head & body agree and scale together (pale→pale,
+// dark→dark, never inverted); fall back to an ORDER-CORRECTED proportional index before the
+// palette data has loaded.
+function acSkinToneIndex(skinTones, skinHex){
+  const len=skinTones&&skinTones.length; if(!len) return 0;
+  if(typeof skinHex==="number"){
+    const bl=0.299*((skinHex>>16)&255)+0.587*((skinHex>>8)&255)+0.114*(skinHex&255);
+    let best=-1,bd=Infinity;
+    for(let i=0;i<len;i++){ const ml=acPalMeanLum(skinTones[i]); if(ml==null) continue; const d=Math.abs(ml-bl); if(d<bd){ bd=d; best=i; } }
+    if(best>=0) return best;
+  }
+  const a=APPEARANCE.skin; let si=a.findIndex(o=>o.k===skinHex); if(si<0) si=0;   // fallback: invert light↔dark ordering
+  return len-1-Math.min(len-1,Math.floor(si/a.length*len));
 }
 // resolve a character's AC head choices: explicit app.acHead wins; otherwise DERIVE from the
 // existing creator appearance (skin/hair/eye colours map proportionally so the creator's choices
@@ -4861,9 +4957,9 @@ function acHeadChoices(app){
   const rnd=n=>{ sd=(Math.imul(sd,1103515245)+12345)>>>0; return n>0?sd%n:0; };
   const prop=(cat,key,len)=>{ const a=APPEARANCE[cat]; if(!a||!len) return 0; let i=a.findIndex(o=>o.k===key); if(i<0)i=0; return Math.min(len-1,Math.floor(i/a.length*len)); };
   return {
-    style: prop("hair", app.hair, H.hairStyles.length),
+    style: basicHairStyleIdx(H, app.hair),
     hairColor: prop("hairColor", app.hairColor, H.hairPals.length),
-    skinTone: prop("skin", app.skin, H.skinTones.length),
+    skinTone: acSkinToneIndex(H.skinTones, app.skin),
     eyeColor: prop("eye", app.eye, H.eyeColors.length),
     eyes: rnd(H.eyes.length), nose: rnd(H.noses.length), mouth: rnd(H.mouths.length),
   };
@@ -4882,6 +4978,16 @@ function acHeadGroup(app, cb){
   fetch('assets/acheads/'+gfx+'.json').then(r=>r&&r.ok?r.json():null).then(mesh=>{
     if(!mesh){ cb&&cb(null); return; }
     const grp=new THREE.Group();
+    // #532: FACE SHAPE now morphs the retail head (it previously did nothing — every shape gave a
+    // pixel-identical head). The six shapes carry per-axis sx/sy/sz (authored for the procedural
+    // skull); normalise to the Oval baseline so Oval == the head as shipped and the other five read
+    // as distinct-but-natural deviations — Long taller/narrower, Round wider/shorter, Square wider
+    // jaw, Angular narrower/flatter, Heart wider brow/narrower chin. Applied in head-local space
+    // (x=width, y=height, z=depth) via an inner group so it composes cleanly with the outer
+    // placement scale set by acBuildHead AND rides the creator bust automatically.
+    const morph=new THREE.Group(), _fs=_find("face",app&&app.face), _ov=_find("face","oval");
+    if(_fs&&_ov) morph.scale.set(_fs.sx/_ov.sx,_fs.sy/_ov.sy,_fs.sz/_ov.sz);
+    grp.add(morph);
     for(const g of mesh.groups){
       const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
@@ -4889,7 +4995,7 @@ function acHeadGroup(app, cb){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       const mat=new THREE.MeshStandardMaterial({color:0xd8b48c,roughness:0.62,metalness:0.02});
-      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm);
+      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; morph.add(mm);
       let texDID=g.otex, remapDIDs=[skinDID], slot="face";                                        // face/skin
       if(g.otex==='05000098'){ texDID=(style&&style.hairTex)||g.otex; remapDIDs=[skinDID,hairDID]; slot="hair"; }        // hair (over its scalp skin)
       else if(g.otex==='0500024C'){ texDID=(eye&&(bald?eye.texBald:eye.tex))||g.otex; remapDIDs=[skinDID,eyeDID]; slot="eyes"; }  // eyes (iris over the strip's skin)
@@ -4911,16 +5017,45 @@ function acBuildHead(av,app){
   const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return;
   app=app||u._headApp||player.appearance;               // each avatar wears its OWN head (heritage + seeded features); player falls back to player.appearance
   const token=(u._acHeadToken=(u._acHeadToken||0)+1);
+  // #530: a real retail head exists for every playable heritage/gender, but the mesh+textures load
+  // async (~0.2–1.5 s cold). Until now the procedural placeholder head — whose flat skin-hex tone
+  // doesn't match the AC body — stayed visible during that window, so the creator preview (and first
+  // viewer of any avatar) rendered a pale, feature-painted "egg". Any capture taken mid-load caught it
+  // (the two Oval DEFAULTS most reliably, being each race/gender's first cold view). Hide the placeholder
+  // the instant we know a retail head is coming; only reveal it again on a genuine miss (truly-missing asset).
+  const acAvail=(typeof acHeadOpts==="function")&&!!acHeadOpts(app);
+  if(acAvail&&u.head&&!u.acHead) u.head.visible=false;
   acHeadGroup(app, grp=>{
-    if(!grp||u._acHeadToken!==token) return;
+    if(u._acHeadToken!==token) return;                 // superseded by a newer build — don't touch its state
+    // No retail head resolved (old/appearance-less save, acheads pack absent, or a fetch hiccup): fall
+    // back to the procedural painted head so the avatar is never left headless (#555) — unless a retail
+    // head from an earlier successful build is already attached, in which case a later transient miss
+    // must not flash the placeholder back in over it (u.acHead is that earlier group).
+    if(!grp){ if(u.head) u.head.visible=!u.acHead; return; }
     if(u.acHead&&u.acHead.parent){ u.acHead.parent.remove(u.acHead); }
     grp.userData.acBody=true; grp.userData.acHeadGrp=true;
     const s=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
     grp.position.set(P.p[0]*s-jl.x, P.p[1]*s-jl.y, P.p[2]*s-jl.z);
     grp.quaternion.set(P.q[0],P.q[1],P.q[2],P.q[3]);
-    grp.rotateY(Math.PI);   // the acheads mesh fronts opposite the AC body parts — turn the face to the body forward
+    // NO extra yaw: head GfxObjs front +z in mesh-local space exactly like every body part, and part 16's
+    // own placement quat (a 180° yaw, same as the rest of the setup) already turns the face to the body's
+    // forward (-z). The old rotateY(PI) here double-flipped the head — face/eye/nose/mouth strips rendered
+    // on the BACK of the skull with the hair over the face, so ears sat mirrored ("moved opposite") and
+    // the whole body read as 180° off against the visible face.
     grp.scale.setScalar(s);
     u.neck.add(grp); u.acHead=grp;
+    // #533: NECK SEAM — the retail head base (y≈1.525) and the torso neck rim (y≈1.44–1.55) don't
+    //   quite meet at the collar, so the transparent canvas / untextured underside shows through as
+    //   bright wedges under the chin (female) or a dark crease ring (male). Bridge the join with a
+    //   slim skin-tinted collar seated INSIDE both necks (retail space, same placement math as the
+    //   head) so the gap always reads as skin, never as background.
+    if(u.acNeck&&u.acNeck.parent){ u.acNeck.parent.remove(u.acNeck); u.acNeck=null; }
+    { const skin=(app&&app.skin!=null)?app.skin:0xe8b890;
+      const nm=new THREE.MeshStandardMaterial({color:skin,roughness:0.62,metalness:0.0});
+      const nk=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.078,0.13,14),nm);   // retail units: top r at neck, wider base into the collar
+      const ng=new THREE.Group(); ng.userData.acBody=true; ng.userData.acNeck=true;
+      ng.position.set(0-jl.x, 1.492*s-jl.y, 0-jl.z); ng.scale.setScalar(s); ng.add(nk);
+      u.neck.add(ng); u.acNeck=ng; }
     if(u.head) u.head.visible=false;                 // retire the procedural painted head
     if(u.neck.children.some(c=>c.userData&&c.userData.acHat)) grp.visible=false;   // a worn hat replaces the head (retail part-16 swap) — even when the head arrives after the hat
   });
@@ -6534,6 +6669,11 @@ function textSprite(txt,color){
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,fog:false}));
   sp.scale.set(2.2,1.1,1);return sp;
 }
+// A textSprite is shared with combat floaters (which must x-ray over everything), so its material is
+// depthTest:false + fog:false. An OVER-HEAD role marker parented to an NPC must instead behave like a
+// world object: depth-tested so a roof/wall occludes it (an owner behind a building no longer shows only
+// a see-through glyph floating in the skybox — #557) and fogged so it fades with distance like its owner.
+function markOverhead(sp){ const m=sp.material; if(m){ m.depthTest=true; m.fog=true; m.needsUpdate=true; } return sp; }
 
 // ---------- world build ----------
 function buildWorld(){
@@ -7237,7 +7377,13 @@ function tbIndexReq(){ if(_tbIndex!==null) return _tbIndex; if(!_tbIndexReq){ _t
       _tbIndex=up; }).catch(()=>{_tbIndex={};}); }
   return null; }
 const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
-function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
+// #554: these town-building textures are a SESSION-SHARED cache — the SAME texture object backs every
+// building in every town (and the open-world structs), reused each time a town streams back in. Per-build
+// materials ARE disposed on tbDropTown/wsDropBlock (correct), but _dispMat also frees each material's .map;
+// without _acShared that disposed the shared texture out from under still-visible neighbours and left the
+// reused copy GPU-incomplete — which ANGLE/Metal samples as flat WHITE (the featureless white town). The
+// _acShared flag makes _dispTex skip it, exactly as it already does for shared canvas/normal/archetype (#326).
+function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
 function tbModelReq(did){ did=(''+did).toUpperCase();
@@ -7682,7 +7828,13 @@ function tbStream(dt){
     if(Math.hypot(c.x-px,c.z-pz)>TB_BUILD_R) continue;
     const objs=AC_TOWNS[c.name]; if(!objs){ _tbBuilt[c.name]={c,g:null,obst:[]}; seatVendorsInBuildings(); continue; }  // no real data → procedural fallback seating
     let ready=true;                                                 // all this town's building + scenery meshes loaded?
-    for(const o of objs){ if(!TB_KINDS[o.kind]) continue; if(!tbModelReq(o.did)) ready=false; }
+    // A DID that isn't in the actownmodels bake caches _tbModels[did]=false (tbModelReq returns null
+    // forever). The old gate couldn't tell "still loading" from "permanently missing", so a single
+    // un-baked prop kept the WHOLE town from ever building — buildings, colliders and textures all
+    // absent, leaving only the pale procedural plaza with live collision (#554). Treat a known-missing
+    // DID (cached false) as skippable; tbPlaceStructure/tbRingBuilding already no-op on it.
+    for(const o of objs){ if(!TB_KINDS[o.kind]) continue;
+      if(!tbModelReq(o.did) && _tbModels[(''+o.did).toUpperCase()]!==false) ready=false; }
     if(_tbIndex===null){ tbIndexReq(); ready=false; }
     if(ready) _tbBuilt[c.name]=tbBuildTown(c,objs);
   }
@@ -7716,7 +7868,7 @@ function wsStream(dt){
   for(const lb in _wsBuilt){ const e=_wsBuilt[lb]; if(Math.hypot(e.cx-px,e.cz-pz)>WS_DROP_R) wsDropBlock(lb); }
   for(const lb in AC_WORLD){ if(_wsBuilt[lb]) continue;
     const rec=AC_WORLD[lb]; if(Math.hypot(rec.cx-px,rec.cz-pz)>WS_BUILD_R) continue;
-    let ready=true; for(const b of rec.b){ if(!tbModelReq(b[0])) ready=false; }
+    let ready=true; for(const b of rec.b){ if(!tbModelReq(b[0]) && _tbModels[(''+b[0]).toUpperCase()]!==false) ready=false; }   // #554: skip DIDs absent from the bake (cached false) instead of blocking the landblock forever
     if(_tbIndex===null){ tbIndexReq(); ready=false; }
     if(ready) _wsBuilt[lb]=wsBuildBlock(lb,rec);
   }
@@ -9972,7 +10124,7 @@ function spawnSomewhere(){
   // #349: streamMonsters already keeps ~MOB_TARGET mobs around the player. Don't build a throwaway
   // creature mesh when we're already at target, and never spawn one beyond the despawn radius (it
   // would be disposed on the very next streamMonsters tick — pure per-kill allocation churn).
-  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
+  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared&&!m.event) live++;   // #570: event mobs cluster at the far town — don't let them count against the near-player ambient target
   if(live>=MOB_TARGET) return;
   let x,z,d,t=0;
   do{const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(75*WSCALE,470*WSCALE);   // spawn ring at true 1:1 spacing around hubs
@@ -10316,7 +10468,16 @@ function startPortalTransit(arrive,opts){
   if(typeof cam==="undefined"||!cam||typeof scene==="undefined"||!scene){ try{arrive&&arrive();}catch(e){} return; }   // renderer not up yet (pre-initThree): arrive without the overlay
   scene.add(cam);                                                    // camera-attached overlay (idempotent)
   const mat=new THREE.MeshBasicMaterial({map:portalTubeTex(),side:THREE.BackSide,transparent:true,opacity:0,fog:false,depthTest:false,depthWrite:false});
-  const tube=new THREE.Mesh(new THREE.CylinderGeometry(5,5,90,24,1,true),mat);
+  // The tunnel is a long closed SPINDLE: both ends converge to a sub-pixel tip 180 units out, so
+  // the streaks vanish into a single point ahead AND behind — nothing outside portal space is ever
+  // visible from any angle (the old constant-radius open cylinder framed the world through its
+  // exit). The camera sits at the widest waist (r≈5.5), and the whole thing is camera-attached.
+  const TUBE_LEN=360, TUBE_R=5.5, _pts=[];
+  for(let i=0;i<=16;i++){ const y=-TUBE_LEN/2+TUBE_LEN*i/16;
+    const f=Math.max(0,1-Math.pow(Math.abs(y)/(TUBE_LEN/2),2));        // rounded taper to each tip
+    _pts.push(new THREE.Vector2(Math.max(0.005,TUBE_R*Math.pow(f,0.6)),y)); }
+  const tubeGeo=new THREE.LatheGeometry(_pts,24);
+  const tube=new THREE.Mesh(tubeGeo,mat);
   tube.rotation.x=Math.PI/2; tube.renderOrder=999; cam.add(tube);
   portalTransit={tube,mat,t:0,hold:0,outT:0,phase:"in",arrive:arrive||null,fired:false,pinned:false,ax:0,az:0,
     ready:(typeof opts.ready==="function")?opts.ready:null,
@@ -10331,7 +10492,7 @@ function updatePortalTransit(dt){
   p.t+=dt;
   const slow=(typeof settings!=="undefined"&&settings.reduceMotion)?0.4:1;   // #244: gentler swirl under Reduce Motion (still gated on load)
   const tex=p.mat.map; if(tex){ tex.offset.y-=dt*1.6*slow; tex.offset.x+=dt*0.12*slow; }  // streaks rush past, tunnel twists
-  p.tube.rotation.z+=dt*0.9*slow;
+  p.tube.rotation.y+=dt*0.9*slow;   // roll about the cylinder's OWN axis (with rotation.x=PI/2 set, .z tilted the axis itself — a wobble the old uniform tube hid, but it swings the cone's tip off-center)
   // once the tube fully covers the view, switch the world — you're inside the tunnel when it happens
   if(!p.fired && p.t>=_PT_IN){ p.fired=true;
     try{ p.arrive&&p.arrive(); }catch(e){ console.error("portal arrive() failed:",e); }
@@ -15319,6 +15480,14 @@ function playerHurt(dmg,sx,sz,type,element){
   let _crit=false;
   { const cc=clamp(0.10-player.attr.Coordination*0.0008,0.03,0.12);
     if(Math.random()<cc){ _crit=true; const cr=Math.min(1,(player.augment&&player.augment.critReduce)||0); dmg=Math.round(dmg*(2-cr)); } }
+  // #571: the Training Academy's practice targets are training dummies — retail's tutorial never let the
+  // practice mob kill you. Find the attacker (its position is passed as sx,sz) and, if it's a flagged
+  // practice mob, clamp the blow so it can never drop the recruit below 1 hp. This makes the very first
+  // combat lesson unable to one-shot a fresh 5-hp Custom recruit (End 10 → 5 hp vs the 6-dmg clamp) and
+  // thus never ejects them from the one-way Academy onto the overworld lifestone.
+  if(sx!==undefined){ let _pa=null,_pd=1e9; for(const m of monsters){ const d=(m.x-sx)*(m.x-sx)+(m.z-sz)*(m.z-sz); if(d<_pd){_pd=d;_pa=m;} }
+    if(_pa&&_pa.practice&&_pd<6.25){ dmg=Math.min(dmg,Math.max(0,player.hp-1));
+      if(dmg<=0){ player.invuln=0.25; floater(player.x,EYE+0.6,player.z,"safe","#bfe6ff"); return; } } }
   player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)*(_crit?1.8:1)); // combatT: recently-in-combat → Healing is less effective
   if(typeof aetheriaSurge==="function"&&sx!==undefined){ let atk=null,bd=9; for(const m of monsters){ const d=Math.hypot(m.x-sx,m.z-sz); if(d<bd){bd=d;atk=m;} } aetheriaSurge("hurt",atk); }
   clog(`You take <b style="color:#ff6a5a">${Math.round(dmg)}</b> ${element||type} damage${_crit?' — <b style="color:#ff8f6b">a critical blow!</b>':'.'}`);
@@ -16346,21 +16515,29 @@ function currentPrompt(){
     return "";
   }
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
-  for(const bs of bookStands) if(nr(bs.x,bs.z)<3.2) return "Browse "+bs.name+" (E)";
-  for(const ct of chessTables) if(nr(ct.x,ct.z)<3.0) return "Play chess (E)";
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){const o=n.o;
-    if(o.role==="crier") return "Ask the Town Crier for directions (E)";
-    if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
-    if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
-    if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
-    if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
-    if(o.role==="townsfolk") return "Greet the "+o.name+" (E)";
-    // quest-giver (named NPC or the Emissary): the hint reflects THIS giver's quest state
-    if(o.questId){ const id=o.questId, gn=o.name||"the Emissary";
-      if(isActive(id)) return (questCompleteId(id)?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
-      if(isDone(id)) return "Speak to "+gn+" (E)";
-      return "Accept a quest from "+gn+" (E)"; }
-    return "Speak (E)";}}
+  // #583: mirror interact()'s NPC-vs-furniture priority so the E-prompt matches what E will actually
+  // do — otherwise the prompt reads "Browse …" over a quest-giver the keypress now talks to.
+  {
+    const n=nearestOf(npcs);
+    let bs=null,bsd=Infinity; for(const s of bookStands){ const d=nr(s.x,s.z); if(d<bsd){ bsd=d; bs=s; } }
+    let hasCt=false,ctd=Infinity; for(const t of chessTables){ const d=nr(t.x,t.z); if(d<ctd){ ctd=d; hasCt=true; } }
+    const npcOK=!!(n&&n.d<3.5), bsOK=!!(bs&&bsd<3.2), ctOK=hasCt&&ctd<3.0;
+    if(npcOK&&(!bsOK||n.d<=bsd+0.8)&&(!ctOK||n.d<=ctd+0.8)){ const o=n.o;
+      if(o.role==="crier") return "Ask the Town Crier for directions (E)";
+      if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
+      if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
+      if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
+      if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
+      if(o.role==="townsfolk") return "Greet "+o.name+" (E)";   // #546: townsfolk always carry a proper name (e.g. "Rolf Holt") — "Greet the Rolf Holt" read as a stray definite article
+      // quest-giver (named NPC or the Emissary): the hint reflects THIS giver's quest state
+      if(o.questId){ const id=o.questId, gn=o.name||"the Emissary";
+        if(isActive(id)) return (questCompleteId(id)?"Turn in to "+gn+" (E)":"Speak to "+gn+" (E)");
+        if(isDone(id)) return "Speak to "+gn+" (E)";
+        return "Accept a quest from "+gn+" (E)"; }
+      return "Speak (E)"; }
+    if(bsOK&&(!ctOK||bsd<=ctd)) return "Browse "+bs.name+" (E)";
+    if(ctOK) return "Play chess (E)";
+  }
   for(const ch of kcChests) if(nr(ch.x,ch.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)) return "Open "+(ch.title||KC_VAULT_TITLE[ch.kind==="storage"?"vault":ch.kind]||"the chest")+" — castle storage (E)";
   for(const hk of kcHooks) if(nr(hk.x,hk.z)<1.9) return (kcCurHookItem(hk)?"Take from the hook":"Use the hook")+" (E)";
   for(const p of kcPortals) if(nr(p.x,p.z)<2.6) return "Gateway to "+p.dest.name+" (E)";
@@ -16472,7 +16649,10 @@ function interact(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house){ hsInteractInside(); return; }   // house interiors & residential halls
-    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; } }   // the Academy's instructors
+    if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs);   // the Academy's instructors
+      if(n&&n.d<3.5){ talkToNPC(n.o); return; }
+      if(n&&n.d<9){ log(`You need to get closer to talk to <b>${esc(n.o.name)}</b>.`,"warn"); return; }   // #535: E gave no feedback at all when a target was near but just out of talk range
+    }
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&Math.hypot(dungeonChest.x-player.x,dungeonChest.z-player.z)<3.5){ openChest(); return; }
     if(dungeonLock&&!dungeonLock.opened&&Math.hypot(dungeonLock.x-player.x,dungeonLock.z-player.z)<3.2){ openLockedCache(); return; }
     if(dungeonVault&&!dungeonVault.opened&&Math.hypot(dungeonVault.x-player.x,dungeonVault.z-player.z)<3.2){ openVault(); return; }
@@ -16492,11 +16672,25 @@ function interact(){
       if(dungeonDepth>1){ const d=dungeonDepth-1; dungeonGoDepth(d); if(SFX.portal)SFX.portal();
         log(d>1?`You climb back up to <b>depth ${d}</b>.`:"You climb back up to the top floor.","sys"); return; }
       exitDungeon(true); toast("HOLTBURG"); log("You climb back into the light of Dereth.","sys"); }
+    else log("There is nothing here to interact with.","warn");   // #535: E must never be silent, including plain dungeons/the Academy with nothing in reach
     return;
   }
-  for(const bs of bookStands) if(Math.hypot(bs.x-player.x,bs.z-player.z)<3.2){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
-  for(const ct of chessTables) if(Math.hypot(ct.x-player.x,ct.z-player.z)<3.0){ openChessBoard(); return; }
-  {const n=nearestOf(npcs); if(n&&n.d<3.5){ talkToNPC(n.o); return; }}
+  // #583: resolve ambient furniture (book stands, chess tables) vs an NPC by NEAREST distance with a
+  // modest NPC bias — a book stand's 3.2u / chess table's 3.0u browse radius used to always shadow a
+  // quest-giver standing beside it (Cragstone's Armiger Wendel sits 2.4u from the Scriptorium stand,
+  // so every talk-radius position was inside the stand's radius and he could never be addressed).
+  // Talking is the deliberate, rarer act, so an in-range NPC wins unless the furniture is clearly
+  // closer (>0.8u), which still lets you browse a stand you're standing right at.
+  {
+    const npc=nearestOf(npcs);
+    let bs=null,bsd=Infinity; for(const s of bookStands){ const d=Math.hypot(s.x-player.x,s.z-player.z); if(d<bsd){ bsd=d; bs=s; } }
+    let hasCt=false,ctd=Infinity; for(const t of chessTables){ const d=Math.hypot(t.x-player.x,t.z-player.z); if(d<ctd){ ctd=d; hasCt=true; } }
+    const npcOK=!!(npc&&npc.d<3.5), bsOK=!!(bs&&bsd<3.2), ctOK=hasCt&&ctd<3.0;
+    if(npcOK&&(!bsOK||npc.d<=bsd+0.8)&&(!ctOK||npc.d<=ctd+0.8)){ talkToNPC(npc.o); return; }
+    if(bsOK&&(!ctOK||bsd<=ctd)){ if(bs.history) openHistoryBook(); else openBookShelf(bs); return; }
+    if(ctOK){ openChessBoard(); return; }
+    if(npc&&npc.d<9){ log(`You need to get closer to talk to <b>${esc(npc.o.name)}</b>.`,"warn"); return; }   // #535: "too far, but not silent" feedback when nothing else in range claimed E either
+  }
   for(const ch of casinoChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<3){ openCasinoChest(ch); return; } }
   for(const gd of kcGateDefs){ if(Math.hypot(gd.x-player.x,gd.z-player.z)<5.5){ toggleKcGate(gd); return; } }
   for(const ch of kcChests){ if(Math.hypot(ch.x-player.x,ch.z-player.z)<2.6&&(ch.y==null||Math.abs((player.y||0)-ch.y)<4)){ openKcChest(ch); return; } }
@@ -16538,6 +16732,7 @@ function interact(){
       toast("BOUND");SFX.quest();saveGame();return;
     }
   }
+  log("There is nothing here to interact with.","warn");   // #535: E must never be silent — every branch above returns early on a hit, so reaching here means E genuinely found nothing at all
 }
 function recoverCorpse(d){
   // a SHARED (multiplayer) corpse is server-brokered and owner-only — the server validates and
@@ -16669,7 +16864,11 @@ function buildSheet(){
   if(player.allegianceMOTD) ah+=`<div class="desc" style="margin-top:4px;color:#cdbf9a">MOTD: <i>${esc(player.allegianceMOTD)}</i></div>`;
   al.innerHTML=ah;
   { const sb=document.getElementById('swearBtn'); if(sb) sb.onclick=()=>{ swearToPatron(); SFX.quest(); buildSheet(); }; }
-  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{ breakFromPatron(); buildSheet(); }; }
+  { const bb=document.getElementById('breakBtn'); if(bb) bb.onclick=()=>{   // #518: confirm (breaking severs the pass-up chain + resets sworn-time) and use the SAME path as /break
+    const who=(player.patronInfo&&player.patronInfo.name)?esc(player.patronInfo.name):"your patron";
+    uiConfirm(`Break fealty with <b>${who}</b>?<br><span style="color:var(--dim);font-size:12px">This severs your pass-up chain and resets your accrued sworn-time — the only pass-up decay in AC.</span>`,
+      ()=>{ if(!isOnline){ breakFromPatron(); } else { netSend({t:"unswear"}); }   // mirror handleSlash /break: offline model vs server-authoritative
+        if(SFX.click)SFX.click(); buildSheet(); }, "Break fealty"); }; }
   { const rb=document.getElementById('recruitBtn'); if(rb) rb.onclick=()=>{ if(recruitVassal()){ SFX.quest(); saveGame(); buildSheet(); } }; }
   // Luminance / Enlightenment endgame
   if(player.lumUnlocked||player.enlightenment){
@@ -16685,28 +16884,44 @@ function buildSheet(){
     if(attrRank(a)>=attrMaxRanks()){ log("Attributes take at most <b>190 raises</b> above their innate value (AC).","warn"); return; }
     if(player.skillPts>0){ player.skillPts--; player.freeRank=player.freeRank||{}; player.freeRank[a]=(player.freeRank[a]||0)+1; }   // #287: legacy free point (old saves) — remember this rank was free so lowering refunds a POINT, not XP
     else { const cost=attrCost(a); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise "+a+".","warn"); return; } player.xpUnspent-=cost; }
-    player.attr[a]++; derive(); saveGame(); buildSheet();
+    player.attr[a]++; derive(); saveGame(); updateHUD(); buildSheet();   // #582: refresh the HUD "Unspent XP" plaque (buildSheet only rebuilds the sheet)
   });
   attrRows.querySelectorAll('[data-lower]').forEach(btn=>btn.onclick=()=>{
     const a=btn.dataset.lower; if(attrRank(a)<=0) return;                          // can lower only bought ranks, never the innate value
     if(player.freeRank&&player.freeRank[a]>0){ player.freeRank[a]--; player.skillPts=(player.skillPts||0)+1; }   // #287: this rank was funded by a free point → refund the POINT (symmetric with raise); NOT XP, which would mint XP from a free point
     else player.xpUnspent+=attrRefund(a);
-    player.attr[a]--; derive(); saveGame(); buildSheet();
+    player.attr[a]--; derive(); saveGame(); updateHUD(); buildSheet();   // #582: keep the HUD "Unspent XP" plaque in sync on refund too
   });
   attrRows.querySelectorAll('[data-vit]').forEach(btn=>btn.onclick=()=>{
     const vk=btn.dataset.vit; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0;
     if(n>=vitalMaxRanks()){ log("Vitals take at most <b>196 raises</b> (AC).","warn"); return; }
     const cost=vitalCost(n); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise that vital.","warn"); return; }
-    player.xpUnspent-=cost; player.vitals[vk]=n+1; derive(); saveGame(); buildSheet();
+    player.xpUnspent-=cost; player.vitals[vk]=n+1; derive(); saveGame(); updateHUD(); buildSheet();   // #582: HUD plaque
   });
   attrRows.querySelectorAll('[data-vitlo]').forEach(btn=>btn.onclick=()=>{
     const vk=btn.dataset.vitlo; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0; if(n<=0) return;
-    player.vitals[vk]=n-1; player.xpUnspent+=vitalRefund(n); derive(); saveGame(); buildSheet();
+    player.vitals[vk]=n-1; player.xpUnspent+=vitalRefund(n); derive(); saveGame(); updateHUD(); buildSheet();   // #582: HUD plaque
   });
 }
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
 const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing"];
 function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
+// #517: in touch mode, #touchUI (spell-arc, JUMP, attack, HEIGHT/PAGE, joystick, …) floats above #hud
+// in z-order, so any BIG_MODALS panel that lives inside #hud (Quest Log, Housing) gets drawn under the
+// touch buttons and taps meant for the panel land on a control instead. Watch every BIG_MODALS panel's
+// `style` from one place — same pattern as closeOtherModals' shared list — and toggle a body class that
+// hides the whole touch layer (display:none, so it's also unreachable to taps) for as long as ANY of
+// them is open; restored the instant the last one closes. Scoped to body.touchui via CSS, so desktop
+// play is untouched.
+function refreshTouchModalState(){
+  const anyOpen=BIG_MODALS.some(id=>{ const el=document.getElementById(id); return el&&getComputedStyle(el).display!=="none"; });
+  document.body.classList.toggle("tcModalOpen",anyOpen);
+}
+(function(){
+  const mo=new MutationObserver(refreshTouchModalState);
+  BIG_MODALS.forEach(id=>{ const el=document.getElementById(id); if(el) mo.observe(el,{attributes:true,attributeFilter:['style']}); });
+  refreshTouchModalState();
+})();
 function openSheet(){closeOtherModals("sheet");buildSheet();sheet.style.display="flex";paused=true;if(locked)document.exitPointerLock();}
 function closeSheet(){sheet.style.display="none";paused=false;}
 document.getElementById('closeSheet').onclick=closeSheet;
@@ -17605,13 +17820,13 @@ function streamMonsters(dt){
   _mobStreamAcc+=dt; if(_mobStreamAcc<0.4) return; _mobStreamAcc=0;
   const px=player.x,pz=player.z;
   // dispose creatures left far behind (frees their meshes/skeletons entirely — real unload)
-  for(let i=monsters.length-1;i>=0;i--){ const m=monsters[i]; if(m.isDungeon||m.shared) continue;
+  for(let i=monsters.length-1;i>=0;i--){ const m=monsters[i]; if(m.isDungeon||m.shared||m.event) continue;   // #570: event mobs live at the (distant) besieged town, not near the player — culling them made distant Incursions read as alive=0 → auto-success + full bounty to AFK players. Keep them alive for the 240s timer so unattended events correctly FAIL.
     if((m.x-px)*(m.x-px)+(m.z-pz)*(m.z-pz) > MOB_DESPAWN*MOB_DESPAWN){
       if(m.gltfMixer&&m.gltfMixer.stopAllAction)m.gltfMixer.stopAllAction();
       disposeObject3D(m.mesh);   // #232: acShared skip keeps the cache's skinned geometry safe, while the per-spawn extras (health bar, nametag) are freed and pruned from LABELS
       monsters.splice(i,1); } }
   // refill up to the target with region-appropriate kinds, spawned just inside view around the player
-  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared) live++;
+  let live=0; for(const m of monsters) if(!m.isDungeon&&!m.shared&&!m.event) live++;   // #570: event mobs are no longer culled, but they shouldn't count toward the ambient population target either (they cluster at the far town), or refill of nearby wildlife would starve
   let tries=0;
   while(live<MOB_TARGET && tries++<40){
     const a=rnd(0,6.28), rr=rnd(MOB_SPAWN_MIN,MOB_SPAWN_MAX);
@@ -18176,8 +18391,8 @@ let lastTs=0,_loopRunning=false;   // #334: single-rAF-chain guard
 function loop(ts){
   if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;dt=Math.min(dt,0.05);
   try{ update(dt); }catch(e){ console.error("update() failed:",e); }   // #227: no single-frame exception may ever kill the rAF chain (a thrown update froze the game permanently)
-  updateLightPool();
-  renderComposite();
+  try{ updateLightPool(); }catch(e){ console.error("updateLightPool() failed:",e); }   // #501: same guarantee — a render-side throw here previously skipped requestAnimationFrame() below and froze the camera (and the portal tube, since its maxHold advance lives inside update()) with no recovery
+  try{ renderComposite(); }catch(e){ console.error("renderComposite() failed:",e); }   // #501: ditto — a WebGL/composite exception must not kill the loop either
   requestAnimationFrame(loop);
 }
 
@@ -20938,7 +21153,8 @@ function acAttachHat(av,name,gender){
     const sc=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
     inst.position.set(P.p[0]*sc-jl.x, P.p[1]*sc-jl.y, P.p[2]*sc-jl.z);
     inst.quaternion.set(P.q[0],P.q[1],P.q[2],P.q[3]);
-    inst.rotateY(Math.PI);                              // hat meshes front opposite the body, same as the heads
+    // no extra yaw — hat GfxObjs are part-16 swaps with the same +z mesh-local front as the heads;
+    // the placement quat alone faces them forward (see acBuildHead)
     inst.scale.setScalar(sc);
     u.neck.add(inst);
     if(u.acHead) u.acHead.visible=false;                // retail: the hat's part-16 swap replaces the head beneath
@@ -21109,7 +21325,7 @@ function buildNPC(role,name,seedX,look,region){
   o.heritage=_NPC_HERITAGE[region]||"aluvian";          // town's people wear their heritage's AC head (Sho in Shoushi, etc.)
   const g=buildDressedAvatar(o,seed), app=g.userData._app;
   const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
-  if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
+  if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);markOverhead(marker);g.add(marker);g.userData.marker=marker; }
   return g;
 }
 function addNPC(x,z,opts){
@@ -21283,7 +21499,7 @@ function talkToNPC(n){
     const practice=(kind,nm,goal,hp)=>{ let m=null;
       if(inDungeon&&curDungeon&&curDungeon.academy){ spawnDungeonMonster(kind,DCEN.x+rnd(-5,5),DCEN.z+18+rnd(-4,4),false,1); m=monsters[monsters.length-1]; }   // loose it in the courtyard
       else m=spawnMonster(kind,AP.x+rnd(-4,4),AP.z+12+rnd(0,4),false);
-      if(m){ m.name=nm; m.mhp=m.hp=hp; m.dmg=Math.min(m.dmg,6); m.academyGoal=goal; floater(m.x,2.5,m.z,nm,"#ffd27a"); } };
+      if(m){ m.name=nm; m.mhp=m.hp=hp; m.dmg=Math.min(m.dmg,6); m.academyGoal=goal; m.practice=1; floater(m.x,2.5,m.z,nm,"#ffd27a"); } };   // #571: m.practice flags a training dummy — its blows can never drop the recruit below 1 hp (see playerHurt), so the very first combat lesson can't one-shot a 5-hp fresh character and eject them from the one-way Academy
     if(k==="greet"){ if(!A.greet){ A.greet=1; const ci=player.inv.findIndex(i=>i.name==="Calling Stone"); if(ci>=0)takeFromInv(ci);
         say("Welcome to the Training Academy! I'll take that Calling Stone. Move with <b>W A S D</b>, speak to folk with <b>E</b>. Samuel waits with your armor, and the Training Master will test your arm. The Sentry keeps the portal out — or <b>Jonathan</b> can send you on at once."); }
       else { say("Samuel first, then the Training Master. The Sentry holds your way out.");
@@ -21302,16 +21518,19 @@ function talkToNPC(n){
     else if(k==="master"){ if(A.golem) say("Well fought! The Foreman has honest work for you.");
       else if(!A.golemUp){ A.golemUp=1; practice("golem","Sparring Golem","golem",40);
         say("Warriors read the signs on the left; spellcasters the right. Now, a practical test — best my <b>Sparring Golem</b>! Mind your power bar and your attack height."); }
+      else if(!monsters.some(m=>m.academyGoal==="golem")){ practice("golem","Sparring Golem","golem",40); say("The <b>Sparring Golem</b> stands ready once more — best it!"); }   // #562: the *Up latch persists across save/load but the spawned monster does not (live monsters aren't serialized). If the latch is set yet no golem is alive, re-spawn instead of forever answering 'awaits your challenge' and dead-ending the chain.
       else say("The Sparring Golem awaits your challenge."); }
     else if(k==="foreman"){ if(!A.golem) say("The Training Master's golem first, friend.");
       else if(A.wasp) say("Good wing-work. The Blacksmith is short a bellows, I hear.");
       else if(!A.waspUp){ A.waspUp=1; practice("phyntoswasp","Carpenter Wasp","wasp",26);
         say("Pests! A <b>Carpenter Wasp</b> chews our scaffolds out in the training yard. Bring me its wing."); }
+      else if(!monsters.some(m=>m.academyGoal==="wasp")){ practice("phyntoswasp","Carpenter Wasp","wasp",26); say("The <b>Carpenter Wasp</b> is back at the scaffolds — bring me its wing."); }   // #562: re-spawn if the latch outlived the monster across a save/load
       else say("The wasp still buzzes out there."); }
     else if(k==="smith"){ if(!A.wasp) say("Help the Foreman first — I'm mid-forging.");
       else if(A.thrungus) say("My bellows, returned! The Library stands open to you now.");
       else if(!A.thrungusUp){ A.thrungusUp=1; practice("shreth","Thieving Thrungus","thrungus",34);
         say("A thieving <b>Thrungus</b> made off with my BELLOWS — it's loose in the training yard. Fetch it back!"); }
+      else if(!monsters.some(m=>m.academyGoal==="thrungus")){ practice("shreth","Thieving Thrungus","thrungus",34); say("The <b>Thrungus</b> is loose in the yard again — fetch my bellows back!"); }   // #562: re-spawn if the latch outlived the monster across a save/load
       else say("The Thrungus still has my bellows."); }
     else if(k==="research"){ if(!A.thrungus) say("The Library opens to those the Blacksmith vouches for.");
       else if(!A.oil){ A.oil=1;
@@ -21328,6 +21547,7 @@ function talkToNPC(n){
         academyExit(); }
       else if(!A.olthoiUp){ A.olthoiUp=1; practice("olthoiworker","Adolescent Olthoi","olthoi",50);
         say("Olthoi breached the Outer Wall and stole our <b>Protection Orbs</b>! An adolescent skulks in the training yard — recover an orb!"); }
+      else if(!monsters.some(m=>m.academyGoal==="olthoi")){ practice("olthoiworker","Adolescent Olthoi","olthoi",50); say("The <b>Adolescent Olthoi</b> skulks in the training yard again — recover an orb!"); }   // #562: re-spawn if the latch outlived the monster across a save/load
       else say("Recover the Protection Orb from the Adolescent Olthoi!"); }
     if(SFX.quest)SFX.quest(); saveGame(); return;
   }
@@ -21576,8 +21796,11 @@ function renderQuestLog(){
     log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
     renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
   });
-  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge);
-    if(s && confirm(`Pledge to the ${s.name}? You may swear to only one society, and the choice is permanent.`)) pledgeSociety(s.id); });
+  body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge); if(!s) return;
+    // #516: a styled, touch-safe confirm (native confirm() is unreliable/blocked on touch, and this is a
+    // permanent, mutually-exclusive choice — a mis-tap while scrolling the panel must not swear you in)
+    uiConfirm(`Pledge yourself to the <b>${esc(s.name)}</b>?<br><span style="color:var(--dim);font-size:12px">You may swear to only ONE society, and the choice is <b>permanent</b> — it locks out the other two, for good.</span>`,
+      ()=>{ pledgeSociety(s.id); }, "Pledge"); });
   { const u=body.querySelector('#socUndertake'); if(u) u.onclick=()=>{ undertakeSocietyTest(+u.dataset.tier); buildSheet&&buildSheet(); }; }
   { const c=body.querySelector('#socClaim'); if(c) c.onclick=()=>{ claimSocietyTest(); buildSheet&&buildSheet(); }; }
 }
@@ -21753,8 +21976,16 @@ const ACHIEVEMENTS=[
 function checkAchievements(){
   for(const a of ACHIEVEMENTS){
     if(player.achievements.indexOf(a.id)<0 && a.check()){
-      player.achievements.push(a.id);player.title=a.title;
-      toast("ACHIEVEMENT");log(`<b>Achievement unlocked:</b> ${a.name} — you are now <b>${a.title}</b>.`,"sys");
+      player.achievements.push(a.id);
+      // #545: only auto-equip the earned title when the player has none yet (a fresh character's first
+      // taste of the system) — never silently swap out a title they already chose. The Character Sheet's
+      // Titles tab (built above) lists every earned title and lets the player pick one explicitly.
+      const hadTitle=!!player.title;
+      if(!hadTitle) player.title=a.title;
+      toast("ACHIEVEMENT");
+      log(hadTitle
+        ? `<b>Achievement unlocked:</b> ${a.name} — the title <b>${a.title}</b> is now available (Character Sheet → Titles).`
+        : `<b>Achievement unlocked:</b> ${a.name} — you are now <b>${a.title}</b>.`,"sys");
       SFX.quest();saveGame();
     }
   }
@@ -22200,7 +22431,7 @@ function buildMerchant(vt,name,region){
   for(let i=0;i<3;i++){const w=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2),i%2?wood2:new THREE.MeshStandardMaterial({color:def.robe}));w.position.set(-0.45+i*0.45,1.04,0.1);stall.add(w);}
   addVendorKit(g,stall,vt);   // each trade's signature possessions: tools at the stall + one in hand
   const lbl=labelSprite((name?name+" — ":"")+def.title+" — E to trade","npcs");lbl.position.y=2.5;g.add(lbl);
-  const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
+  const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);markOverhead(marker);g.add(marker);
   return g;
 }
 // ── vendor-class possessions: every trade carries and displays the tools of its craft ──
@@ -22410,7 +22641,13 @@ function updateCaravan(dt){
   if(c.shop){ c.shop.x=c.x; c.shop.z=c.z; }
 }
 // the keeper's blessing (buff bot): weave a broad set of enchantments over the player for 10 minutes
-function caravanBless(){
+// #547: the keeper's blessing is a paid service, not a free click. Priced to scale with
+// level so hour-long level-8 buff coverage never trivializes the buff economy / mage identity
+// (a starter character spends most of a modest purse for it; it stays a real sink at endgame).
+function caravanBlessCost(){ return 1500 + (player.level||1)*350; }
+function caravanBless(cost){
+  cost=cost||0;
+  if(cost>0){ if((player.gold||0)<cost) return; player.gold-=cost; if(isOnline) netSend({t:"vendor_buy",cost:cost}); }   // authoritative coin debit online, same as other vendor buys
   const DUR=3600;   // one hour
   // the single highest circle (level 8) of every Creature, Item and Life buff family
   const fams={};
@@ -22433,15 +22670,16 @@ function caravanBless(){
   if(typeof derive==="function") derive(); updateHUD&&updateHUD();
   if(SFX.quest)SFX.quest(); if(typeof castFlash==="function")castFlash(0x9af0ff);
   floater(player.x,EYE+0.6,player.z,"BLESSED","#9af0ff");
-  log(`<b>The caravan keeper</b> weaves <b>${n}</b> level-8 Creature, Item &amp; Life enchantments over you — blessed for one hour.`,"heal");
+  log(`<b>The caravan keeper</b> weaves <b>${n}</b> level-8 Creature, Item &amp; Life enchantments over you — blessed for one hour${cost>0?` for <b>${cost.toLocaleString()}p</b>`:""}.`,"heal");
   if(typeof buildShop==="function") buildShop();
+  if(cost>0&&typeof saveGame==="function") saveGame();   // persist the coin spend
 }
 // vendor: every spell (scroll), every casting scarab, every taper — plus free portals & a blessing
 function caravanStock(){
   const list=[];
   list.push({name:"Portal: Holtburg", warp:{x:2664*WSCALE,z:-3381*WSCALE,name:"Holtburg"}, cost:0, ico:"🌀", desc:"the keeper opens a portal to Holtburg"});
   if(typeof KC!=="undefined") list.push({name:"Portal: Castle Val Halla", warp:{x:KC.x,z:KC.z+150,name:"Castle Val Halla"}, cost:0, ico:"🌀", desc:"a portal to Lord Kilmer's castle"});
-  list.push({name:"Caravan Blessing", blessing:true, cost:0, ico:"✨", desc:"level-8 Creature, Item & Life buffs (1 hour)"});
+  list.push({name:"Caravan Blessing", blessing:true, cost:caravanBlessCost(), ico:"✨", desc:"level-8 Creature, Item & Life buffs (1 hour)"});   // #547: priced, not free
   for(const t of TAPER_STOCK) list.push(t);
   for(const nm in SCARAB_LEVEL) list.push({name:nm+" (×3)", gear:{name:nm,stat:"comp",count:3}, cost:60+SCARAB_LEVEL[nm]*45, ico:"🪲", desc:`level ${SCARAB_LEVEL[nm]} casting scarab (channels mana when dry)`});
   for(const id in SPELLBOOK){ const sp=SPELLBOOK[id]; if(!sp||sp.dmag!=null||sp.vuln!=null) continue;   // skip debuff mirrors
@@ -22467,7 +22705,11 @@ function buildShop(){
     const have=new Set(SHOP.filter(i=>i.scroll).map(i=>i.spellId));
     SHOP=SHOP.concat(scrollStock().filter(i=>!have.has(i.spellId)));
   }
-  const h=document.querySelector('#shop h2'); if(h) h.textContent=(activeShop&&activeShop.name)?activeShop.name+" — "+def.title:def.title;
+  // #546: some vendors (e.g. the roaming Wandering Caravan) have their own `name` equal to the
+  // vendor-TYPE `title` — showing both produced "Wandering Caravan — Wandering Caravan". Only join
+  // the two when they actually differ (a named individual working a role, e.g. "Rowena — Barkeep").
+  const h=document.querySelector('#shop h2');
+  if(h) h.textContent=(activeShop&&activeShop.name)?(activeShop.name===def.title?activeShop.name:activeShop.name+" — "+def.title):def.title;
   const sub=document.querySelector('#shop .sub');
   if(sub) sub.innerHTML=`Trade with the ${def.title}. Spend pyreals on wares below, or sell loot from your satchel. &nbsp;·&nbsp; <b style="color:var(--gold)">Your purse: ${player.gold.toLocaleString()}p</b>`;   // #166: show the player's own gold, not just the vendor's coin
   const buy=document.getElementById('shopBuy');buy.innerHTML="";
@@ -22499,7 +22741,7 @@ function buildShop(){
       SFX.gold();buildShop();updateHUD();saveGame();return;
     }
     if(it.warp){ if(inDungeon||inNetwork){log("You cannot portal from here.","warn");return;} closeShop(); warpTo(it.warp.x,it.warp.z,{invuln:2}); if(SFX.quest)SFX.quest(); log(`You step through the caravan's portal to <b>${it.warp.name}</b>.`,"heal"); return; }
-    if(it.blessing){ caravanBless(); return; }
+    if(it.blessing){ caravanBless(it.cost); return; }
     if(it.shipdeed){ if(!buyShip(it.shipType)) return; }   // Ultima-style deed → grants + spawns the vessel (buyShip deducts the pyreals)
     else if(it.gear){ const g=Object.assign({},it.gear,{bp:it.cost}); if(!addToInv(g)){log("Your satchel is full.","warn");return;} player.gold-=it.cost; if(isOnline) netSend({t:"vendor_buy",cost:it.cost,item:g}); log(`You buy a <b>${it.gear.name}</b>. (T to equip)`,"loot");
       if(activeShop&&activeShop._stock===SHOP) SHOP.splice(+b.dataset.buy,1); }   // Outfitter wares are one-off
@@ -22571,6 +22813,7 @@ function healScale(base){   // AC: the Healing skill boosts kit/potion potency; 
 function drinkPotion(field,amt,kind){
   if(!player.alive||player.drinkCd>0) return;
   if(player[field]<=0){ log("You have none of that potion.","warn"); return; }
+  if(kind==="hp"&&player.hp>=player.mhp){ log("You are already at full health.","warn"); return; }   // #515: don't waste a potion (and belt count) on a no-op heal
   amt=Math.max(0,+amt||0);   // #28: a potion never DRAINS a vital — clamp a stray negative/NaN amount to 0
   player[field]--;player.drinkCd=0.6;
   if(kind==="hp"){amt=healScale(amt);player.hp=Math.min(player.mhp,player.hp+amt);floater(player.x,EYE+0.5,player.z,"+"+amt,"#7fe6a0");}
@@ -22839,7 +23082,13 @@ function selectTarget(pick,silent){
   updateTargetUI(0,true);
 }
 function cycleTarget(dir){
-  const cand=monsters.filter(m=>m.hp>0&&!m.isDungeon===!inDungeon&&Math.hypot(m.x-player.x,m.z-player.z)<70)
+  // #580: the overworld streamer (streamMonsters) spawns creatures on a 70–150u ring and keeps ~32
+  // of them alive out to MOB_DESPAWN (215u). Scanning only <70u meant a stationary player who had
+  // just arrived — every streamed creature sitting at ≥70u — always got "No targets in range" and
+  // could never lock the first fight. Target anything the streamer maintains around us (indoors keep
+  // the old close radius so Next Target still reads the current room, not mobs through walls).
+  const R=(inDungeon||inNetwork)?70:MOB_DESPAWN;
+  const cand=monsters.filter(m=>m.hp>0&&(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<R)
     .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
   if(!cand.length){ selectTarget(null); log("No targets in range.","sys"); return; }
   let i=TARGET&&TARGET.type==="monster"?cand.indexOf(TARGET.ref):-1;
@@ -25556,12 +25805,17 @@ function arenaFail(){
 function buildNetwork(){
   netObjs=[];netPortals=[];const R=48;   // wide hall so all ~56 town portals + labels spread out
   const fac=netMode==="facility";
-  const floorCol=fac?0x202a33:0x2a2640,ringCol=fac?0x3a8a9a:0x6a5aa0,ringEm=fac?0x1a4a5a:0x3a2a6a,liteCol=fac?0x5ad0ff:0x9b6bff,orbCol=fac?0x40e0ff:0xc060ff;
+  // #577: facility floor nudged up from 0x202a33 — too close to the fog color to read past a few metres
+  const floorCol=fac?0x24303c:0x2a2640,ringCol=fac?0x3a8a9a:0x6a5aa0,ringEm=fac?0x1a4a5a:0x3a2a6a,liteCol=fac?0x5ad0ff:0x9b6bff,orbCol=fac?0x40e0ff:0xc060ff;
   const floor=new THREE.Mesh(new THREE.CircleGeometry(R,44),new THREE.MeshStandardMaterial({color:floorCol,metalness:0.08,roughness:0.88}));
   floor.rotation.x=-Math.PI/2;floor.position.set(DCEN.x,0.04,DCEN.z);floor.receiveShadow=true;scene.add(floor);netObjs.push(floor);
   // ── the hall is an ENCLOSED chamber: dark stone walls + a roof, so the only real light
   //    is the glow of the portals themselves (updateInstanceLight kills the daylight here) ──
-  const WALLH=18, wallMat=new THREE.MeshStandardMaterial({color:fac?0x0e141a:0x120e1c,roughness:0.95,metalness:0.05,side:THREE.BackSide});
+  // #577: these used to sit at 0x0e141a/0x120e1c — within ~18 RGB units of the inNetwork fog color
+  // (0x080610), so the walls visually "melted" into the fog a few metres out (same class of bug as
+  // the Academy's #534). Lifted enough to stay clearly distinct from the fog while still reading as
+  // a dark, moody enclosed hall.
+  const WALLH=18, wallMat=new THREE.MeshStandardMaterial({color:fac?0x223240:0x2e2444,roughness:0.95,metalness:0.05,side:THREE.BackSide});
   const wall=new THREE.Mesh(new THREE.CylinderGeometry(R+3,R+3,WALLH,56,1,true),wallMat);
   wall.position.set(DCEN.x,WALLH/2,DCEN.z);scene.add(wall);netObjs.push(wall);
   const roof=new THREE.Mesh(new THREE.CylinderGeometry(R*0.18,R+3,7,56,1,true),wallMat);   // shallow cone ceiling
@@ -25577,10 +25831,19 @@ function buildNetwork(){
   ped.position.set(DCEN.x,0.65,DCEN.z);ped.castShadow=true;scene.add(ped);netObjs.push(ped);
   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.9,16,12),new THREE.MeshBasicMaterial({color:new THREE.Color(orbCol).multiplyScalar(0.5),transparent:true,opacity:0.8}));orb.position.set(DCEN.x,2.6,DCEN.z);scene.add(orb);netObjs.push(orb);
   const list=fac?FACILITY_PORTALS:CITIES;
-  list.forEach((c,i)=>{const a=i/list.length*6.28,px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
+  // #577: plain list order could land a high-level frontier portal (e.g. Redspire, level 35) right
+  // beside a fresh arrival's spawn point — low-req and high-req destinations were interleaved with no
+  // regard for the hall's layout. Sort by level requirement and fan outward from ENTRANCE_A alternating
+  // left/right, so req-0 destinations cluster nearest the entrance side of the ring and the steepest
+  // level requirements end up as far around as possible, at ENTRANCE_A+PI.
+  const ENTRANCE_A=Math.PI/2, RING_STEP=2*Math.PI/list.length;
+  const ordered=list.slice().sort((a,b)=>(a.req||0)-(b.req||0));
+  ordered.forEach((c,k)=>{
+    const half=Math.ceil(k/2), sign=k===0?0:(k%2===1?1:-1), a=ENTRANCE_A+sign*half*RING_STEP;
+    const px=DCEN.x+Math.cos(a)*R*0.84,pz=DCEN.z+Math.sin(a)*R*0.84;
     const np=fac?{x:px,z:pz,kind:"facility",dungeon:c.def,req:c.req,name:c.def.name}:{x:px,z:pz,kind:"town",town:c,name:c.name};
     const m=buildPortal(fac?`${c.def.name} · Lv${c.req}`:(c.req?`${c.name} · Lv${c.req}`:c.name));m.position.set(px,0,pz);m.rotation.y=-a+Math.PI;
-    m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(i%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
+    m.traverse(o=>{if(o.isSprite){o.scale.set(fac?8:6,1.6,1);o.position.y=4.2+(k%3)*1.5;o.material.depthTest=false;}}); // smaller, height-staggered labels so they don't collide
     m.traverse(o=>{ if(o.isPointLight){ o.intensity=0.85; o.distance=14; } });   // dim each portal's glow so the enclosed hall stays moody, not washed out
     scene.add(m);netObjs.push(m);netPortals.push(np);});
   netExit={x:DCEN.x,z:DCEN.z+7};
@@ -25851,13 +26114,17 @@ function buildTinker(){
       for(let i=player.inv.length-1;i>=0;i--){ const it=player.inv[i]; if(!it) continue;
         if(it.stat!=="weapon"&&it.stat!=="worn"&&it.stat!=="jewelry") continue;       // gear only — consumables/quest/etc. untouched
         const cmp=(typeof itemCompare==="function")?itemCompare(it):null;
-        const slotFilled=it.stat==="weapon"?!!player.weapon:it.stat==="worn"?!!(player.armorSlots&&player.armorSlots[it.aslot||"chest"]):false;
-        if(cmp&&cmp.up&&slotFilled){ kept++; continue; }                              // strictly better than a piece you actually WEAR — keep it (empty-slot "upgrades" salvage)
+        // #581: keep anything itemCompare flags as an upgrade — including gear that would fill an
+        // EMPTY slot (itemCompare already reports up:true there, since any piece beats bare armor 0).
+        // The old &&slotFilled guard salvaged empty-slot fillers, so a fresh Academy graduate who
+        // followed the overload tip ("T → Salvage All") melted their just-awarded Academy Coat because
+        // the chest slot was still empty. Matching the button's own promise ("upgrades … are kept").
+        if(cmp&&cmp.up){ kept++; continue; }
         const before={}; for(const m in player.salvage) before[m]=player.salvage[m].units;   // snapshot units (bags are mutated in place)
         salvageItem(i,true); n++;
         for(const m in player.salvage){ const d=player.salvage[m].units-(before[m]||0); if(d>0) gained[m]=(gained[m]||0)+d; }
       }
-      if(!n){ log(kept?`Nothing salvaged — <b>${kept}</b> piece(s) kept as upgrades over your worn gear.`:"Nothing in the satchel to salvage.","sys"); return; }
+      if(!n){ log(kept?`Nothing salvaged — <b>${kept}</b> piece(s) kept as upgrades (better than your worn gear, or gear for an empty slot).`:"Nothing in the satchel to salvage.","sys"); return; }
       const parts=Object.keys(gained).sort().map(m=>`+${gained[m]} ${m}`).join(", ");
       log(`Salvaged <b>${n}</b> item(s) → ${parts}.${kept?` <span style="color:var(--dim)">(${kept} kept as upgrades)</span>`:""}`,"loot");
       SFX.gold(); buildTinker(); updateHUD(); saveGame();
@@ -27267,10 +27534,13 @@ function ccBust_build(app){
   const collar=new THREE.Mesh(new THREE.TorusGeometry(0.15,0.045,8,20),new THREE.MeshStandardMaterial({color:garb})); collar.rotation.x=Math.PI/2; collar.position.y=1.42; g.add(collar);
   // swap in the REAL AC head when the pack is available — the creator becomes WYSIWYG
   if(AC_HEADS){ const tok=++_ccHeadTok;
+    if((typeof acHeadOpts==="function")&&acHeadOpts(app)&&g.userData.head) g.userData.head.visible=false;   // #530: hide the procedural "egg" while the retail head loads (no mid-load flash)
     acHeadGroup(app, hgrp=>{
-      if(!hgrp||tok!==_ccHeadTok) return;
+      if(tok!==_ccHeadTok) return;
+      if(!hgrp){ if(g.userData.head) g.userData.head.visible=true; return; }   // no retail asset → keep the procedural head
       if(g.userData.head){ g.remove(g.userData.head); }        // retire the procedural bust head
-      hgrp.position.y=1.505; g.add(hgrp);                       // the bust's own sway turns the head to face the camera
+      hgrp.position.y=1.505; hgrp.rotation.y=Math.PI;           // head mesh fronts +z; half-turn matches the bust's -z convention so the sway shows the face
+      g.add(hgrp);
       g.userData.head=null; g.userData.acHead=hgrp;
     });
   }
@@ -27328,9 +27598,12 @@ function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
   if(ccBust){ ccBust.rotation.y=sway; if(ccBust.userData.head) tickFace(ccBust.userData.head,dt); }
   if(ccModel) ccModel.rotation.y=sway;
   if(ccBody){ const u=ccBody.userData;
-    // face the character toward the camera and let it sway gently. The AC body's forward is -z and
-    // the preview camera sits at +z, so a base of PI turns the front (and the head's face) to us.
-    ccBody.rotation.y=Math.PI+Math.sin(tNow/1600)*0.6;
+    // #563: face the character toward the camera and let it sway gently. Since PR #548 (#39) dropped the
+    // compensating rotateY(PI) head/hat flips, the assembled AC body+head front the camera-facing +z axis
+    // in mesh-local space (the same convention the bust re-flips its AC head to at ccBust_build). The
+    // preview camera sits at +z looking -z, so the base is now 0 (was Math.PI, which turned the whole
+    // figure away — Face view showed the back of the skull and the shoulder blades).
+    ccBody.rotation.y=Math.sin(tNow/1600)*0.6;
     if(u){ if(u.acBody&&AC_MOTION&&typeof acMotionPose==="function"){ try{ acMotionPose(u,"idle",tNow/1000,true); }catch(e){} }
       if(u.head&&u.head.visible) tickFace(u.head,dt); } }
   ccRenderer.render(ccScene,ccCam); }
@@ -27345,6 +27618,7 @@ function ccBuildOptions(){
       else b.textContent=o.n;
       b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
         Object.assign(ccWork,HERITAGE_LOOK[o.k]||{});   // heritage look defaults (face/skin/hair/nose/eyes) — still overridable below
+        ccWork.acHead=null;                             // #533: re-derive the retail head for THIS heritage — else acHead stays frozen on the first race/gender and every race reads as the same ginger default (skin+hair indices never re-picked per heritage)
         ccRenderCreation(); } ccSyncSel(); ccBuildACHead(); ccRebuild(); };
       box.appendChild(b); });
   });
@@ -27411,7 +27685,7 @@ function ccRenderCreation(){
         +`<div class="cl-town">Begins in <b>${h.town}</b></div>`;
     } else lore.style.display="none"; }
   const gd=document.getElementById('ccGender');
-  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k;ccRenderCreation();}; gd.appendChild(b); }); }
+  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null; ccRenderCreation(); if(typeof ccBuildACHead==="function")ccBuildACHead(); if(typeof ccRebuild==="function")ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
   const pf=document.getElementById('ccProf');
   if(pf){ pf.innerHTML=""; TEMPLATES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.name; b.className=ccWork.template===t.k?"sel":""; b.onclick=()=>ccApplyTemplate(t.k); pf.appendChild(b); }); }
   const at=document.getElementById('ccAttrs');
@@ -27602,6 +27876,7 @@ function applyTouchUI(){
   if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; blocking=false;
     const j=document.getElementById('tcJoy'); if(j) j.classList.remove('run','live');
     for(const id of ['tcWheel','tcPMenu','tcBoard']){ const el=document.getElementById(id); if(el) el.classList.remove('open'); }
+    document.body.classList.remove('tcOnboard');
     const sh=document.getElementById('tcSheet'); if(sh) sh.classList.remove('open'); }
   if(TOUCH.on&&document.pointerLockElement) document.exitPointerLock();
   try{ document.documentElement.style.setProperty('--tcscale',String(settings.touchBtnScale||1)); }catch(e){}
@@ -27981,11 +28256,12 @@ function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.
   const bd=document.getElementById('tcBoard'), go=document.getElementById('tcBoardGo'); if(!bd||!go) return;
   let shown=false;
   const done=()=>{ try{ return localStorage.getItem("dereth_touch_onboard")==="1"; }catch(e){ return true; } };
+  const close=()=>{ bd.classList.remove('open'); document.body.classList.remove('tcOnboard'); };
   setInterval(()=>{ if(shown||!TOUCH.on||!running||done()) return;
-    shown=true; bd.classList.add('open'); },800);
+    shown=true; bd.classList.add('open'); document.body.classList.add('tcOnboard'); },800);
   go.addEventListener('touchstart',e=>{ e.preventDefault();
-    bd.classList.remove('open'); buzz(12); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} },{passive:false});
-  go.addEventListener('click',()=>{ bd.classList.remove('open'); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} });
+    close(); buzz(12); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} },{passive:false});
+  go.addEventListener('click',()=>{ close(); try{ localStorage.setItem("dereth_touch_onboard","1"); }catch(e){} });
 })();
 // touch mode: tapping away from the on-screen keyboard closes chat (no Esc key on a phone)
 { const ci=document.getElementById('chatInput');
