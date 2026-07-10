@@ -2893,7 +2893,7 @@ function academyExit(){   // the single exit portal: one destination, the town y
 //     Exploration Society's hall — Great Hall → open Courtyard (Sparring Golem) → Workshop and
 //     Library wings → Gatehouse. Same station chain and rewards as the grounds (the outdoor
 //     grounds remain for old saves mid-chain); Jonathan or the Sentry sends you out. ═══
-let _acadNpcs=[];
+let _acadNpcs=[], _acadDoors=null;
 function _clearAcademyNpcs(){
   for(const rec of _acadNpcs){ const i=npcs.indexOf(rec); if(i>=0)npcs.splice(i,1);
     for(let j=obstacles.length-1;j>=0;j--) if(obstacles[j].x===rec.x&&obstacles[j].z===rec.z) obstacles.splice(j,1);
@@ -2907,7 +2907,7 @@ function buildAcademyHall(){
   dungeonChest=null;dungeonLock=null;dungeonVault=null;
   dungeonRects=[
     {x0:cx-14,z0:cz-12,x1:cx+14,z1:cz+2, fy:0,room:true},     // the Great Hall
-    {x0:cx-2.5,z0:cz+1.5,x1:cx+2.5,z1:cz+6.5,fy:0,room:true}, // hall doorway
+    {x0:cx-2.5,z0:cz-1,x1:cx+2.5,z1:cz+8,fy:0,room:true},     // hall doorway — overlaps Hall & Courtyard so the wide player radius clears both seams
     {x0:cx-16,z0:cz+6,x1:cx+16,z1:cz+34,fy:0,room:true},      // the Courtyard (open air)
     {x0:cx-34,z0:cz+12,x1:cx-15.5,z1:cz+26,fy:0,room:true},   // west wing — the Workshop
     {x0:cx+15.5,z0:cz+12,x1:cx+34,z1:cz+26,fy:0,room:true},   // east wing — the Library
@@ -2947,6 +2947,24 @@ function buildAcademyHall(){
   arch.position.set(cx,0.2,cz+40); scene.add(arch); dungeonObjs.push(arch);
   const plt=new THREE.PointLight(0x6aa0ff,1.2,14); plt.position.set(cx,2,cz+40); scene.add(plt); dungeonObjs.push(plt);
   dungeonSpawn={x:cx,z:cz-9}; dungeonExit={x:cx,z:cz+40};   // the arch answers only to the Sentry (or Jonathan)
+  // The Great Hall doors — a fresh recruit spawns with the way into the training yard SHUT. The
+  // leaves swing open the instant the player engages the Academy (speaks to any instructor) instead
+  // of taking Jonathan's leave-at-once offer: "deciding not to skip" unbars the yard. Hinged on the
+  // jambs, both leaves swing back (+z) into the doorway alcove.
+  { const gz=cz+2, doorH=4.2, leafW=2.62;   // doorH nearly fills the 4.4 wall; leaves span the 5-wide gap and OVERLAP at the seam (no see-through); a per-leaf z offset keeps the overlap from z-fighting
+    const woodM=new THREE.MeshStandardMaterial({color:0x6b4a2a,roughness:0.86,metalness:0.04});
+    const ironM=new THREE.MeshStandardMaterial({color:0x2a2622,roughness:0.7,metalness:0.45});
+    const mkLeaf=(hingeX,sgn,zoff)=>{ const g=new THREE.Group(); g.position.set(hingeX,0,gz+zoff);
+      const leaf=new THREE.Mesh(new THREE.BoxGeometry(leafW,doorH,0.22),woodM);
+      leaf.position.set(sgn*leafW/2,doorH/2,0); leaf.castShadow=true; g.add(leaf);
+      for(const yy of [doorH*0.28,doorH*0.72]){ const b=new THREE.Mesh(new THREE.BoxGeometry(leafW*0.94,0.16,0.26),ironM); b.position.set(sgn*leafW/2,yy,0); g.add(b); }
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(0.16,0.04,6,12),ironM); ring.position.set(sgn*(leafW-0.4),doorH*0.5,0.17); g.add(ring);
+      scene.add(g); dungeonObjs.push(g); return g; };
+    const left=mkLeaf(cx-2.5,+1,-0.07), right=mkLeaf(cx+2.5,-1,+0.07);
+    const bar={x0:cx-2.7,z0:gz-0.7,x1:cx+2.7,z1:gz+0.7,open:false}; dungeonBars.push(bar);
+    _acadDoors={bar,left,right,open:false,t:0};
+    if(player.academy&&player.academy.greet){ _acadDoors.open=true; _acadDoors.t=1; bar.open=true; left.rotation.y=-Math.PI*0.52; right.rotation.y=Math.PI*0.52; }   // re-entry mid-chain: already unbarred
+  }
   _acadNpcs=[];
   const ST=[["Society Greeter","greet",cx-2,cz-5],["Jonathan","skip",cx+3,cz-5],["Samuel","armor",cx-11,cz-1],
     ["Training Master","master",cx-6,cz+9],["Academy Foreman","foreman",cx-22,cz+15],["Academy Blacksmith","smith",cx-30,cz+20],
@@ -2977,8 +2995,22 @@ function enterAcademyHall(){
   toast("THE TRAINING ACADEMY");
 }
 function exitAcademyHall(){
-  _clearAcademyNpcs();
+  _clearAcademyNpcs(); _acadDoors=null;
   exitDungeon(false);
+}
+// The Great Hall doors: unbarred the moment the recruit commits to training (any non-skip instructor).
+function openAcademyDoors(){
+  if(!_acadDoors||_acadDoors.open) return;
+  _acadDoors.open=true; _acadDoors.bar.open=true;   // passable at once; the swing is cosmetic
+  if(typeof SFX!=="undefined"){ if(SFX.portal)SFX.portal(); else if(SFX.quest)SFX.quest(); }
+  if(typeof log==="function") log("The Great Hall doors grind open — the training yard lies beyond.","sys");
+}
+function updateAcademyDoors(dt){
+  const D=_acadDoors; if(!D) return;
+  if(!inDungeon||!curDungeon||!curDungeon.academy){ _acadDoors=null; return; }   // left the hall by any path
+  const target=D.open?1:0; if(D.t===target) return;
+  D.t=clamp(D.t + (target>D.t?dt*1.7:-dt*1.7), 0, 1);
+  const a=D.t*Math.PI*0.52; if(D.left)D.left.rotation.y=-a; if(D.right)D.right.rotation.y=a;
 }
 // AC jump (ACE MovementSystem): hold-to-charge power bar 0→1; height scales LINEARLY with power
 // (so velocity ∝ √power), with the skill term on AC's asymptote curve jump/(jump+1300) and the
@@ -16992,6 +17024,7 @@ function update(dt){
   // otherwise anything that pauses during the transit (e.g. the academy greeter on a delve-saved login)
   // freezes the tube forever, so maxHold never fires and the character is permanently stuck in the warp.
   if(portalTransit) updatePortalTransit(dt);
+  if(_acadDoors) updateAcademyDoors(dt);   // the Great Hall doors swing regardless of pause state
   if(paused||!running) return;
   questTimerTick(dt);   // timed-quest clocks
   if(player.combatT>0) player.combatT=Math.max(0,player.combatT-dt);   // recent-combat timer (Healing potency, portal-storm gating)
@@ -21549,6 +21582,7 @@ function talkToNPC(n){
         say("Olthoi breached the Outer Wall and stole our <b>Protection Orbs</b>! An adolescent skulks in the training yard — recover an orb!"); }
       else if(!monsters.some(m=>m.academyGoal==="olthoi")){ practice("olthoiworker","Adolescent Olthoi","olthoi",50); say("The <b>Adolescent Olthoi</b> skulks in the training yard again — recover an orb!"); }   // #562: re-spawn if the latch outlived the monster across a save/load
       else say("Recover the Protection Orb from the Adolescent Olthoi!"); }
+    if(k!=="skip") openAcademyDoors();   // any instructor engaged = the recruit chose to train, not skip → open the yard
     if(SFX.quest)SFX.quest(); saveGame(); return;
   }
   if(n.role==="greeter"){   // A3: the retail new-arrival chain — Lifestone → Bartender → Pathwarden
