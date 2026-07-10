@@ -697,6 +697,11 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Chat channels</span><span id="setChat" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="In-game homages to the classic Decal plugin suite">Decal plugins</span><span id="setPlugins" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Show or hide any on-screen interface (each also has an ✕ and a keybind — see Map Keys → HUD Toggles)">Interfaces</span><span id="setHud" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="How far the top compass bar shows blips. By default it reaches exactly as far as the round minimap in the top right.">Compass bar range</span><span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="setBarMatch"> Match minimap</label>
+    <input id="setBarRange" type="range" min="100" step="50"><span id="setBarRangeV"></span></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Which things paint a dot on the top compass bar">Compass bar blips</span><span id="setBarBlips" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
+  <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Which things paint a dot on the round minimap (same as the minimap's ⚙ menu)">Minimap blips</span><span id="setMiniBlips" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Sync your character to the server, then depart Dereth through a recall portal back to the title screen">Session</span><button id="logoutBtn" class="tbtn" style="border-color:var(--gold);color:var(--gold)">🚪 Log Out…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
@@ -18142,17 +18147,35 @@ function drawCompass(){
     g.fillStyle=lab.length===1?"#e8dcc0":"#9a8a66";g.font=lab.length===1?"bold 12px Trebuchet MS":"9px Trebuchet MS";
     g.fillText(lab,x,11);
   }
-  function marker(wx,wz,color){
+  // Blips are culled by DISTANCE as well as bearing: by default the bar reaches exactly as far as
+  // the round minimap (barBlipRange()), which the player can override in Settings. `r` lets a blip
+  // be drawn smaller for the minor categories so a crowded bar stays readable.
+  const barR2=(()=>{const r=barBlipRange();return r*r;})();
+  const inBarRange=(wx,wz)=>{const dx=wx-player.x,dz=wz-player.z;return dx*dx+dz*dz<=barR2;};
+  function markerAt(wx,wz,color,r){          // bearing-only: for navigation aids that must never vanish
     const b=Math.atan2(wx-player.x,-(wz-player.z))*180/Math.PI,rel=norm(b-B0);
     if(Math.abs(rel)>halfFov)return;const x=place(b);
-    g.fillStyle=color;g.beginPath();g.arc(x,H2-14,3.5,0,6.28);g.fill();
+    g.fillStyle=color;g.beginPath();g.arc(x,H2-14,r||3.5,0,6.28);g.fill();
+  }
+  function marker(wx,wz,color,r){            // proximity blip: culled by range AND bearing
+    if(!inBarRange(wx,wz))return;
+    markerAt(wx,wz,color,r);
   }
   if(!inDungeon){
-    for(const ls of lifestones) marker(ls.x,ls.z,ls.bound?"#5aa8ff":"#8e44ad");
-    {const ne=nearestEntrance(player.x,player.z); if(ne) marker(ne.e.x,ne.e.z,"#bf9bff");}
-    if(boss) marker(boss.x,boss.z,"#ff3030");
-    if(worldEvent&&worldEvent.active) marker(worldEvent.town.x,worldEvent.town.z,"#ffb347");
-  } else marker(dungeonExit.x,dungeonExit.z,"#6aa0ff");
+    if(barShow.town) for(const ls of lifestones) marker(ls.x,ls.z,ls.bound?"#5aa8ff":"#8e44ad");
+    if(barShow.dungeon){const ne=nearestEntrance(player.x,player.z); if(ne) marker(ne.e.x,ne.e.z,"#bf9bff");}
+    if(barShow.boss&&boss) marker(boss.x,boss.z,"#ff3030");
+    if(barShow.event&&worldEvent&&worldEvent.active) marker(worldEvent.town.x,worldEvent.town.z,"#ffb347");
+    // opt-in categories — same colours the minimap uses, so a blip means the same thing on both
+    if(barShow.monster) for(const m of monsters){ if(m.isBoss||m.isDungeon)continue; marker(m.x,m.z,"#e08830",2.4); }
+    if(barShow.resource) for(const n of nodes) if(!n.depleted) marker(n.x,n.z,n.type==="ore"?"#7fd0d0":"#7fe6a0",2.4);
+    if(barShow.portal) for(const pt of portals) marker(pt.x,pt.z,"#bf9bff",2.6);
+    if(barShow.vendor) for(const sh of shops) marker(sh.x,sh.z,"#7fe6a0",2.6);
+    if(barShow.quest) for(const n of npcs){ if(n.role==="townsfolk")continue; marker(n.x,n.z,"#ffd23b",2.6); }
+    if(barShow.building&&typeof structures!=="undefined") for(const st of structures){ if(st&&st.x!=null) marker(st.x,st.z,"#a89878",1.6); }
+    if(barShow.players&&isOnline&&typeof NET!=="undefined") for(const id in NET.players){ const rp=NET.players[id];
+      const rx=rp.x!=null?rp.x:rp.tx, rz=rp.z!=null?rp.z:rp.tz; if(rx==null||rz==null)continue; marker(rx,rz,"#6fe8ff",2.6); }
+  } else markerAt(dungeonExit.x,dungeonExit.z,"#6aa0ff");   // the way OUT is never range-culled
   // quest objective: gold diamond toward the target
   if(activeQuests.length&&!inDungeon){
     const tid=trackedId(), fi=tid?firstObjIndex(tid):-1, o=(tid&&fi>=0)?questById(tid).obj[fi]:null; let tx,tz,bd=Infinity;
@@ -18184,8 +18207,30 @@ function drawDungeonMinimap(g,S){
 }
 // Configurable round compass-minimap: centred on the player, zoomable, with per-category dot filters.
 let miniZoom=2600, miniShow={town:true,vendor:true,quest:true,dungeon:true,building:true,portal:true,resource:true,monster:true,players:true};
-function saveMiniPrefs(){ try{ localStorage.setItem("dereth_mini",JSON.stringify({z:miniZoom,s:miniShow})); }catch(e){} }
-function loadMiniPrefs(){ try{ const p=JSON.parse(localStorage.getItem("dereth_mini")); if(p){ if(p.z)miniZoom=clamp(p.z,700,WORLD*0.6); if(p.s)Object.assign(miniShow,p.s); } }catch(e){} }
+// The blip categories the minimap and the compass bar share. `bar` marks the ones the BAR shows by
+// default — historically the bar drew lifestones, the nearest dungeon entrance, the boss and the
+// world event, and nothing else. Everything else is opt-in so enabling filters can't change the
+// bar's look for an existing player until they ask for it.
+const BLIP_CATS=[["town","Towns & lifestones",true],["vendor","Vendors",false],["quest","Quest givers",false],
+  ["dungeon","Dungeons",true],["building","Buildings",false],["portal","Portals",false],
+  ["resource","Resources",false],["monster","Creatures",false],["players","Players",false],
+  ["boss","World boss",true],["event","World events",true]];
+let barShow={}; for(const [k,,onBar] of BLIP_CATS) barShow[k]=onBar;
+// The compass BAR's blip range, in world units. null => track the minimap exactly (the default the
+// issue asks for: "only display dots at the same distance as the compass in the top right").
+// Before this, the bar's marker() culled by ANGLE only, so a boss on the far side of the continent
+// still painted a dot on your bar.
+let barRange=null;
+const BAR_RANGE_MIN=100, BAR_RANGE_MAX=()=>WORLD*0.6;
+// The minimap's TRUE visible world radius. drawMinimap uses S=150 -> R=S/2-2=73, and its inR() test
+// admits pixels within (R-1). So the world radius it actually shows is (R-1)/ppw, i.e. miniZoom*72/73
+// — NOT miniZoom. Match that exactly so "same distance" means the same distance.
+function miniWorldRadius(){ const S=150,R=S/2-2; return (R-1)*miniZoom/R; }
+function barBlipRange(){ return barRange==null ? miniWorldRadius() : barRange; }
+function saveMiniPrefs(){ try{ localStorage.setItem("dereth_mini",JSON.stringify({z:miniZoom,s:miniShow,bs:barShow,br:barRange})); }catch(e){} }
+function loadMiniPrefs(){ try{ const p=JSON.parse(localStorage.getItem("dereth_mini")); if(p){ if(p.z)miniZoom=clamp(p.z,700,WORLD*0.6); if(p.s)Object.assign(miniShow,p.s);
+  if(p.bs)Object.assign(barShow,p.bs);
+  if(p.br!==undefined) barRange = p.br==null ? null : clamp(p.br,BAR_RANGE_MIN,BAR_RANGE_MAX()); } }catch(e){} }
 function miniZoomBy(f){ miniZoom=clamp(miniZoom*f,700,WORLD*0.6); saveMiniPrefs(); }
 function buildMiniToggles(){
   const el=document.getElementById('mmToggles'); if(!el) return;
@@ -23400,6 +23445,39 @@ function updatePlugins(dt){
       .map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
   }
 }
+// Settings → compass-bar range + the per-category blip filters for the bar AND the minimap.
+// The minimap's own ⚙ menu edits the same `miniShow` object, so the two stay in lockstep.
+function buildBlipSettings(){
+  const match=document.getElementById('setBarMatch'), rng=document.getElementById('setBarRange'),
+        rv=document.getElementById('setBarRangeV'), barEl=document.getElementById('setBarBlips'),
+        miniEl=document.getElementById('setMiniBlips');
+  if(!match||!rng) return;
+  rng.max=Math.round(BAR_RANGE_MAX());
+  const paint=()=>{
+    const matching = barRange==null;
+    match.checked=matching;
+    rng.disabled=matching;
+    rng.style.opacity=matching?0.45:1;
+    rng.value=Math.round(matching?miniWorldRadius():barRange);
+    rv.textContent=Math.round(+rng.value)+"m"+(matching?" (minimap)":"");
+  };
+  paint();
+  match.onchange=()=>{ barRange = match.checked ? null : clamp(Math.round(miniWorldRadius()),BAR_RANGE_MIN,BAR_RANGE_MAX());
+    saveMiniPrefs(); paint(); };
+  rng.oninput=()=>{ if(match.checked) return; barRange=clamp(+rng.value,BAR_RANGE_MIN,BAR_RANGE_MAX()); saveMiniPrefs(); paint(); };
+
+  const chips=(el,store,cats,after)=>{
+    if(!el) return;
+    el.innerHTML=cats.map(([k,lab])=>`<button class="tbtn" data-blip="${k}" title="${lab}">${lab}</button>`).join("");
+    const hi=()=>el.querySelectorAll('[data-blip]').forEach(b=>b.style.opacity=store[b.dataset.blip]?1:0.45);
+    hi();
+    el.querySelectorAll('[data-blip]').forEach(b=>b.onclick=()=>{ store[b.dataset.blip]=!store[b.dataset.blip];
+      saveMiniPrefs(); hi(); after&&after(); });
+  };
+  chips(barEl, barShow, BLIP_CATS.map(([k,lab])=>[k,lab]));
+  // the minimap draws neither the world boss nor the world event, so don't offer those toggles there
+  chips(miniEl, miniShow, BLIP_CATS.filter(([k])=>k!=="boss"&&k!=="event").map(([k,lab])=>[k,lab]), ()=>buildMiniToggles());
+}
 function openSettings(){
   closeOtherModals("settings");
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
@@ -23417,6 +23495,7 @@ function openSettings(){
   sens.oninput=()=>{settings.sens=+sens.value;lbl();saveSettings();};
   vol.oninput=()=>{settings.vol=+vol.value;lbl();applySettings();saveSettings();};
   fov.oninput=()=>{settings.fov=+fov.value;lbl();applySettings();saveSettings();};
+  buildBlipSettings();
   const diffBtns=document.querySelectorAll('#settings [data-diff]');
   const hi=()=>diffBtns.forEach(b=>b.style.opacity=(+b.dataset.diff===settings.diff)?1:0.45);
   hi();
