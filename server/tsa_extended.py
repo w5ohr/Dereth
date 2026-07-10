@@ -13,19 +13,29 @@ def check(name, ok, note=""):
     RESULTS.append((name, bool(ok), note))
     print(f"  {'PASS' if ok else 'FAIL'} {name}{(' -- ' + str(note)) if note and not ok else ''}")
 
-async def mk(name, level=10):
+async def mk(name, level=10, inv=None):
     c = await WS.connect()
     u = f"{name}_{secrets.token_hex(3)}"
     await c.send({"t": "register", "user": u, "pass": "secret9"})
     await c.recv_until(lambda x: x["t"] == "auth_ok")
     await c.recv_until(lambda x: x["t"] == "roster")
-    await c.send({"t": "create_char", "slot": 0, "name": u[:14], "char": {"level": level, "gold": 1000}})
-    await c.recv_until(lambda x: x["t"] == "play_ok")
+    char = {"level": level, "gold": 1000}
+    if inv:
+        char["inv"] = inv   # adopted by enter_world -> load_econ as the char's authoritative inventory
+    await c.send({"t": "create_char", "slot": 0, "name": u[:14], "char": char})
+    po = await c.recv_until(lambda x: x["t"] == "play_ok")
     c.username, c.charname = u, u[:14]
+    c.netid = po.get("netid") if po else None   # #438: opaque session id -- the wire never uses the account name as a target
     return c
 
 async def main():
-    a = await mk("tsaA"); b = await mk("tsaB")
+    # #238: `a` needs REAL server-side inventory items -- handle_trade's take_owned() and death's
+    # take_owned_filter() both validate against the authoritative inventory (adopted from the save at
+    # enter_world) and drop anything fabricated. TSA_GEM is spent in the trade block below; TSA_DROP
+    # survives to be dropped on the corpse further down, so that check exercises a real recovered item.
+    TSA_GEM = {"name": "TSA Gem", "stat": "trophy", "v": 50}
+    TSA_DROP = {"name": "TSA Drop", "stat": "trophy", "v": 9}
+    a = await mk("tsaA", inv=[TSA_GEM, TSA_DROP]); b = await mk("tsaB")
     # stand together; PK states ride the input tick (pkState field)
     await a.send({"t": "input", "x": 100, "z": 100, "yaw": 0, "pkState": "pk"})
     await b.send({"t": "input", "x": 102, "z": 100, "yaw": 0, "pkState": "npk"})
@@ -38,7 +48,7 @@ async def main():
     await b.send({"t": "trade", "act": "accept_open"})
     opened = await a.recv_until(lambda x: x["t"] == "trade" and x.get("act") == "sync", timeout=3)
     check("trade window syncs after accept_open", opened)
-    await a.send({"t": "trade", "act": "add", "item": {"name": "TSA Gem", "stat": "trophy", "v": 50}})
+    await a.send({"t": "trade", "act": "add", "item": TSA_GEM})
     sync1 = await b.recv_until(lambda x: x["t"] == "trade" and x.get("act") == "sync"
                                and any((i or {}).get("name") == "TSA Gem" for i in (x.get("them") or [])), timeout=3)
     check("item offer syncs to partner", sync1)
@@ -56,19 +66,19 @@ async def main():
         (i or {}).get("name") == "TSA Gem" for i in (doneB.get("give") or [])),
         f"give={doneB.get('give') if doneB else None}")
 
-    # ── 3-state PK gating (pvp hit targets the USERNAME key) ──
-    await a.send({"t": "pvp", "target": b.username, "dmg": 10})
+    # ── 3-state PK gating (#438: pvp hit targets the opaque netid, not the account name) ──
+    await a.send({"t": "pvp", "target": b.netid, "dmg": 10})
     hit = await b.recv_until(lambda x: x["t"] == "pvp", timeout=2)
     check("PK->NPK hit does NOT land", hit is None, f"got {hit}")
     await b.send({"t": "input", "x": 102, "z": 100, "yaw": 0, "pkState": "pk"})
     await asyncio.sleep(0.4)
-    await a.send({"t": "pvp", "target": b.username, "dmg": 10})
+    await a.send({"t": "pvp", "target": b.netid, "dmg": 10})
     hit2 = await b.recv_until(lambda x: x["t"] == "pvp", timeout=2)
     check("PK->PK hit lands", hit2 and hit2.get("dmg") == 10)
     # PKL vs PK must NOT mix (AC rulesets fight their own)
     await b.send({"t": "input", "x": 102, "z": 100, "yaw": 0, "pkState": "pkl"})
     await asyncio.sleep(0.4)
-    await a.send({"t": "pvp", "target": b.username, "dmg": 10})
+    await a.send({"t": "pvp", "target": b.netid, "dmg": 10})
     hit3 = await b.recv_until(lambda x: x["t"] == "pvp", timeout=2)
     check("PK->PKL hit does NOT land", hit3 is None, f"got {hit3}")
 
@@ -84,8 +94,13 @@ async def main():
     check("allegiance chat reaches patron", line)
 
     # ── corpse owner-gating ──
-    await a.send({"t": "death", "x": 100, "z": 100, "gold": 5,
-                  "items": [{"name": "TSA Drop", "stat": "trophy", "v": 9}]})
+    # `a` is still flagged pkState:"pk" from the PvP block above; a PK death's corpse is created
+    # open:true (AC rule: PK death is free loot for anyone), which would make B's non-owner recovery
+    # succeed and A's later owner recovery find nothing -- both by design, not a bug. Reset `a` to
+    # npk first so this corpse is ownership-gated like a normal (non-PK) death.
+    await a.send({"t": "input", "x": 100, "z": 100, "yaw": 0, "pkState": "npk"})
+    await asyncio.sleep(0.4)
+    await a.send({"t": "death", "x": 100, "z": 100, "gold": 5, "items": [TSA_DROP]})
     corpse = await b.recv_until(lambda x: x.get("type") == "corpse" or
                                 (x["t"] in ("drop", "drops") and "corpse" in json.dumps(x)), timeout=3)
     check("shared corpse broadcast to others", corpse)
