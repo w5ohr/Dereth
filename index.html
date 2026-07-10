@@ -21811,8 +21811,16 @@ const ACHIEVEMENTS=[
 function checkAchievements(){
   for(const a of ACHIEVEMENTS){
     if(player.achievements.indexOf(a.id)<0 && a.check()){
-      player.achievements.push(a.id);player.title=a.title;
-      toast("ACHIEVEMENT");log(`<b>Achievement unlocked:</b> ${a.name} — you are now <b>${a.title}</b>.`,"sys");
+      player.achievements.push(a.id);
+      // #545: only auto-equip the earned title when the player has none yet (a fresh character's first
+      // taste of the system) — never silently swap out a title they already chose. The Character Sheet's
+      // Titles tab (built above) lists every earned title and lets the player pick one explicitly.
+      const hadTitle=!!player.title;
+      if(!hadTitle) player.title=a.title;
+      toast("ACHIEVEMENT");
+      log(hadTitle
+        ? `<b>Achievement unlocked:</b> ${a.name} — the title <b>${a.title}</b> is now available (Character Sheet → Titles).`
+        : `<b>Achievement unlocked:</b> ${a.name} — you are now <b>${a.title}</b>.`,"sys");
       SFX.quest();saveGame();
     }
   }
