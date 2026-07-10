@@ -8396,7 +8396,16 @@ let _guardKill=false;   // #12: set while a castle guard deals damage → its ki
 const KC_VALKYRIES=["Sigrun","Brynhild","Eir","Gondul","Hildr","Kara","Mist","Rota","Skuld","Thrud"];
 const KC_VENDORS=[["provisioner","Valga"],["weaponsmith","Hallbrand"],["armorer","Valgard"],["scrivener","Hallwyn"],
   ["outfitter","Valfen"],["healer","Hallveig"],["jeweler","Valdis"],["collector","Hallrik"]];
-function kcGuests(){ try{ return JSON.parse(localStorage.getItem("kcGuests")||"[]"); }catch(e){ return []; } }
+// #660: a shipped default guest roll — a player named David is admitted on EVERY client. The in-game
+// /grant only writes the local browser's kcGuests (there is no server-side castle-guest concept), so a
+// grant on Kilmer's machine never reaches David's; baking David into the client is the only way to let
+// him past the moat in the shared world. Unioned (case-insensitively) with any local /grant entries.
+const KC_DEFAULT_GUESTS=["David"];
+function kcGuests(){ let a; try{ a=JSON.parse(localStorage.getItem("kcGuests")||"[]"); }catch(e){ a=[]; }
+  if(!Array.isArray(a)) a=[];
+  const seen=new Set(a.map(g=>String(g||"").toLowerCase()));
+  for(const d of KC_DEFAULT_GUESTS){ if(!seen.has(d.toLowerCase())) a.push(d); }   // union the shipped roll with local grants, no dup
+  return a; }
 function kcSaveGuests(a){ try{ localStorage.setItem("kcGuests",JSON.stringify(a)); }catch(e){} }
 function castleAccess(){ const nm=((player&&player.name)||"").trim().toLowerCase(); if(!nm) return false;
   if(nm===KC.lord.toLowerCase()) return true; return kcGuests().some(g=>(g||"").toLowerCase()===nm); }
