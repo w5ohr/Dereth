@@ -18131,7 +18131,7 @@ function updateHUD(){
   const ve=document.getElementById("sVitae");if(player.vitae>0.001){ve.textContent="-"+Math.round(player.vitae*100)+"%";ve.style.color="#ff6b6b";}else{ve.textContent="—";ve.style.color="#fff";}
   const evr=document.getElementById("evRow");
   if(worldEvent&&worldEvent.active){evr.style.display="";document.getElementById("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
-  else if(isOnline&&NET.event){ evr.style.display=""; const a=netEventAlive(); document.getElementById("sEvent").textContent=`${NET.event.name} · ${NET.event.total-a}/${NET.event.total} cleared`; }
+  else if(isOnline&&NET.event){ evr.style.display=""; const a=(typeof NET.event.alive==="number")?NET.event.alive:netEventAlive(); document.getElementById("sEvent").textContent=`${NET.event.name} · ${NET.event.total-a}/${NET.event.total} cleared`; }
   else evr.style.display="none";
   spellbar.querySelectorAll(".slot").forEach((el)=>{
     const abs=+el.dataset.abs, e=player.hotbar[abs];
@@ -26800,6 +26800,7 @@ function reconcileEvent(ev){
     const bc=buildEventBeacon(ev.x,ev.z,ev.col);
     NET.event={id:ev.id,x:ev.x,z:ev.z,col:ev.col,name:ev.name,total:ev.total||0,beam:bc.beam,light:bc.light};
   }
+  NET.event.alive=(typeof ev.alive==="number")?ev.alive:undefined; // #641: server's authoritative live count, unlike netEventAlive() which is AOI-limited
 }
 function onEventStart(msg){
   if(!isOnline) return;

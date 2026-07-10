@@ -904,7 +904,7 @@ def event_snap():
     # The Incursion beacon is a 220-unit pillar meant to be seen from across the region, so it is
     # deliberately NOT range-filtered. Its mobs are (they ring out 90-440 units from the anchor).
     return {"id": EVENT["id"], "name": EVENT["name"], "x": EVENT["x"], "z": EVENT["z"],
-            "col": EVENT["col"], "total": EVENT["total"]}
+            "col": EVENT["col"], "total": EVENT["total"], "alive": event_alive()}
 
 def _in_aoi(px, pz, ex, ez, was_sent):
     lim = AOI_OUT if was_sent else AOI_IN
