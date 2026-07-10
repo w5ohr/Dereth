@@ -37,6 +37,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACD  = os.path.join(ROOT, "acdata")
 OUT  = os.path.join(ROOT, "assets", "acdungeons")
 CAP  = 400   # cap huge dungeons to the first N cells
+FORCE_TEX = False   # --force-tex: overwrite existing texture PNGs even if they are higher-res
 
 # ~8 iconic dungeons already in the game (name -> landblock hex from dungeon-landblocks.json)
 SAMPLE = ["Holtburg Dungeon", "Green Mire Grave", "Mines of Despair", "Halls of the Helm",
@@ -212,6 +213,7 @@ def decode_texture_ex(data, palettes):
 # ── material resolution (shared surface->texture/color path) ──
 def make_material_resolver(portal):
     pal_cache, tex_written, surf_cache = {}, {}, {}
+    skipped_hires = []   # textures left alone because the PNG on disk is already >= this size
     def palettes(pid):
         if pid not in pal_cache:
             pal_cache[pid] = parse_palette(portal.read(pid))
@@ -240,15 +242,32 @@ def make_material_resolver(portal):
                 else:
                     from PIL import Image
                     w, h, px = dec
-                    Image.frombytes("RGBA", (w, h), px).save(
-                        os.path.join(OUT, "tex", "%08X.png" % tid))
-                    tex_written[tid] = "%08X.png" % tid
+                    name = "%08X.png" % tid
+                    path = os.path.join(OUT, "tex", name)
+                    # NEVER downgrade an existing texture. tools/ac_highres_export.py re-decodes
+                    # these same TIDs from client_highres.dat at LARGER dimensions and overwrites
+                    # in place; portal.dat only holds the low-res originals. Without this guard a
+                    # re-run of this exporter silently halves every texture it touches (measured:
+                    # 256x256 -> 128x128 on A Red Rat Lair's 8 surfaces) and the loss is invisible
+                    # until someone looks at a wall. Pass --force-tex to overwrite anyway.
+                    keep = False
+                    if os.path.exists(path) and not FORCE_TEX:
+                        try:
+                            ow, oh = Image.open(path).size
+                            keep = ow * oh >= w * h
+                            if keep:
+                                skipped_hires.append((name, (ow, oh), (w, h)))
+                        except Exception:
+                            keep = False
+                    if not keep:
+                        Image.frombytes("RGBA", (w, h), px).save(path)
+                    tex_written[tid] = name
             fn = tex_written[tid]
             m = dict(tex=fn) if fn else dict(color=0x777777)
             if s.get("clip"): m["clip"] = 1
         surf_cache[surf_did] = m
         return m
-    return material, tex_written
+    return material, tex_written, skipped_hires
 
 # ── merge one dungeon's cells into per-material triangle groups ──
 def group_key(mat):
@@ -315,17 +334,31 @@ def _emit_cell(cs, pos, quat, surfs, groups, material):
     return tris
 
 # ── main ──
-def main():
-    os.makedirs(os.path.join(OUT, "tex"), exist_ok=True)
+def main(only=None):
+    """Extract every dungeon in dungeon-landblocks.json, or just `only` (a list of names).
+
+    A subset run MERGES into the existing index.json instead of replacing it — index.json is the
+    game's dungeon manifest, and a naive rewrite would drop the 200+ dungeons this run didn't touch.
+    """
     lbmap = json.load(open(os.path.join(ROOT, "assets", "dungeon-landblocks.json")))
+    ALL = sorted(lbmap)
+    if only:                                       # validate BEFORE opening 1.3 GB of dat files
+        missing = [n for n in only if n not in lbmap]
+        if missing:
+            raise SystemExit(f"not in dungeon-landblocks.json: {', '.join(missing)}")
+        ALL = sorted(only)
+
+    os.makedirs(os.path.join(OUT, "tex"), exist_ok=True)
     cell_dat = dung.DatReader(os.path.join(ACD, "client_cell_1.dat"))
     portal   = mdl.DatReader(os.path.join(ACD, "client_portal.dat"))
-    material, tex_written = make_material_resolver(portal)
+    material, tex_written, skipped_hires = make_material_resolver(portal)
 
     envcache = {}
     index = {}
+    idx_path = os.path.join(OUT, "index.json")
+    if only and os.path.exists(idx_path):
+        index = json.load(open(idx_path))          # keep every dungeon we're not re-extracting
     print("dungeon                        lb    cells  used  tris     groups  file")
-    ALL = sorted(lbmap)
     for name in ALL:
         hexid = lbmap.get(name)
         if not hexid:
@@ -381,6 +414,20 @@ def main():
     total = sum(os.path.getsize(os.path.join(dp, f))
                 for dp, _, fs in os.walk(OUT) for f in fs) // 1024
     print(f"\nwrote {OUT}: {len(index)} dungeons, {ntex} textures, {total} KB total")
+    if skipped_hires:
+        print(f"kept {len(skipped_hires)} existing higher-res texture(s) (portal.dat holds only the "
+              f"low-res originals; see tools/ac_highres_export.py). --force-tex overwrites them.")
+        for name, old, new in skipped_hires[:5]:
+            print(f"    {name}: kept {old[0]}x{old[1]}, would have written {new[0]}x{new[1]}")
+        if len(skipped_hires) > 5:
+            print(f"    ... and {len(skipped_hires)-5} more")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    # `python tools/ac_env_export.py` re-extracts everything (slow);
+    # `python tools/ac_env_export.py "A Ruin" "Mines of Despair"` extracts just those,
+    #   MERGING into index.json instead of rebuilding it from this run alone.
+    # `--force-tex` re-writes texture PNGs even when a higher-res one is already on disk.
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    FORCE_TEX = "--force-tex" in sys.argv
+    main(args or None)
