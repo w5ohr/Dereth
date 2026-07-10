@@ -8068,7 +8068,9 @@ const CARENZI_COST=300;
 function carenziRace(pick,ownerName){
   if(player.gold<CARENZI_COST){ log(`A race bet costs <b>${CARENZI_COST}</b> pyreals.`,"warn"); if(SFX.hit)SFX.hit(); return; }
   player.gold-=CARENZI_COST;
-  const order=CARENZI_ROSTER.slice().sort(()=>Math.random()-0.5), winner=order[0];
+  const order=CARENZI_ROSTER.slice();
+  for(let i=order.length-1;i>0;i--){ const j=irnd(0,i); [order[i],order[j]]=[order[j],order[i]]; }
+  const winner=order[0];
   log(`The carenzi burst from the gates! <b>${order[3]}</b> stumbles early…`,"sys");
   log(`Down the stretch it's <b>${order[0]}</b> and <b>${order[1]}</b> whisker to whisker…`,"sys");
   if(winner===pick){
