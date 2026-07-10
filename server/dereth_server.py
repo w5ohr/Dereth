@@ -820,6 +820,7 @@ class Client:
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
+        self.inst = False        # #646: True while in a per-player instance (dungeon/Town Network/Academy). x/z carry the OVERWORLD return point (#307), so peers hide the avatar and AI/PvP must not target it
         # #239: per-connection token buckets (refilled by elapsed time in the read loop). One general
         # bucket caps total message rate; a tighter one caps "chatty" broadcast messages (chat/emote/
         # tell/party/allegiance) that fan out to every client. Start full so a normal session never trips.
@@ -885,7 +886,8 @@ def player_pub(u, cl):
     return {"id": cl.netid, "name": cl.charname or "Adventurer", "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
             "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
             "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
-            "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
+            "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None),
+            "inst": getattr(cl, "inst", False)}   # #646: peers hide the avatar when set (player is inside an instance)
 
 def world_pubs():
     """Build every public record ONCE per tick, not once per (viewer, entity) pair.
@@ -1067,7 +1069,7 @@ _ambient_timer  = 0.0
 AMBIENT_TICK    = 1.0     # seconds between top-up passes (O(mobs*players) work stays off the hot 10Hz path)
 
 def ambient_topup():
-    players = [cl for cl in CLIENTS.values() if cl.in_world and cl.hp > 0]
+    players = [cl for cl in CLIENTS.values() if cl.in_world and cl.hp > 0 and not getattr(cl, "inst", False)]  # #646: don't seed ambient mobs around an instance entrance nobody stands at
     if not players:
         return
     ambient_n = 0
@@ -1507,8 +1509,8 @@ def pk_compatible(a, b):
 def nearest_player(x, z, maxd):
     best, bd = None, maxd
     for u, cl in CLIENTS.items():
-        if not cl.in_world or cl.hp <= 0:
-            continue
+        if not cl.in_world or cl.hp <= 0 or getattr(cl, "inst", False):
+            continue   # #646: an instanced player broadcasts only their overworld return point — never a real mob-AI target
         d = math.hypot(cl.x - x, cl.z - z)
         if d < bd:
             best, bd = cl, d
@@ -2299,6 +2301,7 @@ async def dispatch(cl, msg):
     if t == "input":
         cl.x = _finitef(msg.get("x"), cl.x); cl.z = _finitef(msg.get("z"), cl.z)   # #238: reject NaN/Inf so a bad coord can't be broadcast to (and corrupt) other clients
         cl.yaw = _finitef(msg.get("yaw"), cl.yaw)
+        cl.inst = bool(msg.get("inst"))   # #646: the client sets inst:1 while inside a per-player instance; wire it so peers hide the avatar and mob AI / PvP skip the phantom at the return point
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
         cl.level = min(_clampi(msg.get("level"), 1, 275, cl.level), cl.level_auth)   # #238: bound the client-reported level to the character's AUTHORITATIVE level (seeded from the save, rate-limited on save) — closes the forged-level → unlimited-vassals / swear-over-anyone exploit
@@ -2456,11 +2459,12 @@ async def dispatch(cl, msg):
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "pvp":
         # S3 PvP: relay a hit only if both players share a PvP ruleset (PK↔PK or PKL↔PKL) and are in range
-        if cl.in_world and getattr(cl, "pk", False):
+        if cl.in_world and getattr(cl, "pk", False) and not getattr(cl, "inst", False):   # #646: an instanced attacker's coords are their return point — can't legitimately land a PvP hit
             tgt = SESSIONS.get(msg.get("target"))   # #438: targets are opaque netids, not account names
             try: dmg = float(msg.get("dmg", 0))
             except Exception: dmg = 0
-            if (tgt and tgt.in_world and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
+            if (tgt and tgt.in_world and not getattr(tgt, "inst", False)   # #646: and an instanced target is a phantom at the entrance — not hittable
+                    and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
                     and 0 < dmg <= 2000 and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 40):
                 await tgt.send({"t": "pvp", "from": cl.charname, "dmg": round(dmg, 1), "element": str(msg.get("element", ""))[:12]})
     elif t == "spellfx":
