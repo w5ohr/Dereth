@@ -7780,7 +7780,13 @@ function tbStream(dt){
     if(Math.hypot(c.x-px,c.z-pz)>TB_BUILD_R) continue;
     const objs=AC_TOWNS[c.name]; if(!objs){ _tbBuilt[c.name]={c,g:null,obst:[]}; seatVendorsInBuildings(); continue; }  // no real data → procedural fallback seating
     let ready=true;                                                 // all this town's building + scenery meshes loaded?
-    for(const o of objs){ if(!TB_KINDS[o.kind]) continue; if(!tbModelReq(o.did)) ready=false; }
+    // A DID that isn't in the actownmodels bake caches _tbModels[did]=false (tbModelReq returns null
+    // forever). The old gate couldn't tell "still loading" from "permanently missing", so a single
+    // un-baked prop kept the WHOLE town from ever building — buildings, colliders and textures all
+    // absent, leaving only the pale procedural plaza with live collision (#554). Treat a known-missing
+    // DID (cached false) as skippable; tbPlaceStructure/tbRingBuilding already no-op on it.
+    for(const o of objs){ if(!TB_KINDS[o.kind]) continue;
+      if(!tbModelReq(o.did) && _tbModels[(''+o.did).toUpperCase()]!==false) ready=false; }
     if(_tbIndex===null){ tbIndexReq(); ready=false; }
     if(ready) _tbBuilt[c.name]=tbBuildTown(c,objs);
   }
@@ -7814,7 +7820,7 @@ function wsStream(dt){
   for(const lb in _wsBuilt){ const e=_wsBuilt[lb]; if(Math.hypot(e.cx-px,e.cz-pz)>WS_DROP_R) wsDropBlock(lb); }
   for(const lb in AC_WORLD){ if(_wsBuilt[lb]) continue;
     const rec=AC_WORLD[lb]; if(Math.hypot(rec.cx-px,rec.cz-pz)>WS_BUILD_R) continue;
-    let ready=true; for(const b of rec.b){ if(!tbModelReq(b[0])) ready=false; }
+    let ready=true; for(const b of rec.b){ if(!tbModelReq(b[0]) && _tbModels[(''+b[0]).toUpperCase()]!==false) ready=false; }   // #554: skip DIDs absent from the bake (cached false) instead of blocking the landblock forever
     if(_tbIndex===null){ tbIndexReq(); ready=false; }
     if(ready) _wsBuilt[lb]=wsBuildBlock(lb,rec);
   }
