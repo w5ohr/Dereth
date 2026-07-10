@@ -15521,14 +15521,21 @@ function gainXP(amt,opts){
     player.luminance=Math.min(1000000,(player.luminance||0)+Math.round(amt*0.2));
   }
 }
-function playerHurt(dmg,sx,sz,type,element){
-  dmg=+dmg; if(!isFinite(dmg)||dmg<=0) return;   // #32: guard NaN/non-finite/≤0 damage (mirrors damageMonster) — the inner Math.max(1,…) steps catch negatives but NOT NaN (Math.max(1,NaN)===NaN), which would flow to player.hp and leave an unhealable/undyable soft-brick; e.g. a malformed server dmg-message via onMobDmg
-  if(player.invuln>0||!player.alive||inNetwork) return;
+function playerHurt(dmg,sx,sz,type,element,opts){
+  // #639: returns the damage actually APPLIED (0 for evade/invuln absorption, the post-mitigation
+  // amount otherwise) so callers that relay a raw claimed number (e.g. onPvp) can log what really
+  // happened instead of the attacker's unverified claim. opts.silent skips the built-in "You take…"
+  // line (the caller is logging its own coherent line); opts.onApplied(applied) — if given — fires
+  // AFTER hp is applied but BEFORE any death is processed, so a caller's strike line can be logged
+  // ahead of the death message it caused.
+  opts=opts||{};
+  dmg=+dmg; if(!isFinite(dmg)||dmg<=0) return 0;   // #32: guard NaN/non-finite/≤0 damage (mirrors damageMonster) — the inner Math.max(1,…) steps catch negatives but NOT NaN (Math.max(1,NaN)===NaN), which would flow to player.hp and leave an unhealable/undyable soft-brick; e.g. a malformed server dmg-message via onMobDmg
+  if(player.invuln>0||!player.alive||inNetwork) return 0;
   type=type||"melee";   // "melee" | "missile" | "magic" — selects which Defense skill mitigates
   // AC: a trained Defense skill can make an incoming attack MISS outright (evade), on top of its mitigation
   { const dk=type==="magic"?"magicd":(type==="missile"?"missiled":"meleed");
     const ev=clamp((skillValue(dk)-skillBase(dk))*0.0025,0,0.35);
-    if(ev>0&&Math.random()<ev){ if(sx!==undefined)floater(player.x,EYE+0.5,player.z,"evade","#bfe6ff"); return; } }
+    if(ev>0&&Math.random()<ev){ if(sx!==undefined)floater(player.x,EYE+0.5,player.z,"evade","#bfe6ff"); return 0; } }
   // Armour blunts physical hits, scaled by the matching Defense skill; it only half-applies to spells.
   const armScale=type==="missile"?"missiled":"meleed";
   let armT=(player.armor+wornArmorV()+itemBuff("armor")+jewelryBonus("armor")+((player.gearFx&&player.gearFx.armor)||0))*skillEff(armScale,0.02)*skillEff("shield",0.01);  // Impenetrability + Defense + jewelry + worn Armor item-spells
@@ -15571,10 +15578,10 @@ function playerHurt(dmg,sx,sz,type,element){
   // thus never ejects them from the one-way Academy onto the overworld lifestone.
   if(sx!==undefined){ let _pa=null,_pd=1e9; for(const m of monsters){ const d=(m.x-sx)*(m.x-sx)+(m.z-sz)*(m.z-sz); if(d<_pd){_pd=d;_pa=m;} }
     if(_pa&&_pa.practice&&_pd<6.25){ dmg=Math.min(dmg,Math.max(0,player.hp-1));
-      if(dmg<=0){ player.invuln=0.25; floater(player.x,EYE+0.6,player.z,"safe","#bfe6ff"); return; } } }
+      if(dmg<=0){ player.invuln=0.25; floater(player.x,EYE+0.6,player.z,"safe","#bfe6ff"); return 0; } } }
   player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)*(_crit?1.8:1)); // combatT: recently-in-combat → Healing is less effective
   if(typeof aetheriaSurge==="function"&&sx!==undefined){ let atk=null,bd=9; for(const m of monsters){ const d=Math.hypot(m.x-sx,m.z-sz); if(d<bd){bd=d;atk=m;} } aetheriaSurge("hurt",atk); }
-  clog(`You take <b style="color:#ff6a5a">${Math.round(dmg)}</b> ${element||type} damage${_crit?' — <b style="color:#ff8f6b">a critical blow!</b>':'.'}`);
+  if(!opts.silent) clog(`You take <b style="color:#ff6a5a">${Math.round(dmg)}</b> ${element||type} damage${_crit?' — <b style="color:#ff8f6b">a critical blow!</b>':'.'}`);
   if(_crit){ if(SFX.crit)SFX.crit(); if(sx!==undefined)floater(player.x,EYE+0.95,player.z,"CRIT!","#ff5a3a"); }
   // a solid hit can shatter a spell you're mid-cast on — high Focus steadies your concentration
   if(player.casting){ const ic=clamp(0.55-player.attr.Focus*0.004,0.18,0.6);
@@ -15585,7 +15592,10 @@ function playerHurt(dmg,sx,sz,type,element){
   if(sx!==undefined){const rel=Math.atan2(sx-player.x,-(sz-player.z))+player.yaw;
     const dd=document.getElementById('dmgdir');dd.style.transform=`rotate(${rel}rad)`;dd.style.opacity="1";
     setTimeout(()=>dd.style.opacity="0",420);}
+  const applied=Math.round(dmg);
+  if(opts.onApplied) opts.onApplied(applied);   // fires before die() so a caller's strike line logs ahead of the death message
   if(player.hp<=0) die();
+  return applied;
 }
 // AC death: you leave a LOOTABLE CORPSE holding some of your gear + half your pyreals;
 // walk back to reclaim it before it decays (5 min/level, minimum 1 hour). No XP is lost —
@@ -27564,8 +27574,16 @@ function pkCompatible(a,b){ return (a==="pk"&&b==="pk")||(a==="pkl"&&b==="pkl");
 function onPvp(m){
   if(!player.pk||!player.alive||!running||inDungeon||inNetwork) return;   // #307: you can't be PvP'd while inside a private instance (a PK at your phantom overworld spot must not land hits on you underground)
   const el=m.element||undefined, type=(el==="nether"||el==="fire"||el==="frost"||el==="shock"||el==="acid")?"magic":"melee";
-  playerHurt(Math.max(1,Math.round(m.dmg||0)),undefined,undefined,type,el);
-  log(`<b>${esc(m.from||"A foe")}</b> strikes you for <b>${Math.round(m.dmg||0)}</b> in combat!`,"warn");
+  // #639: the server only relays the attacker's CLAIMED damage — what actually lands (post-mitigation,
+  // or 0 on an evade/i-frame) is decided by playerHurt. Look up the attacker's last-known snapshot pos
+  // (keyed by charname in NET.players) so the evade floater/direction indicator can fire, log ONE line
+  // built from the real applied amount (via onApplied, so it lands before any death message), and
+  // silence playerHurt's own "You take…" line so PvP hits never print two contradictory lines.
+  let sx,sz; for(const id in NET.players){ const r=NET.players[id]; if(r&&(r.name||"").toLowerCase()===(m.from||"").toLowerCase()){ sx=(r.x!=null?r.x:r.tx); sz=(r.z!=null?r.z:r.tz); break; } }
+  const from=esc(m.from||"A foe");
+  const applied=playerHurt(Math.max(1,Math.round(m.dmg||0)),sx,sz,type,el,{silent:true,
+    onApplied:hit=>{ if(hit>0) log(`<b>${from}</b> strikes you for <b>${hit}</b>!`,"warn"); }});
+  if(!applied) log(`You evade <b>${from}</b>'s strike.`,"warn");
 }
 // send a PvP hit to a flagged remote player under your attack (called from melee/war when player.pk)
 function pvpStrike(dmg,element){
