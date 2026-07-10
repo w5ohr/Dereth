@@ -18217,8 +18217,8 @@ let lastTs=0,_loopRunning=false;   // #334: single-rAF-chain guard
 function loop(ts){
   if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;dt=Math.min(dt,0.05);
   try{ update(dt); }catch(e){ console.error("update() failed:",e); }   // #227: no single-frame exception may ever kill the rAF chain (a thrown update froze the game permanently)
-  updateLightPool();
-  renderComposite();
+  try{ updateLightPool(); }catch(e){ console.error("updateLightPool() failed:",e); }   // #501: same guarantee — a render-side throw here previously skipped requestAnimationFrame() below and froze the camera (and the portal tube, since its maxHold advance lives inside update()) with no recovery
+  try{ renderComposite(); }catch(e){ console.error("renderComposite() failed:",e); }   // #501: ditto — a WebGL/composite exception must not kill the loop either
   requestAnimationFrame(loop);
 }
 
