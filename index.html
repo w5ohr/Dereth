@@ -27375,9 +27375,12 @@ function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
   if(ccBust){ ccBust.rotation.y=sway; if(ccBust.userData.head) tickFace(ccBust.userData.head,dt); }
   if(ccModel) ccModel.rotation.y=sway;
   if(ccBody){ const u=ccBody.userData;
-    // face the character toward the camera and let it sway gently. The AC body's forward is -z and
-    // the preview camera sits at +z, so a base of PI turns the front (and the head's face) to us.
-    ccBody.rotation.y=Math.PI+Math.sin(tNow/1600)*0.6;
+    // #563: face the character toward the camera and let it sway gently. Since PR #548 (#39) dropped the
+    // compensating rotateY(PI) head/hat flips, the assembled AC body+head front the camera-facing +z axis
+    // in mesh-local space (the same convention the bust re-flips its AC head to at ccBust_build). The
+    // preview camera sits at +z looking -z, so the base is now 0 (was Math.PI, which turned the whole
+    // figure away — Face view showed the back of the skull and the shoulder blades).
+    ccBody.rotation.y=Math.sin(tNow/1600)*0.6;
     if(u){ if(u.acBody&&AC_MOTION&&typeof acMotionPose==="function"){ try{ acMotionPose(u,"idle",tNow/1000,true); }catch(e){} }
       if(u.head&&u.head.visible) tickFace(u.head,dt); } }
   ccRenderer.render(ccScene,ccCam); }
