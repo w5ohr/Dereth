@@ -10455,7 +10455,16 @@ function startPortalTransit(arrive,opts){
   if(typeof cam==="undefined"||!cam||typeof scene==="undefined"||!scene){ try{arrive&&arrive();}catch(e){} return; }   // renderer not up yet (pre-initThree): arrive without the overlay
   scene.add(cam);                                                    // camera-attached overlay (idempotent)
   const mat=new THREE.MeshBasicMaterial({map:portalTubeTex(),side:THREE.BackSide,transparent:true,opacity:0,fog:false,depthTest:false,depthWrite:false});
-  const tube=new THREE.Mesh(new THREE.CylinderGeometry(5,5,90,24,1,true),mat);
+  // The tunnel is a long closed SPINDLE: both ends converge to a sub-pixel tip 180 units out, so
+  // the streaks vanish into a single point ahead AND behind — nothing outside portal space is ever
+  // visible from any angle (the old constant-radius open cylinder framed the world through its
+  // exit). The camera sits at the widest waist (r≈5.5), and the whole thing is camera-attached.
+  const TUBE_LEN=360, TUBE_R=5.5, _pts=[];
+  for(let i=0;i<=16;i++){ const y=-TUBE_LEN/2+TUBE_LEN*i/16;
+    const f=Math.max(0,1-Math.pow(Math.abs(y)/(TUBE_LEN/2),2));        // rounded taper to each tip
+    _pts.push(new THREE.Vector2(Math.max(0.005,TUBE_R*Math.pow(f,0.6)),y)); }
+  const tubeGeo=new THREE.LatheGeometry(_pts,24);
+  const tube=new THREE.Mesh(tubeGeo,mat);
   tube.rotation.x=Math.PI/2; tube.renderOrder=999; cam.add(tube);
   portalTransit={tube,mat,t:0,hold:0,outT:0,phase:"in",arrive:arrive||null,fired:false,pinned:false,ax:0,az:0,
     ready:(typeof opts.ready==="function")?opts.ready:null,
@@ -10470,7 +10479,7 @@ function updatePortalTransit(dt){
   p.t+=dt;
   const slow=(typeof settings!=="undefined"&&settings.reduceMotion)?0.4:1;   // #244: gentler swirl under Reduce Motion (still gated on load)
   const tex=p.mat.map; if(tex){ tex.offset.y-=dt*1.6*slow; tex.offset.x+=dt*0.12*slow; }  // streaks rush past, tunnel twists
-  p.tube.rotation.z+=dt*0.9*slow;
+  p.tube.rotation.y+=dt*0.9*slow;   // roll about the cylinder's OWN axis (with rotation.x=PI/2 set, .z tilted the axis itself — a wobble the old uniform tube hid, but it swings the cone's tip off-center)
   // once the tube fully covers the view, switch the world — you're inside the tunnel when it happens
   if(!p.fired && p.t>=_PT_IN){ p.fired=true;
     try{ p.arrive&&p.arrive(); }catch(e){ console.error("portal arrive() failed:",e); }
