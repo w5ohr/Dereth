@@ -27765,6 +27765,31 @@ function ccApplyTemplate(k){
 function ccAttrSpent(){ let s=0; for(const a of ATTRS) s+=(ccWork.cattr[a]-10); return s; }
 function ccCreditsSpent(){ let s=0; for(const k of ccWork.ctrained){ const sk=SKILL_BY_KEY[k]; if(sk)s+=sk.tc; }
   for(const k of (ccWork.cspec||[])){ const sk=SKILL_BY_KEY[k]; if(sk&&sk.sc>0)s+=sk.sc; } return s; }
+// Spend any LEFTOVER creation credits so a fresh recruit is never weaker than a fully-allocated one —
+// unspent creation credits are pure waste (you can't bank them past creation). Only the remainder is
+// filled: whatever the player deliberately chose is kept. Returns {attr, skills} actually allocated.
+function ccAutoSpendCredits(){
+  const out={attr:0, skills:[]};
+  // ── attributes: fill the remainder, weighted toward what the build already emphasises (even split
+  //    when nothing is emphasised, e.g. an untouched Custom), each capped at 100 ──
+  let arem=CREATE_POOL-ccAttrSpent();
+  if(arem>0){
+    const weight=a=>(ccWork.cattr[a]-10)+2;   // +2 floor → even distribution when all six sit at the base
+    let wsum=0; for(const a of ATTRS) wsum+=weight(a);
+    for(const a of ATTRS){ if(arem<=0)break; const add=Math.min(Math.floor(arem*weight(a)/wsum),100-ccWork.cattr[a]); if(add>0){ ccWork.cattr[a]+=add; arem-=add; out.attr+=add; } }
+    let guard=0; while(arem>0 && guard++<800){ let placed=false; for(const a of ATTRS){ if(arem>0&&ccWork.cattr[a]<100){ ccWork.cattr[a]++; arem--; out.attr++; placed=true; } } if(!placed)break; }   // round-robin the rounding remainder
+  }
+  // ── skills: train broadly-useful skills with the leftover credits (defenses, mobility, self-heal) ──
+  let srem=CREATE_CREDITS-ccCreditsSpent();
+  if(srem>0){
+    ccWork.ctrained=ccWork.ctrained||[];
+    for(const k of ["meleed","missiled","magicd","run","jump","healing","mana","arcane","heavy","light","missile","alchemy","lockpick"]){
+      if(srem<=0)break; const sk=SKILL_BY_KEY[k]; if(!sk||ccWork.ctrained.includes(k))continue;
+      if(sk.tc<=srem){ ccWork.ctrained.push(k); srem-=sk.tc; out.skills.push(sk.n); }
+    }
+  }
+  return out;
+}
 function ccRenderCreation(){
   const lore=document.getElementById('ccLore'), h=HERITAGE_LORE[ccWork.race];
   if(lore){ if(h){ lore.style.display="block";
@@ -27861,6 +27886,10 @@ document.getElementById('ccCreate').onclick=()=>{
   // over-budget ccWork would otherwise bake a permanent over-statted character (innate can't be lowered).
   if(ccAttrSpent()>CREATE_POOL || ccCreditsSpent()>CREATE_CREDITS || ATTRS.some(a=>ccWork.cattr[a]<10||ccWork.cattr[a]>100)){
     ccErr("Character exceeds the creation budget — adjust attributes/skills."); return; }
+  // Spend any leftover attribute/skill credits into a sensible build so the recruit isn't weaker than
+  // a fully-allocated character (unspent creation credits can't be banked). Keeps whatever the player chose.
+  const _auto=ccAutoSpendCredits();
+  if(_auto.attr>0||_auto.skills.length){ log(`Your remaining creation credits were allocated automatically${_auto.attr>0?` — <b>+${_auto.attr}</b> attribute points`:""}${_auto.skills.length?`${_auto.attr>0?", and ":" — "}<b>${_auto.skills.join(", ")}</b> trained`:""}.`,"sys"); }
   player.name=name; player.heritage=ccWork.race;
   const APP_KEYS=["race","skin","face","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo","model","gender"];
   const app={}; for(const k of APP_KEYS) if(ccWork[k]!==undefined) app[k]=ccWork[k];
