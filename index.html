@@ -6555,6 +6555,11 @@ function textSprite(txt,color){
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,fog:false}));
   sp.scale.set(2.2,1.1,1);return sp;
 }
+// A textSprite is shared with combat floaters (which must x-ray over everything), so its material is
+// depthTest:false + fog:false. An OVER-HEAD role marker parented to an NPC must instead behave like a
+// world object: depth-tested so a roof/wall occludes it (an owner behind a building no longer shows only
+// a see-through glyph floating in the skybox — #557) and fogged so it fades with distance like its owner.
+function markOverhead(sp){ const m=sp.material; if(m){ m.depthTest=true; m.fog=true; m.needsUpdate=true; } return sp; }
 
 // ---------- world build ----------
 function buildWorld(){
@@ -21151,7 +21156,7 @@ function buildNPC(role,name,seedX,look,region){
   o.heritage=_NPC_HERITAGE[region]||"aluvian";          // town's people wear their heritage's AC head (Sho in Shoushi, etc.)
   const g=buildDressedAvatar(o,seed), app=g.userData._app;
   const lbl=labelSprite(name||R.label,"npcs");lbl.position.y=2.5;lbl.scale.set(role==="townsfolk"?4.5:6,role==="townsfolk"?1.1:1.5,1);g.add(lbl);
-  if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);g.userData.marker=marker; }
+  if(R.mark){ const marker=textSprite(R.mark,R.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);markOverhead(marker);g.add(marker);g.userData.marker=marker; }
   return g;
 }
 function addNPC(x,z,opts){
@@ -22245,7 +22250,7 @@ function buildMerchant(vt,name,region){
   for(let i=0;i<3;i++){const w=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2),i%2?wood2:new THREE.MeshStandardMaterial({color:def.robe}));w.position.set(-0.45+i*0.45,1.04,0.1);stall.add(w);}
   addVendorKit(g,stall,vt);   // each trade's signature possessions: tools at the stall + one in hand
   const lbl=labelSprite((name?name+" — ":"")+def.title+" — E to trade","npcs");lbl.position.y=2.5;g.add(lbl);
-  const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);g.add(marker);
+  const marker=textSprite(def.marker,def.mcol);marker.position.y=2.2;marker.scale.set(1,1,1);markOverhead(marker);g.add(marker);
   return g;
 }
 // ── vendor-class possessions: every trade carries and displays the tools of its craft ──
