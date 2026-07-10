@@ -21466,16 +21466,19 @@ function talkToNPC(n){
     else if(k==="master"){ if(A.golem) say("Well fought! The Foreman has honest work for you.");
       else if(!A.golemUp){ A.golemUp=1; practice("golem","Sparring Golem","golem",40);
         say("Warriors read the signs on the left; spellcasters the right. Now, a practical test — best my <b>Sparring Golem</b>! Mind your power bar and your attack height."); }
+      else if(!monsters.some(m=>m.academyGoal==="golem")){ practice("golem","Sparring Golem","golem",40); say("The <b>Sparring Golem</b> stands ready once more — best it!"); }   // #562: the *Up latch persists across save/load but the spawned monster does not (live monsters aren't serialized). If the latch is set yet no golem is alive, re-spawn instead of forever answering 'awaits your challenge' and dead-ending the chain.
       else say("The Sparring Golem awaits your challenge."); }
     else if(k==="foreman"){ if(!A.golem) say("The Training Master's golem first, friend.");
       else if(A.wasp) say("Good wing-work. The Blacksmith is short a bellows, I hear.");
       else if(!A.waspUp){ A.waspUp=1; practice("phyntoswasp","Carpenter Wasp","wasp",26);
         say("Pests! A <b>Carpenter Wasp</b> chews our scaffolds out in the training yard. Bring me its wing."); }
+      else if(!monsters.some(m=>m.academyGoal==="wasp")){ practice("phyntoswasp","Carpenter Wasp","wasp",26); say("The <b>Carpenter Wasp</b> is back at the scaffolds — bring me its wing."); }   // #562: re-spawn if the latch outlived the monster across a save/load
       else say("The wasp still buzzes out there."); }
     else if(k==="smith"){ if(!A.wasp) say("Help the Foreman first — I'm mid-forging.");
       else if(A.thrungus) say("My bellows, returned! The Library stands open to you now.");
       else if(!A.thrungusUp){ A.thrungusUp=1; practice("shreth","Thieving Thrungus","thrungus",34);
         say("A thieving <b>Thrungus</b> made off with my BELLOWS — it's loose in the training yard. Fetch it back!"); }
+      else if(!monsters.some(m=>m.academyGoal==="thrungus")){ practice("shreth","Thieving Thrungus","thrungus",34); say("The <b>Thrungus</b> is loose in the yard again — fetch my bellows back!"); }   // #562: re-spawn if the latch outlived the monster across a save/load
       else say("The Thrungus still has my bellows."); }
     else if(k==="research"){ if(!A.thrungus) say("The Library opens to those the Blacksmith vouches for.");
       else if(!A.oil){ A.oil=1;
@@ -21492,6 +21495,7 @@ function talkToNPC(n){
         academyExit(); }
       else if(!A.olthoiUp){ A.olthoiUp=1; practice("olthoiworker","Adolescent Olthoi","olthoi",50);
         say("Olthoi breached the Outer Wall and stole our <b>Protection Orbs</b>! An adolescent skulks in the training yard — recover an orb!"); }
+      else if(!monsters.some(m=>m.academyGoal==="olthoi")){ practice("olthoiworker","Adolescent Olthoi","olthoi",50); say("The <b>Adolescent Olthoi</b> skulks in the training yard again — recover an orb!"); }   // #562: re-spawn if the latch outlived the monster across a save/load
       else say("Recover the Protection Orb from the Adolescent Olthoi!"); }
     if(SFX.quest)SFX.quest(); saveGame(); return;
   }
