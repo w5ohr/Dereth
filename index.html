@@ -15590,6 +15590,13 @@ function deathDrops(){
   return {items:chosen.map(c=>c.it),gold};
 }
 function die(){
+  // #613: a full-screen panel (Inventory & Tinkering, Estate, Spellbook, etc.) left open when death strikes
+  // must not ride through the death fade and lifestone respawn — it would obscure the death message and the
+  // respawned world, and leave the game paused behind a modal the player never asked to keep open. Reuse the
+  // same close-all-panels path other forced transitions use (closeOtherModals with no exception closes every
+  // BIG_MODALS panel), then clear paused ourselves since closeOtherModals only toggles display, not paused.
+  if(typeof closeOtherModals==="function") closeOtherModals();
+  paused=false;
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
   player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.banes={};player.hots={};player.debuffs={};player.lightBuff=null;
   if(player.skillBuffs&&Object.keys(player.skillBuffs).length){player.skillBuffs={};derive();}
