@@ -4930,6 +4930,16 @@ function acHeadGroup(app, cb){
   fetch('assets/acheads/'+gfx+'.json').then(r=>r&&r.ok?r.json():null).then(mesh=>{
     if(!mesh){ cb&&cb(null); return; }
     const grp=new THREE.Group();
+    // #532: FACE SHAPE now morphs the retail head (it previously did nothing — every shape gave a
+    // pixel-identical head). The six shapes carry per-axis sx/sy/sz (authored for the procedural
+    // skull); normalise to the Oval baseline so Oval == the head as shipped and the other five read
+    // as distinct-but-natural deviations — Long taller/narrower, Round wider/shorter, Square wider
+    // jaw, Angular narrower/flatter, Heart wider brow/narrower chin. Applied in head-local space
+    // (x=width, y=height, z=depth) via an inner group so it composes cleanly with the outer
+    // placement scale set by acBuildHead AND rides the creator bust automatically.
+    const morph=new THREE.Group(), _fs=_find("face",app&&app.face), _ov=_find("face","oval");
+    if(_fs&&_ov) morph.scale.set(_fs.sx/_ov.sx,_fs.sy/_ov.sy,_fs.sz/_ov.sz);
+    grp.add(morph);
     for(const g of mesh.groups){
       const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.Float32BufferAttribute(g.v,3));
@@ -4937,7 +4947,7 @@ function acHeadGroup(app, cb){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       const mat=new THREE.MeshStandardMaterial({color:0xd8b48c,roughness:0.62,metalness:0.02});
-      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm);
+      const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; morph.add(mm);
       let texDID=g.otex, remapDIDs=[skinDID], slot="face";                                        // face/skin
       if(g.otex==='05000098'){ texDID=(style&&style.hairTex)||g.otex; remapDIDs=[skinDID,hairDID]; slot="hair"; }        // hair (over its scalp skin)
       else if(g.otex==='0500024C'){ texDID=(eye&&(bald?eye.texBald:eye.tex))||g.otex; remapDIDs=[skinDID,eyeDID]; slot="eyes"; }  // eyes (iris over the strip's skin)
