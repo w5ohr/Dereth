@@ -27579,6 +27579,8 @@ function reconcileRemotes(players){
     r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
     r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
+    r.inst=!!p.inst;   // #646: peer is inside a per-player instance — its x/z are only its overworld return point (#307). Hide the phantom avatar (its child nameplate sprite hides with the mesh) and restore when the flag clears.
+    if(r.inst && NET.meshes[p.id]) NET.meshes[p.id].visible=false;   // hide immediately; updateRemotes keeps it hidden while r.inst holds
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
 }
@@ -27604,7 +27606,7 @@ function updateRemotes(dt){
   const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
   for(const id in NET.players){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
-    mesh.visible=!hide; if(hide) continue;
+    mesh.visible=!hide && !r.inst; if(hide||r.inst) continue;   // #646: keep an instanced peer hidden (and skip its dressing/nameplate work) until the inst flag clears
     dressRemoteWield(mesh, r.wt, r.wmode, r.shield);   // reflect their wielded weapon/shield
     if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives
       r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
