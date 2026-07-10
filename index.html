@@ -26884,7 +26884,7 @@ function spawnSharedMob(sm){
   scene.add(mesh);
   const m={shared:true,id:sm.id,kind:sm.kind,x:sm.x,z:sm.z,tx:sm.x,tz:sm.z,yaw:sm.yaw||0,
     r:b.size*0.8*scale,hp:sm.hp,mhp:sm.mhp,dmg:b.dmg,xp:b.xp,ang:sm.yaw||0,state:sm.st||"wander",
-    mesh,headY:mesh.userData.headY*scale,isDungeon:false,baseScale:scale,flash:0,slow:0,burnT:0,t:0,atkCd:0,
+    mesh,headY:mesh.userData.headY*scale,isDungeon:false,baseScale:scale,flash:0,slow:0,burnT:0,burnDps:0,burnAcc:0,t:0,atkCd:0,   // #642: burnDps/burnAcc so a shared mob carries the same DoT fields as a local one
     isBoss:!!sm.boss,name:sm.name||(gm&&gm.vname&&gm.vname!==b.name?gm.vname:undefined),gltf:!!gm};
   monsters.push(m); NET.mobs[sm.id]=m; attachCreatureAnims(m, gm); return m;
 }
@@ -26908,6 +26908,36 @@ function reconcileMobs(serverMobs){
   }
   for(const id in NET.mobs){ if(!seen[id]) removeSharedMob(id); }
 }
+// #642: DoT/status ticking for SERVER-AUTHORITATIVE mobs.
+//
+// The burn tick lives inside the monster-AI loop, which opens with `if(m.shared) continue;` — right
+// for AI (the server owns shared mobs) but it took the DoT with it. A fire-imbued weapon or a nether
+// caster's whole kit silently did nothing online: burnT never even decremented.
+//
+// The shared-mob protocol vocabulary is just {t:"attack", id, dmg}, so we convert accumulated burn
+// into throttled damage claims. The server (resolve_attack) validates and applies them authoritatively
+// — the client never touches m.hp for a shared mob.
+const NET_ATTACK_RANGE=16;   // mirrors ATTACK_RANGE in server/dereth_server.py — claims beyond it are DROPPED
+const NET_BURN_MIN_MS=1000;  // throttle: at most one burn claim per second per mob
+function sharedStatusTick(m,dt){
+  if(m.slow>0) m.slow=Math.max(0,m.slow-dt*0.5);   // decay the transient slow so it can't stick forever (still cosmetic online — the server drives movement)
+  if(!(m.burnT>0)) return;
+  m.burnT-=dt; m.burnAcc=(m.burnAcc||0)+(m.burnDps||0)*dt;
+  if(Math.random()<0.16) burst(m.x,rnd(0.5,1.6),m.z,0xff7a2a,1);   // the flames render for shared mobs too now
+  // The server drops any claim from beyond ATTACK_RANGE. Rather than fire into the void (silent damage
+  // loss — the very bug being fixed) hold the tick. The backlog is capped at ONE SECOND of burn, so
+  // stepping back into range lands at most a single second's worth in one claim (what you'd have taken
+  // standing still) rather than everything accrued while you kited.
+  if(Math.hypot(player.x-m.x,player.z-m.z)>NET_ATTACK_RANGE){ m.burnAcc=Math.min(m.burnAcc,(m.burnDps||0)); return; }
+  const t=now();
+  if(m.burnAcc>=1 && t-(m._burnSendT||0)>=NET_BURN_MIN_MS){
+    const dd=Math.floor(m.burnAcc);
+    if(!NET.open) return;                       // disconnected: keep accumulating, don't fake feedback (#636)
+    m.burnAcc-=dd; m._burnSendT=t;
+    netSend({t:"attack",id:m.id,dmg:dd});       // server applies HP/death/XP; we never touch m.hp here
+    floater(m.x,(m.headY||1.6)+1.4,m.z,dd,"#ff7a2a");
+  }
+}
 function updateSharedMobs(dt){
   const hide=inDungeon||inNetwork; const k=1-Math.exp(-10*dt);
   if(NET.event){ const e=NET.event; // pulse + rotate the Incursion beacon (hidden inside instances)
@@ -26917,6 +26947,7 @@ function updateSharedMobs(dt){
     const m=NET.mobs[id]; if(!m.mesh) continue;
     m.mesh.visible=!hide; if(hide) continue;
     m.flash=Math.max(0,m.flash-dt);
+    sharedStatusTick(m,dt);   // #642: burn/slow tick for server-owned mobs (the AI loop skips them)
     const smx=m.x,smz=m.z; m.x+=(m.tx-m.x)*k; m.z+=(m.tz-m.z)*k;
     if(m.gltfMixer){ m.gltfMixer.update(dt);                       // animate the rigged AC model (server-driven mobs get their own mixer tick)
       if(m.actWalk){ const moving=Math.hypot(m.x-smx,m.z-smz)>2e-3||m.state==="chase";
