@@ -15340,6 +15340,14 @@ function playerHurt(dmg,sx,sz,type,element){
   let _crit=false;
   { const cc=clamp(0.10-player.attr.Coordination*0.0008,0.03,0.12);
     if(Math.random()<cc){ _crit=true; const cr=Math.min(1,(player.augment&&player.augment.critReduce)||0); dmg=Math.round(dmg*(2-cr)); } }
+  // #571: the Training Academy's practice targets are training dummies — retail's tutorial never let the
+  // practice mob kill you. Find the attacker (its position is passed as sx,sz) and, if it's a flagged
+  // practice mob, clamp the blow so it can never drop the recruit below 1 hp. This makes the very first
+  // combat lesson unable to one-shot a fresh 5-hp Custom recruit (End 10 → 5 hp vs the 6-dmg clamp) and
+  // thus never ejects them from the one-way Academy onto the overworld lifestone.
+  if(sx!==undefined){ let _pa=null,_pd=1e9; for(const m of monsters){ const d=(m.x-sx)*(m.x-sx)+(m.z-sz)*(m.z-sz); if(d<_pd){_pd=d;_pa=m;} }
+    if(_pa&&_pa.practice&&_pd<6.25){ dmg=Math.min(dmg,Math.max(0,player.hp-1));
+      if(dmg<=0){ player.invuln=0.25; floater(player.x,EYE+0.6,player.z,"safe","#bfe6ff"); return; } } }
   player.hp-=dmg;player.invuln=0.25;player.combatT=6;SFX.hurt();shake(clamp(dmg*0.012,0.05,0.4)*(_crit?1.8:1)); // combatT: recently-in-combat → Healing is less effective
   if(typeof aetheriaSurge==="function"&&sx!==undefined){ let atk=null,bd=9; for(const m of monsters){ const d=Math.hypot(m.x-sx,m.z-sz); if(d<bd){bd=d;atk=m;} } aetheriaSurge("hurt",atk); }
   clog(`You take <b style="color:#ff6a5a">${Math.round(dmg)}</b> ${element||type} damage${_crit?' — <b style="color:#ff8f6b">a critical blow!</b>':'.'}`);
@@ -21325,7 +21333,7 @@ function talkToNPC(n){
     const practice=(kind,nm,goal,hp)=>{ let m=null;
       if(inDungeon&&curDungeon&&curDungeon.academy){ spawnDungeonMonster(kind,DCEN.x+rnd(-5,5),DCEN.z+18+rnd(-4,4),false,1); m=monsters[monsters.length-1]; }   // loose it in the courtyard
       else m=spawnMonster(kind,AP.x+rnd(-4,4),AP.z+12+rnd(0,4),false);
-      if(m){ m.name=nm; m.mhp=m.hp=hp; m.dmg=Math.min(m.dmg,6); m.academyGoal=goal; floater(m.x,2.5,m.z,nm,"#ffd27a"); } };
+      if(m){ m.name=nm; m.mhp=m.hp=hp; m.dmg=Math.min(m.dmg,6); m.academyGoal=goal; m.practice=1; floater(m.x,2.5,m.z,nm,"#ffd27a"); } };   // #571: m.practice flags a training dummy — its blows can never drop the recruit below 1 hp (see playerHurt), so the very first combat lesson can't one-shot a 5-hp fresh character and eject them from the one-way Academy
     if(k==="greet"){ if(!A.greet){ A.greet=1; const ci=player.inv.findIndex(i=>i.name==="Calling Stone"); if(ci>=0)takeFromInv(ci);
         say("Welcome to the Training Academy! I'll take that Calling Stone. Move with <b>W A S D</b>, speak to folk with <b>E</b>. Samuel waits with your armor, and the Training Master will test your arm. The Sentry keeps the portal out — or <b>Jonathan</b> can send you on at once."); }
       else { say("Samuel first, then the Training Master. The Sentry holds your way out.");
