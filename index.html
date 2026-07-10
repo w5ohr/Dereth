@@ -4933,8 +4933,17 @@ function acBuildHead(av,app){
   const u=av&&av.userData; if(!u||!u.acBody||!u.neck||!u.acHeadPlace) return;
   app=app||u._headApp||player.appearance;               // each avatar wears its OWN head (heritage + seeded features); player falls back to player.appearance
   const token=(u._acHeadToken=(u._acHeadToken||0)+1);
+  // #530: a real retail head exists for every playable heritage/gender, but the mesh+textures load
+  // async (~0.2–1.5 s cold). Until now the procedural placeholder head — whose flat skin-hex tone
+  // doesn't match the AC body — stayed visible during that window, so the creator preview (and first
+  // viewer of any avatar) rendered a pale, feature-painted "egg". Any capture taken mid-load caught it
+  // (the two Oval DEFAULTS most reliably, being each race/gender's first cold view). Hide the placeholder
+  // the instant we know a retail head is coming; only reveal it again on a genuine miss (truly-missing asset).
+  const acAvail=(typeof acHeadOpts==="function")&&!!acHeadOpts(app);
+  if(acAvail&&u.head&&!u.acHead) u.head.visible=false;
   acHeadGroup(app, grp=>{
-    if(!grp||u._acHeadToken!==token) return;
+    if(u._acHeadToken!==token) return;                 // superseded by a newer build — don't touch its state
+    if(!grp){ if(u.head) u.head.visible=!u.acHead; return; }   // no retail asset resolved → fall back to the procedural head
     if(u.acHead&&u.acHead.parent){ u.acHead.parent.remove(u.acHead); }
     grp.userData.acBody=true; grp.userData.acHeadGrp=true;
     const s=u.acScale||1, P=u.acHeadPlace, jl=acRestPos(u.neck,av);
@@ -27359,8 +27368,10 @@ function ccBust_build(app){
   const collar=new THREE.Mesh(new THREE.TorusGeometry(0.15,0.045,8,20),new THREE.MeshStandardMaterial({color:garb})); collar.rotation.x=Math.PI/2; collar.position.y=1.42; g.add(collar);
   // swap in the REAL AC head when the pack is available — the creator becomes WYSIWYG
   if(AC_HEADS){ const tok=++_ccHeadTok;
+    if((typeof acHeadOpts==="function")&&acHeadOpts(app)&&g.userData.head) g.userData.head.visible=false;   // #530: hide the procedural "egg" while the retail head loads (no mid-load flash)
     acHeadGroup(app, hgrp=>{
-      if(!hgrp||tok!==_ccHeadTok) return;
+      if(tok!==_ccHeadTok) return;
+      if(!hgrp){ if(g.userData.head) g.userData.head.visible=true; return; }   // no retail asset → keep the procedural head
       if(g.userData.head){ g.remove(g.userData.head); }        // retire the procedural bust head
       hgrp.position.y=1.505; hgrp.rotation.y=Math.PI;           // head mesh fronts +z; half-turn matches the bust's -z convention so the sway shows the face
       g.add(hgrp);
