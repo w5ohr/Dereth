@@ -1697,7 +1697,7 @@ function acSkyAt(t){
 }
 fetch('assets/acscenery.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_SCEN=j; }).catch(()=>{});
 function floraTexture(fn){ if(_floraTex[fn]) return _floraTex[fn];
-  const t=new THREE.TextureLoader().load('assets/acflora/tex/'+fn); t.wrapS=t.wrapT=THREE.RepeatWrapping; _floraTex[fn]=t; return t; }
+  const t=new THREE.TextureLoader().load('assets/acflora/tex/'+fn); t.flipY=false; t.wrapS=t.wrapT=THREE.RepeatWrapping; _floraTex[fn]=t; return t; }
 function floraProto(shex){   // build (once) the shared prototype group for a scenery setup
   if(_floraProto[shex]) return _floraProto[shex];
   _floraProto[shex]=fetch('assets/acflora/'+shex+'.json').then(r=>r&&r.ok?r.json():null).then(d=>{
@@ -4724,7 +4724,7 @@ function acPartTemplates(j){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.6,metalness:0.02});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.6,metalness:0.02});
@@ -4863,8 +4863,8 @@ function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, 
       tex=new THREE.CanvasTexture(cv);
     } else { tex=new THREE.Texture(img); tex.needsUpdate=true; }
     tex.encoding=THREE.sRGBEncoding;
-    tex.flipY=false;   // the head GfxObj UVs use the opposite V convention from the body parts —
-    tex.needsUpdate=true;  // without this the eye/nose/mouth strips land on the brow, chin and neck
+    tex.flipY=false;   // dat UVs are top-origin (v=0 = texture top) — every AC pack needs flipY off —
+    tex.needsUpdate=true;  // (three.js flipY default is bottom-origin; with it the strips land on brow/chin/neck)
     // #533: if a colour remap was requested but palettes.json hadn't loaded yet, we just served the
     //   RAW texture — that's the ginger hair every race showed. Don't cache it permanently, so the
     //   next rebuild (once AC_HEAD_REMAP is in) re-remaps to the real per-heritage hair colour.
@@ -6607,7 +6607,7 @@ function glyphStoneTex(seed){
 // a longer jagged crystal — elongated faceted bipyramid, jittered uniquely per seed
 // ── real AC fixture meshes (assets/acmisc: lifestone, bindstone) ──
 const _miscGeo={}, _miscTexCache={}, _miscTL=new THREE.TextureLoader();
-function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
+function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.flipY=false; t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
 function acMiscMesh(name,cb){   // fetch + cache a misc fixture's groups, call cb(groups) when ready (or now if cached)
   const c=_miscGeo[name];
   if(c&&c!=="loading"){ cb(c); return; }
@@ -7370,7 +7370,7 @@ const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 // without _acShared that disposed the shared texture out from under still-visible neighbours and left the
 // reused copy GPU-incomplete — which ANGLE/Metal samples as flat WHITE (the featureless white town). The
 // _acShared flag makes _dispTex skip it, exactly as it already does for shared canvas/normal/archetype (#326).
-function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
+function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.flipY=false; t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
 function tbModelReq(did){ did=(''+did).toUpperCase();
@@ -9364,7 +9364,7 @@ function hsLayoutOf(h){ const l=_hsLay[h.set]; return (l&&l[String(h.unit)])||nu
 // ── real building meshes (assets/achouses/<model>.json), shared geometry per model ──
 const _hsModels={},_hsTexCache={},_hsTL=new THREE.TextureLoader();
 function hsTex(fn){
-  if(!_hsTexCache[fn]){ const t=_hsTL.load('assets/achouses/tex/'+fn);
+  if(!_hsTexCache[fn]){ const t=_hsTL.load('assets/achouses/tex/'+fn); t.flipY=false;
     t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _hsTexCache[fn]=t; }
   return _hsTexCache[fn];
 }
@@ -11942,7 +11942,7 @@ function acItemMesh(name){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.5,metalness:0.25});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.5,metalness:0.25});
@@ -14656,7 +14656,7 @@ function acArmorPart(gid,cb){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.55,metalness:0.15});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.55,metalness:0.15});
@@ -14736,7 +14736,7 @@ function acClothPart(baseHex,gk,cb){    // baseHex like "10000001", gk "m"|"f" �
         geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
         geo.setIndex(g.i);
         let mat;
-        if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+        if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
           mat=new THREE.MeshStandardMaterial({map:t,roughness:0.82,metalness:0.03});
           if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
         else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x9a8f7a),roughness:0.82,metalness:0.03});
@@ -14765,7 +14765,7 @@ function acClothDyeTex(fn,key,remap,cb){
     for(let i=0;i<px.length;i+=4){ const v=(px[i]<<16)|(px[i+1]<<8)|px[i+2]; const nv=map[v];
       if(nv!==undefined){ px[i]=nv>>16&255; px[i+1]=nv>>8&255; px[i+2]=nv&255; } }
     ctx.putImageData(id,0,0);
-    const t=new THREE.CanvasTexture(cv); t.encoding=THREE.sRGBEncoding; flush(t);
+    const t=new THREE.CanvasTexture(cv); t.flipY=false; t.encoding=THREE.sRGBEncoding; flush(t);
   }catch(e){ flush(null); } };
   img.onerror=()=>flush(null);
   img.src='assets/acmodels/tex/'+fn;
@@ -21121,7 +21121,7 @@ function acHatPart(name,gk,cb){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a7a5a),roughness:0.85,metalness:0.02});
@@ -25323,7 +25323,7 @@ function buildDungeonReal(def,dj){
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uvs,2));
     geo.setIndex(g.idx);
     let mat;
-    if(g.tex){ const t=TL.load('assets/acdungeons/tex/'+g.tex); t.encoding=THREE.sRGBEncoding;
+    if(g.tex){ const t=TL.load('assets/acdungeons/tex/'+g.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
       t.wrapS=t.wrapT=THREE.RepeatWrapping; mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02,side:THREE.DoubleSide}); }
     else mat=new THREE.MeshStandardMaterial({color:(g.color!=null?g.color:0x777788),roughness:0.85,side:THREE.DoubleSide});
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
