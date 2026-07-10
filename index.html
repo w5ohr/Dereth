@@ -27080,10 +27080,21 @@ function buffBotList(){
   const mt=pick(s=>s.buff==="might"); if(mt)out.push(mt);
   return out;
 }
+// same buff-family test as buffBotList(), minus the castability filter — used to tell "knows no buffs
+// at all" apart from "knows buffs but the schools aren't trained yet" (#615).
+function buffBotKnowsAny(){
+  const known=player.knownSpells||[];
+  const isBuff=sp=>!!sp&&(sp.buff==="attr"||sp.buff==="skill"||sp.buff==="swift"||sp.buff==="prot"||sp.buff==="item"||sp.buff==="bane"||sp.buff==="might"||sp.special==="regen"||(sp.school==="life"&&typeof sp.heal==="function"));
+  return known.some(id=>isBuff(SPELLBOOK[id]));
+}
 // the simple command: /buff (self) · /buff <name> (a nearby online player) · /buff all (all nearby)
 function buffBotCast(targetName){
   const list=buffBotList();
-  if(!list.length){ log("You know no buffs to cast — learn creature/life/item enchantments first.","warn"); return; }
+  if(!list.length){
+    if(buffBotKnowsAny()) log("Your buff spells await training — train Creature/Item/Life Enchantment on the character sheet (C) to cast them.","warn");
+    else log("You know no buffs to cast — learn creature/life/item enchantments first.","warn");
+    return;
+  }
   const t=(targetName||"").trim();
   if(!t||/^(me|self)$/i.test(t)){
     list.forEach(sp=>applyBuffSelf(sp,true)); derive(); if(typeof updateHUD==="function")updateHUD();
