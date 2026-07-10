@@ -704,6 +704,7 @@
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Which things paint a dot on the top compass bar">Compass bar blips</span><span id="setBarBlips" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow" style="align-items:flex-start"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Which things paint a dot on the round minimap (same as the minimap's ⚙ menu)">Minimap blips</span><span id="setMiniBlips" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Controls</span><button id="openKeymapBtn" class="tbtn">⌨ Map Keys…</button></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="A complete in-game manual, with a Controls section showing your own current keybindings">Manual</span><button id="openManualBtn" class="tbtn">📖 Handbook…</button></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Sync your character to the server, then depart Dereth through a recall portal back to the title screen">Session</span><button id="logoutBtn" class="tbtn" style="border-color:var(--gold);color:var(--gold)">🚪 Log Out…</button></div>
   <button id="closeSettings">Return to Dereth  (O)</button>
 </div></div>
@@ -16507,6 +16508,7 @@ const ACTIONS=[
   {id:"moveui",   label:"Move UI Mode",     group:"Interface",def:"KeyN",run:()=>{ setUIMove(!movingUI); log(movingUI?"<b>Move UI</b> — drag any panel; press again to finish.":"HUD layout saved.","sys"); }},
   {id:"mute",     label:"Mute Sound",       group:"Interface",def:"KeyM",run:()=>toggleMute()},
   {id:"pause",    label:"Pause",            group:"Interface",def:"KeyP",run:()=>togglePause()},
+  {id:"manual",   label:"Manual / Handbook",group:"Interface",def:"F1",run:()=>openManual()},
   {id:"qbprev",   label:"Quickbar Page ◀",  group:"Quickbar",def:"BracketLeft",run:()=>{hotbarPage=(hotbarPage+QB_PAGES-1)%QB_PAGES;buildSpellbar();}},
   {id:"qbnext",   label:"Quickbar Page ▶",  group:"Quickbar",def:"BracketRight",run:()=>{hotbarPage=(hotbarPage+1)%QB_PAGES;buildSpellbar();}},
 ];
@@ -16529,7 +16531,8 @@ function buildPanelRail(){
     ["📜","Quest Log (J)",()=>togglePanel('questlog',openQuestLog,closeQuestLog)],
     ["📖","Codex (B)",()=>togglePanel('codex',openCodex,closeCodex)],
     ["🏠","Estate (Y)",()=>togglePanel('housing',openHousing,closeHousing)],
-    ["⚙️","Options (O)",()=>togglePanel('settings',openSettings,closeSettings)]];
+    ["⚙️","Options (O)",()=>togglePanel('settings',openSettings,closeSettings)],
+    ["📘","Manual — the Adventurer's Handbook (F1)",()=>openManual()]];   // book icon, last in the rail
   rail.innerHTML=""; for(const [ic,tt,fn] of B){ const b=document.createElement('button'); b.textContent=ic; b.title=tt; b.onclick=fn; rail.appendChild(b); }
 }
 buildPanelRail();
@@ -23668,6 +23671,159 @@ document.getElementById('closeSettings').onclick=closeSettings;
 // (and anything that reads it, including the autosave timer via saveGame()'s `keymap:KEYBINDS`) is
 // untouched until an explicit Save button commits the draft. Done/Esc/losing focus just drops the draft.
 let keymapDraft=null;
+// ── The Adventurer's Handbook — a complete in-game manual that reflects YOUR keybinds ──
+// Rebuilt on every open so the CONTROLS pages always show the player's live, per-character
+// bindings (KEYBINDS via bindLabel). Rendered through the shared book reader (kcReadLectern),
+// the same tome idiom as "A History of Dereth". Opened by hotkey (default F1), the Settings
+// "Handbook" button, or the ❓ on the panel rail.
+function manualCtrlBlock(groupList){
+  const byGroup={};
+  for(const a of ACTIONS){ if(groupList.indexOf(a.group)<0) continue; (byGroup[a.group]=byGroup[a.group]||[]).push(a); }
+  let out="";
+  for(const g of groupList){ const arr=byGroup[g]; if(!arr||!arr.length) continue;
+    out+="\n"+g.toUpperCase()+"\n";
+    for(const a of arr) out+="   "+a.label+"  —  "+bindLabel(a.id)+"\n";
+  }
+  return out;
+}
+function openManual(){
+  const who=(typeof player!=="undefined"&&player&&player.name)?player.name:"adventurer";
+  const her=((typeof player!=="undefined"&&player&&player.heritage)||"").toLowerCase();
+  let herLine="No class binds you in Dereth — you become what you choose to train.";
+  if(her.indexOf("alu")>=0) herLine="As an Aluvian you take up a steel gauntlet & sword — a knight's path.";
+  else if(her.indexOf("sho")>=0) herLine="As one of the Sho you take up a dark glove & bow — a hunter's path.";
+  else if(her.indexOf("ghar")>=0) herLine="As a Gharu'ndim you take up a robe sleeve & wand — a mage's path.";
+  const mk=bindLabel("manual");
+  const P=[];
+  P.push(`THE ADVENTURER'S HANDBOOK
+A complete guide to Dereth — the world of Asheron's Call.
+
+Welcome, ${who}.
+${herLine}
+
+This handbook is written for YOU. The CONTROLS pages at the end list every command exactly as you have it bound right now — remap a key in Settings → Map Keys, reopen this book, and it will have changed to match.
+
+Turn pages with  Next ▸  and  ◂ Prev .  Press  ${mk}  to open the handbook any time; Esc closes it.`);
+  P.push(`GETTING STARTED
+
+• Pick a HERITAGE — Aluvian (Holtburg), Sho (Shoushi), or Gharu'ndim (Yaraq) — or Wanderer for a balanced start. A creation wizard walks you through heritage → attributes → appearance. Every new hero starts with heritage clothing, starting gear, and a Welcome Letter.
+• Playing ONLINE: register an account, roll up to 8 characters, and enter the shared world. Playing OFFLINE: choose a heritage and play from a local browser save; "Continue Your Saga" resumes it.
+• Click the screen to CAPTURE THE MOUSE for looking around; press Esc to release it.
+• BIND YOUR SOUL to a Lifestone (press the interact key at a glowing blue stone). When you die, your spirit returns there.
+• Press ${mk} at any time to reopen this handbook.`);
+  P.push(`THE SCREEN — HUD & INTERFACE
+
+• VITALS show Health (red), Stamina (yellow) and Mana (blue).
+• The COMPASS strip across the top and the circular RADAR / minimap keep you oriented; other players, party members and world bosses show on them online.
+• The QUICKBAR holds your spell/consumable slots; a POTION BELT sits nearby; a TARGET FRAME shows what you have selected; a QUEST TRACKER lists your active bounties.
+• Open panels with their keys (see CONTROLS): Character Sheet, Inventory, Spellbook, Bestiary, Quest Log, Estate, World Map, Settings.
+• MOVE UI MODE lets you drag any panel where you like, then saves the layout. Each interface can also be shown/hidden with its own key (see HUD Toggles) or its ✕.`);
+  P.push(`MOVEMENT & THE WORLD
+
+• Walk with the movement keys; hold Sprint to run (it drains Stamina). Auto-Run toggles continuous running.
+• JUMP is a charge: hold the key to wind up the jump bar, release to leap. DODGE rolls you clear.
+• The land is contoured — hills, valleys, snow-capped peaks and lakes. Steep SLOPES gate travel; follow the contour. Cobblestone HIGHWAYS link the three capitals and grant a +50% speed bonus.
+• You can wade shallows but DROWN in deep ocean.
+• BUILDINGS are enterable: walk through the doorway facing the plaza; the walls block you, the doorway lets you pass.
+• A day/night cycle and region-aware WEATHER (clear, overcast, rain, portal storms) pass over Dereth. Town centres are SAFE havens — creatures cannot enter.`);
+  P.push(`COMBAT
+
+• Progression is CLASSLESS and attribute-driven — you are what you train.
+• MELEE: left-click to strike; hold to charge a heavier blow. MISSILE: swap to your bow and left-click to fire ballistic arrows with range falloff.
+• ATTACK HEIGHT (mouse wheel) aims high / middle / low — match it to your foe's size. Hold right-mouse to BLOCK with a shield.
+• Every strike can CRIT for double damage (crit chance scales with Coordination). Watch for Crushing Blow, Sneak Attack, and a rear-attack bonus.
+• DAMAGE TYPES are pierce / slash / bludgeon; ELEMENTS are fire / frost / lightning (plus acid, etc.). Foes RESIST or are WEAK to elements — read the "weak!/resist" callouts and your damage numbers, and pick the right tool.
+• DIFFICULTY (Settings): Adept / Hero / Legend scales enemy health and damage.`);
+  P.push(`MAGIC & SPELLS
+
+• Eight schools: War Magic (elemental bolts, volleys, rings, walls), Life Magic (heals, drains, protections, vulnerabilities), Creature Enchantment (attribute buffs), Item Enchantment (aptitudes, cantrips), Void, Mana Conversion, and the full recall set (Tie / Recall / Secondary / Sending).
+• You start knowing a few spells and LEARN the rest from SCROLLS — buy them from a Scrivener or loot them, then scribe them (in Inventory) to add them to your Spellbook.
+• Open the SPELLBOOK to assign any known spell to a QUICKBAR slot; cast with the slot keys (see CONTROLS). Use the Quickbar Page keys to reach more slots.
+• COMPONENT CASTING draws on tapers and reagents; a Prismatic Taper empowers a cast. A focus-mana battery / mana stones extend your endurance in the field.
+• BUFF SELF casts your prepared self-enchantments in one press.`);
+  P.push(`ITEMS, INVENTORY & EQUIPMENT
+
+• Slain creatures drop loot; press the interact key to pocket it into your SATCHEL.
+• Open INVENTORY & PAPERDOLL to manage gear: Held / Body / Adornment rails and container packs. EQUIP weapons and armour for their bonuses; hover for a live Examine box.
+• Every item shows its real icon and stats — wield requirements, item-spells, Spellcraft, item mana, banes. Red means a requirement you don't yet meet.
+• SALVAGE unwanted items into raw materials for crafting.
+• GATHER from ore veins (⛏) and herb patches (🌿) in the wilds with the interact key; nodes replenish over time.`);
+  P.push(`CRAFTING — SALVAGE, TINKERING & COMBINE
+
+• TINKER salvage onto gear to add permanent bonuses (per-item caps; some imbues are once-only).
+• The COMBINE / tradeskill engine crafts through ~1,500 recipes — bring the right ingredients together.
+• AETHERIA: slot aetheria with levels and sets for combat SURGES.
+• ATTRIBUTE GEMS raise a core attribute (capped at its natural peak). BUFF ELIXIRS (Might, Swiftness) grant temporary combat boosts shown in your status panel.`);
+  P.push(`YOUR CHARACTER — ATTRIBUTES, VITALS & SKILLS
+
+• Six ATTRIBUTES: Strength, Endurance, Coordination, Quickness, Focus, Self — bought up in ranks with unspent XP (innate cap 100).
+• VITALS (Health, Stamina, Mana) derive from your attributes and can also be raised directly with XP on the Character Sheet.
+• SKILLS: train and specialize weapon and magic skills; higher spell tiers need a higher skill in that school. Credits gate what you can train.
+• Open the CHARACTER SHEET to spend XP, review skills and vitals, and read your titles. Everything auto-saves — to the server online, to the browser offline.`);
+  P.push(`ADVANCEMENT — AUGMENTATIONS, TITLES & ENLIGHTENMENT
+
+• AUGMENTATIONS grant permanent attribute/skill boosts (capped).
+• ACHIEVEMENTS earn TITLES shown under your name (First Blood, Slayer, Giant Killer, Delver, Archmage… hundreds in all) — browse them on the Character Sheet.
+• ENLIGHTENMENT is the endgame gate (level 275 + Society Master + auras): it resets you for further growth and prestige.
+• ALLEGIANCE (online): once you reach the level gate you may swear to a patron for bonus XP.`);
+  P.push(`TRAVEL — TOWNS, PORTALS & THE MAP
+
+• 24 towns sit at their real Dereth coordinates across Aluvia (north), the Sho Lands (east), Gharu'ndim (south), and the deadly Direlands (centre). Capitals are walled and marked ★.
+• Every town has a TOWN NETWORK portal (a teal arch by the Lifestone): interact to enter a hub ringed by a portal to every town.
+• Or open the WORLD MAP and CLICK ANY TOWN to fast-travel there.
+• Level-gated OVERWORLD PORTALS reach frontier zones. Danger rises with distance from any capital — the Direlands are lethal.`);
+  P.push(`DUNGEONS (DELVES)
+
+• 50 themed dungeon entrances are scattered across Dereth — Ice Caverns, Lava Forges, Olthoi Hives, Forgotten Crypts, Shadow Sanctums, The Deep and more. Entrances glow in their theme's colour and are named.
+• Each delve has a TIER (1–5): deeper, farther dungeons field tougher guardians and richer hoards, and many span multiple storeys with descend portals.
+• Slay every guardian — the elite WARDEN included — to unseal the treasure HOARD, plunder it with the interact key, then leave through the archway. Die inside and your spirit returns to your bound Lifestone.
+• A guided TRAINING ACADEMY tutorial dungeon teaches the ropes. All 50 show on the world map.`);
+  P.push(`FOES & THE BESTIARY
+
+• The full creature roster of Dereth walks the wilds — Drudges, Mosswarts, Tuskers, Olthoi, Lugians, Tumeroks, Virindi, undead and many more — on real, distinct models, spawned in lore-appropriate lands and scaled by distance from town.
+• CHAMPIONS are glowing, named creatures in the deep wilds with far more health and richer loot.
+• WORLD BOSSES roam the wilds — Gnawvil the Olthoi Queen, the Shadow Generals, and the apex terror Bael'Zharon the Hopeslayer. Online these are shared: everyone fights the same boss, and a global cry heralds each spawn and slaying.
+• The BESTIARY records the creatures you've slain and their weaknesses; undiscovered foes stay a mystery until you face them.`);
+  P.push(`QUESTS, VENDORS & THE KILMER SAGA
+
+• VENDORS in every town: a Provisioner (potions, elixirs, respec), a Weaponsmith, an Armorer, and a Scrivener (scrolls, tapers, the Prismatic Taper). Capitals host all four. They buy your spare loot; shop rows show wield gates and item-magic so you never buy blind.
+• QUESTS: Asheron's Emissary and other givers hand out rotating bounties — slay creatures, gather resources, clear a delve, fell a boss — turned in for XP and pyreals, with daily/weekly lockouts.
+• THE KILMER SAGA — the ten-year "Tenfold Crown" storyline — runs on its own calendar alongside instanced events and a Colosseum. Read "A History of Dereth" at Castle Val Halla to follow it as it unfolds.`);
+  P.push(`DEATH, LIFESTONES & VITAE
+
+• When you fall, you drop a lootable CORPSE and your spirit returns to your bound LIFESTONE.
+• Death also leaves a VITAE penalty — a damage reduction shown in your status panel — which you burn off by earning XP. It is Dereth's price for dying.
+• Bind to a convenient Lifestone before a dangerous delve so your recovery run is short. Online, corpses can be shared/recovered per their rules.`);
+  P.push(`PLAYING TOGETHER (ONLINE)
+
+• CHAT: open the chat bar (see CONTROLS), type, and send. It takes slash commands and emotes (next page).
+• FELLOWSHIPS: parties of up to 9 with proportional shared XP; nearby members share a kill even without landing a blow.
+• ALLEGIANCE & MONARCHY: swear to a patron for an XP bonus, take vassals, pass XP up the pyramid, and build a monarchy.
+• SOCIETY: join a society, earn ranks and ribbons, and run Society Test quests.
+• PLAYER-VS-PLAYER: a 3-state PK system with altars, PK-loot, and an authentic 3-day PK key.
+• SECURE TRADE: face-to-face item-and-coin trading with confirmation.
+• HOUSING: own a cottage, villa, or manor; decorate with hooks; set access and manage guests.
+• SHIPS: own and board a skiff, cog, or caravel to sail across Dereth's waters.`);
+  P.push(`CHAT COMMANDS & EMOTES (online)
+
+   /who                     — who is online
+   /tell <name> <message>   — private whisper   (short: /w)
+   /r <message>             — reply to the last whisper
+   /party invite|accept|leave|list — manage your party
+   /p <message>             — party chat
+   /allegiance <message>    — allegiance chat
+   /where                   — name your current region
+   /me <action>             — emote a custom action
+
+   Emotes:  /wave  /cheer  /dance  /bow  … and more.`);
+  P.push("=== YOUR CONTROLS — ADVENTURING ===\n(These are YOUR current key bindings. Rebind any of them in Settings → Map Keys, and save them for this character or as your default.)\n"
+    + manualCtrlBlock(["Movement","Actions","Consumables","Targeting","Quickbar","Quick Slots"]));
+  P.push("=== YOUR CONTROLS — INTERFACE & PANELS ===\n"
+    + manualCtrlBlock(["Panels","Interface","HUD Toggles"])
+    + "\nMOUSE\n   Look around  —  move the mouse (click the world to capture it)\n   Attack / fire  —  left-click (hold to charge a melee blow)\n   Shield block  —  hold right-mouse\n   Appraise a foe  —  quick right-click\n   Attack height  —  mouse wheel (high / middle / low)"
+    + "\n\nThis page always reflects your live bindings — change a key and reopen the handbook to see it update.");
+  kcReadLectern({title:"The Adventurer's Handbook", pages:P});
+}
 function openKeymap(){ document.getElementById('keymap').style.display="flex"; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap(); if(locked)document.exitPointerLock(); paused=true;
   const sc=document.getElementById('keymapSaveChar');
   if(sc){ sc.disabled=!running; sc.style.opacity=running?"1":"0.5"; sc.title=running?"Keep these bindings on this character only":"Load or start a character first"; }
@@ -23717,6 +23873,7 @@ function saveKeymapAsDefault(){
   toast("Keybindings saved as default for all characters");
 }
 { const b=document.getElementById('openKeymapBtn'); if(b) b.onclick=openKeymap;
+  const mb=document.getElementById('openManualBtn'); if(mb) mb.onclick=()=>{ closeSettings(); openManual(); };   // close Settings first so closing the book doesn't leave Settings up-but-unpaused
   const c=document.getElementById('keymapClose'); if(c) c.onclick=closeKeymap;
   const r=document.getElementById('keymapReset'); if(r) r.onclick=()=>{ resetKeybinds(); keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap();
     const st=document.getElementById('keymapStatus'); if(st) st.textContent="Reset to the global default — click Save for This Character to also keep it on this character."; };
@@ -28626,6 +28783,7 @@ function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.
     ["📖","Codex",()=>togglePanel('codex',openCodex,closeCodex)],
     ["🏠","Estate",()=>togglePanel('housing',openHousing,closeHousing)],
     ["⚙️","Options",()=>togglePanel('settings',openSettings,closeSettings)],
+    ["📘","Manual",()=>openManual()],
     ["🚪","Log Out",()=>beginLogout()],   // #457: touch ☰ → Log Out (recall-away departure)
     ["⛶","Fullscreen",()=>tcFullscreen(false)]];
   for(const [ic,lab,fn] of items){ const b=document.createElement('button');
