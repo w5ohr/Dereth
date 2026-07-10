@@ -16715,23 +16715,23 @@ function buildSheet(){
     if(attrRank(a)>=attrMaxRanks()){ log("Attributes take at most <b>190 raises</b> above their innate value (AC).","warn"); return; }
     if(player.skillPts>0){ player.skillPts--; player.freeRank=player.freeRank||{}; player.freeRank[a]=(player.freeRank[a]||0)+1; }   // #287: legacy free point (old saves) — remember this rank was free so lowering refunds a POINT, not XP
     else { const cost=attrCost(a); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise "+a+".","warn"); return; } player.xpUnspent-=cost; }
-    player.attr[a]++; derive(); saveGame(); buildSheet();
+    player.attr[a]++; derive(); saveGame(); updateHUD(); buildSheet();   // #582: refresh the HUD "Unspent XP" plaque (buildSheet only rebuilds the sheet)
   });
   attrRows.querySelectorAll('[data-lower]').forEach(btn=>btn.onclick=()=>{
     const a=btn.dataset.lower; if(attrRank(a)<=0) return;                          // can lower only bought ranks, never the innate value
     if(player.freeRank&&player.freeRank[a]>0){ player.freeRank[a]--; player.skillPts=(player.skillPts||0)+1; }   // #287: this rank was funded by a free point → refund the POINT (symmetric with raise); NOT XP, which would mint XP from a free point
     else player.xpUnspent+=attrRefund(a);
-    player.attr[a]--; derive(); saveGame(); buildSheet();
+    player.attr[a]--; derive(); saveGame(); updateHUD(); buildSheet();   // #582: keep the HUD "Unspent XP" plaque in sync on refund too
   });
   attrRows.querySelectorAll('[data-vit]').forEach(btn=>btn.onclick=()=>{
     const vk=btn.dataset.vit; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0;
     if(n>=vitalMaxRanks()){ log("Vitals take at most <b>196 raises</b> (AC).","warn"); return; }
     const cost=vitalCost(n); if(player.xpUnspent<cost){ log("Not enough unspent XP to raise that vital.","warn"); return; }
-    player.xpUnspent-=cost; player.vitals[vk]=n+1; derive(); saveGame(); buildSheet();
+    player.xpUnspent-=cost; player.vitals[vk]=n+1; derive(); saveGame(); updateHUD(); buildSheet();   // #582: HUD plaque
   });
   attrRows.querySelectorAll('[data-vitlo]').forEach(btn=>btn.onclick=()=>{
     const vk=btn.dataset.vitlo; player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0; if(n<=0) return;
-    player.vitals[vk]=n-1; player.xpUnspent+=vitalRefund(n); derive(); saveGame(); buildSheet();
+    player.vitals[vk]=n-1; player.xpUnspent+=vitalRefund(n); derive(); saveGame(); updateHUD(); buildSheet();   // #582: HUD plaque
   });
 }
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
