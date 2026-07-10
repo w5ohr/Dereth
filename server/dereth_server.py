@@ -1013,22 +1013,32 @@ TOWN_SAFE = 60.0
 ATTACK_RANGE = 16.0    # max client→mob distance accepted for an attack intent (melee+ranged+latency)
 FELLOW_RANGE = 150.0   # party members within this range of a kill share its XP
 
-def spawn_mob(kind=None, near=None):
+def spawn_mob(kind=None, near=None, pos=None, ambient=False):
     global _mob_seq
     _mob_seq += 1
     if kind is None:
         kind = random.choice(list(MOB_BESTIARY))
     b = MOB_BESTIARY[kind]
-    cx, cz = near if near else random.choice(MOB_CLUSTERS)
-    a, rr = random.uniform(0, 6.28), random.uniform(90, 440)   # ring around the hub, clear of the town core
-    x = max(-WORLD_LIMIT, min(WORLD_LIMIT, cx + math.cos(a) * rr))
-    z = max(-WORLD_LIMIT, min(WORLD_LIMIT, cz + math.sin(a) * rr))
+    if pos is not None:
+        # place exactly at `pos` and anchor home there (used by the per-player ambient top-up,
+        # which spawns creatures directly inside a wanderer's area-of-interest)
+        a = random.uniform(0, 6.28)
+        cx = x = max(-WORLD_LIMIT, min(WORLD_LIMIT, pos[0]))
+        cz = z = max(-WORLD_LIMIT, min(WORLD_LIMIT, pos[1]))
+    else:
+        cx, cz = near if near else random.choice(MOB_CLUSTERS)
+        # ring around the hub, clear of the town core but mostly inside the AOI_IN(300) a hub-standing
+        # player can actually see -- the old 90-440 band dropped most of a cluster's mobs out of view.
+        a, rr = random.uniform(0, 6.28), random.uniform(60, 250)
+        x = max(-WORLD_LIMIT, min(WORLD_LIMIT, cx + math.cos(a) * rr))
+        z = max(-WORLD_LIMIT, min(WORLD_LIMIT, cz + math.sin(a) * rr))
     mid = "m%d" % _mob_seq
     MOBS[mid] = {
         "id": mid, "kind": kind, "x": x, "z": z, "hx": cx, "hz": cz, "yaw": a,
         "hp": float(b["hp"]), "mhp": b["hp"], "dmg": b["dmg"], "spd": b["spd"], "xp": b["xp"],
         "gold": b["gold"], "r": b["size"] * 0.8, "sense": b["sense"], "atkcd_max": b["atk"],
-        "state": "wander", "target": None, "atkcd": 0.0, "wt": 0.0, "respawn_at": 0.0}
+        "state": "wander", "target": None, "atkcd": 0.0, "wt": 0.0, "respawn_at": 0.0,
+        "ambient": ambient}
     return MOBS[mid]
 
 def populate_world():
@@ -1039,6 +1049,48 @@ def populate_world():
             spawn_mob(near=c)
     for key in BOSS_DEFS:
         spawn_boss(key)
+
+# Per-player ambient top-up — the server-side analog of the client's offline streamMonsters(), which is
+# disabled online (#632). The static cluster packs only populate the eight town rings, so a player who
+# leaves a hub finds a dead world. Each tick we ensure every in-world player has ~AMBIENT_TARGET live
+# creatures inside AMBIENT_AOI, spawning the shortfall from the shared bestiary directly in view, and we
+# despawn ambient mobs that have drifted beyond every player's view. A global cap bounds the total so
+# density can never leak, and ambient mobs are tagged so respawn/leash logic can cull rather than
+# re-anchor them. Bosses, Incursion waves, and the static cluster packs are untouched.
+AMBIENT_TARGET  = 14      # live creatures kept within AMBIENT_AOI of each in-world player
+AMBIENT_AOI     = 260.0   # count radius (< AOI_IN 300 so topped-up mobs are actually rendered, not pop-in)
+AMBIENT_MIN     = 110.0   # spawn band around the player: outside melee...
+AMBIENT_MAX     = 250.0   # ...and inside the AOI so it is visible immediately
+AMBIENT_DESPAWN = 380.0   # cull an ambient mob once it is this far from EVERY player (= AOI_OUT: off-screen)
+AMBIENT_CAP     = 240     # hard ceiling on total ambient mobs server-wide (bounds worst-case density)
+_ambient_timer  = 0.0
+AMBIENT_TICK    = 1.0     # seconds between top-up passes (O(mobs*players) work stays off the hot 10Hz path)
+
+def ambient_topup():
+    players = [cl for cl in CLIENTS.values() if cl.in_world and cl.hp > 0]
+    if not players:
+        return
+    ambient_n = 0
+    # cull ambient mobs that have wandered off every player's screen (keeps the total bounded as players move)
+    for m in list(MOBS.values()):
+        if not m.get("ambient"):
+            continue
+        if m["hp"] <= 0:
+            continue   # dead ambient mobs are removed in world_step (no re-anchor); leave them be here
+        if min(math.hypot(cl.x - m["x"], cl.z - m["z"]) for cl in players) > AMBIENT_DESPAWN:
+            MOBS.pop(m["id"], None)
+        else:
+            ambient_n += 1
+    # top each player up to AMBIENT_TARGET, counting ALL nearby live creatures (static packs included)
+    for cl in players:
+        near = sum(1 for m in MOBS.values()
+                   if m["hp"] > 0 and not m.get("boss") and not m.get("event")
+                   and math.hypot(cl.x - m["x"], cl.z - m["z"]) <= AMBIENT_AOI)
+        while near < AMBIENT_TARGET and ambient_n < AMBIENT_CAP:
+            a = random.uniform(0, 6.28)
+            rr = random.uniform(AMBIENT_MIN, AMBIENT_MAX)
+            spawn_mob(pos=(cl.x + math.cos(a) * rr, cl.z + math.sin(a) * rr), ambient=True)
+            near += 1; ambient_n += 1
 
 # Shared world bosses — every online player fights the same named bosses. The browser
 # renders any boss generically from the snapshot (boss/name/scale/tint), so adding bosses
@@ -1472,6 +1524,9 @@ async def world_step():
             if m.get("event"):
                 MOBS.pop(m["id"], None)   # Incursion wave mobs are finite — no respawn
                 continue
+            if m.get("ambient"):
+                MOBS.pop(m["id"], None)   # #632: ambient top-up mobs don't re-anchor; ambient_topup restreams near players
+                continue
             if now >= m["respawn_at"]:
                 if m.get("boss"):
                     key = m["bosskey"]; name = m["name"]
@@ -1530,6 +1585,12 @@ async def world_step():
     for did in [d for d, v in DROPS.items() if now >= v["expire"]]:
         DROPS.pop(did, None)
         await broadcast({"t": "drop_gone", "id": did})
+    # keep the overworld populated near every player (server-side streamMonsters, #632), on a slow cadence
+    global _ambient_timer
+    _ambient_timer += DT
+    if _ambient_timer >= AMBIENT_TICK:
+        _ambient_timer = 0.0
+        ambient_topup()
     # NPC vassals trickle pass-up XP to their online patrons on a slow cadence
     global _npc_v_timer
     _npc_v_timer += DT
