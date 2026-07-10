@@ -93,6 +93,11 @@ def init_db():
         # #355: authoritative per-dwelling ownership + access settings, keyed by the world plot id (hid),
         # so every client can seal/allow another player's house (owner-only claim; first-come on unowned plots).
         c.execute("""CREATE TABLE IF NOT EXISTS houses(hid TEXT PRIMARY KEY, data TEXT)""")
+        # #644: durable backing for TOKENS (resume-session tokens). TOKENS is an in-memory cache for
+        # speed, but a server restart (a Render deploy, or the free-tier instance waking from an idle
+        # sleep) must not wipe every resume token — that's exactly when #640's auto-reconnect needs one.
+        c.execute("""CREATE TABLE IF NOT EXISTS tokens(
+            token TEXT PRIMARY KEY, user TEXT NOT NULL, expires REAL NOT NULL)""")
         # #449: index the case-folded name so create_char_slot's global-uniqueness check
         # (WHERE LOWER(name)=LOWER(?)) is an index probe, not an O(n) scan of every character on the server.
         c.execute("CREATE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
@@ -771,6 +776,37 @@ def ws_frame(payload: bytes, opcode=0x1) -> bytes:
 # ---------------------------------------------------------------- game state
 TOKENS = {}            # #309: token -> (username, expiry_epoch). Tokens must outlive a disconnect (that's what `resume` is for), so the fix for unbounded growth is a TTL + a size cap, not deletion on close.
 TOKEN_TTL = 7 * 24 * 3600   # a resume token is valid for 7 days
+
+# #644: TOKENS above is only ever a warm cache. Every mint/prune/revoke also touches the `tokens`
+# table (created in init_db) so a resume token survives a server restart — the exact moment #640's
+# auto-reconnect needs one (a Render deploy, or the free-tier instance waking from an idle spin-down).
+# Same security posture as before: same random-hex token, same TTL, same revocation semantics — just
+# durable instead of wiped on restart.
+def token_insert(token, user, expires):
+    with db() as c:
+        c.execute("INSERT OR REPLACE INTO tokens(token,user,expires) VALUES(?,?,?)", (token, user, expires))
+
+def token_delete(token):
+    with db() as c:
+        c.execute("DELETE FROM tokens WHERE token=?", (token,))
+
+def token_delete_many(tokens):
+    with db() as c:
+        c.executemany("DELETE FROM tokens WHERE token=?", [(t,) for t in tokens])
+
+def token_lookup(token):
+    """DB fallback for a resume whose token missed the in-memory cache (eg. right after a restart).
+    Returns (user, expires) or None; expiry is checked by the caller, same as the in-memory path."""
+    with db() as c:
+        row = c.execute("SELECT user, expires FROM tokens WHERE token=?", (token,)).fetchone()
+    return tuple(row) if row else None
+
+def prune_expired_tokens():
+    """#644: drop rows that expired while the server was down — the in-memory TTL prune (in
+    do_auth_success) never got a chance to run for them. Called once at boot."""
+    with db() as c:
+        c.execute("DELETE FROM tokens WHERE expires < ?", (time.time(),))
+
 CLIENTS = {}           # username -> Client (one active session per account)
 SESSIONS = {}          # #438: netid -> Client. The opaque public id clients use to target each other
                        # (cast/pvp) and the key remotes are stored under, so the account name never leaks.
@@ -2193,12 +2229,19 @@ async def do_auth_success(cl, username):
     cl.in_world = False; cl.charname = None; cl.slot = None
     _nowt = time.time()
     if len(TOKENS) > 5000:   # #309: prune expired (then oldest) so the map can't grow without bound
-        for k in [k for k, v in TOKENS.items() if v[1] < _nowt]:
+        _expired = [k for k, v in TOKENS.items() if v[1] < _nowt]
+        for k in _expired:
             TOKENS.pop(k, None)
+        if _expired:
+            await dbq(token_delete_many, _expired)   # #644: keep the durable store in step
         if len(TOKENS) > 5000:
-            for k in sorted(TOKENS, key=lambda k: TOKENS[k][1])[:len(TOKENS) - 4000]:
+            _oldest = sorted(TOKENS, key=lambda k: TOKENS[k][1])[:len(TOKENS) - 4000]
+            for k in _oldest:
                 TOKENS.pop(k, None)
-    TOKENS[cl.token] = (username, _nowt + TOKEN_TTL)
+            await dbq(token_delete_many, _oldest)   # #644: keep the durable store in step
+    _expires = _nowt + TOKEN_TTL
+    TOKENS[cl.token] = (username, _expires)
+    await dbq(token_insert, cl.token, username, _expires)   # #644: durable so this token survives a restart
     CLIENTS[username] = cl
     # Auth lands the player at the character-select screen, not the world.
     await cl.send({"t": "auth_ok", "id": username, "token": cl.token, "pv": PROTOCOL_VERSION})
@@ -2254,7 +2297,19 @@ async def dispatch(cl, msg):
     if t == "resume":
         _tk = msg.get("token", ""); _rec = TOKENS.get(_tk)
         if _rec and _rec[1] < time.time():   # #309: expired token
-            TOKENS.pop(_tk, None); _rec = None
+            TOKENS.pop(_tk, None)
+            await dbq(token_delete, _tk)
+            _rec = None
+        if _rec is None and _tk:
+            # #644: memory cache missed — eg. a fresh restart wiped TOKENS. Fall back to the durable
+            # store before giving up; a hit is re-cached into memory so the fallback isn't repeated.
+            _rec = await dbq(token_lookup, _tk)
+            if _rec:
+                if _rec[1] < time.time():   # expired while the server was down or since last prune
+                    await dbq(token_delete, _tk)
+                    _rec = None
+                else:
+                    TOKENS[_tk] = _rec
         u = _rec[0] if _rec else None
         if not u:
             return await cl.send({"t": "auth_err", "msg": "Session expired — please log in."})
@@ -2738,6 +2793,7 @@ async def tick_loop():
 
 async def main():
     init_db()     # #449: create the schema + hot-path indexes once, up front (not on every db() call)
+    prune_expired_tokens()  # #644: drop resume tokens that expired while the server was down
     seed_admin()  # always keep the default Admin account + maxed Kilmer character
     load_houses()  # #355: restore dwelling ownership registry
     load_valid_plots()  # #451: authentic plot-id set for claim validation
