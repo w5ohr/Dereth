@@ -1141,8 +1141,7 @@ async def step_events():
         if event_cd <= 0:
             event_cd = random.uniform(170, 280)
             start_event()
-            await broadcast(event_pub())
-            await broadcast({"t": "system", "msg": f"Incursion! {EVENT['blurb']}. Repel it before the beacon fades!"})
+            await broadcast(event_pub())  # sole announcement (#637): the client's onEventStart renders the "Incursion!" line itself
 
 # ---------------------------------------------------------------- loot (server-authoritative)
 # Items are plain JSON matching the client schema {name,stat,v,work,mat,tier,wt?,at?,affix?},
