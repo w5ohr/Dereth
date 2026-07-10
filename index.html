@@ -4866,6 +4866,32 @@ function acHeadOpts(app){          // resolve the appearance's head choices agai
   const H=HB[gen]||HB.male; if(!H||!H.hairStyles||!H.hairStyles.length) return null;
   return H;
 }
+// representative luminance of a head skin palette (mean of its remapped output colours).
+const _acPalLum={};
+function acPalMeanLum(did){
+  if(did in _acPalLum) return _acPalLum[did];
+  const e=AC_HEAD_REMAP&&AC_HEAD_REMAP[did]; if(!e) return null;   // palettes.json not loaded yet — don't cache
+  let s=0,n=0; for(const k in e){ const v=parseInt(e[k],16); s+=0.299*((v>>16)&255)+0.587*((v>>8)&255)+0.114*(v&255); n++; }
+  return _acPalLum[did]=(n?s/n:null);
+}
+// Pick the heritage skin palette whose TONE matches the creator's body skin (app.skin hex).
+// APPEARANCE.skin runs light→dark (index 0 = Fair) but every heritage's skinTones palette runs
+// dark→light (index 0 = darkest), so the old proportional same-index map INVERTED the tone —
+// the palest race (Viamontian, Fair) got the darkest head palette (near-black). See #531.
+// Match by luminance against the body hex so head & body agree and scale together (pale→pale,
+// dark→dark, never inverted); fall back to an ORDER-CORRECTED proportional index before the
+// palette data has loaded.
+function acSkinToneIndex(skinTones, skinHex){
+  const len=skinTones&&skinTones.length; if(!len) return 0;
+  if(typeof skinHex==="number"){
+    const bl=0.299*((skinHex>>16)&255)+0.587*((skinHex>>8)&255)+0.114*(skinHex&255);
+    let best=-1,bd=Infinity;
+    for(let i=0;i<len;i++){ const ml=acPalMeanLum(skinTones[i]); if(ml==null) continue; const d=Math.abs(ml-bl); if(d<bd){ bd=d; best=i; } }
+    if(best>=0) return best;
+  }
+  const a=APPEARANCE.skin; let si=a.findIndex(o=>o.k===skinHex); if(si<0) si=0;   // fallback: invert light↔dark ordering
+  return len-1-Math.min(len-1,Math.floor(si/a.length*len));
+}
 // resolve a character's AC head choices: explicit app.acHead wins; otherwise DERIVE from the
 // existing creator appearance (skin/hair/eye colours map proportionally so the creator's choices
 // visibly drive the AC head) plus a per-character seed for the style/eye/nose/mouth strips — so
@@ -4885,7 +4911,7 @@ function acHeadChoices(app){
   return {
     style: prop("hair", app.hair, H.hairStyles.length),
     hairColor: prop("hairColor", app.hairColor, H.hairPals.length),
-    skinTone: prop("skin", app.skin, H.skinTones.length),
+    skinTone: acSkinToneIndex(H.skinTones, app.skin),
     eyeColor: prop("eye", app.eye, H.eyeColors.length),
     eyes: rnd(H.eyes.length), nose: rnd(H.noses.length), mouth: rnd(H.mouths.length),
   };
