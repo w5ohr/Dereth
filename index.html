@@ -600,7 +600,7 @@
   <div class="tinkPane" data-pane="salvage" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="color:var(--gold);font-weight:bold;font-size:13px">Salvaged Materials <span style="color:var(--dim);font-weight:normal;font-size:11px">— salvage loot (from the Satchel) into these materials, then tinker your gear</span></div>
-      <button id="salvageAllBtn" class="tbtn" title="Salvage every weapon, armor piece &amp; trinket in your satchel (upgrades over your worn gear are kept)">Salvage All</button>
+      <button id="salvageAllBtn" class="tbtn" title="Salvage every weapon, armor piece &amp; trinket in your satchel (upgrades over your worn gear — and gear for an empty slot — are kept)">Salvage All</button>
     </div>
     <div id="tinkBags" style="margin-bottom:12px"></div>
   </div>
@@ -25902,13 +25902,17 @@ function buildTinker(){
       for(let i=player.inv.length-1;i>=0;i--){ const it=player.inv[i]; if(!it) continue;
         if(it.stat!=="weapon"&&it.stat!=="worn"&&it.stat!=="jewelry") continue;       // gear only — consumables/quest/etc. untouched
         const cmp=(typeof itemCompare==="function")?itemCompare(it):null;
-        const slotFilled=it.stat==="weapon"?!!player.weapon:it.stat==="worn"?!!(player.armorSlots&&player.armorSlots[it.aslot||"chest"]):false;
-        if(cmp&&cmp.up&&slotFilled){ kept++; continue; }                              // strictly better than a piece you actually WEAR — keep it (empty-slot "upgrades" salvage)
+        // #581: keep anything itemCompare flags as an upgrade — including gear that would fill an
+        // EMPTY slot (itemCompare already reports up:true there, since any piece beats bare armor 0).
+        // The old &&slotFilled guard salvaged empty-slot fillers, so a fresh Academy graduate who
+        // followed the overload tip ("T → Salvage All") melted their just-awarded Academy Coat because
+        // the chest slot was still empty. Matching the button's own promise ("upgrades … are kept").
+        if(cmp&&cmp.up){ kept++; continue; }
         const before={}; for(const m in player.salvage) before[m]=player.salvage[m].units;   // snapshot units (bags are mutated in place)
         salvageItem(i,true); n++;
         for(const m in player.salvage){ const d=player.salvage[m].units-(before[m]||0); if(d>0) gained[m]=(gained[m]||0)+d; }
       }
-      if(!n){ log(kept?`Nothing salvaged — <b>${kept}</b> piece(s) kept as upgrades over your worn gear.`:"Nothing in the satchel to salvage.","sys"); return; }
+      if(!n){ log(kept?`Nothing salvaged — <b>${kept}</b> piece(s) kept as upgrades (better than your worn gear, or gear for an empty slot).`:"Nothing in the satchel to salvage.","sys"); return; }
       const parts=Object.keys(gained).sort().map(m=>`+${gained[m]} ${m}`).join(", ");
       log(`Salvaged <b>${n}</b> item(s) → ${parts}.${kept?` <span style="color:var(--dim)">(${kept} kept as upgrades)</span>`:""}`,"loot");
       SFX.gold(); buildTinker(); updateHUD(); saveGame();
