@@ -814,6 +814,12 @@ class Client:
         self.charname = None    # active character's in-world name
         self.slot = None        # active character slot (0..MAX_CHARS-1)
         self.in_world = False    # True once a character is selected/created (else: at char-select)
+        # #646: the player is inside an INSTANCE (dungeon / Town Network / the Academy). #307 made the
+        # client broadcast the instance's overworld RETURN POINT instead of instance-local coords, and
+        # it has sent `inst:1` alongside ever since — but nothing ingested the flag, so that reported
+        # position was treated as a real body standing at the entrance. Mobs chased and meleed the
+        # phantom, and every landed hit was applied to a player who could neither see nor flee it.
+        self.inst = False
         self.party = None       # party id (or None)
         self.invite_from = None  # pending party invite (inviter account)
         # presence state (last reported by the client; M3 will make this authoritative)
@@ -882,10 +888,15 @@ def mob_pub(m):
 def player_pub(u, cl):
     # #438: the public "id" is the opaque session netid, NOT the account login name `u`. Display uses
     # the in-world charname. `u` (the account name) is never placed on the wire.
-    return {"id": cl.netid, "name": cl.charname or "Adventurer", "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
-            "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
-            "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
-            "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
+    d = {"id": cl.netid, "name": cl.charname or "Adventurer", "x": round(cl.x, 2), "z": round(cl.z, 2), "yaw": round(cl.yaw, 3),
+         "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
+         "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
+         "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None)}
+    # #646: only present when true, so the common case costs no bytes. Peers hide the avatar; without
+    # it they render a motionless, targetable phantom at the instance's entrance.
+    if getattr(cl, "inst", False):
+        d["inst"] = 1
+    return d
 
 def world_pubs():
     """Build every public record ONCE per tick, not once per (viewer, entity) pair.
@@ -1067,7 +1078,10 @@ _ambient_timer  = 0.0
 AMBIENT_TICK    = 1.0     # seconds between top-up passes (O(mobs*players) work stays off the hot 10Hz path)
 
 def ambient_topup():
-    players = [cl for cl in CLIENTS.values() if cl.in_world and cl.hp > 0]
+    # #646: don't seed (or retain) ambient mobs around an instanced player's entrance phantom — nobody
+    # is standing there. Before this, #635's top-up kept 14 live creatures within 260u of every
+    # dungeon entrance a player had walked into, which is what made the phantom-melee constant.
+    players = [cl for cl in CLIENTS.values() if cl.in_world and cl.hp > 0 and not getattr(cl, "inst", False)]
     if not players:
         return
     ambient_n = 0
@@ -1507,7 +1521,9 @@ def pk_compatible(a, b):
 def nearest_player(x, z, maxd):
     best, bd = None, maxd
     for u, cl in CLIENTS.items():
-        if not cl.in_world or cl.hp <= 0:
+        # #646: a player inside an instance reports the entrance's coords, not a body. Chasing and
+        # meleeing that phantom dealt real, invisible, unavoidable damage to someone in a dungeon.
+        if not cl.in_world or cl.hp <= 0 or getattr(cl, "inst", False):
             continue
         d = math.hypot(cl.x - x, cl.z - z)
         if d < bd:
@@ -2298,6 +2314,7 @@ async def dispatch(cl, msg):
         return
     if t == "input":
         cl.x = _finitef(msg.get("x"), cl.x); cl.z = _finitef(msg.get("z"), cl.z)   # #238: reject NaN/Inf so a bad coord can't be broadcast to (and corrupt) other clients
+        cl.inst = bool(msg.get("inst"))   # #646: inside an instance — the coords above are its RETURN POINT, not a body
         cl.yaw = _finitef(msg.get("yaw"), cl.yaw)
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
@@ -2456,11 +2473,15 @@ async def dispatch(cl, msg):
                 await tgt.send({"t": "rbuff", "spell": spell, "from": cl.charname})
     elif t == "pvp":
         # S3 PvP: relay a hit only if both players share a PvP ruleset (PK↔PK or PKL↔PKL) and are in range
-        if cl.in_world and getattr(cl, "pk", False):
+        # #646: neither side may be inside an instance. An instanced player's reported coords are the
+        # entrance, so a PK could camp the phantom of someone in a dungeon and land free hits they
+        # could not see, answer, or escape.
+        if cl.in_world and getattr(cl, "pk", False) and not getattr(cl, "inst", False):
             tgt = SESSIONS.get(msg.get("target"))   # #438: targets are opaque netids, not account names
             try: dmg = float(msg.get("dmg", 0))
             except Exception: dmg = 0
-            if (tgt and tgt.in_world and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
+            if (tgt and tgt.in_world and not getattr(tgt, "inst", False)
+                    and pk_compatible(getattr(cl, "pkState", "npk"), getattr(tgt, "pkState", "npk"))
                     and 0 < dmg <= 2000 and math.hypot(cl.x - tgt.x, cl.z - tgt.z) <= 40):
                 await tgt.send({"t": "pvp", "from": cl.charname, "dmg": round(dmg, 1), "element": str(msg.get("element", ""))[:12]})
     elif t == "spellfx":

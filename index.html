@@ -15764,7 +15764,8 @@ function pickAllyTarget(range){
   const dir=new THREE.Vector3(); cam.getWorldDirection(dir);
   const fl=Math.hypot(dir.x,dir.z)||1; let best=null,bd=0.985;
   for(const aid in NET.players){ const r=NET.players[aid]; const rx=(r.x!=null?r.x:r.tx), rz=(r.z!=null?r.z:r.tz);
-    if(rx==null) continue; const dx=rx-player.x, dz=rz-player.z, d=Math.hypot(dx,dz);
+    if(rx==null||!netPeerPresent(r)) continue;   // #646: never target the entrance phantom of a player who is inside an instance
+    const dx=rx-player.x, dz=rz-player.z, d=Math.hypot(dx,dz);
     if(d<0.1||d>range) continue; const dot=(dx*dir.x+dz*dir.z)/(d*fl);
     if(dot>bd){ bd=dot; best={id:aid,name:r.name||aid}; } }
   return best;
@@ -18212,6 +18213,7 @@ function drawCompass(){
     if(barShow.quest) for(const n of npcs){ if(n.role==="townsfolk")continue; marker(n.x,n.z,"#ffd23b",2.6); }
     if(barShow.building&&typeof structures!=="undefined") for(const st of structures){ if(st&&st.x!=null) marker(st.x,st.z,"#a89878",1.6); }
     if(barShow.players&&isOnline&&typeof NET!=="undefined") for(const id in NET.players){ const rp=NET.players[id];
+      if(!netPeerPresent(rp)) continue;   // #646: no blip for a player who is inside an instance
       const rx=rp.x!=null?rp.x:rp.tx, rz=rp.z!=null?rp.z:rp.tz; if(rx==null||rz==null)continue; marker(rx,rz,"#6fe8ff",2.6); }
   } else markerAt(dungeonExit.x,dungeonExit.z,"#6aa0ff");   // the way OUT is never range-culled
   // quest objective: gold diamond toward the target
@@ -18393,7 +18395,8 @@ function drawMinimap(){
   if(miniShow.dungeon) for(const e of dungeonEntrances) mark(e.x,e.z,player.clearedDungeons.indexOf(e.def.id)>=0?"#7fe6a0":"#bf9bff",2.2,"dia");   // dungeon entrances: diamond (cleared green / uncleared violet)
   if(boss) cir(boss.x,boss.z,"#ff3030",3.5);
   for(const m of monsters){ if(!m.isBoss||!m.shared)continue; cir(m.x,m.z,"#ff3030",3.5); }
-  if(isOnline&&miniShow.players) for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
+  if(isOnline&&miniShow.players) for(const id in NET.players){ const r=NET.players[id]; if(!netPeerPresent(r))continue;   // #646: instanced players have no body here
+    const rx=r.x!=null?r.x:r.tx; if(rx==null)continue;
     const rz=(r.z!=null?r.z:r.tz);
     if(NET.partyNames.has(r.name)){ if(inR(rx,rz)){ const px=sx(rx),py=sy(rz), up=r.name===NET.partyLeader;   // fellows: GREEN TRIANGLES (up = leader, down = member)
       g.fillStyle="#3fd06a"; g.beginPath();
@@ -18487,7 +18490,8 @@ function drawBigMap(){
     g.fillStyle="#ff7a6b";g.font="11px Trebuchet MS";g.fillText(m.name||"Boss",cx(m.x),cx(m.z)-9); }
   // other online players — party members green (named), others cyan
   if(isOnline){ g.font="10px Trebuchet MS";
-    for(const id in NET.players){ const r=NET.players[id]; const rx=r.x!=null?r.x:r.tx, rz=r.z!=null?r.z:r.tz; if(rx==null)continue;
+    for(const id in NET.players){ const r=NET.players[id]; if(!netPeerPresent(r))continue;   // #646: instanced players have no body here
+      const rx=r.x!=null?r.x:r.tx, rz=r.z!=null?r.z:r.tz; if(rx==null)continue;
       const inParty=NET.partyNames.has(r.name); g.fillStyle=inParty?"#7fe6a0":"#5ad6ff";
       g.beginPath();g.arc(cx(rx),cx(rz),4,0,6.28);g.fill();
       if(inParty&&r.name){ g.fillStyle="#bdf0c8"; g.fillText(r.name,cx(rx),cx(rz)-7); } } }
@@ -27546,6 +27550,10 @@ function remoteApp(p){
   app.mouth=["medium","full","thin","wide"][R(4)]; app.feature="none"; app.tattoo="none"; app.faceSeed=sd;
   return app;
 }
+// #646: is this remote player actually STANDING in the overworld? A player inside an instance reports
+// the entrance's coords; they have no body there, so they must not be targeted, hit, or drawn on the
+// map/radar. Callers pass the NET.players record.
+function netPeerPresent(r){ return !!r && !r.inst; }
 function reconcileRemotes(players){
   const seen={};
   for(const p of players){
@@ -27560,6 +27568,12 @@ function reconcileRemotes(players){
     r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
     r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
+    // #646: `inst` means this player is inside an instance (dungeon / Town Network / Academy) and the
+    // coords above are the entrance's RETURN POINT, not a body. #307 has had the client SEND this flag
+    // since it merged, but nothing ever read it — so peers rendered a motionless, targetable phantom
+    // at the entrance. Hide the avatar; netPeerPresent() keeps it out of targeting/PvP/map/radar.
+    r.inst=!!p.inst;
+    if(r.mesh) r.mesh.visible=!r.inst;
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
 }
@@ -27585,7 +27599,10 @@ function updateRemotes(dt){
   const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
   for(const id in NET.players){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
-    mesh.visible=!hide; if(hide) continue;
+    // #646: hide peers who are inside an instance — their coords are the entrance's return point, not
+    // a body. (This runs every frame, so it is the authority on peer visibility; reconcileRemotes only
+    // seeds it.) `hide` is about OUR OWN instance; r.inst is about THEIRS.
+    mesh.visible=!hide && netPeerPresent(r); if(hide||!netPeerPresent(r)) continue;
     dressRemoteWield(mesh, r.wt, r.wmode, r.shield);   // reflect their wielded weapon/shield
     if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives
       r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
@@ -27631,7 +27648,7 @@ function onPvp(m){
 function pvpStrike(dmg,element){
   if(!player.pk||!isOnline||inDungeon||inNetwork) return;
   const dir=new THREE.Vector3(); cam.getWorldDirection(dir); const fx=dir.x,fz=dir.z,fl=Math.hypot(fx,fz)||1;
-  for(const id in NET.players){ const r=NET.players[id]; if(!r) continue;
+  for(const id in NET.players){ const r=NET.players[id]; if(!netPeerPresent(r)) continue;   // #646: never strike the entrance phantom of a player inside an instance (the server also refuses)
     if(!pkCompatible(player.pkState||"npk", r.pkState||(r.pk?"pk":"npk"))) continue;   // only same-ruleset foes
     const rx=(r.x!=null?r.x:r.tx), rz=(r.z!=null?r.z:r.tz); if(rx==null) continue;
     const dx=rx-player.x,dz=rz-player.z,d=Math.hypot(dx,dz); if(d>6) continue;
