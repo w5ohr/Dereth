@@ -429,10 +429,65 @@ def bind_icons():
         f.write(',\n'.join(f'{json.dumps(k)}: {json.dumps(v)}' for k, v in idx['names'].items()))
         f.write('\n}\n}')
 
+
+# ── the cape cloth (issue #671): Kilmer's Cape in the set's own dress ────────
+# One vertical banner (512x1024, v=1 at the shoulders) flowing down the avatar's
+# segmented cape chain: obsidian wool with soft vertical folds, a gold border down
+# both edges and along the hem, the ten-rayed sunburst on the upper back, and a
+# pair of filigree volutes beneath it. Emissive pair matches the armor's soft glow.
+def build_cape_texture():
+    W, H = 512, 1024
+    # cloth luminance: slow vertical folds that drift with depth + a fine weave grain
+    xx = np.linspace(0, 1, W)[None, :]
+    yy = np.linspace(0, 1, H)[:, None]
+    folds = (0.52
+             + 0.16 * np.sin(xx * 2 * math.pi * 5.0 + yy * 2.2)
+             + 0.07 * np.sin(xx * 2 * math.pi * 11.0 - yy * 4.0 + 1.3))
+    rng = np.random.default_rng(667)
+    grain = _blur(rng.random((H, W)).astype(np.float32), 1.2) - 0.5
+    hang = 1.0 - 0.22 * yy         # the hem falls into shadow
+    L = np.clip((folds + grain * 0.18) * hang, 0, 1) * 0.62   # cap the ramp — obsidian wool, not navy: the sheen stays in the fold crests
+    base = _ramp(L, OBSIDIAN) * 1.08 + 3.0
+
+    # gold motifs (mask) + their emissive twins
+    mot = Image.new('L', (W, H), 0); emi = Image.new('L', (W, H), 0)
+    dm, de = ImageDraw.Draw(mot), ImageDraw.Draw(emi)
+    bw = int(W * 0.030)
+    for d in (dm, de):
+        _vline(d, bw // 2, 0, H, bw)                    # left border
+        _vline(d, W - 1 - bw // 2, 0, H, bw)            # right border
+        _hline(d, 0, W, H - 1 - bw, bw * 2)             # hem band
+        _hline(d, 0, W, int(H * 0.045), bw)             # collar band under the clasp
+        _hline(d, bw * 2, W - bw * 2, H - 1 - bw * 3 - bw // 2, max(2, bw // 3))  # hem pinstripe
+    cx, cy = W // 2, int(H * 0.30)                      # the sunburst rides the upper back
+    for d in (dm, de):
+        _star_rays(d, cx, cy, W * 0.075, W * 0.30, w=W * 0.024)
+        _ring(d, cx, cy, W * 0.105, W * 0.020)
+        _volute(d, cx - W * 0.17, int(H * 0.52), W * 0.11, W * 0.014, flip=1)
+        _volute(d, cx + W * 0.17, int(H * 0.52), W * 0.11, W * 0.014, flip=-1)
+        _diamond(d, cx, int(H * 0.52), W * 0.040)
+    mot = mot.filter(ImageFilter.GaussianBlur(0.6))
+    m = np.asarray(mot, np.float32) / 255.0
+    gold = _gold(np.clip(_blur(L, 1.6) * 0.75 + 0.28 + m * 0.22, 0, 1))
+    out = np.clip(base * (1 - m[..., None]) + gold * m[..., None], 0, 255)
+    Image.fromarray(out.astype(np.uint8)).save(os.path.join(TEXD, 'tenfold_cape_cloth.png'))
+
+    e = np.asarray(emi.filter(ImageFilter.GaussianBlur(1.0)), np.float32) / 255.0
+    e = np.clip(e * 1.35, 0, 1) * EM_LVL
+    em = (e[..., None] * np.array(EM_GOLD, np.float32)).astype(np.uint8)
+    Image.fromarray(em).save(os.path.join(TEXD, 'tenfold_cape_cloth_e.png'))
+    print('tex  tenfold_cape_cloth.png (+_e)')
+
 if __name__ == '__main__':
+    import sys
+    if 'cape' in sys.argv:                # re-run just the #671 cape lane
+        build_cape_texture()
+        print('done')
+        raise SystemExit
     for tid, cfg in TEXCFG.items():
         print('tex ', build_texture(tid, cfg))
     build_gids(); print('gids', len(GIDS))
     bind_index(); print('index bound:', len(ITEMS), 'items')
     bind_icons(); print('icons:', len(ICONS))
+    build_cape_texture()
     print('done')

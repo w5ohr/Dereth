@@ -4768,6 +4768,9 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
     const w0=CAPE_W0+(CAPE_W1-CAPE_W0)*(i/CAPE_N), w1=CAPE_W0+(CAPE_W1-CAPE_W0)*((i+1)/CAPE_N);
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array([-w0/2,0,0, w0/2,0,0, w1/2,-CAPE_SEG,0, -w1/2,-CAPE_SEG,0]),3));
+    // #671: band UVs — segment i wears rows i/N..(i+1)/N of one banner texture, so a textured mantle
+    // (Kilmer's Cape in the Tenfold dress) flows unbroken down the swaying chain; flat tints ignore UVs
+    geo.setAttribute('uv',new THREE.BufferAttribute(new Float32Array([0,1-i/CAPE_N, 1,1-i/CAPE_N, 1,1-(i+1)/CAPE_N, 0,1-(i+1)/CAPE_N]),2));
     geo.setIndex([0,2,1,0,3,2]); geo.computeVertexNormals();
     const m=new THREE.Mesh(geo,capeMat); m.castShadow=true; sg.add(m); capeSegs.push(sg);
   }
@@ -14912,6 +14915,44 @@ function refreshHeadwear(ent,it){   // -> true when a diadem replaced the helm s
   }
   return isD;
 }
+// ── KILMER'S CAPE in the Tenfold dress (#671): a cape-flagged back item named for the set swaps the
+//    animated cloth from a flat tint to the obsidian-and-gold banner (tools/tenfold_art.py cape lane —
+//    gold hem, the ten-rayed sunburst, filigree volutes, soft emissive glow like the armor's inlay)
+//    and clasps it with a gold mantle-chain + the set's blue gem. Plain capes keep the old flat tint.
+//    Cosmetic only — the item's stats are untouched. Works for any wearer (champion grant or Kilmer
+//    himself via the bot's gear payload: the NAME travels on the wire). ──
+let _tfCapeTex=null,_tfCapeEm=null;
+function _tenfoldCape(it){ return !!(it&&/tenfold|kilmer's cape/i.test(it.name||"")); }
+function refreshCapeLook(u,bc){
+  const tf=_tenfoldCape(bc), m=u.capeMat; if(!m) return;
+  if(tf!==!!m._tf){ m._tf=tf;
+    if(tf){
+      if(!_tfCapeTex){ const TL=new THREE.TextureLoader();
+        _tfCapeTex=TL.load('assets/acmodels/tex/tenfold_cape_cloth.png'); _tfCapeTex.encoding=THREE.sRGBEncoding;
+        _tfCapeEm=TL.load('assets/acmodels/tex/tenfold_cape_cloth_e.png'); _tfCapeEm.encoding=THREE.sRGBEncoding; }
+      m.map=_tfCapeTex; m.emissiveMap=_tfCapeEm; m.emissive.setHex(0xffffff); m.emissiveIntensity=0.55;
+      m.color.setHex(0xffffff); m.metalness=0.22; m.roughness=0.62;
+    } else {
+      m.map=null; m.emissiveMap=null; m.emissive.setHex(0x000000); m.emissiveIntensity=1;
+      m.metalness=0.05; m.roughness=0.8;
+    }
+    m.needsUpdate=true;
+  }
+  if(!tf) m.color.setHex(bc&&bc.tint!=null?bc.tint:0x1c2c6c);
+  if(tf&&!u.capeClasp){   // the mantle-chain: gold shoulder bosses + chain bar + the set's gem (diadem materials)
+    const g=new THREE.Group();
+    const gold=new THREE.MeshStandardMaterial({color:0xd8a83a,metalness:0.92,roughness:0.28,emissive:0x6a4a10,emissiveIntensity:0.35});
+    for(const sx of[-0.17,0.17]){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.034,0.034,0.016,10),gold);
+      b.rotation.x=Math.PI/2; b.position.set(sx,0.015,-0.012); b.castShadow=true; g.add(b); }
+    const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.009,0.009,0.32,6),gold);
+    bar.rotation.z=Math.PI/2; bar.position.set(0,0.015,-0.012); g.add(bar);
+    const gem=new THREE.Mesh(new THREE.OctahedronGeometry(0.022),
+      new THREE.MeshStandardMaterial({color:0x2a3a9a,metalness:0.3,roughness:0.15,emissive:0x1a2a8a,emissiveIntensity:0.6}));
+    gem.position.set(0,0.012,-0.030); g.add(gem);
+    u.capeSim.add(g); u.capeClasp=g;
+  }
+  if(u.capeClasp) u.capeClasp.visible=tf;
+}
 // Show/tint the avatar's per-slot armor shells from player.armorSlots: colour from the piece's material,
 // finish + bulk from its class (heavy=broad polished plate, medium=duller mail, light=matte leather).
 function refreshAvatarArmor(av,slotsArg){
@@ -14942,7 +14983,7 @@ function refreshAvatarArmor(av,slotsArg){
   // a cape-flagged back item (e.g. Kilmer's Cape) shows the ANIMATED cloth cape and hides the static back shell
   if(u.capeSim){ const bc=slots.back, isCape=!!(bc&&bc.cape);
     u.capeSim.visible=isCape;
-    if(isCape){ u.capeMat.color.setHex(bc.tint!=null?bc.tint:0x1c2c6c);
+    if(isCape){ refreshCapeLook(u,bc);   // #671: Tenfold mantles wear the obsidian-and-gold banner; plain capes keep their flat tint
       if(u.armorRig.back) for(const gr of u.armorRig.back.groups) gr.visible=false; } }
   if(typeof refreshACArmor==="function") refreshACArmor(av,slots);   // retail pieces swap the real body-part meshes
 }
