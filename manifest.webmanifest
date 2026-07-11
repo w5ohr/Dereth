@@ -1,0 +1,16 @@
+{
+  "name": "Dereth — A World of Asheron's Call",
+  "short_name": "Dereth",
+  "description": "A first-person MMORPG homage to Asheron's Call. Bind to a Lifestone and walk a fractured isle of ancient ruins, wandering portals, and the insectoid Olthoi.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07080a",
+  "theme_color": "#07080a",
+  "icons": [
+    { "src": "assets/pwa/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/pwa/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/pwa/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

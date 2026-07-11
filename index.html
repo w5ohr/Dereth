@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Dereth">
 <meta name="theme-color" content="#07080a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/pwa/icon-192.png">
+<link rel="apple-touch-icon" href="assets/pwa/apple-touch-icon.png">
 <title>Dereth — A First-Person Asheron's Call Homage</title>
 <style>
   :root{
@@ -27114,6 +27117,26 @@ const SERVER_URL = serverUrl();
 // in chat, or read the boot line in the console. Zero maintenance: nothing to bump on deploy.
 const CLIENT_BUILD=(typeof document!=="undefined"&&document.lastModified)||"unknown";
 try{ console.log("Dereth client build (server Last-Modified): "+CLIENT_BUILD); }catch(e){}
+// ═══ #673 PWA: installable app shell. The service worker is network-first for index.html (deploys
+//     land on reload, same as a plain tab) and cache-first for the asset packs (the slow part of
+//     every load — textures/meshes/sounds warm once and reloads are near-instant, incl. offline
+//     solo). Registered only on https/localhost; file:// offline play is untouched. ═══
+try{
+  if("serviceWorker" in navigator && (location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1"))
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+}catch(e){}
+// #673: keep the screen awake while playing (Wake Lock API, iOS 16.4+/Android/desktop) — a phone
+// dimming mid-fight read as a crash. Acquired on entering the world, re-acquired whenever the tab
+// returns to the foreground (the OS releases it on hide); every path is guarded, failure is silent.
+let _wakeLock=null;
+async function acquireWakeLock(){
+  try{
+    if(!navigator.wakeLock || _wakeLock || typeof running==="undefined" || !running) return;
+    _wakeLock=await navigator.wakeLock.request("screen");
+    _wakeLock.addEventListener("release",()=>{ _wakeLock=null; });
+  }catch(e){ _wakeLock=null; }
+}
+try{ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") acquireWakeLock(); }); }catch(e){}
 // #442: a transport is safe iff it's TLS (wss) or a loopback host — never send credentials in cleartext otherwise.
 function transportSecure(url, loc){ loc=loc||location; url=url||SERVER_URL;
   if(String(url).indexOf('wss://')===0) return true;
@@ -28307,6 +28330,7 @@ function startGame(loadSaved,preset){
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
   running=true;paused=false;lastTs=0;updateQuestHUD();updateSeasonHUD();
+  if(typeof acquireWakeLock==="function") acquireWakeLock();   // #673: the screen stays on while playing
   if(autosaveTimer) clearInterval(autosaveTimer);
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
   cEl.requestPointerLock();
