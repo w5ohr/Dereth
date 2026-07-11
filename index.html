@@ -27827,7 +27827,12 @@ function updateRemotes(dt){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
     mesh.visible=!hide && !r.inst; if(hide||r.inst) continue;   // #646: keep an instanced peer hidden (and skip its dressing/nameplate work) until the inst flag clears
     dressRemoteWield(mesh, r.wt, r.wmode, r.shield);   // reflect their wielded weapon/shield
-    if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives
+    // A remote built on the first snapshot at connect can predate the async AC_BODY pack load, so its
+    // applyACBody() no-op'd. Unlike the local player (retried on pack load), remotes had NO retry — the
+    // body/clothing never appeared and the head could never mount (acHeadPlace stayed unset), leaving a
+    // bodyless, headless avatar forever. Retry here once the pack is in (self-guards via u.acBody).
+    if(!mesh.userData.acBody&&typeof applyACBody==="function") applyACBody(mesh, mesh.userData._headApp&&mesh.userData._headApp.gender);
+    if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives (now reachable, acHeadPlace set)
       r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
