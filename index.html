@@ -8407,9 +8407,15 @@ function kcGuests(){ let saved=[]; try{ saved=JSON.parse(localStorage.getItem("k
 function kcSaveGuests(a){ try{ localStorage.setItem("kcGuests",JSON.stringify(a)); }catch(e){} }
 function castleAccess(){ const nm=((player&&player.name)||"").trim().toLowerCase(); if(!nm) return false;
   if(nm===KC.lord.toLowerCase()) return true; return kcGuests().some(g=>(g||"").toLowerCase()===nm); }
+// Castle Val Halla is thrown open to every adventurer: castleEntry() gates PHYSICAL entry (the moat,
+// the gates, and /castle recall) and admits all. Lord Kilmer's PRIVATE facilities — chests, storage
+// hooks, portal room, war table, Trial Master and guard-healing — keep using castleAccess() and stay
+// lord+guest only. Flip KC_OPEN_TO_ALL to false to return to a lord+guests-only keep.
+const KC_OPEN_TO_ALL=true;
+function castleEntry(){ return KC_OPEN_TO_ALL||castleAccess(); }
 let _kcWarnT=0;
 function enforceCastleAccess(dt){   // strangers are turned back at the moat — the castle admits Kilmer + sworn guests
-  if(inDungeon||inNetwork||!player.alive||castleAccess()) return;
+  if(inDungeon||inNetwork||!player.alive||castleEntry()) return;
   if(typeof hsMine==="function"){ const _h=hsMine(); if(_h&&_h.castle) return; }   // #13: a Valstead deed-holder may pass the moat to reach their OWN home even without a castle guest-grant (their cottage's storage/hooks stay gated by deed ownership; Kilmer's private chests stay lord/guest-only)
   const dx=player.x-KC.x,dz=player.z-KC.z,ch=Math.max(Math.abs(dx),Math.abs(dz));
   if(ch>=KC.moatOut+4) return;
@@ -8877,7 +8883,7 @@ function openAttendant(n){
 // ── gates: the keep's great doors close, the gatehouse portcullis raises & lowers (E to work them) ──
 let kcGateDefs=[];
 function toggleKcGate(gd){
-  if(!castleAccess()){ log("Only Lord Kilmer and his sworn guests may work the castle gates.","warn"); if(SFX.hit)SFX.hit(); return; }
+  if(!castleEntry()){ log("Only Lord Kilmer and his sworn guests may work the castle gates.","warn"); if(SFX.hit)SFX.hit(); return; }
   gd.open=!gd.open;
   if(!gd.open&&!gd.obst.length){   // bar the way the moment the gate starts to close
     for(let x=-gd.half+0.6;x<=gd.half-0.6;x+=1.2){ const o={x:gd.x+x,z:gd.z,r:0.8}; obstacles.push(o); gd.obst.push(o); } }
@@ -27647,7 +27653,7 @@ function handleSlash(text){
     if(player.homestead&&(player.homestead.type==="mansion"||player.homestead.type==="villa")) recallHome();
     else log("Your allegiance holds no mansion — when your monarch buys one, <b>/hoa</b> recalls you there.","sys"); }
   else if(cmd==="castle"){ if(inDungeon||inNetwork){ log("You cannot recall to the castle from here.","warn"); }
-    else if(!castleAccess()){ log("Castle Val Halla admits only Lord Kilmer and his sworn guests.","warn"); }
+    else if(!castleEntry()){ log("Castle Val Halla admits only Lord Kilmer and his sworn guests.","warn"); }
     else { warpTo(KC.x,KC.z+138,{invuln:2});
       toast("CASTLE VAL HALLA"); log("You recall to <b>Castle Val Halla</b>.","sys"); if(SFX.portal)SFX.portal(); } }
   else if(cmd==="grant"||cmd==="revoke"){ const who=parts.slice(1).join(" ").trim();
