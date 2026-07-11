@@ -27732,7 +27732,7 @@ function poseRemoteEmote(mesh,act,osc){   // apply an emote pose to a remote pla
   if(act==="wave"){ sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }
   else if(act==="clap"){ const c=Math.abs(osc); sX=-1.35;sZ=-0.35+c*0.34;eX=-1.05;lX=-1.35;lZ=0.35-c*0.34;lE=-1.05; }
   else if(act==="cheer"){ sX=-2.9;lX=-2.9;sZ=-0.25;lZ=0.25; }
-  else if(act==="bow"){ if(u.spine)u.spine.rotation.x=0.62; sX=-0.45;lX=-0.45; }
+  else if(act==="bow"){ if(u.spine)u.spine.rotation.x=0.62; if(u.neck)u.neck.rotation.x=0.35; sX=-0.45;lX=-0.45; }   // #672: the head dips with the bow — a stiff level stare read as broken on retail heads
   else if(act==="flex"){ sX=-1.6;sZ=-0.5;eX=-2.5;lX=-1.6;lZ=0.5;lE=-2.5; }
   else if(act==="point"){ sX=-1.5;sZ=0;eX=-0.05; }
   else if(act==="salute"){ sX=-2.4;sZ=0.28;eX=-2.5; }
@@ -27744,7 +27744,7 @@ function poseRemoteEmote(mesh,act,osc){   // apply an emote pose to a remote pla
   u.shL.rotation.x=lX;u.shL.rotation.z=lZ;u.elL.rotation.x=lE;
 }
 function clearRemoteEmote(mesh){ const u=mesh&&mesh.userData; if(!u||!u.shR) return;   // return arms to the neutral built pose
-  u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0); if(u.spine)u.spine.rotation.x=0; }
+  u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0); if(u.spine)u.spine.rotation.x=0; if(u.neck)u.neck.rotation.set(0,0,0); }   // #672: bow's head-dip resets too (nothing else drives a remote's neck)
 function onEmote(m){
   chatMsg("emote",`<i>${esc(m.msg)}</i>`);
   let x=null,z=null;
@@ -28144,8 +28144,27 @@ function updateRemotes(dt){
       if(!_hready) r._acHeadKicked=false;   // prerequisites still streaming — don't burn the one kick yet
       else if(!r._acHeadKicked){ r._acHeadKicked=true; r._hr._acHeadTried=false; npcAcHead(r._hr); } }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
+    const _rpx=r.x,_rpz=r.z;   // #672: pre-lerp position → this frame's actual displacement drives the gait
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
     mesh.position.set(r.x, groundY(r.x,r.z), r.z); mesh.rotation.y=r.yaw||0;
+    // #672: remotes ANIMATE — the same MotionTable clips the local body uses (walk/run/idle), driven by
+    // their snapshot velocity, so other players stride and breathe instead of gliding statue-still.
+    // An active emote owns the joints: return them to rest once, then let poseRemoteEmote's eulers pose
+    // a clean base (the clip solver moves joint positions AND quaternions; stacking eulers on a solved
+    // frame contorts the rig).
+    { const u=mesh.userData;
+      if(u.acBody&&u.acDrive&&typeof AC_MOTION!=="undefined"&&AC_MOTION&&!(r.emoteT>0)&&typeof acMotionPose==="function"){
+        const mvd=Math.hypot(r.x-_rpx,r.z-_rpz)/Math.max(dt,0.001);
+        r._spd=(r._spd==null?0:r._spd)+(mvd-(r._spd||0))*Math.min(1,dt*8);   // smoothed speed (units/s)
+        u._acmT=(u._acmT||0)+dt;
+        const moving=r._spd>0.35;
+        let posed=false;
+        try{ posed=acMotionPose(u,moving?((r._spd>5&&AC_MOTION.clips.run)?"run":"walk"):"idle",u._acmT,true); }catch(e){}
+        u._acPosed=posed;
+      } else if(u._acPosed&&u.acDrive){   // emote (or pack loss) takes the body — joints back to rest first
+        for(const kk in u.acDrive){ const d=u.acDrive[kk]; d.J.position.copy(d.restP); d.J.quaternion.copy(d.restQ); }
+        u._acPosed=false;
+      } }
     if(r.emoteT>0){ r.emoteT-=dt; poseRemoteEmote(mesh, r.emoteAct, Math.sin(now()/110)); if(r.emoteT<=0) clearRemoteEmote(mesh); }   // play/expire a remote player's emote gesture
   }
 }
