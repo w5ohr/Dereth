@@ -3626,7 +3626,7 @@ function updateDayNight(dt){
       if(p.position.z>player.z+WORLD*0.5)p.position.z-=WORLD;else if(p.position.z<player.z-WORLD*0.5)p.position.z+=WORLD;
       for(const sp of p.children){sp.material.opacity=op;sp.material.color.copy(_tmp);}}}
   // reflective water: gentle swell + scrolling ripple normals + a sun glint streak near the player
-  if(waterMesh){ waterMesh.position.y=Math.sin(now()/1100)*0.12;
+  if(waterMesh){ waterMesh.position.y=Math.sin(now()/1100)*0.12+(typeof sagaTide==="function"?sagaTide():0);   // #683: Y9+ the Wrong Tide holds the sea high
     const t=now()/1000;
     const nm=waterMesh.material.normalMap; if(nm){nm.offset.set((t*0.018)%1,(t*0.012)%1);}
     const wsh=waterMesh.material.userData.sh; if(wsh){ wsh.uniforms.uWTime.value=t;
@@ -11775,7 +11775,17 @@ function seasonTick(){   // the month turns every 30 day/night cycles
     toast("MONTH — "+nm.toUpperCase()); if(SFX.quest)SFX.quest(); }
   if(typeof updateSeasonHUD==="function") updateSeasonHUD();
 }
-function currentSeason(){ return SEASONS[SEASON_ORDER[Math.floor(worldDays/SEASON_DAYS)%SEASON_ORDER.length]]||SEASONS.growth; }
+function currentSeason(){
+  // #683: Y7 "The Dericost Winter" — from No Thaw (y7m73, which carries winter:true) until the
+  // Lich-King falls (m80), the world HOLDS in Frostfell no matter where the season wheel points.
+  // Solo-saga only (the calendar itself is solo; see updateCalendar's isOnline gate).
+  if(typeof gameMonth==="number"&&gameMonth>=72&&gameMonth<=79&&(typeof isOnline==="undefined"||!isOnline)) return SEASONS.frost;
+  return SEASONS[SEASON_ORDER[Math.floor(worldDays/SEASON_DAYS)%SEASON_ORDER.length]]||SEASONS.growth; }
+// #683: Y9 "The Wrong Tide" — from month 97 the sea stands visibly HIGH on every shore (the
+// drowned-shore world-state the doc promises), easing only when the Last Light seals T'thuun.
+function sagaTide(){
+  if(typeof gameMonth!=="number"||(typeof isOnline!=="undefined"&&isOnline)) return 0;
+  return (gameMonth>=96&&!(typeof calendarDone!=="undefined"&&calendarDone["y10m120"]))?0.55:0; }
 function seasonDayInfo(){ const d=Math.floor(worldDays%AC_DAYS_PER_MONTH)+1; return `${acMonthName()} ${d}, ${acYear()} ${AC_YEAR_SPEC}`; }
 function updateSeasonHUD(){ const el=document.getElementById('sSeason'); if(el){ const ce=currentCalEvent();
   el.innerHTML=`${timeOfDayName()} <span style="color:var(--dim)">· ${seasonDayInfo()} · ${ce.name}</span>`; } }
@@ -11975,6 +11985,18 @@ function updateCalendar(dt){
   if(!sagaProg._intro){ sagaProg._intro=1; advanceMonth(); }   // herald the live chapter once per world (new game or migrated save)
   const ce=currentCalEvent(), g=ce.goal;
   if(!g||calendarDone[ce.id]) return;
+  // #683: Y8 "Rift-Storm Season" (y8m85) is a WORLD-STATE, not just a bounty: portalspace tears open
+  // near the traveller every 30-60s and spills mixed-era creatures — richer pockets (x1.5 gold), and
+  // their deaths feed the month's kill tally like any other.
+  if(ce.id==="y8m85"&&!inDungeon&&!inNetwork){
+    if(!sagaProg._riftT||now()-sagaProg._riftT>(30000+Math.random()*30000)){ sagaProg._riftT=now();
+      const a=rnd(0,6.28), d=rnd(30,70), rx=player.x+Math.cos(a)*d, rz=player.z+Math.sin(a)*d;
+      if(terrainH(rx,rz)>0){
+        burst(rx,2,rz,0xc07aff,44); if(SFX.portal)SFX.portal();
+        const fams=["shadow","drudge","skeleton","virindi"];
+        for(let i=0,n=irnd(2,3);i<n;i++){ const m=spawnMonster(fams[irnd(0,fams.length-1)],rx+rnd(-4,4),rz+rnd(-4,4),Math.random()<0.25);
+          if(m){ m.goldMul=(m.goldMul||1)*1.5; floater(m.x,2.6,m.z,"rift-touched","#c07aff"); } }
+        log("The air <b>TEARS</b> — a rift spills creatures of another era onto the road!","warn"); toast("RIFT-STORM"); } } }
   if(g.bosses){   // multi-boss: spawn all avatars once, complete when all are down
     if(!inDungeon&&!inNetwork){ for(const b of g.bosses) if(!monsters.some(m=>m.sagaBoss===b)&&!sagaProg[ce.id+"_"+b]){ sagaProg[ce.id+"_"+b]=1; spawnSagaBoss(b); } }
     return; }
@@ -11997,6 +12019,12 @@ function updateCalendar(dt){
     if((sagaProg[key]||0)>=g.contribute) sagaNotify("contribute");
     return; }
   if(g.stages){   // the finale: a sequence of sub-goals, each advanced in turn
+    // #683: the finale is witnessed BY CANDLELIGHT, as the doc promises — The Last Light (the
+    // Vigil's candle, month 119) must be carried into the Sending. Reaching m120 means the Vigil
+    // was kept, so a lost/sold candle RE-LIGHTS rather than softlocking the saga's last night.
+    if(ce.id==="y10m120"&&!player.inv.some(it=>it&&it.name==="The Last Light")){
+      addToInv({name:"The Last Light",stat:"quest",v:150},true);
+      log("A candle kindles unasked in your satchel — <b>The Last Light</b> remembers its keeper. Carry it into the Sending.","sys"); }
     const key=ce.id+"_stg", st=sagaProg[key]||0;
     if(st>=g.stages.length){ sagaNotify("stage"); return; }
     const cur=g.stages[st];
