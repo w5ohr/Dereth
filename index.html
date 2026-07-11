@@ -10400,6 +10400,123 @@ function burst(x,y,z,color,n=10){
     bursts.push({sp,vx:Math.cos(a)*sp2,vy:Math.abs(el)*sp2*0.6+1,vz:Math.sin(a)*sp2,t:rnd(.3,.6)});
   }
 }
+// ═══ SPELL SPECTACLE FX (#668) — the unified toolkit behind every casting visual: wind-up gathers,
+//     muzzle flashes, element-styled trails, shockwave rings, debris, smoke and scorch decals.
+//     Every particle rides the shared CIRC map; counts scale with the GFX governor tier and drop
+//     under Reduce Motion; SPELLFX is hard-capped so a packed fight can never spawn unbounded nodes. ═══
+let SPELLFX=[];
+function fxQ(){ const t=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2;
+  return [0.35,0.6,1,1.2][t]*((typeof settings!=="undefined"&&settings.reduceMotion)?0.45:1); }
+function fxCap(){ return SPELLFX.length<420; }
+function fxSprite(color,additive){ return new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color,transparent:true,depthWrite:false,fog:false,blending:additive===false?THREE.NormalBlending:THREE.AdditiveBlending})); }
+// a bright pop of light that swells and dies — the core "energy" read of every release & impact
+function fxFlash(x,y,z,color,size,dur){ if(!fxCap())return;
+  const sp=fxSprite(color); sp.position.set(x,y,z); sp.scale.setScalar(size*0.4); scene.add(sp);
+  SPELLFX.push({k:"flash",sp,t:0,dur:dur||0.22,size});
+}
+// an expanding shockwave ring — flat on the ground, or camera-facing for mid-air detonations
+function fxRing(x,y,z,color,o){ if(!fxCap())return; o=o||{};
+  const geo=new THREE.RingGeometry(0.78,1,42);
+  const mat=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.95,side:THREE.DoubleSide,depthWrite:false,fog:false,blending:THREE.AdditiveBlending});
+  const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z);
+  if(o.flat) m.rotation.x=-Math.PI/2; else m.userData.face=1;   // camera-facing unless laid on the ground
+  m.scale.setScalar(0.1); scene.add(m);
+  SPELLFX.push({k:"ring",m,t:0,dur:o.dur||0.45,r1:o.r1||3});
+}
+// element debris: additive sparks with gravity, drift and flicker — each element's personality
+function fxSparks(x,y,z,color,n,o){ o=o||{};
+  n=Math.max(1,Math.round(n*fxQ()));
+  for(let i=0;i<n;i++){ if(!fxCap())break;
+    const sp=fxSprite(o.color2&&(i%2)?o.color2:color,o.additive!==false);
+    const s=rnd(o.s0!=null?o.s0:0.16,o.s1!=null?o.s1:0.42); sp.scale.setScalar(s); sp.position.set(x,y,z); scene.add(sp);
+    const a=rnd(0,6.283),el=rnd(-1,1),v=rnd(o.v0!=null?o.v0:3,o.v1!=null?o.v1:9);
+    SPELLFX.push({k:"spark",sp,t:0,dur:rnd(o.l0!=null?o.l0:0.3,o.l1!=null?o.l1:0.6),
+      vx:Math.cos(a)*v*Math.cos(el*0.9),vy:(o.up!=null?o.up:0.5)*v*Math.abs(el)+(o.rise||0),vz:Math.sin(a)*v*Math.cos(el*0.9),
+      g:(o.g!=null?o.g:9),flicker:!!o.flicker&&!(typeof settings!=="undefined"&&settings.reduceMotion),s});
+  }
+}
+// slow dark puffs that grow as they fade — smoke hanging over a blast site (normal blending)
+function fxSmoke(x,y,z,n,color){ n=Math.max(1,Math.round(n*fxQ()));
+  for(let i=0;i<n;i++){ if(!fxCap())break;
+    const sp=fxSprite(color||0x1c1712,false); sp.material.opacity=0.42;
+    const s=rnd(0.5,0.9); sp.scale.setScalar(s); sp.position.set(x+rnd(-0.4,0.4),y+rnd(0,0.5),z+rnd(-0.4,0.4)); scene.add(sp);
+    SPELLFX.push({k:"smoke",sp,t:0,dur:rnd(0.7,1.3),vy:rnd(0.8,1.6),s});
+  }
+}
+// a scorch decal burned into the ground under a big elemental blast, fading over seconds
+function fxScorch(x,z,color,r){ if((typeof settings!=="undefined"&&settings.reduceMotion)||!fxCap())return;
+  const gy=(typeof groundY==="function")?groundY(x,z):0;
+  const geo=new THREE.CircleGeometry(r||1.6,26);
+  const mat=new THREE.MeshBasicMaterial({color:color||0x0d0a08,transparent:true,opacity:0.5,depthWrite:false,fog:false});
+  const m=new THREE.Mesh(geo,mat); m.rotation.x=-Math.PI/2; m.position.set(x,gy+0.04,z); m.renderOrder=2; scene.add(m);
+  SPELLFX.push({k:"decal",m,t:0,dur:4.5});
+}
+// wind-up: motes stream INWARD and compress into the forming spell at the caster's hands
+function fxGather(getPos,color,dur,n){ n=Math.max(3,Math.round((n||14)*fxQ()));
+  const parts=[];
+  for(let i=0;i<n;i++){ if(!fxCap())break;
+    const sp=fxSprite(color); const s=rnd(0.1,0.22); sp.scale.setScalar(s); sp.material.opacity=0; scene.add(sp);
+    parts.push({sp,a:rnd(0,6.283),el:rnd(-0.5,0.9),r:rnd(1.2,2.1),s,ph:rnd(0,6.283)});
+  }
+  if(parts.length) SPELLFX.push({k:"gather",parts,getPos,t:0,dur:dur||0.5});
+}
+// the per-element look — trail emitter + impact debris parameters (frost bolts fly as "ice")
+const ELEM_FX={
+  fire:    {trail:{rate:34,color2:0xffd23b,up:1.4,g:-2,l:0.32,s:0.3},smoke:1,scorch:0x0d0a08,
+            impact:{n:26,v0:4,v1:11,up:0.9,g:6,l1:0.85,color2:0xffd23b,flicker:1}},
+  ice:     {trail:{rate:26,color2:0xdff4ff,up:0.15,g:2.5,l:0.42,s:0.24},
+            impact:{n:22,v0:3,v1:9,up:0.7,g:12,l1:0.7,color2:0xffffff,s0:0.1,s1:0.3}},
+  shock:   {trail:{rate:44,color2:0xffffff,up:0,g:0,l:0.14,s:0.2,jitter:0.5},strobe:1,
+            impact:{n:24,v0:9,v1:18,up:0.4,g:4,l0:0.12,l1:0.3,color2:0xffffff,flicker:1}},
+  acid:    {trail:{rate:24,color2:0xd8ff6b,up:-0.4,g:7,l:0.5,s:0.26},scorch:0x1c2c08,
+            impact:{n:20,v0:3,v1:8,up:1.1,g:11,l1:0.8,color2:0xd8ff6b}},
+  slash:   {trail:{rate:20,color2:0xffffff,up:0,g:1,l:0.22,s:0.2},
+            impact:{n:16,v0:6,v1:14,up:0.5,g:7,l1:0.4,color2:0xffffff,s0:0.08,s1:0.2}},
+  pierce:  {trail:{rate:18,color2:0xffffff,up:0,g:0,l:0.18,s:0.16},
+            impact:{n:12,v0:6,v1:13,up:0.4,g:6,l1:0.35}},
+  bludgeon:{trail:{rate:18,color2:0x9a7ad8,up:0.2,g:1,l:0.3,s:0.3},
+            impact:{n:18,v0:4,v1:9,up:0.6,g:8,l1:0.6}},
+  nether:  {trail:{rate:28,color2:0xe0b0ff,up:0.6,g:-1.5,l:0.5,s:0.26},scorch:0x160a20,
+            impact:{n:22,v0:3,v1:8,up:0.8,g:2,l1:0.9,color2:0xe0b0ff,flicker:1}},
+};
+ELEM_FX.frost=ELEM_FX.ice;
+// composed impact: flash + shockwave + element debris (+ smoke/scorch/strobe on big detonations)
+function spellImpactFX(x,y,z,color,element,big){
+  const ef=ELEM_FX[element]||{impact:{n:16,v0:3,v1:9,up:0.6,g:8,l1:0.6}};
+  fxFlash(x,y,z,color,big?3.6:2.0,big?0.3:0.2);
+  fxRing(x,y,z,color,{r1:big?5.5:2.6,dur:big?0.55:0.4});
+  if(big){ const gy=(typeof groundY==="function")?groundY(x,z):0; fxRing(x,gy+0.15,z,color,{r1:6.5,dur:0.6,flat:1}); }
+  const io=Object.assign({},ef.impact); io.n=Math.round((io.n||16)*(big?1.6:1));
+  fxSparks(x,y,z,color,io.n,io);
+  if(ef.smoke&&big) fxSmoke(x,y+0.3,z,5);
+  if(ef.scorch&&big) fxScorch(x,z,ef.scorch,2.1);
+  if(ef.strobe&&big&&!(typeof settings!=="undefined"&&settings.reduceMotion)) fxFlash(x,y,z,0xffffff,5.5,0.1);
+}
+function updateSpellFX(dt){
+  for(let i=SPELLFX.length-1;i>=0;i--){ const f=SPELLFX[i]; f.t+=dt; const k=f.t/f.dur;
+    if(f.k==="flash"){ f.sp.scale.setScalar(f.size*(0.4+k*0.9)); f.sp.material.opacity=Math.max(0,1-k*k); }
+    else if(f.k==="ring"){ const e=1-Math.pow(1-Math.min(1,k),2.4);   // fast start, soft finish
+      f.m.scale.setScalar(0.1+f.r1*e); f.m.material.opacity=0.95*Math.max(0,1-k);
+      if(f.m.userData.face&&typeof cam!=="undefined"&&cam) f.m.quaternion.copy(cam.quaternion); }
+    else if(f.k==="spark"){ f.vy-=f.g*dt;
+      f.sp.position.x+=f.vx*dt; f.sp.position.y+=f.vy*dt; f.sp.position.z+=f.vz*dt;
+      f.sp.material.opacity=Math.max(0,1-k)*(f.flicker?(0.55+0.45*Math.sin(f.t*47+f.s*90)):1);
+      f.sp.scale.setScalar(f.s*(1-k*0.5)); }
+    else if(f.k==="smoke"){ f.sp.position.y+=f.vy*dt; f.sp.scale.setScalar(f.s*(1+k*2.2)); f.sp.material.opacity=0.42*Math.max(0,1-k); }
+    else if(f.k==="decal"){ f.m.material.opacity=0.5*Math.max(0,1-k); }
+    else if(f.k==="gather"){ const p=f.getPos?f.getPos():null; if(p){
+        for(const g of f.parts){ g.a+=dt*(4+k*10); const r=g.r*(1-Math.min(1,k*1.06));
+          g.sp.position.set(p[0]+Math.cos(g.a)*r, p[1]+g.el*r, p[2]+Math.sin(g.a)*r);
+          g.sp.material.opacity=Math.min(1,k*4)*(0.7+0.3*Math.sin(f.t*22+g.ph));
+          g.sp.scale.setScalar(g.s*(1+k*0.8)); } } }
+    if(f.t>=f.dur){
+      if(f.sp){ scene.remove(f.sp); f.sp.material.dispose(); }
+      if(f.m){ scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); }
+      if(f.parts){ for(const g of f.parts){ scene.remove(g.sp); g.sp.material.dispose(); } }
+      SPELLFX.splice(i,1);
+    }
+  }
+}
 // self-cast aura: motes swirl up around the caster and gather above the head as the spell takes hold
 function selfCastFX(x,z,color){
   const g=new THREE.Group(); g.position.set(x,0,z); scene.add(g);
@@ -10410,7 +10527,7 @@ function selfCastFX(x,z,color){
     const s=rnd(0.16,0.32); m.scale.set(s,s,s); g.add(m);
     parts.push({m,a:rnd(0,6.28),r:rnd(0.7,1.0),y:rnd(0,0.7),spd:rnd(6,9),rise:rnd(2.4,3.2),s,ph:rnd(0,6.28)});
   }
-  castSwirls.push({g,t:0,dur:1.05,parts});
+  castSwirls.push({g,t:0,dur:1.05,parts,color:bright});
 }
 function updateCastSwirls(dt){
   for(let i=castSwirls.length-1;i>=0;i--){ const c=castSwirls[i]; c.t+=dt; const k=Math.min(1,c.t/c.dur);
@@ -10422,7 +10539,11 @@ function updateCastSwirls(dt){
       p.m.material.opacity=clamp((1-k)*1.6,0,1)*(0.78+0.22*Math.sin(c.t*16+p.ph));
       p.m.scale.setScalar(p.s*(1+k*0.6));
     }
-    if(c.t>=c.dur){ scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); castSwirls.splice(i,1); }
+    if(c.t>=c.dur){ // #668: the blessing SETTLES — a bloom above the head + a soft ring as the swirl completes
+      if(typeof fxFlash==="function"){ const gx=c.g.position.x,gz=c.g.position.z;
+        fxFlash(gx,c.g.position.y+EYE+0.55,gz,c.color||0xffffff,1.8,0.28);
+        fxRing(gx,c.g.position.y+EYE+0.35,gz,c.color||0xffffff,{r1:2.2,dur:0.5}); }
+      scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); castSwirls.splice(i,1); }
   }
 }
 // LEVEL-UP celebration: a multicolored starburst above the head + small multicolored balls that swirl
@@ -15878,6 +15999,15 @@ function castSpellById(id){
   castKind=castSelf?"self":"bolt";                  // refined to "bestow" in executeSpell if it lands on an ally
   if(!castSelf&&typeof breakResProt==="function") breakResProt();   // offensive casting ends res protection
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; spellCast(s.school);   // per-school casting wind-up
+  // #668: the wind-up is now VISIBLE — motes stream inward to the forming spell and a ground ring
+  // blooms underfoot, coloured by what's coming (war bolts take their element's colour).
+  { const wc=(s.school==="war"&&typeof s.make==="function")?((s.make()||{}).color||0xff7a2a)
+      :s.school==="void"?0x9b30ff:s.school==="life"?0x7fe6a0:s.school==="item"?0xffd86b
+      :s.school==="creature"?0xbdeed8:0x9af0ff;
+    const gp=()=>{ const fy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y; return [player.x,fy+EYE-0.25,player.z]; };
+    fxGather(gp,wc,Math.max(0.35,ct*0.85),16);
+    const fy0=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;
+    fxRing(player.x,fy0+0.12,player.z,wc,{r1:1.7,dur:Math.max(0.4,ct*0.9),flat:1}); }
 }
 // retail component destruction: each formula component you CARRY burns with probability
 // componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
@@ -16194,14 +16324,24 @@ function executeSpell(id){
     mesh.position.set(ox,oy,oz);
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
     halo.scale.setScalar((sp.r||0.28)*4.2); mesh.add(halo);   // additive glow so the bolt reads as energy, not a solid primitive
+    // #668: two orbiter motes corkscrew around the bolt in flight — the projectile reads as living magic
+    const orbs=[];
+    if(!settings.reduceMotion) for(let oi=0;oi<2;oi++){ const os=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:sp.color,transparent:true,opacity:0.9,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+      os.scale.setScalar((sp.r||0.28)*1.6); mesh.add(os); orbs.push(os); }
     const light=new THREE.PointLight(sp.color,1.5,8);mesh.add(light);scene.add(mesh);
     // AC (ACE WorldObject_Magic): ARC spells are the only lobbed war geometry — launched from full
     // caster height with an upward loft, falling under gravity; all other geometries fly flat.
     const isArc=geom==="arc", isStreak=!!sp.streak, isShuriken=sp.element==="slash", isRing=sp.element==="bludgeon";
     const rlife=Math.max(0.5,spellRange/Math.max(1,sp.speed));   // travel time to reach the skill-gated range
-    pProj.push({mesh,spin:0,shuriken:isShuriken,orient:(isStreak||sp.element==="pierce"||isRing)?1:0,streak:isStreak,x:ox,y:isArc?_footY+EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.55:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // blade = spinning ninja star · force = ring facing its flight · streak/pierce fly nose-first · arc lofts & falls
+    pProj.push({mesh,halo,orbs,orb:rnd(0,6.283),spin:0,shuriken:isShuriken,orient:(isStreak||sp.element==="pierce"||isRing)?1:0,streak:isStreak,x:ox,y:isArc?_footY+EYE+0.3:oy,z:oz,vx:dx*sp.speed,vy:isArc?sp.speed*0.55:dir.y*sp.speed,vz:dz*sp.speed,grav:isArc,   // blade = spinning ninja star · force = ring facing its flight · streak/pierce fly nose-first · arc lofts & falls
       dmg,r:sp.r,color:sp.color,slow:sp.slow||0,burn:sp.burn||false,stun:sp.stun||false,element:sp.element||null,drain:sp.drain||0,splash:sp.splash||0,life:isArc?Math.min(4,rlife):rlife});
   }
+  // #668: MUZZLE FLASH — the release pops where the bolt leaves the hand: flash + shock ring + sparks
+  { const _fy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;
+    const mx=player.x+dir.x*1.0, mz=player.z+dir.z*1.0, my=_fy+EYE-0.15;
+    fxFlash(mx,my,mz,sp.color,1.7,0.16);
+    fxRing(mx,my,mz,sp.color,{r1:1.5,dur:0.3});
+    fxSparks(mx,my,mz,sp.color,8,{v0:2,v1:6,up:0.4,g:5,l1:0.35}); }
   if(pow>1) floater(player.x,EYE+0.9,player.z,"✦ empowered","#ffe9b0");
   castFlash(sp.color);((sp.element==="ice"||s.school==="void")?SFX.frost:SFX.flame)();
   netSpellFx("proj",player.x,player.z,dir.x,dir.z,sp.color,sp.r,sp.speed);
@@ -17310,6 +17450,7 @@ function update(dt){
   if(levelUps.length) updateLevelUps(dt);
   if(castRingFX.length) updateCastRings(dt);
   if(spellLandFXs.length) updateSpellLandFX(dt);
+  if(SPELLFX.length) updateSpellFX(dt);   // #668: the spell-spectacle toolkit (gathers, rings, trails, debris, smoke, decals)
   weaponLight.intensity=Math.max(0,weaponLight.intensity-dt*6);
   player.regenT+=dt;
   if(player.regenT>0.5&&player.alive){
@@ -17335,8 +17476,24 @@ function update(dt){
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
-    if(p.streak||Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false,blending:p.streak?THREE.AdditiveBlending:THREE.NormalBlending}));
-      const sc=p.r*(p.streak?2.6:1.7);sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:p.streak?0.3:0.2});}   // streak leaves a continuous bright additive trail
+    if(p.arrow){ if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false,blending:THREE.NormalBlending}));
+      const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});} }   // arrows: faint physical dust, as before
+    else { // #668: SPELL TRAILS — a continuous element-styled wake (fire embers rise, frost falls & glitters,
+      // lightning jitters, acid drips, nether wisps drift up), density scaled by the GFX governor tier
+      const ef=ELEM_FX[p.element], tr=ef&&ef.trail;
+      p._ta=(p._ta||0)+dt*(tr?tr.rate:(p.streak?30:14))*fxQ();
+      while(p._ta>=1){ p._ta-=1; if(!fxCap())break;
+        const j=tr&&tr.jitter?tr.jitter:0;
+        const sp=fxSprite((tr&&tr.color2&&Math.random()<0.4)?tr.color2:p.color);
+        const sc=((tr&&tr.s)||p.r*1.1)*(p.streak?2.2:1.6)*rnd(0.7,1.2); sp.scale.setScalar(sc);
+        sp.position.set(p.x+rnd(-j,j),p.y+rnd(-j,j),p.z+rnd(-j,j)); scene.add(sp);
+        SPELLFX.push({k:"spark",sp,t:0,dur:((tr&&tr.l)||0.25)*rnd(0.8,1.3),vx:0,vy:tr?tr.up:0,vz:0,g:tr?tr.g:0,s:sc,
+          flicker:p.element==="shock"&&!settings.reduceMotion});
+      }
+      if(p.halo) p.halo.scale.setScalar((p.r||0.28)*4.2*(1+0.22*Math.sin(p.life*23)));   // the bolt's glow breathes
+      if(p.orbs&&p.orbs.length){ p.orb+=dt*13; for(let oi=0;oi<p.orbs.length;oi++){ const oa=p.orb+oi*Math.PI;
+        p.orbs[oi].position.set(Math.cos(oa)*p.r*2.6, Math.sin(oa*1.7)*p.r*1.4, Math.sin(oa)*p.r*2.6); } }   // corkscrew motes
+    }
     // Terrain collision: EVERY projectile buries into the actual ground height (hillsides included) —
     // #228: flat bolts used a sea-level cull, so on hills they tunneled straight through ridges.
     // The monster hit-test below runs FIRST for the frame where a bolt reaches a foe standing ON the
@@ -17364,7 +17521,7 @@ function update(dt){
           applyHit(m,p.dmg*em,{spell:true});
           if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
         }
-        burst(p.x,p.y,p.z,p.color,8);
+        if(p.arrow) burst(p.x,p.y,p.z,p.color,8); else spellImpactFX(p.x,p.y,p.z,p.color,p.element,false);   // #668: spells detonate — flash + shockwave + element debris
         const ifl=new THREE.PointLight(p.color,2.2,7);ifl._transient=1;ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
         gone=true;break;
       }
@@ -17372,7 +17529,7 @@ function update(dt){
     if(!gone && hitGround){ gone=true; if(p.arrow) burst(p.x,gh+0.1,p.z,0x8a7a5a,4); }   // #228: the ground claims the bolt only if no foe was struck this frame (dirt puff for arrows)
     if(gone && p.splash && !p._done){ p._done=true;   // Arc detonation: splash every foe in radius
       const ix=p.x,iz=p.z,iy=Math.max(0.5,Math.min(p.y,2));
-      burst(ix,iy,iz,p.color,26);
+      spellImpactFX(ix,iy,iz,p.color,p.element,true);   // #668: the BIG detonation — double shockwave, debris storm, smoke & scorch
       const fl=new THREE.PointLight(p.color,3,16);fl._transient=1;fl.position.set(ix,iy,iz);scene.add(fl);setTimeout(()=>scene.remove(fl),200);
       for(const m of monsters){ if(!!m.isDungeon!==inDungeon) continue;
         if(Math.hypot(ix-m.x,iz-m.z)<p.splash){
@@ -26920,8 +27077,10 @@ function onSpellFx(m){
   if(m.cat==="proj"){
     const r=clamp(+m.r||0.3,0.1,0.6), spd=clamp(+m.sp||50,10,150), dx=+m.dx||0, dz=+m.dz||0, oy=gy+EYE-0.15;
     const mesh=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),new THREE.MeshBasicMaterial({color:col}));
+    const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,opacity:0.85,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+    halo.scale.setScalar(r*4.2); mesh.add(halo);   // #668: remote bolts glow & trail like our own
     mesh.position.set(x,oy,z); mesh.add(new THREE.PointLight(col,1.2,7)); scene.add(mesh);
-    pProj.push({mesh,x,y:oy,z,vx:dx*spd,vy:0,vz:dz*spd,dmg:0,r,color:col,slow:0,burn:false,stun:false,element:null,drain:0,splash:0,life:1.6,cosmetic:true});
+    pProj.push({mesh,halo,x,y:oy,z,vx:dx*spd,vy:0,vz:dz*spd,dmg:0,r,color:col,slow:0,burn:false,stun:false,element:null,drain:0,splash:0,life:1.6,cosmetic:true});
   } else if(m.cat==="wall"){
     const r=clamp(+m.r||3.5,1,6);
     const disc=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,opacity:0.45,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
@@ -26930,7 +27089,8 @@ function onSpellFx(m){
     const g=new THREE.Group(); g.add(disc); g.add(lt); scene.add(g);
     walls.push({x,z,r,dps:0,element:null,color:col,burn:false,slow:0,t:6,acc:0,isDungeon:!!inDungeon,mesh:g,disc,cosmetic:true});
   } else { // aoe / ring / blast burst
-    if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
+    if(typeof spellImpactFX==="function") spellImpactFX(x,gy+0.9,z,col,null,true);   // #668: a peer's blast detonates with the full spectacle
+    else if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
     const fl=new THREE.PointLight(col,3,18); fl._transient=1; fl.position.set(x,gy+1.5,z); scene.add(fl); setTimeout(()=>scene.remove(fl),300);
   }
 }
