@@ -381,3 +381,38 @@ consistent. **One real bug in the focus-mana battery refund:**
 - **Verified GREEN:** mana-conversion reduction, fizzle sigmoid (fz cap 0.40), component burn on both
   hit and fizzle, scarab substitution path (self-consistent: not deducted, not refunded).
 - NOT FIXED per loop policy — logged only. MMO harness 47/47 · 0 console errors · no drift.
+
+## 2026-07-10 16:40
+
+- **git HEAD:** `c46ac357`
+- **Syntax check:** `SYNTAX OK` (JavaScriptCore, all `<script>` blocks parsed clean).
+- **Runtime:** headless Chrome via Browser MCP, server on :3000. Entered offline via `startGame(false,'aluvian')`, loaded Kilmer's full loadout from `server/admin_kilmer.json` into the live `player` (level 275, "of the Tenfold" set, Kilmer's Cape, 875 known spells), tested in third-person.
+- **Console errors:** NONE across the entire session. **Network:** all requests 200 OK — **zero 404s** (acmodels / acheads / acflora / acclothing_mesh / acarmor / acitemmodels / acsounds all served).
+
+### Issues found this run (all LOW severity — no functional/crash bugs)
+
+1. **[LOW · UI completeness] The Alinco Buffs enchantment tracker omits Item-Enchantment buffs and Life buffs.**
+   - **What I did:** Cast Blood Drinker VII, Swift Killer VII, Impenetrability VII, Protection Self VII, Flame Bane VII, Strength/Quickness Self VII, then opened the Alinco Buffs panel.
+   - **What went wrong:** The panel listed only **Fire Bane 59:57**, **+70 Strength 74:57**, **+70 Quickness 74:57**. The Item-Enchantment buffs that landed in `player.itemBuffs` (Blood Drinker → `dmg` 0.66, Swift Killer → `haste` 0.64, both live at 3600 s) and the Life **Protection** buff (in `player.lifeBuffs`) never appear — a player buffing weapon/armour has no on-screen countdown for them.
+   - **Origin:** `index.html:23512–23521` (`pluginOn("alinco")` render). It builds rows only from `player.spellBuffs`, `player.skillBuffs`, and `player.banes`; it never iterates `player.itemBuffs` or `player.lifeBuffs`. Banes/attribute/skill buffs show; the four weapon/armour item-spells and Protection do not.
+   - **Severity:** low — cosmetic/UX (the buffs *apply* correctly, they're just not tracked in the one on-screen enchantment timer).
+
+2. **[LOW · latent robustness] acspellstats duration merge can clobber Item-Enchant/Bane durations (currently harmless).**
+   - `index.html:1612` — `if(a.dur&&s.buff){ s.dur=Math.round(a.dur); }` re-applies retail JSON durations to **every** buff, including `s.buff==="item"` and `"bane"`. The sibling magnitude merge one line up (`:1611`) deliberately guards these families (`s.buff!=="item"&&s.buff!=="bane"`), but the duration merge has no such guard.
+   - **Currently no defect:** I read the live post-merge durations for all 4 item-enchant families + all 7 banes (I–V = 1800 s, VI = 2700 s, VII–VIII = 3600 s) and magnitudes (monotonic increasing) — every value is correct, because `acspellstats.json` doesn't supply `dur` for these names. But if a retail duration is ever added for a Blood Drinker/Bane entry, it would silently override the authentic `ITEM_ENCHANT_DUR` ladder. Recommend mirroring the `:1611` guard on `:1612`.
+
+3. **[LOW · cosmetic] Minor bare foot skin below the Sabatons of the Tenfold.**
+   - Inspecting the avatar rig: the feet slot has 4 `acArmor` (sabaton) meshes attached, yet 3 `acBody` foot/ankle meshes (worldY-fraction ~0.02–0.03) remain visible below them. Torso, pelvis, thighs and shins are all correctly hidden and clad, so this is a small toe/heel gap only, plausibly by design.
+
+### Verified GREEN (no issues)
+
+- **Avatar / armour mapping:** Kilmer's "of the Tenfold" set maps correctly onto the AC body — chest (2 meshes), legs (4), upper/lower arm, hands, feet all clad via the `platemail *` fallbacks (`acArmorFallback` resolved every legendary name; 16 armor meshes attached, 14 bare-body parts hidden). No torso/leg bare-skin gap (the "bare" look in early screenshots was washed-out cream lighting in the arrival hall, not missing armour). **Kilmer's Cape** renders (blue) and drapes; the head shows the procedural helm shell (Diadem has no retail mesh → intended fallback).
+- **Magic — all schools cast with no errors:** War (bolt/streak), Life (heal/revit/prot/vuln), Creature (str/quick), Item (blood/swift/impen), Void (nether bolt/streak), Bane — 14 spells executed, 0 exceptions.
+- **Item-Enchantment durations (flagged concern) — CORRECT:** Blood Drinker / Heart Seeker / Impenetrability / Swift Killer + all 7 Banes = 30 min (I–V), 45 min (VI), 60 min (VII–VIII); magnitudes monotonic. Buff HUD countdowns match (Fire Bane 59:57; +70 Str/Quick 74:57 for the 75-min attribute line).
+- **Kilmer's Cape stats:** `+100 magicDef` folded into gearSkill (`index.html:14610`); `elemProt 100` drives all-element resist to the 0.70 cap (`resistVs`, `index.html:10756`).
+- **Castle Val Halla storage:** `castleAccess()` true for Kilmer; all 3 mega-chest variants fill (base 90 / dye 98 / salvage 174 items, ≤ `KC_VAULT_CAP` 300) and all 18 labelled chests fill (mmd/jewelry/armor/weapons/salvage/dye/…) with no undefined items; the "vault" Estate-storage chest is intentionally empty (default case).
+- **Movement/physics:** forward drive moved 9.71 m in ~1.2 s, stayed grounded (yΔ 0), no errors. **Combat:** melee swing + projectile casts stepped 30 frames, no errors. **Inventory/equip:** equip/unequip weapon (sword↔bow stance switch), armor, jewelry all clean. **Character Sheet** renders (Attributes/Skills/Titles tabs, buffed Str/Quick 170, vassal system).
+
+> Environment note (NOT a game bug): the headless tab throttles `requestAnimationFrame`, so the arrival portal-transit tube (`portalTransit`, `maxHold` 10 s) does not accumulate wall-clock time and appears "stuck" until stepped. In a real focused browser it self-completes in ~1–2 s. Systems were driven by calling `update(dt)` with explicit dt to work around this.
+
+- NOT FIXED per test-only policy — logged only. No code, commit, or push.
