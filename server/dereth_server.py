@@ -856,6 +856,7 @@ class Client:
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
+        self.gear = None           # #667: compact worn-armour descriptor (sanitize_gear), so remotes render our armour
         self.inst = False        # #646: True while in a per-player instance (dungeon/Town Network/Academy). x/z carry the OVERWORLD return point (#307), so peers hide the avatar and AI/PvP must not target it
         # #239: per-connection token buckets (refilled by elapsed time in the read loop). One general
         # bucket caps total message rate; a tighter one caps "chatty" broadcast messages (chat/emote/
@@ -923,6 +924,7 @@ def player_pub(u, cl):
             "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
             "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
             "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None),
+            "gear": getattr(cl, "gear", None),   # #667: worn armour so remotes render us clad, not bare
             "inst": getattr(cl, "inst", False)}   # #646: peers hide the avatar when set (player is inside an instance)
 
 def world_pubs():
@@ -2217,6 +2219,32 @@ def clean_relay(s, maxlen):
     s = "".join(ch for ch in s if ch >= " ")   # drop control chars incl. newlines/tabs (single-line relay)
     return s[:maxlen].strip()
 
+# #667: worn-armour descriptor synced between players (client myGearPayload -> player_pub -> remote render).
+# Untrusted and relayed to every viewer, so sanitize hard: known slots only, bounded typed arrays, names
+# stripped of markup (they drive an asset lookup, never innerHTML). Drop anything malformed rather than trust it.
+GEAR_SLOTS = frozenset(("head", "chest", "upperarm", "lowerarm", "hands", "legs", "feet", "shirt", "pants", "back"))
+def sanitize_gear(g):
+    if not isinstance(g, dict):
+        return None
+    out = {}
+    for k, v in g.items():
+        if k not in GEAR_SLOTS or not isinstance(v, list) or not (3 <= len(v) <= 6):
+            continue
+        name = clean_relay(v[0], 40)
+        if not name:
+            continue
+        cls = v[1] if v[1] in ("heavy", "medium", "light") else "medium"
+        mat = clean_relay(v[2], 24) or "Steel"
+        dye = int(v[3]) & 0xFFFFFF if isinstance(v[3], (int, float)) and not isinstance(v[3], bool) else 0
+        e = [name, cls, mat, dye]
+        if k == "back" and len(v) >= 6:
+            e.append(1 if v[4] else 0)
+            e.append(int(v[5]) & 0xFFFFFF if isinstance(v[5], (int, float)) and not isinstance(v[5], bool) else 0)
+        out[k] = e
+        if len(out) >= len(GEAR_SLOTS):
+            break
+    return out or None
+
 async def do_auth_success(cl, username):
     # one session per account: kick a prior connection
     old = CLIENTS.get(username)
@@ -2365,6 +2393,8 @@ async def dispatch(cl, msg):
         cl.wt = (str(msg.get("wt"))[:16] if msg.get("wt") else None)          # so remotes render the right weapon
         cl.wmode = str(msg.get("wmode", cl.wmode))[:8]
         cl.shield = (str(msg.get("shield"))[:16] if msg.get("shield") else None)
+        if "gear" in msg:                                                     # #667: worn armour, synced on change; cached for every snapshot
+            cl.gear = sanitize_gear(msg.get("gear"))
         ps = str(msg.get("pkState", "pk" if msg.get("pk") else getattr(cl, "pkState", "npk")))   # AC 3-state PvP
         cl.pkState = ps if ps in ("npk", "pkl", "pk") else "npk"
         cl.pk = cl.pkState != "npk"

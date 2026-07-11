@@ -14751,10 +14751,12 @@ const ARMOR_MAT_TINT={Leather:0x4a3018,Hide:0x54402a,Sharkskin:0x38505e,Snakeski
   Silk:0xa88ab8,Satin:0x9878a8,Velvet:0x461420,Granite:0x5c5c62,Marble:0xb8b8c2,Alabaster:0xc8c2b0,Sandstone:0xa08050};
 // Show/tint the avatar's per-slot armor shells from player.armorSlots: colour from the piece's material,
 // finish + bulk from its class (heavy=broad polished plate, medium=duller mail, light=matte leather).
-function refreshAvatarArmor(){
-  if(typeof playerAvatar==="undefined"||!playerAvatar) return;
-  const u=playerAvatar.userData, rig=u.armorRig; if(!rig) return;
-  const slots=(typeof player!=="undefined"&&player.armorSlots)||{};
+function refreshAvatarArmor(av,slotsArg){
+  // #667: (av,slotsArg) let a REMOTE player's avatar be dressed from its synced gear; both default to the
+  // local player so every existing call site is unchanged.
+  av=av||((typeof playerAvatar!=="undefined")?playerAvatar:null); if(!av) return;
+  const u=av.userData, rig=u.armorRig; if(!rig) return;
+  const slots=slotsArg||((typeof player!=="undefined"&&player.armorSlots)||{});
   // effective piece per rig slot: the slot's own item, else any piece whose COVERAGE reaches it
   // (a hauberk shows on the upper arms, a coat on the whole arm) — a dedicated piece wins the slot
   const eff=k=>{ if(slots[k]) return slots[k];
@@ -14778,7 +14780,7 @@ function refreshAvatarArmor(){
     u.capeSim.visible=isCape;
     if(isCape){ u.capeMat.color.setHex(bc.tint!=null?bc.tint:0x1c2c6c);
       if(u.armorRig.back) for(const gr of u.armorRig.back.groups) gr.visible=false; } }
-  if(typeof refreshACArmor==="function") refreshACArmor();   // retail pieces swap the real body-part meshes
+  if(typeof refreshACArmor==="function") refreshACArmor(av,slots);   // retail pieces swap the real body-part meshes
 }
 // ── ClothingTable armor-on-body (assets/acarmor, tools/ac_armor_export.py): equipping a
 //    retail piece replaces the AC body's part meshes with the armor's — a breastplate is
@@ -14820,15 +14822,19 @@ function acArmorFallback(it,slot){
   const tbl=AC_ARMOR_FALLBACK[(it.at==="light"||it.at==="cloth")?"light":"heavy"];   // default heavy
   return tbl[it.aslot]||tbl[slot]||null;   // only the 6 body slots map; head/shirt/pants/offhand → null (skipped)
 }
-function refreshACArmor(){
-  const av=(typeof playerAvatar!=="undefined")&&playerAvatar, u=av&&av.userData;
+function refreshACArmor(avArg,slotsArg){
+  // #667: (avArg,slotsArg) let a REMOTE avatar be clad from its synced gear; both default to the local
+  // player. Track the resolved slots on the avatar's OWN userData so an async part-load bails when THIS
+  // avatar has since been re-dressed (was: a hard read of the global player.armorSlots, wrong for remotes).
+  const av=avArg||((typeof playerAvatar!=="undefined")&&playerAvatar), u=av&&av.userData;
   if(!u||!u.acBody||!AC_ARMOR) return;
   av.traverse(o=>{ if(o.userData&&o.userData.acBody) o.visible=true; });          // restore the bare body
   const del=[]; av.traverse(o=>{ if(o.userData&&o.userData.acArmor) del.push(o); });
   for(const d of del) if(d.parent) d.parent.remove(d);
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
-  const as=player.armorSlots||{};
+  const as=slotsArg||(typeof player!=="undefined"&&player.armorSlots)||{};
+  u._acSlots=as;
   for(const slot in as){ const it=as[slot]; if(!it||!it.name) continue;
     let swaps=AC_ARMOR.items[it.name.toLowerCase()];
     if(!swaps){ const fb=acArmorFallback(it,slot); swaps=fb?AC_ARMOR.items[fb]:null; }   // named/legendary → real retail mesh of the same slot & class
@@ -14836,7 +14842,7 @@ function refreshACArmor(){
     if(u.armorRig&&u.armorRig[slot]) for(const gr of u.armorRig[slot].groups) gr.visible=false;   // the real mesh replaces the shell
     for(const s of swaps){ const jk=AC_ARMOR.partJoint[s.p], J=jk&&joints[jk]; if(!J) continue;
       acArmorPart(s.g, grp=>{
-        if(!player.armorSlots||!player.armorSlots[slot]||player.armorSlots[slot].name!==it.name) return;   // unequipped meanwhile
+        if(!u._acSlots||!u._acSlots[slot]||u._acSlots[slot].name!==it.name) return;   // re-dressed meanwhile
         const inst=grp.clone(); inst.userData.acArmor=slot;
         if(it.dye) inst.traverse(o=>{ if(o.isMesh&&o.material){ o.material=o.material.clone(); o.material.color.setHex(it.dye); } });
         let ref=null; for(const ch of J.children){ if(ch.userData&&ch.userData.acBody){ ref=ch; break; } }
@@ -27798,6 +27804,7 @@ function reconcileRemotes(players){
     r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
     r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
+    if(p.gear!==undefined) r.gear=p.gear;   // #667: relayed worn armour → applyRemoteGear in updateRemotes
     r.inst=!!p.inst;   // #646: peer is inside a per-player instance — its x/z are only its overworld return point (#307). Hide the phantom avatar (its child nameplate sprite hides with the mesh) and restore when the flag clears.
     if(r.inst && NET.meshes[p.id]) NET.meshes[p.id].visible=false;   // hide immediately; updateRemotes keeps it hidden while r.inst holds
   }
@@ -27821,19 +27828,58 @@ function dressRemoteWield(mesh,wt,wmode,shield){
     if(u.aShield) u.aShield.visible=!!shield && wt!=="twohand";
   }catch(e){}
 }
+// #667: compact worn-armour descriptor synced between players so a remote avatar wears the same armour
+// (and cape) its owner does — not a bare body. Per slot: [name, class, material, dye]; the back slot
+// appends [cape?1:0, tint]. A dozen small arrays; built cheaply and sent only on change (see sendInput).
+const REMOTE_GEAR_SLOTS=["head","chest","upperarm","lowerarm","hands","legs","feet","shirt","pants","back"];
+function myGearPayload(){
+  const as=(typeof player!=="undefined"&&player.armorSlots)||{}, out={};
+  for(const k of REMOTE_GEAR_SLOTS){ const it=as[k]; if(!it||!it.name) continue;
+    const e=[it.name, it.at||"medium", it.mat||"Steel", (it.dye!=null?it.dye:0)];
+    if(k==="back"){ e.push(it.cape?1:0); e.push(it.tint!=null?it.tint:(it.dye!=null?it.dye:0)); }
+    out[k]=e; }
+  return out;
+}
+// Dress a remote avatar from a synced gear payload — reconstruct light item stubs and route through the
+// SAME refreshAvatarArmor/refreshACArmor the local player uses (now avatar-parameterised). Re-runs when
+// the gear changes OR when the AC_ARMOR pack finishes loading (so the shells upgrade to retail meshes).
+function applyRemoteGear(mesh, gear){
+  const u=mesh&&mesh.userData; if(!u||!u.acBody) return;   // wait for the AC body/rig to exist
+  const acReady=(typeof AC_ARMOR!=="undefined"&&!!AC_ARMOR);
+  const sig=(gear?JSON.stringify(gear):"")+"|"+(acReady?1:0);
+  if(u._gearSig===sig) return; u._gearSig=sig;
+  const slots={};
+  if(gear) for(const k in gear){ const g=gear[k]; if(!g||!g.length) continue;
+    const it={name:g[0], stat:"worn", at:g[1]||"medium", mat:g[2]||"Steel", aslot:k};
+    if(g[3]) it.dye=g[3];
+    if(k==="back"){ if(g[4]) it.cape=1; if(g[5]!=null) it.tint=g[5]; }
+    slots[k]=it; }
+  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor(mesh, slots);
+}
 function updateRemotes(dt){
   const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
   for(const id in NET.players){
     const r=NET.players[id], mesh=NET.meshes[id]; if(!mesh) continue;
     mesh.visible=!hide && !r.inst; if(hide||r.inst) continue;   // #646: keep an instanced peer hidden (and skip its dressing/nameplate work) until the inst flag clears
     dressRemoteWield(mesh, r.wt, r.wmode, r.shield);   // reflect their wielded weapon/shield
-    // A remote built on the first snapshot at connect can predate the async AC_BODY pack load, so its
-    // applyACBody() no-op'd. Unlike the local player (retried on pack load), remotes had NO retry — the
-    // body/clothing never appeared and the head could never mount (acHeadPlace stayed unset), leaving a
-    // bodyless, headless avatar forever. Retry here once the pack is in (self-guards via u.acBody).
+    // #666: a remote built on the first snapshot at connect can predate the async AC_BODY pack load, so
+    // its applyACBody() no-op'd and the body/clothing (and the head-mount acHeadPlace) never appeared.
+    // Retry here once the pack is in (self-guards via u.acBody).
     if(!mesh.userData.acBody&&typeof applyACBody==="function") applyACBody(mesh, mesh.userData._headApp&&mesh.userData._headApp.gender);
-    if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach retries until its mesh pack arrives (now reachable, acHeadPlace set)
-      r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0}; r._hr._acHeadTried=false; npcAcHead(r._hr); }
+    applyRemoteGear(mesh, r.gear);                      // #667: reflect their worn armour (sig-guarded — only rebuilds on change; bails until acBody exists)
+    if(!mesh.userData.acHead&&typeof npcAcHead==="function"){   // real-AC-head attach — waits for its prerequisites, then kicks ONCE
+      r._hr=r._hr||{mesh,x:r.x||0,z:r.z||0};
+      // #667: do NOT re-kick acBuildHead every frame. Each kick issued a fresh async head fetch under a
+      // new token; while the pack loads over the wire (fetch latency ≫ one frame on real networks) every
+      // in-flight fetch was superseded by the next frame's newer token before it could resolve, so acHead
+      // NEVER attached and the avatar stayed permanently headless (the procedural head is hidden the moment
+      // a retail head is known to be coming). Wait until EVERYTHING npcAcHead needs is in — the head pack
+      // AND the #666 body/head-mount (whose applyACBody kicks its own acBuildHead when it lands) — then
+      // kick the build a single time and let it resolve (a genuine miss falls back to the procedural head
+      // via acHeadGroup's cb(null), so this can never leave the avatar headless).
+      const _u=mesh.userData, _hready=(typeof AC_HEADS!=="undefined")&&AC_HEADS&&_u.acBody&&_u.acHeadPlace&&_u.neck;
+      if(!_hready) r._acHeadKicked=false;   // prerequisites still streaming — don't burn the one kick yet
+      else if(!r._acHeadKicked){ r._acHeadKicked=true; r._hr._acHeadTried=false; npcAcHead(r._hr); } }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
     mesh.position.set(r.x, groundY(r.x,r.z), r.z); mesh.rotation.y=r.yaw||0;
@@ -27844,11 +27890,17 @@ function sendInput(dt){
   if(!isOnline||!NET.open) return;
   netInputT-=dt; if(netInputT>0) return; netInputT=0.1;  // 10 Hz
   const _inst=inDungeon||inNetwork;   // #307: while in an instance, player.x/z are instance-LOCAL coords built around origin — broadcast the OVERWORLD return point (your entrance) instead, so remotes/server AI/PvP don't target a phantom near map origin; the inst flag lets peers hide the avatar
-  netSend({t:"input",x:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),z:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),inst:_inst?1:0,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
+  const msg={t:"input",x:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),z:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),inst:_inst?1:0,yaw:player.yaw,hp:Math.round(player.hp),mhp:Math.round(player.mhp),
     level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk,pkState:player.pkState||"npk",
     loyalty:skillValue("loyalty"),leadership:skillValue("leadership"),
     wt:(player.weapon&&player.weapon.wt)||null, wmode:weaponMode,   // so other players see our wielded weapon/shield
-    shield:(player.armorSlots&&player.armorSlots.offhand&&player.armorSlots.offhand.shield)||null});
+    shield:(player.armorSlots&&player.armorSlots.offhand&&player.armorSlots.offhand.shield)||null};
+  // #667: sync worn armour so other players see us clad (not a bare body). Sent only when it CHANGES —
+  // the server caches the last value and stamps it into every snapshot, so late-joining viewers still get
+  // it without paying the payload on every 10 Hz tick.
+  const _gp=myGearPayload(), _gs=JSON.stringify(_gp);
+  if(_gs!==NET._gearSig){ NET._gearSig=_gs; msg.gear=_gp; }
+  netSend(msg);
 }
 // AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
 // PK (Player Killer — fights other PKs, drops a lootable corpse). Same ruleset only; NPK never fights.
