@@ -1,0 +1,27 @@
+{
+  "license": "All tracks by Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "gain": { "wild": 0.30, "crowd": 0.30, "aggressive": 0.38, "suspense": 0.30, "festive": 0.32, "dark": 0.34 },
+  "moods": {
+    "wild":       ["explore-achaidh-cheide.mp3", "explore-teller-of-the-tales.mp3", "explore-lord-of-the-land.mp3"],
+    "crowd":      ["town-master-of-the-feast.mp3", "town-minstrel-guild.mp3", "town-suonatore-di-liuto.mp3"],
+    "aggressive": ["combat-five-armies.mp3", "combat-invariance.mp3"],
+    "suspense":   ["dungeon-penumbra.mp3", "dungeon-ossuary-air.mp3"],
+    "festive":    ["castle-fairytale-waltz.mp3", "castle-village-consort.mp3"],
+    "dark":       ["death-long-note-one.mp3"]
+  },
+  "titles": {
+    "explore-achaidh-cheide.mp3": "Achaidh Cheide",
+    "explore-teller-of-the-tales.mp3": "Teller of the Tales",
+    "explore-lord-of-the-land.mp3": "Lord of the Land",
+    "town-master-of-the-feast.mp3": "Master of the Feast",
+    "town-minstrel-guild.mp3": "Minstrel Guild",
+    "town-suonatore-di-liuto.mp3": "Suonatore di Liuto",
+    "combat-five-armies.mp3": "Five Armies",
+    "combat-invariance.mp3": "Invariance",
+    "dungeon-penumbra.mp3": "Penumbra",
+    "dungeon-ossuary-air.mp3": "Ossuary 6 — Air",
+    "castle-fairytale-waltz.mp3": "Fairytale Waltz",
+    "castle-village-consort.mp3": "Village Consort",
+    "death-long-note-one.mp3": "Long Note One"
+  }
+}

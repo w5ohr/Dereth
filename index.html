@@ -684,7 +684,7 @@
     <button class="tbtn" data-acdeath="1">Corpse &amp; item drop</button><button class="tbtn" data-acdeath="0">Soft (Vitae only)</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Suppress camera shake and fullscreen lightning/spell flashes (for motion sensitivity or photosensitivity). Defaults to your OS 'reduce motion' setting.">Reduce motion &amp; flashes</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-reducemotion="1">On</button><button class="tbtn" data-reducemotion="0">Off</button></span></div>
-  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware score: festive in the castle, aggressive in a fight, suspenseful in a dungeon, a crowd murmur in town, dark on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Context-aware orchestral score: exploration pieces in the wilds, feast music in town, battle orchestra in a fight, dread in a dungeon, a waltz in the castle, somber strings on death. Off restores the classic ambient loops.">Dynamic music</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-dynmusic="1">On</button><button class="tbtn" data-dynmusic="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Living environmental sound: wind &amp; surf, dungeon drips and groans, birdsong by day and crickets &amp; owls by night.">Ambient sound</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-ambience="1">On</button><button class="tbtn" data-ambience="0">Off</button></span></div>
@@ -18919,7 +18919,7 @@ function playAcAmbient(){
 }
 function musicTick(){
   if(!actx||muted) return;
-  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&MUSICDIR.mode&&MUSICDIR.mode!=="wild") return;   // the dynamic music director owns non-wild moods; don't layer the synth pad under it
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&((MUSICDIR.mode&&MUSICDIR.mode!=="wild")||(typeof mdScoreHas==="function"&&mdScoreHas("wild")))) return;   // the director owns non-wild moods — and the wilds too once the orchestral score (#669) is loaded; the pad/AC loops only carry a scoreless build
   if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
   if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
@@ -19195,14 +19195,16 @@ setInterval(()=>{ try{
 }catch(e){} },4000);
 
 // ══ DYNAMIC MUSIC DIRECTOR ═══════════════════════════════════════════════════════════════════════
-// Context-aware procedural score, synthesized through WebAudio (works fully offline like the SFX).
-// It picks a MOOD from game state each beat and plays a matching bed, crossfading on change:
-//   death  → dark   (somber descending minor drone + slow toll)
-//   combat → aggressive (fast driving minor bass pulse + noise drum + dissonant stabs)
-//   dungeon→ suspense (sparse low drone + eerie minor-2nd + slow heartbeat)
-//   castle → festive (bright major lute/harp arpeggio + bouncy bass)
-//   town   → crowd  (the murmur of people talking: layered band-passed noise babble, no melody)
-//   else   → wild   (silent here; the legacy ambient pad/zone loop carries the wilds)
+// Context-aware score. Since #669 every mood is carried by a PRODUCED ORCHESTRAL RECORDING from
+// assets/music/ (Kevin MacLeod, CC BY 4.0) — the WebAudio synthesis below each mood survives only
+// as the offline/asset-miss fallback. The director picks a MOOD from game state each beat and
+// crossfades on change:
+//   death  → dark   (somber long strings — "Long Note One")
+//   combat → aggressive (driving battle orchestra — "Five Armies", "Invariance")
+//   dungeon→ suspense (dark orchestral dread — "Penumbra", "Ossuary 6 — Air")
+//   castle → festive (courtly waltz & consort — "Fairytale Waltz", "Village Consort")
+//   town   → crowd  (medieval feast & minstrelsy over the culture-tinted crowd babble)
+//   else   → wild   (celtic/orchestral exploration pieces with breathing room between them)
 // Priority is death > combat > dungeon > castle > town > wild. The director owns all non-wild moods,
 // so the legacy zone loop + synth pad are gated off above while MUSICDIR.on. A `dynMusic` setting
 // toggles it; kcAmbience (the castle's live court murmur/fireworks) is left untouched and layers under.
@@ -19214,6 +19216,51 @@ function mdBus(){
   if(!actx) return null;
   if(!MUSICDIR._bus){ const g=actx.createGain(); g.gain.value=0.0; g.connect(masterGain||actx.destination); MUSICDIR._bus=g; }
   return MUSICDIR._bus;
+}
+// ── THE ORCHESTRAL SCORE (#669): every mood is now carried by a PRODUCED orchestral recording
+//    (assets/music/ — Kevin MacLeod, CC BY 4.0; see manifest.json + the Handbook's credits).
+//    The oscillator bars below survive only as the offline/asset-miss fallback: raw triangle/
+//    square waves can't sound like an orchestra no matter how they're arranged. Tracks stream
+//    through an <audio> element routed INTO the music bus, so the volume slider, mute, the
+//    hidden-tab suspend and the mood crossfade all keep working unchanged. ──
+let MD_SCORE=null;
+const _mdsLast={}, _mdsBad=new Set();   // _mdsBad: files that 404'd/failed to decode — never retried, so a broken deploy degrades to the synth instead of hammering the server
+fetch('assets/music/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{ MD_SCORE=(j&&j.moods)?j:false; }).catch(()=>{ MD_SCORE=false; });
+function mdScoreHas(mood){ const l=MD_SCORE&&MD_SCORE.moods&&MD_SCORE.moods[mood]; return !!(l&&l.some(f=>!_mdsBad.has(f))); }
+function mdScorePick(mood){
+  const list=MD_SCORE.moods[mood].filter(f=>!_mdsBad.has(f));
+  if(list.length===1) return list[0];
+  let f; do{ f=list[irnd(0,list.length-1)]; }while(f===_mdsLast[mood]);   // shuffle, no immediate repeat
+  _mdsLast[mood]=f; return f;
+}
+function mdScoreStop(fade){   // fade out and dispose the current track (and cancel a pending wilds gap)
+  if(MUSICDIR._gapT){ clearTimeout(MUSICDIR._gapT); MUSICDIR._gapT=0; }
+  const s=MUSICDIR._score; if(!s) return; MUSICDIR._score=null;
+  const f=(fade==null?1.4:fade);
+  try{ const t=actx.currentTime;
+    s.g.gain.cancelScheduledValues(t); s.g.gain.setValueAtTime(Math.max(0.0001,s.g.gain.value),t);
+    s.g.gain.linearRampToValueAtTime(0.0001,t+f); }catch(e){}
+  setTimeout(()=>{ try{ s.el.pause(); s.el.src=""; s.src.disconnect(); s.g.disconnect(); }catch(e){} }, f*1000+150);
+}
+function mdScoreStart(mood){
+  const bus=mdBus(); if(!bus||!actx||!mdScoreHas(mood)) return false;
+  const file=mdScorePick(mood), el=new Audio("assets/music/"+file); el.preload="auto";
+  let src,g;
+  try{ src=actx.createMediaElementSource(el); g=actx.createGain(); }catch(e){ return false; }   // media routing unavailable → fallback synth carries it
+  const t=actx.currentTime, base=(MD_SCORE.gain&&MD_SCORE.gain[mood]!=null)?MD_SCORE.gain[mood]:0.32;
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(base,t+2.2);   // swell in over the crossfade
+  src.connect(g); g.connect(bus);
+  const s=MUSICDIR._score={el,src,g,mood,file};
+  el.onended=()=>{
+    if(MUSICDIR._score!==s) return;
+    MUSICDIR._score=null; try{ s.src.disconnect(); s.g.disconnect(); }catch(e){}
+    const delay=mood==="wild"?(25000+Math.random()*30000):1500;   // the wilds breathe between pieces; mood beds roll straight on
+    MUSICDIR._gapT=setTimeout(()=>{ MUSICDIR._gapT=0;
+      if(MUSICDIR.on&&MUSICDIR.mode===mood&&!MUSICDIR._score&&typeof running!=="undefined"&&running) mdScoreStart(mood); },delay);
+  };
+  el.onerror=()=>{ _mdsBad.add(s.file); if(MUSICDIR._score===s){ MUSICDIR._score=null; try{ s.src.disconnect(); s.g.disconnect(); }catch(e){} } };   // 404/decode failure → blacklist the file; synth fallback takes over when the mood runs dry
+  el.play().catch(()=>{});   // pre-gesture block → retried by the scheduler tick
+  return true;
 }
 // one synth voice into the music bus (own ADSR); type/detune/filter tuned per call
 function mdNote(freq,t,dur,type,peak,glideTo){
@@ -19330,15 +19377,33 @@ setInterval(()=>{ try{
   if(!MUSICDIR.on||!actx||muted||typeof running==="undefined"||!running){
     if(MUSICDIR._bus) MUSICDIR._bus.gain.setTargetAtTime(0.0001,actx?actx.currentTime:0,0.3);
     if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
+    if(MUSICDIR._score||MUSICDIR._gapT) mdScoreStop(0.6);     // #669: stop the recording too (director off / menu / muted)
     MUSICDIR.mode=null; MUSICDIR._next=0; return; }
   const bus=mdBus(); if(!bus) return;
   const target=mdMode(), tnow=actx.currentTime;
   if(target!==MUSICDIR.mode){                                 // crossfade: duck out, switch, swell in
     if(MUSICDIR.mode==="crowd"){ mdCrowdStop(); _mdCity="__unset"; }
+    mdScoreStop(1.4);                                         // #669: fade the old mood's recording under the new one
     MUSICDIR.mode=target; MUSICDIR._next=0;
-    const vol=target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34));
+    // with a real recording the per-track gain sets the level — the bus just crossfades; the old
+    // per-mood numbers only scale the oscillator fallback
+    const vol=mdScoreHas(target)?(target==="crowd"?0.9:1.0)
+      :(target==="wild"?0.0001:(target==="crowd"?0.9:(target==="dark"?0.5:0.34)));
     bus.gain.cancelScheduledValues(tnow); bus.gain.setValueAtTime(Math.max(0.0001,bus.gain.value),tnow);
     bus.gain.linearRampToValueAtTime(vol, tnow+1.2);
+  }
+  // ── #669: a produced orchestral track carries every mood it has files for ──
+  if(mdScoreHas(target)){
+    if(target==="crowd"){                                     // the culture-tinted crowd babble stays, UNDER the piece
+      const cap=(typeof nearestCapital==="function"&&typeof player!=="undefined"&&player)?nearestCapital(player.x,player.z):null;
+      const cult=cap?_cityCulture(cap.name):null, spec=MD_CITY[cult]||MD_CITY._default;
+      if(_mdCity!==cult){ _mdCity=cult; mdCrowdStop(); }
+      mdCrowdStart(spec.formants);
+    }
+    const s=MUSICDIR._score;
+    if(s){ if(s.el&&s.el.paused) s.el.play().catch(()=>{}); } // pre-gesture autoplay block → keep retrying
+    else if(!MUSICDIR._gapT) mdScoreStart(target);            // a pending wilds gap holds its silence
+    MUSICDIR._next=0; return;
   }
   if(target==="wild"){ MUSICDIR._next=0; return; }
   if(tnow>=MUSICDIR._next-0.05){                              // schedule the next bar just before the last ends
@@ -24102,6 +24167,24 @@ Turn pages with  Next ▸  and  ◂ Prev .  Press  ${mk}  to open the handbook a
     + manualCtrlBlock(["Panels","Interface","HUD Toggles"])
     + "\nMOUSE\n   Look around  —  move the mouse (click the world to capture it)\n   Attack / fire  —  left-click (hold to charge a melee blow)\n   Shield block  —  hold right-mouse\n   Appraise a foe  —  quick right-click\n   Attack height  —  mouse wheel (high / middle / low)"
     + "\n\nThis page always reflects your live bindings — change a key and reopen the handbook to see it update.");
+  P.push(`MUSIC & CREDITS
+
+The orchestral score that follows you through Dereth is context-aware:
+exploration pieces in the wilds, feast music in the towns, battle
+orchestra when steel is drawn, dread in the dungeons, a waltz within
+Castle Val Halla, and somber strings should you fall. Toggle it in
+Settings ("Dynamic music"); Off restores the classic ambient loops.
+
+All orchestral tracks by KEVIN MacLEOD (incompetech.com):
+"Achaidh Cheide" · "Teller of the Tales" · "Lord of the Land" ·
+"Master of the Feast" · "Minstrel Guild" · "Suonatore di Liuto" ·
+"Five Armies" · "Invariance" · "Penumbra" · "Ossuary 6 — Air" ·
+"Fairytale Waltz" · "Village Consort" · "Long Note One"
+Licensed under Creative Commons: By Attribution 4.0
+creativecommons.org/licenses/by/4.0/
+
+Original ambient loops from Asheron's Call are the property of their
+rightful owners and appear here in homage.`);
   kcReadLectern({title:"The Adventurer's Handbook", pages:P});
 }
 function openKeymap(){ document.getElementById('keymap').style.display="flex"; keymapDraft=JSON.parse(JSON.stringify(KEYBINDS)); buildKeymap(); if(locked)document.exitPointerLock(); paused=true;
