@@ -42,8 +42,10 @@ self.addEventListener("fetch", e => {
     return;
   }
 
-  const isStatic = url.pathname.includes("/assets/") || url.pathname.endsWith("three.min.js")
-    || url.pathname.endsWith("manifest.webmanifest");
+  // assets/music/ is EXCLUDED (#669): <audio> streams the score with Range requests, and the Cache
+  // API rejects 206 partials — and ~100 MB of MP3s doesn't belong in a phone's cache storage anyway.
+  const isStatic = (url.pathname.includes("/assets/") && !url.pathname.includes("/assets/music/"))
+    || url.pathname.endsWith("three.min.js") || url.pathname.endsWith("manifest.webmanifest");
   if (!isStatic) return;
 
   e.respondWith((async () => {
