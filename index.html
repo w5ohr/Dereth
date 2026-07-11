@@ -4768,6 +4768,11 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
     const w0=CAPE_W0+(CAPE_W1-CAPE_W0)*(i/CAPE_N), w1=CAPE_W0+(CAPE_W1-CAPE_W0)*((i+1)/CAPE_N);
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array([-w0/2,0,0, w0/2,0,0, w1/2,-CAPE_SEG,0, -w1/2,-CAPE_SEG,0]),3));
+    // #675: UVs — segment i is the [i/N,(i+1)/N] vertical band of one cape-long texture (v=1 at the
+    // shoulders; canvas y=0 ↔ v=1 under flipY), so a decorated cape (Kilmer's Tenfold) can wear real
+    // art across the whole cloth chain; flat-tinted capes ignore the attribute entirely.
+    const vt=1-i/CAPE_N, vb=1-(i+1)/CAPE_N;
+    geo.setAttribute('uv',new THREE.BufferAttribute(new Float32Array([0,vt, 1,vt, 1,vb, 0,vb]),2));
     geo.setIndex([0,2,1,0,3,2]); geo.computeVertexNormals();
     const m=new THREE.Mesh(geo,capeMat); m.castShadow=true; sg.add(m); capeSegs.push(sg);
   }
@@ -14912,6 +14917,56 @@ function refreshHeadwear(ent,it){   // -> true when a diadem replaced the helm s
   }
   return isD;
 }
+// ── #675: Kilmer's Cape in the Tenfold set's livery — one cached canvas texture pair (colour +
+//    emissive) painted in the exact tools/tenfold_art.py palette: obsidian ramp base, gold seam
+//    trim, the ten-rayed sunburst, and diamond hem studs. The emissive map gives the goldwork the
+//    same soft enchanted glow the plate has. Drawn once, shared by every avatar wearing the cape. ──
+let _tenfoldCapeTex=null;
+function tenfoldCapeTex(){
+  if(_tenfoldCapeTex) return _tenfoldCapeTex;
+  const W=256,H=512, GOLD="#d6a63c", GOLD_HI="#ffe27c", GOLD_DK="#623f12";
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const g=cv.getContext('2d');
+  const ev=document.createElement('canvas'); ev.width=W; ev.height=H; const e=ev.getContext('2d');
+  // obsidian cloth: the tenfold_art OBSIDIAN ramp, run top→hem with a faint centre sheen
+  const grad=g.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,"#0b0d14"); grad.addColorStop(0.35,"#171a28"); grad.addColorStop(0.7,"#0e101a"); grad.addColorStop(1,"#04050a");
+  g.fillStyle=grad; g.fillRect(0,0,W,H);
+  const sheen=g.createLinearGradient(0,0,W,0);
+  sheen.addColorStop(0,"rgba(0,0,0,0)"); sheen.addColorStop(0.5,"rgba(60,66,96,0.18)"); sheen.addColorStop(1,"rgba(0,0,0,0)");
+  g.fillStyle=sheen; g.fillRect(0,0,W,H);
+  e.fillStyle="#000"; e.fillRect(0,0,W,H);   // emissive: black except the goldwork
+  // both contexts draw the same goldwork; the emissive copy is dimmer so the glow stays soft
+  const gold=(x,fn)=>{ fn(g,1); e.save(); e.globalAlpha=0.55; fn(e,1); e.restore(); };
+  // gold seam trim: side rails + hem band + a yoke line under the shoulders (tenfold seam inlay)
+  gold(0,(d)=>{ d.strokeStyle=GOLD; d.lineWidth=5;
+    d.beginPath(); d.moveTo(10,6); d.lineTo(10,H-14); d.moveTo(W-10,6); d.lineTo(W-10,H-14); d.stroke();
+    d.lineWidth=4; d.beginPath(); d.moveTo(8,H-16); d.lineTo(W-8,H-16); d.stroke();
+    d.strokeStyle=GOLD_DK; d.lineWidth=1.5;
+    d.beginPath(); d.moveTo(17,10); d.lineTo(17,H-24); d.moveTo(W-17,10); d.lineTo(W-17,H-24); d.stroke(); });
+  // the ten-rayed sunburst (tenfold_art _star_rays: slim tapered rays, alternating long/short)
+  const CX=W/2, CY=170, RIN=26, ROUT=86;
+  gold(0,(d)=>{ d.fillStyle=GOLD_HI;
+    for(let k=0;k<10;k++){ const a=k*Math.PI/5-Math.PI/2, len=(k%2===0)?ROUT:ROUT*0.62, hw=0.10;
+      d.beginPath();
+      d.moveTo(CX+Math.cos(a-hw)*RIN, CY+Math.sin(a-hw)*RIN);
+      d.lineTo(CX+Math.cos(a)*len,    CY+Math.sin(a)*len);
+      d.lineTo(CX+Math.cos(a+hw)*RIN, CY+Math.sin(a+hw)*RIN);
+      d.closePath(); d.fill(); }
+    d.strokeStyle=GOLD; d.lineWidth=5;
+    d.beginPath(); d.arc(CX,CY,RIN-4,0,6.29); d.stroke();
+    const rg=d.createRadialGradient?d.createRadialGradient(CX,CY,2,CX,CY,RIN-8):null;
+    if(rg){ rg.addColorStop(0,GOLD_HI); rg.addColorStop(1,GOLD_DK); d.fillStyle=rg; }
+    else d.fillStyle=GOLD;
+    d.beginPath(); d.arc(CX,CY,RIN-8,0,6.29); d.fill(); });
+  // diamond hem studs — the greaves' accent, marching along the cape's lower third
+  gold(0,(d)=>{ d.fillStyle=GOLD_HI;
+    for(const [dx,dy,s] of [[CX,392,13],[CX-58,404,9],[CX+58,404,9]]){
+      d.beginPath(); d.moveTo(dx,dy-s); d.lineTo(dx+s*0.66,dy); d.lineTo(dx,dy+s); d.lineTo(dx-s*0.66,dy); d.closePath(); d.fill(); } });
+  const mk=c=>{ const t=new THREE.CanvasTexture(c); if(THREE.sRGBEncoding!==undefined) t.encoding=THREE.sRGBEncoding;
+    t.anisotropy=4; return t; };
+  _tenfoldCapeTex={map:mk(cv), em:(()=>{ const t=new THREE.CanvasTexture(ev); t.anisotropy=2; return t; })()};
+  return _tenfoldCapeTex;
+}
 // Show/tint the avatar's per-slot armor shells from player.armorSlots: colour from the piece's material,
 // finish + bulk from its class (heavy=broad polished plate, medium=duller mail, light=matte leather).
 function refreshAvatarArmor(av,slotsArg){
@@ -14942,7 +14997,20 @@ function refreshAvatarArmor(av,slotsArg){
   // a cape-flagged back item (e.g. Kilmer's Cape) shows the ANIMATED cloth cape and hides the static back shell
   if(u.capeSim){ const bc=slots.back, isCape=!!(bc&&bc.cape);
     u.capeSim.visible=isCape;
-    if(isCape){ u.capeMat.color.setHex(bc.tint!=null?bc.tint:0x1c2c6c);
+    if(isCape){
+      // #675: Kilmer's Cape wears the SET's art — obsidian cloth, gold seam trim, the ten-rayed
+      // sunburst — matching the tenfold_art plate (tools/tenfold_art.py palette). Every other cape
+      // keeps its flat tint; the material is per-avatar, so toggling the map is safe.
+      const tf=/tenfold|kilmer/i.test(bc.name||"");
+      if(tf&&typeof tenfoldCapeTex==="function"){ const tx=tenfoldCapeTex();
+        if(u.capeMat.map!==tx.map){ u.capeMat.map=tx.map; u.capeMat.emissiveMap=tx.em;
+          u.capeMat.emissive=new THREE.Color(0xffffff); u.capeMat.emissiveIntensity=0.4;
+          u.capeMat.roughness=0.7; u.capeMat.needsUpdate=true; }
+        u.capeMat.color.setHex(0xffffff); }   // white base: the texture carries the colours
+      else{ if(u.capeMat.map){ u.capeMat.map=null; u.capeMat.emissiveMap=null;
+          u.capeMat.emissive=new THREE.Color(0x000000); u.capeMat.emissiveIntensity=1;
+          u.capeMat.roughness=0.8; u.capeMat.needsUpdate=true; }
+        u.capeMat.color.setHex(bc.tint!=null?bc.tint:0x1c2c6c); }
       if(u.armorRig.back) for(const gr of u.armorRig.back.groups) gr.visible=false; } }
   if(typeof refreshACArmor==="function") refreshACArmor(av,slots);   // retail pieces swap the real body-part meshes
 }
