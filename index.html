@@ -3076,6 +3076,7 @@ let dungeonBars=[],dungeonLevers=[],dungeonPortals=[],dungeonBoxes=[];   // walk
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null,dungeonDepth=1,dungeonDescent=null;   // multi-level delves: current floor + this floor's descent stair
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
+let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -6886,6 +6887,21 @@ function buildWorld(){
         const shown=/^(a|an|the)\s/i.test(nm)? titledName(c.region||0, Math.round(c.x*3+c.z*7)+nm.length*31+i*97, nm) : nm;
         addNPC(c.x+Math.cos(a)*R, c.z+Math.sin(a)*R, {role:"questgiver", name:shown, town:tn, questId:ids[0], questIds:ids, look:QUEST_GIVERS[ids[0]].look}); }); }
   }
+  // #673: LORD KILMER keeps his vigil beside the castle gate and offers THE REGALIA OF THE TENFOLD.
+  // He wears his own set (the wire-format gear payload, same as the live bot sends) — the regalia
+  // advertises itself. When the LIVE Kilmer (the lore-keeper bot's player-character) is online at the
+  // gate, this NPC steps aside (hidden by updateRemotes) and the /tell intercept speaks for him.
+  { const gx=KC.x+11, gz=KC.z+KC.wall+8;
+    _kilmerNpcRec=addNPC(gx,gz,{role:"questgiver",name:"Lord Kilmer",town:"Castle Val Halla",questId:"regalia1",questIds:["regalia1"],look:"captain"});
+    const KGEAR={head:["Diadem of the Tenfold","heavy","Diamond",0],chest:["Aegis Cuirass of the Tenfold","heavy","Diamond",0],
+      upperarm:["Pauldrons of the Tenfold","heavy","Diamond",0],lowerarm:["Vambraces of the Tenfold","heavy","Diamond",0],
+      hands:["Gauntlets of the Tenfold","heavy","Diamond",0],legs:["Greaves of the Tenfold","heavy","Diamond",0],
+      feet:["Sabatons of the Tenfold","heavy","Diamond",0],shirt:["Shirt of the Tenfold","light","Silk",0],
+      pants:["Breeches of the Tenfold","light","Silk",0],back:["Kilmer's Cape","light","Diamond",0,1,1846380]};
+    const dress=tries=>{ try{ if(window._noKilmerDress) return;   // test harness escape: SwiftShader can't chew the 4x armor textures
+      if(_kilmerNpcRec&&_kilmerNpcRec.mesh&&_kilmerNpcRec.mesh.userData.acBody&&typeof applyRemoteGear==="function"){ applyRemoteGear(_kilmerNpcRec.mesh,KGEAR); return; } }catch(e){}
+      if(tries>0) setTimeout(()=>dress(tries-1),2000); };   // the AC body attaches async — retry until it lands
+    setTimeout(()=>dress(12),2000); }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*COORD-3,-21.2*COORD,{role:"reset_attr",name:"Chafulumisa"});   // #329: place at Asheron's Castle (21.2N 69.3E) at the true COORD scale — the hardcoded *80 left them ~11km off, lost in the wilderness
   addNPC(69.3*COORD+3,-21.2*COORD,{role:"reset_skill",name:"Fianhe"});
@@ -17473,6 +17489,7 @@ function update(dt){
   if(player.spellFatigue){ for(const k in player.spellFatigue){ const v=player.spellFatigue[k]-dt*0.06; if(v<=0) delete player.spellFatigue[k]; else player.spellFatigue[k]=v; } }   // H11 spell fatigue recovers over time
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
   updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
+  updateEmberField(dt);    // #673 Regalia I: the Ember Field gauntlet (keep moving or burn)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20088,6 +20105,17 @@ const QUESTS=[
     intro:"the Halls of Lost Light teems with virindis. Descend, clear its guardians, and report back — the guild pays well for a cleared delve.",
     obj:[{type:"delve",count:1,label:"Descend into the Halls of Lost Light"},{type:"slay",kind:"virindi",count:4,label:"Slay 4 of its virindi guardians"}],
     xp:3200, gold:256, item:null },
+  // ═══ #673 THE REGALIA OF THE TENFOLD — Chapter I: Year of Embers (epic #672; design:
+  //     docs/tenfold-regalia-quest-design.md). Lord Kilmer at the Castle Val Halla gate offers the
+  //     road he walked: one chapter per saga year, one piece of his own set per chapter. ═══
+  { id:"regalia1", name:"The Regalia of the Tenfold · I — Year of Embers", giver:"Lord Kilmer (Castle Val Halla)",
+    intro:"The crown was never given — it was earned, year by burning year. Walk my first: the Cult of the Crimson Star kindles again. Cut down six of their shadowed firebrands wherever they muster, then return to me — I will open the Ember Field, and you will learn what that year taught me. Keep moving. Cast down the Herald's Echo.",
+    gateFn:function(){ if(player.level<40) return "The road I walked would burn you as you are. Come back to me at the fortieth season of your strength (level 40).";
+      if(!(player.colosseumClears>0)) return "First let the sand know your name — conquer the Colosseum, then we will speak of the regalia."; return null; },
+    obj:[{type:"slay",kind:"shadow",count:6,label:"Cut down the Crimson Remnant's firebrands (shadows)"},
+         {type:"ember",count:1,label:"Survive the Ember Field and cast down the Herald's Echo"}],
+    xp:150000, gold:2500,
+    item:{name:"Sabatons of the Tenfold",stat:"worn",at:"heavy",aslot:"feet",mat:"Diamond",v:44,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20345,6 +20373,10 @@ function questTimerTick(dt){   // fail timed quests whose clock runs out; tick t
 // ── named quest-givers: each quest is offered by a specific NPC standing in a real AC town,
 //    with its own conversation (greet/offer · accept · in-progress nudge · turn-in · post-completion). ──
 const QUEST_GIVERS={
+  regalia1:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Six firebrands, cut down wherever the Remnant's shadows muster. Then come back to me, and I will open the Ember Field. Keep moving in there — the year's first lesson.",
+    turn:"The Echo is ash and the Field lies cool. The first year is yours, as it was mine. Kneel — these are the Sabatons of the Tenfold: they remember how to keep moving. Nine years remain.",
+    post:"The first year is walked. When the next chapter of the regalia is written, I will offer it here."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -22004,6 +22036,14 @@ function talkQuestGiver(n){
   const id=(n&&n.questIds&&n.questIds.length>1)?(n.questId=resolveGiverQuest(n)):(n&&n.questId);
   const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
   const gv=QUEST_GIVERS[id]||{}; const name=(n&&n.name)||gv.name||q.giver;
+  // #673: once the firebrands are cut down, Lord Kilmer HIMSELF is the Ember Gate — first word warns,
+  // the second word within half a minute sends you through (so a stray E can't hurl you into the fire).
+  if(id==="regalia1"&&isActive(id)){ const a=activeEntry(id);
+    if(a&&a.prog[0]>=q.obj[0].count&&a.prog[1]<q.obj[1].count){
+      if(n._emberOffer&&now()-n._emberOffer<30000){ n._emberOffer=0; enterEmberField(player.x,player.z); return; }
+      n._emberOffer=now();
+      log(`<b>${name}:</b> The firebrands are ash — well cut. Behind me the <b>Ember Gate</b> stands open. Speak to me again and I will send you through. <i>And in there — keep moving, as I learned to.</i>`,"sys");
+      if(SFX.quest)SFX.quest(); return; } }
   if(isActive(id)){
     const a=activeEntry(id);
     if(questCompleteId(id)){                              // ── turn in: pay out + flavour ──
@@ -22058,6 +22098,7 @@ function talkQuestGiver(n){
     log(`<b>${name}:</b> ${msg}`,"sys");
     if(SFX.quest)SFX.quest();
   } else {                                                // ── offer + accept (any number can be active) ──
+    if(q.gateFn){ const gm=q.gateFn(); if(gm){ log(`<b>${name}:</b> ${gm}`,"sys"); if(SFX.hit)SFX.hit(); return; } }   // #673: quest-specific gate (level/deed requirements), spoken in the giver's voice
     const rl=questLvl(id);
     const entry={id, prog:q.obj.map(()=>0)};
     if(q.timeLimit) entry.deadline=Date.now()+q.timeLimit*1000;   // timed quest: must finish before the clock runs out
@@ -26503,6 +26544,7 @@ function exitDungeon(toEntrance){
   document.getElementById('dvig').style.opacity="0";
   dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;curDungeon=null;
   arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
+  emberActive=false;emberWave=0;emberTimer=0;emberHeat=0;   // #673: abort an Ember Field run on exit too
   hideOverworld(true);
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
 }
@@ -26523,6 +26565,22 @@ function rollColosseumTicket(){ return {name:"Colosseum Ticket",stat:"ticket",v:
 //      (into gearSkill) · +100 elemProt (all-element, into the damage math). See arenaWin() for the grant.
 function makeKilmersCape(){ return {name:"Kilmer's Cape",stat:"worn",at:"light",aslot:"back",cape:true,
   magicDef:100,elemProt:100,tint:0x6a1526,v:250,legendary:true,tier:5,ico:"🧣"}; }
+// ── #673 THE REGALIA OF THE TENFOLD: player-earnable copies of Kilmer's own set (stats mirror
+//    server/admin_kilmer.json — the prestige is the completed road, not power creep). One piece per
+//    Regalia chapter; the art/meshes/icons shipped with #667/#668 render on any wearer. ──
+const TENFOLD_PIECES={
+  feet:     {name:"Sabatons of the Tenfold",        at:"heavy",v:44},
+  hands:    {name:"Gauntlets of the Tenfold",       at:"heavy",v:46},
+  legs:     {name:"Greaves of the Tenfold",         at:"heavy",v:50},
+  upperarm: {name:"Pauldrons of the Tenfold",       at:"heavy",v:44},
+  shirt:    {name:"Shirt of the Tenfold",           at:"light",v:30,mat:"Silk"},
+  lowerarm: {name:"Vambraces of the Tenfold",       at:"heavy",v:44},
+  pants:    {name:"Breeches of the Tenfold",        at:"light",v:30,mat:"Silk"},
+  chest:    {name:"Aegis Cuirass of the Tenfold",   at:"heavy",v:64},
+  head:     {name:"Diadem of the Tenfold",          at:"heavy",v:52},
+};
+function makeTenfoldPiece(slot){ const p=TENFOLD_PIECES[slot]; if(!p) return null;
+  return {name:p.name,stat:"worn",at:p.at,aslot:slot,mat:p.mat||"Diamond",v:p.v,tier:5,work:10,affix:"warding",legendary:true,cov:[]}; }
 function buildArena(){
   dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=24;
   dungeonRects=[{round:true,cx,cz,rad:R}];
@@ -26621,6 +26679,93 @@ function arenaFail(){
   arenaActive=false; arenaAdvanced=false;
   log("The clock runs out — the Colosseum crowd jeers as the gate hauls you back to the sand's edge.","warn");
   toast("OUT OF TIME"); if(SFX.hit)SFX.hit();
+  exitDungeon(true);
+}
+// ═══ #673 REGALIA I — THE EMBER FIELD: Year of Embers re-lived (Colosseum-pattern wave gauntlet).
+//     Kilmer's first lesson made mechanical: STANDING STILL IGNITES YOU. Linger and the ash under
+//     your boots catches — a stacking burn that only movement cools. Three waves of the Crimson
+//     Remnant, then the Herald's Echo. Won → questEvent("ember") advances regalia1; Lord Kilmer
+//     pays out the Sabatons at turn-in. ═══
+function buildEmberField(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=24;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const ash=new THREE.MeshStandardMaterial({color:0x241a14,roughness:0.98});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),ash);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // ember veins: glowing cracks scattered through the ash
+  for(let i=0;i<14;i++){ const a=rnd(0,6.28),r=rnd(3,R-3);
+    const em=new THREE.Mesh(new THREE.CircleGeometry(rnd(0.6,1.6),10),
+      new THREE.MeshStandardMaterial({color:0x3a1a08,emissive:0xff5a18,emissiveIntensity:rnd(0.5,1.1),roughness:0.9}));
+    em.rotation.x=-Math.PI/2; em.position.set(cx+Math.cos(a)*r,0.07,cz+Math.sin(a)*r); scene.add(em); dungeonObjs.push(em); }
+  // charred obelisk ring — the burned shrine's bones
+  const stone=new THREE.MeshStandardMaterial({color:0x1c1512,roughness:0.92});
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(R+0.6,R+0.6,7,48,1,true),stone);ring.position.set(cx,3.5,cz);ring.material.side=THREE.DoubleSide;scene.add(ring);dungeonObjs.push(ring);
+  for(let i=0;i<6;i++){ const a=i/6*Math.PI*2,tx=cx+Math.cos(a)*(R-2),tz=cz+Math.sin(a)*(R-2);
+    const ob=new THREE.Mesh(new THREE.BoxGeometry(0.8,rnd(3.2,4.6),0.8),stone);ob.position.set(tx,2,tz);ob.rotation.y=a;ob.castShadow=true;scene.add(ob);dungeonObjs.push(ob);
+    const fl=new THREE.PointLight(0xff6a2a,1.5,22);fl.position.set(tx,3.4,tz);scene.add(fl);dungeonObjs.push(fl); }
+  // low smouldering sky
+  const sun=new THREE.PointLight(0xff9a5a,1.0,120);sun.position.set(cx,30,cz);scene.add(sun);dungeonObjs.push(sun);
+  const amb=new THREE.HemisphereLight(0xff8a5a,0x2a1408,0.5);scene.add(amb);dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz-R+4};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Flee the Ember Field — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterEmberField(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;emberActive=true;curDungeon={id:990673,name:"The Ember Field",tier:4};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.35";
+  buildEmberField();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  emberWave=0;emberTimer=300;emberHeat=0;_emberPX=player.x;_emberPZ=player.z;
+  toast("THE EMBER FIELD");
+  log("Ash underfoot, heat in the air — <b>keep moving or the embers catch you</b>. Three waves of the Crimson Remnant stand between you and the Herald's Echo.","sys");
+  updateHUD&&updateHUD();
+  emberNextWave();
+}
+function emberNextWave(){
+  emberWave++;
+  if(emberWave>4){ emberWin(); return; }
+  const cx=DCEN.x,cz=DCEN.z;
+  if(emberWave===4){   // the climax: the Herald's Echo and its last two torchbearers
+    spawnDungeonMonster("shadow",cx,cz-6,true,3.4,"The Herald's Echo");
+    spawnDungeonMonster("skeleton",cx-5,cz-3,true,1.2,"Crimson Torchbearer");
+    spawnDungeonMonster("skeleton",cx+5,cz-3,true,1.2,"Crimson Torchbearer");
+    toast("THE HERALD'S ECHO"); log("The ash lifts — <b>the Herald's Echo</b> takes shape, wearing the year's fire like a cloak.","warn");
+    return; }
+  const pool=["shadow","skeleton","zombie","phantom"], n=3+emberWave;
+  for(let i=0;i<n;i++){ const a=(i/n)*Math.PI*2+emberWave, r=rnd(8,16);
+    spawnDungeonMonster(pool[irnd(0,pool.length-1)],cx+Math.cos(a)*r,cz+Math.sin(a)*r,emberWave>=2&&i===0,1+emberWave*0.18); }
+  log(`<b>Wave ${emberWave} of 3</b> — the Crimson Remnant pours from the ash.`,"sys");
+}
+function updateEmberField(dt){
+  if(!emberActive) return;
+  emberTimer-=dt;
+  if(emberTimer<=0){ emberFail(); return; }
+  // the year's lesson: standing still ignites you (movement cools the ash twice as fast as it heats)
+  const moved=Math.hypot(player.x-_emberPX,player.z-_emberPZ); _emberPX=player.x;_emberPZ=player.z;
+  if(player.alive&&player.invuln<=0){
+    if(moved<dt*1.1) emberHeat+=dt; else emberHeat=Math.max(0,emberHeat-dt*2);
+    if(emberHeat>1.3){ _emberBurn+=dt;
+      if(_emberBurn>=0.5){ _emberBurn=0; playerHurt(4+emberWave*2,player.x,player.z,"magic","fire");
+        floater(player.x,1.8,player.z,"THE EMBERS CATCH — MOVE!","#ff8a4a"); } }
+    else if(emberHeat>0.7&&moved<dt*1.1&&Math.random()<dt*2) floater(player.x,1.6,player.z,"the ash smoulders…","#e0a070");
+  }
+  if(dungeonMobs<=0) emberNextWave();
+}
+function emberWin(){
+  emberActive=false;
+  burst(DCEN.x,2,DCEN.z,0xff8a3a,80); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  toast("THE HERALD'S ECHO IS CAST DOWN");
+  log("The Herald's Echo gutters out like a spent torch, and for the first time the Ember Field is <b>cool underfoot</b>. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("ember");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!emberActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function emberFail(){
+  emberActive=false;
+  log("The fire outlasts you — the Ember Field's heat drives you back through the gate. Kilmer's first year was not walked in a day.","warn");
+  toast("THE EMBERS PREVAIL"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
@@ -28119,7 +28264,12 @@ function handleSlash(text){
   else if(cmd==="logout"||cmd==="camp"){ beginLogout(); }   // #457: recall-away logout (syncs to the server, then returns to the title screen)
   else if(cmd==="who"){ netSend({t:"who"}); }
   else if(cmd==="tell"||cmd==="w"){ const name=parts[1], msg=parts.slice(2).join(" ").trim();
-    if(name&&msg) netSend({t:"tell",name,msg}); else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
+    if(name&&msg){
+      // #673: "/tell Kilmer regalia" opens the Regalia road wherever you stand — online the live
+      // Kilmer (the bot) still hears the whisper and answers in his own voice alongside.
+      if(/^kilmer$/i.test(name)&&/\bregalia\b/i.test(msg)&&_kilmerNpcRec) talkQuestGiver(_kilmerNpcRec);
+      netSend({t:"tell",name,msg});
+    } else log("Usage: /tell &lt;name&gt; &lt;message&gt;","warn"); }
   else if(cmd==="r"){ const msg=parts.slice(1).join(" ").trim();
     if(NET.lastWhisperFrom&&msg) netSend({t:"tell",name:NET.lastWhisperFrom,msg});
     else log(NET.lastWhisperFrom?"Usage: /r &lt;message&gt;":"No one has whispered you yet.","warn"); }
@@ -28353,6 +28503,12 @@ function updateRemotes(dt){
         u._acPosed=false;
       } }
     if(r.emoteT>0){ r.emoteT-=dt; poseRemoteEmote(mesh, r.emoteAct, Math.sin(now()/110)); if(r.emoteT<=0) clearRemoteEmote(mesh); }   // play/expire a remote player's emote gesture
+  }
+  // #673: the gate NPC yields to the LIVE Kilmer (the lore-keeper bot) — no two Kilmers at one gate.
+  // Quest access online stays via the /tell Kilmer regalia intercept, which speaks through this record.
+  if(_kilmerNpcRec&&_kilmerNpcRec.mesh){ let live=false;
+    for(const id in NET.players){ const r=NET.players[id]; if(r&&!r.inst&&(r.name||"")==="Kilmer"){ live=true; break; } }
+    if(_kilmerNpcRec.hidden!==live){ _kilmerNpcRec.hidden=live; _kilmerNpcRec.mesh.visible=!live; }
   }
 }
 function sendInput(dt){
