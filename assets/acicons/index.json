@@ -4147,7 +4147,17 @@
 "06007561": "06007561.png",
 "06007562": "06007562.png",
 "06007563": "06007563.png",
-"06007571": "06007571.png"
+"06007571": "06007571.png",
+"tenfold_diadem": "tenfold_diadem.png",
+"tenfold_cuirass": "tenfold_cuirass.png",
+"tenfold_pauldrons": "tenfold_pauldrons.png",
+"tenfold_vambraces": "tenfold_vambraces.png",
+"tenfold_gauntlets": "tenfold_gauntlets.png",
+"tenfold_greaves": "tenfold_greaves.png",
+"tenfold_sabatons": "tenfold_sabatons.png",
+"tenfold_shirt": "tenfold_shirt.png",
+"tenfold_breeches": "tenfold_breeches.png",
+"tenfold_cape": "tenfold_cape.png"
 },
 "names": {
 "\"assassin's crossbow\" summoning gem": "0600260f",
@@ -17446,6 +17456,16 @@
 "zoe's place portal gem": "060030b0",
 "zombie mask": "060022a4",
 "zon-atara": "060012d3",
-"zon-atara portal gem": "060030b0"
+"zon-atara portal gem": "060030b0",
+"diadem of the tenfold": "tenfold_diadem",
+"aegis cuirass of the tenfold": "tenfold_cuirass",
+"pauldrons of the tenfold": "tenfold_pauldrons",
+"vambraces of the tenfold": "tenfold_vambraces",
+"gauntlets of the tenfold": "tenfold_gauntlets",
+"greaves of the tenfold": "tenfold_greaves",
+"sabatons of the tenfold": "tenfold_sabatons",
+"shirt of the tenfold": "tenfold_shirt",
+"breeches of the tenfold": "tenfold_breeches",
+"kilmer's cape": "tenfold_cape"
 }
 }

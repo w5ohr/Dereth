@@ -14883,6 +14883,32 @@ function refreshFPWeapon(){
 // (values pre-darkened ~40% — the renderer's linear-colour pipeline brightens hexes, washing dark cloth to pastel)
 const ARMOR_MAT_TINT={Leather:0x4a3018,Hide:0x54402a,Sharkskin:0x38505e,Snakeskin:0x40502a,Linen:0xb0a380,Wool:0x8a7c60,
   Silk:0xa88ab8,Satin:0x9878a8,Velvet:0x461420,Granite:0x5c5c62,Marble:0xb8b8c2,Alabaster:0xc8c2b0,Sandstone:0xa08050};
+// ── a DIADEM on the head slot (e.g. "Diadem of the Tenfold", issue #667) renders as a real
+//    ten-pointed gold circlet — band, alternating tall/short points, glowing brow gem — instead
+//    of the generic helm dome. Built once per avatar, then toggled against the helm meshes. ──
+function buildDiademMesh(){
+  const g=new THREE.Group();
+  const gold=new THREE.MeshStandardMaterial({color:0xd8a83a,metalness:0.92,roughness:0.28,emissive:0x6a4a10,emissiveIntensity:0.35});
+  const band=new THREE.Mesh(new THREE.TorusGeometry(0.132,0.016,10,24),gold);
+  band.rotation.x=Math.PI/2; band.position.y=-0.033; band.castShadow=true; g.add(band);
+  for(let k=0;k<10;k++){ const a=k*Math.PI/5, tall=k%2===0;                     // ten points — one per year-arc
+    const sp=new THREE.Mesh(new THREE.ConeGeometry(tall?0.016:0.012,tall?0.085:0.05,6),gold);
+    sp.position.set(Math.sin(a)*0.132,-0.033+(tall?0.0425:0.025)+0.006,Math.cos(a)*0.132); sp.castShadow=true; g.add(sp); }
+  const gem=new THREE.Mesh(new THREE.OctahedronGeometry(0.024),
+    new THREE.MeshStandardMaterial({color:0x2a3a9a,metalness:0.3,roughness:0.15,emissive:0x1a2a8a,emissiveIntensity:0.6}));
+  gem.position.set(0,-0.024,-0.138); g.add(gem);                                 // brow gem fronts -z (the avatar's facing)
+  return g;
+}
+function refreshHeadwear(ent,it){   // -> true when a diadem replaced the helm shell
+  const isD=!!(it&&/\bdiadem\b/i.test(it.name||""));
+  for(const gr of ent.groups){
+    if(isD&&!gr.userData._diadem){ const dd=buildDiademMesh(); dd.scale.setScalar(0.68);   // helm-shell fit on the AC head
+      dd.userData.diadem=true; gr.userData._diadem=dd; gr.add(dd); }
+    for(const ch of gr.children){ if(ch.userData&&ch.userData.diadem) ch.visible=isD; else ch.visible=!isD; }
+    if(isD) gr.scale.setScalar(1);   // no heavy-class bulk on a circlet
+  }
+  return isD;
+}
 // Show/tint the avatar's per-slot armor shells from player.armorSlots: colour from the piece's material,
 // finish + bulk from its class (heavy=broad polished plate, medium=duller mail, light=matte leather).
 function refreshAvatarArmor(av,slotsArg){
@@ -14898,6 +14924,7 @@ function refreshAvatarArmor(av,slotsArg){
   const CLS={heavy:{me:0.85,ro:0.3,bulk:1.07},medium:{me:0.55,ro:0.52,bulk:1.0},light:{me:0.06,ro:0.8,bulk:0.95}};
   for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
+    if(k==="head"&&refreshHeadwear(ent,it)) continue;   // a diadem has its own gold/gem materials — skip the tint
     if(!it) continue;
     const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8));
     const cls=CLS[it.at]||CLS.medium;
@@ -14924,8 +14951,11 @@ try{ fetch('assets/acarmor/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   AC_ARMOR=j; console.log("AC armor-on-body: "+Object.keys(j.items).length+" retail pieces mapped.");
   if(typeof playerAvatar!=="undefined"&&playerAvatar) refreshACArmor();
 }).catch(()=>{}); }catch(e){}
+let _acArmorCbs={};
 function acArmorPart(gid,cb){
-  if(_acArmorMesh[gid]!==undefined){ if(_acArmorMesh[gid]&&_acArmorMesh[gid]!=="loading") cb(_acArmorMesh[gid]); return; }
+  if(_acArmorMesh[gid]!==undefined){
+    if(_acArmorMesh[gid]==="loading"){ (_acArmorCbs[gid]=_acArmorCbs[gid]||[]).push(cb); return; }   // #667: queue, don't drop — a 2nd avatar dressing during the fetch stayed naked
+    if(_acArmorMesh[gid]) cb(_acArmorMesh[gid]); return; }
   _acArmorMesh[gid]="loading";
   fetch('assets/acarmor/'+gid+'.json').then(r=>r.json()).then(j=>{
     const grp=new THREE.Group(), TL=new THREE.TextureLoader();
@@ -14935,17 +14965,26 @@ function acArmorPart(gid,cb){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
+      // #667: a part may carry its own finish (rough/metal) and an emissive map — the Tenfold
+      // set's gold filigree glows softly through emtex/emint; retail parts keep the old defaults.
+      const rough=(g.mat.rough!=null?g.mat.rough:0.55), metal=(g.mat.metal!=null?g.mat.metal:0.15);
       if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
-        mat=new THREE.MeshStandardMaterial({map:t,roughness:0.55,metalness:0.15});
+        t.wrapS=t.wrapT=THREE.RepeatWrapping;   // #667: some parts carry wrapped UVs (v>1) — clamp smeared them
+        mat=new THREE.MeshStandardMaterial({map:t,roughness:rough,metalness:metal});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
-      else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.55,metalness:0.15});
+      else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:rough,metalness:metal});
+      if(g.mat.emtex){ const e=TL.load('assets/acmodels/tex/'+g.mat.emtex); e.flipY=false; e.encoding=THREE.sRGBEncoding;
+        e.wrapS=e.wrapT=THREE.RepeatWrapping;
+        mat.emissiveMap=e; mat.emissive=new THREE.Color(0xffffff); mat.emissiveIntensity=(g.mat.emint!=null?g.mat.emint:1); }
       const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
     _acArmorMesh[gid]=grp; cb(grp);
-  }).catch(()=>{ _acArmorMesh[gid]=null; });
+    const q=_acArmorCbs[gid]; delete _acArmorCbs[gid]; if(q) for(const f of q) f(grp);   // #667: flush dressers queued during the fetch
+  }).catch(()=>{ _acArmorMesh[gid]=null; delete _acArmorCbs[gid]; });
 }
-// Named/legendary pieces (e.g. "Aegis Cuirass of the Tenfold") aren't in the retail ClothingTable,
-// so they had NO body-part swap and fell back to the ill-fitting procedural shell. Map each such
+// Named/legendary pieces without their own meshes aren't in the retail ClothingTable, so they
+// had NO body-part swap and fell back to the ill-fitting procedural shell. Map each such
 // piece to a real retail mesh of the same body slot & armour class — diforsa (heavy) / leather
+// ("of the Tenfold" pieces DO have their own meshes now — tenfold_* gids, tools/tenfold_art.py)
 // (light) both cover every slot cleanly, and the swap aligns to the body exactly like a retail piece.
 const AC_ARMOR_FALLBACK={
   heavy:{chest:"platemail cuirass",upperarm:"platemail pauldrons",lowerarm:"platemail vambraces",
