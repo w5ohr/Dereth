@@ -27475,9 +27475,24 @@ function onEmote(m){
   if(x!=null && m.act!=="me") floater(x,EYE+1.4,z,m.act,"#ffe9b0",1.1);
 }
 function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff bot) cast on you
+  if(typeof m.spell==="string"&&m.spell.indexOf("kportal:")===0) return onKilmerPortal(m);   // a portal bot opens a gate to a destination
   const sp=SPELLBOOK[m.spell]; if(!sp||!player.alive||!running) return;
   applyBuffSelf(sp,true);   // apply every buff type to us (heal/attr/skill/swift/prot/item/regen)
   log(`<b>${esc(m.from)}</b> casts <b>${sp.name}</b> on you.`,"heal");
+}
+// ── Portal bot: a "kportal:<place>" cast opens a gate to a named town/dungeon and sends you through
+//    (overworld only), mirroring how a "sending" spell warps you — load-gated warpTo + brief invuln. ──
+function onKilmerPortal(m){
+  if(!player.alive||!running) return;
+  if(inDungeon||inNetwork){ log("Kilmer's gate cannot reach you here.","warn"); return; }
+  const want=m.spell.slice(8).trim().toLowerCase();
+  let dest=(typeof CITIES!=="undefined")&&CITIES.find(c=>(c.name||"").toLowerCase()===want);
+  if(!dest&&typeof DUNGEONS!=="undefined") dest=DUNGEONS.find(d=>(d.name||"").toLowerCase()===want);
+  if(!dest){ log(`<b>${esc(m.from)}</b> speaks of a place you do not know.`,"warn"); return; }
+  const land=(typeof nearestDryLand==="function")?nearestDryLand(dest.x,dest.z+3):{x:dest.x,z:dest.z};
+  if(SFX.portal)SFX.portal();
+  warpTo(land.x,land.z,{invuln:2});
+  log(`<b>${esc(m.from)}</b> opens a gate — you step through to <b>${esc(dest.name)}</b>.`,"heal");
 }
 // ── Buff-bot: apply a single beneficial enchantment's effect to the LOCAL player (instant, no mana/cd).
 //    Item enchantments ride player.itemBuffs, which are global — so they empower whatever weapon/armour
