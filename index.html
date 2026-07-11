@@ -27609,7 +27609,7 @@ function closeChat(relock){
   const ce=document.getElementById('chatInput'); if(!ce) return;
   ce.style.display="none"; ce.blur();
   for(const kk in keys) keys[kk]=false;        // drop any keys captured while typing
-  if(relock && cEl && running) cEl.requestPointerLock();
+  if(relock && cEl && running && cEl.requestPointerLock) cEl.requestPointerLock();   // #674: existence-guarded — the API is absent on iOS
 }
 function sendChatLine(text){
   text=(text||"").trim(); if(!text) return;
@@ -28333,7 +28333,11 @@ function startGame(loadSaved,preset){
   if(typeof acquireWakeLock==="function") acquireWakeLock();   // #673: the screen stays on while playing
   if(autosaveTimer) clearInterval(autosaveTimer);
   autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
-  cEl.requestPointerLock();
+  // #674: iOS Safari has NO pointer-lock API — the bare cEl.requestPointerLock() threw a TypeError
+  // one line before the rAF loop started, so tapping Play on an iPhone set running=true, never drew a
+  // frame, and bounced the player back to the title screen. Guard on existence AND touch mode (touch
+  // devices never pointer-lock anyway), and never let a lock failure block the world.
+  try{ if(!TOUCH.on && cEl.requestPointerLock) cEl.requestPointerLock(); }catch(e){}
   if(!_loopRunning){ _loopRunning=true; requestAnimationFrame(loop); }   // #334: guard against a SECOND rAF chain — startGame is reachable repeatedly (online re-select, create-then-play), and loop() self-requeues, so an unguarded start ran update()+render N× per frame
   // #466: arm a 6s warm-up before the auto-tuner starts sampling FPS — every entry into the world (fresh
   // character, reload, Continue) hits a burst of monster model / dungeon pack / clothing table streaming
