@@ -14950,18 +14950,21 @@ function refreshACArmor(avArg,slotsArg){
   const av=avArg||((typeof playerAvatar!=="undefined")&&playerAvatar), u=av&&av.userData;
   if(!u||!u.acBody||!AC_ARMOR) return;
   av.traverse(o=>{ if(o.userData&&o.userData.acBody) o.visible=true; });          // restore the bare body
-  const del=[]; av.traverse(o=>{ if(o.userData&&o.userData.acArmor) del.push(o); });
+  const del=[]; av.traverse(o=>{ if(o.userData&&(o.userData.acArmor||o.userData.acCloth)) del.push(o); });   // #669: also clear prior base-clothing so a re-dress never stacks garments
   for(const d of del) if(d.parent) d.parent.remove(d);
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
   const as=slotsArg||(typeof player!=="undefined"&&player.armorSlots)||{};
   u._acSlots=as;
+  const armorJoints=new Set(), clothed=new Set();   // #669: joints the armor will occupy / slots that resolved a mesh
   for(const slot in as){ const it=as[slot]; if(!it||!it.name) continue;
     let swaps=AC_ARMOR.items[it.name.toLowerCase()];
     if(!swaps){ const fb=acArmorFallback(it,slot); swaps=fb?AC_ARMOR.items[fb]:null; }   // named/legendary → real retail mesh of the same slot & class
     if(!swaps) continue;
+    clothed.add(slot);
     if(u.armorRig&&u.armorRig[slot]) for(const gr of u.armorRig[slot].groups) gr.visible=false;   // the real mesh replaces the shell
     for(const s of swaps){ const jk=AC_ARMOR.partJoint[s.p], J=jk&&joints[jk]; if(!J) continue;
+      armorJoints.add(jk);
       acArmorPart(s.g, grp=>{
         if(!u._acSlots||!u._acSlots[slot]||u._acSlots[slot].name!==it.name) return;   // re-dressed meanwhile
         const inst=grp.clone(); inst.userData.acArmor=slot;
@@ -14971,6 +14974,40 @@ function refreshACArmor(avArg,slotsArg){
         else inst.scale.setScalar(u.acScale||1);
         J.add(inst);
       });
+    }
+  }
+  // ═══ #669: BASE CLOTHING on players — the fix for "everyone looks naked". A cloth shirt/pants/shoes
+  //     item has no ClothingTable ARMOR mesh, and the old procedural cloth shells sit invisibly inside
+  //     the AC body — so the local player and every synced remote rendered bare skin. Dress the
+  //     unresolved shirt/pants/feet slots with the REAL base-clothing meshes (acclothing_mesh), exactly
+  //     the path that keeps NPC townsfolk looking right; armor-occupied joints are pre-claimed so a
+  //     sleeve never pokes through a cuirass. ═══
+  if(typeof dressAvatarAC==="function"){
+    const bases=[];
+    const shirtIt=as.shirt, pantsIt=as.pants, feetIt=as.feet;
+    const her=((av===((typeof playerAvatar!=="undefined")&&playerAvatar))?(player.heritage||"aluvian")
+      :((u._headApp&&u._headApp.race)||"aluvian")).toLowerCase();
+    const gender=(av===((typeof playerAvatar!=="undefined")&&playerAvatar))
+      ?((player.appearance&&player.appearance.gender)||"male")
+      :((u._headApp&&u._headApp.gender)||"male");
+    if(shirtIt&&shirtIt.name&&!clothed.has("shirt")){
+      const nm=shirtIt.name.toLowerCase();
+      bases.push(/robe/.test(nm)?(AC_ROBE_BY_CULT[her]||"faran robe"):/dress/.test(nm)?"sleek dress":/tunic|doublet|kimono/.test(nm)?"tunic":"shirt");
+      if(u.armorRig&&u.armorRig.shirt) for(const gr of u.armorRig.shirt.groups) gr.visible=false;
+    }
+    if(pantsIt&&pantsIt.name&&!clothed.has("pants")&&!/robe|dress/.test((bases[0]||""))){
+      const nm=pantsIt.name.toLowerCase();
+      bases.push(/breech/.test(nm)?"breeches":/pantaloon/.test(nm)?"pantaloons":"trousers");
+      if(u.armorRig&&u.armorRig.pants) for(const gr of u.armorRig.pants.groups) gr.visible=false;
+    }
+    if(feetIt&&feetIt.name&&!clothed.has("feet")){
+      bases.push(/sandal/.test(feetIt.name.toLowerCase())?"sandals":"shoes");
+      if(u.armorRig&&u.armorRig.feet) for(const gr of u.armorRig.feet.groups) gr.visible=false;
+    }
+    if(bases.length){
+      let sd=2166136261; const ss=(shirtIt&&shirtIt.name||"")+(pantsIt&&pantsIt.name||"")+her;
+      for(let i=0;i<ss.length;i++){ sd^=ss.charCodeAt(i); sd=Math.imul(sd,16777619)>>>0; }
+      dressAvatarAC(av,bases,gender,sd,armorJoints);   // armor-claimed joints stay armor's
     }
   }
 }
@@ -15052,12 +15089,12 @@ function acOutfitFor(o,gender){
   const feet=(cult==="gharu'ndim"||cult==="gharundim")&&(seed>>9)%2?"sandals":"shoes";
   return [top,legs,feet];
 }
-function dressAvatarAC(av,bases,gender,seed){
+function dressAvatarAC(av,bases,gender,seed,claimedArg){
   seed=Math.abs(seed|0);
   const u=av.userData, gk=gender==="female"?"f":"m";
   const joints={torso:u.torso,pelvisG:u.pelvisG,shR:u.shR,shL:u.shL,elR:u.elR,elL:u.elL,wrR:u.wrR,wrL:u.wrL,
     hipR:u.hipR,hipL:u.hipL,knR:u.knR,knL:u.knL,anR:u.anR,anL:u.anL};
-  const claimed=new Set();                       // one garment per body part — earlier (outer) layer wins
+  const claimed=claimedArg||new Set();           // one garment per body part — earlier (outer) layer wins; #669: a caller may pre-claim the joints its ARMOR covers so cloth never pokes through plate
   let i=0;
   const next=()=>{                               // apply garments strictly in list order (async fetches resolve out of order)
     if(i>=bases.length||!u.acBody) return;       // stop if the avatar was torn down mid-fetch
@@ -17832,7 +17869,10 @@ function animateAvatar(dt){
   legPose(u.hipL,u.knL,u.anL,sQ);
   // ---- neck/head: level while moving, glance about while idle ----
   u.neck.rotation.x=-lean*0.7;
-  u.neck.rotation.y=(1-w)*Math.sin(idleT*0.45)*0.32;
+  // #669: the ±18° idle glance was tuned for the small painted placeholder head — with the real AC head
+  // riding the same neck joint it read as the character's whole head slowly TURNING side to side.
+  // Retail heads keep a barely-perceptible sway (±3°); the legacy painted head keeps the old glance.
+  u.neck.rotation.y=(1-w)*Math.sin(idleT*0.45)*(u.acHead?0.05:0.32);
   u.neck.rotation.z=(1-w)*Math.sin(idleT*0.8+0.6)*0.025;
   // ---- arms: action poses (attack/cast/bow) override the walk swing ----
   const twoH=!!(player.weapon&&player.weapon.wt==="twohand")&&weaponMode==="sword";
