@@ -5169,6 +5169,13 @@ function acBuildHead(av,app){
     // the whole body read as 180° off against the visible face.
     grp.scale.setScalar(s);
     u.neck.add(grp); u.acHead=grp;
+    // #676: hide the procedural placeholder ON SUCCESS, unconditionally. The early hide above only
+    // fires when the heads index had already loaded at call time (acAvail) — a build kicked before
+    // the index arrived (cold cache: applyACBody's own kick on a fresh remote) resolves later from
+    // the queue and attached the retail head WITHOUT ever hiding the painted egg-head, leaving the
+    // avatar with TWO offset heads (the placeholder appears to orbit the real one as the viewer
+    // circles). The #667 once-kick never re-fires to hide it either — u.acHead is set by then.
+    if(u.head) u.head.visible=false;
     // #533: NECK SEAM — the retail head base (y≈1.525) and the torso neck rim (y≈1.44–1.55) don't
     //   quite meet at the collar, so the transparent canvas / untextured underside shows through as
     //   bright wedges under the chin (female) or a dark crease ring (male). Bridge the join with a
@@ -28317,6 +28324,12 @@ function updateRemotes(dt){
       const _u=mesh.userData, _hready=(typeof AC_HEADS!=="undefined")&&AC_HEADS&&_u.acBody&&_u.acHeadPlace&&_u.neck;
       if(!_hready) r._acHeadKicked=false;   // prerequisites still streaming — don't burn the one kick yet
       else if(!r._acHeadKicked){ r._acHeadKicked=true; r._hr._acHeadTried=false; npcAcHead(r._hr); } }
+    // #676: INVARIANT — a remote with the retail head attached must never also show the painted
+    // placeholder. Kilmer was seen wearing BOTH (the placeholder appears to orbit the real head as
+    // the viewer circles): any attach ordering that skips acBuildHead's early hide (cold-cache index
+    // races and the like) used to leave the egg-head visible forever. Enforced per frame, costs a
+    // flag check; kills the double-head no matter which race produced it.
+    { const _u=mesh.userData; if(_u.acHead&&_u.head&&_u.head.visible) _u.head.visible=false; }
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const _rpx=r.x,_rpz=r.z;   // #672: pre-lerp position → this frame's actual displacement drives the gait
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
