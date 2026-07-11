@@ -6898,10 +6898,13 @@ function buildWorld(){
       hands:["Gauntlets of the Tenfold","heavy","Diamond",0],legs:["Greaves of the Tenfold","heavy","Diamond",0],
       feet:["Sabatons of the Tenfold","heavy","Diamond",0],shirt:["Shirt of the Tenfold","light","Silk",0],
       pants:["Breeches of the Tenfold","light","Silk",0],back:["Kilmer's Cape","light","Diamond",0,1,1846380]};
-    const dress=tries=>{ try{ if(window._noKilmerDress) return;   // test harness escape: SwiftShader can't chew the 4x armor textures
-      if(_kilmerNpcRec&&_kilmerNpcRec.mesh&&_kilmerNpcRec.mesh.userData.acBody&&typeof applyRemoteGear==="function"){ applyRemoteGear(_kilmerNpcRec.mesh,KGEAR); return; } }catch(e){}
-      if(tries>0) setTimeout(()=>dress(tries-1),2000); };   // the AC body attaches async — retry until it lands
-    setTimeout(()=>dress(12),2000); }
+    // #687: Kilmer is ALWAYS in his set. Assert the gear on a permanent slow cadence rather than a
+    // bounded retry — the old 12-try/24s window could expire before the acarmor pack streamed in on a
+    // cold cache, leaving the Monarch bare until reload. applyRemoteGear is signature-guarded (its sig
+    // includes pack-readiness), so steady-state this is a no-op and the pack's arrival re-dresses him.
+    const dress=()=>{ try{ if(window._noKilmerDress) return;   // test harness escape: SwiftShader can't chew the 4x armor textures
+      if(_kilmerNpcRec&&_kilmerNpcRec.mesh&&_kilmerNpcRec.mesh.userData.acBody&&typeof applyRemoteGear==="function") applyRemoteGear(_kilmerNpcRec.mesh,KGEAR); }catch(e){} };
+    setInterval(dress,5000); setTimeout(dress,2000); }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*COORD-3,-21.2*COORD,{role:"reset_attr",name:"Chafulumisa"});   // #329: place at Asheron's Castle (21.2N 69.3E) at the true COORD scale — the hardcoded *80 left them ~11km off, lost in the wilderness
   addNPC(69.3*COORD+3,-21.2*COORD,{role:"reset_skill",name:"Fianhe"});
