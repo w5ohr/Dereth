@@ -2567,7 +2567,10 @@ async def dispatch(cl, msg):
             await broadcast(fx, exclude=cl)
     elif t == "tell":
         name = str(msg.get("name", ""))
-        text = clean_relay(msg.get("msg", ""), 240)
+        # 1000, not the 240 the public channels use: tells are private 1:1 (no broadcast amplification,
+        # same RL_CHAT rate limit), and the Kilmer lore-bot's multi-sentence answers were being clipped
+        # mid-sentence at 240 ("…His remnant I scatter") before they ever reached the asker.
+        text = clean_relay(msg.get("msg", ""), 1000)
         if cl.in_world and text:
             target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
             if not target or target is cl:
