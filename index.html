@@ -4873,6 +4873,19 @@ function applyACBody(av,gender){
     const grp=new THREE.Group(); grp.userData.acBody=true;
     for(const m of t.meshes){ const mm=new THREE.Mesh(m.geo,m.mat); mm.castShadow=true; grp.add(mm); }
     const jl=acRestPos(J,av);
+    // #671: the FOOT GfxObjs are the one part family whose meshes front +z — every other part (torso,
+    // head mount, arms) fronts the engine's -z. On the bare body the toes visibly pointed BACKWARD
+    // ("things are backwards in some places" — never seen before #669 because clothed avatars replace
+    // their foot parts with garment shoes). Flip the foot MESHES 180° about the vertical axis THROUGH
+    // THE ANKLE JOINT (not the part-group origin, which sits offset — a plain flip slid the foot
+    // backward). Mesh-level, so the group transform stays template-true and MotionTable joint-solving
+    // (acMotionPose reads drive.lp/lq off the group) and armor/cloth ref-placement copies are unaffected.
+    if(jk==="anR"||jk==="anL"){
+      const q=new THREE.Quaternion(t.q[0],t.q[1],t.q[2],t.q[3]);
+      // ankle position in group-local, pre-scale units: q⁻¹·(jl − t.p·s) / s
+      const pv=new THREE.Vector3(jl.x-t.p[0]*s, 0, jl.z-t.p[2]*s).applyQuaternion(q.clone().invert()).divideScalar(s);
+      for(const mm of grp.children){ mm.rotation.y=Math.PI; mm.position.x=2*pv.x; mm.position.z=2*pv.z; }
+    }
     grp.position.set(t.p[0]*s-jl.x, t.p[1]*s-jl.y, t.p[2]*s-jl.z);
     grp.quaternion.set(t.q[0],t.q[1],t.q[2],t.q[3]);
     grp.scale.setScalar(s);
