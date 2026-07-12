@@ -3080,6 +3080,7 @@ let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0
 let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=0,_frostAddT=0,frostTimer=0; // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
 let riftActive=false,riftWave=0,riftTimer=0,_riftPulseT=0,_riftZones=[],riftBoss=false; // #680 Regalia VIII: the Sundered Veil (lone stand, storm pulses, no retreat)
 let tideActive=false,tideLevel=0,tideRise=0,_tideWave=0,_tidePhase="",_tideHeraldKills=0,_tideWater=null,_tideAddT=0; // #681 Regalia IX: the Drowned Rift (hold the tide-gate; the Herald reconstitutes twice)
+let consActive=false,_consReinforced=false,_consT=0; // #682 Regalia X: the Consecration (T'thuun's Lingering Dream, at Kilmer's side)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -11163,7 +11164,16 @@ function resistVs(el){ if(!el) return 0; let n=0;
   if(player.gearFx&&player.gearFx.protect&&player.gearFx.protect[el]) n+=player.gearFx.protect[el]/100;   // worn Protection item-spells
   if(player.augment&&player.augment.resist) n+=player.augment.resist;        // Blue Aetheria: permanent all-element resistance
   { const cp=player.armorSlots&&player.armorSlots.back; if(cp&&cp.elemProt) n+=cp.elemProt/100; }   // a cape's all-element protection (Kilmer's Cape: +100)
+  if(player.tenfoldAttuned && tenfoldSetComplete()) n+=0.05;   // #682 Regalia X: the consecrated set bonus — +5% all elemental protections with the full set + cape
   return Math.min(0.7,n); }
+// #682: is the full regalia WORN — the nine earned chapter pieces (one per slot, from the TENFOLD_PIECES
+// table) AND Kilmer's Cape on the back? The offhand "Aegis of the Tenfold Crown" shield is Kilmer's own,
+// NOT a chapter piece, so it never counts; the cape is required specifically (the capstone gate).
+function tenfoldSetComplete(){ const s=player.armorSlots||{};
+  if(!(s.back&&/kilmer's cape/i.test(s.back.name||""))) return false;   // the cape is mandatory
+  if(typeof TENFOLD_PIECES==="undefined") return false;
+  const worn=new Set(); for(const k in s){ const it=s[k]; if(it&&it.name) worn.add(it.name); }
+  return Object.values(TENFOLD_PIECES).every(p=>worn.has(p.name)); }
 // Item-set bonus (AC Item Sets): the dominant matching set among equipped pieces grants tiered boons.
 // 3 pieces → +armour & +max-health; 5 pieces → bigger, plus the set's themed skill (folded into gearSkill).
 function dominantSet(){ const c={}; let best=null,bn=0; for(const p of wornPieces()){ if(!p.aset)continue; c[p.aset]=(c[p.aset]||0)+1; if(c[p.aset]>bn){bn=c[p.aset];best=p.aset;} } return {set:best,count:bn}; }
@@ -17776,6 +17786,7 @@ function update(dt){
   updateFrostCourt(dt);    // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
   updateRiftStand(dt);     // #680 Regalia VIII: the Sundered Veil (storm pulses, lone stand, no retreat)
   updateTideGate(dt);      // #681 Regalia IX: the Drowned Rift (hold the gate; the Herald reconstitutes twice)
+  updateConsecration(dt);  // #682 Regalia X: the Consecration (T'thuun's Lingering Dream, at Kilmer's side)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20438,6 +20449,26 @@ const QUESTS=[
     xp:1000000, gold:16000, instance:enterTideGate,
     gateOpen:"The tide-callers are silenced. Behind me the <b>drowned rift</b> churns — step in and hold the gate while the flood climbs. Speak once more and I will send you into the water. <i>Fell them fast; every kill buys you a breath. And the Herald does not die easily — nor twice.</i>",
     item:{name:"Diadem of the Tenfold",stat:"worn",at:"heavy",aslot:"head",mat:"Diamond",v:52,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
+  // ═══ #682 CHAPTER X — THE CONSECRATION (Regalia epic #672 capstone). No new piece: wearing all nine
+  //     Tenfold pieces AND Kilmer's Cape (all ten slots), face T'thuun's Lingering Dream at Kilmer's side
+  //     in the sealed undercroft. Victory ATTUNES the set for the character — a soft gold glow, the title
+  //     "Heir of the Tenfold", a +5% all-element set bonus (resistVs), and a final page in "A History of
+  //     Dereth" naming them. The gate itself is the whole set worn. (Chain: after IX.) ═══
+  { id:"regalia10", name:"The Regalia of the Tenfold · X — The Consecration", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia9",
+    intro:"Nine pieces, and my own cape upon your back — the road is walked but not yet sealed. There is one thing left in the world that remembers the crown as it was: T'thuun's Lingering Dream, coiled in the undercroft's sealed heart beneath this castle. Wear the whole regalia and the cape, and I will go down with you. We end it together, or not at all. Then — and only then — is the set truly yours.",
+    gateFn:function(){ if(typeof tenfoldSetComplete==="function"&&!tenfoldSetComplete()) return "Come to me wearing the whole regalia — all nine pieces you have earned, and my own cape upon your back. The set must be complete before it can be consecrated."; return null; },
+    obj:[{type:"consecration",count:1,label:"Face T'thuun's Lingering Dream in the sealed undercroft, at Kilmer's side"}],
+    xp:1500000, gold:25000, instance:enterConsecration,
+    gateOpen:"You wear the whole road at last. The undercroft's seal is mine to break — speak once more and we go down together, into the dark where the Dream still coils. <i>Stay at my side.</i>",
+    onComplete:function(){   // the Consecration's reward: attune the set to this character
+      player.tenfoldAttuned=true; player.tenfoldConsecrated=true;
+      player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf("Heir of the Tenfold")<0) player.eventTitles.push("Heir of the Tenfold");
+      player.title="Heir of the Tenfold";
+      if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // pick up the attuned glow on the worn set
+      toast("HEIR OF THE TENFOLD"); if(SFX.level)SFX.level();
+      log("Lord Kilmer kneels to <b>you</b> — he who kneels to no one — and the regalia takes a soft gold light that will not fade. You are <b>the Heir of the Tenfold</b>. A final page is written in <i>A History of Dereth</i>, and it bears your name.","sys");
+      return ", the title <b>Heir of the Tenfold</b>, and the set attuned to you (soft glow · +5% all elemental protections)";
+    } },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20711,6 +20742,10 @@ const QUEST_GIVERS={
     prog:"Six Burun tide-callers, culled wherever the water is rising. Then return, and I will open the drowned rift — hold the gate, and put the Herald down three times over. Fell them fast; the flood is patient and you are not.",
     turn:"The gate held and the water fell back, and the Herald will not rise a fourth time. Take the Diadem of the Tenfold — ten points, and you held every one of them. Only the crown remains: wear all nine and my own cape, and come to me for the last year.",
     post:"The ninth year is behind you — the drowned one. Wear the whole set and my cape, and we will end this together."},
+  regalia10:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Wear the whole regalia and my cape, and come to me — the undercroft's seal is mine to break, and I will not send you into that dark alone. We end it together.",
+    turn:"It is done. T'thuun's Dream is unmade, the road is walked to its last stone, and the regalia is yours in a way no forge could make it. Rise, Heir of the Tenfold — the crown was never given, and you did not wait to be given it.",
+    post:"Heir of the Tenfold. The road is walked, and the world will remember your name in the chronicle beside mine. Wear it well."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -22391,6 +22426,7 @@ function talkQuestGiver(n){
       }
       if(q.rewards && q.rewards.length){ rw+=`, and your choice of reward`; }   // reward choice handled after turn-in
       else if(q.item){ addToInv(Object.assign({},q.item),true); rw+=`, and a <b>${q.item.name}</b>`; }
+      if(typeof q.onComplete==="function"){ try{ const extra=q.onComplete(); if(extra) rw+=extra; }catch(e){ console.error("quest onComplete failed:",e); } }   // #682: a chapter may bestow a custom reward (the Consecration's attunement)
       const repGain=player.society?questRepValue(id):0;   // society standing for the order you've pledged to
       if(repGain) rw+=`, +${repGain} ${societyById(player.society).name} standing`;
       if(q.repeatable){ taskReps[id]=(taskReps[id]|0)+1; taskCooldown[id]=Date.now()+questCdMs(id); }  // tally + start the timer
@@ -23108,6 +23144,9 @@ function openHistoryBook(){
   flush();
   pages.push(any?"Here the written record ends — the next age is not yet lived. This chronicle grows with every turning of the calendar; return, and read of what is yet to come to pass."
     :"The chronicle is yet young — no great turning has passed since your arrival. Return when the calendar has turned, and read of the ages you helped shape.");
+  if(player.tenfoldAttuned){   // #682 Regalia X: the final page names the character who walked all ten years
+    pages.push(`── THE HEIR OF THE TENFOLD ──\n\nAnd in a later age one adventurer walked all ten years of Lord Kilmer's road, quenched each piece of the regalia in its own trial, and stood at his side in the sealed undercroft as T'thuun's Lingering Dream came apart at last.\n\nKilmer bowed — he, who bows to no one — and named the regalia's second wearer:\n\n${esc(player.name||"the Adventurer")}, Heir of the Tenfold.\n\n"The crown was never given," he said. "It is earned, or it is nothing. You have earned it."`);
+  }
   if(typeof kcReadLectern==="function") kcReadLectern({title:"A History of Dereth",pages});
   else log("The tome's script blurs before your eyes.","warn");
 }
@@ -26865,7 +26904,7 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false; tideActive=false;   // #680/#681: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false;   // #680-#682: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -27423,6 +27462,80 @@ function tideFail(why){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   log(`The water wins — ${why||"the gate goes under and the flood carries you back"}. No one holds a tide with too few hands; bring more, or fell them faster.`,"warn");
   toast("THE TIDE PREVAILS"); if(SFX.hit)SFX.hit();
+  exitDungeon(true);
+}
+// ═══ #682 REGALIA X — THE CONSECRATION: the capstone. In the sealed undercroft beneath Castle Val
+//     Halla, T'THUUN'S LINGERING DREAM coils — the last thing that remembers the crown as it was. Lord
+//     Kilmer goes down at your side (a stationary ally at the sealed heart). Cut the Dream down through
+//     one reinforcement of void-echoes; the win → questEvent("consecration") advances regalia10, and the
+//     turn-in attunes the set (glow, title "Heir of the Tenfold", +5% set bonus, the naming page). ═══
+function buildConsecration(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=22;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const dark=new THREE.MeshStandardMaterial({color:0x14101c,roughness:0.7,metalness:0.1});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),dark);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // the sealed heart: a broken ritual circle of gold sigils around the centre
+  for(let i=0;i<12;i++){ const a=i/12*Math.PI*2, r=8;
+    const sig=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.06,1.4),new THREE.MeshStandardMaterial({color:0x1a1424,emissive:0xd8a83a,emissiveIntensity:0.5,roughness:0.6}));
+    sig.rotation.x=-Math.PI/2; sig.rotation.z=a; sig.position.set(cx+Math.cos(a)*r,0.07,cz+Math.sin(a)*r); scene.add(sig); dungeonObjs.push(sig); }
+  // undercroft vault
+  const stone=new THREE.MeshStandardMaterial({color:0x24202c,roughness:0.9});
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(R+0.6,R+0.6,10,48,1,true),stone);ring.position.set(cx,5,cz);ring.material.side=THREE.DoubleSide;scene.add(ring);dungeonObjs.push(ring);
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2,tx=cx+Math.cos(a)*(R-1.5),tz=cz+Math.sin(a)*(R-1.5);
+    const ob=new THREE.Mesh(new THREE.BoxGeometry(1,rnd(6,8),1),stone);ob.position.set(tx,4,tz);ob.castShadow=true;scene.add(ob);dungeonObjs.push(ob); }
+  // Kilmer at your side — a stationary figure at the sealed heart's edge (narrative ally, not a combatant)
+  { const kil=(typeof buildPerson==="function")?buildPerson({look:"captain",name:"Lord Kilmer"}):null;
+    if(kil){ kil.position.set(cx-2.4,0,cz+3.2); kil.rotation.y=Math.PI; scene.add(kil); dungeonObjs.push(kil);
+      const kl=labelSprite("Lord Kilmer","npcs"); kl.position.set(cx-2.4,2.4,cz+3.2); scene.add(kl); dungeonObjs.push(kl); } }
+  const vlight=new THREE.PointLight(0x9a5aff,1.1,44);vlight.position.set(cx,6,cz);scene.add(vlight);dungeonObjs.push(vlight);
+  const amb=new THREE.HemisphereLight(0x3a2a5a,0x0a0612,0.4);scene.add(amb);dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz+8};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Withdraw from the undercroft — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterConsecration(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;consActive=true;curDungeon={id:990682,name:"The Sealed Undercroft",tier:5};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.4";
+  buildConsecration();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  consActive=true;_consReinforced=false;_consT=0;
+  const cx=DCEN.x,cz=DCEN.z;
+  spawnDungeonMonster("shadow",cx,cz-4,true,5.5,"T'thuun's Lingering Dream");
+  toast("T'THUUN'S LINGERING DREAM");
+  log("The seal breaks and the dark uncoils — <b>T'thuun's Lingering Dream</b>, the last thing that remembers the crown. <b>Lord Kilmer stands at your side.</b> End it here, and the regalia is truly yours.","warn");
+  updateHUD&&updateHUD();
+}
+function updateConsecration(dt){
+  if(!consActive) return;
+  _consT+=dt;
+  // one reinforcement of void-echoes mid-fight, to make the Dream's last stand feel like one
+  if(!_consReinforced&&_consT>12&&dungeonMobs>0){ _consReinforced=true;
+    const cx=DCEN.x,cz=DCEN.z;
+    for(let i=0;i<3;i++){ const a=i/3*Math.PI*2, r=10; spawnDungeonMonster("phantom",cx+Math.cos(a)*r,cz+Math.sin(a)*r,false,2.2,"Void-Echo"); }
+    log("The Dream frays and throws off <b>void-echoes of itself</b> — Kilmer takes the flank. Hold the centre.","sys");
+  }
+  if(dungeonMobs<=0) consecrationWin();
+}
+function consecrationWin(){
+  consActive=false;
+  const cx=DCEN.x,cz=DCEN.z;
+  for(let i=0;i<3;i++) burst(cx,2,cz,[0xd8a83a,0x9a5aff,0xffe27c][i],70);
+  if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("T'THUUN'S DREAM IS UNMADE");
+  log("T'thuun's Lingering Dream comes apart into failing light and does not remember itself again. Kilmer lowers his blade. Return to him at the castle gate — the road has one stone left to lay.","sys");
+  if(typeof questEvent==="function") questEvent("consecration");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!consActive&&inDungeon) exitDungeon(true); }, 4500);
+}
+function consecrationFail(){
+  consActive=false;
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  log("You withdraw, and the seal knits shut behind you — the Dream still coils, and the last year is unwalked. Come again wearing the whole regalia, and end it.","warn");
+  toast("THE DREAM ENDURES"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
