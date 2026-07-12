@@ -416,3 +416,67 @@ consistent. **One real bug in the focus-mana battery refund:**
 > Environment note (NOT a game bug): the headless tab throttles `requestAnimationFrame`, so the arrival portal-transit tube (`portalTransit`, `maxHold` 10 s) does not accumulate wall-clock time and appears "stuck" until stepped. In a real focused browser it self-completes in ~1–2 s. Systems were driven by calling `update(dt)` with explicit dt to work around this.
 
 - NOT FIXED per test-only policy — logged only. No code, commit, or push.
+
+**Finding 1 (537 "missing" town placements) — FALSE POSITIVE, no fix needed.** On investigation the 12 DIDs are all `kind` = **portal / lifestone / bindstone**, NOT buildings. The town builder intentionally skips them (`if(!TB_KINDS[o.kind]) continue; // the game places its own`, index.html ~6704) because the game renders portals/lifestones/bindstones with its OWN systems. Verified: the game spawns 185 lifestones covering **56/56 towns** (+ its 1728-portal network). Extracting the raw AC Setup meshes would wrongly duplicate the game's own visuals. My earlier MEDIUM flag was an over-call — corrected here.
+
+## 2026-07-06 09:18 — OVERNIGHT SWEEP pass 2 (HEAD 821ad73, post index-fix)
+
+### Dungeons — ALL 331 FULLY BUILT (deeper than pass 1)
+- Built every dungeon's full mesh via enterDungeon + exitDungeon teardown, in 3 batches: 330 mazes built + 1 Advanced Colosseum (correctly routes to the arena, not a maze). **0 build errors, 0 empty-object builds, 0 console errors.** (Pass 1 only full-built 16; this covers all 331.)
+
+### Towns — ALL 56 building placements resolve (index-fix regression PASS)
+- Validated every town-model placement against the (uppercased) index: 2441 building/scenery/fixture/statue placements across 56 towns, **0 unresolved, 0 towns with missing buildings**. (811 building, 1567 scenery, 41 fixture, 22 statue; the 434 portal + 80 lifestone + 23 bindstone placements correctly excluded — game renders those.) Confirms PR #104's index-case fix works town-wide.
+
+### World bosses, arena, combat loop — PASS
+- Gnawvil (Olthoi Queen, 2000hp) + Bael'Zharon (Hopeslayer, 6000hp, apex): both spawn, take damage, die; boss kill grants XP (51750 for the pair) and advances/completes the gnawvil quest (validates the Emissary quest chain).
+- Colosseum arena gauntlet: enters, wave 1/5 spawns 3 mobs. Works.
+
+### Save/load — PASS
+- Roundtrip: saveGame writes to localStorage `dereth_save_v1` capturing level/gold/society/inventory/house/quest-progress; applySave restores them exactly after live state was mutated. Persistence intact.
+
+### MMO server backend — 47/47 PASS
+- Ran server/test_client.py end-to-end: auth/register, 8 character slots (create/reject-occupied/reject-9th/delete), persistence (save/restore all 8, level restore, kills persist), chat/whisper/emote, party+fellowship (invite/accept/roster/chat/shared-XP/leave), shared mobs + world boss sync, attack/hit/die + shared kill rewards, ground drops (broadcast/late-joiner/pickup/double-pickup-reject), login pw check.
+- The lone "FAIL active Incursion synced to late joiner" against the LIVE game server was a **false positive**: that server runs the default 60s event cooldown so no Incursion was active during the brief test. Re-ran against a throwaway server with DERETH_EVENT_CD=1 → **47 passed, 0 failed** (incursion syncs correctly). Not a bug.
+
+### ===== PASS 2 SUMMARY (2026-07-06 09:25) =====
+Deeper than pass 1, all on HEAD with the 2 merged fixes:
+- All **331 dungeons** fully mesh-built (was 16) — 0 errors.
+- All **56 towns**: 2441 building placements resolve, 0 missing (index-fix regression PASS).
+- World bosses (Gnawvil + Bael'Zharon) spawn/die/reward + quest-chain advance.
+- Arena gauntlet, save/load roundtrip, MMO backend (47/47) all PASS.
+- **0 console errors, 0 real new bugs.** (2 investigated "failures" — Advanced Colosseum arena routing, MMO incursion cooldown — were both false positives.)
+
+### Combat depth — PASS
+- All 6 war-spell geometries cast without error (Blast/Volley/Ring/Arc/Wall/Streak), 56 spells each (7 elements × 8 levels). Weapon elemental branding (Atlan stone) applies element + damage + renames correctly.
+
+**End of overnight sweep pass 2.** Two full deep passes complete: every quest, every dungeon (fully built), every town, plus MMO backend, save/load, bosses, arena, combat — 0 real new bugs. Two prior real bugs already fixed (PR #100 ship disembark, PR #104 index case).
+
+## 2026-07-06 09:34 — OVERNIGHT SWEEP pass 3 (new-player perspective + edge/stress)
+
+### New-player / low-level — PASS (+ 2 design observations, not bugs)
+- Fresh level-1 "Adventurer" (cleared save): all attrs 10, HP 5, 10 starting spells (Flame/Frost/Lightning/Nether Bolt I, Heal Self I, Flame Storm I, Blade Lure, Quickening, Stam→Mana, Summon Wisp), unarmed attack available — playable.
+- **HP 5 is correct**, not a bug: health = Endurance/2 (5 @ End 10, 50 @ End 100) — AC-authentic.
+- Wield gates work: a tier-5 blade requires Lv 64 and is blocked for a low-level char (reason "level 64"); tier-1 gear is free.
+- Leveling: fresh char 1→6 on 20k XP, XP banks to xpUnspent for spending. Skill spend via trainSkill/raiseSkill; attribute spend via the character sheet.
+- OBSERVATIONS (confirm intended, NOT bugs): (1) fresh char starts with no weapon/armor/gold — playable via spells+unarmed, but a lean start; may be granted in the creation flow I bypassed by auto-entering. (2) level-8 incantation skill-300 gate (from pass 1) still stands.
+
+### Edge / stress — PASS
+- 60-monster spawn: created + added to scene with no crash; real game loop processed 65 monsters for several seconds with 0 console errors.
+- Map boundaries (±24000 corners + center): terrainH finite (no NaN), collide() returns valid results — no crash at extremes.
+- Inventory cap (12): over-cap addToInv correctly rejected (42 rejected). (Forced quest-reward grants can exceed the visible cap by design.)
+
+**End of overnight sweep pass 3.** Three deep passes (endgame Kilmer + fresh new-player + edge/stress) — 0 real new bugs beyond the 2 already fixed. Remaining items are design confirmations, not defects.
+
+## 2026-07-06 09:43 — MMO registration process (focused)
+
+### Registration — PASS (server 20/20 edge cases + client flow)
+**Server-side** (throwaway server, fresh DB) — 20/20:
+- Valid register → auth_ok with session token + protocol version.
+- Duplicate name → auth_err "already taken". Name length bounds (3–16) enforced (2-char and 17-char rejected). Invalid chars rejected (space, "!"). Password <4 rejected. Min-valid (3-char name / 4-char pw) accepted. Names with _ and - accepted. Names case-sensitive (Case vs case both register). Empty name/password rejected. Non-string name handled without crash.
+- Login roundtrip: correct pw → auth_ok, wrong pw → auth_err, unknown account → auth_err. No server errors/tracebacks on any malformed input.
+
+**Client-side** (browser → live :8787 → browser):
+- Valid registration authenticates, receives token, and transitions to the character-select roster (0/8 empty "+ Create" slots). Confirmed by screenshot.
+- Duplicate name → shows "That name is already taken." and stays at login.
+- Short password → shows "Password must be at least 4 characters." and stays at login.
+- Cleanup: removed the test account + earlier test-harness accounts from the real dereth.db (only Admin/Kilmer remains). No registration bugs found.
