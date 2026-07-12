@@ -992,7 +992,15 @@ const SKILLS_DEF=[
   {k:"deception",  n:"Deception",            fam:"Lore",   a:[], d:0, tc:4,  sc:4,  u:"util", e:"Mislead foes"},                                        //e tc/sc
   {k:"assesscreature",n:"Assess Creature",   fam:"Lore",   a:[], d:0, tc:0,  sc:0,  u:"util", e:"Reveal creature stats (codex)"},
   {k:"assessperson",  n:"Assess Person",     fam:"Lore",   a:[], d:0, tc:0,  sc:0,  u:"util", e:"Reveal NPC/player info"},
+  // — Mounts & Vessels — (base movement speed while piloting a ship / riding a horse)
+  {k:"sailing",    n:"Sailing",              fam:"Lore",   a:["Coordination","Focus"],     d:3, tc:2, sc:4, u:"util", e:"Base sailing speed of your ship"},
+  {k:"riding",     n:"Horse Riding",         fam:"Lore",   a:["Coordination","Quickness"], d:3, tc:2, sc:4, u:"util", e:"Base riding speed of your mount"},
 ];
+// shared speed curve for mount/vessel skills: unskilled ≈ ×0.8 base speed, rising asymptotically to ×1.5.
+// Ship piloting multiplies by pilotSpeedFactor("sailing"); the horse-riding system (other client) should
+// multiply its mount's base speed by pilotSpeedFactor("riding").
+function pilotSpeedFactor(key){ const v=(typeof skillValue==="function")?skillValue(key):0;
+  return clamp(0.8+(v/(v+240))*0.7, 0.8, 1.5); }
 const SKILL_BY_KEY={};
 for(const s of SKILLS_DEF){ let b=0; if(s.d){let sum=0;for(const a of s.a)sum+=10;b=Math.floor(sum/s.d);} s.base0=b; SKILL_BY_KEY[s.k]=s; }
 // ── THE authentic skill system (assets/acskills.json, extracted from client_portal.dat by
@@ -24266,7 +24274,7 @@ function updateShipPilot(dt){
     const windStr=clamp((windSpd-3)/26,0.25,1.15);
     const windMult=clamp(1+windStr*0.45*align,0.4,1.6);
     sh._windMult=windMult;
-    const dir=f>0?1:-1, rate=sh.def.speed*(f>0?1:0.6)*windMult;
+    const dir=f>0?1:-1, rate=sh.def.speed*(f>0?1:0.6)*windMult*pilotSpeedFactor("sailing");   // Sailing skill sets your base speed at the helm
     const nx=clamp(sh.x+fx*dir*rate*dt,-HALF+3,HALF-3), nz=clamp(sh.z+fz*dir*rate*dt,-HALF+3,HALF-3);
     if(shipNavigable(nx,nz,sh.def)){ sh.x=nx; sh.z=nz; }
     else if(now()-(sh._bumpT||0)>1600){ sh._bumpT=now(); log(`The ${sh.def.name} can go no further — shallower water lies ahead.`,"sys"); }
