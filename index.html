@@ -3117,6 +3117,80 @@ function texGround(){
   if(typeof renderer!=="undefined"&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
   return t;
 }
+// ── #693: data-driven terrain splatting (fallback scope — no acdata dats on the build box, so the
+//    per-type detail tiles are SYNTHESIZED in canvas; the shader is texture-agnostic, and a future
+//    extraction lane can swap the atlas for real dat ground textures with zero code changes).
+//    ACMAP.T — the client's authentic per-cell LandDefs terrain types, already driving vertex
+//    colours and scenery — becomes a 2041² index texture; the ground shader bilinear-blends the 4
+//    surrounding cells' tiles per pixel, adds slope-rock + high-altitude snow, and keeps the
+//    two-scale anti-tiling multiply. Tiles are near-greyscale STRUCTURE (blades/grain/cracks/
+//    ripples/sparkle) — hue stays with the per-vertex biome tint, so regionTint, the seasonal
+//    reskin and winter all compose unchanged. Atlas UVs are MIRRORED (abs-triangle wave), which
+//    makes unwrapped canvas tiles seamless and doubles the repeat period for free. ──
+const TER={ready:false,uOn:{value:0},uIdx:{value:null},uAtl:{value:null},uCW:{value:new THREE.Vector2(1,2041)}};
+// LandDefs type (0–31) → atlas tile: 0 grass · 1 lush · 2 patchy · 3 rock · 4 rockpatch · 5 dirt ·
+// 6 mud · 7 marsh · 8 sand · 9 sandrock · 10 snow · 11 ice · 12 obsidian · 13 seabed
+const TER_LUT=[3,0,11,1,7,6,12,5,5,2,8,8,9,3,4,10, 13,13,13,13,13, 0,2,0,1,0,2,0,2,0,1,3];
+function terBuildAtlas(){
+  const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');
+  const R=(a,b)=>a+Math.random()*(b-a), RI=(a,b)=>Math.floor(R(a,b+1));
+  function tile(ti,p){
+    const x0=(ti%4)*128, y0=Math.floor(ti/4)*128;
+    g.save(); g.beginPath(); g.rect(x0,y0,128,128); g.clip(); g.translate(x0,y0);
+    g.fillStyle=p.base; g.fillRect(0,0,128,128);
+    for(let i=0;i<p.patch;i++){const r=R(14,42),v=RI(-p.var,p.var);       // large soft patchiness
+      const gr=g.createRadialGradient(0,0,0,0,0,r);
+      gr.addColorStop(0,`rgba(${p.tone+v},${p.tone+v-3},${p.tone+v-8},0.35)`);gr.addColorStop(1,"rgba(0,0,0,0)");
+      g.save();g.translate(R(0,128),R(0,128));g.fillStyle=gr;g.fillRect(-r,-r,r*2,r*2);g.restore();}
+    for(let i=0;i<p.grain;i++){const v=RI(-p.var,p.var);                   // speckle grain
+      g.fillStyle=`rgba(${p.tone+v},${p.tone+v-4},${p.tone+v-10},0.55)`;
+      g.fillRect(R(0,127),R(0,127),R(1,p.gs),R(1,p.gs));}
+    if(p.blades)for(let i=0;i<p.blades;i++){const x=R(0,127),y=R(0,127),h=R(3,p.bh),l=R(-2,2);
+      const b=p.tone+(Math.random()<0.5?46:-46),v=RI(-14,14);              // random-lit blades → mirror-safe
+      g.strokeStyle=`rgba(${b+v},${b+v-4},${b+v-14},0.8)`;g.lineWidth=1;
+      g.beginPath();g.moveTo(x,y);g.quadraticCurveTo(x+l*0.5,y-h*0.6,x+l,y-h);g.stroke();}
+    if(p.cracks)for(let i=0;i<p.cracks;i++){let x=R(0,127),y=R(0,127);
+      g.strokeStyle=`rgba(${p.tone-52},${p.tone-56},${p.tone-60},0.65)`;g.lineWidth=1;g.beginPath();g.moveTo(x,y);
+      for(let s2=0;s2<5;s2++){x+=R(-14,14);y+=R(-14,14);g.lineTo(x,y);} g.stroke();}
+    if(p.peb)for(let i=0;i<p.peb;i++){const v=RI(-16,16),x=R(0,127),y=R(0,127),r=R(1,3.2);
+      g.fillStyle=`rgba(${p.tone-38+v},${p.tone-44+v},${p.tone-52+v},0.8)`;g.beginPath();g.arc(x+0.7,y+0.8,r,0,6.28);g.fill();
+      g.fillStyle=`rgba(${p.tone+34+v},${p.tone+28+v},${p.tone+16+v},0.85)`;g.beginPath();g.arc(x,y,r,0,6.28);g.fill();}
+    if(p.rip){g.lineWidth=2;for(let i=0;i<p.rip;i++){const y=R(0,127),v=RI(-10,10);   // wind/wave ripples
+      g.strokeStyle=`rgba(${p.tone+18+v},${p.tone+12+v},${p.tone+2+v},0.30)`;
+      g.beginPath();g.moveTo(0,y);g.quadraticCurveTo(42,y+R(-7,7),85,y+R(-5,5));g.quadraticCurveTo(107,y+R(-4,4),128,y);g.stroke();}}
+    if(p.spark)for(let i=0;i<p.spark;i++){g.fillStyle=`rgba(255,255,255,${R(0.25,0.8)})`;g.fillRect(R(0,127),R(0,127),1,1);}
+    g.restore();
+  }
+  tile(0,{base:"#8f9078",tone:145,var:16,patch:16,grain:800,gs:3,blades:2600,bh:9});     // grass
+  tile(1,{base:"#7f8a6c",tone:135,var:14,patch:14,grain:600,gs:3,blades:4200,bh:12});    // lush grass
+  tile(2,{base:"#94907a",tone:148,var:20,patch:26,grain:1200,gs:4,blades:1200,bh:7,peb:60}); // patchy grass
+  tile(3,{base:"#8d8a84",tone:141,var:14,patch:12,grain:900,gs:5,cracks:26,peb:40});     // rock
+  tile(4,{base:"#918e84",tone:144,var:18,patch:20,grain:1000,gs:4,cracks:14,blades:500,bh:6,peb:90}); // semi-barren
+  tile(5,{base:"#95897a",tone:142,var:12,patch:14,grain:1400,gs:3,peb:70});              // packed dirt
+  tile(6,{base:"#877e72",tone:130,var:9,patch:30,grain:500,gs:5});                       // rich mud
+  tile(7,{base:"#7e836e",tone:128,var:12,patch:24,grain:700,gs:4,blades:1500,bh:11});    // marsh tufts
+  tile(8,{base:"#a49a80",tone:158,var:8,patch:8,grain:2200,gs:2,rip:22});                // sand
+  tile(9,{base:"#a0977f",tone:154,var:12,patch:10,grain:1800,gs:2,rip:12,peb:110});      // rock-strewn sand
+  tile(10,{base:"#b9bcc2",tone:186,var:6,patch:10,grain:500,gs:3,spark:420});            // snow
+  tile(11,{base:"#aeb6bd",tone:178,var:8,patch:8,grain:300,gs:4,cracks:30,spark:260});   // ice
+  tile(12,{base:"#6f6d72",tone:108,var:10,patch:10,grain:700,gs:4,cracks:34,spark:140}); // obsidian
+  tile(13,{base:"#9a9483",tone:150,var:9,patch:10,grain:1600,gs:2,rip:30});              // seabed
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.flipY=false;   // atlas row math is canvas-y-down; default flipY would mirror the 4×4 grid (grass sampled obsidian!)
+  if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+function terSplatBuild(){
+  if(TER.ready||!ACMAP.on) return;
+  const W=ACMAP.W,n=W*W,data=new Uint8Array(n);
+  for(let i=0;i<n;i++) data[i]=(TER_LUT[ACMAP.T[i]]||0)*17;   // tile id packed ×17 → decode floor(r*15+0.5)
+  const idx=new THREE.DataTexture(data,W,W,THREE.LuminanceFormat,THREE.UnsignedByteType);
+  idx.minFilter=THREE.NearestFilter;idx.magFilter=THREE.NearestFilter;
+  idx.wrapS=idx.wrapT=THREE.ClampToEdgeWrapping;idx.needsUpdate=true;   // NPOT-safe: clamp+nearest+no mips
+  TER.uIdx.value=idx; TER.uAtl.value=terBuildAtlas();
+  TER.uCW.value.set(1/AC_CELL,W);
+  TER.ready=true;
+}
 // --- procedural NORMAL maps (data textures; kept linear, never tagged sRGB) ---
 // Build a tangent-space normal map from a tiling height function (central-difference gradient).
 function makeNormalTex(size,hf,strength,repeat){
@@ -3610,6 +3684,7 @@ function updateDayNight(dt){
   { const wglow=0.05+(1-daylight)*0.7;
     for(let i=0;i<tbWindowMats.length;i++) tbWindowMats[i].emissiveIntensity=wglow; }
   updateEnvIntensity(daylight);
+  TER.uOn.value=(TER.ready&&GFX.tier>=1&&!inDungeon&&!inNetwork)?1:0;   // #693: splat on Medium+, overworld only (tier 0 keeps the legacy single tile)
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
   scene.fog.color.copy(_cNight).lerp(_cDay,daylight).lerp(_cWarm,warm*0.5);
   // ── the CLIENT'S OWN light of Dereth (Region SkyInfo): pull fog/sun/ambient strongly toward
@@ -3914,16 +3989,53 @@ function initThree(){
   // to a 4.3×-larger sampling of the same tile so the 110×110 repeat never reads as a grid.
   groundMat=new THREE.MeshStandardMaterial({map:texGround(),vertexColors:true,roughness:0.94,metalness:0.0,
     normalMap:groundNormalTex(),normalScale:new THREE.Vector2(0.7,0.7)});
-  groundMat.onBeforeCompile=sh=>{ sh.fragmentShader=sh.fragmentShader
-    .replace('#include <map_fragment>',
+  groundMat.onBeforeCompile=sh=>{
+    // #693: bind the splat uniforms (shared objects — live once terSplatBuild runs) and hand the
+    // fragment stage the world position for cell lookup + world-anchored tiling.
+    sh.uniforms.uTerOn=TER.uOn; sh.uniforms.uTerIdx=TER.uIdx; sh.uniforms.uTerAtl=TER.uAtl; sh.uniforms.uTerCW=TER.uCW;
+    sh.vertexShader='varying vec3 vTWp;\n'+sh.vertexShader.replace('#include <project_vertex>',
+      'vTWp=(modelMatrix*vec4(transformed,1.0)).xyz;\n#include <project_vertex>');
+    sh.fragmentShader='uniform sampler2D uTerIdx,uTerAtl;\nuniform float uTerOn;\nuniform vec2 uTerCW;\nvarying vec3 vTWp;\n'+
+    // terS: sample tile `tl` of the 4×4 atlas with an inset so filtering never bleeds across tiles.
+    // terT: tile id of a heightmap cell (uTerCW = 1/AC_CELL, W); ids packed ×17 → ×15 decode.
+    'vec4 terS(float tl,vec2 tuv){ return texture2D(uTerAtl,(vec2(mod(tl,4.0),floor(tl/4.0))+tuv)*0.25); }\n'+
+    'float terT(vec2 cc){ return floor(texture2D(uTerIdx,(cc+0.5)/uTerCW.y).x*15.0+0.5); }\n'+
+    // per-cell dihedral rotation of the tile UV — kills the 9m kaleidoscope the mirrored tiling
+    // makes of directional motifs (sand ripples!). Seam-free by construction: a corner's rotation
+    // only changes where that corner's bilinear weight is already zero.
+    'vec2 terV(vec2 t,vec2 cc){ float h=fract(sin(dot(cc,vec2(127.1,311.7)))*43758.5453);\n'+
+    ' return h<0.25?t : h<0.5?vec2(1.0-t.y,t.x) : h<0.75?vec2(1.0-t.x,1.0-t.y) : vec2(t.y,1.0-t.x); }\n'+
+    sh.fragmentShader.replace('#include <map_fragment>',
       '#ifdef USE_MAP\n'+
-      ' vec4 _tNear=texture2D(map,vUv);\n'+
-      ' vec4 _tFar=texture2D(map,vUv*0.233+vec2(0.37));\n'+
+      ' vec4 texelColor;\n'+
       ' float _dk=smoothstep(26.0,85.0,length(vViewPosition));\n'+
-      ' vec4 texelColor=mix(_tNear,_tNear*_tFar*2.0,_dk*0.7);\n'+   // multiplicative detail blend keeps contrast at range
+      ' if(uTerOn>0.5){\n'+
+      // the same cell mapping acHeight/acType use: fc=x/AC_CELL+1019.5 · fr=z/AC_CELL+1020.5
+      '  vec2 fcr=vec2(vTWp.x*uTerCW.x+1019.5, vTWp.z*uTerCW.x+1020.5);\n'+
+      '  vec2 c0=floor(fcr), f=fcr-c0;\n'+
+      // MIRRORED tiling (triangle wave): unwrapped canvas tiles turn seamless, repeat period doubles
+      '  vec2 tuv=abs(fract(vTWp.xz*0.11)*2.0-1.0)*0.94+0.03;\n'+
+      '  vec2 c10=c0+vec2(1.,0.), c01=c0+vec2(0.,1.), c11=c0+vec2(1.,1.);\n'+
+      '  vec4 s=terS(terT(c0),terV(tuv,c0))*(1.0-f.x)*(1.0-f.y)+terS(terT(c10),terV(tuv,c10))*f.x*(1.0-f.y)\n'+
+      '        +terS(terT(c01),terV(tuv,c01))*(1.0-f.x)*f.y+terS(terT(c11),terV(tuv,c11))*f.x*f.y;\n'+
+      // vNormal is VIEW-space — rotate back to world with the vector*matrix transpose trick, or the
+      // rock term would track camera pitch (everything shears to cliff when looking down)
+      '  float _wny=normalize((vec4(vNormal,0.0)*viewMatrix).xyz).y;\n'+
+      '  float _sl=smoothstep(0.60,0.36,_wny);\n'+                          // cliffs shear to bare rock
+      '  if(_sl>0.02) s=mix(s,terS(3.0,tuv),_sl*0.85);\n'+
+      '  float _sn=smoothstep(105.0,150.0,vTWp.y);\n'+                      // high peaks catch snow
+      '  if(_sn>0.02) s=mix(s,terS(10.0,tuv),_sn*0.9);\n'+
+      '  vec2 tuvF=abs(fract(vTWp.xz*0.0256)*2.0-1.0)*0.94+0.03;\n'+        // far-scale anti-tiling multiply
+      '  texelColor=mix(s, s*terS(terT(c0),tuvF)*2.0, _dk*0.6);\n'+
+      ' } else {\n'+
+      '  vec4 _tNear=texture2D(map,vUv);\n'+
+      '  vec4 _tFar=texture2D(map,vUv*0.233+vec2(0.37));\n'+
+      '  texelColor=mix(_tNear,_tNear*_tFar*2.0,_dk*0.7);\n'+   // multiplicative detail blend keeps contrast at range
+      ' }\n'+
       ' texelColor=mapTexelToLinear(texelColor);\n'+
       ' diffuseColor*=texelColor;\n'+
       '#endif');};
+  terSplatBuild();   // #693: assets resolved before initThree, so ACMAP is live here (no-op on procedural fallback terrain)
   // terrain is a TERRA_CHUNKS×TERRA_CHUNKS grid of areas (256 chunks) instead of one world-sized
   // mesh — the renderer frustum-culls the chunks behind you, so only visible land is drawn.
   // Chunk vertices land exactly on the shared GROUND_SEG grid, so groundY() physics still matches.
