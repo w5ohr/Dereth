@@ -3921,7 +3921,11 @@ function playerLightSource(){
   return base;
 }
 function updateInstanceLight(){
-  if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); scene.add(playerLight); }
+  if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); playerLight.shadow.mapSize.set(512,512); playerLight.shadow.camera.near=0.2; playerLight.shadow.bias=-0.006; scene.add(playerLight); }
+  // #716: on Ultra, the carried light throws REAL moving shadows (six-face point-shadow render) —
+  // gated to tier 3 + true dungeons (not the bright Academy), toggled only on state change
+  { const wantShadow=GFX.tier>=3&&renderer.shadowMap.enabled&&inDungeon&&!(curDungeon&&curDungeon.academy);
+    if(playerLight.castShadow!==wantShadow) playerLight.castShadow=wantShadow; }
   if(inDungeon){
     if(curDungeon&&curDungeon.academy){
       // #464: the Training Academy is a BIG, torch-lit hall opening onto a sky-lit courtyard — not a
@@ -27222,6 +27226,23 @@ function mkMotes(x,y,z,color){
     p.geometry.attributes.position.needsUpdate=true; }});
   return p;
 }
+// #716: still water on worn stone — a glossy near-black disc that catches torch speculars,
+// with a drip ring that expands and fades on a slow cycle (PROPANIM).
+function mkPuddle(x,z,fy){
+  const g=new THREE.Group(); g.position.set(x,fy+0.035,z);
+  const r=rnd(0.7,1.4);
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(r,20),
+    new THREE.MeshStandardMaterial({color:0x0a0e14,roughness:0.07,metalness:0.35,transparent:true,opacity:0.92}));
+  disc.rotation.x=-Math.PI/2; g.add(disc);
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.96,1.0,20),
+    new THREE.MeshBasicMaterial({color:0x8aa0b8,transparent:true,opacity:0,depthWrite:false}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=0.01; g.add(ring);
+  const period=rnd(2.2,4.5), seed=rnd(0,10);
+  PROPANIM.push({g,tick:t=>{ const k=((t+seed)%period)/period;
+    const rr=0.15+k*r*0.9; ring.scale.setScalar(rr); ring.material.opacity=0.5*(1-k); }});
+  return g;
+}
+const TH_WET={mushroom:1,crystal:1};
 function buildProp(type,lx,lz,color){
   const o=[];
   if(type==="lava"){   // #705: MOLTEN — flowing 2-octave noise, dark crust islands with glowing cracks,
@@ -27578,7 +27599,8 @@ function buildDungeonReal(def,dj){
   // #714: theme debris through a third of the true-stone chambers
   for(let _di=2;_di<dj.cellPos.length;_di+=3){ const c=dj.cellPos[_di];
     const d=mkDebris(TH_DEBRIS[th.prop]||"rubble",th);
-    d.position.set(c[0]+rnd(-2.2,2.2),c[1],c[2]+rnd(-2.2,2.2)); scene.add(d); dungeonObjs.push(d); }
+    d.position.set(c[0]+rnd(-2.2,2.2),c[1],c[2]+rnd(-2.2,2.2)); scene.add(d); dungeonObjs.push(d);
+    if(TH_WET[th.prop]&&Math.random()<0.5){ const _pd=mkPuddle(c[0]+rnd(-2,2),c[2]+rnd(-2,2),c[1]); scene.add(_pd); dungeonObjs.push(_pd); } }
   // entry: spawn + exit archway at the true entrance cell
   const en=dj.entry;
   dungeonExit={x:en[0],z:en[2]+3.4,y:en[1]}; dungeonSpawn={x:en[0],z:en[2]-1.5,y:en[1]};
@@ -27843,7 +27865,10 @@ function buildDungeon(def){
     for(const d of dressRoom(r.cx,r.cz,r.fy,_ext,th,r.round?null:[[-1,-1],[1,-1],[-1,1],[1,1]])){ scene.add(d); dungeonObjs.push(d); }
     if(th.prop==="torch"||th.prop==="brazier"){
       const _sc=mkScorch(_ppx,r.cz,r.fy,1.0); scene.add(_sc); dungeonObjs.push(_sc);
-      if(GFX.motesOn){ const _mo=mkMotes(_ppx,r.fy+2.2,r.cz,th.light); scene.add(_mo); dungeonObjs.push(_mo); } } }
+      if(GFX.motesOn){ const _mo=mkMotes(_ppx,r.fy+2.2,r.cz,th.light); scene.add(_mo); dungeonObjs.push(_mo); } }
+    if(TH_WET[th.prop]){ for(let _pi=0;_pi<irnd(1,2);_pi++){   // #716: wet themes pool still water
+      const _pa=rnd(0,6.28), _pr=_ext*rnd(0.25,0.6);
+      const _pd=mkPuddle(r.cx+Math.cos(_pa)*_pr,r.cz+Math.sin(_pa)*_pr,r.fy); scene.add(_pd); dungeonObjs.push(_pd); } } }
   // exit archway in the entry room's south doorway
   const en=L.entry; dungeonExit={x:en.cx,z:en.cz+en.hz-0.6}; dungeonSpawn={x:en.cx,z:en.cz-Math.max(1,en.hz-3)};
   const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
