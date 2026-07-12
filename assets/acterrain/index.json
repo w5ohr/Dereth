@@ -1,0 +1,204 @@
+{
+ "region": "Dereth",
+ "types": {
+  "0": {
+   "name": "BarrenRock",
+   "tex": "t00_BarrenRock.png",
+   "tiling": 2,
+   "gid": 83891292
+  },
+  "1": {
+   "name": "Grassland",
+   "tex": "t01_Grassland.png",
+   "tiling": 2,
+   "gid": 83891289
+  },
+  "2": {
+   "name": "Ice",
+   "tex": "t02_Ice.png",
+   "tiling": 2,
+   "gid": 83891304
+  },
+  "3": {
+   "name": "LushGrass",
+   "tex": "t03_LushGrass.png",
+   "tiling": 2,
+   "gid": 83898223
+  },
+  "4": {
+   "name": "MarshSparseSwamp",
+   "tex": "t04_MarshSparseSwamp.png",
+   "tiling": 2,
+   "gid": 83891303
+  },
+  "5": {
+   "name": "MudRichDirt",
+   "tex": "t05_MudRichDirt.png",
+   "tiling": 2,
+   "gid": 83891298
+  },
+  "6": {
+   "name": "ObsidianPlain",
+   "tex": "t06_ObsidianPlain.png",
+   "tiling": 2,
+   "gid": 83891299
+  },
+  "7": {
+   "name": "PackedDirt",
+   "tex": "t07_PackedDirt.png",
+   "tiling": 2,
+   "gid": 83891301
+  },
+  "8": {
+   "name": "PatchyDirt",
+   "tex": "t08_PatchyDirt.png",
+   "tiling": 2,
+   "gid": 83891291
+  },
+  "9": {
+   "name": "PatchyGrassland",
+   "tex": "t09_PatchyGrassland.png",
+   "tiling": 2,
+   "gid": 83891287
+  },
+  "10": {
+   "name": "sand-yellow",
+   "tex": "t10_sand-yellow.png",
+   "tiling": 2,
+   "gid": 83891293
+  },
+  "11": {
+   "name": "sand-grey",
+   "tex": "t11_sand-grey.png",
+   "tiling": 2,
+   "gid": 83891295
+  },
+  "12": {
+   "name": "sand-rockStrewn",
+   "tex": "t12_sand-rockStrewn.png",
+   "tiling": 2,
+   "gid": 83891294
+  },
+  "13": {
+   "name": "SedimentaryRock",
+   "tex": "t13_SedimentaryRock.png",
+   "tiling": 2,
+   "gid": 83891367
+  },
+  "14": {
+   "name": "SemiBarrenRock",
+   "tex": "t14_SemiBarrenRock.png",
+   "tiling": 2,
+   "gid": 83891290
+  },
+  "15": {
+   "name": "Snow",
+   "tex": "t15_Snow.png",
+   "tiling": 2,
+   "gid": 83891300
+  },
+  "16": {
+   "name": "WaterRunning",
+   "tex": "t16_WaterRunning.png",
+   "tiling": 2,
+   "gid": 83891306
+  },
+  "17": {
+   "name": "WaterStandingFresh",
+   "tex": "t17_WaterStandingFresh.png",
+   "tiling": 2,
+   "gid": 83891297
+  },
+  "18": {
+   "name": "WaterShallowSea",
+   "tex": "t18_WaterShallowSea.png",
+   "tiling": 2,
+   "gid": 83891308
+  },
+  "19": {
+   "name": "WaterShallowStillSea",
+   "tex": "t19_WaterShallowStillSea.png",
+   "tiling": 2,
+   "gid": 83891305
+  },
+  "20": {
+   "name": "WaterDeepSea",
+   "tex": "t20_WaterDeepSea.png",
+   "tiling": 2,
+   "gid": 83891307
+  },
+  "21": {
+   "name": "forestfloor",
+   "tex": "t21_forestfloor.png",
+   "tiling": 2,
+   "gid": 83891302
+  },
+  "22": {
+   "name": "FauxWaterRunning",
+   "tex": "t16_WaterRunning.png",
+   "tiling": 2,
+   "gid": 83891306
+  },
+  "23": {
+   "name": "SeaSlime",
+   "tex": "t23_SeaSlime.png",
+   "tiling": 2,
+   "gid": 83892263
+  },
+  "24": {
+   "name": "Argila",
+   "tex": "t00_BarrenRock.png",
+   "tiling": 2,
+   "gid": 83891292
+  },
+  "25": {
+   "name": "Volcano1",
+   "tex": "t25_Volcano1.png",
+   "tiling": 2,
+   "gid": 83892255
+  },
+  "26": {
+   "name": "Volcano2",
+   "tex": "t26_Volcano2.png",
+   "tiling": 2,
+   "gid": 83892516
+  },
+  "27": {
+   "name": "BlueIce",
+   "tex": "t27_BlueIce.png",
+   "tiling": 2,
+   "gid": 83892480
+  },
+  "28": {
+   "name": "Moss",
+   "tex": "t28_Moss.png",
+   "tiling": 2,
+   "gid": 83893306
+  },
+  "29": {
+   "name": "DarkMoss",
+   "tex": "t29_DarkMoss.png",
+   "tiling": 2,
+   "gid": 83893307
+  },
+  "30": {
+   "name": "olthoi",
+   "tex": "t30_olthoi.png",
+   "tiling": 2,
+   "gid": 83893308
+  },
+  "31": {
+   "name": "DesolateLands",
+   "tex": "t00_BarrenRock.png",
+   "tiling": 2,
+   "gid": 83891292
+  },
+  "32": {
+   "name": "type32",
+   "tex": "t32_type32.png",
+   "tiling": 2,
+   "gid": 83891288
+  }
+ },
+ "unique": 30
+}
