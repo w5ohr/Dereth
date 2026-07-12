@@ -3079,6 +3079,7 @@ let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAd
 let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC
 let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=0,_frostAddT=0,frostTimer=0; // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
 let riftActive=false,riftWave=0,riftTimer=0,_riftPulseT=0,_riftZones=[],riftBoss=false; // #680 Regalia VIII: the Sundered Veil (lone stand, storm pulses, no retreat)
+let tideActive=false,tideLevel=0,tideRise=0,_tideWave=0,_tidePhase="",_tideHeraldKills=0,_tideWater=null,_tideAddT=0; // #681 Regalia IX: the Drowned Rift (hold the tide-gate; the Herald reconstitutes twice)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -17774,6 +17775,7 @@ function update(dt){
   updateEmberField(dt);    // #673 Regalia I: the Ember Field gauntlet (keep moving or burn)
   updateFrostCourt(dt);    // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
   updateRiftStand(dt);     // #680 Regalia VIII: the Sundered Veil (storm pulses, lone stand, no retreat)
+  updateTideGate(dt);      // #681 Regalia IX: the Drowned Rift (hold the gate; the Herald reconstitutes twice)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20424,6 +20426,18 @@ const QUESTS=[
     xp:850000, gold:13000, instance:enterRiftStand,
     gateOpen:"The echoes are sealed. Behind me the <b>breach</b> yawns open — step through and there is no stepping back: no recall, no portal, no retreat. Speak once more and I will send you into the storm. <i>Hold, as I held.</i>",
     item:{name:"Aegis Cuirass of the Tenfold",stat:"worn",at:"heavy",aslot:"chest",mat:"Diamond",v:64,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
+  // ═══ #681 CHAPTER IX — Year of Tides (Regalia epic #672). The Drowned Rift: hold the tide-gate as a
+  //     Burun flood rises — every foe cut down holds the water back a breath; let it top the gate and the
+  //     stand is lost. The Herald's Shadow reconstitutes TWICE (three kills). Fellowship-tuned but
+  //     soloable at this tier. Awards the Diadem of the Tenfold. (Chain: after VIII.) ═══
+  { id:"regalia9", name:"The Regalia of the Tenfold · IX — Year of Tides", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia8",
+    intro:"The ninth year the sea itself rose against us at the drowned rift, and no one holds a tide alone — I held it with nine at my back, and the circlet remembers every one of them. Cull six of the Burun tide-callers first, then return: I will open the drowned rift. Hold the gate as the flood climbs — every foe you fell holds the water a breath longer. The Herald's Shadow will fall and rise, and fall and rise again; put it down a third time. Ten points on that circlet, and not one of them stands alone.",
+    gateFn:function(){ if(player.level<110) return "The tide would take you as you are. Return at your hundred-and-tenth season (level 110) — and better still, with a fellowship at your back."; return null; },
+    obj:[{type:"slay",kind:"burun",count:6,label:"Cull the Burun tide-callers"},
+         {type:"tidegate",count:1,label:"Hold the tide-gate and put down the Herald's Shadow (thrice)"}],
+    xp:1000000, gold:16000, instance:enterTideGate,
+    gateOpen:"The tide-callers are silenced. Behind me the <b>drowned rift</b> churns — step in and hold the gate while the flood climbs. Speak once more and I will send you into the water. <i>Fell them fast; every kill buys you a breath. And the Herald does not die easily — nor twice.</i>",
+    item:{name:"Diadem of the Tenfold",stat:"worn",at:"heavy",aslot:"head",mat:"Diamond",v:52,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20693,6 +20707,10 @@ const QUEST_GIVERS={
     prog:"Six rift-echoes, sealed wherever the Veil is thin. Then return, and I will open the breach — and once you are in, there is no way out but through. Hold the storm.",
     turn:"The Veil is whole and the storm is spent, and you never took the step backward that would have ended it. Take the Aegis Cuirass of the Tenfold — worn over the heart, because holding is a thing you decide there. Two years remain.",
     post:"The eighth year is sealed — the year I learned to stand still. Only the tides and the crown lie ahead now."},
+  regalia9:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Six Burun tide-callers, culled wherever the water is rising. Then return, and I will open the drowned rift — hold the gate, and put the Herald down three times over. Fell them fast; the flood is patient and you are not.",
+    turn:"The gate held and the water fell back, and the Herald will not rise a fourth time. Take the Diadem of the Tenfold — ten points, and you held every one of them. Only the crown remains: wear all nine and my own cape, and come to me for the last year.",
+    post:"The ninth year is behind you — the drowned one. Wear the whole set and my cape, and we will end this together."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -26847,7 +26865,7 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false;   // #680: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  emberActive=false; frostActive=false; riftActive=false; tideActive=false;   // #680/#681: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -27301,6 +27319,110 @@ function riftFail(why){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   log(`You give ground, and the breach takes it — ${why||"you fall back through the tear"}. To hold is to stay. Try the stand again.`,"warn");
   toast("THE VEIL PREVAILS"); if(SFX.hit)SFX.hit();
+  exitDungeon(true);
+}
+// ═══ #681 REGALIA IX — THE DROWNED RIFT: Year of Tides re-lived. Hold the tide-gate as a Burun FLOOD
+//     rises: the water climbs steadily and every foe you cut down holds it back a breath — let it top the
+//     gate (TIDE_MAX) and the stand is lost. After the Burun waves the HERALD'S SHADOW rises, and
+//     RECONSTITUTES TWICE (three kills). Fellowship-tuned but soloable at this tier; in a party the
+//     questEvent credits every fellow present. Win → questEvent("tidegate") advances regalia9, Kilmer
+//     pays out the Diadem. ═══
+const TIDE_MAX=3.0;
+function buildTideGate(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=24;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const stoneWet=new THREE.MeshStandardMaterial({color:0x2a3a3a,roughness:0.6,metalness:0.15});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),stoneWet);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // the tide-gate: a broad low dais at the centre you hold
+  const dais=new THREE.Mesh(new THREE.CylinderGeometry(5,5.4,0.6,24),new THREE.MeshStandardMaterial({color:0x3a4a4a,roughness:0.7}));dais.position.set(cx,0.3,cz);dais.receiveShadow=true;scene.add(dais);dungeonObjs.push(dais);
+  const gatePillar=new THREE.Mesh(new THREE.BoxGeometry(1.2,7,1.2),new THREE.MeshStandardMaterial({color:0x4a5a5a,roughness:0.6,emissive:0x1a3a4a,emissiveIntensity:0.3}));gatePillar.position.set(cx,3.8,cz);gatePillar.castShadow=true;scene.add(gatePillar);dungeonObjs.push(gatePillar);
+  // drowned colonnade
+  const stone=new THREE.MeshStandardMaterial({color:0x33403f,roughness:0.85});
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(R+0.6,R+0.6,9,48,1,true),stone);ring.position.set(cx,4.5,cz);ring.material.side=THREE.DoubleSide;scene.add(ring);dungeonObjs.push(ring);
+  // the rising water — a translucent plane that climbs with tideLevel
+  _tideWater=new THREE.Mesh(new THREE.CircleGeometry(R+0.4,48),new THREE.MeshStandardMaterial({color:0x2a6a8a,transparent:true,opacity:0.6,roughness:0.15,metalness:0.4}));
+  _tideWater.rotation.x=-Math.PI/2; _tideWater.position.set(cx,0.15,cz); scene.add(_tideWater); dungeonObjs.push(_tideWater);
+  const moon=new THREE.PointLight(0x7aa8c8,0.9,120);moon.position.set(cx,30,cz);scene.add(moon);dungeonObjs.push(moon);
+  const amb=new THREE.HemisphereLight(0x3a5a6a,0x0a1418,0.45);scene.add(amb);dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Abandon the gate — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterTideGate(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;tideActive=true;curDungeon={id:990681,name:"The Drowned Rift",tier:5};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.3";
+  buildTideGate();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  tideLevel=0.15;tideRise=0.06;_tideWave=0;_tidePhase="burun";_tideHeraldKills=0;_tideAddT=2;
+  toast("THE DROWNED RIFT");
+  log("The water is already at your boots and <b>climbing</b> — hold the tide-gate. Every Burun you cut down holds the flood back a breath; let it top the gate and the stand is lost. Then the <b>Herald's Shadow</b> rises — and it does not stay down.","sys");
+  updateHUD&&updateHUD();
+  tideNextWave();
+}
+function tideNextWave(){
+  _tideWave++;
+  const cx=DCEN.x,cz=DCEN.z;
+  if(_tidePhase==="burun"&&_tideWave>2){ _tidePhase="herald"; tideSpawnHerald(); return; }
+  const pool=["burun","reedshark","moarsman","sclavus"], n=4+_tideWave*2;
+  for(let i=0;i<n;i++){ const a=(i/n)*Math.PI*2+_tideWave, r=rnd(9,R_TIDE());
+    spawnDungeonMonster(pool[irnd(0,pool.length-1)],cx+Math.cos(a)*r,cz+Math.sin(a)*r,_tideWave>=2&&i===0,1.3+_tideWave*0.2); }
+  log(`<b>The flood surges</b> — Burun pour over the drowned rim (wave ${_tideWave}).`,"sys");
+}
+function R_TIDE(){ return 18; }
+function tideSpawnHerald(){
+  const cx=DCEN.x,cz=DCEN.z;
+  const left=3-_tideHeraldKills;   // 3 lives total (reconstitutes twice)
+  const hpMul=3.4-_tideHeraldKills*0.6;   // weaker each time it reknits
+  spawnDungeonMonster("shadow",cx,cz-5,true,hpMul,"The Herald's Shadow");
+  toast(_tideHeraldKills===0?"THE HERALD'S SHADOW RISES":"THE HERALD REKNITS ("+left+" left)");
+  if(_tideHeraldKills===0) log("The flood parts and <b>the Herald's Shadow</b> wades from it, tide-crowned. Cut it down — but it will not stay down.","warn");
+  else log(`The Herald's Shadow pours back together from the water — <b>${left} more to send it under for good</b>.`,"warn");
+}
+function updateTideGate(dt){
+  if(!tideActive) return;
+  // the flood climbs; killing foes is the only thing that holds it (handled on death below via tideLevel dip)
+  tideLevel+=tideRise*dt;
+  if(_tideWater) _tideWater.position.y=0.15+tideLevel;
+  // deep water drags at you — below the waterline you wade (slowed), and it laps for chip damage near the top
+  if(player.alive&&player.invuln<=0){
+    if(tideLevel>1.2&&player.slow!=null) player.slow=Math.max(player.slow||0,clamp((tideLevel-1.2)*0.4,0,0.5));
+    if(tideLevel>TIDE_MAX-0.6&&Math.random()<dt*1.5) floater(player.x,1.9,player.z,"the gate is going under!","#9fd0e8");
+  }
+  if(tideLevel>=TIDE_MAX){ tideFail("the flood tops the gate"); return; }
+  // steady Burun pressure during the Herald phase too
+  _tideAddT-=dt; if(_tideAddT<=0&&dungeonMobs<6){ _tideAddT=5;
+    const cx=DCEN.x,cz=DCEN.z,a=rnd(0,6.28),r=rnd(12,R_TIDE());
+    spawnDungeonMonster(irnd(0,1)?"burun":"reedshark",cx+Math.cos(a)*r,cz+Math.sin(a)*r,false,1.4); }
+  // wave/herald flow
+  if(dungeonMobs<=0){
+    if(_tidePhase==="burun"){ tideNextWave(); }
+    else if(_tidePhase==="herald"){ _tideHeraldKills++;
+      // each kill (Burun or Herald) holds the flood back a breath — the Herald kill much more
+      tideLevel=Math.max(0.15,tideLevel-0.5);
+      if(_tideHeraldKills>=3){ tideWin(); }
+      else tideSpawnHerald();
+    }
+  }
+}
+function tideWin(){
+  tideActive=false;
+  const cx=DCEN.x,cz=DCEN.z;
+  burst(cx,2,cz,0x7ad0ff,90); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE HERALD IS SENT UNDER");
+  log("The Herald's Shadow comes apart a third time and does not reform — the flood shrinks back into the rift, and the tide-gate holds. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("tidegate");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!tideActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function tideFail(why){
+  tideActive=false;
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  log(`The water wins — ${why||"the gate goes under and the flood carries you back"}. No one holds a tide with too few hands; bring more, or fell them faster.`,"warn");
+  toast("THE TIDE PREVAILS"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
