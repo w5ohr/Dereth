@@ -72,6 +72,7 @@ MANIFEST = [
     ("monsters/Demon.glb",        "https://static.poly.pizza/6fbb8914-bd11-45e1-a906-51ace2ca5d2d.glb"),   # tumerok
     ("monsters/Mushnub.glb",      "https://static.poly.pizza/55c64684-49a4-4fcc-b393-113126add89b.glb"),   # mosswart
     ("monsters/Ghost.glb",        "https://static.poly.pizza/810f60a2-6e45-4c4e-a0d5-da91cd7288bd.glb"),   # shadow / virindi
+    ("animals/Horse.glb",         QSHOW + "animals_pack/Horse.glb"),          # rideable mount (rigged, animated)
     ("monsters/Wolf.glb",         QSHOW + "animals_pack/Wolf.glb"),           # mattekar
     ("monsters/Bull.glb",         QSHOW + "animals_pack/Bull.glb"),           # auroch
     ("monsters/Velociraptor.glb", QSHOW + "dinosaurs_pack/Velociraptor.glb"), # reedshark
