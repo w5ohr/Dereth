@@ -23959,7 +23959,7 @@ function buyShip(type){
 function boardShip(sh){
   player.aboardShip=sh; player.grounded=true; player.vx=0; player.vz=0; player.vy=0; player.breath=1;
   player.x=sh.x; player.z=sh.z; player.y=sh.def.deckY;
-  log(`You climb aboard the <b>${sh.def.name}</b>. Sail with W/S; steer with the mouse or ←/→. Press E near shore to disembark.`,"sys");
+  log(`You climb aboard the <b>${sh.def.name}</b>. Sail with W/S; steer with the mouse or ←/→. Run before the wind for speed, beat into it and you'll crawl. Press E near shore to disembark.`,"sys");
   if(typeof toast==="function") toast("ABOARD THE "+sh.def.name.toUpperCase()); if(SFX.portal)SFX.portal();
 }
 function disembarkShip(){
@@ -23990,11 +23990,18 @@ function updateShipPilot(dt){
   if(held("forward")||keys["arrowup"]||autoRun) f+=1;
   if(held("back")||keys["arrowdown"]||keys["KeyX"]) f-=1;   // #201: ship reverse — e.code form
   if(f!==0){
-    const dir=f>0?1:-1, rate=sh.def.speed*(f>0?1:0.6);
     const fx=-Math.sin(sh.yaw), fz=-Math.cos(sh.yaw);
+    // WIND: run before it and you fly; beat into it and you crawl. windDir is the way the wind blows TOWARD
+    // (same vector the clouds ride); its strength scales the swing (a calm day ≈ flat, a gale ≈ big).
+    const align=fx*Math.cos(windDir)+fz*Math.sin(windDir);          // +1 heading downwind … 0 abeam … −1 into the wind
+    const windStr=clamp((windSpd-3)/26,0.25,1.15);
+    const windMult=clamp(1+windStr*0.45*align,0.4,1.6);
+    sh._windMult=windMult;
+    const dir=f>0?1:-1, rate=sh.def.speed*(f>0?1:0.6)*windMult;
     const nx=clamp(sh.x+fx*dir*rate*dt,-HALF+3,HALF-3), nz=clamp(sh.z+fz*dir*rate*dt,-HALF+3,HALF-3);
     if(shipNavigable(nx,nz,sh.def)){ sh.x=nx; sh.z=nz; }
     else if(now()-(sh._bumpT||0)>1600){ sh._bumpT=now(); log(`The ${sh.def.name} can go no further — shallower water lies ahead.`,"sys"); }
+    if(f>0 && windMult<0.62 && now()-(sh._windHintT||0)>7000){ sh._windHintT=now(); log(`The ${sh.def.name} beats into the wind and slows — steer to bring the wind abeam or astern to gather speed.`,"sys"); }
   }
   const bob=Math.sin(now()/1100)*0.12;
   sh.mesh.position.set(sh.x,bob,sh.z); sh.mesh.rotation.y=sh.yaw;
