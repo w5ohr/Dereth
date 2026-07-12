@@ -3146,7 +3146,7 @@ function updateJumpCharge(dt){
   if(held("jump")){ jumpChargeT=Math.min(1,jumpChargeT+dt/2.0); }   // hold up to 2s → full-distance jump (linear: 1s = half of 2s)
   else { const p=jumpChargeT; jumpChargeT=-1; tryJump(p<0.04?0:p); }
 }
-let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
+let streak=0,streakT=0,lastBreath=0,ambientCallT=10,npcChatT=9,wasOnRoad=false;
 let autoRun=false;   // AC: Q toggles auto-run (1999 manual); backing up cancels it
 let worldEvent=null,eventCd=120; // F4 live Incursions: active event + seconds until the next one
 let stormBuild=0,stormPhase=0,stormCd=0; // H13 portal storms: build-up timer / phase (0 idle,1 warned) / post-storm cooldown
@@ -19045,6 +19045,19 @@ function update(dt){
   if(player.dispelImmune>0) player.dispelImmune-=dt;
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
+  // ── ambient NPC chatter: nearby townsfolk speak their REAL retail lines unprompted
+  //    (acdialogue.json `chatter` = the HeartBeat emote texts; criers/barkeeps hawk their news) ──
+  npcChatT-=dt;
+  if(npcChatT<=0){ npcChatT=rnd(8,15);
+    if(AC_DIALOGUE&&!inDungeon&&Math.random()<0.6){
+      const t0=now(),cand=[];
+      for(const n of npcs){ if(n.name&&!(n._chatCd>t0)&&Math.hypot(n.x-player.x,n.z-player.z)<22) cand.push({rec:n,name:n.name,role:n.role}); }
+      for(const s of shops){ if(!(s._chatCd>t0)&&Math.hypot(s.x-player.x,s.z-player.z)<22) cand.push({rec:s,name:s.name||s.title,role:s.vtype}); }
+      if(cand.length){ const c=cand[irnd(0,cand.length-1)];
+        const line=acChatterLine(c.name,c.role);
+        if(line){ c.rec._chatCd=t0+rnd(50000,110000);   // an NPC speaks up at most every ~1-2 min
+          log(`<b>${esc(c.name)}</b> says, "${esc(line)}"`,"sys");
+          floater(c.rec.x,groundY(c.rec.x,c.rec.z)+2.6,c.rec.z,"💬","#e8dcc0",1.2); } } } }
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You take to the road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
   updateEvents(dt);
   sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
@@ -23525,7 +23538,7 @@ function talkToNPC(n){
 // greeting/quest lines from 2,587 NPCs' emote tables, keyed by lowercase NPC name.
 // Resolution: exact name → the "the <title>" part of an individualized name → a pool
 // aggregated from every retail NPC of the same trade (all the barkeeps' lines, etc.).
-let AC_DIALOGUE=null,AC_DIA_ROLE=null;
+let AC_DIALOGUE=null,AC_DIA_ROLE=null,AC_CHAT_ROLE=null;
 const AC_DIA_TRADES={   // engine role / vendor type → retail name fragments to harvest
   crier:["town crier"], arcanum:["agent of the arcanum"],
   barkeep:["barkeep","barkeeper","innkeeper"], blacksmith:["blacksmith"],
@@ -23537,13 +23550,32 @@ const AC_DIA_TRADES={   // engine role / vendor type → retail name fragments t
 };
 fetch('assets/acdialogue.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   if(!j||!j.npcs) return; AC_DIALOGUE=j.npcs;
-  AC_DIA_ROLE={};
-  for(const role in AC_DIA_TRADES){ const pool=[];
+  AC_DIA_ROLE={}; AC_CHAT_ROLE={};
+  for(const role in AC_DIA_TRADES){ const pool=[],chat=[];
     for(const key in AC_DIALOGUE){
       if(!AC_DIA_TRADES[role].some(w=>key===w||key.includes(w))) continue;
-      for(const s of (AC_DIALOGUE[key].greetings||[])) if(s&&s.length>=10&&s.length<300) pool.push(s); }
-    if(pool.length) AC_DIA_ROLE[role]=pool; }
+      for(const s of (AC_DIALOGUE[key].greetings||[])) if(s&&s.length>=10&&s.length<300) pool.push(s);
+      for(const s of (AC_DIALOGUE[key].chatter||[]))   if(s&&s.length>=10&&s.length<240) chat.push(s); }
+    if(pool.length) AC_DIA_ROLE[role]=pool;
+    // ambient pool: real HeartBeat chatter when the trade has any; criers & barkeeps hawk their
+    // spoken rumor/greeting lines aloud (that IS their retail flavor — they broadcast the news)
+    if(chat.length) AC_CHAT_ROLE[role]=chat;
+    else if((role==="crier"||role==="barkeep")&&pool.length) AC_CHAT_ROLE[role]=pool.filter(s=>s.length<200); }
 }).catch(()=>{});
+// an authentic UNPROMPTED line (retail HeartBeat chatter) for this NPC — or null to stay silent
+function acChatterLine(name,role){
+  if(!AC_DIALOGUE) return null;
+  const pick=a=>(a&&a.length)?a[irnd(0,a.length-1)]:null;
+  if(name){
+    const e=AC_DIALOGUE[name.toLowerCase()];
+    if(e&&e.chatter&&e.chatter.length) return pick(e.chatter.filter(s=>s.length<240));
+    const parts=name.toLowerCase().split(" the ");   // "Elda Cooper the Town Crier" → "town crier"
+    if(parts.length>1){ const t=AC_DIALOGUE[parts[parts.length-1]];
+      if(t&&t.chatter&&t.chatter.length) return pick(t.chatter.filter(s=>s.length<240)); }
+  }
+  if(role&&typeof AC_CHAT_ROLE!=="undefined"&&AC_CHAT_ROLE&&AC_CHAT_ROLE[role]) return pick(AC_CHAT_ROLE[role]);
+  return null;
+}
 function acDialogueLine(name,role){ if(!AC_DIALOGUE||!name&&!role) return null;
   if(name){
     const e=AC_DIALOGUE[name.toLowerCase()];
