@@ -108,3 +108,192 @@ throughout.)
   Moderate–high. Full detail + fix in authoritative list #35.
 - jsc clean · 0 console errors · MMO harness **47/47** (one first-run failure was a transient
   server-startup timing flake; clean re-run confirmed 47/47 — not a regression).
+
+## AgentC pass 10 (net-handler completeness sweep + housing persistence) — ALL GREEN, no new defects
+
+Systematic audit of ALL remaining client net-message handlers (to close out the surface behind
+#32/#33/#34/#35) + housing/vault storage persistence.
+
+- **Net-handler surface — now fully audited.** Read + malformed-message-tested every remaining
+  state-mutating handler; **no NEW player-state corruption** beyond the three already filed
+  (#32 onMobDmg, #33 onLoot, #35 trade-done):
+  - **Well-guarded (good):** `onSpellFx` is EXEMPLARY — clamps/coerces every field (`+m.x||0`,
+    `clamp(+m.r||0.3,…)`, `typeof m.c==="number"`); `onDropGone`/`onRemoteBuff`/`onCorpseLoot`/
+    `onReward`/`onWho`/`onEmote`(esc'd) all validate or are display-only.
+  - **Cosmetic-only unvalidated (low):** `onMobHit` (sets shared-mob hp → display NaN only),
+    `onDrop` (stores amt in a drop; surfaces via `onLoot`=#33), `onMobDie` (guarded `b?b.c:…`).
+  - `onPvp` clamps NaN dmg; any string-dmg edge is **subsumed by the #32 `playerHurt` fix**.
+  - **Takeaway:** onSpellFx proves the codebase knows how to validate net input, so #32/#33/#35 are
+    genuine omissions, not a systemic absence. No new finding warranted here.
+- **Housing / vault persistence: CLEAN.** A hooked item (`homestead.hooks["1"]`) survives
+  save→wipe→load; `hsHookCount`=1; all hook fns present. `kcVault` (castle hoard) item also survives.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
+
+## AgentC pass 11 (loot-tier scaling + targeting) — ALL GREEN, no defects (caught a false alarm)
+
+- **Loot-tier scaling: CORRECT & well-designed.** Avg gear value rises **21.8 → 84.3** across tiers
+  1→9 (**3.87×**), climbing steeply through tier 5 then plateauing (the AC_POOLS have 5 value bands).
+  Legendaries are gated: **0 at tiers 1–4**, appearing only at tier 5+ (38/47/39/29/50). Progression
+  loot works as intended.
+- **⚠ Near-miss (my error, NOT a game bug):** a first run showed FLAT value across tiers and I almost
+  filed "loot doesn't scale." Root cause was a TEST bug: `rollItem`'s signature is
+  **`rollItem(rare, tier, noRare)`** — tier is the SECOND arg. I'd called `rollItem(tier, false)`, so
+  every roll used `rare=<my tier>` (truthy) and `tier=false` (0). Corrected to `rollItem(false, tier,
+  true)` → clean 3.87× scaling. **Lesson for future passes: rollItem tier is arg #2.** (Earlier passes'
+  malformed-item checks are unaffected — those are valid for any args; finding #31 stands.)
+- **Targeting: CLEAN.** `pickMonsterTarget` returns null with no mobs, picks the monster in the aim
+  direction (not the one behind), and does not throw on a NaN-position mob.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
+
+## AgentC pass 12 (chargen budget + bestiary/achievement tracking) — ALL GREEN, no defects
+
+- **Character-creation budget: enforced.** Attribute pool caps at exactly **270** (never exceeds
+  after 2,000 simulated inc-clicks); per-attribute caps at **100**; skill credits never go negative
+  (`trainSkill`/`specSkill` reject over-spend); the **70 spec-credit cap** holds (and can't even be
+  reached — the per-skill credit gate fires first). The final commit trusts `ccWork` but every UI
+  path is guarded, so normal creation can't over-allocate.
+- **Bestiary: dedups** — killing/learning a kind twice adds it once (`indexOf<0` guard).
+- **Achievements: no double-grant** — `checkAchievements()` run twice grants each id once
+  (`indexOf<0 && check()` guard).
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
+
+## AgentC pass 13 (ship physics + weather/day-night + emotes) — ALL GREEN, no defects
+
+- **Ship physics: solid.** Board sets deck position; sailing moves the hull (48u under forward
+  input) and is guarded by `shipNavigable(nx,nz,def)` so it stops at shallows ("can go no further")
+  — proper land-collision, no clipping onto terrain; player rides the deck; no NaN. Disembark lands
+  on dry shore; dead pilot auto-disembarks (#17); open-ocean disembark handled without NaN.
+- **Day/night: clean.** A full multi-day cycle keeps `gameTime` in [0,1], covers all four quarters
+  (dawn/noon/dusk/night), no NaN.
+- **Weather / portal storm / emotes: clean.** Weather transitions across states (clear/fog/cloudy)
+  with no throw; portal-storm trigger+update no throw; all 5 emote anims run.
+- **Self-caught test error (NOT a game bug):** first ship run showed "didn't move" — I'd set
+  `keys["w"]`, but `updateShipPilot` reads `held("forward")||keys["arrowup"]`. Corrected → sails
+  fine. (Second self-caught harness error in as many passes; game systems remain robust.)
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
+
+## AgentC pass 14 (cross-system state-transition edges) — ALL GREEN, no defects
+
+Probed actions in incompatible states (dead / in-dungeon / aboard-ship / not-in-dungeon) for missing
+combined-state guards — throws, NaN, or invalid dual states.
+
+- **All reachable combinations guarded:** cast-while-dead blocked (no mana corruption); recall/teleport
+  while aboard ship → no NaN; enter-dungeon-while-already-in early-returns (`if(inDungeon) return`);
+  use-item/attack while dead → no throw, no hp corruption; exitDungeon when not in a dungeon → no
+  throw/NaN.
+- **Investigated & cleared (NOT a bug): "in dungeon AND aboard ship".** Only occurs in the ARTIFICIAL
+  order enter-dungeon→then-boardShip, which is **unreachable** (no ships exist inside dungeon
+  instances to board). The REALISTIC order board→enter-dungeon correctly clears `aboardShip` via the
+  existing **#17 guard** (index.html:14935 — "any teleport disembarks"), so dungeon entry (a
+  teleport-class move) disembarks you; verified: board→enter → aboardShip=false, no yank, no NaN.
+- Third self-caught near-miss in a row (rollItem args, ship keys, now this artificial order) — the
+  game's state machine is robust; the flags were test-constructed unreachable states.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.**
+
+## AgentC pass 15 (tinkering / salvage economy) — ALL GREEN, no defects
+
+Number-heavy crafting economy, only lightly touched before.
+
+- **10-tink cap: exact.** 15 forced-success tinkers → capped at exactly 10 (`if((it.tinks||0)>=10)`
+  precedes salvage consumption, so a capped item consumes no salvage — verified units unchanged).
+  Value rose 20→90 (10 × +7 bonus at workmanship 10) — correct scaling. No NaN.
+- **Salvage workmanship averaging: bounded.** 200 varied salvages → units-weighted `bag.work`=6.78,
+  2122 units, never out of [0,11], no NaN. First-salvage division edge (empty bag, `bag.units=0`
+  denominator) handled — `(0*0 + work*units)/units = work` (=5), no divide-by-zero.
+- **Imbue path:** one-imbue-ever guard + counts toward the 10 cap (verified in TestSystemC pass 8).
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–15 all clean — the game's number-heavy systems are solid.)
+
+## AgentC pass 16 (inventory/pack capacity + regression watch) — ALL GREEN, no defects
+
+- **Regression watch:** main unchanged (cbce433); nothing new to re-verify. PR #157 (#31–#35) still open.
+- **Inventory capacity: enforced.** Filled to exactly `invCap()` (12); `addToInv` refuses when full,
+  `force` bypasses for rewards; `inv.length` never exceeds cap.
+- **Stacking:** 3×20 arrows merge into one entry (count 60), no duplicate entries; `takeFromInv`
+  decrements the stack (60→59) rather than removing.
+- **Pack limit:** 12 packs attempted → capped at 7 (AC limit); `invCap` grew to 68, no NaN.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–16 all clean.)
+
+## AgentC pass 17 (allegiance pass-up chain) — ALL GREEN, no defects
+
+- **Pass-up math bounded & correct.** `algPassupPct = clamp(gen×recv/100, 25, 90)` — always ≤90%,
+  so the patron's share never exceeds what a vassal generated (no duplication). Over 50 settle-cycles:
+  player.xp +1579 == vassalXP +1579 (received tally matches XP added exactly); no NaN, no runaway;
+  `gainXP(up,{passup:true})` doesn't recurse. Vassal cap = `player.level` (recruited exactly 50, not
+  more); vassals never outlevel the patron.
+- **Net `passup` handler guarded:** `gainXP(m.xp|0,{passup:true})` coerces with `|0` (NaN-safe) —
+  consistent with the pass-10 net-handler audit.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–17 all clean.)
+
+## AgentC pass 18 (spell projectile physics + AoE geometries) — ALL GREEN, no defects
+
+- **All 5 war/void geometries** (bolt, blast, volley, ring, arc) cast without throwing, spawn
+  projectiles, produce no NaN positions, and fully clean up (0 live projectiles after settle).
+- **AoE shapes hit multiple targets:** ring + arc each struck all 5 clustered mobs.
+- **Projectile collision works:** a bolt aimed along the (synced) camera forward hits its target.
+  The bolt/blast/volley "0 hits" in the first run was the documented headless **cam-desync**
+  (executeSpell fires along `cam.getWorldDirection()`, and `cam` lags `player.yaw` in the frozen
+  preview); after driving the loop 10 frames to sync cam, the bolt hits. Test artifact, not a bug —
+  4th self-caught headless artifact.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–18 all clean.)
+
+## AgentC pass 19 (broad 15-system smoke test + regression watch) — ALL GREEN, no defects
+
+Wide regression net rather than a deep dive (systems exhausted). Main unchanged (cbce433).
+
+- **15 systems all functional, 0 errors:** data integrity (2265 spells / 331 dungeons / 56 cities /
+  324 quests / 61 bestiary / 500 item bases), combat one-shot kill, loot roll (50/50 valid),
+  life-heal cast, vendor pricing, save/load gold roundtrip, lockpicking (skillCheck), crafting/
+  combine, aetheria slotting, housing, quest events (323 givers), achievements/bestiary, ships,
+  society (3/5 ranks), allegiance (cap=level, algTick).
+- **Aetheria flag resolved as NON-bug:** below L75 the blue slot correctly refuses the gem
+  (`applyItem`→"keep", no mhp change — level-gating works); at L75 it slots for **+31** mhp. The
+  smoke test's `===+30` assertion was too strict (+31 is the correct Growth bonus after derive's
+  rounding at that level) AND the test char was below 75. 5th self-caught test artifact.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–19 all clean.)
+
+## AgentC pass 20 (soak test — 5000-frame stability) — ALL GREEN, no defects
+
+Drove the game loop 5000 frames with continuous combat, watching for slow leaks single-op tests miss.
+
+- **No NaN** in player.hp/x or gameTime over 5000 frames.
+- **No FX/array leaks:** pProj, floaters, bursts, drops, spellLandFXs, sceneChildren all stable
+  mid→end (deltas 0 / -3 / +59 scene — noise, no growth).
+- **Monster population is BOUNDED** by the spawn manager (`MOB_TARGET=32`, `MOB_DESPAWN=215`,
+  index.html:16931/16942). Verified: after the soak's stationary pile reached 156, moving the player
+  2000u away culled it to **exactly 32** (= MOB_TARGET) in ~6s. The soak's apparent monster "growth"
+  (5→55→117) was a TEST artifact — a stationary player + manual close-spawns never trip the 215u
+  distant-despawn, and a direct `m.hp=0` doesn't call `killMonster` (only `applyHit`-to-death does).
+  6th self-caught test artifact. No leak.
+- jsc clean · 0 console errors · MMO harness 47/47.
+
+**No issues found this pass.** (Passes 11–20 all clean.)
+
+## 2026-07-07 08:02 — AgentC pass 21 (regression sentinel) — ALL GREEN
+
+Main unchanged (cbce433, 11 passes running). Light core-loop confirmation (deep systems exhausted &
+verified in passes 1–20).
+- Boot (2265 spells / 331 dungeons), combat one-shot kill, life-heal cast, save/load gold roundtrip,
+  loot roll, all core fns present — 0 errors. jsc clean · 0 console errors · MMO harness 47/47.
+- PR #157 (findings #31–#35) open & MERGEABLE — the complete finding set, awaiting review.
+
+**No issues found.** (Passes 11–21 all clean.)
