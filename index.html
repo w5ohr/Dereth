@@ -28905,6 +28905,26 @@ function genDungeonLayout(def){
   return {rooms,corridors,entry,rng,script};
 }
 function roomExtent(room,dir){ return room.round?room.rad:(dir==="N"||dir==="S"?room.hz:room.hx); }
+// A pit-DROP is one-way (the ledge blocks climbing back). Any room you can only reach by dropping —
+// and can't walk back from — would strand a player past the drop. buildDungeon drops a "way out"
+// portal into EVERY such stranded pocket (one per two-way-connected group), so no delve can trap you.
+// (Real-geometry delves have no one-way ledges and don't need this.)
+function strandedPortalRooms(L){
+  const idx=new Map(); L.rooms.forEach((r,i)=>idx.set(r,i));
+  const n=L.rooms.length, entry=idx.get(L.entry);
+  const adj=Array.from({length:n},()=>[]);                       // two-way corridors only (drops excluded)
+  for(const c of L.corridors){ if(c.feat==="drop") continue;
+    const u=idx.get(c.a), v=idx.get(c.b); if(u==null||v==null) continue; adj[u].push(v); adj[v].push(u); }
+  const canReturn=new Set([entry]); const st=[entry];
+  while(st.length){ const x=st.pop(); for(const y of adj[x]) if(!canReturn.has(y)){ canReturn.add(y); st.push(y); } }
+  const seen=new Set(), out=[];
+  for(let i=0;i<n;i++){ if(canReturn.has(i)||seen.has(i)) continue;
+    const comp=[], q=[i]; seen.add(i);                           // one two-way-connected stranded pocket
+    while(q.length){ const x=q.pop(); comp.push(x); for(const y of adj[x]) if(!seen.has(y)&&!canReturn.has(y)){ seen.add(y); q.push(y); } }
+    let best=comp[0]; for(const k of comp) if((L.rooms[k].depth||0)>(L.rooms[best].depth||0)) best=k;   // deepest room of the pocket
+    out.push(L.rooms[best]); }
+  return out;
+}
 // floor height at a point: rooms first (flat per-room fy), then corridors (ramps interpolate).
 // dungeonRects entries carry fy; ramp rects carry {ramp:{vert,lo,hi,fyHi,fyLo}}.
 // Multi-level: the floor at (x,z) depends on which STOREY you're on. refY (default: the player's
@@ -29297,6 +29317,9 @@ function buildDungeon(def){
   // carry a portal back to the entrance
   { const prooms=L.rooms.filter(r=>r.portalHere);
     if(!prooms.length&&script&&script.portal) prooms.push(L.rooms[L.rooms.length-1]);
+    // #754: guarantee an exit — every one-way-drop pocket the player can't walk back from gets its
+    // own portal to the entrance, so no delve can strand you (was: force /unstuck or die).
+    for(const pr of strandedPortalRooms(L)) if(prooms.indexOf(pr)<0) prooms.push(pr);
     for(const pr of prooms){
       const ppx=pr.cx,ppz=pr.cz-(pr.round?pr.rad-2.5:pr.hz-2.5);
       const disc=new THREE.Mesh(new THREE.CircleGeometry(1.2,32),new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.9,side:THREE.DoubleSide,fog:false,depthWrite:false}));
