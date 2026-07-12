@@ -2194,6 +2194,9 @@ for(const k of ["armoredillo","auroch","banderling","burun","carenzi","drudge","
   "olthoiqueen","lichlord","virindidirector"]) MONSTER_MODELS[k]=[{f:"ac/"+k+".glb"}];
 MONSTER_MODELS.phyntoswasp=[{f:"ac/wasp.glb"}];
 MONSTER_MODELS.mummy=[{f:"ac/mummy.glb"}];   // the REAL Mu-miyah extract (end-of-retail dats) — the tinted-zombie stand-in retires
+// huntable game — CC0 Quaternius "Animated Animal Pack" (rigged, Walk/Gallop/Idle/Death). Deer + the
+// antlered Stag stand in as breed variants of the deer creature (both drop leather hides + venison).
+MONSTER_MODELS.deer=[{f:"Deer.glb",tints:[0xb0895a,0x9a7248,0xc8a878]},{f:"Stag.glb",tints:[0x8a6a44,0x6a4a2c]}];
 let gltfMonsters={}, gltfMonstersStarted=false, _gmL=null; const _gmReq=new Set();
 function gmLoadEntry(kind,ent){   // one variant file; safe to call again (deduped)
   const key=kind+"|"+ent.f; if(_gmReq.has(key)||!_gmL) return; _gmReq.add(key);
