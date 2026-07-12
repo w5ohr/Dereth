@@ -3104,6 +3104,7 @@ let whispersActive=false,_whispersSim=null,_whispersT=0; // #674 Regalia II: the
 let chitinActive=false,_chitinClutches=[],_chitinWax=[],_chitinBoss=false,chitinTimer=0,_chitinAddT=0; // #675 Regalia III: the hive-crater (burn the clutches, beat the Matron)
 let bannersActive=false,_bannersWave=0,_bannerMob=null,_bannerBoss=null,_bannerBaseDmg=0,_bannerTorn=false; // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
 let bloodActive=false,_bloodReinforced=false,_bloodT=0; // #677 Regalia V: the blood-undercroft (fight at half vitals)
+let stormActive=false,_stormSeals=[],_stormBoss=null,_stormPhase=0,_stormPhaseT=0,_stormBoltT=0,_stormZones=[],stormTimer=0; // #678 Regalia VI: the storm-peak (wind-seals, hunting lightning, 4-phase Warden)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -17930,6 +17931,7 @@ function update(dt){
   updateChitin(dt);        // #675 Regalia III: the Hive-Crater (burn the clutches, beat the Matron)
   updateBanners(dt);       // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
   updateBloodRite(dt);     // #677 Regalia V: the Blood-Undercroft (fight at half vitals)
+  updateStormPeak(dt);     // #678 Regalia VI: the Storm-Peak (wind-seals, hunting lightning, 4-phase Warden)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20657,6 +20659,18 @@ const QUESTS=[
     xp:520000, gold:8000, instance:enterBloodRite,
     gateOpen:"The thralls are spilled. Beneath us the <b>blood-undercroft</b> is mine to open. Speak once more and I will send you down — but know this: her tithe takes half your health and half your mana the moment you enter. <i>Half-empty, and still you must be enough.</i>",
     item:{name:"Shirt of the Tenfold",stat:"worn",at:"light",aslot:"shirt",mat:"Silk",v:30,tier:5,work:10,legendary:true} },
+  // ═══ #678 CHAPTER VI — Year of Storms (Regalia epic #672). Gaerlan's Heirs: an exposed peak under full
+  //     hostile weather — restore the three wind-seals while LIGHTNING HUNTS YOU (strikes track your
+  //     ground), then the WARDEN OF THE FOUR WINDS turns through four elemental phases. Awards the
+  //     Vambraces. (Chain: after V.) ═══
+  { id:"regalia6", name:"The Regalia of the Tenfold · VI — Year of Storms", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia5",
+    intro:"My sixth year Gaerlan's heirs turned the sky against us. Ground six of their storm-callers first, then return: I will lift you to the exposed peak. Restore the three wind-seals while the lightning hunts your very footsteps — keep moving — then face the Warden of the Four Winds as it turns through fire, frost, storm and acid. Raise your arms against the sky and mean it.",
+    gateFn:function(){ if(player.level<84) return "The sky itself would strike you down as you are. Return at your eighty-fourth season (level 84)."; return null; },
+    obj:[{type:"slay",kind:"zefir",count:6,label:"Ground the storm-callers (zefir)"},
+         {type:"storm",count:1,label:"Restore the three wind-seals and fell the Warden of the Four Winds"}],
+    xp:600000, gold:9500, instance:enterStormPeak,
+    gateOpen:"The storm-callers are grounded. Behind me the way lifts to the <b>exposed peak</b>, and the weather up there wants you dead. Speak once more and I will send you into it. <i>The lightning hunts where you stand — restore the three seals on the move, then meet the Warden.</i>",
+    item:{name:"Vambraces of the Tenfold",stat:"worn",at:"heavy",aslot:"lowerarm",mat:"Diamond",v:44,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20950,6 +20964,10 @@ const QUEST_GIVERS={
     prog:"Six blood-thralls, spilled wherever the Falatacot root takes hold. Then return — I will open the undercroft beneath us, and her tithe will take half of you at the door. Be enough anyway.",
     turn:"The revenant is undone and the root cut, and you did it half-empty. Worn nearest the heart — take the Shirt of the Tenfold; that year cut me there, and this covers it. Five years remain.",
     post:"The fifth year is behind you — the bloody one. Some tithes you pay whether you will or no."},
+  regalia6:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Six storm-callers, grounded wherever Gaerlan's heirs raise the sky. Then return — I will lift you to the peak. Restore the three wind-seals on the move; the lightning hunts your footing. Then the Warden, in all four of its weathers.",
+    turn:"The seals hold and the Warden's four winds are spent. You raised your arms against the sky and meant it — take the Vambraces of the Tenfold; they weathered that year with me. Four years remain.",
+    post:"The sixth year is behind you — the storm-lashed one. The sky forgets nothing, but it can be outlasted."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -27114,7 +27132,7 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false; bannersActive=false; bloodActive=false;   // #680-#677: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false; bannersActive=false; bloodActive=false; stormActive=false;   // #680-#678: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
   if(player.bloodTithed){ player.bloodTithed=false; if(typeof derive==="function")derive(); }   // #677: the blood-tithe releases on ANY exit (win, flee, death) — re-derive restores full max health & mana
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
@@ -28066,6 +28084,111 @@ function bloodWin(){
 function bloodFail(){ bloodActive=false;
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE TITHE IS PAID IN FULL"); if(SFX.hit)SFX.hit(); exitDungeon(true);
+}
+// ═══ #678 REGALIA VI — THE STORM-PEAK: Year of Storms re-lived. An exposed peak under hostile weather:
+//     restore the THREE WIND-SEALS (hold at each) while LIGHTNING HUNTS YOU — strike-zones spawn on your
+//     own ground, so keep moving. All three restored, the WARDEN OF THE FOUR WINDS rises and turns
+//     through four elemental phases (fire, frost, storm, acid). Win → questEvent("storm") advances
+//     regalia6, Kilmer pays out the Vambraces. ═══
+const STORM_PHASES=[{el:"fire",col:0xff6a2a,n:"FIRE"},{el:"frost",col:0x8ad0ff,n:"FROST"},{el:"shock",col:0xffe23b,n:"STORM"},{el:"acid",col:0x9ae04a,n:"ACID"}];
+function buildStormPeak(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=22;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const rock=new THREE.MeshStandardMaterial({color:0x40444a,roughness:0.9});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),rock);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // jagged summit rim
+  for(let i=0;i<14;i++){ const a=i/14*Math.PI*2, r=R-rnd(0,1.5);
+    const cr=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.8,1.6),rnd(2,4.5),5),rock); cr.position.set(cx+Math.cos(a)*r,1.5,cz+Math.sin(a)*r); cr.rotation.y=a; scene.add(cr); dungeonObjs.push(cr); }
+  // three wind-seals (broken rings on plinths) at the peak's points
+  _stormSeals=[];
+  for(let i=0;i<3;i++){ const a=i/3*Math.PI*2-Math.PI/2, sx=cx+Math.cos(a)*(R-8), sz=cz+Math.sin(a)*(R-8);
+    const plinth=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.1,1.0,8),new THREE.MeshStandardMaterial({color:0x30343a,roughness:0.85})); plinth.position.set(sx,0.5,sz); scene.add(plinth); dungeonObjs.push(plinth);
+    const seal=new THREE.Mesh(new THREE.TorusGeometry(0.7,0.1,8,20),new THREE.MeshStandardMaterial({color:0x5a6a7a,emissive:0x2a4a6a,emissiveIntensity:0.2})); seal.position.set(sx,1.5,sz); seal.rotation.x=Math.PI/2; scene.add(seal); dungeonObjs.push(seal);
+    const lbl=labelSprite("Broken wind-seal — restore it (stand close)","dungeons"); lbl.position.set(sx,3.0,sz); scene.add(lbl); dungeonObjs.push(lbl);
+    _stormSeals.push({x:sx,z:sz,fixed:false,prog:0,seal,lbl}); }
+  const sky=new THREE.HemisphereLight(0x6a7a9a,0x2a2e34,0.5);scene.add(sky);dungeonObjs.push(sky);
+  const key=new THREE.PointLight(0xbfc8d8,0.8,120);key.position.set(cx,34,cz);scene.add(key);dungeonObjs.push(key);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Off the peak — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterStormPeak(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;stormActive=true;curDungeon={id:990678,name:"The Storm-Peak",tier:5};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.3";
+  buildStormPeak();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  stormActive=true;_stormBoss=null;_stormPhase=0;_stormPhaseT=0;_stormBoltT=2.5;_stormZones=[];stormTimer=360;
+  toast("THE STORM-PEAK");
+  log("Wind tears at the summit and the sky hunts you — <b>lightning strikes where you stand, so keep moving</b>. Restore the <b>three wind-seals</b>, then the <b>Warden of the Four Winds</b> will turn on you.","sys");
+  updateHUD&&updateHUD();
+}
+function stormSealsFixed(){ let n=0; for(const s of _stormSeals) if(s.fixed) n++; return n; }
+function stormSpawnBolt(huntX,huntZ){
+  const rad=rnd(2.8,3.8), zx=huntX+rnd(-1.5,1.5), zz=huntZ+rnd(-1.5,1.5);
+  const ring=new THREE.Mesh(new THREE.RingGeometry(rad-0.25,rad,26),new THREE.MeshBasicMaterial({color:0xffe23b,transparent:true,opacity:0.5,side:THREE.DoubleSide,depthWrite:false}));
+  ring.rotation.x=-Math.PI/2; ring.position.set(zx,0.12,zz); scene.add(ring); dungeonObjs.push(ring);
+  _stormZones.push({x:zx,z:zz,rad,ring,t:1.1,det:false});
+}
+function updateStormPeak(dt){
+  if(!stormActive) return;
+  stormTimer-=dt;
+  if(stormTimer<=0){ stormFail("the storm outlasts you"); return; }
+  const px=player.x,pz=player.z;
+  // restore the wind-seals: hold within ~3u
+  if(!_stormBoss) for(const s of _stormSeals){ if(s.fixed) continue; const d=Math.hypot(px-s.x,pz-s.z);
+    if(d<3.0&&player.alive){ s.prog+=dt;
+      if(!s._spark||now()-s._spark>400){ s._spark=now(); floater(s.x,2.4,s.z,"restoring… "+Math.min(100,Math.round(s.prog/2.6*100))+"%","#bfe0ff"); }
+      if(s.prog>=2.6){ s.fixed=true; if(s.seal){ s.seal.material.emissive.setHex(0x8ad0ff); s.seal.material.emissiveIntensity=1.1; }
+        if(s.lbl)s.lbl.visible=false; burst(s.x,1.6,s.z,0x8ad0ff,24); if(SFX.quest)SFX.quest();
+        toast("A WIND-SEAL HOLDS ("+stormSealsFixed()+"/3)"); log(`<b>A wind-seal is restored</b> — ${stormSealsFixed()} of 3 hold.`,"sys"); }
+    } else if(s.prog>0&&!s.fixed){ s.prog=Math.max(0,s.prog-dt*0.6); }
+  }
+  // LIGHTNING HUNTS YOU: strike-zones spawn on your ground and detonate
+  _stormBoltT-=dt; if(_stormBoltT<=0){ _stormBoltT=_stormBoss?1.4:2.2; stormSpawnBolt(px,pz); }
+  for(let i=_stormZones.length-1;i>=0;i--){ const z=_stormZones[i]; z.t-=dt;
+    if(z.ring) z.ring.material.opacity=0.3+0.5*clamp(1-z.t/1.1,0,1);
+    if(z.t<=0&&!z.det){ z.det=true;
+      const fl=new THREE.PointLight(0xffe23b,3,z.rad*3); fl._transient=1; fl.position.set(z.x,1,z.z); scene.add(fl); setTimeout(()=>scene.remove(fl),150);
+      if(player.alive&&player.invuln<=0&&Math.hypot(player.x-z.x,player.z-z.z)<z.rad){ playerHurt(20+stormSealsFixed()*4,z.x,z.z,"magic","shock"); floater(player.x,1.9,player.z,"THE LIGHTNING FINDS YOU!","#ffe23b"); }
+      if(z.ring){ scene.remove(z.ring); z.ring.geometry.dispose(); z.ring.material.dispose(); } _stormZones.splice(i,1);
+    }
+  }
+  // all three seals → the Warden rises
+  if(stormSealsFixed()>=3&&!_stormBoss){ const cx=DCEN.x,cz=DCEN.z;
+    spawnDungeonMonster("elemental",cx,cz-5,true,4.8,"The Warden of the Four Winds");
+    _stormBoss=monsters[monsters.length-1]; _stormPhase=0;_stormPhaseT=0;
+    if(_stormBoss){ _stormBoss.element=STORM_PHASES[0].el; if(_stormBoss.mesh) _stormBoss.mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive){ o.material.emissive.setHex(STORM_PHASES[0].col); o.material.emissiveIntensity=0.6; } }); }
+    burst(cx,1.5,cz,STORM_PHASES[0].col,50); shake&&shake(0.2);
+    toast("THE WARDEN OF THE FOUR WINDS"); log("The seals blaze and the storm draws to a point — <b>the Warden of the Four Winds</b> forms, wreathed first in <b>fire</b>. It will turn through all four; match your blows to its weather.","warn");
+  }
+  // the Warden turns through its four elemental phases
+  if(_stormBoss&&_stormBoss.hp>0){ _stormPhaseT+=dt;
+    if(_stormPhaseT>=11){ _stormPhaseT=0; _stormPhase=(_stormPhase+1)%4; const ph=STORM_PHASES[_stormPhase];
+      _stormBoss.element=ph.el; if(_stormBoss.mesh) _stormBoss.mesh.traverse(o=>{ if(o.isMesh&&o.material&&o.material.emissive){ o.material.emissive.setHex(ph.col); } });
+      burst(_stormBoss.x,2,_stormBoss.z,ph.col,30); toast("THE WARDEN TURNS — "+ph.n);
+      log(`The Warden's weather shifts to <b>${ph.n.toLowerCase()}</b>.`,"sys"); }
+  }
+  if(_stormBoss&&dungeonMobs<=0) stormWin();
+}
+function stormWin(){
+  stormActive=false;_stormBoss=null;
+  for(const z of _stormZones){ if(z.ring) scene.remove(z.ring); } _stormZones=[];
+  const cx=DCEN.x,cz=DCEN.z; for(const p of STORM_PHASES) burst(cx,2,cz,p.col,30); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE FOUR WINDS ARE STILLED");
+  log("The Warden's four winds gutter out at once and the peak falls still under a clearing sky. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("storm");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!stormActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function stormFail(why){ stormActive=false;_stormBoss=null;
+  for(const z of _stormZones){ if(z.ring) scene.remove(z.ring); } _stormZones=[];
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  log(`The sky wins this time — ${why||"the lightning drives you off the peak"}. Keep moving next time; it strikes where you linger.`,"warn");
+  toast("THE STORM PREVAILS"); if(SFX.hit)SFX.hit(); exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
 function buildNetwork(){
