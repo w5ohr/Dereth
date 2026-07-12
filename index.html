@@ -18664,6 +18664,7 @@ function update(dt){
   updateTargetUI(dt);
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
+  updatePropFires(dt);   // #704: torch/brazier flames lick & their lights flicker (towns + dungeons; self-expiring registry)
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
   updateCaravan(dt);     // the wandering ox-drawn caravan plies the road
   enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
@@ -26984,14 +26985,103 @@ function spawnDungeonMonster(kind,x,z,elite,hpMul,bossName,fy){
   monsters.push(m); attachCreatureAnims(m, gm);
   dungeonMobs++;dungeonObjs.push(mesh);
 }
+// ── #704: real fire — a shared animated-flame builder for torches & braziers (and anything else
+//    that burns). Two additive billboard sprites (hot core + coloured body) over a canvas flame
+//    texture, optional rising embers (tier ≥1), and a registered flicker that drives BOTH the
+//    sprites and the prop's PointLight from the main tick. Registry entries self-expire when
+//    their group leaves the scene (dungeon disposal / town chunk unload) — no explicit cleanup. ──
+let _flameTexC=null;
+function flameTex(){
+  if(_flameTexC) return _flameTexC;
+  const c=document.createElement('canvas');c.width=64;c.height=128;const g=c.getContext('2d');
+  g.clearRect(0,0,64,128);
+  // teardrop: stacked radial gradients, brighter + narrower toward the top
+  for(let i=0;i<5;i++){ const y=108-i*20, r=26-i*4;
+    const gr=g.createRadialGradient(32,y,0,32,y,r);
+    gr.addColorStop(0,`rgba(255,255,255,${0.55-i*0.06})`);
+    gr.addColorStop(0.45,`rgba(255,220,150,${0.4-i*0.05})`);
+    gr.addColorStop(1,"rgba(255,120,20,0)");
+    g.fillStyle=gr;g.beginPath();g.ellipse(32,y,r*0.72,r,0,0,6.28);g.fill(); }
+  // licking streaks
+  g.globalCompositeOperation="lighter";
+  for(let i=0;i<9;i++){ const x=20+Math.random()*24;
+    g.strokeStyle=`rgba(255,${170+Math.random()*60|0},60,0.35)`;g.lineWidth=2+Math.random()*3;
+    g.beginPath();g.moveTo(x,116);g.quadraticCurveTo(x+(Math.random()*14-7),70,32+(Math.random()*10-5),18+Math.random()*14);g.stroke(); }
+  _flameTexC=new THREE.CanvasTexture(c);return _flameTexC;
+}
+const PROPFIRE=[];   // {g,light,s1,s2,emb,sc,seed,baseI} — baseI captured on FIRST tick so callers may boost the light after build
+function mkFire(scale,color,light){
+  const g=new THREE.Group();
+  const mk=(col,sc,op)=>{ const m=new THREE.SpriteMaterial({map:flameTex(),color:col,transparent:true,opacity:op,
+      blending:THREE.AdditiveBlending,depthWrite:false,fog:false});
+    const s=new THREE.Sprite(m); s.scale.set(sc,sc*1.7,1); g.add(s); return s; };
+  const body=mk(color,scale,0.9), core=mk(0xfff2cc,scale*0.55,0.95);
+  core.position.y=-scale*0.12;
+  let emb=null;
+  if(typeof GFX==="undefined"||GFX.motesOn){   // rising embers on Medium+
+    const n=7, pos=new Float32Array(n*3);
+    for(let i=0;i<n;i++){ pos[i*3]=(Math.random()-0.5)*scale*0.5; pos[i*3+1]=Math.random()*scale*1.6; pos[i*3+2]=(Math.random()-0.5)*scale*0.5; }
+    const bg=new THREE.BufferGeometry(); bg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    emb=new THREE.Points(bg,new THREE.PointsMaterial({color,size:0.05,transparent:true,opacity:0.85,
+      blending:THREE.AdditiveBlending,depthWrite:false,fog:false,sizeAttenuation:true}));
+    g.add(emb);
+  }
+  PROPFIRE.push({g,light:light||null,s1:body,s2:core,emb,sc:scale,seed:Math.random()*97,baseI:null});
+  return {g,light:light||null};
+}
+function updatePropFires(dt){
+  if(!PROPFIRE.length) return;
+  const t=now()/1000;
+  for(let i=PROPFIRE.length-1;i>=0;i--){ const f=PROPFIRE[i];
+    let p=f.g; while(p.parent) p=p.parent;
+    if(p!==scene){ PROPFIRE.splice(i,1); continue; }   // its dungeon/chunk was torn down
+    const fl=0.82+0.13*Math.sin(t*13+f.seed)+0.07*Math.sin(t*29+f.seed*2)+0.05*Math.sin(t*47+f.seed*3);
+    if(f.light){ if(f.baseI==null) f.baseI=f.light.intensity;   // AFTER any caller boost (dungeon torches burn brighter)
+      f.light.intensity=f.baseI*fl; }
+    f.s1.scale.set(f.sc*(0.86+0.24*fl),f.sc*1.7*(0.8+0.34*fl),1);
+    f.s2.scale.set(f.sc*0.55*(0.9+0.2*fl),f.sc*0.94*(0.82+0.3*(1.64-fl)),1);
+    f.s1.material.rotation=0.10*Math.sin(t*9+f.seed);
+    if(f.emb){ const a=f.emb.geometry.attributes.position, ar=a.array;
+      for(let e=0;e<ar.length;e+=3){ ar[e+1]+=dt*f.sc*(0.9+((e*7)%5)*0.2);
+        if(ar[e+1]>f.sc*1.8){ ar[e+1]=f.sc*0.1; ar[e]=(Math.random()-0.5)*f.sc*0.5; ar[e+2]=(Math.random()-0.5)*f.sc*0.5; } }
+      a.needsUpdate=true; }
+  }
+}
 function buildProp(type,lx,lz,color){
   const o=[];
   if(type==="lava"){const pool=new THREE.Mesh(new THREE.CircleGeometry(1.7,14),new THREE.MeshBasicMaterial({color}));pool.rotation.x=-Math.PI/2;pool.position.set(lx,0.06,lz);o.push(pool);const lt=new THREE.PointLight(color,1.8,18);lt.position.set(lx,1.0,lz);o.push(lt);}
   else if(type==="ice"){const sp=new THREE.Mesh(new THREE.ConeGeometry(0.5,3,6),new THREE.MeshStandardMaterial({color,transparent:true,opacity:0.7,emissive:color,emissiveIntensity:0.3}));sp.position.set(lx,1.5,lz);sp.castShadow=true;o.push(sp);const lt=new THREE.PointLight(color,1.2,16);lt.position.set(lx,2.0,lz);o.push(lt);}
   else if(type==="mushroom"){const stk=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.24,1.4,6),solid(0xcabfa0));stk.position.set(lx,0.7,lz);o.push(stk);const cap=new THREE.Mesh(new THREE.SphereGeometry(0.7,10,6,0,6.28,0,Math.PI/2),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:0.5}));cap.position.set(lx,1.4,lz);o.push(cap);const lt=new THREE.PointLight(color,1.0,14);lt.position.set(lx,1.7,lz);o.push(lt);}
   else if(type==="crystal"){for(let k=0;k<3;k++){const c=new THREE.Mesh(new THREE.ConeGeometry(0.22,rnd(1,2),5),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:0.7,metalness:0.3,roughness:0.2}));c.position.set(lx+rnd(-0.4,0.4),0.8,lz+rnd(-0.4,0.4));c.rotation.z=rnd(-0.3,0.3);o.push(c);}const lt=new THREE.PointLight(color,1.3,16);lt.position.set(lx,1.6,lz);o.push(lt);}
-  else if(type==="brazier"){const post=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,1.1,6),solid(0x33312c));post.position.set(lx,0.55,lz);o.push(post);const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.26,0.35,8),solid(0x33312c));bowl.position.set(lx,1.1,lz);o.push(bowl);const fire=new THREE.Mesh(new THREE.SphereGeometry(0.3,8,6),new THREE.MeshBasicMaterial({color}));fire.position.set(lx,1.35,lz);o.push(fire);const lt=new THREE.PointLight(color,1.9,18);lt.position.set(lx,1.6,lz);o.push(lt);}
-  else{const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,2.2,6),solid(0x2a1c10));post.position.set(lx,1.1,lz);o.push(post);const flame=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,6),new THREE.MeshBasicMaterial({color}));flame.position.set(lx,2.5,lz);o.push(flame);const fl=new THREE.PointLight(color,1.7,20);fl.position.set(lx,2.5,lz);o.push(fl);}
+  else if(type==="brazier"){   // #704: riveted iron fire-bowl on a ridged column, glowing coal bed, LIVE flame
+    const iron=new THREE.MeshStandardMaterial({color:0x2e2c30,metalness:0.75,roughness:0.45});
+    const g=new THREE.Group(); g.position.set(lx,0,lz);
+    const base=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.42,0.12,10),iron); base.position.y=0.06; g.add(base);
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.10,0.85,8),iron); post.position.y=0.54; g.add(post);
+    const collar=new THREE.Mesh(new THREE.TorusGeometry(0.10,0.03,6,12),iron); collar.rotation.x=Math.PI/2; collar.position.y=0.30; g.add(collar);
+    const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.46,0.20,0.34,12,1,true),iron); bowl.position.y=1.10; bowl.material.side=THREE.DoubleSide; g.add(bowl);
+    const rim=new THREE.Mesh(new THREE.TorusGeometry(0.46,0.035,6,16),iron); rim.rotation.x=Math.PI/2; rim.position.y=1.27; g.add(rim);
+    const coalM=new THREE.MeshStandardMaterial({color:0x1a0e08,emissive:color,emissiveIntensity:1.15,roughness:0.9});
+    for(let k=0;k<5;k++){ const c=new THREE.Mesh(new THREE.SphereGeometry(0.09+Math.random()*0.05,7,5),coalM);
+      c.position.set((Math.random()-0.5)*0.4,1.16+Math.random()*0.05,(Math.random()-0.5)*0.4); g.add(c); }
+    g.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
+    const lt=new THREE.PointLight(color,1.9,18); lt.position.set(lx,1.75,lz); o.push(lt);   // top-level: callers boost dungeon lights via isPointLight
+    const fire=mkFire(0.75,color,lt); fire.g.position.y=1.55; g.add(fire.g);
+    o.push(g);
+  }
+  else{   // #704: a real standing torch — iron-collared wooden brand with a wrapped, charred head and LIVE flame
+    const g=new THREE.Group(); g.position.set(lx,0,lz);
+    const iron=new THREE.MeshStandardMaterial({color:0x2e2c30,metalness:0.75,roughness:0.45});
+    const base=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.22,0.10,8),iron); base.position.y=0.05; g.add(base);
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.06,2.1,7),texMat(woodTex,0x6a4a2e)); pole.position.y=1.12; g.add(pole);
+    const collar=new THREE.Mesh(new THREE.TorusGeometry(0.075,0.02,6,10),iron); collar.rotation.x=Math.PI/2; collar.position.y=2.02; g.add(collar);
+    const wrap=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.07,0.30,8),new THREE.MeshStandardMaterial({color:0x4a3220,roughness:0.95})); wrap.position.y=2.20; g.add(wrap);
+    const char_=new THREE.Mesh(new THREE.CylinderGeometry(0.088,0.085,0.08,8),new THREE.MeshStandardMaterial({color:0x0c0a08,emissive:color,emissiveIntensity:0.55,roughness:1})); char_.position.y=2.38; g.add(char_);
+    g.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
+    const lt=new THREE.PointLight(color,1.7,20); lt.position.set(lx,2.62,lz); o.push(lt);
+    const fire=mkFire(0.55,color,lt); fire.g.position.y=2.62; g.add(fire.g);
+    o.push(g);
+  }
   return o;
 }
 // ---- AC-style dungeons: rooms joined by corridors (real AC dungeons are tile-grid rooms
