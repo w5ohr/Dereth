@@ -24245,116 +24245,142 @@ function horseCoatTex(tk){
 }
 // The horse: lofted capsule barrel, tapered neck + head with ears, 4 hip-pivoted legs (gallop-
 // animated), mane strip, swishing tail, saddle + blanket — and saddlebag rigs when packs>0.
+// #741: sweep elliptical cross-sections along a spine curve into ONE smooth skin — the Oblivion
+// build: a single unbroken silhouette from poll to dock, no ellipsoid seams. Stations are {y,z,w,h}
+// in the bilateral (x=0) plane; centers ride a CatmullRom, radii lerp between stations.
+function loftTube(stations,segR,uvRepeat){
+  const curve=new THREE.CatmullRomCurve3(stations.map(st=>new THREE.Vector3(0,st.y,st.z)));
+  const N=stations.length*7, pos=[], uv=[], idx=[];
+  for(let i=0;i<=N;i++){
+    const t=i/N, c=curve.getPoint(t), T=curve.getTangent(t).normalize();
+    const f=t*(stations.length-1), i0=Math.min(stations.length-2,Math.floor(f)), k=f-i0, ke=k*k*(3-2*k);
+    const w=stations[i0].w*(1-ke)+stations[i0+1].w*ke, h=stations[i0].h*(1-ke)+stations[i0+1].h*ke;
+    const U=new THREE.Vector3(0,-T.z,T.y).normalize();               // section-up, perpendicular to the spine
+    for(let j=0;j<=segR;j++){
+      const a=j/segR*Math.PI*2;
+      pos.push(Math.cos(a)*w, c.y+U.y*Math.sin(a)*h, c.z+U.z*Math.sin(a)*h);
+      uv.push(t*(uvRepeat||3), j/segR);
+    }
+  }
+  for(let i=0;i<N;i++)for(let j=0;j<segR;j++){
+    const a=i*(segR+1)+j;
+    idx.push(a,a+1,a+segR+1, a+1,a+segR+2,a+segR+1);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
 function buildHorseMesh(tk,packs){
-  // #740: REAL horse anatomy. Body lofted from overlapping ellipsoids (deep chest, round barrel,
-  // withers ridge, sloped croup); an S-curved crested neck; a true skull (cheek masses, tapered
-  // nasal bone, rounded muzzle with nostrils, SIDE-set eyes, poll-set ears); front and hind legs
-  // DIFFER (forearm/knee vs gaskin/hock with its resting angle — base joint angles the gait engine
-  // preserves); black "points" on bay-family coats; mane along the crest, a flowing three-segment
-  // tail, and full tack (blanket, saddle, bridle straps, reins).
   const T=HORSE_TYPES[tk]||HORSE_TYPES.bay;
   const g=new THREE.Group();
   const coatTex=horseCoatTex(tk);
   const coat=new THREE.MeshStandardMaterial({map:coatTex,roughness:0.8,metalness:0.02,
-    normalMap:lumNormalTex(coatTex),normalScale:new THREE.Vector2(0.35,0.35)});
+    normalMap:lumNormalTex(coatTex),normalScale:new THREE.Vector2(0.3,0.3)});
   const dark=new THREE.MeshStandardMaterial({color:T.mane,roughness:0.95});
   const tack=new THREE.MeshStandardMaterial({color:0x3e2a16,roughness:0.7});
-  const points=T.points?dark:coat;                       // bay-family: black lower legs
-  const ell=(r,sx,sy,sz,x,y,z,rx)=>{ const e=new THREE.Mesh(new THREE.SphereGeometry(r,14,11),coat);
-    e.scale.set(sx,sy,sz); e.position.set(x,y,z); if(rx)e.rotation.x=rx; g.add(e); return e; };
-  // ── the body, lofted ──
-  ell(0.44,0.8,0.88,1.5,0,1.13,-0.12);                   // barrel — deeper than wide, the horse way
-  ell(0.4,0.7,1.02,0.95,0,1.09,0.58);                    // chest, deep through the girth
-  ell(0.28,0.52,0.72,1.1,0,1.4,0.42);                    // withers ridge
-  ell(0.38,0.78,0.85,1.0,0,1.2,-0.7,-0.22);              // croup, sloping to the tail
-  for(const e2 of[-1,1]){ ell(0.18,0.78,1.15,0.95,e2*0.2,1.22,0.55);   // shoulder masses
-    ell(0.2,0.78,1.2,1.0,e2*0.2,1.2,-0.62); }                          // hip masses
-  // ── the neck: three tapered segments arcing to the poll, crest on top ──
-  const nsegs=[[0.205,0.165,0.5,0,1.42,0.72,0.5],[0.16,0.125,0.44,0,1.68,0.94,0.72],[0.12,0.105,0.36,0,1.88,1.08,0.95]];
-  for(const[r1,r2,ln,x,y,z,rx]of nsegs){ const n=new THREE.Mesh(new THREE.CylinderGeometry(r2,r1,ln,10),coat);
-    n.position.set(x,y,z); n.rotation.x=rx; g.add(n); }
-  // ── the skull ──
-  const head=new THREE.Group(); head.position.set(0,2.02,1.2); head.rotation.x=0.5;
-  const cheek=new THREE.Mesh(new THREE.SphereGeometry(0.115,12,9),coat); cheek.scale.set(0.92,1.05,1.25); head.add(cheek);
-  const nasal=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.098,0.34,9),coat);
-  nasal.rotation.x=Math.PI/2-0.08; nasal.position.set(0,-0.03,0.26); head.add(nasal);
-  const muzzle=new THREE.Mesh(new THREE.SphereGeometry(0.075,10,8),points===dark?dark:coat);
-  muzzle.scale.set(0.88,0.8,1.05); muzzle.position.set(0,-0.075,0.43); head.add(muzzle);
+  const points=T.points?dark:coat;
+  // ── ONE skin: poll → crest → withers → back → croup → dock ──
+  const body=new THREE.Mesh(loftTube([
+    {y:2.02,z:1.18,w:0.085,h:0.10},    // just under the poll
+    {y:1.88,z:1.04,w:0.105,h:0.155},   // upper neck
+    {y:1.66,z:0.86,w:0.13, h:0.21},    // mid neck
+    {y:1.44,z:0.66,w:0.165,h:0.29},    // neck base into the shoulder
+    {y:1.24,z:0.46,w:0.21, h:0.40},    // withers/chest, deep through the brisket
+    {y:1.15,z:0.12,w:0.235,h:0.44},    // the girth
+    {y:1.14,z:-0.28,w:0.245,h:0.43},   // barrel
+    {y:1.17,z:-0.62,w:0.225,h:0.39},   // flank
+    {y:1.24,z:-0.88,w:0.175,h:0.30},   // croup
+    {y:1.30,z:-1.04,w:0.06, h:0.08},   // dock
+  ],16),coat);
+  g.add(body);
+  // ── the head: its own small loft (pivots at the poll for the gait pendulum) ──
+  const head=new THREE.Group(); head.position.set(0,2.0,1.22); head.rotation.x=0.48;
+  const skull=new THREE.Mesh(loftTube([
+    {y:0.06,z:-0.14,w:0.075,h:0.09},   // behind the poll (tucks into the neck)
+    {y:0.05,z:-0.02,w:0.105,h:0.125},  // cheeks
+    {y:0.03,z:0.12,w:0.09, h:0.105},   // brow
+    {y:-0.01,z:0.28,w:0.068,h:0.082},  // nasal bone
+    {y:-0.045,z:0.42,w:0.055,h:0.062}, // muzzle
+    {y:-0.06,z:0.5,w:0.042,h:0.045},   // lip
+  ],12,1),coat);
+  head.add(skull);
+  const chin=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,6),coat); chin.scale.set(0.8,0.7,1.1); chin.position.set(0,-0.1,0.34); head.add(chin);
   for(const e2 of[-1,1]){
-    const nos=new THREE.Mesh(new THREE.SphereGeometry(0.02,6,5),dark);
-    nos.scale.set(0.7,1.2,0.9); nos.position.set(e2*0.045,-0.055,0.5); head.add(nos);
-    const eye=new THREE.Mesh(new THREE.SphereGeometry(0.032,8,7),
+    const nos=new THREE.Mesh(new THREE.SphereGeometry(0.018,6,5),dark);
+    nos.scale.set(0.7,1.3,0.9); nos.position.set(e2*0.038,-0.03,0.485); head.add(nos);
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(0.03,8,7),
       T.ember?new THREE.MeshStandardMaterial({color:0xff5a20,emissive:0xff5a20,emissiveIntensity:1.6})
              :new THREE.MeshStandardMaterial({color:0x14100c,roughness:0.25}));
-    eye.position.set(e2*0.1,0.045,0.06); head.add(eye);                 // eyes on the SIDES
-    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.042,0.17*(T.ears||1),6),coat);
-    ear.position.set(e2*0.07,0.17,-0.1); ear.rotation.z=e2*0.22; ear.rotation.x=-0.15; head.add(ear);
-    // bridle: cheek straps
-    const strap=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.16,0.012),tack);
-    strap.position.set(e2*0.104,-0.02,0.18); strap.rotation.x=0.5; head.add(strap);
+    eye.position.set(e2*0.088,0.055,0.1); head.add(eye);
+    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.038,0.16*(T.ears||1),6),coat);
+    ear.position.set(e2*0.06,0.16,-0.09); ear.rotation.z=e2*0.2; ear.rotation.x=-0.12; head.add(ear);
+    const strap=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.15,0.012),tack);
+    strap.position.set(e2*0.095,-0.01,0.14); strap.rotation.x=0.5; head.add(strap);
   }
-  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.21,0.014,0.014),tack); brow.position.set(0,0.09,0.03); head.add(brow);
-  const nose=new THREE.Mesh(new THREE.TorusGeometry(0.088,0.008,5,12),tack);
-  nose.rotation.x=Math.PI/2-0.1; nose.position.set(0,-0.045,0.33); head.add(nose);
-  const flock=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.12,0.05),dark); flock.position.set(0,0.16,0.02); flock.rotation.x=0.4; head.add(flock);
+  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.014,0.014),tack); brow.position.set(0,0.085,0.06); head.add(brow);
+  const nose=new THREE.Mesh(new THREE.TorusGeometry(0.075,0.008,5,12),tack);
+  nose.rotation.x=Math.PI/2-0.1; nose.position.set(0,-0.035,0.35); head.add(nose);
+  const flock=new THREE.Mesh(new THREE.BoxGeometry(0.055,0.11,0.045),dark); flock.position.set(0,0.15,0); flock.rotation.x=0.4; head.add(flock);
+  if(T.blaze){ const bl=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.012,0.3),new THREE.MeshStandardMaterial({color:0xe8e4dc,roughness:0.9}));
+    bl.position.set(0,0.075,0.28); bl.rotation.x=-0.12; head.add(bl); }
   g.add(head); g.userData.head=head;
-  // reins: a soft curve from the bit back toward the saddle
-  for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(   // bezier: no Catmull overshoot spikes
-      new THREE.Vector3(e2*0.1,1.95,1.5),new THREE.Vector3(e2*0.24,1.66,0.95),new THREE.Vector3(e2*0.16,1.6,0.38));
+  // reins
+  for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(e2*0.09,1.92,1.52),new THREE.Vector3(e2*0.2,1.8,0.95),new THREE.Vector3(e2*0.17,1.62,0.38));   // reins REST on the neck, no chest droop
     const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,8,0.011,5),tack); g.add(rein); }
-  // ── mane along the crest (offset tufts, darker) + forelock above ──
-  for(let i=0;i<8;i++){ const k=i/7;
-    const mn=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.2-0.06*k,0.16),dark);
-    mn.position.set((i%2?0.012:-0.012),1.56+k*0.5,0.62+k*0.52); mn.rotation.x=0.55+k*0.35; g.add(mn); }
-  // ── legs: front (forearm/knee) and hind (gaskin/hock, with its resting crook) DIFFER ──
+  // ── the mane: a serrated crest ribbon hugging the neck's topline (Oblivion's card-mane) ──
+  { const crest=[[2.06,1.10],[1.95,0.97],[1.80,0.84],[1.62,0.72],[1.46,0.62]];
+    for(let i=0;i<crest.length-1;i++){
+      const[y1,z1]=crest[i],[y2,z2]=crest[i+1];
+      const seg=new THREE.Mesh(new THREE.BoxGeometry(0.045,Math.hypot(y2-y1,z2-z1)+0.06,0.14+i*0.02),dark);
+      seg.position.set((i%2?0.008:-0.008),(y1+y2)/2+0.05,(z1+z2)/2);
+      seg.rotation.x=Math.atan2(z1-z2,y1-y2); g.add(seg); } }
+  // ── legs (unchanged rig: base angles the gait engine preserves) ──
   const legs=[];
-  for(const[lx,lz]of[[-0.23,0.56],[0.23,0.56],[-0.24,-0.6],[0.24,-0.6]]){
+  for(const[lx,lz]of[[-0.15,0.5],[0.15,0.5],[-0.16,-0.62],[0.16,-0.62]]){
     const front=lz>0;
-    const leg=new THREE.Group(); leg.position.set(lx,1.1,lz);
-    const upper=new THREE.Mesh(new THREE.CylinderGeometry(front?0.075:0.1,0.052,front?0.5:0.54,8),coat);
-    upper.position.y=front?-0.25:-0.27; leg.add(upper);
-    const joint=new THREE.Mesh(new THREE.SphereGeometry(front?0.055:0.062,7,6),coat);
-    joint.position.y=front?-0.5:-0.54; leg.add(joint);                  // knee / hock lump
-    const knee=new THREE.Group(); knee.position.y=front?-0.5:-0.54; leg.add(knee);
-    const cannon=new THREE.Mesh(new THREE.CylinderGeometry(0.042,0.038,0.36,7),points);
+    const leg=new THREE.Group(); leg.position.set(lx,1.12,lz);
+    const upper=new THREE.Mesh(new THREE.CylinderGeometry(front?0.078:0.105,0.05,front?0.52:0.56,9),coat);
+    upper.position.y=front?-0.26:-0.28; leg.add(upper);
+    const joint=new THREE.Mesh(new THREE.SphereGeometry(front?0.052:0.06,8,6),coat);
+    joint.position.y=front?-0.52:-0.56; leg.add(joint);
+    const knee=new THREE.Group(); knee.position.y=front?-0.52:-0.56; leg.add(knee);
+    const cannon=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.036,0.36,8),points);
     cannon.position.y=-0.18; knee.add(cannon);
-    const fet=new THREE.Mesh(new THREE.SphereGeometry(0.048,7,6),points); fet.position.y=-0.37; knee.add(fet);
-    const past=new THREE.Mesh(new THREE.CylinderGeometry(0.034,0.04,0.1,7),points);
+    const fet=new THREE.Mesh(new THREE.SphereGeometry(0.045,7,6),points); fet.position.y=-0.37; knee.add(fet);
+    const past=new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.038,0.1,7),points);
     past.position.set(0,-0.43,0.02); past.rotation.x=0.35; knee.add(past);
-    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.068,0.088,0.09,10),dark);
+    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.082,0.085,10),dark);
     hoof.position.set(0,-0.5,0.045); knee.add(hoof);
-    // resting anatomy: hind upper slopes back, hind cannon stands vertical again
     const b0=front?0:0.42, k0=front?0:-0.42;
     leg.rotation.x=b0; knee.rotation.x=k0;
     g.add(leg); legs.push({g:leg,knee,front,b0,k0});
   }
   g.userData.legs=legs;
-  // ── the tail: three drooping segments + tip, swished at the root ──
-  const tail=new THREE.Group(); tail.position.set(0,1.34,-1.02);
-  { let ty=0,tz=0,ang=0.12;                                // HANGS near-vertical, sweeping gently back toward the tip
-    for(const[r1,r2,ln]of[[0.05,0.038,0.3],[0.038,0.024,0.3],[0.024,0.008,0.28]]){
-      const seg=new THREE.Mesh(new THREE.CylinderGeometry(r2,r1,ln,6),dark);
-      seg.rotation.x=ang;
-      seg.position.set(0,ty-Math.cos(ang)*ln/2,tz-Math.sin(ang)*ln/2);
-      tail.add(seg);
-      ty-=Math.cos(ang)*ln; tz-=Math.sin(ang)*ln; ang+=0.18; } }
-  g.add(tail); g.userData.tail=tail;
-  // ── tack: blanket, saddle, girth strap, and the pack rigs ──
-  const blanket=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.05,0.7),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
-  blanket.position.y=1.45; g.add(blanket);
-  const saddle=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.07,0.62),tack);   // low seat between pommel and cantle
-  saddle.position.y=1.5; g.add(saddle);
-  for(const e2 of[-1,1]){ const flap=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.3,0.4),tack);   // saddle flaps down the sides
-    flap.position.set(e2*0.24,1.36,0.02); flap.rotation.z=e2*0.15; g.add(flap); }
-  const pommel=new THREE.Mesh(new THREE.SphereGeometry(0.045,7,6),tack); pommel.position.set(0,1.56,0.3); g.add(pommel);
-  const cantle=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.09,0.05),tack); cantle.position.set(0,1.54,-0.28); g.add(cantle);
-  const girth=new THREE.Mesh(new THREE.TorusGeometry(0.47,0.016,6,18),tack);
-  girth.rotation.y=Math.PI/2; girth.scale.set(1,0.95,1); girth.position.set(0,1.1,0.08); g.add(girth);
+  // ── the tail: a full lofted fall from the dock to the hocks ──
+  const tail=new THREE.Group(); tail.position.set(0,1.3,-1.04);
+  const tmesh=new THREE.Mesh(loftTube([
+    {y:0.0,z:0.0,w:0.045,h:0.05},
+    {y:-0.22,z:-0.1,w:0.07,h:0.085},
+    {y:-0.5,z:-0.16,w:0.06,h:0.075},
+    {y:-0.74,z:-0.18,w:0.025,h:0.03},
+  ],9,1),dark);
+  tail.add(tmesh); g.add(tail); g.userData.tail=tail;
+  // ── tack ──
+  const blanket=new THREE.Mesh(new THREE.BoxGeometry(0.56,0.045,0.66),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
+  blanket.position.y=1.55; g.add(blanket);
+  const saddle=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.06,0.58),tack); saddle.position.y=1.59; g.add(saddle);
+  const pommel=new THREE.Mesh(new THREE.SphereGeometry(0.042,7,6),tack); pommel.position.set(0,1.65,0.28); g.add(pommel);
+  const cantle=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.08,0.045),tack); cantle.position.set(0,1.64,-0.26); g.add(cantle);
+  for(const e2 of[-1,1]){ const flap=new THREE.Mesh(new THREE.BoxGeometry(0.026,0.28,0.38),tack);
+    flap.position.set(e2*0.25,1.44,0.02); flap.rotation.z=e2*0.12; g.add(flap); }
+  const girth=new THREE.Mesh(new THREE.TorusGeometry(0.44,0.015,6,20),tack);   // rings the BARREL: torus plane stays XY
+  girth.scale.set(0.56,1,1); girth.position.set(0,1.16,0.12); g.add(girth);
   for(let p=0;p<(packs||0);p++){ for(const e2 of[-1,1]){
-    const bag=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.3,0.34),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
-    bag.position.set(e2*0.48,1.2,-0.34-p*0.4); g.add(bag); } }
-  if(T.blaze){ const bl=new THREE.Mesh(new THREE.BoxGeometry(0.045,0.015,0.34),new THREE.MeshStandardMaterial({color:0xe8e4dc,roughness:0.9}));
-    bl.position.set(0,0.055,0.26); head.add(bl); }
+    const bag=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.28,0.32),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
+    bag.position.set(e2*0.42,1.25,-0.4-p*0.38); g.add(bag); } }
   g.traverse(mm=>{ if(mm.isMesh) mm.castShadow=true; });
   if(tk==="pony") g.scale.setScalar(0.78);
   if(tk==="mule") g.scale.setScalar(0.9);
@@ -24365,6 +24391,37 @@ function buildHorseMesh(tk,packs){
 //    (gable roof, plank walls, open door), a rail-fenced paddock the retrieved horses are led out
 //    into, hay bales and a hitching post. Collision registered so riders route around it. ──
 const STABLE_PADDOCK={};   // stable-key → paddock centre, so horseRetrieve leads horses out INSIDE the fence
+let _dirtYard=null,_hayT=null;
+function dirtYardTex(){                                     // #741: packed hoof-worn earth
+  if(_dirtYard) return _dirtYard;
+  const c=document.createElement('canvas');c.width=c.height=256;const g2=c.getContext('2d');
+  g2.fillStyle="#8a6f4d";g2.fillRect(0,0,256,256);
+  for(let i=0;i<2600;i++){ const v=(Math.random()-0.5)*40;
+    g2.fillStyle=`rgba(${138+v|0},${111+v|0},${77+v|0},0.55)`;
+    g2.fillRect(Math.random()*255,Math.random()*255,Math.random()*3+1,Math.random()*3+1); }
+  for(let i=0;i<28;i++){ const x=Math.random()*255,y=Math.random()*255,r=6+Math.random()*16;   // worn patches
+    const gr=g2.createRadialGradient(x,y,1,x,y,r);
+    gr.addColorStop(0,"rgba(90,70,46,0.35)");gr.addColorStop(1,"rgba(0,0,0,0)");
+    g2.fillStyle=gr;g2.beginPath();g2.arc(x,y,r,0,6.28);g2.fill(); }
+  for(let i=0;i<38;i++){ g2.strokeStyle="rgba(60,46,30,0.3)";g2.lineWidth=1.5;   // hoof scuffs
+    const x=Math.random()*255,y=Math.random()*255,a=Math.random()*6.28;
+    g2.beginPath();g2.arc(x,y,4,a,a+2);g2.stroke(); }
+  _dirtYard=new THREE.CanvasTexture(c);_dirtYard.wrapS=_dirtYard.wrapT=THREE.RepeatWrapping;_dirtYard.repeat.set(5,3);
+  return _dirtYard;
+}
+function hayTex(){                                          // strewn straw wisps on transparent ground
+  if(_hayT) return _hayT;
+  const c=document.createElement('canvas');c.width=c.height=128;const g2=c.getContext('2d');
+  for(let i=0;i<230;i++){ const v=Math.random()*40|0;
+    g2.strokeStyle=`rgba(${185+v},${150+v},${70+(v>>1)},${0.35+Math.random()*0.45})`;g2.lineWidth=1.4;
+    const x=64+(Math.random()-0.5)*110,y=64+(Math.random()-0.5)*110,a=Math.random()*6.28,l=7+Math.random()*17;
+    g2.beginPath();g2.moveTo(x,y);g2.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);g2.stroke(); }
+  const grd=g2.createRadialGradient(64,64,20,64,64,64);     // feather the patch edge
+  grd.addColorStop(0,"rgba(0,0,0,0)");grd.addColorStop(1,"rgba(0,0,0,1)");
+  g2.globalCompositeOperation="destination-out";g2.fillStyle=grd;g2.fillRect(0,0,128,128);
+  _hayT=new THREE.CanvasTexture(c);
+  return _hayT;
+}
 const STABLE_STOCK=[];   // #739: the master's display horses grazing in each paddock
 function buildStableYard(sx,sz){
   // #739: stables SEEK FLAT GROUND — sample the yard footprint (barn+paddock, ~26×14) at candidate
@@ -24383,10 +24440,16 @@ function buildStableYard(sx,sz){
   if(!best) best={x:sx+9,z:sz+4,span:0,top:groundY(sx+9,sz+4)};
   const g=new THREE.Group(); g.position.set(best.x,best.top+0.06,best.z); g.userData.noSettle=true;
   // foundation: the packed-earth deck the whole yard stands on, skirted down to swallow the slope
-  const deck=new THREE.Mesh(new THREE.BoxGeometry(27,0.3,15),texMat(stoneFloorTex,0x7a6a52));
+  // #741: a stable yard is DIRT and hay, not dressed stone — packed earth deck, earthen skirt,
+  // and strewn hay/straw patches worn in around the paddock
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(27,0.3,15),texMat(dirtYardTex,0x8a6f4d));
   deck.position.set(5.5,-0.15,0); deck.receiveShadow=true; g.add(deck);
-  const skirt=new THREE.Mesh(new THREE.BoxGeometry(27,Math.max(1.2,best.span+1.2),15),texMat(stoneFloorTex,0x6a5a46));
+  const skirt=new THREE.Mesh(new THREE.BoxGeometry(27,Math.max(1.2,best.span+1.2),15),texMat(dirtYardTex,0x6f5638));
   skirt.position.set(5.5,-Math.max(1.2,best.span+1.2)/2-0.28,0); g.add(skirt);
+  for(let i=0;i<9;i++){ const hayp=new THREE.Mesh(new THREE.CircleGeometry(rnd(0.5,1.2),10),
+      new THREE.MeshStandardMaterial({map:hayTex(),transparent:true,opacity:0.92,roughness:1,depthWrite:false}));
+    hayp.rotation.x=-Math.PI/2; hayp.rotation.z=rnd(0,6.28);
+    hayp.position.set(rnd(2,17),0.02,rnd(-6,6)); g.add(hayp); }
   const wood=texMat(woodTex,0x6a4a2e), woodD=texMat(woodTex,0x4e3620);
   // barn: 8×6 plank walls, open south door, gable roof
   const W=8,D=6,H=3.4;
