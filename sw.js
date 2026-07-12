@@ -15,7 +15,8 @@
 // next visit. v2: ship the rigged Horse/Deer/Stag GLBs + the UO crafting build (was serving old cached
 // Horse.glb / index.html to returning players).
 // v3: acdialogue.json v2 (ambient chatter). v4: acspellfx.json (spell effect+projectile data).
-const V = "dereth-v4";
+// v5: acspellsets.json (equipment-set spell bonuses).
+const V = "dereth-v5";
 
 self.addEventListener("install", () => { self.skipWaiting(); });
 

@@ -1736,6 +1736,22 @@ fetch('assets/acspells.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j)ret
 //    projectile object + count + spread (the VISUAL), crit, slayer, ignore-resist. Keyed by spell id;
 //    joined to the spellbook by name for display (the combat balance stays as tuned). ──
 fetch('assets/acspellfx.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j)return; AC_SPELLFX=j; _attachSpellFx(); }).catch(()=>{});
+// ── authentic EQUIPMENT-SET spells (assets/acspellsets.json · tools/ace_spell_sets.py): the DAT
+//    SpellTable's second hash table (SpellSet: setId → pieces-worn → granted spell ids). Each of the
+//    game's cultural armour sets is themed to the AC equipment set whose aptitudes fit its role, so a
+//    full set shows the REAL retail set spells (Soldier's weapon aptitudes, Adept's magic aptitudes…). ──
+let AC_SPELLSETS=null;
+fetch('assets/acspellsets.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.sets) AC_SPELLSETS=j.sets; }).catch(()=>{});
+const _AC_SET_BY_SKILL={ war:"Adept's",life:"Adept's",creature:"Adept's",item:"Adept's",void:"Adept's",mana:"Adept's",arcane:"Adept's",
+  missile:"Archer's",missiled:"Archer's",
+  heavy:"Soldier's",light:"Soldier's",finesse:"Soldier's",twohand:"Soldier's",dualwield:"Soldier's",dirty:"Soldier's",recklessness:"Soldier's",
+  meleed:"Defender's",magicd:"Defender's",shield:"Defender's", healing:"Hearty" };
+function acSetForCulture(cultureName){ const sk=(typeof ARMOR_SET_SKILL!=="undefined")&&ARMOR_SET_SKILL[cultureName]; return (sk&&_AC_SET_BY_SKILL[sk])||"Soldier's"; }
+function acSetSpellsAt(acSetName,pieces){                       // the highest set tier your piece-count reaches
+  const set=AC_SPELLSETS&&AC_SPELLSETS[acSetName]; if(!set) return null;
+  let best=null,bk=0; for(const k in set.tiers){ const n=+k; if(n<=pieces&&n>bk){ bk=n; best=set.tiers[k]; } }
+  return best?{set:acSetName,tier:bk,spells:best.map(s=>s.n)}:null;
+}
 function _attachSpellFx(){
   if(!AC_SPELLS||!AC_SPELLFX) return;                        // need both (id→name from roster, fx by id)
   AC_FX_BYNAME={};
@@ -31086,7 +31102,10 @@ function buildTinker(){
     <div class="panel" style="position:static;width:150px">
       <div style="color:var(--dim);font-size:11px">Materials: <span style="color:var(--gold);font-weight:bold">${player.materials}</span></div>
       <div style="font-size:11px;margin-top:4px">🛡 Armor rating <b style="color:#fff">+${wornArmorV()}</b></div>
-      ${(()=>{const sb=setBonus();return sb.count>=3?`<div style="font-size:10.5px;color:#9be08a;margin-top:3px">✦ ${esc(sb.set)} Set (${sb.count}/7): +${sb.armor} armor · +${sb.mhp} health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>`:`<div style="font-size:10px;color:var(--dim);margin-top:3px">Wear a full set for a bonus.</div>`;})()}
+      ${(()=>{const sb=setBonus();if(sb.count<3)return `<div style="font-size:10px;color:var(--dim);margin-top:3px">Wear a full set for a bonus.</div>`;
+        const acs=(typeof acSetSpellsAt==="function")?acSetSpellsAt(acSetForCulture(sb.set),sb.count):null;
+        const acLine=acs?`<div style="font-size:10px;color:#bfa8e0;margin-top:2px">≈ retail <b>${esc(acs.set)}</b> set (${acs.tier}pc): ${acs.spells.slice(0,4).map(esc).join(", ")}${acs.spells.length>4?" …":""}</div>`:"";
+        return `<div style="font-size:10.5px;color:#9be08a;margin-top:3px">✦ ${esc(sb.set)} Set (${sb.count}/7): +${sb.armor} armor · +${sb.mhp} health${sb.skill?` · +${sb.skillV} ${SKILL_BY_KEY[sb.skill]?SKILL_BY_KEY[sb.skill].n:sb.skill}`:""}</div>${acLine}`;})()}
       ${(()=>{const r=["slash","pierce","bludgeon","fire","frost","shock","acid","nether"].map(e=>[e,resistVs(e)]).filter(x=>x[1]>0);return r.length?`<div style="font-size:10px;color:#9fd0ff;margin-top:3px">Resist: ${r.map(x=>x[0]+" "+Math.round(x[1]*100)+"%").join(" · ")}</div>`:"";})()}
     </div>`;
   buildPaperDoll();
