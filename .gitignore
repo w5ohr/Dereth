@@ -33,3 +33,6 @@ ac-updates.zip
 # local DB backups
 server/*.db.bak-*
 server/dereth.db
+# #694: the HD texture pack is a generated artifact (tools/ac_hd_upscale.py) — never committed
+assets/hd/
+tools/sr_models/

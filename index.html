@@ -690,6 +690,7 @@
     <button class="tbtn" data-ambience="1">On</button><button class="tbtn" data-ambience="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto steps quality down whenever the frame rate dips below 30 FPS (and back up when there's headroom)">Graphics</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-gfx="auto">Auto</button><button class="tbtn" data-gfx="0">Low</button><button class="tbtn" data-gfx="1">Medium</button><button class="tbtn" data-gfx="2">High</button><button class="tbtn" data-gfx="3">Ultra</button></span></div>
+    <div class="srow"><span>HD textures</span><span><button class="tbtn" data-hdtex="1">On</button><button class="tbtn" data-hdtex="0">Off</button></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Auto picks the on-screen touch interface on phones/tablets and keyboard &amp; mouse on computers">Interface</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button class="tbtn" data-tui="auto">Auto</button><button class="tbtn" data-tui="on">📱 Touch</button><button class="tbtn" data-tui="off">⌨ Desktop</button></span></div>
   <div class="srow" id="tsSensRow"><span style="min-width:auto;text-align:left;color:var(--ink)">Touch look speed</span><input id="tsSens" type="range" min="40" max="200" value="100" style="flex:1"></div>
@@ -1695,6 +1696,19 @@ fetch('assets/acicons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j
 // ── THE REAL TREES (assets/acflora + acscenery.json): every scenery model the retail client
 //    scattered — trees, plants, rocks — with per-terrain frequencies from portal.dat Region. ──
 let AC_FLORA=null,AC_SCEN=null; const _floraProto={},_floraTex={},_scenPick={};
+// ── #694: opt-in HD texture pack. assets/hd/ mirrors assets/<pack>/tex/ with 2–4× FSRCNN
+//    upscales (tools/ac_hd_upscale.py — a GENERATED artifact, absent unless the operator ran the
+//    tool). The manifest is the feature-detect AND the per-file fallback: only listed files ever
+//    take the HD path, so a partial or missing pack silently serves SD with zero 404s. Gated on
+//    the Settings toggle + High/Ultra tier. lumNormalTex derives normals from whatever image the
+//    map loaded, so HD maps upgrade the runtime normal maps for free — no baked normals needed. ──
+const HD={set:null,_fetching:false};
+function hdLoadManifest(){ if(HD.set||HD._fetching) return; HD._fetching=true;
+  fetch('assets/hd/manifest.json').then(r=>r&&r.ok?r.json():null).then(j=>{
+    if(j&&j.files){ HD.set=new Set(j.files); console.log('HD texture pack: '+j.files.length+' files ('+(j.engine||'?')+')'); }
+  }).catch(()=>{}).finally(()=>{HD._fetching=false;}); }
+function acTexURL(rel){
+  return (settings.hd&&HD.set&&(typeof GFX==="undefined"||GFX.tier>=2)&&HD.set.has(rel))?'assets/hd/'+rel:'assets/'+rel; }
 fetch('assets/acflora/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_FLORA=j; }).catch(()=>{});
 // the retail STRING TABLES (client_local_English.dat): 7,050 strings incl. the 873 character titles
 let AC_STRINGS=null,AC_TITLESET=null;
@@ -1712,7 +1726,7 @@ function acSkyAt(t){
 }
 fetch('assets/acscenery.json').then(r=>r&&r.ok?r.json():null).then(j=>{ AC_SCEN=j; }).catch(()=>{});
 function floraTexture(fn){ if(_floraTex[fn]) return _floraTex[fn];
-  const t=new THREE.TextureLoader().load('assets/acflora/tex/'+fn); t.flipY=false; t.wrapS=t.wrapT=THREE.RepeatWrapping; _floraTex[fn]=t; return t; }
+  const t=new THREE.TextureLoader().load(acTexURL('acflora/tex/'+fn)); t.flipY=false; t.wrapS=t.wrapT=THREE.RepeatWrapping; _floraTex[fn]=t; return t; }
 function floraProto(shex){   // build (once) the shared prototype group for a scenery setup
   if(_floraProto[shex]) return _floraProto[shex];
   _floraProto[shex]=fetch('assets/acflora/'+shex+'.json').then(r=>r&&r.ok?r.json():null).then(d=>{
@@ -5174,7 +5188,7 @@ function acPartTemplates(j){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+      if(g.mat.tex){ const t=TL.load(acTexURL('acmodels/tex/'+g.mat.tex)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.6,metalness:0.02});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.6,metalness:0.02});
@@ -5359,7 +5373,7 @@ function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, 
     flush(tex);
   };
   img.onerror=()=>{ _acHeadTexCache[key]="failed"; _acHeadTexCb[key]=null; };
-  img.src='assets/acheads/tex/'+texDID+'.png';
+  img.src=acTexURL('acheads/tex/'+texDID+'.png');   // #694: HD path when the pack is live (palette remap runs on whatever resolution arrives)
 }
 function acHeadOpts(app){          // resolve the appearance's head choices against the heritage/gender lists
   if(!AC_HEADS) return null;
@@ -7108,7 +7122,7 @@ function glyphStoneTex(seed){
 // a longer jagged crystal — elongated faceted bipyramid, jittered uniquely per seed
 // ── real AC fixture meshes (assets/acmisc: lifestone, bindstone) ──
 const _miscGeo={}, _miscTexCache={}, _miscTL=new THREE.TextureLoader();
-function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
+function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load(acTexURL('acmisc/tex/'+fn)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
 function acMiscMesh(name,cb){   // fetch + cache a misc fixture's groups, call cb(groups) when ready (or now if cached)
   const c=_miscGeo[name];
   if(c&&c!=="loading"){ cb(c); return; }
@@ -7892,7 +7906,7 @@ const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 // without _acShared that disposed the shared texture out from under still-visible neighbours and left the
 // reused copy GPU-incomplete — which ANGLE/Metal samples as flat WHITE (the featureless white town). The
 // _acShared flag makes _dispTex skip it, exactly as it already does for shared canvas/normal/archetype (#326).
-function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
+function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load(acTexURL('actownmodels/tex/'+fn)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
 function tbModelReq(did){ did=(''+did).toUpperCase();
@@ -9908,7 +9922,7 @@ function hsLayoutOf(h){ const l=_hsLay[h.set]; return (l&&l[String(h.unit)])||nu
 // ── real building meshes (assets/achouses/<model>.json), shared geometry per model ──
 const _hsModels={},_hsTexCache={},_hsTL=new THREE.TextureLoader();
 function hsTex(fn){
-  if(!_hsTexCache[fn]){ const t=_hsTL.load('assets/achouses/tex/'+fn); t.flipY=false;
+  if(!_hsTexCache[fn]){ const t=_hsTL.load(acTexURL('achouses/tex/'+fn)); t.flipY=false;
     t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; _hsTexCache[fn]=t; }
   return _hsTexCache[fn];
 }
@@ -12648,7 +12662,7 @@ function acItemMesh(name){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+      if(g.mat.tex){ const t=TL.load(acTexURL('acmodels/tex/'+g.mat.tex)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.5,metalness:0.25});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.5,metalness:0.25});
@@ -15477,12 +15491,12 @@ function acArmorPart(gid,cb){
       // #667: a part may carry its own finish (rough/metal) and an emissive map — the Tenfold
       // set's gold filigree glows softly through emtex/emint; retail parts keep the old defaults.
       const rough=(g.mat.rough!=null?g.mat.rough:0.55), metal=(g.mat.metal!=null?g.mat.metal:0.15);
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+      if(g.mat.tex){ const t=TL.load(acTexURL('acmodels/tex/'+g.mat.tex)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         t.wrapS=t.wrapT=THREE.RepeatWrapping;   // #667: some parts carry wrapped UVs (v>1) — clamp smeared them
         mat=new THREE.MeshStandardMaterial({map:t,roughness:rough,metalness:metal});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:rough,metalness:metal});
-      if(g.mat.emtex){ const e=TL.load('assets/acmodels/tex/'+g.mat.emtex); e.flipY=false; e.colorSpace=THREE.SRGBColorSpace;
+      if(g.mat.emtex){ const e=TL.load(acTexURL('acmodels/tex/'+g.mat.emtex)); e.flipY=false; e.colorSpace=THREE.SRGBColorSpace;
         e.wrapS=e.wrapT=THREE.RepeatWrapping;
         mat.emissiveMap=e; mat.emissive=new THREE.Color(0xffffff); mat.emissiveIntensity=(g.mat.emint!=null?g.mat.emint:1); }
       const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
@@ -15604,7 +15618,7 @@ function acClothPart(baseHex,gk,cb){    // baseHex like "10000001", gk "m"|"f" �
         geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
         geo.setIndex(g.i);
         let mat;
-        if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+        if(g.mat.tex){ const t=TL.load(acTexURL('acmodels/tex/'+g.mat.tex)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
           mat=new THREE.MeshStandardMaterial({map:t,roughness:0.82,metalness:0.03});
           if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
         else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x9a8f7a),roughness:0.82,metalness:0.03});
@@ -19375,7 +19389,7 @@ function loop(ts){
 //  AUDIO — synthesized via WebAudio (no asset files; works fully offline)
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
-const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight:1.0,   // dungeon brightness multiplier (Settings slider — tuned on real hardware)
+const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:false,dglight:1.0,   // dungeon brightness multiplier (Settings slider — tuned on real hardware)
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
@@ -19386,6 +19400,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",dglight
   reduceMotion:(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false};   // #244: default to the OS preference; a saved setting overrides via loadSettings' Object.assign
 const SETTINGS_KEY="dereth_settings_v1";
 function loadSettings(){ try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));if(s)Object.assign(settings,s);}catch(e){}
+  if(settings.hd) hdLoadManifest();   // #694: warm the HD manifest before the asset packs stream in
   if(!settings._labelsOff){   // migrate: floating name labels are now OFF; force once for existing saves, then the Settings toggles work normally
     settings.labels={players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false};
     settings._labelsOff=true; saveSettings(); } }
@@ -22291,7 +22306,7 @@ function acHatPart(name,gk,cb){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+      if(g.mat.tex){ const t=TL.load(acTexURL('acmodels/tex/'+g.mat.tex)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a7a5a),roughness:0.85,metalness:0.02});
@@ -24587,6 +24602,12 @@ function openSettings(){
   gxBtns.forEach(b=>b.onclick=()=>{settings.gfx=b.dataset.gfx==="auto"?"auto":+b.dataset.gfx;
     saveSettings();gxHi();applyGfxSetting();
     log(settings.gfx==="auto"?"Graphics on <b>Auto</b> — quality steps itself to hold 30+ FPS.":`Graphics locked to <b>${GFX.TIERS[+settings.gfx]}</b>.`,"sys");});
+  const hdBtns=document.querySelectorAll('#settings [data-hdtex]');
+  const hdHi=()=>hdBtns.forEach(b=>b.style.opacity=((+b.dataset.hdtex===1)===(settings.hd===true))?1:0.45);
+  hdHi();
+  hdBtns.forEach(b=>b.onclick=()=>{settings.hd=+b.dataset.hdtex===1;saveSettings();hdHi();
+    if(settings.hd) hdLoadManifest();
+    log(settings.hd?"HD textures <b>on</b> — 2–4× upscaled surfaces stream in for new areas (High/Ultra tiers; reload for a full refresh).":"HD textures off — standard textures for newly loaded areas (reload for a full refresh).","sys");});
   // per-category floating-name toggles (lit = shown)
   const lc=document.getElementById('setLabels');
   if(lc&&!lc.dataset.built){ lc.dataset.built="1";
@@ -26728,7 +26749,7 @@ function buildDungeonReal(def,dj){
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uvs,2));
     geo.setIndex(g.idx);
     let mat;
-    if(g.tex){ const t=TL.load('assets/acdungeons/tex/'+g.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+    if(g.tex){ const t=TL.load(acTexURL('acdungeons/tex/'+g.tex)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
       t.wrapS=t.wrapT=THREE.RepeatWrapping; mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02,side:THREE.DoubleSide}); }
     else mat=new THREE.MeshStandardMaterial({color:(g.color!=null?g.color:0x777788),roughness:0.85,side:THREE.DoubleSide});
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
