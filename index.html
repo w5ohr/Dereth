@@ -3508,7 +3508,8 @@ function updateWeather(dt){
   if(rainGain) rainGain.gain.value=wetness*(storming?0.14:0.08);   // heavier hiss in a storm
   // overcast dimming: heavy cloud cover mutes the light for moodier storms
   if(hemi){ hemi.intensity*=1-cloudCover*0.30; amb.intensity*=1-cloudCover*0.22; }
-  if(sun) sun.intensity*=1-cloudCover*0.38;
+  if(sun){ sun.intensity*=1-cloudCover*0.38; sun.userData.fI=(sun.userData.fI||0)*(1-cloudCover*0.38);
+    if(typeof sunFar!=="undefined"&&sunFar) sunFar.intensity*=1-cloudCover*0.38; }   // #692: dim both cascade halves (and the stored full value) alike
   // storms: periodic lightning flash (screen + a burst of light) with thunder delayed by "distance"
   if(storming && wetness>0.5){
     boltCd-=dt;
@@ -3599,7 +3600,7 @@ function updateDayNight(dt){
   const dir=_ddDir.set(sunX*0.7,Math.max(0.12,sunY),0.45).normalize();
   sun.position.set(player.x+dir.x*110,dir.y*110+8,player.z+dir.z*110);
   sun.target.position.set(player.x,0,player.z);sun.target.updateMatrixWorld();
-  sun.intensity=clamp(sunY,0,1)*1.25;   // stronger key light → clear directional shaping (AC's sunlit look)
+  setSunI(clamp(sunY,0,1)*1.25);   // stronger key light → clear directional shaping (AC's sunlit look) — #692: split across the two cascade lights
   sun.color.copy(_sunNoon).lerp(_sunWarm,clamp(1-sunY,0,1)*0.8);
   hemi.intensity=0.16+daylight*0.46;   // less flat sky-fill so the sun defines form + shadow
   amb.intensity=0.12+daylight*0.22;
@@ -3615,11 +3616,12 @@ function updateDayNight(dt){
     const S=acSkyAt(gameTime);
     _tmp.setRGB(S.fog[0]/255,S.fog[1]/255,S.fog[2]/255); scene.fog.color.lerp(_tmp,0.7);
     _tmp.setRGB(S.sun[0]/255,S.sun[1]/255,S.sun[2]/255); sun.color.lerp(_tmp,0.6);
-    sun.intensity=Math.max(sun.intensity*0.35, S.sunBright*1.5*clamp(sunY+0.12,0,1));
+    setSunI(Math.max((sun.userData.fI||0)*0.35, S.sunBright*1.5*clamp(sunY+0.12,0,1)));   // #692: read/write the FULL intensity, not the split half
     _tmp.setRGB(S.amb[0]/255,S.amb[1]/255,S.amb[2]/255); hemi.color.lerp(_tmp,0.45);
     amb.intensity=(amb.intensity+S.ambBright*0.5)/2;
     scene.fog.far=clamp(60+S.fogFar*(WSCALE/3),140,300);   // retail metres at true 1:1 (was /3 for the old 1/3 scale); capped at AC's ~300m draw
   }
+  syncSunFar();   // #692: far cascade mirrors the sun's final position/target/colour for this frame
   const _oc=clamp((cloudCover-0.5)/0.5,0,1);   // overcast factor: 0 below half-cover … 1 fully overcast/storm (1.0 only under a full storm)
   // #569: overcast/storm drives the fog toward a dark, saturated storm-grey. The blend has to be
   //   strong at full storm (_oc→1) so the grey actually WINS — otherwise the retail-sky fog above
@@ -3702,6 +3704,38 @@ function updateDayNight(dt){
     waterGlint.material.opacity=clamp(sunY*2,0,1)*0.7;waterGlint.material.color.copy(sunSprite?sunSprite.material.color:_sunNoon);}
 }
 
+// ── #692: second sun-shadow cascade — shadows past the 72m box ─────────────────────────────
+// `sun` keeps the crisp ±72m near box; `sunFar` is a same-direction, same-colour light with a
+// coarse ±192m box reaching the fog wall. The full sun intensity is SPLIT 55/45 between them
+// (summed lighting identical to one light), and each half is shadowed by its own map:
+//   · inside 72m both maps agree → full-depth shadows with the near map's crisp edges;
+//   · 72–192m only the far map covers → shadows at 45% depth, which reads as the natural
+//     aerial-perspective lightening of distant shade (the height fog pools there too).
+// This buys far shadows with ZERO shader surgery — no CSM chunk patching across the material
+// zoo — at the cost of that intentional distance fade. All writers go through setSunI() (the
+// full value lives in sun.userData.fI); position/colour mirror via syncSunFar() once per frame.
+let sunFar=null;
+const SHAD2={on:true,K:0.55};
+function initSunFar(){
+  sunFar=new THREE.DirectionalLight(0xffedc2,0);
+  sunFar.castShadow=true;
+  sunFar.shadow.mapSize.set(4096,4096);
+  sunFar.shadow.camera.near=10;sunFar.shadow.camera.far=460;
+  sunFar.shadow.camera.left=-192;sunFar.shadow.camera.right=192;
+  sunFar.shadow.camera.top=192;sunFar.shadow.camera.bottom=-192;
+  // biases scale with the ~2.7× coarser texels; radius a touch wider so the far penumbra stays soft
+  sunFar.shadow.bias=-0.0007;sunFar.shadow.normalBias=0.10;sunFar.shadow.radius=2.6;
+  sunFar.shadow.autoUpdate=false;   // pulsed at HALF the near cadence (distant shadows move slowly)
+  scene.add(sunFar);scene.add(sunFar.target);
+}
+function setSunI(v){ sun.userData.fI=v;
+  if(SHAD2.on&&sunFar&&sunFar.castShadow){ sun.intensity=v*SHAD2.K; sunFar.intensity=v*(1-SHAD2.K); }
+  else { sun.intensity=v; if(sunFar) sunFar.intensity=0; } }
+function syncSunFar(){ if(!sunFar) return;
+  sunFar.position.copy(sun.position);
+  sunFar.target.position.copy(sun.target.position); sunFar.target.updateMatrixWorld();
+  sunFar.color.copy(sun.color); }
+
 // ---- carried light: dungeons are pitch dark; the player needs a light source ----
 // a fire-imbued weapon flames, any magical weapon glows, otherwise a plain torch; nothing → near-blind.
 let playerLight=null;
@@ -3731,7 +3765,7 @@ function updateInstanceLight(){
       // from the arrival spot, so everything past a few metres fogged out to a flat fill and a new
       // arrival saw "nothing." Treat it as the open, welcoming hall it's built to be: warm stone-toned
       // fog that reaches clear across the room, and enough fill light that its surfaces read at once.
-      hemi.intensity=0.5; amb.intensity=0.3; sun.intensity=0;
+      hemi.intensity=0.5; amb.intensity=0.3; setSunI(0);
       // The Training Academy renders WITHOUT fog: it's a small, fully-enclosed tutorial instance
       // (everything is within ~55m) lit by torches + fill light, so a new arrival should see the whole
       // hall, courtyard, staff and exit at once. Keep the scene.fog object alive (other branches and
@@ -3739,7 +3773,7 @@ function updateInstanceLight(){
       // fogged. (Supersedes the earlier #464/#534 attempts to merely lighten/recede the fog.)
       scene.fog.near=4000; scene.fog.far=8000; scene.fog.color.setHex(0x4a4438);
     } else {
-      hemi.intensity=0.045; amb.intensity=0.05; sun.intensity=0;      // kill daylight inside
+      hemi.intensity=0.045; amb.intensity=0.05; setSunI(0);      // kill daylight inside (#692: both cascade halves)
       scene.fog.near=2.5; scene.fog.far=30; scene.fog.color.setHex(0x05060b); // can't see far in the dark
     }
     const ls=playerLightSource(); let inten=ls.intensity;
@@ -3748,7 +3782,7 @@ function updateInstanceLight(){
     playerLight.position.set(player.x,EYE+0.1,player.z); playerLight.visible=true;
   } else if(inNetwork){
     // the enclosed portal hall: no daylight — the portals (and the faint hub-orb) light it
-    hemi.intensity=0.05; amb.intensity=0.07; sun.intensity=0;
+    hemi.intensity=0.05; amb.intensity=0.07; setSunI(0);
     scene.fog.near=6; scene.fog.far=78; scene.fog.color.setHex(0x080610);
     if(playerLight.visible){ playerLight.visible=false; playerLight.intensity=0; }
   } else {
@@ -3870,6 +3904,7 @@ function initThree(){
   sun.shadow.camera.top=72;sun.shadow.camera.bottom=-72;
   sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.035;sun.shadow.radius=2.2;
   scene.add(sun);scene.add(sun.target);
+  initSunFar();   // #692: the far cascade rides alongside
   amb=new THREE.AmbientLight(0x404040,0.28);scene.add(amb);
   initLightPool();
 
@@ -4541,6 +4576,13 @@ function gfxTick(dt){
     GFX._sF=(GFX._sF||0)+1;
     if(GFX._sF>=GFX.shadowEvery){ GFX._sF=0; renderer.shadowMap.needsUpdate=true; }
   }
+  // #692: the far cascade re-rasters at HALF the near cadence — distant shadows crawl slowly, and
+  // its ±192m box re-draws more casters per pass. (Per-light shadow.needsUpdate is honoured inside
+  // the global shadow pass, so the flag simply waits for the next pass when one isn't due yet.)
+  if(typeof sunFar!=="undefined"&&sunFar&&sunFar.castShadow){
+    GFX._sF2=(GFX._sF2||0)+1;
+    if(GFX._sF2>=(GFX.shadowEvery<=1?2:GFX.shadowEvery*2)){ GFX._sF2=0; sunFar.shadow.needsUpdate=true; }
+  }
   WIND.uT.value+=dt*(0.75+(typeof windSpd==="number"?windSpd:8)*0.05);
   WIND.uS.value=clamp(0.45+(typeof windSpd==="number"?windSpd:8)*0.075,0.45,2.4);
   const t2=gameTime*Math.PI*2, sunY=-Math.cos(t2);
@@ -4637,6 +4679,14 @@ function applyGfxTier(t,quiet){
     const sz=[1024,1024,2048,4096][t];
     if(sun.shadow.mapSize.x!==sz){ sun.shadow.mapSize.set(sz,sz);
       if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; } }
+    // #692: far cascade on High/Ultra only; its ±192m map matches the near map's texel budget
+    SHAD2.on=t>=2;
+    if(sunFar){
+      sunFar.castShadow=SHAD2.on&&renderer.shadowMap.enabled;
+      if(sunFar.shadow.mapSize.x!==sz){ sunFar.shadow.mapSize.set(sz,sz);
+        if(sunFar.shadow.map){ sunFar.shadow.map.dispose(); sunFar.shadow.map=null; } }
+      if(!sunFar.castShadow) sunFar.intensity=0;   // the next setSunI restores the split when re-enabled
+    }
   }
   REFL.on=t>=2; REFL.rate=t>=3?3:6;
   GFX.shadowEvery=[0,3,2,1][t];   // Medium redraws the shadow map every 3rd frame, High every 2nd
