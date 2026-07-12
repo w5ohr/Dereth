@@ -24123,9 +24123,27 @@ function buildDock(sx,sz,wx,wz){
 }
 function buildHarbor(town,water){
   if(typeof buildDock!=="function") return;
-  let dx=water.x-town.x, dz=water.z-town.z; const dl=Math.hypot(dx,dz)||1; dx/=dl; dz/=dl;   // town → water
-  let sx=water.x, sz=water.z; for(let step=0;step<48;step++){ const tx=water.x-dx*step, tz=water.z-dz*step; if(terrainH(tx,tz)>=0.5){ sx=tx; sz=tz; break; } }  // dry shore point
-  const D=buildDock(sx,sz,water.x,water.z), G=D.group, M=dockMats();
+  // Aim the pier off the beach into the MOST OPEN, DEEP water: sweep rays from the town, and for each
+  // find where land first drops below the waterline, then score how far & deep the water runs beyond it.
+  let bestA=null,bestScore=-1,bestShore=0,bestRun=0;
+  for(let k=0;k<64;k++){ const a=k/64*Math.PI*2, dx=Math.cos(a), dz=Math.sin(a);
+    let shoreR=-1; for(let r=8;r<900;r+=6){ if(terrainH(town.x+dx*r,town.z+dz*r)<0){ shoreR=r; break; } }
+    if(shoreR<0) continue;
+    let run=0,deep=0; for(let r=shoreR;r<shoreR+170;r+=6){ const h=terrainH(town.x+dx*r,town.z+dz*r); if(h<0.1){ run+=6; deep+=Math.max(0,-h); } else break; }
+    if(run<12) continue;                                              // needs real open water, not a puddle
+    const score=run+deep*7-shoreR*0.04;                              // open + deep water beyond, near the town
+    if(score>bestScore){ bestScore=score; bestA={dx,dz}; bestShore=shoreR; bestRun=run; }
+  }
+  if(!bestA){ let dx=water.x-town.x, dz=water.z-town.z; const dl=Math.hypot(dx,dz)||1; bestA={dx:dx/dl,dz:dz/dl}; bestShore=dl; bestRun=24; }
+  const dx=bestA.dx, dz=bestA.dz;
+  // refine the exact waterline, then anchor the dock a few metres up the BEACH and run it OUT over the water
+  let shoreR=bestShore; for(let r=Math.max(0,bestShore-6);r<bestShore+6;r+=1){ if(terrainH(town.x+dx*r,town.z+dz*r)<0){ shoreR=r; break; } }
+  const outDist=Math.max(15,Math.min(26,bestRun-3));                 // how far the pier reaches over the water
+  const sx=town.x+dx*(shoreR-3), sz=town.z+dz*(shoreR-3);            // pier root on the beach, just above the waterline
+  const rootH=terrainH(sx,sz);
+  if(rootH>3.5) return false;                                        // steep/cliff shore (e.g. a crater-rim town) — no beach to build a dock on
+  const wx=town.x+dx*(shoreR+outDist), wz=town.z+dz*(shoreR+outDist);// pier head, well out over open water
+  const D=buildDock(sx,sz,wx,wz), G=D.group, M=dockMats();
   registerStructure(D.baseX,D.baseZ,D.yaw,D.deckY,{platforms:[{x0:-D.width/2,x1:D.width/2,z0:0,z1:D.len,y:0}]});   // walk the pier
   // a local placer: world groundY under a local (lx,lz), added to the (rotated) group at local y=that height
   const placeShore=(mesh,lx,lz,ry)=>{ const [wxp,wzp]=D.toWorld(lx,lz); mesh.position.set(lx,groundY(wxp,wzp),lz); if(ry!=null)mesh.rotation.y=ry; G.add(mesh); obstacles.push({x:wxp,z:wzp,r:0.6}); };
@@ -24157,6 +24175,7 @@ function buildHarbor(town,water){
   // DOCKMASTER (boat deeds) + SHIPPING MERCHANT (transport, cargo, stores) flanking the pier head
   const [mx,mz]=D.toWorld(-1.1,-1.5); addMerchant(mx,mz,"shipwright","Dockmaster",shipDeedStock());
   const [sx2,sz2]=D.toWorld(1.5,-1.7); addMerchant(sx2,sz2,"shipping","Shipping Merchant",shippingStock());
+  return true;
 }
 function buildHarbors(){
   if(typeof addMerchant!=="function"||typeof CITIES==="undefined"||!CITIES.length) return;
@@ -24164,9 +24183,9 @@ function buildHarbors(){
   const cand=[];
   for(const c of CITIES){ const dc=Math.hypot(c.x,c.z); if(dc>17000) continue; const w=findWater(c.x,c.z,1.0,900); if(w) cand.push({c,w,wd:Math.hypot(w.x-c.x,w.z-c.z)}); }
   cand.sort((a,b)=>a.wd-b.wd);
-  const chosen=cand.slice(0,8);
-  if(!chosen.length){ seatShipwright(); return; }   // no central lake town found → fall back to the single dockmaster
-  for(const h of chosen){ try{ buildHarbor(h.c,h.w); }catch(e){ console.error("harbor build failed:",h.c.name,e); } }
+  let built=0;
+  for(const h of cand){ if(built>=8) break; try{ if(buildHarbor(h.c,h.w)) built++; }catch(e){ console.error("harbor build failed:",h.c.name,e); } }  // skip cliff shores, keep trying until 8 real beach docks
+  if(!built) seatShipwright();   // nothing worked → fall back to the single shore dockmaster
 }
 function seatShipwright(){
   if(typeof addMerchant!=="function"||typeof CITIES==="undefined"||!CITIES.length) return;
