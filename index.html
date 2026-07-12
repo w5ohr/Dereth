@@ -7287,6 +7287,16 @@ function _plantGeos(){
   _plantGeoCache=cache; return cache;
 }
 const PLANT_SPECIES=[{k:"fern",w:18},{k:"daisy",w:24},{k:"poppy",w:14},{k:"cornflower",w:16},{k:"wheat",w:28}];
+// each wild plant can be PICKED (E) in the field for a reagent that brews into a matching armour dye pot.
+const PLANT_PICK={
+  poppy:     {item:"Red Poppy",   dye:"Relanim Dye Pot",  hex:0xa02a2a, ico:"🌺"},
+  cornflower:{item:"Cornflower",  dye:"Colban Dye Pot",   hex:0x2a4a9a, ico:"🌸"},
+  daisy:     {item:"Oxeye Daisy", dye:"Argenory Dye Pot", hex:0xd8d8d0, ico:"🌼"},
+  fern:      {item:"Fern Frond",  dye:"Verdalim Dye Pot", hex:0x2a7a3a, ico:"🌿"},
+  wheat:     {item:"Wild Wheat",  dye:"Berimphur Dye Pot",hex:0xd0a02a, ico:"🌾"},
+};
+let _plantSpots=[];              // {x,z,key,species} of the plants currently on-screen — for E-pick detection
+const _pickedPlants=new Map();   // cellKey → readyAt: a picked plant vanishes and regrows after a cooldown
 function buildPlants(){
   if(plantPools){ for(const k in plantPools){ scene.remove(plantPools[k]); } plantPools=null; }
   const tier=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2, cfg=GRASS_CFG[tier]||GRASS_CFG[2];
@@ -7306,8 +7316,9 @@ function buildPlants(){
 const _pTmp=new THREE.Object3D();
 function refreshPlantsField(px,pz,R,nogo,nn){
   if(!plantPools) return;
+  _plantSpots.length=0;
   if(inDungeon||inNetwork){ for(const k in plantPools){ if(plantPools[k].count){ plantPools[k].count=0; plantPools[k].instanceMatrix.needsUpdate=true; } } return; }
-  const PC=4.4, R2=R*R, rad=Math.ceil(R/PC), cx0=Math.round(px/PC), cz0=Math.round(pz/PC);
+  const PC=4.4, R2=R*R, rad=Math.ceil(R/PC), cx0=Math.round(px/PC), cz0=Math.round(pz/PC), _now=now();
   const cnt={}; for(const sp of PLANT_SPECIES) cnt[sp.k]=0;
   const totW=PLANT_SPECIES.reduce((a,s)=>a+s.w,0);
   for(let gz=-rad; gz<=rad; gz++) for(let gx=-rad; gx<=rad; gx++){
@@ -7318,6 +7329,8 @@ function refreshPlantsField(px,pz,R,nogo,nn){
     if(!grassOK(wx,wz)) continue;                                 // ONLY in the grass fields
     let inBld=false; for(let bi=0;bi<nn;bi++){ const st=nogo[bi], bdx=wx-st.bx, bdz=wz-st.bz; if(bdx*bdx+bdz*bdz<=st.r2){ inBld=true; break; } }
     if(inBld) continue;
+    const cellKey=ci*100003+cj, picked=_pickedPlants.get(cellKey);   // a freshly-picked cell stays bare until it regrows
+    if(picked!=null){ if(_now<picked) continue; else _pickedPlants.delete(cellKey); }
     const hs2=(Math.imul(hsh,2654435761)>>>0);                    // remixed hash — decorrelate species from the placement bits
     let pick=(hs2>>>8)%totW, key=PLANT_SPECIES[0].k;              // weighted species choice
     for(const sp of PLANT_SPECIES){ if(pick<sp.w){ key=sp.k; break; } pick-=sp.w; }
@@ -7327,8 +7340,20 @@ function refreshPlantsField(px,pz,R,nogo,nn){
     _pTmp.rotation.set(0,((hsh>>>4)&255)/255*6.283,0);
     _pTmp.scale.set(s,s,s); _pTmp.updateMatrix();
     pool.setMatrixAt(cnt[key]++,_pTmp.matrix);
+    if(PLANT_PICK[key]) _plantSpots.push({x:wx,z:wz,key:cellKey,species:key});   // pickable
   }
   for(const sp of PLANT_SPECIES){ const pool=plantPools[sp.k]; pool.count=cnt[sp.k]; pool.instanceMatrix.needsUpdate=true; }
+}
+function pickPlant(sp){
+  const pk=PLANT_PICK[sp.species]; if(!pk) return;
+  const it={name:pk.item,stat:"plant",dye:pk.dye,hex:pk.hex,ico:pk.ico,v:6,count:1};
+  if(!addToInv(it)){ log(`Your satchel is too full to pick the <b>${pk.item}</b>.`,"warn"); if(SFX.hit)SFX.hit(); return; }
+  startAction("gather",1.0);
+  _pickedPlants.set(sp.key, now()+rnd(50000,80000));            // regrows in ~1 minute
+  if(typeof floater==="function") floater(player.x,EYE+0.4,player.z,"+ "+pk.item,"#c0e070");
+  log(`You pick a <b>${pk.item}</b> — brew it into a <b>${pk.dye}</b> at a crafting station (Alchemy, key T).`,"loot");
+  if(SFX.gold)SFX.gold(); if(typeof gainXP==="function")gainXP(12); if(typeof questEvent==="function")questEvent("gather","harvest");
+  if(typeof refreshGrassField==="function") refreshGrassField(true);   // clear the picked plant now
 }
 // ── instanced forests: the hand-placed scenery (~1900 groups) left the wilds feeling empty.
 // Each species is ONE merged vertex-colored geometry drawn as ONE InstancedMesh (a whole
@@ -15356,6 +15381,9 @@ function addToInv(it, force){   // → true if added/stacked, false if the satch
   player.inv.push(it); return true;
 }
 function takeFromInv(i){ const it=player.inv[i]; if(!it) return; if(stackable(it)&&(it.count||1)>1) it.count--; else player.inv.splice(i,1); }
+function invCountOf(name){ let n=0; for(const it of player.inv) if(it&&it.name===name) n+=(it.count||1); return n; }
+function removeItemsByName(name,n){ for(let i=player.inv.length-1;i>=0&&n>0;i--){ const it=player.inv[i]; if(!it||it.name!==name) continue;
+  const c=it.count||1; if(c<=n){ n-=c; player.inv.splice(i,1); } else { it.count=c-n; n=0; } } return n<=0; }
 function namedItemFrom(t){   // instantiate a NAMED_ITEMS / RARE_ITEMS template into a real item
   const it={name:t.name,stat:t.stat,v:t.v?irnd(t.v[0],t.v[1]):0,mat:t.mat,work:irnd(8,10),tier:5,legendary:true,affix:t.affix?t.affix():null};
   if(t.wt) it.wt=t.wt; if(t.at) it.at=t.at; if(t.aslot) it.aslot=t.aslot;
@@ -16380,6 +16408,7 @@ function applyItem(it){
   else if(it.stat==="ticket"){ log(`<b>${it.name}</b> — present it at the <b>Colosseum</b> gate (11.3S 37.6E) to enter the arena gauntlet.`,"sys"); return "keep"; }
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
   else if(it.stat==="dye"){ return openDyePicker(it); }             // AC dye pots recolor a worn piece
+  else if(it.stat==="plant"){ log(`A <b>${it.name}</b> — a dye reagent. Crush 2 of them into a <b>${it.dye||"dye pot"}</b> at a crafting station (Tinkering panel, key T · Alchemy).`,"sys"); return "keep"; }
   else if(it.stat==="salvage"){                                      // a bag of salvaged material → pours into your materials
     player.salvage=player.salvage||{}; const mat=it.mat||"Steel", u=it.units||100, w=it.work||10;
     const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
@@ -16589,6 +16618,11 @@ const RECIPES=[
   ...DYE_POTS.map(d=>({ id:"dye_"+d.name.split(" ")[0].toLowerCase(), skill:"alchemy", name:d.name, cost:10, ico:"🎨",
     out:()=>({name:d.name,stat:"dye",hex:d.hex,v:85}),
     blurb:"an armour dye pot (<span style=\"color:#"+d.hex.toString(16).padStart(6,'0')+"\">■</span> — Use it, then pick the piece)" })),
+  // WILD-PLANT dyes: crush 2 of a picked field flower into its matching dye pot (cheaper than the plain pots)
+  ...Object.keys(PLANT_PICK).map(k=>{ const pk=PLANT_PICK[k]; return {
+    id:"pdye_"+k, skill:"alchemy", name:pk.dye, cost:3, ing:pk.item, ingN:2, ico:pk.ico,
+    out:()=>({name:pk.dye,stat:"dye",hex:pk.hex,v:85}),
+    blurb:"crush 2 "+pk.item+" (picked in the fields) into a dye pot (<span style=\"color:#"+pk.hex.toString(16).padStart(6,'0')+"\">■</span>)" }; }),
 ];
 const RECIPE_BY_ID={}; for(const r of RECIPES) RECIPE_BY_ID[r.id]=r;
 function craftChance(skill){ const st=skillTier(skill); if(st<1) return 0; return clamp(0.55+skillRank(skill)*0.003+(st>1?0.1:0),0.4,0.97); } // trained scales w/ rank, spec +10%
@@ -16615,8 +16649,11 @@ function craftL8Scroll(){
 function craftRecipe(id){
   const r=RECIPE_BY_ID[id]; if(!r) return false;
   if(skillTier(r.skill)<1){ log(`You must train <b>${SKILL_BY_KEY[r.skill].n}</b> to craft ${r.name} (sheet: C).`,"warn"); if(SFX.hit)SFX.hit(); return false; }
+  const ingN=r.ingN||1;
+  if(r.ing && invCountOf(r.ing)<ingN){ log(`You need <b>${ingN}× ${r.ing}</b> to brew <b>${r.name}</b> — pick them (E) in the grass fields.`,"warn"); if(SFX.hit)SFX.hit(); return false; }
   if(player.materials<r.cost){ log(`Not enough materials for <b>${r.name}</b> (need ${r.cost}, have ${player.materials}). Salvage loot to gather more.`,"warn"); if(SFX.hit)SFX.hit(); return false; }
   player.materials-=r.cost;
+  if(r.ing) removeItemsByName(r.ing,ingN);   // crush the picked plants into the pot
   if(Math.random()<craftChance(r.skill)){
     const it=r.out();
     if(!addToInv(it)){ log(`Your satchel is too full to hold the <b>${r.name}</b>.`,"warn"); player.materials+=r.cost; return false; }
@@ -17937,6 +17974,7 @@ function currentPrompt(){
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ const t=ne.e.def.tier; return "Descend into "+ne.e.def.name+(t?" — Tier "+t+", ~Lv "+t*10:"")+" (E)"; }}
   for(const tp of tnPortals) if(nr(tp.x,tp.z)<3.2) return "Enter the Town Network (E)";
   for(const n of nodes) if(!n.depleted&&nr(n.x,n.z)<3) return n.type==="ore"?"Mine ore (E)":"Gather herbs (E)";
+  for(const sp of _plantSpots) if(nr(sp.x,sp.z)<2.6){ const pk=PLANT_PICK[sp.species]; return "Pick "+(pk?pk.item:"plant")+" (E)"; }
   for(const pt of portals) if(nr(pt.x,pt.z)<3.2) return "Portal to "+pt.dest.name+" (E)";
   for(const ls of lifestones) if(nr(ls.x,ls.z)<5) return ls.bound?ls.name+" — bound":"Bind to "+ls.name+" (E)";
   return "";
@@ -18101,6 +18139,7 @@ function interact(){
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
   for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<3){ gatherNode(n); return; } }
+  { let bp=null,bd=2.6*2.6; for(const sp of _plantSpots){ const dx=sp.x-player.x,dz=sp.z-player.z,d=dx*dx+dz*dz; if(d<bd){bd=d;bp=sp;} } if(bp){ pickPlant(bp); return; } }   // pick a wild plant for dye-making
   for(const pt of portals){
     if(Math.hypot(pt.x-player.x,pt.z-player.z)<3.2){
       log(`You step into the portal…`,"sys");
@@ -23794,7 +23833,7 @@ function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
 function gearIco(it){
   if(it&&it.acicon) return `<img src="assets/acicons/${it.acicon}.png" style="width:1.25em;height:1.25em;vertical-align:-0.28em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('📦'))">`;   // the item's ORIGINAL inventory icon
-  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="aetheria"?"🧿":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="aetheria"?"🧿":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":it.stat==="plant"?(it.ico||"🌿"):(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ let p;
@@ -31077,7 +31116,7 @@ function buildTinker(){
       rows.appendChild(row); return;
     }
     const base=it.cape?`<span style="color:#9ab0ff">legendary cape · back slot · +${it.magicDef||0} Magic Defense · +${it.elemProt||0} protection vs all elements</span>`:
-    it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · ${Math.round(it.stored!=null?it.stored:(it.charge||0))}/${it.cap||300} stored · Use: release into gear · draw from your mana · consume an enchanted item</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    it.stat==="plant"?`<span style="color:#a8d878">dye plant · crush 2 into a ${it.dye||"dye pot"} (Alchemy)</span>`:it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · ${Math.round(it.stored!=null?it.stored:(it.charge||0))}/${it.cap||300} stored · Use: release into gear · draw from your mana · consume an enchanted item</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const spellsHTML=(()=>{ if(it.stat!=="weapon"&&it.stat!=="worn") return "";
       let h=""; if(it.cantrips&&it.cantrips.length) h+=` · <span style="color:#c9a6ff">${it.cantrips.map(c=>c.name).join(", ")}</span>`;
       const sn=itemSpellNames(it); if(sn.length){ const dormant=it.itemMana!=null&&it.itemMana<=0;
