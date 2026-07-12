@@ -24365,6 +24365,9 @@ function buildHorseMesh(tk,packs){
     const bm=coat.clone(); bm.normalMap=lumNormalTex(horseMuscleTex(),2.4);
     bm.normalScale=new THREE.Vector2(0.7,0.7); return bm; })());
   g.add(body);
+  for(const e2 of[-1,1]){                                            // PHOTO-STUDY: the neck-into-shoulder groove
+    const shg=new THREE.Mesh(new THREE.SphereGeometry(0.09,8,7),coat);
+    shg.scale.set(0.4,1.5,0.7); shg.position.set(e2*0.135,1.34,0.5); shg.rotation.x=-0.5; g.add(shg); }
   // pectoral breast between the forelegs and round APPLE quarters over the hips — large,
   // barely-proud volumes that melt into the main skin
   const withersRidge=new THREE.Mesh(new THREE.SphereGeometry(0.11,9,7),coat);   // ANATOMY PASS 7: the withers
@@ -24388,7 +24391,7 @@ function buildHorseMesh(tk,packs){
     const buttock=new THREE.Mesh(new THREE.SphereGeometry(0.15,10,8),coat);     // level), meeting at a centre cleft
     buttock.scale.set(0.7,1.2,0.7); buttock.position.set(e2*0.08,1.0,-0.92); g.add(buttock); }   // buttock drops vertical behind
   // ── the head: its own small loft (pivots at the poll for the gait pendulum) ──
-  const head=new THREE.Group(); head.position.set(0,2.02,1.20); head.rotation.x=0.5;   // ANATOMY PASS 25: poll ~level with withers
+  const head=new THREE.Group(); head.position.set(0,2.03,1.19); head.rotation.x=0.5; head.scale.setScalar(0.94);   // PHOTO-STUDY: refined head, poll ~level with withers
   const throat=new THREE.Mesh(new THREE.SphereGeometry(0.085,9,7),coat);            // clean head-neck junction — the
   throat.scale.set(0.7,1.1,0.9); throat.position.set(0,1.74,0.94); g.add(throat);   // jaw flows into the neck, no hollow
   // #744: the head is a WEDGE — a straight declining topline (forehead → nasal → muzzle) over a
@@ -24402,8 +24405,10 @@ function buildHorseMesh(tk,packs){
     y:(headTop[i]+headBot[i])/2, z, w:headW[i], h:(headTop[i]-headBot[i])/2 })),12,1),coat);
   head.add(skull);
   const chin=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,6),coat); chin.scale.set(0.8,0.7,1.05); chin.position.set(0,-0.068,0.415); head.add(chin);
-  const upperLip=new THREE.Mesh(new THREE.SphereGeometry(0.034,8,6),coat);               // PASS 3: the mobile upper lip
-  upperLip.scale.set(0.95,0.62,0.85); upperLip.position.set(0,-0.028,0.502); head.add(upperLip);   // overhangs the lower
+  const muzzle=new THREE.Mesh(new THREE.SphereGeometry(0.062,10,8),coat);               // PHOTO-STUDY: soft ROUND muzzle box
+  muzzle.scale.set(0.92,0.85,0.7); muzzle.position.set(0,-0.02,0.47); head.add(muzzle);
+  const upperLip=new THREE.Mesh(new THREE.SphereGeometry(0.034,8,6),coat);               // the mobile upper lip
+  upperLip.scale.set(0.95,0.62,0.85); upperLip.position.set(0,-0.03,0.505); head.add(upperLip);
   const jowl=new THREE.Mesh(new THREE.SphereGeometry(0.085,10,8),coat);                 // central jaw mass
   jowl.scale.set(0.8,0.95,1.05); jowl.position.set(0,-0.06,0.0); head.add(jowl);
   for(const e2 of[-1,1]){
@@ -24434,29 +24439,69 @@ function buildHorseMesh(tk,packs){
     lash.position.set(e2*0.104,0.098,0.062); lash.rotation.z=e2*0.5; head.add(lash);   // upper lid only
     const socket=new THREE.Mesh(new THREE.SphereGeometry(0.036,7,6),coat);
     socket.scale.set(0.9,0.8,1.1); socket.position.set(e2*0.085,0.07,0.06); head.add(socket);
-    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.046,0.18*(T.ears||1),7),coat);   // ANATOMY PASS 1: wide-based
-    ear.scale.z=0.58; ear.position.set(e2*0.058,0.168,-0.092);                          // flattened funnel, nearly
-    ear.rotation.z=e2*0.13; ear.rotation.x=-0.15; ear.rotation.y=e2*0.35; head.add(ear);// upright, tips a touch IN
+    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.048,0.155*(T.ears||1),7),coat);  // PHOTO-STUDY: neat medium ear,
+    ear.scale.z=0.55; ear.position.set(e2*0.058,0.16,-0.088);                           // wide base, tip carried a
+    ear.rotation.z=e2*0.18; ear.rotation.x=-0.12; ear.rotation.y=e2*0.32; head.add(ear);// touch inward
     const earIn=new THREE.Mesh(new THREE.ConeGeometry(0.022,0.085*(T.ears||1),5),dark); // shadowed inner funnel
     earIn.scale.z=0.5; earIn.position.set(e2*0.057,0.146,-0.082);
     earIn.rotation.z=e2*0.13; earIn.rotation.x=-0.15; earIn.rotation.y=e2*0.35; head.add(earIn);
     (g.userData.ears=g.userData.ears||[]).push(ear,earIn);                              // PASS 10 hooks flicks here
-    const cheek=new THREE.Mesh(new THREE.SphereGeometry(0.05,7,6),coat);                // PASS 7: masseter ridge
-    cheek.scale.set(0.5,1.15,1.35); cheek.position.set(e2*0.062,-0.035,0.03); head.add(cheek);
+    const cheek=new THREE.Mesh(new THREE.SphereGeometry(0.048,8,7),coat);               // PHOTO-STUDY: subtle masseter,
+    cheek.scale.set(0.55,1.0,1.15); cheek.position.set(e2*0.06,-0.03,0.05); head.add(cheek);   // no dark hollow
     const glint=new THREE.Mesh(new THREE.SphereGeometry(0.008,5,4),new THREE.MeshBasicMaterial({color:0xffffff}));
     glint.position.set(e2*0.112,0.082,0.075); head.add(glint);                          // #742: the live-eye glint
-    const strap=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.15,0.012),tack);
-    strap.position.set(e2*0.095,-0.01,0.14); strap.rotation.x=0.5; head.add(strap);
   }
   const mouth=new THREE.Mesh(new THREE.BoxGeometry(0.074,0.007,0.05),dark);            // PASS 7: the lip crease
   mouth.position.set(0,-0.052,0.455); head.add(mouth);
-  const nose=new THREE.Mesh(new THREE.TorusGeometry(0.064,0.008,5,12),tack);            // the noseband hugs the muzzle
-  nose.rotation.x=Math.PI/2-0.1; nose.position.set(0,-0.018,0.355); head.add(nose);
+  // ══ BRIDLE (photo-study: crownpiece, browband, cheekpieces, cavesson noseband, throatlatch, bit,
+  //    reins). Built in HEAD-LOCAL space so it flexes with the head. ══
+  const bridleM=new THREE.MeshStandardMaterial({color:0x2c1a0e,roughness:0.55,metalness:0.05});  // PHOTO-STUDY: fine dark oiled leather
+  const buckleM=new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.85});   // steel
+  const strapBox=(w,h,d)=>new THREE.BoxGeometry(w,h,d);
+  // BRIDLE PASS 1-2: NOSEBAND (cavesson) — a band encircling the muzzle above the bit
+  const nose=new THREE.Mesh(new THREE.TorusGeometry(0.068,0.009,6,18),bridleM);       // BRIDLE PASS 13: tighter cavesson
+  nose.rotation.x=Math.PI/2-0.08; nose.scale.set(1,0.82,1); nose.position.set(0,-0.008,0.35); head.add(nose);
+  // BRIDLE PASS 3-4: BROWBAND across the forehead, just below the ears
+  const brow=new THREE.Mesh(strapBox(0.2,0.02,0.013),bridleM);
+  brow.position.set(0,0.11,-0.02); brow.rotation.x=-0.25; head.add(brow);
+  const browTrim=new THREE.Mesh(strapBox(0.19,0.008,0.006),                            // BRIDLE PASS 17: coloured trim
+    new THREE.MeshStandardMaterial({color:0x7a1e1e,roughness:0.7})); browTrim.position.set(0,0.115,-0.006); browTrim.rotation.x=-0.25; head.add(browTrim);
+  // BRIDLE PASS 5: CROWNPIECE over the poll behind the ears (ties the browband ends over the head)
+  const crown=new THREE.Mesh(strapBox(0.19,0.016,0.03),bridleM);
+  crown.position.set(0,0.135,-0.075); crown.rotation.x=0.4; head.add(crown);
+  for(const e2 of[-1,1]){
+    // BRIDLE PASS 6-7: CHEEKPIECE runs from the crownpiece down the face to the bit ring
+    const cheekCur=new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(e2*0.095,0.13,-0.05), new THREE.Vector3(e2*0.11,0.03,0.2),
+      new THREE.Vector3(e2*0.098,-0.05,0.44));
+    const cp=new THREE.Mesh(new THREE.TubeGeometry(cheekCur,10,0.01,5),bridleM); head.add(cp);
+    // BRIDLE PASS 8: a small buckle where the cheekpiece meets the noseband
+    const bk=new THREE.Mesh(strapBox(0.02,0.02,0.01),buckleM); bk.position.set(e2*0.104,0.0,0.28); head.add(bk);
+    // BRIDLE PASS 9: NOSEBAND cheek-strap up to the crownpiece (the cavesson hangs from its own strap)
+    const nb=new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(e2*0.09,0.12,-0.02), new THREE.Vector3(e2*0.1,0.05,0.16),
+      new THREE.Vector3(e2*0.075,-0.01,0.33)),8,0.007,5),bridleM); head.add(nb);
+  }
+  // BRIDLE PASS 10: THROATLATCH — loops under the jaw from behind the ears
+  const throatL=new THREE.Mesh(new THREE.TorusGeometry(0.12,0.008,6,16,Math.PI*1.15),bridleM);
+  throatL.rotation.set(0.1,0,Math.PI*0.42); throatL.position.set(0,0.0,-0.02); head.add(throatL);
+  const tlBuckle=new THREE.Mesh(strapBox(0.016,0.024,0.01),buckleM);                   // BRIDLE PASS 18: throatlatch buckle
+  tlBuckle.position.set(-0.11,-0.02,0.02); head.add(tlBuckle);
+  for(const e2 of[-1,1]){ const cpBuckle=new THREE.Mesh(strapBox(0.018,0.022,0.01),buckleM);   // PASS 19: cheek buckles
+    cpBuckle.position.set(e2*0.108,0.06,0.06); head.add(cpBuckle); }
+  // BRIDLE PASS 11: the BIT — a bar across the mouth corners with a ring showing each side
+  const bitBar=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.19,8),buckleM);
+  bitBar.rotation.z=Math.PI/2; bitBar.position.set(0,-0.055,0.44); head.add(bitBar);
+  for(const e2 of[-1,1]){ const ring=new THREE.Mesh(new THREE.TorusGeometry(0.028,0.006,6,14),buckleM);
+    ring.position.set(e2*0.095,-0.055,0.44); ring.rotation.y=Math.PI/2; head.add(ring); }
   g.add(head); g.userData.head=head;
-  // reins
+  // BRIDLE PASS 12: REINS from the bit rings back along the neck to the rider's hands
   for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(e2*0.07,1.82,1.52),new THREE.Vector3(e2*0.13,1.72,0.95),new THREE.Vector3(e2*0.11,1.60,0.38));   // from the BIT at the mouth corner, resting along the neck
-    const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,8,0.011,5),tack); g.add(rein); }
+      new THREE.Vector3(e2*0.1,1.79,1.52), new THREE.Vector3(e2*0.14,1.66,0.95),
+      new THREE.Vector3(e2*0.12,1.55,0.35));
+    const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,10,0.012,5),bridleM); g.add(rein);
+    const keeper=new THREE.Mesh(new THREE.TorusGeometry(0.02,0.006,6,12),bridleM);      // BRIDLE PASS 20: rein keeper loop
+    keeper.position.set(e2*0.115,1.72,1.05); keeper.rotation.y=Math.PI/2; g.add(keeper); }
   // 100-pass: the MANE is HAIR — cards pivot at their TOP EDGE on the crest line and hang
   // VERTICALLY (hair obeys gravity), draping down the right side of the neck. A vertical curtain
   // off a diagonal crest steps naturally, like a combed mane.
@@ -24466,20 +24511,19 @@ function buildHorseMesh(tk,packs){
     const hang=(w,len)=>{ const geo=new THREE.PlaneGeometry(w,len); geo.translate(0,-len/2,0); return geo; };
     // ANATOMY PASS 21: mane grows crest poll->withers, but a short BRIDLE PATH is clipped behind
     // the ears (first station dropped) so the crownpiece sits flat
-    const crest=[[1.99,1.01],[1.89,0.90],[1.78,0.80],[1.66,0.70],[1.54,0.61],[1.44,0.545]];
+    // PHOTO-STUDY: the mane is a CONTINUOUS falling curtain lying flat on the near side of the neck,
+    // longest through the mid-neck, tapering at poll and withers. Dense overlapping cards, no gaps.
+    const crest=[[2.0,1.02],[1.92,0.94],[1.83,0.86],[1.74,0.78],[1.64,0.70],[1.55,0.63],[1.46,0.565],[1.39,0.52]];
     crest.forEach(([cy,cz],ci)=>{
-      const len=0.23+((ci*7)%3)*0.03+(ci>1&&ci<5?0.03:0);            // longest mid-neck, never past the throat
-      const card=new THREE.Mesh(hang(0.19,len),maneMat);            // wide cards OVERLAP — no comb gaps
-      card.position.set(0.05,cy+0.03,cz);
-      card.rotation.y=Math.PI/2+(((ci*5)%3)-1)*0.08;                 // flat to the neck side, scattered
-      card.rotation.z=-0.10-((ci*3)%2)*0.05;                         // bottoms drift a whisper outboard
-      g.add(card);
-      const card2=new THREE.Mesh(hang(0.17,len*0.85),maneMat);       // second ragged layer
-      card2.position.set(0.082,cy+0.02,cz-0.05);
-      card2.rotation.y=Math.PI/2-0.1; card2.rotation.z=-0.2; g.add(card2);
-      const card3=new THREE.Mesh(hang(0.15,len*0.9),maneMat);        // third fills the between-card seams
-      card3.position.set(0.065,cy+0.025,cz+0.04);
-      card3.rotation.y=Math.PI/2+0.12; card3.rotation.z=-0.14; g.add(card3);
+      const t=ci/(crest.length-1);
+      const len=0.20+Math.sin(t*Math.PI)*0.14;                       // longest mid-neck (sine bulge)
+      for(let layer=0;layer<3;layer++){                              // three overlapping layers = a solid fall
+        const card=new THREE.Mesh(hang(0.15,len*(1-layer*0.08)),maneMat);
+        card.position.set(0.045+layer*0.028,cy+0.02,cz-0.02+layer*0.03);
+        card.rotation.y=Math.PI/2+(layer-1)*0.06;                    // near-flat against the neck side
+        card.rotation.z=-0.16-layer*0.06;                            // hangs DOWN the side, tips drift out
+        g.add(card);
+      }
     });
     const fore=new THREE.Mesh(hang(0.10,0.30),maneMat);              // the forelock LIES ALONG the nasal
     fore.position.set(0.012,2.13,1.31); fore.rotation.x=0.88; g.add(fore);   // line between the eyes
@@ -24497,23 +24541,23 @@ function buildHorseMesh(tk,packs){
     const leg=new THREE.Group(); leg.position.set(lx,front?1.14:1.24,lz);
     let hockY;
     if(front){
-      const fair=new THREE.Mesh(new THREE.CylinderGeometry(0.105,0.078,0.34,9),legCoat);  // shoulder muscle into the chest
-      fair.position.y=0.02; leg.add(fair);
-      const forearm=new THREE.Mesh(new THREE.CylinderGeometry(0.068,0.05,0.5,9),legCoat);  // top NESTS inside the fairing — no cap rims from above
-      forearm.position.y=-0.28; leg.add(forearm);
+      const fair=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.085,0.36,9),legCoat);  // PHOTO-STUDY: broad muscular
+      fair.position.y=0.03; leg.add(fair);                                                // forearm...
+      const forearm=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.045,0.5,9),legCoat);// ...tapering SHARPLY to a
+      forearm.position.y=-0.28; leg.add(forearm);                                         // fine cannon below the knee
       const carpus=new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6),legCoat);   // ANATOMY PASS 10: the knee is
       carpus.scale.set(1.15,0.9,0.95); carpus.position.y=-0.54; leg.add(carpus);   // a FLAT WIDE knob (broad
       const carpusFront=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.07,0.04),legCoat);   // tendon-attachment face)
       carpusFront.position.set(0,-0.54,0.05); leg.add(carpusFront);
       hockY=-0.54;
     } else {
-      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.09,0.36,9),legCoat);   // femur: forward-down
+      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.10,0.38,9),legCoat);   // PHOTO-STUDY: powerful thigh
       thigh.rotation.x=-0.42; thigh.position.set(0,-0.15,0.055); leg.add(thigh);
       const stifle=new THREE.Mesh(new THREE.SphereGeometry(0.082,8,6),legCoat);         // ANATOMY PASS 15: the stifle
       stifle.scale.set(0.95,1.05,1.0); stifle.position.set(0,-0.30,0.135); leg.add(stifle);   // sits high and FORWARD
       const flankFold=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,7),legCoat);       // ANATOMY PASS 19: the stifle
       flankFold.scale.set(0.55,1.3,0.9); flankFold.position.set(0,-0.06,0.16); leg.add(flankFold);   // fold fills the flank
-      const gaskin=new THREE.Mesh(new THREE.CylinderGeometry(0.086,0.05,0.44,9),legCoat);  // the GASKIN (2nd thigh) is a
+      const gaskin=new THREE.Mesh(new THREE.CylinderGeometry(0.098,0.046,0.44,9),legCoat); // PHOTO-STUDY: heavy gaskin,
       // broad muscle — wide at the top, tapering to the hock
       gaskin.rotation.x=0.46; gaskin.position.set(0,-0.5,0.015); leg.add(gaskin);
       const hock=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,6),legCoat);
@@ -24536,8 +24580,8 @@ function buildHorseMesh(tk,packs){
     const horn=new THREE.MeshStandardMaterial({color:0x241a10,roughness:0.45,metalness:0.05});
     const coronet=new THREE.Mesh(new THREE.CylinderGeometry(0.048,0.062,0.02,10),points);         // coronet band —
     coronet.scale.z=1.1; coronet.position.set(0,-cLen-0.095,0.048); knee.add(coronet);            // hoof grows from it
-    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.085,0.088,10),horn);  // wall angle CONTINUES the
-    hoof.scale.z=1.16; hoof.position.set(0,-cLen-0.14,0.055); hoof.rotation.x=pAng*0.5; knee.add(hoof);   // pastern line
+    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.066,0.092,0.092,12),horn);  // PHOTO-STUDY: solid round hoof,
+    hoof.scale.z=1.14; hoof.position.set(0,-cLen-0.142,0.052); hoof.rotation.x=pAng*0.5; knee.add(hoof);  // wall continues the pastern
     const heel=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.05,0.05),horn);             // the heel bulbs at the back
     heel.position.set(0,-cLen-0.125,0.006); knee.add(heel);
     const horn2=new THREE.MeshStandardMaterial({color:0x3a2c1c,roughness:0.7});      // ANATOMY PASS 20: leathery callosity
@@ -24558,9 +24602,9 @@ function buildHorseMesh(tk,packs){
     side:THREE.DoubleSide,roughness:0.9});
   const dock=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.022,0.26,7),dark);   // thicker fleshy dock
   dock.rotation.x=0.5; dock.position.set(0,-0.10,-0.06); tail.add(dock);            // arcs out then hangs
-  for(let i=0;i<9;i++){                                             // the fall: cards ring the dock
-    const a=i/9*Math.PI*2, r0=0.035+((i*7)%3)*0.012;
-    const len=0.62+((i*5)%4)*0.04, wid=0.11+((i*3)%3)*0.02;
+  for(let i=0;i<12;i++){                                            // PHOTO-STUDY: a full thick tail fall
+    const a=i/12*Math.PI*2, r0=0.045+((i*7)%3)*0.014;
+    const len=0.72+((i*5)%4)*0.05, wid=0.13+((i*3)%3)*0.02;
     const card=new THREE.Mesh(new THREE.PlaneGeometry(wid,len),hairMat);
     card.position.set(Math.sin(a)*r0,-0.05-len*0.42,-0.04+Math.cos(a)*r0*0.8);
     card.rotation.y=a+(((i*11)%5)-2)*0.06;                          // face outward, slightly scattered
@@ -24572,36 +24616,63 @@ function buildHorseMesh(tk,packs){
     card.position.set(0,-0.34,-0.05); card.rotation.y=i/3*Math.PI; tail.add(card);
   }
   g.add(tail); g.userData.tail=tail;
-  // ── tack ──
-  const blanket=new THREE.Mesh(loftTube([                                  // drapes along the back — no floating corners
-    {y:1.60,z:0.34,w:0.235,h:0.030},
-    {y:1.555,z:0.10,w:0.245,h:0.030},
-    {y:1.53,z:-0.14,w:0.245,h:0.030},
-    {y:1.54,z:-0.32,w:0.225,h:0.026},
-  ],10,1),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
-  g.add(blanket);
-  const seat=new THREE.Mesh(loftTube([                                     // PASS 9: swell → seat dip → cantle rise
-    {y:1.575,z:0.30,w:0.055,h:0.045},   // gentle dip, thick sections: wide thin sheets on a wavy
-    {y:1.595,z:0.22,w:0.110,h:0.060},   // spine tilt their cross-sections into a butterfly — keep
-    {y:1.560,z:0.05,w:0.150,h:0.055},   // the spine nearly level and let h carry the shape
-    {y:1.555,z:-0.10,w:0.155,h:0.055},
-    {y:1.595,z:-0.24,w:0.130,h:0.070},  // the cantle rises
-    {y:1.620,z:-0.29,w:0.080,h:0.045},
-  ],10,1,{top:1.0,bot:0.5}),tack);
-  g.add(seat);
-  const horn2=new THREE.Mesh(new THREE.SphereGeometry(0.035,7,6),tack); horn2.position.set(0,1.675,0.27); g.add(horn2);
+  // ══ SADDLE (photo-study: English-saddle engraving + placement shots). Sits JUST BEHIND the
+  //    withers on a pad; raised pommel & cantle over a dished seat; big flaps with knee rolls;
+  //    panels lift it off the back; stirrup leathers & irons; girth under the belly. ══
+  const leatherM=new THREE.MeshStandardMaterial({color:0x4a2e18,roughness:0.55,metalness:0.04});   // saddle leather
+  const padM=new THREE.MeshStandardMaterial({color:0x3a3340,roughness:0.95});                     // PHOTO-STUDY: quilted numnah
+  // SADDLE PASS 1-2: the PAD / numnah under the tree, a touch larger than the saddle all round
+  const pad=new THREE.Mesh(loftTube([
+    {y:1.585,z:0.36,w:0.255,h:0.028},{y:1.55,z:0.10,w:0.27,h:0.028},
+    {y:1.535,z:-0.16,w:0.27,h:0.028},{y:1.55,z:-0.36,w:0.245,h:0.026},
+  ],12,1),padM); g.add(pad);
+  const padTrim=new THREE.Mesh(loftTube([                                              // SADDLE PASS 17: coloured border
+    {y:1.578,z:0.37,w:0.258,h:0.008},{y:1.543,z:0.10,w:0.273,h:0.008},
+    {y:1.528,z:-0.16,w:0.273,h:0.008},{y:1.543,z:-0.37,w:0.248,h:0.008},
+  ],12,1),new THREE.MeshStandardMaterial({color:0x6a1818,roughness:0.85})); g.add(padTrim);
+  // SADDLE PASS 3-6: the SEAT — pommel swell (front) → dished centre → cantle rise (back)
+  const seat=new THREE.Mesh(loftTube([
+    {y:1.60,z:0.26,w:0.07,h:0.05},    // pommel throat
+    {y:1.635,z:0.20,w:0.135,h:0.07},  // POMMEL swell rises
+    {y:1.585,z:0.06,w:0.175,h:0.06},  // seat dips
+    {y:1.575,z:-0.10,w:0.18,h:0.06},  // deepest seat
+    {y:1.62,z:-0.24,w:0.155,h:0.08},  // CANTLE rises
+    {y:1.645,z:-0.30,w:0.09,h:0.05},  // cantle cap
+  ],12,1,{top:1.0,bot:0.45}),leatherM); g.add(seat);
+  // SADDLE PASS 7: pommel arch cap
+  const pom=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,7),leatherM);
+  pom.scale.set(1.2,0.8,0.9); pom.position.set(0,1.64,0.235); g.add(pom);
+  const seatStitch=new THREE.Mesh(new THREE.BoxGeometry(0.004,0.006,0.42),             // SADDLE PASS 19: seat centre seam
+    new THREE.MeshStandardMaterial({color:0x2a1a0e,roughness:0.7})); seatStitch.position.set(0,1.618,-0.02); g.add(seatStitch);
+  const gullet=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.03,0.05),padM);             // SADDLE PASS 20: gullet clearance notch
+  gullet.position.set(0,1.585,0.26); g.add(gullet);
   for(const e2 of[-1,1]){
-    const flap=new THREE.Mesh(new THREE.BoxGeometry(0.024,0.26,0.34),tack); // the skirt hugs the barrel
-    flap.position.set(e2*0.245,1.46,0.02); flap.rotation.z=e2*0.16; g.add(flap);
-    const leather=new THREE.Mesh(new THREE.BoxGeometry(0.028,0.26,0.06),
-      new THREE.MeshStandardMaterial({color:0x54381e,roughness:0.72}));                 // PASS 9: stirrup leather
-    leather.position.set(e2*0.268,1.35,0.10); leather.rotation.z=e2*0.10; g.add(leather);
-    const iron=new THREE.Mesh(new THREE.TorusGeometry(0.045,0.009,5,10),
-      new THREE.MeshStandardMaterial({color:0x8a8f96,roughness:0.35,metalness:0.8}));   // the iron hangs level
-    iron.position.set(e2*0.285,1.21,0.10); iron.rotation.y=Math.PI/2; g.add(iron);
+    // SADDLE PASS 8-9: the FLAP hangs down the barrel, larger and rounded (English cut)
+    const flap=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.34,0.44),leatherM);
+    flap.position.set(e2*0.24,1.40,-0.02); flap.rotation.z=e2*0.2; flap.rotation.x=0.02; g.add(flap);
+    // SADDLE PASS 10: a KNEE ROLL padding the front of the flap
+    const roll=new THREE.Mesh(new THREE.CapsuleGeometry(0.03,0.16,4,7),leatherM);
+    roll.position.set(e2*0.255,1.44,0.16); roll.rotation.set(0.3,0,e2*0.2); g.add(roll);
+    // SADDLE PASS 11: the PANEL under the seat (the cushion that lifts it off the back)
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.09,0.5),padM);
+    panel.position.set(e2*0.11,1.52,-0.04); g.add(panel);
+    // SADDLE PASS 12-13: STIRRUP LEATHER (broad strap) → IRON stirrup hanging level
+    const leather=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.3,0.055),leatherM);
+    leather.position.set(e2*0.262,1.33,0.06); leather.rotation.z=e2*0.09; g.add(leather);
+    const iron=new THREE.Mesh(new THREE.TorusGeometry(0.05,0.011,6,12),
+      new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.85}));
+    iron.position.set(e2*0.283,1.17,0.06); iron.rotation.y=Math.PI/2; g.add(iron);
+    const tread=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.012,0.075),
+      new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.85}));
+    tread.position.set(e2*0.283,1.126,0.06); g.add(tread);
   }
-  const girth=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.015,6,20),tack);   // rings the BARREL: torus plane stays XY
-  girth.scale.set(0.56,1,1); girth.position.set(0,1.19,0.12); g.add(girth);
+  // SADDLE PASS 14: the GIRTH strap under the belly, behind the elbow
+  const girth=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.02,6,20),leatherM);
+  girth.scale.set(0.56,1,1); girth.position.set(0,1.19,0.14); g.add(girth);
+  // SADDLE PASS 15: a billet/buckle where the girth meets the flap
+  for(const e2 of[-1,1]){ const buck=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.05,0.02),
+      new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.8}));
+    buck.position.set(e2*0.2,1.30,0.14); g.add(buck); }
   for(let p=0;p<(packs||0);p++){ for(const e2 of[-1,1]){
     const bag=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.28,0.32),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
     bag.position.set(e2*0.42,1.25,-0.4-p*0.38); g.add(bag); } }
