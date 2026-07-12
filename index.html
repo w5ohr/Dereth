@@ -7120,6 +7120,7 @@ function buildGrass(){
   if(grassMesh){ scene.remove(grassMesh); grassMesh.geometry.dispose(); if(grassMesh.material.dispose)grassMesh.material.dispose(); grassMesh=null; }
   const tier=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2, cfg=GRASS_CFG[tier]||GRASS_CFG[2];
   _grassAnchor=null;
+  buildPlants();                                                                          // wild plants ride the same tier gate (no-op pools on Low)
   if(cfg.r<=0) return;                                                                    // Low: no grass field
   const geo=grassTuftGeo();
   const mat=new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:0.82,metalness:0.0});
@@ -7166,6 +7167,167 @@ function refreshGrassField(force){
   }
   grassMesh.count=n; grassMesh.instanceMatrix.needsUpdate=true;
   if(grassMesh.instanceColor) grassMesh.instanceColor.needsUpdate=true;
+  refreshPlantsField(px,pz,R,nogo,nn);   // wild plants scatter through the same grass fields
+}
+// ── WILD PLANTS: realistic procedural field flora — ferns, oxeye daisies, red poppies, cornflowers and
+//    wild wheat — scattered RANDOMLY through the grass fields only (same grassOK gate as the tufts, at a
+//    much coarser spacing so they read as finds, not a carpet). Each species is one small merged geometry:
+//    solid vertex-coloured stems/blades + alpha-cut textured cards (fronds & petal heads) from one shared
+//    atlas, instanced, wind-swayed, following the camera on the grass anchor. ──
+let plantPools=null,_plantAtlas=null,_plantGeoCache=null,_plantSolidMat=null,_plantCardMat=null;
+function plantAtlasTex(){
+  if(_plantAtlas) return _plantAtlas;
+  const N=512,Q=256,c=document.createElement('canvas');c.width=c.height=N;const g=c.getContext('2d');g.clearRect(0,0,N,N);
+  // TL: FERN FROND — central rachis with paired tapering pinnae, each serrated by little tooth strokes
+  { g.save();g.translate(Q/2,Q-10);
+    g.strokeStyle="#3f6224";g.lineWidth=7;g.beginPath();g.moveTo(0,0);g.quadraticCurveTo(6,-Q*0.5,2,-Q+22);g.stroke();
+    const P=13; for(let i=0;i<P;i++){ const t=i/P, y=-14-t*(Q-52), len=(1-t*0.82)*54, w=(1-t*0.7)*13;
+      for(const s of[-1,1]){ g.save();g.translate(3*t,y);g.rotate(s*(1.15-t*0.25));
+        const grad=g.createLinearGradient(0,0,len,0); grad.addColorStop(0,"#47702a"); grad.addColorStop(1,"#6f9c42");
+        g.fillStyle=grad;g.beginPath();g.ellipse(len/2,0,len/2,w/2,0,0,6.283);g.fill();
+        g.strokeStyle="#3a5c22";g.lineWidth=1;g.beginPath();g.moveTo(0,0);g.lineTo(len,0);g.stroke();g.restore(); } } g.restore(); }
+  // TR: OXEYE DAISY — a ring of white petals with a golden disc
+  { g.save();g.translate(Q+Q/2,Q/2);
+    for(let i=0;i<18;i++){ const a=i/18*6.283; g.save();g.rotate(a);
+      const grad=g.createLinearGradient(0,0,86,0); grad.addColorStop(0,"#e8e6da"); grad.addColorStop(1,"#ffffff");
+      g.fillStyle=grad;g.beginPath();g.ellipse(58,0,34,11,0,0,6.283);g.fill();
+      g.strokeStyle="rgba(190,188,175,0.6)";g.lineWidth=1;g.beginPath();g.moveTo(26,0);g.lineTo(88,0);g.stroke();g.restore(); }
+    const dc=g.createRadialGradient(0,0,2,0,0,30); dc.addColorStop(0,"#f2ce4a"); dc.addColorStop(0.75,"#dca92e"); dc.addColorStop(1,"#b8860f");
+    g.fillStyle=dc;g.beginPath();g.arc(0,0,28,0,6.283);g.fill();
+    for(let i=0;i<40;i++){ const a=Math.random()*6.283,r=Math.random()*24; g.fillStyle="rgba(150,105,20,0.5)";g.fillRect(Math.cos(a)*r-1,Math.sin(a)*r-1,2.4,2.4);} g.restore(); }
+  // BL: RED POPPY — four broad overlapping crumpled petals, near-black centre with stamen dots
+  { g.save();g.translate(Q/2,Q+Q/2);
+    for(let i=0;i<5;i++){ const a=i/5*6.283+0.4; g.save();g.rotate(a);
+      const grad=g.createRadialGradient(30,0,8,55,0,72); grad.addColorStop(0,"#c41818"); grad.addColorStop(0.7,"#e33422"); grad.addColorStop(1,"#a80e12");
+      g.fillStyle=grad;g.beginPath();g.ellipse(58,0,52,40,0,0,6.283);g.fill();
+      g.strokeStyle="rgba(140,10,14,0.5)";g.lineWidth=2;for(const off of[-14,0,14]){g.beginPath();g.moveTo(20,off*0.4);g.quadraticCurveTo(60,off,100,off*0.8);g.stroke();} g.restore(); }
+    g.fillStyle="#2c1024";g.beginPath();g.arc(0,0,22,0,6.283);g.fill();
+    for(let i=0;i<26;i++){ const a=i/26*6.283; g.fillStyle="#120818";g.beginPath();g.arc(Math.cos(a)*26,Math.sin(a)*26,3.4,0,6.283);g.fill(); } g.restore(); }
+  // BR: CORNFLOWER — ragged royal-blue florets around a deep violet heart
+  { g.save();g.translate(Q+Q/2,Q+Q/2);
+    for(let i=0;i<13;i++){ const a=i/13*6.283; g.save();g.rotate(a);
+      const grad=g.createLinearGradient(20,0,92,0); grad.addColorStop(0,"#4a5ac4"); grad.addColorStop(1,"#3f7ae0");
+      g.fillStyle=grad;g.beginPath();g.moveTo(22,0);
+      g.lineTo(66,-16);g.lineTo(90,-6);g.lineTo(78,0);g.lineTo(90,6);g.lineTo(66,16);g.closePath();g.fill();g.restore(); }
+    const dc=g.createRadialGradient(0,0,2,0,0,26); dc.addColorStop(0,"#2a1e6a"); dc.addColorStop(1,"#3a2a8a");
+    g.fillStyle=dc;g.beginPath();g.arc(0,0,22,0,6.283);g.fill(); g.restore(); }
+  _plantAtlas=new THREE.CanvasTexture(c); _plantAtlas.colorSpace=THREE.SRGBColorSpace;
+  if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)_plantAtlas.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  return _plantAtlas;
+}
+// atlas quadrant UV rects (canvas y-down + flipY: TL quadrant = v .5-1)
+const _PUV={fern:[0,0.5,0.5,1], daisy:[0.5,0.5,1,1], poppy:[0,0,0.5,0.5], cornflower:[0.5,0,1,0.5]};
+function _plantGeos(){
+  if(_plantGeoCache) return _plantGeoCache;
+  const mk=()=>({sP:[],sN:[],sC:[],cP:[],cN:[],cC:[],cU:[]});
+  const C1=new THREE.Color();
+  const lin=h=>{C1.setHex(h).convertSRGBToLinear();return [C1.r,C1.g,C1.b];};
+  // one vertical quad: base (bx,by,bz), width w, height h, facing yaw, tip offset (ox,oz); solid or card.
+  // BOTH windings are emitted with the same sky-biased normal (materials are FrontSide) so neither side
+  // of a thin card ever renders as an unlit black back-face.
+  const quad=(A,card,bx,by,bz,w,h,yaw,ox,oz,col,uvr)=>{
+    const rx=Math.cos(yaw)*w/2, rz=Math.sin(yaw)*w/2;
+    const bl=[bx-rx,by,bz-rz], br=[bx+rx,by,bz+rz], tr=[bx+rx+ox,by+h,bz+rz+oz], tl=[bx-rx+ox,by+h,bz-rz+oz];
+    let nx=-(Math.sin(yaw)), nz=Math.cos(yaw);   // face normal-ish, then sky-biased for soft grass-field lighting
+    const nl=Math.hypot(nx*0.4,1,nz*0.4); nx=nx*0.4/nl; nz=nz*0.4/nl; const ny=1/nl;
+    const P=card?A.cP:A.sP, Nn=card?A.cN:A.sN, Cc=card?A.cC:A.sC;
+    for(const v of [bl,br,tr, bl,tr,tl,  bl,tr,br, bl,tl,tr]){ P.push(v[0],v[1],v[2]); Nn.push(nx,ny,nz); Cc.push(col[0],col[1],col[2]); }
+    if(card){ const [u0,v0,u1,v1]=uvr; A.cU.push(u0,v0,u1,v0,u1,v1, u0,v0,u1,v1,u0,v1, u0,v0,u1,v1,u1,v0, u0,v0,u0,v1,u1,v1); }
+  };
+  // a flower head: an upward-facing card (slightly tilted, like a bloom turned to the sun)
+  const flatHead=(A,x,y,z,s,rot,seed,uvr)=>{
+    const tA=(seed*1.7)%6.283, tM=0.16*s+((seed*13)%10)/10*0.1*s, tx=Math.cos(tA), tz=Math.sin(tA);
+    const cs=Math.cos(rot)*s/2, sn=Math.sin(rot)*s/2;
+    const c0=[x-cs+sn,0,z-sn-cs], c1=[x+cs+sn,0,z+sn-cs], c2=[x+cs-sn,0,z+sn+cs], c3=[x-cs-sn,0,z-sn+cs];
+    for(const c of [c0,c1,c2,c3]) c[1]=y+((c[0]-x)*tx+(c[2]-z)*tz)/(s/2)*tM;   // tilt toward tA
+    const [u0,v0,u1,v1]=uvr;
+    for(const [v,uu,vv] of [[c0,u0,v0],[c1,u1,v0],[c2,u1,v1], [c0,u0,v0],[c2,u1,v1],[c3,u0,v1],
+                            [c0,u0,v0],[c2,u1,v1],[c1,u1,v0], [c0,u0,v0],[c3,u0,v1],[c2,u1,v1]]){
+      A.cP.push(v[0],v[1],v[2]); A.cN.push(0,1,0); A.cC.push(1,1,1); A.cU.push(uu,vv); }
+  };
+  const stem=(A,bx,bz,h,lean,seed)=>{ const g1=lin(0x4e6b26), yaw=(seed*2.4)%6.283;
+    quad(A,false,bx,0,bz,0.028,h,yaw,lean[0],lean[1],g1); quad(A,false,bx,0,bz,0.028,h,yaw+1.57,lean[0],lean[1],g1); };
+  const bladeRing=(A,n,r,hmax,seed)=>{ for(let i=0;i<n;i++){ const a=i/n*6.283+seed, d=[Math.cos(a),Math.sin(a)];
+    quad(A,false,d[0]*r*0.3,0,d[1]*r*0.3,0.05,0.14+((seed*7+i)%10)/10*hmax,a,d[0]*0.12,d[1]*0.12,lin(0x5a7a2e)); } };
+  const head=(A,x,y,z,s,uvr,seed)=>flatHead(A,x,y,z,s,(seed*3.1)%6.283,seed,uvr);
+  const finish=(A)=>{ const g=new THREE.BufferGeometry();
+    const pos=A.sP.concat(A.cP), nrm=A.sN.concat(A.cN), col=A.sC.concat(A.cC);
+    const uv=new Array(A.sP.length/3*2).fill(0).concat(A.cU);
+    g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    const sv=A.sP.length/3, cv=A.cP.length/3;
+    if(sv) g.addGroup(0,sv,0); if(cv) g.addGroup(sv,cv,1);
+    return g; };
+  const cache={};
+  { // FERN — 8 arching textured fronds radiating from a dark rosette
+    const A=mk(); for(let i=0;i<8;i++){ const a=i/8*6.283+((i*37)%10)/22, d=[Math.cos(a),Math.sin(a)], h=0.42+((i*53)%10)/10*0.22;
+      quad(A,true,d[0]*0.05,0.02,d[1]*0.05,0.30,h,a+1.57,d[0]*0.34,d[1]*0.34,[1,1,1],_PUV.fern); }
+    bladeRing(A,4,0.4,0.1,2); cache.fern=finish(A); }
+  { // OXEYE DAISY — a clump of five white-headed stems in basal leaves
+    const A=mk(); for(let i=0;i<5;i++){ const a=i/5*6.283, bx=Math.cos(a)*0.11, bz=Math.sin(a)*0.11, h=0.34+((i*71)%10)/10*0.2, lx=Math.cos(a)*0.05, lz=Math.sin(a)*0.05;
+      stem(A,bx,bz,h,[lx,lz],i+1); head(A,bx+lx,h+0.02,bz+lz,0.17,_PUV.daisy,i+2); }
+    bladeRing(A,6,0.5,0.16,5); cache.daisy=finish(A); }
+  { // RED POPPY — three tall nodding scarlet heads
+    const A=mk(); for(let i=0;i<3;i++){ const a=i/3*6.283+0.5, bx=Math.cos(a)*0.09, bz=Math.sin(a)*0.09, h=0.42+((i*61)%10)/10*0.18, lx=Math.cos(a)*0.07, lz=Math.sin(a)*0.07;
+      stem(A,bx,bz,h,[lx,lz],i+3); head(A,bx+lx,h+0.02,bz+lz,0.19,_PUV.poppy,i+5); }
+    bladeRing(A,5,0.42,0.13,8); cache.poppy=finish(A); }
+  { // CORNFLOWER — four blue heads on slender stems
+    const A=mk(); for(let i=0;i<4;i++){ const a=i/4*6.283+0.9, bx=Math.cos(a)*0.1, bz=Math.sin(a)*0.1, h=0.36+((i*43)%10)/10*0.18, lx=Math.cos(a)*0.05, lz=Math.sin(a)*0.05;
+      stem(A,bx,bz,h,[lx,lz],i+7); head(A,bx+lx,h+0.02,bz+lz,0.13,_PUV.cornflower,i+9); }
+    bladeRing(A,5,0.44,0.14,11); cache.cornflower=finish(A); }
+  { // WILD WHEAT — seven pale stalks with golden seed heads (pure geometry)
+    const A=mk(); const gold=lin(0xc2a24e), pale=lin(0x9aa050);
+    for(let i=0;i<7;i++){ const a=i/7*6.283+((i*29)%10)/18, bx=Math.cos(a)*0.13, bz=Math.sin(a)*0.13, h=0.55+((i*83)%10)/10*0.3, lx=Math.cos(a)*0.1, lz=Math.sin(a)*0.1, yaw=(i*2.1)%6.283;
+      quad(A,false,bx,0,bz,0.022,h,yaw,lx,lz,pale); quad(A,false,bx,0,bz,0.022,h,yaw+1.57,lx,lz,pale);
+      quad(A,false,bx+lx,h-0.02,bz+lz,0.032,0.13,yaw,lx*0.22,lz*0.22,gold); quad(A,false,bx+lx,h-0.02,bz+lz,0.032,0.13,yaw+1.57,lx*0.22,lz*0.22,gold); }
+    cache.wheat=finish(A); }
+  _plantGeoCache=cache; return cache;
+}
+const PLANT_SPECIES=[{k:"fern",w:18},{k:"daisy",w:24},{k:"poppy",w:14},{k:"cornflower",w:16},{k:"wheat",w:28}];
+function buildPlants(){
+  if(plantPools){ for(const k in plantPools){ scene.remove(plantPools[k]); } plantPools=null; }
+  const tier=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2, cfg=GRASS_CFG[tier]||GRASS_CFG[2];
+  if(cfg.r<=0) return;                                           // plants ride the grass tier gate
+  if(!_plantSolidMat){
+    _plantSolidMat=new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.FrontSide,roughness:0.88,metalness:0});   // geometry carries both windings — FrontSide avoids black flipped-normal backs
+    _plantCardMat=new THREE.MeshStandardMaterial({vertexColors:true,map:plantAtlasTex(),alphaTest:0.42,side:THREE.FrontSide,roughness:0.9,metalness:0});
+    addWindSway(_plantSolidMat,0.05,0.05,0.6); addWindSway(_plantCardMat,0.05,0.05,0.6);
+  }
+  const G=_plantGeos(); plantPools={};
+  for(const sp of PLANT_SPECIES){
+    const m=new THREE.InstancedMesh(G[sp.k],[_plantSolidMat,_plantCardMat],150);
+    m.castShadow=false; m.receiveShadow=true; m.frustumCulled=false; m.count=0;
+    plantPools[sp.k]=m; scene.add(m);
+  }
+}
+const _pTmp=new THREE.Object3D();
+function refreshPlantsField(px,pz,R,nogo,nn){
+  if(!plantPools) return;
+  if(inDungeon||inNetwork){ for(const k in plantPools){ if(plantPools[k].count){ plantPools[k].count=0; plantPools[k].instanceMatrix.needsUpdate=true; } } return; }
+  const PC=4.4, R2=R*R, rad=Math.ceil(R/PC), cx0=Math.round(px/PC), cz0=Math.round(pz/PC);
+  const cnt={}; for(const sp of PLANT_SPECIES) cnt[sp.k]=0;
+  const totW=PLANT_SPECIES.reduce((a,s)=>a+s.w,0);
+  for(let gz=-rad; gz<=rad; gz++) for(let gx=-rad; gx<=rad; gx++){
+    const ci=cx0+gx, cj=cz0+gz, hsh=((ci*40503)^(cj*88651)^0x5f3a)>>>0;
+    if((hsh>>>9)%100 >= 17) continue;                             // ~17% of coarse cells host a plant → random finds, not a carpet
+    const wx=ci*PC+((hsh&255)/255-0.5)*PC*0.8, wz=cj*PC+(((hsh>>8)&255)/255-0.5)*PC*0.8;
+    const ddx=wx-px, ddz=wz-pz, d2=ddx*ddx+ddz*ddz; if(d2>R2) continue;
+    if(!grassOK(wx,wz)) continue;                                 // ONLY in the grass fields
+    let inBld=false; for(let bi=0;bi<nn;bi++){ const st=nogo[bi], bdx=wx-st.bx, bdz=wz-st.bz; if(bdx*bdx+bdz*bdz<=st.r2){ inBld=true; break; } }
+    if(inBld) continue;
+    const hs2=(Math.imul(hsh,2654435761)>>>0);                    // remixed hash — decorrelate species from the placement bits
+    let pick=(hs2>>>8)%totW, key=PLANT_SPECIES[0].k;              // weighted species choice
+    for(const sp of PLANT_SPECIES){ if(pick<sp.w){ key=sp.k; break; } pick-=sp.w; }
+    const pool=plantPools[key]; if(!pool||cnt[key]>=pool.instanceMatrix.count) continue;
+    const s=0.8+((hsh>>>20)&255)/255*0.6;
+    _pTmp.position.set(wx,groundY(wx,wz),wz);
+    _pTmp.rotation.set(0,((hsh>>>4)&255)/255*6.283,0);
+    _pTmp.scale.set(s,s,s); _pTmp.updateMatrix();
+    pool.setMatrixAt(cnt[key]++,_pTmp.matrix);
+  }
+  for(const sp of PLANT_SPECIES){ const pool=plantPools[sp.k]; pool.count=cnt[sp.k]; pool.instanceMatrix.needsUpdate=true; }
 }
 // ── instanced forests: the hand-placed scenery (~1900 groups) left the wilds feeling empty.
 // Each species is ONE merged vertex-colored geometry drawn as ONE InstancedMesh (a whole
