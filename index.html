@@ -5770,7 +5770,15 @@ function _normHumanMesh(g,target){
   const body=new THREE.Group(); while(g.children.length) body.add(g.children[0]);
   body.scale.setScalar(target/robustHeight(body));
   const b2=new THREE.Box3().setFromObject(body); body.position.y-=b2.min.y;   // feet to y=0
-  g.add(body); return g;
+  g.add(body);
+  // PASS 3: pectoral breast between the front legs and round quarter masses over the hips —
+  // low-offset lofted blobs that melt into the main skin
+  const breast=new THREE.Mesh(loftTube([
+    {y:1.06,z:0.56,w:0.13,h:0.14},{y:1.0,z:0.66,w:0.15,h:0.17},{y:0.98,z:0.74,w:0.10,h:0.12}],10,1),coat);
+  g.add(breast);
+  for(const e2 of[-1,1]){
+    const qtr=new THREE.Mesh(new THREE.SphereGeometry(0.21,12,9),coat);
+    qtr.scale.set(0.62,1.15,1.05); qtr.position.set(e2*0.145,1.08,-0.7); g.add(qtr); } return g;
 }
 function buildPerson(o){
   o=o||{}; const g=new THREE.Group(), sd=Math.abs(o.seed|0);
@@ -24233,27 +24241,30 @@ let mountMesh=null;         // the mesh under you while riding (its rec is playe
 const _coatTexCache={};
 function horseCoatTex(tk){
   if(_coatTexCache[tk]) return _coatTexCache[tk];
-  const T=HORSE_TYPES[tk], c=document.createElement('canvas'); c.width=256; c.height=128;
+  const T=HORSE_TYPES[tk], c=document.createElement('canvas'); c.width=512; c.height=256;
   const g=c.getContext('2d'), col=new THREE.Color(T.coat);
   const R=(col.r*255)|0, G=(col.g*255)|0, B=(col.b*255)|0;
-  g.fillStyle='#'+col.getHexString(); g.fillRect(0,0,256,128);
-  for(let i=0;i<7000;i++){ const v=(Math.random()-0.5)*16;                        // fine, soft hide grain
-    g.fillStyle=`rgba(${R+v|0},${G+v|0},${B+v|0},0.35)`;
-    g.fillRect(Math.random()*255,Math.random()*127,1,1); }
-  // anatomy bands (u: 0 poll → 1 dock; v: ~0.25 topline, ~0.75 belly)
-  g.fillStyle="rgba(0,0,0,0.14)"; g.fillRect(0,24,256,14);                        // dorsal shading
-  if(T.points) { g.fillStyle="rgba(0,0,0,0.22)"; g.fillRect(0,26,256,8); }        // bay dorsal stripe
-  const belly=g.createLinearGradient(0,84,0,110);
-  belly.addColorStop(0,"rgba(255,255,255,0)"); belly.addColorStop(0.5,"rgba(255,250,240,0.14)"); belly.addColorStop(1,"rgba(255,255,255,0)");
-  g.fillStyle=belly; g.fillRect(0,84,256,26);                                     // lighter under-belly
-  const shoulder=g.createLinearGradient(60,0,110,0);
-  shoulder.addColorStop(0,"rgba(0,0,0,0.10)"); shoulder.addColorStop(1,"rgba(0,0,0,0)");
-  g.fillStyle=shoulder; g.fillRect(60,0,50,128);                                  // shoulder muscle shading
-  if(T.dapple) for(let i=0;i<120;i++){ const r=2.5+Math.random()*4.5;             // dapple rosettes
-    g.fillStyle="rgba(238,238,244,0.15)"; g.beginPath();
-    g.arc(Math.random()*255,20+Math.random()*80,r,0,6.28); g.fill(); }
-  if(T.ember) for(let i=0;i<40;i++){ g.fillStyle="rgba(90,30,110,0.12)";          // shadowmane's violet sheen
-    g.fillRect(Math.random()*255,Math.random()*127,4,2); }
+  g.fillStyle='#'+col.getHexString(); g.fillRect(0,0,512,256);
+  for(let i=0;i<16000;i++){ const v=(Math.random()-0.5)*15;                       // fine soft hide grain
+    g.fillStyle=`rgba(${R+v|0},${G+v|0},${B+v|0},0.32)`;
+    g.fillRect(Math.random()*511,Math.random()*255,1,1); }
+  // PASS 4: vertical body shading — light catches the top of the barrel, shadow gathers low
+  const vert=g.createLinearGradient(0,40,0,230);
+  vert.addColorStop(0,"rgba(255,245,230,0.05)"); vert.addColorStop(0.55,"rgba(0,0,0,0.0)"); vert.addColorStop(1,"rgba(30,15,5,0.12)");
+  g.fillStyle=vert; g.fillRect(0,40,512,190);
+  g.fillStyle="rgba(0,0,0,0.12)"; g.fillRect(0,48,512,28);                        // dorsal shading
+  if(T.points){ g.fillStyle="rgba(0,0,0,0.22)"; g.fillRect(0,52,512,14); }        // bay dorsal stripe
+  const belly=g.createLinearGradient(0,168,0,220);
+  belly.addColorStop(0,"rgba(255,255,255,0)"); belly.addColorStop(0.5,"rgba(255,250,238,0.12)"); belly.addColorStop(1,"rgba(255,255,255,0)");
+  g.fillStyle=belly; g.fillRect(0,168,512,52);                                    // lighter under-belly
+  const shoulder=g.createLinearGradient(120,0,220,0);
+  shoulder.addColorStop(0,"rgba(0,0,0,0.09)"); shoulder.addColorStop(1,"rgba(0,0,0,0)");
+  g.fillStyle=shoulder; g.fillRect(120,0,100,256);                                // shoulder muscle shading
+  if(T.dapple) for(let i=0;i<260;i++){ const r=4+Math.random()*8;                 // dapple rosettes
+    g.fillStyle="rgba(238,238,244,0.13)"; g.beginPath();
+    g.arc(Math.random()*511,40+Math.random()*160,r,0,6.28); g.fill(); }
+  if(T.ember) for(let i=0;i<90;i++){ g.fillStyle="rgba(90,30,110,0.12)";
+    g.fillRect(Math.random()*511,Math.random()*255,6,3); }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
   return (_coatTexCache[tk]=t);
 }
@@ -24262,7 +24273,9 @@ function horseCoatTex(tk){
 // #741: sweep elliptical cross-sections along a spine curve into ONE smooth skin — the Oblivion
 // build: a single unbroken silhouette from poll to dock, no ellipsoid seams. Stations are {y,z,w,h}
 // in the bilateral (x=0) plane; centers ride a CatmullRom, radii lerp between stations.
-function loftTube(stations,segR,uvRepeat){
+function loftTube(stations,segR,uvRepeat,asym){
+  // asym {top,bot}: radial height multipliers for the upper/lower half of every section —
+  // a horse's back is FLAT and its belly is ROUND; a symmetric ellipse reads like a sausage.
   const curve=new THREE.CatmullRomCurve3(stations.map(st=>new THREE.Vector3(0,st.y,st.z)));
   const N=stations.length*7, pos=[], uv=[], idx=[];
   for(let i=0;i<=N;i++){
@@ -24271,8 +24284,9 @@ function loftTube(stations,segR,uvRepeat){
     const w=stations[i0].w*(1-ke)+stations[i0+1].w*ke, h=stations[i0].h*(1-ke)+stations[i0+1].h*ke;
     const U=new THREE.Vector3(0,-T.z,T.y).normalize();               // section-up, perpendicular to the spine
     for(let j=0;j<=segR;j++){
-      const a=j/segR*Math.PI*2;
-      pos.push(Math.cos(a)*w, c.y+U.y*Math.sin(a)*h, c.z+U.z*Math.sin(a)*h);
+      const a=j/segR*Math.PI*2, sn=Math.sin(a);
+      const hh2=h*(asym?(sn>0?asym.top:asym.bot):1);
+      pos.push(Math.cos(a)*w, c.y+U.y*sn*hh2, c.z+U.z*sn*hh2);
       uv.push(t*(uvRepeat||3), j/segR);
     }
   }
@@ -24293,21 +24307,31 @@ function buildHorseMesh(tk,packs){
   const coat=new THREE.MeshStandardMaterial({map:coatTex,roughness:0.8,metalness:0.02,
     normalMap:lumNormalTex(coatTex),normalScale:new THREE.Vector2(0.3,0.3)});
   const dark=new THREE.MeshStandardMaterial({color:T.mane,roughness:0.95});
+  const legCoat=new THREE.MeshStandardMaterial({color:T.coat,roughness:0.85});   // legs: plain colour — the anatomy map would band them
   const tack=new THREE.MeshStandardMaterial({color:0x3e2a16,roughness:0.7});
-  const points=T.points?dark:coat;
+  let points=legCoat;
+  if(T.points){                                                     // PASS 4: points FADE in — a gradient cannon texture
+    const pc=document.createElement('canvas'); pc.width=16; pc.height=64; const pg=pc.getContext('2d');
+    const grd=pg.createLinearGradient(0,0,0,64);
+    const cs='#'+new THREE.Color(T.coat).getHexString(), ms='#'+new THREE.Color(T.mane).getHexString();
+    grd.addColorStop(0,cs); grd.addColorStop(0.45,ms); grd.addColorStop(1,ms);
+    pg.fillStyle=grd; pg.fillRect(0,0,16,64);
+    const pt=new THREE.CanvasTexture(pc); pt.colorSpace=THREE.SRGBColorSpace;
+    points=new THREE.MeshStandardMaterial({map:pt,roughness:0.9});
+  }
   // ── ONE skin: poll → crest → withers → back → croup → dock ──
   const body=new THREE.Mesh(loftTube([
-    {y:2.02,z:1.18,w:0.085,h:0.10},    // just under the poll
-    {y:1.88,z:1.04,w:0.105,h:0.155},   // upper neck
-    {y:1.66,z:0.86,w:0.13, h:0.21},    // mid neck
-    {y:1.44,z:0.66,w:0.165,h:0.29},    // neck base into the shoulder
-    {y:1.24,z:0.46,w:0.21, h:0.40},    // withers/chest, deep through the brisket
-    {y:1.15,z:0.12,w:0.235,h:0.44},    // the girth
+    {y:2.04,z:1.16,w:0.08, h:0.095},   // just under the poll
+    {y:1.92,z:1.02,w:0.10, h:0.15},    // upper neck — CREST arches here
+    {y:1.72,z:0.85,w:0.12, h:0.185},   // mid neck, thin through the THROAT
+    {y:1.48,z:0.66,w:0.16, h:0.27},    // neck base flowing into the shoulder
+    {y:1.26,z:0.46,w:0.205,h:0.40},    // withers/chest, deep through the brisket
+    {y:1.15,z:0.12,w:0.23, h:0.455},   // the girth — deepest point
     {y:1.14,z:-0.28,w:0.245,h:0.43},   // barrel
-    {y:1.17,z:-0.62,w:0.225,h:0.39},   // flank
-    {y:1.24,z:-0.88,w:0.175,h:0.30},   // croup
+    {y:1.18,z:-0.62,w:0.225,h:0.38},   // flank tucks
+    {y:1.25,z:-0.88,w:0.175,h:0.30},   // croup
     {y:1.30,z:-1.04,w:0.06, h:0.08},   // dock
-  ],16,1),coat);   // uvRepeat 1: u runs poll→dock so the anatomy bands land where they belong
+  ],18,1,{top:0.88,bot:1.1}),coat);    // flat back, round belly (uvRepeat 1: anatomy bands land true)
   g.add(body);
   // ── the head: its own small loft (pivots at the poll for the gait pendulum) ──
   const head=new THREE.Group(); head.position.set(0,2.0,1.22); head.rotation.x=0.52;
@@ -24333,15 +24357,22 @@ function buildHorseMesh(tk,packs){
     eye.position.set(e2*0.092,0.075,0.05); head.add(eye);                 // high and back, where a horse carries them
     const socket=new THREE.Mesh(new THREE.SphereGeometry(0.036,7,6),coat);
     socket.scale.set(0.9,0.8,1.1); socket.position.set(e2*0.085,0.07,0.05); head.add(socket);
-    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.038,0.16*(T.ears||1),6),coat);
-    ear.position.set(e2*0.06,0.16,-0.09); ear.rotation.z=e2*0.2; ear.rotation.x=-0.12; head.add(ear);
-    const earIn=new THREE.Mesh(new THREE.ConeGeometry(0.02,0.1*(T.ears||1),5),dark);   // #742: shadowed inner ear
-    earIn.position.set(e2*0.058,0.15,-0.078); earIn.rotation.z=e2*0.2; earIn.rotation.x=-0.02; head.add(earIn);
+    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.04,0.17*(T.ears||1),7),coat);    // PASS 7: curved, flattened ear shells
+    ear.scale.z=0.62; ear.position.set(e2*0.062,0.165,-0.095);
+    ear.rotation.z=e2*0.24; ear.rotation.x=-0.18; ear.rotation.y=e2*0.3; head.add(ear);
+    const earIn=new THREE.Mesh(new THREE.ConeGeometry(0.021,0.105*(T.ears||1),5),dark); // shadowed inner shell
+    earIn.scale.z=0.6; earIn.position.set(e2*0.06,0.155,-0.082);
+    earIn.rotation.z=e2*0.24; earIn.rotation.x=-0.08; earIn.rotation.y=e2*0.3; head.add(earIn);
+    (g.userData.ears=g.userData.ears||[]).push(ear,earIn);                              // PASS 10 hooks flicks here
+    const cheek=new THREE.Mesh(new THREE.SphereGeometry(0.05,7,6),coat);                // PASS 7: masseter ridge
+    cheek.scale.set(0.5,1.15,1.35); cheek.position.set(e2*0.062,-0.035,0.03); head.add(cheek);
     const glint=new THREE.Mesh(new THREE.SphereGeometry(0.008,5,4),new THREE.MeshBasicMaterial({color:0xffffff}));
     glint.position.set(e2*0.112,0.082,0.065); head.add(glint);                          // #742: the live-eye glint
     const strap=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.15,0.012),tack);
     strap.position.set(e2*0.095,-0.01,0.14); strap.rotation.x=0.5; head.add(strap);
   }
+  const mouth=new THREE.Mesh(new THREE.BoxGeometry(0.074,0.007,0.05),dark);            // PASS 7: the lip crease
+  mouth.position.set(0,-0.052,0.455); head.add(mouth);
   const nose=new THREE.Mesh(new THREE.TorusGeometry(0.075,0.008,5,12),tack);
   nose.rotation.x=Math.PI/2-0.1; nose.position.set(0,-0.035,0.35); head.add(nose);
   const flock=new THREE.Mesh(new THREE.BoxGeometry(0.055,0.11,0.045),dark); flock.position.set(0,0.15,0); flock.rotation.x=0.4; head.add(flock);
@@ -24352,6 +24383,12 @@ function buildHorseMesh(tk,packs){
   for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(
       new THREE.Vector3(e2*0.07,1.82,1.52),new THREE.Vector3(e2*0.2,1.74,0.95),new THREE.Vector3(e2*0.17,1.62,0.38));   // from the BIT at the mouth corner, resting along the neck
     const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,8,0.011,5),tack); g.add(rein); }
+  // PASS 5: horses' manes FALL TO A SIDE — hanging cards off the right of the crest, over the ridge
+  { const fall=[[2.0,1.0,0.19,0.10],[1.87,0.87,0.24,0.09],[1.71,0.74,0.26,0.095],[1.56,0.63,0.21,0.085]];
+    fall.forEach(([fy,fz,fl,fd],fi)=>{                                                  // PASS 7: thinner, staggered locks
+      const card=new THREE.Mesh(new THREE.BoxGeometry(0.028,fl,fd),dark);
+      card.position.set(0.052+(fi%2)*0.012,fy-fl*0.42,fz+0.02);
+      card.rotation.z=-0.24-(fi%2)*0.06; card.rotation.x=0.35; card.rotation.y=(fi%2?0.12:-0.1); g.add(card); }); }
   // #742: the mane is ONE scalloped lofted ridge hugging the crest — no more stepped boxes
   { const mane=new THREE.Mesh(loftTube([
       {y:2.12,z:1.12,w:0.014,h:0.04},
@@ -24373,21 +24410,21 @@ function buildHorseMesh(tk,packs){
     const leg=new THREE.Group(); leg.position.set(lx,front?1.14:1.24,lz);
     let hockY;
     if(front){
-      const fair=new THREE.Mesh(new THREE.CylinderGeometry(0.115,0.075,0.3,9),coat);   // shoulder muscle into the chest
-      fair.position.y=0.03; leg.add(fair);
-      const forearm=new THREE.Mesh(new THREE.CylinderGeometry(0.082,0.05,0.52,9),coat);
-      forearm.position.y=-0.26; leg.add(forearm);
-      const carpus=new THREE.Mesh(new THREE.SphereGeometry(0.052,8,6),coat);
+      const fair=new THREE.Mesh(new THREE.CylinderGeometry(0.105,0.078,0.34,9),legCoat);  // shoulder muscle into the chest
+      fair.position.y=0.02; leg.add(fair);
+      const forearm=new THREE.Mesh(new THREE.CylinderGeometry(0.068,0.05,0.5,9),legCoat);  // top NESTS inside the fairing — no cap rims from above
+      forearm.position.y=-0.28; leg.add(forearm);
+      const carpus=new THREE.Mesh(new THREE.SphereGeometry(0.052,8,6),legCoat);
       carpus.scale.set(1,1.15,0.9); carpus.position.y=-0.54; leg.add(carpus);
       hockY=-0.54;
     } else {
-      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.09,0.36,9),coat);   // femur: forward-down
+      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.09,0.36,9),legCoat);   // femur: forward-down
       thigh.rotation.x=-0.42; thigh.position.set(0,-0.15,0.055); leg.add(thigh);
-      const stifle=new THREE.Mesh(new THREE.SphereGeometry(0.075,8,6),coat);
+      const stifle=new THREE.Mesh(new THREE.SphereGeometry(0.075,8,6),legCoat);
       stifle.position.set(0,-0.31,0.12); leg.add(stifle);                              // the stifle, forward
-      const gaskin=new THREE.Mesh(new THREE.CylinderGeometry(0.078,0.048,0.44,9),coat);// tibia: back-down
+      const gaskin=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.048,0.44,9),legCoat); // tibia: back-down, nested under the thigh
       gaskin.rotation.x=0.46; gaskin.position.set(0,-0.5,0.015); leg.add(gaskin);
-      const hock=new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6),coat);
+      const hock=new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6),legCoat);
       hock.scale.set(0.95,1.2,1.05); hock.position.set(0,-0.69,-0.085); leg.add(hock); // the hock, behind
       hockY=-0.69;
     }
@@ -24398,8 +24435,11 @@ function buildHorseMesh(tk,packs){
     const fet=new THREE.Mesh(new THREE.SphereGeometry(0.046,7,6),points); fet.position.y=-cLen-0.01; knee.add(fet);
     const past=new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.04,0.11,7),points);
     past.position.set(0,-cLen-0.065,0.025); past.rotation.x=0.4; knee.add(past);       // the sloped pastern
-    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.083,0.085,10),dark);
-    hoof.position.set(0,-cLen-0.13,0.05); knee.add(hoof);
+    const horn=new THREE.MeshStandardMaterial({color:0x241a10,roughness:0.45,metalness:0.05});   // PASS 8: polished horn
+    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.058,0.085,0.085,10),horn);
+    hoof.scale.z=1.18; hoof.position.set(0,-cLen-0.13,0.055); knee.add(hoof);                     // the toe points forward
+    const coronet=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.06,0.022,10),points);          // PASS 8: coronet band
+    coronet.scale.z=1.12; coronet.position.set(0,-cLen-0.085,0.05); knee.add(coronet);
     const b0=front?0:0.06, k0=front?0:-0.06;                                           // hind stance: a whisper under itself
     leg.rotation.x=b0; knee.rotation.x=k0;
     g.add(leg); legs.push({g:leg,knee,front,b0,k0});
@@ -24408,20 +24448,43 @@ function buildHorseMesh(tk,packs){
   // ── the tail: a full lofted fall from the dock to the hocks ──
   const tail=new THREE.Group(); tail.position.set(0,1.3,-1.04);
   const tmesh=new THREE.Mesh(loftTube([
-    {y:0.0,z:0.0,w:0.045,h:0.05},
-    {y:-0.22,z:-0.1,w:0.07,h:0.085},
-    {y:-0.5,z:-0.16,w:0.06,h:0.075},
-    {y:-0.74,z:-0.18,w:0.025,h:0.03},
+    {y:0.0,z:0.0,w:0.05,h:0.055},
+    {y:-0.2,z:-0.09,w:0.075,h:0.09},
+    {y:-0.42,z:-0.13,w:0.082,h:0.1},
+    {y:-0.62,z:-0.19,w:0.06,h:0.08},
+    {y:-0.8,z:-0.21,w:0.028,h:0.04},
   ],9,1),dark);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(0.05,0.22,7),dark);
+  tip.rotation.x=Math.PI-0.28; tip.position.set(0,-0.9,-0.24); tail.add(tip);
   tail.add(tmesh); g.add(tail); g.userData.tail=tail;
   // ── tack ──
-  const blanket=new THREE.Mesh(new THREE.BoxGeometry(0.56,0.045,0.66),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
-  blanket.position.y=1.55; g.add(blanket);
-  const saddle=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.06,0.58),tack); saddle.position.y=1.59; g.add(saddle);
-  const pommel=new THREE.Mesh(new THREE.SphereGeometry(0.042,7,6),tack); pommel.position.set(0,1.65,0.28); g.add(pommel);
-  const cantle=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.08,0.045),tack); cantle.position.set(0,1.64,-0.26); g.add(cantle);
-  for(const e2 of[-1,1]){ const flap=new THREE.Mesh(new THREE.BoxGeometry(0.026,0.28,0.38),tack);
-    flap.position.set(e2*0.25,1.44,0.02); flap.rotation.z=e2*0.12; g.add(flap); }
+  const blanket=new THREE.Mesh(loftTube([                                  // drapes along the back — no floating corners
+    {y:1.60,z:0.34,w:0.265,h:0.032},
+    {y:1.555,z:0.10,w:0.275,h:0.032},
+    {y:1.53,z:-0.14,w:0.275,h:0.032},
+    {y:1.54,z:-0.32,w:0.255,h:0.028},
+  ],10,1),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
+  g.add(blanket);
+  const seat=new THREE.Mesh(loftTube([                                     // PASS 9: swell → seat dip → cantle rise
+    {y:1.575,z:0.30,w:0.055,h:0.045},   // gentle dip, thick sections: wide thin sheets on a wavy
+    {y:1.595,z:0.22,w:0.110,h:0.060},   // spine tilt their cross-sections into a butterfly — keep
+    {y:1.560,z:0.05,w:0.150,h:0.055},   // the spine nearly level and let h carry the shape
+    {y:1.555,z:-0.10,w:0.155,h:0.055},
+    {y:1.595,z:-0.24,w:0.130,h:0.070},  // the cantle rises
+    {y:1.620,z:-0.29,w:0.080,h:0.045},
+  ],10,1,{top:1.0,bot:0.5}),tack);
+  g.add(seat);
+  const horn2=new THREE.Mesh(new THREE.SphereGeometry(0.035,7,6),tack); horn2.position.set(0,1.675,0.27); g.add(horn2);
+  for(const e2 of[-1,1]){
+    const flap=new THREE.Mesh(new THREE.BoxGeometry(0.024,0.26,0.34),tack); // the skirt hugs the barrel
+    flap.position.set(e2*0.245,1.46,0.02); flap.rotation.z=e2*0.16; g.add(flap);
+    const leather=new THREE.Mesh(new THREE.BoxGeometry(0.028,0.26,0.06),
+      new THREE.MeshStandardMaterial({color:0x54381e,roughness:0.72}));                 // PASS 9: stirrup leather
+    leather.position.set(e2*0.268,1.35,0.10); leather.rotation.z=e2*0.10; g.add(leather);
+    const iron=new THREE.Mesh(new THREE.TorusGeometry(0.045,0.009,5,10),
+      new THREE.MeshStandardMaterial({color:0x8a8f96,roughness:0.35,metalness:0.8}));   // the iron hangs level
+    iron.position.set(e2*0.285,1.21,0.10); iron.rotation.y=Math.PI/2; g.add(iron);
+  }
   const girth=new THREE.Mesh(new THREE.TorusGeometry(0.44,0.015,6,20),tack);   // rings the BARREL: torus plane stays XY
   girth.scale.set(0.56,1,1); girth.position.set(0,1.16,0.12); g.add(girth);
   for(let p=0;p<(packs||0);p++){ for(const e2 of[-1,1]){
@@ -24613,22 +24676,33 @@ function buyHorse(tk){
   saveGame(); renderStable();
 }
 // per-frame: parked horses graze; the mounted horse gallops under you
+// PASS 10: micro-life shared by every idle horse — the graze dip, the tail swish, EAR FLICKS
+// (a quick independent swivel every few seconds), and the odd head shake. seed staggers herds.
+function horseIdleTick(mesh,h,t,seed){
+  const hd=mesh.userData.head;
+  if(hd){ if(h.gt<1.6&&h.gt>0) hd.rotation.x=0.45+Math.min(0.5,(1.6-h.gt))*0.9;      // dip to graze
+    else { hd.rotation.x=0.45; if(h.gt<=0) h.gt=rnd(3,9); }
+    const sh=Math.sin(t*0.31+seed*2.1);                                              // the odd head shake
+    hd.rotation.z=(sh>0.985)?0.16*Math.sin(t*22):hd.rotation.z*0.85;
+  }
+  const ears=mesh.userData.ears;
+  if(ears){ for(let i=0;i<ears.length;i++){
+    const f=Math.sin(t*0.9+seed+i*1.7);                                              // each ear on its own clock
+    ears[i].rotation.y=(i%4<2?1:-1)*0.3+((f>0.93)?0.55*Math.sin(t*26+i):0); } }
+  if(mesh.userData.tail){
+    const shiver=Math.sin(t*0.47+seed)>0.97?0.3*Math.sin(t*30):0;                    // fly-shiver between swishes
+    mesh.userData.tail.rotation.z=0.22*Math.sin(t*1.3+seed)+shiver; }
+}
 function updateHorses(dt){
   const t=now()/1000;
   for(const h of STABLE_STOCK){                                          // #739: the paddock stock grazes too
     h.gt-=dt;
-    const hd=h.mesh.userData.head;
-    if(hd){ if(h.gt<1.6&&h.gt>0) hd.rotation.x=0.45+Math.min(0.5,(1.6-h.gt))*0.9;
-      else { hd.rotation.x=0.45; if(h.gt<=0) h.gt=rnd(3,9); } }
-    if(h.mesh.userData.tail) h.mesh.userData.tail.rotation.z=0.22*Math.sin(t*1.3+h.mesh.position.x);
+    horseIdleTick(h.mesh,h,t,h.mesh.position.x);
   }
   for(const h of horses){
     if(!h.mesh) continue;
     h.gt-=dt;
-    const hd=h.mesh.userData.head;
-    if(hd){ if(h.gt<1.6&&h.gt>0) hd.rotation.x=0.45+Math.min(0.5,(1.6-h.gt))*0.9;   // dip to graze
-      else { hd.rotation.x=0.45; if(h.gt<=0) h.gt=rnd(3,9); } }
-    if(h.mesh.userData.tail) h.mesh.userData.tail.rotation.z=0.22*Math.sin(t*1.3+h.rec.id);
+    horseIdleTick(h.mesh,h,t,h.rec.id);
   }
   if(player.mountRec&&mountMesh){
     const T=HORSE_TYPES[player.mountRec.type]||HORSE_TYPES.bay;
