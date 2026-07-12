@@ -9849,11 +9849,8 @@ function addKilmerCastle(){
     obst(58,zc,2.2,3.5);
   }
   // ═══ 20 vault chests (estate storage) lining the great corridor ═══
-  const mkChest=(lx,lz,tint,bandTint)=>{ const ch=new THREE.Group();
-    const bx=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.8,0.85),texMat(woodTex,tint||0x7a5a2a)); bx.position.y=0.4; bx.castShadow=true; ch.add(bx);
-    const lid=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.3,10,1,false,0,Math.PI),new THREE.MeshStandardMaterial({color:bandTint||0xb8912e,metalness:0.7,roughness:0.35}));
-    lid.rotation.z=Math.PI/2; lid.position.y=0.8; ch.add(lid);
-    ch.position.set(lx,0.18,lz); G.add(ch); obst(lx,lz,0.8,1.6); return ch; };
+  const mkChest=(lx,lz,tint,bandTint)=>{ const _c=mkChestMesh({sc:1.0,wood:tint||0x7a5a2a,iron:bandTint||0xb8912e});   // #706: same builder as the dungeon hoards
+    const ch=_c.g; ch.position.set(lx,0.18,lz); G.add(ch); obst(lx,lz,0.8,1.6); ch.userData.lid=_c.lid; return ch; };
   let placed=0;
   for(let z=KZ0+6;z<KZ1-4&&placed<20;z+=6.4){
     if(rowC.some(c=>Math.abs(z-c)<DOOR+1.6)) continue;
@@ -17728,7 +17725,7 @@ function openVault(){
   let key;
   if(i>=0){ key={name:player.inv[i].name}; takeFromInv(i); }
   else { const kr=findKeyring(true); if(!kr){ log("The vault is sealed. Only a <b>Key</b> will open it — a lockpick won't.","warn"); if(SFX.hit)SFX.hit(); return; } kr.keys--; key={name:"Keyring key"}; }
-  dungeonVault.opened=true;
+  dungeonVault.opened=true; chestOpenAnim(dungeonVault);
   if(dungeonVault.mesh) dungeonVault.mesh.rotation.y=-0.6;   // door swings open
   const tier=curDungeon?curDungeon.tier:4;
   for(let k=0;k<4;k++) addDrop(dungeonVault.x+rnd(-2,2),dungeonVault.z+rnd(-1,2),{type:"item",item:rollItem(true,Math.min(5,tier+1))});
@@ -17753,7 +17750,7 @@ function openLockedCache(){
       if(SFX.hit)SFX.hit(); return;
     }
   }
-  dungeonLock.opened=true;
+  dungeonLock.opened=true; chestOpenAnim(dungeonLock);
   if(dungeonLock.mesh) dungeonLock.mesh.rotation.z=-0.35;   // lid pops open
   // yield from the real treasure_death tier profile (chests sit one tier above trash drops)
   const tp=AC_REW&&AC_REW.tiers&&AC_REW.tiers[Math.min(6,tier+1)];
@@ -27038,7 +27035,8 @@ function updatePropFires(dt){
   for(let i=PROPANIM.length-1;i>=0;i--){ const a=PROPANIM[i];
     let pr=a.g; while(pr.parent) pr=pr.parent;
     if(pr!==scene){ PROPANIM.splice(i,1); continue; }
-    a.tick(t,dt); }
+    if(a.tick(t,dt)===true){ PROPANIM.splice(i,1); }   // #706: a tick may declare itself finished (one-shot anims)
+  }
   for(let i=PROPFIRE.length-1;i>=0;i--){ const f=PROPFIRE[i];
     let p=f.g; while(p.parent) p=p.parent;
     if(p!==scene){ PROPFIRE.splice(i,1); continue; }   // its dungeon/chunk was torn down
@@ -27053,6 +27051,59 @@ function updatePropFires(dt){
         if(ar[e+1]>f.sc*1.8){ ar[e+1]=f.sc*0.1; ar[e]=(Math.random()-0.5)*f.sc*0.5; ar[e+2]=(Math.random()-0.5)*f.sc*0.5; } }
       a.needsUpdate=true; }
   }
+}
+// ── #706: the ONE chest builder — every chest in the game (boss hoards, locked caches, sealed
+//    vaults, key strongboxes, Kilmer's castle chests) shares this: planked wooden body on iron
+//    feet, iron edge-bands, a domed lid HINGED at the rear edge, front hasp — and for locked
+//    variants a visible padlock (gold) or arcane seal (glowing blue ring). chestOpenAnim() swings
+//    the lid with an eased 0.6s arc and drops/removes the lock, via a one-shot PROPANIM tick. ──
+function mkChestMesh(opts){
+  opts=opts||{};
+  const sc=opts.sc||1, wood=opts.wood!=null?opts.wood:0x7a552e, iron=opts.iron!=null?opts.iron:0x35322e;
+  const g=new THREE.Group();
+  const wm=texMat(woodTex,wood);
+  const im=new THREE.MeshStandardMaterial({color:iron,metalness:0.72,roughness:0.42});
+  const W=1.3*sc,H=0.72*sc,D=0.85*sc;
+  for(const fx of[-1,1])for(const fz of[-1,1]){ const f=new THREE.Mesh(new THREE.BoxGeometry(0.16*sc,0.09*sc,0.16*sc),im);
+    f.position.set(fx*(W/2-0.1*sc),0.045*sc,fz*(D/2-0.1*sc)); g.add(f); }
+  const body=new THREE.Mesh(new THREE.BoxGeometry(W,H,D),wm); body.position.y=0.09*sc+H/2; g.add(body);
+  for(const bx of[-W*0.31,W*0.31]){ const b=new THREE.Mesh(new THREE.BoxGeometry(0.10*sc,H+0.015*sc,D+0.05*sc),im);
+    b.position.set(bx,0.09*sc+H/2,0); g.add(b); }
+  const lid=new THREE.Group(); lid.position.set(0,0.09*sc+H,-D/2); g.add(lid);   // hinge line = rear top edge
+  const dome=new THREE.Mesh(new THREE.CylinderGeometry(D/2,D/2,W,14,1,false,0,Math.PI),wm);
+  dome.rotation.z=Math.PI/2; dome.position.set(0,0,D/2); lid.add(dome);   // θ 0–π selects the +x half → UP once the axis lies along x
+  for(const ex of[-1,1]){ const cap=new THREE.Mesh(new THREE.CircleGeometry(D/2,12,0,Math.PI),wm);
+    cap.rotation.y=ex*Math.PI/2; cap.position.set(ex*W/2,0,D/2); lid.add(cap); }
+  for(const bx of[-W*0.31,W*0.31]){ const b=new THREE.Mesh(new THREE.CylinderGeometry(D/2+0.02*sc,D/2+0.02*sc,0.1*sc,14,1,false,0,Math.PI),im);
+    b.rotation.z=Math.PI/2; b.position.set(bx,0,D/2); lid.add(b); }
+  const hasp=new THREE.Mesh(new THREE.BoxGeometry(0.16*sc,0.2*sc,0.035*sc),im);
+  hasp.position.set(0,0.09*sc+H-0.05*sc,D/2+0.02*sc); g.add(hasp);
+  let lock=null;
+  if(opts.locked){
+    lock=new THREE.Group();
+    const shk=new THREE.Mesh(new THREE.TorusGeometry(0.085*sc,0.026*sc,6,10,Math.PI),im); shk.position.y=0.06*sc; lock.add(shk);
+    const lb=new THREE.Mesh(new THREE.BoxGeometry(0.17*sc,0.17*sc,0.075*sc),
+      new THREE.MeshStandardMaterial({color:opts.locked==="seal"?0x39415a:0xa88a34,metalness:0.85,roughness:0.3}));
+    lb.position.y=-0.05*sc; lock.add(lb);
+    if(opts.locked==="seal"){ const ring=new THREE.Mesh(new THREE.TorusGeometry(0.06*sc,0.018*sc,6,14),
+        new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x3a6abf,emissiveIntensity:1.1}));
+      ring.position.set(0,-0.05*sc,0.045*sc); lock.add(ring); }
+    lock.position.set(0,0.09*sc+H-0.16*sc,D/2+0.055*sc); g.add(lock);
+  }
+  g.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
+  return {g,lid,lock,sc};
+}
+function chestOpenAnim(ch){   // any object carrying {lid, lock?}
+  if(!ch||!ch.lid) return;
+  const lid=ch.lid, lock=ch.lock; let t0=null;
+  PROPANIM.push({g:lid,tick:(t,dt)=>{
+    if(t0==null) t0=t;
+    const k=Math.min(1,(t-t0)/0.6);
+    lid.rotation.x=-1.85*(1-Math.pow(1-k,3));           // ease-out swing past vertical
+    if(lock){ lock.position.y-=dt*1.4; lock.rotation.z+=dt*4; lock.position.z+=dt*0.3;   // the lock tumbles off
+      if(k>=1&&lock.parent) lock.parent.remove(lock); }
+    return k>=1;                                         // one-shot: retire when the lid settles
+  }});
 }
 function buildProp(type,lx,lz,color){
   const o=[];
@@ -27521,12 +27572,11 @@ function buildDungeon(def){
   }
   // walkthrough gates: portcullises across lever/key corridors, wall levers & key strongboxes in the room before
   function mkStrongbox(bx,bz,fy,keyName){
-    const sb=new THREE.Group(); sb.position.set(bx,fy,bz);
-    const body=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.5,0.55),new THREE.MeshStandardMaterial({color:0x5a4326,metalness:0.3,roughness:0.6})); body.position.y=0.25; sb.add(body);
-    const strap=new THREE.Mesh(new THREE.BoxGeometry(0.84,0.1,0.58),new THREE.MeshStandardMaterial({color:0x8a8a92,metalness:0.8,roughness:0.35})); strap.position.y=0.34; sb.add(strap);
+    const _sc=mkChestMesh({sc:0.62,wood:0x5a4326,iron:0x565660});   // #706: a real little banded coffer
+    const sb=_sc.g; sb.position.set(bx,fy,bz);
     scene.add(sb); dungeonObjs.push(sb);
     const slbl=labelSprite("Strongbox","dungeons"); slbl.position.set(bx,fy+1.8,bz); scene.add(slbl); dungeonObjs.push(slbl);
-    dungeonBoxes.push({x:bx,z:bz,key:keyName,opened:false,mesh:sb});
+    dungeonBoxes.push({x:bx,z:bz,key:keyName,opened:false,mesh:sb,lid:_sc.lid});
   }
   // rooms that hold a named quest key (collected here, used in ANOTHER dungeon — e.g. the Sword of Lost Light hunt)
   for(const r of L.rooms) if(r.box) mkStrongbox(r.cx-(r.round?r.rad-1.8:r.hx-1.4), r.cz-2, r.fy, r.box);
@@ -27586,14 +27636,11 @@ function buildDungeon(def){
   const elt=new THREE.PointLight(0x6aa0ff,1.4,16);elt.position.set(dungeonExit.x,2,dungeonExit.z);scene.add(elt);dungeonObjs.push(elt);
   // treasure chest in the boss room
   const boss=L.rooms[L.rooms.length-1];
-  const cm=new THREE.Group();
-  const cbase=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.8,1.0),new THREE.MeshStandardMaterial({color:0x8a5a2a,metalness:0.3,roughness:0.6}));
-  cbase.position.y=0.4;cbase.castShadow=true;cm.add(cbase);
-  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.46,0.34,1.05),new THREE.MeshStandardMaterial({color:0x6a4420,metalness:0.3,roughness:0.6}));
-  lid.position.y=0.95;cm.add(lid);
+  const _hc=mkChestMesh({sc:1.15,wood:0x8a5a2a,iron:0x3a332a});   // #706: the hoard is a real banded chest
+  const cm=_hc.g, lid=_hc.lid;
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
   cm.position.set(boss.cx,boss.fy,boss.cz);scene.add(cm);dungeonObjs.push(cm);
-  dungeonChest={x:boss.cx,z:boss.cz,mesh:cm,lid,light:clt,opened:false};
+  dungeonChest={x:boss.cx,z:boss.cz,mesh:cm,lid,lock:null,light:clt,opened:false};
   if(dungeonDepth<dungeonMaxDepth(curDungeon)) placeDescentStair(boss.cx+3.2,boss.fy,boss.cz+2.6);   // the way down hides by the hoard
   // a locked cache (AC): needs a Lockpick or Key, gives bonus loot — appears in ~55% of delves, in a mid room
   dungeonLock=null;
@@ -27601,27 +27648,21 @@ function buildDungeon(def){
     const mids=L.rooms.filter(r=>r.type!=="entry"&&r.type!=="boss");
     const rm=mids.length?mids[irnd(0,mids.length-1)]:boss;
     const lx=rm.cx+(rm.round?(rm.rad-2.5):(rm.hx-2.5)), lz=rm.cz;
-    const lg=new THREE.Group();
-    const lb=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.66,0.74),new THREE.MeshStandardMaterial({color:0x4a4a55,metalness:0.6,roughness:0.4}));
-    lb.position.y=0.33;lb.castShadow=true;lg.add(lb);
-    const lk=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6),new THREE.MeshStandardMaterial({color:0xffd23b,emissive:0x6a5320,emissiveIntensity:0.7}));
-    lk.position.set(0,0.46,0.4);lg.add(lk);
+    const _lc=mkChestMesh({sc:0.82,wood:0x555046,iron:0x3a3a44,locked:"padlock"});   // #706: LOOKS locked — visible gold padlock
+    const lg=_lc.g;
     lg.position.set(lx,rm.fy,lz);scene.add(lg);dungeonObjs.push(lg);
     const llbl=labelSprite("Locked Cache","dungeons");llbl.position.set(lx,rm.fy+2.0,lz);scene.add(llbl);dungeonObjs.push(llbl);
-    dungeonLock={x:lx,z:lz,mesh:lg,opened:false};
+    dungeonLock={x:lx,z:lz,mesh:lg,lid:_lc.lid,lock:_lc.lock,opened:false};
   }
   // a Sealed Vault (AC): KEY-only (a pick won't do), richer reward — rarer, ~25% of delves, near the boss room
   dungeonVault=null;
   if(Math.random()<0.25){
     const vx=boss.cx+(boss.round?-(boss.rad-2.5):-(boss.hx-2.5)), vz=boss.cz;
-    const vg=new THREE.Group();
-    const vd=new THREE.Mesh(new THREE.BoxGeometry(1.5,2.0,0.4),new THREE.MeshStandardMaterial({color:0x2a3550,metalness:0.7,roughness:0.35,emissive:0x101830,emissiveIntensity:0.5}));
-    vd.position.y=1.0;vd.castShadow=true;vg.add(vd);
-    const vk=new THREE.Mesh(new THREE.TorusGeometry(0.18,0.05,8,16),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x3a6abf,emissiveIntensity:0.9}));
-    vk.position.set(0.45,1.0,0.22);vg.add(vk);
+    const _vc=mkChestMesh({sc:1.05,wood:0x39415a,iron:0x23283a,locked:"seal"});   // #706: iron-blue strongchest under an arcane seal
+    const vg=_vc.g;
     vg.position.set(vx,boss.fy,vz);scene.add(vg);dungeonObjs.push(vg);
     const vlbl=labelSprite("Sealed Vault","dungeons");vlbl.position.set(vx,boss.fy+2.7,vz);scene.add(vlbl);dungeonObjs.push(vlbl);
-    dungeonVault={x:vx,z:vz,mesh:vg,opened:false};
+    dungeonVault={x:vx,z:vz,mesh:vg,lid:_vc.lid,lock:_vc.lock,opened:false};
   }
   // guardians spread across the rooms; the warden guards the hoard
   const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
@@ -28891,7 +28932,7 @@ function pullDungeonLever(lv){
   openDungeonBar(lv.bar); if(SFX.click)SFX.click();
 }
 function openStrongbox(bx){
-  bx.opened=true; if(bx.mesh) bx.mesh.rotation.x=-0.18;
+  bx.opened=true; chestOpenAnim(bx);   // #706: the coffer lid swings open
   player.inv.push({name:bx.key,stat:"key",v:1});
   log(`The strongbox holds the <b>${esc(bx.key)}</b> — it must open something, somewhere.`,"loot");
   if(SFX.gold)SFX.gold(); burst(bx.x,1,bx.z,0xffd23b,10);
@@ -28905,7 +28946,7 @@ function unlockDungeonDoor(b){
 }
 function openChest(){
   if(!dungeonChest||dungeonChest.opened) return;
-  dungeonChest.opened=true;dungeonChest.lid.position.y=1.18;dungeonChest.lid.rotation.x=-0.5;dungeonChest.light.intensity=2;
+  dungeonChest.opened=true;chestOpenAnim(dungeonChest);dungeonChest.light.intensity=2;   // #706: the lid swings on its hinge
   burst(dungeonChest.x,1,dungeonChest.z,0xffd23b,28);
   const tier=curDungeon?curDungeon.tier:1;
   const _tp=AC_REW&&AC_REW.tiers&&AC_REW.tiers[Math.min(6,tier+1)];   // hoards yield per the real tier profile
