@@ -5771,14 +5771,7 @@ function _normHumanMesh(g,target){
   body.scale.setScalar(target/robustHeight(body));
   const b2=new THREE.Box3().setFromObject(body); body.position.y-=b2.min.y;   // feet to y=0
   g.add(body);
-  // PASS 3: pectoral breast between the front legs and round quarter masses over the hips —
-  // low-offset lofted blobs that melt into the main skin
-  const breast=new THREE.Mesh(loftTube([
-    {y:1.06,z:0.56,w:0.13,h:0.14},{y:1.0,z:0.66,w:0.15,h:0.17},{y:0.98,z:0.74,w:0.10,h:0.12}],10,1),coat);
-  g.add(breast);
-  for(const e2 of[-1,1]){
-    const qtr=new THREE.Mesh(new THREE.SphereGeometry(0.21,12,9),coat);
-    qtr.scale.set(0.62,1.15,1.05); qtr.position.set(e2*0.145,1.08,-0.7); g.add(qtr); } return g;
+  return g;
 }
 function buildPerson(o){
   o=o||{}; const g=new THREE.Group(), sd=Math.abs(o.seed|0);
@@ -24239,32 +24232,77 @@ const HORSE_MAX=20;
 let horses=[];              // live PARKED world entities: {rec, mesh, gt (graze timer), ph (gallop phase)}
 let mountMesh=null;         // the mesh under you while riding (its rec is player.mountRec)
 const _coatTexCache={};
+const _horseHairT={};
+let _muscleT=null;
+function horseMuscleTex(){
+  // surface-anatomy relief, painted in luminance and converted to a normal map: the scapula line,
+  // triceps, brachiocephalicus strap, rib hints, gluteals and the quarter groove. Light plays over
+  // these without touching the silhouette or the (uniform) coat colour.
+  if(_muscleT) return _muscleT;
+  const c=document.createElement('canvas'); c.width=512; c.height=256;
+  const g=c.getContext('2d');
+  g.fillStyle="#808080"; g.fillRect(0,0,512,256);
+  const blob=(x,y,rx,ry,a,bright)=>{ for(const yy of[y,y+256,y-256]){        // wrap v-seam (right mid-line)
+    const gr=g.createRadialGradient(x,yy,1,x,yy,Math.max(rx,ry));
+    gr.addColorStop(0,`rgba(${bright?255:0},${bright?255:0},${bright?255:0},${a})`);
+    gr.addColorStop(1,"rgba(128,128,128,0)");
+    g.save(); g.translate(x,yy); g.scale(1,ry/rx); g.translate(-x,-yy);
+    g.fillStyle=gr; g.beginPath(); g.arc(x,yy,rx,0,6.283); g.fill(); g.restore(); } };
+  const stroke=(x1,y1,x2,y2,w,a,bright)=>{ for(const off of[0,256,-256]){
+    g.strokeStyle=`rgba(${bright?255:0},${bright?255:0},${bright?255:0},${a})`;
+    g.lineWidth=w; g.lineCap="round";
+    g.beginPath(); g.moveTo(x1,y1+off); g.lineTo(x2,y2+off); g.stroke(); } };
+  const SIDES=[y=>y, y=>128-y];                                              // right quadrant ↔ left mirror
+  for(const S of SIDES){
+    stroke(228,S(48),182,S(12),9,0.32,true);          // scapula spine: withers → point of shoulder
+    stroke(238,S(40),196,S(6),22,0.16,false);         // the shoulder bed shadow behind it
+    blob(262,S(18),30,17,0.30,true);                  // triceps mass above the elbow
+    blob(100,S(30),48,12,0.22,true);                  // brachiocephalicus: the neck strap
+    stroke(96,S(44),160,S(16),7,0.14,false);          // jugular groove beneath it
+    for(let r2=0;r2<4;r2++) stroke(310+r2*22,S(8),300+r2*22,S(46),4,0.10,true);   // rib spring hints
+    blob(438,S(42),34,20,0.30,true);                  // gluteal: the quarter's round top
+    stroke(472,S(2),466,S(46),6,0.26,false);          // the quarter GROOVE (biceps/semitendinosus split)
+    blob(486,S(20),16,26,0.22,true);                  // semitendinosus ridge behind the groove
+    blob(388,S(58),26,12,0.12,false);                 // flank hollow
+  }
+  _muscleT=new THREE.CanvasTexture(c); _muscleT.wrapS=_muscleT.wrapT=THREE.RepeatWrapping;
+  return _muscleT;
+}
+function horseHairTex(colHex){
+  // long tail/mane hair: vertical strands of varied shade and length over TRANSPARENCY, so a few
+  // crossed cards read as a hanging fall of hair instead of a solid slab
+  if(_horseHairT[colHex]) return _horseHairT[colHex];
+  const c=document.createElement('canvas'); c.width=128; c.height=256;
+  const g=c.getContext('2d'), col=new THREE.Color(colHex);
+  const R=(col.r*255)|0, G=(col.g*255)|0, B=(col.b*255)|0;
+  for(let i=0;i<430;i++){
+    const v=(Math.random()-0.45)*46, a=0.5+Math.random()*0.5;
+    g.strokeStyle=`rgba(${Math.max(0,R+v)|0},${Math.max(0,G+v)|0},${Math.max(0,B+v)|0},${a})`;
+    g.lineWidth=1+Math.random()*1.6;
+    const x=Math.random()*127, x2=x+(Math.random()-0.5)*10;
+    const y0=Math.random()*16, y1=140+Math.random()*116;              // strands start bunched, end ragged
+    g.beginPath(); g.moveTo(x,y0);
+    g.quadraticCurveTo(x+(Math.random()-0.5)*14,(y0+y1)/2,x2,y1); g.stroke();
+  }
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
+  return (_horseHairT[colHex]=t);
+}
 function horseCoatTex(tk){
+  // 100-pass rebuild: the coat is ONE SOLID COLOUR everywhere — a uniform short-hair hide.
+  // Only soft grain (clipped hair sheen) varies it; no dorsal bands, dapples, or blazes, so the
+  // same material can wrap body, head and legs without direction-dependent striping.
   if(_coatTexCache[tk]) return _coatTexCache[tk];
-  const T=HORSE_TYPES[tk], c=document.createElement('canvas'); c.width=512; c.height=256;
+  const T=HORSE_TYPES[tk], c=document.createElement('canvas'); c.width=256; c.height=256;
   const g=c.getContext('2d'), col=new THREE.Color(T.coat);
   const R=(col.r*255)|0, G=(col.g*255)|0, B=(col.b*255)|0;
-  g.fillStyle='#'+col.getHexString(); g.fillRect(0,0,512,256);
-  for(let i=0;i<16000;i++){ const v=(Math.random()-0.5)*15;                       // fine soft hide grain
-    g.fillStyle=`rgba(${R+v|0},${G+v|0},${B+v|0},0.32)`;
-    g.fillRect(Math.random()*511,Math.random()*255,1,1); }
-  // PASS 4: vertical body shading — light catches the top of the barrel, shadow gathers low
-  const vert=g.createLinearGradient(0,40,0,230);
-  vert.addColorStop(0,"rgba(255,245,230,0.05)"); vert.addColorStop(0.55,"rgba(0,0,0,0.0)"); vert.addColorStop(1,"rgba(30,15,5,0.12)");
-  g.fillStyle=vert; g.fillRect(0,40,512,190);
-  g.fillStyle="rgba(0,0,0,0.12)"; g.fillRect(0,48,512,28);                        // dorsal shading
-  if(T.points){ g.fillStyle="rgba(0,0,0,0.22)"; g.fillRect(0,52,512,14); }        // bay dorsal stripe
-  const belly=g.createLinearGradient(0,168,0,220);
-  belly.addColorStop(0,"rgba(255,255,255,0)"); belly.addColorStop(0.5,"rgba(255,250,238,0.12)"); belly.addColorStop(1,"rgba(255,255,255,0)");
-  g.fillStyle=belly; g.fillRect(0,168,512,52);                                    // lighter under-belly
-  const shoulder=g.createLinearGradient(120,0,220,0);
-  shoulder.addColorStop(0,"rgba(0,0,0,0.09)"); shoulder.addColorStop(1,"rgba(0,0,0,0)");
-  g.fillStyle=shoulder; g.fillRect(120,0,100,256);                                // shoulder muscle shading
-  if(T.dapple) for(let i=0;i<260;i++){ const r=4+Math.random()*8;                 // dapple rosettes
-    g.fillStyle="rgba(238,238,244,0.13)"; g.beginPath();
-    g.arc(Math.random()*511,40+Math.random()*160,r,0,6.28); g.fill(); }
-  if(T.ember) for(let i=0;i<90;i++){ g.fillStyle="rgba(90,30,110,0.12)";
-    g.fillRect(Math.random()*511,Math.random()*255,6,3); }
+  g.fillStyle='#'+col.getHexString(); g.fillRect(0,0,256,256);
+  for(let i=0;i<9000;i++){ const v=(Math.random()-0.5)*10;                    // fine even grain
+    g.fillStyle=`rgba(${R+v|0},${G+v|0},${B+v|0},0.3)`;
+    g.fillRect(Math.random()*255,Math.random()*255,1,1); }
+  for(let i=0;i<340;i++){ const v=(Math.random()-0.5)*7;                      // short hair licks
+    g.strokeStyle=`rgba(${R+v|0},${G+v|0},${B+v|0},0.25)`; g.lineWidth=1;
+    const x=Math.random()*255,y=Math.random()*255;
+    g.beginPath(); g.moveTo(x,y); g.lineTo(x+2+Math.random()*3,y+(Math.random()-0.5)*2); g.stroke(); }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
   return (_coatTexCache[tk]=t);
 }
@@ -24307,31 +24345,24 @@ function buildHorseMesh(tk,packs){
   const coat=new THREE.MeshStandardMaterial({map:coatTex,roughness:0.8,metalness:0.02,
     normalMap:lumNormalTex(coatTex),normalScale:new THREE.Vector2(0.3,0.3)});
   const dark=new THREE.MeshStandardMaterial({color:T.mane,roughness:0.95});
-  const legCoat=new THREE.MeshStandardMaterial({color:T.coat,roughness:0.85});   // legs: plain colour — the anatomy map would band them
+  const legCoat=coat;                                              // ONE hide: legs wear the same coat texture
   const tack=new THREE.MeshStandardMaterial({color:0x3e2a16,roughness:0.7});
-  let points=legCoat;
-  if(T.points){                                                     // PASS 4: points FADE in — a gradient cannon texture
-    const pc=document.createElement('canvas'); pc.width=16; pc.height=64; const pg=pc.getContext('2d');
-    const grd=pg.createLinearGradient(0,0,0,64);
-    const cs='#'+new THREE.Color(T.coat).getHexString(), ms='#'+new THREE.Color(T.mane).getHexString();
-    grd.addColorStop(0,cs); grd.addColorStop(0.45,ms); grd.addColorStop(1,ms);
-    pg.fillStyle=grd; pg.fillRect(0,0,16,64);
-    const pt=new THREE.CanvasTexture(pc); pt.colorSpace=THREE.SRGBColorSpace;
-    points=new THREE.MeshStandardMaterial({map:pt,roughness:0.9});
-  }
+  const points=coat;                                               // no contrasting leg points — the horse is one solid colour
   // ── ONE skin: poll → crest → withers → back → croup → dock ──
   const body=new THREE.Mesh(loftTube([
     {y:2.04,z:1.16,w:0.08, h:0.095},   // just under the poll
     {y:1.92,z:1.02,w:0.10, h:0.15},    // upper neck — CREST arches here
     {y:1.72,z:0.85,w:0.12, h:0.185},   // mid neck, thin through the THROAT
     {y:1.48,z:0.66,w:0.16, h:0.27},    // neck base flowing into the shoulder
-    {y:1.26,z:0.46,w:0.205,h:0.40},    // withers/chest, deep through the brisket
-    {y:1.15,z:0.12,w:0.23, h:0.455},   // the girth — deepest point
-    {y:1.14,z:-0.28,w:0.245,h:0.43},   // barrel
-    {y:1.18,z:-0.62,w:0.225,h:0.38},   // flank tucks
-    {y:1.25,z:-0.88,w:0.175,h:0.30},   // croup
+    {y:1.28,z:0.46,w:0.205,h:0.375},   // withers/chest — withers a touch ABOVE the croup
+    {y:1.18,z:0.12,w:0.225,h:0.415},   // the girth — deepest point (depth ≈ leg length now)
+    {y:1.17,z:-0.28,w:0.245,h:0.40},   // barrel — the sprung ribs stay the widest point
+    {y:1.20,z:-0.62,w:0.22, h:0.355},  // flank tucks up
+    {y:1.26,z:-0.88,w:0.18, h:0.295},  // croup
     {y:1.30,z:-1.04,w:0.06, h:0.08},   // dock
-  ],18,1,{top:0.88,bot:1.1}),coat);    // flat back, round belly (uvRepeat 1: anatomy bands land true)
+  ],18,1,{top:0.88,bot:1.04}),(()=>{   // flat back, round (not pendulous) belly
+    const bm=coat.clone(); bm.normalMap=lumNormalTex(horseMuscleTex(),2.4);
+    bm.normalScale=new THREE.Vector2(0.7,0.7); return bm; })());
   g.add(body);
   // ── the head: its own small loft (pivots at the poll for the gait pendulum) ──
   const head=new THREE.Group(); head.position.set(0,2.0,1.22); head.rotation.x=0.52;
@@ -24375,30 +24406,33 @@ function buildHorseMesh(tk,packs){
   mouth.position.set(0,-0.052,0.455); head.add(mouth);
   const nose=new THREE.Mesh(new THREE.TorusGeometry(0.075,0.008,5,12),tack);
   nose.rotation.x=Math.PI/2-0.1; nose.position.set(0,-0.035,0.35); head.add(nose);
-  const flock=new THREE.Mesh(new THREE.BoxGeometry(0.055,0.11,0.045),dark); flock.position.set(0,0.15,0); flock.rotation.x=0.4; head.add(flock);
-  if(T.blaze){ const bl=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.012,0.3),new THREE.MeshStandardMaterial({color:0xe8e4dc,roughness:0.9}));
-    bl.position.set(0,0.075,0.28); bl.rotation.x=-0.12; head.add(bl); }
   g.add(head); g.userData.head=head;
   // reins
   for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(
       new THREE.Vector3(e2*0.07,1.82,1.52),new THREE.Vector3(e2*0.2,1.74,0.95),new THREE.Vector3(e2*0.17,1.62,0.38));   // from the BIT at the mouth corner, resting along the neck
     const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,8,0.011,5),tack); g.add(rein); }
-  // PASS 5: horses' manes FALL TO A SIDE — hanging cards off the right of the crest, over the ridge
-  { const fall=[[2.0,1.0,0.19,0.10],[1.87,0.87,0.24,0.09],[1.71,0.74,0.26,0.095],[1.56,0.63,0.21,0.085]];
-    fall.forEach(([fy,fz,fl,fd],fi)=>{                                                  // PASS 7: thinner, staggered locks
-      const card=new THREE.Mesh(new THREE.BoxGeometry(0.028,fl,fd),dark);
-      card.position.set(0.052+(fi%2)*0.012,fy-fl*0.42,fz+0.02);
-      card.rotation.z=-0.24-(fi%2)*0.06; card.rotation.x=0.35; card.rotation.y=(fi%2?0.12:-0.1); g.add(card); }); }
-  // #742: the mane is ONE scalloped lofted ridge hugging the crest — no more stepped boxes
-  { const mane=new THREE.Mesh(loftTube([
-      {y:2.12,z:1.12,w:0.014,h:0.04},
-      {y:2.00,z:0.98,w:0.02, h:0.095},
-      {y:1.85,z:0.85,w:0.022,h:0.075},
-      {y:1.69,z:0.72,w:0.022,h:0.105},
-      {y:1.54,z:0.61,w:0.02, h:0.08},
-      {y:1.42,z:0.53,w:0.014,h:0.045},
-    ],7,1),dark);
-    mane.position.y=0.02; g.add(mane); }
+  // 100-pass: the MANE is HAIR — cards pivot at their TOP EDGE on the crest line and hang
+  // VERTICALLY (hair obeys gravity), draping down the right side of the neck. A vertical curtain
+  // off a diagonal crest steps naturally, like a combed mane.
+  { const hairT2=horseHairTex(T.mane);
+    const maneMat=new THREE.MeshStandardMaterial({map:hairT2,transparent:true,alphaTest:0.28,
+      side:THREE.DoubleSide,roughness:0.9});
+    const hang=(w,len)=>{ const geo=new THREE.PlaneGeometry(w,len); geo.translate(0,-len/2,0); return geo; };
+    const crest=[[2.08,1.13],[1.99,1.01],[1.89,0.90],[1.78,0.80],[1.66,0.70],[1.54,0.61],[1.44,0.545]];
+    crest.forEach(([cy,cz],ci)=>{
+      const len=0.26+((ci*7)%3)*0.05+(ci>1&&ci<5?0.06:0);            // longest through the mid-neck
+      const card=new THREE.Mesh(hang(0.15,len),maneMat);
+      card.position.set(0.05,cy+0.03,cz);
+      card.rotation.y=Math.PI/2+(((ci*5)%3)-1)*0.08;                 // flat to the neck side, scattered
+      card.rotation.z=-0.10-((ci*3)%2)*0.05;                         // bottoms drift a whisper outboard
+      g.add(card);
+      const card2=new THREE.Mesh(hang(0.13,len*0.82),maneMat);       // second ragged layer
+      card2.position.set(0.085,cy+0.02,cz-0.02);
+      card2.rotation.y=Math.PI/2-0.1; card2.rotation.z=-0.2; g.add(card2);
+    });
+    const fore=new THREE.Mesh(hang(0.13,0.24),maneMat);              // the forelock, over the brow
+    fore.position.set(0,2.14,1.30); fore.rotation.x=0.62; g.add(fore);
+  }
   // ── legs (unchanged rig: base angles the gait engine preserves) ──
   const legs=[];
   // #744: REAL leg architecture. Front: a straight column — muscled forearm → flat carpus knob →
@@ -24445,18 +24479,28 @@ function buildHorseMesh(tk,packs){
     g.add(leg); legs.push({g:leg,knee,front,b0,k0});
   }
   g.userData.legs=legs;
-  // ── the tail: a full lofted fall from the dock to the hocks ──
+  // ── the tail IS HAIR: a short dock (real docks reach just past the buttock) buried under a
+  //    radial fall of strand cards that hangs to the hocks — a fountain, not a solid slab ──
   const tail=new THREE.Group(); tail.position.set(0,1.3,-1.04);
-  const tmesh=new THREE.Mesh(loftTube([
-    {y:0.0,z:0.0,w:0.05,h:0.055},
-    {y:-0.2,z:-0.09,w:0.075,h:0.09},
-    {y:-0.42,z:-0.13,w:0.082,h:0.1},
-    {y:-0.62,z:-0.19,w:0.06,h:0.08},
-    {y:-0.8,z:-0.21,w:0.028,h:0.04},
-  ],9,1),dark);
-  const tip=new THREE.Mesh(new THREE.ConeGeometry(0.05,0.22,7),dark);
-  tip.rotation.x=Math.PI-0.28; tip.position.set(0,-0.9,-0.24); tail.add(tip);
-  tail.add(tmesh); g.add(tail); g.userData.tail=tail;
+  const hairT=horseHairTex(T.mane);
+  const hairMat=new THREE.MeshStandardMaterial({map:hairT,transparent:true,alphaTest:0.28,
+    side:THREE.DoubleSide,roughness:0.9});
+  const dock=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.02,0.3,7),dark);
+  dock.rotation.x=0.35; dock.position.set(0,-0.13,-0.05); tail.add(dock);
+  for(let i=0;i<9;i++){                                             // the fall: cards ring the dock
+    const a=i/9*Math.PI*2, r0=0.035+((i*7)%3)*0.012;
+    const len=0.82+((i*5)%4)*0.05, wid=0.11+((i*3)%3)*0.02;
+    const card=new THREE.Mesh(new THREE.PlaneGeometry(wid,len),hairMat);
+    card.position.set(Math.sin(a)*r0,-0.05-len*0.42,-0.04+Math.cos(a)*r0*0.8);
+    card.rotation.y=a+(((i*11)%5)-2)*0.06;                          // face outward, slightly scattered
+    card.rotation.x=0.10+Math.cos(a)*0.10;                          // flare a whisper off the vertical
+    tail.add(card);
+  }
+  for(let i=0;i<3;i++){                                             // crossed core cards fill the centre
+    const card=new THREE.Mesh(new THREE.PlaneGeometry(0.14,0.9),hairMat);
+    card.position.set(0,-0.42,-0.05); card.rotation.y=i/3*Math.PI; tail.add(card);
+  }
+  g.add(tail); g.userData.tail=tail;
   // ── tack ──
   const blanket=new THREE.Mesh(loftTube([                                  // drapes along the back — no floating corners
     {y:1.60,z:0.34,w:0.265,h:0.032},
