@@ -24303,7 +24303,20 @@ function loadGltfHorse(){
       for(const bn of sk.bones){ bn.getWorldPosition(v); b.expandByPoint(v); } h=(b.max.y-b.min.y)||1; }
     gltfHorse={scene:g.scene, anims:g.animations||[], h};
     console.log("Loaded the horse model ("+(g.animations||[]).length+" clips).");
+    refreshHorseMeshes();   // rebuild any horses that were built with the blocky fallback before this async load finished
   }, undefined, e=>console.log("horse model failed:",(e&&e.message)||""));
+}
+// The rigged horse GLB loads asynchronously, so stable-stock / parked / mounted horses created during
+// world-build get the procedural fallback (box body, stick legs). Once the model lands, swap those
+// placeholders for the real rigged mesh — preserving position & facing.
+function refreshHorseMeshes(){
+  if(!gltfHorse||!gltfHorse.scene||typeof THREE.SkeletonUtils==="undefined") return;
+  const swap=(oldMesh,tk,packs)=>{ const p=oldMesh.position.clone(), ry=oldMesh.rotation.y;
+    scene.remove(oldMesh); if(typeof disposeObject3D==="function"){ try{disposeObject3D(oldMesh);}catch(e){} }
+    const hm=buildHorseMesh(tk,packs||0); hm.position.copy(p); hm.rotation.y=ry; scene.add(hm); return hm; };
+  for(const s of STABLE_STOCK){ if(s.mesh && !s.mesh.userData.glbHorse) s.mesh=swap(s.mesh, s.type||"bay", 0); }
+  for(const h of horses){ if(h.mesh && !h.mesh.userData.glbHorse && h.rec) h.mesh=swap(h.mesh, h.rec.type, h.rec.packs); }
+  if(mountMesh && !mountMesh.userData.glbHorse && player.mountRec){ mountMesh=swap(mountMesh, player.mountRec.type, player.mountRec.packs); }
 }
 let horses=[];              // live PARKED world entities: {rec, mesh, gt (graze timer), ph (gallop phase)}
 let mountMesh=null;         // the mesh under you while riding (its rec is player.mountRec)
@@ -24607,7 +24620,7 @@ function buildStableYard(sx,sz){
     const hm=buildHorseMesh(tk,0);
     const hx2=g.position.x+PX+(-3.5+i*3.4), hz2=g.position.z+PZ+((i%2)?2.6:-2.4);
     hm.position.set(hx2,g.position.y,hz2); hm.rotation.y=rnd(0,6.28);
-    scene.add(hm); STABLE_STOCK.push({mesh:hm,gt:rnd(0,6),master:mpost});
+    scene.add(hm); STABLE_STOCK.push({mesh:hm,gt:rnd(0,6),master:mpost,type:tk});   // keep the breed so the mesh can be rebuilt once the rigged GLB finishes loading
   }
   return mpost;
 }
