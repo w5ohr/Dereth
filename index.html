@@ -890,10 +890,14 @@
 <script>
 "use strict";
 /* ============================================================================
-   DERETH — first-person Asheron's Call homage (Three.js r128, bundled locally)
+   DERETH — first-person Asheron's Call homage (Three.js r159, bundled locally)
    Pure local files; runs in any modern HTML5 browser on any OS — no install.
 ============================================================================ */
 if(typeof THREE==="undefined"){ document.body.innerHTML="<p style='color:#e8dcc0;padding:40px;font-family:sans-serif'>Could not load three.min.js — make sure it sits next to index.html.</p>"; }
+// #695 (r128→r159): keep the r128 colour pipeline EXACTLY — modern colour management would
+// re-interpret every raw hex/RGB in the game (they were authored against the legacy pipeline).
+// Must run before ANY `new THREE.Color(...)`, which the script does at parse time below.
+else THREE.ColorManagement.enabled=false;
 
 // ---------- helpers ----------
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -3184,7 +3188,11 @@ function terSplatBuild(){
   if(TER.ready||!ACMAP.on) return;
   const W=ACMAP.W,n=W*W,data=new Uint8Array(n);
   for(let i=0;i<n;i++) data[i]=(TER_LUT[ACMAP.T[i]]||0)*17;   // tile id packed ×17 → decode floor(r*15+0.5)
-  const idx=new THREE.DataTexture(data,W,W,THREE.LuminanceFormat,THREE.UnsignedByteType);
+  // #695: WebGL2 needs RedFormat — r159 allocates DataTextures with immutable texStorage2D, which
+  // requires SIZED internal formats and LUMINANCE has none (GL_INVALID_ENUM). WebGL1 keeps LUMINANCE.
+  const fmt=(typeof renderer!=="undefined"&&renderer&&renderer.capabilities.isWebGL2)?THREE.RedFormat:THREE.LuminanceFormat;
+  const idx=new THREE.DataTexture(data,W,W,fmt,THREE.UnsignedByteType);
+  idx.unpackAlignment=1;   // 2041-wide single-byte rows: the default alignment of 4 would skew every row
   idx.minFilter=THREE.NearestFilter;idx.magFilter=THREE.NearestFilter;
   idx.wrapS=idx.wrapT=THREE.ClampToEdgeWrapping;idx.needsUpdate=true;   // NPOT-safe: clamp+nearest+no mips
   TER.uIdx.value=idx; TER.uAtl.value=terBuildAtlas();
@@ -3386,7 +3394,7 @@ function plazaCobbleTex(){
   return _plazaCobble;
 }
 function texMat(texFn,tint){
-  const tex=texFn(); tex.encoding=THREE.sRGBEncoding; tex._acShared=true;   // #326: texFn returns a memoized shared canvas texture — never dispose it when one material using it is evicted
+  const tex=texFn(); tex.colorSpace=THREE.SRGBColorSpace; tex._acShared=true;   // #326: texFn returns a memoized shared canvas texture — never dispose it when one material using it is evicted
   const m=new THREE.MeshStandardMaterial({map:tex,roughness:0.82,metalness:0.03,
     normalMap:lumNormalTex(tex),normalScale:new THREE.Vector2(0.7,0.7)});
   if(tint)m.color.setHex(tint);return m;
@@ -3627,8 +3635,8 @@ const FOGX={
   sun:{value:new THREE.Vector4(1,0.85,0.6,0)},     // rgb sun colour · w tint strength (0 = off, e.g. dungeons/storms)
   h:{value:new THREE.Vector4(0.0077,0.45,1,0.72)}  // x fall-off /m (halves ≈90m) · y min factor · z strength · w far-guard start
 };
-THREE.Material.prototype.onBuild=function(sh){ sh.uniforms.dFogCam=FOGX.cam;
-  sh.uniforms.dFogSunDir=FOGX.sunDir; sh.uniforms.dFogSun=FOGX.sun; sh.uniforms.dFogH=FOGX.h; };
+THREE.Material.prototype.onBuild=function(a,b){ const sh=(a&&a.uniforms)?a:b;   // r128 passed (parameters,renderer); r159 passes (object,parameters,renderer)
+  sh.uniforms.dFogCam=FOGX.cam; sh.uniforms.dFogSunDir=FOGX.sunDir; sh.uniforms.dFogSun=FOGX.sun; sh.uniforms.dFogH=FOGX.h; };
 THREE.ShaderChunk.fog_pars_vertex="#ifdef USE_FOG\n\tvarying float fogDepth;\n\tvarying vec3 vDFogView;\n#endif";
 THREE.ShaderChunk.fog_vertex="#ifdef USE_FOG\n\tfogDepth = - mvPosition.z;\n\tvDFogView = mvPosition.xyz;\n#endif";
 THREE.ShaderChunk.fog_pars_fragment="#ifdef USE_FOG\n"+
@@ -3885,7 +3893,7 @@ function creatureTex(baseHex,pattern){
     else if(pattern==="spots"){ g.beginPath();g.arc(x,y,irnd(1,4),0,6.28);g.fill(); }
     else { g.fillRect(x,y,2,2); }
   }
-  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;   // creatures spawn after markSceneSRGB — tag here
+  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;   // creatures spawn after markSceneSRGB — tag here
   return t;
 }
 
@@ -4028,12 +4036,12 @@ function initThree(){
       '  vec2 tuvF=abs(fract(vTWp.xz*0.0256)*2.0-1.0)*0.94+0.03;\n'+        // far-scale anti-tiling multiply
       '  texelColor=mix(s, s*terS(terT(c0),tuvF)*2.0, _dk*0.6);\n'+
       ' } else {\n'+
-      '  vec4 _tNear=texture2D(map,vUv);\n'+
-      '  vec4 _tFar=texture2D(map,vUv*0.233+vec2(0.37));\n'+
+      '  vec4 _tNear=texture2D(map,vMapUv);\n'+
+      '  vec4 _tFar=texture2D(map,vMapUv*0.233+vec2(0.37));\n'+
       '  texelColor=mix(_tNear,_tNear*_tFar*2.0,_dk*0.7);\n'+   // multiplicative detail blend keeps contrast at range
       ' }\n'+
-      ' texelColor=mapTexelToLinear(texelColor);\n'+
-      ' diffuseColor*=texelColor;\n'+
+      ' diffuseColor*=texelColor;\n'+   // r159: sRGB textures decode in hardware — mapTexelToLinear is gone
+
       '#endif');};
   terSplatBuild();   // #693: assets resolved before initThree, so ACMAP is live here (no-op on procedural fallback terrain)
   // terrain is a TERRA_CHUNKS×TERRA_CHUNKS grid of areas (256 chunks) instead of one world-sized
@@ -4211,7 +4219,8 @@ function initThree(){
   playerAvatar=buildAvatar();scene.add(playerAvatar);
   tryLoadGltfAvatar();   // async; swaps in the rigged glTF model if present, else keeps the procedural avatar
   // ACES filmic tone-mapping + correct sRGB output for a richer, less-washed image
-  renderer.outputEncoding=THREE.sRGBEncoding;
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.useLegacyLights=true;   // #695: r159 defaults to physical light units — every light in the game is tuned to the legacy falloff
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.04;
   markSceneSRGB();
@@ -4230,7 +4239,7 @@ function initEnvironment(){
     const grd=g.createLinearGradient(0,0,0,64);
     grd.addColorStop(0,"#5d80b8");grd.addColorStop(0.48,"#93a6b4");grd.addColorStop(0.52,"#6d6a58");grd.addColorStop(1,"#403a2e");
     g.fillStyle=grd;g.fillRect(0,0,8,64);
-    const tex=new THREE.CanvasTexture(c);tex.encoding=THREE.sRGBEncoding;
+    const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10,16,12),new THREE.MeshBasicMaterial({map:tex,side:THREE.BackSide})));
     const env=pm.fromScene(es);   // gradient is already smooth — no pre-blur (avoids sigma clip warnings)
     scene.environment=env.texture;
@@ -4241,7 +4250,7 @@ function initEnvironment(){
 function markSceneSRGB(){
   scene.traverse(o=>{ if(!o.material) return;
     const mm=Array.isArray(o.material)?o.material:[o.material];
-    for(const m of mm){ for(const k of ["map","emissiveMap"]){ if(m[k]&&m[k].encoding!==THREE.sRGBEncoding){m[k].encoding=THREE.sRGBEncoding;m.needsUpdate=true;} } }
+    for(const m of mm){ for(const k of ["map","emissiveMap"]){ if(m[k]&&m[k].colorSpace!==THREE.SRGBColorSpace){m[k].colorSpace=THREE.SRGBColorSpace;m.needsUpdate=true;} } }
   });
 }
 // ---------- inline post pipeline: bloom + vignette + grade ----------
@@ -4256,11 +4265,10 @@ function initPost(){
   const opt={minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,format:THREE.RGBAFormat,type:THREE.UnsignedByteType};
   // multisampled scene target (WebGL2): keeps 4× MSAA through the post pipeline —
   // a plain render target here rendered the whole game with zero antialiasing.
-  if(renderer.capabilities.isWebGL2&&THREE.WebGLMultisampleRenderTarget){
-    POST.rtScene=new THREE.WebGLMultisampleRenderTarget(W,H,Object.assign({},opt));
-    POST.rtScene.samples=4;
+  if(renderer.capabilities.isWebGL2){   // #695: r159 — `samples` on a plain target replaces the removed WebGLMultisampleRenderTarget
+    POST.rtScene=new THREE.WebGLRenderTarget(W,H,Object.assign({samples:4},opt));
   } else POST.rtScene=new THREE.WebGLRenderTarget(W,H,Object.assign({},opt));
-  POST.rtScene.texture.encoding=THREE.sRGBEncoding; // scene was tonemapped+sRGB-encoded on the way in
+  POST.rtScene.texture.colorSpace=THREE.SRGBColorSpace; // scene was tonemapped+sRGB-encoded on the way in
   POST.rtA=new THREE.WebGLRenderTarget(hw,hh,Object.assign({},opt));
   POST.rtB=new THREE.WebGLRenderTarget(hw,hh,Object.assign({},opt));
   // ── #690: SSAO — scene depth rides the MSAA target for free. This r128 supports a depthTexture
@@ -5164,7 +5172,7 @@ function acPartTemplates(j){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.6,metalness:0.02});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.6,metalness:0.02});
@@ -5332,7 +5340,7 @@ function acHeadTexture(texDID, remapDIDs, cb, opts){    // load a head texture, 
       cx.putImageData(id,0,0);
       tex=new THREE.CanvasTexture(cv);
     } else { tex=new THREE.Texture(img); tex.needsUpdate=true; }
-    tex.encoding=THREE.sRGBEncoding;
+    tex.colorSpace=THREE.SRGBColorSpace;
     tex.flipY=false;   // dat UVs are top-origin (v=0 = texture top) — every AC pack needs flipY off —
     tex.needsUpdate=true;  // (three.js flipY default is bottom-origin; with it the strips land on brow/chin/neck)
     // #533: if a colour remap was requested but palettes.json hadn't loaded yet, we just served the
@@ -5914,7 +5922,7 @@ function hairTex(col){ if(_hairTexCache[col]) return _hairTexCache[col];
     x.strokeStyle="#"+cc.getHexString(); x.lineWidth=0.6+Math.random()*1.1; x.globalAlpha=0.55+Math.random()*0.45;
     x.beginPath(); x.moveTo(lx,ly); x.lineTo(lx+(Math.random()-0.5)*4,ly+lh); x.stroke(); }
   x.globalAlpha=1; const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(2,2);
-  t.encoding=THREE.sRGBEncoding;   // heads build after markSceneSRGB — untagged, dark hair washes to grey
+  t.colorSpace=THREE.SRGBColorSpace;   // heads build after markSceneSRGB — untagged, dark hair washes to grey
   _hairTexCache[col]=t; return t;
 }
 // ── seeded per-identity variation: geometry jitter + a subtle tone shift ──────
@@ -6015,7 +6023,7 @@ function faceTex(app,fem){
   // 8. skin character + tattoos, painted in
   paintFeature(x,app.feature,S,CX,CY);
   paintTattoo(x,app.tattoo,CX,CY);
-  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;t.anisotropy=4;_faceTexCache[key]=t;return t;
+  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;_faceTexCache[key]=t;return t;
 }
 function paintFeature(x,style,S,CX,CY){ if(!style||style==='none')return;
   const R=(s)=>{let h=(s*2654435761)>>>0;return((h>>8)&1023)/1023;};
@@ -7098,7 +7106,7 @@ function glyphStoneTex(seed){
 // a longer jagged crystal — elongated faceted bipyramid, jittered uniquely per seed
 // ── real AC fixture meshes (assets/acmisc: lifestone, bindstone) ──
 const _miscGeo={}, _miscTexCache={}, _miscTL=new THREE.TextureLoader();
-function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.flipY=false; t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
+function _miscTex(fn){ if(!_miscTexCache[fn]){ const t=_miscTL.load('assets/acmisc/tex/'+fn); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; _miscTexCache[fn]=t; } return _miscTexCache[fn]; }
 function acMiscMesh(name,cb){   // fetch + cache a misc fixture's groups, call cb(groups) when ready (or now if cached)
   const c=_miscGeo[name];
   if(c&&c!=="loading"){ cb(c); return; }
@@ -7507,7 +7515,7 @@ function roofTex(){ if(_roofTex) return _roofTex;
       g.fillStyle="rgba(0,0,0,0.20)";g.fillRect(x+off,y+2,1,rh-2);            // seam between tiles
     }
   }
-  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,3);t.encoding=THREE.sRGBEncoding;
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,3);t.colorSpace=THREE.SRGBColorSpace;
   if(typeof renderer!=="undefined"&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
   _roofTex=t;return t;
 }
@@ -7882,7 +7890,7 @@ const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 // without _acShared that disposed the shared texture out from under still-visible neighbours and left the
 // reused copy GPU-incomplete — which ANGLE/Metal samples as flat WHITE (the featureless white town). The
 // _acShared flag makes _dispTex skip it, exactly as it already does for shared canvas/normal/archetype (#326).
-function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.flipY=false; t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
+function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load('assets/actownmodels/tex/'+fn); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
 function tbModelReq(did){ did=(''+did).toUpperCase();
@@ -9899,7 +9907,7 @@ function hsLayoutOf(h){ const l=_hsLay[h.set]; return (l&&l[String(h.unit)])||nu
 const _hsModels={},_hsTexCache={},_hsTL=new THREE.TextureLoader();
 function hsTex(fn){
   if(!_hsTexCache[fn]){ const t=_hsTL.load('assets/achouses/tex/'+fn); t.flipY=false;
-    t.encoding=THREE.sRGBEncoding; t.wrapS=t.wrapT=THREE.RepeatWrapping; _hsTexCache[fn]=t; }
+    t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; _hsTexCache[fn]=t; }
   return _hsTexCache[fn];
 }
 function hsGroupsToProto(groups){
@@ -12638,7 +12646,7 @@ function acItemMesh(name){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.5,metalness:0.25});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:0.5,metalness:0.25});
@@ -15390,7 +15398,7 @@ function tenfoldCapeTex(){
   gold(0,(d)=>{ d.fillStyle=GOLD_HI;
     for(const [dx,dy,s] of [[CX,392,13],[CX-58,404,9],[CX+58,404,9]]){
       d.beginPath(); d.moveTo(dx,dy-s); d.lineTo(dx+s*0.66,dy); d.lineTo(dx,dy+s); d.lineTo(dx-s*0.66,dy); d.closePath(); d.fill(); } });
-  const mk=c=>{ const t=new THREE.CanvasTexture(c); if(THREE.sRGBEncoding!==undefined) t.encoding=THREE.sRGBEncoding;
+  const mk=c=>{ const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
     t.anisotropy=4; return t; };
   _tenfoldCapeTex={map:mk(cv), em:(()=>{ const t=new THREE.CanvasTexture(ev); t.anisotropy=2; return t; })()};
   return _tenfoldCapeTex;
@@ -15467,12 +15475,12 @@ function acArmorPart(gid,cb){
       // #667: a part may carry its own finish (rough/metal) and an emissive map — the Tenfold
       // set's gold filigree glows softly through emtex/emint; retail parts keep the old defaults.
       const rough=(g.mat.rough!=null?g.mat.rough:0.55), metal=(g.mat.metal!=null?g.mat.metal:0.15);
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         t.wrapS=t.wrapT=THREE.RepeatWrapping;   // #667: some parts carry wrapped UVs (v>1) — clamp smeared them
         mat=new THREE.MeshStandardMaterial({map:t,roughness:rough,metalness:metal});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a8a8a),roughness:rough,metalness:metal});
-      if(g.mat.emtex){ const e=TL.load('assets/acmodels/tex/'+g.mat.emtex); e.flipY=false; e.encoding=THREE.sRGBEncoding;
+      if(g.mat.emtex){ const e=TL.load('assets/acmodels/tex/'+g.mat.emtex); e.flipY=false; e.colorSpace=THREE.SRGBColorSpace;
         e.wrapS=e.wrapT=THREE.RepeatWrapping;
         mat.emissiveMap=e; mat.emissive=new THREE.Color(0xffffff); mat.emissiveIntensity=(g.mat.emint!=null?g.mat.emint:1); }
       const mm=new THREE.Mesh(geo,mat); mm.castShadow=true; grp.add(mm); }
@@ -15594,7 +15602,7 @@ function acClothPart(baseHex,gk,cb){    // baseHex like "10000001", gk "m"|"f" �
         geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
         geo.setIndex(g.i);
         let mat;
-        if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
+        if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
           mat=new THREE.MeshStandardMaterial({map:t,roughness:0.82,metalness:0.03});
           if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
         else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x9a8f7a),roughness:0.82,metalness:0.03});
@@ -15623,7 +15631,7 @@ function acClothDyeTex(fn,key,remap,cb){
     for(let i=0;i<px.length;i+=4){ const v=(px[i]<<16)|(px[i+1]<<8)|px[i+2]; const nv=map[v];
       if(nv!==undefined){ px[i]=nv>>16&255; px[i+1]=nv>>8&255; px[i+2]=nv&255; } }
     ctx.putImageData(id,0,0);
-    const t=new THREE.CanvasTexture(cv); t.flipY=false; t.encoding=THREE.sRGBEncoding; flush(t);
+    const t=new THREE.CanvasTexture(cv); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; flush(t);
   }catch(e){ flush(null); } };
   img.onerror=()=>flush(null);
   img.src='assets/acmodels/tex/'+fn;
@@ -22249,7 +22257,7 @@ function acHatPart(name,gk,cb){
       geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uv,2));
       geo.setIndex(g.i);
       let mat;
-      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
+      if(g.mat.tex){ const t=TL.load('assets/acmodels/tex/'+g.mat.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
         mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02});
         if(g.mat.clip){ mat.transparent=true; mat.alphaTest=0.45; } }
       else mat=new THREE.MeshStandardMaterial({color:(g.mat.color!=null?g.mat.color:0x8a7a5a),roughness:0.85,metalness:0.02});
@@ -26686,7 +26694,7 @@ function buildDungeonReal(def,dj){
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uvs,2));
     geo.setIndex(g.idx);
     let mat;
-    if(g.tex){ const t=TL.load('assets/acdungeons/tex/'+g.tex); t.flipY=false; t.encoding=THREE.sRGBEncoding;
+    if(g.tex){ const t=TL.load('assets/acdungeons/tex/'+g.tex); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
       t.wrapS=t.wrapT=THREE.RepeatWrapping; mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02,side:THREE.DoubleSide}); }
     else mat=new THREE.MeshStandardMaterial({color:(g.color!=null?g.color:0x777788),roughness:0.85,side:THREE.DoubleSide});
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
@@ -29604,7 +29612,7 @@ function ccInitPreview(){
   const canvas=document.getElementById('ccPreview');
   ccRenderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
   ccRenderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
-  ccRenderer.outputEncoding=THREE.sRGBEncoding; ccRenderer.toneMapping=THREE.ACESFilmicToneMapping; ccRenderer.toneMappingExposure=1.05;
+  ccRenderer.outputColorSpace=THREE.SRGBColorSpace; ccRenderer.useLegacyLights=true; ccRenderer.toneMapping=THREE.ACESFilmicToneMapping; ccRenderer.toneMappingExposure=1.05;
   ccScene=new THREE.Scene();
   if(typeof scene!=="undefined"&&scene&&scene.environment) ccScene.environment=scene.environment;   // metal needs an env map to read as steel
   ccCam=new THREE.PerspectiveCamera(30,1,0.1,20); ccCam.position.set(0,1.62,1.45); ccCam.lookAt(0,1.6,0);
