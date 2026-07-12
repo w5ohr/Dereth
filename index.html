@@ -1913,6 +1913,8 @@ const BESTIARY={
   mukkir:   {name:"Mukkir",      c:0x3a2a2a,size:1.3,hp:180,dmg:26,spd:7.0,xp:820, gold:[16,40],range:0,  sense:50,tall:1.4,shape:"humanoid",dmgEl:"slash"}, // feral rending horror of the Dark Isle
   rabbit:   {name:"Rabbit",      c:0xc8b89a,size:0.45,hp:10,dmg:0, spd:7.5,xp:20,  gold:[0,1],  range:0,  sense:26,tall:0.4,shape:"beast",ambient:true},
   cow:      {name:"Cow",         c:0xd8c8b0,size:1.3,hp:40, dmg:0, spd:3.0,xp:30,  gold:[0,2],  range:0,  sense:24,tall:1.1,shape:"beast",ambient:true},
+  deer:     {name:"Deer",        c:0xb0895a,size:1.05,hp:55,dmg:0, spd:9.0,xp:70,  gold:[0,2],  range:0,  sense:44,tall:1.3,shape:"beast",ambient:true,hide:"leather",hideN:[1,3],meat:"Venison"},   // skittish game — hunt it for leather hides & venison
+  bear:     {name:"Black Bear",  c:0x38281c,size:1.55,hp:230,dmg:27,spd:6.6,xp:560,gold:[6,22], range:0,  sense:46,tall:1.5,shape:"beast",hide:"horned",hideN:[2,4],meat:"Bear Meat"},   // aggressive quarry — thick horned hides & meat
   // ── the creature deep-dive wave: every remaining classic family with a real retail
   //    model + SoundTable + stats (acrewards overrides these baselines at load) ──
   siraluun: {name:"Siraluun",    c:0x6a5a8a,size:1.3,hp:150,dmg:22,spd:8.0,xp:600, gold:[12,30],range:0,  sense:48,tall:1.3,shape:"beast",dmgEl:"pierce"},   // striding raptor-bird of the cliffs
@@ -2163,6 +2165,7 @@ const MONSTER_MODELS={
   zefir:        [{f:"Bat.glb",tints:[0x9a7ab0,0x6a6a8a]}],                 // bat-winged imp
   monouga:      [{f:"Giant.glb",tint:0x7a5a42}],                           // three-eyed hulk
   ursuin:       [{f:"Bear.glb",tints:[0x6a4a2a,0x2a2420,0xe8e8f0]}],       // brown/black/polar bears
+  bear:         [{f:"Bear.glb",tints:[0x38281c,0x2a2018,0x5a4028]}],       // huntable black/brown bear (reuses the Bear model)
   shreth:       [{f:"Boar.glb",tints:[0x8a7a5a,0x9a4a3a]}],                // spike-backed rammer (+Blood breed)
   moarsman:     [{f:"Glub.glb",tints:[0x3a6a7a,0x4a7a5a]}],                // slimy finned deep-one
   burun:        [{f:"Glub.glb",tint:0x6a7a3a}],                            // marsh frog-man
@@ -6813,7 +6816,7 @@ const CREATURE_BUILDERS={drudge:cDrudge,banderling:cBanderling,mosswart:cMosswar
   olthoiworker:cOlthoiWorker,olthoisoldier:cOlthoiSoldier,
   rat:cRat,shreth:cShreth,mite:cMite,sclavus:cSclavus,zefir:cZefir,monouga:cMonouga,ursuin:cUrsuin,
   moarsman:cMoarsman,phyntoswasp:cPhyntosWasp,wisp:cWisp,golem:cGolem,zombie:cZombie,mummy:cMummy,
-  grievver:cGrievver,rabbit:cRabbit,cow:cCow,
+  grievver:cGrievver,rabbit:cRabbit,cow:cCow,deer:cCow,bear:cUrsuin,
   carenzi:cCarenzi,niffis:cNiffis,armoredillo:cArmoredillo,
   remoran:cRemoran,burun:cMosswart,mukkir:cMukkir,   // burun (frog-man) reuses the mosswart cousin
   // deep-dive wave: procedural stand-ins borrow the nearest cousin (the real GLB extract
@@ -7883,8 +7886,8 @@ function buildWorld(){
   buildRoadBridges();   // span every river/sea the real AC road web crosses with a walkable plank bridge
   // gathering nodes scattered across the wilds
   for(let i=0;i<54;i++){let nx,nz,t=0;do{nx=rnd(-HALF+10,HALF-10);nz=rnd(-HALF+10,HALF-10);t++;}while(nearestCapitalDist(nx,nz)<TOWN_SAFE+10&&t<20);
-    addNode(nx,nz,Math.random()<0.5?"ore":"herb");}
-  if(typeof buildCraftWorld==="function") buildCraftWorld();   // UO crafting: place Crafting Forges in towns + ore veins, choppable trees & fishing spots in the wilds
+    addNode(nx,nz,"herb");}   // wild scatter is herbs now; ALL ore is placed as typed deposits by region level (buildCraftWorld)
+  if(typeof buildCraftWorld==="function") buildCraftWorld();   // UO crafting: Crafting Forges + typed ore deposits (every metal, by area level) + choppable trees & fishing spots in the wilds
   // scenery clusters around hubs, keyed to each region's AC biome (forest / wooded hills / desert /
   // barren Direlands / snowy frontier / swamp) so the flora around each town matches Asheron's Call
   for(let i=0;i<1900;i++){
@@ -11141,15 +11144,15 @@ function addPortal(x,z,dest){
 function pickKind(d,x,z){ // by region, climate & distance from the nearest capital (AC-accurate spawns)
   const reg=regionOf(x,z), pick=a=>a[irnd(0,a.length-1)];
   // ambient fauna in settled/grassland areas — a rabbit or cow now and then
-  if(reg>=0 && !coldZone(x,z) && d>60 && Math.random()<0.10) return Math.random()<0.7?"rabbit":"cow";
+  if(reg>=0 && !coldZone(x,z) && d>60 && Math.random()<0.12){ const r=Math.random(); return r<0.42?"rabbit":r<0.66?"cow":"deer"; }   // game: deer roam the settled grasslands & woods
   // the RETAIL spawn table: if the encounter data says what lived here, spawn that (mostly)
   if(d>=200*WSCALE){ const real=acSpawnKinds(x,z);   // ×WSCALE: difficulty gradient at true 1:1 distance-from-town
     if(real&&real.length&&Math.random()<0.75) return pick(real); }
-  if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin","ruschk","penguin","snowman","wight","elemental"]);   // frozen north/south — snowy spawns
+  if(coldZone(x,z)) return pick(["mattekar","gromnie","tusker","skeleton","wisp","golem","ursuin","bear","ruschk","penguin","snowman","wight","elemental"]);   // frozen north/south — snowy spawns (bears prowl the treeline)
   if(reg===-1) return pick(["tumerok","lugian","gromnie","virindi","golem","olthoi","olthoisoldier","sclavus","grievver","zombie","shadow","mukkir","remoran","hollow","margul","phantom","gurog","gearknight","falatacot","tormented","crystalwisp"]); // Direlands — deadliest frontier
   if(inSwamp(x,z)) return pick(["mosswart","mosswart","reedshark","moarsman","sclavus","gromnie","drudge","burun","remoran","sleech","thrungus"]);  // the Blackmire swamp
   if(d<200*WSCALE) return pick(["drudge","mosswart","rat","rat","mite","carenzi"]);            // town outskirts — weakest (×WSCALE)
-  if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin","carenzi","marionette","lich","viamontian"]); // Aluvia — temperate forest
+  if(reg===0) return pick(["drudge","mosswart","rat","mite","banderling","reedshark","shreth","phyntoswasp","skeleton","zombie","ursuin","bear","deer","carenzi","marionette","lich","viamontian"]); // Aluvia — temperate forest (deer & bear in the woods)
   if(reg===1) return pick(["shreth","drudge","phyntoswasp","banderling","mosswart","sclavus","wisp","mite","reedshark","burun","doll","hea","siraluun"]);   // Sho — wooded hills
   return pick(["skeleton","drudge","rat","shreth","monouga","mummy","zombie","tumerok","gromnie","armoredillo","niffis","fiun","thrungus","hea"]);   // Gharu'ndim — desert
 }
@@ -27023,7 +27026,7 @@ function addNode(x,z,type){
 function gatherNode(n){
   n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
   startAction(n.type==="ore"?"mine":"gather",1.3);   // play the work animation (mining swing / crouched harvest)
-  if(n.type==="ore"){ if(typeof mineOreYield==="function"){ mineOreYield(); } else { const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot"); } }
+  if(n.type==="ore"){ if(typeof mineOreYield==="function"){ mineOreYield(n); } else { const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot"); } }
   else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
     if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
   gainXP(30);SFX.gold();questEvent("gather", n.type==="ore"?"ore":"harvest");updateHUD();   // #236: mining advances only "ore"-kind objectives, not generic fetch quests
@@ -33376,17 +33379,20 @@ function consumeCraftTool(kind){ const t=findCraftTool(kind); if(!t) return fals
 function toolItem(kind,name,uses,ico){ return {name,stat:"tool",tool:kind,uses,ico}; }
 
 // ---- GATHERING ── mining (called from gatherNode's ore branch) ----
-function mineOreYield(){
+function mineOreYield(n){
   const lvl=craftLvl("mining");
-  const t=rollResTier(UO_METALS,lvl);
+  const metalKey=(n&&n.metal)||null;
+  const t = metalKey ? (UO_METAL_BY[metalKey]||UO_METALS[0]) : rollResTier(UO_METALS,lvl);
+  const under = lvl < t.req;                      // below the ideal skill: you can still work the vein, just less efficiently
   const bonus=hasCraftTool("mining")?irnd(1,3):0;
-  const a=irnd(2,5)+bonus;
+  let a=irnd(2,5)+bonus-(under?2:0); if(a<1) a=1;
   const it=resItem("ore",t.k,a);
   if(!addToInv(it)){ addDrop(player.x,player.z,{type:"item",item:it}); }
-  floater(player.x,EYE+0.4,player.z,"+"+a+" "+t.n+" Ore",(t.k==="iron"?"#cfd0d0":"#"+t.col.toString(16).padStart(6,"0")));
-  log(`You mine <b>${a} ${t.n} Ore</b>${bonus?" (pickaxe)":""}.`,"loot");
+  const col=(t.k==="iron"?"#cfd0d0":"#"+t.col.toString(16).padStart(6,"0"));
+  floater(player.x,EYE+0.4,player.z,"+"+a+" "+t.n+" Ore",col);
+  log(`You mine <b>${a} ${t.n} Ore</b>${under?" <span style='color:#d0a06a'>(hard going at your skill)</span>":(bonus?" (pickaxe)":"")}.`,"loot");
   if(hasCraftTool("mining")) consumeCraftTool("mining");
-  gainCraft("mining",1);
+  gainCraft("mining", under?1.7:1);
 }
 
 // ---- GATHERING ── lumberjacking & fishing (via craftInteract) ----
@@ -33425,10 +33431,18 @@ function fishAtSpot(sp){
   consumeCraftTool("fishing");
   gainCraft("fishing",1); gainXP(16); if(SFX&&SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather","harvest"); updateHUD();
 }
-// hides drop off slain beasts (tier scales with the creature's strength)
+// hides drop off slain beasts. Designated game (deer/bear) always yield hides + raw meat;
+// other fleshy creatures drop a hide by chance, tier scaling with the beast's strength.
 function craftHideDrop(m,b){
-  if(Math.random()>0.5) return;
-  const pw=(m&&m.xp)||(b&&b.xp)||10;
+  b=b||(typeof BESTIARY!=="undefined"&&BESTIARY[m.kind])||{};
+  if(b.hide){
+    const n=b.hideN?irnd(b.hideN[0],b.hideN[1]):1;
+    addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:resItem("hide",b.hide,n)});
+    if(b.meat) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:{name:"Raw "+b.meat,stat:"food",v:2,attr:"Strength",dur:70,ico:"🍖",meat:true,raw:true}});
+    return;
+  }
+  if(Math.random()>0.4) return;
+  const pw=(m&&m.xp)||b.xp||10;
   let k="leather"; if(pw>1400)k="barbed"; else if(pw>550)k="horned"; else if(pw>160)k="spined";
   addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:resItem("hide",k,irnd(1,2))});
 }
@@ -33442,6 +33456,37 @@ function craftInteract(){
   return false;
 }
 function nearCraftStation(){ for(const s of craftStations){ if(Math.hypot(s.x-player.x,s.z-player.z)<5) return true; } return false; }
+
+// ---- area difficulty → ore tier (low ore near towns, valorite in the Direlands) ----
+function oreAreaLevel(x,z){
+  const dd=(typeof nearestCapitalDist==="function"?nearestCapitalDist(x,z):300)/(typeof WSCALE!=="undefined"?WSCALE:1);
+  let lvl=clamp((dd-120)/8,0,90);                                   // farther from town = deadlier = richer ore
+  const reg=(typeof regionOf==="function")?regionOf(x,z):0;
+  if(reg===-1) lvl=Math.max(lvl, 74+clamp((dd-300)/40,0,16));       // Direlands: the deadliest frontier → top-tier ore
+  if(typeof coldZone==="function" && coldZone(x,z)) lvl=Math.max(lvl,52);
+  const h=(Math.imul((((x*0.11)|0)+7919)>>>0,2654435761) ^ (((z*0.11)|0)+104729))>>>0;
+  lvl+=((h%17)-8);                                                  // gentle variation so tiers aren't perfect radial bands
+  return clamp(lvl,0,98);
+}
+function buildOreDeposit(metalKey){
+  const t=UO_METAL_BY[metalKey]||UO_METALS[0];
+  const g=new THREE.Group();
+  const rockCol=(t.k==="iron")?0x5a564d:new THREE.Color(t.col).lerp(new THREE.Color(0x47433a),0.55).getHex();
+  const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.85,0),new THREE.MeshStandardMaterial({color:rockCol,flatShading:true,roughness:0.95,metalness:t.k==="iron"?0.1:0.35}));
+  rock.position.y=0.5; rock.castShadow=true; g.add(rock);
+  const veinMat=new THREE.MeshStandardMaterial({color:t.col,emissive:t.col,emissiveIntensity:t.k==="iron"?0.12:0.5,metalness:0.7,roughness:0.4});
+  for(let i=0;i<5;i++){ const v=new THREE.Mesh(new THREE.OctahedronGeometry(0.12+Math.random()*0.06,0),veinMat);
+    v.position.set(rnd(-0.5,0.5),0.35+Math.random()*0.5,rnd(-0.5,0.5)); v.rotation.set(rnd(0,3),rnd(0,3),rnd(0,3)); g.add(v); }
+  return g;
+}
+function addOreDeposit(x,z,metalKey){
+  const mesh=buildOreDeposit(metalKey); mesh.position.set(x,(typeof terrainH==="function"?terrainH(x,z):0),z);
+  const t=UO_METAL_BY[metalKey]||UO_METALS[0];
+  const icon=textSprite("⛏","#"+(t.k==="iron"?"cdbb88":t.col.toString(16).padStart(6,"0"))); icon.scale.set(0.95,0.95,1); icon.position.y=1.9; mesh.add(icon);
+  scene.add(mesh);
+  nodes.push({x,z,type:"ore",metal:metalKey,mesh,depleted:false,readyAt:0});   // rides the existing node interact + respawn tick; regrows as the SAME metal
+}
+let _orePlaced={};
 
 // ---- WORLD: Crafting Forges in towns + ore veins, choppable trees, fishing spots ----
 function buildStationMesh(x,y,z){
@@ -33490,14 +33535,29 @@ function buildCraftWorld(){
     const mesh=buildStationMesh(px,py,pz);
     craftStations.push({x:px,z:pz,y:py,mesh,town:c.name});
   }
-  // 2) ore veins clustered in the hills (extra mining nodes, on top of the wild scatter)
-  let placed=0,tries=0;
-  while(placed<70 && tries<1200){ tries++;
-    const x=rnd(-HALF+12,HALF-12), z=rnd(-HALF+12,HALF-12), h=terrainH(x,z);
-    if(h>7 && (typeof nearestCapitalDist!=="function"||nearestCapitalDist(x,z)>40)){ addNode(x,z,"ore"); placed++; }
+  // 2) TYPED ore deposits — every one of the nine metals, placed where its area level fits: iron & dull
+  //    copper ring the towns, valorite & verite lie deep in the Direlands. Quotas guarantee each metal is
+  //    accessible and spread across Dereth (deposits regrow as the same metal via the node respawn tick).
+  const _oreQuota={iron:32,dullcopper:26,shadowiron:24,copper:22,bronze:20,gold:18,agapite:16,verite:14,valorite:14};
+  const WSC=(typeof WSCALE!=="undefined"?WSCALE:1);
+  _orePlaced={};
+  for(const M of UO_METALS){
+    const want=_oreQuota[M.k]||16; let got=0,tr=0;
+    const baseDist=120+M.req*8;                 // distance-from-town (base units) where oreAreaLevel ≈ M.req
+    const loA=M.req-15, hiA=(M.req>=80?400:M.req+24);
+    while(got<want && tr<want*160){ tr++;
+      const c=CITIES[irnd(0,CITIES.length-1)];
+      const ring=(baseDist+rnd(-45,70))*WSC, a=rnd(0,6.28);
+      const x=clamp(c.x+Math.cos(a)*ring,-HALF+14,HALF-14), z=clamp(c.z+Math.sin(a)*ring,-HALF+14,HALF-14), h=terrainH(x,z);
+      if(h<1.2||h>240) continue;                                  // land only, not lakebed/peak
+      if(typeof nearestCapitalDist==="function" && nearestCapitalDist(x,z)<24*WSC) continue;   // not inside a town
+      const al=oreAreaLevel(x,z); if(al<loA||al>hiA) continue;    // spot's difficulty must fit this metal's tier
+      addOreDeposit(x,z,M.k); got++;
+    }
+    _orePlaced[M.k]=got;
   }
   // 3) choppable trees in wooded land
-  placed=0; tries=0;
+  let placed=0,tries=0;
   while(placed<130 && tries<3000){ tries++;
     const x=rnd(-HALF+14,HALF-14), z=rnd(-HALF+14,HALF-14), h=terrainH(x,z);
     if(h>1.6 && h<30 && (typeof nearestCapitalDist!=="function"||nearestCapitalDist(x,z)>30)){ lumberNodes.push(buildTreeMesh(x,h,z)); placed++; }
@@ -33581,6 +33641,8 @@ UO_RECIPES.push({id:"tinkering_lockpick",skill:"tinkering",tab:"tinker",name:"Lo
 // Cooking (raw fish → cooked; bread/rations from materials)
 UO_RECIPES.push({id:"cooking_fish",skill:"cooking",tab:"cook",name:"Cooked Fish",ico:"🍳",matKind:"fish",n:1,min:0,exc:false,
   make:(tier,exc,src)=>({name:"Cooked "+(src&&src.species?src.species:"Fish"),stat:"food",v:(src?src.v+3:5),attr:"Endurance",dur:(src?src.dur*2:180),ico:"🍖"})});
+UO_RECIPES.push({id:"cooking_meat",skill:"cooking",tab:"cook",name:"Roast Meat",ico:"🍖",matKind:"meat",n:1,min:0,exc:false,
+  make:(tier,exc,src)=>({name:"Roast "+((src&&src.name)?src.name.replace("Raw ",""):"Meat"),stat:"food",v:(src?src.v+4:6),attr:"Strength",dur:(src?src.dur*2:200),ico:"🍖"})});
 UO_RECIPES.push({id:"cooking_bread",skill:"cooking",tab:"cook",name:"Loaf of Bread",ico:"🍞",matKind:"materials",n:4,min:4,exc:false,
   make:()=>({name:"Loaf of Bread",stat:"food",v:3,attr:"Strength",dur:150,ico:"🍞"})});
 UO_RECIPES.push({id:"cooking_rations",skill:"cooking",tab:"cook",name:"Trail Rations",ico:"🥖",matKind:"materials",n:6,min:14,exc:false,
@@ -33600,16 +33662,18 @@ function availTiers(matKind){ // {key,name,count} the player currently carries
   const out=[]; for(const t of ladder){ const nm=resNameFor(matKind,t.k); const c=invCountOf(nm); if(c>0) out.push({key:t.k,name:t.n||"Common",count:c}); } return out;
 }
 function firstRawFish(){ for(let i=0;i<player.inv.length;i++){ const it=player.inv[i]; if(it&&it.fish&&it.raw) return {it,i}; } return null; }
+function firstRawMeat(){ for(let i=0;i<player.inv.length;i++){ const it=player.inv[i]; if(it&&it.meat&&it.raw) return {it,i}; } return null; }
 function attemptCraft(rec,tierKey){
   if(!nearCraftStation()){ log("Stand at a <b>Crafting Forge</b> to craft.","warn"); return; }
   const matKind=rec.matKind;
   const tier=matKind==="ingot"?UO_METAL_BY[tierKey]:matKind==="board"?UO_WOOD_BY[tierKey]:matKind==="leather"?UO_LEATHER_BY[tierKey]:null;
   // ingredient checks
-  let srcFish=null;
+  let srcFish=null, srcMeat=null;
   if(matKind==="ingot"||matKind==="board"||matKind==="leather"){ if(!tier){ log("Choose a material.","warn"); return; }
     const nm=resNameFor(matKind,tierKey); if(invCountOf(nm)<rec.n){ log(`Not enough <b>${nm}</b> (need ${rec.n}).`,"warn"); if(SFX&&SFX.deny)SFX.deny(); return; } }
   else if(matKind==="materials"){ if(player.materials<rec.n){ log(`Not enough materials (need ${rec.n}).`,"warn"); if(SFX&&SFX.deny)SFX.deny(); return; } }
   else if(matKind==="fish"){ srcFish=firstRawFish(); if(!srcFish){ log("You have no raw fish to cook.","warn"); if(SFX&&SFX.deny)SFX.deny(); return; } }
+  else if(matKind==="meat"){ srcMeat=firstRawMeat(); if(!srcMeat){ log("You have no raw meat to cook.","warn"); if(SFX&&SFX.deny)SFX.deny(); return; } }
   if(rec.extraBoard){ const bn=resNameFor("board","regular"); if(invCountOf(bn)<rec.extraBoard){ log(`Also needs ${rec.extraBoard} ${bn}.`,"warn"); return; } }
   // tool
   if(rec.skill!=="cooking" && rec.skill!=="alchemy" && !hasCraftTool(rec.skill)){ log(`You need the right tool for <b>${SKILL_BY_KEY[rec.skill].n}</b> (buy one in the Tools tab).`,"warn"); if(SFX&&SFX.deny)SFX.deny(); return; }
@@ -33617,13 +33681,14 @@ function attemptCraft(rec,tierKey){
   if(matKind==="ingot"||matKind==="board"||matKind==="leather") removeItemsByName(resNameFor(matKind,tierKey),rec.n);
   else if(matKind==="materials") player.materials-=rec.n;
   else if(matKind==="fish") takeFromInv(srcFish.i);
+  else if(matKind==="meat") takeFromInv(srcMeat.i);
   if(rec.extraBoard) removeItemsByName(resNameFor("board","regular"),rec.extraBoard);
   if(rec.skill!=="cooking" && rec.skill!=="alchemy") consumeCraftTool(rec.skill);
   startAction("craft",1.1);
   gainCraft(rec.skill, 0.6);
   if(Math.random()>successChance(rec,tier)){ log(`You fail and ruin the materials.`,"warn"); if(SFX&&SFX.deny)SFX.deny(); updateHUD(); if(_cmOpen) renderCraftMenu(); return; }
   const exc=Math.random()<excChance(rec,tier);
-  const item=rec.make(tier,exc,srcFish&&srcFish.it); item.crafted=true;
+  const item=rec.make(tier,exc,(srcFish&&srcFish.it)||(srcMeat&&srcMeat.it)); item.crafted=true;
   if(exc){ item.exceptional=true; item.maker=player.name||"Adventurer"; if(item.v) item.v=Math.round(item.v); }
   if(!addToInv(item)){ addDrop(player.x,player.z,{type:"item",item}); log("Pack full — set at your feet.","warn"); }
   gainCraft(rec.skill, exc?1.6:1.0);
@@ -33693,7 +33758,7 @@ function renderCraftMenu(){
       const tk=r.matKind==="ingot"||r.matKind==="board"||r.matKind==="leather"?_cmSel[r.matKind]:null;
       const tier=r.matKind==="ingot"?UO_METAL_BY[tk]:r.matKind==="board"?UO_WOOD_BY[tk]:r.matKind==="leather"?UO_LEATHER_BY[tk]:null;
       const sc=Math.round(successChance(r,tier)*100), xc=Math.round(excChance(r,tier)*100);
-      let cost = r.matKind==="materials"?`${r.n} mat`: r.matKind==="fish"?"1 raw fish": tier?`${r.n} ${esc(tier.n||"Common")}`:(tk?`${r.n}`:`${r.n} — pick a material`);
+      let cost = r.matKind==="materials"?`${r.n} mat`: r.matKind==="fish"?"1 raw fish": r.matKind==="meat"?"1 raw meat": tier?`${r.n} ${esc(tier.n||"Common")}`:(tk?`${r.n}`:`${r.n} — pick a material`);
       const canSkill=craftLvl(r.skill)>=Math.floor(recipeDiff(r,tier));
       const tool=(r.skill==="cooking"||r.skill==="alchemy")||hasCraftTool(r.skill);
       body+=`<div class="cmRow"><span class="cmI">${r.ico}</span><span class="cmN">${esc(r.name)}<span class="cmSub">${cost}${r.extraBoard?` + ${r.extraBoard} Board`:""} · needs ${SKILL_BY_KEY[r.skill].n} ${Math.floor(recipeDiff(r,tier))}${r.exc!==false?` · <span style="color:#ffd86b">${xc}% exc</span>`:""}</span></span><span class="cmMid ${canSkill?'':'cmBad'}">${sc}%${tool?"":' · <span class="cmBad">no tool</span>'}</span><button data-craft="${r.id}" class="cmBtn"${at?"":" disabled"}>Craft</button></div>`;
