@@ -1,0 +1,67 @@
+<!doctype html><html><head><meta charset="utf8"></head><body style="margin:0;background:#111">
+<script src="/three.min.js"></script>
+<script>
+// Dungeon geometry comparison harness (top-down contact sheet).
+// For each dungeon it draws the CELL GRID (green squares from cellPos — the walkable/minimap data,
+// the "map that looks right") and the WALL MESH (grey, from groups[].verts). If the grey walls line
+// up on/around the green squares → geometry is correct. If the walls are shifted, rotated, or
+// scrambled off the green grid → that dungeon needs work.
+//   URL params:  ?start=0&count=12   (which slice of index.json to render)
+// window.DONE + window.NAMES are set when finished (the runner screenshots then).
+const params=new URLSearchParams(location.search);
+const START=+(params.get('start')||0), COUNT=+(params.get('count')||12);
+const COLS=3, TILE=453, PAD=4;
+const ROWS=Math.ceil(COUNT/COLS);
+const W=COLS*TILE, H=ROWS*TILE;
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+renderer.setSize(W,H); renderer.setScissorTest(true);
+document.body.appendChild(renderer.domElement);
+window.NAMES=[]; window.DONE=false;
+
+function tileFor(dj){
+  const scene=new THREE.Scene(); scene.background=new THREE.Color(0x161a20);
+  scene.add(new THREE.AmbientLight(0xffffff,1));
+  const cells=dj.cellPos||[];
+  // cell grid: flat green squares (the "map" — where walls SHOULD sit)
+  const cg=new THREE.Group();
+  const cmat=new THREE.MeshBasicMaterial({color:0x2f9e54,transparent:true,opacity:0.5,side:THREE.DoubleSide});
+  for(const c of cells){ const p=new THREE.Mesh(new THREE.PlaneGeometry(11.0,11.0),cmat);
+    p.rotation.x=-Math.PI/2; p.position.set(c[0],-0.2,c[2]); cg.add(p); }
+  scene.add(cg);
+  // walls: the actual mesh (grey), from every group
+  const wmat=new THREE.MeshLambertMaterial({color:0xb8bec8,side:THREE.DoubleSide});
+  scene.add(new THREE.DirectionalLight(0xffffff,0.8).translateY(1));
+  { const dl=new THREE.DirectionalLight(0xffffff,0.9); dl.position.set(1,2,1); scene.add(dl); }
+  for(const g of dj.groups||[]){ const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(g.verts,3));
+    if(g.idx) geo.setIndex(g.idx); geo.computeVertexNormals();
+    scene.add(new THREE.Mesh(geo,wmat)); }
+  // mark the entry (blue) so orientation is legible
+  if(dj.entry){ const e=new THREE.Mesh(new THREE.CircleGeometry(3,16),new THREE.MeshBasicMaterial({color:0x4aa8ff}));
+    e.rotation.x=-Math.PI/2; e.position.set(dj.entry[0],0.3,dj.entry[2]); scene.add(e); }
+  // top-down orthographic framing over the CELL bounds (so a mesh that escapes the cells shows as walls off the green)
+  const xs=cells.map(c=>c[0]), zs=cells.map(c=>c[2]), ys=cells.map(c=>c[1]);
+  const minx=Math.min(...xs)-8,maxx=Math.max(...xs)+8,minz=Math.min(...zs)-8,maxz=Math.max(...zs)+8;
+  const cx=(minx+maxx)/2, cz=(minz+maxz)/2, cy=(Math.min(...ys)+Math.max(...ys))/2;
+  const span=Math.max(maxx-minx,maxz-minz)/2*1.15;
+  const cam=new THREE.OrthographicCamera(-span,span,span,-span,0.1,8000);   // isometric 3/4 view
+  cam.position.set(cx+span*1.2,span*1.5+400,cz+span*1.2); cam.up.set(0,1,0); cam.lookAt(cx,cy,cz);
+  return {scene,cam};
+}
+
+async function run(){
+  const index=await (await fetch('/assets/acdungeons/index.json')).json();
+  const entries=Object.entries(index).sort((a,b)=>a[0].localeCompare(b[0])).slice(START,START+COUNT);
+  for(let i=0;i<entries.length;i++){
+    const [name,meta]=entries[i]; window.NAMES.push(name);
+    let dj=null; try{ dj=await (await fetch('/assets/acdungeons/'+meta.file)).json(); }catch(e){}
+    const col=i%COLS, row=Math.floor(i/COLS);
+    const vx=col*TILE+PAD, vy=H-(row+1)*TILE+PAD, vs=TILE-2*PAD;
+    renderer.setViewport(vx,vy,vs,vs); renderer.setScissor(vx,vy,vs,vs);
+    renderer.setClearColor(0x161a20,1); renderer.clear();
+    if(dj&&dj.cellPos&&dj.cellPos.length){ const {scene,cam}=tileFor(dj); renderer.render(scene,cam); }
+  }
+  window.DONE=true;
+}
+run();
+</script></body></html>
