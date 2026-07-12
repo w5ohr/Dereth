@@ -3087,6 +3087,7 @@ let tideActive=false,tideLevel=0,tideRise=0,_tideWave=0,_tidePhase="",_tideHeral
 let consActive=false,_consReinforced=false,_consT=0; // #682 Regalia X: the Consecration (T'thuun's Lingering Dream, at Kilmer's side)
 let whispersActive=false,_whispersSim=null,_whispersT=0; // #674 Regalia II: the counting-house (cut the strings before the puppet)
 let chitinActive=false,_chitinClutches=[],_chitinWax=[],_chitinBoss=false,chitinTimer=0,_chitinAddT=0; // #675 Regalia III: the hive-crater (burn the clutches, beat the Matron)
+let bannersActive=false,_bannersWave=0,_bannerMob=null,_bannerBoss=null,_bannerBaseDmg=0,_bannerTorn=false; // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -17911,6 +17912,7 @@ function update(dt){
   updateConsecration(dt);  // #682 Regalia X: the Consecration (T'thuun's Lingering Dream, at Kilmer's side)
   updateWhispers(dt);      // #674 Regalia II: the Counting-House (cut the strings before the puppet)
   updateChitin(dt);        // #675 Regalia III: the Hive-Crater (burn the clutches, beat the Matron)
+  updateBanners(dt);       // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20615,6 +20617,17 @@ const QUESTS=[
     xp:300000, gold:4500, instance:enterHiveCrater,
     gateOpen:"The outriders are down. Behind me the <b>hive-crater</b> opens, and the wax is already rising in it. Speak once more and I will send you down. <i>Burn the four clutches fast — the Matron wakes, and when she does she seals the ways out.</i>",
     item:{name:"Greaves of the Tenfold",stat:"worn",at:"heavy",aslot:"legs",mat:"Diamond",v:50,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
+  // ═══ #676 CHAPTER IV — Year of Banners (Regalia epic #672). The Pretender's War: board the corsair
+  //     deck through three waves, then duel the Standard-Bearer — he hits twice as hard while his banner
+  //     stands, so tear the banner down mid-fight. Awards the Pauldrons. (Chain: after III.) ═══
+  { id:"regalia4", name:"The Regalia of the Tenfold · IV — Year of Banners", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia3",
+    intro:"My fourth year a pretender flew false banners off the Halaetan Isles. Cut down six of his corsair press-gang first, then return: I will run you out to the anchored ships. Fight through to the Standard-Bearer — and mark this: he strikes twice as hard while his banner flies. Tear it down mid-duel, then put him down. Shoulders are for standards; bear the right one.",
+    gateFn:function(){ if(player.level<66) return "The Pretender's corsairs would cut you down as you are. Return at your sixty-sixth season (level 66)."; return null; },
+    obj:[{type:"slay",kind:"viamontian",count:6,label:"Cut down the Pretender's corsair press-gang"},
+         {type:"banners",count:1,label:"Board the ships, tear the Standard-Bearer's banner, and duel him down"}],
+    xp:400000, gold:6000, instance:enterBanners,
+    gateOpen:"The press-gang is scattered. Behind me the launch waits to run you out to the <b>anchored ships</b>. Speak once more and I will send you across. <i>His banner doubles his blade — tear it down before you trade blows in earnest.</i>",
+    item:{name:"Pauldrons of the Tenfold",stat:"worn",at:"heavy",aslot:"upperarm",mat:"Diamond",v:44,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20900,6 +20913,10 @@ const QUEST_GIVERS={
     prog:"Eight brood-outriders, culled wherever the Olthoi tunnel. Then return — I will open the hive-crater. Burn the four egg-clutches before the Matron wakes, and mind the wax; it does not want to let you go.",
     turn:"The clutches are ash and the Matron will spawn no more brood. A season in the wax, walked before the exits could close — take the Greaves of the Tenfold; they know how to carry you through the deep. Seven years remain.",
     post:"The third year is behind you — the deep one. The wax still comes off my boots some nights."},
+  regalia4:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Six of the press-gang, cut down wherever the Pretender's corsairs make landfall. Then return — I will run you out to the ships. Fight to the Standard-Bearer and tear his banner down; it is half his strength.",
+    turn:"The false banner is down and the Pretender's champion with it. Shoulders are for standards — bear the right one. These Pauldrons of the Tenfold are yours; wear them, and fly no lie. Six years remain.",
+    post:"The fourth year is behind you — the war of banners. A standard is only worth the arm that carries it."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -27058,7 +27075,7 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false;   // #680-#675: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false; bannersActive=false;   // #680-#676: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -27859,6 +27876,87 @@ function chitinFail(why){ chitinActive=false;
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   log(`The hive wins this time — ${why||"the wax and the dark drive you out"}. Burn the clutches faster next time.`,"warn");
   toast("THE BROOD PREVAILS"); if(SFX.hit)SFX.hit(); exitDungeon(true);
+}
+// ═══ #676 REGALIA IV — THE PRETENDER'S WAR: Year of Banners re-lived. Board the corsair deck through
+//     three waves of press-gang, then the STANDARD-BEARER: while his WAR BANNER (a destructible target
+//     beside him) still flies he strikes at DOUBLE damage — tear the banner down and his blade halves.
+//     Win → questEvent("banners") advances regalia4, Kilmer pays out the Pauldrons. ═══
+function buildCorsairDeck(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=22;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const plank=new THREE.MeshStandardMaterial({color:0x5a4326,roughness:0.85});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),plank);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // deck plank lines
+  for(let i=-R;i<R;i+=2){ const ln=new THREE.Mesh(new THREE.BoxGeometry(R*2,0.02,0.08),new THREE.MeshStandardMaterial({color:0x3a2a16})); ln.position.set(cx,0.07,cz+i); scene.add(ln); dungeonObjs.push(ln); }
+  // two masts + a low rail ring
+  for(const mz of [-8,8]){ const mast=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.5,12,10),new THREE.MeshStandardMaterial({color:0x6a5030,roughness:0.7})); mast.position.set(cx,6,cz+mz); mast.castShadow=true; scene.add(mast); dungeonObjs.push(mast); }
+  const rail=new THREE.Mesh(new THREE.TorusGeometry(R,0.25,8,40),new THREE.MeshStandardMaterial({color:0x4a3820})); rail.rotation.x=-Math.PI/2; rail.position.set(cx,1.1,cz); scene.add(rail); dungeonObjs.push(rail);
+  // sea + sky
+  const sea=new THREE.Mesh(new THREE.CircleGeometry(R+40,48),new THREE.MeshStandardMaterial({color:0x24506a,roughness:0.2,metalness:0.5})); sea.rotation.x=-Math.PI/2; sea.position.set(cx,-0.6,cz); scene.add(sea); dungeonObjs.push(sea);
+  const sun=new THREE.PointLight(0xfff0d0,1.0,120); sun.position.set(cx+20,30,cz); scene.add(sun); dungeonObjs.push(sun);
+  const amb=new THREE.HemisphereLight(0x9ab8d8,0x2a3a2a,0.5); scene.add(amb); dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz+R-5};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Back to the launch — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterBanners(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;bannersActive=true;curDungeon={id:990676,name:"The Corsair Deck",tier:4};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.25";
+  buildCorsairDeck();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  bannersActive=true;_bannersWave=0;_bannerMob=null;_bannerBoss=null;_bannerTorn=false;
+  toast("BOARDING — THE CORSAIR SHIPS");
+  log("You swing over the rail onto a corsair deck. <b>Three ships stand between you and the Standard-Bearer</b> — fight through, then tear his banner down before you trade blows.","sys");
+  updateHUD&&updateHUD();
+  bannersNextWave();
+}
+function bannersNextWave(){
+  _bannersWave++;
+  const cx=DCEN.x,cz=DCEN.z;
+  if(_bannersWave>3){   // the Standard-Bearer duel
+    spawnDungeonMonster("viamontian",cx,cz-4,true,3.6,"The Standard-Bearer");
+    _bannerBoss=monsters[monsters.length-1]; if(_bannerBoss){ _bannerBaseDmg=_bannerBoss.dmg; _bannerBoss.dmg=Math.round(_bannerBaseDmg*2); _bannerBoss._standardBearer=true; }
+    spawnDungeonMonster("banderling",cx+2.5,cz-4,false,1.4,"The War Banner");
+    _bannerMob=monsters[monsters.length-1]; if(_bannerMob){ _bannerMob._warBanner=true; _bannerMob.wx=cx+2.5; _bannerMob.wz=cz-4; _bannerMob.state="idle"; }
+    // banner pole visual
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,5,6),new THREE.MeshStandardMaterial({color:0x6a5030})); pole.position.set(cx+2.5,2.5,cz-4); scene.add(pole); dungeonObjs.push(pole); if(_bannerMob)_bannerMob._pole=pole;
+    const flag=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.0),new THREE.MeshStandardMaterial({color:0x9a2434,emissive:0x4a1018,emissiveIntensity:0.4,side:THREE.DoubleSide})); flag.position.set(cx+3.3,4,cz-4); scene.add(flag); dungeonObjs.push(flag); if(_bannerMob)_bannerMob._flag=flag;
+    toast("THE STANDARD-BEARER"); log("The last deck clears and <b>the Standard-Bearer</b> plants his banner — <b>while it flies he strikes twice as hard</b>. Tear the banner down, then take him.","warn");
+    return; }
+  const pool=["viamontian","banderling","sclavus"], n=4+_bannersWave*2;
+  for(let i=0;i<n;i++){ const a=(i/n)*Math.PI*2+_bannersWave, r=rnd(7,15);
+    spawnDungeonMonster(pool[irnd(0,pool.length-1)],cx+Math.cos(a)*r,cz+Math.sin(a)*r,_bannersWave>=2&&i===0,1.2+_bannersWave*0.2); }
+  log(`<b>You board ship ${_bannersWave} of 3</b> — the corsair crew swarms the deck.`,"sys");
+}
+function updateBanners(dt){
+  if(!bannersActive) return;
+  // the banner empowers the Standard-Bearer: while it flies he hits double; torn down, his blade halves
+  if(_bannerBoss&&_bannerBoss.hp>0){
+    const bannerUp=_bannerMob&&_bannerMob.hp>0;
+    if(!bannerUp&&!_bannerTorn){ _bannerTorn=true; _bannerBoss.dmg=_bannerBaseDmg;
+      if(_bannerMob){ if(_bannerMob._flag){ _bannerMob._flag.visible=false; } if(_bannerMob._pole){ _bannerMob._pole.material.color.setHex(0x2a2018); } }
+      burst(_bannerBoss.x,2,_bannerBoss.z,0x9a2434,30); toast("THE BANNER IS TORN DOWN");
+      log("The banner comes down in a rush of red — <b>the Standard-Bearer's strength halves</b>. Finish him.","sys"); }
+  }
+  if(_bannersWave<=3&&dungeonMobs<=0) bannersNextWave();
+  else if(_bannersWave>3&&dungeonMobs<=0) bannersWin();
+}
+function bannersWin(){
+  bannersActive=false;_bannerMob=null;_bannerBoss=null;
+  const cx=DCEN.x,cz=DCEN.z; burst(cx,2,cz,0x9a2434,90); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE STANDARD-BEARER FALLS");
+  log("The Standard-Bearer goes down beside his fallen banner, and the Pretender's fleet strikes its colours. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("banners");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!bannersActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function bannersFail(){ bannersActive=false;_bannerMob=null;_bannerBoss=null;
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE PRETENDER HOLDS"); if(SFX.hit)SFX.hit(); exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
 function buildNetwork(){
