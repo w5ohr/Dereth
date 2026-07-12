@@ -5177,6 +5177,14 @@ function acBuildHead(av,app){
     // avatar with TWO offset heads (the placeholder appears to orbit the real one as the viewer
     // circles). The #667 once-kick never re-fires to hide it either — u.acHead is set by then.
     if(u.head) u.head.visible=false;
+    // #676: (re)mount a diadem on the freshly-attached retail head. refreshAvatarArmor may have run
+    // before this head existed (async), or a head rebuild (palette/appearance) just replaced u.acHead
+    // and took the old circlet with it — either way, re-place it now against the real head.
+    if(u.armorRig&&u.armorRig.head&&typeof refreshHeadwear==="function"){
+      const isLocal=(typeof playerAvatar!=="undefined"&&av===playerAvatar);
+      const hit=(u._acSlots&&u._acSlots.head)||(isLocal&&typeof player!=="undefined"&&player.armorSlots&&player.armorSlots.head)||null;
+      refreshHeadwear(u.armorRig.head, hit, av);
+    }
     // #533: NECK SEAM — the retail head base (y≈1.525) and the torso neck rim (y≈1.44–1.55) don't
     //   quite meet at the collar, so the transparent canvas / untextured underside shows through as
     //   bright wedges under the chin (female) or a dark crease ring (male). Bridge the join with a
@@ -14961,10 +14969,27 @@ function buildDiademMesh(){
   gem.position.set(0,-0.024,-0.138); g.add(gem);                                 // brow gem fronts -z (the avatar's facing)
   return g;
 }
-function refreshHeadwear(ent,it){   // -> true when a diadem replaced the helm shell
+function refreshHeadwear(ent,it,av){   // -> true when a diadem replaced the helm shell
   const isD=!!(it&&/\bdiadem\b/i.test(it.name||""));
+  const u=av&&av.userData;
+  // #676: on a RETAIL AC head, mount the circlet ON THE HEAD (u.acHead) sized to the head itself.
+  // The old shell-fitted diadem (scale 0.68 on the procedural helm-slot group) sat in the procedural
+  // avatar's coordinate space, not the retail head's — it rendered as a tiny gold cluster jammed off
+  // the temple with the brow gem floating separately, which read as a malformed SECOND HEAD. The
+  // shell path is kept only for a purely procedural avatar that never receives a retail head.
+  if(u&&u.acHead){
+    // never show the legacy shell diadem; the helm dome shows only when no headwear is worn
+    for(const gr of ent.groups) for(const ch of gr.children){ if(ch.userData&&ch.userData.diadem) ch.visible=false; else ch.visible=!isD; }
+    if(u._diademReal&&u._diademReal.parent) u._diademReal.parent.remove(u._diademReal);
+    u._diademReal=null;
+    if(isD){ const dd=buildDiademMesh(); dd.userData.diadem=true;
+      dd.scale.setScalar(0.72); dd.rotation.set(0,Math.PI,0); dd.position.set(0,0.232,-0.045);   // head-local: encircles the crown, band at the brow, gem to the forehead (rot π: buildDiademMesh fronts -z, head-local face is +z)
+      u.acHead.add(dd); u._diademReal=dd; }
+    return isD;
+  }
+  // procedural avatar (no retail head) — original shell-mounted circlet
   for(const gr of ent.groups){
-    if(isD&&!gr.userData._diadem){ const dd=buildDiademMesh(); dd.scale.setScalar(0.68);   // helm-shell fit on the AC head
+    if(isD&&!gr.userData._diadem){ const dd=buildDiademMesh(); dd.scale.setScalar(0.68);   // helm-shell fit on the procedural head
       dd.userData.diadem=true; gr.userData._diadem=dd; gr.add(dd); }
     for(const ch of gr.children){ if(ch.userData&&ch.userData.diadem) ch.visible=isD; else ch.visible=!isD; }
     if(isD) gr.scale.setScalar(1);   // no heavy-class bulk on a circlet
@@ -15036,7 +15061,7 @@ function refreshAvatarArmor(av,slotsArg){
   const CLS={heavy:{me:0.85,ro:0.3,bulk:1.07},medium:{me:0.55,ro:0.52,bulk:1.0},light:{me:0.06,ro:0.8,bulk:0.95}};
   for(const k in rig){ const ent=rig[k], it=eff(k);
     for(const gr of ent.groups) gr.visible=!!it;
-    if(k==="head"&&refreshHeadwear(ent,it)) continue;   // a diadem has its own gold/gem materials — skip the tint
+    if(k==="head"&&refreshHeadwear(ent,it,av)) continue;   // a diadem has its own gold/gem materials — skip the tint
     if(!it) continue;
     const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||ARMOR_MAT_TINT[it.mat]||0x9aa0a8));
     const cls=CLS[it.at]||CLS.medium;
