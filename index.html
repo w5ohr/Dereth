@@ -24229,17 +24229,27 @@ let mountMesh=null;         // the mesh under you while riding (its rec is playe
 const _coatTexCache={};
 function horseCoatTex(tk){
   if(_coatTexCache[tk]) return _coatTexCache[tk];
-  const T=HORSE_TYPES[tk], c=document.createElement('canvas'); c.width=c.height=128;
+  const T=HORSE_TYPES[tk], c=document.createElement('canvas'); c.width=256; c.height=128;
   const g=c.getContext('2d'), col=new THREE.Color(T.coat);
-  g.fillStyle='#'+col.getHexString(); g.fillRect(0,0,128,128);
-  for(let i=0;i<900;i++){ const v=(Math.random()-0.5)*26;                       // hide grain
-    g.fillStyle=`rgba(${(col.r*255+v)|0},${(col.g*255+v)|0},${(col.b*255+v)|0},0.5)`;
-    g.fillRect(Math.random()*127,Math.random()*127,2,2); }
-  if(T.dapple) for(let i=0;i<70;i++){ const r=3+Math.random()*5;                // dapple-grey rosettes
-    g.fillStyle="rgba(235,235,240,0.16)"; g.beginPath();
-    g.arc(Math.random()*127,Math.random()*127,r,0,6.28); g.fill(); }
-  g.fillStyle="rgba(255,255,255,0.10)"; g.fillRect(0,96,128,32);                // lighter belly band
-  g.fillStyle="rgba(0,0,0,0.10)"; g.fillRect(0,0,128,20);                       // shaded topline
+  const R=(col.r*255)|0, G=(col.g*255)|0, B=(col.b*255)|0;
+  g.fillStyle='#'+col.getHexString(); g.fillRect(0,0,256,128);
+  for(let i=0;i<7000;i++){ const v=(Math.random()-0.5)*16;                        // fine, soft hide grain
+    g.fillStyle=`rgba(${R+v|0},${G+v|0},${B+v|0},0.35)`;
+    g.fillRect(Math.random()*255,Math.random()*127,1,1); }
+  // anatomy bands (u: 0 poll → 1 dock; v: ~0.25 topline, ~0.75 belly)
+  g.fillStyle="rgba(0,0,0,0.14)"; g.fillRect(0,24,256,14);                        // dorsal shading
+  if(T.points) { g.fillStyle="rgba(0,0,0,0.22)"; g.fillRect(0,26,256,8); }        // bay dorsal stripe
+  const belly=g.createLinearGradient(0,84,0,110);
+  belly.addColorStop(0,"rgba(255,255,255,0)"); belly.addColorStop(0.5,"rgba(255,250,240,0.14)"); belly.addColorStop(1,"rgba(255,255,255,0)");
+  g.fillStyle=belly; g.fillRect(0,84,256,26);                                     // lighter under-belly
+  const shoulder=g.createLinearGradient(60,0,110,0);
+  shoulder.addColorStop(0,"rgba(0,0,0,0.10)"); shoulder.addColorStop(1,"rgba(0,0,0,0)");
+  g.fillStyle=shoulder; g.fillRect(60,0,50,128);                                  // shoulder muscle shading
+  if(T.dapple) for(let i=0;i<120;i++){ const r=2.5+Math.random()*4.5;             // dapple rosettes
+    g.fillStyle="rgba(238,238,244,0.15)"; g.beginPath();
+    g.arc(Math.random()*255,20+Math.random()*80,r,0,6.28); g.fill(); }
+  if(T.ember) for(let i=0;i<40;i++){ g.fillStyle="rgba(90,30,110,0.12)";          // shadowmane's violet sheen
+    g.fillRect(Math.random()*255,Math.random()*127,4,2); }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
   return (_coatTexCache[tk]=t);
 }
@@ -24293,7 +24303,7 @@ function buildHorseMesh(tk,packs){
     {y:1.17,z:-0.62,w:0.225,h:0.39},   // flank
     {y:1.24,z:-0.88,w:0.175,h:0.30},   // croup
     {y:1.30,z:-1.04,w:0.06, h:0.08},   // dock
-  ],16),coat);
+  ],16,1),coat);   // uvRepeat 1: u runs poll→dock so the anatomy bands land where they belong
   g.add(body);
   // ── the head: its own small loft (pivots at the poll for the gait pendulum) ──
   const head=new THREE.Group(); head.position.set(0,2.0,1.22); head.rotation.x=0.48;
@@ -24316,6 +24326,10 @@ function buildHorseMesh(tk,packs){
     eye.position.set(e2*0.088,0.055,0.1); head.add(eye);
     const ear=new THREE.Mesh(new THREE.ConeGeometry(0.038,0.16*(T.ears||1),6),coat);
     ear.position.set(e2*0.06,0.16,-0.09); ear.rotation.z=e2*0.2; ear.rotation.x=-0.12; head.add(ear);
+    const earIn=new THREE.Mesh(new THREE.ConeGeometry(0.02,0.1*(T.ears||1),5),dark);   // #742: shadowed inner ear
+    earIn.position.set(e2*0.058,0.15,-0.078); earIn.rotation.z=e2*0.2; earIn.rotation.x=-0.02; head.add(earIn);
+    const glint=new THREE.Mesh(new THREE.SphereGeometry(0.008,5,4),new THREE.MeshBasicMaterial({color:0xffffff}));
+    glint.position.set(e2*0.108,0.062,0.115); head.add(glint);                          // #742: the live-eye glint
     const strap=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.15,0.012),tack);
     strap.position.set(e2*0.095,-0.01,0.14); strap.rotation.x=0.5; head.add(strap);
   }
@@ -24330,18 +24344,23 @@ function buildHorseMesh(tk,packs){
   for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(
       new THREE.Vector3(e2*0.09,1.92,1.52),new THREE.Vector3(e2*0.2,1.8,0.95),new THREE.Vector3(e2*0.17,1.62,0.38));   // reins REST on the neck, no chest droop
     const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,8,0.011,5),tack); g.add(rein); }
-  // ── the mane: a serrated crest ribbon hugging the neck's topline (Oblivion's card-mane) ──
-  { const crest=[[2.06,1.10],[1.95,0.97],[1.80,0.84],[1.62,0.72],[1.46,0.62]];
-    for(let i=0;i<crest.length-1;i++){
-      const[y1,z1]=crest[i],[y2,z2]=crest[i+1];
-      const seg=new THREE.Mesh(new THREE.BoxGeometry(0.045,Math.hypot(y2-y1,z2-z1)+0.06,0.14+i*0.02),dark);
-      seg.position.set((i%2?0.008:-0.008),(y1+y2)/2+0.05,(z1+z2)/2);
-      seg.rotation.x=Math.atan2(z1-z2,y1-y2); g.add(seg); } }
+  // #742: the mane is ONE scalloped lofted ridge hugging the crest — no more stepped boxes
+  { const mane=new THREE.Mesh(loftTube([
+      {y:2.12,z:1.12,w:0.014,h:0.04},
+      {y:2.00,z:0.98,w:0.02, h:0.095},
+      {y:1.85,z:0.85,w:0.022,h:0.075},
+      {y:1.69,z:0.72,w:0.022,h:0.105},
+      {y:1.54,z:0.61,w:0.02, h:0.08},
+      {y:1.42,z:0.53,w:0.014,h:0.045},
+    ],7,1),dark);
+    mane.position.y=0.02; g.add(mane); }
   // ── legs (unchanged rig: base angles the gait engine preserves) ──
   const legs=[];
   for(const[lx,lz]of[[-0.15,0.5],[0.15,0.5],[-0.16,-0.62],[0.16,-0.62]]){
     const front=lz>0;
     const leg=new THREE.Group(); leg.position.set(lx,1.12,lz);
+    const fair=new THREE.Mesh(new THREE.CylinderGeometry(front?0.11:0.15,front?0.07:0.09,front?0.3:0.36,9),coat);
+    fair.position.y=front?0.02:0.0; leg.add(fair);                       // #742: the thigh grows OUT of the body
     const upper=new THREE.Mesh(new THREE.CylinderGeometry(front?0.078:0.105,0.05,front?0.52:0.56,9),coat);
     upper.position.y=front?-0.26:-0.28; leg.add(upper);
     const joint=new THREE.Mesh(new THREE.SphereGeometry(front?0.052:0.06,8,6),coat);
@@ -24636,6 +24655,7 @@ function updateHorses(dt){
           floater(m.x,1.6,m.z,"trampled","#e0c68a"); if(SFX.bump)SFX.bump();
         }
       }
+      if(mountMesh.userData.tail) mountMesh.userData.tail.rotation.x=(gallop?(0.45+0.25*k):0.08)+0.05*Math.sin(p*3);   // #742: the tail streams out with pace
       if(gallop){
         bounce=Math.abs(Math.sin(p*Math.PI))*0.14*k;                       // the suspension beat
         mountMesh.rotation.x=0.055*Math.sin(p*Math.PI*2+0.6)*k;           // gathered→extended pitch rock
@@ -24646,7 +24666,8 @@ function updateHorses(dt){
         if(head) head.rotation.x=0.42+0.06*Math.sin(p*Math.PI*2);          // nodding walk
       }
       mountMesh.position.y=hy+bounce;
-    } else { legs.forEach(L=>{ L.g.rotation.x=(L.b0||0)+(L.g.rotation.x-(L.b0||0))*0.8; L.knee.rotation.x=(L.k0||0)+(L.knee.rotation.x-(L.k0||0))*0.8; }); mountMesh.rotation.x*=0.8; }
+    } else { legs.forEach(L=>{ L.g.rotation.x=(L.b0||0)+(L.g.rotation.x-(L.b0||0))*0.8; L.knee.rotation.x=(L.k0||0)+(L.knee.rotation.x-(L.k0||0))*0.8; }); mountMesh.rotation.x*=0.8;
+      if(mountMesh.userData.tail) mountMesh.userData.tail.rotation.x*=0.85; }
     // ── THE RIDER (research: at speed you ride a half-seat — rocking with the horse, rising and
     //    falling with the suspension beat a hair BEHIND it, leaning further forward as the pace
     //    builds). The seat pins you to the saddle; the bob rides player.y so the first-person
@@ -32053,6 +32074,7 @@ function updateRemotes(dt){
         legs2.forEach((L,i)=>{ const lp=(p3+offs2[i])*Math.PI*2;
           L.g.rotation.x=(L.b0||0)+Math.sin(lp)*swA;
           const fold=Math.max(0,Math.sin(lp+1.15))*fdA; L.knee.rotation.x=(L.k0||0)+(L.front?-fold:fold); });
+        if(hm.userData.tail) hm.userData.tail.rotation.x=(gallop2?(0.45+0.25*k2):0.08)+0.05*Math.sin(p3*3);
         if(gallop2) hm.position.y+=Math.abs(Math.sin(p3*Math.PI))*0.14*k2;
       } else legs2.forEach(L=>{ L.g.rotation.x=(L.b0||0)+(L.g.rotation.x-(L.b0||0))*0.8; L.knee.rotation.x=(L.k0||0)+(L.knee.rotation.x-(L.k0||0))*0.8; });
     }
