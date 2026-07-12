@@ -3556,13 +3556,13 @@ function buildSun(){   // the sun disc (sky obj 0x01001348, tex 0600388D) — wa
 function buildMoon(){   // Dereth's great moon — the green storm-world (sky obj 0x01001F6A, tex 06003898)
   moonSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_green.png'),
     transparent:true,fog:false,depthWrite:false}));
-  moonSprite.scale.set(520,520,1);return moonSprite;   // AC bbox 520
+  moonSprite.scale.set(2600,2600,1);return moonSprite;   // large, close great moon — dominates the night sky
 }
 // AC's night sky has TWO moons — the smaller amber cratered companion rides an offset arc beside the primary.
 function buildMoon2(){   // amber cratered moon (sky obj 0x01001F67, tex 06003894)
   moon2Sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_amber.png'),
     transparent:true,fog:false,depthWrite:false}));
-  moon2Sprite.scale.set(245,245,1);return moon2Sprite;   // AC bbox 245 (≈0.47× the green moon, matching retail)
+  moon2Sprite.scale.set(1300,1300,1);return moon2Sprite;   // amber companion, ≈0.5× the great moon, also brought close
 }
 function buildClouds(){
   cloudGroup=new THREE.Group();
@@ -3815,10 +3815,11 @@ function updateDayNight(dt){
     sunSprite.material.opacity=clamp(sunY*3+0.4,0,1);
     sunSprite.material.color.copy(_sunNoon).lerp(_cWarm,warm);} // redden at dawn/dusk
   if(sunHalo){sunHalo.position.copy(sunSprite.position);sunHalo.material.opacity=clamp(sunY*2+0.25,0,1)*0.4;sunHalo.material.color.copy(sunSprite.material.color);}
-  if(moonSprite){moonSprite.position.set(player.x-sky.x*R,Math.max(-200,-sky.y*R*0.7),player.z-sky.z*R);
+  const MR=R*0.62;   // the moons hang closer than the sun's arc — big and near overhead
+  if(moonSprite){moonSprite.position.set(player.x-sky.x*MR,Math.max(-200,-sky.y*MR*0.7),player.z-sky.z*MR);
     moonSprite.material.opacity=clamp(-sunY*3+0.4,0,1);}
   if(moon2Sprite){const perp=_ddPerp.set(-sky.z,0,sky.x);   // the amber companion rides beside & above the primary
-    moon2Sprite.position.set(player.x-sky.x*R*0.86+perp.x*R*0.32,Math.max(-160,-sky.y*R*0.55+70),player.z-sky.z*R*0.86+perp.z*R*0.32);
+    moon2Sprite.position.set(player.x-sky.x*MR*0.86+perp.x*MR*0.34,Math.max(-160,-sky.y*MR*0.55+70),player.z-sky.z*MR*0.86+perp.z*MR*0.34);
     moon2Sprite.material.opacity=clamp(-sunY*3+0.35,0,1);}
   // drifting clouds, fading at night, wrapping across the sky, following the player
   if(cloudGroup){
@@ -4287,11 +4288,14 @@ function initThree(){
     'gl_FragColor.rgb=mix(_deep,_refl,_fres);\n'+
     'float _rd=max(dot(reflect(-normalize(uSunView),_N),_V),0.0);\n'+
     'gl_FragColor.rgb+=uSunCol*(pow(_rd,180.0)*1.8+pow(_rd,26.0)*0.22);\n'+   // sharp glitter + soft sheen
-    // shoreline foam: surf where shallow, undulating with a wave term
-    'float _wv=0.5+0.25*sin(vWXZ.x*0.25+uWTime*2.2)+0.25*sin(vWXZ.y*0.21-uWTime*1.8);\n'+
+    // shoreline foam: surf where shallow. A MULTI-OCTAVE wave term makes the breaking line wander in and
+    // out organically, so the waterline reads as ragged natural surf instead of a straight contour band.
+    'float _wv=0.5+0.2*sin(vWXZ.x*0.25+uWTime*2.2)+0.2*sin(vWXZ.y*0.21-uWTime*1.8)\n'+
+    '  +0.17*sin(vWXZ.x*0.63-vWXZ.y*0.55+uWTime*1.3)+0.13*sin((vWXZ.x+vWXZ.y)*0.92+uWTime*3.1)\n'+
+    '  +0.09*sin(vWXZ.x*1.7+vWXZ.y*1.3-uWTime*2.6);\n'+
     'float _foam=smoothstep(2.4,0.0,_depth)*clamp(_depth*3.0,0.0,1.0);\n'+    // fade in deep→shore, kill on dry land
-    'float _surf=smoothstep(0.55,0.0,abs(_depth-0.45-_wv*0.6));\n'+           // a wandering breaking line
-    '_foam=clamp(_foam*(0.4+0.5*_wv)+_surf*(0.42+0.38*uWindF),0.0,0.95);\n'+   // #691: storms whip the breaking line up
+    'float _surf=smoothstep(0.62,0.0,abs(_depth-0.4-_wv*1.05));\n'+           // wider, deeper-wandering breaking line
+    '_foam=clamp(_foam*(0.32+0.55*_wv)+_surf*(0.46+0.4*uWindF),0.0,0.96);\n'+   // #691: storms whip the breaking line up
     'gl_FragColor.rgb=mix(gl_FragColor.rgb,uFoamCol,_foam);\n'+
     'float _a=max(mix(0.80,0.99,_fres),_foam);\n'+
     // #691: true shore fade — the razor waterline edge dissolves over the last ~1.4m of column,
@@ -7124,7 +7128,62 @@ function _mergeColored(parts){       // [{geo,color,translate?}] → single vert
   geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   return geo;
 }
-let _floraGeo=null;
+let _floraGeo=null,_leafTex=null;
+// ── real foliage: a light leaf-cluster mask (alpha-cut) that the per-leaf vertex colour tints green.
+//    Deciduous crowns are built from crossed leaf CARDS instead of smooth blobs, so the canopy reads as
+//    leaves and its silhouette breaks up; the canopy material sways so the leaves blow in the wind. ──
+function leafTex(){
+  if(_leafTex) return _leafTex;
+  const N=128, c=document.createElement('canvas'); c.width=c.height=N; const g=c.getContext('2d'); g.clearRect(0,0,N,N);
+  const cx=N/2, cy=N/2;
+  for(let i=0;i<74;i++){
+    const a=Math.random()*6.283, rr=Math.pow(Math.random(),0.7)*N*0.47;
+    const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr, s=5+Math.random()*11, ang=Math.random()*6.283, v=Math.random()*36;
+    g.save(); g.translate(x,y); g.rotate(ang);
+    g.fillStyle=`rgba(${(196+v)|0},${(216+v)|0},${(172+v)|0},1)`;            // light leaf → vertex colour supplies the green
+    g.beginPath(); g.ellipse(0,0,s*0.52,s,0,0,6.28); g.fill();
+    g.strokeStyle='rgba(120,140,96,0.5)'; g.lineWidth=1; g.beginPath(); g.moveTo(0,-s); g.lineTo(0,s); g.stroke();
+    g.restore();
+  }
+  _leafTex=new THREE.CanvasTexture(c); _leafTex.colorSpace=THREE.SRGBColorSpace;
+  if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities) _leafTex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  return _leafTex;
+}
+// crossed leaf cards scattered over an ellipsoid crown → non-indexed {pos,nrm,col,uv}
+function _leafCards(cx,cy,cz, rx,ry, n, colorHex, sz){
+  const pos=[],nrm=[],col=[],uv=[]; const base=new THREE.Color(colorHex).convertSRGBToLinear();
+  let seed=(((cx*97+cz*57+cy*29+n)|0)>>>0)||7; const rr=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;};
+  for(let i=0;i<n;i++){
+    const u=rr()*6.283, ct=2*rr()-1, st=Math.sqrt(1-ct*ct), nx=st*Math.cos(u), ny=ct, nz=st*Math.sin(u), rad=0.5+rr()*0.55;
+    const px=cx+nx*rx*rad, py=cy+ny*ry*rad, pz=cz+nz*rx*rad, s=sz*(0.7+rr()*0.75);
+    for(let q=0;q<2;q++){
+      const ang=rr()*6.283, ax=Math.cos(ang), az=Math.sin(ang), upT=rr()*0.4-0.2, tv=0.84+rr()*0.32;
+      for(const [rc,uc] of [[-1,-1],[1,-1],[1,1],[-1,-1],[1,1],[-1,1]]){    // 2 tris, non-indexed
+        pos.push(px+ax*rc*s, py+uc*s+upT*rc*s, pz+az*rc*s);
+        col.push(base.r*tv, base.g*tv, base.b*tv);
+        nrm.push(nx*0.28, Math.max(0.6,ny*0.4+0.62), nz*0.28);   // skyward-biased so the canopy interior isn't near-black
+        uv.push(rc*0.5+0.5, uc*0.5+0.5);
+      }
+    }
+  }
+  return {pos,nrm,col,uv};
+}
+// merge a solid trunk (material 0) with a leaf-card canopy (material 1) into one 2-group geometry
+function _treeGeo(trunkParts, canopy){
+  const tg=_mergeColored(trunkParts), tp=tg.attributes.position.array, tn=tg.attributes.normal.array, tc=tg.attributes.color.array, tvC=tg.attributes.position.count;
+  const lp=canopy.pos, lvC=lp.length/3;
+  const pos=new Float32Array(tp.length+lp.length); pos.set(tp); pos.set(lp,tp.length);
+  const nrm=new Float32Array(tn.length+canopy.nrm.length); nrm.set(tn); nrm.set(canopy.nrm,tn.length);
+  const colr=new Float32Array(tc.length+canopy.col.length); colr.set(tc); colr.set(canopy.col,tc.length);
+  const uv=new Float32Array((tvC+lvC)*2); uv.set(canopy.uv, tvC*2);       // trunk uv stays (0,0)
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.setAttribute('normal',new THREE.BufferAttribute(nrm,3));
+  g.setAttribute('color',new THREE.BufferAttribute(colr,3));
+  g.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+  g.addGroup(0,tvC,0); g.addGroup(tvC,lvC,1);
+  tg.dispose(); return g;
+}
 function floraGeos(){
   if(_floraGeo) return _floraGeo;
   _floraGeo={
@@ -7134,25 +7193,15 @@ function floraGeos(){
       {geo:new THREE.ConeGeometry(1.2,1.6,8),color:0x2c4c2a,translate:[0,2.8,0]},
       {geo:new THREE.ConeGeometry(0.9,1.4,8),color:0x315233,translate:[0,3.7,0]},
       {geo:new THREE.ConeGeometry(0.6,1.2,8),color:0x37583a,translate:[0,4.5,0]}]),
-    broadleaf:_mergeColored([
-      {geo:new THREE.CylinderGeometry(0.18,0.3,2.0,6),color:0x5c452c,translate:[0,1.0,0]},
-      {geo:new THREE.IcosahedronGeometry(1.5,1),color:0x3b5c31,translate:[0,2.9,0]},
-      {geo:new THREE.IcosahedronGeometry(1.05,1),color:0x446636,translate:[0.9,2.4,0.35]},
-      {geo:new THREE.IcosahedronGeometry(1.0,1),color:0x365427,translate:[-0.8,2.55,-0.3]},
-      {geo:new THREE.IcosahedronGeometry(0.95,1),color:0x40602f,translate:[0.2,3.55,-0.5]}, // fuller crown
-      {geo:new THREE.IcosahedronGeometry(0.85,1),color:0x30491f,translate:[-0.35,2.9,0.75]}]),
-    oak:_mergeColored([
-      {geo:new THREE.CylinderGeometry(0.26,0.46,2.3,7),color:0x5a4430,translate:[0,1.15,0]},   // broad shade tree, wide multi-lobe crown
-      {geo:new THREE.IcosahedronGeometry(1.95,1),color:0x3e5e30,translate:[0,3.15,0]},
-      {geo:new THREE.IcosahedronGeometry(1.45,1),color:0x496b38,translate:[1.25,2.8,0.3]},
-      {geo:new THREE.IcosahedronGeometry(1.4,1),color:0x37552a,translate:[-1.15,2.9,-0.4]},
-      {geo:new THREE.IcosahedronGeometry(1.25,1),color:0x44662f,translate:[0.1,3.95,0.55]},
-      {geo:new THREE.IcosahedronGeometry(1.2,1),color:0x2f4a26,translate:[-0.3,3.0,1.05]}]),
-    birch:_mergeColored([
-      {geo:new THREE.CylinderGeometry(0.1,0.16,3.6,6),color:0xdcd6c8,translate:[0,1.8,0]},      // tall, slender, pale trunk + airy light-green crown
-      {geo:new THREE.IcosahedronGeometry(0.98,1),color:0x74963f,translate:[0,3.9,0]},
-      {geo:new THREE.IcosahedronGeometry(0.78,1),color:0x648438,translate:[0.5,4.4,0.2]},
-      {geo:new THREE.IcosahedronGeometry(0.72,1),color:0x82a24a,translate:[-0.45,3.7,-0.25]}]),
+    broadleaf:_treeGeo([
+      {geo:new THREE.CylinderGeometry(0.18,0.3,2.4,6),color:0x5c452c,translate:[0,1.2,0]}],
+      _leafCards(0,3.0,0, 1.8,1.5, 54, 0x486a2c, 0.62)),      // leafy rounded crown
+    oak:_treeGeo([
+      {geo:new THREE.CylinderGeometry(0.26,0.46,2.6,7),color:0x5a4430,translate:[0,1.3,0]}],
+      _leafCards(0,3.5,0, 2.5,1.9, 82, 0x466428, 0.68)),      // broad shade tree, wide leafy crown
+    birch:_treeGeo([
+      {geo:new THREE.CylinderGeometry(0.1,0.16,3.8,6),color:0xdcd6c8,translate:[0,1.9,0]}],
+      _leafCards(0,4.4,0, 1.15,1.4, 36, 0x84a24a, 0.5)),      // tall slender trunk, airy light-green crown
     snowpine:_mergeColored([
       {geo:new THREE.CylinderGeometry(0.14,0.24,1.6,6),color:0x4a3d30,translate:[0,0.8,0]},
       {geo:new THREE.ConeGeometry(1.3,1.7,7),color:0x2f4a37,translate:[0,2.0,0]},
@@ -7164,20 +7213,24 @@ function floraGeos(){
       {geo:new THREE.CylinderGeometry(0.12,0.24,2.6,5),color:0x6a6154,translate:[0,1.3,0]},
       {geo:new THREE.CylinderGeometry(0.05,0.09,1.2,4),color:0x615a4e,translate:[0.45,2.3,0.2]},
       {geo:new THREE.CylinderGeometry(0.04,0.08,1.0,4),color:0x6d6558,translate:[-0.4,2.0,-0.15]}]),
-    boulder:_mergeColored([
-      {geo:new THREE.DodecahedronGeometry(0.85,0),color:0x5a564d,translate:[0,0.42,0]},
-      {geo:new THREE.DodecahedronGeometry(0.5,0),color:0x514d45,translate:[0.6,0.25,0.3]}]),
+    boulder:_rockPile(777),
   };
   return _floraGeo;
 }
 function buildForests(){
   const G=floraGeos();
   const mkMat=flat=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.92,metalness:0.0,flatShading:!!flat});
-  const pools={conifer:{cap:8500,mat:mkMat(false)},broadleaf:{cap:6500,mat:mkMat(false)},
-               oak:{cap:4200,mat:mkMat(false)},birch:{cap:2600,mat:mkMat(false)},
-               snowpine:{cap:3200,mat:mkMat(false)},deadtree:{cap:1600,mat:mkMat(true)},boulder:{cap:2600,mat:mkMat(true)}};
-  // the whole forest sways: canopies bend, trunks stay planted (boulders sit still)
-  for(const k in pools){ if(k!=="boulder") addWindSway(pools[k].mat,k==="deadtree"?0.035:(k==="birch"?0.13:0.09),1.3,4.6); }
+  // deciduous species = [solid trunk, leaf-textured canopy]; the leaf canopy is alpha-cut and sways
+  const _trunkMat=mkMat(false);   // shared rigid trunk (planted)
+  const leafMat=amp=>{ const m=new THREE.MeshStandardMaterial({vertexColors:true,map:leafTex(),alphaTest:0.42,side:THREE.DoubleSide,roughness:0.9,metalness:0.0});
+    addWindSway(m,amp,1.6,7.0); return m; };
+  const LEAFY={broadleaf:0.14,oak:0.12,birch:0.17};
+  const matFor=(k,flat)=> (k in LEAFY) ? [_trunkMat,leafMat(LEAFY[k])] : mkMat(flat);
+  const pools={conifer:{cap:8500,mat:matFor("conifer")},broadleaf:{cap:6500,mat:matFor("broadleaf")},
+               oak:{cap:4200,mat:matFor("oak")},birch:{cap:2600,mat:matFor("birch")},
+               snowpine:{cap:3200,mat:matFor("snowpine")},deadtree:{cap:1600,mat:matFor("deadtree",true)},boulder:{cap:2600,mat:matFor("boulder",true)}};
+  // evergreens/deadtree sway as a whole; deciduous sway is on the leaf canopy only (trunks stay planted)
+  for(const k in pools){ if(!(k in LEAFY)&&k!=="boulder"&&!Array.isArray(pools[k].mat)) addWindSway(pools[k].mat,k==="deadtree"?0.035:0.09,1.3,4.6); }
   for(const k in pools){ const p=pools[k];
     p.mesh=new THREE.InstancedMesh(G[k],p.mat,p.cap); p.n=0;
     p.mesh.castShadow=true; p.mesh.receiveShadow=true; }
@@ -7228,11 +7281,45 @@ function buildForests(){
     p.mesh.frustumCulled=false;                                    // instance bounds ≠ geometry bounds
     scene.add(p.mesh); scenery.push(p.mesh); }
 }
+// craggy rock geometry: an icosahedron shattered by per-vertex noise (wider than tall, like a real
+// boulder), flat-shaded, with vertex colours for sun-bleached tops, damp bases, strata and lichen.
+function _rockGeo(rad,seed){
+  const g=new THREE.IcosahedronGeometry(rad,1); const p=g.attributes.position, v=new THREE.Vector3(), dir=new THREE.Vector3();
+  let s=(seed|0)||1; const rr=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};
+  const ph=rr()*6.28, ax=1.4+rr()*1.2, ay=1.1+rr()*1.0, az=1.3+rr()*1.1;   // per-rock noise phases → each boulder unique
+  for(let i=0;i<p.count;i++){ v.fromBufferAttribute(p,i); dir.copy(v).normalize();
+    // COHERENT lumps (smooth noise of the vertex direction) — solid boulder, not shattered shards
+    const nz=Math.sin(dir.x*ax*3.0+ph)*0.5+Math.sin(dir.y*ay*2.4-ph)*0.3+Math.sin(dir.z*az*3.6+dir.x*2.0)*0.2;
+    v.copy(dir).multiplyScalar(rad*(0.86+nz*0.17));
+    v.y*=0.72; v.x*=0.98+Math.sin(dir.z*2.1)*0.1; p.setXYZ(i,v.x,v.y,v.z); }
+  g.computeVertexNormals();
+  const col=[], c=new THREE.Color();
+  for(let i=0;i<p.count;i++){ v.fromBufferAttribute(p,i);
+    const up=clamp(v.y/rad*0.5+0.5,0,1); let r=0.46+up*0.16, gg=0.45+up*0.15, bb=0.42+up*0.14;   // lighter, sun-bleached tops
+    const band=Math.sin(v.y*3.1+i*1.3)*0.5+0.5; if(band>0.7){ r*=0.9; gg*=0.9; bb*=0.9; }          // faint strata
+    if(rr()<0.13){ gg+=0.06; r-=0.01; bb-=0.03; }                                                   // lichen fleck
+    c.setRGB(r,gg,bb).convertSRGBToLinear(); col.push(c.r,c.g,c.b); }
+  g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); return g;
+}
+// two craggy rocks merged into one instanced-boulder geometry, sitting on the ground
+function _rockPile(seed){
+  const a=_rockGeo(0.9,seed), b=_rockGeo(0.52,seed*3+1); b.translate(0.62,-0.16,0.34);
+  const cat=n=>{const A=a.attributes[n].array,B=b.attributes[n].array,o=new Float32Array(A.length+B.length);o.set(A);o.set(B,A.length);return o;};
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(cat('position'),3));
+  g.setAttribute('normal',new THREE.BufferAttribute(cat('normal'),3));
+  g.setAttribute('color',new THREE.BufferAttribute(cat('color'),3));
+  g.translate(0,0.6,0); a.dispose(); b.dispose(); return g;
+}
+let _rockMat=null;
 function buildRock(s){
-  const m=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7*s,0),
-    new THREE.MeshStandardMaterial({color:0x5a564d,flatShading:true}));
-  m.position.y=0.4*s;m.rotation.set(rnd(0,6),rnd(0,6),rnd(0,6));
-  m.castShadow=true;m.receiveShadow=true;return m;
+  if(!_rockMat) _rockMat=new THREE.MeshStandardMaterial({vertexColors:true,flatShading:true,roughness:1,metalness:0});
+  const g=new THREE.Group(), n=1+((Math.random()*2)|0);
+  for(let i=0;i<n;i++){ const rad=(0.62+Math.random()*0.42)*s*(i===0?1:0.55);
+    const m=new THREE.Mesh(_rockGeo(rad,(Math.random()*1e6)|0),_rockMat);
+    m.position.set((Math.random()-0.5)*0.7*s, rad*0.52, (Math.random()-0.5)*0.7*s);
+    m.rotation.set(rnd(0,6),rnd(0,6),rnd(0,6)); m.castShadow=true; m.receiveShadow=true; g.add(m); }
+  return g;
 }
 // carved-rune stone texture for the lifestone plinth (a handful of variants, cached)
 function glyphStoneTex(seed){
@@ -9515,7 +9602,9 @@ function addKilmerCastle(){
   const gy=groundY(KC.x,KC.z);
   const G=new THREE.Group(); G.position.set(KC.x,gy,KC.z); G.userData.noSettle=true; G.userData.cullR2=620*620;
   scene.add(G); scenery.push(G);
-  const stone=texMat(stoneFloorTex,0x9a958c), stoneDark=texMat(stoneFloorTex,0x6f6a62), stoneBlk=texMat(stoneFloorTex,0x4e4a44), wood=texMat(woodTex,0x6a4a2a);
+  const _ash=ashlarStone();   // real dressed-ashlar masonry (albedo + normal) — big cut blocks, mortar joints, bevels
+  const mkStone=hex=>new THREE.MeshStandardMaterial({map:_ash.map,normalMap:_ash.normalMap,normalScale:new THREE.Vector2(1.05,1.05),color:hex,roughness:0.9,metalness:0.02});
+  const stone=mkStone(0xc2bcae), stoneDark=mkStone(0x8f887b), stoneBlk=mkStone(0x655f55), wood=texMat(woodTex,0x6a4a2a);
   // every stone surface tiles at ONE world size so the whole castle reads as one masonry of
   // same-size blocks (~2.3u), instead of the texture stretching to fit each wall/tower's face.
   const KC_TILE=36, STONES=[stone,stoneDark,stoneBlk];
@@ -25147,6 +25236,42 @@ function cobbleTex(tint){
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
   if(typeof renderer!=="undefined"&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();
   return t;
+}
+// ── Dressed ashlar masonry for Kilmer's castle: big rectangular cut blocks in running bond, recessed
+//    mortar joints, beveled edges and per-block weathering baked into albedo + a matching normal map so
+//    the walls read as real fitted stone that catches light — not a flat cobble decal. ──
+let _ashlar=null;
+function ashlarStone(){
+  if(_ashlar) return _ashlar;
+  const N=512, R=11, C=16, bh=N/R, bw=N/C, mortar=3.0, bevel=5.5;
+  const bval=(r,c)=>{ let s=(((r*73856093)^(c*19349663))>>>0)||1; s=(s*1103515245+12345)&0x7fffffff; return 0.8+(s/0x7fffffff)*0.36; };
+  const Hf=new Float32Array(N*N);
+  const A=document.createElement('canvas');A.width=A.height=N;const ga=A.getContext('2d');const ia=ga.createImageData(N,N),da=ia.data;
+  for(let py=0;py<N;py++)for(let px=0;px<N;px++){
+    const row=Math.floor(py/bh), off=(row&1)*bw*0.5, gx=px+off, col=Math.floor(gx/bw);
+    const lx=gx-col*bw, ly=py-row*bh, dE=Math.min(lx,bw-lx,ly,bh-ly);
+    let h, shade;
+    if(dE<mortar){ h=0.34; shade=0.56; }                                                   // shallow mortar groove
+    else { const bv=Math.min(1,(dE-mortar)/bevel); h=0.72+bv*0.28; shade=0.8+bv*0.2; }      // near-flush block face, slight edge bevel
+    h += (Math.sin(px*1.7+row*2.3)*Math.cos(py*1.3+col*1.9))*0.02; Hf[py*N+px]=h;
+    const i=(py*N+px)*4;
+    if(dE<mortar){ da[i]=92; da[i+1]=88; da[i+2]=80; }                                   // tan-grey mortar
+    else { const v=bval(row,col); let g0=150*v*shade*(0.95+0.05*Math.sin(px*0.25+row*3.1));  // weathered block face
+      da[i]=g0; da[i+1]=g0*0.985; da[i+2]=g0*0.94; }
+    da[i+3]=255;
+  }
+  ga.putImageData(ia,0,0);
+  const Nn=document.createElement('canvas');Nn.width=Nn.height=N;const gn=Nn.getContext('2d');const inp=gn.createImageData(N,N),dn=inp.data;
+  const STR=2.5;
+  for(let py=0;py<N;py++)for(let px=0;px<N;px++){
+    const xl=Hf[py*N+((px-1+N)%N)],xr=Hf[py*N+((px+1)%N)],yl=Hf[((py-1+N)%N)*N+px],yr=Hf[((py+1)%N)*N+px];
+    let nx=(xl-xr)*STR,ny=(yl-yr)*STR,nz=1;const l=Math.hypot(nx,ny,nz)||1;nx/=l;ny/=l;nz/=l;
+    const i=(py*N+px)*4;dn[i]=(nx*.5+.5)*255;dn[i+1]=(ny*.5+.5)*255;dn[i+2]=(nz*.5+.5)*255;dn[i+3]=255;
+  }
+  gn.putImageData(inp,0,0);
+  const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t;};
+  _ashlar={map:mk(A,true),normalMap:mk(Nn,false)};
+  return _ashlar;
 }
 // roads as a ribbon of quads that follow the terrain contours
 // ── Purpose-built roads: freshly-laid beds that follow the land closely (fine tessellation),
