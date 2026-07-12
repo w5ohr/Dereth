@@ -867,6 +867,7 @@ class Client:
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
+        self.mnt = None   # #728: mount type key while riding (e.g. "grey") — remotes render the horse
         self.gear = None           # #667: compact worn-armour descriptor (sanitize_gear), so remotes render our armour
         self.inst = False        # #646: True while in a per-player instance (dungeon/Town Network/Academy). x/z carry the OVERWORLD return point (#307), so peers hide the avatar and AI/PvP must not target it
         # #239: per-connection token buckets (refilled by elapsed time in the read loop). One general
@@ -935,6 +936,7 @@ def player_pub(u, cl):
             "hp": cl.hp, "mhp": cl.mhp, "level": cl.level, "heritage": cl.heritage, "title": cl.title,
             "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
             "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None),
+            "mnt": getattr(cl, "mnt", None),   # #728: mounted remotes render their horse
             "gear": getattr(cl, "gear", None),   # #667: worn armour so remotes render us clad, not bare
             "inst": getattr(cl, "inst", False)}   # #646: peers hide the avatar when set (player is inside an instance)
 
@@ -2531,6 +2533,7 @@ async def dispatch(cl, msg):
         cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
         cl.title = str(msg.get("title", cl.title))[:40]
         cl.wt = (str(msg.get("wt"))[:16] if msg.get("wt") else None)          # so remotes render the right weapon
+        cl.mnt = (str(msg.get("mnt"))[:12] if msg.get("mnt") else None)        # #728: riding? which horse
         cl.wmode = str(msg.get("wmode", cl.wmode))[:8]
         cl.shield = (str(msg.get("shield"))[:16] if msg.get("shield") else None)
         if "gear" in msg:                                                     # #667: worn armour, synced on change; cached for every snapshot
