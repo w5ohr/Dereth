@@ -8814,7 +8814,8 @@ function tbRingBuilding(g,obst,did,wx,wz,th){
     const fnd=new THREE.Mesh(new THREE.BoxGeometry(hx*2+0.6,base-lo+1.6,hz*2+0.6),texMat(stoneFloorTex,0x8a8074));
     fnd.position.set(fcx,(base+lo-1.6)/2,fcz); fnd.rotation.y=th; fnd.receiveShadow=true; g.add(fnd); }
   const enter=(hx>=2.6&&hz>=2.6&&H>=3.0);
-  const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[],doorMX,doorMZ};
+  const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[],doorMX,doorMZ,
+    did:(''+did).replace(/^0x/i,'').toUpperCase()};   // #767: the AC model DID → its extracted interior
   const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
     for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
       const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw;
@@ -18054,6 +18055,7 @@ function currentPrompt(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house) return hsHintInside();
+    if(curDungeon&&curDungeon.interior) return nr(dungeonExit.x,dungeonExit.z)<3.0?"Leave — E":"";
     if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs); if(n&&n.d<3.5) return "Speak with "+n.o.name+" (E)"; }
     if(dungeonChest&&!dungeonChest.opened&&dungeonMobs<=0&&nr(dungeonChest.x,dungeonChest.z)<3.5) return "Open the hoard (E)";
     if(dungeonLock&&!dungeonLock.opened&&nr(dungeonLock.x,dungeonLock.z)<3.2) return hasLockOpener()?"Pick the locked cache (E)":"Locked — need a Lockpick or Key";
@@ -18068,6 +18070,8 @@ function currentPrompt(){
     return "";
   }
   for(const a of pkAltars) if(nr(a.x,a.z)<3.5) return (a.state==="pk"?"Swear the Blood Oath at the "+a.name+" (E)":"Lay down your arms at the "+a.name+" (E)");
+  { const dr=(typeof intDoorNear==="function")&&intDoorNear();                        // #767: real interiors
+    if(dr){ const n2=nearestOf(npcs); if(!(n2&&n2.d<3.0)) return "Step inside (E)"; } }
   // #583: mirror interact()'s NPC-vs-furniture priority so the E-prompt matches what E will actually
   // do — otherwise the prompt reads "Browse …" over a quest-giver the keypress now talks to.
   {
@@ -18213,6 +18217,8 @@ function interact(){
   }
   if(inDungeon){
     if(curDungeon&&curDungeon.house){ hsInteractInside(); return; }   // house interiors & residential halls
+    if(curDungeon&&curDungeon.interior){ if(Math.hypot(dungeonExit.x-player.x,dungeonExit.z-player.z)<3.0){ intExitInstance(); }
+      else log("There is nothing here to interact with.","warn"); return; }   // #767 real building interiors
     if(curDungeon&&curDungeon.academy){ const n=nearestOf(npcs);   // the Academy's instructors
       if(n&&n.d<3.5){ talkToNPC(n.o); return; }
       if(n&&n.d<9){ log(`You need to get closer to talk to <b>${esc(n.o.name)}</b>.`,"warn"); return; }   // #535: E gave no feedback at all when a target was near but just out of talk range
@@ -18239,6 +18245,8 @@ function interact(){
     else log("There is nothing here to interact with.","warn");   // #535: E must never be silent, including plain dungeons/the Academy with nothing in reach
     return;
   }
+  { const dr=(typeof intDoorNear==="function")&&intDoorNear();                        // #767: step through a real doorway
+    if(dr){ const n2=nearestOf(npcs); if(!(n2&&n2.d<3.0)){ intEnterInstance(dr); return; } } }
   // #583: resolve ambient furniture (book stands, chess tables) vs an NPC by NEAREST distance with a
   // modest NPC bias — a book stand's 3.2u / chess table's 3.0u browse radius used to always shadow a
   // quest-giver standing beside it (Cragstone's Armiger Wendel sits 2.4u from the Scriptorium stand,
@@ -29186,6 +29194,88 @@ function dstatProto(i){   // build (once) the shared prototype for static #i —
     }
     return g;
   }).catch(()=>null)); }
+// ── #767: REAL BUILDING INTERIORS — every real AC building (towns + lone world structures) whose
+//    model has an extracted EnvCell interior can be ENTERED: E at the cut doorway instances the
+//    TRUE rooms (assets/acinteriors, deduped library keyed by building model DID), furnished with
+//    the building's real stab furniture and lit by its scripted fire pieces. Same dungeon-shell
+//    lifecycle as house interiors (#327 guard, exitDungeon(true) restores the overworld).
+let AC_INT=null;
+fetch('assets/acinteriors/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{
+  if(!j||!j.interiors) return;
+  AC_INT={byMid:{},n:j.interiors.length};
+  for(const it of j.interiors) for(const m of (it.mids||[])){
+    const cur=AC_INT.byMid[m];                        // a DID can map to several layouts (per-instance
+    if(!cur||it.uses>cur.uses) AC_INT.byMid[m]=it;    // furnishing variants) — the most-used one wins
+  }
+  console.log("AC interiors: "+j.interiors.length+" unique layouts for "+Object.keys(AC_INT.byMid).length+" building models.");
+}).catch(()=>{});
+let _dstatById=null;
+function dstatIdxOf(hex){ if(!AC_DSTAT) return -1;
+  if(!_dstatById){ _dstatById={}; AC_DSTAT.forEach((s2,i)=>{_dstatById[s2.id]=i;}); }
+  const i=_dstatById[hex]; return i===undefined?-1:i; }
+function intDoorNear(){                               // nearest enterable real-building doorway with an interior
+  if(!AC_INT||inDungeon||inNetwork) return null;
+  let best=null,bd=2.6;
+  const scan=recs=>{ for(const r of recs){
+    if(!r.enter||r.doorX==null||!r.did||!AC_INT.byMid[r.did]) continue;
+    const d=Math.hypot(r.doorX-player.x,r.doorZ-player.z);
+    if(d<bd){ bd=d; best=r; } } };
+  for(const k in _tbBuilt){ const e=_tbBuilt[k]; if(e&&e.recs) scan(e.recs); }
+  for(const k in _wsBuilt){ const e=_wsBuilt[k]; if(e&&e.recs) scan(e.recs); }
+  return best;
+}
+function intEnterInstance(rec){
+  const it=AC_INT&&AC_INT.byMid[rec.did]; if(!it) return;
+  fetch('assets/acinteriors/'+it.file).then(r=>r.ok?r.json():null).then(dj=>{
+    if(!dj||!dj.groups||!dj.rects||!dj.rects.length){ log("The doorway wavers — the interior is missing.","warn"); return; }
+    if(inDungeon||inNetwork) return;                  // #327: don't hijack an instance entered while loading
+    inDungeon=true; curDungeon={name:"Inside the Building",tier:1,interior:true};
+    dungeonReturn={x:rec.doorX+rec.dux*1.6,z:rec.doorZ+rec.duz*1.6};
+    clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+    document.getElementById('dvig').style.opacity="1";
+    dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+    dungeonChest=null;dungeonLock=null;dungeonVault=null;
+    for(const c of dj.rects) dungeonRects.push({x0:c[0]-0.35,z0:c[1]-0.35,x1:c[2]+0.35,z1:c[3]+0.35,fy:c[4],room:true});
+    const grp=new THREE.Group();                      // the true EnvCell rooms, building-local space
+    for(const gr of dj.groups){
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(gr.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(gr.n,3));
+      if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
+      geo.setIndex(gr.i);
+      const mp={roughness:0.88,metalness:0.02,side:THREE.DoubleSide};
+      if(gr.mat&&gr.mat.tex){ const t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+gr.mat.tex));
+        t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true;
+        mp.map=t; if(gr.mat.clip){mp.transparent=true;mp.alphaTest=0.45;} }
+      else mp.color=(gr.mat&&gr.mat.color!=null)?gr.mat.color:0x8a8478;
+      const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial(mp)); m.castShadow=true; m.receiveShadow=true; grp.add(m);
+    }
+    scene.add(grp); dungeonObjs.push(grp);
+    for(const st of dj.stabs||[]){                    // the building's own furniture; scripted pieces burn
+      const di=dstatIdxOf(st[0]); if(di<0) continue;
+      const lum=AC_DSTAT[di].lum;
+      dstatProto(di).then(proto=>{
+        if(!proto||!inDungeon||!curDungeon||!curDungeon.interior) return;
+        const m=proto.clone(); m.position.set(st[1],st[2],st[3]); m.quaternion.set(st[4],st[5],st[6],st[7]);
+        scene.add(m); dungeonObjs.push(m);
+        if(lum){ const pl=new THREE.PointLight(0xffa040,1.7,15); pl.position.set(st[1],st[2]+1.6,st[3]);
+          scene.add(pl); dungeonObjs.push(pl);
+          const f=mkFire(0.4,0xffa040,pl); f.g.position.set(st[1],st[2]+1.3,st[3]); scene.add(f.g); dungeonObjs.push(f.g); }
+      });
+    }
+    const amb=new THREE.AmbientLight(0xa89878,1.0*(settings.dglight||1)); amb.userData.dgBase=1.0; scene.add(amb); dungeonObjs.push(amb);
+    const hemi=new THREE.HemisphereLight(0x8a8a9a,0x3a3228,0.5*(settings.dglight||1)); hemi.userData.dgBase=0.5; scene.add(hemi); dungeonObjs.push(hemi);
+    const en=dj.entry||[0,0,0];
+    dungeonExit={x:en[0],z:en[2]}; dungeonSpawn={x:en[0],z:en[2]};
+    const arch=new THREE.Mesh(new THREE.CircleGeometry(1.0,20),new THREE.MeshStandardMaterial({color:0x6a3fbf,emissive:0x40248a,emissiveIntensity:1.0,transparent:true,opacity:0.85,side:THREE.DoubleSide}));
+    arch.position.set(en[0],(en[1]||0)+1.5,en[2]); scene.add(arch); dungeonObjs.push(arch);
+    const elbl=labelSprite("Leave — E","dungeons"); elbl.position.set(en[0],(en[1]||0)+3.2,en[2]); scene.add(elbl); dungeonObjs.push(elbl);
+    markSceneSRGB();
+    player.y=en[1]||0; arriveAt(en[0],en[2]); player.invuln=1.5;
+    toast("YOU STEP INSIDE"); if(SFX.portal)SFX.portal();
+  }).catch(()=>{ log("The doorway wavers and rejects you.","warn"); });
+}
+function intExitInstance(){ exitDungeon(true); log("You step back out into the street.","sys"); if(SFX.portal)SFX.portal(); }
 try{ fetch('assets/acdungeons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_DGN=j;
   console.log("AC dungeon geometry: "+Object.keys(j).length+" real dungeons available."); } }).catch(()=>{}); }catch(e){}
 // ── Dungeon CHAINS (retail linked dungeons): a world portal whose surface origin sits at dungeon
