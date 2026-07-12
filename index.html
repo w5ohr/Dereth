@@ -1721,7 +1721,7 @@ try{ fetch('assets/acspellstats.json').then(r=>r&&r.ok?r.json():null).then(j=>{ 
 // ── authentic spell data (assets/acspells.json · tools/ac_spell_export.py): the real client
 //    SpellTable — names, cast WORDS, and component formulas. Matched to our spells by name so
 //    casting speaks the true words of power and the spellbook shows the real reagents. ──
-let AC_SPELLS=null;
+let AC_SPELLS=null, AC_SPELLFX=null, AC_FX_BYNAME=null;
 fetch('assets/acspells.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j)return; AC_SPELLS=j;
   const byName={}, comps=j.components||{};
   for(const id in j.spells){ const s=j.spells[id]; if(s.n) byName[s.n.toLowerCase()]=s; }
@@ -1729,7 +1729,37 @@ fetch('assets/acspells.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j)ret
     g.words=a.words||g.words;                                              // "Zojak Quaguz"
     if(a.comps&&a.comps.length) g.reagents=a.comps.map(c=>comps[c]&&comps[c].n).filter(Boolean);
     if(a.d&&!g.acDesc) g.acDesc=a.d; }
+  _attachSpellFx();
 }).catch(()=>{});
+// ── authentic per-spell EFFECT + PROJECTILE data (assets/acspellfx.json · tools/ace_spell_effects.py):
+//    the ACE SpellTableExtendedData — real magnitudes (stat_Mod_Val / boost / base_Intensity),
+//    projectile object + count + spread (the VISUAL), crit, slayer, ignore-resist. Keyed by spell id;
+//    joined to the spellbook by name for display (the combat balance stays as tuned). ──
+fetch('assets/acspellfx.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j)return; AC_SPELLFX=j; _attachSpellFx(); }).catch(()=>{});
+function _attachSpellFx(){
+  if(!AC_SPELLS||!AC_SPELLFX) return;                        // need both (id→name from roster, fx by id)
+  AC_FX_BYNAME={};
+  for(const id in AC_SPELLFX){ const s=AC_SPELLS.spells[id]; if(s&&s.n) AC_FX_BYNAME[s.n.toLowerCase()]=AC_SPELLFX[id]; }
+  for(const sid in SPELLBOOK){ const g=SPELLBOOK[sid], fx=AC_FX_BYNAME[(g.name||"").toLowerCase()]; if(fx) g.fx=fx; }
+}
+// one-line authentic effect summary for the spell examine (additive info; never overrides balance)
+function spellFxNote(g){
+  const fx=g&&g.fx; if(!fx) return "";
+  if(fx.kind==="projectile"){ const bits=[];
+    if(fx.n>1) bits.push(fx.n+"× "+(fx.projName||"bolts")+(fx.spread?` (${fx.spread}° spread)`:""));
+    else if(fx.projName) bits.push(fx.projName);
+    if(fx.crit>0) bits.push(`crit ${Math.round(fx.crit*100)}%×${fx.critMult||2}`);
+    if(fx.slayer) bits.push(`slayer: +${fx.slayerBonus}× vs ${fx.slayer}`);
+    if(fx.ignoreRes) bits.push("ignores magic resist");
+    if(fx.drainPct) bits.push(`drains ${Math.round(fx.drainPct*100)}% as health`);
+    return bits.join(" · ");
+  }
+  if(fx.kind==="statmod") return `retail: ${fx.val>0?"+":""}${fx.val} ${fx.stat}`;
+  if(fx.kind==="vital") return `retail: ${fx.boost>0?"restores":"drains"} ${Math.abs(fx.boost)}–${Math.abs(fx.boostVar)} ${fx.vital}`;
+  if(fx.kind==="transfer") return `retail: ${Math.round(fx.proportion*100)}% ${fx.src}→${fx.dst}`;
+  if(fx.kind==="dispel") return `retail: dispels ${fx.school} (power ${fx.minPower}–${fx.maxPower})`;
+  return "";
+}
 // ── real item icons (assets/acicons/, tools/ac_icon_export.py): authentic client bitmaps keyed by
 //    lowercase item name; itemIconHTML() returns an <img> when one matches, else the emoji glyph. ──
 let AC_ICONS=null;
@@ -26094,7 +26124,8 @@ function buildSpellbook(){
       }
       const row=document.createElement('div'); row.className="row";
       const eff=spellEffectText(s);
-      const lore = s.words?`<div class="desc" style="margin-left:22px;color:#a98fd0;font-size:11px">⟡ <i>${esc(s.words)}</i>${s.reagents&&s.reagents.length?` · <span style="color:#8a9a6a">${s.reagents.map(esc).join(", ")}</span>`:""}</div>`:"";
+      const fxn = (typeof spellFxNote==="function")?spellFxNote(s):"";
+      const lore = (s.words||fxn)?`<div class="desc" style="margin-left:22px;color:#a98fd0;font-size:11px">${s.words?`⟡ <i>${esc(s.words)}</i>`:""}${s.reagents&&s.reagents.length?` · <span style="color:#8a9a6a">${s.reagents.map(esc).join(", ")}</span>`:""}${fxn?`${s.words?"<br>":""}<span style="color:#7fa8c8">✦ ${esc(fxn)}</span>`:""}</div>`:"";
       row.innerHTML=`<div><span class="lab">${s.acicon?`<img src="assets/acicons/${s.acicon}.png" style="width:1.2em;height:1.2em;vertical-align:-0.25em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('✨'))">`:s.ico} ${s.name}</span> <span class="desc">— L${s.lvl} · ${s.cost||0} mana${eff?` · <span style="color:#d7c79a">${eff}</span>`:""}${s.dur?` · ${s.dur>=120?Math.round(s.dur/60)+" min":s.dur+"s"}`:""}${s.req?` · req ${s.req}`:""} · ${status}</span>${lore}</div><div class="ctl">${ctl}</div>`;
       root.appendChild(row);
     }

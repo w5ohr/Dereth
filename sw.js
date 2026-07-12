@@ -14,8 +14,8 @@
 // deletes every cache whose key != V, so a version bump purges stale asset caches on every client's
 // next visit. v2: ship the rigged Horse/Deer/Stag GLBs + the UO crafting build (was serving old cached
 // Horse.glb / index.html to returning players).
-// v3: acdialogue.json v2 (adds the ambient-chatter bucket).
-const V = "dereth-v3";
+// v3: acdialogue.json v2 (ambient chatter). v4: acspellfx.json (spell effect+projectile data).
+const V = "dereth-v4";
 
 self.addEventListener("install", () => { self.skipWaiting(); });
 
