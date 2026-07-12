@@ -2344,7 +2344,7 @@
 				texture.flipY = false;
 				if ( textureDef.name ) texture.name = textureDef.name; // When there is definitely no alpha channel in the texture, set THREE.RGBFormat to save space.
 
-				if ( ! hasAlpha ) texture.format = THREE.RGBFormat;
+				if ( ! hasAlpha && THREE.RGBFormat !== undefined ) texture.format = THREE.RGBFormat;   // #695: RGBFormat removed in r159 — RGBA upload is fine, this was only a memory optimisation
 				const samplers = json.samplers || {};
 				const sampler = samplers[ textureDef.sampler ] || {};
 				texture.magFilter = WEBGL_FILTERS[ sampler.magFilter ] || THREE.LinearFilter;
