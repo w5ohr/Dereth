@@ -18250,14 +18250,13 @@ function update(dt){
     const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD*tmag; // units/sec
     desVX=dx*spSec; desVZ=dz*spSec; moving=true;
   }
-  // AC movement: on the ground you have full control; a JUMP launches with your run velocity and
-  // CARRIES that momentum through the air (Run skill → jump distance), with only light air-steering.
+  // AC movement: on the ground you have full control. A JUMP launches with your CURRENT run velocity and
+  // carries that momentum UNCHANGED through the whole arc — you fly in a straight line exactly the distance
+  // you'd have run in the airtime. Standing still at takeoff → zero horizontal velocity → a straight-up hop.
+  // No mid-air steering: the leap commits to its launch direction (momentum, not air control).
   if(player.grounded){
     player.vx=desVX; player.vz=desVZ;                      // immediate ground control
-  } else if(moving){
-    const AIR=0.8;                                          // limited mid-air steer toward input
-    player.vx+=(desVX-player.vx)*Math.min(1,dt*AIR); player.vz+=(desVZ-player.vz)*Math.min(1,dt*AIR);
-  }   // airborne with no input → keep launch momentum (carry forward for the whole jump)
+  }   // airborne → launch momentum stays locked (run velocity → jump distance, in a straight line)
   if((player.vx||player.vz)&&player.alive){
     const px0=player.x, pz0=player.z;   // #465: remember where we started so we can tell if a wall ate the move
     let [nx,nz]=collide(px0+player.vx*dt,pz0+player.vz*dt);
