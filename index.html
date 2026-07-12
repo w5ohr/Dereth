@@ -7061,7 +7061,10 @@ function grassTuftGeo(){
 }
 function grassOK(x,z){
   const h=terrainH(x,z); if(h<1.4||h>175) return false;                                  // no water, no high snow
-  if(typeof acRoad==="function"&&acRoad(x,z)) return false;                               // keep the road clean
+  if(typeof acRoad==="function"&&acRoad(x,z)) return false;                               // no grass on the dirt roads
+  // town cores stay clear (stone plazas, paths & buildings) — every settlement, not just the 3 capitals
+  if(typeof CITIES!=="undefined") for(let i=0;i<CITIES.length;i++){ const c=CITIES[i], dx=x-c.x, dz=z-c.z, rr=c.capital?TOWN_SAFE:95; if(dx*dx+dz*dz<rr*rr) return false; }
+  if(typeof FLATTEN!=="undefined") for(const t of FLATTEN){ const dx=x-t.x,dz=z-t.z, cr=(t.core||t.r)+6; if(dx*dx+dz*dz<cr*cr) return false; }  // Castle Val Halla / Valstead courtyard
   if(Math.abs(terrainH(x+2,z)-terrainH(x-2,z))+Math.abs(terrainH(x,z+2)-terrainH(x,z-2))>7) return false; // not on cliffs
   if(ACMAP.on){ const ty=acType(x,z); return ty===1||ty===3||ty===9||ty===4; }            // Grassland/LushGrass/PatchyGrass/Marsh
   const bm=biomeAt(x,z); return bm!=="desert"&&bm!=="cold"&&bm!=="direlands";
@@ -7089,6 +7092,12 @@ function refreshGrassField(force){
   const px=player.x, pz=player.z, C=cfg.cell, R=cfg.r, R2=R*R;
   if(!force && _grassAnchor && Math.abs(px-_grassAnchor.x)<C*0.6 && Math.abs(pz-_grassAnchor.z)<C*0.6) return;
   _grassAnchor={x:px,z:pz};
+  // buildings you can stand inside (Valstead cottages, isolated houses) — gather nearby footprints once so
+  // no tuft sprouts on a floor. Cheap: structures[] is small and only the in-range ones are kept.
+  const nogo=[], reach2=(R+10)*(R+10);
+  if(typeof structures!=="undefined") for(let si=0;si<structures.length;si++){ const st=structures[si];
+    const sdx=st.bx-px, sdz=st.bz-pz; if(sdx*sdx+sdz*sdz<reach2+st.r2) nogo.push(st); }
+  const nn=nogo.length;
   const cx0=Math.round(px/C), cz0=Math.round(pz/C), rad=Math.ceil(R/C), POOL=grassMesh.instanceMatrix.count;
   let n=0;
   for(let gz=-rad; gz<=rad && n<POOL; gz++) for(let gx=-rad; gx<=rad && n<POOL; gx++){
@@ -7096,6 +7105,8 @@ function refreshGrassField(force){
     const wx=ci*C+((hsh&255)/255-0.5)*C*0.8, wz=cj*C+(((hsh>>8)&255)/255-0.5)*C*0.8;
     const ddx=wx-px, ddz=wz-pz, d2=ddx*ddx+ddz*ddz; if(d2>R2) continue;
     if(!grassOK(wx,wz)) continue;
+    let inBld=false; for(let bi=0;bi<nn;bi++){ const st=nogo[bi], bdx=wx-st.bx, bdz=wz-st.bz; if(bdx*bdx+bdz*bdz<=st.r2){ inBld=true; break; } }
+    if(inBld) continue;
     const edge=1-d2/R2, s=(0.9+((hsh>>16)&255)/255*0.65)*Math.min(1,edge*2.4+0.12);
     if(s<0.12) continue;
     _gTmp.position.set(wx,groundY(wx,wz),wz);
