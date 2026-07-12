@@ -10352,7 +10352,14 @@ function buildFurniture(kind){
   else if(kind==="lamp"){ bx(0.3,0.06,0.3,0,0.03,0,wood2); bx(0.07,1.3,0.07,0,0.68,0,wood2);
     const fl=new THREE.Mesh(new THREE.SphereGeometry(0.12,8,7),new THREE.MeshStandardMaterial({color:0x3a2c14,emissive:0xffb050,emissiveIntensity:1.3})); fl.position.y=1.44; g.add(fl); }
   else if(kind==="vase"){ const v=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.2,0.55,10),new THREE.MeshStandardMaterial({color:0x9af0ff,metalness:0.4,roughness:0.2,transparent:true,opacity:0.85})); v.position.y=0.3; g.add(v); }
-  else if(kind==="pedestal"){ bx(0.5,0.12,0.5,0,0.06,0,texMat(stoneFloorTex,0x9a958c)); const c=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,0.9,10),texMat(stoneFloorTex,0x9a958c)); c.position.y=0.55; g.add(c); bx(0.42,0.08,0.42,0,1.04,0,texMat(stoneFloorTex,0x9a958c)); }
+  else if(kind==="pedestal"){ const sm=texMat(stoneFloorTex,0x9a958c);   // #707: carved octagonal plinth
+    bx(0.56,0.10,0.56,0,0.05,0,sm);
+    const b2=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.3,0.12,8),sm); b2.position.y=0.16; g.add(b2);
+    const col=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.21,0.72,8),sm); col.position.y=0.58; g.add(col);
+    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.18,0.10,8),sm); neck.position.y=0.99; g.add(neck);
+    bx(0.46,0.07,0.46,0,1.075,0,sm);
+    const glow=new THREE.Mesh(new THREE.CircleGeometry(0.19,12),new THREE.MeshStandardMaterial({color:0xfff2cc,emissive:0xc9b06a,emissiveIntensity:0.55,roughness:0.6}));
+    glow.rotation.x=-Math.PI/2; glow.position.y=1.115; g.add(glow); }
   else if(kind==="painting"){ bx(0.1,1.4,0.1,0,0.7,0,wood2); bx(0.9,0.7,0.06,0,1.35,0.02,wood2); const p=new THREE.Mesh(new THREE.PlaneGeometry(0.8,0.6),new THREE.MeshStandardMaterial({color:0x6a8aa0})); p.position.set(0,1.35,0.06); g.add(p); }
   else if(kind==="shelf"){ bx(1.1,1.7,0.34,0,0.85,0,wood2); for(let i=0;i<3;i++){ bx(1.0,0.06,0.3,0,0.35+i*0.5,0.0); for(let b=0;b<5;b++) bx(0.1,0.3,0.2,-0.4+b*0.2,0.55+i*0.5,0,solid([0x7a3a2a,0x3a5a7a,0x5a7a3a,0x8a7a3a][b%4])); } }
   else if(kind==="barrel"){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.26,0.75,12),wood); b.position.y=0.38; b.castShadow=true; g.add(b);
@@ -27584,10 +27591,23 @@ function buildDungeon(def){
     const seg=pureSeg(c), mid=(seg.p0+seg.p1)/2, fy=c.lo.fy;
     const px=c.vert?c.x:mid, pz=c.vert?mid:c.z;
     const pg=new THREE.Group(); pg.position.set(px,fy,pz);
-    const barMat=new THREE.MeshStandardMaterial({color:0x3a3a42,metalness:0.8,roughness:0.35});
+    // #707: rust-iron portcullis in a carved stone frame — jambs + lintel around the corridor mouth,
+    // a proper lattice (verticals + straps) with spiked feet. The frame is static; the LATTICE rides
+    // `gate`, which openDungeonBar grinds up into the ceiling with a judder.
+    const barMat=new THREE.MeshStandardMaterial({color:0x4a3d33,metalness:0.72,roughness:0.5});
+    const stone=texMat(stoneFloorTex,0x8a8378);
+    for(const sx of[-1,1]){ const jamb=new THREE.Mesh(new THREE.BoxGeometry(c.vert?0.5:0.7,5.4,c.vert?0.7:0.5),stone);
+      jamb.position.set(c.vert?sx*2.75:0,2.7,c.vert?0:sx*2.75); pg.add(jamb); }
+    const lintel=new THREE.Mesh(new THREE.BoxGeometry(c.vert?6.0:0.7,0.6,c.vert?0.7:6.0),stone);
+    lintel.position.y=5.5; pg.add(lintel);
     const gate=new THREE.Group();
-    for(let i=-2;i<=2;i++){ const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,5.2,6),barMat); bar.position.set(c.vert?i*1.0:0,2.6,c.vert?0:i*1.0); gate.add(bar); }
-    const rail=new THREE.Mesh(new THREE.BoxGeometry(c.vert?5:0.3,0.3,c.vert?0.3:5),barMat); rail.position.y=5.0; gate.add(rail);
+    for(let i=-3;i<=3;i++){ const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,5.2,6),barMat);
+      bar.position.set(c.vert?i*0.72:0,2.6,c.vert?0:i*0.72); gate.add(bar);
+      const spike=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.3,6),barMat);
+      spike.rotation.x=Math.PI; spike.position.set(c.vert?i*0.72:0,-0.12,c.vert?0:i*0.72); gate.add(spike); }
+    for(const sy of[1.2,2.6,4.0]){ const strap=new THREE.Mesh(new THREE.BoxGeometry(c.vert?4.9:0.16,0.16,c.vert?0.16:4.9),barMat);
+      strap.position.y=sy; gate.add(strap); }
+    pg.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
     pg.add(gate); scene.add(pg); dungeonObjs.push(pg);
     const bar={x0:px-(c.vert?2.5:0.5),x1:px+(c.vert?2.5:0.5),z0:pz-(c.vert?0.5:2.5),z1:pz+(c.vert?0.5:2.5),open:false,gate,kind:c.door.kind,need:c.door.need,x:px,z:pz};
     dungeonBars.push(bar);
@@ -27596,9 +27616,17 @@ function buildDungeon(def){
     if(c.door.kind==="lever"){   // wall lever in that room
       const lx=hi.cx+(hi.round?hi.rad-1.6:hi.hx-1.2), lz=hi.cz+2;
       const lg=new THREE.Group(); lg.position.set(lx,hi.fy,lz);
-      const plate=new THREE.Mesh(new THREE.BoxGeometry(0.5,1.0,0.28),new THREE.MeshStandardMaterial({color:0x4a4038,roughness:0.7})); plate.position.y=1.3; lg.add(plate);
-      const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.9,6),barMat); handle.position.set(0,1.35,-0.2); handle.rotation.x=0.7; lg.add(handle);
-      const knob=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6),new THREE.MeshStandardMaterial({color:0xb03a2a})); knob.position.set(0,1.75,-0.5); lg.add(knob);
+      // #707: carved stone mount, brass ratchet quadrant, long iron handle HINGED at its base —
+      // pullDungeonLever hauls it through an eased 1.4rad swing instead of snapping.
+      const mount=new THREE.Mesh(new THREE.BoxGeometry(0.56,1.1,0.3),texMat(stoneFloorTex,0x847d72)); mount.position.y=1.3; lg.add(mount);
+      const quad=new THREE.Mesh(new THREE.TorusGeometry(0.34,0.035,6,10,1.8),new THREE.MeshStandardMaterial({color:0x8a7434,metalness:0.85,roughness:0.35}));
+      quad.rotation.y=Math.PI/2; quad.rotation.z=-0.9; quad.position.set(0,1.32,-0.16); lg.add(quad);
+      const handle=new THREE.Group(); handle.position.set(0,1.32,-0.17);
+      const rod=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.05,0.85,7),barMat); rod.position.y=0.42; handle.add(rod);
+      const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.065,0.065,0.16,8),new THREE.MeshStandardMaterial({color:0x6a2a1e,roughness:0.85}));
+      grip.position.y=0.84; handle.add(grip);
+      handle.rotation.x=0.7; lg.add(handle);
+      lg.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
       scene.add(lg); dungeonObjs.push(lg);
       const llbl=labelSprite("Wall Lever","dungeons"); llbl.position.set(lx,hi.fy+2.6,lz); scene.add(llbl); dungeonObjs.push(llbl);
       dungeonLevers.push({x:lx,z:lz,bar,pulled:false,handle});
@@ -27610,9 +27638,13 @@ function buildDungeon(def){
   // prison cells (walkthrough flavour, e.g. Green Mire Grave): barred alcoves along the flagged room's wall
   if(script&&(script.cells||L.rooms.some(r=>r.cells))){ const rm=L.rooms.find(r=>r.cells)||L.rooms.find(r=>r.type==="room"&&!r.round)||L.rooms[1];
     if(rm){ const barMat=new THREE.MeshStandardMaterial({color:0x3a3a42,metalness:0.8,roughness:0.35});
-      for(let ci=0;ci<4;ci++){ const czp=rm.cz-rm.hz+2+ci*(rm.hz*2-4)/3;
-        for(let bi=0;bi<4;bi++){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,3.4,5),barMat);
-          b.position.set(rm.cx-rm.hx+1.5,rm.fy+1.7,czp-0.9+bi*0.6); scene.add(b); dungeonObjs.push(b); } } } }
+      for(let ci=0;ci<4;ci++){ const czp=rm.cz-rm.hz+2+ci*(rm.hz*2-4)/3;   // #707: FRAMED cell panels
+        const panel=new THREE.Group(); panel.position.set(rm.cx-rm.hx+1.5,rm.fy,czp);
+        for(const ry of[0.12,3.28]){ const rail=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.14,2.1),barMat); rail.position.y=ry; panel.add(rail); }
+        for(let bi=0;bi<5;bi++){ const b=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,3.3,5),barMat);
+          b.position.set(0,1.7,-0.9+bi*0.45); panel.add(b); }
+        panel.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
+        scene.add(panel); dungeonObjs.push(panel); } } }
   // internal portals (walkthrough dungeons like Mines of Despair): flagged rooms — or the boss room —
   // carry a portal back to the entrance
   { const prooms=L.rooms.filter(r=>r.portalHere);
@@ -28922,11 +28954,18 @@ function questLootItem(nm,tier){
 function hasNamedKey(nm){ return player.inv.some(it=>it&&it.name===nm); }
 function openDungeonBar(b){
   b.open=true;
-  if(b.gate){ b.gate.position.y+=4.6; }   // the portcullis grinds up into the ceiling
+  if(b.gate){ const g=b.gate; let t0=null;   // #707: the portcullis GRINDS up — eased rise with a chain-judder
+    PROPANIM.push({g,tick:(t)=>{ if(t0==null) t0=t; const k=Math.min(1,(t-t0)/1.6);
+      const e=1-Math.pow(1-k,2);
+      g.position.y=e*4.6+(k<1?0.05*Math.sin(t*34):0);
+      return k>=1; }}); }
   if(SFX.quest)SFX.quest(); burst(b.x,1.5,b.z,0x9ac0ff,14);
 }
 function pullDungeonLever(lv){
-  lv.pulled=true; if(lv.handle){ lv.handle.rotation.x=-0.7; }
+  lv.pulled=true;
+  if(lv.handle){ const h=lv.handle; let t0=null;   // #707: haul the handle through its arc
+    PROPANIM.push({g:h,tick:(t)=>{ if(t0==null) t0=t; const k=Math.min(1,(t-t0)/0.5);
+      h.rotation.x=0.7-1.4*(1-Math.pow(1-k,3)); return k>=1; }}); }
   log("You haul the <b>wall lever</b> down — somewhere, chains rattle and a portcullis grinds open.","sys");
   openDungeonBar(lv.bar); if(SFX.click)SFX.click();
 }
