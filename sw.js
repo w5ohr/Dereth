@@ -10,7 +10,11 @@
 //    the slow part of every load, and on a phone they now warm once.
 //
 // Everything else (websocket upgrade, server/*, cross-origin) is untouched.
-const V = "dereth-v1";
+// Bump V on any asset change (new/updated models, textures, three.min.js): the activate handler below
+// deletes every cache whose key != V, so a version bump purges stale asset caches on every client's
+// next visit. v2: ship the rigged Horse/Deer/Stag GLBs + the UO crafting build (was serving old cached
+// Horse.glb / index.html to returning players).
+const V = "dereth-v2";
 
 self.addEventListener("install", () => { self.skipWaiting(); });
 
