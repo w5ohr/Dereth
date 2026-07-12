@@ -29077,6 +29077,36 @@ function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
 //    straight from the actual 10-unit cells (multi-level floors included). Used for pack
 //    dungeons; hand-scripted walkthrough dungeons keep the grid renderer with their gates. ──
 let AC_DGN=null,_acDgnCache={};
+// ── #766: the dungeons' PLACED STATICS — every table, cage, altar, statue and brazier Turbine
+//    set down, from the EnvCell stab lists (tools/ac_dstatics_export.py). AC_DSTAT = the unique
+//    object index ({id,lum,uses}; lum = carries a self-animating PhysicsScript → burns);
+//    AC_DSPL = per-dungeon placements [[setupIdx, x,y,z, qx,qy,qz,qw]...] in wall space. ──
+let AC_DSTAT=null,AC_DSPL=null; const _dstatProto={},_dstatTexC={};
+fetch('assets/acdstatics/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j&&j.setups)AC_DSTAT=j.setups; }).catch(()=>{});
+fetch('assets/dungeon-statics.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j)AC_DSPL=j; }).catch(()=>{});
+function dstatTexture(fn){ if(_dstatTexC[fn]) return _dstatTexC[fn];
+  const t=new THREE.TextureLoader().load('assets/acdstatics/tex/'+fn);
+  t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true;
+  return (_dstatTexC[fn]=t); }
+function dstatProto(i){   // build (once) the shared prototype for static #i — the flora-proto pattern
+  if(_dstatProto[i]!==undefined) return _dstatProto[i];
+  const rec=AC_DSTAT&&AC_DSTAT[i]; if(!rec) return (_dstatProto[i]=Promise.resolve(null));
+  return (_dstatProto[i]=fetch('assets/acdstatics/S'+rec.id+'.json').then(r=>r&&r.ok?r.json():null).then(d=>{
+    if(!d||!d.groups) return null;
+    const g=new THREE.Group();
+    for(const grp of d.groups){
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(grp.v,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(grp.n,3));
+      if(grp.uv&&grp.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(grp.uv,2));
+      geo.setIndex(grp.i);
+      const mp={roughness:0.86,metalness:0.03,side:THREE.DoubleSide};
+      if(grp.mat&&grp.mat.tex){ mp.map=dstatTexture(grp.mat.tex); if(grp.mat.clip){mp.transparent=true;mp.alphaTest=0.45;} }
+      else mp.color=(grp.mat&&grp.mat.color!=null)?grp.mat.color:0x8a8478;
+      const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial(mp)); m.castShadow=true; m.receiveShadow=true; g.add(m);
+    }
+    return g;
+  }).catch(()=>null)); }
 try{ fetch('assets/acdungeons/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(j){ AC_DGN=j;
   console.log("AC dungeon geometry: "+Object.keys(j).length+" real dungeons available."); } }).catch(()=>{}); }catch(e){}
 // ── Dungeon CHAINS (retail linked dungeons): a world portal whose surface origin sits at dungeon
@@ -29199,8 +29229,41 @@ function buildDungeonReal(def,dj){
   // one big dungeon mesh isn't lit by an unbounded light count) so no chamber sits in ambient-only gloom —
   // the old "every ~4th cell" left far cells dark between torches. Dungeon torches also burn brighter and
   // reach further than their overworld cousins (buildProp's default is tuned for town torches).
+  // ── #766: the REAL furnishing — place every authored static; fire-bearing ones (lum) get live
+  //    flames, and up to 20 of them (spread through the list) carry the actual point lights. The
+  //    even-spread torch fallback below only runs when a dungeon has no fire statics of its own. ──
+  let _realFire=0;
+  { const spl=AC_DSPL&&AC_DSPL[def.name];
+    if(spl&&AC_DSTAT){
+      const lumIdx=new Set(); AC_DSTAT.forEach((st2,i2)=>{ if(st2.lum) lumIdx.add(i2); });
+      const lums=spl.filter(r2=>lumIdx.has(r2[0]));
+      _realFire=lums.length;
+      const litEvery=Math.max(1,Math.ceil(lums.length/20)); const lit=new Set();
+      for(let i2=0;i2<lums.length;i2+=litEvery) lit.add(lums[i2]);
+      const MAXSTAT=450; let placed=0, dropped=0;                  // draw-call guard: fire first, then furniture
+      const ordered=[...lums,...spl.filter(r2=>!lumIdx.has(r2[0]))];
+      const _dname=def.name;
+      for(const r2 of ordered){
+        if(placed>=MAXSTAT){ dropped++; continue; }
+        placed++;
+        const si=r2[0],px2=r2[1],py2=r2[2],pz2=r2[3];
+        dstatProto(si).then(proto=>{
+          if(!proto||!inDungeon||!curDungeon||curDungeon.name!==_dname) return;   // left the delve while it streamed
+          const m=proto.clone(); m.position.set(px2,py2,pz2); m.quaternion.set(r2[4],r2[5],r2[6],r2[7]);
+          scene.add(m); dungeonObjs.push(m);
+          if(lumIdx.has(si)){
+            let lt2=null;
+            if(lit.has(r2)){ lt2=new THREE.PointLight(th.light,1.9,17); lt2.position.set(px2,py2+1.7,pz2);
+              scene.add(lt2); dungeonObjs.push(lt2); }
+            const f=mkFire(0.42,th.light,lt2); f.g.position.set(px2,py2+1.35,pz2);
+            scene.add(f.g); dungeonObjs.push(f.g);
+          }
+        });
+      }
+      if(dropped) console.log("dungeon statics: "+dropped+" of "+spl.length+" placements dropped (cap "+MAXSTAT+")");
+    } }
   const _nCells=dj.cellPos.length, _step=Math.max(3,Math.floor(_nCells/20)); let _torches=0;
-  for(let i=2;i<_nCells && _torches<20;i+=_step){ _torches++;
+  for(let i=2;i<_nCells && _torches<20 && !_realFire;i+=_step){ _torches++;   // #766: authored fire replaces the even spread
     const c=dj.cellPos[i];
     for(const o of buildProp(th.prop,c[0],c[2],th.light)){ o.position.y+=c[1];
       if(o.isPointLight){ o.intensity*=1.6; o.distance+=8; }   // #715: hotter pools against the darker base
