@@ -17900,6 +17900,8 @@ function currentPrompt(){
       if(o.role==="stable") return "See the Stable Master's horses (E)";
       { let _oh=null,_ohd=3; for(const h of horses){ const d=Math.hypot(h.rec.x-player.x,h.rec.z-player.z); if(d<_ohd){ _ohd=d; _oh=h; } }
         if(_oh) return "Mount "+_oh.rec.name+" (E)";
+        for(const st2 of STABLE_STOCK){ if(Math.hypot(st2.mesh.position.x-player.x,st2.mesh.position.z-player.z)<3)
+          return "The Stable Master's stock — see him to buy (E)"; }
         for(const id in NET.players){ const md=NET.meshes[id], pk2=md&&md.userData.parked; if(!pk2) continue;
           for(const k in pk2){ const hm=pk2[k]; if(hm.visible&&Math.hypot(hm.position.x-player.x,hm.position.z-player.z)<3)
             return (NET.players[id].name||"Another rider")+"'s horse — not yours to ride"; } } }
@@ -18086,6 +18088,8 @@ function interact(){
   for(const gt of hsHallGates){ if(Math.hypot(gt.x-player.x,gt.z-player.z)<3){ hsEnterHall(gt); return; } }
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
   for(const h of horses){ if(Math.hypot(h.rec.x-player.x,h.rec.z-player.z)<3){ mountHorse(h); return; } }   // #725: swing into your horse's saddle
+  for(const st2 of STABLE_STOCK){ if(Math.hypot(st2.mesh.position.x-player.x,st2.mesh.position.z-player.z)<3){   // #739: the display stock
+    log("A fine animal — but it is the <b>Stable Master's</b> stock. Speak to him to buy one of your own.","sys"); return; } }
   for(const id in NET.players){ const md=NET.meshes[id], pk2=md&&md.userData.parked;   // #734: someone ELSE's horse
     if(!pk2) continue;
     for(const k in pk2){ const hm=pk2[k]; if(hm.visible&&Math.hypot(hm.position.x-player.x,hm.position.z-player.z)<3){
@@ -24298,8 +24302,28 @@ function buildHorseMesh(tk,packs){
 //    (gable roof, plank walls, open door), a rail-fenced paddock the retrieved horses are led out
 //    into, hay bales and a hitching post. Collision registered so riders route around it. ──
 const STABLE_PADDOCK={};   // stable-key → paddock centre, so horseRetrieve leads horses out INSIDE the fence
+const STABLE_STOCK=[];   // #739: the master's display horses grazing in each paddock
 function buildStableYard(sx,sz){
-  const g=new THREE.Group(); g.position.set(sx+9,groundY(sx+9,sz+4),sz+4); g.userData.noSettle=true;
+  // #739: stables SEEK FLAT GROUND — sample the yard footprint (barn+paddock, ~26×14) at candidate
+  // spots ringing the master and take the one with the least height spread; then LEVEL it anyway:
+  // the yard sits on a packed-earth foundation deck at the highest corner, registered as a walkable
+  // platform (supportAt), with a skirt closing the gap so nothing floats and nothing buries.
+  const FOOT=[[0,0],[-6,-4],[6,-4],[-6,4],[6,4],[16,-6],[16,6],[19,0]];
+  let best=null;
+  for(let ai=0;ai<10;ai++) for(const rr of[11,16,21]){
+    const cx2=sx+Math.cos(ai/10*6.283)*rr, cz2=sz+Math.sin(ai/10*6.283)*rr;
+    const hs=FOOT.map(([ox,oz])=>groundY(cx2+ox,cz2+oz));
+    const top=Math.max(...hs), span=top-Math.min(...hs);
+    if(top<0.5) continue;                                         // never wade the yard into a lake
+    if(!best||span<best.span){ best={x:cx2,z:cz2,span,top}; }
+  }
+  if(!best) best={x:sx+9,z:sz+4,span:0,top:groundY(sx+9,sz+4)};
+  const g=new THREE.Group(); g.position.set(best.x,best.top+0.06,best.z); g.userData.noSettle=true;
+  // foundation: the packed-earth deck the whole yard stands on, skirted down to swallow the slope
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(27,0.3,15),texMat(stoneFloorTex,0x7a6a52));
+  deck.position.set(5.5,-0.15,0); deck.receiveShadow=true; g.add(deck);
+  const skirt=new THREE.Mesh(new THREE.BoxGeometry(27,Math.max(1.2,best.span+1.2),15),texMat(stoneFloorTex,0x6a5a46));
+  skirt.position.set(5.5,-Math.max(1.2,best.span+1.2)/2-0.28,0); g.add(skirt);
   const wood=texMat(woodTex,0x6a4a2e), woodD=texMat(woodTex,0x4e3620);
   // barn: 8×6 plank walls, open south door, gable roof
   const W=8,D=6,H=3.4;
@@ -24328,8 +24352,21 @@ function buildStableYard(sx,sz){
   g.traverse(m=>{ if(m.isMesh){ m.castShadow=true; m.receiveShadow=true; } });
   scene.add(g); scenery.push(g);
   obstacles.push({x:g.position.x,z:g.position.z,r:4.6});                                     // the barn blocks
+  // #739: the deck is real footing — players (and horses via _hgy) walk the levelled yard
+  registerStructure(g.position.x,g.position.z,0,g.position.y,{platforms:[{x0:-8,z0:-7.5,x1:19,z1:7.5,y:0}]});
   STABLE_PADDOCK[Math.round(sx)+","+Math.round(sz)]={x:g.position.x+PX,z:g.position.z+PZ};   // retrieval target
+  // #739: the master's STOCK grazes inside the fence — two or three display horses, always
+  const stockKinds=["pony","bay","chestnut","mule","grey"];
+  for(let i=0,n=2+((Math.round(sx)%2+2)%2);i<n;i++){
+    const tk=stockKinds[(Math.abs(Math.round(sx*3+sz*7))+i*2)%stockKinds.length];
+    const hm=buildHorseMesh(tk,0);
+    const hx2=g.position.x+PX+(-3.5+i*3.4), hz2=g.position.z+PZ+((i%2)?2.6:-2.4);
+    hm.position.set(hx2,g.position.y,hz2); hm.rotation.y=rnd(0,6.28);
+    scene.add(hm); STABLE_STOCK.push({mesh:hm,gt:rnd(0,6),master:{x:sx,z:sz}});
+  }
 }
+// #739: horses stand on structure decks (the stable yard platform) when one is underfoot
+function _hgy(x,z,ref){ return (typeof supportAt==="function")?supportAt(x,z,(ref!=null?ref:groundY(x,z))+1.5):groundY(x,z); }
 function horseRec(id){ return (player.horses||[]).find(h=>h&&h.id===id)||null; }
 // #734: publish the parked string so other players see your horses standing in the world.
 // Sent on every state change (park/mount/board/retrieve/buy/release/death/world-build).
@@ -24348,7 +24385,7 @@ function spawnOwnedHorses(){
     if(!rec||rec.loc!=="parked") continue;
     if(rec.x==null||rec.z==null){ rec.x=player.x+rnd(-4,4); rec.z=player.z+rnd(-4,4); }
     const mesh=buildHorseMesh(rec.type,rec.packs);
-    mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28);
+    mesh.position.set(rec.x,_hgy(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28);
     scene.add(mesh);
     horses.push({rec,mesh,gt:rnd(0,6),ph:0});
   }
@@ -24372,7 +24409,7 @@ function dismountHorse(silent){
   rec.loc="parked"; rec.x=player.x+1.2; rec.z=player.z+0.6;
   player.mountRec=null;
   if(mountMesh){ if(inDungeon||inNetwork){ disposeObject3D(mountMesh); }   // teleported indoors: the horse WAITS outside at rec.x/z
-    else { mountMesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z);
+    else { mountMesh.position.set(rec.x,_hgy(rec.x,rec.z),rec.z);
       horses.push({rec,mesh:mountMesh,gt:rnd(2,6),ph:0}); }
     mountMesh=null; }
   if(!silent){ log(`You dismount — <b>${esc(rec.name||(HORSE_TYPES[rec.type]||{}).name||"your horse")}</b> waits where you left it.`,"sys"); }
@@ -24386,13 +24423,14 @@ function buyHorse(tk){
   if(player.gold<T.cost){ log(`You need <b>${T.cost.toLocaleString()}</b> pyreals for a ${T.name}.`,"sys"); if(SFX.err)SFX.err(); return; }
   player.gold-=T.cost;
   player.nextHorseId=(player.nextHorseId||1);
+  const _pad2=activeStable&&STABLE_PADDOCK[Math.round(activeStable.x)+","+Math.round(activeStable.z)];   // #739: new mounts wait in the paddock
   const rec={id:player.nextHorseId++,type:tk,name:T.name,owner:player.name||"you",hp:T.hp,mhp:T.hp,packs:T.packs||0,items:[],
-    loc:"parked",x:(activeStable?activeStable.x:player.x)+rnd(2,5),z:(activeStable?activeStable.z:player.z)+rnd(2,5)};
+    loc:"parked",x:_pad2?_pad2.x+rnd(-3.5,3.5):(activeStable?activeStable.x:player.x)+rnd(2,5),z:_pad2?_pad2.z+rnd(-2.8,2.8):(activeStable?activeStable.z:player.z)+rnd(2,5)};
   player.horses.push(rec);
   const mesh=buildHorseMesh(rec.type,rec.packs);
-  mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
+  mesh.position.set(rec.x,_hgy(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
   horses.push({rec,mesh,gt:rnd(0,6),ph:0});
-  log(`You buy a <b>${T.name}</b> — it stands saddled outside the stable.`,"loot");
+  log(`You buy a <b>${T.name}</b> — it stands saddled in the paddock.`,"loot");
   syncHorsesNet();
   if(SFX.gold)SFX.gold(); if(typeof toast==="function") toast("HORSE ACQUIRED");
   saveGame(); renderStable();
@@ -24400,6 +24438,13 @@ function buyHorse(tk){
 // per-frame: parked horses graze; the mounted horse gallops under you
 function updateHorses(dt){
   const t=now()/1000;
+  for(const h of STABLE_STOCK){                                          // #739: the paddock stock grazes too
+    h.gt-=dt;
+    const hd=h.mesh.userData.head;
+    if(hd){ if(h.gt<1.6&&h.gt>0) hd.rotation.x=0.45+Math.min(0.5,(1.6-h.gt))*0.9;
+      else { hd.rotation.x=0.45; if(h.gt<=0) h.gt=rnd(3,9); } }
+    if(h.mesh.userData.tail) h.mesh.userData.tail.rotation.z=0.22*Math.sin(t*1.3+h.mesh.position.x);
+  }
   for(const h of horses){
     if(!h.mesh) continue;
     h.gt-=dt;
@@ -24417,7 +24462,7 @@ function updateHorses(dt){
       else { const rec=player.mountRec, back=player._mountShallow||{x:player.x,z:player.z};
         player.mountRec=null;
         rec.loc="parked"; rec.x=back.x; rec.z=back.z;
-        if(mountMesh){ mountMesh.position.set(back.x,groundY(back.x,back.z),back.z);
+        if(mountMesh){ mountMesh.position.set(back.x,_hgy(back.x,back.z),back.z);
           horses.push({rec,mesh:mountMesh,gt:rnd(2,6),ph:0}); mountMesh=null; }
         player.mountStagger=1.0; shake(0.3);
         log(`<b>${esc(rec.name)}</b> balks at the deep water and throws you — it waits back at the shallows.`,"warn");
@@ -24425,7 +24470,7 @@ function updateHorses(dt){
         saveGame(); return; } }
     const spd=Math.hypot(player.vx||0,player.vz||0);
     const full=Math.max(1,(player.speed||8)*T.spd), k=Math.min(1,spd/full);   // 0..1 of this horse's top pace
-    const hy=groundY(player.x,player.z,player.y);
+    const hy=_hgy(player.x,player.z,player.y);
     mountMesh.position.set(player.x,hy,player.z);
     if(spd>0.5) mountMesh.rotation.y=Math.atan2(player.vx,player.vz);
     const legs=mountMesh.userData.legs||[], head=mountMesh.userData.head;
@@ -24529,7 +24574,7 @@ function horseRetrieve(id){
   if(_pad){ rec.x=_pad.x+rnd(-3.5,3.5); rec.z=_pad.z+rnd(-2.8,2.8); }
   else { rec.x=activeStable.x+rnd(2,5); rec.z=activeStable.z+rnd(2,5); }
   const mesh=buildHorseMesh(rec.type,rec.packs);
-  mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
+  mesh.position.set(rec.x,_hgy(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
   horses.push({rec,mesh,gt:rnd(0,6),ph:0});
   log(`${esc(rec.name)} is led out, brushed and fresh — it waits by the stable.`,"sys");
   syncHorsesNet();
@@ -31864,7 +31909,7 @@ function updateRemotes(dt){
         if(!have[k]){ const hm2=buildHorseMesh(h.t,0); hm2.userData.ownerName=r.name; scene.add(hm2); have[k]=hm2; }
         const hm2=have[k];
         hm2.visible=mesh.visible||!r.inst;
-        hm2.position.set(h.x,groundY(h.x,h.z),h.z);
+        hm2.position.set(h.x,_hgy(h.x,h.z),h.z);
         if(hm2.userData.tail) hm2.userData.tail.rotation.z=0.22*Math.sin(now()/1000*1.3+(+k));   // idle swish
       } }
     if(mesh.userData.horse){ const hm=mesh.userData.horse;
