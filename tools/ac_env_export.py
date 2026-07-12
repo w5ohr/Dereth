@@ -316,11 +316,16 @@ def _emit_cell(cs, pos, quat, surfs, groups, material):
         corner = []
         for i, vid in enumerate(poly["v"]):
             uvi = poly["uv"][i] if poly["uv"] else 0
-            key = (vid, uvi)
+            v = verts[vid & 0xFFFF]
+            wp = qrot(quat, v["o"])
+            wp = (wp[0] + pos[0], wp[1] + pos[1], wp[2] + pos[2])
+            # Dedup on WORLD POSITION (+uv), NOT the cell-local vertex id. `vid` restarts at 0 in
+            # every EnvCell, but `g["vmap"]` persists across all cells in the dungeon — so keying on
+            # (vid, uvi) made cell #2's vid=0 alias cell #1's vertex, collapsing every cell's polygons
+            # onto the first cell's corners (the "scrambled walls, good map" bug). World-position keys
+            # merge only genuinely coincident corners (shared cell seams) and keep each cell distinct.
+            key = (round(wp[0], 3), round(wp[1], 3), round(wp[2], 3), uvi)
             if key not in g["vmap"]:
-                v = verts[vid & 0xFFFF]
-                wp = qrot(quat, v["o"])
-                wp = (wp[0] + pos[0], wp[1] + pos[1], wp[2] + pos[2])
                 wn = qrot(quat, v["n"])
                 g["vmap"][key] = len(g["verts"]) // 3
                 g["verts"] += tx_pos(wp)
