@@ -24216,8 +24216,8 @@ function buyShip(type){
 //     creature standing WHERE YOU LEFT IT, not a menu convenience). Epic #724 has the research. ═══
 const HORSE_TYPES={
   pony:    {name:"Shetland Pony",      cost:900,   spd:3.0, hp:120, coat:0x8a6a4a, mane:0x4a3320, blaze:true},
-  bay:     {name:"Bay Courser",        cost:2500,  spd:4.0, hp:180, coat:0x6a4226, mane:0x241408},
-  chestnut:{name:"Chestnut Palfrey",   cost:6000,  spd:4.5, hp:220, coat:0x8a4a22, mane:0x5a2e12, packs:1},
+  bay:     {name:"Bay Courser",        cost:2500,  spd:4.0, hp:180, coat:0x6a4226, mane:0x1a1008, points:true},
+  chestnut:{name:"Chestnut Palfrey",   cost:6000,  spd:4.5, hp:220, coat:0x8a4a22, mane:0x5a2e12, packs:1, points:true},
   mule:    {name:"Pack Mule",          cost:4000,  spd:2.5, hp:260, coat:0x6a5f52, mane:0x3a332a, packs:2, ears:1.7},
   destrier:{name:"Black Destrier",     cost:15000, spd:4.5, hp:400, coat:0x1c1a1e, mane:0x0c0a0e, guard:0.20},
   grey:    {name:"Dapple-Grey Charger",cost:25000, spd:5.0, hp:320, coat:0x9a9aa2, mane:0x5a5a64, dapple:true},
@@ -24239,61 +24239,124 @@ function horseCoatTex(tk){
     g.fillStyle="rgba(235,235,240,0.16)"; g.beginPath();
     g.arc(Math.random()*127,Math.random()*127,r,0,6.28); g.fill(); }
   g.fillStyle="rgba(255,255,255,0.10)"; g.fillRect(0,96,128,32);                // lighter belly band
+  g.fillStyle="rgba(0,0,0,0.10)"; g.fillRect(0,0,128,20);                       // shaded topline
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
   return (_coatTexCache[tk]=t);
 }
 // The horse: lofted capsule barrel, tapered neck + head with ears, 4 hip-pivoted legs (gallop-
 // animated), mane strip, swishing tail, saddle + blanket — and saddlebag rigs when packs>0.
 function buildHorseMesh(tk,packs){
+  // #740: REAL horse anatomy. Body lofted from overlapping ellipsoids (deep chest, round barrel,
+  // withers ridge, sloped croup); an S-curved crested neck; a true skull (cheek masses, tapered
+  // nasal bone, rounded muzzle with nostrils, SIDE-set eyes, poll-set ears); front and hind legs
+  // DIFFER (forearm/knee vs gaskin/hock with its resting angle — base joint angles the gait engine
+  // preserves); black "points" on bay-family coats; mane along the crest, a flowing three-segment
+  // tail, and full tack (blanket, saddle, bridle straps, reins).
   const T=HORSE_TYPES[tk]||HORSE_TYPES.bay;
   const g=new THREE.Group();
-  const coat=new THREE.MeshStandardMaterial({map:horseCoatTex(tk),roughness:0.85,metalness:0.02,
-    normalMap:lumNormalTex(horseCoatTex(tk)),normalScale:new THREE.Vector2(0.4,0.4)});
+  const coatTex=horseCoatTex(tk);
+  const coat=new THREE.MeshStandardMaterial({map:coatTex,roughness:0.8,metalness:0.02,
+    normalMap:lumNormalTex(coatTex),normalScale:new THREE.Vector2(0.35,0.35)});
   const dark=new THREE.MeshStandardMaterial({color:T.mane,roughness:0.95});
-  const body=new THREE.Mesh(new THREE.CapsuleGeometry(0.42,1.15,6,12),coat);
-  body.rotation.x=Math.PI/2; body.position.y=1.12; g.add(body);
-  const chest=new THREE.Mesh(new THREE.SphereGeometry(0.44,10,8),coat); chest.position.set(0,1.14,0.62); chest.scale.set(1,0.96,0.8); g.add(chest);
-  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.26,0.85,9),coat);
-  neck.position.set(0,1.62,0.86); neck.rotation.x=0.62; g.add(neck);
-  const head=new THREE.Group(); head.position.set(0,2.02,1.16); head.rotation.x=0.45;
-  const skull=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.26,0.5),coat); skull.position.z=0.12; head.add(skull);
-  const muzzle=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.18,0.24),dark); muzzle.position.set(0,-0.03,0.44); head.add(muzzle);
-  for(const e of[-1,1]){ const ear=new THREE.Mesh(new THREE.ConeGeometry(0.045,0.16*(T.ears||1),5),coat);
-    ear.position.set(e*0.09,0.18,0.0); ear.rotation.z=e*0.16; head.add(ear); }
-  if(T.ember){ for(const e of[-1,1]){ const eye=new THREE.Mesh(new THREE.SphereGeometry(0.025,6,5),
-      new THREE.MeshStandardMaterial({color:0xff5a20,emissive:0xff5a20,emissiveIntensity:1.6}));
-    eye.position.set(e*0.115,0.06,0.22); head.add(eye); } }
+  const tack=new THREE.MeshStandardMaterial({color:0x3e2a16,roughness:0.7});
+  const points=T.points?dark:coat;                       // bay-family: black lower legs
+  const ell=(r,sx,sy,sz,x,y,z,rx)=>{ const e=new THREE.Mesh(new THREE.SphereGeometry(r,14,11),coat);
+    e.scale.set(sx,sy,sz); e.position.set(x,y,z); if(rx)e.rotation.x=rx; g.add(e); return e; };
+  // ── the body, lofted ──
+  ell(0.44,0.8,0.88,1.5,0,1.13,-0.12);                   // barrel — deeper than wide, the horse way
+  ell(0.4,0.7,1.02,0.95,0,1.09,0.58);                    // chest, deep through the girth
+  ell(0.28,0.52,0.72,1.1,0,1.4,0.42);                    // withers ridge
+  ell(0.38,0.78,0.85,1.0,0,1.2,-0.7,-0.22);              // croup, sloping to the tail
+  for(const e2 of[-1,1]){ ell(0.18,0.78,1.15,0.95,e2*0.2,1.22,0.55);   // shoulder masses
+    ell(0.2,0.78,1.2,1.0,e2*0.2,1.2,-0.62); }                          // hip masses
+  // ── the neck: three tapered segments arcing to the poll, crest on top ──
+  const nsegs=[[0.205,0.165,0.5,0,1.42,0.72,0.5],[0.16,0.125,0.44,0,1.68,0.94,0.72],[0.12,0.105,0.36,0,1.88,1.08,0.95]];
+  for(const[r1,r2,ln,x,y,z,rx]of nsegs){ const n=new THREE.Mesh(new THREE.CylinderGeometry(r2,r1,ln,10),coat);
+    n.position.set(x,y,z); n.rotation.x=rx; g.add(n); }
+  // ── the skull ──
+  const head=new THREE.Group(); head.position.set(0,2.02,1.2); head.rotation.x=0.5;
+  const cheek=new THREE.Mesh(new THREE.SphereGeometry(0.115,12,9),coat); cheek.scale.set(0.92,1.05,1.25); head.add(cheek);
+  const nasal=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.098,0.34,9),coat);
+  nasal.rotation.x=Math.PI/2-0.08; nasal.position.set(0,-0.03,0.26); head.add(nasal);
+  const muzzle=new THREE.Mesh(new THREE.SphereGeometry(0.075,10,8),points===dark?dark:coat);
+  muzzle.scale.set(0.88,0.8,1.05); muzzle.position.set(0,-0.075,0.43); head.add(muzzle);
+  for(const e2 of[-1,1]){
+    const nos=new THREE.Mesh(new THREE.SphereGeometry(0.02,6,5),dark);
+    nos.scale.set(0.7,1.2,0.9); nos.position.set(e2*0.045,-0.055,0.5); head.add(nos);
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(0.032,8,7),
+      T.ember?new THREE.MeshStandardMaterial({color:0xff5a20,emissive:0xff5a20,emissiveIntensity:1.6})
+             :new THREE.MeshStandardMaterial({color:0x14100c,roughness:0.25}));
+    eye.position.set(e2*0.1,0.045,0.06); head.add(eye);                 // eyes on the SIDES
+    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.042,0.17*(T.ears||1),6),coat);
+    ear.position.set(e2*0.07,0.17,-0.1); ear.rotation.z=e2*0.22; ear.rotation.x=-0.15; head.add(ear);
+    // bridle: cheek straps
+    const strap=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.16,0.012),tack);
+    strap.position.set(e2*0.104,-0.02,0.18); strap.rotation.x=0.5; head.add(strap);
+  }
+  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.21,0.014,0.014),tack); brow.position.set(0,0.09,0.03); head.add(brow);
+  const nose=new THREE.Mesh(new THREE.TorusGeometry(0.088,0.008,5,12),tack);
+  nose.rotation.x=Math.PI/2-0.1; nose.position.set(0,-0.045,0.33); head.add(nose);
+  const flock=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.12,0.05),dark); flock.position.set(0,0.16,0.02); flock.rotation.x=0.4; head.add(flock);
   g.add(head); g.userData.head=head;
-  const mane=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.62,0.34),dark);
-  mane.position.set(0,1.86,0.74); mane.rotation.x=0.62; g.add(mane);
-  // #725b: TWO-JOINT legs from the gait research — shoulder/hip pivot + a knee (front) or hock
-  // (hind) pivot. A horse's front knee folds the cannon BACKWARD under the body; the hind hock
-  // folds it FORWARD — getting those directions right is most of what reads as "real horse".
+  // reins: a soft curve from the bit back toward the saddle
+  for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(   // bezier: no Catmull overshoot spikes
+      new THREE.Vector3(e2*0.1,1.95,1.5),new THREE.Vector3(e2*0.24,1.66,0.95),new THREE.Vector3(e2*0.16,1.6,0.38));
+    const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,8,0.011,5),tack); g.add(rein); }
+  // ── mane along the crest (offset tufts, darker) + forelock above ──
+  for(let i=0;i<8;i++){ const k=i/7;
+    const mn=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.2-0.06*k,0.16),dark);
+    mn.position.set((i%2?0.012:-0.012),1.56+k*0.5,0.62+k*0.52); mn.rotation.x=0.55+k*0.35; g.add(mn); }
+  // ── legs: front (forearm/knee) and hind (gaskin/hock, with its resting crook) DIFFER ──
   const legs=[];
-  for(const[lx,lz]of[[-0.24,0.52],[0.24,0.52],[-0.24,-0.52],[0.24,-0.52]]){
+  for(const[lx,lz]of[[-0.23,0.56],[0.23,0.56],[-0.24,-0.6],[0.24,-0.6]]){
     const front=lz>0;
-    const leg=new THREE.Group(); leg.position.set(lx,1.02,lz);                       // shoulder / hip
-    const upper=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.062,0.5,7),coat); upper.position.y=-0.25; leg.add(upper);
-    const knee=new THREE.Group(); knee.position.y=-0.5; leg.add(knee);               // carpus / hock
-    const lower=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.04,0.44,6),coat); lower.position.y=-0.22; knee.add(lower);
-    const hoof=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.09,0.13),dark); hoof.position.y=-0.46; knee.add(hoof);
-    g.add(leg); legs.push({g:leg,knee,front});
+    const leg=new THREE.Group(); leg.position.set(lx,1.1,lz);
+    const upper=new THREE.Mesh(new THREE.CylinderGeometry(front?0.075:0.1,0.052,front?0.5:0.54,8),coat);
+    upper.position.y=front?-0.25:-0.27; leg.add(upper);
+    const joint=new THREE.Mesh(new THREE.SphereGeometry(front?0.055:0.062,7,6),coat);
+    joint.position.y=front?-0.5:-0.54; leg.add(joint);                  // knee / hock lump
+    const knee=new THREE.Group(); knee.position.y=front?-0.5:-0.54; leg.add(knee);
+    const cannon=new THREE.Mesh(new THREE.CylinderGeometry(0.042,0.038,0.36,7),points);
+    cannon.position.y=-0.18; knee.add(cannon);
+    const fet=new THREE.Mesh(new THREE.SphereGeometry(0.048,7,6),points); fet.position.y=-0.37; knee.add(fet);
+    const past=new THREE.Mesh(new THREE.CylinderGeometry(0.034,0.04,0.1,7),points);
+    past.position.set(0,-0.43,0.02); past.rotation.x=0.35; knee.add(past);
+    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.068,0.088,0.09,10),dark);
+    hoof.position.set(0,-0.5,0.045); knee.add(hoof);
+    // resting anatomy: hind upper slopes back, hind cannon stands vertical again
+    const b0=front?0:0.42, k0=front?0:-0.42;
+    leg.rotation.x=b0; knee.rotation.x=k0;
+    g.add(leg); legs.push({g:leg,knee,front,b0,k0});
   }
   g.userData.legs=legs;
-  const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.015,0.72,6),dark);
-  tail.position.set(0,1.28,-1.06); tail.rotation.x=-0.5; g.add(tail); g.userData.tail=tail;
-  const blanket=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.06,0.72),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
-  blanket.position.y=1.44; g.add(blanket);
-  const saddle=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.34,0.16,10,1,false,0,Math.PI),
-    new THREE.MeshStandardMaterial({color:0x4a2e18,roughness:0.7}));
-  saddle.rotation.z=Math.PI/2; saddle.rotation.y=Math.PI/2; saddle.position.y=1.47; g.add(saddle);
-  for(let p=0;p<(packs||0);p++){ for(const e of[-1,1]){
+  // ── the tail: three drooping segments + tip, swished at the root ──
+  const tail=new THREE.Group(); tail.position.set(0,1.34,-1.02);
+  { let ty=0,tz=0,ang=0.12;                                // HANGS near-vertical, sweeping gently back toward the tip
+    for(const[r1,r2,ln]of[[0.05,0.038,0.3],[0.038,0.024,0.3],[0.024,0.008,0.28]]){
+      const seg=new THREE.Mesh(new THREE.CylinderGeometry(r2,r1,ln,6),dark);
+      seg.rotation.x=ang;
+      seg.position.set(0,ty-Math.cos(ang)*ln/2,tz-Math.sin(ang)*ln/2);
+      tail.add(seg);
+      ty-=Math.cos(ang)*ln; tz-=Math.sin(ang)*ln; ang+=0.18; } }
+  g.add(tail); g.userData.tail=tail;
+  // ── tack: blanket, saddle, girth strap, and the pack rigs ──
+  const blanket=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.05,0.7),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
+  blanket.position.y=1.45; g.add(blanket);
+  const saddle=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.07,0.62),tack);   // low seat between pommel and cantle
+  saddle.position.y=1.5; g.add(saddle);
+  for(const e2 of[-1,1]){ const flap=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.3,0.4),tack);   // saddle flaps down the sides
+    flap.position.set(e2*0.24,1.36,0.02); flap.rotation.z=e2*0.15; g.add(flap); }
+  const pommel=new THREE.Mesh(new THREE.SphereGeometry(0.045,7,6),tack); pommel.position.set(0,1.56,0.3); g.add(pommel);
+  const cantle=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.09,0.05),tack); cantle.position.set(0,1.54,-0.28); g.add(cantle);
+  const girth=new THREE.Mesh(new THREE.TorusGeometry(0.47,0.016,6,18),tack);
+  girth.rotation.y=Math.PI/2; girth.scale.set(1,0.95,1); girth.position.set(0,1.1,0.08); g.add(girth);
+  for(let p=0;p<(packs||0);p++){ for(const e2 of[-1,1]){
     const bag=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.3,0.34),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
-    bag.position.set(e*0.5,1.22,-0.32-p*0.4); g.add(bag); } }
-  if(T.blaze){ const bl=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.02,0.36),new THREE.MeshStandardMaterial({color:0xe8e4dc,roughness:0.9}));
-    bl.position.set(0,0.14,0.3); head.add(bl); }
-  g.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
-  if(T===HORSE_TYPES.pony||tk==="pony") g.scale.setScalar(0.78);
+    bag.position.set(e2*0.48,1.2,-0.34-p*0.4); g.add(bag); } }
+  if(T.blaze){ const bl=new THREE.Mesh(new THREE.BoxGeometry(0.045,0.015,0.34),new THREE.MeshStandardMaterial({color:0xe8e4dc,roughness:0.9}));
+    bl.position.set(0,0.055,0.26); head.add(bl); }
+  g.traverse(mm=>{ if(mm.isMesh) mm.castShadow=true; });
+  if(tk==="pony") g.scale.setScalar(0.78);
   if(tk==="mule") g.scale.setScalar(0.9);
   return g;
 }
@@ -24486,9 +24549,9 @@ function updateHorses(dt){
       const offs=gallop?[0.55,0.67,0.0,0.12]:[0.25,0.75,0.0,0.5];
       const swingA=gallop?0.78:0.38, foldA=gallop?1.05:0.55;
       legs.forEach((L,i)=>{ const lp=(p+offs[i])*Math.PI*2;
-        L.g.rotation.x=Math.sin(lp)*swingA;
+        L.g.rotation.x=(L.b0||0)+Math.sin(lp)*swingA;                      // #740: swing rides the RESTING angle
         const fold=Math.max(0,Math.sin(lp+1.15))*foldA;                    // cannon folds through the swing
-        L.knee.rotation.x=L.front?-fold:fold;                              // knee folds BACK, hock folds FORWARD
+        L.knee.rotation.x=(L.k0||0)+(L.front?-fold:fold);                  // knee folds BACK, hock folds FORWARD
       });
       // #735: hoofbeats ride the stride — two clops a cycle at the gallop, four soft falls at the walk
       { const beat=Math.floor(p*(gallop?2:4));
@@ -24520,7 +24583,7 @@ function updateHorses(dt){
         if(head) head.rotation.x=0.42+0.06*Math.sin(p*Math.PI*2);          // nodding walk
       }
       mountMesh.position.y=hy+bounce;
-    } else { legs.forEach(L=>{ L.g.rotation.x*=0.8; L.knee.rotation.x*=0.8; }); mountMesh.rotation.x*=0.8; }
+    } else { legs.forEach(L=>{ L.g.rotation.x=(L.b0||0)+(L.g.rotation.x-(L.b0||0))*0.8; L.knee.rotation.x=(L.k0||0)+(L.knee.rotation.x-(L.k0||0))*0.8; }); mountMesh.rotation.x*=0.8; }
     // ── THE RIDER (research: at speed you ride a half-seat — rocking with the horse, rising and
     //    falling with the suspension beat a hair BEHIND it, leaning further forward as the pace
     //    builds). The seat pins you to the saddle; the bob rides player.y so the first-person
@@ -31925,10 +31988,10 @@ function updateRemotes(dt){
         const p3=(hm.userData.ph=(hm.userData.ph||0)+dt*rate2);
         const offs2=gallop2?[0.55,0.67,0.0,0.12]:[0.25,0.75,0.0,0.5], swA=gallop2?0.78:0.38, fdA=gallop2?1.05:0.55;
         legs2.forEach((L,i)=>{ const lp=(p3+offs2[i])*Math.PI*2;
-          L.g.rotation.x=Math.sin(lp)*swA;
-          const fold=Math.max(0,Math.sin(lp+1.15))*fdA; L.knee.rotation.x=L.front?-fold:fold; });
+          L.g.rotation.x=(L.b0||0)+Math.sin(lp)*swA;
+          const fold=Math.max(0,Math.sin(lp+1.15))*fdA; L.knee.rotation.x=(L.k0||0)+(L.front?-fold:fold); });
         if(gallop2) hm.position.y+=Math.abs(Math.sin(p3*Math.PI))*0.14*k2;
-      } else legs2.forEach(L=>{ L.g.rotation.x*=0.8; L.knee.rotation.x*=0.8; });
+      } else legs2.forEach(L=>{ L.g.rotation.x=(L.b0||0)+(L.g.rotation.x-(L.b0||0))*0.8; L.knee.rotation.x=(L.k0||0)+(L.knee.rotation.x-(L.k0||0))*0.8; });
     }
     // #666: a remote built on the first snapshot at connect can predate the async AC_BODY pack load, so
     // its applyACBody() no-op'd and the body/clothing (and the head-mount acHeadPlace) never appeared.
