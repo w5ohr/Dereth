@@ -3078,6 +3078,7 @@ let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: wa
 let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
 let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC
 let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=0,_frostAddT=0,frostTimer=0; // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
+let riftActive=false,riftWave=0,riftTimer=0,_riftPulseT=0,_riftZones=[],riftBoss=false; // #680 Regalia VIII: the Sundered Veil (lone stand, storm pulses, no retreat)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -17722,6 +17723,7 @@ function update(dt){
   updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
   updateEmberField(dt);    // #673 Regalia I: the Ember Field gauntlet (keep moving or burn)
   updateFrostCourt(dt);    // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
+  updateRiftStand(dt);     // #680 Regalia VIII: the Sundered Veil (storm pulses, lone stand, no retreat)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20360,6 +20362,18 @@ const QUESTS=[
     xp:700000, gold:11000, instance:enterFrostCourt,
     gateOpen:"The outriders are down to splinters. Behind me the <b>Frozen Court</b> lies open, its hearths dead. Speak to me again and I will send you into that winter. <i>Relight the Hearths and keep to their light — the cold is patient.</i>",
     item:{name:"Breeches of the Tenfold",stat:"worn",at:"light",aslot:"pants",mat:"Silk",v:30,tier:5,work:10,legendary:true} },
+  // ═══ #680 CHAPTER VIII — Year of Rifts (Regalia epic #672). The Sundered Veil: a lone stand inside an
+  //     unstable rift — no recall, no portal, no retreat (recall/portal are barred in any instance; fleeing
+  //     the rift fails the chapter). Storm pulses hammer the ground; hold through three waves and the
+  //     Rift-Warden, then stabilize the rift from within. Awards the Aegis Cuirass. (Chain: after VII.) ═══
+  { id:"regalia8", name:"The Regalia of the Tenfold · VIII — Year of Rifts", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia7",
+    intro:"The eighth year the Veil tore, and I stood in the breach alone — no gate would carry me out, so I stopped wishing for one. Cut down six of the Sundered's rift-echoes first, then return: I will open the breach. Inside there is no recall, no portal, no step backward — only the storm and three waves of it, and then the Rift-Warden. Hold. Stabilize the Veil from within. An aegis is not armour; it is the decision not to move.",
+    gateFn:function(){ if(player.level<100) return "The Veil would unmake you as you are. Return at your hundredth season (level 100)."; return null; },
+    obj:[{type:"slay",kind:"phantom",count:6,label:"Seal the Sundered's rift-echoes (phantoms)"},
+         {type:"rift",count:1,label:"Hold the breach through three waves and the Rift-Warden"}],
+    xp:850000, gold:13000, instance:enterRiftStand,
+    gateOpen:"The echoes are sealed. Behind me the <b>breach</b> yawns open — step through and there is no stepping back: no recall, no portal, no retreat. Speak once more and I will send you into the storm. <i>Hold, as I held.</i>",
+    item:{name:"Aegis Cuirass of the Tenfold",stat:"worn",at:"heavy",aslot:"chest",mat:"Diamond",v:64,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20625,6 +20639,10 @@ const QUEST_GIVERS={
     prog:"Eight bone-outriders, wherever the Dericost dead still walk. Then come back — the Frozen Court is mine to open, and its cold is yours to outlast. Relight the three Hearths and keep to their light.",
     turn:"The Reliquary is shards and the Court is silent at last. Three seasons of winter, walked in an afternoon — you kept moving, and the cold never caught you. Take the Breeches of the Tenfold: they were quenched in that frost. Three years remain.",
     post:"The seventh year is behind you — the winter one. The road narrows now; few walk this far."},
+  regalia8:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Six rift-echoes, sealed wherever the Veil is thin. Then return, and I will open the breach — and once you are in, there is no way out but through. Hold the storm.",
+    turn:"The Veil is whole and the storm is spent, and you never took the step backward that would have ended it. Take the Aegis Cuirass of the Tenfold — worn over the heart, because holding is a thing you decide there. Two years remain.",
+    post:"The eighth year is sealed — the year I learned to stand still. Only the tides and the crown lie ahead now."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -26779,6 +26797,7 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
+  emberActive=false; frostActive=false; riftActive=false;   // #680: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -27132,6 +27151,106 @@ function frostCourtFail(why){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   log(`The cold wins this time — ${why||"the Frozen Court drives you back through the gate"}. Kilmer's winter was three seasons long; try it again.`,"warn");
   toast("THE COLD PREVAILS"); if(SFX.hit)SFX.hit();
+  exitDungeon(true);
+}
+// ═══ #680 REGALIA VIII — THE SUNDERED VEIL: Year of Rifts re-lived. A lone stand inside an unstable
+//     rift — recall/portal are already barred in any instance; the exit here FLEES (fails the chapter),
+//     so "no retreat" is a choice, not a wall. STORM PULSES telegraph strike-zones on the ground and
+//     detonate for shock — read them and move. Three waves, then the Rift-Warden; win → the Veil is
+//     stabilized, questEvent("rift") advances regalia8, Kilmer pays out the Aegis Cuirass. ═══
+function buildRiftStand(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=22;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const shard=new THREE.MeshStandardMaterial({color:0x1a1230,roughness:0.5,metalness:0.2,emissive:0x2a1a5a,emissiveIntensity:0.25});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),shard);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // torn-veil rim: a broken ring of floating shards
+  for(let i=0;i<20;i++){ const a=i/20*Math.PI*2, r=R+rnd(-0.5,1.5);
+    const sh=new THREE.Mesh(new THREE.TetrahedronGeometry(rnd(0.6,1.6)),new THREE.MeshStandardMaterial({color:0x3a2a6a,emissive:0x6a3aff,emissiveIntensity:0.5,roughness:0.4}));
+    sh.position.set(cx+Math.cos(a)*r,rnd(1,6),cz+Math.sin(a)*r); sh.rotation.set(rnd(0,6),rnd(0,6),rnd(0,6)); scene.add(sh); dungeonObjs.push(sh); }
+  // the rift-heart: a churning void column at the centre
+  const col=new THREE.Mesh(new THREE.CylinderGeometry(1.4,2.2,14,20,1,true),new THREE.MeshStandardMaterial({color:0x5a2aff,emissive:0x7a3aff,emissiveIntensity:1.1,transparent:true,opacity:0.5,side:THREE.DoubleSide}));
+  col.position.set(cx,7,cz); scene.add(col); dungeonObjs.push(col);
+  const vlight=new THREE.PointLight(0x8a5aff,1.4,40); vlight.position.set(cx,5,cz); scene.add(vlight); dungeonObjs.push(vlight);
+  const amb=new THREE.HemisphereLight(0x4a3a8a,0x0a0620,0.45);scene.add(amb);dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz+R-5};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0xff5a6a,emissive:0x8a2434,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Retreat — the chapter fails — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterRiftStand(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;riftActive=true;curDungeon={id:990680,name:"The Sundered Veil",tier:5};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.35";
+  buildRiftStand();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  riftWave=0;riftBoss=false;riftTimer=420;_riftPulseT=4;_riftZones=[];
+  toast("THE SUNDERED VEIL");
+  log("The breach seals behind you — <b>no recall, no portal, no retreat</b>. The storm reads the ground before it strikes; <b>watch for the glowing rings and step clear</b>. Three waves, then the Rift-Warden.","sys");
+  updateHUD&&updateHUD();
+  riftNextWave();
+}
+function riftNextWave(){
+  riftWave++;
+  if(riftWave>4){ riftWin(); return; }
+  const cx=DCEN.x,cz=DCEN.z;
+  if(riftWave===4){ riftBoss=true;
+    spawnDungeonMonster("phantom",cx,cz,true,3.6,"The Rift-Warden");
+    toast("THE RIFT-WARDEN"); log("The storm folds inward and takes a shape — <b>the Rift-Warden</b>, the wound given will. Cut it down and the Veil closes.","warn");
+    return; }
+  const pool=["phantom","shadow","skeleton","phantom"], n=4+riftWave*2;
+  for(let i=0;i<n;i++){ const a=(i/n)*Math.PI*2+riftWave*0.7, r=rnd(7,15);
+    spawnDungeonMonster(pool[irnd(0,pool.length-1)],cx+Math.cos(a)*r,cz+Math.sin(a)*r,riftWave>=2&&i===0,1.2+riftWave*0.2); }
+  log(`<b>Wave ${riftWave} of 3</b> — the Sundered pour from the tear.`,"sys");
+}
+function riftSpawnPulse(){
+  const cx=DCEN.x,cz=DCEN.z,R=20;
+  const n=2+Math.min(2,riftWave);
+  for(let i=0;i<n;i++){ const a=rnd(0,6.28),r=rnd(0,R-4), zx=cx+Math.cos(a)*r, zz=cz+Math.sin(a)*r, rad=rnd(3,4.5);
+    const ring=new THREE.Mesh(new THREE.RingGeometry(rad-0.25,rad,28),new THREE.MeshBasicMaterial({color:0xaa5aff,transparent:true,opacity:0.5,side:THREE.DoubleSide,depthWrite:false}));
+    ring.rotation.x=-Math.PI/2; ring.position.set(zx,0.12,zz); scene.add(ring); dungeonObjs.push(ring);
+    _riftZones.push({x:zx,z:zz,rad,ring,t:1.5,det:false}); }
+}
+function updateRiftStand(dt){
+  if(!riftActive) return;
+  riftTimer-=dt;
+  if(riftTimer<=0){ riftFail("the storm outlasts you"); return; }
+  // storm pulses: telegraph → detonate
+  _riftPulseT-=dt; if(_riftPulseT<=0){ _riftPulseT=Math.max(2.6,5-riftWave*0.4); riftSpawnPulse(); }
+  for(let i=_riftZones.length-1;i>=0;i--){ const z=_riftZones[i]; z.t-=dt;
+    const k=clamp(1-z.t/1.5,0,1);
+    if(z.ring){ z.ring.material.opacity=0.3+0.5*k; z.ring.scale.setScalar(1); }
+    if(z.t<=0&&!z.det){ z.det=true;
+      // detonate: flash + shock to anyone standing inside
+      if(z.ring) z.ring.material.color.setHex(0xffffff);
+      const fl=new THREE.PointLight(0xaa6aff,3,z.rad*3); fl._transient=1; fl.position.set(z.x,1,z.z); scene.add(fl); setTimeout(()=>scene.remove(fl),160);
+      if(player.alive&&player.invuln<=0&&Math.hypot(player.x-z.x,player.z-z.z)<z.rad){
+        playerHurt(24+riftWave*6,z.x,z.z,"magic","shock"); floater(player.x,1.9,player.z,"THE STORM STRIKES!","#c99aff"); }
+      if(z.ring){ scene.remove(z.ring); z.ring.geometry.dispose(); z.ring.material.dispose(); }
+      _riftZones.splice(i,1);
+    }
+  }
+  if(!riftBoss&&dungeonMobs<=0) riftNextWave();
+  if(riftBoss&&dungeonMobs<=0) riftWin();
+}
+function riftWin(){
+  riftActive=false;
+  for(const z of _riftZones){ if(z.ring){ scene.remove(z.ring); } } _riftZones=[];
+  const cx=DCEN.x,cz=DCEN.z;
+  burst(cx,2,cz,0x9a5aff,90); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE VEIL IS STABILIZED");
+  log("The Rift-Warden unravels and the tear draws shut from the inside — the storm falls still. You never stepped back. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("rift");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!riftActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function riftFail(why){
+  riftActive=false;
+  for(const z of _riftZones){ if(z.ring){ scene.remove(z.ring); } } _riftZones=[];
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  log(`You give ground, and the breach takes it — ${why||"you fall back through the tear"}. To hold is to stay. Try the stand again.`,"warn");
+  toast("THE VEIL PREVAILS"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
