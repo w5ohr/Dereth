@@ -3682,6 +3682,17 @@ function updateDayNight(dt){
     const t=now()/1000;
     const nm=waterMesh.material.normalMap; if(nm){nm.offset.set((t*0.018)%1,(t*0.012)%1);}
     const wsh=waterMesh.material.userData.sh; if(wsh){ wsh.uniforms.uWTime.value=t;
+      // #691: feed the depth/refraction path when the #690 targets are live and the camera is above
+      // the waterline (underwater the "seabed behind the surface" premise inverts — legacy look there)
+      if(wsh.uniforms.uDepthOn){
+        const dOK=typeof POST!=="undefined"&&POST.aoOk&&POST.on&&POST.rtScene&&POST.rtScene.depthTexture&&cam.position.y>0.12;
+        wsh.uniforms.uDepthOn.value=dOK?1:0;
+        if(dOK){ const pe=cam.projectionMatrix.elements, g=renderer.getContext();
+          wsh.uniforms.uSceneTex.value=POST.rtScene.texture;
+          wsh.uniforms.uSceneDepth.value=POST.rtScene.depthTexture;
+          wsh.uniforms.uAB.value.set(pe[10],pe[14]);
+          wsh.uniforms.uRes.value.set(g.drawingBufferWidth,g.drawingBufferHeight);
+          wsh.uniforms.uWindF.value=clamp((windSpd-7)/27,0,1); } }
       if(wsh.uniforms.uSunView){ wsh.uniforms.uSunView.value.copy(sky).transformDirection(cam.matrixWorldInverse);   // sun dir → view space
         wsh.uniforms.uSunCol.value.copy(_sunNoon).lerp(_cWarm,warm);                                                 // glitter reddens at dawn/dusk
         if(skyU) wsh.uniforms.uSkyCol.value.copy(skyU.uZen.value).lerp(skyU.uHor.value,0.5).multiplyScalar(0.82); } } }  // reflect the live sky (dimmed so midday water stays blue, not white)
@@ -3955,7 +3966,11 @@ function initThree(){
   }
   scene.add(groundMesh);
   // ocean / lakes at sea level
-  waterMesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,128,128),new THREE.MeshPhongMaterial({color:0x115982,specular:0x223243,shininess:90,transparent:true,opacity:0.86,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.6,0.6)}));
+  // #691: depthWrite:false is LOAD-BEARING — the SSAO/water depth texture (#690) must resolve the
+  // SEABED's depth, not the water surface's, or per-pixel water thickness would read zero everywhere.
+  // (Bonus: SSAO no longer darkens the water sheet, and transparent back-to-front sorting already
+  // layers underwater transparents correctly without the depth write.)
+  waterMesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD,WORLD,128,128),new THREE.MeshPhongMaterial({color:0x115982,specular:0x223243,shininess:90,transparent:true,opacity:0.86,depthWrite:false,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.6,0.6)}));
   // fresnel: dark/deep looking straight down, bright sky-reflection at grazing angles. Injected before
   // <fog_fragment> so distant water still blends into the fog. Keeps Phong ripples/specular/shadows.
   // vertex stage: two crossed travelling swells displace the (now 128×128) sheet so the sea
@@ -3971,6 +3986,16 @@ function initThree(){
     sh.uniforms.uReflMap={value:null};                       // C6◇: planar-reflection render (see renderReflection)
     sh.uniforms.uTexMat={value:new THREE.Matrix4()};
     sh.uniforms.uReflStr={value:0};
+    // #691: true per-pixel water column + refraction, fed by the #690 depth/scene targets.
+    // uSceneTex/uSceneDepth hold LAST frame's resolved colour/depth (resolve runs at end-of-render,
+    // and the draw target is the MSAA fbo while these live on the resolve fbo — no feedback hazard;
+    // one frame of lag under rippled distortion is invisible, the same trick the mirror uses).
+    sh.uniforms.uSceneTex={value:null};
+    sh.uniforms.uSceneDepth={value:null};
+    sh.uniforms.uAB={value:new THREE.Vector2()};             // projection [2][2],[3][2] → viewZ from depth
+    sh.uniforms.uRes={value:new THREE.Vector2(1,1)};         // drawing-buffer px (gl_FragCoord → UV)
+    sh.uniforms.uDepthOn={value:0};                          // 0 → legacy baked-heightfield look (tier 0/1, WebGL1, underwater cam)
+    sh.uniforms.uWindF={value:0};                            // 0..1 wind factor: storms whip the surf up
     waterMesh.material.userData.sh=sh;
     sh.vertexShader='uniform float uWTime;\nuniform mat4 uTexMat;\nvarying vec2 vWXZ;\nvarying vec4 vReflC;\n'+sh.vertexShader.replace('#include <begin_vertex>',
       '#include <begin_vertex>\n'+
@@ -3981,10 +4006,19 @@ function initThree(){
     // Reflective water: Fresnel blends deep-water colour (looking down) into a live sky reflection (grazing),
     // a true planar reflection of the world (buildings/terrain/trees mirrored in the shallows), a specular
     // sun-glitter that tracks the sun, and depth-based shoreline foam read from the baked heightfield.
-    sh.fragmentShader='uniform vec3 uSunView,uSkyCol,uSunCol,uFoamCol;\nuniform sampler2D uHeightMap,uReflMap;\nuniform float uWTime,uWorld,uReflStr;\nuniform mat4 uTexMat;\nvarying vec2 vWXZ;\nvarying vec4 vReflC;\n'+sh.fragmentShader.replace('#include <fog_fragment>',
+    sh.fragmentShader='uniform vec3 uSunView,uSkyCol,uSunCol,uFoamCol;\nuniform sampler2D uHeightMap,uReflMap,uSceneTex,uSceneDepth;\nuniform float uWTime,uWorld,uReflStr,uDepthOn,uWindF;\nuniform mat4 uTexMat;\nuniform vec2 uAB,uRes;\nvarying vec2 vWXZ;\nvarying vec4 vReflC;\n'+sh.fragmentShader.replace('#include <fog_fragment>',
     // decode sea-bed depth under this fragment from the baked heightfield (drives shallow colour + foam)
     'float _th=texture2D(uHeightMap, vWXZ/uWorld+0.5).r*12.0-6.0;\n'+
     'float _depth=-_th;\n'+
+    // #691: TRUE water column along the view ray from the resolved scene depth — anything standing
+    // in the water (piers, rocks, swimmers) reads a thin column and earns foam/turquoise, which the
+    // baked terrain heightfield could never see. _tv in metres; -1 marks "depth unavailable".
+    'vec2 _suv=vec2(0.0); float _tv=-1.0;\n'+
+    'if(uDepthOn>0.5){\n'+
+    '  _suv=gl_FragCoord.xy/uRes;\n'+
+    '  float _nd=texture2D(uSceneDepth,_suv).x*2.0-1.0;\n'+
+    '  _tv=max((-vViewPosition.z)-(-uAB.y/(_nd+uAB.x)),0.0);\n'+              // waterZ − seabedZ (view space)
+    '  _depth=min(_depth,_tv*0.8);\n}\n'+                                     // feed the shared shallow/foam logic
     'float _sh=smoothstep(7.0,0.4,_depth);\n'+                                // 1 in the shallows, 0 in the deep
     'gl_FragColor.rgb=mix(gl_FragColor.rgb, vec3(0.16,0.52,0.60), _sh*0.5);\n'+  // shallows read turquoise, deep stays blue
     'vec3 _N=normalize(normal), _V=normalize(vViewPosition);\n'+
@@ -3995,6 +4029,13 @@ function initThree(){
     'if(uReflStr>0.01&&_rp.x>0.001&&_rp.x<0.999&&_rp.y>0.001&&_rp.y<0.999){\n'+
     '  vec3 _rs=texture2D(uReflMap,clamp(_rp.xy+_N.xy*0.05,0.001,0.999)).rgb;\n'+
     '  _refl=mix(_refl,_rs,uReflStr);\n}\n'+
+    // #691: refraction — the transmitted component is last frame's scene, ripple-distorted (more with
+    // depth, so the shoreline stays registered), ≈sRGB-decoded, then murked out by Beer-Lambert
+    // absorption along the view ray. Replaces the flat 0.42×-darkened guess where depth is live.
+    'if(_tv>=0.0){\n'+
+    '  vec3 _rf=texture2D(uSceneTex,clamp(_suv+_N.xy*(0.012+0.03*min(_tv*0.25,1.0)),0.001,0.999)).rgb;\n'+
+    '  _rf*=_rf;\n'+
+    '  _deep=mix(_rf,_deep,1.0-exp(-_tv*0.14));\n}\n'+
     'gl_FragColor.rgb=mix(_deep,_refl,_fres);\n'+
     'float _rd=max(dot(reflect(-normalize(uSunView),_N),_V),0.0);\n'+
     'gl_FragColor.rgb+=uSunCol*(pow(_rd,180.0)*1.8+pow(_rd,26.0)*0.22);\n'+   // sharp glitter + soft sheen
@@ -4002,9 +4043,13 @@ function initThree(){
     'float _wv=0.5+0.25*sin(vWXZ.x*0.25+uWTime*2.2)+0.25*sin(vWXZ.y*0.21-uWTime*1.8);\n'+
     'float _foam=smoothstep(2.4,0.0,_depth)*clamp(_depth*3.0,0.0,1.0);\n'+    // fade in deep→shore, kill on dry land
     'float _surf=smoothstep(0.55,0.0,abs(_depth-0.45-_wv*0.6));\n'+           // a wandering breaking line
-    '_foam=clamp(_foam*(0.4+0.5*_wv)+_surf*0.55,0.0,0.9);\n'+
+    '_foam=clamp(_foam*(0.4+0.5*_wv)+_surf*(0.42+0.38*uWindF),0.0,0.95);\n'+   // #691: storms whip the breaking line up
     'gl_FragColor.rgb=mix(gl_FragColor.rgb,uFoamCol,_foam);\n'+
-    'gl_FragColor.a=max(mix(0.80,0.99,_fres),_foam);\n#include <fog_fragment>'); };
+    'float _a=max(mix(0.80,0.99,_fres),_foam);\n'+
+    // #691: true shore fade — the razor waterline edge dissolves over the last ~1.4m of column,
+    // showing the CURRENT frame's seabed through genuine transparency (crisp, no refraction lag).
+    'if(_tv>=0.0) _a=max(mix(0.10,_a,smoothstep(0.0,1.4,_tv)),_foam);\n'+
+    'gl_FragColor.a=_a;\n#include <fog_fragment>'); };
   waterMesh.rotation.x=-Math.PI/2;waterMesh.position.y=0;scene.add(waterMesh);
   initReflections();
 
