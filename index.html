@@ -6267,20 +6267,50 @@ function swirlTex(){
     g.strokeStyle=arm===1?'rgba(160,200,255,0.9)':'rgba(225,205,255,0.95)'; g.lineWidth=6.5; g.stroke(); }
   const t=new THREE.CanvasTexture(c); _swirlTex=t; return t;
 }
+// ── The portal is pure MAGIC — no ring, no frame, no baked spiral lines, nothing solid: a GPU-animated
+//    vortex of churning violet energy that feathers to nothing at the rim, with drifting sparks. One
+//    shared time uniform drives every portal in the world; each mesh owns its material so a world
+//    rebuild can dispose it safely. ──
+let PORTAL_U=null;
+function portalUniforms(){ if(!PORTAL_U) PORTAL_U={uTime:{value:0}}; return PORTAL_U; }
+const _PORTAL_FRAG=`
+  varying vec2 vUv; uniform float uTime;
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
+  float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+    float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));
+    return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
+  float fbm(vec2 p){ float v=0.0,a=0.55; for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.03+1.7; a*=0.5; } return v; }
+  void main(){
+    vec2 uv=vUv-0.5; float r=length(uv)*2.0; float ang=atan(uv.y,uv.x);
+    float swirl=ang + (1.2-r)*3.2 + uTime*0.7;            // twist tightens toward the core, whole field rotates
+    vec2 pol=vec2(swirl*0.8, r*2.6 - uTime*0.55);          // energy streams outward from the middle
+    float energy=fbm(pol*1.6)*0.75 + fbm(pol*3.1+9.0)*0.45;
+    float edge=smoothstep(1.02,0.12,r);                    // feather to nothing at the rim — no hard edge
+    float core=smoothstep(0.55,0.0,r);
+    float body=edge*(energy*0.95 + core*0.6);
+    float sp=fbm(pol*5.5 - uTime*1.3);
+    float spark=smoothstep(0.80,0.99,sp)*edge;             // drifting motes of light
+    vec3 colA=vec3(0.42,0.20,0.85), colB=vec3(0.80,0.66,1.0);
+    vec3 col=mix(colA,colB,clamp(energy,0.0,1.0));
+    col+=vec3(0.95,0.88,1.0)*spark*1.6;                    // white-violet sparks
+    col+=colB*core*0.7;                                    // luminous heart (blooms via post)
+    float alpha=clamp(body+spark*0.9,0.0,1.0)*0.95;
+    if(alpha<0.008) discard;
+    gl_FragColor=vec4(col,alpha);
+  }`;
+function portalMaterial(){
+  return new THREE.ShaderMaterial({ uniforms:portalUniforms(),
+    transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false, blending:THREE.AdditiveBlending,
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:_PORTAL_FRAG });
+}
 function buildPortal(name){
-  // AC's portal is FREE-STANDING — no ring or frame: a vertically-stretched lens of swirling
-  // purple mist, two counter-rotating layers so the energy visibly churns, wispy at the rim.
   const g=new THREE.Group();
-  const disc=new THREE.Mesh(new THREE.CircleGeometry(1.5,48),
-    new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.9,side:THREE.DoubleSide,fog:false,depthWrite:false}));
-  disc.scale.set(1.05,1.5,1); disc.position.y=2.3; g.add(disc);              // the upright lens
-  const disc2=new THREE.Mesh(new THREE.CircleGeometry(1.32,48),
-    new THREE.MeshBasicMaterial({map:swirlTex(),transparent:true,opacity:0.55,side:THREE.DoubleSide,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
-  disc2.scale.set(1.0,1.42,1); disc2.position.y=2.3; disc2.position.z=0.02; g.add(disc2);   // additive counter-swirl
-  const light=new THREE.PointLight(0x9a7aff,1.6,18);light.position.y=2;g.add(light);
-  g.userData.disc2=disc2;
-  const lbl=labelSprite("Portal → "+name,"portals");lbl.position.y=4.2;g.add(lbl);
-  g.userData.disc=disc;g.userData.light=light;
+  const lens=new THREE.Mesh(new THREE.CircleGeometry(1.55,64), portalMaterial());
+  lens.scale.set(1.05,1.55,1); lens.position.y=2.3; g.add(lens);             // upright energy lens, stretched tall
+  const light=new THREE.PointLight(0x9a6aff,1.6,18); light.position.y=2.2; g.add(light);
+  const lbl=labelSprite("Portal → "+name,"portals"); lbl.position.y=4.2; g.add(lbl);
+  g.userData.lens=lens; g.userData.light=light;
   return g;
 }
 // floating name text. `cat` groups it under a Settings toggle: players / npcs / cities /
@@ -18928,11 +18958,13 @@ function update(dt){
     const u=ls.mesh&&ls.mesh.userData; if(!u) continue;   // real AC crystal model may still be streaming in
     if(u.light) u.light.intensity=1.1+0.35*Math.sin(now()/650);
     if(u.crystal&&u.crystal.material) u.crystal.material.emissiveIntensity=0.5+0.12*Math.sin(now()/650);}
-  // portal swirl (capital portals + every town's Town-Network portal + the hall portals)
+  // portals: the churning-energy shader animates itself off one shared time uniform; here we just
+  // advance that clock once and pulse each portal's glow (capital + Town-Network + hall + network portals)
   const swirlPulse=1.2+0.5*Math.sin(now()/250);
-  for(const pt of portals){pt.mesh.userData.disc.rotation.z+=dt*0.5; if(pt.mesh.userData.disc2)pt.mesh.userData.disc2.rotation.z-=dt*0.85; pt.mesh.userData.light.intensity=swirlPulse;}
-  for(const tp of tnPortals){ const u=tp.mesh&&tp.mesh.userData; if(u&&u.disc){u.disc.rotation.z+=dt*0.5; if(u.light)u.light.intensity=swirlPulse;} }
-  if(inNetwork) for(const o of netObjs){ const u=o.userData; if(u&&u.disc){u.disc.rotation.z+=dt*0.5; if(u.light)u.light.intensity=swirlPulse;} }
+  if(PORTAL_U) PORTAL_U.uTime.value=now()*0.001;
+  for(const pt of portals){ const u=pt.mesh.userData; if(u&&u.light)u.light.intensity=swirlPulse; }
+  for(const tp of tnPortals){ const u=tp.mesh&&tp.mesh.userData; if(u&&u.light)u.light.intensity=swirlPulse; }
+  if(inNetwork) for(const o of netObjs){ const u=o.userData; if(u&&u.light)u.light.intensity=swirlPulse; }
   // gathering nodes respawn
   for(const n of nodes){ if(n.depleted&&now()>n.readyAt){n.depleted=false;if(!inDungeon)n.mesh.visible=true;} }
 
