@@ -3061,6 +3061,7 @@ function updateAcademyDoors(dt){
 // AC jump (ACE MovementSystem): hold-to-charge power bar 0→1; height scales LINEARLY with power
 // (so velocity ∝ √power), with the skill term on AC's asymptote curve jump/(jump+1300) and the
 // burden modifier (≤100% free, linear to zero at 200%). At 0 stamina the skill counts as 0.
+const JUMP_DIST_MAX=8;   // world-units of horizontal reach at FULL charge (×jump-skill factor); scales linearly with the space-bar hold time
 function jumpVelocity(power){
   power=(typeof power==="number")?clamp(power,0,1):1;
   const jv=player.st>0?skillValue("jump"):0;
@@ -3076,7 +3077,20 @@ function tryJump(power){
   power=(typeof power==="number")?clamp(power,0,1):1;
   const cost=Math.ceil((encumbrance().ratio+0.5)*power*8+2);     // ACE JumpStaminaCost: ceil((burden+0.5)×power×8+2)
   if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
-  player.vy=jumpVelocity(power); player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.step)SFX.step();
+  const vy=jumpVelocity(power); player.vy=vy; player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.step)SFX.step();
+  // CHARGE → DISTANCE: the hold time (0..2s → power 0..1) sets how far you leap, LINEARLY (1s = half of 2s,
+  // taps are short). The leap goes in your MOVEMENT direction — standing still keeps you going straight up
+  // (no horizontal). Run momentum is the floor, so a moving jump always carries at least your run distance.
+  const runSpeed=Math.hypot(player.vx||0,player.vz||0);
+  if(runSpeed>0.1){
+    const jv=player.st>0?skillValue("jump"):0, skF=clamp(1+(jv/(jv+1300))*6.0,1.0,1.9);
+    const airtime=2*vy/(GRAV*WSCALE);                         // whole-arc time; horizontal is set to hit D exactly → distance is linear in `power` regardless of the arc height
+    const D=JUMP_DIST_MAX*skF*power;                          // target horizontal distance for this charge
+    const chargeSpeed=airtime>0?D/airtime:0;
+    const speed=Math.max(chargeSpeed,runSpeed);               // charge extends the leap; run momentum is the floor
+    const ax=player.vx/runSpeed, az=player.vz/runSpeed;
+    player.vx=ax*speed; player.vz=az*speed;
+  }   // standing (runSpeed≈0) → vx/vz stay ~0 → a straight-up hop (higher with a longer charge)
 }
 // hold Space to charge (AC's jump bar: ~0.7s to full), release to leap; a tap gives the minimum hop
 let jumpChargeT=-1;
@@ -3084,8 +3098,8 @@ function startJumpCharge(){ if(!player.alive||paused||!player.grounded) return; 
 function updateJumpCharge(dt){
   if(jumpChargeT<0) return;
   if(!player.alive||paused){ jumpChargeT=-1; return; }
-  if(held("jump")){ jumpChargeT=Math.min(1,jumpChargeT+dt/0.7); }
-  else { const p=jumpChargeT; jumpChargeT=-1; tryJump(p<0.08?0:p); }
+  if(held("jump")){ jumpChargeT=Math.min(1,jumpChargeT+dt/2.0); }   // hold up to 2s → full-distance jump (linear: 1s = half of 2s)
+  else { const p=jumpChargeT; jumpChargeT=-1; tryJump(p<0.04?0:p); }
 }
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,wasOnRoad=false;
 let autoRun=false;   // AC: Q toggles auto-run (1999 manual); backing up cancels it
