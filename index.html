@@ -7654,11 +7654,13 @@ function buildWorld(){
   // #722: each capital fields a Consignment Broker — the player-to-player market stall
   for(const c of CAPITALS) addNPC(c.x-9,c.z-6,{role:"broker",town:c.name,
     name:titledName(c.region||0,Math.round(c.x*17+c.z*3),"Consignment Broker")});
-  // #725: and a Stable Master selling mounts
-  for(const c of CAPITALS) addNPC(c.x+11,c.z+7,{role:"stable",town:c.name,
-    name:titledName(c.region||0,Math.round(c.x*13+c.z*9),"Stable Master")});
-  // #733: the stable itself — a timber barn, rail paddock, hay and a hitching post behind each master
-  for(const c of CAPITALS) buildStableYard(c.x+11,c.z+7);
+  // #725/#743: the stable YARD is placed first (flat-ground search), and the Stable Master takes a
+  // fixed post OUTSIDE the paddock gate the yard hands back — never inside his own fence.
+  for(const c of CAPITALS){
+    const post=buildStableYard(c.x+11,c.z+7);
+    addNPC(post.x,post.z,{role:"stable",town:c.name,
+      name:titledName(c.region||0,Math.round(c.x*13+c.z*9),"Stable Master")});
+  }
   // every town fields a Town Crier (directions) and a Barkeeper (rumours) — each an individual
   for(const c of CITIES){
     addNPC(c.x-6,c.z+9,{role:"crier",town:c.name,name:titledName(c.region||0,Math.round(c.x*5+c.z*3),"Town Crier")});
@@ -19198,7 +19200,9 @@ function animateOnePerson(p,dt){
   p._pt+=dt; const t=p._pt;
   let moving=false;
   if(p.stroll){   // wander near home: seek a target, pause, repeat
-    if(!p._tgt){ p._wait=(p._wait||0)-dt; if(p._wait<=0){ const a=Math.random()*6.283,r=1.2+Math.random()*(p.range||3); p._tgt={x:p.home.x+Math.cos(a)*r,z:p.home.z+Math.sin(a)*r}; } }
+    if(!p._tgt){ p._wait=(p._wait||0)-dt; if(p._wait<=0){ const a=Math.random()*6.283,r=1.2+Math.random()*(p.range||3); p._tgt={x:p.home.x+Math.cos(a)*r,z:p.home.z+Math.sin(a)*r};
+      if(typeof STABLE_ZONES!=="undefined") for(const zn of STABLE_ZONES){   // #743: townsfolk keep out of the stables
+        if(p._tgt.x>=zn.x0&&p._tgt.x<=zn.x1&&p._tgt.z>=zn.z0&&p._tgt.z<=zn.z1){ p._tgt=null; p._wait=1.5; break; } } } }
     if(p._tgt){ const dx=p._tgt.x-p.x,dz=p._tgt.z-p.z,d=Math.hypot(dx,dz);
       if(d<0.5){ p._tgt=null; p._wait=2.5+Math.random()*5; }
       else { const sp=Math.min(d,1.15*dt); p.x+=dx/d*sp; p.z+=dz/d*sp; moving=true; p._wp=(p._wp||0)+dt*7.5;
@@ -24442,6 +24446,7 @@ function hayTex(){                                          // strewn straw wisp
   return _hayT;
 }
 const STABLE_STOCK=[];   // #739: the master's display horses grazing in each paddock
+const STABLE_ZONES=[];   // #743: yard footprints strolling NPCs must never wander into
 function buildStableYard(sx,sz){
   // #739: stables SEEK FLAT GROUND — sample the yard footprint (barn+paddock, ~26×14) at candidate
   // spots ringing the master and take the one with the least height spread; then LEVEL it anyway:
@@ -24499,7 +24504,10 @@ function buildStableYard(sx,sz){
   obstacles.push({x:g.position.x,z:g.position.z,r:4.6});                                     // the barn blocks
   // #739: the deck is real footing — players (and horses via _hgy) walk the levelled yard
   registerStructure(g.position.x,g.position.z,0,g.position.y,{platforms:[{x0:-8,z0:-7.5,x1:19,z1:7.5,y:0}]});
-  STABLE_PADDOCK[Math.round(sx)+","+Math.round(sz)]={x:g.position.x+PX,z:g.position.z+PZ};   // retrieval target
+  // #743: the master's post — on the deck, outside the paddock's west gate, facing his stock
+  const mpost={x:g.position.x+5.4,z:g.position.z+PZ};   // (the fence-post helper above owns the name `post`)
+  STABLE_PADDOCK[Math.round(mpost.x)+","+Math.round(mpost.z)]={x:g.position.x+PX,z:g.position.z+PZ};   // retrieval target, keyed to the post
+  STABLE_ZONES.push({x0:g.position.x-8.5,z0:g.position.z-8,x1:g.position.x+19.5,z1:g.position.z+8}); // #743: strollers keep out
   // #739: the master's STOCK grazes inside the fence — two or three display horses, always
   const stockKinds=["pony","bay","chestnut","mule","grey"];
   for(let i=0,n=2+((Math.round(sx)%2+2)%2);i<n;i++){
@@ -24507,8 +24515,9 @@ function buildStableYard(sx,sz){
     const hm=buildHorseMesh(tk,0);
     const hx2=g.position.x+PX+(-3.5+i*3.4), hz2=g.position.z+PZ+((i%2)?2.6:-2.4);
     hm.position.set(hx2,g.position.y,hz2); hm.rotation.y=rnd(0,6.28);
-    scene.add(hm); STABLE_STOCK.push({mesh:hm,gt:rnd(0,6),master:{x:sx,z:sz}});
+    scene.add(hm); STABLE_STOCK.push({mesh:hm,gt:rnd(0,6),master:mpost});
   }
+  return mpost;
 }
 // #739: horses stand on structure decks (the stable yard platform) when one is underfoot
 function _hgy(x,z,ref){ return (typeof supportAt==="function")?supportAt(x,z,(ref!=null?ref:groundY(x,z))+1.5):groundY(x,z); }
