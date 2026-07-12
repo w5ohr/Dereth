@@ -23747,47 +23747,167 @@ const SHIP_TYPES=[
 function shipDef(id){ return SHIP_TYPES.find(s=>s.id===id)||null; }
 function shipDeedStock(){ return SHIP_TYPES.map(s=>({name:s.name+" Deed",cost:s.cost,ico:"⛵",desc:s.blurb+" — the ship awaits at the nearest shore",shipdeed:true,shipType:s.id})); }
 
-// ---- procedural period-correct hulls (THREE.Group of primitives, matching the game's model style) ----
-function _shipHull(len,beam,hullH){
+// ── REALISTIC procedural ships: a lofted, curved carvel hull (fine bow entry, tapered transom, rounded
+//    bilge, sheer and rocker), planked-wood PBR, billowed canvas sails, and standing rigging. Built once
+//    per vessel; a handful of instances, so the geometry can be generous. ──
+let _shipWood=null;
+function shipWoodMaps(){                                        // planked hull wood: albedo + normal (fore-aft strakes + caulk seams + grain)
+  if(_shipWood) return _shipWood;
+  const N=512, planks=13, ph=N/planks;
+  const A=document.createElement('canvas');A.width=A.height=N;const ga=A.getContext('2d');const ia=ga.createImageData(N,N),da=ia.data;
+  const Hf=new Float32Array(N*N);
+  const prng=(s)=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};
+  const plankTone=r=>{ let s=(r*97+13)|0; return 0.82+prng(s)*0.3; };   // per-plank tone drift
+  for(let py=0;py<N;py++){ const row=Math.floor(py/ph), ly=py-row*ph, dSeam=Math.min(ly,ph-ly), tone=plankTone(row);
+    for(let px=0;px<N;px++){
+      const seam=dSeam<2.2;                                     // dark caulked seam between planks
+      const grain=Math.sin(px*0.09+row*1.7)*0.5+Math.sin(px*0.31+row)*0.3;    // long grain along the plank
+      let base=(seam?116:196)*tone*(1+grain*0.05);             // bright enough to survive sRGB→linear + a near-white tint
+      // knots + weathering flecks
+      if(!seam && prng((px*7+py*131)|0)<0.006) base*=0.72;
+      const i=(py*N+px)*4; da[i]=Math.min(255,base); da[i+1]=Math.min(255,base*0.74); da[i+2]=Math.min(255,base*0.5); da[i+3]=255;   // warm oak
+      Hf[py*N+px]= seam? -0.6 : (0.5+grain*0.15);              // seams recess, plank faces slightly proud + grain
+    }
+  }
+  ga.putImageData(ia,0,0);
+  const Nn=document.createElement('canvas');Nn.width=Nn.height=N;const gn=Nn.getContext('2d');const inp=gn.createImageData(N,N),dn=inp.data;
+  const STR=2.2; for(let py=0;py<N;py++)for(let px=0;px<N;px++){
+    const xl=Hf[py*N+((px-1+N)%N)],xr=Hf[py*N+((px+1)%N)],yl=Hf[((py-1+N)%N)*N+px],yr=Hf[((py+1)%N)*N+px];
+    let nx=(xl-xr)*STR,ny=(yl-yr)*STR,nz=1;const l=Math.hypot(nx,ny,nz)||1;const i=(py*N+px)*4;
+    dn[i]=(nx/l*.5+.5)*255;dn[i+1]=(ny/l*.5+.5)*255;dn[i+2]=(nz/l*.5+.5)*255;dn[i+3]=255; }
+  gn.putImageData(inp,0,0);
+  const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
+    if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t;};
+  _shipWood={map:mk(A,true),normalMap:mk(Nn,false)};
+  return _shipWood;
+}
+function _shipTimberMat(tint,rep){ const w=shipWoodMaps();
+  const m=new THREE.MeshStandardMaterial({map:w.map.clone(),normalMap:w.normalMap.clone(),normalScale:new THREE.Vector2(0.8,0.8),color:tint,roughness:0.82,metalness:0.0});
+  m.map.wrapS=m.map.wrapT=THREE.RepeatWrapping; m.normalMap.wrapS=m.normalMap.wrapT=THREE.RepeatWrapping;
+  if(rep){ m.map.repeat.set(rep[0],rep[1]); m.normalMap.repeat.set(rep[0],rep[1]); m.map.needsUpdate=m.normalMap.needsUpdate=true; }
+  return m; }
+function _sinterp(cps,vals,t){ if(t<=cps[0])return vals[0]; for(let i=1;i<cps.length;i++){ if(t<=cps[i]){ const f=(t-cps[i-1])/(cps[i]-cps[i-1]); return vals[i-1]+(vals[i]-vals[i-1])*f; } } return vals[vals.length-1]; }
+// lofted carvel hull. Local: +z bow, -z stern, y=0 waterline, deck ends up near `deckY`.
+function buildHull(L,B,deckY){
+  const bulw=Math.max(0.26,deckY*0.30), draft=Math.max(0.35,deckY*0.62), hb=B/2;
+  const NS=34, NC=12;
+  const BU=[0,0.12,0.32,0.52,0.70,0.84,0.93,0.985,1.0], BW=[0.46,0.66,0.88,1.0,0.97,0.80,0.50,0.18,0.03]; // beam plan (stern→bow)
+  const shape=v=>{ const vd=0.66; return v<=vd? Math.pow(Math.sin((v/vd)*Math.PI*0.5),0.62) : 1-0.11*((v-vd)/(1-vd)); }; // rounded bilge → tumblehome bulwark
+  const gunTop=deckY+bulw, vDeck=Math.min(0.95,(deckY+draft)/(gunTop+draft));   // the cross-section height where the deck sits at exactly `deckY`
+  const yAt=(u,v)=>{ const p=(2*u-1)*(2*u-1); const sheer=(deckY*0.34)*p*(u>0.5?1.28:1.0), rocker=(draft*0.7)*p;
+    return -draft + (gunTop+draft)*v + sheer*v + rocker*(1-v); };   // sheer lifts the rail at the ends; rocker raises the keel
+  const sect=[];
+  for(let i=0;i<=NS;i++){ const u=i/NS, w=hb*_sinterp(BU,BW,u), z=(u-0.5)*L, arr=[];
+    for(let j=NC;j>=1;j--){ const v=j/NC; arr.push([-w*shape(v), yAt(u,v), z]); }   // port gunwale → keel
+    for(let j=0;j<=NC;j++){ const v=j/NC; arr.push([ w*shape(v), yAt(u,v), z]); }    // keel → starboard gunwale
+    sect.push({u,w,z,arr,deckY:yAt(u,vDeck),deckL:-w*shape(vDeck),deckR:w*shape(vDeck),gunL:-w*shape(1),gunR:w*shape(1),gy:yAt(u,1.0)}); }
+  const M=sect[0].arr.length;
+  const pos=[],uv=[],idx=[],base=[];
+  for(let i=0;i<sect.length;i++){ base.push([]); for(let k=0;k<M;k++){ const p=sect[i].arr[k];
+    base[i].push(pos.length/3); pos.push(p[0],p[1],p[2]); uv.push((k/(M-1))*3.0, (i/NS)*Math.max(3,L*0.5)); } }
+  for(let i=0;i<sect.length-1;i++) for(let k=0;k<M-1;k++){ const a=base[i][k],b=base[i][k+1],c=base[i+1][k+1],d=base[i+1][k]; idx.push(a,d,c, a,c,b); }
+  const hullGeo=new THREE.BufferGeometry();
+  hullGeo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  hullGeo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); hullGeo.setIndex(idx); hullGeo.computeVertexNormals();
   const g=new THREE.Group();
-  const wood=texMat(woodTex,0x5a3a22), trim=texMat(woodTex,0x6a4a2a), deckMat=texMat(woodTex,0x7a5a38);
-  const hull=new THREE.Mesh(new THREE.BoxGeometry(beam,hullH,len*0.8),wood); hull.position.y=hullH*0.5; g.add(hull);
-  for(const s of [-1,1]){ const pk=new THREE.Mesh(new THREE.BoxGeometry(beam*0.5,hullH,len*0.28),wood);   // toed-in bow planks → a prow
-    pk.position.set(s*beam*0.22,hullH*0.5,len*0.46); pk.rotation.y=s*0.5; g.add(pk); }
-  const stern=new THREE.Mesh(new THREE.BoxGeometry(beam,hullH*1.05,len*0.06),trim); stern.position.set(0,hullH*0.52,-len*0.4); g.add(stern);   // transom
-  const deck=new THREE.Mesh(new THREE.BoxGeometry(beam*0.92,0.12,len*0.78),deckMat); deck.position.y=hullH; g.add(deck);
-  for(const s of [-1,1]){ const rail=new THREE.Mesh(new THREE.BoxGeometry(0.12,hullH*0.3,len*0.78),trim); rail.position.set(s*beam*0.46,hullH+hullH*0.15,0); g.add(rail); }
+  const hullMat=_shipTimberMat(0xd8bc94), deckMat=_shipTimberMat(0xeaddc0), trimMat=_shipTimberMat(0xa8825a), keelMat=_shipTimberMat(0x8a6844);
+  const hull=new THREE.Mesh(hullGeo,hullMat); hull.castShadow=true; hull.receiveShadow=true; g.add(hull);
+  // transom cap (stern, i=0) — fan-fill the aft section
+  { const s0=sect[0].arr, tp=[],ti=[]; let cx=0,cy=0; for(const p of s0){cx+=p[0];cy+=p[1];} cx/=s0.length;cy/=s0.length;
+    const cIdx=0; tp.push(cx,cy,s0[0][2]); for(const p of s0) tp.push(p[0],p[1],p[2]);
+    for(let k=1;k<s0.length;k++) ti.push(0,k,k+1);
+    const tg=new THREE.BufferGeometry(); tg.setAttribute('position',new THREE.Float32BufferAttribute(tp,3)); tg.setIndex(ti); tg.computeVertexNormals();
+    const tm=new THREE.Mesh(tg,trimMat); tm.castShadow=true; g.add(tm); }
+  // DECK — planked surface between the port & starboard sheer lines (follows the sheer curve)
+  { const dpos=[],duv=[],didx=[]; const inset=Math.min(0.12,B*0.03);
+    for(let i=0;i<sect.length;i++){ const s=sect[i], dy=s.deckY;
+      dpos.push(s.deckL+inset,dy,s.z); duv.push(0,(i/NS)*L*0.4);
+      dpos.push(s.deckR-inset,dy,s.z); duv.push(1,(i/NS)*L*0.4); }
+    for(let i=0;i<sect.length-1;i++){ const a=i*2,b=i*2+1,c=i*2+3,d=i*2+2; didx.push(a,c,b, a,d,c); }
+    const dg=new THREE.BufferGeometry(); dg.setAttribute('position',new THREE.Float32BufferAttribute(dpos,3));
+    dg.setAttribute('uv',new THREE.Float32BufferAttribute(duv,2)); dg.setIndex(didx); dg.computeVertexNormals();
+    const dk=new THREE.Mesh(dg,deckMat); dk.receiveShadow=true; g.add(dk); }
+  // rubrail / wale — a dark molding strip riding the sheer line, both sides
+  for(const side of [-1,1]){ const rp=[]; for(let i=0;i<sect.length;i++){ const s=sect[i]; rp.push(new THREE.Vector3(side*Math.abs(s.gunR)*0.99, s.gy-bulw*0.42, s.z)); }
+    const curve=new THREE.CatmullRomCurve3(rp); const rg=new THREE.TubeGeometry(curve,NS,Math.max(0.05,B*0.02),6,false);
+    const rail=new THREE.Mesh(rg,trimMat); rail.castShadow=true; g.add(rail); }
+  // keel — a thin strake down the centerline bottom
+  { const kp=[]; for(let i=0;i<sect.length;i++){ const s=sect[i]; kp.push(new THREE.Vector3(0, yAt(s.u,0)-Math.max(0.06,draft*0.14), s.z)); }
+    const kc=new THREE.CatmullRomCurve3(kp); const kg=new THREE.TubeGeometry(kc,NS,Math.max(0.05,B*0.03),5,false);
+    const keel=new THREE.Mesh(kg,keelMat); keel.castShadow=true; g.add(keel); }
+  // stem post at the bow + sternpost
+  { const bz=sect[NS].z, byT=sect[NS].gy, byB=yAt(1,0);
+    const stem=new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.05,B*0.03),Math.max(0.07,B*0.04),(byT-byB)*1.02,7),keelMat);
+    stem.position.set(0,(byT+byB)/2,bz); stem.rotation.x=-0.34; g.add(stem); }
+  g.userData.deckTopY=deckY; g.userData.beam=B; g.userData.len=L; g.userData.sect=sect; g.userData.gunTop=gunTop;
   return g;
 }
-function _mast(g,x,z,h,r){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r*1.2,h,8),texMat(woodTex,0x4a3420)); m.position.set(x,h*0.5,z); g.add(m); return m; }
-function _squareSail(g,x,y,z,w,h){
-  const yard=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,w*1.06,6),texMat(woodTex,0x4a3420)); yard.rotation.z=Math.PI/2; yard.position.set(x,y+h*0.5,z); g.add(yard);
-  const sail=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshStandardMaterial({color:0xece3cf,roughness:0.92,metalness:0,side:THREE.DoubleSide})); sail.position.set(x,y,z); g.add(sail); return sail;
+function _mast(g,x,z,h,r,y0){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.7,r*1.25,h,10),_shipTimberMat(0xc0a274)); m.position.set(x,(y0||0)+h*0.5,z); m.castShadow=true; g.add(m);
+  const top=new THREE.Mesh(new THREE.SphereGeometry(r*1.5,7,6),_shipTimberMat(0xa8845a)); top.position.set(x,(y0||0)+h,z); g.add(top); return m; }
+// a BILLOWED canvas sail: a subdivided plane bowed by the wind, with bolt-rope reinforced edges
+let _sailMat=null;
+function _sailMaterial(){ if(_sailMat) return _sailMat;
+  const N=256,c=document.createElement('canvas');c.width=c.height=N;const x=c.getContext('2d');
+  x.fillStyle="#efe7d4";x.fillRect(0,0,N,N);
+  for(let i=0;i<5;i++){ x.strokeStyle="rgba(150,138,112,0.35)";x.lineWidth=2;x.beginPath();x.moveTo((i+1)/6*N,0);x.lineTo((i+1)/6*N,N);x.stroke(); } // vertical cloth panels
+  for(let i=0;i<900;i++){ x.fillStyle=`rgba(${200+Math.random()*30|0},${190+Math.random()*30|0},${165+Math.random()*25|0},0.25)`; x.fillRect(Math.random()*N,Math.random()*N,2,2); }
+  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;
+  _sailMat=new THREE.MeshStandardMaterial({map:t,color:0xf2ecda,roughness:0.94,metalness:0,side:THREE.DoubleSide}); return _sailMat; }
+function _squareSail(g,x,y,z,w,h,bow){
+  const seg=10, geo=new THREE.PlaneGeometry(w,h,seg,seg), p=geo.attributes.position; bow=bow||w*0.14;
+  for(let i=0;i<p.count;i++){ const u=(p.getX(i)/w+0.5), v=(p.getY(i)/h+0.5); p.setZ(i, Math.sin(u*Math.PI)*Math.sin(v*Math.PI*0.85+0.2)*bow); } // billow toward -z... set below
+  geo.computeVertexNormals();
+  const yard=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,w*1.08,7),_shipTimberMat(0xa8845a)); yard.rotation.z=Math.PI/2; yard.position.set(x,y+h*0.5,z); g.add(yard);
+  const sail=new THREE.Mesh(geo,_sailMaterial()); sail.position.set(x,y,z); sail.castShadow=true; g.add(sail);
+  // clew/tack lines from yard tips down to the deck-ish
+  return sail;
 }
 function _lateenSail(g,x,y,z,size){
-  const shp=new THREE.Shape(); shp.moveTo(0,size*0.6); shp.lineTo(0,-size*0.5); shp.lineTo(size*0.85,-size*0.15); shp.lineTo(0,size*0.6);
-  const sail=new THREE.Mesh(new THREE.ShapeGeometry(shp),new THREE.MeshStandardMaterial({color:0xe6dcc4,roughness:0.92,metalness:0,side:THREE.DoubleSide})); sail.position.set(x,y,z); sail.rotation.y=Math.PI/2; g.add(sail); return sail;
+  const shp=new THREE.Shape(); shp.moveTo(0,size*0.62); shp.lineTo(0,-size*0.5); shp.lineTo(size*0.9,-size*0.18); shp.closePath();
+  const geo=new THREE.ShapeGeometry(shp,14);
+  const sail=new THREE.Mesh(geo,_sailMaterial()); sail.position.set(x,y,z); sail.rotation.y=Math.PI/2; sail.castShadow=true; g.add(sail);
+  const yard=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,size*1.5,6),_shipTimberMat(0xa8845a)); yard.position.set(x,y+size*0.05,z); yard.rotation.x=0.6; g.add(yard);
+  return sail;
 }
-function _castle(g,z,w,h,d){ const c=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),texMat(woodTex,0x5a3a22)); c.position.set(0,h*0.5,z); g.add(c); return c; }
-function buildSkiff(){ const g=_shipHull(5,2.0,0.55);
-  for(const z of [-0.8,0.6]){ const t=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.1,0.35),texMat(woodTex,0x6a4a2a)); t.position.set(0,0.6,z); g.add(t); }   // thwarts
-  for(const s of [-1,1]){ const oar=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,3.2,6),texMat(woodTex,0x4a3420)); oar.rotation.z=Math.PI*0.28*s; oar.position.set(s*1.1,0.75,0); g.add(oar); }
+// standing rigging: taut lines (thin dark cylinders) between two points
+const _rigMat=new THREE.MeshStandardMaterial({color:0x241c12,roughness:0.9,metalness:0});
+function _rig(g,a,b,r){ const A=new THREE.Vector3(a[0],a[1],a[2]),Bv=new THREE.Vector3(b[0],b[1],b[2]),d=new THREE.Vector3().subVectors(Bv,A),len=d.length();
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(r||0.018,r||0.018,len,5),_rigMat); m.position.copy(A).add(Bv).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize()); g.add(m); }
+function _shrouds(g,mx,mz,mtopY,beam,deckY,pairs){ for(let s of [-1,1]) for(let i=0;i<pairs;i++){ const off=beam*(0.24+i*0.14);
+  _rig(g,[mx,mtopY,mz],[mx+s*off,deckY,mz+(i-pairs/2)*0.5]); } }
+function _cabin(g,z,w,h,d,y0){ const c=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),_shipTimberMat(0xc8a878,[3,2])); c.position.set(0,(y0||0)+h*0.5,z); c.castShadow=true; c.receiveShadow=true; g.add(c);
+  const roof=new THREE.Mesh(new THREE.BoxGeometry(w*1.06,0.1,d*1.06),_shipTimberMat(0xa8825a)); roof.position.set(0,(y0||0)+h+0.05,z); g.add(roof); return c; }
+function _flag(g,x,y,z,col){ const p=new THREE.Mesh(new THREE.PlaneGeometry(1.1,0.5),new THREE.MeshStandardMaterial({color:col||0x9a2020,side:THREE.DoubleSide,roughness:0.9})); p.position.set(x+0.55,y,z); g.add(p); }
+function buildSkiff(){ const g=buildHull(5.4,2.05,0.62), dY=0.62;
+  for(const z of [-0.9,0.55]){ const t=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.09,0.34),_shipTimberMat(0xdcc298,[2,1])); t.position.set(0,dY,z); t.castShadow=true; g.add(t); }  // thwarts
+  for(const s of [-1,1]){ const oar=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.05,3.2,6),_shipTimberMat(0xc0a274)); oar.rotation.z=Math.PI*0.30*s; oar.rotation.x=0.1; oar.position.set(s*1.15,dY+0.12,0.1); oar.castShadow=true; g.add(oar);
+    const blade=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.03,0.7),_shipTimberMat(0xc0a274)); blade.position.set(s*2.6,dY-0.5,0.1); blade.rotation.z=Math.PI*0.30*s; g.add(blade); }
   return g; }
-function buildCog(){ const g=_shipHull(11,4.2,1.2);
-  _castle(g,-4.2,3.6,2.2,2.4); _castle(g,4.3,3.2,1.4,1.6);
-  _mast(g,0,0,7.5,0.12); _squareSail(g,0,4.8,0.15,3.6,3.2);
-  const rud=new THREE.Mesh(new THREE.BoxGeometry(0.14,1.6,0.7),texMat(woodTex,0x4a3420)); rud.position.set(0,0.2,-4.7); g.add(rud);
+function buildCog(){ const g=buildHull(11.5,4.3,1.5), dY=1.5;
+  _cabin(g,-4.3,3.2,2.0,2.2,dY);                                  // stern castle
+  _cabin(g,4.5,1.9,1.5,1.5,dY);                                   // small fore castle
+  const mY=dY, mh=8.6; _mast(g,0,0.2,mh,0.14,mY);
+  _squareSail(g,0,mY+5.4,0.05,3.9,3.4);
+  _shrouds(g,0,0.2,mY+mh,4.3,dY+0.3,3);
+  _rig(g,[0,mY+mh,0.2],[0,dY+1.0,5.2]); _rig(g,[0,mY+mh,0.2],[0,dY+1.6,-4.6]);   // fore & back stays
+  _flag(g,0,mY+mh+0.2,0.2,0x9a2020);
+  const rud=new THREE.Mesh(new THREE.BoxGeometry(0.14,1.7,0.7),_shipTimberMat(0x8a6844)); rud.position.set(0,-0.1,-5.4); g.add(rud);
   return g; }
-function buildCaravel(){ const g=_shipHull(18,6.0,1.6);
-  _castle(g,-7.0,5.2,3.2,3.6); _castle(g,7.2,4.4,1.8,2.2);
-  _mast(g,0,3.4,11,0.16); _squareSail(g,0,7.0,3.55,4.6,4.2);       // mainmast (square)
-  _mast(g,0,-2.2,8.5,0.13); _lateenSail(g,0,5.4,-2.05,3.6);        // mizzen (lateen)
-  _mast(g,0,6.0,7.5,0.12); _squareSail(g,0,5.2,6.15,3.2,3.0);      // foremast (square)
-  const bs=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,4,6),texMat(woodTex,0x4a3420)); bs.rotation.x=Math.PI/2-0.5; bs.position.set(0,2.2,9.2); g.add(bs);   // bowsprit
-  const rud=new THREE.Mesh(new THREE.BoxGeometry(0.18,2.2,0.9),texMat(woodTex,0x4a3420)); rud.position.set(0,0.2,-8.0); g.add(rud);
+function buildCaravel(){ const g=buildHull(18.5,6.1,2.0), dY=2.0;
+  _cabin(g,-7.2,4.4,2.6,3.0,dY); _cabin(g,-7.2,3.2,1.7,2.2,dY+2.6);   // stacked stern castle
+  _cabin(g,7.6,2.6,1.7,1.9,dY);                                        // forecastle
+  const mainH=12; _mast(g,0,2.6,mainH,0.18,dY); _squareSail(g,0,dY+7.0,2.66,5.0,4.4); _squareSail(g,0,dY+11.0,2.66,3.0,2.4,0.5); // main + topsail
+  _shrouds(g,0,2.6,dY+mainH,6.1,dY+0.4,4);
+  const foreH=9.5; _mast(g,0,6.4,foreH,0.14,dY); _squareSail(g,0,dY+5.4,6.46,3.4,3.0); _shrouds(g,0,6.4,dY+foreH,4.4,dY+0.4,3);
+  const mizH=8.5; _mast(g,0,-3.2,mizH,0.13,dY); _lateenSail(g,0,dY+4.6,-3.1,3.6); _shrouds(g,0,-3.2,dY+mizH,4.0,dY+0.4,2);
+  const bs=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.11,5,7),_shipTimberMat(0xa8845a)); bs.rotation.x=Math.PI/2-0.42; bs.position.set(0,dY+0.9,9.6); bs.castShadow=true; g.add(bs);
+  _rig(g,[0,dY+mainH,2.6],[0,dY+1.4,9.4]); _rig(g,[0,dY+foreH,6.4],[0,dY+1.6,9.6]);  // forestays to bowsprit
+  _flag(g,0,dY+mainH+0.2,2.6,0x1a3a7a);
+  const rud=new THREE.Mesh(new THREE.BoxGeometry(0.18,2.3,0.9),_shipTimberMat(0x8a6844)); rud.position.set(0,-0.2,-9.0); g.add(rud);
   return g; }
 function buildShip(id){ const g=(id==="caravel")?buildCaravel():(id==="cog")?buildCog():buildSkiff();
-  g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } }); g.userData.isShip=true; return g; }
+  g.traverse(o=>{ if(o.isMesh){ if(o.castShadow==null)o.castShadow=true; o.receiveShadow=true; } }); g.userData.isShip=true; return g; }
 
 // ---- water queries ----
 function shipNavigable(x,z,def){
