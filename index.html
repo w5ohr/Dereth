@@ -1260,6 +1260,7 @@ function derive(){
   if(player.gearFx){ player.mhp+=Math.round(player.gearFx.hp||0); player.mst+=Math.round(player.gearFx.st||0); player.mmn+=Math.round(player.gearFx.mn||0); }  // Endurance/Willpower item-spells on worn gear
   if(player.vitae>0){ const vm=1-player.vitae;   // Vitae (death penalty): your vital pools shrink until worked off with XP
     player.mhp=Math.max(1,Math.round(player.mhp*vm)); player.mst=Math.max(1,Math.round(player.mst*vm)); player.mmn=Math.max(0,Math.round(player.mmn*vm)); }
+  if(player.bloodTithed){ player.mhp=Math.max(1,Math.floor(player.mhp/2)); player.mmn=Math.max(0,Math.floor(player.mmn/2)); }   // #677 Regalia V: the Blood-Undercroft's tithe — half max health & mana while inside (survives any re-derive)
   player.hp=Math.min(player.hp,player.mhp);
   player.st=Math.min(player.st,player.mst);
   player.mn=Math.min(player.mn,player.mmn);
@@ -3102,6 +3103,7 @@ let consActive=false,_consReinforced=false,_consT=0; // #682 Regalia X: the Cons
 let whispersActive=false,_whispersSim=null,_whispersT=0; // #674 Regalia II: the counting-house (cut the strings before the puppet)
 let chitinActive=false,_chitinClutches=[],_chitinWax=[],_chitinBoss=false,chitinTimer=0,_chitinAddT=0; // #675 Regalia III: the hive-crater (burn the clutches, beat the Matron)
 let bannersActive=false,_bannersWave=0,_bannerMob=null,_bannerBoss=null,_bannerBaseDmg=0,_bannerTorn=false; // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
+let bloodActive=false,_bloodReinforced=false,_bloodT=0; // #677 Regalia V: the blood-undercroft (fight at half vitals)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -17927,6 +17929,7 @@ function update(dt){
   updateWhispers(dt);      // #674 Regalia II: the Counting-House (cut the strings before the puppet)
   updateChitin(dt);        // #675 Regalia III: the Hive-Crater (burn the clutches, beat the Matron)
   updateBanners(dt);       // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
+  updateBloodRite(dt);     // #677 Regalia V: the Blood-Undercroft (fight at half vitals)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20643,6 +20646,17 @@ const QUESTS=[
     xp:400000, gold:6000, instance:enterBanners,
     gateOpen:"The press-gang is scattered. Behind me the launch waits to run you out to the <b>anchored ships</b>. Speak once more and I will send you across. <i>His banner doubles his blade — tear it down before you trade blows in earnest.</i>",
     item:{name:"Pauldrons of the Tenfold",stat:"worn",at:"heavy",aslot:"upperarm",mat:"Diamond",v:44,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
+  // ═══ #677 CHAPTER V — Year of Blood (Regalia epic #672). The Falatacot Root: in the castle's own
+  //     blood-undercroft, a Blood-Matriarch revenant levies a BLOOD-TITHE — you fight at HALF your max
+  //     health and mana. Cut her down anyway. Awards the Shirt. (Chain: after IV.) ═══
+  { id:"regalia5", name:"The Regalia of the Tenfold · V — Year of Blood", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia4",
+    intro:"My fifth year the Falatacot rooted in the blood beneath my own castle, and their Matriarch takes her tithe in it — you will fight her at half your strength, as I did. Spill six of her blood-thralls first, then return: I will open the undercroft beneath us. Half your health, half your mana, and her revenant across the floor. Worn nearest the heart, because that is where that year cut me.",
+    gateFn:function(){ if(player.level<76) return "The blood-tithe would empty you as you are. Return at your seventy-sixth season (level 76)."; return null; },
+    obj:[{type:"slay",kind:"falatacot",count:6,label:"Spill the Matriarch's blood-thralls (Falatacot)"},
+         {type:"blood",count:1,label:"Cut down the Blood-Matriarch's revenant under the blood-tithe"}],
+    xp:520000, gold:8000, instance:enterBloodRite,
+    gateOpen:"The thralls are spilled. Beneath us the <b>blood-undercroft</b> is mine to open. Speak once more and I will send you down — but know this: her tithe takes half your health and half your mana the moment you enter. <i>Half-empty, and still you must be enough.</i>",
+    item:{name:"Shirt of the Tenfold",stat:"worn",at:"light",aslot:"shirt",mat:"Silk",v:30,tier:5,work:10,legendary:true} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20932,6 +20946,10 @@ const QUEST_GIVERS={
     prog:"Six of the press-gang, cut down wherever the Pretender's corsairs make landfall. Then return — I will run you out to the ships. Fight to the Standard-Bearer and tear his banner down; it is half his strength.",
     turn:"The false banner is down and the Pretender's champion with it. Shoulders are for standards — bear the right one. These Pauldrons of the Tenfold are yours; wear them, and fly no lie. Six years remain.",
     post:"The fourth year is behind you — the war of banners. A standard is only worth the arm that carries it."},
+  regalia5:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Six blood-thralls, spilled wherever the Falatacot root takes hold. Then return — I will open the undercroft beneath us, and her tithe will take half of you at the door. Be enough anyway.",
+    turn:"The revenant is undone and the root cut, and you did it half-empty. Worn nearest the heart — take the Shirt of the Tenfold; that year cut me there, and this covers it. Five years remain.",
+    post:"The fifth year is behind you — the bloody one. Some tithes you pay whether you will or no."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -27096,7 +27114,8 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false; bannersActive=false;   // #680-#676: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false; bannersActive=false; bloodActive=false;   // #680-#677: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  if(player.bloodTithed){ player.bloodTithed=false; if(typeof derive==="function")derive(); }   // #677: the blood-tithe releases on ANY exit (win, flee, death) — re-derive restores full max health & mana
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -27978,6 +27997,75 @@ function bannersWin(){
 function bannersFail(){ bannersActive=false;_bannerMob=null;_bannerBoss=null;
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE PRETENDER HOLDS"); if(SFX.hit)SFX.hit(); exitDungeon(true);
+}
+// ═══ #677 REGALIA V — THE BLOOD-UNDERCROFT: Year of Blood re-lived. The Falatacot Blood-Matriarch's
+//     revenant levies a BLOOD-TITHE: on entering, your max health and mana are HALVED (restored on any
+//     exit — win, flee, or death — via player._bloodTithe in exitDungeon). Cut her down half-empty,
+//     through one wave of blood-thralls. Win → questEvent("blood") advances regalia5, Kilmer pays out
+//     the Shirt. ═══
+function buildBloodUndercroft(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=20;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const flesh=new THREE.MeshStandardMaterial({color:0x2a1216,roughness:0.7,metalness:0.05});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),flesh);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // blood-runnels: dark red veins across the floor
+  for(let i=0;i<10;i++){ const a=rnd(0,6.28),r=rnd(3,R-3);
+    const v=new THREE.Mesh(new THREE.CircleGeometry(rnd(0.7,1.8),10),new THREE.MeshStandardMaterial({color:0x6a0a12,emissive:0x3a0206,emissiveIntensity:0.5,roughness:0.4}));
+    v.rotation.x=-Math.PI/2; v.position.set(cx+Math.cos(a)*r,0.07,cz+Math.sin(a)*r); scene.add(v); dungeonObjs.push(v); }
+  const stone=new THREE.MeshStandardMaterial({color:0x241416,roughness:0.9});
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(R+0.6,R+0.6,9,48,1,true),stone);ring.position.set(cx,4.5,cz);ring.material.side=THREE.DoubleSide;scene.add(ring);dungeonObjs.push(ring);
+  for(let i=0;i<6;i++){ const a=i/6*Math.PI*2,tx=cx+Math.cos(a)*(R-1.5),tz=cz+Math.sin(a)*(R-1.5);
+    const p=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.6,rnd(5,7),8),stone);p.position.set(tx,3,tz);p.castShadow=true;scene.add(p);dungeonObjs.push(p);
+    const torch=new THREE.PointLight(0xff2a2a,1.1,20);torch.position.set(tx,4,tz);scene.add(torch);dungeonObjs.push(torch); }
+  const glow=new THREE.PointLight(0x8a1a1a,0.8,44);glow.position.set(cx,6,cz);scene.add(glow);dungeonObjs.push(glow);
+  const amb=new THREE.HemisphereLight(0x5a1a20,0x120608,0.4);scene.add(amb);dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz+R-5};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Flee the undercroft — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterBloodRite(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;bloodActive=true;curDungeon={id:990677,name:"The Blood-Undercroft",tier:5};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.45";
+  buildBloodUndercroft();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  bloodActive=true;_bloodReinforced=false;_bloodT=0;
+  // the BLOOD-TITHE: half max health & mana while inside (derive() honors player.bloodTithed; released on
+  // any exit in exitDungeon). Set the flag and re-derive so the true, tithed max is computed from stats.
+  player.bloodTithed=true; if(typeof derive==="function") derive();
+  player.hp=Math.min(player.hp,player.mhp); player.mn=Math.min(player.mn,player.mmn);
+  const cx=DCEN.x,cz=DCEN.z;
+  spawnDungeonMonster("falatacot",cx,cz-5,true,4.6,"The Blood-Matriarch's Revenant");
+  for(let i=0;i<3;i++){ const a=i/3*Math.PI*2, r=10; spawnDungeonMonster("falatacot",cx+Math.cos(a)*r,cz+Math.sin(a)*r,false,1.4); }
+  toast("THE BLOOD-TITHE — HALF VITALS");
+  log("The tithe takes hold the instant you enter — <b>your health and mana are halved</b>. Across the runnels, the <b>Blood-Matriarch's Revenant</b> rises. Cut her down half-empty.","warn");
+  updateHUD&&updateHUD();
+}
+function updateBloodRite(dt){
+  if(!bloodActive) return;
+  _bloodT+=dt;
+  // one wave of blood-thralls midway, so the half-vitals fight has teeth
+  if(!_bloodReinforced&&_bloodT>10&&dungeonMobs>0){ _bloodReinforced=true;
+    const cx=DCEN.x,cz=DCEN.z; for(let i=0;i<3;i++){ const a=i/3*Math.PI*2+0.5, r=11; spawnDungeonMonster("falatacot",cx+Math.cos(a)*r,cz+Math.sin(a)*r,false,1.5); }
+    log("The Matriarch opens a vein and <b>fresh blood-thralls</b> pour from it. Hold — half-empty is still enough.","sys");
+  }
+  if(dungeonMobs<=0) bloodWin();
+}
+function bloodWin(){
+  bloodActive=false;
+  const cx=DCEN.x,cz=DCEN.z; burst(cx,2,cz,0x9a1a1a,90); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE MATRIARCH IS UNDONE");
+  log("The Blood-Matriarch's Revenant sinks back into the runnels and the tithe releases you. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("blood");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!bloodActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function bloodFail(){ bloodActive=false;
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE TITHE IS PAID IN FULL"); if(SFX.hit)SFX.hit(); exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
 function buildNetwork(){
