@@ -8438,7 +8438,7 @@ function tbRingBuilding(g,obst,did,wx,wz,th){
   edge(lcx+hx,lcz+hz,lcx-hx,lcz+hz); edge(lcx-hx,lcz+hz,lcx-hx,lcz-hz);
   if(enter){   // register the interior floor as a walkable platform so you stand ON it, not the sloped terrain beneath
     const st={bx:wx,bz:wz,baseY:base,cos:cw,sin:sw,r2:(Math.max(hx,hz)+2)**2+4,
-      platforms:[{x0:lcx-hx+0.3,x1:lcx+hx-0.3,z0:lcz-hz+0.3,z1:lcz+hz-0.3,y:0}],ramps:[]};
+      platforms:[{x0:lcx-hx,x1:lcx+hx,z0:lcz-hz,z1:lcz+hz,y:0}],ramps:[]};  // floor reaches the walls — no sub-slab terrain ring to drop into
     structures.push(st); rec.structs.push(st); rec.struct=st; }
   return rec;
 }
@@ -18117,6 +18117,46 @@ function collide(nx,nz){
   if(terrainH(nx,nz)<-6) return [player.x,player.z]; // W3: you can wade into deep water (and drown), but the ocean abyss stays a wall
   return [nx,nz];
 }
+// ── ANTI-STUCK GUARDIAN: a per-frame safety net so no player is ever trapped IN, ON, or UNDER any
+//    building or structure. (1) If you're standing on terrain UNDER a building's ground slab (entered on
+//    a downhill side, floor too high to step onto), pop up onto that floor. (2) If you've been pushing
+//    into geometry with input but making no progress (wedged in a wall/corner), auto-eject to the nearest
+//    clear ground. Both are general — they cover every structure with a registered footprint, no per-
+//    building tuning. ──
+function antiStuckEject(){
+  // spiral outward for the nearest spot clear of every obstacle circle at a sane support height
+  for(let r=1.1;r<=10;r+=0.7) for(let a=0;a<6.2832;a+=0.45){
+    const x=player.x+Math.cos(a)*r, z=player.z+Math.sin(a)*r;
+    if(terrainH(x,z)<0.2) continue;                              // don't eject into water/abyss
+    let clear=true;
+    for(let i=0;i<obstacles.length;i++){ const o=obstacles[i]; if(o.yMax!=null&&player.y>o.yMax) continue;
+      const dx=x-o.x,dz=z-o.z,min=o.r+player.r+0.06; if(dx*dx+dz*dz<min*min){ clear=false; break; } }
+    if(!clear) continue;
+    const sy=supportAt(x,z,player.y+3); if(Math.abs(sy-player.y)>7) continue;   // no flinging onto a roof or into a pit
+    player.x=x; player.z=z; player.y=sy; player.vy=0; player.grounded=true;
+    if(typeof floater==="function") floater(x,EYE,z,"freed","#bfe0ff");
+    return true;
+  }
+  return false;
+}
+function antiStuckGuardian(){
+  if(inDungeon||inNetwork||!player.alive||player.aboardShip||typeof structures==="undefined") return;
+  // (1) trapped UNDER a ground slab → lift onto it
+  if(player.grounded){
+    for(let i=0;i<structures.length;i++){ const st=structures[i];
+      const ddx=player.x-st.bx, ddz=player.z-st.bz; if(ddx*ddx+ddz*ddz>st.r2) continue;
+      const lx=ddx*st.cos-ddz*st.sin, lz=ddx*st.sin+ddz*st.cos;
+      for(const p of st.platforms){ if(p.y>0.7) continue;         // only the ground floor, never an upper storey/raised deck
+        if(lx>=p.x0&&lx<=p.x1&&lz>=p.z0&&lz<=p.z1){ const py=st.baseY+p.y;
+          if(py>player.y+STEP_UP+0.02 && py-player.y<6){ player.y=py; player.vy=0; player.grounded=true; } } }
+    }
+  }
+  // (2) wedged with input but no progress → auto-free (rarely needed once (1) is in place)
+  if((player._blockRun||0)>1.2 && (player._autoUnstuckT||0)<now()){
+    player._autoUnstuckT=now()+1500;
+    if(antiStuckEject()){ player._blockRun=0; player._unstuckHintSeen=1; }
+  }
+}
 let castReticle=null;
 function showCastReticle(x,z,r,col){
   if(!castReticle){ castReticle=new THREE.Mesh(new THREE.RingGeometry(0.88,1,30),
@@ -18280,6 +18320,7 @@ function update(dt){
         player.y=support; player.vy=0; player.grounded=true; fallDamage(drop);
       }
     }
+    antiStuckGuardian();   // never leave the player trapped in/on/under a building or structure
   }
   }   // ← end of on-foot movement (skipped while aboard a ship)
   // timers/regen
