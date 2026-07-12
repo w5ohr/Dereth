@@ -7928,6 +7928,7 @@ function buildWorld(){
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfPeople(); assignGltfNpcs();   // populate some townsfolk with real CDN people models (async; procedural fallback)
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
+  loadGltfHorse();                       // preload the rigged horse model for mounts
   if(typeof buildHarbors==="function") buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
   if(typeof spawnOwnedHorses==="function") spawnOwnedHorses();             // #725: parked horses stand back up where they were left
@@ -24268,6 +24269,21 @@ const HORSE_TYPES={
   shadow:  {name:"Shadowmane",         cost:60000, spd:5.0, hp:380, coat:0x141018, mane:0x2a1030, ember:true},
 };
 const HORSE_MAX=20;
+const HORSE_H=2.15;                  // target withers-span height (world units) for the rigged horse model
+const HORSE_MODEL="assets/models/animals/Horse.glb";   // CC0 Quaternius Animated Animals — rigged, Gallop/Walk/Idle/Eating clips
+let gltfHorse=null, _horseLoadStarted=false;
+function loadGltfHorse(){
+  if(_horseLoadStarted||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
+  _horseLoadStarted=true;
+  new THREE.GLTFLoader().load(HORSE_MODEL, g=>{
+    // measure native height from the SKELETON (this rig's skinned-mesh boxes are degenerate)
+    let sk=null; g.scene.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton)sk=o.skeleton; });
+    let h=1; if(sk){ const b=new THREE.Box3(),v=new THREE.Vector3(); g.scene.updateWorldMatrix(true,true);
+      for(const bn of sk.bones){ bn.getWorldPosition(v); b.expandByPoint(v); } h=(b.max.y-b.min.y)||1; }
+    gltfHorse={scene:g.scene, anims:g.animations||[], h};
+    console.log("Loaded the horse model ("+(g.animations||[]).length+" clips).");
+  }, undefined, e=>console.log("horse model failed:",(e&&e.message)||""));
+}
 let horses=[];              // live PARKED world entities: {rec, mesh, gt (graze timer), ph (gallop phase)}
 let mountMesh=null;         // the mesh under you while riding (its rec is player.mountRec)
 const _coatTexCache={};
@@ -24380,344 +24396,72 @@ function loftTube(stations,segR,uvRepeat,asym){
 function buildHorseMesh(tk,packs){
   const T=HORSE_TYPES[tk]||HORSE_TYPES.bay;
   const g=new THREE.Group();
-  const coatTex=horseCoatTex(tk);
-  const coat=new THREE.MeshStandardMaterial({map:coatTex,roughness:0.8,metalness:0.02,
-    normalMap:lumNormalTex(coatTex),normalScale:new THREE.Vector2(0.3,0.3)});
-  const dark=new THREE.MeshStandardMaterial({color:T.mane,roughness:0.95});
-  const legCoat=coat;                                              // ONE hide: legs wear the same coat texture
-  const tack=new THREE.MeshStandardMaterial({color:0x3e2a16,roughness:0.7});
-  const points=coat;                                               // no contrasting leg points — the horse is one solid colour
-  // ── ONE skin: poll → crest → withers → back → croup → dock ──
-  const body=new THREE.Mesh(loftTube([
-    {y:2.04,z:1.16,w:0.08, h:0.095},   // just under the poll
-    {y:1.94,z:1.04,w:0.10, h:0.155},   // upper neck — the convex CREST curve behind the poll
-    {y:1.72,z:0.85,w:0.112,h:0.17},    // mid neck — the throatlatch stays REFINED under the jowl
-    {y:1.47,z:0.68,w:0.16, h:0.275},   // neck base — the second, longer curve into the withers
-    {y:1.28,z:0.46,w:0.205,h:0.375},   // withers/chest — withers a touch ABOVE the croup
-    {y:1.18,z:0.12,w:0.215,h:0.415},   // heart-girth — deepest point, just behind the elbow
-    {y:1.17,z:-0.26,w:0.258,h:0.40},   // ANATOMY PASS 12: well-sprung barrel — WIDEST just behind girth
-    {y:1.21,z:-0.57,w:0.228,h:0.365},  // ANATOMY PASS 24: thirds evened — midsection pulled forward so
-                                       // fore/mid/hind read balanced, topline shorter than underline
-    {y:1.27,z:-0.86,w:0.205,h:0.30},   // ANATOMY PASS 14: croup — oval, gently sloping, well-rounded
-    {y:1.30,z:-1.04,w:0.06, h:0.08},   // dock
-  ],18,1,{top:0.88,bot:1.04}),(()=>{   // flat back, round (not pendulous) belly
-    const bm=coat.clone(); bm.normalMap=lumNormalTex(horseMuscleTex(),2.4);
-    bm.normalScale=new THREE.Vector2(0.7,0.7); return bm; })());
-  g.add(body);
-  for(const e2 of[-1,1]){                                            // PHOTO-STUDY: the neck-into-shoulder groove
-    const shg=new THREE.Mesh(new THREE.SphereGeometry(0.09,8,7),coat);
-    shg.scale.set(0.4,1.5,0.7); shg.position.set(e2*0.135,1.34,0.5); shg.rotation.x=-0.5; g.add(shg); }
-  // pectoral breast between the forelegs and round APPLE quarters over the hips — large,
-  // barely-proud volumes that melt into the main skin
-  const withersRidge=new THREE.Mesh(new THREE.SphereGeometry(0.11,9,7),coat);   // ANATOMY PASS 7: the withers
-  withersRidge.scale.set(0.30,0.55,1.55); withersRidge.position.set(0,1.565,0.42);  // are a narrow PROMINENT ridge
-  g.add(withersRidge);                                                              // between the shoulder blades
-  // ANATOMY PASS 9: the breast is PAIRED pectoral lobes forming an inverted "V" with a centre cleft
-  for(const e2 of[-1,1]){
-    const pec=new THREE.Mesh(new THREE.SphereGeometry(0.11,10,8),coat);
-    pec.scale.set(0.62,1.15,0.85); pec.position.set(e2*0.072,1.0,0.62);
-    pec.rotation.z=e2*0.18; g.add(pec); }                                       // splay to open the V downward
-  const breast=new THREE.Mesh(loftTube([
-    {y:1.08,z:0.56,w:0.10,h:0.13},{y:1.0,z:0.66,w:0.115,h:0.15},{y:0.98,z:0.74,w:0.09,h:0.11}],10,1),coat);
-  g.add(breast);
-  for(const e2 of[-1,1]){
-    const pos2=new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6),coat);       // PASS 8: the point of shoulder —
-    pos2.scale.set(0.7,0.9,0.9); pos2.position.set(e2*0.105,1.03,0.58); g.add(pos2);   // the humerus bump on the chest
-    const hipPt=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,6),coat);        // ANATOMY PASS 14: point of hip —
-    hipPt.scale.set(0.85,0.7,0.9); hipPt.position.set(e2*0.165,1.33,-0.66); g.add(hipPt);   // bony bump at haunch front
-    const qtr=new THREE.Mesh(new THREE.SphereGeometry(0.235,14,11),coat);      // ANATOMY PASS 18: the quarters are
-    qtr.scale.set(0.66,1.05,1.1); qtr.position.set(e2*0.13,1.11,-0.72); g.add(qtr);   // apple-round, WIDEST low (stifle
-    const buttock=new THREE.Mesh(new THREE.SphereGeometry(0.15,10,8),coat);     // level), meeting at a centre cleft
-    buttock.scale.set(0.7,1.2,0.7); buttock.position.set(e2*0.08,1.0,-0.92); g.add(buttock); }   // buttock drops vertical behind
-  // ── the head: its own small loft (pivots at the poll for the gait pendulum) ──
-  const head=new THREE.Group(); head.position.set(0,2.03,1.19); head.rotation.x=0.5; head.scale.setScalar(0.94);   // PHOTO-STUDY: refined head, poll ~level with withers
-  const throat=new THREE.Mesh(new THREE.SphereGeometry(0.085,9,7),coat);            // clean head-neck junction — the
-  throat.scale.set(0.7,1.1,0.9); throat.position.set(0,1.74,0.94); g.add(throat);   // jaw flows into the neck, no hollow
-  // #744: the head is a WEDGE — a straight declining topline (forehead → nasal → muzzle) over a
-  // bottom line that drops deep at the jowl and sweeps up to the chin. Stations derive from the
-  // two profile lines: centre=(top+bot)/2, height=(top-bot)/2.
-  const headZ =[-0.13, 0.00, 0.14, 0.28, 0.40, 0.50];
-  const headTop=[0.115, 0.125, 0.095, 0.062, 0.034, 0.012];
-  const headBot=[-0.075,-0.165,-0.115,-0.072,-0.058,-0.044];
-  const headW =[0.078, 0.114, 0.082, 0.060, 0.050, 0.037];   // broad forehead, tapering muzzle
-  const skull=new THREE.Mesh(loftTube(headZ.map((z,i)=>({
-    y:(headTop[i]+headBot[i])/2, z, w:headW[i], h:(headTop[i]-headBot[i])/2 })),12,1),coat);
-  head.add(skull);
-  const chin=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,6),coat); chin.scale.set(0.8,0.7,1.05); chin.position.set(0,-0.068,0.415); head.add(chin);
-  const muzzle=new THREE.Mesh(new THREE.SphereGeometry(0.062,10,8),coat);               // PHOTO-STUDY: soft ROUND muzzle box
-  muzzle.scale.set(0.92,0.85,0.7); muzzle.position.set(0,-0.02,0.47); head.add(muzzle);
-  const upperLip=new THREE.Mesh(new THREE.SphereGeometry(0.034,8,6),coat);               // the mobile upper lip
-  upperLip.scale.set(0.95,0.62,0.85); upperLip.position.set(0,-0.03,0.505); head.add(upperLip);
-  const jowl=new THREE.Mesh(new THREE.SphereGeometry(0.085,10,8),coat);                 // central jaw mass
-  jowl.scale.set(0.8,0.95,1.05); jowl.position.set(0,-0.06,0.0); head.add(jowl);
-  for(const e2 of[-1,1]){
-    const cheekDisc=new THREE.Mesh(new THREE.SphereGeometry(0.085,9,7),coat);            // ANATOMY PASS 4: the jowl is
-    cheekDisc.scale.set(0.48,1.05,1.1); cheekDisc.position.set(e2*0.05,-0.055,-0.015);   // FLESHY AND FULL — a round
-    head.add(cheekDisc);                                                                 // masseter disc
-    const crest2=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,6),coat);                // facial crest: the bony
-    crest2.scale.set(0.28,0.36,1.9); crest2.position.set(e2*0.054,-0.005,0.20);          // ridge under the eye,
-    crest2.rotation.x=0.1; head.add(crest2);                                             // running to the muzzle
-    const brow=new THREE.Mesh(new THREE.SphereGeometry(0.042,8,6),coat);                 // brow ridge over the eye
-    brow.scale.set(0.6,0.4,0.9); brow.position.set(e2*0.08,0.104,0.055); head.add(brow);
-    const lip=new THREE.Mesh(new THREE.SphereGeometry(0.03,7,5),coat);                   // the lower lip step
-    lip.scale.set(0.9,0.7,1.0); lip.position.set(e2*0.018,-0.07,0.435); head.add(lip);
-  }
-  for(const e2 of[-1,1]){
-    const nos=new THREE.Mesh(new THREE.SphereGeometry(0.023,7,5),dark);                 // ANATOMY PASS 3: nostrils are
-    nos.scale.set(0.6,1.5,0.85); nos.rotation.z=e2*0.55;                                 // LARGE flexible commas riding
-    nos.position.set(e2*0.041,0.008,0.468); head.add(nos);                               // the outer muzzle
-    const alar=new THREE.Mesh(new THREE.SphereGeometry(0.016,6,5),coat);                 // alar-fold rim wrapping the
-    alar.scale.set(0.7,1.3,0.8); alar.rotation.z=e2*0.55;                                // nostril's outer edge
-    alar.position.set(e2*0.052,0.006,0.462); head.add(alar);
-    const eye=new THREE.Mesh(new THREE.SphereGeometry(0.03,8,7),
-      T.ember?new THREE.MeshStandardMaterial({color:0xff5a20,emissive:0xff5a20,emissiveIntensity:1.6})
-             :new THREE.MeshStandardMaterial({color:0x14100c,roughness:0.25}));
-    eye.scale.set(1.0,0.82,1.18);                                          // ANATOMY PASS 2: horizontally-oval
-    eye.position.set(e2*0.095,0.075,0.06); head.add(eye);                  // almond, set at the head's corners
-    const lash=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.006,0.062),dark);
-    lash.position.set(e2*0.104,0.098,0.062); lash.rotation.z=e2*0.5; head.add(lash);   // upper lid only
-    const socket=new THREE.Mesh(new THREE.SphereGeometry(0.036,7,6),coat);
-    socket.scale.set(0.9,0.8,1.1); socket.position.set(e2*0.085,0.07,0.06); head.add(socket);
-    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.048,0.155*(T.ears||1),7),coat);  // PHOTO-STUDY: neat medium ear,
-    ear.scale.z=0.55; ear.position.set(e2*0.058,0.16,-0.088);                           // wide base, tip carried a
-    ear.rotation.z=e2*0.18; ear.rotation.x=-0.12; ear.rotation.y=e2*0.32; head.add(ear);// touch inward
-    const earIn=new THREE.Mesh(new THREE.ConeGeometry(0.022,0.085*(T.ears||1),5),dark); // shadowed inner funnel
-    earIn.scale.z=0.5; earIn.position.set(e2*0.057,0.146,-0.082);
-    earIn.rotation.z=e2*0.13; earIn.rotation.x=-0.15; earIn.rotation.y=e2*0.35; head.add(earIn);
-    (g.userData.ears=g.userData.ears||[]).push(ear,earIn);                              // PASS 10 hooks flicks here
-    const cheek=new THREE.Mesh(new THREE.SphereGeometry(0.048,8,7),coat);               // PHOTO-STUDY: subtle masseter,
-    cheek.scale.set(0.55,1.0,1.15); cheek.position.set(e2*0.06,-0.03,0.05); head.add(cheek);   // no dark hollow
-    const glint=new THREE.Mesh(new THREE.SphereGeometry(0.008,5,4),new THREE.MeshBasicMaterial({color:0xffffff}));
-    glint.position.set(e2*0.112,0.082,0.075); head.add(glint);                          // #742: the live-eye glint
-  }
-  const mouth=new THREE.Mesh(new THREE.BoxGeometry(0.074,0.007,0.05),dark);            // PASS 7: the lip crease
-  mouth.position.set(0,-0.052,0.455); head.add(mouth);
-  // ══ BRIDLE (photo-study: crownpiece, browband, cheekpieces, cavesson noseband, throatlatch, bit,
-  //    reins). Built in HEAD-LOCAL space so it flexes with the head. ══
-  const bridleM=new THREE.MeshStandardMaterial({color:0x2c1a0e,roughness:0.55,metalness:0.05});  // PHOTO-STUDY: fine dark oiled leather
-  const buckleM=new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.85});   // steel
-  const strapBox=(w,h,d)=>new THREE.BoxGeometry(w,h,d);
-  // BRIDLE PASS 1-2: NOSEBAND (cavesson) — a band encircling the muzzle above the bit
-  const nose=new THREE.Mesh(new THREE.TorusGeometry(0.068,0.009,6,18),bridleM);       // BRIDLE PASS 13: tighter cavesson
-  nose.rotation.x=Math.PI/2-0.08; nose.scale.set(1,0.82,1); nose.position.set(0,-0.008,0.35); head.add(nose);
-  // BRIDLE PASS 3-4: BROWBAND across the forehead, just below the ears
-  const brow=new THREE.Mesh(strapBox(0.2,0.02,0.013),bridleM);
-  brow.position.set(0,0.11,-0.02); brow.rotation.x=-0.25; head.add(brow);
-  const browTrim=new THREE.Mesh(strapBox(0.19,0.008,0.006),                            // BRIDLE PASS 17: coloured trim
-    new THREE.MeshStandardMaterial({color:0x7a1e1e,roughness:0.7})); browTrim.position.set(0,0.115,-0.006); browTrim.rotation.x=-0.25; head.add(browTrim);
-  // BRIDLE PASS 5: CROWNPIECE over the poll behind the ears (ties the browband ends over the head)
-  const crown=new THREE.Mesh(strapBox(0.19,0.016,0.03),bridleM);
-  crown.position.set(0,0.135,-0.075); crown.rotation.x=0.4; head.add(crown);
-  for(const e2 of[-1,1]){
-    // BRIDLE PASS 6-7: CHEEKPIECE runs from the crownpiece down the face to the bit ring
-    const cheekCur=new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(e2*0.095,0.13,-0.05), new THREE.Vector3(e2*0.11,0.03,0.2),
-      new THREE.Vector3(e2*0.098,-0.05,0.44));
-    const cp=new THREE.Mesh(new THREE.TubeGeometry(cheekCur,10,0.01,5),bridleM); head.add(cp);
-    // BRIDLE PASS 8: a small buckle where the cheekpiece meets the noseband
-    const bk=new THREE.Mesh(strapBox(0.02,0.02,0.01),buckleM); bk.position.set(e2*0.104,0.0,0.28); head.add(bk);
-    // BRIDLE PASS 9: NOSEBAND cheek-strap up to the crownpiece (the cavesson hangs from its own strap)
-    const nb=new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(e2*0.09,0.12,-0.02), new THREE.Vector3(e2*0.1,0.05,0.16),
-      new THREE.Vector3(e2*0.075,-0.01,0.33)),8,0.007,5),bridleM); head.add(nb);
-  }
-  // BRIDLE PASS 10: THROATLATCH — loops under the jaw from behind the ears
-  const throatL=new THREE.Mesh(new THREE.TorusGeometry(0.12,0.008,6,16,Math.PI*1.15),bridleM);
-  throatL.rotation.set(0.1,0,Math.PI*0.42); throatL.position.set(0,0.0,-0.02); head.add(throatL);
-  const tlBuckle=new THREE.Mesh(strapBox(0.016,0.024,0.01),buckleM);                   // BRIDLE PASS 18: throatlatch buckle
-  tlBuckle.position.set(-0.11,-0.02,0.02); head.add(tlBuckle);
-  for(const e2 of[-1,1]){ const cpBuckle=new THREE.Mesh(strapBox(0.018,0.022,0.01),buckleM);   // PASS 19: cheek buckles
-    cpBuckle.position.set(e2*0.108,0.06,0.06); head.add(cpBuckle); }
-  // BRIDLE PASS 11: the BIT — a bar across the mouth corners with a ring showing each side
-  const bitBar=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.19,8),buckleM);
-  bitBar.rotation.z=Math.PI/2; bitBar.position.set(0,-0.055,0.44); head.add(bitBar);
-  for(const e2 of[-1,1]){ const ring=new THREE.Mesh(new THREE.TorusGeometry(0.028,0.006,6,14),buckleM);
-    ring.position.set(e2*0.095,-0.055,0.44); ring.rotation.y=Math.PI/2; head.add(ring); }
-  g.add(head); g.userData.head=head;
-  // BRIDLE PASS 12: REINS from the bit rings back along the neck to the rider's hands
-  for(const e2 of[-1,1]){ const cur=new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(e2*0.1,1.79,1.52), new THREE.Vector3(e2*0.14,1.66,0.95),
-      new THREE.Vector3(e2*0.12,1.55,0.35));
-    const rein=new THREE.Mesh(new THREE.TubeGeometry(cur,10,0.012,5),bridleM); g.add(rein);
-    const keeper=new THREE.Mesh(new THREE.TorusGeometry(0.02,0.006,6,12),bridleM);      // BRIDLE PASS 20: rein keeper loop
-    keeper.position.set(e2*0.115,1.72,1.05); keeper.rotation.y=Math.PI/2; g.add(keeper); }
-  // 100-pass: the MANE is HAIR — cards pivot at their TOP EDGE on the crest line and hang
-  // VERTICALLY (hair obeys gravity), draping down the right side of the neck. A vertical curtain
-  // off a diagonal crest steps naturally, like a combed mane.
-  { const hairT2=horseHairTex(T.mane);
-    const maneMat=new THREE.MeshStandardMaterial({map:hairT2,transparent:true,alphaTest:0.28,
-      side:THREE.DoubleSide,roughness:0.9});
-    const hang=(w,len)=>{ const geo=new THREE.PlaneGeometry(w,len); geo.translate(0,-len/2,0); return geo; };
-    // ANATOMY PASS 21: mane grows crest poll->withers, but a short BRIDLE PATH is clipped behind
-    // the ears (first station dropped) so the crownpiece sits flat
-    // PHOTO-STUDY: the mane is a CONTINUOUS falling curtain lying flat on the near side of the neck,
-    // longest through the mid-neck, tapering at poll and withers. Dense overlapping cards, no gaps.
-    const crest=[[2.0,1.02],[1.92,0.94],[1.83,0.86],[1.74,0.78],[1.64,0.70],[1.55,0.63],[1.46,0.565],[1.39,0.52]];
-    crest.forEach(([cy,cz],ci)=>{
-      const t=ci/(crest.length-1);
-      const len=0.20+Math.sin(t*Math.PI)*0.14;                       // longest mid-neck (sine bulge)
-      for(let layer=0;layer<3;layer++){                              // three overlapping layers = a solid fall
-        const card=new THREE.Mesh(hang(0.15,len*(1-layer*0.08)),maneMat);
-        card.position.set(0.045+layer*0.028,cy+0.02,cz-0.02+layer*0.03);
-        card.rotation.y=Math.PI/2+(layer-1)*0.06;                    // near-flat against the neck side
-        card.rotation.z=-0.16-layer*0.06;                            // hangs DOWN the side, tips drift out
-        g.add(card);
+  g.userData.head=null; g.userData.tail=null; g.userData.ears=null; g.userData.legs=[];   // rigged-GLB rig: the old procedural hooks are inert no-ops
+  if(gltfHorse&&gltfHorse.scene&&typeof THREE.SkeletonUtils!=="undefined"){
+    try{
+      const clone=THREE.SkeletonUtils.clone(gltfHorse.scene);
+      clone.updateWorldMatrix(true,true);
+      // this Quaternius rig ships degenerate skinned-mesh boxes, so size/ground from the SKELETON BONES
+      const boneBox=(o)=>{ let sk=null; o.traverse(n=>{ if(n.isSkinnedMesh&&n.skeleton)sk=n.skeleton; });
+        const b=new THREE.Box3(),v=new THREE.Vector3(); if(sk)for(const bn of sk.bones){bn.getWorldPosition(v);b.expandByPoint(v);} return b; };
+      const bb0=boneBox(clone); const nativeH=(bb0.max.y-bb0.min.y)||1;
+      let sc=HORSE_H/nativeH; if(tk==="pony")sc*=0.82; if(tk==="mule")sc*=0.92;
+      clone.scale.setScalar(sc); clone.updateWorldMatrix(true,true);
+      const bb=boneBox(clone); clone.position.y-=bb.min.y-0.12*sc;   // feet to ground (hoof reaches below the lowest bone)
+      clone.rotation.y=Math.PI;                                       // GLB faces -Z natively → flip to +Z (nose forward, matching mount rotation)
+      const coat=new THREE.Color(T.coat), mane=new THREE.Color(T.mane);
+      clone.traverse(o=>{ if(o.isMesh&&o.material){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true;
+        const nm=o.material.name||"";
+        if(/^Main/.test(nm)){ o.material=o.material.clone(); if(o.material.color)o.material.color.lerp(coat,0.82); }        // body coat → breed colour
+        else if(/Hair/.test(nm)){ o.material=o.material.clone(); if(o.material.color)o.material.color.lerp(mane,0.9); }     // mane + tail → mane colour
+        else if(/Muzzle/.test(nm)){ o.material=o.material.clone(); if(o.material.color)o.material.color.lerp(coat.clone().multiplyScalar(0.55),0.6); } } });
+      g.add(clone);
+      // ── saddle, anchored to the mid-back spine bone so it sits true at any scale ──
+      clone.updateWorldMatrix(true,true);
+      const t2=clone.getObjectByName("Torso2")||clone.getObjectByName("Torso"); const wp=new THREE.Vector3();
+      let backY=1.35, backZ=0, bw=0.62;
+      if(t2){ t2.getWorldPosition(wp); backY=wp.y+0.24; backZ=wp.z;
+        const leather=new THREE.MeshStandardMaterial({color:0x4a2e18,roughness:0.6});
+        const padM=new THREE.MeshStandardMaterial({color:0x5a1414,roughness:0.9});
+        const irM=new THREE.MeshStandardMaterial({color:0x9298a0,metalness:0.8,roughness:0.3});
+        const blanket=new THREE.Mesh(new THREE.BoxGeometry(bw,0.05,0.8),padM); blanket.position.set(0,backY-0.02,backZ); g.add(blanket);
+        const seat=new THREE.Mesh(new THREE.BoxGeometry(bw*0.72,0.1,0.6),leather); seat.position.set(0,backY+0.05,backZ); g.add(seat);
+        const pommel=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,6),leather); pommel.position.set(0,backY+0.11,backZ+0.3); g.add(pommel);
+        const cantle=new THREE.Mesh(new THREE.BoxGeometry(bw*0.6,0.11,0.06),leather); cantle.position.set(0,backY+0.1,backZ-0.28); g.add(cantle);
+        for(const e2 of[-1,1]){ const flap=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.3,0.42),leather); flap.position.set(e2*bw*0.42,backY-0.12,backZ); g.add(flap);
+          const iron=new THREE.Mesh(new THREE.TorusGeometry(0.05,0.012,6,12),irM); iron.position.set(e2*bw*0.46,backY-0.34,backZ); iron.rotation.y=Math.PI/2; g.add(iron); }
+        for(let p=0;p<(packs||0);p++){ for(const e2 of[-1,1]){ const bag=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.28,0.32),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
+          bag.position.set(e2*bw*0.5,backY-0.14,backZ-0.5-p*0.36); g.add(bag); } }
       }
-    });
-    const fore=new THREE.Mesh(hang(0.10,0.30),maneMat);              // the forelock LIES ALONG the nasal
-    fore.position.set(0.012,2.13,1.31); fore.rotation.x=0.88; g.add(fore);   // line between the eyes
-    const fore2=new THREE.Mesh(hang(0.08,0.24),maneMat);
-    fore2.position.set(-0.02,2.12,1.30); fore2.rotation.x=0.92; fore2.rotation.z=0.1; g.add(fore2);
+      g.userData.seatY=backY+0.33;   // where the rider's seat rests above the horse's feet
+      // ── animation: idle / walk / gallop / graze(Eating), weight-blended by the update loop ──
+      if(gltfHorse.anims&&gltfHorse.anims.length){
+        const mx=new THREE.AnimationMixer(clone); const find=re=>gltfHorse.anims.find(c=>re.test(c.name));
+        const idleC=find(/Idle$/i)||gltfHorse.anims[0];
+        const clip=(re)=>{ const c=find(re)||idleC; return mx.clipAction(c); };
+        const act={ idle:mx.clipAction(idleC), walk:clip(/Walk/i), gallop:clip(/Gallop$/i), graze:clip(/Eating/i) };
+        for(const n in act){ if(act[n]){ act[n].play(); act[n].enabled=true; act[n].setEffectiveWeight(n==="idle"?1:0); } }
+        g.userData.horseMixer=mx; g.userData.horseAct=act;
+      }
+      g.userData.glbHorse=true;
+      return g;
+    }catch(e){ if(typeof console!=="undefined") console.log("horse GLB build failed, using placeholder:",(e&&e.message)||e); }
   }
-  // ── legs (unchanged rig: base angles the gait engine preserves) ──
-  const legs=[];
-  // #744: REAL leg architecture. Front: a straight column — muscled forearm → flat carpus knob →
-  // slim cannon → fetlock → sloped pastern → hoof. Hind: the ZIGZAG — femur slopes FORWARD from
-  // the hip to the stifle, the gaskin slopes BACK to the hock, and the cannon drops vertical.
-  // The kink is baked into the upper-leg geometry, so the two-joint gait rig animates it whole.
-  for(const[lx,lz]of[[-0.15,0.52],[0.15,0.52],[-0.185,-0.6],[0.185,-0.6]]){
-    const front=lz>0;
-    const leg=new THREE.Group(); leg.position.set(lx,front?1.14:1.24,lz);
-    let hockY;
-    if(front){
-      const fair=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.085,0.36,9),legCoat);  // PHOTO-STUDY: broad muscular
-      fair.position.y=0.03; leg.add(fair);                                                // forearm...
-      const forearm=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.045,0.5,9),legCoat);// ...tapering SHARPLY to a
-      forearm.position.y=-0.28; leg.add(forearm);                                         // fine cannon below the knee
-      const carpus=new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6),legCoat);   // ANATOMY PASS 10: the knee is
-      carpus.scale.set(1.15,0.9,0.95); carpus.position.y=-0.54; leg.add(carpus);   // a FLAT WIDE knob (broad
-      const carpusFront=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.07,0.04),legCoat);   // tendon-attachment face)
-      carpusFront.position.set(0,-0.54,0.05); leg.add(carpusFront);
-      hockY=-0.54;
-    } else {
-      const thigh=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.10,0.38,9),legCoat);   // PHOTO-STUDY: powerful thigh
-      thigh.rotation.x=-0.42; thigh.position.set(0,-0.15,0.055); leg.add(thigh);
-      const stifle=new THREE.Mesh(new THREE.SphereGeometry(0.082,8,6),legCoat);         // ANATOMY PASS 15: the stifle
-      stifle.scale.set(0.95,1.05,1.0); stifle.position.set(0,-0.30,0.135); leg.add(stifle);   // sits high and FORWARD
-      const flankFold=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,7),legCoat);       // ANATOMY PASS 19: the stifle
-      flankFold.scale.set(0.55,1.3,0.9); flankFold.position.set(0,-0.06,0.16); leg.add(flankFold);   // fold fills the flank
-      const gaskin=new THREE.Mesh(new THREE.CylinderGeometry(0.098,0.046,0.44,9),legCoat); // PHOTO-STUDY: heavy gaskin,
-      // broad muscle — wide at the top, tapering to the hock
-      gaskin.rotation.x=0.46; gaskin.position.set(0,-0.5,0.015); leg.add(gaskin);
-      const hock=new THREE.Mesh(new THREE.SphereGeometry(0.058,8,6),legCoat);
-      hock.scale.set(0.9,1.15,1.0); hock.position.set(0,-0.69,-0.075); leg.add(hock);  // ANATOMY PASS 16: the hock
-      const calc=new THREE.Mesh(new THREE.SphereGeometry(0.036,7,6),legCoat);          // point of hock (calcaneus) —
-      calc.scale.set(0.8,1.1,0.8); calc.position.set(0,-0.66,-0.13); leg.add(calc);    // prominent bump at the BACK
-      hockY=-0.69;
-    }
-    const knee=new THREE.Group(); knee.position.set(0,hockY,front?0:-0.085); leg.add(knee);
-    const cLen=front?0.42:0.36;
-    const cannon=new THREE.Mesh(new THREE.CylinderGeometry(0.037,0.032,cLen,8),points);   // ANATOMY PASS 23: clean,
-    cannon.scale.z=0.8; cannon.position.y=-cLen/2; knee.add(cannon);                   // slender, FLAT cannon — no muscle here
-    const tendon=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.018,cLen*0.92,6),points);   // ANATOMY PASS 10: the
-    tendon.position.set(0,-cLen/2,-0.038); knee.add(tendon);                           // flexor tendon stands off the back
-    const fet=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,6),points);              // ANATOMY PASS 11: the fetlock
-    fet.scale.set(1.0,0.9,1.05); fet.position.set(0,-cLen-0.01,-0.008); knee.add(fet);            // is a defined round joint
-    const pAng=front?0.42:0.34;                                                        // hind pastern more upright
-    const past=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.038,0.1,7),points);    // ~48deg, matching the hoof
-    past.position.set(0,-cLen-0.06,0.022); past.rotation.x=pAng; knee.add(past);
-    const horn=new THREE.MeshStandardMaterial({color:0x241a10,roughness:0.45,metalness:0.05});
-    const coronet=new THREE.Mesh(new THREE.CylinderGeometry(0.048,0.062,0.02,10),points);         // coronet band —
-    coronet.scale.z=1.1; coronet.position.set(0,-cLen-0.095,0.048); knee.add(coronet);            // hoof grows from it
-    const hoof=new THREE.Mesh(new THREE.CylinderGeometry(0.066,0.092,0.092,12),horn);  // PHOTO-STUDY: solid round hoof,
-    hoof.scale.z=1.14; hoof.position.set(0,-cLen-0.142,0.052); hoof.rotation.x=pAng*0.5; knee.add(hoof);  // wall continues the pastern
-    const heel=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.05,0.05),horn);             // the heel bulbs at the back
-    heel.position.set(0,-cLen-0.125,0.006); knee.add(heel);
-    const horn2=new THREE.MeshStandardMaterial({color:0x3a2c1c,roughness:0.7});      // ANATOMY PASS 20: leathery callosity
-    const chestnut=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.07,0.018),horn2);     // chestnut on the INSIDE of the leg
-    chestnut.position.set(-lx>0?0.05:-0.05,front?-0.30:-0.44,front?0.02:0.0); leg.add(chestnut);
-    const ergot=new THREE.Mesh(new THREE.SphereGeometry(0.014,6,5),horn2);           // ergot under the fetlock
-    ergot.position.set(0,-cLen-0.03,-0.03); knee.add(ergot);
-    const b0=front?0:0.06, k0=front?0:-0.06;                                           // hind stance: a whisper under itself
-    leg.rotation.x=b0; knee.rotation.x=k0;
-    g.add(leg); legs.push({g:leg,knee,front,b0,k0});
-  }
-  g.userData.legs=legs;
-  // ── the tail IS HAIR: a short dock (real docks reach just past the buttock) buried under a
-  //    radial fall of strand cards that hangs to the hocks — a fountain, not a solid slab ──
-  const tail=new THREE.Group(); tail.position.set(0,1.36,-1.02);   // ANATOMY PASS 17: dock set LEVEL with the croup top
-  const hairT=horseHairTex(T.mane);
-  const hairMat=new THREE.MeshStandardMaterial({map:hairT,transparent:true,alphaTest:0.28,
-    side:THREE.DoubleSide,roughness:0.9});
-  const dock=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.022,0.26,7),dark);   // thicker fleshy dock
-  dock.rotation.x=0.5; dock.position.set(0,-0.10,-0.06); tail.add(dock);            // arcs out then hangs
-  for(let i=0;i<12;i++){                                            // PHOTO-STUDY: a full thick tail fall
-    const a=i/12*Math.PI*2, r0=0.045+((i*7)%3)*0.014;
-    const len=0.72+((i*5)%4)*0.05, wid=0.13+((i*3)%3)*0.02;
-    const card=new THREE.Mesh(new THREE.PlaneGeometry(wid,len),hairMat);
-    card.position.set(Math.sin(a)*r0,-0.05-len*0.42,-0.04+Math.cos(a)*r0*0.8);
-    card.rotation.y=a+(((i*11)%5)-2)*0.06;                          // face outward, slightly scattered
-    card.rotation.x=0.10+Math.cos(a)*0.10;                          // flare a whisper off the vertical
-    tail.add(card);
-  }
-  for(let i=0;i<3;i++){                                             // crossed core cards fill the centre
-    const card=new THREE.Mesh(new THREE.PlaneGeometry(0.14,0.72),hairMat);
-    card.position.set(0,-0.34,-0.05); card.rotation.y=i/3*Math.PI; tail.add(card);
-  }
-  g.add(tail); g.userData.tail=tail;
-  // ══ SADDLE (photo-study: English-saddle engraving + placement shots). Sits JUST BEHIND the
-  //    withers on a pad; raised pommel & cantle over a dished seat; big flaps with knee rolls;
-  //    panels lift it off the back; stirrup leathers & irons; girth under the belly. ══
-  const leatherM=new THREE.MeshStandardMaterial({color:0x4a2e18,roughness:0.55,metalness:0.04});   // saddle leather
-  const padM=new THREE.MeshStandardMaterial({color:0x3a3340,roughness:0.95});                     // PHOTO-STUDY: quilted numnah
-  // SADDLE PASS 1-2: the PAD / numnah under the tree, a touch larger than the saddle all round
-  const pad=new THREE.Mesh(loftTube([
-    {y:1.585,z:0.36,w:0.255,h:0.028},{y:1.55,z:0.10,w:0.27,h:0.028},
-    {y:1.535,z:-0.16,w:0.27,h:0.028},{y:1.55,z:-0.36,w:0.245,h:0.026},
-  ],12,1),padM); g.add(pad);
-  const padTrim=new THREE.Mesh(loftTube([                                              // SADDLE PASS 17: coloured border
-    {y:1.578,z:0.37,w:0.258,h:0.008},{y:1.543,z:0.10,w:0.273,h:0.008},
-    {y:1.528,z:-0.16,w:0.273,h:0.008},{y:1.543,z:-0.37,w:0.248,h:0.008},
-  ],12,1),new THREE.MeshStandardMaterial({color:0x6a1818,roughness:0.85})); g.add(padTrim);
-  // SADDLE PASS 3-6: the SEAT — pommel swell (front) → dished centre → cantle rise (back)
-  const seat=new THREE.Mesh(loftTube([
-    {y:1.60,z:0.26,w:0.07,h:0.05},    // pommel throat
-    {y:1.635,z:0.20,w:0.135,h:0.07},  // POMMEL swell rises
-    {y:1.585,z:0.06,w:0.175,h:0.06},  // seat dips
-    {y:1.575,z:-0.10,w:0.18,h:0.06},  // deepest seat
-    {y:1.62,z:-0.24,w:0.155,h:0.08},  // CANTLE rises
-    {y:1.645,z:-0.30,w:0.09,h:0.05},  // cantle cap
-  ],12,1,{top:1.0,bot:0.45}),leatherM); g.add(seat);
-  // SADDLE PASS 7: pommel arch cap
-  const pom=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,7),leatherM);
-  pom.scale.set(1.2,0.8,0.9); pom.position.set(0,1.64,0.235); g.add(pom);
-  const seatStitch=new THREE.Mesh(new THREE.BoxGeometry(0.004,0.006,0.42),             // SADDLE PASS 19: seat centre seam
-    new THREE.MeshStandardMaterial({color:0x2a1a0e,roughness:0.7})); seatStitch.position.set(0,1.618,-0.02); g.add(seatStitch);
-  const gullet=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.03,0.05),padM);             // SADDLE PASS 20: gullet clearance notch
-  gullet.position.set(0,1.585,0.26); g.add(gullet);
-  for(const e2 of[-1,1]){
-    // SADDLE PASS 8-9: the FLAP hangs down the barrel, larger and rounded (English cut)
-    const flap=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.34,0.44),leatherM);
-    flap.position.set(e2*0.24,1.40,-0.02); flap.rotation.z=e2*0.2; flap.rotation.x=0.02; g.add(flap);
-    // SADDLE PASS 10: a KNEE ROLL padding the front of the flap
-    const roll=new THREE.Mesh(new THREE.CapsuleGeometry(0.03,0.16,4,7),leatherM);
-    roll.position.set(e2*0.255,1.44,0.16); roll.rotation.set(0.3,0,e2*0.2); g.add(roll);
-    // SADDLE PASS 11: the PANEL under the seat (the cushion that lifts it off the back)
-    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.09,0.5),padM);
-    panel.position.set(e2*0.11,1.52,-0.04); g.add(panel);
-    // SADDLE PASS 12-13: STIRRUP LEATHER (broad strap) → IRON stirrup hanging level
-    const leather=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.3,0.055),leatherM);
-    leather.position.set(e2*0.262,1.33,0.06); leather.rotation.z=e2*0.09; g.add(leather);
-    const iron=new THREE.Mesh(new THREE.TorusGeometry(0.05,0.011,6,12),
-      new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.85}));
-    iron.position.set(e2*0.283,1.17,0.06); iron.rotation.y=Math.PI/2; g.add(iron);
-    const tread=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.012,0.075),
-      new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.85}));
-    tread.position.set(e2*0.283,1.126,0.06); g.add(tread);
-  }
-  // SADDLE PASS 14: the GIRTH strap under the belly, behind the elbow
-  const girth=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.02,6,20),leatherM);
-  girth.scale.set(0.56,1,1); girth.position.set(0,1.19,0.14); g.add(girth);
-  // SADDLE PASS 15: a billet/buckle where the girth meets the flap
-  for(const e2 of[-1,1]){ const buck=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.05,0.02),
-      new THREE.MeshStandardMaterial({color:0x9298a0,roughness:0.3,metalness:0.8}));
-    buck.position.set(e2*0.2,1.30,0.14); g.add(buck); }
-  for(let p=0;p<(packs||0);p++){ for(const e2 of[-1,1]){
-    const bag=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.28,0.32),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
-    bag.position.set(e2*0.42,1.25,-0.4-p*0.38); g.add(bag); } }
+  // ── fallback (GLB not yet loaded, or a headless/stub context): a compact stand-in so every mount
+  //    mechanic still works and something recognisable shows if the model ever fails to load ──
+  const cm=new THREE.MeshStandardMaterial({color:T.coat,roughness:0.85});
+  const mm2=new THREE.MeshStandardMaterial({color:T.mane,roughness:0.9});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.62,1.5),cm); body.position.y=1.15; g.add(body);
+  const neck=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.6,0.3),cm); neck.position.set(0,1.5,0.78); neck.rotation.x=-0.55; g.add(neck);
+  const head=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.26,0.5),cm); head.position.set(0,1.78,1.02); g.add(head);
+  for(const[lx,lz]of[[-0.18,0.55],[0.18,0.55],[-0.18,-0.55],[0.18,-0.55]]){ const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.05,1.0,7),cm); leg.position.set(lx,0.5,lz); g.add(leg); }
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.5,0.08),mm2); tail.position.set(0,1.15,-0.82); tail.rotation.x=0.4; g.add(tail);
+  for(let p=0;p<(packs||0);p++){ for(const e2 of[-1,1]){ const bag=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.28,0.32),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
+    bag.position.set(e2*0.4,1.2,-0.4-p*0.38); g.add(bag); } }
+  g.userData.seatY=1.30;
   g.traverse(mm=>{ if(mm.isMesh) mm.castShadow=true; });
-  if(tk==="pony") g.scale.setScalar(0.78);
-  if(tk==="mule") g.scale.setScalar(0.9);
+  if(tk==="pony") g.scale.setScalar(0.82);
+  if(tk==="mule") g.scale.setScalar(0.92);
   return g;
 }
 
@@ -24903,7 +24647,15 @@ function buyHorse(tk){
 // per-frame: parked horses graze; the mounted horse gallops under you
 // PASS 10: micro-life shared by every idle horse — the graze dip, the tail swish, EAR FLICKS
 // (a quick independent swivel every few seconds), and the odd head shake. seed staggers herds.
-function horseIdleTick(mesh,h,t,seed){
+// rigged-horse animation: advance the mixer and ease the four clips' weights toward the active gait
+function horseGaitClip(mesh,dt,state){
+  const u=mesh&&mesh.userData; if(!u||!u.horseMixer||!u.horseAct) return;
+  u.horseMixer.update(dt);
+  const act=u.horseAct, e=Math.min(1,dt*5);
+  for(const n in act){ const a=act[n]; if(!a) continue; const w=a.getEffectiveWeight();
+    a.setEffectiveWeight(w+((n===state?1:0)-w)*e); }
+}
+function horseIdleTick(mesh,h,t,seed,dt){
   const hd=mesh.userData.head;
   if(hd){ if(h.gt<1.6&&h.gt>0) hd.rotation.x=0.45+Math.min(0.5,(1.6-h.gt))*0.9;      // dip to graze
     else { hd.rotation.x=0.45; if(h.gt<=0) h.gt=rnd(3,9); }
@@ -24917,17 +24669,18 @@ function horseIdleTick(mesh,h,t,seed){
   if(mesh.userData.tail){
     const shiver=Math.sin(t*0.47+seed)>0.97?0.3*Math.sin(t*30):0;                    // fly-shiver between swishes
     mesh.userData.tail.rotation.z=0.22*Math.sin(t*1.3+seed)+shiver; }
+  horseGaitClip(mesh,dt||0.016,(h.gt<2)?"graze":"idle");                             // GLB: play the grazing / idle clip
 }
 function updateHorses(dt){
   const t=now()/1000;
   for(const h of STABLE_STOCK){                                          // #739: the paddock stock grazes too
     h.gt-=dt;
-    horseIdleTick(h.mesh,h,t,h.mesh.position.x);
+    horseIdleTick(h.mesh,h,t,h.mesh.position.x,dt);
   }
   for(const h of horses){
     if(!h.mesh) continue;
     h.gt-=dt;
-    horseIdleTick(h.mesh,h,t,h.rec.id);
+    horseIdleTick(h.mesh,h,t,h.rec.id,dt);
   }
   if(player.mountRec&&mountMesh){
     const T=HORSE_TYPES[player.mountRec.type]||HORSE_TYPES.bay;
@@ -24946,6 +24699,7 @@ function updateHorses(dt){
         saveGame(); return; } }
     const spd=Math.hypot(player.vx||0,player.vz||0);
     const full=Math.max(1,(player.speed||8)*T.spd), k=Math.min(1,spd/full);   // 0..1 of this horse's top pace
+    horseGaitClip(mountMesh,dt,(k>0.45)?"gallop":(k>0.05)?"walk":"idle");      // GLB: canter/walk/idle clip under you
     const hy=_hgy(player.x,player.z,player.y);
     mountMesh.position.set(player.x,hy,player.z);
     if(spd>0.5) mountMesh.rotation.y=Math.atan2(player.vx,player.vz);
@@ -25005,7 +24759,7 @@ function updateHorses(dt){
     //    camera breathes with the gait and the third-person avatar sits the bounce. ──
     const p2=(mountMesh.userData.ph||0);
     const riderBob=k>0.45?Math.abs(Math.sin(p2*Math.PI-0.5))*0.10*k:Math.abs(Math.sin(p2*Math.PI*2-0.4))*0.02;
-    player.y=hy+1.30+bounce*0.6+riderBob;
+    player.y=hy+(mountMesh.userData.seatY||1.30)+bounce*0.6+riderBob;
     player.vy=0; player.grounded=true;                                     // saddle-pinned (the ship-deck rule)
     if(playerAvatar) playerAvatar.rotation.x=-(0.06+0.14*k*(k>0.45?1:0.3));// half-seat forward lean
   } else if(playerAvatar&&playerAvatar.rotation.x!==0){ playerAvatar.rotation.x*=0.8; if(Math.abs(playerAvatar.rotation.x)<0.01) playerAvatar.rotation.x=0; }
@@ -32389,6 +32143,7 @@ function updateRemotes(dt){
         hm2.visible=mesh.visible||!r.inst;
         hm2.position.set(h.x,_hgy(h.x,h.z),h.z);
         if(hm2.userData.tail) hm2.userData.tail.rotation.z=0.22*Math.sin(now()/1000*1.3+(+k));   // idle swish
+        horseGaitClip(hm2,dt,"graze");                                                          // GLB: parked peers graze
       } }
     if(mesh.userData.horse){ const hm=mesh.userData.horse;
       mesh.userData.mountedNow=true;                                       // #735: their avatar sits — remote locomotion anim checks this
@@ -32398,6 +32153,7 @@ function updateRemotes(dt){
       const rvx=(r.tx-(r._hx!=null?r._hx:r.tx))/Math.max(dt,0.001), rvz=(r.tz-(r._hz!=null?r._hz:r.tz))/Math.max(dt,0.001);
       r._hx=r.tx; r._hz=r.tz;
       const spd2=Math.hypot(rvx,rvz), T2=HORSE_TYPES[r.mnt], k2=Math.min(1,spd2/Math.max(1,8*T2.spd));
+      horseGaitClip(hm,dt,(k2>0.45)?"gallop":(k2>0.05)?"walk":"idle");                          // GLB: remote canter/walk/idle
       const legs2=hm.userData.legs||[];
       if(k2>0.04){ const gallop2=k2>0.45, rate2=gallop2?(3.2+5.2*k2):(2.2+2.4*k2);
         const p3=(hm.userData.ph=(hm.userData.ph||0)+dt*rate2);
@@ -32436,7 +32192,7 @@ function updateRemotes(dt){
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const _rpx=r.x,_rpz=r.z;   // #672: pre-lerp position → this frame's actual displacement drives the gait
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
-    mesh.position.set(r.x, groundY(r.x,r.z)+(mesh.userData.horse?1.30:0), r.z); mesh.rotation.y=r.yaw||0;   // #735: a mounted peer sits at saddle height (fixes #728: the later lerp was resetting the seat)
+    mesh.position.set(r.x, groundY(r.x,r.z)+((mesh.userData.horse&&mesh.userData.horse.userData.seatY)||(mesh.userData.horse?1.30:0)), r.z); mesh.rotation.y=r.yaw||0;   // #735: a mounted peer sits at saddle height (fixes #728: the later lerp was resetting the seat)
     // #672: remotes ANIMATE — the same MotionTable clips the local body uses (walk/run/idle), driven by
     // their snapshot velocity, so other players stride and breathe instead of gliding statue-still.
     // An active emote owns the joints: return them to rest once, then let poseRemoteEmote's eulers pose
