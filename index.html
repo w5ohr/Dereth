@@ -3081,6 +3081,7 @@ let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=
 let riftActive=false,riftWave=0,riftTimer=0,_riftPulseT=0,_riftZones=[],riftBoss=false; // #680 Regalia VIII: the Sundered Veil (lone stand, storm pulses, no retreat)
 let tideActive=false,tideLevel=0,tideRise=0,_tideWave=0,_tidePhase="",_tideHeraldKills=0,_tideWater=null,_tideAddT=0; // #681 Regalia IX: the Drowned Rift (hold the tide-gate; the Herald reconstitutes twice)
 let consActive=false,_consReinforced=false,_consT=0; // #682 Regalia X: the Consecration (T'thuun's Lingering Dream, at Kilmer's side)
+let whispersActive=false,_whispersSim=null,_whispersT=0; // #674 Regalia II: the counting-house (cut the strings before the puppet)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -17899,6 +17900,7 @@ function update(dt){
   updateRiftStand(dt);     // #680 Regalia VIII: the Sundered Veil (storm pulses, lone stand, no retreat)
   updateTideGate(dt);      // #681 Regalia IX: the Drowned Rift (hold the gate; the Herald reconstitutes twice)
   updateConsecration(dt);  // #682 Regalia X: the Consecration (T'thuun's Lingering Dream, at Kilmer's side)
+  updateWhispers(dt);      // #674 Regalia II: the Counting-House (cut the strings before the puppet)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20581,6 +20583,17 @@ const QUESTS=[
       log("Lord Kilmer kneels to <b>you</b> — he who kneels to no one — and the regalia takes a soft gold light that will not fade. You are <b>the Heir of the Tenfold</b>. A final page is written in <i>A History of Dereth</i>, and it bears your name.","sys");
       return ", the title <b>Heir of the Tenfold</b>, and the set attuned to you (soft glow · +5% all elemental protections)";
     } },
+  // ═══ #674 CHAPTER II — Year of Whispers (Regalia epic #672). Aerbax's Audit: a Prodigal Simulacrum
+  //     wearing your own face and gear, worked by three puppet-strings — cut the strings (it reknits
+  //     itself while any still hangs), then cut the puppet down. Awards the Gauntlets. (Chain: after I.) ═══
+  { id:"regalia2", name:"The Regalia of the Tenfold · II — Year of Whispers", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia1",
+    intro:"My second year a whispering thing they called Aerbax's Audit made a puppet of me — a Prodigal Simulacrum in my own face, moved on strings from the dark. Silence six of its whisper-drudges first, then return: I will open its counting-house. The puppet reknits itself while its strings still hang — cut the three, then cut it down. A puppet's hands are moved; yours, now, are your own.",
+    gateFn:function(){ if(player.level<48) return "The Audit would make a puppet of you as you are. Return at your forty-eighth season (level 48)."; return null; },
+    obj:[{type:"slay",kind:"drudge",count:6,label:"Silence the Audit's whisper-drudges"},
+         {type:"whispers",count:1,label:"Cut the Simulacrum's three strings, then cut it down"}],
+    xp:220000, gold:3500, instance:enterWhispers,
+    gateOpen:"The whisperers are quiet. Behind me the <b>counting-house</b> stands open, and the puppet in my face waits within. Speak once more and I will send you in. <i>Cut its strings first — it will not die while they hold it up.</i>",
+    item:{name:"Gauntlets of the Tenfold",stat:"worn",at:"heavy",aslot:"hands",mat:"Diamond",v:46,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20858,6 +20871,10 @@ const QUEST_GIVERS={
     prog:"Wear the whole regalia and my cape, and come to me — the undercroft's seal is mine to break, and I will not send you into that dark alone. We end it together.",
     turn:"It is done. T'thuun's Dream is unmade, the road is walked to its last stone, and the regalia is yours in a way no forge could make it. Rise, Heir of the Tenfold — the crown was never given, and you did not wait to be given it.",
     post:"Heir of the Tenfold. The road is walked, and the world will remember your name in the chronicle beside mine. Wear it well."},
+  regalia2:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Six whisper-drudges, silenced wherever the Audit's murmur carries. Then return — I will open the counting-house, and you will meet the puppet in my face. Cut its three strings before you cut it down.",
+    turn:"The strings are cut and the Simulacrum lies still, wearing your face no longer. A puppet's hands are moved; yours are your own, and these Gauntlets of the Tenfold will move only at your will. Eight years remain.",
+    post:"The second year is behind you — the whispering one. Watch always for the hand behind the puppet."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -27016,7 +27033,7 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false;   // #680-#682: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false;   // #680-#674: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -27649,6 +27666,82 @@ function consecrationFail(){
   log("You withdraw, and the seal knits shut behind you — the Dream still coils, and the last year is unwalked. Come again wearing the whole regalia, and end it.","warn");
   toast("THE DREAM ENDURES"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
+}
+// ═══ #674 REGALIA II — THE COUNTING-HOUSE: Year of Whispers re-lived. A Prodigal Simulacrum in your own
+//     face hangs on THREE PUPPET-STRINGS — while any string still stands the Simulacrum REKNITS (regens
+//     faster than you can cut it, and shrugs the blow). Cut the three string-anchors, its regen stops,
+//     and you can put the puppet down. Win → questEvent("whispers") advances regalia2, Kilmer pays out
+//     the Gauntlets. ═══
+function buildCountingHouse(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=20;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const marble=new THREE.MeshStandardMaterial({color:0x2a2a34,roughness:0.4,metalness:0.15});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),marble);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // tall mirrors around the rim — the audit's many faces
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, r=R-1;
+    const mir=new THREE.Mesh(new THREE.BoxGeometry(2.6,6,0.3),new THREE.MeshStandardMaterial({color:0x3a3a4a,roughness:0.1,metalness:0.8,emissive:0x1a1a2a,emissiveIntensity:0.3}));
+    mir.position.set(cx+Math.cos(a)*r,3,cz+Math.sin(a)*r); mir.rotation.y=-a+Math.PI/2; scene.add(mir); dungeonObjs.push(mir); }
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(R+0.6,R+0.6,8,48,1,true),marble);ring.position.set(cx,4,cz);ring.material.side=THREE.DoubleSide;scene.add(ring);dungeonObjs.push(ring);
+  const chand=new THREE.PointLight(0xbfa8ff,1.1,44);chand.position.set(cx,7,cz);scene.add(chand);dungeonObjs.push(chand);
+  const amb=new THREE.HemisphereLight(0x4a3a6a,0x0a0a14,0.45);scene.add(amb);dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz+R-5};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Leave the counting-house — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterWhispers(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;whispersActive=true;curDungeon={id:990674,name:"The Counting-House",tier:4};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.3";
+  buildCountingHouse();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  whispersActive=true;_whispersT=0;
+  const cx=DCEN.x,cz=DCEN.z;
+  spawnDungeonMonster("marionette",cx,cz-3,true,3.4,"The Prodigal Simulacrum");
+  _whispersSim=monsters[monsters.length-1]; if(_whispersSim) _whispersSim._simulacrum=true;
+  // three puppet-strings — weak anchors that must be cut; their thread-pillars stand behind them
+  for(let i=0;i<3;i++){ const a=i/3*Math.PI*2-Math.PI/2, sx=cx+Math.cos(a)*9, sz=cz+Math.sin(a)*9;
+    spawnDungeonMonster("marionette",sx,sz,false,0.5,"Puppet-String");
+    const str=monsters[monsters.length-1]; if(str) str._puppetString=true;
+    const thread=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,8,4),new THREE.MeshStandardMaterial({color:0xcfc0ff,emissive:0x8a7aff,emissiveIntensity:0.7}));
+    thread.position.set(sx,4,sz); scene.add(thread); dungeonObjs.push(thread); if(str) str._thread=thread; }
+  toast("THE PRODIGAL SIMULACRUM");
+  log("A puppet wearing <b>your own face</b> steps from the mirrors, hung on three glowing strings. <b>It reknits itself while the strings hold</b> — cut the three anchors first, then cut the puppet down.","warn");
+  updateHUD&&updateHUD();
+}
+function updateWhispers(dt){
+  if(!whispersActive) return;
+  _whispersT+=dt;
+  const strings=monsters.filter(m=>m.isDungeon&&m._puppetString&&m.hp>0);
+  const sim=_whispersSim&&_whispersSim.hp>0?_whispersSim:null;
+  if(sim){
+    // clear a dead string's thread as it falls
+    for(const m of monsters){ if(m._puppetString&&m.hp<=0&&m._thread){ scene.remove(m._thread); m._thread.geometry.dispose(); m._thread.material.dispose(); m._thread=null; } }
+    if(strings.length>0){
+      sim.hp=Math.min(sim.mhp, sim.hp + sim.mhp*0.12*dt);   // reknits while any string holds — can't be out-damaged
+      if(Math.random()<dt*0.7) floater(sim.x,(sim.headY||2)+1.2,sim.z,"the strings reknit it — cut them!","#cfc0ff");
+    } else if(!sim._stringsCut){ sim._stringsCut=true;
+      burst(sim.x,1.6,sim.z,0xcfc0ff,30); toast("THE STRINGS ARE CUT");
+      log("The last string parts and the puppet sags — <b>it will die now</b>. Cut it down.","sys");
+    }
+  }
+  if(dungeonMobs<=0) whispersWin();
+}
+function whispersWin(){
+  whispersActive=false;_whispersSim=null;
+  const cx=DCEN.x,cz=DCEN.z;
+  burst(cx,2,cz,0xbfa8ff,80); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE PUPPET IS CUT DOWN");
+  log("The Simulacrum comes apart at its cut strings and wears your face no more. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("whispers");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!whispersActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function whispersFail(){ whispersActive=false;_whispersSim=null;
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE PUPPET ENDURES"); if(SFX.hit)SFX.hit(); exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
 function buildNetwork(){
