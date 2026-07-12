@@ -3217,9 +3217,9 @@ const TER={ready:false,uOn:{value:0},uIdx:{value:null},uAtl:{value:null},uCW:{va
 // 6 mud · 7 marsh · 8 sand · 9 sandrock · 10 snow · 11 ice · 12 obsidian · 13 seabed
 const TER_LUT=[3,0,11,1,7,6,12,5,5,2,8,8,9,3,4,10, 13,13,13,13,13, 0,2,0,1,0,2,0,2,0,1,3];
 function terBuildAtlas(){
-  // 1024² atlas = 256px per tile (4× the old 128px) → the material relief no longer smears at true
-  // AC 24u cells. Grid stays 4×4 so the shader's normalized tile UVs (×0.25) are unchanged.
-  const TS=256, AT=TS*4, k=TS/128;                    // k: linear density scale vs the old 128px tiles
+  // 1536² atlas = 256px per tile in a 6×6 grid (#740) — big enough for every REAL AC ground texture;
+  // the synthesized tiles below fill the first 14 slots as the instant fallback.
+  const TS=256, AT=TS*6, k=TS/128;   // #740: 6×6 grid                    // k: linear density scale vs the old 128px tiles
   const c=document.createElement('canvas');c.width=c.height=AT;const g=c.getContext('2d');
   const R=(a,b)=>a+Math.random()*(b-a), RI=(a,b)=>Math.floor(R(a,b+1));
   // two shared value-noise octaves, upscaled with bilinear smoothing → organic soft-light mottle
@@ -3230,7 +3230,7 @@ function terBuildAtlas(){
     ng.putImageData(im,0,0);return nc;}
   const nCoarse=noise(24), nMed=noise(96);
   function tile(ti,p){
-    const x0=(ti%4)*TS, y0=Math.floor(ti/4)*TS, TT=p.tone;
+    const x0=(ti%6)*TS, y0=Math.floor(ti/6)*TS, TT=p.tone;
     g.save(); g.beginPath(); g.rect(x0,y0,TS,TS); g.clip(); g.translate(x0,y0);
     g.fillStyle=p.base; g.fillRect(0,0,TS,TS);
     // organic 2-octave base mottle (soft-light modulates lightness without washing the material hue)
@@ -3311,7 +3311,7 @@ function terBuildAtlas(){
 function terSplatBuild(){
   if(TER.ready||!ACMAP.on) return;
   const W=ACMAP.W,n=W*W,data=new Uint8Array(n);
-  for(let i=0;i<n;i++) data[i]=(TER_LUT[ACMAP.T[i]]||0)*17;   // tile id packed ×17 → decode floor(r*15+0.5)
+  for(let i=0;i<n;i++) data[i]=(TER_LUT[ACMAP.T[i]]||0)*7;    // tile slot packed ×7 → decode floor(r*36.43+0.5) — 6×6 grid
   // #695: WebGL2 needs RedFormat — r159 allocates DataTextures with immutable texStorage2D, which
   // requires SIZED internal formats and LUMINANCE has none (GL_INVALID_ENUM). WebGL1 keeps LUMINANCE.
   const fmt=(typeof renderer!=="undefined"&&renderer&&renderer.capabilities.isWebGL2)?THREE.RedFormat:THREE.LuminanceFormat;
@@ -3322,6 +3322,51 @@ function terSplatBuild(){
   TER.uIdx.value=idx; TER.uAtl.value=terBuildAtlas();
   TER.uCW.value.set(1/AC_CELL,W);
   TER.ready=true;
+  terRealUpgrade(W);   // #740: the REAL AC ground swaps in when the extraction pack exists
+}
+// ── #740: the promised #693 atlas swap — assets/acterrain (tools/ac_terrain_export.py, from the
+//    end-of-retail dats) carries the authentic per-type ground textures out of the Region file.
+//    Tiles draw into the same 6×6 grid at 256px and are NEUTRALISED to a common mean, so the
+//    per-vertex biome tints, region tints, seasons and winter keep painting the hue (AC_TYPE_COL
+//    was matched to AC — the result reads authentic without breaking that machinery). The splat
+//    shader is untouched; the index texture is repacked so every LandDefs type points at ITS OWN
+//    real texture's slot — sand-grey finally differs from sand-yellow, moss from grass.
+function terRealUpgrade(W){
+  fetch('assets/acterrain/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{
+    if(!j||!j.types||TER.real) return;
+    const files=[...new Set(Object.values(j.types).map(t=>t.tex))].slice(0,36);
+    const slotOf={}; files.forEach((f,i)=>slotOf[f]=i);
+    let left=files.length; const imgs={};
+    for(const f of files){ const im=new Image();
+      im.onload=()=>{ imgs[f]=im; if(--left===0) done(); };
+      im.onerror=()=>{ if(--left===0) done(); };
+      im.src='assets/acterrain/tex/'+f; }
+    function done(){
+      if(files.some(f=>!imgs[f])) return;                     // partial pack → keep the synthesized atlas
+      const c=document.createElement('canvas'); c.width=c.height=1536; const g=c.getContext('2d');
+      for(const f of files){ const sl=slotOf[f], x0=(sl%6)*256, y0=Math.floor(sl/6)*256;
+        g.drawImage(imgs[f],0,0,imgs[f].width,imgs[f].height,x0,y0,256,256);
+        const id=g.getImageData(x0,y0,256,256), d=id.data;
+        // desaturate CHROMA but keep LUMA — the vertex biome tints paint the hue (no double-tint),
+        // while each tile keeps its authored brightness (snow stays bright → altitude snow works,
+        // sand reads lighter than forest floor, exactly as AC drew them). 15% of the true hue stays.
+        for(let i2=0;i2<d.length;i2+=4){ const lu=d[i2]*0.299+d[i2+1]*0.587+d[i2+2]*0.114;
+          d[i2]=lu+(d[i2]-lu)*0.15; d[i2+1]=lu+(d[i2+1]-lu)*0.15; d[i2+2]=lu+(d[i2+2]-lu)*0.15; }
+        g.putImageData(id,x0,y0); }
+      const t=new THREE.CanvasTexture(c); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+      if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+      TER.uAtl.value=t;
+      const n=W*W, data=new Uint8Array(n);                    // repack: every type → its OWN texture's slot
+      const typeSlot={}; for(const k2 in j.types) typeSlot[k2]=slotOf[j.types[k2].tex]||0;
+      for(let i2=0;i2<n;i2++){ const sl=typeSlot[ACMAP.T[i2]]; data[i2]=(sl!=null?sl:0)*7; }
+      const fmt=(typeof renderer!=="undefined"&&renderer&&renderer.capabilities.isWebGL2)?THREE.RedFormat:THREE.LuminanceFormat;
+      const idx2=new THREE.DataTexture(data,W,W,fmt,THREE.UnsignedByteType);
+      idx2.unpackAlignment=1; idx2.minFilter=THREE.NearestFilter; idx2.magFilter=THREE.NearestFilter;
+      idx2.wrapS=idx2.wrapT=THREE.ClampToEdgeWrapping; idx2.needsUpdate=true;
+      TER.uIdx.value=idx2; TER.real=true;
+      console.log('TERRAIN: '+files.length+' authentic AC ground textures live (assets/acterrain)');
+    }
+  }).catch(()=>{});
 }
 // --- procedural NORMAL maps (data textures; kept linear, never tagged sRGB) ---
 // Build a tangent-space normal map from a tiling height function (central-difference gradient).
@@ -4135,8 +4180,8 @@ function initThree(){
     sh.fragmentShader='uniform sampler2D uTerIdx,uTerAtl;\nuniform float uTerOn;\nuniform vec2 uTerCW;\nvarying vec3 vTWp;\n'+
     // terS: sample tile `tl` of the 4×4 atlas with an inset so filtering never bleeds across tiles.
     // terT: tile id of a heightmap cell (uTerCW = 1/AC_CELL, W); ids packed ×17 → ×15 decode.
-    'vec4 terS(float tl,vec2 tuv){ return texture2D(uTerAtl,(vec2(mod(tl,4.0),floor(tl/4.0))+tuv)*0.25); }\n'+
-    'float terT(vec2 cc){ return floor(texture2D(uTerIdx,(cc+0.5)/uTerCW.y).x*15.0+0.5); }\n'+
+    'vec4 terS(float tl,vec2 tuv){ return texture2D(uTerAtl,(vec2(mod(tl,6.0),floor(tl/6.0))+tuv)/6.0); }\n'+   // #740: 6×6 grid — room for all 30 REAL AC ground textures
+    'float terT(vec2 cc){ return floor(texture2D(uTerIdx,(cc+0.5)/uTerCW.y).x*36.4286+0.5); }\n'+
     // per-cell dihedral rotation of the tile UV — kills the 9m kaleidoscope the mirrored tiling
     // makes of directional motifs (sand ripples!). Seam-free by construction: a corner's rotation
     // only changes where that corner's bilinear weight is already zero.
