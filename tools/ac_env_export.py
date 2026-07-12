@@ -36,7 +36,7 @@ from ac_model_export import (Buf, read_polygon, parse_surface, parse_surfacetext
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACD  = os.path.join(ROOT, "acdata")
 OUT  = os.path.join(ROOT, "assets", "acdungeons")
-CAP  = 400   # cap huge dungeons to the first N cells
+CAP  = 4000  # effectively uncapped — the largest retail dungeon is ~1.6k cells (was 400: it truncated 104 of 232 dungeons; local dats now allow full-fidelity export)
 FORCE_TEX = False   # --force-tex: overwrite existing texture PNGs even if they are higher-res
 
 # ~8 iconic dungeons already in the game (name -> landblock hex from dungeon-landblocks.json)

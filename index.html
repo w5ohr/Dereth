@@ -29110,7 +29110,7 @@ function dungeonChainFor(name){
 //    (dj.cellPos, a 10u grid) — a wall wherever a cell has no neighbour, floor under every cell, ceiling
 //    where nothing sits above. One merged mesh, textured with the dungeon's own stone. (Rollout gated to
 //    the Tusker Temples first; the fix generalises to any low-coverage dungeon.) ──
-const SYNTH_WALL_DUNGEONS=new Set(["Direlands Tusker Temple","Highland Tusker Temple","Tusker Temple"]);
+const SYNTH_WALL_DUNGEONS=new Set([]);   // emptied: the uncapped dat re-export gives every dungeon 100% real walls (the adaptive <50% gap-fill stays as a safety net, currently unreachable)
 function _pushBox(P,N,U,cx,cy,cz,hx,hy,hz,TILE){
   const F=[
     {n:[1,0,0], v:[[cx+hx,cy-hy,cz-hz],[cx+hx,cy-hy,cz+hz],[cx+hx,cy+hy,cz+hz],[cx+hx,cy+hy,cz-hz]], u:'z', w:'y'},

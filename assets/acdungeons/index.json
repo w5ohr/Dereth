@@ -74,10 +74,10 @@
  "Accursed Halls": {
   "file": "Accursed_Halls.json",
   "landblock": "01F9",
-  "cells": 400,
-  "tris": 9912,
+  "cells": 580,
+  "tris": 14066,
   "groups": 15,
-  "capped": true
+  "capped": false
  },
  "Aerbax Laboratory": {
   "file": "Aerbax_Laboratory.json",
@@ -98,18 +98,18 @@
  "Aerfalle Keep": {
   "file": "Aerfalle_Keep.json",
   "landblock": "01F5",
-  "cells": 400,
-  "tris": 8975,
+  "cells": 549,
+  "tris": 10255,
   "groups": 49,
-  "capped": true
+  "capped": false
  },
  "Aerlinthe Reservoir": {
   "file": "Aerlinthe_Reservoir.json",
   "landblock": "02EE",
-  "cells": 400,
-  "tris": 10314,
-  "groups": 30,
-  "capped": true
+  "cells": 994,
+  "tris": 25598,
+  "groups": 39,
+  "capped": false
  },
  "Altar Nest": {
   "file": "Altar_Nest.json",
@@ -138,18 +138,18 @@
  "Ancient Lighthouse": {
   "file": "Ancient_Lighthouse.json",
   "landblock": "01A9",
-  "cells": 400,
-  "tris": 12370,
+  "cells": 485,
+  "tris": 14980,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Apostate Nexus": {
   "file": "Apostate_Nexus.json",
   "landblock": "7F02",
-  "cells": 400,
-  "tris": 9814,
+  "cells": 432,
+  "tris": 10464,
   "groups": 24,
-  "capped": true
+  "capped": false
  },
  "Arcanum Research Facility": {
   "file": "Arcanum_Research_Facility.json",
@@ -162,18 +162,18 @@
  "Arcanum Storehouse": {
   "file": "Arcanum_Storehouse.json",
   "landblock": "545C",
-  "cells": 400,
-  "tris": 12208,
-  "groups": 19,
-  "capped": true
+  "cells": 645,
+  "tris": 19828,
+  "groups": 21,
+  "capped": false
  },
  "Arwic Mines": {
   "file": "Arwic_Mines.json",
   "landblock": "01EF",
-  "cells": 400,
-  "tris": 10922,
-  "groups": 27,
-  "capped": true
+  "cells": 854,
+  "tris": 23065,
+  "groups": 29,
+  "capped": false
  },
  "Asheron's Sanctum": {
   "file": "Asheron's_Sanctum.json",
@@ -194,18 +194,18 @@
  "Aun Papileona's Shrine": {
   "file": "Aun_Papileona's_Shrine.json",
   "landblock": "0287",
-  "cells": 400,
-  "tris": 12492,
+  "cells": 417,
+  "tris": 12748,
   "groups": 10,
-  "capped": true
+  "capped": false
  },
  "Back Tunnels": {
   "file": "Back_Tunnels.json",
   "landblock": "0055",
-  "cells": 400,
-  "tris": 11426,
-  "groups": 27,
-  "capped": true
+  "cells": 447,
+  "tris": 12804,
+  "groups": 28,
+  "capped": false
  },
  "Banderling Conquest Dungeon": {
   "file": "Banderling_Conquest_Dungeon.json",
@@ -250,10 +250,10 @@
  "Black Death Catacombs": {
   "file": "Black_Death_Catacombs.json",
   "landblock": "01EE",
-  "cells": 400,
-  "tris": 10150,
-  "groups": 3,
-  "capped": true
+  "cells": 1319,
+  "tris": 33665,
+  "groups": 5,
+  "capped": false
  },
  "Black Dominion": {
   "file": "Black_Dominion.json",
@@ -266,10 +266,10 @@
  "Black Spawn Den": {
   "file": "Black_Spawn_Den.json",
   "landblock": "0104",
-  "cells": 400,
-  "tris": 6016,
+  "cells": 653,
+  "tris": 8984,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Bone Lair": {
   "file": "Bone_Lair.json",
@@ -298,18 +298,18 @@
  "Burun Burrow": {
   "file": "Burun_Burrow.json",
   "landblock": "6247",
-  "cells": 400,
-  "tris": 10796,
+  "cells": 438,
+  "tris": 12054,
   "groups": 11,
-  "capped": true
+  "capped": false
  },
  "Burun Cavern": {
   "file": "Burun_Cavern.json",
   "landblock": "624A",
-  "cells": 400,
-  "tris": 12522,
+  "cells": 643,
+  "tris": 20988,
   "groups": 6,
-  "capped": true
+  "capped": false
  },
  "Carved Cave": {
   "file": "Carved_Cave.json",
@@ -322,10 +322,10 @@
  "Catacombs of the Forgotten": {
   "file": "Catacombs_of_the_Forgotten.json",
   "landblock": "02E6",
-  "cells": 400,
-  "tris": 11892,
-  "groups": 14,
-  "capped": true
+  "cells": 505,
+  "tris": 14180,
+  "groups": 18,
+  "capped": false
  },
  "Caul Asylum": {
   "file": "Caul_Asylum.json",
@@ -338,18 +338,18 @@
  "Colier Mine": {
   "file": "Colier_Mine.json",
   "landblock": "01AE",
-  "cells": 400,
-  "tris": 11306,
-  "groups": 12,
-  "capped": true
+  "cells": 745,
+  "tris": 20321,
+  "groups": 13,
+  "capped": false
  },
  "Colossus Foundry": {
   "file": "Colossus_Foundry.json",
   "landblock": "5457",
-  "cells": 400,
-  "tris": 5796,
+  "cells": 822,
+  "tris": 11982,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Coral Caves": {
   "file": "Coral_Caves.json",
@@ -362,26 +362,26 @@
  "Coral Tunnels": {
   "file": "Coral_Tunnels.json",
   "landblock": "02EC",
-  "cells": 400,
-  "tris": 13507,
-  "groups": 16,
-  "capped": true
+  "cells": 780,
+  "tris": 19864,
+  "groups": 37,
+  "capped": false
  },
  "Corrupted Catacombs": {
   "file": "Corrupted_Catacombs.json",
   "landblock": "00BA",
-  "cells": 400,
-  "tris": 14126,
-  "groups": 9,
-  "capped": true
+  "cells": 593,
+  "tris": 20598,
+  "groups": 10,
+  "capped": false
  },
  "Crater Caves": {
   "file": "Crater_Caves.json",
   "landblock": "019A",
-  "cells": 400,
-  "tris": 10200,
+  "cells": 493,
+  "tris": 12332,
   "groups": 16,
-  "capped": true
+  "capped": false
  },
  "Crater Lair": {
   "file": "Crater_Lair.json",
@@ -402,34 +402,34 @@
  "Crumbling Empyrean Mansion": {
   "file": "Crumbling_Empyrean_Mansion.json",
   "landblock": "6679",
-  "cells": 400,
-  "tris": 12240,
-  "groups": 25,
-  "capped": true
+  "cells": 467,
+  "tris": 13983,
+  "groups": 30,
+  "capped": false
  },
  "Crypt of Ashen Tears": {
   "file": "Crypt_of_Ashen_Tears.json",
   "landblock": "01FA",
-  "cells": 400,
-  "tris": 9320,
+  "cells": 651,
+  "tris": 14654,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Crystal Mine": {
   "file": "Crystal_Mine.json",
   "landblock": "6149",
-  "cells": 400,
-  "tris": 8915,
+  "cells": 485,
+  "tris": 11035,
   "groups": 9,
-  "capped": true
+  "capped": false
  },
  "Cursed Swamp": {
   "file": "Cursed_Swamp.json",
   "landblock": "0108",
-  "cells": 400,
-  "tris": 11548,
+  "cells": 414,
+  "tris": 11728,
   "groups": 4,
-  "capped": true
+  "capped": false
  },
  "Dark Mosswart Hall": {
   "file": "Dark_Mosswart_Hall.json",
@@ -466,10 +466,10 @@
  "Deep Mukkir Nest": {
   "file": "Deep_Mukkir_Nest.json",
   "landblock": "0054",
-  "cells": 400,
-  "tris": 10206,
-  "groups": 22,
-  "capped": true
+  "cells": 1201,
+  "tris": 27841,
+  "groups": 32,
+  "capped": false
  },
  "Dericost Ruin": {
   "file": "Dericost_Ruin.json",
@@ -482,10 +482,10 @@
  "Desert March": {
   "file": "Desert_March.json",
   "landblock": "02AA",
-  "cells": 400,
-  "tris": 6944,
+  "cells": 417,
+  "tris": 6978,
   "groups": 11,
-  "capped": true
+  "capped": false
  },
  "Desert Mine": {
   "file": "Desert_Mine.json",
@@ -514,26 +514,26 @@
  "Direlands Subway": {
   "file": "Direlands_Subway.json",
   "landblock": "1568",
-  "cells": 400,
-  "tris": 9508,
-  "groups": 25,
-  "capped": true
+  "cells": 852,
+  "tris": 19708,
+  "groups": 28,
+  "capped": false
  },
  "Direlands Tusker Temple": {
   "file": "Direlands_Tusker_Temple.json",
   "landblock": "5C4A",
-  "cells": 400,
-  "tris": 6000,
-  "groups": 13,
-  "capped": true
+  "cells": 514,
+  "tris": 7518,
+  "groups": 18,
+  "capped": false
  },
  "Disaster Maze": {
   "file": "Disaster_Maze.json",
   "landblock": "01A6",
-  "cells": 400,
-  "tris": 10265,
-  "groups": 17,
-  "capped": true
+  "cells": 533,
+  "tris": 13449,
+  "groups": 23,
+  "capped": false
  },
  "Dragon's Power": {
   "file": "Dragon's_Power.json",
@@ -594,34 +594,34 @@
  "Eastham Sewer": {
   "file": "Eastham_Sewer.json",
   "landblock": "01CF",
-  "cells": 400,
-  "tris": 9845,
-  "groups": 28,
-  "capped": true
+  "cells": 424,
+  "tris": 10469,
+  "groups": 30,
+  "capped": false
  },
  "Egg Orchard": {
   "file": "Egg_Orchard.json",
   "landblock": "002B",
-  "cells": 400,
-  "tris": 11509,
-  "groups": 17,
-  "capped": true
+  "cells": 639,
+  "tris": 17754,
+  "groups": 22,
+  "capped": false
  },
  "Empyrean Cloister": {
   "file": "Empyrean_Cloister.json",
   "landblock": "02AD",
-  "cells": 400,
-  "tris": 10623,
-  "groups": 16,
-  "capped": true
+  "cells": 450,
+  "tris": 11251,
+  "groups": 17,
+  "capped": false
  },
  "Empyrean Foundry": {
   "file": "Empyrean_Foundry.json",
   "landblock": "0136",
-  "cells": 400,
-  "tris": 11360,
-  "groups": 15,
-  "capped": true
+  "cells": 505,
+  "tris": 13440,
+  "groups": 22,
+  "capped": false
  },
  "Empyrean Garrison": {
   "file": "Empyrean_Garrison.json",
@@ -634,10 +634,10 @@
  "Empyrean Workshop": {
   "file": "Empyrean_Workshop.json",
   "landblock": "006E",
-  "cells": 400,
-  "tris": 12151,
-  "groups": 16,
-  "capped": true
+  "cells": 612,
+  "tris": 16737,
+  "groups": 18,
+  "capped": false
  },
  "Enkindled Souls": {
   "file": "Enkindled_Souls.json",
@@ -650,18 +650,18 @@
  "Falcon Clan Camp": {
   "file": "Falcon_Clan_Camp.json",
   "landblock": "5777",
-  "cells": 400,
-  "tris": 7758,
-  "groups": 13,
-  "capped": true
+  "cells": 799,
+  "tris": 16994,
+  "groups": 14,
+  "capped": false
  },
  "Fenmalain Vestibule": {
   "file": "Fenmalain_Vestibule.json",
   "landblock": "02DB",
-  "cells": 400,
-  "tris": 11105,
-  "groups": 20,
-  "capped": true
+  "cells": 538,
+  "tris": 14307,
+  "groups": 22,
+  "capped": false
  },
  "Fir Tree": {
   "file": "Fir_Tree.json",
@@ -682,18 +682,18 @@
  "Folthid Cellar": {
   "file": "Folthid_Cellar.json",
   "landblock": "013B",
-  "cells": 400,
-  "tris": 10458,
+  "cells": 570,
+  "tris": 14568,
   "groups": 23,
-  "capped": true
+  "capped": false
  },
  "Forbidden Crypts": {
   "file": "Forbidden_Crypts.json",
   "landblock": "013D",
-  "cells": 400,
-  "tris": 10676,
-  "groups": 22,
-  "capped": true
+  "cells": 551,
+  "tris": 15085,
+  "groups": 26,
+  "capped": false
  },
  "Forgotten Temple": {
   "file": "Forgotten_Temple.json",
@@ -714,18 +714,18 @@
  "Freebooter Phyntos Wasp Hive": {
   "file": "Freebooter_Phyntos_Wasp_Hive.json",
   "landblock": "F930",
-  "cells": 400,
-  "tris": 13104,
+  "cells": 1524,
+  "tris": 51768,
   "groups": 8,
-  "capped": true
+  "capped": false
  },
  "Frozen Library": {
   "file": "Frozen_Library.json",
   "landblock": "02FE",
-  "cells": 400,
-  "tris": 10628,
-  "groups": 11,
-  "capped": true
+  "cells": 855,
+  "tris": 21134,
+  "groups": 14,
+  "capped": false
  },
  "Gelidite Library": {
   "file": "Gelidite_Library.json",
@@ -738,10 +738,10 @@
  "Glenden Wood Dungeon": {
   "file": "Glenden_Wood_Dungeon.json",
   "landblock": "01E3",
-  "cells": 400,
-  "tris": 11158,
-  "groups": 25,
-  "capped": true
+  "cells": 747,
+  "tris": 20028,
+  "groups": 26,
+  "capped": false
  },
  "Golem Burial Ground": {
   "file": "Golem_Burial_Ground.json",
@@ -754,58 +754,58 @@
  "Greater Olthoi Brood Hive": {
   "file": "Greater_Olthoi_Brood_Hive.json",
   "landblock": "584B",
-  "cells": 400,
-  "tris": 10795,
-  "groups": 8,
-  "capped": true
+  "cells": 1040,
+  "tris": 29296,
+  "groups": 10,
+  "capped": false
  },
  "Gredaline Consulate": {
   "file": "Gredaline_Consulate.json",
   "landblock": "029B",
-  "cells": 400,
-  "tris": 5178,
-  "groups": 9,
-  "capped": true
+  "cells": 618,
+  "tris": 9496,
+  "groups": 11,
+  "capped": false
  },
  "Green Mire Grave": {
   "file": "Green_Mire_Grave.json",
   "landblock": "01E5",
-  "cells": 400,
-  "tris": 9786,
-  "groups": 10,
-  "capped": true
+  "cells": 630,
+  "tris": 15318,
+  "groups": 12,
+  "capped": false
  },
  "Grievous Vault": {
   "file": "Grievous_Vault.json",
   "landblock": "0189",
-  "cells": 400,
-  "tris": 8890,
-  "groups": 20,
-  "capped": true
+  "cells": 534,
+  "tris": 11986,
+  "groups": 38,
+  "capped": false
  },
  "Grievver Caves": {
   "file": "Grievver_Caves.json",
   "landblock": "5456",
-  "cells": 400,
-  "tris": 11378,
+  "cells": 419,
+  "tris": 11767,
   "groups": 16,
-  "capped": true
+  "capped": false
  },
  "Gromnie Clan Camp": {
   "file": "Gromnie_Clan_Camp.json",
   "landblock": "5643",
-  "cells": 400,
-  "tris": 10957,
-  "groups": 14,
-  "capped": true
+  "cells": 747,
+  "tris": 18750,
+  "groups": 18,
+  "capped": false
  },
  "Halls of Metos": {
   "file": "Halls_of_Metos.json",
   "landblock": "02F3",
-  "cells": 400,
-  "tris": 11330,
-  "groups": 16,
-  "capped": true
+  "cells": 540,
+  "tris": 14470,
+  "groups": 20,
+  "capped": false
  },
  "Halls of the Helm": {
   "file": "Halls_of_the_Helm.json",
@@ -818,34 +818,34 @@
  "Hebian-To Sewers": {
   "file": "Hebian-To_Sewers.json",
   "landblock": "01CA",
-  "cells": 400,
-  "tris": 10069,
+  "cells": 475,
+  "tris": 12663,
   "groups": 30,
-  "capped": true
+  "capped": false
  },
  "Hidden Dungeon": {
   "file": "Hidden_Dungeon.json",
   "landblock": "536A",
-  "cells": 400,
-  "tris": 8551,
-  "groups": 24,
-  "capped": true
+  "cells": 651,
+  "tris": 12616,
+  "groups": 25,
+  "capped": false
  },
  "Highland Tusker Temple": {
   "file": "Highland_Tusker_Temple.json",
   "landblock": "5D43",
-  "cells": 400,
-  "tris": 6000,
-  "groups": 13,
-  "capped": true
+  "cells": 514,
+  "tris": 7518,
+  "groups": 18,
+  "capped": false
  },
  "Holtburg Dungeon": {
   "file": "Holtburg_Dungeon.json",
   "landblock": "01F6",
-  "cells": 400,
-  "tris": 11054,
+  "cells": 425,
+  "tris": 11406,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Hovels": {
   "file": "Hovels.json",
@@ -858,18 +858,18 @@
  "Impious Temple": {
   "file": "Impious_Temple.json",
   "landblock": "015E",
-  "cells": 400,
-  "tris": 7600,
+  "cells": 567,
+  "tris": 10904,
   "groups": 10,
-  "capped": true
+  "capped": false
  },
  "Incunabula Vault": {
   "file": "Incunabula_Vault.json",
   "landblock": "011A",
-  "cells": 400,
-  "tris": 11755,
+  "cells": 966,
+  "tris": 24483,
   "groups": 10,
-  "capped": true
+  "capped": false
  },
  "Inner Dungeon": {
   "file": "Inner_Dungeon.json",
@@ -882,10 +882,10 @@
  "Insatiable Vault": {
   "file": "Insatiable_Vault.json",
   "landblock": "0096",
-  "cells": 400,
-  "tris": 5102,
-  "groups": 14,
-  "capped": true
+  "cells": 563,
+  "tris": 7202,
+  "groups": 21,
+  "capped": false
  },
  "Jahannan Vault": {
   "file": "Jahannan_Vault.json",
@@ -906,10 +906,10 @@
  "Khayyaban Crystal Mine": {
   "file": "Khayyaban_Crystal_Mine.json",
   "landblock": "6149",
-  "cells": 400,
-  "tris": 8915,
+  "cells": 485,
+  "tris": 11035,
   "groups": 9,
-  "capped": true
+  "capped": false
  },
  "Lair of Death": {
   "file": "Lair_of_Death.json",
@@ -938,10 +938,10 @@
  "Linvak Tukal Entryway": {
   "file": "Linvak_Tukal_Entryway.json",
   "landblock": "029C",
-  "cells": 400,
-  "tris": 4892,
-  "groups": 8,
-  "capped": true
+  "cells": 590,
+  "tris": 7220,
+  "groups": 10,
+  "capped": false
  },
  "Lost Distillery": {
   "file": "Lost_Distillery.json",
@@ -954,10 +954,10 @@
  "Lugian Ice Tunnels": {
   "file": "Lugian_Ice_Tunnels.json",
   "landblock": "001C",
-  "cells": 400,
-  "tris": 12910,
+  "cells": 491,
+  "tris": 14649,
   "groups": 8,
-  "capped": true
+  "capped": false
  },
  "Lugian Mines": {
   "file": "Lugian_Mines.json",
@@ -986,10 +986,10 @@
  "Lugian Quarry": {
   "file": "Lugian_Quarry.json",
   "landblock": "02E8",
-  "cells": 400,
-  "tris": 4045,
-  "groups": 10,
-  "capped": true
+  "cells": 461,
+  "tris": 4389,
+  "groups": 11,
+  "capped": false
  },
  "Lytaway Dungeon": {
   "file": "Lytaway_Dungeon.json",
@@ -1002,18 +1002,18 @@
  "Mage Academy": {
   "file": "Mage_Academy.json",
   "landblock": "0139",
-  "cells": 400,
-  "tris": 8953,
-  "groups": 59,
-  "capped": true
+  "cells": 645,
+  "tris": 15498,
+  "groups": 69,
+  "capped": false
  },
  "Mammet Foundry": {
   "file": "Mammet_Foundry.json",
   "landblock": "5458",
-  "cells": 400,
-  "tris": 5564,
+  "cells": 731,
+  "tris": 10366,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Mannikin Foundry": {
   "file": "Mannikin_Foundry.json",
@@ -1026,42 +1026,42 @@
  "Martinate Holding": {
   "file": "Martinate_Holding.json",
   "landblock": "027E",
-  "cells": 400,
-  "tris": 4632,
+  "cells": 478,
+  "tris": 5316,
   "groups": 7,
-  "capped": true
+  "capped": false
  },
  "Mask Clan Camp": {
   "file": "Mask_Clan_Camp.json",
   "landblock": "5644",
-  "cells": 400,
-  "tris": 10184,
-  "groups": 14,
-  "capped": true
+  "cells": 927,
+  "tris": 21779,
+  "groups": 17,
+  "capped": false
  },
  "Matron Hive East": {
   "file": "Matron_Hive_East.json",
   "landblock": "6146",
-  "cells": 400,
-  "tris": 12788,
+  "cells": 625,
+  "tris": 20660,
   "groups": 10,
-  "capped": true
+  "capped": false
  },
  "Matron Hive South": {
   "file": "Matron_Hive_South.json",
   "landblock": "6346",
-  "cells": 400,
-  "tris": 12788,
+  "cells": 625,
+  "tris": 20660,
   "groups": 10,
-  "capped": true
+  "capped": false
  },
  "Matron Hive West": {
   "file": "Matron_Hive_West.json",
   "landblock": "6145",
-  "cells": 400,
-  "tris": 12788,
+  "cells": 625,
+  "tris": 20660,
   "groups": 10,
-  "capped": true
+  "capped": false
  },
  "Mattekar Cave": {
   "file": "Mattekar_Cave.json",
@@ -1074,18 +1074,18 @@
  "Mines of Despair": {
   "file": "Mines_of_Despair.json",
   "landblock": "0188",
-  "cells": 400,
-  "tris": 9978,
-  "groups": 30,
-  "capped": true
+  "cells": 535,
+  "tris": 13464,
+  "groups": 31,
+  "capped": false
  },
  "Mite Maze": {
   "file": "Mite_Maze.json",
   "landblock": "01F8",
-  "cells": 400,
-  "tris": 10662,
-  "groups": 8,
-  "capped": true
+  "cells": 879,
+  "tris": 21737,
+  "groups": 9,
+  "capped": false
  },
  "Mnemosyne Collection Site": {
   "file": "Mnemosyne_Collection_Site.json",
@@ -1114,18 +1114,18 @@
  "Mosswart Maze": {
   "file": "Mosswart_Maze.json",
   "landblock": "02CA",
-  "cells": 400,
-  "tris": 14550,
-  "groups": 9,
-  "capped": true
+  "cells": 555,
+  "tris": 21348,
+  "groups": 10,
+  "capped": false
  },
  "Mossy Cave": {
   "file": "Mossy_Cave.json",
   "landblock": "0177",
-  "cells": 400,
-  "tris": 10396,
+  "cells": 444,
+  "tris": 11134,
   "groups": 6,
-  "capped": true
+  "capped": false
  },
  "Mountain Cavern": {
   "file": "Mountain_Cavern.json",
@@ -1138,10 +1138,10 @@
  "Mountain Fortress": {
   "file": "Mountain_Fortress.json",
   "landblock": "011C",
-  "cells": 400,
-  "tris": 13016,
-  "groups": 14,
-  "capped": true
+  "cells": 716,
+  "tris": 22048,
+  "groups": 18,
+  "capped": false
  },
  "Mountain Halls": {
   "file": "Mountain_Halls.json",
@@ -1170,10 +1170,10 @@
  "Murk Warrens": {
   "file": "Murk_Warrens.json",
   "landblock": "0101",
-  "cells": 400,
-  "tris": 11084,
+  "cells": 934,
+  "tris": 26904,
   "groups": 13,
-  "capped": true
+  "capped": false
  },
  "Musansayn's Vaults": {
   "file": "Musansayn's_Vaults.json",
@@ -1234,10 +1234,10 @@
  "Northern Temple Catacombs": {
   "file": "Northern_Temple_Catacombs.json",
   "landblock": "004E",
-  "cells": 400,
-  "tris": 8950,
+  "cells": 1474,
+  "tris": 34676,
   "groups": 11,
-  "capped": true
+  "capped": false
  },
  "Old Warehouse": {
   "file": "Old_Warehouse.json",
@@ -1250,26 +1250,26 @@
  "Olthoi Brood Hive": {
   "file": "Olthoi_Brood_Hive.json",
   "landblock": "5773",
-  "cells": 400,
-  "tris": 11161,
-  "groups": 10,
-  "capped": true
+  "cells": 911,
+  "tris": 25543,
+  "groups": 24,
+  "capped": false
  },
  "Olthoi Chasm": {
   "file": "Olthoi_Chasm.json",
   "landblock": "5D4A",
-  "cells": 400,
-  "tris": 12463,
+  "cells": 599,
+  "tris": 16572,
   "groups": 11,
-  "capped": true
+  "capped": false
  },
  "Olthoi Horde Nest": {
   "file": "Olthoi_Horde_Nest.json",
   "landblock": "02FC",
-  "cells": 400,
-  "tris": 11535,
+  "cells": 850,
+  "tris": 24670,
   "groups": 10,
-  "capped": true
+  "capped": false
  },
  "Olthoi Tunnels": {
   "file": "Olthoi_Tunnels.json",
@@ -1282,18 +1282,18 @@
  "Palenqual's Cavern": {
   "file": "Palenqual's_Cavern.json",
   "landblock": "028E",
-  "cells": 400,
-  "tris": 9656,
-  "groups": 20,
-  "capped": true
+  "cells": 1060,
+  "tris": 23165,
+  "groups": 22,
+  "capped": false
  },
  "Panopticon": {
   "file": "Panopticon.json",
   "landblock": "02A1",
-  "cells": 400,
-  "tris": 5018,
-  "groups": 8,
-  "capped": true
+  "cells": 509,
+  "tris": 7936,
+  "groups": 11,
+  "capped": false
  },
  "Penguin Cave Hatchery": {
   "file": "Penguin_Cave_Hatchery.json",
@@ -1322,26 +1322,26 @@
  "Ravenous Vault": {
   "file": "Ravenous_Vault.json",
   "landblock": "039D",
-  "cells": 400,
-  "tris": 5236,
+  "cells": 433,
+  "tris": 5640,
   "groups": 7,
-  "capped": true
+  "capped": false
  },
  "Reclamation": {
   "file": "Reclamation.json",
   "landblock": "01E9",
-  "cells": 400,
-  "tris": 11014,
-  "groups": 22,
-  "capped": true
+  "cells": 977,
+  "tris": 25922,
+  "groups": 31,
+  "capped": false
  },
  "Reedshark Clan Camp": {
   "file": "Reedshark_Clan_Camp.json",
   "landblock": "577A",
-  "cells": 400,
-  "tris": 7795,
-  "groups": 12,
-  "capped": true
+  "cells": 768,
+  "tris": 15885,
+  "groups": 16,
+  "capped": false
  },
  "Reedshark Lair": {
   "file": "Reedshark_Lair.json",
@@ -1354,18 +1354,18 @@
  "Remote Empyrean Vault": {
   "file": "Remote_Empyrean_Vault.json",
   "landblock": "0001",
-  "cells": 400,
-  "tris": 5086,
+  "cells": 463,
+  "tris": 5652,
   "groups": 9,
-  "capped": true
+  "capped": false
  },
  "Renegade Fortress": {
   "file": "Renegade_Fortress.json",
   "landblock": "6248",
-  "cells": 400,
-  "tris": 6270,
-  "groups": 30,
-  "capped": true
+  "cells": 735,
+  "tris": 9806,
+  "groups": 31,
+  "capped": false
  },
  "Renegade Incursion": {
   "file": "Renegade_Incursion.json",
@@ -1418,10 +1418,10 @@
  "Ruined Cave Outpost": {
   "file": "Ruined_Cave_Outpost.json",
   "landblock": "0152",
-  "cells": 400,
-  "tris": 11870,
+  "cells": 461,
+  "tris": 13221,
   "groups": 18,
-  "capped": true
+  "capped": false
  },
  "Ruined Empyrean Vault": {
   "file": "Ruined_Empyrean_Vault.json",
@@ -1434,10 +1434,10 @@
  "Ruschk Iceberg": {
   "file": "Ruschk_Iceberg.json",
   "landblock": "02DE",
-  "cells": 400,
-  "tris": 10770,
+  "cells": 449,
+  "tris": 12532,
   "groups": 8,
-  "capped": true
+  "capped": false
  },
  "Saadia's Retreat": {
   "file": "Saadia's_Retreat.json",
@@ -1450,10 +1450,10 @@
  "Sand Shallows Cave": {
   "file": "Sand_Shallows_Cave.json",
   "landblock": "02A0",
-  "cells": 400,
-  "tris": 11502,
-  "groups": 26,
-  "capped": true
+  "cells": 550,
+  "tris": 15982,
+  "groups": 27,
+  "capped": false
  },
  "Sea Temple Catacombs": {
   "file": "Sea_Temple_Catacombs.json",
@@ -1466,10 +1466,10 @@
  "Serpent Clan Camp": {
   "file": "Serpent_Clan_Camp.json",
   "landblock": "5778",
-  "cells": 400,
-  "tris": 10205,
-  "groups": 12,
-  "capped": true
+  "cells": 536,
+  "tris": 12754,
+  "groups": 15,
+  "capped": false
  },
  "Setab's Barracks": {
   "file": "Setab's_Barracks.json",
@@ -1498,42 +1498,42 @@
  "Shreth Clan Camp": {
   "file": "Shreth_Clan_Camp.json",
   "landblock": "5779",
-  "cells": 400,
-  "tris": 10545,
+  "cells": 841,
+  "tris": 21654,
   "groups": 15,
-  "capped": true
+  "capped": false
  },
  "Shreth Hive": {
   "file": "Shreth_Hive.json",
   "landblock": "0153",
-  "cells": 400,
-  "tris": 10086,
-  "groups": 19,
-  "capped": true
+  "cells": 574,
+  "tris": 12948,
+  "groups": 24,
+  "capped": false
  },
  "Singular Chorizite Repository": {
   "file": "Singular_Chorizite_Repository.json",
   "landblock": "03A0",
-  "cells": 400,
-  "tris": 4562,
+  "cells": 406,
+  "tris": 4580,
   "groups": 8,
-  "capped": true
+  "capped": false
  },
  "Singular Obsidian Repository": {
   "file": "Singular_Obsidian_Repository.json",
   "landblock": "039F",
-  "cells": 400,
-  "tris": 4764,
+  "cells": 489,
+  "tris": 5780,
   "groups": 7,
-  "capped": true
+  "capped": false
  },
  "Singularity Bore": {
   "file": "Singularity_Bore.json",
   "landblock": "0291",
-  "cells": 400,
-  "tris": 13498,
-  "groups": 11,
-  "capped": true
+  "cells": 718,
+  "tris": 19424,
+  "groups": 13,
+  "capped": false
  },
  "Small Fledgling Mukkir Nest": {
   "file": "Small_Fledgling_Mukkir_Nest.json",
@@ -1578,10 +1578,10 @@
  "Stable Rift": {
   "file": "Stable_Rift.json",
   "landblock": "0290",
-  "cells": 400,
-  "tris": 13140,
+  "cells": 562,
+  "tris": 18286,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Stone Cathedral": {
   "file": "Stone_Cathedral.json",
@@ -1602,10 +1602,10 @@
  "Swamp Temple": {
   "file": "Swamp_Temple.json",
   "landblock": "01A2",
-  "cells": 400,
-  "tris": 9855,
-  "groups": 14,
-  "capped": true
+  "cells": 867,
+  "tris": 20623,
+  "groups": 15,
+  "capped": false
  },
  "Temple of Forgetfulness": {
   "file": "Temple_of_Forgetfulness.json",
@@ -1618,10 +1618,10 @@
  "Tenkarrdun Foundry": {
   "file": "Tenkarrdun_Foundry.json",
   "landblock": "0116",
-  "cells": 400,
-  "tris": 7054,
+  "cells": 807,
+  "tris": 17094,
   "groups": 14,
-  "capped": true
+  "capped": false
  },
  "Thasali": {
   "file": "Thasali.json",
@@ -1658,10 +1658,10 @@
  "Trothyr's Rest": {
   "file": "Trothyr's_Rest.json",
   "landblock": "01FD",
-  "cells": 400,
-  "tris": 10133,
+  "cells": 506,
+  "tris": 12475,
   "groups": 15,
-  "capped": true
+  "capped": false
  },
  "Tumerok Bunker": {
   "file": "Tumerok_Bunker.json",
@@ -1674,10 +1674,10 @@
  "Tumerok Cave": {
   "file": "Tumerok_Cave.json",
   "landblock": "0286",
-  "cells": 400,
-  "tris": 8580,
+  "cells": 521,
+  "tris": 11086,
   "groups": 17,
-  "capped": true
+  "capped": false
  },
  "Tumerok Cavern": {
   "file": "Tumerok_Cavern.json",
@@ -1690,18 +1690,18 @@
  "Tumerok Fortress": {
   "file": "Tumerok_Fortress.json",
   "landblock": "01BE",
-  "cells": 400,
-  "tris": 10957,
+  "cells": 461,
+  "tris": 11364,
   "groups": 24,
-  "capped": true
+  "capped": false
  },
  "Tumerok Mine": {
   "file": "Tumerok_Mine.json",
   "landblock": "01C1",
-  "cells": 400,
-  "tris": 10450,
-  "groups": 21,
-  "capped": true
+  "cells": 451,
+  "tris": 11578,
+  "groups": 23,
+  "capped": false
  },
  "Tumerok Outpost": {
   "file": "Tumerok_Outpost.json",
@@ -1714,10 +1714,10 @@
  "Tumideon Fortress": {
   "file": "Tumideon_Fortress.json",
   "landblock": "02C7",
-  "cells": 400,
-  "tris": 4630,
+  "cells": 437,
+  "tris": 5092,
   "groups": 8,
-  "capped": true
+  "capped": false
  },
  "Tunnels to the Harbinger": {
   "file": "Tunnels_to_the_Harbinger.json",
@@ -1730,34 +1730,34 @@
  "Tusker Emporium": {
   "file": "Tusker_Emporium.json",
   "landblock": "F784",
-  "cells": 400,
-  "tris": 9145,
-  "groups": 30,
-  "capped": true
+  "cells": 749,
+  "tris": 17644,
+  "groups": 33,
+  "capped": false
  },
  "Tusker Temple": {
   "file": "Tusker_Temple.json",
   "landblock": "5C4A",
-  "cells": 400,
-  "tris": 6000,
-  "groups": 13,
-  "capped": true
+  "cells": 514,
+  "tris": 7518,
+  "groups": 18,
+  "capped": false
  },
  "Umbral Hall": {
   "file": "Umbral_Hall.json",
   "landblock": "0179",
-  "cells": 400,
-  "tris": 10386,
+  "cells": 457,
+  "tris": 11706,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Undead Temple": {
   "file": "Undead_Temple.json",
   "landblock": "03A5",
-  "cells": 400,
-  "tris": 5214,
+  "cells": 484,
+  "tris": 6302,
   "groups": 12,
-  "capped": true
+  "capped": false
  },
  "Under Cove Crypt": {
   "file": "Under_Cove_Crypt.json",
@@ -1794,10 +1794,10 @@
  "Viamontian Royal Prison": {
   "file": "Viamontian_Royal_Prison.json",
   "landblock": "001E",
-  "cells": 400,
-  "tris": 12412,
+  "cells": 521,
+  "tris": 15232,
   "groups": 33,
-  "capped": true
+  "capped": false
  },
  "Viamontian Torture Chamber": {
   "file": "Viamontian_Torture_Chamber.json",
