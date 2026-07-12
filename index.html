@@ -24411,10 +24411,26 @@ function buildHorseMesh(tk,packs){
       clone.rotation.y=Math.PI;                                       // GLB faces -Z natively → flip to +Z (nose forward, matching mount rotation)
       const coat=new THREE.Color(T.coat), mane=new THREE.Color(T.mane);
       clone.traverse(o=>{ if(o.isMesh&&o.material){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true;
-        const nm=o.material.name||"";
-        if(/^Main/.test(nm)){ o.material=o.material.clone(); if(o.material.color)o.material.color.lerp(coat,0.82); }        // body coat → breed colour
-        else if(/Hair/.test(nm)){ o.material=o.material.clone(); if(o.material.color)o.material.color.lerp(mane,0.9); }     // mane + tail → mane colour
-        else if(/Muzzle/.test(nm)){ o.material=o.material.clone(); if(o.material.color)o.material.color.lerp(coat.clone().multiplyScalar(0.55),0.6); } } });
+        const nm=o.material.name||""; o.material=o.material.clone();
+        o.material.metalness=0.0;                                     // the model ships metalness 0.4 → a "varnished wood" sheen; a coat is NOT metal
+        o.material.roughness=0.62;                                    // satin coat (was 0.41 — too glassy/plasticky)
+        if(/^Main/.test(nm)){
+          if(o.material.color) o.material.color.lerp(coat,0.85);      // body coat → breed colour
+          // this rig has NO UVs, so paint coat DEPTH into vertex colours: lighter belly, darker
+          // topline (countershading) + a fine hide grain. Shared geometry → compute once, all breeds reuse it.
+          const geo=o.geometry;
+          if(!geo.attributes.color){ const pos=geo.attributes.position, n=pos.count, col=new Float32Array(n*3);
+            const bx=new THREE.Box3().setFromBufferAttribute(pos), yr=(bx.max.y-bx.min.y)||1;
+            for(let i=0;i<n;i++){ const yy=(pos.getY(i)-bx.min.y)/yr;
+              const f=(0.78+(1-yy)*0.30)*(1+((Math.sin(i*12.9898)*43758.5453)%1-0.5)*0.06);
+              col[i*3]=col[i*3+1]=col[i*3+2]=f; }
+            geo.setAttribute('color',new THREE.BufferAttribute(col,3)); }
+          o.material.vertexColors=true;
+        }
+        else if(/Hair/.test(nm)){ if(o.material.color) o.material.color.lerp(mane,0.92); o.material.roughness=0.8; }        // mane + tail → mane colour, matte
+        else if(/Muzzle/.test(nm)){ if(o.material.color) o.material.color.lerp(coat.clone().multiplyScalar(0.55),0.6); o.material.roughness=0.5; }   // soft velvety muzzle
+        else if(/Hoo/.test(nm)){ o.material.roughness=0.45; }         // hooves keep a faint horn sheen
+      } });
       g.add(clone);
       // ── saddle, anchored to the mid-back spine bone so it sits true at any scale ──
       clone.updateWorldMatrix(true,true);
