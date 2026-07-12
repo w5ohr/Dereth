@@ -5771,14 +5771,7 @@ function _normHumanMesh(g,target){
   body.scale.setScalar(target/robustHeight(body));
   const b2=new THREE.Box3().setFromObject(body); body.position.y-=b2.min.y;   // feet to y=0
   g.add(body);
-  // PASS 3: pectoral breast between the front legs and round quarter masses over the hips —
-  // low-offset lofted blobs that melt into the main skin
-  const breast=new THREE.Mesh(loftTube([
-    {y:1.06,z:0.56,w:0.13,h:0.14},{y:1.0,z:0.66,w:0.15,h:0.17},{y:0.98,z:0.74,w:0.10,h:0.12}],10,1),coat);
-  g.add(breast);
-  for(const e2 of[-1,1]){
-    const qtr=new THREE.Mesh(new THREE.SphereGeometry(0.21,12,9),coat);
-    qtr.scale.set(0.62,1.15,1.05); qtr.position.set(e2*0.145,1.08,-0.7); g.add(qtr); } return g;
+  return g;
 }
 function buildPerson(o){
   o=o||{}; const g=new THREE.Group(), sd=Math.abs(o.seed|0);
