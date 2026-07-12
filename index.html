@@ -4783,6 +4783,7 @@ function gfxTick(dt){
   GFX._fT=(GFX._fT||0)+dt;
   if(GFX._fT>0.7&&(GFX._fx==null||GFX._fT>=99||Math.hypot(player.x-GFX._fx,player.z-GFX._fz)>18)){
     GFX._fT=0; gfxForestStream(); }
+  if(typeof refreshGrassField==="function") refreshGrassField();   // the grass carpet follows the camera
   GFX._lT=(GFX._lT||0)+dt;
   if(GFX._lT>0.4){ GFX._lT=0; gfxCullLabels(); gfxCullProps(); }
   if(GFX.shadowEvery>1&&renderer.shadowMap.enabled){   // shadow refresh on a cadence, not every frame
@@ -4911,8 +4912,7 @@ function applyGfxTier(t,quiet){
   if(auroraGroup) auroraGroup.children.forEach((m,i)=>m.visible=i<GFX.auroraN);
   if(MIST.pool) MIST.pool.forEach((m,i)=>{ if(i>=GFX.mistN) m.material.opacity=0; });
   if(typeof rainSegs!=="undefined"&&rainSegs) rainSegs.count=[500,800,1100,1400][t];
-  if(typeof grassMesh!=="undefined"&&grassMesh&&grassMesh.userData.full!=null)
-    grassMesh.count=Math.max(1,Math.floor(grassMesh.userData.full*[0.25,0.55,0.85,1][t]));
+  if(typeof buildGrass==="function") buildGrass();   // rebuild the grass field for the new tier's density/radius
   GFX.treeR=[150,200,260,320][t];   // trees stream in to this radius (fog ends ~235 — nothing is lost)
   GFX._fT=99;                       // restream the forest now
   if(typeof cloudGroup!=="undefined"&&cloudGroup){ const nC=[14,26,40,52][t];
@@ -7023,35 +7023,87 @@ function biomeAt(x,z){
   return "forest";   // Aluvia — temperate woodland
 }
 // instanced grass tufts — a billboard quad with a procedural blade texture
-let grassMesh=null,_grassTex=null;
-function grassTex(){if(_grassTex)return _grassTex;const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
-  g.clearRect(0,0,128,128);
-  for(let i=0;i<64;i++){const x=irnd(8,120),base=127,h=irnd(50,122),lean=irnd(-16,16),w=rnd(1.6,3.6);
-    const grd=g.createLinearGradient(x,base,x+lean,base-h);
-    grd.addColorStop(0,`rgba(${34+irnd(0,16)},${62+irnd(0,20)},${24+irnd(0,12)},1)`);
-    grd.addColorStop(0.7,`rgba(${72+irnd(0,24)},${116+irnd(0,26)},${44+irnd(0,14)},1)`);
-    grd.addColorStop(1,`rgba(${110+irnd(0,40)},${152+irnd(0,36)},${64+irnd(0,20)},1)`);
-    g.strokeStyle=grd;g.lineWidth=w;g.lineCap="round";g.beginPath();g.moveTo(x,base);g.quadraticCurveTo(x+lean*0.5,base-h*0.6,x+lean,base-h);g.stroke();}
-  // a few seed-heads catching the light
-  for(let i=0;i<9;i++){const x=irnd(10,118),y=irnd(8,52);g.fillStyle=`rgba(${170+irnd(0,40)},${180+irnd(0,30)},${110+irnd(0,20)},0.8)`;
-    g.beginPath();g.ellipse(x,y,1.4,3.2,rnd(-0.4,0.4),0,6.28);g.fill();}
-  const t=new THREE.CanvasTexture(c);if(typeof renderer!=="undefined"&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();_grassTex=t;return t;}
+// ── Real 3D grass: a dense carpet of tufts that FOLLOWS THE CAMERA. The old system was one flat
+//    billboard sprinkled only near towns; this is a moving ring of instanced multi-blade tufts placed
+//    on grassland around the player (stable world-cell hash so they never swim), wind-swayed, with
+//    per-tuft colour + scale variation and a ring-edge fade. Density + radius scale with the graphics
+//    tier — modest on Medium, lush and far-reaching on Ultra. ──
+let grassMesh=null,_grassTuftGeo=null,_grassAnchor=null;
+const GRASS_CFG=[{r:0,cell:0},{r:22,cell:1.6},{r:38,cell:1.2},{r:54,cell:0.98}];   // per GFX.tier {radius, spacing}
+function grassTuftGeo(){
+  if(_grassTuftGeo) return _grassTuftGeo;
+  const pos=[],nrm=[],col=[],idx=[];
+  // base lifted off near-black so the tuft roots don't read as a hard dark line; rich mid, bright tip
+  const cLo=new THREE.Color(0x53661e).convertSRGBToLinear(), cMid=new THREE.Color(0x87a83f).convertSRGBToLinear(), cHi=new THREE.Color(0xc0da6f).convertSRGBToLinear(), c=new THREE.Color();
+  const BL=11,SEG=3; let v=0, seed=1234; const rr=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;};
+  for(let b=0;b<BL;b++){
+    const ang=(b/BL)*6.283+rr()*0.5-0.25, dx=Math.cos(ang), dz=Math.sin(ang);
+    const H=0.30+rr()*0.34, bend=0.07+rr()*0.17, W=0.032+rr()*0.024, pxp=-dz, pzp=dx, base=v;  // fuller blades, less splay
+    for(let s=0;s<=SEG;s++){
+      const t=s/SEG, y=H*t, out=t*t*bend, w=W*(1-t*0.80), cx=dx*out, cz=dz*out;
+      c.copy(t<0.5?cLo.clone().lerp(cMid,t*2):cMid.clone().lerp(cHi,(t-0.5)*2));
+      const nx=dx*0.24, nz=dz*0.24, nl=Math.hypot(nx,1,nz)||1;
+      pos.push(cx-pxp*w,y,cz-pzp*w); nrm.push(nx/nl,1/nl,nz/nl); col.push(c.r,c.g,c.b);
+      pos.push(cx+pxp*w,y,cz+pzp*w); nrm.push(nx/nl,1/nl,nz/nl); col.push(c.r,c.g,c.b);
+      if(s<SEG){ const a=base+s*2; idx.push(a,a+1,a+2, a+1,a+3,a+2); }
+      v+=2;
+    }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+  g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+  g.setIndex(idx); _grassTuftGeo=g; return g;
+}
+function grassOK(x,z){
+  const h=terrainH(x,z); if(h<1.4||h>175) return false;                                  // no water, no high snow
+  if(typeof acRoad==="function"&&acRoad(x,z)) return false;                               // keep the road clean
+  if(Math.abs(terrainH(x+2,z)-terrainH(x-2,z))+Math.abs(terrainH(x,z+2)-terrainH(x,z-2))>7) return false; // not on cliffs
+  if(ACMAP.on){ const ty=acType(x,z); return ty===1||ty===3||ty===9||ty===4; }            // Grassland/LushGrass/PatchyGrass/Marsh
+  const bm=biomeAt(x,z); return bm!=="desert"&&bm!=="cold"&&bm!=="direlands";
+}
 function buildGrass(){
-  if(grassMesh){scene.remove(grassMesh);grassMesh.geometry.dispose();grassMesh=null;}
-  const geo=new THREE.PlaneGeometry(1.5,1.1);geo.translate(0,0.55,0);
-  const mat=new THREE.MeshStandardMaterial({map:grassTex(),alphaTest:0.4,transparent:true,side:THREE.DoubleSide});
-  addWindSway(mat,0.22,0.06,1.05);   // the meadows ripple in the wind
-  const N=7200;grassMesh=new THREE.InstancedMesh(geo,mat,N);
-  const d=new THREE.Object3D();let n=0;
-  for(let i=0;i<N;i++){const h=HUBS[irnd(0,HUBS.length-1)],a=rnd(0,6.28),rr=rnd(14,320);
-    const x=clamp(h.x+Math.cos(a)*rr,-HALF+5,HALF-5),z=clamp(h.z+Math.sin(a)*rr,-HALF+5,HALF-5);
-    if(terrainH(x,z)<1.2||terrainH(x,z)>190) continue;             // skip water and snow
-    const bm=biomeAt(x,z); if(bm==="desert"||bm==="cold"||bm==="direlands") continue;   // no lush grass on sand, snow or barren rock
-    d.position.set(x,groundY(x,z),z);d.rotation.set(0,rnd(0,6.28),0);
-    const sc=rnd(0.7,1.8);d.scale.set(sc,rnd(0.8,1.6),sc);d.updateMatrix();grassMesh.setMatrixAt(n++,d.matrix);}
-  grassMesh.count=n;grassMesh.userData.full=n;grassMesh.castShadow=false;grassMesh.receiveShadow=true;grassMesh.instanceMatrix.needsUpdate=true;
-  if(typeof GFX!=="undefined") grassMesh.count=Math.max(1,Math.floor(n*[0.3,0.6,0.85,1][GFX.tier]));
+  if(grassMesh){ scene.remove(grassMesh); grassMesh.geometry.dispose(); if(grassMesh.material.dispose)grassMesh.material.dispose(); grassMesh=null; }
+  const tier=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2, cfg=GRASS_CFG[tier]||GRASS_CFG[2];
+  _grassAnchor=null;
+  if(cfg.r<=0) return;                                                                    // Low: no grass field
+  const geo=grassTuftGeo();
+  const mat=new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:0.82,metalness:0.0});
+  addWindSway(mat,0.12,0.05,0.5);
+  const rad=Math.ceil(cfg.r/cfg.cell), POOL=(2*rad+1)*(2*rad+1);
+  grassMesh=new THREE.InstancedMesh(geo,mat,POOL);
+  grassMesh.castShadow=false; grassMesh.receiveShadow=true; grassMesh.frustumCulled=false; // it always surrounds the camera
+  grassMesh.count=0; grassMesh.userData.cfg=cfg;
   scene.add(grassMesh);
+  refreshGrassField(true);
+}
+const _gTmp=new THREE.Object3D(), _gCol=new THREE.Color();
+function refreshGrassField(force){
+  if(!grassMesh || typeof player==="undefined" || !player) return;
+  const cfg=grassMesh.userData.cfg; if(!cfg||cfg.r<=0){ grassMesh.count=0; return; }
+  if(inDungeon||inNetwork){ if(grassMesh.count){ grassMesh.count=0; grassMesh.instanceMatrix.needsUpdate=true; } return; }
+  const px=player.x, pz=player.z, C=cfg.cell, R=cfg.r, R2=R*R;
+  if(!force && _grassAnchor && Math.abs(px-_grassAnchor.x)<C*0.6 && Math.abs(pz-_grassAnchor.z)<C*0.6) return;
+  _grassAnchor={x:px,z:pz};
+  const cx0=Math.round(px/C), cz0=Math.round(pz/C), rad=Math.ceil(R/C), POOL=grassMesh.instanceMatrix.count;
+  let n=0;
+  for(let gz=-rad; gz<=rad && n<POOL; gz++) for(let gx=-rad; gx<=rad && n<POOL; gx++){
+    const ci=cx0+gx, cj=cz0+gz, hsh=((ci*73856093)^(cj*19349663))>>>0;
+    const wx=ci*C+((hsh&255)/255-0.5)*C*0.8, wz=cj*C+(((hsh>>8)&255)/255-0.5)*C*0.8;
+    const ddx=wx-px, ddz=wz-pz, d2=ddx*ddx+ddz*ddz; if(d2>R2) continue;
+    if(!grassOK(wx,wz)) continue;
+    const edge=1-d2/R2, s=(0.9+((hsh>>16)&255)/255*0.65)*Math.min(1,edge*2.4+0.12);
+    if(s<0.12) continue;
+    _gTmp.position.set(wx,groundY(wx,wz),wz);
+    _gTmp.rotation.set(0,((hsh>>4)&255)/255*6.283,0);
+    _gTmp.scale.set(s,s*(0.85+((hsh>>20)&15)/15*0.5),s);
+    _gTmp.updateMatrix(); grassMesh.setMatrixAt(n,_gTmp.matrix);
+    const tv=((hsh>>12)&255)/255;
+    _gCol.setRGB(0.82+tv*0.34, 0.9+(0.12-Math.abs(tv-0.5)*0.24), 0.7+tv*0.18);            // lush ↔ dry per tuft
+    grassMesh.setColorAt(n,_gCol); n++;
+  }
+  grassMesh.count=n; grassMesh.instanceMatrix.needsUpdate=true;
+  if(grassMesh.instanceColor) grassMesh.instanceColor.needsUpdate=true;
 }
 // ── instanced forests: the hand-placed scenery (~1900 groups) left the wilds feeling empty.
 // Each species is ONE merged vertex-colored geometry drawn as ONE InstancedMesh (a whole
@@ -25191,8 +25243,65 @@ function buildRoadBridges(){
   } }
   return built;
 }
+// ── Photoreal road surface: a Voronoi cobble set baked into albedo + NORMAL + roughness from one shared
+//    stone height field, so the stones actually catch light (rounded, rim-shadowed), the worn tops read
+//    smoother than the mossy/dirty joints, and dirt + moss fill the mortar. This is the relief the old
+//    flat-map road never had. Built once, shared by every road ribbon. ──
+let _roadMaps=null;
+function roadStoneMaps(){
+  if(_roadMaps) return _roadMaps;
+  const N=512, cell=24, cols=Math.round(N/cell), half=N/2, stoneR=cell*0.6;
+  const HUES=[[1.0,1.0,0.98],[1.06,1.0,0.9],[1.12,0.96,0.8],[0.82,0.85,0.9],[1.15,0.87,0.77],[0.94,0.96,0.99]]; // granite/fieldstone mix
+  const sites=[];
+  for(let cy=0;cy<cols;cy++)for(let cx=0;cx<cols;cx++)
+    sites.push({x:(cx+0.5+rnd(-0.42,0.42))*cell, y:(cy+0.5+rnd(-0.42,0.42))*cell,
+      b:104+irnd(-26,30), h:HUES[irnd(0,HUES.length-1)], hg:rnd(0.72,1.0), fl:rnd(0,1)});
+  const A=document.createElement('canvas');A.width=A.height=N;const ga=A.getContext('2d');const ia=ga.createImageData(N,N),da=ia.data;
+  const RM=document.createElement('canvas');RM.width=RM.height=N;const gr=RM.getContext('2d');const ir=gr.createImageData(N,N),dr=ir.data;
+  const Hf=new Float32Array(N*N);
+  for(let py=0;py<N;py++)for(let px=0;px<N;px++){
+    let f1=1e9,f2=1e9,s1=null; const gcx=(px/cell)|0, gcy=(py/cell)|0;
+    for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
+      const s=sites[((gcy+oy+cols)%cols)*cols+((gcx+ox+cols)%cols)];
+      let dx=px-s.x; if(dx>half)dx-=N;else if(dx<-half)dx+=N;
+      let dy=py-s.y; if(dy>half)dy-=N;else if(dy<-half)dy+=N;
+      const q=dx*dx+dy*dy; if(q<f1){f2=f1;f1=q;s1=s;} else if(q<f2)f2=q;
+    }
+    f1=Math.sqrt(f1); f2=Math.sqrt(f2); const edge=f2-f1, i=(py*N+px)*4;
+    let dome=Math.max(0,1-f1/stoneR); dome=dome*dome*(3-2*dome)*(1-s1.fl*0.35);   // rounded, worn-flat tops
+    const seam=Math.min(1,edge/2.4);                                              // 0 in mortar → 1 on stone
+    let h=dome*s1.hg*seam + (Math.sin(px*1.9)*Math.cos(py*1.7))*0.012; Hf[py*N+px]=h;
+    const lit=0.6+0.4*dome; let base=s1.b*lit;
+    let r=base*s1.h[0], gg=base*s1.h[1], bb=base*s1.h[2];
+    const dirt=(1-seam)*0.8;                                                      // packed earth in the joints
+    if(dirt>0){ r=r*(1-dirt)+74*dirt; gg=gg*(1-dirt)+59*dirt; bb=bb*(1-dirt)+43*dirt; }
+    const mossN=Math.sin(px*0.14+py*0.09)*Math.cos(px*0.07-py*0.12);
+    const moss=Math.max(0,(1-seam))*(mossN>0.32?0.5:0);                           // patchy moss in the mortar
+    if(moss>0){ r=r*(1-moss)+56*moss; gg=gg*(1-moss)+84*moss; bb=bb*(1-moss)+40*moss; }
+    if(s1.fl>0.6&&dome>0.5){ const w=(dome-0.5)*2*(s1.fl-0.6)*1.3; r+=22*w; gg+=22*w; bb+=20*w; }   // foot-polished tops
+    da[i]=r; da[i+1]=gg; da[i+2]=bb; da[i+3]=255;
+    let rough=0.93-dome*0.36+dirt*0.06; rough=Math.max(0.42,Math.min(1,rough));   // tops smoother than joints
+    const rv=rough*255; dr[i]=dr[i+1]=dr[i+2]=rv; dr[i+3]=255;
+  }
+  ga.putImageData(ia,0,0); gr.putImageData(ir,0,0);
+  const Nn=document.createElement('canvas');Nn.width=Nn.height=N;const gn=Nn.getContext('2d');const inp=gn.createImageData(N,N),dn=inp.data;
+  const STR=2.7;
+  for(let py=0;py<N;py++)for(let px=0;px<N;px++){
+    const xl=Hf[py*N+((px-1+N)%N)], xr=Hf[py*N+((px+1)%N)], yl=Hf[((py-1+N)%N)*N+px], yr=Hf[((py+1)%N)*N+px];
+    let nx=(xl-xr)*STR, ny=(yl-yr)*STR, nz=1; const l=Math.hypot(nx,ny,nz)||1; nx/=l;ny/=l;nz/=l;
+    const i=(py*N+px)*4; dn[i]=(nx*.5+.5)*255; dn[i+1]=(ny*.5+.5)*255; dn[i+2]=(nz*.5+.5)*255; dn[i+3]=255;
+  }
+  gn.putImageData(inp,0,0);
+  const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;
+    t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
+    if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy(); return t;};
+  _roadMaps={map:mk(A,true), roughnessMap:mk(RM,false), normalMap:mk(Nn,false)};
+  return _roadMaps;
+}
 function buildRoads(){
-  if(!roadMat) roadMat=new THREE.MeshStandardMaterial({map:cobbleTex()});
+  if(!roadMat){ const rm=roadStoneMaps();
+    roadMat=new THREE.MeshStandardMaterial({map:rm.map,normalMap:rm.normalMap,roughnessMap:rm.roughnessMap,
+      normalScale:new THREE.Vector2(1.1,1.1),roughness:1.0,metalness:0.0}); }
   for(const r of ROADS){
     let ax=r.ax,az=r.az,bx=r.bx,bz=r.bz;
     let dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz);
