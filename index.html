@@ -3077,6 +3077,7 @@ let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null,dungeonDepth=1,dun
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
 let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC
+let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=0,_frostAddT=0,frostTimer=0; // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -7026,7 +7027,10 @@ function buildWorld(){
   // advertises itself. When the LIVE Kilmer (the lore-keeper bot's player-character) is online at the
   // gate, this NPC steps aside (hidden by updateRemotes) and the /tell intercept speaks for him.
   { const gx=KC.x+11, gz=KC.z+KC.wall+8;
-    _kilmerNpcRec=addNPC(gx,gz,{role:"questgiver",name:"Lord Kilmer",town:"Castle Val Halla",questId:"regalia1",questIds:["regalia1"],look:"captain"});
+    // #679: offer EVERY Regalia chapter (data-driven from QUESTS, sorted by chapter number) so each new
+    // chapter is append-only — no edit here. resolveGiverQuest surfaces the one whose chain gate is open.
+    const _regIds=QUESTS.filter(q=>/^regalia\d+$/.test(q.id)).map(q=>q.id).sort((a,b)=>(+a.slice(7))-(+b.slice(7)));
+    _kilmerNpcRec=addNPC(gx,gz,{role:"questgiver",name:"Lord Kilmer",town:"Castle Val Halla",questId:_regIds[0],questIds:_regIds,look:"captain"});
     const KGEAR={head:["Diadem of the Tenfold","heavy","Diamond",0],chest:["Aegis Cuirass of the Tenfold","heavy","Diamond",0],
       upperarm:["Pauldrons of the Tenfold","heavy","Diamond",0],lowerarm:["Vambraces of the Tenfold","heavy","Diamond",0],
       hands:["Gauntlets of the Tenfold","heavy","Diamond",0],legs:["Greaves of the Tenfold","heavy","Diamond",0],
@@ -17672,6 +17676,7 @@ function update(dt){
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
   updateArena(dt);         // H16 Colosseum wave-gauntlet state machine
   updateEmberField(dt);    // #673 Regalia I: the Ember Field gauntlet (keep moving or burn)
+  updateFrostCourt(dt);    // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
   // spell cast wind-up: fire the effect when the bar fills
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
@@ -20296,8 +20301,20 @@ const QUESTS=[
       if(!(player.colosseumClears>0)) return "First let the sand know your name — conquer the Colosseum, then we will speak of the regalia."; return null; },
     obj:[{type:"slay",kind:"shadow",count:6,label:"Cut down the Crimson Remnant's firebrands (shadows)"},
          {type:"ember",count:1,label:"Survive the Ember Field and cast down the Herald's Echo"}],
-    xp:150000, gold:2500,
+    xp:150000, gold:2500, instance:enterEmberField,
+    gateOpen:"The firebrands are ash — well cut. Behind me the <b>Ember Gate</b> stands open. Speak to me again and I will send you through. <i>And in there — keep moving, as I learned to.</i>",
     item:{name:"Sabatons of the Tenfold",stat:"worn",at:"heavy",aslot:"feet",mat:"Diamond",v:44,tier:5,work:10,affix:"warding",legendary:true,cov:[]} },
+  // ═══ #679 CHAPTER VII — Year of Bone (Regalia epic #672). The Dericost Winter: the Frozen Court, where
+  //     the cold stacks unless you stand in brazier-light. Relight the three Hearths, then shatter the
+  //     Lich-King's Vertebra-Reliquary. Awards the Breeches of the Tenfold. (Chain: after Chapter VI.) ═══
+  { id:"regalia7", name:"The Regalia of the Tenfold · VII — Year of Bone", giver:"Lord Kilmer (Castle Val Halla)", req:"regalia6",
+    intro:"My seventh year was three seasons of winter — the Dericost dead woke in their frozen court and the cold itself was the enemy. Cull eight of their bone-outriders wherever they walk, then return: I will open the Frozen Court. Its hearths are dead and its cold will stack in your marrow — relight the three Hearths and stand in their light, then shatter the Lich-King's Vertebra-Reliquary. I never once stopped walking. Neither will you.",
+    gateFn:function(){ if(player.level<90) return "The Dericost Winter would freeze the strength you have. Return at the ninetieth season of your might (level 90)."; return null; },
+    obj:[{type:"slay",kind:"skeleton",count:8,label:"Cull the Dericost bone-outriders (skeletons)"},
+         {type:"frostcourt",count:1,label:"Relight the three Hearths and shatter the Lich-King's Vertebra-Reliquary"}],
+    xp:700000, gold:11000, instance:enterFrostCourt,
+    gateOpen:"The outriders are down to splinters. Behind me the <b>Frozen Court</b> lies open, its hearths dead. Speak to me again and I will send you into that winter. <i>Relight the Hearths and keep to their light — the cold is patient.</i>",
+    item:{name:"Breeches of the Tenfold",stat:"worn",at:"light",aslot:"pants",mat:"Silk",v:30,tier:5,work:10,legendary:true} },
 ];
 // recommended character level per quest (tuned to the difficulty of its creatures / delve tier)
 const QUEST_LVL={ alfrin:1, nen_ai:2, lou_ka:2, reedbanks:3, worcer:3, lubziklan:3, mitemaze:4, jojii:4, beacon:2, necklace:2, soll:10, elysa:20,
@@ -20559,6 +20576,10 @@ const QUEST_GIVERS={
     prog:"Six firebrands, cut down wherever the Remnant's shadows muster. Then come back to me, and I will open the Ember Field. Keep moving in there — the year's first lesson.",
     turn:"The Echo is ash and the Field lies cool. The first year is yours, as it was mine. Kneel — these are the Sabatons of the Tenfold: they remember how to keep moving. Nine years remain.",
     post:"The first year is walked. When the next chapter of the regalia is written, I will offer it here."},
+  regalia7:{name:"Lord Kilmer",town:"Castle Val Halla",look:"captain",
+    prog:"Eight bone-outriders, wherever the Dericost dead still walk. Then come back — the Frozen Court is mine to open, and its cold is yours to outlast. Relight the three Hearths and keep to their light.",
+    turn:"The Reliquary is shards and the Court is silent at last. Three seasons of winter, walked in an afternoon — you kept moving, and the cold never caught you. Take the Breeches of the Tenfold: they were quenched in that frost. Three years remain.",
+    post:"The seventh year is behind you — the winter one. The road narrows now; few walk this far."},
   beacon:{name:"Elena Du Furza",town:"Sanamar",look:"captain",
     prog:"The tower still stands dark — the fleets hug the shore until it burns again.",
     turn:"Light on the water! You've given the fishers back their nights. Sanamar thanks you.",
@@ -22218,13 +22239,15 @@ function talkQuestGiver(n){
   const id=(n&&n.questIds&&n.questIds.length>1)?(n.questId=resolveGiverQuest(n)):(n&&n.questId);
   const q=questById(id); if(!q){ log("There is nothing to do here.","sys"); return; }
   const gv=QUEST_GIVERS[id]||{}; const name=(n&&n.name)||gv.name||q.giver;
-  // #673: once the firebrands are cut down, Lord Kilmer HIMSELF is the Ember Gate — first word warns,
-  // the second word within half a minute sends you through (so a stray E can't hurl you into the fire).
-  if(id==="regalia1"&&isActive(id)){ const a=activeEntry(id);
-    if(a&&a.prog[0]>=q.obj[0].count&&a.prog[1]<q.obj[1].count){
-      if(n._emberOffer&&now()-n._emberOffer<30000){ n._emberOffer=0; enterEmberField(player.x,player.z); return; }
-      n._emberOffer=now();
-      log(`<b>${name}:</b> The firebrands are ash — well cut. Behind me the <b>Ember Gate</b> stands open. Speak to me again and I will send you through. <i>And in there — keep moving, as I learned to.</i>`,"sys");
+  // #673/#679+: a Regalia chapter's giver IS the gate into that chapter's instance. Once the chapter's
+  // pre-kills (obj[0]) are done but its signature-mechanic step (obj[1]) isn't, and the quest declares an
+  // `instance` opener, Kilmer sends the player through — two words within half a minute (a stray E can't
+  // hurl you in). Data-driven so every chapter is append-only (no per-chapter edit here).
+  if(/^regalia\d+$/.test(id)&&isActive(id)&&typeof q.instance==="function"){ const a=activeEntry(id);
+    if(a&&q.obj.length>=2&&a.prog[0]>=q.obj[0].count&&a.prog[1]<q.obj[1].count&&!inDungeon){
+      if(n._regInstOffer===id&&now()-(n._regInstOfferT||0)<30000){ n._regInstOffer=null; q.instance(player.x,player.z); return; }
+      n._regInstOffer=id; n._regInstOfferT=now();
+      log(`<b>${name}:</b> ${q.gateOpen||"The way behind me stands open. Speak to me again and I will send you through."}`,"sys");
       if(SFX.quest)SFX.quest(); return; } }
   if(isActive(id)){
     const a=activeEntry(id);
@@ -26948,6 +26971,122 @@ function emberFail(){
   emberActive=false;
   log("The fire outlasts you — the Ember Field's heat drives you back through the gate. Kilmer's first year was not walked in a day.","warn");
   toast("THE EMBERS PREVAIL"); if(SFX.hit)SFX.hit();
+  exitDungeon(true);
+}
+// ═══ #679 REGALIA VII — THE FROZEN COURT: Year of Bone re-lived. Kilmer's seventh-year lesson made
+//     mechanical: the COLD STACKS unless you stand in brazier-light. The three Hearths are dead —
+//     relight each by holding in its ring while the Dericost dead press you, then, all three lit, the
+//     Lich-King's Vertebra-Reliquary rises to be shattered. Won → questEvent("frostcourt") advances
+//     regalia7; Lord Kilmer pays out the Breeches at turn-in. ═══
+function buildFrostCourt(){
+  dungeonObjs=[];dungeonMobs=0;const cx=DCEN.x,cz=DCEN.z,R=24;
+  dungeonRects=[{round:true,cx,cz,rad:R}];
+  const ice=new THREE.MeshStandardMaterial({color:0x2a3a4e,roughness:0.35,metalness:0.1});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(R,48),ice);floor.rotation.x=-Math.PI/2;floor.position.set(cx,0.05,cz);floor.receiveShadow=true;scene.add(floor);dungeonObjs.push(floor);
+  // rime veins: pale frost cracks across the black ice
+  for(let i=0;i<14;i++){ const a=rnd(0,6.28),r=rnd(3,R-3);
+    const rm=new THREE.Mesh(new THREE.CircleGeometry(rnd(0.5,1.4),8),new THREE.MeshStandardMaterial({color:0x9fc8e8,emissive:0x2a5a8a,emissiveIntensity:0.4,roughness:0.5}));
+    rm.rotation.x=-Math.PI/2; rm.position.set(cx+Math.cos(a)*r,0.07,cz+Math.sin(a)*r); scene.add(rm); dungeonObjs.push(rm); }
+  // frozen colonnade — the Court's bones
+  const stone=new THREE.MeshStandardMaterial({color:0x3a4656,roughness:0.9});
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(R+0.6,R+0.6,8,48,1,true),stone);ring.position.set(cx,4,cz);ring.material.side=THREE.DoubleSide;scene.add(ring);dungeonObjs.push(ring);
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2,tx=cx+Math.cos(a)*(R-1.5),tz=cz+Math.sin(a)*(R-1.5);
+    const ob=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.7,rnd(4.5,6),8),stone);ob.position.set(tx,3,tz);ob.castShadow=true;scene.add(ob);dungeonObjs.push(ob); }
+  // three DEAD Hearths at the points of a triangle — the relight objective
+  _frostHearths=[];
+  for(let i=0;i<3;i++){ const a=i/3*Math.PI*2-Math.PI/2, hx=cx+Math.cos(a)*(R-8), hz=cz+Math.sin(a)*(R-8);
+    const bowl=new THREE.Mesh(new THREE.CylinderGeometry(1.0,0.6,0.9,12),new THREE.MeshStandardMaterial({color:0x24303c,roughness:0.85}));
+    bowl.position.set(hx,0.7,hz); bowl.castShadow=true; scene.add(bowl); dungeonObjs.push(bowl);
+    const flame=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.3,8),new THREE.MeshStandardMaterial({color:0xff9a3a,emissive:0xff6a1a,emissiveIntensity:1.4,transparent:true,opacity:0.9}));
+    flame.position.set(hx,1.7,hz); flame.visible=false; scene.add(flame); dungeonObjs.push(flame);
+    const light=new THREE.PointLight(0xff8a3a,0,16); light.position.set(hx,2,hz); scene.add(light); dungeonObjs.push(light);
+    const lbl=labelSprite("Dead Hearth — stand in the ring to relight","dungeons"); lbl.position.set(hx,3.2,hz); scene.add(lbl); dungeonObjs.push(lbl);
+    _frostHearths.push({x:hx,z:hz,lit:false,prog:0,flame,light,lbl}); }
+  // the dormant Reliquary at the heart — rises when all three Hearths burn
+  const relic=new THREE.Mesh(new THREE.OctahedronGeometry(1.2),new THREE.MeshStandardMaterial({color:0xbfeaff,emissive:0x2a6a9a,emissiveIntensity:0.5,roughness:0.2,metalness:0.3}));
+  relic.position.set(cx,1.3,cz); relic.visible=false; scene.add(relic); dungeonObjs.push(relic); _frostHearths._relic=relic;
+  // cold moon-light
+  const moon=new THREE.PointLight(0x8fb8e8,0.7,120);moon.position.set(cx,32,cz);scene.add(moon);dungeonObjs.push(moon);
+  const amb=new THREE.HemisphereLight(0x3a5a8a,0x0a1420,0.4);scene.add(amb);dungeonObjs.push(amb);
+  dungeonExit={x:cx,z:cz+R-1.2}; dungeonSpawn={x:cx,z:cz};
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.3,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x6aa0ff,emissive:0x244a8a,emissiveIntensity:0.85}));
+  arch.position.set(dungeonExit.x,0.2,dungeonExit.z);scene.add(arch);dungeonObjs.push(arch);
+  const elbl=labelSprite("Flee the Frozen Court — E","dungeons");elbl.position.set(dungeonExit.x,3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
+}
+function enterFrostCourt(ex,ez){
+  if(inDungeon) return;
+  inDungeon=true;frostActive=true;curDungeon={id:990679,name:"The Frozen Court",tier:5};dungeonReturn={x:ex,z:ez};
+  clearDrops();clearProjectiles();clearDying();hideOverworld(false);
+  document.getElementById('dvig').style.opacity="0.4";
+  buildFrostCourt();markSceneSRGB();
+  arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
+  frostCold=0;_frostBoss=false;_frostChill=0;_frostAddT=2;frostTimer=360;
+  toast("THE FROZEN COURT");
+  log("Black ice underfoot and a cold that finds the marrow — <b>the three Hearths are dead</b>. Stand in a Hearth's ring to relight it, and keep to the firelight; the cold stacks wherever it is dark. Relight all three, then shatter the Reliquary.","sys");
+  updateHUD&&updateHUD();
+  frostSpawnAdds(3);
+}
+function frostSpawnAdds(n){ const cx=DCEN.x,cz=DCEN.z;
+  for(let i=0;i<n;i++){ const a=rnd(0,6.28),r=rnd(9,16);
+    spawnDungeonMonster(irnd(0,2)?"skeleton":"zombie",cx+Math.cos(a)*r,cz+Math.sin(a)*r,false,1.4); }
+}
+function frostLitCount(){ let n=0; for(const h of _frostHearths) if(h.lit) n++; return n; }
+function updateFrostCourt(dt){
+  if(!frostActive) return;
+  frostTimer-=dt;
+  if(frostTimer<=0){ frostCourtFail("the long night outlasts you"); return; }
+  const px=player.x,pz=player.z, litCount=frostLitCount();
+  // relight the dead Hearths: hold within a Hearth's ring (~3u) and it kindles over ~2.6s
+  let inLight=false;
+  for(const h of _frostHearths){ const d=Math.hypot(px-h.x,pz-h.z);
+    if(h.lit){ if(d<6.5) inLight=true; h.flame.scale.y=1+0.14*Math.sin(now()/120+h.x); continue; }
+    if(d<3.2 && player.alive){ h.prog+=dt;
+      if(!h._spark||now()-h._spark>400){ h._spark=now(); floater(h.x,2.1,h.z,"kindling… "+Math.min(100,Math.round(h.prog/2.6*100))+"%","#ffcf7a"); }
+      if(h.prog>=2.6){ h.lit=true; h.flame.visible=true; h.light.intensity=1.7;
+        h.lbl.visible=false; burst(h.x,1.8,h.z,0xff9a3a,26); if(SFX.quest)SFX.quest();
+        toast("A HEARTH IS LIT ("+frostLitCount()+"/3)");
+        log(`<b>A Hearth catches</b> — ${frostLitCount()} of 3 burn. Its light holds the cold at bay.`,"sys"); }
+    } else if(h.prog>0&&!h.lit){ h.prog=Math.max(0,h.prog-dt*0.6); }   // walk out and the kindling gutters
+  }
+  // the year's lesson: the cold STACKS in the dark; brazier-light is the only reprieve
+  if(player.alive&&player.invuln<=0&&!_frostBoss){
+    if(inLight) frostCold=Math.max(0,frostCold-dt*1.6); else frostCold+=dt*(1+litCount*0.15);
+    if(frostCold>2.4){ _frostChill+=dt;
+      if(_frostChill>=0.5){ _frostChill=0; playerHurt(6+litCount*2,px,pz,"magic","frost");
+        floater(px,1.9,pz,"THE COLD BITES — FIND FIRELIGHT!","#bfe6ff"); if(player.slow!=null)player.slow=Math.max(player.slow||0,0.4); } }
+    else if(frostCold>1.4&&!inLight&&Math.random()<dt*2) floater(px,1.7,pz,"frost creeps up your legs…","#9fc8e8");
+  }
+  // cold vignette intensity tracks the chill
+  { const dv=document.getElementById('dvig'); if(dv) dv.style.opacity=String(clamp(0.25+frostCold*0.14,0.25,0.72)); }
+  // steady trickle of Dericost dead until the Court is warm
+  if(!_frostBoss){ _frostAddT-=dt; if(_frostAddT<=0&&dungeonMobs<4){ _frostAddT=6-litCount; frostSpawnAdds(1+ (litCount>=2?1:0)); } }
+  // all three lit → the Reliquary rises
+  if(litCount>=3&&!_frostBoss){ _frostBoss=true;
+    const relic=_frostHearths._relic; if(relic) relic.visible=true;
+    const cx=DCEN.x,cz=DCEN.z;
+    spawnDungeonMonster("lich",cx,cz-4,true,3.2,"The Lich-King's Vertebra-Reliquary");
+    burst(cx,1.5,cz,0xbfeaff,60); shake&&shake(0.2);
+    toast("THE VERTEBRA-RELIQUARY RISES");
+    log("The three fires roar as one and the black ice cracks — <b>the Lich-King's Vertebra-Reliquary</b> grinds up from the floor, wreathed in the cold it hoarded. Shatter it.","warn");
+  }
+  if(_frostBoss&&dungeonMobs<=0) frostCourtWin();
+}
+function frostCourtWin(){
+  frostActive=false;
+  const cx=DCEN.x,cz=DCEN.z;
+  burst(cx,2,cz,0xbfeaff,90); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  toast("THE RELIQUARY IS SHATTERED");
+  log("The Vertebra-Reliquary bursts into a rain of frozen bone, and the Frozen Court falls quiet and warm. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
+  if(typeof questEvent==="function") questEvent("frostcourt");
+  saveGame&&saveGame();
+  setTimeout(()=>{ if(!frostActive&&inDungeon) exitDungeon(true); }, 4000);
+}
+function frostCourtFail(why){
+  frostActive=false;
+  const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
+  log(`The cold wins this time — ${why||"the Frozen Court drives you back through the gate"}. Kilmer's winter was three seasons long; try it again.`,"warn");
+  toast("THE COLD PREVAILS"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
 }
 // ---- The Town Network / Facility Hub: portal halls (netMode toggles which) ----
