@@ -4067,6 +4067,22 @@ function initPost(){
   POST.rtScene.texture.encoding=THREE.sRGBEncoding; // scene was tonemapped+sRGB-encoded on the way in
   POST.rtA=new THREE.WebGLRenderTarget(hw,hh,Object.assign({},opt));
   POST.rtB=new THREE.WebGLRenderTarget(hw,hh,Object.assign({},opt));
+  // ── #690: SSAO — scene depth rides the MSAA target for free. This r128 supports a depthTexture
+  //    on WebGLMultisampleRenderTarget: the MSAA depth RENDERBUFFER is allocated to match the
+  //    texture's type (UnsignedInt → DEPTH_COMPONENT24, both sides 33190 so the blit is legal) and
+  //    the end-of-render resolve carries DEPTH into the texture (blit mask |= DEPTH_BUFFER_BIT).
+  //    So sampling POST.rtScene.depthTexture after the scene pass reads real 24-bit depth with
+  //    ZERO extra draw calls — no depth pre-pass, no raw-GL surgery. WebGL2 only (tier ≥2 is
+  //    desktop; the WebGL1 fallback path simply never enables AO). ──
+  POST.aoOk=!!renderer.capabilities.isWebGL2;
+  if(POST.aoOk){
+    const dtex=new THREE.DepthTexture(W,H);
+    dtex.type=THREE.UnsignedIntType; dtex.format=THREE.DepthFormat;
+    dtex.minFilter=THREE.NearestFilter; dtex.magFilter=THREE.NearestFilter;
+    POST.rtScene.depthTexture=dtex;
+    POST.rtAO =new THREE.WebGLRenderTarget(hw,hh,Object.assign({},opt));
+    POST.rtAO2=new THREE.WebGLRenderTarget(hw,hh,Object.assign({},opt));
+  }
   POST.quadScene=new THREE.Scene();
   POST.quadCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
   POST.quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2));
@@ -4095,10 +4111,49 @@ function initPost(){
     " for(int i=0;i<26;i++){ acc+=texture2D(tDiffuse,p).rgb*w; tot+=w; w*=0.93; p+=d; }"+
     " gl_FragColor=vec4(acc/tot,1.0); }",
     {tDiffuse:{value:null},uSun:{value:new THREE.Vector2(0.5,0.8)}});
-  // composite: scene + bloom + god-rays, subtle teal/gold grade, vignette
+  // #690: half-res Alchemy-style SSAO from the resolved scene depth. View-space position is
+  // reconstructed through the inverse projection; normals come from position derivatives
+  // (extensions.derivatives handles the WebGL1 pragma; on WebGL2 it's core). 10 golden-angle
+  // spiral taps, radius shrinking with distance, depth-proportional bias against slope acne,
+  // sky (depth≈1) passes through untouched.
+  if(POST.aoOk){
+    POST.ao=makePass(
+      "varying vec2 vUv; uniform sampler2D tDepth; uniform mat4 uInvProj; uniform vec2 uProj; uniform vec2 uRad;"+
+      "vec3 vpos(vec2 uv){ float d=texture2D(tDepth,uv).x;"+
+      " vec4 p=uInvProj*vec4(uv*2.0-1.0, d*2.0-1.0, 1.0); return p.xyz/p.w; }"+
+      "void main(){ float d0=texture2D(tDepth,vUv).x;"+
+      " if(d0>=0.9999){ gl_FragColor=vec4(1.0); return; }"+
+      " vec3 P=vpos(vUv);"+
+      " float fade=smoothstep(60.0,28.0,-P.z);"+                                // AO is near-field: gone by 60m (kills far-plane acne bands; 0.8m radius is subpixel there anyway)
+      " if(fade<0.004){ gl_FragColor=vec4(1.0); return; }"+
+      " vec3 N=normalize(cross(dFdx(P),dFdy(P)));"+
+      " float ang=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)*6.2832;"+
+      " float occ=0.0;"+
+      " for(int i=0;i<10;i++){ float fi=float(i);"+
+      "  float a=ang+fi*2.39996; float rr=(fi+0.57)/10.0; rr*=rr;"+
+      "  vec2 duv=vec2(cos(a),sin(a))*(rr*uRad.x*0.5)*uProj/max(0.35,-P.z);"+   // world radius → UV, clamped near the camera (first-person weapon)
+      "  vec3 v=vpos(vUv+duv)-P; float d2=dot(v,v);"+
+      "  occ+=max(0.0,dot(N,v)-0.032*(-P.z))/(d2+0.12)*step(d2,uRad.x*uRad.x*6.0); }"+   // depth-scaled bias: grazing floors must NOT self-occlude
+      " float ao=pow(clamp(1.0-occ*(uRad.y*0.1)*fade,0.0,1.0),1.5);"+
+      " gl_FragColor=vec4(vec3(ao),1.0); }",
+      {tDepth:{value:null},uInvProj:{value:new THREE.Matrix4()},uProj:{value:new THREE.Vector2(1,1)},uRad:{value:new THREE.Vector2(0.8,1.3)}});
+    POST.ao.extensions.derivatives=true;
+    // depth-aware separable blur: gaussian falloff × a viewZ gate so AO never bleeds across edges
+    POST.aoBlur=makePass(
+      "varying vec2 vUv; uniform sampler2D tAO; uniform sampler2D tDepth; uniform vec2 dir; uniform vec2 uAB;"+
+      "float vz(vec2 uv){ float n=texture2D(tDepth,uv).x*2.0-1.0; return -uAB.y/(n+uAB.x); }"+
+      "void main(){ float z0=vz(vUv); float acc=0.0,tot=0.0;"+
+      " for(int i=-2;i<=2;i++){ vec2 uv=vUv+dir*float(i); float dz=vz(uv)-z0;"+
+      "  float w=exp(-float(i*i)*0.28)*exp(-dz*dz*6.0);"+
+      "  acc+=texture2D(tAO,uv).r*w; tot+=w; }"+
+      " gl_FragColor=vec4(vec3(acc/max(tot,1e-4)),1.0); }",
+      {tAO:{value:null},tDepth:{value:null},dir:{value:new THREE.Vector2()},uAB:{value:new THREE.Vector2()}});
+  }
+  // composite: scene ×AO + bloom + god-rays, subtle teal/gold grade, vignette
   POST.comp=makePass(
-    "varying vec2 vUv; uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tRays; uniform float strength; uniform float vig; uniform float rayStr;"+
+    "varying vec2 vUv; uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tRays; uniform sampler2D tAO; uniform float strength; uniform float vig; uniform float rayStr; uniform float aoStr;"+
     "void main(){ vec3 c=texture2D(tScene,vUv).rgb; vec3 b=texture2D(tBloom,vUv).rgb;"+
+    " if(aoStr>0.001) c*=mix(1.0,texture2D(tAO,vUv).r,aoStr);"+   // #690: AO darkens the scene BEFORE the grade & bloom add — glow is never dimmed
     " float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,1.18);"+ // richer saturation (AC's vivid fantasy palette)
     " c=mix(c, c*c*(3.0-2.0*c), 0.16);"+                          // gentle S-curve — deeper shadows, snappier midtones
     " c*=mix(vec3(0.95,0.975,1.07),vec3(1.08,1.02,0.92),clamp(l,0.0,1.0));"+ // cooler shadows / warmer highlights (sunlit warmth)
@@ -4108,13 +4163,14 @@ function initPost(){
     " float n=fract(sin(dot(vUv,vec2(12.9898,78.233)))*43758.5453);"+ // ordered-noise dither:
     " c+=(n-0.5)/255.0;"+                                          // kills sky-gradient banding
     " gl_FragColor=vec4(c,1.0); }",
-    {tScene:{value:null},tBloom:{value:null},tRays:{value:null},strength:{value:0.74},vig:{value:0.33},rayStr:{value:0}});
+    {tScene:{value:null},tBloom:{value:null},tRays:{value:null},tAO:{value:null},strength:{value:0.74},vig:{value:0.33},rayStr:{value:0},aoStr:{value:0}});
 }
 function resizePost(){
   if(!POST.rtScene) return;
   const db=renderer.getDrawingBufferSize(new THREE.Vector2());
   const W=Math.max(2,db.x|0),H=Math.max(2,db.y|0),hw=Math.max(1,W>>1),hh=Math.max(1,H>>1);
-  POST.rtScene.setSize(W,H);POST.rtA.setSize(hw,hh);POST.rtB.setSize(hw,hh);
+  POST.rtScene.setSize(W,H);POST.rtA.setSize(hw,hh);POST.rtB.setSize(hw,hh);   // (the depth texture self-resizes with rtScene — r128 setupDepthTexture syncs image dims)
+  if(POST.rtAO){POST.rtAO.setSize(hw,hh);POST.rtAO2.setSize(hw,hh);}
 }
 function blitPass(mat,src,dst){
   POST.quad.material=mat;
@@ -4176,9 +4232,25 @@ function renderComposite(){
   renderReflection();
   cam.updateMatrixWorld(); FOGX.cam.value.copy(cam.matrixWorld);   // #689: restore the true camera for the main pass (and hand the fog this frame's matrix)
   if(!POST.on||!POST.rtScene){ renderer.setRenderTarget(null); renderer.render(scene,cam); return; }
-  // 1) scene → rtScene (tonemapped + sRGB by the renderer)
+  // 1) scene → rtScene (tonemapped + sRGB by the renderer; the end-of-render MSAA resolve
+  //    also blits DEPTH into rtScene.depthTexture — see initPost #690)
   renderer.setRenderTarget(POST.rtScene);
   renderer.render(scene,cam);
+  // 1b) #690: SSAO — AO from the resolved depth → rtAO, depth-aware blur H→rtAO2, V→rtAO
+  if(POST.aoOk&&GFX.ao&&POST.ao){
+    const pe=cam.projectionMatrix.elements;
+    POST.ao.uniforms.tDepth.value=POST.rtScene.depthTexture;
+    POST.ao.uniforms.uInvProj.value.copy(cam.projectionMatrixInverse);
+    POST.ao.uniforms.uProj.value.set(pe[0],pe[5]);
+    blitPass(POST.ao,null,POST.rtAO);
+    const bw=POST.rtAO.width,bh=POST.rtAO.height;
+    POST.aoBlur.uniforms.tDepth.value=POST.rtScene.depthTexture;
+    POST.aoBlur.uniforms.uAB.value.set(pe[10],pe[14]);
+    POST.aoBlur.uniforms.tAO.value=POST.rtAO.texture;  POST.aoBlur.uniforms.dir.value.set(1/bw,0); blitPass(POST.aoBlur,null,POST.rtAO2);
+    POST.aoBlur.uniforms.tAO.value=POST.rtAO2.texture; POST.aoBlur.uniforms.dir.value.set(0,1/bh); blitPass(POST.aoBlur,null,POST.rtAO);
+    POST.comp.uniforms.tAO.value=POST.rtAO.texture;
+    POST.comp.uniforms.aoStr.value=1.0;
+  } else POST.comp.uniforms.aoStr.value=0;
   // 2) bright pass → rtA (half-res)
   POST.bright.uniforms.tDiffuse.value=POST.rtScene.texture; blitPass(POST.bright,null,POST.rtA);
   // 3) two blur iterations (H then V), widening the glow
@@ -4498,7 +4570,7 @@ function gfxTick(dt){
   gfxGovern(dt);
 }
 // ── quality tiers + the 30-FPS governor ──
-const GFX={tier:3,rays:true,motesOn:true,mistOn:true,auroraOn:true,fps:60,_lo:0,_hi:0,forest:null,
+const GFX={tier:3,rays:true,ao:true,motesOn:true,mistOn:true,auroraOn:true,fps:60,_lo:0,_hi:0,forest:null,
   TIERS:["Low","Medium","High","Ultra"]};
 function applyGfxTier(t,quiet){
   t=clamp(t|0,0,3); GFX.tier=t;
@@ -4524,7 +4596,7 @@ function applyGfxTier(t,quiet){
   renderer.shadowMap.autoUpdate=GFX.shadowEvery<=1;
   if(GFX.shadowEvery>1) renderer.shadowMap.needsUpdate=true;
   POST.on=t>=1;
-  GFX.rays=t>=2; GFX.motesOn=t>=1; GFX.mistOn=t>=1; GFX.auroraOn=t>=1;
+  GFX.rays=t>=2; GFX.ao=t>=2; GFX.motesOn=t>=1; GFX.mistOn=t>=1; GFX.auroraOn=t>=1;   // #690: SSAO rides the High/Ultra tiers; the governor sheds it by tier downshift
   GFX.auroraN=t>=3?2:1; GFX.mistN=[0,8,12,16][t];
   if(auroraGroup) auroraGroup.children.forEach((m,i)=>m.visible=i<GFX.auroraN);
   if(MIST.pool) MIST.pool.forEach((m,i)=>{ if(i>=GFX.mistN) m.material.opacity=0; });
