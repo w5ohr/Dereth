@@ -1002,6 +1002,16 @@ const SKILLS_DEF=[
   // — Mounts & Vessels — (base movement speed while piloting a ship / riding a horse)
   {k:"sailing",    n:"Sailing",              fam:"Lore",   a:["Coordination","Focus"],     d:3, tc:2, sc:4, u:"util", e:"Base sailing speed of your ship"},
   {k:"riding",     n:"Horse Riding",         fam:"Lore",   a:["Coordination","Quickness"], d:3, tc:2, sc:4, u:"util", e:"Base riding speed of your mount"},
+  // — Trades: gathering & crafting (Ultima-Online-style) — training/spec is a head-start; the working
+  //   level rises with USE (player.craft, see craftLvl). Higher tiers of ore/wood/leather & finer
+  //   recipes unlock as the working level climbs. —
+  {k:"mining",     n:"Mining",               fam:"Trade",  a:["Strength","Endurance"],     d:2, tc:3, sc:6, u:"util", e:"Mine ore; higher tiers need more skill"},
+  {k:"lumberjack", n:"Lumberjacking",        fam:"Trade",  a:["Strength","Coordination"],  d:2, tc:3, sc:6, u:"util", e:"Fell trees for logs of finer wood"},
+  {k:"fishing",    n:"Fishing",              fam:"Trade",  a:["Coordination","Focus"],     d:2, tc:3, sc:6, u:"util", e:"Fish the lakes & coasts"},
+  {k:"blacksmithy",n:"Blacksmithy",          fam:"Trade",  a:["Strength","Focus"],         d:2, tc:4, sc:8, u:"util", e:"Forge weapons & armour from ingots"},
+  {k:"tailoring",  n:"Tailoring",            fam:"Trade",  a:["Coordination","Focus"],     d:2, tc:4, sc:8, u:"util", e:"Sew leather & cloth armour"},
+  {k:"carpentry",  n:"Carpentry",            fam:"Trade",  a:["Strength","Coordination"],  d:2, tc:4, sc:8, u:"util", e:"Build shields, staves & furniture"},
+  {k:"tinkering",  n:"Tinkering",            fam:"Trade",  a:["Focus","Coordination"],     d:2, tc:4, sc:8, u:"util", e:"Craft tools, jewellery & utility items"},
 ];
 // shared speed curve for mount/vessel skills: unskilled ≈ ×0.8 base speed, rising asymptotically to ×1.5.
 // Ship piloting multiplies by pilotSpeedFactor("sailing"); the horse-riding system (other client) should
@@ -1234,7 +1244,7 @@ const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
   hp:100,mhp:100,st:100,mst:100,mn:100,mmn:100,
   vitals:{hp:0,st:0,mn:0},   // AC secondary attributes: XP-raised Health/Stamina/Mana points, added to the derived base max
   level:1,xp:0,xpUnspent:0,skillPts:0,kills:0,gold:0,armor:0,weapon:null,armorSlots:{},jewelry:{},gearSkill:{},
-  inv:[],materials:0,salvage:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,potStam:0,
+  inv:[],materials:0,salvage:{},craft:{},weaponTink:0,armorTink:0,potHealth:0,potMana:0,potGreat:0,potStam:0,
   tapers:0,prismTapers:0,   // spell components: colored tapers + the universal Prismatic Taper
   achievements:[],title:"",bossKills:0,championKills:0,delves:0,delveCredited:[],bestiary:[],clearedDungeons:[],hasTorch:true,
   skills:freshSkills(),patronInfo:null,vassals:[],vassalXP:0,allegianceMOTD:null,vitae:0,heritage:"aluvian",
@@ -7874,6 +7884,7 @@ function buildWorld(){
   // gathering nodes scattered across the wilds
   for(let i=0;i<54;i++){let nx,nz,t=0;do{nx=rnd(-HALF+10,HALF-10);nz=rnd(-HALF+10,HALF-10);t++;}while(nearestCapitalDist(nx,nz)<TOWN_SAFE+10&&t<20);
     addNode(nx,nz,Math.random()<0.5?"ore":"herb");}
+  if(typeof buildCraftWorld==="function") buildCraftWorld();   // UO crafting: place Crafting Forges in towns + ore veins, choppable trees & fishing spots in the wilds
   // scenery clusters around hubs, keyed to each region's AC biome (forest / wooded hills / desert /
   // barren Direlands / snowy frontier / swamp) so the flora around each town matches Asheron's Call
   for(let i=0;i<1900;i++){
@@ -11961,6 +11972,7 @@ function killMonster(m){
     for(let i=0;i<n;i++) addDrop(m.x+rnd(-1.2,1.2),m.z+rnd(-1.2,1.2),{type:"item",item:rollItem(rich,tier)});
   }
   if(Math.random()<0.20){ const tr=rollTrophy(m.kind); if(tr) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:tr}); }   // creature trophy
+  if(typeof craftHideDrop==="function") craftHideDrop(m,b);   // UO crafting: creatures yield tanning hides (tier scales with the beast)
   if(Math.random()<0.05){ const k=Math.random()<0.7?{name:"Lockpick",stat:"pick",v:1}:{name:"Brass Key",stat:"key",v:1}; addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:k}); }   // lockpick / key
   if(Math.random()<0.04) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollTradeNote()});   // trade note
   if(Math.random()<((m.kind==="shadow"||m.kind==="virindi"||m.kind==="skeleton")?0.10:0.03)) addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:rollComponent()});   // spell component (casters drop more)
@@ -16410,6 +16422,8 @@ function applyItem(it){
   else if(it.stat==="book"){ openBookReader(it); return "keep"; }   // retail books open the parchment reader, never consumed
   else if(it.stat==="dye"){ return openDyePicker(it); }             // AC dye pots recolor a worn piece
   else if(it.stat==="plant"){ log(`A <b>${it.name}</b> — a dye reagent. Crush 2 of them into a <b>${it.dye||"dye pot"}</b> at a crafting station (Tinkering panel, key T · Alchemy).`,"sys"); return "keep"; }
+  else if(it.stat==="resource"){ log(`<b>${it.name}</b> — a crafting resource. Bring it to a <b>Crafting Forge</b> (press E at one in any town) to smelt, refine, or craft.`,"sys"); return "keep"; }
+  else if(it.stat==="tool"){ log(`<b>${it.name}</b> — a crafting tool${it.uses!=null?` (${it.uses} uses left)`:""}. Carry it and it's used automatically when you craft at a station.`,"sys"); return "keep"; }
   else if(it.stat==="salvage"){                                      // a bag of salvaged material → pours into your materials
     player.salvage=player.salvage||{}; const mat=it.mat||"Steel", u=it.units||100, w=it.work||10;
     const bag=player.salvage[mat]||(player.salvage[mat]={units:0,work:0});
@@ -18141,6 +18155,7 @@ function interact(){
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
   for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<3){ gatherNode(n); return; } }
   { let bp=null,bd=2.6*2.6; for(const sp of _plantSpots){ const dx=sp.x-player.x,dz=sp.z-player.z,d=dx*dx+dz*dz; if(d<bd){bd=d;bp=sp;} } if(bp){ pickPlant(bp); return; } }   // pick a wild plant for dye-making
+  if(typeof craftInteract==="function" && craftInteract()) return;   // UO crafting: forges/anvils → craft menu, choppable trees → logs, water's edge → fishing
   for(const pt of portals){
     if(Math.hypot(pt.x-player.x,pt.z-player.z)<3.2){
       log(`You step into the portal…`,"sys");
@@ -23834,7 +23849,7 @@ function scrollPrice(id){ const sp=SPELLBOOK[id]; return 90+(sp?sp.lvl:1)*80; }
 // ---- gear vendor (Outfitter): buys/sells rolled gear at rarity-scaled prices ----
 function gearIco(it){
   if(it&&it.acicon) return `<img src="assets/acicons/${it.acicon}.png" style="width:1.25em;height:1.25em;vertical-align:-0.28em;image-rendering:pixelated" onerror="this.replaceWith(document.createTextNode('📦'))">`;   // the item's ORIGINAL inventory icon
-  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="aetheria"?"🧿":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":it.stat==="plant"?(it.ico||"🌿"):(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
+  return it.stat==="weapon"?(it.wt==="focus"?"🔮":"⚔️"):it.stat==="worn"?"🛡":it.stat==="jewelry"?(it.jtype==="neck"?"📿":it.jtype==="wrist"?"⌚":"💍"):it.stat==="food"?"🍖":it.stat==="trophy"?"🦴":it.stat==="comp"?"🪲":it.stat==="note"?"💵":it.stat==="pick"?"🔓":it.stat==="key"?"🔑":it.stat==="aetheria"?"🧿":it.stat==="augment"?"✨":it.stat==="pack"?"🎒":it.stat==="ammo"?"🏹":it.stat==="oil"?"🧴":it.stat==="atlanstone"?"🪨":it.stat==="recall"?"🔵":it.stat==="cure"?"🟢":it.stat==="hot"?"💧":it.stat==="skillpot"?"⚗️":it.stat==="attrpot"?"🍶":it.stat==="portalgem"?"🌀":it.stat==="contract"?"📜":it.stat==="ticket"?"🎟️":it.stat==="keyring"?"🔑":it.stat==="manastone"?"🔷":it.stat==="book"?"📖":it.stat==="dye"?"🎨":it.stat==="quest"?"📜":it.stat==="furniture"?"🪑":it.stat==="writ"?"📃":it.stat==="plant"?(it.ico||"🌿"):it.stat==="resource"?(it.ico||"📦"):it.stat==="tool"?(it.ico||"🔨"):(it.stat==="hp"||it.stat==="mn"||it.stat==="st")?"🧪":"📦"; }
 function gearPrice(it){ const mult={common:1,uncommon:1.6,fine:2.4,rare:4,epic:7,legendary:14}[itemRarity(it).n]||1;
   return Math.round((22+(it.v||0)*3+(it.tier||1)*14)*mult); }
 function gearSellPrice(it){ let p;
@@ -27008,7 +27023,7 @@ function addNode(x,z,type){
 function gatherNode(n){
   n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
   startAction(n.type==="ore"?"mine":"gather",1.3);   // play the work animation (mining swing / crouched harvest)
-  if(n.type==="ore"){const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot");}
+  if(n.type==="ore"){ if(typeof mineOreYield==="function"){ mineOreYield(); } else { const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot"); } }
   else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
     if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
   gainXP(30);SFX.gold();questEvent("gather", n.type==="ore"?"ore":"harvest");updateHUD();   // #236: mining advances only "ore"-kind objectives, not generic fetch quests
@@ -30886,7 +30901,7 @@ function buildTinker(){
       rows.appendChild(row); return;
     }
     const base=it.cape?`<span style="color:#9ab0ff">legendary cape · back slot · +${it.magicDef||0} Magic Defense · +${it.elemProt||0} protection vs all elements</span>`:
-    it.stat==="plant"?`<span style="color:#a8d878">dye plant · crush 2 into a ${it.dye||"dye pot"} (Alchemy)</span>`:it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · ${Math.round(it.stored!=null?it.stored:(it.charge||0))}/${it.cap||300} stored · Use: release into gear · draw from your mana · consume an enchanted item</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
+    it.stat==="plant"?`<span style="color:#a8d878">dye plant · crush 2 into a ${it.dye||"dye pot"} (Alchemy)</span>`:it.stat==="resource"?`<span style="color:#cdbf9a">${it.kindLabel||"crafting resource"}${it.tierLabel?" · "+it.tierLabel:""} · use at a crafting station</span>`:it.stat==="tool"?`<span style="color:#d0c090">crafting tool${it.uses!=null?" · "+it.uses+" uses left":""} · ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.tool])?SKILL_BY_KEY[it.tool].n:it.tool}</span>`:it.stat==="trophy"?`<span style="color:#cdbf9a">trophy · sells for ${it.v}p</span>`:it.stat==="quest"?`<span style="color:#e8d27a">quest item · turn in or sell (${it.v}p)</span>`:it.stat==="comp"?(isScarab(it)?`<span style="color:#c9a6ff">scarab · casting reagent (lv ${SCARAB_LEVEL[it.name]}) · powers a spell when mana runs out · sells ${it.v}p</span>`:`<span style="color:#cdbf9a">spell component · sells for ${it.v}p</span>`):it.stat==="note"?`<span style="color:#ffd86b">trade note · redeem for ${it.v}p</span>`:(it.stat==="pick"||it.stat==="key")?`<span style="color:#cdbf9a">${it.stat==="key"?"key":"lockpick"} · opens a locked cache</span>`:it.stat==="aetheria"?`<span style="color:#66c8ff">aetheria (${it.color} slot, L${aetheriaSlotLevel(it.color)}+) · ${(typeof aetheriaDesc==="function")?aetheriaDesc(it):""} · Use to slot</span>`:it.stat==="augment"?`<span style="color:#ffd23b">augmentation · ${it.augDesc||"permanent boost"}</span>`:it.stat==="pack"?`<span style="color:#c9e0a6">container · +${it.cap} satchel slots</span>`:it.stat==="ammo"?`<span style="color:#e0c68a">ammunition · +${it.dmg} dmg${it.element?" "+it.element:""} · for ${it.for}</span>`:it.stat==="oil"?`<span style="color:#e0c68a">weapon oil · +${it.v}% dmg for ${it.dur}s</span>`:it.stat==="atlanstone"?`<span style="color:#ffb060">Atlan stone · Use to brand your weapon with ${it.element}${it.vplus?" (+"+it.vplus+" dmg)":""}</span>`:it.stat==="recall"?`<span style="color:#7fb0ff">recall stone · teleport to your bound Lifestone</span>`:it.stat==="cure"?`<span style="color:#8fe6a0">antidote · cleanses hostile curses</span>`:it.stat==="hot"?`<span style="color:#8fe6a0">regen · +${it.rate} ${({hp:"health",st:"stamina",mn:"mana"})[it.pool]||it.pool}/s for ${it.dur}s</span>`:it.stat==="skillpot"?`<span style="color:#bfe0ff">aptitude elixir · +${it.v} ${(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="attrpot"?`<span style="color:#bfe0ff">philtre · +${it.v} ${it.attr} for ${it.dur>=120?Math.round(it.dur/60)+" min":it.dur+"s"}</span>`:it.stat==="portalgem"?`<span style="color:#c7a6ff">portal gem · opens a portal to ${it.town}</span>`:it.stat==="contract"?`<span style="color:#c7a6ff">recall contract · reusable · recall to ${it.town} (2 min cooldown)</span>`:it.stat==="ticket"?`<span style="color:#ffd86b">colosseum ticket · enter the arena gauntlet at the Colosseum</span>`:it.stat==="keyring"?`<span style="color:#cdbf9a">keyring · holds ${it.picks||0} picks &amp; ${it.keys||0} keys · Use to stow loose ones</span>`:it.stat==="manastone"?`<span style="color:#9af0ff">mana stone · ${Math.round(it.stored!=null?it.stored:(it.charge||0))}/${it.cap||300} stored · Use: release into gear · draw from your mana · consume an enchanted item</span>`:it.wt==="focus"?`<span style="color:#c9a6ff">+${it.foc||it.v} all magic · casting focus</span>`:it.stat==="weapon"?`+${it.v} dmg · ${(it.wt&&WEAPON_TYPES[it.wt]&&WEAPON_TYPES[it.wt].dt)||"melee"}`:it.stat==="worn"?`+${it.v} armor · ${it.cov?"covers "+[it.aslot||"chest"].concat(it.cov).join(" + "):(it.aslot==="offhand"?"shield":(it.aslot||"chest"))}`:it.stat==="jewelry"?`${({finger:"ring",wrist:"bracelet",neck:"necklace"})[it.jtype]||"trinket"} · <span style="color:#c9a6ff">${jewelryDesc(it)}</span>`:it.stat==="food"?`food · <span style="color:#9be08a">+${it.v} ${it.attr} ${it.dur}s</span>`:it.stat==="armor"?`+${it.v} armor`:it.stat==="hp"?`+${it.v} HP`:it.stat==="mn"?`+${it.v} mana`:it.stat==="st"?`+${it.v} stamina`:`+${it.v} ${it.stat}`;
     const spellsHTML=(()=>{ if(it.stat!=="weapon"&&it.stat!=="worn") return "";
       let h=""; if(it.cantrips&&it.cantrips.length) h+=` · <span style="color:#c9a6ff">${it.cantrips.map(c=>c.name).join(", ")}</span>`;
       const sn=itemSpellNames(it); if(sn.length){ const dormant=it.itemMana!=null&&it.itemMana<=0;
@@ -30944,7 +30959,7 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
     const baseAttr={}; for(const a in player.attr) baseAttr[a]=player.attr[a]-((player.spellBuffs&&player.spellBuffs[a])?player.spellBuffs[a].v:0);
     const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
       skillPts:player.skillPts,freeRank:player.freeRank||null,kills:player.kills,gold:player.gold,armor:player.armor,
-      inv:player.inv,materials:player.materials,salvage:player.salvage,weaponTink:player.weaponTink,armorTink:player.armorTink,
+      inv:player.inv,materials:player.materials,salvage:player.salvage,craft:player.craft,weaponTink:player.weaponTink,armorTink:player.armorTink,
       weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,aetheria:player.aetheria||null,attrInnate:player.attrInnate||null,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
       name:player.name,appearance:player.appearance,
       potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
@@ -30984,7 +30999,7 @@ function applySaveObj(s){
     greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
     academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
     packs:Array.isArray(s.packs)?s.packs:[],
-    kills:s.kills|0,gold:Math.max(0,Math.min(2e9,Math.floor(+s.gold||0))),armor:s.armor|0,inv:Array.isArray(s.inv)?s.inv:[],materials:s.materials||0,salvage:(s.salvage&&typeof s.salvage==="object")?s.salvage:{},   // #292: gold via clamp not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR; clamp to [0,2e9] to match the server's coin ceiling
+    kills:s.kills|0,gold:Math.max(0,Math.min(2e9,Math.floor(+s.gold||0))),armor:s.armor|0,inv:Array.isArray(s.inv)?s.inv:[],materials:s.materials||0,salvage:(s.salvage&&typeof s.salvage==="object")?s.salvage:{},craft:(s.craft&&typeof s.craft==="object")?s.craft:{},   // #292: gold via clamp not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR; clamp to [0,2e9] to match the server's coin ceiling
     weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
     potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
     tapers:s.tapers||0,prismTapers:s.prismTapers||0,
@@ -33271,6 +33286,457 @@ function tcSheetClose(){ const sh=document.getElementById('tcSheet'); if(sh) sh.
 // boot: load the saved preference (default auto = device detection at page load)
 (function(){ try{ const p=localStorage.getItem("dereth_touchui"); if(p==="on"||p==="off"||p==="auto") TOUCH.pref=p; }catch(e){}
   applyTouchUI(); })();
+</script>
+<script>
+/* ============================================================================
+   ULTIMA-ONLINE-STYLE CRAFTING & HARVESTING  (self-contained module)
+   ── Gathering skills (Mining, Lumberjacking, Fishing) feed nine metal, seven
+      wood and four leather tiers. Raw ore/logs/hides refine into ingots/boards/
+      leather, which the crafting skills (Blacksmithy, Tailoring, Carpentry,
+      Fletching, Tinkering, Cooking, Alchemy) turn into gear at a Crafting Forge.
+   ── Working level rises with USE (player.craft); training/spec is a head start.
+      Higher material tiers pass their bonuses to the item; skilled crafters roll
+      EXCEPTIONAL pieces signed with a maker's mark. Tools wear out with use.
+   ============================================================================ */
+
+// ---- resource ladders (mining/lumberjack/leather requirement = working level) ----
+const UO_METALS=[
+  {k:"iron",       n:"Iron",        req:0,  col:0x9a9a9a, dmg:1.00, arm:1.00, val:1,  res:"—"},
+  {k:"dullcopper", n:"Dull Copper", req:20, col:0x9a6a4a, dmg:1.06, arm:1.12, val:2,  res:"+durability, +phys"},
+  {k:"shadowiron", n:"Shadow Iron", req:30, col:0x35363f, dmg:1.10, arm:1.08, val:3,  res:"+durability"},
+  {k:"copper",     n:"Copper",      req:40, col:0xb87333, dmg:1.14, arm:1.11, val:4,  res:"+phys"},
+  {k:"bronze",     n:"Bronze",      req:50, col:0x8c6a3a, dmg:1.19, arm:1.15, val:6,  res:"+fire"},
+  {k:"gold",       n:"Gold",        req:60, col:0xd4af37, dmg:1.24, arm:1.20, val:9,  res:"+cold/poison, +luck"},
+  {k:"agapite",    n:"Agapite",     req:70, col:0xc0607e, dmg:1.29, arm:1.27, val:13, res:"+all resist"},
+  {k:"verite",     n:"Verite",      req:80, col:0x2f8a5a, dmg:1.35, arm:1.35, val:18, res:"+phys/energy"},
+  {k:"valorite",   n:"Valorite",    req:90, col:0x4a6ac8, dmg:1.42, arm:1.44, val:26, res:"+phys/energy, +luck"},
+];
+const UO_WOODS=[
+  {k:"regular",  n:"",          req:0,  col:0x8a5a32, dmg:1.00, arm:1.00, val:1},
+  {k:"oak",      n:"Oak",       req:25, col:0x9a6a3a, dmg:1.05, arm:1.05, val:2},
+  {k:"ash",      n:"Ash",       req:40, col:0xb89a6a, dmg:1.10, arm:1.08, val:3},
+  {k:"yew",      n:"Yew",       req:55, col:0x6f5f3a, dmg:1.16, arm:1.13, val:5},
+  {k:"heartwood",n:"Heartwood", req:70, col:0xa84a2a, dmg:1.23, arm:1.19, val:8},
+  {k:"bloodwood",n:"Bloodwood", req:82, col:0x8a1f1f, dmg:1.31, arm:1.25, val:13},
+  {k:"frostwood",n:"Frostwood", req:92, col:0x8ab0d0, dmg:1.39, arm:1.33, val:20},
+];
+const UO_LEATHERS=[
+  {k:"leather",n:"Leather", req:0,  col:0x8a5a32, arm:1.00, val:1},
+  {k:"spined", n:"Spined",  req:35, col:0x5a7a4a, arm:1.14, val:3},
+  {k:"horned", n:"Horned",  req:60, col:0x8a6a3a, arm:1.26, val:6},
+  {k:"barbed", n:"Barbed",  req:85, col:0x6a3a5a, arm:1.38, val:11},
+];
+const UO_METAL_BY={},UO_WOOD_BY={},UO_LEATHER_BY={};
+UO_METALS.forEach(m=>UO_METAL_BY[m.k]=m); UO_WOODS.forEach(w=>UO_WOOD_BY[w.k]=w); UO_LEATHERS.forEach(l=>UO_LEATHER_BY[l.k]=l);
+const UO_TRADES=["mining","lumberjack","fishing","blacksmithy","tailoring","carpentry","fletching","tinkering","cooking","alchemy"];
+
+// ---- working level: use-XP curve (0..100) + training(+20)/spec(+15) head start (cap 120) ----
+function craftLvl(key){
+  const xp=(player.craft&&player.craft[key])||0;
+  let lvl=Math.min(100, Math.floor(7.6*Math.sqrt(xp)));   // xp 44→~50, xp 173→100
+  if(typeof skillTier==="function"){ const t=skillTier(key); if(t>=1) lvl=Math.min(120,lvl+20); if(t>=2) lvl=Math.min(120,lvl+15); }
+  return lvl;
+}
+function gainCraft(key,amt){
+  player.craft=player.craft||{};
+  const before=craftLvl(key);
+  player.craft[key]=(player.craft[key]||0)+(amt||1);
+  const after=craftLvl(key);
+  if(after>before){
+    const nm=(SKILL_BY_KEY[key]&&SKILL_BY_KEY[key].n)||key;
+    floater(player.x,EYE+0.7,player.z,nm+" "+after,"#ffd86b");
+    if(after%5===0) log(`Your <b>${nm}</b> skill rises to <b>${after}</b>.`,"sys");
+  }
+}
+// weighted tier roll: mostly the base tier, rarer chance of the best unlocked (authentic "colored ore is rare")
+function rollResTier(ladder,lvl){
+  const avail=ladder.filter(t=>t.req<=lvl);
+  for(let i=avail.length-1;i>=1;i--){ const t=avail[i]; const p=clamp(0.05+(lvl-t.req)*0.004,0.02,0.32); if(Math.random()<p) return t; }
+  return avail[0];
+}
+
+// ---- resource items (stackable inventory items) ----
+function resItem(kind,tierKey,count){
+  count=count||1; let name,ico,col,v,kl,tl;
+  if(kind==="ore"){ const t=UO_METAL_BY[tierKey]||UO_METALS[0]; name=t.n+" Ore"; ico="🪨"; col=t.col; v=Math.max(1,Math.round(2*t.val)); kl="raw ore — smelt into ingots"; tl=t.n; }
+  else if(kind==="ingot"){ const t=UO_METAL_BY[tierKey]||UO_METALS[0]; name=t.n+" Ingot"; ico="🔩"; col=t.col; v=Math.max(1,Math.round(4*t.val)); kl="metal ingot"; tl=t.n; }
+  else if(kind==="log"){ const t=UO_WOOD_BY[tierKey]||UO_WOODS[0]; name=(t.n?t.n+" ":"")+"Log"; ico="🪵"; col=t.col; v=Math.max(1,Math.round(2*t.val)); kl="log — mill into boards"; tl=t.n||"Common"; }
+  else if(kind==="board"){ const t=UO_WOOD_BY[tierKey]||UO_WOODS[0]; name=(t.n?t.n+" ":"")+"Board"; ico="🟫"; col=t.col; v=Math.max(1,Math.round(3*t.val)); kl="board"; tl=t.n||"Common"; }
+  else if(kind==="hide"){ const t=UO_LEATHER_BY[tierKey]||UO_LEATHERS[0]; name=(t.k==="leather"?"":t.n+" ")+"Hide"; ico="🟤"; col=t.col; v=Math.max(1,Math.round(2*t.val)); kl="raw hide — tan into leather"; tl=t.n; }
+  else { const t=UO_LEATHER_BY[tierKey]||UO_LEATHERS[0]; name=(t.k==="leather"?"":t.n+" ")+"Leather"; ico="🟫"; col=t.col; v=Math.max(1,Math.round(4*t.val)); kl="cured leather"; tl=t.n; }
+  return {name,stat:"resource",kind,mat:tierKey,count,ico,v,kindLabel:kl,tierLabel:tl};
+}
+function resNameFor(kind,tierKey){ return resItem(kind,tierKey,1).name; }
+
+// ---- tools ----
+function findCraftTool(kind){ return player.inv.find(it=>it&&it.stat==="tool"&&it.tool===kind&&(it.uses==null||it.uses>0)); }
+function hasCraftTool(kind){ return !!findCraftTool(kind); }
+function consumeCraftTool(kind){ const t=findCraftTool(kind); if(!t) return false;
+  if(t.uses!=null){ t.uses--; if(t.uses<=0){ const i=player.inv.indexOf(t); if(i>=0)player.inv.splice(i,1); log(`Your <b>${t.name}</b> wears out and breaks.`,"warn"); } } return true; }
+function toolItem(kind,name,uses,ico){ return {name,stat:"tool",tool:kind,uses,ico}; }
+
+// ---- GATHERING ── mining (called from gatherNode's ore branch) ----
+function mineOreYield(){
+  const lvl=craftLvl("mining");
+  const t=rollResTier(UO_METALS,lvl);
+  const bonus=hasCraftTool("mining")?irnd(1,3):0;
+  const a=irnd(2,5)+bonus;
+  const it=resItem("ore",t.k,a);
+  if(!addToInv(it)){ addDrop(player.x,player.z,{type:"item",item:it}); }
+  floater(player.x,EYE+0.4,player.z,"+"+a+" "+t.n+" Ore",(t.k==="iron"?"#cfd0d0":"#"+t.col.toString(16).padStart(6,"0")));
+  log(`You mine <b>${a} ${t.n} Ore</b>${bonus?" (pickaxe)":""}.`,"loot");
+  if(hasCraftTool("mining")) consumeCraftTool("mining");
+  gainCraft("mining",1);
+}
+
+// ---- GATHERING ── lumberjacking & fishing (via craftInteract) ----
+let craftStations=[], lumberNodes=[], fishSpots=[];
+function chopTree(t){
+  const lvl=craftLvl("lumberjack");
+  t.depleted=true; t.readyAt=now()+rnd(45000,80000);
+  if(t.canopy) t.canopy.visible=false; if(t.stump) t.stump.visible=true; if(t.spr) t.spr.visible=false;
+  startAction("mine",1.4);
+  const tier=rollResTier(UO_WOODS,lvl);
+  const bonus=hasCraftTool("lumberjack")?irnd(1,3):0;
+  const a=irnd(2,5)+bonus;
+  const it=resItem("log",tier.k,a);
+  if(!addToInv(it)){ addDrop(player.x,player.z,{type:"item",item:it}); }
+  floater(player.x,EYE+0.5,player.z,"+"+a+" "+(tier.n?tier.n+" ":"")+"Log","#c8a06a");
+  log(`You fell the tree for <b>${a} ${tier.n?tier.n+" ":""}Log${a>1?"s":""}</b>${bonus?" (hatchet)":""}.`,"loot");
+  if(hasCraftTool("lumberjack")) consumeCraftTool("lumberjack");
+  gainCraft("lumberjack",1); gainXP(22); if(SFX&&SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather","harvest"); updateHUD();
+}
+const UO_FISH=[
+  {n:"Minnow",req:0,v:2,dur:45},{n:"Trout",req:15,v:3,dur:70},{n:"Bass",req:35,v:4,dur:110},
+  {n:"Salmon",req:55,v:5,dur:160},{n:"Swordfish",req:80,v:7,dur:220},
+];
+function rollFish(lvl){
+  const avail=UO_FISH.filter(f=>f.req<=lvl); let f=avail[0];
+  for(let i=avail.length-1;i>=1;i--){ const p=clamp(0.06+(lvl-avail[i].req)*0.005,0.03,0.4); if(Math.random()<p){ f=avail[i]; break; } }
+  return {name:"Raw "+f.n,stat:"food",v:f.v,attr:"Endurance",dur:f.dur,ico:"🐟",fish:true,raw:true,species:f.n};
+}
+function fishAtSpot(sp){
+  if(!hasCraftTool("fishing")){ log("You need a <b>Fishing Pole</b> — buy or craft one at a Crafting Forge.","warn"); if(SFX&&SFX.deny)SFX.deny(); return; }
+  sp.readyAt=now()+rnd(6000,12000);
+  startAction("fish",1.6);
+  const lvl=craftLvl("fishing");
+  if(lvl>40 && Math.random()<0.03){ const g=irnd(200,900); player.gold+=g; floater(player.x,EYE+0.6,player.z,"+"+g+"p","#ffd86b"); log(`Your line snags a waterlogged coffer — <b>${g} pyreals</b>!`,"loot"); }
+  else { const f=rollFish(lvl); if(!addToInv(f)){ addDrop(player.x,player.z,{type:"item",item:f}); } floater(player.x,EYE+0.6,player.z,f.name,"#8fd0e0"); log(`You reel in a <b>${f.name}</b>.`,"loot"); }
+  consumeCraftTool("fishing");
+  gainCraft("fishing",1); gainXP(16); if(SFX&&SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather","harvest"); updateHUD();
+}
+// hides drop off slain beasts (tier scales with the creature's strength)
+function craftHideDrop(m,b){
+  if(Math.random()>0.5) return;
+  const pw=(m&&m.xp)||(b&&b.xp)||10;
+  let k="leather"; if(pw>1400)k="barbed"; else if(pw>550)k="horned"; else if(pw>160)k="spined";
+  addDrop(m.x+rnd(-1,1),m.z+rnd(-1,1),{type:"item",item:resItem("hide",k,irnd(1,2))});
+}
+
+// ---- interact hook: stations → menu, trees → chop, water's edge → fish ----
+function craftInteract(){
+  for(const s of craftStations){ if(Math.hypot(s.x-player.x,s.z-player.z)<3.8){ openCraftMenu(); return true; } }
+  for(const t of lumberNodes){ if(t.depleted&&now()>t.readyAt){ t.depleted=false; if(t.canopy)t.canopy.visible=true; if(t.stump)t.stump.visible=false; if(t.spr)t.spr.visible=true; }
+    if(!t.depleted && Math.hypot(t.x-player.x,t.z-player.z)<3){ chopTree(t); return true; } }
+  for(const sp of fishSpots){ if(Math.hypot(sp.x-player.x,sp.z-player.z)<3.4 && (!sp.readyAt||now()>sp.readyAt)){ fishAtSpot(sp); return true; } }
+  return false;
+}
+function nearCraftStation(){ for(const s of craftStations){ if(Math.hypot(s.x-player.x,s.z-player.z)<5) return true; } return false; }
+
+// ---- WORLD: Crafting Forges in towns + ore veins, choppable trees, fishing spots ----
+function buildStationMesh(x,y,z){
+  const g=new THREE.Group(); g.position.set(x,y,z);
+  const stone=new THREE.MeshStandardMaterial({color:0x5a554c,roughness:0.95,metalness:0.05});
+  const iron=new THREE.MeshStandardMaterial({color:0x2b2b30,roughness:0.55,metalness:0.7});
+  const wood=new THREE.MeshStandardMaterial({color:0x6a4a2a,roughness:0.9});
+  // forge base + hood
+  const base=new THREE.Mesh(new THREE.BoxGeometry(2.0,1.1,1.4),stone); base.position.set(-1.0,0.55,0); base.castShadow=base.receiveShadow=true; g.add(base);
+  const hood=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.6,1.3,8),stone); hood.position.set(-1.0,1.85,0); g.add(hood);
+  const coals=new THREE.Mesh(new THREE.CircleGeometry(0.55,12),new THREE.MeshBasicMaterial({color:0xff7a2a})); coals.rotation.x=-Math.PI/2; coals.position.set(-1.0,1.12,0); g.add(coals);
+  const glow=new THREE.PointLight(0xff8a3a,1.2,7); glow.position.set(-1.0,1.4,0); g.add(glow);
+  // anvil
+  const anv=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.32,0.4),iron); anv.position.set(0.7,0.95,0.2); anv.castShadow=true; g.add(anv);
+  const anvNeck=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.55,0.3),iron); anvNeck.position.set(0.7,0.5,0.2); g.add(anvNeck);
+  // workbench
+  const bench=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.16,0.7),wood); bench.position.set(0.9,0.95,-0.9); bench.castShadow=true; g.add(bench);
+  for(const bx of[0.2,1.6]) for(const bz of[-0.6,-1.2]){ const leg=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.9,0.12),wood); leg.position.set(bx,0.45,bz); g.add(leg); }
+  const spr=textSprite("⚒️","#ffd27a"); spr.scale.set(1.3,1.3,1); spr.position.set(0,2.7,0); g.add(spr);
+  scene.add(g); return g;
+}
+function buildTreeMesh(x,y,z,wood){
+  const g=new THREE.Group(); g.position.set(x,y,z);
+  const bark=new THREE.MeshStandardMaterial({color:0x6a4a2c,roughness:0.95});
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.42,3.0,7),bark); trunk.position.y=1.5; trunk.castShadow=true; g.add(trunk);
+  const canopy=new THREE.Group();
+  const leaf=new THREE.MeshStandardMaterial({color:0x2f6a34,roughness:0.9});
+  for(let i=0;i<3;i++){ const b=new THREE.Mesh(new THREE.IcosahedronGeometry(1.1-i*0.18,0),leaf); b.position.set(rnd(-0.4,0.4),2.8+i*0.7,rnd(-0.4,0.4)); b.castShadow=true; canopy.add(b); }
+  g.add(canopy);
+  const stump=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.44,0.5,7),bark); stump.position.y=0.25; stump.visible=false; g.add(stump);
+  const spr=textSprite("🪓","#d8c088"); spr.scale.set(0.8,0.8,1); spr.position.y=4.2; g.add(spr);
+  scene.add(g);
+  return {x,z,mesh:g,canopy,stump,spr,depleted:false,readyAt:0};
+}
+function waterNear(x,z){ for(let a=0;a<6.28;a+=0.8){ if(terrainH(x+Math.cos(a)*4.5,z+Math.sin(a)*4.5)<-0.2) return true; } return false; }
+function buildCraftWorld(){
+  if(craftStations.length) return;   // once
+  // 1) a Crafting Forge in / beside every town
+  for(const c of CITIES){
+    let px=null,py=0,pz=0;
+    for(const ang of [0.4,1.3,2.2,3.1,4.0,4.9,5.8,0.9]){
+      const x=c.x+Math.cos(ang)*15, z=c.z+Math.sin(ang)*15, h=terrainH(x,z);
+      if(h>1.1 && Math.abs(terrainH(x+2,z)-h)<2.2 && Math.abs(terrainH(x,z+2)-h)<2.2){ px=x;py=h;pz=z; break; }
+    }
+    if(px==null){ px=c.x+15; pz=c.z; py=Math.max(1,terrainH(px,pz)); }
+    const mesh=buildStationMesh(px,py,pz);
+    craftStations.push({x:px,z:pz,y:py,mesh,town:c.name});
+  }
+  // 2) ore veins clustered in the hills (extra mining nodes, on top of the wild scatter)
+  let placed=0,tries=0;
+  while(placed<70 && tries<1200){ tries++;
+    const x=rnd(-HALF+12,HALF-12), z=rnd(-HALF+12,HALF-12), h=terrainH(x,z);
+    if(h>7 && (typeof nearestCapitalDist!=="function"||nearestCapitalDist(x,z)>40)){ addNode(x,z,"ore"); placed++; }
+  }
+  // 3) choppable trees in wooded land
+  placed=0; tries=0;
+  while(placed<130 && tries<3000){ tries++;
+    const x=rnd(-HALF+14,HALF-14), z=rnd(-HALF+14,HALF-14), h=terrainH(x,z);
+    if(h>1.6 && h<30 && (typeof nearestCapitalDist!=="function"||nearestCapitalDist(x,z)>30)){ lumberNodes.push(buildTreeMesh(x,h,z)); placed++; }
+  }
+  // 4) fishing spots along shorelines — the shore is a 1-D curve, so march OUTWARD from a
+  //    random water cell until we cross onto land, and drop the spot right at the water's edge
+  placed=0; tries=0;
+  while(placed<50 && tries<8000){ tries++;
+    const x=rnd(-HALF+25,HALF-25), z=rnd(-HALF+25,HALF-25);
+    if(terrainH(x,z)>-1) continue;                       // start in water
+    const a=rnd(0,6.28), dx=Math.cos(a), dz=Math.sin(a);
+    let fx=x,fz=z,found=false;
+    for(let s=0;s<40;s++){ fx+=dx*2.5; fz+=dz*2.5; if(Math.abs(fx)>HALF-12||Math.abs(fz)>HALF-12) break;
+      const h=terrainH(fx,fz); if(h>0.4 && h<8){ found=true; break; } if(h>20) break; }
+    if(!found) continue;
+    const h=terrainH(fx,fz);
+    const g=new THREE.Group(); g.position.set(fx,Math.max(0.05,h),fz);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.06,6,16),new THREE.MeshBasicMaterial({color:0x6fd0e0,transparent:true,opacity:0.7})); ring.rotation.x=-Math.PI/2; ring.position.y=0.05; g.add(ring);
+    const spr=textSprite("🎣","#8fe0f0"); spr.scale.set(0.8,0.8,1); spr.position.y=1.4; g.add(spr);
+    scene.add(g); fishSpots.push({x:fx,z:fz,mesh:g,readyAt:0}); placed++;
+  }
+  // lazy tree-regrow tick (cheap; restores canopies you're not standing next to)
+  setInterval(()=>{ const t0=now(); for(const t of lumberNodes){ if(t.depleted&&t0>t.readyAt){ t.depleted=false; if(t.canopy)t.canopy.visible=true; if(t.stump)t.stump.visible=false; if(t.spr)t.spr.visible=true; } } },4000);
+}
+
+// ---- RECIPE CATALOG (built with loops) ----
+const _AS_SLOTS=[{slot:"head",suf:"Helm",vMul:0.55,n:2},{slot:"chest",suf:"Hauberk",vMul:1.0,n:6},{slot:"upperarm",suf:"Pauldrons",vMul:0.55,n:2},{slot:"lowerarm",suf:"Vambraces",vMul:0.45,n:2},{slot:"hands",suf:"Gauntlets",vMul:0.4,n:2},{slot:"legs",suf:"Leggings",vMul:0.8,n:4},{slot:"feet",suf:"Sabatons",vMul:0.45,n:2}];
+const _LE_SLOTS=[{slot:"head",suf:"Cap",vMul:0.5,n:2},{slot:"chest",suf:"Tunic",vMul:1.0,n:5},{slot:"upperarm",suf:"Sleeves",vMul:0.5,n:2},{slot:"hands",suf:"Gloves",vMul:0.4,n:2},{slot:"legs",suf:"Leggings",vMul:0.8,n:4},{slot:"feet",suf:"Boots",vMul:0.45,n:2}];
+function _mprefix(tier){ if(!tier) return ""; if(tier.k==="iron"||tier.k==="regular"||tier.k==="leather") return ""; return tier.n+" "; }
+function _workRoll(skill,exc){ const l=craftLvl(skill); return Math.min(10, Math.max(1, Math.round(l/12)+(exc?2:0)+irnd(0,1))); }
+const UO_RECIPES=[];
+function _addWeapon(skill,matKind,ico,list){ for(const w of list) UO_RECIPES.push({id:skill+"_"+(w.id||w.wt),skill,tab:skill,name:w.name,ico:ico||"⚔️",matKind,n:w.n,extraBoard:w.board||0,min:w.min||0,
+  make:(tier,exc)=>{ const wm=rnd(0.95,1.08); const it={name:_mprefix(tier)+w.name,stat:"weapon",wt:w.wt,v:Math.max(1,Math.round(w.base*(tier?tier.dmg:1)*(exc?1.18:1)*wm)),mat:(tier?tier.n:"Iron"),work:_workRoll(skill,exc)}; if(w.shield){it.stat="worn";it.aslot="offhand";it.shield=true;it.at=w.at;delete it.wt;} return it; } }); }
+function _addArmor(skill,matKind,setL,slots,ico){ for(const s of setL) for(const sl of slots) UO_RECIPES.push({id:skill+"_"+s.set.toLowerCase().replace(/ /g,"")+"_"+sl.slot,skill,tab:skill,name:s.set+" "+sl.suf,ico:ico||"🛡",matKind,n:sl.n,min:s.min||0,
+  make:(tier,exc)=>{ const wm=rnd(0.95,1.08); return {name:_mprefix(tier)+s.set+" "+sl.suf,stat:"worn",at:s.at,aslot:sl.slot,v:Math.max(1,Math.round(s.base*sl.vMul*(tier?tier.arm:1)*(exc?1.15:1)*wm)),mat:(tier?tier.n:"Iron"),work:_workRoll(skill,exc)}; } }); }
+// Blacksmithy — weapons, metal armour, metal shields (matKind: ingot)
+_addWeapon("blacksmithy","ingot","⚔️",[
+  {id:"dagger",name:"Dagger",wt:"dagger",base:12,n:2,min:0},{id:"shortsword",name:"Short Sword",wt:"sword",base:18,n:4,min:8},
+  {id:"longsword",name:"Long Sword",wt:"sword",base:22,n:6,min:22},{id:"spear",name:"War Spear",wt:"spear",base:20,n:5,min:18},
+  {id:"battleaxe",name:"Battle Axe",wt:"axe",base:24,n:6,min:30},{id:"warmace",name:"War Mace",wt:"mace",base:26,n:6,min:34},
+  {id:"greatsword",name:"Greatsword",wt:"twohand",base:34,n:9,min:52},
+  {id:"heater",name:"Heater Shield",wt:"_sh",shield:true,at:"heavy",base:14,n:5,min:24},{id:"kite",name:"Kite Shield",wt:"_sh",shield:true,at:"heavy",base:16,n:6,min:40},
+]);
+_addArmor("blacksmithy","ingot",[{set:"Ringmail",at:"medium",base:11,min:12},{set:"Chainmail",at:"medium",base:13,min:28},{set:"Platemail",at:"heavy",base:16,min:54}],_AS_SLOTS,"🛡");
+// Tailoring — leather armour (matKind: leather)
+_addArmor("tailoring","leather",[{set:"Leather",at:"light",base:9,min:0},{set:"Studded Leather",at:"light",base:12,min:34}],_LE_SLOTS,"🧥");
+// Carpentry — wooden weapons, wooden shield, furniture (matKind: board)
+_addWeapon("carpentry","board","🪵",[
+  {id:"club",name:"Club",wt:"mace",base:15,n:3,min:0},{id:"qstaff",name:"Quarterstaff",wt:"staff",base:19,n:4,min:12},
+  {id:"wshield",name:"Wooden Shield",wt:"_sh",shield:true,at:"medium",base:11,n:5,min:6},
+]);
+for(const f of [{id:"chair",name:"Wooden Chair",n:6,min:8},{id:"table",name:"Wooden Table",n:10,min:18},{id:"stool",name:"Wooden Stool",n:4,min:0}])
+  UO_RECIPES.push({id:"carpentry_"+f.id,skill:"carpentry",tab:"carpentry",name:f.name,ico:"🪑",matKind:"board",n:f.n,min:f.min,
+    make:(tier,exc)=>({name:_mprefix(tier)+f.name,stat:"furniture",kind:f.id,v:Math.max(4,Math.round(f.n*3*(tier?tier.val:1))),work:_workRoll("carpentry",exc)})});
+// Fletching — bows & ammunition (matKind: board)
+_addWeapon("fletching","board","🏹",[
+  {id:"shortbow",name:"Short Bow",wt:"bow",base:18,n:4,min:0},{id:"longbow",name:"Long Bow",wt:"bow",base:24,n:6,min:30},{id:"crossbow",name:"Crossbow",wt:"crossbow",base:28,n:7,min:46},
+]);
+for(const am of [{id:"arrows",name:"Arrows",for:"bow",min:0},{id:"bolts",name:"Crossbow Bolts",for:"crossbow",min:20}])
+  UO_RECIPES.push({id:"fletching_"+am.id,skill:"fletching",tab:"fletching",name:am.name,ico:"🏹",matKind:"board",n:1,min:am.min,
+    make:(tier,exc)=>({name:_mprefix(tier)+am.name,stat:"ammo",for:am.for,dmg:Math.round(3*(tier?tier.dmg:1)),element:null,count:(exc?30:20),ico:"🏹"})});
+// Tinkering — tools, jewellery, lockpicks (matKind: ingot, some boards)
+const _TOOLS=[
+  {id:"pickaxe",name:"Pickaxe",tool:"mining",uses:220,ico:"⛏️",n:3,min:0},
+  {id:"hatchet",name:"Hatchet",tool:"lumberjack",uses:220,ico:"🪓",n:3,min:0},
+  {id:"pole",name:"Fishing Pole",tool:"fishing",uses:180,ico:"🎣",matKind:"board",n:2,min:0},
+  {id:"hammer",name:"Smith's Hammer",tool:"blacksmithy",uses:120,ico:"🔨",n:4,min:15},
+  {id:"kit",name:"Sewing Kit",tool:"tailoring",uses:120,ico:"🧵",n:2,min:15},
+  {id:"saw",name:"Saw",tool:"carpentry",uses:120,ico:"🪚",n:2,min:15},
+  {id:"ttools",name:"Tinker's Tools",tool:"tinkering",uses:120,ico:"🛠️",n:3,min:20},
+  {id:"ftools",name:"Fletcher's Tools",tool:"fletching",uses:120,ico:"🗡️",n:2,min:15},
+];
+for(const t of _TOOLS) UO_RECIPES.push({id:"tinkering_"+t.id,skill:"tinkering",tab:"tinker",name:t.name,ico:t.ico,matKind:t.matKind||"ingot",n:t.n,min:t.min,exc:false,
+  make:(tier,exc)=>toolItem(t.tool,t.name,t.uses,t.ico)});
+UO_RECIPES.push({id:"tinkering_ring",skill:"tinkering",tab:"tinker",name:"Jewelled Ring",ico:"💍",matKind:"ingot",n:2,min:38,
+  make:(tier,exc)=>({name:_mprefix(tier)+"Ring",stat:"jewelry",jtype:"finger",bonus:{kind:"vital",vs:"mhp",v:Math.round((exc?18:12)*(tier?tier.val*0.4+0.8:1))}})});
+UO_RECIPES.push({id:"tinkering_brace",skill:"tinkering",tab:"tinker",name:"Jewelled Bracelet",ico:"⌚",matKind:"ingot",n:2,min:44,
+  make:(tier,exc)=>({name:_mprefix(tier)+"Bracelet",stat:"jewelry",jtype:"wrist",bonus:{kind:"vital",vs:"mst",v:Math.round((exc?18:12)*(tier?tier.val*0.4+0.8:1))}})});
+UO_RECIPES.push({id:"tinkering_lockpick",skill:"tinkering",tab:"tinker",name:"Lockpicks (×3)",ico:"🔓",matKind:"ingot",n:1,min:10,exc:false,
+  make:(tier,exc)=>({name:"Lockpick",stat:"pick",v:1,count:3})});
+// Cooking (raw fish → cooked; bread/rations from materials)
+UO_RECIPES.push({id:"cooking_fish",skill:"cooking",tab:"cook",name:"Cooked Fish",ico:"🍳",matKind:"fish",n:1,min:0,exc:false,
+  make:(tier,exc,src)=>({name:"Cooked "+(src&&src.species?src.species:"Fish"),stat:"food",v:(src?src.v+3:5),attr:"Endurance",dur:(src?src.dur*2:180),ico:"🍖"})});
+UO_RECIPES.push({id:"cooking_bread",skill:"cooking",tab:"cook",name:"Loaf of Bread",ico:"🍞",matKind:"materials",n:4,min:4,exc:false,
+  make:()=>({name:"Loaf of Bread",stat:"food",v:3,attr:"Strength",dur:150,ico:"🍞"})});
+UO_RECIPES.push({id:"cooking_rations",skill:"cooking",tab:"cook",name:"Trail Rations",ico:"🥖",matKind:"materials",n:6,min:14,exc:false,
+  make:()=>({name:"Trail Rations",stat:"food",v:4,attr:"Endurance",dur:240,ico:"🥖"})});
+// Alchemy (materials → potions)
+for(const p of [{id:"health",name:"Health Potion",mats:8,st:"hp",v:60,min:0},{id:"mana",name:"Mana Potion",mats:8,st:"mn",v:60,min:0},{id:"stam",name:"Stamina Potion",mats:6,st:"st",v:60,min:0},{id:"great",name:"Greater Healing Potion",mats:16,st:"hp",v:150,min:28}])
+  UO_RECIPES.push({id:"alchemy_"+p.id,skill:"alchemy",tab:"alch",name:p.name,ico:"🧪",matKind:"materials",n:p.mats,min:p.min,exc:false,
+    make:()=>({name:p.name,stat:p.st,v:p.v})});
+
+// ---- difficulty / success / craft attempt ----
+function recipeDiff(rec,tier){ return (rec.min||0) + (tier?tier.req*0.45:0); }
+function successChance(rec,tier){ return clamp(0.35 + (craftLvl(rec.skill)-recipeDiff(rec,tier))*0.02, 0.05, 0.98); }
+function excChance(rec,tier){ if(rec.exc===false) return 0; return clamp((craftLvl(rec.skill)-recipeDiff(rec,tier)-12)*0.012,0,0.35) + (skillTier(rec.skill)>=2?0.05:0); }
+function availTiers(matKind){ // {key,name,count} the player currently carries
+  const ladder=matKind==="ingot"?UO_METALS:matKind==="board"?UO_WOODS:matKind==="leather"?UO_LEATHERS:null;
+  if(!ladder) return [];
+  const out=[]; for(const t of ladder){ const nm=resNameFor(matKind,t.k); const c=invCountOf(nm); if(c>0) out.push({key:t.k,name:t.n||"Common",count:c}); } return out;
+}
+function firstRawFish(){ for(let i=0;i<player.inv.length;i++){ const it=player.inv[i]; if(it&&it.fish&&it.raw) return {it,i}; } return null; }
+function attemptCraft(rec,tierKey){
+  if(!nearCraftStation()){ log("Stand at a <b>Crafting Forge</b> to craft.","warn"); return; }
+  const matKind=rec.matKind;
+  const tier=matKind==="ingot"?UO_METAL_BY[tierKey]:matKind==="board"?UO_WOOD_BY[tierKey]:matKind==="leather"?UO_LEATHER_BY[tierKey]:null;
+  // ingredient checks
+  let srcFish=null;
+  if(matKind==="ingot"||matKind==="board"||matKind==="leather"){ if(!tier){ log("Choose a material.","warn"); return; }
+    const nm=resNameFor(matKind,tierKey); if(invCountOf(nm)<rec.n){ log(`Not enough <b>${nm}</b> (need ${rec.n}).`,"warn"); if(SFX&&SFX.deny)SFX.deny(); return; } }
+  else if(matKind==="materials"){ if(player.materials<rec.n){ log(`Not enough materials (need ${rec.n}).`,"warn"); if(SFX&&SFX.deny)SFX.deny(); return; } }
+  else if(matKind==="fish"){ srcFish=firstRawFish(); if(!srcFish){ log("You have no raw fish to cook.","warn"); if(SFX&&SFX.deny)SFX.deny(); return; } }
+  if(rec.extraBoard){ const bn=resNameFor("board","regular"); if(invCountOf(bn)<rec.extraBoard){ log(`Also needs ${rec.extraBoard} ${bn}.`,"warn"); return; } }
+  // tool
+  if(rec.skill!=="cooking" && rec.skill!=="alchemy" && !hasCraftTool(rec.skill)){ log(`You need the right tool for <b>${SKILL_BY_KEY[rec.skill].n}</b> (buy one in the Tools tab).`,"warn"); if(SFX&&SFX.deny)SFX.deny(); return; }
+  // consume ingredients up-front
+  if(matKind==="ingot"||matKind==="board"||matKind==="leather") removeItemsByName(resNameFor(matKind,tierKey),rec.n);
+  else if(matKind==="materials") player.materials-=rec.n;
+  else if(matKind==="fish") takeFromInv(srcFish.i);
+  if(rec.extraBoard) removeItemsByName(resNameFor("board","regular"),rec.extraBoard);
+  if(rec.skill!=="cooking" && rec.skill!=="alchemy") consumeCraftTool(rec.skill);
+  startAction("craft",1.1);
+  gainCraft(rec.skill, 0.6);
+  if(Math.random()>successChance(rec,tier)){ log(`You fail and ruin the materials.`,"warn"); if(SFX&&SFX.deny)SFX.deny(); updateHUD(); if(_cmOpen) renderCraftMenu(); return; }
+  const exc=Math.random()<excChance(rec,tier);
+  const item=rec.make(tier,exc,srcFish&&srcFish.it); item.crafted=true;
+  if(exc){ item.exceptional=true; item.maker=player.name||"Adventurer"; if(item.v) item.v=Math.round(item.v); }
+  if(!addToInv(item)){ addDrop(player.x,player.z,{type:"item",item}); log("Pack full — set at your feet.","warn"); }
+  gainCraft(rec.skill, exc?1.6:1.0);
+  log(`You craft ${exc?"an <b>exceptional</b> ":"a "}<b>${item.name}</b>${exc?` <span style="color:#ffd86b">✦ signed by ${esc(item.maker)}</span>`:""}.`,"loot");
+  if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu();
+}
+function refineAll(kind){ // ore→ingot / log→board / hide→leather (1:1)
+  if(!nearCraftStation()){ log("Stand at a <b>Crafting Forge</b> to refine.","warn"); return; }
+  const src=kind==="ingot"?"ore":kind==="board"?"log":"hide";
+  const ladder=kind==="ingot"?UO_METALS:kind==="board"?UO_WOODS:UO_LEATHERS;
+  let total=0;
+  for(const t of ladder){ const nm=resNameFor(src,t.k), c=invCountOf(nm); if(c>0){ removeItemsByName(nm,c); const out=resItem(kind,t.k,c); if(!addToInv(out)) addDrop(player.x,player.z,{type:"item",item:out}); total+=c; } }
+  if(!total){ log(`You have no ${src}s to refine.`,"warn"); return; }
+  const verb=kind==="ingot"?"smelt":kind==="board"?"mill":"tan";
+  log(`You ${verb} <b>${total}</b> ${src}${total>1?"s":""}.`,"loot"); if(SFX&&SFX.gold)SFX.gold(); startAction("craft",0.9); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu();
+}
+// tool shop (buy for pyreals)
+const UO_SHOP=[
+  {tool:"mining",name:"Pickaxe",uses:220,ico:"⛏️",cost:150},{tool:"lumberjack",name:"Hatchet",uses:220,ico:"🪓",cost:150},
+  {tool:"fishing",name:"Fishing Pole",uses:180,ico:"🎣",cost:120},{tool:"blacksmithy",name:"Smith's Hammer",uses:120,ico:"🔨",cost:220},
+  {tool:"tailoring",name:"Sewing Kit",uses:120,ico:"🧵",cost:200},{tool:"carpentry",name:"Saw",uses:120,ico:"🪚",cost:180},
+  {tool:"tinkering",name:"Tinker's Tools",uses:120,ico:"🛠️",cost:240},{tool:"fletching",name:"Fletcher's Tools",uses:120,ico:"🗡️",cost:200},
+];
+function buyTool(i){ const t=UO_SHOP[i]; if(!t) return; if(player.gold<t.cost){ log("Not enough pyreals.","warn"); if(SFX&&SFX.deny)SFX.deny(); return; }
+  player.gold-=t.cost; addToInv(toolItem(t.tool,t.name,t.uses,t.ico)); log(`You buy a <b>${t.name}</b> (${t.uses} uses).`,"loot"); if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu(); }
+
+// ---- CRAFT MENU UI ----
+let _cmOpen=false, _cmTab="refine", _cmSel={ingot:null,board:null,leather:null};
+const _CM_TABS=[["refine","Refine","⚒️"],["blacksmithy","Blacksmithy","⚔️"],["tailoring","Tailoring","🧥"],["carpentry","Carpentry","🪑"],["fletching","Fletching","🏹"],["tinker","Tinkering","🛠️"],["cook","Cooking","🍳"],["alch","Alchemy","🧪"],["tools","Tools","🛒"]];
+function openCraftMenu(){
+  if(typeof closeOtherModals==="function") closeOtherModals("craftmenu");
+  let ov=document.getElementById('craftmenu');
+  if(!ov){ ov=document.createElement('div'); ov.id='craftmenu';
+    ov.style.cssText="display:none;position:fixed;inset:0;z-index:260;align-items:center;justify-content:center;background:rgba(0,0,0,.6)";
+    document.body.appendChild(ov);
+    ov.addEventListener('click',e=>{ if(e.target===ov) closeCraftMenu(); });
+  }
+  _cmOpen=true; ov.style.display="flex"; paused=true; if(locked)document.exitPointerLock();
+  renderCraftMenu();
+}
+function closeCraftMenu(){ const ov=document.getElementById('craftmenu'); if(ov) ov.style.display="none"; _cmOpen=false; paused=false; }
+function _tierPicker(matKind){
+  const tiers=availTiers(matKind); if(!tiers.length) return `<span style="color:#a06a6a">no ${matKind} — gather &amp; refine first</span>`;
+  if(!_cmSel[matKind]||!tiers.find(t=>t.key===_cmSel[matKind])) _cmSel[matKind]=tiers[tiers.length-1].key;
+  return tiers.map(t=>`<button data-tier="${matKind}:${t.key}" class="cmTier${_cmSel[matKind]===t.key?' on':''}">${esc(t.name)} <span style="opacity:.6">×${t.count}</span></button>`).join("");
+}
+function renderCraftMenu(){
+  const ov=document.getElementById('craftmenu'); if(!ov) return;
+  const at=nearCraftStation();
+  const trades=UO_TRADES.map(k=>`<span class="cmLv"><b>${esc(SKILL_BY_KEY[k].n)}</b> ${craftLvl(k)}</span>`).join("");
+  let body="";
+  if(_cmTab==="refine"){
+    body=`<div class="cmHint">Smelt ore into ingots, mill logs into boards, tan hides into leather. (Gather ore at ⛏ veins, chop 🪓 trees, skin slain beasts.)</div>`;
+    const rows=[["ingot","Smelt ore → ingots","ore","🔩"],["board","Mill logs → boards","log","🟫"],["leather","Tan hides → leather","hide","🟫"]];
+    for(const [kind,label,src,ico] of rows){ const ladder=kind==="ingot"?UO_METALS:kind==="board"?UO_WOODS:UO_LEATHERS;
+      let have=0; for(const t of ladder) have+=invCountOf(resNameFor(src,t.k));
+      body+=`<div class="cmRow"><span class="cmI">${ico}</span><span class="cmN">${label}</span><span class="cmMid">carrying ${have} ${src}${have===1?"":"s"}</span><button data-refine="${kind}" class="cmBtn"${have?"":" disabled"}>Refine all</button></div>`;
+    }
+  } else if(_cmTab==="tools"){
+    body=`<div class="cmHint">Buy the tool a craft needs (each has limited uses, then breaks). Tinkers can also <i>craft</i> tools.</div>`;
+    UO_SHOP.forEach((t,i)=>{ const have=findCraftTool(t.tool); body+=`<div class="cmRow"><span class="cmI">${t.ico}</span><span class="cmN">${esc(t.name)}${have?` <span style="color:#7fd07f">(have ${have.uses})</span>`:""}</span><span class="cmMid">${t.uses} uses</span><button data-buy="${i}" class="cmBtn"${player.gold>=t.cost?"":" disabled"}>${t.cost}p</button></div>`; });
+  } else {
+    const list=UO_RECIPES.filter(r=>r.tab===_cmTab);
+    const kinds=[...new Set(list.map(r=>r.matKind).filter(k=>k==="ingot"||k==="board"||k==="leather"))];
+    if(kinds.length) body+=`<div class="cmPick">${kinds.map(k=>`<span class="cmPickL">${k==="ingot"?"Metal":k==="board"?"Wood":"Leather"}:</span> ${_tierPicker(k)}`).join('<span style="margin:0 8px"></span>')}</div>`;
+    for(const r of list){
+      const tk=r.matKind==="ingot"||r.matKind==="board"||r.matKind==="leather"?_cmSel[r.matKind]:null;
+      const tier=r.matKind==="ingot"?UO_METAL_BY[tk]:r.matKind==="board"?UO_WOOD_BY[tk]:r.matKind==="leather"?UO_LEATHER_BY[tk]:null;
+      const sc=Math.round(successChance(r,tier)*100), xc=Math.round(excChance(r,tier)*100);
+      let cost = r.matKind==="materials"?`${r.n} mat`: r.matKind==="fish"?"1 raw fish": tier?`${r.n} ${esc(tier.n||"Common")}`:(tk?`${r.n}`:`${r.n} — pick a material`);
+      const canSkill=craftLvl(r.skill)>=Math.floor(recipeDiff(r,tier));
+      const tool=(r.skill==="cooking"||r.skill==="alchemy")||hasCraftTool(r.skill);
+      body+=`<div class="cmRow"><span class="cmI">${r.ico}</span><span class="cmN">${esc(r.name)}<span class="cmSub">${cost}${r.extraBoard?` + ${r.extraBoard} Board`:""} · needs ${SKILL_BY_KEY[r.skill].n} ${Math.floor(recipeDiff(r,tier))}${r.exc!==false?` · <span style="color:#ffd86b">${xc}% exc</span>`:""}</span></span><span class="cmMid ${canSkill?'':'cmBad'}">${sc}%${tool?"":' · <span class="cmBad">no tool</span>'}</span><button data-craft="${r.id}" class="cmBtn"${at?"":" disabled"}>Craft</button></div>`;
+    }
+  }
+  ov.innerHTML=`<div class="cmWrap">
+    <style>
+      .cmWrap{max-width:760px;width:94%;max-height:88vh;display:flex;flex-direction:column;background:#14161d;border:1px solid var(--gold,#c8a24a);border-radius:12px;overflow:hidden;font-size:13px;color:#e8dcc0}
+      .cmHead{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+      .cmHead h2{margin:0;color:var(--gold,#e8c060);font-size:15px;letter-spacing:.5px;text-transform:uppercase}
+      .cmLv{font-size:11px;color:#b8ad90;background:rgba(255,255,255,.04);padding:2px 7px;border-radius:20px}
+      .cmLv b{color:#e8dcc0;font-weight:600}
+      .cmX{margin-left:auto;cursor:pointer;color:#c8b890;font-size:20px;line-height:1;background:none;border:none}
+      .cmTabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+      .cmTab{cursor:pointer;background:rgba(255,255,255,.04);border:1px solid transparent;border-radius:8px;color:#cdbf9a;padding:6px 10px;font-size:12px}
+      .cmTab.on{background:rgba(200,162,74,.18);border-color:var(--gold,#c8a24a);color:#ffe8b0}
+      .cmScroll{overflow-y:auto;padding:10px 14px}
+      .cmHint{color:#9a9078;font-size:12px;margin:2px 2px 10px;line-height:1.4}
+      .cmPick{margin:2px 2px 12px;line-height:2}
+      .cmPickL{color:#b8ad90;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+      .cmTier{cursor:pointer;background:rgba(255,255,255,.05);border:1px solid var(--border,#3a3830);border-radius:7px;color:#d8cba0;padding:3px 9px;margin:0 3px 3px 0;font-size:12px}
+      .cmTier.on{background:rgba(200,162,74,.22);border-color:var(--gold,#c8a24a);color:#ffe8b0}
+      .cmRow{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
+      .cmI{font-size:20px;width:26px;text-align:center;flex:none}
+      .cmN{flex:1;min-width:0}
+      .cmSub{display:block;color:#8f866c;font-size:11px;margin-top:1px}
+      .cmMid{flex:none;width:120px;text-align:right;color:#a8cfa0;font-size:12px}
+      .cmBad{color:#d08a6a}
+      .cmBtn{flex:none;background:linear-gradient(180deg,#c8a24a,#9a7a2a);border:none;border-radius:7px;color:#241c08;font-weight:700;padding:6px 12px;cursor:pointer;font-size:12px}
+      .cmBtn[disabled]{opacity:.35;cursor:not-allowed;filter:grayscale(.5)}
+    </style>
+    <div class="cmHead"><h2>⚒️ Crafting Forge</h2>${trades}<button class="cmX" id="cmClose">✕</button></div>
+    <div class="cmTabs">${_CM_TABS.map(t=>`<button class="cmTab${_cmTab===t[0]?' on':''}" data-tab="${t[0]}">${t[2]} ${t[1]}</button>`).join("")}</div>
+    ${at?"":'<div style="padding:8px 16px;color:#d08a6a;background:rgba(208,138,106,.08);font-size:12px">⚠ Walk up to a Crafting Forge (in any town) to craft — you can browse from anywhere.</div>'}
+    <div class="cmScroll">${body}</div></div>`;
+  ov.querySelector('#cmClose').onclick=closeCraftMenu;
+  ov.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ _cmTab=b.dataset.tab; renderCraftMenu(); });
+  ov.querySelectorAll('[data-tier]').forEach(b=>b.onclick=()=>{ const [mk,tk]=b.dataset.tier.split(":"); _cmSel[mk]=tk; renderCraftMenu(); });
+  ov.querySelectorAll('[data-refine]').forEach(b=>b.onclick=()=>refineAll(b.dataset.refine));
+  ov.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>buyTool(+b.dataset.buy));
+  ov.querySelectorAll('[data-craft]').forEach(b=>b.onclick=()=>{ const r=UO_RECIPES.find(x=>x.id===b.dataset.craft); if(r) attemptCraft(r, r.matKind==="ingot"||r.matKind==="board"||r.matKind==="leather"?_cmSel[r.matKind]:null); });
+}
+if(typeof BIG_MODALS!=="undefined" && BIG_MODALS.indexOf('craftmenu')<0) BIG_MODALS.push('craftmenu');
 </script>
 </body>
 </html>
