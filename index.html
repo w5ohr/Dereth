@@ -29079,13 +29079,18 @@ function _pushBox(P,N,U,cx,cy,cz,hx,hy,hz,TILE){
   for(const f of F) for(const ti of tri){ const p=f.v[ti];
     P.push(p[0],p[1],p[2]); N.push(f.n[0],f.n[1],f.n[2]); U.push(p[ax[f.u]]/TILE, p[ax[f.w]]/TILE); }
 }
-function synthDungeonWalls(dj){
+function synthDungeonWalls(dj,skipFn){
+  // skipFn (optional): cellPos triple -> true to SKIP emitting geometry for that cell (it already has
+  // real exported walls). The cell still counts as occupied, so no bogus wall rises between a real
+  // chamber and a synthesized one — gap-fill mode for partially-truncated exports.
   const STEP=10, HALF=5.2, H=6, T=0.7, TILE=4;
   const occ=new Set(), cells=[], k=(gx,y,gz)=>gx+'|'+y+'|'+gz;
   for(const c of dj.cellPos){ const gx=Math.round(c[0]/STEP), gz=Math.round(c[2]/STEP), iy=Math.round(c[1]);
-    const kk=k(gx,iy,gz); if(occ.has(kk)) continue; occ.add(kk); cells.push({gx,gz,iy,x:c[0],z:c[2],y:c[1]}); }
+    const kk=k(gx,iy,gz); if(occ.has(kk)) continue; occ.add(kk);
+    cells.push({gx,gz,iy,x:c[0],z:c[2],y:c[1],skip:skipFn?!!skipFn(c):false}); }
   const P=[],N=[],U=[];
   for(const c of cells){
+    if(c.skip) continue;   // this cell's real walls survived the export — leave it alone
     _pushBox(P,N,U, c.x, c.y-T/2, c.z, HALF+0.3, T/2, HALF+0.3, TILE);                       // floor (top at floor level)
     if(!occ.has(k(c.gx,c.iy+6,c.gz))) _pushBox(P,N,U, c.x, c.y+H+T/2, c.z, HALF+0.3, T/2, HALF+0.3, TILE);   // ceiling unless a storey sits above
     for(const d of [[1,0],[-1,0],[0,1],[0,-1]]) if(!occ.has(k(c.gx+d[0],c.iy,c.gz+d[1]))){    // wall where the edge is open
@@ -29111,7 +29116,18 @@ function buildDungeonReal(def,dj){
   const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
   for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
   const grp=new THREE.Group(), TL=new THREE.TextureLoader();
-  if(SYNTH_WALL_DUNGEONS.has(def.name)){ grp.add(synthDungeonWalls(dj)); }   // truncated export → rebuild walls from the cell grid
+  // ── truncated-export detection at build time (same signals as tools/dungeon_coverage_audit.py):
+  //    coverage = fraction of cells with a real wall vertex within ~8u. Below 50% the export lost
+  //    most of its walls (#762) — keep whatever real geometry survived and GAP-FILL the bare cells
+  //    from the cell grid. The SYNTH_WALL_DUNGEONS set still forces a full rebuild (worst cases). ──
+  const _wallBins=new Set();
+  for(const g of dj.groups){ const v=g.verts||[]; for(let i=0;i<v.length;i+=3) _wallBins.add(Math.round(v[i]/8)+"|"+Math.round(v[i+2]/8)); }
+  const _cellCovered=(c)=>{ const bx=Math.round(c[0]/8), bz=Math.round(c[2]/8);
+    for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++) if(_wallBins.has((bx+dx)+"|"+(bz+dz))) return true; return false; };
+  let _nCov=0; for(const c of dj.cellPos) if(_cellCovered(c)) _nCov++;
+  const _coverage=dj.cellPos.length?_nCov/dj.cellPos.length:1;
+  const _fullSynth=SYNTH_WALL_DUNGEONS.has(def.name), _gapFill=!_fullSynth&&_coverage<0.5;
+  if(_fullSynth){ grp.add(synthDungeonWalls(dj)); }   // truncated export → rebuild walls from the cell grid
   else for(const g of dj.groups){
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.Float32BufferAttribute(g.verts,3));
@@ -29129,6 +29145,7 @@ function buildDungeonReal(def,dj){
     else mat=new THREE.MeshStandardMaterial({color:(g.color!=null?g.color:0x777788),roughness:0.85,side:THREE.DoubleSide});
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
+  if(_gapFill) grp.add(synthDungeonWalls(dj,_cellCovered));   // #762: synthesize walls for the cells the export lost
   scene.add(grp); dungeonObjs.push(grp);
   // #715: darker darkness — the flat base drops so the torch pools MATTER (dglight slider still scales it)
   const amb=new THREE.AmbientLight(0x9a8a72,0.62*(settings.dglight||1)); amb.userData.dgBase=0.62; scene.add(amb); dungeonObjs.push(amb);
