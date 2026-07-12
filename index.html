@@ -3531,6 +3531,49 @@ function updateEnvIntensity(daylight){
     const mm=Array.isArray(o.material)?o.material:[o.material];
     for(const m of mm){ if(m.isMeshStandardMaterial) m.envMapIntensity=target; } });
 }
+// ── #689: height-aware fog + sun-hued aerial perspective ────────────────────────────────
+// The r128 fog ShaderChunks are extended (before any material compiles) so EVERY fog-enabled
+// material gets: (a) an analytic exponential-height term — haze holds at sea level and pools
+// in valleys, thins with altitude; at sea level the maths reduce EXACTLY to today's linear
+// fog, so the portal.dat SkyInfo keyframes stay the density/colour authority — and (b) a
+// sun-azimuth inscatter tint: fog toward the sun takes the sun's colour at dawn/dusk.
+// The far end of the curve is guarded (dFogH.w): VIS culling hides objects at ≈fog-far, so
+// full-distance fog must stay opaque or hidden geometry would pop into view on clear hilltops.
+// Uniforms are SHARED objects bound via Material.prototype.onBuild — r128 calls onBuild on the
+// same parameters object right before onBeforeCompile, so the materials that assign their own
+// onBeforeCompile (ground detail-blend, water, wind-sway) keep working with zero chaining.
+const FOGX={
+  cam:{value:new THREE.Matrix4()},                 // ACTIVE camera matrixWorld (the mirror pass swaps in its reflected cam)
+  sunDir:{value:new THREE.Vector3(0,1,0)},         // world-space direction toward the sun disc
+  sun:{value:new THREE.Vector4(1,0.85,0.6,0)},     // rgb sun colour · w tint strength (0 = off, e.g. dungeons/storms)
+  h:{value:new THREE.Vector4(0.0077,0.45,1,0.72)}  // x fall-off /m (halves ≈90m) · y min factor · z strength · w far-guard start
+};
+THREE.Material.prototype.onBuild=function(sh){ sh.uniforms.dFogCam=FOGX.cam;
+  sh.uniforms.dFogSunDir=FOGX.sunDir; sh.uniforms.dFogSun=FOGX.sun; sh.uniforms.dFogH=FOGX.h; };
+THREE.ShaderChunk.fog_pars_vertex="#ifdef USE_FOG\n\tvarying float fogDepth;\n\tvarying vec3 vDFogView;\n#endif";
+THREE.ShaderChunk.fog_vertex="#ifdef USE_FOG\n\tfogDepth = - mvPosition.z;\n\tvDFogView = mvPosition.xyz;\n#endif";
+THREE.ShaderChunk.fog_pars_fragment="#ifdef USE_FOG\n"+
+"\tuniform vec3 fogColor;\n\tvarying float fogDepth;\n\tvarying vec3 vDFogView;\n"+
+"\tuniform mat4 dFogCam;\n\tuniform vec3 dFogSunDir;\n\tuniform vec4 dFogSun;\n\tuniform vec4 dFogH;\n"+
+"\t#ifdef FOG_EXP2\n\t\tuniform float fogDensity;\n\t#else\n\t\tuniform float fogNear;\n\t\tuniform float fogFar;\n\t#endif\n"+
+"#endif";
+THREE.ShaderChunk.fog_fragment="#ifdef USE_FOG\n"+
+"\t#ifdef FOG_EXP2\n\t\tfloat fogFactor = 1.0 - exp( - fogDensity * fogDensity * fogDepth * fogDepth );\n"+
+"\t#else\n\t\tfloat fogFactor = smoothstep( fogNear, fogFar, fogDepth );\n\t#endif\n"+
+// camera→fragment vector rotated into WORLD space, basis-column by basis-column (GLSL ES 1.00
+// forbids mat3(mat4)); small numbers only — never the raw ±12k world coords, so mediump-safe.
+"\tvec3 dfV = dFogCam[0].xyz * vDFogView.x + dFogCam[1].xyz * vDFogView.y + dFogCam[2].xyz * vDFogView.z;\n"+
+// ratio of ∫exp-height density along this ray to the flat sea-level ∫ (closed form): 1.0 with
+// camera and fragment both at sea level, <1 with altitude, >1 looking down into a low valley.
+"\tfloat dfHc = max( dFogCam[3].y, 0.0 ) * dFogH.x;\n"+
+"\tfloat dfDy = dfV.y * dFogH.x;\n"+
+"\tfloat dfR = exp( -dfHc ) * ( abs( dfDy ) > 1e-4 ? ( 1.0 - exp( -dfDy ) ) / dfDy : 1.0 );\n"+
+"\tdfR = mix( 1.0, clamp( dfR, dFogH.y, 1.25 ), dFogH.z );\n"+
+"\tfogFactor = clamp( mix( fogFactor * dfR, fogFactor, smoothstep( dFogH.w, 1.0, fogFactor ) ), 0.0, 1.0 );\n"+
+// sun-hued inscatter: fog pixels near the sun's azimuth blend toward the live sun colour
+"\tfloat dfSun = pow( max( dot( dfV / max( length( dfV ), 1e-3 ), dFogSunDir ), 0.0 ), 6.0 ) * dFogSun.w;\n"+
+"\tgl_FragColor.rgb = mix( gl_FragColor.rgb, mix( fogColor, dFogSun.xyz, min( dfSun, 1.0 ) ), fogFactor );\n"+
+"#endif";
 const _cDay=new THREE.Color(0xaebccb), _cNight=new THREE.Color(0x0a1020);   // day fog leans atmospheric blue-grey → distant land hazes into sky (aerial perspective)
 const _skyDay=new THREE.Color(0xffffff), _skyNight=new THREE.Color(0x1a2742);
 // analytic-sky palette (zenith / horizon / below-horizon ground haze, day vs night)
@@ -3605,6 +3648,15 @@ function updateDayNight(dt){
   // visible sun & moon discs ride the sky along the light's arc
   const R=WORLD*0.42,sky=_ddSky.set(sunX*0.62,sunY,0.4).normalize();
   if(skyU) skyU.uSunDir.value.copy(sky);
+  // #689: aim the fog's sun-inscatter & height terms for this frame. Tint peaks at dawn/dusk
+  // (warm), keeps a whisper at noon, dies under overcast (_oc) and below the horizon; both
+  // effects are OFF in dungeons/the Town Network, whose fog is hand-set by updateInstanceLight.
+  FOGX.sunDir.value.copy(sky);
+  { const _inst=(typeof inDungeon!=="undefined"&&inDungeon)||(typeof inNetwork!=="undefined"&&inNetwork);
+    const _ft=_inst?0:clamp(0.16*daylight+1.5*warm,0,0.85)*(1-_oc*0.9)*clamp(sunY*5+0.5,0,1);
+    _tmp.copy(_sunNoon).lerp(_cWarm,warm);
+    FOGX.sun.value.set(_tmp.r,_tmp.g,_tmp.b,_ft);
+    FOGX.h.value.z=_inst?0:(weather==="fog"?0.3:1); }   // rolling fog weather blankets the hills too
   if(sunSprite){sunSprite.position.set(player.x+sky.x*R,Math.max(-200,sky.y*R*0.7),player.z+sky.z*R);
     sunSprite.material.opacity=clamp(sunY*3+0.4,0,1);
     sunSprite.material.color.copy(_sunNoon).lerp(_cWarm,warm);} // redden at dawn/dusk
@@ -4113,6 +4165,7 @@ function renderReflection(){
   pe[2]=cp.x*s; pe[6]=cp.y*s; pe[10]=cp.z*s+1.0-0.003; pe[14]=cw*s;
   const oldShadow=renderer.shadowMap.autoUpdate, oldTarget=renderer.getRenderTarget();
   waterMesh.visible=false; renderer.shadowMap.autoUpdate=false;
+  FOGX.cam.value.copy(rc.matrixWorld);   // #689: height/sun fog reconstructs world-space from the ACTIVE camera — the mirror pass uses the reflected one
   renderer.setRenderTarget(REFL.rt); renderer.render(scene,rc);
   renderer.setRenderTarget(oldTarget); renderer.shadowMap.autoUpdate=oldShadow;
   waterMesh.visible=true;
@@ -4121,6 +4174,7 @@ function renderReflection(){
 }
 function renderComposite(){
   renderReflection();
+  cam.updateMatrixWorld(); FOGX.cam.value.copy(cam.matrixWorld);   // #689: restore the true camera for the main pass (and hand the fog this frame's matrix)
   if(!POST.on||!POST.rtScene){ renderer.setRenderTarget(null); renderer.render(scene,cam); return; }
   // 1) scene → rtScene (tonemapped + sRGB by the renderer)
   renderer.setRenderTarget(POST.rtScene);
