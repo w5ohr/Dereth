@@ -677,6 +677,8 @@
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Mouse sensitivity</span><input id="setSens" type="range" min="0.3" max="2.5" step="0.1"><span id="setSensV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Master volume</span><input id="setVol" type="range" min="0" max="1" step="0.05"><span id="setVolV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Field of view</span><input id="setFov" type="range" min="60" max="100" step="1"><span id="setFovV"></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Overall image brightness (final display grade)">Brightness</span><input id="setBright" type="range" min="0.5" max="1.5" step="0.02"><span id="setBrightV"></span></div>
+  <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)" title="Overall image contrast (final display grade)">Contrast</span><input id="setContrast" type="range" min="0.5" max="1.5" step="0.02"><span id="setContrastV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Dungeon brightness</span><input id="setDgl" type="range" min="0.5" max="2.2" step="0.05"><span id="setDglV"></span></div>
   <div class="srow"><span style="min-width:auto;text-align:left;color:var(--ink)">Difficulty</span><span style="display:flex;gap:6px">
     <button class="tbtn" data-diff="0.75">Adept</button><button class="tbtn" data-diff="1">Hero</button><button class="tbtn" data-diff="1.4">Legend</button></span></div>
@@ -4309,7 +4311,7 @@ function initThree(){
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.useLegacyLights=true;   // #695: r159 defaults to physical light units — every light in the game is tuned to the legacy falloff
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure=1.04;
+  renderer.toneMappingExposure=TONE_EXPOSURE_BASE;   // applyGrade() re-derives this from the brightness setting once POST is up
   markSceneSRGB();
   initEnvironment();
   initPost();
@@ -4442,7 +4444,7 @@ function initPost(){
   }
   // composite: scene ×AO + bloom + god-rays, subtle teal/gold grade, vignette
   POST.comp=makePass(
-    "varying vec2 vUv; uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tRays; uniform sampler2D tAO; uniform float strength; uniform float vig; uniform float rayStr; uniform float aoStr;"+
+    "varying vec2 vUv; uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tRays; uniform sampler2D tAO; uniform float strength; uniform float vig; uniform float rayStr; uniform float aoStr; uniform float uBright; uniform float uContrast;"+
     "void main(){ vec3 c=texture2D(tScene,vUv).rgb; vec3 b=texture2D(tBloom,vUv).rgb;"+
     " if(aoStr>0.001) c*=mix(1.0,texture2D(tAO,vUv).r,aoStr);"+   // #690: AO darkens the scene BEFORE the grade & bloom add — glow is never dimmed
     " float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,1.18);"+ // richer saturation (AC's vivid fantasy palette)
@@ -4450,11 +4452,13 @@ function initPost(){
     " c*=mix(vec3(0.95,0.975,1.07),vec3(1.08,1.02,0.92),clamp(l,0.0,1.0));"+ // cooler shadows / warmer highlights (sunlit warmth)
     " c+=b*strength;"+                                            // additive glow (after grade so highlights stay hot)
     " if(rayStr>0.001) c+=texture2D(tRays,vUv).rgb*rayStr;"+       // the sun streams through the world
+    " c=(c-0.5)*uContrast+0.5; c*=uBright; c=max(c,0.0);"+         // player brightness/contrast grade (Settings sliders)
     " vec2 q=vUv-0.5; float d=dot(q,q); c*=1.0-smoothstep(0.24,0.82,d)*vig;"+ // vignette
     " float n=fract(sin(dot(vUv,vec2(12.9898,78.233)))*43758.5453);"+ // ordered-noise dither:
     " c+=(n-0.5)/255.0;"+                                          // kills sky-gradient banding
     " gl_FragColor=vec4(c,1.0); }",
-    {tScene:{value:null},tBloom:{value:null},tRays:{value:null},tAO:{value:null},strength:{value:0.74},vig:{value:0.33},rayStr:{value:0},aoStr:{value:0}});
+    {tScene:{value:null},tBloom:{value:null},tRays:{value:null},tAO:{value:null},strength:{value:0.74},vig:{value:0.33},rayStr:{value:0},aoStr:{value:0},uBright:{value:1},uContrast:{value:1}});
+  applyGrade();   // sync the user brightness/contrast from settings onto the fresh composite pass
 }
 function resizePost(){
   if(!POST.rtScene) return;
@@ -19464,6 +19468,7 @@ function loop(ts){
 // ============================================================================
 let actx=null,masterGain=null,muted=false,musicTimer=null;
 const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:false,dglight:1.0,   // dungeon brightness multiplier (Settings slider — tuned on real hardware)
+  brightness:1.0,contrast:1.0,   // final-image display grade (Settings sliders): 1.0 = neutral
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
@@ -19482,6 +19487,23 @@ function saveSettings(){ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(se
 function applySettings(){
   if(masterGain&&!muted) masterGain.gain.value=settings.vol;
   if(cam){cam.fov=settings.fov;cam.updateProjectionMatrix();}
+  applyGrade();
+}
+// Player brightness/contrast grade. Contrast + brightness live in the final composite pass (the common
+// path). When post-processing is off (low tier / unsupported), there's no composite shader to grade, so
+// brightness falls back onto the tone-mapping exposure at least; contrast then has no cheap hook and is
+// simply skipped. TONE_EXPOSURE_BASE mirrors the value set once in initThree.
+const TONE_EXPOSURE_BASE=1.04;
+function applyGrade(){
+  const br=clamp(+settings.brightness||1,0.4,2.0), ct=clamp(+settings.contrast||1,0.4,2.0);
+  if(typeof POST!=="undefined"&&POST.comp&&POST.comp.uniforms.uBright){
+    POST.comp.uniforms.uBright.value=br; POST.comp.uniforms.uContrast.value=ct;
+  }
+  // exposure carries brightness only when the composite isn't doing it (POST off), so it never double-applies
+  if(typeof renderer!=="undefined"&&renderer){
+    const postGrades=(typeof POST!=="undefined"&&POST.on&&POST.comp);
+    renderer.toneMappingExposure=TONE_EXPOSURE_BASE*(postGrades?1:br);
+  }
 }
 function initAudio(){
   if(actx) return;
@@ -24679,18 +24701,25 @@ function openSettings(){
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
   const sens=document.getElementById('setSens'),vol=document.getElementById('setVol'),fov=document.getElementById('setFov');
   const dgl=document.getElementById('setDgl');
+  const bright=document.getElementById('setBright'),contrast=document.getElementById('setContrast');
   sens.value=settings.sens;vol.value=settings.vol;fov.value=settings.fov;
+  if(bright) bright.value=settings.brightness||1;
+  if(contrast) contrast.value=settings.contrast||1;
   if(dgl){ dgl.value=settings.dglight||1;
     dgl.oninput=()=>{ settings.dglight=+dgl.value; lbl(); saveSettings();
       for(const o of (typeof dungeonObjs!=="undefined"?dungeonObjs:[])) if(o.isLight&&o.userData&&o.userData.dgBase!=null) o.intensity=o.userData.dgBase*settings.dglight; }; }   // live-retune the current delve
   const lbl=()=>{document.getElementById('setSensV').textContent=(+settings.sens).toFixed(1);
     document.getElementById('setVolV').textContent=Math.round(settings.vol*100)+"%";
     if(document.getElementById('setDglV')) document.getElementById('setDglV').textContent=Math.round((settings.dglight||1)*100)+"%";
+    if(document.getElementById('setBrightV')) document.getElementById('setBrightV').textContent=Math.round((settings.brightness||1)*100)+"%";
+    if(document.getElementById('setContrastV')) document.getElementById('setContrastV').textContent=Math.round((settings.contrast||1)*100)+"%";
     document.getElementById('setFovV').textContent=settings.fov;};
   lbl();
   sens.oninput=()=>{settings.sens=+sens.value;lbl();saveSettings();};
   vol.oninput=()=>{settings.vol=+vol.value;lbl();applySettings();saveSettings();};
   fov.oninput=()=>{settings.fov=+fov.value;lbl();applySettings();saveSettings();};
+  if(bright) bright.oninput=()=>{settings.brightness=+bright.value;lbl();applyGrade();saveSettings();};
+  if(contrast) contrast.oninput=()=>{settings.contrast=+contrast.value;lbl();applyGrade();saveSettings();};
   buildBlipSettings();
   const diffBtns=document.querySelectorAll('#settings [data-diff]');
   const hi=()=>diffBtns.forEach(b=>b.style.opacity=(+b.dataset.diff===settings.diff)?1:0.45);
