@@ -868,6 +868,7 @@ class Client:
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
         self.mnt = None   # #728: mount type key while riding (e.g. "grey") — remotes render the horse
+        self.phs = None   # #734: this rider's PARKED horses [{i,t,n,x,z}] — stamped into snapshots
         self.gear = None           # #667: compact worn-armour descriptor (sanitize_gear), so remotes render our armour
         self.inst = False        # #646: True while in a per-player instance (dungeon/Town Network/Academy). x/z carry the OVERWORLD return point (#307), so peers hide the avatar and AI/PvP must not target it
         # #239: per-connection token buckets (refilled by elapsed time in the read loop). One general
@@ -937,6 +938,7 @@ def player_pub(u, cl):
             "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
             "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None),
             "mnt": getattr(cl, "mnt", None),   # #728: mounted remotes render their horse
+            "phs": getattr(cl, "phs", None),   # #734: their parked horses stand in the shared world
             "gear": getattr(cl, "gear", None),   # #667: worn armour so remotes render us clad, not bare
             "inst": getattr(cl, "inst", False)}   # #646: peers hide the avatar when set (player is inside an instance)
 
@@ -2730,6 +2732,24 @@ async def dispatch(cl, msg):
     elif t == "market":
         if cl.in_world:
             await handle_market(cl, msg)
+    elif t == "horses":
+        # #734: the client's parked-horse summary. Validated + capped: ints/floats coerced, type and
+        # name length-limited, 20 entries max, non-finite coords dropped — never a payload amplifier.
+        if cl.in_world:
+            lst = msg.get("list"); out = []
+            if isinstance(lst, list):
+                for h in lst[:20]:
+                    if not isinstance(h, dict):
+                        continue
+                    try:
+                        e = {"i": int(h.get("i", 0)), "t": str(h.get("t", ""))[:12],
+                             "n": str(h.get("n", ""))[:24],
+                             "x": float(h.get("x", 0)), "z": float(h.get("z", 0))}
+                    except (TypeError, ValueError):
+                        continue
+                    if abs(e["x"]) < 1e6 and abs(e["z"]) < 1e6 and e["x"] == e["x"] and e["z"] == e["z"]:
+                        out.append(e)
+            cl.phs = out or None
     elif t == "pchat":
         text = clean_relay(msg.get("msg", ""), 240)
         if cl.in_world and cl.party in PARTIES and text:

@@ -17898,6 +17898,11 @@ function currentPrompt(){
       if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
       if(o.role==="broker") return isOnline?"Trade at the Consignment Market (E)":"Consignment Market — online realm only (E)";
       if(o.role==="stable") return "See the Stable Master's horses (E)";
+      { let _oh=null,_ohd=3; for(const h of horses){ const d=Math.hypot(h.rec.x-player.x,h.rec.z-player.z); if(d<_ohd){ _ohd=d; _oh=h; } }
+        if(_oh) return "Mount "+_oh.rec.name+" (E)";
+        for(const id in NET.players){ const md=NET.meshes[id], pk2=md&&md.userData.parked; if(!pk2) continue;
+          for(const k in pk2){ const hm=pk2[k]; if(hm.visible&&Math.hypot(hm.position.x-player.x,hm.position.z-player.z)<3)
+            return (NET.players[id].name||"Another rider")+"'s horse — not yours to ride"; } } }
       if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
       if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
       if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
@@ -18081,6 +18086,10 @@ function interact(){
   for(const gt of hsHallGates){ if(Math.hypot(gt.x-player.x,gt.z-player.z)<3){ hsEnterHall(gt); return; } }
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
   for(const h of horses){ if(Math.hypot(h.rec.x-player.x,h.rec.z-player.z)<3){ mountHorse(h); return; } }   // #725: swing into your horse's saddle
+  for(const id in NET.players){ const md=NET.meshes[id], pk2=md&&md.userData.parked;   // #734: someone ELSE's horse
+    if(!pk2) continue;
+    for(const k in pk2){ const hm=pk2[k]; if(hm.visible&&Math.hypot(hm.position.x-player.x,hm.position.z-player.z)<3){
+      log(`This isn't your horse — it belongs to <b>${esc(NET.players[id].name||"another rider")}</b>.`,"warn"); if(SFX.deny)SFX.deny(); return; } } }
   for(const sh of ships){ if(Math.hypot(sh.x-player.x,sh.z-player.z) < sh.def.len*0.6+3){ boardShip(sh); return; } }   // step aboard your ship
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
@@ -24320,6 +24329,15 @@ function buildStableYard(sx,sz){
   STABLE_PADDOCK[Math.round(sx)+","+Math.round(sz)]={x:g.position.x+PX,z:g.position.z+PZ};   // retrieval target
 }
 function horseRec(id){ return (player.horses||[]).find(h=>h&&h.id===id)||null; }
+// #734: publish the parked string so other players see your horses standing in the world.
+// Sent on every state change (park/mount/board/retrieve/buy/release/death/world-build).
+function syncHorsesNet(){
+  if(typeof isOnline==="undefined"||!isOnline||!NET.open) return;
+  const list=(player.horses||[]).filter(h=>h&&h.loc==="parked"&&isFinite(h.x)&&isFinite(h.z))
+    .slice(0,HORSE_MAX).map(h=>({i:h.id,t:h.type,n:String(h.name||"").slice(0,24),
+      x:Math.round(h.x*10)/10,z:Math.round(h.z*10)/10}));
+  netSend({t:"horses",list});
+}
 // (re)spawn every PARKED horse as a live world entity — mirrors spawnOwnedShip after world rebuilds
 function spawnOwnedHorses(){
   for(const h of horses){ if(h.mesh) disposeObject3D(h.mesh); } horses=[];
@@ -24332,6 +24350,7 @@ function spawnOwnedHorses(){
     scene.add(mesh);
     horses.push({rec,mesh,gt:rnd(0,6),ph:0});
   }
+  syncHorsesNet();
 }
 function mountHorse(h){
   if(h.rec.owner&&h.rec.owner!==(player.name||"you")){   // #725b: hands off — the saddle knows its rider
@@ -24342,6 +24361,7 @@ function mountHorse(h){
   player.mountRec=h.rec; h.rec.loc="mounted";
   mountMesh=h.mesh; horses.splice(horses.indexOf(h),1);
   log(`You swing into the saddle of <b>${esc(h.rec.name||T.name)}</b> — ${T.spd}× stride. Press E to dismount.`,"sys");
+  syncHorsesNet();
   if(typeof toast==="function") toast("MOUNTED"); if(SFX.quest)SFX.quest();
   saveGame();
 }
@@ -24354,6 +24374,7 @@ function dismountHorse(silent){
       horses.push({rec,mesh:mountMesh,gt:rnd(2,6),ph:0}); }
     mountMesh=null; }
   if(!silent){ log(`You dismount — <b>${esc(rec.name||(HORSE_TYPES[rec.type]||{}).name||"your horse")}</b> waits where you left it.`,"sys"); }
+  syncHorsesNet();
   saveGame();
 }
 function buyHorse(tk){
@@ -24370,6 +24391,7 @@ function buyHorse(tk){
   mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
   horses.push({rec,mesh,gt:rnd(0,6),ph:0});
   log(`You buy a <b>${T.name}</b> — it stands saddled outside the stable.`,"loot");
+  syncHorsesNet();
   if(SFX.gold)SFX.gold(); if(typeof toast==="function") toast("HORSE ACQUIRED");
   saveGame(); renderStable();
 }
@@ -24397,6 +24419,7 @@ function updateHorses(dt){
           horses.push({rec,mesh:mountMesh,gt:rnd(2,6),ph:0}); mountMesh=null; }
         player.mountStagger=1.0; shake(0.3);
         log(`<b>${esc(rec.name)}</b> balks at the deep water and throws you — it waits back at the shallows.`,"warn");
+        syncHorsesNet();
         saveGame(); return; } }
     const spd=Math.hypot(player.vx||0,player.vz||0);
     const full=Math.max(1,(player.speed||8)*T.spd), k=Math.min(1,spd/full);   // 0..1 of this horse's top pace
@@ -24474,6 +24497,7 @@ function horseStable(id){
   const h=_horseLive(id); if(h){ disposeObject3D(h.mesh); horses.splice(horses.indexOf(h),1); }
   rec.loc="stabled"; rec.x=null; rec.z=null;
   log(`${esc(rec.name)} is boarded with the stablemasters — retrieve it at ANY capital, rested and healed.`,"sys");
+  syncHorsesNet();
   saveGame(); renderStable();
 }
 function horseRetrieve(id){
@@ -24486,6 +24510,7 @@ function horseRetrieve(id){
   mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
   horses.push({rec,mesh,gt:rnd(0,6),ph:0});
   log(`${esc(rec.name)} is led out, brushed and fresh — it waits by the stable.`,"sys");
+  syncHorsesNet();
   saveGame(); renderStable();
 }
 function horseRename(id){
@@ -24503,6 +24528,7 @@ function horseRelease(id){
   const h=_horseLive(id); if(h){ disposeObject3D(h.mesh); horses.splice(horses.indexOf(h),1); }
   player.horses.splice(player.horses.indexOf(rec),1);
   log(`You slip the halter from <b>${esc(rec.name)}</b> — it canters off into Dereth, free.`,"sys");
+  syncHorsesNet();
   saveGame(); renderStable();
 }
 // ── #726: SADDLE PACKS in the field — the horse's cargo, reachable from the saddle or standing
@@ -24574,6 +24600,7 @@ function horseDies(rec){
   burst(px2,1.2,pz2,0xb03a2a,16);
   player.horses.splice(player.horses.indexOf(rec),1);
   if(typeof toast==="function") toast("YOUR HORSE HAS DIED");
+  syncHorsesNet();
   if(SFX.hurt)SFX.hurt(); saveGame();
   if(document.getElementById('stable').style.display==="flex") renderStable();
 }
@@ -31737,11 +31764,13 @@ function reconcileRemotes(players){
     r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
     r.mnt=(p.mnt&&HORSE_TYPES[p.mnt])?p.mnt:null;   // #728: riding — validated against the known types (AC-4 rule)
+    r.phs=Array.isArray(p.phs)?p.phs.filter(h=>h&&HORSE_TYPES[h.t]&&isFinite(+h.x)&&isFinite(+h.z)).slice(0,20):null;   // #734: their parked string, validated
     if(p.gear!==undefined) r.gear=p.gear;   // #667: relayed worn armour → applyRemoteGear in updateRemotes
     r.inst=!!p.inst;   // #646: peer is inside a per-player instance — its x/z are only its overworld return point (#307). Hide the phantom avatar (its child nameplate sprite hides with the mesh) and restore when the flag clears.
     if(r.inst && NET.meshes[p.id]) NET.meshes[p.id].visible=false;   // hide immediately; updateRemotes keeps it hidden while r.inst holds
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(mm.userData.horse){ disposeObject3D(mm.userData.horse); mm.userData.horse=null; }   // #728: the ridden horse lives beside the avatar, not under it
+      if(mm.userData.parked){ for(const k in mm.userData.parked) disposeObject3D(mm.userData.parked[k]); mm.userData.parked=null; }   // #734: and so do their parked horses
       if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
 }
 // Dress a remote player's avatar with their relayed wield (weapon/shield). The jointed avatar already
@@ -31805,6 +31834,17 @@ function updateRemotes(dt){
     if(r.mnt&&!mesh.userData.horse){ const hm=buildHorseMesh(r.mnt,0); scene.add(hm); mesh.userData.horse=hm; mesh.userData.horseType=r.mnt; }
     else if(r.mnt&&mesh.userData.horseType!==r.mnt){ disposeObject3D(mesh.userData.horse); const hm=buildHorseMesh(r.mnt,0); scene.add(hm); mesh.userData.horse=hm; mesh.userData.horseType=r.mnt; }
     else if(!r.mnt&&mesh.userData.horse){ disposeObject3D(mesh.userData.horse); mesh.userData.horse=null; mesh.userData.horseType=null; }
+    // #734: their PARKED horses stand in the shared world — keyed by id, built/moved/disposed by diff
+    { const want={}; for(const h of (r.phs||[])) want[h.i]=h;
+      const have=mesh.userData.parked=mesh.userData.parked||{};
+      for(const k in have){ if(!want[k]){ disposeObject3D(have[k]); delete have[k]; } }
+      for(const k in want){ const h=want[k];
+        if(!have[k]){ const hm2=buildHorseMesh(h.t,0); hm2.userData.ownerName=r.name; scene.add(hm2); have[k]=hm2; }
+        const hm2=have[k];
+        hm2.visible=mesh.visible||!r.inst;
+        hm2.position.set(h.x,groundY(h.x,h.z),h.z);
+        if(hm2.userData.tail) hm2.userData.tail.rotation.z=0.22*Math.sin(now()/1000*1.3+(+k));   // idle swish
+      } }
     if(mesh.userData.horse){ const hm=mesh.userData.horse;
       hm.visible=mesh.visible;
       hm.position.set(mesh.position.x,groundY(mesh.position.x,mesh.position.z,mesh.position.y),mesh.position.z);

@@ -99,6 +99,17 @@ async def main():
     await a.send({"t": "input", "x": 100.0, "z": 100.0, "yaw": 0, "hp": 50, "mhp": 50, "level": 5, "mnt": "X" * 4000})
     m = await b.recv_until(lambda x: x.get("t") == "snapshot" and any(p.get("mnt") and len(p["mnt"]) <= 12 for p in (x.get("players") or [])), timeout=5.0)
     check("oversize mnt truncated to 12 chars", bool(m))
+    # #734: parked horses relay with the owner's record, sanitized
+    await a.send({"t": "horses", "list": [{"i": 1, "t": "grey", "n": "Smoke", "x": 105.0, "z": 100.0},
+                                           "junk", {"i": "bad"}, {"i": 2, "t": "X" * 99, "n": "N" * 99, "x": 1e12, "z": 0}]})
+    await a.send({"t": "input", "x": 100.0, "z": 100.0, "yaw": 0, "hp": 50, "mhp": 50, "level": 5})
+    m = await b.recv_until(lambda x: x.get("t") == "snapshot" and any(p.get("phs") for p in (x.get("players") or [])), timeout=5.0)
+    ph = m and next(p["phs"] for p in m["players"] if p.get("phs"))
+    check("parked horse relays via phs", bool(ph) and any(h["i"] == 1 and h["t"] == "grey" and h["n"] == "Smoke" for h in ph))
+    check("junk/oversize/NaN-coord entries sanitized away", bool(ph) and len(ph) == 1)
+    await a.send({"t": "horses", "list": []})
+    m = await b.recv_until(lambda x: x.get("t") == "snapshot" and any(p.get("name", "").startswith("Rider") and not p.get("phs") for p in (x.get("players") or [])), timeout=5.0)
+    check("empty string clears phs", bool(m))
     await a.close(); await b.close()
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)
