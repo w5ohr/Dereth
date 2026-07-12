@@ -23761,6 +23761,21 @@ const SHIP_TYPES=[
 ];
 function shipDef(id){ return SHIP_TYPES.find(s=>s.id===id)||null; }
 function shipDeedStock(){ return SHIP_TYPES.map(s=>({name:s.name+" Deed",cost:s.cost,ico:"⛵",desc:s.blurb+" — the ship awaits at the nearest shore",shipdeed:true,shipType:s.id})); }
+// The dockside Shipping Merchant: transport (portal gems to the ports, recall stones) + cargo capacity + voyage stores.
+function shippingStock(){
+  const s=[
+    {name:"Sack",cost:120,desc:"Adds +3 satchel slots — ship more cargo (Use it from your pack).",ico:"🎒",gear:{name:"Sack",stat:"pack",cap:3,v:3}},
+    {name:"Backpack",cost:220,desc:"Adds +4 satchel slots — a trader's load (Use it from your pack).",ico:"🎒",gear:{name:"Backpack",stat:"pack",cap:4,v:4}},
+    {name:"Recall Stone",cost:90,desc:"Crush to teleport to your bound Lifestone.",ico:"🔵",gear:{name:"Recall Stone",stat:"recall",v:0}},
+    {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health — stores for the voyage.",ico:"❤"},
+    {name:"Stamina Potion",field:"potStam",cost:25,desc:"Restores 60 stamina (key H).",ico:"⚡"},
+  ];
+  if(typeof CITIES!=="undefined"&&CITIES.length){
+    const picks=CITIES.filter(c=>c.capital).concat(CITIES.filter(c=>!c.capital)).slice(0,6);   // gems to the capitals first, then a few more ports
+    for(const c of picks) s.push({name:`Portal Gem: ${c.name}`,cost:160,desc:`Single-use — opens a portal that ships you to ${c.name}.`,ico:"💠",gear:{name:`Portal Gem: ${c.name}`,stat:"portalgem",town:c.name,v:0}});
+  }
+  return s;
+}
 
 // ── REALISTIC procedural ships: a lofted, curved carvel hull (fine bow entry, tapered transom, rounded
 //    bilge, sheer and rocker), planked-wood PBR, billowed canvas sails, and standing rigging. Built once
@@ -24139,9 +24154,9 @@ function buildHarbor(town,water){
   placeShore(buildSack(0.8),rr(3.0,3.8),rr(1.8,2.8),0); placeShore(buildSack(0.8),rr(3.2,4.0),rr(2.2,3.2),0);
   placeShore(buildBuoy(0.8),rr(-4.2,-3.4),rr(-0.6,0.8),0); placeShore(buildBuoy(0.8),rr(3.6,4.4),rr(-0.4,0.6),0);
   scene.add(G); scenery.push(G);
-  // DOCKMASTER on the quay by the pier head
-  const [mx,mz]=D.toWorld(-1.0,-1.4);
-  addMerchant(mx,mz,"shipwright","Dockmaster",shipDeedStock());
+  // DOCKMASTER (boat deeds) + SHIPPING MERCHANT (transport, cargo, stores) flanking the pier head
+  const [mx,mz]=D.toWorld(-1.1,-1.5); addMerchant(mx,mz,"shipwright","Dockmaster",shipDeedStock());
+  const [sx2,sz2]=D.toWorld(1.5,-1.7); addMerchant(sx2,sz2,"shipping","Shipping Merchant",shippingStock());
 }
 function buildHarbors(){
   if(typeof addMerchant!=="function"||typeof CITIES==="undefined"||!CITIES.length) return;
@@ -24167,6 +24182,7 @@ function seatShipwright(){
 
 const VENDOR_TYPES={
   shipwright:{title:"Shipwright",marker:"⚓",mcol:"#7fd0ff",robe:0x2a4a5a,stock:shipDeedStock},
+  shipping:{title:"Shipping Merchant",marker:"📦",mcol:"#d0b070",robe:0x5a4028,stock:shippingStock},
   provisioner:{title:"Provisioner",marker:"🧪",mcol:"#7fe6a0",robe:0x2e7a4a,respec:true,stock:()=>[
     {name:"Health Potion",field:"potHealth",cost:30,desc:"Restores 60 health.",ico:"❤"},
     {name:"Health Elixir",field:"potGreat",cost:80,desc:"Restores 150 health.",ico:"❤"},
