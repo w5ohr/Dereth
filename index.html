@@ -31515,11 +31515,13 @@ function reconcileRemotes(players){
     r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
     r.yaw=isFinite(p.yaw)?p.yaw:0; r.mhp=(isFinite(p.mhp)&&p.mhp>=1)?p.mhp:1; r.hp=isFinite(p.hp)?p.hp:r.mhp;   // #443: coerce garbage hp/mhp/yaw so health-bar/rotation math stays finite even with a valid coord
     r.wt=p.wt||null; r.wmode=p.wmode||"sword"; r.shield=p.shield||null;   // relayed wield → dressed in updateRemotes
+    r.mnt=(p.mnt&&HORSE_TYPES[p.mnt])?p.mnt:null;   // #728: riding — validated against the known types (AC-4 rule)
     if(p.gear!==undefined) r.gear=p.gear;   // #667: relayed worn armour → applyRemoteGear in updateRemotes
     r.inst=!!p.inst;   // #646: peer is inside a per-player instance — its x/z are only its overworld return point (#307). Hide the phantom avatar (its child nameplate sprite hides with the mesh) and restore when the flag clears.
     if(r.inst && NET.meshes[p.id]) NET.meshes[p.id].visible=false;   // hide immediately; updateRemotes keeps it hidden while r.inst holds
   }
-  for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
+  for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(mm.userData.horse){ disposeObject3D(mm.userData.horse); mm.userData.horse=null; }   // #728: the ridden horse lives beside the avatar, not under it
+      if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
 }
 // Dress a remote player's avatar with their relayed wield (weapon/shield). The jointed avatar already
 // carries aHeld/aBow/aWand/aShield sub-meshes (built by buildAvatarJointed); we just toggle/fill them
@@ -31578,6 +31580,28 @@ function updateRemotes(dt){
     const _bodyReady=!!mesh.userData.acBody || (performance.now()-(r._born||0))>3000;
     mesh.visible=!hide && !r.inst && _bodyReady; if(hide||r.inst) continue;   // #646: keep an instanced peer hidden (and skip its dressing/nameplate work) until the inst flag clears
     dressRemoteWield(mesh, r.wt, r.wmode, r.shield);   // reflect their wielded weapon/shield
+    // #728: mounted remotes ride a real horse — built once per type change, galloped by their motion
+    if(r.mnt&&!mesh.userData.horse){ const hm=buildHorseMesh(r.mnt,0); scene.add(hm); mesh.userData.horse=hm; mesh.userData.horseType=r.mnt; }
+    else if(r.mnt&&mesh.userData.horseType!==r.mnt){ disposeObject3D(mesh.userData.horse); const hm=buildHorseMesh(r.mnt,0); scene.add(hm); mesh.userData.horse=hm; mesh.userData.horseType=r.mnt; }
+    else if(!r.mnt&&mesh.userData.horse){ disposeObject3D(mesh.userData.horse); mesh.userData.horse=null; mesh.userData.horseType=null; }
+    if(mesh.userData.horse){ const hm=mesh.userData.horse;
+      hm.visible=mesh.visible;
+      hm.position.set(mesh.position.x,groundY(mesh.position.x,mesh.position.z,mesh.position.y),mesh.position.z);
+      hm.rotation.y=mesh.rotation.y;
+      mesh.position.y=hm.position.y+1.30;                                   // seat the rider on the saddle
+      const rvx=(r.tx-(r._hx!=null?r._hx:r.tx))/Math.max(dt,0.001), rvz=(r.tz-(r._hz!=null?r._hz:r.tz))/Math.max(dt,0.001);
+      r._hx=r.tx; r._hz=r.tz;
+      const spd2=Math.hypot(rvx,rvz), T2=HORSE_TYPES[r.mnt], k2=Math.min(1,spd2/Math.max(1,8*T2.spd));
+      const legs2=hm.userData.legs||[];
+      if(k2>0.04){ const gallop2=k2>0.45, rate2=gallop2?(3.2+5.2*k2):(2.2+2.4*k2);
+        const p3=(hm.userData.ph=(hm.userData.ph||0)+dt*rate2);
+        const offs2=gallop2?[0.55,0.67,0.0,0.12]:[0.25,0.75,0.0,0.5], swA=gallop2?0.78:0.38, fdA=gallop2?1.05:0.55;
+        legs2.forEach((L,i)=>{ const lp=(p3+offs2[i])*Math.PI*2;
+          L.g.rotation.x=Math.sin(lp)*swA;
+          const fold=Math.max(0,Math.sin(lp+1.15))*fdA; L.knee.rotation.x=L.front?-fold:fold; });
+        if(gallop2) hm.position.y+=Math.abs(Math.sin(p3*Math.PI))*0.14*k2;
+      } else legs2.forEach(L=>{ L.g.rotation.x*=0.8; L.knee.rotation.x*=0.8; });
+    }
     // #666: a remote built on the first snapshot at connect can predate the async AC_BODY pack load, so
     // its applyACBody() no-op'd and the body/clothing (and the head-mount acHeadPlace) never appeared.
     // Retry here once the pack is in (self-guards via u.acBody).
@@ -31641,6 +31665,7 @@ function sendInput(dt){
     level:player.level,heritage:player.heritage,title:player.title,pk:!!player.pk,pkState:player.pkState||"npk",
     loyalty:skillValue("loyalty"),leadership:skillValue("leadership"),
     wt:(player.weapon&&player.weapon.wt)||null, wmode:weaponMode,   // so other players see our wielded weapon/shield
+    mnt:(player.mountRec&&player.mountRec.type)||null,               // #728: riding? remotes render the horse under us
     shield:(player.armorSlots&&player.armorSlots.offhand&&player.armorSlots.offhand.shield)||null};
   // #667: sync worn armour so other players see us clad (not a bare body). Sent only when it CHANGES —
   // the server caches the last value and stamps it into every snapshot, so late-joining viewers still get
