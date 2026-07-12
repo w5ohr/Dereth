@@ -27437,8 +27437,13 @@ function buildDungeonReal(def,dj){
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(g.uvs,2));
     geo.setIndex(g.idx);
     let mat;
-    if(g.tex){ const t=TL.load(acTexURL('acdungeons/tex/'+g.tex)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
-      t.wrapS=t.wrapT=THREE.RepeatWrapping; mat=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02,side:THREE.DoubleSide}); }
+    if(g.tex){ let mm=null;
+      const t=TL.load(acTexURL('acdungeons/tex/'+g.tex),tt=>{   // #713: relief for the TRUE stone once the image is in
+        if(mm){ const nm=lumNormalTex(tt); nm.flipY=false; nm.needsUpdate=true;   // dat textures are top-origin (#40) — the derived map must match
+          mm.normalMap=nm; mm.normalScale=new THREE.Vector2(0.6,0.6); mm.needsUpdate=true; } });
+      t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+      t.wrapS=t.wrapT=THREE.RepeatWrapping;
+      mat=mm=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02,side:THREE.DoubleSide}); }
     else mat=new THREE.MeshStandardMaterial({color:(g.color!=null?g.color:0x777788),roughness:0.85,side:THREE.DoubleSide});
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
@@ -27463,16 +27468,29 @@ function buildDungeonReal(def,dj){
   const elbl=labelSprite("Leave the Delve — E","dungeons");elbl.position.set(dungeonExit.x,en[1]+3.4,dungeonExit.z);scene.add(elbl);dungeonObjs.push(elbl);
   const elt=new THREE.PointLight(0x6aa0ff,1.4,16);elt.position.set(dungeonExit.x,en[1]+2,dungeonExit.z);scene.add(elt);dungeonObjs.push(elt);
   // treasure chest at the deepest cell
-  const far=dj.far, cm=new THREE.Group();
-  const cbase=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.8,1.0),new THREE.MeshStandardMaterial({color:0x8a5a2a,metalness:0.3,roughness:0.6}));
-  cbase.position.y=0.4;cbase.castShadow=true;cm.add(cbase);
-  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.46,0.34,1.05),new THREE.MeshStandardMaterial({color:0x6a4420,metalness:0.3,roughness:0.6}));
-  lid.position.y=0.95;cm.add(lid);
+  // #713: the authentic-geometry delves get the SAME #706 chest set as generated ones — the old
+  // box hoard lingered here, and the locked cache / sealed vault never existed in this path at all.
+  const far=dj.far;
+  const _hc=mkChestMesh({sc:1.15,wood:0x8a5a2a,iron:0x3a332a});
+  const cm=_hc.g;
   const clt=new THREE.PointLight(0xffd23b,0,9);clt.position.set(0,1.5,0);cm.add(clt);
   cm.position.set(far[0],far[1],far[2]);scene.add(cm);dungeonObjs.push(cm);
-  dungeonChest={x:far[0],z:far[2],mesh:cm,lid,light:clt,opened:false};
+  dungeonChest={x:far[0],z:far[2],mesh:cm,lid:_hc.lid,lock:null,light:clt,opened:false};
   if(dungeonDepth<dungeonMaxDepth(curDungeon)) placeDescentStair(far[0]+3.2,far[1],far[2]+2.6);   // the way down hides by the hoard
   dungeonLock=null;dungeonVault=null;
+  if(dj.cellPos.length>6&&Math.random()<0.55){   // locked cache in a mid chamber (parity with generated delves)
+    const c=dj.cellPos[irnd(2,Math.max(2,dj.cellPos.length-3))];
+    const _lc=mkChestMesh({sc:0.82,wood:0x555046,iron:0x3a3a44,locked:"padlock"});
+    _lc.g.position.set(c[0]+1.8,c[1],c[2]+1.8); scene.add(_lc.g); dungeonObjs.push(_lc.g);
+    const llbl=labelSprite("Locked Cache","dungeons"); llbl.position.set(c[0]+1.8,c[1]+2.0,c[2]+1.8); scene.add(llbl); dungeonObjs.push(llbl);
+    dungeonLock={x:c[0]+1.8,z:c[2]+1.8,mesh:_lc.g,lid:_lc.lid,lock:_lc.lock,opened:false};
+  }
+  if(Math.random()<0.25){   // sealed vault by the hoard chamber
+    const _vc=mkChestMesh({sc:1.05,wood:0x39415a,iron:0x23283a,locked:"seal"});
+    _vc.g.position.set(far[0]-2.6,far[1],far[2]-1.4); scene.add(_vc.g); dungeonObjs.push(_vc.g);
+    const vlbl=labelSprite("Sealed Vault","dungeons"); vlbl.position.set(far[0]-2.6,far[1]+2.7,far[2]-1.4); scene.add(vlbl); dungeonObjs.push(vlbl);
+    dungeonVault={x:far[0]-2.6,z:far[2]-1.4,mesh:_vc.g,lid:_vc.lid,lock:_vc.lock,opened:false};
+  }
   // chain onward: the deepest chamber may carry the way down into the linked delve (retail chains)
   { const chain=dungeonChainFor(def.name), destDef=chain&&DUNGEONS.find(d=>d.name===chain.to);
     if(destDef){
@@ -27530,6 +27548,17 @@ function buildDungeon(def){
     } else dungeonRects.push({x0:c.x0,z0:c.z0,x1:c.x1,z1:c.z1,fy:c.lo?c.lo.fy:0});
   }
   function wallBox(x,z,sx,sz,base,hh){const h=hh||WH,w=new THREE.Mesh(new THREE.BoxGeometry(sx,h,sz),wallMat);w.position.set(x,(base||0)+h/2,z);w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);}
+  // #713: carved stone doorframes — jambs + lintel around every room door gap, so exits read as
+  // built openings instead of slits in a box. vert = the corridor through this door runs N–S.
+  const frameMat=texMat(stoneFloorTex,0x8a8378);
+  function doorFrame(x,z,vert,fy){
+    for(const sd of[-1,1]){ const j=new THREE.Mesh(new THREE.BoxGeometry(vert?0.55:Tw+0.3,5.2,vert?Tw+0.3:0.55),frameMat);
+      j.position.set(x+(vert?sd*2.75:0),(fy||0)+2.6,z+(vert?0:sd*2.75)); j.castShadow=true; j.receiveShadow=true;
+      scene.add(j); dungeonObjs.push(j); }
+    const l=new THREE.Mesh(new THREE.BoxGeometry(vert?6.05:Tw+0.36,0.7,vert?Tw+0.36:6.05),frameMat);
+    l.position.set(x,(fy||0)+5.35,z); l.castShadow=true; l.receiveShadow=true;
+    scene.add(l); dungeonObjs.push(l);
+  }
   function floorTile(x,z,sx,sz,y){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),floorMat);f.rotation.x=-Math.PI/2;f.position.set(x,y,z);f.receiveShadow=true;scene.add(f);dungeonObjs.push(f);}
   function ceilTile(x,z,sx,sz,y){const f=new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),ceilMat);f.rotation.x=Math.PI/2;f.position.set(x,y,z);scene.add(f);dungeonObjs.push(f);}
   // floors + matching ceilings, each at its room's level (dungeons descend — ramps slope, pits drop)
@@ -27562,10 +27591,10 @@ function buildDungeon(def){
       for(let i=0;i<seg;i++){const a=i/seg*Math.PI*2; let skip=false; for(const d of da){if(Math.abs(Math.atan2(Math.sin(a-d),Math.cos(a-d)))<0.46)skip=true;} if(skip)continue;
         const w=new THREE.Mesh(new THREE.BoxGeometry(r.rad*2*Math.PI/seg*1.25,WH,Tw),wallMat);w.position.set(r.cx+Math.cos(a)*r.rad,wy+WH/2,r.cz+Math.sin(a)*r.rad);w.rotation.y=-a;w.castShadow=true;w.receiveShadow=true;scene.add(w);dungeonObjs.push(w);} }
     else { for(const side of["N","S"]){ const z=side==="N"?r.cz-r.hz:r.cz+r.hz;
-        if(r.doors[side]){const sh=(r.hx-gap)/2; if(sh>0.3){wallBox(r.cx-(gap+sh),z,sh*2,Tw,wy);wallBox(r.cx+(gap+sh),z,sh*2,Tw,wy);}}
+        if(r.doors[side]){const sh=(r.hx-gap)/2; if(sh>0.3){wallBox(r.cx-(gap+sh),z,sh*2,Tw,wy);wallBox(r.cx+(gap+sh),z,sh*2,Tw,wy);doorFrame(r.cx,z,true,r.fy);}}
         else wallBox(r.cx,z,r.hx*2+Tw,Tw,wy); }
       for(const side of["E","W"]){ const x=side==="E"?r.cx+r.hx:r.cx-r.hx;
-        if(r.doors[side]){const sh=(r.hz-gap)/2; if(sh>0.3){wallBox(x,r.cz-(gap+sh),Tw,sh*2,wy);wallBox(x,r.cz+(gap+sh),Tw,sh*2,wy);}}
+        if(r.doors[side]){const sh=(r.hz-gap)/2; if(sh>0.3){wallBox(x,r.cz-(gap+sh),Tw,sh*2,wy);wallBox(x,r.cz+(gap+sh),Tw,sh*2,wy);doorFrame(x,r.cz,false,r.fy);}}
         else wallBox(x,r.cz,Tw,r.hz*2+Tw,wy); } }
   }
   // corridor side rails between the wall planes — tall enough to enclose both levels
