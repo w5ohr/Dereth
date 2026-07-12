@@ -105,7 +105,7 @@
     color:var(--gold);background:rgba(8,6,3,.7);padding:8px 16px;border-radius:8px;border:1px solid var(--border);
     font-size:14px;pointer-events:none;display:none}
 
-  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook,#market{position:absolute;inset:0;background:rgba(4,3,1,.86);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50;backdrop-filter:blur(3px)}
+  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook,#market,#stable{position:absolute;inset:0;background:rgba(4,3,1,.86);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50;backdrop-filter:blur(3px)}
   #sheet .card,#tinker .card,#shop .card,#settings .card,#keymap .card,#worldmap .card,#codex .card,#spellbook .card{width:560px;max-width:92vw;background:linear-gradient(180deg,#1b1509,#0e0a05);
     border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 20px 60px #000;max-height:92vh;overflow:auto}
   #sheet h2,#tinker h2,#shop h2,#settings h2,#worldmap h2,#codex h2,#spellbook h2{margin:0 0 2px;color:var(--gold)}#sheet .sub,#tinker .sub,#shop .sub,#settings .sub,#worldmap .sub,#codex .sub,#spellbook .sub{color:var(--dim);font-size:12px;margin-bottom:14px}
@@ -622,6 +622,12 @@
   <button id="closeTink">Return to Dereth  (T)</button>
 </div></div>
 
+<div id="stable"><div class="card">
+  <h2>The Stables</h2>
+  <div class="sub" id="stbSub"></div>
+  <div id="stbBody" style="max-height:52vh;overflow-y:auto"></div>
+  <div style="text-align:right;margin-top:10px"><button class="tbtn" onclick="closeStable()">Close (Esc)</button></div>
+</div></div>
 <div id="market"><div class="card">
   <h2>Consignment Market</h2>
   <div class="sub" id="mktSub">Leave an item with the broker; collect your gold here after it sells.</div>
@@ -7471,6 +7477,9 @@ function buildWorld(){
   // #722: each capital fields a Consignment Broker — the player-to-player market stall
   for(const c of CAPITALS) addNPC(c.x-9,c.z-6,{role:"broker",town:c.name,
     name:titledName(c.region||0,Math.round(c.x*17+c.z*3),"Consignment Broker")});
+  // #725: and a Stable Master selling mounts
+  for(const c of CAPITALS) addNPC(c.x+11,c.z+7,{role:"stable",town:c.name,
+    name:titledName(c.region||0,Math.round(c.x*13+c.z*9),"Stable Master")});
   // every town fields a Town Crier (directions) and a Barkeeper (rumours) — each an individual
   for(const c of CITIES){
     addNPC(c.x-6,c.z+9,{role:"crier",town:c.name,name:titledName(c.region||0,Math.round(c.x*5+c.z*3),"Town Crier")});
@@ -7714,6 +7723,7 @@ function buildWorld(){
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   if(typeof seatShipwright==="function") seatShipwright();                 // dockside Shipwright at the most-coastal town
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
+  if(typeof spawnOwnedHorses==="function") spawnOwnedHorses();             // #725: parked horses stand back up where they were left
 }
 function settleY(){ // drop every placed object onto the RENDERED ground surface (groundY, not raw terrainH)
   for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
@@ -16748,6 +16758,7 @@ function breakResProt(){ if(player.resProt){ player.resProt=false; player.invuln
 function arriveAt(x,z){
   if(typeof GFX!=="undefined") GFX._grace=2.0;   // don't let arrival stutter trip the quality governor
   player.aboardShip=null;   // #17: any teleport (death-respawn, recall, portal, map-travel) disembarks — else updateShipPilot re-pins you to the ship at sea
+  if(typeof dismountHorse==="function"&&player.mountRec) dismountHorse(true);   // #725: the horse stays behind, parked where you teleported FROM
   player.x=clamp(x,-HALF+2,HALF-2); player.z=clamp(z,-HALF+2,HALF-2);
   const g=groundY(player.x,player.z), lift=(inDungeon||inNetwork)?0.5:2;
   player.y=g+lift; player.vy=0; player.grounded=false; player.fallPeak=g;
@@ -17699,6 +17710,7 @@ function currentPrompt(){
       if(o.role==="crier") return "Ask the Town Crier for directions (E)";
       if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
       if(o.role==="broker") return isOnline?"Trade at the Consignment Market (E)":"Consignment Market — online realm only (E)";
+      if(o.role==="stable") return "See the Stable Master's horses (E)";
       if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
       if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
       if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
@@ -17799,6 +17811,7 @@ function openLockedCache(){
 }
 function interact(){
   if(!player.alive) return;   // the dead can't act — E during the death fade was insta-looting your own corpse
+  if(player.mountRec){ dismountHorse(); return; }   // #725: in the saddle → E dismounts, horse waits here
   if(player.aboardShip){ disembarkShip(); return; }   // aboard a ship → E puts you ashore
   // your corpse first — recover everything it holds in one motion
   for(const d of drops) if(d.type==="corpse"&&Math.hypot(d.x-player.x,d.z-player.z)<4){ recoverCorpse(d); return; }
@@ -17880,6 +17893,7 @@ function interact(){
   for(const dr of hsDoors){ if(Math.hypot(dr.x-player.x,dr.z-player.z)<2.6){ hsEnterInterior(dr.h); return; } }
   for(const gt of hsHallGates){ if(Math.hypot(gt.x-player.x,gt.z-player.z)<3){ hsEnterHall(gt); return; } }
   {const sh=nearestOf(shops); if(sh&&sh.d<3.8){ activeShop=sh.o; openShop(); return; }}
+  for(const h of horses){ if(Math.hypot(h.rec.x-player.x,h.rec.z-player.z)<3){ mountHorse(h); return; } }   // #725: swing into your horse's saddle
   for(const sh of ships){ if(Math.hypot(sh.x-player.x,sh.z-player.z) < sh.def.len*0.6+3){ boardShip(sh); return; } }   // step aboard your ship
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
@@ -18078,7 +18092,7 @@ function buildSheet(){
   });
 }
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
-const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing","market"];
+const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing","market","stable"];
 function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
 // #517: in touch mode, #touchUI (spell-arc, JUMP, attack, HEIGHT/PAGE, joystick, …) floats above #hud
 // in z-order, so any BIG_MODALS panel that lives inside #hud (Quest Log, Housing) gets drawn under the
@@ -18284,7 +18298,8 @@ function update(dt){
     if(slidecast && !player._slidecastSeen){ player._slidecastSeen=1; log("<b>Slidecasting</b> — hold a turn key while casting to keep moving at full speed.","sys"); }
     const castD=player.casting?(slidecast?1:0.5):1;
     const tmag=(TOUCH.on&&TOUCH.mag>0)?(0.35+0.65*Math.min(1,TOUCH.mag)):1;   // analog joystick: partial tilt walks
-    const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD*tmag; // units/sec
+    const mountBoost=(player.mountRec&&HORSE_TYPES[player.mountRec.type])?HORSE_TYPES[player.mountRec.type].spd:1;   // #725: a horse's stride (up to 5×)
+    const spSec=player.speed*sprint*(player.buffSwiftT>0?1.4:1)*roadBoost*(blocking?0.5:1)*slowD*castD*tmag*mountBoost; // units/sec
     desVX=dx*spSec; desVZ=dz*spSec; moving=true;
   }
   // AC movement: on the ground you have full control. A JUMP launches with your CURRENT run velocity and
@@ -18698,6 +18713,7 @@ function update(dt){
   updateWeather(dt);
   updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
   updatePropFires(dt);   // #704: torch/brazier flames lick & their lights flicker (towns + dungeons; self-expiring registry)
+  updateHorses(dt);      // #725: parked horses graze; the mounted one gallops under you
   updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
   updateCaravan(dt);     // the wandering ox-drawn caravan plies the road
   enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
@@ -22521,6 +22537,7 @@ const NPC_ROLES={
   crier:      {robe:0x2e5a8a,hood:0x214567,mark:"?",mcol:"#7fd0ff",label:"Town Crier"},
   barkeep:    {robe:0x6a4a2a,hood:0x4a3320,mark:"♪",mcol:"#ffcf6b",label:"Barkeeper"},
   broker:     {robe:0x3a5a3a,hood:0x2a4229,mark:"⚖",mcol:"#c9e09a",label:"Consignment Broker"},   // #722
+  stable:     {robe:0x5a4a2e,hood:0x3e3220,mark:"∩",mcol:"#e0b070",label:"Stable Master"},          // #725
   gatekeep:   {robe:0x556070,hood:0x3c4450,mark:"⚷",mcol:"#cfd6e0",label:"Gate Keeper"},
   reset_attr: {robe:0x6a2250,hood:0x4d1839,mark:"⟳",mcol:"#ff9adf",label:"Chafulumisa"},
   reset_skill:{robe:0x225a55,hood:0x18413d,mark:"⟳",mcol:"#9affe0",label:"Fianhe"},
@@ -23043,6 +23060,7 @@ function talkToNPC(n){
     if(SFX.quest)SFX.quest();
     return;
   }
+  if(n.role==="stable"){ openStable(n); return; }   // #725: mounts
   if(n.role==="broker"){   // #722: the player-to-player consignment market
     if(!isOnline){ log(`<b>${n.name}:</b> My ledger serves the shared realm — come back when you walk Dereth online.`,"sys"); return; }
     openMarket(n); return; }
@@ -23968,6 +23986,227 @@ function buyShip(type){
   if(SFX.quest)SFX.quest(); if(typeof toast==="function") toast("SHIP ACQUIRED");
   if(typeof updateHUD==="function") updateHUD(); saveGame();
   return true;
+}
+
+// ═══ #725: MOUNTS — stables, ownable horses, riding (UO-style possessions: your horse is a
+//     creature standing WHERE YOU LEFT IT, not a menu convenience). Epic #724 has the research. ═══
+const HORSE_TYPES={
+  pony:    {name:"Shetland Pony",      cost:900,   spd:3.0, hp:120, coat:0x8a6a4a, mane:0x4a3320, blaze:true},
+  bay:     {name:"Bay Courser",        cost:2500,  spd:4.0, hp:180, coat:0x6a4226, mane:0x241408},
+  chestnut:{name:"Chestnut Palfrey",   cost:6000,  spd:4.5, hp:220, coat:0x8a4a22, mane:0x5a2e12, packs:1},
+  mule:    {name:"Pack Mule",          cost:4000,  spd:2.5, hp:260, coat:0x6a5f52, mane:0x3a332a, packs:2, ears:1.7},
+  destrier:{name:"Black Destrier",     cost:15000, spd:4.5, hp:400, coat:0x1c1a1e, mane:0x0c0a0e, guard:0.20},
+  grey:    {name:"Dapple-Grey Charger",cost:25000, spd:5.0, hp:320, coat:0x9a9aa2, mane:0x5a5a64, dapple:true},
+  shadow:  {name:"Shadowmane",         cost:60000, spd:5.0, hp:380, coat:0x141018, mane:0x2a1030, ember:true},
+};
+const HORSE_MAX=20;
+let horses=[];              // live PARKED world entities: {rec, mesh, gt (graze timer), ph (gallop phase)}
+let mountMesh=null;         // the mesh under you while riding (its rec is player.mountRec)
+const _coatTexCache={};
+function horseCoatTex(tk){
+  if(_coatTexCache[tk]) return _coatTexCache[tk];
+  const T=HORSE_TYPES[tk], c=document.createElement('canvas'); c.width=c.height=128;
+  const g=c.getContext('2d'), col=new THREE.Color(T.coat);
+  g.fillStyle='#'+col.getHexString(); g.fillRect(0,0,128,128);
+  for(let i=0;i<900;i++){ const v=(Math.random()-0.5)*26;                       // hide grain
+    g.fillStyle=`rgba(${(col.r*255+v)|0},${(col.g*255+v)|0},${(col.b*255+v)|0},0.5)`;
+    g.fillRect(Math.random()*127,Math.random()*127,2,2); }
+  if(T.dapple) for(let i=0;i<70;i++){ const r=3+Math.random()*5;                // dapple-grey rosettes
+    g.fillStyle="rgba(235,235,240,0.16)"; g.beginPath();
+    g.arc(Math.random()*127,Math.random()*127,r,0,6.28); g.fill(); }
+  g.fillStyle="rgba(255,255,255,0.10)"; g.fillRect(0,96,128,32);                // lighter belly band
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  return (_coatTexCache[tk]=t);
+}
+// The horse: lofted capsule barrel, tapered neck + head with ears, 4 hip-pivoted legs (gallop-
+// animated), mane strip, swishing tail, saddle + blanket — and saddlebag rigs when packs>0.
+function buildHorseMesh(tk,packs){
+  const T=HORSE_TYPES[tk]||HORSE_TYPES.bay;
+  const g=new THREE.Group();
+  const coat=new THREE.MeshStandardMaterial({map:horseCoatTex(tk),roughness:0.85,metalness:0.02,
+    normalMap:lumNormalTex(horseCoatTex(tk)),normalScale:new THREE.Vector2(0.4,0.4)});
+  const dark=new THREE.MeshStandardMaterial({color:T.mane,roughness:0.95});
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(0.42,1.15,6,12),coat);
+  body.rotation.x=Math.PI/2; body.position.y=1.12; g.add(body);
+  const chest=new THREE.Mesh(new THREE.SphereGeometry(0.44,10,8),coat); chest.position.set(0,1.14,0.62); chest.scale.set(1,0.96,0.8); g.add(chest);
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.26,0.85,9),coat);
+  neck.position.set(0,1.62,0.86); neck.rotation.x=0.62; g.add(neck);
+  const head=new THREE.Group(); head.position.set(0,2.02,1.16); head.rotation.x=0.45;
+  const skull=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.26,0.5),coat); skull.position.z=0.12; head.add(skull);
+  const muzzle=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.18,0.24),dark); muzzle.position.set(0,-0.03,0.44); head.add(muzzle);
+  for(const e of[-1,1]){ const ear=new THREE.Mesh(new THREE.ConeGeometry(0.045,0.16*(T.ears||1),5),coat);
+    ear.position.set(e*0.09,0.18,0.0); ear.rotation.z=e*0.16; head.add(ear); }
+  if(T.ember){ for(const e of[-1,1]){ const eye=new THREE.Mesh(new THREE.SphereGeometry(0.025,6,5),
+      new THREE.MeshStandardMaterial({color:0xff5a20,emissive:0xff5a20,emissiveIntensity:1.6}));
+    eye.position.set(e*0.115,0.06,0.22); head.add(eye); } }
+  g.add(head); g.userData.head=head;
+  const mane=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.62,0.34),dark);
+  mane.position.set(0,1.86,0.74); mane.rotation.x=0.62; g.add(mane);
+  // #725b: TWO-JOINT legs from the gait research — shoulder/hip pivot + a knee (front) or hock
+  // (hind) pivot. A horse's front knee folds the cannon BACKWARD under the body; the hind hock
+  // folds it FORWARD — getting those directions right is most of what reads as "real horse".
+  const legs=[];
+  for(const[lx,lz]of[[-0.24,0.52],[0.24,0.52],[-0.24,-0.52],[0.24,-0.52]]){
+    const front=lz>0;
+    const leg=new THREE.Group(); leg.position.set(lx,1.02,lz);                       // shoulder / hip
+    const upper=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.062,0.5,7),coat); upper.position.y=-0.25; leg.add(upper);
+    const knee=new THREE.Group(); knee.position.y=-0.5; leg.add(knee);               // carpus / hock
+    const lower=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.04,0.44,6),coat); lower.position.y=-0.22; knee.add(lower);
+    const hoof=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.09,0.13),dark); hoof.position.y=-0.46; knee.add(hoof);
+    g.add(leg); legs.push({g:leg,knee,front});
+  }
+  g.userData.legs=legs;
+  const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.015,0.72,6),dark);
+  tail.position.set(0,1.28,-1.06); tail.rotation.x=-0.5; g.add(tail); g.userData.tail=tail;
+  const blanket=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.06,0.72),new THREE.MeshStandardMaterial({color:0x6a2a2a,roughness:0.9}));
+  blanket.position.y=1.44; g.add(blanket);
+  const saddle=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.34,0.16,10,1,false,0,Math.PI),
+    new THREE.MeshStandardMaterial({color:0x4a2e18,roughness:0.7}));
+  saddle.rotation.z=Math.PI/2; saddle.rotation.y=Math.PI/2; saddle.position.y=1.47; g.add(saddle);
+  for(let p=0;p<(packs||0);p++){ for(const e of[-1,1]){
+    const bag=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.3,0.34),new THREE.MeshStandardMaterial({color:0x6a5232,roughness:0.9}));
+    bag.position.set(e*0.5,1.22,-0.32-p*0.4); g.add(bag); } }
+  if(T.blaze){ const bl=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.02,0.36),new THREE.MeshStandardMaterial({color:0xe8e4dc,roughness:0.9}));
+    bl.position.set(0,0.14,0.3); head.add(bl); }
+  g.traverse(m=>{ if(m.isMesh) m.castShadow=true; });
+  if(T===HORSE_TYPES.pony||tk==="pony") g.scale.setScalar(0.78);
+  if(tk==="mule") g.scale.setScalar(0.9);
+  return g;
+}
+function horseRec(id){ return (player.horses||[]).find(h=>h&&h.id===id)||null; }
+// (re)spawn every PARKED horse as a live world entity — mirrors spawnOwnedShip after world rebuilds
+function spawnOwnedHorses(){
+  for(const h of horses){ if(h.mesh) disposeObject3D(h.mesh); } horses=[];
+  if(!player.horses) return;
+  for(const rec of player.horses){
+    if(!rec||rec.loc!=="parked") continue;
+    if(rec.x==null||rec.z==null){ rec.x=player.x+rnd(-4,4); rec.z=player.z+rnd(-4,4); }
+    const mesh=buildHorseMesh(rec.type,rec.packs);
+    mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28);
+    scene.add(mesh);
+    horses.push({rec,mesh,gt:rnd(0,6),ph:0});
+  }
+}
+function mountHorse(h){
+  if(h.rec.owner&&h.rec.owner!==(player.name||"you")){   // #725b: hands off — the saddle knows its rider
+    log(`This isn't your horse — it belongs to <b>${esc(h.rec.owner)}</b>.`,"warn"); if(SFX.deny)SFX.deny(); return; }
+  if(inDungeon||inNetwork){ log("The passage is too tight to ride here.","warn"); return; }
+  if(player.aboardShip){ return; }
+  const T=HORSE_TYPES[h.rec.type]||HORSE_TYPES.bay;
+  player.mountRec=h.rec; h.rec.loc="mounted";
+  mountMesh=h.mesh; horses.splice(horses.indexOf(h),1);
+  log(`You swing into the saddle of <b>${esc(h.rec.name||T.name)}</b> — ${T.spd}× stride. Press E to dismount.`,"sys");
+  if(typeof toast==="function") toast("MOUNTED"); if(SFX.quest)SFX.quest();
+  saveGame();
+}
+function dismountHorse(silent){
+  const rec=player.mountRec; if(!rec) return;
+  rec.loc="parked"; rec.x=player.x+1.2; rec.z=player.z+0.6;
+  player.mountRec=null;
+  if(mountMesh){ if(inDungeon||inNetwork){ disposeObject3D(mountMesh); }   // teleported indoors: the horse WAITS outside at rec.x/z
+    else { mountMesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z);
+      horses.push({rec,mesh:mountMesh,gt:rnd(2,6),ph:0}); }
+    mountMesh=null; }
+  if(!silent){ log(`You dismount — <b>${esc(rec.name||(HORSE_TYPES[rec.type]||{}).name||"your horse")}</b> waits where you left it.`,"sys"); }
+  saveGame();
+}
+function buyHorse(tk){
+  const T=HORSE_TYPES[tk]; if(!T) return;
+  player.horses=player.horses||[];
+  if(player.horses.length>=HORSE_MAX){ log(`The stablemaster shakes his head — a string of <b>${HORSE_MAX}</b> is all any rider can claim.`,"warn"); if(SFX.err)SFX.err(); return; }
+  if(player.gold<T.cost){ log(`You need <b>${T.cost.toLocaleString()}</b> pyreals for a ${T.name}.`,"sys"); if(SFX.err)SFX.err(); return; }
+  player.gold-=T.cost;
+  player.nextHorseId=(player.nextHorseId||1);
+  const rec={id:player.nextHorseId++,type:tk,name:T.name,owner:player.name||"you",hp:T.hp,mhp:T.hp,packs:T.packs||0,items:[],
+    loc:"parked",x:(activeStable?activeStable.x:player.x)+rnd(2,5),z:(activeStable?activeStable.z:player.z)+rnd(2,5)};
+  player.horses.push(rec);
+  const mesh=buildHorseMesh(rec.type,rec.packs);
+  mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
+  horses.push({rec,mesh,gt:rnd(0,6),ph:0});
+  log(`You buy a <b>${T.name}</b> — it stands saddled outside the stable.`,"loot");
+  if(SFX.gold)SFX.gold(); if(typeof toast==="function") toast("HORSE ACQUIRED");
+  saveGame(); renderStable();
+}
+// per-frame: parked horses graze; the mounted horse gallops under you
+function updateHorses(dt){
+  const t=now()/1000;
+  for(const h of horses){
+    if(!h.mesh) continue;
+    h.gt-=dt;
+    const hd=h.mesh.userData.head;
+    if(hd){ if(h.gt<1.6&&h.gt>0) hd.rotation.x=0.45+Math.min(0.5,(1.6-h.gt))*0.9;   // dip to graze
+      else { hd.rotation.x=0.45; if(h.gt<=0) h.gt=rnd(3,9); } }
+    if(h.mesh.userData.tail) h.mesh.userData.tail.rotation.z=0.22*Math.sin(t*1.3+h.rec.id);
+  }
+  if(player.mountRec&&mountMesh){
+    const T=HORSE_TYPES[player.mountRec.type]||HORSE_TYPES.bay;
+    const spd=Math.hypot(player.vx||0,player.vz||0);
+    const full=Math.max(1,(player.speed||8)*T.spd), k=Math.min(1,spd/full);   // 0..1 of this horse's top pace
+    const hy=groundY(player.x,player.z,player.y);
+    mountMesh.position.set(player.x,hy,player.z);
+    if(spd>0.5) mountMesh.rotation.y=Math.atan2(player.vx,player.vz);
+    const legs=mountMesh.userData.legs||[], head=mountMesh.userData.head;
+    let bounce=0;
+    if(k>0.04){
+      // ── GAITS (research: walk = 4-beat lateral LH·LF·RH·RF, earthbound; gallop = asymmetric
+      //    4-beat, hind pair drives, front pair catches, then SUSPENSION — the body pitch-rocks
+      //    and the head swings as a balancing pendulum) ──
+      const gallop=k>0.45;
+      const rate=gallop?(3.2+5.2*k):(2.2+2.4*k);
+      const p=(mountMesh.userData.ph=(mountMesh.userData.ph||0)+dt*rate);
+      // stride phase offsets, legs ordered [FL,FR,HL,HR]
+      const offs=gallop?[0.55,0.67,0.0,0.12]:[0.25,0.75,0.0,0.5];
+      const swingA=gallop?0.78:0.38, foldA=gallop?1.05:0.55;
+      legs.forEach((L,i)=>{ const lp=(p+offs[i])*Math.PI*2;
+        L.g.rotation.x=Math.sin(lp)*swingA;
+        const fold=Math.max(0,Math.sin(lp+1.15))*foldA;                    // cannon folds through the swing
+        L.knee.rotation.x=L.front?-fold:fold;                              // knee folds BACK, hock folds FORWARD
+      });
+      if(gallop){
+        bounce=Math.abs(Math.sin(p*Math.PI))*0.14*k;                       // the suspension beat
+        mountMesh.rotation.x=0.055*Math.sin(p*Math.PI*2+0.6)*k;           // gathered→extended pitch rock
+        if(head) head.rotation.x=0.30+0.11*Math.sin(p*Math.PI*2+1.0)*k;   // pendulum head
+      } else {
+        bounce=Math.abs(Math.sin(p*Math.PI*2))*0.03;
+        mountMesh.rotation.x=0;
+        if(head) head.rotation.x=0.42+0.06*Math.sin(p*Math.PI*2);          // nodding walk
+      }
+      mountMesh.position.y=hy+bounce;
+    } else { legs.forEach(L=>{ L.g.rotation.x*=0.8; L.knee.rotation.x*=0.8; }); mountMesh.rotation.x*=0.8; }
+    // ── THE RIDER (research: at speed you ride a half-seat — rocking with the horse, rising and
+    //    falling with the suspension beat a hair BEHIND it, leaning further forward as the pace
+    //    builds). The seat pins you to the saddle; the bob rides player.y so the first-person
+    //    camera breathes with the gait and the third-person avatar sits the bounce. ──
+    const p2=(mountMesh.userData.ph||0);
+    const riderBob=k>0.45?Math.abs(Math.sin(p2*Math.PI-0.5))*0.10*k:Math.abs(Math.sin(p2*Math.PI*2-0.4))*0.02;
+    player.y=hy+1.30+bounce*0.6+riderBob;
+    player.vy=0; player.grounded=true;                                     // saddle-pinned (the ship-deck rule)
+    if(playerAvatar) playerAvatar.rotation.x=-(0.06+0.14*k*(k>0.45?1:0.3));// half-seat forward lean
+  } else if(playerAvatar&&playerAvatar.rotation.x!==0){ playerAvatar.rotation.x*=0.8; if(Math.abs(playerAvatar.rotation.x)<0.01) playerAvatar.rotation.x=0; }
+}
+// ── the Stable Master's window ──
+let activeStable=null;
+function openStable(n){
+  activeStable=n; closeOtherModals("stable");
+  document.getElementById('stbSub').innerHTML=`${esc(n.name)} — <b>${esc(n.town||"?")}</b>. Horses are flesh and bone: they stand where you leave them, and the wilds are not kind.`;
+  document.getElementById('stable').style.display="flex"; paused=true; if(locked)document.exitPointerLock();
+  renderStable();
+}
+function closeStable(){ document.getElementById('stable').style.display="none"; paused=false; activeStable=null; }
+function renderStable(){
+  const B=document.getElementById('stbBody'); if(!B||document.getElementById('stable').style.display==="none") return;
+  const own=(player.horses||[]);
+  B.innerHTML="<div class='sub' style='margin:4px 0'>For sale:</div>"+
+    Object.entries(HORSE_TYPES).map(([k,T])=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #3a3428">
+      <span style="flex:1"><b>${T.name}</b> <span class="sub">— ${T.spd}× stride · ${T.hp} vigor${T.packs?` · ${T.packs} pack rig${T.packs>1?"s":""}`:""}${T.guard?" · warhorse":""}</span></span>
+      <span style="color:#ffd23b">${T.cost.toLocaleString()}p</span>
+      <button class="tbtn" ${player.gold>=T.cost&&own.length<HORSE_MAX?"":"disabled style='opacity:0.4'"} onclick="buyHorse('${k}')">Buy</button></div>`).join("")+
+    `<div class='sub' style='margin:10px 0 4px'>Your string (${own.length}/${HORSE_MAX}):</div>`+
+    (own.length?own.map(h=>{ const T=HORSE_TYPES[h.type]||{name:h.type};
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 2px;border-bottom:1px solid #3a3428">
+        <span style="flex:1"><b>${esc(h.name||T.name)}</b> <span class="sub">— ${T.name} · ${h.hp}/${h.mhp} vigor</span></span>
+        <span class="sub">${h.loc==="mounted"?"under you":h.loc==="stabled"?"stabled":"parked afield"}</span></div>`; }).join("")
+      :"<div class='sub'>You own no horses yet.</div>");
 }
 
 // ---- boarding / piloting ----
