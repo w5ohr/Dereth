@@ -105,7 +105,7 @@
     color:var(--gold);background:rgba(8,6,3,.7);padding:8px 16px;border-radius:8px;border:1px solid var(--border);
     font-size:14px;pointer-events:none;display:none}
 
-  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook,#market,#stable{position:absolute;inset:0;background:rgba(4,3,1,.86);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50;backdrop-filter:blur(3px)}
+  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook,#market,#stable,#horsepacks{position:absolute;inset:0;background:rgba(4,3,1,.86);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50;backdrop-filter:blur(3px)}
   #sheet .card,#tinker .card,#shop .card,#settings .card,#keymap .card,#worldmap .card,#codex .card,#spellbook .card{width:560px;max-width:92vw;background:linear-gradient(180deg,#1b1509,#0e0a05);
     border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 20px 60px #000;max-height:92vh;overflow:auto}
   #sheet h2,#tinker h2,#shop h2,#settings h2,#worldmap h2,#codex h2,#spellbook h2{margin:0 0 2px;color:var(--gold)}#sheet .sub,#tinker .sub,#shop .sub,#settings .sub,#worldmap .sub,#codex .sub,#spellbook .sub{color:var(--dim);font-size:12px;margin-bottom:14px}
@@ -622,6 +622,12 @@
   <button id="closeTink">Return to Dereth  (T)</button>
 </div></div>
 
+<div id="horsepacks"><div class="card">
+  <h2>Saddle Packs</h2>
+  <div class="sub" id="hpSub"></div>
+  <div id="hpBody" style="max-height:52vh;overflow-y:auto"></div>
+  <div style="text-align:right;margin-top:10px"><button class="tbtn" onclick="closePacks()">Close (Esc)</button></div>
+</div></div>
 <div id="stable"><div class="card">
   <h2>The Stables</h2>
   <div class="sub" id="stbSub"></div>
@@ -17530,6 +17536,7 @@ const ACTIONS=[
   {id:"weaponswap",label:"Swap Weapon",     group:"Actions",def:"shift+KeyQ",run:()=>weaponSwap()},
   {id:"view",      label:"Toggle View 1st/3rd",group:"Actions",def:"KeyV",run:()=>toggleView()},
   {id:"buffbot",   label:"Buff Self",       group:"Actions",def:"KeyU",run:()=>buffBotCast()},
+  {id:"packs",     label:"Open Saddle Packs",group:"Actions",def:"Comma",run:()=>openPacks()},
   {id:"loadout",   label:"Cycle Spell Loadout",group:"Actions",def:"Backslash",run:()=>cycleLoadout()},
   {id:"pothealth",label:"Drink Health Potion",  group:"Consumables",def:"KeyR",run:()=>drinkPotion("potHealth",60,"hp")},
   {id:"potgreat", label:"Drink Greater Potion", group:"Consumables",def:"KeyG",run:()=>drinkPotion("potGreat",150,"hp")},
@@ -18092,7 +18099,7 @@ function buildSheet(){
   });
 }
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
-const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing","market","stable"];
+const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing","market","stable","horsepacks"];
 function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
 // #517: in touch mode, #touchUI (spell-arc, JUMP, attack, HEIGHT/PAGE, joystick, …) floats above #hud
 // in z-order, so any BIG_MODALS panel that lives inside #hud (Quest Log, Housing) gets drawn under the
@@ -24208,6 +24215,100 @@ function openStable(n){
   renderStable();
 }
 function closeStable(){ document.getElementById('stable').style.display="none"; paused=false; activeStable=null; }
+// ── #726: string management — saddle packs, the stablemasters' boarding network, rename, release ──
+let _hRelArm=null;
+function _horseLive(id){ return horses.find(h=>h.rec.id===id)||null; }
+function horseBuyPack(id){
+  const rec=horseRec(id); if(!rec||(rec.packs||0)>=2) return;
+  if(player.gold<1200){ log("A saddle pack rig runs <b>1,200</b> pyreals.","sys"); if(SFX.err)SFX.err(); return; }
+  player.gold-=1200; rec.packs=(rec.packs||0)+1;
+  const h=_horseLive(id);
+  if(h){ const y=h.mesh.rotation.y; disposeObject3D(h.mesh);            // re-rig the standing horse with its new bags
+    h.mesh=buildHorseMesh(rec.type,rec.packs); h.mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); h.mesh.rotation.y=y; scene.add(h.mesh); }
+  if(player.mountRec===rec&&mountMesh){ const y=mountMesh.rotation.y; disposeObject3D(mountMesh);
+    mountMesh=buildHorseMesh(rec.type,rec.packs); mountMesh.rotation.y=y; scene.add(mountMesh); }
+  log(`The stablemaster straps a <b>saddle pack</b> to ${esc(rec.name)} — 12 more slots (${rec.packs}/2 rigs).`,"loot");
+  if(SFX.gold)SFX.gold(); saveGame(); renderStable();
+}
+function horseStable(id){
+  const rec=horseRec(id); if(!rec||rec.loc==="stabled") return;
+  const near=rec.loc==="mounted"||(activeStable&&Math.hypot((rec.x||0)-activeStable.x,(rec.z||0)-activeStable.z)<30);
+  if(!near){ log("Bring the horse to the stable first — the master boards what stands before him.","warn"); return; }
+  if(player.mountRec===rec) dismountHorse(true);
+  const h=_horseLive(id); if(h){ disposeObject3D(h.mesh); horses.splice(horses.indexOf(h),1); }
+  rec.loc="stabled"; rec.x=null; rec.z=null;
+  log(`${esc(rec.name)} is boarded with the stablemasters — retrieve it at ANY capital, rested and healed.`,"sys");
+  saveGame(); renderStable();
+}
+function horseRetrieve(id){
+  const rec=horseRec(id); if(!rec||rec.loc!=="stabled"||!activeStable) return;
+  rec.loc="parked"; rec.hp=rec.mhp;                                     // boarded horses come back rested
+  rec.x=activeStable.x+rnd(2,5); rec.z=activeStable.z+rnd(2,5);
+  const mesh=buildHorseMesh(rec.type,rec.packs);
+  mesh.position.set(rec.x,groundY(rec.x,rec.z),rec.z); mesh.rotation.y=rnd(0,6.28); scene.add(mesh);
+  horses.push({rec,mesh,gt:rnd(0,6),ph:0});
+  log(`${esc(rec.name)} is led out, brushed and fresh — it waits by the stable.`,"sys");
+  saveGame(); renderStable();
+}
+function horseRename(id){
+  const rec=horseRec(id); if(!rec) return;
+  const nm=prompt("Name this horse:",rec.name||""); if(nm==null) return;
+  rec.name=String(nm).slice(0,24).trim()||rec.name;
+  saveGame(); renderStable();
+}
+function horseRelease(id){
+  const rec=horseRec(id); if(!rec) return;
+  if(_hRelArm!==id){ _hRelArm=id; renderStable(); return; }             // two-press confirm
+  _hRelArm=null;
+  if((rec.items||[]).length){ log("Empty its saddle packs first — the stablemaster won't loose a laden horse.","warn"); renderStable(); return; }
+  if(player.mountRec===rec) dismountHorse(true);
+  const h=_horseLive(id); if(h){ disposeObject3D(h.mesh); horses.splice(horses.indexOf(h),1); }
+  player.horses.splice(player.horses.indexOf(rec),1);
+  log(`You slip the halter from <b>${esc(rec.name)}</b> — it canters off into Dereth, free.`,"sys");
+  saveGame(); renderStable();
+}
+// ── #726: SADDLE PACKS in the field — the horse's cargo, reachable from the saddle or standing
+//    beside your parked horse (Open Saddle Packs action; rebindable). Pack cargo lives ON the
+//    horse: it rides with it, waits with it, and never counts against your satchel. ──
+let packHorse=null;
+function openPacks(){
+  let rec=player.mountRec;
+  if(!rec){ const h=horses.filter(x=>x.rec.owner===(player.name||"you")&&Math.hypot(x.rec.x-player.x,x.rec.z-player.z)<4)
+      .sort((a,b)=>Math.hypot(a.rec.x-player.x,a.rec.z-player.z)-Math.hypot(b.rec.x-player.x,b.rec.z-player.z))[0];
+    rec=h&&h.rec; }
+  if(!rec){ log("No horse of yours stands within reach.","sys"); return; }
+  if(!(rec.packs>0)){ log(`${esc(rec.name)} carries no saddle packs — a stablemaster fits a rig for 1,200p.`,"sys"); return; }
+  packHorse=rec; closeOtherModals("horsepacks");
+  document.getElementById('horsepacks').style.display="flex"; paused=true; if(locked)document.exitPointerLock();
+  renderPacks();
+}
+function closePacks(){ document.getElementById('horsepacks').style.display="none"; paused=false; packHorse=null; }
+function packCap(rec){ return (rec.packs||0)*12; }
+function renderPacks(){
+  const rec=packHorse; if(!rec) return;
+  rec.items=rec.items||[];
+  document.getElementById('hpSub').innerHTML=`<b>${esc(rec.name)}</b> — ${rec.items.length}/${packCap(rec)} slots across ${rec.packs} rig${rec.packs>1?"s":""}.`;
+  const B=document.getElementById('hpBody');
+  B.innerHTML=`<div style="display:flex;gap:14px"><div style="flex:1"><div class='sub'>Saddle packs</div>`+
+    (rec.items.length?rec.items.map((it,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #3a3428">
+      <span style="flex:1">${itemIconHTML(it.name,"📦",16,it)} ${esc(it.name)}</span>
+      <button class="tbtn" onclick="packTake(${i})">→ Satchel</button></div>`).join(""):"<div class='sub'>empty</div>")+
+    `</div><div style="flex:1"><div class='sub'>Your satchel</div>`+
+    (player.inv.length?player.inv.map((it,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #3a3428">
+      <span style="flex:1">${itemIconHTML(it.name,"📦",16,it)} ${esc(it.name)}</span>
+      <button class="tbtn" onclick="packStow(${i})">Stow →</button></div>`).join(""):"<div class='sub'>empty</div>")+`</div></div>`;
+}
+function packStow(i){
+  const rec=packHorse, it=player.inv[i]; if(!rec||!it) return;
+  rec.items=rec.items||[];
+  if(rec.items.length>=packCap(rec)){ log("The saddle packs are full.","warn"); return; }
+  player.inv.splice(i,1); rec.items.push(it); saveGame(); renderPacks();
+}
+function packTake(i){
+  const rec=packHorse; if(!rec||!(rec.items&&rec.items[i])) return;
+  if(player.inv.length>=invCap()){ log("Your satchel is full.","warn"); return; }
+  player.inv.push(rec.items.splice(i,1)[0]); saveGame(); renderPacks();
+}
 function renderStable(){
   const B=document.getElementById('stbBody'); if(!B||document.getElementById('stable').style.display==="none") return;
   const own=(player.horses||[]);
@@ -24218,9 +24319,15 @@ function renderStable(){
       <button class="tbtn" ${player.gold>=T.cost&&own.length<HORSE_MAX?"":"disabled style='opacity:0.4'"} onclick="buyHorse('${k}')">Buy</button></div>`).join("")+
     `<div class='sub' style='margin:10px 0 4px'>Your string (${own.length}/${HORSE_MAX}):</div>`+
     (own.length?own.map(h=>{ const T=HORSE_TYPES[h.type]||{name:h.type};
-      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 2px;border-bottom:1px solid #3a3428">
-        <span style="flex:1"><b>${esc(h.name||T.name)}</b> <span class="sub">— ${T.name} · ${h.hp}/${h.mhp} vigor</span></span>
-        <span class="sub">${h.loc==="mounted"?"under you":h.loc==="stabled"?"stabled":"parked afield"}</span></div>`; }).join("")
+      const near=h.loc==="mounted"||(h.loc==="parked"&&activeStable&&Math.hypot((h.x||0)-activeStable.x,(h.z||0)-activeStable.z)<30);
+      return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #3a3428;flex-wrap:wrap">
+        <span style="flex:1;min-width:190px"><b>${esc(h.name||T.name)}</b> <span class="sub">— ${T.name} · ${h.hp}/${h.mhp} vigor · ${h.packs||0}/2 packs${(h.items&&h.items.length)?` (${h.items.length} stowed)`:""}</span></span>
+        <span class="sub">${h.loc==="mounted"?"under you":h.loc==="stabled"?"stabled":"parked afield"}</span>
+        ${(h.packs||0)<2?`<button class="tbtn" ${player.gold>=1200?"":"disabled style='opacity:0.4'"} onclick="horseBuyPack(${h.id})">+Pack 1,200p</button>`:""}
+        ${h.loc!=="stabled"?`<button class="tbtn" ${near?"":"disabled style='opacity:0.4' title='bring it to the stable first'"} onclick="horseStable(${h.id})">Stable</button>`
+                           :`<button class="tbtn" onclick="horseRetrieve(${h.id})">Retrieve</button>`}
+        <button class="tbtn" onclick="horseRename(${h.id})">Rename</button>
+        <button class="tbtn" onclick="horseRelease(${h.id})">${_hRelArm===h.id?"Sure?":"Release"}</button></div>`; }).join("")
       :"<div class='sub'>You own no horses yet.</div>");
 }
 
