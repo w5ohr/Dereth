@@ -105,7 +105,7 @@
     color:var(--gold);background:rgba(8,6,3,.7);padding:8px 16px;border-radius:8px;border:1px solid var(--border);
     font-size:14px;pointer-events:none;display:none}
 
-  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook{position:absolute;inset:0;background:rgba(4,3,1,.86);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50;backdrop-filter:blur(3px)}
+  #sheet,#tinker,#shop,#settings,#keymap,#worldmap,#codex,#spellbook,#market{position:absolute;inset:0;background:rgba(4,3,1,.86);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:50;backdrop-filter:blur(3px)}
   #sheet .card,#tinker .card,#shop .card,#settings .card,#keymap .card,#worldmap .card,#codex .card,#spellbook .card{width:560px;max-width:92vw;background:linear-gradient(180deg,#1b1509,#0e0a05);
     border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 20px 60px #000;max-height:92vh;overflow:auto}
   #sheet h2,#tinker h2,#shop h2,#settings h2,#worldmap h2,#codex h2,#spellbook h2{margin:0 0 2px;color:var(--gold)}#sheet .sub,#tinker .sub,#shop .sub,#settings .sub,#worldmap .sub,#codex .sub,#spellbook .sub{color:var(--dim);font-size:12px;margin-bottom:14px}
@@ -622,6 +622,13 @@
   <button id="closeTink">Return to Dereth  (T)</button>
 </div></div>
 
+<div id="market"><div class="card">
+  <h2>Consignment Market</h2>
+  <div class="sub" id="mktSub">Leave an item with the broker; collect your gold here after it sells.</div>
+  <div id="mktTabs" style="display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap"></div>
+  <div id="mktBody" style="max-height:52vh;overflow-y:auto"></div>
+  <div style="text-align:right;margin-top:10px"><button class="tbtn" onclick="closeMarket()">Close (Esc)</button></div>
+</div></div>
 <div id="shop"><div class="card">
   <h2>Vendor of Holtburg</h2>
   <div class="sub">Spend your hard-won pyreals on potions, or sell loot you don't need. Quaff with R / G / F in the field.</div>
@@ -7461,6 +7468,9 @@ function buildWorld(){
   // each capital gets Asheron's Emissary, who offers the apex bounty (Gnawvil's Brood)
   for(const c of CAPITALS) addNPC(c.x+8,c.z-8,{town:c.name,questId:"gnawvil",
     name:titledName(c.region||0,Math.round(c.x*11+c.z*13),"Emissary of Asheron")});
+  // #722: each capital fields a Consignment Broker — the player-to-player market stall
+  for(const c of CAPITALS) addNPC(c.x-9,c.z-6,{role:"broker",town:c.name,
+    name:titledName(c.region||0,Math.round(c.x*17+c.z*3),"Consignment Broker")});
   // every town fields a Town Crier (directions) and a Barkeeper (rumours) — each an individual
   for(const c of CITIES){
     addNPC(c.x-6,c.z+9,{role:"crier",town:c.name,name:titledName(c.region||0,Math.round(c.x*5+c.z*3),"Town Crier")});
@@ -17688,6 +17698,7 @@ function currentPrompt(){
     if(npcOK&&(!bsOK||n.d<=bsd+0.8)&&(!ctOK||n.d<=ctd+0.8)){ const o=n.o;
       if(o.role==="crier") return "Ask the Town Crier for directions (E)";
       if(o.role==="barkeep") return "Hear a rumor from "+o.name+" (E)";
+      if(o.role==="broker") return isOnline?"Trade at the Consignment Market (E)":"Consignment Market — online realm only (E)";
       if(o.role==="reset_attr") return "Reset attributes with Chafulumisa (E)";
       if(o.role==="reset_skill") return "Reset skills with Fianhe (E)";
       if(o.role==="gatekeep") return "Speak with the Gate Keeper (E)";
@@ -18067,7 +18078,7 @@ function buildSheet(){
   });
 }
 // #169: the big activity screens are mutually exclusive — opening one closes the others (no more stacked overlays)
-const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing"];
+const BIG_MODALS=["sheet","tinker","shop","settings","keymap","worldmap","codex","spellbook","questlog","housing","market"];
 function closeOtherModals(except){ for(const id of BIG_MODALS){ if(id===except) continue; const el=document.getElementById(id); if(el&&el.style.display!=="none") el.style.display="none"; } }
 // #517: in touch mode, #touchUI (spell-arc, JUMP, attack, HEIGHT/PAGE, joystick, …) floats above #hud
 // in z-order, so any BIG_MODALS panel that lives inside #hud (Quest Log, Housing) gets drawn under the
@@ -22509,6 +22520,7 @@ const NPC_ROLES={
   emissary:   {robe:0x8a3b2a,hood:0x6e2e20,mark:"!",mcol:"#ffd23b",label:"Asheron's Emissary"},
   crier:      {robe:0x2e5a8a,hood:0x214567,mark:"?",mcol:"#7fd0ff",label:"Town Crier"},
   barkeep:    {robe:0x6a4a2a,hood:0x4a3320,mark:"♪",mcol:"#ffcf6b",label:"Barkeeper"},
+  broker:     {robe:0x3a5a3a,hood:0x2a4229,mark:"⚖",mcol:"#c9e09a",label:"Consignment Broker"},   // #722
   gatekeep:   {robe:0x556070,hood:0x3c4450,mark:"⚷",mcol:"#cfd6e0",label:"Gate Keeper"},
   reset_attr: {robe:0x6a2250,hood:0x4d1839,mark:"⟳",mcol:"#ff9adf",label:"Chafulumisa"},
   reset_skill:{robe:0x225a55,hood:0x18413d,mark:"⟳",mcol:"#9affe0",label:"Fianhe"},
@@ -23031,6 +23043,9 @@ function talkToNPC(n){
     if(SFX.quest)SFX.quest();
     return;
   }
+  if(n.role==="broker"){   // #722: the player-to-player consignment market
+    if(!isOnline){ log(`<b>${n.name}:</b> My ledger serves the shared realm — come back when you walk Dereth online.`,"sys"); return; }
+    openMarket(n); return; }
   if(n.role==="barkeep"){   // alternate our tavern rumors with real retail barkeep patter
     const bl=acDialogueLine(n.name,"barkeep"), i=(n._line=(n._line||0)+1);
     if(bl&&i%2===0){ log(`<b>${n.name}:</b> ${esc(bl[(i>>1)%bl.length])}`,"sys"); return; }
@@ -24367,6 +24382,122 @@ function openShop(){ closeOtherModals("shop"); buildShop(); document.getElementB
     if(pool){ const i=(activeShop._line=(activeShop._line||0)+1);
       log(`<b>${activeShop.name||activeShop.title}:</b> ${esc(pool[i%pool.length])}`,"sys"); } } }
 function closeShop(){ document.getElementById('shop').style.display="none"; paused=false; }
+// ── #722: Consignment Market — player-to-player selling through a capital's broker.
+//    Sell: the item leaves the satchel IMMEDIATELY (escrowed to the server, the #295 trade rule;
+//    restored on list_fail). Buy: pay-first — gold is deducted only on the server's 'bought'
+//    confirmation, which is also the only path that hands over the item (the server's atomic
+//    claim picks one winner per listing). Proceeds wait at the SAME town's broker until collected.
+const MKT={town:null,tab:"browse",stock:[],mine:[],pendingList:null};
+function openMarket(n){
+  MKT.town=n.town||"?"; MKT.tab="browse"; MKT.stock=[]; MKT.mine=[];
+  closeOtherModals("market");
+  document.getElementById('mktSub').innerHTML=`${esc(n.name||"The broker")} — <b>${esc(MKT.town)}</b>. Leave an item to sell; collect your gold here after it sells.`;
+  document.getElementById('market').style.display="flex"; paused=true; if(locked)document.exitPointerLock();
+  renderMarket();
+  netSend({t:"market",act:"browse",town:MKT.town});
+  netSend({t:"market",act:"mine"});
+}
+function closeMarket(){ document.getElementById('market').style.display="none"; paused=false; }
+function mktItemHTML(itj){
+  let it=null; try{ it=typeof itj==="string"?JSON.parse(itj):itj; }catch(e){}
+  if(!it||typeof it!=="object") return "<i>unreadable ware</i>";
+  return `${itemIconHTML(it.name,"📦",18,it)} <b>${esc(String(it.name||"item"))}</b>`;
+}
+function renderMarket(){
+  const tabs=[["browse","Browse"],["sell","Sell an Item"],["mine","My Consignments"]];
+  document.getElementById('mktTabs').innerHTML=tabs.map(([k,n])=>
+    `<button class="tbtn" style="opacity:${MKT.tab===k?1:0.45}" onclick="MKT.tab='${k}';renderMarket()">${n}</button>`).join("");
+  const B=document.getElementById('mktBody');
+  if(MKT.tab==="browse"){
+    if(!MKT.stock.length){ B.innerHTML="<div class='sub'>The shelves stand empty — no consignments in "+esc(MKT.town)+" today.</div>"; return; }
+    B.innerHTML=MKT.stock.map(r=>{
+      const mine=r.seller===player.name, can=player.gold>=r.price&&!mine;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #3a3428">
+        <span style="flex:1">${mktItemHTML(r.item)} <span class="sub">— consigned by ${esc(r.seller)}${mine?" (you)":""}</span></span>
+        <span style="color:#ffd23b">${r.price}p</span>
+        <button class="tbtn" ${can?"":"disabled style='opacity:0.4'"} onclick="mktBuy(${r.id})">${mine?"Yours":"Buy"}</button></div>`; }).join("");
+  } else if(MKT.tab==="sell"){
+    const rows=player.inv.map((it,i)=>({it,i})).filter(x=>x.it&&x.it.stat!=="quest");
+    if(!rows.length){ B.innerHTML="<div class='sub'>Your satchel holds nothing the broker will take.</div>"; return; }
+    B.innerHTML="<div class='sub' style='margin-bottom:6px'>Name your price — the item stays with the broker until it sells (or you reclaim it).</div>"+
+      rows.map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #3a3428">
+        <span style="flex:1">${mktItemHTML(x.it)}</span>
+        <input id="mktp${x.i}" type="number" min="1" max="10000000" value="${Math.max(1,(x.it.v||1)*10)}" style="width:90px">
+        <button class="tbtn" onclick="mktList(${x.i})">Consign</button></div>`).join("");
+  } else {
+    const rows=MKT.mine;
+    const here=rows.filter(r=>r.status==="sold"&&r.town===MKT.town), hereGold=here.reduce((a,r)=>a+r.price,0);
+    const away=rows.filter(r=>r.status==="sold"&&r.town!==MKT.town);
+    B.innerHTML=(hereGold?`<div style="padding:6px 2px"><button class="tbtn" onclick="mktCollect()">Collect ${hereGold}p (${here.length} sale${here.length>1?"s":""})</button></div>`:
+      "<div class='sub'>No proceeds waiting at this broker.</div>")+
+      (away.length?`<div class='sub'>Gold also waits at: ${[...new Set(away.map(r=>r.town))].map(esc).join(", ")}.</div>`:"")+
+      rows.map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #3a3428">
+        <span style="flex:1">${mktItemHTML(r.item)} <span class="sub">— ${esc(r.town)}</span></span>
+        <span style="color:#ffd23b">${r.price}p</span>
+        <span class="sub">${r.status==="sold"?("sold to "+esc(String(r.buyer||"?"))):"on the shelf"}</span>
+        ${r.status==="listed"?`<button class="tbtn" onclick="mktReclaim(${r.id})">Reclaim</button>`:""}</div>`).join("");
+    if(!rows.length&&!hereGold) B.innerHTML="<div class='sub'>You have nothing on consignment anywhere in Dereth.</div>";
+  }
+}
+function mktList(i){
+  const it=player.inv[i]; if(!it) return;
+  const pe=document.getElementById('mktp'+i);
+  const price=Math.floor(+((pe&&pe.value)||0));
+  if(!(price>0&&price<=10000000)){ log("Name a price between 1 and 10,000,000 pyreals.","warn"); return; }
+  player.inv.splice(i,1); MKT.pendingList=it;                     // escrow OUT of the satchel (#295)
+  netSend({t:"market",act:"list",town:MKT.town,item:it,price});
+  renderMarket();
+}
+function mktBuy(id){
+  const r=MKT.stock.find(x=>x.id===id); if(!r) return;
+  if(player.gold<r.price){ log("You cannot afford that consignment.","warn"); return; }
+  netSend({t:"market",act:"buy",id});
+}
+function mktCollect(){ netSend({t:"market",act:"collect",town:MKT.town}); }
+function mktReclaim(id){ netSend({t:"market",act:"reclaim",id}); }
+function onMarketMsg(m){
+  const act=m.act;
+  if(act==="stock"){ if(Array.isArray(m.rows)){ MKT.stock=m.rows.filter(r=>r&&isFinite(+r.price)&&+r.price>0); MKT.stock.forEach(r=>r.price=Math.floor(+r.price)); } if(MKT.tab==="browse")renderMarket(); }
+  else if(act==="mine"){ if(Array.isArray(m.rows)) MKT.mine=m.rows.filter(r=>r&&r.id!=null); if(MKT.tab==="mine")renderMarket(); }
+  else if(act==="listed"){ MKT.pendingList=null; log(`The broker shelves your ware at <b>${Math.floor(+m.price||0)}p</b>.`,"loot"); saveGame();
+    netSend({t:"market",act:"mine"}); if(MKT.tab==="sell")renderMarket(); }
+  else if(act==="list_fail"){ if(MKT.pendingList){ addToInv(MKT.pendingList,true); MKT.pendingList=null; }
+    log(esc(String(m.msg||"The broker declines.")),"warn"); renderMarket(); }
+  else if(act==="bought"){
+    const price=Math.floor(+m.price||0);
+    let it=null; try{ it=JSON.parse(m.item); }catch(e){}
+    if(!it||!(price>=0)) return;                                   // AC-3: never credit/debit on malformed fields
+    player.gold=Math.max(0,player.gold-price);                     // pay-first: the deduction rides the confirmation that hands over the item
+    addToInv(it,true);                                             // force: a paid-for item must never vanish on a full satchel
+    log(`You buy the <b>${esc(String(it.name||"ware"))}</b> for <b>${price}p</b> from ${esc(String(m.seller||"?"))}'s consignment.`,"loot");
+    if(SFX.gold)SFX.gold(); saveGame();
+    netSend({t:"market",act:"browse",town:MKT.town});
+  }
+  else if(act==="buy_fail"){ log(esc(String(m.msg||"Too late — it is gone.")),"warn"); netSend({t:"market",act:"browse",town:MKT.town}); }
+  else if(act==="sold"){
+    const price=Math.floor(+m.price||0);
+    log(`<b>Your consignment sold!</b> ${esc(String(m.buyer||"Someone"))} paid <b>${price}p</b> in ${esc(String(m.town||"?"))} — call on that broker to collect.`,"loot");
+    toast("CONSIGNMENT SOLD"); if(SFX.gold)SFX.gold();
+    if(document.getElementById('market').style.display==="flex") netSend({t:"market",act:"mine"});
+  }
+  else if(act==="sold_summary"){
+    log(`While you were away: <b>${Math.max(0,m.n|0)}</b> consignment${(m.n|0)>1?"s":""} sold in <b>${esc(String(m.town||"?"))}</b> — <b>${Math.floor(+m.gold||0)}p</b> waits with that broker.`,"loot");
+    toast("CONSIGNMENTS SOLD");
+  }
+  else if(act==="collected"){
+    const g=Math.floor(+m.gold||0);
+    if(g>0){ player.gold+=g; log(`The broker counts out <b>${g}p</b> — proceeds of ${Math.max(1,m.n|0)} sale${(m.n|0)>1?"s":""}.`,"loot"); if(SFX.gold)SFX.gold(); saveGame(); }
+    else log("No proceeds waiting at this broker.","sys");
+    netSend({t:"market",act:"mine"});
+  }
+  else if(act==="reclaimed"){
+    let it=null; try{ it=JSON.parse(m.item); }catch(e){}
+    if(it){ addToInv(it,true); log(`You take back the <b>${esc(String(it.name||"ware"))}</b>.`,"sys"); saveGame(); }
+    netSend({t:"market",act:"mine"});
+  }
+  else if(act==="reclaim_fail"){ log(esc(String(m.msg||"It is no longer on the shelf.")),"warn"); netSend({t:"market",act:"mine"}); }
+}
+
 function buildShop(){
   const def=VENDOR_TYPES[(activeShop&&activeShop.vtype)||"provisioner"]||VENDOR_TYPES.provisioner;
   if(activeShop){ if(activeShop.pyreals==null){activeShop.pyreals=irnd(14000,20000);activeShop.pmax=20000;}   // I4: coin regenerates ~150/s up to the vendor's max
@@ -29948,6 +30079,7 @@ function netHandle(m){
   if(m.t==="pvp") return onPvp(m);
   if(m.t==="rbuff") return onRemoteBuff(m);
   if(m.t==="pmembers"){ NET.partyNames=new Set(m.names||[]); NET.partyLeader=m.leader||null; updatePartyHUD(); return; }
+  if(m.t==="market"){ onMarketMsg(m); return; }   // #722: consignment market
   if(m.t==="trade"){ // AC secure trade: invite / sync / done / cancel
     if(m.act==="invite"){ TRADE.from=m.from; log(`<b>${esc(m.from)}</b> offers to trade with you — type <b>/trade accept</b>.`,"warn"); if(SFX.quest)SFX.quest(); }
     else if(m.act==="sync"){ TRADE.open=true; TRADE.them=m.them||[]; TRADE.youOk=!!m.youOk; TRADE.themOk=!!m.themOk; TRADE.with=m.with||"?";

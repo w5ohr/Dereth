@@ -100,6 +100,17 @@ def init_db():
             token TEXT PRIMARY KEY, user TEXT NOT NULL, expires REAL NOT NULL)""")
         # #449: index the case-folded name so create_char_slot's global-uniqueness check
         # (WHERE LOWER(name)=LOWER(?)) is an index probe, not an O(n) scan of every character on the server.
+        # #722: player consignment market — items left with a town broker; buyers pay first;
+        # sellers collect proceeds AT that broker. Lifecycle: listed -> sold -> collected
+        # (or listed -> reclaimed). item is the client item JSON, escrowed here while listed.
+        c.execute("""CREATE TABLE IF NOT EXISTS market(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            town TEXT NOT NULL, seller TEXT NOT NULL,
+            item TEXT NOT NULL, price INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'listed',
+            buyer TEXT, listed INTEGER, sold INTEGER)""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_market_town ON market(town, status)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_market_seller ON market(seller, status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
         # allegiance vassal lookups (WHERE patron=?) run on enter_world / swear / alg_info
         c.execute("CREATE INDEX IF NOT EXISTS idx_alg_patron ON allegiance(patron)")
@@ -2147,6 +2158,132 @@ async def handle_trade(cl, msg):
     elif act == "cancel":
         await trade_cancel(cl.username)
 
+# ── #722: consignment market (sync DB helpers — run via dbq) ────────────────────────────────
+MARKET_MAX_LISTINGS = 12          # active listings per character
+MARKET_MAX_PRICE    = 10_000_000
+MARKET_ITEM_BYTES   = 4096
+
+def market_add(town, seller, item_json, price):
+    c = db()
+    with c:
+        n = c.execute("SELECT COUNT(*) FROM market WHERE seller=? AND status='listed'", (seller,)).fetchone()[0]
+        if n >= MARKET_MAX_LISTINGS:
+            return None
+        cur = c.execute("INSERT INTO market(town,seller,item,price,status,listed) VALUES(?,?,?,?,'listed',?)",
+                        (town, seller, item_json, price, int(time.time())))
+        return cur.lastrowid
+
+def market_browse(town):
+    with db() as c:
+        rows = c.execute("SELECT id,seller,item,price FROM market WHERE town=? AND status='listed' ORDER BY id DESC LIMIT 60",
+                         (town,)).fetchall()
+    return [{"id": r[0], "seller": r[1], "item": r[2], "price": r[3]} for r in rows]
+
+def market_buy(lid, buyer):
+    """Atomically claim a listing for the buyer. Returns the row (pre-claim) or None if already gone —
+    the status guard in the UPDATE is the race arbiter when two buyers grab at once."""
+    c = db()
+    with c:
+        r = c.execute("SELECT id,town,seller,item,price,status FROM market WHERE id=?", (lid,)).fetchone()
+        if not r or r[5] != "listed" or r[2] == buyer:
+            return None
+        n = c.execute("UPDATE market SET status='sold', buyer=?, sold=? WHERE id=? AND status='listed'",
+                      (buyer, int(time.time()), lid)).rowcount
+        return {"id": r[0], "town": r[1], "seller": r[2], "item": r[3], "price": r[4]} if n == 1 else None
+
+def market_collect(seller, town):
+    """Claim all sold-but-uncollected proceeds for this seller AT this town's broker."""
+    c = db()
+    with c:
+        rows = c.execute("SELECT id,item,price,buyer FROM market WHERE seller=? AND town=? AND status='sold'",
+                         (seller, town)).fetchall()
+        if rows:
+            c.execute("UPDATE market SET status='collected' WHERE seller=? AND town=? AND status='sold'",
+                      (seller, town))
+        return [{"id": r[0], "item": r[1], "price": r[2], "buyer": r[3]} for r in rows]
+
+def market_reclaim(lid, seller):
+    c = db()
+    with c:
+        r = c.execute("SELECT id,item,status,seller FROM market WHERE id=?", (lid,)).fetchone()
+        if not r or r[3] != seller or r[2] != "listed":
+            return None
+        n = c.execute("UPDATE market SET status='reclaimed' WHERE id=? AND status='listed'", (lid,)).rowcount
+        return r[1] if n == 1 else None
+
+def market_mine(seller):
+    with db() as c:
+        rows = c.execute("SELECT id,town,item,price,status,buyer FROM market WHERE seller=? AND status IN('listed','sold') ORDER BY id DESC",
+                         (seller,)).fetchall()
+    return [{"id": r[0], "town": r[1], "item": r[2], "price": r[3], "status": r[4], "buyer": r[5]} for r in rows]
+
+def market_pending(seller):
+    with db() as c:
+        rows = c.execute("SELECT town, COUNT(*) n, SUM(price) g FROM market WHERE seller=? AND status='sold' GROUP BY town",
+                         (seller,)).fetchall()
+    return [{"town": r[0], "n": r[1], "g": r[2]} for r in rows]
+
+async def handle_market(cl, msg):
+    """#722: consignment broker. The item is ESCROWED here while listed (the client removes it from
+    the satchel on 'list', the #295 trade rule); buyers PAY FIRST (client deducts gold only on our
+    'bought' confirmation, and the atomic claim means one winner per listing); proceeds wait in the
+    DB until the seller collects them at the same town's broker."""
+    act = str(msg.get("act", ""))
+    town = str(msg.get("town", ""))[:40]
+    if act == "list":
+        item = msg.get("item")
+        try:
+            price = int(msg.get("price", 0))
+        except (TypeError, ValueError):
+            price = 0
+        if not (isinstance(item, dict) and town and 0 < price <= MARKET_MAX_PRICE):
+            return await cl.send({"t": "market", "act": "list_fail", "msg": "The broker squints at the offer and shakes his head."})
+        item_json = json.dumps(item)[:MARKET_ITEM_BYTES]
+        try:
+            json.loads(item_json)
+        except ValueError:   # truncation broke the JSON → item too big
+            return await cl.send({"t": "market", "act": "list_fail", "msg": "The broker cannot catalogue something so unwieldy."})
+        lid = await dbq(market_add, town, cl.charname, item_json, price)
+        if lid is None:
+            return await cl.send({"t": "market", "act": "list_fail",
+                                  "msg": f"The broker's ledger holds only {MARKET_MAX_LISTINGS} of your consignments at once."})
+        await cl.send({"t": "market", "act": "listed", "id": lid, "price": price, "town": town})
+    elif act == "browse":
+        rows = await dbq(market_browse, town)
+        await cl.send({"t": "market", "act": "stock", "town": town, "rows": rows})
+    elif act == "buy":
+        try:
+            lid = int(msg.get("id", 0))
+        except (TypeError, ValueError):
+            return
+        row = await dbq(market_buy, lid, cl.charname)
+        if not row:
+            return await cl.send({"t": "market", "act": "buy_fail", "id": lid,
+                                  "msg": "Too late — that consignment is already gone."})
+        await cl.send({"t": "market", "act": "bought", "id": lid, "item": row["item"], "price": row["price"],
+                       "seller": row["seller"], "town": row["town"]})
+        seller = next((c for c in CLIENTS.values() if c.in_world and c.charname == row["seller"]), None)
+        if seller:
+            await seller.send({"t": "market", "act": "sold", "id": lid, "price": row["price"],
+                               "town": row["town"], "buyer": cl.charname})
+    elif act == "collect":
+        rows = await dbq(market_collect, cl.charname, town)
+        gold = sum(r["price"] for r in rows)
+        await cl.send({"t": "market", "act": "collected", "town": town, "gold": gold, "n": len(rows)})
+    elif act == "reclaim":
+        try:
+            lid = int(msg.get("id", 0))
+        except (TypeError, ValueError):
+            return
+        item = await dbq(market_reclaim, lid, cl.charname)
+        if item is None:
+            return await cl.send({"t": "market", "act": "reclaim_fail", "id": lid,
+                                  "msg": "That consignment is no longer on the shelf."})
+        await cl.send({"t": "market", "act": "reclaimed", "id": lid, "item": item})
+    elif act == "mine":
+        rows = await dbq(market_mine, cl.charname)
+        await cl.send({"t": "market", "act": "mine", "rows": rows})
+
 async def handle_party(cl, msg):
     global _party_seq
     act = msg.get("act")
@@ -2294,6 +2431,9 @@ async def enter_world(cl, slot, name, data):
     pending = await dbq(alg_take_pending, name)
     if pending > 0:
         await cl.send({"t": "passup", "xp": pending, "from": "your vassals (while away)"})
+    # #722: sales that closed while away — point the seller back at the right broker(s)
+    for p in await dbq(market_pending, name):
+        await cl.send({"t": "market", "act": "sold_summary", "town": p["town"], "n": p["n"], "gold": p["g"]})
     # sync current ground loot + any active Incursion to the entering player
     for d in list(DROPS.values()):
         await cl.send(drop_pub(d))
@@ -2584,6 +2724,9 @@ async def dispatch(cl, msg):
     elif t == "trade":
         if cl.in_world:
             await handle_trade(cl, msg)
+    elif t == "market":
+        if cl.in_world:
+            await handle_market(cl, msg)
     elif t == "pchat":
         text = clean_relay(msg.get("msg", ""), 240)
         if cl.in_world and cl.party in PARTIES and text:
