@@ -45,6 +45,25 @@ prefixed **✅** in the WP column; see the live progress log below for commit SH
 
 **Sprint A anti-cheat CORE complete (S1/S2/S3/S7).** Five new regression harnesses added (`tsa_speedhack`, `tsa_dmg`, `tsa_forged_chargen`, `tsa_auth`, plus updated `test_client`/`tsa_persist`). The two CRITICAL enforcement levers (S1/S3 snap-back + caps) ship gated OFF pending live calibration; S2/S7 are always-on. S4/S5 and S6 are owner-decision architectural lifts.
 
+**Phase 2 — ops (started).**
+
+| WP | Finding | Status | Commit | Note |
+|----|---------|--------|--------|------|
+| 2.1 | O1, Q1 | ✅ done | `f09cf655` | GitHub Actions CI: JS syntax gate (`tools/check_syntax.py`, node/jsc) + `py_compile` + server suite + the 4 anti-cheat regressions, on push/PR. Validated locally end-to-end (green). |
+| 2.2 | O2 | ⬜ todo | — | Atomic deploy + rollback + systemd `StartLimit*` (needs droplet to validate `nginx -t`/`systemctl`). |
+| 2.3 | O3 | ⬜ todo | — | Content-addressed asset packs (retires manual `sw.js` `V`); touches the asset pipeline + `index.html` refs. |
+
+**Phase 3 — client perf (started).**
+
+| WP | Finding | Status | Commit | Note |
+|----|---------|--------|--------|------|
+| 3.1 | P1 | ✅ done | `6b75ff2d` | `updateHUD()` render-loop refresh throttled to ~10 Hz (was ~63 DOM ops/frame); event-driven calls stay instant. Browser-verified: 120 frames → 20 refreshes, no errors. |
+| 3.3 | P4 (proj) | ✅ done | `3e56cfca` | Reuse scratch vectors for projectile orientation (was 2 `new THREE.Vector3` per projectile/frame). Browser-verified orientation exact. Floater-texture cache + burst-sprite pool (rest of P4) still open. |
+| 3.2 | P2 | ⏸ deferred | — | Re-enable frustum culling on skinned monsters/NPCs — **higher regression risk** (skinned bounding spheres can mis-cull → visible pop-out at screen edges); needs careful per-creature bounds + edge validation, not a quick safe change. |
+| 3.4/3.5 | P3, P5 | ⬜ todo | — | Mobile boot-tier caps (changes default visual quality — validate on-device) and `Math.hypot`→`sqrt` in AI loops (safe, marginal). |
+
+**Session checkpoint (2026-07-13).** Shipped: all of Phase 0, the Phase 1 anti-cheat core (S1/S2/S3/S7), CI (O1), and two perf wins (P1/P4) — 13 verified commits, every server change with a passing regression, every client change browser-verified. **Remaining, by category:** owner-decision architectural lifts (S4/S5 HP authority, S6 item minting); droplet-dependent ops (O2 atomic deploy, O3 content-addressed assets); higher-risk perf needing visual validation (P2); the large maintainability refactor (Phase 4: mob-loop de-dup → `update()` split → file split); and long-tail items (Phase 5, P3/P5, T1). Enforcement flags `DERETH_ENFORCE_MOVE` / `DERETH_ENFORCE_COMBAT` await live tuning before enabling.
+
 **Enforcement-flag note for ops:** `DERETH_ENFORCE_MOVE=1` and `DERETH_ENFORCE_COMBAT=1` turn on the S3/S1 snap-back + damage caps. They default OFF so the live client's real teleport/mount/crit numbers can be validated first (the detection paths log candidates). Flip them on once tuned.
 
 ---
