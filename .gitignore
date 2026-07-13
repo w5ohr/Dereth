@@ -20,6 +20,9 @@ assets/*.gltf
 
 # AC client data (Turbine-owned, user-supplied) — never commit
 acdata/
+# raw Turbine .dat source blobs anywhere (e.g. assets/client_highres.dat, 127MB) — extractor
+# input only, referenced by nothing at runtime; one `git add -A` from permanent history bloat
+assets/*.dat
 winter-full*
 winter-onset*
 ace-world*.sql*
@@ -36,3 +39,6 @@ server/dereth.db
 # #694: the HD texture pack is a generated artifact (tools/ac_hd_upscale.py) — never committed
 assets/hd/
 tools/sr_models/
+
+# macOS Finder duplicate artifacts ("foo 2.png") — never intended to be tracked
+* 2.*
