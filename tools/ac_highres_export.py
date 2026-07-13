@@ -23,6 +23,31 @@ TEX_DIRS = ["assets/acflora/tex", "assets/acmodels/tex", "assets/acdungeons/tex"
 HEXNAME = re.compile(r"^([0-9a-fA-F]{8})(?:_.*)?\.png$")
 
 
+def clip_flagged():
+    """Every texture FILE referenced with clip=1 (colour-key transparency) anywhere in the
+    mesh packs. Re-decoding one of these WITHOUT clip=True writes a fully-opaque alpha
+    channel — in-game the grate/bars/web renders as a solid slab (the 2026-07-13 dungeon
+    regression). Returns {(texdir_rel, filename)}."""
+    import glob
+    out = set()
+    def scan(g, texdir):
+        m = g.get("mat", g)
+        if m.get("clip") and m.get("tex"): out.add((texdir, m["tex"]))
+    for f in glob.glob(os.path.join(ROOT, "assets", "acdstatics", "S*.json")):
+        for g in json.load(open(f))["groups"]: scan(g, "assets/acdstatics/tex")
+    for f in glob.glob(os.path.join(ROOT, "assets", "acdungeons", "*.json")):
+        if f.endswith("index.json"): continue
+        for g in json.load(open(f)).get("groups", []): scan(g, "assets/acdungeons/tex")
+    for f in glob.glob(os.path.join(ROOT, "assets", "acinteriors", "I*.json")):
+        for g in json.load(open(f))["groups"]: scan(g, "assets/acdungeons/tex")
+    for sub in ("acmodels", "acmisc", "acflora"):
+        for f in glob.glob(os.path.join(ROOT, "assets", sub, "*.json")):
+            try: d = json.load(open(f))
+            except Exception: continue
+            for g in (d.get("groups") or []): scan(g, f"assets/{sub}/tex")
+    return out
+
+
 def main():
     dry = "--dry" in sys.argv
     hr = ame.DatReader(os.path.join(ROOT, "acdata", "client_highres.dat"))
@@ -57,7 +82,10 @@ def main():
     except Exception:
         pass
 
-    total_up, per_dir = 0, {}
+    clips = clip_flagged()
+    print(f"clip-flagged texture files: {len(clips)}")
+
+    total_up, per_dir, reclipped = 0, {}, 0
     for rel in TEX_DIRS:
         d = os.path.join(ROOT, rel)
         if not os.path.isdir(d): continue
@@ -80,22 +108,31 @@ def main():
             else:
                 hi = lo2hi.get(tid)
             if not hi: continue
+            is_clip = (rel, fn) in clips
             try:
-                dec = ame.decode_texture(hr.read(hi), palettes)
+                dec = ame.decode_texture(hr.read(hi), palettes, clip=is_clip)
             except Exception:
                 continue
             if dec is None: continue
             dw, dh, px = dec
-            try: cw, ch = Image.open(os.path.join(d, fn)).size
-            except Exception: cw = ch = 0
-            if dw * dh <= cw * ch: continue          # not actually bigger
+            try:
+                cur = Image.open(os.path.join(d, fn))
+                cw, ch = cur.size
+                # repair pass: a clip texture whose on-disk alpha is fully opaque was written
+                # by the clip-less run — rewrite it even though the size already matches
+                needs_repair = is_clip and cur.convert("RGBA").getchannel("A").getextrema()[0] == 255
+            except Exception:
+                cw = ch = 0; needs_repair = False
+            if dw * dh <= cw * ch and not needs_repair: continue     # not bigger and not damaged
             if not dry:
                 Image.frombytes("RGBA", (dw, dh), px).save(os.path.join(d, fn))
             ups += 1
+            if needs_repair: reclipped += 1
         if ups: per_dir[rel] = ups
         total_up += ups
     for rel, n in per_dir.items(): print(f"  {rel}: {n} upgraded")
-    print(f"{'DRY RUN — ' if dry else ''}upgraded {total_up} textures to high-res (same filenames — zero engine changes)")
+    print(f"{'DRY RUN — ' if dry else ''}upgraded {total_up} textures to high-res "
+          f"({reclipped} clip-alpha repairs — same filenames, zero engine changes)")
 
 
 if __name__ == "__main__":
