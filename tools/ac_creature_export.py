@@ -371,7 +371,11 @@ def export_creature(kind, setup_id, mt_id, portal, texbytes, variant=None):
     MELEE = [0x3C, 0x3E, 0x40, 0x44, 0x3F, 0x41, style]     # stances: unarmed first
     for clip_name, cmds, styles in (("Attack", ATTACK, MELEE),
                                     ("Death", [0x40000011], [style] + MELEE),
-                                    ("Cast", [0x400000D3], [0x47, style])):
+                                    ("Cast", [0x400000D3], [0x47, style]),
+                                    # get-hit recoil (#768): 0x40000015..17 are the short twitch
+                                    # one-shots (median 0.23s across all creature tables — the
+                                    # hit-react profile; present per combat stance)
+                                    ("Flinch", [0x40000015, 0x40000016, 0x40000017], MELEE + [style])):
         ad = link_for(cmds, styles)
         if ad: add_clip(clip_name, ad)
     if not glb.j["animations"]:
