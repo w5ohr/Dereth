@@ -48,6 +48,18 @@ AUTH_TIMEOUT      = float(os.environ.get("DERETH_AUTH_TIMEOUT", "30"))   # secon
 MAX_MOVE_SPEED    = float(os.environ.get("DERETH_MAX_MOVE_SPEED", "150.0"))  # units/sec ceiling — far above legit run+mount, far below any teleport
 MOVE_STRIKES      = int(os.environ.get("DERETH_MOVE_STRIKES", "3"))          # consecutive supra-speed ticks (~0.3s @10Hz) → sustained hack, not a one-off teleport
 ENFORCE_MOVE      = os.environ.get("DERETH_ENFORCE_MOVE", "").strip().lower() in ("1", "true", "yes", "on")
+# #S1 combat authority. resolve_attack trusts the client's claimed dmg (clamped only to mob mhp*1.5 — a
+# one-shot). These bound it: a per-hit cap that keeps trash one-shottable (HIT_ABS_CAP floor) but forces
+# ≥1/HIT_FRAC hits on a high-HP boss; a per-mob attack cooldown; and an XP-rate ceiling so instakill-spam
+# can't power-level even if a big hit slips. Gated OFF by default (like ENFORCE_MOVE): the client damage
+# model is deeply multiplicative and the test harnesses one-shot with dmg:99999, so enforcement is opt-in
+# until the caps are validated against real high-level crit/crush numbers. Set DERETH_ENFORCE_COMBAT=1.
+ENFORCE_COMBAT    = os.environ.get("DERETH_ENFORCE_COMBAT", "").strip().lower() in ("1", "true", "yes", "on")
+HIT_FRAC          = float(os.environ.get("DERETH_HIT_FRAC", "0.34"))         # max fraction of a mob's MAX hp one hit may remove (≥3 hits to kill a boss)
+HIT_ABS_CAP       = float(os.environ.get("DERETH_HIT_ABS_CAP", "600.0"))     # absolute per-hit floor — trash (≤~500hp) still dies in one blow
+ATTACK_CD         = float(os.environ.get("DERETH_ATTACK_CD", "0.10"))        # min seconds between accepted hits on the SAME mob by one client
+XP_BUCKET_MAX     = float(os.environ.get("DERETH_XP_BUCKET_MAX", "60000"))   # XP token bucket capacity (absorbs legit bursts)
+XP_REFILL_PER_SEC = float(os.environ.get("DERETH_XP_REFILL_PER_SEC", "12000"))  # sustained authoritative XP/sec ceiling — far above legit farming, far below instakill-spam
 
 # ---------------------------------------------------------------- persistence
 # An *account* (users row: username+password) owns up to MAX_CHARS *characters*
@@ -539,6 +551,16 @@ def credit_xp(c, amt):
         return
     if amt <= 0:
         return
+    if ENFORCE_COMBAT:                                 # #S1 XP-rate ceiling — instakill-spam can't power-level even if a big hit slips
+        now = time.monotonic()
+        if c._xpb is None or c._xpb_t == 0.0:
+            c._xpb = XP_BUCKET_MAX; c._xpb_t = now
+        c._xpb = min(XP_BUCKET_MAX, c._xpb + (now - c._xpb_t) * XP_REFILL_PER_SEC)
+        c._xpb_t = now
+        amt = int(min(amt, c._xpb))
+        c._xpb -= amt
+        if amt <= 0:
+            return
     c.xp_total += amt
     lv = level_from_total_xp(c.xp_total)
     if lv > c.level_auth:
@@ -873,6 +895,8 @@ class Client:
         # presence state (last reported by the client; M3 will make this authoritative)
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
         self._mvx = 0.0; self._mvz = 0.0; self._mvt = 0.0; self._mvbad = 0   # #S3 last-accepted pos + monotonic time + consecutive supra-speed strikes
+        self._atk_cd = {}                            # #S1 mid -> last accepted hit time (per-mob attack cooldown)
+        self._xpb = None; self._xpb_t = 0.0          # #S1 XP token bucket (lazily filled) + last refill time
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
         self.mnt = None   # #728: mount type key while riding (e.g. "grey") — remotes render the horse
@@ -1668,7 +1692,14 @@ async def resolve_attack(cl, mid, dmg):
         return
     if math.hypot(cl.x - m["x"], cl.z - m["z"]) > ATTACK_RANGE:
         return
+    if ENFORCE_COMBAT:                                # #S1 per-mob attack cooldown — reject hits faster than a weapon-speed floor
+        now_a = time.monotonic()
+        if now_a - cl._atk_cd.get(mid, 0.0) < ATTACK_CD:
+            return
+        cl._atk_cd[mid] = now_a
     dmg = max(0.0, min(float(dmg), m["mhp"] * 1.5))  # clamp absurd claims
+    if ENFORCE_COMBAT:                                # #S1 no single hit removes more than HIT_FRAC of max hp (trash still one-shots via the abs floor) — kills the boss one-shot
+        dmg = min(dmg, max(HIT_ABS_CAP, m["mhp"] * HIT_FRAC))
     m["hp"] -= dmg
     # #439: only a real contribution tags you as a damage-dealer. A zero-damage "attack" must NOT
     # enter `dealt`, or the sender collects full kill XP + allegiance pass-up when someone else lands
