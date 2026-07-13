@@ -34171,17 +34171,69 @@ function oreAreaLevel(x,z){
   lvl+=((h%17)-8);                                                  // gentle variation so tiers aren't perfect radial bands
   return clamp(lvl,0,98);
 }
-const ORE_DEPOSIT_SCALE=30;   // deposit body is drawn this many × the base rock/vein size (base rock radius 0.85, top ≈1.35)
+const ORE_DEPOSIT_SCALE=30;   // deposit body is drawn this many × the base outcrop size (base outcrop ~1.2 wide, ~1.5 tall)
+// Researched per-metal ore look. Each deposit = a craggy HOST outcrop (stone) + an ORE expression:
+//   • "crust"  — oxidized mineral crusts hugging the rock (copper malachite/azurite, dull-copper patina)
+//   • "vein"   — metallic veins + flecks threading the stone (iron hematite specks, brassy bronze, gold-in-quartz)
+//   • "crystal"— faceted crystals emerging from the rock; the arcane metals GLOW (shadow-iron→valorite)
+// rock=host stone, ore=metallic tone, cr1/cr2=crust hues, glow=emissive intensity, gcol=glow/crystal colour.
+const ORE_PROFILES={
+  iron:      {rock:0x4a453d, band:0x6e4636, ore:0x9a9a9a, style:"vein",    metalness:0.30, roughness:0.88, glow:0.00, banded:true},   // hematite/limonite: dark rock, rusty bands, dull grey specks
+  copper:    {rock:0x584636, ore:0xb87333, cr1:0x2fae7a, cr2:0x2f7fc0,     style:"crust", metalness:0.30, roughness:0.80, glow:0.00}, // green malachite + blue azurite on brown rock, native-copper flecks
+  bronze:    {rock:0x554633, ore:0x9a7a44, style:"vein",                   metalness:0.62, roughness:0.50, glow:0.00},                // brassy metallic veins (tin/cassiterite dark host)
+  gold:      {rock:0x8f8a7c, ore:0xd4af37, style:"vein",                   metalness:0.92, roughness:0.32, glow:0.06, quartz:true},   // pale quartz host laced with bright gold
+  dullcopper:{rock:0x554438, ore:0x9a6a4a, cr1:0x9a6a4a, cr2:0x6f4a34,     style:"crust", metalness:0.22, roughness:0.86, glow:0.00}, // muted oxidised copper patina
+  shadowiron:{rock:0x21222a, ore:0x35363f, style:"crystal", gcol:0x5566aa, metalness:0.72, roughness:0.42, glow:0.16},               // near-black stone, cold dark crystals w/ faint blue sheen
+  agapite:   {rock:0x463840, ore:0xc0607e, style:"crystal", gcol:0xff9ec0, metalness:0.55, roughness:0.34, glow:0.55},               // rose crystals, glow
+  verite:    {rock:0x293a30, ore:0x2f8a5a, style:"crystal", gcol:0x62e6a4, metalness:0.55, roughness:0.30, glow:0.68},               // green crystals, glow
+  valorite:  {rock:0x2c3340, ore:0x4a6ac8, style:"crystal", gcol:0x93b6ff, metalness:0.66, roughness:0.26, glow:0.85},               // blue crystals, strongest glow (top tier)
+};
+// materials are identical for every deposit of a metal → build once and share (fewer GPU state changes)
+const _oreMatCache={};
+function oreMats(k){
+  if(_oreMatCache[k]) return _oreMatCache[k];
+  const p=ORE_PROFILES[k]||ORE_PROFILES.iron;
+  const m={
+    stone:new THREE.MeshStandardMaterial({color:p.rock,flatShading:true,roughness:p.quartz?0.55:0.95,metalness:0.04}),
+    band :p.banded?new THREE.MeshStandardMaterial({color:p.band,flatShading:true,roughness:0.9,metalness:0.15}):null,
+    ore  :new THREE.MeshStandardMaterial({color:p.ore,metalness:p.metalness,roughness:p.roughness,emissive:p.ore,emissiveIntensity:p.glow,flatShading:true}),
+    cr1  :p.cr1!=null?new THREE.MeshStandardMaterial({color:p.cr1,roughness:0.72,metalness:0.10,flatShading:true}):null,
+    cr2  :p.cr2!=null?new THREE.MeshStandardMaterial({color:p.cr2,roughness:0.68,metalness:0.12,flatShading:true}):null,
+    xtal :new THREE.MeshStandardMaterial({color:p.ore,emissive:p.gcol||p.ore,emissiveIntensity:p.glow||0.2,metalness:p.metalness,roughness:p.roughness,flatShading:true}),
+  };
+  return (_oreMatCache[k]=m);
+}
+// craggy boulder: jitter every vertex of a base solid radially so flat-shading reads as fractured rock
+function _craggy(geo,amt){ const pa=geo.attributes.position; for(let i=0;i<pa.count;i++){ const f=1+rnd(-amt,amt); pa.setXYZ(i,pa.getX(i)*f,pa.getY(i)*f,pa.getZ(i)*f); } geo.computeVertexNormals(); return geo; }
 function buildOreDeposit(metalKey){
-  const t=UO_METAL_BY[metalKey]||UO_METALS[0];
+  const p=ORE_PROFILES[metalKey]?metalKey:"iron", prof=ORE_PROFILES[p], M=oreMats(p);
   const g=new THREE.Group();
   const body=new THREE.Group();   // the physical deposit — scaled as one unit so the ⛏ marker (added later) stays independent
-  const rockCol=(t.k==="iron")?0x5a564d:new THREE.Color(t.col).lerp(new THREE.Color(0x47433a),0.55).getHex();
-  const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.85,0),new THREE.MeshStandardMaterial({color:rockCol,flatShading:true,roughness:0.95,metalness:t.k==="iron"?0.1:0.35}));
-  rock.position.y=0.5; rock.castShadow=true; body.add(rock);
-  const veinMat=new THREE.MeshStandardMaterial({color:t.col,emissive:t.col,emissiveIntensity:t.k==="iron"?0.12:0.5,metalness:0.7,roughness:0.4});
-  for(let i=0;i<5;i++){ const v=new THREE.Mesh(new THREE.OctahedronGeometry(0.12+Math.random()*0.06,0),veinMat);
-    v.position.set(rnd(-0.5,0.5),0.35+Math.random()*0.5,rnd(-0.5,0.5)); v.rotation.set(rnd(0,3),rnd(0,3),rnd(0,3)); body.add(v); }
+  // ── host outcrop: a main craggy boulder + two shoulders, with a low rubble skirt (footprint kept ~the approved 30× size) ──
+  const main=part(body,_craggy(new THREE.IcosahedronGeometry(0.82,1),0.22),M.stone,0,0.58,0,rnd(0,6.28),rnd(0,6.28),rnd(0,6.28)); main.castShadow=main.receiveShadow=true; main.scale.set(1,rnd(0.82,1.05),1);
+  for(let i=0;i<2;i++){ const a=rnd(0,6.28), r=rnd(0.4,0.55); const s=part(body,_craggy(new THREE.IcosahedronGeometry(rnd(0.34,0.48),1),0.26),M.stone,Math.cos(a)*r,rnd(0.26,0.46),Math.sin(a)*r,rnd(0,6.28),rnd(0,6.28),rnd(0,6.28)); s.castShadow=true; }
+  for(let i=0;i<4;i++){ const a=rnd(0,6.28), r=rnd(0.55,0.82); part(body,_craggy(new THREE.IcosahedronGeometry(rnd(0.1,0.2),0),0.3),M.stone,Math.cos(a)*r,rnd(0.05,0.14),Math.sin(a)*r,rnd(0,6.28),rnd(0,6.28),rnd(0,6.28)); }
+  if(prof.banded&&M.band){ // iron: rusty banded-iron-formation strata tilted across the boulder
+    for(let i=0;i<3;i++){ const b=part(body,new THREE.CylinderGeometry(0.9,0.9,0.1,10),M.band,0,0.4+i*0.42,0,rnd(-0.25,0.25),0,rnd(-0.25,0.25)); b.scale.set(1,1,0.5); }
+  }
+  // ── ore expression ──
+  if(prof.style==="crust"){
+    for(let i=0;i<10;i++){ const a=rnd(0,6.28), el=rnd(0.15,1.0), r=rnd(0.45,0.8); // patches clinging to the surface
+      const patch=part(body,new THREE.SphereGeometry(rnd(0.11,0.22),7,5),(i%2?M.cr2:M.cr1)||M.ore,
+        Math.cos(a)*Math.cos(el)*r,0.5+Math.sin(el)*0.8,Math.sin(a)*Math.cos(el)*r,rnd(0,3),rnd(0,3),rnd(0,3));
+      patch.scale.set(1,0.4,1); }
+    for(let i=0;i<5;i++){ const a=rnd(0,6.28); part(body,new THREE.OctahedronGeometry(rnd(0.05,0.09),0),M.ore,Math.cos(a)*rnd(0.35,0.75),rnd(0.4,1.1),Math.sin(a)*rnd(0.35,0.75),rnd(0,3),rnd(0,3),rnd(0,3)); } // native-metal flecks
+  } else if(prof.style==="vein"){
+    for(let i=0;i<6;i++){ const a=rnd(0,6.28), y=rnd(0.3,1.05); // metallic veins threading the stone
+      const v=part(body,new THREE.BoxGeometry(0.05,rnd(0.35,0.65),0.05),M.ore,Math.cos(a)*rnd(0.45,0.72),y,Math.sin(a)*rnd(0.45,0.72),rnd(-0.9,0.9),rnd(0,3),rnd(-0.9,0.9)); }
+    for(let i=0;i<8;i++){ const a=rnd(0,6.28); part(body,new THREE.IcosahedronGeometry(rnd(0.04,0.08),0),M.ore,Math.cos(a)*rnd(0.4,0.8),rnd(0.35,1.15),Math.sin(a)*rnd(0.4,0.8),rnd(0,3),rnd(0,3),rnd(0,3)); } // flecks
+  } else { // crystal — faceted prisms emerging in a cluster; magical metals glow via emissive
+    const n=6+irnd(0,2);
+    for(let i=0;i<n;i++){ const a=(i/n)*6.28+rnd(-0.4,0.4), r=rnd(0.15,0.6), h=rnd(0.5,1.05);
+      const cr=part(body,new THREE.CylinderGeometry(0.015,rnd(0.11,0.17),h,6),M.xtal,Math.cos(a)*r,0.6+rnd(-0.1,0.35),Math.sin(a)*r,rnd(-0.5,0.5),rnd(0,6.28),rnd(-0.5,0.5));
+      cr.castShadow=true; }
+    for(let i=0;i<3;i++){ const a=rnd(0,6.28); part(body,new THREE.OctahedronGeometry(rnd(0.06,0.1),0),M.xtal,Math.cos(a)*rnd(0.4,0.8),rnd(0.4,1.1),Math.sin(a)*rnd(0.4,0.8),rnd(0,3),rnd(0,3),rnd(0,3)); } // shards
+  }
   body.scale.setScalar(ORE_DEPOSIT_SCALE);   // 30× bigger ore deposits
   g.add(body);
   return g;
@@ -34193,6 +34245,7 @@ function addOreDeposit(x,z,metalKey){
   // sit the marker just above the enlarged deposit (base rock top ≈1.35) and size it up so it still reads over a 30× boulder
   icon.scale.set(4,4,1); icon.position.y=ORE_DEPOSIT_SCALE*1.35+3; mesh.add(icon);
   scene.add(mesh);
+  mesh.updateMatrixWorld(true); mesh.traverse(o=>{ o.matrixAutoUpdate=false; });   // #perf: static deposit (deplete only toggles .visible) → skip per-frame matrix recompute of its ~20 meshes
   nodes.push({x,z,type:"ore",metal:metalKey,mesh,depleted:false,readyAt:0});   // rides the existing node interact + respawn tick; regrows as the SAME metal
 }
 let _orePlaced={};
