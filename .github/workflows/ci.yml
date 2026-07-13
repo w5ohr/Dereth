@@ -1,0 +1,55 @@
+name: CI
+
+# The whole game is one ~3 MB index.html served straight from the repo on the live droplet, with no
+# build step — a single syntax slip takes www.derethgame.com down. This gate parses the client, compiles
+# the Python, and runs the server + anti-cheat regression suites on every push / PR before anything ships.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: JS syntax gate (client + service worker)
+        run: python3 tools/check_syntax.py
+
+      - name: Python compile (server + tools)
+        run: python3 -m py_compile server/*.py tools/*.py
+
+      - name: Server suite (presence, persistence, lifecycle)
+        working-directory: server
+        run: |
+          DB=$(mktemp -u)_ci.db
+          DERETH_PORT=8811 DERETH_DB="$DB" DERETH_EVENT_CD=2 DERETH_BACKUP_EVERY=0 \
+            python3 dereth_server.py >/tmp/ci_server.log 2>&1 &
+          SRV=$!
+          for i in $(seq 1 60); do
+            python3 -c "import socket;socket.create_connection(('127.0.0.1',8811),0.3).close()" 2>/dev/null && break
+            sleep 0.2
+          done
+          set -e
+          python3 test_client.py 127.0.0.1 8811
+          python3 tsa_persist.py 127.0.0.1 8811
+          kill $SRV 2>/dev/null || true
+
+      - name: Anti-cheat regressions (self-hosted servers)
+        working-directory: server
+        run: |
+          set -e
+          python3 tsa_forged_chargen.py   # S2 forged-chargen lockdown
+          python3 tsa_speedhack.py        # S3 movement guard (DERETH_ENFORCE_MOVE)
+          python3 tsa_dmg.py              # S1 combat authority (DERETH_ENFORCE_COMBAT)
+          python3 tsa_auth.py             # S7 auth hardening
+
+      - name: Server log tail on failure
+        if: failure()
+        run: tail -50 /tmp/ci_server.log || true
