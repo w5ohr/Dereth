@@ -29724,10 +29724,15 @@ function buildDungeon(def){
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
     if(dgn&&(!sc0||sc0.pack)&&!_acDgnCache.disable){
       const cached=_acDgnCache[def.name];
-      if(cached){ buildDungeonReal(def,cached); return; }
+      if(cached&&cached.groups){ buildDungeonReal(def,cached); return; }   // "loading" sentinel is truthy — never hand it to the builder
       // not fetched yet: fall through to the grid build this visit; prefetch for next time
+      // (failure marks null for THIS session-entry but heals after 30 s — the old permanent null
+      // pinned the procedural grid all session)
       if(cached===undefined){ _acDgnCache[def.name]="loading";
-        fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).then(j=>{ _acDgnCache[def.name]=j; }).catch(()=>{ _acDgnCache[def.name]=null; }); }
+        fetch('assets/acdungeons/'+dgn.file).then(r=>r.ok?r.json():null).catch(()=>null)
+          .then(j=>{ if(j&&j.groups) _acDgnCache[def.name]=j;
+            else { _acDgnCache[def.name]=null;
+              setTimeout(()=>{ if(_acDgnCache[def.name]===null) delete _acDgnCache[def.name]; },30000); } }); }
     } }
   const th=def.theme;
   const L=genDungeonLayout(def),wallMat=texMat(stoneFloorTex,th.wall);   // real masonry texture, tinted to the theme
@@ -30027,7 +30032,7 @@ function enterDungeon(def,ex,ez){
     log(`<span style="color:#e0a070">This delve is meant for an adventurer of about level <b>${def.tier*10}</b> — you are level ${player.level}. Tread carefully.</span>`,"warn");
   // Portal space carries you down: the tube holds until the dungeon geometry is actually built (its
   // EnvCell pack may need fetching first), then sets you at the entry. maxHold is the hard safety cap.
-  startPortalTransit(()=>_dungeonEnter(def,ex,ez),{ready:()=>inDungeon&&dungeonObjs.length>0,minHold:0.7,maxHold:9});
+  startPortalTransit(()=>_dungeonEnter(def,ex,ez),{ready:()=>inDungeon&&dungeonObjs.length>0,minHold:0.7,maxHold:10});   // covers the 9 s first-fetch race
 }
 function _dungeonEnter(def,ex,ez){
   if(inDungeon) return;
@@ -30037,10 +30042,19 @@ function _dungeonEnter(def,ex,ez){
     if(dgn&&(!sc0||sc0.pack)&&!_acDgnCache.disable&&_acDgnCache[def.name]===undefined){
       _acDgnCache[def.name]="loading";
       log(`You step into the dark of the <b>${def.name}</b>…`,"sys");
-      const timeout=new Promise(r=>setTimeout(()=>r(null),4000));
-      Promise.race([fetch('assets/acdungeons/'+dgn.file).then(r=>r.json()).catch(()=>null),timeout])
-        .then(j=>{ _acDgnCache[def.name]=j||null;                 // null → grid fallback (and no refetch loop)
-          if(!inDungeon&&!inNetwork) _dungeonEnter(def,ex,ez); });             // #327: resume the descent (still inside the tube) unless something intervened — also skip if we've since stepped into the Town Network
+      // The 2026-07-13 "old mazes are back" regression: the full-fidelity re-export grew the
+      // EnvCell packs ~10x (0.8-3.3 MB), the old 4 s race started losing on first entry, and —
+      // worse — Promise.race THREW AWAY the late fetch and cached null, pinning the procedural
+      // grid for the whole session. Now: the fetch ALWAYS lands in the cache when it arrives
+      // (late or not), a timeout builds the grid once but the next descent is real, and only a
+      // genuine fetch failure clears the slot (retried on the next entry — never poisoned).
+      const fp=fetch('assets/acdungeons/'+dgn.file).then(r=>r.ok?r.json():null).catch(()=>null);
+      fp.then(j=>{ if(j&&j.groups) _acDgnCache[def.name]=j;
+        else { _acDgnCache[def.name]=null;                          // genuine failure: grid THIS entry (null terminates the resume — an immediate delete would re-arm the fetch and spin on a dead network)
+          setTimeout(()=>{ if(_acDgnCache[def.name]===null) delete _acDgnCache[def.name]; },30000); } });   // …but heal the slot so a later descent retries
+      const timeout=new Promise(r=>setTimeout(()=>r(null),9000));   // matches the portal tube's maxHold
+      Promise.race([fp,timeout])
+        .then(()=>{ if(!inDungeon&&!inNetwork) _dungeonEnter(def,ex,ez); });   // #327: resume the descent (still inside the tube) unless something intervened — also skip if we've since stepped into the Town Network
       return;
     } }
   inDungeon=true;curDungeon=def;dungeonReturn={x:ex,z:ez};dungeonDepth=1;dungeonDescent=null;
