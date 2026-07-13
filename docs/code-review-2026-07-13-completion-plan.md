@@ -39,9 +39,11 @@ prefixed **✅** in the WP column; see the live progress log below for commit SH
 | 1.1 | S3 | ✅ done | `ce2acdc0` | Movement guard: WORLD_LIMIT clamp (always on) + sustained-supra-speed snap-back gated behind `DERETH_ENFORCE_MOVE`. `tsa_speedhack.py` 4/4; default server still 49/49+13/13 with zero false-positives. |
 | 1.2 | S1 | ✅ done | `6fe71f4a` | Combat authority: per-hit cap (frac of mob max-HP, trash-safe floor) + per-mob attack cooldown + XP-rate token bucket, gated behind `DERETH_ENFORCE_COMBAT`. `tsa_dmg.py` 7/7 (boss survives a 99999 hit, still killable in a few spaced hits). |
 | 1.3 | S2, X3 | ✅ done | `15a47e76` | Forged-chargen lockdown: `new_char_data()` forces a server starter economy at creation (always on; legit clients send `char:null`). `tsa_forged_chargen.py` 9/9; save path + admin/legacy seeds untouched. |
-| 1.4 | S7 | ⏳ next | — | Auth-surface hardening (login flood / `_LOGIN_FAILS` prune / per-IP throttle / NPC_VASSALS cleanup / DB backup). |
-| 1.5 | S4, S5 | ⬜ todo | — | Server-authoritative HP & death (the large "M3" lift). |
-| 1.6 | S6 | ⬜ todo/defer | — | Server item minting, or documented acceptance. |
+| 1.4 | S7 | ✅ done | `e0de1d4e` | Auth hardening: login `valid_name` gate + per-IP throttle (login+register) + tick-loop sweep of `_LOGIN_FAILS`/`_AUTH_BY_IP` + `NPC_VASSALS` cleanup on delete + periodic `VACUUM INTO` DB backup. All always-on. `tsa_auth.py` 5/5; full suite green. |
+| 1.5 | S4, S5 | 🔶 decision | — | **Server-authoritative HP & death — the large "L" lift.** Rewrites a core loop and needs coordinated *client* changes (client HP becomes a server mirror); can't be landed + verified autonomously without risking combat. Left for a dedicated, owner-approved effort. S1/S3 already blunt the associated exploits (damage cap + range/speed gates). |
+| 1.6 | S6 | 🔶 decision | — | **Server item minting, or documented acceptance.** The biggest lift; S2 already stops forged items from entering at chargen. Decide: build server-authoritative minting, or formally accept item-authenticity as a bounded limitation (trade is between consenting players; forged items grant no server-side power beyond what S1/S2 close). |
+
+**Sprint A anti-cheat CORE complete (S1/S2/S3/S7).** Five new regression harnesses added (`tsa_speedhack`, `tsa_dmg`, `tsa_forged_chargen`, `tsa_auth`, plus updated `test_client`/`tsa_persist`). The two CRITICAL enforcement levers (S1/S3 snap-back + caps) ship gated OFF pending live calibration; S2/S7 are always-on. S4/S5 and S6 are owner-decision architectural lifts.
 
 **Enforcement-flag note for ops:** `DERETH_ENFORCE_MOVE=1` and `DERETH_ENFORCE_COMBAT=1` turn on the S3/S1 snap-back + damage caps. They default OFF so the live client's real teleport/mount/crit numbers can be validated first (the detection paths log candidates). Flip them on once tuned.
 
