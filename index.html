@@ -19143,7 +19143,7 @@ function update(dt){
     m.mesh.position.set(lx,groundY(lx,lz,m.mesh.position.y)+by,lz);m.mesh.rotation.set(m._pitch||0,m.ang+(m._yawOff||0),m._roll||0);   // refY: a mob stays on ITS storey
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
-    if(hb&&(m.hp<m.mhp||m.isBoss||m.isElite)){hb.visible=true;hb.quaternion.copy(cam.quaternion);
+    if(hb&&(m.hp<m.mhp||m.isBoss||m.isElite||(TARGET&&TARGET.type==="monster"&&TARGET.ref===m))){hb.visible=true;hb.quaternion.copy(m.mesh.quaternion).conjugate().multiply(cam.quaternion);   // billboard in WORLD space — the bar is a child of the rotating mob, so a raw cam copy faced away whenever the mob faced you; targeted mobs keep their overhead vitals even at full HP
       const fill=m.mesh.userData.fill,r=m.hp/m.mhp;fill.scale.x=r;fill.position.x=-(1-r)*0.7;}
   }
   for(const m of burned) if(monsters.indexOf(m)>=0) killMonster(m);
@@ -26423,14 +26423,35 @@ function targetName(t){
 // overhead tri-bar: stamina + mana planes join the creature's existing billboarded health bar
 function attachTargetBars(m){
   if(!m.mesh||!m.mesh.userData.hb||m.mesh.userData.tfBars) return;
-  const hb=m.mesh.userData.hb, mk=(col,y)=>{ const bar=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.09),
-    new THREE.MeshBasicMaterial({color:col,fog:false})); bar.position.set(0,y,0.012); hb.add(bar); return bar; };
+  const hb=m.mesh.userData.hb, mk=(col,y)=>{ const bg=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.09),
+    new THREE.MeshBasicMaterial({color:0x000000,fog:false})); bg.position.set(0,y,0.011); hb.add(bg);   // its own dark lane, so a drained vital still reads as an empty bar
+    const bar=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.09),
+    new THREE.MeshBasicMaterial({color:col,fog:false})); bar.position.set(0,y,0.012); hb.add(bar); bar.userData.bg=bg; return bar; };
   const stB=mk(0x46d784,-0.15), mnB=mk(0x5aa8ff,-0.26);                       // the character's own vital colours
   m.mesh.userData.tfBars={st:stB,mn:mnB};
+  // the bar spot was authored from BESTIARY size — real AC models are often taller, leaving the bar
+  // buried inside the skull where its own depth-tested head swallows it. Hoist it above the true
+  // mesh top (once, permanently — a raised bar is right for damaged mobs too)…
+  const mm=m.mesh;
+  if(hb.userData.hoisted!==true){
+    const box=new THREE.Box3(), tmp=new THREE.Box3(); mm.updateWorldMatrix(true,true);
+    mm.traverse(o=>{ if(!o.isMesh||!o.geometry) return;
+      for(let p=o;p&&p!==mm;p=p.parent) if(p===hb) return;                     // the bar itself doesn't count
+      if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      tmp.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); box.union(tmp); });
+    if(!box.isEmpty()){ const wp=new THREE.Vector3(); mm.getWorldPosition(wp);
+      hb.position.y=Math.max(hb.position.y,(box.max.y-wp.y)/(mm.scale.y||1)+0.42); }
+    hb.userData.hoisted=true;
+  }
+  // …and while locked, draw the vitals as an overlay so no geometry can ever occlude them
+  hb.traverse(o=>{ if(o.isMesh){ o.material.depthTest=false; o.renderOrder=(o.material.color&&o.material.color.getHex()===0)?6:7; } });
 }
 function detachTargetBars(m){
   const tb=m&&m.mesh&&m.mesh.userData.tfBars; if(!tb) return;
-  const hb=m.mesh.userData.hb; hb.remove(tb.st); hb.remove(tb.mn); m.mesh.userData.tfBars=null;
+  const hb=m.mesh.userData.hb;
+  if(tb.st.userData.bg) hb.remove(tb.st.userData.bg); if(tb.mn.userData.bg) hb.remove(tb.mn.userData.bg);
+  hb.remove(tb.st); hb.remove(tb.mn); m.mesh.userData.tfBars=null;
+  hb.traverse(o=>{ if(o.isMesh){ o.material.depthTest=true; o.renderOrder=0; } });   // plain damaged-mob bar again
 }
 function selectTarget(pick,silent){
   if(TARGET&&TARGET.type==="monster") detachTargetBars(TARGET.ref);
@@ -26448,11 +26469,16 @@ function cycleTarget(dir){
   // could never lock the first fight. Target anything the streamer maintains around us (indoors keep
   // the old close radius so Next Target still reads the current room, not mobs through walls).
   const R=(inDungeon||inNetwork)?70:MOB_DESPAWN;
-  const cand=monsters.filter(m=>m.hp>0&&(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<R)
+  let cand=monsters.filter(m=>m.hp>0&&(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-player.x,m.z-player.z)<R)
     .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+  // cycle only what's actually on screen (closest → furthest visible); if nothing is in view — say
+  // something gnawing your back — fall back to the full in-range ring so you can still lock it
+  const fr=new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse));
+  const vis=cand.filter(m=>m.mesh&&fr.intersectsSphere(new THREE.Sphere(m.mesh.position.clone().setY(m.mesh.position.y+(m.headY||1)*0.5),Math.max(1,m.r||1))));
+  if(vis.length) cand=vis;
   if(!cand.length){ selectTarget(null); log("No targets in range.","sys"); return; }
   let i=TARGET&&TARGET.type==="monster"?cand.indexOf(TARGET.ref):-1;
-  i=((i+dir)%cand.length+cand.length)%cand.length;
+  i=i<0?0:((i+dir)%cand.length+cand.length)%cand.length;   // nothing locked yet → both keys start at the closest
   selectTarget({type:"monster",ref:cand[i]});
 }
 function uiHiddenIs(id){ return !!(settings.uiHidden&&settings.uiHidden[id]); }
@@ -26474,7 +26500,8 @@ function updateTargetUI(dt,force){
     if(m.hp<=0||monsters.indexOf(m)<0){ selectTarget(null,true); return; }     // fell or despawned
     if(m.mesh&&m.mesh.userData.hb) m.mesh.userData.hb.visible=true;            // the tri-bar stays visible while targeted
     const tb=m.mesh&&m.mesh.userData.tfBars;
-    if(tb){ tb.st.scale.x=Math.max(0.001,(m.st!=null?m.st/m.mst:1)); tb.mn.scale.x=Math.max(0.001,(m.mn!=null?m.mn/m.mmn:1)); }
+    if(tb){ const sr=Math.max(0.001,(m.st!=null?m.st/m.mst:1)), mr=Math.max(0.001,(m.mn!=null?m.mn/m.mmn:1));
+      tb.st.scale.x=sr; tb.st.position.x=-(1-sr)*0.7; tb.mn.scale.x=mr; tb.mn.position.x=-(1-mr)*0.7; }   // left-anchored like the hp fill
     tfSetBar(tf,"tfHp","bhp",m.hp,m.mhp); tfSetBar(tf,"tfSt","bst",m.st!=null?m.st:1,m.mst||1); tfSetBar(tf,"tfMn","bmn",m.mn!=null?m.mn:0,m.mmn||1);
     const ring=targetRing();                                                    // #173: ground ring tracks the locked creature
     if(m.mesh){ ring.position.set(m.x,groundY(m.x,m.z,m.mesh.position.y)+0.06,m.z);
@@ -32152,7 +32179,7 @@ function updateSharedMobs(dt){
     m.mesh.position.set(m.x,groundY(m.x,m.z,m.mesh.position.y)+by,m.z); m.mesh.rotation.set(m._pitch||0,(m.yaw||0)+(m._yawOff||0),m._roll||0);   // refY: keep shared mobs on their storey
     m.mesh.scale.setScalar((m.baseScale||1)*(m.flash>0?1.08:1));
     const hb=m.mesh.userData.hb;
-    if(hb){ if(m.hp<m.mhp){ hb.visible=true; hb.quaternion.copy(cam.quaternion);
+    if(hb){ if(m.hp<m.mhp||(TARGET&&TARGET.type==="monster"&&TARGET.ref===m)){ hb.visible=true; hb.quaternion.copy(m.mesh.quaternion).conjugate().multiply(cam.quaternion);   // world-space billboard (parent mob rotates); never hide the bar on the locked target — full-HP server mobs were blanking it every frame
         const fill=m.mesh.userData.fill,r=Math.max(0,m.hp/m.mhp); fill.scale.x=r; fill.position.x=-(1-r)*0.7; }
       else hb.visible=false; }
   }
