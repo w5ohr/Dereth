@@ -19278,8 +19278,9 @@ function update(dt){
   landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
   syncCamera(dt);
-  updateHUD();
+  _hudAcc+=dt; if(_hudAcc>=0.1){ _hudAcc=0; updateHUD(); }   // #P1: the HUD did ~63 DOM ops EVERY frame — throttle the render-loop refresh to ~10Hz. Every event-driven updateHUD() call (damage/heal/pickup/level/cast) still fires instantly, so nothing feels laggy.
 }
+let _hudAcc=0;   // #P1 render-loop HUD-refresh accumulator
 
 function shake(m){ if(settings.reduceMotion) return; shakeMag=Math.max(shakeMag,m); shakeT=0.32; }   // #244: no camera shake when reduce-motion is on
 // third-person body animation: walk cycle + attack/cast on the right arm
