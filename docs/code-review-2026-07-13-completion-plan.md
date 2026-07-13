@@ -13,7 +13,24 @@ reflects two corrections found on re-read (noted inline).
 
 Effort key: **S** ≈ ≤½ day · **M** ≈ 1–2 days · **L** ≈ 3+ days / architectural.
 
-Legend for status column (update as you go): `todo` / `wip` / `done` / `blocked`.
+Legend for status column (update as you go): `todo` / `wip` / `done` / `blocked`. Completed rows are
+prefixed **✅** in the WP column; see the live progress log below for commit SHAs.
+
+---
+
+## Progress log (execution against this plan)
+
+**Sprint A — in progress (started 2026-07-13).**
+
+| WP | Finding | Status | Commit | Note |
+|----|---------|--------|--------|------|
+| ✅ 0.1 | R2 | ✅ done | `2b0579b0` | Untracked `acdata/client_local_English.dat` (kept on disk; history not rewritten). |
+| ✅ 0.2 | R3, R4 | ✅ done | `2b0579b0` | `.gitignore`: `assets/*.dat` + `* 2.*`; deleted 3 stray Finder copies. |
+| ✅ 0.3 | O4 | ✅ done | `d1910d36` | nginx HSTS/nosniff/X-Frame-Options (server + caching locations) + `sw.js` no-cache. Brace-checked; validate `nginx -t` on droplet before reload. |
+| ✅ 0.4 | X1 | ✅ done | `1f3124c3` | `esc()` now escapes `"`/`'`. Browser-verified: `title="${esc(payload)}"` yields no `onmouseover` attr. |
+| ✅ 0.5 | X2 | ✅ done | `1f3124c3` | Escaped item names at `lootItem`, `rarityName`, shop row. Browser-verified: no raw `<img`, XSS probe never fired. |
+
+**Phase 0 complete** — latent-XSS class closed, repo/deploy landmines defused. Next: Phase 1 anti-cheat (S3 → S1 → S2 → S7 → S4/S5).
 
 ---
 
