@@ -11345,6 +11345,8 @@ function attachCreatureAnims(m, gm){
   const deathC=find(/death|die|dead/i), castC=find(/cast|spell|summon|conjure/i);   // #177: wire the authored Death + Cast one-shots (were never referenced)
   if(deathC){ m.actDeath=m.gltfMixer.clipAction(deathC); m.actDeath.setLoop(THREE.LoopOnce,1); m.actDeath.clampWhenFinished=true; }
   if(castC){ m.actCast=m.gltfMixer.clipAction(castC); m.actCast.setLoop(THREE.LoopOnce,1); }
+  const flinchC=find(/flinch|twitch/i);                                            // #768: the authored get-hit recoil
+  if(flinchC){ m.actFlinch=m.gltfMixer.clipAction(flinchC); m.actFlinch.setLoop(THREE.LoopOnce,1); }
   m.gltf=true;
 }
 function spawnMonster(kind,x,z,elite){
@@ -11986,6 +11988,7 @@ function damageMonster(m,dmg,crit){
       return;
     }
     m.flash=.12; crit?SFX.crit():SFX.hit();
+    if(m.actFlinch&&!(m.actAtk&&m.actAtk.isRunning())&&!(m.actCast&&m.actCast.isRunning())){ m.actFlinch.reset(); m.actFlinch.weight=1; m.actFlinch.play(); }   // #768: authored hit recoil
     if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
     floater(m.x,(m.headY||1.6)+1.6,m.z,(crit?"✸":"")+Math.round(dmg),crit?"#ff5a5a":"#ffd86b",crit?1.7:clamp(1+dmg/100,1,1.8));
     if(crit) shake(0.16);
@@ -11993,6 +11996,7 @@ function damageMonster(m,dmg,crit){
     return;
   }
   m.hp-=dmg;m.flash=.12;m.state="chase";m.t=0; crit?SFX.crit():SFX.hit();
+  if(m.actFlinch&&!(m.actAtk&&m.actAtk.isRunning())&&!(m.actCast&&m.actCast.isRunning())){ m.actFlinch.reset(); m.actFlinch.weight=1; m.actFlinch.play(); }   // #768: authored hit recoil
   if(Math.random()<0.35) creatureSFX(m.kind,"wound",m.x,m.z);   // the creature's own retail pain vocal (spatialized)
   clog(`You ${crit?'<b style="color:#ff8f6b">critically strike</b>':'hit'} the ${m.name||((BESTIARY[m.kind]||{}).name||m.kind)} for <b>${Math.round(dmg)}</b>.`);
   if(m.mesh.userData.hb) m.mesh.userData.hb.visible=true;
@@ -12167,6 +12171,8 @@ function attachBossAnims(m){   // the retail clips drive the boss exactly like a
   const deathC=find(/death|die|dead/i), castC=find(/cast|spell|summon|conjure/i);   // #177: wire the authored Death + Cast one-shots (were never referenced)
   if(deathC){ m.actDeath=m.gltfMixer.clipAction(deathC); m.actDeath.setLoop(THREE.LoopOnce,1); m.actDeath.clampWhenFinished=true; }
   if(castC){ m.actCast=m.gltfMixer.clipAction(castC); m.actCast.setLoop(THREE.LoopOnce,1); }
+  const flinchC=find(/flinch|twitch/i);                                            // #768: the authored get-hit recoil
+  if(flinchC){ m.actFlinch=m.gltfMixer.clipAction(flinchC); m.actFlinch.setLoop(THREE.LoopOnce,1); }
   m.gltf=true;
 }
 function spawnBoss(){
@@ -31987,7 +31993,9 @@ function updateSharedMobs(dt){
 function onMobHit(msg){
   const m=NET.mobs[msg.id]; if(!m) return;
   m.hp=msg.hp; // authoritative
-  if(msg.by!==NET.me){ m.flash=.12; floater(m.x,(m.headY||1.6)+1.6,m.z,Math.round(msg.dmg),"#ffd86b"); }
+  if(msg.by!==NET.me){ m.flash=.12; floater(m.x,(m.headY||1.6)+1.6,m.z,Math.round(msg.dmg),"#ffd86b");
+    if(m.actFlinch&&!(m.actAtk&&m.actAtk.isRunning())&&!(m.actCast&&m.actCast.isRunning())){ m.actFlinch.reset(); m.actFlinch.weight=1; m.actFlinch.play(); }   // #768: authored hit recoil
+  }
 }
 function onMobDie(msg){
   const b=BESTIARY[msg.kind];
