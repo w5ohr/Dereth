@@ -8080,7 +8080,11 @@ function buildWorld(){
     scene.add(est); scenery.push(est);
     if(est.userData&&est.userData.surfaces) registerStructure(L.x,L.z,Math.PI,groundY(L.x,L.z),est.userData.surfaces);
     const lbl=labelSprite("Kilmer's Estate — recall home (/home)","cities"); lbl.scale.set(11,2.2,1); lbl.position.set(L.x,8.5,L.z); scene.add(lbl); scenery.push(lbl);
-    obstacles.push({x:L.x,z:L.z,r:6});
+    // the estate's REAL wall colliders (door gap included), rotated by its yaw — the old blanket
+    // obstacles.push({r:6}) at the centre walled the whole interior shut: the manor was unenterable
+    // and its loft ramp unclimbable (found by the 2026-07-13 building/ramp audit)
+    const ec=Math.cos(Math.PI), es=Math.sin(Math.PI);
+    for(const cc of (est.userData&&est.userData.colliders)||[]) obstacles.push({x:L.x+cc.x*ec+cc.z*es, z:L.z-cc.x*es+cc.z*ec, r:cc.r});
   })();
   // #3: seat a town-adjacent WALK-IN portal at the plaza EDGE, not ~13u from the lifestone on the
   //     footpath (a lethal surprise-teleport for a level-1 wanderer). Keep the requested facing, but push
