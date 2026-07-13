@@ -306,7 +306,11 @@ async def main():
     # playing slot 5 returns its persisted data (created with level 6)
     await c.send({"t": "play_char", "slot": 5})
     p5 = await c.recv_until(lambda x: x["t"] in ("play_ok", "play_err"))
-    check("play_char slot 5 restores its character (level 6)", bool(p5) and p5["t"] == "play_ok" and p5.get("char", {}).get("level") == 6)
+    # #S2: create_char no longer trusts client economy — a freshly created slot starts from the server
+    # baseline (level 1) regardless of the level sent to create_char. Legit level is earned through the
+    # SAVE path, which IS persisted (proven below: kills 999 saved and read back).
+    check("play_char slot 5 restores a starter character (S2: create forces level 1)",
+          bool(p5) and p5["t"] == "play_ok" and p5.get("char", {}).get("level") == 1)
     # save to the active slot, then verify it persists after another relogin
     await c.send({"t": "save", "char": {"level": 6, "kills": 999, "heritage": "sho"}})
     await c.send({"t": "ping"}); await c.recv_until(lambda x: x["t"] == "pong")

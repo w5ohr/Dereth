@@ -375,8 +375,9 @@ def create_char_slot(account, slot, name, data):
             return False, "That name is already taken."
         if c.execute("SELECT 1 FROM characters WHERE account=? AND name=?", (account, name)).fetchone():
             return False, "You already have a character with that name."
+        nd = new_char_data(data)   # #S2: force a server starter economy — never trust client gold/level/xp/inv at creation
         c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
-                  (account, slot, name, json.dumps(sanitize_save(data)) if data is not None else None, int(time.time()), int(time.time())))
+                  (account, slot, name, json.dumps(nd) if nd is not None else None, int(time.time()), int(time.time())))
     return True, None
 
 def _svnum(v, lo, hi, default):
@@ -442,6 +443,26 @@ def sanitize_save(data):
             d["packs"] = packs[:7]                                         # AC caps side packs at 7
     except Exception as e:
         print(f"[sanitize_save] {e}")
+    return d
+
+# #S2: a NEWLY created character must start from a server-defined economy baseline. sanitize_save only
+# clamps forgeries to PLAUSIBLE values (its own comment) — it happily persists 2e9 gold + level 275 + a
+# forged 500-item inventory, which load_econ then adopts wholesale on play_char, bypassing every post-load
+# rate limiter. So at CREATION we force the economy/progression fields to a fresh-character baseline and
+# drop any client-supplied inventory. Cosmetic + chargen choices (name/heritage/appearance/attr/skills)
+# pass through (attr/skills are already sanitize-clamped). Legit clients send char:null here anyway (a new
+# character is level 1 / 0 gold / empty inv), so this changes nothing for them — it only neuters forged
+# chargen. NOTE: the admin/Kilmer seed and legacy-save migration use their own INSERTs, not this path.
+_STARTER_ECON = {"gold": 0, "level": 1, "xp": 0, "xpUnspent": 0, "kills": 0, "bossKills": 0,
+                 "championKills": 0, "delves": 0, "materials": 0, "luminance": 0, "vitae": 0.0,
+                 "inv": [], "aetheria": {}}
+def new_char_data(data):
+    """Persisted blob for a freshly created slot: sanitized, with economy/progression forced to starter."""
+    if not isinstance(data, dict):
+        return data                      # None → stored as NULL; load_econ already treats that as a starter
+    d = sanitize_save(data)
+    if isinstance(d, dict):
+        d.update(_STARTER_ECON)
     return d
 
 # #238: bound an untrusted item dict that will be relayed to ANOTHER player (trade offers, corpse

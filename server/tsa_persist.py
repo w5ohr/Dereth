@@ -52,8 +52,17 @@ async def main():
     pd = await b.recv_until(lambda x: x["t"] == "play_ok", timeout=5)
     got = (pd or {}).get("char") or {}
     check("play_ok returns the save blob", bool(got))
-    check("deep-equal round trip", got == COMPLEX_CHAR,
-          "diff keys: " + str([k for k in COMPLEX_CHAR if got.get(k) != COMPLEX_CHAR[k]][:5]))
+    # #S2/#238: level & xp are authoritatively gated — a save can raise the level by at most
+    # LEVEL_MAX_GAIN_PER_SAVE, and since create now starts a character at level 1 (no forged-chargen
+    # seed), this fresh char can't persist a one-shot jump to level 42. That is correct anti-cheat
+    # behaviour, so the deep-fidelity round trip compares every OTHER key (nested/unicode/skills/
+    # aetheria/inv items all still survive verbatim). Level/xp gating has its own coverage in
+    # tsa_forged_chargen.py.
+    GATED = {"level", "xp"}
+    got_cmp = {k: v for k, v in got.items() if k not in GATED}
+    exp_cmp = {k: v for k, v in COMPLEX_CHAR.items() if k not in GATED}
+    check("deep-equal round trip (excluding authoritatively-gated level/xp)", got_cmp == exp_cmp,
+          "diff keys: " + str([k for k in exp_cmp if got_cmp.get(k) != exp_cmp[k]][:5]))
     check("unicode survives", got.get("unicode") == COMPLEX_CHAR["unicode"])
     check("float itemMana survives", got.get("inv", [{}])[0].get("itemMana") == 380.5)
 
@@ -100,7 +109,10 @@ async def main():
     check("deleted slot is reusable", r)
     await d.send({"t": "play_char", "slot": 2})
     pd2 = await d.recv_until(lambda x: x["t"] == "play_ok", timeout=4)
-    check("recreated slot plays with new blob", pd2 and (pd2.get("char") or {}).get("level") == 99,
+    # #S2: the reused slot is a fresh character at the server baseline — create_char ignores the forged
+    # level:99 (that was the chargen-injection exploit). Slot reuse is still proven (a new blob loads).
+    check("recreated slot plays a fresh starter character (S2: create forces level 1, not 99)",
+          pd2 and (pd2.get("char") or {}).get("level") == 1,
           f"char={pd2.get('char') if pd2 else None}")
     await d.close()
 
