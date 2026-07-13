@@ -60,6 +60,9 @@ HIT_ABS_CAP       = float(os.environ.get("DERETH_HIT_ABS_CAP", "600.0"))     # a
 ATTACK_CD         = float(os.environ.get("DERETH_ATTACK_CD", "0.10"))        # min seconds between accepted hits on the SAME mob by one client
 XP_BUCKET_MAX     = float(os.environ.get("DERETH_XP_BUCKET_MAX", "60000"))   # XP token bucket capacity (absorbs legit bursts)
 XP_REFILL_PER_SEC = float(os.environ.get("DERETH_XP_REFILL_PER_SEC", "12000"))  # sustained authoritative XP/sec ceiling — far above legit farming, far below instakill-spam
+# #S7 periodic maintenance
+MAINT_TICK        = float(os.environ.get("DERETH_MAINT_TICK", "30"))         # seconds between auth-map sweeps + backup checks
+BACKUP_EVERY      = float(os.environ.get("DERETH_BACKUP_EVERY", "3600"))     # seconds between DB snapshots (0 disables); the live droplet keeps a rolling <db>.bak
 
 # ---------------------------------------------------------------- persistence
 # An *account* (users row: username+password) owns up to MAX_CHARS *characters*
@@ -94,6 +97,26 @@ def db():
         c = _new_conn()
         _DB_LOCAL.conn = c
     return c
+
+def backup_db():
+    """#S7/M4 best-effort DB snapshot for the durability gap (single SQLite file, no prior backup story).
+    VACUUM INTO a temp then atomically replace <db>.bak. Uses a throwaway autocommit connection because
+    VACUUM can't run inside a transaction (and the thread connection is transactional). Never raises —
+    a failed backup must never take down the tick loop. Run periodically off the loop via dbq()."""
+    if not DB_PATH or DB_PATH == ":memory:":
+        return
+    tmp, dst = DB_PATH + ".bak.tmp", DB_PATH + ".bak"
+    try:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        bc = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)
+        try:
+            bc.execute("VACUUM INTO ?", (tmp,))
+        finally:
+            bc.close()
+        os.replace(tmp, dst)
+    except Exception as e:
+        print(f"[backup_db] {e}")
 
 def init_db():
     """Create the schema + hot-path indexes once, at startup."""
@@ -243,6 +266,30 @@ def note_login_fail(username):
     if time.time() - t0 > 60:
         n, t0 = 0, time.time()
     _LOGIN_FAILS[username] = (n + 1, t0)
+
+# #S7 per-IP auth throttle. login/register both run scrypt (a decoy hash even for unknown users, so an
+# attacker can't be told to stop by "user not found"), and the general 30/s bucket is PER-CONNECTION —
+# up to MAX_CONNS_PER_IP sockets multiply it. A flood of unique usernames also grew _LOGIN_FAILS without
+# bound. This caps auth attempts per source IP across all its connections, independent of the general
+# bucket, and both maps are swept in the tick loop so they can't grow unbounded.
+_AUTH_BY_IP = {}   # ip -> (attempt_count, window_start)
+AUTH_PER_IP_WINDOW = float(os.environ.get("DERETH_AUTH_IP_WINDOW", "60"))   # seconds
+AUTH_PER_IP_MAX    = int(os.environ.get("DERETH_AUTH_IP_MAX", "30"))        # login+register attempts per IP per window
+def auth_ip_throttled(ip):
+    n, t0 = _AUTH_BY_IP.get(ip, (0, time.time()))
+    now = time.time()
+    if now - t0 > AUTH_PER_IP_WINDOW:
+        n, t0 = 0, now
+    n += 1
+    _AUTH_BY_IP[ip] = (n, t0)
+    return n > AUTH_PER_IP_MAX
+def sweep_auth_maps():
+    """#S7 drop expired throttle entries so a unique-username / unique-IP flood can't grow these dicts."""
+    now = time.time()
+    for u in [u for u, (_, t0) in list(_LOGIN_FAILS.items()) if now - t0 > 60]:
+        _LOGIN_FAILS.pop(u, None)
+    for ip in [ip for ip, (_, t0) in list(_AUTH_BY_IP.items()) if now - t0 > AUTH_PER_IP_WINDOW]:
+        _AUTH_BY_IP.pop(ip, None)
 
 # ── default admin: keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
 # #440: the Admin password is an operator secret sourced from DERETH_ADMIN_PW — NEVER a committed
@@ -1705,6 +1752,15 @@ async def world_step():
         _npc_v_timer = 0.0
         await npc_vassal_tick()
     await step_events()
+    # #S7 periodic maintenance: sweep the auth throttle maps (bound their memory) and snapshot the DB.
+    global _maint_timer
+    _maint_timer += DT
+    if _maint_timer >= MAINT_TICK:
+        _maint_timer = 0.0
+        sweep_auth_maps()
+        if BACKUP_EVERY > 0 and (time.time() - _last_backup[0]) >= BACKUP_EVERY:
+            _last_backup[0] = time.time()
+            await dbq(backup_db)
 
 async def resolve_attack(cl, mid, dmg):
     """A client claims it hit mob `mid` for `dmg`. Validate range, apply authoritatively."""
@@ -1935,6 +1991,8 @@ _NPC_V_LAST = ["the Bold", "the Swift", "Ironhand", "of Holtburg", "Stormborn", 
                "of Yaraq", "the Sworn", "Hollowmoor", "Brightspear", "of Shoushi"]
 NPC_VASSAL_TICK = 30.0   # seconds between NPC pass-up trickles
 _npc_v_timer = 0.0
+_maint_timer = 0.0          # #S7 accumulates DT toward MAINT_TICK
+_last_backup = [0.0]        # #S7 wall-clock of the last DB snapshot (list so the tick can mutate it without a global rebind)
 
 def npc_vassal_cap(level):
     return max(0, min(6, level // 12))   # a few sworn adventurers, growing with your renown (L12+)
@@ -2512,6 +2570,8 @@ async def dispatch(cl, msg):
     t = msg.get("t")
     if t == "register":
         u, p = msg.get("user", ""), msg.get("pass", "")
+        if auth_ip_throttled(getattr(cl, "ip", "?")):   # #S7: per-IP cap across all this IP's connections
+            return await cl.send({"t": "auth_err", "msg": "Too many attempts — wait a minute and try again."})
         if not valid_name(u):
             return await cl.send({"t": "auth_err", "msg": "Name: 3-16 letters/numbers/_-."})
         if not isinstance(p, str) or len(p) < 4:
@@ -2521,6 +2581,10 @@ async def dispatch(cl, msg):
         return await do_auth_success(cl, u)
     if t == "login":
         u, p = msg.get("user", ""), msg.get("pass", "")
+        if auth_ip_throttled(getattr(cl, "ip", "?")):   # #S7: per-IP cap — bounds scrypt CPU + _LOGIN_FAILS growth under a flood
+            return await cl.send({"t": "auth_err", "msg": "Too many attempts — wait a minute and try again."})
+        if not valid_name(u):   # #S7: reject garbage/over-long names BEFORE the DB lookup, decoy scrypt, and _LOGIN_FAILS entry (a legit login always has a valid name)
+            return await cl.send({"t": "auth_err", "msg": "Wrong name or password."})
         if login_throttled(u):   # #320: brute-force lockout after too many recent failures
             return await cl.send({"t": "auth_err", "msg": "Too many attempts — wait a minute and try again."})
         if not await dbq(verify_user, u, p):   # #449: scrypt + DB lookup off the loop
@@ -2579,6 +2643,7 @@ async def dispatch(cl, msg):
                 for hid in [h for h, v in list(HOUSES.items()) if v.get("owner") == freed]:
                     HOUSES.pop(hid, None); await dbq(save_house, hid); await broadcast_house(hid)
                 SKILL_CACHE.pop(freed, None)   # drop cached loyalty/leadership keyed by the freed charname
+                NPC_VASSALS.pop(freed, None)   # #S7/M5: drop the freed charname's sworn-NPC muster (else it leaks, and a new same-named character re-inherits the list)
             await cl.send({"t": "roster", "chars": await dbq(roster, cl.username), "max": MAX_CHARS})
         elif isinstance(slot, int):
             # Refuse deleting the slot you're currently playing — but SAY SO, so the client can tell a
@@ -2973,6 +3038,7 @@ async def handle(reader, writer):
     _CONN_TOTAL += 1
     _CONN_BY_IP[ip] = _CONN_BY_IP.get(ip, 0) + 1
     cl = Client(reader, writer)
+    cl.ip = ip   # #S7: source IP for the per-IP auth throttle
     try:
         if not await ws_handshake(reader, writer):
             writer.close(); return

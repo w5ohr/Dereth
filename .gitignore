@@ -42,3 +42,7 @@ tools/sr_models/
 
 # macOS Finder duplicate artifacts ("foo 2.png") — never intended to be tracked
 * 2.*
+
+# #S7 DB snapshots (backup_db) — never commit player data
+server/*.bak
+server/*.bak.tmp
