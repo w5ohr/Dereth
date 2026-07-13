@@ -34171,21 +34171,27 @@ function oreAreaLevel(x,z){
   lvl+=((h%17)-8);                                                  // gentle variation so tiers aren't perfect radial bands
   return clamp(lvl,0,98);
 }
+const ORE_DEPOSIT_SCALE=30;   // deposit body is drawn this many × the base rock/vein size (base rock radius 0.85, top ≈1.35)
 function buildOreDeposit(metalKey){
   const t=UO_METAL_BY[metalKey]||UO_METALS[0];
   const g=new THREE.Group();
+  const body=new THREE.Group();   // the physical deposit — scaled as one unit so the ⛏ marker (added later) stays independent
   const rockCol=(t.k==="iron")?0x5a564d:new THREE.Color(t.col).lerp(new THREE.Color(0x47433a),0.55).getHex();
   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.85,0),new THREE.MeshStandardMaterial({color:rockCol,flatShading:true,roughness:0.95,metalness:t.k==="iron"?0.1:0.35}));
-  rock.position.y=0.5; rock.castShadow=true; g.add(rock);
+  rock.position.y=0.5; rock.castShadow=true; body.add(rock);
   const veinMat=new THREE.MeshStandardMaterial({color:t.col,emissive:t.col,emissiveIntensity:t.k==="iron"?0.12:0.5,metalness:0.7,roughness:0.4});
   for(let i=0;i<5;i++){ const v=new THREE.Mesh(new THREE.OctahedronGeometry(0.12+Math.random()*0.06,0),veinMat);
-    v.position.set(rnd(-0.5,0.5),0.35+Math.random()*0.5,rnd(-0.5,0.5)); v.rotation.set(rnd(0,3),rnd(0,3),rnd(0,3)); g.add(v); }
+    v.position.set(rnd(-0.5,0.5),0.35+Math.random()*0.5,rnd(-0.5,0.5)); v.rotation.set(rnd(0,3),rnd(0,3),rnd(0,3)); body.add(v); }
+  body.scale.setScalar(ORE_DEPOSIT_SCALE);   // 30× bigger ore deposits
+  g.add(body);
   return g;
 }
 function addOreDeposit(x,z,metalKey){
   const mesh=buildOreDeposit(metalKey); mesh.position.set(x,(typeof terrainH==="function"?terrainH(x,z):0),z);
   const t=UO_METAL_BY[metalKey]||UO_METALS[0];
-  const icon=textSprite("⛏","#"+(t.k==="iron"?"cdbb88":t.col.toString(16).padStart(6,"0"))); icon.scale.set(0.95,0.95,1); icon.position.y=1.9; mesh.add(icon);
+  const icon=textSprite("⛏","#"+(t.k==="iron"?"cdbb88":t.col.toString(16).padStart(6,"0")));
+  // sit the marker just above the enlarged deposit (base rock top ≈1.35) and size it up so it still reads over a 30× boulder
+  icon.scale.set(4,4,1); icon.position.y=ORE_DEPOSIT_SCALE*1.35+3; mesh.add(icon);
   scene.add(mesh);
   nodes.push({x,z,type:"ore",metal:metalKey,mesh,depleted:false,readyAt:0});   // rides the existing node interact + respawn tick; regrows as the SAME metal
 }
