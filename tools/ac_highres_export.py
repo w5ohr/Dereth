@@ -17,7 +17,9 @@ ame = importlib.util.module_from_spec(spec); spec.loader.exec_module(ame)
 
 TEX_DIRS = ["assets/acflora/tex", "assets/acmodels/tex", "assets/acdungeons/tex",
             "assets/actownmodels/tex", "assets/acui", "assets/acicons", "assets/acheads/tex",
-            "assets/acbuild/tex"]
+            "assets/acbuild/tex",
+            # dat-riches-era packs (statics/interiors share acdungeons/tex; these two are their own pools)
+            "assets/acdstatics/tex", "assets/acterrain/tex"]
 HEXNAME = re.compile(r"^([0-9a-fA-F]{8})(?:_.*)?\.png$")
 
 
@@ -44,6 +46,17 @@ def main():
             pal_cache[pid] = ame.parse_palette(src.read(pid))
         return pal_cache[pid]
 
+    # acterrain names its PNGs t<NN>_<name>.png; its index.json carries each type's
+    # SurfaceTexture gid — build filename -> lowres TID for that pack
+    terr_by_name = {}
+    try:
+        tidx = json.load(open(os.path.join(ROOT, "assets", "acterrain", "index.json")))
+        for t in tidx.get("types", {}).values():
+            ids = ame.parse_surfacetexture(portal.read(t["gid"]))
+            terr_by_name[t["tex"]] = ids[-1]
+    except Exception:
+        pass
+
     total_up, per_dir = 0, {}
     for rel in TEX_DIRS:
         d = os.path.join(ROOT, rel)
@@ -51,8 +64,12 @@ def main():
         ups = 0
         for fn in os.listdir(d):
             m = HEXNAME.match(fn)
-            if not m: continue
-            tid = int(m.group(1), 16)
+            if not m and rel.endswith("acterrain/tex") and fn in terr_by_name:
+                tid = terr_by_name[fn]
+            elif not m:
+                continue
+            else:
+                tid = int(m.group(1), 16)
             hi = None
             if (tid >> 24) == 0x05:   # named by SURFACE-TEXTURE id (the head/face pack) — resolve directly
                 try:
