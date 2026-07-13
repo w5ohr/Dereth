@@ -41,6 +41,13 @@ PROTOCOL_VERSION = 2   # v2: accounts own up to 8 character slots (roster/play_c
 MAX_CONNECTIONS   = int(os.environ.get("DERETH_MAX_CONNS", "400"))       # global concurrent sockets
 MAX_CONNS_PER_IP  = int(os.environ.get("DERETH_MAX_CONNS_PER_IP", "16")) # concurrent sockets per peer IP
 AUTH_TIMEOUT      = float(os.environ.get("DERETH_AUTH_TIMEOUT", "30"))   # seconds to authenticate before drop
+# #S3 movement guard. The overworld clamp (bounds) is ALWAYS on. Speed-hack snap-back is gated OFF by
+# default: legit portals/recall/lifestone are single-tick position spikes with no server signal, and the
+# test harnesses deliberately teleport onto mobs — so the snap-back is opt-in until an operator validates
+# it against the live client (set DERETH_ENFORCE_MOVE=1). Detection always logs; only the correction is gated.
+MAX_MOVE_SPEED    = float(os.environ.get("DERETH_MAX_MOVE_SPEED", "150.0"))  # units/sec ceiling — far above legit run+mount, far below any teleport
+MOVE_STRIKES      = int(os.environ.get("DERETH_MOVE_STRIKES", "3"))          # consecutive supra-speed ticks (~0.3s @10Hz) → sustained hack, not a one-off teleport
+ENFORCE_MOVE      = os.environ.get("DERETH_ENFORCE_MOVE", "").strip().lower() in ("1", "true", "yes", "on")
 
 # ---------------------------------------------------------------- persistence
 # An *account* (users row: username+password) owns up to MAX_CHARS *characters*
@@ -865,6 +872,7 @@ class Client:
         self.invite_from = None  # pending party invite (inviter account)
         # presence state (last reported by the client; M3 will make this authoritative)
         self.x = 0.0; self.z = 0.0; self.yaw = 0.0; self.hp = 100; self.mhp = 100
+        self._mvx = 0.0; self._mvz = 0.0; self._mvt = 0.0; self._mvbad = 0   # #S3 last-accepted pos + monotonic time + consecutive supra-speed strikes
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
         self.mnt = None   # #728: mount type key while riding (e.g. "grey") — remotes render the horse
@@ -2526,9 +2534,33 @@ async def dispatch(cl, msg):
             await cl.send({"t": "play_err", "msg": "You can't delete the character you're currently playing — leave the world first."})
         return
     if t == "input":
-        cl.x = _finitef(msg.get("x"), cl.x); cl.z = _finitef(msg.get("z"), cl.z)   # #238: reject NaN/Inf so a bad coord can't be broadcast to (and corrupt) other clients
+        nx = _finitef(msg.get("x"), cl.x); nz = _finitef(msg.get("z"), cl.z)   # #238: reject NaN/Inf so a bad coord can't be broadcast to (and corrupt) other clients
+        nx = max(-WORLD_LIMIT, min(WORLD_LIMIT, nx)); nz = max(-WORLD_LIMIT, min(WORLD_LIMIT, nz))   # #S3: players, like mobs, stay inside the playfield — out-of-bounds is always invalid (always on)
+        inst = bool(msg.get("inst"))   # #646: the client sets inst:1 while inside a per-player instance; wire it so peers hide the avatar and mob AI / PvP skip the phantom at the return point
+        # #S3 speed-hack guard — police only SUSTAINED supra-speed in the overworld. A legit portal/recall/
+        # lifestone is a single-tick position spike (then normal movement resumes); a fly/speed hack is fast
+        # EVERY tick. While inst, x/z is a fixed overworld return point (no real movement), so skip then and
+        # on any inst-state change. Never false-positives on legit teleports or fast mounts. Snap-back is
+        # gated by ENFORCE_MOVE (default off); detection always logs so an operator can tune before enabling.
+        now_m = time.monotonic()
+        if inst or inst != cl.inst:
+            cl._mvbad = 0                                   # instance / transition: reset baseline, don't police
+        elif cl._mvt > 0.0:
+            dt_m = now_m - cl._mvt
+            if dt_m > 0.0 and math.hypot(nx - cl._mvx, nz - cl._mvz) / dt_m > MAX_MOVE_SPEED:
+                cl._mvbad += 1
+                if cl._mvbad >= MOVE_STRIKES:
+                    if cl._mvbad == MOVE_STRIKES:
+                        print(f"[S3] sustained supra-speed from {cl.netid} ({cl.charname or cl.username}) — "
+                              f"{'snapping back' if ENFORCE_MOVE else 'DETECT-ONLY'}")
+                    if ENFORCE_MOVE:
+                        nx, nz = cl._mvx, cl._mvz            # snap back to last accepted position
+            else:
+                cl._mvbad = 0
+        cl._mvx = nx; cl._mvz = nz; cl._mvt = now_m
+        cl.x = nx; cl.z = nz
         cl.yaw = _finitef(msg.get("yaw"), cl.yaw)
-        cl.inst = bool(msg.get("inst"))   # #646: the client sets inst:1 while inside a per-player instance; wire it so peers hide the avatar and mob AI / PvP skip the phantom at the return point
+        cl.inst = inst
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
         cl.level = min(_clampi(msg.get("level"), 1, 275, cl.level), cl.level_auth)   # #238: bound the client-reported level to the character's AUTHORITATIVE level (seeded from the save, rate-limited on save) — closes the forged-level → unlimited-vassals / swear-over-anyone exploit
