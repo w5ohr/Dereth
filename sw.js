@@ -16,7 +16,8 @@
 // Horse.glb / index.html to returning players).
 // v3: acdialogue.json v2 (ambient chatter). v4: acspellfx.json (spell effect+projectile data).
 // v5: acspellsets.json (equipment-set spell bonuses). v6: acitems.json v2 (scrolls) + 2 scroll icons.
-const V = "dereth-v6";
+// v7: acportalfx.json + acportal/ sprites (the authentic retail portal particle effect).
+const V = "dereth-v7";
 
 self.addEventListener("install", () => { self.skipWaiting(); });
 
