@@ -30,7 +30,20 @@ prefixed **✅** in the WP column; see the live progress log below for commit SH
 | ✅ 0.4 | X1 | ✅ done | `1f3124c3` | `esc()` now escapes `"`/`'`. Browser-verified: `title="${esc(payload)}"` yields no `onmouseover` attr. |
 | ✅ 0.5 | X2 | ✅ done | `1f3124c3` | Escaped item names at `lootItem`, `rarityName`, shop row. Browser-verified: no raw `<img`, XSS probe never fired. |
 
-**Phase 0 complete** — latent-XSS class closed, repo/deploy landmines defused. Next: Phase 1 anti-cheat (S3 → S1 → S2 → S7 → S4/S5).
+**Phase 0 complete** — latent-XSS class closed, repo/deploy landmines defused.
+
+**Phase 1 — anti-cheat (in progress).** Each ships with a `tsa_*.py` regression; the CRITICAL enforcement is gated OFF by default (opt-in via env) where it can't yet be runtime-validated against the live client, so nothing breaks and the default test suite stays green.
+
+| WP | Finding | Status | Commit | Note |
+|----|---------|--------|--------|------|
+| 1.1 | S3 | ✅ done | `ce2acdc0` | Movement guard: WORLD_LIMIT clamp (always on) + sustained-supra-speed snap-back gated behind `DERETH_ENFORCE_MOVE`. `tsa_speedhack.py` 4/4; default server still 49/49+13/13 with zero false-positives. |
+| 1.2 | S1 | ✅ done | `6fe71f4a` | Combat authority: per-hit cap (frac of mob max-HP, trash-safe floor) + per-mob attack cooldown + XP-rate token bucket, gated behind `DERETH_ENFORCE_COMBAT`. `tsa_dmg.py` 7/7 (boss survives a 99999 hit, still killable in a few spaced hits). |
+| 1.3 | S2, X3 | ✅ done | `15a47e76` | Forged-chargen lockdown: `new_char_data()` forces a server starter economy at creation (always on; legit clients send `char:null`). `tsa_forged_chargen.py` 9/9; save path + admin/legacy seeds untouched. |
+| 1.4 | S7 | ⏳ next | — | Auth-surface hardening (login flood / `_LOGIN_FAILS` prune / per-IP throttle / NPC_VASSALS cleanup / DB backup). |
+| 1.5 | S4, S5 | ⬜ todo | — | Server-authoritative HP & death (the large "M3" lift). |
+| 1.6 | S6 | ⬜ todo/defer | — | Server item minting, or documented acceptance. |
+
+**Enforcement-flag note for ops:** `DERETH_ENFORCE_MOVE=1` and `DERETH_ENFORCE_COMBAT=1` turn on the S3/S1 snap-back + damage caps. They default OFF so the live client's real teleport/mount/crit numbers can be validated first (the detection paths log candidates). Flip them on once tuned.
 
 ---
 
