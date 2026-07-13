@@ -654,8 +654,16 @@
 </div></div>
 
 <div id="codex"><div class="card">
-  <h2>Bestiary</h2>
-  <div class="sub">Creatures of Dereth — the volcanic isle of the world Auberean — and their elemental natures.</div>
+  <h2>Codex</h2>
+  <div id="codexTabs" style="display:flex;gap:6px;margin:4px 0 8px">
+    <button data-ctab="beasts" class="cdxTab">🐾 Bestiary</button>
+    <button data-ctab="items" class="cdxTab">⚔️ Item Catalog</button>
+  </div>
+  <div class="sub" id="codexSub">Creatures of Dereth — the volcanic isle of the world Auberean — and their elemental natures.</div>
+  <div id="codexItemBar" style="display:none;gap:6px;margin:0 0 8px;align-items:center">
+    <input id="cdxSearch" type="text" placeholder="Search 6,000+ retail items…" style="flex:1;background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px">
+    <select id="cdxType" style="background:#0c0e08;color:#e8dcc0;border:1px solid var(--border);border-radius:6px;padding:6px;font-size:12px"></select>
+  </div>
   <div id="codexRows"></div>
   <button id="closeCodex">Return to Dereth  (B)</button>
 </div></div>
@@ -20092,7 +20100,61 @@ document.getElementById('bigmap').addEventListener('click',e=>{
 });
 
 // ---------- bestiary codex ----------
+// ── Item Catalog tab: every retail item from acitems.json with its REAL icon (assets/acicons) ──
+let _cdxTab="beasts", _cdxQ="", _cdxType="all";
+const _CDX_TYPES={all:"All types",MeleeWeapon:"Melee weapons",MissileLauncher:"Bows & launchers",Missile:"Thrown",Ammunition:"Ammunition",Caster:"Casters",Clothing:"Armor & clothing",Gem:"Gems",Food:"Food & potions",Scroll:"Spell scrolls",SpellComponent:"Spell components",Key:"Keys",Lockpick:"Lockpicks",Healer:"Healing kits",ManaStone:"Mana stones"};
+const _DT_NAMES={1:"slash",2:"pierce",3:"slash/pierce",4:"bludgeon",8:"cold",16:"fire",32:"acid",64:"electric",1024:"nether"};
+function _tcase(s){ return s.replace(/(^|[ '\-(])([a-z])/g,(m,a,b)=>a+b.toUpperCase()); }
+function buildItemCatalog(){
+  const root=document.getElementById('codexRows');
+  if(typeof AC_ITEMS==="undefined"||!AC_ITEMS){ root.innerHTML='<div class="row"><span class="desc">The catalog is still being unpacked — try again in a moment.</span></div>'; return; }
+  const q=_cdxQ.trim().toLowerCase();
+  const keys=Object.keys(AC_ITEMS).filter(k=>{
+    const a=AC_ITEMS[k];
+    if(_cdxType!=="all"&&a.t!==_cdxType) return false;
+    return !q||k.includes(q);
+  }).sort();
+  const MAX=250, show=keys.slice(0,MAX);
+  const spellName=id=>{ const s=(typeof AC_SPELLS!=="undefined")&&AC_SPELLS&&AC_SPELLS.spells&&AC_SPELLS.spells[String(id)]; return s?s.n:("spell #"+id); };
+  root.innerHTML=`<div class="row" style="opacity:.8"><span class="desc">${keys.length.toLocaleString()} items${keys.length>MAX?` — showing first ${MAX}; refine the search`:""}</span></div>`+
+    show.map(k=>{
+      const a=AC_ITEMS[k], bits=[];
+      if(a.dmg) bits.push(`${a.dmg} dmg${a.dt&&_DT_NAMES[a.dt]?" "+_DT_NAMES[a.dt]:""}`);
+      if(a.al) bits.push(`AL ${a.al}`);
+      if(a.spell) bits.push(`teaches <span style="color:#c9a6ff">${esc(spellName(a.spell))}</span>`);
+      else if(a.spells&&a.spells.length) bits.push(`${a.spells.length} spell${a.spells.length>1?"s":""}`);
+      if(a.mana) bits.push(`${a.mana} mana`);
+      if(a.wield) bits.push(`wield ${a.wield}`);
+      if(a.val) bits.push(`${a.val.toLocaleString()}p`);
+      if(a.bur) bits.push(`${a.bur} bu`);
+      const ico=a.icon?`<img src="assets/acicons/${a.icon}.png" style="width:26px;height:26px;image-rendering:pixelated;vertical-align:middle;margin-right:8px;border-radius:4px;background:#1a1c14" loading="lazy" onerror="this.style.display='none'">`:"";
+      return `<div class="row"><div>${ico}<span class="lab">${esc(_tcase(k))}</span> <span style="font-size:10px;color:#8a95a8;margin-left:5px">[${_CDX_TYPES[a.t]||a.t}]</span><br><span class="desc" style="margin-left:34px">${bits.join(" · ")||"—"}</span></div></div>`;
+    }).join("");
+}
+function _cdxRender(){
+  const beasts=_cdxTab==="beasts";
+  document.getElementById('codexSub').style.display=beasts?"":"none";
+  document.getElementById('codexItemBar').style.display=beasts?"none":"flex";
+  document.querySelectorAll('#codexTabs .cdxTab').forEach(b=>{
+    const on=b.dataset.ctab===_cdxTab;
+    b.style.cssText=`cursor:pointer;border-radius:8px;padding:5px 12px;font-size:12px;border:1px solid ${on?"var(--gold)":"var(--border)"};background:${on?"rgba(200,162,74,.18)":"rgba(255,255,255,.04)"};color:${on?"#ffe8b0":"#cdbf9a"}`;
+  });
+  if(beasts) buildCodexBeasts(); else buildItemCatalog();
+}
 function buildCodex(){
+  // one-time wiring for the tab bar + search controls
+  const tabs=document.getElementById('codexTabs');
+  if(tabs&&!tabs._wired){ tabs._wired=true;
+    tabs.querySelectorAll('.cdxTab').forEach(b=>b.onclick=()=>{ _cdxTab=b.dataset.ctab; _cdxRender(); });
+    const sel=document.getElementById('cdxType');
+    sel.innerHTML=Object.keys(_CDX_TYPES).map(t=>`<option value="${t}">${_CDX_TYPES[t]}</option>`).join("");
+    sel.onchange=()=>{ _cdxType=sel.value; buildItemCatalog(); };
+    const inp=document.getElementById('cdxSearch');
+    inp.oninput=()=>{ _cdxQ=inp.value; buildItemCatalog(); };
+  }
+  _cdxRender();
+}
+function buildCodexBeasts(){
   // every creature in the bestiary, weakest first (retail levels order the codex)
   const order=Object.keys(BESTIARY).filter(k=>!BESTIARY[k].ambient)
     .sort((a,b2)=>(BESTIARY[a].lvl||BESTIARY[a].hp/10)-(BESTIARY[b2].lvl||BESTIARY[b2].hp/10));

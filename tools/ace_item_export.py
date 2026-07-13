@@ -20,7 +20,8 @@ from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.path.join(ROOT, "ACE-World-16PY-master", "Database", "3-Core", "9 WeenieDefaults", "SQL")
 CATS = ["MeleeWeapon", "MissileLauncher", "Missile", "Caster", "Clothing", "Gem",
-        "Food", "Ammunition", "Healer", "Lockpick", "ManaStone", "SpellComponent", "Key"]
+        "Food", "Ammunition", "Healer", "Lockpick", "ManaStone", "SpellComponent", "Key",
+        "Scroll"]   # spell scrolls: name + icon + the taught spell (DataID 28)
 
 RE_INT   = re.compile(r"\(\d+,\s*(\d+),\s*(-?\d+)\)")
 RE_FLOAT = re.compile(r"\(\d+,\s*(\d+),\s*(-?[\d.]+)\)")
@@ -52,6 +53,10 @@ def parse_item(path):
     if spells: o["spells"] = spells
     if dids.get(8): o["icon"] = "%08x" % dids[8]
     if dids.get(1): o["setup"] = "%08x" % dids[1]   # the item's 3D model (Setup DID)
+    # scrolls: DataID 28 = the taught spell. The dump writes it in DECIMAL ("(3212, 28, 490) /* Spell */")
+    # so the hex-only RE_DID above misses it — pick it up separately.
+    m = re.search(r"\(\d+,\s*28,\s*(\d+|0x[0-9A-Fa-f]+)\)\s*/\* Spell", src)
+    if m: o["spell"] = int(m.group(1), 0)
     return o
 
 def main():
