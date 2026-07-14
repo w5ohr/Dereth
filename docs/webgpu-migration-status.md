@@ -69,10 +69,31 @@ before you touch anything.
 ignored). The scene renders **dimmer/wrong** on WebGPU because the sky shader + POST tone-map/bloom are
 absent — that IS Phase C, exactly as planned. Nothing to "fix" in B.
 
-## Phase C — TSL/NodeMaterial rewrites  →  NOT STARTED (parallel; see plan §4 ownership table)
+## Phase C — TSL/NodeMaterial rewrites  →  IN PROGRESS
+
 Concrete targets confirmed by the B scaffold: sky-dome / portal / aetheria / 2 misc `ShaderMaterial`s +
 the ground-blend / water / wind-sway `onBeforeCompile`s + the whole POST chain (bloom/tonemap/vignette/
-SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` is already wired for this.
+SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` is already wired.
+
+**FX/post half (machine 1) — started:**
+- ✅ **Tone-mapping on the WebGPU direct path.** WebGPURenderer clears `toneMapping`/`toneMappingExposure`
+  back to defaults (NoToneMapping / 1) during its deferred backend init, so the direct render was
+  un-tonemapped (in the WebGL build the POST composite owns tonemapping). `renderComposite()`'s WebGPU
+  branch now re-asserts ACES + the brightness-graded exposure, guarded so it only writes on drift (no
+  per-frame pipeline recompile). Verified: `toneMapping` holds at ACES(4) through the loop, no errors,
+  WebGL path untouched; a positioned-camera luminance probe confirmed the right direction (ACES 133 vs
+  none 110). `three/webgpu` `PostProcessing` + `QuadMesh` and 638 TSL nodes confirmed available.
+- ⬜ **Remaining FX/post:** bloom + vignette + brightness/contrast grade + SSAO + god-rays as a TSL
+  `PostProcessing` node graph (needs the `three/addons/tsl/display/*` bloom node vendored); portal FX,
+  aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL (dual-path: keep GLSL for classic
+  WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops classic WebGL).
+
+> ⚠️ **Verification limitation (this dev box):** the Browser-pane preview is a HIDDEN pane
+> (`document.hidden`, `innerWidth=0`, rAF throttled), and WebGPU canvas→drawImage readback is unreliable
+> here — so WebGPU output can be checked programmatically (renderer state, no-throw, frame counts, region
+> luminance) but NOT reliably pixel-verified. The remaining FX/post work is inherently VISUAL (bloom look,
+> shader appearance), so it should be done/verified on a machine with a VISIBLE browser (or the Phase-D
+> Apple-Silicon Safari pass). Don't land large shader visuals from this box on trust alone.
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
 ---

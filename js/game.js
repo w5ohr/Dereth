@@ -3807,7 +3807,16 @@ function renderReflection(){
   sh.uniforms.uReflStr.value=0.55;
 }
 function renderComposite(){
-  if(IS_WEBGPU){ renderer.setRenderTarget(null); renderer.render(scene,cam); return; }   // #webgpu Phase B: direct render only — the water reflection RT + GLSL POST chain are WebGL-only (ported to TSL in Phase C)
+  if(IS_WEBGPU){
+    // #webgpu Phase C: WebGPURenderer clears toneMapping/exposure back to defaults during its deferred
+    // backend init (in the WebGL build the POST composite owns tonemapping, so the renderer's own is off).
+    // Re-assert ACES + the brightness-graded exposure so the direct render is tonemapped like WebGL.
+    // Guarded writes → only touches them on drift, so no per-frame pipeline recompile.
+    if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    const wantExp=TONE_EXPOSURE_BASE*clamp(+settings.brightness||1,0.4,2.0);
+    if(Math.abs(renderer.toneMappingExposure-wantExp)>1e-4) renderer.toneMappingExposure=wantExp;
+    renderer.setRenderTarget(null); renderer.render(scene,cam); return;   // water reflection RT + GLSL POST chain stay WebGL-only (bloom/vignette/AO/rays ported to TSL next)
+  }
   renderReflection();
   cam.updateMatrixWorld(); FOGX.cam.value.copy(cam.matrixWorld);   // #689: restore the true camera for the main pass (and hand the fog this frame's matrix)
   if(!POST.on||!POST.rtScene){ renderer.setRenderTarget(null); renderer.render(scene,cam); return; }
