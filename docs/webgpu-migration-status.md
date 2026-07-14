@@ -83,10 +83,19 @@ SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` i
   per-frame pipeline recompile). Verified: `toneMapping` holds at ACES(4) through the loop, no errors,
   WebGL path untouched; a positioned-camera luminance probe confirmed the right direction (ACES 133 vs
   none 110). `three/webgpu` `PostProcessing` + `QuadMesh` and 638 TSL nodes confirmed available.
-- ⬜ **Remaining FX/post:** bloom + vignette + brightness/contrast grade + SSAO + god-rays as a TSL
-  `PostProcessing` node graph (needs the `three/addons/tsl/display/*` bloom node vendored); portal FX,
-  aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL (dual-path: keep GLSL for classic
-  WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops classic WebGL).
+- ✅ **WebGPU POST node graph (bloom + tonemap).** Vendored `vendor/jsm/tsl/display/BloomNode.js`; the
+  bootstrap exposes `window.PostProcessing` + `window.bloomNode` (only under `?gpu=1`). `buildGpuPost()`
+  builds a `PostProcessing` graph — `pass(scene,cam)` + `bloom(...)`, `outputNode = scenePass.add(bloom)` —
+  built lazily in `renderComposite`'s WebGPU branch (after ACES is set, so ACES bakes into the output;
+  exposure stays a runtime uniform → brightness setting works live). Replaces the plain direct render.
+  Verified: game loop drives `GPUPOST.render()` (sync) with zero errors; richer output than direct
+  (avgLum 24.8 vs 9.3; bloom spreads light); WebGL default path untouched (WebGPU POST modules not loaded).
+  ⚠️ **Bloom params (strength/radius/threshold) are first-pass defaults — need an on-hardware eyeball to
+  match the WebGL bloom.** Vignette + brightness/contrast grade + SSAO + god-rays not yet in the graph.
+- ⬜ **Remaining FX/post:** add vignette + grade + SSAO + god-rays to the `PostProcessing` graph and tune
+  bloom to match WebGL; portal FX, aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL
+  (dual-path: keep GLSL for classic WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops
+  classic WebGL). All of this is inherently visual → do/verify on a machine with a VISIBLE browser.
 
 > ⚠️ **Verification limitation (this dev box):** the Browser-pane preview is a HIDDEN pane
 > (`document.hidden`, `innerWidth=0`, rAF throttled), and WebGPU canvas→drawImage readback is unreliable

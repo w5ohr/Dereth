@@ -3806,16 +3806,34 @@ function renderReflection(){
   sh.uniforms.uReflMap.value=REFL.rt.texture;
   sh.uniforms.uReflStr.value=0.55;
 }
+// #webgpu Phase C: the WebGPU POST pipeline (TSL node graph). Mirrors the WebGL POST's bloom; tonemap is
+// applied on the PostProcessing output (outputColorTransform). Bloom params are first-pass defaults —
+// they want an on-hardware eyeball to match the WebGL bloom exactly (can't be pixel-tuned on a headless box).
+let GPUPOST=null;
+const GPUBLOOM={strength:0.6, radius:0.4, threshold:0.85};
+function buildGpuPost(){
+  const pass=window.TSL.pass, bloom=window.bloomNode;
+  GPUPOST=new window.PostProcessing(renderer);
+  const scenePass=pass(scene,cam);
+  const bloomPass=bloom(scenePass, GPUBLOOM.strength, GPUBLOOM.radius, GPUBLOOM.threshold);
+  GPUPOST.outputNode=scenePass.add(bloomPass);
+  GPUPOST._bloom=bloomPass; GPUPOST._scenePass=scenePass;
+}
 function renderComposite(){
   if(IS_WEBGPU){
     // #webgpu Phase C: WebGPURenderer clears toneMapping/exposure back to defaults during its deferred
-    // backend init (in the WebGL build the POST composite owns tonemapping, so the renderer's own is off).
-    // Re-assert ACES + the brightness-graded exposure so the direct render is tonemapped like WebGL.
-    // Guarded writes → only touches them on drift, so no per-frame pipeline recompile.
+    // backend init (in the WebGL build the POST composite owns tonemapping). Re-assert ACES + the
+    // brightness-graded exposure — the mode is BAKED into the PostProcessing output at build time, the
+    // exposure is a runtime uniform. Guarded writes → only touch on drift (no per-frame recompile).
     if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;
     const wantExp=TONE_EXPOSURE_BASE*clamp(+settings.brightness||1,0.4,2.0);
     if(Math.abs(renderer.toneMappingExposure-wantExp)>1e-4) renderer.toneMappingExposure=wantExp;
-    renderer.setRenderTarget(null); renderer.render(scene,cam); return;   // water reflection RT + GLSL POST chain stay WebGL-only (bloom/vignette/AO/rays ported to TSL next)
+    renderer.setRenderTarget(null);
+    // Node-graph POST: scene pass + bloom, tonemapped on output. Built lazily (needs toneMapping=ACES set
+    // above so ACES bakes in). Falls back to a plain direct render if the WebGPU POST modules didn't load.
+    if(window.PostProcessing&&window.TSL&&window.bloomNode){ if(!GPUPOST) buildGpuPost(); GPUPOST.render(); }
+    else renderer.render(scene,cam);
+    return;   // water reflection RT + the rest of the GLSL POST (vignette/AO/rays/grade) still WebGL-only
   }
   renderReflection();
   cam.updateMatrixWorld(); FOGX.cam.value.copy(cam.matrixWorld);   // #689: restore the true camera for the main pass (and hand the fog this frame's matrix)
