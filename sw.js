@@ -17,7 +17,10 @@
 // v3: acdialogue.json v2 (ambient chatter). v4: acspellfx.json (spell effect+projectile data).
 // v5: acspellsets.json (equipment-set spell bonuses). v6: acitems.json v2 (scrolls) + 2 scroll icons.
 // v7: acportalfx.json + acportal/ sprites (the authentic retail portal particle effect).
-const V = "dereth-v7";
+// v8: #webgpu Phase A — the game code moved out of inline index.html into js/game.js + js/craft.js
+// (ES-module three via vendor/three.module.js). js/*.js are treated like the app (network-first, so a
+// deploy lands on reload); vendor/* is pinned-dependency static (stale-while-revalidate).
+const V = "dereth-v8";
 
 self.addEventListener("install", () => { self.skipWaiting(); });
 
@@ -34,8 +37,11 @@ self.addEventListener("fetch", e => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
 
+  // app code (js/game.js, js/craft.js) changes on every deploy just like index.html did when it was
+  // inline — serve it network-first so a reload always gets the latest, falling back to cache offline.
+  const isCode = url.pathname.endsWith("/js/game.js") || url.pathname.endsWith("/js/craft.js");
   const isNav = req.mode === "navigate" || url.pathname === "/" || url.pathname.endsWith("/index.html");
-  if (isNav) {
+  if (isNav || isCode) {
     e.respondWith((async () => {
       const c = await caches.open(V);
       try {
@@ -52,7 +58,8 @@ self.addEventListener("fetch", e => {
   // assets/music/ is EXCLUDED (#669): <audio> streams the score with Range requests, and the Cache
   // API rejects 206 partials — and ~100 MB of MP3s doesn't belong in a phone's cache storage anyway.
   const isStatic = (url.pathname.includes("/assets/") && !url.pathname.includes("/assets/music/"))
-    || url.pathname.endsWith("three.min.js") || url.pathname.endsWith("manifest.webmanifest");
+    || url.pathname.includes("/vendor/")   // pinned Three.js ESM build + jsm addons (change only on a version bump)
+    || url.pathname.endsWith("manifest.webmanifest");
   if (!isStatic) return;
 
   e.respondWith((async () => {
