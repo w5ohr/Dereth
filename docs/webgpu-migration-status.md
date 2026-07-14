@@ -6,7 +6,7 @@ before you touch anything.
 
 ---
 
-## Phase A — ESM foundation  →  IN PROGRESS (core done, one step left)
+## Phase A — ESM foundation  →  ✅ COMPLETE
 
 **Done (machine 1, this commit):**
 - Vendored Three.js **r159 ESM** into `vendor/` (SAME revision as the old `three.min.js` — pure loader
@@ -30,11 +30,22 @@ before you touch anything.
   - Testing note: a stale service worker served old HTML — had to `unregister()` + clear caches + load a
     cache-busted `?nocache=N` URL in a fresh tab. Do the same when verifying.
 
-**Still TODO in Phase A:**
-- **A.4 — bump r159 → latest stable** (r17x) where `three/webgpu` + `three/tsl` are stable. Separate
-  commit; re-verify parity. (Deferred deliberately so the loader swap and the version bump don't mix.)
+**A.4 — version bump  →  DONE (machine 1):**
+- Bumped **r159 → r185** (latest stable; `three/webgpu` + `three/tsl` are mature here). Vendored the
+  split build: `vendor/three.module.js` (650 KB, re-exports `./three.core.js`) + `vendor/three.core.js`
+  (1.44 MB, REVISION 185) + r185 jsm addons. Importmap unchanged.
+- **Breaking-change handled:** `useLegacyLights` was removed (~r165) — r185 is physical-lights-only, so
+  `renderer.useLegacyLights=true` is now a no-op. Verified this does NOT regress the look: a runtime
+  toggle produces identical luminance (118.1 both ways), and both the Coronation instance and the sunlit
+  overworld render visually identical to r159 (ACES tone-mapping absorbs the legacy→physical delta).
+  Comment at game.js updated; a future light re-tune, if ever wanted, is an on-hardware eyeball pass.
+- **Custom shaders survive the bump:** overworld render confirms the ground detail-blend, water reflection,
+  foliage/wind-sway `onBeforeCompile` shaders and the analytic-sky `ShaderMaterial` all still compile and
+  render correctly on r185 (they get rewritten to TSL in Phase C regardless).
+- **Verified:** boots, zero console errors, addons work, instance + overworld render at parity. Still on
+  `WebGLRenderer`.
 
-## Phase B — WebGPURenderer scaffold  →  NOT STARTED (single-agent, after A.4)
+## Phase B — WebGPURenderer scaffold  →  NOT STARTED (single-agent, next up)
 ## Phase C — TSL/NodeMaterial rewrites  →  NOT STARTED (parallel; see plan §4 ownership table)
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 

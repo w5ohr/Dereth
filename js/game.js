@@ -3581,7 +3581,7 @@ function initThree(){
   tryLoadGltfAvatar();   // async; swaps in the rigged glTF model if present, else keeps the procedural avatar
   // ACES filmic tone-mapping + correct sRGB output for a richer, less-washed image
   renderer.outputColorSpace=THREE.SRGBColorSpace;
-  renderer.useLegacyLights=true;   // #695: r159 defaults to physical light units — every light in the game is tuned to the legacy falloff
+  renderer.useLegacyLights=true;   // #695/#webgpu: NO-OP from r165 on (removed) — r185 is physical-lights-only. Kept as a harmless marker; parity with the old legacy-falloff tuning was verified on r185 (ACES tone-mapping absorbs the difference — instance + overworld both match r159). If a future light re-tune is needed it's an on-hardware eyeball pass, not a code bug.
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=TONE_EXPOSURE_BASE;   // applyGrade() re-derives this from the brightness setting once POST is up
   markSceneSRGB();
