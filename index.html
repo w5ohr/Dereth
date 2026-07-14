@@ -921,6 +921,8 @@
 <script type="importmap">
 { "imports": {
     "three": "./vendor/three.module.js",
+    "three/webgpu": "./vendor/three.webgpu.js",
+    "three/tsl": "./vendor/three.tsl.js",
     "three/addons/": "./vendor/jsm/"
 } }
 </script>
@@ -939,6 +941,16 @@
     THREE.GLTFLoader = GLTFLoader;         // game calls new THREE.GLTFLoader()
     THREE.SkeletonUtils = SkeletonUtils;   // game calls THREE.SkeletonUtils.clone()
     window.THREE = THREE;
+    // #webgpu Phase B: opt into the WebGPU renderer with ?gpu=1. Only THEN pull the 2.17 MB three.webgpu
+    // bundle (+ TSL, for Phase C node materials) — the default WebGL path never pays for it. three.webgpu
+    // re-exports the SAME three.core, so constructor identity is shared with window.THREE (instanceof holds).
+    if (/[?&]gpu=1\b/.test(location.search)) {
+      try {
+        const webgpu = await import('three/webgpu');
+        window.WebGPURenderer = webgpu.WebGPURenderer;
+        window.TSL = await import('three/tsl');
+      } catch (e) { console.error('WebGPU module load failed — staying on WebGL:', e); }
+    }
     for (const src of ['js/game.js', 'js/craft.js']) {
       const s = document.createElement('script'); s.src = src; s.async = false;
       document.body.appendChild(s);

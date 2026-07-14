@@ -45,8 +45,34 @@ before you touch anything.
 - **Verified:** boots, zero console errors, addons work, instance + overworld render at parity. Still on
   `WebGLRenderer`.
 
-## Phase B — WebGPURenderer scaffold  →  NOT STARTED (single-agent, next up)
+## Phase B — WebGPURenderer scaffold  →  ✅ COMPLETE (machine 1)
+
+- **Opt-in flag `?gpu=1`.** The bootstrap (`index.html`) only then dynamic-imports `three/webgpu`
+  (2.17 MB) + `three/tsl`, exposing `window.WebGPURenderer` + `window.TSL`. Default WebGL path never loads
+  them (verified: `webgpuGlobal:false`, WebGPU bundle absent without the flag). Importmap gained
+  `three/webgpu` + `three/tsl` (both vendored: `vendor/three.webgpu.js`, `vendor/three.tsl.js`; webgpu
+  re-exports the same `three.core`, so constructor identity is shared → `instanceof` holds).
+- **`initThree` is now async.** With `window.WebGPURenderer` present it does
+  `new WebGPURenderer(...)` → `await renderer.init()` → `IS_WEBGPU=true`; any failure falls back to
+  `WebGLRenderer`. The boot `Promise.all().then(async()=>{ await initThree(); … })` awaits it.
+- **WebGL-only paths gated by `IS_WEBGPU`:** `initPost()` skipped (the GLSL POST chain =
+  WebGLRenderTarget + `ShaderMaterial` passes), `POST.on` forced false, and `renderComposite()` takes a
+  direct `renderer.render(scene,cam)` early-return (also skips `renderReflection()`'s RT).
+- **Verified:** `?gpu=1` → WebGPURenderer on the **native WebGPU backend**; the real game loop
+  (`loop()`→`renderComposite()`→ sync `renderer.render`) drives 60 frames with **zero errors**; stock
+  materials render (NPCs via SkeletonUtils, torches, floor). Default path unchanged (WebGLRenderer, full
+  POST, `rtScene` built, no errors).
+
+**Phase B's scaffold makes the Phase-C worklist concrete.** On WebGPU the console logs
+`THREE.NodeBuilder: Material "ShaderMaterial" is not compatible` (non-fatal — skipped) for the **6 custom
+`ShaderMaterial`s**, and the **6 `onBeforeCompile`** materials render as plain MeshStandard (patches
+ignored). The scene renders **dimmer/wrong** on WebGPU because the sky shader + POST tone-map/bloom are
+absent — that IS Phase C, exactly as planned. Nothing to "fix" in B.
+
 ## Phase C — TSL/NodeMaterial rewrites  →  NOT STARTED (parallel; see plan §4 ownership table)
+Concrete targets confirmed by the B scaffold: sky-dome / portal / aetheria / 2 misc `ShaderMaterial`s +
+the ground-blend / water / wind-sway `onBeforeCompile`s + the whole POST chain (bloom/tonemap/vignette/
+SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` is already wired for this.
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
 ---

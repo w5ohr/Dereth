@@ -1141,6 +1141,7 @@ function elemMult(kind,el){const a=AFFINITY[kind];if(!a||!el)return 1;if(a.weak=
 
 // ---------- THREE scene ----------
 let scene,cam,renderer,sun;
+let IS_WEBGPU=false;   // #webgpu Phase B: true once a WebGPURenderer is active (set in initThree). Gates the WebGL-only POST chain + custom-shader paths (ported to TSL in Phase C).
 // cinematic post-processing pipeline (bloom + filmic tonemap + vignette), built inline (no extra files)
 let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,quad:null,bright:null,blur:null,comp:null};
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
@@ -3288,8 +3289,18 @@ function mobilePixelRatio(tierCap){
   const minW=w>=h?MOBILE_MIN_LONG:MOBILE_MIN_SHORT, minH=w>=h?MOBILE_MIN_SHORT:MOBILE_MIN_LONG;
   return Math.max(dpr, minW/w, minH/h);   // native panel resolution, raised to the minimum when the panel (or a small in-app viewport) is lower
 }
-function initThree(){
-  renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
+async function initThree(){
+  // #webgpu Phase B: with ?gpu=1 the bootstrap exposes window.WebGPURenderer — try it (async init), fall
+  // back to WebGL on any failure so the game always comes up. WebGL stays the default (no flag → no GPU).
+  if(window.WebGPURenderer){
+    try{
+      renderer=new window.WebGPURenderer({canvas:document.getElementById('c'),antialias:true});
+      await renderer.init();
+      IS_WEBGPU=true;
+      console.log("[webgpu] WebGPURenderer active (backend:", (renderer.backend&&renderer.backend.isWebGPUBackend)?"WebGPU":"WebGL2 fallback", ")");
+    }catch(e){ console.error("[webgpu] init failed — falling back to WebGLRenderer:",e); renderer=null; IS_WEBGPU=false; }
+  }
+  if(!renderer) renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
   renderer.setPixelRatio(mobilePixelRatio(2));
   renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.enabled=true;
@@ -3586,7 +3597,7 @@ function initThree(){
   renderer.toneMappingExposure=TONE_EXPOSURE_BASE;   // applyGrade() re-derives this from the brightness setting once POST is up
   markSceneSRGB();
   initEnvironment();
-  initPost();
+  if(!IS_WEBGPU) initPost();   // #webgpu Phase B: the GLSL post chain (WebGLRenderTarget + ShaderMaterial passes) is WebGL-only — ported to TSL in Phase C. On WebGPU, renderComposite() takes its direct-render path.
   applyGfxSetting();   // graphics tier (auto governor keeps it above 30 FPS)
 }
 // image-based ambient: a tiny sky-and-ground gradient scene run through PMREM becomes
@@ -3796,6 +3807,7 @@ function renderReflection(){
   sh.uniforms.uReflStr.value=0.55;
 }
 function renderComposite(){
+  if(IS_WEBGPU){ renderer.setRenderTarget(null); renderer.render(scene,cam); return; }   // #webgpu Phase B: direct render only — the water reflection RT + GLSL POST chain are WebGL-only (ported to TSL in Phase C)
   renderReflection();
   cam.updateMatrixWorld(); FOGX.cam.value.copy(cam.matrixWorld);   // #689: restore the true camera for the main pass (and hand the fog this frame's matrix)
   if(!POST.on||!POST.rtScene){ renderer.setRenderTarget(null); renderer.render(scene,cam); return; }
@@ -4178,7 +4190,7 @@ function applyGfxTier(t,quiet){
   GFX.shadowEvery=[0,3,2,1][t];   // Medium redraws the shadow map every 3rd frame, High every 2nd
   renderer.shadowMap.autoUpdate=GFX.shadowEvery<=1;
   if(GFX.shadowEvery>1) renderer.shadowMap.needsUpdate=true;
-  POST.on=t>=1;
+  POST.on=(t>=1)&&!IS_WEBGPU;   // #webgpu Phase B: no GLSL post on WebGPU (Phase C) — force the direct-render path
   GFX.rays=t>=2; GFX.ao=t>=2; GFX.motesOn=t>=1; GFX.mistOn=t>=1; GFX.auroraOn=t>=1;   // #690: SSAO rides the High/Ultra tiers; the governor sheds it by tier downshift
   GFX.auroraN=t>=3?2:1; GFX.mistN=[0,8,12,16][t];
   if(auroraGroup) auroraGroup.children.forEach((m,i)=>m.visible=i<GFX.auroraN);
@@ -32227,8 +32239,8 @@ acChromeInit();
 loadSettings();
 // the real-Dereth data texture must be decoded BEFORE the ground/water meshes bake their vertices
 // (the retail-vendor data rides the same gate so towns build with their true merchants)
-Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(()=>{
-  initThree();
+Promise.all([ACMAP.load(),ACV.load(),ACW.load(),ACLOOT.load()]).then(async ()=>{
+  await initThree();   // #webgpu Phase B: WebGPURenderer needs an async init() before the first frame
   applySettings();
   initMinimap();
   initDragUI();
