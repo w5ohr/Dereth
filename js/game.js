@@ -2373,7 +2373,13 @@ function texGround(){
 //    ripples/sparkle) — hue stays with the per-vertex biome tint, so regionTint, the seasonal
 //    reskin and winter all compose unchanged. Atlas UVs are MIRRORED (abs-triangle wave), which
 //    makes unwrapped canvas tiles seamless and doubles the repeat period for free. ──
-const TER={ready:false,uOn:{value:0},uIdx:{value:null},uAtl:{value:null},uCW:{value:new THREE.Vector2(1,2041)}};
+const TER={ready:false,uOn:{value:0},uIdx:{value:null},uAtl:{value:null},uCW:{value:new THREE.Vector2(1,2041)},
+  // #webgpu Phase C: TSL texture nodes sampling uIdx/uAtl (built by buildGroundTSL) — retargeted in
+  // place when terSplatBuild/terRealUpgrade swap the underlying textures (a TextureNode's .value is
+  // hot-swappable; the GLSL path keeps reading the plain {value} handles above).
+  _tslIdxNodes:[],_tslAtlNodes:[],
+  _tslSetIdx(tex){ this.uIdx.value=tex; for(const n of this._tslIdxNodes) n.value=tex; },
+  _tslSetAtl(tex){ this.uAtl.value=tex; for(const n of this._tslAtlNodes) n.value=tex; }};
 // LandDefs type (0–31) → atlas tile: 0 grass · 1 lush · 2 patchy · 3 rock · 4 rockpatch · 5 dirt ·
 // 6 mud · 7 marsh · 8 sand · 9 sandrock · 10 snow · 11 ice · 12 obsidian · 13 seabed
 const TER_LUT=[3,0,11,1,7,6,12,5,5,2,8,8,9,3,4,10, 13,13,13,13,13, 0,2,0,1,0,2,0,2,0,1,3];
@@ -2481,7 +2487,7 @@ function terSplatBuild(){
   idx.unpackAlignment=1;   // 2041-wide single-byte rows: the default alignment of 4 would skew every row
   idx.minFilter=THREE.NearestFilter;idx.magFilter=THREE.NearestFilter;
   idx.wrapS=idx.wrapT=THREE.ClampToEdgeWrapping;idx.needsUpdate=true;   // NPOT-safe: clamp+nearest+no mips
-  TER.uIdx.value=idx; TER.uAtl.value=terBuildAtlas();
+  TER._tslSetIdx(idx); TER._tslSetAtl(terBuildAtlas());
   TER.uCW.value.set(1/AC_CELL,W);
   TER.ready=true;
   terRealUpgrade(W);   // #740: the REAL AC ground swaps in when the extraction pack exists
@@ -2493,6 +2499,64 @@ function terSplatBuild(){
 //    was matched to AC — the result reads authentic without breaking that machinery). The splat
 //    shader is untouched; the index texture is repacked so every LandDefs type points at ITS OWN
 //    real texture's slot — sand-grey finally differs from sand-yellow, moss from grass.
+// #webgpu Phase C: TSL twin of groundMat.onBeforeCompile — the same splat/detail maths as
+// colorNode/roughnessNode/normalNode. The sub-expressions (sTer, dk, luminance) are SHARED node
+// instances across the three slots, so the builder emits them once per shader (the GLSL kept them in
+// main() scope for the same reason). uTerOn flips at runtime → reference() uniform + select(), never a
+// compile-time branch. Sampling nodes register with TER._tslIdxNodes/_tslAtlNodes so terRealUpgrade's
+// async atlas/index swap retargets them in place. Called from initThree AFTER terSplatBuild (so the
+// textures are live when the graph builds; on procedural fallback terrain a 1×1 dummy is bound and the
+// uTerOn=0 detail-blend path renders).
+function buildGroundTSL(){
+  const t=window.TSL;
+  const dummy=()=>{ const d=new THREE.DataTexture(new Uint8Array([0,0,0,255]),1,1); d.needsUpdate=true; return d; };
+  const idxSample=uv=>{ const n=t.texture(TER.uIdx.value||dummy(),uv); TER._tslIdxNodes.push(n); return n; };
+  const atlSample=uv=>{ const n=t.texture(TER.uAtl.value||dummy(),uv); TER._tslAtlNodes.push(n); return n; };
+  const uOn=t.reference('value','float',TER.uOn), uCW=t.reference('value','vec2',TER.uCW);
+  // terS/terT/terV — same helpers as the GLSL block above
+  const terS=(tl,tuv)=> atlSample( t.vec2(t.mod(tl,6.0),t.floor(tl.div(6.0))).add(tuv).div(6.0) );
+  const terT=cc=> t.floor( idxSample( cc.add(0.5).div(uCW.y) ).x.mul(36.4286).add(0.5) );
+  const terV=(tv,cc)=>{ const h=t.fract(t.sin(t.dot(cc,t.vec2(127.1,311.7))).mul(43758.5453));
+    return t.select(h.lessThan(0.25), tv,
+           t.select(h.lessThan(0.5),  t.vec2(tv.y.oneMinus(),tv.x),
+           t.select(h.lessThan(0.75), t.vec2(tv.x.oneMinus(),tv.y.oneMinus()), t.vec2(tv.y,tv.x.oneMinus())))); };
+  const wp=t.positionWorld;
+  const dk=t.smoothstep(26.0,85.0,t.positionView.length());               // dkTer — near→far detail fade
+  // ── splat path (uTerOn=1): 4-corner bilinear blend over the AC cell grid ──
+  const fcr=t.vec2(wp.x.mul(uCW.x).add(1019.5), wp.z.mul(uCW.x).add(1020.5));
+  const c0=t.floor(fcr), f=fcr.sub(c0), sTid0=terT(c0);
+  const tuv=t.abs(t.fract(wp.xz.mul(0.11)).mul(2.0).sub(1.0)).mul(0.94).add(0.03);   // mirrored anti-tiling
+  const c10=c0.add(t.vec2(1,0)), c01=c0.add(t.vec2(0,1)), c11=c0.add(t.vec2(1,1));
+  let sTer=terS(sTid0,terV(tuv,c0)).mul(f.x.oneMinus().mul(f.y.oneMinus()))
+    .add(terS(terT(c10),terV(tuv,c10)).mul(f.x.mul(f.y.oneMinus())))
+    .add(terS(terT(c01),terV(tuv,c01)).mul(f.x.oneMinus().mul(f.y)))
+    .add(terS(terT(c11),terV(tuv,c11)).mul(f.x.mul(f.y)));
+  const sl=t.smoothstep(0.60,0.36,t.normalWorld.y);                       // cliffs shear to bare rock
+  sTer=t.mix(sTer,terS(t.float(3.0),tuv),sl.mul(0.85));
+  const sn=t.smoothstep(105.0,150.0,wp.y);                                // high peaks catch snow
+  sTer=t.mix(sTer,terS(t.float(10.0),tuv),sn.mul(0.9));
+  const tuvF=t.abs(t.fract(wp.xz.mul(0.0256)).mul(2.0).sub(1.0)).mul(0.94).add(0.03);
+  const texelSplat=t.mix(sTer, sTer.mul(terS(sTid0,tuvF)).mul(2.0), dk.mul(0.6));   // far-scale anti-tiling multiply
+  // ── fallback path (uTerOn=0): near/far detail blend of the plain ground tile ──
+  const uvm=t.uv().mul(110.0);                                            // texGround repeat(110,110) — vMapUv equivalent
+  const nearT=t.texture(groundMat.map,uvm), farT=t.texture(groundMat.map,uvm.mul(0.233).add(0.37));
+  const texelFallback=t.mix(nearT, nearT.mul(farT).mul(2.0), dk.mul(0.7));
+  const splatOn=uOn.greaterThan(0.5);
+  const texel=t.select(splatOn,texelSplat,texelFallback);
+  groundMat.colorNode=t.materialColor.mul(texel);                         // vertexColors auto-multiplied by the builder
+  // per-material roughness: bright materials (sand/snow/ice) take a faint sheen, dark ones go matte
+  const lum=t.dot(sTer.rgb,t.vec3(0.299,0.587,0.114));
+  groundMat.roughnessNode=t.materialRoughness.mul(
+    t.select(splatOn, t.clamp(t.float(1.08).sub(lum.mul(0.30)),0.7,1.0), t.float(1.0)));
+  // per-material RELIEF: screen-space surface-gradient of the splat luminance (Mikkelsen, tangent-free)
+  const vp=t.positionView, dpx=t.dFdx(vp), dpy=t.dFdy(vp);
+  const gN=t.materialNormal.normalize();                                  // includes the ground normalMap
+  const r1=t.cross(dpy,gN), r2=t.cross(gN,dpx), det=t.dot(dpx,r1);
+  const grad=t.dFdx(lum).mul(r1).add(t.dFdy(lum).mul(r2)).div(t.max(det.abs(),1e-6));
+  const reliefN=gN.sub(t.mix(t.float(2.2),t.float(0.15),dk).mul(grad)).normalize();
+  groundMat.normalNode=t.select(splatOn,reliefN,t.materialNormal);
+  groundMat.needsUpdate=true;
+}
 function terRealUpgrade(W){
   fetch('assets/acterrain/index.json').then(r=>r&&r.ok?r.json():null).then(j=>{
     if(!j||!j.types||TER.real) return;
@@ -2517,7 +2581,7 @@ function terRealUpgrade(W){
         g.putImageData(id,x0,y0); }
       const t=new THREE.CanvasTexture(c); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
       if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
-      TER.uAtl.value=t;
+      TER._tslSetAtl(t);
       const n=W*W, data=new Uint8Array(n);                    // repack: every type → its OWN texture's slot
       const typeSlot={}; for(const k2 in j.types) typeSlot[k2]=slotOf[j.types[k2].tex]||0;
       for(let i2=0;i2<n;i2++){ const sl=typeSlot[ACMAP.T[i2]]; data[i2]=(sl!=null?sl:0)*7; }
@@ -2525,7 +2589,7 @@ function terRealUpgrade(W){
       const idx2=new THREE.DataTexture(data,W,W,fmt,THREE.UnsignedByteType);
       idx2.unpackAlignment=1; idx2.minFilter=THREE.NearestFilter; idx2.magFilter=THREE.NearestFilter;
       idx2.wrapS=idx2.wrapT=THREE.ClampToEdgeWrapping; idx2.needsUpdate=true;
-      TER.uIdx.value=idx2; TER.real=true;
+      TER._tslSetIdx(idx2); TER.real=true;
       console.log('TERRAIN: '+files.length+' authentic AC ground textures live (assets/acterrain)');
     }
   }).catch(()=>{});
@@ -3355,12 +3419,18 @@ async function initThree(){
       // node library maps light→node by EXACT constructor — register the wrapper or every point light
       // in the game is silently skipped (unlit torches/braziers/portals: black NPCs, black nights).
       if(THREE.PointLightNode&&renderer.library) renderer.library.addLight(THREE.PointLightNode,THREE.PointLight);
-      // #webgpu dispose-lifecycle Phase 1: three's own internals destroy render targets synchronously
-      // too (the light ShadowNode disposes its shadow RT when a light is disposed or castShadow flips
-      // → "Destroyed texture ShadowDepthTexture used in a submit"). Those sites are unreachable from
-      // the game's _disp* choke, so defer ALL RenderTarget disposal through the same 2-tick queue.
-      { const _rtDispose=THREE.RenderTarget.prototype.dispose;
-        THREE.RenderTarget.prototype.dispose=function(){ _wgpuDeferDispose({dispose:_rtDispose.bind(this)}); }; }
+      // #webgpu dispose-lifecycle Phase 1 (the decisive piece): the game's per-frame FX teardown
+      // (label sprites, hit bursts, cast swirls, mob despawn — ~25 direct .dispose() sites that
+      // bypass the _disp* choke) destroys materials/geometries whose buffers the in-flight submit
+      // still references. On WebGPU each destroy REJECTS that whole submit; with steady FX churn
+      // EVERY frame is dropped → permanently black canvas (measured: ~60 faults/s, RenderObject
+      // disposal ~100/s, scene/lights/fog cache keys all stable — never a cache-key churn). Route
+      // EVERY Material/BufferGeometry/Texture dispose through the 2-tick deferral queue at the
+      // prototype, instead of patching each site. WebGL keeps synchronous dispose (lazy re-upload).
+      for(const P of [THREE.Material,THREE.BufferGeometry,THREE.Texture]){
+        const orig=P.prototype.dispose;
+        P.prototype.dispose=function(){ _wgpuDeferDispose({dispose:orig.bind(this)}); };
+      }
       // #webgpu KNOWN ISSUE (see docs/webgpu-migration-status.md): the game's dispose-then-reattach
       // GPU eviction (#232 releaseObjectGPU, dungeon-exit disposeObject3D bursts, the portal tube's
       // dispose) assumes WebGL's lazy re-upload. r185 WebGPU keeps cached bind groups pointing at the
@@ -3482,6 +3552,7 @@ async function initThree(){
       '  normal=normalize(gN - mix(2.2,0.15,dkTer)*grad);\n'+              // strong relief up close, calm far off
       '}\n#endif\n');};
   terSplatBuild();   // #693: assets resolved before initThree, so ACMAP is live here (no-op on procedural fallback terrain)
+  if(IS_WEBGPU&&window.TSL) buildGroundTSL();   // #webgpu Phase C: the splat as colorNode/roughnessNode/normalNode (GLSL above stays for WebGL)
   // terrain is a TERRA_CHUNKS×TERRA_CHUNKS grid of areas (256 chunks) instead of one world-sized
   // mesh — the renderer frustum-culls the chunks behind you, so only visible land is drawn.
   // Chunk vertices land exactly on the shared GROUND_SEG grid, so groundY() physics still matches.
@@ -3919,9 +3990,19 @@ function buildGpuPost(){
   GPUPOST.outputNode=c;
   GPUPOST._uBright=uBright; GPUPOST._uContrast=uContrast; GPUPOST._uVig=uVig; GPUPOST._bloom=bloomPass;
 }
+let _wgpuShadowFixN=0;   // #webgpu: armed by applyGfxTier after a shadow.mapSize change (see there)
 function renderComposite(){
   if(IS_WEBGPU){
-    _wgpuDrainDispose();   // #webgpu Phase 1: destroy resources queued ≥2 ticks ago — every submit that referenced them has been made (see _dispGeo/_dispMat)
+    // #webgpu Phase 1: destroy resources queued ≥2 ticks ago — every submit that referenced them has
+    // been made (see _dispGeo/_dispMat). HELD during portal transits: the mid-tunnel buildWorld burst
+    // contains shared-but-unmarked resources (Mode B1) whose destruction faults every later submit —
+    // the transit-end handler drops the whole burst instead (bounded leak; Phase-2 audit is the fix).
+    if(typeof portalTransit==="undefined"||!portalTransit) _wgpuDrainDispose();
+    if(_wgpuShadowFixN>0&&--_wgpuShadowFixN===0&&scene){   // late bind-group invalidation after the ShadowNode swapped its RT
+      scene.traverse(o=>{ if(!o.material) return;
+        const mm=Array.isArray(o.material)?o.material:[o.material];
+        for(const m of mm) m.needsUpdate=true; });
+    }
     // #webgpu Phase C: WebGPURenderer clears toneMapping/exposure back to defaults during its deferred
     // backend init (in the WebGL build the POST composite owns tonemapping). Re-assert ACES + the
     // brightness-graded exposure — the mode is BAKED into the PostProcessing output at build time, the
@@ -4196,7 +4277,7 @@ function gfxForestStream(){
       if(dx*dx+dz*dz>R2) continue;
       dst.set(p.all.subarray(i*16,i*16+16),m*16); m++;
     }
-    p.mesh.count=m;
+    p.mesh.count=m; if(p.mesh2)p.mesh2.count=m;   // #webgpu split canopy mesh mirrors the visible count
     p.mesh.instanceMatrix.needsUpdate=true;
   }
   GFX._fx=player.x; GFX._fz=player.z;
@@ -4352,19 +4433,32 @@ function applyGfxTier(t,quiet){
   renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
   if(typeof resizePost==="function") resizePost();
   renderer.shadowMap.enabled=t>=1;
+  let _shadowResized=false;   // #webgpu: see the invalidation block below
   if(typeof sun!=="undefined"&&sun){
     const sz=[1024,1024,2048,4096][t];
-    if(sun.shadow.mapSize.x!==sz){ sun.shadow.mapSize.set(sz,sz);
-      // #webgpu Phase 1: defer the RT destroy — the in-flight submit still samples ShadowDepthTexture
-      if(sun.shadow.map){ if(IS_WEBGPU)_wgpuDeferDispose(sun.shadow.map); else sun.shadow.map.dispose(); sun.shadow.map=null; } }
+    if(sun.shadow.mapSize.x!==sz){ sun.shadow.mapSize.set(sz,sz); _shadowResized=true;
+      if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; } }
     // #692: far cascade on High/Ultra only; its ±192m map matches the near map's texel budget
-    SHAD2.on=t>=2;
+    // #webgpu: ONE cascade only — two shadow-casting DirectionalLights over the same casters make
+    // r185's renderObject cache ping-pong (initialNodesCacheKey mismatch per cascade → dispose+
+    // recreate EVERY draw → ~60 destroyed-buffer faults/s → every submit rejected → permanently
+    // black canvas). Measured: baseline 63 faults/s, either cascade alone ~0. Upstream bug —
+    // re-evaluate at the next three.js bump.
+    SHAD2.on=t>=2&&!IS_WEBGPU;
     if(sunFar){
       sunFar.castShadow=SHAD2.on&&renderer.shadowMap.enabled;
-      if(sunFar.shadow.mapSize.x!==sz){ sunFar.shadow.mapSize.set(sz,sz);
-        if(sunFar.shadow.map){ if(IS_WEBGPU)_wgpuDeferDispose(sunFar.shadow.map); else sunFar.shadow.map.dispose(); sunFar.shadow.map=null; } }
+      if(sunFar.shadow.mapSize.x!==sz){ sunFar.shadow.mapSize.set(sz,sz); _shadowResized=true;
+        if(sunFar.shadow.map){ sunFar.shadow.map.dispose(); sunFar.shadow.map=null; } }
       if(!sunFar.castShadow) sunFar.intensity=0;   // the next setSunI restores the split when re-enabled
     }
+    // #webgpu dispose-lifecycle: a shadow.mapSize change makes r185's internal ShadowNode setSize→
+    // DESTROY its old ShadowDepthTexture at the NEXT shadow pass, but existing material bind groups
+    // are never invalidated — they keep sampling the destroyed texture, every subsequent submit is
+    // rejected, and the canvas goes permanently black (repro: seeded overworld + tier change). The
+    // destroy is LAZY, so invalidating now would rebuild pipelines onto the still-old texture and go
+    // stale again — instead arm a countdown; renderComposite bumps every material a few frames later,
+    // after the shadow pass actually swapped RTs. WebGL is untouched (lazy re-upload semantics).
+    if(IS_WEBGPU&&_shadowResized) _wgpuShadowFixN=(GFX.shadowEvery||1)*2+4;
   }
   REFL.on=t>=2; REFL.rate=t>=3?3:6;
   GFX.shadowEvery=[0,3,2,1][t];   // Medium redraws the shadow map every 3rd frame, High every 2nd
@@ -7038,6 +7132,22 @@ function buildForests(){
   for(const k in pools){ if(!(k in LEAFY)&&k!=="boulder"&&!Array.isArray(pools[k].mat)) addWindSway(pools[k].mat,k==="deadtree"?0.035:0.09,1.3,4.6); }
   for(const k in pools){ const p=pools[k];
     p.mesh=new THREE.InstancedMesh(G[k],p.mat,p.cap); p.n=0;
+    // #webgpu: an ARRAY-material InstancedMesh that casts shadows makes r185's renderObject cache
+    // ping-pong between the two geometry groups in the shadow pass (dispose+recreate EVERY draw →
+    // ~30 destroyed-buffer faults/s per pool → dropped submits → black frames). Split the deciduous
+    // pools into trunk+canopy meshes with a SHARED instanceMatrix (one setMatrixAt/needsUpdate drives
+    // both); each is single-material, which the shadow pass caches correctly. WebGL keeps the array.
+    if(IS_WEBGPU&&Array.isArray(p.mat)&&G[k].groups&&G[k].groups.length===2){
+      const sub=gi=>{ const grp=G[k].groups[gi], sg=new THREE.BufferGeometry();
+        for(const a in G[k].attributes) sg.setAttribute(a,G[k].attributes[a]);
+        if(G[k].index) sg.setIndex(new THREE.BufferAttribute(G[k].index.array.slice(grp.start,grp.start+grp.count),1));
+        else sg.setDrawRange(grp.start,grp.count);   // merged flora is non-indexed — groups are vertex ranges
+        return sg; };
+      p.mesh=new THREE.InstancedMesh(sub(0),p.mat[0],p.cap);
+      p.mesh2=new THREE.InstancedMesh(sub(1),p.mat[1],p.cap);
+      p.mesh2.instanceMatrix=p.mesh.instanceMatrix;
+      p.mesh2.castShadow=true; p.mesh2.receiveShadow=true;
+    }
     p.mesh.castShadow=true; p.mesh.receiveShadow=true; }
   if(typeof GFX!=="undefined") GFX.forest=pools;   // the quality governor scales visible counts
   const d=new THREE.Object3D(), tint=new THREE.Color();
@@ -7084,7 +7194,12 @@ function buildForests(){
     if(p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate=true;
     p.mesh.userData.noCull=true; p.mesh.userData.noSettle=true;   // world-spanning: exempt from streaming & settleY
     p.mesh.frustumCulled=false;                                    // instance bounds ≠ geometry bounds
-    scene.add(p.mesh); scenery.push(p.mesh); }
+    scene.add(p.mesh); scenery.push(p.mesh);
+    if(p.mesh2){   // #webgpu split canopy mesh rides along (shared instanceMatrix — see buildForests)
+      p.mesh2.instanceColor=p.mesh.instanceColor;
+      p.mesh2.count=p.n; p.mesh2.frustumCulled=false;
+      p.mesh2.userData.noCull=true; p.mesh2.userData.noSettle=true;
+      scene.add(p.mesh2); scenery.push(p.mesh2); } }
 }
 // craggy rock geometry: an icosahedron shattered by per-vertex noise (wider than tall, like a real
 // boulder), flat-shaded, with vertex colours for sun-bleached tops, damp bases, strata and lichen.
@@ -11221,7 +11336,18 @@ function updatePortalTransit(dt){
   } else {   // "out"
     p.outT+=dt;
     p.mat.opacity=Math.max(0,1-p.outT/_PT_OUT);
-    if(p.outT>=_PT_OUT){ cam.remove(p.tube); _dispGeo(p.tube.geometry); _dispMat(p.mat); portalTransit=null; }   // #webgpu Phase 1: route through the deferred-dispose choke
+    if(p.outT>=_PT_OUT){ cam.remove(p.tube);
+      // #webgpu: do NOT free the tube's GPU copies — destroying them leaves a stale unlabeled-buffer
+      // reference that faults EVERY subsequent submit (frozen canvas). The tube geometry is tiny and
+      // portalTubeTex is cached anyway; keep both resident on WebGPU. WebGL frees as before.
+      if(!IS_WEBGPU){ _dispGeo(p.tube.geometry); _dispMat(p.mat); }
+      // #webgpu: DROP everything queued for disposal during the transit (the buildWorld teardown
+      // burst). One of those resources is shared-but-unmarked with a live object (Mode B1 in the
+      // scoping doc) — destroying it faults every subsequent submit and freezes the canvas at the
+      // tube frame. Leaking the old world's GPU copies per transit is bounded and invisible;
+      // the Phase-2 refcount audit is the real fix.
+      else { _wgpuDispNow.length=0; _wgpuDispNext.length=0; }
+      portalTransit=null; }
   }
 }
 // "Has the area around the player finished streaming in?" — the gate for every overworld arrival.
@@ -18935,9 +19061,11 @@ function _wgpuDrainDispose(){
   if(_wgpuDispNow.length){ for(let i=0;i<_wgpuDispNow.length;i++){ try{_wgpuDispNow[i].dispose();}catch(e){} } _wgpuDispNow.length=0; }
   const t=_wgpuDispNow; _wgpuDispNow=_wgpuDispNext; _wgpuDispNext=t;
 }
-function _dispTex(t){ if(t&&!t._acShared&&t.dispose){ if(IS_WEBGPU){_wgpuDeferDispose(t);return;} t.dispose(); } }
-function _dispGeo(g){ if(g&&!g._acShared&&g.dispose){ if(IS_WEBGPU){_wgpuDeferDispose(g);return;} g.dispose(); } }
-function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose){ if(IS_WEBGPU){_wgpuDeferDispose(x);continue;} x.dispose(); } } }
+// (On WebGPU the deferral happens INSIDE dispose(): initThree patches the Material/BufferGeometry/
+// Texture prototypes to enqueue — see there. These helpers stay plain.)
+function _dispTex(t){ if(t&&!t._acShared&&t.dispose) t.dispose(); }
+function _dispGeo(g){ if(g&&!g._acShared&&g.dispose) g.dispose(); }
+function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose)x.dispose(); } }
 function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
   o.traverse(c=>{ if(c.isSprite){ const li=LABELS.indexOf(c); if(li>=0) LABELS.splice(li,1); }   // #22: keep the label registry from holding disposed nametags
     if(c.userData&&c.userData.acShared) return;   // #232: gltf-clone subtrees share geometry/materials with the model cache — never dispose those
