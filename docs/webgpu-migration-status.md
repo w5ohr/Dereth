@@ -388,16 +388,19 @@ Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. 
   D3D12, and machine 2 has both the repro and the A/B harness. Implementing it blind on Metal (where dispose
   faults don't even manifest) risks a machine-2-only regression. Current state: dispose is no-op'd on WebGPU
   → correct + stable but bounded VRAM growth per session. Scope in [webgpu-dispose-lifecycle-scoping.md] §Phase 3.
-- 🟡 **#691 water true-column / refraction on WebGPU** — **IMPLEMENTED + Metal-verified, BUILD-TIME opt-in**
-  (`window.__WATER_DEPTH`; default OFF = graph byte-identical to the baked look). In
-  `buildWaterMaterialTSL().waterOut`: true view-ray column via
-  `positionView.z.sub(perspectiveDepthToViewZ(viewportDepthTexture, cameraNear, cameraFar)).max(0)` (probe:
-  seabed 12.00 m exact), refraction from `viewportSharedTexture(screenUV + N.xy·off)` (probe: reddish seabed
-  transmits through shallow water), and the `_tv`-based shore fade on alpha. 0 WGSL errors; mirrors GLSL
-  js/game.js ~3739-3781 with identical constants. **TO ENABLE BY DEFAULT** (small follow-up): eyeball a real
-  shoreline in-game for parity, then gate the depth blocks by the existing `U.uDepthOn` uniform set per-frame
-  from `cam.position.y>0.12` (the WebGL path disables the column UNDERWATER; the build flag applies it
-  unconditionally). → machine 2 or machine 1 next.
+- ✅ **#691 water true-column / refraction on WebGPU — ON by default.** In `buildWaterMaterialTSL().waterOut`:
+  true view-ray column `positionView.z.sub(perspectiveDepthToViewZ(viewportDepthTexture, cameraNear,
+  cameraFar)).max(0)` (probe: seabed 12.00 m exact), refraction from `viewportSharedTexture(screenUV +
+  N.xy·off)` (probe: reddish seabed transmits through shallow water), `_tv`-based shore fade on alpha; same
+  constants as GLSL js/game.js ~3739-3781. Every depth block is gated at RUNTIME by the `U.uDepthOn` uniform
+  (now a `t.uniform`), which the water tick sets to `cam.position.y > waterMesh.position.y+0.06 ? 1 : 0` —
+  underwater it collapses to the byte-identical baked look (matches WebGL's cam-above-water gate). Escape
+  hatch: `window.__WATER_NODEPTH=1`. VERIFIED on Metal: uDepthOn 0↔1 toggles baked↔refraction cleanly; the
+  FULL in-game pipeline (loop→update→GPUPOST) drives 100+ frames with `uDepthOn=1` above water, **0 WGSL/
+  pipeline errors**. ⚠️ One caveat: a real-shoreline aesthetic eyeball wasn't reachable (the headless pane
+  spawns into the starter interior, no open water in view) — the maths is a faithful port of the shipping
+  WebGL look and colours now match (Agent 2's #695 fix), so parity is expected, but a human glance at a
+  coastline on either backend is the final confirmation.
 - ✅ **Dungeon/torch embers & spores** (4 map-less `THREE.Points`: mkFire, mkMotes, brazier, mushroom) —
   converted to `makePointSprites()` (extended for single-color + a synthesized soft round sprite when no
   `map`). WebGPU now renders them as sized soft glows instead of 1px specks; WebGL byte-unchanged

@@ -3283,14 +3283,21 @@ function updateDayNight(dt){
       // #691: feed the depth/refraction path when the #690 targets are live and the camera is above
       // the waterline (underwater the "seabed behind the surface" premise inverts — legacy look there)
       if(wsh.uniforms.uDepthOn){
-        const dOK=typeof POST!=="undefined"&&POST.aoOk&&POST.on&&POST.rtScene&&POST.rtScene.depthTexture&&cam.position.y>0.12;
-        wsh.uniforms.uDepthOn.value=dOK?1:0;
-        if(dOK){ const pe=cam.projectionMatrix.elements, g=renderer.getContext();
-          wsh.uniforms.uSceneTex.value=POST.rtScene.texture;
-          wsh.uniforms.uSceneDepth.value=POST.rtScene.depthTexture;
-          wsh.uniforms.uAB.value.set(pe[10],pe[14]);
-          wsh.uniforms.uRes.value.set(g.drawingBufferWidth,g.drawingBufferHeight);
-          wsh.uniforms.uWindF.value=clamp((windSpd-7)/27,0,1); } }
+        if(typeof IS_WEBGPU!=="undefined"&&IS_WEBGPU){
+          // #691 on WebGPU: the column/refraction ride the node viewports (no #690 render targets), so the
+          // only gate is "camera above the surface" — underwater the seabed-behind-the-surface premise
+          // inverts, so fall back to the baked look (uDepthOn→0). Surface bobs with the swell + tide.
+          wsh.uniforms.uDepthOn.value = (cam.position.y > waterMesh.position.y+0.06) ? 1 : 0;
+          wsh.uniforms.uWindF.value = clamp((windSpd-7)/27,0,1);       // storms whip the breaking line up
+        } else {
+          const dOK=typeof POST!=="undefined"&&POST.aoOk&&POST.on&&POST.rtScene&&POST.rtScene.depthTexture&&cam.position.y>0.12;
+          wsh.uniforms.uDepthOn.value=dOK?1:0;
+          if(dOK){ const pe=cam.projectionMatrix.elements, g=renderer.getContext();
+            wsh.uniforms.uSceneTex.value=POST.rtScene.texture;
+            wsh.uniforms.uSceneDepth.value=POST.rtScene.depthTexture;
+            wsh.uniforms.uAB.value.set(pe[10],pe[14]);
+            wsh.uniforms.uRes.value.set(g.drawingBufferWidth,g.drawingBufferHeight);
+            wsh.uniforms.uWindF.value=clamp((windSpd-7)/27,0,1); } } }
       if(wsh.uniforms.uSunView){ wsh.uniforms.uSunView.value.copy(sky).transformDirection(cam.matrixWorldInverse);   // sun dir → view space
         wsh.uniforms.uSunCol.value.copy(_sunNoon).lerp(_cWarm,warm);                                                 // glitter reddens at dawn/dusk
         if(skyU) wsh.uniforms.uSkyCol.value.copy(skyU.uZen.value).lerp(skyU.uHor.value,0.5).multiplyScalar(0.82); } } }  // reflect the live sky (dimmed so midday water stays blue, not white)
@@ -3998,16 +4005,15 @@ function blitPass(mat,src,dst){
 function buildWaterMaterialTSL(){
   const t=window.TSL;
   // #691 on WebGPU: TRUE per-pixel water column + refraction, fed by the node depth/scene viewports
-  // (viewportDepthTexture / viewportSharedTexture) instead of the WebGL #690 render targets. BUILD-TIME
-  // opt-in: when off (default) the graph is byte-identical to the baked-heightfield look (no viewport
-  // nodes emitted at all). VERIFIED on Metal: perspectiveDepthToViewZ(viewportDepthTexture) gives exact
-  // seabed view-Z (probe: 12.00 m), viewportSharedTexture() returns the opaque scene colour behind the
-  // surface (probe: reddish seabed transmits through shallow water — refraction works), 0 WGSL errors.
-  // TO ENABLE BY DEFAULT: (1) eyeball a real shoreline in-game for parity with the WebGL #691 look, and
-  // (2) gate the depth blocks below by the existing U.uDepthOn uniform set per-frame from cam.position.y
-  //     (>0.12) — the WebGL path disables the column when the camera is UNDERWATER; this build-time flag
-  //     applies it unconditionally, which is only correct above water.
-  const DEPTH691 = !!(typeof window!=="undefined" && window.__WATER_DEPTH);
+  // (viewportDepthTexture / viewportSharedTexture) instead of the WebGL #690 render targets. ON by default
+  // (escape hatch: window.__WATER_NODEPTH=1). The depth blocks below are gated at RUNTIME by U.uDepthOn — a
+  // 0/1 uniform the water tick sets from "camera above the surface" (like the WebGL path's cam.position.y
+  // gate): underwater the "seabed behind the surface" premise inverts, so uDepthOn=0 collapses every block
+  // back to the baked-heightfield look (byte-identical to the pre-#691 graph). VERIFIED on Metal:
+  // perspectiveDepthToViewZ(viewportDepthTexture) gives exact seabed view-Z (probe: 12.00 m),
+  // viewportSharedTexture() returns the opaque scene colour behind the surface (probe: reddish seabed
+  // transmits through shallow water), 0 WGSL errors.
+  const DEPTH691 = !(typeof window!=="undefined" && window.__WATER_NODEPTH) && !!(t.viewportDepthTexture && t.viewportSharedTexture);
   const U={
     uWTime:t.uniform(0),
     uSunView:t.uniform(new THREE.Vector3(0,0,1)),
@@ -4018,8 +4024,8 @@ function buildWaterMaterialTSL(){
     uTexMat:t.uniform(new THREE.Matrix4()),
     uReflStr:t.uniform(0),
     uWindF:t.uniform(0),
-    // #691 feed — inert on WebGPU (uDepthOn never flips; see header comment)
-    uDepthOn:{value:0}, uSceneTex:{value:null}, uSceneDepth:{value:null},
+    // #691 runtime gate (0 underwater → baked look, 1 above water → true column + refraction)
+    uDepthOn:t.uniform(0), uSceneTex:{value:null}, uSceneDepth:{value:null},
     uAB:{value:new THREE.Vector2()}, uRes:{value:new THREE.Vector2(1,1)},
   };
   const wp=t.positionWorld;
@@ -4045,7 +4051,7 @@ function buildWaterMaterialTSL(){
       // water (piers, rocks, swimmers) reads a thin column and earns foam/turquoise the baked field can't see.
       const seabedVZ=t.perspectiveDepthToViewZ(t.viewportDepthTexture(), t.cameraNear, t.cameraFar);
       tv=t.positionView.z.sub(seabedVZ).max(0.0);
-      depth=t.min(depth, tv.mul(0.8));                                   // feed the shared shallow/foam logic
+      depth=t.mix(depth, t.min(depth, tv.mul(0.8)), U.uDepthOn);         // runtime gate: 0 underwater → baked
     }
     const sh1=t.smoothstep(7.0,0.4,depth);                              // 1 in the shallows
     const base=t.mix(lit.rgb, t.vec3(0.16,0.52,0.60), sh1.mul(0.5));    // turquoise shallows
@@ -4058,7 +4064,8 @@ function buildWaterMaterialTSL(){
       const off=N.xy.mul(tv.mul(0.25).min(1.0).mul(0.03).add(0.012));
       const rf=t.viewportSharedTexture(t.screenUV.add(off)).rgb;
       const rfLin=rf.mul(rf);
-      deep=t.mix(rfLin, deep, tv.mul(0.14).negate().exp().oneMinus());  // 1−exp(−tv·0.14): shallow=see-through, deep=dark
+      const refr=t.mix(rfLin, deep, tv.mul(0.14).negate().exp().oneMinus());  // 1−exp(−tv·0.14): shallow=see-through, deep=dark
+      deep=t.mix(deep, refr, U.uDepthOn);                              // runtime gate: 0 underwater → flat deep
     }
     const inb=U.uReflStr.greaterThan(0.01)
       .and(rp.x.greaterThan(0.001)).and(rp.x.lessThan(0.999))
@@ -4083,7 +4090,8 @@ function buildWaterMaterialTSL(){
     if(DEPTH691){
       // true shore fade — the razor waterline edge dissolves over the last ~1.4 m of column, showing the
       // current frame's seabed through genuine transparency (crisp, no refraction lag).
-      a=t.max(t.mix(t.float(0.10), a, t.smoothstep(0.0,1.4,tv)), foam);
+      const aShore=t.max(t.mix(t.float(0.10), a, t.smoothstep(0.0,1.4,tv)), foam);
+      a=t.mix(a, aShore, U.uDepthOn);                                  // runtime gate: 0 underwater → baked alpha
     }
     return t.vec4(rgb,a);
   };
