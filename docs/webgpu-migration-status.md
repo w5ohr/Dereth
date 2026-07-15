@@ -391,9 +391,10 @@ Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. 
   shoreline in-game for parity, then gate the depth blocks by the existing `U.uDepthOn` uniform set per-frame
   from `cam.position.y>0.12` (the WebGL path disables the column UNDERWATER; the build flag applies it
   unconditionally). → machine 2 or machine 1 next.
-- 🔻 **Dungeon/torch embers & spores** (4 map-less `THREE.Points`, size 0.05–0.06) — still 1px on WebGPU, but
-  map-less so **no warning/error**; purely cosmetic on tiny ambient FX. Low priority. `makePointSprites()` can
-  absorb them (extend it to synthesize a soft round sprite when no `map` is given) if desired.
+- ✅ **Dungeon/torch embers & spores** (4 map-less `THREE.Points`: mkFire, mkMotes, brazier, mushroom) —
+  converted to `makePointSprites()` (extended for single-color + a synthesized soft round sprite when no
+  `map`). WebGPU now renders them as sized soft glows instead of 1px specks; WebGL byte-unchanged
+  (`Points`/`PointsMaterial`, colour preserved, 0 errors). **No 1px point FX remain on WebGPU.**
 - 🔻 **`PostProcessing` → `RenderPipeline` r185 rename** — trivial; do at the next three.js bump.
 
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED

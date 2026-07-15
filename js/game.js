@@ -2902,10 +2902,13 @@ function softTex(inner,outer,stops){ // radial-gradient sprite texture
 // WebGL keeps the original THREE.Points path byte-for-byte. `geo` supplies position
 // (+ optional color) attributes; the returned wrapper exposes the same handle the game
 // already drives (object/visible/position) plus sync()/setOpacity().
+let _pointSoftTexC=null;
+function _pointSoftTex(){ if(!_pointSoftTexC) _pointSoftTexC=softTex("rgba(255,255,255,1)","rgba(255,255,255,0)"); return _pointSoftTexC; }
 function makePointSprites(geo, o){
   const blending=o.blending||THREE.AdditiveBlending, fog=o.fog!==false, op0=(o.opacity!=null?o.opacity:1);
+  const col = (o.color!=null) ? new THREE.Color(o.color) : null;   // single tint for map-less/solid systems
   if(!(typeof IS_WEBGPU!=="undefined" && IS_WEBGPU && window.TSL && THREE.SpriteNodeMaterial)){
-    const m=new THREE.PointsMaterial({size:o.size,map:o.map,vertexColors:!!o.vertexColors,
+    const m=new THREE.PointsMaterial({size:o.size,map:o.map,color:(col?col.getHex():0xffffff),vertexColors:!!o.vertexColors,
       sizeAttenuation:o.sizeAttenuation!==false,transparent:true,opacity:op0,fog:fog,
       depthWrite:false,blending:blending});
     const pts=new THREE.Points(geo,m);
@@ -2926,8 +2929,10 @@ function makePointSprites(geo, o){
   ig.instanceCount=n;
   const mat=new THREE.SpriteNodeMaterial({transparent:true, depthWrite:false, blending:blending, fog:fog, toneMapped:false});
   mat.positionNode=TSL.attribute('aCenter','vec3');
-  const samp=TSL.texture(o.map, TSL.uv());
-  mat.colorNode = o.vertexColors ? samp.rgb.mul(TSL.attribute('aColor','vec3')) : samp.rgb;
+  const samp=TSL.texture(o.map||_pointSoftTex(), TSL.uv());   // map-less systems get a soft round sprite
+  mat.colorNode = o.vertexColors ? samp.rgb.mul(TSL.attribute('aColor','vec3'))
+                : col ? samp.rgb.mul(TSL.vec3(col.r,col.g,col.b))
+                : samp.rgb;
   const uOpacity=TSL.uniform(op0);
   mat.opacityNode=samp.a.mul(uOpacity);
   const mesh=new THREE.Mesh(ig, mat);
@@ -28664,16 +28669,17 @@ function mkFire(scale,color,light){
     const s=new THREE.Sprite(m); s.scale.set(sc,sc*1.7,1); g.add(s); return s; };
   const body=mk(color,scale,0.9), core=mk(0xfff2cc,scale*0.55,0.95);
   core.position.y=-scale*0.12;
-  let emb=null;
+  let emb=null, embSpr=null, embGeo=null;
   if(typeof GFX==="undefined"||GFX.motesOn){   // rising embers on Medium+
     const n=7, pos=new Float32Array(n*3);
     for(let i=0;i<n;i++){ pos[i*3]=(Math.random()-0.5)*scale*0.5; pos[i*3+1]=Math.random()*scale*1.6; pos[i*3+2]=(Math.random()-0.5)*scale*0.5; }
-    const bg=new THREE.BufferGeometry(); bg.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    emb=new THREE.Points(bg,new THREE.PointsMaterial({color,size:0.05,transparent:true,opacity:0.85,
-      blending:THREE.AdditiveBlending,depthWrite:false,fog:false,sizeAttenuation:true}));
+    embGeo=new THREE.BufferGeometry(); embGeo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    embSpr=makePointSprites(embGeo,{color,size:0.05,gpuSize:0.07,transparent:true,opacity:0.85,
+      blending:THREE.AdditiveBlending,fog:false,sizeAttenuation:true});   // #webgpu: sized soft ember glows (1px points otherwise)
+    emb=embSpr.object;
     g.add(emb);
   }
-  PROPFIRE.push({g,light:light||null,s1:body,s2:core,emb,sc:scale,seed:Math.random()*97,baseI:null});
+  PROPFIRE.push({g,light:light||null,s1:body,s2:core,emb,embSpr,embGeo,sc:scale,seed:Math.random()*97,baseI:null});
   return {g,light:light||null};
 }
 function updatePropFires(dt){
@@ -28693,10 +28699,10 @@ function updatePropFires(dt){
     f.s1.scale.set(f.sc*(0.86+0.24*fl),f.sc*1.7*(0.8+0.34*fl),1);
     f.s2.scale.set(f.sc*0.55*(0.9+0.2*fl),f.sc*0.94*(0.82+0.3*(1.64-fl)),1);
     f.s1.material.rotation=0.10*Math.sin(t*9+f.seed);
-    if(f.emb){ const a=f.emb.geometry.attributes.position, ar=a.array;
+    if(f.emb){ const ar=f.embGeo.attributes.position.array;
       for(let e=0;e<ar.length;e+=3){ ar[e+1]+=dt*f.sc*(0.9+((e*7)%5)*0.2);
         if(ar[e+1]>f.sc*1.8){ ar[e+1]=f.sc*0.1; ar[e]=(Math.random()-0.5)*f.sc*0.5; ar[e+2]=(Math.random()-0.5)*f.sc*0.5; } }
-      a.needsUpdate=true; }
+      f.embSpr.sync(); }
   }
 }
 // ── #706: the ONE chest builder — every chest in the game (boss hoards, locked caches, sealed
@@ -28839,13 +28845,14 @@ function mkMotes(x,y,z,color){
   const n=10, pos=new Float32Array(n*3), seed=Math.random()*70;
   for(let i=0;i<n;i++){ pos[i*3]=rnd(-1.8,1.8); pos[i*3+1]=rnd(-1.2,1.6); pos[i*3+2]=rnd(-1.8,1.8); }
   const bg=new THREE.BufferGeometry(); bg.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  const p=new THREE.Points(bg,new THREE.PointsMaterial({color:color||0xffd9a0,size:0.035,transparent:true,opacity:0.5,
-    blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+  const spr=makePointSprites(bg,{color:color||0xffd9a0,size:0.035,gpuSize:0.05,transparent:true,opacity:0.5,
+    blending:THREE.AdditiveBlending,fog:false,sizeAttenuation:true});   // #webgpu: sized soft dust motes
+  const p=spr.object;
   p.position.set(x,y,z);
-  PROPANIM.push({g:p,tick:(t,dt)=>{ const ar=p.geometry.attributes.position.array;
+  PROPANIM.push({g:p,tick:(t,dt)=>{ const ar=bg.attributes.position.array;
     for(let e=0;e<ar.length;e+=3){ ar[e]+=Math.sin(t*0.35+e*1.3+seed)*dt*0.10;
       ar[e+1]+=Math.cos(t*0.22+e*0.9+seed)*dt*0.06; ar[e+2]+=Math.cos(t*0.30+e*1.7+seed)*dt*0.10; }
-    p.geometry.attributes.position.needsUpdate=true; }});
+    spr.sync(); }});
   return p;
 }
 // #716: still water on worn stone — a glossy near-black disc that catches torch speculars,
@@ -28924,17 +28931,18 @@ function buildProp(type,lx,lz,color){
     for(let i=0;i<n;i++){ const a=Math.random()*6.28,r=Math.random()*1.4;
       pos[i*3]=Math.cos(a)*r; pos[i*3+1]=Math.random()*1.6; pos[i*3+2]=Math.sin(a)*r; }
     const bg=new THREE.BufferGeometry(); bg.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    const emb=new THREE.Points(bg,new THREE.PointsMaterial({color:0xff8a30,size:0.06,transparent:true,opacity:0.9,
-      blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+    const embSpr=makePointSprites(bg,{color:0xff8a30,size:0.06,gpuSize:0.08,transparent:true,opacity:0.9,
+      blending:THREE.AdditiveBlending,fog:false,sizeAttenuation:true});   // #webgpu: sized soft ember glows
+    const emb=embSpr.object;
     emb.position.set(lx,0.1,lz); o.push(emb);
     let baseI=null;
     PROPANIM.push({g:pool,tick:(t,dt)=>{ mat.uniforms.uT.value=t;
       if(baseI==null) baseI=lt.intensity;
       lt.intensity=baseI*(0.8+0.14*Math.sin(t*1.7)+0.06*Math.sin(t*4.3));
-      const ar=emb.geometry.attributes.position.array;
+      const ar=bg.attributes.position.array;
       for(let e=0;e<ar.length;e+=3){ ar[e+1]+=dt*(0.35+((e*7)%4)*0.12);
         if(ar[e+1]>1.7){ const a=Math.random()*6.28,r=Math.random()*1.4; ar[e]=Math.cos(a)*r; ar[e+1]=0.05; ar[e+2]=Math.sin(a)*r; } }
-      emb.geometry.attributes.position.needsUpdate=true; }});
+      embSpr.sync(); }});
   }
   else if(type==="ice"){   // #705: a clustered spire of glassy shards over a frost skirt
     const g=new THREE.Group(); g.position.set(lx,0,lz);
@@ -28967,16 +28975,17 @@ function buildProp(type,lx,lz,color){
     const n=8, pos=new Float32Array(n*3);
     for(let i=0;i<n;i++){ pos[i*3]=(Math.random()-0.5)*1.6; pos[i*3+1]=0.5+Math.random()*1.6; pos[i*3+2]=(Math.random()-0.5)*1.6; }
     const bg=new THREE.BufferGeometry(); bg.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    const spores=new THREE.Points(bg,new THREE.PointsMaterial({color,size:0.045,transparent:true,opacity:0.7,
-      blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+    const sporeSpr=makePointSprites(bg,{color,size:0.045,gpuSize:0.06,transparent:true,opacity:0.7,
+      blending:THREE.AdditiveBlending,fog:false,sizeAttenuation:true});   // #webgpu: sized soft drifting spores
+    const spores=sporeSpr.object;
     g.add(spores); o.push(g);
     const lt=new THREE.PointLight(color,1.0,14); lt.position.set(lx,1.7,lz); o.push(lt);
     PROPANIM.push({g,tick:(t,dt)=>{ const pu=0.45+0.2*Math.sin(t*1.4);
       for(const m of caps) m.emissiveIntensity=pu;
-      const ar=spores.geometry.attributes.position.array;
+      const ar=bg.attributes.position.array;
       for(let e=0;e<ar.length;e+=3){ ar[e+1]+=dt*0.14; ar[e]+=Math.sin(t*0.9+e)*dt*0.06;
         if(ar[e+1]>2.3) ar[e+1]=0.5; }
-      spores.geometry.attributes.position.needsUpdate=true; }});
+      sporeSpr.sync(); }});
   }
   else if(type==="crystal"){   // #705: faceted prism spars (hex bipyramids), inner glow pulsing out of phase
     const g=new THREE.Group(); g.position.set(lx,0,lz);
