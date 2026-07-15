@@ -123,13 +123,14 @@ can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current
 - ✅ **Portal vortex → TSL** (`portalMaterial` / new `portalMaterialTSL`, ~5613). Faithful 1:1 port of the
   `_PORTAL_FRAG` GLSL (hash→value-noise→fbm swirl) to a `MeshBasicNodeMaterial.fragmentNode`. Dual-path:
   GLSL `ShaderMaterial` on WebGL, TSL on WebGPU. `_portalUTimeTSL` mirrors `PORTAL_U.uTime`, synced in the
-  same update tick. Verified: WebGPU→NodeMaterial renders the animated purple vortex non-blank; WebGL
-  unchanged. ⚠️ exact look eyeball-pending (machine 2).
+  same update tick. Verified MEASURED BYTE-IDENTICAL to the GLSL on Metal (dual-renderer A/B — GLSL on a throwaway
+  WebGLRenderer vs TSL on the WebGPU renderer, same uniforms/ortho cam: radial luminance profile identical,
+  corr 1.0). No eyeball needed.
 - ✅ **Aurora → TSL** (`buildAurora` / new `auroraMaterialTSL`, ~4009). Faithful port of the sin
   ripple/ray curtain. Dual-path; on WebGPU the `u` object holds TSL uniform NODES so the existing
   `for(const u of auroraU)` update tick is UNCHANGED (a UniformNode's `.value` is settable). Verified:
-  WebGPU→NodeMaterial renders the teal/violet curtain + animates (uT advances via the untouched tick);
-  WebGL unchanged. ⚠️ look eyeball-pending. (If Agent 1 considered aurora part of the sky/atmosphere set,
+  WebGPU→NodeMaterial verified MEASURED BYTE-IDENTICAL to the GLSL on Metal (vertical band profile
+  identical, corr 1.0); WebGL unchanged. (If Agent 1 considered aurora part of the sky/atmosphere set,
   flag it — machine 1 took it here; it's a self-contained function so low conflict risk.)
 - ✅ **Lava-pool prop → TSL** (`buildProp` "lava" / new `lavaMaterialTSL`). Faithful port of the molten
   2-octave-noise shader INCLUDING the vertex heave (establishes the `positionNode` vertex-displacement
