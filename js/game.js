@@ -6085,7 +6085,7 @@ function updatePortalFx(g,dt){
   }
 }
 function refreshPortalFx(){                                      // swap lens-fallback portals to the real effect
-  if(!PORTAL_FX) return;
+  if(!PORTAL_FX||(IS_WEBGPU&&!window.__PFX_TSL)) return;         // #webgpu: keep the TSL vortex lens (see buildPortal)
   const up=(mesh)=>{ const u=mesh&&mesh.userData; if(!u||u.pfx||!u.lens) return;
     if(buildPortalFx(mesh)){ mesh.remove(u.lens); u.lens.geometry.dispose(); u.lens.material.dispose(); u.lens=null; } };
   if(typeof portals!=="undefined") for(const pt of portals) up(pt.mesh);
@@ -6094,7 +6094,10 @@ function refreshPortalFx(){                                      // swap lens-fa
 }
 function buildPortal(name){
   const g=new THREE.Group();
-  if(PORTAL_FX&&buildPortalFx(g)){ /* the real retail emitters */ }
+  // #webgpu: the retail particle replay is gated OFF on WebGPU until the billboard port is verified
+  // (see buildPortalFx) — portals get the ANIMATED TSL VORTEX lens instead of invisible particles.
+  const wantPfx=PORTAL_FX&&(!IS_WEBGPU||window.__PFX_TSL);
+  if(wantPfx&&buildPortalFx(g)){ /* the real retail emitters */ }
   else{ const lens=new THREE.Mesh(new THREE.CircleGeometry(1.55,64), portalMaterial());
     lens.scale.set(1.05,1.55,1); lens.position.y=2.3; g.add(lens); g.userData.lens=lens; }   // fallback until the pack loads
   const light=new THREE.PointLight(0x9a6aff,1.6,18); light.position.y=2.2; g.add(light);
