@@ -687,3 +687,13 @@ True draw counting (backend.draw wrap) + a three-arm comparison at the standard 
   in future three releases and re-run this table.
 - Why Metal shows WebGPU FASTER: their WebGL baseline is ANGLE→Metal (weak), and Apple single-core JS
   absorbs the frontend cost — consistent, not contradictory.
+
+**Machine 2 — mitigation tests from the D3D12-slowness research (all four levers evaluated):**
+| lever | result |
+|-------|--------|
+| Vulkan backend (`--use-webgpu-adapter=vulkan`) | **No change**: 40.5ms/22.5fps vs D3D12 42.8ms/22.1fps. Flag verified honored (see next row). |
+| Dawn D3D11 (`--use-webgpu-adapter=d3d11`) | Adapter unavailable → requestAdapter()=null → game fell back to WebGL2 backend (23.3fps, matches glfallback) — proves the flag mechanism works, so the Vulkan number is real. |
+| Chrome Canary (newer Dawn) | Not installed on this box. Note: per the three-arm test the Dawn slice is only ~1.2× of the 2.7× total, so best case ≈42.8→37ms — worth re-checking when Canary/newer stable lands, not decisive. |
+| r186 UBO work (#30560) | The real fix — the measured bottleneck IS the per-render-item UBO/frontend JS (backend-independent, confirmed by identical Vulkan + slow glfallback). Re-run the tables on r186. |
+Bottom line for the cutover: backend swaps do not help on Windows; the per-backend default policy
+(Metal→WebGPU, Windows→WebGL) stands until three.js r186's UBO overhaul, then re-measure.
