@@ -197,6 +197,18 @@ read zero. Hard-set the camera INSIDE a `renderComposite` override instead (scra
 gate every run on an advancing `renderer.info.render.frame` (spawn-burst device-loss flake wedges ~50%
 of tier-2 runs), and freeze `WIND.uT/uS` behind `defineProperty` getters for deterministic pose A/Bs.
 
+**FOGX height/sun fog → TSL `scene.fogNode`: DONE** (0d1b39d8, 2026-07-15). One `buildGpuFog()` node
+graph replaces the ShaderChunk surgery + `Material.prototype.onBuild` hack (both dead on WebGPU — fog
+was silently absent there). Same closed-form maths; `positionWorld`/`cameraPosition` builtins replace
+the `dFogCam` matrix (reflection pass will fog correctly for free — drop the `FOGX.cam` swap when water
+lands); `scene.fog.near/far/color` tracked live via `reference()` nodes so all existing writers work
+unchanged; `FOGX.sunDir/sun/h` are TSL uniform nodes under `?gpu=1` (`.value` interface preserved).
+Verified: graph builds clean; aerial-perspective fog renders correctly (eyeballed screenshots); far
+crush via the weather system's own `fogFar`/`targetFar` moves 219k px; height + inscatter uniforms
+drive pixels; sky (fog:false) stays exempt; WebGL default path re-verified clean.
+Testing note: `scene.fog.far` is rewritten EVERY frame by the weather lerp (game.js ~2925) AND AC_SKY
+(~3091) — to test fog distance, drive `targetFar`/`fogFar` and null `AC_SKY`, don't write `fog.far`.
+
 **NEW OPEN ISSUE (pre-existing, not from the sway change): static radial "streak" artifact on WebGPU
 at gfx tier ≥2.** Bright white/blue lines radiating from a point near screen center, pixel-STATIC
 across frames, localized around the player (a hard camera aimed at a tree 240m away shows none).
