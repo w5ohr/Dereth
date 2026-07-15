@@ -531,3 +531,26 @@ merge → main.
 - ✅ Sky + portal vortex post-compensation verified during the parity work.
 - ⬜ Lava post-compensation: no lava prop spawns within this seed's streaming range on either backend —
   falls to machine 1's Metal re-measure (which is still the outstanding action from 2265843f).
+
+**Agent 2 / machine 2 — Phase D PERF PASS (D3D12, headless Chrome, identical seed/framing/session):**
+
+| scenario                | WebGL fps (avg/med/p95 ms) | WebGPU fps (avg/med/p95 ms) | ratio |
+|-------------------------|---------------------------|-----------------------------|-------|
+| tier 2, static spawn    | 41.8 (23.9/21.0/39.1)     | 21.2 (47.1/43.9/62.6)       | 0.51x |
+| tier 2, orbiting camera | 29.8 (33.5/31.4/65.9)     | 15.3 (65.3/65.5/84.5)       | 0.51x |
+| tier 3 (Ultra), static  | 27.5 (36.4/31.4/53.8)     | 14.0 (71.3/68.1/87.2)       | 0.51x |
+
+**WebGPU is a consistent ~2x SLOWER on this box, and it is CPU-bound in the renderer**: renderComposite
+JS time ~= the whole frame (43-67ms) at 5.4-12k draw calls — r185's node-renderer per-draw encode
+overhead dominates. The GPU itself is not the limit (raf ~= rc). Implications:
+- Do NOT default Windows/D3D12 to WebGPU at current perf; the auto-fallback flip should keep a
+  per-backend default or tier bias until this improves.
+- The three.js BUMP EVALUATION just became the highest-leverage next step: upstream WebGPU renderer
+  perf has improved materially since r185, and the bump may also delete the single-cascade +
+  forest-split workarounds. Re-run this table after the bump.
+- Longer-term game-side lever: draw-call reduction (5k+ calls at spawn) benefits both backends.
+- Also observed: the tier-2->3 switch still emits a short transient ShadowDepthTexture fault burst
+  (the known lazy shadow-RT resize; self-heals, no device loss) — the delayed invalidation misses the
+  in-game applyGfxSetting path; harmless but track it.
+(Caveat: desktop Chrome shared the GPU during measurement; both arms ran back-to-back under identical
+conditions and the bottleneck is CPU-side encode, so the comparison stands.)
