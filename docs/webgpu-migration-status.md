@@ -90,12 +90,18 @@ SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` i
   exposure stays a runtime uniform → brightness setting works live). Replaces the plain direct render.
   Verified: game loop drives `GPUPOST.render()` (sync) with zero errors; richer output than direct
   (avgLum 24.8 vs 9.3; bloom spreads light); WebGL default path untouched (WebGPU POST modules not loaded).
-  ⚠️ **Bloom params (strength/radius/threshold) are first-pass defaults — need an on-hardware eyeball to
-  match the WebGL bloom.** Vignette + brightness/contrast grade + SSAO + god-rays not yet in the graph.
-- ⬜ **Remaining FX/post:** add vignette + grade + SSAO + god-rays to the `PostProcessing` graph and tune
-  bloom to match WebGL; portal FX, aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL
-  (dual-path: keep GLSL for classic WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops
-  classic WebGL). All of this is inherently visual → do/verify on a machine with a VISIBLE browser.
+  ⚠️ **Bloom params (strength/radius/threshold) are first-pass defaults — need an on-hardware eyeball.**
+- ✅ **Full POST grade ported to the node graph.** `buildGpuPost()` now reproduces the WebGL `POST.comp`
+  composite verbatim in TSL: saturation (1.18) → S-curve (0.16) → warm/cool tint → additive bloom →
+  brightness/contrast grade → vignette (0.33) → dither. The grade MATH is copied from the GLSL, so it
+  matches by construction; `applyGrade()` drives the `uBright`/`uContrast` uniforms (Settings sliders),
+  and brightness is applied once (grade owns it; exposure stays at base, no double-apply). Verified: graph
+  builds + loop-drives with zero errors; brightness/contrast uniforms respond live (brightness 0.6→1.6 =
+  lum 8.8→26.7); WebGL path untouched (`applyGrade` GPUPOST branch is null-guarded).
+- ⬜ **Remaining FX/post:** SSAO + god-rays as their own passes into the node graph; tune bloom to match
+  WebGL; portal FX, aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL (dual-path: keep GLSL
+  for classic WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops classic WebGL). Inherently
+  visual → do/verify on a machine with a VISIBLE browser (this box can't pixel-verify WebGPU).
 
 > ⚠️ **Verification limitation (this dev box):** the Browser-pane preview is a HIDDEN pane
 > (`document.hidden`, `innerWidth=0`, rAF throttled), and WebGPU canvas→drawImage readback is unreliable

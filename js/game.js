@@ -3841,18 +3841,33 @@ function renderReflection(){
   sh.uniforms.uReflMap.value=REFL.rt.texture;
   sh.uniforms.uReflStr.value=0.55;
 }
-// #webgpu Phase C: the WebGPU POST pipeline (TSL node graph). Mirrors the WebGL POST's bloom; tonemap is
-// applied on the PostProcessing output (outputColorTransform). Bloom params are first-pass defaults —
-// they want an on-hardware eyeball to match the WebGL bloom exactly (can't be pixel-tuned on a headless box).
+// #webgpu Phase C: the WebGPU POST pipeline (TSL node graph). Faithful port of the WebGL POST composite
+// (js/game.js POST.comp): saturation → S-curve → warm/cool tint → additive bloom → brightness/contrast
+// grade → vignette → dither, tonemapped on the PostProcessing output (outputColorTransform, ACES). The
+// GRADE math is copied verbatim from the GLSL so it matches by construction; the bloom PARAMS
+// (strength/radius/threshold) are first-pass defaults that want an on-hardware eyeball to match exactly.
 let GPUPOST=null;
-const GPUBLOOM={strength:0.6, radius:0.4, threshold:0.85};
+const GPUBLOOM={strength:0.74, radius:0.4, threshold:0.85};   // strength mirrors the WebGL composite's bloom `strength` (0.74)
 function buildGpuPost(){
-  const pass=window.TSL.pass, bloom=window.bloomNode;
+  const T=window.TSL, bloom=window.bloomNode;
+  const {pass,uv,vec2,vec3,float,mix,clamp,smoothstep,fract,sin,uniform,luminance}=T;
   GPUPOST=new window.PostProcessing(renderer);
   const scenePass=pass(scene,cam);
   const bloomPass=bloom(scenePass, GPUBLOOM.strength, GPUBLOOM.radius, GPUBLOOM.threshold);
-  GPUPOST.outputNode=scenePass.add(bloomPass);
-  GPUPOST._bloom=bloomPass; GPUPOST._scenePass=scenePass;
+  const uBright=uniform(1.0), uContrast=uniform(1.0), uVig=uniform(0.33);   // vig 0.33 mirrors POST.comp's `vig`
+  let c=scenePass.rgb;
+  const l=luminance(c);
+  c=mix(vec3(l),c,float(1.18));                                            // richer saturation
+  c=mix(c, c.mul(c).mul(float(3.0).sub(c.mul(2.0))), float(0.16));         // gentle S-curve
+  c=c.mul(mix(vec3(0.95,0.975,1.07),vec3(1.08,1.02,0.92),clamp(l,0.0,1.0))); // cooler shadows / warmer highlights
+  c=c.add(bloomPass.rgb);                                                  // additive glow (bloom pre-scaled by strength)
+  c=c.sub(0.5).mul(uContrast).add(0.5).mul(uBright).max(0.0);              // brightness/contrast grade (Settings sliders)
+  const q=uv().sub(0.5), d=q.dot(q);
+  c=c.mul(float(1.0).sub(smoothstep(0.24,0.82,d).mul(uVig)));              // vignette
+  const n=fract(sin(uv().dot(vec2(12.9898,78.233))).mul(43758.5453));
+  c=c.add(n.sub(0.5).div(255.0));                                          // dither — kills sky-gradient banding
+  GPUPOST.outputNode=c;
+  GPUPOST._uBright=uBright; GPUPOST._uContrast=uContrast; GPUPOST._uVig=uVig; GPUPOST._bloom=bloomPass;
 }
 function renderComposite(){
   if(IS_WEBGPU){
@@ -3861,14 +3876,18 @@ function renderComposite(){
     // brightness-graded exposure — the mode is BAKED into the PostProcessing output at build time, the
     // exposure is a runtime uniform. Guarded writes → only touch on drift (no per-frame recompile).
     if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    const wantExp=TONE_EXPOSURE_BASE*clamp(+settings.brightness||1,0.4,2.0);
-    if(Math.abs(renderer.toneMappingExposure-wantExp)>1e-4) renderer.toneMappingExposure=wantExp;
     renderer.setRenderTarget(null);
-    // Node-graph POST: scene pass + bloom, tonemapped on output. Built lazily (needs toneMapping=ACES set
-    // above so ACES bakes in). Falls back to a plain direct render if the WebGPU POST modules didn't load.
-    if(window.PostProcessing&&window.TSL&&window.bloomNode){ if(!GPUPOST) buildGpuPost(); GPUPOST.render(); }
-    else renderer.render(scene,cam);
-    return;   // water reflection RT + the rest of the GLSL POST (vignette/AO/rays/grade) still WebGL-only
+    // Node-graph POST: scene grade + bloom + vignette, tonemapped on output. Built lazily (needs
+    // toneMapping=ACES set above so ACES bakes in), then applyGrade() syncs the brightness/contrast
+    // uniforms. Falls back to a plain direct render if the WebGPU POST modules didn't load.
+    const havePost=window.PostProcessing&&window.TSL&&window.bloomNode;
+    if(havePost&&!GPUPOST){ buildGpuPost(); applyGrade(); }
+    // exposure: when the node grade owns brightness (like the WebGL composite) keep exposure at base;
+    // only the plain-fallback render folds brightness into exposure. Guarded → no per-frame recompile.
+    const wantExp=TONE_EXPOSURE_BASE*(GPUPOST?1:clamp(+settings.brightness||1,0.4,2.0));
+    if(Math.abs(renderer.toneMappingExposure-wantExp)>1e-4) renderer.toneMappingExposure=wantExp;
+    if(GPUPOST) GPUPOST.render(); else renderer.render(scene,cam);
+    return;   // water reflection RT + SSAO + god-rays still WebGL-only (added to the node graph next)
   }
   renderReflection();
   cam.updateMatrixWorld(); FOGX.cam.value.copy(cam.matrixWorld);   // #689: restore the true camera for the main pass (and hand the fog this frame's matrix)
@@ -19506,9 +19525,12 @@ function applyGrade(){
   if(typeof POST!=="undefined"&&POST.comp&&POST.comp.uniforms.uBright){
     POST.comp.uniforms.uBright.value=br; POST.comp.uniforms.uContrast.value=ct;
   }
-  // exposure carries brightness only when the composite isn't doing it (POST off), so it never double-applies
+  if(typeof GPUPOST!=="undefined"&&GPUPOST&&GPUPOST._uBright){   // #webgpu: the TSL grade owns brightness/contrast, mirroring POST.comp
+    GPUPOST._uBright.value=br; GPUPOST._uContrast.value=ct;
+  }
+  // exposure carries brightness only when a composite/grade isn't doing it, so it never double-applies
   if(typeof renderer!=="undefined"&&renderer){
-    const postGrades=(typeof POST!=="undefined"&&POST.on&&POST.comp);
+    const postGrades=(typeof POST!=="undefined"&&POST.on&&POST.comp)||(typeof GPUPOST!=="undefined"&&!!GPUPOST);
     renderer.toneMappingExposure=TONE_EXPOSURE_BASE*(postGrades?1:br);
   }
 }
