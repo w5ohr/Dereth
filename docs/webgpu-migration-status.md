@@ -502,11 +502,25 @@ Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so 
   Jun 25, r185.1 Jul 1), so **r186 — where the WebGPU encode-perf work would land — is ~Aug+, not out yet.**
   ⇒ The "bump fixes the D3D12 encode gap" plan is **parked**: nothing to bump to. Re-check when r186 ships,
   then re-run machine 2's D3D12 perf table. The actionable levers NOW are B2a + the cutover default policy:
-- **B2a. Draw-call reduction (game-side) — the real highest-leverage item, replaces the bump.** Machine 2's
-  D3D12 profile is **CPU-encode-bound and encode cost ∝ draw-call count** (5–12k calls at spawn). Since no
-  engine bump is available, cutting draw calls is the only lever that directly attacks the D3D12 WebGPU
-  bottleneck — and it speeds up BOTH backends. Candidates: merge/instance more static props, atlas materials,
-  raise the instancing threshold, coarser distant LOD. This is where the D3D12 perf win now comes from.
+- **B2a. Draw-call reduction — PROFILED (machine 1, Metal, 2026-07-15); the premise needs machine-2 repro.**
+  Profiled native-WebGPU draw calls at tier 3 (Ultra), both via `renderer.renderAsync` AND the real
+  `renderComposite`→GPUPOST path, at the char spawn (0,-9) AND warped into Holtburg, all yaws:
+  **draw calls = 210–526 everywhere. I could NOT reproduce machine 2's 5–12k on Metal.** Frustum culling is
+  healthy (Holtburg: 7,773 ancestor-visible meshes → 516 drawn); shadows add ~0 calls (single directional
+  cascade after machine 2's fix); the forest is instanced (few calls, ~10 M tris). **⇒ The scene is NOT
+  draw-call-pathological on Metal.** Two possibilities for the D3D12 gap, and machine 2 must disambiguate:
+  1. **Their 5–12k is a specific denser scenario** (a forest vista? a torch-heavy dungeon with many
+     shadow-casting point lights? a different seed?) — if so, **machine 2: post the EXACT repro (char/seed/
+     location/camera)** so B2a targets a reproducible frame, not a guess.
+  2. **Or D3D12's Dawn encoder is just ~2× slower PER DRAW than Metal's at r185** even at ~500 calls — that's
+     an encoder characteristic fixed by the r186 bump (unavailable), NOT by game-side work; draw-call cutting
+     only partially mitigates.
+  **One clearly-actionable, backend-agnostic win found regardless — MATERIAL PROLIFERATION.** ~1,973 distinct
+  materials among 7,773 active meshes at Holtburg (more at spawn). Each distinct material = a pipeline +
+  bind-group; on WebGPU, per-draw pipeline/bind-group STATE CHANGES are exactly the CPU-encode cost machine 2
+  is bound on. **Deduping/sharing materials (canonicalize identical `MeshStandard` params to one instance)
+  cuts encode-state churn on both backends** and is worth doing independent of the draw-call mystery. Candidate
+  next step: audit the prop/structure/dungeon builders for per-object `new Material()` that could be shared.
 - **B3. Author the cutover** (AFTER the bump + the perf re-measure decides the default policy). Make
   `WebGPURenderer` the default per the agreed policy (blanket flip if the bump closes the D3D12 gap, else
   per-backend), retire `?gpu=1`, and DELETE the classic path: the `WebGLRenderer` branch of `initThree`, the
