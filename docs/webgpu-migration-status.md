@@ -438,3 +438,14 @@ Remaining Phase D: feature-detect auto-fallback + default flip, browser matrix (
 Chrome/Edge/Firefox here), perf pass, refcounted resource manager (or D3D12-gating of never-destroy),
 far-cascade restore via three bump, __PFX_TSL billboards, uv warnings, PostProcessing rename, then
 merge webgpu → main.
+
+**Agent 2 / machine 2 (943b8de1): RESOURCE LIFECYCLE DONE — liveness-swept destruction.** The Phase-2
+manager landed without hand-refcounting: dispose() enqueues; the drain (every ~30 frames, batches ≥1
+batch old) traverses the scene once and destroys only geometries/materials NOTHING attached still
+references — shared survivors stay resident (structural Mode-B1 fix). Textures stay permanently
+resident (cached/shared class, bounded by content). The transit-window leak is removed. Verified on
+D3D12: exitDungeon reclaims killed=2850/kept=327 with ZERO faults; seeded + long-teleport flows live;
+WebGL untouched. Also confirmed: machine 1's SpriteNodeMaterial portal particles RENDER ON D3D12.
+Remaining Phase D: auto-fallback + default flip, browser matrix, perf pass, three bump evaluation
+(far cascade), machine-1 re-measure of portal/aurora/lava post-_rawFragTSL, water #691 flag flip,
+merge → main.
