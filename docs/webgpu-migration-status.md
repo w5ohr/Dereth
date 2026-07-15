@@ -184,6 +184,29 @@ can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current
 headed Chrome on native WebGPU: world renders, sky gradient correct, `skyU` writes drive it live, zero
 NodeBuilder errors for the sky. Agent 1 conversion notes: `docs/webgpu-agent1-tsl-notes.md`.
 
+**Wind-sway → TSL: DONE** (810fb85c, 2026-07-15). Under `?gpu=1` `WIND.uT/uS` are shared TSL uniform
+nodes (`.value` interface preserved → `updateWind` and the GLSL binding untouched); `addWindSway` gets a
+TSL branch composing a height-masked two-sine sway onto `positionNode`. r185 ordering note: the instance
+transform is applied to `positionLocal` BEFORE `positionNode` runs (`setupPosition`), so the height mask
+reads `positionGeometry.y` and the phase reads instanced `positionLocal.xz`. Verified 3 ways on native
+WebGPU: isolated r185 repro sways; injected in-game probe mesh sways (60k px pose delta); real birch
+canopy visibly displaced between frozen wind poses with the trunk planted.
+⚠️ **Verification lesson (cost hours): do NOT trust `player.yaw/pitch` writes to aim the camera** — the
+smoothed over-shoulder rig ignores them enough that the subject drifts out of frame and pixel-diffs
+read zero. Hard-set the camera INSIDE a `renderComposite` override instead (scratchpad `treetest.js`),
+gate every run on an advancing `renderer.info.render.frame` (spawn-burst device-loss flake wedges ~50%
+of tier-2 runs), and freeze `WIND.uT/uS` behind `defineProperty` getters for deterministic pose A/Bs.
+
+**NEW OPEN ISSUE (pre-existing, not from the sway change): static radial "streak" artifact on WebGPU
+at gfx tier ≥2.** Bright white/blue lines radiating from a point near screen center, pixel-STATIC
+across frames, localized around the player (a hard camera aimed at a tree 240m away shows none).
+Present with the sway change stashed, so it's an existing tier-2 WebGPU rendering bug — suspects are
+the player-area grass/wheat field or one of the ShaderMaterial-fallback objects (WebGPU renders raw
+`ShaderMaterial` as a blank `NodeMaterial` fallback, it does NOT skip them: found 1× cylinder mesh with
+`uT,uA,uHueOff` uniforms + ~20 `Points` with `map`). A visibility-bisect run (scratchpad
+`streakhunt.js`) returned all-zero diffs but had no liveness gate — rerun it WITH the gate to identify
+the object. Doesn't block Phase C work; pollutes player-POV screenshots.
+
 **Cross-cutting fixes landed with it (both were breaking EVERY WebGPU overworld run):**
 1. **Point lights were 100% dark on WebGPU.** The virtual-light-pool wrapper (game.js ~3266) subclasses
    `THREE.PointLight` anonymously, and r185's node library maps light→node by EXACT constructor → all
