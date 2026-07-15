@@ -622,3 +622,22 @@ overhead dominates. The GPU itself is not the limit (raf ~= rc). Implications:
   in-game applyGfxSetting path; harmless but track it.
 (Caveat: desktop Chrome shared the GPU during measurement; both arms ran back-to-back under identical
 conditions and the bottleneck is CPU-side encode, so the comparison stands.)
+
+**Machine 2 — RE-DIAGNOSIS after B2a (broken counter confirmed, attribution corrected):**
+True draw counting (backend.draw wrap) + a three-arm comparison at the standard spawn (tier 2, static):
+| arm | frontend | backend | true draws/frame | frameMs med | fps |
+|-----|----------|---------|------------------|-------------|-----|
+| webgl | classic WebGLRenderer | ANGLE D3D11 | n/a | 15.7 | 55 |
+| glfallback | node renderer | ANGLE D3D11 (SAME GL) | 1429 | 35.8 | 25.3 |
+| gpu | node renderer | Dawn D3D12 | 1731 | 42.8 | 22.1 |
+- Machine 1 was right: info.render.calls was session-cumulative garbage; TRUE draws are ~1.4-1.7k/frame
+  (17 render passes: scene+shadow+reflection+bloom mips+rtt+output). No draw explosion.
+- **Corrected attribution: ~80% of the D3D12 gap is the r185 NODE-RENDERER FRONTEND (per-object JS),
+  backend-independent** — the same node renderer on the same ANGLE/GL backend is already 2.3× slower
+  than classic WebGL. Dawn/D3D12 submission adds only ~1.2× on top. A three.js bump would NOT have
+  fixed this (it's architectural frontend cost in r185, matching why the byte-identical r185.1 exists).
+- Levers, corrected: (a) per-backend default stands (Windows→WebGL for now); (b) reduce draws/passes
+  (shadowEvery, REFL.rate, batching) — pays 2× on the node renderer; (c) track upstream frontend perf
+  in future three releases and re-run this table.
+- Why Metal shows WebGPU FASTER: their WebGL baseline is ANGLE→Metal (weak), and Apple single-core JS
+  absorbs the frontend cost — consistent, not contradictory.
