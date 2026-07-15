@@ -3496,17 +3496,20 @@ async function initThree(){
       // disposal ~100/s, scene/lights/fog cache keys all stable — never a cache-key churn). Route
       // EVERY Material/BufferGeometry/Texture dispose through the 2-tick deferral queue at the
       // prototype, instead of patching each site. WebGL keeps synchronous dispose (lazy re-upload).
-      // Mode B1 in practice: shared-but-unmarked resources (cached canvas textures, merged-archetype
-      // geometry) are disposed by one object's teardown while ANOTHER live object still binds them —
-      // on WebGPU ONE such destroy faults every subsequent submit and freezes the canvas forever
-      // (repro: seeded spawn, any long teleport, dungeon exit). 2-tick deferral doesn't help (the
-      // survivor still binds the buffer whenever it dies), and the shared set is spread across the
-      // 33k-line codebase. Until the Phase-2 refcounted resource manager lands, GPU resources are
-      // simply never destroyed on WebGPU (A/B-verified: zero faults, live canvas, all flows). VRAM
-      // grows with play session (grass restreams, label churn) — bounded enough for Phase C/D work.
-      THREE.Material.prototype.dispose=function(){};
-      THREE.BufferGeometry.prototype.dispose=function(){};
-      THREE.Texture.prototype.dispose=function(){};
+      // Phase-2 RESOURCE LIFECYCLE (supersedes the interim never-destroy): Mode B1 = a shared-but-
+      // unmarked resource destroyed while a LIVE object still binds it freezes the canvas forever on
+      // D3D12. Instead of hand-refcounting a 33k-line codebase, destruction is gated by a LIVENESS
+      // SWEEP: every dispose() enqueues; the drain (renderComposite, every ~30 frames, double-buffered
+      // so items are ≥1 batch old before destruction) traverses the scene once and only destroys
+      // geometries/materials that NOTHING attached still references — still-referenced ones are
+      // dropped (kept resident, the WebGL lazy-reupload semantic). TEXTURES stay resident permanently:
+      // they are the cached/shared class (portal tube, CIRC, atlases, blade sprites) and are bounded
+      // by content variety, not by rebuild count. Geometries+materials are the real VRAM (dungeon
+      // worlds, mob meshes, grass restreams) and now genuinely reclaim. WebGL is untouched.
+      { const om=THREE.Material.prototype.dispose, og=THREE.BufferGeometry.prototype.dispose;
+        THREE.Material.prototype.dispose=function(){ _wgpuDeferDispose(this,om); };
+        THREE.BufferGeometry.prototype.dispose=function(){ _wgpuDeferDispose(this,og); };
+        THREE.Texture.prototype.dispose=function(){}; }
       // #webgpu KNOWN ISSUE (see docs/webgpu-migration-status.md): the game's dispose-then-reattach
       // GPU eviction (#232 releaseObjectGPU, dungeon-exit disposeObject3D bursts, the portal tube's
       // dispose) assumes WebGL's lazy re-upload. r185 WebGPU keeps cached bind groups pointing at the
@@ -4243,11 +4246,7 @@ function buildGpuPost(){
 let _wgpuShadowFixN=0;   // #webgpu: armed by applyGfxTier after a shadow.mapSize change (see there)
 function renderComposite(){
   if(IS_WEBGPU){
-    // #webgpu Phase 1: destroy resources queued ≥2 ticks ago — every submit that referenced them has
-    // been made (see _dispGeo/_dispMat). HELD during portal transits: the mid-tunnel buildWorld burst
-    // contains shared-but-unmarked resources (Mode B1) whose destruction faults every later submit —
-    // the transit-end handler drops the whole burst instead (bounded leak; Phase-2 audit is the fix).
-    if(typeof portalTransit==="undefined"||!portalTransit) _wgpuDrainDispose();
+    _wgpuDrainDispose();   // Phase-2 lifecycle: batched, liveness-swept destruction (see _wgpuDrainDispose)
     if(_wgpuShadowFixN>0&&--_wgpuShadowFixN===0&&scene){   // late bind-group invalidation after the ShadowNode swapped its RT
       scene.traverse(o=>{ if(!o.material) return;
         const mm=Array.isArray(o.material)?o.material:[o.material];
@@ -11637,16 +11636,9 @@ function updatePortalTransit(dt){
     p.outT+=dt;
     p.mat.opacity=Math.max(0,1-p.outT/_PT_OUT);
     if(p.outT>=_PT_OUT){ cam.remove(p.tube);
-      // #webgpu: do NOT free the tube's GPU copies — destroying them leaves a stale unlabeled-buffer
-      // reference that faults EVERY subsequent submit (frozen canvas). The tube geometry is tiny and
-      // portalTubeTex is cached anyway; keep both resident on WebGPU. WebGL frees as before.
-      if(!IS_WEBGPU){ _dispGeo(p.tube.geometry); _dispMat(p.mat); }
-      // #webgpu: DROP everything queued for disposal during the transit (the buildWorld teardown
-      // burst). One of those resources is shared-but-unmarked with a live object (Mode B1 in the
-      // scoping doc) — destroying it faults every subsequent submit and freezes the canvas at the
-      // tube frame. Leaking the old world's GPU copies per transit is bounded and invisible;
-      // the Phase-2 refcount audit is the real fix.
-      else { _wgpuDispNow.length=0; _wgpuDispNext.length=0; }
+      // (Phase-2 lifecycle: safe on WebGPU now — the tube geometry is per-transit and detached, so
+      // the liveness sweep destroys it; portalTubeTex is a cached Texture, which stays resident.)
+      _dispGeo(p.tube.geometry); _dispMat(p.mat);
       portalTransit=null; }
   }
 }
@@ -19355,10 +19347,26 @@ function maxAnisotropy(){ return (typeof renderer!=="undefined"&&renderer)?(rend
 // resource queued during tick N is destroyed at the start of tick N+2's render, after every submit
 // that could reference it has been made without it (the owning object was detached in tick N).
 // WebGL keeps the immediate dispose (lazy re-upload semantics — VRAM actually freed).
-let _wgpuDispNow=[], _wgpuDispNext=[];
-function _wgpuDeferDispose(r){ _wgpuDispNext.push(r); }
+// Phase-2 lifecycle queue (see the initThree prototype patch for the full story): dispose() calls
+// enqueue {res, fn(original dispose)}; the drain runs every ~30 WebGPU frames, double-buffered so a
+// batch is ≥1 batch old when destroyed, and a single scene traverse builds the LIVE set — anything
+// still attached is kept resident instead of destroyed (Mode-B1 guard). Stats in _wgpuLifeStats.
+let _wgpuDispNow=[], _wgpuDispNext=[], _wgpuDrainTick=0;
+const _wgpuLifeStats={killed:0,kept:0,sweeps:0};
+function _wgpuDeferDispose(res,fn){ _wgpuDispNext.push({res,fn:fn||res.dispose}); }
 function _wgpuDrainDispose(){
-  if(_wgpuDispNow.length){ for(let i=0;i<_wgpuDispNow.length;i++){ try{_wgpuDispNow[i].dispose();}catch(e){} } _wgpuDispNow.length=0; }
+  if(++_wgpuDrainTick<30) return;
+  _wgpuDrainTick=0;
+  if(_wgpuDispNow.length&&typeof scene!=="undefined"&&scene){
+    const live=new Set();
+    scene.traverse(o=>{ if(o.geometry) live.add(o.geometry);
+      if(o.material){ const mm=o.material; if(Array.isArray(mm)) for(const m of mm) live.add(m); else live.add(mm); } });
+    for(let i=0;i<_wgpuDispNow.length;i++){ const it=_wgpuDispNow[i];
+      if(live.has(it.res)){ _wgpuLifeStats.kept++; continue; }
+      try{ it.fn.call(it.res); }catch(e){}
+      _wgpuLifeStats.killed++; }
+    _wgpuDispNow.length=0; _wgpuLifeStats.sweeps++;
+  }
   const t=_wgpuDispNow; _wgpuDispNow=_wgpuDispNext; _wgpuDispNext=t;
 }
 // (On WebGPU the deferral happens INSIDE dispose(): initThree patches the Material/BufferGeometry/
