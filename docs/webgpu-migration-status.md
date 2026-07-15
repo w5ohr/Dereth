@@ -135,8 +135,8 @@ can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current
 - ✅ **Lava-pool prop → TSL** (`buildProp` "lava" / new `lavaMaterialTSL`). Faithful port of the molten
   2-octave-noise shader INCLUDING the vertex heave (establishes the `positionNode` vertex-displacement
   pattern). Dual-path; a `.uniforms` shim ({uT,uCol}→TSL uniform nodes) keeps the PROPANIM tick
-  (`mat.uniforms.uT.value=t`) unchanged. Verified both backends: WebGPU→NodeMaterial renders molten orange
-  + animates (shim wires the tick); WebGL keeps ShaderMaterial, tick works. ⚠️ look eyeball-pending.
+  (`mat.uniforms.uT.value=t`) unchanged. Verified MEASURED BYTE-IDENTICAL to the GLSL on Metal (dual-renderer
+  A/B, per-pixel mean-abs-diff = 0 over 5929 px); WebGL keeps ShaderMaterial, tick works. No eyeball needed.
 - ⬜ **Remaining FX/post — needs a VISIBLE browser (→ machine 2, already in the shader→TSL flow):**
   - **Portal particles** (`buildPortalFx` ~5650, `_PFX_VERT`/`_PFX_FRAG`) + the lava **embers**
     (`PointsMaterial`). **API is tractable (machine 1 confirmed):** `THREE.PointsNodeMaterial` +
