@@ -3974,7 +3974,7 @@ function resizePost(){
     // handler) and between frames, so the graph is always built once at the final size — no build→resize
     // race. (Dispose-then-rebuild here is the safe window; the broader WebGPU dispose-lifecycle audit for
     // dungeon-exit/eviction is the cross-cutting item tracked in the status log.)
-    if(window.PostProcessing&&window.TSL&&window.bloomNode&&typeof scene!=="undefined"&&scene&&typeof cam!=="undefined"&&cam){
+    if(window.RenderPipeline&&window.TSL&&window.bloomNode&&typeof scene!=="undefined"&&scene&&typeof cam!=="undefined"&&cam){
       const old=GPUPOST; GPUPOST=null;
       if(old&&old.dispose){ try{ old.dispose(); }catch(e){} }
       if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;   // ACES bakes into the fresh output
@@ -4155,7 +4155,7 @@ function renderReflection(){
 }
 // #webgpu Phase C: the WebGPU POST pipeline (TSL node graph). Faithful port of the WebGL POST composite
 // (js/game.js POST.comp): saturation → S-curve → warm/cool tint → additive bloom → brightness/contrast
-// grade → vignette → dither, tonemapped on the PostProcessing output (outputColorTransform, ACES). The
+// grade → vignette → dither, tonemapped on the RenderPipeline output (outputColorTransform, ACES). The
 // GRADE math is copied verbatim from the GLSL so it matches by construction; the bloom PARAMS
 // (strength/radius/threshold) are first-pass defaults that want an on-hardware eyeball to match exactly.
 let GPUPOST=null;
@@ -4168,7 +4168,7 @@ function buildGpuPost(){
   const {pass,uv,vec2,vec3,float,mix,clamp,smoothstep,fract,sin,cos,uniform,luminance,Fn,Loop,If,
          getViewPosition,cameraProjectionMatrixInverse,convertToTexture,dFdx,dFdy,normalize,cross,
          dot,max,step,screenCoordinate}=T;
-  GPUPOST=new window.PostProcessing(renderer);
+  GPUPOST=new window.RenderPipeline(renderer);
   const scenePass=pass(scene,cam);
   // #695/#webgpu COLOR-PIPELINE PARITY: the game runs with ColorManagement DISABLED (legacy colors,
   // game.js line ~10). r185's WebGPU output transform gates its sRGB encode on ColorManagement.enabled
@@ -4254,7 +4254,7 @@ function renderComposite(){
     }
     // #webgpu Phase C: WebGPURenderer clears toneMapping/exposure back to defaults during its deferred
     // backend init (in the WebGL build the POST composite owns tonemapping). Re-assert ACES + the
-    // brightness-graded exposure — the mode is BAKED into the PostProcessing output at build time, the
+    // brightness-graded exposure — the mode is BAKED into the RenderPipeline output at build time, the
     // exposure is a runtime uniform. Guarded writes → only touch on drift (no per-frame recompile).
     if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;
     renderReflection();   // #webgpu Phase C: the water's planar mirror renders on WebGPU too (RenderTarget + matrix surgery are backend-agnostic)

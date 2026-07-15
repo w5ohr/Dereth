@@ -948,7 +948,7 @@
       try {
         const webgpu = await import('three/webgpu');
         window.WebGPURenderer = webgpu.WebGPURenderer;
-        window.PostProcessing = webgpu.PostProcessing;   // #webgpu Phase C: node-graph POST (bloom/tonemap) for the WebGPU path
+        window.RenderPipeline = webgpu.RenderPipeline || webgpu.PostProcessing;   // #webgpu Phase C: node-graph POST (bloom/tonemap); r183 renamed PostProcessing→RenderPipeline (fallback kept for older builds)
         window.TSL = await import('three/tsl');
         window.bloomNode = (await import('three/addons/tsl/display/BloomNode.js')).bloom;
         // #webgpu Phase C: node materials (MeshBasicNodeMaterial, …) ship only in the webgpu namespace.

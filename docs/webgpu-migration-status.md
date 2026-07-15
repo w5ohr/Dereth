@@ -405,7 +405,13 @@ Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. 
   converted to `makePointSprites()` (extended for single-color + a synthesized soft round sprite when no
   `map`). WebGPU now renders them as sized soft glows instead of 1px specks; WebGL byte-unchanged
   (`Points`/`PointsMaterial`, colour preserved, 0 errors). **No 1px point FX remain on WebGPU.**
-- 🔻 **`PostProcessing` → `RenderPipeline` r185 rename** — trivial; do at the next three.js bump.
+- ✅ **`PostProcessing` → `RenderPipeline` rename** — done now (not deferred). `PostProcessing` is
+  `@deprecated since r183` in the vendored r185 (`class PostProcessing extends RenderPipeline`) and fires a
+  `warnOnce` on construction; `RenderPipeline` is exported and a straight drop-in (PostProcessing adds only
+  the warning). Bootstrap now exposes `window.RenderPipeline = webgpu.RenderPipeline || webgpu.PostProcessing`
+  (fallback kept); `buildGpuPost()` builds `new window.RenderPipeline(renderer)`. Verified on Metal: GPUPOST
+  is a `RenderPipeline`, renders through the loop, **0 deprecation warnings**, `window.PostProcessing` global
+  gone.
 
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
