@@ -697,3 +697,17 @@ True draw counting (backend.draw wrap) + a three-arm comparison at the standard 
 | r186 UBO work (#30560) | The real fix — the measured bottleneck IS the per-render-item UBO/frontend JS (backend-independent, confirmed by identical Vulkan + slow glfallback). Re-run the tables on r186. |
 Bottom line for the cutover: backend swaps do not help on Windows; the per-backend default policy
 (Metal→WebGPU, Windows→WebGL) stands until three.js r186's UBO overhaul, then re-measure.
+
+**Machine 2 — Chrome Canary test (the last same-day lever): NO IMPROVEMENT.**
+Installed Canary 152.0.7942.0 (Dawn two majors newer than stable 150) and re-ran the perf diag:
+| build | WebGPU frameMs med / fps | WebGL frameMs med / fps |
+|-------|--------------------------|--------------------------|
+| Chrome stable 150 | 42.8 / 22.1 | 15.7 / 55 |
+| Chrome Canary 152 | 43.5-49.2 / 19-21.5 (2 valid runs) | 19.3 / 44.6 |
+Same ~2.3-2.5x gap on both builds; Canary is marginally slower on BOTH arms (typical canary-build
+overhead) and the WebGPU spawn-wedge flake fires MORE often there (2 of 5 runs). The #26266 "Canary
+5-10% CPU" report evidently addressed a Dawn-heavy profile — ours is three.js-frontend-heavy, so a
+newer Dawn moves nothing, consistent with the Vulkan null-result and the glfallback attribution.
+**Every same-day lever is now exhausted: the Windows gap waits on three.js r186 (#30560 UBO work).**
+Per-backend cutover default confirmed. (Canary remains installed at LOCALAPPDATA\Google\Chrome SxS
+for future re-tests.)
