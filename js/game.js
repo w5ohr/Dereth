@@ -2360,7 +2360,7 @@ function texGround(){
     g.strokeStyle=`rgba(${140+v},${126+v},${96+v},0.6)`;
     g.beginPath();g.moveTo(x,y);g.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);g.stroke();}
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(110,110);
-  if(typeof renderer!=="undefined"&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
   return t;
 }
 // ── #693: data-driven terrain splatting (fallback scope — no acdata dats on the build box, so the
@@ -2466,7 +2466,7 @@ function terBuildAtlas(){
   tile(13,{base:"#9a9483",tone:150,var:9,mott:0.5,patch:8,grain:1500,gs:2*k,rip:32});                    // seabed
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
   t.flipY=false;   // atlas row math is canvas-y-down; default flipY would mirror the 4×4 grid (grass sampled obsidian!)
-  if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
   return t;
 }
 function terSplatBuild(){
@@ -2516,7 +2516,7 @@ function terRealUpgrade(W){
           d[i2]=lu+(d[i2]-lu)*0.15; d[i2+1]=lu+(d[i2+1]-lu)*0.15; d[i2+2]=lu+(d[i2+2]-lu)*0.15; }
         g.putImageData(id,x0,y0); }
       const t=new THREE.CanvasTexture(c); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
-      if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+      if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
       TER.uAtl.value=t;
       const n=W*W, data=new Uint8Array(n);                    // repack: every type → its OWN texture's slot
       const typeSlot={}; for(const k2 in j.types) typeSlot[k2]=slotOf[j.types[k2].tex]||0;
@@ -2542,7 +2542,7 @@ function makeNormalTex(size,hf,strength,repeat){
   }
   g.putImageData(img,0,0);
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;if(repeat)t.repeat.set(repeat,repeat);
-  if(typeof renderer!=="undefined"&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
   return t;
 }
 let _groundNrm=null,_waterNrm=null;
@@ -6716,7 +6716,7 @@ function plantAtlasTex(){
     const dc=g.createRadialGradient(0,0,2,0,0,26); dc.addColorStop(0,"#2a1e6a"); dc.addColorStop(1,"#3a2a8a");
     g.fillStyle=dc;g.beginPath();g.arc(0,0,22,0,6.283);g.fill(); g.restore(); }
   _plantAtlas=new THREE.CanvasTexture(c); _plantAtlas.colorSpace=THREE.SRGBColorSpace;
-  if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)_plantAtlas.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(typeof renderer!=="undefined"&&renderer)_plantAtlas.anisotropy=maxAnisotropy();
   return _plantAtlas;
 }
 // atlas quadrant UV rects (canvas y-down + flipY: TL quadrant = v .5-1)
@@ -6895,7 +6895,7 @@ function leafTex(){
     g.restore();
   }
   _leafTex=new THREE.CanvasTexture(c); _leafTex.colorSpace=THREE.SRGBColorSpace;
-  if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities) _leafTex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(typeof renderer!=="undefined"&&renderer) _leafTex.anisotropy=maxAnisotropy();
   return _leafTex;
 }
 // crossed leaf cards scattered over an ellipsoid crown → non-indexed {pos,nrm,col,uv}
@@ -7512,7 +7512,7 @@ function roofTex(){ if(_roofTex) return _roofTex;
     }
   }
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,3);t.colorSpace=THREE.SRGBColorSpace;
-  if(typeof renderer!=="undefined"&&renderer.capabilities) t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
   _roofTex=t;return t;
 }
 function roofMat(color){ return new THREE.MeshStandardMaterial({map:roofTex(),color,roughness:0.86,metalness:0.0,flatShading:true}); }
@@ -18861,6 +18861,11 @@ let _mobStreamAcc=0;
 // textures are shared across every town/object that uses that archetype, so disposing them when one
 // far object is evicted frees buffers a VISIBLE object still references (three.js re-uploads next
 // frame → churn, no real reclaim). Skip any geometry/material/texture flagged _acShared.
+// #webgpu: max anisotropic-filtering level, backend-aware. WebGLRenderer exposes it via
+// capabilities.getMaxAnisotropy(); WebGPURenderer has no .capabilities and no device limit for it, but its
+// sampler maxAnisotropy spec cap is 16 — VERIFIED HONORED on Metal (a grazing tiled texture keeps detail at
+// 16 that it loses to a flat blur at 1: hi-freq variance 0→5.1). Returns 1 pre-init as a safe default.
+function maxAnisotropy(){ return (typeof renderer!=="undefined"&&renderer)?(renderer.capabilities?renderer.capabilities.getMaxAnisotropy():16):1; }
 function _dispTex(t){ if(t&&!t._acShared&&t.dispose) t.dispose(); }
 function _dispGeo(g){ if(g&&!g._acShared&&g.dispose) g.dispose(); }
 function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose)x.dispose(); } }
@@ -23736,7 +23741,7 @@ function shipWoodMaps(){                                        // planked hull 
     dn[i]=(nx/l*.5+.5)*255;dn[i+1]=(ny/l*.5+.5)*255;dn[i+2]=(nz/l*.5+.5)*255;dn[i+3]=255; }
   gn.putImageData(inp,0,0);
   const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
-    if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t;};
+    if(typeof renderer!=="undefined"&&renderer)t.anisotropy=maxAnisotropy();return t;};
   _shipWood={map:mk(A,true),normalMap:mk(Nn,false)};
   return _shipWood;
 }
@@ -26438,7 +26443,7 @@ function cobbleTex(tint){
   }
   g.putImageData(img,0,0);
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
-  if(typeof renderer!=="undefined"&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  if(typeof renderer!=="undefined"&&renderer)t.anisotropy=maxAnisotropy();
   return t;
 }
 // ── Dressed ashlar masonry for Kilmer's castle: big rectangular cut blocks in running bond, recessed
@@ -26473,7 +26478,7 @@ function ashlarStone(){
     const i=(py*N+px)*4;dn[i]=(nx*.5+.5)*255;dn[i+1]=(ny*.5+.5)*255;dn[i+2]=(nz*.5+.5)*255;dn[i+3]=255;
   }
   gn.putImageData(inp,0,0);
-  const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t;};
+  const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;if(typeof renderer!=="undefined"&&renderer)t.anisotropy=maxAnisotropy();return t;};
   _ashlar={map:mk(A,true),normalMap:mk(Nn,false)};
   return _ashlar;
 }
@@ -26623,7 +26628,7 @@ function roadStoneMaps(){
   gn.putImageData(inp,0,0);
   const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;
     t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
-    if(typeof renderer!=="undefined"&&renderer&&renderer.capabilities)t.anisotropy=renderer.capabilities.getMaxAnisotropy(); return t;};
+    if(typeof renderer!=="undefined"&&renderer)t.anisotropy=maxAnisotropy(); return t;};
   _roadMaps={map:mk(A,true), roughnessMap:mk(RM,false), normalMap:mk(Nn,false)};
   return _roadMaps;
 }

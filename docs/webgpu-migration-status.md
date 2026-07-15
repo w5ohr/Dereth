@@ -152,11 +152,15 @@ can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current
     POST pass, replaced by GPUPOST on WebGPU — not a target.)
     (Sky `ShaderMaterial` @2783 = Agent 1's WebGL fallback, done. `makePass` @3665 = the WebGL POST pass,
     unused on WebGPU since GPUPOST replaces it — not a target.)
-  - **Anisotropy gap (cross-cutting, both agents):** on WebGPU `renderer.capabilities` is absent, so every
-    `t.anisotropy=renderer.capabilities.getMaxAnisotropy()` (guarded → safe no-op) is skipped → all textures
-    lack anisotropic filtering (blurrier at grazing angles; not a crash). WebGPU supports it via a different
-    max query — set `texture.anisotropy` from the WebGPU backend limit once, apply everywhere. Minor polish,
-    needs a real GPU to confirm.
+  - ✅ **Anisotropy gap FIXED (machine 1, verified on Metal).** On WebGPU `renderer.capabilities` is absent,
+    so the 11 `t.anisotropy=renderer.capabilities.getMaxAnisotropy()` sites were guarded no-ops → textures
+    lost anisotropic filtering (grazing terrain/road/wall textures blurred to flat). Added a backend-aware
+    `maxAnisotropy()` helper (WebGL: `capabilities.getMaxAnisotropy()`; WebGPU: 16, the sampler spec cap) and
+    routed all 11 sites through it (dropped the `.capabilities` guard). VERIFIED on Metal: (a) WebGPU honors
+    `texture.anisotropy` — a grazing tiled texture keeps hi-freq detail at 16 that it loses at 1 (variance
+    0→5.1); (b) 4739 repeating textures now at aniso 16 on WebGPU (were 1), an EXACT match to WebGL's
+    distribution (4739@16 / 4026@1 both backends — the 4026 are GLTF/inline textures that never set it on
+    either backend, pre-existing/out of scope).
   - **SSAO** + **god-rays** as their own `pass`/nodes into the GPUPOST graph (currently WebGL-only).
   - **Tune the bloom** strength/radius/threshold (`GPUBLOOM`) to match the WebGL look.
   - Whoever picks these up: they slot into the existing `GPUPOST` graph / dual-path pattern already in
