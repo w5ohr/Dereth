@@ -405,3 +405,25 @@ Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. 
 git fetch origin && git checkout webgpu && git pull --rebase origin webgpu
 # then hard-reload the preview past the service worker: unregister SW + clear caches + ?nocache=N
 ```
+
+## Phase D — integration/parity/cutover  →  IN PROGRESS
+
+**Agent 2 / machine 2, 2026-07-15 (2265843f): COLOR-PIPELINE PARITY SOLVED.** The 0.5–0.76× luminance
+gap was never lighting: the game runs with ColorManagement DISABLED (#695 legacy colors), and r185's
+WebGPU output transform gates its sRGB encode on `ColorManagement.enabled` while WebGL encodes
+regardless — the WebGPU frame was written LINEAR to the canvas (verified: sRGB_encode(WebGPU) ==
+WebGL exactly). GPUPOST now tonemaps+encodes manually and grades in DISPLAY space like POST.comp;
+bloom uses the WebGL curve (threshold .90/knee .2) with an eyeball-calibrated radius .05; the four
+raw-authored display-referred materials (sky/portal vortex/aurora/lava) pre-compensate via
+_rawFragTSL. Terrain + sky now match WebGL by eyeball with identical hard-camera framing.
+Repro/diagnosis recipe: iso-light.html pattern — CM enabled = backends byte-identical; CM disabled =
+the exact in-game divergence.
+⚠️ For machine 1: re-run your byte-identical measurements for portal/aurora/lava — the _rawFragTSL
+compensation intentionally changes their output (they were only "identical" against the old
+non-encoding pipeline). The water #691 column feed (5a3942f4) may also want a look through the new
+display-space GPUPOST chain.
+
+Remaining Phase D: feature-detect auto-fallback + default flip, browser matrix (Safari on machine 1;
+Chrome/Edge/Firefox here), perf pass, refcounted resource manager (or D3D12-gating of never-destroy),
+far-cascade restore via three bump, __PFX_TSL billboards, uv warnings, PostProcessing rename, then
+merge webgpu → main.
