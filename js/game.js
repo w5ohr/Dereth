@@ -3002,9 +3002,55 @@ function buildSun(){   // the sun disc (sky obj 0x01001348, tex 0600388D) — wa
     transparent:true,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
   sunSprite.scale.set(900,900,1);return sunSprite;
 }
+// per-frame moon dynamics: slow disc spin, day-cycling phase light, and Earth-moonrise
+// colour — ember-amber on the horizon climbing to a pale tint at height. The phase light
+// is expressed in view space and counter-rotated by the spin so the terminator stays put
+// while the face turns beneath it. Returns the lit fraction (0 new → 1 full) so the halo
+// can breathe with the phase. period is in game days (worldDays is fractional & saved).
+const _mZen1=new THREE.Color(0.93,1.0,0.96), _mZen2=new THREE.Color(1.0,0.97,0.90),
+      _mHoriz=new THREE.Color(1.0,0.42,0.20);
+function _moonFrame(sp,period,ph0,spin,zenith,alt,dt){
+  const ud=sp.material.userData; if(!ud.moonL) return 1;
+  const rot=(sp.material.rotation+=spin*dt);
+  const ph=(((worldDays/period)+ph0)%1)*Math.PI*2;
+  const c=Math.cos(rot),s=Math.sin(rot),lx=Math.sin(ph)*0.984,lz=Math.cos(ph)*0.984;   // 0.984²+0.18²≈1
+  ud.moonL.set(c*lx+s*0.18,-s*lx+c*0.18,lz);
+  sp.material.color.copy(_mHoriz).lerp(zenith,Math.pow(clamp(alt,0,1),0.7));
+  return 0.5+0.5*Math.cos(ph);
+}
+// ── phase-shaded moon material ──────────────────────────────────────────────────────────
+// The billboard is shaded as a virtual sphere — N=(uv*2-1, sqrt(1-r²)) against a light
+// direction that cycles with worldDays, so the moons wax and wane like the Earth moon.
+// The light lives in VIEW space (the crescent always reads clearly from any azimuth) and
+// is counter-rotated by the disc spin so the terminator holds still while the face turns.
+// Dual-path: GLSL injection on WebGL, ad-hoc TSL nodes on WebGPU (fromMaterial copies them).
+function moonPhaseMat(map){
+  const mat=new THREE.SpriteMaterial({map,transparent:true,fog:false,depthWrite:false});
+  const L=new THREE.Vector3(0,0,1);                  // lit-side dir; one Vector3 shared by both backends
+  mat.userData.moonL=L; mat.userData.moonAmb=0.16;   // ambient floor = earthshine on the dark limb
+  if(typeof IS_WEBGPU!=="undefined"&&IS_WEBGPU){
+    const t=window.TSL, uL=t.uniform(L), uAmb=t.uniform(mat.userData.moonAmb);
+    const samp=t.texture(map,t.uv());
+    const p=t.uv().mul(2).sub(1);
+    const n=t.vec3(p,p.dot(p).oneMinus().max(0.0).sqrt());
+    const shade=uAmb.add(uAmb.oneMinus().mul(t.smoothstep(t.float(-0.06),t.float(0.22),n.dot(uL))));
+    mat.colorNode=samp.rgb.mul(t.materialColor).mul(shade);
+    mat.opacityNode=samp.a.mul(t.materialOpacity);
+  } else {
+    mat.onBeforeCompile=(sh)=>{
+      sh.uniforms.uMoonL={value:L}; sh.uniforms.uMoonAmb={value:mat.userData.moonAmb};
+      sh.fragmentShader=sh.fragmentShader
+        .replace('#include <common>','#include <common>\nuniform vec3 uMoonL;\nuniform float uMoonAmb;')
+        .replace('#include <map_fragment>','#include <map_fragment>\n'
+          +'vec2 _mp=vMapUv*2.0-1.0;\n'
+          +'vec3 _mn=vec3(_mp,sqrt(max(0.0,1.0-dot(_mp,_mp))));\n'
+          +'diffuseColor.rgb*=uMoonAmb+(1.0-uMoonAmb)*smoothstep(-0.06,0.22,dot(_mn,uMoonL));');
+    };
+  }
+  return mat;
+}
 function buildMoon(){   // Dereth's great moon — the green storm-world (sky obj 0x01001F6A, tex 06003898)
-  moonSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_green.png'),
-    transparent:true,fog:false,depthWrite:false}));
+  moonSprite=new THREE.Sprite(moonPhaseMat(_skyTL.load('assets/sky/moon_green.png')));
   moonSprite.scale.set(1700,1700,1);   // scaled for the near arc (MR) — looms at ~30° of sky, a true fantasy moon
   // soft atmospheric glow behind the disc — a wide additive halo tinted to the storm-world's green
   moonHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(150,255,190,0.55)","rgba(80,200,130,0)"),
@@ -3014,8 +3060,7 @@ function buildMoon(){   // Dereth's great moon — the green storm-world (sky ob
 }
 // AC's night sky has TWO moons — the smaller amber cratered companion rides an offset arc beside the primary.
 function buildMoon2(){   // amber cratered moon (sky obj 0x01001F67, tex 06003894)
-  moon2Sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_amber.png'),
-    transparent:true,fog:false,depthWrite:false}));
+  moon2Sprite=new THREE.Sprite(moonPhaseMat(_skyTL.load('assets/sky/moon_amber.png')));
   moon2Sprite.scale.set(850,850,1);   // keeps AC's ≈0.5× companion proportion at the near arc
   moon2Halo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,220,150,0.5)","rgba(220,160,80,0)"),
     transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
@@ -3303,13 +3348,17 @@ function updateDayNight(dt){
   const MR=R*0.30;   // the moons hang FAR closer than the sun's arc — vast, low, storybook-close over the land
   if(moonSprite){moonSprite.position.set(player.x-sky.x*MR,Math.max(-200,-sky.y*MR*0.7),player.z-sky.z*MR);
     moonSprite.material.opacity=clamp(-sunY*2.5+0.45,0,1);   // rises into view a little before full dark
+    const lit1=_moonFrame(moonSprite,24,0.35,0.006,_mZen1,moonSprite.position.y/(MR*0.5),dt);
     if(moonHalo){moonHalo.position.copy(moonSprite.position);
-      moonHalo.material.opacity=moonSprite.material.opacity*0.45;}}   // glow breathes with the disc
+      moonHalo.material.color.copy(moonSprite.material.color);   // glow inherits the moonrise ember tint
+      moonHalo.material.opacity=moonSprite.material.opacity*0.45*(0.35+0.65*lit1);}}   // halo breathes with disc & phase
   if(moon2Sprite){const perp=_ddPerp.set(-sky.z,0,sky.x);   // the amber companion rides beside & above the primary
     moon2Sprite.position.set(player.x-sky.x*MR*0.86+perp.x*MR*0.34,Math.max(-160,-sky.y*MR*0.55+70),player.z-sky.z*MR*0.86+perp.z*MR*0.34);
     moon2Sprite.material.opacity=clamp(-sunY*2.5+0.4,0,1);
+    const lit2=_moonFrame(moon2Sprite,9,0.7,-0.011,_mZen2,moon2Sprite.position.y/(MR*0.5),dt);
     if(moon2Halo){moon2Halo.position.copy(moon2Sprite.position);
-      moon2Halo.material.opacity=moon2Sprite.material.opacity*0.4;}}
+      moon2Halo.material.color.copy(moon2Sprite.material.color);
+      moon2Halo.material.opacity=moon2Sprite.material.opacity*0.4*(0.35+0.65*lit2);}}
   // drifting clouds, fading at night, wrapping across the sky, following the player
   if(cloudGroup){
     const wcx=Math.cos(windDir), wcz=Math.sin(windDir);                 // clouds ride the wind vector (both axes)
