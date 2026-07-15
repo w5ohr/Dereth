@@ -361,6 +361,38 @@ VERIFIED on Metal via buildPortal("Holtburg") with NO flag: chose the FX path, S
 px / maxv 741 across 10 steady frames, 0 WGSL/pipeline errors. (First-appearance frame may be blank while the
 WebGPU pipeline compiles async — normal, imperceptible at 60fps.) WebGL portal path byte-unchanged.
 
+## Phase C — remaining items after machine-1's 2026-07-15 session  →  what's DONE vs LEFT
+
+Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. Authoritative status:
+
+- ✅ **Base-lighting parity** — measured D3D12-specific; Apple-Silicon/Metal is byte-identical per light. NOT a
+  target-platform blocker (machine 2's "on-hardware light re-tune" is a Windows/AMD/D3D12-only concern).
+- ✅ **`Vertex attribute "uv" not found` warnings** — root cause was NOT canopy/flora (machine 2's suspicion);
+  it was the starfield + firefly/portal-mote PointsMaterials carrying a `.map`. Fixed with the point-sprite
+  work below. 0 warnings now.
+- ✅ **Sized point sprites on native WebGPU** (stars, motes) — `makePointSprites()` helper; the general fix for
+  "core WebGPU renders THREE.Points at 1px". WebGL path byte-unchanged.
+- ✅ **Portal particles** — the gated WIP was rewritten to the verified SpriteNodeMaterial billboard and turned
+  **ON by default** on WebGPU (authentic retail replay; vortex-lens only as a no-node-material fallback).
+
+**LEFT (with owner + why):**
+- ⬜ **Refcounted resource manager** (Phase-2 dispose) — *the top Phase-D prerequisite.* → **machine 2.** Its
+  real failure mode (Mode B1: destroying a shared-but-unmarked resource FREEZES the canvas) only reproduces on
+  D3D12, and machine 2 has both the repro and the A/B harness. Implementing it blind on Metal (where dispose
+  faults don't even manifest) risks a machine-2-only regression. Current state: dispose is no-op'd on WebGPU
+  → correct + stable but bounded VRAM growth per session. Scope in [webgpu-dispose-lifecycle-scoping.md] §Phase 3.
+- ⬜ **#691 water true-column / refraction on WebGPU** — real feature, currently WebGL-only; TSL water renders
+  the baked-heightfield column (tier-0/1 look) on WebGPU. Port scope (feasible, Metal-verifiable, but touches
+  the *default-visible* water so gate behind a flag until parity-verified): in `buildWaterMaterialTSL().waterOut`,
+  replace the baked `depth` with a true view-ray column from **`TSL.viewportDepthTexture`** (WebGPU depth is
+  [0,1], linearize via cameraNear/Far — NOT the WebGL `*2-1` + `uAB` reconstruction), add refraction from
+  **`TSL.viewportSharedTexture`** (opaque-pass scene color, ripple-offset by `N.xy`), and the `_tv`-based shore
+  fade on alpha. Mirrors GLSL js/game.js ~3739-3781. → machine 2 (owns the TSL water) or machine 1 next.
+- 🔻 **Dungeon/torch embers & spores** (4 map-less `THREE.Points`, size 0.05–0.06) — still 1px on WebGPU, but
+  map-less so **no warning/error**; purely cosmetic on tiny ambient FX. Low priority. `makePointSprites()` can
+  absorb them (extend it to synthesize a soft round sprite when no `map` is given) if desired.
+- 🔻 **`PostProcessing` → `RenderPipeline` r185 rename** — trivial; do at the next three.js bump.
+
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
 ---
