@@ -469,8 +469,19 @@ cross-backend hardening + the Windows fallback:
 
 **Stream B — Machine 1 (Mac / Metal): "land the cutover."**
 Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so it owns the code surgery:
-- **B1. WebGL2-fallback QA on macOS.** Same force-WebGL2 test on this side (macOS ANGLE/Metal-GL differs
-  from Windows) — the macOS half of A1.
+- ✅ **B1. WebGL2-fallback QA on macOS — FUNCTIONAL PASS (2026-07-15).** Added a QA flag: `?gpu=1&glfallback=1`
+  passes `forceWebGL:true` to `WebGPURenderer` in `initThree` (js/game.js ~3482), so the full node-material
+  game runs on the WebGL2 backend without special hardware — **machine 2 should use the same flag for A1 on
+  Windows.** Verified on Metal-GL: `renderer.backend` = `WebGLBackend` (`isWebGPUBackend:false`), game enters,
+  50 loop frames through the real pipeline (`RenderPipeline` POST + `WaterNodeMaterial` #691 + particles all
+  live), **0 errors**, ~320 draw calls. So all the TSL ports compile+run on WebGL2, not just native WebGPU.
+  **⚠️ Perf caveats (for the cutover call, need a real-browser confirm):** (1) the WebGL backend compiles
+  node-material GLSL *lazily per render-target config* — the first render to any new target stalls hard
+  (fresh-RT probes timed out on shader compile). Normal play uses stable targets (canvas + POST), so it's a
+  one-time startup cost, but it's real. (2) The WebGPU path's no-cull instanced forests (~10 M tris) are far
+  heavier on WebGL2 than on native WebGPU — a wide overlook was slow enough to time out a 30 s readback. Net:
+  the fallback is FUNCTIONAL and fine as a "can't run native WebGPU at all" safety net, but it is NOT a fast
+  path; quantify normal-play fps in a real foreground browser before leaning on it.
 - **B2. Author the cutover.** Make `WebGPURenderer` the default (native WebGPU, auto WebGL2-backend
   fallback), retire the `?gpu=1` opt-in, and DELETE the classic path: the `WebGLRenderer` branch of
   `initThree`, the 6 GLSL `ShaderMaterial`s + `onBeforeCompile` patches (now superseded by TSL), the

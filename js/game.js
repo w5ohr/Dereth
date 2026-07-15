@@ -3479,7 +3479,11 @@ async function initThree(){
   // back to WebGL on any failure so the game always comes up. WebGL stays the default (no flag → no GPU).
   if(window.WebGPURenderer){
     try{
-      renderer=new window.WebGPURenderer({canvas:document.getElementById('c'),antialias:true});
+      // #webgpu Phase D QA: ?glfallback=1 forces WebGPURenderer onto its WebGL2 backend — the SAME path a
+      // machine without native WebGPU takes, and (after the cutover drops the classic WebGLRenderer) the
+      // ONLY fallback. Lets us exercise the full node-material game on WebGL2 without special hardware.
+      const _forceGL=/[?&]glfallback=1/.test(location.search);
+      renderer=new window.WebGPURenderer({canvas:document.getElementById('c'),antialias:true,forceWebGL:_forceGL});
       await renderer.init();
       IS_WEBGPU=true;
       // #webgpu Phase C: the virtual-light-pool wrapper (see VLIGHTS) subclasses PointLight, and the
