@@ -4249,6 +4249,11 @@ function buildGpuPost(){
 }
 let _wgpuShadowFixN=0;   // #webgpu: armed by applyGfxTier after a shadow.mapSize change (see there)
 function renderComposite(){
+  // #webgpu: a 0×0 canvas (minimized/hidden context, innerWidth=0 before layout) makes WebGPU error hard on
+  // the size-0 swapchain ("Could not create a swapchain texture of size 0") — WebGL silently tolerated it.
+  // Skip the frame: it's invisible either way, and real tabs pause rAF when hidden, so this only guards
+  // synthetic/edge cases (headless drivers, a frame between collapse and the resize event).
+  { const _cv=renderer&&renderer.domElement; if(_cv&&(_cv.width===0||_cv.height===0)) return; }
   if(IS_WEBGPU){
     _wgpuDrainDispose();   // Phase-2 lifecycle: batched, liveness-swept destruction (see _wgpuDrainDispose)
     if(_wgpuShadowFixN>0&&--_wgpuShadowFixN===0&&scene){   // late bind-group invalidation after the ShadowNode swapped its RT

@@ -941,10 +941,18 @@
     THREE.GLTFLoader = GLTFLoader;         // game calls new THREE.GLTFLoader()
     THREE.SkeletonUtils = SkeletonUtils;   // game calls THREE.SkeletonUtils.clone()
     window.THREE = THREE;
-    // #webgpu Phase B: opt into the WebGPU renderer with ?gpu=1. Only THEN pull the 2.17 MB three.webgpu
-    // bundle (+ TSL, for Phase C node materials) — the default WebGL path never pays for it. three.webgpu
-    // re-exports the SAME three.core, so constructor identity is shared with window.THREE (instanceof holds).
-    if (/[?&]gpu=1\b/.test(location.search)) {
+    // #webgpu Phase D cutover — PER-BACKEND DEFAULT. On Apple hardware WebGPU (Dawn-on-Metal) is a clear win
+    // (verified: ~4× faster than WebGL at tier 2/3, regression-clean across dungeons/towns/water/FX), so it
+    // is now the DEFAULT there. On Windows/Linux the WebGPURenderer is currently ~2× SLOWER than WebGL — a
+    // known three.js per-object UBO-frontend CPU cost that is backend-independent (issue #30560; confirmed
+    // unchanged by Vulkan vs D3D12 and by newer Dawn/Canary), expected to improve in r186 — so those clients
+    // stay on the fast classic WebGL path for now. Manual overrides: ?gpu=1 forces WebGPU anywhere, ?gpu=0
+    // forces WebGL anywhere. WebGL is always the safe fallback (initThree try/catches a failed WebGPU init).
+    // The 2.17 MB three.webgpu bundle (+ TSL) loads only when WebGPU is actually going to be used.
+    const _forceGpu = /[?&]gpu=1\b/.test(location.search), _forceNoGpu = /[?&]gpu=0\b/.test(location.search);
+    const _isApple = /Mac/.test(navigator.platform || '') || /Mac OS X|Macintosh/.test(navigator.userAgent || '');
+    const _wantWebGPU = !!navigator.gpu && !_forceNoGpu && (_forceGpu || _isApple);
+    if (_wantWebGPU) {
       try {
         const webgpu = await import('three/webgpu');
         window.WebGPURenderer = webgpu.WebGPURenderer;

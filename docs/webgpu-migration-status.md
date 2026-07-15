@@ -584,14 +584,20 @@ Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so 
   is bound on. **Deduping/sharing materials (canonicalize identical `MeshStandard` params to one instance)
   cuts encode-state churn on both backends** and is worth doing independent of the draw-call mystery. Candidate
   next step: audit the prop/structure/dungeon builders for per-object `new Material()` that could be shared.
-- **B3. Author the cutover** (AFTER the bump + the perf re-measure decides the default policy). Make
-  `WebGPURenderer` the default per the agreed policy (blanket flip if the bump closes the D3D12 gap, else
-  per-backend), retire `?gpu=1`, and DELETE the classic path: the `WebGLRenderer` branch of `initThree`, the
-  6 GLSL `ShaderMaterial`s + `onBeforeCompile` patches, the WebGLRenderTarget POST chain
-  (`initPost`/`POST.comp`/`makePass`), and every `if(IS_WEBGPU) … else …` fork kept only to run both. Bump
-  `sw.js`, trim importmap/boot. Sub-branch.
-- **B4. Verify the cutover on Metal** (full game, no `?gpu=1`) and open the `webgpu`→`main` PR — held for the
-  user's green-light + Stream-A sign-off + the post-bump perf decision.
+- ✅ **B3. Cutover authored — PER-BACKEND DEFAULT (2026-07-15).** The boot bootstrap (`index.html`) now
+  auto-selects: `_wantWebGPU = !!navigator.gpu && !?gpu=0 && (?gpu=1 || isApple)`, i.e. **WebGPU is the
+  DEFAULT on Apple hardware** (Dawn-on-Metal, verified ~4× faster + regression-clean) and **WebGL stays the
+  default everywhere else** (WebGPU ~2× slower on D3D12 until r186). `?gpu=1` forces WebGPU anywhere, `?gpu=0`
+  forces WebGL anywhere; the 2.17 MB webgpu bundle loads only when it'll be used; WebGL is the safe fallback
+  (initThree try/catch). **The classic dual-path is DELIBERATELY KEPT** (Windows/Linux still need fast WebGL)
+  — the full "delete the classic renderer" step is deferred until WebGPU is competitive everywhere (r186
+  re-measure). Also added a **0×0-canvas render guard** in `renderComposite` (WebGPU errors hard on a size-0
+  swapchain when minimized/hidden; WebGL tolerated it). Verified on Metal: no-flag→WebGPU, `?gpu=0`→WebGL
+  (bundle not fetched), `?gpu=1`→WebGPU, 0×0 canvas→0 errors, renders clean at real size.
+- 🟡 **B4. Verify + merge.** Metal verification ✅ (B3 + the A2/A3 passes). Merging `webgpu`→`main` is the
+  cutover. **Does NOT auto-deploy** — production (derethgame.com) is a separate manual step, untouched.
+  Remaining before/at merge: machine-2 Windows fallback QA (A1) is nice-to-have but non-blocking since
+  Windows stays on the unchanged WebGL path by default.
 
 ---
 
