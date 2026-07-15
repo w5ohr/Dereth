@@ -98,6 +98,11 @@ SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` i
   and brightness is applied once (grade owns it; exposure stays at base, no double-apply). Verified: graph
   builds + loop-drives with zero errors; brightness/contrast uniforms respond live (brightness 0.6→1.6 =
   lum 8.8→26.7); WebGL path untouched (`applyGrade` GPUPOST branch is null-guarded).
+- ✅ **CONFIRMED by Agent 1 (machine 2, real GPU, 2026-07-15): the resizePost fix holds.** Two full
+  seeded overworld drives at ba9288d5: **0 × `used in submit while destroyed`, 0 × GPUValidationError**
+  (vs 219–438× at the pre-fix tip on the same box/flow). Only remaining GPU-loss noise is the known
+  Windows/AMD "valid external Instance reference no longer exists" environment flake at run teardown.
+  The broader eviction-dispose audit (dungeon-exit bursts) is still open, but the GPUPOST trip is fixed.
 - 🔧 **Candidate fix for the GPUPOST dispose-lifecycle trip (→ Agent 1, needs machine-2 A/B).** Per your
   note: the lazily-built `PostProcessing` pass RT was being disposed/rebuilt when `applyGfxTier`'s
   post-boot `setSize` fired → `used in submit while destroyed`. Moved the graph build OUT of the per-frame
