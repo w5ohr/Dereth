@@ -137,11 +137,18 @@ can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current
   (`mat.uniforms.uT.value=t`) unchanged. Verified both backends: WebGPU→NodeMaterial renders molten orange
   + animates (shim wires the tick); WebGL keeps ShaderMaterial, tick works. ⚠️ look eyeball-pending.
 - ⬜ **Remaining FX/post — needs a VISIBLE browser (→ machine 2, already in the shader→TSL flow):**
-  - **Portal particles** (`buildPortalFx` ~5650) + the lava **embers** (`PointsMaterial`) — point-sprite
-    rendering on WebGPU is structurally different (`gl_PointSize`/`gl_PointCoord` don't translate; needs
-    `PointsNodeMaterial`/`SpriteNodeMaterial` + a size node). Deferred — the point path wants a display to
-    confirm size/placement. (All the fragment/vertex `ShaderMaterial`s are now ported: sky[A1], portal
-    vortex, aurora, lava. `makePass` @~3665 is the WebGL POST pass, replaced by GPUPOST on WebGPU.)
+  - **Portal particles** (`buildPortalFx` ~5650, `_PFX_VERT`/`_PFX_FRAG`) + the lava **embers**
+    (`PointsMaterial`). **API is tractable (machine 1 confirmed):** `THREE.PointsNodeMaterial` +
+    `THREE.SpriteNodeMaterial` exist, `TSL.pointUV` samples within the sprite, and `mat.sizeNode` +
+    `mat.colorNode` render (a 50-point test drew). Port: `colorNode = texture(sprite).sample(pointUV) *
+    attribute('aAlpha')`, `sizeNode = attribute('aSize') * 240/max(1,positionView.z.negate())` (the
+    `gl_PointSize=aSize*(240/-mv.z)` formula). **Why machine 1 stopped here (not verifiable-by-construction
+    like the fragment ports):** point SIZE has backend-different semantics — WebGPU's `sizeNode` unit vs
+    WebGL's `gl_PointSize` pixels may not match, and a wrong size = giant blobs / invisible specks that a
+    headless box can't catch. Needs a display to dial in. NOT urgent: the ported portal VORTEX already
+    gives portals a complete look; particles are additive retail polish. (All fragment/vertex
+    `ShaderMaterial`s ARE ported now: sky[A1], portal vortex, aurora, lava. `makePass` @~3665 = the WebGL
+    POST pass, replaced by GPUPOST on WebGPU — not a target.)
     (Sky `ShaderMaterial` @2783 = Agent 1's WebGL fallback, done. `makePass` @3665 = the WebGL POST pass,
     unused on WebGPU since GPUPOST replaces it — not a target.)
   - **Anisotropy gap (cross-cutting, both agents):** on WebGPU `renderer.capabilities` is absent, so every
