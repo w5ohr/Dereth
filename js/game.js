@@ -3956,8 +3956,28 @@ function renderComposite(){
 //  · god-rays streaming from the sun through the bloom chain
 //  · GFX quality tiers + an auto governor that keeps the game above 30 FPS
 // ════════════════════════════════════════════════════════════════════════════
-const WIND={uT:{value:0},uS:{value:1}};
+// #webgpu Phase C: under ?gpu=1 these become shared TSL uniform nodes — same `.value` interface, so
+// the per-frame updater (updateWind) and the GLSL binding below both keep working untouched.
+const WIND=window.TSL?{uT:window.TSL.uniform(0),uS:window.TSL.uniform(1)}:{uT:{value:0},uS:{value:1}};
 function addWindSway(mat,amp,yLo,yHi){
+  // #webgpu Phase C: TSL twin. Ordering differs from GLSL — on WebGPU the instance transform is
+  // applied to positionLocal BEFORE positionNode runs, so:
+  // · the height mask reads positionGeometry.y (the raw attribute — the space begin_vertex used);
+  // · the phase reads the instanced position (positionLocal.xz ≈ instance translation ± mesh radius)
+  //   instead of instanceMatrix[3].xz, which a shared material's node graph can't reach. Per-vertex
+  //   phase spread across one canopy is ~1 rad — reads as leaf rustle rather than rigid sway.
+  // Composes with any existing positionNode (fallback positionLocal), mirroring the GLSL chaining.
+  if(IS_WEBGPU){
+    const t=window.TSL;
+    const wk=t.smoothstep(yLo,yHi,t.positionGeometry.y);
+    const ph=t.positionLocal.x.mul(0.35).add(t.positionLocal.z.mul(0.29));
+    const sw=t.sin(WIND.uT.mul(1.9).add(ph)).mul(0.7).add(t.sin(WIND.uT.mul(3.23).add(ph.mul(1.7))).mul(0.3));
+    const dx=sw.mul(wk).mul(amp).mul(WIND.uS);
+    const dz=t.cos(WIND.uT.mul(1.53).add(ph)).mul(wk).mul(amp*0.6).mul(WIND.uS);
+    mat.positionNode=(mat.positionNode||t.positionLocal).add(t.vec3(dx,0,dz));
+    mat.needsUpdate=true;
+    return;
+  }
   const prev=mat.onBeforeCompile;
   mat.onBeforeCompile=sh=>{
     if(prev)prev(sh);
