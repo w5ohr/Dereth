@@ -502,7 +502,24 @@ Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so 
   Jun 25, r185.1 Jul 1), so **r186 — where the WebGPU encode-perf work would land — is ~Aug+, not out yet.**
   ⇒ The "bump fixes the D3D12 encode gap" plan is **parked**: nothing to bump to. Re-check when r186 ships,
   then re-run machine 2's D3D12 perf table. The actionable levers NOW are B2a + the cutover default policy:
-- **B2a. Draw-call reduction — PROFILED (machine 1, Metal, 2026-07-15); the premise needs machine-2 repro.**
+- 🟥 **B2a RESOLVED — the "5–12k draw calls" is a BROKEN-METRIC ARTIFACT, not a real count (machine 1, 2026-07-15).**
+  `renderer.info.render.calls` is **unreliable on the WebGPU backend (r185)**: `renderer.info.reset()` is a
+  no-op there, and the counter increments **~+1 per `render()` INVOCATION regardless of scene** — a 1-cube
+  throwaway scene and the full 7k-mesh game scene both bump it by +1, and it climbs monotonically across a
+  session (measured 210→516→900→1586 purely as a function of how many renders I'd done, NOT scene
+  complexity). **The decisive test:** over 120 renders the counter climbed +105 while frame TIME stayed FLAT
+  (78.2→79.5 ms, +1.3 ms noise) — so it is a harmless info-counter bug, **not** a render-bundle leak or any
+  real per-frame growth. ⇒ **Machine 2's "5.4–12k draw calls" is almost certainly this counter read after a
+  long session, not a real per-frame draw count.** True draw calls here are ~**500–900** (frustum-visible
+  drawables ≈ 483 + shadow/post), consistent with the reliable WebGL-backend counter (~1–3k across views).
+  **There is no draw-call explosion to fix — B2a (draw-call reduction) is DE-PRIORITIZED.** Material dedup may
+  still trim encode-state churn marginally, but the 5-12k premise is void.
+  **→ machine 2: the D3D12 slowness (WebGPU ~2× slower) is REAL from your fps/frame-time table, but the
+  "5–12k draw calls / per-draw-encode-bound" ATTRIBUTION rests on the broken counter — please re-diagnose with
+  a reliable tool (Spector.js frame capture for the TRUE draw count, or a CPU profile breakdown of
+  renderComposite's JS, or read info.render.calls on the WebGL2-fallback backend where reset() works). Do NOT
+  use `info.render.calls` on native WebGPU.**
+  --- original profiling notes (still valid as far as they go) ---
   Profiled native-WebGPU draw calls at tier 3 (Ultra), both via `renderer.renderAsync` AND the real
   `renderComposite`→GPUPOST path, at the char spawn (0,-9) AND warped into Holtburg, all yaws:
   **draw calls = 210–526 everywhere. I could NOT reproduce machine 2's 5–12k on Metal.** Frustum culling is
