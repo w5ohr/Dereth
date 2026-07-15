@@ -225,10 +225,16 @@ Testing note: `scene.fog.far` is rewritten EVERY frame by the weather lerp (game
   quads (b7de0352). Native WebGPU has NO sized points: pointUV emits gl_PointCoord (invalid WGSL) and
   SpriteNodeMaterial+InstancedMesh silently draws nothing — machine 1's PointsNodeMaterial scout must
   have hit the WebGL2-fallback backend. UNVERIFIED because the box degraded (below).
-- ⬜ Bloom tune vs WebGL + look-eyeball of portal vortex/aurora/lava: blocked on a healthy display box.
-- ⚠️ ENVIRONMENT (late 2026-07-15): the dev box's GPU became unusable for headless verification (the
-  user's desktop Chrome now shares the AMD card; every run crawls at ~6fps or freezes at spawn).
-  Remaining visual verification needs a quiet GPU or another machine.
+- ✅ Portal/aurora/lava looks: machine 1 measured the TSL ports BYTE-IDENTICAL on Metal (3840b42c) —
+  supersedes the machine-2 eyeball. Portals on WebGPU render the ANIMATED TSL VORTEX (verified on
+  D3D12: glowing purple spiral, 50k px animation delta) until the particle port is proven.
+- 📌 **Bloom tune is NOT the parity gap.** Measured with identical hard-camera framing through both
+  full composites: WebGPU renders ~0.76× WebGL luminance (mid-terrain 62,66,66 vs 82,89,80), and the
+  gap is LARGER (~0.5×) with post disabled on both — so it's the BASE LIGHTING (r185 node-material
+  light integration vs the WebGL program path), not bloom/grade. scene.environment exists on both.
+  This is the "on-hardware light re-tune" A.4 anticipated → Phase-D item. GPUBLOOM defaults stay.
+- (Resolved: the earlier "GPU degraded" note was transient contention + a too-tight 60s transit
+  timeout in the harness — the seeded world build now takes ~20s; verification runs fine again.)
 - ⚠️ Non-fatal warnings to chase: 3× "Vertex attribute uv not found" on WebGPU (suspect: split canopy
   sub-geometries or a flora pool sampling map without uv), and r185 renamed PostProcessing→RenderPipeline
   (update at next bump).
