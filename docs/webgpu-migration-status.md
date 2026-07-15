@@ -480,6 +480,29 @@ cross-backend hardening + the Windows fallback:
 - **A3. D3D12 perf numbers.** Same fixed-pose method as machine 1's Metal run (table above) so we have a
   two-hardware perf picture for the cutover call.
 
+**Machine 1 also ran the METAL-side of A2 + A3 (2026-07-15, user asked for the Metal versions):**
+- ✅ **A2 (Metal) regression sweep — PASS, ZERO real errors.** Persistent error hook (console +
+  window.onerror + unhandledrejection, filtered for WGSL/pipeline/"used in submit while destroyed"/NodeBuilder/
+  TSL) across: overworld spawn, Holtburg, forest vista, night + storm, **dungeon enter/exit**, a **7-warp
+  teleport churn** (7 `buildWorld` dispose bursts), **combat FX** (4 monster kinds, 5 spells, 36 live mobs),
+  and the **water #691 shoreline** (`WaterNodeMaterial`, `uDepthOn=1`). All rendered non-black; **0 rendering/
+  dispose/WGSL errors** (only 2 logged: a headless pointer-lock rejection + a test typo). ⇒ **machine 2's
+  resource-lifecycle manager holds clean on Metal** through the historically-faulting exit/churn/FX paths.
+- ✅ **A3 (Metal) perf — Holtburg fixed pose, forced-sync, 1280×720:**
+
+  | scenario | WebGL (Metal) | WebGPU (Metal) | WebGPU speedup |
+  |---|---|---|---|
+  | tier 2 static | 86.8 ms | 20.1 ms | **4.3×** |
+  | tier 2 orbit | 82.8 ms | 20.6 ms | **4.0×** |
+  | tier 3 static | 89.1 ms | 22.5 ms | **4.0×** |
+
+  On Metal WebGPU is **~4× FASTER** than WebGL at the town (vs ~1.2× at the earlier heavy forest-vista overlook
+  where WebGPU's no-cull instanced forest is GPU-bound at ~10 M tris). WebGL's reliable counter read 172 (tier2)
+  / 1430 (tier3) draw calls — **again ~1–1.5 k real draw calls, not 5–12 k.** This is the MIRROR IMAGE of
+  machine 2's D3D12 result (WebGPU ~2× SLOWER there): the divergence is a **Dawn backend characteristic** —
+  Dawn-on-Metal encodes fast, Dawn-on-D3D12 slow. WebGPU is a clear win on Apple hardware; the open question is
+  purely why Dawn-on-D3D12 is slow (→ A3 reliable re-profile).
+
 **Stream B — Machine 1 (Mac / Metal): "land the cutover."**
 Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so it owns the code surgery:
 - ✅ **B1. WebGL2-fallback QA on macOS — FUNCTIONAL PASS (2026-07-15).** Added a QA flag: `?gpu=1&glfallback=1`
