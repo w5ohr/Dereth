@@ -347,6 +347,20 @@ red-left/blue-right). This is also the **verified primitive for the gated-off po
 item) — same InstancedBufferGeometry+SpriteNodeMaterial billboard path. (Dungeon embers/spores at ~28.6k are
 map-less THREE.Points → no warning, still 1px; low-priority ambient, can adopt the same helper later.)
 
+**2026-07-15 (machine 1, Metal) — portal particles now ON by default on WebGPU (authentic retail replay).**
+The gated-off WIP (`window.__PFX_TSL`) used a MeshBasicNodeMaterial + MANUAL billboard whose positionNode
+returned a WORLD-space position — but positionNode is object-space (re-multiplied by modelViewMatrix) → the
+quads landed off-screen ("silently draws nothing", 0 errors). Rewrote buildPortalFx's WebGPU branch to the
+same VERIFIED SpriteNodeMaterial billboard the stars/motes use: InstancedBufferGeometry (shared quad) +
+instanced iPos/aSize/aAlpha reusing the sim's Float32Arrays, `positionNode=iPos` (SpriteNodeMaterial does the
+billboard + view xform), `scaleNode=aSize` (per-instance size — VERIFIED: spans scale 0.4:1.0:1.8 →
+16:39:74px), `opacityNode=sprite.a × aAlpha`. updatePortalFx is untouched (still marks iPos/aSize/aAlpha).
+Removed the `__PFX_TSL` gate — WebGPU portals now show the retail particle effect by default, gated only on
+`window.TSL && THREE.SpriteNodeMaterial` (else fall back to the TSL vortex lens — never invisible Points).
+VERIFIED on Metal via buildPortal("Holtburg") with NO flag: chose the FX path, SpriteNodeMaterial, 18378 lit
+px / maxv 741 across 10 steady frames, 0 WGSL/pipeline errors. (First-appearance frame may be blank while the
+WebGPU pipeline compiles async — normal, imperceptible at 60fps.) WebGL portal path byte-unchanged.
+
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
 ---

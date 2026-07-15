@@ -6057,32 +6057,31 @@ function buildPortalFx(g){
     // the same pos/size/alp Float32Arrays, so the retail CPU sim (updatePortalFx) is untouched.
     // gl_PointSize=aSize*(240/-z) px ≈ a CONSTANT world size: aSize*240*2*tan(fov/2)/bufferH.
     let pts;
-    // ⚠️ WIP, default-OFF (window.__PFX_TSL=1 to enable): instanced camera-facing quads with MANUAL
-    // billboarding — SpriteNodeMaterial+InstancedMesh silently draws nothing on native WebGPU, and
-    // PointsNodeMaterial+pointUV emits gl_PointCoord (WebGL-only intrinsic, invalid WGSL). This
-    // billboard variant is written but UNVERIFIED: the dev box's GPU degraded mid-verification
-    // (user's Chrome sharing the AMD card → all runs crawl/freeze). Until verified, WebGPU portals
-    // keep the Points+ShaderMaterial fallback (skipped by NodeBuilder → no particles, no errors).
-    if(IS_WEBGPU&&window.TSL&&THREE.MeshBasicNodeMaterial&&window.__PFX_TSL){
-      // positionNode places each quad at its instanced center and spans it along the camera's world
-      // right/up. Identity instanceMatrix — per-particle data rides in instanced attributes reusing
-      // the sim's Float32Arrays.
+    // native WebGPU has NO sized points (gl_PointSize/gl_PointCoord are WebGL-only intrinsics →
+    // invalid WGSL). Render each particle as a camera-facing quad via SpriteNodeMaterial, reusing
+    // the sim's pos/size/alp Float32Arrays as instanced attributes so updatePortalFx is untouched:
+    //   positionNode = per-instance centre  (SpriteNodeMaterial handles the billboard + view xform;
+    //                  a manual world-space billboard fed to positionNode double-applies modelView
+    //                  → off-screen, which is why the earlier WIP "silently drew nothing"),
+    //   scaleNode    = per-instance size,    opacityNode = sprite.a × per-instance alpha.
+    // VERIFIED on Metal (Dawn): correct per-instance position/size/alpha, 0 WGSL/pipeline errors.
+    if(IS_WEBGPU&&window.TSL&&THREE.SpriteNodeMaterial){
       const t=window.TSL;
-      const geo2=new THREE.PlaneGeometry(1,1);
+      const base=new THREE.PlaneGeometry(1,1);
+      const geo2=new THREE.InstancedBufferGeometry();
+      geo2.index=base.index; geo2.attributes.position=base.attributes.position; geo2.attributes.uv=base.attributes.uv;
       const iPos=new THREE.InstancedBufferAttribute(pos,3), iSize=new THREE.InstancedBufferAttribute(size,1), iAlp=new THREE.InstancedBufferAttribute(alp,1);
+      iPos.setUsage(THREE.DynamicDrawUsage); iSize.setUsage(THREE.DynamicDrawUsage); iAlp.setUsage(THREE.DynamicDrawUsage);
       geo2.setAttribute('iPos',iPos); geo2.setAttribute('aSize',iSize); geo2.setAttribute('aAlpha',iAlp);
-      const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false,side:THREE.DoubleSide});
-      const db=renderer.getDrawingBufferSize(new THREE.Vector2());
-      const pxToWorld=240.0*2.0*Math.tan((cam?cam.fov:72)*Math.PI/360)/Math.max(1,db.y);   // gl_PointSize px ≈ constant world size
-      const s=t.instancedBufferAttribute(iSize,'float').mul(pxToWorld);
-      const rightW=t.cameraWorldMatrix.mul(t.vec4(1,0,0,0)).xyz, upW=t.cameraWorldMatrix.mul(t.vec4(0,1,0,0)).xyz;
-      mat.positionNode=t.instancedBufferAttribute(iPos,'vec3')
-        .add(rightW.mul(t.positionGeometry.x.mul(s)))
-        .add(upW.mul(t.positionGeometry.y.mul(s)));
+      geo2.instanceCount=n;
+      const mat=new THREE.SpriteNodeMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false});
+      mat.positionNode=t.attribute('iPos','vec3');
+      mat.scaleNode=t.attribute('aSize','float');
       const tex=t.texture(_portalSprite(em.sprite), t.uv());
-      mat.colorNode=t.vec4(tex.rgb, tex.a.mul(t.instancedBufferAttribute(iAlp,'float')));
+      mat.colorNode=tex.rgb;
+      mat.opacityNode=tex.a.mul(t.attribute('aAlpha','float'));
       mat.alphaTest=0.01;
-      pts=new THREE.InstancedMesh(geo2,mat,n);
+      pts=new THREE.Mesh(geo2,mat);
     } else {
       const mat=new THREE.ShaderMaterial({uniforms:{map:{value:_portalSprite(em.sprite)}},
         vertexShader:_PFX_VERT, fragmentShader:_PFX_FRAG,
@@ -6132,7 +6131,7 @@ function updatePortalFx(g,dt){
   }
 }
 function refreshPortalFx(){                                      // swap lens-fallback portals to the real effect
-  if(!PORTAL_FX||(IS_WEBGPU&&!window.__PFX_TSL)) return;         // #webgpu: keep the TSL vortex lens (see buildPortal)
+  if(!PORTAL_FX||(IS_WEBGPU&&!(window.TSL&&THREE.SpriteNodeMaterial))) return;   // #webgpu: need the SpriteNodeMaterial billboard path (else keep the TSL vortex lens)
   const up=(mesh)=>{ const u=mesh&&mesh.userData; if(!u||u.pfx||!u.lens) return;
     if(buildPortalFx(mesh)){ mesh.remove(u.lens); u.lens.geometry.dispose(); u.lens.material.dispose(); u.lens=null; } };
   if(typeof portals!=="undefined") for(const pt of portals) up(pt.mesh);
@@ -6141,9 +6140,10 @@ function refreshPortalFx(){                                      // swap lens-fa
 }
 function buildPortal(name){
   const g=new THREE.Group();
-  // #webgpu: the retail particle replay is gated OFF on WebGPU until the billboard port is verified
-  // (see buildPortalFx) — portals get the ANIMATED TSL VORTEX lens instead of invisible particles.
-  const wantPfx=PORTAL_FX&&(!IS_WEBGPU||window.__PFX_TSL);
+  // #webgpu: the retail particle replay now runs on WebGPU too via the SpriteNodeMaterial billboard
+  // path (buildPortalFx, VERIFIED on Metal). If the node material is somehow unavailable, fall back
+  // to the ANIMATED TSL VORTEX lens (never invisible Points).
+  const wantPfx=PORTAL_FX&&(!IS_WEBGPU||(window.TSL&&THREE.SpriteNodeMaterial));
   if(wantPfx&&buildPortalFx(g)){ /* the real retail emitters */ }
   else{ const lens=new THREE.Mesh(new THREE.CircleGeometry(1.55,64), portalMaterial());
     lens.scale.set(1.05,1.55,1); lens.position.y=2.3; g.add(lens); g.userData.lens=lens; }   // fallback until the pack loads
