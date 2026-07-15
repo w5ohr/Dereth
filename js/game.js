@@ -1391,7 +1391,7 @@ fetch(GM_DIR+'ac/breeds.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   }
   console.log("AC breeds: "+Object.keys(j).length+" families, "+looks+" authentic looks.");
 }).catch(()=>{});
-let skyMat,skyDomeMesh,hemi,amb,starMat,starField,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
+let skyMat,skyDomeMesh,hemi,amb,starMat,starField,starSprites,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
 let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
@@ -2884,10 +2884,55 @@ function softTex(inner,outer,stops){ // radial-gradient sprite texture
   else{grd.addColorStop(0,inner);grd.addColorStop(1,outer);}
   g.fillStyle=grd;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);
 }
+// ── native-WebGPU sized point sprites ─────────────────────────────────────────
+// Core WebGPU has no gl_PointSize: THREE.Points render at a fixed 1px, so every
+// sized point-sprite effect (stars, fireflies, portal-motes) collapses to invisible
+// specks and — when the PointsMaterial carries a .map — spams "Vertex attribute uv
+// not found". On WebGPU we render those as an InstancedBufferGeometry of camera-facing
+// quads via SpriteNodeMaterial: positionNode = per-instance centre (billboards each
+// sprite at its own point, respecting instance position), the sprite sampled at the
+// quad uv, per-instance colour, and a uniform opacity fade. VERIFIED on Metal (Dawn):
+// billboards land at the correct per-instance screen position + colour, 0 uv warnings.
+// WebGL keeps the original THREE.Points path byte-for-byte. `geo` supplies position
+// (+ optional color) attributes; the returned wrapper exposes the same handle the game
+// already drives (object/visible/position) plus sync()/setOpacity().
+function makePointSprites(geo, o){
+  const blending=o.blending||THREE.AdditiveBlending, fog=o.fog!==false, op0=(o.opacity!=null?o.opacity:1);
+  if(!(typeof IS_WEBGPU!=="undefined" && IS_WEBGPU && window.TSL && THREE.SpriteNodeMaterial)){
+    const m=new THREE.PointsMaterial({size:o.size,map:o.map,vertexColors:!!o.vertexColors,
+      sizeAttenuation:o.sizeAttenuation!==false,transparent:true,opacity:op0,fog:fog,
+      depthWrite:false,blending:blending});
+    const pts=new THREE.Points(geo,m);
+    return {object:pts, material:m, sync(){ geo.attributes.position.needsUpdate=true; }, setOpacity(v){ m.opacity=v; } };
+  }
+  const TSL=window.TSL, n=geo.attributes.position.count, sz=(o.gpuSize!=null?o.gpuSize:o.size);
+  const base=new THREE.PlaneGeometry(sz,sz);
+  const ig=new THREE.InstancedBufferGeometry();
+  ig.index=base.index; ig.attributes.position=base.attributes.position; ig.attributes.uv=base.attributes.uv;
+  // aCenter shares the SOURCE position Float32Array — the game's existing position writes
+  // land in the sprite centres; sync() just flips the upload flag.
+  const aCenter=new THREE.InstancedBufferAttribute(geo.attributes.position.array,3);
+  aCenter.setUsage(THREE.DynamicDrawUsage);
+  ig.setAttribute('aCenter', aCenter);
+  const colArr = (o.vertexColors && geo.attributes.color) ? geo.attributes.color.array
+               : (function(){ const a=new Float32Array(n*3); a.fill(1); return a; })();
+  ig.setAttribute('aColor', new THREE.InstancedBufferAttribute(colArr,3));
+  ig.instanceCount=n;
+  const mat=new THREE.SpriteNodeMaterial({transparent:true, depthWrite:false, blending:blending, fog:fog, toneMapped:false});
+  mat.positionNode=TSL.attribute('aCenter','vec3');
+  const samp=TSL.texture(o.map, TSL.uv());
+  mat.colorNode = o.vertexColors ? samp.rgb.mul(TSL.attribute('aColor','vec3')) : samp.rgb;
+  const uOpacity=TSL.uniform(op0);
+  mat.opacityNode=samp.a.mul(uOpacity);
+  const mesh=new THREE.Mesh(ig, mat);
+  return {object:mesh, material:mat, _aCenter:aCenter, _uOpacity:uOpacity,
+    sync(){ aCenter.needsUpdate=true; },
+    setOpacity(v){ uOpacity.value=v; } };
+}
 function buildStars(){
-  const n=2600,pos=new Float32Array(n*3),colArr=new Float32Array(n*3);
+  const n=2600,pos=new Float32Array(n*3),colArr=new Float32Array(n*3),R=WORLD*0.92;
   for(let i=0;i<n;i++){
-    const u=Math.random(),v=Math.random()*0.55,th=u*Math.PI*2,ph=Math.acos(1-v),R=WORLD*0.92;
+    const u=Math.random(),v=Math.random()*0.55,th=u*Math.PI*2,ph=Math.acos(1-v);
     pos[i*3]=R*Math.sin(ph)*Math.cos(th);pos[i*3+1]=R*Math.cos(ph)+WORLD*0.05;pos[i*3+2]=R*Math.sin(ph)*Math.sin(th);
     const tone=Math.random();const cr=tone<0.7?1:(tone<0.85?0.7:1),cg=tone<0.7?1:(tone<0.85?0.8:0.85),cb=tone<0.7?1:(tone<0.85?1:0.7);
     colArr[i*3]=cr;colArr[i*3+1]=cg;colArr[i*3+2]=cb;
@@ -2895,9 +2940,13 @@ function buildStars(){
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
   geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
-  starMat=new THREE.PointsMaterial({size:7,map:softTex("rgba(255,255,255,1)","rgba(255,255,255,0)"),
-    vertexColors:true,sizeAttenuation:false,transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending});
-  starField=new THREE.Points(geo,starMat);return starField;
+  // stars sit on a dome of radius R that follows the player, so a fixed world-space quad
+  // size ≈ constant screen size (all stars equidistant) — matches the old screen-space size:7.
+  starSprites=makePointSprites(geo,{size:7, gpuSize:R*0.011, map:softTex("rgba(255,255,255,1)","rgba(255,255,255,0)"),
+    vertexColors:true, sizeAttenuation:false, fog:false, opacity:0, blending:THREE.AdditiveBlending});
+  starMat=starSprites.material; starField=starSprites.object;
+  starSprites.sync();   // static positions — upload once
+  return starField;
 }
 // Sky bodies are the REAL AC discs from the Region file (DID 0x13000000) SkyInfo, extracted by
 // tools/ac_region_export.py to assets/sky/. Sizes are the client bbox spans (sun 600, green moon
@@ -3178,7 +3227,7 @@ function updateDayNight(dt){
     seasonCur.fog.lerp(_tmp.setHex(S.fog),k);       scene.fog.color.lerp(seasonCur.fog,0.30*(1-_oc));   // #569: don't re-tint the fog toward the (warm/pale) seasonal colour under overcast/storm — that pulled the dark storm-grey back toward Harvestgain's salmon-tan (0xdcc492) and washed the tempest out to a flat pink field. Season fog only colours CLEAR/light weather now.
     seasonCur.sky.lerp(_tmp.setHex(S.sky),k);       if(skyU)skyU.uHor.value.lerp(seasonCur.sky,0.20);
   }
-  if(starMat) starMat.opacity=clamp(1-daylight*1.6,0,1)*(0.85+0.15*Math.sin(now()/350)); // twinkle
+  if(starSprites) starSprites.setOpacity(clamp(1-daylight*1.6,0,1)*(0.85+0.15*Math.sin(now()/350))); // twinkle
   if(starField) starField.position.set(player.x,0,player.z);   // starfield follows the player
   if(skyDomeMesh) skyDomeMesh.position.set(player.x,0,player.z); // keep the sky dome centred on the player so the
   // horizon stays symmetric and you never roam out toward the dome's dark lower hemisphere
@@ -4348,7 +4397,7 @@ function auroraTonight(){
   return f<0.25?0:0.3+f*0.9;   // 1 night in 4 is dark; the rest glow 0.3–1.2
 }
 // ── fireflies & portalspace motes ──
-const MOTES={n:340,mesh:null,base:null,phase:null,on:true};
+const MOTES={n:340,mesh:null,base:null,phase:null,on:true,dataGeo:null,sprites:null,op:0};
 function buildMotes(){
   const pos=new Float32Array(MOTES.n*3),col=new Float32Array(MOTES.n*3);
   MOTES.base=new Float32Array(MOTES.n*3); MOTES.phase=new Float32Array(MOTES.n);
@@ -4358,10 +4407,10 @@ function buildMotes(){
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
   geo.setAttribute('color',new THREE.BufferAttribute(col,3));
-  const mat=new THREE.PointsMaterial({size:0.42,map:softTex("rgba(255,255,255,1)","rgba(255,255,255,0)"),
-    vertexColors:true,transparent:true,opacity:0,sizeAttenuation:true,fog:true,
-    depthWrite:false,blending:THREE.AdditiveBlending});
-  MOTES.mesh=new THREE.Points(geo,mat); MOTES.mesh.frustumCulled=false;
+  MOTES.dataGeo=geo;
+  MOTES.sprites=makePointSprites(geo,{size:0.42, gpuSize:0.55, map:softTex("rgba(255,255,255,1)","rgba(255,255,255,0)"),
+    vertexColors:true, sizeAttenuation:true, fog:true, opacity:0, blending:THREE.AdditiveBlending});
+  MOTES.mesh=MOTES.sprites.object; MOTES.mesh.frustumCulled=false; MOTES.op=0;
   MOTES.anchor={x:1e9,z:1e9};
   return MOTES.mesh;
 }
@@ -4520,16 +4569,17 @@ function gfxTick(dt){
   if(MOTES.mesh){
     const want=GFX.motesOn&&!inside&&night>0.15;
     const op=want?clamp((night-0.15)/0.4,0,1)*0.9:0;
-    MOTES.mesh.material.opacity+= (op-MOTES.mesh.material.opacity)*Math.min(1,dt*2);
-    MOTES.mesh.visible=MOTES.mesh.material.opacity>0.02;
+    MOTES.op+= (op-MOTES.op)*Math.min(1,dt*2);
+    MOTES.sprites.setOpacity(MOTES.op);
+    MOTES.mesh.visible=MOTES.op>0.02;
     if(MOTES.mesh.visible){
       if(Math.hypot(player.x-MOTES.anchor.x,player.z-MOTES.anchor.z)>55) seedMotes();
-      const pos=MOTES.mesh.geometry.attributes.position.array,b=MOTES.base,t=WIND.uT.value;
+      const pos=MOTES.dataGeo.attributes.position.array,b=MOTES.base,t=WIND.uT.value;
       for(let i=0;i<MOTES.n;i++){ const ph=MOTES.phase[i];
         pos[i*3]  =b[i*3]  +Math.sin(t*0.7+ph)*1.1+Math.sin(t*0.23+ph*2.0)*1.8;
         pos[i*3+1]=b[i*3+1]+Math.sin(t*0.9+ph*1.3)*0.5;
         pos[i*3+2]=b[i*3+2]+Math.cos(t*0.6+ph)*1.1; }
-      MOTES.mesh.geometry.attributes.position.needsUpdate=true;
+      MOTES.sprites.sync();
     }
   }
   // river-mist: thickest at dawn & dusk, after rain, and over low ground

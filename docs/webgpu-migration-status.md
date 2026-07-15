@@ -328,6 +328,25 @@ D3D12-only concern, not a target-platform blocker. (IBL/scene.environment couldn
 three/webgpu PMREMGenerator rejects a WebGLRenderer — but WebGPU IBL renders fine; basic lights being exact
 makes an IBL-only gap unlikely to explain a whole-scene 0.76×.)
 
+**2026-07-15 (machine 1, Metal) — native-WebGPU sized point sprites FIXED (stars, motes; portal-particle primitive ready).**
+Root cause of the `Vertex attribute "uv" not found` warnings AND the harder-hidden regression: core WebGPU has
+no gl_PointSize, so THREE.Points render at a fixed **1px** regardless of `size` (verified: size:40 → 1 lit px),
+and a PointsMaterial with a `.map` compiles to WGSL that references `gl_PointCoord` → a hard
+`unresolved value 'gl_PointCoord'` pipeline error. Both the starfield (2600, size 7 screen-space) and the
+firefly/portal-motes (340, size 0.42 world) hit this — invisible specks + error spam on WebGPU.
+FIX: new `makePointSprites(geo,opts)` helper (js/game.js ~2887). WebGL path is the original THREE.Points +
+PointsMaterial, **byte-unchanged** (verified: `?`-less load still builds `Points/PointsMaterial`, 0 errors).
+WebGPU path renders an `InstancedBufferGeometry` of camera-facing quads via `SpriteNodeMaterial` with
+`positionNode = attribute('aCenter')` (per-instance billboard centre — SpriteNodeMaterial otherwise ignores
+instanceMatrix, which is why machine 2's InstancedMesh+Sprite drew nothing), the sprite sampled at the quad
+uv, per-instance `aColor`, and a `uniform()` opacity fade. buildStars/buildMotes rewired; the motes update
+loop writes into the shared position array + `sprites.sync()`. VERIFIED on Metal: 0 uv warnings, 0
+gl_PointCoord errors across multiple manual scene renders; offscreen measurement shows sized soft sprites
+(stars 445 blobs ~12px, motes 210 blobs ~25px) with correct per-instance colour/position (isolated A/B:
+red-left/blue-right). This is also the **verified primitive for the gated-off portal particles** (A.'s Phase-C
+item) — same InstancedBufferGeometry+SpriteNodeMaterial billboard path. (Dungeon embers/spores at ~28.6k are
+map-less THREE.Points → no warning, still 1px; low-priority ambient, can adopt the same helper later.)
+
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
 ---
