@@ -503,6 +503,29 @@ cross-backend hardening + the Windows fallback:
   Dawn-on-Metal encodes fast, Dawn-on-D3D12 slow. WebGPU is a clear win on Apple hardware; the open question is
   purely why Dawn-on-D3D12 is slow (→ A3 reliable re-profile).
 
+**D3D12 SLOWNESS — DIAGNOSED via web research (machine 1, 2026-07-15). It's a known three.js+Dawn issue, not our bug.**
+Machine 2's "CPU-encode-bound, per-draw overhead" is the well-documented `WebGPURenderer` **UBO/uniform-buffer
+problem** (three.js [#30560] "Current UBO system has severe performance issues with many render items" — HIGH
+PRIORITY, still open; [#26266] Windows-Chrome perf; [#26673] "increase performance" tracker; [#31055]). Per-
+object-scope uniforms are managed via UBOs whose CPU-side organization is expensive per render item → 4× slower
+than WebGL with thousands of non-instanced meshes *even on M1*. It's **amplified on D3D12** because Dawn's D3D12
+command recording is much slower than its Metal path (`insertRecording` "takes very long on D3D12 vs Metal") —
+which is exactly our Metal-fast (A3: 4× faster) / D3D12-slow (machine 2: 2× slower) split. **Mitigations for
+machine 2 to test, in priority order (may close the gap WITHOUT waiting for r186):**
+1. **Chrome Canary** — [#26266] measured stable-Chrome 20% CPU vs **Canary 5–10% CPU** on the same scene
+   (Canary ships a newer Dawn). Fastest thing to try; potentially the biggest single win. Re-run the A3 table.
+2. **Force the Vulkan backend instead of D3D12.** Dawn supports Vulkan on Windows and the **D3D12 backend is
+   "less tested"**. Launch Chrome with `--use-webgpu-adapter=vulkan` (or the WebGPU-Developer-Features flag),
+   confirm via `adapter.info.backend` ("d3d12" vs "vulkan"), and A/B the A3 table. Vulkan may be faster on AMD.
+3. **Profile with AMD Radeon GPU Profiler (RGP)** — the right tool for the AMD box (frguthmann.github.io guide;
+   launch flags `--disable-gpu-sandbox --disable-gpu-watchdog --enable-dawn-features=...`). Confirms CPU-encode
+   vs GPU and gives the TRUE draw count (don't trust `info.render.calls` on WebGPU — see B2a).
+4. **r186 when it ships (~Aug).** sunag is actively working #30560/#26673; r184 already fixed a 240k–500k
+   objects/sec per-frame allocation leak (we have that on r185). r186 likely improves the UBO path further.
+5. **Game-side (marginal here):** the sanctioned workaround is more InstancedMesh/BatchedMesh — but our real
+   draw count is only ~1–1.5k (A3/B2a), so limited upside vs the browser/backend levers above.
+Sources: three.js issues #30560/#26266/#26673/#31055, Chrome WebGPU docs, frguthmann.github.io WebGPU-profiling.
+
 **Stream B — Machine 1 (Mac / Metal): "land the cutover."**
 Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so it owns the code surgery:
 - ✅ **B1. WebGL2-fallback QA on macOS — FUNCTIONAL PASS (2026-07-15).** Added a QA flag: `?gpu=1&glfallback=1`
