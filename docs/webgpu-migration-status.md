@@ -69,7 +69,7 @@ before you touch anything.
 ignored). The scene renders **dimmer/wrong** on WebGPU because the sky shader + POST tone-map/bloom are
 absent — that IS Phase C, exactly as planned. Nothing to "fix" in B.
 
-## Phase C — TSL/NodeMaterial rewrites  →  IN PROGRESS
+## Phase C — TSL/NodeMaterial rewrites  →  IN PROGRESS (parallel; see plan §4 ownership table)
 
 Concrete targets confirmed by the B scaffold: sky-dome / portal / aetheria / 2 misc `ShaderMaterial`s +
 the ground-blend / water / wind-sway `onBeforeCompile`s + the whole POST chain (bloom/tonemap/vignette/
@@ -103,6 +103,55 @@ SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` i
 > luminance) but NOT reliably pixel-verified. The remaining FX/post work is inherently VISUAL (bloom look,
 > shader appearance), so it should be done/verified on a machine with a VISIBLE browser (or the Phase-D
 > Apple-Silicon Safari pass). Don't land large shader visuals from this box on trust alone.
+
+### Agent 1 (machine 2, world/terrain) — log
+**Sky dome → TSL: DONE** (this commit). `MeshBasicNodeMaterial` + `fragmentNode`, same maths/uniforms;
+`skyU` keeps its `.value` interface so `updateDayNight`/`updateWeather` are untouched. Verified headless +
+headed Chrome on native WebGPU: world renders, sky gradient correct, `skyU` writes drive it live, zero
+NodeBuilder errors for the sky. Agent 1 conversion notes: `docs/webgpu-agent1-tsl-notes.md`.
+
+**Cross-cutting fixes landed with it (both were breaking EVERY WebGPU overworld run):**
+1. **Point lights were 100% dark on WebGPU.** The virtual-light-pool wrapper (game.js ~3266) subclasses
+   `THREE.PointLight` anonymously, and r185's node library maps light→node by EXACT constructor → all
+   805 point lights skipped with per-frame `LightsNode: Light node not found` spam. Fix: one
+   `renderer.library.addLight(THREE.PointLightNode, THREE.PointLight)` after `renderer.init()`.
+   (This is why Phase-B academy shots had black NPC silhouettes.)
+2. **`renderer.capabilities.isWebGL2` crash** in `terSplatBuild`/`terRealUpgrade` — WebGPURenderer has
+   no `.capabilities`; the TypeError aborted `initThree` midway on any run where ACMAP is live. Both
+   sites now treat WebGPU as modern (RedFormat).
+3. `index.html` boot: under `?gpu=1`, `THREE` is now rebased onto the `three/webgpu` namespace
+   (`Object.assign`) so node materials/TSL node classes are reachable from game code. Same three.core →
+   instanceof holds (verified).
+
+**KNOWN ISSUE (open, cross-cutting, likely Phase-D scale): GPU-resource lifecycle on WebGPU.**
+The game's dispose-then-reattach eviction (#232 `releaseObjectGPU`, dungeon-exit `disposeObject3D`
+bursts, the portal tube's own dispose at arrival) assumes WebGL's lazy re-upload of disposed-but-live
+resources. r185 WebGPU instead keeps cached bind groups pointing at destroyed buffers →
+`GPUValidationError: [Buffer …] used in submit while destroyed` spam and (sometimes) device loss with a
+frozen canvas. Repro: fresh char → `exitDungeon(true)` under `?gpu=1`. Confirmed by A/B: no-op'ing all
+dispose → zero faults; a 3-frame deferred-dispose shim does NOT fix it (still-live objects re-bind the
+destroyed buffer). Real fix = audit which disposals target still-referenced resources (or dirty the
+material/renderObject cache on WebGPU when eviction fires). Until then avoid dungeon-exit flows when
+testing WebGPU.
+
+**Notes for Agent 2 (FX/post):**
+- **Tone mapping on WebGPU is a whole-frame output blit** — `material.toneMapped` is ignored and even a
+  custom `fragmentNode` gets the frame's ACES + output encode (measured byte-identical vs colorNode).
+  Raw-GLSL-look parity for sky/portal/aetheria is only settleable when the POST/tonemap chain is ported;
+  plan the node `PostProcessing` graph with that in mind.
+- **NDC depth decode differs**: WebGPU depth is [0,1], WebGL is [-1,1] — every `*2.0-1.0` decode (water
+  #691, SSAO, aoBlur) needs a backend-aware helper.
+- Water's `uSceneTex/uSceneDepth` feed comes from POST.rtScene — agree on the replacement source
+  (viewportSharedTexture / PostProcessing pass texture) before hard-coding either side.
+
+**Harness (machine 2):** headless/headed Chrome driver + save-seed trick in the scratchpad (`drive.js`) —
+seeds `dereth_save_v1` with `academy.done:true` and calls `startGame(true)` to spawn straight into the
+overworld (avoids both the SW cache trap and the dungeon-exit dispose bug); waits on `!portalTransit`,
+pins `gameTime`/weather for comparable screenshots. Beware: loading a save with `academy.done` falsy
+warps back into the Academy (game.js ~30912). On this Windows/AMD box Chrome intermittently drops the
+WebGPU instance ("A valid external Instance reference no longer exists", ~50% of runs, headless worse) —
+environment flake, retry the run.
+
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
 ---

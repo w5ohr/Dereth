@@ -2475,7 +2475,8 @@ function terSplatBuild(){
   for(let i=0;i<n;i++) data[i]=(TER_LUT[ACMAP.T[i]]||0)*7;    // tile slot packed ×7 → decode floor(r*36.43+0.5) — 6×6 grid
   // #695: WebGL2 needs RedFormat — r159 allocates DataTextures with immutable texStorage2D, which
   // requires SIZED internal formats and LUMINANCE has none (GL_INVALID_ENUM). WebGL1 keeps LUMINANCE.
-  const fmt=(typeof renderer!=="undefined"&&renderer&&renderer.capabilities.isWebGL2)?THREE.RedFormat:THREE.LuminanceFormat;
+  // #webgpu: WebGPURenderer has no .capabilities — treat it as modern (RedFormat).
+  const fmt=(typeof renderer!=="undefined"&&renderer&&(IS_WEBGPU||(renderer.capabilities&&renderer.capabilities.isWebGL2)))?THREE.RedFormat:THREE.LuminanceFormat;
   const idx=new THREE.DataTexture(data,W,W,fmt,THREE.UnsignedByteType);
   idx.unpackAlignment=1;   // 2041-wide single-byte rows: the default alignment of 4 would skew every row
   idx.minFilter=THREE.NearestFilter;idx.magFilter=THREE.NearestFilter;
@@ -2520,7 +2521,7 @@ function terRealUpgrade(W){
       const n=W*W, data=new Uint8Array(n);                    // repack: every type → its OWN texture's slot
       const typeSlot={}; for(const k2 in j.types) typeSlot[k2]=slotOf[j.types[k2].tex]||0;
       for(let i2=0;i2<n;i2++){ const sl=typeSlot[ACMAP.T[i2]]; data[i2]=(sl!=null?sl:0)*7; }
-      const fmt=(typeof renderer!=="undefined"&&renderer&&renderer.capabilities.isWebGL2)?THREE.RedFormat:THREE.LuminanceFormat;
+      const fmt=(typeof renderer!=="undefined"&&renderer&&(IS_WEBGPU||(renderer.capabilities&&renderer.capabilities.isWebGL2)))?THREE.RedFormat:THREE.LuminanceFormat;   // #webgpu: no .capabilities on WebGPURenderer
       const idx2=new THREE.DataTexture(data,W,W,fmt,THREE.UnsignedByteType);
       idx2.unpackAlignment=1; idx2.minFilter=THREE.NearestFilter; idx2.magFilter=THREE.NearestFilter;
       idx2.wrapS=idx2.wrapT=THREE.ClampToEdgeWrapping; idx2.needsUpdate=true;
@@ -2753,6 +2754,32 @@ function cloneMatRepeat(mat,ru,rv){
 let skyU=null;
 function skyDome(){
   const geo=new THREE.SphereGeometry(WORLD*0.95,32,20);
+  // #webgpu Phase C: TSL twin of the GLSL shader below — same maths, same uniform names; skyU keeps
+  // its `.value` interface so updateDayNight/updateWeather drive either backend unchanged.
+  if(IS_WEBGPU){
+    const t=window.TSL;
+    const u={
+      uZen:t.uniform(new THREE.Color(0x3a70c8)),
+      uHor:t.uniform(new THREE.Color(0xbdd2e4)),
+      uGnd:t.uniform(new THREE.Color(0x59524a)),
+      uSunDir:t.uniform(new THREE.Vector3(0,1,0)),
+      uSunCol:t.uniform(new THREE.Color(0xfff2d8)),
+      uGlow:t.uniform(1.0)};
+    const d=t.normalize(t.positionWorld.sub(t.cameraPosition));               // = GLSL vDir, normalized
+    const grad=t.mix(u.uHor,u.uZen,t.pow(t.clamp(d.y,0.0,1.0),0.62));         // Rayleigh-ish falloff
+    const below=t.mix(u.uHor,u.uGnd,t.clamp(d.y.negate().mul(1.6),0.0,1.0));  // ground haze under the horizon
+    const s=t.max(t.dot(d,t.normalize(u.uSunDir)),0.0);
+    const sun=u.uSunCol.mul(t.pow(s,420.0).mul(1.1).add(t.pow(s,26.0).mul(0.34)).add(t.pow(s,5.0).mul(0.16))).mul(u.uGlow);
+    const mat=new THREE.MeshBasicNodeMaterial({side:THREE.BackSide,fog:false,depthWrite:false});
+    // fragmentNode: skip the lighting model entirely (the GLSL original wrote gl_FragColor raw).
+    // NOTE r185 WebGPU applies renderer tone mapping in a whole-frame output blit — no per-material
+    // opt-out exists (measured: fragmentNode and colorNode produce identical bytes; toneMapped is
+    // ignored). The sky therefore takes the frame's ACES like everything else on WebGPU; final look
+    // parity is settled when the POST/tonemap chain is ported (Phase C post / Phase D QA).
+    mat.fragmentNode=t.vec4(t.select(d.y.lessThan(0.0),below,grad).add(sun),1.0);
+    skyU=u;
+    return new THREE.Mesh(geo,mat);
+  }
   const mat=new THREE.ShaderMaterial({side:THREE.BackSide,fog:false,depthWrite:false,
     uniforms:{
       uZen:{value:new THREE.Color(0x3a70c8)},   // overhead
@@ -3297,6 +3324,14 @@ async function initThree(){
       renderer=new window.WebGPURenderer({canvas:document.getElementById('c'),antialias:true});
       await renderer.init();
       IS_WEBGPU=true;
+      // #webgpu Phase C: the virtual-light-pool wrapper (see VLIGHTS) subclasses PointLight, and the
+      // node library maps light→node by EXACT constructor — register the wrapper or every point light
+      // in the game is silently skipped (unlit torches/braziers/portals: black NPCs, black nights).
+      if(THREE.PointLightNode&&renderer.library) renderer.library.addLight(THREE.PointLightNode,THREE.PointLight);
+      // #webgpu KNOWN ISSUE (see docs/webgpu-migration-status.md): the game's dispose-then-reattach
+      // GPU eviction (#232 releaseObjectGPU, dungeon-exit disposeObject3D bursts, the portal tube's
+      // dispose) assumes WebGL's lazy re-upload. r185 WebGPU keeps cached bind groups pointing at the
+      // destroyed buffer → "used in submit while destroyed" spam. Needs a lifecycle audit, not a shim.
       console.log("[webgpu] WebGPURenderer active (backend:", (renderer.backend&&renderer.backend.isWebGPUBackend)?"WebGPU":"WebGL2 fallback", ")");
     }catch(e){ console.error("[webgpu] init failed — falling back to WebGLRenderer:",e); renderer=null; IS_WEBGPU=false; }
   }

@@ -951,6 +951,11 @@
         window.PostProcessing = webgpu.PostProcessing;   // #webgpu Phase C: node-graph POST (bloom/tonemap) for the WebGPU path
         window.TSL = await import('three/tsl');
         window.bloomNode = (await import('three/addons/tsl/display/BloomNode.js')).bloom;
+        // #webgpu Phase C: node materials (MeshBasicNodeMaterial, …) ship only in the webgpu namespace.
+        // Rebase THREE onto it — a superset of core sharing the same three.core, so instanceof holds and
+        // core names resolve identically; webgpu-flavoured overrides (e.g. PMREMGenerator) are the correct
+        // ones when this renderer is active. This is also the Phase-D end-state namespace.
+        Object.assign(THREE, webgpu);
       } catch (e) { console.error('WebGPU module load failed — staying on WebGL:', e); }
     }
     for (const src of ['js/game.js', 'js/craft.js']) {
