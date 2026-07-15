@@ -6088,14 +6088,14 @@ const _PORTAL_FRAG=`
     float ragged=0.82 + 0.10*sin(ang*6.0+uTime*0.45) + 0.05*sin(ang*11.0-uTime*0.7) + 0.035*sin(ang*19.0+uTime*0.3);
     float disc=smoothstep(ragged, ragged-0.16, r);         // soft ragged-edged disc, 1 inside → 0 past the torn rim
     float bg=disc*(0.6+0.4*smoothstep(1.0,0.15,r));         // a touch denser toward the heart
-    // SWIRLING SMALL DOTS — a polar lattice that rotates with time while its rings flow inward
+    // WHIRLPOOL OF SMALL DOTS — a dense polar lattice spiralling INWARD (rim → centre) as it rotates
     float sw=ang*3.0 + (1.0-r)*5.0 + uTime*0.85;
-    vec2 f1=fract(vec2(sw*1.7, r*8.0 - uTime*0.9))-0.5;
-    float dots=smoothstep(0.28,0.06,length(f1))*disc;
+    vec2 f1=fract(vec2(sw*4.8, r*22.0 + uTime*0.9))-0.5;      // +uTime → rings drain toward the core
+    float dots=smoothstep(0.20,0.045,length(f1))*disc;        // 8× as many dots, ¼ the size
     // a finer counter-swirling second layer for depth
     float sw2=ang*6.0 - (1.0-r)*3.0 - uTime*0.6;
-    vec2 f2=fract(vec2(sw2*1.3, r*13.0 + uTime*0.6))-0.5;
-    float dots2=smoothstep(0.22,0.05,length(f2))*disc*0.7;
+    vec2 f2=fract(vec2(sw2*3.7, r*37.0 + uTime*0.6))-0.5;
+    float dots2=smoothstep(0.155,0.035,length(f2))*disc*0.7;
     float dotSum=dots+dots2;
     vec3 col=vec3(0.12,0.32,0.72) + vec3(0.42,0.70,1.0)*dotSum*0.9;   // blue backing + blue dots
     float alpha=clamp(bg*0.40 + dotSum*0.42, 0.0, 0.85);            // translucent disc + almost-translucent dots
@@ -6118,11 +6118,11 @@ function portalMaterialTSL(){
   const disc=smoothstep(ragged, ragged.sub(0.16), r);
   const bg=disc.mul(float(0.6).add(smoothstep(1.0,0.15,r).mul(0.4)));
   const sw=ang.mul(3.0).add(float(1.0).sub(r).mul(5.0)).add(uT.mul(0.85));
-  const f1=fract(vec2(sw.mul(1.7), r.mul(8.0).sub(uT.mul(0.9)))).sub(0.5);
-  const dots=smoothstep(0.28,0.06,length(f1)).mul(disc);
+  const f1=fract(vec2(sw.mul(4.8), r.mul(22.0).add(uT.mul(0.9)))).sub(0.5);   // +uT → whirlpool drains inward
+  const dots=smoothstep(0.20,0.045,length(f1)).mul(disc);                     // 8× as many dots, ¼ the size
   const sw2=ang.mul(6.0).sub(float(1.0).sub(r).mul(3.0)).sub(uT.mul(0.6));
-  const f2=fract(vec2(sw2.mul(1.3), r.mul(13.0).add(uT.mul(0.6)))).sub(0.5);
-  const dots2=smoothstep(0.22,0.05,length(f2)).mul(disc).mul(0.7);
+  const f2=fract(vec2(sw2.mul(3.7), r.mul(37.0).add(uT.mul(0.6)))).sub(0.5);
+  const dots2=smoothstep(0.155,0.035,length(f2)).mul(disc).mul(0.7);
   const dotSum=dots.add(dots2);
   const col=vec3(0.12,0.32,0.72).add(vec3(0.42,0.70,1.0).mul(dotSum).mul(0.9));
   const alpha=clamp(bg.mul(0.40).add(dotSum.mul(0.42)),0.0,0.85);
@@ -6262,10 +6262,11 @@ function buildPortal(name){
   // Portal look: a blue, ragged-edged, near-translucent flat disc with swirling small blue dots
   // (portalMaterial lens — TSL on WebGPU, GLSL on WebGL). The retail purple-particle replay
   // (buildPortalFx) stays available but is no longer the default look.
-  const lens=new THREE.Mesh(new THREE.CircleGeometry(1.55,64), portalMaterial());
-  lens.scale.set(1.05,1.55,1); lens.position.y=2.3; g.add(lens); g.userData.lens=lens;
-  const light=new THREE.PointLight(0x3aa0ff,1.5,18); light.position.y=2.2; g.add(light);   // blue portal glow
-  const lbl=labelSprite("Portal → "+name,"portals"); lbl.position.y=4.2; g.add(lbl);
+  // sized to ~player height +20% (~2.4 m tall), a doorway-shaped ellipse sitting just above the ground
+  const lens=new THREE.Mesh(new THREE.CircleGeometry(1.5,72), portalMaterial());
+  lens.scale.set(0.62,1.0,1); lens.position.y=1.35; g.add(lens); g.userData.lens=lens;
+  const light=new THREE.PointLight(0x3aa0ff,1.4,13); light.position.y=1.4; g.add(light);   // blue portal glow
+  const lbl=labelSprite("Portal → "+name,"portals"); lbl.position.y=2.9; g.add(lbl);
   g.userData.light=light;
   return g;
 }
