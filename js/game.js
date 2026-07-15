@@ -3721,6 +3721,9 @@ async function initThree(){
     // showing the CURRENT frame's seabed through genuine transparency (crisp, no refraction lag).
     'if(_tv>=0.0) _a=max(mix(0.10,_a,smoothstep(0.0,1.4,_tv)),_foam);\n'+
     'gl_FragColor.a=_a;\n#include <fog_fragment>'); };
+  // #webgpu Phase C: swap in the TSL water (the plain material above is never compiled on WebGPU —
+  // its onBeforeCompile is a dead GLSL contract there). See buildWaterMaterialTSL.
+  if(IS_WEBGPU&&window.TSL&&THREE.MeshPhongNodeMaterial) waterMesh.material=buildWaterMaterialTSL();
   waterMesh.rotation.x=-Math.PI/2;waterMesh.position.y=0;scene.add(waterMesh);
   initReflections();
 
@@ -3916,6 +3919,80 @@ function blitPass(mat,src,dst){
 //    proper rigid transform (no winding flip), the scene is clipped just above y=0 so the seabed
 //    never bleeds into the mirror, shadow maps are frozen for the pass, and the water shader
 //    projects the result into its fresnel term with ripple distortion. ──
+// #webgpu Phase C: water → a MeshPhongNodeMaterial subclass. setupOutput() is overridden so the
+// water maths run on the LIT phong colour BEFORE super's fog — the exact <fog_fragment> injection
+// point the GLSL uses. All uniforms live in userData.sh.uniforms with the same .value interface, so
+// renderReflection and the per-frame water tick (game.js ~3222) are untouched. The #691 true-column
+// path (uSceneTex/uSceneDepth from POST.rtScene) stays WebGL-only: the tick gates uDepthOn on
+// POST.rtScene, which never exists on WebGPU — the baked-heightfield look renders instead (tier-0/1
+// parity). TODO(#691-webgpu): feed it from viewportSharedTexture/viewportLinearDepth.
+function buildWaterMaterialTSL(){
+  const t=window.TSL;
+  const U={
+    uWTime:t.uniform(0),
+    uSunView:t.uniform(new THREE.Vector3(0,0,1)),
+    uSkyCol:t.uniform(new THREE.Color(0xbcd0e8)),
+    uSunCol:t.uniform(new THREE.Color(0xfff2d8)),
+    uFoamCol:t.uniform(new THREE.Color(0xeaf4ff)),
+    uWorld:{value:WORLD},                        // static — baked into the graph
+    uTexMat:t.uniform(new THREE.Matrix4()),
+    uReflStr:t.uniform(0),
+    uWindF:t.uniform(0),
+    // #691 feed — inert on WebGPU (uDepthOn never flips; see header comment)
+    uDepthOn:{value:0}, uSceneTex:{value:null}, uSceneDepth:{value:null},
+    uAB:{value:new THREE.Vector2()}, uRes:{value:new THREE.Vector2(1,1)},
+  };
+  const wp=t.positionWorld;
+  // vertex: two crossed travelling swells (plane-local z = world up after the -PI/2 rotation)
+  const px=t.positionGeometry.x, py=t.positionGeometry.y;
+  const swell=t.sin(px.mul(0.012).add(U.uWTime.mul(0.9))).mul(t.cos(py.mul(0.011).add(U.uWTime.mul(0.7)))).mul(0.55)
+    .add(t.sin(px.mul(0.043).sub(U.uWTime.mul(1.4))).mul(0.18))
+    .add(t.cos(py.mul(0.037).add(U.uWTime.mul(1.1))).mul(0.15));
+  // fragment pieces (shared node instances — emitted once)
+  const hm=t.texture(terrainHeightTex(), wp.xz.div(WORLD).add(0.5)); U.uHeightMap=hm;
+  const _rDummy=new THREE.DataTexture(new Uint8Array([0,0,0,255]),1,1); _rDummy.needsUpdate=true;
+  const N=t.transformedNormalView.normalize();
+  const V=t.positionView.negate().normalize();
+  const rp4=U.uTexMat.mul(t.vec4(wp,1.0));
+  const rp=rp4.xyz.div(rp4.w.max(1e-4));
+  const reflSample=t.texture(_rDummy, t.clamp(rp.xy.add(N.xy.mul(0.05)),0.001,0.999)); U.uReflMap=reflSample;
+  const waterOut=lit=>{
+    const depth=hm.x.mul(12.0).sub(6.0).negate();                       // baked sea-bed column
+    const sh1=t.smoothstep(7.0,0.4,depth);                              // 1 in the shallows
+    const base=t.mix(lit.rgb, t.vec3(0.16,0.52,0.60), sh1.mul(0.5));    // turquoise shallows
+    const fres=t.clamp(t.dot(N,V),0.0,1.0).oneMinus().pow(4.0);
+    const deep=base.mul(0.42);
+    const inb=U.uReflStr.greaterThan(0.01)
+      .and(rp.x.greaterThan(0.001)).and(rp.x.lessThan(0.999))
+      .and(rp.y.greaterThan(0.001)).and(rp.y.lessThan(0.999));
+    let refl=t.mix(base,U.uSkyCol,0.72);
+    refl=t.select(inb, t.mix(refl,reflSample.rgb,U.uReflStr), refl);    // the mirrored world, ripple-distorted
+    let rgb=t.mix(deep,refl,fres);
+    const rd=t.dot(t.reflect(U.uSunView.normalize().negate(),N),V).max(0.0);
+    rgb=rgb.add(U.uSunCol.mul(rd.pow(180.0).mul(1.8).add(rd.pow(26.0).mul(0.22))));   // glitter + sheen
+    const wx=wp.x, wz=wp.z;                                             // vWXZ — multi-octave surf line
+    const wv=t.float(0.5)
+      .add(t.sin(wx.mul(0.25).add(U.uWTime.mul(2.2))).mul(0.2))
+      .add(t.sin(wz.mul(0.21).sub(U.uWTime.mul(1.8))).mul(0.2))
+      .add(t.sin(wx.mul(0.63).sub(wz.mul(0.55)).add(U.uWTime.mul(1.3))).mul(0.17))
+      .add(t.sin(wx.add(wz).mul(0.92).add(U.uWTime.mul(3.1))).mul(0.13))
+      .add(t.sin(wx.mul(1.7).add(wz.mul(1.3)).sub(U.uWTime.mul(2.6))).mul(0.09));
+    const foam0=t.smoothstep(2.4,0.0,depth).mul(t.clamp(depth.mul(3.0),0.0,1.0));
+    const surf=t.smoothstep(0.62,0.0,depth.sub(0.4).sub(wv.mul(1.05)).abs());
+    const foam=t.clamp(foam0.mul(wv.mul(0.55).add(0.32)).add(surf.mul(U.uWindF.mul(0.4).add(0.46))),0.0,0.96);
+    rgb=t.mix(rgb,U.uFoamCol,foam);
+    const a=t.max(t.mix(0.80,0.99,fres),foam);
+    return t.vec4(rgb,a);
+  };
+  class WaterNodeMaterial extends THREE.MeshPhongNodeMaterial{
+    setupOutput(builder,outputNode){ return super.setupOutput(builder, waterOut(outputNode)); }
+  }
+  const mat=new WaterNodeMaterial({color:0x115982,specular:0x223243,shininess:90,transparent:true,
+    opacity:0.86,depthWrite:false,normalMap:waterNormalTex(),normalScale:new THREE.Vector2(0.6,0.6)});
+  mat.positionNode=t.positionLocal.add(t.vec3(0,0,swell));
+  mat.userData.sh={uniforms:U};
+  return mat;
+}
 const REFL={on:true,rt:null,cam:null,mat:new THREE.Matrix4(),tick:0,
   plane:new THREE.Plane(new THREE.Vector3(0,1,0),0.02),
   _q:new THREE.Quaternion(),_p:new THREE.Vector3(),_f:new THREE.Vector3(),_u:new THREE.Vector3(),_t:new THREE.Vector3()};
@@ -4008,6 +4085,7 @@ function renderComposite(){
     // brightness-graded exposure — the mode is BAKED into the PostProcessing output at build time, the
     // exposure is a runtime uniform. Guarded writes → only touch on drift (no per-frame recompile).
     if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    renderReflection();   // #webgpu Phase C: the water's planar mirror renders on WebGPU too (RenderTarget + matrix surgery are backend-agnostic)
     renderer.setRenderTarget(null);
     // The POST node graph (scene grade + bloom + vignette, tonemapped on output) is built in resizePost()
     // at a settled size — NOT lazily here (that tripped the pass-RT dispose-during-resize race on real GPU).
