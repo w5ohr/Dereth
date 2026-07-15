@@ -441,8 +441,43 @@ definitive fps verdict needs a real foreground browser with GPU timer queries (`
 WebGPU timestamp-query) and natural rAF pacing. **Bottom line for cutover: no perf blocker — WebGPU ≥ WebGL
 here, and its advantage widens with draw-call count.**
 
-**Still LEFT in D:** WebGL2-fallback-backend QA (force `forceWebGL`/no-native-WebGPU and confirm the game
-runs), then the cutover (flip default, retire `?gpu=1`, drop the classic dual-path, roll `webgpu`→`main`).
+### Phase D split — two workstreams, one per machine (2026-07-15)
+
+The remaining D work divides along each machine's comparative advantage. **Rule of thumb:** verification of a
+backend can only be done on the machine that runs that backend (Metal vs D3D12); the cutover *code surgery*
+is authored once (machine 1, which owns the boot/scaffold) and verified on both.
+
+**⚠️ Hard dependency:** the cutover MERGE (`webgpu`→`main`, dropping the classic path) must NOT land until
+BOTH fallback QAs pass and machine 2's D3D12 regression is green — dropping the classic `WebGLRenderer`
+commits us to `WebGPURenderer` (native WebGPU, WebGL2-backend fallback) as the ONLY path. Machine 1 may
+AUTHOR the cutover on a sub-branch in parallel; it just can't be merged until Stream A is green.
+
+---
+**Stream A — Machine 2 (Windows / AMD / D3D12): "prove it survives everywhere it must."**
+This is the strict backend where every hard bug surfaced (dispose faults, color pipeline), so it owns
+cross-backend hardening + the Windows fallback:
+- **A1. WebGL2-fallback QA on Windows.** Force `WebGPURenderer`'s WebGL2 backend (`new WebGPURenderer({
+  forceWebGL:true })`, or block `navigator.gpu`) and confirm the WHOLE game renders + plays. This is the
+  real path for Windows players whose Chrome doesn't expose WebGPU — and after cutover it's the ONLY
+  fallback (the classic `WebGLRenderer` is gone), so it's load-bearing. Windows/ANGLE-over-D3D WebGL2
+  differs from macOS, so machine 2 must cover the Windows side.
+- **A2. D3D12 full regression sweep.** Overworld + dungeons + towns + water(#691) + particles + weather +
+  combat FX + enter/exit/teleport churn, watching for `used in submit while destroyed`, WGSL errors, or
+  visual breakage. D3D12 is where regressions hide.
+- **A3. D3D12 perf numbers.** Same fixed-pose method as machine 1's Metal run (table above) so we have a
+  two-hardware perf picture for the cutover call.
+
+**Stream B — Machine 1 (Mac / Metal): "land the cutover."**
+Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so it owns the code surgery:
+- **B1. WebGL2-fallback QA on macOS.** Same force-WebGL2 test on this side (macOS ANGLE/Metal-GL differs
+  from Windows) — the macOS half of A1.
+- **B2. Author the cutover.** Make `WebGPURenderer` the default (native WebGPU, auto WebGL2-backend
+  fallback), retire the `?gpu=1` opt-in, and DELETE the classic path: the `WebGLRenderer` branch of
+  `initThree`, the 6 GLSL `ShaderMaterial`s + `onBeforeCompile` patches (now superseded by TSL), the
+  WebGLRenderTarget POST chain (`initPost`/`POST.comp`/`makePass`), and every `if(IS_WEBGPU) … else …`
+  fork that exists only to keep both alive. Bump `sw.js`, trim the importmap/boot. Keep it on a sub-branch.
+- **B3. Verify the cutover on Metal** (full game, no `?gpu=1`) and open the `webgpu`→`main` PR — held for
+  the user's green-light + Stream-A sign-off.
 
 ---
 
