@@ -114,10 +114,24 @@ SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` i
   RETURNS the buffer**), then de-pads the 256-byte-aligned rows (stride = ceil(w*4/256)*256 = 768 for 150px)
   and does NOT flip (WebGPU readback is top-down). Verified on BOTH backends: portrait non-blank + correctly
   oriented (red-up subject → canvas top; WebGPU was blank before).
-- ⬜ **Remaining FX/post:** SSAO + god-rays as their own passes into the node graph; tune bloom to match
-  WebGL; portal FX, aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL (dual-path: keep GLSL
-  for classic WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops classic WebGL). Inherently
-  visual → do/verify on a machine with a VISIBLE browser (this box can't pixel-verify WebGPU).
+**Machine 1's headless-VERIFIABLE FX/post work is COMPLETE** (tonemap, bloom graph, full grade, dispose-race
+candidate, async portrait read — all above). What's left is **inherently visual** — a procedural/particle
+shader look or a screen-space effect that only means anything when you can SEE it, which this box can't
+(hidden pane, no WebGPU pixel readback). Machine 1 deliberately stopped here rather than land blind ports it
+can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current skip). Handoff below.
+
+- ⬜ **Remaining FX/post — needs a VISIBLE browser (→ machine 2, already in the shader→TSL flow):**
+  - Custom `ShaderMaterial`s still skipped on WebGPU (render blank): **portal vortex** (`portalMaterial`,
+    game.js ~5613, procedural fbm), **portal particles** (`buildPortalFx` ~5650, point-sprite sampler —
+    note WebGPU point rendering ≠ `gl_PointSize`/`gl_PointCoord`), **aurora** (`buildAurora` ~4009,
+    procedural), and the **prop shader** (`buildProp` ~28317, check what it is). Dual-path each: keep GLSL
+    for classic WebGLRenderer, add a TSL `NodeMaterial`/`fragmentNode` for WebGPU — same pattern Agent 1
+    used for the sky dome (`skyDome` ~2773). (Sky `ShaderMaterial` @2783 = Agent 1's WebGL fallback, done.
+    `makePass` @3665 = the WebGL POST pass, unused on WebGPU since GPUPOST replaces it — not a target.)
+  - **SSAO** + **god-rays** as their own `pass`/nodes into the GPUPOST graph (currently WebGL-only).
+  - **Tune the bloom** strength/radius/threshold (`GPUBLOOM`) to match the WebGL look.
+  - Whoever picks these up: they slot into the existing `GPUPOST` graph / dual-path pattern already in
+    `js/game.js`; nothing new architecturally.
 
 > ⚠️ **Verification limitation (this dev box):** the Browser-pane preview is a HIDDEN pane
 > (`document.hidden`, `innerWidth=0`, rAF throttled), and WebGPU canvas→drawImage readback is unreliable
