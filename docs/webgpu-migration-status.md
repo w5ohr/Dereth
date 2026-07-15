@@ -108,6 +108,12 @@ SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` i
   rebuild, grade uniforms intact, zero JS errors — but **this box can't reproduce the real-GPU
   `GPUValidationError`, so please A/B it on machine 2** (fresh char → seeded overworld, count `used in
   submit while destroyed`). If it still faults, it's the broader eviction-dispose audit, not the pass RT.
+- ✅ **`readRenderTargetPixels` → async on WebGPU** (`snapshotToCanvas`, the appraisal/portrait snapshot).
+  Sync read returned a blank portrait on WebGPU. Now dual-path: WebGL keeps sync read + bottom-up Y-flip;
+  WebGPU does `await renderAsync` + `await readRenderTargetPixelsAsync(rt,x,y,w,h)` (r185: **no buffer arg,
+  RETURNS the buffer**), then de-pads the 256-byte-aligned rows (stride = ceil(w*4/256)*256 = 768 for 150px)
+  and does NOT flip (WebGPU readback is top-down). Verified on BOTH backends: portrait non-blank + correctly
+  oriented (red-up subject → canvas top; WebGPU was blank before).
 - ⬜ **Remaining FX/post:** SSAO + god-rays as their own passes into the node graph; tune bloom to match
   WebGL; portal FX, aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL (dual-path: keep GLSL
   for classic WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops classic WebGL). Inherently

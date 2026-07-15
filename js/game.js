@@ -25726,13 +25726,29 @@ function snapshotToCanvas(srcMesh,cnv){
     const r=Math.max(sz.x,sz.y,sz.z)*0.5||1;
     _idCam.position.set(c.x+r*1.5,c.y+r*0.75,c.z+r*1.9); _idCam.lookAt(c); _idCam.updateProjectionMatrix();
     const oldT=renderer.getRenderTarget(), oldC=new THREE.Color(); renderer.getClearColor(oldC); const oldA=renderer.getClearAlpha();
-    renderer.setClearColor(0x241c10,1); renderer.setRenderTarget(_idRT); renderer.clear(); renderer.render(_idScene,_idCam);
-    const px=new Uint8Array(150*150*4); renderer.readRenderTargetPixels(_idRT,0,0,150,150,px);
-    renderer.setRenderTarget(oldT); renderer.setClearColor(oldC,oldA);
-    _idScene.remove(cl);
-    const ctx=cnv.getContext('2d'), img=ctx.createImageData(150,150);
-    for(let y=0;y<150;y++) img.data.set(px.subarray((149-y)*600,(149-y)*600+600), y*600);   // flip Y
-    ctx.putImageData(img,0,0);
+    renderer.setClearColor(0x241c10,1); renderer.setRenderTarget(_idRT);
+    const restore=()=>{ renderer.setRenderTarget(oldT); renderer.setClearColor(oldC,oldA); _idScene.remove(cl); };
+    const fail=()=>{ try{restore();}catch(_){} const ctx=cnv.getContext('2d'); ctx.fillStyle="#241c10"; ctx.fillRect(0,0,150,150); };
+    // #webgpu Phase C: WebGPU reads are ASYNC and its render queues async, so the sync
+    // readRenderTargetPixels path returns a blank portrait. On WebGPU: awaited renderAsync + the
+    // (buffer-returning, no-buffer-arg) readRenderTargetPixelsAsync, then de-pad the 256-byte-aligned rows
+    // (stride = ceil(w*4/256)*256) and DON'T flip Y (WebGPU readback is top-down; WebGL is bottom-up).
+    if(IS_WEBGPU&&renderer.readRenderTargetPixelsAsync){
+      (async()=>{ try{
+          renderer.clear(); await renderer.renderAsync(_idScene,_idCam);
+          const buf=await renderer.readRenderTargetPixelsAsync(_idRT,0,0,150,150);
+          const stride=Math.ceil(150*4/256)*256;   // 768 — GPUBuffer rows are 256-byte aligned
+          const ctx=cnv.getContext('2d'), img=ctx.createImageData(150,150);
+          for(let y=0;y<150;y++) img.data.set(buf.subarray(y*stride,y*stride+600), y*600);   // top-down, un-padded
+          ctx.putImageData(img,0,0); restore();
+        }catch(e){ fail(); } })();
+    } else {
+      renderer.clear(); renderer.render(_idScene,_idCam);
+      const px=new Uint8Array(150*150*4); renderer.readRenderTargetPixels(_idRT,0,0,150,150,px); restore();
+      const ctx=cnv.getContext('2d'), img=ctx.createImageData(150,150);
+      for(let y=0;y<150;y++) img.data.set(px.subarray((149-y)*600,(149-y)*600+600), y*600);   // GL bottom-up → flip Y
+      ctx.putImageData(img,0,0);
+    }
   }catch(e){ const ctx=cnv.getContext('2d'); ctx.fillStyle="#241c10"; ctx.fillRect(0,0,150,150); }
 }
 function idItemDesc(it){
