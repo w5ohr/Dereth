@@ -4048,17 +4048,63 @@ let GPUPOST=null;
 const GPUBLOOM={strength:0.74, radius:0.4, threshold:0.85};   // strength mirrors the WebGL composite's bloom `strength` (0.74)
 function buildGpuPost(){
   const T=window.TSL, bloom=window.bloomNode;
-  const {pass,uv,vec2,vec3,float,mix,clamp,smoothstep,fract,sin,uniform,luminance}=T;
+  const {pass,uv,vec2,vec3,float,mix,clamp,smoothstep,fract,sin,cos,uniform,luminance,Fn,Loop,If,
+         getViewPosition,cameraProjectionMatrixInverse,convertToTexture,dFdx,dFdy,normalize,cross,
+         dot,max,step,screenCoordinate}=T;
   GPUPOST=new window.PostProcessing(renderer);
   const scenePass=pass(scene,cam);
   const bloomPass=bloom(scenePass, GPUBLOOM.strength, GPUBLOOM.radius, GPUBLOOM.threshold);
   const uBright=uniform(1.0), uContrast=uniform(1.0), uVig=uniform(0.33);   // vig 0.33 mirrors POST.comp's `vig`
+  const uRayStr=uniform(0.0), uSun=uniform(new THREE.Vector2(0.5,0.8));     // god-rays (driven per frame from _raysStr/_sunNDC)
+  const uAoStr=uniform(0.0), uRad=uniform(new THREE.Vector2(0.8,1.3)), uProj=uniform(new THREE.Vector2(1,1));
+  const depthTex=scenePass.getTextureNode('depth');
+  // #690 SSAO — the same Alchemy-style AO as the WebGL POST.ao, ported node-for-node. Differences:
+  // getViewPosition handles the backend depth convention ([0,1] on WebGPU vs [-1,1] NDC on WebGL),
+  // and it runs inline in the composite (no half-res RT or separable blur; the 10-tap golden-angle
+  // spiral + per-pixel dither hide most of the noise the blur used to).
+  const vpos=u=>getViewPosition(u, depthTex.sample(u).x, cameraProjectionMatrixInverse);
+  const aoNode=Fn(()=>{
+    const suv=uv().toVar();
+    const ao=float(1.0).toVar();
+    If(depthTex.sample(suv).x.lessThan(0.9999),()=>{                        // sky passes through untouched
+      const P=vpos(suv).toVar();
+      const fade=smoothstep(60.0,28.0,P.z.negate()).toVar();                // AO is near-field: gone by 60m
+      If(fade.greaterThan(0.004),()=>{
+        const N=normalize(cross(dFdx(P),dFdy(P))).toVar();
+        const ang=fract(sin(dot(screenCoordinate.xy,vec2(12.9898,78.233))).mul(43758.5453)).mul(6.2832);
+        const occ=float(0.0).toVar();
+        Loop(10,({i})=>{
+          const fi=float(i);
+          const a=ang.add(fi.mul(2.39996));
+          const rr0=fi.add(0.57).div(10.0), rr=rr0.mul(rr0);
+          const duv=vec2(cos(a),sin(a)).mul(rr.mul(uRad.x).mul(0.5)).mul(uProj).div(max(0.35,P.z.negate()));
+          const v=vpos(suv.add(duv)).sub(P);
+          const d2=dot(v,v);
+          occ.addAssign(max(0.0,dot(N,v).sub(P.z.negate().mul(0.032))).div(d2.add(0.12))
+            .mul(step(d2,uRad.x.mul(uRad.x).mul(6.0))));                    // depth-scaled bias — grazing floors must not self-occlude
+        });
+        ao.assign(clamp(float(1.0).sub(occ.mul(uRad.y.mul(0.1)).mul(fade)),0.0,1.0).pow(1.5));
+      });
+    });
+    return ao;
+  })();
+  // god-rays: 26-tap radial smear of the bloom (the blurred bright field) toward the sun's screen pos
+  const bloomTex=convertToTexture(bloomPass);
+  const raysNode=Fn(()=>{
+    const p=uv().toVar();
+    const d=uSun.sub(uv()).div(26.0).toVar();
+    const acc=vec3(0.0).toVar(), w=float(1.0).toVar(), tot=float(0.0).toVar();
+    Loop(26,()=>{ acc.addAssign(bloomTex.sample(p).rgb.mul(w)); tot.addAssign(w); w.mulAssign(0.93); p.addAssign(d); });
+    return acc.div(tot);
+  })();
   let c=scenePass.rgb;
+  c=c.mul(mix(float(1.0),aoNode,uAoStr));                                  // #690: AO darkens BEFORE grade & bloom — glow is never dimmed
   const l=luminance(c);
   c=mix(vec3(l),c,float(1.18));                                            // richer saturation
   c=mix(c, c.mul(c).mul(float(3.0).sub(c.mul(2.0))), float(0.16));         // gentle S-curve
   c=c.mul(mix(vec3(0.95,0.975,1.07),vec3(1.08,1.02,0.92),clamp(l,0.0,1.0))); // cooler shadows / warmer highlights
   c=c.add(bloomPass.rgb);                                                  // additive glow (bloom pre-scaled by strength)
+  c=c.add(raysNode.mul(uRayStr));                                          // the sun streams through the world
   c=c.sub(0.5).mul(uContrast).add(0.5).mul(uBright).max(0.0);              // brightness/contrast grade (Settings sliders)
   const q=uv().sub(0.5), d=q.dot(q);
   c=c.mul(float(1.0).sub(smoothstep(0.24,0.82,d).mul(uVig)));              // vignette
@@ -4066,6 +4112,7 @@ function buildGpuPost(){
   c=c.add(n.sub(0.5).div(255.0));                                          // dither — kills sky-gradient banding
   GPUPOST.outputNode=c;
   GPUPOST._uBright=uBright; GPUPOST._uContrast=uContrast; GPUPOST._uVig=uVig; GPUPOST._bloom=bloomPass;
+  GPUPOST._uRayStr=uRayStr; GPUPOST._uSun=uSun; GPUPOST._uAoStr=uAoStr; GPUPOST._uProj=uProj;
 }
 let _wgpuShadowFixN=0;   // #webgpu: armed by applyGfxTier after a shadow.mapSize change (see there)
 function renderComposite(){
@@ -4093,7 +4140,16 @@ function renderComposite(){
     // the plain-fallback render (graph not built yet) folds brightness into exposure. Guarded writes.
     const wantExp=TONE_EXPOSURE_BASE*(GPUPOST?1:clamp(+settings.brightness||1,0.4,2.0));
     if(Math.abs(renderer.toneMappingExposure-wantExp)>1e-4) renderer.toneMappingExposure=wantExp;
-    if(GPUPOST) GPUPOST.render(); else renderer.render(scene,cam);
+    if(GPUPOST){
+      // per-frame SSAO/god-rays wiring (mirrors the WebGL comp's rayStr/aoStr/uSun updates)
+      if(GPUPOST._uSun){
+        GPUPOST._uRayStr.value=(GFX.rays&&_raysStr>0.003)?_raysStr:0;
+        if(_raysStr>0.003) GPUPOST._uSun.value.set(_sunNDC.x*0.5+0.5,_sunNDC.y*0.5+0.5);
+        GPUPOST._uAoStr.value=GFX.ao?1:0;
+        const pe=cam.projectionMatrix.elements; GPUPOST._uProj.value.set(pe[0],pe[5]);
+      }
+      GPUPOST.render();
+    } else renderer.render(scene,cam);
     return;   // water reflection RT + SSAO + god-rays still WebGL-only (added to the node graph next)
   }
   renderReflection();
