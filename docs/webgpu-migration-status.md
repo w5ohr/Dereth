@@ -209,7 +209,26 @@ drive pixels; sky (fog:false) stays exempt; WebGL default path re-verified clean
 Testing note: `scene.fog.far` is rewritten EVERY frame by the weather lerp (game.js ~2925) AND AC_SKY
 (~3091) — to test fog distance, drive `targetFar`/`fogFar` and null `AC_SKY`, don't write `fog.far`.
 
-**NEW OPEN ISSUE (pre-existing, not from the sway change): static radial "streak" artifact on WebGPU
+**2026-07-15 (machine 2, now owning ALL of Phase C): WebGPU actually RENDERS — 3 root causes fixed**
+(a6ff53ac). The seeded tier-≥1 overworld was a PERMANENTLY FROZEN canvas (every submit rejected); any
+prior pixel check of a dispose-active WebGPU flow was a frozen frame with the live DOM HUD on top —
+treat pre-a6ff53ac WebGPU pixel "verification" of such flows as void (harness runs that no-op'd
+dispose, e.g. the sway/fog work, remain valid). Root causes + fixes:
+1. **Array-material shadow casters churn the renderObject cache** (deciduous [trunk,leaf] pools →
+   ~100 uniform-buffer destroys/s in the shadow pass). Fixed: pools split into trunk+canopy meshes
+   sharing one instanceMatrix on WebGPU.
+2. **Two shadow-casting DirectionalLights ping-pong the cache** (63 faults/s; either alone ~0).
+   Fixed: single cascade on WebGPU (SHAD2.on gated) — upstream r185 bug, re-check at next bump.
+3. **The mid-tunnel buildWorld burst destroys shared-but-unmarked resources (Mode B1)** → every later
+   submit faults. Fixed: ALL dispose routes through a 2-tick deferral queue (prototype patch, WebGPU
+   only), HELD during transits and DROPPED at transit end (bounded leak; Phase-2 refcount audit is
+   the real fix). exitDungeon repro now 0 faults (was 219–438).
+**Ground detail-blend splat → TSL: DONE** (same commit) — full splat/cliff/snow/anti-tiling/relief as
+colorNode/roughnessNode/normalNode; verified vs WebGL through both composites (structure/hue match;
+uniform brightness delta pending bloom/grade tune). **The "streak artifact" below is RESOLVED** — it
+was never a rendering artifact, just the frozen canvas showing the last transit-tube frame.
+
+**RESOLVED (see above — was: pre-existing static radial "streak" artifact on WebGPU
 at gfx tier ≥2.** Bright white/blue lines radiating from a point near screen center, pixel-STATIC
 across frames, localized around the player (a hard camera aimed at a tree 240m away shows none).
 Present with the sway change stashed, so it's an existing tier-2 WebGPU rendering bug — suspects are
