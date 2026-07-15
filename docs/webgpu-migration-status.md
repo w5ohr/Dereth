@@ -166,6 +166,7 @@ can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current
     0→5.1); (b) 4739 repeating textures now at aniso 16 on WebGPU (were 1), an EXACT match to WebGL's
     distribution (4739@16 / 4026@1 both backends — the 4026 are GLTF/inline textures that never set it on
     either backend, pre-existing/out of scope).
+    - **MERGE RECONCILE (machine 1):** machine 2 independently fixed the same bug via a `renderer.capabilities={getMaxAnisotropy:()=>16}` monkey-patch (commit 3582083f). Both landed. Removed that shim — the `maxAnisotropy()` helper already returns 16 on WebGPU (its else-branch), no need to fake `renderer.capabilities` on the WebGPU renderer. Verified after removal: `renderer.capabilities` undefined, `maxAnisotropy()`==16, 4739 textures still @16, zero errors.
   - **SSAO** + **god-rays** as their own `pass`/nodes into the GPUPOST graph (currently WebGL-only).
   - **Tune the bloom** strength/radius/threshold (`GPUBLOOM`) to match the WebGL look.
   - Whoever picks these up: they slot into the existing `GPUPOST` graph / dual-path pattern already in

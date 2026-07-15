@@ -3419,11 +3419,8 @@ async function initThree(){
       // node library maps light→node by EXACT constructor — register the wrapper or every point light
       // in the game is silently skipped (unlit torches/braziers/portals: black NPCs, black nights).
       if(THREE.PointLightNode&&renderer.library) renderer.library.addLight(THREE.PointLightNode,THREE.PointLight);
-      // #webgpu: WebGPURenderer has no .capabilities, so every guarded
-      // `t.anisotropy=renderer.capabilities.getMaxAnisotropy()` site silently skipped → all textures
-      // lost anisotropic filtering (blurry at grazing angles). WebGPU guarantees maxAnisotropy 16.
-      // (The isWebGL2 checks all short-circuit on IS_WEBGPU before reaching this object.)
-      renderer.capabilities={getMaxAnisotropy:()=>16};
+      // (anisotropy on WebGPU is handled by the backend-aware maxAnisotropy() helper — no renderer.capabilities
+      //  monkey-patch needed; two independent fixes collided in the merge, this keeps the clean one.)
       // #webgpu dispose-lifecycle Phase 1 (the decisive piece): the game's per-frame FX teardown
       // (label sprites, hit bursts, cast swirls, mob despawn — ~25 direct .dispose() sites that
       // bypass the _disp* choke) destroys materials/geometries whose buffers the in-flight submit
