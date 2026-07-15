@@ -209,6 +209,30 @@ drive pixels; sky (fog:false) stays exempt; WebGL default path re-verified clean
 Testing note: `scene.fog.far` is rewritten EVERY frame by the weather lerp (game.js ~2925) AND AC_SKY
 (~3091) — to test fog distance, drive `targetFar`/`fogFar` and null `AC_SKY`, don't write `fog.far`.
 
+**2026-07-15 EOD (machine 2) — Phase C essentially complete; remaining items and environment note:**
+- ✅ Water + planar reflection → TSL (31d88bab): MeshPhongNodeMaterial subclass, setupOutput override
+  = the exact pre-fog injection point; userData.sh mimic keeps renderReflection + the water tick
+  untouched; mirror renders on WebGPU. #691 true-column path stays WebGL-only (uDepthOn gated on
+  POST.rtScene) — TODO: viewportSharedTexture feed.
+- ✅ SSAO + god-rays in GPUPOST (9ecfcd45): Alchemy AO inline (getViewPosition handles the depth
+  convention), 26-tap radial rays from the bloom field; wired per frame like the WebGL comp.
+- ✅ Anisotropic filtering restored (722b7015): renderer.capabilities shim (WebGPU guarantees 16×).
+- ✅ Dispose endgame: GPU resources are NEVER destroyed on WebGPU (prototype no-ops, b7de0352) —
+  deferral can't fix Mode B1 (shared-unmarked resources: cached canvas textures AND merged-archetype
+  geometry; destroying either freezes the canvas on spawn/teleport/exit). Bounded VRAM growth per
+  session; the Phase-2 REFCOUNTED RESOURCE MANAGER is the real fix and the top Phase-D prerequisite.
+- ⚠️ WIP gated OFF (window.__PFX_TSL=1 to enable): portal particles as manually-billboarded instanced
+  quads (b7de0352). Native WebGPU has NO sized points: pointUV emits gl_PointCoord (invalid WGSL) and
+  SpriteNodeMaterial+InstancedMesh silently draws nothing — machine 1's PointsNodeMaterial scout must
+  have hit the WebGL2-fallback backend. UNVERIFIED because the box degraded (below).
+- ⬜ Bloom tune vs WebGL + look-eyeball of portal vortex/aurora/lava: blocked on a healthy display box.
+- ⚠️ ENVIRONMENT (late 2026-07-15): the dev box's GPU became unusable for headless verification (the
+  user's desktop Chrome now shares the AMD card; every run crawls at ~6fps or freezes at spawn).
+  Remaining visual verification needs a quiet GPU or another machine.
+- ⚠️ Non-fatal warnings to chase: 3× "Vertex attribute uv not found" on WebGPU (suspect: split canopy
+  sub-geometries or a flora pool sampling map without uv), and r185 renamed PostProcessing→RenderPipeline
+  (update at next bump).
+
 **2026-07-15 (machine 2, now owning ALL of Phase C): WebGPU actually RENDERS — 3 root causes fixed**
 (a6ff53ac). The seeded tier-≥1 overworld was a PERMANENTLY FROZEN canvas (every submit rejected); any
 prior pixel check of a dispose-active WebGPU flow was a frozen frame with the live DOM HUD on top —
