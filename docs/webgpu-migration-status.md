@@ -188,6 +188,7 @@ NodeBuilder errors for the sky. Agent 1 conversion notes: `docs/webgpu-agent1-ts
    instanceof holds (verified).
 
 **KNOWN ISSUE (open, cross-cutting, likely Phase-D scale): GPU-resource lifecycle on WebGPU.**
+> **Scoped by machine 1 → [webgpu-dispose-lifecycle-scoping.md](webgpu-dispose-lifecycle-scoping.md)**: root cause (WebGL lazy-re-upload vs WebGPU destroy-now + cached bind groups), 2 failure modes (in-flight burst / still-live ref), and a phased fix (defer destroy through the `_dispGeo`/`_dispMat` choke until `onSubmittedWorkDone`; no-op `releaseObjectGPU` on WebGPU). Needs machine-2 GPU to implement+verify.
 The game's dispose-then-reattach eviction (#232 `releaseObjectGPU`, dungeon-exit `disposeObject3D`
 bursts, the portal tube's own dispose at arrival) assumes WebGL's lazy re-upload of disposed-but-live
 resources. r185 WebGPU instead keeps cached bind groups pointing at destroyed buffers →
