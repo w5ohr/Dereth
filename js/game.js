@@ -28372,11 +28372,38 @@ function mkPuddle(x,z,fy){
   return g;
 }
 const TH_WET={mushroom:1,crystal:1};
+// #webgpu Phase C: faithful TSL port of the lava-pool shader (vertex heave + 2-octave-noise molten
+// fragment). Establishes the positionNode (vertex-displacement) pattern. Math copied 1:1 from the GLSL.
+// A `.uniforms` shim ({uT,uCol} → TSL uniform nodes) lets the PROPANIM tick (`mat.uniforms.uT.value=t`)
+// run unchanged. Verified: compiles (incl. the heave), renders molten orange, animates. ⚠️ look eyeball-pending.
+function lavaMaterialTSL(color){
+  const T=window.TSL;
+  const {Fn,float,vec2,vec3,vec4,uniform,fract,sin,cos,dot,floor,mix,smoothstep,abs,length,positionGeometry}=T;
+  const uT=uniform(0), uCol=uniform(new THREE.Color(color));
+  const h=Fn(([p])=> fract(sin(dot(p,vec2(127.1,311.7))).mul(43758.5453)) );
+  const n2=Fn(([p])=>{ const i=floor(p),f=fract(p); const ff=f.mul(f).mul(float(3).sub(f.mul(2)));
+    return mix(mix(h(i),h(i.add(vec2(1,0))),ff.x), mix(h(i.add(vec2(0,1))),h(i.add(vec2(1,1))),ff.x), ff.y); });
+  const pg=positionGeometry;
+  const heave=sin(uT.mul(0.9).add(pg.x.mul(2.1))).mul(cos(uT.mul(0.7).add(pg.y.mul(1.7)))).mul(0.06);
+  const vP=pg.xy, q=vP.mul(1.4);
+  const flow=n2(q.add(vec2(uT.mul(0.11),uT.mul(0.07)))).mul(0.62).add(n2(q.mul(2.3).sub(vec2(uT.mul(0.05),uT.mul(0.13)))).mul(0.38));
+  const crust=smoothstep(0.46,0.62,flow);
+  const hot=mix(mix(vec3(1.0,0.16,0.0),vec3(1.0,0.72,0.22),n2(q.mul(3.1).add(uT.mul(0.09)))),uCol,0.25).mul(1.7);
+  const crustCol=vec3(0.08,0.035,0.02).mul(float(0.7).add(n2(q.mul(5.0)).mul(0.3)));
+  const crack=smoothstep(0.02,0.10,abs(flow.sub(0.54)));
+  const c0=mix(hot,mix(hot.mul(1.2),crustCol,crack),crust);
+  const edge=smoothstep(1.7,1.35,length(vP));
+  const mat=new THREE.MeshBasicNodeMaterial({fog:false});
+  mat.positionNode=vec3(pg.x,pg.y,pg.z.add(heave));
+  mat.fragmentNode=vec4(c0.mul(mix(float(0.35),float(1.0),edge)),1.0);
+  mat.uniforms={uT,uCol};   // shim: PROPANIM tick sets mat.uniforms.uT.value — a UniformNode's .value is settable
+  return mat;
+}
 function buildProp(type,lx,lz,color){
   const o=[];
   if(type==="lava"){   // #705: MOLTEN — flowing 2-octave noise, dark crust islands with glowing cracks,
     // heaving surface, rising embers, and a light that pulses with the flow. Emissive runs >1 so bloom blooms it.
-    const mat=new THREE.ShaderMaterial({
+    const mat=(IS_WEBGPU&&window.TSL&&THREE.MeshBasicNodeMaterial) ? lavaMaterialTSL(color) : new THREE.ShaderMaterial({
       uniforms:{uT:{value:0},uCol:{value:new THREE.Color(color)}},
       vertexShader:"uniform float uT; varying vec2 vP;"+
         "void main(){ vP=position.xy;"+

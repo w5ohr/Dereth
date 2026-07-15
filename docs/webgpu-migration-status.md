@@ -131,10 +131,17 @@ can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current
   WebGPU→NodeMaterial renders the teal/violet curtain + animates (uT advances via the untouched tick);
   WebGL unchanged. ⚠️ look eyeball-pending. (If Agent 1 considered aurora part of the sky/atmosphere set,
   flag it — machine 1 took it here; it's a self-contained function so low conflict risk.)
+- ✅ **Lava-pool prop → TSL** (`buildProp` "lava" / new `lavaMaterialTSL`). Faithful port of the molten
+  2-octave-noise shader INCLUDING the vertex heave (establishes the `positionNode` vertex-displacement
+  pattern). Dual-path; a `.uniforms` shim ({uT,uCol}→TSL uniform nodes) keeps the PROPANIM tick
+  (`mat.uniforms.uT.value=t`) unchanged. Verified both backends: WebGPU→NodeMaterial renders molten orange
+  + animates (shim wires the tick); WebGL keeps ShaderMaterial, tick works. ⚠️ look eyeball-pending.
 - ⬜ **Remaining FX/post — needs a VISIBLE browser (→ machine 2, already in the shader→TSL flow):**
-  - Still-skipped custom `ShaderMaterial`s: **portal particles** (`buildPortalFx` ~5650, point-sprite
-    sampler — WebGPU point rendering ≠ `gl_PointSize`/`gl_PointCoord`, structurally different, deferred),
-    and the **prop shader** (`buildProp` ~28317, check what it is). Dual-path pattern as above.
+  - **Portal particles** (`buildPortalFx` ~5650) + the lava **embers** (`PointsMaterial`) — point-sprite
+    rendering on WebGPU is structurally different (`gl_PointSize`/`gl_PointCoord` don't translate; needs
+    `PointsNodeMaterial`/`SpriteNodeMaterial` + a size node). Deferred — the point path wants a display to
+    confirm size/placement. (All the fragment/vertex `ShaderMaterial`s are now ported: sky[A1], portal
+    vortex, aurora, lava. `makePass` @~3665 is the WebGL POST pass, replaced by GPUPOST on WebGPU.)
     (Sky `ShaderMaterial` @2783 = Agent 1's WebGL fallback, done. `makePass` @3665 = the WebGL POST pass,
     unused on WebGPU since GPUPOST replaces it — not a target.)
   - **Anisotropy gap (cross-cutting, both agents):** on WebGPU `renderer.capabilities` is absent, so every
