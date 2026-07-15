@@ -594,10 +594,16 @@ Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so 
   re-measure). Also added a **0×0-canvas render guard** in `renderComposite` (WebGPU errors hard on a size-0
   swapchain when minimized/hidden; WebGL tolerated it). Verified on Metal: no-flag→WebGPU, `?gpu=0`→WebGL
   (bundle not fetched), `?gpu=1`→WebGPU, 0×0 canvas→0 errors, renders clean at real size.
-- 🟡 **B4. Verify + merge.** Metal verification ✅ (B3 + the A2/A3 passes). Merging `webgpu`→`main` is the
-  cutover. **Does NOT auto-deploy** — production (derethgame.com) is a separate manual step, untouched.
-  Remaining before/at merge: machine-2 Windows fallback QA (A1) is nice-to-have but non-blocking since
-  Windows stays on the unchanged WebGL path by default.
+- ✅ **B4. Verified + MERGED TO MAIN (2026-07-15).** `webgpu`→`main` landed as merge commit `9b99fc13`
+  (`--no-ff`, 63 commits, clean fast-forwardable — `main` had 0 divergent commits). The migration is on
+  `main`. **Production (derethgame.com) NOT deployed** — that's a separate manual step, deliberately untouched.
+  Per-backend default means non-Apple clients keep the exact current WebGL production behavior, so machine-2's
+  Windows fallback QA (A1) is non-blocking. **The migration is COMPLETE as a per-backend cutover.**
+
+**🎉 CUTOVER DONE.** Remaining is optional/future, not blocking: (1) machine-2 Windows WebGL2-fallback QA (A1);
+(2) **r186 (~Aug) re-measure** — if it closes the D3D12 UBO gap, flip to a blanket WebGPU default and then
+delete the classic renderer/GLSL/POST dual-path; (3) minor polish (water #691 real-shoreline eyeball, lava
+verify). Deploy to production whenever you choose (separate manual step).
 
 ---
 
