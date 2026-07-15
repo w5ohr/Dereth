@@ -10,6 +10,14 @@ if(typeof THREE==="undefined"){ document.body.innerHTML="<p style='color:#e8dcc0
 else THREE.ColorManagement.enabled=false;
 
 // ---------- helpers ----------
+// #695/#webgpu: raw-authored DISPLAY-REFERRED materials (sky dome, portal vortex, aurora, lava) were
+// written as WebGL ShaderMaterials that bypass tone mapping and output encoding entirely. On WebGPU
+// the GPUPOST graph applies ACES+sRGB-OETF to the WHOLE frame (matching how the lit scene reaches
+// WebGL's rtScene), so these materials pre-compensate: sRGB-EOTF undoes the coming OETF exactly, and
+// the exposure divide undoes the ACES input scale (ACES itself is near-identity over their 0.2–0.9
+// authored range — residual is a few percent of rolloff, eyeball-equivalent).
+function _rawFragTSL(rgbNode){ const t=window.TSL;
+  return t.sRGBTransferEOTF(rgbNode).div(t.reference('toneMappingExposure','float',renderer)); }
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const irnd=(a,b)=>Math.floor(rnd(a,b+1));
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
@@ -2836,11 +2844,9 @@ function skyDome(){
     const sun=u.uSunCol.mul(t.pow(s,420.0).mul(1.1).add(t.pow(s,26.0).mul(0.34)).add(t.pow(s,5.0).mul(0.16))).mul(u.uGlow);
     const mat=new THREE.MeshBasicNodeMaterial({side:THREE.BackSide,fog:false,depthWrite:false});
     // fragmentNode: skip the lighting model entirely (the GLSL original wrote gl_FragColor raw).
-    // NOTE r185 WebGPU applies renderer tone mapping in a whole-frame output blit — no per-material
-    // opt-out exists (measured: fragmentNode and colorNode produce identical bytes; toneMapped is
-    // ignored). The sky therefore takes the frame's ACES like everything else on WebGPU; final look
-    // parity is settled when the POST/tonemap chain is ported (Phase C post / Phase D QA).
-    mat.fragmentNode=t.vec4(t.select(d.y.lessThan(0.0),below,grad).add(sun),1.0);
+    // _rawFragTSL pre-compensates the whole-frame ACES+OETF that GPUPOST applies, approximating
+    // WebGL's ShaderMaterial passthrough (see the helper for the maths).
+    mat.fragmentNode=t.vec4(_rawFragTSL(t.select(d.y.lessThan(0.0),below,grad).add(sun)),1.0);
     skyU=u;
     return new THREE.Mesh(geo,mat);
   }
@@ -4137,7 +4143,10 @@ function renderReflection(){
 // GRADE math is copied verbatim from the GLSL so it matches by construction; the bloom PARAMS
 // (strength/radius/threshold) are first-pass defaults that want an on-hardware eyeball to match exactly.
 let GPUPOST=null;
-const GPUBLOOM={strength:0.74, radius:0.4, threshold:0.85};   // strength mirrors the WebGL composite's bloom `strength` (0.74)
+// strength/threshold mirror the WebGL composite (bright pass: threshold .90, knee .2). radius is
+// eyeball-calibrated: BloomNode's 5-mip cascade spreads FAR wider than the WebGL 2×9-tap half-res
+// blur — 0.4 smeared the whole fog band across the sky; 0.05 matches the WebGL glow footprint.
+const GPUBLOOM={strength:0.6, radius:0.05, threshold:0.90};
 function buildGpuPost(){
   const T=window.TSL, bloom=window.bloomNode;
   const {pass,uv,vec2,vec3,float,mix,clamp,smoothstep,fract,sin,cos,uniform,luminance,Fn,Loop,If,
@@ -4145,7 +4154,18 @@ function buildGpuPost(){
          dot,max,step,screenCoordinate}=T;
   GPUPOST=new window.PostProcessing(renderer);
   const scenePass=pass(scene,cam);
-  const bloomPass=bloom(scenePass, GPUBLOOM.strength, GPUBLOOM.radius, GPUBLOOM.threshold);
+  // #695/#webgpu COLOR-PIPELINE PARITY: the game runs with ColorManagement DISABLED (legacy colors,
+  // game.js line ~10). r185's WebGPU output transform gates its sRGB encode on ColorManagement.enabled
+  // — so the frame was written LINEAR to the canvas (≈γ² darker than WebGL, which encodes regardless).
+  // Also, the WebGL POST composite grades TONEMAPPED+ENCODED scene values (rtScene is rendered with
+  // the renderer's ACES+sRGB). Reproduce that exactly: tonemap+encode the scene pass FIRST (manually —
+  // the built-in transform is disabled below), grade in display space like POST.comp, bloom from the
+  // encoded scene like POST.bright. Verified: sRGB_encode(old WebGPU output) == WebGL output.
+  const expRef=T.reference('toneMappingExposure','float',renderer);
+  const sceneTM=T.sRGBTransferOETF(T.acesFilmicToneMapping(scenePass.rgb, expRef));
+  const sceneTex=T.convertToTexture(T.vec4(sceneTM,1.0));
+  const bloomPass=bloom(sceneTex, GPUBLOOM.strength, GPUBLOOM.radius, GPUBLOOM.threshold);
+  bloomPass.smoothWidth.value=0.2;   // = the WebGL bright-pass knee (threshold 0.90 → full at 1.10)
   const uBright=uniform(1.0), uContrast=uniform(1.0), uVig=uniform(0.33);   // vig 0.33 mirrors POST.comp's `vig`
   const uRayStr=uniform(0.0), uSun=uniform(new THREE.Vector2(0.5,0.8));     // god-rays (driven per frame from _raysStr/_sunNDC)
   const uAoStr=uniform(0.0), uRad=uniform(new THREE.Vector2(0.8,1.3)), uProj=uniform(new THREE.Vector2(1,1));
@@ -4189,7 +4209,7 @@ function buildGpuPost(){
     Loop(26,()=>{ acc.addAssign(bloomTex.sample(p).rgb.mul(w)); tot.addAssign(w); w.mulAssign(0.93); p.addAssign(d); });
     return acc.div(tot);
   })();
-  let c=scenePass.rgb;
+  let c=sceneTM;                                                           // display-referred, like the WebGL rtScene
   c=c.mul(mix(float(1.0),aoNode,uAoStr));                                  // #690: AO darkens BEFORE grade & bloom — glow is never dimmed
   const l=luminance(c);
   c=mix(vec3(l),c,float(1.18));                                            // richer saturation
@@ -4202,6 +4222,7 @@ function buildGpuPost(){
   c=c.mul(float(1.0).sub(smoothstep(0.24,0.82,d).mul(uVig)));              // vignette
   const n=fract(sin(uv().dot(vec2(12.9898,78.233))).mul(43758.5453));
   c=c.add(n.sub(0.5).div(255.0));                                          // dither — kills sky-gradient banding
+  GPUPOST.outputColorTransform=false;                                      // tonemap+encode already applied to sceneTM above (see #695 note)
   GPUPOST.outputNode=c;
   GPUPOST._uBright=uBright; GPUPOST._uContrast=uContrast; GPUPOST._uVig=uVig; GPUPOST._bloom=bloomPass;
   GPUPOST._uRayStr=uRayStr; GPUPOST._uSun=uSun; GPUPOST._uAoStr=uAoStr; GPUPOST._uProj=uProj;
@@ -4382,7 +4403,7 @@ function auroraMaterialTSL(uT,uA,uHueOff){
   let col=mix(teal,violet,m); col=mix(col,rose,smoothstep(0.75,0.98,vUv.y).mul(0.5));
   const kA=k.mul(uA);
   const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,fog:false,side:THREE.BackSide,blending:THREE.AdditiveBlending});
-  mat.fragmentNode=vec4(col.mul(kA),kA);
+  mat.fragmentNode=vec4(_rawFragTSL(col.mul(kA)),kA);   // #695: display-referred authored colors — see _rawFragTSL
   return mat;
 }
 function buildAurora(){
@@ -6043,7 +6064,7 @@ function portalMaterialTSL(){
   col=col.add(vec3(0.95,0.88,1.0).mul(spark).mul(1.6)).add(colB.mul(core).mul(0.7));
   const alpha=clamp(body.add(spark.mul(0.9)),0.0,1.0).mul(0.95);
   const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,fog:false,blending:THREE.AdditiveBlending});
-  mat.fragmentNode=vec4(col,alpha);
+  mat.fragmentNode=vec4(_rawFragTSL(col),alpha);   // #695: display-referred authored colors — see _rawFragTSL
   return mat;
 }
 function portalMaterial(){
@@ -28867,7 +28888,7 @@ function lavaMaterialTSL(color){
   const edge=smoothstep(1.7,1.35,length(vP));
   const mat=new THREE.MeshBasicNodeMaterial({fog:false});
   mat.positionNode=vec3(pg.x,pg.y,pg.z.add(heave));
-  mat.fragmentNode=vec4(c0.mul(mix(float(0.35),float(1.0),edge)),1.0);
+  mat.fragmentNode=vec4(_rawFragTSL(c0.mul(mix(float(0.35),float(1.0),edge))),1.0);   // #695: display-referred authored colors — see _rawFragTSL
   mat.uniforms={uT,uCol};   // shim: PROPANIM tick sets mat.uniforms.uT.value — a UniformNode's .value is settable
   return mat;
 }
