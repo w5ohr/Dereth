@@ -3779,6 +3779,22 @@ function initPost(){
   applyGrade();   // sync the user brightness/contrast from settings onto the fresh composite pass
 }
 function resizePost(){
+  if(IS_WEBGPU){
+    // #webgpu: (re)build the POST node graph at the CURRENT, settled size. Building it lazily mid-frame
+    // let applyGfxTier's post-boot setSize dispose+rebuild the pass render target while a frame still
+    // referenced it → "GPUValidationError: buffer used in submit while destroyed" (A/B'd on machine 2's
+    // real GPU). resizePost runs AFTER every resize settles (applyGfxTier at boot + the window-resize
+    // handler) and between frames, so the graph is always built once at the final size — no build→resize
+    // race. (Dispose-then-rebuild here is the safe window; the broader WebGPU dispose-lifecycle audit for
+    // dungeon-exit/eviction is the cross-cutting item tracked in the status log.)
+    if(window.PostProcessing&&window.TSL&&window.bloomNode&&typeof scene!=="undefined"&&scene&&typeof cam!=="undefined"&&cam){
+      const old=GPUPOST; GPUPOST=null;
+      if(old&&old.dispose){ try{ old.dispose(); }catch(e){} }
+      if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;   // ACES bakes into the fresh output
+      buildGpuPost(); applyGrade();
+    }
+    return;
+  }
   if(!POST.rtScene) return;
   const db=renderer.getDrawingBufferSize(new THREE.Vector2());
   const W=Math.max(2,db.x|0),H=Math.max(2,db.y|0),hw=Math.max(1,W>>1),hh=Math.max(1,H>>1);
@@ -3877,13 +3893,10 @@ function renderComposite(){
     // exposure is a runtime uniform. Guarded writes → only touch on drift (no per-frame recompile).
     if(renderer.toneMapping!==THREE.ACESFilmicToneMapping) renderer.toneMapping=THREE.ACESFilmicToneMapping;
     renderer.setRenderTarget(null);
-    // Node-graph POST: scene grade + bloom + vignette, tonemapped on output. Built lazily (needs
-    // toneMapping=ACES set above so ACES bakes in), then applyGrade() syncs the brightness/contrast
-    // uniforms. Falls back to a plain direct render if the WebGPU POST modules didn't load.
-    const havePost=window.PostProcessing&&window.TSL&&window.bloomNode;
-    if(havePost&&!GPUPOST){ buildGpuPost(); applyGrade(); }
-    // exposure: when the node grade owns brightness (like the WebGL composite) keep exposure at base;
-    // only the plain-fallback render folds brightness into exposure. Guarded → no per-frame recompile.
+    // The POST node graph (scene grade + bloom + vignette, tonemapped on output) is built in resizePost()
+    // at a settled size — NOT lazily here (that tripped the pass-RT dispose-during-resize race on real GPU).
+    // exposure: when the node grade owns brightness (like the WebGL composite) keep exposure at base; only
+    // the plain-fallback render (graph not built yet) folds brightness into exposure. Guarded writes.
     const wantExp=TONE_EXPOSURE_BASE*(GPUPOST?1:clamp(+settings.brightness||1,0.4,2.0));
     if(Math.abs(renderer.toneMappingExposure-wantExp)>1e-4) renderer.toneMappingExposure=wantExp;
     if(GPUPOST) GPUPOST.render(); else renderer.render(scene,cam);

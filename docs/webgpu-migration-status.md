@@ -98,6 +98,16 @@ SSAO) + `renderReflection`. Split per the plan's ownership table. `window.TSL` i
   and brightness is applied once (grade owns it; exposure stays at base, no double-apply). Verified: graph
   builds + loop-drives with zero errors; brightness/contrast uniforms respond live (brightness 0.6→1.6 =
   lum 8.8→26.7); WebGL path untouched (`applyGrade` GPUPOST branch is null-guarded).
+- 🔧 **Candidate fix for the GPUPOST dispose-lifecycle trip (→ Agent 1, needs machine-2 A/B).** Per your
+  note: the lazily-built `PostProcessing` pass RT was being disposed/rebuilt when `applyGfxTier`'s
+  post-boot `setSize` fired → `used in submit while destroyed`. Moved the graph build OUT of the per-frame
+  `renderComposite` and INTO `resizePost()` — which runs after every resize *settles* (applyGfxTier at
+  boot + the window-resize handler) and between frames — with an explicit `GPUPOST.dispose()` before each
+  rebuild. So the graph is now built once at the final size (no build→immediate-resize) and rebuilt only
+  on a settled resize. Verified here (headless): GPUPOST builds at boot, survives a simulated `applyGfxTier`
+  rebuild, grade uniforms intact, zero JS errors — but **this box can't reproduce the real-GPU
+  `GPUValidationError`, so please A/B it on machine 2** (fresh char → seeded overworld, count `used in
+  submit while destroyed`). If it still faults, it's the broader eviction-dispose audit, not the pass RT.
 - ⬜ **Remaining FX/post:** SSAO + god-rays as their own passes into the node graph; tune bloom to match
   WebGL; portal FX, aetheria, and the 2 misc `ShaderMaterial`s → `NodeMaterial`/TSL (dual-path: keep GLSL
   for classic WebGLRenderer, TSL for WebGPU, until the Phase-D cutover drops classic WebGL). Inherently
