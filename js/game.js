@@ -3355,6 +3355,12 @@ async function initThree(){
       // node library maps light→node by EXACT constructor — register the wrapper or every point light
       // in the game is silently skipped (unlit torches/braziers/portals: black NPCs, black nights).
       if(THREE.PointLightNode&&renderer.library) renderer.library.addLight(THREE.PointLightNode,THREE.PointLight);
+      // #webgpu dispose-lifecycle Phase 1: three's own internals destroy render targets synchronously
+      // too (the light ShadowNode disposes its shadow RT when a light is disposed or castShadow flips
+      // → "Destroyed texture ShadowDepthTexture used in a submit"). Those sites are unreachable from
+      // the game's _disp* choke, so defer ALL RenderTarget disposal through the same 2-tick queue.
+      { const _rtDispose=THREE.RenderTarget.prototype.dispose;
+        THREE.RenderTarget.prototype.dispose=function(){ _wgpuDeferDispose({dispose:_rtDispose.bind(this)}); }; }
       // #webgpu KNOWN ISSUE (see docs/webgpu-migration-status.md): the game's dispose-then-reattach
       // GPU eviction (#232 releaseObjectGPU, dungeon-exit disposeObject3D bursts, the portal tube's
       // dispose) assumes WebGL's lazy re-upload. r185 WebGPU keeps cached bind groups pointing at the
@@ -3915,6 +3921,7 @@ function buildGpuPost(){
 }
 function renderComposite(){
   if(IS_WEBGPU){
+    _wgpuDrainDispose();   // #webgpu Phase 1: destroy resources queued ≥2 ticks ago — every submit that referenced them has been made (see _dispGeo/_dispMat)
     // #webgpu Phase C: WebGPURenderer clears toneMapping/exposure back to defaults during its deferred
     // backend init (in the WebGL build the POST composite owns tonemapping). Re-assert ACES + the
     // brightness-graded exposure — the mode is BAKED into the PostProcessing output at build time, the
@@ -4348,13 +4355,14 @@ function applyGfxTier(t,quiet){
   if(typeof sun!=="undefined"&&sun){
     const sz=[1024,1024,2048,4096][t];
     if(sun.shadow.mapSize.x!==sz){ sun.shadow.mapSize.set(sz,sz);
-      if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; } }
+      // #webgpu Phase 1: defer the RT destroy — the in-flight submit still samples ShadowDepthTexture
+      if(sun.shadow.map){ if(IS_WEBGPU)_wgpuDeferDispose(sun.shadow.map); else sun.shadow.map.dispose(); sun.shadow.map=null; } }
     // #692: far cascade on High/Ultra only; its ±192m map matches the near map's texel budget
     SHAD2.on=t>=2;
     if(sunFar){
       sunFar.castShadow=SHAD2.on&&renderer.shadowMap.enabled;
       if(sunFar.shadow.mapSize.x!==sz){ sunFar.shadow.mapSize.set(sz,sz);
-        if(sunFar.shadow.map){ sunFar.shadow.map.dispose(); sunFar.shadow.map=null; } }
+        if(sunFar.shadow.map){ if(IS_WEBGPU)_wgpuDeferDispose(sunFar.shadow.map); else sunFar.shadow.map.dispose(); sunFar.shadow.map=null; } }
       if(!sunFar.castShadow) sunFar.intensity=0;   // the next setSunI restores the split when re-enabled
     }
   }
@@ -6669,7 +6677,7 @@ function grassOK(x,z){
   const bm=biomeAt(x,z); return bm!=="desert"&&bm!=="cold"&&bm!=="direlands";
 }
 function buildGrass(){
-  if(grassMesh){ scene.remove(grassMesh); grassMesh.geometry.dispose(); if(grassMesh.material.dispose)grassMesh.material.dispose(); grassMesh=null; }
+  if(grassMesh){ scene.remove(grassMesh); _dispGeo(grassMesh.geometry); _dispMat(grassMesh.material); grassMesh=null; }   // #webgpu Phase 1: route through the deferred-dispose choke
   const tier=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2, cfg=GRASS_CFG[tier]||GRASS_CFG[2];
   _grassAnchor=null;
   buildPlants();                                                                          // wild plants ride the same tier gate (no-op pools on Low)
@@ -7207,7 +7215,7 @@ function buildWorld(){
   for(const e of dungeonEntrances) disposeObject3D(e.mesh);
   for(const o of dungeonObjs) disposeObject3D(o);
   monsters=[];pProj=[];eProj=[];drops=[];lifestones=[];portals=[];floaters=[];bursts=[];pkAltars=[];obstacles.length=0;
-  for(const c of levelUps){ scene.remove(c.g); c.parts.forEach(p=>p.m.material.dispose()); } levelUps=[];   // clear any in-progress level-up swirl
+  for(const c of levelUps){ scene.remove(c.g); c.parts.forEach(p=>_dispMat(p.m.material)); } levelUps=[];   // clear any in-progress level-up swirl (#webgpu Phase 1: deferred choke)
   for(const d of dying) disposeObject3D(d.mesh); dying=[];
   for(const o of netObjs) disposeObject3D(o);
   for(const _s of ships){ if(_s.mesh) disposeObject3D(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
@@ -11213,7 +11221,7 @@ function updatePortalTransit(dt){
   } else {   // "out"
     p.outT+=dt;
     p.mat.opacity=Math.max(0,1-p.outT/_PT_OUT);
-    if(p.outT>=_PT_OUT){ cam.remove(p.tube); p.tube.geometry.dispose(); p.mat.dispose(); portalTransit=null; }
+    if(p.outT>=_PT_OUT){ cam.remove(p.tube); _dispGeo(p.tube.geometry); _dispMat(p.mat); portalTransit=null; }   // #webgpu Phase 1: route through the deferred-dispose choke
   }
 }
 // "Has the area around the player finished streaming in?" — the gate for every overworld arrival.
@@ -18914,9 +18922,22 @@ let _mobStreamAcc=0;
 // sampler maxAnisotropy spec cap is 16 — VERIFIED HONORED on Metal (a grazing tiled texture keeps detail at
 // 16 that it loses to a flat blur at 1: hi-freq variance 0→5.1). Returns 1 pre-init as a safe default.
 function maxAnisotropy(){ return (typeof renderer!=="undefined"&&renderer)?(renderer.capabilities?renderer.capabilities.getMaxAnisotropy():16):1; }
-function _dispTex(t){ if(t&&!t._acShared&&t.dispose) t.dispose(); }
-function _dispGeo(g){ if(g&&!g._acShared&&g.dispose) g.dispose(); }
-function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose)x.dispose(); } }
+// #webgpu dispose-lifecycle Phase 1 (docs/webgpu-dispose-lifecycle-scoping.md): on WebGPU, dispose()
+// destroys the GPUBuffer immediately while cached bind groups / the in-flight submit still reference
+// it → "used in submit while destroyed" spam and device loss. So on WebGPU the choke helpers ENQUEUE;
+// the queue is double-buffered and drained at the start of renderComposite's WebGPU branch — a
+// resource queued during tick N is destroyed at the start of tick N+2's render, after every submit
+// that could reference it has been made without it (the owning object was detached in tick N).
+// WebGL keeps the immediate dispose (lazy re-upload semantics — VRAM actually freed).
+let _wgpuDispNow=[], _wgpuDispNext=[];
+function _wgpuDeferDispose(r){ _wgpuDispNext.push(r); }
+function _wgpuDrainDispose(){
+  if(_wgpuDispNow.length){ for(let i=0;i<_wgpuDispNow.length;i++){ try{_wgpuDispNow[i].dispose();}catch(e){} } _wgpuDispNow.length=0; }
+  const t=_wgpuDispNow; _wgpuDispNow=_wgpuDispNext; _wgpuDispNext=t;
+}
+function _dispTex(t){ if(t&&!t._acShared&&t.dispose){ if(IS_WEBGPU){_wgpuDeferDispose(t);return;} t.dispose(); } }
+function _dispGeo(g){ if(g&&!g._acShared&&g.dispose){ if(IS_WEBGPU){_wgpuDeferDispose(g);return;} g.dispose(); } }
+function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose){ if(IS_WEBGPU){_wgpuDeferDispose(x);continue;} x.dispose(); } } }
 function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
   o.traverse(c=>{ if(c.isSprite){ const li=LABELS.indexOf(c); if(li>=0) LABELS.splice(li,1); }   // #22: keep the label registry from holding disposed nametags
     if(c.userData&&c.userData.acShared) return;   // #232: gltf-clone subtrees share geometry/materials with the model cache — never dispose those
@@ -18927,6 +18948,10 @@ function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
 // cullWorld's eviction tier on things that will come back when the player returns; unlike
 // disposeObject3D it neither detaches nor touches the LABELS registry.
 function releaseObjectGPU(o){ if(!o) return;
+  // #webgpu Phase 1: VRAM-freeing of detached will-return objects is a WebGL optimization (lazy
+  // re-upload on re-attach). On WebGPU the re-attach path keeps stale bind groups over destroyed
+  // buffers (Mode B2) — keep the buffers resident instead; idle VRAM is the accepted tradeoff.
+  if(IS_WEBGPU) return;
   o.traverse(c=>{ if(c.userData&&c.userData.acShared) return;
     _dispGeo(c.geometry); _dispMat(c.material); }); }   // #326: skip shared cache resources (see _dispGeo/_dispMat)
 function streamMonsters(dt){
