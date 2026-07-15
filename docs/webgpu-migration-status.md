@@ -455,3 +455,15 @@ WebGL untouched. Also confirmed: machine 1's SpriteNodeMaterial portal particles
 Remaining Phase D: auto-fallback + default flip, browser matrix, perf pass, three bump evaluation
 (far cascade), machine-1 re-measure of portal/aurora/lava post-_rawFragTSL, water #691 flag flip,
 merge → main.
+
+**Agent 2 / machine 2 — D3D12 verification sweep (Phase D item: cross-machine verifies):**
+- ✅ Water #691 true-column default-on (c4eeac6d) verified on D3D12 through the display-space GPUPOST
+  chain: uDepthOn=1 live, water animates, mirror runs, ZERO faults. Observation (not a blocker): at a
+  grazing shoreline angle WebGPU reads slightly more turquoise / less mirrored than WebGL — likely the
+  shallow-tint vs fresnel balance under the true column; revisit only if it bothers the eyeball pass.
+- ✅ SpriteNodeMaterial portal particles CONFIRMED on D3D12 (138k px animation at a live portal).
+- ✅ Aurora post-_rawFragTSL: night-sky comparison matches WebGL (same curtain shape/colors); stars
+  render slightly crisper on WebGPU (makePointSprites sizing — cosmetic).
+- ✅ Sky + portal vortex post-compensation verified during the parity work.
+- ⬜ Lava post-compensation: no lava prop spawns within this seed's streaming range on either backend —
+  falls to machine 1's Metal re-measure (which is still the outstanding action from 2265843f).
