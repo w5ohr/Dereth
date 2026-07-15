@@ -1432,7 +1432,7 @@ fetch(GM_DIR+'ac/breeds.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   }
   console.log("AC breeds: "+Object.keys(j).length+" families, "+looks+" authentic looks.");
 }).catch(()=>{});
-let skyMat,skyDomeMesh,hemi,amb,starMat,starField,starSprites,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
+let skyMat,skyDomeMesh,hemi,amb,starMat,starField,starSprites,sunSprite,sunHalo,moonSprite,moon2Sprite,moonHalo,moon2Halo,cloudGroup,waterGlint,gameTime=0.35,boss=null;
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
 let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
@@ -3005,13 +3005,22 @@ function buildSun(){   // the sun disc (sky obj 0x01001348, tex 0600388D) — wa
 function buildMoon(){   // Dereth's great moon — the green storm-world (sky obj 0x01001F6A, tex 06003898)
   moonSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_green.png'),
     transparent:true,fog:false,depthWrite:false}));
-  moonSprite.scale.set(2600,2600,1);return moonSprite;   // large, close great moon — dominates the night sky
+  moonSprite.scale.set(1700,1700,1);   // scaled for the near arc (MR) — looms at ~30° of sky, a true fantasy moon
+  // soft atmospheric glow behind the disc — a wide additive halo tinted to the storm-world's green
+  moonHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(150,255,190,0.55)","rgba(80,200,130,0)"),
+    transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+  moonHalo.scale.set(3900,3900,1);scene.add(moonHalo);
+  return moonSprite;
 }
 // AC's night sky has TWO moons — the smaller amber cratered companion rides an offset arc beside the primary.
 function buildMoon2(){   // amber cratered moon (sky obj 0x01001F67, tex 06003894)
   moon2Sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_amber.png'),
     transparent:true,fog:false,depthWrite:false}));
-  moon2Sprite.scale.set(1300,1300,1);return moon2Sprite;   // amber companion, ≈0.5× the great moon, also brought close
+  moon2Sprite.scale.set(850,850,1);   // keeps AC's ≈0.5× companion proportion at the near arc
+  moon2Halo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,220,150,0.5)","rgba(220,160,80,0)"),
+    transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+  moon2Halo.scale.set(1900,1900,1);scene.add(moon2Halo);
+  return moon2Sprite;
 }
 function buildClouds(){
   cloudGroup=new THREE.Group();
@@ -3291,12 +3300,16 @@ function updateDayNight(dt){
     sunSprite.material.opacity=clamp(sunY*3+0.4,0,1);
     sunSprite.material.color.copy(_sunNoon).lerp(_cWarm,warm);} // redden at dawn/dusk
   if(sunHalo){sunHalo.position.copy(sunSprite.position);sunHalo.material.opacity=clamp(sunY*2+0.25,0,1)*0.4;sunHalo.material.color.copy(sunSprite.material.color);}
-  const MR=R*0.62;   // the moons hang closer than the sun's arc — big and near overhead
+  const MR=R*0.30;   // the moons hang FAR closer than the sun's arc — vast, low, storybook-close over the land
   if(moonSprite){moonSprite.position.set(player.x-sky.x*MR,Math.max(-200,-sky.y*MR*0.7),player.z-sky.z*MR);
-    moonSprite.material.opacity=clamp(-sunY*3+0.4,0,1);}
+    moonSprite.material.opacity=clamp(-sunY*2.5+0.45,0,1);   // rises into view a little before full dark
+    if(moonHalo){moonHalo.position.copy(moonSprite.position);
+      moonHalo.material.opacity=moonSprite.material.opacity*0.45;}}   // glow breathes with the disc
   if(moon2Sprite){const perp=_ddPerp.set(-sky.z,0,sky.x);   // the amber companion rides beside & above the primary
     moon2Sprite.position.set(player.x-sky.x*MR*0.86+perp.x*MR*0.34,Math.max(-160,-sky.y*MR*0.55+70),player.z-sky.z*MR*0.86+perp.z*MR*0.34);
-    moon2Sprite.material.opacity=clamp(-sunY*3+0.35,0,1);}
+    moon2Sprite.material.opacity=clamp(-sunY*2.5+0.4,0,1);
+    if(moon2Halo){moon2Halo.position.copy(moon2Sprite.position);
+      moon2Halo.material.opacity=moon2Sprite.material.opacity*0.4;}}
   // drifting clouds, fading at night, wrapping across the sky, following the player
   if(cloudGroup){
     const wcx=Math.cos(windDir), wcz=Math.sin(windDir);                 // clouds ride the wind vector (both axes)
