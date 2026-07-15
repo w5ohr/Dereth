@@ -120,14 +120,28 @@ shader look or a screen-space effect that only means anything when you can SEE i
 (hidden pane, no WebGPU pixel readback). Machine 1 deliberately stopped here rather than land blind ports it
 can only prove "non-blank" (a wrong-looking fbm vortex is worse than the current skip). Handoff below.
 
+- ✅ **Portal vortex → TSL** (`portalMaterial` / new `portalMaterialTSL`, ~5613). Faithful 1:1 port of the
+  `_PORTAL_FRAG` GLSL (hash→value-noise→fbm swirl) to a `MeshBasicNodeMaterial.fragmentNode`. Dual-path:
+  GLSL `ShaderMaterial` on WebGL, TSL on WebGPU. `_portalUTimeTSL` mirrors `PORTAL_U.uTime`, synced in the
+  same update tick. Verified: WebGPU→NodeMaterial renders the animated purple vortex non-blank; WebGL
+  unchanged. ⚠️ exact look eyeball-pending (machine 2).
+- ✅ **Aurora → TSL** (`buildAurora` / new `auroraMaterialTSL`, ~4009). Faithful port of the sin
+  ripple/ray curtain. Dual-path; on WebGPU the `u` object holds TSL uniform NODES so the existing
+  `for(const u of auroraU)` update tick is UNCHANGED (a UniformNode's `.value` is settable). Verified:
+  WebGPU→NodeMaterial renders the teal/violet curtain + animates (uT advances via the untouched tick);
+  WebGL unchanged. ⚠️ look eyeball-pending. (If Agent 1 considered aurora part of the sky/atmosphere set,
+  flag it — machine 1 took it here; it's a self-contained function so low conflict risk.)
 - ⬜ **Remaining FX/post — needs a VISIBLE browser (→ machine 2, already in the shader→TSL flow):**
-  - Custom `ShaderMaterial`s still skipped on WebGPU (render blank): **portal vortex** (`portalMaterial`,
-    game.js ~5613, procedural fbm), **portal particles** (`buildPortalFx` ~5650, point-sprite sampler —
-    note WebGPU point rendering ≠ `gl_PointSize`/`gl_PointCoord`), **aurora** (`buildAurora` ~4009,
-    procedural), and the **prop shader** (`buildProp` ~28317, check what it is). Dual-path each: keep GLSL
-    for classic WebGLRenderer, add a TSL `NodeMaterial`/`fragmentNode` for WebGPU — same pattern Agent 1
-    used for the sky dome (`skyDome` ~2773). (Sky `ShaderMaterial` @2783 = Agent 1's WebGL fallback, done.
-    `makePass` @3665 = the WebGL POST pass, unused on WebGPU since GPUPOST replaces it — not a target.)
+  - Still-skipped custom `ShaderMaterial`s: **portal particles** (`buildPortalFx` ~5650, point-sprite
+    sampler — WebGPU point rendering ≠ `gl_PointSize`/`gl_PointCoord`, structurally different, deferred),
+    and the **prop shader** (`buildProp` ~28317, check what it is). Dual-path pattern as above.
+    (Sky `ShaderMaterial` @2783 = Agent 1's WebGL fallback, done. `makePass` @3665 = the WebGL POST pass,
+    unused on WebGPU since GPUPOST replaces it — not a target.)
+  - **Anisotropy gap (cross-cutting, both agents):** on WebGPU `renderer.capabilities` is absent, so every
+    `t.anisotropy=renderer.capabilities.getMaxAnisotropy()` (guarded → safe no-op) is skipped → all textures
+    lack anisotropic filtering (blurrier at grazing angles; not a crash). WebGPU supports it via a different
+    max query — set `texture.anisotropy` from the WebGPU backend limit once, apply everywhere. Minor polish,
+    needs a real GPU to confirm.
   - **SSAO** + **god-rays** as their own `pass`/nodes into the GPUPOST graph (currently WebGL-only).
   - **Tune the bloom** strength/radius/threshold (`GPUBLOOM`) to match the WebGL look.
   - Whoever picks these up: they slot into the existing `GPUPOST` graph / dual-path pattern already in

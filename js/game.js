@@ -4001,12 +4001,41 @@ function buildMilkyWay(){
   milkyWay.position.y=WORLD*0.42; milkyWay.renderOrder=-1;
   return milkyWay;
 }
+// #webgpu Phase C: faithful TSL port of the aurora fragment (sin ripples/rays + teal/violet/rose mix) for
+// the WebGPU path. Math copied 1:1 from the GLSL below → matches by construction. Verified: compiles,
+// renders the curtain band, animates. ⚠️ exact look not pixel-confirmed on this headless box (eyeball on
+// machine 2). The u object holds TSL uniform NODES on WebGPU, so the update tick (`for(const u of auroraU)`)
+// is untouched — a UniformNode's .value is settable just like a plain {value}.
+function auroraMaterialTSL(uT,uA,uHueOff){
+  const T=window.TSL;
+  const {vec3,vec4,uv,float,sin,smoothstep,mix}=T;
+  const vUv=uv(), x=vUv.x.mul(6.28318);
+  const rip=sin(x.mul(3).add(uT.mul(0.53))).mul(0.5).add(sin(x.mul(7).sub(uT.mul(0.91))).mul(0.3)).add(sin(x.mul(13).add(uT.mul(1.7))).mul(0.2));
+  const base=float(0.16).add(rip.mul(0.10));
+  const body=smoothstep(base,base.add(0.06),vUv.y).mul(float(1).sub(smoothstep(base.add(0.10),0.96,vUv.y).mul(0.9)));
+  const rays=float(0.55).add(sin(x.mul(24).add(rip.mul(7)).add(uT.mul(0.6))).mul(0.45));
+  const k=body.mul(rays);
+  const teal=vec3(0.15,0.95,0.62),violet=vec3(0.55,0.30,0.95),rose=vec3(0.9,0.35,0.6);
+  const m=float(0.5).add(sin(x.mul(1.5).add(uT.mul(0.21)).add(uHueOff)).mul(0.5));
+  let col=mix(teal,violet,m); col=mix(col,rose,smoothstep(0.75,0.98,vUv.y).mul(0.5));
+  const kA=k.mul(uA);
+  const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,fog:false,side:THREE.BackSide,blending:THREE.AdditiveBlending});
+  mat.fragmentNode=vec4(col.mul(kA),kA);
+  return mat;
+}
 function buildAurora(){
   auroraGroup=new THREE.Group(); auroraU=[];
+  const gpu=IS_WEBGPU&&window.TSL&&THREE.MeshBasicNodeMaterial;
   for(let i=0;i<2;i++){
-    const u={uT:{value:0},uA:{value:0},uHueOff:{value:i*0.7}};
+    let u, mat;
+    if(gpu){
+      const uT=window.TSL.uniform(0), uA=window.TSL.uniform(0), uHueOff=window.TSL.uniform(i*0.7);
+      u={uT,uA,uHueOff};                    // TSL uniform nodes — update tick unchanged
+      mat=auroraMaterialTSL(uT,uA,uHueOff);
+    }else{
+    u={uT:{value:0},uA:{value:0},uHueOff:{value:i*0.7}};
     // BackSide: we stand inside the arc looking at its inner face — one layer of fill, not two
-    const mat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,side:THREE.BackSide,
+    mat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,side:THREE.BackSide,
       blending:THREE.AdditiveBlending,
       uniforms:u,
       vertexShader:"varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
@@ -4024,6 +4053,7 @@ function buildAurora(){
         " vec3 col=mix(teal,violet,m); col=mix(col,rose,smoothstep(0.75,0.98,vUv.y)*0.5);\n"+
         " gl_FragColor=vec4(col*k*uA,k*uA);\n"+
         "}"});
+    }
     // a curtain hung across the northern sky (kept lean — sky fill is the frame-rate killer)
     const geo=new THREE.CylinderGeometry(WORLD*0.55,WORLD*0.55,WORLD*0.20,48,1,true,Math.PI*0.78,Math.PI*0.44);
     const m=new THREE.Mesh(geo,mat);
@@ -5582,7 +5612,7 @@ function swirlTex(){
 //    vortex of churning violet energy that feathers to nothing at the rim, with drifting sparks. One
 //    shared time uniform drives every portal in the world; each mesh owns its material so a world
 //    rebuild can dispose it safely. ──
-let PORTAL_U=null;
+let PORTAL_U=null, _portalUTimeTSL=null;   // _portalUTimeTSL: the WebGPU TSL uniform mirror of PORTAL_U.uTime
 function portalUniforms(){ if(!PORTAL_U) PORTAL_U={uTime:{value:0}}; return PORTAL_U; }
 const _PORTAL_FRAG=`
   varying vec2 vUv; uniform float uTime;
@@ -5609,7 +5639,38 @@ const _PORTAL_FRAG=`
     if(alpha<0.008) discard;
     gl_FragColor=vec4(col,alpha);
   }`;
+// #webgpu Phase C: faithful TSL port of _PORTAL_FRAG (hash→value-noise→fbm swirl) for the WebGPU path.
+// Math is copied 1:1 from the GLSL, so it matches by construction. Verified: compiles on the GPU, renders
+// the purple vortex non-blank, animates via uTime. ⚠️ exact look not pixel-confirmed on this headless box
+// — flagged for a machine-2 eyeball. Shares _portalUTimeTSL, synced next to PORTAL_U in the update tick.
+function portalMaterialTSL(){
+  const T=window.TSL;
+  const {Fn,Loop,float,vec2,vec3,vec4,uv,uniform,fract,sin,dot,floor,mix,smoothstep,length,atan,clamp}=T;
+  if(!_portalUTimeTSL) _portalUTimeTSL=uniform(0);
+  const uTime=_portalUTimeTSL;
+  const hash=Fn(([p])=> fract(sin(dot(p,vec2(127.1,311.7))).mul(43758.5453123)) );
+  const vnoise=Fn(([p])=>{ const i=floor(p),f=fract(p); const ff=f.mul(f).mul(float(3.0).sub(f.mul(2.0)));
+    const a=hash(i),b=hash(i.add(vec2(1,0))),c=hash(i.add(vec2(0,1))),d=hash(i.add(vec2(1,1)));
+    return mix(mix(a,b,ff.x),mix(c,d,ff.x),ff.y); });
+  const fbm=Fn(([p0])=>{ const v=float(0).toVar(),a=float(0.55).toVar(),p=p0.toVar();
+    Loop(5,()=>{ v.addAssign(a.mul(vnoise(p))); p.assign(p.mul(2.03).add(1.7)); a.mulAssign(0.5); }); return v; });
+  const uvC=uv().sub(0.5), r=length(uvC).mul(2.0), ang=atan(uvC.y,uvC.x);
+  const swirl=ang.add(float(1.2).sub(r).mul(3.2)).add(uTime.mul(0.7));
+  const pol=vec2(swirl.mul(0.8), r.mul(2.6).sub(uTime.mul(0.55)));
+  const energy=fbm(pol.mul(1.6)).mul(0.75).add(fbm(pol.mul(3.1).add(9.0)).mul(0.45));
+  const edge=smoothstep(1.02,0.12,r), core=smoothstep(0.55,0.0,r);
+  const body=edge.mul(energy.mul(0.95).add(core.mul(0.6)));
+  const sp=fbm(pol.mul(5.5).sub(uTime.mul(1.3))), spark=smoothstep(0.80,0.99,sp).mul(edge);
+  const colA=vec3(0.42,0.20,0.85), colB=vec3(0.80,0.66,1.0);
+  let col=mix(colA,colB,clamp(energy,0.0,1.0));
+  col=col.add(vec3(0.95,0.88,1.0).mul(spark).mul(1.6)).add(colB.mul(core).mul(0.7));
+  const alpha=clamp(body.add(spark.mul(0.9)),0.0,1.0).mul(0.95);
+  const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,fog:false,blending:THREE.AdditiveBlending});
+  mat.fragmentNode=vec4(col,alpha);
+  return mat;
+}
 function portalMaterial(){
+  if(IS_WEBGPU&&window.TSL&&THREE.MeshBasicNodeMaterial) return portalMaterialTSL();   // #webgpu: GLSL ShaderMaterial isn't compiled by WebGPU — use the TSL port
   return new THREE.ShaderMaterial({ uniforms:portalUniforms(),
     transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false, blending:THREE.AdditiveBlending,
     vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
@@ -18378,6 +18439,7 @@ function update(dt){
   // advance that clock once and pulse each portal's glow (capital + Town-Network + hall + network portals)
   const swirlPulse=1.2+0.5*Math.sin(now()/250);
   if(PORTAL_U) PORTAL_U.uTime.value=now()*0.001;
+  if(_portalUTimeTSL) _portalUTimeTSL.value=now()*0.001;   // #webgpu: keep the TSL portal uniform in lockstep with the GLSL one
   // the authentic particle portals simulate on the CPU — only the ones near enough to see (≤160u)
   const _pfR=160*160;
   for(const pt of portals){ const u=pt.mesh.userData; if(u&&u.light)u.light.intensity=swirlPulse;
