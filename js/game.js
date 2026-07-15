@@ -3337,7 +3337,7 @@ async function initThree(){
   }
   if(!renderer) renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
   renderer.setPixelRatio(mobilePixelRatio(2));
-  renderer.setSize(innerWidth,innerHeight);
+  renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
   renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   scene=new THREE.Scene();
@@ -4294,7 +4294,7 @@ function applyGfxTier(t,quiet){
   // Low renders SUB-native and upscales — fill rate is what integrated GPUs drown in
   // (desktop only: on mobile, mobilePixelRatio() renders at the device's real resolution regardless of tier)
   renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][t]));
-  renderer.setSize(innerWidth,innerHeight);
+  renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
   if(typeof resizePost==="function") resizePost();
   renderer.shadowMap.enabled=t>=1;
   if(typeof sun!=="undefined"&&sun){
@@ -32410,8 +32410,8 @@ function startGame(loadSaved,preset){
 }
 window.addEventListener('resize',()=>{
   if(typeof cam==="undefined"||!cam||typeof renderer==="undefined"||!renderer) return;   // #335: cam/renderer are undefined until initThree() resolves (inside the async asset Promise.all) — a resize during the load screen would otherwise throw
-  cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
+  cam.aspect=Math.max(1,innerWidth)/Math.max(1,innerHeight);cam.updateProjectionMatrix();   // #webgpu: avoid NaN aspect when innerHeight=0 (hidden/minimized tab)
+  renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
   if(typeof GFX!=="undefined"){ renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][GFX.tier|0])); GFX._grace=Math.max(GFX._grace||0,1.0); }   // #345: re-apply the current tier's pixelRatio cap (setSize alone doesn't; on mobile this is the device's native/min resolution instead) and arm a grace window so the resize's MSAA-realloc stall doesn't trip a spurious governor downshift
   resizePost();
 });
@@ -32879,7 +32879,7 @@ function applyTouchUI(){
   // mobile-resolution directive keys on TOUCH.on — re-apply the render resolution when the mode flips
   if(typeof renderer!=="undefined"&&renderer&&typeof mobilePixelRatio==="function"){
     renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][(typeof GFX!=="undefined"?GFX.tier:3)|0]));
-    renderer.setSize(innerWidth,innerHeight);
+    renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
     if(typeof resizePost==="function") resizePost();
     if(typeof GFX!=="undefined") GFX._grace=Math.max(GFX._grace||0,1.0);   // #345: realloc stall must not trip the governor
   }

@@ -107,6 +107,30 @@ constructed once and reused by multiple meshes without `_acShared`.
 - The drain-at-start-of-next-frame flush assumes one frame is enough for the prior submit to finish — true
   for a single in-flight frame; if the renderer ever pipelines >1 frame, use `onSubmittedWorkDone`.
 
+## Backend reproducibility — UPDATE (machine 1, Apple-Silicon MacBook Pro, integrated GPU / Metal)
+Machine 1 has a real WebGPU device (Dawn-on-**Metal**) and tried hard to reproduce the fault:
+`exitDungeon` burst with **awaited** frames, with **in-flight (non-awaited)** submits (the Mode-A pattern),
+with valid non-zero render targets (see the size-0 fix below, which removed the confound), AND a **6-cycle
+`buildWorld` soak**. **Zero `used in submit while destroyed` across all of it.** So the bug appears
+**backend-specific to machine 2's Windows/AMD/D3D12 backend** — Dawn-on-Metal seems to defer the real
+buffer destruction until the referencing submit completes (spec-permitted), so it never faults.
+- **Implication for priority:** this project's PRIMARY target is **offline on Apple Silicon** (Metal), where
+  the bug does **not** manifest. It's real on D3D12 (machine 2's dev box) and worth fixing for cross-backend
+  safety, but it is **not** a blocker for the intended platform. Verify the Phase-1 fix on machine 2 (the
+  only place it reproduces).
+- Caveat: machine 1's repro is synthetic (the Browser pane is a hidden/throttled tab, no real rAF pacing).
+  Not 100% conclusive, but strong (multiple patterns, valid targets, soak — all clean).
+
+## Size-0 render-target bug — FOUND & FIXED (machine 1, verified on Metal)
+Separate, real WebGPU robustness gap surfaced while chasing the above: when the canvas is 0×0 (a
+background / minimized / hidden tab, or pre-layout), the game's `renderer.setSize(innerWidth,innerHeight)`
+and `cam.aspect=innerWidth/innerHeight` create **0-size swapchain/depth/color textures** → a flood of
+`GPUValidationError: texture size … is empty` / `Could not create a swapchain texture of size 0`
+(and NaN aspect). WebGL tolerated 0-size; WebGPU errors hard. **Fix:** clamp all five sizing sites to
+`Math.max(1, …)` (js/game.js — 4× `renderer.setSize`, 1× `cam.aspect`). Verified on this Metal box: the
+size-0 error flood is **gone** (0 errors, canvas stays valid through the exitDungeon rebuild). Harmless
+no-op when `innerWidth>0` (the normal case). This also un-confounded the dispose repro above.
+
 ## One-line summary
 Route all GPU disposal through the existing `_dispGeo`/`_dispMat`/`_dispTex` choke; on WebGPU **defer** the
 actual destroy until the in-flight submit completes and **no-op `releaseObjectGPU`** — then, only if needed,
