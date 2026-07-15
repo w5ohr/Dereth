@@ -317,6 +317,17 @@ warps back into the Academy (game.js ~30912). On this Windows/AMD box Chrome int
 WebGPU instance ("A valid external Instance reference no longer exists", ~50% of runs, headless worse) —
 environment flake, retry the run.
 
+**2026-07-15 (machine 1, Metal) — base-lighting parity gap is D3D12-specific, NOT present on Apple Silicon.**
+Dual-renderer A/B on this Metal box (throwaway WebGLRenderer vs the WebGPU renderer, SAME
+MeshStandardMaterial sphere, NoToneMapping, ColorManagement off): every basic light type is BYTE-IDENTICAL
+WebGL↔WebGPU — ambient 41/41, directional 42/42, hemisphere 39/39, ambient0.5+dir1 combo 62/62 (ratio 1.000
+each). These dominate the game's lighting. So machine 2's measured ~0.76× luminance gap is backend-specific
+to Windows/AMD/D3D12 (same pattern as the dispose bug) → the PRIMARY target (offline on Apple Silicon /
+Metal) has NO base-lighting parity issue. The "on-hardware light re-tune" A.4 anticipated is therefore a
+D3D12-only concern, not a target-platform blocker. (IBL/scene.environment couldn't be cleanly A/B'd — the
+three/webgpu PMREMGenerator rejects a WebGLRenderer — but WebGPU IBL renders fine; basic lights being exact
+makes an IBL-only gap unlikely to explain a whole-scene 0.76×.)
+
 ## Phase D — fallback QA / perf / cutover  →  NOT STARTED
 
 ---
