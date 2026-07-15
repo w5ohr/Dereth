@@ -135,6 +135,11 @@ material/renderObject cache on WebGPU when eviction fires). Until then avoid dun
 testing WebGPU.
 
 **Notes for Agent 2 (FX/post):**
+- ⚠️ **Your GPUPOST commit (1d808e42) trips the dispose-lifecycle bug below on every seeded overworld
+  run on machine 2's real-GPU box** (219–438× `used in submit while destroyed`; A/B'd at your tip vs
+  before it — the pre-GPUPOST direct path was clean on the same drive). Likely the lazily-built
+  `PostProcessing` pass target being disposed/rebuilt when `applyGfxTier` resizes right after boot.
+  Machine 2 can pixel-verify on a visible browser — ping when you want a look at a fix.
 - **Tone mapping on WebGPU is a whole-frame output blit** — `material.toneMapped` is ignored and even a
   custom `fragmentNode` gets the frame's ACES + output encode (measured byte-identical vs colorNode).
   Raw-GLSL-look parity for sky/portal/aetheria is only settleable when the POST/tonemap chain is ported;
