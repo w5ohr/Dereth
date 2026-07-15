@@ -413,7 +413,36 @@ Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. 
   is a `RenderPipeline`, renders through the loop, **0 deprecation warnings**, `window.PostProcessing` global
   gone.
 
-## Phase D — fallback QA / perf / cutover  →  NOT STARTED
+## Phase D — fallback QA / perf / cutover  →  IN PROGRESS
+
+**Perf comparison (machine 1, Metal, 2026-07-15).** Method: same seeded tier-≥1 spawn (0,-9), a FIXED camera
+pose in both loads, render the live scene to a 1280×720 target with **forced GPU completion each frame**
+(`device.queue.onSubmittedWorkDone()` on WebGPU / `gl.finish()` on WebGL), warmup discarded. Result:
+
+| metric | WebGPU (native/Metal) | WebGL2 (Metal) |
+|---|---|---|
+| full-frame mean | **81.9 ms** | 100.3 ms |
+| full-frame median | **81.5 ms** | 90.0 ms |
+| min | 80.6 ms | 88.5 ms |
+| draw calls | 283 | 1,178 |
+| triangles drawn | 10.87 M | 72 K |
+
+**Takeaways:** (1) WebGPU is **not a regression — it's modestly faster** (~10% median, ~18% mean) *while
+drawing ~150× more geometry in ¼ the draw calls.* The two paths differ by design: machine 2's WebGPU
+batching (single shadow cascade + pooled instanced trunk/canopy meshes, `frustumCulled=false`) submits the
+whole forest in a few instanced calls and lets the GPU eat it, whereas the WebGL path spends its frame on
+CPU-side per-object frustum culling (confirmed CPU-bound: WebGL `render()` WITHOUT `gl.finish()` = 108 ms ≈
+WITH = 109 ms → the GPU is idle, the cost is scene-graph traversal/cull + submission of ~200k objects).
+(2) So WebGPU shifts work from CPU culling to GPU throughput — the right direction as scenes get draw-call-
+heavy. **Caveat:** absolute numbers (~80–100 ms ⇒ 10–12 "fps") are massively inflated by the forced
+per-frame GPU sync (no pipelining) + the throttled/backgrounded headless Browser pane; real pipelined
+framerate in a foreground tab is far higher for both. The RATIO and DIRECTION are the reliable signal; a
+definitive fps verdict needs a real foreground browser with GPU timer queries (`EXT_disjoint_timer_query` /
+WebGPU timestamp-query) and natural rAF pacing. **Bottom line for cutover: no perf blocker — WebGPU ≥ WebGL
+here, and its advantage widens with draw-call count.**
+
+**Still LEFT in D:** WebGL2-fallback-backend QA (force `forceWebGL`/no-native-WebGPU and confirm the game
+runs), then the cutover (flip default, retire `?gpu=1`, drop the classic dual-path, roll `webgpu`→`main`).
 
 ---
 
