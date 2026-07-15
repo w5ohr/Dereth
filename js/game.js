@@ -3986,6 +3986,17 @@ function blitPass(mat,src,dst){
 // parity). TODO(#691-webgpu): feed it from viewportSharedTexture/viewportLinearDepth.
 function buildWaterMaterialTSL(){
   const t=window.TSL;
+  // #691 on WebGPU: TRUE per-pixel water column + refraction, fed by the node depth/scene viewports
+  // (viewportDepthTexture / viewportSharedTexture) instead of the WebGL #690 render targets. BUILD-TIME
+  // opt-in: when off (default) the graph is byte-identical to the baked-heightfield look (no viewport
+  // nodes emitted at all). VERIFIED on Metal: perspectiveDepthToViewZ(viewportDepthTexture) gives exact
+  // seabed view-Z (probe: 12.00 m), viewportSharedTexture() returns the opaque scene colour behind the
+  // surface (probe: reddish seabed transmits through shallow water — refraction works), 0 WGSL errors.
+  // TO ENABLE BY DEFAULT: (1) eyeball a real shoreline in-game for parity with the WebGL #691 look, and
+  // (2) gate the depth blocks below by the existing U.uDepthOn uniform set per-frame from cam.position.y
+  //     (>0.12) — the WebGL path disables the column when the camera is UNDERWATER; this build-time flag
+  //     applies it unconditionally, which is only correct above water.
+  const DEPTH691 = !!(typeof window!=="undefined" && window.__WATER_DEPTH);
   const U={
     uWTime:t.uniform(0),
     uSunView:t.uniform(new THREE.Vector3(0,0,1)),
@@ -4015,11 +4026,29 @@ function buildWaterMaterialTSL(){
   const rp=rp4.xyz.div(rp4.w.max(1e-4));
   const reflSample=t.texture(_rDummy, t.clamp(rp.xy.add(N.xy.mul(0.05)),0.001,0.999)); U.uReflMap=reflSample;
   const waterOut=lit=>{
-    const depth=hm.x.mul(12.0).sub(6.0).negate();                       // baked sea-bed column
+    let depth=hm.x.mul(12.0).sub(6.0).negate();                        // baked sea-bed column
+    let tv=null;
+    if(DEPTH691){
+      // TRUE column along the view ray: water surface view-Z − resolved scene view-Z (both negative;
+      // seabed is farther, so the difference is a positive column in metres). Anything standing in the
+      // water (piers, rocks, swimmers) reads a thin column and earns foam/turquoise the baked field can't see.
+      const seabedVZ=t.perspectiveDepthToViewZ(t.viewportDepthTexture(), t.cameraNear, t.cameraFar);
+      tv=t.positionView.z.sub(seabedVZ).max(0.0);
+      depth=t.min(depth, tv.mul(0.8));                                   // feed the shared shallow/foam logic
+    }
     const sh1=t.smoothstep(7.0,0.4,depth);                              // 1 in the shallows
     const base=t.mix(lit.rgb, t.vec3(0.16,0.52,0.60), sh1.mul(0.5));    // turquoise shallows
     const fres=t.clamp(t.dot(N,V),0.0,1.0).oneMinus().pow(4.0);
-    const deep=base.mul(0.42);
+    let deep=base.mul(0.42);
+    if(DEPTH691){
+      // refraction: the transmitted component is the CURRENT frame's opaque scene, ripple-distorted
+      // (more with depth so the shoreline stays registered), ≈sRGB-decoded, then murked out by
+      // Beer-Lambert absorption along the view ray. Replaces the flat 0.42×-darkened guess.
+      const off=N.xy.mul(tv.mul(0.25).min(1.0).mul(0.03).add(0.012));
+      const rf=t.viewportSharedTexture(t.screenUV.add(off)).rgb;
+      const rfLin=rf.mul(rf);
+      deep=t.mix(rfLin, deep, tv.mul(0.14).negate().exp().oneMinus());  // 1−exp(−tv·0.14): shallow=see-through, deep=dark
+    }
     const inb=U.uReflStr.greaterThan(0.01)
       .and(rp.x.greaterThan(0.001)).and(rp.x.lessThan(0.999))
       .and(rp.y.greaterThan(0.001)).and(rp.y.lessThan(0.999));
@@ -4039,7 +4068,12 @@ function buildWaterMaterialTSL(){
     const surf=t.smoothstep(0.62,0.0,depth.sub(0.4).sub(wv.mul(1.05)).abs());
     const foam=t.clamp(foam0.mul(wv.mul(0.55).add(0.32)).add(surf.mul(U.uWindF.mul(0.4).add(0.46))),0.0,0.96);
     rgb=t.mix(rgb,U.uFoamCol,foam);
-    const a=t.max(t.mix(0.80,0.99,fres),foam);
+    let a=t.max(t.mix(0.80,0.99,fres),foam);
+    if(DEPTH691){
+      // true shore fade — the razor waterline edge dissolves over the last ~1.4 m of column, showing the
+      // current frame's seabed through genuine transparency (crisp, no refraction lag).
+      a=t.max(t.mix(t.float(0.10), a, t.smoothstep(0.0,1.4,tv)), foam);
+    }
     return t.vec4(rgb,a);
   };
   class WaterNodeMaterial extends THREE.MeshPhongNodeMaterial{

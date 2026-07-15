@@ -381,13 +381,16 @@ Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. 
   D3D12, and machine 2 has both the repro and the A/B harness. Implementing it blind on Metal (where dispose
   faults don't even manifest) risks a machine-2-only regression. Current state: dispose is no-op'd on WebGPU
   → correct + stable but bounded VRAM growth per session. Scope in [webgpu-dispose-lifecycle-scoping.md] §Phase 3.
-- ⬜ **#691 water true-column / refraction on WebGPU** — real feature, currently WebGL-only; TSL water renders
-  the baked-heightfield column (tier-0/1 look) on WebGPU. Port scope (feasible, Metal-verifiable, but touches
-  the *default-visible* water so gate behind a flag until parity-verified): in `buildWaterMaterialTSL().waterOut`,
-  replace the baked `depth` with a true view-ray column from **`TSL.viewportDepthTexture`** (WebGPU depth is
-  [0,1], linearize via cameraNear/Far — NOT the WebGL `*2-1` + `uAB` reconstruction), add refraction from
-  **`TSL.viewportSharedTexture`** (opaque-pass scene color, ripple-offset by `N.xy`), and the `_tv`-based shore
-  fade on alpha. Mirrors GLSL js/game.js ~3739-3781. → machine 2 (owns the TSL water) or machine 1 next.
+- 🟡 **#691 water true-column / refraction on WebGPU** — **IMPLEMENTED + Metal-verified, BUILD-TIME opt-in**
+  (`window.__WATER_DEPTH`; default OFF = graph byte-identical to the baked look). In
+  `buildWaterMaterialTSL().waterOut`: true view-ray column via
+  `positionView.z.sub(perspectiveDepthToViewZ(viewportDepthTexture, cameraNear, cameraFar)).max(0)` (probe:
+  seabed 12.00 m exact), refraction from `viewportSharedTexture(screenUV + N.xy·off)` (probe: reddish seabed
+  transmits through shallow water), and the `_tv`-based shore fade on alpha. 0 WGSL errors; mirrors GLSL
+  js/game.js ~3739-3781 with identical constants. **TO ENABLE BY DEFAULT** (small follow-up): eyeball a real
+  shoreline in-game for parity, then gate the depth blocks by the existing `U.uDepthOn` uniform set per-frame
+  from `cam.position.y>0.12` (the WebGL path disables the column UNDERWATER; the build flag applies it
+  unconditionally). → machine 2 or machine 1 next.
 - 🔻 **Dungeon/torch embers & spores** (4 map-less `THREE.Points`, size 0.05–0.06) — still 1px on WebGPU, but
   map-less so **no warning/error**; purely cosmetic on tiny ambient FX. Low priority. `makePointSprites()` can
   absorb them (extend it to synthesize a soft round sprite when no `map` is given) if desired.
