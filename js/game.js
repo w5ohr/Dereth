@@ -6079,28 +6079,26 @@ function swirlTex(){
 //    rebuild can dispose it safely. ──
 let PORTAL_U=null, _portalUTimeTSL=null;   // _portalUTimeTSL: the WebGPU TSL uniform mirror of PORTAL_U.uTime
 function portalUniforms(){ if(!PORTAL_U) PORTAL_U={uTime:{value:0}}; return PORTAL_U; }
+// The portal look: a blue, ragged-edged, near-translucent flat disc with swirling small blue dots.
 const _PORTAL_FRAG=`
   varying vec2 vUv; uniform float uTime;
-  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
-  float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-    float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));
-    return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
-  float fbm(vec2 p){ float v=0.0,a=0.55; for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.03+1.7; a*=0.5; } return v; }
   void main(){
     vec2 uv=vUv-0.5; float r=length(uv)*2.0; float ang=atan(uv.y,uv.x);
-    float swirl=ang + (1.2-r)*3.2 + uTime*0.7;            // twist tightens toward the core, whole field rotates
-    vec2 pol=vec2(swirl*0.8, r*2.6 - uTime*0.55);          // energy streams outward from the middle
-    float energy=fbm(pol*1.6)*0.75 + fbm(pol*3.1+9.0)*0.45;
-    float edge=smoothstep(1.02,0.12,r);                    // feather to nothing at the rim — no hard edge
-    float core=smoothstep(0.55,0.0,r);
-    float body=edge*(energy*0.95 + core*0.6);
-    float sp=fbm(pol*5.5 - uTime*1.3);
-    float spark=smoothstep(0.80,0.99,sp)*edge;             // drifting motes of light
-    vec3 colA=vec3(0.42,0.20,0.85), colB=vec3(0.80,0.66,1.0);
-    vec3 col=mix(colA,colB,clamp(energy,0.0,1.0));
-    col+=vec3(0.95,0.88,1.0)*spark*1.6;                    // white-violet sparks
-    col+=colB*core*0.7;                                    // luminous heart (blooms via post)
-    float alpha=clamp(body+spark*0.9,0.0,1.0)*0.95;
+    // RAGGED FLAT BLUE BACKGROUND — the rim radius wobbles with angle so the outline reads torn/ragged
+    float ragged=0.82 + 0.10*sin(ang*6.0+uTime*0.45) + 0.05*sin(ang*11.0-uTime*0.7) + 0.035*sin(ang*19.0+uTime*0.3);
+    float disc=smoothstep(ragged, ragged-0.16, r);         // soft ragged-edged disc, 1 inside → 0 past the torn rim
+    float bg=disc*(0.6+0.4*smoothstep(1.0,0.15,r));         // a touch denser toward the heart
+    // SWIRLING SMALL DOTS — a polar lattice that rotates with time while its rings flow inward
+    float sw=ang*3.0 + (1.0-r)*5.0 + uTime*0.85;
+    vec2 f1=fract(vec2(sw*1.7, r*8.0 - uTime*0.9))-0.5;
+    float dots=smoothstep(0.28,0.06,length(f1))*disc;
+    // a finer counter-swirling second layer for depth
+    float sw2=ang*6.0 - (1.0-r)*3.0 - uTime*0.6;
+    vec2 f2=fract(vec2(sw2*1.3, r*13.0 + uTime*0.6))-0.5;
+    float dots2=smoothstep(0.22,0.05,length(f2))*disc*0.7;
+    float dotSum=dots+dots2;
+    vec3 col=vec3(0.12,0.32,0.72) + vec3(0.42,0.70,1.0)*dotSum*0.9;   // blue backing + blue dots
+    float alpha=clamp(bg*0.40 + dotSum*0.42, 0.0, 0.85);            // translucent disc + almost-translucent dots
     if(alpha<0.008) discard;
     gl_FragColor=vec4(col,alpha);
   }`;
@@ -6108,36 +6106,34 @@ const _PORTAL_FRAG=`
 // Math is copied 1:1 from the GLSL, so it matches by construction. Verified: compiles on the GPU, renders
 // the purple vortex non-blank, animates via uTime. ⚠️ exact look not pixel-confirmed on this headless box
 // — flagged for a machine-2 eyeball. Shares _portalUTimeTSL, synced next to PORTAL_U in the update tick.
+// #webgpu: TSL mirror of _PORTAL_FRAG — blue ragged translucent disc + swirling small blue dots.
 function portalMaterialTSL(){
   const T=window.TSL;
-  const {Fn,Loop,float,vec2,vec3,vec4,uv,uniform,fract,sin,dot,floor,mix,smoothstep,length,atan,clamp}=T;
+  const {float,vec2,vec3,vec4,uv,uniform,fract,sin,smoothstep,length,atan,clamp}=T;
   if(!_portalUTimeTSL) _portalUTimeTSL=uniform(0);
-  const uTime=_portalUTimeTSL;
-  const hash=Fn(([p])=> fract(sin(dot(p,vec2(127.1,311.7))).mul(43758.5453123)) );
-  const vnoise=Fn(([p])=>{ const i=floor(p),f=fract(p); const ff=f.mul(f).mul(float(3.0).sub(f.mul(2.0)));
-    const a=hash(i),b=hash(i.add(vec2(1,0))),c=hash(i.add(vec2(0,1))),d=hash(i.add(vec2(1,1)));
-    return mix(mix(a,b,ff.x),mix(c,d,ff.x),ff.y); });
-  const fbm=Fn(([p0])=>{ const v=float(0).toVar(),a=float(0.55).toVar(),p=p0.toVar();
-    Loop(5,()=>{ v.addAssign(a.mul(vnoise(p))); p.assign(p.mul(2.03).add(1.7)); a.mulAssign(0.5); }); return v; });
-  const uvC=uv().sub(0.5), r=length(uvC).mul(2.0), ang=atan(uvC.y,uvC.x);
-  const swirl=ang.add(float(1.2).sub(r).mul(3.2)).add(uTime.mul(0.7));
-  const pol=vec2(swirl.mul(0.8), r.mul(2.6).sub(uTime.mul(0.55)));
-  const energy=fbm(pol.mul(1.6)).mul(0.75).add(fbm(pol.mul(3.1).add(9.0)).mul(0.45));
-  const edge=smoothstep(1.02,0.12,r), core=smoothstep(0.55,0.0,r);
-  const body=edge.mul(energy.mul(0.95).add(core.mul(0.6)));
-  const sp=fbm(pol.mul(5.5).sub(uTime.mul(1.3))), spark=smoothstep(0.80,0.99,sp).mul(edge);
-  const colA=vec3(0.42,0.20,0.85), colB=vec3(0.80,0.66,1.0);
-  let col=mix(colA,colB,clamp(energy,0.0,1.0));
-  col=col.add(vec3(0.95,0.88,1.0).mul(spark).mul(1.6)).add(colB.mul(core).mul(0.7));
-  const alpha=clamp(body.add(spark.mul(0.9)),0.0,1.0).mul(0.95);
-  const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,fog:false,blending:THREE.AdditiveBlending});
+  const uT=_portalUTimeTSL;
+  const p=uv().sub(0.5), r=length(p).mul(2.0), ang=atan(p.y,p.x);
+  const ragged=float(0.82).add(sin(ang.mul(6.0).add(uT.mul(0.45))).mul(0.10))
+    .add(sin(ang.mul(11.0).sub(uT.mul(0.7))).mul(0.05)).add(sin(ang.mul(19.0).add(uT.mul(0.3))).mul(0.035));
+  const disc=smoothstep(ragged, ragged.sub(0.16), r);
+  const bg=disc.mul(float(0.6).add(smoothstep(1.0,0.15,r).mul(0.4)));
+  const sw=ang.mul(3.0).add(float(1.0).sub(r).mul(5.0)).add(uT.mul(0.85));
+  const f1=fract(vec2(sw.mul(1.7), r.mul(8.0).sub(uT.mul(0.9)))).sub(0.5);
+  const dots=smoothstep(0.28,0.06,length(f1)).mul(disc);
+  const sw2=ang.mul(6.0).sub(float(1.0).sub(r).mul(3.0)).sub(uT.mul(0.6));
+  const f2=fract(vec2(sw2.mul(1.3), r.mul(13.0).add(uT.mul(0.6)))).sub(0.5);
+  const dots2=smoothstep(0.22,0.05,length(f2)).mul(disc).mul(0.7);
+  const dotSum=dots.add(dots2);
+  const col=vec3(0.12,0.32,0.72).add(vec3(0.42,0.70,1.0).mul(dotSum).mul(0.9));
+  const alpha=clamp(bg.mul(0.40).add(dotSum.mul(0.42)),0.0,0.85);
+  const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,fog:false,blending:THREE.NormalBlending});
   mat.fragmentNode=vec4(_rawFragTSL(col),alpha);   // #695: display-referred authored colors — see _rawFragTSL
   return mat;
 }
 function portalMaterial(){
   if(IS_WEBGPU&&window.TSL&&THREE.MeshBasicNodeMaterial) return portalMaterialTSL();   // #webgpu: GLSL ShaderMaterial isn't compiled by WebGPU — use the TSL port
   return new THREE.ShaderMaterial({ uniforms:portalUniforms(),
-    transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false, blending:THREE.AdditiveBlending,
+    transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false, blending:THREE.NormalBlending,
     vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader:_PORTAL_FRAG });
 }
@@ -6252,7 +6248,8 @@ function updatePortalFx(g,dt){
     at.aAlpha.needsUpdate=true;
   }
 }
-function refreshPortalFx(){                                      // swap lens-fallback portals to the real effect
+function refreshPortalFx(){                                      // swap lens portals to the retail particle replay
+  return;   // portals now keep the blue ragged-disc + swirling-dots lens by design (buildPortal); no swap
   if(!PORTAL_FX||(IS_WEBGPU&&!(window.TSL&&THREE.SpriteNodeMaterial))) return;   // #webgpu: need the SpriteNodeMaterial billboard path (else keep the TSL vortex lens)
   const up=(mesh)=>{ const u=mesh&&mesh.userData; if(!u||u.pfx||!u.lens) return;
     if(buildPortalFx(mesh)){ mesh.remove(u.lens); u.lens.geometry.dispose(); u.lens.material.dispose(); u.lens=null; } };
@@ -6262,14 +6259,12 @@ function refreshPortalFx(){                                      // swap lens-fa
 }
 function buildPortal(name){
   const g=new THREE.Group();
-  // #webgpu: the retail particle replay now runs on WebGPU too via the SpriteNodeMaterial billboard
-  // path (buildPortalFx, VERIFIED on Metal). If the node material is somehow unavailable, fall back
-  // to the ANIMATED TSL VORTEX lens (never invisible Points).
-  const wantPfx=PORTAL_FX&&(!IS_WEBGPU||(window.TSL&&THREE.SpriteNodeMaterial));
-  if(wantPfx&&buildPortalFx(g)){ /* the real retail emitters */ }
-  else{ const lens=new THREE.Mesh(new THREE.CircleGeometry(1.55,64), portalMaterial());
-    lens.scale.set(1.05,1.55,1); lens.position.y=2.3; g.add(lens); g.userData.lens=lens; }   // fallback until the pack loads
-  const light=new THREE.PointLight(0x9a6aff,1.6,18); light.position.y=2.2; g.add(light);
+  // Portal look: a blue, ragged-edged, near-translucent flat disc with swirling small blue dots
+  // (portalMaterial lens — TSL on WebGPU, GLSL on WebGL). The retail purple-particle replay
+  // (buildPortalFx) stays available but is no longer the default look.
+  const lens=new THREE.Mesh(new THREE.CircleGeometry(1.55,64), portalMaterial());
+  lens.scale.set(1.05,1.55,1); lens.position.y=2.3; g.add(lens); g.userData.lens=lens;
+  const light=new THREE.PointLight(0x3aa0ff,1.5,18); light.position.y=2.2; g.add(light);   // blue portal glow
   const lbl=labelSprite("Portal → "+name,"portals"); lbl.position.y=4.2; g.add(lbl);
   g.userData.light=light;
   return g;
