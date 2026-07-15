@@ -2986,11 +2986,15 @@ function updateEnvIntensity(daylight){
 // Uniforms are SHARED objects bound via Material.prototype.onBuild — r128 calls onBuild on the
 // same parameters object right before onBeforeCompile, so the materials that assign their own
 // onBeforeCompile (ground detail-blend, water, wind-sway) keep working with zero chaining.
+// #webgpu Phase C: under ?gpu=1 the shared handles become TSL uniform nodes — same `.value` interface,
+// so updateDayNight's writes and the GLSL uniform binding below both keep working untouched. `cam` stays
+// a plain handle: it exists only so the WebGL mirror pass can rebuild world-space inside the fog chunk;
+// the TSL fog reads the per-pass cameraPosition builtin instead (the reflection pass fogs correctly for free).
 const FOGX={
   cam:{value:new THREE.Matrix4()},                 // ACTIVE camera matrixWorld (the mirror pass swaps in its reflected cam)
-  sunDir:{value:new THREE.Vector3(0,1,0)},         // world-space direction toward the sun disc
-  sun:{value:new THREE.Vector4(1,0.85,0.6,0)},     // rgb sun colour · w tint strength (0 = off, e.g. dungeons/storms)
-  h:{value:new THREE.Vector4(0.0077,0.45,1,0.72)}  // x fall-off /m (halves ≈90m) · y min factor · z strength · w far-guard start
+  sunDir:window.TSL?window.TSL.uniform(new THREE.Vector3(0,1,0)):{value:new THREE.Vector3(0,1,0)},         // world-space direction toward the sun disc
+  sun:window.TSL?window.TSL.uniform(new THREE.Vector4(1,0.85,0.6,0)):{value:new THREE.Vector4(1,0.85,0.6,0)},     // rgb sun colour · w tint strength (0 = off, e.g. dungeons/storms)
+  h:window.TSL?window.TSL.uniform(new THREE.Vector4(0.0077,0.45,1,0.72)):{value:new THREE.Vector4(0.0077,0.45,1,0.72)}  // x fall-off /m (halves ≈90m) · y min factor · z strength · w far-guard start
 };
 THREE.Material.prototype.onBuild=function(a,b){ const sh=(a&&a.uniforms)?a:b;   // r128 passed (parameters,renderer); r159 passes (object,parameters,renderer)
   sh.uniforms.dFogCam=FOGX.cam; sh.uniforms.dFogSunDir=FOGX.sunDir; sh.uniforms.dFogSun=FOGX.sun; sh.uniforms.dFogH=FOGX.h; };
@@ -3018,6 +3022,29 @@ THREE.ShaderChunk.fog_fragment="#ifdef USE_FOG\n"+
 "\tfloat dfSun = pow( max( dot( dfV / max( length( dfV ), 1e-3 ), dFogSunDir ), 0.0 ), 6.0 ) * dFogSun.w;\n"+
 "\tgl_FragColor.rgb = mix( gl_FragColor.rgb, mix( fogColor, dFogSun.xyz, min( dfSun, 1.0 ) ), fogFactor );\n"+
 "#endif";
+// #webgpu Phase C: TSL twin of the #689 fog — ONE scene.fogNode instead of chunk surgery + onBuild
+// (both are dead contracts on WebGPU). Same closed-form maths as the GLSL above. dfV comes from the
+// positionWorld/cameraPosition builtins, which are per-render-pass — so the reflection pass gets
+// correct fog with no dFogCam matrix swap. near/far/color track the live scene.fog via reference()
+// nodes, so every existing writer (updateDayNight, AC_SKY, weather, updateInstanceLight) works as-is.
+// Materials with fog:false (sky dome, sprites) are exempted by the node builder, matching USE_FOG.
+// Installed in initThree once scene.fog exists.
+function buildGpuFog(){
+  const t=window.TSL;
+  const near=t.reference('near','float',scene.fog), far=t.reference('far','float',scene.fog);
+  const fogCol=t.reference('color','color',scene.fog);
+  const f0=t.smoothstep(near,far,t.positionView.z.negate());
+  const dfV=t.positionWorld.sub(t.cameraPosition);
+  const dfHc=t.cameraPosition.y.max(0.0).mul(FOGX.h.x);
+  const dfDy=dfV.y.mul(FOGX.h.x);
+  // select() evaluates both lanes but discards the unselected one, so the ÷0 lane is harmless (same
+  // contract as the GLSL ternary)
+  const ratio=t.select(dfDy.abs().greaterThan(1e-4), t.float(1.0).sub(dfDy.negate().exp()).div(dfDy), t.float(1.0));
+  const dfR=t.mix(t.float(1.0), t.clamp(dfHc.negate().exp().mul(ratio), FOGX.h.y, 1.25), FOGX.h.z);
+  const f=t.clamp(t.mix(f0.mul(dfR), f0, t.smoothstep(FOGX.h.w, 1.0, f0)), 0.0, 1.0);
+  const dfSun=dfV.normalize().dot(FOGX.sunDir).max(0.0).pow(6.0).mul(FOGX.sun.w);
+  return t.fog(t.mix(fogCol, FOGX.sun.xyz, dfSun.min(1.0)), f);
+}
 const _cDay=new THREE.Color(0xaebccb), _cNight=new THREE.Color(0x0a1020);   // day fog leans atmospheric blue-grey → distant land hazes into sky (aerial perspective)
 const _skyDay=new THREE.Color(0xffffff), _skyNight=new THREE.Color(0x1a2742);
 // analytic-sky palette (zenith / horizon / below-horizon ground haze, day vs night)
@@ -3343,6 +3370,7 @@ async function initThree(){
   scene=new THREE.Scene();
   const fogCol=0x8a8062;
   scene.fog=new THREE.Fog(fogCol,40,235);
+  if(IS_WEBGPU&&window.TSL) scene.fogNode=buildGpuFog();   // #webgpu Phase C: the #689 height/sun fog as a TSL scene fogNode (see buildGpuFog)
   cam=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.05,WORLD*1.2);
   cam.rotation.order="YXZ";
 
