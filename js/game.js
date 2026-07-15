@@ -509,6 +509,39 @@ for(const b of CE_DEBUFFS) for(const t of DEBUFF_TIERS) SPELLBOOK_LIST.push({id:
 //    frost=white, lightning=blue; health=red, stamina=yellow, mana=blue). ──
 const FX_ELEM={fire:0xff3322,flame:0xff3322, acid:0x54dc3c, frost:0xeef4ff,ice:0xeef4ff,cold:0xeef4ff, shock:0x3a9bff,lightning:0x3a9bff};
 const FX_VITAL={hp:0xff3b30,health:0xff3b30, st:0xffd23b,stamina:0xffd23b, mn:0x3a9bff,mana:0x3a9bff};
+// ── vivid, thematically-exact spell colours per element / damage type / school — the CAST SIGNATURE
+//    (fxCastSignature) and every wind-up read from this so a spell's flourish always matches what it does.
+const SPELL_COL={
+  fire:0xff5a1e, flame:0xff5a1e,                 // orange-red flame
+  frost:0x74e0ff, ice:0x74e0ff, cold:0x74e0ff,   // icy cyan
+  shock:0x8ab0ff, lightning:0x8ab0ff,            // electric blue-white
+  acid:0x9bff2e,                                 // toxic green
+  bludgeon:0xc98bff, force:0xc98bff,             // impact violet
+  slash:0xe8f0fb, blade:0xe8f0fb,                // steel white
+  pierce:0xbfe8ff,                               // pale ice-blue
+  nether:0xc44dff, void:0xc44dff,                // corruption purple
+  life:0x53ffa0, heal:0x53ffa0,                  // vivid life green
+};
+// resolve the eyecatching colour for ANY spell by its element / damage type / school / buff
+function spellFxColor(s){
+  if(!s) return 0x9af0ff;
+  let el=s.element;
+  if(!el && (s.school==="war"||s.school==="aoe") && typeof s.make==="function"){ try{ el=(s.make()||{}).element; }catch(e){} }
+  if(el && SPELL_COL[el]!=null) return SPELL_COL[el];
+  if(s.vulnElem && SPELL_COL[s.vulnElem]!=null) return SPELL_COL[s.vulnElem];
+  if(s.buff==="bane" && s.element && SPELL_COL[s.element]!=null) return SPELL_COL[s.element];
+  if(s.school==="life"||s.heal) return SPELL_COL.life;
+  if(s.school==="void"||s.special==="corrupt") return SPELL_COL.nether;
+  if(s.buff==="light") return s.lightColor||0xfff2cf;
+  if(s.buff==="might") return 0xff8f5a;           // strength — molten orange
+  if(s.buff==="swift") return 0x66ffcf;           // haste — bright teal
+  if(s.buff==="attr"||s.buff==="skill") return 0xbfe0ff;
+  if(s.buff==="prot") return 0x86ffbf;
+  if(s.buff==="item"||s.school==="item") return 0xffd86b;   // enchantment gold
+  if(s.school==="creature") return 0xbf8bff;      // arcane violet
+  if(s.debuff) return 0xc060ff;
+  return 0x9af0ff;
+}
 function fxElem(el,fb){ return (el!=null&&FX_ELEM[el]!=null)?FX_ELEM[el]:(fb!=null?fb:0xffffff); }
 // ── #769: AUTHORED FX — assets/acfx.json carries per-element particle profiles baked from the
 //    real dats (projectile weenie → PhysicsEffectTable → PhysicsScript → emitter → gfxObj colour).
@@ -11347,6 +11380,27 @@ function fxGather(getPos,color,dur,n){ n=Math.max(3,Math.round((n||14)*fxQ()));
   }
   if(parts.length) SPELLFX.push({k:"gather",parts,getPos,t:0,dur:dur||0.5});
 }
+// a rising spiral column of energy motes — the spell drawing power up out of the ground into the caster
+function fxColumn(x,gy,z,color,dur){ const n=Math.max(4,Math.round(16*fxQ()));
+  for(let i=0;i<n;i++){ if(!fxCap())break;
+    const sp=fxSprite(color); const s=rnd(0.12,0.28); sp.scale.setScalar(s); sp.material.opacity=0; scene.add(sp);
+    SPELLFX.push({k:"column",sp,t:0,dur:(dur||0.6)*rnd(0.8,1.15),x,z,gy,a:rnd(0,6.283),r:rnd(0.25,0.95),rise:rnd(2.4,3.8),spin:rnd(5,10)*(i%2?1:-1),s});
+  }
+}
+// ── THE CAST SIGNATURE — an eyecatching, element-coloured casting flourish, played for EVERY spell and
+//    broadcast so other players see you weave it: twin ground rune-rings bloom underfoot, a spiral column
+//    of energy rises, motes stream inward to the forming spell at the hands, and a coloured light swells.
+function fxCastSignature(x,z,color,dur){ dur=Math.max(0.42,dur||0.6);
+  const gy=(typeof groundY==="function")?groundY(x,z):(typeof player!=="undefined"&&!inDungeon&&!inNetwork?player.y:0);
+  const eye=(typeof EYE!=="undefined")?EYE:1.6;
+  fxRing(x,gy+0.12,z,color,{r1:2.4,dur:dur*1.2,flat:1});                   // fast inner bloom
+  fxRing(x,gy+0.10,z,color,{r1:3.4,dur:dur*1.45,flat:1});                  // slower outer bloom
+  fxColumn(x,gy,z,color,dur);                                             // rising spiral energy
+  if(typeof fxGather==="function") fxGather(()=>[x,gy+eye-0.2,z],color,dur,20);   // motes gather at the hands
+  if(!fxCap()) return;
+  const lt=new THREE.PointLight(color,0,11); lt.position.set(x,gy+1.2,z); lt._transient=1; scene.add(lt);
+  SPELLFX.push({k:"castlight",lt,t:0,dur:dur});                          // swell-then-fade coloured glow
+}
 // the per-element look — trail emitter + impact debris parameters (frost bolts fly as "ice")
 const ELEM_FX={
   fire:    {trail:{rate:34,color2:0xffd23b,up:1.4,g:-2,l:0.32,s:0.3},smoke:1,scorch:0x0d0a08,
@@ -11396,9 +11450,15 @@ function updateSpellFX(dt){
           g.sp.position.set(p[0]+Math.cos(g.a)*r, p[1]+g.el*r, p[2]+Math.sin(g.a)*r);
           g.sp.material.opacity=Math.min(1,k*4)*(0.7+0.3*Math.sin(f.t*22+g.ph));
           g.sp.scale.setScalar(g.s*(1+k*0.8)); } } }
+    else if(f.k==="column"){ f.a+=f.spin*dt; const yy=f.gy+f.rise*f.t;         // spiral rising out of the ground
+      f.sp.position.set(f.x+Math.cos(f.a)*f.r, yy+0.1, f.z+Math.sin(f.a)*f.r);
+      f.sp.material.opacity=Math.min(1,k*3)*Math.max(0,1-k)*1.5;
+      f.sp.scale.setScalar(f.s*(1+k*0.6)); }
+    else if(f.k==="castlight"){ f.lt.intensity=3.4*Math.sin(Math.min(1,k)*Math.PI); }   // swell then fade
     if(f.t>=f.dur){
       if(f.sp){ scene.remove(f.sp); f.sp.material.dispose(); }
       if(f.m){ scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); }
+      if(f.lt){ scene.remove(f.lt); }
       if(f.parts){ for(const g of f.parts){ scene.remove(g.sp); g.sp.material.dispose(); } }
       SPELLFX.splice(i,1);
     }
@@ -17104,7 +17164,7 @@ function castSpellById(id){
   if(s.req>0 && mkc && skillValue(mkc)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
   if(s.words) log(`You intone the words of power: <i style="color:#c9a6ff">${esc(s.words)}</i>`,"sys");   // authentic AC cast words
   const ct=castTimeFor(s);
-  if(ct<=0){ executeSpell(id); return; }            // instant utility (Stam→Mana) skips the cast bar
+  if(ct<=0){ const sig=spellFxColor(s); fxCastSignature(player.x,player.z,sig,0.45); netSpellFx("cast",player.x,player.z,0,0,sig,0,0); executeSpell(id); return; }   // instant utility still shows (+ peers see) a quick flourish
   player.casting={id,t:ct,total:ct};
   // mark self-cast up front so the wind-up already eases into the crouch (executeSpell refines it)
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
@@ -17114,13 +17174,9 @@ function castSpellById(id){
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; spellCast(s.school);   // per-school casting wind-up
   // #668: the wind-up is now VISIBLE — motes stream inward to the forming spell and a ground ring
   // blooms underfoot, coloured by what's coming (war bolts take their element's colour).
-  { const wc=(s.school==="war"&&typeof s.make==="function")?((s.make()||{}).color||0xff7a2a)
-      :s.school==="void"?0x9b30ff:s.school==="life"?0x7fe6a0:s.school==="item"?0xffd86b
-      :s.school==="creature"?0xbdeed8:0x9af0ff;
-    const gp=()=>{ const fy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y; return [player.x,fy+EYE-0.25,player.z]; };
-    fxGather(gp,wc,Math.max(0.35,ct*0.85),16);
-    const fy0=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;
-    fxRing(player.x,fy0+0.12,player.z,wc,{r1:1.7,dur:Math.max(0.4,ct*0.9),flat:1}); }
+  { const sig=spellFxColor(s);   // exact element/damage-type colour — twin rune-rings + spiral column + gather + glow
+    fxCastSignature(player.x,player.z,sig,Math.max(0.42,ct*0.95));
+    netSpellFx("cast",player.x,player.z,0,0,sig,0,0); }   // #spellfx: peers see you weave EVERY spell (not just bolts)
 }
 // retail component destruction: each formula component you CARRY burns with probability
 // componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
@@ -31734,6 +31790,8 @@ function onSpellFx(m){
     const lt=new THREE.PointLight(col,2.4,r*5); lt.position.set(x,gy+1.4,z);
     const g=new THREE.Group(); g.add(disc); g.add(lt); scene.add(g);
     walls.push({x,z,r,dps:0,element:null,color:col,burn:false,slow:0,t:6,acc:0,isDungeon:!!inDungeon,mesh:g,disc,cosmetic:true});
+  } else if(m.cat==="cast"){   // #spellfx: a peer weaving a spell — show their element-coloured cast signature
+    if(typeof fxCastSignature==="function") fxCastSignature(x,z,col,0.6);
   } else { // aoe / ring / blast burst
     if(typeof spellImpactFX==="function") spellImpactFX(x,gy+0.9,z,col,null,true);   // #668: a peer's blast detonates with the full spectacle
     else if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
