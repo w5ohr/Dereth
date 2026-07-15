@@ -3427,10 +3427,17 @@ async function initThree(){
       // disposal ~100/s, scene/lights/fog cache keys all stable — never a cache-key churn). Route
       // EVERY Material/BufferGeometry/Texture dispose through the 2-tick deferral queue at the
       // prototype, instead of patching each site. WebGL keeps synchronous dispose (lazy re-upload).
-      for(const P of [THREE.Material,THREE.BufferGeometry,THREE.Texture]){
-        const orig=P.prototype.dispose;
-        P.prototype.dispose=function(){ _wgpuDeferDispose({dispose:orig.bind(this)}); };
-      }
+      // Mode B1 in practice: shared-but-unmarked resources (cached canvas textures, merged-archetype
+      // geometry) are disposed by one object's teardown while ANOTHER live object still binds them —
+      // on WebGPU ONE such destroy faults every subsequent submit and freezes the canvas forever
+      // (repro: seeded spawn, any long teleport, dungeon exit). 2-tick deferral doesn't help (the
+      // survivor still binds the buffer whenever it dies), and the shared set is spread across the
+      // 33k-line codebase. Until the Phase-2 refcounted resource manager lands, GPU resources are
+      // simply never destroyed on WebGPU (A/B-verified: zero faults, live canvas, all flows). VRAM
+      // grows with play session (grass restreams, label churn) — bounded enough for Phase C/D work.
+      THREE.Material.prototype.dispose=function(){};
+      THREE.BufferGeometry.prototype.dispose=function(){};
+      THREE.Texture.prototype.dispose=function(){};
       // #webgpu KNOWN ISSUE (see docs/webgpu-migration-status.md): the game's dispose-then-reattach
       // GPU eviction (#232 releaseObjectGPU, dungeon-exit disposeObject3D bursts, the portal tube's
       // dispose) assumes WebGL's lazy re-upload. r185 WebGPU keeps cached bind groups pointing at the
@@ -5992,10 +5999,45 @@ function buildPortalFx(g){
     geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
     geo.setAttribute('aSize',new THREE.BufferAttribute(size,1));
     geo.setAttribute('aAlpha',new THREE.BufferAttribute(alp,1));
-    const mat=new THREE.ShaderMaterial({uniforms:{map:{value:_portalSprite(em.sprite)}},
-      vertexShader:_PFX_VERT, fragmentShader:_PFX_FRAG,
-      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
-    const pts=new THREE.Points(geo,mat); pts.frustumCulled=false;
+    // #webgpu Phase C: native WebGPU has NO sized points (gl_PointCoord/gl_PointSize are WebGL-only;
+    // PointsNodeMaterial+pointUV only worked on machine 1 via the WebGL2-fallback backend). The twin
+    // is an InstancedMesh of camera-facing quads: SpriteNodeMaterial + instanced attributes REUSING
+    // the same pos/size/alp Float32Arrays, so the retail CPU sim (updatePortalFx) is untouched.
+    // gl_PointSize=aSize*(240/-z) px ≈ a CONSTANT world size: aSize*240*2*tan(fov/2)/bufferH.
+    let pts;
+    // ⚠️ WIP, default-OFF (window.__PFX_TSL=1 to enable): instanced camera-facing quads with MANUAL
+    // billboarding — SpriteNodeMaterial+InstancedMesh silently draws nothing on native WebGPU, and
+    // PointsNodeMaterial+pointUV emits gl_PointCoord (WebGL-only intrinsic, invalid WGSL). This
+    // billboard variant is written but UNVERIFIED: the dev box's GPU degraded mid-verification
+    // (user's Chrome sharing the AMD card → all runs crawl/freeze). Until verified, WebGPU portals
+    // keep the Points+ShaderMaterial fallback (skipped by NodeBuilder → no particles, no errors).
+    if(IS_WEBGPU&&window.TSL&&THREE.MeshBasicNodeMaterial&&window.__PFX_TSL){
+      // positionNode places each quad at its instanced center and spans it along the camera's world
+      // right/up. Identity instanceMatrix — per-particle data rides in instanced attributes reusing
+      // the sim's Float32Arrays.
+      const t=window.TSL;
+      const geo2=new THREE.PlaneGeometry(1,1);
+      const iPos=new THREE.InstancedBufferAttribute(pos,3), iSize=new THREE.InstancedBufferAttribute(size,1), iAlp=new THREE.InstancedBufferAttribute(alp,1);
+      geo2.setAttribute('iPos',iPos); geo2.setAttribute('aSize',iSize); geo2.setAttribute('aAlpha',iAlp);
+      const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false,side:THREE.DoubleSide});
+      const db=renderer.getDrawingBufferSize(new THREE.Vector2());
+      const pxToWorld=240.0*2.0*Math.tan((cam?cam.fov:72)*Math.PI/360)/Math.max(1,db.y);   // gl_PointSize px ≈ constant world size
+      const s=t.instancedBufferAttribute(iSize,'float').mul(pxToWorld);
+      const rightW=t.cameraWorldMatrix.mul(t.vec4(1,0,0,0)).xyz, upW=t.cameraWorldMatrix.mul(t.vec4(0,1,0,0)).xyz;
+      mat.positionNode=t.instancedBufferAttribute(iPos,'vec3')
+        .add(rightW.mul(t.positionGeometry.x.mul(s)))
+        .add(upW.mul(t.positionGeometry.y.mul(s)));
+      const tex=t.texture(_portalSprite(em.sprite), t.uv());
+      mat.colorNode=t.vec4(tex.rgb, tex.a.mul(t.instancedBufferAttribute(iAlp,'float')));
+      mat.alphaTest=0.01;
+      pts=new THREE.InstancedMesh(geo2,mat,n);
+    } else {
+      const mat=new THREE.ShaderMaterial({uniforms:{map:{value:_portalSprite(em.sprite)}},
+        vertexShader:_PFX_VERT, fragmentShader:_PFX_FRAG,
+        transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
+      pts=new THREE.Points(geo,mat);
+    }
+    pts.frustumCulled=false;
     pts.position.y=2.1;                                          // emitter frame sits at the lens heart
     g.add(pts);
     // per-particle sim state, staggered by the retail birthrate so the stream is continuous
@@ -6031,9 +6073,10 @@ function updatePortalFx(g,dt){
       S.pos[i*3]=pt.p[0]+pt.v[0]*pt.age; S.pos[i*3+1]=pt.p[1]+pt.v[1]*pt.age; S.pos[i*3+2]=pt.p[2]+pt.v[2]*pt.age;
       S.size[i]=sc; S.alp[i]=tr;
     }
-    S.pts.geometry.attributes.position.needsUpdate=true;
-    S.pts.geometry.attributes.aSize.needsUpdate=true;
-    S.pts.geometry.attributes.aAlpha.needsUpdate=true;
+    const at=S.pts.geometry.attributes;                          // #webgpu: instanced quads carry iPos instead of position
+    (at.iPos||at.position).needsUpdate=true;
+    at.aSize.needsUpdate=true;
+    at.aAlpha.needsUpdate=true;
   }
 }
 function refreshPortalFx(){                                      // swap lens-fallback portals to the real effect
