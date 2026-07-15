@@ -456,14 +456,14 @@ AUTHOR the cutover on a sub-branch in parallel; it just can't be merged until St
 - Machine 1 / **Metal**: WebGPU ~10-18% **faster** than WebGL (table above).
 - Machine 2 / **D3D12**: WebGPU **~2× SLOWER** (0.51× across tier 2/3, static+orbit), **CPU-encode-bound** —
   r185's node-renderer per-draw encode cost dominates at 5-12k draw calls (renderComposite JS ≈ whole frame).
-- **So "flip WebGPU on everywhere" is NOT viable yet.** Two levers, in order:
-  1. **Three.js version bump (r185 → latest) — now the CRITICAL PATH → Machine 1** (owns bumps; did r159→r185).
-     Upstream WebGPU-renderer encode perf improved materially post-r185 and it may also delete machine 2's
-     single-cascade + forest-split workarounds. This is the highest-leverage fix for the D3D12 gap.
-  2. If the bump doesn't close it: the cutover keeps a **per-backend default** (native-WebGPU→WebGPU on
-     Metal-class HW; D3D12/Windows stays WebGL, or a tier-biased WebGPU) instead of a blanket flip.
-- **Re-measure BOTH boxes after the bump** before deciding the default. Draw-call reduction (5k+ at spawn)
-  is a game-side win for both backends and can proceed independently.
+- **So "flip WebGPU on everywhere" is NOT viable yet.** Levers, updated after the bump was ruled out (B2):
+  1. ~~Three.js bump~~ — **NOT AVAILABLE** (B2: latest r185.1 == our build, byte-identical; r186 not shipped).
+     Parked until r186 lands (~Aug+); re-run the D3D12 table then.
+  2. **Draw-call reduction (B2a) — now the primary lever.** D3D12 WebGPU is encode-bound and cost ∝ draw
+     calls; cutting them is the only available fix and helps both backends.
+  3. **Per-backend default for the cutover** — native-WebGPU→WebGPU on Metal-class HW (where it's ~15%
+     faster); D3D12/Windows stays WebGL (where WebGPU is ~2× slower) until B2a and/or r186 close the gap.
+     This is now the EXPECTED cutover shape, not a fallback.
 
 ---
 **Stream A — Machine 2 (Windows / AMD / D3D12): "prove it survives everywhere it must."**
@@ -495,12 +495,18 @@ Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so 
   heavier on WebGL2 than on native WebGPU — a wide overlook was slow enough to time out a 30 s readback. Net:
   the fallback is FUNCTIONAL and fine as a "can't run native WebGPU at all" safety net, but it is NOT a fast
   path; quantify normal-play fps in a real foreground browser before leaning on it.
-- **B2. Three.js version bump (r185 → latest) — CRITICAL PATH, do FIRST.** The fix for the D3D12
-  CPU-encode perf gap (see PERF RECONCILE). Vendor the newer `three.webgpu.js`/`three.core.js`/tsl/addons,
-  handle any TSL/node API renames (e.g. this session already hit `PostProcessing`→`RenderPipeline`), re-verify
-  the whole node-material game on Metal (native + `glfallback`), then hand to machine 2 to re-run the D3D12
-  perf table + regression. Check whether the bump lets machine 2 drop the single-shadow-cascade + forest-split
-  workarounds.
+- ⛔ **B2. Three.js bump — NOT AVAILABLE (investigated 2026-07-15).** The latest published three.js is
+  **0.185.1**, and its four build files (`three.core/module/webgpu/tsl.js`) are **byte-for-byte IDENTICAL** to
+  what we already vendor (sha256 match; 0 commits between the `r185`/`r185.1` GitHub tags — a pure npm
+  republish). 0.186+ do not exist on npm/unpkg/jsdelivr (404). Release cadence is ~2 months (r184 Apr, r185
+  Jun 25, r185.1 Jul 1), so **r186 — where the WebGPU encode-perf work would land — is ~Aug+, not out yet.**
+  ⇒ The "bump fixes the D3D12 encode gap" plan is **parked**: nothing to bump to. Re-check when r186 ships,
+  then re-run machine 2's D3D12 perf table. The actionable levers NOW are B2a + the cutover default policy:
+- **B2a. Draw-call reduction (game-side) — the real highest-leverage item, replaces the bump.** Machine 2's
+  D3D12 profile is **CPU-encode-bound and encode cost ∝ draw-call count** (5–12k calls at spawn). Since no
+  engine bump is available, cutting draw calls is the only lever that directly attacks the D3D12 WebGPU
+  bottleneck — and it speeds up BOTH backends. Candidates: merge/instance more static props, atlas materials,
+  raise the instancing threshold, coarser distant LOD. This is where the D3D12 perf win now comes from.
 - **B3. Author the cutover** (AFTER the bump + the perf re-measure decides the default policy). Make
   `WebGPURenderer` the default per the agreed policy (blanket flip if the bump closes the D3D12 gap, else
   per-backend), retire `?gpu=1`, and DELETE the classic path: the `WebGLRenderer` branch of `initThree`, the
