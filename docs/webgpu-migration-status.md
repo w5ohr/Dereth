@@ -452,6 +452,19 @@ BOTH fallback QAs pass and machine 2's D3D12 regression is green — dropping th
 commits us to `WebGPURenderer` (native WebGPU, WebGL2-backend fallback) as the ONLY path. Machine 1 may
 AUTHOR the cutover on a sub-branch in parallel; it just can't be merged until Stream A is green.
 
+**🔴 PERF RECONCILE — the two boxes DISAGREE, and it re-orders the plan (2026-07-15):**
+- Machine 1 / **Metal**: WebGPU ~10-18% **faster** than WebGL (table above).
+- Machine 2 / **D3D12**: WebGPU **~2× SLOWER** (0.51× across tier 2/3, static+orbit), **CPU-encode-bound** —
+  r185's node-renderer per-draw encode cost dominates at 5-12k draw calls (renderComposite JS ≈ whole frame).
+- **So "flip WebGPU on everywhere" is NOT viable yet.** Two levers, in order:
+  1. **Three.js version bump (r185 → latest) — now the CRITICAL PATH → Machine 1** (owns bumps; did r159→r185).
+     Upstream WebGPU-renderer encode perf improved materially post-r185 and it may also delete machine 2's
+     single-cascade + forest-split workarounds. This is the highest-leverage fix for the D3D12 gap.
+  2. If the bump doesn't close it: the cutover keeps a **per-backend default** (native-WebGPU→WebGPU on
+     Metal-class HW; D3D12/Windows stays WebGL, or a tier-biased WebGPU) instead of a blanket flip.
+- **Re-measure BOTH boxes after the bump** before deciding the default. Draw-call reduction (5k+ at spawn)
+  is a game-side win for both backends and can proceed independently.
+
 ---
 **Stream A — Machine 2 (Windows / AMD / D3D12): "prove it survives everywhere it must."**
 This is the strict backend where every hard bug surfaced (dispose faults, color pipeline), so it owns
@@ -482,13 +495,20 @@ Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so 
   heavier on WebGL2 than on native WebGPU — a wide overlook was slow enough to time out a 30 s readback. Net:
   the fallback is FUNCTIONAL and fine as a "can't run native WebGPU at all" safety net, but it is NOT a fast
   path; quantify normal-play fps in a real foreground browser before leaning on it.
-- **B2. Author the cutover.** Make `WebGPURenderer` the default (native WebGPU, auto WebGL2-backend
-  fallback), retire the `?gpu=1` opt-in, and DELETE the classic path: the `WebGLRenderer` branch of
-  `initThree`, the 6 GLSL `ShaderMaterial`s + `onBeforeCompile` patches (now superseded by TSL), the
-  WebGLRenderTarget POST chain (`initPost`/`POST.comp`/`makePass`), and every `if(IS_WEBGPU) … else …`
-  fork that exists only to keep both alive. Bump `sw.js`, trim the importmap/boot. Keep it on a sub-branch.
-- **B3. Verify the cutover on Metal** (full game, no `?gpu=1`) and open the `webgpu`→`main` PR — held for
-  the user's green-light + Stream-A sign-off.
+- **B2. Three.js version bump (r185 → latest) — CRITICAL PATH, do FIRST.** The fix for the D3D12
+  CPU-encode perf gap (see PERF RECONCILE). Vendor the newer `three.webgpu.js`/`three.core.js`/tsl/addons,
+  handle any TSL/node API renames (e.g. this session already hit `PostProcessing`→`RenderPipeline`), re-verify
+  the whole node-material game on Metal (native + `glfallback`), then hand to machine 2 to re-run the D3D12
+  perf table + regression. Check whether the bump lets machine 2 drop the single-shadow-cascade + forest-split
+  workarounds.
+- **B3. Author the cutover** (AFTER the bump + the perf re-measure decides the default policy). Make
+  `WebGPURenderer` the default per the agreed policy (blanket flip if the bump closes the D3D12 gap, else
+  per-backend), retire `?gpu=1`, and DELETE the classic path: the `WebGLRenderer` branch of `initThree`, the
+  6 GLSL `ShaderMaterial`s + `onBeforeCompile` patches, the WebGLRenderTarget POST chain
+  (`initPost`/`POST.comp`/`makePass`), and every `if(IS_WEBGPU) … else …` fork kept only to run both. Bump
+  `sw.js`, trim importmap/boot. Sub-branch.
+- **B4. Verify the cutover on Metal** (full game, no `?gpu=1`) and open the `webgpu`→`main` PR — held for the
+  user's green-light + Stream-A sign-off + the post-bump perf decision.
 
 ---
 
