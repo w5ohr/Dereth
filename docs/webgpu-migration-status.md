@@ -365,8 +365,15 @@ WebGPU pipeline compiles async — normal, imperceptible at 60fps.) WebGL portal
 
 Machine 1 (Metal) closed the visible WebGPU rendering-parity gaps this session. Authoritative status:
 
-- ✅ **Base-lighting parity** — measured D3D12-specific; Apple-Silicon/Metal is byte-identical per light. NOT a
-  target-platform blocker (machine 2's "on-hardware light re-tune" is a Windows/AMD/D3D12-only concern).
+- ✅ **Base-lighting / luminance parity — SOLVED by Agent 2 (2265843f), supersedes machine-1's "D3D12-specific".**
+  My per-light A/B showed byte-identical lights on Metal ONLY because the probe set the output transform
+  manually (NoToneMapping + explicit outputColorSpace on both renderers), which masked the real gap: with
+  #695 ColorManagement OFF, r185's WebGPU output transform gates its sRGB ENCODE on `ColorManagement.enabled`
+  while WebGL encodes regardless → the WebGPU frame was written LINEAR (darker) on ALL backends, not just
+  D3D12. Agent 2's GPUPOST now tonemaps+encodes the scene pass manually (ACES → sRGB OETF) and grades in
+  display space like the WebGL POST.comp. My sprites feed the scene pass like any other geometry, so this
+  applies to them uniformly — re-verified on Metal against the merged tree: stars/motes/embers render, 0
+  errors (their `toneMapped:false` is now moot since GPUPOST tonemaps the whole pass).
 - ✅ **`Vertex attribute "uv" not found` warnings** — root cause was NOT canopy/flora (machine 2's suspicion);
   it was the starfield + firefly/portal-mote PointsMaterials carrying a `.map`. Fixed with the point-sprite
   work below. 0 warnings now.
