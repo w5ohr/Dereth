@@ -17890,6 +17890,7 @@ const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Com
   ["magtools","Mag-Tools","shift+F12"],
   ["dungmap","Dungeon Maps",""],["radar","Virindi Radar",""],["itemtool","Item Tool",""],["compkeep","Comp Keeper",""],
   ["dmgmeter","Damage Meter",""],["corpsetk","Corpse Tracker",""],["squire","Squire",""],
+  ["targhud","Target HUD",""],["skunk","SkunkVision",""],
   ["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
 for(const [id,label,def] of HUD_TOGGLES)
   ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
@@ -19920,7 +19921,7 @@ function buildMiniToggles(){
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
 const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
-  "goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
+  "goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -19937,7 +19938,7 @@ function initDragUI(){
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
     el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
   // parchment windows also drag by their title bar at any time (no N-mode needed)
-  for(const id of ["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
+  for(const id of ["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
     const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
     head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
       e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
@@ -19963,7 +19964,7 @@ function initDragUI(){
 // Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
 function ensureGrips(){
   const label={}; if(typeof HUD_TOGGLES!=="undefined") for(const [id,n] of HUD_TOGGLES) label[id]=n;
-  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","idPanel"].indexOf(id)>=0) continue;
+  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","idPanel"].indexOf(id)>=0) continue;
     const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
     if(getComputedStyle(el).position==="static") el.style.position="relative";
     const grip=document.createElement('div'); grip.className="dragGrip"; grip.textContent="⠿"; grip.title="Drag to move (or press N to move whole panels)";
@@ -20267,7 +20268,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:fals
   brightness:1.0,contrast:1.0,   // final-image display grade (Settings sliders): 1.0 = neutral
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
-  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false,dmgmeter:false,corpsetk:false,squire:false},   // Decal-plugin homages (settings → Decal plugins)
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false,dmgmeter:false,corpsetk:false,squire:false,targhud:false,skunk:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,vtankVitals:true,vtankVitalPct:50,gaDest:"auto",gaCoords:null,
   ubeltXp:true,ubeltPolicy:"spec",   // UtilityBelt XP investor: auto-spend policy
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
@@ -26679,7 +26680,7 @@ function applyUIVis(){
   const h=settings.uiHidden||{};
   for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
     if(h[id]) el.style.display="none";
-    else if(["goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
+    else if(["goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
   applyPluginSettings();            // plugin panels re-apply their own visibility
 }
 // ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
@@ -26708,6 +26709,8 @@ const PLUGIN_DEFS=[
   {k:"dmgmeter",n:"Damage Meter", d:"DamageTracker — live DPS (10s window), session damage dealt & taken, your biggest hit and crit rate."},
   {k:"corpsetk",n:"Corpse Tracker",d:"CorpseTracker — lists your unrecovered corpses with distance, bearing and the time left before each decays."},
   {k:"squire",  n:"Squire",       d:"Squire — your worn equipment at a glance, each magical piece showing its remaining item-mana."},
+  {k:"targhud", n:"Target HUD",   d:"TargetHUD — the locked target's vitals, its elemental weakness & resistance, and any debuffs (burning, slowed, vulnerable) on it."},
+  {k:"skunk",   n:"SkunkVision",  d:"SkunkVision — a terrain-vision dial that reveals what you can't easily see: impassable deep water (blue) and unclimbable slopes (red) around you, oriented to your facing."},
 ];
 const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
 function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
@@ -26913,6 +26916,23 @@ function updatePlugins(dt){
       for(const k of Object.keys(player.armorSlots||{})){ const it=player.armorSlots[k]; if(it&&it.name) rows.push([it.name,it.itemMana]); }
       for(const k of Object.keys(player.jewelry||{})){ const it=player.jewelry[k]; if(it&&it.name) rows.push([it.name,it.itemMana]); }
       el.innerHTML=rows.length?rows.map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(r[0])}</span><span style="color:#3a5a8a">${(r[1]!=null&&isFinite(r[1]))?Math.round(r[1])+" mana":""}</span></div>`).join(""):'<div style="color:#5a4a2e">Nothing equipped.</div>'; } }
+  // ── Target HUD: the locked target's vitals, elemental weakness/resist and debuffs ──
+  if(pluginOn("targhud")){ const el=document.getElementById('targhudRows');
+    if(el){ const m=(TARGET&&TARGET.type==="monster")?TARGET.ref:null;
+      if(!m||m.hp<=0) el.innerHTML='<div style="color:#5a4a2e">No target — press , / . to lock.</div>';
+      else { const b=BESTIARY[m.kind]||{}, af=AFFINITY[m.kind]||{}, cap=s=>s?s[0].toUpperCase()+s.slice(1):"—";
+        const hp=Math.max(0,Math.round(m.hp)), mhp=Math.max(1,Math.round(m.mhp||m.hp)), pct=Math.round(hp/mhp*100);
+        const debs=[]; const _n=now();
+        if(m.burnT>0) debs.push('<span style="color:#c85028">Burning</span>');
+        if(m.slow>0||m.slowUntil>_n) debs.push('<span style="color:#5a8ad0">Slowed</span>');
+        if(m.vulnUntil>_n||m.vulnElemUntil>_n) debs.push('<span style="color:#c04a8a">Vulnerable</span>');
+        if(m.weakUntil>_n) debs.push('<span style="color:#8a6ac0">Weakened</span>');
+        const row=(a,b2)=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${a}</span><b>${b2}</b></div>`;
+        el.innerHTML=`<div style="font-weight:bold;color:#3a2a12;margin-bottom:2px">${esc(m.name||b.name||m.kind)}${m.isBoss?" ★":m.isElite?" ◆":""}</div>`
+          +row("Health",hp+" / "+mhp+" ("+pct+"%)")
+          +row("Weak to",af.weak?`<span style="color:#1e7a2e">${cap(af.weak)}</span>`:"—")
+          +row("Resists",af.resist?`<span style="color:#8a1e1e">${cap(af.resist)}</span>`:"—")
+          +`<div style="margin-top:2px;color:#5a4a2e">${debs.length?debs.join(" · "):"No debuffs"}</div>`; } } }
 }
 // Dungeon Maps + Radar redraw every frame (cheap 2D canvas) — driven from updatePlugins' per-frame block
 function _drawPluginCanvases(){
@@ -26937,6 +26957,25 @@ function _drawPluginCanvases(){
     if(typeof NET!=="undefined"&&NET.players) for(const id in NET.players){ const r=NET.players[id]; if(r&&r.mesh){ blip(r.mesh.position.x,r.mesh.position.z,"#6ad0ff",2.4); } }
     g.fillStyle="#ffe9a8"; g.beginPath(); g.moveTo(R,R-5); g.lineTo(R+4,R+4); g.lineTo(R-4,R+4); g.closePath(); g.fill();   // you, facing up
     const inf=document.getElementById('radarInfo'); if(inf)inf.textContent=n+" hostile"+(n===1?"":"s")+" near"; } }
+  // ── SkunkVision: terrain-vision dial revealing impassable water (blue) + unclimbable slopes (red) ──
+  if(pluginOn("skunk")){ const cv=document.getElementById('skunkCv'); if(cv){ const g=cv.getContext('2d'), S=cv.width;
+    g.clearRect(0,0,S,S); g.fillStyle="#0a0c07"; g.fillRect(0,0,S,S);
+    const N=15, RANGE=48, cell=S/N, step=RANGE*2/N, cy=Math.cos(-player.yaw), sy=Math.sin(-player.yaw), SM=(typeof SLOPE_MAX!=="undefined")?SLOPE_MAX:1.7;
+    for(let gy2=0;gy2<N;gy2++) for(let gx=0;gx<N;gx++){
+      const lx=(gx-N/2+0.5)*step, lz=(gy2-N/2+0.5)*step;        // local (player-relative), forward = -z → up
+      const wx=player.x + (lx*cy + lz*sy), wz=player.z + (-lx*sy + lz*cy);   // rotate into world by facing
+      const h=terrainH(wx,wz);
+      let col=null;
+      if(h< -1) col="rgba(60,120,210,0.55)";                     // impassable deep water
+      else { const gx2=(terrainH(wx+2,wz)-terrainH(wx-2,wz))/4, gz2=(terrainH(wx,wz+2)-terrainH(wx,wz-2))/4;
+        const slope=Math.hypot(gx2,gz2);
+        if(slope>SM) col="rgba(210,60,50,0.55)";                 // unclimbable slope
+        else if(slope>SM*0.6) col="rgba(210,160,50,0.35)";       // steep but passable
+        else col="rgba(90,150,90,0.18)"; }                       // walkable
+      g.fillStyle=col; g.fillRect(gx*cell,gy2*cell,cell+0.5,cell+0.5);
+    }
+    g.fillStyle="#ffe9a8"; g.beginPath(); g.moveTo(S/2,S/2-5); g.lineTo(S/2+4,S/2+4); g.lineTo(S/2-4,S/2+4); g.closePath(); g.fill();
+    const inf=document.getElementById('skunkInfo'); if(inf)inf.textContent=inDungeon?"(indoors)":"Terrain vision"; } }
 }
 // Settings → compass-bar range + the per-category blip filters for the bar AND the minimap.
 // The minimap's own ⚙ menu edits the same `miniShow` object, so the two stay in lockstep.
