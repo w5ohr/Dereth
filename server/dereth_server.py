@@ -2690,8 +2690,8 @@ async def dispatch(cl, msg):
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
         cl.level = min(_clampi(msg.get("level"), 1, 275, cl.level), cl.level_auth)   # #238: bound the client-reported level to the character's AUTHORITATIVE level (seeded from the save, rate-limited on save) — closes the forged-level → unlimited-vassals / swear-over-anyone exploit
-        cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
-        cl.title = str(msg.get("title", cl.title))[:40]
+        cl.heritage = clean_relay(msg.get("heritage", cl.heritage), 16)   # #813: strip markup/control chars like every other peer-relayed text field
+        cl.title = clean_relay(msg.get("title", cl.title), 40)             # #813: title reaches other clients' label rendering — defense-in-depth against innerHTML XSS
         cl.wt = (str(msg.get("wt"))[:16] if msg.get("wt") else None)          # so remotes render the right weapon
         cl.mnt = (str(msg.get("mnt"))[:12] if msg.get("mnt") else None)        # #728: riding? which horse
         cl.wmode = str(msg.get("wmode", cl.wmode))[:8]
