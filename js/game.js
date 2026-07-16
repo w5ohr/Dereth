@@ -139,7 +139,7 @@ try{ fetch('assets/acskills.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!
     s.tc=Math.max(0,a.tc); s.sc=(a.sc>=900?-1:a.sc);              // 1000+ in the table = cannot specialize
     let b=0; if(s.d){let sum=0;for(const at of s.a)sum+=10;b=Math.floor(sum/s.d);} s.base0=b; }
   AC_XP=j.xp;
-  if(typeof derive==="function"&&typeof player!=="undefined"&&player.skills){ derive(); if(typeof updateHUD==="function") updateHUD(); }
+  if(typeof derive==="function"&&typeof player!=="undefined"&&player.skills){ derive(); updateHUD(); }
   console.log("AC skill pack: "+Object.keys(j.skills).length+" authentic skill formulas + XP charts loaded.");
 }).catch(()=>{}); }catch(e){}
 // THE AC skill check (client formula): success chance vs difficulty is a logistic curve.
@@ -1384,8 +1384,8 @@ const REGION_META={
 const REGION_KEYS=["aluvia","sho","gharu"];   // REGIONS[] index → REGION_META key
 // The most SPECIFIC named region covering a point: isles → Direlands → the Blackmire → cultural homeland.
 function regionNameAt(x,z){
-  if(typeof onOuterIsle==="function" && onOuterIsle(x,z)) return REGION_META.isles;   // standing on an outer isle
-  if(typeof inSwamp==="function" && inSwamp(x,z)) return REGION_META.blackmire;           // the named swamp band wins over the generic frontier
+  if(onOuterIsle(x,z)) return REGION_META.isles;   // standing on an outer isle
+  if(inSwamp(x,z)) return REGION_META.blackmire;           // the named swamp band wins over the generic frontier
   if(regionOf(x,z)<0) return REGION_META.dire;                                            // beyond the settled lands
   return REGION_META[REGION_KEYS[regionOf(x,z)]]||REGION_META.aluvia;                     // the three homelands
 }
@@ -2091,7 +2091,7 @@ function academyKill(m){
 function academyExit(){   // the single exit portal: one destination, the town you chose at creation
   if(inDungeon&&curDungeon&&curDungeon.academy&&typeof exitAcademyHall==="function") exitAcademyHall();   // step out of the hall first
   const tn=player.createTown||"Holtburg", c=CITIES.find(x=>x.name===tn)||CAPITALS[0];
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  teleportFX(player.x,player.z);
   const land=nearestDryLand(c.x,(c.z||0)+4);
   arriveAt(land.x,land.z); player.academy.done=1;
   log(`You step through the Academy portal into <b>${c.name||tn}</b>. Seek out the town's greeters by the plaza — they'll see you settled.`,"sys");
@@ -2105,8 +2105,8 @@ let _acadNpcs=[], _acadDoors=null;
 function _clearAcademyNpcs(){
   for(const rec of _acadNpcs){ const i=npcs.indexOf(rec); if(i>=0)npcs.splice(i,1);
     for(let j=obstacles.length-1;j>=0;j--) if(obstacles[j].x===rec.x&&obstacles[j].z===rec.z) obstacles.splice(j,1);
-    scene.remove(rec.mesh); if(typeof disposeObject3D==="function")disposeObject3D(rec.mesh); }
-  _acadNpcs=[]; if(typeof updateNPCMarker==="function")updateNPCMarker();
+    scene.remove(rec.mesh); disposeObject3D(rec.mesh); }
+  _acadNpcs=[]; updateNPCMarker();
 }
 function buildAcademyHall(){
   const cx=DCEN.x, cz=DCEN.z;
@@ -2201,7 +2201,7 @@ function enterAcademyHall(){
   inDungeon=true; curDungeon={name:"The Training Academy",tier:1,academy:true}; dungeonReturn={x:ACADEMY_POS.x,z:ACADEMY_POS.z};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.4";
-  buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
+  buildAcademyHall(); markSceneSRGB();
   player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #511: face INTO the Great Hall (the greeter/room lie north of the spawn point) — the old default (yaw 0, forward=-z) wedged a fresh recruit nose-first into the south wall behind them
   // #464 (REOPEN): the interior is built AND attached to the scene synchronously above — but the very
   // first render after entry still has to lazily compile the shader PROGRAMS for these freshly-added
@@ -2227,7 +2227,7 @@ function openAcademyDoors(){
   if(!_acadDoors||_acadDoors.open) return;
   _acadDoors.open=true; _acadDoors.bar.open=true;   // passable at once; the swing is cosmetic
   if(typeof SFX!=="undefined"){ if(SFX.portal)SFX.portal(); else if(SFX.quest)SFX.quest(); }
-  if(typeof log==="function") log("The Great Hall doors grind open — the training yard lies beyond.","sys");
+  log("The Great Hall doors grind open — the training yard lies beyond.","sys");
 }
 function updateAcademyDoors(dt){
   const D=_acadDoors; if(!D) return;
@@ -3121,7 +3121,7 @@ function updateWeather(dt){
   if(storming && wetness>0.5){
     boltCd-=dt;
     if(boltCd<=0){ boltCd=rnd(3.5,11); stormFlash=settings.reduceMotion?0:1;   // #244: no fullscreen lightning brightening under reduce-motion (thunder still rolls)
-      if(typeof castFlash==="function") castFlash(0xe6f0ff);
+      castFlash(0xe6f0ff);
       const dist=rnd(0.3,3.2); setTimeout(()=>{ if(weather==="storm"||wetness>0.3) playThunder(dist>1.5); }, dist*1000);
     }
   }
@@ -3225,7 +3225,7 @@ function updateDayNight(dt){
   gameTime=(gameTime+dt/DAYLEN)%1;
   worldDays+=dt/DAYLEN; seasonTick();   // 30 day/night cycles → the month turns
   { const _tt=Math.floor(gameTime*16); if(_tt!==_todIdx){ _todIdx=_tt;   // the tithe turned → refresh the clock HUD
-      if(typeof updateSeasonHUD==="function") updateSeasonHUD(); } }
+      updateSeasonHUD(); } }
   const t2=gameTime*Math.PI*2;
   const sunY=-Math.cos(t2);            // -1 midnight .. +1 noon
   const sunX=Math.sin(t2);
@@ -3548,7 +3548,7 @@ function updateLightPool(){
 const MOBILE_MIN_LONG=2532, MOBILE_MIN_SHORT=1170;
 function mobilePixelRatio(tierCap){
   const dpr=window.devicePixelRatio||1;
-  const mobile=(typeof TOUCH!=="undefined"&&TOUCH.on)||(typeof touchDeviceIs==="function"&&touchDeviceIs());
+  const mobile=(typeof TOUCH!=="undefined"&&TOUCH.on)||(touchDeviceIs());
   if(!mobile) return Math.min(dpr,tierCap);
   const w=Math.max(1,innerWidth), h=Math.max(1,innerHeight);
   const minW=w>=h?MOBILE_MIN_LONG:MOBILE_MIN_SHORT, minH=w>=h?MOBILE_MIN_SHORT:MOBILE_MIN_LONG;
@@ -4660,7 +4660,7 @@ function gfxTick(dt){
   GFX._fT=(GFX._fT||0)+dt;
   if(GFX._fT>0.7&&(GFX._fx==null||GFX._fT>=99||Math.hypot(player.x-GFX._fx,player.z-GFX._fz)>18)){
     GFX._fT=0; gfxForestStream(); }
-  if(typeof refreshGrassField==="function") refreshGrassField();   // the grass carpet follows the camera
+  refreshGrassField();   // the grass carpet follows the camera
   GFX._lT=(GFX._lT||0)+dt;
   if(GFX._lT>0.4){ GFX._lT=0; gfxCullLabels(); gfxCullProps(); }
   if(GFX.shadowEvery>1&&renderer.shadowMap.enabled){   // shadow refresh on a cadence, not every frame
@@ -4765,7 +4765,7 @@ function applyGfxTier(t,quiet){
   // (desktop only: on mobile, mobilePixelRatio() renders at the device's real resolution regardless of tier)
   renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][t]));
   renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
-  if(typeof resizePost==="function") resizePost();
+  resizePost();
   renderer.shadowMap.enabled=t>=1;
   let _shadowResized=false;   // #webgpu: see the invalidation block below
   if(typeof sun!=="undefined"&&sun){
@@ -4804,7 +4804,7 @@ function applyGfxTier(t,quiet){
   if(auroraGroup) auroraGroup.children.forEach((m,i)=>m.visible=i<GFX.auroraN);
   if(MIST.pool) MIST.pool.forEach((m,i)=>{ if(i>=GFX.mistN) m.material.opacity=0; });
   if(typeof rainSegs!=="undefined"&&rainSegs) rainSegs.count=[500,800,1100,1400][t];
-  if(typeof buildGrass==="function") buildGrass();   // rebuild the grass field for the new tier's density/radius
+  buildGrass();   // rebuild the grass field for the new tier's density/radius
   GFX.treeR=[150,200,260,320][t];   // trees stream in to this radius (fog ends ~235 — nothing is lost)
   GFX._fT=99;                       // restream the forest now
   if(typeof cloudGroup!=="undefined"&&cloudGroup){ const nC=[14,26,40,52][t];
@@ -7098,7 +7098,7 @@ function buildReed(s){ const g=new THREE.Group(); const m=new THREE.MeshStandard
   g.traverse(o=>{if(o.isMesh)o.castShadow=true;}); return g; }
 // which biome a spot belongs to → drives flora & ground cover
 function biomeAt(x,z){
-  if(typeof coldZone==="function"&&coldZone(x,z)) return "cold";
+  if(coldZone(x,z)) return "cold";
   const reg=regionOf(x,z);
   if(reg===-1) return "direlands";
   if(inSwamp(x,z)) return "swamp";
@@ -7141,7 +7141,7 @@ function grassTuftGeo(){
 }
 function grassOK(x,z){
   const h=terrainH(x,z); if(h<1.4||h>175) return false;                                  // no water, no high snow
-  if(typeof acRoad==="function"&&acRoad(x,z)) return false;                               // no grass on the dirt roads
+  if(acRoad(x,z)) return false;                               // no grass on the dirt roads
   // town cores stay clear (stone plazas, paths & buildings) — every settlement, not just the 3 capitals
   if(typeof CITIES!=="undefined") for(let i=0;i<CITIES.length;i++){ const c=CITIES[i], dx=x-c.x, dz=z-c.z, rr=c.capital?TOWN_SAFE:95; if(dx*dx+dz*dz<rr*rr) return false; }
   if(typeof FLATTEN!=="undefined") for(const t of FLATTEN){ const dx=x-t.x,dz=z-t.z, cr=(t.core||t.r)+6; if(dx*dx+dz*dz<cr*cr) return false; }  // Castle Val Halla / Valstead courtyard
@@ -7382,10 +7382,10 @@ function pickPlant(sp){
   if(!addToInv(it)){ log(`Your satchel is too full to pick the <b>${pk.item}</b>.`,"warn"); if(SFX.hit)SFX.hit(); return; }
   startAction("gather",1.0);
   _pickedPlants.set(sp.key, now()+rnd(50000,80000));            // regrows in ~1 minute
-  if(typeof floater==="function") floater(player.x,EYE+0.4,player.z,"+ "+pk.item,"#c0e070");
+  floater(player.x,EYE+0.4,player.z,"+ "+pk.item,"#c0e070");
   log(`You pick a <b>${pk.item}</b> — brew it into a <b>${pk.dye}</b> at a crafting station (Alchemy, key T).`,"loot");
-  if(SFX.gold)SFX.gold(); if(typeof gainXP==="function")gainXP(12); if(typeof questEvent==="function")questEvent("gather","harvest");
-  if(typeof refreshGrassField==="function") refreshGrassField(true);   // clear the picked plant now
+  if(SFX.gold)SFX.gold(); gainXP(12); questEvent("gather","harvest");
+  refreshGrassField(true);   // clear the picked plant now
 }
 // ── instanced forests: the hand-placed scenery (~1900 groups) left the wilds feeling empty.
 // Each species is ONE merged vertex-colored geometry drawn as ONE InstancedMesh (a whole
@@ -7539,7 +7539,7 @@ function buildForests(){
       for(const t of FLATTEN){ if(Math.hypot(x-t.x,z-t.z)<t.r+12){inTown=true;break;} }
       if(inTown) continue; }
     const hh=terrainH(x,z); if(hh<1.5||hh>230) continue;
-    if(typeof onRoad==="function"&&onRoad(x,z)) continue;
+    if(onRoad(x,z)) continue;
     const bm=biomeAt(x,z), cl=clump(x,z);
     let key=null,s=1;
     if(bm==="forest"||bm==="sho"){ if(cl<0.1) continue;                       // woodland grows in patches, not everywhere
@@ -7713,7 +7713,7 @@ function buildWorld(){
   for(const d of dying) disposeObject3D(d.mesh); dying=[];
   for(const o of netObjs) disposeObject3D(o);
   for(const _s of ships){ if(_s.mesh) disposeObject3D(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
-  if(typeof despawnPets==="function") despawnPets();   // #361: pets[] was neither disposed nor cleared on a world rebuild (every other entity array is) — a latent leak the moment a mid-session rebuild is added
+  despawnPets();   // #361: pets[] was neither disposed nor cleared on a world rebuild (every other entity array is) — a latent leak the moment a mid-session rebuild is added
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];chessTables=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
@@ -7979,7 +7979,7 @@ function buildWorld(){
   // monsters roam the realm (clustered near hubs).
   // Online, the overworld monsters are server-authoritative & shared — they arrive via
   // snapshots (reconcileMobs), so the client does not spawn its own local population.
-  if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; clearNetEvent(); NET.partyNames=new Set(); NET.partyLeader=null; if(typeof updatePartyHUD==="function") updatePartyHUD(); }
+  if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; clearNetEvent(); NET.partyNames=new Set(); NET.partyLeader=null; updatePartyHUD(); }
   // monsters now STREAM in around the player (streamMonsters) instead of 300 spawned across the whole map
   // Online, world bosses are server-authoritative & shared (the Olthoi Queen arrives via
   // snapshots). The local per-client bosses only spawn in the offline solo game.
@@ -7988,9 +7988,9 @@ function buildWorld(){
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   loadGltfHorse();                       // preload the rigged horse model for mounts
-  if(typeof buildHarbors==="function") buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
+  buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
-  if(typeof spawnOwnedHorses==="function") spawnOwnedHorses();             // #725: parked horses stand back up where they were left
+  spawnOwnedHorses();             // #725: parked horses stand back up where they were left
 }
 function settleY(){ // drop every placed object onto the RENDERED ground surface (groundY, not raw terrainH)
   for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
@@ -10903,7 +10903,7 @@ function hsExitInstance(){
 // decorations inside the active instance (hooks/chests/unit crystals), owner-aware
 function hsInstDecorate(){
   if(!hsInst) return;
-  for(const m of hsInst.decor||[]){ const i=dungeonObjs.indexOf(m); if(i>=0)dungeonObjs.splice(i,1); if(typeof disposeObject3D==="function") disposeObject3D(m); else scene.remove(m); }   // #360: dispose old decor (freshly built each re-decorate) instead of only detaching — repeated hook toggling was leaking geometry/materials
+  for(const m of hsInst.decor||[]){ const i=dungeonObjs.indexOf(m); if(i>=0)dungeonObjs.splice(i,1); disposeObject3D(m); }   // #360: dispose old decor (freshly built each re-decorate) instead of only detaching — repeated hook toggling was leaking geometry/materials
   hsInst.decor=[]; hsInst.hooks=[]; hsInst.chests=[]; hsInst.crystals=[];
   const hs=player.homestead;
   const addM=m=>{ scene.add(m); dungeonObjs.push(m); hsInst.decor.push(m); };
@@ -11320,7 +11320,7 @@ function renderLog(){
   if(sized) logInner.scrollTop=logInner.scrollHeight;                        // stay pinned to the newest line
 }
 function setChatTab(t){
-  chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; if(typeof saveSettings==="function") saveSettings(); }
+  chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; saveSettings(); }
   document.querySelectorAll('#chatTabs .ctab').forEach(b=>{ b.classList.toggle('on',b.dataset.tab===t); if(b.dataset.tab===t) b.classList.remove('unread'); });
   const ci=document.getElementById('chatInput');
   if(ci) ci.placeholder=({global:"say aloud to the realm…",team:"message your allegiance… (/allegiance join <name> first)",
@@ -11463,7 +11463,7 @@ function fxCastSignature(x,z,color,dur){ dur=Math.max(0.42,dur||0.6);
   fxRing(x,gy+0.12,z,color,{r1:2.4,dur:dur*1.2,flat:1});                   // fast inner bloom
   fxRing(x,gy+0.10,z,color,{r1:3.4,dur:dur*1.45,flat:1});                  // slower outer bloom
   fxColumn(x,gy,z,color,dur);                                             // rising spiral energy
-  if(typeof fxGather==="function") fxGather(()=>[x,gy+eye-0.2,z],color,dur,20);   // motes gather at the hands
+  fxGather(()=>[x,gy+eye-0.2,z],color,dur,20);   // motes gather at the hands
   if(!fxCap()) return;
   const lt=new THREE.PointLight(color,0,11); lt.position.set(x,gy+1.2,z); lt._transient=1; scene.add(lt);
   SPELLFX.push({k:"castlight",lt,t:0,dur:dur});                          // swell-then-fade coloured glow
@@ -11798,7 +11798,7 @@ function warpTo(x,z,opts){
   startPortalTransit(()=>{
     arriveAt(x,z);
     player.invuln=Math.max(player.invuln||0,opts.invuln||2);
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z);
   },{ready:overworldAreaLoaded,minHold:(opts.minHold!=null)?opts.minHold:1.0,maxHold:opts.maxHold||8});
 }
 
@@ -12070,7 +12070,7 @@ function killMonster(m){
   questEvent("slay",m.kind);   // both overworld AND dungeon kills count toward slay quests (themed delves are where many creatures live)
   if(m.sagaTag==="agitator") sagaNotify("agitator");
   sagaNotify("kill",m.kind);   // saga cull objectives (cheap no-op when the live chapter has none)
-  if(typeof sagaStageKill==="function") sagaStageKill(m);   // finale kills-stage
+  sagaStageKill(m);   // finale kills-stage
   if(m.academyGoal&&typeof academyKill==="function") academyKill(m);   // B1 Training Academy practice targets
   if(m.isElite) player.championKills++;
   checkAchievements();
@@ -12763,7 +12763,7 @@ function seasonTick(){   // the month turns every 30 day/night cycles
   if(!first){ const nm=acMonthName();
     log(`<b>The month turns to ${nm}, ${acYear()} ${AC_YEAR_SPEC}</b> — ${currentSeason().blurb}.`,"warn");
     toast("MONTH — "+nm.toUpperCase()); if(SFX.quest)SFX.quest(); }
-  if(typeof updateSeasonHUD==="function") updateSeasonHUD();
+  updateSeasonHUD();
 }
 function currentSeason(){
   // #683: Y7 "The Dericost Winter" — from No Thaw (y7m73, which carries winter:true) until the
@@ -13276,8 +13276,8 @@ function acItemMesh(name){
     _acItemMesh[shex]=grp;
     // the equipped weapon may have been waiting on this mesh — rebuild the held models
     if(player&&player.weapon&&(player.weapon.name||"").toLowerCase()===key){
-      if(typeof refreshAvatarWeapon==="function") refreshAvatarWeapon();
-      if(typeof refreshFPWeapon==="function") refreshFPWeapon(); }
+      refreshAvatarWeapon();
+      refreshFPWeapon(); }
   }).catch(()=>{ _acItemMesh[shex]=null; });
   return null;
 }
@@ -15488,7 +15488,7 @@ function aetheriaSurge(on,attacker){
     else if(a.surge==="Affliction"&&attacker){ attacker.weakV=0.75; attacker.weakUntil=now()+8000; }
     floater(player.x,EYE+0.8,player.z,"SURGE of "+a.surge+"!","#9af0ff");
     log(`Your <b>${esc(a.name)}</b> flares — <b>Surge of ${a.surge}</b>!`,"heal"); if(SFX.quest)SFX.quest();
-    if(typeof selfCastFX==="function") selfCastFX(player.x,player.z,0x66c8ff);
+    selfCastFX(player.x,player.z,0x66c8ff);
     break; }
 }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
@@ -16076,7 +16076,7 @@ function refreshAvatarArmor(av,slotsArg){
           u.capeMat.roughness=0.8; u.capeMat.needsUpdate=true; }
         u.capeMat.color.setHex(bc.tint!=null?bc.tint:0x1c2c6c); }
       if(u.armorRig.back) for(const gr of u.armorRig.back.groups) gr.visible=false; } }
-  if(typeof refreshACArmor==="function") refreshACArmor(av,slots);   // retail pieces swap the real body-part meshes
+  refreshACArmor(av,slots);   // retail pieces swap the real body-part meshes
 }
 // ── ClothingTable armor-on-body (assets/acarmor, tools/ac_armor_export.py): equipping a
 //    retail piece replaces the AC body's part meshes with the armor's — a breastplate is
@@ -16365,11 +16365,11 @@ function equipItem(it){
   // #22: a two-handed weapon and an off-hand shield can never be wielded together (AC: both hands on the weapon)
   if(isWeapon && it.wt==="twohand" && player.armorSlots && player.armorSlots.offhand && player.armorSlots.offhand.shield){
     const sh=player.armorSlots.offhand; player.armorSlots.offhand=null; player.inv.push(sh);
-    if(typeof updateShieldModel==="function") updateShieldModel(); if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();
+    updateShieldModel(); refreshAvatarArmor();
     log(`You sling your <b>${sh.name}</b> — a two-handed weapon needs both hands.`,"sys");
   } else if(it.stat==="worn" && it.aslot==="offhand" && it.shield && player.weapon && player.weapon.wt==="twohand"){
     const w=player.weapon; player.weapon=null; weaponMode="sword"; player.inv.push(w);
-    if(typeof styleWeaponModel==="function") styleWeaponModel();
+    styleWeaponModel();
     log(`You lower your <b>${w.name}</b> — you can't raise a shield with a two-handed weapon.`,"sys");
   }
   if(isWeapon){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
@@ -16421,12 +16421,12 @@ function tryCraft(src){
   if(ok){ const res=craftResultItem(r.result);
     if(!addToInv(res)) addDrop(player.x,player.z,{type:"item",item:res});
     log(`You use the <b>${esc(src.name)}</b> on the <b>${esc(tgt.name)}</b> — <b>${esc(r.result)}</b>! <i>(${sk} ${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"loot");
-    if(SFX.quest)SFX.quest(); if(typeof questEvent==="function")questEvent("gather","craft");   // #236: crafting matches no gather objective — was spuriously advancing every fetch quest
+    if(SFX.quest)SFX.quest(); questEvent("gather","craft");   // #236: crafting matches no gather objective — was spuriously advancing every fetch quest
   } else {
     log(`Your ${sk} attempt fails — the <b>${esc(tgt.name)}</b> is ruined. <i>(${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"warn");
     if(SFX.hit)SFX.hit();
   }
-  if(typeof updateHUD==="function")updateHUD(); if(typeof saveGame==="function")saveGame();
+  updateHUD(); saveGame();
   return true;
 }
 function applyItem(it){
@@ -16454,7 +16454,7 @@ function applyItem(it){
     player.aetheria=player.aetheria||{blue:null,yellow:null,red:null};
     const old=player.aetheria[it.color]; player.aetheria[it.color]=it;
     if(old) addToInv(old,true);
-    derive(); updateHUD&&updateHUD(); if(typeof buildPaperDoll==="function") buildPaperDoll();
+    derive(); updateHUD&&updateHUD(); buildPaperDoll();
     log(`You slot the <b>${esc(it.name)}</b> — ${aetheriaDesc(it)}.${old?` (the <b>${esc(old.name)}</b> returns to your pack)`:""}`,"loot");
     if(SFX.level)SFX.level(); toast("AETHERIA SLOTTED"); }
   else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
@@ -16477,7 +16477,7 @@ function applyItem(it){
     if(a.skillpts) player.augment.skillCredits=(player.augment.skillCredits||0)+a.skillpts;   // real skill credits (fed into creditBase) — was mis-wired to the legacy free-attribute pool
     player.augment.resist=(player.augment.resist||0)+(a.resist||0); player.augment.magic=(player.augment.magic||0)+(a.magic||0); player.augment.crit=(player.augment.crit||0)+(a.crit||0);
     if(!it.aetheria) player.augment.count++;   // count this aug against the cap
-    if(typeof recomputeGearSkill==="function") recomputeGearSkill();
+    recomputeGearSkill();
     derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.${it.aetheria?"":` (${player.augment.count}/60 augmentations)`}`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
   else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor, or trade it to an <b>Agent of the Arcanum</b> for a Writ of Refuge.`,"sys"); }
   else if(it.stat==="furniture"){ log(`<b>${it.name}</b> is housing furniture — stand at an empty hook at your dwelling and press E to place it.`,"sys"); return "keep"; }
@@ -16515,7 +16515,7 @@ function applyItem(it){
   else if(it.stat==="hot"){ player.hots=player.hots||{}; hotSet(player.hots,it.pool,it.rate,it.dur);
     const nm={hp:"health",st:"stamina",mn:"mana"}[it.pool]||it.pool;
     log(`You drink the <b>${it.name}</b> — ${nm} regenerates ${it.rate}/s for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
-  else if(it.stat==="skillpot"){ player.skillBuffs=player.skillBuffs||{}; buffSet(player.skillBuffs,it.skillKey,it.v,it.dur); if(typeof derive==="function")derive();
+  else if(it.stat==="skillpot"){ player.skillBuffs=player.skillBuffs||{}; buffSet(player.skillBuffs,it.skillKey,it.v,it.dur); derive();
     const nm=(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey;
     log(`You drink the <b>${it.name}</b> — +${it.v} ${nm} for ${Math.round(it.dur/60)} min.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="attrpot"){ applyAttrBuff(it.attr,it.v,it.dur);
@@ -16611,7 +16611,7 @@ function attemptCombine(ia,ib){
     for(const idx of order) craftTake(idx);
     const out=craftResultItem(rec.result); addToInv(out,true);
     log(`Your ${skN} succeeds — <b>${esc(rec.tool)}</b> + <b>${esc(rec.target)}</b> → <b>${esc(rec.result)}</b> <span style="color:var(--dim)">(${Math.round(ch*100)}%)</span>.`,"loot");
-    if(SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather","craft");   // #236: crafting matches no gather objective
+    if(SFX.gold)SFX.gold(); questEvent("gather","craft");   // #236: crafting matches no gather objective
   } else {
     const keepTool=CRAFT_DURABLE.test(rec.tool);                   // failure ruins the target; a non-durable tool is spent too
     const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
@@ -16619,7 +16619,7 @@ function attemptCombine(ia,ib){
     log(`Your ${skN} attempt fails — the <b>${esc(rec.target)}</b> is ruined <span style="color:var(--dim)">(${Math.round(ch*100)}% chance)</span>.`,"warn");
     if(SFX.hit)SFX.hit();
   }
-  updateHUD&&updateHUD(); saveGame(); if(typeof buildTinker==="function")buildTinker();
+  updateHUD&&updateHUD(); saveGame(); buildTinker();
 }
 function openCombinePicker(i){
   const it=player.inv[i]; if(!it) return;
@@ -16792,7 +16792,7 @@ function craftRecipe(id){
     const it=r.out();
     if(!addToInv(it)){ log(`Your satchel is too full to hold the <b>${r.name}</b>.`,"warn"); player.materials+=r.cost; return false; }
     log(`<b>${SKILL_BY_KEY[r.skill].n}:</b> you craft <b>${it.name}</b>${it.count?` ×${it.count}`:""} — ${r.blurb}.`,"loot"); if(SFX.quest)SFX.quest(); toast("CRAFTED — "+r.name.toUpperCase());
-    if(typeof gainXP==="function") gainXP(Math.round(r.cost*4));   // a little XP for the craft
+    gainXP(Math.round(r.cost*4));   // a little XP for the craft
   } else { const back=Math.floor(r.cost/2); player.materials+=back; log(`Your <b>${r.name}</b> spoils in the making — ${back} materials recovered. (Raise ${SKILL_BY_KEY[r.skill].n}.)`,"warn"); if(SFX.hit)SFX.hit(); }
   updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
 }
@@ -17057,7 +17057,7 @@ function die(){
   // respawned world, and leave the game paused behind a modal the player never asked to keep open. Reuse the
   // same close-all-panels path other forced transitions use (closeOtherModals with no exception closes every
   // BIG_MODALS panel), then clear paused ourselves since closeOtherModals only toggles display, not paused.
-  if(typeof closeOtherModals==="function") closeOtherModals();
+  closeOtherModals();
   paused=false;
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
   player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.banes={};player.hots={};player.debuffs={};player.lightBuff=null;
@@ -17085,7 +17085,7 @@ function die(){
       } else {
         _corpseDrop={items:dd.items,gold:dd.gold,ttl};   // #227: dropped in the respawn timeout, after the deferred teardown's clearDrops. #289: also the fallback when the online socket is down — otherwise the netSend is silently dropped and the items (already spliced out of inv) vanish with no corpse anywhere.
       }
-      if(typeof recomputeGearSkill==="function") recomputeGearSkill();
+      recomputeGearSkill();
       // AC always named your losses — list them so you know exactly what to walk back for
       const _nm=dd.items.slice(0,6).map(it=>it.name), _more=dd.items.length-_nm.length;
       const _list=_nm.length?` — <i>${_nm.join(", ")}${_more>0?`, +${_more} more`:""}</i>`:"";
@@ -17374,7 +17374,7 @@ function executeSpell(id){
         if(typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"){ pet.t+=10; }   // mending your familiar sustains it
         else { pet.dmg=Math.round((pet.dmg||8)*1.2); pet.t+=4; }                                       // empowering it sharpens its sting
         castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
-        if(typeof spellLandFX==="function") spellLandFX(s.school,()=>[pet.x,0,pet.z],1.4,0.5);
+        spellLandFX(s.school,()=>[pet.x,0,pet.z],1.4,0.5);
         floater(player.x,EYE+0.6,player.z,"→ your familiar","#bfe0ff");
         log(`You cast <b>${s.name}</b> on your familiar — it ${typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"?"steadies and endures":"hums with borrowed power"}.`,"heal"); return; }
       refundCast(); spellCd[id]=0;
@@ -17684,7 +17684,7 @@ function fireArrow(){
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(power){
-  if(typeof breakResProt==="function") breakResProt();   // offensive action ends res protection
+  breakResProt();   // offensive action ends res protection
   if(!player.alive||player.meleeCd>0||paused) return;
   power=(typeof power==="number")?clamp(power,0.6,1.6):1;   // Cb1 power bar: charge-scaled damage (0.6 tap → 1.6 full)
   const acc=1-Math.abs(power-1.05)*0.5;   // accuracy peaks in the mid-upper charge band (AC's sweet spot), falls off at the extremes
@@ -17758,7 +17758,7 @@ function updateDrowning(dt){
         const d=Math.max(6,Math.round(player.mhp*0.06)); player.hp-=d;   // drowning ignores armour
         floater(player.x,player.y+EYE,player.z,"-"+d+" drown","#7fd0ff"); if(SFX.hurt)SFX.hurt();
         if(now()-lastBreath>1400){ lastBreath=now(); log("You are <b>drowning</b> — get to the surface!","warn"); }
-        if(player.hp<=0){ player.hp=0; if(typeof die==="function") die(); } } }
+        if(player.hp<=0){ player.hp=0; die(); } } }
   } else { player.breath=Math.min(1,player.breath+dt/2.5); player.drownAcc=0; }   // refill on the surface
   // HUD: breath bar (only while it matters) + underwater tint
   const bb=document.getElementById('breathBar'), bf=document.getElementById('breathFill'), dt2=document.getElementById('drownTint');
@@ -17856,7 +17856,7 @@ cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse = shie
 const ATK_HEIGHTS=["low","mid","high"], ATK_LABEL={low:"Low",mid:"Middle",high:"High"};
 window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
   let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); i=clamp(i+(e.deltaY<0?1:-1),0,2); player.atkHeight=ATK_HEIGHTS[i];
-  if(typeof buildCombatPanel==="function") buildCombatPanel();   // the panel's red pills follow the wheel
+  buildCombatPanel();   // the panel's red pills follow the wheel
   const el=document.getElementById('atkHeight'); if(el){ el.textContent="Attack: "+ATK_LABEL[player.atkHeight]; el.style.display="block"; el._t=now(); }
 },{passive:false});
 document.addEventListener('mousemove',e=>{
@@ -17949,7 +17949,7 @@ function buildCombatPanel(){
   sl.oninput=()=>{ player.powerBar=sl.value/100; };
   const wp=(typeof weaponProfile==="function")?weaponProfile():null;
   document.getElementById('pwrLabel').textContent=(wp&&wp.mode==="missile")?"Accuracy":"Power";
-  if(typeof skillTier==="function"&&skillTier("recklessness")>0)
+  if(skillTier("recklessness")>0)
     sl.style.background="linear-gradient(90deg,transparent 10%,rgba(224,48,48,.45) 10%,rgba(224,48,48,.45) 90%,transparent 90%)";   // the Recklessness zone
   pills.innerHTML="";
   const HTIP={high:"Strikes the HEAD — harder to land, hits harder. Suits towering foes (lugians, golems).",
@@ -17974,7 +17974,7 @@ const ACTION_RUN={}; for(const a of ACTIONS) if(a.run) ACTION_RUN[a.id]=a.run;
 function rebuildComboMap(){ ACTION_BY_COMBO={}; for(const a of ACTIONS){ if(a.held)continue; for(const c of (KEYBINDS[a.id]||[])) if(c) ACTION_BY_COMBO[c]=a.id; } }
 function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_keys")); if(s) for(const a of ACTIONS) if(Array.isArray(s[a.id])) KEYBINDS[a.id]=s[a.id]; }catch(e){} rebuildComboMap(); }
 function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
-function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
+function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); buildKeymap(); }
 // #483: per-character keybinds — a loaded character's own map (saved in its character save) wins;
 // with none saved, fall back to the global default (dereth_keys) so a fresh/legacy character isn't stranded.
 function applyCharKeymap(s){
@@ -18323,7 +18323,7 @@ function recoverCorpse(d){
   }
   disposeObject3D(d.mesh); const i=drops.indexOf(d); if(i>=0)drops.splice(i,1);   // #232: corpses carry a label sprite — dispose prunes it from LABELS too
   log(`You recover your corpse — <b>${taken}</b> item(s)${d.amt?` and <b>${d.amt.toLocaleString()}</b> pyreals`:""} returned${spilled?`; <b>${spilled}</b> spilled beside it (satchel full)`:""}.`,"loot");
-  if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
+  if(SFX.quest)SFX.quest(); recomputeGearSkill(); updateHUD(); saveGame();
 }
 function recolorLifestone(ls){
   const col=ls.bound?0x9fe0ff:0x6ab0e0;   // bound = brighter/whiter (matches buildLifestone)
@@ -18448,7 +18448,7 @@ function buildSheet(){
     for(const a of LUM_AURAS){ const lv=auraLevel(a.k); lh+=`<div class="row"><span class="desc">${a.name} <b>${lv}</b>/${a.max} — ${a.desc}</span> <button class="pmbtn" data-aura="${a.k}" ${(lv>=a.max||(player.luminance||0)<a.cost)?'disabled':''}>${a.cost.toLocaleString()} lum</button></div>`; }
     if(player.level>=275&&(player.enlightenment||0)<5) lh+=`<div class="row"><button class="tbtn" id="enlightenBtn">Attain Enlightenment — reset for permanent power</button></div>`;   // #332: enlighten() requires level 275 — don't offer the button 175 levels early (it just warned)
     lh+=`</div>`; al.innerHTML+=lh;
-    al.querySelectorAll('[data-aura]').forEach(b=>b.onclick=()=>{ if(buyAura(b.dataset.aura)){saveGame();if(typeof updateHUD==="function")updateHUD();buildSheet();} });
+    al.querySelectorAll('[data-aura]').forEach(b=>b.onclick=()=>{ if(buyAura(b.dataset.aura)){saveGame();updateHUD();buildSheet();} });
     const eb=document.getElementById('enlightenBtn'); if(eb) eb.onclick=()=>enlighten();
   }
   attrRows.querySelectorAll('[data-a]').forEach(btn=>btn.onclick=()=>{
@@ -18566,7 +18566,7 @@ function antiStuckEject(){
     if(!clear) continue;
     const sy=supportAt(x,z,player.y+3); if(Math.abs(sy-player.y)>7) continue;   // no flinging onto a roof or into a pit
     player.x=x; player.z=z; player.y=sy; player.vy=0; player.grounded=true;
-    if(typeof floater==="function") floater(x,EYE,z,"freed","#bfe0ff");
+    floater(x,EYE,z,"freed","#bfe0ff");
     return true;
   }
   return false;
@@ -19976,7 +19976,7 @@ function initDragUI(){
       applyLogSize(w,h); });
     document.addEventListener('mouseup',()=>{ if(_logRz){ _logRz=null;
       if(typeof settings!=="undefined"){ settings.logSize={w:parseInt(lg.style.width)||340,h:parseInt(document.getElementById('logInner').style.height)||0};
-        if(typeof saveSettings==="function") saveSettings(); } } });
+        saveSettings(); } } });
   }
 }
 // every game panel gets a hover ⠿ grip that drags the same way as the plugin windows, anytime.
@@ -20006,7 +20006,7 @@ function applyLogSize(w,h){
   const lg=document.getElementById('log'), inner=document.getElementById('logInner'); if(!lg||!inner) return;
   if(w) lg.style.width=Math.round(w)+"px";
   if(h){ inner.style.height=Math.round(h)+"px"; inner.classList.add("sized"); }
-  if(typeof renderLog==="function") renderLog();
+  renderLog();
 }
 document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
   el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
@@ -20357,7 +20357,7 @@ function playAcAmbient(){
 }
 function musicTick(){
   if(!actx||muted) return;
-  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&((MUSICDIR.mode&&MUSICDIR.mode!=="wild")||(typeof mdScoreHas==="function"&&mdScoreHas("wild")))) return;   // the director owns non-wild moods — and the wilds too once the orchestral score (#669) is loaded; the pad/AC loops only carry a scoreless build
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&((MUSICDIR.mode&&MUSICDIR.mode!=="wild")||(mdScoreHas("wild")))) return;   // the director owns non-wild moods — and the wilds too once the orchestral score (#669) is loaded; the pad/AC loops only carry a scoreless build
   if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
   if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
@@ -20614,7 +20614,7 @@ setInterval(()=>{ try{
   if(!MUSIC||typeof running==="undefined"||!running||(typeof muted!=="undefined"&&muted)){ if(_musEl){_musEl.pause();_musZone=null;} return; }
   const kcNear=(typeof KC!=="undefined")&&!inDungeon&&Math.hypot(player.x-KC.x,player.z-KC.z)<260;
   const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon": kcNear?"castle":
-    ((typeof nearestCapitalDist==="function"&&nearestCapitalDist(player.x,player.z)<160)?"town":"wild");
+    ((nearestCapitalDist(player.x,player.z)<160)?"town":"wild");
   if(zone==="castle"){ if(_musEl){_musEl.pause();} _musZone="castle"; return; }   // the castle plays its own live lute & harp (kcAmbience) — no track here
   if(zone===_musZone&&_musEl&&!_musEl.paused) return;
   if(zone!==_musZone){
@@ -21544,7 +21544,7 @@ const QUESTS=[
       player.tenfoldAttuned=true; player.tenfoldConsecrated=true;
       player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf("Heir of the Tenfold")<0) player.eventTitles.push("Heir of the Tenfold");
       player.title="Heir of the Tenfold";
-      if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // pick up the attuned glow on the worn set
+      refreshAvatarArmor();   // pick up the attuned glow on the worn set
       toast("HEIR OF THE TENFOLD"); if(SFX.level)SFX.level();
       log("Lord Kilmer kneels to <b>you</b> — he who kneels to no one — and the regalia takes a soft gold light that will not fade. You are <b>the Heir of the Tenfold</b>. A final page is written in <i>A History of Dereth</i>, and it bears your name.","sys");
       return ", the title <b>Heir of the Tenfold</b>, and the set attuned to you (soft glow · +5% all elemental protections)";
@@ -21714,9 +21714,9 @@ function claimSocietyTest(){ const st=player.societyTest; if(!st) return; const 
   grantSocietyRep(T.rep);
   const so=societyById(player.society);
   log(`<span style="color:${so.col}">The ${so.name} awards you a <b>Commendation Ribbon</b> (${player.societyRibbons} held) and <b>${T.reward.name}</b> for passing the ${T.name}.</span>`,"loot");
-  if(typeof addToInv==="function") addToInv(Object.assign({},T.reward),true);   // #20: force-grant (AC overweight) the one-time rank prize — the test can't be retaken, so a full satchel must never silently eat it
+  addToInv(Object.assign({},T.reward),true);   // #20: force-grant (AC overweight) the one-time rank prize — the test can't be retaken, so a full satchel must never silently eat it
   toast("COMMENDATION RIBBON"); if(SFX.level)SFX.level(); saveGame();
-  if(typeof buildSheet==="function") buildSheet();
+  buildSheet();
 }
 // ── AC endgame: Luminance Auras (permanent, bought with luminance) + Enlightenment prestige ──
 const LUM_AURAS=[
@@ -21763,13 +21763,13 @@ function grantSocietyRep(n){ if(!player.society||n<=0) return;
   const after=societyRankInfo(player.societyRep);
   if(after.title!==beforeTitle){ toast("SOCIETY RANK"); if(SFX.level)SFX.level();
     log(`<span style="color:${societyById(player.society).col}">Your standing rises — you are now <b>${after.title} of the ${societyById(player.society).name}</b>.</span>`,"sys"); }
-  if(typeof checkAchievements==="function") checkAchievements();
+  checkAchievements();
 }
 function pledgeSociety(id){ const so=societyById(id); if(!so||player.society) return;
   player.society=id; player.societyRep=0;
   toast("SOCIETY PLEDGE");
   log(`<span style="color:${so.col}">You pledge yourself to the <b>${so.name}</b>. ${so.blurb} You rise as an <b>Initiate</b> — complete bounties to earn your standing.</span>`,"sys");
-  if(SFX.quest)SFX.quest(); if(typeof checkAchievements==="function") checkAchievements(); saveGame(); renderQuestLog(); updateQuestHUD();
+  if(SFX.quest)SFX.quest(); checkAchievements(); saveGame(); renderQuestLog(); updateQuestHUD();
 }
 // ── Story Arcs: curated multi-quest storylines. Finishing every quest in an arc grants a title + capstone reward. ──
 // (A meta layer over the bounties — it does not gate the open world; quests stay free to do in any order.)
@@ -23200,7 +23200,7 @@ function crierRumors(){
   }
   const ce=(typeof currentCalEvent==="function")&&currentCalEvent();            // the saga beat
   if(ce&&ce.rumor) R.push(`<b>${esc(ce.name||"The season turns")}</b> — ${esc(ce.rumor)}`);
-  if(typeof algIsMonarch==="function"&&algIsMonarch())                          // news of the player's renown
+  if(algIsMonarch())                          // news of the player's renown
     R.push(`Hail a <b>Monarch</b>! ${player.allegianceName?("The "+esc(player.allegianceName)):"An allegiance"} rallies ${(typeof algFollowerCount==="function"?algFollowerCount():(player.vassals||[]).length)} sworn under ${esc(nm)}.`);
   else if(player.patronInfo&&player.patronInfo.name) R.push(`${esc(nm)} is sworn to <b>${esc(player.patronInfo.name)}</b> — loyalty is the coin of the realm.`);
   if(player.title) R.push(`Make way for <b>${esc(nm)}</b>, ${esc(player.title)} — level ${player.level|0} and rising.`);
@@ -23555,7 +23555,7 @@ function showRewardChoice(q, name){
   ov.querySelectorAll('[data-rw]').forEach(b=>b.onclick=()=>{
     const it=rewards[b.dataset.rw|0]; addToInv(Object.assign({},it),true);
     log(`You choose your reward: <b>${it.name}</b>.`,"loot"); if(SFX.quest)SFX.quest();
-    ov.remove(); paused=false; saveGame(); if(typeof updateHUD==="function") updateHUD(); renderQuestLog();
+    ov.remove(); paused=false; saveGame(); updateHUD(); renderQuestLog();
   });
 }
 // conversation with a named quest-giver (or the Emissary), bound to one quest by id
@@ -23991,7 +23991,7 @@ function renderQuestLog(){
     activeQuests.splice(i,1);
     if(tracked===id) tracked=trackedId();
     log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
-    renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
+    renderQuestLog(); updateQuestHUD(); updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
   });
   body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge); if(!s) return;
     // #516: a styled, touch-safe confirm (native confirm() is unreliable/blocked on touch, and this is a
@@ -24328,8 +24328,7 @@ function openHistoryBook(){
   if(player.tenfoldAttuned){   // #682 Regalia X: the final page names the character who walked all ten years
     pages.push(`── THE HEIR OF THE TENFOLD ──\n\nAnd in a later age one adventurer walked all ten years of Lord Kilmer's road, quenched each piece of the regalia in its own trial, and stood at his side in the sealed undercroft as T'thuun's Lingering Dream came apart at last.\n\nKilmer bowed — he, who bows to no one — and named the regalia's second wearer:\n\n${esc(player.name||"the Adventurer")}, Heir of the Tenfold.\n\n"The crown was never given," he said. "It is earned, or it is nothing. You have earned it."`);
   }
-  if(typeof kcReadLectern==="function") kcReadLectern({title:"A History of Dereth",pages});
-  else log("The tome's script blurs before your eyes.","warn");
+  kcReadLectern({title:"A History of Dereth",pages});
 }
 function openBookShelf(stand){
   if(!_acBookKeys||!_acBookKeys.length){ log("The shelves stand bare — the library's texts are still being catalogued.","warn"); return; }
@@ -24603,7 +24602,7 @@ function spawnOwnedShip(origin){
   if(x==null||z==null||!shipNavigable(x,z,def)){
     const o=origin||{x:player.x,z:player.z};
     const w=findWater(o.x,o.z,def.minDepth,3000)||findWater(0,0,def.minDepth,HALF-40);
-    if(!w){ if(typeof log==="function") log("No open water could be found for your ship.","warn"); return; }
+    if(!w){ log("No open water could be found for your ship.","warn"); return; }
     x=w.x; z=w.z; player.ship.x=x; player.ship.z=z;
   }
   const mesh=buildShip(def.id); mesh.position.set(x,0,z); mesh.rotation.y=player.ship.yaw||0; scene.add(mesh);
@@ -24620,7 +24619,7 @@ function buyShip(type){
   spawnOwnedShip(origin);
   log(`You take the deed to a <b>${def.name}</b>. It awaits you at the nearest shore.`,"loot");
   if(SFX.quest)SFX.quest(); if(typeof toast==="function") toast("SHIP ACQUIRED");
-  if(typeof updateHUD==="function") updateHUD(); saveGame();
+  updateHUD(); saveGame();
   return true;
 }
 
@@ -25291,7 +25290,7 @@ function horseDies(rec){
     log(`<b>${esc(rec.name)} has been slain</b> — you hear the death-scream across the field.`,"warn");
   }
   // its packs spill where it fell: nothing a player owns may vanish
-  for(const it of (rec.items||[])) if(typeof addDrop==="function") addDrop(px2+rnd(-1.5,1.5),pz2+rnd(-1.5,1.5),{type:"item",item:it});
+  for(const it of (rec.items||[])) addDrop(px2+rnd(-1.5,1.5),pz2+rnd(-1.5,1.5),{type:"item",item:it});
   burst(px2,1.2,pz2,0xb03a2a,16);
   player.horses.splice(player.horses.indexOf(rec),1);
   if(typeof toast==="function") toast("YOUR HORSE HAS DIED");
@@ -25872,11 +25871,11 @@ function caravanBless(cost){
     if(!fams[fam]||(s.lvl||0)>(fams[fam].lvl||0)) fams[fam]=s;                // keep the top circle
   }
   let n=0; for(const k in fams){ if(applyBuffSelf(Object.assign({},fams[k],{dur:DUR}),false)) n++; }
-  if(typeof derive==="function") derive(); updateHUD&&updateHUD();
-  if(SFX.quest)SFX.quest(); if(typeof castFlash==="function")castFlash(0x9af0ff);
+  derive(); updateHUD&&updateHUD();
+  if(SFX.quest)SFX.quest(); castFlash(0x9af0ff);
   floater(player.x,EYE+0.6,player.z,"BLESSED","#9af0ff");
   log(`<b>The caravan keeper</b> weaves <b>${n}</b> level-8 Creature, Item &amp; Life enchantments over you — blessed for one hour${cost>0?` for <b>${cost.toLocaleString()}p</b>`:""}.`,"heal");
-  if(typeof buildShop==="function") buildShop();
+  buildShop();
   if(cost>0&&typeof saveGame==="function") saveGame();   // persist the coin spend
 }
 // vendor: every spell (scroll), every casting scarab, every taper — plus free portals & a blessing
@@ -26118,7 +26117,7 @@ function buildShop(){
       netSend({t:"vendor_sell",item:it,price}); }   // M3 (#238): server credits pyreals authoritatively (validates ownership, caps at catalog value); vendor_ok reconciles/rolls back
     player.gold+=price;takeFromInv(i);SFX.gold();buildShop();updateHUD();saveGame();});
   sell.querySelectorAll('[data-turnin]').forEach(b=>b.onclick=()=>{const i=+b.dataset.turnin; const it=player.inv[i]; if(!isCreatureTrophy(it))return;   // #291: re-check at click time — never pay the XP bounty for a bought curio
-    const bt=trophyBounty(it); player.gold+=bt.gold; if(typeof gainXP==="function")gainXP(bt.xp); takeFromInv(i);
+    const bt=trophyBounty(it); player.gold+=bt.gold; gainXP(bt.xp); takeFromInv(i);
     log(`You turn in a <b>${it.name}</b> for a bounty — <b>${bt.gold}</b> pyreals and <b>${bt.xp}</b> XP.`,"loot"); SFX.gold(); buildShop(); updateHUD(); saveGame();});
 }
 function trophyBounty(it){ const v=it.v|0; return {gold:Math.round(v*1.6), xp:Math.max(25,v*14)}; }   // I7 collector bounty — beats a plain sell
@@ -26171,7 +26170,7 @@ function assignHotbarEntry(slot, entry){
   for(let i=0;i<player.hotbar.length;i++){ const h=player.hotbar[i];   // a given spell/item occupies one slot
     if(hbIsItem(entry)&&hbIsItem(h)&&h.name===entry.name) player.hotbar[i]=null;
     else if(!hbIsItem(entry)&&h===entry) player.hotbar[i]=null; }
-  player.hotbar[slot]=entry; buildSpellbar(); if(typeof buildSpellbook==="function") buildSpellbook(); saveGame();
+  player.hotbar[slot]=entry; buildSpellbar(); buildSpellbook(); saveGame();
   log(`Assigned <b>${esc(hbIsItem(entry)?entry.name:((SPELLBOOK[entry]||{}).name||entry))}</b> to quickbar page ${Math.floor(slot/QB_PAGE)+1}, slot ${slot%QB_PAGE+1}.`,"sys");
 }
 function qbAssignPick(entry, label){
@@ -26582,7 +26581,7 @@ function applyUIVis(){
   for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
     if(h[id]) el.style.display="none";
     else if(["goarrow","alinco","vtank","magtools"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
-  if(typeof applyPluginSettings==="function") applyPluginSettings();            // plugin panels re-apply their own visibility
+  applyPluginSettings();            // plugin panels re-apply their own visibility
 }
 // ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
 //     real plugin screenshots (AC wiki): GoArrow's chrome arrow with destination-over / distance-
@@ -26676,7 +26675,7 @@ function updatePlugins(dt){
   }
   // ── 1 Hz panels ──
   PLUG.t2-=dt; if(PLUG.t2>0) return; PLUG.t2=1;
-  if(typeof ensureGrips==="function") ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
+  ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
   if(pluginOn("alinco")){
     const rows=[];
     if(player.spellBuffs) for(const a of Object.keys(player.spellBuffs)) rows.push(["+"+player.spellBuffs[a].v+" "+a,player.spellBuffs[a].t]);
@@ -30113,7 +30112,7 @@ function _dungeonEnter(def,ex,ez){
 }
 function exitDungeon(toEntrance){
   resetInstanceState();   // #779/#680-#678: any exit (incl. fleeing via the arch) resets EVERY registered mechanic's state — else a Regalia timer keeps ticking in the overworld
-  if(player.bloodTithed){ player.bloodTithed=false; if(typeof derive==="function")derive(); }   // #677: the blood-tithe releases on ANY exit (win, flee, death) — re-derive restores full max health & mana
+  if(player.bloodTithed){ player.bloodTithed=false; derive(); }   // #677: the blood-tithe releases on ANY exit (win, flee, death) — re-derive restores full max health & mana
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -30341,7 +30340,7 @@ function emberWin(){
   burst(DCEN.x,2,DCEN.z,0xff8a3a,80); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
   toast("THE HERALD'S ECHO IS CAST DOWN");
   log("The Herald's Echo gutters out like a spent torch, and for the first time the Ember Field is <b>cool underfoot</b>. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("ember");
+  questEvent("ember");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!emberActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30456,7 +30455,7 @@ function frostCourtWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE RELIQUARY IS SHATTERED");
   log("The Vertebra-Reliquary bursts into a rain of frozen bone, and the Frozen Court falls quiet and warm. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("frostcourt");
+  questEvent("frostcourt");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!frostActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30555,7 +30554,7 @@ function riftWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE VEIL IS STABILIZED");
   log("The Rift-Warden unravels and the tear draws shut from the inside — the storm falls still. You never stepped back. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("rift");
+  questEvent("rift");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!riftActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30660,7 +30659,7 @@ function tideWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE HERALD IS SENT UNDER");
   log("The Herald's Shadow comes apart a third time and does not reform — the flood shrinks back into the rift, and the tide-gate holds. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("tidegate");
+  questEvent("tidegate");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!tideActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30734,7 +30733,7 @@ function consecrationWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("T'THUUN'S DREAM IS UNMADE");
   log("T'thuun's Lingering Dream comes apart into failing light and does not remember itself again. Kilmer lowers his blade. Return to him at the castle gate — the road has one stone left to lay.","sys");
-  if(typeof questEvent==="function") questEvent("consecration");
+  questEvent("consecration");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!consActive&&inDungeon) exitDungeon(true); }, 4500);
 }
@@ -30813,7 +30812,7 @@ function whispersWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE PUPPET IS CUT DOWN");
   log("The Simulacrum comes apart at its cut strings and wears your face no more. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("whispers");
+  questEvent("whispers");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!whispersActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30904,7 +30903,7 @@ function chitinWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE MATRON FALLS");
   log("The Brood-Remnant Matron collapses into the wax that made her, and the hive falls silent. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("chitin");
+  questEvent("chitin");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!chitinActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30986,7 +30985,7 @@ function bannersWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE STANDARD-BEARER FALLS");
   log("The Standard-Bearer goes down beside his fallen banner, and the Pretender's fleet strikes its colours. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("banners");
+  questEvent("banners");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!bannersActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -31030,7 +31029,7 @@ function enterBloodRite(ex,ez){
   bloodActive=true;_bloodReinforced=false;_bloodT=0;
   // the BLOOD-TITHE: half max health & mana while inside (derive() honors player.bloodTithed; released on
   // any exit in exitDungeon). Set the flag and re-derive so the true, tithed max is computed from stats.
-  player.bloodTithed=true; if(typeof derive==="function") derive();
+  player.bloodTithed=true; derive();
   player.hp=Math.min(player.hp,player.mhp); player.mn=Math.min(player.mn,player.mmn);
   const cx=DCEN.x,cz=DCEN.z;
   spawnDungeonMonster("falatacot",cx,cz-5,true,4.6,"The Blood-Matriarch's Revenant");
@@ -31055,7 +31054,7 @@ function bloodWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE MATRIARCH IS UNDONE");
   log("The Blood-Matriarch's Revenant sinks back into the runnels and the tithe releases you. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("blood");
+  questEvent("blood");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!bloodActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -31158,7 +31157,7 @@ function stormWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE FOUR WINDS ARE STILLED");
   log("The Warden's four winds gutter out at once and the peak falls still under a clearing sky. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("storm");
+  questEvent("storm");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!stormActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -31302,7 +31301,7 @@ function openStrongbox(bx){
   player.inv.push({name:bx.key,stat:"key",v:1});
   log(`The strongbox holds the <b>${esc(bx.key)}</b> — it must open something, somewhere.`,"loot");
   if(SFX.gold)SFX.gold(); burst(bx.x,1,bx.z,0xffd23b,10);
-  if(typeof questEvent==="function") questEvent("gather");   // quest keys count as gathers (Sword of Lost Light hunt)
+  questEvent("gather");   // quest keys count as gathers (Sword of Lost Light hunt)
 }
 function unlockDungeonDoor(b){
   if(!hasNamedKey(b.need)){ log(`The door is locked fast — you need the <b>${esc(b.need)}</b>.`,"warn"); if(SFX.deny)SFX.deny(); return; }
@@ -31337,7 +31336,7 @@ function lootItem(it){
   if(!addToInv(it)){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
   SFX.gold();
   log(it.scroll?`You find a <b>${esc(it.name)}</b>. (T to scribe it)`:`You pick up a <b>${esc(it.name)}</b>. (T to equip or salvage)`,"loot");   // #xss: item name can be server-controlled — escape before it enters the chat feed HTML
-  if(typeof questEvent==="function") questEvent("gather");   // #236: picking up loot is the natural advance for "recover X" fetch objectives (kind-less)
+  questEvent("gather");   // #236: picking up loot is the natural advance for "recover X" fetch objectives (kind-less)
 }
 function openTinker(){ closeOtherModals("tinker"); buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
@@ -31630,7 +31629,7 @@ function buildTinker(){
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil"||it.stat==="recall"||it.stat==="cure"||it.stat==="hot"||it.stat==="skillpot"||it.stat==="attrpot"||it.stat==="portalgem")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
-      <div class="ctl">${ctl}${(typeof craftCanCombine==="function"&&craftCanCombine(it))?`<button class="tbtn" data-cb="${i}" title="tradeskill combine — use with another material">⚗ Combine</button>`:""}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
+      <div class="ctl">${ctl}${(craftCanCombine(it))?`<button class="tbtn" data-cb="${i}" title="tradeskill combine — use with another material">⚗ Combine</button>`:""}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
     rows.appendChild(row);
   });
   rows.querySelectorAll('[data-qb]').forEach(b=>b.onclick=()=>{ const it=player.inv[+b.dataset.qb]; if(it) qbAssignPick(hbItemEntry(it), it.name); });
@@ -31840,7 +31839,7 @@ function applySaveObj(s){
   if(player.ship&&player.ship.x!=null){ const _sm=WSCALE/(s.wscale||1); if(_sm!==1){ player.ship.x*=_sm; player.ship.z*=_sm; } }   // migrate ship coords across a world-scale change
   if(typeof hsMigrateDeed==="function"&&_hsPackOn) hsMigrateDeed();
   if(typeof hsRefreshHomestead==="function"&&typeof hsCrystals!=="undefined"&&(hsCrystals.length||_hsPackOn)) hsRefreshHomestead();
-  if(typeof hsRentTick==="function") hsRentTick();
+  hsRentTick();
   if(Array.isArray(s.activeQuests)){                              // multi-quest journal (SAVE_MIGRATIONS lifts the old single-active form)
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
@@ -31854,8 +31853,8 @@ function applySaveObj(s){
   _seasonIdx=-1; seasonTick();
   updateSeasonHUD();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
-  if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
-  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // show the loaded armour on the body
+  styleWeaponModel();   // tint held blade to the loaded weapon
+  refreshAvatarArmor();   // show the loaded armour on the body
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   // restore bound lifestone + spawn there. #330: the raw index is fragile (the lifestones array's
   // composition depends on an async, failable acworld*.json fetch), so prefer matching the saved
@@ -31877,9 +31876,9 @@ function applySaveObj(s){
   updateNPCMarker();updateQuestHUD();
   // refresh the HUD + character sheet NOW so the panels show the LOADED character immediately, rather
   // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
-  if(typeof updateHUD==="function") updateHUD();
-  if(typeof buildSheet==="function") buildSheet();
-  if(typeof applyCharKeymap==="function") applyCharKeymap(s);   // #483: this character's saved keybinds, else the global default
+  updateHUD();
+  buildSheet();
+  applyCharKeymap(s);   // #483: this character's saved keybinds, else the global default
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
@@ -31992,10 +31991,9 @@ function onSpellFx(m){
     const g=new THREE.Group(); g.add(disc); g.add(lt); scene.add(g);
     walls.push({x,z,r,dps:0,element:null,color:col,burn:false,slow:0,t:6,acc:0,isDungeon:!!inDungeon,mesh:g,disc,cosmetic:true});
   } else if(m.cat==="cast"){   // #spellfx: a peer weaving a spell — show their element-coloured cast signature
-    if(typeof fxCastSignature==="function") fxCastSignature(x,z,col,0.6);
+    fxCastSignature(x,z,col,0.6);
   } else { // aoe / ring / blast burst
-    if(typeof spellImpactFX==="function") spellImpactFX(x,gy+0.9,z,col,null,true);   // #668: a peer's blast detonates with the full spectacle
-    else if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
+    spellImpactFX(x,gy+0.9,z,col,null,true);   // #668: a peer's blast detonates with the full spectacle
     impactFlash(col,3,18,x,gy+1.5,z,300);   // #797: pooled
   }
 }
@@ -32064,7 +32062,7 @@ function netHandle(m){
     log(`Allegiance — rank <b>${m.rank}</b>${m.monarch?` under Monarch <b>${esc(m.monarch)}</b>`:""} · ${m.followers} follower${m.followers!==1?"s":""}${m.vassals&&m.vassals.length?`<br>Vassals: ${m.vassals.map(v=>`${esc(v.name)}${v.online?"":" (away)"} — passes up ${v.passup}%`).join(" · ")}`:""}${m.motd?`<br>MOTD: <i>${esc(m.motd)}</i>`:""}`,"sys"); return; }
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
-  if(m.t==="coin"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance (#315: reject null/non-number, never zero gold)
+  if(m.t==="coin"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance (#315: reject null/non-number, never zero gold)
   if(m.t==="vendor_ok"){
     // #297: the client sold/redeemed OPTIMISTICALLY (item already removed) and queued the item in
     // NET.pendingSell. On a server REJECT (item wasn't in the authoritative inventory), restore that
@@ -32072,7 +32070,7 @@ function netHandle(m){
     if(m.act==="reject"){ const back=(NET.pendingSell&&NET.pendingSell.shift())||null; if(back) addToInv(back); if(m.reason) log(m.reason,"warn"); }
     else if(m.act==="sell"){ if(NET.pendingSell) NET.pendingSell.shift(); }   // confirmed sold
     if(typeof m.coin==="number"&&isFinite(m.coin)) player.gold=m.coin;   // M3 (#238): adopt the authoritative balance (#315: reject null/non-number)
-    if(typeof updateHUD==="function") updateHUD(); if(typeof buildShop==="function"&&document.getElementById('shop')&&document.getElementById('shop').style.display!=="none") buildShop();
+    updateHUD(); if(typeof buildShop==="function"&&document.getElementById('shop')&&document.getElementById('shop').style.display!=="none") buildShop();
     return; }
   if(m.t==="loot")      return onLoot(m);
   if(m.t==="corpse_loot") return onCorpseLoot(m);
@@ -32129,7 +32127,7 @@ function onEventReward(msg){
   if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin;   // #297: adopt the server's authoritative balance (event gold is now credited to cl.coin server-side) so the next absolute loot push can't erase the reward
     else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); if(SFX.gold)SFX.gold(); }
   player.incursions=(player.incursions||0)+1;
-  if(typeof checkAchievements==="function") checkAchievements();
+  checkAchievements();
 }
 // ---- shared ground loot (M3c): server owns drops; pickups are first-come, server-validated ----
 function onDrop(msg){
@@ -32151,7 +32149,7 @@ function onLoot(msg){
   if(msg.type==="gold"){ const amt=+msg.amt; if(!isFinite(amt)||amt<=0) return;   // #33: validate the server amount — a missing/NaN/non-numeric amt must not corrupt player.gold to NaN (economy soft-brick)
     if(isFinite(msg.coin)) player.gold=msg.coin;   // M3 (#238): adopt the server's authoritative balance when it sends one, else fall back to additive (older server)
     else player.gold+=amt;
-    floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); SFX.gold(); if(typeof updateHUD==="function") updateHUD(); }
+    floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); SFX.gold(); updateHUD(); }
   else if(msg.type==="item"&&msg.item){ lootItem(msg.item); }
 }
 // server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
@@ -32164,7 +32162,7 @@ function onCorpseLoot(msg){
   }
   const whose=(msg.owner&&player.name&&msg.owner!==player.name)?`<b>${esc(msg.owner)}</b>'s corpse`:"your corpse";
   log(`You loot ${whose} — <b>${taken}</b> item(s)${msg.amt?` and <b>${msg.amt.toLocaleString()}</b> pyreals`:""} taken${spilled?`; <b>${spilled}</b> spilled beside you (satchel full)`:""}.`,"loot");
-  if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
+  if(SFX.quest)SFX.quest(); recomputeGearSkill(); updateHUD(); saveGame();
 }
 // ---- shared, server-authoritative monsters (M3) ----
 // Server mobs live in the same monsters[] array (so all combat/targeting/visuals reuse the
@@ -32288,11 +32286,11 @@ function onReward(msg){
   if(msg.xp) gainXP(msg.xp);
   if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); SFX.gold(); }   // #297: finite guard + adopt authoritative balance when present
   player.kills++;
-  if(msg.boss){ player.bossKills=(player.bossKills||0)+1; if(typeof questEvent==="function") questEvent("boss"); }
+  if(msg.boss){ player.bossKills=(player.bossKills||0)+1; questEvent("boss"); }
   const b=BESTIARY[msg.kind];
   if(b && player.bestiary.indexOf(msg.kind)<0){ player.bestiary.push(msg.kind);
     log(`<b>Bestiary:</b> you have learned the nature of the ${b.name}.`,"loot"); toast("NEW BESTIARY ENTRY"); SFX.quest(); }
-  if(typeof checkAchievements==="function") checkAchievements();
+  checkAchievements();
 }
 function onAuthOk(m){
   NET.me=m.id; NET.token=m.token||null; isOnline=true;       // m.id = account; world identity is the chosen character
@@ -32407,7 +32405,7 @@ function sendChatLine(text){
   if(isOnline){ if(!NET.open){ log("Not connected — message not sent. (reconnecting…)","warn"); return; }   // #636: don't silently eat the line while the socket is down
     netSend({t:"chat",msg:text}); }
   else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
-    if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
+    floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
 }
 // ── AC SECURE TRADE window: two columns (your offer | theirs), both must Accept,
 //    any change to either side clears both accepts (retail rule). Real item icons throughout. ──
@@ -32476,7 +32474,7 @@ function beginLogout(){
   for(const k in keys) delete keys[k];
   if(typeof TOUCH!=="undefined"){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; }
   chargeActive=false; blocking=false; player.casting=null; player.emoteT=0;
-  if(typeof closeAnyPanel==="function") closeAnyPanel();
+  closeAnyPanel();
   if(locked&&document.exitPointerLock) document.exitPointerLock();
   player.invuln=Math.max(player.invuln||0, LOGOUT.saveDeadline+2);   // a deliberate logout is not cancelled by a stray hit
   // portal visuals at the player's feet — the SAME swirl/flash the game uses when entering a portal
@@ -32657,9 +32655,9 @@ function buffBotCast(targetName){
   }
   const t=(targetName||"").trim();
   if(!t||/^(me|self)$/i.test(t)){
-    list.forEach(sp=>applyBuffSelf(sp,true)); derive(); if(typeof updateHUD==="function")updateHUD();
+    list.forEach(sp=>applyBuffSelf(sp,true)); derive(); updateHUD();
     log(`<b>Buff bot:</b> applied <b>${list.length}</b> enchantments to yourself — creature, life &amp; item buffs. Item enchantments empower all gear you hold.`,"heal");
-    if(typeof toast==="function")toast("BUFFED"); if(SFX.quest)SFX.quest(); if(typeof saveGame==="function")saveGame(); return;
+    if(typeof toast==="function")toast("BUFFED"); if(SFX.quest)SFX.quest(); saveGame(); return;
   }
   if(!isOnline){ log("Buffing others requires being online.","warn"); return; }
   const send=(id,name)=>{ list.forEach(sp=>netSend({t:"cast",target:id,spell:sp.id})); return name; };
@@ -32687,16 +32685,16 @@ function doUnstuck(){
     if(!sp){ const r=(dungeonRects||[]).find(c=>c.room)||(dungeonRects||[])[0];
       if(r) sp=r.round?{x:r.cx,z:r.cz}:{x:(r.x0+r.x1)/2,z:(r.z0+r.z1)/2}; }
     if(!sp) sp={x:DCEN.x,z:DCEN.z};
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z);
     player.y=(dungeonSpawn&&dungeonSpawn.y)||0; arriveAt(sp.x,sp.z); player.invuln=Math.max(player.invuln||0,2);
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
     log((curDungeon&&curDungeon.academy)?"You step back to the Academy's entry hall. Walk to the <b>Society Greeter</b> and press <b>E</b> to speak.":"You wrench free and reappear at the delve's entrance.","sys");
     toast("UNSTUCK"); return;
   }
   if(inNetwork){
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z);
     arriveAt(DCEN.x,DCEN.z-2); player.invuln=Math.max(player.invuln||0,2);
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
     log("You pull free and step back to the hub's entrance.","sys"); toast("UNSTUCK"); return;
   }
   // overworld: hop to the nearest clear footing; if there truly is none, recall to your Lifestone
@@ -32872,7 +32870,7 @@ function reconcileRemotes(players){
     let r=NET.players[p.id];
     if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); mesh.userData._headApp=app; applyACBody(mesh,app.gender); mesh.visible=true;
       mesh.userData.headApp=app;
-      if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
+      npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh,_born:performance.now()}; }   // #670: _born → grace clock for hide-until-AC-body
     r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
@@ -32886,7 +32884,7 @@ function reconcileRemotes(players){
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(mm.userData.horse){ disposeObject3D(mm.userData.horse); mm.userData.horse=null; }   // #728: the ridden horse lives beside the avatar, not under it
       if(mm.userData.parked){ for(const k in mm.userData.parked) disposeObject3D(mm.userData.parked[k]); mm.userData.parked=null; }   // #734: and so do their parked horses
-      if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
+      disposeObject3D(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
 }
 // Dress a remote player's avatar with their relayed wield (weapon/shield). The jointed avatar already
 // carries aHeld/aBow/aWand/aShield sub-meshes (built by buildAvatarJointed); we just toggle/fill them
@@ -32932,7 +32930,7 @@ function applyRemoteGear(mesh, gear){
     if(g[3]) it.dye=g[3];
     if(k==="back"){ if(g[4]) it.cape=1; if(g[5]!=null) it.tint=g[5]; }
     slots[k]=it; }
-  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor(mesh, slots);
+  refreshAvatarArmor(mesh, slots);
 }
 function updateRemotes(dt){
   const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
@@ -33133,7 +33131,7 @@ function startGame(loadSaved,preset){
   if(loadSaved){
     if(isOnline&&pendingServerChar){ applySaveObj(pendingServerChar); pendingServerChar=null; }
     else applySave();
-    if(typeof kcRefreshDecor==="function") kcRefreshDecor();   // castle is built before the save loads — rebuild hooks from the restored placements
+    kcRefreshDecor();   // castle is built before the save loads — rebuild hooks from the restored placements
     log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(player.name||"Adventurer")}.`:"Your saga continues in <b>Dereth</b>.","sys");   // #438: greet by character name — NET.me is now an opaque session id, not the account name
     toast(isOnline?"ENTERING DERETH ONLINE":"WELCOME BACK");
   } else {
@@ -33162,7 +33160,7 @@ function startGame(loadSaved,preset){
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
-  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
+  refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
   running=true;paused=false;lastTs=0;updateQuestHUD();updateSeasonHUD();
@@ -33458,7 +33456,7 @@ function ccRenderCreation(){
         +`<div class="cl-town">Begins in <b>${h.town}</b></div>`;
     } else lore.style.display="none"; }
   const gd=document.getElementById('ccGender');
-  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null; ccRenderCreation(); if(typeof ccBuildACHead==="function")ccBuildACHead(); if(typeof ccRebuild==="function")ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
+  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null; ccRenderCreation(); ccBuildACHead(); ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
   const pf=document.getElementById('ccProf');
   if(pf){ pf.innerHTML=""; TEMPLATES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.name; b.className=ccWork.template===t.k?"sel":""; b.onclick=()=>ccApplyTemplate(t.k); pf.appendChild(b); }); }
   const at=document.getElementById('ccAttrs');
@@ -33521,7 +33519,7 @@ function openBarber(n){
   ccBarber=true;
   openCharCreator((player.appearance&&player.appearance.race)||player.heritage,()=>{
     ccBarber=false; paused=false;
-    refreshAvatarAppearance(); if(typeof refreshACArmor==="function")refreshACArmor();
+    refreshAvatarAppearance(); refreshACArmor();
     log("The barber's work is done — <b>you wear a new look</b>.","loot"); toast("A NEW FACE"); if(SFX.quest)SFX.quest(); saveGame();
   });
 }
@@ -33656,7 +33654,7 @@ function applyTouchUI(){
   if(typeof renderer!=="undefined"&&renderer&&typeof mobilePixelRatio==="function"){
     renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][(typeof GFX!=="undefined"?GFX.tier:3)|0]));
     renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
-    if(typeof resizePost==="function") resizePost();
+    resizePost();
     if(typeof GFX!=="undefined") GFX._grace=Math.max(GFX._grace||0,1.0);   // #345: realloc stall must not trip the governor
   }
   if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; blocking=false;
@@ -33890,9 +33888,9 @@ function tcFullscreen(auto){
   btn('tcEye',()=>toggleView());
   btn('tcHt',()=>{ let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); player.atkHeight=ATK_HEIGHTS[(i+1)%3];
     const el=document.getElementById('tcHt'); if(el) el.firstChild.textContent=player.atkHeight.toUpperCase();
-    if(typeof buildCombatPanel==="function") buildCombatPanel();
+    buildCombatPanel();
     const ah=document.getElementById('atkHeight'); if(ah){ ah.textContent="Attack: "+ATK_LABEL[player.atkHeight]; ah.style.display="block"; ah._t=now(); } });
-  btn('tcPg',()=>{ hotbarPage=(hotbarPage+1)%QB_PAGES; if(typeof buildSpellbar==="function") buildSpellbar(); tcArcRender(); });
+  btn('tcPg',()=>{ hotbarPage=(hotbarPage+1)%QB_PAGES; buildSpellbar(); tcArcRender(); });
   const act=document.getElementById('tcAct');
   if(act) act.addEventListener('touchstart',e=>{ e.preventDefault(); if(TOUCH.on&&running&&!paused&&player.alive){ interact(); buzz(9); } },{passive:false});
   // the Interact pill mirrors the desktop E-prompt (currentPrompt already names the exact action)
@@ -33930,12 +33928,12 @@ function tcArcRender(){
     const a=(150-i*17)*Math.PI/180;                       // #469: 150°→82° fan (was 180°→90°) so the lowest slots clear the HEIGHT/PAGE buttons and the last slot stays on-screen; 17° step at r=160 still spaces the 46px slots
     const x=cx+Math.cos(a)*rad, y=cy-Math.sin(a)*rad;
     const e=player.hotbar&&player.hotbar[abs];
-    const isIt=e&&typeof hbIsItem==="function"&&hbIsItem(e);
+    const isIt=e&&hbIsItem(e);
     const s=(e&&!isIt)?SPELLBOOK[e]:null;
     const d=document.createElement('div');
     d.className='tcSlot'+(e?'':' empty'); d.dataset.abs=abs; d.dataset.id=(s&&typeof e==="string")?e:'';
     d.style.left=Math.round(x-23)+'px'; d.style.top=Math.round(y-23)+'px';
-    const ico=e?(isIt?((typeof gearIco==="function"&&gearIco(e))||"📦"):((s&&s.ico)||"✦")):String(i+1);
+    const ico=e?(isIt?((gearIco(e))||"📦"):((s&&s.ico)||"✦")):String(i+1);
     d.innerHTML=`<span class="ico">${ico}</span><div class="sweep"></div><div class="cds"></div>`;
     d.addEventListener('touchstart',ev=>{ ev.preventDefault(); ev.stopPropagation();
       if(!TOUCH.on||!running||paused||!player.alive) return;
