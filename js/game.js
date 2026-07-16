@@ -339,7 +339,12 @@ function specCreditsUsed(){ let n=0; for(const s of SKILLS_DEF){ if(skillTier(s.
 function trainSkill(key){ const s=SKILL_BY_KEY[key]; if(!s)return false; const st=skillState(key); if(st.t!==0)return false; if(creditsAvail()<s.tc)return false; st.t=1; return true; }
 function specSkill(key){ const s=SKILL_BY_KEY[key]; if(!s)return false; const st=skillState(key); if(st.t!==1||s.sc<0)return false; if(creditsAvail()<s.sc)return false; if(specCreditsUsed()+s.tc+s.sc>70)return false; st.t=2; return true; }
 function raiseSkillCost(key){ const st=skillState(key); if(st.t===0)return Infinity; const r=skillRank(key); return skillCumXP(r+1,st.t===2)-skillCumXP(r,st.t===2); }
-function raiseSkill(key){ const st=skillState(key); if(st.t===0)return false; const cost=raiseSkillCost(key); if(player.xpUnspent<cost)return false; player.xpUnspent-=cost; st.xp+=cost; return true; }
+function skillMaxRank(spec){ return AC_XP?((spec?AC_XP.spec.length:AC_XP.trained.length)-1):260; }   // the highest rank the chart allows
+function raiseSkill(key){ const st=skillState(key); if(st.t===0)return false; if(skillRank(key)>=skillMaxRank(st.t===2))return false; const cost=raiseSkillCost(key); if(!(cost>0)||player.xpUnspent<cost)return false; player.xpUnspent-=cost; st.xp+=cost; return true; }
+// Reusable single-rank raisers (mirror the character-sheet buttons) so the UtilityBelt XP investor can
+// invest exactly as a hand-click would — every cap respected, never minting XP.
+function xpRaiseAttr(a){ if(!player.attr||player.attr[a]==null||attrRank(a)>=attrMaxRanks())return false; const c=attrCost(a); if(!isFinite(c)||player.xpUnspent<c)return false; player.xpUnspent-=c; player.attr[a]++; derive(); return true; }
+function xpRaiseVital(vk){ player.vitals=player.vitals||{hp:0,st:0,mn:0}; const n=player.vitals[vk]||0; if(n>=vitalMaxRanks())return false; const c=vitalCost(n); if(!isFinite(c)||player.xpUnspent<c)return false; player.xpUnspent-=c; player.vitals[vk]=n+1; derive(); return true; }
 const DEFAULT_TRAINED=["riding","sailing"];   // #881: free-trained at creation (tc:0, specialize 2) — AC's Free-train pattern, applied per the Dereth mounts/vessels rule
 function freshSkills(){ const o={}; for(const s of SKILLS_DEF)o[s.k]={t:0,xp:0}; for(const k of DEFAULT_TRAINED)o[k].t=1; return o; }
 function migrateSkills(old){ const fresh=freshSkills(); if(!old||typeof old!=="object")return fresh;
@@ -20249,8 +20254,9 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:fals
   brightness:1.0,contrast:1.0,   // final-image display grade (Settings sliders): 1.0 = neutral
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
-  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false},   // Decal-plugin homages (settings → Decal plugins)
-  vtankBuff:true,vtankLoot:true,gaDest:"auto",
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false},   // Decal-plugin homages (settings → Decal plugins)
+  vtankBuff:true,vtankLoot:true,vtankVitals:true,vtankVitalPct:50,gaDest:"auto",gaCoords:null,
+  ubeltXp:true,ubeltPolicy:"spec",   // UtilityBelt XP investor: auto-spend policy
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
   dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
   ambience:true,   // environmental soundscape: wind/surf/dungeon-drips + day birds / night crickets & owls
@@ -26559,27 +26565,46 @@ const PLUGIN_DEFS=[
   {k:"alinco",  n:"Alinco Buffs", d:"Buff HUD — every active enchantment with its time remaining."},
   {k:"vtank",   n:"Virindi Tank", d:"Combat assistant: rebuffs expiring enchantments when idle (20 mana each) and loots nearby drops."},
   {k:"magtools",n:"Mag-Tools",    d:"Combat tracker — XP/hour, kills/hour, time to next level."},
+  {k:"ubelt",   n:"UtilityBelt",  d:"XP investor — automatically spends unspent XP into the cheapest next rank under a policy you pick (specialized skills, all trained skills, attributes, vitals, or balanced). Also adds /wp <coords> to aim GoArrow at any location."},
 ];
 const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
 function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
   return Math.abs(N).toFixed(1)+(N>=0?"N":"S")+", "+Math.abs(E).toFixed(1)+(E>=0?"E":"W"); }
+// Parse an AC coordinate string ("24.5N, 63.2E" / "10.2s 5w") back to world x,z (inverse of acCoordStr).
+function parseACCoords(s){ if(!s)return null;
+  const m=String(s).match(/(-?\d+(?:\.\d+)?)\s*([NnSs])[\s,]+(-?\d+(?:\.\d+)?)\s*([EeWw])/);
+  if(!m) return null;
+  const ns=parseFloat(m[1])*(/[Ss]/.test(m[2])?-1:1), ew=parseFloat(m[3])*(/[Ww]/.test(m[4])?-1:1);
+  if(!isFinite(ns)||!isFinite(ew)) return null;
+  return { x: clamp(ew*COORD,-HALF+40,HALF-40), z: clamp(-ns*COORD,-HALF+40,HALF-40) };   // x=E·COORD, z=−N·COORD
+}
 function pluginOn(k){ return !!(settings.plugins&&settings.plugins[k]); }
 function applyPluginSettings(){
   for(const p of PLUGIN_DEFS){ const el=document.getElementById(p.k); if(el) el.style.display=(pluginOn(p.k)&&running&&!uiHiddenIs(p.k))?"block":"none"; }
   const mt=document.getElementById('magtools'); if(mt) mt.style.top=pluginOn("alinco")?"334px":"196px";   // stack below Alinco when both live
   if(pluginOn("magtools")&&!PLUG.mag&&typeof player!=="undefined") PLUG.mag={t0:performance.now(),xp:0,k0:player.kills||0};
-  vtPaint();
+  vtPaint(); ubPaint();
 }
 function vtPaint(){ document.querySelectorAll('#vtank .vtrow').forEach(r=>{
-  const on=r.dataset.vt==="buff"?settings.vtankBuff:settings.vtankLoot;
+  const on=r.dataset.vt==="buff"?settings.vtankBuff:r.dataset.vt==="loot"?settings.vtankLoot:settings.vtankVitals;
   const led=r.querySelector('.vtled'); if(led) led.className="vtled"+(on?" on":""); }); }
+function ubPaint(){ const r=document.querySelector('#ubelt .vtrow'); if(!r) return;
+  const led=r.querySelector('.vtled'); if(led) led.className="vtled"+(settings.ubeltXp?" on":""); }
 function initPluginUI(){
   document.querySelectorAll('#vtank .vtrow').forEach(r=>{ r.onclick=()=>{
-    if(r.dataset.vt==="buff") settings.vtankBuff=!settings.vtankBuff; else settings.vtankLoot=!settings.vtankLoot;
+    if(r.dataset.vt==="buff") settings.vtankBuff=!settings.vtankBuff;
+    else if(r.dataset.vt==="loot") settings.vtankLoot=!settings.vtankLoot;
+    else settings.vtankVitals=!settings.vtankVitals;
     saveSettings(); vtPaint(); }; });
+  const vp=document.getElementById('vtPct'), vpv=document.getElementById('vtPctV');
+  if(vp&&vpv){ vp.value=settings.vtankVitalPct||50; vpv.textContent=(settings.vtankVitalPct||50)+"%";
+    vp.oninput=()=>{ settings.vtankVitalPct=+vp.value; vpv.textContent=vp.value+"%"; saveSettings(); }; }
+  document.querySelectorAll('#ubelt .vtrow').forEach(r=>{ r.onclick=()=>{ settings.ubeltXp=!settings.ubeltXp; saveSettings(); ubPaint(); }; });
+  const up=document.getElementById('ubPolicy');
+  if(up){ up.value=settings.ubeltPolicy||"spec"; up.onchange=()=>{ settings.ubeltPolicy=up.value; saveSettings(); }; }
   const de=document.getElementById('gaDest'), sel=document.getElementById('gaSel');
   if(de&&sel){
-    const opts=[["auto","◈ Auto (saga / corpse / lifestone)"],["valhalla","Castle Val Halla"]].concat(
+    const opts=[["auto","◈ Auto (saga / corpse / lifestone)"],["custom","◈ Waypoint (set with /wp)"],["valhalla","Castle Val Halla"]].concat(
       CITIES.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>[c.name,c.name]));
     sel.innerHTML=opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("");
     sel.value=settings.gaDest||"auto";
@@ -26598,8 +26623,32 @@ function gaTarget(){
     const ls=lifestones.find(l=>l.bound); if(ls) return {x:ls.x,z:ls.z,label:ls.name+" Lifestone"};
     return null;
   }
+  if(mode==="custom"){ const c=settings.gaCoords; return (c&&isFinite(c.x)&&isFinite(c.z))?{x:c.x,z:c.z,label:c.label||("Waypoint "+acCoordStr(c.x,c.z))}:null; }   // UtilityBelt: /wp coords
   if(mode==="valhalla") return {x:KC.x,z:KC.z+138,label:"Castle Val Halla"};
   const c=CITIES.find(c=>c.name===mode); return c?{x:c.x,z:c.z,label:c.name}:null;
+}
+// UtilityBelt's XP investor — the cheapest eligible next raise under a policy, as a thunk (null if none).
+function ubeltCheapestRaise(pol){
+  const cands=[];
+  const wantSkills=(pol==="spec"||pol==="trained"||pol==="balanced");
+  const wantVitals=(pol==="vitals"||pol==="balanced");
+  const wantAttr  =(pol==="attr"||pol==="balanced");
+  if(wantSkills) for(const s of SKILLS_DEF){ const t=skillTier(s.k);
+    if(t===0||(pol==="spec"&&t<2)) continue;
+    if(skillRank(s.k)>=skillMaxRank(t===2)) continue;
+    const c=raiseSkillCost(s.k); if(c>0&&isFinite(c)&&c<=player.xpUnspent) cands.push({c,fn:()=>raiseSkill(s.k)}); }
+  if(wantVitals) for(const vk of ["hp","st","mn"]){ const n=(player.vitals&&player.vitals[vk])||0; if(n>=vitalMaxRanks()) continue;
+    const c=vitalCost(n); if(c>0&&isFinite(c)&&c<=player.xpUnspent) cands.push({c,fn:()=>xpRaiseVital(vk)}); }
+  if(wantAttr) for(const a in player.attr){ if(attrRank(a)>=attrMaxRanks()) continue;
+    const c=attrCost(a); if(c>0&&isFinite(c)&&c<=player.xpUnspent) cands.push({c,fn:()=>xpRaiseAttr(a)}); }
+  if(!cands.length) return null;
+  cands.sort((x,y)=>x.c-y.c); return cands[0].fn;
+}
+function ubeltAutoSpend(){
+  const pol=settings.ubeltPolicy||"spec"; let did=false, budget=40;   // cap raises/sec so a big banked total drains without a frame hitch
+  while(budget-->0&&player.xpUnspent>0){ const step=ubeltCheapestRaise(pol); if(!step||!step()) break; did=true; }
+  if(did){ saveGame(); updateHUD(); const sh=document.getElementById('sheet'); if(sh&&sh.style.display!=="none"&&typeof buildSheet==="function") buildSheet(); }
+  return did;
 }
 function updatePlugins(dt){
   if(!running) return;
@@ -26629,6 +26678,13 @@ function updatePlugins(dt){
         return false; };
       RECAST(player.spellBuffs,a=>a)||RECAST(player.skillBuffs,k=>(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k))||RECAST(player.banes,el=>el+" bane");
     }
+    // Vitals monitor — VTank's keep-alive: quaff the right potion when a vital dips below the threshold.
+    if(settings.vtankVitals&&player.alive&&!paused&&!(player.drinkCd>0)){
+      const pct=Math.max(0.05,Math.min(0.95,(settings.vtankVitalPct||50)/100)), Q=()=>{ PLUG.vtMsg="Quaffing…"; PLUG.vtMsgT=2; };
+      if(player.hp<player.mhp*pct&&(player.potGreat>0||player.potHealth>0)){ if(player.potGreat>0) drinkPotion("potGreat",150,"hp"); else drinkPotion("potHealth",60,"hp"); Q(); }
+      else if(player.mn<player.mmn*pct&&player.potMana>0){ drinkPotion("potMana",60,"mn"); Q(); }
+      else if(player.st<player.mst*pct&&player.potStam>0){ drinkPotion("potStam",60,"st"); Q(); }
+    }
     PLUG.vtMsgT-=0.4; const st=document.getElementById('vtState');
     if(st) st.textContent=PLUG.vtMsgT>0?PLUG.vtMsg:(player.combatT?"Combat":"Idle");
   }
@@ -26653,6 +26709,10 @@ function updatePlugins(dt){
       const mm=Math.floor(r[1]/60), ss=Math.floor(r[1]%60);
       return `<div style="display:flex;justify-content:space-between;gap:8px${r[1]<15?";color:#8a1e1e;font-weight:bold":""}"><span>${r[0]}</span><span>${mm}:${String(ss).padStart(2,"0")}</span></div>`;
     }).join(""):'<div style="color:#7a6a4a">No active enchantments</div>';
+  }
+  if(pluginOn("ubelt")&&settings.ubeltXp&&typeof player!=="undefined"&&player.alive){
+    const spent=ubeltAutoSpend(); const el=document.getElementById('ubState');
+    if(el) el.textContent=(player.xpUnspent<=0)?"Fully invested":(spent?"Investing…":"Idle");
   }
   if(pluginOn("magtools")&&PLUG.mag){
     const hrs=Math.max((performance.now()-PLUG.mag.t0)/3600000,1/3600);
@@ -32880,6 +32940,19 @@ function handleSlash(text){
       pkl:"🗡️ You become a <b>PK-Lite</b> — you may duel other PK-Lites, but keep your goods on death.",
       npk:"You lay down your arms — <b>no longer open to player combat</b>."})[target],"warn");
     if(SFX.growl)SFX.growl(); saveGame(); }
+  else if(cmd==="wp"||cmd==="waypoint"||cmd==="arrow"){   // UtilityBelt: aim GoArrow at any coordinate
+    const rest=parts.slice(1).join(" ").trim();
+    if(!rest||/^(clear|off|none)$/i.test(rest)){ settings.gaCoords=null; if(settings.gaDest==="custom") settings.gaDest="auto";
+      const sel=document.getElementById('gaSel'); if(sel) sel.value=settings.gaDest; saveSettings(); log("Waypoint cleared.","sys"); return; }
+    let x,z,label=null;
+    if(/^here$/i.test(rest)){ x=player.x; z=player.z; label="Waypoint (marked here)"; }
+    else { const c=parseACCoords(rest); if(!c){ log("Usage: <b>/wp 24.5N, 63.2E</b> · <b>/wp here</b> · <b>/wp clear</b>","warn"); return; } x=c.x; z=c.z; }
+    settings.gaCoords={x,z,label:label||("Waypoint "+acCoordStr(x,z))}; settings.gaDest="custom";
+    if(!pluginOn("goarrow")){ settings.plugins=settings.plugins||{}; settings.plugins.goarrow=true; }
+    saveSettings(); applyPluginSettings();
+    const sel=document.getElementById('gaSel'); if(sel) sel.value="custom";
+    log(`Waypoint set to <b>${acCoordStr(x,z)}</b> — GoArrow now points there. <span style="color:var(--dim)">(/wp clear to remove)</span>`,"sys");
+  }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
     if(!act) log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+" — e.g. <b>/emote clap</b>","sys");
     else doEmote(act); }
@@ -32887,7 +32960,7 @@ function handleSlash(text){
   else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
   else if(cmd==="help"||cmd==="commands"||cmd==="?"){   // #203: the full command list, grouped as the code groups them
     log(`<b>Chat:</b> /tell (/w) &lt;name&gt; &lt;msg&gt; · /r reply · /p party · /f fellowship · /a allegiance · /who`,"sys");
-    log(`<b>World:</b> /loc coordinates · /where · /region · /story saga recap · /arc story arcs`,"sys");
+    log(`<b>World:</b> /loc coordinates · /where · /region · /wp &lt;coords&gt; set a GoArrow waypoint · /story saga recap · /arc story arcs`,"sys");
     log(`<b>Stuck?</b> /unstuck (/stuck, /free) — teleport to clear ground; works even while delving`,"sys");
     log(`<b>Allegiance:</b> /swear &lt;name&gt; · /break (/unswear) · /muster · /allegiance join|leave|hometown`,"sys");
     log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");

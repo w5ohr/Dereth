@@ -543,7 +543,24 @@
   <div style="padding:5px 8px 6px">
     <div class="vtrow" data-vt="buff" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Buffing</div>
     <div class="vtrow" data-vt="loot" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Looting</div>
+    <div class="vtrow" data-vt="vitals" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0" title="Auto-quaff a health / mana / stamina potion when that vital drops below the threshold"><span class="vtled"></span>Enable Vitals <span style="opacity:.7">(auto-quaff)</span></div>
+    <div style="display:flex;align-items:center;gap:5px;margin:2px 0 1px;color:#5a4a2e">Quaff below <input id="vtPct" type="range" min="20" max="90" step="5" style="flex:1" title="quaff threshold"><b id="vtPctV" style="min-width:30px;text-align:right">50%</b></div>
     <div style="border-top:1px solid #a08a5a;margin-top:4px;padding-top:3px;color:#5a4a2e">State: <b id="vtState">Idle</b></div>
+  </div>
+</div>
+<div id="ubelt" style="display:none;position:fixed;right:14px;bottom:296px;z-index:40;width:212px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#2e5a7a;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ UtilityBelt <span style="font-weight:normal;opacity:.75">· XP Investor</span></div>
+  <div style="padding:5px 8px 6px">
+    <div class="vtrow" data-ub="xp" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0" title="Automatically pour unspent XP into the cheapest next rank under your chosen policy"><span class="vtled"></span>Auto-spend XP</div>
+    <div style="display:flex;align-items:center;gap:5px;margin:3px 0 2px"><span style="color:#5a4a2e">Policy</span>
+      <select id="ubPolicy" style="flex:1;background:#1d1a14;color:#e8e0c8;border:1px solid #6a5a3a;border-radius:4px;font-size:11px">
+        <option value="spec">Specialized skills</option>
+        <option value="trained">All trained skills</option>
+        <option value="attr">Attributes</option>
+        <option value="vitals">Vitals</option>
+        <option value="balanced">Balanced (skills → vitals → attrs)</option>
+      </select></div>
+    <div style="border-top:1px solid #a08a5a;margin-top:4px;padding-top:3px;color:#5a4a2e">State: <b id="ubState">Idle</b></div>
   </div>
 </div>
 <div id="magtools" style="display:none;position:fixed;left:14px;top:388px;z-index:40;min-width:168px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
@@ -863,7 +880,7 @@
 /* Decal plugin HUDs — VTank's green LED toggles (per the real plugin screenshot) */
 .vtled{width:11px;height:11px;border-radius:50%;flex:0 0 auto;border:1px solid #4a3a20;background:radial-gradient(circle at 35% 35%,#5a5244,#2a261c)}
 .vtled.on{background:radial-gradient(circle at 35% 35%,#c8ffb0,#3fae2a 55%,#1e6a12);box-shadow:0 0 5px #4fd034}
-#vtank .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
+#vtank .vtrow:hover, #ubelt .vtrow:hover, #goarrow #gaDest:hover{filter:brightness(1.15)}
 /* Universal drag grips — every game panel drags like the plugin windows. The HUD layer is
    pointer-events:none, so parent :hover can never fire — the grips stay ALWAYS visible (faint,
    brightening under their own cursor, which works because the grip itself takes pointer events). */
