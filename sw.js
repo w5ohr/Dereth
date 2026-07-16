@@ -49,7 +49,7 @@ self.addEventListener("fetch", e => {
 
   // app code (js/game.js, js/craft.js) changes on every deploy just like index.html did when it was
   // inline — serve it network-first so a reload always gets the latest, falling back to cache offline.
-  const isCode = url.pathname.endsWith("/js/game.js") || url.pathname.endsWith("/js/craft.js");
+  const isCode = url.pathname.endsWith("/js/game.js") || url.pathname.endsWith("/js/craft.js") || url.pathname.includes("/js/data/");   // #778: extracted data modules deploy with the game code — same network-first class
   const isNav = req.mode === "navigate" || url.pathname === "/" || url.pathname.endsWith("/index.html");
   if (isNav || isCode) {
     e.respondWith((async () => {
