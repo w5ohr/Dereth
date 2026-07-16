@@ -31564,7 +31564,18 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
     if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
       if(alsoLocal){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(s)); }catch(e){} } }   // #457: logout also writes the local safety-net so a socket drop mid-logout can't black-hole progress
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
-  }catch(e){}
+  }catch(e){
+    // #789: don't silently swallow the failure — a QuotaExceededError (browser storage full) means the
+    // player's progress is NOT being written, and they'd never know. Surface it, throttled so a repeated
+    // failure doesn't spam every autosave.
+    const _now=(typeof performance!=="undefined"?performance.now():Date.now());
+    if(!saveGame._warnedAt || _now-saveGame._warnedAt>60000){
+      saveGame._warnedAt=_now;
+      const quota=!!(e&&(e.name==="QuotaExceededError"||e.code===22||e.code===1014));
+      try{ log(quota?"⚠ Save failed — browser storage is full. Free some space or your progress won't persist.":"⚠ Save failed — your progress may not be saving. See the console for details.","warn"); }catch(_){}
+      if(typeof console!=="undefined"&&console.warn) console.warn("saveGame failed:",e&&(e.message||e));
+    }
+  }
 }
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 function applySave(){
