@@ -20145,8 +20145,20 @@ document.getElementById('closeCodex').onclick=closeCodex;
 // ---------- loop ----------
 let lastTs=0,_loopRunning=false;   // #334: single-rAF-chain guard
 function loop(ts){
-  if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;dt=Math.min(dt,0.05);
+  if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;
+  if(!(dt>0))dt=0; dt=Math.min(dt,0.05);   // #791: a NaN/negative/backwards timestamp must not feed a NaN dt into the physics (NaN dt → NaN velocity → NaN position, propagated + persisted forever)
   try{ update(dt); }catch(e){ console.error("update() failed:",e); }   // #227: no single-frame exception may ever kill the rAF chain (a thrown update froze the game permanently)
+  // #791: circuit-breaker — if a frame left the player at a non-finite position, restore the last known
+  // good spot instead of letting NaN propagate through physics/camera every subsequent frame (and get
+  // written to the save). Records the good position each frame it's finite.
+  if(typeof player!=="undefined"&&player){
+    if(Number.isFinite(player.x)&&Number.isFinite(player.y)&&Number.isFinite(player.z)){
+      loop._lastGood={x:player.x,y:player.y,z:player.z};
+    }else if(loop._lastGood){
+      if(console&&console.error)console.error("loop: non-finite player position — restoring last good",player.x,player.y,player.z);
+      player.x=loop._lastGood.x; player.y=loop._lastGood.y; player.z=loop._lastGood.z; player.vy=0;
+    }
+  }
   try{ updateLightPool(); }catch(e){ console.error("updateLightPool() failed:",e); }   // #501: same guarantee — a render-side throw here previously skipped requestAnimationFrame() below and froze the camera (and the portal tube, since its maxHold advance lives inside update()) with no recovery
   try{ renderComposite(); }catch(e){ console.error("renderComposite() failed:",e); }   // #501: ditto — a WebGL/composite exception must not kill the loop either
   requestAnimationFrame(loop);
