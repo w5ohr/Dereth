@@ -19508,6 +19508,10 @@ function _dispGeo(g){ if(g&&!g._acShared&&g.dispose) g.dispose(); }
 function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose)x.dispose(); } }
 function disposeObject3D(o){ if(!o)return; if(o.parent)o.parent.remove(o);
   o.traverse(c=>{ if(c.isSprite){ const li=LABELS.indexOf(c); if(li>=0) LABELS.splice(li,1); }   // #22: keep the label registry from holding disposed nametags
+    // #872: a disposed subtree never re-attaches — unregister its virtual lights, or every Academy/
+    // dungeon visit grows VLIGHTS forever (unbounded per-frame scan) and each retained light pins the
+    // torn-down subtree via .parent. Pooled transients stay (the impact pool re-uses them, #797).
+    if(c._virtual&&!c._pooled){ const vi=VLIGHTS.indexOf(c); if(vi>=0) VLIGHTS.splice(vi,1); }
     if(c.userData&&c.userData.acShared) return;   // #232: gltf-clone subtrees share geometry/materials with the model cache — never dispose those
     _dispGeo(c.geometry); _dispMat(c.material); }); }
 // #232: free an object's GPU copies (geometry buffers, textures, programs) WITHOUT retiring the
