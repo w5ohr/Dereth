@@ -1785,8 +1785,17 @@ async def resolve_attack(cl, mid, dmg):
     if dmg > 0:
         dealt = m.setdefault("dealt", {})
         dealt[cl.username] = dealt.get(cl.username, 0) + dmg
+    # #812: claim the kill ATOMICALLY here, before the mob_hit broadcast's await can yield the loop.
+    # Two attackers finishing the same mob both reach `m["hp"] <= 0` after their awaits; without a
+    # synchronous single-winner claim they would each run the death block (double loot + double kill XP
+    # + double allegiance pass-up). The claim is set between the (synchronous) hp mutation and the first
+    # await, so exactly one coroutine wins. Respawn pops+replaces the mob object, so the flag self-clears.
+    killed = False
+    if m["hp"] <= 0 and not m.get("dead"):
+        m["dead"] = True
+        killed = True
     await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.netid})  # #438: opaque netid, not the account name
-    if m["hp"] <= 0:
+    if killed:
         m["hp"] = 0.0
         is_boss = bool(m.get("boss"))
         m["respawn_at"] = time.time() + (BOSS_DEFS[m["bosskey"]]["respawn"] if is_boss else 8.0)
