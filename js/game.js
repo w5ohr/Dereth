@@ -19661,39 +19661,45 @@ function syncCamera(dt){
 }
 
 // ---------- HUD ----------
-function setBar(cls,id,cur,max){document.querySelector(cls+" i").style.width=clamp(cur/max*100,0,100)+"%";
-  document.getElementById(id).textContent=Math.round(cur)+"/"+Math.round(max);}
+// #801: memoize the static HUD element lookups — updateHUD/setBar ran ~30 getElementById/querySelector
+// calls every refresh. Cache by key; if a cached node was detached (a panel rebuilt), isConnected is
+// false and we re-query, so caching stays correct for recreated elements.
+const _hudEl={};
+function elc(id){ let e=_hudEl[id]; if(!e||!e.isConnected){ e=_hudEl[id]=document.getElementById(id); } return e; }
+function qsc(sel){ const k="$"+sel; let e=_hudEl[k]; if(!e||!e.isConnected){ e=_hudEl[k]=document.querySelector(sel); } return e; }
+function setBar(cls,id,cur,max){qsc(cls+" i").style.width=clamp(cur/max*100,0,100)+"%";
+  elc(id).textContent=Math.round(cur)+"/"+Math.round(max);}
 function updateHUD(){
   setBar(".bhp","hpT",player.hp,player.mhp);
   setBar(".bst","stT",player.st,player.mst);
   setBar(".bmn","mnT",player.mn,player.mmn);
-  { const hb=document.getElementById("horsebar"), rec=player.mountRec;   // #733: your mount's vigor rides the vitals stack
+  { const hb=elc("horsebar"), rec=player.mountRec;   // #733: your mount's vigor rides the vitals stack
     if(rec){ hb.style.display="block";
       hb.querySelector("i").style.width=clamp(rec.hp/rec.mhp*100,0,100)+"%";
-      document.getElementById("horseT").textContent=`${rec.name} ${rec.hp}/${rec.mhp}`; }
+      elc("horseT").textContent=`${rec.name} ${rec.hp}/${rec.mhp}`; }
     else if(hb.style.display!=="none") hb.style.display="none"; }
   const need=xpForLevel(player.level);
-  document.querySelector(".bxp i").style.width=clamp(player.xp/need*100,0,100)+"%";
-  document.getElementById("xpT").textContent=player.xp.toLocaleString()+" / "+need.toLocaleString()+" XP";   // #235: thousands separators, matching the rest of the UI
-  document.getElementById("name").textContent=(player.name||"Adventurer")+" of Dereth"+(player.title?", "+player.title:"");
-  document.getElementById("lvline").textContent=`Level ${player.level} · Unspent XP: ${(player.xpUnspent||0).toLocaleString()}`;
-  for(const a of ATTRS) document.getElementById("a"+a).textContent=player.attr[a];
-  document.getElementById("sArmor").textContent=Math.round((player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01));
-  { const bt=document.getElementById("sBurden"); if(bt){ const r=(typeof encumbrance==="function")?encumbrance().ratio:0, pct=Math.round(r*100);
+  qsc(".bxp i").style.width=clamp(player.xp/need*100,0,100)+"%";
+  elc("xpT").textContent=player.xp.toLocaleString()+" / "+need.toLocaleString()+" XP";   // #235: thousands separators, matching the rest of the UI
+  elc("name").textContent=(player.name||"Adventurer")+" of Dereth"+(player.title?", "+player.title:"");
+  elc("lvline").textContent=`Level ${player.level} · Unspent XP: ${(player.xpUnspent||0).toLocaleString()}`;
+  for(const a of ATTRS) elc("a"+a).textContent=player.attr[a];
+  elc("sArmor").textContent=Math.round((player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01));
+  { const bt=elc("sBurden"); if(bt){ const r=(typeof encumbrance==="function")?encumbrance().ratio:0, pct=Math.round(r*100);
       bt.textContent=pct+"%"+(r>=2?" ⚠":r>1?" ↓":""); bt.style.color=r>=2?"#e8704a":r>1?"#e8c24a":"#e8dcc0";
       // #200: say it out loud the moment you cross into overload (the sheet's tiny ↓ was the only cue)
       if(r>=1&&!player._overloadWarned){ player._overloadWarned=true; log("You are <b>overloaded</b> — you move slower until you lighten your load (T → Salvage All, or stash at home).","warn"); }
       else if(r<0.97&&player._overloadWarned) player._overloadWarned=false; } }   // >100% slows you; ≥200% blocks jumping
-  document.getElementById("sKills").textContent=(player.kills||0).toLocaleString();
-  document.getElementById("sGold").textContent=Math.floor(player.gold||0).toLocaleString();
-  document.getElementById("sMats").textContent=player.materials;
-  { const tp=document.getElementById("sTapers"); if(tp) tp.textContent=player.prismTapers?`${player.tapers} (+${player.prismTapers}✦)`:player.tapers; }
-  document.getElementById("pHealth").textContent=player.potHealth;
-  document.getElementById("pGreat").textContent=player.potGreat;
-  document.getElementById("pMana").textContent=player.potMana;
-  {const e=document.getElementById("pStam"); if(e) e.textContent=player.potStam;}
-  document.getElementById("pMight").textContent=player.elixMight;
-  document.getElementById("pSwift").textContent=player.elixSwift;
+  elc("sKills").textContent=(player.kills||0).toLocaleString();
+  elc("sGold").textContent=Math.floor(player.gold||0).toLocaleString();
+  elc("sMats").textContent=player.materials;
+  { const tp=elc("sTapers"); if(tp) tp.textContent=player.prismTapers?`${player.tapers} (+${player.prismTapers}✦)`:player.tapers; }
+  elc("pHealth").textContent=player.potHealth;
+  elc("pGreat").textContent=player.potGreat;
+  elc("pMana").textContent=player.potMana;
+  {const e=elc("pStam"); if(e) e.textContent=player.potStam;}
+  elc("pMight").textContent=player.elixMight;
+  elc("pSwift").textContent=player.elixSwift;
   const bf=[];if(player.buffMightT>0)bf.push("Might "+Math.ceil(player.buffMightT)+"s");if(player.buffSwiftT>0)bf.push("Swift "+Math.ceil(player.buffSwiftT)+"s");
   if(player.spellBuffs) for(const a in player.spellBuffs) bf.push(`+${player.spellBuffs[a].v} ${a}`);
   if(player.itemBuffs){ const IB={dmg:"+dmg",oildmg:"+dmg",crit:"+crit",armor:"+armor",haste:"+haste"}; for(const k in player.itemBuffs) bf.push(IB[k]||k); }
@@ -19704,14 +19710,14 @@ function updateHUD(){
   { const fm=focusManaMax(); if(fm>0) bf.push(`🔮 ${Math.round(player.focusMana||0)}/${fm} focus`); }
   if(player.lightBuff) bf.push(`🔆 light ${Math.ceil(player.lightBuff.t)}s`);
   if(player.debuffs) for(const k in player.debuffs) bf.push(k==="slow"?"⊘ slowed":"▲ imperiled");
-  document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
+  elc("sBuffs").textContent=bf.length?bf.join(", "):"—";
   let threats=0;for(const m of monsters){if(!!m.isDungeon===inDungeon&&m.state==="chase"&&Math.hypot(m.x-player.x,m.z-player.z)<50)threats++;}
-  const te=document.getElementById("sThreat");te.textContent=threats;te.style.color=threats>0?"#ff6b6b":"#fff";
-  document.getElementById("sDelves").textContent=player.clearedDungeons.length+"/50";
-  const ve=document.getElementById("sVitae");if(player.vitae>0.001){ve.textContent="-"+Math.round(player.vitae*100)+"%";ve.style.color="#ff6b6b";}else{ve.textContent="—";ve.style.color="#fff";}
-  const evr=document.getElementById("evRow");
-  if(worldEvent&&worldEvent.active){evr.style.display="";document.getElementById("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
-  else if(isOnline&&NET.event){ evr.style.display=""; document.getElementById("sEvent").textContent=`${NET.event.name} · ${eventCleared()}/${NET.event.total} cleared`; }
+  const te=elc("sThreat");te.textContent=threats;te.style.color=threats>0?"#ff6b6b":"#fff";
+  elc("sDelves").textContent=player.clearedDungeons.length+"/50";
+  const ve=elc("sVitae");if(player.vitae>0.001){ve.textContent="-"+Math.round(player.vitae*100)+"%";ve.style.color="#ff6b6b";}else{ve.textContent="—";ve.style.color="#fff";}
+  const evr=elc("evRow");
+  if(worldEvent&&worldEvent.active){evr.style.display="";elc("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
+  else if(isOnline&&NET.event){ evr.style.display=""; elc("sEvent").textContent=`${NET.event.name} · ${eventCleared()}/${NET.event.total} cleared`; }
   else evr.style.display="none";
   spellbar.querySelectorAll(".slot").forEach((el)=>{
     const abs=+el.dataset.abs, e=player.hotbar[abs];
@@ -19724,18 +19730,18 @@ function updateHUD(){
       const sw=el.querySelector(".cdsweep"); if(sw) sw.style.background=`conic-gradient(rgba(6,4,1,.62) ${deg}deg, transparent ${deg}deg)`;}
     else { el.classList.remove("cool"); const c=el.querySelector(".cd"); if(c)c.textContent=""; }
   });
-  const cb=document.getElementById('castbar');
+  const cb=elc('castbar');
   if(player.casting){ const c=player.casting, frac=clamp(1-c.t/c.total,0,1);
-    cb.style.display="block"; document.getElementById('castfill').style.width=Math.round(frac*100)+"%";
-    document.getElementById('castlabel').textContent=(SPELLBOOK[c.id]||{}).name||""; }
+    cb.style.display="block"; elc('castfill').style.width=Math.round(frac*100)+"%";
+    elc('castlabel').textContent=(SPELLBOOK[c.id]||{}).name||""; }
   else cb.style.display="none";
-  document.getElementById('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
-  const dv=document.getElementById('dmgvig');
+  elc('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
+  const dv=elc('dmgvig');
   if(player.alive&&player.hp/player.mhp<0.25){dv.style.opacity=settings.reduceMotion?0.3:(0.22+0.22*Math.abs(Math.sin(now()/240)));dv.dataset.low="1";}   // #352: static low-HP border under Reduce Motion instead of a ~2Hz pulse
   else if(dv.dataset.low){dv.style.opacity=0;dv.dataset.low="";}
   drawMinimap();
   drawCompass();
-  const ep=document.getElementById('eprompt'),pr=player.alive?currentPrompt():"";
+  const ep=elc('eprompt'),pr=player.alive?currentPrompt():"";
   if(pr){ep.textContent=pr;ep.style.display="block";}else ep.style.display="none";
 }
 function drawCompass(){
