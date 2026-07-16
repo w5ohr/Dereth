@@ -9687,7 +9687,7 @@ let kcRockets=[],kcFlashes=[],_kcFwT=0,_kcFwHugeT=0,_kcMusT=0,_kcMusI=0,kcCrowd=
 // spherical starburst that rides the existing bursts[] physics (gravity + fade)
 function kcFireBurst(x,y,z,col,n,speed,big){
   for(let i=0;i<n;i++){
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,depthWrite:false,fog:false}));
+    const sp=acquireBurstSprite(col);   // #796: pooled
     const sc=(big?rnd(1.4,2.4):rnd(0.9,1.6)); sp.scale.set(sc,sc,sc); sp.position.set(x,y,z); scene.add(sp);   // big enough to read against the sky from afar
     const a=rnd(0,6.28), el=Math.acos(rnd(-1,1)), spd=speed*rnd(0.55,1.1);
     bursts.push({sp,vx:Math.sin(el)*Math.cos(a)*spd,vy:Math.cos(el)*spd,vz:Math.sin(el)*Math.sin(a)*spd,t:rnd(1.1,1.8)});
@@ -11356,9 +11356,20 @@ let toastT=0;function toast(t){document.getElementById('toast').textContent=t;to
 // ---------- effects ----------
 function floater(x,y,z,txt,color,sz){const sp=textSprite(txt,color);if(sz)sp.scale.multiplyScalar(sz);sp.position.set(x,y,z);scene.add(sp);
   floaters.push({sp,t:1.1,vy:1.4});}
+// #796: recycle burst particle sprites. Every melee hit / arrow contrail / firework used to allocate a
+// fresh Sprite+SpriteMaterial per particle and dispose it on fade. All bursts[] particles share one
+// material config (CIRC map, normal blend) — only the colour varies — so pool the objects and just
+// recolor on reuse. Acquire resets colour/opacity; release returns to the pool (capped) or disposes.
+const _burstPool=[]; const _BURST_MAX=512;
+function acquireBurstSprite(color){
+  let sp=_burstPool.pop();
+  if(!sp) sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,transparent:true,depthWrite:false,fog:false}));
+  sp.material.color.set(color); sp.material.opacity=1; sp.visible=true; return sp;
+}
+function releaseBurstSprite(sp){ scene.remove(sp); if(_burstPool.length<_BURST_MAX) _burstPool.push(sp); else sp.material.dispose(); }
 function burst(x,y,z,color,n=10){
   for(let i=0;i<n;i++){
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color,transparent:true,depthWrite:false,fog:false}));
+    const sp=acquireBurstSprite(color);
     const sc=rnd(0.3,0.7);sp.scale.set(sc,sc,sc);sp.position.set(x,y,z);scene.add(sp);
     const a=rnd(0,6.28),el=rnd(-1,1),sp2=rnd(3,8);
     bursts.push({sp,vx:Math.cos(a)*sp2,vy:Math.abs(el)*sp2*0.6+1,vz:Math.sin(a)*sp2,t:rnd(.3,.6)});
@@ -11372,7 +11383,19 @@ let SPELLFX=[];
 function fxQ(){ const t=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2;
   return [0.35,0.6,1,1.2][t]*((typeof settings!=="undefined"&&settings.reduceMotion)?0.45:1); }
 function fxCap(){ return SPELLFX.length<420; }
-function fxSprite(color,additive){ return new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color,transparent:true,depthWrite:false,fog:false,blending:additive===false?THREE.NormalBlending:THREE.AdditiveBlending})); }
+// #796: pool spell-FX sprites the same way as bursts. Blending is the only fixed axis that varies
+// (additive vs normal), so keep two pools keyed by it — a pooled sprite is only ever reused with its
+// own blending, so no needsUpdate/shader churn. Acquire resets colour+opacity; callers then override.
+const _fxPoolA=[], _fxPoolN=[]; const _FX_MAX=512;
+function fxSprite(color,additive){
+  const add=additive!==false, pool=add?_fxPoolA:_fxPoolN;
+  let sp=pool.pop();
+  if(!sp){ sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,transparent:true,depthWrite:false,fog:false,blending:add?THREE.AdditiveBlending:THREE.NormalBlending})); sp._fxAdd=add?1:0; }
+  sp.material.color.set(color); sp.material.opacity=1; sp.visible=true; return sp;
+}
+function fxRelease(sp){ if(!sp) return; scene.remove(sp);
+  const pool=sp._fxAdd?_fxPoolA:_fxPoolN;
+  if(pool.length<_FX_MAX) pool.push(sp); else sp.material.dispose(); }
 // a bright pop of light that swells and dies — the core "energy" read of every release & impact
 function fxFlash(x,y,z,color,size,dur){ if(!fxCap())return;
   const sp=fxSprite(color); sp.position.set(x,y,z); sp.scale.setScalar(size*0.4); scene.add(sp);
@@ -11500,10 +11523,10 @@ function updateSpellFX(dt){
       f.sp.scale.setScalar(f.s*(1+k*0.6)); }
     else if(f.k==="castlight"){ f.lt.intensity=3.4*Math.sin(Math.min(1,k)*Math.PI); }   // swell then fade
     if(f.t>=f.dur){
-      if(f.sp){ scene.remove(f.sp); f.sp.material.dispose(); }
+      if(f.sp){ fxRelease(f.sp); }   // #796: recycle instead of disposing
       if(f.m){ scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); }
       if(f.lt){ scene.remove(f.lt); }
-      if(f.parts){ for(const g of f.parts){ scene.remove(g.sp); g.sp.material.dispose(); } }
+      if(f.parts){ for(const g of f.parts){ fxRelease(g.sp); } }   // #796: recycle instead of disposing
       SPELLFX.splice(i,1);
     }
   }
@@ -11671,7 +11694,7 @@ function teleportFX(x,z){
   const pp=(typeof AC_FXP!=="undefined"&&AC_FXP&&AC_FXP.portal)||null;   // #769: the real portal swirl
   const col=pp?pp.color:0x9b6bff, p0=pp&&pp.use[0];
   for(let i=0;i<34;i++){
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:(pp&&i%3===2&&pp.use[1])?pp.use[1].color:col,transparent:true,depthWrite:false,fog:false}));
+    const sp=acquireBurstSprite((pp&&i%3===2&&pp.use[1])?pp.use[1].color:col);   // #796: pooled
     const sc=p0?rnd(Math.min(0.9,p0.size1*0.3+0.1),Math.min(1.3,p0.size0*0.3)):rnd(0.4,0.9);sp.scale.set(sc,sc,sc);
     const a=rnd(0,6.28),rr=rnd(0.2,2.4);sp.position.set(x+Math.cos(a)*rr,gy+rnd(0,0.5),z+Math.sin(a)*rr);scene.add(sp);
     bursts.push({sp,vx:Math.cos(a)*1.5,vy:rnd(5,11),vz:Math.sin(a)*1.5,t:p0?rnd(.5,Math.min(1.6,p0.life)):rnd(.5,.9)});
@@ -18822,7 +18845,7 @@ function updatePlayerProjectiles(dt){
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
-    if(p.arrow){ if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false,blending:THREE.NormalBlending}));
+    if(p.arrow){ if(Math.random()<0.5){const sp=acquireBurstSprite(p.color);   // #796: pooled
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});} }   // arrows: faint physical dust, as before
     else { // #668: SPELL TRAILS — a continuous element-styled wake (fire embers rise, frost falls & glitters,
       // lightning jitters, acid drips, nether wisps drift up), density scaled by the GFX governor tier
@@ -19073,7 +19096,7 @@ function updateDropsAndFX(dt){
     if(d.t<=0){disposeObject3D(d.mesh);dying.splice(i,1);}}   // #22: dead mobs leaked their geometry + skin texture (same teardown as streamMonsters despawn)
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];b.sp.position.x+=b.vx*dt;b.sp.position.y+=b.vy*dt;
     b.sp.position.z+=b.vz*dt;b.vy-=dt*6;b.t-=dt;b.sp.material.opacity=clamp(b.t*2.5,0,1);
-    if(b.t<=0){scene.remove(b.sp);b.sp.material.dispose();bursts.splice(i,1);}}   // #22: material only — the CIRC map is shared
+    if(b.t<=0){releaseBurstSprite(b.sp);bursts.splice(i,1);}}   // #796: recycle the sprite instead of disposing its material
   // lifestone shimmer
   for(const ls of lifestones){   // AC lifestones stand STILL — only the inner light breathes
     const u=ls.mesh&&ls.mesh.userData; if(!u) continue;   // real AC crystal model may still be streaming in
