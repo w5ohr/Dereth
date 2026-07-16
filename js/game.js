@@ -31537,28 +31537,117 @@ document.getElementById('closeTink').onclick=closeTinker;
 //  SAVE / LOAD  (localStorage)
 // ============================================================================
 const SAVE_KEY="dereth_save_v1";
+// ── #784: THE SAVE SCHEMA AS DATA ───────────────────────────────────────────────────────────────
+// One table drives BOTH directions: saveGame writes s[k]=save(player) (default: player[k]) and
+// applySaveObj assigns player[k]=load(s) (default: type-coerce via `t` with default `d`). Adding a
+// field is ONE entry — the two hand-maintained parallel literals can no longer drift apart.
+// Fields with multi-statement load logic (spells/hotbar), non-player globals (quests, calendar,
+// keymap), and position live in the explicit bespoke sections of saveGame/applySaveObj below.
+// Old-schema fixups live in SAVE_MIGRATIONS (versioned), not inline conditionals.
+function DEFAULT_APPEARANCE(race){ return {race:race||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}; }
+const _SV={ int:v=>v|0, num:v=>+v||0, str:(v,d)=>v||d||"", bool:v=>!!v, orNull:v=>v||null,
+  arr:v=>Array.isArray(v)?v:[], obj:v=>(v&&typeof v==="object")?v:{}, objOrNull:v=>(v&&typeof v==="object")?v:null };
+const SAVE_SCHEMA=[
+  {k:"level",load:s=>(+s.level>0?Math.floor(+s.level):1)},
+  {k:"xp",t:"num"},{k:"xpUnspent",t:"num"},{k:"skillPts",t:"num"},
+  {k:"freeRank",save:p=>p.freeRank||null,t:"obj"},
+  {k:"kills",t:"int"},
+  {k:"gold",load:s=>Math.max(0,Math.min(2e9,Math.floor(+s.gold||0)))},   // #292: clamp, not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR
+  {k:"armor",t:"int"},
+  {k:"inv",t:"arr"},
+  {k:"materials",load:s=>s.materials||0},
+  {k:"salvage",t:"obj"},{k:"craft",t:"obj"},
+  {k:"weaponTink",t:"num"},{k:"armorTink",t:"num"},
+  {k:"weapon",t:"orNull"},
+  {k:"armorSlots",t:"obj"},                       // pre-versioned armorItem migration: SAVE_MIGRATIONS
+  {k:"jewelry",t:"obj"},                          // pre-versioned ringItem/neckItem migration: SAVE_MIGRATIONS
+  {k:"skills",load:s=>migrateSkills(s.skills)},
+  {k:"patronInfo",save:p=>p.patronInfo||null,t:"objOrNull"},
+  {k:"vassals",t:"arr"},                          // per-entry normalization stays a bespoke step (needs player.level)
+  {k:"monarch",t:"orNull"},
+  {k:"vassalXP",t:"int"},
+  {k:"allegianceMOTD",save:p=>p.allegianceMOTD||null,t:"orNull"},
+  {k:"vitae",t:"num"},
+  {k:"heritage",t:"str",d:"aluvian"},
+  {k:"allegianceName",save:p=>p.allegianceName||null,t:"orNull"},
+  {k:"vitals",load:s=>(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0}},
+  {k:"aetheria",save:p=>p.aetheria||null,load:s=>(s.aetheria&&typeof s.aetheria==="object")?{blue:s.aetheria.blue||null,yellow:s.aetheria.yellow||null,red:s.aetheria.red||null}:{blue:null,yellow:null,red:null}},
+  {k:"attrInnate",save:p=>p.attrInnate||null,t:"objOrNull"},   // pre-parity saves: attrInnate() falls back to min(attr,100)
+  {k:"greeters",save:p=>p.greeters||{},t:"obj"},
+  {k:"academy",save:p=>p.academy||{},load:s=>(s.academy&&typeof s.academy==="object")?s.academy:{done:1}},   // pre-Academy saves have long left the grounds
+  {k:"packs",save:p=>p.packs||[],t:"arr"},
+  {k:"name",t:"str",d:"Adventurer"},
+  {k:"appearance",load:s=>Object.assign(DEFAULT_APPEARANCE(s.heritage),(s.appearance&&typeof s.appearance==="object")?s.appearance:{})},
+  {k:"potHealth",t:"num"},{k:"potMana",t:"num"},{k:"potGreat",t:"num"},{k:"potStam",t:"num"},
+  {k:"tapers",t:"num"},{k:"prismTapers",t:"num"},
+  {k:"elixMight",t:"num"},{k:"elixSwift",t:"num"},
+  {k:"achievements",load:s=>s.achievements||[]},
+  {k:"title",t:"str"},
+  {k:"bossKills",t:"num"},{k:"championKills",t:"num"},{k:"delves",t:"num"},
+  {k:"delveCredited",t:"arr"},
+  {k:"bestiary",load:s=>s.bestiary||[]},
+  {k:"clearedDungeons",load:s=>s.clearedDungeons||[]},
+  {k:"society",load:s=>(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null},
+  {k:"societyRep",t:"int"},
+  {k:"societyRibbons",save:p=>p.societyRibbons||0,t:"int"},
+  {k:"societyTest",save:p=>p.societyTest||null,t:"orNull"},
+  {k:"societyTestsDone",save:p=>p.societyTestsDone||[],t:"arr"},
+  {k:"arcsDone",load:s=>Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[]},
+  {k:"augment",load:s=>(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}}},
+  {k:"packBonus",t:"int"},
+  {k:"house",load:s=>(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]}},
+  {k:"homestead",save:p=>p.homestead||null,load:s=>(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null},
+  {k:"hsRebuyUntil",save:p=>p.hsRebuyUntil||0,t:"num"},
+  {k:"ship",save:p=>p.ship||null,load:s=>(s.ship&&typeof s.ship==="object"&&shipDef(s.ship.type))?{type:s.ship.type,x:(typeof s.ship.x==="number")?s.ship.x:null,z:(typeof s.ship.z==="number")?s.ship.z:null,yaw:+s.ship.yaw||0}:null},
+  {k:"kcVault",save:p=>p.kcVault||{},t:"obj"},
+  {k:"kcHookItems",save:p=>p.kcHookItems||{},t:"obj"},
+  {k:"luminance",t:"int"},{k:"lumUnlocked",t:"bool"},{k:"auras",t:"obj"},{k:"enlightenment",t:"int"},
+  {k:"tiedPortal",t:"objOrNull"},
+  {k:"tiedPortal2",save:p=>p.tiedPortal2||null,t:"objOrNull"},   // #330: Secondary Portal Tie must persist
+  {k:"createTown",save:p=>p.createTown||null,load:s=>s.createTown||player.createTown||null},         // #330: chargen routing
+  {k:"createTemplate",save:p=>p.createTemplate||null,load:s=>s.createTemplate||player.createTemplate||null},
+  {k:"createSpec",save:p=>p.createSpec||null,load:s=>Array.isArray(s.createSpec)?s.createSpec:(player.createSpec||null)},
+  {k:"eventTitles",load:s=>Array.isArray(s.eventTitles)?s.eventTitles.slice():[]},
+  {k:"itemBuffs",t:"obj"},   // Item-Enchantment buffs live on gear, so they survive death/relog with their timer
+  {k:"dye",load:s=>(typeof s.dye==="number")?s.dye:null},
+  {k:"colosseumClears",t:"int"},{k:"advColosseumClears",t:"int"},
+  {k:"rarePity",t:"int"},   // I6 rare-drop pity counter
+  {k:"focusMana",t:"num"},  // H15 focus mana battery
+  // spells: knownSpells/hotbar/loadouts save as plain player fields but load via the bespoke
+  // multi-statement step in applySaveObj (defaults seeding, unknown-id drops, QB padding).
+  {k:"knownSpells",load:null},{k:"hotbar",load:null},{k:"loadouts",load:null},
+];
+// ── versioned migration pipeline: each entry upgrades a save IN PLACE to version v. The old
+//    inline old-schema conditionals live here now; add new entries (v:3, …) for future changes.
+const SAVE_VERSION=2;
+const SAVE_MIGRATIONS=[
+  {v:2,up(s){   // everything pre-dating the versioned pipeline
+    if(!s.armorSlots&&s.armorItem) s.armorSlots={chest:s.armorItem};                        // ancient single-slot armour
+    if(!s.jewelry&&(s.ringItem||s.neckItem)){ const j={}; if(s.ringItem)j.lfinger=s.ringItem; if(s.neckItem)j.neck=s.neckItem; s.jewelry=j; }
+    if(s.patron&&!s.patronInfo) s.patronInfo={name:s.monarch||vassalName(),level:Math.floor(+s.level>0?+s.level:1)+5,sworn:Date.now(),ig:0};   // patron:bool → pyramid record
+    if(!Array.isArray(s.activeQuests)&&s.questActive&&s.questIdx!=null&&QUESTS[s.questIdx|0]){   // single-active journal → multi-quest
+      const q=QUESTS[s.questIdx|0];
+      s.activeQuests=[{id:q.id,prog:(Array.isArray(s.questProg)&&s.questProg.length===q.obj.length)?s.questProg.slice():q.obj.map(()=>0)}];
+    }
+    if(!s.sagaVer){ s.gameMonth=0; s.sagaProg={}; }   // pre-saga saves (the old "Fifth Sending" loop) begin the Kilmer Saga at the Coronation
+  }},
+];
+function upgradeSaveObj(s){
+  const from=+s.saveVersion||1;
+  for(const m of SAVE_MIGRATIONS) if(m.v>from) try{ m.up(s); }catch(e){}
+  s.saveVersion=SAVE_VERSION;
+  return s;
+}
 function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the localStorage safety-net even while online
   try{
     const baseAttr={}; for(const a in player.attr) baseAttr[a]=player.attr[a]-((player.spellBuffs&&player.spellBuffs[a])?player.spellBuffs[a].v:0);
-    const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
-      skillPts:player.skillPts,freeRank:player.freeRank||null,kills:player.kills,gold:player.gold,armor:player.armor,
-      inv:player.inv,materials:player.materials,salvage:player.salvage,craft:player.craft,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,aetheria:player.aetheria||null,attrInnate:player.attrInnate||null,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
-      name:player.name,appearance:player.appearance,
-      potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
-      tapers:player.tapers,prismTapers:player.prismTapers,
-      elixMight:player.elixMight,elixSwift:player.elixSwift,
-      achievements:player.achievements,title:player.title,bossKills:player.bossKills,
-      championKills:player.championKills,delves:player.delves,delveCredited:player.delveCredited,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
-      boundLS:lifestones.findIndex(l=>l.bound),boundLSAt:(()=>{const l=lifestones.find(x=>x.bound);return l?{name:l.name,x:l.x,z:l.z}:null;})(),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,kcVault:player.kcVault||{},kcHookItems:player.kcHookItems||{},
-      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
-      tiedPortal2:player.tiedPortal2||null,createTown:player.createTown||null,createTemplate:player.createTemplate||null,createSpec:player.createSpec||null,   // #330: these were set but never persisted — Secondary Portal Tie evaporated on relog, and a relog mid-Academy rerouted every heritage to Holtburg
-      gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
-      knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
+    const s={attr:baseAttr,saveVersion:SAVE_VERSION,
+      boundLS:lifestones.findIndex(l=>l.bound),boundLSAt:(()=>{const l=lifestones.find(x=>x.bound);return l?{name:l.name,x:l.x,z:l.z}:null;})(),
+      activeQuests,questDone,tracked,taskReps,taskCooldown,
+      gameMonth,calendarDone,worldDays,sagaProg,sagaVer:1,
       keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
-      dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
+    for(const f of SAVE_SCHEMA) s[f.k]=f.save?f.save(player):player[f.k];
     if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
       if(alsoLocal){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(s)); }catch(e){} } }   // #457: logout also writes the local safety-net so a socket drop mid-logout can't black-hole progress
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
@@ -31571,30 +31660,17 @@ function applySave(){
 }
 function applySaveObj(s){
   if(!s||typeof s!=="object") return false;
+  upgradeSaveObj(s);   // #784: versioned old-schema fixups run FIRST, in place — the field loads below see current-schema data
   // #15: default/sanitize the core fields so a corrupt, truncated, or old-schema save (missing/wrong
   //      `attr`/`level`/`xp`/…) degrades gracefully instead of crashing the load with an unrecoverable
-  //      undefined-attr state. Newer fields below already default; these ancient ones didn't.
+  //      undefined-attr state.
   const _attr=(()=>{ const b={Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10};
     if(s.attr&&typeof s.attr==="object") for(const k in b){ const v=+s.attr[k]; if(isFinite(v)&&v>0) b[k]=v; } return b; })();
-  Object.assign(player,{attr:_attr,level:(+s.level>0?Math.floor(+s.level):1),xp:+s.xp||0,xpUnspent:+s.xpUnspent||0,skillPts:+s.skillPts||0,freeRank:(s.freeRank&&typeof s.freeRank==="object")?s.freeRank:{},
-    vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
-    attrInnate:(s.attrInnate&&typeof s.attrInnate==="object")?s.attrInnate:null,   // pre-parity saves: current values become the innate line (attrInnate() falls back to min(attr,100))
-    greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
-    academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
-    packs:Array.isArray(s.packs)?s.packs:[],
-    kills:s.kills|0,gold:Math.max(0,Math.min(2e9,Math.floor(+s.gold||0))),armor:s.armor|0,inv:Array.isArray(s.inv)?s.inv:[],materials:s.materials||0,salvage:(s.salvage&&typeof s.salvage==="object")?s.salvage:{},craft:(s.craft&&typeof s.craft==="object")?s.craft:{},   // #292: gold via clamp not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR; clamp to [0,2e9] to match the server's coin ceiling
-    weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
-    potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
-    tapers:s.tapers||0,prismTapers:s.prismTapers||0,
-    elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
-    achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
-    championKills:s.championKills||0,delves:s.delves||0,delveCredited:Array.isArray(s.delveCredited)?s.delveCredited:[],bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
-    weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
-    jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
-    skills:migrateSkills(s.skills),patronInfo:(s.patronInfo&&typeof s.patronInfo==="object")?s.patronInfo:null,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,allegianceMOTD:s.allegianceMOTD||null,vitae:s.vitae||0,heritage:s.heritage||"aluvian",allegianceName:s.allegianceName||null,
-    name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}});
-  // allegiance migration: old saves held patron:bool + vassals:[{name}] — lift them into the pyramid
-  if(s.patron&&!player.patronInfo) player.patronInfo={name:s.monarch||vassalName(),level:player.level+5,sworn:Date.now(),ig:0};
+  player.attr=_attr;
+  // #784: the schema drives every symmetric field (see SAVE_SCHEMA) — one entry, both directions.
+  for(const f of SAVE_SCHEMA){ if(f.load===null) continue;
+    player[f.k]=f.load?f.load(s):_SV[f.t||"orNull"](s[f.k],f.d); }
+  player.gearSkill={};   // rebuilt below by recomputeGearSkill()
   player.vassals=player.vassals.map(v=>{
     if(typeof v==="string") v={name:v};
     if(v&&v.level==null) v=Object.assign({level:Math.max(1,(player.level|0)-irnd(2,10)),
@@ -31607,54 +31683,29 @@ function applySaveObj(s){
   player.loadouts=Array.isArray(s.loadouts)?s.loadouts.filter(l=>l&&l.name&&Array.isArray(l.bar)).slice(0,8):[];
   while(player.hotbar.length<QB_TOTAL) player.hotbar.push(null);
   buildSpellbar();
-  // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
-  player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
   questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
   taskReps=(s.taskReps&&typeof s.taskReps==="object")?Object.assign({},s.taskReps):{};
   taskCooldown=(s.taskCooldown&&typeof s.taskCooldown==="object")?Object.assign({},s.taskCooldown):{};
-  player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
-  player.societyRep=s.societyRep|0;
-  player.societyRibbons=s.societyRibbons|0; player.societyTest=s.societyTest||null; player.societyTestsDone=Array.isArray(s.societyTestsDone)?s.societyTestsDone:[];
-  player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
-  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}};
-  player.aetheria=(s.aetheria&&typeof s.aetheria==="object")?{blue:s.aetheria.blue||null,yellow:s.aetheria.yellow||null,red:s.aetheria.red||null}:{blue:null,yellow:null,red:null};
-  player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
-  player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
-  player.tiedPortal2=(s.tiedPortal2&&typeof s.tiedPortal2==="object")?s.tiedPortal2:null;   // #330: restore the Secondary Portal Tie
-  if(s.createTown) player.createTown=s.createTown; if(s.createTemplate) player.createTemplate=s.createTemplate; if(Array.isArray(s.createSpec)) player.createSpec=s.createSpec;   // #330: restore chargen routing (Academy exit / greeter / welcome all key on createTown)
+  // #784: coordinate migrations + load side effects (the schema loaded the raw fields above)
   if(player.tiedPortal){ const _m=WSCALE/(s.wscale||1); if(_m!==1){ player.tiedPortal.x*=_m; player.tiedPortal.z*=_m; } }   // migrate tied-portal coords
-  player.packBonus=s.packBonus|0;
-  player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0; player.advColosseumClears=s.advColosseumClears|0;   // H7 armour dye + H16 clears
-  player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
-  player.focusMana=+s.focusMana||0;   // H15 focus mana battery
-  player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
-  player.homestead=(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null;
   if(player.homestead&&player.homestead.hid!=null){ hsClaimLocal(player.homestead.hid); hsSyncHouse(); }   // #355: re-assert ownership of our plot on load (+ re-sync online)
-  player.kcVault=(s.kcVault&&typeof s.kcVault==="object")?s.kcVault:{};                 // Kilmer's castle chest contents
-  player.kcHookItems=(s.kcHookItems&&typeof s.kcHookItems==="object")?s.kcHookItems:{};  // castle hook placements (deviations from defaults)
-  player.hsRebuyUntil=+s.hsRebuyUntil||0;
   player.aboardShip=null;   // always start a session ashore
-  player.ship=(s.ship&&typeof s.ship==="object"&&shipDef(s.ship.type))?{type:s.ship.type,x:(typeof s.ship.x==="number")?s.ship.x:null,z:(typeof s.ship.z==="number")?s.ship.z:null,yaw:+s.ship.yaw||0}:null;
   if(player.ship&&player.ship.x!=null){ const _sm=WSCALE/(s.wscale||1); if(_sm!==1){ player.ship.x*=_sm; player.ship.z*=_sm; } }   // migrate ship coords across a world-scale change
   if(typeof hsMigrateDeed==="function"&&_hsPackOn) hsMigrateDeed();
   if(typeof hsRefreshHomestead==="function"&&typeof hsCrystals!=="undefined"&&(hsCrystals.length||_hsPackOn)) hsRefreshHomestead();
   if(typeof hsRentTick==="function") hsRentTick();
-  if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
+  if(Array.isArray(s.activeQuests)){                              // multi-quest journal (SAVE_MIGRATIONS lifts the old single-active form)
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
       if(a.deadline) e.deadline=a.deadline;   // preserve timed-quest deadline across relog (may already be expired)
       return e; });
-  } else if(s.questActive && s.questIdx!=null && QUESTS[s.questIdx|0]){   // migrate old single-active save
-    const q=QUESTS[s.questIdx|0];
-    activeQuests=[{id:q.id, prog:(Array.isArray(s.questProg)&&s.questProg.length===q.obj.length)?s.questProg.slice():q.obj.map(()=>0)}];
   } else activeQuests=[];
   tracked=(s.tracked&&isActive(s.tracked))?s.tracked:trackedId();
   gameMonth=s.gameMonth|0; eventClock=0; calendarDone=(s.calendarDone&&typeof s.calendarDone==="object")?s.calendarDone:{};
   sagaProg=(s.sagaProg&&typeof s.sagaProg==="object")?s.sagaProg:{};
-  if(!s.sagaVer){ gameMonth=0; sagaProg={}; }   // pre-saga saves (the old "Fifth Sending" loop) begin the Kilmer Saga at the Coronation
   worldDays=(typeof s.worldDays==="number"&&isFinite(s.worldDays))?s.worldDays:120;   // older saves join at the dawn of Verdantine
   _seasonIdx=-1; seasonTick();
-  player.eventTitles=Array.isArray(s.eventTitles)?s.eventTitles.slice():[]; updateSeasonHUD();
+  updateSeasonHUD();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
   if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
   if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // show the loaded armour on the body
