@@ -98,8 +98,15 @@ hotbar slot. Online **chat** also takes slash commands: **`/who`** (who's online
 ### Combat & magic
 
 - **Classless, attribute-driven progression** — the six AC attributes (Strength, Endurance,
-  Coordination, Quickness, Focus, Self) with XP-bought ranks. Vitals (Health, Stamina, Mana) derive
-  from attributes and can also be raised directly with XP on the character sheet. You are what you train.
+  Coordination, Quickness, Focus, Self), raised in ranks with XP (innate 10–100 at creation, up to +190
+  more, each rank costing more than the last). Vitals (Health, Stamina, Mana) derive from attributes —
+  Health from Endurance, Stamina from Endurance, Mana from Self — and can also be raised directly with XP
+  on the character sheet. You are what you train.
+- **AC's two-currency skill system** — **skill credits** (52 at creation, more each level) decide *which*
+  skills you own: spend them to **train** a skill, or **specialize** a trained one (with a 70-credit spec
+  cap) for a **+5 bonus**, cheaper XP per rank, and a higher ceiling (226 ranks vs 208). Then spend **XP**
+  to **raise** a trained skill's ranks along the authentic AC per-rank cost curves. Untrained skills work
+  only at their attribute base; Horse Riding and Sailing come free-trained.
 - **A full spellbook of leveled spells** across the schools, each at multiple levels with rising skill
   requirements: **War Magic** elemental bolts and storms, **Life Magic** (heals, drains, protections,
   vulnerabilities), **Creature Enchantment** attribute self-buffs, **Item Enchantment** aptitudes and
@@ -245,8 +252,9 @@ party members, and world bosses show on the minimap and world map online.
 
 ### Character progression & achievements
 
-- **Skills** — train weapon and magic skills on the character sheet (`C`); once you reach the level gate
-  you may swear an **Allegiance** for bonus XP.
+- **Skills** — spend **skill credits** to train (or specialize) weapon, magic, and trade skills on the
+  character sheet (`C`), then pour **XP** into raising their ranks; once you reach the level gate you may
+  swear an **Allegiance** for bonus XP.
 - **Achievements & titles** — earn milestone achievements (First Blood, Slayer, Giant Killer, Delver,
   Queenslayer, Pyreal Magnate, Archmage…), each granting a **title** shown under your name; **873 retail
   titles** are available. The full list lives in the character sheet.
@@ -313,6 +321,8 @@ firewall, backups).
 ## What it captures from Asheron's Call
 
 - **Classless, attribute-driven progression** — the six AC attributes; you are what you train.
+- **The two-currency skill system** — skill credits train/specialize skills; XP raises their ranks along
+  the authentic AC cost curves, with specialization's +5 bonus, cheaper ranks, and higher ceiling.
 - **Vitals derived from attributes** — Health, Stamina, Mana, AC-style, plus direct XP investment.
 - **The eight schools of magic** — War, Life, Creature/Item Enchantment, recall spells, tapers and mana
   stones, cantrips and aptitudes.

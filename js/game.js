@@ -26916,10 +26916,13 @@ Turn pages with  Next ▸  and  ◂ Prev .  Press  ${mk}  to open the handbook a
 • AETHERIA slots with levels and sets for combat SURGES. ATTRIBUTE GEMS raise a core attribute (to its natural peak); BUFF ELIXIRS (Might, Swiftness) grant temporary boosts shown in your status panel.`);
   P.push(`YOUR CHARACTER — ATTRIBUTES, VITALS & SKILLS
 
-• Six ATTRIBUTES: Strength, Endurance, Coordination, Quickness, Focus, Self — bought up in ranks with unspent XP (innate cap 100).
-• VITALS (Health, Stamina, Mana) derive from your attributes and can also be raised directly with XP on the Character Sheet.
-• SKILLS: train and specialize weapon and magic skills; higher spell tiers need a higher skill in that school. Credits gate what you can train. TRADE skills (Mining, Blacksmithy, Tailoring…) and the MOUNT/VESSEL skills (Horse Riding, Sailing) round out your craft — trade levels also climb with use.
-• Open the CHARACTER SHEET to spend XP, review skills and vitals, and read your titles. Everything auto-saves — to the server online, to the browser offline.`);
+• Two currencies drive your growth, just as in Asheron's Call. SKILL CREDITS decide WHICH skills you have; EXPERIENCE (XP) makes the skills and attributes you own STRONGER.
+• Six ATTRIBUTES: Strength, Endurance, Coordination, Quickness, Focus, Self — raised in ranks with XP (innate 10–100 set at creation, up to +190 more from XP; the cost per rank climbs as it rises).
+• VITALS (Health, Stamina, Mana) derive from your attributes — Health from Endurance, Stamina from Endurance, Mana from Self — and can also be raised directly with XP on the Character Sheet.
+• SKILL CREDITS (52 at creation, more with each level) TRAIN a skill so you can use and raise it, or SPECIALIZE a trained one for a bonus. Specializing costs extra credits (with a 70-credit spec cap) but grants a +5 skill bonus, cheaper XP per rank, and a higher ceiling (226 ranks vs 208). Horse Riding and Sailing come free-trained.
+• Then spend XP to RAISE a trained skill's ranks — each rank costs more than the last. Untrained skills work only at their attribute base and can't be raised; higher spell tiers need a higher skill in that school.
+• TRADE skills (Mining, Blacksmithy, Tailoring…) round out your craft — their working level also climbs with USE.
+• Open the CHARACTER SHEET to spend credits and XP, review skills and vitals, and read your titles. Everything auto-saves — to the server online, to the browser offline.`);
   P.push(`ADVANCEMENT — AUGMENTATIONS, TITLES & ENLIGHTENMENT
 
 • AUGMENTATIONS grant permanent attribute/skill boosts (capped).
