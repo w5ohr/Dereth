@@ -3235,7 +3235,8 @@ function updateDayNight(dt){
   amb.intensity=0.12+daylight*0.22;
   // #21 (windows): glass panes glow warm as lamps come on — full lamplight at night, a faint sheen by day
   { const wglow=0.05+(1-daylight)*0.7;
-    for(let i=0;i<tbWindowMats.length;i++) tbWindowMats[i].emissiveIntensity=wglow; }
+    if(Math.abs(wglow-_tbWindowGlow)>0.003){ _tbWindowGlow=wglow;   // #799: daylight creeps sub-perceptibly most frames — only rewrite when the glow actually moved (each write is a per-material node/uniform update on WebGPU)
+      for(let i=0;i<tbWindowMats.length;i++) tbWindowMats[i].emissiveIntensity=wglow; } }
   updateEnvIntensity(daylight);
   TER.uOn.value=(TER.ready&&GFX.tier>=1&&!inDungeon&&!inNetwork)?1:0;   // #693: splat on Medium+, overworld only (tier 0 keeps the legacy single tile)
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
@@ -8405,6 +8406,7 @@ const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load(acTexURL('actownmodels/tex/'+fn)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
+let _tbWindowGlow=-1;    // #799: last-applied window glow, so we skip the per-material rewrite when daylight hasn't perceptibly moved
 function tbModelReq(did){ did=(''+did).toUpperCase();
   if(_tbModels[did]!==undefined) return (_tbModels[did]&&_tbModels[did].ready)?_tbModels[did]:null;
   const idx=tbIndexReq(); if(idx===null) return null;                 // index still loading
