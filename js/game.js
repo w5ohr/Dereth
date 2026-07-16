@@ -16364,7 +16364,7 @@ function applyItem(it){
   if(it.stat==="weapon"||it.stat==="worn"||it.stat==="jewelry"){ return equipItem(it)===false?"keep":undefined; }  // "keep" leaves an un-wieldable item in the satchel
   if(it.stat==="armor"){player.armor+=it.v;log(`Equipped <b>${it.name}</b> (+${it.v} armor).`,"loot");}
   else if(it.stat==="hp"){ if(player.hp>=player.mhp){ log("Your health is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; }   // #318: don't burn a heal/kit at full HP
-    const h=healScale(it.v);player.hp=Math.min(player.mhp,player.hp+h);
+    const h=healScale(+it.v||0);player.hp=Math.min(player.mhp,player.hp+h);   // #870: a non-finite v (corrupt save / malformed item) made hp NaN forever
     if(/healing kit/i.test(it.name)){   // retail kits carry multiple uses (Crude 5 … Treated 100), each a Healing-skill application
       const full=/crude/i.test(it.name)?5:/plain/i.test(it.name)?10:/good/i.test(it.name)?15:/excellent/i.test(it.name)?20:/peerless/i.test(it.name)?25:/treated/i.test(it.name)?100:10;
       if(it.uses==null) it.uses=full;
@@ -16374,8 +16374,8 @@ function applyItem(it){
       if((it.count||1)>1) it.uses=full;   // #305: uses lived on the shared stack object — re-seed the NEXT unit to full so it isn't inherited at 0 (a stack of N kits gave N-1 fewer uses); invUseItem then decrements the count
       log(`The <b>${it.name}</b> is used up.`,"sys");
     } else log(`Used <b>${it.name}</b> (+${h} HP${(player.combatT||0)>0?", reduced in combat":""}).`,"loot");}
-  else if(it.stat==="mn"){ if(player.mn>=player.mmn){ log("Your mana is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; } player.mn=Math.min(player.mmn,player.mn+it.v);log(`Used <b>${it.name}</b> (+${it.v} mana).`,"loot");}   // #318: no waste at full
-  else if(it.stat==="st"){ if(player.st>=player.mst){ log("Your stamina is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; } player.st=Math.min(player.mst,player.st+it.v);log(`Used <b>${it.name}</b> (+${it.v} stamina).`,"loot");}   // #318: no waste at full
+  else if(it.stat==="mn"){ if(player.mn>=player.mmn){ log("Your mana is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; } const v=+it.v||0;player.mn=Math.min(player.mmn,player.mn+v);log(`Used <b>${it.name}</b> (+${v} mana).`,"loot");}   // #318: no waste at full · #870: coerce non-finite v (NaN bricked the vital)
+  else if(it.stat==="st"){ if(player.st>=player.mst){ log("Your stamina is already full.","warn"); if(SFX.deny)SFX.deny(); return "keep"; } const v=+it.v||0;player.st=Math.min(player.mst,player.st+v);log(`Used <b>${it.name}</b> (+${v} stamina).`,"loot");}   // #318: no waste at full · #870: coerce non-finite v (NaN bricked the vital)
   else if(it.stat==="food"){ const dur=Math.round(it.dur*(skillTier("cooking")>0?1.3:1)); applyAttrBuff(it.attr,it.v,dur);
     log(`You eat <b>${it.name}</b> — +${it.v} ${it.attr} for ${dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="aetheria"){                                     // slot the medallion — swap out whatever sits in its colour slot
@@ -20197,6 +20197,11 @@ function loop(ts){
       if(console&&console.error)console.error("loop: non-finite player position — restoring last good",player.x,player.y,player.z);
       player.x=loop._lastGood.x; player.y=loop._lastGood.y; player.z=loop._lastGood.z; player.vy=0;
     }
+    // #870: same catch-all for vitals — a NaN hp/mn/st self-perpetuates through every Math.min(max, NaN+heal)
+    // and persists to the save (permanent brick: broken bar, hp<=0 death check never true). Restore to max.
+    if(!Number.isFinite(player.hp)) player.hp=Number.isFinite(player.mhp)?player.mhp:100;
+    if(!Number.isFinite(player.mn)) player.mn=Number.isFinite(player.mmn)?player.mmn:100;
+    if(!Number.isFinite(player.st)) player.st=Number.isFinite(player.mst)?player.mst:100;
   }
   try{ updateLightPool(); }catch(e){ console.error("updateLightPool() failed:",e); }   // #501: same guarantee — a render-side throw here previously skipped requestAnimationFrame() below and froze the camera (and the portal tube, since its maxHold advance lives inside update()) with no recovery
   try{ renderComposite(); }catch(e){ console.error("renderComposite() failed:",e); }   // #501: ditto — a WebGL/composite exception must not kill the loop either
