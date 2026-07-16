@@ -25778,7 +25778,7 @@ function closeShop(){ document.getElementById('shop').style.display="none"; paus
 //    restored on list_fail). Buy: pay-first — gold is deducted only on the server's 'bought'
 //    confirmation, which is also the only path that hands over the item (the server's atomic
 //    claim picks one winner per listing). Proceeds wait at the SAME town's broker until collected.
-const MKT={town:null,tab:"browse",stock:[],mine:[],pendingList:[]};   // #820: FIFO escrow queue — the server answers list requests in order, so listed/list_fail pop the oldest pending item
+const MKT={town:null,tab:"browse",stock:[],mine:[],pendingList:[],applied:new Set()};   // #820: FIFO escrow queue — the server answers list requests in order, so listed/list_fail pop the oldest pending item. #822: `applied` dedups item-crediting settlements by listing id so a replayed frame can't double-add
 function openMarket(n){
   MKT.town=n.town||"?"; MKT.tab="browse"; MKT.stock=[]; MKT.mine=[];
   closeOtherModals("market");
@@ -25858,6 +25858,7 @@ function onMarketMsg(m){
     const price=Math.floor(+m.price||0);
     let it=null; try{ it=JSON.parse(m.item); }catch(e){}
     if(!it||!(price>=0)) return;                                   // AC-3: never credit/debit on malformed fields
+    if(m.id!=null){ if(MKT.applied.has("b"+m.id)) return; MKT.applied.add("b"+m.id); }   // #822: idempotent — a replayed 'bought' (e.g. on reconnect) must not re-credit the item/debit gold
     player.gold=Math.max(0,player.gold-price);                     // pay-first: the deduction rides the confirmation that hands over the item
     addToInv(it,true);                                             // force: a paid-for item must never vanish on a full satchel
     log(`You buy the <b>${esc(String(it.name||"ware"))}</b> for <b>${price}p</b> from ${esc(String(m.seller||"?"))}'s consignment.`,"loot");
@@ -25882,6 +25883,7 @@ function onMarketMsg(m){
     netSend({t:"market",act:"mine"});
   }
   else if(act==="reclaimed"){
+    if(m.id!=null){ if(MKT.applied.has("r"+m.id)) return; MKT.applied.add("r"+m.id); }   // #822: idempotent — a replayed 'reclaimed' must not re-add the item
     let it=null; try{ it=JSON.parse(m.item); }catch(e){}
     if(it){ addToInv(it,true); log(`You take back the <b>${esc(String(it.name||"ware"))}</b>.`,"sys"); saveGame(); }
     netSend({t:"market",act:"mine"});
