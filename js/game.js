@@ -1348,7 +1348,7 @@ fetch(GM_DIR+'ac/breeds.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   }
   console.log("AC breeds: "+Object.keys(j).length+" families, "+looks+" authentic looks.");
 }).catch(()=>{});
-let skyMat,skyDomeMesh,hemi,amb,starMat,starField,starSprites,sunSprite,sunHalo,moonSprite,moon2Sprite,moonHalo,moon2Halo,cloudGroup,waterGlint,gameTime=0.35,boss=null;
+let skyMat,skyDomeMesh,hemi,amb,starMat,starField,starSprites,sunSprite,sunHalo,moonSprite,moon2Sprite,moonHalo,moon2Halo,cloudGroup,cloudMat,waterGlint,gameTime=0.35,boss=null;   // #795: cloudMat is the single shared cloud-blob material
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
 let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
@@ -3020,10 +3020,15 @@ function buildMoon2(){   // amber cratered moon (sky obj 0x01001F67, tex 0600389
 function buildClouds(){
   cloudGroup=new THREE.Group();
   const ctex=softTex("rgba(255,255,255,0.95)","rgba(255,255,255,0)");
+  // #795: ONE shared material for every cloud blob. All blobs always render with the SAME tint+opacity
+  // (the day/weather sky colour), so the old per-blob SpriteMaterial meant re-coloring ~300 materials
+  // every frame; with a shared material it's one write. Scale/position stay per-Sprite. _acShared so a
+  // stray disposeObject3D can't blank the whole sky by freeing the material out from under the others.
+  cloudMat=new THREE.SpriteMaterial({map:ctex,transparent:true,opacity:0.92,fog:false,depthWrite:false}); cloudMat._acShared=true;
   for(let i=0;i<52;i++){
     const puff=new THREE.Group();
     const blobs=irnd(4,8);
-    for(let b=0;b<blobs;b++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:ctex,transparent:true,opacity:0.92,fog:false,depthWrite:false}));
+    for(let b=0;b<blobs;b++){const sp=new THREE.Sprite(cloudMat);
       const sc=rnd(140,320);sp.scale.set(sc,sc*rnd(0.5,0.66),1);sp.position.set(rnd(-210,210),rnd(-30,30),0);puff.add(sp);}
     puff.position.set(rnd(-WORLD*0.5,WORLD*0.5),rnd(400,820),rnd(-WORLD*0.5,WORLD*0.5));
     puff.userData.spd=rnd(4,11);cloudGroup.add(puff);
@@ -3311,16 +3316,17 @@ function updateDayNight(dt){
       moon2Halo.material.color.copy(moon2Sprite.material.color);
       moon2Halo.material.opacity=moon2Sprite.material.opacity*0.4*(0.35+0.65*lit2);}}
   // drifting clouds, fading at night, wrapping across the sky, following the player
-  if(cloudGroup){
+  if(cloudGroup&&cloudMat){
     const wcx=Math.cos(windDir), wcz=Math.sin(windDir);                 // clouds ride the wind vector (both axes)
     const op=(0.2+daylight*0.7)*clamp(0.55+cloudCover*0.6,0,1);         // denser, opaquer sky under overcast & storm
     _tmp.copy(_skyDay).lerp(_cWarm,warm*0.6).multiplyScalar(0.45+0.55*clamp(daylight*1.6,0,1));   // white day · warm dusk · dim night
     _tmp.lerp(_stormGrey, clamp((cloudCover-0.65)/0.35,0,1)*0.7);       // storm/overcast clouds turn grey
+    cloudMat.opacity=op; cloudMat.color.copy(_tmp);                     // #795: one write on the shared material — every blob picks it up
     for(const p of cloudGroup.children){ const spd=windSpd*(0.6+p.userData.spd*0.055);   // per-puff parallax on the wind
       p.position.x+=wcx*spd*dt; p.position.z+=wcz*spd*dt;
       if(p.position.x>player.x+WORLD*0.5)p.position.x-=WORLD;else if(p.position.x<player.x-WORLD*0.5)p.position.x+=WORLD;
       if(p.position.z>player.z+WORLD*0.5)p.position.z-=WORLD;else if(p.position.z<player.z-WORLD*0.5)p.position.z+=WORLD;
-      for(const sp of p.children){sp.material.opacity=op;sp.material.color.copy(_tmp);}}}
+    }}
   // reflective water: gentle swell + scrolling ripple normals + a sun glint streak near the player
   if(waterMesh){ waterMesh.position.y=Math.sin(now()/1100)*0.12+(typeof sagaTide==="function"?sagaTide():0);   // #683: Y9+ the Wrong Tide holds the sea high
     const t=now()/1000;
