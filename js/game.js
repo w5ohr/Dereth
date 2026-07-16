@@ -19162,7 +19162,7 @@ function animateAvatar(dt){
   const u=playerAvatar.userData;
   idleT+=dt;
   updateShieldModel();                                        // reflect the equipped off-hand shield
-  const moving=!!(held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"])&&player.alive
+  const moving=!!(held("forward")||held("back")||held("left")||held("right")||keys["arrowup"]||keys["arrowdown"]||keys["arrowleft"]||keys["arrowright"]||autoRun)&&player.alive   // #910: auto-run (Q, VTank chase, touch run-lock) moves the body through the same physics path — animate the gait too, don't glide in the idle pose
     &&!player.mountRec;   // #735: in the saddle the LEGS sit still — the horse does the running (seat bob + lean sell the motion)
   const sw=player.swing, actGesture=!!(player.act&&player.act.t>0);
   const acting=sw>0||castShow>0||(player.bowDraw>0&&weaponMode==="bow")||actGesture;
