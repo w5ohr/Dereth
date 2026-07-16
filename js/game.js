@@ -53,7 +53,7 @@ const CFG={
 };
 
 // ---------- attributes (AC's six) ----------
-const ATTRS=["Strength","Endurance","Coordination","Quickness","Focus","Self"];
+// ATTRS → js/data/ac-tables.js (#778)
 // ---- AC skill system (E1) ----------------------------------------------------------------
 // Full retail skill list grouped by family. Fields: k=key, n=name, fam=family, a=attr formula
 // inputs, d=divisor (value base = floor(sum(a)/d); d:0 = no attribute formula), tc=train credit
@@ -186,7 +186,7 @@ try{ fetch('assets/acitems.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j
 }).catch(()=>{}); }catch(e){}
 const AC_TITLE_SMALL=/^(of|the|a|an|and|in|to)$/;
 function acTitle(n){ return n.split(" ").map((w,i)=>(i>0&&AC_TITLE_SMALL.test(w))?w:w.charAt(0).toUpperCase()+w.slice(1)).join(" "); }
-const AC_WT_BY_SKILL={1:"axe",4:"dagger",5:"mace",9:"spear",10:"staff",11:"sword",12:"atlatl",2:"bow",3:"crossbow",8:"atlatl",41:"twohand",44:"sword",45:"dagger",46:"dagger",47:"bow"};
+// AC_WT_BY_SKILL → js/data/ac-tables.js (#778)
 function rollACItem(rare,tier){   // a REAL retail item of the right tier, exact specs via acItemize
   if(!AC_POOLS) return null;
   const t=clamp((tier|0)||1,1,5), r=Math.random();
@@ -231,7 +231,7 @@ let _gearManaAcc=0;
 function _rnum(s){ const m=/\b([ivx]+)\s*$/i.exec(s); if(!m) return 4;   // trailing roman numeral → spell rank (default IV)
   const R={i:1,v:5,x:10}; let n=0,p=0; const t=m[1].toLowerCase();
   for(let i=t.length-1;i>=0;i--){ const v=R[t[i]]; n+=v<p?-v:v; if(v>p)p=v; } return clamp(n,1,8); }
-const _APT_SKILL={"heavy weapon":"heavy","light weapon":"light","finesse weapon":"finesse","two handed combat":"twohand","missile weapon":"missile","war magic":"war","life magic":"life","creature enchantment":"creature","item enchantment":"item","void magic":"void","melee defense":"meleed","missile defense":"missiled","invulnerability":"meleed","impregnability":"missiled","magic resistance":"magicd","healing":"healing","arcane lore":"arcane","mana conversion":"mana","lockpick":"lockpick","salvaging":"salvaging","shield":"shield"};
+// _APT_SKILL → js/data/ac-tables.js (#778)
 function itemSpellFx(nm){   // one retail spell name → a typed worn effect (null = lore-only, shown but inert)
   const n=nm.toLowerCase(), r=_rnum(n);
   const apt=/(minor|moderate|major|epic|legendary)\s+(.+?)\s+(aptitude|prowess)/.exec(n);
@@ -261,7 +261,7 @@ function itemSpellNames(it){   // resolve an item's numeric acspells ids to thei
   if(!it||!it.acspells||!it.acspells.length||typeof AC_SPELLS==="undefined"||!AC_SPELLS||!AC_SPELLS.spells) return [];
   return it.acspells.map(id=>{ const e=AC_SPELLS.spells[String(id)]; return e?e.n:null; }).filter(Boolean);
 }
-const CANTRIP_TIERS=[["Minor",3],["Major",6],["Epic",9],["Legendary",12]];
+// CANTRIP_TIERS → js/data/ac-tables.js (#778)
 function initItemMagic(it,tier,work,rare){   // spellcraft + mana pool + Arcane Lore gate for anything that carries magic
   const n=(it.cantrips?it.cantrips.length:0)+(it.acspells?it.acspells.length:0);
   if(!n) return;
@@ -271,13 +271,12 @@ function initItemMagic(it,tier,work,rare){   // spellcraft + mana pool + Arcane 
   if(!it.reqArcane) it.reqArcane=Math.round(Math.max(10,it.spellcraft*0.5));   // retail: Arcane Lore tracks spellcraft
 }
 function wornMagicItems(){ return [player.weapon].concat(Object.values(player.armorSlots||{}),(typeof jewelryItems==="function")?jewelryItems():[]).filter(Boolean); }
-const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
-const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
-const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
+// SKILL_FAMS → js/data/ac-tables.js (#778)
+// MAGIC_SCHOOLS → js/data/ac-tables.js (#778)
+// MELEE_WEAPON_KEYS → js/data/ac-tables.js (#778)
 // Cb7 — every weapon type maps to ITS weapon skill (ToD): heavy blades/axes/maces/spears, light
 // staves/fists, finesse daggers, two-handers, missiles. Your equipped weapon rolls ITS OWN skill.
-const WEAPON_SKILL={sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",staff:"light",unarmed:"light",
-  dagger:"finesse",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile"};
+// WEAPON_SKILL → js/data/ac-tables.js (#778)
 function weaponSkillKey(){ const wt=player.weapon&&player.weapon.wt; return WEAPON_SKILL[wt]||"light"; }   // bare fists fight with Light Weapons
 // Trained-vs-Specialized cumulative XP curves, fit to the two verified anchors (pt1: 23/58, pt70: 67504/168758)
 function skillCumXP(rank,spec){ if(rank<=0)return 0;
@@ -342,8 +341,7 @@ function migrateSkills(old){ const fresh=freshSkills(); if(!old||typeof old!=="o
   for(const ok in map){ fresh[map[ok]]={t:1,xp:skillCumXP(old[ok]|0,false)}; }
   return fresh;
 }
-const ATTR_DESC={Strength:"Melee damage & burden",Endurance:"Health, stamina & regen",Coordination:"Attack accuracy",
-  Quickness:"Defense & run speed",Focus:"Spell skill & mana",Self:"Mana & spell skill"};
+// ATTR_DESC → js/data/ac-tables.js (#778)
 
 // ---------- player ----------
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
@@ -418,51 +416,18 @@ const xpForLevel=l=>(AC_XP&&AC_XP.level&&l+1<AC_XP.level.length)?(AC_XP.level[l+
 
 // starting-path presets (AC is classless — these just seed your build)
 // the three heritage groups of Dereth — each starts in its culture's capital
-const PRESETS={
-  aluvian:{attr:{Strength:5,Coordination:5},armor:5,pot:2,title:"the Aluvian",town:"Holtburg"},
-  sho:{attr:{Coordination:5,Quickness:3,Focus:2},pot:1,mana:1,title:"the Sho",town:"Shoushi"},
-  gharundim:{attr:{Focus:6,Self:4},mana:3,title:"the Gharu'ndim",town:"Yaraq"},
-  viamontian:{attr:{Strength:4,Coordination:4,Self:2},armor:5,pot:1,title:"the Viamontian",town:"Sanamar"},   // Throne of Destiny heritage
-};
+// PRESETS → js/data/ac-tables.js (#778)
 // AC heritage lore — shown when a heritage is chosen at character creation (the four playable peoples).
-const HERITAGE_LORE={
-  aluvian:{name:"Aluvian",town:"Holtburg",affinity:"Blade & Bow",
-    lore:"A hardy, self-reliant people from the island nation of Aluvia — farmers, hunters and soldiers whose blood runs to the frontier. The Aluvians favour cold steel and the longbow, taking readily to melee and missile skill. They begin their lives in the mountain garrison of Holtburg."},
-  sho:{name:"Sho",town:"Shoushi",affinity:"Discipline & Finesse",
-    lore:"A contemplative people of the eastern mountains who prize harmony, discipline and mastery of the self. Sho warriors are as deadly unarmed as armed, their scholars keen of mind. They favour finesse weapons and swift movement, and begin in the wooded town of Shoushi."},
-  gharundim:{name:"Gharu'ndim",town:"Yaraq",affinity:"The Arcane",
-    lore:"A learned people of the arid south who prize scholarship, tradition and the arts magical. The mages and merchants of the Gharu'ndim are renowned across Dereth. They favour the schools of magic, and begin in the desert city of Yaraq."},
-  viamontian:{name:"Viamontian",town:"Sanamar",affinity:"Knightly Steel",
-    lore:"A proud, chivalrous people ruled by a monarchy across the sea — knights, courtiers and crusaders sworn to blade and crown. The Viamontians favour heavy weapons and the sword, and arrive on Dereth's shores at the port of Sanamar."},
-};
+// HERITAGE_LORE → js/data/ac-tables.js (#778)
 // ── #785: creation data tables (previously rebuilt inline in startGame on every call) ──
-const HERITAGE_SKILLS={   // default trained loadout when no creation choice was made
-  aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],
-  gharundim:["war","life","creature"],viamontian:["heavy","meleed","shield"]};
-const TEMPLATE_TRAIN_WEAPON={   // ToD starter Training Weapon per profession template
-  soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
-  bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
-  warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
-const HERITAGE_CLOTHING={   // creation shirt & breeches (retail arrivals weren't naked)
-  aluvian:{sh:"Aluvian Shirt",pt:"Aluvian Breeches",tint:0x6a5a3a},
-  gharundim:{sh:"Gharu'ndim Tunic",pt:"Gharu'ndim Trousers",tint:0x8a6a30},
-  sho:{sh:"Sho Kimono Shirt",pt:"Sho Hakama",tint:0x3a4a5a},
-  viamontian:{sh:"Viamontian Doublet",pt:"Viamontian Hose",tint:0x5a2a3a}};
-const HERITAGE_WELCOME={   // the Welcome Letter blessing line
-  aluvian:"a kinsman's blessing from the green Aluvian shires",gharundim:"a blessing of Zaikhal and the shining sands",
-  sho:"the quiet counsel of the Sho masters",viamontian:"a noble's charge from the courts of Viamont"};
+// HERITAGE_SKILLS → js/data/ac-tables.js (#778)
+// TEMPLATE_TRAIN_WEAPON → js/data/ac-tables.js (#778)
+// HERITAGE_CLOTHING → js/data/ac-tables.js (#778)
+// HERITAGE_WELCOME → js/data/ac-tables.js (#778)
 // AC creation: professions (templates) preset attributes + starting trained skills; "Custom" = free build.
-const CREATE_POOL=270;   // AC: 270 Attribute Credits above the six 10-point bases (330 total), max 100 each
-const CREATE_CREDITS=52; // AC: 52 starting skill credits (Train or, only at creation-time freely, Specialize)
-const TEMPLATES=[
-  {k:"custom",  name:"Custom",       attr:{},                                    skills:[]},
-  {k:"soldier", name:"Soldier",      attr:{Strength:22,Endurance:16,Coordination:8}, skills:["heavy","meleed","shield"]},
-  {k:"swash",   name:"Swashbuckler", attr:{Coordination:22,Quickness:16,Strength:8}, skills:["light","meleed","dualwield"]},
-  {k:"archer",  name:"Bow Hunter",   attr:{Coordination:26,Quickness:12,Strength:8}, skills:["missile","meleed"]},
-  {k:"warmage", name:"War Mage",     attr:{Focus:26,Self:16,Endurance:4},         skills:["war","mana","meleed"]},
-  {k:"lifemage",name:"Life Caster",  attr:{Self:26,Focus:16,Endurance:4},         skills:["life","creature","meleed"]},
-  {k:"wayfarer",name:"Wayfarer",     attr:{Endurance:12,Coordination:12,Focus:10,Self:6}, skills:["heavy","life","meleed"]},
-];
+// CREATE_POOL → js/data/ac-tables.js (#778)
+// CREATE_CREDITS → js/data/ac-tables.js (#778)
+// TEMPLATES → js/data/ac-tables.js (#778)
 
 // ---------- spells ----------
 // ── SPELLBOOK ─────────────────────────────────────────────────────────────────
@@ -506,26 +471,19 @@ const _SPELLBOOK_APPEND=[
   {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
 for(const e of _SPELLBOOK_APPEND) SPELLBOOK_LIST.push(e);
-const ROMAN=["","I","II","III","IV","V","VI","VII","VIII"];
+// ROMAN → js/data/ac-tables.js (#778)
 // AC has 8 spell levels with rising skill requirements; we scale to 6 here. Buffs last
 // a level-scaled duration (AC's 30-min buffs are shortened for our minutes-long sessions).
 // ── Creature Enchantment: self attribute buffs (Strength/Endurance/… Self I–VI) ──
-const CE_ATTRS=[["Strength","str","💪"],["Endurance","end","🛡️"],["Coordination","coord","🎯"],
-  ["Quickness","quick","🌀"],["Focus","focus","🔆"],["Self","will","✦"]];
-const CE_TIERS=[{lvl:1,mag:5,cost:16,req:0,dur:60},{lvl:2,mag:9,cost:24,req:30,dur:75},{lvl:3,mag:14,cost:34,req:60,dur:90},
-  {lvl:4,mag:20,cost:46,req:95,dur:105},{lvl:5,mag:27,cost:60,req:135,dur:120},{lvl:6,mag:35,cost:78,req:180,dur:150},
-  {lvl:7,mag:45,cost:100,req:240,dur:180},{lvl:8,mag:58,cost:128,req:300,dur:210}];
+// CE_ATTRS → js/data/ac-tables.js (#778)
+// CE_TIERS → js/data/ac-tables.js (#778)
 for(const [attr,code,ico] of CE_ATTRS){ const disp=attr==="Self"?"Willpower":attr;
   for(const t of CE_TIERS) SPELLBOOK_LIST.push({id:`creature_${code}_${t.lvl}`,name:`${disp} Self ${ROMAN[t.lvl]}`,
     ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:t.dur});
 }
 // ── Creature Enchantment debuffs: cast on an enemy to weaken/slow it (I–IV) ──
-const CE_DEBUFFS=[
-  {code:"weak",name:"Weakness",ico:"💢",eff:"dmg"},   // lowers the foe's attack damage
-  {code:"slow",name:"Slowness",ico:"🐌",eff:"spd"},   // lowers the foe's movement speed
-];
-const DEBUFF_TIERS=[{lvl:1,v:0.85,cost:18,req:0,dur:20},{lvl:2,v:0.72,cost:26,req:35,dur:25},{lvl:3,v:0.58,cost:36,req:70,dur:30},{lvl:4,v:0.45,cost:48,req:110,dur:35},
-  {lvl:5,v:0.34,cost:62,req:150,dur:40},{lvl:6,v:0.25,cost:78,req:195,dur:45},{lvl:7,v:0.18,cost:96,req:250,dur:50},{lvl:8,v:0.12,cost:116,req:300,dur:55}];
+// CE_DEBUFFS → js/data/ac-tables.js (#778)
+// DEBUFF_TIERS → js/data/ac-tables.js (#778)
 for(const b of CE_DEBUFFS) for(const t of DEBUFF_TIERS) SPELLBOOK_LIST.push({id:`creature_${b.code}_${t.lvl}`,
   name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,
   debuff:b.eff,dmag:t.v,dur:t.dur});
@@ -535,21 +493,11 @@ for(const b of CE_DEBUFFS) for(const t of DEBUFF_TIERS) SPELLBOOK_LIST.push({id:
 // ── Canonical spell/effect colour palette — one source of truth so every projectile, AoE, brand,
 //    arrow, vulnerability/protection and vital effect reads the same colours (fire=red, acid=green,
 //    frost=white, lightning=blue; health=red, stamina=yellow, mana=blue). ──
-const FX_ELEM={fire:0xff3322,flame:0xff3322, acid:0x54dc3c, frost:0xeef4ff,ice:0xeef4ff,cold:0xeef4ff, shock:0x3a9bff,lightning:0x3a9bff};
-const FX_VITAL={hp:0xff3b30,health:0xff3b30, st:0xffd23b,stamina:0xffd23b, mn:0x3a9bff,mana:0x3a9bff};
+// FX_ELEM → js/data/ac-tables.js (#778)
+// FX_VITAL → js/data/ac-tables.js (#778)
 // ── vivid, thematically-exact spell colours per element / damage type / school — the CAST SIGNATURE
 //    (fxCastSignature) and every wind-up read from this so a spell's flourish always matches what it does.
-const SPELL_COL={
-  fire:0xff5a1e, flame:0xff5a1e,                 // orange-red flame
-  frost:0x74e0ff, ice:0x74e0ff, cold:0x74e0ff,   // icy cyan
-  shock:0x8ab0ff, lightning:0x8ab0ff,            // electric blue-white
-  acid:0x9bff2e,                                 // toxic green
-  bludgeon:0xc98bff, force:0xc98bff,             // impact violet
-  slash:0xe8f0fb, blade:0xe8f0fb,                // steel white
-  pierce:0xbfe8ff,                               // pale ice-blue
-  nether:0xc44dff, void:0xc44dff,                // corruption purple
-  life:0x53ffa0, heal:0x53ffa0,                  // vivid life green
-};
+// SPELL_COL → js/data/ac-tables.js (#778)
 // resolve the eyecatching colour for ANY spell by its element / damage type / school / buff
 function spellFxColor(s){
   if(!s) return 0x9af0ff;
@@ -600,56 +548,33 @@ fetch('assets/acfx.json').then(r=>r&&r.ok?r.json():null).then(j=>{
 }).catch(()=>{});
 function fxVital(k,fb){ return (k!=null&&FX_VITAL[k]!=null)?FX_VITAL[k]:(fb!=null?fb:0xffffff); }
 function fxHex(c){ return "#"+("000000"+((c>>>0)&0xffffff).toString(16)).slice(-6); }
-const WAR_BOLTS=[
-  {code:"flame",name:"Flame Bolt",   ico:"🔥",color:FX_ELEM.fire, r:0.28,element:"fire",    burn:true, base:18,foc:1.4,speed:55, cost:14,cd:520},
-  {code:"frost",name:"Frost Bolt",   ico:"❄️",color:FX_ELEM.frost,r:0.32,element:"ice",     slow:.45,  base:24,foc:1.7,speed:46, cost:18,cd:760},
-  {code:"light",name:"Lightning Bolt",ico:"⚡",color:FX_ELEM.shock,r:0.2, element:"shock",   stun:true, base:30,foc:1.8,speed:120,cost:20,cd:600},
-  {code:"acid", name:"Acid Stream",  ico:"🟢",color:FX_ELEM.acid, r:0.26,element:"acid",                base:20,foc:1.5,speed:52, cost:16,cd:560},
-  {code:"force",name:"Force Bolt",   ico:"⚪",color:0x4a1e8c,r:0.3, element:"bludgeon",            base:22,foc:1.5,speed:60, cost:16,cd:560},
-  {code:"blade",name:"Whirling Blade",ico:"🌀",color:0xd6dbe4,r:0.28,element:"slash",              base:21,foc:1.5,speed:58, cost:16,cd:560},
-  {code:"pierce",name:"Force Arrow", ico:"🏹",color:0xb0e0ff,r:0.18,element:"pierce",             base:23,foc:1.6,speed:72, cost:16,cd:540},
-];
-const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},
-  {lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180},{lvl:7,mult:7.6,req:240},{lvl:8,mult:9.6,req:300}];
+// WAR_BOLTS → js/data/ac-tables.js (#778)
+// WAR_TIERS → js/data/ac-tables.js (#778)
 for(const b of WAR_BOLTS) for(const t of WAR_TIERS){
   SPELLBOOK_LIST.push({id:`war_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"war",lvl:t.lvl,req:t.req,
     cost:Math.round(b.cost*(1+(t.lvl-1)*0.45)),cd:b.cd,
     make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
 }
-const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:80},
-  {lvl:4,base:84,foc:2.6,cost:112,req:130},{lvl:5,base:114,foc:3.0,cost:148,req:175},{lvl:6,base:150,foc:3.4,cost:188,req:215},
-  {lvl:7,base:196,foc:3.8,cost:236,req:260},{lvl:8,base:256,foc:4.2,cost:300,req:310}];
+// WAR_STORM → js/data/ac-tables.js (#778)
 for(const t of WAR_STORM) SPELLBOOK_LIST.push({id:`war_storm_${t.lvl}`,name:`Flame Storm ${ROMAN[t.lvl]}`,ico:"🌋",
   school:"aoe",lvl:t.lvl,req:t.req,cost:t.cost,cd:3200,element:"fire",color:FX_ELEM.fire,dmg:()=>t.base+player.attr.Focus*t.foc});
 // ── Life Magic: Heal Self (I–VI), Revitalize stamina (I–IV), Drain Health bolt (I–IV) ──
-const LIFE_HEAL=[{lvl:1,base:34,foc:2.2,cost:26,cd:1500,req:0},{lvl:2,base:60,foc:2.8,cost:38,cd:1500,req:30},{lvl:3,base:95,foc:3.4,cost:54,cd:1600,req:60},{lvl:4,base:140,foc:4.0,cost:74,cd:1700,req:95},{lvl:5,base:195,foc:4.6,cost:98,cd:1800,req:135},{lvl:6,base:260,foc:5.2,cost:126,cd:1900,req:180},{lvl:7,base:340,foc:5.8,cost:158,cd:2000,req:240},{lvl:8,base:440,foc:6.4,cost:196,cd:2100,req:300}];
+// LIFE_HEAL → js/data/ac-tables.js (#778)
 for(const t of LIFE_HEAL) SPELLBOOK_LIST.push({id:`life_heal_${t.lvl}`,name:`Heal Self ${ROMAN[t.lvl]}`,ico:"✨",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:t.cd,heal:()=>t.base+player.attr.Self*t.foc});
-const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60},{lvl:4,base:130,foc:3.8,cost:62,req:100},
-  {lvl:5,base:178,foc:4.2,cost:82,req:140},{lvl:6,base:236,foc:4.8,cost:106,req:185},{lvl:7,base:308,foc:5.4,cost:136,req:245},{lvl:8,base:396,foc:6.0,cost:172,req:305}];
+// LIFE_REVIT → js/data/ac-tables.js (#778)
 for(const t of LIFE_REVIT) SPELLBOOK_LIST.push({id:`life_revit_${t.lvl}`,name:`Revitalize Self ${ROMAN[t.lvl]}`,ico:"💚",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1400,special:"revitalize",amt:t.base,foc:t.foc});
 // ── Item Enchantment: classic AC weapon/armour self-buffs (Blood Drinker, Heart Seeker,
 //    Impenetrability, Swift Killer) at three levels — empower your gear for a duration ──
-const ITEM_BUFFS=[
-  {code:"blood",name:"Blood Drinker", ico:"🗡",stat:"dmg",  mags:[0.10,0.16,0.22,0.30,0.40,0.52,0.66,0.82], desc:"weapon & spell damage"},
-  {code:"heart",name:"Heart Seeker",  ico:"🎯",stat:"crit", mags:[0.05,0.08,0.11,0.15,0.20,0.26,0.33,0.41], desc:"critical chance"},
-  {code:"impen",name:"Impenetrability",ico:"🛡",stat:"armor",mags:[12,22,34,50,70,95,125,160],            desc:"armour"},
-  {code:"swift",name:"Swift Killer",  ico:"💨",stat:"haste",mags:[0.08,0.14,0.20,0.28,0.38,0.50,0.64,0.80], desc:"attack speed"},
-];
-const ITEM_TIERS=[{lvl:1,cost:20,req:0,dur:90},{lvl:2,cost:30,req:40,dur:120},{lvl:3,cost:44,req:80,dur:150},
-  {lvl:4,cost:60,req:120,dur:180},{lvl:5,cost:80,req:160,dur:210},{lvl:6,cost:104,req:205,dur:240},{lvl:7,cost:134,req:255,dur:270},{lvl:8,cost:170,req:300,dur:300}];
+// ITEM_BUFFS → js/data/ac-tables.js (#778)
+// ITEM_TIERS → js/data/ac-tables.js (#778)
 for(const b of ITEM_BUFFS) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
   id:`item_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:8000,buff:"item",stat:b.stat,mag:b.mags[t.lvl-1],dur:t.dur});
 // ── Mg4 Banes: Item Enchantment self-buffs granting temporary protection vs one damage type (AC's 7 banes) ──
-const BANE_TYPES=[
-  {code:"flame", name:"Flame Bane",       ico:"🔥", el:"fire"},   {code:"frost",  name:"Frost Bane",       ico:"❄️", el:"frost"},
-  {code:"acid",  name:"Acid Bane",        ico:"🧪", el:"acid"},   {code:"storm",  name:"Lightning Bane",   ico:"⚡", el:"shock"},
-  {code:"blade", name:"Bladed Bane",      ico:"🗡", el:"slash"},  {code:"bludg",  name:"Bludgeoning Bane", ico:"🔨", el:"bludgeon"},
-  {code:"pierce",name:"Piercing Bane",    ico:"🎯", el:"pierce"},
-];
-const BANE_MAGS=[0.10,0.15,0.20,0.26,0.32,0.38,0.44,0.50];   // fraction of that element's damage negated, per level I–VIII
+// BANE_TYPES → js/data/ac-tables.js (#778)
+// BANE_MAGS → js/data/ac-tables.js (#778)
 for(const b of BANE_TYPES) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
   id:`bane_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:8000,buff:"bane",element:b.el,mag:BANE_MAGS[t.lvl-1],dur:t.dur});
@@ -663,13 +588,12 @@ SPELLBOOK_LIST.push({id:"item_portal_tie2",name:"Secondary Portal Tie",ico:"🔗
 SPELLBOOK_LIST.push({id:"item_portal_recall2",name:"Secondary Portal Recall",ico:"🌀",school:"item",lvl:5,req:150,cost:55,cd:30000,special:"recall",dest:"portal2"});
 SPELLBOOK_LIST.push({id:"item_portal_sending",name:"Portal Sending",ico:"📤",school:"item",lvl:6,req:205,cost:60,cd:30000,special:"sending",dest:"portal"});
 SPELLBOOK_LIST.push({id:"item_lifestone_sending",name:"Lifestone Sending",ico:"📩",school:"item",lvl:6,req:205,cost:60,cd:30000,special:"sending",dest:"lifestone"});
-const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115},
-  {lvl:5,base:112,foc:2.8,drain:0.62,cost:100,req:155},{lvl:6,base:150,foc:3.2,drain:0.65,cost:130,req:200},{lvl:7,base:198,foc:3.6,drain:0.68,cost:166,req:255},{lvl:8,base:258,foc:4.0,drain:0.72,cost:208,req:305}];
+// LIFE_DRAIN → js/data/ac-tables.js (#778)
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:48,color:0xc0306a,r:0.3,drain:t.drain,element:null})});
 // ── Void Magic: Nether Bolt I–VI (corruption bolt that drains + burns) ──
-const VOID_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},{lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180},{lvl:7,mult:7.6,req:240},{lvl:8,mult:9.6,req:300}];
+// VOID_TIERS → js/data/ac-tables.js (#778)
 for(const t of VOID_TIERS) SPELLBOOK_LIST.push({id:`void_nether_${t.lvl}`,name:`Nether Bolt ${ROMAN[t.lvl]}`,ico:"🟣",
   school:"void",lvl:t.lvl,req:t.req,cost:Math.round(24*(1+(t.lvl-1)*0.45)),cd:900,
   make:()=>({dmg:(28+player.attr.Focus*1.8)*t.mult,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})});
@@ -683,71 +607,49 @@ for(const t of VOID_TIERS){
     make:()=>({dmg:(24+player.attr.Focus*1.6)*t.mult*0.7,speed:46,color:0x9b30ff,r:0.32,burn:true,element:"nether",drain:0.35})});
 }
 // ── Mg6 Void curses: Nether Corruption — a targeted nether DoT that also corrodes the foe's defences ──
-const VOID_CORRUPT=[{lvl:2,dps:9,cvuln:1.12,req:40},{lvl:3,dps:13,cvuln:1.15,req:70},{lvl:4,dps:18,cvuln:1.18,req:115},
-  {lvl:5,dps:24,cvuln:1.22,req:155},{lvl:6,dps:31,cvuln:1.26,req:200},{lvl:7,dps:40,cvuln:1.30,req:255},{lvl:8,dps:50,cvuln:1.35,req:305}];
+// VOID_CORRUPT → js/data/ac-tables.js (#778)
 for(const t of VOID_CORRUPT) SPELLBOOK_LIST.push({id:`void_corrupt_${t.lvl}`,name:`Nether Corruption ${ROMAN[t.lvl]}`,ico:"🕸️",
   school:"void",lvl:t.lvl,req:t.req,cost:Math.round(30*(1+(t.lvl-1)*0.45)),cd:2200,special:"corrupt",dps:t.dps,cvuln:t.cvuln,dur:12});  // cvuln (not vuln) to dodge the buff-normalization loop
 // ── Creature Enchantment: skill "Aptitude" Self buffs (I–VIII) — raise a skill's value for a
 //    duration. Wired into skillValue(), so they really boost spell damage / healing / mana cost /
 //    weapon damage etc. (AC has no researchable Creature *Other* skill buffs, so these are Self-only.)
-const CE_SKILLS=[
-  ["war","War Magic","🔥"],["life","Life Magic","✨"],["creature","Creature Mastery","🦂"],["item","Item Mastery","💍"],
-  ["void","Void Mastery","🌑"],["mana","Mana Conversion","🔷"],["heavy","Heavy Weapon","⚔️"],["light","Light Weapon","🗡"],
-  ["finesse","Finesse Weapon","🤺"],["twohand","Two Handed","🪓"],["missile","Missile Weapon","🏹"],["meleed","Invulnerability","🛡"],
-  ["missiled","Impregnability","🪶"],["magicd","Magic Resistance","🔯"],["healing","Healing","💉"],["arcane","Arcane Enlightenment","📜"],
-  ["run","Sprint","🏃"],["summon","Summoning","🔮"]];
+// CE_SKILLS → js/data/ac-tables.js (#778)
 for(const [key,disp,ico] of CE_SKILLS) for(const t of CE_TIERS) SPELLBOOK_LIST.push({
   id:`creature_apt_${key}_${t.lvl}`,name:`${disp} Aptitude ${ROMAN[t.lvl]}`,ico,school:"creature",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:9000,buff:"skill",skillKey:key,mag:t.mag,dur:t.dur});
 // ── Life Magic: over-time renewal — Regeneration (health), Rejuvenation (stamina), Mana Renewal (I–VIII) ──
-const LIFE_RENEW=[
-  {pool:"hp",name:"Regeneration", ico:"💗",rate:[1.6,2.6,4.0,6.0,8.5,11.5,15,20]},
-  {pool:"st",name:"Rejuvenation", ico:"🌿",rate:[2.0,3.2,5.0,7.5,10.5,14,18,24]},
-  {pool:"mn",name:"Mana Renewal", ico:"🔹",rate:[1.4,2.3,3.6,5.4,7.6,10.4,13.6,18]},
-];
-const RENEW_TIERS=[{lvl:1,cost:22,req:0,dur:24},{lvl:2,cost:32,req:30,dur:26},{lvl:3,cost:46,req:60,dur:28},{lvl:4,cost:62,req:95,dur:30},
-  {lvl:5,cost:82,req:135,dur:32},{lvl:6,cost:106,req:180,dur:34},{lvl:7,cost:136,req:240,dur:36},{lvl:8,cost:172,req:300,dur:40}];
+// LIFE_RENEW → js/data/ac-tables.js (#778)
+// RENEW_TIERS → js/data/ac-tables.js (#778)
 for(const r of LIFE_RENEW) for(const t of RENEW_TIERS) SPELLBOOK_LIST.push({
   id:`life_renew_${r.pool}_${t.lvl}`,name:`${r.name} ${ROMAN[t.lvl]}`,ico:r.ico,school:"life",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:5000,special:"regen",pool:r.pool,rate:r.rate[t.lvl-1],dur:t.dur});
 // ── Life Magic: Dispel Self — strip hostile curses (Slow/Imperil) off yourself + brief immunity ──
-const LIFE_DISPEL=[{lvl:1,cost:24,req:0,immune:1.5},{lvl:2,cost:34,req:40,immune:3},{lvl:3,cost:48,req:80,immune:5},{lvl:4,cost:64,req:120,immune:8}];
+// LIFE_DISPEL → js/data/ac-tables.js (#778)
 for(const t of LIFE_DISPEL) SPELLBOOK_LIST.push({id:`life_dispel_${t.lvl}`,name:`Dispel Self ${ROMAN[t.lvl]}`,ico:"🧿",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:6000,special:"dispel",immune:t.immune});
 // ── Life Magic: Harm Other I–VI (pure damage bolt — no lifesteal, distinct from Drain) ──
 // ── Life Magic: Protection Self (reduce incoming damage) + Vulnerability Other (foe takes more) ──
-const LIFE_PROT=[{lvl:1,v:0.12,cost:24,req:0,dur:90},{lvl:2,v:0.20,cost:34,req:35,dur:120},{lvl:3,v:0.30,cost:48,req:70,dur:150},{lvl:4,v:0.40,cost:64,req:110,dur:180},
-  {lvl:5,v:0.48,cost:84,req:150,dur:210},{lvl:6,v:0.55,cost:108,req:195,dur:240},{lvl:7,v:0.62,cost:138,req:250,dur:270},{lvl:8,v:0.70,cost:174,req:300,dur:300}];
+// LIFE_PROT → js/data/ac-tables.js (#778)
 for(const t of LIFE_PROT) SPELLBOOK_LIST.push({id:`life_prot_${t.lvl}`,name:`Protection Self ${ROMAN[t.lvl]}`,ico:"🛡️",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"prot",mag:t.v,dur:t.dur});
-const LIFE_VULN=[{lvl:1,v:1.12,cost:20,req:0,dur:20},{lvl:2,v:1.20,cost:28,req:35,dur:25},{lvl:3,v:1.32,cost:38,req:70,dur:30},{lvl:4,v:1.45,cost:50,req:110,dur:35},
-  {lvl:5,v:1.58,cost:64,req:150,dur:40},{lvl:6,v:1.72,cost:80,req:195,dur:45},{lvl:7,v:1.88,cost:100,req:250,dur:50},{lvl:8,v:2.05,cost:124,req:300,dur:55}];
+// LIFE_VULN → js/data/ac-tables.js (#778)
 for(const t of LIFE_VULN) SPELLBOOK_LIST.push({id:`life_vuln_${t.lvl}`,name:`Vulnerability Other ${ROMAN[t.lvl]}`,ico:"🎯",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,vuln:t.v,dur:t.dur});
 // per-element Vulnerability Other (I–VIII): boosts only matching-element damage, so it stacks with the
 // creature's elemental weakness — curse a foe to your bolt's element for a burst. Stronger than the
 // generic line (narrower), reusing its tier ladder for cost/req/dur.
-const LIFE_VULN_EL=[
-  {el:"fire",   name:"Fire Vulnerability",       ico:"🔥"},{el:"ice",     name:"Cold Vulnerability",       ico:"❄️"},
-  {el:"shock",  name:"Lightning Vulnerability",  ico:"⚡"},{el:"acid",    name:"Acid Vulnerability",       ico:"🟢"},
-  {el:"bludgeon",name:"Bludgeoning Vulnerability",ico:"⚪"},{el:"slash",  name:"Slashing Vulnerability",    ico:"🗡"},
-  {el:"pierce", name:"Piercing Vulnerability",   ico:"🏹"}];
+// LIFE_VULN_EL → js/data/ac-tables.js (#778)
 for(const b of LIFE_VULN_EL) for(const t of LIFE_VULN) SPELLBOOK_LIST.push({
   id:`life_vuln_${b.el}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"life",lvl:t.lvl,req:t.req,
   cost:Math.round(t.cost*0.9),cd:7000,vuln:1+(t.v-1)*1.4,vulnElem:b.el,dur:t.dur});
-const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,cost:36,req:30},{lvl:3,base:78,foc:2.4,cost:52,req:60},{lvl:4,base:112,foc:2.8,cost:72,req:95},{lvl:5,base:155,foc:3.2,cost:96,req:135},{lvl:6,base:208,foc:3.6,cost:124,req:180},{lvl:7,base:272,foc:4.0,cost:158,req:240},{lvl:8,base:352,foc:4.4,cost:196,req:300}];
+// LIFE_HARM → js/data/ac-tables.js (#778)
 for(const t of LIFE_HARM) SPELLBOOK_LIST.push({id:`life_harm_${t.lvl}`,name:`Harm Other ${ROMAN[t.lvl]}`,ico:"💀",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:50,color:0x6a1a3a,r:0.3,element:null})});
 // ── War Magic geometries: Blast (cone), Volley (stream), Ring (point-blank) per element, I–IV ──
-const WAR_ROOT={flame:"Flame",frost:"Frost",light:"Lightning",acid:"Acid",force:"Bludgeoning",blade:"Blade",pierce:"Force"};
-const WAR_GEOMS=[
-  {geom:"blast", gname:"Blast", ico:"🔆",dmgMul:0.8,costMul:1.4,cdMul:1.0, splash:3.6},   // flies like a bolt, detonates for splash damage on impact
-  {geom:"volley",gname:"Volley",ico:"🎇",dmgMul:0.6,costMul:1.3,cdMul:1.1},
-  {geom:"ring",  gname:"Ring",  ico:"💥",dmgMul:0.8,costMul:1.7,cdMul:1.5},
-];
-const GEOM_TIERS=[{lvl:1,m:1,req:0},{lvl:2,m:1.6,req:35},{lvl:3,m:2.4,req:70},{lvl:4,m:3.4,req:110},
-  {lvl:5,m:4.6,req:150},{lvl:6,m:6.0,req:195},{lvl:7,m:7.6,req:250},{lvl:8,m:9.6,req:300}];
+// WAR_ROOT → js/data/ac-tables.js (#778)
+// WAR_GEOMS → js/data/ac-tables.js (#778)
+// GEOM_TIERS → js/data/ac-tables.js (#778)
 for(const b of WAR_BOLTS) for(const g of WAR_GEOMS) for(const t of GEOM_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_${g.geom}_${t.lvl}`,name:`${WAR_ROOT[b.code]} ${g.gname} ${ROMAN[t.lvl]}`,ico:g.ico,
   school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*g.costMul*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*g.cdMul),geom:g.geom,
@@ -771,12 +673,8 @@ for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
 // ── Light spells (Life & Creature): conjure a glow for the dark places of Dereth. Higher tiers
 //    burn longer and brighter. Life's "Enlightenment" is a warm holy radiance; Creature's
 //    "Foxfire" is an eldritch bioluminescent glow. (buff:"light" → player.lightBuff) ──
-const LIGHT_TIERS=[{lvl:1,dur:90, intensity:1.9,dist:17,cost:14,req:0},
-                   {lvl:2,dur:180,intensity:2.5,dist:21,cost:22,req:30},
-                   {lvl:3,dur:360,intensity:3.1,dist:26,cost:32,req:65},
-                   {lvl:4,dur:600,intensity:3.9,dist:32,cost:46,req:110}];
-const LIGHT_SPELLS=[{school:"life",code:"enlighten",name:"Enlightenment",ico:"🔆",color:0xfff2cf},
-                    {school:"creature",code:"foxfire",name:"Foxfire",ico:"🦊",color:0x9affc0}];
+// LIGHT_TIERS → js/data/ac-tables.js (#778)
+// LIGHT_SPELLS → js/data/ac-tables.js (#778)
 for(const sp of LIGHT_SPELLS) for(const t of LIGHT_TIERS) SPELLBOOK_LIST.push({
   id:`${sp.school}_${sp.code}_${t.lvl}`,name:`${sp.name} ${ROMAN[t.lvl]}`,ico:sp.ico,
   school:sp.school,lvl:t.lvl,req:t.req,cost:t.cost,cd:5000,buff:"light",
@@ -790,7 +688,7 @@ function buffMagFor(lvl){ lvl=Math.max(1,lvl|0); return lvl*10; }               
 // Authentic AC Item Enchantment durations (retail client SpellTable): I–V = 30 min, VI = 45 min, VII–VIII = 60 min.
 // Verified vs assets/acspellstats.json — I–V 1800s, VI 2700s, "spirit drinker vii" 3600s; the level-8 incantations
 // plateau at the same 60-min top tier. Blood Drinker / Heart Seeker / Impenetrability / Swift Killer / the seven Banes.
-const ITEM_ENCHANT_DUR=[1800,1800,1800,1800,1800,2700,3600,3600];
+// ITEM_ENCHANT_DUR → js/data/ac-tables.js (#778)
 function itemEnchantDur(lvl){ return ITEM_ENCHANT_DUR[Math.max(1,Math.min(8,lvl|0))-1]; }
 for(const s of SPELLBOOK_LIST){
   if(s.buff==="attr"||s.buff==="skill"){ s.mag=buffMagFor(s.lvl); s.dur=buffDurFor(s.lvl); }   // flat stat/skill → +10/level

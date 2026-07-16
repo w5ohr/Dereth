@@ -975,6 +975,11 @@
         Object.assign(THREE, webgpu);
       } catch (e) { console.error('WebGPU module load failed — staying on WebGL:', e); }
     }
+    // #778: the first ES-module tranche — the AC leaf data tables live in a real module. Import it
+    // and expose every export as a global BEFORE the classic scripts are injected, so their bare-name
+    // references resolve identically. As more of game.js modularizes, this bridge shrinks away.
+    const ACT = await import('./js/data/ac-tables.js');
+    for (const k in ACT) window[k] = ACT[k];
     for (const src of ['js/game.js', 'js/craft.js']) {
       const s = document.createElement('script'); s.src = src; s.async = false;
       document.body.appendChild(s);
