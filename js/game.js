@@ -58,9 +58,10 @@ const CFG={
 // Full retail skill list grouped by family. Fields: k=key, n=name, fam=family, a=attr formula
 // inputs, d=divisor (value base = floor(sum(a)/d); d:0 = no attribute formula), tc=train credit
 // cost, sc=specialize credit cost (-1 = via Augmentation gem, not buyable here), u=use hook
-// (cast/melee/missile/util), e=effect blurb. Costs marked //e are AC-consistent estimates pending
-// a 3rd research pass; the rest are verified in plan Phase 6.7. Base formulas & 52→102 credit
-// economy, Trained-vs-Specialized XP curves are all from the verified E0 research.
+// (cast/melee/missile/util), e=effect blurb. All tc/sc verified against retail AC (#881: ACPedia +
+// two cross-checked planners); sc is the ADDITIONAL cost at specialize (total = tc+sc). Intentional
+// Dereth deviations are commented on their lines. Base formulas & 52→102 credit economy,
+// Trained-vs-Specialized XP curves are all from the verified E0 research.
 const SKILLS_DEF=[
   // — Magic — (schools must be Trained before you can cast them)
   {k:"war",        n:"War Magic",            fam:"Magic",  a:["Focus","Self"], d:4, tc:16, sc:12, u:"cast",    e:"War-spell damage"},
@@ -68,47 +69,49 @@ const SKILLS_DEF=[
   {k:"creature",   n:"Creature Enchantment", fam:"Magic",  a:["Focus","Self"], d:4, tc:8,  sc:8,  u:"cast",    e:"Self/creature buffs (Quickening)"},
   {k:"item",       n:"Item Enchantment",     fam:"Magic",  a:["Focus","Self"], d:4, tc:8,  sc:8,  u:"cast",    e:"Item buffs (Blade Lure)"},
   {k:"void",       n:"Void Magic",           fam:"Magic",  a:["Focus","Self"], d:4, tc:16, sc:12, u:"cast",    e:"Corruption magic (late-era)"},
-  {k:"mana",       n:"Mana Conversion",      fam:"Magic",  a:["Focus","Self"], d:6, tc:6,  sc:4,  u:"util",    e:"Reduces spell mana cost"},        //e tc/sc
+  {k:"mana",       n:"Mana Conversion",      fam:"Magic",  a:["Focus","Self"], d:6, tc:6,  sc:6,  u:"util",    e:"Reduces spell mana cost"},
   // — Defense —
   {k:"meleed",     n:"Melee Defense",        fam:"Defense",a:["Quickness","Coordination"], d:3, tc:10, sc:10, u:"util", e:"Mitigates melee damage"},
-  {k:"missiled",   n:"Missile Defense",      fam:"Defense",a:["Quickness","Coordination"], d:5, tc:8,  sc:8,  u:"util", e:"Mitigates ranged damage"},   //e tc/sc
+  {k:"missiled",   n:"Missile Defense",      fam:"Defense",a:["Quickness","Coordination"], d:5, tc:6,  sc:4,  u:"util", e:"Mitigates ranged damage"},
   {k:"magicd",     n:"Magic Defense",        fam:"Defense",a:["Focus","Self"], d:7, tc:0,  sc:12, u:"util",    e:"Resists hostile magic"},
   // — Melee weapons —
   {k:"heavy",      n:"Heavy Weapons",        fam:"Melee",  a:["Strength","Coordination"], d:3, tc:6,  sc:6,  u:"melee", e:"Sword/axe/mace damage"},
   {k:"light",      n:"Light Weapons",        fam:"Melee",  a:["Strength","Coordination"], d:3, tc:4,  sc:4,  u:"melee", e:"Dagger/staff damage"},
   {k:"finesse",    n:"Finesse Weapons",      fam:"Melee",  a:["Coordination","Quickness"], d:3, tc:4, sc:4,  u:"melee", e:"Finesse-weapon damage"},
-  {k:"twohand",    n:"Two Handed Combat",    fam:"Melee",  a:["Strength","Coordination"], d:3, tc:6,  sc:6,  u:"melee", e:"Two-handed weapon damage"}, //e tc/sc
+  {k:"twohand",    n:"Two Handed Combat",    fam:"Melee",  a:["Strength","Coordination"], d:3, tc:8,  sc:8,  u:"melee", e:"Two-handed weapon damage"},
   {k:"dualwield",  n:"Dual Wield",           fam:"Melee",  a:["Strength","Coordination"], d:3, tc:2,  sc:2,  u:"melee", e:"Off-hand attacks"},
   {k:"dirty",      n:"Dirty Fighting",       fam:"Melee",  a:["Strength","Coordination"], d:3, tc:2,  sc:2,  u:"melee", e:"Debilitating strikes"},
-  {k:"recklessness",n:"Recklessness",        fam:"Melee",  a:["Strength","Coordination"], d:3, tc:4,  sc:4,  u:"melee", e:"Trade defense for damage"}, //e tc/sc
-  {k:"sneak",      n:"Sneak Attack",         fam:"Melee",  a:["Coordination","Strength"], d:3, tc:4,  sc:4,  u:"melee", e:"Bonus from stealth"},        //e tc/sc
+  {k:"recklessness",n:"Recklessness",        fam:"Melee",  a:["Strength","Coordination"], d:3, tc:4,  sc:2,  u:"melee", e:"Trade defense for damage"},
+  {k:"sneak",      n:"Sneak Attack",         fam:"Melee",  a:["Coordination","Strength"], d:3, tc:4,  sc:2,  u:"melee", e:"Bonus from stealth"},
   {k:"shield",     n:"Shield",               fam:"Melee",  a:["Strength","Coordination"], d:3, tc:2,  sc:2,  u:"util",  e:"Blocks with a shield"},
   // — Missile weapons —
-  {k:"missile",    n:"Missile Weapons",      fam:"Missile",a:["Coordination"], d:2, tc:6,  sc:6,  u:"missile", e:"Bow & crossbow damage"},             //e tc/sc
+  {k:"missile",    n:"Missile Weapons",      fam:"Missile",a:["Coordination"], d:2, tc:6,  sc:6,  u:"missile", e:"Bow & crossbow damage"},
   // — Trade —
-  {k:"alchemy",    n:"Alchemy",              fam:"Trade",  a:["Coordination","Focus"], d:3, tc:4, sc:4, u:"util", e:"Brews potions"},                   //e tc/sc
-  {k:"cooking",    n:"Cooking",              fam:"Trade",  a:["Coordination","Focus"], d:3, tc:4, sc:4, u:"util", e:"Prepares food buffs"},             //e tc/sc
-  {k:"fletching",  n:"Fletching",            fam:"Trade",  a:["Coordination","Focus"], d:3, tc:4, sc:4, u:"util", e:"Crafts ammunition"},               //e tc/sc
-  {k:"lockpick",   n:"Lockpick",             fam:"Trade",  a:["Coordination","Focus"], d:3, tc:4, sc:4, u:"util", e:"Opens locked chests"},             //e tc/sc
-  {k:"healing",    n:"Healing",              fam:"Trade",  a:["Coordination","Focus"], d:3, tc:6, sc:8, u:"util", e:"Boosts kit/regen healing"},        //e tc/sc
+  {k:"alchemy",    n:"Alchemy",              fam:"Trade",  a:["Coordination","Focus"], d:3, tc:6, sc:6, u:"util", e:"Brews potions"},
+  {k:"cooking",    n:"Cooking",              fam:"Trade",  a:["Coordination","Focus"], d:3, tc:4, sc:4, u:"util", e:"Prepares food buffs"},
+  {k:"fletching",  n:"Fletching",            fam:"Trade",  a:["Coordination","Focus"], d:3, tc:4, sc:4, u:"util", e:"Crafts ammunition"},
+  {k:"lockpick",   n:"Lockpick",             fam:"Trade",  a:["Coordination","Focus"], d:3, tc:6, sc:4, u:"util", e:"Opens locked chests"},
+  {k:"healing",    n:"Healing",              fam:"Trade",  a:["Coordination","Focus"], d:3, tc:6, sc:4, u:"util", e:"Boosts kit/regen healing"},
   // — Tinkering — (specialized via Augmentation, not skill credits)
-  {k:"weapontink", n:"Weapon Tinkering",     fam:"Tinkering",a:[], d:0, tc:0, sc:-1, u:"util", e:"Improves weapons"},
-  {k:"armortink",  n:"Armor Tinkering",      fam:"Tinkering",a:[], d:0, tc:0, sc:-1, u:"util", e:"Improves armour"},
-  {k:"magictink",  n:"Magic Item Tinkering", fam:"Tinkering",a:[], d:0, tc:0, sc:-1, u:"util", e:"Improves magic items"},
+  {k:"weapontink", n:"Weapon Tinkering",     fam:"Tinkering",a:[], d:0, tc:4, sc:-1, u:"util", e:"Improves weapons"},   // #881: retail train cost 4 (matches the skill pack)
+  {k:"armortink",  n:"Armor Tinkering",      fam:"Tinkering",a:[], d:0, tc:4, sc:-1, u:"util", e:"Improves armour"},    // #881: retail train cost 4
+  {k:"magictink",  n:"Magic Item Tinkering", fam:"Tinkering",a:[], d:0, tc:4, sc:-1, u:"util", e:"Improves magic items"},   // #881: retail train cost 4
   {k:"salvaging",  n:"Salvaging",            fam:"Tinkering",a:[], d:0, tc:0, sc:-1, u:"util", e:"Better salvage returns"},
   // — Lore & Society —
   {k:"arcane",     n:"Arcane Lore",          fam:"Lore",   a:["Focus"], d:3, tc:0,  sc:2,  u:"util", e:"Use higher-requirement items"},
   {k:"run",        n:"Run",                  fam:"Lore",   a:["Quickness"], d:1, tc:0, sc:4, u:"util", e:"Increases run speed"},
-  {k:"jump",       n:"Jump",                 fam:"Lore",   a:[], d:0, tc:0,  sc:0,  u:"util", e:"Jump farther"},
-  {k:"leadership", n:"Leadership",           fam:"Lore",   a:[], d:0, tc:4,  sc:8,  u:"util", e:"Patron XP pass-up"},                                   //e tc/sc
+  {k:"jump",       n:"Jump",                 fam:"Lore",   a:[], d:0, tc:0,  sc:4,  u:"util", e:"Jump farther"},   // #881: retail — free to train, +4 to specialize (was a free specialize)
+  {k:"leadership", n:"Leadership",           fam:"Lore",   a:[], d:0, tc:4,  sc:2,  u:"util", e:"Patron XP pass-up"},
   {k:"loyalty",    n:"Loyalty",              fam:"Lore",   a:[], d:0, tc:0,  sc:2,  u:"util", e:"Vassal allegiance XP"},
   {k:"summon",     n:"Summoning",            fam:"Lore",   a:["Endurance","Self"], d:3, tc:8, sc:4, u:"util", e:"Summon combat pets"},
-  {k:"deception",  n:"Deception",            fam:"Lore",   a:[], d:0, tc:4,  sc:4,  u:"util", e:"Mislead foes"},                                        //e tc/sc
-  {k:"assesscreature",n:"Assess Creature",   fam:"Lore",   a:[], d:0, tc:0,  sc:0,  u:"util", e:"Reveal creature stats (codex)"},
-  {k:"assessperson",  n:"Assess Person",     fam:"Lore",   a:[], d:0, tc:0,  sc:0,  u:"util", e:"Reveal NPC/player info"},
+  {k:"deception",  n:"Deception",            fam:"Lore",   a:[], d:0, tc:4,  sc:2,  u:"util", e:"Mislead foes"},
+  {k:"assesscreature",n:"Assess Creature",   fam:"Lore",   a:[], d:0, tc:4,  sc:2,  u:"util", e:"Reveal creature stats (codex)"},   // #881: retail 4/+2 (matches the skill pack, which already charged this)
+  {k:"assessperson",  n:"Assess Person",     fam:"Lore",   a:[], d:0, tc:2,  sc:2,  u:"util", e:"Reveal NPC/player info"},          // #881: retail 2/+2
   // — Mounts & Vessels — (base movement speed while piloting a ship / riding a horse)
-  {k:"sailing",    n:"Sailing",              fam:"Lore",   a:["Coordination","Focus"],     d:3, tc:2, sc:4, u:"util", e:"Base sailing speed of your ship"},
-  {k:"riding",     n:"Horse Riding",         fam:"Lore",   a:["Coordination","Quickness"], d:3, tc:2, sc:4, u:"util", e:"Base riding speed of your mount"},
+  // #881 Dereth rule: Riding & Sailing are FREE-TRAINED (trained by default at creation, tc:0) and
+  // cost 2 to specialize — AC's Free-train pattern (Loyalty/Arcane Lore). Never pack-overridden.
+  {k:"sailing",    n:"Sailing",              fam:"Lore",   a:["Coordination","Focus"],     d:3, tc:0, sc:2, u:"util", e:"Base sailing speed of your ship"},
+  {k:"riding",     n:"Horse Riding",         fam:"Lore",   a:["Coordination","Quickness"], d:3, tc:0, sc:2, u:"util", e:"Base riding speed of your mount"},
   // — Trades: gathering & crafting (Ultima-Online-style) — training/spec is a head-start; the working
   //   level rises with USE (player.craft, see craftLvl). Higher tiers of ore/wood/leather & finer
   //   recipes unlock as the working level climbs. —
@@ -136,7 +139,11 @@ let AC_XP=null;
 try{ fetch('assets/acskills.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j) return;
   for(const k in j.skills){ const s=SKILL_BY_KEY[k]; if(!s) continue; const a=j.skills[k];
     if(a.a&&a.a.length){ s.a=a.a; s.d=a.d; } else if(a.d===0){ s.a=[]; s.d=0; }
-    s.tc=Math.max(0,a.tc); s.sc=(a.sc>=900?-1:a.sc);              // 1000+ in the table = cannot specialize
+    // #881: the pack's sc column is the TOTAL cost to specialize (train+spec: war 16/28). The game
+    // charges tc at train and sc ADDITIONAL at spec (specSkill/creditsSpent sum tc+sc), so importing
+    // the total as-is overcharged every specialization (War Magic cost 16+28=44 instead of 16+12=28).
+    if(s.k==="riding"||s.k==="sailing"){ /* Dereth-custom free-train rule (#881) — never pack-overridden */ }
+    else { s.tc=Math.max(0,a.tc); s.sc=(a.sc>=900?-1:Math.max(0,a.sc-Math.max(0,a.tc))); }   // 900+ in the table = cannot specialize (Augmentation only)
     let b=0; if(s.d){let sum=0;for(const at of s.a)sum+=10;b=Math.floor(sum/s.d);} s.base0=b; }
   AC_XP=j.xp;
   if(typeof derive==="function"&&typeof player!=="undefined"&&player.skills){ derive(); updateHUD(); }
@@ -333,10 +340,13 @@ function trainSkill(key){ const s=SKILL_BY_KEY[key]; if(!s)return false; const s
 function specSkill(key){ const s=SKILL_BY_KEY[key]; if(!s)return false; const st=skillState(key); if(st.t!==1||s.sc<0)return false; if(creditsAvail()<s.sc)return false; if(specCreditsUsed()+s.tc+s.sc>70)return false; st.t=2; return true; }
 function raiseSkillCost(key){ const st=skillState(key); if(st.t===0)return Infinity; const r=skillRank(key); return skillCumXP(r+1,st.t===2)-skillCumXP(r,st.t===2); }
 function raiseSkill(key){ const st=skillState(key); if(st.t===0)return false; const cost=raiseSkillCost(key); if(player.xpUnspent<cost)return false; player.xpUnspent-=cost; st.xp+=cost; return true; }
-function freshSkills(){ const o={}; for(const s of SKILLS_DEF)o[s.k]={t:0,xp:0}; return o; }
+const DEFAULT_TRAINED=["riding","sailing"];   // #881: free-trained at creation (tc:0, specialize 2) — AC's Free-train pattern, applied per the Dereth mounts/vessels rule
+function freshSkills(){ const o={}; for(const s of SKILLS_DEF)o[s.k]={t:0,xp:0}; for(const k of DEFAULT_TRAINED)o[k].t=1; return o; }
 function migrateSkills(old){ const fresh=freshSkills(); if(!old||typeof old!=="object")return fresh;
   const sample=old[Object.keys(old)[0]];
-  if(sample&&typeof sample==="object"){ for(const k in fresh){ if(old[k]&&typeof old[k]==="object")fresh[k]={t:old[k].t|0,xp:old[k].xp|0}; } return fresh; } // new tiered format
+  if(sample&&typeof sample==="object"){ for(const k in fresh){ if(old[k]&&typeof old[k]==="object")fresh[k]={t:old[k].t|0,xp:old[k].xp|0}; }
+    for(const k of DEFAULT_TRAINED) if(fresh[k].t<1)fresh[k].t=1;   // #881: existing characters gain the default training too (it costs 0 credits)
+    return fresh; } // new tiered format
   const map={melee:"heavy",missile:"missile",war:"war",life:"life",defense:"meleed"}; // legacy numeric ranks → trained, ranks→invested XP
   for(const ok in map){ fresh[map[ok]]={t:1,xp:skillCumXP(old[ok]|0,false)}; }
   return fresh;
