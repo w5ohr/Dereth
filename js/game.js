@@ -1194,16 +1194,11 @@ let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // world activity/visibility culling: only the area around the player is simulated & drawn (perf).
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
 const SIM_RADIUS=95, VIS_RADIUS=380, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;   // VIS reaches past the clear-weather fog wall (350) so distant land is drawn, not popped — AC's long vistas
-// ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
-let USE_GLTF_AVATAR=false;                      // legacy single-avatar drop-in (assets/avatar.glb); superseded by model choice
-const GLTF_AVATAR_URL="assets/avatar.glb";
-let gltfAvatar=null,gltfMixer=null,gltfIdle=null,gltfWalk=null,_pgWalk=false,gltfReady=false,gltfTried=false,gltfAvatarUrl=null;
-// ── Player-character models, chosen at avatar creation. "procedural" = the customizable classic avatar;
-//    the rest are self-hosted rigged models (idle-animated) rendered as your character in third person. ──
+// ── Player-character models, chosen at avatar creation. Only the customizable classic avatar remains:
+//    the legacy rigged-glTF avatar drop-in and the external model roster (Knight/Barbarian/…) were
+//    removed (#780) — the player character is always the authentic AC model (buildAvatarJointed). ──
 const PLAYER_MODELS=[
   {k:"procedural",n:"Classic"},   // the real Asheron's Call body (buildAvatarJointed + applyACBody).
-  // The external rigged glTF models (Knight/Barbarian/Mage/Soldier/Astronaut/Robot/… — not AC assets)
-  // were removed: the player character is always the authentic AC model.
 ];
 function playerModelDef(k){ return PLAYER_MODELS.find(m=>m.k===k)||PLAYER_MODELS[0]; }
 // Robust model height: some rigged/skinned glTFs report an empty bounding box on load (matrices not yet
@@ -1220,116 +1215,9 @@ function robustHeight(obj){
   }
   return h>0.001?h:1;
 }
-// Load a chosen player model into gltfAvatar (shown in 3rd person; the render loop already swaps it for
-// the procedural avatar). url null → procedural (clears any gltf avatar). Latest choice wins on async load.
-function loadPlayerModel(def){
-  def=(typeof def==="string")?{url:def}:(def||{});
-  const url=def.url||null;
-  if(gltfAvatar){ scene.remove(gltfAvatar); gltfAvatar=null; } gltfMixer=gltfIdle=gltfWalk=null; gltfReady=false; gltfAvatarUrl=url;
-  if(!url||typeof THREE.GLTFLoader==="undefined") return;   // procedural avatar
-  const L=new THREE.GLTFLoader();
-  const finish=(root,anims)=>{
-    if(gltfAvatarUrl!==url) return;                          // superseded by a newer choice
-    root.scale.setScalar(TARGET_HUMAN_H/robustHeight(root));
-    let box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;
-    root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
-    gltfAvatar=new THREE.Group(); gltfAvatar.add(root); gltfAvatar.visible=false; scene.add(gltfAvatar);
-    if(anims&&anims.length){ gltfMixer=new THREE.AnimationMixer(root);
-      const idle=anims.find(a=>/idle/i.test(a.name))||anims[0], walk=anims.find(a=>/walk|run/i.test(a.name));
-      gltfIdle=gltfMixer.clipAction(idle); gltfWalk=walk?gltfMixer.clipAction(walk):null; gltfIdle.play(); }
-    gltfReady=true;
-  };
-  L.load(url, gltf=>{
-    const root=gltf.scene, anims=(gltf.animations||[]).slice();
-    if(!def.clips||!def.clips.length){ finish(root,anims); return; }   // model has its own baked clips
-    let pending=def.clips.length;                                       // else load shared idle/walk clips (RPM bodies)
-    for(const cu of def.clips){ L.load(cu, cg=>{
-        for(const a of (cg.animations||[])){ a.name=(/idle/i.test(cu)?"idle_":/walk/i.test(cu)?"walk_":"")+a.name; anims.push(a); }
-        if(--pending===0) finish(root,anims);
-      }, undefined, e=>{ if(--pending===0) finish(root,anims); }); }
-  }, undefined, err=>console.log("player model failed:",url,(err&&err.message)||""));
-}
-function applyPlayerModel(){ loadPlayerModel(playerModelDef((player.appearance&&player.appearance.model)||"procedural")); }
-function tryLoadGltfAvatar(){ if(gltfTried||!USE_GLTF_AVATAR) return; gltfTried=true; loadPlayerModel(GLTF_AVATAR_URL); }
-// ---- real rigged "people" pulled from public CDNs, randomly assigned to strolling townsfolk ----
-// (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
-let USE_GLTF_NPCS=false;           // all NPCs/townsfolk use the standard procedural humanoid (buildPerson) with per-NPC random colours — no grab-bag of CDN models
-const MAX_GLTF_NPCS=40;            // cap skinned NPCs for performance; the rest stay procedural
-// Rigged human/character models, SELF-HOSTED under assets/models/ (run assets/fetch-models.py once to
-// populate). The game's own static server serves them same-origin — no runtime CDN dependency, works
-// offline, no CORS. Each entry:
-//   {url, sex, w}                        self-contained glTF (mesh + baked clips in one file)
-//   {mesh, clips:[...], sex, w}          a static mesh + separate animation-clip glTFs (Ready Player Me:
-//                                        the *_TPose body is animated by shared idle/walk clips)
-// sex: 'f' female · 'm' male · 'n' non-human/neutral (robots, astronaut). Players & townsfolk are a mix.
-// w = townsfolk-assignment weight: thematic medieval humans dominate; sci-fi oddities stay rare.
-const GP_DIR="assets/models/people/", GA_DIR="assets/models/anim/";
-// The external rigged glTF human models (RPM bodies + KayKit Adventurers + sci-fi oddities) were
-// REMOVED — not AC assets. NPCs/townsfolk and the player are always the authentic AC model.
-const GLTF_PEOPLE=[];
-let gltfPeople=[], gltfPeopleStarted=false, gltfPeopleDone=0;
-function loadGltfPeople(){
-  if(gltfPeopleStarted||!USE_GLTF_NPCS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
-  gltfPeopleStarted=true; const L=new THREE.GLTFLoader();
-  const settle=()=>{ if(++gltfPeopleDone>=GLTF_PEOPLE.length) rebalanceGltfNpcs(); };  // all loads finished → re-roll for correct weighting
-  const store=(p,scene,anims)=>{
-    const h=robustHeight(scene);
-    // models face +z; our bodies face -z and NPC yaw aims -z at travel, so clones need a +PI flip (else moonwalk).
-    gltfPeople.push({scene, anims:anims||[], scale:TARGET_HUMAN_H/h, faceOffset:Math.PI, w:(p.w>0?p.w:1), sex:p.sex||"n"});
-    console.log("Loaded a person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+")."); assignGltfNpcs();   // #163: dev console, not player chat
-  };
-  for(const p of GLTF_PEOPLE){
-    if(p.mesh){                                        // modular: static mesh + external animation clips
-      L.load(p.mesh, gltf=>{
-        const scene=gltf.scene, anims=(gltf.animations||[]).slice(); let pending=p.clips.length;
-        if(!pending){ store(p,scene,anims); settle(); return; }
-        for(const cu of p.clips){ L.load(cu, cg=>{
-            for(const a of (cg.animations||[])){ a.name=(/idle/i.test(cu)?"idle_":/walk/i.test(cu)?"walk_":"")+a.name; anims.push(a); }
-            if(--pending===0){ store(p,scene,anims); settle(); }
-          }, undefined, err=>{ console.log("clip failed:",cu,(err&&err.message)||""); if(--pending===0){ store(p,scene,anims); settle(); } }); }
-      }, undefined, err=>{ console.log("person mesh failed:",p.mesh,(err&&err.message)||""); settle(); });
-    } else {                                           // self-contained glTF
-      L.load(p.url, gltf=>{ store(p, gltf.scene, gltf.animations||[]); settle(); },
-             undefined, err=>{ console.log("person model failed:",p.url,(err&&err.message)||""); settle(); });
-    }
-  }
-}
-function pickWeightedPerson(){   // weighted random over loaded people so fantasy humans dominate townsfolk
-  let tot=0; for(const m of gltfPeople) tot+=(m.w||1);
-  let r=Math.random()*tot; for(const m of gltfPeople){ r-=(m.w||1); if(r<=0) return m; }
-  return gltfPeople[gltfPeople.length-1];
-}
-function applyGltfToNpc(n,m){   // clone model m onto townsfolk n (also used to REPLACE an existing clone)
-  let clone; try{ clone=THREE.SkeletonUtils.clone(m.scene); }catch(e){ return false; }
-  clone.scale.setScalar(m.scale);
-  const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y;     // feet to 0
-  clone.rotation.y=(m.faceOffset!=null?m.faceOffset:Math.PI);                       // per-model front alignment
-  clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true; } });   // #232: geometry/materials belong to the gltfPeople cache
-  if(n.gltf){ if(n.gltfMixer&&n.gltfMixer.stopAllAction)n.gltfMixer.stopAllAction(); n.mesh.remove(n.gltf); n.gltfMixer=n.gltfIdle=n.gltfWalk=null; }
-  else { for(const ch of n.mesh.children) ch.visible=false; }                        // first time: hide the procedural body
-  n.mesh.add(clone); n.gltf=clone; n._gw=undefined; n.sex=m.sex||"n";   // record sex (gendered names/voices later)
-  if(m.anims.length){ n.gltfMixer=new THREE.AnimationMixer(clone);
-    n.gltfIdle=n.gltfMixer.clipAction(m.anims.find(a=>/idle/i.test(a.name))||m.anims[0]);
-    const w=m.anims.find(a=>/walk/i.test(a.name)); n.gltfWalk=w?n.gltfMixer.clipAction(w):null;
-    n.gltfIdle.play(); }
-  return true;
-}
-function assignGltfNpcs(){
-  if(!USE_GLTF_NPCS||!gltfPeople.length||typeof THREE.SkeletonUtils==="undefined") return;
-  let count=npcs.filter(n=>n.gltf).length;
-  for(const n of npcs){                              // fill empty townsfolk slots (fast progressive population)
-    if(count>=MAX_GLTF_NPCS) break;
-    if(n.gltf||n.role!=="townsfolk"||!n.mesh) continue;
-    if(applyGltfToNpc(n, pickWeightedPerson())) count++;
-  }
-}
-// Greedy fill above uses whatever loaded first, so the small generic models (fast) tend to grab the
-// slots before the larger KayKit fantasy humans finish — undoing the weighting. Once every fetch has
-// settled, re-roll all skinned townsfolk against the full weighted pool so fantasy humans dominate.
-function rebalanceGltfNpcs(){
-  if(!USE_GLTF_NPCS||!gltfPeople.length||typeof THREE.SkeletonUtils==="undefined") return;
-  for(const n of npcs){ if(n.gltf&&n.role==="townsfolk"&&n.mesh) applyGltfToNpc(n, pickWeightedPerson()); }
-}
+// (The legacy CDN "rigged people" townsfolk system — loadGltfPeople/assignGltfNpcs/rebalanceGltfNpcs,
+//  gated behind USE_GLTF_NPCS=false — was removed in #780. NPCs/townsfolk always use the procedural
+//  humanoid (buildPerson); only the monster glTF path below is live.)
 // ---- rigged glTF models for MONSTER kinds (spawned via streamMonsters; procedural creature is the fallback) ----
 let USE_GLTF_MONSTERS=true;
 // AC kind → one or more SELF-HOSTED models (assets/models/monsters/, via fetch-models.py). Each value is
@@ -3926,7 +3814,6 @@ async function initThree(){
   cam.add(weapon);
   scene.add(cam);
   playerAvatar=buildAvatar();scene.add(playerAvatar);
-  tryLoadGltfAvatar();   // async; swaps in the rigged glTF model if present, else keeps the procedural avatar
   // ACES filmic tone-mapping + correct sRGB output for a richer, less-washed image
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.useLegacyLights=true;   // #695/#webgpu: NO-OP from r165 on (removed) — r185 is physical-lights-only. Kept as a harmless marker; parity with the old legacy-falloff tuning was verified on r185 (ACES tone-mapping absorbs the difference — instance + overworld both match r159). If a future light re-tune is needed it's an on-hardware eyeball pass, not a code bug.
@@ -8029,7 +7916,6 @@ function buildWorld(){
   if(!isOnline){ spawnBoss();spawnApex();spawnShadowGenerals(); }
   if(worldEvent){if(worldEvent.beam)scene.remove(worldEvent.beam);if(worldEvent.beacon)scene.remove(worldEvent.beacon);}
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
-  loadGltfPeople(); assignGltfNpcs();   // populate some townsfolk with real CDN people models (async; procedural fallback)
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   loadGltfHorse();                       // preload the rigged horse model for mounts
   if(typeof buildHarbors==="function") buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
@@ -19424,8 +19310,6 @@ function animateOnePerson(p,dt){
   }
   // smooth body facing
   let fy=p.mesh.rotation.y; const df=((p._face-fy+Math.PI*3)%(Math.PI*2))-Math.PI; p.mesh.rotation.y=fy+df*Math.min(1,dt*6);
-  if(p.gltfMixer){ p.gltfMixer.update(dt);                                  // drive the rigged CDN model
-    if(p.gltfWalk && p._gw!==moving){ p._gw=moving; p.gltfIdle.stop(); p.gltfWalk.stop(); (moving?p.gltfWalk:p.gltfIdle).play(); } }
   const breath=Math.sin(t*1.6+p._ph);
   if(moving){
     const s=Math.sin(p._wp)*0.55;
@@ -19618,19 +19502,11 @@ function syncCamera(dt){
     cam.position.copy(camCur);
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false;
-    if(gltfReady&&gltfAvatar){   // external rigged model
-      playerAvatar.visible=false; gltfAvatar.visible=player.alive&&!camTooClose;
-      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=player.yaw+Math.PI;   // faces the character's own heading, not the camera orbit
-      if(gltfMixer){ gltfMixer.update(dt);   // swap idle↔walk with movement (RPM bodies use loaded clips)
-        const mv=held("forward")||held("back")||held("left")||held("right");
-        if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
-    } else {                     // procedural avatar
-      avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
-      playerAvatar.visible=player.alive&&!camTooClose;
-      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;   // character keeps its heading; the camera orbits around it
-      animateAvatar(dt);
-      if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
-    }
+    avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
+    playerAvatar.visible=player.alive&&!camTooClose;
+    playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;   // character keeps its heading; the camera orbits around it
+    animateAvatar(dt);
+    if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
   } else {
     // AC-style TRUE first person: look out from the real body's eyes. The AC character body stays
     // visible & animated, so you see your OWN hands/arms and the weapon in your real hand doing the
@@ -19641,18 +19517,10 @@ function syncCamera(dt){
     cam.position.set(player.x+ldx*0.12, gy+EYE+Math.sin(player.bob)*0.06, player.z+ldz*0.12);   // eye socket, a touch forward of head centre
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false; camInit=false;
-    if(gltfReady&&gltfAvatar){
-      playerAvatar.visible=false; gltfAvatar.visible=player.alive;
-      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=player.yaw+Math.PI;
-      if(gltfMixer){ gltfMixer.update(dt);
-        const mv=held("forward")||held("back")||held("left")||held("right");
-        if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
-    } else {
-      playerAvatar.visible=player.alive;
-      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;
-      animateAvatar(dt);
-      avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
-    }
+    playerAvatar.visible=player.alive;
+    playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;
+    animateAvatar(dt);
+    avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
   }
   if(shakeT>0){
     shakeT-=dt; const m=shakeMag*clamp(shakeT/0.32,0,1);
@@ -32391,8 +32259,8 @@ function _logoutFadeAvatar(op){
   av.traverse(o=>{ if(!o.isMesh||!o.material) return;
     const arr=Array.isArray(o.material)?o.material:null, list=arr||[o.material];
     for(let i=0;i<list.length;i++){ let m=list[i];
-      // clone each material once so we fade ONLY the local avatar — never a material shared with the
-      // gltfPeople cache (which would fade remote players too). We reload after, so no restore is needed.
+      // clone each material once so we fade ONLY the local avatar — never a shared AC-model material
+      // (which would fade remote players too). We reload after, so no restore is needed.
       if(!m._logoutOwned){ m=m.clone(); m._logoutOwned=true; m.transparent=true; m.depthWrite=false;
         if(arr) o.material[i]=m; else o.material=m; }
       m.opacity=op; }
@@ -33054,7 +32922,6 @@ function startGame(loadSaved,preset){
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
   if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
-  applyPlayerModel();          // if the player chose a rigged body model at creation, load it as their avatar
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
   running=true;paused=false;lastTs=0;updateQuestHUD();updateSeasonHUD();
