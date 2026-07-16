@@ -26698,6 +26698,10 @@ function buildBlipSettings(){
 function openSettings(){
   closeOtherModals("settings");
   const el=document.getElementById('settings');el.style.display="flex";paused=true;if(locked)document.exitPointerLock();
+  if(!document.getElementById('setBugBtn')){ const card=el.querySelector('.card');   // in-game issue reporting entry point (the modal itself is built in openBugReport)
+    if(card){ const b=document.createElement('button'); b.id='setBugBtn'; b.textContent="Report an Issue…";
+      b.title="Report a problem to the developers — files a GitHub issue with your name, location and (optionally) the chat log";
+      b.style.marginTop="10px"; b.onclick=()=>{ closeSettings(); openBugReport(); }; card.appendChild(b); } }
   const sens=document.getElementById('setSens'),vol=document.getElementById('setVol'),fov=document.getElementById('setFov');
   const dgl=document.getElementById('setDgl');
   const bright=document.getElementById('setBright'),contrast=document.getElementById('setContrast');
@@ -31986,6 +31990,9 @@ function netHandle(m){
   if(m.t==="who") return onWho(m);
   if(m.t==="house_sync") return onHouseSync(m);   // #355: authoritative dwelling ownership + access settings
   if(m.t==="save_ok") return onSaveOk(m);         // #457: server confirmed the save landed — a pending logout can now finish
+  if(m.t==="bug_ok"){ log(`Your report was filed — <a href="${esc(m.url||BUG_REPO_URL)}" target="_blank" rel="noopener" style="color:var(--gold)">issue #${m.num|0}</a>. Thank you!`,"sys"); if(SFX.quest)SFX.quest(); return; }
+  if(m.t==="bug_err"){ const fb=(m.fallback&&_bugLastPayload)?` — <a href="${bugFallbackUrl(_bugLastPayload)}" target="_blank" rel="noopener" style="color:var(--gold)">file it on GitHub instead</a>`:"";
+    log(`Report not filed: ${esc(m.msg||"unknown error")}${fb}`,"warn"); return; }
   if(m.t==="emote") return onEmote(m);
   if(m.t==="pvp") return onPvp(m);
   if(m.t==="rbuff") return onRemoteBuff(m);
@@ -32704,6 +32711,7 @@ function handleSlash(text){
   const parts=text.slice(1).split(/\s+/), cmd=parts[0].toLowerCase();
   const after=text.slice(text.indexOf(" ")+1);
   if(cmd==="unstuck"||cmd==="stuck"||cmd==="free"){ doUnstuck(); }   // #465: escape hatch — works even while delving
+  else if(cmd==="bug"||cmd==="report"||cmd==="issue"){ openBugReport(); }   // in-game issue reporting → GitHub
   else if(cmd==="buff"||cmd==="buffbot"){ buffBotCast(parts.slice(1).join(" ")); }
   else if(cmd==="home"||cmd==="estate"){ recallHome(); }
   else if(cmd==="house"){ hsHouseCmd(parts); }
@@ -32826,6 +32834,7 @@ function handleSlash(text){
     log(`<b>Housing:</b> /home (/estate, /hor) recall · /house · /castle · /mansion_recall · /grant &lt;name&gt; · /revoke &lt;name&gt;`,"sys");
     log(`<b>Combat &amp; social:</b> /pk pk|pkl|npk · /trade &lt;name&gt; · /buff [spell] · /me &lt;action&gt; · /emote — or /${Object.keys(EMOTE_CMDS).join(", /")}`,"sys");
     log(`<b>Session:</b> /logout (/camp) — sync to the server and depart Dereth through a recall portal`,"sys");
+    log(`<b>Feedback:</b> /bug (/report) — report a problem to the developers (files a GitHub issue)`,"sys");
   }
   else log("Unknown command: <b>/"+esc(cmd)+"</b> — type <b>/help</b> for the full list.","warn");
 }
@@ -33569,6 +33578,78 @@ function refreshAvatarAppearance(){
 
 // #478: a lightweight in-game confirm modal (the game has no native-dialog helper) — used to guard the
 // destructive single-slot save overwrite when starting a new character.
+// ══ In-game issue reporting ═══════════════════════════════════════════════════════════════════════
+// /bug (also /report, /issue) or Settings → "Report an Issue" opens a form that captures the
+// character name, an in-world location string, the player's description, and (opt-out) the current
+// chat log, and files it as a GitHub issue labelled player-report. Online, the SERVER files it —
+// the GitHub token lives only in the server's environment (never in this shipped client; see #440).
+// Solo/offline (or if the server has no token), a pre-filled GitHub new-issue page opens instead,
+// so the player can submit it under their own GitHub account.
+const BUG_REPO_URL="https://github.com/w5ohr/Dereth/issues/new";
+let _bugLastPayload=null;   // kept so a server-side failure can still offer the pre-filled fallback link
+function bugLocationStr(){
+  try{
+    if(inDungeon) return "Dungeon: "+((curDungeon&&curDungeon.name)||"unknown")+(curDungeon&&curDungeon.interior?" (building interior)":"");
+    if(inNetwork) return "Town Network (portal hub)";
+    let s=acCoordStr(player.x,player.z);
+    const rn=(typeof regionNameAt==="function")&&regionNameAt(player.x,player.z); if(rn&&rn.name) s+=" — "+rn.name;
+    const near=CITIES.map(c=>({c,d:Math.hypot(c.x-player.x,c.z-player.z)})).sort((a,b)=>a.d-b.d)[0];
+    if(near) s+=" (near "+near.c.name+")";
+    return s;
+  }catch(e){ return "x="+Math.round(player.x)+" z="+Math.round(player.z); }
+}
+function bugChatCapture(){   // the chat window's current text, as plain text (tags stripped, entities decoded)
+  const div=document.createElement('div'), out=[];
+  for(const l of logLines){ div.innerHTML=l.msg; const t=(div.textContent||"").replace(/\s+/g," ").trim(); if(t) out.push("["+l.tab+"] "+t); }
+  let s=out.join("\n"); if(s.length>6000) s=s.slice(-6000);
+  return s;
+}
+function bugIssueBody(p){
+  const fence=t=>"```\n"+String(t).replace(/```/g,"'''")+"\n```";   // player text rides inside a fence — neutralize markdown/@-mentions and fence breakouts
+  return `**Reported in-game by:** ${p.name}\n**Location:** ${p.loc}\n**Mode:** ${p.online?"online":"solo"} · **Level:** ${p.level}\n\n## Player description\n\n${fence(p.text)}\n`
+    +(p.chat?`\n## Chat log at the time\n\n${fence(p.chat)}\n`:"");
+}
+function bugFallbackUrl(p){
+  const title="[Player report] "+((p.text.split("\n")[0]||"In-game issue").slice(0,70));
+  let body=bugIssueBody(p);
+  let url=BUG_REPO_URL+"?labels=player-report&title="+encodeURIComponent(title)+"&body="+encodeURIComponent(body);
+  if(url.length>7600){ body=bugIssueBody(Object.assign({},p,{chat:""}))+"\n_(chat log omitted — too long for a pre-filled link; paste it manually if relevant)_\n";
+    url=BUG_REPO_URL+"?labels=player-report&title="+encodeURIComponent(title)+"&body="+encodeURIComponent(body); }   // GitHub rejects over-long URLs — drop the chat before mangling the encoding
+  return url;
+}
+function openBugReport(){
+  if(document.getElementById('bugOv')) return;
+  const nm=player.name||"Adventurer", loc=bugLocationStr();
+  const ov=document.createElement('div'); ov.id='bugOv';
+  ov.style.cssText="position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  ov.innerHTML=`<div style="max-width:540px;width:92%;background:#161821;border:1px solid var(--gold);border-radius:10px;padding:18px 20px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+    <h3 style="margin:0 0 6px;color:var(--gold)">Report an Issue</h3>
+    <div style="color:var(--dim);font-size:12px;line-height:1.5;margin-bottom:10px">Files a report to the Dereth developers as a <b>public</b> GitHub issue. Your character name and location are included${isOnline?"":" — on the solo world a pre-filled GitHub page will open for you to submit"}.</div>
+    <div style="font-size:12.5px;color:#e8dcc0;margin-bottom:8px"><b>${esc(nm)}</b> · ${esc(loc)}</div>
+    <textarea id="bugText" maxlength="2000" placeholder="What happened? What did you expect to happen instead?" style="width:100%;box-sizing:border-box;height:110px;background:#0d0f16;color:#e8e8e8;border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit;resize:vertical"></textarea>
+    <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim);margin:8px 0;cursor:pointer"><input id="bugChat" type="checkbox" checked> include the current chat-window text (${logLines.length} lines)</label>
+    <div id="bugMsg" style="font-size:12px;color:#e08a6a;min-height:16px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+      <button id="bugCancel" class="tbtn">Cancel</button>
+      <button id="bugSend" class="tbtn" style="border-color:var(--gold);color:var(--gold)">Submit Report</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  paused=true; if(locked)document.exitPointerLock();
+  ov.addEventListener('keydown',e=>{ e.stopPropagation(); if(e.key==="Escape") close(); });   // typing must not drive the game (the global handler has no textarea guard)
+  const close=()=>{ ov.remove(); paused=false; };
+  ov.querySelector('#bugCancel').onclick=close;
+  ov.querySelector('#bugText').focus();
+  ov.querySelector('#bugSend').onclick=()=>{
+    const text=ov.querySelector('#bugText').value.trim();
+    if(text.length<10){ ov.querySelector('#bugMsg').textContent="Please describe the problem (at least 10 characters)."; return; }
+    const p={name:nm,loc,level:player.level|0,online:!!isOnline,text,chat:ov.querySelector('#bugChat').checked?bugChatCapture():""};
+    _bugLastPayload=p;
+    if(isOnline&&NET.open){ netSend({t:"bug",text:p.text,loc:p.loc,chat:p.chat}); log("Submitting your report…","sys"); }
+    else { window.open(bugFallbackUrl(p),"_blank");
+      log("A pre-filled GitHub page has opened — press <b>Submit new issue</b> there to file your report.","sys"); }
+    close();
+  };
+}
 function uiConfirm(html,onYes,yesLabel){
   const ov=document.createElement('div');
   ov.style.cssText="position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";

@@ -2570,6 +2570,77 @@ def clean_relay(s, maxlen):
     s = "".join(ch for ch in s if ch >= " ")   # drop control chars incl. newlines/tabs (single-line relay)
     return s[:maxlen].strip()
 
+# ---------------------------------------------------------------- in-game issue reporting → GitHub
+# The client's /bug form sends {t:"bug", text, loc, chat}. The server — never the client — holds the
+# GitHub token (post-#440 rule: credentials live in the environment, not in anything shipped or
+# committed) and files the report as an issue labelled player-report. No token → the client is told
+# to fall back to its pre-filled github.com/new link.
+GITHUB_TOKEN  = os.environ.get("DERETH_GITHUB_TOKEN", "").strip()
+GITHUB_REPO   = os.environ.get("DERETH_GITHUB_REPO", "w5ohr/Dereth").strip()
+BUG_COOLDOWN  = float(os.environ.get("DERETH_BUG_COOLDOWN", "120"))   # seconds between reports per account
+BUG_DAILY_MAX = int(os.environ.get("DERETH_BUG_DAILY_MAX", "10"))     # reports per account per UTC day
+_BUG_LAST  = {}   # account -> monotonic time of last accepted report
+_BUG_COUNT = {}   # account -> [utc_day, count]
+
+def clean_block(s, maxlen):
+    """Multi-line variant of clean_relay for issue bodies: keeps newlines, drops other control
+    chars. Markup is NOT stripped — the text lands inside a Markdown code fence, so neutralize
+    fence breakouts instead of mangling what the player wrote."""
+    s = str(s).replace("\r\n", "\n").replace("\r", "\n")
+    s = "".join(ch for ch in s if ch >= " " or ch == "\n")
+    return s.replace("```", "'''")[:maxlen].strip()
+
+def _github_create_issue(title, body):
+    """Blocking POST to the GitHub issues API (stdlib only) — run via asyncio.to_thread."""
+    import urllib.request
+    req = urllib.request.Request(
+        "https://api.github.com/repos/%s/issues" % GITHUB_REPO,
+        data=json.dumps({"title": title, "body": body, "labels": ["player-report"]}).encode("utf-8"),
+        headers={"Authorization": "Bearer " + GITHUB_TOKEN, "Accept": "application/vnd.github+json",
+                 "Content-Type": "application/json", "User-Agent": "dereth-server"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        j = json.loads(r.read().decode("utf-8"))
+        return j.get("html_url"), j.get("number")
+
+async def handle_bug(cl, msg):
+    if not GITHUB_TOKEN:
+        await cl.send({"t": "bug_err", "msg": "This realm has no issue reporting configured.", "fallback": True}); return
+    acct = cl.username or "?"
+    now_m = time.monotonic()
+    if now_m - _BUG_LAST.get(acct, -1e9) < BUG_COOLDOWN:
+        await cl.send({"t": "bug_err", "msg": "Please wait a couple of minutes between reports."}); return
+    day = int(time.time() // 86400); rec = _BUG_COUNT.get(acct)
+    if rec and rec[0] == day and rec[1] >= BUG_DAILY_MAX:
+        await cl.send({"t": "bug_err", "msg": "Daily report limit reached — thank you, we have plenty to go on!"}); return
+    text = clean_block(msg.get("text", ""), 4000)
+    if len(text) < 10:
+        await cl.send({"t": "bug_err", "msg": "The report text is too short."}); return
+    chat = clean_block(msg.get("chat", ""), 8000)
+    loc  = clean_relay(msg.get("loc", ""), 200)
+    name = clean_relay(cl.charname or acct, 32)
+    title = "[Player report] " + (text.splitlines()[0][:70] or "In-game issue")
+    # Player-provided text rides inside code fences (clean_block already neutralized ```), so it
+    # cannot inject markdown, @-mentions, or issue-command syntax into the tracker.
+    body = ("**Reported in-game by:** %s (account: %s)\n**Client location:** %s\n"
+            "**Server-observed position:** x=%.1f z=%.1f\n**Filed:** %s UTC\n\n"
+            "## Player description\n\n```\n%s\n```\n" % (
+                name, clean_relay(acct, 32), loc or "unknown",
+                getattr(cl, "x", 0.0), getattr(cl, "z", 0.0),
+                time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()), text))
+    if chat:
+        body += "\n## Chat log at the time\n\n```\n%s\n```\n" % chat
+    body += "\n_Filed automatically by the in-game /bug reporter._\n"
+    try:
+        url, num = await asyncio.to_thread(_github_create_issue, title, body)
+    except Exception as e:
+        print("[bug] GitHub issue create failed:", repr(e))
+        await cl.send({"t": "bug_err", "msg": "The report could not be delivered.", "fallback": True}); return
+    _BUG_LAST[acct] = now_m
+    _BUG_COUNT[acct] = [day, (rec[1] + 1) if (rec and rec[0] == day) else 1]
+    print("[bug] %s filed issue #%s (%s)" % (acct, num, url))
+    await cl.send({"t": "bug_ok", "url": url, "num": num})
+
 # #667: worn-armour descriptor synced between players (client myGearPayload -> player_pub -> remote render).
 # Untrusted and relayed to every viewer, so sanitize hard: known slots only, bounded typed arrays, names
 # stripped of markup (they drive an asset lookup, never innerHTML). Drop anything malformed rather than trust it.
@@ -3118,6 +3189,9 @@ async def dispatch(cl, msg):
                         }
                         await dbq(save_house, hid); await broadcast_house(hid)   # #449: 256 KiB write off the loop
                     # else: invalid hid, or plot owned by someone else — ignore
+    elif t == "bug":
+        if cl.in_world:
+            await handle_bug(cl, msg)
     elif t == "ping":
         await cl.send({"t": "pong"})
 
