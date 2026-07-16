@@ -21919,8 +21919,9 @@ function updateQuestArrows(dt){
   if(!_qArrows) return;
   const hideAll=()=>{ for(const m of _qArrows) if(m.visible){ m.visible=false; m.material.opacity=0; } };
   if(inDungeon||inNetwork||!player.alive||paused){ hideAll(); return; }   // overworld guidance only
+  if(!isFinite(player.x)||!isFinite(player.z)){ hideAll(); return; }      // never propagate a corrupt player position into arrow meshes
   const t=questArrowTarget();
-  if(!t){ hideAll(); return; }
+  if(!t||!isFinite(t.x)||!isFinite(t.z)){ hideAll(); return; }
   const dx=t.x-player.x, dz=t.z-player.z, dist=Math.hypot(dx,dz);
   if(dist<6){ hideAll(); return; }                       // you're basically there — stop cluttering the ground
   const ux=dx/dist, uz=dz/dist, ang=Math.atan2(ux,uz)+Math.PI;   // heading — the chevron's tip points AT the target (the +PI corrects the YXZ-lay-flat composition)
@@ -26866,12 +26867,13 @@ function updatePlugins(dt){
         +row("Armour",worn+" pieces")+row("Jewelry",jw+" worn"); } }
   // ── Comp Keeper: spell-component stock with low warnings ──
   if(pluginOn("compkeep")){ const el=document.getElementById('compkeepRows');
-    if(el){ const scarabs=player.inv.filter(it=>it&&it.stat==="comp"&&(typeof isScarab!=="function"||isScarab(it))).reduce((n,it)=>n+(it.count||1),0);
-      const pea=player.inv.filter(it=>it&&it.stat==="comp"&&!(typeof isScarab==="function"&&isScarab(it))).reduce((n,it)=>n+(it.count||1),0);
+    if(el){ const clean=v=>{ v=+v; return isFinite(v)?Math.max(0,Math.round(v)):0; };   // never surface a negative/NaN/Infinity comp count
+      const scarabs=clean(player.inv.filter(it=>it&&it.stat==="comp"&&(typeof isScarab!=="function"||isScarab(it))).reduce((n,it)=>n+(it.count||1),0));
+      const pea=clean(player.inv.filter(it=>it&&it.stat==="comp"&&!(typeof isScarab==="function"&&isScarab(it))).reduce((n,it)=>n+(it.count||1),0));
       const row=(a,b,lo)=>`<div style="display:flex;justify-content:space-between;gap:8px${b<=lo?";color:#8a1e1e;font-weight:bold":""}"><span>${a}</span><b>${b}</b></div>`;
-      el.innerHTML=row("Prismatic Tapers",player.prismTapers|0,10)+row("Tapers",player.tapers|0,10)
+      el.innerHTML=row("Prismatic Tapers",clean(player.prismTapers),10)+row("Tapers",clean(player.tapers),10)
         +row("Casting Scarabs",scarabs,3)+row("Other comps",pea,-1)
-        +row("Focus mana",Math.round(player.focusMana||0),-1); } }
+        +row("Focus mana",clean(player.focusMana),-1); } }
 }
 // Dungeon Maps + Radar redraw every frame (cheap 2D canvas) — driven from updatePlugins' per-frame block
 function _drawPluginCanvases(){
