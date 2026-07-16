@@ -18640,6 +18640,7 @@ function update(dt){
   regionTick(dt);        // announce region crossings + keep the HUD Region readout current
   landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
   gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
+  updateQuestArrows(dt); // white ground-arrows guiding the player toward the tracked quest's next step
   syncCamera(dt);
   _hudAcc+=dt; if(_hudAcc>=0.1){ _hudAcc=0; updateHUD(); }   // #P1: the HUD did ~63 DOM ops EVERY frame — throttle the render-loop refresh to ~10Hz. Every event-driven updateHUD() call (damage/heal/pickup/level/cast) still fires instantly, so nothing feels laggy.
 }
@@ -21821,8 +21822,120 @@ function firstObjIndex(id){ const a=activeEntry(id); if(!a) return -1; const q=q
   for(let i=0;i<q.obj.length;i++) if(!q.obj[i].bonus && a.prog[i]<q.obj[i].count) return i;   // required objectives first
   for(let i=0;i<q.obj.length;i++) if(a.prog[i]<q.obj[i].count) return i;                       // then any incomplete bonus
   return -1; }
-function trackedId(){ if(tracked&&isActive(tracked)) return tracked; return activeQuests.length?activeQuests[0].id:null; }   // quest the compass/HUD focus on
+function trackedId(){ if(tracked&&isActive(tracked)) return tracked; return activeQuests.length?activeQuests[activeQuests.length-1].id:null; }   // the ACTIVE (tracked) quest the compass/HUD/ground-arrows focus on. Default = the MOST RECENTLY accepted quest (accepting sets `tracked`); the player re-picks via the ☆ button in the quest log (J).
 function questDeadline(id){ const a=activeEntry(id); return a&&a.deadline||0; }
+// ═══ QUEST GROUND-ARROWS ═══════════════════════════════════════════════════════════════════════
+// A trail of white chevrons laid on the ground, flowing from the player toward the tracked quest's
+// next objective. Only the ACTIVE (tracked) quest is guided — see trackedId(). Overworld only.
+// Where an objective points: turn-in → the quest giver; slay <kind> → nearest live foe of that kind
+// (else the giver's town, where the hunt begins); delve → nearest dungeon entrance; gather/other →
+// the giver's town. Falls back to the giver so the arrows are never blank while a quest is active.
+let _qArrows=null, _qArrowTex=null, _qArrowFlow=0;
+function _questArrowTexture(){
+  if(_qArrowTex) return _qArrowTex;
+  const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+  g.clearRect(0,0,128,128);
+  // a fat chevron pointing UP (+v), soft white with a faint outer glow so it reads on any ground
+  g.lineJoin="round"; g.lineCap="round";
+  const draw=(col,w)=>{ g.strokeStyle=col; g.lineWidth=w; g.beginPath();
+    g.moveTo(22,86); g.lineTo(64,32); g.lineTo(106,86); g.stroke();
+    g.beginPath(); g.moveTo(22,108); g.lineTo(64,54); g.lineTo(106,108); g.stroke(); };
+  g.shadowColor="rgba(120,180,255,0.9)"; g.shadowBlur=10; draw("rgba(230,244,255,0.35)",22);   // glow
+  g.shadowBlur=0; draw("rgba(255,255,255,0.98)",13);                                            // core
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t._acShared=true; _qArrowTex=t; return t;
+}
+function _buildQuestArrows(){
+  if(_qArrows||typeof scene==="undefined"||!scene) return;
+  _qArrows=[];
+  const tex=_questArrowTexture(), geo=new THREE.PlaneGeometry(2.2,2.6);
+  for(let i=0;i<7;i++){
+    const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0,depthWrite:false,fog:false,toneMapped:false}));
+    m.rotation.order="YXZ"; m.visible=false; m.renderOrder=3; m.frustumCulled=false;
+    scene.add(m); _qArrows.push(m);
+  }
+}
+// the quest giver's world position: the live NPC if streamed in, else its town's coordinates
+function _questGiverPos(id){
+  for(const n of npcs){ if(!n) continue; if(n.questId===id||(n.questIds&&n.questIds.indexOf(id)>=0)) return {x:n.x,z:n.z}; }
+  const gv=(typeof QUEST_GIVERS!=="undefined"&&QUEST_GIVERS[id])||null;
+  const town=gv&&gv.town; if(town){ const c=CITIES.find(c=>c.name===town); if(c) return {x:c.x,z:c.z}; }
+  const cap=nearestCapital(player.x,player.z); return cap?{x:cap.x,z:cap.z}:null;
+}
+// If a portal hop reaches T faster than walking, return the PORTAL to guide to instead (else null).
+// Concrete A→B portals (portals[]: capital network + retail placements) are modelled exactly —
+// walk to the portal, emerge at its dest, walk the rest. The Town Network (tnPortals) reaches any
+// town, so for a far target it's modelled as "walk to the hub + a short destination-town walk".
+function _fastTravelTarget(T,direct){
+  let best=null, bestRoute=direct-45;                    // require ≥45u saved before rerouting off the direct path
+  if(typeof portals!=="undefined") for(const p of portals){
+    if(!p||!p.dest||!isFinite(p.dest.x)) continue;
+    const fromDest=Math.hypot(p.dest.x-T.x,p.dest.z-T.z);
+    if(fromDest>=direct) continue;                       // the far end must actually be closer to the goal
+    const route=Math.hypot(p.x-player.x,p.z-player.z)+fromDest;
+    if(route<bestRoute){ bestRoute=route; best={x:p.x,z:p.z,name:(p.dest.name||"Portal")}; }
+  }
+  if(direct>400 && typeof tnPortals!=="undefined") for(const tp of tnPortals){   // the universal hub only pays off cross-map
+    const route=Math.hypot(tp.x-player.x,tp.z-player.z)+80;                       // + nominal walk from the destination town's network portal
+    if(route<bestRoute){ bestRoute=route; best={x:tp.x,z:tp.z,name:"Town Network"}; }
+  }
+  return best;
+}
+// resolve the tracked quest's current objective to a world point to guide toward (null = no guidance)
+function questArrowTarget(){
+  if(!activeQuests.length) return null;
+  const id=trackedId(); if(!id) return null;
+  const q=questById(id), a=activeEntry(id); if(!q||!a) return null;
+  // ── base destination (where the objective actually is) ──
+  let T=null;
+  if(questCompleteId(id)){ const p=_questGiverPos(id); T=p&&{x:p.x,z:p.z,label:"Turn in: "+q.name}; }
+  else { const i=firstObjIndex(id);
+    if(i<0){ const p=_questGiverPos(id); T=p&&{x:p.x,z:p.z,label:q.name}; }
+    else { const o=q.obj[i];
+      if(o.type==="slay"&&o.kind){                       // hunt: aim at the nearest live foe of that kind
+        let best=null,bd=Infinity;
+        for(const m of monsters){ if(m.kind!==o.kind||m.hp<=0||!!m.isDungeon) continue;
+          const d=Math.hypot(m.x-player.x,m.z-player.z); if(d<bd){bd=d;best=m;} }
+        if(best) T={x:best.x,z:best.z,label:o.label};
+      } else if(o.type==="delve"){                       // aim at the nearest dungeon entrance
+        const e=(typeof nearestEntrance==="function")?nearestEntrance(player.x,player.z):null;
+        if(e&&e.e) T={x:e.e.x,z:e.e.z,label:o.label};
+      }
+      if(!T){ const p=_questGiverPos(id); T=p&&{x:p.x,z:p.z,label:o.label}; }   // gather / no live foe / no entrance → the giver's town
+    }
+  }
+  if(!T) return null;
+  // ── portal shortcut: if a portal hop reaches T faster than walking, guide to the portal instead ──
+  if(!inDungeon&&!inNetwork){
+    const direct=Math.hypot(T.x-player.x,T.z-player.z);
+    if(direct>150){ const ft=_fastTravelTarget(T,direct);
+      if(ft) return {x:ft.x,z:ft.z,label:ft.name+" → "+(T.label||"your goal"),viaPortal:true}; }
+  }
+  return T;
+}
+function updateQuestArrows(dt){
+  if(_qArrows===null) _buildQuestArrows();
+  if(!_qArrows) return;
+  const hideAll=()=>{ for(const m of _qArrows) if(m.visible){ m.visible=false; m.material.opacity=0; } };
+  if(inDungeon||inNetwork||!player.alive||paused){ hideAll(); return; }   // overworld guidance only
+  const t=questArrowTarget();
+  if(!t){ hideAll(); return; }
+  const dx=t.x-player.x, dz=t.z-player.z, dist=Math.hypot(dx,dz);
+  if(dist<6){ hideAll(); return; }                       // you're basically there — stop cluttering the ground
+  const ux=dx/dist, uz=dz/dist, ang=Math.atan2(ux,uz)+Math.PI;   // heading — the chevron's tip points AT the target (the +PI corrects the YXZ-lay-flat composition)
+  _qArrowFlow=(_qArrowFlow+dt*3.2)%4;                     // chevrons flow forward at ~3.2 u/s
+  const near=8;                                           // first chevron ~8 u ahead
+  for(let i=0;i<_qArrows.length;i++){ const m=_qArrows[i];
+    const d=near + i*4 - _qArrowFlow;                     // 4 u spacing, animated
+    if(d<3 || d>dist-2){ if(m.visible){m.visible=false;m.material.opacity=0;} continue; }   // don't sit on the player or overshoot the target
+    const ax=player.x+ux*d, az=player.z+uz*d;
+    m.position.set(ax, groundY(ax,az)+0.22, az);         // laid on the terrain surface, lifted clear of z-fighting
+    m.rotation.set(-Math.PI/2, ang, 0);                  // flat on the ground, pointing at the target
+    // fade in as a chevron flows in near the player, hold, fade out as it approaches the target
+    const fadeIn=Math.min(1,(d-3)/4), fadeOut=Math.min(1,(dist-2-d)/6);
+    m.material.opacity=0.9*Math.min(fadeIn,fadeOut)*(0.7+0.3*Math.sin(now()/300+i));   // gentle shimmer
+    m.visible=true;
+  }
+}
 function timeLeft(id){ const d=questDeadline(id); return d?Math.max(0, d-Date.now()):0; }   // ms remaining on a timed quest
 let _qtAcc=0;
 function questTimerTick(dt){   // fail timed quests whose clock runs out; tick the HUD countdown
@@ -23923,7 +24036,7 @@ function renderQuestLog(){
   const tid=trackedId();
   let h=societyPanelHTML();
   h+=arcsPanelHTML();
-  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:0 0 4px">Active — ${activeQuests.length}${activeQuests.length?" · click ☆ to track for the compass":""}</div>`;
+  h+=`<div style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:.5px;margin:0 0 4px">Active — ${activeQuests.length}${activeQuests.length>1?" · click ☆ to set the ACTIVE quest (the white ground-arrows guide it)":activeQuests.length?" · the white ground-arrows guide you":""}</div>`;
   if(activeQuests.length){
     h+=activeQuests.map(a=>{ const q=questById(a.id), done=questCompleteId(a.id), isTrk=a.id===tid;
       return `<div style="margin-bottom:8px;padding:8px;background:${isTrk?'rgba(255,210,59,.10)':'rgba(255,255,255,.03)'};border:1px solid ${isTrk?'var(--gold)':'var(--border)'};border-radius:6px">
