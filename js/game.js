@@ -18569,7 +18569,54 @@ function update(dt){
   updateBanners(dt);       // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
   updateBloodRite(dt);     // #677 Regalia V: the Blood-Undercroft (fight at half vitals)
   updateStormPeak(dt);     // #678 Regalia VI: the Storm-Peak (wind-seals, hunting lightning, 4-phase Warden)
-  // spell cast wind-up: fire the effect when the bar fills
+  // ── #782: from here update() is a SCHEDULER — each subsystem is its own updateX(dt), defined
+  //    after this function, so it can be read, profiled, and edited in isolation. Order preserved.
+  updateCastWindup(dt);
+  // ships bob on the swell every frame; when aboard, WASD + mouse/arrows pilot the ship over water
+  if(!inDungeon&&!inNetwork){ updateShips(dt);   // #359: don't reposition/bob (or pilot) overworld ships while in an instance — wasted work, and they're hidden anyway
+    if(player.aboardShip){ updateShipPilot(dt); } }
+  if(!player.aboardShip) updateMovementPhysics(dt);   // #359: movement runs whenever NOT piloting a ship — overworld and instances alike
+  updateTimersRegen(dt);
+  updatePets(dt);
+  updatePlayerProjectiles(dt);
+  updateWallZones(dt);
+  updateEnemyProjectiles(dt);
+  updateMonstersAI(dt);
+  updateDropsAndFX(dt);
+  updateStatusTimers(dt);
+  updateAmbientChatter(dt);
+  updateEvents(dt);
+  sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
+  updateDayNight(dt);
+  updateCalendar(dt);
+  updatePlugins(dt);
+  updateTargetUI(dt);
+  updateWeather(dt);
+  updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
+  updatePropFires(dt);   // #704: torch/brazier flames lick & their lights flicker (towns + dungeons; self-expiring registry)
+  updateHorses(dt);      // #725: parked horses graze; the mounted one gallops under you
+  updateHorseCombat(dt); // #727: horse mending, parked-horse aggro, thrown-rider stagger
+  updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
+  updateCaravan(dt);     // the wandering ox-drawn caravan plies the road
+  enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
+  updateKcGates(dt);       // the portcullis & keep doors glide open / shut
+  updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
+  kcAmbience(dt);          // Val Halla's eternal festival: fireworks, a murmuring court & lute-song
+  cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
+  streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
+  hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
+  tbStream(dt);          // stream the real AC town buildings in/out around the player
+  wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
+  algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
+  crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
+  regionTick(dt);        // announce region crossings + keep the HUD Region readout current
+  landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
+  gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
+  syncCamera(dt);
+  _hudAcc+=dt; if(_hudAcc>=0.1){ _hudAcc=0; updateHUD(); }   // #P1: the HUD did ~63 DOM ops EVERY frame — throttle the render-loop refresh to ~10Hz. Every event-driven updateHUD() call (damage/heal/pickup/level/cast) still fires instantly, so nothing feels laggy.
+}
+// #782: spell cast wind-up — fire the effect when the bar fills; ground-target reticle while winding
+function updateCastWindup(dt){
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
   // ground-target reticle: while winding up an AoE/Wall, show where it will land
@@ -18578,14 +18625,11 @@ function update(dt){
       const reach=cs.special==="wall"?7:12, rx=clamp(player.x+d.x*reach,-HALF+2,HALF-2), rz=clamp(player.z+d.z*reach,-HALF+2,HALF-2);
       showCastReticle(rx,rz, cs.special==="wall"?(cs.r||3.5):8, cs.color||0xff7a2a); }
     else hideCastReticle(); }
-  // ships bob on the swell every frame; when aboard, WASD + mouse/arrows pilot the ship over water
-  if(!inDungeon&&!inNetwork){ updateShips(dt);   // #359: don't reposition/bob (or pilot) overworld ships while in an instance — wasted work, and they're hidden anyway
-    if(player.aboardShip){ updateShipPilot(dt); } }
-  if(!player.aboardShip){   // #359 REGRESSION FIX: this was the `else` of the !inDungeon&&!inNetwork guard above,
-                            // which froze ALL overworld on-foot movement (movement then ran only inside instances).
-                            // Movement must run whenever you are NOT piloting a ship — overworld and instances alike.
-  // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
-  // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
+}
+// #782: on-foot movement + physics (skipped while piloting a ship — see the update() dispatcher).
+// AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN), the W/X + Z/C cluster is
+// the secondary ("the keys surrounding S"), Q toggles auto-run.
+function updateMovementPhysics(dt){
   let f=0,s=0;
   // ARROW KEYS (AC default): Left/Right TURN the character, Up/Down move forward/back.
   // Hold SHIFT with the arrows to free-look — they orbit the CAMERA instead (eases back on release).
@@ -18697,8 +18741,9 @@ function update(dt){
     }
     antiStuckGuardian();   // never leave the player trapped in/on/under a building or structure
   }
-  }   // ← end of on-foot movement (skipped while aboard a ship)
-  // timers/regen
+}
+// #782: per-frame combat/action timers + vitals regen
+function updateTimersRegen(dt){
   updateJumpCharge(dt);   // AC hold-to-charge jump: releases when Space is let go
   player.meleeCd=Math.max(0,player.meleeCd-dt);
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
@@ -18728,8 +18773,9 @@ function update(dt){
     player.mn=Math.min(player.mmn,player.mn+0.8+player.attr.Self*0.04);
     if(player.hp<player.mhp) player.hp=Math.min(player.mhp,player.hp+0.6+player.attr.Endurance*0.03);
   }
-  updatePets(dt);
-  // player projectiles
+}
+// #782: player projectiles — swept collision, spell trails, splash detonation
+function updatePlayerProjectiles(dt){
   // #11: swept segment-vs-circle test so a fast projectile can't tunnel past a monster between frames
   const _segHit=(ax,az,bx,bz,cx,cz,rad)=>{ const dx=bx-ax,dz=bz-az,L2=dx*dx+dz*dz; let t=L2>0?((cx-ax)*dx+(cz-az)*dz)/L2:0; t=t<0?0:t>1?1:t; const qx=ax+dx*t,qz=az+dz*t; return (qx-cx)*(qx-cx)+(qz-cz)*(qz-cz)<rad*rad; };
   for(let i=pProj.length-1;i>=0;i--){
@@ -18809,7 +18855,9 @@ function update(dt){
     }
     if(gone){disposeObject3D(p.mesh);pProj.splice(i,1);}   // #22: every arrow/bolt carried its own SphereGeometry
   }
-  // persistent War "Wall" zones — tick damage to foes standing inside, then expire
+}
+// #782: persistent War "Wall" zones — tick damage to foes standing inside, then expire
+function updateWallZones(dt){
   for(let i=walls.length-1;i>=0;i--){
     const w=walls[i]; w.t-=dt; w.acc+=dt;
     if(w.disc) w.disc.material.opacity=0.32+0.18*Math.abs(Math.sin(now()/180));
@@ -18826,7 +18874,9 @@ function update(dt){
     }
     if(w.t<=0){ disposeObject3D(w.mesh); walls.splice(i,1); }   // #22
   }
-  // enemy projectiles
+}
+// #782: enemy projectiles
+function updateEnemyProjectiles(dt){
   for(let i=eProj.length-1;i>=0;i--){
     const p=eProj[i]; if(!p) continue;   // #227: guard against a re-entrant clear (death teardown) emptying the array mid-iteration
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
@@ -18840,7 +18890,9 @@ function update(dt){
     }
     if(gone){disposeObject3D(p.mesh);eProj.splice(i,1);}   // #22
   }
-  // monsters AI
+}
+// #782: monster AI — aggro/chase/wander, specials, ranged casts, burn ticks, mesh sync
+function updateMonstersAI(dt){
   const burned=[];
   for(const m of monsters){
     if(inNetwork) break; // no creatures in the Town Network hub
@@ -18948,7 +19000,9 @@ function update(dt){
       const fill=m.mesh.userData.fill,r=m.hp/m.mhp;fill.scale.x=r;fill.position.x=-(1-r)*0.7;}
   }
   for(const m of burned) if(monsters.indexOf(m)>=0) killMonster(m);
-  // drops
+}
+// #782: ground drops, floaters, death animations, bursts, lifestone/portal shimmer, node respawn
+function updateDropsAndFX(dt){
   for(let i=drops.length-1;i>=0;i--){
     const dp=drops[i];dp.t+=dt;dp.mesh.rotation.y+=dt*2;
     dp.mesh.position.y=(dp.baseY||0)+0.55+Math.sin(now()/250+dp.x)*0.12;
@@ -19005,7 +19059,9 @@ function update(dt){
     if(u&&u.pfx) updatePortalFx(o,dt); }
   // gathering nodes respawn
   for(const n of nodes){ if(n.depleted&&now()>n.readyAt){n.depleted=false;if(!inDungeon)n.mesh.visible=true;} }
-
+}
+// #782: buff/debuff/HoT/gear-mana & UI status timers
+function updateStatusTimers(dt){
   if(toastT>0)toastT-=dt;
   if(_chatBarT>0){ _chatBarT-=dt; if(_chatBarT<=0){ const b=document.getElementById('chatBarText'); if(b) b.style.opacity=0.45; } }
   player.drinkCd=Math.max(0,player.drinkCd-dt);
@@ -19037,6 +19093,9 @@ function update(dt){
   if(player.debuffs){ for(const k of Object.keys(player.debuffs)){ const b=player.debuffs[k]; b.t-=dt; if(b.t<=0) delete player.debuffs[k]; } }
   if(player.dispelImmune>0) player.dispelImmune-=dt;
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
+}
+// #782: ambient audio + NPC chatter + road-pace notes
+function updateAmbientChatter(dt){
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   // ── ambient NPC chatter: nearby townsfolk speak their REAL retail lines unprompted
   //    (acdialogue.json `chatter` = the HeartBeat emote texts; criers/barkeeps hawk their news) ──
@@ -19052,35 +19111,6 @@ function update(dt){
           log(`<b>${esc(c.name)}</b> says, "${esc(line)}"`,"sys");
           floater(c.rec.x,groundY(c.rec.x,c.rec.z)+2.6,c.rec.z,"💬","#e8dcc0",1.2); } } } }
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You take to the road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
-  updateEvents(dt);
-  sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
-  updateDayNight(dt);
-  updateCalendar(dt);
-  updatePlugins(dt);
-  updateTargetUI(dt);
-  updateWeather(dt);
-  updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
-  updatePropFires(dt);   // #704: torch/brazier flames lick & their lights flicker (towns + dungeons; self-expiring registry)
-  updateHorses(dt);      // #725: parked horses graze; the mounted one gallops under you
-  updateHorseCombat(dt); // #727: horse mending, parked-horse aggro, thrown-rider stagger
-  updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
-  updateCaravan(dt);     // the wandering ox-drawn caravan plies the road
-  enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
-  updateKcGates(dt);       // the portcullis & keep doors glide open / shut
-  updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
-  kcAmbience(dt);          // Val Halla's eternal festival: fireworks, a murmuring court & lute-song
-  cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
-  streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
-  hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
-  tbStream(dt);          // stream the real AC town buildings in/out around the player
-  wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
-  algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
-  crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
-  regionTick(dt);        // announce region crossings + keep the HUD Region readout current
-  landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
-  gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
-  syncCamera(dt);
-  _hudAcc+=dt; if(_hudAcc>=0.1){ _hudAcc=0; updateHUD(); }   // #P1: the HUD did ~63 DOM ops EVERY frame — throttle the render-loop refresh to ~10Hz. Every event-driven updateHUD() call (damage/heal/pickup/level/cast) still fires instantly, so nothing feels laggy.
 }
 let _hudAcc=0;   // #P1 render-loop HUD-refresh accumulator
 const _projUp=new THREE.Vector3(0,1,0), _projDir=new THREE.Vector3();   // #P4 reused scratch for projectile orientation (per-frame, per-projectile)
