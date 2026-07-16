@@ -26864,7 +26864,11 @@ function updatePlugins(dt){
     // ── v0.4 auto-combat: lock the nearest hostile, face it, close, and attack with the readied weapon ──
     if(settings.vtankFight&&player.alive&&!paused&&!player.casting){
       let best=null,bd=VT_ENGAGE;
+      // #907: "nearest hostile" must skip ambient fauna (deer/rabbits/cows/chickens — dmg:0, they
+      // only flee, #18967). Without the filter the bot broke off real fights to chase skittish deer
+      // across the map (autoRun stays on while it flees). Same BESTIARY-flag idiom as :9832.
       for(const m of monsters){ if(m.hp<=0||!!m.isDungeon!==inDungeon) continue;
+        const _b=BESTIARY[m.kind]; if((_b&&_b.ambient)||m.ambient) continue;
         const d=Math.hypot(m.x-player.x,m.z-player.z); if(d<bd){bd=d;best=m;} }
       if(best){
         if(!(TARGET&&TARGET.type==="monster"&&TARGET.ref===best)) selectTarget({type:"monster",ref:best},true);
