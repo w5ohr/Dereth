@@ -18,6 +18,10 @@ Environment overrides:
 | `DERETH_HOST` | `0.0.0.0` | bind address |
 | `DERETH_PORT` | `8787` | bind port |
 | `DERETH_DB` | `server/dereth.db` | SQLite path (use a persistent volume in the cloud) |
+| `DERETH_GITHUB_TOKEN` | *(unset)* | fine-grained GitHub token with **Issues: write** on the repo below — enables the in-game `/bug` reporter to file issues. Unset → clients fall back to a pre-filled github.com new-issue page. Never commit this token (see #440/#459). |
+| `DERETH_GITHUB_REPO` | `w5ohr/Dereth` | repo that receives `player-report` issues |
+| `DERETH_BUG_COOLDOWN` | `120` | seconds between accepted reports per account |
+| `DERETH_BUG_DAILY_MAX` | `10` | accepted reports per account per UTC day |
 
 ## Test
 
