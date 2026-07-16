@@ -19,6 +19,13 @@ async def mk(name, level):
     await c.send({"t": "create_char", "slot": 0, "name": u[:14], "char": {"level": level}})
     await c.recv_until(lambda x: x["t"] == "play_ok")
     c.username, c.charname, c.level = u, u[:14], level
+    # #887: create_char forces a starter blob (#S2) and level is derived from server-accounted XP,
+    # ratcheted at most +10 levels per save (#238) — so climb to the target level through repeated
+    # saves, exactly as a real client's autosaves would carry a fast-levelling character.
+    for _ in range((max(1, level) + 9) // 10 + 1):
+        await c.send({"t": "save", "char": {"level": level, "xp": 0}})
+        sk = await c.recv_until(lambda x: x.get("t") == "save_ok")
+        assert sk, f"seed save not acked for {u}"
     # level rides the input tick server-side
     await c.send({"t": "input", "x": 60, "z": 60, "yaw": 0, "level": level})
     return c
