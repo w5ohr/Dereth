@@ -31767,6 +31767,12 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
       keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
     for(const f of SAVE_SCHEMA) s[f.k]=f.save?f.save(player):player[f.k];
+    // #893: while a trade is open, offered items are escrowed OUT of player.inv — fold them back into the
+    // SAVED inventory so the server's authoritative cl.inv still shows you own them. Otherwise the 10s
+    // autosave persists an inventory without the escrowed items, and the trade's take_owned then can't
+    // verify them → the trade spuriously aborts ("could not be verified"). (Coin offers aren't deducted
+    // locally, so gold needs no such fold.)
+    if(TRADE&&TRADE.open&&TRADE.mine&&TRADE.mine.length&&Array.isArray(s.inv)) s.inv=s.inv.concat(TRADE.mine);
     if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
       if(alsoLocal){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(s)); }catch(e){} } }   // #457: logout also writes the local safety-net so a socket drop mid-logout can't black-hole progress
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
@@ -32020,12 +32026,13 @@ function netHandle(m){
       // (escrowed locally but never taken server-side → the undo keeps it) and a dropped 'remove'
       // (restored locally but still taken server-side → m.gave removes it). Match by (name,stat,v),
       // one entry per gave-item, mirroring the server's take_owned signature.
-      const _tsig=it=>it?[it.name||"",it.stat||"",it.v||0].join("|"):"";
-      for(const it of TRADE.mine) player.inv.push(it);   // undo escrow → satchel is "as if no offer was made"
+      // Count-aware: merge escrowed offers back (a split-off portion rejoins its stack), then subtract the
+      // EXACT count the server took (m.gave carries `count` for partial stacks), then add what we received.
+      for(const it of TRADE.mine) addToInv(it,true);   // undo escrow → satchel is "as if no offer was made" (merges split stacks)
       TRADE.mine.length=0;
       const gaveN=(m.gave||[]).length;
-      for(const g of (m.gave||[])){ const s=_tsig(g), i=player.inv.findIndex(x=>_tsig(x)===s); if(i>=0) player.inv.splice(i,1); }   // remove exactly what the server took
-      for(const raw of (m.give||[])){ const it=sanitizeItem(raw); if(it) player.inv.push(it); }   // #882: a peer's relayed items get the same boundary validation as loot
+      for(const g of (m.gave||[])) removeStack(g, (g&&g.count)||1);   // remove exactly what the server took (count-accurate)
+      for(const raw of (m.give||[])){ const it=sanitizeItem(raw); if(it) addToInv(it,true); }   // #882: a peer's relayed items get the same boundary validation as loot (addToInv merges partial stacks)
       const paid=TRADE.mineCoin|0, got=m.coin|0;
       if(typeof m.authCoin==="number"&&isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance (#315: isFinite(null)===true — a null authCoin must fall through to the additive branch, not zero gold)
       else { if(paid) player.gold=Math.max(0,player.gold-paid); if(got) player.gold+=got; }
@@ -32448,12 +32455,51 @@ function renderTradeWin(){
   w.querySelector('#trCancel').onclick=()=>{ netSend({t:"trade",act:"cancel"}); closeTradeWin(); };
   w.querySelector('#trOk').onclick=(e)=>{ if(e&&e.currentTarget)e.currentTarget.disabled=true; netSend({t:"trade",act:"ok"}); };   // #322: disable on click until the next sync re-renders — no duplicate 'ok' spam before the round-trip
   w.querySelectorAll('#trInv [data-inv]').forEach(b=>b.onclick=()=>{ const idx=+b.dataset.inv, it=player.inv[idx]; if(!it)return;
+    if(stackable(it) && (it.count||1)>1){ tradeSplitPrompt(idx); return; }   // a stack asks "how many?" (slider) before escrowing — partial offers
     player.inv.splice(idx,1); TRADE.mine.push(it); netSend({t:"trade",act:"add",item:it}); renderTradeWin(); });   // #295: escrow the offered item OUT of the satchel so it can't be equipped/used/sold while the offer is pending (the dupe vector)
   w.querySelectorAll('#trMine [data-i]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i, it=TRADE.mine[i]; if(!it)return;
-    TRADE.mine.splice(i,1); player.inv.push(it); netSend({t:"trade",act:"remove",idx:i}); renderTradeWin(); });   // #295: withdrawing an offer returns the escrowed item to the satchel
+    TRADE.mine.splice(i,1); addToInv(it,true); netSend({t:"trade",act:"remove",idx:i}); renderTradeWin(); });   // #295: withdrawing an offer returns the escrowed item to the satchel (addToInv merges a split-off portion back into its stack)
   const ci=w.querySelector('#trCoin');
   if(ci) ci.onchange=()=>{ const n=Math.max(0,Math.min(player.gold|0,Math.floor(+ci.value||0)));   // cap pyreal offer to what you carry
     TRADE.mineCoin=n; ci.value=n; TRADE.youOk=false; netSend({t:"trade",act:"coin",amount:n}); renderTradeWin(); };
+}
+// Offering a STACK asks how many via a slider; you can trade a partial stack (e.g. 2 of 100 notes),
+// leaving the remainder in your satchel. The split-off portion is escrowed as its own item; the server's
+// count-aware take_owned removes exactly that many from the authoritative stack.
+function tradeSplitPrompt(idx){
+  const it=player.inv[idx]; if(!it) return; const cnt=it.count||1;
+  let m=document.getElementById('trSplit'); if(m) m.remove();
+  m=document.createElement('div'); m.id='trSplit';
+  m.style.cssText="position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:130;background:linear-gradient(#191622,#100d16);border:1px solid var(--gold);border-radius:10px;padding:16px 20px;box-shadow:0 12px 44px rgba(0,0,0,.8);min-width:300px;text-align:center";
+  m.innerHTML=`<div style="color:var(--gold);font-size:13px;margin-bottom:10px">Offer how many <b>${esc(it.name)}</b>?</div>
+    <input id="trSplitRange" type="range" min="1" max="${cnt}" value="1" style="width:100%">
+    <div style="margin:10px 0;color:#ffe9b0;font-size:16px"><b id="trSplitN">1</b> <span style="color:var(--dim);font-size:12px">of ${cnt} · satchel keeps <b id="trSplitKeep">${cnt-1}</b></span></div>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
+      <button id="trSplitCancel" class="tbtn">Cancel</button>
+      <button id="trSplitOk" class="tbtn" style="background:#1e3a24;border-color:#3a6a44;color:#9be08a">Offer</button></div>`;
+  document.body.appendChild(m);
+  const r=m.querySelector('#trSplitRange'), nEl=m.querySelector('#trSplitN'), kEl=m.querySelector('#trSplitKeep');
+  r.oninput=()=>{ const v=+r.value; nEl.textContent=v; kEl.textContent=cnt-v; };
+  m.querySelector('#trSplitCancel').onclick=()=>m.remove();
+  m.querySelector('#trSplitOk').onclick=()=>{ const n=+r.value; m.remove(); tradeOfferSplit(idx,n); };
+}
+function tradeOfferSplit(idx,n){
+  const it=player.inv[idx]; if(!it) return; const cnt=it.count||1; n=Math.max(1,Math.min(cnt,n|0));
+  let off;
+  if(n>=cnt){ player.inv.splice(idx,1); off=it; }                 // whole stack — escrow it as-is
+  else { it.count=cnt-n; off=Object.assign({},it,{count:n}); }    // partial — leave the remainder, escrow a count-n copy
+  TRADE.mine.push(off); netSend({t:"trade",act:"add",item:off}); renderTradeWin();
+}
+// Remove `n` of an item from the satchel by stack identity (decrement a stack, splice at 0); falls back to
+// (name,stat,v) for non-stackables. Used by the trade 'done' reconciliation so a partial-stack trade
+// subtracts exactly what the server took.
+function removeStack(item,n){
+  if(!item) return; n=Math.max(1,n|0);
+  if(stackable(item)){ const k=stackKey(item), ex=player.inv.find(x=>x&&stackable(x)&&stackKey(x)===k);
+    if(ex){ const c=ex.count||1; if(c>n){ ex.count=c-n; } else { const i=player.inv.indexOf(ex); if(i>=0) player.inv.splice(i,1); } return; } }
+  const s=[item.name||"",item.stat||"",item.v||0].join("|");
+  const i=player.inv.findIndex(x=>x&&[x.name||"",x.stat||"",x.v||0].join("|")===s);
+  if(i>=0) player.inv.splice(i,1);
 }
 function updatePartyHUD(){
   const el=document.getElementById('partyHud'); if(!el) return;

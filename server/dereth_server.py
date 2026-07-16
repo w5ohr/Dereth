@@ -744,20 +744,33 @@ def _item_sig(it):
         return ("", "", 0)
     return (str(it.get("name", "")), str(it.get("stat", "")), int(_svnum(it.get("v", 0), -1e9, 1e9, 0)))
 
+def _item_count(it):
+    if not isinstance(it, dict) or "count" not in it:
+        return 1
+    return int(_svnum(it.get("count", 1), 1, 100000, 1))
+
 def take_owned(cl, offered):
-    """Try to remove each offered item from cl.inv by signature (one entry per offered item).
-    Returns (ok, removed_items). On failure (an offered item isn't owned = fabricated) removes
-    nothing. When econ isn't loaded, allows the offer unchanged (legacy)."""
+    """Remove each offered item from cl.inv by signature — COUNT-AWARE so a partial stack (offer 2 of a
+    100-stack) takes exactly what's offered and leaves the remainder. Returns (ok, removed_items) where
+    removed is count-accurate: a forged over-count can never mint (we take at most what's actually owned).
+    On failure (an offered item isn't owned = fabricated) removes nothing. Econ not loaded → legacy pass."""
     if not cl or not getattr(cl, "econ_ready", False):
         return True, list(offered)
-    work = list(cl.inv)
+    work = [dict(it) if isinstance(it, dict) else it for it in cl.inv]   # copy dicts so a partial take never mutates cl.inv on the failure path
     removed = []
     for off in offered:
         sig = _item_sig(off)
         idx = next((i for i, it in enumerate(work) if _item_sig(it) == sig), -1)
         if idx < 0:
             return False, []          # not in the authoritative inventory → fabricated
-        removed.append(work.pop(idx))
+        owned = work[idx]
+        want, have = _item_count(off), _item_count(owned)
+        if not isinstance(owned, dict) or want >= have:
+            removed.append(work.pop(idx))          # whole item / whole stack (want>=have clamps a forged over-count to what's owned)
+        else:
+            taken = dict(owned); taken["count"] = want   # split: take `want`, leave the remainder in cl.inv
+            owned["count"] = have - want
+            removed.append(taken)
     cl.inv = work
     return True, removed
 
@@ -2324,13 +2337,17 @@ async def handle_trade(cl, msg):
             # so removing it here means a replayed {"act":"ok"} arriving while a send's drain() yields
             # under backpressure finds no live trade (trade_of → None) and returns — no double-escrow/
             # double-deposit. Build the payloads first, then delete, then send.
+            # give/gave are the items take_owned ACTUALLY moved (remA from a, remB from b) — count-accurate
+            # and forge-proof, so a split stack (or a forged over-count) reconciles on the client to exactly
+            # what the server transferred, never the raw offer. remA/remB carry `count` for partial stacks.
             done_msgs = []
             for acc in (tr["a"], tr["b"]):
-                other = tr["b"] if acc == tr["a"] else tr["a"]
+                gave = remA if acc == tr["a"] else remB
+                give = remB if acc == tr["a"] else remA
                 c = CLIENTS.get(acc)
                 if c:
-                    done_msgs.append((c, {"t": "trade", "act": "done", "give": tr["offers"][other],
-                                          "gave": tr["offers"][acc],   # #296: the offerer's OWN authoritative offer, so the client can reconcile against dropped add/remove messages instead of trusting its local list
+                    done_msgs.append((c, {"t": "trade", "act": "done", "give": give,
+                                          "gave": gave,   # #296: what the server authoritatively took from me — client reconciles against this, not its local offer list
                                           "coin": (coin_b if acc == tr["a"] else coin_a),
                                           "authCoin": (int(c.coin) if c.econ_ready else None)}))   # M3: authoritative balance to adopt
             del TRADES[tid]
