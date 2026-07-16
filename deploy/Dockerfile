@@ -17,6 +17,13 @@ WORKDIR /app
 COPY server/dereth_server.py server/admin_kilmer.json ./
 COPY assets/acrewards.json assets/acitems.json assets/acspellstats.json assets/achousing.json /assets/
 
+# #811: DERETH_HOST MUST stay 0.0.0.0 here. A server bound to 127.0.0.1 *inside* the container is NOT
+# reachable through Docker's `-p` publishing (Docker forwards to the container's namespace IP, not its
+# loopback), so binding container-loopback would break the documented run command. Loopback-only safety
+# is the HOST's job — ALWAYS publish with the 127.0.0.1 prefix so the port is never world-reachable:
+#     docker run -p 127.0.0.1:8787:8787 ...     ✅ loopback-only, front with nginx
+#     docker run -p 8787:8787 ...               ❌ exposes the raw game server to the internet
+# (The server also enforces its own global + per-IP connection caps as defense in depth — see #441.)
 ENV DERETH_HOST=0.0.0.0 \
     DERETH_PORT=8787 \
     DERETH_DB=/data/dereth.db
