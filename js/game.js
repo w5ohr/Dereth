@@ -17964,7 +17964,11 @@ window.addEventListener('keydown',e=>{
   if(!running) return;
   // #337: while a full-screen modal is open, let Tab do native focus traversal instead of hijacking it
   // to open the world map (keyboard/AT users need Tab to move between the panel's controls).
-  if(e.key==="Tab"){ const _mOpen=(typeof BIG_MODALS!=="undefined"&&BIG_MODALS.some(id=>{const el=document.getElementById(id);return el&&el.style.display!=="none";}))||(document.getElementById('keymap')&&document.getElementById('keymap').style.display!=="none"); if(_mOpen) return; }
+  // #888: the world map itself is exempt — it's a click-to-travel canvas with no Tab-navigable
+  // controls, and the guard swallowing Tab meant the documented map key opened it but could never
+  // close it (stuck open + paused until Escape). Tab while ONLY the map is open falls through to
+  // its toggle; any other open modal still gets native focus traversal.
+  if(e.key==="Tab"){ const _mOpen=(typeof BIG_MODALS!=="undefined"&&BIG_MODALS.some(id=>{if(id==="worldmap")return false;const el=document.getElementById(id);return el&&el.style.display!=="none";}))||(document.getElementById('keymap')&&document.getElementById('keymap').style.display!=="none"); if(_mOpen) return; }
   const id=ACTION_BY_COMBO[evtCombo(e)];
   if(id){ e.preventDefault(); runAction(id); }
 });
