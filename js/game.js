@@ -20,7 +20,7 @@ function _rawFragTSL(rgbNode){ const t=window.TSL;
   return t.sRGBTransferEOTF(rgbNode).div(t.reference('toneMappingExposure','float',renderer)); }
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const irnd=(a,b)=>Math.floor(rnd(a,b+1));
-const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const clamp=(v,a,b)=>v>=a?(v>b?b:v):a;   // #790: v>=a is false for NaN too, so NaN clamps to the low bound `a` instead of passing straight through (finite values behave exactly as before)
 const now=()=>performance.now();
 
 // ---------- world constants ----------
@@ -17068,6 +17068,10 @@ function breakResProt(){ if(player.resProt){ player.resProt=false; player.invuln
 // (so you can never materialize inside a hill), and pins the fall apex to the ground height so
 // the gentle float-down out of a portal never deals fall damage.
 function arriveAt(x,z){
+  // #790: a non-finite destination (NaN/undefined from a broken portal dest, map-travel edge case, or a
+  // corrupt save) must never reach player.x/z — it soft-bricks the session and persists NaN coords on the
+  // next save. Refuse the teleport and leave the player where they are.
+  if(!Number.isFinite(x)||!Number.isFinite(z)){ if(typeof console!=="undefined"&&console.warn)console.warn("arriveAt: ignoring non-finite destination",x,z); return; }
   if(typeof GFX!=="undefined") GFX._grace=2.0;   // don't let arrival stutter trip the quality governor
   player.aboardShip=null;   // #17: any teleport (death-respawn, recall, portal, map-travel) disembarks — else updateShipPilot re-pins you to the ship at sea
   if(typeof dismountHorse==="function"&&player.mountRec) dismountHorse(true);   // #725: the horse stays behind, parked where you teleported FROM
