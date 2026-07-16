@@ -462,7 +462,7 @@ function attemptCraft(rec,tierKey){
   if(!addToInv(item)){ addDrop(player.x,player.z,{type:"item",item}); log("Pack full — set at your feet.","warn"); }
   gainCraft(rec.skill, exc?1.6:1.0);
   log(`You craft ${exc?"an <b>exceptional</b> ":"a "}<b>${item.name}</b>${exc?` <span style="color:#ffd86b">✦ signed by ${esc(item.maker)}</span>`:""}.`,"loot");
-  if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu();
+  if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGameSoon(); if(_cmOpen) renderCraftMenu();
 }
 function refineAll(kind){ // ore→ingot / log→board / hide→leather (1:1)
   if(!nearCraftStation()){ log("Stand at a <b>Crafting Forge</b> to refine.","warn"); return; }
@@ -472,7 +472,7 @@ function refineAll(kind){ // ore→ingot / log→board / hide→leather (1:1)
   for(const t of ladder){ const nm=resNameFor(src,t.k), c=invCountOf(nm); if(c>0){ removeItemsByName(nm,c); const out=resItem(kind,t.k,c); if(!addToInv(out)) addDrop(player.x,player.z,{type:"item",item:out}); total+=c; } }
   if(!total){ log(`You have no ${src}s to refine.`,"warn"); return; }
   const verb=kind==="ingot"?"smelt":kind==="board"?"mill":"tan";
-  log(`You ${verb} <b>${total}</b> ${src}${total>1?"s":""}.`,"loot"); if(SFX&&SFX.gold)SFX.gold(); startAction("craft",0.9); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu();
+  log(`You ${verb} <b>${total}</b> ${src}${total>1?"s":""}.`,"loot"); if(SFX&&SFX.gold)SFX.gold(); startAction("craft",0.9); updateHUD(); saveGameSoon(); if(_cmOpen) renderCraftMenu();
 }
 // tool shop (buy for pyreals)
 const UO_SHOP=[
@@ -482,7 +482,7 @@ const UO_SHOP=[
   {tool:"tinkering",name:"Tinker's Tools",uses:120,ico:"🛠️",cost:240},{tool:"fletching",name:"Fletcher's Tools",uses:120,ico:"🗡️",cost:200},
 ];
 function buyTool(i){ const t=UO_SHOP[i]; if(!t) return; if(player.gold<t.cost){ log("Not enough pyreals.","warn"); if(SFX&&SFX.deny)SFX.deny(); return; }
-  player.gold-=t.cost; addToInv(toolItem(t.tool,t.name,t.uses,t.ico)); log(`You buy a <b>${t.name}</b> (${t.uses} uses).`,"loot"); if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu(); }
+  player.gold-=t.cost; addToInv(toolItem(t.tool,t.name,t.uses,t.ico)); log(`You buy a <b>${t.name}</b> (${t.uses} uses).`,"loot"); if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGameSoon(); if(_cmOpen) renderCraftMenu(); }
 
 // ---- CRAFT MENU UI ----
 let _cmOpen=false, _cmTab="refine", _cmSel={ingot:null,board:null,leather:null};
