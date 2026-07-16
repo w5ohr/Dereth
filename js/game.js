@@ -3555,10 +3555,15 @@ async function initThree(){
       // they are the cached/shared class (portal tube, CIRC, atlases, blade sprites) and are bounded
       // by content variety, not by rebuild count. Geometries+materials are the real VRAM (dungeon
       // worlds, mob meshes, grass restreams) and now genuinely reclaim. WebGL is untouched.
-      { const om=THREE.Material.prototype.dispose, og=THREE.BufferGeometry.prototype.dispose;
+      { const om=THREE.Material.prototype.dispose, og=THREE.BufferGeometry.prototype.dispose, ot=THREE.Texture.prototype.dispose;
         THREE.Material.prototype.dispose=function(){ _wgpuDeferDispose(this,om); };
         THREE.BufferGeometry.prototype.dispose=function(){ _wgpuDeferDispose(this,og); };
-        THREE.Texture.prototype.dispose=function(){}; }
+        // #788: shared/cached textures (portal tube, atlases, blade sprites, procedural maps) stay resident
+        // — destroying one still bound by a live object freezes the canvas on D3D12 (Mode B1). But
+        // per-instance CanvasTextures (labels, combat floaters — tagged _acPerInstance at creation) are
+        // unshared and UNBOUNDED (one per label/floater), so the blanket no-op leaked every one. Route only
+        // those through the same 2-batch deferred queue so they're actually freed.
+        THREE.Texture.prototype.dispose=function(){ if(this._acPerInstance) _wgpuDeferDispose(this,ot); }; }
       // #webgpu KNOWN ISSUE (see docs/webgpu-migration-status.md): the game's dispose-then-reattach
       // GPU eviction (#232 releaseObjectGPU, dungeon-exit disposeObject3D bursts, the portal tube's
       // dispose) assumes WebGL's lazy re-upload. r185 WebGPU keeps cached bind groups pointing at the
@@ -6287,7 +6292,8 @@ function labelSprite(txt,cat){
   if(tw>244) g.font=`bold ${Math.max(13,Math.floor(26*244/tw))}px Trebuchet MS`;
   g.lineWidth=5;g.strokeStyle="rgba(0,0,0,.85)";g.strokeText(txt,128,32);
   g.fillStyle="#e8dcc0";g.fillText(txt,128,32);
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));
+  const _lt=new THREE.CanvasTexture(c); _lt._acPerInstance=true;   // #788: per-instance (one canvas+texture per label) — mark so WebGPU actually frees it on dispose instead of leaking
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:_lt}));
   sp.scale.set(6,1.5,1);
   sp.userData.labelCat=cat||"npcs";
   LABELS.push(sp);
@@ -7658,7 +7664,7 @@ function textSprite(txt,color){
   g.font="bold 44px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
   g.lineWidth=6;g.strokeStyle="rgba(0,0,0,.85)";g.strokeText(txt,64,34);
   g.fillStyle=color;g.fillText(txt,64,34);
-  const tex=new THREE.CanvasTexture(c);
+  const tex=new THREE.CanvasTexture(c); tex._acPerInstance=true;   // #788: per-instance (combat floaters, emoji markers) — mark so WebGPU frees it on dispose instead of leaking one canvas+texture per floater
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,fog:false}));
   sp.scale.set(2.2,1.1,1);return sp;
 }
