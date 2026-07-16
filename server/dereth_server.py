@@ -1868,6 +1868,34 @@ def alg_set_patron(name, patron):
                   "ON CONFLICT(charname) DO UPDATE SET patron=?, sworn_at=?",
                   (name, patron, int(time.time()), patron, int(time.time())))
 
+def alg_swear_atomic(vassal, patron):
+    """#819: acyclic-swear as ONE serialized transaction. The old code ran the cycle check and the
+    patron write as two separate awaited dbq() calls, so two accounts swearing to each other could both
+    pass the check (each on its own read snapshot) before either committed, closing a 2-node cycle.
+    BEGIN IMMEDIATE takes the write lock up front, so a concurrent swearer blocks until this commits and
+    then sees the just-written patron in its own check. Returns True if sworn, False if it would cycle."""
+    c = db()
+    c.execute("BEGIN IMMEDIATE")   # connection is in autocommit between transactions (isolation_level=""), so this opens exactly one
+    try:
+        seen = set()
+        cur = patron
+        while cur and cur not in seen:          # walk patron's chain upward; a hit on `vassal` means swearing would close a loop
+            if cur == vassal:
+                c.execute("ROLLBACK")
+                return False
+            seen.add(cur)
+            row = c.execute("SELECT patron FROM allegiance WHERE charname=?", (cur,)).fetchone()
+            cur = row[0] if row else None
+        c.execute("INSERT INTO allegiance(charname,patron,sworn_at,pending_xp) VALUES(?,?,?,0) "
+                  "ON CONFLICT(charname) DO UPDATE SET patron=?, sworn_at=?",
+                  (vassal, patron, int(time.time()), patron, int(time.time())))
+        c.execute("COMMIT")
+        return True
+    except Exception:
+        try: c.execute("ROLLBACK")
+        except Exception: pass
+        raise
+
 def alg_set_motd(name, text):
     with db() as c:
         c.execute("INSERT INTO allegiance(charname,motd) VALUES(?,?) "
@@ -2964,7 +2992,11 @@ async def dispatch(cl, msg):
             return await cl.send({"t": "system", "msg": "They stand beneath you in your own tree — that fealty would be a circle."})
         if len(await dbq(alg_vassals, name)) >= max(1, target.level):
             return await cl.send({"t": "system", "msg": f"{name}'s patronage is full (AC caps vassals at character level)."})
-        await dbq(alg_set_patron, cl.charname, name)
+        # #819: the cycle check above is a fast pre-check for a friendly message; the atomic swear is the
+        # authoritative arbiter — it re-checks and writes under one BEGIN IMMEDIATE, so two accounts
+        # swearing to each other at once can't both pass and close a 2-node cycle.
+        if not await dbq(alg_swear_atomic, cl.charname, name):
+            return await cl.send({"t": "system", "msg": "They stand beneath you in your own tree — that fealty would be a circle."})
         mon = await dbq(alg_monarch, cl.charname)
         cl.allegiance = mon; target.allegiance = mon
         await cl.send({"t": "system", "msg": f"You swear fealty to {name}. Your allegiance stands under Monarch {mon}; your kill XP passes up as extra XP for your patron (you lose nothing)."})
