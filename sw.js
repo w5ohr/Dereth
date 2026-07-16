@@ -59,7 +59,16 @@ self.addEventListener("fetch", e => {
         if (r && r.ok) c.put(req, r.clone());
         return r;
       } catch (_) {
-        return (await c.match(req)) || Response.error();
+        // #803: offline fallback. A navigation can carry a query string (/?ref=x, deep links, share
+        // params) that matches no cache key exactly, so retry ignoring the search params and finally
+        // fall back to the cached shell — otherwise the app fails to open offline on any non-bare URL.
+        let hit = await c.match(req);
+        if (!hit && isNav) {
+          hit = await c.match(req, { ignoreSearch: true })
+             || await c.match("./index.html", { ignoreSearch: true })
+             || await c.match("./");
+        }
+        return hit || Response.error();
       }
     })());
     return;
