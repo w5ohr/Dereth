@@ -299,6 +299,16 @@ def sweep_auth_maps():
         _LOGIN_FAILS.pop(u, None)
     for ip in [ip for ip, (_, t0) in list(_AUTH_BY_IP.items()) if now - t0 > AUTH_PER_IP_WINDOW]:
         _AUTH_BY_IP.pop(ip, None)
+    # #889: the /bug reporter maps are account-keyed and were never evicted (the #818 pattern) —
+    # a stream of throwaway accounts would grow them for the process lifetime. Entries are only
+    # meaningful within their window (cooldown / current UTC day / the last hour), so drop the rest.
+    now_m = time.monotonic()
+    for u in [u for u, t in list(_BUG_LAST.items()) if now_m - t > BUG_COOLDOWN]:
+        _BUG_LAST.pop(u, None)
+    day = int(now // 86400)
+    for u in [u for u, rec in list(_BUG_COUNT.items()) if rec[0] != day]:
+        _BUG_COUNT.pop(u, None)
+    _BUG_GLOBAL[:] = [t for t in _BUG_GLOBAL if now_m - t < 3600.0]
 
 # ── default admin: keep an "Admin" account; seed a maxed "Kilmer" character in slot 0 ──
 # #440: the Admin password is an operator secret sourced from DERETH_ADMIN_PW — NEVER a committed
@@ -2579,8 +2589,13 @@ GITHUB_TOKEN  = os.environ.get("DERETH_GITHUB_TOKEN", "").strip()
 GITHUB_REPO   = os.environ.get("DERETH_GITHUB_REPO", "w5ohr/Dereth").strip()
 BUG_COOLDOWN  = float(os.environ.get("DERETH_BUG_COOLDOWN", "120"))   # seconds between reports per account
 BUG_DAILY_MAX = int(os.environ.get("DERETH_BUG_DAILY_MAX", "10"))     # reports per account per UTC day
-_BUG_LAST  = {}   # account -> monotonic time of last accepted report
-_BUG_COUNT = {}   # account -> [utc_day, count]
+# #889: per-account limits alone don't bound the tracker — accounts are cheap (creation is only
+# IP-rate-throttled), so N throwaway accounts × 10/day is unbounded repo spam and burns the repo's
+# GitHub API quota. A GLOBAL hourly budget caps what the whole realm can file, whatever the account count.
+BUG_GLOBAL_HOURLY = int(os.environ.get("DERETH_BUG_GLOBAL_HOURLY", "20"))   # accepted reports per hour, ALL accounts
+_BUG_LAST   = {}   # account -> monotonic time of last accepted report (swept in sweep_auth_maps, #889)
+_BUG_COUNT  = {}   # account -> [utc_day, count]                      (swept in sweep_auth_maps, #889)
+_BUG_GLOBAL = []   # monotonic times of globally accepted reports within the last hour
 
 def clean_block(s, maxlen):
     """Multi-line variant of clean_relay for issue bodies: keeps newlines, drops other control
@@ -2613,16 +2628,22 @@ async def handle_bug(cl, msg):
     day = int(time.time() // 86400); rec = _BUG_COUNT.get(acct)
     if rec and rec[0] == day and rec[1] >= BUG_DAILY_MAX:
         await cl.send({"t": "bug_err", "msg": "Daily report limit reached — thank you, we have plenty to go on!"}); return
+    _BUG_GLOBAL[:] = [t for t in _BUG_GLOBAL if now_m - t < 3600.0]   # #889: global hourly budget across ALL accounts
+    if len(_BUG_GLOBAL) >= BUG_GLOBAL_HOURLY:
+        await cl.send({"t": "bug_err", "msg": "The broker's report ledger is full for the hour — please try again later.", "fallback": True}); return
     text = clean_block(msg.get("text", ""), 4000)
     if len(text) < 10:
         await cl.send({"t": "bug_err", "msg": "The report text is too short."}); return
     chat = clean_block(msg.get("chat", ""), 8000)
-    loc  = clean_relay(msg.get("loc", ""), 200)
+    # #889: loc sits OUTSIDE the code fences in the body, so clean_relay alone left @-mentions and
+    # [markdown](links) live in the filed issue (maintainer notification spam / phishing surface).
+    # Render it as inline code — with backticks stripped so it can't break out of its own span.
+    loc  = clean_relay(msg.get("loc", ""), 200).replace("`", "'")
     name = clean_relay(cl.charname or acct, 32)
     title = "[Player report] " + (text.splitlines()[0][:70] or "In-game issue")
     # Player-provided text rides inside code fences (clean_block already neutralized ```), so it
     # cannot inject markdown, @-mentions, or issue-command syntax into the tracker.
-    body = ("**Reported in-game by:** %s (account: %s)\n**Client location:** %s\n"
+    body = ("**Reported in-game by:** %s (account: %s)\n**Client location:** `%s`\n"
             "**Server-observed position:** x=%.1f z=%.1f\n**Filed:** %s UTC\n\n"
             "## Player description\n\n```\n%s\n```\n" % (
                 name, clean_relay(acct, 32), loc or "unknown",
@@ -2638,6 +2659,7 @@ async def handle_bug(cl, msg):
         await cl.send({"t": "bug_err", "msg": "The report could not be delivered.", "fallback": True}); return
     _BUG_LAST[acct] = now_m
     _BUG_COUNT[acct] = [day, (rec[1] + 1) if (rec and rec[0] == day) else 1]
+    _BUG_GLOBAL.append(now_m)   # #889: count against the realm-wide hourly budget
     print("[bug] %s filed issue #%s (%s)" % (acct, num, url))
     await cl.send({"t": "bug_ok", "url": url, "num": num})
 
