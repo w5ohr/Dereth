@@ -31667,7 +31667,13 @@ const SAVE_SCHEMA=[
   {k:"kills",t:"int"},
   {k:"gold",load:s=>_goldClamp(s.gold),save:p=>_goldClamp(p.gold)},   // #292: clamp, not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR. #876: clamp BOTH directions — save wrote the raw value, so an out-of-range/negative gold persisted to disk and went out on the wire (netSend save payload)
   {k:"armor",t:"int"},
-  {k:"inv",t:"arr"},
+  // #893: items offered in an open secure trade are escrowed OUT of player.inv (into TRADE.mine, #295)
+  // but are still authoritatively OWNED until the trade completes. The 10s autosave used to serialize
+  // player.inv alone, so the server's reconcile_econ dropped the escrowed items from cl.inv and the
+  // trade's take_owned verification then failed — aborting any trade that outlived one autosave (~all
+  // real negotiations). Fold the escrow back into every save; 'done'/cancel empty TRADE.mine first,
+  // so a completed trade never re-saves a transferred item.
+  {k:"inv",save:p=>(typeof TRADE!=="undefined"&&TRADE.open&&TRADE.mine&&TRADE.mine.length)?p.inv.concat(TRADE.mine):p.inv,t:"arr"},
   {k:"materials",load:s=>s.materials||0},
   {k:"salvage",t:"obj"},{k:"craft",t:"obj"},
   {k:"weaponTink",t:"num"},{k:"armorTink",t:"num"},
