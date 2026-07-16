@@ -17885,7 +17885,9 @@ const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Com
   ["minimap","Minimap","shift+F3"],["right","Attributes & Status","shift+F4"],["quest","Quest Tracker","shift+F5"],
   ["spellbar","Quickbar","shift+F6"],["potions","Potion Belt","shift+F7"],["partyHud","Party Frame","shift+F8"],
   ["goarrow","GoArrow","shift+F9"],["alinco","Alinco Buffs","shift+F10"],["vtank","Virindi Tank","shift+F11"],
-  ["magtools","Mag-Tools","shift+F12"],["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
+  ["magtools","Mag-Tools","shift+F12"],
+  ["dungmap","Dungeon Maps",""],["radar","Virindi Radar",""],["itemtool","Item Tool",""],["compkeep","Comp Keeper",""],
+  ["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
 for(const [id,label,def] of HUD_TOGGLES)
   ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
 // AC's on-screen panel TOGGLE BAR (manual p.99 roster order: Magic · Attributes & Skills ·
@@ -19915,7 +19917,7 @@ function buildMiniToggles(){
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
 const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
-  "goarrow","alinco","vtank","magtools","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
+  "goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -19932,7 +19934,7 @@ function initDragUI(){
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
     el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
   // parchment windows also drag by their title bar at any time (no N-mode needed)
-  for(const id of ["alinco","vtank","magtools","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
+  for(const id of ["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
     const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
     head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
       e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
@@ -19958,7 +19960,7 @@ function initDragUI(){
 // Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
 function ensureGrips(){
   const label={}; if(typeof HUD_TOGGLES!=="undefined") for(const [id,n] of HUD_TOGGLES) label[id]=n;
-  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","idPanel"].indexOf(id)>=0) continue;
+  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","idPanel"].indexOf(id)>=0) continue;
     const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
     if(getComputedStyle(el).position==="static") el.style.position="relative";
     const grip=document.createElement('div'); grip.className="dragGrip"; grip.textContent="⠿"; grip.title="Drag to move (or press N to move whole panels)";
@@ -20262,7 +20264,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:fals
   brightness:1.0,contrast:1.0,   // final-image display grade (Settings sliders): 1.0 = neutral
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
-  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false},   // Decal-plugin homages (settings → Decal plugins)
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,vtankVitals:true,vtankVitalPct:50,gaDest:"auto",gaCoords:null,
   ubeltXp:true,ubeltPolicy:"spec",   // UtilityBelt XP investor: auto-spend policy
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
@@ -26673,7 +26675,7 @@ function applyUIVis(){
   const h=settings.uiHidden||{};
   for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
     if(h[id]) el.style.display="none";
-    else if(["goarrow","alinco","vtank","magtools"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
+    else if(["goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
   applyPluginSettings();            // plugin panels re-apply their own visibility
 }
 // ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
@@ -26686,6 +26688,10 @@ const PLUGIN_DEFS=[
   {k:"vtank",   n:"Virindi Tank", d:"Combat assistant: rebuffs expiring enchantments when idle (20 mana each) and loots nearby drops."},
   {k:"magtools",n:"Mag-Tools",    d:"Combat tracker — XP/hour, kills/hour, time to next level."},
   {k:"ubelt",   n:"UtilityBelt",  d:"XP investor — automatically spends unspent XP into the cheapest next rank under a policy you pick (specialized skills, all trained skills, attributes, vitals, or balanced). Also adds /wp <coords> to aim GoArrow at any location."},
+  {k:"dungmap", n:"Dungeon Maps", d:"Digero's Dungeon Maps — a live top-down map of the delve you're exploring: rooms, the exit, the chest, creatures, and your heading."},
+  {k:"radar",   n:"Virindi Radar",d:"Close-range tactical radar — nearby creatures (red), players (cyan) and NPCs (gold) around you, oriented to your facing."},
+  {k:"itemtool",n:"Item Tool",    d:"Virindi Item Tool — a compact inventory summary: pack slots used, burden %, pyreals and equipped gear at a glance."},
+  {k:"compkeep",n:"Comp Keeper",  d:"Spell-component tracker — Prismatic Tapers, Tapers, casting scarabs and focus mana, with a red warning when a stock runs low."},
 ];
 const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
 function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
@@ -26702,6 +26708,8 @@ function pluginOn(k){ return !!(settings.plugins&&settings.plugins[k]); }
 function applyPluginSettings(){
   for(const p of PLUGIN_DEFS){ const el=document.getElementById(p.k); if(el) el.style.display=(pluginOn(p.k)&&running&&!uiHiddenIs(p.k))?"block":"none"; }
   const mt=document.getElementById('magtools'); if(mt) mt.style.top=pluginOn("alinco")?"334px":"196px";   // stack below Alinco when both live
+  const ck=document.getElementById('compkeep'); if(ck) ck.style.top=pluginOn("itemtool")?"690px":"540px";  // stack below Item Tool
+  const rd=document.getElementById('radar'); if(rd) rd.style.top=pluginOn("dungmap")?"430px":"200px";      // stack below Dungeon Maps
   if(pluginOn("magtools")&&!PLUG.mag&&typeof player!=="undefined") PLUG.mag={t0:performance.now(),xp:0,k0:player.kills||0};
   vtPaint(); ubPaint();
 }
@@ -26816,6 +26824,7 @@ function updatePlugins(dt){
         de.textContent=t.label; inf.textContent=Math.round(d)+" m · "+acCoordStr(player.x,player.z);   // #605: live player position, not the (fixed) destination
       } else { de.textContent="No destination"; inf.textContent="—"; ar.style.transform="rotate(0rad)"; } }
   }
+  _drawPluginCanvases();   // Dungeon Maps + Radar (per-frame 2D canvases)
   // ── 1 Hz panels ──
   PLUG.t2-=dt; if(PLUG.t2>0) return; PLUG.t2=1;
   ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
@@ -26845,6 +26854,48 @@ function updatePlugins(dt){
       ["Kills / hour",kph],["Next level",eta!=null?"~"+fmt(eta*3600):"—"]]
       .map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
   }
+  // ── Virindi Item Tool: inventory / burden / coin summary ──
+  if(pluginOn("itemtool")){ const el=document.getElementById('itemtoolRows');
+    if(el){ const cap=(typeof invCap==="function")?invCap():102, used=player.inv.length;
+      const enc=(typeof encumbrance==="function")?encumbrance():{load:0,cap:1,ratio:0}, bp=Math.round(enc.ratio*100);
+      const worn=Object.keys(player.armorSlots||{}).filter(k=>player.armorSlots[k]).length;
+      const jw=Object.keys(player.jewelry||{}).filter(k=>player.jewelry[k]).length;
+      const row=(a,b,warn)=>`<div style="display:flex;justify-content:space-between;gap:8px${warn?";color:#8a1e1e;font-weight:bold":""}"><span>${a}</span><b>${b}</b></div>`;
+      el.innerHTML=row("Pack",used+" / "+cap,used>=cap)+row("Burden",bp+"%",bp>=100)
+        +row("Pyreals",(player.gold||0).toLocaleString())+row("Weapon",player.weapon?esc(player.weapon.name):"—")
+        +row("Armour",worn+" pieces")+row("Jewelry",jw+" worn"); } }
+  // ── Comp Keeper: spell-component stock with low warnings ──
+  if(pluginOn("compkeep")){ const el=document.getElementById('compkeepRows');
+    if(el){ const scarabs=player.inv.filter(it=>it&&it.stat==="comp"&&(typeof isScarab!=="function"||isScarab(it))).reduce((n,it)=>n+(it.count||1),0);
+      const pea=player.inv.filter(it=>it&&it.stat==="comp"&&!(typeof isScarab==="function"&&isScarab(it))).reduce((n,it)=>n+(it.count||1),0);
+      const row=(a,b,lo)=>`<div style="display:flex;justify-content:space-between;gap:8px${b<=lo?";color:#8a1e1e;font-weight:bold":""}"><span>${a}</span><b>${b}</b></div>`;
+      el.innerHTML=row("Prismatic Tapers",player.prismTapers|0,10)+row("Tapers",player.tapers|0,10)
+        +row("Casting Scarabs",scarabs,3)+row("Other comps",pea,-1)
+        +row("Focus mana",Math.round(player.focusMana||0),-1); } }
+}
+// Dungeon Maps + Radar redraw every frame (cheap 2D canvas) — driven from updatePlugins' per-frame block
+function _drawPluginCanvases(){
+  if(pluginOn("dungmap")){ const cv=document.getElementById('dungmapCv'); if(cv){ const g=cv.getContext('2d');
+    if(inDungeon&&dungeonRects.length){ drawDungeonMinimap(g,cv.width); const inf=document.getElementById('dungmapInfo'); if(inf)inf.textContent=(curDungeon&&curDungeon.name)||"Delve"; }
+    else { g.clearRect(0,0,cv.width,cv.height); g.fillStyle="#0a0c07"; g.fillRect(0,0,cv.width,cv.height);
+      g.fillStyle="#5a6a4a"; g.font="11px sans-serif"; g.textAlign="center"; g.fillText("— Surface —",cv.width/2,cv.height/2);
+      const inf=document.getElementById('dungmapInfo'); if(inf)inf.textContent="Surface"; } } }
+  if(pluginOn("radar")){ const cv=document.getElementById('radarCv'); if(cv){ const g=cv.getContext('2d'), S=cv.width, R=S/2, RANGE=70;
+    g.clearRect(0,0,S,S);
+    g.strokeStyle="rgba(120,150,90,0.25)"; g.beginPath(); g.arc(R,R,R-1,0,6.28); g.stroke();
+    g.beginPath(); g.arc(R,R,R*0.5,0,6.28); g.stroke();
+    g.beginPath(); g.moveTo(R,2); g.lineTo(R,S-2); g.moveTo(2,R); g.lineTo(S-2,R); g.stroke();
+    const cy=Math.cos(-player.yaw), sy=Math.sin(-player.yaw);   // rotate world into player-facing (up = forward)
+    const blip=(wx,wz,col,sz)=>{ const dx=wx-player.x, dz=wz-player.z; if(dx*dx+dz*dz>RANGE*RANGE) return false;
+      const rx=dx*cy - dz*sy, rz=dx*sy + dz*cy;                 // forward = -z → up on the dial
+      const px=R+rx/RANGE*(R-4), py=R+rz/RANGE*(R-4);
+      g.fillStyle=col; g.beginPath(); g.arc(px,py,sz,0,6.28); g.fill(); return true; };
+    let n=0;
+    for(const m of monsters){ if(!!m.isDungeon!==inDungeon||m.hp<=0) continue; if(blip(m.x,m.z,m.isElite||m.isBoss?"#ff3838":"#c85050",m.isElite||m.isBoss?3:2)) n++; }
+    for(const nn of npcs){ if(nn) blip(nn.x,nn.z,"#ffd23b",2); }
+    if(typeof NET!=="undefined"&&NET.players) for(const id in NET.players){ const r=NET.players[id]; if(r&&r.mesh){ blip(r.mesh.position.x,r.mesh.position.z,"#6ad0ff",2.4); } }
+    g.fillStyle="#ffe9a8"; g.beginPath(); g.moveTo(R,R-5); g.lineTo(R+4,R+4); g.lineTo(R-4,R+4); g.closePath(); g.fill();   // you, facing up
+    const inf=document.getElementById('radarInfo'); if(inf)inf.textContent=n+" hostile"+(n===1?"":"s")+" near"; } }
 }
 // Settings → compass-bar range + the per-category blip filters for the bar AND the minimap.
 // The minimap's own ⚙ menu edits the same `miniShow` object, so the two stay in lockstep.
