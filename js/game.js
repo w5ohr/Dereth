@@ -32160,6 +32160,12 @@ function applySaveObj(s){
   // #784: the schema drives every symmetric field (see SAVE_SCHEMA) — one entry, both directions.
   for(const f of SAVE_SCHEMA){ if(f.load===null) continue;
     player[f.k]=f.load?f.load(s):_SV[f.t||"orNull"](s[f.k],f.d); }
+  // #899: a pre-parity save (or any character made before the innate line was frozen at creation) has no
+  // attrInnate. FREEZE it now at the loaded values so attrRank measures raises above a FIXED baseline —
+  // else attrInnate()'s min(attr,100) fallback tracks the rising attribute, underpricing every raise
+  // (flat rank-0 cost, no escalation) and refunding 0. Per-key so a partial innate keeps its good keys.
+  if(!player.attrInnate||typeof player.attrInnate!=="object") player.attrInnate={};
+  for(const a of ATTRS) if(player.attrInnate[a]==null) player.attrInnate[a]=player.attr[a];
   player.gearSkill={};   // rebuilt below by recomputeGearSkill()
   player.vassals=player.vassals.map(v=>{
     if(typeof v==="string") v={name:v};
@@ -33511,8 +33517,9 @@ function startGame(loadSaved,preset){
     const p=PRESETS[preset]||{};
     player.armor+=p.armor||0;player.potHealth+=p.pot||0;player.potMana+=p.mana||0;player.title=p.title||"";player.heritage=preset||player.heritage;
     // attributes: from the creation allocation if the player made one, else the heritage bonus
-    if(player.createAttr){ for(const a of ATTRS) player.attr[a]=player.createAttr[a]||10; player.attrInnate=Object.assign({},player.attr); }   // creation values are the permanent INNATE line (AC)
+    if(player.createAttr){ for(const a of ATTRS) player.attr[a]=player.createAttr[a]||10; }   // creation values are the permanent INNATE line (AC)
     else for(const a in (p.attr||{})) player.attr[a]+=p.attr[a];
+    player.attrInnate=Object.assign({},player.attr);   // #899: FREEZE the innate line for EVERY new character (custom allocation OR heritage-preset/default). Without this, a no-createAttr character left attrInnate unset, and attrInnate()'s min(attr,100) fallback TRACKED the rising attribute — so attrRank stayed 0 (flat 110 XP/rank, no escalation) and refunds returned 0.
     // skills: the trained set chosen at creation, else the heritage default loadout
     player.skills=freshSkills();
     const load=(player.createSkills&&player.createSkills.length)?player.createSkills
