@@ -2006,6 +2006,10 @@ function _clearAcademyNpcs(){
     scene.remove(rec.mesh); disposeObject3D(rec.mesh); }
   _acadNpcs=[]; updateNPCMarker();
 }
+// #873: Academy textures cached across entries (keyed fn|repeat — the layout is fixed, so the key set
+// is bounded). Every entry used to build ~30 fresh Textures that WebGPU's keep-resident policy never
+// destroyed → GPU texture count grew per VISIT. _acShared: the exit-dispose choke helpers skip them.
+const _acadTexC={};
 function buildAcademyHall(){
   const cx=DCEN.x, cz=DCEN.z;
   _clearAcademyNpcs();   // idempotent: a re-entry never doubles the staff
@@ -2026,8 +2030,10 @@ function buildAcademyHall(){
   // (true): plain BoxGeometry UVs, not the exporter's top-origin dungeon UVs. markSceneSRGB (called on
   // entry) tags the maps sRGB like every other AC texture — the instance lights below are scaled ~4×
   // to match, because decode drops a mid-tone map to ~¼ the raw value the old flat colours rendered at.
-  const _acadTex=(fn,rx,ry)=>{ const t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+fn));
-    t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); return t; };
+  const _acadTex=(fn,rx,ry)=>{ const k=fn+'|'+rx+'|'+ry; if(_acadTexC[k]) return _acadTexC[k];   // #873: reuse across entries
+    const t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+fn));
+    t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); t._acShared=true;
+    return (_acadTexC[k]=t); };
   const WALL_TEX='06003EA2.png', FLOOR_TEX='06003E54.png', COURT_TEX='06003E52.png', DOOR_TEX='06003935.png';
   const stone=new THREE.MeshStandardMaterial({map:_acadTex(WALL_TEX,1,1),roughness:0.94});
   const floorM=new THREE.MeshStandardMaterial({map:_acadTex(FLOOR_TEX,1,1),roughness:0.96});
@@ -29449,8 +29455,7 @@ function intEnterInstance(rec){
       if(gr.uv&&gr.uv.length) geo.setAttribute('uv',new THREE.Float32BufferAttribute(gr.uv,2));
       geo.setIndex(gr.i);
       const mp={roughness:0.88,metalness:0.02,side:THREE.DoubleSide};
-      if(gr.mat&&gr.mat.tex){ const t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+gr.mat.tex));
-        t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true;
+      if(gr.mat&&gr.mat.tex){ const t=dgTexture(gr.mat.tex);   // #873: cached by filename — was a fresh Texture per group per visit
         mp.map=t; if(gr.mat.clip){mp.transparent=true;mp.alphaTest=0.45;} }
       else mp.color=(gr.mat&&gr.mat.color!=null)?gr.mat.color:0x8a8478;
       const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial(mp)); m.castShadow=true; m.receiveShadow=true; grp.add(m);
@@ -29555,16 +29560,34 @@ function synthDungeonWalls(dj,skipFn){
   let wallTex=null,best=-1;
   for(const g of dj.groups){ if(g.tex){ const n=(g.verts||[]).length; if(n>best){best=n;wallTex=g.tex;} } }
   let mat;
-  if(wallTex){ const t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+wallTex));
-    t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  if(wallTex){ const t=dgTexture(wallTex);   // #873: cached by filename — was a fresh Texture per visit
     mat=new THREE.MeshStandardMaterial({map:t,roughness:0.9,metalness:0.02,side:THREE.DoubleSide}); }
   else mat=new THREE.MeshStandardMaterial({color:0x6b6b76,roughness:0.9,side:THREE.DoubleSide});
   const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; return m;
 }
+// #873: dungeon-set textures cached by filename (the dstatTexture pattern). The builders created a
+// fresh Texture per material group per VISIT; the WebGPU keep-resident policy assumes shared/cached
+// textures ("bounded by content variety, not rebuild count"), so per-visit copies accumulated on the
+// GPU without bound. Rebuilds now reuse the same Texture — the policy's premise holds. onNorm delivers
+// the #713 derived relief map (once per filename via lumNormalTex's own cache) as soon as the image
+// is available, including on cache hits where the first load completed long ago.
+const _dgTexC={};
+function dgTexture(fn,onNorm){
+  let e=_dgTexC[fn];
+  if(!e){ e=_dgTexC[fn]={t:null,ready:false,cbs:[]};
+    e.t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+fn),()=>{ e.ready=true;
+      const cbs=e.cbs; e.cbs=[]; for(const cb of cbs){ try{ cb(_dgNorm(e)); }catch(err){} } });
+    e.t.flipY=false; e.t.colorSpace=THREE.SRGBColorSpace; e.t.wrapS=e.t.wrapT=THREE.RepeatWrapping; e.t._acShared=true; }
+  // cache-hit delivery is deferred to a microtask: the call site assigns its material AFTER this
+  // returns (the original loader callback was always async), so a synchronous call would see mm=null
+  if(onNorm){ if(e.ready) Promise.resolve().then(()=>{ try{ onNorm(_dgNorm(e)); }catch(err){} }); else e.cbs.push(onNorm); }
+  return e.t;
+}
+function _dgNorm(e){ const nm=lumNormalTex(e.t); nm.flipY=false; nm.needsUpdate=true; nm._acShared=true; return nm; }
 function buildDungeonReal(def,dj){
   const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
   for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
-  const grp=new THREE.Group(), TL=new THREE.TextureLoader();
+  const grp=new THREE.Group();
   // ── truncated-export detection at build time (same signals as tools/dungeon_coverage_audit.py):
   //    coverage = fraction of cells with a real wall vertex within ~8u. Below 50% the export lost
   //    most of its walls (#762) — keep whatever real geometry survived and GAP-FILL the bare cells
@@ -29585,11 +29608,8 @@ function buildDungeonReal(def,dj){
     geo.setIndex(g.idx);
     let mat;
     if(g.tex){ let mm=null;
-      const t=TL.load(acTexURL('acdungeons/tex/'+g.tex),tt=>{   // #713: relief for the TRUE stone once the image is in
-        if(mm){ const nm=lumNormalTex(tt); nm.flipY=false; nm.needsUpdate=true;   // dat textures are top-origin (#40) — the derived map must match
-          mm.normalMap=nm; mm.normalScale=new THREE.Vector2(0.6,0.6); mm.needsUpdate=true; } });
-      t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
-      t.wrapS=t.wrapT=THREE.RepeatWrapping;
+      const t=dgTexture(g.tex,nm=>{   // #713: relief for the TRUE stone once the image is in (#873: texture + derived map now cached by filename)
+        if(mm){ mm.normalMap=nm; mm.normalScale=new THREE.Vector2(0.6,0.6); mm.needsUpdate=true; } });
       mat=mm=new THREE.MeshStandardMaterial({map:t,roughness:0.85,metalness:0.02,side:THREE.DoubleSide}); }
     else mat=new THREE.MeshStandardMaterial({color:(g.color!=null?g.color:0x777788),roughness:0.85,side:THREE.DoubleSide});
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
