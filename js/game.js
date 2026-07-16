@@ -15453,9 +15453,16 @@ function invCap(){ let n=mainPackCap(); for(const p of (player.packs||[])) n+=p.
 //    (itemBurden isn't multiplied by count). Equipment (weapon/worn/jewelry) never stacks — each has unique rolls.
 function stackable(it){ return !!it && (it.scroll===true || (typeof it.stat==="string" && it.stat!=="weapon" && it.stat!=="worn" && it.stat!=="jewelry" && it.stat!=="aetheria")); }   // aetheria: each medallion levels independently
 function stackKey(it){ return it.scroll?("scroll:"+it.spellId):[it.stat,it.name,it.v||0,it.attr||"",it.cap||0,it.aug?JSON.stringify(it.aug):"",it.bp||0,it.uses==null?"":it.uses,it.stored==null?"":it.stored].join("|"); }   // #290: include bp (buy-price resale clamp mustn't be stripped by merging into a bp-less stack). #305: include uses so a fresh multi-use kit can't merge into a partly-spent stack. #318: include stored so merging two mana stones can't discard the incoming stone's banked mana
+// #896: the ONE client-side stack-count invariant, mirroring the server's sanitize_item/_clampleaf
+// clamp — an integer in [1, STACK_MAX]. Offline the client is authoritative (no server pass cleans a
+// bad count), so a corrupt save or future item source could otherwise seed NaN/0/negative/huge counts
+// that per-callsite `(it.count||1)` reads hide but removeStack/trade-split arithmetic would propagate.
+const STACK_MAX=100000;
+function _stackCount(n){ n=Math.floor(+n); return (isFinite(n)&&n>0)?Math.min(n,STACK_MAX):1; }
 function addToInv(it, force){   // → true if added/stacked, false if the satchel was full
+  if(it&&it.count!=null) it.count=_stackCount(it.count);   // #896: sanitize before use
   if(stackable(it)){ const k=stackKey(it), ex=player.inv.find(x=>stackable(x)&&stackKey(x)===k);
-    if(ex){ ex.count=(ex.count||1)+(it.count||1); return true; } }
+    if(ex){ ex.count=Math.min(STACK_MAX,(ex.count||1)+(it.count||1)); return true; } }   // #896: merges clamp to the server's cap (an online sync would clamp anyway — keep the views agreeing)
   if(!force && player.inv.length>=invCap()) return false;
   player.inv.push(it); return true;
 }
@@ -31736,7 +31743,10 @@ const SAVE_SCHEMA=[
   // trade's take_owned verification then failed — aborting any trade that outlived one autosave (~all
   // real negotiations). Fold the escrow back into every save; 'done'/cancel empty TRADE.mine first,
   // so a completed trade never re-saves a transferred item.
-  {k:"inv",save:p=>(typeof TRADE!=="undefined"&&TRADE.open&&TRADE.mine&&TRADE.mine.length)?p.inv.concat(TRADE.mine):p.inv,t:"arr"},
+  // #896: repair counts on load too — offline saves are authoritative, so a bad persisted count
+  // (NaN/0/negative/past STACK_MAX) is fixed here instead of being trusted for the whole session.
+  {k:"inv",save:p=>(typeof TRADE!=="undefined"&&TRADE.open&&TRADE.mine&&TRADE.mine.length)?p.inv.concat(TRADE.mine):p.inv,
+   load:s=>(Array.isArray(s.inv)?s.inv:[]).map(it=>{ if(it&&typeof it==="object"&&it.count!=null) it.count=_stackCount(it.count); return it; })},
   {k:"materials",load:s=>s.materials||0},
   {k:"salvage",t:"obj"},{k:"craft",t:"obj"},
   {k:"weaponTink",t:"num"},{k:"armorTink",t:"num"},
@@ -32202,7 +32212,7 @@ function onEventReward(msg){
 // numeric field at ingest; names are escaped at display time (#xss), so strings pass through.
 function sanitizeItem(it){
   if(!it||typeof it!=="object"||Array.isArray(it)) return null;
-  if(it.count!=null||it.stackable) it.count=Math.max(1,Math.min(1e9,Math.floor(+it.count||1)));
+  if(it.count!=null||it.stackable) it.count=_stackCount(it.count);   // #896: one invariant — the server's [1, STACK_MAX] clamp (was a looser 1e9 cap)
   for(const k of ["v","uses","dur","work","tier","foc","shield","magicAbsorb"])
     if(it[k]!=null&&typeof it[k]!=="object"){ const n=+it[k]; it[k]=isFinite(n)?n:0; }
   return it;
