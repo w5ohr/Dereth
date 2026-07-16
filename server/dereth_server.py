@@ -938,7 +938,7 @@ RL_GEN_RATE = 30.0    # sustained messages/sec (input/attack/etc.)
 RL_GEN_BURST = 60.0   # burst capacity
 RL_CHAT_RATE = 2.0    # sustained "chatty" broadcast messages/sec
 RL_CHAT_BURST = 6.0   # burst capacity for chat/emote/tell/party/allegiance
-CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd", "spellfx"}   # messages that fan out to others. #312: spellfx is a purely-cosmetic broadcast-to-all — throttle it on the scarcer chat budget (2/s) so a client can't blast FX to every player 30×/s (attack/debuff stay on the general bucket since they fire at legitimate combat rate)
+CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd", "spellfx", "house"}   # messages that fan out to others. #312: spellfx is a purely-cosmetic broadcast-to-all — throttle it on the scarcer chat budget (2/s) so a client can't blast FX to every player 30×/s (attack/debuff stay on the general bucket since they fire at legitimate combat rate). #817: house set/release also fans out (broadcast_house, O(N)) plus a DB write — put it on the scarcer bucket so a client can't drive ~30×N egress + 30 writes/s by toggling its own plot
 SAVE_MIN_INTERVAL = 1.0   # #449: min seconds between persisted saves per character — a cost-aware cap on the 256 KiB serialize+write beyond the flat message bucket (client autosaves every ~10s, so this drops no real state)
 
 # #468: per-(sender→target) cooldown for targeted, consent-style notifications (party invite, trade
