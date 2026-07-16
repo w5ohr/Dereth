@@ -15443,6 +15443,9 @@ function addToInv(it, force){   // → true if added/stacked, false if the satch
   if(!force && player.inv.length>=invCap()) return false;
   player.inv.push(it); return true;
 }
+// #823: true only if adding this item would occupy a NEW inventory slot. A stackable that merges into an
+// existing stack takes none, so it can be picked up even at a "full" (slot-count) satchel.
+function wouldConsumeSlot(it){ if(!it) return true; if(stackable(it)){ const k=stackKey(it); if(player.inv.find(x=>stackable(x)&&stackKey(x)===k)) return false; } return true; }
 function takeFromInv(i){ const it=player.inv[i]; if(!it) return; if(stackable(it)&&(it.count||1)>1) it.count--; else player.inv.splice(i,1); }
 function invCountOf(name){ let n=0; for(const it of player.inv) if(it&&it.name===name) n+=(it.count||1); return n; }
 function removeItemsByName(name,n){ for(let i=player.inv.length-1;i>=0&&n>0;i--){ const it=player.inv[i]; if(!it||it.name!==name) continue;
@@ -18118,12 +18121,13 @@ function interact(){
   const near=drops.filter(d=>d.type==="item"&&Math.hypot(d.x-player.x,d.z-player.z)<4)
     .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
   if(near.length){
-    if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
+    // #823: no blanket "satchel full" refusal — a stackable that merges needs no slot. Decide per item.
     let left=0, projected=player.inv.length;   // #821: track projected slot use so a shared pickup fired for an item we can't hold doesn't destroy it (server removes the ground copy before the client learns the satchel is full)
     for(const d of near){
-      if(projected>=invCap()){ left++; continue; }              // #821: no projected room — leave the rest (shared AND local) on the ground rather than lose them
-      if(d.shared){ netSend({t:"pickup",id:d.id}); projected++; continue; }   // reserve a slot for the incoming item; server validates each, grants & broadcasts drop_gone (removes the mesh)
-      lootItem(d.item); disposeObject3D(d.mesh); const idx=drops.indexOf(d); if(idx>=0) drops.splice(idx,1); projected++;   // #22: dispose the item model
+      const consumes=wouldConsumeSlot(d.item);   // #823: shared and local item drops both carry d.item; a mergeable stackable takes no slot
+      if(consumes && projected>=invCap()){ left++; continue; }   // #821: no projected room — leave the rest on the ground rather than lose them
+      if(d.shared){ netSend({t:"pickup",id:d.id}); if(consumes) projected++; continue; }   // server validates each, grants & broadcasts drop_gone (removes the mesh)
+      lootItem(d.item); disposeObject3D(d.mesh); const idx=drops.indexOf(d); if(idx>=0) drops.splice(idx,1); if(consumes) projected++;   // #22: dispose the item model
     }
     if(left) log(`Your satchel is full — <b>${left}</b> item(s) left on the ground.`,"warn");
     return;
