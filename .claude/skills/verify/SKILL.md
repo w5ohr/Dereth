@@ -21,8 +21,11 @@ npx http-server . -p 8765 -c-1 --silent
 Chrome: `C:/Program Files/Google/Chrome/Application/chrome.exe`. A ready driver lives in the session
 scratchpad as `drive.js` (recreate from this recipe if gone). Key steps:
 
-1. Fresh `--user-data-dir` per run AND abort the `/sw.js` request (request interception) — a stale
-   service worker serves old HTML/JS and its failures poison whole runs.
+1. Fresh `--user-data-dir` per run AND neutralize the service worker — a stale SW serves old HTML/JS
+   and its failures poison whole runs. Do NOT use `page.setRequestInterception` to abort `/sw.js`:
+   interception silently fails many concurrent asset fetches (textures/models never load — this was
+   the real source of the `net::ERR_FAILED` asset spam). Instead:
+   `page.evaluateOnNewDocument(() => { if (navigator.serviceWorker) navigator.serviceWorker.register = () => Promise.reject(new Error('sw disabled by harness')); })`
 2. `goto http://localhost:8765/index.html?nocache=N` (add `&gpu=1` for the WebGPURenderer path).
 3. `waitForFunction('typeof startGame==="function" && renderer !== null')` — initThree is async.
 4. Skip menus: seed a save and load it —
@@ -35,8 +38,9 @@ scratchpad as `drive.js` (recreate from this recipe if gone). Key steps:
 6. For comparable screenshots pin the scene:
    `gameTime=0.40; weather="clear"; weatherT=9999; cloudCover=0; wetness=0; snowAmt=0;` (wait ~5s for
    lerps), camera via `player.pitch/player.yaw`.
-7. Console: `page.on('console'|'pageerror')`. Ignore the `net::ERR_FAILED` asset spam (environment) and
-   `NotAllowedError: pointer lock` (headless). Real signals: `NodeBuilder`, `GPUValidationError`,
+7. Console: `page.on('console'|'pageerror')`. Ignore `NotAllowedError: pointer lock` (headless).
+   `net::ERR_FAILED` asset spam means request interception is on — remove it (step 1); without
+   interception assets load cleanly. Real signals: `NodeBuilder`, `GPUValidationError`,
    `Device Lost`, `update() failed`, `renderComposite() failed`.
 8. Read pixels from screenshots with `pngjs` — `drawImage` readback of the WebGPU canvas returns black.
 

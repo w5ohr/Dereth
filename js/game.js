@@ -20,7 +20,7 @@ function _rawFragTSL(rgbNode){ const t=window.TSL;
   return t.sRGBTransferEOTF(rgbNode).div(t.reference('toneMappingExposure','float',renderer)); }
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const irnd=(a,b)=>Math.floor(rnd(a,b+1));
-const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const clamp=(v,a,b)=>v>=a?(v>b?b:v):a;   // #790: v>=a is false for NaN too, so NaN clamps to the low bound `a` instead of passing straight through (finite values behave exactly as before)
 const now=()=>performance.now();
 
 // ---------- world constants ----------
@@ -39,9 +39,21 @@ const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled are
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
 const TOWN_SAFE=60*WSCALE, DAYLEN=7620; // safe radius around each capital (×WSCALE: real town extent at 1:1); DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
+// ── #781: central tuning config — the named home for cross-cutting scene/timing constants that were
+//    inline magic numbers at their use sites. Balancing/theming edits happen here, not by spelunking.
+//    (Live systems — weather, AC_SKY, gfx tiers — still retune these at runtime; CFG is the boot state.)
+const CFG={
+  fog:{color:0x8a8062,near:40,far:235},                       // boot fog (weather/AC_SKY drive it live)
+  camera:{fov:72,near:0.05,farK:1.2},                         // far plane = WORLD*farK
+  sunNear:{size:72,near:10,far:300,mapSize:4096,bias:-0.0004,normalBias:0.035,radius:2.2},   // near shadow cascade
+  sunFar:{size:192,near:10,far:460,mapSize:4096,bias:-0.0007,normalBias:0.10,radius:2.6},    // #692 far cascade (coarser texels → scaled biases)
+  carriedLight:{mapSize:512,near:0.2,bias:-0.006},            // #716 dungeon point-shadow light
+  sceneLight:{hemiSky:0xbcd0ff,hemiGround:0x4a4230,hemiI:0.62,sunColor:0xffedc2,sunI:1.25,ambColor:0x404040,ambI:0.28},
+  autosaveMs:10000,                                           // offline autosave cadence
+};
 
 // ---------- attributes (AC's six) ----------
-const ATTRS=["Strength","Endurance","Coordination","Quickness","Focus","Self"];
+// ATTRS → js/data/ac-tables.js (#778)
 // ---- AC skill system (E1) ----------------------------------------------------------------
 // Full retail skill list grouped by family. Fields: k=key, n=name, fam=family, a=attr formula
 // inputs, d=divisor (value base = floor(sum(a)/d); d:0 = no attribute formula), tc=train credit
@@ -127,7 +139,7 @@ try{ fetch('assets/acskills.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!
     s.tc=Math.max(0,a.tc); s.sc=(a.sc>=900?-1:a.sc);              // 1000+ in the table = cannot specialize
     let b=0; if(s.d){let sum=0;for(const at of s.a)sum+=10;b=Math.floor(sum/s.d);} s.base0=b; }
   AC_XP=j.xp;
-  if(typeof derive==="function"&&typeof player!=="undefined"&&player.skills){ derive(); if(typeof updateHUD==="function") updateHUD(); }
+  if(typeof derive==="function"&&typeof player!=="undefined"&&player.skills){ derive(); updateHUD(); }
   console.log("AC skill pack: "+Object.keys(j.skills).length+" authentic skill formulas + XP charts loaded.");
 }).catch(()=>{}); }catch(e){}
 // THE AC skill check (client formula): success chance vs difficulty is a logistic curve.
@@ -174,7 +186,7 @@ try{ fetch('assets/acitems.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(!j
 }).catch(()=>{}); }catch(e){}
 const AC_TITLE_SMALL=/^(of|the|a|an|and|in|to)$/;
 function acTitle(n){ return n.split(" ").map((w,i)=>(i>0&&AC_TITLE_SMALL.test(w))?w:w.charAt(0).toUpperCase()+w.slice(1)).join(" "); }
-const AC_WT_BY_SKILL={1:"axe",4:"dagger",5:"mace",9:"spear",10:"staff",11:"sword",12:"atlatl",2:"bow",3:"crossbow",8:"atlatl",41:"twohand",44:"sword",45:"dagger",46:"dagger",47:"bow"};
+// AC_WT_BY_SKILL → js/data/ac-tables.js (#778)
 function rollACItem(rare,tier){   // a REAL retail item of the right tier, exact specs via acItemize
   if(!AC_POOLS) return null;
   const t=clamp((tier|0)||1,1,5), r=Math.random();
@@ -219,7 +231,7 @@ let _gearManaAcc=0;
 function _rnum(s){ const m=/\b([ivx]+)\s*$/i.exec(s); if(!m) return 4;   // trailing roman numeral → spell rank (default IV)
   const R={i:1,v:5,x:10}; let n=0,p=0; const t=m[1].toLowerCase();
   for(let i=t.length-1;i>=0;i--){ const v=R[t[i]]; n+=v<p?-v:v; if(v>p)p=v; } return clamp(n,1,8); }
-const _APT_SKILL={"heavy weapon":"heavy","light weapon":"light","finesse weapon":"finesse","two handed combat":"twohand","missile weapon":"missile","war magic":"war","life magic":"life","creature enchantment":"creature","item enchantment":"item","void magic":"void","melee defense":"meleed","missile defense":"missiled","invulnerability":"meleed","impregnability":"missiled","magic resistance":"magicd","healing":"healing","arcane lore":"arcane","mana conversion":"mana","lockpick":"lockpick","salvaging":"salvaging","shield":"shield"};
+// _APT_SKILL → js/data/ac-tables.js (#778)
 function itemSpellFx(nm){   // one retail spell name → a typed worn effect (null = lore-only, shown but inert)
   const n=nm.toLowerCase(), r=_rnum(n);
   const apt=/(minor|moderate|major|epic|legendary)\s+(.+?)\s+(aptitude|prowess)/.exec(n);
@@ -249,7 +261,7 @@ function itemSpellNames(it){   // resolve an item's numeric acspells ids to thei
   if(!it||!it.acspells||!it.acspells.length||typeof AC_SPELLS==="undefined"||!AC_SPELLS||!AC_SPELLS.spells) return [];
   return it.acspells.map(id=>{ const e=AC_SPELLS.spells[String(id)]; return e?e.n:null; }).filter(Boolean);
 }
-const CANTRIP_TIERS=[["Minor",3],["Major",6],["Epic",9],["Legendary",12]];
+// CANTRIP_TIERS → js/data/ac-tables.js (#778)
 function initItemMagic(it,tier,work,rare){   // spellcraft + mana pool + Arcane Lore gate for anything that carries magic
   const n=(it.cantrips?it.cantrips.length:0)+(it.acspells?it.acspells.length:0);
   if(!n) return;
@@ -259,13 +271,12 @@ function initItemMagic(it,tier,work,rare){   // spellcraft + mana pool + Arcane 
   if(!it.reqArcane) it.reqArcane=Math.round(Math.max(10,it.spellcraft*0.5));   // retail: Arcane Lore tracks spellcraft
 }
 function wornMagicItems(){ return [player.weapon].concat(Object.values(player.armorSlots||{}),(typeof jewelryItems==="function")?jewelryItems():[]).filter(Boolean); }
-const SKILL_FAMS=["Magic","Defense","Melee","Missile","Trade","Tinkering","Lore"];
-const MAGIC_SCHOOLS={war:"war",aoe:"war",life:"life",item:"item",creature:"creature",void:"void"}; // spell.school → skill key
-const MELEE_WEAPON_KEYS=["heavy","light","finesse","twohand","dualwield","dirty","recklessness","sneak"];
+// SKILL_FAMS → js/data/ac-tables.js (#778)
+// MAGIC_SCHOOLS → js/data/ac-tables.js (#778)
+// MELEE_WEAPON_KEYS → js/data/ac-tables.js (#778)
 // Cb7 — every weapon type maps to ITS weapon skill (ToD): heavy blades/axes/maces/spears, light
 // staves/fists, finesse daggers, two-handers, missiles. Your equipped weapon rolls ITS OWN skill.
-const WEAPON_SKILL={sword:"heavy",axe:"heavy",mace:"heavy",spear:"heavy",staff:"light",unarmed:"light",
-  dagger:"finesse",twohand:"twohand",bow:"missile",crossbow:"missile",atlatl:"missile"};
+// WEAPON_SKILL → js/data/ac-tables.js (#778)
 function weaponSkillKey(){ const wt=player.weapon&&player.weapon.wt; return WEAPON_SKILL[wt]||"light"; }   // bare fists fight with Light Weapons
 // Trained-vs-Specialized cumulative XP curves, fit to the two verified anchors (pt1: 23/58, pt70: 67504/168758)
 function skillCumXP(rank,spec){ if(rank<=0)return 0;
@@ -330,8 +341,7 @@ function migrateSkills(old){ const fresh=freshSkills(); if(!old||typeof old!=="o
   for(const ok in map){ fresh[map[ok]]={t:1,xp:skillCumXP(old[ok]|0,false)}; }
   return fresh;
 }
-const ATTR_DESC={Strength:"Melee damage & burden",Endurance:"Health, stamina & regen",Coordination:"Attack accuracy",
-  Quickness:"Defense & run speed",Focus:"Spell skill & mana",Self:"Mana & spell skill"};
+// ATTR_DESC → js/data/ac-tables.js (#778)
 
 // ---------- player ----------
 const player={x:0,z:0,yaw:0,pitch:0,r:0.8,
@@ -406,35 +416,18 @@ const xpForLevel=l=>(AC_XP&&AC_XP.level&&l+1<AC_XP.level.length)?(AC_XP.level[l+
 
 // starting-path presets (AC is classless — these just seed your build)
 // the three heritage groups of Dereth — each starts in its culture's capital
-const PRESETS={
-  aluvian:{attr:{Strength:5,Coordination:5},armor:5,pot:2,title:"the Aluvian",town:"Holtburg"},
-  sho:{attr:{Coordination:5,Quickness:3,Focus:2},pot:1,mana:1,title:"the Sho",town:"Shoushi"},
-  gharundim:{attr:{Focus:6,Self:4},mana:3,title:"the Gharu'ndim",town:"Yaraq"},
-  viamontian:{attr:{Strength:4,Coordination:4,Self:2},armor:5,pot:1,title:"the Viamontian",town:"Sanamar"},   // Throne of Destiny heritage
-};
+// PRESETS → js/data/ac-tables.js (#778)
 // AC heritage lore — shown when a heritage is chosen at character creation (the four playable peoples).
-const HERITAGE_LORE={
-  aluvian:{name:"Aluvian",town:"Holtburg",affinity:"Blade & Bow",
-    lore:"A hardy, self-reliant people from the island nation of Aluvia — farmers, hunters and soldiers whose blood runs to the frontier. The Aluvians favour cold steel and the longbow, taking readily to melee and missile skill. They begin their lives in the mountain garrison of Holtburg."},
-  sho:{name:"Sho",town:"Shoushi",affinity:"Discipline & Finesse",
-    lore:"A contemplative people of the eastern mountains who prize harmony, discipline and mastery of the self. Sho warriors are as deadly unarmed as armed, their scholars keen of mind. They favour finesse weapons and swift movement, and begin in the wooded town of Shoushi."},
-  gharundim:{name:"Gharu'ndim",town:"Yaraq",affinity:"The Arcane",
-    lore:"A learned people of the arid south who prize scholarship, tradition and the arts magical. The mages and merchants of the Gharu'ndim are renowned across Dereth. They favour the schools of magic, and begin in the desert city of Yaraq."},
-  viamontian:{name:"Viamontian",town:"Sanamar",affinity:"Knightly Steel",
-    lore:"A proud, chivalrous people ruled by a monarchy across the sea — knights, courtiers and crusaders sworn to blade and crown. The Viamontians favour heavy weapons and the sword, and arrive on Dereth's shores at the port of Sanamar."},
-};
+// HERITAGE_LORE → js/data/ac-tables.js (#778)
+// ── #785: creation data tables (previously rebuilt inline in startGame on every call) ──
+// HERITAGE_SKILLS → js/data/ac-tables.js (#778)
+// TEMPLATE_TRAIN_WEAPON → js/data/ac-tables.js (#778)
+// HERITAGE_CLOTHING → js/data/ac-tables.js (#778)
+// HERITAGE_WELCOME → js/data/ac-tables.js (#778)
 // AC creation: professions (templates) preset attributes + starting trained skills; "Custom" = free build.
-const CREATE_POOL=270;   // AC: 270 Attribute Credits above the six 10-point bases (330 total), max 100 each
-const CREATE_CREDITS=52; // AC: 52 starting skill credits (Train or, only at creation-time freely, Specialize)
-const TEMPLATES=[
-  {k:"custom",  name:"Custom",       attr:{},                                    skills:[]},
-  {k:"soldier", name:"Soldier",      attr:{Strength:22,Endurance:16,Coordination:8}, skills:["heavy","meleed","shield"]},
-  {k:"swash",   name:"Swashbuckler", attr:{Coordination:22,Quickness:16,Strength:8}, skills:["light","meleed","dualwield"]},
-  {k:"archer",  name:"Bow Hunter",   attr:{Coordination:26,Quickness:12,Strength:8}, skills:["missile","meleed"]},
-  {k:"warmage", name:"War Mage",     attr:{Focus:26,Self:16,Endurance:4},         skills:["war","mana","meleed"]},
-  {k:"lifemage",name:"Life Caster",  attr:{Self:26,Focus:16,Endurance:4},         skills:["life","creature","meleed"]},
-  {k:"wayfarer",name:"Wayfarer",     attr:{Endurance:12,Coordination:12,Focus:10,Self:6}, skills:["heavy","life","meleed"]},
-];
+// CREATE_POOL → js/data/ac-tables.js (#778)
+// CREATE_CREDITS → js/data/ac-tables.js (#778)
+// TEMPLATES → js/data/ac-tables.js (#778)
 
 // ---------- spells ----------
 // ── SPELLBOOK ─────────────────────────────────────────────────────────────────
@@ -478,26 +471,19 @@ const _SPELLBOOK_APPEND=[
   {id:"summon_wisp",name:"Summon Wisp",ico:"🔮",cost:30,cd:14000,school:"summon",lvl:1,req:0,special:"summon"},
 ];
 for(const e of _SPELLBOOK_APPEND) SPELLBOOK_LIST.push(e);
-const ROMAN=["","I","II","III","IV","V","VI","VII","VIII"];
+// ROMAN → js/data/ac-tables.js (#778)
 // AC has 8 spell levels with rising skill requirements; we scale to 6 here. Buffs last
 // a level-scaled duration (AC's 30-min buffs are shortened for our minutes-long sessions).
 // ── Creature Enchantment: self attribute buffs (Strength/Endurance/… Self I–VI) ──
-const CE_ATTRS=[["Strength","str","💪"],["Endurance","end","🛡️"],["Coordination","coord","🎯"],
-  ["Quickness","quick","🌀"],["Focus","focus","🔆"],["Self","will","✦"]];
-const CE_TIERS=[{lvl:1,mag:5,cost:16,req:0,dur:60},{lvl:2,mag:9,cost:24,req:30,dur:75},{lvl:3,mag:14,cost:34,req:60,dur:90},
-  {lvl:4,mag:20,cost:46,req:95,dur:105},{lvl:5,mag:27,cost:60,req:135,dur:120},{lvl:6,mag:35,cost:78,req:180,dur:150},
-  {lvl:7,mag:45,cost:100,req:240,dur:180},{lvl:8,mag:58,cost:128,req:300,dur:210}];
+// CE_ATTRS → js/data/ac-tables.js (#778)
+// CE_TIERS → js/data/ac-tables.js (#778)
 for(const [attr,code,ico] of CE_ATTRS){ const disp=attr==="Self"?"Willpower":attr;
   for(const t of CE_TIERS) SPELLBOOK_LIST.push({id:`creature_${code}_${t.lvl}`,name:`${disp} Self ${ROMAN[t.lvl]}`,
     ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"attr",attr,mag:t.mag,dur:t.dur});
 }
 // ── Creature Enchantment debuffs: cast on an enemy to weaken/slow it (I–IV) ──
-const CE_DEBUFFS=[
-  {code:"weak",name:"Weakness",ico:"💢",eff:"dmg"},   // lowers the foe's attack damage
-  {code:"slow",name:"Slowness",ico:"🐌",eff:"spd"},   // lowers the foe's movement speed
-];
-const DEBUFF_TIERS=[{lvl:1,v:0.85,cost:18,req:0,dur:20},{lvl:2,v:0.72,cost:26,req:35,dur:25},{lvl:3,v:0.58,cost:36,req:70,dur:30},{lvl:4,v:0.45,cost:48,req:110,dur:35},
-  {lvl:5,v:0.34,cost:62,req:150,dur:40},{lvl:6,v:0.25,cost:78,req:195,dur:45},{lvl:7,v:0.18,cost:96,req:250,dur:50},{lvl:8,v:0.12,cost:116,req:300,dur:55}];
+// CE_DEBUFFS → js/data/ac-tables.js (#778)
+// DEBUFF_TIERS → js/data/ac-tables.js (#778)
 for(const b of CE_DEBUFFS) for(const t of DEBUFF_TIERS) SPELLBOOK_LIST.push({id:`creature_${b.code}_${t.lvl}`,
   name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"creature",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,
   debuff:b.eff,dmag:t.v,dur:t.dur});
@@ -507,8 +493,31 @@ for(const b of CE_DEBUFFS) for(const t of DEBUFF_TIERS) SPELLBOOK_LIST.push({id:
 // ── Canonical spell/effect colour palette — one source of truth so every projectile, AoE, brand,
 //    arrow, vulnerability/protection and vital effect reads the same colours (fire=red, acid=green,
 //    frost=white, lightning=blue; health=red, stamina=yellow, mana=blue). ──
-const FX_ELEM={fire:0xff3322,flame:0xff3322, acid:0x54dc3c, frost:0xeef4ff,ice:0xeef4ff,cold:0xeef4ff, shock:0x3a9bff,lightning:0x3a9bff};
-const FX_VITAL={hp:0xff3b30,health:0xff3b30, st:0xffd23b,stamina:0xffd23b, mn:0x3a9bff,mana:0x3a9bff};
+// FX_ELEM → js/data/ac-tables.js (#778)
+// FX_VITAL → js/data/ac-tables.js (#778)
+// ── vivid, thematically-exact spell colours per element / damage type / school — the CAST SIGNATURE
+//    (fxCastSignature) and every wind-up read from this so a spell's flourish always matches what it does.
+// SPELL_COL → js/data/ac-tables.js (#778)
+// resolve the eyecatching colour for ANY spell by its element / damage type / school / buff
+function spellFxColor(s){
+  if(!s) return 0x9af0ff;
+  let el=s.element;
+  if(!el && (s.school==="war"||s.school==="aoe") && typeof s.make==="function"){ try{ el=(s.make()||{}).element; }catch(e){} }
+  if(el && SPELL_COL[el]!=null) return SPELL_COL[el];
+  if(s.vulnElem && SPELL_COL[s.vulnElem]!=null) return SPELL_COL[s.vulnElem];
+  if(s.buff==="bane" && s.element && SPELL_COL[s.element]!=null) return SPELL_COL[s.element];
+  if(s.school==="life"||s.heal) return SPELL_COL.life;
+  if(s.school==="void"||s.special==="corrupt") return SPELL_COL.nether;
+  if(s.buff==="light") return s.lightColor||0xfff2cf;
+  if(s.buff==="might") return 0xff8f5a;           // strength — molten orange
+  if(s.buff==="swift") return 0x66ffcf;           // haste — bright teal
+  if(s.buff==="attr"||s.buff==="skill") return 0xbfe0ff;
+  if(s.buff==="prot") return 0x86ffbf;
+  if(s.buff==="item"||s.school==="item") return 0xffd86b;   // enchantment gold
+  if(s.school==="creature") return 0xbf8bff;      // arcane violet
+  if(s.debuff) return 0xc060ff;
+  return 0x9af0ff;
+}
 function fxElem(el,fb){ return (el!=null&&FX_ELEM[el]!=null)?FX_ELEM[el]:(fb!=null?fb:0xffffff); }
 // ── #769: AUTHORED FX — assets/acfx.json carries per-element particle profiles baked from the
 //    real dats (projectile weenie → PhysicsEffectTable → PhysicsScript → emitter → gfxObj colour).
@@ -539,56 +548,33 @@ fetch('assets/acfx.json').then(r=>r&&r.ok?r.json():null).then(j=>{
 }).catch(()=>{});
 function fxVital(k,fb){ return (k!=null&&FX_VITAL[k]!=null)?FX_VITAL[k]:(fb!=null?fb:0xffffff); }
 function fxHex(c){ return "#"+("000000"+((c>>>0)&0xffffff).toString(16)).slice(-6); }
-const WAR_BOLTS=[
-  {code:"flame",name:"Flame Bolt",   ico:"🔥",color:FX_ELEM.fire, r:0.28,element:"fire",    burn:true, base:18,foc:1.4,speed:55, cost:14,cd:520},
-  {code:"frost",name:"Frost Bolt",   ico:"❄️",color:FX_ELEM.frost,r:0.32,element:"ice",     slow:.45,  base:24,foc:1.7,speed:46, cost:18,cd:760},
-  {code:"light",name:"Lightning Bolt",ico:"⚡",color:FX_ELEM.shock,r:0.2, element:"shock",   stun:true, base:30,foc:1.8,speed:120,cost:20,cd:600},
-  {code:"acid", name:"Acid Stream",  ico:"🟢",color:FX_ELEM.acid, r:0.26,element:"acid",                base:20,foc:1.5,speed:52, cost:16,cd:560},
-  {code:"force",name:"Force Bolt",   ico:"⚪",color:0x4a1e8c,r:0.3, element:"bludgeon",            base:22,foc:1.5,speed:60, cost:16,cd:560},
-  {code:"blade",name:"Whirling Blade",ico:"🌀",color:0xd6dbe4,r:0.28,element:"slash",              base:21,foc:1.5,speed:58, cost:16,cd:560},
-  {code:"pierce",name:"Force Arrow", ico:"🏹",color:0xb0e0ff,r:0.18,element:"pierce",             base:23,foc:1.6,speed:72, cost:16,cd:540},
-];
-const WAR_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},
-  {lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180},{lvl:7,mult:7.6,req:240},{lvl:8,mult:9.6,req:300}];
+// WAR_BOLTS → js/data/ac-tables.js (#778)
+// WAR_TIERS → js/data/ac-tables.js (#778)
 for(const b of WAR_BOLTS) for(const t of WAR_TIERS){
   SPELLBOOK_LIST.push({id:`war_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"war",lvl:t.lvl,req:t.req,
     cost:Math.round(b.cost*(1+(t.lvl-1)*0.45)),cd:b.cd,
     make:()=>({dmg:(b.base+player.attr.Focus*b.foc)*t.mult,speed:b.speed,color:b.color,r:b.r,burn:!!b.burn,slow:b.slow||0,stun:!!b.stun,element:b.element})});
 }
-const WAR_STORM=[{lvl:1,base:26,foc:1.3,cost:40,req:0},{lvl:2,base:42,foc:1.7,cost:60,req:40},{lvl:3,base:60,foc:2.1,cost:84,req:80},
-  {lvl:4,base:84,foc:2.6,cost:112,req:130},{lvl:5,base:114,foc:3.0,cost:148,req:175},{lvl:6,base:150,foc:3.4,cost:188,req:215},
-  {lvl:7,base:196,foc:3.8,cost:236,req:260},{lvl:8,base:256,foc:4.2,cost:300,req:310}];
+// WAR_STORM → js/data/ac-tables.js (#778)
 for(const t of WAR_STORM) SPELLBOOK_LIST.push({id:`war_storm_${t.lvl}`,name:`Flame Storm ${ROMAN[t.lvl]}`,ico:"🌋",
   school:"aoe",lvl:t.lvl,req:t.req,cost:t.cost,cd:3200,element:"fire",color:FX_ELEM.fire,dmg:()=>t.base+player.attr.Focus*t.foc});
 // ── Life Magic: Heal Self (I–VI), Revitalize stamina (I–IV), Drain Health bolt (I–IV) ──
-const LIFE_HEAL=[{lvl:1,base:34,foc:2.2,cost:26,cd:1500,req:0},{lvl:2,base:60,foc:2.8,cost:38,cd:1500,req:30},{lvl:3,base:95,foc:3.4,cost:54,cd:1600,req:60},{lvl:4,base:140,foc:4.0,cost:74,cd:1700,req:95},{lvl:5,base:195,foc:4.6,cost:98,cd:1800,req:135},{lvl:6,base:260,foc:5.2,cost:126,cd:1900,req:180},{lvl:7,base:340,foc:5.8,cost:158,cd:2000,req:240},{lvl:8,base:440,foc:6.4,cost:196,cd:2100,req:300}];
+// LIFE_HEAL → js/data/ac-tables.js (#778)
 for(const t of LIFE_HEAL) SPELLBOOK_LIST.push({id:`life_heal_${t.lvl}`,name:`Heal Self ${ROMAN[t.lvl]}`,ico:"✨",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:t.cd,heal:()=>t.base+player.attr.Self*t.foc});
-const LIFE_REVIT=[{lvl:1,base:34,foc:2.0,cost:22,req:0},{lvl:2,base:58,foc:2.6,cost:32,req:30},{lvl:3,base:90,foc:3.2,cost:46,req:60},{lvl:4,base:130,foc:3.8,cost:62,req:100},
-  {lvl:5,base:178,foc:4.2,cost:82,req:140},{lvl:6,base:236,foc:4.8,cost:106,req:185},{lvl:7,base:308,foc:5.4,cost:136,req:245},{lvl:8,base:396,foc:6.0,cost:172,req:305}];
+// LIFE_REVIT → js/data/ac-tables.js (#778)
 for(const t of LIFE_REVIT) SPELLBOOK_LIST.push({id:`life_revit_${t.lvl}`,name:`Revitalize Self ${ROMAN[t.lvl]}`,ico:"💚",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1400,special:"revitalize",amt:t.base,foc:t.foc});
 // ── Item Enchantment: classic AC weapon/armour self-buffs (Blood Drinker, Heart Seeker,
 //    Impenetrability, Swift Killer) at three levels — empower your gear for a duration ──
-const ITEM_BUFFS=[
-  {code:"blood",name:"Blood Drinker", ico:"🗡",stat:"dmg",  mags:[0.10,0.16,0.22,0.30,0.40,0.52,0.66,0.82], desc:"weapon & spell damage"},
-  {code:"heart",name:"Heart Seeker",  ico:"🎯",stat:"crit", mags:[0.05,0.08,0.11,0.15,0.20,0.26,0.33,0.41], desc:"critical chance"},
-  {code:"impen",name:"Impenetrability",ico:"🛡",stat:"armor",mags:[12,22,34,50,70,95,125,160],            desc:"armour"},
-  {code:"swift",name:"Swift Killer",  ico:"💨",stat:"haste",mags:[0.08,0.14,0.20,0.28,0.38,0.50,0.64,0.80], desc:"attack speed"},
-];
-const ITEM_TIERS=[{lvl:1,cost:20,req:0,dur:90},{lvl:2,cost:30,req:40,dur:120},{lvl:3,cost:44,req:80,dur:150},
-  {lvl:4,cost:60,req:120,dur:180},{lvl:5,cost:80,req:160,dur:210},{lvl:6,cost:104,req:205,dur:240},{lvl:7,cost:134,req:255,dur:270},{lvl:8,cost:170,req:300,dur:300}];
+// ITEM_BUFFS → js/data/ac-tables.js (#778)
+// ITEM_TIERS → js/data/ac-tables.js (#778)
 for(const b of ITEM_BUFFS) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
   id:`item_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:8000,buff:"item",stat:b.stat,mag:b.mags[t.lvl-1],dur:t.dur});
 // ── Mg4 Banes: Item Enchantment self-buffs granting temporary protection vs one damage type (AC's 7 banes) ──
-const BANE_TYPES=[
-  {code:"flame", name:"Flame Bane",       ico:"🔥", el:"fire"},   {code:"frost",  name:"Frost Bane",       ico:"❄️", el:"frost"},
-  {code:"acid",  name:"Acid Bane",        ico:"🧪", el:"acid"},   {code:"storm",  name:"Lightning Bane",   ico:"⚡", el:"shock"},
-  {code:"blade", name:"Bladed Bane",      ico:"🗡", el:"slash"},  {code:"bludg",  name:"Bludgeoning Bane", ico:"🔨", el:"bludgeon"},
-  {code:"pierce",name:"Piercing Bane",    ico:"🎯", el:"pierce"},
-];
-const BANE_MAGS=[0.10,0.15,0.20,0.26,0.32,0.38,0.44,0.50];   // fraction of that element's damage negated, per level I–VIII
+// BANE_TYPES → js/data/ac-tables.js (#778)
+// BANE_MAGS → js/data/ac-tables.js (#778)
 for(const b of BANE_TYPES) for(const t of ITEM_TIERS) SPELLBOOK_LIST.push({
   id:`bane_${b.code}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"item",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:8000,buff:"bane",element:b.el,mag:BANE_MAGS[t.lvl-1],dur:t.dur});
@@ -602,13 +588,12 @@ SPELLBOOK_LIST.push({id:"item_portal_tie2",name:"Secondary Portal Tie",ico:"🔗
 SPELLBOOK_LIST.push({id:"item_portal_recall2",name:"Secondary Portal Recall",ico:"🌀",school:"item",lvl:5,req:150,cost:55,cd:30000,special:"recall",dest:"portal2"});
 SPELLBOOK_LIST.push({id:"item_portal_sending",name:"Portal Sending",ico:"📤",school:"item",lvl:6,req:205,cost:60,cd:30000,special:"sending",dest:"portal"});
 SPELLBOOK_LIST.push({id:"item_lifestone_sending",name:"Lifestone Sending",ico:"📩",school:"item",lvl:6,req:205,cost:60,cd:30000,special:"sending",dest:"lifestone"});
-const LIFE_DRAIN=[{lvl:1,base:22,foc:1.3,drain:0.45,cost:26,req:0},{lvl:2,base:38,foc:1.7,drain:0.5,cost:40,req:40},{lvl:3,base:58,foc:2.0,drain:0.55,cost:56,req:70},{lvl:4,base:82,foc:2.4,drain:0.6,cost:76,req:115},
-  {lvl:5,base:112,foc:2.8,drain:0.62,cost:100,req:155},{lvl:6,base:150,foc:3.2,drain:0.65,cost:130,req:200},{lvl:7,base:198,foc:3.6,drain:0.68,cost:166,req:255},{lvl:8,base:258,foc:4.0,drain:0.72,cost:208,req:305}];
+// LIFE_DRAIN → js/data/ac-tables.js (#778)
 for(const t of LIFE_DRAIN) SPELLBOOK_LIST.push({id:`life_drain_${t.lvl}`,name:`Drain Health ${ROMAN[t.lvl]}`,ico:"🩸",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:48,color:0xc0306a,r:0.3,drain:t.drain,element:null})});
 // ── Void Magic: Nether Bolt I–VI (corruption bolt that drains + burns) ──
-const VOID_TIERS=[{lvl:1,mult:1,req:0},{lvl:2,mult:1.6,req:30},{lvl:3,mult:2.4,req:60},{lvl:4,mult:3.4,req:95},{lvl:5,mult:4.6,req:135},{lvl:6,mult:6.0,req:180},{lvl:7,mult:7.6,req:240},{lvl:8,mult:9.6,req:300}];
+// VOID_TIERS → js/data/ac-tables.js (#778)
 for(const t of VOID_TIERS) SPELLBOOK_LIST.push({id:`void_nether_${t.lvl}`,name:`Nether Bolt ${ROMAN[t.lvl]}`,ico:"🟣",
   school:"void",lvl:t.lvl,req:t.req,cost:Math.round(24*(1+(t.lvl-1)*0.45)),cd:900,
   make:()=>({dmg:(28+player.attr.Focus*1.8)*t.mult,speed:50,color:0x9b30ff,r:0.3,burn:true,element:"nether",drain:0.35})});
@@ -622,71 +607,49 @@ for(const t of VOID_TIERS){
     make:()=>({dmg:(24+player.attr.Focus*1.6)*t.mult*0.7,speed:46,color:0x9b30ff,r:0.32,burn:true,element:"nether",drain:0.35})});
 }
 // ── Mg6 Void curses: Nether Corruption — a targeted nether DoT that also corrodes the foe's defences ──
-const VOID_CORRUPT=[{lvl:2,dps:9,cvuln:1.12,req:40},{lvl:3,dps:13,cvuln:1.15,req:70},{lvl:4,dps:18,cvuln:1.18,req:115},
-  {lvl:5,dps:24,cvuln:1.22,req:155},{lvl:6,dps:31,cvuln:1.26,req:200},{lvl:7,dps:40,cvuln:1.30,req:255},{lvl:8,dps:50,cvuln:1.35,req:305}];
+// VOID_CORRUPT → js/data/ac-tables.js (#778)
 for(const t of VOID_CORRUPT) SPELLBOOK_LIST.push({id:`void_corrupt_${t.lvl}`,name:`Nether Corruption ${ROMAN[t.lvl]}`,ico:"🕸️",
   school:"void",lvl:t.lvl,req:t.req,cost:Math.round(30*(1+(t.lvl-1)*0.45)),cd:2200,special:"corrupt",dps:t.dps,cvuln:t.cvuln,dur:12});  // cvuln (not vuln) to dodge the buff-normalization loop
 // ── Creature Enchantment: skill "Aptitude" Self buffs (I–VIII) — raise a skill's value for a
 //    duration. Wired into skillValue(), so they really boost spell damage / healing / mana cost /
 //    weapon damage etc. (AC has no researchable Creature *Other* skill buffs, so these are Self-only.)
-const CE_SKILLS=[
-  ["war","War Magic","🔥"],["life","Life Magic","✨"],["creature","Creature Mastery","🦂"],["item","Item Mastery","💍"],
-  ["void","Void Mastery","🌑"],["mana","Mana Conversion","🔷"],["heavy","Heavy Weapon","⚔️"],["light","Light Weapon","🗡"],
-  ["finesse","Finesse Weapon","🤺"],["twohand","Two Handed","🪓"],["missile","Missile Weapon","🏹"],["meleed","Invulnerability","🛡"],
-  ["missiled","Impregnability","🪶"],["magicd","Magic Resistance","🔯"],["healing","Healing","💉"],["arcane","Arcane Enlightenment","📜"],
-  ["run","Sprint","🏃"],["summon","Summoning","🔮"]];
+// CE_SKILLS → js/data/ac-tables.js (#778)
 for(const [key,disp,ico] of CE_SKILLS) for(const t of CE_TIERS) SPELLBOOK_LIST.push({
   id:`creature_apt_${key}_${t.lvl}`,name:`${disp} Aptitude ${ROMAN[t.lvl]}`,ico,school:"creature",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:9000,buff:"skill",skillKey:key,mag:t.mag,dur:t.dur});
 // ── Life Magic: over-time renewal — Regeneration (health), Rejuvenation (stamina), Mana Renewal (I–VIII) ──
-const LIFE_RENEW=[
-  {pool:"hp",name:"Regeneration", ico:"💗",rate:[1.6,2.6,4.0,6.0,8.5,11.5,15,20]},
-  {pool:"st",name:"Rejuvenation", ico:"🌿",rate:[2.0,3.2,5.0,7.5,10.5,14,18,24]},
-  {pool:"mn",name:"Mana Renewal", ico:"🔹",rate:[1.4,2.3,3.6,5.4,7.6,10.4,13.6,18]},
-];
-const RENEW_TIERS=[{lvl:1,cost:22,req:0,dur:24},{lvl:2,cost:32,req:30,dur:26},{lvl:3,cost:46,req:60,dur:28},{lvl:4,cost:62,req:95,dur:30},
-  {lvl:5,cost:82,req:135,dur:32},{lvl:6,cost:106,req:180,dur:34},{lvl:7,cost:136,req:240,dur:36},{lvl:8,cost:172,req:300,dur:40}];
+// LIFE_RENEW → js/data/ac-tables.js (#778)
+// RENEW_TIERS → js/data/ac-tables.js (#778)
 for(const r of LIFE_RENEW) for(const t of RENEW_TIERS) SPELLBOOK_LIST.push({
   id:`life_renew_${r.pool}_${t.lvl}`,name:`${r.name} ${ROMAN[t.lvl]}`,ico:r.ico,school:"life",lvl:t.lvl,req:t.req,
   cost:t.cost,cd:5000,special:"regen",pool:r.pool,rate:r.rate[t.lvl-1],dur:t.dur});
 // ── Life Magic: Dispel Self — strip hostile curses (Slow/Imperil) off yourself + brief immunity ──
-const LIFE_DISPEL=[{lvl:1,cost:24,req:0,immune:1.5},{lvl:2,cost:34,req:40,immune:3},{lvl:3,cost:48,req:80,immune:5},{lvl:4,cost:64,req:120,immune:8}];
+// LIFE_DISPEL → js/data/ac-tables.js (#778)
 for(const t of LIFE_DISPEL) SPELLBOOK_LIST.push({id:`life_dispel_${t.lvl}`,name:`Dispel Self ${ROMAN[t.lvl]}`,ico:"🧿",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:6000,special:"dispel",immune:t.immune});
 // ── Life Magic: Harm Other I–VI (pure damage bolt — no lifesteal, distinct from Drain) ──
 // ── Life Magic: Protection Self (reduce incoming damage) + Vulnerability Other (foe takes more) ──
-const LIFE_PROT=[{lvl:1,v:0.12,cost:24,req:0,dur:90},{lvl:2,v:0.20,cost:34,req:35,dur:120},{lvl:3,v:0.30,cost:48,req:70,dur:150},{lvl:4,v:0.40,cost:64,req:110,dur:180},
-  {lvl:5,v:0.48,cost:84,req:150,dur:210},{lvl:6,v:0.55,cost:108,req:195,dur:240},{lvl:7,v:0.62,cost:138,req:250,dur:270},{lvl:8,v:0.70,cost:174,req:300,dur:300}];
+// LIFE_PROT → js/data/ac-tables.js (#778)
 for(const t of LIFE_PROT) SPELLBOOK_LIST.push({id:`life_prot_${t.lvl}`,name:`Protection Self ${ROMAN[t.lvl]}`,ico:"🛡️",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:9000,buff:"prot",mag:t.v,dur:t.dur});
-const LIFE_VULN=[{lvl:1,v:1.12,cost:20,req:0,dur:20},{lvl:2,v:1.20,cost:28,req:35,dur:25},{lvl:3,v:1.32,cost:38,req:70,dur:30},{lvl:4,v:1.45,cost:50,req:110,dur:35},
-  {lvl:5,v:1.58,cost:64,req:150,dur:40},{lvl:6,v:1.72,cost:80,req:195,dur:45},{lvl:7,v:1.88,cost:100,req:250,dur:50},{lvl:8,v:2.05,cost:124,req:300,dur:55}];
+// LIFE_VULN → js/data/ac-tables.js (#778)
 for(const t of LIFE_VULN) SPELLBOOK_LIST.push({id:`life_vuln_${t.lvl}`,name:`Vulnerability Other ${ROMAN[t.lvl]}`,ico:"🎯",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:7000,vuln:t.v,dur:t.dur});
 // per-element Vulnerability Other (I–VIII): boosts only matching-element damage, so it stacks with the
 // creature's elemental weakness — curse a foe to your bolt's element for a burst. Stronger than the
 // generic line (narrower), reusing its tier ladder for cost/req/dur.
-const LIFE_VULN_EL=[
-  {el:"fire",   name:"Fire Vulnerability",       ico:"🔥"},{el:"ice",     name:"Cold Vulnerability",       ico:"❄️"},
-  {el:"shock",  name:"Lightning Vulnerability",  ico:"⚡"},{el:"acid",    name:"Acid Vulnerability",       ico:"🟢"},
-  {el:"bludgeon",name:"Bludgeoning Vulnerability",ico:"⚪"},{el:"slash",  name:"Slashing Vulnerability",    ico:"🗡"},
-  {el:"pierce", name:"Piercing Vulnerability",   ico:"🏹"}];
+// LIFE_VULN_EL → js/data/ac-tables.js (#778)
 for(const b of LIFE_VULN_EL) for(const t of LIFE_VULN) SPELLBOOK_LIST.push({
   id:`life_vuln_${b.el}_${t.lvl}`,name:`${b.name} ${ROMAN[t.lvl]}`,ico:b.ico,school:"life",lvl:t.lvl,req:t.req,
   cost:Math.round(t.cost*0.9),cd:7000,vuln:1+(t.v-1)*1.4,vulnElem:b.el,dur:t.dur});
-const LIFE_HARM=[{lvl:1,base:30,foc:1.6,cost:24,req:0},{lvl:2,base:50,foc:2.0,cost:36,req:30},{lvl:3,base:78,foc:2.4,cost:52,req:60},{lvl:4,base:112,foc:2.8,cost:72,req:95},{lvl:5,base:155,foc:3.2,cost:96,req:135},{lvl:6,base:208,foc:3.6,cost:124,req:180},{lvl:7,base:272,foc:4.0,cost:158,req:240},{lvl:8,base:352,foc:4.4,cost:196,req:300}];
+// LIFE_HARM → js/data/ac-tables.js (#778)
 for(const t of LIFE_HARM) SPELLBOOK_LIST.push({id:`life_harm_${t.lvl}`,name:`Harm Other ${ROMAN[t.lvl]}`,ico:"💀",
   school:"life",lvl:t.lvl,req:t.req,cost:t.cost,cd:1100,
   make:()=>({dmg:t.base+player.attr.Self*t.foc,speed:50,color:0x6a1a3a,r:0.3,element:null})});
 // ── War Magic geometries: Blast (cone), Volley (stream), Ring (point-blank) per element, I–IV ──
-const WAR_ROOT={flame:"Flame",frost:"Frost",light:"Lightning",acid:"Acid",force:"Bludgeoning",blade:"Blade",pierce:"Force"};
-const WAR_GEOMS=[
-  {geom:"blast", gname:"Blast", ico:"🔆",dmgMul:0.8,costMul:1.4,cdMul:1.0, splash:3.6},   // flies like a bolt, detonates for splash damage on impact
-  {geom:"volley",gname:"Volley",ico:"🎇",dmgMul:0.6,costMul:1.3,cdMul:1.1},
-  {geom:"ring",  gname:"Ring",  ico:"💥",dmgMul:0.8,costMul:1.7,cdMul:1.5},
-];
-const GEOM_TIERS=[{lvl:1,m:1,req:0},{lvl:2,m:1.6,req:35},{lvl:3,m:2.4,req:70},{lvl:4,m:3.4,req:110},
-  {lvl:5,m:4.6,req:150},{lvl:6,m:6.0,req:195},{lvl:7,m:7.6,req:250},{lvl:8,m:9.6,req:300}];
+// WAR_ROOT → js/data/ac-tables.js (#778)
+// WAR_GEOMS → js/data/ac-tables.js (#778)
+// GEOM_TIERS → js/data/ac-tables.js (#778)
 for(const b of WAR_BOLTS) for(const g of WAR_GEOMS) for(const t of GEOM_TIERS) SPELLBOOK_LIST.push({
   id:`war_${b.code}_${g.geom}_${t.lvl}`,name:`${WAR_ROOT[b.code]} ${g.gname} ${ROMAN[t.lvl]}`,ico:g.ico,
   school:"war",lvl:t.lvl,req:t.req,cost:Math.round(b.cost*g.costMul*(1+(t.lvl-1)*0.45)),cd:Math.round(b.cd*g.cdMul),geom:g.geom,
@@ -710,12 +673,8 @@ for(const b of WAR_BOLTS) for(const t of WAR_TIERS) SPELLBOOK_LIST.push({
 // ── Light spells (Life & Creature): conjure a glow for the dark places of Dereth. Higher tiers
 //    burn longer and brighter. Life's "Enlightenment" is a warm holy radiance; Creature's
 //    "Foxfire" is an eldritch bioluminescent glow. (buff:"light" → player.lightBuff) ──
-const LIGHT_TIERS=[{lvl:1,dur:90, intensity:1.9,dist:17,cost:14,req:0},
-                   {lvl:2,dur:180,intensity:2.5,dist:21,cost:22,req:30},
-                   {lvl:3,dur:360,intensity:3.1,dist:26,cost:32,req:65},
-                   {lvl:4,dur:600,intensity:3.9,dist:32,cost:46,req:110}];
-const LIGHT_SPELLS=[{school:"life",code:"enlighten",name:"Enlightenment",ico:"🔆",color:0xfff2cf},
-                    {school:"creature",code:"foxfire",name:"Foxfire",ico:"🦊",color:0x9affc0}];
+// LIGHT_TIERS → js/data/ac-tables.js (#778)
+// LIGHT_SPELLS → js/data/ac-tables.js (#778)
 for(const sp of LIGHT_SPELLS) for(const t of LIGHT_TIERS) SPELLBOOK_LIST.push({
   id:`${sp.school}_${sp.code}_${t.lvl}`,name:`${sp.name} ${ROMAN[t.lvl]}`,ico:sp.ico,
   school:sp.school,lvl:t.lvl,req:t.req,cost:t.cost,cd:5000,buff:"light",
@@ -729,7 +688,7 @@ function buffMagFor(lvl){ lvl=Math.max(1,lvl|0); return lvl*10; }               
 // Authentic AC Item Enchantment durations (retail client SpellTable): I–V = 30 min, VI = 45 min, VII–VIII = 60 min.
 // Verified vs assets/acspellstats.json — I–V 1800s, VI 2700s, "spirit drinker vii" 3600s; the level-8 incantations
 // plateau at the same 60-min top tier. Blood Drinker / Heart Seeker / Impenetrability / Swift Killer / the seven Banes.
-const ITEM_ENCHANT_DUR=[1800,1800,1800,1800,1800,2700,3600,3600];
+// ITEM_ENCHANT_DUR → js/data/ac-tables.js (#778)
 function itemEnchantDur(lvl){ return ITEM_ENCHANT_DUR[Math.max(1,Math.min(8,lvl|0))-1]; }
 for(const s of SPELLBOOK_LIST){
   if(s.buff==="attr"||s.buff==="skill"){ s.mag=buffMagFor(s.lvl); s.dur=buffDurFor(s.lvl); }   // flat stat/skill → +10/level
@@ -1161,16 +1120,11 @@ let playerAvatar,thirdPerson=false,camCur=null,camInit=false;
 // world activity/visibility culling: only the area around the player is simulated & drawn (perf).
 // SIM = run AI/animation within this; VIS = keep the mesh visible within (≈ fog distance). Beyond → frozen & hidden.
 const SIM_RADIUS=95, VIS_RADIUS=380, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RADIUS*VIS_RADIUS;   // VIS reaches past the clear-weather fog wall (350) so distant land is drawn, not popped — AC's long vistas
-// ---- experimental external rigged-glTF avatar (Three.js GLTFLoader). The procedural avatar is the offline fallback. ----
-let USE_GLTF_AVATAR=false;                      // legacy single-avatar drop-in (assets/avatar.glb); superseded by model choice
-const GLTF_AVATAR_URL="assets/avatar.glb";
-let gltfAvatar=null,gltfMixer=null,gltfIdle=null,gltfWalk=null,_pgWalk=false,gltfReady=false,gltfTried=false,gltfAvatarUrl=null;
-// ── Player-character models, chosen at avatar creation. "procedural" = the customizable classic avatar;
-//    the rest are self-hosted rigged models (idle-animated) rendered as your character in third person. ──
+// ── Player-character models, chosen at avatar creation. Only the customizable classic avatar remains:
+//    the legacy rigged-glTF avatar drop-in and the external model roster (Knight/Barbarian/…) were
+//    removed (#780) — the player character is always the authentic AC model (buildAvatarJointed). ──
 const PLAYER_MODELS=[
   {k:"procedural",n:"Classic"},   // the real Asheron's Call body (buildAvatarJointed + applyACBody).
-  // The external rigged glTF models (Knight/Barbarian/Mage/Soldier/Astronaut/Robot/… — not AC assets)
-  // were removed: the player character is always the authentic AC model.
 ];
 function playerModelDef(k){ return PLAYER_MODELS.find(m=>m.k===k)||PLAYER_MODELS[0]; }
 // Robust model height: some rigged/skinned glTFs report an empty bounding box on load (matrices not yet
@@ -1187,116 +1141,9 @@ function robustHeight(obj){
   }
   return h>0.001?h:1;
 }
-// Load a chosen player model into gltfAvatar (shown in 3rd person; the render loop already swaps it for
-// the procedural avatar). url null → procedural (clears any gltf avatar). Latest choice wins on async load.
-function loadPlayerModel(def){
-  def=(typeof def==="string")?{url:def}:(def||{});
-  const url=def.url||null;
-  if(gltfAvatar){ scene.remove(gltfAvatar); gltfAvatar=null; } gltfMixer=gltfIdle=gltfWalk=null; gltfReady=false; gltfAvatarUrl=url;
-  if(!url||typeof THREE.GLTFLoader==="undefined") return;   // procedural avatar
-  const L=new THREE.GLTFLoader();
-  const finish=(root,anims)=>{
-    if(gltfAvatarUrl!==url) return;                          // superseded by a newer choice
-    root.scale.setScalar(TARGET_HUMAN_H/robustHeight(root));
-    let box=new THREE.Box3().setFromObject(root); root.position.y-=box.min.y;
-    root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; } });
-    gltfAvatar=new THREE.Group(); gltfAvatar.add(root); gltfAvatar.visible=false; scene.add(gltfAvatar);
-    if(anims&&anims.length){ gltfMixer=new THREE.AnimationMixer(root);
-      const idle=anims.find(a=>/idle/i.test(a.name))||anims[0], walk=anims.find(a=>/walk|run/i.test(a.name));
-      gltfIdle=gltfMixer.clipAction(idle); gltfWalk=walk?gltfMixer.clipAction(walk):null; gltfIdle.play(); }
-    gltfReady=true;
-  };
-  L.load(url, gltf=>{
-    const root=gltf.scene, anims=(gltf.animations||[]).slice();
-    if(!def.clips||!def.clips.length){ finish(root,anims); return; }   // model has its own baked clips
-    let pending=def.clips.length;                                       // else load shared idle/walk clips (RPM bodies)
-    for(const cu of def.clips){ L.load(cu, cg=>{
-        for(const a of (cg.animations||[])){ a.name=(/idle/i.test(cu)?"idle_":/walk/i.test(cu)?"walk_":"")+a.name; anims.push(a); }
-        if(--pending===0) finish(root,anims);
-      }, undefined, e=>{ if(--pending===0) finish(root,anims); }); }
-  }, undefined, err=>console.log("player model failed:",url,(err&&err.message)||""));
-}
-function applyPlayerModel(){ loadPlayerModel(playerModelDef((player.appearance&&player.appearance.model)||"procedural")); }
-function tryLoadGltfAvatar(){ if(gltfTried||!USE_GLTF_AVATAR) return; gltfTried=true; loadPlayerModel(GLTF_AVATAR_URL); }
-// ---- real rigged "people" pulled from public CDNs, randomly assigned to strolling townsfolk ----
-// (online enhancement: needs internet for the CDN fetch; offline or any failure → procedural NPCs)
-let USE_GLTF_NPCS=false;           // all NPCs/townsfolk use the standard procedural humanoid (buildPerson) with per-NPC random colours — no grab-bag of CDN models
-const MAX_GLTF_NPCS=40;            // cap skinned NPCs for performance; the rest stay procedural
-// Rigged human/character models, SELF-HOSTED under assets/models/ (run assets/fetch-models.py once to
-// populate). The game's own static server serves them same-origin — no runtime CDN dependency, works
-// offline, no CORS. Each entry:
-//   {url, sex, w}                        self-contained glTF (mesh + baked clips in one file)
-//   {mesh, clips:[...], sex, w}          a static mesh + separate animation-clip glTFs (Ready Player Me:
-//                                        the *_TPose body is animated by shared idle/walk clips)
-// sex: 'f' female · 'm' male · 'n' non-human/neutral (robots, astronaut). Players & townsfolk are a mix.
-// w = townsfolk-assignment weight: thematic medieval humans dominate; sci-fi oddities stay rare.
-const GP_DIR="assets/models/people/", GA_DIR="assets/models/anim/";
-// The external rigged glTF human models (RPM bodies + KayKit Adventurers + sci-fi oddities) were
-// REMOVED — not AC assets. NPCs/townsfolk and the player are always the authentic AC model.
-const GLTF_PEOPLE=[];
-let gltfPeople=[], gltfPeopleStarted=false, gltfPeopleDone=0;
-function loadGltfPeople(){
-  if(gltfPeopleStarted||!USE_GLTF_NPCS||typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return;
-  gltfPeopleStarted=true; const L=new THREE.GLTFLoader();
-  const settle=()=>{ if(++gltfPeopleDone>=GLTF_PEOPLE.length) rebalanceGltfNpcs(); };  // all loads finished → re-roll for correct weighting
-  const store=(p,scene,anims)=>{
-    const h=robustHeight(scene);
-    // models face +z; our bodies face -z and NPC yaw aims -z at travel, so clones need a +PI flip (else moonwalk).
-    gltfPeople.push({scene, anims:anims||[], scale:TARGET_HUMAN_H/h, faceOffset:Math.PI, w:(p.w>0?p.w:1), sex:p.sex||"n"});
-    console.log("Loaded a person model ("+gltfPeople.length+"/"+GLTF_PEOPLE.length+")."); assignGltfNpcs();   // #163: dev console, not player chat
-  };
-  for(const p of GLTF_PEOPLE){
-    if(p.mesh){                                        // modular: static mesh + external animation clips
-      L.load(p.mesh, gltf=>{
-        const scene=gltf.scene, anims=(gltf.animations||[]).slice(); let pending=p.clips.length;
-        if(!pending){ store(p,scene,anims); settle(); return; }
-        for(const cu of p.clips){ L.load(cu, cg=>{
-            for(const a of (cg.animations||[])){ a.name=(/idle/i.test(cu)?"idle_":/walk/i.test(cu)?"walk_":"")+a.name; anims.push(a); }
-            if(--pending===0){ store(p,scene,anims); settle(); }
-          }, undefined, err=>{ console.log("clip failed:",cu,(err&&err.message)||""); if(--pending===0){ store(p,scene,anims); settle(); } }); }
-      }, undefined, err=>{ console.log("person mesh failed:",p.mesh,(err&&err.message)||""); settle(); });
-    } else {                                           // self-contained glTF
-      L.load(p.url, gltf=>{ store(p, gltf.scene, gltf.animations||[]); settle(); },
-             undefined, err=>{ console.log("person model failed:",p.url,(err&&err.message)||""); settle(); });
-    }
-  }
-}
-function pickWeightedPerson(){   // weighted random over loaded people so fantasy humans dominate townsfolk
-  let tot=0; for(const m of gltfPeople) tot+=(m.w||1);
-  let r=Math.random()*tot; for(const m of gltfPeople){ r-=(m.w||1); if(r<=0) return m; }
-  return gltfPeople[gltfPeople.length-1];
-}
-function applyGltfToNpc(n,m){   // clone model m onto townsfolk n (also used to REPLACE an existing clone)
-  let clone; try{ clone=THREE.SkeletonUtils.clone(m.scene); }catch(e){ return false; }
-  clone.scale.setScalar(m.scale);
-  const box=new THREE.Box3().setFromObject(clone); clone.position.y-=box.min.y;     // feet to 0
-  clone.rotation.y=(m.faceOffset!=null?m.faceOffset:Math.PI);                       // per-model front alignment
-  clone.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.frustumCulled=false; o.userData.acShared=true; } });   // #232: geometry/materials belong to the gltfPeople cache
-  if(n.gltf){ if(n.gltfMixer&&n.gltfMixer.stopAllAction)n.gltfMixer.stopAllAction(); n.mesh.remove(n.gltf); n.gltfMixer=n.gltfIdle=n.gltfWalk=null; }
-  else { for(const ch of n.mesh.children) ch.visible=false; }                        // first time: hide the procedural body
-  n.mesh.add(clone); n.gltf=clone; n._gw=undefined; n.sex=m.sex||"n";   // record sex (gendered names/voices later)
-  if(m.anims.length){ n.gltfMixer=new THREE.AnimationMixer(clone);
-    n.gltfIdle=n.gltfMixer.clipAction(m.anims.find(a=>/idle/i.test(a.name))||m.anims[0]);
-    const w=m.anims.find(a=>/walk/i.test(a.name)); n.gltfWalk=w?n.gltfMixer.clipAction(w):null;
-    n.gltfIdle.play(); }
-  return true;
-}
-function assignGltfNpcs(){
-  if(!USE_GLTF_NPCS||!gltfPeople.length||typeof THREE.SkeletonUtils==="undefined") return;
-  let count=npcs.filter(n=>n.gltf).length;
-  for(const n of npcs){                              // fill empty townsfolk slots (fast progressive population)
-    if(count>=MAX_GLTF_NPCS) break;
-    if(n.gltf||n.role!=="townsfolk"||!n.mesh) continue;
-    if(applyGltfToNpc(n, pickWeightedPerson())) count++;
-  }
-}
-// Greedy fill above uses whatever loaded first, so the small generic models (fast) tend to grab the
-// slots before the larger KayKit fantasy humans finish — undoing the weighting. Once every fetch has
-// settled, re-roll all skinned townsfolk against the full weighted pool so fantasy humans dominate.
-function rebalanceGltfNpcs(){
-  if(!USE_GLTF_NPCS||!gltfPeople.length||typeof THREE.SkeletonUtils==="undefined") return;
-  for(const n of npcs){ if(n.gltf&&n.role==="townsfolk"&&n.mesh) applyGltfToNpc(n, pickWeightedPerson()); }
-}
+// (The legacy CDN "rigged people" townsfolk system — loadGltfPeople/assignGltfNpcs/rebalanceGltfNpcs,
+//  gated behind USE_GLTF_NPCS=false — was removed in #780. NPCs/townsfolk always use the procedural
+//  humanoid (buildPerson); only the monster glTF path below is live.)
 // ---- rigged glTF models for MONSTER kinds (spawned via streamMonsters; procedural creature is the fallback) ----
 let USE_GLTF_MONSTERS=true;
 // AC kind → one or more SELF-HOSTED models (assets/models/monsters/, via fetch-models.py). Each value is
@@ -1399,7 +1246,7 @@ fetch(GM_DIR+'ac/breeds.json').then(r=>r&&r.ok?r.json():null).then(j=>{
   }
   console.log("AC breeds: "+Object.keys(j).length+" families, "+looks+" authentic looks.");
 }).catch(()=>{});
-let skyMat,skyDomeMesh,hemi,amb,starMat,starField,starSprites,sunSprite,sunHalo,moonSprite,moon2Sprite,cloudGroup,waterGlint,gameTime=0.35,boss=null;
+let skyMat,skyDomeMesh,hemi,amb,starMat,starField,starSprites,sunSprite,sunHalo,moonSprite,moon2Sprite,moonHalo,moon2Halo,cloudGroup,cloudMat,waterGlint,gameTime=0.35,boss=null;   // #795: cloudMat is the single shared cloud-blob material
 const _cWarm=new THREE.Color(0xff8a3a); // dawn/dusk horizon tint
 let shakeT=0,shakeMag=0,fovKick=0;
 let shops=[],weather="clear",weatherT=10,wetness=0,snowAmt=0,rainSegs=null,rainGain=null,fogFar=320;
@@ -1435,8 +1282,8 @@ const REGION_META={
 const REGION_KEYS=["aluvia","sho","gharu"];   // REGIONS[] index → REGION_META key
 // The most SPECIFIC named region covering a point: isles → Direlands → the Blackmire → cultural homeland.
 function regionNameAt(x,z){
-  if(typeof onOuterIsle==="function" && onOuterIsle(x,z)) return REGION_META.isles;   // standing on an outer isle
-  if(typeof inSwamp==="function" && inSwamp(x,z)) return REGION_META.blackmire;           // the named swamp band wins over the generic frontier
+  if(onOuterIsle(x,z)) return REGION_META.isles;   // standing on an outer isle
+  if(inSwamp(x,z)) return REGION_META.blackmire;           // the named swamp band wins over the generic frontier
   if(regionOf(x,z)<0) return REGION_META.dire;                                            // beyond the settled lands
   return REGION_META[REGION_KEYS[regionOf(x,z)]]||REGION_META.aluvia;                     // the three homelands
 }
@@ -2142,7 +1989,7 @@ function academyKill(m){
 function academyExit(){   // the single exit portal: one destination, the town you chose at creation
   if(inDungeon&&curDungeon&&curDungeon.academy&&typeof exitAcademyHall==="function") exitAcademyHall();   // step out of the hall first
   const tn=player.createTown||"Holtburg", c=CITIES.find(x=>x.name===tn)||CAPITALS[0];
-  if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+  teleportFX(player.x,player.z);
   const land=nearestDryLand(c.x,(c.z||0)+4);
   arriveAt(land.x,land.z); player.academy.done=1;
   log(`You step through the Academy portal into <b>${c.name||tn}</b>. Seek out the town's greeters by the plaza — they'll see you settled.`,"sys");
@@ -2156,8 +2003,8 @@ let _acadNpcs=[], _acadDoors=null;
 function _clearAcademyNpcs(){
   for(const rec of _acadNpcs){ const i=npcs.indexOf(rec); if(i>=0)npcs.splice(i,1);
     for(let j=obstacles.length-1;j>=0;j--) if(obstacles[j].x===rec.x&&obstacles[j].z===rec.z) obstacles.splice(j,1);
-    scene.remove(rec.mesh); if(typeof disposeObject3D==="function")disposeObject3D(rec.mesh); }
-  _acadNpcs=[]; if(typeof updateNPCMarker==="function")updateNPCMarker();
+    scene.remove(rec.mesh); disposeObject3D(rec.mesh); }
+  _acadNpcs=[]; updateNPCMarker();
 }
 function buildAcademyHall(){
   const cx=DCEN.x, cz=DCEN.z;
@@ -2168,18 +2015,31 @@ function buildAcademyHall(){
     {x0:cx-14,z0:cz-12,x1:cx+14,z1:cz+2, fy:0,room:true},     // the Great Hall
     {x0:cx-2.5,z0:cz-1,x1:cx+2.5,z1:cz+8,fy:0,room:true},     // hall doorway — overlaps Hall & Courtyard so the wide player radius clears both seams
     {x0:cx-16,z0:cz+6,x1:cx+16,z1:cz+34,fy:0,room:true},      // the Courtyard (open air)
-    {x0:cx-34,z0:cz+12,x1:cx-15.5,z1:cz+26,fy:0,room:true},   // west wing — the Workshop
-    {x0:cx+15.5,z0:cz+12,x1:cx+34,z1:cz+26,fy:0,room:true},   // east wing — the Library
-    {x0:cx-6,z0:cz+33.5,x1:cx+6,z1:cz+42,fy:0,room:true},     // the Gatehouse
+    // the wing/gatehouse rects OVERLAP the courtyard by 1.5 — dungeonWalkable insets every rect by
+    // player.r*0.6 (=0.48), so seams need ≥0.96 of shared area or an invisible dead strip blocks the
+    // opening (the old 0.5 overlaps made the Foreman/Blacksmith/Researcher/Sentry unreachable on foot)
+    {x0:cx-34,z0:cz+12,x1:cx-14.5,z1:cz+26,fy:0,room:true},   // west wing — the Workshop
+    {x0:cx+14.5,z0:cz+12,x1:cx+34,z1:cz+26,fy:0,room:true},   // east wing — the Library
+    {x0:cx-6,z0:cz+32.5,x1:cx+6,z1:cz+42,fy:0,room:true},     // the Gatehouse
   ];
-  const stone=new THREE.MeshStandardMaterial({color:0x8d8578,roughness:0.94});
-  const floorM=new THREE.MeshStandardMaterial({color:0x9a927e,roughness:0.96});
-  const courtM=new THREE.MeshStandardMaterial({color:0xb5a582,roughness:0.97});
+  // AC dungeon-set skins (assets/acdungeons/tex, buildDungeonReal's texture set). flipY stays DEFAULT
+  // (true): plain BoxGeometry UVs, not the exporter's top-origin dungeon UVs. markSceneSRGB (called on
+  // entry) tags the maps sRGB like every other AC texture — the instance lights below are scaled ~4×
+  // to match, because decode drops a mid-tone map to ~¼ the raw value the old flat colours rendered at.
+  const _acadTex=(fn,rx,ry)=>{ const t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+fn));
+    t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); return t; };
+  const WALL_TEX='06003EA2.png', FLOOR_TEX='06003E54.png', COURT_TEX='06003E52.png', DOOR_TEX='06003935.png';
+  const stone=new THREE.MeshStandardMaterial({map:_acadTex(WALL_TEX,1,1),roughness:0.94});
+  const floorM=new THREE.MeshStandardMaterial({map:_acadTex(FLOOR_TEX,1,1),roughness:0.96});
+  const courtM=new THREE.MeshStandardMaterial({map:_acadTex(COURT_TEX,1,1),roughness:0.97});
   for(const r of dungeonRects){ const w=r.x1-r.x0,d=r.z1-r.z0;
-    const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),(d>20&&w>20)?courtM:floorM);
+    const court=(d>20&&w>20);
+    const fm=(court?courtM:floorM).clone(); fm.map=_acadTex(court?COURT_TEX:FLOOR_TEX,Math.max(1,Math.round(w/4)),Math.max(1,Math.round(d/4)));
+    const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),fm);
     f.position.set((r.x0+r.x1)/2,0,(r.z0+r.z1)/2); f.receiveShadow=true; scene.add(f); dungeonObjs.push(f); }
   const wall=(x0,z0,x1,z1)=>{ const w=Math.max(Math.abs(x1-x0),0.6), d=Math.max(Math.abs(z1-z0),0.6);
-    const m=new THREE.Mesh(new THREE.BoxGeometry(w,4.4,d),stone);
+    const wm=stone.clone(); wm.map=_acadTex(WALL_TEX,Math.max(1,Math.round(Math.max(w,d)/4.4)),1);   // ~square tiles at wall height
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,4.4,d),wm);
     m.position.set((x0+x1)/2,2.2,(z0+z1)/2); m.castShadow=true; scene.add(m); dungeonObjs.push(m); };
   wall(cx-14,cz-12,cx+14,cz-12);                                   // Great Hall south
   wall(cx-14,cz-12,cx-14,cz+2); wall(cx+14,cz-12,cx+14,cz+2);      // flanks
@@ -2192,9 +2052,12 @@ function buildAcademyHall(){
   wall(cx-34,cz+12,cx-16,cz+12); wall(cx-34,cz+26,cx-16,cz+26); wall(cx-34,cz+12,cx-34,cz+26);   // workshop
   wall(cx+16,cz+12,cx+34,cz+12); wall(cx+16,cz+26,cx+34,cz+26); wall(cx+34,cz+12,cx+34,cz+26);   // library
   wall(cx-6,cz+34,cx-6,cz+42); wall(cx+6,cz+34,cx+6,cz+42); wall(cx-6,cz+42,cx+6,cz+42);         // gatehouse
-  const ceil=new THREE.Mesh(new THREE.BoxGeometry(28,0.3,14),stone); ceil.position.set(cx,4.6,cz-5); scene.add(ceil); dungeonObjs.push(ceil);   // the courtyard stays open to the sky
-  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.85*(settings.dglight||1)); amb.userData.dgBase=0.85; scene.add(amb); dungeonObjs.push(amb);
-  const sun=new THREE.PointLight(0xfff2d8,1.3,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);
+  const ceilM=stone.clone(); ceilM.map=_acadTex(WALL_TEX,6,3);
+  const ceil=new THREE.Mesh(new THREE.BoxGeometry(28,0.3,14),ceilM); ceil.position.set(cx,4.6,cz-5); scene.add(ceil); dungeonObjs.push(ceil);   // the courtyard stays open to the sky
+  // fill scaled ~4× for the sRGB-decoded AC textures (see _acadTex) — the old 0.85/1.3 was calibrated
+  // for raw flat colours that never went through the decode
+  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,4.2*(settings.dglight||1)); amb.userData.dgBase=4.2; scene.add(amb); dungeonObjs.push(amb);
+  const sun=new THREE.PointLight(0xfff2d8,5.5,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);
   for(const [tx,tz] of [[cx-12,cz-10],[cx+12,cz-10],[cx-12,cz],[cx+12,cz],[cx-30,cz+14],[cx+30,cz+14],[cx,cz+40]]){
     for(const o of buildProp("torch",tx,tz,0xffb060)){ scene.add(o); dungeonObjs.push(o); } }
   const forge=new THREE.PointLight(0xff6a30,1.6,16); forge.position.set(cx-30,1.4,cz+22); scene.add(forge); dungeonObjs.push(forge);
@@ -2211,7 +2074,7 @@ function buildAcademyHall(){
   // of taking Jonathan's leave-at-once offer: "deciding not to skip" unbars the yard. Hinged on the
   // jambs, both leaves swing back (+z) into the doorway alcove.
   { const gz=cz+2, doorH=4.2, leafW=2.62;   // doorH nearly fills the 4.4 wall; leaves span the 5-wide gap and OVERLAP at the seam (no see-through); a per-leaf z offset keeps the overlap from z-fighting
-    const woodM=new THREE.MeshStandardMaterial({color:0x6b4a2a,roughness:0.86,metalness:0.04});
+    const woodM=new THREE.MeshStandardMaterial({map:_acadTex(DOOR_TEX,1,2),roughness:0.86,metalness:0.04});   // iron-bound dungeon door planks, tiled 2× up the leaf
     const ironM=new THREE.MeshStandardMaterial({color:0x2a2622,roughness:0.7,metalness:0.45});
     const mkLeaf=(hingeX,sgn,zoff)=>{ const g=new THREE.Group(); g.position.set(hingeX,0,gz+zoff);
       const leaf=new THREE.Mesh(new THREE.BoxGeometry(leafW,doorH,0.22),woodM);
@@ -2236,7 +2099,7 @@ function enterAcademyHall(){
   inDungeon=true; curDungeon={name:"The Training Academy",tier:1,academy:true}; dungeonReturn={x:ACADEMY_POS.x,z:ACADEMY_POS.z};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.4";
-  buildAcademyHall(); if(typeof markSceneSRGB==="function")markSceneSRGB();
+  buildAcademyHall(); markSceneSRGB();
   player.y=0; arriveAt(dungeonSpawn.x,dungeonSpawn.z); player.yaw=Math.PI; player.invuln=3;   // #511: face INTO the Great Hall (the greeter/room lie north of the spawn point) — the old default (yaw 0, forward=-z) wedged a fresh recruit nose-first into the south wall behind them
   // #464 (REOPEN): the interior is built AND attached to the scene synchronously above — but the very
   // first render after entry still has to lazily compile the shader PROGRAMS for these freshly-added
@@ -2262,7 +2125,7 @@ function openAcademyDoors(){
   if(!_acadDoors||_acadDoors.open) return;
   _acadDoors.open=true; _acadDoors.bar.open=true;   // passable at once; the swing is cosmetic
   if(typeof SFX!=="undefined"){ if(SFX.portal)SFX.portal(); else if(SFX.quest)SFX.quest(); }
-  if(typeof log==="function") log("The Great Hall doors grind open — the training yard lies beyond.","sys");
+  log("The Great Hall doors grind open — the training yard lies beyond.","sys");
 }
 function updateAcademyDoors(dt){
   const D=_acadDoors; if(!D) return;
@@ -2324,8 +2187,15 @@ let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dun
 let dungeonBars=[],dungeonLevers=[],dungeonPortals=[],dungeonBoxes=[];   // walkthrough mechanics: doors/ledges, wall levers, internal portals, key strongboxes
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null,dungeonDepth=1,dungeonDescent=null;   // multi-level delves: current floor + this floor's descent stair
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
-let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
-let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC
+// ── #779: instance-mechanic state registry — every wave/Regalia mechanic registers ONE reset closure
+//    (covering ALL of its state, private vars included), and any instance exit calls
+//    resetInstanceState() instead of exitDungeon maintaining hand-written reset lists that drift.
+const _INSTANCE_RESETS=[];
+function onInstanceReset(fn){ _INSTANCE_RESETS.push(fn); }
+function resetInstanceState(){ for(const fn of _INSTANCE_RESETS){ try{ fn(); }catch(e){} } }
+const ARENA={active:false,wave:0,waves:0,timer:0,inter:0,advanced:false}; // H16 Colosseum wave-gauntlet state (#779: grouped)
+onInstanceReset(()=>{ Object.assign(ARENA,{active:false,wave:0,waves:0,timer:0,inter:0,advanced:false}); });
+let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null,_kilmerDressTimer=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC (#792: dress-interval handle for teardown)
 let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=0,_frostAddT=0,frostTimer=0; // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
 let riftActive=false,riftWave=0,riftTimer=0,_riftPulseT=0,_riftZones=[],riftBoss=false; // #680 Regalia VIII: the Sundered Veil (lone stand, storm pulses, no retreat)
 let tideActive=false,tideLevel=0,tideRise=0,_tideWave=0,_tidePhase="",_tideHeraldKills=0,_tideWater=null,_tideAddT=0; // #681 Regalia IX: the Drowned Rift (hold the tide-gate; the Herald reconstitutes twice)
@@ -2335,6 +2205,17 @@ let chitinActive=false,_chitinClutches=[],_chitinWax=[],_chitinBoss=false,chitin
 let bannersActive=false,_bannersWave=0,_bannerMob=null,_bannerBoss=null,_bannerBaseDmg=0,_bannerTorn=false; // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
 let bloodActive=false,_bloodReinforced=false,_bloodT=0; // #677 Regalia V: the blood-undercroft (fight at half vitals)
 let stormActive=false,_stormSeals=[],_stormBoss=null,_stormPhase=0,_stormPhaseT=0,_stormBoltT=0,_stormZones=[],stormTimer=0; // #678 Regalia VI: the storm-peak (wind-seals, hunting lightning, 4-phase Warden)
+// #779: one reset closure per mechanic, registered beside its state so new fields can't be missed.
+onInstanceReset(()=>{ emberActive=false;emberWave=0;emberTimer=0;emberHeat=0;_emberPX=0;_emberPZ=0;_emberBurn=0; });   // (_kilmerNpcRec is world dressing, not run state)
+onInstanceReset(()=>{ frostActive=false;frostCold=0;_frostHearths=[];_frostBoss=false;_frostChill=0;_frostAddT=0;frostTimer=0; });
+onInstanceReset(()=>{ riftActive=false;riftWave=0;riftTimer=0;_riftPulseT=0;_riftZones=[];riftBoss=false; });
+onInstanceReset(()=>{ tideActive=false;tideLevel=0;tideRise=0;_tideWave=0;_tidePhase="";_tideHeraldKills=0;_tideWater=null;_tideAddT=0; });
+onInstanceReset(()=>{ consActive=false;_consReinforced=false;_consT=0; });
+onInstanceReset(()=>{ whispersActive=false;_whispersSim=null;_whispersT=0; });
+onInstanceReset(()=>{ chitinActive=false;_chitinClutches=[];_chitinWax=[];_chitinBoss=false;chitinTimer=0;_chitinAddT=0; });
+onInstanceReset(()=>{ bannersActive=false;_bannersWave=0;_bannerMob=null;_bannerBoss=null;_bannerBaseDmg=0;_bannerTorn=false; });
+onInstanceReset(()=>{ bloodActive=false;_bloodReinforced=false;_bloodT=0; });
+onInstanceReset(()=>{ stormActive=false;_stormSeals=[];_stormBoss=null;_stormPhase=0;_stormPhaseT=0;_stormBoltT=0;_stormZones=[];stormTimer=0; });
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -2969,24 +2850,83 @@ function buildSun(){   // the sun disc (sky obj 0x01001348, tex 0600388D) — wa
     transparent:true,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
   sunSprite.scale.set(900,900,1);return sunSprite;
 }
+// per-frame moon dynamics: slow disc spin, day-cycling phase light, and Earth-moonrise
+// colour — ember-amber on the horizon climbing to a pale tint at height. The phase light
+// is expressed in view space and counter-rotated by the spin so the terminator stays put
+// while the face turns beneath it. Returns the lit fraction (0 new → 1 full) so the halo
+// can breathe with the phase. period is in game days (worldDays is fractional & saved).
+const _mZen1=new THREE.Color(0.93,1.0,0.96), _mZen2=new THREE.Color(1.0,0.97,0.90),
+      _mHoriz=new THREE.Color(1.0,0.42,0.20);
+function _moonFrame(sp,period,ph0,spin,zenith,alt,dt){
+  const ud=sp.material.userData; if(!ud.moonL) return 1;
+  const rot=(sp.material.rotation+=spin*dt);
+  const ph=(((worldDays/period)+ph0)%1)*Math.PI*2;
+  const c=Math.cos(rot),s=Math.sin(rot),lx=Math.sin(ph)*0.984,lz=Math.cos(ph)*0.984;   // 0.984²+0.18²≈1
+  ud.moonL.set(c*lx+s*0.18,-s*lx+c*0.18,lz);
+  sp.material.color.copy(_mHoriz).lerp(zenith,Math.pow(clamp(alt,0,1),0.7));
+  return 0.5+0.5*Math.cos(ph);
+}
+// ── phase-shaded moon material ──────────────────────────────────────────────────────────
+// The billboard is shaded as a virtual sphere — N=(uv*2-1, sqrt(1-r²)) against a light
+// direction that cycles with worldDays, so the moons wax and wane like the Earth moon.
+// The light lives in VIEW space (the crescent always reads clearly from any azimuth) and
+// is counter-rotated by the disc spin so the terminator holds still while the face turns.
+// Dual-path: GLSL injection on WebGL, ad-hoc TSL nodes on WebGPU (fromMaterial copies them).
+function moonPhaseMat(map){
+  const mat=new THREE.SpriteMaterial({map,transparent:true,fog:false,depthWrite:false});
+  const L=new THREE.Vector3(0,0,1);                  // lit-side dir; one Vector3 shared by both backends
+  mat.userData.moonL=L; mat.userData.moonAmb=0.16;   // ambient floor = earthshine on the dark limb
+  if(typeof IS_WEBGPU!=="undefined"&&IS_WEBGPU){
+    const t=window.TSL, uL=t.uniform(L), uAmb=t.uniform(mat.userData.moonAmb);
+    const samp=t.texture(map,t.uv());
+    const p=t.uv().mul(2).sub(1);
+    const n=t.vec3(p,p.dot(p).oneMinus().max(0.0).sqrt());
+    const shade=uAmb.add(uAmb.oneMinus().mul(t.smoothstep(t.float(-0.06),t.float(0.22),n.dot(uL))));
+    mat.colorNode=samp.rgb.mul(t.materialColor).mul(shade);
+    mat.opacityNode=samp.a.mul(t.materialOpacity);
+  } else {
+    mat.onBeforeCompile=(sh)=>{
+      sh.uniforms.uMoonL={value:L}; sh.uniforms.uMoonAmb={value:mat.userData.moonAmb};
+      sh.fragmentShader=sh.fragmentShader
+        .replace('#include <common>','#include <common>\nuniform vec3 uMoonL;\nuniform float uMoonAmb;')
+        .replace('#include <map_fragment>','#include <map_fragment>\n'
+          +'vec2 _mp=vMapUv*2.0-1.0;\n'
+          +'vec3 _mn=vec3(_mp,sqrt(max(0.0,1.0-dot(_mp,_mp))));\n'
+          +'diffuseColor.rgb*=uMoonAmb+(1.0-uMoonAmb)*smoothstep(-0.06,0.22,dot(_mn,uMoonL));');
+    };
+  }
+  return mat;
+}
 function buildMoon(){   // Dereth's great moon — the green storm-world (sky obj 0x01001F6A, tex 06003898)
-  moonSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_green.png'),
-    transparent:true,fog:false,depthWrite:false}));
-  moonSprite.scale.set(2600,2600,1);return moonSprite;   // large, close great moon — dominates the night sky
+  moonSprite=new THREE.Sprite(moonPhaseMat(_skyTL.load('assets/sky/moon_green.png')));
+  moonSprite.scale.set(1700,1700,1);   // scaled for the near arc (MR) — looms at ~30° of sky, a true fantasy moon
+  // soft atmospheric glow behind the disc — a wide additive halo tinted to the storm-world's green
+  moonHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(150,255,190,0.55)","rgba(80,200,130,0)"),
+    transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+  moonHalo.scale.set(3900,3900,1);scene.add(moonHalo);
+  return moonSprite;
 }
 // AC's night sky has TWO moons — the smaller amber cratered companion rides an offset arc beside the primary.
 function buildMoon2(){   // amber cratered moon (sky obj 0x01001F67, tex 06003894)
-  moon2Sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:_skyTL.load('assets/sky/moon_amber.png'),
-    transparent:true,fog:false,depthWrite:false}));
-  moon2Sprite.scale.set(1300,1300,1);return moon2Sprite;   // amber companion, ≈0.5× the great moon, also brought close
+  moon2Sprite=new THREE.Sprite(moonPhaseMat(_skyTL.load('assets/sky/moon_amber.png')));
+  moon2Sprite.scale.set(850,850,1);   // keeps AC's ≈0.5× companion proportion at the near arc
+  moon2Halo=new THREE.Sprite(new THREE.SpriteMaterial({map:softTex("rgba(255,220,150,0.5)","rgba(220,160,80,0)"),
+    transparent:true,opacity:0,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+  moon2Halo.scale.set(1900,1900,1);scene.add(moon2Halo);
+  return moon2Sprite;
 }
 function buildClouds(){
   cloudGroup=new THREE.Group();
   const ctex=softTex("rgba(255,255,255,0.95)","rgba(255,255,255,0)");
+  // #795: ONE shared material for every cloud blob. All blobs always render with the SAME tint+opacity
+  // (the day/weather sky colour), so the old per-blob SpriteMaterial meant re-coloring ~300 materials
+  // every frame; with a shared material it's one write. Scale/position stay per-Sprite. _acShared so a
+  // stray disposeObject3D can't blank the whole sky by freeing the material out from under the others.
+  cloudMat=new THREE.SpriteMaterial({map:ctex,transparent:true,opacity:0.92,fog:false,depthWrite:false}); cloudMat._acShared=true;
   for(let i=0;i<52;i++){
     const puff=new THREE.Group();
     const blobs=irnd(4,8);
-    for(let b=0;b<blobs;b++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:ctex,transparent:true,opacity:0.92,fog:false,depthWrite:false}));
+    for(let b=0;b<blobs;b++){const sp=new THREE.Sprite(cloudMat);
       const sc=rnd(140,320);sp.scale.set(sc,sc*rnd(0.5,0.66),1);sp.position.set(rnd(-210,210),rnd(-30,30),0);puff.add(sp);}
     puff.position.set(rnd(-WORLD*0.5,WORLD*0.5),rnd(400,820),rnd(-WORLD*0.5,WORLD*0.5));
     puff.userData.spd=rnd(4,11);cloudGroup.add(puff);
@@ -3079,7 +3019,7 @@ function updateWeather(dt){
   if(storming && wetness>0.5){
     boltCd-=dt;
     if(boltCd<=0){ boltCd=rnd(3.5,11); stormFlash=settings.reduceMotion?0:1;   // #244: no fullscreen lightning brightening under reduce-motion (thunder still rolls)
-      if(typeof castFlash==="function") castFlash(0xe6f0ff);
+      castFlash(0xe6f0ff);
       const dist=rnd(0.3,3.2); setTimeout(()=>{ if(weather==="storm"||wetness>0.3) playThunder(dist>1.5); }, dist*1000);
     }
   }
@@ -3183,7 +3123,7 @@ function updateDayNight(dt){
   gameTime=(gameTime+dt/DAYLEN)%1;
   worldDays+=dt/DAYLEN; seasonTick();   // 30 day/night cycles → the month turns
   { const _tt=Math.floor(gameTime*16); if(_tt!==_todIdx){ _todIdx=_tt;   // the tithe turned → refresh the clock HUD
-      if(typeof updateSeasonHUD==="function") updateSeasonHUD(); } }
+      updateSeasonHUD(); } }
   const t2=gameTime*Math.PI*2;
   const sunY=-Math.cos(t2);            // -1 midnight .. +1 noon
   const sunX=Math.sin(t2);
@@ -3198,7 +3138,8 @@ function updateDayNight(dt){
   amb.intensity=0.12+daylight*0.22;
   // #21 (windows): glass panes glow warm as lamps come on — full lamplight at night, a faint sheen by day
   { const wglow=0.05+(1-daylight)*0.7;
-    for(let i=0;i<tbWindowMats.length;i++) tbWindowMats[i].emissiveIntensity=wglow; }
+    if(Math.abs(wglow-_tbWindowGlow)>0.003){ _tbWindowGlow=wglow;   // #799: daylight creeps sub-perceptibly most frames — only rewrite when the glow actually moved (each write is a per-material node/uniform update on WebGPU)
+      for(let i=0;i<tbWindowMats.length;i++) tbWindowMats[i].emissiveIntensity=wglow; } }
   updateEnvIntensity(daylight);
   TER.uOn.value=(TER.ready&&GFX.tier>=1&&!inDungeon&&!inNetwork)?1:0;   // #693: splat on Medium+, overworld only (tier 0 keeps the legacy single tile)
   const warm=clamp(1-Math.abs(sunY)*2.4,0,1)*daylight; // dawn/dusk horizon glow
@@ -3258,23 +3199,32 @@ function updateDayNight(dt){
     sunSprite.material.opacity=clamp(sunY*3+0.4,0,1);
     sunSprite.material.color.copy(_sunNoon).lerp(_cWarm,warm);} // redden at dawn/dusk
   if(sunHalo){sunHalo.position.copy(sunSprite.position);sunHalo.material.opacity=clamp(sunY*2+0.25,0,1)*0.4;sunHalo.material.color.copy(sunSprite.material.color);}
-  const MR=R*0.62;   // the moons hang closer than the sun's arc — big and near overhead
+  const MR=R*0.30;   // the moons hang FAR closer than the sun's arc — vast, low, storybook-close over the land
   if(moonSprite){moonSprite.position.set(player.x-sky.x*MR,Math.max(-200,-sky.y*MR*0.7),player.z-sky.z*MR);
-    moonSprite.material.opacity=clamp(-sunY*3+0.4,0,1);}
+    moonSprite.material.opacity=clamp(-sunY*2.5+0.45,0,1);   // rises into view a little before full dark
+    const lit1=_moonFrame(moonSprite,24,0.35,0.006,_mZen1,moonSprite.position.y/(MR*0.5),dt);
+    if(moonHalo){moonHalo.position.copy(moonSprite.position);
+      moonHalo.material.color.copy(moonSprite.material.color);   // glow inherits the moonrise ember tint
+      moonHalo.material.opacity=moonSprite.material.opacity*0.45*(0.35+0.65*lit1);}}   // halo breathes with disc & phase
   if(moon2Sprite){const perp=_ddPerp.set(-sky.z,0,sky.x);   // the amber companion rides beside & above the primary
     moon2Sprite.position.set(player.x-sky.x*MR*0.86+perp.x*MR*0.34,Math.max(-160,-sky.y*MR*0.55+70),player.z-sky.z*MR*0.86+perp.z*MR*0.34);
-    moon2Sprite.material.opacity=clamp(-sunY*3+0.35,0,1);}
+    moon2Sprite.material.opacity=clamp(-sunY*2.5+0.4,0,1);
+    const lit2=_moonFrame(moon2Sprite,9,0.7,-0.011,_mZen2,moon2Sprite.position.y/(MR*0.5),dt);
+    if(moon2Halo){moon2Halo.position.copy(moon2Sprite.position);
+      moon2Halo.material.color.copy(moon2Sprite.material.color);
+      moon2Halo.material.opacity=moon2Sprite.material.opacity*0.4*(0.35+0.65*lit2);}}
   // drifting clouds, fading at night, wrapping across the sky, following the player
-  if(cloudGroup){
+  if(cloudGroup&&cloudMat){
     const wcx=Math.cos(windDir), wcz=Math.sin(windDir);                 // clouds ride the wind vector (both axes)
     const op=(0.2+daylight*0.7)*clamp(0.55+cloudCover*0.6,0,1);         // denser, opaquer sky under overcast & storm
     _tmp.copy(_skyDay).lerp(_cWarm,warm*0.6).multiplyScalar(0.45+0.55*clamp(daylight*1.6,0,1));   // white day · warm dusk · dim night
     _tmp.lerp(_stormGrey, clamp((cloudCover-0.65)/0.35,0,1)*0.7);       // storm/overcast clouds turn grey
+    cloudMat.opacity=op; cloudMat.color.copy(_tmp);                     // #795: one write on the shared material — every blob picks it up
     for(const p of cloudGroup.children){ const spd=windSpd*(0.6+p.userData.spd*0.055);   // per-puff parallax on the wind
       p.position.x+=wcx*spd*dt; p.position.z+=wcz*spd*dt;
       if(p.position.x>player.x+WORLD*0.5)p.position.x-=WORLD;else if(p.position.x<player.x-WORLD*0.5)p.position.x+=WORLD;
       if(p.position.z>player.z+WORLD*0.5)p.position.z-=WORLD;else if(p.position.z<player.z-WORLD*0.5)p.position.z+=WORLD;
-      for(const sp of p.children){sp.material.opacity=op;sp.material.color.copy(_tmp);}}}
+    }}
   // reflective water: gentle swell + scrolling ripple normals + a sun glint streak near the player
   if(waterMesh){ waterMesh.position.y=Math.sin(now()/1100)*0.12+(typeof sagaTide==="function"?sagaTide():0);   // #683: Y9+ the Wrong Tide holds the sea high
     const t=now()/1000;
@@ -3318,14 +3268,14 @@ function updateDayNight(dt){
 let sunFar=null;
 const SHAD2={on:true,K:0.55};
 function initSunFar(){
-  sunFar=new THREE.DirectionalLight(0xffedc2,0);
+  sunFar=new THREE.DirectionalLight(CFG.sceneLight.sunColor,0);
   sunFar.castShadow=true;
-  sunFar.shadow.mapSize.set(4096,4096);
-  sunFar.shadow.camera.near=10;sunFar.shadow.camera.far=460;
-  sunFar.shadow.camera.left=-192;sunFar.shadow.camera.right=192;
-  sunFar.shadow.camera.top=192;sunFar.shadow.camera.bottom=-192;
-  // biases scale with the ~2.7× coarser texels; radius a touch wider so the far penumbra stays soft
-  sunFar.shadow.bias=-0.0007;sunFar.shadow.normalBias=0.10;sunFar.shadow.radius=2.6;
+  { const S=CFG.sunFar;
+    sunFar.shadow.mapSize.set(S.mapSize,S.mapSize);
+    sunFar.shadow.camera.near=S.near;sunFar.shadow.camera.far=S.far;
+    sunFar.shadow.camera.left=-S.size;sunFar.shadow.camera.right=S.size;
+    sunFar.shadow.camera.top=S.size;sunFar.shadow.camera.bottom=-S.size;
+    sunFar.shadow.bias=S.bias;sunFar.shadow.normalBias=S.normalBias;sunFar.shadow.radius=S.radius; }
   sunFar.shadow.autoUpdate=false;   // pulsed at HALF the near cadence (distant shadows move slowly)
   scene.add(sunFar);scene.add(sunFar.target);
 }
@@ -3356,7 +3306,7 @@ function playerLightSource(){
   return base;
 }
 function updateInstanceLight(){
-  if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); playerLight.shadow.mapSize.set(512,512); playerLight.shadow.camera.near=0.2; playerLight.shadow.bias=-0.006; scene.add(playerLight); }
+  if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); playerLight.shadow.mapSize.set(CFG.carriedLight.mapSize,CFG.carriedLight.mapSize); playerLight.shadow.camera.near=CFG.carriedLight.near; playerLight.shadow.bias=CFG.carriedLight.bias; scene.add(playerLight); }
   // #716: on Ultra, the carried light throws REAL moving shadows (six-face point-shadow render) —
   // gated to tier 3 + true dungeons (not the bright Academy), toggled only on state change
   { const wantShadow=GFX.tier>=3&&renderer.shadowMap.enabled&&inDungeon&&!(curDungeon&&curDungeon.academy);
@@ -3435,19 +3385,47 @@ function initLightPool(){
   _poolBuilding=false;
 }
 const _lpV=new THREE.Vector3(); const _lpCand=[]; let _lpLidSeq=1;   // #342: reused light-pool candidate array + stable-id counter
+let _lpFrame=0; const LP_SLACK=64;   // #800: round-robin cache refresh counter + safety slack (units) so a coarse cached-position reject never drops a light that's actually within pool reach
+// #797: recycle transient combat-impact PointLights. A burst of hits/spell detonations used to allocate
+// (and GC) a fresh PointLight per strike — each also registering in VLIGHTS. Pooled lights are marked
+// `_pooled` so updateLightPool keeps them registered across scene add/remove (never spliced), and just
+// skips them while detached. Acquire sets colour/intensity/position + schedules release back to the pool.
+const _impPool=[]; const _IMP_MAX=32;
+function impactFlash(col,intensity,dist,x,y,z,ms){
+  let l=_impPool.pop();
+  if(!l){ l=new THREE.PointLight(col,intensity,dist); l._transient=1; l._pooled=1; }   // ctor already pushed it to VLIGHTS
+  else { l.color.set(col); l.intensity=intensity; l.distance=dist; }
+  l.position.set(x,y,z); scene.add(l);
+  setTimeout(()=>{ scene.remove(l); l.intensity=0;
+    if(_impPool.length<_IMP_MAX) _impPool.push(l);
+    else { const vi=VLIGHTS.indexOf(l); if(vi>=0) VLIGHTS.splice(vi,1); } },ms);   // overflow past the pool cap: unregister so it GCs instead of lingering in VLIGHTS
+  return l;
+}
 function updateLightPool(){
   if(!LPOOL) return;
   const px=player.x, py=(player.y||0)+1.2, pz=player.z, tNow=performance.now();
   const cand=_lpCand; cand.length=0;   // #342: reuse the candidate array instead of allocating one every frame
+  _lpFrame++;
   for(let i=VLIGHTS.length-1;i>=0;i--){ const l=VLIGHTS[i];
     let root=l, vis=l.visible, o=l.parent;
     while(o){ if(o.visible===false) vis=false; root=o; o=o.parent; }
-    if(root!==scene){ if(l._transient) VLIGHTS.splice(i,1); continue; }  // #325/#343: a detached TRANSIENT flash is dead (no other ref) → prune immediately; a detached PERSISTENT scenery light is only culled and WILL re-attach → keep it in VLIGHTS (the old `_vT>5000` prune used CREATION time, so it permanently dropped culled scenery lamps and never re-registered them → plazas went dark for the session)
+    if(root!==scene){ if(l._transient && !l._pooled) VLIGHTS.splice(i,1); continue; }  // #325/#343: a detached TRANSIENT flash is dead (no other ref) → prune immediately; a detached PERSISTENT scenery light is only culled and WILL re-attach → keep it in VLIGHTS (the old `_vT>5000` prune used CREATION time, so it permanently dropped culled scenery lamps and never re-registered them → plazas went dark for the session). #797: a POOLED transient light stays registered across add/remove — the pool re-uses it, so skip (don't splice) while it's detached
     if(!vis||l.intensity<=0.01) continue;
+    if(l._lid==null) l._lid=_lpLidSeq++;                           // #342/#800: assign stable id up front so the round-robin refresh key is stable
+    const cullR=Math.max(l.distance||20,40)+170;                  // beyond reach + fog — can't matter
+    // #800: coarse spatial reject. Scenery lights are static and vastly outnumber the 14 pool slots;
+    // most sit far beyond reach every frame. Skip the getWorldPosition matrix work for a far light using
+    // its cached world position, refreshing 1/8 of lights per frame (round-robin) so a moving/approaching
+    // light is re-measured within 8 frames. LP_SLACK covers player travel between refreshes, so a light
+    // truly within pool reach is NEVER skipped. Transient flashes always recompute (short-lived, may move).
+    if(l._wp && !l._transient && ((_lpFrame + l._lid) & 7)!==0){
+      const dx=l._wp.x-px, dy=l._wp.y-py, dz=l._wp.z-pz, rr=cullR+LP_SLACK;
+      if(dx*dx+dy*dy+dz*dz > rr*rr) continue;
+    }
     l.getWorldPosition(_lpV);
+    if(l._wp) l._wp.copy(_lpV); else l._wp=_lpV.clone();          // #800: refresh the cached world position
     const d=Math.hypot(_lpV.x-px,_lpV.y-py,_lpV.z-pz);
-    if(d>Math.max(l.distance||20,40)+170) continue;               // beyond reach + fog — can't matter
-    if(l._lid==null) l._lid=_lpLidSeq++;                           // #342: stable id for a deterministic sort tiebreak
+    if(d>cullR) continue;
     cand.push({l,score:d-Math.min(l.intensity,3)*6-(l._wasActive?5:0),x:_lpV.x,y:_lpV.y,z:_lpV.z});   // #342: hysteresis — a currently-lit light gets a small bonus so it isn't evicted by a marginally-closer newcomer (kills the frame-to-frame pop in dense-light plazas)
   }
   cand.sort((a,b)=> (a.score-b.score) || (a.l._lid-b.l._lid));     // #342: stable tiebreak so equal-score lights don't swap slots each frame
@@ -3468,7 +3446,7 @@ function updateLightPool(){
 const MOBILE_MIN_LONG=2532, MOBILE_MIN_SHORT=1170;
 function mobilePixelRatio(tierCap){
   const dpr=window.devicePixelRatio||1;
-  const mobile=(typeof TOUCH!=="undefined"&&TOUCH.on)||(typeof touchDeviceIs==="function"&&touchDeviceIs());
+  const mobile=(typeof TOUCH!=="undefined"&&TOUCH.on)||(touchDeviceIs());
   if(!mobile) return Math.min(dpr,tierCap);
   const w=Math.max(1,innerWidth), h=Math.max(1,innerHeight);
   const minW=w>=h?MOBILE_MIN_LONG:MOBILE_MIN_SHORT, minH=w>=h?MOBILE_MIN_SHORT:MOBILE_MIN_LONG;
@@ -3496,24 +3474,10 @@ async function initThree(){
       // (label sprites, hit bursts, cast swirls, mob despawn — ~25 direct .dispose() sites that
       // bypass the _disp* choke) destroys materials/geometries whose buffers the in-flight submit
       // still references. On WebGPU each destroy REJECTS that whole submit; with steady FX churn
-      // EVERY frame is dropped → permanently black canvas (measured: ~60 faults/s, RenderObject
-      // disposal ~100/s, scene/lights/fog cache keys all stable — never a cache-key churn). Route
-      // EVERY Material/BufferGeometry/Texture dispose through the 2-tick deferral queue at the
-      // prototype, instead of patching each site. WebGL keeps synchronous dispose (lazy re-upload).
-      // Phase-2 RESOURCE LIFECYCLE (supersedes the interim never-destroy): Mode B1 = a shared-but-
-      // unmarked resource destroyed while a LIVE object still binds it freezes the canvas forever on
-      // D3D12. Instead of hand-refcounting a 33k-line codebase, destruction is gated by a LIVENESS
-      // SWEEP: every dispose() enqueues; the drain (renderComposite, every ~30 frames, double-buffered
-      // so items are ≥1 batch old before destruction) traverses the scene once and only destroys
-      // geometries/materials that NOTHING attached still references — still-referenced ones are
-      // dropped (kept resident, the WebGL lazy-reupload semantic). TEXTURES stay resident permanently:
-      // they are the cached/shared class (portal tube, CIRC, atlases, blade sprites) and are bounded
-      // by content variety, not by rebuild count. Geometries+materials are the real VRAM (dungeon
-      // worlds, mob meshes, grass restreams) and now genuinely reclaim. WebGL is untouched.
-      { const om=THREE.Material.prototype.dispose, og=THREE.BufferGeometry.prototype.dispose;
-        THREE.Material.prototype.dispose=function(){ _wgpuDeferDispose(this,om); };
-        THREE.BufferGeometry.prototype.dispose=function(){ _wgpuDeferDispose(this,og); };
-        THREE.Texture.prototype.dispose=function(){}; }
+      // EVERY frame is dropped → permanently black canvas. The full lifecycle policy (2-batch
+      // deferral queue, liveness sweep, per-instance-texture handling, and the prototype choke
+      // itself) is owned by the GPU_RES resource manager — one place to audit on the r186 upgrade.
+      GPU_RES.install();   // #787: WebGPU-only; WebGL keeps stock synchronous dispose (lazy re-upload)
       // #webgpu KNOWN ISSUE (see docs/webgpu-migration-status.md): the game's dispose-then-reattach
       // GPU eviction (#232 releaseObjectGPU, dungeon-exit disposeObject3D bursts, the portal tube's
       // dispose) assumes WebGL's lazy re-upload. r185 WebGPU keeps cached bind groups pointing at the
@@ -3527,10 +3491,9 @@ async function initThree(){
   renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   scene=new THREE.Scene();
-  const fogCol=0x8a8062;
-  scene.fog=new THREE.Fog(fogCol,40,235);
+  scene.fog=new THREE.Fog(CFG.fog.color,CFG.fog.near,CFG.fog.far);
   if(IS_WEBGPU&&window.TSL) scene.fogNode=buildGpuFog();   // #webgpu Phase C: the #689 height/sun fog as a TSL scene fogNode (see buildGpuFog)
-  cam=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.05,WORLD*1.2);
+  cam=new THREE.PerspectiveCamera(CFG.camera.fov,innerWidth/innerHeight,CFG.camera.near,WORLD*CFG.camera.farK);
   cam.rotation.order="YXZ";
 
   const sky=skyDome();skyMat=sky.material;skyDomeMesh=sky;scene.add(sky);
@@ -3546,18 +3509,19 @@ async function initThree(){
   scene.add(buildMilkyWay());scene.add(buildAurora());   // the sorcerous night sky
   scene.add(buildMotes());scene.add(buildMist());        // fireflies, portal-motes, dawn mist
   // lights
-  hemi=new THREE.HemisphereLight(0xbcd0ff,0x4a4230,0.62);scene.add(hemi);
-  sun=new THREE.DirectionalLight(0xffedc2,1.25);
+  hemi=new THREE.HemisphereLight(CFG.sceneLight.hemiSky,CFG.sceneLight.hemiGround,CFG.sceneLight.hemiI);scene.add(hemi);
+  sun=new THREE.DirectionalLight(CFG.sceneLight.sunColor,CFG.sceneLight.sunI);
   sun.position.set(SUN_OFF.x,SUN_OFF.y,SUN_OFF.z);
   sun.castShadow=true;
-  sun.shadow.mapSize.set(4096,4096);
-  sun.shadow.camera.near=10;sun.shadow.camera.far=300;
-  sun.shadow.camera.left=-72;sun.shadow.camera.right=72;
-  sun.shadow.camera.top=72;sun.shadow.camera.bottom=-72;
-  sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.035;sun.shadow.radius=2.2;
+  { const S=CFG.sunNear;
+    sun.shadow.mapSize.set(S.mapSize,S.mapSize);
+    sun.shadow.camera.near=S.near;sun.shadow.camera.far=S.far;
+    sun.shadow.camera.left=-S.size;sun.shadow.camera.right=S.size;
+    sun.shadow.camera.top=S.size;sun.shadow.camera.bottom=-S.size;
+    sun.shadow.bias=S.bias;sun.shadow.normalBias=S.normalBias;sun.shadow.radius=S.radius; }
   scene.add(sun);scene.add(sun.target);
   initSunFar();   // #692: the far cascade rides alongside
-  amb=new THREE.AmbientLight(0x404040,0.28);scene.add(amb);
+  amb=new THREE.AmbientLight(CFG.sceneLight.ambColor,CFG.sceneLight.ambI);scene.add(amb);
   initLightPool();
 
   // ground — per-pixel PBR; near the camera the detail tile shows crisp, far away it cross-fades
@@ -3815,7 +3779,6 @@ async function initThree(){
   cam.add(weapon);
   scene.add(cam);
   playerAvatar=buildAvatar();scene.add(playerAvatar);
-  tryLoadGltfAvatar();   // async; swaps in the rigged glTF model if present, else keeps the procedural avatar
   // ACES filmic tone-mapping + correct sRGB output for a richer, less-washed image
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.useLegacyLights=true;   // #695/#webgpu: NO-OP from r165 on (removed) — r185 is physical-lights-only. Kept as a harmless marker; parity with the old legacy-falloff tuning was verified on r185 (ACES tone-mapping absorbs the difference — instance + overworld both match r159). If a future light re-tune is needed it's an on-hardware eyeball pass, not a code bug.
@@ -4255,7 +4218,7 @@ function renderComposite(){
   // synthetic/edge cases (headless drivers, a frame between collapse and the resize event).
   { const _cv=renderer&&renderer.domElement; if(_cv&&(_cv.width===0||_cv.height===0)) return; }
   if(IS_WEBGPU){
-    _wgpuDrainDispose();   // Phase-2 lifecycle: batched, liveness-swept destruction (see _wgpuDrainDispose)
+    GPU_RES.drain();   // #787 Phase-2 lifecycle: batched, liveness-swept destruction (see GPU_RES)
     if(_wgpuShadowFixN>0&&--_wgpuShadowFixN===0&&scene){   // late bind-group invalidation after the ShadowNode swapped its RT
       scene.traverse(o=>{ if(!o.material) return;
         const mm=Array.isArray(o.material)?o.material:[o.material];
@@ -4595,7 +4558,7 @@ function gfxTick(dt){
   GFX._fT=(GFX._fT||0)+dt;
   if(GFX._fT>0.7&&(GFX._fx==null||GFX._fT>=99||Math.hypot(player.x-GFX._fx,player.z-GFX._fz)>18)){
     GFX._fT=0; gfxForestStream(); }
-  if(typeof refreshGrassField==="function") refreshGrassField();   // the grass carpet follows the camera
+  refreshGrassField();   // the grass carpet follows the camera
   GFX._lT=(GFX._lT||0)+dt;
   if(GFX._lT>0.4){ GFX._lT=0; gfxCullLabels(); gfxCullProps(); }
   if(GFX.shadowEvery>1&&renderer.shadowMap.enabled){   // shadow refresh on a cadence, not every frame
@@ -4700,7 +4663,7 @@ function applyGfxTier(t,quiet){
   // (desktop only: on mobile, mobilePixelRatio() renders at the device's real resolution regardless of tier)
   renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][t]));
   renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
-  if(typeof resizePost==="function") resizePost();
+  resizePost();
   renderer.shadowMap.enabled=t>=1;
   let _shadowResized=false;   // #webgpu: see the invalidation block below
   if(typeof sun!=="undefined"&&sun){
@@ -4739,7 +4702,7 @@ function applyGfxTier(t,quiet){
   if(auroraGroup) auroraGroup.children.forEach((m,i)=>m.visible=i<GFX.auroraN);
   if(MIST.pool) MIST.pool.forEach((m,i)=>{ if(i>=GFX.mistN) m.material.opacity=0; });
   if(typeof rainSegs!=="undefined"&&rainSegs) rainSegs.count=[500,800,1100,1400][t];
-  if(typeof buildGrass==="function") buildGrass();   // rebuild the grass field for the new tier's density/radius
+  buildGrass();   // rebuild the grass field for the new tier's density/radius
   GFX.treeR=[150,200,260,320][t];   // trees stream in to this radius (fog ends ~235 — nothing is lost)
   GFX._fT=99;                       // restream the forest now
   if(typeof cloudGroup!=="undefined"&&cloudGroup){ const nC=[14,26,40,52][t];
@@ -6033,28 +5996,25 @@ function swirlTex(){
 //    rebuild can dispose it safely. ──
 let PORTAL_U=null, _portalUTimeTSL=null;   // _portalUTimeTSL: the WebGPU TSL uniform mirror of PORTAL_U.uTime
 function portalUniforms(){ if(!PORTAL_U) PORTAL_U={uTime:{value:0}}; return PORTAL_U; }
+// The portal look: a blue, ragged-edged, near-translucent flat disc with swirling small blue dots.
 const _PORTAL_FRAG=`
   varying vec2 vUv; uniform float uTime;
-  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
-  float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-    float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));
-    return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
-  float fbm(vec2 p){ float v=0.0,a=0.55; for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.03+1.7; a*=0.5; } return v; }
   void main(){
     vec2 uv=vUv-0.5; float r=length(uv)*2.0; float ang=atan(uv.y,uv.x);
-    float swirl=ang + (1.2-r)*3.2 + uTime*0.7;            // twist tightens toward the core, whole field rotates
-    vec2 pol=vec2(swirl*0.8, r*2.6 - uTime*0.55);          // energy streams outward from the middle
-    float energy=fbm(pol*1.6)*0.75 + fbm(pol*3.1+9.0)*0.45;
-    float edge=smoothstep(1.02,0.12,r);                    // feather to nothing at the rim — no hard edge
-    float core=smoothstep(0.55,0.0,r);
-    float body=edge*(energy*0.95 + core*0.6);
-    float sp=fbm(pol*5.5 - uTime*1.3);
-    float spark=smoothstep(0.80,0.99,sp)*edge;             // drifting motes of light
-    vec3 colA=vec3(0.42,0.20,0.85), colB=vec3(0.80,0.66,1.0);
-    vec3 col=mix(colA,colB,clamp(energy,0.0,1.0));
-    col+=vec3(0.95,0.88,1.0)*spark*1.6;                    // white-violet sparks
-    col+=colB*core*0.7;                                    // luminous heart (blooms via post)
-    float alpha=clamp(body+spark*0.9,0.0,1.0)*0.95;
+    // RAGGED torn rim of the vortex
+    float ragged=0.82 + 0.10*sin(ang*6.0+uTime*0.45) + 0.05*sin(ang*11.0-uTime*0.7) + 0.035*sin(ang*19.0+uTime*0.3);
+    float disc=smoothstep(ragged, ragged-0.16, r);
+    // MAGICAL WHIRLPOOL — logarithmic-spiral arms curve from the rim into a glowing throat and rotate like a drain
+    float lr=log(r+0.05);
+    float spiral=ang*4.0 + lr*6.0 - uTime*1.5;               // 4-arm log spiral; whole vortex rotates
+    float arms=pow(0.5+0.5*sin(spiral), 2.2);                // bright, thinning spiral bands
+    float funnel=smoothstep(1.05,0.0,r);                     // energy concentrates toward the drain (depth cue)
+    vec2 f1=fract(vec2(spiral*1.6, r*20.0 + uTime*0.9))-0.5; // fine dots streaming ALONG the arms, drawn inward
+    float dots=smoothstep(0.22,0.05,length(f1))*disc*(0.35+0.65*arms);
+    float throat=smoothstep(0.26,0.0,r);                     // luminous core — the mouth of the whirlpool
+    vec3 deep=vec3(0.05,0.20,0.58), glow=vec3(0.40,0.78,1.0), core=vec3(0.82,0.94,1.0);
+    vec3 col=deep*disc*0.5 + glow*arms*funnel*disc*1.15 + glow*dots*0.9 + core*throat*disc*1.5;   // blue→cyan magical glow
+    float alpha=clamp(disc*0.20 + arms*funnel*disc*0.5 + dots*0.5 + throat*disc*0.85, 0.0, 0.96);
     if(alpha<0.008) discard;
     gl_FragColor=vec4(col,alpha);
   }`;
@@ -6062,28 +6022,28 @@ const _PORTAL_FRAG=`
 // Math is copied 1:1 from the GLSL, so it matches by construction. Verified: compiles on the GPU, renders
 // the purple vortex non-blank, animates via uTime. ⚠️ exact look not pixel-confirmed on this headless box
 // — flagged for a machine-2 eyeball. Shares _portalUTimeTSL, synced next to PORTAL_U in the update tick.
+// #webgpu: TSL mirror of _PORTAL_FRAG — magical blue whirlpool (log-spiral arms + inward dots + glowing throat).
 function portalMaterialTSL(){
   const T=window.TSL;
-  const {Fn,Loop,float,vec2,vec3,vec4,uv,uniform,fract,sin,dot,floor,mix,smoothstep,length,atan,clamp}=T;
+  const {float,vec2,vec3,vec4,uv,uniform,fract,sin,smoothstep,length,atan,clamp}=T;
   if(!_portalUTimeTSL) _portalUTimeTSL=uniform(0);
-  const uTime=_portalUTimeTSL;
-  const hash=Fn(([p])=> fract(sin(dot(p,vec2(127.1,311.7))).mul(43758.5453123)) );
-  const vnoise=Fn(([p])=>{ const i=floor(p),f=fract(p); const ff=f.mul(f).mul(float(3.0).sub(f.mul(2.0)));
-    const a=hash(i),b=hash(i.add(vec2(1,0))),c=hash(i.add(vec2(0,1))),d=hash(i.add(vec2(1,1)));
-    return mix(mix(a,b,ff.x),mix(c,d,ff.x),ff.y); });
-  const fbm=Fn(([p0])=>{ const v=float(0).toVar(),a=float(0.55).toVar(),p=p0.toVar();
-    Loop(5,()=>{ v.addAssign(a.mul(vnoise(p))); p.assign(p.mul(2.03).add(1.7)); a.mulAssign(0.5); }); return v; });
-  const uvC=uv().sub(0.5), r=length(uvC).mul(2.0), ang=atan(uvC.y,uvC.x);
-  const swirl=ang.add(float(1.2).sub(r).mul(3.2)).add(uTime.mul(0.7));
-  const pol=vec2(swirl.mul(0.8), r.mul(2.6).sub(uTime.mul(0.55)));
-  const energy=fbm(pol.mul(1.6)).mul(0.75).add(fbm(pol.mul(3.1).add(9.0)).mul(0.45));
-  const edge=smoothstep(1.02,0.12,r), core=smoothstep(0.55,0.0,r);
-  const body=edge.mul(energy.mul(0.95).add(core.mul(0.6)));
-  const sp=fbm(pol.mul(5.5).sub(uTime.mul(1.3))), spark=smoothstep(0.80,0.99,sp).mul(edge);
-  const colA=vec3(0.42,0.20,0.85), colB=vec3(0.80,0.66,1.0);
-  let col=mix(colA,colB,clamp(energy,0.0,1.0));
-  col=col.add(vec3(0.95,0.88,1.0).mul(spark).mul(1.6)).add(colB.mul(core).mul(0.7));
-  const alpha=clamp(body.add(spark.mul(0.9)),0.0,1.0).mul(0.95);
+  const uT=_portalUTimeTSL;
+  const p=uv().sub(0.5), r=length(p).mul(2.0), ang=atan(p.y,p.x);
+  const ragged=float(0.82).add(sin(ang.mul(6.0).add(uT.mul(0.45))).mul(0.10))
+    .add(sin(ang.mul(11.0).sub(uT.mul(0.7))).mul(0.05)).add(sin(ang.mul(19.0).add(uT.mul(0.3))).mul(0.035));
+  const disc=smoothstep(ragged, ragged.sub(0.16), r);
+  const lr=r.add(0.05).log();
+  const spiral=ang.mul(4.0).add(lr.mul(6.0)).sub(uT.mul(1.5));          // 4-arm log spiral, rotating
+  const arms=float(0.5).add(sin(spiral).mul(0.5)).pow(2.2);             // bright spiral bands
+  const funnel=smoothstep(1.05,0.0,r);
+  const f1=fract(vec2(spiral.mul(1.6), r.mul(20.0).add(uT.mul(0.9)))).sub(0.5);   // dots stream along the arms, inward
+  const dots=smoothstep(0.22,0.05,length(f1)).mul(disc).mul(float(0.35).add(arms.mul(0.65)));
+  const throat=smoothstep(0.26,0.0,r);
+  const col=vec3(0.05,0.20,0.58).mul(disc).mul(0.5)
+    .add(vec3(0.40,0.78,1.0).mul(arms).mul(funnel).mul(disc).mul(1.15))
+    .add(vec3(0.40,0.78,1.0).mul(dots).mul(0.9))
+    .add(vec3(0.82,0.94,1.0).mul(throat).mul(disc).mul(1.5));
+  const alpha=clamp(disc.mul(0.20).add(arms.mul(funnel).mul(disc).mul(0.5)).add(dots.mul(0.5)).add(throat.mul(disc).mul(0.85)),0.0,0.96);
   const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,fog:false,blending:THREE.AdditiveBlending});
   mat.fragmentNode=vec4(_rawFragTSL(col),alpha);   // #695: display-referred authored colors — see _rawFragTSL
   return mat;
@@ -6206,7 +6166,8 @@ function updatePortalFx(g,dt){
     at.aAlpha.needsUpdate=true;
   }
 }
-function refreshPortalFx(){                                      // swap lens-fallback portals to the real effect
+function refreshPortalFx(){                                      // swap lens portals to the retail particle replay
+  return;   // portals now keep the blue ragged-disc + swirling-dots lens by design (buildPortal); no swap
   if(!PORTAL_FX||(IS_WEBGPU&&!(window.TSL&&THREE.SpriteNodeMaterial))) return;   // #webgpu: need the SpriteNodeMaterial billboard path (else keep the TSL vortex lens)
   const up=(mesh)=>{ const u=mesh&&mesh.userData; if(!u||u.pfx||!u.lens) return;
     if(buildPortalFx(mesh)){ mesh.remove(u.lens); u.lens.geometry.dispose(); u.lens.material.dispose(); u.lens=null; } };
@@ -6214,31 +6175,52 @@ function refreshPortalFx(){                                      // swap lens-fa
   if(typeof tnPortals!=="undefined") for(const tp of tnPortals) up(tp.mesh);
   if(typeof netObjs!=="undefined") for(const o of netObjs) up(o);
 }
+let _portalGlowTexC=null;
+function _portalGlowTex(){ if(!_portalGlowTexC) _portalGlowTexC=softTex(null,null,
+  [[0,"rgba(130,190,255,0.95)"],[0.4,"rgba(70,140,255,0.62)"],[0.78,"rgba(45,100,230,0.24)"],[1,"rgba(40,90,220,0)"]]);
+  return _portalGlowTexC; }
 function buildPortal(name){
   const g=new THREE.Group();
-  // #webgpu: the retail particle replay now runs on WebGPU too via the SpriteNodeMaterial billboard
-  // path (buildPortalFx, VERIFIED on Metal). If the node material is somehow unavailable, fall back
-  // to the ANIMATED TSL VORTEX lens (never invisible Points).
-  const wantPfx=PORTAL_FX&&(!IS_WEBGPU||(window.TSL&&THREE.SpriteNodeMaterial));
-  if(wantPfx&&buildPortalFx(g)){ /* the real retail emitters */ }
-  else{ const lens=new THREE.Mesh(new THREE.CircleGeometry(1.55,64), portalMaterial());
-    lens.scale.set(1.05,1.55,1); lens.position.y=2.3; g.add(lens); g.userData.lens=lens; }   // fallback until the pack loads
-  const light=new THREE.PointLight(0x9a6aff,1.6,18); light.position.y=2.2; g.add(light);
-  const lbl=labelSprite("Portal → "+name,"portals"); lbl.position.y=4.2; g.add(lbl);
+  // Portal look: a magical blue whirlpool (log-spiral arms + glowing throat) over a soft glowing-blue
+  // backdrop. portalMaterial = the whirlpool lens (TSL on WebGPU, GLSL on WebGL); the retail purple-particle
+  // replay (buildPortalFx) stays available but is no longer the default look.
+  // GLOWING BLUE BACKDROP behind the whirlpool — a soft radial blue halo so the vortex reads as a lit portal
+  const glow=new THREE.Mesh(new THREE.CircleGeometry(1.5,48),
+    new THREE.MeshBasicMaterial({map:_portalGlowTex(),transparent:true,opacity:0.9,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
+  glow.scale.set(0.72,1.14,1); glow.position.set(0,1.35,-0.04); g.add(glow); g.userData.glow=glow;   // just behind the lens
+  // sized to ~player height +20% (~2.4 m tall), a doorway-shaped ellipse sitting just above the ground
+  const lens=new THREE.Mesh(new THREE.CircleGeometry(1.5,72), portalMaterial());
+  lens.scale.set(0.62,1.0,1); lens.position.y=1.35; g.add(lens); g.userData.lens=lens;
+  const light=new THREE.PointLight(0x3aa0ff,1.4,13); light.position.y=1.4; g.add(light);   // blue portal glow
+  const lbl=labelSprite("Portal → "+name,"portals"); lbl.position.y=2.9; g.add(lbl);
   g.userData.light=light;
   return g;
 }
 // floating name text. `cat` groups it under a Settings toggle: players / npcs / cities /
 // portals / lifestones / dungeons / monsters — each can be switched off in Settings (O).
 const LABELS=[];
-function labelSprite(txt,cat){
+// #798: a floating label used to bake its OWN 256×64 canvas + CanvasTexture — with 2000+ labels live
+// (towns, portals, lifestones, NPC nametags, many with identical text) that was ~130 MB of texture and a
+// fresh canvas per label, re-baked whenever a streamed NPC re-registered. Cache the texture BY TEXT so
+// every "Drudge" / "Portal → Holtburg" / "— E to bind" shares one texture (bounded by distinct strings,
+// not label count). Marked _acShared so the dispose helpers never free it out from under the others. The
+// SpriteMaterial stays per-sprite so opacity/tint/visibility remain independent. (A glyph atlas / SDF is
+// the fuller fix; text-keyed sharing removes the per-label texture at a fraction of the risk.)
+const _labelTexCache={};
+function labelTexture(txt){
+  let t=_labelTexCache[txt];
+  if(t) return t;
   const c=document.createElement('canvas');c.width=256;c.height=64;const g=c.getContext('2d');
   g.font="bold 26px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
   const tw=g.measureText(txt).width;   // long names shrink to fit the canvas instead of cropping
   if(tw>244) g.font=`bold ${Math.max(13,Math.floor(26*244/tw))}px Trebuchet MS`;
   g.lineWidth=5;g.strokeStyle="rgba(0,0,0,.85)";g.strokeText(txt,128,32);
   g.fillStyle="#e8dcc0";g.fillText(txt,128,32);
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));
+  t=new THREE.CanvasTexture(c); t._acShared=true;   // #798: shared across all labels with this text — never per-instance-disposed
+  _labelTexCache[txt]=t; return t;
+}
+function labelSprite(txt,cat){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:labelTexture(String(txt))}));   // #798: shared per-text texture; material stays per-sprite
   sp.scale.set(6,1.5,1);
   sp.userData.labelCat=cat||"npcs";
   LABELS.push(sp);
@@ -6248,7 +6230,7 @@ function labelSprite(txt,cat){
 function applyLabelSettings(){
   const L=settings.labels||{};
   for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
-    if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); if(sp.material){ if(sp.material.map)sp.material.map.dispose(); sp.material.dispose(); } continue; }   // #22: orphaned labels free their CanvasTexture
+    if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); if(sp.material) sp.material.dispose(); continue; }   // #22/#798: free the per-sprite material only — the label texture is shared per-text (labelTexture cache) and must never be disposed here
     sp.visible=L[sp.userData.labelCat]!==false; }
 }
 // every sprite is its own draw call — the census found 1,500 name labels drawing from
@@ -6258,7 +6240,7 @@ const _lblV=new THREE.Vector3();
 function gfxCullLabels(){
   const L=settings.labels||{};
   for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
-    if(!sp.parent){ LABELS.splice(i,1); if(sp.material){ if(sp.material.map)sp.material.map.dispose(); sp.material.dispose(); } continue; }   // #22: orphaned labels free their CanvasTexture
+    if(!sp.parent){ LABELS.splice(i,1); if(sp.material) sp.material.dispose(); continue; }   // #22/#798: free the per-sprite material only — the label texture is shared per-text (labelTexture cache) and must never be disposed here
     const cat=sp.userData.labelCat||"npcs";
     if(L[cat]===false){ sp.visible=false; continue; }
     sp.getWorldPosition(_lblV);
@@ -7027,7 +7009,7 @@ function buildReed(s){ const g=new THREE.Group(); const m=new THREE.MeshStandard
   g.traverse(o=>{if(o.isMesh)o.castShadow=true;}); return g; }
 // which biome a spot belongs to → drives flora & ground cover
 function biomeAt(x,z){
-  if(typeof coldZone==="function"&&coldZone(x,z)) return "cold";
+  if(coldZone(x,z)) return "cold";
   const reg=regionOf(x,z);
   if(reg===-1) return "direlands";
   if(inSwamp(x,z)) return "swamp";
@@ -7070,7 +7052,7 @@ function grassTuftGeo(){
 }
 function grassOK(x,z){
   const h=terrainH(x,z); if(h<1.4||h>175) return false;                                  // no water, no high snow
-  if(typeof acRoad==="function"&&acRoad(x,z)) return false;                               // no grass on the dirt roads
+  if(acRoad(x,z)) return false;                               // no grass on the dirt roads
   // town cores stay clear (stone plazas, paths & buildings) — every settlement, not just the 3 capitals
   if(typeof CITIES!=="undefined") for(let i=0;i<CITIES.length;i++){ const c=CITIES[i], dx=x-c.x, dz=z-c.z, rr=c.capital?TOWN_SAFE:95; if(dx*dx+dz*dz<rr*rr) return false; }
   if(typeof FLATTEN!=="undefined") for(const t of FLATTEN){ const dx=x-t.x,dz=z-t.z, cr=(t.core||t.r)+6; if(dx*dx+dz*dz<cr*cr) return false; }  // Castle Val Halla / Valstead courtyard
@@ -7311,10 +7293,10 @@ function pickPlant(sp){
   if(!addToInv(it)){ log(`Your satchel is too full to pick the <b>${pk.item}</b>.`,"warn"); if(SFX.hit)SFX.hit(); return; }
   startAction("gather",1.0);
   _pickedPlants.set(sp.key, now()+rnd(50000,80000));            // regrows in ~1 minute
-  if(typeof floater==="function") floater(player.x,EYE+0.4,player.z,"+ "+pk.item,"#c0e070");
+  floater(player.x,EYE+0.4,player.z,"+ "+pk.item,"#c0e070");
   log(`You pick a <b>${pk.item}</b> — brew it into a <b>${pk.dye}</b> at a crafting station (Alchemy, key T).`,"loot");
-  if(SFX.gold)SFX.gold(); if(typeof gainXP==="function")gainXP(12); if(typeof questEvent==="function")questEvent("gather","harvest");
-  if(typeof refreshGrassField==="function") refreshGrassField(true);   // clear the picked plant now
+  if(SFX.gold)SFX.gold(); gainXP(12); questEvent("gather","harvest");
+  refreshGrassField(true);   // clear the picked plant now
 }
 // ── instanced forests: the hand-placed scenery (~1900 groups) left the wilds feeling empty.
 // Each species is ONE merged vertex-colored geometry drawn as ONE InstancedMesh (a whole
@@ -7468,7 +7450,7 @@ function buildForests(){
       for(const t of FLATTEN){ if(Math.hypot(x-t.x,z-t.z)<t.r+12){inTown=true;break;} }
       if(inTown) continue; }
     const hh=terrainH(x,z); if(hh<1.5||hh>230) continue;
-    if(typeof onRoad==="function"&&onRoad(x,z)) continue;
+    if(onRoad(x,z)) continue;
     const bm=biomeAt(x,z), cl=clump(x,z);
     let key=null,s=1;
     if(bm==="forest"||bm==="sho"){ if(cl<0.1) continue;                       // woodland grows in patches, not everywhere
@@ -7609,7 +7591,7 @@ function textSprite(txt,color){
   g.font="bold 44px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
   g.lineWidth=6;g.strokeStyle="rgba(0,0,0,.85)";g.strokeText(txt,64,34);
   g.fillStyle=color;g.fillText(txt,64,34);
-  const tex=new THREE.CanvasTexture(c);
+  const tex=new THREE.CanvasTexture(c); tex._acPerInstance=true;   // #788: per-instance (combat floaters, emoji markers) — mark so WebGPU frees it on dispose instead of leaking one canvas+texture per floater
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,fog:false}));
   sp.scale.set(2.2,1.1,1);return sp;
 }
@@ -7642,7 +7624,7 @@ function buildWorld(){
   for(const d of dying) disposeObject3D(d.mesh); dying=[];
   for(const o of netObjs) disposeObject3D(o);
   for(const _s of ships){ if(_s.mesh) disposeObject3D(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
-  if(typeof despawnPets==="function") despawnPets();   // #361: pets[] was neither disposed nor cleared on a world rebuild (every other entity array is) — a latent leak the moment a mid-session rebuild is added
+  despawnPets();   // #361: pets[] was neither disposed nor cleared on a world rebuild (every other entity array is) — a latent leak the moment a mid-session rebuild is added
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];chessTables=[];
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
@@ -7727,8 +7709,10 @@ function buildWorld(){
     // cold cache, leaving the Monarch bare until reload. applyRemoteGear is signature-guarded (its sig
     // includes pack-readiness), so steady-state this is a no-op and the pack's arrival re-dresses him.
     const dress=()=>{ try{ if(window._noKilmerDress) return;   // test harness escape: SwiftShader can't chew the 4x armor textures
-      if(_kilmerNpcRec&&_kilmerNpcRec.mesh&&_kilmerNpcRec.mesh.userData.acBody&&typeof applyRemoteGear==="function") applyRemoteGear(_kilmerNpcRec.mesh,KGEAR); }catch(e){} };
-    setInterval(dress,5000); setTimeout(dress,2000); }
+      if(!_kilmerNpcRec||!_kilmerNpcRec.mesh){ if(_kilmerDressTimer){clearInterval(_kilmerDressTimer);_kilmerDressTimer=null;} return; }   // #792: the NPC is gone (world rebuilt/disposed) — stop the interval instead of ticking forever
+      if(_kilmerNpcRec.mesh.userData.acBody&&typeof applyRemoteGear==="function") applyRemoteGear(_kilmerNpcRec.mesh,KGEAR); }catch(e){} };
+    if(_kilmerDressTimer) clearInterval(_kilmerDressTimer);   // #792: don't stack a fresh interval on every world (re)build — clear the prior one first
+    _kilmerDressTimer=setInterval(dress,5000); setTimeout(dress,2000); }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*COORD-3,-21.2*COORD,{role:"reset_attr",name:"Chafulumisa"});   // #329: place at Asheron's Castle (21.2N 69.3E) at the true COORD scale — the hardcoded *80 left them ~11km off, lost in the wilderness
   addNPC(69.3*COORD+3,-21.2*COORD,{role:"reset_skill",name:"Fianhe"});
@@ -7906,19 +7890,18 @@ function buildWorld(){
   // monsters roam the realm (clustered near hubs).
   // Online, the overworld monsters are server-authoritative & shared — they arrive via
   // snapshots (reconcileMobs), so the client does not spawn its own local population.
-  if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; clearNetEvent(); NET.partyNames=new Set(); NET.partyLeader=null; if(typeof updatePartyHUD==="function") updatePartyHUD(); }
+  if(typeof NET!=="undefined"){ NET.mobs={}; NET.drops={}; clearNetEvent(); NET.partyNames=new Set(); NET.partyLeader=null; updatePartyHUD(); }
   // monsters now STREAM in around the player (streamMonsters) instead of 300 spawned across the whole map
   // Online, world bosses are server-authoritative & shared (the Olthoi Queen arrives via
   // snapshots). The local per-client bosses only spawn in the offline solo game.
   if(!isOnline){ spawnBoss();spawnApex();spawnShadowGenerals(); }
   if(worldEvent){if(worldEvent.beam)scene.remove(worldEvent.beam);if(worldEvent.beacon)scene.remove(worldEvent.beacon);}
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
-  loadGltfPeople(); assignGltfNpcs();   // populate some townsfolk with real CDN people models (async; procedural fallback)
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   loadGltfHorse();                       // preload the rigged horse model for mounts
-  if(typeof buildHarbors==="function") buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
+  buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
-  if(typeof spawnOwnedHorses==="function") spawnOwnedHorses();             // #725: parked horses stand back up where they were left
+  spawnOwnedHorses();             // #725: parked horses stand back up where they were left
 }
 function settleY(){ // drop every placed object onto the RENDERED ground surface (groundY, not raw terrainH)
   for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
@@ -8368,6 +8351,7 @@ const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load(acTexURL('actownmodels/tex/'+fn)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
+let _tbWindowGlow=-1;    // #799: last-applied window glow, so we skip the per-material rewrite when daylight hasn't perceptibly moved
 function tbModelReq(did){ did=(''+did).toUpperCase();
   if(_tbModels[did]!==undefined) return (_tbModels[did]&&_tbModels[did].ready)?_tbModels[did]:null;
   const idx=tbIndexReq(); if(idx===null) return null;                 // index still loading
@@ -9614,7 +9598,7 @@ let kcRockets=[],kcFlashes=[],_kcFwT=0,_kcFwHugeT=0,_kcMusT=0,_kcMusI=0,kcCrowd=
 // spherical starburst that rides the existing bursts[] physics (gravity + fade)
 function kcFireBurst(x,y,z,col,n,speed,big){
   for(let i=0;i<n;i++){
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:col,transparent:true,depthWrite:false,fog:false}));
+    const sp=acquireBurstSprite(col);   // #796: pooled
     const sc=(big?rnd(1.4,2.4):rnd(0.9,1.6)); sp.scale.set(sc,sc,sc); sp.position.set(x,y,z); scene.add(sp);   // big enough to read against the sky from afar
     const a=rnd(0,6.28), el=Math.acos(rnd(-1,1)), spd=speed*rnd(0.55,1.1);
     bursts.push({sp,vx:Math.sin(el)*Math.cos(a)*spd,vy:Math.cos(el)*spd,vz:Math.sin(el)*Math.sin(a)*spd,t:rnd(1.1,1.8)});
@@ -10830,7 +10814,7 @@ function hsExitInstance(){
 // decorations inside the active instance (hooks/chests/unit crystals), owner-aware
 function hsInstDecorate(){
   if(!hsInst) return;
-  for(const m of hsInst.decor||[]){ const i=dungeonObjs.indexOf(m); if(i>=0)dungeonObjs.splice(i,1); if(typeof disposeObject3D==="function") disposeObject3D(m); else scene.remove(m); }   // #360: dispose old decor (freshly built each re-decorate) instead of only detaching — repeated hook toggling was leaking geometry/materials
+  for(const m of hsInst.decor||[]){ const i=dungeonObjs.indexOf(m); if(i>=0)dungeonObjs.splice(i,1); disposeObject3D(m); }   // #360: dispose old decor (freshly built each re-decorate) instead of only detaching — repeated hook toggling was leaking geometry/materials
   hsInst.decor=[]; hsInst.hooks=[]; hsInst.chests=[]; hsInst.crystals=[];
   const hs=player.homestead;
   const addM=m=>{ scene.add(m); dungeonObjs.push(m); hsInst.decor.push(m); };
@@ -11148,9 +11132,13 @@ function spawnSomewhere(){
 //    here so all creatures wear their authentic AC glTF model + textures when the pack has one,
 //    falling back to the procedural body only when it doesn't. Returns {mesh, gm} — gm is the
 //    loaded model record (null for procedural) so the caller can wire the animation mixer. ──
+// #785: the ONE home of the "does this kind have loaded rigged variants?" lookup (was copy-pasted here and in bossMesh)
+function gltfVariantsFor(kind){
+  return (USE_GLTF_MONSTERS&&typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+}
 function acCreatureMesh(kind){
   const b=BESTIARY[kind]||BESTIARY.drudge;
-  const gvar=(USE_GLTF_MONSTERS&&typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+  const gvar=gltfVariantsFor(kind);
   const gm=(gvar&&typeof THREE.SkeletonUtils!=="undefined")?gvar[irnd(0,gvar.length-1)]:null;   // random rigged breed for variety
   if(!gm) return {mesh:buildCreature(kind), gm:null};                                            // procedural fallback
   const mesh=new THREE.Group();
@@ -11227,11 +11215,20 @@ function classifyLog(msg,tab){
   if(/you have slain|slain|kill streak|enrage/i.test(msg)) return "combat";
   return "sys";   // sys lines live in All only
 }
-function log(msg,cls="",tab,spam){
+// ── #786: UIBUS — the thin UI seam. Game logic EMITS; the DOM renderer (installed below the chat
+//    functions) SUBSCRIBES. Headless tests subscribe stubs instead, so logic that logs/toasts runs
+//    without a document. Adopt incrementally: route new logic→DOM writes through an emit and keep
+//    every document.* touch inside a subscriber.
+const UIBUS={
+  _h:{},
+  on(ev,fn){ (this._h[ev]=this._h[ev]||[]).push(fn); return fn; },
+  off(ev,fn){ const a=this._h[ev]; if(a){ const i=a.indexOf(fn); if(i>=0)a.splice(i,1); } },
+  emit(ev,data){ const a=this._h[ev]; if(a) for(const fn of a){ try{ fn(data); }catch(e){ console.error("UIBUS["+ev+"]",e); } } },
+};
+function log(msg,cls="",tab,spam){   // #786: pure — updates logLines state and emits; no DOM here
   tab=classifyLog(msg,tab);
   logLines.push({msg,cls,tab,spam:!!spam}); if(logLines.length>160)logLines.shift();
-  if(tab!=="sys"&&chatTab!=="all"&&tab!==chatTab){ const b=document.querySelector(`#chatTabs [data-tab="${tab}"]`); if(b) b.classList.add("unread"); }
-  renderLog();
+  UIBUS.emit("chat:line",{msg,cls,tab,spam:!!spam});
 }
 // per-hit combat spam: lands ONLY on the Combat tab, never floods the main feed
 function clog(msg){ log(msg,"cmb","combat",true); }
@@ -11243,7 +11240,7 @@ function renderLog(){
   if(sized) logInner.scrollTop=logInner.scrollHeight;                        // stay pinned to the newest line
 }
 function setChatTab(t){
-  chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; if(typeof saveSettings==="function") saveSettings(); }
+  chatTab=t; if(typeof settings!=="undefined"){ settings.chatTab=t; saveSettings(); }
   document.querySelectorAll('#chatTabs .ctab').forEach(b=>{ b.classList.toggle('on',b.dataset.tab===t); if(b.dataset.tab===t) b.classList.remove('unread'); });
   const ci=document.getElementById('chatInput');
   if(ci) ci.placeholder=({global:"say aloud to the realm…",team:"message your allegiance… (/allegiance join <name> first)",
@@ -11266,22 +11263,42 @@ const CHAT_CHANNELS={
 };
 function chatChan(ch){ const d=CHAT_CHANNELS[ch]||CHAT_CHANNELS.say, o=(settings.chat&&settings.chat[ch])||{}; return {n:d.n, c:o.c||d.c, m:!!o.m}; }
 let _chatBarT=0;
-function chatMsg(ch,html){
+function chatMsg(ch,html){   // #786: pure — emits; the chat-bar DOM write lives in the subscriber below
   const conf=chatChan(ch);
   if(conf.m) return;                                    // muted channel
   const line=`<span style="color:${conf.c}">${html}</span>`;
   log(line,"chat",CHAT_TAB_OF[ch]||"global");           // player-to-player lines land on their tab
-  const bar=document.getElementById('chatBarText');
-  if(bar){ bar.innerHTML=line; bar.style.opacity=1; _chatBarT=12; }   // ride the chat bar, dim after a while
+  _chatBarT=12;
+  UIBUS.emit("chat:bar",line);
 }
-let toastT=0;function toast(t){document.getElementById('toast').textContent=t;toastT=2.2;}
+let toastT=0;function toast(t){ toastT=2.2; UIBUS.emit("toast",t); }   // #786: pure — the DOM write is a subscriber
+// ── #786: the DOM renderer — the ONLY place these UI events touch the document. A headless test
+//    replaces these three subscriptions with stubs and every log/toast/chat caller runs unchanged. ──
+UIBUS.on("chat:line",l=>{
+  if(l.tab!=="sys"&&chatTab!=="all"&&l.tab!==chatTab){ const b=document.querySelector(`#chatTabs [data-tab="${l.tab}"]`); if(b) b.classList.add("unread"); }
+  renderLog();
+});
+UIBUS.on("chat:bar",line=>{ const bar=document.getElementById('chatBarText');
+  if(bar){ bar.innerHTML=line; bar.style.opacity=1; } });   // ride the chat bar, dim after a while (_chatBarT)
+UIBUS.on("toast",t=>{ const el=document.getElementById('toast'); if(el) el.textContent=t; });
 
 // ---------- effects ----------
 function floater(x,y,z,txt,color,sz){const sp=textSprite(txt,color);if(sz)sp.scale.multiplyScalar(sz);sp.position.set(x,y,z);scene.add(sp);
   floaters.push({sp,t:1.1,vy:1.4});}
+// #796: recycle burst particle sprites. Every melee hit / arrow contrail / firework used to allocate a
+// fresh Sprite+SpriteMaterial per particle and dispose it on fade. All bursts[] particles share one
+// material config (CIRC map, normal blend) — only the colour varies — so pool the objects and just
+// recolor on reuse. Acquire resets colour/opacity; release returns to the pool (capped) or disposes.
+const _burstPool=[]; const _BURST_MAX=512;
+function acquireBurstSprite(color){
+  let sp=_burstPool.pop();
+  if(!sp) sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,transparent:true,depthWrite:false,fog:false}));
+  sp.material.color.set(color); sp.material.opacity=1; sp.visible=true; return sp;
+}
+function releaseBurstSprite(sp){ scene.remove(sp); if(_burstPool.length<_BURST_MAX) _burstPool.push(sp); else sp.material.dispose(); }
 function burst(x,y,z,color,n=10){
   for(let i=0;i<n;i++){
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color,transparent:true,depthWrite:false,fog:false}));
+    const sp=acquireBurstSprite(color);
     const sc=rnd(0.3,0.7);sp.scale.set(sc,sc,sc);sp.position.set(x,y,z);scene.add(sp);
     const a=rnd(0,6.28),el=rnd(-1,1),sp2=rnd(3,8);
     bursts.push({sp,vx:Math.cos(a)*sp2,vy:Math.abs(el)*sp2*0.6+1,vz:Math.sin(a)*sp2,t:rnd(.3,.6)});
@@ -11295,7 +11312,19 @@ let SPELLFX=[];
 function fxQ(){ const t=(typeof GFX!=="undefined"&&GFX.tier!=null)?GFX.tier:2;
   return [0.35,0.6,1,1.2][t]*((typeof settings!=="undefined"&&settings.reduceMotion)?0.45:1); }
 function fxCap(){ return SPELLFX.length<420; }
-function fxSprite(color,additive){ return new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color,transparent:true,depthWrite:false,fog:false,blending:additive===false?THREE.NormalBlending:THREE.AdditiveBlending})); }
+// #796: pool spell-FX sprites the same way as bursts. Blending is the only fixed axis that varies
+// (additive vs normal), so keep two pools keyed by it — a pooled sprite is only ever reused with its
+// own blending, so no needsUpdate/shader churn. Acquire resets colour+opacity; callers then override.
+const _fxPoolA=[], _fxPoolN=[]; const _FX_MAX=512;
+function fxSprite(color,additive){
+  const add=additive!==false, pool=add?_fxPoolA:_fxPoolN;
+  let sp=pool.pop();
+  if(!sp){ sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,transparent:true,depthWrite:false,fog:false,blending:add?THREE.AdditiveBlending:THREE.NormalBlending})); sp._fxAdd=add?1:0; }
+  sp.material.color.set(color); sp.material.opacity=1; sp.visible=true; return sp;
+}
+function fxRelease(sp){ if(!sp) return; scene.remove(sp);
+  const pool=sp._fxAdd?_fxPoolA:_fxPoolN;
+  if(pool.length<_FX_MAX) pool.push(sp); else sp.material.dispose(); }
 // a bright pop of light that swells and dies — the core "energy" read of every release & impact
 function fxFlash(x,y,z,color,size,dur){ if(!fxCap())return;
   const sp=fxSprite(color); sp.position.set(x,y,z); sp.scale.setScalar(size*0.4); scene.add(sp);
@@ -11347,6 +11376,27 @@ function fxGather(getPos,color,dur,n){ n=Math.max(3,Math.round((n||14)*fxQ()));
   }
   if(parts.length) SPELLFX.push({k:"gather",parts,getPos,t:0,dur:dur||0.5});
 }
+// a rising spiral column of energy motes — the spell drawing power up out of the ground into the caster
+function fxColumn(x,gy,z,color,dur){ const n=Math.max(4,Math.round(16*fxQ()));
+  for(let i=0;i<n;i++){ if(!fxCap())break;
+    const sp=fxSprite(color); const s=rnd(0.12,0.28); sp.scale.setScalar(s); sp.material.opacity=0; scene.add(sp);
+    SPELLFX.push({k:"column",sp,t:0,dur:(dur||0.6)*rnd(0.8,1.15),x,z,gy,a:rnd(0,6.283),r:rnd(0.25,0.95),rise:rnd(2.4,3.8),spin:rnd(5,10)*(i%2?1:-1),s});
+  }
+}
+// ── THE CAST SIGNATURE — an eyecatching, element-coloured casting flourish, played for EVERY spell and
+//    broadcast so other players see you weave it: twin ground rune-rings bloom underfoot, a spiral column
+//    of energy rises, motes stream inward to the forming spell at the hands, and a coloured light swells.
+function fxCastSignature(x,z,color,dur){ dur=Math.max(0.42,dur||0.6);
+  const gy=(typeof groundY==="function")?groundY(x,z):(typeof player!=="undefined"&&!inDungeon&&!inNetwork?player.y:0);
+  const eye=(typeof EYE!=="undefined")?EYE:1.6;
+  fxRing(x,gy+0.12,z,color,{r1:2.4,dur:dur*1.2,flat:1});                   // fast inner bloom
+  fxRing(x,gy+0.10,z,color,{r1:3.4,dur:dur*1.45,flat:1});                  // slower outer bloom
+  fxColumn(x,gy,z,color,dur);                                             // rising spiral energy
+  fxGather(()=>[x,gy+eye-0.2,z],color,dur,20);   // motes gather at the hands
+  if(!fxCap()) return;
+  const lt=new THREE.PointLight(color,0,11); lt.position.set(x,gy+1.2,z); lt._transient=1; scene.add(lt);
+  SPELLFX.push({k:"castlight",lt,t:0,dur:dur});                          // swell-then-fade coloured glow
+}
 // the per-element look — trail emitter + impact debris parameters (frost bolts fly as "ice")
 const ELEM_FX={
   fire:    {trail:{rate:34,color2:0xffd23b,up:1.4,g:-2,l:0.32,s:0.3},smoke:1,scorch:0x0d0a08,
@@ -11396,10 +11446,16 @@ function updateSpellFX(dt){
           g.sp.position.set(p[0]+Math.cos(g.a)*r, p[1]+g.el*r, p[2]+Math.sin(g.a)*r);
           g.sp.material.opacity=Math.min(1,k*4)*(0.7+0.3*Math.sin(f.t*22+g.ph));
           g.sp.scale.setScalar(g.s*(1+k*0.8)); } } }
+    else if(f.k==="column"){ f.a+=f.spin*dt; const yy=f.gy+f.rise*f.t;         // spiral rising out of the ground
+      f.sp.position.set(f.x+Math.cos(f.a)*f.r, yy+0.1, f.z+Math.sin(f.a)*f.r);
+      f.sp.material.opacity=Math.min(1,k*3)*Math.max(0,1-k)*1.5;
+      f.sp.scale.setScalar(f.s*(1+k*0.6)); }
+    else if(f.k==="castlight"){ f.lt.intensity=3.4*Math.sin(Math.min(1,k)*Math.PI); }   // swell then fade
     if(f.t>=f.dur){
-      if(f.sp){ scene.remove(f.sp); f.sp.material.dispose(); }
+      if(f.sp){ fxRelease(f.sp); }   // #796: recycle instead of disposing
       if(f.m){ scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); }
-      if(f.parts){ for(const g of f.parts){ scene.remove(g.sp); g.sp.material.dispose(); } }
+      if(f.lt){ scene.remove(f.lt); }
+      if(f.parts){ for(const g of f.parts){ fxRelease(g.sp); } }   // #796: recycle instead of disposing
       SPELLFX.splice(i,1);
     }
   }
@@ -11567,12 +11623,12 @@ function teleportFX(x,z){
   const pp=(typeof AC_FXP!=="undefined"&&AC_FXP&&AC_FXP.portal)||null;   // #769: the real portal swirl
   const col=pp?pp.color:0x9b6bff, p0=pp&&pp.use[0];
   for(let i=0;i<34;i++){
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:(pp&&i%3===2&&pp.use[1])?pp.use[1].color:col,transparent:true,depthWrite:false,fog:false}));
+    const sp=acquireBurstSprite((pp&&i%3===2&&pp.use[1])?pp.use[1].color:col);   // #796: pooled
     const sc=p0?rnd(Math.min(0.9,p0.size1*0.3+0.1),Math.min(1.3,p0.size0*0.3)):rnd(0.4,0.9);sp.scale.set(sc,sc,sc);
     const a=rnd(0,6.28),rr=rnd(0.2,2.4);sp.position.set(x+Math.cos(a)*rr,gy+rnd(0,0.5),z+Math.sin(a)*rr);scene.add(sp);
     bursts.push({sp,vx:Math.cos(a)*1.5,vy:rnd(5,11),vz:Math.sin(a)*1.5,t:p0?rnd(.5,Math.min(1.6,p0.life)):rnd(.5,.9)});
   }
-  const fl=new THREE.PointLight(col,3,16);fl._transient=1;fl.position.set(x,gy+2,z);scene.add(fl);setTimeout(()=>scene.remove(fl),220);   // #343: transient flash — prune from VLIGHTS on removal
+  impactFlash(col,3,16,x,gy+2,z,220);   // #797: pooled   // #343: transient flash — prune from VLIGHTS on removal
   SFX.whoosh();
 }
 // ── PORTAL SPACE (AC): stepping through a portal wraps you in the swirling blue tube that
@@ -11671,7 +11727,7 @@ function warpTo(x,z,opts){
   startPortalTransit(()=>{
     arriveAt(x,z);
     player.invuln=Math.max(player.invuln||0,opts.invuln||2);
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z);
   },{ready:overworldAreaLoaded,minHold:(opts.minHold!=null)?opts.minHold:1.0,maxHold:opts.maxHold||8});
 }
 
@@ -11935,7 +11991,7 @@ function killMonster(m){
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
     dungeonMobs--;
-    if(dungeonMobs<=0&&!arenaActive){   // arena wave transitions are handled by updateArena, not the hoard hook
+    if(dungeonMobs<=0&&!ARENA.active){   // arena wave transitions are handled by updateArena, not the hoard hook
       if(dungeonChest){dungeonChest.light.intensity=1.4;}
       log("The guardians lie slain — the hoard is unsealed!","sys");toast("HOARD UNSEALED");
     }
@@ -11943,7 +11999,7 @@ function killMonster(m){
   questEvent("slay",m.kind);   // both overworld AND dungeon kills count toward slay quests (themed delves are where many creatures live)
   if(m.sagaTag==="agitator") sagaNotify("agitator");
   sagaNotify("kill",m.kind);   // saga cull objectives (cheap no-op when the live chapter has none)
-  if(typeof sagaStageKill==="function") sagaStageKill(m);   // finale kills-stage
+  sagaStageKill(m);   // finale kills-stage
   if(m.academyGoal&&typeof academyKill==="function") academyKill(m);   // B1 Training Academy practice targets
   if(m.isElite) player.championKills++;
   checkAchievements();
@@ -11981,7 +12037,7 @@ function clearDying(){ for(const d of dying) disposeObject3D(d.mesh); dying=[]; 
 // virindidirector — or its family's body); procedural fallback keeps the old look
 function bossMesh(kind,fallbackKind,scale,tint){
   const b=BESTIARY[fallbackKind]||BESTIARY.drudge;
-  const gvar=(USE_GLTF_MONSTERS&&typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+  const gvar=gltfVariantsFor(kind);
   if(gvar&&typeof THREE.SkeletonUtils!=="undefined"){
     const gm=gvar[0], mesh=new THREE.Group();
     const clone=THREE.SkeletonUtils.clone(gm.scene);
@@ -12636,7 +12692,7 @@ function seasonTick(){   // the month turns every 30 day/night cycles
   if(!first){ const nm=acMonthName();
     log(`<b>The month turns to ${nm}, ${acYear()} ${AC_YEAR_SPEC}</b> — ${currentSeason().blurb}.`,"warn");
     toast("MONTH — "+nm.toUpperCase()); if(SFX.quest)SFX.quest(); }
-  if(typeof updateSeasonHUD==="function") updateSeasonHUD();
+  updateSeasonHUD();
 }
 function currentSeason(){
   // #683: Y7 "The Dericost Winter" — from No Thaw (y7m73, which carries winter:true) until the
@@ -13149,8 +13205,8 @@ function acItemMesh(name){
     _acItemMesh[shex]=grp;
     // the equipped weapon may have been waiting on this mesh — rebuild the held models
     if(player&&player.weapon&&(player.weapon.name||"").toLowerCase()===key){
-      if(typeof refreshAvatarWeapon==="function") refreshAvatarWeapon();
-      if(typeof refreshFPWeapon==="function") refreshFPWeapon(); }
+      refreshAvatarWeapon();
+      refreshFPWeapon(); }
   }).catch(()=>{ _acItemMesh[shex]=null; });
   return null;
 }
@@ -15361,7 +15417,7 @@ function aetheriaSurge(on,attacker){
     else if(a.surge==="Affliction"&&attacker){ attacker.weakV=0.75; attacker.weakUntil=now()+8000; }
     floater(player.x,EYE+0.8,player.z,"SURGE of "+a.surge+"!","#9af0ff");
     log(`Your <b>${esc(a.name)}</b> flares — <b>Surge of ${a.surge}</b>!`,"heal"); if(SFX.quest)SFX.quest();
-    if(typeof selfCastFX==="function") selfCastFX(player.x,player.z,0x66c8ff);
+    selfCastFX(player.x,player.z,0x66c8ff);
     break; }
 }
 // containers (AC packs): stitched into your satchel to permanently expand its capacity
@@ -15382,6 +15438,9 @@ function addToInv(it, force){   // → true if added/stacked, false if the satch
   if(!force && player.inv.length>=invCap()) return false;
   player.inv.push(it); return true;
 }
+// #823: true only if adding this item would occupy a NEW inventory slot. A stackable that merges into an
+// existing stack takes none, so it can be picked up even at a "full" (slot-count) satchel.
+function wouldConsumeSlot(it){ if(!it) return true; if(stackable(it)){ const k=stackKey(it); if(player.inv.find(x=>stackable(x)&&stackKey(x)===k)) return false; } return true; }
 function takeFromInv(i){ const it=player.inv[i]; if(!it) return; if(stackable(it)&&(it.count||1)>1) it.count--; else player.inv.splice(i,1); }
 function invCountOf(name){ let n=0; for(const it of player.inv) if(it&&it.name===name) n+=(it.count||1); return n; }
 function removeItemsByName(name,n){ for(let i=player.inv.length-1;i>=0&&n>0;i--){ const it=player.inv[i]; if(!it||it.name!==name) continue;
@@ -15946,7 +16005,7 @@ function refreshAvatarArmor(av,slotsArg){
           u.capeMat.roughness=0.8; u.capeMat.needsUpdate=true; }
         u.capeMat.color.setHex(bc.tint!=null?bc.tint:0x1c2c6c); }
       if(u.armorRig.back) for(const gr of u.armorRig.back.groups) gr.visible=false; } }
-  if(typeof refreshACArmor==="function") refreshACArmor(av,slots);   // retail pieces swap the real body-part meshes
+  refreshACArmor(av,slots);   // retail pieces swap the real body-part meshes
 }
 // ── ClothingTable armor-on-body (assets/acarmor, tools/ac_armor_export.py): equipping a
 //    retail piece replaces the AC body's part meshes with the armor's — a breastplate is
@@ -16235,11 +16294,11 @@ function equipItem(it){
   // #22: a two-handed weapon and an off-hand shield can never be wielded together (AC: both hands on the weapon)
   if(isWeapon && it.wt==="twohand" && player.armorSlots && player.armorSlots.offhand && player.armorSlots.offhand.shield){
     const sh=player.armorSlots.offhand; player.armorSlots.offhand=null; player.inv.push(sh);
-    if(typeof updateShieldModel==="function") updateShieldModel(); if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();
+    updateShieldModel(); refreshAvatarArmor();
     log(`You sling your <b>${sh.name}</b> — a two-handed weapon needs both hands.`,"sys");
   } else if(it.stat==="worn" && it.aslot==="offhand" && it.shield && player.weapon && player.weapon.wt==="twohand"){
     const w=player.weapon; player.weapon=null; weaponMode="sword"; player.inv.push(w);
-    if(typeof styleWeaponModel==="function") styleWeaponModel();
+    styleWeaponModel();
     log(`You lower your <b>${w.name}</b> — you can't raise a shield with a two-handed weapon.`,"sys");
   }
   if(isWeapon){ // the weapon's type sets your stance (melee → sword viewmodel, missile → bow)
@@ -16291,12 +16350,12 @@ function tryCraft(src){
   if(ok){ const res=craftResultItem(r.result);
     if(!addToInv(res)) addDrop(player.x,player.z,{type:"item",item:res});
     log(`You use the <b>${esc(src.name)}</b> on the <b>${esc(tgt.name)}</b> — <b>${esc(r.result)}</b>! <i>(${sk} ${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"loot");
-    if(SFX.quest)SFX.quest(); if(typeof questEvent==="function")questEvent("gather","craft");   // #236: crafting matches no gather objective — was spuriously advancing every fetch quest
+    if(SFX.quest)SFX.quest(); questEvent("gather","craft");   // #236: crafting matches no gather objective — was spuriously advancing every fetch quest
   } else {
     log(`Your ${sk} attempt fails — the <b>${esc(tgt.name)}</b> is ruined. <i>(${skillValue(key)} vs ${r.difficulty}: ${Math.round(chance*100)}%)</i>`,"warn");
     if(SFX.hit)SFX.hit();
   }
-  if(typeof updateHUD==="function")updateHUD(); if(typeof saveGame==="function")saveGame();
+  updateHUD(); saveGame();
   return true;
 }
 function applyItem(it){
@@ -16324,7 +16383,7 @@ function applyItem(it){
     player.aetheria=player.aetheria||{blue:null,yellow:null,red:null};
     const old=player.aetheria[it.color]; player.aetheria[it.color]=it;
     if(old) addToInv(old,true);
-    derive(); updateHUD&&updateHUD(); if(typeof buildPaperDoll==="function") buildPaperDoll();
+    derive(); updateHUD&&updateHUD(); buildPaperDoll();
     log(`You slot the <b>${esc(it.name)}</b> — ${aetheriaDesc(it)}.${old?` (the <b>${esc(old.name)}</b> returns to your pack)`:""}`,"loot");
     if(SFX.level)SFX.level(); toast("AETHERIA SLOTTED"); }
   else if(it.stat==="augment"){ const a=it.aug||{}; player.augment=player.augment||{hp:0,st:0,mn:0,resist:0,magic:0,crit:0};
@@ -16347,7 +16406,7 @@ function applyItem(it){
     if(a.skillpts) player.augment.skillCredits=(player.augment.skillCredits||0)+a.skillpts;   // real skill credits (fed into creditBase) — was mis-wired to the legacy free-attribute pool
     player.augment.resist=(player.augment.resist||0)+(a.resist||0); player.augment.magic=(player.augment.magic||0)+(a.magic||0); player.augment.crit=(player.augment.crit||0)+(a.crit||0);
     if(!it.aetheria) player.augment.count++;   // count this aug against the cap
-    if(typeof recomputeGearSkill==="function") recomputeGearSkill();
+    recomputeGearSkill();
     derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.${it.aetheria?"":` (${player.augment.count}/60 augmentations)`}`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
   else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor, or trade it to an <b>Agent of the Arcanum</b> for a Writ of Refuge.`,"sys"); }
   else if(it.stat==="furniture"){ log(`<b>${it.name}</b> is housing furniture — stand at an empty hook at your dwelling and press E to place it.`,"sys"); return "keep"; }
@@ -16385,7 +16444,7 @@ function applyItem(it){
   else if(it.stat==="hot"){ player.hots=player.hots||{}; hotSet(player.hots,it.pool,it.rate,it.dur);
     const nm={hp:"health",st:"stamina",mn:"mana"}[it.pool]||it.pool;
     log(`You drink the <b>${it.name}</b> — ${nm} regenerates ${it.rate}/s for ${it.dur}s.`,"loot"); if(SFX.quest)SFX.quest(); }
-  else if(it.stat==="skillpot"){ player.skillBuffs=player.skillBuffs||{}; buffSet(player.skillBuffs,it.skillKey,it.v,it.dur); if(typeof derive==="function")derive();
+  else if(it.stat==="skillpot"){ player.skillBuffs=player.skillBuffs||{}; buffSet(player.skillBuffs,it.skillKey,it.v,it.dur); derive();
     const nm=(typeof SKILL_BY_KEY!=="undefined"&&SKILL_BY_KEY[it.skillKey])?SKILL_BY_KEY[it.skillKey].n:it.skillKey;
     log(`You drink the <b>${it.name}</b> — +${it.v} ${nm} for ${Math.round(it.dur/60)} min.`,"loot"); if(SFX.quest)SFX.quest(); }
   else if(it.stat==="attrpot"){ applyAttrBuff(it.attr,it.v,it.dur);
@@ -16481,7 +16540,7 @@ function attemptCombine(ia,ib){
     for(const idx of order) craftTake(idx);
     const out=craftResultItem(rec.result); addToInv(out,true);
     log(`Your ${skN} succeeds — <b>${esc(rec.tool)}</b> + <b>${esc(rec.target)}</b> → <b>${esc(rec.result)}</b> <span style="color:var(--dim)">(${Math.round(ch*100)}%)</span>.`,"loot");
-    if(SFX.gold)SFX.gold(); if(typeof questEvent==="function")questEvent("gather","craft");   // #236: crafting matches no gather objective
+    if(SFX.gold)SFX.gold(); questEvent("gather","craft");   // #236: crafting matches no gather objective
   } else {
     const keepTool=CRAFT_DURABLE.test(rec.tool);                   // failure ruins the target; a non-durable tool is spent too
     const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
@@ -16489,7 +16548,7 @@ function attemptCombine(ia,ib){
     log(`Your ${skN} attempt fails — the <b>${esc(rec.target)}</b> is ruined <span style="color:var(--dim)">(${Math.round(ch*100)}% chance)</span>.`,"warn");
     if(SFX.hit)SFX.hit();
   }
-  updateHUD&&updateHUD(); saveGame(); if(typeof buildTinker==="function")buildTinker();
+  updateHUD&&updateHUD(); saveGame(); buildTinker();
 }
 function openCombinePicker(i){
   const it=player.inv[i]; if(!it) return;
@@ -16662,7 +16721,7 @@ function craftRecipe(id){
     const it=r.out();
     if(!addToInv(it)){ log(`Your satchel is too full to hold the <b>${r.name}</b>.`,"warn"); player.materials+=r.cost; return false; }
     log(`<b>${SKILL_BY_KEY[r.skill].n}:</b> you craft <b>${it.name}</b>${it.count?` ×${it.count}`:""} — ${r.blurb}.`,"loot"); if(SFX.quest)SFX.quest(); toast("CRAFTED — "+r.name.toUpperCase());
-    if(typeof gainXP==="function") gainXP(Math.round(r.cost*4));   // a little XP for the craft
+    gainXP(Math.round(r.cost*4));   // a little XP for the craft
   } else { const back=Math.floor(r.cost/2); player.materials+=back; log(`Your <b>${r.name}</b> spoils in the making — ${back} materials recovered. (Raise ${SKILL_BY_KEY[r.skill].n}.)`,"warn"); if(SFX.hit)SFX.hit(); }
   updateHUD&&updateHUD(); saveGame&&saveGame(); return true;
 }
@@ -16927,7 +16986,7 @@ function die(){
   // respawned world, and leave the game paused behind a modal the player never asked to keep open. Reuse the
   // same close-all-panels path other forced transitions use (closeOtherModals with no exception closes every
   // BIG_MODALS panel), then clear paused ourselves since closeOtherModals only toggles display, not paused.
-  if(typeof closeOtherModals==="function") closeOtherModals();
+  closeOtherModals();
   paused=false;
   // Creature/Life enchantments (on you) fall on death; Item buffs (on your gear) persist.
   player.alive=false;player.hp=0;player.casting=null;despawnPets();clearAttrBuffs();player.lifeBuffs={};player.banes={};player.hots={};player.debuffs={};player.lightBuff=null;
@@ -16955,7 +17014,7 @@ function die(){
       } else {
         _corpseDrop={items:dd.items,gold:dd.gold,ttl};   // #227: dropped in the respawn timeout, after the deferred teardown's clearDrops. #289: also the fallback when the online socket is down — otherwise the netSend is silently dropped and the items (already spliced out of inv) vanish with no corpse anywhere.
       }
-      if(typeof recomputeGearSkill==="function") recomputeGearSkill();
+      recomputeGearSkill();
       // AC always named your losses — list them so you know exactly what to walk back for
       const _nm=dd.items.slice(0,6).map(it=>it.name), _more=dd.items.length-_nm.length;
       const _list=_nm.length?` — <i>${_nm.join(", ")}${_more>0?`, +${_more} more`:""}</i>`:"";
@@ -16986,6 +17045,10 @@ function breakResProt(){ if(player.resProt){ player.resProt=false; player.invuln
 // (so you can never materialize inside a hill), and pins the fall apex to the ground height so
 // the gentle float-down out of a portal never deals fall damage.
 function arriveAt(x,z){
+  // #790: a non-finite destination (NaN/undefined from a broken portal dest, map-travel edge case, or a
+  // corrupt save) must never reach player.x/z — it soft-bricks the session and persists NaN coords on the
+  // next save. Refuse the teleport and leave the player where they are.
+  if(!Number.isFinite(x)||!Number.isFinite(z)){ if(typeof console!=="undefined"&&console.warn)console.warn("arriveAt: ignoring non-finite destination",x,z); return; }
   if(typeof GFX!=="undefined") GFX._grace=2.0;   // don't let arrival stutter trip the quality governor
   player.aboardShip=null;   // #17: any teleport (death-respawn, recall, portal, map-travel) disembarks — else updateShipPilot re-pins you to the ship at sea
   if(typeof dismountHorse==="function"&&player.mountRec) dismountHorse(true);   // #725: the horse stays behind, parked where you teleported FROM
@@ -17104,7 +17167,7 @@ function castSpellById(id){
   if(s.req>0 && mkc && skillValue(mkc)<s.req){ const _h=s.req>=240?' <span style="color:#9ab0ff">Raise your skill with an Aptitude self-buff or a skill-cantrip on gear — the highest incantations are meant to be cast buffed.</span>':''; log(`<b>${s.name}</b> requires ${SKILL_BY_KEY[mkc].n} skill ${s.req} (you have ${skillValue(mkc)}).${_h}`,"warn"); SFX.hit&&SFX.hit(); return; }
   if(s.words) log(`You intone the words of power: <i style="color:#c9a6ff">${esc(s.words)}</i>`,"sys");   // authentic AC cast words
   const ct=castTimeFor(s);
-  if(ct<=0){ executeSpell(id); return; }            // instant utility (Stam→Mana) skips the cast bar
+  if(ct<=0){ const sig=spellFxColor(s); fxCastSignature(player.x,player.z,sig,0.45); netSpellFx("cast",player.x,player.z,0,0,sig,0,0); executeSpell(id); return; }   // instant utility still shows (+ peers see) a quick flourish
   player.casting={id,t:ct,total:ct};
   // mark self-cast up front so the wind-up already eases into the crouch (executeSpell refines it)
   castSelf=(s.school==="life"&&s.heal)||s.special==="revitalize"||s.special==="regen"||s.special==="dispel"
@@ -17114,13 +17177,9 @@ function castSpellById(id){
   castDur=castSelf?0.78:0.55; castShow=castSelf?0.42:0.4; spellCast(s.school);   // per-school casting wind-up
   // #668: the wind-up is now VISIBLE — motes stream inward to the forming spell and a ground ring
   // blooms underfoot, coloured by what's coming (war bolts take their element's colour).
-  { const wc=(s.school==="war"&&typeof s.make==="function")?((s.make()||{}).color||0xff7a2a)
-      :s.school==="void"?0x9b30ff:s.school==="life"?0x7fe6a0:s.school==="item"?0xffd86b
-      :s.school==="creature"?0xbdeed8:0x9af0ff;
-    const gp=()=>{ const fy=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y; return [player.x,fy+EYE-0.25,player.z]; };
-    fxGather(gp,wc,Math.max(0.35,ct*0.85),16);
-    const fy0=(inDungeon||inNetwork)?groundY(player.x,player.z):player.y;
-    fxRing(player.x,fy0+0.12,player.z,wc,{r1:1.7,dur:Math.max(0.4,ct*0.9),flat:1}); }
+  { const sig=spellFxColor(s);   // exact element/damage-type colour — twin rune-rings + spiral column + gather + glow
+    fxCastSignature(player.x,player.z,sig,Math.max(0.42,ct*0.95));
+    netSpellFx("cast",player.x,player.z,0,0,sig,0,0); }   // #spellfx: peers see you weave EVERY spell (not just bolts)
 }
 // retail component destruction: each formula component you CARRY burns with probability
 // componentLoss × its destruction modifier (tapers 1.0, scarabs/talismans 0.1) on a good cast.
@@ -17244,7 +17303,7 @@ function executeSpell(id){
         if(typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"){ pet.t+=10; }   // mending your familiar sustains it
         else { pet.dmg=Math.round((pet.dmg||8)*1.2); pet.t+=4; }                                       // empowering it sharpens its sting
         castFlash(0x7fe6a0); SFX.quest&&SFX.quest();
-        if(typeof spellLandFX==="function") spellLandFX(s.school,()=>[pet.x,0,pet.z],1.4,0.5);
+        spellLandFX(s.school,()=>[pet.x,0,pet.z],1.4,0.5);
         floater(player.x,EYE+0.6,player.z,"→ your familiar","#bfe0ff");
         log(`You cast <b>${s.name}</b> on your familiar — it ${typeof s.heal==="function"||s.special==="regen"||s.special==="revitalize"?"steadies and endures":"hums with borrowed power"}.`,"heal"); return; }
       refundCast(); spellCd[id]=0;
@@ -17374,8 +17433,7 @@ function executeSpell(id){
     const cx=clamp(player.x+dir.x*12,-HALF+2,HALF-2),cz=clamp(player.z+dir.z*12,-HALF+2,HALF-2);
     const col=s.color||0xff7a2a, el=s.element||"fire";
     burst(cx,0.6,cz,col,42);
-    const fl=new THREE.PointLight(col,3.5,22);fl._transient=1;fl.position.set(cx,2.5,cz);scene.add(fl);
-    setTimeout(()=>scene.remove(fl),350);
+    impactFlash(col,3.5,22,cx,2.5,cz,350);   // #797: pooled
     const dmg=s.dmg()*skillEff("war",0.02)*castEcon(id);
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
     for(const m of targets){const em=elemMult(m.kind,el);if(em!==1)floater(m.x,(m.headY||1.6)+2.3,m.z,em>1?"weak!":"resist",fxHex(fxElem(el,em>1?0x7fe6a0:0x9fb0c0)));if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el,spell:true});}
@@ -17555,7 +17613,7 @@ function fireArrow(){
     dmg,elemDmg,r:0.22,color:col,slow:pslow,life:2.5,arrow:true,element,burn,stun,drain,phys:prof.dt||"pierce"});
 }
 function meleeAttack(power){
-  if(typeof breakResProt==="function") breakResProt();   // offensive action ends res protection
+  breakResProt();   // offensive action ends res protection
   if(!player.alive||player.meleeCd>0||paused) return;
   power=(typeof power==="number")?clamp(power,0.6,1.6):1;   // Cb1 power bar: charge-scaled damage (0.6 tap → 1.6 full)
   const acc=1-Math.abs(power-1.05)*0.5;   // accuracy peaks in the mid-upper charge band (AC's sweet spot), falls off at the extremes
@@ -17629,7 +17687,7 @@ function updateDrowning(dt){
         const d=Math.max(6,Math.round(player.mhp*0.06)); player.hp-=d;   // drowning ignores armour
         floater(player.x,player.y+EYE,player.z,"-"+d+" drown","#7fd0ff"); if(SFX.hurt)SFX.hurt();
         if(now()-lastBreath>1400){ lastBreath=now(); log("You are <b>drowning</b> — get to the surface!","warn"); }
-        if(player.hp<=0){ player.hp=0; if(typeof die==="function") die(); } } }
+        if(player.hp<=0){ player.hp=0; die(); } } }
   } else { player.breath=Math.min(1,player.breath+dt/2.5); player.drownAcc=0; }   // refill on the surface
   // HUD: breath bar (only while it matters) + underwater tint
   const bb=document.getElementById('breathBar'), bf=document.getElementById('breathFill'), dt2=document.getElementById('drownTint');
@@ -17727,7 +17785,7 @@ cEl.addEventListener('contextmenu',e=>e.preventDefault()); // right-mouse = shie
 const ATK_HEIGHTS=["low","mid","high"], ATK_LABEL={low:"Low",mid:"Middle",high:"High"};
 window.addEventListener('wheel',e=>{ if(!locked) return; e.preventDefault();
   let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); i=clamp(i+(e.deltaY<0?1:-1),0,2); player.atkHeight=ATK_HEIGHTS[i];
-  if(typeof buildCombatPanel==="function") buildCombatPanel();   // the panel's red pills follow the wheel
+  buildCombatPanel();   // the panel's red pills follow the wheel
   const el=document.getElementById('atkHeight'); if(el){ el.textContent="Attack: "+ATK_LABEL[player.atkHeight]; el.style.display="block"; el._t=now(); }
 },{passive:false});
 document.addEventListener('mousemove',e=>{
@@ -17820,7 +17878,7 @@ function buildCombatPanel(){
   sl.oninput=()=>{ player.powerBar=sl.value/100; };
   const wp=(typeof weaponProfile==="function")?weaponProfile():null;
   document.getElementById('pwrLabel').textContent=(wp&&wp.mode==="missile")?"Accuracy":"Power";
-  if(typeof skillTier==="function"&&skillTier("recklessness")>0)
+  if(skillTier("recklessness")>0)
     sl.style.background="linear-gradient(90deg,transparent 10%,rgba(224,48,48,.45) 10%,rgba(224,48,48,.45) 90%,transparent 90%)";   // the Recklessness zone
   pills.innerHTML="";
   const HTIP={high:"Strikes the HEAD — harder to land, hits harder. Suits towering foes (lugians, golems).",
@@ -17845,7 +17903,7 @@ const ACTION_RUN={}; for(const a of ACTIONS) if(a.run) ACTION_RUN[a.id]=a.run;
 function rebuildComboMap(){ ACTION_BY_COMBO={}; for(const a of ACTIONS){ if(a.held)continue; for(const c of (KEYBINDS[a.id]||[])) if(c) ACTION_BY_COMBO[c]=a.id; } }
 function loadKeybinds(){ try{ const s=JSON.parse(localStorage.getItem("dereth_keys")); if(s) for(const a of ACTIONS) if(Array.isArray(s[a.id])) KEYBINDS[a.id]=s[a.id]; }catch(e){} rebuildComboMap(); }
 function saveKeybinds(){ try{ localStorage.setItem("dereth_keys",JSON.stringify(KEYBINDS)); }catch(e){} }
-function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); if(typeof buildKeymap==="function")buildKeymap(); }
+function resetKeybinds(){ KEYBINDS=defaultBinds(); saveKeybinds(); rebuildComboMap(); buildKeymap(); }
 // #483: per-character keybinds — a loaded character's own map (saved in its character save) wins;
 // with none saved, fall back to the global default (dereth_keys) so a fresh/legacy character isn't stranded.
 function applyCharKeymap(s){
@@ -18061,12 +18119,13 @@ function interact(){
   const near=drops.filter(d=>d.type==="item"&&Math.hypot(d.x-player.x,d.z-player.z)<4)
     .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
   if(near.length){
-    if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
-    let left=0;
+    // #823: no blanket "satchel full" refusal — a stackable that merges needs no slot. Decide per item.
+    let left=0, projected=player.inv.length;   // #821: track projected slot use so a shared pickup fired for an item we can't hold doesn't destroy it (server removes the ground copy before the client learns the satchel is full)
     for(const d of near){
-      if(d.shared){ netSend({t:"pickup",id:d.id}); continue; }   // server validates each, grants & broadcasts drop_gone (removes the mesh)
-      if(player.inv.length>=invCap()){ left++; continue; }        // satchel filled mid-pile — leave the rest on the ground
-      lootItem(d.item); disposeObject3D(d.mesh); const idx=drops.indexOf(d); if(idx>=0) drops.splice(idx,1);   // #22: dispose the item model
+      const consumes=wouldConsumeSlot(d.item);   // #823: shared and local item drops both carry d.item; a mergeable stackable takes no slot
+      if(consumes && projected>=invCap()){ left++; continue; }   // #821: no projected room — leave the rest on the ground rather than lose them
+      if(d.shared){ netSend({t:"pickup",id:d.id}); if(consumes) projected++; continue; }   // server validates each, grants & broadcasts drop_gone (removes the mesh)
+      lootItem(d.item); disposeObject3D(d.mesh); const idx=drops.indexOf(d); if(idx>=0) drops.splice(idx,1); if(consumes) projected++;   // #22: dispose the item model
     }
     if(left) log(`Your satchel is full — <b>${left}</b> item(s) left on the ground.`,"warn");
     return;
@@ -18193,7 +18252,7 @@ function recoverCorpse(d){
   }
   disposeObject3D(d.mesh); const i=drops.indexOf(d); if(i>=0)drops.splice(i,1);   // #232: corpses carry a label sprite — dispose prunes it from LABELS too
   log(`You recover your corpse — <b>${taken}</b> item(s)${d.amt?` and <b>${d.amt.toLocaleString()}</b> pyreals`:""} returned${spilled?`; <b>${spilled}</b> spilled beside it (satchel full)`:""}.`,"loot");
-  if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
+  if(SFX.quest)SFX.quest(); recomputeGearSkill(); updateHUD(); saveGame();
 }
 function recolorLifestone(ls){
   const col=ls.bound?0x9fe0ff:0x6ab0e0;   // bound = brighter/whiter (matches buildLifestone)
@@ -18318,7 +18377,7 @@ function buildSheet(){
     for(const a of LUM_AURAS){ const lv=auraLevel(a.k); lh+=`<div class="row"><span class="desc">${a.name} <b>${lv}</b>/${a.max} — ${a.desc}</span> <button class="pmbtn" data-aura="${a.k}" ${(lv>=a.max||(player.luminance||0)<a.cost)?'disabled':''}>${a.cost.toLocaleString()} lum</button></div>`; }
     if(player.level>=275&&(player.enlightenment||0)<5) lh+=`<div class="row"><button class="tbtn" id="enlightenBtn">Attain Enlightenment — reset for permanent power</button></div>`;   // #332: enlighten() requires level 275 — don't offer the button 175 levels early (it just warned)
     lh+=`</div>`; al.innerHTML+=lh;
-    al.querySelectorAll('[data-aura]').forEach(b=>b.onclick=()=>{ if(buyAura(b.dataset.aura)){saveGame();if(typeof updateHUD==="function")updateHUD();buildSheet();} });
+    al.querySelectorAll('[data-aura]').forEach(b=>b.onclick=()=>{ if(buyAura(b.dataset.aura)){saveGame();updateHUD();buildSheet();} });
     const eb=document.getElementById('enlightenBtn'); if(eb) eb.onclick=()=>enlighten();
   }
   attrRows.querySelectorAll('[data-a]').forEach(btn=>btn.onclick=()=>{
@@ -18436,7 +18495,7 @@ function antiStuckEject(){
     if(!clear) continue;
     const sy=supportAt(x,z,player.y+3); if(Math.abs(sy-player.y)>7) continue;   // no flinging onto a roof or into a pit
     player.x=x; player.z=z; player.y=sy; player.vy=0; player.grounded=true;
-    if(typeof floater==="function") floater(x,EYE,z,"freed","#bfe0ff");
+    floater(x,EYE,z,"freed","#bfe0ff");
     return true;
   }
   return false;
@@ -18497,7 +18556,54 @@ function update(dt){
   updateBanners(dt);       // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
   updateBloodRite(dt);     // #677 Regalia V: the Blood-Undercroft (fight at half vitals)
   updateStormPeak(dt);     // #678 Regalia VI: the Storm-Peak (wind-seals, hunting lightning, 4-phase Warden)
-  // spell cast wind-up: fire the effect when the bar fills
+  // ── #782: from here update() is a SCHEDULER — each subsystem is its own updateX(dt), defined
+  //    after this function, so it can be read, profiled, and edited in isolation. Order preserved.
+  updateCastWindup(dt);
+  // ships bob on the swell every frame; when aboard, WASD + mouse/arrows pilot the ship over water
+  if(!inDungeon&&!inNetwork){ updateShips(dt);   // #359: don't reposition/bob (or pilot) overworld ships while in an instance — wasted work, and they're hidden anyway
+    if(player.aboardShip){ updateShipPilot(dt); } }
+  if(!player.aboardShip) updateMovementPhysics(dt);   // #359: movement runs whenever NOT piloting a ship — overworld and instances alike
+  updateTimersRegen(dt);
+  updatePets(dt);
+  updatePlayerProjectiles(dt);
+  updateWallZones(dt);
+  updateEnemyProjectiles(dt);
+  updateMonstersAI(dt);
+  updateDropsAndFX(dt);
+  updateStatusTimers(dt);
+  updateAmbientChatter(dt);
+  updateEvents(dt);
+  sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
+  updateDayNight(dt);
+  updateCalendar(dt);
+  updatePlugins(dt);
+  updateTargetUI(dt);
+  updateWeather(dt);
+  updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
+  updatePropFires(dt);   // #704: torch/brazier flames lick & their lights flicker (towns + dungeons; self-expiring registry)
+  updateHorses(dt);      // #725: parked horses graze; the mounted one gallops under you
+  updateHorseCombat(dt); // #727: horse mending, parked-horse aggro, thrown-rider stagger
+  updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
+  updateCaravan(dt);     // the wandering ox-drawn caravan plies the road
+  enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
+  updateKcGates(dt);       // the portcullis & keep doors glide open / shut
+  updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
+  kcAmbience(dt);          // Val Halla's eternal festival: fireworks, a murmuring court & lute-song
+  cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
+  streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
+  hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
+  tbStream(dt);          // stream the real AC town buildings in/out around the player
+  wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
+  algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
+  crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
+  regionTick(dt);        // announce region crossings + keep the HUD Region readout current
+  landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
+  gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
+  syncCamera(dt);
+  _hudAcc+=dt; if(_hudAcc>=0.1){ _hudAcc=0; updateHUD(); }   // #P1: the HUD did ~63 DOM ops EVERY frame — throttle the render-loop refresh to ~10Hz. Every event-driven updateHUD() call (damage/heal/pickup/level/cast) still fires instantly, so nothing feels laggy.
+}
+// #782: spell cast wind-up — fire the effect when the bar fills; ground-target reticle while winding
+function updateCastWindup(dt){
   if(player.casting){ player.casting.t-=dt;
     if(player.casting.t<=0){ const cid=player.casting.id; player.casting=null; executeSpell(cid); } }
   // ground-target reticle: while winding up an AoE/Wall, show where it will land
@@ -18506,14 +18612,11 @@ function update(dt){
       const reach=cs.special==="wall"?7:12, rx=clamp(player.x+d.x*reach,-HALF+2,HALF-2), rz=clamp(player.z+d.z*reach,-HALF+2,HALF-2);
       showCastReticle(rx,rz, cs.special==="wall"?(cs.r||3.5):8, cs.color||0xff7a2a); }
     else hideCastReticle(); }
-  // ships bob on the swell every frame; when aboard, WASD + mouse/arrows pilot the ship over water
-  if(!inDungeon&&!inNetwork){ updateShips(dt);   // #359: don't reposition/bob (or pilot) overworld ships while in an instance — wasted work, and they're hidden anyway
-    if(player.aboardShip){ updateShipPilot(dt); } }
-  if(!player.aboardShip){   // #359 REGRESSION FIX: this was the `else` of the !inDungeon&&!inNetwork guard above,
-                            // which froze ALL overworld on-foot movement (movement then ran only inside instances).
-                            // Movement must run whenever you are NOT piloting a ship — overworld and instances alike.
-  // movement — AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN),
-  // the W/X + Z/C cluster is the secondary ("the keys surrounding S"), Q toggles auto-run.
+}
+// #782: on-foot movement + physics (skipped while piloting a ship — see the update() dispatcher).
+// AC's default scheme: arrows are primary (Up/Down move, Left/Right TURN), the W/X + Z/C cluster is
+// the secondary ("the keys surrounding S"), Q toggles auto-run.
+function updateMovementPhysics(dt){
   let f=0,s=0;
   // ARROW KEYS (AC default): Left/Right TURN the character, Up/Down move forward/back.
   // Hold SHIFT with the arrows to free-look — they orbit the CAMERA instead (eases back on release).
@@ -18625,8 +18728,9 @@ function update(dt){
     }
     antiStuckGuardian();   // never leave the player trapped in/on/under a building or structure
   }
-  }   // ← end of on-foot movement (skipped while aboard a ship)
-  // timers/regen
+}
+// #782: per-frame combat/action timers + vitals regen
+function updateTimersRegen(dt){
   updateJumpCharge(dt);   // AC hold-to-charge jump: releases when Space is let go
   player.meleeCd=Math.max(0,player.meleeCd-dt);
   player.dashT=Math.max(0,player.dashT-dt);player.dashCd=Math.max(0,player.dashCd-dt);
@@ -18656,8 +18760,9 @@ function update(dt){
     player.mn=Math.min(player.mmn,player.mn+0.8+player.attr.Self*0.04);
     if(player.hp<player.mhp) player.hp=Math.min(player.mhp,player.hp+0.6+player.attr.Endurance*0.03);
   }
-  updatePets(dt);
-  // player projectiles
+}
+// #782: player projectiles — swept collision, spell trails, splash detonation
+function updatePlayerProjectiles(dt){
   // #11: swept segment-vs-circle test so a fast projectile can't tunnel past a monster between frames
   const _segHit=(ax,az,bx,bz,cx,cz,rad)=>{ const dx=bx-ax,dz=bz-az,L2=dx*dx+dz*dz; let t=L2>0?((cx-ax)*dx+(cz-az)*dz)/L2:0; t=t<0?0:t>1?1:t; const qx=ax+dx*t,qz=az+dz*t; return (qx-cx)*(qx-cx)+(qz-cz)*(qz-cz)<rad*rad; };
   for(let i=pProj.length-1;i>=0;i--){
@@ -18669,7 +18774,7 @@ function update(dt){
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z);
     if(p.spin) p.mesh.rotation.y+=dt*22, p.mesh.rotation.x+=dt*14;   // whirling blade
-    if(p.arrow){ if(Math.random()<0.5){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:CIRC,color:p.color,transparent:true,depthWrite:false,fog:false,blending:THREE.NormalBlending}));
+    if(p.arrow){ if(Math.random()<0.5){const sp=acquireBurstSprite(p.color);   // #796: pooled
       const sc=p.r*1.7;sp.scale.set(sc,sc,sc);sp.position.set(p.x,p.y,p.z);scene.add(sp);bursts.push({sp,vx:0,vy:0,vz:0,t:0.2});} }   // arrows: faint physical dust, as before
     else { // #668: SPELL TRAILS — a continuous element-styled wake (fire embers rise, frost falls & glitters,
       // lightning jitters, acid drips, nether wisps drift up), density scaled by the GFX governor tier
@@ -18715,7 +18820,7 @@ function update(dt){
           if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
         }
         if(p.arrow) burst(p.x,p.y,p.z,p.color,8); else spellImpactFX(p.x,p.y,p.z,p.color,p.element,false);   // #668: spells detonate — flash + shockwave + element debris
-        const ifl=new THREE.PointLight(p.color,2.2,7);ifl._transient=1;ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
+        impactFlash(p.color,2.2,7,p.x,p.y,p.z,120);   // #797: pooled
         gone=true;break;
       }
     }
@@ -18723,7 +18828,7 @@ function update(dt){
     if(gone && p.splash && !p._done){ p._done=true;   // Arc detonation: splash every foe in radius
       const ix=p.x,iz=p.z,iy=Math.max(0.5,Math.min(p.y,2));
       spellImpactFX(ix,iy,iz,p.color,p.element,true);   // #668: the BIG detonation — double shockwave, debris storm, smoke & scorch
-      const fl=new THREE.PointLight(p.color,3,16);fl._transient=1;fl.position.set(ix,iy,iz);scene.add(fl);setTimeout(()=>scene.remove(fl),200);
+      impactFlash(p.color,3,16,ix,iy,iz,200);   // #797: pooled
       for(const m of monsters){ if(!!m.isDungeon!==inDungeon) continue;
         if(Math.hypot(ix-m.x,iz-m.z)<p.splash){
           const em=elemMult(m.kind,p.element);
@@ -18737,7 +18842,9 @@ function update(dt){
     }
     if(gone){disposeObject3D(p.mesh);pProj.splice(i,1);}   // #22: every arrow/bolt carried its own SphereGeometry
   }
-  // persistent War "Wall" zones — tick damage to foes standing inside, then expire
+}
+// #782: persistent War "Wall" zones — tick damage to foes standing inside, then expire
+function updateWallZones(dt){
   for(let i=walls.length-1;i>=0;i--){
     const w=walls[i]; w.t-=dt; w.acc+=dt;
     if(w.disc) w.disc.material.opacity=0.32+0.18*Math.abs(Math.sin(now()/180));
@@ -18754,7 +18861,9 @@ function update(dt){
     }
     if(w.t<=0){ disposeObject3D(w.mesh); walls.splice(i,1); }   // #22
   }
-  // enemy projectiles
+}
+// #782: enemy projectiles
+function updateEnemyProjectiles(dt){
   for(let i=eProj.length-1;i>=0;i--){
     const p=eProj[i]; if(!p) continue;   // #227: guard against a re-entrant clear (death teardown) emptying the array mid-iteration
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;
@@ -18768,7 +18877,9 @@ function update(dt){
     }
     if(gone){disposeObject3D(p.mesh);eProj.splice(i,1);}   // #22
   }
-  // monsters AI
+}
+// #782: monster AI — aggro/chase/wander, specials, ranged casts, burn ticks, mesh sync
+function updateMonstersAI(dt){
   const burned=[];
   for(const m of monsters){
     if(inNetwork) break; // no creatures in the Town Network hub
@@ -18876,7 +18987,9 @@ function update(dt){
       const fill=m.mesh.userData.fill,r=m.hp/m.mhp;fill.scale.x=r;fill.position.x=-(1-r)*0.7;}
   }
   for(const m of burned) if(monsters.indexOf(m)>=0) killMonster(m);
-  // drops
+}
+// #782: ground drops, floaters, death animations, bursts, lifestone/portal shimmer, node respawn
+function updateDropsAndFX(dt){
   for(let i=drops.length-1;i>=0;i--){
     const dp=drops[i];dp.t+=dt;dp.mesh.rotation.y+=dt*2;
     dp.mesh.position.y=(dp.baseY||0)+0.55+Math.sin(now()/250+dp.x)*0.12;
@@ -18912,7 +19025,7 @@ function update(dt){
     if(d.t<=0){disposeObject3D(d.mesh);dying.splice(i,1);}}   // #22: dead mobs leaked their geometry + skin texture (same teardown as streamMonsters despawn)
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];b.sp.position.x+=b.vx*dt;b.sp.position.y+=b.vy*dt;
     b.sp.position.z+=b.vz*dt;b.vy-=dt*6;b.t-=dt;b.sp.material.opacity=clamp(b.t*2.5,0,1);
-    if(b.t<=0){scene.remove(b.sp);b.sp.material.dispose();bursts.splice(i,1);}}   // #22: material only — the CIRC map is shared
+    if(b.t<=0){releaseBurstSprite(b.sp);bursts.splice(i,1);}}   // #796: recycle the sprite instead of disposing its material
   // lifestone shimmer
   for(const ls of lifestones){   // AC lifestones stand STILL — only the inner light breathes
     const u=ls.mesh&&ls.mesh.userData; if(!u) continue;   // real AC crystal model may still be streaming in
@@ -18933,7 +19046,9 @@ function update(dt){
     if(u&&u.pfx) updatePortalFx(o,dt); }
   // gathering nodes respawn
   for(const n of nodes){ if(n.depleted&&now()>n.readyAt){n.depleted=false;if(!inDungeon)n.mesh.visible=true;} }
-
+}
+// #782: buff/debuff/HoT/gear-mana & UI status timers
+function updateStatusTimers(dt){
   if(toastT>0)toastT-=dt;
   if(_chatBarT>0){ _chatBarT-=dt; if(_chatBarT<=0){ const b=document.getElementById('chatBarText'); if(b) b.style.opacity=0.45; } }
   player.drinkCd=Math.max(0,player.drinkCd-dt);
@@ -18965,6 +19080,9 @@ function update(dt){
   if(player.debuffs){ for(const k of Object.keys(player.debuffs)){ const b=player.debuffs[k]; b.t-=dt; if(b.t<=0) delete player.debuffs[k]; } }
   if(player.dispelImmune>0) player.dispelImmune-=dt;
   if(streakT>0){streakT-=dt;if(streakT<=0)streak=0;}
+}
+// #782: ambient audio + NPC chatter + road-pace notes
+function updateAmbientChatter(dt){
   ambientCallT-=dt;if(ambientCallT<=0){ambientCallT=rnd(13,24);if(actx&&!muted&&Math.random()<0.7)SFX.growl();}
   // ── ambient NPC chatter: nearby townsfolk speak their REAL retail lines unprompted
   //    (acdialogue.json `chatter` = the HeartBeat emote texts; criers/barkeeps hawk their news) ──
@@ -18980,35 +19098,6 @@ function update(dt){
           log(`<b>${esc(c.name)}</b> says, "${esc(line)}"`,"sys");
           floater(c.rec.x,groundY(c.rec.x,c.rec.z)+2.6,c.rec.z,"💬","#e8dcc0",1.2); } } } }
   {const orn=onRoad(player.x,player.z);if(orn&&!wasOnRoad&&player.alive){log("You take to the road — your pace quickens (+50%).","sys");}wasOnRoad=orn;}
-  updateEvents(dt);
-  sendInput(dt); updateRemotes(dt); updateSharedMobs(dt);   // multiplayer: push our state, lerp others + shared monsters
-  updateDayNight(dt);
-  updateCalendar(dt);
-  updatePlugins(dt);
-  updateTargetUI(dt);
-  updateWeather(dt);
-  updateInstanceLight(); // dungeon darkness + carried torch/glowing weapon (overrides daylight inside)
-  updatePropFires(dt);   // #704: torch/brazier flames lick & their lights flicker (towns + dungeons; self-expiring registry)
-  updateHorses(dt);      // #725: parked horses graze; the mounted one gallops under you
-  updateHorseCombat(dt); // #727: horse mending, parked-horse aggro, thrown-rider stagger
-  updatePeople(dt);      // townsfolk breathe, glance about, and stroll the plazas
-  updateCaravan(dt);     // the wandering ox-drawn caravan plies the road
-  enforceCastleAccess(dt); // Castle Val Halla turns strangers back at the moat
-  updateKcGates(dt);       // the portcullis & keep doors glide open / shut
-  updateKcGuards(dt);      // the castle guard scans for hostiles, heals its lord, and looses bolts
-  kcAmbience(dt);          // Val Halla's eternal festival: fireworks, a murmuring court & lute-song
-  cullWorld(dt);         // stream town/scenery objects in/out of the scene graph by distance
-  streamMonsters(dt);    // build/dispose overworld creatures around the player (true region streaming)
-  hsStreamHouses(dt);    // build/dispose the retail housing map's dwellings around the player
-  tbStream(dt);          // stream the real AC town buildings in/out around the player
-  wsStream(dt);          // stream the real AC open-world structures (non-town) around the player
-  algTick(dt);           // sworn vassals adventure & pass XP up; their courts grow (allegiance)
-  crierTick(dt);         // town criers periodically cry a live headline while you linger nearby
-  regionTick(dt);        // announce region crossings + keep the HUD Region readout current
-  landmarkTick(dt);      // announce named landmarks (peaks seat themselves on the real summits)
-  gfxTick(dt);           // wind, aurora, fireflies, mist, god-rays + the 30-FPS quality governor
-  syncCamera(dt);
-  _hudAcc+=dt; if(_hudAcc>=0.1){ _hudAcc=0; updateHUD(); }   // #P1: the HUD did ~63 DOM ops EVERY frame — throttle the render-loop refresh to ~10Hz. Every event-driven updateHUD() call (damage/heal/pickup/level/cast) still fires instantly, so nothing feels laggy.
 }
 let _hudAcc=0;   // #P1 render-loop HUD-refresh accumulator
 const _projUp=new THREE.Vector3(0,1,0), _projDir=new THREE.Vector3();   // #P4 reused scratch for projectile orientation (per-frame, per-projectile)
@@ -19285,8 +19374,6 @@ function animateOnePerson(p,dt){
   }
   // smooth body facing
   let fy=p.mesh.rotation.y; const df=((p._face-fy+Math.PI*3)%(Math.PI*2))-Math.PI; p.mesh.rotation.y=fy+df*Math.min(1,dt*6);
-  if(p.gltfMixer){ p.gltfMixer.update(dt);                                  // drive the rigged CDN model
-    if(p.gltfWalk && p._gw!==moving){ p._gw=moving; p.gltfIdle.stop(); p.gltfWalk.stop(); (moving?p.gltfWalk:p.gltfIdle).play(); } }
   const breath=Math.sin(t*1.6+p._ph);
   if(moving){
     const s=Math.sin(p._wp)*0.55;
@@ -19356,30 +19443,57 @@ function maxAnisotropy(){ return (typeof renderer!=="undefined"&&renderer)?(rend
 // resource queued during tick N is destroyed at the start of tick N+2's render, after every submit
 // that could reference it has been made without it (the owning object was detached in tick N).
 // WebGL keeps the immediate dispose (lazy re-upload semantics — VRAM actually freed).
-// Phase-2 lifecycle queue (see the initThree prototype patch for the full story): dispose() calls
-// enqueue {res, fn(original dispose)}; the drain runs every ~30 WebGPU frames, double-buffered so a
-// batch is ≥1 batch old when destroyed, and a single scene traverse builds the LIVE set — anything
-// still attached is kept resident instead of destroyed (Mode-B1 guard). Stats in _wgpuLifeStats.
-let _wgpuDispNow=[], _wgpuDispNext=[], _wgpuDrainTick=0;
-const _wgpuLifeStats={killed:0,kept:0,sweeps:0};
-function _wgpuDeferDispose(res,fn){ _wgpuDispNext.push({res,fn:fn||res.dispose}); }
-function _wgpuDrainDispose(){
-  if(++_wgpuDrainTick<30) return;
-  _wgpuDrainTick=0;
-  if(_wgpuDispNow.length&&typeof scene!=="undefined"&&scene){
-    const live=new Set();
-    scene.traverse(o=>{ if(o.geometry) live.add(o.geometry);
-      if(o.material){ const mm=o.material; if(Array.isArray(mm)) for(const m of mm) live.add(m); else live.add(mm); } });
-    for(let i=0;i<_wgpuDispNow.length;i++){ const it=_wgpuDispNow[i];
-      if(live.has(it.res)){ _wgpuLifeStats.kept++; continue; }
-      try{ it.fn.call(it.res); }catch(e){}
-      _wgpuLifeStats.killed++; }
-    _wgpuDispNow.length=0; _wgpuLifeStats.sweeps++;
-  }
-  const t=_wgpuDispNow; _wgpuDispNow=_wgpuDispNext; _wgpuDispNext=t;
-}
-// (On WebGPU the deferral happens INSIDE dispose(): initThree patches the Material/BufferGeometry/
-// Texture prototypes to enqueue — see there. These helpers stay plain.)
+// ── #787: GPU_RES — the ONE owner of the WebGPU resource-lifecycle policy ─────────────────────────
+// Everything about deferred destruction lives here: the deferral queue, the liveness sweep, the
+// drain cadence, the stats, and (as an explicit, documented implementation detail) the prototype
+// patching itself. The rest of the game calls only GPU_RES.install() (initThree, WebGPU branch) and
+// GPU_RES.drain() (renderComposite) — an r186 upgrade or a policy change is a one-object audit.
+// Policy (unchanged from the Phase-2 lifecycle work): dispose() ENQUEUES {res, original dispose};
+// the drain runs every ~30 WebGPU frames, double-buffered so a batch is ≥1 batch old when destroyed,
+// and a single scene traverse builds the LIVE set — anything still attached is kept resident (the
+// Mode-B1 guard: destroying a still-bound resource freezes the canvas on D3D12). Shared/cached
+// textures stay resident permanently; per-instance CanvasTextures (labels/floaters, tagged
+// _acPerInstance at creation, #788) go through the same deferred queue so they genuinely free.
+const GPU_RES={
+  _now:[], _next:[], _tick:0, _installed:false,
+  stats:{killed:0,kept:0,sweeps:0},
+  defer(res,fn){ this._next.push({res,fn:fn||res.dispose}); },
+  // Why prototype patching (and not per-site routing): ~25 direct .dispose() call sites bypass the
+  // _disp* choke helpers; catching them ALL at the prototype is the only complete choke point that
+  // doesn't require auditing every future call site. It is scoped to the WebGPU session (WebGL never
+  // installs) and reversible via the captured originals.
+  install(){
+    if(this._installed) return; this._installed=true;
+    const R=this, om=THREE.Material.prototype.dispose, og=THREE.BufferGeometry.prototype.dispose, ot=THREE.Texture.prototype.dispose;
+    this._orig={material:om,geometry:og,texture:ot};
+    THREE.Material.prototype.dispose=function(){ R.defer(this,om); };
+    THREE.BufferGeometry.prototype.dispose=function(){ R.defer(this,og); };
+    THREE.Texture.prototype.dispose=function(){ if(this._acPerInstance) R.defer(this,ot); };   // #788: only unbounded per-instance textures free; shared/cached stay resident
+  },
+  uninstall(){   // for tests / a future r186 audit — restores stock synchronous dispose
+    if(!this._installed||!this._orig) return; this._installed=false;
+    THREE.Material.prototype.dispose=this._orig.material;
+    THREE.BufferGeometry.prototype.dispose=this._orig.geometry;
+    THREE.Texture.prototype.dispose=this._orig.texture;
+  },
+  drain(){
+    if(++this._tick<30) return;
+    this._tick=0;
+    if(this._now.length&&typeof scene!=="undefined"&&scene){
+      const live=new Set();
+      scene.traverse(o=>{ if(o.geometry) live.add(o.geometry);
+        if(o.material){ const mm=o.material; if(Array.isArray(mm)) for(const m of mm) live.add(m); else live.add(mm); } });
+      for(let i=0;i<this._now.length;i++){ const it=this._now[i];
+        if(live.has(it.res)){ this.stats.kept++; continue; }
+        try{ it.fn.call(it.res); }catch(e){}
+        this.stats.killed++; }
+      this._now.length=0; this.stats.sweeps++;
+    }
+    const t=this._now; this._now=this._next; this._next=t;
+  },
+};
+// (On WebGPU the deferral happens INSIDE dispose(): GPU_RES.install() chokes the Material/
+// BufferGeometry/Texture prototypes to enqueue — see GPU_RES above. These helpers stay plain.)
 function _dispTex(t){ if(t&&!t._acShared&&t.dispose) t.dispose(); }
 function _dispGeo(g){ if(g&&!g._acShared&&g.dispose) g.dispose(); }
 function _dispMat(m){ if(!m)return; for(const x of (Array.isArray(m)?m:[m])){ if(!x||x._acShared) continue; _dispTex(x.map); _dispTex(x.normalMap); if(x.dispose)x.dispose(); } }
@@ -19479,19 +19593,11 @@ function syncCamera(dt){
     cam.position.copy(camCur);
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false;
-    if(gltfReady&&gltfAvatar){   // external rigged model
-      playerAvatar.visible=false; gltfAvatar.visible=player.alive&&!camTooClose;
-      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=player.yaw+Math.PI;   // faces the character's own heading, not the camera orbit
-      if(gltfMixer){ gltfMixer.update(dt);   // swap idle↔walk with movement (RPM bodies use loaded clips)
-        const mv=held("forward")||held("back")||held("left")||held("right");
-        if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
-    } else {                     // procedural avatar
-      avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
-      playerAvatar.visible=player.alive&&!camTooClose;
-      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;   // character keeps its heading; the camera orbits around it
-      animateAvatar(dt);
-      if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
-    }
+    avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
+    playerAvatar.visible=player.alive&&!camTooClose;
+    playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;   // character keeps its heading; the camera orbits around it
+    animateAvatar(dt);
+    if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
   } else {
     // AC-style TRUE first person: look out from the real body's eyes. The AC character body stays
     // visible & animated, so you see your OWN hands/arms and the weapon in your real hand doing the
@@ -19502,18 +19608,10 @@ function syncCamera(dt){
     cam.position.set(player.x+ldx*0.12, gy+EYE+Math.sin(player.bob)*0.06, player.z+ldz*0.12);   // eye socket, a touch forward of head centre
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false; camInit=false;
-    if(gltfReady&&gltfAvatar){
-      playerAvatar.visible=false; gltfAvatar.visible=player.alive;
-      gltfAvatar.position.set(player.x,gy,player.z); gltfAvatar.rotation.y=player.yaw+Math.PI;
-      if(gltfMixer){ gltfMixer.update(dt);
-        const mv=held("forward")||held("back")||held("left")||held("right");
-        if(gltfWalk&&_pgWalk!==!!mv){ _pgWalk=!!mv; gltfIdle.stop(); gltfWalk.stop(); (mv?gltfWalk:gltfIdle).play(); } }
-    } else {
-      playerAvatar.visible=player.alive;
-      playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;
-      animateAvatar(dt);
-      avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
-    }
+    playerAvatar.visible=player.alive;
+    playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;
+    animateAvatar(dt);
+    avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
   }
   if(shakeT>0){
     shakeT-=dt; const m=shakeMag*clamp(shakeT/0.32,0,1);
@@ -19578,39 +19676,45 @@ function syncCamera(dt){
 }
 
 // ---------- HUD ----------
-function setBar(cls,id,cur,max){document.querySelector(cls+" i").style.width=clamp(cur/max*100,0,100)+"%";
-  document.getElementById(id).textContent=Math.round(cur)+"/"+Math.round(max);}
+// #801: memoize the static HUD element lookups — updateHUD/setBar ran ~30 getElementById/querySelector
+// calls every refresh. Cache by key; if a cached node was detached (a panel rebuilt), isConnected is
+// false and we re-query, so caching stays correct for recreated elements.
+const _hudEl={};
+function elc(id){ let e=_hudEl[id]; if(!e||!e.isConnected){ e=_hudEl[id]=document.getElementById(id); } return e; }
+function qsc(sel){ const k="$"+sel; let e=_hudEl[k]; if(!e||!e.isConnected){ e=_hudEl[k]=document.querySelector(sel); } return e; }
+function setBar(cls,id,cur,max){qsc(cls+" i").style.width=clamp(cur/max*100,0,100)+"%";
+  elc(id).textContent=Math.round(cur)+"/"+Math.round(max);}
 function updateHUD(){
   setBar(".bhp","hpT",player.hp,player.mhp);
   setBar(".bst","stT",player.st,player.mst);
   setBar(".bmn","mnT",player.mn,player.mmn);
-  { const hb=document.getElementById("horsebar"), rec=player.mountRec;   // #733: your mount's vigor rides the vitals stack
+  { const hb=elc("horsebar"), rec=player.mountRec;   // #733: your mount's vigor rides the vitals stack
     if(rec){ hb.style.display="block";
       hb.querySelector("i").style.width=clamp(rec.hp/rec.mhp*100,0,100)+"%";
-      document.getElementById("horseT").textContent=`${rec.name} ${rec.hp}/${rec.mhp}`; }
+      elc("horseT").textContent=`${rec.name} ${rec.hp}/${rec.mhp}`; }
     else if(hb.style.display!=="none") hb.style.display="none"; }
   const need=xpForLevel(player.level);
-  document.querySelector(".bxp i").style.width=clamp(player.xp/need*100,0,100)+"%";
-  document.getElementById("xpT").textContent=player.xp.toLocaleString()+" / "+need.toLocaleString()+" XP";   // #235: thousands separators, matching the rest of the UI
-  document.getElementById("name").textContent=(player.name||"Adventurer")+" of Dereth"+(player.title?", "+player.title:"");
-  document.getElementById("lvline").textContent=`Level ${player.level} · Unspent XP: ${(player.xpUnspent||0).toLocaleString()}`;
-  for(const a of ATTRS) document.getElementById("a"+a).textContent=player.attr[a];
-  document.getElementById("sArmor").textContent=Math.round((player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01));
-  { const bt=document.getElementById("sBurden"); if(bt){ const r=(typeof encumbrance==="function")?encumbrance().ratio:0, pct=Math.round(r*100);
+  qsc(".bxp i").style.width=clamp(player.xp/need*100,0,100)+"%";
+  elc("xpT").textContent=player.xp.toLocaleString()+" / "+need.toLocaleString()+" XP";   // #235: thousands separators, matching the rest of the UI
+  elc("name").textContent=(player.name||"Adventurer")+" of Dereth"+(player.title?", "+player.title:"");
+  elc("lvline").textContent=`Level ${player.level} · Unspent XP: ${(player.xpUnspent||0).toLocaleString()}`;
+  for(const a of ATTRS) elc("a"+a).textContent=player.attr[a];
+  elc("sArmor").textContent=Math.round((player.armor+wornArmorV())*skillEff("meleed",0.02)*skillEff("shield",0.01));
+  { const bt=elc("sBurden"); if(bt){ const r=(typeof encumbrance==="function")?encumbrance().ratio:0, pct=Math.round(r*100);
       bt.textContent=pct+"%"+(r>=2?" ⚠":r>1?" ↓":""); bt.style.color=r>=2?"#e8704a":r>1?"#e8c24a":"#e8dcc0";
       // #200: say it out loud the moment you cross into overload (the sheet's tiny ↓ was the only cue)
       if(r>=1&&!player._overloadWarned){ player._overloadWarned=true; log("You are <b>overloaded</b> — you move slower until you lighten your load (T → Salvage All, or stash at home).","warn"); }
       else if(r<0.97&&player._overloadWarned) player._overloadWarned=false; } }   // >100% slows you; ≥200% blocks jumping
-  document.getElementById("sKills").textContent=(player.kills||0).toLocaleString();
-  document.getElementById("sGold").textContent=Math.floor(player.gold||0).toLocaleString();
-  document.getElementById("sMats").textContent=player.materials;
-  { const tp=document.getElementById("sTapers"); if(tp) tp.textContent=player.prismTapers?`${player.tapers} (+${player.prismTapers}✦)`:player.tapers; }
-  document.getElementById("pHealth").textContent=player.potHealth;
-  document.getElementById("pGreat").textContent=player.potGreat;
-  document.getElementById("pMana").textContent=player.potMana;
-  {const e=document.getElementById("pStam"); if(e) e.textContent=player.potStam;}
-  document.getElementById("pMight").textContent=player.elixMight;
-  document.getElementById("pSwift").textContent=player.elixSwift;
+  elc("sKills").textContent=(player.kills||0).toLocaleString();
+  elc("sGold").textContent=Math.floor(player.gold||0).toLocaleString();
+  elc("sMats").textContent=player.materials;
+  { const tp=elc("sTapers"); if(tp) tp.textContent=player.prismTapers?`${player.tapers} (+${player.prismTapers}✦)`:player.tapers; }
+  elc("pHealth").textContent=player.potHealth;
+  elc("pGreat").textContent=player.potGreat;
+  elc("pMana").textContent=player.potMana;
+  {const e=elc("pStam"); if(e) e.textContent=player.potStam;}
+  elc("pMight").textContent=player.elixMight;
+  elc("pSwift").textContent=player.elixSwift;
   const bf=[];if(player.buffMightT>0)bf.push("Might "+Math.ceil(player.buffMightT)+"s");if(player.buffSwiftT>0)bf.push("Swift "+Math.ceil(player.buffSwiftT)+"s");
   if(player.spellBuffs) for(const a in player.spellBuffs) bf.push(`+${player.spellBuffs[a].v} ${a}`);
   if(player.itemBuffs){ const IB={dmg:"+dmg",oildmg:"+dmg",crit:"+crit",armor:"+armor",haste:"+haste"}; for(const k in player.itemBuffs) bf.push(IB[k]||k); }
@@ -19621,14 +19725,14 @@ function updateHUD(){
   { const fm=focusManaMax(); if(fm>0) bf.push(`🔮 ${Math.round(player.focusMana||0)}/${fm} focus`); }
   if(player.lightBuff) bf.push(`🔆 light ${Math.ceil(player.lightBuff.t)}s`);
   if(player.debuffs) for(const k in player.debuffs) bf.push(k==="slow"?"⊘ slowed":"▲ imperiled");
-  document.getElementById("sBuffs").textContent=bf.length?bf.join(", "):"—";
+  elc("sBuffs").textContent=bf.length?bf.join(", "):"—";
   let threats=0;for(const m of monsters){if(!!m.isDungeon===inDungeon&&m.state==="chase"&&Math.hypot(m.x-player.x,m.z-player.z)<50)threats++;}
-  const te=document.getElementById("sThreat");te.textContent=threats;te.style.color=threats>0?"#ff6b6b":"#fff";
-  document.getElementById("sDelves").textContent=player.clearedDungeons.length+"/50";
-  const ve=document.getElementById("sVitae");if(player.vitae>0.001){ve.textContent="-"+Math.round(player.vitae*100)+"%";ve.style.color="#ff6b6b";}else{ve.textContent="—";ve.style.color="#fff";}
-  const evr=document.getElementById("evRow");
-  if(worldEvent&&worldEvent.active){evr.style.display="";document.getElementById("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
-  else if(isOnline&&NET.event){ evr.style.display=""; document.getElementById("sEvent").textContent=`${NET.event.name} · ${eventCleared()}/${NET.event.total} cleared`; }
+  const te=elc("sThreat");te.textContent=threats;te.style.color=threats>0?"#ff6b6b":"#fff";
+  elc("sDelves").textContent=player.clearedDungeons.length+"/50";
+  const ve=elc("sVitae");if(player.vitae>0.001){ve.textContent="-"+Math.round(player.vitae*100)+"%";ve.style.color="#ff6b6b";}else{ve.textContent="—";ve.style.color="#fff";}
+  const evr=elc("evRow");
+  if(worldEvent&&worldEvent.active){evr.style.display="";elc("sEvent").textContent=`${worldEvent.town.name} ${worldEvent.total-worldEvent.alive}/${worldEvent.total} · ${Math.ceil(worldEvent.t)}s`;}
+  else if(isOnline&&NET.event){ evr.style.display=""; elc("sEvent").textContent=`${NET.event.name} · ${eventCleared()}/${NET.event.total} cleared`; }
   else evr.style.display="none";
   spellbar.querySelectorAll(".slot").forEach((el)=>{
     const abs=+el.dataset.abs, e=player.hotbar[abs];
@@ -19641,18 +19745,18 @@ function updateHUD(){
       const sw=el.querySelector(".cdsweep"); if(sw) sw.style.background=`conic-gradient(rgba(6,4,1,.62) ${deg}deg, transparent ${deg}deg)`;}
     else { el.classList.remove("cool"); const c=el.querySelector(".cd"); if(c)c.textContent=""; }
   });
-  const cb=document.getElementById('castbar');
+  const cb=elc('castbar');
   if(player.casting){ const c=player.casting, frac=clamp(1-c.t/c.total,0,1);
-    cb.style.display="block"; document.getElementById('castfill').style.width=Math.round(frac*100)+"%";
-    document.getElementById('castlabel').textContent=(SPELLBOOK[c.id]||{}).name||""; }
+    cb.style.display="block"; elc('castfill').style.width=Math.round(frac*100)+"%";
+    elc('castlabel').textContent=(SPELLBOOK[c.id]||{}).name||""; }
   else cb.style.display="none";
-  document.getElementById('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
-  const dv=document.getElementById('dmgvig');
+  elc('toast').style.opacity=toastT>0?clamp(toastT,0,1):0;
+  const dv=elc('dmgvig');
   if(player.alive&&player.hp/player.mhp<0.25){dv.style.opacity=settings.reduceMotion?0.3:(0.22+0.22*Math.abs(Math.sin(now()/240)));dv.dataset.low="1";}   // #352: static low-HP border under Reduce Motion instead of a ~2Hz pulse
   else if(dv.dataset.low){dv.style.opacity=0;dv.dataset.low="";}
   drawMinimap();
   drawCompass();
-  const ep=document.getElementById('eprompt'),pr=player.alive?currentPrompt():"";
+  const ep=elc('eprompt'),pr=player.alive?currentPrompt():"";
   if(pr){ep.textContent=pr;ep.style.display="block";}else ep.style.display="none";
 }
 function drawCompass(){
@@ -19801,7 +19905,7 @@ function initDragUI(){
       applyLogSize(w,h); });
     document.addEventListener('mouseup',()=>{ if(_logRz){ _logRz=null;
       if(typeof settings!=="undefined"){ settings.logSize={w:parseInt(lg.style.width)||340,h:parseInt(document.getElementById('logInner').style.height)||0};
-        if(typeof saveSettings==="function") saveSettings(); } } });
+        saveSettings(); } } });
   }
 }
 // every game panel gets a hover ⠿ grip that drags the same way as the plugin windows, anytime.
@@ -19831,7 +19935,7 @@ function applyLogSize(w,h){
   const lg=document.getElementById('log'), inner=document.getElementById('logInner'); if(!lg||!inner) return;
   if(w) lg.style.width=Math.round(w)+"px";
   if(h){ inner.style.height=Math.round(h)+"px"; inner.classList.add("sized"); }
-  if(typeof renderLog==="function") renderLog();
+  renderLog();
 }
 document.addEventListener('mousemove',e=>{ if(!_uiDrag)return; const el=_uiDrag.el;
   el.style.left=clamp(e.clientX-_uiDrag.dx,0,innerWidth-40)+"px"; el.style.top=clamp(e.clientY-_uiDrag.dy,0,innerHeight-24)+"px";
@@ -20080,8 +20184,20 @@ document.getElementById('closeCodex').onclick=closeCodex;
 // ---------- loop ----------
 let lastTs=0,_loopRunning=false;   // #334: single-rAF-chain guard
 function loop(ts){
-  if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;dt=Math.min(dt,0.05);
+  if(!lastTs)lastTs=ts;let dt=(ts-lastTs)/1000;lastTs=ts;
+  if(!(dt>0))dt=0; dt=Math.min(dt,0.05);   // #791: a NaN/negative/backwards timestamp must not feed a NaN dt into the physics (NaN dt → NaN velocity → NaN position, propagated + persisted forever)
   try{ update(dt); }catch(e){ console.error("update() failed:",e); }   // #227: no single-frame exception may ever kill the rAF chain (a thrown update froze the game permanently)
+  // #791: circuit-breaker — if a frame left the player at a non-finite position, restore the last known
+  // good spot instead of letting NaN propagate through physics/camera every subsequent frame (and get
+  // written to the save). Records the good position each frame it's finite.
+  if(typeof player!=="undefined"&&player){
+    if(Number.isFinite(player.x)&&Number.isFinite(player.y)&&Number.isFinite(player.z)){
+      loop._lastGood={x:player.x,y:player.y,z:player.z};
+    }else if(loop._lastGood){
+      if(console&&console.error)console.error("loop: non-finite player position — restoring last good",player.x,player.y,player.z);
+      player.x=loop._lastGood.x; player.y=loop._lastGood.y; player.z=loop._lastGood.z; player.vy=0;
+    }
+  }
   try{ updateLightPool(); }catch(e){ console.error("updateLightPool() failed:",e); }   // #501: same guarantee — a render-side throw here previously skipped requestAnimationFrame() below and froze the camera (and the portal tube, since its maxHold advance lives inside update()) with no recovery
   try{ renderComposite(); }catch(e){ console.error("renderComposite() failed:",e); }   // #501: ditto — a WebGL/composite exception must not kill the loop either
   requestAnimationFrame(loop);
@@ -20170,7 +20286,7 @@ function playAcAmbient(){
 }
 function musicTick(){
   if(!actx||muted) return;
-  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&((MUSICDIR.mode&&MUSICDIR.mode!=="wild")||(typeof mdScoreHas==="function"&&mdScoreHas("wild")))) return;   // the director owns non-wild moods — and the wilds too once the orchestral score (#669) is loaded; the pad/AC loops only carry a scoreless build
+  if(typeof MUSICDIR!=="undefined"&&MUSICDIR.on&&((MUSICDIR.mode&&MUSICDIR.mode!=="wild")||(mdScoreHas("wild")))) return;   // the director owns non-wild moods — and the wilds too once the orchestral score (#669) is loaded; the pad/AC loops only carry a scoreless build
   if(AC_MUSIC&&AC_MUSIC.length&&!_acMusicPlaying&&Math.random()<0.35){ playAcAmbient(); return; }   // authentic ambient loop
   if(_acMusicPlaying) return;                                                                          // don't layer the synth over it
   const t=actx.currentTime,root=MSCALE[irnd(0,MSCALE.length-1)];
@@ -20427,7 +20543,7 @@ setInterval(()=>{ try{
   if(!MUSIC||typeof running==="undefined"||!running||(typeof muted!=="undefined"&&muted)){ if(_musEl){_musEl.pause();_musZone=null;} return; }
   const kcNear=(typeof KC!=="undefined")&&!inDungeon&&Math.hypot(player.x-KC.x,player.z-KC.z)<260;
   const zone=(typeof inDungeon!=="undefined"&&inDungeon)?"dungeon": kcNear?"castle":
-    ((typeof nearestCapitalDist==="function"&&nearestCapitalDist(player.x,player.z)<160)?"town":"wild");
+    ((nearestCapitalDist(player.x,player.z)<160)?"town":"wild");
   if(zone==="castle"){ if(_musEl){_musEl.pause();} _musZone="castle"; return; }   // the castle plays its own live lute & harp (kcAmbience) — no track here
   if(zone===_musZone&&_musEl&&!_musEl.paused) return;
   if(zone!==_musZone){
@@ -21357,7 +21473,7 @@ const QUESTS=[
       player.tenfoldAttuned=true; player.tenfoldConsecrated=true;
       player.eventTitles=player.eventTitles||[]; if(player.eventTitles.indexOf("Heir of the Tenfold")<0) player.eventTitles.push("Heir of the Tenfold");
       player.title="Heir of the Tenfold";
-      if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // pick up the attuned glow on the worn set
+      refreshAvatarArmor();   // pick up the attuned glow on the worn set
       toast("HEIR OF THE TENFOLD"); if(SFX.level)SFX.level();
       log("Lord Kilmer kneels to <b>you</b> — he who kneels to no one — and the regalia takes a soft gold light that will not fade. You are <b>the Heir of the Tenfold</b>. A final page is written in <i>A History of Dereth</i>, and it bears your name.","sys");
       return ", the title <b>Heir of the Tenfold</b>, and the set attuned to you (soft glow · +5% all elemental protections)";
@@ -21527,9 +21643,9 @@ function claimSocietyTest(){ const st=player.societyTest; if(!st) return; const 
   grantSocietyRep(T.rep);
   const so=societyById(player.society);
   log(`<span style="color:${so.col}">The ${so.name} awards you a <b>Commendation Ribbon</b> (${player.societyRibbons} held) and <b>${T.reward.name}</b> for passing the ${T.name}.</span>`,"loot");
-  if(typeof addToInv==="function") addToInv(Object.assign({},T.reward),true);   // #20: force-grant (AC overweight) the one-time rank prize — the test can't be retaken, so a full satchel must never silently eat it
+  addToInv(Object.assign({},T.reward),true);   // #20: force-grant (AC overweight) the one-time rank prize — the test can't be retaken, so a full satchel must never silently eat it
   toast("COMMENDATION RIBBON"); if(SFX.level)SFX.level(); saveGame();
-  if(typeof buildSheet==="function") buildSheet();
+  buildSheet();
 }
 // ── AC endgame: Luminance Auras (permanent, bought with luminance) + Enlightenment prestige ──
 const LUM_AURAS=[
@@ -21576,13 +21692,13 @@ function grantSocietyRep(n){ if(!player.society||n<=0) return;
   const after=societyRankInfo(player.societyRep);
   if(after.title!==beforeTitle){ toast("SOCIETY RANK"); if(SFX.level)SFX.level();
     log(`<span style="color:${societyById(player.society).col}">Your standing rises — you are now <b>${after.title} of the ${societyById(player.society).name}</b>.</span>`,"sys"); }
-  if(typeof checkAchievements==="function") checkAchievements();
+  checkAchievements();
 }
 function pledgeSociety(id){ const so=societyById(id); if(!so||player.society) return;
   player.society=id; player.societyRep=0;
   toast("SOCIETY PLEDGE");
   log(`<span style="color:${so.col}">You pledge yourself to the <b>${so.name}</b>. ${so.blurb} You rise as an <b>Initiate</b> — complete bounties to earn your standing.</span>`,"sys");
-  if(SFX.quest)SFX.quest(); if(typeof checkAchievements==="function") checkAchievements(); saveGame(); renderQuestLog(); updateQuestHUD();
+  if(SFX.quest)SFX.quest(); checkAchievements(); saveGame(); renderQuestLog(); updateQuestHUD();
 }
 // ── Story Arcs: curated multi-quest storylines. Finishing every quest in an arc grants a title + capstone reward. ──
 // (A meta layer over the bounties — it does not gate the open world; quests stay free to do in any order.)
@@ -23013,7 +23129,7 @@ function crierRumors(){
   }
   const ce=(typeof currentCalEvent==="function")&&currentCalEvent();            // the saga beat
   if(ce&&ce.rumor) R.push(`<b>${esc(ce.name||"The season turns")}</b> — ${esc(ce.rumor)}`);
-  if(typeof algIsMonarch==="function"&&algIsMonarch())                          // news of the player's renown
+  if(algIsMonarch())                          // news of the player's renown
     R.push(`Hail a <b>Monarch</b>! ${player.allegianceName?("The "+esc(player.allegianceName)):"An allegiance"} rallies ${(typeof algFollowerCount==="function"?algFollowerCount():(player.vassals||[]).length)} sworn under ${esc(nm)}.`);
   else if(player.patronInfo&&player.patronInfo.name) R.push(`${esc(nm)} is sworn to <b>${esc(player.patronInfo.name)}</b> — loyalty is the coin of the realm.`);
   if(player.title) R.push(`Make way for <b>${esc(nm)}</b>, ${esc(player.title)} — level ${player.level|0} and rising.`);
@@ -23368,7 +23484,7 @@ function showRewardChoice(q, name){
   ov.querySelectorAll('[data-rw]').forEach(b=>b.onclick=()=>{
     const it=rewards[b.dataset.rw|0]; addToInv(Object.assign({},it),true);
     log(`You choose your reward: <b>${it.name}</b>.`,"loot"); if(SFX.quest)SFX.quest();
-    ov.remove(); paused=false; saveGame(); if(typeof updateHUD==="function") updateHUD(); renderQuestLog();
+    ov.remove(); paused=false; saveGame(); updateHUD(); renderQuestLog();
   });
 }
 // conversation with a named quest-giver (or the Emissary), bound to one quest by id
@@ -23804,7 +23920,7 @@ function renderQuestLog(){
     activeQuests.splice(i,1);
     if(tracked===id) tracked=trackedId();
     log(`You abandon <b>${q?q.name:id}</b> — its giver will offer it again.`,"sys");
-    renderQuestLog(); updateQuestHUD(); if(typeof updateNPCMarker==="function") updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
+    renderQuestLog(); updateQuestHUD(); updateNPCMarker(); saveGame(); SFX.click&&SFX.click();
   });
   body.querySelectorAll('[data-pledge]').forEach(b=>b.onclick=()=>{ const s=societyById(b.dataset.pledge); if(!s) return;
     // #516: a styled, touch-safe confirm (native confirm() is unreliable/blocked on touch, and this is a
@@ -24141,8 +24257,7 @@ function openHistoryBook(){
   if(player.tenfoldAttuned){   // #682 Regalia X: the final page names the character who walked all ten years
     pages.push(`── THE HEIR OF THE TENFOLD ──\n\nAnd in a later age one adventurer walked all ten years of Lord Kilmer's road, quenched each piece of the regalia in its own trial, and stood at his side in the sealed undercroft as T'thuun's Lingering Dream came apart at last.\n\nKilmer bowed — he, who bows to no one — and named the regalia's second wearer:\n\n${esc(player.name||"the Adventurer")}, Heir of the Tenfold.\n\n"The crown was never given," he said. "It is earned, or it is nothing. You have earned it."`);
   }
-  if(typeof kcReadLectern==="function") kcReadLectern({title:"A History of Dereth",pages});
-  else log("The tome's script blurs before your eyes.","warn");
+  kcReadLectern({title:"A History of Dereth",pages});
 }
 function openBookShelf(stand){
   if(!_acBookKeys||!_acBookKeys.length){ log("The shelves stand bare — the library's texts are still being catalogued.","warn"); return; }
@@ -24416,7 +24531,7 @@ function spawnOwnedShip(origin){
   if(x==null||z==null||!shipNavigable(x,z,def)){
     const o=origin||{x:player.x,z:player.z};
     const w=findWater(o.x,o.z,def.minDepth,3000)||findWater(0,0,def.minDepth,HALF-40);
-    if(!w){ if(typeof log==="function") log("No open water could be found for your ship.","warn"); return; }
+    if(!w){ log("No open water could be found for your ship.","warn"); return; }
     x=w.x; z=w.z; player.ship.x=x; player.ship.z=z;
   }
   const mesh=buildShip(def.id); mesh.position.set(x,0,z); mesh.rotation.y=player.ship.yaw||0; scene.add(mesh);
@@ -24433,7 +24548,7 @@ function buyShip(type){
   spawnOwnedShip(origin);
   log(`You take the deed to a <b>${def.name}</b>. It awaits you at the nearest shore.`,"loot");
   if(SFX.quest)SFX.quest(); if(typeof toast==="function") toast("SHIP ACQUIRED");
-  if(typeof updateHUD==="function") updateHUD(); saveGame();
+  updateHUD(); saveGame();
   return true;
 }
 
@@ -25104,7 +25219,7 @@ function horseDies(rec){
     log(`<b>${esc(rec.name)} has been slain</b> — you hear the death-scream across the field.`,"warn");
   }
   // its packs spill where it fell: nothing a player owns may vanish
-  for(const it of (rec.items||[])) if(typeof addDrop==="function") addDrop(px2+rnd(-1.5,1.5),pz2+rnd(-1.5,1.5),{type:"item",item:it});
+  for(const it of (rec.items||[])) addDrop(px2+rnd(-1.5,1.5),pz2+rnd(-1.5,1.5),{type:"item",item:it});
   burst(px2,1.2,pz2,0xb03a2a,16);
   player.horses.splice(player.horses.indexOf(rec),1);
   if(typeof toast==="function") toast("YOUR HORSE HAS DIED");
@@ -25685,11 +25800,11 @@ function caravanBless(cost){
     if(!fams[fam]||(s.lvl||0)>(fams[fam].lvl||0)) fams[fam]=s;                // keep the top circle
   }
   let n=0; for(const k in fams){ if(applyBuffSelf(Object.assign({},fams[k],{dur:DUR}),false)) n++; }
-  if(typeof derive==="function") derive(); updateHUD&&updateHUD();
-  if(SFX.quest)SFX.quest(); if(typeof castFlash==="function")castFlash(0x9af0ff);
+  derive(); updateHUD&&updateHUD();
+  if(SFX.quest)SFX.quest(); castFlash(0x9af0ff);
   floater(player.x,EYE+0.6,player.z,"BLESSED","#9af0ff");
   log(`<b>The caravan keeper</b> weaves <b>${n}</b> level-8 Creature, Item &amp; Life enchantments over you — blessed for one hour${cost>0?` for <b>${cost.toLocaleString()}p</b>`:""}.`,"heal");
-  if(typeof buildShop==="function") buildShop();
+  buildShop();
   if(cost>0&&typeof saveGame==="function") saveGame();   // persist the coin spend
 }
 // vendor: every spell (scroll), every casting scarab, every taper — plus free portals & a blessing
@@ -25717,7 +25832,7 @@ function closeShop(){ document.getElementById('shop').style.display="none"; paus
 //    restored on list_fail). Buy: pay-first — gold is deducted only on the server's 'bought'
 //    confirmation, which is also the only path that hands over the item (the server's atomic
 //    claim picks one winner per listing). Proceeds wait at the SAME town's broker until collected.
-const MKT={town:null,tab:"browse",stock:[],mine:[],pendingList:null};
+const MKT={town:null,tab:"browse",stock:[],mine:[],pendingList:[],applied:new Set()};   // #820: FIFO escrow queue — the server answers list requests in order, so listed/list_fail pop the oldest pending item. #822: `applied` dedups item-crediting settlements by listing id so a replayed frame can't double-add
 function openMarket(n){
   MKT.town=n.town||"?"; MKT.tab="browse"; MKT.stock=[]; MKT.mine=[];
   closeOtherModals("market");
@@ -25774,7 +25889,7 @@ function mktList(i){
   const pe=document.getElementById('mktp'+i);
   const price=Math.floor(+((pe&&pe.value)||0));
   if(!(price>0&&price<=10000000)){ log("Name a price between 1 and 10,000,000 pyreals.","warn"); return; }
-  player.inv.splice(i,1); MKT.pendingList=it;                     // escrow OUT of the satchel (#295)
+  player.inv.splice(i,1); MKT.pendingList.push(it);              // #820: escrow OUT of the satchel (#295); queue so a second listing before the first replies can't clobber the first item's reference
   netSend({t:"market",act:"list",town:MKT.town,item:it,price});
   renderMarket();
 }
@@ -25789,14 +25904,15 @@ function onMarketMsg(m){
   const act=m.act;
   if(act==="stock"){ if(Array.isArray(m.rows)){ MKT.stock=m.rows.filter(r=>r&&isFinite(+r.price)&&+r.price>0); MKT.stock.forEach(r=>r.price=Math.floor(+r.price)); } if(MKT.tab==="browse")renderMarket(); }
   else if(act==="mine"){ if(Array.isArray(m.rows)) MKT.mine=m.rows.filter(r=>r&&r.id!=null); if(MKT.tab==="mine")renderMarket(); }
-  else if(act==="listed"){ MKT.pendingList=null; log(`The broker shelves your ware at <b>${Math.floor(+m.price||0)}p</b>.`,"loot"); saveGame();
+  else if(act==="listed"){ MKT.pendingList.shift(); log(`The broker shelves your ware at <b>${Math.floor(+m.price||0)}p</b>.`,"loot"); saveGame();   // #820: the oldest pending item succeeded — drop it from the queue (it stays on the shelf)
     netSend({t:"market",act:"mine"}); if(MKT.tab==="sell")renderMarket(); }
-  else if(act==="list_fail"){ if(MKT.pendingList){ addToInv(MKT.pendingList,true); MKT.pendingList=null; }
+  else if(act==="list_fail"){ const pit=MKT.pendingList.shift(); if(pit) addToInv(pit,true);   // #820: the oldest pending item was rejected — give exactly that item back
     log(esc(String(m.msg||"The broker declines.")),"warn"); renderMarket(); }
   else if(act==="bought"){
     const price=Math.floor(+m.price||0);
     let it=null; try{ it=JSON.parse(m.item); }catch(e){}
     if(!it||!(price>=0)) return;                                   // AC-3: never credit/debit on malformed fields
+    if(m.id!=null){ if(MKT.applied.has("b"+m.id)) return; MKT.applied.add("b"+m.id); }   // #822: idempotent — a replayed 'bought' (e.g. on reconnect) must not re-credit the item/debit gold
     player.gold=Math.max(0,player.gold-price);                     // pay-first: the deduction rides the confirmation that hands over the item
     addToInv(it,true);                                             // force: a paid-for item must never vanish on a full satchel
     log(`You buy the <b>${esc(String(it.name||"ware"))}</b> for <b>${price}p</b> from ${esc(String(m.seller||"?"))}'s consignment.`,"loot");
@@ -25821,6 +25937,7 @@ function onMarketMsg(m){
     netSend({t:"market",act:"mine"});
   }
   else if(act==="reclaimed"){
+    if(m.id!=null){ if(MKT.applied.has("r"+m.id)) return; MKT.applied.add("r"+m.id); }   // #822: idempotent — a replayed 'reclaimed' must not re-add the item
     let it=null; try{ it=JSON.parse(m.item); }catch(e){}
     if(it){ addToInv(it,true); log(`You take back the <b>${esc(String(it.name||"ware"))}</b>.`,"sys"); saveGame(); }
     netSend({t:"market",act:"mine"});
@@ -25929,7 +26046,7 @@ function buildShop(){
       netSend({t:"vendor_sell",item:it,price}); }   // M3 (#238): server credits pyreals authoritatively (validates ownership, caps at catalog value); vendor_ok reconciles/rolls back
     player.gold+=price;takeFromInv(i);SFX.gold();buildShop();updateHUD();saveGame();});
   sell.querySelectorAll('[data-turnin]').forEach(b=>b.onclick=()=>{const i=+b.dataset.turnin; const it=player.inv[i]; if(!isCreatureTrophy(it))return;   // #291: re-check at click time — never pay the XP bounty for a bought curio
-    const bt=trophyBounty(it); player.gold+=bt.gold; if(typeof gainXP==="function")gainXP(bt.xp); takeFromInv(i);
+    const bt=trophyBounty(it); player.gold+=bt.gold; gainXP(bt.xp); takeFromInv(i);
     log(`You turn in a <b>${it.name}</b> for a bounty — <b>${bt.gold}</b> pyreals and <b>${bt.xp}</b> XP.`,"loot"); SFX.gold(); buildShop(); updateHUD(); saveGame();});
 }
 function trophyBounty(it){ const v=it.v|0; return {gold:Math.round(v*1.6), xp:Math.max(25,v*14)}; }   // I7 collector bounty — beats a plain sell
@@ -25982,7 +26099,7 @@ function assignHotbarEntry(slot, entry){
   for(let i=0;i<player.hotbar.length;i++){ const h=player.hotbar[i];   // a given spell/item occupies one slot
     if(hbIsItem(entry)&&hbIsItem(h)&&h.name===entry.name) player.hotbar[i]=null;
     else if(!hbIsItem(entry)&&h===entry) player.hotbar[i]=null; }
-  player.hotbar[slot]=entry; buildSpellbar(); if(typeof buildSpellbook==="function") buildSpellbook(); saveGame();
+  player.hotbar[slot]=entry; buildSpellbar(); buildSpellbook(); saveGame();
   log(`Assigned <b>${esc(hbIsItem(entry)?entry.name:((SPELLBOOK[entry]||{}).name||entry))}</b> to quickbar page ${Math.floor(slot/QB_PAGE)+1}, slot ${slot%QB_PAGE+1}.`,"sys");
 }
 function qbAssignPick(entry, label){
@@ -26393,7 +26510,7 @@ function applyUIVis(){
   for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
     if(h[id]) el.style.display="none";
     else if(["goarrow","alinco","vtank","magtools"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
-  if(typeof applyPluginSettings==="function") applyPluginSettings();            // plugin panels re-apply their own visibility
+  applyPluginSettings();            // plugin panels re-apply their own visibility
 }
 // ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
 //     real plugin screenshots (AC wiki): GoArrow's chrome arrow with destination-over / distance-
@@ -26487,7 +26604,7 @@ function updatePlugins(dt){
   }
   // ── 1 Hz panels ──
   PLUG.t2-=dt; if(PLUG.t2>0) return; PLUG.t2=1;
-  if(typeof ensureGrips==="function") ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
+  ensureGrips();   // rebuilt panels (quickbar/party) get their move-grip back
   if(pluginOn("alinco")){
     const rows=[];
     if(player.spellBuffs) for(const a of Object.keys(player.spellBuffs)) rows.push(["+"+player.spellBuffs[a].v+" "+a,player.spellBuffs[a].t]);
@@ -29923,8 +30040,8 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false; bannersActive=false; bloodActive=false; stormActive=false;   // #680-#678: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
-  if(player.bloodTithed){ player.bloodTithed=false; if(typeof derive==="function")derive(); }   // #677: the blood-tithe releases on ANY exit (win, flee, death) — re-derive restores full max health & mana
+  resetInstanceState();   // #779/#680-#678: any exit (incl. fleeing via the arch) resets EVERY registered mechanic's state — else a Regalia timer keeps ticking in the overworld
+  if(player.bloodTithed){ player.bloodTithed=false; derive(); }   // #677: the blood-tithe releases on ANY exit (win, flee, death) — re-derive restores full max health & mana
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
   // the Academy staff, or the 8 interior NPCs + their obstacles leak into the overworld at origin
@@ -29939,8 +30056,6 @@ function exitDungeon(toEntrance){
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
   dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;curDungeon=null;
-  arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
-  emberActive=false;emberWave=0;emberTimer=0;emberHeat=0;   // #673: abort an Ember Field run on exit too
   hideOverworld(true);
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
 }
@@ -30009,44 +30124,44 @@ function enterColosseum(def,ex,ez,advanced){
   if(ti>=0){ takeFromInv(ti); log("You present a <b>Colosseum Ticket</b> at the gate.","sys"); }
   else if(player.gold>=FEE){ player.gold-=FEE; log(`You pay <b>${FEE}</b> pyreals for entry to the ${advanced?"Advanced ":""}Colosseum.`,"sys"); }
   else { log(`The gatekeeper turns you away — you need a <b>Colosseum Ticket</b> or ${FEE} pyreals to enter.`,"warn"); if(SFX.hit)SFX.hit(); return; }
-  inDungeon=true;arenaActive=true;arenaAdvanced=!!advanced;curDungeon=def;dungeonReturn={x:ex,z:ez};
+  inDungeon=true;ARENA.active=true;ARENA.advanced=!!advanced;curDungeon=def;dungeonReturn={x:ex,z:ez};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.35";   // open-air: only a light vignette
   buildArena();markSceneSRGB();
   arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
-  arenaWaves=advanced?8:5;arenaWave=0;arenaTimer=advanced?480:300;arenaInter=0;   // Advanced: 8 rounds, 8-minute clock
+  ARENA.waves=advanced?8:5;ARENA.wave=0;ARENA.timer=advanced?480:300;ARENA.inter=0;   // Advanced: 8 rounds, 8-minute clock
   toast(advanced?"THE ADVANCED COLOSSEUM":"THE COLOSSEUM");
-  log(`You stride onto the sand. <b>${arenaWaves===8?"Eight":"Five"} waves</b>${advanced?" of the veterans' gauntlet":""} stand between you and the vault — clear them before the clock runs out.`,"sys");
+  log(`You stride onto the sand. <b>${ARENA.waves===8?"Eight":"Five"} waves</b>${advanced?" of the veterans' gauntlet":""} stand between you and the vault — clear them before the clock runs out.`,"sys");
   updateHUD&&updateHUD();
   arenaNextWave();
 }
 function arenaNextWave(){
-  arenaWave++;
-  if(arenaWave>arenaWaves){ arenaWin(); return; }
-  const tier=curDungeon?curDungeon.tier:5, adv=(arenaAdvanced?1.6:1)*Math.min(1+arenaWave*0.25, arenaAdvanced?3.5:2.5);   // each wave hits harder; the Advanced gauntlet far harder
-  const count=(arenaAdvanced?3:2)+arenaWave, cx=DCEN.x,cz=DCEN.z,R=20;
-  const shift=arenaAdvanced?2:0;   // Advanced skews the roster toward the deadlier end of the pool
+  ARENA.wave++;
+  if(ARENA.wave>ARENA.waves){ arenaWin(); return; }
+  const tier=curDungeon?curDungeon.tier:5, adv=(ARENA.advanced?1.6:1)*Math.min(1+ARENA.wave*0.25, ARENA.advanced?3.5:2.5);   // each wave hits harder; the Advanced gauntlet far harder
+  const count=(ARENA.advanced?3:2)+ARENA.wave, cx=DCEN.x,cz=DCEN.z,R=20;
+  const shift=ARENA.advanced?2:0;   // Advanced skews the roster toward the deadlier end of the pool
   const pool=["drudge","mosswart","banderling","tumerok","skeleton","zombie","sclavus","lugian","olthoi","golem","virindi"];
   for(let i=0;i<count;i++){ const a=Math.random()*Math.PI*2,rr=8+Math.random()*(R-8);
-    const kind=pool[Math.min(pool.length-1, irnd(Math.max(0,arenaWave-2+shift), Math.min(pool.length-1, arenaWave+3+shift)))];
-    const elite=(i===0&&arenaWave>=(arenaAdvanced?2:3));   // a champion leads later waves (sooner in the Advanced gauntlet)
+    const kind=pool[Math.min(pool.length-1, irnd(Math.max(0,ARENA.wave-2+shift), Math.min(pool.length-1, ARENA.wave+3+shift)))];
+    const elite=(i===0&&ARENA.wave>=(ARENA.advanced?2:3));   // a champion leads later waves (sooner in the Advanced gauntlet)
     spawnDungeonMonster(kind, cx+Math.cos(a)*rr, cz+Math.sin(a)*rr, elite, adv);
   }
-  log(`<b>Wave ${arenaWave}/${arenaWaves}</b> — the gates open and the foes pour in!`,"warn");
-  toast("WAVE "+arenaWave+" / "+arenaWaves); if(SFX.growl)SFX.growl();
+  log(`<b>Wave ${ARENA.wave}/${ARENA.waves}</b> — the gates open and the foes pour in!`,"warn");
+  toast("WAVE "+ARENA.wave+" / "+ARENA.waves); if(SFX.growl)SFX.growl();
 }
 function updateArena(dt){
-  if(!arenaActive) return;
-  arenaTimer-=dt;
-  if(arenaTimer<=0){ arenaFail(); return; }
+  if(!ARENA.active) return;
+  ARENA.timer-=dt;
+  if(ARENA.timer<=0){ arenaFail(); return; }
   if(dungeonMobs<=0){   // wave cleared → short breather, then the next wave
-    if(arenaInter<=0){ arenaInter=3.5; if(arenaWave<arenaWaves) log("The sand clears. Steel yourself — the next wave gathers.","sys"); }
-    else { arenaInter-=dt; if(arenaInter<=0) arenaNextWave(); }
+    if(ARENA.inter<=0){ ARENA.inter=3.5; if(ARENA.wave<ARENA.waves) log("The sand clears. Steel yourself — the next wave gathers.","sys"); }
+    else { ARENA.inter-=dt; if(ARENA.inter<=0) arenaNextWave(); }
   }
 }
 function arenaWin(){
-  const adv=arenaAdvanced;
-  arenaActive=false; arenaAdvanced=false;
+  const adv=ARENA.advanced;
+  ARENA.active=false; ARENA.advanced=false;
   const cx=DCEN.x,cz=DCEN.z;
   burst(cx,2,cz,0xffd23b,adv?90:60); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
   const gold=Math.round((1500+player.level*40)*(adv?2.2:1)), xp=Math.round((6000+player.level*300)*(adv?2.2:1));
@@ -30069,10 +30184,10 @@ function arenaWin(){
   if(adv) player.advColosseumClears=(player.advColosseumClears||0)+1;
   checkAchievements&&checkAchievements();
   updateHUD&&updateHUD(); saveGame&&saveGame();
-  setTimeout(()=>{ if(!arenaActive&&inDungeon) exitDungeon(true); }, 4000);   // auto-return to the world shortly after
+  setTimeout(()=>{ if(!ARENA.active&&inDungeon) exitDungeon(true); }, 4000);   // auto-return to the world shortly after
 }
 function arenaFail(){
-  arenaActive=false; arenaAdvanced=false;
+  ARENA.active=false; ARENA.advanced=false;
   log("The clock runs out — the Colosseum crowd jeers as the gate hauls you back to the sand's edge.","warn");
   toast("OUT OF TIME"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
@@ -30154,7 +30269,7 @@ function emberWin(){
   burst(DCEN.x,2,DCEN.z,0xff8a3a,80); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
   toast("THE HERALD'S ECHO IS CAST DOWN");
   log("The Herald's Echo gutters out like a spent torch, and for the first time the Ember Field is <b>cool underfoot</b>. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("ember");
+  questEvent("ember");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!emberActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30269,7 +30384,7 @@ function frostCourtWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE RELIQUARY IS SHATTERED");
   log("The Vertebra-Reliquary bursts into a rain of frozen bone, and the Frozen Court falls quiet and warm. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("frostcourt");
+  questEvent("frostcourt");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!frostActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30350,7 +30465,7 @@ function updateRiftStand(dt){
     if(z.t<=0&&!z.det){ z.det=true;
       // detonate: flash + shock to anyone standing inside
       if(z.ring) z.ring.material.color.setHex(0xffffff);
-      const fl=new THREE.PointLight(0xaa6aff,3,z.rad*3); fl._transient=1; fl.position.set(z.x,1,z.z); scene.add(fl); setTimeout(()=>scene.remove(fl),160);
+      impactFlash(0xaa6aff,3,z.rad*3,z.x,1,z.z,160);   // #797: pooled
       if(player.alive&&player.invuln<=0&&Math.hypot(player.x-z.x,player.z-z.z)<z.rad){
         playerHurt(24+riftWave*6,z.x,z.z,"magic","shock"); floater(player.x,1.9,player.z,"THE STORM STRIKES!","#c99aff"); }
       if(z.ring){ scene.remove(z.ring); z.ring.geometry.dispose(); z.ring.material.dispose(); }
@@ -30368,7 +30483,7 @@ function riftWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE VEIL IS STABILIZED");
   log("The Rift-Warden unravels and the tear draws shut from the inside — the storm falls still. You never stepped back. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("rift");
+  questEvent("rift");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!riftActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30473,7 +30588,7 @@ function tideWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE HERALD IS SENT UNDER");
   log("The Herald's Shadow comes apart a third time and does not reform — the flood shrinks back into the rift, and the tide-gate holds. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("tidegate");
+  questEvent("tidegate");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!tideActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30547,7 +30662,7 @@ function consecrationWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("T'THUUN'S DREAM IS UNMADE");
   log("T'thuun's Lingering Dream comes apart into failing light and does not remember itself again. Kilmer lowers his blade. Return to him at the castle gate — the road has one stone left to lay.","sys");
-  if(typeof questEvent==="function") questEvent("consecration");
+  questEvent("consecration");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!consActive&&inDungeon) exitDungeon(true); }, 4500);
 }
@@ -30626,7 +30741,7 @@ function whispersWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE PUPPET IS CUT DOWN");
   log("The Simulacrum comes apart at its cut strings and wears your face no more. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("whispers");
+  questEvent("whispers");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!whispersActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30717,7 +30832,7 @@ function chitinWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE MATRON FALLS");
   log("The Brood-Remnant Matron collapses into the wax that made her, and the hive falls silent. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("chitin");
+  questEvent("chitin");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!chitinActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30799,7 +30914,7 @@ function bannersWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE STANDARD-BEARER FALLS");
   log("The Standard-Bearer goes down beside his fallen banner, and the Pretender's fleet strikes its colours. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("banners");
+  questEvent("banners");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!bannersActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30843,7 +30958,7 @@ function enterBloodRite(ex,ez){
   bloodActive=true;_bloodReinforced=false;_bloodT=0;
   // the BLOOD-TITHE: half max health & mana while inside (derive() honors player.bloodTithed; released on
   // any exit in exitDungeon). Set the flag and re-derive so the true, tithed max is computed from stats.
-  player.bloodTithed=true; if(typeof derive==="function") derive();
+  player.bloodTithed=true; derive();
   player.hp=Math.min(player.hp,player.mhp); player.mn=Math.min(player.mn,player.mmn);
   const cx=DCEN.x,cz=DCEN.z;
   spawnDungeonMonster("falatacot",cx,cz-5,true,4.6,"The Blood-Matriarch's Revenant");
@@ -30868,7 +30983,7 @@ function bloodWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE MATRIARCH IS UNDONE");
   log("The Blood-Matriarch's Revenant sinks back into the runnels and the tithe releases you. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("blood");
+  questEvent("blood");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!bloodActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -30942,7 +31057,7 @@ function updateStormPeak(dt){
   for(let i=_stormZones.length-1;i>=0;i--){ const z=_stormZones[i]; z.t-=dt;
     if(z.ring) z.ring.material.opacity=0.3+0.5*clamp(1-z.t/1.1,0,1);
     if(z.t<=0&&!z.det){ z.det=true;
-      const fl=new THREE.PointLight(0xffe23b,3,z.rad*3); fl._transient=1; fl.position.set(z.x,1,z.z); scene.add(fl); setTimeout(()=>scene.remove(fl),150);
+      impactFlash(0xffe23b,3,z.rad*3,z.x,1,z.z,150);   // #797: pooled
       if(player.alive&&player.invuln<=0&&Math.hypot(player.x-z.x,player.z-z.z)<z.rad){ playerHurt(20+stormSealsFixed()*4,z.x,z.z,"magic","shock"); floater(player.x,1.9,player.z,"THE LIGHTNING FINDS YOU!","#ffe23b"); }
       if(z.ring){ scene.remove(z.ring); z.ring.geometry.dispose(); z.ring.material.dispose(); } _stormZones.splice(i,1);
     }
@@ -30971,7 +31086,7 @@ function stormWin(){
   const dv=document.getElementById('dvig'); if(dv) dv.style.opacity="0";
   toast("THE FOUR WINDS ARE STILLED");
   log("The Warden's four winds gutter out at once and the peak falls still under a clearing sky. Return to <b>Lord Kilmer</b> at the castle gate.","sys");
-  if(typeof questEvent==="function") questEvent("storm");
+  questEvent("storm");
   saveGame&&saveGame();
   setTimeout(()=>{ if(!stormActive&&inDungeon) exitDungeon(true); }, 4000);
 }
@@ -31115,7 +31230,7 @@ function openStrongbox(bx){
   player.inv.push({name:bx.key,stat:"key",v:1});
   log(`The strongbox holds the <b>${esc(bx.key)}</b> — it must open something, somewhere.`,"loot");
   if(SFX.gold)SFX.gold(); burst(bx.x,1,bx.z,0xffd23b,10);
-  if(typeof questEvent==="function") questEvent("gather");   // quest keys count as gathers (Sword of Lost Light hunt)
+  questEvent("gather");   // quest keys count as gathers (Sword of Lost Light hunt)
 }
 function unlockDungeonDoor(b){
   if(!hasNamedKey(b.need)){ log(`The door is locked fast — you need the <b>${esc(b.need)}</b>.`,"warn"); if(SFX.deny)SFX.deny(); return; }
@@ -31150,7 +31265,7 @@ function lootItem(it){
   if(!addToInv(it)){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
   SFX.gold();
   log(it.scroll?`You find a <b>${esc(it.name)}</b>. (T to scribe it)`:`You pick up a <b>${esc(it.name)}</b>. (T to equip or salvage)`,"loot");   // #xss: item name can be server-controlled — escape before it enters the chat feed HTML
-  if(typeof questEvent==="function") questEvent("gather");   // #236: picking up loot is the natural advance for "recover X" fetch objectives (kind-less)
+  questEvent("gather");   // #236: picking up loot is the natural advance for "recover X" fetch objectives (kind-less)
 }
 function openTinker(){ closeOtherModals("tinker"); buildTinker(); document.getElementById('tinker').style.display="flex"; paused=true; if(locked)document.exitPointerLock(); }
 function closeTinker(){ document.getElementById('tinker').style.display="none"; paused=false; }
@@ -31443,7 +31558,7 @@ function buildTinker(){
       :it.stat==="note"?`<button class="tbtn" data-eq="${i}">Redeem</button>`
       :`<button class="tbtn" data-eq="${i}">${(it.stat==="hp"||it.stat==="mn"||it.stat==="st"||it.stat==="food"||it.stat==="oil"||it.stat==="recall"||it.stat==="cure"||it.stat==="hot"||it.stat==="skillpot"||it.stat==="attrpot"||it.stat==="portalgem")?"Use":"Equip"}</button><button class="tbtn" data-sv="${i}">Salvage</button>`;
     row.innerHTML=`<div><span class="lab">${rarityName(it)}</span>${(it.count||1)>1?` <span style="color:#ffd86b">×${it.count}</span>`:""} <span class="desc">— ${desc}</span>${cmpHTML}</div>
-      <div class="ctl">${ctl}${(typeof craftCanCombine==="function"&&craftCanCombine(it))?`<button class="tbtn" data-cb="${i}" title="tradeskill combine — use with another material">⚗ Combine</button>`:""}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
+      <div class="ctl">${ctl}${(craftCanCombine(it))?`<button class="tbtn" data-cb="${i}" title="tradeskill combine — use with another material">⚗ Combine</button>`:""}<button class="tbtn" data-qb="${i}" title="Assign to a quickbar slot">⚡ Quickbar</button></div>`;
     rows.appendChild(row);
   });
   rows.querySelectorAll('[data-qb]').forEach(b=>b.onclick=()=>{ const it=player.inv[+b.dataset.qb]; if(it) qbAssignPick(hbItemEntry(it), it.name); });
@@ -31478,33 +31593,141 @@ document.getElementById('closeTink').onclick=closeTinker;
 //  SAVE / LOAD  (localStorage)
 // ============================================================================
 const SAVE_KEY="dereth_save_v1";
+// ── #784: THE SAVE SCHEMA AS DATA ───────────────────────────────────────────────────────────────
+// One table drives BOTH directions: saveGame writes s[k]=save(player) (default: player[k]) and
+// applySaveObj assigns player[k]=load(s) (default: type-coerce via `t` with default `d`). Adding a
+// field is ONE entry — the two hand-maintained parallel literals can no longer drift apart.
+// Fields with multi-statement load logic (spells/hotbar), non-player globals (quests, calendar,
+// keymap), and position live in the explicit bespoke sections of saveGame/applySaveObj below.
+// Old-schema fixups live in SAVE_MIGRATIONS (versioned), not inline conditionals.
+function DEFAULT_APPEARANCE(race){ return {race:race||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}; }
+const _SV={ int:v=>v|0, num:v=>+v||0, str:(v,d)=>v||d||"", bool:v=>!!v, orNull:v=>v||null,
+  arr:v=>Array.isArray(v)?v:[], obj:v=>(v&&typeof v==="object")?v:{}, objOrNull:v=>(v&&typeof v==="object")?v:null };
+const SAVE_SCHEMA=[
+  {k:"level",load:s=>(+s.level>0?Math.floor(+s.level):1)},
+  {k:"xp",t:"num"},{k:"xpUnspent",t:"num"},{k:"skillPts",t:"num"},
+  {k:"freeRank",save:p=>p.freeRank||null,t:"obj"},
+  {k:"kills",t:"int"},
+  {k:"gold",load:s=>Math.max(0,Math.min(2e9,Math.floor(+s.gold||0)))},   // #292: clamp, not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR
+  {k:"armor",t:"int"},
+  {k:"inv",t:"arr"},
+  {k:"materials",load:s=>s.materials||0},
+  {k:"salvage",t:"obj"},{k:"craft",t:"obj"},
+  {k:"weaponTink",t:"num"},{k:"armorTink",t:"num"},
+  {k:"weapon",t:"orNull"},
+  {k:"armorSlots",t:"obj"},                       // pre-versioned armorItem migration: SAVE_MIGRATIONS
+  {k:"jewelry",t:"obj"},                          // pre-versioned ringItem/neckItem migration: SAVE_MIGRATIONS
+  {k:"skills",load:s=>migrateSkills(s.skills)},
+  {k:"patronInfo",save:p=>p.patronInfo||null,t:"objOrNull"},
+  {k:"vassals",t:"arr"},                          // per-entry normalization stays a bespoke step (needs player.level)
+  {k:"monarch",t:"orNull"},
+  {k:"vassalXP",t:"int"},
+  {k:"allegianceMOTD",save:p=>p.allegianceMOTD||null,t:"orNull"},
+  {k:"vitae",t:"num"},
+  {k:"heritage",t:"str",d:"aluvian"},
+  {k:"allegianceName",save:p=>p.allegianceName||null,t:"orNull"},
+  {k:"vitals",load:s=>(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0}},
+  {k:"aetheria",save:p=>p.aetheria||null,load:s=>(s.aetheria&&typeof s.aetheria==="object")?{blue:s.aetheria.blue||null,yellow:s.aetheria.yellow||null,red:s.aetheria.red||null}:{blue:null,yellow:null,red:null}},
+  {k:"attrInnate",save:p=>p.attrInnate||null,t:"objOrNull"},   // pre-parity saves: attrInnate() falls back to min(attr,100)
+  {k:"greeters",save:p=>p.greeters||{},t:"obj"},
+  {k:"academy",save:p=>p.academy||{},load:s=>(s.academy&&typeof s.academy==="object")?s.academy:{done:1}},   // pre-Academy saves have long left the grounds
+  {k:"packs",save:p=>p.packs||[],t:"arr"},
+  {k:"name",t:"str",d:"Adventurer"},
+  {k:"appearance",load:s=>Object.assign(DEFAULT_APPEARANCE(s.heritage),(s.appearance&&typeof s.appearance==="object")?s.appearance:{})},
+  {k:"potHealth",t:"num"},{k:"potMana",t:"num"},{k:"potGreat",t:"num"},{k:"potStam",t:"num"},
+  {k:"tapers",t:"num"},{k:"prismTapers",t:"num"},
+  {k:"elixMight",t:"num"},{k:"elixSwift",t:"num"},
+  {k:"achievements",load:s=>s.achievements||[]},
+  {k:"title",t:"str"},
+  {k:"bossKills",t:"num"},{k:"championKills",t:"num"},{k:"delves",t:"num"},
+  {k:"delveCredited",t:"arr"},
+  {k:"bestiary",load:s=>s.bestiary||[]},
+  {k:"clearedDungeons",load:s=>s.clearedDungeons||[]},
+  {k:"society",load:s=>(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null},
+  {k:"societyRep",t:"int"},
+  {k:"societyRibbons",save:p=>p.societyRibbons||0,t:"int"},
+  {k:"societyTest",save:p=>p.societyTest||null,t:"orNull"},
+  {k:"societyTestsDone",save:p=>p.societyTestsDone||[],t:"arr"},
+  {k:"arcsDone",load:s=>Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[]},
+  {k:"augment",load:s=>(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}}},
+  {k:"packBonus",t:"int"},
+  {k:"house",load:s=>(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]}},
+  {k:"homestead",save:p=>p.homestead||null,load:s=>(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null},
+  {k:"hsRebuyUntil",save:p=>p.hsRebuyUntil||0,t:"num"},
+  {k:"ship",save:p=>p.ship||null,load:s=>(s.ship&&typeof s.ship==="object"&&shipDef(s.ship.type))?{type:s.ship.type,x:(typeof s.ship.x==="number")?s.ship.x:null,z:(typeof s.ship.z==="number")?s.ship.z:null,yaw:+s.ship.yaw||0}:null},
+  {k:"kcVault",save:p=>p.kcVault||{},t:"obj"},
+  {k:"kcHookItems",save:p=>p.kcHookItems||{},t:"obj"},
+  {k:"luminance",t:"int"},{k:"lumUnlocked",t:"bool"},{k:"auras",t:"obj"},{k:"enlightenment",t:"int"},
+  {k:"tiedPortal",t:"objOrNull"},
+  {k:"tiedPortal2",save:p=>p.tiedPortal2||null,t:"objOrNull"},   // #330: Secondary Portal Tie must persist
+  {k:"createTown",save:p=>p.createTown||null,load:s=>s.createTown||player.createTown||null},         // #330: chargen routing
+  {k:"createTemplate",save:p=>p.createTemplate||null,load:s=>s.createTemplate||player.createTemplate||null},
+  {k:"createSpec",save:p=>p.createSpec||null,load:s=>Array.isArray(s.createSpec)?s.createSpec:(player.createSpec||null)},
+  {k:"eventTitles",load:s=>Array.isArray(s.eventTitles)?s.eventTitles.slice():[]},
+  {k:"itemBuffs",t:"obj"},   // Item-Enchantment buffs live on gear, so they survive death/relog with their timer
+  {k:"dye",load:s=>(typeof s.dye==="number")?s.dye:null},
+  {k:"colosseumClears",t:"int"},{k:"advColosseumClears",t:"int"},
+  {k:"rarePity",t:"int"},   // I6 rare-drop pity counter
+  {k:"focusMana",t:"num"},  // H15 focus mana battery
+  // spells: knownSpells/hotbar/loadouts save as plain player fields but load via the bespoke
+  // multi-statement step in applySaveObj (defaults seeding, unknown-id drops, QB padding).
+  {k:"knownSpells",load:null},{k:"hotbar",load:null},{k:"loadouts",load:null},
+];
+// ── versioned migration pipeline: each entry upgrades a save IN PLACE to version v. The old
+//    inline old-schema conditionals live here now; add new entries (v:3, …) for future changes.
+const SAVE_VERSION=2;
+const SAVE_MIGRATIONS=[
+  {v:2,up(s){   // everything pre-dating the versioned pipeline
+    if(!s.armorSlots&&s.armorItem) s.armorSlots={chest:s.armorItem};                        // ancient single-slot armour
+    if(!s.jewelry&&(s.ringItem||s.neckItem)){ const j={}; if(s.ringItem)j.lfinger=s.ringItem; if(s.neckItem)j.neck=s.neckItem; s.jewelry=j; }
+    if(s.patron&&!s.patronInfo) s.patronInfo={name:s.monarch||vassalName(),level:Math.floor(+s.level>0?+s.level:1)+5,sworn:Date.now(),ig:0};   // patron:bool → pyramid record
+    if(!Array.isArray(s.activeQuests)&&s.questActive&&s.questIdx!=null&&QUESTS[s.questIdx|0]){   // single-active journal → multi-quest
+      const q=QUESTS[s.questIdx|0];
+      s.activeQuests=[{id:q.id,prog:(Array.isArray(s.questProg)&&s.questProg.length===q.obj.length)?s.questProg.slice():q.obj.map(()=>0)}];
+    }
+    if(!s.sagaVer){ s.gameMonth=0; s.sagaProg={}; }   // pre-saga saves (the old "Fifth Sending" loop) begin the Kilmer Saga at the Coronation
+  }},
+];
+function upgradeSaveObj(s){
+  const from=+s.saveVersion||1;
+  for(const m of SAVE_MIGRATIONS) if(m.v>from) try{ m.up(s); }catch(e){}
+  s.saveVersion=SAVE_VERSION;
+  return s;
+}
 function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the localStorage safety-net even while online
   try{
     const baseAttr={}; for(const a in player.attr) baseAttr[a]=player.attr[a]-((player.spellBuffs&&player.spellBuffs[a])?player.spellBuffs[a].v:0);
-    const s={attr:baseAttr,level:player.level,xp:player.xp,xpUnspent:player.xpUnspent,
-      skillPts:player.skillPts,freeRank:player.freeRank||null,kills:player.kills,gold:player.gold,armor:player.armor,
-      inv:player.inv,materials:player.materials,salvage:player.salvage,craft:player.craft,weaponTink:player.weaponTink,armorTink:player.armorTink,
-      weapon:player.weapon,armorSlots:player.armorSlots,jewelry:player.jewelry,skills:player.skills,patronInfo:player.patronInfo||null,vassals:player.vassals,monarch:player.monarch,vassalXP:player.vassalXP,allegianceMOTD:player.allegianceMOTD||null,vitae:player.vitae,heritage:player.heritage,allegianceName:player.allegianceName||null,vitals:player.vitals,aetheria:player.aetheria||null,attrInnate:player.attrInnate||null,greeters:player.greeters||{},academy:player.academy||{},packs:player.packs||[],
-      name:player.name,appearance:player.appearance,
-      potHealth:player.potHealth,potMana:player.potMana,potGreat:player.potGreat,potStam:player.potStam,
-      tapers:player.tapers,prismTapers:player.prismTapers,
-      elixMight:player.elixMight,elixSwift:player.elixSwift,
-      achievements:player.achievements,title:player.title,bossKills:player.bossKills,
-      championKills:player.championKills,delves:player.delves,delveCredited:player.delveCredited,bestiary:player.bestiary,clearedDungeons:player.clearedDungeons,
-      boundLS:lifestones.findIndex(l=>l.bound),boundLSAt:(()=>{const l=lifestones.find(x=>x.bound);return l?{name:l.name,x:l.x,z:l.z}:null;})(),activeQuests,questDone,tracked,taskReps,
-      society:player.society,societyRep:player.societyRep,societyRibbons:player.societyRibbons||0,societyTest:player.societyTest||null,societyTestsDone:player.societyTestsDone||[],arcsDone:player.arcsDone,taskCooldown,augment:player.augment,packBonus:player.packBonus,house:player.house,homestead:player.homestead||null,hsRebuyUntil:player.hsRebuyUntil||0,ship:player.ship||null,kcVault:player.kcVault||{},kcHookItems:player.kcHookItems||{},
-      luminance:player.luminance,lumUnlocked:player.lumUnlocked,auras:player.auras,enlightenment:player.enlightenment,tiedPortal:player.tiedPortal,
-      tiedPortal2:player.tiedPortal2||null,createTown:player.createTown||null,createTemplate:player.createTemplate||null,createSpec:player.createSpec||null,   // #330: these were set but never persisted — Secondary Portal Tie evaporated on relog, and a relog mid-Academy rerouted every heritage to Holtburg
-      gameMonth,calendarDone,eventTitles:player.eventTitles,worldDays,sagaProg,sagaVer:1,
-      knownSpells:player.knownSpells,hotbar:player.hotbar,loadouts:player.loadouts,itemBuffs:player.itemBuffs,
+    const s={attr:baseAttr,saveVersion:SAVE_VERSION,
+      boundLS:lifestones.findIndex(l=>l.bound),boundLSAt:(()=>{const l=lifestones.find(x=>x.bound);return l?{name:l.name,x:l.x,z:l.z}:null;})(),
+      activeQuests,questDone,tracked,taskReps,taskCooldown,
+      gameMonth,calendarDone,worldDays,sagaProg,sagaVer:1,
       keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
-      dye:player.dye,colosseumClears:player.colosseumClears,advColosseumClears:player.advColosseumClears,rarePity:player.rarePity,focusMana:player.focusMana,
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
+    for(const f of SAVE_SCHEMA) s[f.k]=f.save?f.save(player):player[f.k];
     if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
       if(alsoLocal){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(s)); }catch(e){} } }   // #457: logout also writes the local safety-net so a socket drop mid-logout can't black-hole progress
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
-  }catch(e){}
+  }catch(e){
+    // #789: don't silently swallow the failure — a QuotaExceededError (browser storage full) means the
+    // player's progress is NOT being written, and they'd never know. Surface it, throttled so a repeated
+    // failure doesn't spam every autosave.
+    const _now=(typeof performance!=="undefined"?performance.now():Date.now());
+    if(!saveGame._warnedAt || _now-saveGame._warnedAt>60000){
+      saveGame._warnedAt=_now;
+      const quota=!!(e&&(e.name==="QuotaExceededError"||e.code===22||e.code===1014));
+      try{ log(quota?"⚠ Save failed — browser storage is full. Free some space or your progress won't persist.":"⚠ Save failed — your progress may not be saving. See the console for details.","warn"); }catch(_){}
+      if(typeof console!=="undefined"&&console.warn) console.warn("saveGame failed:",e&&(e.message||e));
+    }
+  }
 }
+// #794: debounced save — coalesces a burst of state changes (crafting/refining/tool-buying a stack in
+// quick succession) into ONE trailing write instead of a full ~256 KiB serialize + localStorage/netSend
+// per action. The short delay is well under the autosave interval and the logout flush, so nothing is
+// lost; a pending save is force-flushed on logout via flushSaveSoon().
+let _saveSoonTimer=null;
+function saveGameSoon(){ if(_saveSoonTimer) return; _saveSoonTimer=setTimeout(()=>{ _saveSoonTimer=null; saveGame(); }, 1200); }
+function flushSaveSoon(){ if(_saveSoonTimer){ clearTimeout(_saveSoonTimer); _saveSoonTimer=null; saveGame(); } }
+try{ window.addEventListener("pagehide",()=>{ try{ flushSaveSoon(); }catch(e){} }); }catch(e){}   // #794: a tab close mid-debounce still flushes the pending save
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 function applySave(){
   let s; try{ s=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ return false; }
@@ -31512,30 +31735,17 @@ function applySave(){
 }
 function applySaveObj(s){
   if(!s||typeof s!=="object") return false;
+  upgradeSaveObj(s);   // #784: versioned old-schema fixups run FIRST, in place — the field loads below see current-schema data
   // #15: default/sanitize the core fields so a corrupt, truncated, or old-schema save (missing/wrong
   //      `attr`/`level`/`xp`/…) degrades gracefully instead of crashing the load with an unrecoverable
-  //      undefined-attr state. Newer fields below already default; these ancient ones didn't.
+  //      undefined-attr state.
   const _attr=(()=>{ const b={Strength:10,Endurance:10,Coordination:10,Quickness:10,Focus:10,Self:10};
     if(s.attr&&typeof s.attr==="object") for(const k in b){ const v=+s.attr[k]; if(isFinite(v)&&v>0) b[k]=v; } return b; })();
-  Object.assign(player,{attr:_attr,level:(+s.level>0?Math.floor(+s.level):1),xp:+s.xp||0,xpUnspent:+s.xpUnspent||0,skillPts:+s.skillPts||0,freeRank:(s.freeRank&&typeof s.freeRank==="object")?s.freeRank:{},
-    vitals:(s.vitals&&typeof s.vitals==="object")?{hp:s.vitals.hp||0,st:s.vitals.st||0,mn:s.vitals.mn||0}:{hp:0,st:0,mn:0},
-    attrInnate:(s.attrInnate&&typeof s.attrInnate==="object")?s.attrInnate:null,   // pre-parity saves: current values become the innate line (attrInnate() falls back to min(attr,100))
-    greeters:(s.greeters&&typeof s.greeters==="object")?s.greeters:{},
-    academy:(s.academy&&typeof s.academy==="object")?s.academy:{done:1},   // pre-Academy saves have long left the grounds
-    packs:Array.isArray(s.packs)?s.packs:[],
-    kills:s.kills|0,gold:Math.max(0,Math.min(2e9,Math.floor(+s.gold||0))),armor:s.armor|0,inv:Array.isArray(s.inv)?s.inv:[],materials:s.materials||0,salvage:(s.salvage&&typeof s.salvage==="object")?s.salvage:{},craft:(s.craft&&typeof s.craft==="object")?s.craft:{},   // #292: gold via clamp not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR; clamp to [0,2e9] to match the server's coin ceiling
-    weaponTink:s.weaponTink||0,armorTink:s.armorTink||0,
-    potHealth:s.potHealth||0,potMana:s.potMana||0,potGreat:s.potGreat||0,potStam:s.potStam||0,
-    tapers:s.tapers||0,prismTapers:s.prismTapers||0,
-    elixMight:s.elixMight||0,elixSwift:s.elixSwift||0,
-    achievements:s.achievements||[],title:s.title||"",bossKills:s.bossKills||0,
-    championKills:s.championKills||0,delves:s.delves||0,delveCredited:Array.isArray(s.delveCredited)?s.delveCredited:[],bestiary:s.bestiary||[],clearedDungeons:s.clearedDungeons||[],
-    weapon:s.weapon||null,armorSlots:(s.armorSlots&&typeof s.armorSlots==="object")?s.armorSlots:(s.armorItem?{chest:s.armorItem}:{}),
-    jewelry:(s.jewelry&&typeof s.jewelry==="object")?s.jewelry:(()=>{const j={};if(s.ringItem)j.lfinger=s.ringItem;if(s.neckItem)j.neck=s.neckItem;return j;})(),gearSkill:{},
-    skills:migrateSkills(s.skills),patronInfo:(s.patronInfo&&typeof s.patronInfo==="object")?s.patronInfo:null,vassals:Array.isArray(s.vassals)?s.vassals:[],monarch:s.monarch||null,vassalXP:s.vassalXP|0,allegianceMOTD:s.allegianceMOTD||null,vitae:s.vitae||0,heritage:s.heritage||"aluvian",allegianceName:s.allegianceName||null,
-    name:s.name||"Adventurer",appearance:(s.appearance&&typeof s.appearance==="object")?Object.assign({race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"},s.appearance):{race:s.heritage||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}});
-  // allegiance migration: old saves held patron:bool + vassals:[{name}] — lift them into the pyramid
-  if(s.patron&&!player.patronInfo) player.patronInfo={name:s.monarch||vassalName(),level:player.level+5,sworn:Date.now(),ig:0};
+  player.attr=_attr;
+  // #784: the schema drives every symmetric field (see SAVE_SCHEMA) — one entry, both directions.
+  for(const f of SAVE_SCHEMA){ if(f.load===null) continue;
+    player[f.k]=f.load?f.load(s):_SV[f.t||"orNull"](s[f.k],f.d); }
+  player.gearSkill={};   // rebuilt below by recomputeGearSkill()
   player.vassals=player.vassals.map(v=>{
     if(typeof v==="string") v={name:v};
     if(v&&v.level==null) v=Object.assign({level:Math.max(1,(player.level|0)-irnd(2,10)),
@@ -31548,57 +31758,32 @@ function applySaveObj(s){
   player.loadouts=Array.isArray(s.loadouts)?s.loadouts.filter(l=>l&&l.name&&Array.isArray(l.bar)).slice(0,8):[];
   while(player.hotbar.length<QB_TOTAL) player.hotbar.push(null);
   buildSpellbar();
-  // Item-Enchantment buffs are on your gear, so they survive death/relog with their remaining timer
-  player.itemBuffs=(s.itemBuffs&&typeof s.itemBuffs==="object")?s.itemBuffs:{};
   questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
   taskReps=(s.taskReps&&typeof s.taskReps==="object")?Object.assign({},s.taskReps):{};
   taskCooldown=(s.taskCooldown&&typeof s.taskCooldown==="object")?Object.assign({},s.taskCooldown):{};
-  player.society=(s.society&&SOCIETIES.some(o=>o.id===s.society))?s.society:null;
-  player.societyRep=s.societyRep|0;
-  player.societyRibbons=s.societyRibbons|0; player.societyTest=s.societyTest||null; player.societyTestsDone=Array.isArray(s.societyTestsDone)?s.societyTestsDone:[];
-  player.arcsDone=Array.isArray(s.arcsDone)?s.arcsDone.filter(id=>arcById(id)):[];
-  player.augment=(s.augment&&typeof s.augment==="object")?{hp:s.augment.hp|0,st:s.augment.st|0,mn:s.augment.mn|0,resist:+s.augment.resist||0,magic:s.augment.magic|0,crit:+s.augment.crit||0,critReduce:+s.augment.critReduce||0,attrTotal:s.augment.attrTotal|0,dropReduce:s.augment.dropReduce|0,allskills:s.augment.allskills|0,xpBonus:+s.augment.xpBonus||0,count:s.augment.count|0,skillCredits:s.augment.skillCredits|0,fam:(s.augment.fam&&typeof s.augment.fam==="object")?s.augment.fam:{},owned:(s.augment.owned&&typeof s.augment.owned==="object")?s.augment.owned:{}}:{hp:0,st:0,mn:0,resist:0,magic:0,crit:0,critReduce:0,skillCredits:0,fam:{},owned:{}};
-  player.aetheria=(s.aetheria&&typeof s.aetheria==="object")?{blue:s.aetheria.blue||null,yellow:s.aetheria.yellow||null,red:s.aetheria.red||null}:{blue:null,yellow:null,red:null};
-  player.luminance=s.luminance|0; player.lumUnlocked=!!s.lumUnlocked; player.auras=(s.auras&&typeof s.auras==="object")?s.auras:{}; player.enlightenment=s.enlightenment|0;
-  player.tiedPortal=(s.tiedPortal&&typeof s.tiedPortal==="object")?s.tiedPortal:null;
-  player.tiedPortal2=(s.tiedPortal2&&typeof s.tiedPortal2==="object")?s.tiedPortal2:null;   // #330: restore the Secondary Portal Tie
-  if(s.createTown) player.createTown=s.createTown; if(s.createTemplate) player.createTemplate=s.createTemplate; if(Array.isArray(s.createSpec)) player.createSpec=s.createSpec;   // #330: restore chargen routing (Academy exit / greeter / welcome all key on createTown)
+  // #784: coordinate migrations + load side effects (the schema loaded the raw fields above)
   if(player.tiedPortal){ const _m=WSCALE/(s.wscale||1); if(_m!==1){ player.tiedPortal.x*=_m; player.tiedPortal.z*=_m; } }   // migrate tied-portal coords
-  player.packBonus=s.packBonus|0;
-  player.dye=(typeof s.dye==="number")?s.dye:null; player.colosseumClears=s.colosseumClears|0; player.advColosseumClears=s.advColosseumClears|0;   // H7 armour dye + H16 clears
-  player.rarePity=s.rarePity|0;   // I6 rare-drop pity counter
-  player.focusMana=+s.focusMana||0;   // H15 focus mana battery
-  player.house=(s.house&&typeof s.house==="object"&&Array.isArray(s.house.storage))?{tier:s.house.tier|0,storage:s.house.storage}:{tier:0,storage:[]};
-  player.homestead=(s.homestead&&typeof s.homestead==="object"&&(s.homestead.set||s.homestead.hid!=null))?s.homestead:null;
   if(player.homestead&&player.homestead.hid!=null){ hsClaimLocal(player.homestead.hid); hsSyncHouse(); }   // #355: re-assert ownership of our plot on load (+ re-sync online)
-  player.kcVault=(s.kcVault&&typeof s.kcVault==="object")?s.kcVault:{};                 // Kilmer's castle chest contents
-  player.kcHookItems=(s.kcHookItems&&typeof s.kcHookItems==="object")?s.kcHookItems:{};  // castle hook placements (deviations from defaults)
-  player.hsRebuyUntil=+s.hsRebuyUntil||0;
   player.aboardShip=null;   // always start a session ashore
-  player.ship=(s.ship&&typeof s.ship==="object"&&shipDef(s.ship.type))?{type:s.ship.type,x:(typeof s.ship.x==="number")?s.ship.x:null,z:(typeof s.ship.z==="number")?s.ship.z:null,yaw:+s.ship.yaw||0}:null;
   if(player.ship&&player.ship.x!=null){ const _sm=WSCALE/(s.wscale||1); if(_sm!==1){ player.ship.x*=_sm; player.ship.z*=_sm; } }   // migrate ship coords across a world-scale change
   if(typeof hsMigrateDeed==="function"&&_hsPackOn) hsMigrateDeed();
   if(typeof hsRefreshHomestead==="function"&&typeof hsCrystals!=="undefined"&&(hsCrystals.length||_hsPackOn)) hsRefreshHomestead();
-  if(typeof hsRentTick==="function") hsRentTick();
-  if(Array.isArray(s.activeQuests)){                              // new multi-quest journal
+  hsRentTick();
+  if(Array.isArray(s.activeQuests)){                              // multi-quest journal (SAVE_MIGRATIONS lifts the old single-active form)
     activeQuests=s.activeQuests.filter(a=>a&&questById(a.id)).map(a=>{ const q=questById(a.id);
       const e={id:a.id, prog:(Array.isArray(a.prog)&&a.prog.length===q.obj.length)?a.prog.slice():q.obj.map(()=>0)};
       if(a.deadline) e.deadline=a.deadline;   // preserve timed-quest deadline across relog (may already be expired)
       return e; });
-  } else if(s.questActive && s.questIdx!=null && QUESTS[s.questIdx|0]){   // migrate old single-active save
-    const q=QUESTS[s.questIdx|0];
-    activeQuests=[{id:q.id, prog:(Array.isArray(s.questProg)&&s.questProg.length===q.obj.length)?s.questProg.slice():q.obj.map(()=>0)}];
   } else activeQuests=[];
   tracked=(s.tracked&&isActive(s.tracked))?s.tracked:trackedId();
   gameMonth=s.gameMonth|0; eventClock=0; calendarDone=(s.calendarDone&&typeof s.calendarDone==="object")?s.calendarDone:{};
   sagaProg=(s.sagaProg&&typeof s.sagaProg==="object")?s.sagaProg:{};
-  if(!s.sagaVer){ gameMonth=0; sagaProg={}; }   // pre-saga saves (the old "Fifth Sending" loop) begin the Kilmer Saga at the Coronation
   worldDays=(typeof s.worldDays==="number"&&isFinite(s.worldDays))?s.worldDays:120;   // older saves join at the dawn of Verdantine
   _seasonIdx=-1; seasonTick();
-  player.eventTitles=Array.isArray(s.eventTitles)?s.eventTitles.slice():[]; updateSeasonHUD();
+  updateSeasonHUD();
   recomputeGearSkill();   // rebuild jewelry skill bonuses from equipped ring/necklace
-  if(typeof styleWeaponModel==="function") styleWeaponModel();   // tint held blade to the loaded weapon
-  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // show the loaded armour on the body
+  styleWeaponModel();   // tint held blade to the loaded weapon
+  refreshAvatarArmor();   // show the loaded armour on the body
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
   // restore bound lifestone + spawn there. #330: the raw index is fragile (the lifestones array's
   // composition depends on an async, failable acworld*.json fetch), so prefer matching the saved
@@ -31620,9 +31805,9 @@ function applySaveObj(s){
   updateNPCMarker();updateQuestHUD();
   // refresh the HUD + character sheet NOW so the panels show the LOADED character immediately, rather
   // than lingering on the pre-load defaults (level 1 / 0 gold) until the next frame or a manual open.
-  if(typeof updateHUD==="function") updateHUD();
-  if(typeof buildSheet==="function") buildSheet();
-  if(typeof applyCharKeymap==="function") applyCharKeymap(s);   // #483: this character's saved keybinds, else the global default
+  updateHUD();
+  buildSheet();
+  applyCharKeymap(s);   // #483: this character's saved keybinds, else the global default
   return true;
 }
 function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
@@ -31734,10 +31919,11 @@ function onSpellFx(m){
     const lt=new THREE.PointLight(col,2.4,r*5); lt.position.set(x,gy+1.4,z);
     const g=new THREE.Group(); g.add(disc); g.add(lt); scene.add(g);
     walls.push({x,z,r,dps:0,element:null,color:col,burn:false,slow:0,t:6,acc:0,isDungeon:!!inDungeon,mesh:g,disc,cosmetic:true});
+  } else if(m.cat==="cast"){   // #spellfx: a peer weaving a spell — show their element-coloured cast signature
+    fxCastSignature(x,z,col,0.6);
   } else { // aoe / ring / blast burst
-    if(typeof spellImpactFX==="function") spellImpactFX(x,gy+0.9,z,col,null,true);   // #668: a peer's blast detonates with the full spectacle
-    else if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
-    const fl=new THREE.PointLight(col,3,18); fl._transient=1; fl.position.set(x,gy+1.5,z); scene.add(fl); setTimeout(()=>scene.remove(fl),300);
+    spellImpactFX(x,gy+0.9,z,col,null,true);   // #668: a peer's blast detonates with the full spectacle
+    impactFlash(col,3,18,x,gy+1.5,z,300);   // #797: pooled
   }
 }
 function netHandle(m){
@@ -31805,7 +31991,7 @@ function netHandle(m){
     log(`Allegiance — rank <b>${m.rank}</b>${m.monarch?` under Monarch <b>${esc(m.monarch)}</b>`:""} · ${m.followers} follower${m.followers!==1?"s":""}${m.vassals&&m.vassals.length?`<br>Vassals: ${m.vassals.map(v=>`${esc(v.name)}${v.online?"":" (away)"} — passes up ${v.passup}%`).join(" · ")}`:""}${m.motd?`<br>MOTD: <i>${esc(m.motd)}</i>`:""}`,"sys"); return; }
   if(m.t==="drop")      return onDrop(m);
   if(m.t==="drop_gone") return onDropGone(m);
-  if(m.t==="coin"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; if(typeof updateHUD==="function") updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance (#315: reject null/non-number, never zero gold)
+  if(m.t==="coin"){ if(typeof m.coin==="number"&&isFinite(m.coin)){ player.gold=m.coin; updateHUD(); } return; }   // M3 (#238): server pushes the authoritative pyreal balance (#315: reject null/non-number, never zero gold)
   if(m.t==="vendor_ok"){
     // #297: the client sold/redeemed OPTIMISTICALLY (item already removed) and queued the item in
     // NET.pendingSell. On a server REJECT (item wasn't in the authoritative inventory), restore that
@@ -31813,7 +31999,7 @@ function netHandle(m){
     if(m.act==="reject"){ const back=(NET.pendingSell&&NET.pendingSell.shift())||null; if(back) addToInv(back); if(m.reason) log(m.reason,"warn"); }
     else if(m.act==="sell"){ if(NET.pendingSell) NET.pendingSell.shift(); }   // confirmed sold
     if(typeof m.coin==="number"&&isFinite(m.coin)) player.gold=m.coin;   // M3 (#238): adopt the authoritative balance (#315: reject null/non-number)
-    if(typeof updateHUD==="function") updateHUD(); if(typeof buildShop==="function"&&document.getElementById('shop')&&document.getElementById('shop').style.display!=="none") buildShop();
+    updateHUD(); if(typeof buildShop==="function"&&document.getElementById('shop')&&document.getElementById('shop').style.display!=="none") buildShop();
     return; }
   if(m.t==="loot")      return onLoot(m);
   if(m.t==="corpse_loot") return onCorpseLoot(m);
@@ -31870,7 +32056,7 @@ function onEventReward(msg){
   if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin;   // #297: adopt the server's authoritative balance (event gold is now credited to cl.coin server-side) so the next absolute loot push can't erase the reward
     else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); if(SFX.gold)SFX.gold(); }
   player.incursions=(player.incursions||0)+1;
-  if(typeof checkAchievements==="function") checkAchievements();
+  checkAchievements();
 }
 // ---- shared ground loot (M3c): server owns drops; pickups are first-come, server-validated ----
 function onDrop(msg){
@@ -31892,7 +32078,7 @@ function onLoot(msg){
   if(msg.type==="gold"){ const amt=+msg.amt; if(!isFinite(amt)||amt<=0) return;   // #33: validate the server amount — a missing/NaN/non-numeric amt must not corrupt player.gold to NaN (economy soft-brick)
     if(isFinite(msg.coin)) player.gold=msg.coin;   // M3 (#238): adopt the server's authoritative balance when it sends one, else fall back to additive (older server)
     else player.gold+=amt;
-    floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); SFX.gold(); if(typeof updateHUD==="function") updateHUD(); }
+    floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); SFX.gold(); updateHUD(); }
   else if(msg.type==="item"&&msg.item){ lootItem(msg.item); }
 }
 // server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
@@ -31905,7 +32091,7 @@ function onCorpseLoot(msg){
   }
   const whose=(msg.owner&&player.name&&msg.owner!==player.name)?`<b>${esc(msg.owner)}</b>'s corpse`:"your corpse";
   log(`You loot ${whose} — <b>${taken}</b> item(s)${msg.amt?` and <b>${msg.amt.toLocaleString()}</b> pyreals`:""} taken${spilled?`; <b>${spilled}</b> spilled beside you (satchel full)`:""}.`,"loot");
-  if(SFX.quest)SFX.quest(); if(typeof recomputeGearSkill==="function")recomputeGearSkill(); updateHUD(); saveGame();
+  if(SFX.quest)SFX.quest(); recomputeGearSkill(); updateHUD(); saveGame();
 }
 // ---- shared, server-authoritative monsters (M3) ----
 // Server mobs live in the same monsters[] array (so all combat/targeting/visuals reuse the
@@ -32029,11 +32215,11 @@ function onReward(msg){
   if(msg.xp) gainXP(msg.xp);
   if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); SFX.gold(); }   // #297: finite guard + adopt authoritative balance when present
   player.kills++;
-  if(msg.boss){ player.bossKills=(player.bossKills||0)+1; if(typeof questEvent==="function") questEvent("boss"); }
+  if(msg.boss){ player.bossKills=(player.bossKills||0)+1; questEvent("boss"); }
   const b=BESTIARY[msg.kind];
   if(b && player.bestiary.indexOf(msg.kind)<0){ player.bestiary.push(msg.kind);
     log(`<b>Bestiary:</b> you have learned the nature of the ${b.name}.`,"loot"); toast("NEW BESTIARY ENTRY"); SFX.quest(); }
-  if(typeof checkAchievements==="function") checkAchievements();
+  checkAchievements();
 }
 function onAuthOk(m){
   NET.me=m.id; NET.token=m.token||null; isOnline=true;       // m.id = account; world identity is the chosen character
@@ -32148,7 +32334,7 @@ function sendChatLine(text){
   if(isOnline){ if(!NET.open){ log("Not connected — message not sent. (reconnecting…)","warn"); return; }   // #636: don't silently eat the line while the socket is down
     netSend({t:"chat",msg:text}); }
   else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
-    if(typeof floater==="function") floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
+    floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
 }
 // ── AC SECURE TRADE window: two columns (your offer | theirs), both must Accept,
 //    any change to either side clears both accepts (retail rule). Real item icons throughout. ──
@@ -32217,7 +32403,7 @@ function beginLogout(){
   for(const k in keys) delete keys[k];
   if(typeof TOUCH!=="undefined"){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; }
   chargeActive=false; blocking=false; player.casting=null; player.emoteT=0;
-  if(typeof closeAnyPanel==="function") closeAnyPanel();
+  closeAnyPanel();
   if(locked&&document.exitPointerLock) document.exitPointerLock();
   player.invuln=Math.max(player.invuln||0, LOGOUT.saveDeadline+2);   // a deliberate logout is not cancelled by a stray hit
   // portal visuals at the player's feet — the SAME swirl/flash the game uses when entering a portal
@@ -32250,8 +32436,8 @@ function _logoutFadeAvatar(op){
   av.traverse(o=>{ if(!o.isMesh||!o.material) return;
     const arr=Array.isArray(o.material)?o.material:null, list=arr||[o.material];
     for(let i=0;i<list.length;i++){ let m=list[i];
-      // clone each material once so we fade ONLY the local avatar — never a material shared with the
-      // gltfPeople cache (which would fade remote players too). We reload after, so no restore is needed.
+      // clone each material once so we fade ONLY the local avatar — never a shared AC-model material
+      // (which would fade remote players too). We reload after, so no restore is needed.
       if(!m._logoutOwned){ m=m.clone(); m._logoutOwned=true; m.transparent=true; m.depthWrite=false;
         if(arr) o.material[i]=m; else o.material=m; }
       m.opacity=op; }
@@ -32398,9 +32584,9 @@ function buffBotCast(targetName){
   }
   const t=(targetName||"").trim();
   if(!t||/^(me|self)$/i.test(t)){
-    list.forEach(sp=>applyBuffSelf(sp,true)); derive(); if(typeof updateHUD==="function")updateHUD();
+    list.forEach(sp=>applyBuffSelf(sp,true)); derive(); updateHUD();
     log(`<b>Buff bot:</b> applied <b>${list.length}</b> enchantments to yourself — creature, life &amp; item buffs. Item enchantments empower all gear you hold.`,"heal");
-    if(typeof toast==="function")toast("BUFFED"); if(SFX.quest)SFX.quest(); if(typeof saveGame==="function")saveGame(); return;
+    if(typeof toast==="function")toast("BUFFED"); if(SFX.quest)SFX.quest(); saveGame(); return;
   }
   if(!isOnline){ log("Buffing others requires being online.","warn"); return; }
   const send=(id,name)=>{ list.forEach(sp=>netSend({t:"cast",target:id,spell:sp.id})); return name; };
@@ -32428,16 +32614,16 @@ function doUnstuck(){
     if(!sp){ const r=(dungeonRects||[]).find(c=>c.room)||(dungeonRects||[])[0];
       if(r) sp=r.round?{x:r.cx,z:r.cz}:{x:(r.x0+r.x1)/2,z:(r.z0+r.z1)/2}; }
     if(!sp) sp={x:DCEN.x,z:DCEN.z};
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z);
     player.y=(dungeonSpawn&&dungeonSpawn.y)||0; arriveAt(sp.x,sp.z); player.invuln=Math.max(player.invuln||0,2);
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
     log((curDungeon&&curDungeon.academy)?"You step back to the Academy's entry hall. Walk to the <b>Society Greeter</b> and press <b>E</b> to speak.":"You wrench free and reappear at the delve's entrance.","sys");
     toast("UNSTUCK"); return;
   }
   if(inNetwork){
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z);
+    teleportFX(player.x,player.z);
     arriveAt(DCEN.x,DCEN.z-2); player.invuln=Math.max(player.invuln||0,2);
-    if(typeof teleportFX==="function") teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
+    teleportFX(player.x,player.z); if(SFX.portal)SFX.portal();
     log("You pull free and step back to the hub's entrance.","sys"); toast("UNSTUCK"); return;
   }
   // overworld: hop to the nearest clear footing; if there truly is none, recall to your Lifestone
@@ -32613,7 +32799,7 @@ function reconcileRemotes(players){
     let r=NET.players[p.id];
     if(!r){ const app=remoteApp(p); app.raceExplicit=true; const mesh=buildAvatarJointed(app); mesh.userData._headApp=app; applyACBody(mesh,app.gender); mesh.visible=true;
       mesh.userData.headApp=app;
-      if(typeof npcAcHead==="function") npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
+      npcAcHead({mesh,x:p.x||0,z:p.z||0});   // every remote player wears the REAL AC head (their heritage's meshes + feature strips)
       const tag=labelSprite(p.name||p.id,"players"); tag.scale.set(5,1.3,1); tag.position.y=2.5; mesh.add(tag);
       scene.add(mesh); NET.meshes[p.id]=mesh; r=NET.players[p.id]={mesh,_born:performance.now()}; }   // #670: _born → grace clock for hide-until-AC-body
     r.tx=p.x; r.tz=p.z; r.name=p.name||p.id; r.pk=!!p.pk; r.pkState=p.pkState||(p.pk?"pk":"npk");
@@ -32627,7 +32813,7 @@ function reconcileRemotes(players){
   }
   for(const id in NET.players){ if(!seen[id]){ const mm=NET.meshes[id]; if(mm){ if(mm.userData.horse){ disposeObject3D(mm.userData.horse); mm.userData.horse=null; }   // #728: the ridden horse lives beside the avatar, not under it
       if(mm.userData.parked){ for(const k in mm.userData.parked) disposeObject3D(mm.userData.parked[k]); mm.userData.parked=null; }   // #734: and so do their parked horses
-      if(typeof disposeObject3D==="function") disposeObject3D(mm); else scene.remove(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
+      disposeObject3D(mm); } delete NET.meshes[id]; delete NET.players[id]; } }   // #308: a remote avatar is a full jointed body + AC head + label-sprite canvas texture — dispose it (frees geometry/materials/textures and prunes LABELS) on leave, not just scene.remove, or join/leave churn ratchets GPU memory
 }
 // Dress a remote player's avatar with their relayed wield (weapon/shield). The jointed avatar already
 // carries aHeld/aBow/aWand/aShield sub-meshes (built by buildAvatarJointed); we just toggle/fill them
@@ -32673,7 +32859,7 @@ function applyRemoteGear(mesh, gear){
     if(g[3]) it.dye=g[3];
     if(k==="back"){ if(g[4]) it.cape=1; if(g[5]!=null) it.tint=g[5]; }
     slots[k]=it; }
-  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor(mesh, slots);
+  refreshAvatarArmor(mesh, slots);
 }
 function updateRemotes(dt){
   const hide=inDungeon||inNetwork; // remotes live in the shared overworld (instances are per-player until M3)
@@ -32844,7 +33030,7 @@ function startGame(loadSaved,preset){
     // skills: the trained set chosen at creation, else the heritage default loadout
     player.skills=freshSkills();
     const load=(player.createSkills&&player.createSkills.length)?player.createSkills
-      :({aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],gharundim:["war","life","creature"],viamontian:["heavy","meleed","shield"]}[preset]||["heavy","meleed"]);
+      :(HERITAGE_SKILLS[preset]||["heavy","meleed"]);
     for(const k of load){ if(SKILL_BY_KEY[k]) skillState(k).t=1; }
     for(const k of (player.createSpec||[])){ if(SKILL_BY_KEY[k]) skillState(k).t=2; }   // AC: skills specialized at creation
     const fs=freshSpells();player.knownSpells=fs.known;player.hotbar=fs.hotbar;buildSpellbar();
@@ -32854,28 +33040,19 @@ function startGame(loadSaved,preset){
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
       player.inv.push({name:"Calling Stone",stat:"quest",v:0,tut:true});
       player.inv.push({name:"Welcome Letter",stat:"book",v:10,tut:true});   // the real AC starter letter — readable (Use) via openBookReader
-      const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
-        bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
-        warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
-      const tw=TW[tpl]||{name:"Training Sword",wt:"sword",v:7};
+      const tw=TEMPLATE_TRAIN_WEAPON[tpl]||{name:"Training Sword",wt:"sword",v:7};
       player.weapon={name:tw.name,stat:"weapon",wt:tw.wt,v:tw.v,foc:tw.foc||0,mat:"Iron",tier:1,work:3};
       if(tw.wt==="focus"){ player.tapers=(player.tapers||0)+20; player.prismTapers=(player.prismTapers||0)+20; }
       if(tpl==="lifecaster") player.inv.push({name:"Healing Kit",stat:"hp",v:50,count:2});
       if(tpl==="soldier") player.inv.push({name:"Steel Quarrel",stat:"ammo",for:"crossbow",dmg:4,v:4,count:30});
       // creation clothing: a heritage-appropriate shirt & breeches, worn from the start (retail arrivals
       // weren't naked). Cloth layer under any armour; equipped straight into the shirt/pants slots.
-      const CLOTH={aluvian:{sh:"Aluvian Shirt",pt:"Aluvian Breeches",tint:0x6a5a3a},
-        gharundim:{sh:"Gharu'ndim Tunic",pt:"Gharu'ndim Trousers",tint:0x8a6a30},
-        sho:{sh:"Sho Kimono Shirt",pt:"Sho Hakama",tint:0x3a4a5a},
-        viamontian:{sh:"Viamontian Doublet",pt:"Viamontian Hose",tint:0x5a2a3a}};
-      const cl=CLOTH[(player.heritage||"aluvian")]||CLOTH.aluvian;
+      const cl=HERITAGE_CLOTHING[(player.heritage||"aluvian")]||HERITAGE_CLOTHING.aluvian;
       player.armorSlots=player.armorSlots||{};
       player.armorSlots.shirt={name:cl.sh,stat:"worn",at:"light",aslot:"shirt",v:1,tint:cl.tint,cloth:true};
       player.armorSlots.pants={name:cl.pt,stat:"worn",at:"light",aslot:"pants",v:1,tint:cl.tint,cloth:true};
       // a heritage word of welcome, echoing the Letter
-      const WELC={aluvian:"a kinsman's blessing from the green Aluvian shires",gharundim:"a blessing of Zaikhal and the shining sands",
-        sho:"the quiet counsel of the Sho masters",viamontian:"a noble's charge from the courts of Viamont"};
-      log(`You carry a <b>Welcome Letter</b> — ${WELC[(player.heritage||"aluvian")]||WELC.aluvian}. <span style="color:var(--dim)">(Use it from your satchel to read.)</span>`,"sys");
+      log(`You carry a <b>Welcome Letter</b> — ${HERITAGE_WELCOME[(player.heritage||"aluvian")]||HERITAGE_WELCOME.aluvian}. <span style="color:var(--dim)">(Use it from your satchel to read.)</span>`,"sys");
     }
   }
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
@@ -32883,7 +33060,7 @@ function startGame(loadSaved,preset){
   if(loadSaved){
     if(isOnline&&pendingServerChar){ applySaveObj(pendingServerChar); pendingServerChar=null; }
     else applySave();
-    if(typeof kcRefreshDecor==="function") kcRefreshDecor();   // castle is built before the save loads — rebuild hooks from the restored placements
+    kcRefreshDecor();   // castle is built before the save loads — rebuild hooks from the restored placements
     log(isOnline?`Welcome to the shared world of <b>Dereth</b>, ${esc(player.name||"Adventurer")}.`:"Your saga continues in <b>Dereth</b>.","sys");   // #438: greet by character name — NET.me is now an opaque session id, not the account name
     toast(isOnline?"ENTERING DERETH ONLINE":"WELCOME BACK");
   } else {
@@ -32903,23 +33080,27 @@ function startGame(loadSaved,preset){
     log("You have crossed to <b>Dereth</b>, a volcanic isle on the world of <b>Auberean</b> — a land of portals, ancient ruins, and the insectoid Olthoi.","sys");
     log(TOUCH.on?"Tap the Interact pill at the Lifestone to bind; open the ☰ menu → Map to fast-travel.":"Bind to the Lifestone (E), and open the map (Tab) to fast-travel between towns.","sys");   // #652: touch equivalents for the bind/map hint
     toast("WELCOME TO DERETH");
-    setTimeout(()=>{if(running)log("Tip: bind to the blue Lifestone (E) — death returns you there.","sys");},7000);
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (☰ menu → Quests). Vendors are green $.":"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $.","sys");},14000);   // #652: touch equivalent for the quest-log hint
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: ☰ menu: Character, Packs, Codex/Bestiary, Quests, Map. Match spell elements to a foe's weakness!":"Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);   // #652: touch panel access has no B/C/T/Tab keys
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: hold the <b>attack</b> button to charge; the <b>shield</b>/<b>JUMP</b> buttons are on the right cluster.":"Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). <b>Shift+Q</b> swaps weapon; Q toggles auto-run.","sys");},28000);   // #652: touch has no right-click/Shift+Q
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: tap the <b>JUMP</b> button to jump (train <b>Jump</b> & travel light to leap higher) — the <b>dodge</b> button dodges. Climb the ramps inside town halls to the upper floor.":"Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);   // #652: touch has no Space/Shift+Space
-    setTimeout(()=>{if(running)log("Tip: press <b>N</b> to rearrange your HUD (drag any panel). Your <b>quickbar</b> has 4 pages — the <b>1–4</b> buttons (or <b>[ ]</b>) switch pages; assign spells to any of its 96 slots in the Spellbook (K).","sys");},42000);
+    // #786: the boot tutorial drip is DATA fed to one scheduler, not a stack of raw setTimeouts.
+    // Thunks so the touch/desktop variant is chosen at FIRE time (#652), matching the old behavior.
+    const TUT_TIPS=[
+      [7000,()=>"Tip: bind to the blue Lifestone (E) — death returns you there."],
+      [14000,()=>TOUCH.on?"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (☰ menu → Quests). Vendors are green $.":"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $."],
+      [21000,()=>TOUCH.on?"Tip: ☰ menu: Character, Packs, Codex/Bestiary, Quests, Map. Match spell elements to a foe's weakness!":"Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!"],
+      [28000,()=>TOUCH.on?"Tip: hold the <b>attack</b> button to charge; the <b>shield</b>/<b>JUMP</b> buttons are on the right cluster.":"Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). <b>Shift+Q</b> swaps weapon; Q toggles auto-run."],
+      [35000,()=>TOUCH.on?"Tip: tap the <b>JUMP</b> button to jump (train <b>Jump</b> & travel light to leap higher) — the <b>dodge</b> button dodges. Climb the ramps inside town halls to the upper floor.":"Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor."],
+      [42000,()=>"Tip: press <b>N</b> to rearrange your HUD (drag any panel). Your <b>quickbar</b> has 4 pages — the <b>1–4</b> buttons (or <b>[ ]</b>) switch pages; assign spells to any of its 96 slots in the Spellbook (K)."],
+    ];
+    for(const [ms,tip] of TUT_TIPS) setTimeout(()=>{ if(running) log(tip(),"sys"); },ms);
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
-  if(typeof refreshAvatarArmor==="function") refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
-  applyPlayerModel();          // if the player chose a rigged body model at creation, load it as their avatar
+  refreshAvatarArmor();   // #470: a fresh character's starting shirt/pants (and any loaded/equipped armor) never drew on the player's own avatar — applySave() called this for returning characters, but a brand-new character fell straight through to the bare AC body. Sync the armor-rig shells to player.armorSlots here so it covers BOTH paths.
   { const nm=document.getElementById('name'); if(nm) nm.textContent=(player.name||"Adventurer")+" of Dereth"; }
   markSceneSRGB();
   running=true;paused=false;lastTs=0;updateQuestHUD();updateSeasonHUD();
   if(typeof acquireWakeLock==="function") acquireWakeLock();   // #673: the screen stays on while playing
   if(autosaveTimer) clearInterval(autosaveTimer);
-  autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
+  autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },CFG.autosaveMs);
   // #674: iOS Safari has NO pointer-lock API — the bare cEl.requestPointerLock() threw a TypeError
   // one line before the rAF loop started, so tapping Play on an iPhone set running=true, never drew a
   // frame, and bounced the player back to the title screen. Guard on existence AND touch mode (touch
@@ -33209,7 +33390,7 @@ function ccRenderCreation(){
         +`<div class="cl-town">Begins in <b>${h.town}</b></div>`;
     } else lore.style.display="none"; }
   const gd=document.getElementById('ccGender');
-  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null; ccRenderCreation(); if(typeof ccBuildACHead==="function")ccBuildACHead(); if(typeof ccRebuild==="function")ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
+  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null; ccRenderCreation(); ccBuildACHead(); ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
   const pf=document.getElementById('ccProf');
   if(pf){ pf.innerHTML=""; TEMPLATES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.name; b.className=ccWork.template===t.k?"sel":""; b.onclick=()=>ccApplyTemplate(t.k); pf.appendChild(b); }); }
   const at=document.getElementById('ccAttrs');
@@ -33272,7 +33453,7 @@ function openBarber(n){
   ccBarber=true;
   openCharCreator((player.appearance&&player.appearance.race)||player.heritage,()=>{
     ccBarber=false; paused=false;
-    refreshAvatarAppearance(); if(typeof refreshACArmor==="function")refreshACArmor();
+    refreshAvatarAppearance(); refreshACArmor();
     log("The barber's work is done — <b>you wear a new look</b>.","loot"); toast("A NEW FACE"); if(SFX.quest)SFX.quest(); saveGame();
   });
 }
@@ -33407,7 +33588,7 @@ function applyTouchUI(){
   if(typeof renderer!=="undefined"&&renderer&&typeof mobilePixelRatio==="function"){
     renderer.setPixelRatio(mobilePixelRatio([0.85,1,1.25,2][(typeof GFX!=="undefined"?GFX.tier:3)|0]));
     renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight));   // #webgpu: never size to 0 — a 0x0 canvas (background/minimized/hidden tab) makes WebGPU error hard creating 0-size swapchain/depth textures (WebGL tolerated it)
-    if(typeof resizePost==="function") resizePost();
+    resizePost();
     if(typeof GFX!=="undefined") GFX._grace=Math.max(GFX._grace||0,1.0);   // #345: realloc stall must not trip the governor
   }
   if(!TOUCH.on){ TOUCH.held={}; TOUCH.sprint=false; TOUCH.mag=0; blocking=false;
@@ -33641,9 +33822,9 @@ function tcFullscreen(auto){
   btn('tcEye',()=>toggleView());
   btn('tcHt',()=>{ let i=ATK_HEIGHTS.indexOf(player.atkHeight||"mid"); player.atkHeight=ATK_HEIGHTS[(i+1)%3];
     const el=document.getElementById('tcHt'); if(el) el.firstChild.textContent=player.atkHeight.toUpperCase();
-    if(typeof buildCombatPanel==="function") buildCombatPanel();
+    buildCombatPanel();
     const ah=document.getElementById('atkHeight'); if(ah){ ah.textContent="Attack: "+ATK_LABEL[player.atkHeight]; ah.style.display="block"; ah._t=now(); } });
-  btn('tcPg',()=>{ hotbarPage=(hotbarPage+1)%QB_PAGES; if(typeof buildSpellbar==="function") buildSpellbar(); tcArcRender(); });
+  btn('tcPg',()=>{ hotbarPage=(hotbarPage+1)%QB_PAGES; buildSpellbar(); tcArcRender(); });
   const act=document.getElementById('tcAct');
   if(act) act.addEventListener('touchstart',e=>{ e.preventDefault(); if(TOUCH.on&&running&&!paused&&player.alive){ interact(); buzz(9); } },{passive:false});
   // the Interact pill mirrors the desktop E-prompt (currentPrompt already names the exact action)
@@ -33681,12 +33862,12 @@ function tcArcRender(){
     const a=(150-i*17)*Math.PI/180;                       // #469: 150°→82° fan (was 180°→90°) so the lowest slots clear the HEIGHT/PAGE buttons and the last slot stays on-screen; 17° step at r=160 still spaces the 46px slots
     const x=cx+Math.cos(a)*rad, y=cy-Math.sin(a)*rad;
     const e=player.hotbar&&player.hotbar[abs];
-    const isIt=e&&typeof hbIsItem==="function"&&hbIsItem(e);
+    const isIt=e&&hbIsItem(e);
     const s=(e&&!isIt)?SPELLBOOK[e]:null;
     const d=document.createElement('div');
     d.className='tcSlot'+(e?'':' empty'); d.dataset.abs=abs; d.dataset.id=(s&&typeof e==="string")?e:'';
     d.style.left=Math.round(x-23)+'px'; d.style.top=Math.round(y-23)+'px';
-    const ico=e?(isIt?((typeof gearIco==="function"&&gearIco(e))||"📦"):((s&&s.ico)||"✦")):String(i+1);
+    const ico=e?(isIt?((gearIco(e))||"📦"):((s&&s.ico)||"✦")):String(i+1);
     d.innerHTML=`<span class="ico">${ico}</span><div class="sweep"></div><div class="cds"></div>`;
     d.addEventListener('touchstart',ev=>{ ev.preventDefault(); ev.stopPropagation();
       if(!TOUCH.on||!running||paused||!player.alive) return;
@@ -33715,8 +33896,8 @@ function tcOpenPMenu(p,x,y){
   if(!m||!head||!btns) return;
   const nm=(p.r&&p.r.name)||"Adventurer";
   const hpf=Math.round(100*clamp(((p.r&&p.r.hp)||1)/((p.r&&p.r.mhp)||1),0,1));
-  head.innerHTML=`👤 ${nm}${p.r&&p.r.pk?`<span class="pk">${String((p.r.pkState||"pk")).toUpperCase()}</span>`:""}
-    <div class="bar bhp" style="margin-top:5px"><i style="width:${hpf}%"></i></div>`;
+  head.innerHTML=`👤 ${esc(nm)}${p.r&&p.r.pk?`<span class="pk">${esc(String((p.r.pkState||"pk")).toUpperCase())}</span>`:""}
+    <div class="bar bhp" style="margin-top:5px"><i style="width:${hpf}%"></i></div>`;   // #802: escape the remote name/pkState — they reach innerHTML, so an unescaped name is stored XSS
   btns.innerHTML="";
   const mk=(ico,label,fn)=>{ const b=document.createElement('button'); b.textContent=ico+" "+label;
     b.onclick=()=>{ fn(); tcClosePMenu(); buzz(8); }; btns.appendChild(b); return b; };
@@ -33729,7 +33910,7 @@ function tcOpenPMenu(p,x,y){
     b.onclick=()=>{ if(!armed){ armed=true; b.textContent="⚠ Confirm swear?"; b.className="warn"; return; }
       sendChatLine("/swear "+nm); tcClosePMenu(); buzz(8); };
     btns.appendChild(b); }
-  mk("🔍","Examine",()=>log(`<b>${nm}</b> — ${hpf}% health, ${p.r&&p.r.pk?"a <b>Player Killer</b>":"peaceable"}${p.r&&p.r.shield?", shield raised":""}.`,"sys"));
+  mk("🔍","Examine",()=>log(`<b>${esc(nm)}</b> — ${hpf}% health, ${p.r&&p.r.pk?"a <b>Player Killer</b>":"peaceable"}${p.r&&p.r.shield?", shield raised":""}.`,"sys"));   // #802: escape the remote name (log renders HTML)
   m.style.left=Math.round(clamp(x-116,8,innerWidth-248))+"px";
   m.style.top=Math.round(clamp(y-40,8,innerHeight-236))+"px";
   m.classList.add('open');

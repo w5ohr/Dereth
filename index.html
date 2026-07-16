@@ -2,6 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- #805: Content-Security-Policy. Delivered as a meta tag (not an nginx header) so it ships with the
+     network-first index.html and isn't dropped by the per-location add_header inheritance in the site
+     config. 'unsafe-inline' is unavoidable for script/style: the client uses an inline importmap, an
+     inline module bootstrap, ~225 inline style= attributes, and generates inline onclick handlers, so a
+     nonce/strict policy would need the DOM-decoupling refactor (#786). Even with unsafe-inline this still
+     hardens the app — no external script/style origins, object-src none, base-uri/form-action pinned to
+     self — so an injected <script src=evil>, <base>, or <object> is blocked. connect-src allows the
+     same-origin /ws WebSocket (ws:/wss:). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -966,6 +975,11 @@
         Object.assign(THREE, webgpu);
       } catch (e) { console.error('WebGPU module load failed — staying on WebGL:', e); }
     }
+    // #778: the first ES-module tranche — the AC leaf data tables live in a real module. Import it
+    // and expose every export as a global BEFORE the classic scripts are injected, so their bare-name
+    // references resolve identically. As more of game.js modularizes, this bridge shrinks away.
+    const ACT = await import('./js/data/ac-tables.js');
+    for (const k in ACT) window[k] = ACT[k];
     for (const src of ['js/game.js', 'js/craft.js']) {
       const s = document.createElement('script'); s.src = src; s.async = false;
       document.body.appendChild(s);

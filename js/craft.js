@@ -104,6 +104,7 @@ function mineOreYield(n){
 
 // ---- GATHERING ── lumberjacking & fishing (via craftInteract) ----
 let craftStations=[], lumberNodes=[], fishSpots=[];
+let _craftWorldBuilt=false, _treeRegrowTimer=null;   // #793: dedicated build-once guard + regrow-interval handle (don't key idempotency on array length, and don't leak a second interval on a double-build)
 function chopTree(t){
   const lvl=craftLvl("lumberjack");
   t.depleted=true; t.readyAt=now()+rnd(45000,80000);
@@ -289,7 +290,8 @@ function buildTreeMesh(x,y,z,wood){
 }
 function waterNear(x,z){ for(let a=0;a<6.28;a+=0.8){ if(terrainH(x+Math.cos(a)*4.5,z+Math.sin(a)*4.5)<-0.2) return true; } return false; }
 function buildCraftWorld(){
-  if(craftStations.length) return;   // once
+  if(_craftWorldBuilt) return;   // #793: build once — a dedicated flag, not craftStations.length (which a partial/failed build or an external reset could leave falsy, letting the whole build — and its setInterval — run twice)
+  _craftWorldBuilt=true;
   // 1) a Crafting Forge in / beside every town
   for(const c of CITIES){
     let px=null,py=0,pz=0;
@@ -346,7 +348,8 @@ function buildCraftWorld(){
     scene.add(g); fishSpots.push({x:fx,z:fz,mesh:g,readyAt:0}); placed++;
   }
   // lazy tree-regrow tick (cheap; restores canopies you're not standing next to)
-  setInterval(()=>{ const t0=now(); for(const t of lumberNodes){ if(t.depleted&&t0>t.readyAt){ t.depleted=false; if(t.canopy)t.canopy.visible=true; if(t.stump)t.stump.visible=false; if(t.spr)t.spr.visible=true; } } },4000);
+  if(_treeRegrowTimer) clearInterval(_treeRegrowTimer);   // #793: never leak a second regrow interval
+  _treeRegrowTimer=setInterval(()=>{ const t0=now(); for(const t of lumberNodes){ if(t.depleted&&t0>t.readyAt){ t.depleted=false; if(t.canopy)t.canopy.visible=true; if(t.stump)t.stump.visible=false; if(t.spr)t.spr.visible=true; } } },4000);
 }
 
 // ---- RECIPE CATALOG (built with loops) ----
@@ -459,7 +462,7 @@ function attemptCraft(rec,tierKey){
   if(!addToInv(item)){ addDrop(player.x,player.z,{type:"item",item}); log("Pack full — set at your feet.","warn"); }
   gainCraft(rec.skill, exc?1.6:1.0);
   log(`You craft ${exc?"an <b>exceptional</b> ":"a "}<b>${item.name}</b>${exc?` <span style="color:#ffd86b">✦ signed by ${esc(item.maker)}</span>`:""}.`,"loot");
-  if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu();
+  if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGameSoon(); if(_cmOpen) renderCraftMenu();
 }
 function refineAll(kind){ // ore→ingot / log→board / hide→leather (1:1)
   if(!nearCraftStation()){ log("Stand at a <b>Crafting Forge</b> to refine.","warn"); return; }
@@ -469,7 +472,7 @@ function refineAll(kind){ // ore→ingot / log→board / hide→leather (1:1)
   for(const t of ladder){ const nm=resNameFor(src,t.k), c=invCountOf(nm); if(c>0){ removeItemsByName(nm,c); const out=resItem(kind,t.k,c); if(!addToInv(out)) addDrop(player.x,player.z,{type:"item",item:out}); total+=c; } }
   if(!total){ log(`You have no ${src}s to refine.`,"warn"); return; }
   const verb=kind==="ingot"?"smelt":kind==="board"?"mill":"tan";
-  log(`You ${verb} <b>${total}</b> ${src}${total>1?"s":""}.`,"loot"); if(SFX&&SFX.gold)SFX.gold(); startAction("craft",0.9); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu();
+  log(`You ${verb} <b>${total}</b> ${src}${total>1?"s":""}.`,"loot"); if(SFX&&SFX.gold)SFX.gold(); startAction("craft",0.9); updateHUD(); saveGameSoon(); if(_cmOpen) renderCraftMenu();
 }
 // tool shop (buy for pyreals)
 const UO_SHOP=[
@@ -479,7 +482,7 @@ const UO_SHOP=[
   {tool:"tinkering",name:"Tinker's Tools",uses:120,ico:"🛠️",cost:240},{tool:"fletching",name:"Fletcher's Tools",uses:120,ico:"🗡️",cost:200},
 ];
 function buyTool(i){ const t=UO_SHOP[i]; if(!t) return; if(player.gold<t.cost){ log("Not enough pyreals.","warn"); if(SFX&&SFX.deny)SFX.deny(); return; }
-  player.gold-=t.cost; addToInv(toolItem(t.tool,t.name,t.uses,t.ico)); log(`You buy a <b>${t.name}</b> (${t.uses} uses).`,"loot"); if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGame(); if(_cmOpen) renderCraftMenu(); }
+  player.gold-=t.cost; addToInv(toolItem(t.tool,t.name,t.uses,t.ico)); log(`You buy a <b>${t.name}</b> (${t.uses} uses).`,"loot"); if(SFX&&SFX.gold)SFX.gold(); updateHUD(); saveGameSoon(); if(_cmOpen) renderCraftMenu(); }
 
 // ---- CRAFT MENU UI ----
 let _cmOpen=false, _cmTab="refine", _cmSel={ingot:null,board:null,leather:null};

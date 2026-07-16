@@ -594,10 +594,44 @@ Machine 1 authored the Phase-A/B boot bootstrap + the `IS_WEBGPU` dual-path, so 
   re-measure). Also added a **0×0-canvas render guard** in `renderComposite` (WebGPU errors hard on a size-0
   swapchain when minimized/hidden; WebGL tolerated it). Verified on Metal: no-flag→WebGPU, `?gpu=0`→WebGL
   (bundle not fetched), `?gpu=1`→WebGPU, 0×0 canvas→0 errors, renders clean at real size.
-- 🟡 **B4. Verify + merge.** Metal verification ✅ (B3 + the A2/A3 passes). Merging `webgpu`→`main` is the
-  cutover. **Does NOT auto-deploy** — production (derethgame.com) is a separate manual step, untouched.
-  Remaining before/at merge: machine-2 Windows fallback QA (A1) is nice-to-have but non-blocking since
-  Windows stays on the unchanged WebGL path by default.
+- ✅ **B4. Verified + MERGED TO MAIN (2026-07-15).** `webgpu`→`main` landed as merge commit `9b99fc13`
+  (`--no-ff`, 63 commits, clean fast-forwardable — `main` had 0 divergent commits). The migration is on
+  `main`. **Production (derethgame.com) NOT deployed** — that's a separate manual step, deliberately untouched.
+  Per-backend default means non-Apple clients keep the exact current WebGL production behavior, so machine-2's
+  Windows fallback QA (A1) is non-blocking. **The migration is COMPLETE as a per-backend cutover.**
+
+**Agent 2 / machine 2, 2026-07-16: Edge/Firefox fallback QA (A1) — ALL PASS.** Eight headless runs against
+the cutover build (Win11/AMD 8060S; Edge 138 stable at `Program Files (x86)`, Firefox 140.12 ESR via
+puppeteer BiDi), each booting the seeded overworld to gameplay with a pinned scene, backend probed via
+`renderer.backend`, frames counted over 4 s, and the canvas screenshot-verified (not trusting counters —
+frozen-canvas lesson):
+
+| browser | flags | backend | frames/4s | errors |
+|---|---|---|---|---|
+| Edge | (none) | classic WebGL, bundle NOT fetched | 180 | 0 |
+| Edge | `?gpu=1` | native WebGPU | 95 | 0 |
+| Edge | `?gpu=0` | classic WebGL, bundle NOT fetched | 171 | 0 |
+| Edge | `?gpu=1&glfallback=1` | WebGPURenderer on WebGL2 backend | 57 | 0 |
+| Edge | `?gpu=1` + adapter forced null | WebGPURenderer on WebGL2 backend | 62 | 0 |
+| Firefox | (none) | classic WebGL (no `navigator.gpu` on 140 ESR) | 61 | 0 |
+| Firefox | `?gpu=1` | classic WebGL — `_wantWebGPU` false, bundle skipped | 62 | 0 |
+| Firefox | `?gpu=0` | classic WebGL | 53 | 0 |
+
+Notable: (a) the cutover's `navigator.gpu` gate means WebGPU-less browsers (FF ≤140) never fetch the
+bundle even with `?gpu=1` — cleanest possible degradation; (b) **r185 `WebGPURenderer.init()` does NOT
+throw when `requestAdapter()` returns null** — it silently drops to its own WebGL2 backend, so the
+`initThree` catch→classic-WebGL fallback is effectively unreachable via missing adapters (only real init
+exceptions hit it). A `?gpu=1` user with broken/blocklisted WebGPU therefore gets node-on-WebGL2 (~⅓ the
+classic fps here) rather than classic WebGL — acceptable since `?gpu=1` is a manual override, but if we
+ever want classic as the hard fallback, initThree must probe `requestAdapter()` itself before
+constructing the renderer. Firefox pointer-lock/screenshot quirks: FF 140 ESR BiDi lacks the viewport
+emulation command (`page.setViewport` throws — size via `--width/--height` instead). Harness:
+scratchpad `qa-fallback.js`.
+
+**🎉 CUTOVER DONE.** Remaining is optional/future, not blocking: (1) ~~machine-2 Windows WebGL2-fallback QA (A1)~~ ✅ done 2026-07-16 (see table above);
+(2) **r186 (~Aug) re-measure** — if it closes the D3D12 UBO gap, flip to a blanket WebGPU default and then
+delete the classic renderer/GLSL/POST dual-path; (3) minor polish (water #691 real-shoreline eyeball, lava
+verify). Deploy to production whenever you choose (separate manual step).
 
 ---
 

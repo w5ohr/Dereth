@@ -19,8 +19,20 @@
 // v7: acportalfx.json + acportal/ sprites (the authentic retail portal particle effect).
 // v8: #webgpu Phase A — the game code moved out of inline index.html into js/game.js + js/craft.js
 // (ES-module three via vendor/three.module.js). js/*.js are treated like the app (network-first, so a
-// deploy lands on reload); vendor/* is pinned-dependency static (stale-while-revalidate).
+// deploy lands on reload); vendor/* is stale-while-revalidate but SELF-HEALING (#806): its background
+// revalidation forces a conditional server check, so a new Three.js build is picked up on the next load
+// WITHOUT a manual `V` bump — bumping V stays a belt-and-suspenders, no longer the only safety net.
 const V = "dereth-v8";
+
+// #804: network-first must not hang on "lie-fi" (a connected-but-dead link where fetch never settles).
+// Race every network-first fetch against a timeout so a stalled request falls back to cache instead of
+// leaving the player staring at a blank tab. AbortController cancels the in-flight request on timeout.
+const NET_TIMEOUT_MS = 6000;
+function fetchWithTimeout(req, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  return fetch(req, { signal: ctl.signal }).finally(() => clearTimeout(timer));
+}
 
 self.addEventListener("install", () => { self.skipWaiting(); });
 
@@ -39,17 +51,26 @@ self.addEventListener("fetch", e => {
 
   // app code (js/game.js, js/craft.js) changes on every deploy just like index.html did when it was
   // inline — serve it network-first so a reload always gets the latest, falling back to cache offline.
-  const isCode = url.pathname.endsWith("/js/game.js") || url.pathname.endsWith("/js/craft.js");
+  const isCode = url.pathname.endsWith("/js/game.js") || url.pathname.endsWith("/js/craft.js") || url.pathname.includes("/js/data/");   // #778: extracted data modules deploy with the game code — same network-first class
   const isNav = req.mode === "navigate" || url.pathname === "/" || url.pathname.endsWith("/index.html");
   if (isNav || isCode) {
     e.respondWith((async () => {
       const c = await caches.open(V);
       try {
-        const r = await fetch(req);
+        const r = await fetchWithTimeout(req, NET_TIMEOUT_MS);   // #804: don't hang forever on lie-fi
         if (r && r.ok) c.put(req, r.clone());
         return r;
       } catch (_) {
-        return (await c.match(req)) || Response.error();
+        // #803: offline fallback. A navigation can carry a query string (/?ref=x, deep links, share
+        // params) that matches no cache key exactly, so retry ignoring the search params and finally
+        // fall back to the cached shell — otherwise the app fails to open offline on any non-bare URL.
+        let hit = await c.match(req);
+        if (!hit && isNav) {
+          hit = await c.match(req, { ignoreSearch: true })
+             || await c.match("./index.html", { ignoreSearch: true })
+             || await c.match("./");
+        }
+        return hit || Response.error();
       }
     })());
     return;
@@ -65,7 +86,17 @@ self.addEventListener("fetch", e => {
   e.respondWith((async () => {
     const c = await caches.open(V);
     const hit = await c.match(req);
-    const net = fetch(req).then(r => { if (r && r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
+    // #806: the pinned Three.js ESM build (vendor/) must self-heal without a manual `V` bump — otherwise a
+    // new build shipped without one serves the stale module indefinitely (vendor has no Cache-Control, so
+    // the browser's heuristic freshness can pin it for days, and the plain background fetch is satisfied
+    // from that stale HTTP cache without ever reaching the server). Force its revalidation to check the
+    // server CONDITIONALLY: a cheap 304 when unchanged, a full 200 + cache update when it changed. The
+    // cached copy is still returned instantly below, so there's no added latency; the next load is fresh.
+    // (assets/ are immutable + content-addressed — they change only with a network-first index.html — so
+    // they keep the plain revalidation.)
+    const isVendor = url.pathname.includes("/vendor/");
+    const net = fetch(req, isVendor ? { cache: "no-cache" } : undefined)
+      .then(r => { if (r && r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
     return hit || net.then(r => r || Response.error());
   })());
 });

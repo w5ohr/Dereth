@@ -153,7 +153,16 @@ def init_db():
             buyer TEXT, listed INTEGER, sold INTEGER)""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_market_town ON market(town, status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_market_seller ON market(seller, status)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
+        # #815: a UNIQUE index makes global name uniqueness a DB-level invariant, closing the
+        # cross-thread TOCTOU where two concurrent create_char workers both pass the SELECT and both
+        # INSERT. Degrade gracefully to the plain index if a legacy DB already holds duplicate names
+        # (creation would otherwise fail and take down startup); create_char_slot still catches the
+        # IntegrityError, so on a clean DB the race is impossible.
+        try:
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
+        except sqlite3.IntegrityError:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
+            print("init_db: existing duplicate character names — idx_char_lname left non-unique (resolve dupes to enforce uniqueness)")
         # allegiance vassal lookups (WHERE patron=?) run on enter_world / swear / alg_info
         c.execute("CREATE INDEX IF NOT EXISTS idx_alg_patron ON allegiance(patron)")
     c.close()
@@ -423,8 +432,13 @@ def create_char_slot(account, slot, name, data):
         if c.execute("SELECT 1 FROM characters WHERE account=? AND name=?", (account, name)).fetchone():
             return False, "You already have a character with that name."
         nd = new_char_data(data)   # #S2: force a server starter economy — never trust client gold/level/xp/inv at creation
-        c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
-                  (account, slot, name, json.dumps(nd) if nd is not None else None, int(time.time()), int(time.time())))
+        try:
+            c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
+                      (account, slot, name, json.dumps(nd) if nd is not None else None, int(time.time()), int(time.time())))
+        except sqlite3.IntegrityError:
+            # #815: the UNIQUE idx_char_lname is the authoritative arbiter — a concurrent create that
+            # slipped past the SELECT above loses here rather than minting a duplicate global name.
+            return False, "That name is already taken."
     return True, None
 
 def _svnum(v, lo, hi, default):
@@ -924,7 +938,7 @@ RL_GEN_RATE = 30.0    # sustained messages/sec (input/attack/etc.)
 RL_GEN_BURST = 60.0   # burst capacity
 RL_CHAT_RATE = 2.0    # sustained "chatty" broadcast messages/sec
 RL_CHAT_BURST = 6.0   # burst capacity for chat/emote/tell/party/allegiance
-CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd", "spellfx"}   # messages that fan out to others. #312: spellfx is a purely-cosmetic broadcast-to-all — throttle it on the scarcer chat budget (2/s) so a client can't blast FX to every player 30×/s (attack/debuff stay on the general bucket since they fire at legitimate combat rate)
+CHATTY = {"chat", "emote", "tell", "pchat", "achat", "alg_motd", "spellfx", "house"}   # messages that fan out to others. #312: spellfx is a purely-cosmetic broadcast-to-all — throttle it on the scarcer chat budget (2/s) so a client can't blast FX to every player 30×/s (attack/debuff stay on the general bucket since they fire at legitimate combat rate). #817: house set/release also fans out (broadcast_house, O(N)) plus a DB write — put it on the scarcer bucket so a client can't drive ~30×N egress + 30 writes/s by toggling its own plot
 SAVE_MIN_INTERVAL = 1.0   # #449: min seconds between persisted saves per character — a cost-aware cap on the 256 KiB serialize+write beyond the flat message bucket (client autosaves every ~10s, so this drops no real state)
 
 # #468: per-(sender→target) cooldown for targeted, consent-style notifications (party invite, trade
@@ -1785,8 +1799,17 @@ async def resolve_attack(cl, mid, dmg):
     if dmg > 0:
         dealt = m.setdefault("dealt", {})
         dealt[cl.username] = dealt.get(cl.username, 0) + dmg
+    # #812: claim the kill ATOMICALLY here, before the mob_hit broadcast's await can yield the loop.
+    # Two attackers finishing the same mob both reach `m["hp"] <= 0` after their awaits; without a
+    # synchronous single-winner claim they would each run the death block (double loot + double kill XP
+    # + double allegiance pass-up). The claim is set between the (synchronous) hp mutation and the first
+    # await, so exactly one coroutine wins. Respawn pops+replaces the mob object, so the flag self-clears.
+    killed = False
+    if m["hp"] <= 0 and not m.get("dead"):
+        m["dead"] = True
+        killed = True
     await broadcast({"t": "mob_hit", "id": mid, "hp": round(max(0.0, m["hp"]), 1), "dmg": round(dmg, 1), "by": cl.netid})  # #438: opaque netid, not the account name
-    if m["hp"] <= 0:
+    if killed:
         m["hp"] = 0.0
         is_boss = bool(m.get("boss"))
         m["respawn_at"] = time.time() + (BOSS_DEFS[m["bosskey"]]["respawn"] if is_boss else 8.0)
@@ -1844,6 +1867,34 @@ def alg_set_patron(name, patron):
         c.execute("INSERT INTO allegiance(charname,patron,sworn_at,pending_xp) VALUES(?,?,?,0) "
                   "ON CONFLICT(charname) DO UPDATE SET patron=?, sworn_at=?",
                   (name, patron, int(time.time()), patron, int(time.time())))
+
+def alg_swear_atomic(vassal, patron):
+    """#819: acyclic-swear as ONE serialized transaction. The old code ran the cycle check and the
+    patron write as two separate awaited dbq() calls, so two accounts swearing to each other could both
+    pass the check (each on its own read snapshot) before either committed, closing a 2-node cycle.
+    BEGIN IMMEDIATE takes the write lock up front, so a concurrent swearer blocks until this commits and
+    then sees the just-written patron in its own check. Returns True if sworn, False if it would cycle."""
+    c = db()
+    c.execute("BEGIN IMMEDIATE")   # connection is in autocommit between transactions (isolation_level=""), so this opens exactly one
+    try:
+        seen = set()
+        cur = patron
+        while cur and cur not in seen:          # walk patron's chain upward; a hit on `vassal` means swearing would close a loop
+            if cur == vassal:
+                c.execute("ROLLBACK")
+                return False
+            seen.add(cur)
+            row = c.execute("SELECT patron FROM allegiance WHERE charname=?", (cur,)).fetchone()
+            cur = row[0] if row else None
+        c.execute("INSERT INTO allegiance(charname,patron,sworn_at,pending_xp) VALUES(?,?,?,0) "
+                  "ON CONFLICT(charname) DO UPDATE SET patron=?, sworn_at=?",
+                  (vassal, patron, int(time.time()), patron, int(time.time())))
+        c.execute("COMMIT")
+        return True
+    except Exception:
+        try: c.execute("ROLLBACK")
+        except Exception: pass
+        raise
 
 def alg_set_motd(name, text):
     with db() as c:
@@ -2313,6 +2364,15 @@ def market_buy(lid, buyer):
                       (buyer, int(time.time()), lid)).rowcount
         return {"id": r[0], "town": r[1], "seller": r[2], "item": r[3], "price": r[4]} if n == 1 else None
 
+def market_revert_claim(lid, buyer):
+    """#808: undo an atomic claim when the winning buyer turns out not to afford it — put the listing
+    back on the shelf so someone else can buy it. Guarded on (status='sold', buyer) so it only reverts
+    THIS buyer's just-made claim."""
+    c = db()
+    with c:
+        return c.execute("UPDATE market SET status='listed', buyer=NULL, sold=NULL WHERE id=? AND status='sold' AND buyer=?",
+                         (lid, buyer)).rowcount == 1
+
 def market_collect(seller, town):
     """Claim all sold-but-uncollected proceeds for this seller AT this town's broker."""
     c = db()
@@ -2346,10 +2406,12 @@ def market_pending(seller):
     return [{"town": r[0], "n": r[1], "g": r[2]} for r in rows]
 
 async def handle_market(cl, msg):
-    """#722: consignment broker. The item is ESCROWED here while listed (the client removes it from
-    the satchel on 'list', the #295 trade rule); buyers PAY FIRST (client deducts gold only on our
-    'bought' confirmation, and the atomic claim means one winner per listing); proceeds wait in the
-    DB until the seller collects them at the same town's broker."""
+    """#722 consignment broker, made server-AUTHORITATIVE in #808 (matching trade/vendor under the #238
+    model). Items are escrowed out of the authoritative inventory on 'list' (take_owned) and stored
+    sanitized (sanitize_item), buyers are DEBITED authoritatively before delivery, proceeds are credited
+    on 'collect' (a conserved transfer against the buyer's debit), and 'reclaim' re-adds the escrowed
+    item. The server pushes the authoritative coin balance after every coin-moving op so a modified
+    client can't buy for free, mint on collect, dupe on list, or inject forged-stat items."""
     act = str(msg.get("act", ""))
     town = str(msg.get("town", ""))[:40]
     if act == "list":
@@ -2360,13 +2422,21 @@ async def handle_market(cl, msg):
             price = 0
         if not (isinstance(item, dict) and town and 0 < price <= MARKET_MAX_PRICE):
             return await cl.send({"t": "market", "act": "list_fail", "msg": "The broker squints at the offer and shakes his head."})
-        item_json = json.dumps(item)[:MARKET_ITEM_BYTES]
+        # #808: escrow the item OUT of the authoritative inventory. If it isn't owned (fabricated), the
+        # client's list_fail handler re-adds its local copy — nothing is minted onto the shelf.
+        ok, removed = take_owned(cl, [item])
+        if not ok or not removed:
+            return await cl.send({"t": "market", "act": "list_fail", "msg": "That item isn't in your satchel."})
+        server_item = sanitize_item(removed[0])   # #808: store the SERVER's sanitized copy, never the raw client stats
+        item_json = json.dumps(server_item)[:MARKET_ITEM_BYTES]
         try:
             json.loads(item_json)
-        except ValueError:   # truncation broke the JSON → item too big
+        except ValueError:   # truncation broke the JSON → item too big; give the item back
+            if cl.econ_ready: cl.inv = (cl.inv + [server_item])[:500]
             return await cl.send({"t": "market", "act": "list_fail", "msg": "The broker cannot catalogue something so unwieldy."})
         lid = await dbq(market_add, town, cl.charname, item_json, price)
         if lid is None:
+            if cl.econ_ready: cl.inv = (cl.inv + [server_item])[:500]   # #808: listing cap hit → un-escrow (client also re-adds via list_fail; save reconciles to one copy)
             return await cl.send({"t": "market", "act": "list_fail",
                                   "msg": f"The broker's ledger holds only {MARKET_MAX_LISTINGS} of your consignments at once."})
         await cl.send({"t": "market", "act": "listed", "id": lid, "price": price, "town": town})
@@ -2378,20 +2448,37 @@ async def handle_market(cl, msg):
             lid = int(msg.get("id", 0))
         except (TypeError, ValueError):
             return
-        row = await dbq(market_buy, lid, cl.charname)
+        row = await dbq(market_buy, lid, cl.charname)   # atomic claim — one winner per listing
         if not row:
             return await cl.send({"t": "market", "act": "buy_fail", "id": lid,
                                   "msg": "Too late — that consignment is already gone."})
-        await cl.send({"t": "market", "act": "bought", "id": lid, "item": row["item"], "price": row["price"],
-                       "seller": row["seller"], "town": row["town"]})
+        price = int(row["price"])
+        # #808: charge the buyer AUTHORITATIVELY. If they can't cover it, put the listing back on the
+        # shelf (revert the claim) rather than hand over a free item.
+        if cl.econ_ready and price > int(cl.coin):
+            await dbq(market_revert_claim, lid, cl.charname)
+            return await cl.send({"t": "market", "act": "buy_fail", "id": lid, "msg": "You cannot afford that consignment."})
+        if cl.econ_ready:
+            cl.coin = max(0, min(2_000_000_000, int(cl.coin) - price))
+            try: it = json.loads(row["item"])
+            except ValueError: it = None
+            if isinstance(it, dict) and len(cl.inv) < 500:
+                cl.inv.append(sanitize_item(it))   # deliver into the authoritative inventory
+        await cl.send({"t": "market", "act": "bought", "id": lid, "item": row["item"], "price": price,
+                       "seller": row["seller"], "town": row["town"], "authCoin": (int(cl.coin) if cl.econ_ready else None)})
+        await push_coin(cl)   # #808: adopt the authoritative balance (a hacked client that skipped its local debit is corrected)
         seller = next((c for c in CLIENTS.values() if c.in_world and c.charname == row["seller"]), None)
         if seller:
-            await seller.send({"t": "market", "act": "sold", "id": lid, "price": row["price"],
+            await seller.send({"t": "market", "act": "sold", "id": lid, "price": price,
                                "town": row["town"], "buyer": cl.charname})
     elif act == "collect":
         rows = await dbq(market_collect, cl.charname, town)
         gold = sum(r["price"] for r in rows)
-        await cl.send({"t": "market", "act": "collected", "town": town, "gold": gold, "n": len(rows)})
+        if cl.econ_ready and gold > 0:
+            cl.coin = max(0, min(2_000_000_000, int(cl.coin) + gold))   # #808: conserved transfer — the buyers were already debited on 'buy'
+        await cl.send({"t": "market", "act": "collected", "town": town, "gold": gold, "n": len(rows),
+                       "authCoin": (int(cl.coin) if cl.econ_ready else None)})
+        await push_coin(cl)
     elif act == "reclaim":
         try:
             lid = int(msg.get("id", 0))
@@ -2401,6 +2488,11 @@ async def handle_market(cl, msg):
         if item is None:
             return await cl.send({"t": "market", "act": "reclaim_fail", "id": lid,
                                   "msg": "That consignment is no longer on the shelf."})
+        if cl.econ_ready:   # #808: return the escrowed item to the authoritative inventory
+            try: it = json.loads(item)
+            except ValueError: it = None
+            if isinstance(it, dict) and len(cl.inv) < 500:
+                cl.inv.append(sanitize_item(it))
         await cl.send({"t": "market", "act": "reclaimed", "id": lid, "item": item})
     elif act == "mine":
         rows = await dbq(market_mine, cl.charname)
@@ -2509,6 +2601,13 @@ async def do_auth_success(cl, username):
     old = CLIENTS.get(username)
     if old and old is not cl:
         old.alive = False
+        # #816: tear down the old session's shared state BEFORE the new client replaces it in CLIENTS.
+        # Otherwise the old socket's disconnect cleanup (gated on `CLIENTS.get(username) is old`) is
+        # skipped once we overwrite the entry below, orphaning the account in PARTIES[...]["members"]
+        # (a ghost member that blocks disband) and leaving any in-flight trade dangling.
+        if old.party:
+            await party_leave(old, quiet=True)
+        await trade_cancel(username, "Your session was resumed elsewhere.")
         try:
             old.writer.close()
         except Exception:
@@ -2599,6 +2698,11 @@ async def dispatch(cl, msg):
             await dbq(token_delete, _tk)
             _rec = None
         if _rec is None and _tk:
+            # #814: a cache miss hits the DB — gate it behind the same per-IP throttle as login/register
+            # so random-token `resume` spam can't drive unbounded off-loop SELECTs and starve the worker
+            # pool. A legit reconnect with a live (cached) token never reaches here, so it's unaffected.
+            if auth_ip_throttled(getattr(cl, "ip", "?")):
+                return await cl.send({"t": "auth_err", "msg": "Too many attempts — wait a minute and try again."})
             # #644: memory cache missed — eg. a fresh restart wiped TOKENS. Fall back to the durable
             # store before giving up; a hit is re-cached into memory so the fallback isn't repeated.
             _rec = await dbq(token_lookup, _tk)
@@ -2681,8 +2785,8 @@ async def dispatch(cl, msg):
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
         cl.level = min(_clampi(msg.get("level"), 1, 275, cl.level), cl.level_auth)   # #238: bound the client-reported level to the character's AUTHORITATIVE level (seeded from the save, rate-limited on save) — closes the forged-level → unlimited-vassals / swear-over-anyone exploit
-        cl.heritage = str(msg.get("heritage", cl.heritage))[:16]
-        cl.title = str(msg.get("title", cl.title))[:40]
+        cl.heritage = clean_relay(msg.get("heritage", cl.heritage), 16)   # #813: strip markup/control chars like every other peer-relayed text field
+        cl.title = clean_relay(msg.get("title", cl.title), 40)             # #813: title reaches other clients' label rendering — defense-in-depth against innerHTML XSS
         cl.wt = (str(msg.get("wt"))[:16] if msg.get("wt") else None)          # so remotes render the right weapon
         cl.mnt = (str(msg.get("mnt"))[:12] if msg.get("mnt") else None)        # #728: riding? which horse
         cl.wmode = str(msg.get("wmode", cl.wmode))[:8]
@@ -2929,7 +3033,11 @@ async def dispatch(cl, msg):
             return await cl.send({"t": "system", "msg": "They stand beneath you in your own tree — that fealty would be a circle."})
         if len(await dbq(alg_vassals, name)) >= max(1, target.level):
             return await cl.send({"t": "system", "msg": f"{name}'s patronage is full (AC caps vassals at character level)."})
-        await dbq(alg_set_patron, cl.charname, name)
+        # #819: the cycle check above is a fast pre-check for a friendly message; the atomic swear is the
+        # authoritative arbiter — it re-checks and writes under one BEGIN IMMEDIATE, so two accounts
+        # swearing to each other at once can't both pass and close a 2-node cycle.
+        if not await dbq(alg_swear_atomic, cl.charname, name):
+            return await cl.send({"t": "system", "msg": "They stand beneath you in your own tree — that fealty would be a circle."})
         mon = await dbq(alg_monarch, cl.charname)
         cl.allegiance = mon; target.allegiance = mon
         await cl.send({"t": "system", "msg": f"You swear fealty to {name}. Your allegiance stands under Monarch {mon}; your kill XP passes up as extra XP for your patron (you lose nothing)."})
@@ -3120,6 +3228,9 @@ async def handle(reader, writer):
             if cl.party:
                 await party_leave(cl, quiet=True)
             await trade_cancel(cl.username, "Your trading partner left the world.")
+            if cl.charname:   # #818: evict runtime caches keyed by charname so they don't grow for the
+                SKILL_CACHE.pop(cl.charname, None)   # process lifetime (repopulated from `input`/`muster` if the character returns)
+                NPC_VASSALS.pop(cl.charname, None)
             CLIENTS.pop(cl.username, None)
             if was_in_world:
                 await broadcast({"t": "system", "msg": f"{who} has left Dereth."})
