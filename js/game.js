@@ -3481,19 +3481,32 @@ function initLightPool(){
   _poolBuilding=false;
 }
 const _lpV=new THREE.Vector3(); const _lpCand=[]; let _lpLidSeq=1;   // #342: reused light-pool candidate array + stable-id counter
+let _lpFrame=0; const LP_SLACK=64;   // #800: round-robin cache refresh counter + safety slack (units) so a coarse cached-position reject never drops a light that's actually within pool reach
 function updateLightPool(){
   if(!LPOOL) return;
   const px=player.x, py=(player.y||0)+1.2, pz=player.z, tNow=performance.now();
   const cand=_lpCand; cand.length=0;   // #342: reuse the candidate array instead of allocating one every frame
+  _lpFrame++;
   for(let i=VLIGHTS.length-1;i>=0;i--){ const l=VLIGHTS[i];
     let root=l, vis=l.visible, o=l.parent;
     while(o){ if(o.visible===false) vis=false; root=o; o=o.parent; }
     if(root!==scene){ if(l._transient) VLIGHTS.splice(i,1); continue; }  // #325/#343: a detached TRANSIENT flash is dead (no other ref) → prune immediately; a detached PERSISTENT scenery light is only culled and WILL re-attach → keep it in VLIGHTS (the old `_vT>5000` prune used CREATION time, so it permanently dropped culled scenery lamps and never re-registered them → plazas went dark for the session)
     if(!vis||l.intensity<=0.01) continue;
+    if(l._lid==null) l._lid=_lpLidSeq++;                           // #342/#800: assign stable id up front so the round-robin refresh key is stable
+    const cullR=Math.max(l.distance||20,40)+170;                  // beyond reach + fog — can't matter
+    // #800: coarse spatial reject. Scenery lights are static and vastly outnumber the 14 pool slots;
+    // most sit far beyond reach every frame. Skip the getWorldPosition matrix work for a far light using
+    // its cached world position, refreshing 1/8 of lights per frame (round-robin) so a moving/approaching
+    // light is re-measured within 8 frames. LP_SLACK covers player travel between refreshes, so a light
+    // truly within pool reach is NEVER skipped. Transient flashes always recompute (short-lived, may move).
+    if(l._wp && !l._transient && ((_lpFrame + l._lid) & 7)!==0){
+      const dx=l._wp.x-px, dy=l._wp.y-py, dz=l._wp.z-pz, rr=cullR+LP_SLACK;
+      if(dx*dx+dy*dy+dz*dz > rr*rr) continue;
+    }
     l.getWorldPosition(_lpV);
+    if(l._wp) l._wp.copy(_lpV); else l._wp=_lpV.clone();          // #800: refresh the cached world position
     const d=Math.hypot(_lpV.x-px,_lpV.y-py,_lpV.z-pz);
-    if(d>Math.max(l.distance||20,40)+170) continue;               // beyond reach + fog — can't matter
-    if(l._lid==null) l._lid=_lpLidSeq++;                           // #342: stable id for a deterministic sort tiebreak
+    if(d>cullR) continue;
     cand.push({l,score:d-Math.min(l.intensity,3)*6-(l._wasActive?5:0),x:_lpV.x,y:_lpV.y,z:_lpV.z});   // #342: hysteresis — a currently-lit light gets a small bonus so it isn't evicted by a marginally-closer newcomer (kills the frame-to-frame pop in dense-light plazas)
   }
   cand.sort((a,b)=> (a.score-b.score) || (a.l._lid-b.l._lid));     // #342: stable tiebreak so equal-score lights don't swap slots each frame
