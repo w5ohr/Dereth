@@ -25756,7 +25756,7 @@ function closeShop(){ document.getElementById('shop').style.display="none"; paus
 //    restored on list_fail). Buy: pay-first — gold is deducted only on the server's 'bought'
 //    confirmation, which is also the only path that hands over the item (the server's atomic
 //    claim picks one winner per listing). Proceeds wait at the SAME town's broker until collected.
-const MKT={town:null,tab:"browse",stock:[],mine:[],pendingList:null};
+const MKT={town:null,tab:"browse",stock:[],mine:[],pendingList:[]};   // #820: FIFO escrow queue — the server answers list requests in order, so listed/list_fail pop the oldest pending item
 function openMarket(n){
   MKT.town=n.town||"?"; MKT.tab="browse"; MKT.stock=[]; MKT.mine=[];
   closeOtherModals("market");
@@ -25813,7 +25813,7 @@ function mktList(i){
   const pe=document.getElementById('mktp'+i);
   const price=Math.floor(+((pe&&pe.value)||0));
   if(!(price>0&&price<=10000000)){ log("Name a price between 1 and 10,000,000 pyreals.","warn"); return; }
-  player.inv.splice(i,1); MKT.pendingList=it;                     // escrow OUT of the satchel (#295)
+  player.inv.splice(i,1); MKT.pendingList.push(it);              // #820: escrow OUT of the satchel (#295); queue so a second listing before the first replies can't clobber the first item's reference
   netSend({t:"market",act:"list",town:MKT.town,item:it,price});
   renderMarket();
 }
@@ -25828,9 +25828,9 @@ function onMarketMsg(m){
   const act=m.act;
   if(act==="stock"){ if(Array.isArray(m.rows)){ MKT.stock=m.rows.filter(r=>r&&isFinite(+r.price)&&+r.price>0); MKT.stock.forEach(r=>r.price=Math.floor(+r.price)); } if(MKT.tab==="browse")renderMarket(); }
   else if(act==="mine"){ if(Array.isArray(m.rows)) MKT.mine=m.rows.filter(r=>r&&r.id!=null); if(MKT.tab==="mine")renderMarket(); }
-  else if(act==="listed"){ MKT.pendingList=null; log(`The broker shelves your ware at <b>${Math.floor(+m.price||0)}p</b>.`,"loot"); saveGame();
+  else if(act==="listed"){ MKT.pendingList.shift(); log(`The broker shelves your ware at <b>${Math.floor(+m.price||0)}p</b>.`,"loot"); saveGame();   // #820: the oldest pending item succeeded — drop it from the queue (it stays on the shelf)
     netSend({t:"market",act:"mine"}); if(MKT.tab==="sell")renderMarket(); }
-  else if(act==="list_fail"){ if(MKT.pendingList){ addToInv(MKT.pendingList,true); MKT.pendingList=null; }
+  else if(act==="list_fail"){ const pit=MKT.pendingList.shift(); if(pit) addToInv(pit,true);   // #820: the oldest pending item was rejected — give exactly that item back
     log(esc(String(m.msg||"The broker declines.")),"warn"); renderMarket(); }
   else if(act==="bought"){
     const price=Math.floor(+m.price||0);
