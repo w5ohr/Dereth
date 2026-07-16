@@ -104,6 +104,7 @@ function mineOreYield(n){
 
 // ---- GATHERING ── lumberjacking & fishing (via craftInteract) ----
 let craftStations=[], lumberNodes=[], fishSpots=[];
+let _craftWorldBuilt=false, _treeRegrowTimer=null;   // #793: dedicated build-once guard + regrow-interval handle (don't key idempotency on array length, and don't leak a second interval on a double-build)
 function chopTree(t){
   const lvl=craftLvl("lumberjack");
   t.depleted=true; t.readyAt=now()+rnd(45000,80000);
@@ -289,7 +290,8 @@ function buildTreeMesh(x,y,z,wood){
 }
 function waterNear(x,z){ for(let a=0;a<6.28;a+=0.8){ if(terrainH(x+Math.cos(a)*4.5,z+Math.sin(a)*4.5)<-0.2) return true; } return false; }
 function buildCraftWorld(){
-  if(craftStations.length) return;   // once
+  if(_craftWorldBuilt) return;   // #793: build once — a dedicated flag, not craftStations.length (which a partial/failed build or an external reset could leave falsy, letting the whole build — and its setInterval — run twice)
+  _craftWorldBuilt=true;
   // 1) a Crafting Forge in / beside every town
   for(const c of CITIES){
     let px=null,py=0,pz=0;
@@ -346,7 +348,8 @@ function buildCraftWorld(){
     scene.add(g); fishSpots.push({x:fx,z:fz,mesh:g,readyAt:0}); placed++;
   }
   // lazy tree-regrow tick (cheap; restores canopies you're not standing next to)
-  setInterval(()=>{ const t0=now(); for(const t of lumberNodes){ if(t.depleted&&t0>t.readyAt){ t.depleted=false; if(t.canopy)t.canopy.visible=true; if(t.stump)t.stump.visible=false; if(t.spr)t.spr.visible=true; } } },4000);
+  if(_treeRegrowTimer) clearInterval(_treeRegrowTimer);   // #793: never leak a second regrow interval
+  _treeRegrowTimer=setInterval(()=>{ const t0=now(); for(const t of lumberNodes){ if(t.depleted&&t0>t.readyAt){ t.depleted=false; if(t.canopy)t.canopy.visible=true; if(t.stump)t.stump.visible=false; if(t.spr)t.spr.visible=true; } } },4000);
 }
 
 // ---- RECIPE CATALOG (built with loops) ----
