@@ -22,7 +22,7 @@
 // deploy lands on reload); vendor/* is stale-while-revalidate but SELF-HEALING (#806): its background
 // revalidation forces a conditional server check, so a new Three.js build is picked up on the next load
 // WITHOUT a manual `V` bump — bumping V stays a belt-and-suspenders, no longer the only safety net.
-const V = "dereth-v8";
+const V = "dereth-v9";   // deploy bump: production release (quest ground-arrows + the 16-plugin Decal suite). Forces returning clients to drop the old shell/asset cache.
 
 // #804: network-first must not hang on "lie-fi" (a connected-but-dead link where fetch never settles).
 // Race every network-first fetch against a timeout so a stalled request falls back to cache instead of
