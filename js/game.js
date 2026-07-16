@@ -31998,7 +31998,7 @@ function netHandle(m){
       TRADE.mine.length=0;
       const gaveN=(m.gave||[]).length;
       for(const g of (m.gave||[])){ const s=_tsig(g), i=player.inv.findIndex(x=>_tsig(x)===s); if(i>=0) player.inv.splice(i,1); }   // remove exactly what the server took
-      for(const it of (m.give||[])) player.inv.push(it);
+      for(const raw of (m.give||[])){ const it=sanitizeItem(raw); if(it) player.inv.push(it); }   // #882: a peer's relayed items get the same boundary validation as loot
       const paid=TRADE.mineCoin|0, got=m.coin|0;
       if(typeof m.authCoin==="number"&&isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance (#315: isFinite(null)===true — a null authCoin must fall through to the additive branch, not zero gold)
       else { if(paid) player.gold=Math.max(0,player.gold-paid); if(got) player.gold+=got; }
@@ -32098,12 +32098,24 @@ function onEventReward(msg){
   checkAchievements();
 }
 // ---- shared ground loot (M3c): server owns drops; pickups are first-come, server-validated ----
+// #882: server/trade-delivered ITEM OBJECTS cross the trust boundary — the scalar inputs are all
+// hardened (#33 gold, #443 vitals, #319 coords) but item fields were used as-is. A string count
+// turns addToInv's `+` into concatenation (10 + '5' → "105") and poisons invCountOf → crafting/
+// quest math; a non-finite v feeds the consumable path (#870's client-side gap). Coerce every
+// numeric field at ingest; names are escaped at display time (#xss), so strings pass through.
+function sanitizeItem(it){
+  if(!it||typeof it!=="object"||Array.isArray(it)) return null;
+  if(it.count!=null||it.stackable) it.count=Math.max(1,Math.min(1e9,Math.floor(+it.count||1)));
+  for(const k of ["v","uses","dur","work","tier","foc","shield","magicAbsorb"])
+    if(it[k]!=null&&typeof it[k]!=="object"){ const n=+it[k]; it[k]=isFinite(n)?n:0; }
+  return it;
+}
 function onDrop(msg){
   if(!isOnline||NET.drops[msg.id]) return;
   let data;
   if(msg.type==="gold") data={type:"gold",amt:msg.amt};
-  else if(msg.type==="corpse") data={type:"corpse",items:msg.items||[],amt:msg.amt||0,owner:msg.owner||"",open:!!msg.open,corpse:true};   // a fallen player's shared corpse (open = PK, free loot)
-  else data={type:"item",item:msg.item};
+  else if(msg.type==="corpse") data={type:"corpse",items:(msg.items||[]).map(sanitizeItem).filter(Boolean),amt:msg.amt||0,owner:msg.owner||"",open:!!msg.open,corpse:true};   // a fallen player's shared corpse (open = PK, free loot)
+  else { const it=sanitizeItem(msg.item); if(!it) return; data={type:"item",item:it}; }
   data.id=msg.id; data.shared=true;
   NET.drops[msg.id]=addDrop(msg.x,msg.z,data);
 }
@@ -32118,13 +32130,14 @@ function onLoot(msg){
     if(isFinite(msg.coin)) player.gold=msg.coin;   // M3 (#238): adopt the server's authoritative balance when it sends one, else fall back to additive (older server)
     else player.gold+=amt;
     floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); SFX.gold(); updateHUD(); }
-  else if(msg.type==="item"&&msg.item){ lootItem(msg.item); }
+  else if(msg.type==="item"&&msg.item){ const it=sanitizeItem(msg.item); if(it) lootItem(it); }   // #882: validate numeric fields at the boundary
 }
 // server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
 function onCorpseLoot(msg){
   if(msg.amt>0){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }   // M3 (#238): adopt authoritative balance on recovery (#315: guard against a null authCoin zeroing gold)
   let taken=0,spilled=0;
-  for(const it of (msg.items||[])){
+  for(const raw of (msg.items||[])){
+    const it=sanitizeItem(raw); if(!it) continue;   // #882: validate numeric fields at the boundary
     if(addToInv(it,false)) taken++;
     else { addDrop(player.x+rnd(-1.2,1.2),player.z+rnd(-1.2,1.2),{type:"item",item:it,corpse:true}); spilled++; }
   }
