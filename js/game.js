@@ -31641,12 +31641,13 @@ const SAVE_KEY="dereth_save_v1";
 function DEFAULT_APPEARANCE(race){ return {race:race||"aluvian",skin:0xe8b890,face:"oval",hair:"short",hairColor:0x3a2416,beard:"none",tattoo:"none",eye:0x4a6a3a,eyeShape:"almond",nose:"straight",mouth:"medium",feature:"none"}; }
 const _SV={ int:v=>v|0, num:v=>+v||0, str:(v,d)=>v||d||"", bool:v=>!!v, orNull:v=>v||null,
   arr:v=>Array.isArray(v)?v:[], obj:v=>(v&&typeof v==="object")?v:{}, objOrNull:v=>(v&&typeof v==="object")?v:null };
+const _goldClamp=v=>Math.max(0,Math.min(2e9,Math.floor(+v||0)));   // #292/#876: the one gold ceiling, enforced symmetrically on load AND save
 const SAVE_SCHEMA=[
   {k:"level",load:s=>(+s.level>0?Math.floor(+s.level):1)},
   {k:"xp",t:"num"},{k:"xpUnspent",t:"num"},{k:"skillPts",t:"num"},
   {k:"freeRank",save:p=>p.freeRank||null,t:"obj"},
   {k:"kills",t:"int"},
-  {k:"gold",load:s=>Math.max(0,Math.min(2e9,Math.floor(+s.gold||0)))},   // #292: clamp, not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR
+  {k:"gold",load:s=>_goldClamp(s.gold),save:p=>_goldClamp(p.gold)},   // #292: clamp, not |0 — a hoard past 2^31 wrapped NEGATIVE under bitwise OR. #876: clamp BOTH directions — save wrote the raw value, so an out-of-range/negative gold persisted to disk and went out on the wire (netSend save payload)
   {k:"armor",t:"int"},
   {k:"inv",t:"arr"},
   {k:"materials",load:s=>s.materials||0},
