@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """TestSystemA robustness fuzz: malformed input must never kill the server or
-poison other sessions. Usage: python tsa_fuzz.py [host] [port]"""
+poison other sessions. Usage: python tsa_fuzz.py [host] [port]
+Runs clean against a DEFAULT-configured server (#898: the health probe resumes one account
+instead of registering per call, so it no longer spends the per-IP auth throttle on itself).
+When running the WHOLE TSA suite back-to-back from one IP, the other harnesses' registrations
+share the same AUTH_PER_IP_MAX window — start the test server with DERETH_AUTH_IP_MAX=500
+for suite runs (the same documented-env pattern as test_client's DERETH_EVENT_CD)."""
 import asyncio, json, secrets, struct, sys
 sys.path.insert(0, ".")
 from test_client import WS
@@ -23,16 +28,34 @@ async def raw_frame(payload_bytes):
     w.w.write(bytes(out)); await w.w.drain()
     return w
 
+_HZ = {"token": None}   # #898: the one pre-registered probe account's resume token
 async def healthy():
-    """Can a fresh, well-behaved client still register and enter the world?"""
+    """Can a fresh, well-behaved client still connect and enter the world?
+    #898: this used to REGISTER a new account per call, and login/register both spend the server's
+    per-IP auth throttle (AUTH_PER_IP_MAX, default 30/window) — so the harness's own probes (plus
+    the rest of a back-to-back TSA suite run from the same IP) exhausted the window against a
+    default server, and the probe then failed SPURIOUSLY, misread as a pre-auth security hole.
+    Register once and RESUME the session token on every later probe: a live cached token never
+    touches the throttle, while each probe still exercises a fresh socket, the WS handshake, auth
+    dispatch, and world entry. Whole-run auth cost: ~1 attempt instead of one per probe."""
     c = await WS.connect()
-    u = f"hz_{secrets.token_hex(4)}"
-    await c.send({"t": "register", "user": u, "pass": "secret9"})
-    ok = await c.recv_until(lambda x: x["t"] == "auth_ok", timeout=4)
-    if ok:
-        await c.recv_until(lambda x: x["t"] == "roster", timeout=3)
-        await c.send({"t": "create_char", "slot": 0, "name": u[:14], "char": {}})
-        ok = await c.recv_until(lambda x: x["t"] == "play_ok", timeout=4)
+    if _HZ["token"] is None:
+        u = f"hz_{secrets.token_hex(4)}"
+        await c.send({"t": "register", "user": u, "pass": "secret9"})
+        ok = await c.recv_until(lambda x: x["t"] == "auth_ok", timeout=4)
+        if ok:
+            _HZ["token"] = ok.get("token")
+            await c.recv_until(lambda x: x["t"] == "roster", timeout=3)
+            await c.send({"t": "create_char", "slot": 0, "name": u[:14], "char": {}})
+            ok = await c.recv_until(lambda x: x["t"] == "play_ok", timeout=4)
+    else:
+        await c.send({"t": "resume", "token": _HZ["token"]})
+        ok = await c.recv_until(lambda x: x["t"] == "auth_ok", timeout=4)
+        if ok:
+            _HZ["token"] = ok.get("token") or _HZ["token"]   # adopt a rotated token
+            await c.recv_until(lambda x: x["t"] == "roster", timeout=3)
+            await c.send({"t": "play_char", "slot": 0})
+            ok = await c.recv_until(lambda x: x["t"] == "play_ok", timeout=4)
     await c.close()
     return bool(ok)
 
