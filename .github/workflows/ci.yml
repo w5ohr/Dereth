@@ -8,6 +8,11 @@ on:
     branches: [main]
   pull_request:
 
+# #810: least privilege — this job only checks out, syntax-checks, and runs tests. Pin the GITHUB_TOKEN
+# to read-only so a compromised step/dependency can't push commits or edit issues/PRs.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
