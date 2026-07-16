@@ -18119,11 +18119,11 @@ function interact(){
     .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
   if(near.length){
     if(player.inv.length>=invCap()){ log("Your satchel is full. Tinker or salvage (T).","warn"); return; }
-    let left=0;
+    let left=0, projected=player.inv.length;   // #821: track projected slot use so a shared pickup fired for an item we can't hold doesn't destroy it (server removes the ground copy before the client learns the satchel is full)
     for(const d of near){
-      if(d.shared){ netSend({t:"pickup",id:d.id}); continue; }   // server validates each, grants & broadcasts drop_gone (removes the mesh)
-      if(player.inv.length>=invCap()){ left++; continue; }        // satchel filled mid-pile — leave the rest on the ground
-      lootItem(d.item); disposeObject3D(d.mesh); const idx=drops.indexOf(d); if(idx>=0) drops.splice(idx,1);   // #22: dispose the item model
+      if(projected>=invCap()){ left++; continue; }              // #821: no projected room — leave the rest (shared AND local) on the ground rather than lose them
+      if(d.shared){ netSend({t:"pickup",id:d.id}); projected++; continue; }   // reserve a slot for the incoming item; server validates each, grants & broadcasts drop_gone (removes the mesh)
+      lootItem(d.item); disposeObject3D(d.mesh); const idx=drops.indexOf(d); if(idx>=0) drops.splice(idx,1); projected++;   // #22: dispose the item model
     }
     if(left) log(`Your satchel is full — <b>${left}</b> item(s) left on the ground.`,"warn");
     return;
