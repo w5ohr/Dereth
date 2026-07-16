@@ -16984,9 +16984,9 @@ function playerHurt(dmg,sx,sz,type,element,opts){
 // AC death: you leave a LOOTABLE CORPSE holding some of your gear + half your pyreals;
 // walk back to reclaim it before it decays (5 min/level, minimum 1 hour). No XP is lost —
 // Vitae is the debt, and it saps vitals, skills & damage until worked off with your own deeds.
-function deathDrops(){
+function deathDrops(preview){   // preview=true: the Death Predictor plugin — worst-case items + gold, WITHOUT mutating state
   let n=Math.max(1,Math.ceil(player.level/10));
-  if(player.level>=10) n+=irnd(0,2);                                  // level 10+: equal 1/3 chance of +0/+1/+2
+  if(player.level>=10) n+=preview?2:irnd(0,2);                        // level 10+: +0/+1/+2 (preview shows the worst case, +2)
   n=Math.max(0,n-((player.augment&&player.augment.dropReduce)||0));   // Clutch of the Miser augmentation
   // exempt: trade notes, quest items, starting wand & clothing (NOT food or spell components — AC)
   const safe=it=>!it||it.stat==="note"||it.stat==="quest"||it.starter;
@@ -17006,6 +17006,8 @@ function deathDrops(){
     const c=pool.shift(); chosen.push(c);
     const ty=c.it.stat||"misc"; droppedTypes[ty]=(droppedTypes[ty]||0)+1;
   }
+  const gold=Math.floor(player.gold*0.5);
+  if(preview) return {items:chosen.map(c=>c.it),gold};   // read-only: don't touch inventory or coin
   const invIdx=[];
   for(const c of chosen){
     if(c.src==="weapon"){ player.weapon=null; }
@@ -17014,7 +17016,7 @@ function deathDrops(){
     else invIdx.push(c.i);
   }
   invIdx.sort((a,b)=>b-a).forEach(i=>player.inv.splice(i,1));
-  const gold=Math.floor(player.gold*0.5); player.gold-=gold;   // half your pyreals, always (AC)
+  player.gold-=gold;   // half your pyreals, always (AC)
   return {items:chosen.map(c=>c.it),gold};
 }
 function die(){
@@ -17891,6 +17893,7 @@ const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Com
   ["dungmap","Dungeon Maps",""],["radar","Virindi Radar",""],["itemtool","Item Tool",""],["compkeep","Comp Keeper",""],
   ["dmgmeter","Damage Meter",""],["corpsetk","Corpse Tracker",""],["squire","Squire",""],
   ["targhud","Target HUD",""],["skunk","SkunkVision",""],
+  ["deathpre","Death Predictor",""],["questtmr","Quest Timer",""],["raretrk","Rare Tracker",""],
   ["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
 for(const [id,label,def] of HUD_TOGGLES)
   ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
@@ -19921,7 +19924,7 @@ function buildMiniToggles(){
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
 const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
-  "goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
+  "goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","deathpre","questtmr","raretrk","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -19938,7 +19941,7 @@ function initDragUI(){
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
     el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
   // parchment windows also drag by their title bar at any time (no N-mode needed)
-  for(const id of ["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
+  for(const id of ["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","deathpre","questtmr","raretrk","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
     const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
     head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
       e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
@@ -19964,7 +19967,7 @@ function initDragUI(){
 // Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
 function ensureGrips(){
   const label={}; if(typeof HUD_TOGGLES!=="undefined") for(const [id,n] of HUD_TOGGLES) label[id]=n;
-  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","idPanel"].indexOf(id)>=0) continue;
+  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","deathpre","questtmr","raretrk","idPanel"].indexOf(id)>=0) continue;
     const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
     if(getComputedStyle(el).position==="static") el.style.position="relative";
     const grip=document.createElement('div'); grip.className="dragGrip"; grip.textContent="⠿"; grip.title="Drag to move (or press N to move whole panels)";
@@ -20268,7 +20271,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:fals
   brightness:1.0,contrast:1.0,   // final-image display grade (Settings sliders): 1.0 = neutral
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
-  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false,dmgmeter:false,corpsetk:false,squire:false,targhud:false,skunk:false},   // Decal-plugin homages (settings → Decal plugins)
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false,dmgmeter:false,corpsetk:false,squire:false,targhud:false,skunk:false,deathpre:false,questtmr:false,raretrk:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,vtankVitals:true,vtankVitalPct:50,gaDest:"auto",gaCoords:null,
   ubeltXp:true,ubeltPolicy:"spec",   // UtilityBelt XP investor: auto-spend policy
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
@@ -26680,7 +26683,7 @@ function applyUIVis(){
   const h=settings.uiHidden||{};
   for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
     if(h[id]) el.style.display="none";
-    else if(["goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
+    else if(["goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targhud","skunk","deathpre","questtmr","raretrk"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
   applyPluginSettings();            // plugin panels re-apply their own visibility
 }
 // ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
@@ -26711,6 +26714,9 @@ const PLUGIN_DEFS=[
   {k:"squire",  n:"Squire",       d:"Squire — your worn equipment at a glance, each magical piece showing its remaining item-mana."},
   {k:"targhud", n:"Target HUD",   d:"TargetHUD — the locked target's vitals, its elemental weakness & resistance, and any debuffs (burning, slowed, vulnerable) on it."},
   {k:"skunk",   n:"SkunkVision",  d:"SkunkVision — a terrain-vision dial that reveals what you can't easily see: impassable deep water (blue) and unclimbable slopes (red) around you, oriented to your facing."},
+  {k:"deathpre",n:"Death Predictor",d:"LockesArmyKnife — a worst-case preview of exactly which items (and how many pyreals) you'd drop to a lootable corpse if you died right now."},
+  {k:"questtmr",n:"Quest Timer",  d:"QuestTimer — every repeatable bounty currently on cooldown, with the time left before you can take it again."},
+  {k:"raretrk", n:"Rare Tracker", d:"VirindiSense — nearby notable creatures (bosses, champions and named foes) with their distance and bearing, nearest first."},
 ];
 const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
 function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
@@ -26933,6 +26939,29 @@ function updatePlugins(dt){
           +row("Weak to",af.weak?`<span style="color:#1e7a2e">${cap(af.weak)}</span>`:"—")
           +row("Resists",af.resist?`<span style="color:#8a1e1e">${cap(af.resist)}</span>`:"—")
           +`<div style="margin-top:2px;color:#5a4a2e">${debs.length?debs.join(" · "):"No debuffs"}</div>`; } } }
+  // ── Death Predictor: worst-case items + pyreals you'd drop if you died now (read-only preview) ──
+  if(pluginOn("deathpre")){ const el=document.getElementById('deathpreRows');
+    if(el){ let dd=null; try{ dd=deathDrops(true); }catch(e){}
+      if(settings.acDeath===false) el.innerHTML='<div style="color:#5a4a2e">Soft death on — nothing would drop.</div>';
+      else if(!dd||(!dd.items.length&&!dd.gold)) el.innerHTML='<div style="color:#1e7a2e">Nothing at risk right now.</div>';
+      else { const names=dd.items.slice(0,6).map(it=>`<div style="color:#8a2e1e">• ${esc(it.name)}</div>`).join("");
+        el.innerHTML=`<div style="color:#5a4a2e;margin-bottom:2px">At risk on death (worst case):</div>${names}${dd.items.length>6?`<div style="color:#5a4a2e">…+${dd.items.length-6} more</div>`:""}${dd.gold?`<div style="color:#8a6a1e;margin-top:2px">− ${dd.gold.toLocaleString()} pyreals</div>`:""}`; } } }
+  // ── Quest Timer: repeatable bounties on cooldown ──
+  if(pluginOn("questtmr")){ const el=document.getElementById('questtmrRows');
+    if(el){ const rows=[];
+      for(const id in (taskCooldown||{})){ if(typeof onCooldown==="function"&&!onCooldown(id)) continue;
+        const q=questById(id); if(!q) continue; const left=(typeof cdRemaining==="function")?cdRemaining(id):0; if(left<=0) continue;
+        rows.push([q.name,left]); }
+      rows.sort((a,b)=>a[1]-b[1]);
+      el.innerHTML=rows.length?rows.slice(0,6).map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(r[0])}</span><b style="color:#8a6a1e">${(typeof fmtCd==="function")?fmtCd(r[1]):Math.ceil(r[1]/1000)+"s"}</b></div>`).join(""):'<div style="color:#5a4a2e">No bounties on cooldown.</div>'; } }
+  // ── Rare Tracker: nearby notable creatures (bosses / champions / named), nearest first ──
+  if(pluginOn("raretrk")){ const el=document.getElementById('raretrkRows');
+    if(el){ const notable=monsters.filter(m=>m&&m.hp>0&&(!!m.isDungeon===inDungeon)&&(m.isBoss||m.isElite||(m.name&&m.name!==(BESTIARY[m.kind]||{}).name)))
+        .map(m=>({m,d:Math.hypot(m.x-player.x,m.z-player.z)})).sort((a,b)=>a.d-b.d);
+      el.innerHTML=notable.length?notable.slice(0,6).map(o=>{ const b=BESTIARY[o.m.kind]||{};
+        const tag=o.m.isBoss?'<span style="color:#c02020">★</span>':o.m.isElite?'<span style="color:#c07a20">◆</span>':'';
+        return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${tag} ${esc(o.m.name||b.name||o.m.kind)}</span><b>${Math.round(o.d)}m ${compassTo(o.m.x-player.x,o.m.z-player.z)}</b></div>`;
+      }).join(""):'<div style="color:#5a4a2e">No notable foes near.</div>'; } }
 }
 // Dungeon Maps + Radar redraw every frame (cheap 2D canvas) — driven from updatePlugins' per-frame block
 function _drawPluginCanvases(){

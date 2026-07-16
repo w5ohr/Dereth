@@ -615,6 +615,21 @@
   <div style="padding:5px"><canvas id="skunkCv" width="150" height="150" style="display:block;border-radius:3px;background:#0a0c07"></canvas>
     <div id="skunkInfo" style="text-align:center;color:#5a4a2e;margin-top:3px">Terrain vision</div></div>
 </div>
+<!-- Death Predictor: worst-case items/pyreals you'd drop on death -->
+<div id="deathpre" style="display:none;position:fixed;left:14px;top:690px;z-index:40;min-width:180px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Death Predictor</div>
+  <div id="deathpreRows" style="padding:4px 8px 5px"></div>
+</div>
+<!-- Quest Timer: repeatable-bounty cooldowns -->
+<div id="questtmr" style="display:none;position:fixed;left:200px;top:490px;z-index:40;min-width:172px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Quest Timer</div>
+  <div id="questtmrRows" style="padding:4px 8px 5px"></div>
+</div>
+<!-- Rare Tracker: nearby notable creatures -->
+<div id="raretrk" style="display:none;position:fixed;right:220px;top:200px;z-index:40;min-width:172px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Rare Tracker</div>
+  <div id="raretrkRows" style="padding:4px 8px 5px"></div>
+</div>
 <!-- Target frame (,/. cycles targets · left-click selects) + right-click appraisal window -->
 <div id="targetFrame" style="display:none;position:fixed;left:50%;top:148px;transform:translateX(-50%);z-index:41;width:180px;background:rgba(12,10,6,.82);border:1px solid #6a5a3a;border-radius:6px;padding:4px 8px 6px;font-size:12px">
   <div id="tfName" style="color:#ffd86b;font-weight:bold;text-align:center;text-shadow:0 1px 2px #000">—</div>
