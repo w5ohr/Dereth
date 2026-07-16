@@ -6133,21 +6133,20 @@ const _PORTAL_FRAG=`
   varying vec2 vUv; uniform float uTime;
   void main(){
     vec2 uv=vUv-0.5; float r=length(uv)*2.0; float ang=atan(uv.y,uv.x);
-    // RAGGED FLAT BLUE BACKGROUND — the rim radius wobbles with angle so the outline reads torn/ragged
+    // RAGGED torn rim of the vortex
     float ragged=0.82 + 0.10*sin(ang*6.0+uTime*0.45) + 0.05*sin(ang*11.0-uTime*0.7) + 0.035*sin(ang*19.0+uTime*0.3);
-    float disc=smoothstep(ragged, ragged-0.16, r);         // soft ragged-edged disc, 1 inside → 0 past the torn rim
-    float bg=disc*(0.6+0.4*smoothstep(1.0,0.15,r));         // a touch denser toward the heart
-    // WHIRLPOOL OF SMALL DOTS — a dense polar lattice spiralling INWARD (rim → centre) as it rotates
-    float sw=ang*3.0 + (1.0-r)*5.0 + uTime*0.85;
-    vec2 f1=fract(vec2(sw*4.8, r*22.0 + uTime*0.9))-0.5;      // +uTime → rings drain toward the core
-    float dots=smoothstep(0.20,0.045,length(f1))*disc;        // 8× as many dots, ¼ the size
-    // a finer counter-swirling second layer for depth
-    float sw2=ang*6.0 - (1.0-r)*3.0 - uTime*0.6;
-    vec2 f2=fract(vec2(sw2*3.7, r*37.0 + uTime*0.6))-0.5;
-    float dots2=smoothstep(0.155,0.035,length(f2))*disc*0.7;
-    float dotSum=dots+dots2;
-    vec3 col=vec3(0.12,0.32,0.72) + vec3(0.42,0.70,1.0)*dotSum*0.9;   // blue backing + blue dots
-    float alpha=clamp(bg*0.40 + dotSum*0.42, 0.0, 0.85);            // translucent disc + almost-translucent dots
+    float disc=smoothstep(ragged, ragged-0.16, r);
+    // MAGICAL WHIRLPOOL — logarithmic-spiral arms curve from the rim into a glowing throat and rotate like a drain
+    float lr=log(r+0.05);
+    float spiral=ang*4.0 + lr*6.0 - uTime*1.5;               // 4-arm log spiral; whole vortex rotates
+    float arms=pow(0.5+0.5*sin(spiral), 2.2);                // bright, thinning spiral bands
+    float funnel=smoothstep(1.05,0.0,r);                     // energy concentrates toward the drain (depth cue)
+    vec2 f1=fract(vec2(spiral*1.6, r*20.0 + uTime*0.9))-0.5; // fine dots streaming ALONG the arms, drawn inward
+    float dots=smoothstep(0.22,0.05,length(f1))*disc*(0.35+0.65*arms);
+    float throat=smoothstep(0.26,0.0,r);                     // luminous core — the mouth of the whirlpool
+    vec3 deep=vec3(0.05,0.20,0.58), glow=vec3(0.40,0.78,1.0), core=vec3(0.82,0.94,1.0);
+    vec3 col=deep*disc*0.5 + glow*arms*funnel*disc*1.15 + glow*dots*0.9 + core*throat*disc*1.5;   // blue→cyan magical glow
+    float alpha=clamp(disc*0.20 + arms*funnel*disc*0.5 + dots*0.5 + throat*disc*0.85, 0.0, 0.96);
     if(alpha<0.008) discard;
     gl_FragColor=vec4(col,alpha);
   }`;
@@ -6155,7 +6154,7 @@ const _PORTAL_FRAG=`
 // Math is copied 1:1 from the GLSL, so it matches by construction. Verified: compiles on the GPU, renders
 // the purple vortex non-blank, animates via uTime. ⚠️ exact look not pixel-confirmed on this headless box
 // — flagged for a machine-2 eyeball. Shares _portalUTimeTSL, synced next to PORTAL_U in the update tick.
-// #webgpu: TSL mirror of _PORTAL_FRAG — blue ragged translucent disc + swirling small blue dots.
+// #webgpu: TSL mirror of _PORTAL_FRAG — magical blue whirlpool (log-spiral arms + inward dots + glowing throat).
 function portalMaterialTSL(){
   const T=window.TSL;
   const {float,vec2,vec3,vec4,uv,uniform,fract,sin,smoothstep,length,atan,clamp}=T;
@@ -6165,24 +6164,26 @@ function portalMaterialTSL(){
   const ragged=float(0.82).add(sin(ang.mul(6.0).add(uT.mul(0.45))).mul(0.10))
     .add(sin(ang.mul(11.0).sub(uT.mul(0.7))).mul(0.05)).add(sin(ang.mul(19.0).add(uT.mul(0.3))).mul(0.035));
   const disc=smoothstep(ragged, ragged.sub(0.16), r);
-  const bg=disc.mul(float(0.6).add(smoothstep(1.0,0.15,r).mul(0.4)));
-  const sw=ang.mul(3.0).add(float(1.0).sub(r).mul(5.0)).add(uT.mul(0.85));
-  const f1=fract(vec2(sw.mul(4.8), r.mul(22.0).add(uT.mul(0.9)))).sub(0.5);   // +uT → whirlpool drains inward
-  const dots=smoothstep(0.20,0.045,length(f1)).mul(disc);                     // 8× as many dots, ¼ the size
-  const sw2=ang.mul(6.0).sub(float(1.0).sub(r).mul(3.0)).sub(uT.mul(0.6));
-  const f2=fract(vec2(sw2.mul(3.7), r.mul(37.0).add(uT.mul(0.6)))).sub(0.5);
-  const dots2=smoothstep(0.155,0.035,length(f2)).mul(disc).mul(0.7);
-  const dotSum=dots.add(dots2);
-  const col=vec3(0.12,0.32,0.72).add(vec3(0.42,0.70,1.0).mul(dotSum).mul(0.9));
-  const alpha=clamp(bg.mul(0.40).add(dotSum.mul(0.42)),0.0,0.85);
-  const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,fog:false,blending:THREE.NormalBlending});
+  const lr=r.add(0.05).log();
+  const spiral=ang.mul(4.0).add(lr.mul(6.0)).sub(uT.mul(1.5));          // 4-arm log spiral, rotating
+  const arms=float(0.5).add(sin(spiral).mul(0.5)).pow(2.2);             // bright spiral bands
+  const funnel=smoothstep(1.05,0.0,r);
+  const f1=fract(vec2(spiral.mul(1.6), r.mul(20.0).add(uT.mul(0.9)))).sub(0.5);   // dots stream along the arms, inward
+  const dots=smoothstep(0.22,0.05,length(f1)).mul(disc).mul(float(0.35).add(arms.mul(0.65)));
+  const throat=smoothstep(0.26,0.0,r);
+  const col=vec3(0.05,0.20,0.58).mul(disc).mul(0.5)
+    .add(vec3(0.40,0.78,1.0).mul(arms).mul(funnel).mul(disc).mul(1.15))
+    .add(vec3(0.40,0.78,1.0).mul(dots).mul(0.9))
+    .add(vec3(0.82,0.94,1.0).mul(throat).mul(disc).mul(1.5));
+  const alpha=clamp(disc.mul(0.20).add(arms.mul(funnel).mul(disc).mul(0.5)).add(dots.mul(0.5)).add(throat.mul(disc).mul(0.85)),0.0,0.96);
+  const mat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,fog:false,blending:THREE.AdditiveBlending});
   mat.fragmentNode=vec4(_rawFragTSL(col),alpha);   // #695: display-referred authored colors — see _rawFragTSL
   return mat;
 }
 function portalMaterial(){
   if(IS_WEBGPU&&window.TSL&&THREE.MeshBasicNodeMaterial) return portalMaterialTSL();   // #webgpu: GLSL ShaderMaterial isn't compiled by WebGPU — use the TSL port
   return new THREE.ShaderMaterial({ uniforms:portalUniforms(),
-    transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false, blending:THREE.NormalBlending,
+    transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false, blending:THREE.AdditiveBlending,
     vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader:_PORTAL_FRAG });
 }
