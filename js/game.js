@@ -18258,7 +18258,7 @@ function interact(){
   for(const sh of ships){ if(Math.hypot(sh.x-player.x,sh.z-player.z) < sh.def.len*0.6+3){ boardShip(sh); return; } }   // step aboard your ship
   {const ne=nearestEntrance(player.x,player.z); if(ne&&ne.d<4){ enterDungeon(ne.e.def,player.x,player.z); return; }}
   for(const tp of tnPortals){ if(Math.hypot(tp.x-player.x,tp.z-player.z)<3.2){ enterNetwork(player.x,player.z); return; } }
-  for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<3){ gatherNode(n); return; } }
+  for(const n of nodes){ if(!n.depleted && Math.hypot(n.x-player.x,n.z-player.z)<(n.obR?n.obR+3.5:3)){ gatherNode(n); return; } }   // solid deposits are worked from outside their collision footprint
   { let bp=null,bd=2.6*2.6; for(const sp of _plantSpots){ const dx=sp.x-player.x,dz=sp.z-player.z,d=dx*dx+dz*dz; if(d<bd){bd=d;bp=sp;} } if(bp){ pickPlant(bp); return; } }   // pick a wild plant for dye-making
   if(typeof craftInteract==="function" && craftInteract()) return;   // UO crafting: forges/anvils → craft menu, choppable trees → logs, water's edge → fishing
   for(const pt of portals){
@@ -19096,7 +19096,9 @@ function updateDropsAndFX(dt){
   if(inNetwork) for(const o of netObjs){ const u=o.userData; if(u&&u.light)u.light.intensity=swirlPulse;
     if(u&&u.pfx) updatePortalFx(o,dt); }
   // gathering nodes respawn
-  for(const n of nodes){ if(n.depleted&&now()>n.readyAt){n.depleted=false;if(!inDungeon)n.mesh.visible=true;} }
+  for(const n of nodes){ if(n.depleted&&now()>n.readyAt){n.depleted=false;if(!inDungeon)n.mesh.visible=true;
+    if(n.ob&&n.obR)n.ob.r=n.obR;                                              // the regrown deposit is solid again
+    if(n.maxLeft)n.left=irnd(3,n.maxLeft);} }                                 // …with a fresh random stock (≤ maxLeft chunks)
 }
 // #782: buff/debuff/HoT/gear-mana & UI status timers
 function updateStatusTimers(dt){
@@ -20272,7 +20274,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:fals
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
   plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false,dmgmeter:false,corpsetk:false,squire:false,targhud:false,skunk:false,deathpre:false,questtmr:false,raretrk:false},   // Decal-plugin homages (settings → Decal plugins)
-  vtankBuff:true,vtankLoot:true,vtankVitals:true,vtankVitalPct:50,gaDest:"auto",gaCoords:null,
+  vtankBuff:true,vtankLoot:true,vtankVitals:true,vtankVitalPct:50,vtankFight:false,gaDest:"auto",gaCoords:null,
   ubeltXp:true,ubeltPolicy:"spec",   // UtilityBelt XP investor: auto-spend policy
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
   dynMusic:true,   // dynamic music director: context-aware procedural score (off → classic ambient loops)
@@ -26702,7 +26704,7 @@ function dmgMeterHit(amt,crit,outgoing){
 const PLUGIN_DEFS=[
   {k:"goarrow", n:"GoArrow",      d:"Destination arrow with distance + AC coordinates. Auto-tracks the saga chapter, your corpse, or your Lifestone — click the destination name to pick any town."},
   {k:"alinco",  n:"Alinco Buffs", d:"Buff HUD — every active enchantment with its time remaining."},
-  {k:"vtank",   n:"Virindi Tank", d:"Combat assistant: rebuffs expiring enchantments when idle (20 mana each) and loots nearby drops."},
+  {k:"vtank",   n:"Virindi Tank", d:"Combat assistant: auto-fights the nearest hostile, rebuffs when idle with the highest-level spells you can cast (real casts — mana, fizzle, components), quaffs potions, and loots nearby drops."},
   {k:"magtools",n:"Mag-Tools",    d:"Combat tracker — XP/hour, kills/hour, time to next level."},
   {k:"ubelt",   n:"UtilityBelt",  d:"XP investor — automatically spends unspent XP into the cheapest next rank under a policy you pick (specialized skills, all trained skills, attributes, vitals, or balanced). Also adds /wp <coords> to aim GoArrow at any location."},
   {k:"dungmap", n:"Dungeon Maps", d:"Digero's Dungeon Maps — a live top-down map of the delve you're exploring: rooms, the exit, the chest, creatures, and your heading."},
@@ -26739,13 +26741,14 @@ function applyPluginSettings(){
   vtPaint(); ubPaint();
 }
 function vtPaint(){ document.querySelectorAll('#vtank .vtrow').forEach(r=>{
-  const on=r.dataset.vt==="buff"?settings.vtankBuff:r.dataset.vt==="loot"?settings.vtankLoot:settings.vtankVitals;
+  const on=r.dataset.vt==="fight"?settings.vtankFight:r.dataset.vt==="buff"?settings.vtankBuff:r.dataset.vt==="loot"?settings.vtankLoot:settings.vtankVitals;
   const led=r.querySelector('.vtled'); if(led) led.className="vtled"+(on?" on":""); }); }
 function ubPaint(){ const r=document.querySelector('#ubelt .vtrow'); if(!r) return;
   const led=r.querySelector('.vtled'); if(led) led.className="vtled"+(settings.ubeltXp?" on":""); }
 function initPluginUI(){
   document.querySelectorAll('#vtank .vtrow').forEach(r=>{ r.onclick=()=>{
-    if(r.dataset.vt==="buff") settings.vtankBuff=!settings.vtankBuff;
+    if(r.dataset.vt==="fight") settings.vtankFight=!settings.vtankFight;
+    else if(r.dataset.vt==="buff") settings.vtankBuff=!settings.vtankBuff;
     else if(r.dataset.vt==="loot") settings.vtankLoot=!settings.vtankLoot;
     else settings.vtankVitals=!settings.vtankVitals;
     saveSettings(); vtPaint(); }; });
@@ -26803,6 +26806,33 @@ function ubeltAutoSpend(){
   if(did){ saveGame(); updateHUD(); const sh=document.getElementById('sheet'); if(sh&&sh.style.display!=="none"&&typeof buildSheet==="function") buildSheet(); }
   return did;
 }
+// ── VTank v0.4 helpers ──
+const VT_ENGAGE=28;   // auto-combat acquisition radius (m) — inside the streamer ring, outside town-safe spawns
+// is this buff family already comfortably active? (heals/regens/transfers are the vitals monitor's
+// job — report them "active" so the buffer never burns mana on them)
+function vtBuffActive(sp){ const SOON=14;
+  const ok=(pool,key)=>!!(pool&&pool[key]&&pool[key].t>SOON);
+  if(sp.buff==="attr")  return ok(player.spellBuffs,sp.attr);
+  if(sp.buff==="skill") return ok(player.skillBuffs,sp.skillKey);
+  if(sp.buff==="item")  return ok(player.itemBuffs,sp.stat);
+  if(sp.buff==="prot")  return ok(player.lifeBuffs,"prot");
+  if(sp.buff==="bane")  return ok(player.banes,sp.element);
+  if(sp.buff==="swift") return (player.buffSwiftT||0)>SOON;
+  if(sp.buff==="might") return (player.buffMightT||0)>SOON;
+  return true;
+}
+// the next buff worth casting: highest-level castable of each family (buffBotList), skipping
+// families still active, spells on cooldown, and casts the player can't currently pay for
+function vtNextBuff(){
+  if(typeof buffBotList!=="function") return null;
+  for(const sp of buffBotList()){
+    if(vtBuffActive(sp)) continue;
+    if((spellCd[sp.id]||0)>now()) continue;
+    const payable=player.mn>=(sp.cost||10)||(player.focusMana||0)>0||(typeof findScarabFor==="function"&&findScarabFor(sp.lvl||1)>=0);
+    if(payable) return sp;
+  }
+  return null;
+}
 function updatePlugins(dt){
   if(!running) return;
   if(!PLUG._init){ PLUG._init=1; initPluginUI(); applyUIVis();
@@ -26822,15 +26852,36 @@ function updatePlugins(dt){
         else { lootItem(best.item); disposeObject3D(best.mesh); drops.splice(drops.indexOf(best),1); }   // #232
         PLUG.vtMsg="Looting…"; PLUG.vtMsgT=2; }
     }
-    if(settings.vtankBuff&&player.alive&&!paused&&!player.combatT){   // "Rebuff when idle"
-      const RECAST=(pool,label)=>{ if(!pool) return false;
-        for(const k of Object.keys(pool)){ const b=pool[k];
-          if(b&&b.t>0&&b.t<12&&player.mn>=20){ player.mn-=20; b.t=240;
-            log(`<span style="color:#9fd0ff">[VTank]</span> rebuffs <b>${label(k)}</b>.`,"sys");
-            PLUG.vtMsg="Rebuffing…"; PLUG.vtMsgT=2; return true; } }
-        return false; };
-      RECAST(player.spellBuffs,a=>a)||RECAST(player.skillBuffs,k=>(SKILL_BY_KEY[k]?SKILL_BY_KEY[k].n:k))||RECAST(player.banes,el=>el+" bane");
+    if(settings.vtankBuff&&player.alive&&!paused&&!player.combatT&&!player.casting){   // "Rebuff when idle"
+      // v0.4: no more flat 20-mana timer refresh — VTank now recasts the HIGHEST-level spell of each
+      // buff family the player can actually cast (buffBotList: known + trained + skill-req met),
+      // through the real pipeline (castSpellById): cast words, wind-up, mana/scarab, fizzle, components.
+      const sp=vtNextBuff();
+      if(sp){ castSpellById(sp.id);
+        log(`<span style="color:#9fd0ff">[VTank]</span> casts <b>${sp.name}</b>.`,"sys");
+        PLUG.vtMsg="Buffing…"; PLUG.vtMsgT=2; }
     }
+    // ── v0.4 auto-combat: lock the nearest hostile, face it, close, and attack with the readied weapon ──
+    if(settings.vtankFight&&player.alive&&!paused&&!player.casting){
+      let best=null,bd=VT_ENGAGE;
+      for(const m of monsters){ if(m.hp<=0||!!m.isDungeon!==inDungeon) continue;
+        const d=Math.hypot(m.x-player.x,m.z-player.z); if(d<bd){bd=d;best=m;} }
+      if(best){
+        if(!(TARGET&&TARGET.type==="monster"&&TARGET.ref===best)) selectTarget({type:"monster",ref:best},true);
+        const dx=best.x-player.x,dz=best.z-player.z;
+        player.yaw=Math.atan2(-dx,-dz);                                  // camera forward = (-sin yaw, -cos yaw)
+        const aimY=(best.mesh?best.mesh.position.y:player.y)+(best.headY||1.6)*0.6-(player.y+EYE);
+        player.pitch=clamp(Math.atan2(aimY,bd),-0.9,0.9);                // level the aim at the target's chest
+        const prof=weaponProfile(), reach=3.4*((prof&&prof.mode==="melee"&&prof.reach)||1)+best.r;
+        if(weaponMode==="bow"){                                          // archers hold their ground and loose
+          if(PLUG.vtRun){ autoRun=false; PLUG.vtRun=0; }
+          if(player.meleeCd<=0){ fireArrow(); PLUG.vtMsg="Firing…"; PLUG.vtMsgT=2; }
+        } else if(bd<=reach){
+          if(PLUG.vtRun){ autoRun=false; PLUG.vtRun=0; }
+          if(player.meleeCd<=0){ meleeAttack(1.05); PLUG.vtMsg="Fighting…"; PLUG.vtMsgT=2; }
+        } else if(!autoRun){ autoRun=true; PLUG.vtRun=1; PLUG.vtMsg="Closing…"; PLUG.vtMsgT=2; }
+      } else if(PLUG.vtRun){ autoRun=false; PLUG.vtRun=0; }   // no target left — stop the chase we started
+    } else if(PLUG.vtRun){ autoRun=false; PLUG.vtRun=0; }     // toggled off mid-chase
     // Vitals monitor — VTank's keep-alive: quaff the right potion when a vital dips below the threshold.
     if(settings.vtankVitals&&player.alive&&!paused&&!(player.drinkCd>0)){
       const pct=Math.max(0.05,Math.min(0.95,(settings.vtankVitalPct||50)/100)), Q=()=>{ PLUG.vtMsg="Quaffing…"; PLUG.vtMsgT=2; };
@@ -27765,9 +27816,15 @@ function addNode(x,z,type){
   nodes.push({x,z,type,mesh,depleted:false,readyAt:0});
 }
 function gatherNode(n){
-  n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
   startAction(n.type==="ore"?"mine":"gather",1.3);   // play the work animation (mining swing / crouched harvest)
   if(n.type==="ore"){ if(typeof mineOreYield==="function"){ mineOreYield(n); } else { const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot"); } }
+  // typed ore deposits carry a finite random stock (n.left) — the rock stands until mined dry;
+  // everything else (herbs, legacy nodes) still depletes on the single gather it always did.
+  if(n.type!=="ore"||n.left==null||n.left<=0){
+    n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
+    if(n.ob) n.ob.r=0;   // an emptied (hidden) deposit must not keep invisibly blocking the spot
+    if(n.type==="ore"&&n.left===0) log("The deposit is mined out — the vein will resurface in time.","sys");
+  }
   else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
     if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
   gainXP(30);SFX.gold();questEvent("gather", n.type==="ore"?"ore":"harvest");updateHUD();   // #236: mining advances only "ore"-kind objectives, not generic fetch quests

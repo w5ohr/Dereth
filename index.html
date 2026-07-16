@@ -542,9 +542,10 @@
   <div id="alincoRows" style="padding:4px 8px 5px"></div>
 </div>
 <div id="vtank" style="display:none;position:fixed;right:14px;bottom:150px;z-index:40;width:196px;background:linear-gradient(#d8c49a,#c9b184);border:2px solid #6a4a2a;border-radius:6px;box-shadow:0 3px 10px rgba(0,0,0,.5);font-size:11px;color:#2a2014">
-  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Virindi Tank <span style="font-weight:normal;opacity:.75">v0.3</span></div>
+  <div style="background:#7a2e1e;color:#f0e6d2;font-weight:bold;padding:2px 8px;border-radius:4px 4px 0 0;letter-spacing:.4px">✦ Virindi Tank <span style="font-weight:normal;opacity:.75">v0.4</span></div>
   <div style="padding:5px 8px 6px">
-    <div class="vtrow" data-vt="buff" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Buffing</div>
+    <div class="vtrow" data-vt="fight" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0" title="Engage the nearest hostile automatically: lock it, face it, run in, and attack with your readied weapon"><span class="vtled"></span>Enable Combat <span style="opacity:.7">(auto-fight)</span></div>
+    <div class="vtrow" data-vt="buff" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0" title="When idle, recasts the highest-level self-buff of each family you can actually cast — real casts that cost mana, can fizzle, and burn components"><span class="vtled"></span>Enable Buffing</div>
     <div class="vtrow" data-vt="loot" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0"><span class="vtled"></span>Enable Looting</div>
     <div class="vtrow" data-vt="vitals" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0" title="Auto-quaff a health / mana / stamina potion when that vital drops below the threshold"><span class="vtled"></span>Enable Vitals <span style="opacity:.7">(auto-quaff)</span></div>
     <div style="display:flex;align-items:center;gap:5px;margin:2px 0 1px;color:#5a4a2e">Quaff below <input id="vtPct" type="range" min="20" max="90" step="5" style="flex:1" title="quaff threshold"><b id="vtPctV" style="min-width:30px;text-align:right">50%</b></div>

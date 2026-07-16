@@ -93,6 +93,7 @@ function mineOreYield(n){
   const under = lvl < t.req;                      // below the ideal skill: you can still work the vein, just less efficiently
   const bonus=hasCraftTool("mining")?irnd(1,3):0;
   let a=irnd(2,5)+bonus-(under?2:0); if(a<1) a=1;
+  if(n&&n.left!=null){ a=Math.min(a,n.left); n.left-=a; }   // finite deposits: never mine more than the rock still holds
   const it=resItem("ore",t.k,a);
   if(!addToInv(it)){ addDrop(player.x,player.z,{type:"item",item:it}); }
   const col=(t.k==="iron"?"#cfd0d0":"#"+t.col.toString(16).padStart(6,"0"));
@@ -176,7 +177,9 @@ function oreAreaLevel(x,z){
   lvl+=((h%17)-8);                                                  // gentle variation so tiers aren't perfect radial bands
   return clamp(lvl,0,98);
 }
-const ORE_DEPOSIT_SCALE=30;   // deposit body is drawn this many × the base outcrop size (base outcrop ~1.2 wide, ~1.5 tall)
+const ORE_DEPOSIT_SCALE=15;   // deposit body is drawn this many × the base outcrop size (base outcrop ~1.2 wide, ~1.5 tall) — halved from the original 30×
+const ORE_DEPOSIT_MAX=30;     // a fresh deposit holds a random stock of ore, never more than this many chunks
+const ORE_DEPOSIT_SOLID_R=ORE_DEPOSIT_SCALE*0.85;   // collision footprint ≈ the host boulder's visual radius — deposits are solid rock, not walk-through
 // Researched per-metal ore look. Each deposit = a craggy HOST outcrop (stone) + an ORE expression:
 //   • "crust"  — oxidized mineral crusts hugging the rock (copper malachite/azurite, dull-copper patina)
 //   • "vein"   — metallic veins + flecks threading the stone (iron hematite specks, brassy bronze, gold-in-quartz)
@@ -239,7 +242,7 @@ function buildOreDeposit(metalKey){
       cr.castShadow=true; }
     for(let i=0;i<3;i++){ const a=rnd(0,6.28); part(body,new THREE.OctahedronGeometry(rnd(0.06,0.1),0),M.xtal,Math.cos(a)*rnd(0.4,0.8),rnd(0.4,1.1),Math.sin(a)*rnd(0.4,0.8),rnd(0,3),rnd(0,3),rnd(0,3)); } // shards
   }
-  body.scale.setScalar(ORE_DEPOSIT_SCALE);   // 30× bigger ore deposits
+  body.scale.setScalar(ORE_DEPOSIT_SCALE);   // enlarged ore deposits (15× the base outcrop)
   g.add(body);
   return g;
 }
@@ -251,7 +254,13 @@ function addOreDeposit(x,z,metalKey){
   icon.scale.set(4,4,1); icon.position.y=ORE_DEPOSIT_SCALE*1.35+3; mesh.add(icon);
   scene.add(mesh);
   mesh.updateMatrixWorld(true); mesh.traverse(o=>{ o.matrixAutoUpdate=false; });   // #perf: static deposit (deplete only toggles .visible) → skip per-frame matrix recompute of its ~20 meshes
-  nodes.push({x,z,type:"ore",metal:metalKey,mesh,depleted:false,readyAt:0});   // rides the existing node interact + respawn tick; regrows as the SAME metal
+  // the deposit is SOLID rock: register a collision footprint (zeroed while depleted so the hidden
+  // node doesn't invisibly wall the spot), and stock it with a random amount of ore — mining chips
+  // away at n.left until the deposit runs dry; the respawn tick re-rolls a fresh stock.
+  const ob={x,z,r:ORE_DEPOSIT_SOLID_R};
+  if(typeof obstacles!=="undefined") obstacles.push(ob);
+  nodes.push({x,z,type:"ore",metal:metalKey,mesh,depleted:false,readyAt:0,
+    ob,obR:ORE_DEPOSIT_SOLID_R,left:irnd(3,ORE_DEPOSIT_MAX),maxLeft:ORE_DEPOSIT_MAX});   // rides the existing node interact + respawn tick; regrows as the SAME metal
 }
 let _orePlaced={};
 
