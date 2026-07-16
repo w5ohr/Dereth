@@ -31595,6 +31595,14 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
     }
   }
 }
+// #794: debounced save — coalesces a burst of state changes (crafting/refining/tool-buying a stack in
+// quick succession) into ONE trailing write instead of a full ~256 KiB serialize + localStorage/netSend
+// per action. The short delay is well under the autosave interval and the logout flush, so nothing is
+// lost; a pending save is force-flushed on logout via flushSaveSoon().
+let _saveSoonTimer=null;
+function saveGameSoon(){ if(_saveSoonTimer) return; _saveSoonTimer=setTimeout(()=>{ _saveSoonTimer=null; saveGame(); }, 1200); }
+function flushSaveSoon(){ if(_saveSoonTimer){ clearTimeout(_saveSoonTimer); _saveSoonTimer=null; saveGame(); } }
+try{ window.addEventListener("pagehide",()=>{ try{ flushSaveSoon(); }catch(e){} }); }catch(e){}   // #794: a tab close mid-debounce still flushes the pending save
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 function applySave(){
   let s; try{ s=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ return false; }
