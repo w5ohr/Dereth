@@ -153,7 +153,16 @@ def init_db():
             buyer TEXT, listed INTEGER, sold INTEGER)""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_market_town ON market(town, status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_market_seller ON market(seller, status)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
+        # #815: a UNIQUE index makes global name uniqueness a DB-level invariant, closing the
+        # cross-thread TOCTOU where two concurrent create_char workers both pass the SELECT and both
+        # INSERT. Degrade gracefully to the plain index if a legacy DB already holds duplicate names
+        # (creation would otherwise fail and take down startup); create_char_slot still catches the
+        # IntegrityError, so on a clean DB the race is impossible.
+        try:
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
+        except sqlite3.IntegrityError:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_char_lname ON characters(LOWER(name))")
+            print("init_db: existing duplicate character names — idx_char_lname left non-unique (resolve dupes to enforce uniqueness)")
         # allegiance vassal lookups (WHERE patron=?) run on enter_world / swear / alg_info
         c.execute("CREATE INDEX IF NOT EXISTS idx_alg_patron ON allegiance(patron)")
     c.close()
@@ -423,8 +432,13 @@ def create_char_slot(account, slot, name, data):
         if c.execute("SELECT 1 FROM characters WHERE account=? AND name=?", (account, name)).fetchone():
             return False, "You already have a character with that name."
         nd = new_char_data(data)   # #S2: force a server starter economy — never trust client gold/level/xp/inv at creation
-        c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
-                  (account, slot, name, json.dumps(nd) if nd is not None else None, int(time.time()), int(time.time())))
+        try:
+            c.execute("INSERT INTO characters(account,slot,name,data,created,seen) VALUES(?,?,?,?,?,?)",
+                      (account, slot, name, json.dumps(nd) if nd is not None else None, int(time.time()), int(time.time())))
+        except sqlite3.IntegrityError:
+            # #815: the UNIQUE idx_char_lname is the authoritative arbiter — a concurrent create that
+            # slipped past the SELECT above loses here rather than minting a duplicate global name.
+            return False, "That name is already taken."
     return True, None
 
 def _svnum(v, lo, hi, default):
