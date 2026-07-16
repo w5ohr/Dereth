@@ -11906,6 +11906,7 @@ function applyHit(m,base,opts){ opts=opts||{};
 }
 function damageMonster(m,dmg,crit){
   dmg=+dmg; if(!isFinite(dmg)||dmg<0) dmg=0;   // #16/#880: guard NaN/negative AND Infinity (Math.max(0,Infinity) passed → m.hp=-Infinity) — now truly mirrors playerHurt's #32 guard
+  if(dmg>0) dmgMeterHit(dmg,!!crit,true);   // Damage Meter plugin: outgoing damage tally
   if(m.shared){ // server-authoritative: claim the hit, let the server apply HP/death/XP
     if(!NET.open){ // #636: disconnected — the mob is frozen and the netSend is a no-op; refuse instead of faking flash/hit-SFX/health-bar feedback on an unkillable mob
       const _t=now(); if(_t-NET._noConnWarnT>2500){ NET._noConnWarnT=_t; log("You are not connected — reconnecting…","warn"); }
@@ -16975,6 +16976,7 @@ function playerHurt(dmg,sx,sz,type,element,opts){
     const dd=document.getElementById('dmgdir');dd.style.transform=`rotate(${rel}rad)`;dd.style.opacity="1";
     setTimeout(()=>dd.style.opacity="0",420);}
   const applied=Math.round(dmg);
+  if(applied>0) dmgMeterHit(applied,false,false);   // Damage Meter plugin: incoming damage tally
   if(opts.onApplied) opts.onApplied(applied);   // fires before die() so a caller's strike line logs ahead of the death message
   if(player.hp<=0) die();
   return applied;
@@ -17887,6 +17889,7 @@ const HUD_TOGGLES=[["vitals","Character Vitals","shift+F1"],["compassPanel","Com
   ["goarrow","GoArrow","shift+F9"],["alinco","Alinco Buffs","shift+F10"],["vtank","Virindi Tank","shift+F11"],
   ["magtools","Mag-Tools","shift+F12"],
   ["dungmap","Dungeon Maps",""],["radar","Virindi Radar",""],["itemtool","Item Tool",""],["compkeep","Comp Keeper",""],
+  ["dmgmeter","Damage Meter",""],["corpsetk","Corpse Tracker",""],["squire","Squire",""],
   ["targetFrame","Target Frame","shift+Backquote"],["log","Chat Window",""]];
 for(const [id,label,def] of HUD_TOGGLES)
   ACTIONS.push({id:"ui_"+id,label:"Toggle: "+label,group:"HUD Toggles",def,run:()=>toggleHud(id,label)});
@@ -19917,7 +19920,7 @@ function buildMiniToggles(){
 }
 // ── movable HUD frames: press N to enter "Move UI" mode, drag any panel; positions persist ──
 const DRAG_PANELS=["vitals","compassPanel","minimap","right","quest","partyHud","spellbar","potions",
-  "goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
+  "goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","targetFrame","idPanel","log"];   // every interface is movable — anytime by grip/title-bar, or whole-panel in N-mode
 let movingUI=false, _uiDrag=null;
 function applyUIPos(){ let p={}; try{ p=JSON.parse(localStorage.getItem("dereth_ui"))||{}; }catch(e){}
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue; const q=p[id];
@@ -19934,7 +19937,7 @@ function initDragUI(){
   for(const id of DRAG_PANELS){ const el=document.getElementById(id); if(!el)continue;
     el.addEventListener('mousedown',e=>{ if(!movingUI)return; e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
   // parchment windows also drag by their title bar at any time (no N-mode needed)
-  for(const id of ["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
+  for(const id of ["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","idPanel"]){ const el=document.getElementById(id); if(!el)continue;
     const head=el.firstElementChild; if(!head) continue; head.style.cursor="move";
     head.addEventListener('mousedown',e=>{ if(e.target.classList&&e.target.classList.contains('idX'))return;
       e.preventDefault(); e.stopPropagation(); const r=el.getBoundingClientRect(); _uiDrag={el,dx:e.clientX-r.left,dy:e.clientY-r.top}; }); }
@@ -19960,7 +19963,7 @@ function initDragUI(){
 // Re-runnable: panels like the quickbar rebuild their innerHTML and shed the grip.
 function ensureGrips(){
   const label={}; if(typeof HUD_TOGGLES!=="undefined") for(const [id,n] of HUD_TOGGLES) label[id]=n;
-  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","idPanel"].indexOf(id)>=0) continue;
+  for(const id of DRAG_PANELS){ if(["alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire","idPanel"].indexOf(id)>=0) continue;
     const el=document.getElementById(id); if(!el||el.querySelector(':scope>.dragGrip')) continue;
     if(getComputedStyle(el).position==="static") el.style.position="relative";
     const grip=document.createElement('div'); grip.className="dragGrip"; grip.textContent="⠿"; grip.title="Drag to move (or press N to move whole panels)";
@@ -20264,7 +20267,7 @@ const settings={sens:1.0,vol:0.9,fov:72,diff:1.0,acDeath:true,gfx:"auto",hd:fals
   brightness:1.0,contrast:1.0,   // final-image display grade (Settings sliders): 1.0 = neutral
   labels:{players:false,npcs:false,cities:false,portals:false,lifestones:false,dungeons:false,monsters:false},   // floating name labels OFF by default (toggle back on per-category in Settings)
   chat:{},   // per-channel {c:"#hex",m:true|false} overrides — defaults in CHAT_CHANNELS
-  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false},   // Decal-plugin homages (settings → Decal plugins)
+  plugins:{goarrow:true,alinco:true,vtank:false,magtools:false,ubelt:false,dungmap:false,radar:false,itemtool:false,compkeep:false,dmgmeter:false,corpsetk:false,squire:false},   // Decal-plugin homages (settings → Decal plugins)
   vtankBuff:true,vtankLoot:true,vtankVitals:true,vtankVitalPct:50,gaDest:"auto",gaCoords:null,
   ubeltXp:true,ubeltPolicy:"spec",   // UtilityBelt XP investor: auto-spend policy
   touchSens:1.0,touchHaptics:true,touchAutoFace:true,touchBtnScale:1.0,   // mobile/touch interface: look sensitivity ×, vibration, face-target-on-attack assist, control size
@@ -26676,13 +26679,22 @@ function applyUIVis(){
   const h=settings.uiHidden||{};
   for(const [id] of HUD_TOGGLES){ const el=document.getElementById(id); if(!el) continue;
     if(h[id]) el.style.display="none";
-    else if(["goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
+    else if(["goarrow","alinco","vtank","magtools","dungmap","radar","itemtool","compkeep","dmgmeter","corpsetk","squire"].indexOf(id)<0 && id!=="targetFrame") el.style.display=""; }
   applyPluginSettings();            // plugin panels re-apply their own visibility
 }
 // ═══ DECAL PLUGINS — in-game homages to the classic AC plugin suite. Interfaces modeled on the
 //     real plugin screenshots (AC wiki): GoArrow's chrome arrow with destination-over / distance-
 //     under + coords, Virindi Tank's parchment window with green LED toggles, Alinco's buff list,
 //     Mag-Tools' combat tracker. Toggled in Settings → "Decal plugins"; states persist. ═══
+// Damage Meter (DamageTracker / VirindiReporter homage): rolling DPS + session damage totals
+const _dmgStat={dealt:0,taken:0,top:0,hits:0,crits:0};
+let _dmgRecent=[];   // [t, dmg] pairs inside the rolling DPS window
+function dmgMeterHit(amt,crit,outgoing){
+  amt=+amt; if(!isFinite(amt)||amt<=0) return;
+  if(outgoing){ _dmgStat.dealt+=amt; _dmgStat.hits++; if(crit)_dmgStat.crits++; if(amt>_dmgStat.top)_dmgStat.top=amt;
+    _dmgRecent.push([performance.now(),amt]); }
+  else _dmgStat.taken+=amt;
+}
 const PLUGIN_DEFS=[
   {k:"goarrow", n:"GoArrow",      d:"Destination arrow with distance + AC coordinates. Auto-tracks the saga chapter, your corpse, or your Lifestone — click the destination name to pick any town."},
   {k:"alinco",  n:"Alinco Buffs", d:"Buff HUD — every active enchantment with its time remaining."},
@@ -26693,6 +26705,9 @@ const PLUGIN_DEFS=[
   {k:"radar",   n:"Virindi Radar",d:"Close-range tactical radar — nearby creatures (red), players (cyan) and NPCs (gold) around you, oriented to your facing."},
   {k:"itemtool",n:"Item Tool",    d:"Virindi Item Tool — a compact inventory summary: pack slots used, burden %, pyreals and equipped gear at a glance."},
   {k:"compkeep",n:"Comp Keeper",  d:"Spell-component tracker — Prismatic Tapers, Tapers, casting scarabs and focus mana, with a red warning when a stock runs low."},
+  {k:"dmgmeter",n:"Damage Meter", d:"DamageTracker — live DPS (10s window), session damage dealt & taken, your biggest hit and crit rate."},
+  {k:"corpsetk",n:"Corpse Tracker",d:"CorpseTracker — lists your unrecovered corpses with distance, bearing and the time left before each decays."},
+  {k:"squire",  n:"Squire",       d:"Squire — your worn equipment at a glance, each magical piece showing its remaining item-mana."},
 ];
 const PLUG={t1:0,t2:0,mag:null,vtMsg:"Idle",vtMsgT:0,_init:0};
 function acCoordStr(x,z){ const N=-z/COORD, E=x/COORD;
@@ -26874,6 +26889,30 @@ function updatePlugins(dt){
       el.innerHTML=row("Prismatic Tapers",clean(player.prismTapers),10)+row("Tapers",clean(player.tapers),10)
         +row("Casting Scarabs",scarabs,3)+row("Other comps",pea,-1)
         +row("Focus mana",clean(player.focusMana),-1); } }
+  // ── Damage Meter: rolling DPS + session totals ──
+  if(pluginOn("dmgmeter")){ const el=document.getElementById('dmgmeterRows');
+    if(el){ const t=performance.now(); while(_dmgRecent.length&&t-_dmgRecent[0][0]>10000)_dmgRecent.shift();
+      const dps=Math.round(_dmgRecent.reduce((s,r)=>s+r[1],0)/10);
+      const critPct=_dmgStat.hits?Math.round(_dmgStat.crits/_dmgStat.hits*100):0;
+      const row=(a,b)=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${a}</span><b>${b}</b></div>`;
+      el.innerHTML=row("DPS (10s)",dps.toLocaleString())+row("Damage dealt",Math.round(_dmgStat.dealt).toLocaleString())
+        +row("Top hit",Math.round(_dmgStat.top).toLocaleString())+row("Crit rate",critPct+"%")
+        +row("Damage taken",Math.round(_dmgStat.taken).toLocaleString()); } }
+  // ── Corpse Tracker: your unrecovered corpses, nearest first ──
+  if(pluginOn("corpsetk")){ const el=document.getElementById('corpsetkRows');
+    if(el){ const mine=drops.filter(d=>d&&d.type==="corpse"&&(!d.owner||d.owner===player.name))
+        .sort((a,b)=>Math.hypot(a.x-player.x,a.z-player.z)-Math.hypot(b.x-player.x,b.z-player.z));
+      el.innerHTML=mine.length?mine.slice(0,5).map(d=>{ const dist=Math.round(Math.hypot(d.x-player.x,d.z-player.z));
+        const bear=compassTo(d.x-player.x,d.z-player.z), left=Math.max(0,(d.ttl||3600)-(d.t||0)), mm=Math.floor(left/60);
+        return `<div style="display:flex;justify-content:space-between;gap:8px${left<120?";color:#8a1e1e;font-weight:bold":""}"><span>${dist}m ${bear}</span><span>${mm}m left</span></div>`;
+      }).join(""):'<div style="color:#5a4a2e">No corpse to recover.</div>'; } }
+  // ── Squire: worn equipment + per-piece item-mana ──
+  if(pluginOn("squire")){ const el=document.getElementById('squireRows');
+    if(el){ const rows=[];
+      if(player.weapon&&player.weapon.name) rows.push([player.weapon.name,player.weapon.itemMana]);
+      for(const k of Object.keys(player.armorSlots||{})){ const it=player.armorSlots[k]; if(it&&it.name) rows.push([it.name,it.itemMana]); }
+      for(const k of Object.keys(player.jewelry||{})){ const it=player.jewelry[k]; if(it&&it.name) rows.push([it.name,it.itemMana]); }
+      el.innerHTML=rows.length?rows.map(r=>`<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(r[0])}</span><span style="color:#3a5a8a">${(r[1]!=null&&isFinite(r[1]))?Math.round(r[1])+" mana":""}</span></div>`).join(""):'<div style="color:#5a4a2e">Nothing equipped.</div>'; } }
 }
 // Dungeon Maps + Radar redraw every frame (cheap 2D canvas) — driven from updatePlugins' per-frame block
 function _drawPluginCanvases(){
