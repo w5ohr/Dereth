@@ -297,11 +297,11 @@ function skillTier(key){ return skillState(key).t; } // 0 untrained, 1 trained, 
 function skillRank(key){ const st=skillState(key); return st.t>0?skillRankFromXP(st.xp,st.t===2):0; }
 function skillBase(key){ const s=SKILL_BY_KEY[key]; if(!s||!s.d)return 0; let sum=0; for(const a of s.a)sum+=player.attr[a]; return Math.floor(sum/s.d); }
 // effective skill value: untrained = attribute base only (can't be raised); trained = base+ranks;
-// specialized = +10 bonus. (Faithful: untrained skills work at base; magic just can't be cast untrained.)
+// specialized = +5 bonus (AC's retail specialization bonus). (Faithful: untrained skills work at base; magic just can't be cast untrained.)
 function skillValue(key){ if(!SKILL_BY_KEY[key]) return 0; const st=skillState(key),base=skillBase(key);
   const sb=(player.skillBuffs&&player.skillBuffs[key])?player.skillBuffs[key].v:0;   // Creature skill "Aptitude" buff
   const gj=(player.gearSkill&&player.gearSkill[key])?player.gearSkill[key]:0;        // jewelry skill cantrips
-  let v=base+(st.t>0?skillRank(key):0)+(st.t===2?10:0)+sb+gj
+  let v=base+(st.t>0?skillRank(key):0)+(st.t===2?5:0)+sb+gj
     +((player.auras&&player.auras.world)||0)+(player.enlightenment||0)   // Aura of the World + Enlightenment: +1 all skills each level/tier
     +((player.augment&&player.augment.allskills)||0)   // H17 Jack of All Trades augmentation: +N to every skill
     +((player.augment&&player.augment.fam&&player.augment.fam[SKILL_BY_KEY[key].fam])||0);   // skill-family masteries: Steel Circle (melee) / Five Fold Path (magic) / Focused Eye (missile), +10 each
