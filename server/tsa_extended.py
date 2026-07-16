@@ -19,13 +19,16 @@ async def mk(name, level=10, inv=None):
     await c.send({"t": "register", "user": u, "pass": "secret9"})
     await c.recv_until(lambda x: x["t"] == "auth_ok")
     await c.recv_until(lambda x: x["t"] == "roster")
-    char = {"level": level, "gold": 1000}
-    if inv:
-        char["inv"] = inv   # adopted by enter_world -> load_econ as the char's authoritative inventory
-    await c.send({"t": "create_char", "slot": 0, "name": u[:14], "char": char})
+    await c.send({"t": "create_char", "slot": 0, "name": u[:14], "char": {"level": level}})
     po = await c.recv_until(lambda x: x["t"] == "play_ok")
     c.username, c.charname = u, u[:14]
     c.netid = po.get("netid") if po else None   # #438: opaque session id -- the wire never uses the account name as a target
+    # #887: create_char can no longer seed economy (#S2 forces a starter blob) -- adopt inv+gold the
+    # way a real client does, via the first autosave (reconcile_econ takes inv wholesale and meters
+    # the coin gain through the creation bucket; 1000 pyreals is far under the burst).
+    await c.send({"t": "save", "char": {"level": level, "gold": 1000, "inv": inv or []}})
+    sk = await c.recv_until(lambda x: x.get("t") == "save_ok")
+    assert sk, f"seed save not acked for {u}"
     return c
 
 async def main():

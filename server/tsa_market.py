@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """#722 e2e: the consignment market. Two clients — a seller lists, a buyer browses and buys
 (pay-first, atomic claim), the seller gets the live sold notice, collects proceeds at the SAME
-town's broker, and reclaims an unsold listing. Failure paths: oversize item, zero price, buying
-your own listing, double-buy, foreign reclaim, listing cap.
+town's broker, and reclaims an unsold listing. Failure paths: oversize item, fabricated item,
+zero price, buying your own listing, double-buy, foreign reclaim, listing cap.
+#887: updated for the #808 authoritative market — the seller's listings are seeded into the
+server-side inventory at chargen (take_owned escrow) and the buyer carries authoritative coin,
+mirroring the real client flow; authCoin debit/credit is asserted on buy/collect.
 Usage: python3 server/tsa_market.py [host] [port]   (server must already be running)
 """
 import asyncio, base64, hashlib, json, secrets, struct, sys, time
@@ -67,7 +70,13 @@ def check(name, ok):
 def mk(t, act, **kw):
     d = {"t": t, "act": act}; d.update(kw); return d
 
-async def player(user, charname):
+async def player(user, charname, inv=None, gold=0):
+    # #887: post-#808 the market is authoritative — 'list' escrows via take_owned(cl.inv) and 'buy'
+    # debits cl.coin, so the character must actually OWN what it lists and HOLD what it spends.
+    # create_char can't seed these (#S2 forces a starter economy at creation), so mirror the real
+    # client flow instead: loot/craft happen client-side, then an autosave carries inv+gold to the
+    # server, where reconcile_econ adopts the inventory wholesale and meters the coin gain through
+    # the creation bucket (our few thousand pyreals sit far under the 1M burst).
     c = await WS.connect()
     await c.send({"t": "register", "user": user, "pass": "secret1"})
     m = await c.recv_until(lambda x: x["t"] in ("auth_ok", "auth_err"))
@@ -76,6 +85,10 @@ async def player(user, charname):
     await c.send({"t": "create_char", "slot": 0, "name": charname, "char": {"level": 5, "heritage": "sho"}})
     po = await c.recv_until(lambda x: x["t"] == "play_ok")
     assert po, f"play failed for {user}"
+    if inv or gold:
+        await c.send({"t": "save", "char": {"level": 5, "heritage": "sho", "gold": gold, "inv": inv or []}})
+        sk = await c.recv_until(lambda x: x.get("t") == "save_ok")
+        assert sk, f"seed save not acked for {user}"
     return c
 
 async def main():
@@ -84,9 +97,18 @@ async def main():
     print(f"Market e2e on {HOST}:{PORT} — seller {seller_n}, buyer {buyer_n}")
     TOWN = "Holtburg"
     sword = {"name": "Tinkered Sabre", "stat": "weapon", "wt": "sword", "v": 9}
+    boot = {"name": "Old Boot"}
+    crates = [{"name": f"crate {i}"} for i in range(13)]
+    # #887: an OWNED item that still busts MARKET_ITEM_BYTES (4096) after sanitize_item — 59 pad keys
+    # of 64-char strings survive sanitization (keys ≤40 chars, leaves ≤64) and serialize past the cap,
+    # so the oversize guard is exercised on the real post-escrow path, not via a fabricated item.
+    bloat = {"name": "Bloated Relic"}
+    for i in range(59):
+        bloat[f"pad{i:02d}"] = "x" * 64
 
-    s = await player(seller_n + "a", seller_n)
-    b = await player(buyer_n + "a", buyer_n)
+    # seller owns everything it will list; buyer holds the coin it will spend (505 across both buys)
+    s = await player(seller_n + "a", seller_n, inv=[sword, boot, bloat] + crates)
+    b = await player(buyer_n + "a", buyer_n, gold=2000)
 
     # ── list: happy path ────────────────────────────────────────────────────
     await s.send(mk("market", "list", town=TOWN, item=sword, price=500))
@@ -98,9 +120,13 @@ async def main():
     await s.send(mk("market", "list", town=TOWN, item=sword, price=0))
     m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") == "list_fail")
     check("zero price rejected", bool(m))
-    await s.send(mk("market", "list", town=TOWN, item={"pad": "x" * 8000}, price=10))
+    await s.send(mk("market", "list", town=TOWN, item=bloat, price=10))
     m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") == "list_fail")
     check("oversize item rejected", bool(m))
+    # a FABRICATED item (never in the authoritative inventory) must be refused too (#808)
+    await s.send(mk("market", "list", town=TOWN, item={"name": "Forged Blade", "v": 999}, price=10))
+    m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") == "list_fail")
+    check("unowned (fabricated) item rejected", bool(m))
 
     # ── browse from the buyer: the sword is on the shelf ────────────────────
     await b.send(mk("market", "browse", town=TOWN))
@@ -119,6 +145,7 @@ async def main():
     m = await b.recv_until(lambda x: x.get("t") == "market" and x.get("act") in ("bought", "buy_fail"))
     check("buy -> bought (item handed over on payment)", bool(m) and m["act"] == "bought"
           and json.loads(m["item"])["name"] == "Tinkered Sabre" and m["price"] == 500)
+    check("buyer debited authoritatively (authCoin 2000-500)", bool(m) and m.get("authCoin") == 1500)   # #808/#887
     m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") == "sold")
     check("seller notified live of the sale", bool(m) and m["id"] == lid and m["price"] == 500 and m["buyer"] == buyer_n)
 
@@ -134,12 +161,13 @@ async def main():
     await s.send(mk("market", "collect", town=TOWN))
     m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") == "collected")
     check("collect at the broker pays the proceeds", bool(m) and m["gold"] == 500 and m["n"] == 1)
+    check("proceeds credited authoritatively (authCoin 0+500)", bool(m) and m.get("authCoin") == 500)   # #808/#887: conserved transfer
     await s.send(mk("market", "collect", town=TOWN))
     m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") == "collected")
     check("proceeds paid only once", bool(m) and m["gold"] == 0)
 
     # ── reclaim an unsold listing (and only YOURS, and only once) ───────────
-    await s.send(mk("market", "list", town=TOWN, item={"name": "Old Boot"}, price=7))
+    await s.send(mk("market", "list", town=TOWN, item=boot, price=7))
     m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") == "listed")
     lid2 = m and m.get("id")
     check("second listing accepted", bool(lid2))
@@ -155,8 +183,8 @@ async def main():
 
     # ── listing cap ─────────────────────────────────────────────────────────
     ok_caps = 0
-    for i in range(13):
-        await s.send(mk("market", "list", town=TOWN, item={"name": f"crate {i}"}, price=5))
+    for c in crates:                        # all 13 are OWNED — only the 12-listing cap may refuse one (#887)
+        await s.send(mk("market", "list", town=TOWN, item=c, price=5))
         m = await s.recv_until(lambda x: x.get("t") == "market" and x.get("act") in ("listed", "list_fail"))
         if m and m["act"] == "listed": ok_caps += 1
     check("listing cap enforced at 12", ok_caps == 12)
