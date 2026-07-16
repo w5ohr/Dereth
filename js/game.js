@@ -27820,13 +27820,17 @@ function gatherNode(n){
   if(n.type==="ore"){ if(typeof mineOreYield==="function"){ mineOreYield(n); } else { const a=irnd(3,8);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fd0d0");log(`You mine <b>${a}</b> materials.`,"loot"); } }
   // typed ore deposits carry a finite random stock (n.left) — the rock stands until mined dry;
   // everything else (herbs, legacy nodes) still depletes on the single gather it always did.
+  // #904: the herb/legacy reward belongs to NON-ore nodes, on their single gather. The #903 finite-
+  // deposit restructure routed it through the deplete-check's else, which (a) handed every non-final
+  // ORE swing +1–4 materials and a 30% "healing herb" Health Potion on top of mineOreYield's ore, and
+  // (b) made it unreachable for actual herb/legacy nodes (they match the deplete condition first).
+  if(n.type!=="ore"){const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
+    if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
   if(n.type!=="ore"||n.left==null||n.left<=0){
     n.depleted=true;n.mesh.visible=false;n.readyAt=now()+rnd(30000,45000);
     if(n.ob) n.ob.r=0;   // an emptied (hidden) deposit must not keep invisibly blocking the spot
     if(n.type==="ore"&&n.left===0) log("The deposit is mined out — the vein will resurface in time.","sys");
   }
-  else{const a=irnd(1,4);player.materials+=a;floater(player.x,EYE+0.4,player.z,"+"+a+" mat","#7fe6a0");
-    if(Math.random()<0.3){player.potHealth++;log("You gather a healing herb (+1 Health Potion).","loot");}else log(`You gather <b>${a}</b> materials.`,"loot");}
   gainXP(30);SFX.gold();questEvent("gather", n.type==="ore"?"ore":"harvest");updateHUD();   // #236: mining advances only "ore"-kind objectives, not generic fetch quests
 }
 function addEntrance(def){
