@@ -19,7 +19,9 @@
 // v7: acportalfx.json + acportal/ sprites (the authentic retail portal particle effect).
 // v8: #webgpu Phase A — the game code moved out of inline index.html into js/game.js + js/craft.js
 // (ES-module three via vendor/three.module.js). js/*.js are treated like the app (network-first, so a
-// deploy lands on reload); vendor/* is pinned-dependency static (stale-while-revalidate).
+// deploy lands on reload); vendor/* is stale-while-revalidate but SELF-HEALING (#806): its background
+// revalidation forces a conditional server check, so a new Three.js build is picked up on the next load
+// WITHOUT a manual `V` bump — bumping V stays a belt-and-suspenders, no longer the only safety net.
 const V = "dereth-v8";
 
 // #804: network-first must not hang on "lie-fi" (a connected-but-dead link where fetch never settles).
@@ -84,7 +86,17 @@ self.addEventListener("fetch", e => {
   e.respondWith((async () => {
     const c = await caches.open(V);
     const hit = await c.match(req);
-    const net = fetch(req).then(r => { if (r && r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
+    // #806: the pinned Three.js ESM build (vendor/) must self-heal without a manual `V` bump — otherwise a
+    // new build shipped without one serves the stale module indefinitely (vendor has no Cache-Control, so
+    // the browser's heuristic freshness can pin it for days, and the plain background fetch is satisfied
+    // from that stale HTTP cache without ever reaching the server). Force its revalidation to check the
+    // server CONDITIONALLY: a cheap 304 when unchanged, a full 200 + cache update when it changed. The
+    // cached copy is still returned instantly below, so there's no added latency; the next load is fresh.
+    // (assets/ are immutable + content-addressed — they change only with a network-first index.html — so
+    // they keep the plain revalidation.)
+    const isVendor = url.pathname.includes("/vendor/");
+    const net = fetch(req, isVendor ? { cache: "no-cache" } : undefined)
+      .then(r => { if (r && r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
     return hit || net.then(r => r || Response.error());
   })());
 });
