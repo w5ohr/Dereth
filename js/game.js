@@ -11304,11 +11304,20 @@ function classifyLog(msg,tab){
   if(/you have slain|slain|kill streak|enrage/i.test(msg)) return "combat";
   return "sys";   // sys lines live in All only
 }
-function log(msg,cls="",tab,spam){
+// ── #786: UIBUS — the thin UI seam. Game logic EMITS; the DOM renderer (installed below the chat
+//    functions) SUBSCRIBES. Headless tests subscribe stubs instead, so logic that logs/toasts runs
+//    without a document. Adopt incrementally: route new logic→DOM writes through an emit and keep
+//    every document.* touch inside a subscriber.
+const UIBUS={
+  _h:{},
+  on(ev,fn){ (this._h[ev]=this._h[ev]||[]).push(fn); return fn; },
+  off(ev,fn){ const a=this._h[ev]; if(a){ const i=a.indexOf(fn); if(i>=0)a.splice(i,1); } },
+  emit(ev,data){ const a=this._h[ev]; if(a) for(const fn of a){ try{ fn(data); }catch(e){ console.error("UIBUS["+ev+"]",e); } } },
+};
+function log(msg,cls="",tab,spam){   // #786: pure — updates logLines state and emits; no DOM here
   tab=classifyLog(msg,tab);
   logLines.push({msg,cls,tab,spam:!!spam}); if(logLines.length>160)logLines.shift();
-  if(tab!=="sys"&&chatTab!=="all"&&tab!==chatTab){ const b=document.querySelector(`#chatTabs [data-tab="${tab}"]`); if(b) b.classList.add("unread"); }
-  renderLog();
+  UIBUS.emit("chat:line",{msg,cls,tab,spam:!!spam});
 }
 // per-hit combat spam: lands ONLY on the Combat tab, never floods the main feed
 function clog(msg){ log(msg,"cmb","combat",true); }
@@ -11343,15 +11352,24 @@ const CHAT_CHANNELS={
 };
 function chatChan(ch){ const d=CHAT_CHANNELS[ch]||CHAT_CHANNELS.say, o=(settings.chat&&settings.chat[ch])||{}; return {n:d.n, c:o.c||d.c, m:!!o.m}; }
 let _chatBarT=0;
-function chatMsg(ch,html){
+function chatMsg(ch,html){   // #786: pure — emits; the chat-bar DOM write lives in the subscriber below
   const conf=chatChan(ch);
   if(conf.m) return;                                    // muted channel
   const line=`<span style="color:${conf.c}">${html}</span>`;
   log(line,"chat",CHAT_TAB_OF[ch]||"global");           // player-to-player lines land on their tab
-  const bar=document.getElementById('chatBarText');
-  if(bar){ bar.innerHTML=line; bar.style.opacity=1; _chatBarT=12; }   // ride the chat bar, dim after a while
+  _chatBarT=12;
+  UIBUS.emit("chat:bar",line);
 }
-let toastT=0;function toast(t){document.getElementById('toast').textContent=t;toastT=2.2;}
+let toastT=0;function toast(t){ toastT=2.2; UIBUS.emit("toast",t); }   // #786: pure — the DOM write is a subscriber
+// ── #786: the DOM renderer — the ONLY place these UI events touch the document. A headless test
+//    replaces these three subscriptions with stubs and every log/toast/chat caller runs unchanged. ──
+UIBUS.on("chat:line",l=>{
+  if(l.tab!=="sys"&&chatTab!=="all"&&l.tab!==chatTab){ const b=document.querySelector(`#chatTabs [data-tab="${l.tab}"]`); if(b) b.classList.add("unread"); }
+  renderLog();
+});
+UIBUS.on("chat:bar",line=>{ const bar=document.getElementById('chatBarText');
+  if(bar){ bar.innerHTML=line; bar.style.opacity=1; } });   // ride the chat bar, dim after a while (_chatBarT)
+UIBUS.on("toast",t=>{ const el=document.getElementById('toast'); if(el) el.textContent=t; });
 
 // ---------- effects ----------
 function floater(x,y,z,txt,color,sz){const sp=textSprite(txt,color);if(sz)sp.scale.multiplyScalar(sz);sp.position.set(x,y,z);scene.add(sp);
@@ -33151,12 +33169,17 @@ function startGame(loadSaved,preset){
     log("You have crossed to <b>Dereth</b>, a volcanic isle on the world of <b>Auberean</b> — a land of portals, ancient ruins, and the insectoid Olthoi.","sys");
     log(TOUCH.on?"Tap the Interact pill at the Lifestone to bind; open the ☰ menu → Map to fast-travel.":"Bind to the Lifestone (E), and open the map (Tab) to fast-travel between towns.","sys");   // #652: touch equivalents for the bind/map hint
     toast("WELCOME TO DERETH");
-    setTimeout(()=>{if(running)log("Tip: bind to the blue Lifestone (E) — death returns you there.","sys");},7000);
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (☰ menu → Quests). Vendors are green $.":"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $.","sys");},14000);   // #652: touch equivalent for the quest-log hint
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: ☰ menu: Character, Packs, Codex/Bestiary, Quests, Map. Match spell elements to a foe's weakness!":"Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!","sys");},21000);   // #652: touch panel access has no B/C/T/Tab keys
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: hold the <b>attack</b> button to charge; the <b>shield</b>/<b>JUMP</b> buttons are on the right cluster.":"Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). <b>Shift+Q</b> swaps weapon; Q toggles auto-run.","sys");},28000);   // #652: touch has no right-click/Shift+Q
-    setTimeout(()=>{if(running)log(TOUCH.on?"Tip: tap the <b>JUMP</b> button to jump (train <b>Jump</b> & travel light to leap higher) — the <b>dodge</b> button dodges. Climb the ramps inside town halls to the upper floor.":"Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor.","sys");},35000);   // #652: touch has no Space/Shift+Space
-    setTimeout(()=>{if(running)log("Tip: press <b>N</b> to rearrange your HUD (drag any panel). Your <b>quickbar</b> has 4 pages — the <b>1–4</b> buttons (or <b>[ ]</b>) switch pages; assign spells to any of its 96 slots in the Spellbook (K).","sys");},42000);
+    // #786: the boot tutorial drip is DATA fed to one scheduler, not a stack of raw setTimeouts.
+    // Thunks so the touch/desktop variant is chosen at FIRE time (#652), matching the old behavior.
+    const TUT_TIPS=[
+      [7000,()=>"Tip: bind to the blue Lifestone (E) — death returns you there."],
+      [14000,()=>TOUCH.on?"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (☰ menu → Quests). Vendors are green $.":"Tip: named quest-givers (gold !) stand in towns — talk to them for bounties (J: quest log). Vendors are green $."],
+      [21000,()=>TOUCH.on?"Tip: ☰ menu: Character, Packs, Codex/Bestiary, Quests, Map. Match spell elements to a foe's weakness!":"Tip: B = bestiary, C = character, T = tinker, Tab = map. Match spell elements to a foe's weakness!"],
+      [28000,()=>TOUCH.on?"Tip: hold the <b>attack</b> button to charge; the <b>shield</b>/<b>JUMP</b> buttons are on the right cluster.":"Tip: hold <b>right-click</b> to raise your shield — blocks frontal blows (drains stamina, slows you). <b>Shift+Q</b> swaps weapon; Q toggles auto-run."],
+      [35000,()=>TOUCH.on?"Tip: tap the <b>JUMP</b> button to jump (train <b>Jump</b> & travel light to leap higher) — the <b>dodge</b> button dodges. Climb the ramps inside town halls to the upper floor.":"Tip: tap <b>Space</b> to jump (train <b>Jump</b> & travel light to leap higher) — <b>Shift+Space</b> dodges. Climb the ramps inside town halls to the upper floor."],
+      [42000,()=>"Tip: press <b>N</b> to rearrange your HUD (drag any panel). Your <b>quickbar</b> has 4 pages — the <b>1–4</b> buttons (or <b>[ ]</b>) switch pages; assign spells to any of its 96 slots in the Spellbook (K)."],
+    ];
+    for(const [ms,tip] of TUT_TIPS) setTimeout(()=>{ if(running) log(tip(),"sys"); },ms);
   }
   applyHeritageLook(player.heritage);
   refreshAvatarAppearance();   // mirror the chosen face/hair/beard/tattoo on the 3rd-person body
