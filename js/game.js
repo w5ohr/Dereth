@@ -39,6 +39,18 @@ const TERRA_CHUNKS=16;  // terrain is split into 16×16 = 256 frustum-culled are
 const TARGET_HUMAN_H=1.9;   // every human model (procedural NPCs, gltf NPCs, gltf avatar) normalized to this height
 const SUN_OFF={x:50,y:90,z:35}; // sun offset from player (keeps shadow frustum tight)
 const TOWN_SAFE=60*WSCALE, DAYLEN=7620; // safe radius around each capital (×WSCALE: real town extent at 1:1); DAYLEN = AC's authentic Dereth day (Region GameTime DayLength = 7620s = one full day/night cycle)
+// ── #781: central tuning config — the named home for cross-cutting scene/timing constants that were
+//    inline magic numbers at their use sites. Balancing/theming edits happen here, not by spelunking.
+//    (Live systems — weather, AC_SKY, gfx tiers — still retune these at runtime; CFG is the boot state.)
+const CFG={
+  fog:{color:0x8a8062,near:40,far:235},                       // boot fog (weather/AC_SKY drive it live)
+  camera:{fov:72,near:0.05,farK:1.2},                         // far plane = WORLD*farK
+  sunNear:{size:72,near:10,far:300,mapSize:4096,bias:-0.0004,normalBias:0.035,radius:2.2},   // near shadow cascade
+  sunFar:{size:192,near:10,far:460,mapSize:4096,bias:-0.0007,normalBias:0.10,radius:2.6},    // #692 far cascade (coarser texels → scaled biases)
+  carriedLight:{mapSize:512,near:0.2,bias:-0.006},            // #716 dungeon point-shadow light
+  sceneLight:{hemiSky:0xbcd0ff,hemiGround:0x4a4230,hemiI:0.62,sunColor:0xffedc2,sunI:1.25,ambColor:0x404040,ambI:0.28},
+  autosaveMs:10000,                                           // offline autosave cadence
+};
 
 // ---------- attributes (AC's six) ----------
 const ATTRS=["Strength","Endurance","Coordination","Quickness","Focus","Self"];
@@ -3333,14 +3345,14 @@ function updateDayNight(dt){
 let sunFar=null;
 const SHAD2={on:true,K:0.55};
 function initSunFar(){
-  sunFar=new THREE.DirectionalLight(0xffedc2,0);
+  sunFar=new THREE.DirectionalLight(CFG.sceneLight.sunColor,0);
   sunFar.castShadow=true;
-  sunFar.shadow.mapSize.set(4096,4096);
-  sunFar.shadow.camera.near=10;sunFar.shadow.camera.far=460;
-  sunFar.shadow.camera.left=-192;sunFar.shadow.camera.right=192;
-  sunFar.shadow.camera.top=192;sunFar.shadow.camera.bottom=-192;
-  // biases scale with the ~2.7× coarser texels; radius a touch wider so the far penumbra stays soft
-  sunFar.shadow.bias=-0.0007;sunFar.shadow.normalBias=0.10;sunFar.shadow.radius=2.6;
+  { const S=CFG.sunFar;
+    sunFar.shadow.mapSize.set(S.mapSize,S.mapSize);
+    sunFar.shadow.camera.near=S.near;sunFar.shadow.camera.far=S.far;
+    sunFar.shadow.camera.left=-S.size;sunFar.shadow.camera.right=S.size;
+    sunFar.shadow.camera.top=S.size;sunFar.shadow.camera.bottom=-S.size;
+    sunFar.shadow.bias=S.bias;sunFar.shadow.normalBias=S.normalBias;sunFar.shadow.radius=S.radius; }
   sunFar.shadow.autoUpdate=false;   // pulsed at HALF the near cadence (distant shadows move slowly)
   scene.add(sunFar);scene.add(sunFar.target);
 }
@@ -3371,7 +3383,7 @@ function playerLightSource(){
   return base;
 }
 function updateInstanceLight(){
-  if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); playerLight.shadow.mapSize.set(512,512); playerLight.shadow.camera.near=0.2; playerLight.shadow.bias=-0.006; scene.add(playerLight); }
+  if(!playerLight){ playerLight=new THREE.PointLight(0xffffff,0,18,1.6); playerLight.shadow.mapSize.set(CFG.carriedLight.mapSize,CFG.carriedLight.mapSize); playerLight.shadow.camera.near=CFG.carriedLight.near; playerLight.shadow.bias=CFG.carriedLight.bias; scene.add(playerLight); }
   // #716: on Ultra, the carried light throws REAL moving shadows (six-face point-shadow render) —
   // gated to tier 3 + true dungeons (not the bright Academy), toggled only on state change
   { const wantShadow=GFX.tier>=3&&renderer.shadowMap.enabled&&inDungeon&&!(curDungeon&&curDungeon.academy);
@@ -3542,10 +3554,9 @@ async function initThree(){
   renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   scene=new THREE.Scene();
-  const fogCol=0x8a8062;
-  scene.fog=new THREE.Fog(fogCol,40,235);
+  scene.fog=new THREE.Fog(CFG.fog.color,CFG.fog.near,CFG.fog.far);
   if(IS_WEBGPU&&window.TSL) scene.fogNode=buildGpuFog();   // #webgpu Phase C: the #689 height/sun fog as a TSL scene fogNode (see buildGpuFog)
-  cam=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.05,WORLD*1.2);
+  cam=new THREE.PerspectiveCamera(CFG.camera.fov,innerWidth/innerHeight,CFG.camera.near,WORLD*CFG.camera.farK);
   cam.rotation.order="YXZ";
 
   const sky=skyDome();skyMat=sky.material;skyDomeMesh=sky;scene.add(sky);
@@ -3561,18 +3572,19 @@ async function initThree(){
   scene.add(buildMilkyWay());scene.add(buildAurora());   // the sorcerous night sky
   scene.add(buildMotes());scene.add(buildMist());        // fireflies, portal-motes, dawn mist
   // lights
-  hemi=new THREE.HemisphereLight(0xbcd0ff,0x4a4230,0.62);scene.add(hemi);
-  sun=new THREE.DirectionalLight(0xffedc2,1.25);
+  hemi=new THREE.HemisphereLight(CFG.sceneLight.hemiSky,CFG.sceneLight.hemiGround,CFG.sceneLight.hemiI);scene.add(hemi);
+  sun=new THREE.DirectionalLight(CFG.sceneLight.sunColor,CFG.sceneLight.sunI);
   sun.position.set(SUN_OFF.x,SUN_OFF.y,SUN_OFF.z);
   sun.castShadow=true;
-  sun.shadow.mapSize.set(4096,4096);
-  sun.shadow.camera.near=10;sun.shadow.camera.far=300;
-  sun.shadow.camera.left=-72;sun.shadow.camera.right=72;
-  sun.shadow.camera.top=72;sun.shadow.camera.bottom=-72;
-  sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.035;sun.shadow.radius=2.2;
+  { const S=CFG.sunNear;
+    sun.shadow.mapSize.set(S.mapSize,S.mapSize);
+    sun.shadow.camera.near=S.near;sun.shadow.camera.far=S.far;
+    sun.shadow.camera.left=-S.size;sun.shadow.camera.right=S.size;
+    sun.shadow.camera.top=S.size;sun.shadow.camera.bottom=-S.size;
+    sun.shadow.bias=S.bias;sun.shadow.normalBias=S.normalBias;sun.shadow.radius=S.radius; }
   scene.add(sun);scene.add(sun.target);
   initSunFar();   // #692: the far cascade rides alongside
-  amb=new THREE.AmbientLight(0x404040,0.28);scene.add(amb);
+  amb=new THREE.AmbientLight(CFG.sceneLight.ambColor,CFG.sceneLight.ambI);scene.add(amb);
   initLightPool();
 
   // ground — per-pixel PBR; near the camera the detail tile shows crisp, far away it cross-fades
@@ -32938,7 +32950,7 @@ function startGame(loadSaved,preset){
   running=true;paused=false;lastTs=0;updateQuestHUD();updateSeasonHUD();
   if(typeof acquireWakeLock==="function") acquireWakeLock();   // #673: the screen stays on while playing
   if(autosaveTimer) clearInterval(autosaveTimer);
-  autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },10000);
+  autosaveTimer=setInterval(()=>{ if(running&&player.alive) saveGame(); },CFG.autosaveMs);
   // #674: iOS Safari has NO pointer-lock API — the bare cEl.requestPointerLock() threw a TypeError
   // one line before the rAF loop started, so tapping Play on an iPhone set running=true, never drew a
   // frame, and bounced the player back to the title screen. Guard on existence AND touch mode (touch
