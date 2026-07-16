@@ -11890,7 +11890,7 @@ function applyHit(m,base,opts){ opts=opts||{};
   if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
 }
 function damageMonster(m,dmg,crit){
-  dmg=Math.max(0,+dmg||0);   // #16: guard NaN/negative damage — never heal a mob or leave it at un-killable NaN HP
+  dmg=+dmg; if(!isFinite(dmg)||dmg<0) dmg=0;   // #16/#880: guard NaN/negative AND Infinity (Math.max(0,Infinity) passed → m.hp=-Infinity) — now truly mirrors playerHurt's #32 guard
   if(m.shared){ // server-authoritative: claim the hit, let the server apply HP/death/XP
     if(!NET.open){ // #636: disconnected — the mob is frozen and the netSend is a no-op; refuse instead of faking flash/hit-SFX/health-bar feedback on an unkillable mob
       const _t=now(); if(_t-NET._noConnWarnT>2500){ NET._noConnWarnT=_t; log("You are not connected — reconnecting…","warn"); }
