@@ -3482,6 +3482,21 @@ function initLightPool(){
 }
 const _lpV=new THREE.Vector3(); const _lpCand=[]; let _lpLidSeq=1;   // #342: reused light-pool candidate array + stable-id counter
 let _lpFrame=0; const LP_SLACK=64;   // #800: round-robin cache refresh counter + safety slack (units) so a coarse cached-position reject never drops a light that's actually within pool reach
+// #797: recycle transient combat-impact PointLights. A burst of hits/spell detonations used to allocate
+// (and GC) a fresh PointLight per strike — each also registering in VLIGHTS. Pooled lights are marked
+// `_pooled` so updateLightPool keeps them registered across scene add/remove (never spliced), and just
+// skips them while detached. Acquire sets colour/intensity/position + schedules release back to the pool.
+const _impPool=[]; const _IMP_MAX=32;
+function impactFlash(col,intensity,dist,x,y,z,ms){
+  let l=_impPool.pop();
+  if(!l){ l=new THREE.PointLight(col,intensity,dist); l._transient=1; l._pooled=1; }   // ctor already pushed it to VLIGHTS
+  else { l.color.set(col); l.intensity=intensity; l.distance=dist; }
+  l.position.set(x,y,z); scene.add(l);
+  setTimeout(()=>{ scene.remove(l); l.intensity=0;
+    if(_impPool.length<_IMP_MAX) _impPool.push(l);
+    else { const vi=VLIGHTS.indexOf(l); if(vi>=0) VLIGHTS.splice(vi,1); } },ms);   // overflow past the pool cap: unregister so it GCs instead of lingering in VLIGHTS
+  return l;
+}
 function updateLightPool(){
   if(!LPOOL) return;
   const px=player.x, py=(player.y||0)+1.2, pz=player.z, tNow=performance.now();
@@ -3490,7 +3505,7 @@ function updateLightPool(){
   for(let i=VLIGHTS.length-1;i>=0;i--){ const l=VLIGHTS[i];
     let root=l, vis=l.visible, o=l.parent;
     while(o){ if(o.visible===false) vis=false; root=o; o=o.parent; }
-    if(root!==scene){ if(l._transient) VLIGHTS.splice(i,1); continue; }  // #325/#343: a detached TRANSIENT flash is dead (no other ref) → prune immediately; a detached PERSISTENT scenery light is only culled and WILL re-attach → keep it in VLIGHTS (the old `_vT>5000` prune used CREATION time, so it permanently dropped culled scenery lamps and never re-registered them → plazas went dark for the session)
+    if(root!==scene){ if(l._transient && !l._pooled) VLIGHTS.splice(i,1); continue; }  // #325/#343: a detached TRANSIENT flash is dead (no other ref) → prune immediately; a detached PERSISTENT scenery light is only culled and WILL re-attach → keep it in VLIGHTS (the old `_vT>5000` prune used CREATION time, so it permanently dropped culled scenery lamps and never re-registered them → plazas went dark for the session). #797: a POOLED transient light stays registered across add/remove — the pool re-uses it, so skip (don't splice) while it's detached
     if(!vis||l.intensity<=0.01) continue;
     if(l._lid==null) l._lid=_lpLidSeq++;                           // #342/#800: assign stable id up front so the round-robin refresh key is stable
     const cullR=Math.max(l.distance||20,40)+170;                  // beyond reach + fog — can't matter
@@ -11655,7 +11670,7 @@ function teleportFX(x,z){
     const a=rnd(0,6.28),rr=rnd(0.2,2.4);sp.position.set(x+Math.cos(a)*rr,gy+rnd(0,0.5),z+Math.sin(a)*rr);scene.add(sp);
     bursts.push({sp,vx:Math.cos(a)*1.5,vy:rnd(5,11),vz:Math.sin(a)*1.5,t:p0?rnd(.5,Math.min(1.6,p0.life)):rnd(.5,.9)});
   }
-  const fl=new THREE.PointLight(col,3,16);fl._transient=1;fl.position.set(x,gy+2,z);scene.add(fl);setTimeout(()=>scene.remove(fl),220);   // #343: transient flash — prune from VLIGHTS on removal
+  impactFlash(col,3,16,x,gy+2,z,220);   // #797: pooled   // #343: transient flash — prune from VLIGHTS on removal
   SFX.whoosh();
 }
 // ── PORTAL SPACE (AC): stepping through a portal wraps you in the swirling blue tube that
@@ -17460,8 +17475,7 @@ function executeSpell(id){
     const cx=clamp(player.x+dir.x*12,-HALF+2,HALF-2),cz=clamp(player.z+dir.z*12,-HALF+2,HALF-2);
     const col=s.color||0xff7a2a, el=s.element||"fire";
     burst(cx,0.6,cz,col,42);
-    const fl=new THREE.PointLight(col,3.5,22);fl._transient=1;fl.position.set(cx,2.5,cz);scene.add(fl);
-    setTimeout(()=>scene.remove(fl),350);
+    impactFlash(col,3.5,22,cx,2.5,cz,350);   // #797: pooled
     const dmg=s.dmg()*skillEff("war",0.02)*castEcon(id);
     const targets=monsters.filter(m=>(!!m.isDungeon===inDungeon)&&Math.hypot(m.x-cx,m.z-cz)<8);
     for(const m of targets){const em=elemMult(m.kind,el);if(em!==1)floater(m.x,(m.headY||1.6)+2.3,m.z,em>1?"weak!":"resist",fxHex(fxElem(el,em>1?0x7fe6a0:0x9fb0c0)));if(el==="fire"){m.burnT=3;m.burnDps=Math.max(m.burnDps,5+player.attr.Focus*0.3);}applyHit(m,dmg*em,{element:el,spell:true});}
@@ -18802,7 +18816,7 @@ function update(dt){
           if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
         }
         if(p.arrow) burst(p.x,p.y,p.z,p.color,8); else spellImpactFX(p.x,p.y,p.z,p.color,p.element,false);   // #668: spells detonate — flash + shockwave + element debris
-        const ifl=new THREE.PointLight(p.color,2.2,7);ifl._transient=1;ifl.position.set(p.x,p.y,p.z);scene.add(ifl);setTimeout(()=>scene.remove(ifl),120);
+        impactFlash(p.color,2.2,7,p.x,p.y,p.z,120);   // #797: pooled
         gone=true;break;
       }
     }
@@ -18810,7 +18824,7 @@ function update(dt){
     if(gone && p.splash && !p._done){ p._done=true;   // Arc detonation: splash every foe in radius
       const ix=p.x,iz=p.z,iy=Math.max(0.5,Math.min(p.y,2));
       spellImpactFX(ix,iy,iz,p.color,p.element,true);   // #668: the BIG detonation — double shockwave, debris storm, smoke & scorch
-      const fl=new THREE.PointLight(p.color,3,16);fl._transient=1;fl.position.set(ix,iy,iz);scene.add(fl);setTimeout(()=>scene.remove(fl),200);
+      impactFlash(p.color,3,16,ix,iy,iz,200);   // #797: pooled
       for(const m of monsters){ if(!!m.isDungeon!==inDungeon) continue;
         if(Math.hypot(ix-m.x,iz-m.z)<p.splash){
           const em=elemMult(m.kind,p.element);
@@ -30464,7 +30478,7 @@ function updateRiftStand(dt){
     if(z.t<=0&&!z.det){ z.det=true;
       // detonate: flash + shock to anyone standing inside
       if(z.ring) z.ring.material.color.setHex(0xffffff);
-      const fl=new THREE.PointLight(0xaa6aff,3,z.rad*3); fl._transient=1; fl.position.set(z.x,1,z.z); scene.add(fl); setTimeout(()=>scene.remove(fl),160);
+      impactFlash(0xaa6aff,3,z.rad*3,z.x,1,z.z,160);   // #797: pooled
       if(player.alive&&player.invuln<=0&&Math.hypot(player.x-z.x,player.z-z.z)<z.rad){
         playerHurt(24+riftWave*6,z.x,z.z,"magic","shock"); floater(player.x,1.9,player.z,"THE STORM STRIKES!","#c99aff"); }
       if(z.ring){ scene.remove(z.ring); z.ring.geometry.dispose(); z.ring.material.dispose(); }
@@ -31056,7 +31070,7 @@ function updateStormPeak(dt){
   for(let i=_stormZones.length-1;i>=0;i--){ const z=_stormZones[i]; z.t-=dt;
     if(z.ring) z.ring.material.opacity=0.3+0.5*clamp(1-z.t/1.1,0,1);
     if(z.t<=0&&!z.det){ z.det=true;
-      const fl=new THREE.PointLight(0xffe23b,3,z.rad*3); fl._transient=1; fl.position.set(z.x,1,z.z); scene.add(fl); setTimeout(()=>scene.remove(fl),150);
+      impactFlash(0xffe23b,3,z.rad*3,z.x,1,z.z,150);   // #797: pooled
       if(player.alive&&player.invuln<=0&&Math.hypot(player.x-z.x,player.z-z.z)<z.rad){ playerHurt(20+stormSealsFixed()*4,z.x,z.z,"magic","shock"); floater(player.x,1.9,player.z,"THE LIGHTNING FINDS YOU!","#ffe23b"); }
       if(z.ring){ scene.remove(z.ring); z.ring.geometry.dispose(); z.ring.material.dispose(); } _stormZones.splice(i,1);
     }
@@ -31923,7 +31937,7 @@ function onSpellFx(m){
   } else { // aoe / ring / blast burst
     if(typeof spellImpactFX==="function") spellImpactFX(x,gy+0.9,z,col,null,true);   // #668: a peer's blast detonates with the full spectacle
     else if(typeof burst==="function") burst(x,gy+0.6,z,col,28);
-    const fl=new THREE.PointLight(col,3,18); fl._transient=1; fl.position.set(x,gy+1.5,z); scene.add(fl); setTimeout(()=>scene.remove(fl),300);
+    impactFlash(col,3,18,x,gy+1.5,z,300);   // #797: pooled
   }
 }
 function netHandle(m){
