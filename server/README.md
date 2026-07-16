@@ -22,6 +22,7 @@ Environment overrides:
 | `DERETH_GITHUB_REPO` | `w5ohr/Dereth` | repo that receives `player-report` issues |
 | `DERETH_BUG_COOLDOWN` | `120` | seconds between accepted reports per account |
 | `DERETH_BUG_DAILY_MAX` | `10` | accepted reports per account per UTC day |
+| `DERETH_BUG_GLOBAL_HOURLY` | `20` | accepted reports per hour across **all** accounts (#889: bounds tracker spam from throwaway accounts) |
 
 ## Test
 
