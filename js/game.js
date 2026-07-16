@@ -16871,6 +16871,13 @@ function playerHurt(dmg,sx,sz,type,element,opts){
   opts=opts||{};
   dmg=+dmg; if(!isFinite(dmg)||dmg<=0) return 0;   // #32: guard NaN/non-finite/≤0 damage (mirrors damageMonster) — the inner Math.max(1,…) steps catch negatives but NOT NaN (Math.max(1,NaN)===NaN), which would flow to player.hp and leave an unhealable/undyable soft-brick; e.g. a malformed server dmg-message via onMobDmg
   if(player.invuln>0||!player.alive||inNetwork) return 0;
+  // #874: opts.pure — environmental damage (drowning). Passes the gates above and the death pipeline
+  // below, but skips every combat mitigation stage (evade/armour/defense/block/crit/mount): the tick
+  // is a fixed %-of-max by design, and "ignores armour" must not mean "ignores invulnerability".
+  if(opts.pure){ const applied=Math.round(dmg); player.hp-=applied;
+    if(opts.onApplied) opts.onApplied(applied);
+    if(player.hp<=0) die();
+    return applied; }
   type=type||"melee";   // "melee" | "missile" | "magic" — selects which Defense skill mitigates
   // AC: a trained Defense skill can make an incoming attack MISS outright (evade), on top of its mitigation
   { const dk=type==="magic"?"magicd":(type==="missile"?"missiled":"meleed");
@@ -17684,10 +17691,12 @@ function updateDrowning(dt){
       if(player.breath<=0 && SFX.hurt) SFX.hurt(); }
     else { player.drownAcc=(player.drownAcc||0)+dt;
       if(player.drownAcc>=1){ player.drownAcc-=1;
-        const d=Math.max(6,Math.round(player.mhp*0.06)); player.hp-=d;   // drowning ignores armour
-        floater(player.x,player.y+EYE,player.z,"-"+d+" drown","#7fd0ff"); if(SFX.hurt)SFX.hurt();
-        if(now()-lastBreath>1400){ lastBreath=now(); log("You are <b>drowning</b> — get to the surface!","warn"); }
-        if(player.hp<=0){ player.hp=0; die(); } } }
+        const d=Math.max(6,Math.round(player.mhp*0.06));
+        // #874: route through playerHurt (opts.pure) so drowning respects invulnerability / res
+        // protection / the central damage pipeline — it still ignores armour and all combat mitigation
+        const applied=playerHurt(d,undefined,undefined,undefined,null,{pure:true,silent:true});
+        if(applied>0){ floater(player.x,player.y+EYE,player.z,"-"+applied+" drown","#7fd0ff"); if(SFX.hurt)SFX.hurt();
+          if(now()-lastBreath>1400){ lastBreath=now(); log("You are <b>drowning</b> — get to the surface!","warn"); } } } }
   } else { player.breath=Math.min(1,player.breath+dt/2.5); player.drownAcc=0; }   // refill on the surface
   // HUD: breath bar (only while it matters) + underwater tint
   const bb=document.getElementById('breathBar'), bf=document.getElementById('breathFill'), dt2=document.getElementById('drownTint');
