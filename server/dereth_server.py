@@ -2364,6 +2364,15 @@ def market_buy(lid, buyer):
                       (buyer, int(time.time()), lid)).rowcount
         return {"id": r[0], "town": r[1], "seller": r[2], "item": r[3], "price": r[4]} if n == 1 else None
 
+def market_revert_claim(lid, buyer):
+    """#808: undo an atomic claim when the winning buyer turns out not to afford it — put the listing
+    back on the shelf so someone else can buy it. Guarded on (status='sold', buyer) so it only reverts
+    THIS buyer's just-made claim."""
+    c = db()
+    with c:
+        return c.execute("UPDATE market SET status='listed', buyer=NULL, sold=NULL WHERE id=? AND status='sold' AND buyer=?",
+                         (lid, buyer)).rowcount == 1
+
 def market_collect(seller, town):
     """Claim all sold-but-uncollected proceeds for this seller AT this town's broker."""
     c = db()
@@ -2397,10 +2406,12 @@ def market_pending(seller):
     return [{"town": r[0], "n": r[1], "g": r[2]} for r in rows]
 
 async def handle_market(cl, msg):
-    """#722: consignment broker. The item is ESCROWED here while listed (the client removes it from
-    the satchel on 'list', the #295 trade rule); buyers PAY FIRST (client deducts gold only on our
-    'bought' confirmation, and the atomic claim means one winner per listing); proceeds wait in the
-    DB until the seller collects them at the same town's broker."""
+    """#722 consignment broker, made server-AUTHORITATIVE in #808 (matching trade/vendor under the #238
+    model). Items are escrowed out of the authoritative inventory on 'list' (take_owned) and stored
+    sanitized (sanitize_item), buyers are DEBITED authoritatively before delivery, proceeds are credited
+    on 'collect' (a conserved transfer against the buyer's debit), and 'reclaim' re-adds the escrowed
+    item. The server pushes the authoritative coin balance after every coin-moving op so a modified
+    client can't buy for free, mint on collect, dupe on list, or inject forged-stat items."""
     act = str(msg.get("act", ""))
     town = str(msg.get("town", ""))[:40]
     if act == "list":
@@ -2411,13 +2422,21 @@ async def handle_market(cl, msg):
             price = 0
         if not (isinstance(item, dict) and town and 0 < price <= MARKET_MAX_PRICE):
             return await cl.send({"t": "market", "act": "list_fail", "msg": "The broker squints at the offer and shakes his head."})
-        item_json = json.dumps(item)[:MARKET_ITEM_BYTES]
+        # #808: escrow the item OUT of the authoritative inventory. If it isn't owned (fabricated), the
+        # client's list_fail handler re-adds its local copy — nothing is minted onto the shelf.
+        ok, removed = take_owned(cl, [item])
+        if not ok or not removed:
+            return await cl.send({"t": "market", "act": "list_fail", "msg": "That item isn't in your satchel."})
+        server_item = sanitize_item(removed[0])   # #808: store the SERVER's sanitized copy, never the raw client stats
+        item_json = json.dumps(server_item)[:MARKET_ITEM_BYTES]
         try:
             json.loads(item_json)
-        except ValueError:   # truncation broke the JSON → item too big
+        except ValueError:   # truncation broke the JSON → item too big; give the item back
+            if cl.econ_ready: cl.inv = (cl.inv + [server_item])[:500]
             return await cl.send({"t": "market", "act": "list_fail", "msg": "The broker cannot catalogue something so unwieldy."})
         lid = await dbq(market_add, town, cl.charname, item_json, price)
         if lid is None:
+            if cl.econ_ready: cl.inv = (cl.inv + [server_item])[:500]   # #808: listing cap hit → un-escrow (client also re-adds via list_fail; save reconciles to one copy)
             return await cl.send({"t": "market", "act": "list_fail",
                                   "msg": f"The broker's ledger holds only {MARKET_MAX_LISTINGS} of your consignments at once."})
         await cl.send({"t": "market", "act": "listed", "id": lid, "price": price, "town": town})
@@ -2429,20 +2448,37 @@ async def handle_market(cl, msg):
             lid = int(msg.get("id", 0))
         except (TypeError, ValueError):
             return
-        row = await dbq(market_buy, lid, cl.charname)
+        row = await dbq(market_buy, lid, cl.charname)   # atomic claim — one winner per listing
         if not row:
             return await cl.send({"t": "market", "act": "buy_fail", "id": lid,
                                   "msg": "Too late — that consignment is already gone."})
-        await cl.send({"t": "market", "act": "bought", "id": lid, "item": row["item"], "price": row["price"],
-                       "seller": row["seller"], "town": row["town"]})
+        price = int(row["price"])
+        # #808: charge the buyer AUTHORITATIVELY. If they can't cover it, put the listing back on the
+        # shelf (revert the claim) rather than hand over a free item.
+        if cl.econ_ready and price > int(cl.coin):
+            await dbq(market_revert_claim, lid, cl.charname)
+            return await cl.send({"t": "market", "act": "buy_fail", "id": lid, "msg": "You cannot afford that consignment."})
+        if cl.econ_ready:
+            cl.coin = max(0, min(2_000_000_000, int(cl.coin) - price))
+            try: it = json.loads(row["item"])
+            except ValueError: it = None
+            if isinstance(it, dict) and len(cl.inv) < 500:
+                cl.inv.append(sanitize_item(it))   # deliver into the authoritative inventory
+        await cl.send({"t": "market", "act": "bought", "id": lid, "item": row["item"], "price": price,
+                       "seller": row["seller"], "town": row["town"], "authCoin": (int(cl.coin) if cl.econ_ready else None)})
+        await push_coin(cl)   # #808: adopt the authoritative balance (a hacked client that skipped its local debit is corrected)
         seller = next((c for c in CLIENTS.values() if c.in_world and c.charname == row["seller"]), None)
         if seller:
-            await seller.send({"t": "market", "act": "sold", "id": lid, "price": row["price"],
+            await seller.send({"t": "market", "act": "sold", "id": lid, "price": price,
                                "town": row["town"], "buyer": cl.charname})
     elif act == "collect":
         rows = await dbq(market_collect, cl.charname, town)
         gold = sum(r["price"] for r in rows)
-        await cl.send({"t": "market", "act": "collected", "town": town, "gold": gold, "n": len(rows)})
+        if cl.econ_ready and gold > 0:
+            cl.coin = max(0, min(2_000_000_000, int(cl.coin) + gold))   # #808: conserved transfer — the buyers were already debited on 'buy'
+        await cl.send({"t": "market", "act": "collected", "town": town, "gold": gold, "n": len(rows),
+                       "authCoin": (int(cl.coin) if cl.econ_ready else None)})
+        await push_coin(cl)
     elif act == "reclaim":
         try:
             lid = int(msg.get("id", 0))
@@ -2452,6 +2488,11 @@ async def handle_market(cl, msg):
         if item is None:
             return await cl.send({"t": "market", "act": "reclaim_fail", "id": lid,
                                   "msg": "That consignment is no longer on the shelf."})
+        if cl.econ_ready:   # #808: return the escrowed item to the authoritative inventory
+            try: it = json.loads(item)
+            except ValueError: it = None
+            if isinstance(it, dict) and len(cl.inv) < 500:
+                cl.inv.append(sanitize_item(it))
         await cl.send({"t": "market", "act": "reclaimed", "id": lid, "item": item})
     elif act == "mine":
         rows = await dbq(market_mine, cl.charname)
