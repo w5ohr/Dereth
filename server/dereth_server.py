@@ -2608,6 +2608,11 @@ async def dispatch(cl, msg):
             await dbq(token_delete, _tk)
             _rec = None
         if _rec is None and _tk:
+            # #814: a cache miss hits the DB — gate it behind the same per-IP throttle as login/register
+            # so random-token `resume` spam can't drive unbounded off-loop SELECTs and starve the worker
+            # pool. A legit reconnect with a live (cached) token never reaches here, so it's unaffected.
+            if auth_ip_throttled(getattr(cl, "ip", "?")):
+                return await cl.send({"t": "auth_err", "msg": "Too many attempts — wait a minute and try again."})
             # #644: memory cache missed — eg. a fresh restart wiped TOKENS. Fall back to the durable
             # store before giving up; a hit is re-cached into memory so the fallback isn't repeated.
             _rec = await dbq(token_lookup, _tk)
