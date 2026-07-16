@@ -33805,8 +33805,8 @@ function tcOpenPMenu(p,x,y){
   if(!m||!head||!btns) return;
   const nm=(p.r&&p.r.name)||"Adventurer";
   const hpf=Math.round(100*clamp(((p.r&&p.r.hp)||1)/((p.r&&p.r.mhp)||1),0,1));
-  head.innerHTML=`👤 ${nm}${p.r&&p.r.pk?`<span class="pk">${String((p.r.pkState||"pk")).toUpperCase()}</span>`:""}
-    <div class="bar bhp" style="margin-top:5px"><i style="width:${hpf}%"></i></div>`;
+  head.innerHTML=`👤 ${esc(nm)}${p.r&&p.r.pk?`<span class="pk">${esc(String((p.r.pkState||"pk")).toUpperCase())}</span>`:""}
+    <div class="bar bhp" style="margin-top:5px"><i style="width:${hpf}%"></i></div>`;   // #802: escape the remote name/pkState — they reach innerHTML, so an unescaped name is stored XSS
   btns.innerHTML="";
   const mk=(ico,label,fn)=>{ const b=document.createElement('button'); b.textContent=ico+" "+label;
     b.onclick=()=>{ fn(); tcClosePMenu(); buzz(8); }; btns.appendChild(b); return b; };
@@ -33819,7 +33819,7 @@ function tcOpenPMenu(p,x,y){
     b.onclick=()=>{ if(!armed){ armed=true; b.textContent="⚠ Confirm swear?"; b.className="warn"; return; }
       sendChatLine("/swear "+nm); tcClosePMenu(); buzz(8); };
     btns.appendChild(b); }
-  mk("🔍","Examine",()=>log(`<b>${nm}</b> — ${hpf}% health, ${p.r&&p.r.pk?"a <b>Player Killer</b>":"peaceable"}${p.r&&p.r.shield?", shield raised":""}.`,"sys"));
+  mk("🔍","Examine",()=>log(`<b>${esc(nm)}</b> — ${hpf}% health, ${p.r&&p.r.pk?"a <b>Player Killer</b>":"peaceable"}${p.r&&p.r.shield?", shield raised":""}.`,"sys"));   // #802: escape the remote name (log renders HTML)
   m.style.left=Math.round(clamp(x-116,8,innerWidth-248))+"px";
   m.style.top=Math.round(clamp(y-40,8,innerHeight-236))+"px";
   m.classList.add('open');
