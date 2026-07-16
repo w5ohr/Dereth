@@ -2297,7 +2297,7 @@ function onInstanceReset(fn){ _INSTANCE_RESETS.push(fn); }
 function resetInstanceState(){ for(const fn of _INSTANCE_RESETS){ try{ fn(); }catch(e){} } }
 const ARENA={active:false,wave:0,waves:0,timer:0,inter:0,advanced:false}; // H16 Colosseum wave-gauntlet state (#779: grouped)
 onInstanceReset(()=>{ Object.assign(ARENA,{active:false,wave:0,waves:0,timer:0,inter:0,advanced:false}); });
-let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC
+let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null,_kilmerDressTimer=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC (#792: dress-interval handle for teardown)
 let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=0,_frostAddT=0,frostTimer=0; // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
 let riftActive=false,riftWave=0,riftTimer=0,_riftPulseT=0,_riftZones=[],riftBoss=false; // #680 Regalia VIII: the Sundered Veil (lone stand, storm pulses, no retreat)
 let tideActive=false,tideLevel=0,tideRise=0,_tideWave=0,_tidePhase="",_tideHeraldKills=0,_tideWater=null,_tideAddT=0; // #681 Regalia IX: the Drowned Rift (hold the tide-gate; the Herald reconstitutes twice)
@@ -7776,8 +7776,10 @@ function buildWorld(){
     // cold cache, leaving the Monarch bare until reload. applyRemoteGear is signature-guarded (its sig
     // includes pack-readiness), so steady-state this is a no-op and the pack's arrival re-dresses him.
     const dress=()=>{ try{ if(window._noKilmerDress) return;   // test harness escape: SwiftShader can't chew the 4x armor textures
-      if(_kilmerNpcRec&&_kilmerNpcRec.mesh&&_kilmerNpcRec.mesh.userData.acBody&&typeof applyRemoteGear==="function") applyRemoteGear(_kilmerNpcRec.mesh,KGEAR); }catch(e){} };
-    setInterval(dress,5000); setTimeout(dress,2000); }
+      if(!_kilmerNpcRec||!_kilmerNpcRec.mesh){ if(_kilmerDressTimer){clearInterval(_kilmerDressTimer);_kilmerDressTimer=null;} return; }   // #792: the NPC is gone (world rebuilt/disposed) — stop the interval instead of ticking forever
+      if(_kilmerNpcRec.mesh.userData.acBody&&typeof applyRemoteGear==="function") applyRemoteGear(_kilmerNpcRec.mesh,KGEAR); }catch(e){} };
+    if(_kilmerDressTimer) clearInterval(_kilmerDressTimer);   // #792: don't stack a fresh interval on every world (re)build — clear the prior one first
+    _kilmerDressTimer=setInterval(dress,5000); setTimeout(dress,2000); }
   // notable named NPCs: the reset masters at Asheron's Castle (21.2N 69.3E) + Timaru's Gate Keeper
   addNPC(69.3*COORD-3,-21.2*COORD,{role:"reset_attr",name:"Chafulumisa"});   // #329: place at Asheron's Castle (21.2N 69.3E) at the true COORD scale — the hardcoded *80 left them ~11km off, lost in the wilderness
   addNPC(69.3*COORD+3,-21.2*COORD,{role:"reset_skill",name:"Fianhe"});
