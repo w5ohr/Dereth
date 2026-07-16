@@ -33085,7 +33085,7 @@ function applyBuffSelf(sp,fx){
 // swift, protection, the 3 regen HoTs, heal, and the 4 item enchantments + Blade Lure).
 function buffBotList(){
   const known=player.knownSpells||[];
-  const pick=(pred)=>{ let best=null; for(const id of known){ const sp=SPELLBOOK[id]; if(!sp||!pred(sp)) continue;
+  const pick=(pred)=>{ let best=null; for(const id of known){ const sp=SPELLBOOK[id]; if(!sp||sp.other||!pred(sp)) continue;   // #905: Self forms only — an "Other" cast with no ally/familiar refunds with no cooldown, wedging the rebuffer on the same spell forever
     const mk=MAGIC_SCHOOLS[sp.school]; if(sp.req>0&&mk&&skillValue(mk)<sp.req) continue; if(!canCast(sp.school)) continue;
     if(!best||(sp.lvl||0)>(best.lvl||0)) best=sp; } return best; };
   const out=[];
@@ -33105,7 +33105,7 @@ function buffBotList(){
 // at all" apart from "knows buffs but the schools aren't trained yet" (#615).
 function buffBotKnowsAny(){
   const known=player.knownSpells||[];
-  const isBuff=sp=>!!sp&&(sp.buff==="attr"||sp.buff==="skill"||sp.buff==="swift"||sp.buff==="prot"||sp.buff==="item"||sp.buff==="bane"||sp.buff==="might"||sp.special==="regen"||(sp.school==="life"&&typeof sp.heal==="function"));
+  const isBuff=sp=>!!sp&&!sp.other&&(sp.buff==="attr"||sp.buff==="skill"||sp.buff==="swift"||sp.buff==="prot"||sp.buff==="item"||sp.buff==="bane"||sp.buff==="might"||sp.special==="regen"||(sp.school==="life"&&typeof sp.heal==="function"));
   return known.some(id=>isBuff(SPELLBOOK[id]));
 }
 // the simple command: /buff (self) · /buff <name> (a nearby online player) · /buff all (all nearby)
