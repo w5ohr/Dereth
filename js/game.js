@@ -6301,15 +6301,28 @@ function buildPortal(name){
 // floating name text. `cat` groups it under a Settings toggle: players / npcs / cities /
 // portals / lifestones / dungeons / monsters — each can be switched off in Settings (O).
 const LABELS=[];
-function labelSprite(txt,cat){
+// #798: a floating label used to bake its OWN 256×64 canvas + CanvasTexture — with 2000+ labels live
+// (towns, portals, lifestones, NPC nametags, many with identical text) that was ~130 MB of texture and a
+// fresh canvas per label, re-baked whenever a streamed NPC re-registered. Cache the texture BY TEXT so
+// every "Drudge" / "Portal → Holtburg" / "— E to bind" shares one texture (bounded by distinct strings,
+// not label count). Marked _acShared so the dispose helpers never free it out from under the others. The
+// SpriteMaterial stays per-sprite so opacity/tint/visibility remain independent. (A glyph atlas / SDF is
+// the fuller fix; text-keyed sharing removes the per-label texture at a fraction of the risk.)
+const _labelTexCache={};
+function labelTexture(txt){
+  let t=_labelTexCache[txt];
+  if(t) return t;
   const c=document.createElement('canvas');c.width=256;c.height=64;const g=c.getContext('2d');
   g.font="bold 26px Trebuchet MS";g.textAlign="center";g.textBaseline="middle";
   const tw=g.measureText(txt).width;   // long names shrink to fit the canvas instead of cropping
   if(tw>244) g.font=`bold ${Math.max(13,Math.floor(26*244/tw))}px Trebuchet MS`;
   g.lineWidth=5;g.strokeStyle="rgba(0,0,0,.85)";g.strokeText(txt,128,32);
   g.fillStyle="#e8dcc0";g.fillText(txt,128,32);
-  const _lt=new THREE.CanvasTexture(c); _lt._acPerInstance=true;   // #788: per-instance (one canvas+texture per label) — mark so WebGPU actually frees it on dispose instead of leaking
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:_lt}));
+  t=new THREE.CanvasTexture(c); t._acShared=true;   // #798: shared across all labels with this text — never per-instance-disposed
+  _labelTexCache[txt]=t; return t;
+}
+function labelSprite(txt,cat){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:labelTexture(String(txt))}));   // #798: shared per-text texture; material stays per-sprite
   sp.scale.set(6,1.5,1);
   sp.userData.labelCat=cat||"npcs";
   LABELS.push(sp);
@@ -6319,7 +6332,7 @@ function labelSprite(txt,cat){
 function applyLabelSettings(){
   const L=settings.labels||{};
   for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
-    if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); if(sp.material){ if(sp.material.map)sp.material.map.dispose(); sp.material.dispose(); } continue; }   // #22: orphaned labels free their CanvasTexture
+    if(!sp.parent&&!sp.userData.labelCat){ LABELS.splice(i,1); if(sp.material) sp.material.dispose(); continue; }   // #22/#798: free the per-sprite material only — the label texture is shared per-text (labelTexture cache) and must never be disposed here
     sp.visible=L[sp.userData.labelCat]!==false; }
 }
 // every sprite is its own draw call — the census found 1,500 name labels drawing from
@@ -6329,7 +6342,7 @@ const _lblV=new THREE.Vector3();
 function gfxCullLabels(){
   const L=settings.labels||{};
   for(let i=LABELS.length-1;i>=0;i--){ const sp=LABELS[i];
-    if(!sp.parent){ LABELS.splice(i,1); if(sp.material){ if(sp.material.map)sp.material.map.dispose(); sp.material.dispose(); } continue; }   // #22: orphaned labels free their CanvasTexture
+    if(!sp.parent){ LABELS.splice(i,1); if(sp.material) sp.material.dispose(); continue; }   // #22/#798: free the per-sprite material only — the label texture is shared per-text (labelTexture cache) and must never be disposed here
     const cat=sp.userData.labelCat||"npcs";
     if(L[cat]===false){ sp.visible=false; continue; }
     sp.getWorldPosition(_lblV);
