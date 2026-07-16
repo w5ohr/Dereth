@@ -6307,11 +6307,19 @@ function refreshPortalFx(){                                      // swap lens po
   if(typeof tnPortals!=="undefined") for(const tp of tnPortals) up(tp.mesh);
   if(typeof netObjs!=="undefined") for(const o of netObjs) up(o);
 }
+let _portalGlowTexC=null;
+function _portalGlowTex(){ if(!_portalGlowTexC) _portalGlowTexC=softTex(null,null,
+  [[0,"rgba(130,190,255,0.95)"],[0.4,"rgba(70,140,255,0.62)"],[0.78,"rgba(45,100,230,0.24)"],[1,"rgba(40,90,220,0)"]]);
+  return _portalGlowTexC; }
 function buildPortal(name){
   const g=new THREE.Group();
-  // Portal look: a blue, ragged-edged, near-translucent flat disc with swirling small blue dots
-  // (portalMaterial lens — TSL on WebGPU, GLSL on WebGL). The retail purple-particle replay
-  // (buildPortalFx) stays available but is no longer the default look.
+  // Portal look: a magical blue whirlpool (log-spiral arms + glowing throat) over a soft glowing-blue
+  // backdrop. portalMaterial = the whirlpool lens (TSL on WebGPU, GLSL on WebGL); the retail purple-particle
+  // replay (buildPortalFx) stays available but is no longer the default look.
+  // GLOWING BLUE BACKDROP behind the whirlpool — a soft radial blue halo so the vortex reads as a lit portal
+  const glow=new THREE.Mesh(new THREE.CircleGeometry(1.5,48),
+    new THREE.MeshBasicMaterial({map:_portalGlowTex(),transparent:true,opacity:0.9,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
+  glow.scale.set(0.72,1.14,1); glow.position.set(0,1.35,-0.04); g.add(glow); g.userData.glow=glow;   // just behind the lens
   // sized to ~player height +20% (~2.4 m tall), a doorway-shaped ellipse sitting just above the ground
   const lens=new THREE.Mesh(new THREE.CircleGeometry(1.5,72), portalMaterial());
   lens.scale.set(0.62,1.0,1); lens.position.y=1.35; g.add(lens); g.userData.lens=lens;
