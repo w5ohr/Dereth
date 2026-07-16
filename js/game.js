@@ -423,6 +423,22 @@ const HERITAGE_LORE={
   viamontian:{name:"Viamontian",town:"Sanamar",affinity:"Knightly Steel",
     lore:"A proud, chivalrous people ruled by a monarchy across the sea — knights, courtiers and crusaders sworn to blade and crown. The Viamontians favour heavy weapons and the sword, and arrive on Dereth's shores at the port of Sanamar."},
 };
+// ── #785: creation data tables (previously rebuilt inline in startGame on every call) ──
+const HERITAGE_SKILLS={   // default trained loadout when no creation choice was made
+  aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],
+  gharundim:["war","life","creature"],viamontian:["heavy","meleed","shield"]};
+const TEMPLATE_TRAIN_WEAPON={   // ToD starter Training Weapon per profession template
+  soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
+  bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
+  warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
+const HERITAGE_CLOTHING={   // creation shirt & breeches (retail arrivals weren't naked)
+  aluvian:{sh:"Aluvian Shirt",pt:"Aluvian Breeches",tint:0x6a5a3a},
+  gharundim:{sh:"Gharu'ndim Tunic",pt:"Gharu'ndim Trousers",tint:0x8a6a30},
+  sho:{sh:"Sho Kimono Shirt",pt:"Sho Hakama",tint:0x3a4a5a},
+  viamontian:{sh:"Viamontian Doublet",pt:"Viamontian Hose",tint:0x5a2a3a}};
+const HERITAGE_WELCOME={   // the Welcome Letter blessing line
+  aluvian:"a kinsman's blessing from the green Aluvian shires",gharundim:"a blessing of Zaikhal and the shining sands",
+  sho:"the quiet counsel of the Sho masters",viamontian:"a noble's charge from the courts of Viamont"};
 // AC creation: professions (templates) preset attributes + starting trained skills; "Custom" = free build.
 const CREATE_POOL=270;   // AC: 270 Attribute Credits above the six 10-point bases (330 total), max 100 each
 const CREATE_CREDITS=52; // AC: 52 starting skill credits (Train or, only at creation-time freely, Specialize)
@@ -11150,9 +11166,13 @@ function spawnSomewhere(){
 //    here so all creatures wear their authentic AC glTF model + textures when the pack has one,
 //    falling back to the procedural body only when it doesn't. Returns {mesh, gm} — gm is the
 //    loaded model record (null for procedural) so the caller can wire the animation mixer. ──
+// #785: the ONE home of the "does this kind have loaded rigged variants?" lookup (was copy-pasted here and in bossMesh)
+function gltfVariantsFor(kind){
+  return (USE_GLTF_MONSTERS&&typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+}
 function acCreatureMesh(kind){
   const b=BESTIARY[kind]||BESTIARY.drudge;
-  const gvar=(USE_GLTF_MONSTERS&&typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+  const gvar=gltfVariantsFor(kind);
   const gm=(gvar&&typeof THREE.SkeletonUtils!=="undefined")?gvar[irnd(0,gvar.length-1)]:null;   // random rigged breed for variety
   if(!gm) return {mesh:buildCreature(kind), gm:null};                                            // procedural fallback
   const mesh=new THREE.Group();
@@ -12010,7 +12030,7 @@ function clearDying(){ for(const d of dying) disposeObject3D(d.mesh); dying=[]; 
 // virindidirector — or its family's body); procedural fallback keeps the old look
 function bossMesh(kind,fallbackKind,scale,tint){
   const b=BESTIARY[fallbackKind]||BESTIARY.drudge;
-  const gvar=(USE_GLTF_MONSTERS&&typeof gltfMonsters!=="undefined"&&gltfMonsters[kind]&&gltfMonsters[kind].length)?gltfMonsters[kind]:null;
+  const gvar=gltfVariantsFor(kind);
   if(gvar&&typeof THREE.SkeletonUtils!=="undefined"){
     const gm=gvar[0], mesh=new THREE.Group();
     const clone=THREE.SkeletonUtils.clone(gm.scene);
@@ -32853,7 +32873,7 @@ function startGame(loadSaved,preset){
     // skills: the trained set chosen at creation, else the heritage default loadout
     player.skills=freshSkills();
     const load=(player.createSkills&&player.createSkills.length)?player.createSkills
-      :({aluvian:["heavy","meleed","shield"],sho:["missile","finesse","meleed"],gharundim:["war","life","creature"],viamontian:["heavy","meleed","shield"]}[preset]||["heavy","meleed"]);
+      :(HERITAGE_SKILLS[preset]||["heavy","meleed"]);
     for(const k of load){ if(SKILL_BY_KEY[k]) skillState(k).t=1; }
     for(const k of (player.createSpec||[])){ if(SKILL_BY_KEY[k]) skillState(k).t=2; }   // AC: skills specialized at creation
     const fs=freshSpells();player.knownSpells=fs.known;player.hotbar=fs.hotbar;buildSpellbar();
@@ -32863,28 +32883,19 @@ function startGame(loadSaved,preset){
     { const tpl=(player.createTemplate||"custom").toLowerCase().replace(/[^a-z]/g,"");
       player.inv.push({name:"Calling Stone",stat:"quest",v:0,tut:true});
       player.inv.push({name:"Welcome Letter",stat:"book",v:10,tut:true});   // the real AC starter letter — readable (Use) via openBookReader
-      const TW={soldier:{name:"Training Battle Axe",wt:"axe",v:7},swashbuckler:{name:"Training Sword",wt:"sword",v:7},
-        bowhunter:{name:"Training Shortbow",wt:"bow",v:7},wayfarer:{name:"Training Knife",wt:"dagger",v:6},
-        warmage:{name:"Training Wand",wt:"focus",foc:12,v:8},lifecaster:{name:"Training Wand",wt:"focus",foc:12,v:8}};
-      const tw=TW[tpl]||{name:"Training Sword",wt:"sword",v:7};
+      const tw=TEMPLATE_TRAIN_WEAPON[tpl]||{name:"Training Sword",wt:"sword",v:7};
       player.weapon={name:tw.name,stat:"weapon",wt:tw.wt,v:tw.v,foc:tw.foc||0,mat:"Iron",tier:1,work:3};
       if(tw.wt==="focus"){ player.tapers=(player.tapers||0)+20; player.prismTapers=(player.prismTapers||0)+20; }
       if(tpl==="lifecaster") player.inv.push({name:"Healing Kit",stat:"hp",v:50,count:2});
       if(tpl==="soldier") player.inv.push({name:"Steel Quarrel",stat:"ammo",for:"crossbow",dmg:4,v:4,count:30});
       // creation clothing: a heritage-appropriate shirt & breeches, worn from the start (retail arrivals
       // weren't naked). Cloth layer under any armour; equipped straight into the shirt/pants slots.
-      const CLOTH={aluvian:{sh:"Aluvian Shirt",pt:"Aluvian Breeches",tint:0x6a5a3a},
-        gharundim:{sh:"Gharu'ndim Tunic",pt:"Gharu'ndim Trousers",tint:0x8a6a30},
-        sho:{sh:"Sho Kimono Shirt",pt:"Sho Hakama",tint:0x3a4a5a},
-        viamontian:{sh:"Viamontian Doublet",pt:"Viamontian Hose",tint:0x5a2a3a}};
-      const cl=CLOTH[(player.heritage||"aluvian")]||CLOTH.aluvian;
+      const cl=HERITAGE_CLOTHING[(player.heritage||"aluvian")]||HERITAGE_CLOTHING.aluvian;
       player.armorSlots=player.armorSlots||{};
       player.armorSlots.shirt={name:cl.sh,stat:"worn",at:"light",aslot:"shirt",v:1,tint:cl.tint,cloth:true};
       player.armorSlots.pants={name:cl.pt,stat:"worn",at:"light",aslot:"pants",v:1,tint:cl.tint,cloth:true};
       // a heritage word of welcome, echoing the Letter
-      const WELC={aluvian:"a kinsman's blessing from the green Aluvian shires",gharundim:"a blessing of Zaikhal and the shining sands",
-        sho:"the quiet counsel of the Sho masters",viamontian:"a noble's charge from the courts of Viamont"};
-      log(`You carry a <b>Welcome Letter</b> — ${WELC[(player.heritage||"aluvian")]||WELC.aluvian}. <span style="color:var(--dim)">(Use it from your satchel to read.)</span>`,"sys");
+      log(`You carry a <b>Welcome Letter</b> — ${HERITAGE_WELCOME[(player.heritage||"aluvian")]||HERITAGE_WELCOME.aluvian}. <span style="color:var(--dim)">(Use it from your satchel to read.)</span>`,"sys");
     }
   }
   derive();player.hp=player.mhp;player.st=player.mst;player.mn=player.mmn;
