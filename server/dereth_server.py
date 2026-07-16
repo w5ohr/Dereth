@@ -3155,6 +3155,9 @@ async def handle(reader, writer):
             if cl.party:
                 await party_leave(cl, quiet=True)
             await trade_cancel(cl.username, "Your trading partner left the world.")
+            if cl.charname:   # #818: evict runtime caches keyed by charname so they don't grow for the
+                SKILL_CACHE.pop(cl.charname, None)   # process lifetime (repopulated from `input`/`muster` if the character returns)
+                NPC_VASSALS.pop(cl.charname, None)
             CLIENTS.pop(cl.username, None)
             if was_in_world:
                 await broadcast({"t": "system", "msg": f"{who} has left Dereth."})
