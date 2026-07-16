@@ -2289,7 +2289,14 @@ let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dun
 let dungeonBars=[],dungeonLevers=[],dungeonPortals=[],dungeonBoxes=[];   // walkthrough mechanics: doors/ledges, wall levers, internal portals, key strongboxes
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null,dungeonDepth=1,dungeonDescent=null;   // multi-level delves: current floor + this floor's descent stair
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
-let arenaActive=false,arenaWave=0,arenaWaves=0,arenaTimer=0,arenaInter=0,arenaAdvanced=false; // H16 Colosseum wave-gauntlet state
+// ── #779: instance-mechanic state registry — every wave/Regalia mechanic registers ONE reset closure
+//    (covering ALL of its state, private vars included), and any instance exit calls
+//    resetInstanceState() instead of exitDungeon maintaining hand-written reset lists that drift.
+const _INSTANCE_RESETS=[];
+function onInstanceReset(fn){ _INSTANCE_RESETS.push(fn); }
+function resetInstanceState(){ for(const fn of _INSTANCE_RESETS){ try{ fn(); }catch(e){} } }
+const ARENA={active:false,wave:0,waves:0,timer:0,inter:0,advanced:false}; // H16 Colosseum wave-gauntlet state (#779: grouped)
+onInstanceReset(()=>{ Object.assign(ARENA,{active:false,wave:0,waves:0,timer:0,inter:0,advanced:false}); });
 let emberActive=false,emberWave=0,emberTimer=0,emberHeat=0,_emberPX=0,_emberPZ=0,_emberBurn=0,_kilmerNpcRec=null; // #673 Regalia I: the Ember Field gauntlet + Lord Kilmer's gate NPC
 let frostActive=false,frostCold=0,_frostHearths=[],_frostBoss=false,_frostChill=0,_frostAddT=0,frostTimer=0; // #679 Regalia VII: the Frozen Court (relight the Hearths, outlast the cold)
 let riftActive=false,riftWave=0,riftTimer=0,_riftPulseT=0,_riftZones=[],riftBoss=false; // #680 Regalia VIII: the Sundered Veil (lone stand, storm pulses, no retreat)
@@ -2300,6 +2307,17 @@ let chitinActive=false,_chitinClutches=[],_chitinWax=[],_chitinBoss=false,chitin
 let bannersActive=false,_bannersWave=0,_bannerMob=null,_bannerBoss=null,_bannerBaseDmg=0,_bannerTorn=false; // #676 Regalia IV: the Pretender's War (tear the banner mid-duel)
 let bloodActive=false,_bloodReinforced=false,_bloodT=0; // #677 Regalia V: the blood-undercroft (fight at half vitals)
 let stormActive=false,_stormSeals=[],_stormBoss=null,_stormPhase=0,_stormPhaseT=0,_stormBoltT=0,_stormZones=[],stormTimer=0; // #678 Regalia VI: the storm-peak (wind-seals, hunting lightning, 4-phase Warden)
+// #779: one reset closure per mechanic, registered beside its state so new fields can't be missed.
+onInstanceReset(()=>{ emberActive=false;emberWave=0;emberTimer=0;emberHeat=0;_emberPX=0;_emberPZ=0;_emberBurn=0; });   // (_kilmerNpcRec is world dressing, not run state)
+onInstanceReset(()=>{ frostActive=false;frostCold=0;_frostHearths=[];_frostBoss=false;_frostChill=0;_frostAddT=0;frostTimer=0; });
+onInstanceReset(()=>{ riftActive=false;riftWave=0;riftTimer=0;_riftPulseT=0;_riftZones=[];riftBoss=false; });
+onInstanceReset(()=>{ tideActive=false;tideLevel=0;tideRise=0;_tideWave=0;_tidePhase="";_tideHeraldKills=0;_tideWater=null;_tideAddT=0; });
+onInstanceReset(()=>{ consActive=false;_consReinforced=false;_consT=0; });
+onInstanceReset(()=>{ whispersActive=false;_whispersSim=null;_whispersT=0; });
+onInstanceReset(()=>{ chitinActive=false;_chitinClutches=[];_chitinWax=[];_chitinBoss=false;chitinTimer=0;_chitinAddT=0; });
+onInstanceReset(()=>{ bannersActive=false;_bannersWave=0;_bannerMob=null;_bannerBoss=null;_bannerBaseDmg=0;_bannerTorn=false; });
+onInstanceReset(()=>{ bloodActive=false;_bloodReinforced=false;_bloodT=0; });
+onInstanceReset(()=>{ stormActive=false;_stormSeals=[];_stormBoss=null;_stormPhase=0;_stormPhaseT=0;_stormBoltT=0;_stormZones=[];stormTimer=0; });
 let inNetwork=false,netObjs=[],netPortals=[],netReturn={x:0,z:0},netExit={x:0,z:0},tnPortals=[],netMode="towns";
 function nearestEntrance(x,z){let best=null,bd=Infinity;for(const e of dungeonEntrances){const d=Math.hypot(e.x-x,e.z-z);if(d<bd){bd=d;best=e;}}return best&&{e:best,d:bd};}
 const DCEN={x:0,z:0}, DR=30; // dungeon instance is built around origin (overworld hidden while inside)
@@ -11996,7 +12014,7 @@ function killMonster(m){
   gainXP(Math.round((m.xp||b.xp)*sMult));
   if(m.isDungeon){
     dungeonMobs--;
-    if(dungeonMobs<=0&&!arenaActive){   // arena wave transitions are handled by updateArena, not the hoard hook
+    if(dungeonMobs<=0&&!ARENA.active){   // arena wave transitions are handled by updateArena, not the hoard hook
       if(dungeonChest){dungeonChest.light.intensity=1.4;}
       log("The guardians lie slain — the hoard is unsealed!","sys");toast("HOARD UNSEALED");
     }
@@ -29962,7 +29980,7 @@ function _dungeonEnter(def,ex,ez){
       "It is pitch dark here, and you carry no light — you can barely see your hands.","sys");
 }
 function exitDungeon(toEntrance){
-  emberActive=false; frostActive=false; riftActive=false; tideActive=false; consActive=false; whispersActive=false; chitinActive=false; bannersActive=false; bloodActive=false; stormActive=false;   // #680-#678: any exit (incl. fleeing via the arch) ends a Regalia instance's mechanic loop — else its timer keeps ticking in the overworld
+  resetInstanceState();   // #779/#680-#678: any exit (incl. fleeing via the arch) resets EVERY registered mechanic's state — else a Regalia timer keeps ticking in the overworld
   if(player.bloodTithed){ player.bloodTithed=false; if(typeof derive==="function")derive(); }   // #677: the blood-tithe releases on ANY exit (win, flee, death) — re-derive restores full max health & mana
   hsInst=null;   // #329: any exit (incl. dying inside a house/hall) clears the interior-instance flag — else a later hsRefreshHomestead runs hsInstDecorate() in the overworld, spawning hooks/chests/crystals at origin
   // #18: EVERY exit path (death, recalls, the arena auto-return — not just the Sentry) must strike
@@ -29978,8 +29996,6 @@ function exitDungeon(toEntrance){
   clearDrops();clearProjectiles();clearDying();
   document.getElementById('dvig').style.opacity="0";
   dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;curDungeon=null;
-  arenaActive=false;arenaWave=0;arenaWaves=0;arenaTimer=0;arenaInter=0;   // H16: abort any arena run on exit
-  emberActive=false;emberWave=0;emberTimer=0;emberHeat=0;   // #673: abort an Ember Field run on exit too
   hideOverworld(true);
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
 }
@@ -30048,44 +30064,44 @@ function enterColosseum(def,ex,ez,advanced){
   if(ti>=0){ takeFromInv(ti); log("You present a <b>Colosseum Ticket</b> at the gate.","sys"); }
   else if(player.gold>=FEE){ player.gold-=FEE; log(`You pay <b>${FEE}</b> pyreals for entry to the ${advanced?"Advanced ":""}Colosseum.`,"sys"); }
   else { log(`The gatekeeper turns you away — you need a <b>Colosseum Ticket</b> or ${FEE} pyreals to enter.`,"warn"); if(SFX.hit)SFX.hit(); return; }
-  inDungeon=true;arenaActive=true;arenaAdvanced=!!advanced;curDungeon=def;dungeonReturn={x:ex,z:ez};
+  inDungeon=true;ARENA.active=true;ARENA.advanced=!!advanced;curDungeon=def;dungeonReturn={x:ex,z:ez};
   clearDrops();clearProjectiles();clearDying();hideOverworld(false);
   document.getElementById('dvig').style.opacity="0.35";   // open-air: only a light vignette
   buildArena();markSceneSRGB();
   arriveAt(dungeonSpawn.x,dungeonSpawn.z);player.invuln=3;
-  arenaWaves=advanced?8:5;arenaWave=0;arenaTimer=advanced?480:300;arenaInter=0;   // Advanced: 8 rounds, 8-minute clock
+  ARENA.waves=advanced?8:5;ARENA.wave=0;ARENA.timer=advanced?480:300;ARENA.inter=0;   // Advanced: 8 rounds, 8-minute clock
   toast(advanced?"THE ADVANCED COLOSSEUM":"THE COLOSSEUM");
-  log(`You stride onto the sand. <b>${arenaWaves===8?"Eight":"Five"} waves</b>${advanced?" of the veterans' gauntlet":""} stand between you and the vault — clear them before the clock runs out.`,"sys");
+  log(`You stride onto the sand. <b>${ARENA.waves===8?"Eight":"Five"} waves</b>${advanced?" of the veterans' gauntlet":""} stand between you and the vault — clear them before the clock runs out.`,"sys");
   updateHUD&&updateHUD();
   arenaNextWave();
 }
 function arenaNextWave(){
-  arenaWave++;
-  if(arenaWave>arenaWaves){ arenaWin(); return; }
-  const tier=curDungeon?curDungeon.tier:5, adv=(arenaAdvanced?1.6:1)*Math.min(1+arenaWave*0.25, arenaAdvanced?3.5:2.5);   // each wave hits harder; the Advanced gauntlet far harder
-  const count=(arenaAdvanced?3:2)+arenaWave, cx=DCEN.x,cz=DCEN.z,R=20;
-  const shift=arenaAdvanced?2:0;   // Advanced skews the roster toward the deadlier end of the pool
+  ARENA.wave++;
+  if(ARENA.wave>ARENA.waves){ arenaWin(); return; }
+  const tier=curDungeon?curDungeon.tier:5, adv=(ARENA.advanced?1.6:1)*Math.min(1+ARENA.wave*0.25, ARENA.advanced?3.5:2.5);   // each wave hits harder; the Advanced gauntlet far harder
+  const count=(ARENA.advanced?3:2)+ARENA.wave, cx=DCEN.x,cz=DCEN.z,R=20;
+  const shift=ARENA.advanced?2:0;   // Advanced skews the roster toward the deadlier end of the pool
   const pool=["drudge","mosswart","banderling","tumerok","skeleton","zombie","sclavus","lugian","olthoi","golem","virindi"];
   for(let i=0;i<count;i++){ const a=Math.random()*Math.PI*2,rr=8+Math.random()*(R-8);
-    const kind=pool[Math.min(pool.length-1, irnd(Math.max(0,arenaWave-2+shift), Math.min(pool.length-1, arenaWave+3+shift)))];
-    const elite=(i===0&&arenaWave>=(arenaAdvanced?2:3));   // a champion leads later waves (sooner in the Advanced gauntlet)
+    const kind=pool[Math.min(pool.length-1, irnd(Math.max(0,ARENA.wave-2+shift), Math.min(pool.length-1, ARENA.wave+3+shift)))];
+    const elite=(i===0&&ARENA.wave>=(ARENA.advanced?2:3));   // a champion leads later waves (sooner in the Advanced gauntlet)
     spawnDungeonMonster(kind, cx+Math.cos(a)*rr, cz+Math.sin(a)*rr, elite, adv);
   }
-  log(`<b>Wave ${arenaWave}/${arenaWaves}</b> — the gates open and the foes pour in!`,"warn");
-  toast("WAVE "+arenaWave+" / "+arenaWaves); if(SFX.growl)SFX.growl();
+  log(`<b>Wave ${ARENA.wave}/${ARENA.waves}</b> — the gates open and the foes pour in!`,"warn");
+  toast("WAVE "+ARENA.wave+" / "+ARENA.waves); if(SFX.growl)SFX.growl();
 }
 function updateArena(dt){
-  if(!arenaActive) return;
-  arenaTimer-=dt;
-  if(arenaTimer<=0){ arenaFail(); return; }
+  if(!ARENA.active) return;
+  ARENA.timer-=dt;
+  if(ARENA.timer<=0){ arenaFail(); return; }
   if(dungeonMobs<=0){   // wave cleared → short breather, then the next wave
-    if(arenaInter<=0){ arenaInter=3.5; if(arenaWave<arenaWaves) log("The sand clears. Steel yourself — the next wave gathers.","sys"); }
-    else { arenaInter-=dt; if(arenaInter<=0) arenaNextWave(); }
+    if(ARENA.inter<=0){ ARENA.inter=3.5; if(ARENA.wave<ARENA.waves) log("The sand clears. Steel yourself — the next wave gathers.","sys"); }
+    else { ARENA.inter-=dt; if(ARENA.inter<=0) arenaNextWave(); }
   }
 }
 function arenaWin(){
-  const adv=arenaAdvanced;
-  arenaActive=false; arenaAdvanced=false;
+  const adv=ARENA.advanced;
+  ARENA.active=false; ARENA.advanced=false;
   const cx=DCEN.x,cz=DCEN.z;
   burst(cx,2,cz,0xffd23b,adv?90:60); if(SFX.level)SFX.level(); if(SFX.quest)SFX.quest();
   const gold=Math.round((1500+player.level*40)*(adv?2.2:1)), xp=Math.round((6000+player.level*300)*(adv?2.2:1));
@@ -30108,10 +30124,10 @@ function arenaWin(){
   if(adv) player.advColosseumClears=(player.advColosseumClears||0)+1;
   checkAchievements&&checkAchievements();
   updateHUD&&updateHUD(); saveGame&&saveGame();
-  setTimeout(()=>{ if(!arenaActive&&inDungeon) exitDungeon(true); }, 4000);   // auto-return to the world shortly after
+  setTimeout(()=>{ if(!ARENA.active&&inDungeon) exitDungeon(true); }, 4000);   // auto-return to the world shortly after
 }
 function arenaFail(){
-  arenaActive=false; arenaAdvanced=false;
+  ARENA.active=false; ARENA.advanced=false;
   log("The clock runs out — the Colosseum crowd jeers as the gate hauls you back to the sand's edge.","warn");
   toast("OUT OF TIME"); if(SFX.hit)SFX.hit();
   exitDungeon(true);
