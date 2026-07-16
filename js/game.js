@@ -2201,18 +2201,31 @@ function buildAcademyHall(){
     {x0:cx-14,z0:cz-12,x1:cx+14,z1:cz+2, fy:0,room:true},     // the Great Hall
     {x0:cx-2.5,z0:cz-1,x1:cx+2.5,z1:cz+8,fy:0,room:true},     // hall doorway — overlaps Hall & Courtyard so the wide player radius clears both seams
     {x0:cx-16,z0:cz+6,x1:cx+16,z1:cz+34,fy:0,room:true},      // the Courtyard (open air)
-    {x0:cx-34,z0:cz+12,x1:cx-15.5,z1:cz+26,fy:0,room:true},   // west wing — the Workshop
-    {x0:cx+15.5,z0:cz+12,x1:cx+34,z1:cz+26,fy:0,room:true},   // east wing — the Library
-    {x0:cx-6,z0:cz+33.5,x1:cx+6,z1:cz+42,fy:0,room:true},     // the Gatehouse
+    // the wing/gatehouse rects OVERLAP the courtyard by 1.5 — dungeonWalkable insets every rect by
+    // player.r*0.6 (=0.48), so seams need ≥0.96 of shared area or an invisible dead strip blocks the
+    // opening (the old 0.5 overlaps made the Foreman/Blacksmith/Researcher/Sentry unreachable on foot)
+    {x0:cx-34,z0:cz+12,x1:cx-14.5,z1:cz+26,fy:0,room:true},   // west wing — the Workshop
+    {x0:cx+14.5,z0:cz+12,x1:cx+34,z1:cz+26,fy:0,room:true},   // east wing — the Library
+    {x0:cx-6,z0:cz+32.5,x1:cx+6,z1:cz+42,fy:0,room:true},     // the Gatehouse
   ];
-  const stone=new THREE.MeshStandardMaterial({color:0x8d8578,roughness:0.94});
-  const floorM=new THREE.MeshStandardMaterial({color:0x9a927e,roughness:0.96});
-  const courtM=new THREE.MeshStandardMaterial({color:0xb5a582,roughness:0.97});
+  // AC dungeon-set skins (assets/acdungeons/tex, buildDungeonReal's texture set). flipY stays DEFAULT
+  // (true): plain BoxGeometry UVs, not the exporter's top-origin dungeon UVs. markSceneSRGB (called on
+  // entry) tags the maps sRGB like every other AC texture — the instance lights below are scaled ~4×
+  // to match, because decode drops a mid-tone map to ~¼ the raw value the old flat colours rendered at.
+  const _acadTex=(fn,rx,ry)=>{ const t=new THREE.TextureLoader().load(acTexURL('acdungeons/tex/'+fn));
+    t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); return t; };
+  const WALL_TEX='06003EA2.png', FLOOR_TEX='06003E54.png', COURT_TEX='06003E52.png', DOOR_TEX='06003935.png';
+  const stone=new THREE.MeshStandardMaterial({map:_acadTex(WALL_TEX,1,1),roughness:0.94});
+  const floorM=new THREE.MeshStandardMaterial({map:_acadTex(FLOOR_TEX,1,1),roughness:0.96});
+  const courtM=new THREE.MeshStandardMaterial({map:_acadTex(COURT_TEX,1,1),roughness:0.97});
   for(const r of dungeonRects){ const w=r.x1-r.x0,d=r.z1-r.z0;
-    const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),(d>20&&w>20)?courtM:floorM);
+    const court=(d>20&&w>20);
+    const fm=(court?courtM:floorM).clone(); fm.map=_acadTex(court?COURT_TEX:FLOOR_TEX,Math.max(1,Math.round(w/4)),Math.max(1,Math.round(d/4)));
+    const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.1,d),fm);
     f.position.set((r.x0+r.x1)/2,0,(r.z0+r.z1)/2); f.receiveShadow=true; scene.add(f); dungeonObjs.push(f); }
   const wall=(x0,z0,x1,z1)=>{ const w=Math.max(Math.abs(x1-x0),0.6), d=Math.max(Math.abs(z1-z0),0.6);
-    const m=new THREE.Mesh(new THREE.BoxGeometry(w,4.4,d),stone);
+    const wm=stone.clone(); wm.map=_acadTex(WALL_TEX,Math.max(1,Math.round(Math.max(w,d)/4.4)),1);   // ~square tiles at wall height
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,4.4,d),wm);
     m.position.set((x0+x1)/2,2.2,(z0+z1)/2); m.castShadow=true; scene.add(m); dungeonObjs.push(m); };
   wall(cx-14,cz-12,cx+14,cz-12);                                   // Great Hall south
   wall(cx-14,cz-12,cx-14,cz+2); wall(cx+14,cz-12,cx+14,cz+2);      // flanks
@@ -2225,9 +2238,12 @@ function buildAcademyHall(){
   wall(cx-34,cz+12,cx-16,cz+12); wall(cx-34,cz+26,cx-16,cz+26); wall(cx-34,cz+12,cx-34,cz+26);   // workshop
   wall(cx+16,cz+12,cx+34,cz+12); wall(cx+16,cz+26,cx+34,cz+26); wall(cx+34,cz+12,cx+34,cz+26);   // library
   wall(cx-6,cz+34,cx-6,cz+42); wall(cx+6,cz+34,cx+6,cz+42); wall(cx-6,cz+42,cx+6,cz+42);         // gatehouse
-  const ceil=new THREE.Mesh(new THREE.BoxGeometry(28,0.3,14),stone); ceil.position.set(cx,4.6,cz-5); scene.add(ceil); dungeonObjs.push(ceil);   // the courtyard stays open to the sky
-  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,0.85*(settings.dglight||1)); amb.userData.dgBase=0.85; scene.add(amb); dungeonObjs.push(amb);
-  const sun=new THREE.PointLight(0xfff2d8,1.3,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);
+  const ceilM=stone.clone(); ceilM.map=_acadTex(WALL_TEX,6,3);
+  const ceil=new THREE.Mesh(new THREE.BoxGeometry(28,0.3,14),ceilM); ceil.position.set(cx,4.6,cz-5); scene.add(ceil); dungeonObjs.push(ceil);   // the courtyard stays open to the sky
+  // fill scaled ~4× for the sRGB-decoded AC textures (see _acadTex) — the old 0.85/1.3 was calibrated
+  // for raw flat colours that never went through the decode
+  const amb=new THREE.HemisphereLight(0xfff0d0,0x6a5a44,4.2*(settings.dglight||1)); amb.userData.dgBase=4.2; scene.add(amb); dungeonObjs.push(amb);
+  const sun=new THREE.PointLight(0xfff2d8,5.5,90); sun.position.set(cx,26,cz+20); scene.add(sun); dungeonObjs.push(sun);
   for(const [tx,tz] of [[cx-12,cz-10],[cx+12,cz-10],[cx-12,cz],[cx+12,cz],[cx-30,cz+14],[cx+30,cz+14],[cx,cz+40]]){
     for(const o of buildProp("torch",tx,tz,0xffb060)){ scene.add(o); dungeonObjs.push(o); } }
   const forge=new THREE.PointLight(0xff6a30,1.6,16); forge.position.set(cx-30,1.4,cz+22); scene.add(forge); dungeonObjs.push(forge);
@@ -2244,7 +2260,7 @@ function buildAcademyHall(){
   // of taking Jonathan's leave-at-once offer: "deciding not to skip" unbars the yard. Hinged on the
   // jambs, both leaves swing back (+z) into the doorway alcove.
   { const gz=cz+2, doorH=4.2, leafW=2.62;   // doorH nearly fills the 4.4 wall; leaves span the 5-wide gap and OVERLAP at the seam (no see-through); a per-leaf z offset keeps the overlap from z-fighting
-    const woodM=new THREE.MeshStandardMaterial({color:0x6b4a2a,roughness:0.86,metalness:0.04});
+    const woodM=new THREE.MeshStandardMaterial({map:_acadTex(DOOR_TEX,1,2),roughness:0.86,metalness:0.04});   // iron-bound dungeon door planks, tiled 2× up the leaf
     const ironM=new THREE.MeshStandardMaterial({color:0x2a2622,roughness:0.7,metalness:0.45});
     const mkLeaf=(hingeX,sgn,zoff)=>{ const g=new THREE.Group(); g.position.set(hingeX,0,gz+zoff);
       const leaf=new THREE.Mesh(new THREE.BoxGeometry(leafW,doorH,0.22),woodM);
