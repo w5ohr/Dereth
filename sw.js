@@ -22,6 +22,16 @@
 // deploy lands on reload); vendor/* is pinned-dependency static (stale-while-revalidate).
 const V = "dereth-v8";
 
+// #804: network-first must not hang on "lie-fi" (a connected-but-dead link where fetch never settles).
+// Race every network-first fetch against a timeout so a stalled request falls back to cache instead of
+// leaving the player staring at a blank tab. AbortController cancels the in-flight request on timeout.
+const NET_TIMEOUT_MS = 6000;
+function fetchWithTimeout(req, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  return fetch(req, { signal: ctl.signal }).finally(() => clearTimeout(timer));
+}
+
 self.addEventListener("install", () => { self.skipWaiting(); });
 
 self.addEventListener("activate", e => {
@@ -45,7 +55,7 @@ self.addEventListener("fetch", e => {
     e.respondWith((async () => {
       const c = await caches.open(V);
       try {
-        const r = await fetch(req);
+        const r = await fetchWithTimeout(req, NET_TIMEOUT_MS);   // #804: don't hang forever on lie-fi
         if (r && r.ok) c.put(req, r.clone());
         return r;
       } catch (_) {
