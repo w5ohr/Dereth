@@ -9,8 +9,11 @@
      nonce/strict policy would need the DOM-decoupling refactor (#786). Even with unsafe-inline this still
      hardens the app — no external script/style origins, object-src none, base-uri/form-action pinned to
      self — so an injected <script src=evil>, <base>, or <object> is blocked. connect-src allows the
-     same-origin /ws WebSocket (ws:/wss:). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+     same-origin /ws WebSocket (ws:/wss:) plus blob: — three r185's GLTFLoader loads GLB-embedded
+     textures via fetch() on same-document blob: URLs (r159 used <img>, which img-src already
+     covered); without blob: here every creature model rendered untextured. blob: objects can only
+     be minted by same-origin code, so this adds no external connect destination. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' blob: ws: wss:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
