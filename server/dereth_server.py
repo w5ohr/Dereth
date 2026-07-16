@@ -2532,6 +2532,13 @@ async def do_auth_success(cl, username):
     old = CLIENTS.get(username)
     if old and old is not cl:
         old.alive = False
+        # #816: tear down the old session's shared state BEFORE the new client replaces it in CLIENTS.
+        # Otherwise the old socket's disconnect cleanup (gated on `CLIENTS.get(username) is old`) is
+        # skipped once we overwrite the entry below, orphaning the account in PARTIES[...]["members"]
+        # (a ghost member that blocks disband) and leaving any in-flight trade dangling.
+        if old.party:
+            await party_leave(old, quiet=True)
+        await trade_cancel(username, "Your session was resumed elsewhere.")
         try:
             old.writer.close()
         except Exception:
