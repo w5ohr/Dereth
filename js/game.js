@@ -1974,6 +1974,19 @@ function supportAt(wx,wz,feetY){
   }
   return best;
 }
+// #955b: the lowest platform hanging ABOVE the feet at (wx,wz) — a ceiling. Jumps bonk against it
+// instead of passing through; roofs are reached from OUTSIDE (drop on), never from inside a room.
+function ceilingAt(wx,wz,feetY){
+  if(inDungeon||inNetwork) return null;
+  let ceil=null;
+  for(const st of structures){
+    const ddx=wx-st.bx,ddz=wz-st.bz; if(ddx*ddx+ddz*ddz>st.r2) continue;
+    const lx=ddx*st.cos-ddz*st.sin, lz=ddx*st.sin+ddz*st.cos;
+    for(const p of st.platforms){ const py=st.baseY+p.y;
+      if(py>feetY+STEP_UP&&(ceil===null||py<ceil)&&lx>=p.x0&&lx<=p.x1&&lz>=p.z0&&lz<=p.z1) ceil=py; }
+  }
+  return ceil;
+}
 // encumbrance: carried burden vs a Strength/Endurance capacity → ratio 0 (empty) … >1 (overloaded)
 // #200: rebalanced — the old chest-170/base-200 numbers meant the Academy's own starter kit (485)
 // OVERLOADED every STR-10 build (War Mage/Life Caster templates read 114–120% → permanently slowed
@@ -10532,7 +10545,7 @@ function hsBuildHouse(h){
       const da=Math.atan2(lx,lz)-doorA;
       if(!sealed && Math.abs(Math.atan2(Math.sin(da),Math.cos(da)))<0.5) continue;   // the doorway gap (unless sealed)
       const w=hsWorld(h,[b[1]+lx,0,b[3]+lz,0],gy);
-      const o={x:w.x,z:w.z,r:0.75,yMax:gy+3.4}; obstacles.push(o); obst.push(o);   // #955: walls block only to their height
+      const o={x:w.x,z:w.z,r:0.75,yMax:gy+(plats.length?Math.max.apply(null,plats.map(p=>p.y)):0)+2.6}; obstacles.push(o); obst.push(o);   // #955b: walls block to the TRUE wall top (top storey + headroom) — no lateral mid-air entry between post cap and an upper floor
     }
   }
   // the Covenant Crystal at its true spot before the door
@@ -18794,11 +18807,15 @@ function updateMovementPhysics(dt){
       if(support>=player.y-STICK){ player.y=support; player.vy=0; }   // glue to slopes/ramps (up via STEP_UP, down via STICK)
       else { player.grounded=false; player.vy=0; player.fallPeak=player.y; }   // walked off a real ledge → fall
     } else {
+      const prevY=player.y;
       player.vy-=GRAV*WSCALE*dt; player.y+=player.vy*dt;      // player gravity ×WSCALE → jump arc = real metres
+      if(player.vy>0){ const ceil=ceilingAt(player.x,player.z,prevY);   // #955b: ceilings are IMPASSABLE — the jump bonks on the underside instead of popping through onto the plate
+        if(ceil!==null&&player.y+1.8>ceil){ player.y=Math.min(player.y,ceil-1.85); player.vy=0; } }
       if(player.y>player.fallPeak) player.fallPeak=player.y;   // remember the apex so drop = apex − landing
-      if(player.vy<=0 && player.y<=support){                   // land
-        const drop=(player.fallPeak!==undefined?player.fallPeak:support)-support;
-        player.y=support; player.vy=0; player.grounded=true; fallDamage(drop);
+      const landS=supportAt(player.x,player.z,Math.max(prevY,player.y));   // #955b: measured from the PRE-step height — a fast fall frame can no longer tunnel through a floor plate
+      if(player.vy<=0 && player.y<=landS){                   // land
+        const drop=(player.fallPeak!==undefined?player.fallPeak:landS)-landS;
+        player.y=landS; player.vy=0; player.grounded=true; fallDamage(drop);
       }
     }
     antiStuckGuardian();   // never leave the player trapped in/on/under a building or structure
