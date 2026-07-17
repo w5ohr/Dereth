@@ -16437,15 +16437,15 @@ function applyItem(it){
     if(!it.aetheria) player.augment.count++;   // count this aug against the cap
     recomputeGearSkill();
     derive(); updateHUD&&updateHUD(); log(`You absorb the <b>${it.name}</b> — ${it.augDesc||"its power is yours"}.${it.aetheria?"":` (${player.augment.count}/60 augmentations)`}`,"loot"); if(SFX.level)SFX.level(); toast(it.aetheria?"AETHERIA BOUND":"AUGMENTED"); }
-  else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor, or trade it to an <b>Agent of the Arcanum</b> for a Writ of Refuge.`,"sys"); }
+  else if(it.stat==="trophy"){ log(`<b>${it.name}</b> is a creature trophy — sell it to any vendor, or trade it to an <b>Agent of the Arcanum</b> for a Writ of Refuge.`,"sys"); return "keep"; }   // #912: hint-only branches must keep the item — invUseItem consumes anything that doesn't say so
   else if(it.stat==="furniture"){ log(`<b>${it.name}</b> is housing furniture — stand at an empty hook at your dwelling and press E to place it.`,"sys"); return "keep"; }
   else if(it.stat==="writ"){ log(`A <b>Writ of Refuge</b> — the Arcanum's housing scrip. Spend it at a Covenant Crystal when buying a dwelling.`,"sys"); return "keep"; }
-  else if(it.stat==="quest"){ log(`<b>${it.name}</b> is a quest collectible — turn it in to the right quest-giver, or sell it.`,"sys"); }
-  else if(it.stat==="comp"){ if(isScarab(it)) log(`<b>${it.name}</b> is a casting scarab (level ${SCARAB_LEVEL[it.name]}) — held in your satchel, it powers a spell automatically when your mana runs dry. Or sell it to a Scrivener.`,"sys"); else log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); }
+  else if(it.stat==="quest"){ log(`<b>${it.name}</b> is a quest collectible — turn it in to the right quest-giver, or sell it.`,"sys"); return "keep"; }   // #912: don't destroy a quest collectible on double-click
+  else if(it.stat==="comp"){ if(isScarab(it)) log(`<b>${it.name}</b> is a casting scarab (level ${SCARAB_LEVEL[it.name]}) — held in your satchel, it powers a spell automatically when your mana runs dry. Or sell it to a Scrivener.`,"sys"); else log(`<b>${it.name}</b> is a spell component — sell it to a Scrivener.`,"sys"); return "keep"; }   // #912: the hint was silently burning one component per double-click
   else if(it.stat==="note"){ if(isOnline){ NET.pendingSell=NET.pendingSell||[]; NET.pendingSell.push(Object.assign({},it,{count:1}));   // #297: redeeming a note = selling it; queue one unit so a server reject restores the consumed note instead of destroying it
       netSend({t:"vendor_sell",item:it,price:it.v|0}); }   // M3 (#238): the server credits authoritatively and vendor_ok reconciles/rolls back
     player.gold+=it.v|0; updateHUD&&updateHUD(); log(`You redeem the <b>${it.name}</b> for <b>${it.v}</b> pyreals.`,"loot"); if(SFX.gold)SFX.gold(); }
-  else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); }
+  else if(it.stat==="pick"||it.stat==="key"){ log(`<b>${it.name}</b> — use it on a Locked Cache deep in a delve.`,"sys"); return "keep"; }   // #912: double-clicking a lockpick/key destroyed it outright
   else if(it.stat==="ammo"){ log(`<b>${it.name}</b> is loosed automatically when you fire a matching ${it.for}.`,"sys"); return "keep"; }
   else if(it.stat==="recall"){
     if(inDungeon||inNetwork){ log("You cannot recall from here.","warn"); return "keep"; }
