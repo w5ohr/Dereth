@@ -17076,7 +17076,9 @@ function die(){
   setTimeout(()=>{
     if(_wasDungeon&&inDungeon) exitDungeon(false);            // #227: instance teardown deferred out of the update() call stack
     if(_wasNetwork&&inNetwork) exitNetwork(netReturn);
-    if(_corpseDrop) addDrop(corpseX,corpseZ,{type:"corpse",items:_corpseDrop.items,amt:_corpseDrop.gold,corpse:true,owner:player.name||"Adventurer",ttl:_corpseDrop.ttl});
+    if(_corpseDrop){ const _cd=addDrop(corpseX,corpseZ,{type:"corpse",items:_corpseDrop.items,amt:_corpseDrop.gold,corpse:true,owner:player.name||"Adventurer",ttl:_corpseDrop.ttl});
+      const _lr=corpseLedgerAdd(corpseX,corpseZ,_corpseDrop.items,_corpseDrop.gold,player.name,_corpseDrop.ttl);   // #943: offline corpses persist across save/reload
+      if(_cd){ _cd.ledger=_lr; _lr._drop=_cd; } }
     const ls=lifestones.find(l=>l.bound)||lifestones[0];
     const land=nearestDryLand(ls.x,ls.z+3);
     arriveAt(land.x,land.z);player.alive=true;player.breath=1;player.drownAcc=0;   // surface at the lifestone with full breath
@@ -18309,6 +18311,7 @@ function recoverCorpse(d){
     return;
   }
   d.recovered=true;   // #931: flag BEFORE granting (offline path only — the shared path returned above; its grant arrives via server corpse_loot)
+  corpseLedgerDrop(d.ledger);   // #943: recovered — stop persisting it
   // pyreals always come home; items return to the satchel until it fills — the rest spills out
   if(d.amt>0){ player.gold+=d.amt; floater(player.x,EYE+0.4,player.z,"+"+d.amt+" p","#ffd86b"); }
   let taken=0,spilled=0;
@@ -19057,6 +19060,7 @@ function updateMonstersAI(dt){
 }
 // #782: ground drops, floaters, death animations, bursts, lifestone/portal shimmer, node respawn
 function updateDropsAndFX(dt){
+  corpseLedgerSync();   // #943: re-materialize persisted/instance-cleared offline corpses in the overworld
   for(let i=drops.length-1;i>=0;i--){
     const dp=drops[i];dp.t+=dt;dp.mesh.rotation.y+=dt*2;
     dp.mesh.position.y=(dp.baseY||0)+0.55+Math.sin(now()/250+dp.x)*0.12;
@@ -19067,6 +19071,7 @@ function updateDropsAndFX(dt){
       SFX.gold();disposeObject3D(dp.mesh);drops.splice(i,1);continue;}   // #22: dispose, don't leak the sphere geo/mat
     if(dp.type==="corpse"&&dp.t>(dp.ttl||3600)){   // corpses decay after 5 min/level (min 1 hr)
       log("Far away, your corpse crumbles to dust — what it held is lost.","warn");
+      corpseLedgerDrop(dp.ledger);   // #943: decayed for real — stop persisting it
       disposeObject3D(dp.mesh);drops.splice(i,1);continue;}
     // Unlooted ground loot decays so a cleared battlefield can't accumulate drop meshes without bound.
     // #209: ITEMS now linger 4 min — longer than the game's own long fights (Colosseum 5–8 waves on a
@@ -27897,6 +27902,28 @@ function hideOverworld(v){
   applyLabelSettings();   // scenery banners were force-shown above — re-hide any the user toggled off
 }
 function clearDrops(){ for(const d of drops) disposeObject3D(d.mesh); drops=[]; }   // #22
+// ── #943: OFFLINE corpse persistence. Corpse drops are transient world objects: the save carried the
+// DEPLETED inventory but not the corpse, so dying → reloading before the walk-back permanently lost
+// everything it held. Un-recovered offline corpses live in this ledger (survives clearDrops), persist
+// into the save with an ABSOLUTE expiry (decay continues across reloads), and re-materialize whenever
+// the player is in the overworld — which also stops an instance-entry clearDrops from destroying a
+// corpse mid-session. Online corpses are server-owned (shared) and never enter the ledger.
+let _corpseLedger=[];
+function corpseLedgerAdd(x,z,items,amt,owner,ttl){
+  const rec={x,z,items:(items||[]).slice(0,120),amt:Math.max(0,amt|0),owner:owner||"Adventurer",exp:Date.now()+Math.max(60,+ttl||3600)*1000};
+  _corpseLedger.push(rec); if(_corpseLedger.length>8) _corpseLedger.shift();   // bound the save: 8 most recent corpses
+  return rec;
+}
+function corpseLedgerDrop(rec){ if(!rec) return; const i=_corpseLedger.indexOf(rec); if(i>=0) _corpseLedger.splice(i,1); }
+function corpseLedgerSync(){   // called each frame from updateDropsAndFX — ≤8 records, cheap
+  if(!_corpseLedger.length||inDungeon||inNetwork) return;
+  for(let i=_corpseLedger.length-1;i>=0;i--){ const r=_corpseLedger[i];
+    if(r.exp<=Date.now()){ _corpseLedger.splice(i,1); continue; }   // decayed while away/offline
+    if(r._drop&&drops.indexOf(r._drop)>=0) continue;                 // already in the world
+    const d=addDrop(r.x,r.z,{type:"corpse",items:r.items,amt:r.amt,corpse:true,owner:r.owner,ttl:Math.max(60,(r.exp-Date.now())/1000)});
+    if(d){ d.ledger=r; r._drop=d; }
+  }
+}
 function clearProjectiles(){ for(const p of pProj) disposeObject3D(p.mesh); for(const p of eProj) disposeObject3D(p.mesh); for(const w of walls) disposeObject3D(w.mesh); pProj=[];eProj=[];walls=[]; }   // #22
 // ── per-dungeon WALKTHROUGH SCRIPTS — ROOM-FOR-ROOM graphs encoded from the documented AC
 //    walkthroughs (acpedia/fandom). rooms: [id, col(east+), depth(north+), floorY, opts] where opts
@@ -32208,6 +32235,7 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
       activeQuests,questDone,tracked,taskReps,taskCooldown,
       gameMonth,calendarDone,worldDays,sagaProg,sagaVer:1,
       keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
+      corpses:_corpseLedger.map(r=>({x:r.x,z:r.z,items:r.items,amt:r.amt,owner:r.owner,exp:r.exp})),   // #943: un-recovered OFFLINE corpses (absolute expiry — decay continues across reloads); shared/online corpses are server-owned and never ledgered
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
     for(const f of SAVE_SCHEMA) s[f.k]=f.save?f.save(player):player[f.k];
     // #941: the #893 trade-escrow fold lives in ONE place — the SAVE_SCHEMA inv save fn above. A second
@@ -32277,6 +32305,14 @@ function applySaveObj(s){
   questDone=Array.isArray(s.questDone)?s.questDone.slice():[];
   taskReps=(s.taskReps&&typeof s.taskReps==="object")?Object.assign({},s.taskReps):{};
   taskCooldown=(s.taskCooldown&&typeof s.taskCooldown==="object")?Object.assign({},s.taskCooldown):{};
+  // #943: restore un-recovered offline corpses into the ledger (corpseLedgerSync re-materializes them
+  // once the overworld is live — no addDrop here, the world may not be built yet). Expired entries are
+  // dropped; coordinates ride the same WSCALE migration as tiedPortal/ship below.
+  _corpseLedger=[];
+  if(Array.isArray(s.corpses)){ const _cm=WSCALE/(s.wscale||1);
+    for(const c of s.corpses.slice(0,8)){ if(!c||typeof c!=="object"||!(+c.exp>Date.now())) continue;
+      _corpseLedger.push({x:(+c.x||0)*_cm,z:(+c.z||0)*_cm,amt:Math.max(0,c.amt|0),owner:typeof c.owner==="string"?c.owner:"Adventurer",exp:+c.exp,
+        items:(Array.isArray(c.items)?c.items:[]).slice(0,120).map(it=>sanitizeItem(it)).filter(Boolean)}); } }
   // #784: coordinate migrations + load side effects (the schema loaded the raw fields above)
   if(player.tiedPortal){ const _m=WSCALE/(s.wscale||1); if(_m!==1){ player.tiedPortal.x*=_m; player.tiedPortal.z*=_m; } }   // migrate tied-portal coords
   if(player.homestead&&player.homestead.hid!=null){ hsClaimLocal(player.homestead.hid); hsSyncHouse(); }   // #355: re-assert ownership of our plot on load (+ re-sync online)
