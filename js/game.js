@@ -2028,7 +2028,7 @@ const _acadTexC={};
 function buildAcademyHall(){
   const cx=DCEN.x, cz=DCEN.z;
   _clearAcademyNpcs();   // idempotent: a re-entry never doubles the staff
-  dungeonObjs=[];dungeonMobs=0;dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+  dungeonObjs=[];dungeonMobs=0;dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];dungeonWallSegs=[];_dwsHash=null;
   dungeonChest=null;dungeonLock=null;dungeonVault=null;
   dungeonRects=[
     {x0:cx-14,z0:cz-12,x1:cx+14,z1:cz+2, fy:0,room:true},     // the Great Hall
@@ -2206,6 +2206,7 @@ let stormBuild=0,stormPhase=0,stormCd=0; // H13 portal storms: build-up timer / 
 let blocking=false; // active shield block (hold right-mouse): cuts frontal damage, drains stamina, slows you
 let inDungeon=false,dungeonObjs=[],dungeonReturn={x:0,z:0},dungeonChest=null,dungeonMobs=0,dungeonLock=null,dungeonVault=null;
 let dungeonBars=[],dungeonLevers=[],dungeonPortals=[],dungeonBoxes=[];   // walkthrough mechanics: doors/ledges, wall levers, internal portals, key strongboxes
+let dungeonWallSegs=[],_dwsHash=null;   // #945: real-mesh wall collision bars for EnvCell dungeons (thin rects along sealed cell seams; _dwsHash = 8u-bin lookup)
 let dungeonEntrances=[],dungeonExit={x:0,z:0},curDungeon=null,dungeonDepth=1,dungeonDescent=null;   // multi-level delves: current floor + this floor's descent stair
 let dungeonRects=[],dungeonSpawn={x:0,z:0}; // AC-style room/corridor layout: walkable cells + drop-in point
 // ── #779: instance-mechanic state registry — every wave/Regalia mechanic registers ONE reset closure
@@ -10810,7 +10811,7 @@ function hsEnterInstance(meshFile,setup){
     dungeonReturn={x:player.x,z:player.z};
     clearDrops();clearProjectiles();clearDying();hideOverworld(false);
     document.getElementById('dvig').style.opacity="1";
-    dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+    dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];dungeonWallSegs=[];_dwsHash=null;
     dungeonChest=null;dungeonLock=null;dungeonVault=null;
     for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
     const grp=hsGroupsToProto(dj.groups); scene.add(grp); dungeonObjs.push(grp);
@@ -29820,8 +29821,26 @@ function dungeonBarred(x,z,r){
     if(x>=b.x0-r&&x<=b.x1+r&&z>=b.z0-r&&z<=b.z1+r) return true;
   } return false;
 }
+// #945: wall bars — the EnvCell mesh's actual walls, blocking movement along sealed cell seams.
+// Gated per-storey by the bar's floor height so a wall on the level below doesn't ghost-block the
+// hall above it. Binned at 8u (bars pre-expanded by the max test radius) so lookups touch one bin.
+function _dwsIndex(){ _dwsHash=new Map();
+  for(const b of dungeonWallSegs){
+    for(let bx=Math.floor((b.x0-0.7)/8);bx<=Math.floor((b.x1+0.7)/8);bx++)
+      for(let bz=Math.floor((b.z0-0.7)/8);bz<=Math.floor((b.z1+0.7)/8);bz++){
+        const k=bx+"|"+bz; let a=_dwsHash.get(k); if(!a){a=[];_dwsHash.set(k,a);} a.push(b); } } }
+function dungeonWallAt(x,z,r){
+  if(!dungeonWallSegs.length) return false;
+  if(!_dwsHash) _dwsIndex();
+  const a=_dwsHash.get(Math.floor(x/8)+"|"+Math.floor(z/8)); if(!a) return false;
+  const ry=player.y;
+  for(const b of a){ if(Math.abs(ry-b.fy)>4) continue;   // another storey's wall
+    if(x>=b.x0-r&&x<=b.x1+r&&z>=b.z0-r&&z<=b.z1+r) return true; }
+  return false;
+}
 function dungeonWalkable(x,z){ const r=player.r*0.6;
   if(dungeonBarred(x,z,r)) return false;
+  if(dungeonWallAt(x,z,r)) return false;
   for(const c of dungeonRects){
     if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad-r) return true; }
     else if(x>=c.x0+r&&x<=c.x1-r&&z>=c.z0+r&&z<=c.z1-r) return true;
@@ -29916,7 +29935,7 @@ function intEnterInstance(rec){
     dungeonReturn={x:rec.doorX+rec.dux*1.6,z:rec.doorZ+rec.duz*1.6};
     clearDrops();clearProjectiles();clearDying();hideOverworld(false);
     document.getElementById('dvig').style.opacity="1";
-    dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+    dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];dungeonWallSegs=[];_dwsHash=null;
     dungeonChest=null;dungeonLock=null;dungeonVault=null;
     for(const c of dj.rects) dungeonRects.push({x0:c[0]-0.35,z0:c[1]-0.35,x1:c[2]+0.35,z1:c[3]+0.35,fy:c[4],room:true});
     const grp=new THREE.Group();                      // the true EnvCell rooms, building-local space
@@ -30056,9 +30075,132 @@ function dgTexture(fn,onNorm){
   return e.t;
 }
 function _dgNorm(e){ const nm=lumNormalTex(e.t); nm.flipY=false; nm.needsUpdate=true; nm._acShared=true; return nm; }
+// ── #945: derive REAL wall collision + missing-roof cells from the EnvCell mesh, once per dungeon
+//    (cached on the dj). The movement rects are an open union — without this, every visually solid
+//    wall between adjacent cells was freely walkable. Method (validated offline against all 30
+//    tier-3 exports): chest-height Möller–Trumbore segment tests across each same-level cell seam,
+//    19 samples along the 10u edge at two heights → sealed wall / doorway runs / open. Stair pairs
+//    (floor delta 2.5–7.2) are never sealed — storeys keep riding the dungeonFloorAt easing band.
+//    Some exports bake CLOSED DOORS into the wall mesh, so a reachability repair pass BFS-floods
+//    from the entry and unseals the most door-like frontier edge until the hoard is reachable and
+//    ≥90% of cells connect (worst tier-3 case needs 17 unseals; most need 0).
+function dgnGeoFix(dj){
+  if(dj._geoFix) return dj._geoFix;
+  const cells=dj.cellPos, tris=[], hash=new Map();
+  const HK=(bx,bz)=>bx+"|"+bz;
+  for(const g of dj.groups){
+    const v=g.verts, ix=(g.idx&&g.idx.length)?g.idx:null, nT=((ix?ix.length:v.length/3)/3)|0;
+    for(let t=0;t<nT;t++){
+      const A=ix?ix[3*t]:3*t, B=ix?ix[3*t+1]:3*t+1, C=ix?ix[3*t+2]:3*t+2;
+      const tr=[v[3*A],v[3*A+1],v[3*A+2],v[3*B],v[3*B+1],v[3*B+2],v[3*C],v[3*C+1],v[3*C+2]];
+      const ti=tris.length; tris.push(tr);
+      const x0=Math.min(tr[0],tr[3],tr[6]),x1=Math.max(tr[0],tr[3],tr[6]),z0=Math.min(tr[2],tr[5],tr[8]),z1=Math.max(tr[2],tr[5],tr[8]);
+      for(let bx=Math.floor(x0/2);bx<=Math.floor(x1/2);bx++)for(let bz=Math.floor(z0/2);bz<=Math.floor(z1/2);bz++){
+        const k=HK(bx,bz); let a=hash.get(k); if(!a){a=[];hash.set(k,a);} a.push(ti); }
+    }
+  }
+  const _seen=new Set();
+  const segHit=(x0,y0,z0,x1,y1,z1)=>{   // does the segment cross ANY triangle? (horizontal chest-height probes)
+    const bx0=Math.floor(Math.min(x0,x1)/2),bx1=Math.floor(Math.max(x0,x1)/2),bz0=Math.floor(Math.min(z0,z1)/2),bz1=Math.floor(Math.max(z0,z1)/2);
+    const dx=x1-x0,dy=y1-y0,dz=z1-z0; _seen.clear();
+    for(let bx=bx0;bx<=bx1;bx++)for(let bz=bz0;bz<=bz1;bz++){
+      const a=hash.get(HK(bx,bz)); if(!a) continue;
+      for(const ti of a){ if(_seen.has(ti)) continue; _seen.add(ti);
+        const T=tris[ti];
+        if(Math.max(T[1],T[4],T[7])<Math.min(y0,y1)-0.01||Math.min(T[1],T[4],T[7])>Math.max(y0,y1)+0.01) continue;
+        const e1x=T[3]-T[0],e1y=T[4]-T[1],e1z=T[5]-T[2], e2x=T[6]-T[0],e2y=T[7]-T[1],e2z=T[8]-T[2];
+        const hx=dy*e2z-dz*e2y, hy=dz*e2x-dx*e2z, hz=dx*e2y-dy*e2x;
+        const det=e1x*hx+e1y*hy+e1z*hz; if(Math.abs(det)<1e-9) continue;
+        const inv=1/det, sx=x0-T[0],sy=y0-T[1],sz=z0-T[2];
+        const u=(sx*hx+sy*hy+sz*hz)*inv; if(u<0||u>1) continue;
+        const qx=sy*e1z-sz*e1y, qy=sz*e1x-sx*e1z, qz=sx*e1y-sy*e1x;
+        const vv=(dx*qx+dy*qy+dz*qz)*inv; if(vv<0||u+vv>1) continue;
+        const tt=(e2x*qx+e2y*qy+e2z*qz)*inv; if(tt>=0&&tt<=1) return true;
+      } }
+    return false; };
+  // adjacent cell pairs on the 10u grid
+  const bygrid=new Map();
+  cells.forEach((c,i)=>{ const k=Math.round(c[0]/10)+"|"+Math.round(c[2]/10);
+    let a=bygrid.get(k); if(!a){a=[];bygrid.set(k,a);} a.push(i); });
+  const adj=cells.map(()=>new Set());
+  const sealed=[];   // {i,j,nb,bar}
+  const bars=[];
+  const pairSeen=new Set();
+  for(const[k,iis]of bygrid){
+    const[gx,gz]=k.split("|").map(Number);
+    for(const[dx,dz]of[[1,0],[0,1]]){
+      const nb2=bygrid.get((gx+dx)+"|"+(gz+dz)); if(!nb2) continue;
+      for(const i of iis) for(const j of nb2){
+        const pk=Math.min(i,j)+"|"+Math.max(i,j); if(pairSeen.has(pk)) continue; pairSeen.add(pk);
+        const c=cells[i],o=cells[j], dyv=Math.abs(c[1]-o[1]);
+        if(dyv>7.2) continue;
+        if(dyv>2.5){ adj[i].add(j); adj[j].add(i); continue; }   // stair pair — never sealed
+        const mx=(c[0]+o[0])/2, mz=(c[2]+o[2])/2, fy=Math.max(c[1],o[1]);
+        const mask=[]; let nb=0;
+        for(let s=0;s<19;s++){ const off=(s-9)*0.5;
+          const px=dx?mx:mx+off, pz=dx?mz+off:mz;
+          const hit=dx?(segHit(px-0.8,fy+1.0,pz,px+0.8,fy+1.0,pz)||segHit(px-0.8,fy+1.6,pz,px+0.8,fy+1.6,pz))
+                      :(segHit(px,fy+1.0,pz-0.8,px,fy+1.0,pz+0.8)||segHit(px,fy+1.6,pz-0.8,px,fy+1.6,pz+0.8));
+          mask.push(hit); if(hit)nb++;
+        }
+        const mkBar=(off0,off1)=>dx?{x0:mx-0.35,x1:mx+0.35,z0:mz+off0,z1:mz+off1,fy}
+                                   :{x0:mx+off0,x1:mx+off1,z0:mz-0.35,z1:mz+0.35,fy};
+        if(nb>=17){ sealed.push({i,j,nb,bar:mkBar(-5.45,5.45)}); }
+        else{ adj[i].add(j); adj[j].add(i);
+          let run0=-1;   // doorway: bar only the blocked runs, the opening stays true to the mesh
+          for(let s=0;s<=19;s++){ const blk=s<19&&mask[s];
+            if(blk&&run0<0) run0=s;
+            else if(!blk&&run0>=0){ if(s-run0>=2) bars.push(mkBar((run0-9)*0.5-0.12,(s-1-9)*0.5+0.12)); run0=-1; } }
+        }
+      }
+    }
+  }
+  // storeys stacked in the same column stay linked (dungeonFloorAt picks by refY)
+  for(const[,iis]of bygrid){ const ys=[...iis].sort((a,b)=>cells[a][1]-cells[b][1]);
+    for(let q=1;q<ys.length;q++) if(cells[ys[q]][1]-cells[ys[q-1]][1]<=7.2){ adj[ys[q]].add(ys[q-1]); adj[ys[q-1]].add(ys[q]); } }
+  // reachability repair: closed doors baked into some exports read as walls — unseal until the delve completes
+  const near=pt=>{ let bi=0,bd=Infinity; for(let q=0;q<cells.length;q++){ const c=cells[q];
+    const dd=(c[0]-pt[0])*(c[0]-pt[0])+(c[1]-pt[1])*(c[1]-pt[1])+(c[2]-pt[2])*(c[2]-pt[2]); if(dd<bd){bd=dd;bi=q;} } return bi; };
+  const src=near(dj.entry), dst=near(dj.far);
+  const flood=()=>{ const seen=new Set([src]),q=[src];
+    while(q.length){ const u=q.pop(); for(const v2 of adj[u]) if(!seen.has(v2)){ seen.add(v2); q.push(v2); } } return seen; };
+  let seen=flood(), unseals=0;
+  while((!seen.has(dst)||seen.size<0.9*cells.length)&&unseals<60){
+    let best=null;
+    for(const e of sealed){ if(e.done) continue;
+      if(seen.has(e.i)!==seen.has(e.j)){ if(!best||e.nb<best.nb) best=e; } }
+    if(!best) break;
+    best.done=true; adj[best.i].add(best.j); adj[best.j].add(best.i); unseals++;
+    seen=flood();
+  }
+  for(const e of sealed) if(!e.done) bars.push(e.bar);
+  // roofless cells: no storey above and NO geometry overhead at all (walls included) — export losses
+  const bare=[];
+  for(const c of cells){
+    let above=false;
+    for(const q of (bygrid.get(Math.round(c[0]/10)+"|"+Math.round(c[2]/10))||[])){ const o=cells[q];
+      if(o[1]>c[1]+2.5){ above=true; break; } }
+    if(above) continue;
+    let cover=false;
+    for(let bx=Math.floor((c[0]-4.8)/2);bx<=Math.floor((c[0]+4.8)/2)&&!cover;bx++)
+      for(let bz=Math.floor((c[2]-4.8)/2);bz<=Math.floor((c[2]+4.8)/2)&&!cover;bz++){
+        const a=hash.get(HK(bx,bz)); if(!a) continue;
+        for(const ti of a){ const T=tris[ti];
+          const cx=(T[0]+T[3]+T[6])/3, cz=(T[2]+T[5]+T[8])/3;
+          if(Math.abs(cx-c[0])>4.8||Math.abs(cz-c[2])>4.8) continue;
+          if(Math.max(T[1],T[4],T[7])>c[1]+2.6){ cover=true; break; } }
+      }
+    if(!cover) bare.push(c);
+  }
+  dj._geoFix={bars,bare,unseals,sealedN:sealed.length-unseals,reach:seen.size,cellsN:cells.length,farOk:seen.has(dst)};
+  console.log(`[dgnfix] ${dj.name||"dungeon"}: ${sealed.length-unseals} sealed walls, ${bars.length-(sealed.length-unseals)} doorway bars, ${unseals} unsealed for passage, ${bare.length} bare cells re-roofed`);
+  return dj._geoFix;
+}
 function buildDungeonReal(def,dj){
   const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
   for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
+  const _fix=dgnGeoFix(dj);   // #945: the mesh's real walls become collision
+  for(const b of _fix.bars) dungeonWallSegs.push(b);
   const grp=new THREE.Group();
   // ── truncated-export detection at build time (same signals as tools/dungeon_coverage_audit.py):
   //    coverage = fraction of cells with a real wall vertex within ~8u. Below 50% the export lost
@@ -30087,6 +30229,30 @@ function buildDungeonReal(def,dj){
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
   if(_gapFill) grp.add(synthDungeonWalls(dj,_cellCovered));   // #762: synthesize walls for the cells the export lost
+  // ── #945: re-roof the BARE cells — no storey above, no geometry overhead at all. These sat under
+  //    open void (the "no roof" reports) yet slipped the #762 net when overall coverage was fine.
+  //    Ceiling + open-edge walls only; the floor is real mesh, so no coplanar duplicate is added.
+  //    Cells the gap-fill just rebuilt (full boxes) are skipped. ──
+  { const _bare=_fix.bare.filter(c=>!_gapFill||_cellCovered(c));
+    if(_bare.length){
+      const STEP=10,HALF=5.2,H=6,T=0.7,TILE=4;
+      const occ=new Set(); for(const c of dj.cellPos) occ.add(Math.round(c[0]/STEP)+"|"+Math.round(c[1])+"|"+Math.round(c[2]/STEP));
+      const P=[],N=[],U=[];
+      for(const c of _bare){ const gx=Math.round(c[0]/STEP),iy=Math.round(c[1]),gz=Math.round(c[2]/STEP);
+        _pushBox(P,N,U,c[0],c[1]+H+T/2,c[2],HALF+0.3,T/2,HALF+0.3,TILE);   // the roof itself
+        for(const d of[[1,0],[-1,0],[0,1],[0,-1]]) if(!occ.has((gx+d[0])+"|"+iy+"|"+(gz+d[1]))){   // wall where the edge opens on nothing
+          if(d[0]!==0) _pushBox(P,N,U,c[0]+d[0]*HALF,c[1]+H/2,c[2],T/2,H/2,HALF+0.3,TILE);
+          else _pushBox(P,N,U,c[0],c[1]+H/2,c[2]+d[1]*HALF,HALF+0.3,H/2,T/2,TILE); } }
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+      geo.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+      let wallTex=null,best=-1;
+      for(const g of dj.groups){ if(g.tex){ const n2=(g.verts||[]).length; if(n2>best){best=n2;wallTex=g.tex;} } }
+      const mat=wallTex?new THREE.MeshStandardMaterial({map:dgTexture(wallTex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide})
+                       :new THREE.MeshStandardMaterial({color:0x6b6b76,roughness:0.9,side:THREE.DoubleSide});
+      const rm=new THREE.Mesh(geo,mat); rm.receiveShadow=true; grp.add(rm);
+    } }
   scene.add(grp); dungeonObjs.push(grp);
   // #715: darker darkness — the flat base drops so the torch pools MATTER (dglight slider still scales it)
   const amb=new THREE.AmbientLight(0x9a8a72,0.62*(settings.dglight||1)); amb.userData.dgBase=0.62; scene.add(amb); dungeonObjs.push(amb);
@@ -30196,7 +30362,7 @@ function buildDungeonReal(def,dj){
   log(`<i style="color:#8a9a6a">These halls stand exactly as the old world built them — ${dj.cells} chambers of true stone.</i>`,"sys");
 }
 function buildDungeon(def){
-  dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
+  dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];dungeonWallSegs=[];_dwsHash=null;
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
     if(dgn&&(!sc0||sc0.pack)&&!_acDgnCache.disable){
       const cached=_acDgnCache[def.name];
