@@ -2191,7 +2191,7 @@ function tryJump(power,aim){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
   if(encumbrance().ratio>=2){ if(now()-lastBreath>1600){lastBreath=now();log("You are too encumbered to jump!","warn");} return; }   // AC: CantJumpLoadedDown
   power=(typeof power==="number")?clamp(power,0,1):1;
-  const cost=Math.ceil((encumbrance().ratio+0.5)*power*8+2);     // ACE JumpStaminaCost: ceil((burden+0.5)×power×8+2)
+  const cost=jumpStam("ground",power);     // #964: ACE JumpStaminaCost via the shared jump-cost table
   if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
   const vy=jumpVelocity(power); player.vy=vy; player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.jump)SFX.jump(power);   // #960: launch SFX scales with charge
   // CHARGE → DISTANCE: the hold time (0..2s → power 0..1) sets how far you leap, LINEARLY (1s = half of 2s,
@@ -2221,16 +2221,57 @@ function tryJump(power,aim){
 let jumpChargeT=-1,jumpChargeStill=false,jumpAimF=0,jumpAimS=0;
 function startJumpCharge(){ if(!player.alive||paused) return;
   if(player.grounded){ if(jumpChargeT<0){ jumpChargeT=0; jumpChargeStill=Math.hypot(player.vx||0,player.vz||0)<0.6; jumpAimF=0; jumpAimS=0; } return; }
-  if(player._airJumpArmed) tryAirJump();   // #962: airborne Space press → a single mid-air jump (re-armed on release)
+  if(player._airJumpArmed){ if(!tryWallJump()) tryAirJump(); }   // #962/#964: airborne Space → wall-kick if against a wall, else a mid-air jump (re-armed on release)
 }
 const AIR_JUMPS_MAX=1;   // #962: one extra leap per airborne period (a double-jump)
+// #964: BALANCE — one stamina-cost formula for every kind of jump so the numbers stay coherent.
+//   ground full ≈10 · air-jump a premium ≈14 (a real cost, no free spam) · wall-kick ≈8 (rewards
+//   the technique) · plunge ≈12. All scale with encumbrance like AC's JumpStaminaCost.
+function jumpStam(kind,power){ const b=encumbrance().ratio+0.5;
+  if(kind==="ground") return Math.ceil(b*(power||1)*8+2);
+  if(kind==="air")    return Math.ceil(b*10+4);
+  if(kind==="wall")   return Math.ceil(b*6+2);
+  if(kind==="plunge") return Math.ceil(b*8+4);
+  return Math.ceil(b*8+2); }
+// #964: WALL-JUMP — pressed against a vertical surface in the air, kick UP and AWAY off it. Cheaper
+// than an air-jump and it REFRESHES the air-jump budget (so you can wall-kick, then still double-jump),
+// but each kick needs a fresh Space press and a wall in contact. Returns false when there's no wall
+// (so the caller falls through to a normal air-jump).
+function wallContactNormal(){
+  const rr=(player.r||0.8);
+  if(inDungeon){ if(typeof dungeonWalkable!=="function") return null;
+    let nx=0,nz=0,found=false;
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]])
+      if(!dungeonWalkable(player.x+dx*(rr+0.45),player.z+dz*(rr+0.45))){ nx-=dx; nz-=dz; found=true; }   // wall on +d → push toward −d
+    if(!found) return null; const l=Math.hypot(nx,nz)||1; return {nx:nx/l,nz:nz/l}; }
+  let nx=0,nz=0,found=false;   // overworld: obstacles taller than the feet are walls to kick off
+  for(const o of obstacles){ if(o.yMax!=null&&player.y>o.yMax) continue;
+    const dx=player.x-o.x,dz=player.z-o.z,d=Math.hypot(dx,dz);
+    if(d<o.r+rr+0.5&&d>0.001){ nx+=dx/d; nz+=dz/d; found=true; } }
+  if(!found) return null; const l=Math.hypot(nx,nz)||1; return {nx:nx/l,nz:nz/l};
+}
+function tryWallJump(){
+  if(player.grounded||inNetwork) return false;
+  const n=wallContactNormal(); if(!n) return false;
+  player._airJumpArmed=false;
+  const cost=jumpStam("wall"); if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to kick off the wall.","warn");} return true; }   // true = a wall was there; don't also air-jump
+  player.st=Math.max(0,player.st-cost);
+  player.vy=jumpVelocity(0.58); player.fallPeak=player.y;
+  const jv=player.st>0?skillValue("jump"):0, skF=clamp(1+(jv/(jv+1300))*6.0,1.0,1.9);
+  const sp=JUMP_DIST_MAX*skF*0.42/Math.max(0.1,2*player.vy/(GRAV*WSCALE));   // horizontal shove off the wall
+  player.vx=n.nx*sp; player.vz=n.nz*sp;
+  player.yaw=Math.atan2(-n.nx,-n.nz);            // turn to face away from the wall (where you're going)
+  player._airJumps=0;                            // wall contact refreshes the double-jump
+  if(SFX.jump)SFX.jump(0.55); burst(player.x-n.nx*0.6,player.y+0.4,player.z-n.nz*0.6,0xd8e6ff,6);
+  return true;
+}
 // #962: an instant mid-air leap — no charge (you're already committed to the arc). A fixed, skill-scaled
 // upward kick plus a redirect toward the held direction, gated by stamina and once per air period.
 function tryAirJump(){
   player._airJumpArmed=false;
   if((player._airJumps||0)>=AIR_JUMPS_MAX) return;
   if(encumbrance().ratio>=2) return;
-  const cost=Math.ceil((encumbrance().ratio+0.5)*6+2);
+  const cost=jumpStam("air");
   if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump again.","warn");} return; }
   player._airJumps=(player._airJumps||0)+1; player.st=Math.max(0,player.st-cost);
   player.vy=jumpVelocity(0.62); player.fallPeak=player.y;   // a solid second kick, a touch under a full ground leap
@@ -2286,6 +2327,7 @@ function jumpAttackImpact(drop){
   shake(Math.min(0.5,0.18+drop*0.03)); fovKick=Math.min(fovKick+5,6);
   spellLandFX&&spellLandFX("war",()=>[player.x,player.y,player.z],1.6,R*0.5);
   for(let i=0;i<10;i++){ const a=i/10*6.28; burst(player.x+Math.cos(a)*1.2,player.y+0.2,player.z+Math.sin(a)*1.2,0xffcaa0,2); }
+  if(typeof netSpellFx==="function") netSpellFx("aoe",player.x,player.z,0,0,0xffcaa0,R*0.5,0);   // #964: peers see the shockwave land, not just us
   if(SFX.crit)SFX.crit();
   if(hit) log(`<b>Plunging strike!</b> Your landing slams <b>${hit}</b> ${hit===1?"foe":"foes"}.`,"heal");
 }
@@ -17754,8 +17796,8 @@ function meleeAttack(power){
   breakResProt();   // offensive action ends res protection
   if(!player.alive||player.meleeCd>0||paused) return;
   if(!player.grounded&&!player.aboardShip){   // #962: a swing begun airborne becomes a PLUNGE — dive down, detonate on landing
-    if(!player._jumpAtk){ player._jumpAtk={t:now()}; player.vy=Math.min(player.vy,-4)-6; }   // commit the dive
-    player._plunge=1; }
+    if(!player._jumpAtk){ const pc=jumpStam("plunge");   // #964: the plunge costs stamina to commit; too winded → just a normal air swing
+      if(player.st>=pc){ player._jumpAtk={t:now()}; player.st-=pc; player.vy=Math.min(player.vy,-4)-6; player._plunge=1; } } }
   power=(typeof power==="number")?clamp(power,0.6,1.6):1;   // Cb1 power bar: charge-scaled damage (0.6 tap → 1.6 full)
   const acc=1-Math.abs(power-1.05)*0.5;   // accuracy peaks in the mid-upper charge band (AC's sweet spot), falls off at the extremes
   const wp=weaponProfile(),melee=wp&&wp.mode==="melee",prof=melee?wp:WEAPON_TYPES.sword; // equipped melee weapon or bare fists
