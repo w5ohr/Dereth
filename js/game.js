@@ -2191,7 +2191,7 @@ function tryJump(power,aim){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
   if(encumbrance().ratio>=2){ if(now()-lastBreath>1600){lastBreath=now();log("You are too encumbered to jump!","warn");} return; }   // AC: CantJumpLoadedDown
   power=(typeof power==="number")?clamp(power,0,1):1;
-  const cost=Math.ceil((encumbrance().ratio+0.5)*power*8+2);     // ACE JumpStaminaCost: ceil((burden+0.5)×power×8+2)
+  const cost=jumpStam("ground",power);     // #964: ACE JumpStaminaCost via the shared jump-cost table
   if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
   const vy=jumpVelocity(power); player.vy=vy; player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.jump)SFX.jump(power);   // #960: launch SFX scales with charge
   // CHARGE → DISTANCE: the hold time (0..2s → power 0..1) sets how far you leap, LINEARLY (1s = half of 2s,
@@ -2219,8 +2219,71 @@ function tryJump(power,aim){
 // #958: charging from a STANDSTILL roots you and W/A/S/D aim the leap (AC's standing directional
 // jump) — the last direction held during the charge is the launch vector; no key = straight up.
 let jumpChargeT=-1,jumpChargeStill=false,jumpAimF=0,jumpAimS=0;
-function startJumpCharge(){ if(!player.alive||paused||!player.grounded) return;
-  if(jumpChargeT<0){ jumpChargeT=0; jumpChargeStill=Math.hypot(player.vx||0,player.vz||0)<0.6; jumpAimF=0; jumpAimS=0; } }
+function startJumpCharge(){ if(!player.alive||paused) return;
+  if(player.grounded){ if(jumpChargeT<0){ jumpChargeT=0; jumpChargeStill=Math.hypot(player.vx||0,player.vz||0)<0.6; jumpAimF=0; jumpAimS=0; } return; }
+  if(player._airJumpArmed){ if(!tryWallJump()) tryAirJump(); }   // #962/#964: airborne Space → wall-kick if against a wall, else a mid-air jump (re-armed on release)
+}
+const AIR_JUMPS_MAX=1;   // #962: one extra leap per airborne period (a double-jump)
+// #964: BALANCE — one stamina-cost formula for every kind of jump so the numbers stay coherent.
+//   ground full ≈10 · air-jump a premium ≈14 (a real cost, no free spam) · wall-kick ≈8 (rewards
+//   the technique) · plunge ≈12. All scale with encumbrance like AC's JumpStaminaCost.
+function jumpStam(kind,power){ const b=encumbrance().ratio+0.5;
+  if(kind==="ground") return Math.ceil(b*(power||1)*8+2);
+  if(kind==="air")    return Math.ceil(b*10+4);
+  if(kind==="wall")   return Math.ceil(b*6+2);
+  if(kind==="plunge") return Math.ceil(b*8+4);
+  return Math.ceil(b*8+2); }
+// #964: WALL-JUMP — pressed against a vertical surface in the air, kick UP and AWAY off it. Cheaper
+// than an air-jump and it REFRESHES the air-jump budget (so you can wall-kick, then still double-jump),
+// but each kick needs a fresh Space press and a wall in contact. Returns false when there's no wall
+// (so the caller falls through to a normal air-jump).
+function wallContactNormal(){
+  const rr=(player.r||0.8);
+  if(inDungeon){ if(typeof dungeonWalkable!=="function") return null;
+    let nx=0,nz=0,found=false;
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]])
+      if(!dungeonWalkable(player.x+dx*(rr+0.45),player.z+dz*(rr+0.45))){ nx-=dx; nz-=dz; found=true; }   // wall on +d → push toward −d
+    if(!found) return null; const l=Math.hypot(nx,nz)||1; return {nx:nx/l,nz:nz/l}; }
+  let nx=0,nz=0,found=false;   // overworld: obstacles taller than the feet are walls to kick off
+  for(const o of obstacles){ if(o.yMax!=null&&player.y>o.yMax) continue;
+    const dx=player.x-o.x,dz=player.z-o.z,d=Math.hypot(dx,dz);
+    if(d<o.r+rr+0.5&&d>0.001){ nx+=dx/d; nz+=dz/d; found=true; } }
+  if(!found) return null; const l=Math.hypot(nx,nz)||1; return {nx:nx/l,nz:nz/l};
+}
+function tryWallJump(){
+  if(player.grounded||inNetwork) return false;
+  const n=wallContactNormal(); if(!n) return false;
+  player._airJumpArmed=false;
+  const cost=jumpStam("wall"); if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to kick off the wall.","warn");} return true; }   // true = a wall was there; don't also air-jump
+  player.st=Math.max(0,player.st-cost);
+  player.vy=jumpVelocity(0.58); player.fallPeak=player.y;
+  const jv=player.st>0?skillValue("jump"):0, skF=clamp(1+(jv/(jv+1300))*6.0,1.0,1.9);
+  const sp=JUMP_DIST_MAX*skF*0.42/Math.max(0.1,2*player.vy/(GRAV*WSCALE));   // horizontal shove off the wall
+  player.vx=n.nx*sp; player.vz=n.nz*sp;
+  player.yaw=Math.atan2(-n.nx,-n.nz);            // turn to face away from the wall (where you're going)
+  player._airJumps=0;                            // wall contact refreshes the double-jump
+  if(SFX.jump)SFX.jump(0.55); burst(player.x-n.nx*0.6,player.y+0.4,player.z-n.nz*0.6,0xd8e6ff,6);
+  return true;
+}
+// #962: an instant mid-air leap — no charge (you're already committed to the arc). A fixed, skill-scaled
+// upward kick plus a redirect toward the held direction, gated by stamina and once per air period.
+function tryAirJump(){
+  player._airJumpArmed=false;
+  if((player._airJumps||0)>=AIR_JUMPS_MAX) return;
+  if(encumbrance().ratio>=2) return;
+  const cost=jumpStam("air");
+  if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump again.","warn");} return; }
+  player._airJumps=(player._airJumps||0)+1; player.st=Math.max(0,player.st-cost);
+  player.vy=jumpVelocity(0.62); player.fallPeak=player.y;   // a solid second kick, a touch under a full ground leap
+  // redirect: W/A/S/D (relative to facing) steer the air-leap; else keep current horizontal drift
+  const f=(held("forward")?1:0)-(held("back")?1:0), s2=(held("right")?1:0)-((held("left")||keys["KeyZ"])?1:0);
+  if(f||s2){ const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),rx=-fz,rz=fx;
+    let ax=fx*f+rx*s2, az=fz*f+rz*s2; const l=Math.hypot(ax,az)||1; ax/=l; az/=l;
+    const jv=player.st>0?skillValue("jump"):0, skF=clamp(1+(jv/(jv+1300))*6.0,1.0,1.9), sp=JUMP_DIST_MAX*skF*0.5/Math.max(0.1,2*player.vy/(GRAV*WSCALE));
+    player.vx=ax*sp; player.vz=az*sp; }
+  if(SFX.jump)SFX.jump(0.6);
+  burst(player.x,player.y+0.3,player.z,0xbfe0ff,6);   // a little kick of air under the feet
+}
 function updateJumpCharge(dt){
   if(jumpChargeT<0) return;
   if(!player.alive||paused){ jumpChargeT=-1; return; }
@@ -2229,6 +2292,44 @@ function updateJumpCharge(dt){
       if(f||s2){ jumpAimF=f; jumpAimS=s2; } } }
   else { const p=jumpChargeT; jumpChargeT=-1;
     tryJump(p<0.04?0:p, (jumpChargeStill&&(jumpAimF||jumpAimS))?{f:jumpAimF,s:jumpAimS}:null); }
+}
+// #962: LEDGE MANTLING — falling into a lip you're pressing toward, pull up onto it. A ledge is a
+// point just ahead whose walkable top is 0.6–2.2u above your feet AND clearly stepped up from the
+// ground beneath it (a real edge, not open slope) with headroom to stand. Only while descending.
+function tryMantle(){
+  if(player.grounded||inNetwork) return false;
+  const into=held("forward")||Math.hypot(player.vx||0,player.vz||0)>1.2; if(!into) return false;
+  const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw), ahead=(player.r||0.8)+0.6;
+  const px=player.x+fx*ahead, pz=player.z+fz*ahead;
+  const top=supportAt(px,pz,player.y+2.4), low=supportAt(px,pz,player.y-0.5);
+  const rise=top-player.y;
+  if(rise<0.6||rise>2.2) return false;                 // out of mantle reach
+  if(top-low<0.5) return false;                        // no real edge ahead (open ground/slope) — don't teleport forward
+  const ceil=ceilingAt(px,pz,top); if(ceil!==null&&ceil-top<1.8) return false;   // no room to stand up there
+  player.x=px+fx*0.5; player.z=pz+fz*0.5; player.y=top; player.vy=0; player.grounded=true; player.fallPeak=player.y;
+  if(SFX.land)SFX.land(0.5); burst(player.x,player.y+0.2,player.z,0xcdbf9a,5);
+  return true;
+}
+// #962: JUMP / PLUNGE ATTACK — a melee swing begun in the air drives you down and detonates on landing:
+// an AoE around the impact scaled by how far you fell, on top of the swing's own strike.
+function jumpAttackImpact(drop){
+  const ja=player._jumpAtk; player._jumpAtk=null; if(!ja) return;
+  const wp=weaponProfile(), melee=wp&&wp.mode==="melee", prof=melee?wp:WEAPON_TYPES.sword;
+  const base=(10+player.attr.Strength*1.6+player.weaponTink+(melee?player.weapon.v:0))*skillEff(weaponSkillKey(),0.02)*prof.dmg;
+  const impact=base*(0.6+clamp(drop/8,0,1.4));          // farther fall → heavier slam
+  const R=3.2+clamp(drop*0.12,0,2.2);
+  let hit=0;
+  for(const m of monsters){ if(!!m.isDungeon!==inDungeon||m.hp<=0) continue;
+    const dx=m.x-player.x,dz=m.z-player.z,d=Math.hypot(dx,dz);
+    if(d<R+m.r){ applyHit(m,impact*(1-0.5*d/R)*dmgVar(prof),{phys:melee?(prof.dt||"bludgeon"):"bludgeon",melee:true,_crush:true});
+      if(d>0.01){ m.x+=dx/d*0.8; m.z+=dz/d*0.8; } hit++; } }        // shockwave knockback
+  if(player.pk) pvpStrike(impact,null);
+  shake(Math.min(0.5,0.18+drop*0.03)); fovKick=Math.min(fovKick+5,6);
+  spellLandFX&&spellLandFX("war",()=>[player.x,player.y,player.z],1.6,R*0.5);
+  for(let i=0;i<10;i++){ const a=i/10*6.28; burst(player.x+Math.cos(a)*1.2,player.y+0.2,player.z+Math.sin(a)*1.2,0xffcaa0,2); }
+  if(typeof netSpellFx==="function") netSpellFx("aoe",player.x,player.z,0,0,0xffcaa0,R*0.5,0);   // #964: peers see the shockwave land, not just us
+  if(SFX.crit)SFX.crit();
+  if(hit) log(`<b>Plunging strike!</b> Your landing slams <b>${hit}</b> ${hit===1?"foe":"foes"}.`,"heal");
 }
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,npcChatT=9,wasOnRoad=false;
 let autoRun=false;   // AC: Q toggles auto-run (1999 manual); backing up cancels it
@@ -5524,7 +5625,7 @@ function acMotionTick(u,dt,moving,running,guarded){
   // (u.shR/shL — the same joints that drive the AC body) is not overwritten by the idle clip.
   if(player.alive&&!(typeof LOGOUT!=="undefined"&&LOGOUT.active)){
     const sw=player.swing;
-    if(sw>0&&weaponMode==="sword"){
+    if(sw>0&&weaponMode==="sword"&&!player._jumpAtk){   // #962: a PLUNGE keeps the procedural overhead-dive pose, not the grounded attack clip
       const clip=player.weapon?"attack":"punch", c=AC_MOTION.clips[clip]||AC_MOTION.clips.attack;
       if(c) posed=acMotionPose(u,player.weapon&&AC_MOTION.clips.attack?"attack":"punch",(1-sw)*c.dur,false);
     } else if(castShow>0&&castDur>0&&AC_MOTION.clips.cast){
@@ -17694,6 +17795,9 @@ function fireArrow(){
 function meleeAttack(power){
   breakResProt();   // offensive action ends res protection
   if(!player.alive||player.meleeCd>0||paused) return;
+  if(!player.grounded&&!player.aboardShip){   // #962: a swing begun airborne becomes a PLUNGE — dive down, detonate on landing
+    if(!player._jumpAtk){ const pc=jumpStam("plunge");   // #964: the plunge costs stamina to commit; too winded → just a normal air swing
+      if(player.st>=pc){ player._jumpAtk={t:now()}; player.st-=pc; player.vy=Math.min(player.vy,-4)-6; player._plunge=1; } } }
   power=(typeof power==="number")?clamp(power,0.6,1.6):1;   // Cb1 power bar: charge-scaled damage (0.6 tap → 1.6 full)
   const acc=1-Math.abs(power-1.05)*0.5;   // accuracy peaks in the mid-upper charge band (AC's sweet spot), falls off at the extremes
   const wp=weaponProfile(),melee=wp&&wp.mode==="melee",prof=melee?wp:WEAPON_TYPES.sword; // equipped melee weapon or bare fists
@@ -18044,7 +18148,8 @@ function closeAnyPanel(){
   for(const [id,close] of [["keymap",closeKeymap],["shop",closeShop],["questlog",closeQuestLog],["housing",closeHousing],["settings",closeSettings],["sheet",closeSheet],["tinker",closeTinker],["codex",closeCodex],["spellbook",closeSpellbook],["worldmap",closeMap]]){   // #248: shop was the one BIG_MODAL Esc didn't close. #333: keymap first so Esc closes it (layered over Settings) before Settings
     const el=document.getElementById(id); if(el&&el.style.display==="flex"){ close(); return; } }
 }
-window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;keys[e.code]=false;});
+window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;keys[e.code]=false;
+  if(e.code==="Space"||e.key===" ") player._airJumpArmed=true;});   // #962: release re-arms the air-jump so a held Space can't spam it
 
 function currentPrompt(){
   const nr=(x,z)=>Math.hypot(x-player.x,z-player.z);
@@ -18832,7 +18937,9 @@ function updateMovementPhysics(dt){
         const drop=(player.fallPeak!==undefined?player.fallPeak:landS)-landS;
         player.y=landS; player.vy=0; player.grounded=true; fallDamage(drop);
         if(SFX.land)SFX.land(drop);   // #960: landing thud scales with the drop height
-      }
+        if(player._jumpAtk&&now()-player._jumpAtk.t<2000) jumpAttackImpact(drop);   // #962: a plunge in progress strikes on impact
+        player._airJumps=0; player._jumpAtk=null;            // #962: reset the air-jump budget & any plunge on touchdown
+      } else if(player.vy<0 && tryMantle()){ player._airJumps=0; player._jumpAtk=null; }   // #962: grabbed a ledge on the way down
     }
     antiStuckGuardian();   // never leave the player trapped in/on/under a building or structure
   }
@@ -19454,9 +19561,14 @@ function animateAvatar(dt){
     u.hipR.rotation.x=0.30+0.80*rise; u.knR.rotation.x=-(0.40+1.05*rise+0.35*fall);
     u.hipL.rotation.x=0.18+0.55*rise; u.knL.rotation.x=-(0.32+0.75*rise+0.35*fall);
     u.anR.rotation.x=0.25*fall-0.15*rise; u.anL.rotation.x=0.25*fall-0.15*rise;
-    u.shR.rotation.x=-0.35-0.30*rise; u.shR.rotation.z=0.42+0.22*rise;
-    u.shL.rotation.x=-0.35-0.30*rise; u.shL.rotation.z=-0.42-0.22*rise;
-    u.elR.rotation.x=-0.42; u.elL.rotation.x=-0.42;
+    if(player._jumpAtk){   // #962: PLUNGE — weapon hauled overhead, ready to drive down through the fall
+      u.spine.rotation.x=-0.12; u.shR.rotation.set(-2.7,-0.1,0); u.elR.rotation.x=-0.2;
+      u.shL.rotation.set(-2.4,0.2,0); u.elL.rotation.x=-0.3;
+    } else {                                                     // free air: arms out for balance
+      u.shR.rotation.x=-0.35-0.30*rise; u.shR.rotation.z=0.42+0.22*rise;
+      u.shL.rotation.x=-0.35-0.30*rise; u.shL.rotation.z=-0.42-0.22*rise;
+      u.elR.rotation.x=-0.42; u.elL.rotation.x=-0.42;
+    }
   }
   // real AC body present → the human MotionTable's own cycles override the procedural pose
   acMotionTick(u,dt,moving,rN>0.5,blk||actGesture);
