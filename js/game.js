@@ -30136,10 +30136,33 @@ function dgSealDungeon(dj,grp){
   // unconnected one is a true wall (block it whole). The exporter also stopped emitting the
   // invisible portal-opening polygons as geometry, so the runs no longer cover real doorways. ──
   const hasPorts=Array.isArray(dj.ports)&&dj.ports.length===dj.cellPos.length;
+  const pset=new Set();   // #949: slot-level port pairs — needed below the lattice gate too (bridges, honest reach hops)
+  if(hasPorts) dj.ports.forEach((ps,i)=>ps.forEach(j=>{ const a=cellSlot[i],b=cellSlot[j];
+    if(a!==b&&a!==undefined&&b!==undefined){ pset.add(a+"|"+b); pset.add(b+"|"+a); } }));
+  // ── #949: BRIDGE RAMPS — the dat ports cell pairs up to ~13u apart (steep ramp shafts; all of
+  //    Tusker Emporium descends this way), but movement rects reach only ±5.6u, leaving a dead gap
+  //    no radius fits through. Ported pairs whose rects don't overlap get a corridor rect with a
+  //    real ramp profile spanning the gap, overlapping both cell rects by 1.2u so the walkable
+  //    inset (r≈0.5) stays continuous; dungeonFloorAt's cor/ramp branch walks it smoothly. ──
+  let bridges=0;
+  if(hasPorts){ const done=new Set();
+    dj.ports.forEach((ps,i)=>ps.forEach(j=>{
+      const pk=Math.min(i,j)+"|"+Math.max(i,j); if(done.has(pk)) return; done.add(pk);
+      const a=dj.cellPos[i], b=dj.cellPos[j], dyv=Math.abs(a[1]-b[1]); if(dyv>7.2) return;
+      const ddx=Math.abs(a[0]-b[0]), ddz=Math.abs(a[2]-b[2]);
+      if(ddx<=11.1&&ddz<=11.1) return;                    // rects already overlap — nothing to bridge
+      if(Math.max(ddx,ddz)>16.5||Math.min(ddx,ddz)>6) return;   // not a straight walk-gap (teleport-style port)
+      const lo=a[1]<=b[1]?a:b, hi=a[1]<=b[1]?b:a;
+      if(ddx>=ddz){ const s=lo[0]<hi[0]?1:-1;
+        dungeonRects.push({x0:Math.min(a[0],b[0])+4.4,x1:Math.max(a[0],b[0])-4.4,z0:(a[2]+b[2])/2-2.6,z1:(a[2]+b[2])/2+2.6,
+          ramp:{vert:false,p0:lo[0]+s*5.6,p1:hi[0]-s*5.6,f0:lo[1],f1:hi[1]}}); }
+      else{ const s=lo[2]<hi[2]?1:-1;
+        dungeonRects.push({x0:(a[0]+b[0])/2-2.6,x1:(a[0]+b[0])/2+2.6,z0:Math.min(a[2],b[2])+4.4,z1:Math.max(a[2],b[2])-4.4,
+          ramp:{vert:true,p0:lo[2]+s*5.6,p1:hi[2]-s*5.6,f0:lo[1],f1:hi[1]}}); }
+      bridges++; }));
+    if(bridges) console.log("[dgseal] "+(dj.name||"dungeon")+": "+bridges+" ramp bridges over ported rect-gaps");
+  }
   if(onLattice&&hasPorts){
-    const pset=new Set();
-    dj.ports.forEach((ps,i)=>ps.forEach(j=>{ const a=cellSlot[i],b=cellSlot[j];
-      if(a!==b&&a!==undefined&&b!==undefined){ pset.add(a+"|"+b); pset.add(b+"|"+a); } }));
     // a seam is OPEN if any storey-adjacent pairing across its plane is ported: stair ramps cross
     // the boundary mid-height (dat port offsets like (±10, ±6)), and the ground-level seal's y-band
     // would otherwise wall off the ramp the dat says connects
@@ -30187,7 +30210,9 @@ function dgSealDungeon(dj,grp){
         const vert=dx!==0, plane=vert?c.x+(dx>0?HALF:-HALF):c.z+(dz>0?HALF:-HALF);
         if(crossOpen(c,vert,plane,c.y,cells[j].y)){ seen[j]=1; q.push(j); } }
       for(const dy of [6,12,-6,-12]){ const j=byKey.get(c.gx+"|"+(c.iy+dy)+"|"+c.gz);
-        if(j!==undefined&&!seen[j]){ seen[j]=1; q.push(j); } } }
+        if(j===undefined||seen[j]) continue;
+        if(hasPorts&&!pset.has(i+"|"+j)) continue;   // #949: only stairs the dat vouches for — free column hops made the repair believe sealed-off regions were reachable, so it never unsealed their doors
+        seen[j]=1; q.push(j); } }
     return seen; };
   let seen=reach(), guard=0;
   while(guard++<400){
