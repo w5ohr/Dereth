@@ -18132,6 +18132,7 @@ function portalTouch(){
 function hasLockOpener(){ return player.inv.some(it=>it.stat==="pick"||it.stat==="key"||(it.stat==="keyring"&&(it.picks>0||it.keys>0))); }
 function hasKey(){ return player.inv.some(it=>it.stat==="key"||(it.stat==="keyring"&&it.keys>0)); }
 function openVault(){
+  if(!dungeonVault||dungeonVault.opened) return;   // #931: internal idempotency, matching openChest — the sole call site guards too, but an economy-grant path shouldn't rely on a single point of protection
   const i=player.inv.findIndex(it=>it.stat==="key");
   let key;
   if(i>=0){ key={name:player.inv[i].name}; takeFromInv(i); }
@@ -18298,6 +18299,7 @@ function interact(){
   log("There is nothing here to interact with.","warn");   // #535: E must never be silent — every branch above returns early on a hit, so reaching here means E genuinely found nothing at all
 }
 function recoverCorpse(d){
+  if(!d||d.recovered) return;   // #931: internal idempotency, matching openChest — a second call on the same corpse would re-grant its gold and re-stack its items
   // a SHARED (multiplayer) corpse is server-brokered and owner-only — the server validates and
   // returns the contents via corpse_loot; other players can see the corpse but cannot loot it.
   if(d.shared){
@@ -18305,6 +18307,7 @@ function recoverCorpse(d){
     { const _t=now(); if(!d.reqAt||_t-d.reqAt>2000){ d.reqAt=_t; netSend({t:"recover",id:d.id}); } }   // #306: retry every 2s instead of a one-shot flag — a dropped/rate-limited/range-rejected intent no longer locks the corpse until reload (a successful recover removes the drop via onDropGone, so no further retry)
     return;
   }
+  d.recovered=true;   // #931: flag BEFORE granting (offline path only — the shared path returned above; its grant arrives via server corpse_loot)
   // pyreals always come home; items return to the satchel until it fills — the rest spills out
   if(d.amt>0){ player.gold+=d.amt; floater(player.x,EYE+0.4,player.z,"+"+d.amt+" p","#ffd86b"); }
   let taken=0,spilled=0;
