@@ -18880,7 +18880,7 @@ function updatePlayerProjectiles(dt){
           if(p.burn){m.burnT=3;m.burnDps=Math.max(m.burnDps,4+player.attr.Focus*0.3);}
           if(p.stun){m.atkCd=Math.max(m.atkCd,1.2);}
           applyHit(m,p.dmg*em,{spell:true});
-          if(p.drain&&player.alive){ const hl=p.dmg*em*p.drain; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }
+          if(p.drain&&player.alive){ const hl=healSelf(p.dmg*em*p.drain); if(hl) floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#b266e0"); }   // #926 (#925 twin): the spell-projectile drain (Drain Health / Nether Bolt) is a separate inline self-heal — route it through the same guarded choke point
         }
         if(p.arrow) burst(p.x,p.y,p.z,p.color,8); else spellImpactFX(p.x,p.y,p.z,p.color,p.element,false);   // #668: spells detonate — flash + shockwave + element debris
         impactFlash(p.color,2.2,7,p.x,p.y,p.z,120);   // #797: pooled
