@@ -30255,23 +30255,72 @@ function dgSealDungeon(dj,grp){
           for(let gz=Math.floor(seg.z0/10);gz<=Math.floor(seg.z1/10);gz++){
             const k=gx+"|"+gz; let bb=DGW.grid.get(k); if(!bb) DGW.grid.set(k,bb=[]); bb.push(seg); }
         DGW.segs++; }
-      // reachability by REAL cell positions (the lattice is unreliable here): connect cells ≤13u apart
-      // whose shared seam has ANY clear lane through dgWallBlocked. Discard the whole seal if it fails.
-      const cp=dj.cellPos, H=new Map();
-      cp.forEach((c,i)=>{ const k=Math.floor(c[0]/12)+"|"+Math.floor(c[2]/12); let a=H.get(k); if(!a)H.set(k,a=[]); a.push(i); });
-      const nearIdx=pt=>{ let bi=0,bd=1e18; for(let i=0;i<cp.length;i++){ const dx=cp[i][0]-pt[0],dy=cp[i][1]-pt[1],dz=cp[i][2]-pt[2],d=dx*dx+dy*dy+dz*dz; if(d<bd){bd=d;bi=i;} } return bi; };
-      const s0=dj.entry?nearIdx(dj.entry):0, sFar=dj.far?nearIdx(dj.far):cp.length-1;
-      const passable=(A,B)=>{ let dx=B[0]-A[0],dz=B[2]-A[2]; const L=Math.hypot(dx,dz)||1; const px=-dz/L,pz=dx/L;
-        const mx=(A[0]+B[0])/2,mz=(A[2]+B[2])/2,y=(A[1]+B[1])/2+0.9;
-        for(let o=-4.8;o<=4.8;o+=0.4){ if(!dgWallBlocked(mx+px*o,mz+pz*o,0.4,y)) return true; } return false; };
-      const seenR=new Uint8Array(cp.length), q=[s0]; seenR[s0]=1; let nseen=1;
-      while(q.length){ const i=q.pop(); const c=cp[i]; const bx=Math.floor(c[0]/12),bz=Math.floor(c[2]/12);
-        for(let gx=bx-1;gx<=bx+1;gx++) for(let gz=bz-1;gz<=bz+1;gz++){ const arr=H.get(gx+"|"+gz); if(!arr) continue;
-          for(const j of arr){ if(seenR[j]) continue; const o=cp[j];
-            const dx=o[0]-c[0],dy=o[1]-c[1],dz=o[2]-c[2];
-            if(dx*dx+dz*dz>169||Math.abs(dy)>7) continue;                        // ≤13u planar, same-ish storey
-            if(passable(c,o)){ seenR[j]=1; nseen++; q.push(j); } } } }
-      if(!(seenR[sFar]&&nseen>=0.85*cp.length)){ DGW.grid=null; DGW.owner=null; DGW.segs=0; }   // seal broke the delve → revert
+      // ── acceptance is MOVEMENT-TRUE (#948 review): BFS the way the player actually walks —
+      //    rect-inset walkability + dungeonFloorAt easing + dgWallBlocked — with the seal installed,
+      //    against the same BFS without it. Keep the seal only if the hoard chest stays reachable
+      //    AND ≥85% of the baseline's cells stay walkable. The old cell-lane probe (0.4-radius
+      //    midpoint lanes between cells ≤13u apart) accepted seals real movement couldn't pass:
+      //    it walled Ancient Empyrean Grotto's cavern floor with rock-face footprints (96%→72%,
+      //    chest lost) because steep interior rock reads as "wall" with no seam graph to say no. ──
+      const cp=dj.cellPos, cellH=new Map();
+      const bkey=(gx,gz)=>(gx+2048)*4096+(gz+2048);
+      cp.forEach((c,i)=>{ const k=bkey(Math.floor(c[0]/12),Math.floor(c[2]/12)); let a=cellH.get(k); if(!a)cellH.set(k,a=[]); a.push(i); });
+      // 10u-binned rect index: dungeonFloorAt scans every rect per call (O(cells) — a 6.8s hitch on
+      // the 1524-cell Hive at BFS scale). Rect half-width 5.6 + stair band 2.8 < bin 10, so the 3×3
+      // bin neighbourhood always contains every rect that can hold, band-lift, or ramp the point —
+      // floorLite below replays dungeonFloorAt's exact pick over just those.
+      const rbins=new Map();
+      for(const c of dungeonRects){
+        const x0=c.round?c.cx-c.rad:c.x0, x1=c.round?c.cx+c.rad:c.x1, z0=c.round?c.cz-c.rad:c.z0, z1=c.round?c.cz+c.rad:c.z1;
+        for(let gx=Math.floor((x0-2.8)/10);gx<=Math.floor((x1+2.8)/10);gx++)
+          for(let gz=Math.floor((z0-2.8)/10);gz<=Math.floor((z1+2.8)/10);gz++){
+            const k=bkey(gx,gz); let a=rbins.get(k); if(!a)rbins.set(k,a=[]); a.push(c); } }
+      const floorLite=(x,z,ry)=>{ const CLIMB=1.25,BAND=2.8, arr=rbins.get(bkey(Math.floor(x/10),Math.floor(z/10)))||[];
+        let rooms=null,cor=null;
+        for(const c of arr){
+          if(c.round){ if(c.room&&Math.hypot(x-c.cx,z-c.cz)<=c.rad){(rooms=rooms||[]).push(c);} }
+          else if(x>=c.x0&&x<=c.x1&&z>=c.z0&&z<=c.z1){ if(c.room){(rooms=rooms||[]).push(c);} else if(!cor) cor=c; } }
+        if(rooms){ let cur=null;
+          for(const c of rooms){ const fy=c.fy||0; if(fy<=ry+CLIMB&&(!cur||fy>(cur.fy||0))) cur=c; }
+          if(!cur){ cur=rooms[0]; for(const c of rooms) if((c.fy||0)<(cur.fy||0)) cur=c; }
+          let fy=cur.fy||0;
+          if(!cur.round){ for(const c of arr){ if(c===cur||!c.room||c.round) continue;
+            const dfy=(c.fy||0)-fy; if(dfy<=0||dfy>7.2) continue;
+            if(x>=c.x0&&x<=c.x1&&z>=c.z0&&z<=c.z1) continue;
+            const dx=Math.max(c.x0-x,x-c.x1,0), dz=Math.max(c.z0-z,z-c.z1,0), d=Math.hypot(dx,dz);
+            if(d<BAND) fy=Math.max(fy,(cur.fy||0)+dfy*(1-d/BAND)); } }
+          return fy; }
+        if(!cor) return 0;
+        if(cor.ramp){ const rp=cor.ramp,t=Math.min(1,Math.max(0,((rp.vert?z:x)-rp.p0)/(rp.p1-rp.p0))); return rp.f0+(rp.f1-rp.f0)*t; }
+        return cor.fy||0; };
+      const wkLite=(x,z,y)=>{ if(dgWallBlocked(x,z,0.48,y)) return false;   // PRE-step y — exactly how dungeonWalkable reads player.y (post-step probing slipped through ledge walls on ramp nests)
+        const arr=rbins.get(bkey(Math.floor(x/10),Math.floor(z/10)))||[];
+        for(const c of arr){ if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad-0.48) return true; }
+          else if(x>=c.x0+0.48&&x<=c.x1-0.48&&z>=c.z0+0.48&&z<=c.z1-0.48) return true; } return false; };
+      const walkBFS=(stopFar,stopN)=>{ const RES=1.25, seenP=new Set(), touched=new Uint8Array(cp.length);
+        const kf=(x,z,y)=>(Math.round(y/3)+128)*16384*16384+(Math.round(z/RES)+8192)*16384+(Math.round(x/RES)+8192);
+        let farHit=false, nodes=0, n=0;
+        const q2=[[dj.entry[0],dj.entry[2]-1.5,dj.entry[1]]]; seenP.add(kf(q2[0][0],q2[0][1],q2[0][2]));
+        while(q2.length&&nodes++<220000){ const [x,z,y]=q2.pop();
+          if(Math.abs(x-dj.far[0])<2.5&&Math.abs(z-dj.far[2])<2.5&&Math.abs(y-dj.far[1])<3) farHit=true;
+          const bx=Math.floor(x/12),bz=Math.floor(z/12);
+          for(let gx=bx-1;gx<=bx+1;gx++)for(let gz=bz-1;gz<=bz+1;gz++){ const arr=cellH.get(bkey(gx,gz)); if(!arr) continue;
+            for(const ci of arr){ const c=cp[ci]; if(!touched[ci]&&Math.abs(x-c[0])<=5.6&&Math.abs(z-c[2])<=5.6&&Math.abs(y-c[1])<=3){ touched[ci]=1; n++; } } }
+          if(stopFar&&farHit&&n>=stopN) return {n,farHit};   // early accept — the bar is already cleared
+          for(const [ddx,ddz] of [[RES,0],[-RES,0],[0,RES],[0,-RES]]){
+            const nx=x+ddx,nz=z+ddz;
+            if(!wkLite(nx,nz,y)) continue;
+            const ny=floorLite(nx,nz,y);
+            const kk=kf(nx,nz,ny); if(seenP.has(kk)) continue; seenP.add(kk); q2.push([nx,nz,ny]); } }
+        return {n,farHit}; };
+      const hold={grid:DGW.grid,owner:DGW.owner,segs:DGW.segs};
+      DGW.grid=null; DGW.owner=null; DGW.segs=0;           // baseline first: rect-walkable, no fallback walls
+      const noSeal=walkBFS(false,0);
+      DGW.grid=hold.grid; DGW.owner=hold.owner; DGW.segs=hold.segs;
+      const withSeal=walkBFS(true,Math.ceil(0.85*noSeal.n));
+      if(!(withSeal.farHit&&withSeal.n>=0.85*noSeal.n)){    // seal broke the delve → revert to rect-walkable
+        DGW.grid=null; DGW.owner=null; DGW.segs=0;
+        console.log("[dgseal] "+(dj.name||"dungeon")+": triangle-footprint seal rejected by the movement check ("+withSeal.n+"/"+noSeal.n+" cells, chest "+(withSeal.farHit?"kept":"LOST")+") — delve stays rect-walkable"); }
     }
   }
   // ── roofs: synthesize a ceiling tile over cells with no overhead polys and no storey above ──
