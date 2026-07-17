@@ -46,3 +46,5 @@ tools/sr_models/
 # #S7 DB snapshots (backup_db) — never commit player data
 server/*.bak
 server/*.bak.tmp
+base_srv.log
+base_test.db*
