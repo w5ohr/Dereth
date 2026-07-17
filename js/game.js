@@ -4380,6 +4380,20 @@ function buildGpuPost(){
   GPUPOST._uRayStr=uRayStr; GPUPOST._uSun=uSun; GPUPOST._uAoStr=uAoStr; GPUPOST._uProj=uProj;
 }
 let _wgpuShadowFixN=0;   // #webgpu: armed by applyGfxTier after a shadow.mapSize change (see there)
+// #966: clear a stale ShadowDepthTexture reference after an instance→overworld transition on WebGPU.
+// A gfx-tier auto-step while inside an instance (Academy/delve) disposes+rebuilds the sun shadow map
+// while the overworld is hidden; on return, material bind groups still point at the DESTROYED depth
+// texture and every submit faults ("Destroyed texture [ShadowDepthTexture] used in a submit") forever.
+// applyGfxTier's fix only fires on a mapSize CHANGE, so the exit path was uncovered. Force a clean
+// shadow rebuild and arm the same late bind-group invalidation (renderComposite bumps materials once
+// the ShadowNode has swapped its RT). No-op on WebGL (lazy re-upload semantics) and when shadows are off.
+function _wgpuShadowReset(){
+  if(!IS_WEBGPU) return;
+  if(typeof sun!=="undefined"&&sun&&sun.shadow&&sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; }
+  if(typeof sunFar!=="undefined"&&sunFar&&sunFar.shadow&&sunFar.shadow.map){ sunFar.shadow.map.dispose(); sunFar.shadow.map=null; }
+  if(typeof renderer!=="undefined"&&renderer&&renderer.shadowMap) renderer.shadowMap.needsUpdate=true;
+  _wgpuShadowFixN=((typeof GFX!=="undefined"&&GFX.shadowEvery)||1)*2+4;
+}
 function renderComposite(){
   // #webgpu: a 0×0 canvas (minimized/hidden context, innerWidth=0 before layout) makes WebGPU error hard on
   // the size-0 swapchain ("Could not create a swapchain texture of size 0") — WebGL silently tolerated it.
@@ -31088,6 +31102,7 @@ function exitDungeon(toEntrance){
   document.getElementById('dvig').style.opacity="0";
   dungeonChest=null;dungeonMobs=0;inDungeon=false;dungeonDepth=1;dungeonDescent=null;curDungeon=null;
   hideOverworld(true);
+  _wgpuShadowReset();   // #966: clear any stale ShadowDepthTexture ref so the overworld shadow pass doesn't fault every submit
   if(toEntrance){arriveAt(dungeonReturn.x,dungeonReturn.z);player.invuln=2;}
 }
 // ---- H16 Colosseum: a ticketed wave-survival gauntlet (reuses the dungeon-instance shell) ----
@@ -32229,6 +32244,7 @@ function exitNetwork(dest){
   clearDrops();clearProjectiles();
   document.getElementById('dvig').style.opacity="0";
   inNetwork=false;hideOverworld(true);
+  _wgpuShadowReset();   // #966: same instance→overworld shadow-texture reset as exitDungeon
   const land=nearestDryLand(dest.x,dest.z+4);
   arriveAt(land.x,land.z);player.invuln=2;
   teleportFX(player.x,player.z);
