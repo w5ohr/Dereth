@@ -30199,6 +30199,56 @@ function dgSealDungeon(dj,grp){
     if(!best) break;                                   // genuinely detached region (no boundary seam) — leave it
     best.repaired=true; emit(); seen=reach();          // un-seal the most doorway-like boundary seam, re-measure
   }
+  // ── #948: TRIANGLE-FOOTPRINT fallback for delves the seam model can't seal. Off-lattice packs
+  //    (rotated/offset cell frames — caves, nests, a few structured delves) skip the seam scan above
+  //    and stayed FULLY walk-through. Derive collision straight from the near-vertical wall triangles
+  //    (their XZ footprint + y-range) instead, into the SAME DGW grid dgWallBlocked reads. A raw
+  //    triangle seal has no doorway graph to lean on, so KEEP it only if the entry still reaches the
+  //    chest and ≥85% of cells (measured the way the player moves) — else discard and stay
+  //    rect-walkable, exactly as before (never a completability regression). ──
+  if(DGW.segs===0){
+    const cand=[], CAP=80000;
+    for(const g of dj.groups){ const v=g.verts,idx=g.idx; if(!v||!idx) continue;
+      for(let i=0;i+2<idx.length&&cand.length<CAP;i+=3){ const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3;
+        const ux=v[b]-v[a],uy=v[b+1]-v[a+1],uz=v[b+2]-v[a+2], wx=v[c]-v[a],wy=v[c+1]-v[a+1],wz=v[c+2]-v[a+2];
+        const fny=uz*wx-ux*wz, fl=Math.hypot(uy*wz-uz*wy,fny,ux*wy-uy*wx);
+        if(fl<1e-6||Math.abs(fny/fl)>0.5) continue;                              // floor/ceiling/ramp — not a wall
+        const d01=(v[a]-v[b])*(v[a]-v[b])+(v[a+2]-v[b+2])*(v[a+2]-v[b+2]),
+              d02=(v[a]-v[c])*(v[a]-v[c])+(v[a+2]-v[c+2])*(v[a+2]-v[c+2]),
+              d12=(v[b]-v[c])*(v[b]-v[c])+(v[b+2]-v[c+2])*(v[b+2]-v[c+2]);
+        let x0,z0,x1,z1;                                                         // footprint = vertex pair with the greatest XZ span
+        if(d01>=d02&&d01>=d12){x0=v[a];z0=v[a+2];x1=v[b];z1=v[b+2];}
+        else if(d02>=d12){x0=v[a];z0=v[a+2];x1=v[c];z1=v[c+2];}
+        else {x0=v[b];z0=v[b+2];x1=v[c];z1=v[c+2];}
+        if((x0-x1)*(x0-x1)+(z0-z1)*(z0-z1)<0.04) continue;                       // edge-on sliver
+        cand.push({x0:Math.min(x0,x1)-0.2,x1:Math.max(x0,x1)+0.2,z0:Math.min(z0,z1)-0.2,z1:Math.max(z0,z1)+0.2,
+                   y0:Math.min(v[a+1],v[b+1],v[c+1]),y1:Math.max(v[a+1],v[b+1],v[c+1])}); } }
+    if(cand.length){
+      DGW.grid=new Map(); DGW.owner=curDungeon; DGW.segs=0;                      // install candidates
+      for(const seg of cand){
+        for(let gx=Math.floor(seg.x0/10);gx<=Math.floor(seg.x1/10);gx++)
+          for(let gz=Math.floor(seg.z0/10);gz<=Math.floor(seg.z1/10);gz++){
+            const k=gx+"|"+gz; let bb=DGW.grid.get(k); if(!bb) DGW.grid.set(k,bb=[]); bb.push(seg); }
+        DGW.segs++; }
+      // reachability by REAL cell positions (the lattice is unreliable here): connect cells ≤13u apart
+      // whose shared seam has ANY clear lane through dgWallBlocked. Discard the whole seal if it fails.
+      const cp=dj.cellPos, H=new Map();
+      cp.forEach((c,i)=>{ const k=Math.floor(c[0]/12)+"|"+Math.floor(c[2]/12); let a=H.get(k); if(!a)H.set(k,a=[]); a.push(i); });
+      const nearIdx=pt=>{ let bi=0,bd=1e18; for(let i=0;i<cp.length;i++){ const dx=cp[i][0]-pt[0],dy=cp[i][1]-pt[1],dz=cp[i][2]-pt[2],d=dx*dx+dy*dy+dz*dz; if(d<bd){bd=d;bi=i;} } return bi; };
+      const s0=dj.entry?nearIdx(dj.entry):0, sFar=dj.far?nearIdx(dj.far):cp.length-1;
+      const passable=(A,B)=>{ let dx=B[0]-A[0],dz=B[2]-A[2]; const L=Math.hypot(dx,dz)||1; const px=-dz/L,pz=dx/L;
+        const mx=(A[0]+B[0])/2,mz=(A[2]+B[2])/2,y=(A[1]+B[1])/2+0.9;
+        for(let o=-4.8;o<=4.8;o+=0.4){ if(!dgWallBlocked(mx+px*o,mz+pz*o,0.4,y)) return true; } return false; };
+      const seenR=new Uint8Array(cp.length), q=[s0]; seenR[s0]=1; let nseen=1;
+      while(q.length){ const i=q.pop(); const c=cp[i]; const bx=Math.floor(c[0]/12),bz=Math.floor(c[2]/12);
+        for(let gx=bx-1;gx<=bx+1;gx++) for(let gz=bz-1;gz<=bz+1;gz++){ const arr=H.get(gx+"|"+gz); if(!arr) continue;
+          for(const j of arr){ if(seenR[j]) continue; const o=cp[j];
+            const dx=o[0]-c[0],dy=o[1]-c[1],dz=o[2]-c[2];
+            if(dx*dx+dz*dz>169||Math.abs(dy)>7) continue;                        // ≤13u planar, same-ish storey
+            if(passable(c,o)){ seenR[j]=1; nseen++; q.push(j); } } } }
+      if(!(seenR[sFar]&&nseen>=0.85*cp.length)){ DGW.grid=null; DGW.owner=null; DGW.segs=0; }   // seal broke the delve → revert
+    }
+  }
   // ── roofs: synthesize a ceiling tile over cells with no overhead polys and no storey above ──
   const P=[],N=[],U=[]; let roofed=0;
   for(const c of cells){
