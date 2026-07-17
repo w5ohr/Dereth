@@ -2187,7 +2187,7 @@ function jumpVelocity(power){
   // arc height/airtime stay AC-constant in real metres/seconds at any WSCALE (h ∝ power, AC's curve).
   return 7.6*WSCALE*skF*Math.max(0.28,Math.sqrt(burdenMod))*Math.sqrt(0.12+0.88*power);
 }
-function tryJump(power){
+function tryJump(power,aim){
   if(!player.alive||paused||!player.grounded||player.vy>0.01) return;
   if(encumbrance().ratio>=2){ if(now()-lastBreath>1600){lastBreath=now();log("You are too encumbered to jump!","warn");} return; }   // AC: CantJumpLoadedDown
   power=(typeof power==="number")?clamp(power,0,1):1;
@@ -2200,23 +2200,32 @@ function tryJump(power){
   // least your run distance.
   const runSpeed=Math.hypot(player.vx||0,player.vz||0), moving=runSpeed>0.1;
   {
-    const ax=moving?player.vx/runSpeed:-Math.sin(player.yaw), az=moving?player.vz/runSpeed:-Math.cos(player.yaw);   // heading, else facing
+    let ax,az;
+    if(aim){ const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),rx=-fz,rz=fx;   // #958: standing aimed leap — W/A/S/D relative to facing
+      ax=fx*aim.f+rx*aim.s; az=fz*aim.f+rz*aim.s; const l=Math.hypot(ax,az)||1; ax/=l; az/=l; }
+    else { ax=moving?player.vx/runSpeed:-Math.sin(player.yaw); az=moving?player.vz/runSpeed:-Math.cos(player.yaw); }   // heading, else facing
     const jv=player.st>0?skillValue("jump"):0, skF=clamp(1+(jv/(jv+1300))*6.0,1.0,1.9);
     const airtime=2*vy/(GRAV*WSCALE);                         // whole-arc time; horizontal is set to hit D exactly → distance is linear in `power` regardless of the arc height
-    const D=JUMP_DIST_MAX*skF*power;                          // target horizontal distance for this charge
+    const D=JUMP_DIST_MAX*skF*Math.max(power,aim?0.12:0);     // target horizontal distance; an aimed tap still hops a step the chosen way
     const chargeSpeed=airtime>0?D/airtime:0;
     const speed=Math.max(chargeSpeed, moving?runSpeed:0);     // charge sets the leap; run momentum is the floor when moving
     player.vx=ax*speed; player.vz=az*speed;                   // zero charge → speed 0 → a straight-up hop
   }
 }
-// hold Space to charge (AC's jump bar: ~0.7s to full), release to leap; a tap gives the minimum hop
-let jumpChargeT=-1;
-function startJumpCharge(){ if(!player.alive||paused||!player.grounded) return; if(jumpChargeT<0) jumpChargeT=0; }
+// hold Space to charge (AC's jump bar: ~0.7s to full), release to leap; a tap gives the minimum hop.
+// #958: charging from a STANDSTILL roots you and W/A/S/D aim the leap (AC's standing directional
+// jump) — the last direction held during the charge is the launch vector; no key = straight up.
+let jumpChargeT=-1,jumpChargeStill=false,jumpAimF=0,jumpAimS=0;
+function startJumpCharge(){ if(!player.alive||paused||!player.grounded) return;
+  if(jumpChargeT<0){ jumpChargeT=0; jumpChargeStill=Math.hypot(player.vx||0,player.vz||0)<0.6; jumpAimF=0; jumpAimS=0; } }
 function updateJumpCharge(dt){
   if(jumpChargeT<0) return;
   if(!player.alive||paused){ jumpChargeT=-1; return; }
-  if(held("jump")){ jumpChargeT=Math.min(1,jumpChargeT+dt/2.0); }   // hold up to 2s → full-distance jump (linear: 1s = half of 2s)
-  else { const p=jumpChargeT; jumpChargeT=-1; tryJump(p<0.04?0:p); }
+  if(held("jump")){ jumpChargeT=Math.min(1,jumpChargeT+dt/2.0);   // hold up to 2s → full-distance jump (linear: 1s = half of 2s)
+    if(jumpChargeStill){ const f=(held("forward")?1:0)-(held("back")?1:0), s2=(held("right")?1:0)-((held("left")||keys["KeyZ"])?1:0);
+      if(f||s2){ jumpAimF=f; jumpAimS=s2; } } }
+  else { const p=jumpChargeT; jumpChargeT=-1;
+    tryJump(p<0.04?0:p, (jumpChargeStill&&(jumpAimF||jumpAimS))?{f:jumpAimF,s:jumpAimS}:null); }
 }
 let streak=0,streakT=0,lastBreath=0,ambientCallT=10,npcChatT=9,wasOnRoad=false;
 let autoRun=false;   // AC: Q toggles auto-run (1999 manual); backing up cancels it
@@ -5517,7 +5526,8 @@ function acMotionTick(u,dt,moving,running,guarded){
       if(c) posed=acMotionPose(u,player.weapon&&AC_MOTION.clips.attack?"attack":"punch",(1-sw)*c.dur,false);
     } else if(castShow>0&&castDur>0&&AC_MOTION.clips.cast){
       posed=acMotionPose(u,"cast",clamp(1-castShow/castDur,0,1)*AC_MOTION.clips.cast.dur,false);
-    } else if(!guarded&&!(player.bowDraw>0)&&weaponMode!=="bow"){
+    } else if(!guarded&&!(player.bowDraw>0)&&weaponMode!=="bow"
+      &&player.grounded&&jumpChargeT<0){   // #958: no jump/crouch clips extracted — while charging or airborne the procedural squat/tuck drives the body
       u._acmT=(u._acmT||0)+dt;
       if(moving) posed=acMotionPose(u,(running&&AC_MOTION.clips.run)?"run":"walk",u._acmT,true);
       else posed=acMotionPose(u,(u._combatT>0&&AC_MOTION.clips.ready)?"ready":"idle",u._acmT,true);
@@ -18723,6 +18733,7 @@ function updateMovementPhysics(dt){
   if(held("back")||(keys["arrowdown"]&&!camLook)||keys["KeyX"]){ f-=1; if(autoRun){autoRun=false;log("Auto-run off.","sys");} }   // backing up breaks auto-run (#201: keys stores e.code "KeyX", not "keyx")
   if(held("right")) s+=1;                          // D sidesteps right (C belongs to the Character Sheet)
   if(held("left")||keys["KeyZ"]) s-=1;             // A or Z sidestep left (AC's Z strafe)
+  if(jumpChargeT>=0&&jumpChargeStill&&player.grounded){ f=0; s=0; }   // #958: a standing charge ROOTS you — W/A/S/D aim the leap instead of walking
   const sprint=((keys["shift"]||TOUCH.sprint)&&player.st>0&&!blocking)?1.6:1; // can't sprint with shield raised (TOUCH.sprint = joystick at full tilt)
   if(keys["shift"]&&player.st<=0&&now()-lastBreath>1600){lastBreath=now();log("You are out of breath.","warn");
     const e=document.querySelector('.bst i');if(e){e.style.filter="brightness(2.2)";setTimeout(()=>{e.style.filter="";},250);}}
@@ -19424,6 +19435,24 @@ function animateAvatar(dt){
   // keep the forearm shield roughly upright & facing forward regardless of arm pose (counter the arm's pitch/roll)
   if(u.aShield&&u.aShield.visible) u.aShield.rotation.set(-(lX+lE)+0.12, 0, -lZ*0.6);
   if(u.aShieldReal&&u.aShieldReal.visible) u.aShieldReal.rotation.set(-(lX+lE)+0.12, 0, -lZ*0.6);
+  // ── #958: jump poses (no jump/crouch clips in the extracted MotionTable — acMotionTick releases
+  //    the body to these procedural overlays while charging or airborne) ──
+  if(jumpChargeT>=0&&player.grounded&&player.alive){            // charging: coil into a squat, deeper with charge, arms drawn back
+    const k=0.35+0.65*jumpChargeT;
+    castSquat(k,0);
+    u.spine.rotation.x+=0.14*k;
+    u.shR.rotation.x+=0.55*k; u.shL.rotation.x+=0.55*k;
+    u.shR.rotation.z+=0.08*k; u.shL.rotation.z-=0.08*k;
+  } else if(!player.grounded&&player.alive){                     // airborne: tuck on the rise, legs reach on the fall, arms out
+    const ref=7.6*WSCALE, rise=clamp((player.vy||0)/ref,0,1), fall=clamp(-(player.vy||0)/ref,0,1);
+    u.spine.rotation.x=0.16+0.10*rise;
+    u.hipR.rotation.x=0.30+0.80*rise; u.knR.rotation.x=-(0.40+1.05*rise+0.35*fall);
+    u.hipL.rotation.x=0.18+0.55*rise; u.knL.rotation.x=-(0.32+0.75*rise+0.35*fall);
+    u.anR.rotation.x=0.25*fall-0.15*rise; u.anL.rotation.x=0.25*fall-0.15*rise;
+    u.shR.rotation.x=-0.35-0.30*rise; u.shR.rotation.z=0.42+0.22*rise;
+    u.shL.rotation.x=-0.35-0.30*rise; u.shL.rotation.z=-0.42-0.22*rise;
+    u.elR.rotation.x=-0.42; u.elL.rotation.x=-0.42;
+  }
   // real AC body present → the human MotionTable's own cycles override the procedural pose
   acMotionTick(u,dt,moving,rN>0.5,blk||actGesture);
   // ---- cape cloth: a damped pendulum chain driven by movement, jumping & combat ----
