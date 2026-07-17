@@ -30635,10 +30635,14 @@ function arenaNextWave(){
 }
 function updateArena(dt){
   if(!ARENA.active) return;
+  // #935: clearing the FINAL wave wins NOW — the win used to hide behind the same 3.5s inter-wave
+  // breather while the fail-clock kept ticking (and was checked first), so a last-second clear of
+  // every wave FAILED the gauntlet and forfeited the whole reward (incl. the Advanced capstone cape).
+  if(dungeonMobs<=0&&ARENA.wave>=ARENA.waves){ arenaWin(); return; }
   ARENA.timer-=dt;
   if(ARENA.timer<=0){ arenaFail(); return; }
   if(dungeonMobs<=0){   // wave cleared → short breather, then the next wave
-    if(ARENA.inter<=0){ ARENA.inter=3.5; if(ARENA.wave<ARENA.waves) log("The sand clears. Steel yourself — the next wave gathers.","sys"); }
+    if(ARENA.inter<=0){ ARENA.inter=3.5; log("The sand clears. Steel yourself — the next wave gathers.","sys"); }
     else { ARENA.inter-=dt; if(ARENA.inter<=0) arenaNextWave(); }
   }
 }
