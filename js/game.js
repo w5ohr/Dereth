@@ -30324,16 +30324,37 @@ function dgSealDungeon(dj,grp){
     }
   }
   // ── roofs: synthesize a ceiling tile over cells with no overhead polys and no storey above ──
+  // #951: never trust grid-adjacency-above as a roof — a cell 6u up on the grid doesn't mean its
+  // FLOOR spans this one (EnvCell storeys are offset/gappy; the old short-circuit left ~half of
+  // Enkindled Souls sky-open). Instead sample each cell's footprint against ANY real non-wall
+  // geometry overhead (an upper storey's floor slab, a vaulted ceiling — up to 45u so tall vaults
+  // count), via a horizontal bucket index so the scan stays O(points × local tris). Synthesize only
+  // when the footprint is genuinely open (≤30% covered) — partial cover (walkways/ledges) is left
+  // alone so a synth tile never embeds itself in a real upper floor.
+  const roofIx=new Map();                                        // 10u bucket -> overhead-capable tris
+  for(const t of tris){ if(Math.abs(t.ny)<=0.3) continue;        // walls don't roof
+    for(let gx=Math.floor(t.minx/10);gx<=Math.floor(t.maxx/10);gx++)
+      for(let gz=Math.floor(t.minz/10);gz<=Math.floor(t.maxz/10);gz++){
+        const k=gx+"|"+gz; let b=roofIx.get(k); if(!b) roofIx.set(k,b=[]); b.push(t); } }
   const P=[],N=[],U=[]; let roofed=0;
   for(const c of cells){
-    let cov=false;
-    for(const dy of [6,12]) if(byKey.has(c.gx+"|"+(c.iy+dy)+"|"+c.gz)){ cov=true; break; }   // a storey above is the roof
-    if(!cov) for(const t of tris){
-      if(t.ny>-0.5) continue;                                                 // want a face looking DOWN at the player
-      if(t.maxx<c.rx-HALF||t.minx>c.rx+HALF||t.maxz<c.rz-HALF||t.minz>c.rz+HALF) continue;
-      if(t.miny<c.y+2.0||t.miny>c.y+16) continue;                             // overhead band (vaulted rooms count)
-      cov=true; break; }
-    if(!cov){ _pushBox(P,N,U,c.rx,c.y+6.35,c.rz,5.5,0.35,5.5,4); roofed++; }   // real position — off-lattice cells roof correctly too
+    let cov=0,n=0;
+    for(let sx=-1;sx<=1;sx++) for(let sz=-1;sz<=1;sz++){ n++;
+      const px=c.rx+sx*3.3, pz=c.rz+sz*3.3;
+      const b=roofIx.get(Math.floor(px/10)+"|"+Math.floor(pz/10)); if(!b) continue;
+      for(const t of b){
+        if(t.minx>px||t.maxx<px||t.minz>pz||t.maxz<pz) continue;
+        const ymid=(t.miny+t.maxy)/2;
+        if(ymid<c.y+2.0||ymid>c.y+45) continue;                  // overhead band
+        cov++; break; } }
+    if(cov>n*0.2) continue;                                      // ≤20%: roof only true sky-holes — partial overhead structure (walkways/ledges) reads as intentional, never argue with it
+    let crossing=false;                                          // …and never slice a ramp/slab that passes through the tile's own plane (bbox-intersect the WHOLE footprint, not just sample points)
+    for(let gx=Math.floor((c.rx-5.5)/10);gx<=Math.floor((c.rx+5.5)/10)&&!crossing;gx++)
+      for(let gz=Math.floor((c.rz-5.5)/10);gz<=Math.floor((c.rz+5.5)/10)&&!crossing;gz++){
+        const b=roofIx.get(gx+"|"+gz); if(!b) continue;
+        for(const t of b){ const ymid=(t.miny+t.maxy)/2;
+          if(ymid>c.y+5.6&&ymid<c.y+7.1&&t.maxx>=c.rx-5.5&&t.minx<=c.rx+5.5&&t.maxz>=c.rz-5.5&&t.minz<=c.rz+5.5){ crossing=true; break; } } }
+    if(!crossing){ _pushBox(P,N,U,c.rx,c.y+6.35,c.rz,5.5,0.35,5.5,4); roofed++; }   // real position — off-lattice cells roof correctly too
   }
   if(roofed){
     const geo=new THREE.BufferGeometry();
