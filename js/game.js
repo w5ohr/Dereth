@@ -11902,8 +11902,14 @@ function applyHit(m,base,opts){ opts=opts||{};
       floater(m.x,(m.headY||1.6)+2.6,m.z,"CRUSHING!","#ff9a3a"); if(SFX.crit)SFX.crit(); shake(0.2); } }
   if(opts._rear&&!crit) floater(m.x,(m.headY||1.6)+2.3,m.z,"rear +DR","#ffcf6b");   // show the backstab damage-rating bonus
   damageMonster(m,dmg,crit);
-  if(opts.lifesteal&&player.alive){ const hl=dmg*opts.lifesteal; player.hp=Math.min(player.mhp,player.hp+hl); floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }
+  if(opts.lifesteal&&player.alive){ const hl=healSelf(dmg*opts.lifesteal); if(hl) floater(player.x,EYE+0.4,player.z,"+"+Math.round(hl),"#ff7a9a"); }   // #925: damageMonster's #880 guard clamps its OWN copy of dmg — this line read the raw one, so a NaN dmg NaN'd player.hp
 }
+// #925/#926: the ONE combat self-heal choke point — lifesteal weapons/arrows and drain spells both
+// heal through this, so a non-finite computed amount can never reach player.hp. (The #870 frame-loop
+// circuit-breaker restores a non-finite vital to FULL max — so an unclamped NaN here wasn't a brick
+// in the live game but a free full heal; clamp at the source instead of leaning on the fallback.)
+function healSelf(amt){ amt=+amt; if(!isFinite(amt)||amt<=0) return 0;
+  player.hp=Math.min(player.mhp,player.hp+amt); return amt; }
 function damageMonster(m,dmg,crit){
   dmg=+dmg; if(!isFinite(dmg)||dmg<0) dmg=0;   // #16/#880: guard NaN/negative AND Infinity (Math.max(0,Infinity) passed → m.hp=-Infinity) — now truly mirrors playerHurt's #32 guard
   if(dmg>0) dmgMeterHit(dmg,!!crit,true);   // Damage Meter plugin: outgoing damage tally
