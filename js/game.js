@@ -1954,6 +1954,12 @@ function registerStructure(bx,bz,th,baseY,surf){
   structures.push({bx,bz,baseY:baseY||0,cos:Math.cos(th),sin:Math.sin(th),r2:r2+4,platforms:surf.platforms||[],ramps:surf.ramps||[]});
 }
 // highest surface at (wx,wz) at or just below the feet (terrain is always available; floors/ramps add on top)
+// #955: lowest terrain contact over a footprint radius — structures seat at their LOWEST ground
+// point (a dug-in foundation), never perched on the high corner with floating downhill edges.
+function groundLowest(x,z,r){ let lo=groundY(x,z);
+  for(const[sx,sz]of[[1,0],[-1,0],[0,1],[0,-1],[0.7,0.7],[0.7,-0.7],[-0.7,0.7],[-0.7,-0.7]])
+    lo=Math.min(lo,groundY(x+sx*r,z+sz*r));
+  return lo; }
 function supportAt(wx,wz,feetY){
   let best=groundY(wx,wz);
   if(inDungeon||inNetwork) return best;
@@ -7806,9 +7812,10 @@ function buildWorld(){
   (function(){ const cap=CITIES.find(c=>c.name==="Holtburg")||CAPITALS[0]; if(!cap) return;
     const L=landNear(cap.x+150, cap.z+50);   // just outside the capital core, on open land
     HOUSE_LOC={x:L.x, z:L.z};
-    const est=buildBuilding(cap.region,"hall",1.6); est.position.set(L.x,groundY(L.x,L.z),L.z); est.rotation.y=Math.PI;
+    const est=buildBuilding(cap.region,"hall",1.6); est.position.set(L.x,groundLowest(L.x,L.z,7),L.z); est.rotation.y=Math.PI;
+    est.userData.noSettle=true;   // #955: seated at the lowest footprint contact — settleY must not reseat it to centre grade
     scene.add(est); scenery.push(est);
-    if(est.userData&&est.userData.surfaces) registerStructure(L.x,L.z,Math.PI,groundY(L.x,L.z),est.userData.surfaces);
+    if(est.userData&&est.userData.surfaces) registerStructure(L.x,L.z,Math.PI,groundLowest(L.x,L.z,7),est.userData.surfaces);   // #955: platforms ride the same lowest-contact base as the mesh
     const lbl=labelSprite("Kilmer's Estate — recall home (/home)","cities"); lbl.scale.set(11,2.2,1); lbl.position.set(L.x,8.5,L.z); scene.add(lbl); scenery.push(lbl);
     // the estate's REAL wall colliders (door gap included), rotated by its yaw — the old blanket
     // obstacles.push({r:6}) at the centre walled the whole interior shut: the manor was unenterable
@@ -7928,7 +7935,7 @@ function settleY(){ // drop every placed object onto the RENDERED ground surface
   for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
   for(const ls of lifestones) ls.mesh.position.y=groundY(ls.x,ls.z);
   for(const pt of portals) pt.mesh.position.y=groundY(pt.x,pt.z);
-  for(const e of dungeonEntrances) e.mesh.position.y=groundY(e.x,e.z);
+  for(const e of dungeonEntrances) e.mesh.position.y=groundLowest(e.x,e.z,3);   // #955: the dolmen sits at its lowest footprint contact
   for(const n of nodes) n.mesh.position.y=groundY(n.x,n.z);
   for(const np of npcs) np.mesh.position.y=groundY(np.x,np.z);
   for(const sh of shops) sh.mesh.position.y=groundY(sh.x,sh.z);
@@ -8407,6 +8414,7 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
     const mm=gr.mat||{}, marker=(!mm.tex)?_tbMarker(mm.color):null;
     let mat;
     if(marker==="door"){ mat=texMat(woodTex,0x6a4a2a); mat.side=THREE.DoubleSide;              // a real plank door where the client hung one
+      mat.transparent=true; mat.opacity=0.42; mat.depthWrite=false;   // #955: doors read OPEN — see through them into the room (the model's opening IS the entrance)
       let sx=0,sy=0,sz=0,n=0; for(let i=0;i<gr.v.length;i+=3){ sx+=gr.v[i];sy+=gr.v[i+1];sz+=gr.v[i+2];n++; }
       if(n){ g.userData.doorLocal=g.userData.doorLocal||{x:sx/n,y:sy/n,z:sz/n}; } }
     else if(marker==="window"){   // #21 (windows): real glass — see-through by day, warm lamplit glow at night
@@ -8567,9 +8575,9 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
     for(const o of obstacles){ if(rec.cols.indexOf(o)>=0) continue;
       for(const s of [0.0,1.4,2.6]){ const sx=dx+dux*s, sz=dz+duz*s;
         if(((o.x-sx)**2+(o.z-sz)**2)<(o.r+TB_DOOR_HALF*0.9)**2){ blk++; break; } } }
-    // clearest side first, then the HIGHEST-ground side (smallest step up to the floor) so the
-    // entrance sits near grade on the real, unflattened slope
-    const step=Math.max(0,rec.gy-groundY(dx+dux*1.2,dz+duz*1.2));
+    // clearest side first, then the side closest to FLOOR grade — the building now seats at the
+    // LOWEST footprint corner (#955), so the flattest entry is the least-buried, least-stepped side
+    const step=Math.abs(groundY(dx+dux*1.2,dz+duz*1.2)-rec.gy);
     const score=blk*100+step+pen;   // an unblocked marker door (pen 0) beats any other side; the entrance ramp covers its step
     if(score<bestScore){ bestScore=score; best={dux,duz,we,dx,dz}; }
   }
@@ -8604,41 +8612,24 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
   rug.rotation.x=-Math.PI/2; rug.position.y=0.09; fit.add(rug);
   const lt=new THREE.PointLight(0xffd39a,1.7,Math.max(rec.hx,rec.hz)*2.4+9);
   lt.position.set(rec.fcx,rec.gy+Math.min(rec.H*0.62,3.0),rec.fcz); g.add(lt); if(lights)lights.push(lt);
-  const thr=new THREE.Mesh(new THREE.PlaneGeometry(TB_DOOR_HALF*2,Math.min(rec.H*0.8,3.4)),
-    new THREE.MeshBasicMaterial({color:0xffcf8a,transparent:true,opacity:0.16,depthWrite:false,side:THREE.DoubleSide,fog:false}));
-  thr.position.set(best.dx-best.dux*0.5,rec.gy+Math.min(rec.H*0.4,1.7),best.dz-best.duz*0.5);
-  thr.rotation.y=Math.atan2(best.dux,best.duz); g.add(thr);
+  // #955: no threshold glow — the entrance is the model's own opening, lit from inside by the fit-out light.
   // ── proper DOORWAY at any cut that ISN'T on the model's own door art (offmarker fallbacks +
   //    door-less walls): a stone frame + a recessed dark opening + an ajar plank door, so the entrance
   //    READS as a doorway instead of a bare gap where you clip through a blank wall. The AC shell is
   //    closed (no cell interior), so — exactly like the model's real door — you pass through the opening;
   //    the frame + dark recess + interior light make it a doorway, not a wall you phase through. ──
   const atMarker=(rec.doorMX!=null && Math.hypot(best.dx-rec.doorMX,best.dz-rec.doorMZ)<2.5);
-  if(!atMarker){
-    const M=tbDoorMats(), yaw=Math.atan2(best.dux,best.duz);
-    const Tx=-best.duz, Tz=best.dux;                                   // along-wall unit
-    const DW=TB_DOOR_HALF*0.82, DH=clamp(rec.H*0.6,2.3,3.1);           // opening half-width + height
-    const at=(t,o,y)=>[best.dx+Tx*t+best.dux*o, y, best.dz+Tz*t+best.duz*o];
-    const mk=(geo,mat,t,o,y,ry)=>{ const m=new THREE.Mesh(geo,mat); const p=at(t,o,y); m.position.set(p[0],p[1],p[2]); m.rotation.y=(ry!=null?ry:yaw); m.castShadow=true; m.receiveShadow=true; g.add(m); return m; };
-    // warm interior card (the lit room seen through the doorway) — set back into the wall so it reads as
-    // depth; #21: emissive amber instead of near-black so the open door frames a lit interior, not a void.
-    const rec2=new THREE.Mesh(new THREE.PlaneGeometry(DW*2,DH),M.interior);
-    const rp=at(0,-0.35,rec.gy+DH/2); rec2.position.set(rp[0],rp[1],rp[2]); rec2.rotation.y=yaw; g.add(rec2);
-    // stone frame: two jambs + a lintel around the opening (sits on the wall face)
-    mk(new THREE.BoxGeometry(0.34,DH+0.5,0.6),M.frame,-(DW+0.17),0.02,rec.gy+(DH+0.5)/2-0.25);
-    mk(new THREE.BoxGeometry(0.34,DH+0.5,0.6),M.frame, (DW+0.17),0.02,rec.gy+(DH+0.5)/2-0.25);
-    mk(new THREE.BoxGeometry(DW*2+0.85,0.5,0.6),M.frame,0,0.02,rec.gy+DH+0.2);
-    // plank door, hinged on the left jamb and swung inward-ajar so the way reads OPEN
-    const door=mk(new THREE.BoxGeometry(DW*1.7,DH-0.18,0.08),M.door,0,-0.12,rec.gy+(DH-0.18)/2);
-    door.geometry.translate(DW*0.85,0,0);                              // hinge at the left edge
-    door.position.set(...at(-(DW*0.9),-0.12,rec.gy+(DH-0.18)/2)); door.rotation.y=yaw-1.15;
-  }
+  // #955: NO synthetic doorway assembly — the stone jambs/lintel/ajar-door props routinely landed
+  // misaligned with the real model's wall art, and the emissive "interior card" read as a glowing
+  // fake. The model's own opening IS the entrance: the collider gap above clears the way, and the
+  // fit-out (plank floor, rug, warm light) is what you actually see through it. Where the model
+  // hangs a real door panel, tbBuildMesh renders it translucent so the way in stays visible.
   // entrance ramp: if the ground outside the door sits below the floor (downhill approach), lay a
   // short stone ramp and register it walkable so you climb up into the doorway (rare — the door is
   // biased to the high side, but keeps every building enterable on steep sites)
   const gOut=groundY(best.dx+best.dux*1.2,best.dz+best.duz*1.2);
-  if(rec.gy-gOut>STEP_UP){
-    const rl=Math.max(2.4,(rec.gy-gOut)*1.7);
+  if(Math.abs(rec.gy-gOut)>STEP_UP){   // #955: lowest-corner seating means uphill doors step DOWN into the room too — ramp both directions
+    const rl=Math.max(2.4,Math.abs(rec.gy-gOut)*1.7);
     const st2={bx:best.dx,bz:best.dz,baseY:0,cos:best.dux,sin:-best.duz,r2:(rl+TB_DOOR_HALF)**2+4,
       platforms:[],ramps:[{x0:0,x1:rl,z0:-TB_DOOR_HALF-0.3,z1:TB_DOOR_HALF+0.3,axis:'x',yLo:rec.gy,yHi:gOut,dir:1}]};
     structures.push(st2); if(rec.structs) rec.structs.push(st2);
@@ -8654,31 +8645,30 @@ function tbRingBuilding(g,obst,did,wx,wz,th){
   const cw=Math.cos(th), sw=Math.sin(th);
   const bb=md.bb, hx=(bb[3]-bb[0])/2, hz=(bb[5]-bb[2])/2, lcx=(bb[0]+bb[3])/2, lcz=(bb[2]+bb[5])/2, H=bb[4]-bb[1];
   const fcx=wx+lcx*cw+lcz*sw, fcz=wz-lcx*sw+lcz*cw;
-  // Cities are no longer flattened, so seat the building on the REAL terrain: sample the footprint
-  // corners+centre, stand it on the HIGHEST contact (base — nothing pokes up through the floor) and
-  // skirt a stone foundation down to the lowest so it never floats. "Part of the world" on any slope.
+  // #955: cities are not flattened — seat the building at the LOWEST footprint contact, dug into the
+  // hillside like a real foundation (was: perched on the HIGHEST corner with a skirt, which left the
+  // downhill walls floating above grade). Nothing floats; the uphill side sits into the slope.
   const corner=(sx,sz)=>groundY(fcx+sx*hx*cw+sz*hz*sw, fcz-sx*hx*sw+sz*hz*cw);
   const c00=corner(-1,-1),c10=corner(1,-1),c11=corner(1,1),c01=corner(-1,1),cc=groundY(fcx,fcz);
-  const base=Math.max(c00,c10,c11,c01,cc), lo=Math.min(c00,c10,c11,c01,cc);
+  const base=Math.min(c00,c10,c11,c01,cc), lo=base;
   const bm=tbBuildMesh(md); bm.position.set(wx,base,wz); bm.rotation.y=th; g.add(bm);
   let doorMX=null,doorMZ=null;
   if(bm.userData.doorLocal){ const dl=bm.userData.doorLocal;   // the model's own DOOR marker → world
     doorMX=wx+dl.x*cw+dl.z*sw; doorMZ=wz-dl.x*sw+dl.z*cw; }
-  if(base-lo>0.3){                                                    // stone foundation skirt fills the downhill gap
-    const fnd=new THREE.Mesh(new THREE.BoxGeometry(hx*2+0.6,base-lo+1.6,hz*2+0.6),texMat(stoneFloorTex,0x8a8074));
-    fnd.position.set(fcx,(base+lo-1.6)/2,fcz); fnd.rotation.y=th; fnd.receiveShadow=true; g.add(fnd); }
   const enter=(hx>=2.6&&hz>=2.6&&H>=3.0);
   const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[],doorMX,doorMZ,
     did:(''+did).replace(/^0x/i,'').toUpperCase()};   // #767: the AC model DID → its extracted interior
   const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
     for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
       const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw;
-      const ob={x:px,z:pz,r:0.8}; obstacles.push(ob); obst.push(ob); rec.cols.push(ob); } };
+      const ob={x:px,z:pz,r:0.8,yMax:base+H}; obstacles.push(ob); obst.push(ob); rec.cols.push(ob); } };   // #955: walls block only to the roofline — clear the height and you're over
   edge(lcx-hx,lcz-hz,lcx+hx,lcz-hz); edge(lcx+hx,lcz-hz,lcx+hx,lcz+hz);
   edge(lcx+hx,lcz+hz,lcx-hx,lcz+hz); edge(lcx-hx,lcz+hz,lcx-hx,lcz-hz);
-  if(enter){   // register the interior floor as a walkable platform so you stand ON it, not the sloped terrain beneath
-    const st={bx:wx,bz:wz,baseY:base,cos:cw,sin:sw,r2:(Math.max(hx,hz)+2)**2+4,
-      platforms:[{x0:lcx-hx,x1:lcx+hx,z0:lcz-hz,z1:lcz+hz,y:0}],ramps:[]};  // floor reaches the walls — no sub-slab terrain ring to drop into
+  {   // #955: interior floor (enterable) + a ROOF platform at the wall-top for every building —
+      // land a jump on it, walk it, step off. supportAt only grants it when your feet clear it.
+    const plats=[{x0:lcx-hx,x1:lcx+hx,z0:lcz-hz,z1:lcz+hz,y:H}];
+    if(enter) plats.push({x0:lcx-hx,x1:lcx+hx,z0:lcz-hz,z1:lcz+hz,y:0});  // floor reaches the walls — no sub-slab terrain ring to drop into
+    const st={bx:wx,bz:wz,baseY:base,cos:cw,sin:sw,r2:(Math.max(hx,hz)+2)**2+4,platforms:plats,ramps:[]};
     structures.push(st); rec.structs.push(st); rec.struct=st; }
   return rec;
 }
@@ -9227,7 +9217,7 @@ function addCity(c){
       const a=i/cnt*6.28+c.region*0.7,hx=c.x+Math.cos(a)*ring,hz=c.z+Math.sin(a)*ring;
       const kind=i===0?"hall":(i%3===0?"shop":"house");
       const arch=buildingArchetype(c.region,kind,sc*(kind==="hall"?1.2:1));
-      const th=Math.atan2(c.x-hx,c.z-hz), gy=groundY(hx,hz); // door (+z) faces the plaza centre
+      const th=Math.atan2(c.x-hx,c.z-hz), gy=groundLowest(hx,hz,4); // door (+z) faces the plaza centre; #955: seat at the lowest footprint contact
       queueBuilding(arch,hx,hz,th,gy,c);
       const ct=Math.cos(th),st=Math.sin(th);
       for(const cc of arch.colliders){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
@@ -10488,7 +10478,7 @@ function hsWorld(h,p,gy){
           z:h.z+(-p[0]*s+p[2]*c)*HS_SCALE, yaw:h.yaw+(p[3]||0)};
 }
 function hsBuildHouse(h){
-  const gy=groundY(h.x,h.z), lay=hsLayoutOf(h);
+  const gy=groundLowest(h.x,h.z,9*HS_SCALE), lay=hsLayoutOf(h);   // #955: houses seat at the LOWEST footprint contact
   const g=new THREE.Group(); g.position.set(h.x,gy,h.z); g.rotation.y=h.yaw;
   g.userData.noSettle=true; g.userData.cullR2=HS_DROP_R*HS_DROP_R; scene.add(g);
   const obst=[],structs=[],lights=[];
@@ -10513,10 +10503,20 @@ function hsBuildHouse(h){
       const rot=(x,z)=>[x*bc+z*bs,-x*bs+z*bc];
       const cs=[rot(p[0],p[1]),rot(p[2],p[1]),rot(p[0],p[3]),rot(p[2],p[3])];
       const xs=cs.map(c=>c[0]),zs=cs.map(c=>c[1]);
-      return {x0:(b[1]+Math.min.apply(null,xs))*HS_SCALE, z0:(b[3]+Math.min.apply(null,zs))*HS_SCALE,
-              x1:(b[1]+Math.max.apply(null,xs))*HS_SCALE, z1:(b[3]+Math.max.apply(null,zs))*HS_SCALE,
-              y:(b[2]+p[4])*HS_SCALE+0.12};
+      return {x0:(b[1]+Math.min.apply(null,xs))*HS_SCALE-0.35, z0:(b[3]+Math.min.apply(null,zs))*HS_SCALE-0.35,
+              x1:(b[1]+Math.max.apply(null,xs))*HS_SCALE+0.35, z1:(b[3]+Math.max.apply(null,zs))*HS_SCALE+0.35,
+              y:(b[2]+p[4])*HS_SCALE+0.12};   // #955: plates overlap thresholds so the seam between rooms can't drop you to the terrain
     });
+    // #955: STAIR WEDGES — the exporter's per-cell plates leave height gaps just over STEP_UP
+    // (0.65-1.5) between treads/landings, so climbs dead-ended mid-stair. Bridge every near-miss
+    // pair with a half-step plate over their horizontal overlap: the chain becomes climbable.
+    { const extra=[];
+      for(const a of plats) for(const b2 of plats){ const dy=b2.y-a.y;
+        if(dy<=STEP_UP||dy>1.6) continue;
+        const x0=Math.max(a.x0,b2.x0-1.0),x1=Math.min(a.x1,b2.x1+1.0),z0=Math.max(a.z0,b2.z0-1.0),z1=Math.min(a.z1,b2.z1+1.0);
+        if(x1-x0<0.5||z1-z0<0.5) continue;
+        extra.push({x0,x1,z0,z1,y:(a.y+b2.y)/2}); }
+      if(extra.length&&extra.length<=60) plats.push.apply(plats,extra); }
     const st={bx:h.x,bz:h.z,baseY:gy,cos:Math.cos(h.yaw),sin:Math.sin(h.yaw),
       r2:Math.pow((Math.max(fw,fd)+Math.hypot(b[1],b[3]))*HS_SCALE+4,2),platforms:plats,ramps:[]};
     structures.push(st); structs.push(st);
@@ -10532,7 +10532,7 @@ function hsBuildHouse(h){
       const da=Math.atan2(lx,lz)-doorA;
       if(!sealed && Math.abs(Math.atan2(Math.sin(da),Math.cos(da)))<0.5) continue;   // the doorway gap (unless sealed)
       const w=hsWorld(h,[b[1]+lx,0,b[3]+lz,0],gy);
-      const o={x:w.x,z:w.z,r:0.75}; obstacles.push(o); obst.push(o);
+      const o={x:w.x,z:w.z,r:0.75,yMax:gy+3.4}; obstacles.push(o); obst.push(o);   // #955: walls block only to their height
     }
   }
   // the Covenant Crystal at its true spot before the door
@@ -18527,6 +18527,11 @@ function collide(nx,nz){
   if(inDungeon){ // wall-slide against the room/corridor layout
     const s=dungeonSlide(player.x,player.z,nx,nz);
     return [clamp(s[0],-HALF+1,HALF-1),clamp(s[1],-HALF+1,HALF-1)];
+  }
+  if(inNetwork){ // #955: the hall floor is a 48u disc — travel stops ~5 paces past the portal ring (R·0.84≈40), at the floor's outer edge
+    const dx=nx-DCEN.x,dz=nz-DCEN.z,d=Math.hypot(dx,dz),RMAX=47.2;
+    if(d>RMAX) return [DCEN.x+dx/d*RMAX, DCEN.z+dz/d*RMAX];
+    return [nx,nz];
   }
   // Sub-step the move from the current position so a big per-frame step (fast run + low framerate)
   // can't TUNNEL through a thin wall — resolve against the obstacle circles at each sub-step, sliding
