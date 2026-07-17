@@ -684,12 +684,22 @@ def interior_mesh_and_plats(lb, cellset, bx, by, bz, byaw):
             if n0[2] > 0.7:
                 floor_pts += wps
         if floor_pts:
-            xs = [p[0] for p in floor_pts]; ys = [p[1] for p in floor_pts]
-            zs = [p[2] for p in floor_pts]
-            # three-space plate: x0,z0,x1,z1,y  (three x=ac x, three z=-ac y)
-            plats.append([round(min(xs), 2), round(-max(ys), 2),
-                          round(max(xs), 2), round(-min(ys), 2),
-                          round(sum(zs) / len(zs), 2)])
+            # #955: cluster the cell's floor polys by HEIGHT before plating. One averaged plate per
+            # cell collapsed staircases and split-level rooms to a single mid-air plane (upper floors
+            # unreachable, feet floating between levels). Height-banded clusters emit one plate per
+            # step/landing, and the client's STEP_UP (0.62) chains treads into a climbable stair.
+            floor_pts.sort(key=lambda p: p[2])
+            clusters = [[floor_pts[0]]]
+            for pt in floor_pts[1:]:
+                if pt[2] - clusters[-1][-1][2] <= 0.55: clusters[-1].append(pt)
+                else: clusters.append([pt])
+            for cl in clusters:
+                xs = [p[0] for p in cl]; ys = [p[1] for p in cl]
+                zs = [p[2] for p in cl]
+                # three-space plate: x0,z0,x1,z1,y  (three x=ac x, three z=-ac y)
+                plats.append([round(min(xs), 2), round(-max(ys), 2),
+                              round(max(xs), 2), round(-min(ys), 2),
+                              round(sum(zs) / len(zs), 2)])
     return groups_out(groups), plats
 
 print("exporting building models ...")
