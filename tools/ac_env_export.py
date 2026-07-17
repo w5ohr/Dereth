@@ -130,7 +130,10 @@ def parse_cellstruct(r):
     polys = {}
     for _ in range(n_poly):
         k = r.u16(); polys[k] = read_polygon(r)
-    for _ in range(n_port): r.u16()             # PortalPolygon ids
+    # PortalPolygon ids: the polygons that are cell-to-cell OPENINGS (doorways), not surfaces.
+    # The real client never renders them; emitting them painted every doorway shut with an
+    # untextured sheet AND poisoned any geometry-derived wall collision. Capture to exclude.
+    portal_ids = [r.u16() for _ in range(n_port)]
     align4(r)
     read_bsp(r, "cell")
     for _ in range(n_phys): r.u16(); read_polygon(r)
@@ -138,7 +141,7 @@ def parse_cellstruct(r):
     if r.u32():                                 # hasDrawingBSP
         read_bsp(r, "drawing")
     align4(r)
-    return dict(verts=verts, polys=polys)
+    return dict(verts=verts, polys=polys, portal_ids=portal_ids)
 
 def parse_environment(data):
     r = Buf(data)
@@ -305,7 +308,10 @@ def build_dungeon(cellids, cell_dat, portal, envcache, material):
 def _emit_cell(cs, pos, quat, surfs, groups, material):
     verts = cs["verts"]
     tris = 0
-    for poly in cs["polys"].values():
+    pset = set(cs.get("portal_ids") or ())      # doorway-opening polys: never geometry
+    for pk, poly in cs["polys"].items():
+        if pk in pset:
+            continue
         si = poly["surf"]
         surf_did = surfs[si] if 0 <= si < len(surfs) else None
         mat = material(surf_did) if surf_did is not None else dict(color=0x888888)
@@ -399,9 +405,13 @@ def main(only=None):
                 if o in cells and o not in seen: seen[o]=seen[cur]+1; q.append(o)
         order=sorted(seen, key=lambda c: seen[c])
         cellpos=[[round(cells[c]["x"],2), round(cells[c]["z"],2), round(-cells[c]["y"],2)] for c in order]
+        # authoritative cell connectivity (EnvCell portals), as cellPos-index adjacency lists — the
+        # client uses this to seal walls between UNCONNECTED neighbours (walk-through-wall fix)
+        idx_of={c:i for i,c in enumerate(order)}
+        ports=[sorted({idx_of[o] for o in cells[c]["ports"] if o in idx_of}) for c in order]
         payload = dict(name=name, landblock=hexid,
                        cells=stats["cells_ok"], entry=cellpos[0], far=cellpos[-1],
-                       cellPos=cellpos, groups=gout)
+                       cellPos=cellpos, ports=ports, groups=gout)
         json.dump(payload, open(os.path.join(OUT, fn), "w"), separators=(",", ":"))
         kb = os.path.getsize(os.path.join(OUT, fn)) // 1024
         index[name] = dict(file=fn, landblock=hexid, cells=stats["cells_ok"],

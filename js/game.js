@@ -29822,6 +29822,7 @@ function dungeonBarred(x,z,r){
 }
 function dungeonWalkable(x,z){ const r=player.r*0.6;
   if(dungeonBarred(x,z,r)) return false;
+  if(dgWallBlocked(x,z,r,player.y)) return false;   // real-geometry seam walls (sealed delves) — collision now matches what you see
   for(const c of dungeonRects){
     if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad-r) return true; }
     else if(x>=c.x0+r&&x<=c.x1-r&&z>=c.z0+r&&z<=c.z1-r) return true;
@@ -30056,6 +30057,173 @@ function dgTexture(fn,onNorm){
   return e.t;
 }
 function _dgNorm(e){ const nm=lumNormalTex(e.t); nm.flipY=false; nm.needsUpdate=true; nm._acShared=true; return nm; }
+// ══ SEAL THE DELVE: collision + roofs derived from the REAL exported geometry ═══════════════════════
+// The walkable area in a real-geometry dungeon is the UNION of 11.2u cell rects — but the exported
+// EnvCells carry true walls BETWEEN adjacent cells (parallel corridors, sealed chambers), which that
+// union ignores: the player walked straight through most visible walls (audited: ~60% of all
+// adjacent-cell seams in the tier-2 set are solid walls), and many cells have no ceiling polys at all
+// (open to the void). Fix both from the geometry the player actually SEES:
+//  · dgSealDungeon scans every same-storey adjacent-cell seam, bins the wall triangles that sit on it
+//    at walk height (0.5u bins), and turns covered runs into thin blocking segments — full walls
+//    block the whole seam, doorway seams block only their wall parts and keep the opening.
+//  · A BFS from the entry cell then REPAIRS over-sealing: any region cut off from the entry gets its
+//    most-doorway-like boundary seam unblocked (classifier safety net) — the chest cell (dj.far),
+//    levers, and every mob cell stay reachable, so sealing can never break progression.
+//  · Cells with no overhead polys and no storey above get a synthesized ceiling tile in the dungeon's
+//    own wall stone (the synthDungeonWalls look), closing the open-to-void roofs.
+// Segments are bucketed on the 10u grid and owner-tagged to the current dungeon, so lookups are O(1)
+// per step and a stale grid can never leak into interiors/gauntlets/the overworld.
+const DGW={grid:null,owner:null,segs:0};
+function dgWallBlocked(x,z,r,y){
+  if(!DGW.grid||DGW.owner!==curDungeon) return false;
+  const b=DGW.grid.get(Math.floor(x/10)+"|"+Math.floor(z/10)); if(!b) return false;
+  for(const s of b){ if(y<s.y0||y>s.y1) continue;
+    if(x>=s.x0-r&&x<=s.x1+r&&z>=s.z0-r&&z<=s.z1+r) return true; }
+  return false;
+}
+function dgSealDungeon(dj,grp){
+  const STEP=10,HALF=5,BINS=20,BW=0.5;
+  // triangle bounding boxes + mean normal-y, once
+  const tris=[];
+  for(const g of dj.groups){ const v=g.verts,n=g.normals,idx=g.idx; if(!v||!idx) continue;
+    for(let i=0;i<idx.length;i+=3){ const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3;
+      tris.push({minx:Math.min(v[a],v[b],v[c]),maxx:Math.max(v[a],v[b],v[c]),
+                 miny:Math.min(v[a+1],v[b+1],v[c+1]),maxy:Math.max(v[a+1],v[b+1],v[c+1]),
+                 minz:Math.min(v[a+2],v[b+2],v[c+2]),maxz:Math.max(v[a+2],v[b+2],v[c+2]),
+                 ny:n?(n[a+1]+n[b+1]+n[c+1])/3:0}); } }
+  // ── SLOTS, not raw cells: EnvCells aren't 1:1 with the 10u grid — several cells (sub-spaces of
+  // one room) can share a slot (hundreds of the dat's port pairs have zero offset). Seams live
+  // between unique grid slots, and a slot-pair is a DOORWAY if ANY cell of one ports to ANY cell
+  // of the other. (Indexing raw cells collapsed the twins and matched ports against the wrong one,
+  // sealing true doorways shut.)
+  const slotOf=new Map(), cells=[];
+  const cellSlot=new Array(dj.cellPos.length);
+  let offLattice=0;
+  dj.cellPos.forEach((c,i)=>{ const gx=Math.round(c[0]/STEP),iy=Math.round(c[1]),gz=Math.round(c[2]/STEP);
+    if(Math.abs(c[0]/STEP-gx)>0.005||Math.abs(c[2]/STEP-gz)>0.005) offLattice++;
+    const k=gx+"|"+iy+"|"+gz; let si=slotOf.get(k);
+    if(si===undefined){ si=cells.length; slotOf.set(k,si); cells.push({x:gx*STEP,y:iy,z:gz*STEP,gx,gz,iy,rx:c[0],rz:c[2]}); }
+    cellSlot[i]=si; });
+  const byKey=slotOf;
+  // ── off-lattice landblocks (rotated/offset cell frames — a handful of dungeons): the 10u seam
+  // model doesn't line up with their real walls, so sealing would be wrong both ways. Skip the
+  // wall segments there (rect-walkable, exactly as before this system) but still synthesize roofs
+  // from the cells' REAL positions below. ──
+  const onLattice=offLattice/dj.cellPos.length<0.1;
+  // ── scan every same-storey seam: covered 0.5u bins at walk height ──
+  const seams=[];
+  if(onLattice) for(let i=0;i<cells.length;i++){ const c=cells[i];
+    for(const [dx,dz] of [[1,0],[0,1]]){
+      const j=byKey.get((c.gx+dx)+"|"+c.iy+"|"+(c.gz+dz)); if(j===undefined) continue;
+      const vert=dx!==0, plane=vert?c.x+HALF:c.z+HALF, s0=(vert?c.z:c.x)-HALF;
+      const yLo=c.y+0.35,yHi=c.y+2.0, bins=new Array(BINS).fill(false);
+      for(const t of tris){
+        if(t.maxy<yLo||t.miny>yHi) continue;
+        if(Math.abs(t.ny)>0.55) continue;                                    // floors/ramps/ceilings don't wall a seam
+        const pMin=vert?t.minx:t.minz, pMax=vert?t.maxx:t.maxz;
+        if(pMin>plane+0.7||pMax<plane-0.7||pMax-pMin>1.6) continue;          // on the seam plane, thin across it
+        const a0=vert?t.minz:t.minx, a1=vert?t.maxz:t.maxx;
+        const b0=Math.max(0,Math.floor((a0-s0)/BW)), b1=Math.min(BINS-1,Math.ceil((a1-s0)/BW)-1);
+        for(let b=b0;b<=b1;b++) bins[b]=true; }
+      const covered=bins.reduce((s,v)=>s+v,0);
+      let maxOpen=0,run=0;                                                   // widest contiguous opening, in bins
+      for(let b=0;b<BINS;b++){ if(!bins[b]){ run++; if(run>maxOpen)maxOpen=run; } else run=0; }
+      seams.push({a:i,b:j,vert,plane,s0,fy:c.y,bins,covered,maxOpen,solid:covered>=BINS-2,repaired:false});
+    } }
+  // ── authoritative mode: the re-exported packs carry the EnvCells' own portal graph (dj.ports —
+  // which neighbours genuinely connect through an opening). Where present it OVERRIDES the
+  // geometry classifier: a port-connected seam is a doorway (block only its wall runs), an
+  // unconnected one is a true wall (block it whole). The exporter also stopped emitting the
+  // invisible portal-opening polygons as geometry, so the runs no longer cover real doorways. ──
+  const hasPorts=Array.isArray(dj.ports)&&dj.ports.length===dj.cellPos.length;
+  if(onLattice&&hasPorts){
+    const pset=new Set();
+    dj.ports.forEach((ps,i)=>ps.forEach(j=>{ const a=cellSlot[i],b=cellSlot[j];
+      if(a!==b&&a!==undefined&&b!==undefined){ pset.add(a+"|"+b); pset.add(b+"|"+a); } }));
+    // a seam is OPEN if any storey-adjacent pairing across its plane is ported: stair ramps cross
+    // the boundary mid-height (dat port offsets like (±10, ±6)), and the ground-level seal's y-band
+    // would otherwise wall off the ramp the dat says connects
+    const vshift=(k,dy)=>byKey.get(cells[k].gx+"|"+(cells[k].iy+dy)+"|"+cells[k].gz);
+    const pOpen=(a,b)=>{ for(const av of [a,vshift(a,6),vshift(a,-6)]) for(const bv of [b,vshift(b,6),vshift(b,-6)]){
+      if(av===undefined||bv===undefined) continue; if(pset.has(av+"|"+bv)) return true; } return false; };
+    for(const s of seams){ const open=pOpen(s.a,s.b);
+      s.solid=!open;                       // the dat's word beats the classifier both ways
+      if(open) s.maxOpen=Math.max(s.maxOpen,4);   // …and a ported seam always counts as passable in the graph
+    }
+  }
+  // ── emit blocking segments: solid seams whole; doorway seams block their covered runs only ──
+  const emit=()=>{
+    DGW.grid=new Map(); DGW.owner=curDungeon; DGW.segs=0;
+    const addSeg=(s,r0,r1)=>{ const p=s.plane, lo=s.s0+r0*BW, hi=s.s0+r1*BW;
+      const seg=s.vert?{x0:p-0.4,x1:p+0.4,z0:lo,z1:hi,y0:s.fy-1.5,y1:s.fy+4.6}
+                      :{x0:lo,x1:hi,z0:p-0.4,z1:p+0.4,y0:s.fy-1.5,y1:s.fy+4.6};
+      for(let gx=Math.floor((seg.x0-1.5)/10);gx<=Math.floor((seg.x1+1.5)/10);gx++)
+        for(let gz=Math.floor((seg.z0-1.5)/10);gz<=Math.floor((seg.z1+1.5)/10);gz++){
+          const k=gx+"|"+gz; let b=DGW.grid.get(k); if(!b) DGW.grid.set(k,b=[]); b.push(seg); }
+      DGW.segs++; };
+    for(const s of seams){
+      if(s.repaired) continue;                        // reachability override: leave the whole seam open
+      if(s.solid){ addSeg(s,0,BINS); continue; }
+      let r0=-1;                                       // merged covered runs ≥1.2u become partial walls
+      for(let b=0;b<=BINS;b++){ const on=b<BINS&&s.bins[b];
+        if(on&&r0<0) r0=b;
+        else if(!on&&r0>=0){ if((b-r0)*BW>=1.2) addSeg(s,r0,b); r0=-1; } }
+    }
+  };
+  emit();
+  // ── reachability repair AGAINST THE EMITTED COLLISION: the entry must reach every region (the
+  // chest, levers, and mobs live everywhere). Walkability is measured the way the PLAYER moves —
+  // a fine scan along each seam through dgWallBlocked (any clear lane that fits the radius counts,
+  // wherever the doorway sits) — so this self-heals every residual modeling gap: any region the
+  // sealing would cut off gets its most doorway-like boundary seam un-sealed, then re-checks. ──
+  const en=dj.entry, start=(()=>{ let bi=0,bd=1e9; for(let i=0;i<cells.length;i++){ const d=Math.hypot(cells[i].x-en[0],cells[i].z-en[2])+Math.abs(cells[i].y-en[1]); if(d<bd){bd=d;bi=i;} } return bi; })();
+  const crossOpen=(c,vert,plane,yA,yB)=>{ for(let t=-4.8;t<=4.8;t+=0.2){
+    const x=vert?plane:c.x+t, z=vert?c.z+t:plane;
+    if(!dgWallBlocked(x,z,0.45,yA+0.9)&&!dgWallBlocked(x,z,0.45,yB+0.9)) return true; } return false; };
+  const reach=()=>{ const seen=new Uint8Array(cells.length), q=[start]; seen[start]=1;
+    while(q.length){ const i=q.pop(); const c=cells[i];
+      for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) for(const dy of [0,-6,6]){
+        const j=byKey.get((c.gx+dx)+"|"+(c.iy+dy)+"|"+(c.gz+dz)); if(j===undefined||seen[j]) continue;
+        const vert=dx!==0, plane=vert?c.x+(dx>0?HALF:-HALF):c.z+(dz>0?HALF:-HALF);
+        if(crossOpen(c,vert,plane,c.y,cells[j].y)){ seen[j]=1; q.push(j); } }
+      for(const dy of [6,12,-6,-12]){ const j=byKey.get(c.gx+"|"+(c.iy+dy)+"|"+c.gz);
+        if(j!==undefined&&!seen[j]){ seen[j]=1; q.push(j); } } }
+    return seen; };
+  let seen=reach(), guard=0;
+  while(guard++<400){
+    let best=null, done=true;
+    for(let i=0;i<cells.length;i++) if(!seen[i]){ done=false; break; }
+    if(done) break;
+    for(const s of seams){ if(s.repaired) continue;
+      if(seen[s.a]!==seen[s.b]){ if(!best||s.covered<best.covered) best=s; } }
+    if(!best) break;                                   // genuinely detached region (no boundary seam) — leave it
+    best.repaired=true; emit(); seen=reach();          // un-seal the most doorway-like boundary seam, re-measure
+  }
+  // ── roofs: synthesize a ceiling tile over cells with no overhead polys and no storey above ──
+  const P=[],N=[],U=[]; let roofed=0;
+  for(const c of cells){
+    let cov=false;
+    for(const dy of [6,12]) if(byKey.has(c.gx+"|"+(c.iy+dy)+"|"+c.gz)){ cov=true; break; }   // a storey above is the roof
+    if(!cov) for(const t of tris){
+      if(t.ny>-0.5) continue;                                                 // want a face looking DOWN at the player
+      if(t.maxx<c.rx-HALF||t.minx>c.rx+HALF||t.maxz<c.rz-HALF||t.minz>c.rz+HALF) continue;
+      if(t.miny<c.y+2.0||t.miny>c.y+16) continue;                             // overhead band (vaulted rooms count)
+      cov=true; break; }
+    if(!cov){ _pushBox(P,N,U,c.rx,c.y+6.35,c.rz,5.5,0.35,5.5,4); roofed++; }   // real position — off-lattice cells roof correctly too
+  }
+  if(roofed){
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+    geo.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+    let wallTex=null,best=-1;
+    for(const g of dj.groups){ if(g.tex){ const n=(g.verts||[]).length; if(n>best){best=n;wallTex=g.tex;} } }
+    const mat=wallTex?new THREE.MeshStandardMaterial({map:dgTexture(wallTex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide})
+                     :new THREE.MeshStandardMaterial({color:0x6b6b76,roughness:0.9,side:THREE.DoubleSide});
+    const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; grp.add(m);
+  }
+  return {segs:DGW.segs,roofed};
+}
 function buildDungeonReal(def,dj){
   const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
   for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
@@ -30087,6 +30255,9 @@ function buildDungeonReal(def,dj){
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
   if(_gapFill) grp.add(synthDungeonWalls(dj,_cellCovered));   // #762: synthesize walls for the cells the export lost
+  try{ const _seal=dgSealDungeon(dj,grp);   // seal seams + roof the void-open cells from the real geometry
+    if(_seal&&(_seal.segs||_seal.roofed)) console.log(`dungeon seal: ${_seal.segs} wall segments, ${_seal.roofed} synthesized ceilings (${def.name})`);
+  }catch(e){ DGW.grid=null; console.error("dgSealDungeon failed — delve stays rect-walkable:",e); }   // a seal failure must never break entry
   scene.add(grp); dungeonObjs.push(grp);
   // #715: darker darkness — the flat base drops so the torch pools MATTER (dglight slider still scales it)
   const amb=new THREE.AmbientLight(0x9a8a72,0.62*(settings.dglight||1)); amb.userData.dgBase=0.62; scene.add(amb); dungeonObjs.push(amb);
