@@ -32210,12 +32210,10 @@ function saveGame(alsoLocal){   // #457: alsoLocal=true (logout) writes the loca
       keymap:KEYBINDS,   // #483: per-character keybinds — rides along with this character (and the online payload, via the same `s`) instead of only the global dereth_keys
       px:(inDungeon?dungeonReturn.x:inNetwork?netReturn.x:player.x),pz:(inDungeon?dungeonReturn.z:inNetwork?netReturn.z:player.z),pyaw:player.yaw,wscale:WSCALE};   // #323: inside an instance (dungeon/house/network) player.x/z are instance-LOCAL coords built around origin — persist the OVERWORLD return point instead, or reload strands the character at map center (deep Direlands). Mirrors die()'s corpse-drop resolution.
     for(const f of SAVE_SCHEMA) s[f.k]=f.save?f.save(player):player[f.k];
-    // #893: while a trade is open, offered items are escrowed OUT of player.inv — fold them back into the
-    // SAVED inventory so the server's authoritative cl.inv still shows you own them. Otherwise the 10s
-    // autosave persists an inventory without the escrowed items, and the trade's take_owned then can't
-    // verify them → the trade spuriously aborts ("could not be verified"). (Coin offers aren't deducted
-    // locally, so gold needs no such fold.)
-    if(TRADE&&TRADE.open&&TRADE.mine&&TRADE.mine.length&&Array.isArray(s.inv)) s.inv=s.inv.concat(TRADE.mine);
+    // #941: the #893 trade-escrow fold lives in ONE place — the SAVE_SCHEMA inv save fn above. A second
+    // inline fold here (added alongside the schema one) appended TRADE.mine AGAIN, so every autosave
+    // during an open trade persisted player.inv + TRADE.mine ×2 — and the server adopted the doubled
+    // inventory authoritatively: a repeatable item DUPE (offer an item, wait ~10s, own two).
     if(isOnline&&NET.open){ netSend({t:"save",char:s});      // persist server-side when playing online
       if(alsoLocal){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(s)); }catch(e){} } }   // #457: logout also writes the local safety-net so a socket drop mid-logout can't black-hole progress
     else localStorage.setItem(SAVE_KEY,JSON.stringify(s));    // #289: offline OR a dropped online socket → local safety net so progress is never black-holed while isOnline is stuck true
