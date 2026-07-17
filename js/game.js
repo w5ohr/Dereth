@@ -18147,6 +18147,7 @@ function openVault(){
   if(SFX.quest)SFX.quest(); toast("VAULT OPENED");
 }
 function openLockedCache(){
+  if(!dungeonLock||dungeonLock.opened) return;   // #933 (#931 sibling): internal idempotency BEFORE the pick/key is consumed — a re-entry re-granted a full haul + gold
   const i=player.inv.findIndex(it=>it.stat==="pick"||it.stat==="key");
   let openerName=null;
   if(i>=0){ openerName=player.inv[i].name; const st=player.inv[i].stat; takeFromInv(i); openerName={name:openerName,stat:st}; }
@@ -31708,6 +31709,7 @@ function pullDungeonLever(lv){
   openDungeonBar(lv.bar); if(SFX.click)SFX.click();
 }
 function openStrongbox(bx){
+  if(!bx||bx.opened) return;   // #933 (#931 sibling): internal idempotency — a second call re-granted the quest key
   bx.opened=true; chestOpenAnim(bx);   // #706: the coffer lid swings open
   player.inv.push({name:bx.key,stat:"key",v:1});
   log(`The strongbox holds the <b>${esc(bx.key)}</b> — it must open something, somewhere.`,"loot");
