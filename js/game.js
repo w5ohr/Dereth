@@ -4389,8 +4389,10 @@ let _wgpuShadowFixN=0;   // #webgpu: armed by applyGfxTier after a shadow.mapSiz
 // the ShadowNode has swapped its RT). No-op on WebGL (lazy re-upload semantics) and when shadows are off.
 function _wgpuShadowReset(){
   if(!IS_WEBGPU) return;
-  if(typeof sun!=="undefined"&&sun&&sun.shadow&&sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; }
-  if(typeof sunFar!=="undefined"&&sunFar&&sunFar.shadow&&sunFar.shadow.map){ sunFar.shadow.map.dispose(); sunFar.shadow.map=null; }
+  // #968: do NOT dispose the shadow map here — disposing the ShadowDepthTexture on WebGPU is the
+  // unrecoverable op (stale bind groups material.needsUpdate can't rebind). #968 pins the map size
+  // across tiers so it's never destroyed at all; this exit hook now just refreshes shadow rendering
+  // and re-runs the harmless late material bump as belt-and-suspenders (no dispose, no dangling ref).
   if(typeof renderer!=="undefined"&&renderer&&renderer.shadowMap) renderer.shadowMap.needsUpdate=true;
   _wgpuShadowFixN=((typeof GFX!=="undefined"&&GFX.shadowEvery)||1)*2+4;
 }
@@ -4850,7 +4852,14 @@ function applyGfxTier(t,quiet){
   renderer.shadowMap.enabled=t>=1;
   let _shadowResized=false;   // #webgpu: see the invalidation block below
   if(typeof sun!=="undefined"&&sun){
-    const sz=[1024,1024,2048,4096][t];
+    // #968: NEVER resize the shadow map on WebGPU. Disposing the ShadowDepthTexture (what a mapSize
+    // change does) leaves cached material bind groups referencing the destroyed texture, and r185's
+    // material.needsUpdate bump does NOT rebind them — so every subsequent submit faults
+    // ("Destroyed texture [ShadowDepthTexture] used in a submit") forever, wedging the render. #967's
+    // exit-time reset couldn't fix it because the dispose itself is unrecoverable on this backend.
+    // Pin the map to its init resolution (4096) across all tiers; WebGPU shadow quality is fixed, not
+    // faulting. WebGL keeps the per-tier ladder (lazy re-upload, no dangling refs).
+    const sz=IS_WEBGPU?sun.shadow.mapSize.x:[1024,1024,2048,4096][t];
     if(sun.shadow.mapSize.x!==sz){ sun.shadow.mapSize.set(sz,sz); _shadowResized=true;
       if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; } }
     // #692: far cascade on High/Ultra only; its ±192m map matches the near map's texel budget
