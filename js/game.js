@@ -30738,6 +30738,7 @@ function emberNextWave(){
 }
 function updateEmberField(dt){
   if(!emberActive) return;
+  if(dungeonMobs<=0&&emberWave>=4){ emberWin(); return; }   // #937 (#935 sibling): a cleared final wave wins BEFORE the fail-clock is consulted — a buzzer-beater clear used to forfeit the gauntlet and the regalia advance
   emberTimer-=dt;
   if(emberTimer<=0){ emberFail(); return; }
   // the year's lesson: standing still ignites you (movement cools the ash twice as fast as it heats)
@@ -30826,6 +30827,7 @@ function frostSpawnAdds(n){ const cx=DCEN.x,cz=DCEN.z;
 function frostLitCount(){ let n=0; for(const h of _frostHearths) if(h.lit) n++; return n; }
 function updateFrostCourt(dt){
   if(!frostActive) return;
+  if(_frostBoss&&dungeonMobs<=0){ frostCourtWin(); return; }   // #937 (#935 sibling): the shattered Reliquary wins BEFORE the fail-clock is consulted
   frostTimer-=dt;
   if(frostTimer<=0){ frostCourtFail("the long night outlasts you"); return; }
   const px=player.x,pz=player.z, litCount=frostLitCount();
