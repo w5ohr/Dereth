@@ -19625,18 +19625,25 @@ function streamMonsters(dt){
 // how far the 3rd-person camera can sit behind the pivot before terrain/walls block it
 function camClampDist(tx,ty,tz,bx,by,bz,maxD){
   let d=maxD;
-  if(inDungeon){   // #199: indoors the camera respects the real walls — step the camera-back ray through the cell grid
+  if(inDungeon){   // #199/#952: indoors the camera respects the real walls — AND the floors. The old
+    // march was 2D-only, so on a ramp the camera sank below the slope and looked up through it;
+    // each step now also rejects a ray point that dips under the pivot-storey floor.
     if(typeof dungeonWalkable==="function")
-      for(let s=0.6;s<=maxD;s+=0.35){ if(!dungeonWalkable(tx+bx*s,tz+bz*s)){ d=Math.min(d,s-0.35); break; } }
+      for(let s=0.4;s<=maxD;s+=0.25){
+        const px=tx+bx*s, pz=tz+bz*s;
+        if(!dungeonWalkable(px,pz)){ d=Math.min(d,s-0.3); break; }
+        if(typeof dungeonFloorAt==="function" && ty+by*s<dungeonFloorAt(px,pz,ty)+0.25){ d=Math.min(d,s-0.3); break; }
+      }
   } else {
-    if(!inNetwork)   // terrain only exists overworld
-      for(let s=0.5;s<=maxD;s+=0.5){const py=ty+by*s; if(py<terrainH(tx+bx*s,tz+bz*s)+0.3){ d=Math.min(d,s-0.3); break; }}
+    if(!inNetwork)   // terrain only exists overworld — 0.35 march so a sharp hill crest can't slip between samples (#952)
+      for(let s=0.35;s<=maxD;s+=0.35){const py=ty+by*s; if(py<terrainH(tx+bx*s,tz+bz*s)+0.32){ d=Math.min(d,s-0.3); break; }}
     for(const o of obstacles){if(o.yMax!=null&&ty>o.yMax+0.6) continue; const ex=tx-o.x,ez=tz-o.z,rr=o.r+0.4;   // #199: obstacle clamp now runs in the Town Network too (its walls live in obstacles)
       const A=bx*bx+bz*bz; if(A<1e-6) continue;
+      if(ex*ex+ez*ez<o.r*o.r){ d=Math.min(d,0.3); continue; }   // #952: pivot already inside the obstacle core — the t1 gate below ignored it entirely, letting the camera peek through that wall
       const B=2*(ex*bx+ez*bz),C=ex*ex+ez*ez-rr*rr,disc=B*B-4*A*C; if(disc<0) continue;
       const t1=(-B-Math.sqrt(disc))/(2*A); if(t1>0.2&&t1<d) d=t1-0.2;}
   }
-  return Math.max(0.7,d);
+  return Math.max(0.3,d);   // #952: was 0.7 — a hard floor that wide can itself sit inside the wall behind the pivot; under 1.7 the avatar already auto-hides, so a tight pull-in is safe
 }
 // AC first person shows your OWN hands: from the eyes you see your real arms + the weapon in your real
 // hand (real attack/cast animations), but NOT your head/torso/legs (you'd just be looking at the inside
@@ -19660,7 +19667,10 @@ function syncCamera(dt){
     const yaw=player.yaw+camOrbYaw,pitch=clamp(player.pitch+camOrbPitch,-1.35,1.35);
     const dx=-Math.sin(yaw)*Math.cos(pitch),dy=Math.sin(pitch),dz=-Math.cos(yaw)*Math.cos(pitch); // look dir
     // over-the-shoulder: shift the pivot to camera-right so the body sits left of the crosshair
-    const rxv=-dz,rzv=dx,rl=Math.hypot(rxv,rzv)||1,SHOULDER=0.7;
+    const rxv=-dz,rzv=dx,rl=Math.hypot(rxv,rzv)||1;
+    let SHOULDER=0.7;   // #952: don't let the pivot itself start inside a dungeon wall (hugging a wall on the shoulder side put the whole clamp ray behind it)
+    if(inDungeon&&typeof dungeonWalkable==="function")
+      while(SHOULDER>0.05&&!dungeonWalkable(player.x+rxv/rl*SHOULDER,player.z+rzv/rl*SHOULDER)) SHOULDER-=0.15;
     const tx=player.x+rxv/rl*SHOULDER,ty=gy+EYE*0.95,tz=player.z+rzv/rl*SHOULDER; // pivot near the shoulders
     const dist=camClampDist(tx,ty,tz,-dx,-dy,-dz,(typeof TOUCH!=="undefined"&&TOUCH.camDist)||4.2);   // collision: shorten if blocked (TOUCH.camDist = mobile pinch zoom)
     const camTooClose=dist<1.7;                                         // camera inside the body/back-gear — hide the avatar
@@ -19668,11 +19678,18 @@ function syncCamera(dt){
     if(!camCur) camCur=new THREE.Vector3(desX,desY,desZ);
     if(!camInit){ camCur.set(desX,desY,desZ); camInit=true; }           // snap on entering 3rd person
     else { const k=1-Math.exp(-12*dt); camCur.x+=(desX-camCur.x)*k; camCur.y+=(desY-camCur.y)*k; camCur.z+=(desZ-camCur.z)*k; }
+    { // #952: the EASED position must obey collision too — the target is clamped, but a fast orbit
+      // lerps the camera along an ARC that cuts through walls and hill crests. Re-clamp the eased
+      // point along its own pivot ray every frame: snap in through nothing, ease back out freely.
+      const ex=camCur.x-tx,ey=camCur.y-ty,ez=camCur.z-tz,L=Math.hypot(ex,ey,ez);
+      if(L>0.001){ const cd=camClampDist(tx,ty,tz,ex/L,ey/L,ez/L,L);
+        if(cd<L) camCur.set(tx+ex/L*cd,ty+ey/L*cd,tz+ez/L*cd); } }
     cam.position.copy(camCur);
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false;
     avatarFP(playerAvatar,false);   // restore full body (first person hides most of it)
-    playerAvatar.visible=player.alive&&!camTooClose;
+    const _easedClose=Math.hypot(camCur.x-tx,camCur.y-ty,camCur.z-tz)<1.7;   // #952: hide keys off the EASED distance — the re-clamp can pull tighter than the target
+    playerAvatar.visible=player.alive&&!camTooClose&&!_easedClose;
     playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;   // character keeps its heading; the camera orbits around it
     animateAvatar(dt);
     if(playerAvatar.userData.head) tickFace(playerAvatar.userData.head,dt);
