@@ -16525,7 +16525,7 @@ function applyItem(it){
     const gain=Math.min(Math.max(0,+it.v||0),cap-_base); player.attr[it.stat]+=gain; derive();
     log(`Attuned <b>${it.name}</b> (+${gain} ${it.stat}${gain<(+it.v||0)?" — capped at its natural peak":""}).`,"loot");
   }
-  else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); }
+  else { log(`<b>${it.name}</b> — nothing to do with this here.`,"sys"); return "keep"; }   // #916 (#912 sibling): the catch-all is a hint too — an item the game can't use (trade gems, unknown/missing stat) must be inert on use, never destroy-on-inspect
 }
 // ═══ THE COMBINE ENGINE (AC tradeskills): assets/acrecipes.json carries 1,500 retail tool+target→result
 //     combines across Alchemy, Cooking, Fletching and tool assembly. Any two inventory items whose
