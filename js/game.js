@@ -17774,6 +17774,7 @@ function updateDrowning(dt){
 }
 function updateChargeBar(){ const b=document.getElementById('chargeBar'); if(!b) return;
   if(chargeActive){ b.style.display="block"; const f=document.getElementById('chargeFill'); if(f) f.style.width=Math.round(Math.min(chargeT,CHARGE_MAX)/CHARGE_MAX*100)+"%"; }
+  else if(typeof jumpChargeT!=="undefined"&&jumpChargeT>=0){ b.style.display="block"; const f=document.getElementById('chargeFill'); if(f) f.style.width=Math.round(jumpChargeT*100)+"%"; }   // #958: the jump-power bar reuses the attack charge meter
   else b.style.display="none";
   const ah=document.getElementById('atkHeight'); if(ah&&ah.style.display==="block"&&ah._t&&now()-ah._t>2500) ah.style.display="none"; }
 // Cb2: which attack height best fits a creature's size, and the accuracy/damage modifiers for a match/mismatch
