@@ -30944,6 +30944,7 @@ function riftSpawnPulse(){
 }
 function updateRiftStand(dt){
   if(!riftActive) return;
+  if(riftBoss&&dungeonMobs<=0){ riftWin(); return; }   // #938 (#935/#937 sibling): a downed boss wins BEFORE the fail-clock is consulted — no buzzer-beater forfeit
   riftTimer-=dt;
   if(riftTimer<=0){ riftFail("the storm outlasts you"); return; }
   // storm pulses: telegraph → detonate
@@ -31054,21 +31055,24 @@ function updateTideGate(dt){
     if(tideLevel>1.2&&player.slow!=null) player.slow=Math.max(player.slow||0,clamp((tideLevel-1.2)*0.4,0,0.5));
     if(tideLevel>TIDE_MAX-0.6&&Math.random()<dt*1.5) floater(player.x,1.9,player.z,"the gate is going under!","#9fd0e8");
   }
-  if(tideLevel>=TIDE_MAX){ tideFail("the flood tops the gate"); return; }
-  // steady Burun pressure during the Herald phase too
-  _tideAddT-=dt; if(_tideAddT<=0&&dungeonMobs<6){ _tideAddT=5;
-    const cx=DCEN.x,cz=DCEN.z,a=rnd(0,6.28),r=rnd(12,R_TIDE());
-    spawnDungeonMonster(irnd(0,1)?"burun":"reedshark",cx+Math.cos(a)*r,cz+Math.sin(a)*r,false,1.4); }
-  // wave/herald flow
+  // #938 (#935/#937 sibling): resolve kills BEFORE the flood check. The 3rd Herald kill was only
+  // counted below the fail check, so a buzzer-beater kill on the frame the flood topped TIDE_MAX
+  // failed the gauntlet — and the kill's flood-dip ("killing foes is the only thing that holds it")
+  // rightly belongs before the top-of-gate test.
   if(dungeonMobs<=0){
     if(_tidePhase==="burun"){ tideNextWave(); }
     else if(_tidePhase==="herald"){ _tideHeraldKills++;
       // each kill (Burun or Herald) holds the flood back a breath — the Herald kill much more
       tideLevel=Math.max(0.15,tideLevel-0.5);
-      if(_tideHeraldKills>=3){ tideWin(); }
+      if(_tideHeraldKills>=3){ tideWin(); return; }
       else tideSpawnHerald();
     }
   }
+  if(tideLevel>=TIDE_MAX){ tideFail("the flood tops the gate"); return; }
+  // steady Burun pressure during the Herald phase too
+  _tideAddT-=dt; if(_tideAddT<=0&&dungeonMobs<6){ _tideAddT=5;
+    const cx=DCEN.x,cz=DCEN.z,a=rnd(0,6.28),r=rnd(12,R_TIDE());
+    spawnDungeonMonster(irnd(0,1)?"burun":"reedshark",cx+Math.cos(a)*r,cz+Math.sin(a)*r,false,1.4); }
 }
 function tideWin(){
   tideActive=false;
@@ -31289,6 +31293,7 @@ function chitinSpawnAdds(n){ const cx=DCEN.x,cz=DCEN.z;
 function chitinBurnedCount(){ let n=0; for(const c of _chitinClutches) if(c.burned) n++; return n; }
 function updateChitin(dt){
   if(!chitinActive) return;
+  if(_chitinBoss&&dungeonMobs<=0){ chitinWin(); return; }   // #938 (#935/#937 sibling): a downed Matron wins BEFORE the fail-clock is consulted
   chitinTimer-=dt;
   if(chitinTimer<=0){ chitinFail("the Matron seals the crater with you still in it"); return; }
   const px=player.x,pz=player.z;
@@ -31529,6 +31534,7 @@ function stormSpawnBolt(huntX,huntZ){
 }
 function updateStormPeak(dt){
   if(!stormActive) return;
+  if(_stormBoss&&dungeonMobs<=0){ stormWin(); return; }   // #938 (#935/#937 sibling): a downed Warden wins BEFORE the fail-clock is consulted
   stormTimer-=dt;
   if(stormTimer<=0){ stormFail("the storm outlasts you"); return; }
   const px=player.x,pz=player.z;
