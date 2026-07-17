@@ -26481,7 +26481,7 @@ function raycastPick(ev){
   return null;
 }
 function targetName(t){
-  if(!t) return "—";
+  if(!t||!t.ref) return "—";   // #913: a ref-less pick reads as no target instead of throwing on .kind
   if(t.type==="monster"){ const m=t.ref,b=BESTIARY[m.kind]; return m.name||((m.isElite?"Elite ":"")+(b?b.name:m.kind)); }
   if(t.type==="npc") return t.ref.name||"Townsperson";
   if(t.type==="vendor") return (t.ref.name?t.ref.name+" — ":"")+t.ref.title;
@@ -26522,7 +26522,8 @@ function detachTargetBars(m){
   hb.traverse(o=>{ if(o.isMesh){ o.material.depthTest=true; o.renderOrder=0; } });   // plain damaged-mob bar again
 }
 function selectTarget(pick,silent){
-  if(TARGET&&TARGET.type==="monster") detachTargetBars(TARGET.ref);
+  if(pick&&!pick.ref) pick=null;   // #913: a ref-less pick must clear, not poison — TARGET is assigned before attachTargetBars, so a throw there used to leave {type,ref:undefined} live and updateTargetUI then threw EVERY frame (a permanent freeze the #227 rAF guard can't break, since the throw recurs before the self-heal line)
+  if(TARGET&&TARGET.type==="monster"&&TARGET.ref) detachTargetBars(TARGET.ref);
   TARGET=pick||null;
   const tf=document.getElementById('targetFrame');
   if(!TARGET){ hideTargetRing(); if(tf&&!uiHiddenIs("targetFrame")) tf.style.display="none"; return; }
@@ -26545,6 +26546,7 @@ function cycleTarget(dir){
   const vis=cand.filter(m=>m.mesh&&fr.intersectsSphere(new THREE.Sphere(m.mesh.position.clone().setY(m.mesh.position.y+(m.headY||1)*0.5),Math.max(1,m.r||1))));
   if(vis.length) cand=vis;
   if(!cand.length){ selectTarget(null); log("No targets in range.","sys"); return; }
+  dir=(dir===1||dir===-1)?dir:1;   // #913: a dir-less/garbage call made (i+dir) NaN → cand[NaN]===undefined → poisoned TARGET
   let i=TARGET&&TARGET.type==="monster"?cand.indexOf(TARGET.ref):-1;
   i=i<0?0:((i+dir)%cand.length+cand.length)%cand.length;   // nothing locked yet → both keys start at the closest
   selectTarget({type:"monster",ref:cand[i]});
@@ -26565,6 +26567,7 @@ function updateTargetUI(dt,force){
   if(!TARGET){ hideTargetRing(); tf.style.display="none"; return; }
   const t=TARGET;
   if(t.type==="monster"){ const m=t.ref;
+    if(!m){ selectTarget(null,true); return; }                                 // #913: a poisoned/ref-less lock self-heals instead of throwing every frame
     if(m.hp<=0||monsters.indexOf(m)<0){ selectTarget(null,true); return; }     // fell or despawned
     if(m.mesh&&m.mesh.userData.hb) m.mesh.userData.hb.visible=true;            // the tri-bar stays visible while targeted
     const tb=m.mesh&&m.mesh.userData.tfBars;
