@@ -1947,6 +1947,7 @@ function nearestDryLand(x,z){
 //    so the player can climb to a second story and stand on it. ──
 let structures=[];
 const STEP_UP=0.62, STICK=1.5;   // max ledge you walk straight up; max drop you stay glued to (else you fall)
+const EDGE_DROP=1.0;   // #966: a drop steeper than this just ahead is a LEDGE — walking/running stops at the lip; only a jump carries you over
 function registerStructure(bx,bz,th,baseY,surf){
   if(!surf||(!surf.platforms&&!surf.ramps)) return;
   let r2=0; const acc=p=>{const m=Math.max(Math.abs(p.x0),Math.abs(p.x1))+Math.max(Math.abs(p.z0),Math.abs(p.z1));r2=Math.max(r2,m*m);};
@@ -1960,6 +1961,21 @@ function groundLowest(x,z,r){ let lo=groundY(x,z);
   for(const[sx,sz]of[[1,0],[-1,0],[0,1],[0,-1],[0.7,0.7],[0.7,-0.7],[-0.7,0.7],[-0.7,-0.7]])
     lo=Math.min(lo,groundY(x+sx*r,z+sz*r));
   return lo; }
+// #966: LEDGE EDGE-GUARD — while grounded, a walk/run that would step off a lip (a drop steeper than
+// EDGE_DROP within a body-radius ahead) is refused; slide along the edge if one axis stays on, else
+// pin at the lip. Airborne movement is never guarded, so a JUMP always carries you over — a tap hops
+// just off, a longer charge leaps farther. Overworld only (dungeons keep their pit-drop mechanic).
+function edgeGuard(nx,nz){
+  if(!player.grounded||inDungeon) return [nx,nz];
+  const px=player.x, pz=player.z;
+  const over=(x,z)=>{ const dx=x-px,dz=z-pz,d=Math.hypot(dx,dz); if(d<1e-6) return false;
+    const P=Math.max(d,(player.r||0.8)*0.7), qx=px+dx/d*P, qz=pz+dz/d*P;   // probe a body-radius ahead, framerate-independent
+    return (player.y - supportAt(qx,qz,player.y)) > EDGE_DROP; };
+  if(!over(nx,nz)){ player._edgePinned=false; return [nx,nz]; }
+  if(nx!==px && !over(nx,pz)){ player._edgePinned=false; return [nx,pz]; }   // slide along the lip on X
+  if(nz!==pz && !over(px,nz)){ player._edgePinned=false; return [px,nz]; }   // …or Z
+  player._edgePinned=true; return [px,pz];                                    // both go off → held at the edge
+}
 function supportAt(wx,wz,feetY){
   let best=groundY(wx,wz);
   if(inDungeon||inNetwork) return best;
@@ -18894,12 +18910,13 @@ function updateMovementPhysics(dt){
             if(now()-lastBreath>2500){ lastBreath=now(); log("The mountainside is too steep to climb here.","warn"); } }
         } }
     }
+    { const g=edgeGuard(nx,nz); nx=g[0]; nz=g[1]; }   // #966: don't walk/run off a ledge — only a jump goes over
     player.x=nx;player.z=nz;
     // #465: wedged-on-geometry feedback. Sliding above already salvages a partial move; but if you're
     // deliberately pushing into a wall (often INVISIBLE interior geometry) and almost nothing gets
     // through, give a throttled bump so the stop isn't silent, and — after a full second of being
     // pinned — a one-time nudge toward /unstuck (which frees you even while delving).
-    if(moving){
+    if(moving&&!player._edgePinned){   // #966: a ledge lip isn't "wedged" — you can always jump off, so no bump/unstuck nag there
       const want=Math.hypot(player.vx,player.vz)*dt, got=Math.hypot(nx-px0,nz-pz0);
       if(want>0.02 && got<want*0.25){
         if(now()-(player._blockT||0)>420){ player._blockT=now(); if(SFX.bump)SFX.bump(); }
