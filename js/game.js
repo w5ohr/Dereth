@@ -16551,6 +16551,7 @@ function craftRecipeFor(a,b){ const ix=craftIx(); if(!ix||!a||!b||!a.name||!b.na
 function combineChance(rec){ const sk=skillValue(CRAFT_SKILL[rec.family]||"alchemy");
   return clamp(1/(1+Math.exp((rec.difficulty-sk)*0.03)),0.03,0.98); }
 function craftResultItem(nm){
+  if(!nm||typeof nm!=="string") return null;   // #923: 158 salvage→gear rows carry result:null — never throw on them
   const dm=nm.toLowerCase().match(/^(\w+) dye pot$/);              // retail dye pots become REAL dye items (openDyePicker applies them)
   if(dm&&AC_DYE_HEX[dm[1]]) return {name:nm,stat:"dye",hex:AC_DYE_HEX[dm[1]],v:85};
   const row=(typeof acItemRow==="function")?acItemRow(nm,25):null; // the vendor-shelf classifier: potions/food/ammo/comps come out usable
@@ -16560,6 +16561,11 @@ function craftResultItem(nm){
 function craftTake(i){ const it=player.inv[i]; if(!it) return; if((it.count||1)>1) it.count--; else player.inv.splice(i,1); }
 function attemptCombine(ia,ib){
   const A=player.inv[ia], B=player.inv[ib]; const rec=craftRecipeFor(A,B); if(!rec) return;
+  // #923: the salvage→gear rows encode "modify the target" as result:null — this produce-an-item path
+  // used to CONSUME both inputs and then throw in craftResultItem(null), destroying them with no output.
+  // Refuse BEFORE anything is consumed and point at the real system (salvage bags → tinkering, T).
+  if(!rec.result||typeof rec.result!=="string"){
+    log(`The <b>${esc(rec.tool)}</b> works through <b>tinkering</b>, not a combine — salvage materials into a full bag (T), then apply the bag to your gear.`,"sys"); return; }
   const aIsTool=A.name.toLowerCase()===rec.tool.toLowerCase();     // orient the pair: which one is the recipe's tool?
   const iTool=aIsTool?ia:ib, iTarget=aIsTool?ib:ia;
   const ch=combineChance(rec), skN=(SKILL_BY_KEY[CRAFT_SKILL[rec.family]]||{}).n||rec.family;
@@ -16567,7 +16573,7 @@ function attemptCombine(ia,ib){
     const keepTool=CRAFT_DURABLE.test(rec.tool);                   // success: consume target (+ tool unless durable) — splice higher index first
     const order=[iTarget].concat(keepTool?[]:[iTool]).sort((x,y)=>y-x);
     for(const idx of order) craftTake(idx);
-    const out=craftResultItem(rec.result); addToInv(out,true);
+    const out=craftResultItem(rec.result); if(out) addToInv(out,true);   // #923: belt-and-braces — a null result must never reach the satchel
     log(`Your ${skN} succeeds — <b>${esc(rec.tool)}</b> + <b>${esc(rec.target)}</b> → <b>${esc(rec.result)}</b> <span style="color:var(--dim)">(${Math.round(ch*100)}%)</span>.`,"loot");
     if(SFX.gold)SFX.gold(); questEvent("gather","craft");   // #236: crafting matches no gather objective
   } else {
@@ -16584,7 +16590,7 @@ function openCombinePicker(i){
   const opts=[];
   for(let j=0;j<player.inv.length;j++){ if(j===i) continue;
     const rec=craftRecipeFor(it,player.inv[j]);
-    if(rec) opts.push({j,rec,partner:player.inv[j]});
+    if(rec&&typeof rec.result==="string") opts.push({j,rec,partner:player.inv[j]});   // #923: null-result (salvage→gear) rows don't belong in the combine picker — they'd render "→ null" and refuse on click
   }
   if(!opts.length){ log(`Nothing in your satchel combines with the <b>${esc(it.name)}</b> — the right partner is named in a tradeskill recipe.`,"sys"); return; }
   const old=document.getElementById('combinePick'); if(old) old.remove();
