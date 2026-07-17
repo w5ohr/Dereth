@@ -17363,7 +17363,7 @@ function executeSpell(id){
   }
   if(s.school==="life"&&s.heal){
     const pow=castEcon(id);
-    const h=s.heal()*skillEff("life",0.025)*skillEff("healing",0.01)*pow;player.hp=Math.min(player.mhp,player.hp+h);
+    const h=healSelf(s.heal()*skillEff("life",0.025)*skillEff("healing",0.01)*pow);   // #929: every self-heal flows through the guarded choke point (#925/#926)
     floater(player.x,EYE+0.5,player.z,"+"+Math.round(h)+(pow>1?" ✦":""),fxHex(FX_VITAL.hp));   // health = red
     spellLandFX("life",_slfPlayerPos,2.0,0.75);
     castFlash(FX_VITAL.hp);SFX.heal();log(`You cast <b>${s.name}</b>, healing ${Math.round(h)}.`,"heal");return;
@@ -33092,7 +33092,7 @@ function applyBuffSelf(sp,fx){
   if(fx) spellLandFX(sp.school,_slfPlayerPos,2.0,0.75);   // the spell lands on YOU (buff bot / ally): creature → spirits, life → crystals
   const dur=sp.dur||(typeof buffDurFor==="function"?buffDurFor(sp.lvl||1):120), mag=sp.mag;
   const flo=(txt,col)=>{ if(fx&&typeof floater==="function") floater(player.x,EYE+0.5,player.z,txt,col||"#bfe0ff"); };
-  if(typeof sp.heal==="function"){ const h=sp.heal(); player.hp=Math.min(player.mhp,player.hp+h); flo("+"+Math.round(h),"#7fe6a0"); }
+  if(typeof sp.heal==="function"){ const h=healSelf(sp.heal()); flo("+"+Math.round(h),"#7fe6a0"); }   // #929: every self-heal flows through the guarded choke point (#925/#926)
   else if(sp.special==="regen"){ player.hots=player.hots||{}; hotSet(player.hots,sp.pool,sp.rate,sp.dur); flo("regen "+sp.pool,"#8fe6a0"); }
   else if(sp.buff==="might"){ player.buffMightT=Math.max(player.buffMightT||0,dur); flo("+50% dmg","#ff8f6b"); }   // #316: keep-longest
   else if(sp.buff==="swift"){ player.buffSwiftT=Math.max(player.buffSwiftT||0,dur); flo("+speed","#7fe6a0"); }
