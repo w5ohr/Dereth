@@ -18591,7 +18591,7 @@ function update(dt){
   if(chargeActive){ if(!player.alive||(!locked&&!TOUCH.on)){ chargeActive=false; chargeT=0; } else { chargeT+=dt; if(chargeT>=CHARGE_MAX) releaseCharge(); } }   // Cb1 charge accumulate + auto-release at max (touch mode charges without pointer lock)
   updateChargeBar();
   if(player.emoteT>0){ player.emoteT=Math.max(0,player.emoteT-dt);   // emote gesture ends early if you move or attack
-    if(chargeActive||held("forward")||held("back")||held("left")||held("right")) player.emoteT=0; }
+    if(chargeActive||held("forward")||held("back")||held("left")||held("right")||autoRun) player.emoteT=0; }   // #919 (#910 sibling): auto-run is movement too — cut the emote instead of waving while sliding forward
   updateDrowning(dt);   // W3: over-head water depletes breath, then health
   if(player.spellFatigue){ for(const k in player.spellFatigue){ const v=player.spellFatigue[k]-dt*0.06; if(v<=0) delete player.spellFatigue[k]; else player.spellFatigue[k]=v; } }   // H11 spell fatigue recovers over time
   updatePortalStorm(dt);   // AC portal storms: crowding → scatter-teleport to town outskirts
