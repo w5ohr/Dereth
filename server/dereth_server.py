@@ -1005,6 +1005,7 @@ class Client:
         self.level = 1; self.heritage = "aluvian"; self.title = ""
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
         self.mnt = None   # #728: mount type key while riding (e.g. "grey") — remotes render the horse
+        self.jy = 0.0; self.jc = 0.0   # #960: vertical jump offset + charge crouch, relayed so peers see us leap
         self.phs = None   # #734: this rider's PARKED horses [{i,t,n,x,z}] — stamped into snapshots
         self.gear = None           # #667: compact worn-armour descriptor (sanitize_gear), so remotes render our armour
         self.inst = False        # #646: True while in a per-player instance (dungeon/Town Network/Academy). x/z carry the OVERWORLD return point (#307), so peers hide the avatar and AI/PvP must not target it
@@ -1075,6 +1076,7 @@ def player_pub(u, cl):
             "pk": getattr(cl, "pk", False), "pkState": getattr(cl, "pkState", "npk"),
             "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None),
             "mnt": getattr(cl, "mnt", None),   # #728: mounted remotes render their horse
+            "jy": round(getattr(cl, "jy", 0.0), 2), "jc": round(getattr(cl, "jc", 0.0), 2),   # #960: jump height + charge so peers see the leap/crouch
             "phs": getattr(cl, "phs", None),   # #734: their parked horses stand in the shared world
             "gear": getattr(cl, "gear", None),   # #667: worn armour so remotes render us clad, not bare
             "inst": getattr(cl, "inst", False)}   # #646: peers hide the avatar when set (player is inside an instance)
@@ -2891,6 +2893,8 @@ async def dispatch(cl, msg):
         cl._mvx = nx; cl._mvz = nz; cl._mvt = now_m
         cl.x = nx; cl.z = nz
         cl.yaw = _finitef(msg.get("yaw"), cl.yaw)
+        cl.jy = max(-40.0, min(40.0, _finitef(msg.get("jy"), 0.0)))   # #960: vertical jump offset above ground (0 grounded) — absent resets to 0
+        cl.jc = max(0.0, min(1.0, _finitef(msg.get("jc"), 0.0)))       # #960: jump-charge crouch 0..1
         cl.inst = inst
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)

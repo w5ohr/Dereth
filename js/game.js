@@ -2193,7 +2193,7 @@ function tryJump(power,aim){
   power=(typeof power==="number")?clamp(power,0,1):1;
   const cost=Math.ceil((encumbrance().ratio+0.5)*power*8+2);     // ACE JumpStaminaCost: ceil((burden+0.5)×power×8+2)
   if(player.st<cost){ if(now()-lastBreath>1600){lastBreath=now();log("Too winded to jump.","warn");} return; }
-  const vy=jumpVelocity(power); player.vy=vy; player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.step)SFX.step();
+  const vy=jumpVelocity(power); player.vy=vy; player.grounded=false; player.fallPeak=player.y; player.st=Math.max(0,player.st-cost); if(SFX.jump)SFX.jump(power);   // #960: launch SFX scales with charge
   // CHARGE → DISTANCE: the hold time (0..2s → power 0..1) sets how far you leap, LINEARLY (1s = half of 2s,
   // taps are short). The leap goes in your MOVEMENT heading when running, else in the way you're FACING —
   // so a standing charged jump leaps forward. Run momentum is the floor, so a moving jump always carries at
@@ -2206,7 +2206,10 @@ function tryJump(power,aim){
     else { ax=moving?player.vx/runSpeed:-Math.sin(player.yaw); az=moving?player.vz/runSpeed:-Math.cos(player.yaw); }   // heading, else facing
     const jv=player.st>0?skillValue("jump"):0, skF=clamp(1+(jv/(jv+1300))*6.0,1.0,1.9);
     const airtime=2*vy/(GRAV*WSCALE);                         // whole-arc time; horizontal is set to hit D exactly → distance is linear in `power` regardless of the arc height
-    const D=JUMP_DIST_MAX*skF*Math.max(power,aim?0.12:0);     // target horizontal distance; an aimed tap still hops a step the chosen way
+    // #960: AC weighted the FORWARD leap farthest — a backward hop covers ~0.6, a sidestep ~0.75.
+    // Applies only to standing AIMED jumps; running/facing leaps (aim=null) keep full reach.
+    let dirW=1; if(aim){ if(aim.f<0) dirW=0.6; else if(aim.f===0&&aim.s!==0) dirW=0.75; }
+    const D=JUMP_DIST_MAX*skF*Math.max(power,aim?0.12:0)*dirW; // target horizontal distance; an aimed tap still hops a step the chosen way
     const chargeSpeed=airtime>0?D/airtime:0;
     const speed=Math.max(chargeSpeed, moving?runSpeed:0);     // charge sets the leap; run momentum is the floor when moving
     player.vx=ax*speed; player.vz=az*speed;                   // zero charge → speed 0 → a straight-up hop
@@ -18828,6 +18831,7 @@ function updateMovementPhysics(dt){
       if(player.vy<=0 && player.y<=landS){                   // land
         const drop=(player.fallPeak!==undefined?player.fallPeak:landS)-landS;
         player.y=landS; player.vy=0; player.grounded=true; fallDamage(drop);
+        if(SFX.land)SFX.land(drop);   // #960: landing thud scales with the drop height
       }
     }
     antiStuckGuardian();   // never leave the player trapped in/on/under a building or structure
@@ -20497,6 +20501,8 @@ const SFX={
   growl:()=>blip(92,0.34,"sawtooth",0.11,58),
   click:()=>blip(680,0.05,"square",0.07,900),
   hoof:()=>{noiseHit(0.05,0.13,150+irnd(-35,35));blip(90+irnd(-14,14),0.05,"sine",0.05,66)},   // #735: a hollow clop
+  jump:(p)=>{ const c=clamp(p||0,0,1); blip(240+240*c,0.13,"sine",0.07+0.05*c,520+260*c); noiseHit(0.05,0.05,300); },   // #960: launch effort — pitch/volume rise with the charge
+  land:(h)=>{ const d=clamp((h||0)/8,0,1); noiseHit(0.08+0.22*d,0.10+0.08*d,150-40*d); blip(70+20*d,0.09,"sine",0.05+0.06*d,52); },   // #960: landing thud — heavier the farther you fell
 };
 // ── real AC sounds (assets/acsounds/, tools/ac_sound_export.py): when the manifest is present the
 //    authentic client samples play; the synth SFX above stay as the offline fallback. ──
@@ -33457,6 +33463,27 @@ function poseRemoteEmote(mesh,act,osc){   // apply an emote pose to a remote pla
   u.shR.rotation.x=sX;u.shR.rotation.z=sZ;u.elR.rotation.x=eX;
   u.shL.rotation.x=lX;u.shL.rotation.z=lZ;u.elL.rotation.x=lE;
 }
+// #960: a remote player's jump pose (mirrors the local overlay in animateAvatar) — crouch while
+// charging, tuck on the rise, legs reaching on the fall. Resets any AC-clip solve to rest first so
+// the eulers pose a clean base (same discipline as poseRemoteEmote).
+function poseRemoteJump(u,jc,rising){
+  if(!u||!u.shR) return;
+  if(u.acDrive){ for(const kk in u.acDrive){ const d=u.acDrive[kk]; d.J.position.copy(d.restP); d.J.quaternion.copy(d.restQ); } }
+  if(u.spine) u.spine.rotation.set(0,0,0); if(u.neck) u.neck.rotation.set(0,0,0);
+  if(jc>0){ const k=0.35+0.65*jc;                              // charging: coil into a squat
+    if(u.spine) u.spine.rotation.x=0.14*k;
+    if(u.hipR) u.hipR.rotation.x=0.5*k; if(u.hipL) u.hipL.rotation.x=0.5*k;
+    if(u.knR) u.knR.rotation.x=-0.9*k; if(u.knL) u.knL.rotation.x=-0.9*k;
+    u.shR.rotation.set(0.55*k,0.08*k,0); u.shL.rotation.set(0.55*k,-0.08*k,0);
+    if(u.elR) u.elR.rotation.x=-0.2; if(u.elL) u.elL.rotation.x=-0.2;
+  } else { const rise=rising?1:0, fall=rising?0:1;             // airborne: tuck up / reach down
+    if(u.spine) u.spine.rotation.x=0.16+0.10*rise;
+    if(u.hipR) u.hipR.rotation.x=0.30+0.80*rise; if(u.knR) u.knR.rotation.x=-(0.40+1.05*rise+0.35*fall);
+    if(u.hipL) u.hipL.rotation.x=0.18+0.55*rise; if(u.knL) u.knL.rotation.x=-(0.32+0.75*rise+0.35*fall);
+    u.shR.rotation.set(-0.35-0.30*rise,0.42+0.22*rise,0); if(u.elR) u.elR.rotation.x=-0.42;
+    u.shL.rotation.set(-0.35-0.30*rise,-0.42-0.22*rise,0); if(u.elL) u.elL.rotation.x=-0.42;
+  }
+}
 function clearRemoteEmote(mesh){ const u=mesh&&mesh.userData; if(!u||!u.shR) return;   // return arms to the neutral built pose
   u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0); if(u.spine)u.spine.rotation.x=0; if(u.neck)u.neck.rotation.set(0,0,0); }   // #672: bow's head-dip resets too (nothing else drives a remote's neck)
 function onEmote(m){
@@ -33926,14 +33953,20 @@ function updateRemotes(dt){
     if(r.x===undefined){ r.x=r.tx; r.z=r.tz; }
     const _rpx=r.x,_rpz=r.z;   // #672: pre-lerp position → this frame's actual displacement drives the gait
     const k=1-Math.exp(-10*dt); r.x+=(r.tx-r.x)*k; r.z+=(r.tz-r.z)*k;
-    mesh.position.set(r.x, groundY(r.x,r.z)+((mesh.userData.horse&&mesh.userData.horse.userData.seatY)||(mesh.userData.horse?1.30:0)), r.z); mesh.rotation.y=r.yaw||0;   // #735: a mounted peer sits at saddle height (fixes #728: the later lerp was resetting the seat)
+    r.jyv=(r.jyv||0)+((r.jy||0)-(r.jyv||0))*(1-Math.exp(-14*dt));   // #960: smoothed jump height above ground
+    const _seatY=((mesh.userData.horse&&mesh.userData.horse.userData.seatY)||(mesh.userData.horse?1.30:0));
+    mesh.position.set(r.x, groundY(r.x,r.z)+_seatY+(mesh.userData.horse?0:(r.jyv||0)), r.z); mesh.rotation.y=r.yaw||0;   // #735: a mounted peer sits at saddle height; #960: airborne peers rise with their jump
     // #672: remotes ANIMATE — the same MotionTable clips the local body uses (walk/run/idle), driven by
     // their snapshot velocity, so other players stride and breathe instead of gliding statue-still.
     // An active emote owns the joints: return them to rest once, then let poseRemoteEmote's eulers pose
     // a clean base (the clip solver moves joint positions AND quaternions; stacking eulers on a solved
     // frame contorts the rig).
     { const u=mesh.userData;
-      if(u.acBody&&u.acDrive&&typeof AC_MOTION!=="undefined"&&AC_MOTION&&!(r.emoteT>0)&&typeof acMotionPose==="function"){
+      const rCharge=(r.jc||0)>0.01, rAir=Math.abs(r.jyv||0)>0.15||Math.abs(r.jy||0)>0.15;
+      if((rCharge||rAir)&&u.shR&&!(r.emoteT>0)&&!u.mountedNow){   // #960: jump owns the body over walk/idle (emote/mount still win)
+        poseRemoteJump(u,rCharge?(r.jc||0):0,(r.jy||0)>(r._jyPrev||0));
+        u._acPosed=true;   // next non-jump frame resets the AC-clip joints
+      } else if(u.acBody&&u.acDrive&&typeof AC_MOTION!=="undefined"&&AC_MOTION&&!(r.emoteT>0)&&typeof acMotionPose==="function"){
         const mvd=Math.hypot(r.x-_rpx,r.z-_rpz)/Math.max(dt,0.001);
         r._spd=(r._spd==null?0:r._spd)+(mvd-(r._spd||0))*Math.min(1,dt*8);   // smoothed speed (units/s)
         u._acmT=(u._acmT||0)+dt;
@@ -33944,7 +33977,8 @@ function updateRemotes(dt){
       } else if(u._acPosed&&u.acDrive){   // emote (or pack loss) takes the body — joints back to rest first
         for(const kk in u.acDrive){ const d=u.acDrive[kk]; d.J.position.copy(d.restP); d.J.quaternion.copy(d.restQ); }
         u._acPosed=false;
-      } }
+      }
+      r._jyPrev=r.jy||0; }
     if(r.emoteT>0){ r.emoteT-=dt; poseRemoteEmote(mesh, r.emoteAct, Math.sin(now()/110)); if(r.emoteT<=0) clearRemoteEmote(mesh); }   // play/expire a remote player's emote gesture
   }
   // #673: the gate NPC yields to the LIVE Kilmer (the lore-keeper bot) — no two Kilmers at one gate.
@@ -33969,6 +34003,11 @@ function sendInput(dt){
   // it without paying the payload on every 10 Hz tick.
   const _gp=myGearPayload(), _gs=JSON.stringify(_gp);
   if(_gs!==NET._gearSig){ NET._gearSig=_gs; msg.gear=_gp; }
+  // #960: jump sync — vertical offset above local ground (peers render our leap/fall) + charge crouch.
+  // Sent only when off the ground or charging; absent → the server resets both to 0 (jumps are transient).
+  if(!_inst){ const jy=player.y-groundY(player.x,player.z);
+    if(!player.grounded||Math.abs(jy)>0.05) msg.jy=+jy.toFixed(2);
+    if(typeof jumpChargeT!=="undefined"&&jumpChargeT>=0&&player.grounded) msg.jc=+jumpChargeT.toFixed(2); }
   netSend(msg);
 }
 // AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
