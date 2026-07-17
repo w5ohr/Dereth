@@ -17600,7 +17600,7 @@ function dodge(){
   if(player.casting) player.casting=null;   // dodging breaks your own cast
   const yaw=player.yaw,fx=-Math.sin(yaw),fz=-Math.cos(yaw),rx=-fz,rz=fx;
   let f=0,s=0;
-  if(held("forward")||keys["arrowup"])f+=1; if(held("back")||keys["arrowdown"])f-=1;
+  if(held("forward")||keys["arrowup"]||autoRun)f+=1; if(held("back")||keys["arrowdown"])f-=1;   // #920 (#910/#919 sibling): auto-run IS forward input (mirrors :18685) — dodging mid-auto-run used to hit the no-input fallback and dash BACKWARD, against travel (a back key already breaks auto-run at :18686, so no conflict)
   if(held("right")||keys["arrowright"])s+=1; if(held("left")||keys["arrowleft"])s-=1;
   let dx,dz; if(f||s){dx=fx*f+rx*s;dz=fz*f+rz*s;} else {dx=-fx;dz=-fz;} // no input → dodge backward
   const l=Math.hypot(dx,dz)||1; player.dashX=dx/l; player.dashZ=dz/l;
