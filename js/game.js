@@ -33460,15 +33460,34 @@ function closeChat(relock){
   for(const kk in keys) keys[kk]=false;        // drop any keys captured while typing
   if(relock && cEl && running && cEl.requestPointerLock) cEl.requestPointerLock();   // #674: existence-guarded — the API is absent on iOS
 }
+// #1000: mirror of the server's censor() for SOLO/offline chat, which never reaches the authoritative
+// server filter. Whole-word, case-insensitive profanity → a length-matched grawlix run of !@#$%^&*()
+// (avoids the Scunthorpe problem; already-censored text is untouched since grawlix chars aren't letters).
+const _GRAWLIX="!@#$%^&*()";
+const _PROFANITY=new Set((
+  "fuck fucks fucking fucked fucker fuckers fuckin fuckwit motherfucker motherfuckers motherfucking "+
+  "shit shits shitting shitted shitty shite bullshit dipshit "+
+  "ass asses asshole assholes asshat asswipe jackass dumbass "+
+  "bitch bitches bitching bitchy bastard bastards "+
+  "cock cocks cocksucker dick dicks dickhead dickheads prick pricks "+
+  "pussy pussies cunt cunts twat twats slut sluts whore whores "+
+  "piss pissed pissing wank wanker wankers bollocks wtf stfu "+
+  "nigger niggers nigga niggas faggot faggots fag fags retard retards retarded").split(" "));
+function censorProfanity(text){
+  if(!text) return text;
+  return String(text).replace(/[A-Za-z]+(?:'[A-Za-z]+)?/g, w=>{
+    if(!_PROFANITY.has(w.toLowerCase())) return w;
+    let o=""; for(let i=0;i<w.length;i++) o+=_GRAWLIX[i%_GRAWLIX.length]; return o; });
+}
 function sendChatLine(text){
   text=(text||"").trim(); if(!text) return;
   if(text[0]==="/"){ handleSlash(text); return; }
   if(chatTab==="group"){ handleSlash("/p "+text); return; }   // the active tab routes plain text
   if(chatTab==="team"){ handleSlash("/a "+text); return; }
   if(isOnline){ if(!NET.open){ log("Not connected — message not sent. (reconnecting…)","warn"); return; }   // #636: don't silently eat the line while the socket is down
-    netSend({t:"chat",msg:text}); }
-  else { chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(text)}`);   // solo: you say it aloud locally
-    floater(player.x,EYE+1.5,player.z,text.slice(0,26),"#cfe0ff",1.05); }
+    netSend({t:"chat",msg:text}); }   // #1000: online chat is censored authoritatively by the server for every recipient
+  else { const shown=censorProfanity(text); chatMsg("say",`<b>${esc(player.name||"You")}:</b> ${esc(shown)}`);   // solo: you say it aloud locally (server never sees it → censor here)
+    floater(player.x,EYE+1.5,player.z,shown.slice(0,26),"#cfe0ff",1.05); }
 }
 // ── AC SECURE TRADE window: two columns (your offer | theirs), both must Accept,
 //    any change to either side clears both accepts (retail rule). Real item icons throughout. ──
