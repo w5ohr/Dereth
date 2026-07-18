@@ -238,8 +238,20 @@ async def main():
         rew = await a.recv_until(lambda x: x["t"] == "reward")
         check("kill -> reward with shared xp", bool(rew) and rew.get("xp", 0) > 0)
 
-        # the kill drops shared ground loot (gold pile, first-come)
-        drop = await a.recv_until(lambda x: x["t"] == "drop" and x.get("type") == "gold")
+        # the kill drops shared ground loot (gold pile, first-come). #985: match the gold to THIS kill by
+        # position — spawn_loot() drops the pile at the dead mob's (x,z) (dereth_server.py spawn_loot), so
+        # correlating against `cur` rejects a foreign gold that a *different* dying mob (e.g. an active
+        # Incursion combatant elsewhere on the field) may broadcast in the same instant. Latching that
+        # foreign pile was a flake source: it could be picked up / decay before the late joiner arrives, so
+        # carol would (correctly) never be sent it. Fall back to any gold if no snapshot position is known.
+        _kx, _kz = cur.get("x"), cur.get("z")
+        def _mine(x):
+            if x["t"] != "drop" or x.get("type") != "gold":
+                return False
+            if _kx is None or "x" not in x:
+                return True
+            return abs(x["x"] - _kx) <= 8 and abs(x["z"] - _kz) <= 8
+        drop = await a.recv_until(_mine)
         check("kill -> gold drop broadcast", bool(drop) and drop.get("amt", 0) > 0 and "id" in drop)
         if drop:
             # a player who joins AFTER the kill should be sent the still-on-ground loot
@@ -249,7 +261,12 @@ async def main():
             await carol.recv_until(lambda x: x["t"] == "roster")
             await carol.send({"t": "create_char", "slot": 0, "name": f"carol{uniq}", "char": {}})
             await carol.recv_until(lambda x: x["t"] == "play_ok")
-            replay = await carol.recv_until(lambda x: x["t"] == "drop" and x.get("id") == drop["id"])
+            # #985: enter_world replays ground drops right after play_ok, but on a busy world (mid-Incursion)
+            # the 10 Hz snapshot broadcast interleaves large frames on carol's stream, so the replayed
+            # drop_pub can trail well past the old 3.0 s default. The frame IS sent (game is correct) and
+            # TCP is ordered, so a generous ceiling absorbs the backlog jitter without masking a regression
+            # (it returns the instant the drop arrives on a healthy world).
+            replay = await carol.recv_until(lambda x: x["t"] == "drop" and x.get("id") == drop["id"], timeout=20.0)
             check("late joiner receives existing drops", bool(replay))
             await carol.close()
         if drop:
@@ -277,14 +294,16 @@ async def main():
     # seconds of harness round-trips have already elapsed, so a short CD should long since have
     # fired. enter_world syncs an already-active event directly (dereth_server.py enter_world), and
     # a CD that fires just after dave joins is still caught by the subsequent event_start broadcast,
-    # so a generous timeout absorbs scheduler jitter without masking a real regression.
+    # so a generous timeout absorbs scheduler jitter without masking a real regression. #985: the sync
+    # frame can trail a large snapshot backlog on an Incursion-busy world, so give it the same 20s
+    # ceiling as the drop replay above (co-failed with it in the reported overloaded runs).
     dave = await WS.connect()
     await dave.send({"t": "register", "user": f"dave_{uniq}", "pass": "secret4"})
     await dave.recv_until(lambda x: x["t"] == "auth_ok")
     await dave.recv_until(lambda x: x["t"] == "roster")
     await dave.send({"t": "create_char", "slot": 0, "name": f"dave{uniq}", "char": {}})
     await dave.recv_until(lambda x: x["t"] == "play_ok")
-    ev = await dave.recv_until(lambda x: x["t"] == "event_start", timeout=10.0)
+    ev = await dave.recv_until(lambda x: x["t"] == "event_start", timeout=20.0)
     check("active Incursion synced to late joiner", bool(ev) and ev.get("name") and ev.get("count", 0) > 0)
     await dave.close()
 
