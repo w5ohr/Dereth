@@ -3208,7 +3208,7 @@ async def dispatch(cl, msg):
         if cl.in_world and cl.charname:
             await cl.send(await dbq(alg_info_pub, cl.charname))
     elif t == "alg_motd":
-        text = clean_relay(msg.get("text", ""), 200)
+        text = censor(clean_relay(msg.get("text", ""), 200))   # #1003: the MOTD is a chat fan-out too — and worse, it's PERSISTED (alg_set_motd) and re-served on every alg_info, so censor before the DB write to clean the broadcast AND every later read in one place
         if cl.in_world and cl.charname:
             if await dbq(alg_monarch, cl.charname) != cl.charname or not await dbq(alg_vassals, cl.charname):
                 return await cl.send({"t": "system", "msg": "Only a Monarch (the crown of a tree) sets the allegiance MOTD."})
