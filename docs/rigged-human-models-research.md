@@ -2,6 +2,52 @@
 
 *Researched 2026-07-18 via multi-agent deep-research sweep (22 sources fetched, 25 license/spec claims adversarially verified 3-0 each; 0 refuted). Constraint: genuinely free for commercial use inside a live browser MMO (assets are served raw to clients, so "no redistribution" licenses fail).*
 
+## ✅ SPIKE TEST RESULTS (2026-07-18) — Quaternius stack VALIDATED
+
+Ran the in-engine spike (open question 4) same day, using the free tiers downloaded from itch.io
+(Universal Base Characters[Standard].zip 122 MB, upload 15861669; Universal Animation Library[Standard].zip 15 MB, upload 17958403).
+Test page: `spike/spike.html` (gitignored along with the assets; serve repo root and open
+`/spike/spike.html?n=<count>&gpu=1`).
+
+**Key finding — no retargeting needed at all.** The Universal Animation Library GLB and the base
+bodies share the *identical* skeleton (65 bones, UE-mannequin naming: pelvis, spine_01…03,
+clavicle/upperarm/lowerarm/hand_l|r, full finger chains, ball/foot/calf/thigh). Every one of the
+43 free clips' track targets bound by name via plain `THREE.AnimationMixer` on a
+`SkeletonUtils.clone()` of the body — **0 unmatched tracks**. `SkeletonUtils.retargetClip` never needed.
+
+**Works on both render paths** (this machine: M-series Mac, Chrome):
+GLTFLoader loads bodies + clips in ~500 ms total; skinning correct under WebGL and WebGPU
+(`vendor/three.module.js` / `vendor/three.webgpu.js` from the repo).
+
+**Perf** (synchronous bench: mixer.update + render, unique SkeletonUtils clones, no instancing,
+no LOD, 14,318 tris/body, 2560×1440):
+
+| instances | WebGL ms/frame (fps) | WebGPU ms/frame (fps) |
+|---|---|---|
+| 60  | 3.3 (≈307) | 3.5 (≈287) |
+| 300 | 18.3 (≈55) | 24.0 (≈42) |
+
+Dozens of on-screen NPCs cost single-digit ms — fine without any optimization; hundreds would want
+LOD/impostors. WebGPU is slightly *slower* per skinned draw at high counts (CPU-side backend overhead).
+
+**Free-tier animation coverage is a strong AC fit:** Idle/Walk/Jog/Sprint, Jump_Start/Loop/Land,
+Sword_Attack + Sword_Idle, Spell_Simple_Enter/Idle/Shoot/Exit, Hit_Chest/Hit_Head, Death01,
+Crouch, Swim_Idle/Fwd, Sitting set, Dance, Interact, PickUp, Roll, Punches. (Pistol clips ignorable.)
+`UAL1_Standard_RM.glb` variant carries root motion.
+
+**Visual quality:** sculpted anatomy, real fingers/toes, modeled face with eyes+eyebrows —
+far above the current procedural jointed body. Free tier bodies are the **Superhero** proportion
+only (M+F); Regular/Teen proportions are in the paid ($19.99, still CC0) set.
+
+**Gotchas found:** the glTFs reference two texture filenames that don't ship
+(`T_Hair_1_Normal_png.png`, `T_Eye_Normal_png.png`) — copy/rename from the non-`_png` versions.
+itch.io free downloads scriptable via POST `<game>/download_url` (csrf from page cookie) then
+POST `<game>/file/<upload_id>?source=view_game` → CDN URL (60 s expiry).
+
+**Still untested:** hairstyle attachment (head-bone-rigged glTFs are in the pack), the Modular
+Fantasy Outfits pack, AC head attachment / `dressAvatar()` port, blending clips at Dereth's real
+NPC counts inside the actual game loop.
+
 ## Recommended stack (all CC0, coherent ecosystem)
 
 **1. Quaternius — Universal Base Characters** — https://quaternius.com/packs/universalbasecharacters.html

@@ -48,3 +48,4 @@ server/*.bak
 server/*.bak.tmp
 base_srv.log
 base_test.db*
+spike/
