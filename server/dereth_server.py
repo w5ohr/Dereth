@@ -2601,6 +2601,35 @@ def clean_relay(s, maxlen):
     s = "".join(ch for ch in s if ch >= " ")   # drop control chars incl. newlines/tabs (single-line relay)
     return s[:maxlen].strip()
 
+# #1000: profanity → grawlix. Whole-word, case-insensitive, word-boundary matched (avoids the
+# "Scunthorpe problem" — never censors an innocent substring). The grawlix run is a length-matched
+# cycle of !@#$%^&*() so the reader can tell something was censored but the message isn't dropped.
+# Applied AUTHORITATIVELY at every chat fan-out, so it censors for every recipient regardless of the
+# sender's client. Keep the list tunable; inflections are listed explicitly (whole-word match won't
+# stem). Mirrored in js/game.js censorProfanity() for solo/offline chat that never reaches the server.
+_GRAWLIX = "!@#$%^&*()"
+_PROFANITY = frozenset((
+    "fuck fucks fucking fucked fucker fuckers fuckin fuckwit motherfucker motherfuckers motherfucking "
+    "shit shits shitting shitted shitty shite bullshit dipshit "
+    "ass asses asshole assholes asshat asswipe jackass dumbass "
+    "bitch bitches bitching bitchy bastard bastards "
+    "cock cocks cocksucker dick dicks dickhead dickheads prick pricks "
+    "pussy pussies cunt cunts twat twats slut sluts whore whores "
+    "piss pissed pissing wank wanker wankers bollocks wtf stfu "
+    "nigger niggers nigga niggas faggot faggots fag fags retard retards retarded"
+).split())
+_CENSOR_RE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
+
+def censor(s):
+    """Replace whole-word profanity in `s` with a grawlix run of the same length. Returns `s` unchanged
+    when clean. Safe to run twice — grawlix chars aren't letters, so already-censored text is untouched."""
+    if not s:
+        return s
+    def _rep(m):
+        w = m.group(0)
+        return "".join(_GRAWLIX[i % len(_GRAWLIX)] for i in range(len(w))) if w.lower() in _PROFANITY else w
+    return _CENSOR_RE.sub(_rep, s)
+
 # ---------------------------------------------------------------- in-game issue reporting → GitHub
 # The client's /bug form sends {t:"bug", text, loc, chat}. The server — never the client — holds the
 # GitHub token (post-#440 rule: credentials live in the environment, not in anything shipped or
@@ -2921,7 +2950,7 @@ async def dispatch(cl, msg):
             except (TypeError, ValueError):
                 pass
     elif t == "chat":
-        text = clean_relay(msg.get("msg", ""), 240)
+        text = censor(clean_relay(msg.get("msg", ""), 240))   # #1000: profanity → grawlix, authoritatively for every recipient
         if text and cl.in_world:
             await broadcast({"t": "chat", "from": cl.charname or cl.username, "msg": text, "ts": int(time.time())})
     elif t == "attack":
@@ -3044,7 +3073,7 @@ async def dispatch(cl, msg):
         if cl.in_world:
             act = str(msg.get("act", ""))
             if act == "me":
-                text = clean_relay(msg.get("text", ""), 80)
+                text = censor(clean_relay(msg.get("text", ""), 80))   # #1000: free-text emote (/me) is chat too
                 line = f"{cl.charname} {text}" if text else None
             else:
                 verb = EMOTES.get(act)
@@ -3087,7 +3116,7 @@ async def dispatch(cl, msg):
         # 1000, not the 240 the public channels use: tells are private 1:1 (no broadcast amplification,
         # same RL_CHAT rate limit), and the Kilmer lore-bot's multi-sentence answers were being clipped
         # mid-sentence at 240 ("…His remnant I scatter") before they ever reached the asker.
-        text = clean_relay(msg.get("msg", ""), 1000)
+        text = censor(clean_relay(msg.get("msg", ""), 1000))   # #1000: tells are censored too
         if cl.in_world and text:
             target = next((c for c in CLIENTS.values() if c.in_world and c.charname == name), None)
             if not target or target is cl:
@@ -3123,7 +3152,7 @@ async def dispatch(cl, msg):
                         out.append(e)
             cl.phs = out or None
     elif t == "pchat":
-        text = clean_relay(msg.get("msg", ""), 240)
+        text = censor(clean_relay(msg.get("msg", ""), 240))   # #1000: party/allegiance chat censored
         if cl.in_world and cl.party in PARTIES and text:
             for acc in PARTIES[cl.party]["members"]:
                 c = CLIENTS.get(acc)
@@ -3188,7 +3217,7 @@ async def dispatch(cl, msg):
                 if c2.in_world and getattr(c2, "allegiance", None) == cl.charname:
                     await c2.send({"t": "system", "msg": f"[Allegiance MOTD] {text}"})
     elif t == "achat":
-        text = clean_relay(msg.get("msg", ""), 240)
+        text = censor(clean_relay(msg.get("msg", ""), 240))   # #1000: party/allegiance chat censored
         alg = getattr(cl, "allegiance", None)
         if cl.in_world and text and alg:
             for c in CLIENTS.values():
