@@ -8184,6 +8184,7 @@ function buildWorld(){
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   loadGltfHorse();                       // preload the rigged horse model for mounts
+  if(/[?&]newbodies=1/.test(location.search)) loadQuatBodies();   // #1008: opt-in preload of the Quaternius human bodies (default OFF — normal play is untouched)
   buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
   spawnOwnedHorses();             // #725: parked horses stand back up where they were left
@@ -25107,6 +25108,77 @@ const HORSE_TYPES={
 };
 const HORSE_MAX=20;
 const HORSE_H=2.15;                  // target withers-span height (world units) for the rigged horse model
+// ═══ #1008 QUATERNIUS HUMAN BODIES — loader/cache (item 1). The rigged CC0 Universal Base Characters
+//     (male/female) + the Universal Animation Library, loaded ONCE and shared across every clone. The
+//     spike (docs/rigged-human-models-research.md, spike/spike.html) validated that all 43 UAL clips
+//     bind to the body skeleton BY NAME through a plain AnimationMixer on SkeletonUtils.clone() — zero
+//     retargeting. This is the foundation for replacing the procedural player/NPC bodies (#1008 items
+//     2-6); NOTHING consumes it in normal play yet. It auto-preloads only under ?newbodies=1, so the
+//     shipped default is byte-for-byte the current game until the swap is wired up and visually verified. ═══
+const QUAT_BODY_URL={
+  male:  "assets/models/quaternius/bodies/Superhero_Male_FullBody.gltf",
+  female:"assets/models/quaternius/bodies/Superhero_Female_FullBody.gltf",
+  anims: "assets/models/quaternius/animations/UAL1_Standard.glb",
+};
+// game state → UAL clip name (verified against the loaded library by quatBodyClipsResolve()). The
+// follow-up that swaps the in-world bodies drives the AnimationMixer with these in place of acMotionTick
+// for humans. Names are the REAL clip names in UAL1_Standard.glb (e.g. PickUp_Table, not "PickUp").
+const QUAT_ANIM={
+  idle:"Idle_Loop", talk:"Idle_Talking_Loop", walk:"Walk_Loop", jog:"Jog_Fwd_Loop", run:"Sprint_Loop",
+  jumpStart:"Jump_Start", jumpLoop:"Jump_Loop", jumpLand:"Jump_Land",
+  swordIdle:"Sword_Idle", swordAttack:"Sword_Attack", punch:"Punch_Jab", roll:"Roll",
+  castEnter:"Spell_Simple_Enter", castIdle:"Spell_Simple_Idle_Loop", castShoot:"Spell_Simple_Shoot", castExit:"Spell_Simple_Exit",
+  hitChest:"Hit_Chest", hitHead:"Hit_Head", death:"Death01",
+  swimIdle:"Swim_Idle_Loop", swimFwd:"Swim_Fwd_Loop",
+  crouch:"Crouch_Idle_Loop", crouchWalk:"Crouch_Fwd_Loop",
+  sit:"Sitting_Idle_Loop", sitEnter:"Sitting_Enter", sitExit:"Sitting_Exit",
+  interact:"Interact", pickup:"PickUp_Table", dance:"Dance_Loop",
+};
+let quatBody=null;                                 // {male:{scene}, female:{scene}, clips:[], byName:Map, ready:true}
+let _quatBodyPromise=null;
+function loadQuatBodies(){                          // idempotent; resolves to the cache (or null on failure)
+  if(_quatBodyPromise) return _quatBodyPromise;
+  if(typeof THREE.GLTFLoader==="undefined"||typeof THREE.SkeletonUtils==="undefined") return Promise.resolve(null);
+  const L=new THREE.GLTFLoader(), load=u=>new Promise((res,rej)=>L.load(u,res,undefined,rej));
+  _quatBodyPromise=Promise.all([load(QUAT_BODY_URL.male),load(QUAT_BODY_URL.female),load(QUAT_BODY_URL.anims)])
+    .then(([m,f,a])=>{
+      const clips=a.animations||[], byName=new Map();
+      for(const c of clips) byName.set(c.name,c);
+      quatBody={ male:{scene:m.scene}, female:{scene:f.scene}, clips, byName, ready:true };
+      console.log("Quaternius human bodies loaded ("+clips.length+" UAL clips).");
+      return quatBody;
+    }).catch(e=>{ console.warn("Quaternius body load failed:",(e&&e.message)||e); quatBody=null; return null; });
+  return _quatBodyPromise;
+}
+// which of our QUAT_ANIM state clips are actually present in the loaded library (all should be — a guard
+// against a future asset re-export silently renaming a clip). Returns {ok, missing:[state,...]}.
+function quatBodyClipsResolve(){
+  if(!quatBody||!quatBody.ready) return {ok:false, missing:Object.keys(QUAT_ANIM)};
+  const missing=[]; for(const k in QUAT_ANIM){ if(!quatBody.byName.has(QUAT_ANIM[k])) missing.push(k); }
+  return {ok:missing.length===0, missing};
+}
+// a fresh, independent animated instance of a body → {root, mixer, play(state|clipName), height, sex}.
+// Height-normalized to TARGET_HUMAN_H with feet dropped to y=0, matching every other human in the game.
+// Returns null until loadQuatBodies() has resolved. play() accepts a QUAT_ANIM state key or a raw clip name.
+function quatBodyClone(sex){
+  if(!quatBody||!quatBody.ready||typeof THREE.SkeletonUtils==="undefined") return null;
+  const src=(sex==="female"?quatBody.female:quatBody.male).scene;
+  const root=THREE.SkeletonUtils.clone(src);
+  const s=TARGET_HUMAN_H/(robustHeight(root)||1); root.scale.setScalar(s);
+  root.updateMatrixWorld(true);
+  const bb=new THREE.Box3().setFromObject(root); if(isFinite(bb.min.y)) root.position.y-=bb.min.y;   // feet on the ground
+  root.traverse(o=>{ if(o.isMesh) o.frustumCulled=false; });
+  const mixer=new THREE.AnimationMixer(root);
+  let cur=null;
+  const play=(nameOrState,fade)=>{
+    const clip=quatBody.byName.get(QUAT_ANIM[nameOrState]||nameOrState); if(!clip) return null;
+    const act=mixer.clipAction(clip);
+    if(cur&&cur!==act){ act.reset().play(); act.crossFadeFrom(cur,fade==null?0.2:fade,false); }
+    else act.play();
+    cur=act; return act;
+  };
+  return {root, mixer, play, height:robustHeight(root), sex:(sex==="female"?"female":"male")};
+}
 const HORSE_MODEL="assets/models/animals/Horse.glb";   // CC0 Quaternius Animated Animals — rigged, Gallop/Walk/Idle/Eating clips
 let gltfHorse=null, _horseLoadStarted=false;
 function loadGltfHorse(){
