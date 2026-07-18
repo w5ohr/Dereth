@@ -1006,6 +1006,7 @@ class Client:
         self.wt = None; self.wmode = "sword"; self.shield = None   # wield: weapon type, stance, offhand shield type
         self.mnt = None   # #728: mount type key while riding (e.g. "grey") — remotes render the horse
         self.jy = 0.0; self.jc = 0.0   # #960: vertical jump offset + charge crouch, relayed so peers see us leap
+        self.sw = 0.0; self.cf = 0.0; self.blk = False   # #anim-sync: melee swing / cast windup / shield guard, relayed so peers see us act
         self.phs = None   # #734: this rider's PARKED horses [{i,t,n,x,z}] — stamped into snapshots
         self.gear = None           # #667: compact worn-armour descriptor (sanitize_gear), so remotes render our armour
         self.inst = False        # #646: True while in a per-player instance (dungeon/Town Network/Academy). x/z carry the OVERWORLD return point (#307), so peers hide the avatar and AI/PvP must not target it
@@ -1077,6 +1078,7 @@ def player_pub(u, cl):
             "wt": getattr(cl, "wt", None), "wmode": getattr(cl, "wmode", "sword"), "shield": getattr(cl, "shield", None),
             "mnt": getattr(cl, "mnt", None),   # #728: mounted remotes render their horse
             "jy": round(getattr(cl, "jy", 0.0), 2), "jc": round(getattr(cl, "jc", 0.0), 2),   # #960: jump height + charge so peers see the leap/crouch
+            "sw": round(getattr(cl, "sw", 0.0), 2), "cf": round(getattr(cl, "cf", 0.0), 2), "blk": getattr(cl, "blk", False),   # #anim-sync: swing / cast / guard so peers see us act
             "phs": getattr(cl, "phs", None),   # #734: their parked horses stand in the shared world
             "gear": getattr(cl, "gear", None),   # #667: worn armour so remotes render us clad, not bare
             "inst": getattr(cl, "inst", False)}   # #646: peers hide the avatar when set (player is inside an instance)
@@ -2895,6 +2897,9 @@ async def dispatch(cl, msg):
         cl.yaw = _finitef(msg.get("yaw"), cl.yaw)
         cl.jy = max(-40.0, min(40.0, _finitef(msg.get("jy"), 0.0)))   # #960: vertical jump offset above ground (0 grounded) — absent resets to 0
         cl.jc = max(0.0, min(1.0, _finitef(msg.get("jc"), 0.0)))       # #960: jump-charge crouch 0..1
+        cl.sw = max(0.0, min(1.0, _finitef(msg.get("sw"), 0.0)))       # #anim-sync: melee swing progress (0 idle) — transient, absent resets to 0
+        cl.cf = max(0.0, min(1.0, _finitef(msg.get("cf"), 0.0)))       # #anim-sync: spell-cast windup fraction 0..1
+        cl.blk = bool(msg.get("blk"))                                   # #anim-sync: shield guard raised
         cl.inst = inst
         cl.hp = _clampi(msg.get("hp"), 0, 1_000_000, cl.hp)      # sane ceilings — legit values are far below; blocks god-HP display
         cl.mhp = _clampi(msg.get("mhp"), 1, 1_000_000, cl.mhp)
