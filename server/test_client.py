@@ -129,6 +129,18 @@ async def main():
     cm = await a.recv_until(lambda x: x["t"] == "chat")
     check("chat relays bob -> alice", cm and cm.get("from") == f"{bob}0" and "hail" in cm.get("msg", ""))
 
+    # #1017: profanity with a possessive/contraction apostrophe suffix ("shit's") must still be censored
+    # authoritatively — the tokenizer used to keep "shit's" as one token and miss the wordlist lookup.
+    await b.send({"t": "chat", "msg": "that shit's crazy"})
+    cz = await a.recv_until(lambda x: x["t"] == "chat" and "crazy" in x.get("msg", ""))
+    check("apostrophe-suffix profanity censored (shit's)",
+          bool(cz) and "shit" not in cz.get("msg", "").lower() and "!@#" in cz.get("msg", ""))
+    # ...but an innocent apostrophe word whose base is clean is left alone (no over-broadening)
+    await b.send({"t": "chat", "msg": "the assassin's guild"})
+    ci = await a.recv_until(lambda x: x["t"] == "chat" and "guild" in x.get("msg", ""))
+    check("innocent apostrophe word left alone (assassin's)",
+          bool(ci) and ci.get("msg", "") == "the assassin's guild")
+
     # /who lists online in-world characters by name
     await a.send({"t": "who"})
     wh = await a.recv_until(lambda x: x["t"] == "who")
