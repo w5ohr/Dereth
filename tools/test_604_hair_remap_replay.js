@@ -90,11 +90,21 @@ const HAIR_TEX="050011FD";
     await new Promise(r=>acHeadTexture(HAIR_TEX,[skin,hair],t=>{ mat.map=t; r(); }));
     out.rawServed = !!(mat.map && !mat.map.isCanvasTexture);
     out.rawMean = mat.map?meanRGB(mat.map):null;
-    out.pendingRecorded = _acHeadPending.length;
+    // _acHeadPending is a PROCESS-GLOBAL queue, and the live render loop is still building Academy NPC
+    // heads while AC_HEAD_REMAP is null — every concurrent raw serve pushes its OWN (different-key) entry,
+    // so the raw global length is nondeterministic (2/3/6…). Count only the entry THIS test recorded:
+    // same head texture + same skin/hair remap. Exactly one such entry exists (a shared key starts a
+    // single in-flight load; extra callers just join its cbs, they don't push a second entry). (#977)
+    const mine=e=>e.texDID===HAIR_TEX && e.rms.length===2 && e.rms[0]===skin && e.rms[1]===hair;
+    out.pendingRecorded = _acHeadPending.filter(mine).length;
 
-    // palettes land
+    // palettes land. Snapshot the WHOLE queue's queued-callback count right before draining (synchronously,
+    // so no concurrent Image.onload can grow it in between): acHeadRemapArrived must replay exactly that
+    // many — that faithful-drain invariant is the real thing under test, and it holds for any queue size.
+    const totalQueuedCbs = _acHeadPending.reduce((s,e)=>s+e.cbs.length,0);
     AC_HEAD_REMAP=saved;
     out.replayed = acHeadRemapArrived();
+    out.totalQueuedCbs = totalQueuedCbs;
     await new Promise(r=>setTimeout(r,400));     // the replayed load is async (Image.onload)
     out.afterMapIsCanvas = !!(mat.map && mat.map.isCanvasTexture);
     out.afterMean = mat.map?meanRGB(mat.map):null;
@@ -141,8 +151,9 @@ const HAIR_TEX="050011FD";
   check("bug.raw-texture-served-while-palettes-pending", data.rawServed===true,
     `served a plain (non-canvas) texture = ${data.rawServed}, mean rgb(${data.rawMean})`);
   check("fix.raw-serve-is-recorded-for-replay", data.pendingRecorded===1,
-    `_acHeadPending entries=${data.pendingRecorded}`);
-  check("fix.replay-runs-when-palettes-arrive", data.replayed===1, `callbacks replayed=${data.replayed}`);
+    `_acHeadPending entries for this head=${data.pendingRecorded}`);
+  check("fix.replay-runs-when-palettes-arrive", data.replayed===data.totalQueuedCbs && data.replayed>=1,
+    `callbacks replayed=${data.replayed} (== ${data.totalQueuedCbs} queued — drains the whole global queue faithfully)`);
   check("fix.material-map-swapped-to-remapped-texture", data.afterMapIsCanvas===true,
     `mat.map.isCanvasTexture=${data.afterMapIsCanvas}`);
   check("fix.pixels-actually-changed", dist(data.rawMean,data.afterMean)>=12,
