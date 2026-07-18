@@ -140,6 +140,28 @@ async def main():
     em = await a.recv_until(lambda x: x["t"] == "emote")
     check("emote broadcasts to others", bool(em) and em.get("from") == f"{bob}0" and "waves" in em.get("msg", ""))
 
+    # #999 custom emote: bob shares a player-authored keyframe emote -> alice receives the sanitized payload
+    await b.send({"t": "emote", "act": "__custom__", "ce": {
+        "name": "salute", "dur": 1.4,
+        "frames": [{"t": 0, "pose": {"rArmX": -2.4}}, {"t": 1, "pose": {"rArmX": 0.05}}]}})
+    ce = await a.recv_until(lambda x: x["t"] == "emote" and x.get("act") == "__custom__")
+    check("custom emote relays to others", bool(ce) and ce.get("from") == f"{bob}0" and isinstance(ce.get("ce"), dict))
+    check("custom emote payload carries name + >=2 frames",
+          bool(ce) and ce["ce"].get("name") == "salute" and len(ce["ce"].get("frames", [])) >= 2)
+    # an oversized / malformed payload is clamped by the server, never relayed raw
+    await b.send({"t": "emote", "act": "__custom__", "ce": {
+        "name": "z" * 200, "dur": 999,
+        "frames": [{"t": 0, "pose": {"rArmX": -999, "bogus": 5}}] * 100}})
+    ce2 = await a.recv_until(lambda x: x["t"] == "emote" and x.get("act") == "__custom__")
+    check("oversized custom emote clamped (name/dur/frames)",
+          bool(ce2) and len(ce2["ce"]["name"]) <= 24 and ce2["ce"]["dur"] <= 6 and len(ce2["ce"]["frames"]) <= 24)
+    check("unknown pose channel + out-of-range value bounded",
+          bool(ce2) and "bogus" not in ce2["ce"]["frames"][0].get("pose", {}) and ce2["ce"]["frames"][0]["pose"].get("rArmX", 0) >= -3.0)
+    # a payload with no valid frames is dropped (no relay)
+    await b.send({"t": "emote", "act": "__custom__", "ce": {"name": "empty", "frames": []}})
+    ce3 = await a.recv_until(lambda x: x["t"] == "emote" and x.get("act") == "__custom__", timeout=1.0)
+    check("frameless custom emote is not relayed", ce3 is None)
+
     # cast a Creature/Life spell on another player -> they receive an rbuff (in range)
     await a.send({"t": "input", "x": 100, "z": 200, "yaw": 0, "hp": 100})
     await b.send({"t": "input", "x": 102, "z": 200, "yaw": 0, "hp": 100})

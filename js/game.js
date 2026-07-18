@@ -33807,8 +33807,16 @@ function sampleCustomEmote(emote,f){
   const out={}; for(const ch of EMOTE_CHANNELS) out[ch]=a.pose[ch]+(b.pose[ch]-a.pose[ch])*k;
   return out;
 }
-// play a custom emote on YOUR avatar (local — the server has no custom-emote relay yet; sharing is
-// the tracked follow-up). Returns false if the emote is malformed.
+// #999: compact wire payload for sharing — send only the channels the author actually moved off rest
+// (the receiver rest-fills the gaps), keeping the fan-out small. Server + receiver both re-validate.
+function emoteSharePayload(e){
+  return {name:e.name, dur:e.dur, loop:!!e.loop, frames:(e.frames||[]).map(f=>{
+    const p={}; for(const ch of EMOTE_CHANNELS){ if(Math.abs((f.pose[ch]||0)-EMOTE_REST[ch])>1e-4) p[ch]=+f.pose[ch].toFixed(3); }
+    return {t:+(+f.t).toFixed(3), pose:p}; })};
+}
+let _lastSeenEmote=null, _seenEmoteHinted=false;   // most recent custom emote seen from another player → /emote copy
+// play a custom emote on YOUR avatar. Online it broadcasts (server relays to nearby players, who see it
+// on your remote avatar and can /emote copy it); offline it plays locally. Returns false if malformed.
 function playCustomEmote(emote,quiet){
   const e=sanitizeCustomEmote(emote); if(!e) return false;
   player.emoteAct="__custom__"; player.emoteCustom=e; player.emoteT=e.dur;
@@ -33834,7 +33842,8 @@ function doEmote(act,text){
     else chatMsg("emote",`<i>${esc(player.name||"You")} ${esc(t)}</i>`);
     return; }
   const ce=(player.customEmotes||[]).find(e=>e&&e.name.toLowerCase()===(""+act).toLowerCase());
-  if(ce){ playCustomEmote(ce); return; }   // #999: custom emotes play locally (no server relay yet — sharing is the tracked follow-up)
+  if(ce){ if(isOnline){ netSend({t:"emote",act:"__custom__",ce:emoteSharePayload(ce)}); }   // #999: online → server relays to nearby players & echoes back to us (onEmote plays it)
+          else { playCustomEmote(ce); } return; }
   if(!EMOTE_CMDS[act]){ const cust=(player.customEmotes||[]).map(e=>e.name);
     log("Unknown emote. Try: "+Object.keys(EMOTE_CMDS).join(", ")+(cust.length?" · yours: "+cust.join(", "):"")+" · <b>/emote studio</b>","warn"); return; }
   if(isOnline){ netSend({t:"emote",act}); }
@@ -33924,13 +33933,22 @@ function poseRemoteBlock(u){
   if(u.spine) u.spine.rotation.y=0.12;
 }
 function clearRemoteEmote(mesh){ const u=mesh&&mesh.userData; if(!u||!u.shR) return;   // return arms to the neutral built pose
-  u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0); if(u.spine)u.spine.rotation.x=0; if(u.neck)u.neck.rotation.set(0,0,0); }   // #672: bow's head-dip resets too (nothing else drives a remote's neck)
+  u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0);
+  if(u.spine){ u.spine.rotation.set(0,0,0); if(typeof AV_WAIST!=="undefined") u.spine.position.y=AV_WAIST; } if(u.neck)u.neck.rotation.set(0,0,0);   // #672: bow's head-dip resets too
+  if(u.hipR)u.hipR.rotation.x=0; if(u.hipL)u.hipL.rotation.x=0; if(u.knR)u.knR.rotation.x=0; if(u.knL)u.knL.rotation.x=0; }   // #999: a custom emote can pose the torso/legs — reset them too
 function onEmote(m){
   chatMsg("emote",`<i>${esc(m.msg)}</i>`);
   let x=null,z=null;
-  if(m.id===NET.me){ x=player.x; z=player.z; if(m.act&&m.act!=="me") playEmoteAnim(m.act); }   // our own emote, echoed back → animate us
-  else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz); if(m.act&&m.act!=="me") playRemoteEmote(r,m.act); } }
-  if(x!=null && m.act!=="me") floater(x,EYE+1.4,z,m.act,"#ffe9b0",1.1);
+  const custom=(m.act==="__custom__")?sanitizeCustomEmote(m.ce):null;   // #999: a shared player-authored emote (re-validated client-side)
+  if(m.id===NET.me){ x=player.x; z=player.z;
+    if(custom) playCustomEmote(custom,true);                            // our own custom emote, echoed back → play on us
+    else if(m.act&&m.act!=="me") playEmoteAnim(m.act); }
+  else { const r=NET.players[m.id]; if(r){ x=(r.x!=null?r.x:r.tx); z=(r.z!=null?r.z:r.tz);
+    if(custom){ r.emoteAct="__custom__"; r.emoteCustom=custom; r.emoteT=custom.dur;   // play it on their remote avatar
+      _lastSeenEmote={emote:custom,from:m.from};
+      if(!_seenEmoteHinted){ _seenEmoteHinted=true; log(`<b>${esc(m.from||"Someone")}</b> performed a custom emote — <b>/emote copy</b> to keep <b>${esc(custom.name)}</b>.`,"sys"); } }
+    else if(m.act&&m.act!=="me") playRemoteEmote(r,m.act); } }
+  if(x!=null && m.act!=="me") floater(x,EYE+1.4,z,custom?custom.name:m.act,"#ffe9b0",1.1);
 }
 function onRemoteBuff(m){   // a Creature/Life/Item spell another player (a buff bot) cast on you
   if(typeof m.spell==="string"&&m.spell.indexOf("kportal:")===0) return onKilmerPortal(m);   // a portal bot opens a gate to a destination
@@ -34209,8 +34227,16 @@ function handleSlash(text){
   }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
     if(act==="studio"||act==="new"||act==="create"||act==="make"){ openEmoteStudio(); }   // #999: author your own emote
+    else if(act==="copy"){   // #999: keep the last custom emote another player performed near you
+      const seen=_lastSeenEmote&&sanitizeCustomEmote(_lastSeenEmote.emote);
+      if(!seen){ log("No custom emote seen recently to copy.","warn"); }
+      else{ player.customEmotes=Array.isArray(player.customEmotes)?player.customEmotes:[];
+        if(player.customEmotes.some(e=>e.name.toLowerCase()===seen.name.toLowerCase())) log(`You already have an emote named <b>${esc(seen.name)}</b>.`,"warn");
+        else if(player.customEmotes.length>=CUSTOM_EMOTE_MAX) log(`You already have the max ${CUSTOM_EMOTE_MAX} custom emotes.`,"warn");
+        else{ player.customEmotes.push(seen); try{saveGame();}catch(_){}
+          log(`Copied <b>${esc(seen.name)}</b>${_lastSeenEmote.from?" from <b>"+esc(_lastSeenEmote.from)+"</b>":""} — play it with <b>/emote ${esc(seen.name)}</b>.`,"sys"); } } }
     else if(!act){ const cust=(player.customEmotes||[]).map(e=>e.name);
-      log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+(cust.length?' · <b>yours:</b> '+cust.map(esc).join(", "):"")+" — <b>/emote studio</b> to build your own","sys"); }
+      log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+(cust.length?' · <b>yours:</b> '+cust.map(esc).join(", "):"")+" — <b>/emote studio</b> to build your own · <b>/emote copy</b> to keep one you've seen","sys"); }
     else doEmote(act); }
   else if(EMOTE_CMDS[cmd]){ doEmote(cmd); }                                   // shorthand: /clap, /wave, …
   else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
@@ -34430,7 +34456,10 @@ function updateRemotes(dt){
         u._acPosed=false;
       }
       r._jyPrev=r.jy||0; }
-    if(r.emoteT>0){ r.emoteT-=dt; poseRemoteEmote(mesh, r.emoteAct, Math.sin(now()/110)); if(r.emoteT<=0) clearRemoteEmote(mesh); }   // play/expire a remote player's emote gesture
+    if(r.emoteT>0){ r.emoteT-=dt;   // play/expire a remote player's emote gesture
+      if(r.emoteAct==="__custom__"&&r.emoteCustom){ applyEmotePose(mesh.userData, sampleCustomEmote(r.emoteCustom, clamp(1-r.emoteT/(r.emoteCustom.dur||EMOTE_DUR),0,1))); }   // #999: shared custom emote
+      else poseRemoteEmote(mesh, r.emoteAct, Math.sin(now()/110));
+      if(r.emoteT<=0) clearRemoteEmote(mesh); }
   }
   // #673: the gate NPC yields to the LIVE Kilmer (the lore-keeper bot) — no two Kilmers at one gate.
   // Quest access online stays via the /tell Kilmer regalia intercept, which speaks through this record.
