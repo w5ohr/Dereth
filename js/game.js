@@ -33025,6 +33025,13 @@ function onSpellFx(m){
   }
 }
 function netHandle(m){
+  // #970: backstop — a JSON-legal-but-malformed message (a scalar where a handler expects an
+  // array/string) must be DROPPED, not thrown out of onmessage. The specific reward/loot/trade
+  // shapes are guarded at their handlers (rewardNum/arr/sanitizeItem); this catches the long tail.
+  try{ return _netHandle(m); }catch(e){ if(typeof console!=="undefined") console.warn("netHandle: dropped malformed message",m&&m.t,e); }
+}
+function _netHandle(m){
+  if(!m||typeof m!=="object") return;   // #970: a non-object frame (JSON scalar/array) has no handler
   if(m.t==="spellfx") return onSpellFx(m);
   if(m.t==="auth_ok") return onAuthOk(m);
   if(m.t==="auth_err"){ if(NET.reconnecting){ reconnectFailed(m.msg||"Session expired — please log in."); return; }   // #636: resume rejected (token expired/invalid) → fall back to the auth screen
@@ -33059,13 +33066,13 @@ function netHandle(m){
       // EXACT count the server took (m.gave carries `count` for partial stacks), then add what we received.
       for(const it of TRADE.mine) addToInv(it,true);   // undo escrow → satchel is "as if no offer was made" (merges split stacks)
       TRADE.mine.length=0;
-      const gaveN=(m.gave||[]).length;
-      for(const g of (m.gave||[])) removeStack(g, (g&&g.count)||1);   // remove exactly what the server took (count-accurate)
-      for(const raw of (m.give||[])){ const it=sanitizeItem(raw); if(it) addToInv(it,true); }   // #882: a peer's relayed items get the same boundary validation as loot (addToInv merges partial stacks)
+      const gave=arr(m.gave), give=arr(m.give), gaveN=gave.length;   // #970: scalar give/gave must not throw mid-trade (partial-state risk)
+      for(const g of gave) removeStack(g, (g&&g.count)||1);   // remove exactly what the server took (count-accurate)
+      for(const raw of give){ const it=sanitizeItem(raw); if(it) addToInv(it,true); }   // #882: a peer's relayed items get the same boundary validation as loot (addToInv merges partial stacks)
       const paid=TRADE.mineCoin|0, got=m.coin|0;
       if(typeof m.authCoin==="number"&&isFinite(m.authCoin)) player.gold=m.authCoin;   // M3 (#238): adopt the server's authoritative post-trade balance (#315: isFinite(null)===true — a null authCoin must fall through to the additive branch, not zero gold)
       else { if(paid) player.gold=Math.max(0,player.gold-paid); if(got) player.gold+=got; }
-      log(`<b>Trade complete</b> — ${gaveN} item${gaveN!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${(m.give||[]).length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
+      log(`<b>Trade complete</b> — ${gaveN} item${gaveN!==1?"s":""}${paid?` + ${paid.toLocaleString()} pyreals`:""} given, ${give.length} received${got?` + ${got.toLocaleString()} pyreals`:""}.`,"loot"); toast("TRADE COMPLETE"); if(SFX.gold)SFX.gold();
       closeTradeWin(); saveGame(); }
     else if(m.act==="cancel"){ log(m.msg||"The trade was cancelled.","warn"); closeTradeWin(); }
     return; }
@@ -33154,9 +33161,10 @@ function onEventEnd(msg){
   else { log(`The <b>${esc(msg.name||"Incursion")}</b> faded back into the wilds.`,"warn"); toast("INCURSION FADES"); }
 }
 function onEventReward(msg){
-  if(msg.xp) gainXP(msg.xp);
-  if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin;   // #297: adopt the server's authoritative balance (event gold is now credited to cl.coin server-side) so the next absolute loot push can't erase the reward
-    else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); if(SFX.gold)SFX.gold(); }
+  const xp=rewardNum(msg.xp); if(xp) gainXP(xp);   // #970: coerce+bound before crediting
+  const gold=rewardNum(msg.gold);
+  if(gold||typeof msg.authCoin==="number"){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin;   // #297: adopt the server's authoritative balance (event gold is now credited to cl.coin server-side) so the next absolute loot push can't erase the reward
+    else player.gold+=gold; floater(player.x,EYE+0.4,player.z,"+"+gold+" p","#ffd86b"); if(SFX.gold)SFX.gold(); }   // #970: coerced+bounded add — no string/negative/non-finite corruption
   player.incursions=(player.incursions||0)+1;
   checkAchievements();
 }
@@ -33171,13 +33179,22 @@ function sanitizeItem(it){
   if(it.count!=null||it.stackable) it.count=_stackCount(it.count);   // #896: one invariant — the server's [1, STACK_MAX] clamp (was a looser 1e9 cap)
   for(const k of ["v","uses","dur","work","tier","foc","shield","magicAbsorb"])
     if(it[k]!=null&&typeof it[k]!=="object"){ const n=+it[k]; it[k]=isFinite(n)?n:0; }
+  if(it.name!=null&&typeof it.name!=="string") it.name=String(it.name);   // #970: a numeric/other name breaks downstream .toLowerCase()/.split() — coerce to string (escaped at display)
   return it;
 }
+// #970: the reward/loot trust boundary. Wire scalars must be coerced+bounded exactly like item
+// numerics (sanitizeItem above) — the global isFinite type-COERCES (isFinite([])===true because
+// Number([])===0), so `player.gold += msg.gold` on gold:[] made gold the STRING "10000" and every
+// later gain concatenated. rewardNum: object/array/non-finite/≤0 → 0; else the finite positive value
+// capped so a finite-but-astronomical amount (1e308) can't overflow player.gold/xp on accumulation.
+const REWARD_MAX=1e12;   // far above any legit single reward, far below Number overflow
+function rewardNum(v){ if(v==null||typeof v==="object") return 0; const n=+v; return (isFinite(n)&&n>0)?Math.min(n,REWARD_MAX):0; }
+function arr(v){ return Array.isArray(v)?v:[]; }   // #970: a JSON-legal scalar where an array is expected must not throw out of netHandle
 function onDrop(msg){
   if(!isOnline||NET.drops[msg.id]) return;
   let data;
   if(msg.type==="gold") data={type:"gold",amt:msg.amt};
-  else if(msg.type==="corpse") data={type:"corpse",items:(msg.items||[]).map(sanitizeItem).filter(Boolean),amt:msg.amt||0,owner:msg.owner||"",open:!!msg.open,corpse:true};   // a fallen player's shared corpse (open = PK, free loot)
+  else if(msg.type==="corpse") data={type:"corpse",items:arr(msg.items).map(sanitizeItem).filter(Boolean),amt:rewardNum(msg.amt),owner:msg.owner||"",open:!!msg.open,corpse:true};   // #970: arr() so a scalar items can't throw; rewardNum for amt
   else { const it=sanitizeItem(msg.item); if(!it) return; data={type:"item",item:it}; }
   data.id=msg.id; data.shared=true;
   NET.drops[msg.id]=addDrop(msg.x,msg.z,data);
@@ -33197,15 +33214,16 @@ function onLoot(msg){
 }
 // server handed back a recovered corpse's whole bundle — pyreals + every item (overflow spills beside you)
 function onCorpseLoot(msg){
-  if(msg.amt>0){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else player.gold+=msg.amt; floater(player.x,EYE+0.4,player.z,"+"+msg.amt+" p","#ffd86b"); }   // M3 (#238): adopt authoritative balance on recovery (#315: guard against a null authCoin zeroing gold)
+  const amt=rewardNum(msg.amt);   // #970: coerce+bound the pyreal amount
+  if(amt>0){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else player.gold+=amt; floater(player.x,EYE+0.4,player.z,"+"+amt+" p","#ffd86b"); }   // M3 (#238): adopt authoritative balance on recovery (#315: guard against a null authCoin zeroing gold)
   let taken=0,spilled=0;
-  for(const raw of (msg.items||[])){
+  for(const raw of arr(msg.items)){   // #970: arr() so a scalar items can't throw mid-loot
     const it=sanitizeItem(raw); if(!it) continue;   // #882: validate numeric fields at the boundary
     if(addToInv(it,false)) taken++;
     else { addDrop(player.x+rnd(-1.2,1.2),player.z+rnd(-1.2,1.2),{type:"item",item:it,corpse:true}); spilled++; }
   }
   const whose=(msg.owner&&player.name&&msg.owner!==player.name)?`<b>${esc(msg.owner)}</b>'s corpse`:"your corpse";
-  log(`You loot ${whose} — <b>${taken}</b> item(s)${msg.amt?` and <b>${msg.amt.toLocaleString()}</b> pyreals`:""} taken${spilled?`; <b>${spilled}</b> spilled beside you (satchel full)`:""}.`,"loot");
+  log(`You loot ${whose} — <b>${taken}</b> item(s)${amt?` and <b>${amt.toLocaleString()}</b> pyreals`:""} taken${spilled?`; <b>${spilled}</b> spilled beside you (satchel full)`:""}.`,"loot");
   if(SFX.quest)SFX.quest(); recomputeGearSkill(); updateHUD(); saveGame();
 }
 // ---- shared, server-authoritative monsters (M3) ----
@@ -33327,8 +33345,9 @@ function removeSharedMobAsDying(id){
 }
 function onMobDmg(msg){ playerHurt(msg.amt, msg.x, msg.z); }
 function onReward(msg){
-  if(msg.xp) gainXP(msg.xp);
-  if(msg.gold){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else if(isFinite(msg.gold)) player.gold+=msg.gold; floater(player.x,EYE+0.4,player.z,"+"+msg.gold+" p","#ffd86b"); SFX.gold(); }   // #297: finite guard + adopt authoritative balance when present
+  const xp=rewardNum(msg.xp); if(xp) gainXP(xp);   // #970: coerce+bound before crediting
+  const gold=rewardNum(msg.gold);
+  if(gold||typeof msg.authCoin==="number"){ if(typeof msg.authCoin==="number"&&isFinite(msg.authCoin)) player.gold=msg.authCoin; else player.gold+=gold; floater(player.x,EYE+0.4,player.z,"+"+gold+" p","#ffd86b"); SFX.gold(); }   // #297/#970: adopt authoritative balance when present, else a coerced+bounded add (never a string/negative/non-finite)
   player.kills++;
   if(msg.boss){ player.bossKills=(player.bossKills||0)+1; questEvent("boss"); }
   const b=BESTIARY[msg.kind];
