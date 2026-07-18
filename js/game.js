@@ -1127,6 +1127,7 @@ let IS_WEBGPU=false;   // #webgpu Phase B: true once a WebGPURenderer is active 
 // cinematic post-processing pipeline (bloom + filmic tonemap + vignette), built inline (no extra files)
 let POST={on:true,rtScene:null,rtA:null,rtB:null,quadScene:null,quadCam:null,quad:null,bright:null,blur:null,comp:null};
 let groundMat,groundMesh,waterMesh,weapon,weaponHand,weaponLight,bowModel,wandModel,weaponMode="sword",castShow=0,portalCd=0;
+let _recarveChunk=null,_terraChunkAt=null,_terraGrid=null;   // #1005: terrain-chunk regenerator + lookup for the structure-carve registry
 let castSelf=false,castColor=0x9af0ff,castDur=0.55,castSwirlActive=false,castSwirls=[],castRingFX=[];  // self-cast (crouch→raise) vs forward cast; castRingFX = AC concentric casting rings
 let castKind="self";   // "self" (buff/heal on self) | "bolt" (offensive thrust) | "bestow" (gift a spell to an ally)
 // Generic avatar activity gesture (gather/mine/craft/tinker/fish) — a timed pose the animator plays over `dur`.
@@ -1875,7 +1876,81 @@ function terrainH(x,z){
   let h=terrainBase(x,z);
   for(const t of FLATTEN){const d=Math.hypot(x-t.x,z-t.z);
     if(d<t.r){const k=clamp(1-(d-t.core)/(t.r-t.core),0,1);h=h*(1-k)+t.h*k;}}
+  h=terrainCarve(x,z,h);   // #1005: grade the ground down to placed structures' floor level (footprint + skirt)
   return h;
+}
+// ═══ #1005 STRUCTURE TERRAIN CARVE — placed buildings/houses/dungeon entrances seat at their LOWEST
+//     footprint corner (a dug-in foundation), so on a slope the UPHILL ground rises above the floor:
+//     it buries walls, blocks doorways, and pokes dirt up through the interior floor. Rather than perch
+//     every building on a flattened plateau (the old town approach the #955 rework removed), carve ONLY
+//     each structure's own footprint + a short skirt down toward its floor. terrainH runs this, so the
+//     rendered mesh AND groundY()/supportAt() physics grade identically — no visual/collision mismatch.
+//     Carves are ADDED when a structure streams in and REMOVED when it drops; the terrain-mesh chunks
+//     they touch are regenerated in place (initThree exposes _recarveChunk). Buildings load async (their
+//     footprints aren't known at initThree's mesh bake), so this is the only point they CAN be applied. ═══
+const CARVE_HASH=64*WSCALE;                 // spatial-hash cell (world units): keeps the terrainH hot-path lookup O(1)
+const _carveGrid=new Map();                 // "cx,cz" → [entries] (an entry lives in every cell its bbox overlaps)
+let _carveList=[], _carveId=0;
+const _carveDirty=new Set();                // terrain-mesh chunks awaiting regeneration
+const _carvedChunks=new Set();              // chunks that currently have any carve baked (for a full reset)
+function _carveCells(e,fn){                  // visit every hash cell e's (footprint+skirt) bbox overlaps
+  const R=Math.max(e.hx,e.hz)+e.skirt;
+  const c0=Math.floor((e.x-R)/CARVE_HASH), c1=Math.floor((e.x+R)/CARVE_HASH);
+  const r0=Math.floor((e.z-R)/CARVE_HASH), r1=Math.floor((e.z+R)/CARVE_HASH);
+  for(let cx=c0;cx<=c1;cx++) for(let cz=r0;cz<=r1;cz++) fn(cx+","+cz);
+}
+function _carveMarkChunks(e){                // flag the terrain chunks e's bbox overlaps for regeneration
+  if(typeof _terraChunkAt!=="function") return;
+  const R=Math.max(e.hx,e.hz)+e.skirt;
+  const CS=WORLD/TERRA_CHUNKS;
+  const i0=Math.max(0,Math.floor((e.x-R+HALF)/CS)), i1=Math.min(TERRA_CHUNKS-1,Math.floor((e.x+R+HALF)/CS));
+  const k0=Math.max(0,Math.floor((e.z-R+HALF)/CS)), k1=Math.min(TERRA_CHUNKS-1,Math.floor((e.z+R+HALF)/CS));
+  for(let i=i0;i<=i1;i++) for(let k=k0;k<=k1;k++){ const ch=_terraChunkAt(i,k); if(ch){ _carveDirty.add(ch); _carvedChunks.add(ch); } }
+}
+// register a carve; returns its id (pass to removeCarve on drop). x,z=footprint centre (world);
+// cos,sin=structure yaw; hx,hz=footprint half-extents (building-local); floorY=target grade height.
+function addCarve(x,z,cos,sin,hx,hz,floorY,skirt){
+  const STEP=WORLD/GROUND_SEG;
+  const sk=Math.max(skirt||0, 1.25*STEP);   // ≥~1.25 terrain cells so the surrounding vertex ring is caught & graded
+  const e={id:++_carveId,x,z,cos,sin,hx,hz,floorY,skirt:sk,_cells:[]};
+  _carveList.push(e);
+  _carveCells(e,k=>{ let a=_carveGrid.get(k); if(!a){a=[];_carveGrid.set(k,a);} a.push(e); e._cells.push(k); });
+  _carveMarkChunks(e);
+  return e.id;
+}
+function removeCarve(id){
+  const idx=_carveList.findIndex(e=>e.id===id); if(idx<0) return;
+  const e=_carveList[idx]; _carveList.splice(idx,1);
+  for(const k of e._cells){ const a=_carveGrid.get(k); if(!a) continue; const j=a.indexOf(e); if(j>=0) a.splice(j,1); if(!a.length) _carveGrid.delete(k); }
+  _carveMarkChunks(e);
+}
+// grade natural height h at (x,z) down toward any overlapping carve's floor (never raises it)
+function terrainCarve(x,z,h){
+  if(_carveGrid.size===0) return h;
+  const a=_carveGrid.get(Math.floor(x/CARVE_HASH)+","+Math.floor(z/CARVE_HASH));
+  if(!a) return h;
+  let out=h;
+  for(const e of a){
+    const dx=x-e.x, dz=z-e.z;
+    const lx=dx*e.cos-dz*e.sin, lz=dx*e.sin+dz*e.cos;   // world → building-local (matches supportAt)
+    const ox=Math.max(0,Math.abs(lx)-e.hx), oz=Math.max(0,Math.abs(lz)-e.hz);
+    const d=(ox||oz)?Math.hypot(ox,oz):0;               // distance OUTSIDE the footprint (0 = inside)
+    if(d>=e.skirt) continue;
+    let w=1-d/e.skirt; w=w*w*(3-2*w);                   // smoothstep falloff — no cliff at the skirt edge
+    const carved=out*(1-w)+e.floorY*w;
+    if(carved<out) out=carved;                          // LOWER only: dig the uphill side in, leave downhill terrain to meet the base
+  }
+  return out;
+}
+// regenerate every terrain-mesh chunk a carve touched so the drawn ground matches the graded physics
+function carveFlush(){ if(!_carveDirty.size||typeof _recarveChunk!=="function") return;
+  for(const ch of _carveDirty) _recarveChunk(ch); _carveDirty.clear(); }
+// buildWorld rebuilds the world without rebuilding the (initThree) terrain mesh — clear all carves and
+// restore every chunk they had baked, so a fresh world doesn't inherit the last one's dug-in pads
+function carveReset(){
+  if(_carvedChunks.size){ for(const ch of _carvedChunks) _carveDirty.add(ch); }
+  _carveList=[]; _carveGrid.clear(); _carvedChunks.clear();
+  carveFlush();
 }
 // ── OUTER ISLES: the western isles (Aphus Lassel / Aerlinthe / Osteth and their kin) ARE in the real
 //    heightmap — they just aren't connected to the mainland. Flood-fill the mainland from the capitals
@@ -3830,23 +3905,36 @@ async function initThree(){
   groundMesh=new THREE.Group();
   {
     const CS=WORLD/TERRA_CHUNKS, segs=GROUND_SEG/TERRA_CHUNKS;
-    for(let ci=0;ci<TERRA_CHUNKS;ci++)for(let ck=0;ck<TERRA_CHUNKS;ck++){
-      const ccx=-HALF+(ci+0.5)*CS, ccz=-HALF+(ck+0.5)*CS;      // chunk centre (world)
-      const geo=new THREE.PlaneGeometry(CS,CS,segs,segs);
-      const pos=geo.attributes.position.array, cnt=geo.attributes.position.count;   // direct typed-array
-      const colArr=new Float32Array(cnt*3);                     // (2.56M verts at GROUND_SEG 1600 — hot loop)
+    // (re)fill one chunk's height + colour from terrainH — shared by the initial bake and the #1005
+    // structure-carve regeneration (which re-runs it after a building grades its footprint in/out).
+    const fillChunk=chunk=>{
+      const geo=chunk.geometry, pos=geo.attributes.position.array, cnt=geo.attributes.position.count;
+      const ccx=chunk.userData.ccx, ccz=chunk.userData.ccz;
+      let colAttr=geo.attributes.color, colArr;
+      if(colAttr){ colArr=colAttr.array; } else { colArr=new Float32Array(cnt*3); }
       for(let i=0,o=0;i<cnt;i++,o+=3){
         const wx=ccx+pos[o], wz=ccz-pos[o+1], hh=terrainH(wx,wz);
         pos[o+2]=hh;                                            // displace into mountains/valleys
         const c=groundVertColor(wx,wz,hh); colArr[o]=c.r; colArr[o+1]=c.g; colArr[o+2]=c.b;
       }
       geo.attributes.position.needsUpdate=true;
-      geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+      if(colAttr){ colAttr.needsUpdate=true; } else { geo.setAttribute('color',new THREE.BufferAttribute(colArr,3)); }
       geo.computeVertexNormals();                               // smooth heightfield normals from the faces
+    };
+    _terraGrid=[];
+    for(let ci=0;ci<TERRA_CHUNKS;ci++)for(let ck=0;ck<TERRA_CHUNKS;ck++){
+      const ccx=-HALF+(ci+0.5)*CS, ccz=-HALF+(ck+0.5)*CS;      // chunk centre (world)
+      const geo=new THREE.PlaneGeometry(CS,CS,segs,segs);
       const chunk=new THREE.Mesh(geo,groundMat);
+      chunk.userData.ccx=ccx; chunk.userData.ccz=ccz;
+      fillChunk(chunk);
       chunk.rotation.x=-Math.PI/2; chunk.position.set(ccx,0,ccz);
       chunk.receiveShadow=true; groundMesh.add(chunk);
+      _terraGrid[ci*TERRA_CHUNKS+ck]=chunk;
     }
+    _recarveChunk=fillChunk;                                   // #1005: expose the regenerator to the carve registry
+    _terraChunkAt=(i,k)=>(i>=0&&i<TERRA_CHUNKS&&k>=0&&k<TERRA_CHUNKS)?_terraGrid[i*TERRA_CHUNKS+k]:null;
+    carveFlush();                                              // fold in any carves registered before the mesh existed
   }
   scene.add(groundMesh);
   // ocean / lakes at sea level
@@ -7819,6 +7907,7 @@ function buildWorld(){
   for(const _s of ships){ if(_s.mesh) disposeObject3D(_s.mesh); } ships=[]; player.aboardShip=null;   // ships are re-floated after the world rebuilds (below)
   despawnPets();   // #361: pets[] was neither disposed nor cleared on a world rebuild (every other entity array is) — a latent leak the moment a mid-session rebuild is added
   npcs=[];boss=null;shops=[];scenery=[];nodes=[];roadMeshes=[];dungeonEntrances=[];dungeonObjs=[];inDungeon=false;dungeonChest=null;dungeonLock=null;dungeonVault=null;dungeonMobs=0;curDungeon=null;structures=[];bookStands=[];chessTables=[];
+  carveReset();   // #1005: drop every structure carve & restore the terrain chunks — a rebuilt world starts on pristine ground
   tnPortals=[];inNetwork=false;netObjs=[];netPortals=[];
   // no two NPCs share a name: fixed names (quest givers, castle folk) claim theirs first, townName dodges the rest
   usedNpcNames=new Set();
@@ -7978,9 +8067,11 @@ function buildWorld(){
   (function(){ const cap=CITIES.find(c=>c.name==="Holtburg")||CAPITALS[0]; if(!cap) return;
     const L=landNear(cap.x+150, cap.z+50);   // just outside the capital core, on open land
     HOUSE_LOC={x:L.x, z:L.z};
-    const est=buildBuilding(cap.region,"hall",1.6); est.position.set(L.x,groundLowest(L.x,L.z,7),L.z); est.rotation.y=Math.PI;
+    const estBase=groundLowest(L.x,L.z,7);
+    const est=buildBuilding(cap.region,"hall",1.6); est.position.set(L.x,estBase,L.z); est.rotation.y=Math.PI;
     est.userData.noSettle=true;   // #955: seated at the lowest footprint contact — settleY must not reseat it to centre grade
     scene.add(est); scenery.push(est);
+    addCarve(L.x,L.z,Math.cos(Math.PI),Math.sin(Math.PI),9,9,estBase,0);   // #1005: grade the manor's plot to its floor (flushed with the dungeon-entrance carves below)
     if(est.userData&&est.userData.surfaces) registerStructure(L.x,L.z,Math.PI,groundLowest(L.x,L.z,7),est.userData.surfaces);   // #955: platforms ride the same lowest-contact base as the mesh
     const lbl=labelSprite("Kilmer's Estate — recall home (/home)","cities"); lbl.scale.set(11,2.2,1); lbl.position.set(L.x,8.5,L.z); scene.add(lbl); scenery.push(lbl);
     // the estate's REAL wall colliders (door gap included), rotated by its yaw — the old blanket
@@ -8101,7 +8192,9 @@ function settleY(){ // drop every placed object onto the RENDERED ground surface
   for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
   for(const ls of lifestones) ls.mesh.position.y=groundY(ls.x,ls.z);
   for(const pt of portals) pt.mesh.position.y=groundY(pt.x,pt.z);
-  for(const e of dungeonEntrances) e.mesh.position.y=groundLowest(e.x,e.z,3);   // #955: the dolmen sits at its lowest footprint contact
+  for(const e of dungeonEntrances){ const dy=groundLowest(e.x,e.z,3); e.mesh.position.y=dy;   // #955: the dolmen sits at its lowest footprint contact
+    addCarve(e.x,e.z,1,0,4,4,dy,6*WSCALE); }   // #1005: clear the terrain around the entrance so its opening isn't swallowed by the hillside
+  carveFlush();   // fold the dungeon-entrance carves into the terrain mesh (persist for the world's life — carveReset() clears them on rebuild)
   for(const n of nodes) n.mesh.position.y=groundY(n.x,n.z);
   for(const np of npcs) np.mesh.position.y=groundY(np.x,np.z);
   for(const sh of shops) sh.mesh.position.y=groundY(sh.x,sh.z);
@@ -8706,7 +8799,8 @@ function tbBuildTown(c,objs){
   }
   // ── pass 2: for each room, cut a doorway on the CLEAREST side (now every wall exists) ──
   for(const rec of recs){ if(rec.enter) tbCutDoorway(g,obst,recs,rec,lights,c.x,c.z); }
-  seatRealTownVendors(c,recs,seps);
+  carveFlush();   // #1005: regenerate the terrain-mesh chunks this town's buildings graded (so the drawn ground matches groundY)
+  seatRealTownVendors(c,recs,seps);   // vendors seat AFTER the carve so tbFloorAt/groundY see the graded ground
   tbSettleTownNpcs(c,recs);
   return {c,g,obst,lights,recs};
 }
@@ -8824,6 +8918,9 @@ function tbRingBuilding(g,obst,did,wx,wz,th){
   const enter=(hx>=2.6&&hz>=2.6&&H>=3.0);
   const rec={fcx,fcz,hx,hz,th,gy:base,gyLo:lo,H,enter,cols:[],per:0,structs:[],doorMX,doorMZ,
     did:(''+did).replace(/^0x/i,'').toUpperCase()};   // #767: the AC model DID → its extracted interior
+  // #1005: grade the ground down to this building's floor (base) over its footprint + skirt, so the
+  // uphill side no longer buries the walls / blocks the door / pokes dirt up through the floor.
+  rec.carveId=addCarve(fcx,fcz,cw,sw,hx,hz,base,0);
   const edge=(x0,z0,x1,z1)=>{ const n=Math.max(1,Math.ceil(Math.hypot(x1-x0,z1-z0)/1.6));
     for(let i=0;i<=n;i++){ const t=i/n, lx=x0+(x1-x0)*t, lz=z0+(z1-z0)*t;
       const px=wx+lx*cw+lz*sw, pz=wz-lx*sw+lz*cw;
@@ -8946,11 +9043,12 @@ function seatRealTownVendors(c,recs,seps){
   }
 }
 // release the walkable floor-platform / entrance-ramp structures a streamed group registered
-function tbReleaseStructs(recs){ for(const r of (recs||[])) for(const st of (r.structs||[])){
-  const i=structures.indexOf(st); if(i>=0) structures.splice(i,1); } }
+function tbReleaseStructs(recs){ for(const r of (recs||[])){
+  if(r.carveId) removeCarve(r.carveId);   // #1005: un-grade this building's footprint as it drops
+  for(const st of (r.structs||[])){ const i=structures.indexOf(st); if(i>=0) structures.splice(i,1); } } }
 function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
-  tbReleaseStructs(e.recs);
+  tbReleaseStructs(e.recs); carveFlush();   // #1005: un-grade & restore the terrain chunks before NPCs resettle onto it
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
@@ -8996,11 +9094,12 @@ function wsBuildBlock(lb,rec){
   // isolated houses/keeps are enterable too: ring, then cut a doorway on the clearest side
   for(const b of rec.b){ const r=tbRingBuilding(g,obst,b[0],b[1],b[2],b[3]||0); if(r) recs.push(r); }   // b=[did,x,z,rot]
   for(const r of recs){ if(r.enter) tbCutDoorway(g,obst,recs,r,lights,null,null); }
+  carveFlush();   // #1005: regenerate the terrain chunks this landblock's structures graded
   return {cx:rec.cx,cz:rec.cz,g,obst,lights,recs};
 }
 function wsDropBlock(lb){ const e=_wsBuilt[lb]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
-  tbReleaseStructs(e.recs);
+  tbReleaseStructs(e.recs); carveFlush();
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }
   for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   delete _wsBuilt[lb];
@@ -10598,6 +10697,7 @@ function hsStreamHouses(dt){ if(!_hsPackOn||inDungeon||inNetwork) return;
     _hsBuilt[h.i]=hsBuildHouse(h); if(++n>=HS_MAX) break; }
 }
 function hsDropHouse(k){ const e=_hsBuilt[k]; if(!e) return;
+  if(e.carves){ for(const id of e.carves) removeCarve(id); carveFlush(); }   // #1005: un-grade the plot as the house drops
   for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0)obstacles.splice(i,1); }
   for(const s of e.structs){ const i=structures.indexOf(s); if(i>=0)structures.splice(i,1); }
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes
@@ -10651,7 +10751,7 @@ function hsBuildHouse(h){
   const gy=groundLowest(h.x,h.z,9*HS_SCALE), lay=hsLayoutOf(h);   // #955: houses seat at the LOWEST footprint contact
   const g=new THREE.Group(); g.position.set(h.x,gy,h.z); g.rotation.y=h.yaw;
   g.userData.noSettle=true; g.userData.cullR2=HS_DROP_R*HS_DROP_R; scene.add(g);
-  const obst=[],structs=[],lights=[];
+  const obst=[],structs=[],lights=[],carves=[];
   const sealed=!hsAccessible(h);   // owned by someone else → wall the doorway
   // the dwelling's real buildings (mansions: the full 4-building compound)
   for(const b of h.blds){
@@ -10666,6 +10766,12 @@ function hsBuildHouse(h){
     const bb=M.bb, fw=(bb[2]-bb[0])+1.5, fd=(bb[3]-bb[1])+1.5;
     const fnd=new THREE.Mesh(new THREE.BoxGeometry(fw,6,fd),texMat(stoneFloorTex,0x8a8074));
     fnd.position.set((bb[0]+bb[2])/2,-3+0.12/HS_SCALE,(bb[1]+bb[3])/2); bg.add(fnd);
+    // #1005: grade the plot down to the dwelling's floor (gy) over each building's footprint + skirt,
+    // so a hillside homestead's uphill wall isn't buried and the doorway stays clear (foundation fills below)
+    { const mcx=(bb[0]+bb[2])/2, mcz=(bb[1]+bb[3])/2, cb=Math.cos(b[4]||0), sb=Math.sin(b[4]||0), cH=Math.cos(h.yaw), sH=Math.sin(h.yaw);
+      const rcx=mcx*cb+mcz*sb, rcz=-mcx*sb+mcz*cb, glx=b[1]+rcx, glz=b[3]+rcz;
+      const wcx=h.x+(glx*cH+glz*sH)*HS_SCALE, wcz=h.z+(-glx*sH+glz*cH)*HS_SCALE;
+      carves.push(addCarve(wcx,wcz,Math.cos(h.yaw+(b[4]||0)),Math.sin(h.yaw+(b[4]||0)),(bb[2]-bb[0])/2*HS_SCALE,(bb[3]-bb[1])/2*HS_SCALE,gy,0)); }
     // walkable floors (multi-storey): register the extractor's real floor plates,
     // rotating each plate's corners by the building's yaw within the compound
     const bc=Math.cos(b[4]),bs=Math.sin(b[4]);
@@ -10719,7 +10825,8 @@ function hsBuildHouse(h){
   cr.lbl.scale.set(8.5,1.8,1); cr.lbl.position.y=3.1; cg.add(cr.lbl);
   const o2={x:cw.x,z:cw.z,r:0.7}; obstacles.push(o2); obst.push(o2);
   hsCrystals.push(cr);
-  const built={x:h.x,z:h.z,g,obst,structs,lights,cr,h};
+  carveFlush();   // #1005: fold the plot grading into the terrain mesh once the compound is placed
+  const built={x:h.x,z:h.z,g,obst,structs,lights,cr,h,carves};
   if(own) hsDecorate(h,built);   // the owner's hooks, chests, house portal, placed items
   return built;
 }
