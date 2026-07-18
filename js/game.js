@@ -33675,6 +33675,50 @@ function poseRemoteJump(u,jc,rising){
     u.shL.rotation.set(-0.35-0.30*rise,-0.42-0.22*rise,0); if(u.elL) u.elL.rotation.x=-0.42;
   }
 }
+// #anim-sync: return a remote rig to a clean base before an euler pose — undo any AC-clip solve (which
+// moves joint positions AND quaternions) and zero the spine/neck, exactly as poseRemoteJump does.
+function _remoteActReset(u){
+  if(u.acDrive){ for(const kk in u.acDrive){ const d=u.acDrive[kk]; d.J.position.copy(d.restP); d.J.quaternion.copy(d.restQ); } }
+  if(u.spine) u.spine.rotation.set(0,0,0); if(u.neck) u.neck.rotation.set(0,0,0);
+}
+// #anim-sync: a remote player's MELEE SWING (mirrors the local swing branch in animateAvatar). sw is the
+// relayed 1→0 progress; twoH picks the overhead chop vs the one-hand diagonal. raise winds up, slash drives.
+function poseRemoteSwing(u,sw,twoH){
+  if(!u||!u.shR) return; _remoteActReset(u);
+  const t=1-clamp(sw,0,1), raise=Math.sin(clamp(t,0,0.3)/0.3*Math.PI), slash=t>=0.22?Math.sin((t-0.22)/0.78*Math.PI):0;
+  const drive=k=>{ if(u.spine)u.spine.rotation.x+=k*0.2; if(u.hipR)u.hipR.rotation.x=k*0.26; if(u.knR)u.knR.rotation.x=-k*0.5; };   // lead leg plants & drives into the blow
+  let sX,sZ,eX,lX,lZ,lE,twist;
+  if(twoH){ sX=-0.55-raise*1.7+slash*3.0; sZ=-0.04; eX=-(0.3+raise*0.6-slash*0.55);
+    lX=sX*0.92; lZ=-0.55; lE=-0.95; twist=-0.3-slash*0.55+raise*0.2; drive(slash*0.55); }
+  else { sX=-0.3-raise*1.7+slash*2.7; sZ=-0.1-slash*0.5; eX=-(0.4+raise*0.9-slash*0.7);
+    lX=-0.35; lZ=0.12; lE=-0.9; twist=slash*0.2; drive(slash*0.4); }
+  u.shR.rotation.set(sX,0,sZ); if(u.elR)u.elR.rotation.x=eX;
+  u.shL.rotation.set(lX,0,lZ); if(u.elL)u.elL.rotation.x=lE;
+  if(u.spine) u.spine.rotation.y=twist;
+}
+// #anim-sync: a remote player's SPELL CAST windup (mirrors the local bolt branch). cf is the 0→1 fraction:
+// coil the wand back & up, then snap a forward thrust through the torso.
+function poseRemoteCast(u,cf){
+  if(!u||!u.shR) return; _remoteActReset(u);
+  const cp=clamp(cf,0,1);
+  const coil=Math.sin(clamp(cp,0,0.35)/0.35*Math.PI*0.5), thrust=cp>=0.35?Math.sin((cp-0.35)/0.65*Math.PI):0;
+  if(u.spine) u.spine.rotation.x=-coil*0.08+thrust*0.15;
+  const sX=-0.4+coil*0.5-thrust*1.95, sZ=-0.08-coil*0.22+thrust*0.06, eX=-(1.15+coil*0.4-thrust*0.95);
+  const lX=-0.3+coil*0.4-thrust*0.25, lZ=0.2, lE=-0.7, twist=coil*0.32-thrust*0.48;
+  u.shR.rotation.set(sX,0,sZ); if(u.elR)u.elR.rotation.x=eX;
+  u.shL.rotation.set(lX,0,lZ); if(u.elL)u.elL.rotation.x=lE;
+  if(u.spine) u.spine.rotation.y=twist; if(u.neck) u.neck.rotation.y=-twist*0.4;
+}
+// #anim-sync: a remote player's SHIELD GUARD (mirrors the local blk branch) — brace low, off-hand up across the body.
+function poseRemoteBlock(u){
+  if(!u||!u.shR) return; _remoteActReset(u);
+  if(u.spine) u.spine.rotation.x=0.14;
+  if(u.hipR) u.hipR.rotation.x=0.16; if(u.hipL) u.hipL.rotation.x=0.16;
+  if(u.knR) u.knR.rotation.x=-0.42; if(u.knL) u.knL.rotation.x=-0.42;
+  u.shR.rotation.set(-0.5,0,-0.22); if(u.elR)u.elR.rotation.x=-1.2;
+  u.shL.rotation.set(-1.02,0,0.12); if(u.elL)u.elL.rotation.x=-1.42;
+  if(u.spine) u.spine.rotation.y=0.12;
+}
 function clearRemoteEmote(mesh){ const u=mesh&&mesh.userData; if(!u||!u.shR) return;   // return arms to the neutral built pose
   u.shR.rotation.set(0,0,0);u.elR.rotation.set(0,0,0);u.shL.rotation.set(0,0,0);u.elL.rotation.set(0,0,0); if(u.spine)u.spine.rotation.x=0; if(u.neck)u.neck.rotation.set(0,0,0); }   // #672: bow's head-dip resets too (nothing else drives a remote's neck)
 function onEmote(m){
@@ -34017,6 +34061,8 @@ function reconcileRemotes(players){
     r.mnt=(p.mnt&&HORSE_TYPES[p.mnt])?p.mnt:null;   // #728: riding — validated against the known types (AC-4 rule)
     r.phs=Array.isArray(p.phs)?p.phs.filter(h=>h&&HORSE_TYPES[h.t]&&isFinite(+h.x)&&isFinite(+h.z)).slice(0,20):null;   // #734: their parked string, validated
     if(p.gear!==undefined) r.gear=p.gear;   // #667: relayed worn armour → applyRemoteGear in updateRemotes
+    r.jy=isFinite(p.jy)?p.jy:0; r.jc=isFinite(p.jc)?p.jc:0;   // #960 FIX: reconcileRemotes never copied the relayed jump — r.jy/r.jc stayed undefined so poseRemoteJump never fired (peers never saw a leap). Wire it up.
+    r.sw=isFinite(p.sw)?p.sw:0; r.cf=isFinite(p.cf)?p.cf:0; r.blk=!!p.blk;   // #anim-sync: relayed melee swing / cast windup / shield guard → posed in updateRemotes
     r.inst=!!p.inst;   // #646: peer is inside a per-player instance — its x/z are only its overworld return point (#307). Hide the phantom avatar (its child nameplate sprite hides with the mesh) and restore when the flag clears.
     if(r.inst && NET.meshes[p.id]) NET.meshes[p.id].visible=false;   // hide immediately; updateRemotes keeps it hidden while r.inst holds
   }
@@ -34153,10 +34199,18 @@ function updateRemotes(dt){
     // a clean base (the clip solver moves joint positions AND quaternions; stacking eulers on a solved
     // frame contorts the rig).
     { const u=mesh.userData;
+      const rSwing=(r.sw||0)>0.02&&u.shR&&!u.mountedNow;                      // #anim-sync: a melee swing owns the body
       const rCharge=(r.jc||0)>0.01, rAir=Math.abs(r.jyv||0)>0.15||Math.abs(r.jy||0)>0.15;
-      if((rCharge||rAir)&&u.shR&&!(r.emoteT>0)&&!u.mountedNow){   // #960: jump owns the body over walk/idle (emote/mount still win)
+      const rCast=(r.cf||0)>0.01&&u.shR&&!u.mountedNow, rBlock=!!r.blk&&u.shR&&!u.mountedNow;
+      if(rSwing&&!(r.emoteT>0)){   // #anim-sync: swing beats jump/cast/block/walk (emote, applied below, still wins)
+        poseRemoteSwing(u,r.sw,r.wt==="twohand"&&r.wmode!=="bow"); u._acPosed=true;
+      } else if((rCharge||rAir)&&u.shR&&!(r.emoteT>0)&&!u.mountedNow){   // #960: jump owns the body over walk/idle (emote/mount still win)
         poseRemoteJump(u,rCharge?(r.jc||0):0,(r.jy||0)>(r._jyPrev||0));
         u._acPosed=true;   // next non-jump frame resets the AC-clip joints
+      } else if(rCast&&!(r.emoteT>0)){   // #anim-sync: spell windup
+        poseRemoteCast(u,r.cf); u._acPosed=true;
+      } else if(rBlock&&!(r.emoteT>0)){   // #anim-sync: shield guard raised
+        poseRemoteBlock(u); u._acPosed=true;
       } else if(u.acBody&&u.acDrive&&typeof AC_MOTION!=="undefined"&&AC_MOTION&&!(r.emoteT>0)&&typeof acMotionPose==="function"){
         const mvd=Math.hypot(r.x-_rpx,r.z-_rpz)/Math.max(dt,0.001);
         r._spd=(r._spd==null?0:r._spd)+(mvd-(r._spd||0))*Math.min(1,dt*8);   // smoothed speed (units/s)
@@ -34199,6 +34253,11 @@ function sendInput(dt){
   if(!_inst){ const jy=player.y-groundY(player.x,player.z);
     if(!player.grounded||Math.abs(jy)>0.05) msg.jy=+jy.toFixed(2);
     if(typeof jumpChargeT!=="undefined"&&jumpChargeT>=0&&player.grounded) msg.jc=+jumpChargeT.toFixed(2); }
+  // #anim-sync: relay our combat action pose so peers see us swing / cast / guard, not glide statue-still.
+  // Transient like the jump fields — sent only while active; absent → the server resets to 0 next tick.
+  if(player.swing>0.01) msg.sw=+player.swing.toFixed(2);                                   // melee swing progress (1→0 over the arc)
+  if(player.casting&&player.casting.total>0) msg.cf=+clamp(1-player.casting.t/player.casting.total,0,1).toFixed(2);   // spell windup fraction 0→1
+  if(typeof blocking!=="undefined"&&blocking&&!(player.swing>0)) msg.blk=1;                // shield guard raised (matches the local `blk=blocking&&sw<=0` gate)
   netSend(msg);
 }
 // AC three-state PvP: NPK (unflagged, safe) · PKL (PK-Lite — fights only other PK-Lites, no item loss) ·
