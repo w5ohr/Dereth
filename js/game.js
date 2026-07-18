@@ -34897,7 +34897,12 @@ function openEmoteStudio(){
     closeStudio(); };
   closeBtn.onclick=()=>closeStudio();
   ov.addEventListener('mousedown',ev=>{ if(ev.target===ov) closeStudio(); });
+  // #1012: the Studio opens DURING gameplay (running===true), so — like every other in-game modal —
+  // trap keystrokes (typing an emote name must not walk the character or fire hotbar actions), pause
+  // the world (no taking damage while you author), and release the pointer lock.
+  ov.addEventListener('keydown',e=>{ e.stopPropagation(); if(e.key==="Escape") closeStudio(); });
   document.body.appendChild(ov);
+  paused=true; if(typeof locked!=="undefined"&&locked&&document.exitPointerLock) document.exitPointerLock();
   refreshFrames();
   // ---- 3D preview (best-effort) ----
   try{
@@ -34928,6 +34933,7 @@ function closeStudio(){ const st=_es; if(!st) return; _es=null;
   try{ if(st.body&&typeof disposeObject3D==="function") disposeObject3D(st.body); }catch(_){}
   try{ if(st.renderer){ st.renderer.dispose(); st.renderer.forceContextLoss&&st.renderer.forceContextLoss(); } }catch(_){}
   try{ if(st.overlay&&st.overlay.parentNode) st.overlay.parentNode.removeChild(st.overlay); }catch(_){}
+  paused=false;   // #1012: resume the world when the Studio closes
 }
 function ccBuildOptions(){
   document.querySelectorAll('#charCreator .cc-row[data-cat]').forEach(row=>{
