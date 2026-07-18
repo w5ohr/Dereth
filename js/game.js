@@ -19620,7 +19620,13 @@ function animateAvatar(dt){
     const act=player.emoteAct, osc=Math.sin(now()/110);
     u.aSword.visible=false;u.aBow.visible=false;u.aWand.visible=false;   // free the hands for the gesture
     sX=0.05; sZ=-0.05; eX=-0.2; lX=0.05; lZ=0.05; lE=-0.2; twist=0;      // relaxed default
-    if(act==="wave"){ sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }
+    if(act==="__custom__"&&player.emoteCustom){                          // #999: player-authored keyframe emote
+      const P=sampleCustomEmote(player.emoteCustom, clamp(1-player.emoteT/(player.emoteCustom.dur||EMOTE_DUR),0,1));
+      sX=P.rArmX; sZ=P.rArmZ; eX=P.rElbow; lX=P.lArmX; lZ=P.lArmZ; lE=P.lElbow; twist=P.twist;
+      u.spine.rotation.x=P.spineX; u.spine.position.y+=P.spineY; u.neck.rotation.x=P.neckX; u.neck.rotation.y=P.neckY;
+      u.hipR.rotation.x+=P.hips; u.hipL.rotation.x+=P.hips; u.knR.rotation.x+=P.knees; u.knL.rotation.x+=P.knees;
+    }
+    else if(act==="wave"){ sX=-2.6; sZ=-0.2+osc*0.38; eX=-0.3; }
     else if(act==="clap"){ const c=Math.abs(osc); sX=-1.35; sZ=-0.35+c*0.34; eX=-1.05; lX=-1.35; lZ=0.35-c*0.34; lE=-1.05; }
     else if(act==="cheer"){ sX=-2.9; lX=-2.9; sZ=-0.25; lZ=0.25; u.spine.position.y+=Math.abs(osc)*0.05; }
     else if(act==="bow"){ u.spine.rotation.x=0.62; sX=-0.45; lX=-0.45; sZ=-0.1; lZ=0.1; }
@@ -32828,6 +32834,8 @@ const SAVE_SCHEMA=[
   {k:"tapers",t:"num"},{k:"prismTapers",t:"num"},
   {k:"elixMight",t:"num"},{k:"elixSwift",t:"num"},
   {k:"achievements",load:s=>s.achievements||[]},
+  {k:"customEmotes",save:p=>(Array.isArray(p.customEmotes)?p.customEmotes:[]).map(sanitizeCustomEmote).filter(Boolean).slice(0,CUSTOM_EMOTE_MAX),
+    load:s=>(Array.isArray(s.customEmotes)?s.customEmotes:[]).map(sanitizeCustomEmote).filter(Boolean).slice(0,CUSTOM_EMOTE_MAX)},   // #999: player-authored emotes, revalidated both directions
   {k:"title",t:"str"},
   {k:"bossKills",t:"num"},{k:"championKills",t:"num"},{k:"delves",t:"num"},
   {k:"delveCredited",t:"arr"},
@@ -33755,14 +33763,80 @@ function logoutReturnToTitle(){ try{ location.reload(); }catch(e){} }   // a cle
 const EMOTE_CMDS={wave:1,cheer:1,dance:1,bow:1,laugh:1,point:1,salute:1,flex:1,kneel:1,clap:1};
 const EMOTE_VERB={wave:"wave.",cheer:"cheer!",dance:"break into a dance.",bow:"bow solemnly.",laugh:"burst out laughing.",point:"point.",salute:"salute.",flex:"flex.",kneel:"kneel.",clap:"applaud."};
 const EMOTE_DUR=2.2;
-function playEmoteAnim(act){ player.emoteAct=act; player.emoteT=EMOTE_DUR; }   // your own avatar performs the gesture
+function playEmoteAnim(act){ player.emoteAct=act; player.emoteCustom=null; player.emoteT=EMOTE_DUR; }   // your own avatar performs the gesture
+// ═══ #999 CUSTOM EMOTES — player-authored keyframe gestures. A custom emote keyframes the SAME joint
+//     DOF the built-in emotes drive in animateAvatar (arms, elbows, spine, neck, hips, knees), so
+//     playback reuses the existing pose pipeline — no new animation engine. v1 is author + save + play
+//     your OWN emotes (local); cross-player sharing (a server-relayed payload with guardrails) is a
+//     documented follow-up on #999. Guardrails here (frame/dur caps, name sanitation, rotation clamps)
+//     already mirror what a share path will need, so a malformed emote can't wedge playback. ═══
+const EMOTE_CHANNELS=["rArmX","rArmZ","rElbow","lArmX","lArmZ","lElbow","twist","spineX","spineY","neckX","neckY","hips","knees"];
+const EMOTE_CH_RANGE={rArmX:[-3.0,0.6],rArmZ:[-0.9,0.9],rElbow:[-2.6,0.1],lArmX:[-3.0,0.6],lArmZ:[-0.9,0.9],
+  lElbow:[-2.6,0.1],twist:[-0.6,0.6],spineX:[-0.5,0.8],spineY:[-0.3,0.15],neckX:[-0.6,0.6],neckY:[-0.6,0.6],hips:[-0.2,1.0],knees:[-1.8,0.2]};
+const EMOTE_REST={rArmX:0.05,rArmZ:-0.05,rElbow:-0.2,lArmX:0.05,lArmZ:0.05,lElbow:-0.2,twist:0,spineX:0,spineY:0,neckX:0,neckY:0,hips:0,knees:0};
+const CUSTOM_EMOTE_MAXFRAMES=24, CUSTOM_EMOTE_MAX=12, CUSTOM_EMOTE_DUR=[0.4,6];   // caps: keyframes per emote / emotes per character / dur seconds
+function emoteRestPose(){ return Object.assign({}, EMOTE_REST); }
+// clamp one pose object to the per-channel ranges, dropping unknown channels and rest-filling gaps
+function sanitizeEmotePose(pose){ const out=emoteRestPose(); if(pose&&typeof pose==="object")
+  for(const ch of EMOTE_CHANNELS){ let v=+pose[ch]; if(isFinite(v)){ const r=EMOTE_CH_RANGE[ch]; out[ch]=clamp(v,r[0],r[1]); } }
+  return out; }
+// validate/normalize a whole custom emote (from the studio, a save blob, or a future wire payload) →
+// clean emote or null. Names run through the same censor as chat; frames sorted & capped; t normalized 0..1.
+let _emoteIdSeq=0;
+function sanitizeCustomEmote(e){
+  if(!e||typeof e!=="object") return null;
+  let name=(""+(e.name||"")).replace(/[<>&"']/g,"").trim().slice(0,24);
+  if(typeof censorProfanity==="function") name=censorProfanity(name);
+  name=name.trim(); if(!name||/^__/.test(name)) return null;                 // no empty / reserved (__custom__) names
+  let dur=+e.dur; if(!isFinite(dur)) dur=1.6; dur=clamp(dur,CUSTOM_EMOTE_DUR[0],CUSTOM_EMOTE_DUR[1]);
+  let frames=Array.isArray(e.frames)?e.frames:[];
+  frames=frames.filter(f=>f&&typeof f==="object").slice(0,CUSTOM_EMOTE_MAXFRAMES)
+    .map(f=>({t:clamp(isFinite(+f.t)?+f.t:0,0,1), pose:sanitizeEmotePose(f.pose)}))
+    .sort((a,b)=>a.t-b.t);
+  if(!frames.length) return null;                                            // an emote with no keyframes is nothing
+  if(frames[0].t>0) frames.unshift({t:0,pose:emoteRestPose()});             // always anchor t=0 so playback starts clean
+  const id=(""+(e.id||"")).replace(/[^a-zA-Z0-9_]/g,"").slice(0,40) || ("usr_"+(++_emoteIdSeq)+"_"+name.toLowerCase().replace(/[^a-z0-9]+/g,"").slice(0,10));
+  return {id,name,dur,loop:!!e.loop,frames};
+}
+// sample the interpolated pose at fraction f (0..1) — piecewise-linear between the bracketing keyframes
+function sampleCustomEmote(emote,f){
+  const fr=emote.frames; if(!fr||!fr.length) return emoteRestPose();
+  if(f<=fr[0].t) return fr[0].pose; if(f>=fr[fr.length-1].t) return fr[fr.length-1].pose;
+  let i=0; while(i<fr.length-1 && fr[i+1].t<f) i++;
+  const a=fr[i], b=fr[i+1], span=(b.t-a.t)||1e-6, k=clamp((f-a.t)/span,0,1);
+  const out={}; for(const ch of EMOTE_CHANNELS) out[ch]=a.pose[ch]+(b.pose[ch]-a.pose[ch])*k;
+  return out;
+}
+// play a custom emote on YOUR avatar (local — the server has no custom-emote relay yet; sharing is
+// the tracked follow-up). Returns false if the emote is malformed.
+function playCustomEmote(emote,quiet){
+  const e=sanitizeCustomEmote(emote); if(!e) return false;
+  player.emoteAct="__custom__"; player.emoteCustom=e; player.emoteT=e.dur;
+  if(!quiet){ chatMsg("emote",`<i>You ${esc(e.name)}</i>`); if(typeof floater==="function") floater(player.x,EYE+1.4,player.z,e.name,"#ffe9b0",1.1); }
+  return true;
+}
+// apply a sampled custom-emote pose onto a rig's joint userData (shared by the local branch, the studio
+// preview, and remote playback) — resets the base first so eulers pose cleanly (as poseRemote* do)
+function applyEmotePose(u,P){
+  if(!u||!u.shR) return;
+  if(u.acDrive){ for(const kk in u.acDrive){ const d=u.acDrive[kk]; d.J.position.copy(d.restP); d.J.quaternion.copy(d.restQ); } }
+  u.shR.rotation.set(P.rArmX,0,P.rArmZ); if(u.elR) u.elR.rotation.x=P.rElbow;
+  u.shL.rotation.set(P.lArmX,0,P.lArmZ); if(u.elL) u.elL.rotation.x=P.lElbow;
+  if(u.spine){ u.spine.rotation.x=P.spineX; u.spine.rotation.y=P.twist; if(typeof AV_WAIST!=="undefined") u.spine.position.y=AV_WAIST+P.spineY; }
+  if(u.neck){ u.neck.rotation.x=P.neckX; u.neck.rotation.y=P.neckY; }
+  if(u.hipR) u.hipR.rotation.x=P.hips; if(u.hipL) u.hipL.rotation.x=P.hips;
+  if(u.knR) u.knR.rotation.x=P.knees; if(u.knL) u.knL.rotation.x=P.knees;
+}
 // perform an emote: online → the server echoes it to everyone (incl. us) via onEmote; offline → show it locally
 function doEmote(act,text){
   if(act==="me"){ const t=(text||"").trim(); if(!t){ log("Usage: /me &lt;action&gt;","warn"); return; }
     if(isOnline) netSend({t:"emote",act:"me",text:t});
     else chatMsg("emote",`<i>${esc(player.name||"You")} ${esc(t)}</i>`);
     return; }
-  if(!EMOTE_CMDS[act]){ log("Unknown emote. Try: "+Object.keys(EMOTE_CMDS).join(", "),"warn"); return; }
+  const ce=(player.customEmotes||[]).find(e=>e&&e.name.toLowerCase()===(""+act).toLowerCase());
+  if(ce){ playCustomEmote(ce); return; }   // #999: custom emotes play locally (no server relay yet — sharing is the tracked follow-up)
+  if(!EMOTE_CMDS[act]){ const cust=(player.customEmotes||[]).map(e=>e.name);
+    log("Unknown emote. Try: "+Object.keys(EMOTE_CMDS).join(", ")+(cust.length?" · yours: "+cust.join(", "):"")+" · <b>/emote studio</b>","warn"); return; }
   if(isOnline){ netSend({t:"emote",act}); }
   else { playEmoteAnim(act); chatMsg("emote",`<i>You ${EMOTE_VERB[act]||act}</i>`); floater(player.x,EYE+1.4,player.z,act,"#ffe9b0",1.1); }
 }
@@ -34134,7 +34208,9 @@ function handleSlash(text){
     log(`Waypoint set to <b>${acCoordStr(x,z)}</b> — GoArrow now points there. <span style="color:var(--dim)">(/wp clear to remove)</span>`,"sys");
   }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
-    if(!act) log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+" — e.g. <b>/emote clap</b>","sys");
+    if(act==="studio"||act==="new"||act==="create"||act==="make"){ openEmoteStudio(); }   // #999: author your own emote
+    else if(!act){ const cust=(player.customEmotes||[]).map(e=>e.name);
+      log("Emotes: "+Object.keys(EMOTE_CMDS).join(", ")+(cust.length?' · <b>yours:</b> '+cust.map(esc).join(", "):"")+" — <b>/emote studio</b> to build your own","sys"); }
     else doEmote(act); }
   else if(EMOTE_CMDS[cmd]){ doEmote(cmd); }                                   // shorthand: /clap, /wave, …
   else if(cmd==="me"){ doEmote("me", parts.slice(1).join(" ").trim()); }
@@ -34698,6 +34774,132 @@ function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
   ccRenderer.render(ccScene,ccCam); }
 function ccSize(){ const cv=document.getElementById('ccPreview'); const w=cv.clientWidth||330,h=cv.clientHeight||430;
   ccRenderer.setSize(w,h,false); ccCam.aspect=w/h; ccCam.updateProjectionMatrix(); }
+// ═══ #999 EMOTE STUDIO — author a custom emote: pose your own avatar with limb sliders, capture
+//     keyframes onto a timeline, preview the interpolated gesture, name it, and save it to your
+//     character (then play it with /emote <name>). The live preview reuses ccBuildBody() (the real
+//     jointed avatar) in a small dedicated WebGL view, mirroring the character-creator preview. All
+//     wrapped defensively: if the 3D preview can't init, the form still authors & saves. ═══
+const EMOTE_CH_LABEL={rArmX:"Right arm raise",rArmZ:"Right arm out",rElbow:"Right elbow",lArmX:"Left arm raise",
+  lArmZ:"Left arm out",lElbow:"Left elbow",twist:"Torso twist",spineX:"Bow / lean",spineY:"Crouch / hop",
+  neckX:"Head nod",neckY:"Head turn",hips:"Hips",knees:"Knees"};
+let _es=null;   // active studio state (renderer/scene/body/RAF/draft) — null when closed
+function openEmoteStudio(){
+  if(_es) return;   // already open
+  if(typeof player==="undefined"||!player){ return; }
+  const draft={ name:"", dur:1.6, loop:false, frames:[] };
+  const cur=emoteRestPose();
+  const st={ draft, cur, playing:false, playT:0, raf:0, renderer:null, scene:null, cam:null, body:null, lastT:0, overlay:null };
+  _es=st;
+  // ---- overlay + panel ----
+  const ov=document.createElement('div'); st.overlay=ov;
+  ov.id="emoteStudio";
+  ov.style.cssText="position:fixed;inset:0;z-index:320;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62)";
+  const panel=document.createElement('div'); panel.className="panel";
+  panel.style.cssText="background:#14100a;color:#e8dcc0;max-width:760px;width:94%;max-height:92vh;overflow:auto;padding:16px 18px;font-family:sans-serif;display:flex;flex-direction:column;gap:10px";
+  ov.appendChild(panel);
+  const title=document.createElement('div'); title.innerHTML="<b style='font-size:17px;color:#ffd86b'>Emote Studio</b> <span style='color:#9a8f70;font-size:12px'>— pose your avatar, capture keyframes, name it, save.</span>";
+  panel.appendChild(title);
+  const body=document.createElement('div'); body.style.cssText="display:flex;gap:16px;flex-wrap:wrap"; panel.appendChild(body);
+  // ---- left: preview ----
+  const left=document.createElement('div'); left.style.cssText="flex:0 0 240px;display:flex;flex-direction:column;gap:8px"; body.appendChild(left);
+  const canvas=document.createElement('canvas'); canvas.width=240; canvas.height=300;
+  canvas.style.cssText="width:240px;height:300px;background:#0b0906;border:1px solid #3a3526;border-radius:8px"; left.appendChild(canvas);
+  const timeWrap=document.createElement('div'); timeWrap.style.cssText="font-size:12px;color:#cfe6b0";
+  timeWrap.innerHTML="Keyframe time <span id='esTLbl'>0%</span>";
+  const timeS=document.createElement('input'); timeS.type="range"; timeS.min=0; timeS.max=1; timeS.step=0.01; timeS.value=0; timeS.style.width="100%";
+  timeWrap.appendChild(timeS); left.appendChild(timeWrap);
+  const capBtn=document.createElement('button'); capBtn.textContent="＋ Capture keyframe";
+  capBtn.style.cssText="padding:7px;border-radius:6px;cursor:pointer;background:#2a3a18;color:#ffd86b;border:1px solid #3a3526;font-weight:bold"; left.appendChild(capBtn);
+  const frameList=document.createElement('div'); frameList.style.cssText="font-size:12px;display:flex;flex-direction:column;gap:3px;max-height:120px;overflow:auto"; left.appendChild(frameList);
+  // ---- right: controls ----
+  const right=document.createElement('div'); right.style.cssText="flex:1 1 340px;min-width:280px;display:flex;flex-direction:column;gap:6px"; body.appendChild(right);
+  const nameRow=document.createElement('div'); nameRow.style.cssText="display:flex;gap:8px;align-items:center";
+  nameRow.innerHTML="<span style='font-size:13px;width:56px'>Name</span>";
+  const nameI=document.createElement('input'); nameI.type="text"; nameI.maxLength=24; nameI.placeholder="salute";
+  nameI.style.cssText="flex:1;padding:5px 8px;background:#0b0906;color:#e8dcc0;border:1px solid #3a3526;border-radius:5px"; nameRow.appendChild(nameI); right.appendChild(nameRow);
+  const durRow=document.createElement('div'); durRow.style.cssText="display:flex;gap:8px;align-items:center;font-size:13px";
+  durRow.innerHTML="<span style='width:56px'>Length</span>";
+  const durS=document.createElement('input'); durS.type="range"; durS.min=CUSTOM_EMOTE_DUR[0]; durS.max=CUSTOM_EMOTE_DUR[1]; durS.step=0.1; durS.value=draft.dur; durS.style.flex="1";
+  const durLbl=document.createElement('span'); durLbl.style.width="42px"; durLbl.textContent=draft.dur.toFixed(1)+"s";
+  durRow.appendChild(durS); durRow.appendChild(durLbl); right.appendChild(durRow);
+  const slHint=document.createElement('div'); slHint.style.cssText="font-size:11px;color:#9a8f70"; slHint.textContent="Pose the body, then Capture. Add 2+ keyframes for movement."; right.appendChild(slHint);
+  const slWrap=document.createElement('div'); slWrap.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px"; right.appendChild(slWrap);
+  const chInputs={};
+  for(const ch of EMOTE_CHANNELS){ const r=EMOTE_CH_RANGE[ch];
+    const row=document.createElement('label'); row.style.cssText="font-size:11px;display:flex;flex-direction:column;gap:1px;color:#cfe6b0";
+    const lab=document.createElement('span'); lab.textContent=EMOTE_CH_LABEL[ch]||ch;
+    const inp=document.createElement('input'); inp.type="range"; inp.min=r[0]; inp.max=r[1]; inp.step=0.02; inp.value=cur[ch];
+    inp.oninput=()=>{ st.cur[ch]=+inp.value; st.playing=false; };
+    chInputs[ch]=inp; row.appendChild(lab); row.appendChild(inp); slWrap.appendChild(row); }
+  const btnRow=document.createElement('div'); btnRow.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"; right.appendChild(btnRow);
+  const mkBtn=(txt,bg,col)=>{ const b=document.createElement('button'); b.textContent=txt;
+    b.style.cssText="padding:7px 14px;border-radius:6px;cursor:pointer;border:1px solid #3a3526;background:"+bg+";color:"+col+";font-weight:bold"; return b; };
+  const playBtn=mkBtn("▶ Preview","#16210e","#cfe6b0"), resetBtn=mkBtn("Reset pose","#16210e","#cfe6b0"),
+        saveBtn=mkBtn("Save emote","#2a3a18","#ffd86b"), closeBtn=mkBtn("Close","#2a1414","#e0b0b0");
+  btnRow.appendChild(playBtn); btnRow.appendChild(resetBtn); btnRow.appendChild(saveBtn); btnRow.appendChild(closeBtn);
+  const status=document.createElement('div'); status.style.cssText="font-size:12px;color:#9a8f70;min-height:16px"; right.appendChild(status);
+  // ---- helpers ----
+  const setSlidersFrom=pose=>{ for(const ch of EMOTE_CHANNELS){ st.cur[ch]=pose[ch]; if(chInputs[ch]) chInputs[ch].value=pose[ch]; } };
+  const refreshFrames=()=>{ frameList.innerHTML="";
+    draft.frames.sort((a,b)=>a.t-b.t);
+    if(!draft.frames.length){ const e=document.createElement('div'); e.style.color="#9a8f70"; e.textContent="(no keyframes yet)"; frameList.appendChild(e); return; }
+    draft.frames.forEach((f,i)=>{ const row=document.createElement('div'); row.style.cssText="display:flex;gap:6px;align-items:center;justify-content:space-between;background:#1a150d;padding:2px 6px;border-radius:4px";
+      const lb=document.createElement('span'); lb.textContent="Frame "+(i+1)+" @ "+Math.round(f.t*100)+"%"; lb.style.cursor="pointer"; lb.title="load this pose";
+      lb.onclick=()=>{ setSlidersFrom(f.pose); timeS.value=f.t; document.getElementById('esTLbl').textContent=Math.round(f.t*100)+"%"; st.playing=false; };
+      const del=document.createElement('button'); del.textContent="✕"; del.style.cssText="cursor:pointer;background:none;border:none;color:#e08080;font-weight:bold";
+      del.onclick=()=>{ draft.frames.splice(i,1); refreshFrames(); };
+      row.appendChild(lb); row.appendChild(del); frameList.appendChild(row); }); };
+  timeS.oninput=()=>{ document.getElementById('esTLbl').textContent=Math.round(timeS.value*100)+"%"; };
+  durS.oninput=()=>{ draft.dur=+durS.value; durLbl.textContent=draft.dur.toFixed(1)+"s"; };
+  capBtn.onclick=()=>{ const t=+timeS.value; const pose=Object.assign({},st.cur);
+    const ex=draft.frames.find(f=>Math.abs(f.t-t)<0.02); if(ex){ ex.pose=pose; } else { if(draft.frames.length>=CUSTOM_EMOTE_MAXFRAMES){ status.textContent="Max "+CUSTOM_EMOTE_MAXFRAMES+" keyframes."; return; } draft.frames.push({t,pose}); }
+    refreshFrames(); status.textContent="Captured keyframe at "+Math.round(t*100)+"%."; };
+  resetBtn.onclick=()=>{ setSlidersFrom(emoteRestPose()); st.playing=false; status.textContent="Pose reset."; };
+  playBtn.onclick=()=>{ if(draft.frames.length<1){ status.textContent="Capture at least one keyframe first."; return; } st.playing=true; st.playT=0; status.textContent="Previewing…"; };
+  saveBtn.onclick=()=>{ draft.name=nameI.value;
+    const e=sanitizeCustomEmote(draft);
+    if(!e){ status.textContent="Needs a name and at least one keyframe."; return; }
+    player.customEmotes=Array.isArray(player.customEmotes)?player.customEmotes:[];
+    const i=player.customEmotes.findIndex(x=>x&&x.name.toLowerCase()===e.name.toLowerCase());
+    if(i>=0) player.customEmotes[i]=e;
+    else { if(player.customEmotes.length>=CUSTOM_EMOTE_MAX){ status.textContent="You have the max "+CUSTOM_EMOTE_MAX+" custom emotes. Rename to overwrite one."; return; } player.customEmotes.push(e); }
+    try{ saveGame(); }catch(_){}
+    try{ log(`Emote <b>${esc(e.name)}</b> saved — play it with <b>/emote ${esc(e.name)}</b>.`,"sys"); }catch(_){}
+    closeStudio(); };
+  closeBtn.onclick=()=>closeStudio();
+  ov.addEventListener('mousedown',ev=>{ if(ev.target===ov) closeStudio(); });
+  document.body.appendChild(ov);
+  refreshFrames();
+  // ---- 3D preview (best-effort) ----
+  try{
+    const rnd=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+    rnd.setPixelRatio(Math.min(2,window.devicePixelRatio||1)); rnd.setSize(240,300,false);
+    rnd.outputColorSpace=THREE.SRGBColorSpace; rnd.useLegacyLights=true; rnd.toneMapping=THREE.ACESFilmicToneMapping; rnd.toneMappingExposure=1.05;
+    const sc=new THREE.Scene(); if(typeof scene!=="undefined"&&scene&&scene.environment) sc.environment=scene.environment;
+    const cam=new THREE.PerspectiveCamera(32,240/300,0.1,20); cam.position.set(0,1.05,3.4); cam.lookAt(0,0.95,0);
+    sc.add(new THREE.HemisphereLight(0xdfeaff,0x2a2820,0.7));
+    const key=new THREE.DirectionalLight(0xfff2d8,0.95); key.position.set(1.6,2.4,2.2); sc.add(key);
+    const fill=new THREE.DirectionalLight(0x88aaff,0.35); fill.position.set(-2,1,1.2); sc.add(fill);
+    const av=(typeof ccBuildBody==="function")?ccBuildBody(player.appearance):null;
+    if(av){ av.rotation.y=Math.PI; sc.add(av); st.body=av; }
+    st.renderer=rnd; st.scene=sc; st.cam=cam;
+  }catch(e){ st.renderer=null; if(status) status.textContent="(3D preview unavailable — authoring still works)"; }
+  st.lastT=performance.now();
+  const anim=()=>{ if(_es!==st) return; st.raf=requestAnimationFrame(anim);
+    const tN=performance.now(), dt=Math.min(0.1,(tN-(st.lastT||tN))/1000); st.lastT=tN;
+    let pose=st.cur;
+    if(st.playing){ st.playT+=dt; const f=st.playT/(draft.dur||1.6);
+      if(f>=1){ st.playing=false; } else if(draft.frames.length){ pose=sampleCustomEmote({frames:draft.frames.slice().sort((a,b)=>a.t-b.t),dur:draft.dur},f); } }
+    if(st.body){ try{ applyEmotePose(st.body.userData,pose); if(st.body.userData&&st.body.userData.head&&st.body.userData.head.visible&&typeof tickFace==="function") tickFace(st.body.userData.head,dt); }catch(_){} }
+    if(st.renderer){ try{ st.renderer.render(st.scene,st.cam); }catch(_){} } };
+  st.raf=requestAnimationFrame(anim);
+}
+function closeStudio(){ const st=_es; if(!st) return; _es=null;
+  if(st.raf) cancelAnimationFrame(st.raf);
+  try{ if(st.body&&typeof disposeObject3D==="function") disposeObject3D(st.body); }catch(_){}
+  try{ if(st.renderer){ st.renderer.dispose(); st.renderer.forceContextLoss&&st.renderer.forceContextLoss(); } }catch(_){}
+  try{ if(st.overlay&&st.overlay.parentNode) st.overlay.parentNode.removeChild(st.overlay); }catch(_){}
+}
 function ccBuildOptions(){
   document.querySelectorAll('#charCreator .cc-row[data-cat]').forEach(row=>{
     const cat=row.dataset.cat, box=row.querySelector('.cc-opts'); box.innerHTML="";
