@@ -188,7 +188,13 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
       await clearTransit();   // #991: the return-from-evict arriveAt (and each cycle's exitDungeon) can leave a transit winding down
       await page.evaluate(name=>{ const def=DUNGEONS.find(d=>d.name===name);
         enterDungeon(def,player.x,player.z); },dgnName);
-      await page.waitForFunction('inDungeon===true',{timeout:15000});
+      // #993: enterDungeon builds ASYNC — startPortalTransit's callback _dungeonEnter sets inDungeon AND
+      // populates dungeonObjs/curDungeon after minHold (~0.7s). Waiting on inDungeon alone could catch a
+      // transient flip before the entry settled, so `inside` was sometimes measured on an incomplete/reset
+      // entry (dungeonObjs=0) — a pure-timing flake. Wait for the FULLY-built state before measuring.
+      await page.waitForFunction('typeof inDungeon!=="undefined"&&inDungeon===true'
+        +'&&typeof curDungeon!=="undefined"&&!!curDungeon'
+        +'&&typeof dungeonObjs!=="undefined"&&dungeonObjs.length>0',{timeout:15000});
       const inside=await settle();
       await page.evaluate(()=>exitDungeon(true));
       cyc.push({inside,after:await settle()});
@@ -220,8 +226,13 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
   {
     await page.evaluate(()=>buildWorld()); const r1=await settle(30000);
     await page.evaluate(()=>buildWorld()); const r2=await settle(30000);
-    check('rebuild.no-stacked-world',r2.lgeo<=r1.lgeo+80&&r2.ltex<=r1.ltex+40,
-      `rebuild1 liveGeo=${r1.lgeo}/liveTex=${r1.ltex}, rebuild2 liveGeo=${r2.lgeo}/liveTex=${r2.ltex}`);
+    // #993: gate on GPU RESIDENCY (renderer.info.memory), not the live create-minus-dispose tracker.
+    // buildWorld() spins up a large pool of transient/streamed geometries, so window.__live balloons to
+    // ~160k while only ~5-12k are ever GPU-resident — a +216 tracker delta there is ~0.1% noise and does
+    // NOT mean the world stacked. #232 is about GPU residency, which DROPS across the rebuild (no
+    // stacking), so measure that, exactly as evict.gpu-counts-drop does.
+    check('rebuild.no-stacked-world',r2.g<=r1.g+80&&r2.t<=r1.t+40,
+      `rebuild1 gpuGeo=${r1.g}/gpuTex=${r1.t}, rebuild2 gpuGeo=${r2.g}/gpuTex=${r2.t}`);
   }
 
   check('no-page-errors',errs.length===0,errs.slice(0,5).join(' | ').slice(0,400));
