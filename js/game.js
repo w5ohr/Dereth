@@ -30734,8 +30734,8 @@ function buildDungeonReal(def,dj){
   const kinds=th.kinds,hpMul=1+(def.tier-1)*0.32;
   const n=Math.min(38,Math.max(8,Math.floor(dj.cellPos.length/7)));
   for(let i=0;i<n;i++){ const c=dj.cellPos[irnd(2,dj.cellPos.length-1)];
-    spawnDungeonMonster(kinds[irnd(0,kinds.length-1)],c[0]+rnd(-2.5,2.5),c[2]+rnd(-2.5,2.5),false,hpMul,null,c[1]); dungeonMobs++; }
-  spawnDungeonMonster(th.warden,far[0]+rnd(-2,2),far[2]+rnd(-2,2),true,hpMul,sc&&sc.boss,far[1]); dungeonMobs++;
+    spawnDungeonMonster(kinds[irnd(0,kinds.length-1)],c[0]+rnd(-2.5,2.5),c[2]+rnd(-2.5,2.5),false,hpMul,null,c[1]); }   // #996: spawnDungeonMonster already increments dungeonMobs — a redundant ++ here double-counted the guardian tally (2×N), so clearing every mob left dungeonMobs at N and the hoard never unsealed (softlock)
+  spawnDungeonMonster(th.warden,far[0]+rnd(-2,2),far[2]+rnd(-2,2),true,hpMul,sc&&sc.boss,far[1]);   // #996: dungeonMobs is incremented inside spawnDungeonMonster
   if(sc&&sc.d) log(`<i style="color:#cdbf9a">${sc.d}</i>`,"sys");
   log(`<i style="color:#8a9a6a">These halls stand exactly as the old world built them — ${dj.cells} chambers of true stone.</i>`,"sys");
 }
