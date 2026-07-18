@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Quaternius rig spike — Dereth</title>
+<style>
+  body { margin:0; background:#1a2030; overflow:hidden; font-family:monospace; }
+  #hud { position:fixed; top:8px; left:8px; color:#cfe3ff; background:rgba(0,0,0,.55);
+         padding:8px 12px; font-size:13px; white-space:pre; z-index:10; border-radius:4px; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "../vendor/three.module.js",
+    "three/webgpu": "../vendor/three.webgpu.js",
+    "three/tsl": "../vendor/three.tsl.js",
+    "three/addons/": "../vendor/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">loading…</div>
+<script type="module">
+const params = new URLSearchParams(location.search);
+const USE_GPU = params.get('gpu') === '1';
+const COUNT   = parseInt(params.get('n') || '60', 10);
+
+const hud = document.getElementById('hud');
+const log = (...a) => { console.log('[spike]', ...a); };
+
+let THREE, renderer;
+if (USE_GPU) {
+  THREE = await import('three/webgpu');
+  renderer = new THREE.WebGPURenderer({ antialias: true });
+  await renderer.init();
+} else {
+  THREE = await import('three');
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+}
+const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
+
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x28324a);
+scene.fog = new THREE.Fog(0x28324a, 30, 90);
+const cam = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 200);
+
+const sun = new THREE.DirectionalLight(0xfff2dd, 2.6); sun.position.set(8, 14, 6);
+scene.add(sun, new THREE.HemisphereLight(0xbfd4ff, 0x40372a, 1.1));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300),
+  new THREE.MeshStandardMaterial({ color: 0x4a5b3a, roughness: 1 }));
+ground.rotation.x = -Math.PI/2; scene.add(ground);
+
+const loader = new GLTFLoader();
+const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+
+const t0 = performance.now();
+const [male, female, anims] = await Promise.all([
+  load('../assets/models/quaternius/bodies/Superhero_Male_FullBody.gltf'),
+  load('../assets/models/quaternius/bodies/Superhero_Female_FullBody.gltf'),
+  load('../assets/models/quaternius/animations/UAL1_Standard.glb'),
+]);
+const tLoad = performance.now() - t0;
+log('loaded in', tLoad.toFixed(0), 'ms; clips:', anims.animations.length);
+
+// --- Rig compatibility check: clip track targets vs body bone names ---
+const boneNames = new Set();
+male.scene.traverse(o => { if (o.isBone) boneNames.add(o.name); });
+const clipTargets = new Set();
+for (const clip of anims.animations)
+  for (const tr of clip.tracks) clipTargets.add(tr.name.split('.')[0]);
+const missing = [...clipTargets].filter(n => !boneNames.has(n));
+log('body bones:', boneNames.size, 'clip targets:', clipTargets.size, 'unmatched:', missing);
+
+// tri count of one body
+let tris = 0;
+male.scene.traverse(o => { if (o.isMesh) {
+  const idx = o.geometry.index; tris += (idx ? idx.count : o.geometry.attributes.position.count) / 3;
+}});
+log('male body triangles:', tris);
+
+// --- Spawn crowd ---
+const CLIPS = ['Idle_Loop','Walk_Loop','Jog_Fwd_Loop','Sprint_Loop','Sword_Attack','Sword_Idle',
+  'Spell_Simple_Idle_Loop','Spell_Simple_Shoot','Dance_Loop','Crouch_Idle_Loop','Punch_Jab','Roll'];
+const mixers = [];
+const cols = Math.ceil(Math.sqrt(COUNT));
+for (let i = 0; i < COUNT; i++) {
+  const src = (i % 2 === 0) ? male.scene : female.scene;
+  const inst = SkeletonUtils.clone(src);
+  inst.position.set((i % cols - cols/2) * 2.2, 0, Math.floor(i / cols) * -2.2);
+  inst.rotation.y = (i * 0.37) % 0.8 - 0.4;
+  scene.add(inst);
+  const mixer = new THREE.AnimationMixer(inst);
+  const clipName = CLIPS[i % CLIPS.length];
+  const clip = anims.animations.find(c => c.name === clipName);
+  const action = mixer.clipAction(clip);
+  action.time = (i * 0.31) % clip.duration;   // desync
+  action.play();
+  mixers.push(mixer);
+}
+cam.position.set(0, 3.2, 7.5);
+cam.lookAt(0, 1.2, -cols);
+
+// --- FPS measurement ---
+const clock = new THREE.Clock();
+let frames = 0, acc = 0, warm = 0;
+const samples = [];
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = clock.getDelta();
+  for (const m of mixers) m.update(dt);
+  renderer.render(scene, cam);
+  warm += dt;
+  if (warm < 2) return;           // 2s warmup
+  if (dt > 0.1) return;           // skip hidden-tab throttled frames
+  frames++; acc += dt;
+  if (acc >= 1) { samples.push(frames / acc); frames = 0; acc = 0; report(); }
+}
+function report() {
+  const avg = samples.reduce((a,b)=>a+b,0) / samples.length;
+  const last = samples[samples.length-1];
+  hud.textContent =
+    `renderer: ${USE_GPU ? 'WebGPU' : 'WebGL'}   instances: ${COUNT}\n` +
+    `fps now: ${last.toFixed(1)}   avg: ${avg.toFixed(1)}  (${samples.length}s)\n` +
+    `load: ${tLoad.toFixed(0)}ms   tris/body: ${tris}\n` +
+    `bones: ${boneNames.size}   clip-target mismatches: ${missing.length}`;
+  window.spikeResults = { renderer: USE_GPU ? 'webgpu' : 'webgl', count: COUNT,
+    fpsAvg: +avg.toFixed(1), fpsLast: +last.toFixed(1), seconds: samples.length,
+    loadMs: +tLoad.toFixed(0), trisPerBody: tris, boneCount: boneNames.size,
+    unmatchedTracks: missing };
+  if (samples.length === 10) log('RESULT', JSON.stringify(window.spikeResults));
+}
+tick();
+
+// synchronous benchmark for driving from automation (rAF-throttle-proof)
+window.spikeBench = (iters = 120) => {
+  for (const m of mixers) m.update(1/60);  // prime
+  renderer.render(scene, cam);
+  const t = performance.now();
+  for (let i = 0; i < iters; i++) {
+    for (const m of mixers) m.update(1/60);
+    renderer.render(scene, cam);
+  }
+  const ms = (performance.now() - t) / iters;
+  return { renderer: USE_GPU ? 'webgpu' : 'webgl', count: COUNT, iters,
+    msPerFrame: +ms.toFixed(2), impliedFps: +(1000/ms).toFixed(1),
+    trisPerBody: tris, loadMs: +tLoad.toFixed(0), unmatched: missing.length };
+};
+
+window.spikeCam = cam; window.spikeRender = () => renderer.render(scene, cam);
+
+addEventListener('resize', () => {
+  cam.aspect = innerWidth/innerHeight; cam.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
