@@ -159,9 +159,12 @@ try{ fetch('assets/acrewards.json').then(r=>r&&r.ok?r.json():null).then(j=>{ if(
   AC_REW=j;
   for(const k in j.killxp){ if(typeof BESTIARY!=="undefined"&&BESTIARY[k]){ const e=j.killxp[k],b=BESTIARY[k];
     if(e.xp>0) b.xp=e.xp; b.lvl=e.lvl;             // exact retail kill XP + level (0-XP reps keep the baseline)
-    if(e.hp>0) b.hp=e.hp;                          // real max health (attribute_2nd)
-    if(e.dmg>0) b.dmg=e.dmg;                       // real strike damage (hardest body part)
-    if(e.al>0) b.al=e.al; } }                      // median body armor level (for future mitigation)
+    // #1024: DO NOT override curated hp/dmg with retail ACE absolutes. Our combat model is a curated
+    // per-tier scale (spawnMonster/spawnDungeonMonster = base×diff, dungeons then ×tier); stomping in a
+    // retail line's endgame numbers made every wight a Lv-220 monster (155 dmg → one-shots at the tier-1
+    // Holtburg dungeon) AND made under-exported kinds trivial (lich dmg 3). Keep retail XP/level only;
+    // hp/dmg stay on the curated bases the tier multipliers were tuned against. (b.al is unused/dormant.)
+    } }
   let nq=0;
   if(typeof QUESTS!=="undefined") for(const q of QUESTS){
     const nm=(q.giver||"").split(" (")[0].trim().toLowerCase();
