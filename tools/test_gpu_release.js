@@ -93,6 +93,16 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
     for(let t=0;t<maxMs&&stable<2;t+=700){ await sleep(700); const cur=await mem();
       stable=(cur.g===prev.g&&cur.t===prev.t&&cur.lgeo===prev.lgeo&&cur.ltex===prev.ltex)?stable+1:0; prev=cur; }
     return prev; };
+  // #991: enterDungeon() no-ops while a portalTransit tube is winding down (js/game.js:
+  // `if(inDungeon||portalTransit) return`), and the cycle transitions (exitDungeon / arriveAt on return
+  // from the evict section) can leave one active for a few seconds. Before each transition, wait briefly
+  // for it to clear then FORCE it null (mirroring the game's own maxHold and the #986 boot gate), so
+  // enterDungeon isn't silently dropped and inDungeon reliably flips. Never READ portalTransit raw out of
+  // an evaluate — it's a circular object and marshals to undefined (same hazard as `scene`, line 38).
+  const clearTransit=async()=>{
+    await page.waitForFunction('typeof portalTransit==="undefined"||!portalTransit',{timeout:8000}).catch(()=>{});
+    await page.evaluate(()=>{ if(typeof portalTransit!=="undefined"&&portalTransit) portalTransit=null; });
+  };
 
   // ── 1. unit: acShared skip + LABELS behaviour ─────────────────────────────────────────────
   const unit=await page.evaluate(()=>{
@@ -175,6 +185,7 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
   if(dgnName){
     const cyc=[];
     for(let i=0;i<3;i++){
+      await clearTransit();   // #991: the return-from-evict arriveAt (and each cycle's exitDungeon) can leave a transit winding down
       await page.evaluate(name=>{ const def=DUNGEONS.find(d=>d.name===name);
         enterDungeon(def,player.x,player.z); },dgnName);
       await page.waitForFunction('inDungeon===true',{timeout:15000});
@@ -195,6 +206,7 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
   {
     const cyc=[];
     for(let i=0;i<3;i++){
+      await clearTransit();   // #991: defensive — the prior exitDungeon/exitNetwork can leave a transit active (enterNetwork ignores it today, but keep the cycle transitions uniform)
       await page.evaluate(()=>enterNetwork(player.x,player.z));
       const inside=await settle();
       await page.evaluate(()=>exitNetwork(netReturn));
