@@ -30,9 +30,18 @@ function rgbDist(a,b){
   const page=await browser.newPage();
   const errs=[]; page.on('pageerror',e=>{ if(!BENIGN.test(e.message)) errs.push(e.message); });
   await page.goto(URL,{waitUntil:'load',timeout:60000});
-  await waitForMain(page,()=>typeof startGame==="function",{timeout:30000});
+  // initThree() creates scene/renderer ASYNC (after the asset loaders resolve) — but startGame() is
+  // defined at script load and runs buildWorld()/enterAcademyHall() synchronously, so calling it before
+  // the renderer/scene exist throws mid-build into our catch and leaves the world half-built. Wait for
+  // them to actually exist FIRST. (#979/#983)
+  await waitForMain(page,()=>typeof startGame==="function"&&typeof renderer!=="undefined"&&renderer!==null
+    &&typeof scene!=="undefined"&&!!scene,{timeout:60000});   // end on a boolean: a bare `&&scene` returns the (unserializable, circular) THREE.Scene, which puppeteer marshals to undefined → the gate reads falsy forever
   await page.evaluate(()=>{ try{ startGame(false,'aluvian'); }catch(e){} });
-  await waitForMain(page,()=>typeof player!=="undefined"&&player&&typeof enterNetwork==="function",{timeout:30000});
+  // startGame ends by holding an arrival portalTransit until the overworld streams in. Gate on the scene
+  // being live AND the transit cleared before driving enterNetwork — enterNetwork/buildNetwork call
+  // scene.add(), which throws on an undefined scene (the #983 TypeError). (#983)
+  await waitForMain(page,()=>typeof player!=="undefined"&&player&&typeof enterNetwork==="function"
+    &&typeof scene!=="undefined"&&!!scene&&typeof portalTransit!=="undefined"&&!portalTransit,{timeout:30000});
 
   // force out of the academy (a fresh character always starts there) so enterNetwork's guard passes,
   // then enter the towns hub and force one deterministic lighting/fog pass.
