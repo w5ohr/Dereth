@@ -43,7 +43,7 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
 }
 
 (async()=>{
-  const browser=await puppeteer.launch({executablePath:CHROME,headless:'new',
+  const browser=await puppeteer.launch({executablePath:CHROME,headless:'new',protocolTimeout:600000,   // #986: SwiftShader frames run seconds apart, so a single settle/eviction evaluate can exceed puppeteer's 180s default protocolTimeout — raise the ceiling so software GL can finish the whole cycle
     args:['--no-sandbox','--use-gl=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
   const page=await browser.newPage();
   const errs=[]; page.on('pageerror',e=>{ if(!BENIGN.test(e.message)) errs.push(e.message); });
@@ -79,8 +79,13 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
     &&typeof inDungeon!=="undefined"&&inDungeon===true
     &&typeof curDungeon!=="undefined"&&curDungeon&&curDungeon.academy,{timeout:30000});
   await page.evaluate(()=>{ try{ player.academy=player.academy||{}; if(typeof academyExit==="function") academyExit(); }catch(e){} });
-  await waitForMain(page,()=>typeof inDungeon!=="undefined"&&!inDungeon
-    &&typeof portalTransit!=="undefined"&&!portalTransit,{timeout:30000});
+  await waitForMain(page,()=>typeof inDungeon!=="undefined"&&!inDungeon,{timeout:30000});
+  // #986: the warm-up enterDungeon() below no-ops while portalTransit is set, but under swiftshader the
+  // arrival tube's game-time maxHold stretches past any fixed real-time ceiling (clamped-dt frames), so
+  // waiting on it deterministically timed out on software GL. Give it a chance to clear naturally, then
+  // force it (mirroring the game's own maxHold hard cap) so a slow renderer can't deadlock the gate.
+  await waitForMain(page,()=>typeof portalTransit==="undefined"||!portalTransit,{timeout:15000}).catch(()=>{});
+  await page.evaluate(()=>{ if(typeof portalTransit!=="undefined"&&portalTransit) portalTransit=null; });
   await sleep(2000);   // let a few cullWorld frames re-show the overworld and stream the starting town in
   const mem=()=>page.evaluate(()=>({g:renderer.info.memory.geometries,t:renderer.info.memory.textures,
     lgeo:window.__live.geo,ltex:window.__live.tex,labels:LABELS.length}));

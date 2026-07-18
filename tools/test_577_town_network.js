@@ -37,11 +37,14 @@ function rgbDist(a,b){
   await waitForMain(page,()=>typeof startGame==="function"&&typeof renderer!=="undefined"&&renderer!==null
     &&typeof scene!=="undefined"&&!!scene,{timeout:60000});   // end on a boolean: a bare `&&scene` returns the (unserializable, circular) THREE.Scene, which puppeteer marshals to undefined → the gate reads falsy forever
   await page.evaluate(()=>{ try{ startGame(false,'aluvian'); }catch(e){} });
-  // startGame ends by holding an arrival portalTransit until the overworld streams in. Gate on the scene
-  // being live AND the transit cleared before driving enterNetwork — enterNetwork/buildNetwork call
-  // scene.add(), which throws on an undefined scene (the #983 TypeError). (#983)
+  // Gate on the scene being live before driving enterNetwork — enterNetwork/buildNetwork call scene.add(),
+  // which throws on an undefined scene (the #983 TypeError). #986: do NOT also gate on the arrival
+  // portalTransit clearing — enterNetwork's guard is `if(inNetwork||inDungeon) return;` (it never checks
+  // portalTransit), and the test forces inDungeon=false below, so the tube is irrelevant here. Under
+  // swiftshader that tube's game-time maxHold stretches past any fixed real-time ceiling (clamped-dt
+  // frames), so waiting on it turned the #983 fix into a deterministic timeout on software GL.
   await waitForMain(page,()=>typeof player!=="undefined"&&player&&typeof enterNetwork==="function"
-    &&typeof scene!=="undefined"&&!!scene&&typeof portalTransit!=="undefined"&&!portalTransit,{timeout:30000});
+    &&typeof scene!=="undefined"&&!!scene,{timeout:30000});
 
   // force out of the academy (a fresh character always starts there) so enterNetwork's guard passes,
   // then enter the towns hub and force one deterministic lighting/fog pass.
