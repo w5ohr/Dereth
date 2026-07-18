@@ -195,13 +195,21 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
       await page.waitForFunction('typeof inDungeon!=="undefined"&&inDungeon===true'
         +'&&typeof curDungeon!=="undefined"&&!!curDungeon'
         +'&&typeof dungeonObjs!=="undefined"&&dungeonObjs.length>0',{timeout:15000});
+      const dObjs=await page.evaluate(()=>dungeonObjs.length);   // #995: the reuse-proof built-dungeon signal
       const inside=await settle();
       await page.evaluate(()=>exitDungeon(true));
-      cyc.push({inside,after:await settle()});
+      cyc.push({inside,dObjs,after:await settle()});
     }
     const base=cyc[0].after, last=cyc[2].after;
-    check('dungeon.builds-inside',cyc[1].inside.lgeo>base.lgeo+50,
-      `live geo inside=${cyc[1].inside.lgeo} vs after-exit=${base.lgeo} (dungeon: ${dgnName})`);
+    // #995: assert the dungeon actually BUILT (dungeonObjs>0), not a live-geo delta. The dungeon builds
+    // from pooled/cached geometry, so on re-entry THREE.BufferGeometry.setAttribute('position') doesn't
+    // fire and the live create-minus-dispose tracker (window.__live) shows ~0 new geometry — the old
+    // `inside.lgeo > after.lgeo+50` heuristic read +1 and failed ~2/3 of runs (only passing on the rare
+    // cycle whose pool was disposed+rebuilt). Same pooled-geometry blind spot #994 fixed for the rebuild
+    // check. The waitForFunction above already GATED on dungeonObjs.length>0, so this asserts the built
+    // state it established, immune to geometry reuse.
+    check('dungeon.builds-inside',cyc[1].dObjs>0,
+      `dungeonObjs inside cycle1=${cyc[1].dObjs} (dungeon: ${dgnName})`);
     check('dungeon.no-ratchet-across-cycles',last.lgeo<=base.lgeo+60&&last.ltex<=base.ltex+30,
       `after cycle1 liveGeo=${base.lgeo}/liveTex=${base.ltex}, cycle3 liveGeo=${last.lgeo}/liveTex=${last.ltex}`);
     check('dungeon.labels-registry-stable',Math.abs(last.labels-base.labels)<=5,
