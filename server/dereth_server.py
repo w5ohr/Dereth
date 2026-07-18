@@ -2739,6 +2739,56 @@ def sanitize_gear(g):
             break
     return out or None
 
+# #999: custom-emote relay. A player-authored emote is an untrusted dict fanned out to other players,
+# so bound it exactly like sanitize_gear — clamp name/dur/frames/rotations, drop unknown channels. The
+# ranges mirror js/game.js EMOTE_CH_RANGE; the client re-validates on receive (defense in depth).
+EMOTE_CH_RANGE = {
+    "rArmX": (-3.0, 0.6), "rArmZ": (-0.9, 0.9), "rElbow": (-2.6, 0.1),
+    "lArmX": (-3.0, 0.6), "lArmZ": (-0.9, 0.9), "lElbow": (-2.6, 0.1),
+    "twist": (-0.6, 0.6), "spineX": (-0.5, 0.8), "spineY": (-0.3, 0.15),
+    "neckX": (-0.6, 0.6), "neckY": (-0.6, 0.6), "hips": (-0.2, 1.0), "knees": (-1.8, 0.2),
+}
+EMOTE_MAX_FRAMES = 24
+
+def sanitize_custom_emote(ce):
+    if not isinstance(ce, dict):
+        return None
+    name = censor(clean_relay(ce.get("name", ""), 24))
+    if not name or name.startswith("__"):
+        return None
+    try:
+        dur = float(ce.get("dur", 1.6))
+    except (TypeError, ValueError):
+        dur = 1.6
+    if dur != dur:   # NaN
+        dur = 1.6
+    dur = min(6.0, max(0.4, dur))
+    frames_in = ce.get("frames")
+    if not isinstance(frames_in, list):
+        return None
+    frames = []
+    for f in frames_in[:EMOTE_MAX_FRAMES]:
+        if not isinstance(f, dict):
+            continue
+        try:
+            tt = float(f.get("t", 0))
+        except (TypeError, ValueError):
+            tt = 0.0
+        if tt != tt:
+            tt = 0.0
+        tt = min(1.0, max(0.0, tt))
+        pin = f.get("pose") if isinstance(f.get("pose"), dict) else {}
+        pose = {}
+        for ch, (lo, hi) in EMOTE_CH_RANGE.items():
+            v = pin.get(ch)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v:
+                pose[ch] = min(hi, max(lo, float(v)))
+        frames.append({"t": tt, "pose": pose})
+    if not frames:
+        return None
+    frames.sort(key=lambda fr: fr["t"])
+    return {"name": name, "dur": dur, "frames": frames}
+
 async def do_auth_success(cl, username):
     # one session per account: kick a prior connection
     old = CLIENTS.get(username)
@@ -3072,9 +3122,15 @@ async def dispatch(cl, msg):
     elif t == "emote":
         if cl.in_world:
             act = str(msg.get("act", ""))
+            line = None
             if act == "me":
                 text = censor(clean_relay(msg.get("text", ""), 80))   # #1000: free-text emote (/me) is chat too
                 line = f"{cl.charname} {text}" if text else None
+            elif act == "__custom__":                                 # #999: a player-authored emote — validate & fan out the keyframe payload
+                ce = sanitize_custom_emote(msg.get("ce"))
+                if ce:
+                    await broadcast({"t": "emote", "id": cl.netid, "from": cl.charname, "act": "__custom__",
+                                     "ce": ce, "msg": f"{cl.charname} performs {ce['name']}"})
             else:
                 verb = EMOTES.get(act)
                 line = f"{cl.charname} {verb}" if verb else None
