@@ -122,7 +122,29 @@ async def main():
     # the event mobs' REAL ids + positions from the snapshot (mob_pub tags them with `event`),
     # teleport onto each, and strike it by its real id — re-snapshotting until the horde is cleared.
     e = await mk("evt")
-    ev = await e.recv_until(lambda x: x["t"] == "event_start", timeout=8)
+    # #988: the check needs an active Incursion, but the server only guarantees a QUICK first one
+    # (DERETH_EVENT_CD, ~2s); after it fires the auto-spawn CD jumps to random.uniform(170,280)s
+    # (dereth_server.py). So whether `evt` catches one depends on prior server state: on a cold server —
+    # or the standard CI test_client->tsa_persist flow — the first incursion fires within seconds, but on
+    # a RE-RUN against a server whose first incursion was already consumed, the next is minutes out and
+    # the old 8s wait deterministically missed it. Accept EITHER a fresh `event_start` OR an already-active
+    # incursion carried in a snapshot's `event` field (a client that joined mid-incursion never gets a
+    # start frame — same late-joiner cross-talk as #985), and give the wait a ceiling that covers the max
+    # auto-spawn CD so a merely-delayed incursion isn't misread as "never started". The CD ticks down only
+    # while a client is connected (`evt` stays connected here), and this returns the instant the event
+    # appears, so the CI/cold path is still ~seconds. event_snap()'s `total` == event_pub()'s `count`, so
+    # the downstream eid/anchor/count code is identical whichever source produced `ev`.
+    m = await e.recv_until(lambda x: x["t"] == "event_start"
+                           or (x["t"] == "snapshot" and isinstance(x.get("event"), dict)
+                               and x["event"].get("total", 0) > 0), timeout=320)   # >max auto-spawn CD (280s) + margin
+    if m and m["t"] == "event_start":
+        ev = m
+    elif m:   # snapshot-carried active incursion (mid-join)
+        se = m["event"]
+        ev = {"id": se.get("id"), "name": se.get("name"), "x": se.get("x", 0.0),
+              "z": se.get("z", 0.0), "count": se.get("total", 0)}
+    else:
+        ev = None
     check("Incursion starts", ev and ev.get("count", 0) > 0)
     if ev:
         eid = ev.get("id")
