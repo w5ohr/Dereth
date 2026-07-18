@@ -10112,8 +10112,12 @@ function addKilmerCastle(){
   const KX0=-65,KX1=65,KZ0=-105,KZ1=95,ST=7,STORIES=6,KH=ST*STORIES,DOOR=4;   // 130×200, 42u to the parapet
   const rows=[-105,-55,-5,45,95], rowC=[-80,-30,20,70];
   const SLOT0=16.5,SLOT1=23.5;                                         // stair-tower doorway slot in the west wall
-  { const fl=box(KX1-KX0-0.3,0.18,KZ1-KZ0-0.3,0,0.09,0,stoneDark,false); fl.receiveShadow=true; }
-  { const cp=new THREE.Mesh(new THREE.PlaneGeometry(10,KZ1-KZ0-6),crimson); cp.rotation.x=-Math.PI/2; cp.position.set(0,0.2,0); G.add(cp); }
+  // #1006: SINK the keep floor so its TOP face sits at the walk height (local y=0 = the flattened
+  // plateau groundY the Group is anchored to), not resting the whole slab on top of it. The keep
+  // registers no walk platform, so the player stands on the terrain plateau — a slab whose top sat at
+  // +0.18 (and a carpet at +0.2) meant feet sank ~0.2u into the visible floor inside Castle Val Halla.
+  { const fl=box(KX1-KX0-0.3,0.18,KZ1-KZ0-0.3,0,-0.09,0,stoneDark,false); fl.receiveShadow=true; }   // center -0.09, thickness 0.18 → top face flush at y=0
+  { const cp=new THREE.Mesh(new THREE.PlaneGeometry(10,KZ1-KZ0-6),crimson); cp.rotation.x=-Math.PI/2; cp.position.set(0,0.02,0); G.add(cp); }   // rug rests just above the flush floor (2cm z-offset, not foot height)
   // outer shell: door gap on the south face, stair slot on the west face; windows on every story
   wallSeg(KX0,KZ0,KX1,KZ0,KH,1.4,stone,1.1);
   wallSeg(KX1,KZ0,KX1,KZ1,KH,1.4,stone,1.1);
