@@ -33674,7 +33674,10 @@ const _PROFANITY=new Set((
 function censorProfanity(text){
   if(!text) return text;
   return String(text).replace(/[A-Za-z]+(?:'[A-Za-z]+)?/g, w=>{
-    if(!_PROFANITY.has(w.toLowerCase())) return w;
+    const lw=w.toLowerCase();
+    // #1017: the tokenizer keeps a possessive/contraction tail (so "don't" survives) — but that let
+    // "shit's" / "fuck'n" / "bitch's" past the whole-token lookup. Also test the pre-apostrophe base.
+    if(!_PROFANITY.has(lw) && !(lw.indexOf("'")>=0 && _PROFANITY.has(lw.split("'")[0]))) return w;
     let o=""; for(let i=0;i<w.length;i++) o+=_GRAWLIX[i%_GRAWLIX.length]; return o; });
 }
 function sendChatLine(text){

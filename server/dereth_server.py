@@ -2627,7 +2627,12 @@ def censor(s):
         return s
     def _rep(m):
         w = m.group(0)
-        return "".join(_GRAWLIX[i % len(_GRAWLIX)] for i in range(len(w))) if w.lower() in _PROFANITY else w
+        lw = w.lower()
+        # #1017: the tokenizer keeps a possessive/contraction tail (so "don't" survives) — but that let
+        # "shit's" / "fuck'n" / "bitch's" past the whole-token lookup. Also test the pre-apostrophe base.
+        if lw in _PROFANITY or ("'" in lw and lw.split("'")[0] in _PROFANITY):
+            return "".join(_GRAWLIX[i % len(_GRAWLIX)] for i in range(len(w)))
+        return w
     return _CENSOR_RE.sub(_rep, s)
 
 # ---------------------------------------------------------------- in-game issue reporting → GitHub
