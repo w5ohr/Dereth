@@ -1142,6 +1142,13 @@ const SIM_RADIUS=95, VIS_RADIUS=380, SIM_R2=SIM_RADIUS*SIM_RADIUS, VIS_R2=VIS_RA
 const PLAYER_MODELS=[
   {k:"procedural",n:"Classic"},   // the real Asheron's Call body (buildAvatarJointed + applyACBody).
 ];
+// #1009: the rigged Quaternius bodies as selectable chargen models — OPT-IN under ?newbodies=1 so the
+// default creation flow is byte-for-byte unchanged. `quat` marks the animated-preview path + sex; they
+// carry no `url` (the shared loadQuatBodies() cache serves the mesh). In-world these still spawn the
+// procedural body until the #1008 follow-up wires the swap — the choice just persists on the character.
+try{ if(typeof location!=="undefined" && /[?&]newbodies=1/.test(location.search)){
+  PLAYER_MODELS.push({k:"quat_m",n:"Athletic — Male",quat:"male",rigged:true},
+                     {k:"quat_f",n:"Athletic — Female",quat:"female",rigged:true}); } }catch(e){}
 function playerModelDef(k){ return PLAYER_MODELS.find(m=>m.k===k)||PLAYER_MODELS[0]; }
 // Robust model height: some rigged/skinned glTFs report an empty bounding box on load (matrices not yet
 // updated), which used to fall back to 1 and leave a model in large native units GIGANTIC. This updates
@@ -34752,7 +34759,7 @@ if(hasSave()){ continueBtn.style.display="block";
 // ============================================================================
 //  CHARACTER CREATOR — live 3D face/hair/beard/tattoo customization
 // ============================================================================
-let ccRenderer=null,ccScene=null,ccCam=null,ccBust=null,ccRAF=0,ccWork=null,ccOnCreate=null,ccVisible=false,ccModel=null,ccModelCache={},ccModelToken=0,ccBody=null;
+let ccRenderer=null,ccScene=null,ccCam=null,ccBust=null,ccRAF=0,ccWork=null,ccOnCreate=null,ccVisible=false,ccModel=null,ccModelCache={},ccModelToken=0,ccBody=null,ccModelMixer=null;
 function ccInitPreview(){
   if(ccRenderer) return;
   const canvas=document.getElementById('ccPreview');
@@ -34842,15 +34849,30 @@ function ccShowModel(url){                                   // render the chose
     ccModelCache[url]=root; place(root);
   }, undefined, e=>console.log("cc model failed",url,(e&&e.message)||""));
 }
+// #1009: an ANIMATED Quaternius body in the creator preview — clone from the shared loadQuatBodies()
+// cache, play Idle_Loop, and drive its mixer in ccAnim (item 1: "animated (Idle_Loop) render"). The
+// token guards against the async load resolving after the user has already switched models.
+function ccShowQuatBody(sex){
+  const tok=++ccModelToken;
+  if(ccModel){ ccScene.remove(ccModel); ccModel=null; } ccModelMixer=null;
+  loadQuatBodies().then(cache=>{
+    if(tok!==ccModelToken||!cache||!ccScene) return;   // superseded or load failed → leave the preview as-is
+    const inst=quatBodyClone(sex); if(!inst) return;
+    inst.play("idle");
+    ccModel=new THREE.Group(); ccModel.add(inst.root); ccScene.add(ccModel); ccModelMixer=inst.mixer;
+  });
+}
 function ccRebuild(){ if(!ccScene) return;
   const md=playerModelDef(ccWork.model||"procedural");
+  const rigged=!!(md.url||md.quat);
   // face/skin/hair options only matter for the classic procedural body — hide them for rigged models
-  ["face","skin","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo"].forEach(cat=>{ const row=document.querySelector('#charCreator .cc-row[data-cat="'+cat+'"]'); if(row) row.style.display=md.url?"none":""; });
+  ["face","skin","hair","hairColor","beard","eye","eyeShape","nose","mouth","feature","tattoo"].forEach(cat=>{ const row=document.querySelector('#charCreator .cc-row[data-cat="'+cat+'"]'); if(row) row.style.display=rigged?"none":""; });
   if(ccBust){ ccScene.remove(ccBust); ccBust=null; }
   if(ccBody){ ccScene.remove(ccBody); ccBody=null; }
-  if(md.url){ if(ccCam){ccCam.position.set(0,1.05,3.5);ccCam.lookAt(0,0.95,0);} ccShowModel(md.url); }
+  if(md.quat){ if(ccCam){ccCam.position.set(0,1.05,3.5);ccCam.lookAt(0,0.95,0);} ccShowQuatBody(md.quat); }   // #1009: animated Quaternius body
+  else if(md.url){ ccModelMixer=null; if(ccCam){ccCam.position.set(0,1.05,3.5);ccCam.lookAt(0,0.95,0);} ccShowModel(md.url); }
   else {
-    ccModelToken++; if(ccModel){ccScene.remove(ccModel);ccModel=null;}
+    ccModelToken++; ccModelMixer=null; if(ccModel){ccScene.remove(ccModel);ccModel=null;}
     ccBody=ccBuildBody(ccWork);                              // the whole player model, head included
     if(ccBody){ ccScene.add(ccBody); ccEnsureViewToggle(); ccApplyView(); }   // #172: Face/Body toggle, defaults to Face so head edits are visible
     else { if(ccCam){ccCam.position.set(0,1.62,1.45);ccCam.lookAt(0,1.6,0);} ccBust=ccBust_build(ccWork); ccScene.add(ccBust); }   // fallback: head-and-shoulders bust
@@ -34862,6 +34884,7 @@ function ccAnim(){ if(!ccVisible) return; ccRAF=requestAnimationFrame(ccAnim);
   const sway=Math.PI+Math.sin(tNow/1500)*0.5;
   if(ccBust){ ccBust.rotation.y=sway; if(ccBust.userData.head) tickFace(ccBust.userData.head,dt); }
   if(ccModel) ccModel.rotation.y=sway;
+  if(ccModelMixer) ccModelMixer.update(dt);   // #1009: advance the Quaternius body's Idle_Loop
   if(ccBody){ const u=ccBody.userData;
     // face the character toward the camera and let it sway gently. The assembled AC body fronts
     // avatar-local -z (nose/eye strips measure at -z; movement forward is -z; #548's placement quats
