@@ -34,6 +34,13 @@ function check(name,ok,detail){ console.log(`${ok?'PASS':'FAIL'}  ${name}${detai
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 // headless Chrome cannot grant pointer lock — a boot-time NotAllowedError is environmental, not a bug
 const BENIGN=/Pointer Lock|pointerlock/i;
+// poll a main-world predicate to quiescence — every wait must gate on real state, never a fixed sleep,
+// because SwiftShader frames run seconds apart and the async boot (initThree) resolves on its own clock.
+async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
+  const t0=Date.now();
+  while(Date.now()-t0<timeout){ if(await page.evaluate(fn)) return; await sleep(interval); }
+  throw new Error(`waitForMain timed out after ${timeout}ms`);
+}
 
 (async()=>{
   const browser=await puppeteer.launch({executablePath:CHROME,headless:'new',
@@ -41,7 +48,11 @@ const BENIGN=/Pointer Lock|pointerlock/i;
   const page=await browser.newPage();
   const errs=[]; page.on('pageerror',e=>{ if(!BENIGN.test(e.message)) errs.push(e.message); });
   await page.goto(URL,{waitUntil:'load',timeout:60000});
-  await page.waitForFunction('typeof startGame==="function"',{timeout:30000});
+  // initThree() creates scene/renderer ASYNC (after the asset loaders resolve) — but startGame() is
+  // defined at script load and runs buildWorld() synchronously, so calling it before the renderer/scene
+  // exist throws mid-build into our catch and leaves the world half-built. Wait for them FIRST. (#979/#981)
+  await waitForMain(page,()=>typeof startGame==="function"&&typeof renderer!=="undefined"&&renderer!==null
+    &&typeof scene!=="undefined"&&scene&&typeof scenery!=="undefined",{timeout:60000});
   // live-count tracker: every geometry/texture the GAME creates, minus every one it disposes
   await page.evaluate(()=>{
     window.__live={geo:0,tex:0};
@@ -57,7 +68,20 @@ const BENIGN=/Pointer Lock|pointerlock/i;
     GP.dispose=function(){ if(this.__tracked){ this.__tracked=0; window.__live.geo--; } return ogd.call(this); };
   });
   await page.evaluate(()=>{ try{ startGame(false,'aluvian'); }catch(e){} });
-  await sleep(5000);
+  // A fresh 'aluvian' recruit spawns INSIDE the Training Academy (inDungeon===true, curDungeon.academy),
+  // and startGame ends by holding an arrival portalTransit until the overworld streams in. enterDungeon()
+  // no-ops while inDungeon||portalTransit is truthy (js/game.js: "already below, or a transit is already
+  // carrying you"), so the warm-up delve below would silently no-op and inDungeon would never flip — the
+  // old fixed sleep(5000) raced that transit and hit the line-100 timeout under SwiftShader. Step out
+  // through the Academy portal and wait for BOTH inDungeon and portalTransit to clear before driving the
+  // delve/hub/capital cycle. Same async-boot race class as #974/#979. (#981)
+  await waitForMain(page,()=>typeof scenery!=="undefined"&&scenery.length>0
+    &&typeof inDungeon!=="undefined"&&inDungeon===true
+    &&typeof curDungeon!=="undefined"&&curDungeon&&curDungeon.academy,{timeout:30000});
+  await page.evaluate(()=>{ try{ player.academy=player.academy||{}; if(typeof academyExit==="function") academyExit(); }catch(e){} });
+  await waitForMain(page,()=>typeof inDungeon!=="undefined"&&!inDungeon
+    &&typeof portalTransit!=="undefined"&&!portalTransit,{timeout:30000});
+  await sleep(2000);   // let a few cullWorld frames re-show the overworld and stream the starting town in
   const mem=()=>page.evaluate(()=>({g:renderer.info.memory.geometries,t:renderer.info.memory.textures,
     lgeo:window.__live.geo,ltex:window.__live.tex,labels:LABELS.length}));
   const settle=async(maxMs=25000)=>{ let prev=await mem(), stable=0;
