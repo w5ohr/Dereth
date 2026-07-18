@@ -37,7 +37,16 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
   await page.goto(URL,{waitUntil:'load',timeout:60000});
   await waitForMain(page,()=>typeof startGame==="function",{timeout:30000});
   await page.evaluate(()=>{ try{ startGame(false,'aluvian'); }catch(e){} });
-  await waitForMain(page,()=>typeof scene!=="undefined"&&typeof plazaCobbleTex==="function"&&typeof cobbleTex==="function",{timeout:30000});
+  await waitForMain(page,()=>typeof scene!=="undefined"&&scene&&typeof plazaCobbleTex==="function"
+    &&typeof cobbleTex==="function"&&typeof scenery!=="undefined",{timeout:30000});
+  // A fresh recruit spawns INSIDE the Training Academy (inDungeon): the overworld is built but hidden,
+  // and once the player moves, cullWorld distance-detaches far towns — so the plaza is not a reliable
+  // live scene member at this point (this is what made the old scene.traverse probe find 0 plazas).
+  // Step out through the Academy portal into the starting town (Holtburg for aluvian) so the overworld
+  // is active and the plaza sits right under the player, exactly as a real arrival sees it. (#974)
+  await page.evaluate(()=>{ try{ player.academy=player.academy||{}; if(typeof academyExit==="function") academyExit(); }catch(e){} });
+  await waitForMain(page,()=>typeof inDungeon!=="undefined"&&!inDungeon,{timeout:30000});
+  await sleep(1500);   // let a few cullWorld frames re-show the overworld and stream the town in
 
   const data=await page.evaluate(()=>{
     const meanOf=tex=>{                                  // average colour of a CanvasTexture
@@ -59,9 +68,14 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
     out.acShared = red._acShared===true;
     out.wrapsRepeat = red.wrapS===THREE.RepeatWrapping && red.wrapT===THREE.RepeatWrapping;
 
-    // ── locate the plaza meshes actually in the scene
+    // ── locate the plaza meshes. addCity pushes every plaza into the persistent scenery[] array, which
+    //    holds them whether or not they're currently attached to the scene / visible — more robust than
+    //    scene.traverse, which only walks currently-attached nodes (a distance-culled town is detached).
+    //    Fall back to a scene walk if scenery[] isn't reachable. (#974)
     const plazas=[];
-    scene.traverse(o=>{ if(o.isMesh && o.material && o.material.map===red) plazas.push(o); });
+    const pool=(typeof scenery!=="undefined"&&scenery)?scenery:null;
+    if(pool){ for(const o of pool){ if(o&&o.isMesh&&o.material&&o.material.map===red) plazas.push(o); } }
+    if(!plazas.length){ scene.traverse(o=>{ if(o.isMesh && o.material && o.material.map===red) plazas.push(o); }); }
     out.plazaCount=plazas.length;
 
     if(plazas.length){

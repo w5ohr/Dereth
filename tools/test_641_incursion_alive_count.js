@@ -34,7 +34,12 @@ async function waitForMain(page,fn,{timeout=30000,interval=100}={}){
   await page.goto(URL,{waitUntil:'load',timeout:60000});
   await waitForMain(page,()=>typeof startGame==="function",{timeout:30000});
   await page.evaluate(()=>{ try{ startGame(false,'aluvian'); }catch(e){} });
-  await waitForMain(page,()=>typeof eventCleared==="function"&&typeof reconcileEvent==="function"&&typeof NET!=="undefined",{timeout:30000});
+  // initThree() is async: eventCleared/reconcileEvent/NET are hoisted and exist immediately, but `scene`
+  // and `renderer` do not. reconcileEvent -> buildEventBeacon does scene.add(beam), so gate on the
+  // renderer/scene being live (the `renderer!==null` readiness the verify SKILL uses) before probing —
+  // otherwise the first evaluate races initThree and throws "Cannot read properties of undefined". (#975)
+  await waitForMain(page,()=>typeof eventCleared==="function"&&typeof reconcileEvent==="function"&&typeof NET!=="undefined"
+    &&typeof renderer!=="undefined"&&renderer!==null&&typeof scene!=="undefined"&&!!scene,{timeout:30000});
 
   const data = await page.evaluate(()=>{
     const out={};
