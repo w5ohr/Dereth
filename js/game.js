@@ -8203,9 +8203,41 @@ function settleY(){ // drop every placed object onto the RENDERED ground surface
   for(const e of dungeonEntrances){ const dy=groundLowest(e.x,e.z,3); e.mesh.position.y=dy;   // #955: the dolmen sits at its lowest footprint contact
     addCarve(e.x,e.z,1,0,4,4,dy,6*WSCALE); }   // #1005: clear the terrain around the entrance so its opening isn't swallowed by the hillside
   carveFlush();   // fold the dungeon-entrance carves into the terrain mesh (persist for the world's life — carveReset() clears them on rebuild)
+  for(const e of dungeonEntrances) resettleGroundNear(e.x,e.z,6*WSCALE+16);   // #1018: drop objects near each entrance onto its freshly-carved ground
   for(const n of nodes) n.mesh.position.y=groundY(n.x,n.z);
   for(const np of npcs) np.mesh.position.y=groundY(np.x,np.z);
   for(const sh of shops) sh.mesh.position.y=groundY(sh.x,sh.z);
+}
+// #1018: re-seat the static ground-sitting objects within `r` of (cx,cz) onto the CURRENT ground.
+// settleY() runs once at buildWorld, but streamed structures carve the terrain lower afterwards (#1005)
+// — and restore it when they drop — so objects near them float/sink until re-sampled. Called after each
+// carve batch (town/world-struct/house build AND drop). Mirrors settleY's per-category groundY seating;
+// NPCs/vendors already re-seat via tbSettleTownNpcs/seatRealTownVendors onto their structure floors.
+function resettleGroundNear(cx,cz,r){
+  const r2=r*r, near=(x,z)=>{ const dx=x-cx,dz=z-cz; return dx*dx+dz*dz<=r2; };
+  for(const s of scenery){ const u=s.userData||{}; if(s.isSprite||u.noSettle) continue; if(near(s.position.x,s.position.z)) s.position.y=groundY(s.position.x,s.position.z)+(u.float||0); }
+  for(const ls of lifestones){ if(ls.mesh&&near(ls.x,ls.z)) ls.mesh.position.y=groundY(ls.x,ls.z); }
+  for(const pt of portals){ if(pt.mesh&&near(pt.x,pt.z)) pt.mesh.position.y=groundY(pt.x,pt.z); }
+  for(const n of nodes){ if(n.mesh&&near(n.x,n.z)) n.mesh.position.y=groundY(n.x,n.z); }
+}
+// #1018: dev audit — walk every static ground-sitting object and report any whose base is further than
+// `eps` from its support height (supportAt: a structure floor when it stands on one, else the terrain).
+// Re-runnable after any terrain edit; surfaced via /audit. Returns {eps,total,byCat,worst,offenders}.
+function auditGroundObjects(eps){
+  eps=(eps!=null)?eps:0.4;
+  const off=[];
+  const chk=(cat,x,z,y,fl)=>{ if(!isFinite(x)||!isFinite(z)||!isFinite(y)) return;
+    const base=y-(fl||0), sup=supportAt(x,z,y), d=base-sup;
+    if(Math.abs(d)>eps) off.push({cat,x:Math.round(x),z:Math.round(z),off:+d.toFixed(2)}); };
+  for(const s of scenery){ const u=s.userData||{}; if(s.isSprite||u.noSettle) continue; chk("scenery",s.position.x,s.position.z,s.position.y,u.float); }
+  for(const ls of lifestones){ if(ls.mesh) chk("lifestone",ls.x,ls.z,ls.mesh.position.y); }
+  for(const pt of portals){ if(pt.mesh) chk("portal",pt.x,pt.z,pt.mesh.position.y); }
+  for(const e of dungeonEntrances){ if(e.mesh) chk("dungeonEntrance",e.x,e.z,e.mesh.position.y); }
+  for(const n of nodes){ if(n.mesh) chk("node",n.x,n.z,n.mesh.position.y); }
+  for(const np of npcs){ if(np.mesh) chk("npc",np.x,np.z,np.mesh.position.y); }
+  for(const sh of shops){ if(sh.mesh) chk("shop",sh.x,sh.z,sh.mesh.position.y); }
+  const byCat={}; for(const o of off) byCat[o.cat]=(byCat[o.cat]||0)+1;
+  return {eps,total:off.length,byCat,worst:off.slice().sort((a,b)=>Math.abs(b.off)-Math.abs(a.off)).slice(0,10),offenders:off};
 }
 function addLifestone(x,z,bound,name,capital,region){
   const mesh=buildLifestone(bound);mesh.position.set(x,0,z);
@@ -8808,6 +8840,7 @@ function tbBuildTown(c,objs){
   // ── pass 2: for each room, cut a doorway on the CLEAREST side (now every wall exists) ──
   for(const rec of recs){ if(rec.enter) tbCutDoorway(g,obst,recs,rec,lights,c.x,c.z); }
   carveFlush();   // #1005: regenerate the terrain-mesh chunks this town's buildings graded (so the drawn ground matches groundY)
+  resettleGroundNear(c.x,c.z,220);   // #1018: re-seat static ground objects (props/lifestone/portal/nodes) onto the town's graded ground
   seatRealTownVendors(c,recs,seps);   // vendors seat AFTER the carve so tbFloorAt/groundY see the graded ground
   tbSettleTownNpcs(c,recs);
   return {c,g,obst,lights,recs};
@@ -9056,7 +9089,7 @@ function tbReleaseStructs(recs){ for(const r of (recs||[])){
   for(const st of (r.structs||[])){ const i=structures.indexOf(st); if(i>=0) structures.splice(i,1); } } }
 function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
-  tbReleaseStructs(e.recs); carveFlush();   // #1005: un-grade & restore the terrain chunks before NPCs resettle onto it
+  tbReleaseStructs(e.recs); carveFlush(); resettleGroundNear(e.c.x,e.c.z,220);   // #1005: restore terrain + #1018: re-seat ground objects before NPCs resettle
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
@@ -9102,12 +9135,12 @@ function wsBuildBlock(lb,rec){
   // isolated houses/keeps are enterable too: ring, then cut a doorway on the clearest side
   for(const b of rec.b){ const r=tbRingBuilding(g,obst,b[0],b[1],b[2],b[3]||0); if(r) recs.push(r); }   // b=[did,x,z,rot]
   for(const r of recs){ if(r.enter) tbCutDoorway(g,obst,recs,r,lights,null,null); }
-  carveFlush();   // #1005: regenerate the terrain chunks this landblock's structures graded
+  carveFlush(); resettleGroundNear(rec.cx,rec.cz,140);   // #1005: regen chunks + #1018: re-seat ground objects near this landblock
   return {cx:rec.cx,cz:rec.cz,g,obst,lights,recs};
 }
 function wsDropBlock(lb){ const e=_wsBuilt[lb]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
-  tbReleaseStructs(e.recs); carveFlush();
+  tbReleaseStructs(e.recs); carveFlush(); resettleGroundNear(e.cx,e.cz,140);   // #1005 restore + #1018 re-seat
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }
   for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   delete _wsBuilt[lb];
@@ -10705,7 +10738,7 @@ function hsStreamHouses(dt){ if(!_hsPackOn||inDungeon||inNetwork) return;
     _hsBuilt[h.i]=hsBuildHouse(h); if(++n>=HS_MAX) break; }
 }
 function hsDropHouse(k){ const e=_hsBuilt[k]; if(!e) return;
-  if(e.carves){ for(const id of e.carves) removeCarve(id); carveFlush(); }   // #1005: un-grade the plot as the house drops
+  if(e.carves){ for(const id of e.carves) removeCarve(id); carveFlush(); resettleGroundNear(e.x,e.z,50); }   // #1005: un-grade the plot + #1018: re-seat objects as the house drops
   for(const o of e.obst){ const i=obstacles.indexOf(o); if(i>=0)obstacles.splice(i,1); }
   for(const s of e.structs){ const i=structures.indexOf(s); if(i>=0)structures.splice(i,1); }
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes
@@ -10833,7 +10866,7 @@ function hsBuildHouse(h){
   cr.lbl.scale.set(8.5,1.8,1); cr.lbl.position.y=3.1; cg.add(cr.lbl);
   const o2={x:cw.x,z:cw.z,r:0.7}; obstacles.push(o2); obst.push(o2);
   hsCrystals.push(cr);
-  carveFlush();   // #1005: fold the plot grading into the terrain mesh once the compound is placed
+  carveFlush(); resettleGroundNear(h.x,h.z,50);   // #1005: fold the plot grading + #1018: re-seat ground objects on the graded plot
   const built={x:h.x,z:h.z,g,obst,structs,lights,cr,h,carves};
   if(own) hsDecorate(h,built);   // the owner's hooks, chests, house portal, placed items
   return built;
@@ -34307,6 +34340,12 @@ function handleSlash(text){
     const sel=document.getElementById('gaSel'); if(sel) sel.value="custom";
     log(`Waypoint set to <b>${acCoordStr(x,z)}</b> — GoArrow now points there. <span style="color:var(--dim)">(/wp clear to remove)</span>`,"sys");
   }
+  else if(cmd==="audit"){   // #1018: dev tool — report ground-sitting objects that float/sink off their support height
+    const eps=parseFloat(parts[2])||0.4, a=auditGroundObjects(eps);
+    if(!a.total){ log(`Ground audit: <b>0</b> offenders (eps ${a.eps}). Everything rests on its support.`,"sys"); }
+    else{ log(`Ground audit: <b>${a.total}</b> offenders (eps ${a.eps}) — ${Object.entries(a.byCat).map(([c,n])=>c+":"+n).join(", ")}`,"warn");
+      for(const o of a.worst) log(`  ${o.cat} @ ${o.x},${o.z} off ${o.off>0?"+":""}${o.off}${o.off>0?" (floating)":" (sunken)"}`,"warn"); }
+    if(typeof console!=="undefined") console.log("[/audit]",a); }
   else if(cmd==="emote"||cmd==="e"){ const act=(parts[1]||"").toLowerCase();
     if(act==="studio"||act==="new"||act==="create"||act==="make"){ openEmoteStudio(); }   // #999: author your own emote
     else if(act==="copy"){   // #999: keep the last custom emote another player performed near you
