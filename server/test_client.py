@@ -110,6 +110,15 @@ async def main():
     bid = pob.get("netid") if pob else None   # #438: bob's opaque netid -- the wire never uses the account name as an id
     check("alice sees bob join", bool(await a.recv_until(lambda x: x["t"] == "system" and bob in x.get("msg", ""))))
 
+    # #1023: names the shipped client can't submit but a raw socket could — homoglyph impersonation and
+    # profanity — are rejected server-side (into bob's still-free slot 1, so neither creates/enters).
+    await b.send({"t": "create_char", "slot": 1, "name": "Кilmer", "char": {}})   # Cyrillic К + ilmer -> looks like reserved "Kilmer"
+    e_h = await b.recv_until(lambda x: x["t"] == "play_err")
+    check("homoglyph name rejected (Cyrillic Кilmer)", bool(e_h) and "name" in e_h.get("msg", "").lower())
+    await b.send({"t": "create_char", "slot": 1, "name": "Shit_lord", "char": {}})   # profane (whole first token)
+    e_p = await b.recv_until(lambda x: x["t"] == "play_err")
+    check("profane name rejected (Shit_lord)", bool(e_p) and "allowed" in e_p.get("msg", "").lower())
+
     # movement input -> snapshot reflects the OTHER player. AOI: the viewer's own record is no longer
     # echoed back (the client always discarded it), and only entities within AOI_IN are sent -- these
     # two stand ~212u apart, inside it.

@@ -2590,7 +2590,12 @@ def _clampi(v, lo, hi, default):
 
 # ---------------------------------------------------------------- auth + dispatch
 def valid_name(u):
-    return isinstance(u, str) and 3 <= len(u) <= 16 and all(ch.isalnum() or ch in "_-" for ch in u)
+    # #1023: ASCII-ONLY, mirroring the shipped client's ^[A-Za-z0-9_-]{3,16}$. str.isalnum() is
+    # Unicode-aware, so the old check accepted Cyrillic/Greek/CJK/accented/fullwidth homoglyphs — a
+    # modified client or raw socket could make a byte-different "Кilmer" that renders as the reserved
+    # "Kilmer" (RESERVED_NAMES + global uniqueness compare exact/.lower() strings) to impersonate the
+    # lore name or any other player in the broadcast chat/presence. Reject non-ASCII here in one place.
+    return isinstance(u, str) and re.fullmatch(r"[A-Za-z0-9_-]{3,16}", u) is not None
 
 def clean_relay(s, maxlen):
     """#240: server-side defense-in-depth for free text relayed to other clients (chat/emote/tell/
@@ -2929,6 +2934,8 @@ async def dispatch(cl, msg):
         slot, name, char = msg.get("slot"), msg.get("name", ""), msg.get("char")
         if not valid_name(name):
             return await cl.send({"t": "play_err", "msg": "Name: 3-16 letters/numbers/_-."})
+        if censor(name) != name:   # #1023: the name is broadcast verbatim in chat/presence and never ran through the #1000 censor — reject profane names (a whole word or _/- -separated segment) at creation
+            return await cl.send({"t": "play_err", "msg": "That name isn't allowed."})
         ok, err = await dbq(create_char_slot, cl.username, slot, name, char if isinstance(char, dict) else None)
         if not ok:
             return await cl.send({"t": "play_err", "msg": err})
