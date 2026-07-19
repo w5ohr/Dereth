@@ -8395,7 +8395,10 @@ function roofTex(){ if(_roofTex) return _roofTex;
   if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
   _roofTex=t;return t;
 }
-function roofMat(color){ return new THREE.MeshStandardMaterial({map:roofTex(),color,roughness:0.86,metalness:0.0,flatShading:true}); }
+// #1022: faint warm emissive — same trick as the interior floor slab — so the roof UNDERSIDE (which
+// no sun and only a distant interior lamp ever reach) reads as a surface instead of a pitch-black
+// void above wall height ("hole into the sky" during storms). Subtle enough to be invisible outside.
+function roofMat(color){ return new THREE.MeshStandardMaterial({map:roofTex(),color,roughness:0.86,metalness:0.0,flatShading:true,emissive:0x241a10,emissiveIntensity:0.55}); }
 function roofPyramid(w,h,color){const r=new THREE.Mesh(new THREE.ConeGeometry(w,h,4),roofMat(color));r.rotation.y=Math.PI/4;r.castShadow=true;return r;}
 // ── solid roofs: stepped square platforms approximate the pyramid so a player who lands on a
 //    roof stands on it (and can walk to the ridge) instead of falling through into the house. ──
@@ -8438,9 +8441,12 @@ function addWindows(g,face,W,D,y,ww,wh){
 }
 function addShell(g,W,H,D,wallMat,floorMat,trim){
   trim=trim||0x4a3220; const t=Math.min(W,D)*0.05+0.24, tm=solid(trim);
-  const floor=new THREE.Mesh(new THREE.BoxGeometry(W,0.18,D),floorMat||wallMat);floor.position.y=0.09;floor.receiveShadow=true;g.add(floor);
+  // #1022: the interior walking surface is the FOUNDATION's top (0.6u, above the 0.18u floor slab),
+  // and both rendered as flat untextured grey — the "featureless gray floor" inside every procedural
+  // building. Dress the foundation (and the default floor slab) in world-scale flagstone.
+  const floor=new THREE.Mesh(tileBoxUV(new THREE.BoxGeometry(W,0.18,D),W,0.18,D,2.6),floorMat||texMat(stoneFloorTex,0x9a9284));floor.position.y=0.09;floor.receiveShadow=true;g.add(floor);
   if(floor.material&&floor.material.emissive) floor.material.emissive.setHex(0x241f14);
-  const found=new THREE.Mesh(new THREE.BoxGeometry(W+0.5,0.6,D+0.5),solid(0x6a6258,true));found.position.y=0.3;found.castShadow=true;found.receiveShadow=true;g.add(found); // stone foundation course
+  const found=new THREE.Mesh(tileBoxUV(new THREE.BoxGeometry(W+0.5,0.6,D+0.5),W+0.5,0.6,D+0.5,2.6),texMat(stoneFloorTex,0x8f877b));found.position.y=0.3;found.castShadow=true;found.receiveShadow=true;g.add(found); // stone foundation course — flagstone, not bare grey
   const mk=(bw,bh,bd,x,y,z,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),mat||wallMat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m;};
   mk(W,H,t,0,H/2,-D/2); mk(t,H,D,-W/2,H/2,0); mk(t,H,D,W/2,H/2,0);   // back, left, right
   const dg=2.6,side=(W-dg)/2,dh=3.0;
@@ -8813,9 +8819,29 @@ function tbBuildMesh(md){   // one textured Group for a placement (textures shar
       tbWindowMats.push(mat);
       mat.addEventListener('dispose',()=>{ const i=tbWindowMats.indexOf(mat); if(i>=0) tbWindowMats.splice(i,1); }); }
     else if(mm.tex) mat=new THREE.MeshStandardMaterial({map:tbTex(mm.tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide,alphaTest:mm.clip?0.5:0});
-    else { let c=(mm.color!=null?mm.color:0x8a8478);   // some AC building surfaces carry a bright "unset texture" placeholder colour that glares to a blank white panel under PBR sun — tone any near-white untextured wall down to muted stone/plaster
+    else {
+      // #1022: FLOOR PLATES — an untextured, predominantly-horizontal surface at the model's base is
+      // the building's interior floor (the export carries no texture for them), and it rendered as a
+      // flat featureless grey plane. Dress those in flagstone; walls/roofs keep their flat colour.
+      let isFloor=false;
+      if(md.bb && gr.n && gr.n.length){
+        let nyAbs=0, nN=0, sy=0, vN=0;
+        for(let i=1;i<gr.n.length;i+=3){ nyAbs+=Math.abs(gr.n[i]); nN++; }
+        for(let i=1;i<gr.v.length;i+=3){ sy+=gr.v[i]; vN++; }
+        isFloor = nN>0 && vN>0 && (nyAbs/nN)>0.7 && (sy/vN) < md.bb[1]+1.4;
+      }
+      if(isFloor){
+        if(!gr.uv||!gr.uv.length){   // untextured groups ship no UVs — planar-map from x/z at flagstone scale
+          const uvArr=new Float32Array((gr.v.length/3)*2);
+          for(let i=0,u=0;i<gr.v.length;i+=3){ uvArr[u++]=gr.v[i]/2; uvArr[u++]=gr.v[i+2]/2; }
+          geo.setAttribute('uv',new THREE.BufferAttribute(uvArr,2));
+        }
+        mat=texMat(stoneFloorTex,0x9a9284); mat.side=THREE.DoubleSide;
+      } else {
+      let c=(mm.color!=null?mm.color:0x8a8478);   // some AC building surfaces carry a bright "unset texture" placeholder colour that glares to a blank white panel under PBR sun — tone any near-white untextured wall down to muted stone/plaster
       if(((c>>16)&255)>190&&((c>>8)&255)>190&&(c&255)>190) c=0x9c9078;
       mat=new THREE.MeshStandardMaterial({color:c,roughness:0.94,metalness:0.02,side:THREE.DoubleSide}); }
+    }
     const me=new THREE.Mesh(geo,mat); me.castShadow=true; me.receiveShadow=true; g.add(me);
   }
   return g;
@@ -9010,8 +9036,11 @@ function tbCutDoorway(g,obst,recs,rec,lights,faceX,faceZ){
   const rug=new THREE.Mesh(new THREE.PlaneGeometry(Math.min(rec.hx,3),Math.min(rec.hz*0.9,3.4)),
     new THREE.MeshStandardMaterial({color:0x6a3a2a,roughness:0.95}));
   rug.rotation.x=-Math.PI/2; rug.position.y=0.09; fit.add(rug);
-  const lt=new THREE.PointLight(0xffd39a,1.7,Math.max(rec.hx,rec.hz)*2.4+9);
-  lt.position.set(rec.fcx,rec.gy+Math.min(rec.H*0.62,3.0),rec.fcz); g.add(lt); if(lights)lights.push(lt);
+  // #1022: hang the light at 62% of the room's REAL height (was capped at 3.0u) with range covering
+  // the full interior volume — a multi-storey hall's ceiling rendered pitch-black because the light
+  // sat at lamp height with a floor-sized range and never reached the roof underside.
+  const lt=new THREE.PointLight(0xffd39a,1.7,Math.max(rec.hx,rec.hz)*2.4+9+rec.H);
+  lt.position.set(rec.fcx,rec.gy+Math.min(rec.H*0.62,5.5),rec.fcz); g.add(lt); if(lights)lights.push(lt);
   // #955: no threshold glow — the entrance is the model's own opening, lit from inside by the fit-out light.
   // ── proper DOORWAY at any cut that ISN'T on the model's own door art (offmarker fallbacks +
   //    door-less walls): a stone frame + a recessed dark opening + an ajar plank door, so the entrance
@@ -9632,7 +9661,8 @@ function addCity(c){
       for(const cc of arch.colliders){ obstacles.push({x:hx+cc.x*ct+cc.z*st, z:hz-cc.x*st+cc.z*ct, r:cc.r}); }
       if(arch.surfaces) registerStructure(hx,hz,th,gy,arch.surfaces);
       // warm interior light so the hollow shell isn't black inside (pooled → cheap)
-      const bl=new THREE.PointLight(0xffd39a,1.5,20); bl.position.set(hx,gy+2.7,hz); scene.add(bl); scenery.push(bl);
+      // #1022: raised + longer range so multi-storey interiors read to the ceiling, not just lamp height
+      const bl=new THREE.PointLight(0xffd39a,1.9,26); bl.position.set(hx,gy+3.6,hz); scene.add(bl); scenery.push(bl);
     }
   }
   // paved plaza — a triangle-fan that CONFORMS to the ground (groundY) so townsfolk standing
