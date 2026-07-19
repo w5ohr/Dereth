@@ -5330,7 +5330,11 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
   g.visible=false;
   return g;
 }
-function buildAvatar(){ const g=buildAvatarJointed(); applyACBody(g); return g; }
+function buildAvatar(){
+  // #1008: opt-in Quaternius body for the player. If the rig hasn't finished loading yet, fall through
+  // to the procedural body as a placeholder — quatSwapPlayerAvatar() rebuilds it the moment the rig lands.
+  if(typeof NEWBODIES!=="undefined"&&NEWBODIES){ const qa=buildQuatAvatar(player.appearance); if(qa) return qa; }
+  const g=buildAvatarJointed(); applyACBody(g); return g; }
 // ---- The REAL AC body: mesh parts extracted from client_portal.dat by tools/ac_model_export.py.
 //      When assets/acmodels/ is present the forged-plate placeholder body is swapped for the
 //      authentic Asheron's Call human (original skin textures and all). The sculpted head/face
@@ -19597,6 +19601,10 @@ function animateAvatar(dt){
   // combat engagement: acting or blocking holds a "ready" stance, which relaxes to "resting" a few seconds later
   if(sw>0||castShow>0||(player.bowDraw>0)||blk) u._combatT=4; else u._combatT=Math.max(0,(u._combatT||0)-dt);  // gather/craft don't raise the guard
   u._c=(u._c==null?0:u._c)+(((u._combatT>0)?1:0)-(u._c||0))*Math.min(1,dt*5); const cW=u._c;
+  // #1008: a Quaternius-bodied avatar is driven by its AnimationMixer, not the procedural jointed pose.
+  if(u.isQuat){ driveQuatAvatar(playerAvatar,dt,{ moving, running, swing:sw, casting:(castShow>0||player.bowDraw>0),
+      blocking:blk, grounded:player.grounded, dead:!player.alive, bow:(weaponMode==="bow"),
+      wt:(player.weapon&&player.weapon.wt)||null }); return; }
   const hasShield=!!equippedShield();
   const p=player.bob*3, sP=Math.sin(p), sQ=Math.sin(p+Math.PI);
   const breath=Math.sin(idleT*1.6);
@@ -25285,6 +25293,8 @@ function loadQuatBodies(){                          // idempotent; resolves to t
       for(const c of clips) byName.set(c.name,c);
       quatBody={ male:{scene:m.scene}, female:{scene:f.scene}, clips, byName, ready:true };
       console.log("Quaternius human bodies loaded ("+clips.length+" UAL clips).");
+      if(typeof quatSwapPlayerAvatar==="function") quatSwapPlayerAvatar();   // #1008: swap the player avatar in now the rig is ready
+      if(typeof quatRefreshNpcs==="function") quatRefreshNpcs();             // …and any NPCs built before the rig landed
       return quatBody;
     }).catch(e=>{ console.warn("Quaternius body load failed:",(e&&e.message)||e); quatBody=null; return null; });
   return _quatBodyPromise;
@@ -25317,6 +25327,84 @@ function quatBodyClone(sex){
     cur=act; return act;
   };
   return {root, mixer, play, height:robustHeight(root), sex:(sex==="female"?"female":"male")};
+}
+// ═══ #1008 / #1019: IN-WORLD QUATERNIUS BODIES ═══════════════════════════════════════════════════
+//   Wire the loaded Quaternius rig (loadQuatBodies / quatBodyClone / QUAT_ANIM) into the in-world
+//   PLAYER avatar and role NPCs — opt-in under ?newbodies=1 so the shipped default is byte-for-byte
+//   the current game. The Superhero base body ships with its own modeled head/face, so no AC-head
+//   port is needed; skin + hair are tinted to the character's appearance, held weapons mount on the
+//   hand_r bone, and the AnimationMixer is driven per movement/combat state (QUAT_ANIM) in place of
+//   acMotionTick for these humans. This is step 1 (attachments: dye + held weapon) + step 2 (wiring)
+//   of #1019; the enforcement pass (flip the default, delete the procedural body path) is the final
+//   step, gated on visual sign-off across every role — NOT done here.
+const NEWBODIES=(typeof location!=="undefined")&&/[?&]newbodies=1/.test(location.search);
+function quatFindBones(root){ const b={};
+  root.traverse(o=>{ if(o.isBone){ if(o.name==="Head")b.head=o; else if(o.name==="hand_r")b.handR=o; else if(o.name==="hand_l")b.handL=o; } });
+  return b; }
+// Tint the body's skin + hair to an appearance (best-effort match by material/mesh name). Clones the
+// shared cached materials first so one character's dye never bleeds onto another's body.
+function quatTint(root,app){
+  const skin=(app&&app.skin!=null)?app.skin:0xe8b890, hair=(app&&(app.hairColor!=null?app.hairColor:app.hair))|0||0x3a2a1a;
+  root.traverse(o=>{ if(!o.isMesh||!o.material) return;
+    const mats=Array.isArray(o.material)?o.material:[o.material];
+    for(let i=0;i<mats.length;i++){ const m=mats[i]; const nm=((m.name||"")+"|"+(o.name||"")).toLowerCase(); const mm=m.clone();
+      if(/hair|eyebrow|beard/.test(nm)){ if(mm.color) mm.color.setHex(hair); }
+      else if(/eye/.test(nm)){ /* leave the eyes as authored */ }
+      else if(mm.color){ mm.color.setHex(skin); }   // body skin
+      if(Array.isArray(o.material)) o.material[i]=mm; else o.material=mm; }
+  }); }
+// Build a player/NPC avatar Group backed by a Quaternius body. Returns null if the rig isn't loaded yet.
+function buildQuatAvatar(app){
+  const sex=(app&&app.gender==="female")?"female":"male";
+  const inst=quatBodyClone(sex); if(!inst) return null;
+  quatTint(inst.root,app);
+  const g=new THREE.Group(); g.add(inst.root);
+  g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null},isQuat:true,acBody:true,_headApp:app};
+  inst.play("idle",0);
+  return g; }
+// Mount/refresh a simple held-weapon proxy on the hand_r bone (step 1). Kept deliberately light — a
+// tapered blade sized to the equipped weapon class; the full KayKit weapon meshes are a follow-up.
+function quatHoldWeapon(av,wt){
+  const q=av&&av.userData&&av.userData.quat; if(!q||!q.bones.handR) return;
+  if(q.wpn&&q.wpn.parent){ q.wpn.parent.remove(q.wpn); q.wpn=null; }
+  if(!wt||wt==="unarmed") return;
+  const g=new THREE.Group();
+  const bow=(WEAPON_TYPES[wt]&&WEAPON_TYPES[wt].mode==="missile");
+  if(bow){ const bm=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.02,6,16,Math.PI*1.1),new THREE.MeshStandardMaterial({color:0x6b4a2a,roughness:0.8}));
+    bm.rotation.z=Math.PI/2; g.add(bm); }
+  else { const len=(wt==="twohand"||wt==="spear"||wt==="staff")?1.4:(wt==="dagger"?0.4:0.9);
+    const steel=new THREE.MeshStandardMaterial({color:0xcfd6de,metalness:0.6,roughness:0.35});
+    const blade=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.02,len),steel); blade.position.z=-len/2-0.12; g.add(blade);
+    const grip=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.14,8),new THREE.MeshStandardMaterial({color:0x2a1c10,roughness:0.9}));
+    grip.rotation.x=Math.PI/2; g.add(grip); }
+  g.scale.setScalar(1/(av.userData.quat.inst.root.scale.x||1));   // undo the body's height-normalize scale so the weapon reads at world size
+  q.bones.handR.add(g); q.wpn=g; q.wpnWt=wt; }
+// Per-frame driver: map movement/combat signals → a QUAT_ANIM state and advance the mixer. Replaces
+// the procedural acMotionTick pose for a Quaternius-bodied human.
+function driveQuatAvatar(av,dt,sig){
+  const q=av&&av.userData&&av.userData.quat; if(!q||!q.inst) return;
+  let st="idle";
+  if(sig.dead) st="death";
+  else if(!sig.grounded) st="jumpLoop";
+  else if(sig.swing>0) st=(sig.bow?"castShoot":"swordAttack");
+  else if(sig.casting) st="castShoot";
+  else if(sig.blocking) st="swordIdle";
+  else if(sig.running) st="run";
+  else if(sig.moving) st="walk";
+  if(st!==q.curState){ q.inst.play(st,0.18); q.curState=st; }
+  // keep the held weapon in sync with the equipped class
+  const wt=sig.wt||null; if(wt!==q.wpnWt) quatHoldWeapon(av,wt);
+  q.inst.mixer.update(dt); }
+// Async swap: buildAvatar() may run before loadQuatBodies() resolves, so it returns the procedural
+// body as a placeholder; once the rig lands, rebuild the player avatar in place (like refreshHorseMeshes).
+function quatSwapPlayerAvatar(){
+  if(!NEWBODIES||!quatBody||!quatBody.ready) return;
+  if(typeof playerAvatar==="undefined"||!playerAvatar||playerAvatar.userData.isQuat) return;
+  const qa=buildQuatAvatar(player.appearance); if(!qa) return;
+  qa.position.copy(playerAvatar.position); qa.rotation.y=playerAvatar.rotation.y; qa.visible=playerAvatar.visible;
+  scene.remove(playerAvatar); if(typeof disposeObject3D==="function") disposeObject3D(playerAvatar);
+  playerAvatar=qa; scene.add(playerAvatar);
+  console.log("[#1008] player avatar swapped to the Quaternius body.");
 }
 const HORSE_MODEL="assets/models/animals/Horse.glb";   // CC0 Quaternius Animated Animals — rigged, Gallop/Walk/Idle/Eating clips
 let gltfHorse=null, _horseLoadStarted=false;
