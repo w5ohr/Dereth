@@ -35082,7 +35082,10 @@ function ccBuildOptions(){
     APPEARANCE[cat].forEach(o=>{ const b=document.createElement('button'); b.dataset.k=String(o.k);
       if(isColor){ b.className="cc-sw"; b.style.background="#"+(o.k>>>0).toString(16).padStart(6,"0"); b.title=o.n; }
       else b.textContent=o.n;
-      b.onclick=()=>{ ccWork[cat]=o.k; if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
+      b.onclick=()=>{ ccWork[cat]=o.k;
+        if(cat==="model"){ const _md=playerModelDef(o.k);   // #1035: a sexed body model (quat_m/quat_f) syncs the Gender control so the two can't contradict
+          if(_md&&_md.quat&&ccWork.gender!==_md.quat){ ccWork.gender=_md.quat; ccWork.acHead=null; ccRenderCreation(); } }
+        if(cat==="race"){ ccWork.heritage=o.k; ccWork.town=(PRESETS[o.k]&&PRESETS[o.k].town)||"Holtburg";
         Object.assign(ccWork,HERITAGE_LOOK[o.k]||{});   // heritage look defaults (face/skin/hair/nose/eyes) — still overridable below
         ccWork.acHead=null;                             // #533: re-derive the retail head for THIS heritage — else acHead stays frozen on the first race/gender and every race reads as the same ginger default (skin+hair indices never re-picked per heritage)
         ccRenderCreation(); } ccSyncSel(); ccBuildACHead(); ccRebuild(); };
@@ -35178,7 +35181,9 @@ function ccRenderCreation(){
         +`<div class="cl-town">Begins in <b>${h.town}</b></div>`;
     } else lore.style.display="none"; }
   const gd=document.getElementById('ccGender');
-  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null; ccRenderCreation(); ccBuildACHead(); ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
+  if(gd){ gd.innerHTML=""; [["male","Male"],["female","Female"]].forEach(([k,n])=>{ const b=document.createElement('button'); b.textContent=n; b.className=ccWork.gender===k?"sel":""; b.onclick=()=>{ccWork.gender=k; ccWork.acHead=null;
+    { const _md=playerModelDef(ccWork.model); if(_md&&_md.quat){ ccWork.model=(k==="female"?"quat_f":"quat_m"); if(typeof ccSyncSel==="function") ccSyncSel(); } }   // #1035: with a sexed body model selected, switching Gender swaps quat_m<->quat_f
+    ccRenderCreation(); ccBuildACHead(); ccRebuild();}; gd.appendChild(b); }); }   // #533: switching gender must re-derive the retail head (male/female hair + skin lists differ) AND rebuild the preview, else the female default never actually renders
   const pf=document.getElementById('ccProf');
   if(pf){ pf.innerHTML=""; TEMPLATES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.name; b.className=ccWork.template===t.k?"sel":""; b.onclick=()=>ccApplyTemplate(t.k); pf.appendChild(b); }); }
   const at=document.getElementById('ccAttrs');
@@ -35211,6 +35216,7 @@ function ccRenderCreation(){
 function openCharCreator(race,onCreate){
   ccOnCreate=onCreate;
   ccWork=Object.assign({},player.appearance); ccWork.race=race||ccWork.race||"aluvian"; if(!ccWork.model)ccWork.model="procedural";
+  { const _md=playerModelDef(ccWork.model); if(_md&&_md.quat) ccWork.gender=_md.quat; }   // #1035: a sexed body model wins on open, so the creator never starts in a Gender/Model contradiction
   document.getElementById('overlay').style.display="none";
   document.getElementById('charCreator').style.display="block"; ccVisible=true;
   const nameI=document.getElementById('ccName'); nameI.value=(player.name&&player.name!=="Adventurer")?player.name:"";
