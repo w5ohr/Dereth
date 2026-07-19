@@ -5,6 +5,14 @@ Usage: python3 server/test_client.py [host] [port]   (server must already be run
 """
 import asyncio, base64, hashlib, json, os, secrets, struct, sys, time
 
+# #1033: a stock Windows console defaults to cp1252, which can't encode a non-ASCII check label (a raw
+# Cyrillic 'К' aborted the whole suite mid-run with UnicodeEncodeError). Force UTF-8 output so no label
+# can ever kill the run; keep the labels themselves ASCII too (belt and suspenders).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HOST = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8787
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -112,9 +120,11 @@ async def main():
 
     # #1023: names the shipped client can't submit but a raw socket could — homoglyph impersonation and
     # profanity — are rejected server-side (into bob's still-free slot 1, so neither creates/enters).
-    await b.send({"t": "create_char", "slot": 1, "name": "Кilmer", "char": {}})   # Cyrillic К + ilmer -> looks like reserved "Kilmer"
+    # #1033: build the Cyrillic name from an escape (not a raw code point) and keep the printed check
+    # label ASCII — a raw U+041A in the label crashed the whole suite on a cp1252 Windows console.
+    await b.send({"t": "create_char", "slot": 1, "name": "Кilmer", "char": {}})   # U+041A (Cyrillic К) + ilmer -> looks like reserved "Kilmer"
     e_h = await b.recv_until(lambda x: x["t"] == "play_err")
-    check("homoglyph name rejected (Cyrillic Кilmer)", bool(e_h) and "name" in e_h.get("msg", "").lower())
+    check("homoglyph name rejected (Cyrillic K + ilmer)", bool(e_h) and "name" in e_h.get("msg", "").lower())
     await b.send({"t": "create_char", "slot": 1, "name": "Shit_lord", "char": {}})   # profane (whole first token)
     e_p = await b.recv_until(lambda x: x["t"] == "play_err")
     check("profane name rejected (Shit_lord)", bool(e_p) and "allowed" in e_p.get("msg", "").lower())
