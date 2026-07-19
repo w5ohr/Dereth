@@ -25625,9 +25625,12 @@ function quatBuildUnderlayer(inst){
   const ug=new THREE.BufferGeometry();
   ug.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
   ug.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  ug.setAttribute('uv',new THREE.BufferAttribute(quatShellUVs(P),2));   // cloth-weave texture tiles over the hose/undershirt via the body UVs
   ug.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(SI,4));
   ug.setAttribute('skinWeight',new THREE.Float32BufferAttribute(SW,4));
-  const um=new THREE.SkinnedMesh(ug,new THREE.MeshStandardMaterial({color:QUAT_UNDER_COLOR,roughness:0.92,metalness:0.02,
+  const _uw=quatArmorTextures().weave;
+  const um=new THREE.SkinnedMesh(ug,new THREE.MeshStandardMaterial({map:_uw,color:QUAT_UNDER_COLOR,roughness:0.92,metalness:0.02,
+    normalMap:lumNormalTex(_uw,1.2),normalScale:new THREE.Vector2(0.4,0.4),
     polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:6}));   // #1079 ladder rank 3: loses ties vs EVERY garment (which now carry their own smaller biases), wins vs
                                                                         // the skin (rank 4) — and in a real opening it still sits 4mm ahead of the skin geometrically
   um.bind(body.skeleton, body.bindMatrix);
@@ -25659,6 +25662,84 @@ function quatBodyMeshOf(inst){
   if(!body) inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&!body) body=o; });
   return body;
 }
+// Cylindrical UVs for a body-clone shell (non-indexed triangle soup, bind-space positions): u wraps
+// around the body (atan2), v runs up it. The wrap seam is fixed PER TRIANGLE (verts are unshared, so
+// a triangle spanning the -π/+π seam just shifts its low-u verts +1) — no smeared seam strip. Fine
+// tiled surface patterns (brushed plate, mail rings, leather grain, cloth weave) tolerate the
+// cylinder distortion on limbs; this is texture FIT, not a hand-authored unwrap.
+function quatShellUVs(P){
+  const n=P.length/3, uv=new Float32Array(n*2), AROUND=4, VSCALE=3.2;
+  for(let t=0;t<n;t+=3){
+    const us=[],vs=[];
+    for(let k=0;k<3;k++){ const x=P[(t+k)*3], y=P[(t+k)*3+1], z=P[(t+k)*3+2];
+      us.push(Math.atan2(x,z)/(Math.PI*2)+0.5); vs.push(y*VSCALE); }
+    const mx=Math.max(us[0],us[1],us[2]), mn=Math.min(us[0],us[1],us[2]);
+    if(mx-mn>0.5) for(let k=0;k<3;k++) if(us[k]<0.5) us[k]+=1;
+    for(let k=0;k<3;k++){ uv[(t+k)*2]=us[k]*AROUND; uv[(t+k)*2+1]=vs[k]; }
+  }
+  return uv;
+}
+// Shared canvas surface textures for the armor/clothing shells (one set for every avatar): neutral-
+// bright bases so material.color TINTS them (Steel blues, Bronze browns, …); the Tenfold plate bakes
+// its own obsidian + gold filigree colours (color stays white) with a black/gold emissive twin for the
+// glowing goldwork — the same map+em pattern tenfoldCapeTex uses.
+let _quatArmTex=null;
+function quatArmorTextures(){
+  if(_quatArmTex) return _quatArmTex;
+  const cv=()=>{ const c=document.createElement('canvas'); c.width=c.height=256; return c; };
+  const fin=(c)=>{ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; t._acShared=true; return t; };
+  // PLATE — brushed metal, panel seams, rivet rows
+  const pc=cv(), pg=pc.getContext('2d');
+  pg.fillStyle="#b6bac0"; pg.fillRect(0,0,256,256);
+  for(let i=0;i<700;i++){ const y=(Math.random()*256)|0;
+    pg.fillStyle="rgba(255,255,255,"+(Math.random()*0.07).toFixed(3)+")"; pg.fillRect(0,y,256,1);
+    pg.fillStyle="rgba(20,24,30,"+(Math.random()*0.06).toFixed(3)+")"; pg.fillRect(0,(y+3)%256,256,1); }
+  pg.strokeStyle="rgba(40,44,52,0.6)"; pg.lineWidth=3;
+  pg.beginPath(); pg.moveTo(0,84); pg.lineTo(256,84); pg.moveTo(0,200); pg.lineTo(256,200); pg.stroke();
+  for(const y of [84,200]) for(let x=14;x<256;x+=40){
+    pg.fillStyle="#646a72"; pg.beginPath(); pg.arc(x,y,4.2,0,7); pg.fill();
+    pg.fillStyle="#e6ebf0"; pg.beginPath(); pg.arc(x-1.2,y-1.2,1.6,0,7); pg.fill(); }
+  // MAIL — interlocked ring rows
+  const mc=cv(), mg=mc.getContext('2d');
+  mg.fillStyle="#93999f"; mg.fillRect(0,0,256,256);
+  const r=7; let row=0;
+  for(let y=0;y<266;y+=9,row++) for(let x=0;x<266;x+=12){
+    const ox=(row%2)?6:0;
+    mg.strokeStyle="rgba(25,28,34,0.65)"; mg.lineWidth=2.4; mg.beginPath(); mg.arc(x+ox,y,r,0,7); mg.stroke();
+    mg.strokeStyle="rgba(235,240,246,0.30)"; mg.lineWidth=1.1; mg.beginPath(); mg.arc(x+ox,y,r,3.6,5.8); mg.stroke(); }
+  // LEATHER — grain + creases
+  const lc=cv(), lg=lc.getContext('2d');
+  lg.fillStyle="#b3a48c"; lg.fillRect(0,0,256,256);
+  for(let i=0;i<2600;i++){ lg.fillStyle="rgba("+(Math.random()<0.5?"70,58,40":"215,205,185")+","+(Math.random()*0.10).toFixed(3)+")";
+    lg.fillRect(Math.random()*256,Math.random()*256,2,2); }
+  lg.strokeStyle="rgba(70,58,40,0.28)"; lg.lineWidth=1.4;
+  for(let i=0;i<26;i++){ lg.beginPath(); let x=Math.random()*256,y=Math.random()*256; lg.moveTo(x,y);
+    for(let s2=0;s2<4;s2++){ x+=Math.random()*36-18; y+=Math.random()*36-18; lg.lineTo(x,y); } lg.stroke(); }
+  // WEAVE — cloth crosshatch
+  const wc=cv(), wg=wc.getContext('2d');
+  wg.fillStyle="#c4bfb4"; wg.fillRect(0,0,256,256);
+  for(let x=0;x<256;x+=4){ wg.fillStyle="rgba(60,55,45,0.10)"; wg.fillRect(x,0,1,256); }
+  for(let y=0;y<256;y+=4){ wg.fillStyle="rgba(60,55,45,0.12)"; wg.fillRect(0,y,256,1); }
+  for(let i=0;i<800;i++){ wg.fillStyle="rgba(255,255,255,"+(Math.random()*0.05).toFixed(3)+")"; wg.fillRect(Math.random()*256,Math.random()*256,2,1); }
+  // TENFOLD — obsidian panels + gold filigree (lit copy + emissive-only copy)
+  const tc=cv(), tg=tc.getContext('2d'), te=cv(), eg=te.getContext('2d');
+  const tgrad=tg.createLinearGradient(0,0,0,256);
+  tgrad.addColorStop(0,"#171a26"); tgrad.addColorStop(0.5,"#10131d"); tgrad.addColorStop(1,"#0a0c14");
+  tg.fillStyle=tgrad; tg.fillRect(0,0,256,256);
+  for(let i=0;i<500;i++){ const y=(Math.random()*256)|0; tg.fillStyle="rgba(90,100,140,"+(Math.random()*0.05).toFixed(3)+")"; tg.fillRect(0,y,256,1); }
+  eg.fillStyle="#000"; eg.fillRect(0,0,256,256);
+  const goldBoth=(fn)=>{ fn(tg); eg.save(); eg.globalAlpha=0.6; fn(eg); eg.restore(); };
+  goldBoth(d=>{ d.strokeStyle="#d6a63c"; d.lineWidth=2.5;
+    d.strokeRect(10,10,236,236);
+    d.beginPath(); d.moveTo(0,128); d.lineTo(256,128); d.stroke();
+    d.lineWidth=1.4;
+    for(const [cx2,cy2] of [[64,64],[192,64],[64,192],[192,192]]){
+      for(let a=0;a<10;a++){ const th=a/10*Math.PI*2;
+        d.beginPath(); d.moveTo(cx2+Math.cos(th)*7,cy2+Math.sin(th)*7); d.lineTo(cx2+Math.cos(th)*17,cy2+Math.sin(th)*17); d.stroke(); }
+      d.beginPath(); d.arc(cx2,cy2,7,0,7); d.stroke(); } });
+  _quatArmTex={plate:fin(pc), mail:fin(mc), leather:fin(lc), weave:fin(wc), tf:fin(tc), tfEm:fin(te)};
+  return _quatArmTex;
+}
 function quatBuildRegionShell(inst, matchRe, offset, mat){
   const body=quatBodyMeshOf(inst); if(!body) return null;
   const g=body.geometry, pos=g.attributes.position, nrm=g.attributes.normal,
@@ -25680,6 +25761,7 @@ function quatBuildRegionShell(inst, matchRe, offset, mat){
   const sg=new THREE.BufferGeometry();
   sg.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
   sg.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  sg.setAttribute('uv',new THREE.BufferAttribute(quatShellUVs(P),2));   // cylindrical body UVs — the class textures (plate/mail/leather/weave/tenfold) tile over the shell
   sg.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(SI,4));
   sg.setAttribute('skinWeight',new THREE.Float32BufferAttribute(SW,4));
   const sm=new THREE.SkinnedMesh(sg,mat);
@@ -25690,19 +25772,27 @@ function quatBuildRegionShell(inst, matchRe, offset, mat){
 }
 // material for a piece: Tenfold set look, else tint by material + finish by class (mirrors refreshAvatarArmor's CLS)
 function quatArmorMaterial(it, cloth){
-  // metalness is kept moderate and the env reflection damped: at 0.85 metal the pale sky/fog envmap
-  // MIRRORED into the plate and the whole set rendered cream — the tint was unreadable. The material
-  // is flagged fixedEnv so updateEnvIntensity's daylight sweep (→ ~1.0 at noon) can't undo the damping.
+  // Every shell now carries a real SURFACE TEXTURE fitted via the cylindrical body UVs: brushed
+  // plate for heavy, mail rings for medium, leather grain for light, cloth weave for shirts/pants —
+  // the neutral-bright maps are TINTED by material colour (Steel/Bronze/Gold/… via MAT_TINT), and a
+  // lumNormalTex-derived normal map gives the pattern relief. The Tenfold set bakes its own obsidian
+  // + gold filigree art (colour stays white) with an emissive twin so only the GOLDWORK glows — the
+  // earlier whole-shell emissive flooded the plate cream. metalness stays moderate + envMapIntensity
+  // damped and flagged fixedEnv (updateEnvIntensity's daylight sweep would mirror the sky into it).
+  const TX=quatArmorTextures();
   let m;
-  if(/tenfold|kilmer/i.test(it.name||""))
-    m=new THREE.MeshStandardMaterial({color:0x14161c,metalness:0.5,roughness:0.38,envMapIntensity:0.3,
-      emissive:0xcaa03a,emissiveIntensity:0.045});                     // obsidian plate with the faintest gold warmth — 0.25 flooded the whole shell cream (emissive covers the full surface, not just trim)
-  else{
+  if(/tenfold|kilmer/i.test(it.name||"")){
+    m=new THREE.MeshStandardMaterial({map:TX.tf,color:0xffffff,metalness:0.5,roughness:0.4,envMapIntensity:0.3,
+      emissiveMap:TX.tfEm,emissive:0xffffff,emissiveIntensity:0.5,
+      normalMap:lumNormalTex(TX.tf,1.2),normalScale:new THREE.Vector2(0.5,0.5)});
+  } else {
     const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||(typeof ARMOR_MAT_TINT!=="undefined"&&ARMOR_MAT_TINT[it.mat])||0x9aa0a8));
-    if(cloth||/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||""))
-      m=new THREE.MeshStandardMaterial({color:tint,metalness:0.05,roughness:0.85});
-    else{ const cls=it.at==="heavy"?{me:0.5,ro:0.38}:(it.at==="light"?{me:0.06,ro:0.8}:{me:0.35,ro:0.55});
-      m=new THREE.MeshStandardMaterial({color:tint,metalness:cls.me,roughness:cls.ro,envMapIntensity:0.3}); }
+    const soft=cloth||/linen|wool|silk|satin|velvet/i.test(it.mat||"");
+    const hidey=/leather|hide|shark|snake/i.test(it.mat||"");
+    const tex = soft?TX.weave : hidey?TX.leather : (it.at==="heavy"?TX.plate : it.at==="light"?TX.leather : TX.mail);
+    const cls = soft?{me:0.04,ro:0.86} : hidey?{me:0.05,ro:0.8} : (it.at==="heavy"?{me:0.5,ro:0.38}:(it.at==="light"?{me:0.06,ro:0.8}:{me:0.35,ro:0.55}));
+    m=new THREE.MeshStandardMaterial({map:tex,color:tint,metalness:cls.me,roughness:cls.ro,envMapIntensity:0.3,
+      normalMap:lumNormalTex(tex,1.4),normalScale:new THREE.Vector2(0.6,0.6)});
   }
   m.userData.fixedEnv=true;
   return m;
