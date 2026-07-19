@@ -8204,6 +8204,13 @@ function buildWorld(){
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
   spawnOwnedHorses();             // #725: parked horses stand back up where they were left
 }
+// #1056: ore deposits (js/craft.js addOreDeposit) bake their placement height into the matrix and then
+// set matrixAutoUpdate=false on the whole deposit (a #perf win — depletion only toggles .visible). A bare
+// `mesh.position.y=…` re-seat therefore NEVER re-renders: every settleY/resettle silently no-op'd, so a
+// deposit placed at raw terrainH stayed floating above the coarse-mesh groundY it renders on (up to 8m on
+// slopes/coasts). Force the frozen matrix after moving such a node so the re-seat actually takes effect.
+function seatNodeY(n){ if(!n.mesh) return; n.mesh.position.y=groundY(n.x,n.z);
+  if(!n.mesh.matrixAutoUpdate){ n.mesh.updateMatrix(); n.mesh.updateMatrixWorld(true); } }
 function settleY(){ // drop every placed object onto the RENDERED ground surface (groundY, not raw terrainH)
   for(const s of scenery){ if(s.userData&&s.userData.noSettle) continue; s.position.y=groundY(s.position.x,s.position.z)+(s.userData.float||0); }
   for(const ls of lifestones) ls.mesh.position.y=groundY(ls.x,ls.z);
@@ -8212,7 +8219,7 @@ function settleY(){ // drop every placed object onto the RENDERED ground surface
     addCarve(e.x,e.z,1,0,4,4,dy,6*WSCALE); }   // #1005: clear the terrain around the entrance so its opening isn't swallowed by the hillside
   carveFlush();   // fold the dungeon-entrance carves into the terrain mesh (persist for the world's life — carveReset() clears them on rebuild)
   for(const e of dungeonEntrances) resettleGroundNear(e.x,e.z,6*WSCALE+16);   // #1018: drop objects near each entrance onto its freshly-carved ground
-  for(const n of nodes) n.mesh.position.y=groundY(n.x,n.z);
+  for(const n of nodes) seatNodeY(n);   // #1056: force-update matrixAutoUpdate=false ore-deposit matrices
   for(const np of npcs) np.mesh.position.y=groundY(np.x,np.z);
   for(const sh of shops) sh.mesh.position.y=groundY(sh.x,sh.z);
 }
@@ -8226,7 +8233,7 @@ function resettleGroundNear(cx,cz,r){
   for(const s of scenery){ const u=s.userData||{}; if(s.isSprite||u.noSettle) continue; if(near(s.position.x,s.position.z)) s.position.y=groundY(s.position.x,s.position.z)+(u.float||0); }
   for(const ls of lifestones){ if(ls.mesh&&near(ls.x,ls.z)) ls.mesh.position.y=groundY(ls.x,ls.z); }
   for(const pt of portals){ if(pt.mesh&&near(pt.x,pt.z)) pt.mesh.position.y=groundY(pt.x,pt.z); }
-  for(const n of nodes){ if(n.mesh&&near(n.x,n.z)) n.mesh.position.y=groundY(n.x,n.z); }
+  for(const n of nodes){ if(n.mesh&&near(n.x,n.z)) seatNodeY(n); }   // #1056: force the frozen ore-deposit matrix on re-seat too
 }
 // #1018: dev audit — walk every static ground-sitting object and report any whose base is further than
 // `eps` from its support height (supportAt: a structure floor when it stands on one, else the terrain).
