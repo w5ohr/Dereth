@@ -3341,7 +3341,7 @@ function updateEnvIntensity(daylight){
   _envK=target;_envLastT=tn;
   scene.traverse(o=>{ if(!o.material) return;
     const mm=Array.isArray(o.material)?o.material:[o.material];
-    for(const m of mm){ if(m.isMeshStandardMaterial) m.envMapIntensity=target; } });
+    for(const m of mm){ if(m.isMeshStandardMaterial && !(m.userData&&m.userData.fixedEnv)) m.envMapIntensity=target; } });   // fixedEnv: materials that manage their own reflection strength (quat armor shells — full daylight env mirrored dark plate into cream)
 }
 // ── #689: height-aware fog + sun-hued aerial perspective ────────────────────────────────
 // The r128 fog ShaderChunks are extended (before any material compiles) so EVERY fog-enabled
@@ -16560,7 +16560,11 @@ function refreshAvatarArmor(av,slotsArg){
   // #667: (av,slotsArg) let a REMOTE player's avatar be dressed from its synced gear; both default to the
   // local player so every existing call site is unchanged.
   av=av||((typeof playerAvatar!=="undefined")?playerAvatar:null); if(!av) return;
-  const u=av.userData, rig=u.armorRig; if(!rig) return;
+  const u=av.userData;
+  // Quaternius bodies have no armorRig/AC joints — dress them with the quat armor shells instead
+  // (the Tenfold regalia and every other worn piece fit the hero model; see quatRefreshArmor).
+  if(u&&u.isQuat&&typeof quatRefreshArmor==="function"){ quatRefreshArmor(av,slotsArg); return; }
+  const rig=u.armorRig; if(!rig) return;
   const slots=slotsArg||((typeof player!=="undefined"&&player.armorSlots)||{});
   // effective piece per rig slot: the slot's own item, else any piece whose COVERAGE reaches it
   // (a hauberk shows on the upper arms, a coat on the whole arm) — a dedicated piece wins the slot
@@ -25631,6 +25635,124 @@ function quatBuildUnderlayer(inst){
   (body.parent||inst.root).add(um);
   return um;
 }
+// ═══ ARMOR ON THE QUATERNIUS BODY (user directive: "make the Tenfold armor fit the hero model") ═══
+//   The AC armor pipelines can't dress these bodies: refreshAvatarArmor needs the procedural armorRig
+//   and refreshACArmor swaps AC-body part meshes via joints (u.torso/u.shR/…) the Quaternius rig
+//   doesn't have. Equipped armor therefore rendered NOTHING on a quat avatar. Render it instead as
+//   form-fitting ARMOR SHELLS cloned from the body's own triangles per slot region (the proven
+//   underlayer technique — guaranteed fit on the Superhero proportions, deforms with the mixer),
+//   styled from the piece's material/class; the Tenfold regalia gets its set look (obsidian plate,
+//   gold-glow trim, and Kilmer's Cape wearing the real tenfold cape art). A diadem/crown head piece
+//   renders as a gold circlet on the Head bone rather than a face-covering shell.
+const QUAT_ARMOR_REGIONS={
+  chest:   {match:/^spine_0[123]$|^clavicle_/, off:0.045},
+  upperarm:{match:/^upperarm_/,                off:0.055},   // pauldron bulk
+  lowerarm:{match:/^lowerarm_/,                off:0.045},
+  hands:   {match:/^hand_|^index_|^middle_|^pinky_|^ring_|^thumb_/, off:0.03},
+  legs:    {match:/^thigh_|^calf_/,            off:0.045},
+  feet:    {match:/^foot_|^ball_/,             off:0.04},
+  shirt:   {match:/^spine_0[123]$|^clavicle_|^upperarm_/, off:0.016, cloth:true},   // shows only when no chest piece covers it
+  pants:   {match:/^thigh_|^calf_/,            off:0.016, cloth:true}               // shows only when no legs piece covers it
+};
+function quatBodyMeshOf(inst){
+  let body=null; inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&/hero/i.test(o.name||"")&&!body) body=o; });
+  if(!body) inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&!body) body=o; });
+  return body;
+}
+function quatBuildRegionShell(inst, matchRe, offset, mat){
+  const body=quatBodyMeshOf(inst); if(!body) return null;
+  const g=body.geometry, pos=g.attributes.position, nrm=g.attributes.normal,
+        si=g.attributes.skinIndex, sw=g.attributes.skinWeight, idx=g.index;
+  if(!pos||!nrm||!si||!sw||!idx) return null;
+  const nameOf=body.skeleton.bones.map(b=>b.name);
+  const want=new Uint8Array(nameOf.length); for(let i=0;i<nameOf.length;i++) if(matchRe.test(nameOf[i])) want[i]=1;
+  const domBone=v=>{ let bi=si.getX(v),bw=sw.getX(v);
+    if(sw.getY(v)>bw){bw=sw.getY(v);bi=si.getY(v);} if(sw.getZ(v)>bw){bw=sw.getZ(v);bi=si.getZ(v);}
+    if(sw.getW(v)>bw){bw=sw.getW(v);bi=si.getW(v);} return bi; };
+  const P=[],N=[],SI=[],SW=[];
+  const push=v=>{ P.push(pos.getX(v)+nrm.getX(v)*offset, pos.getY(v)+nrm.getY(v)*offset, pos.getZ(v)+nrm.getZ(v)*offset);
+    N.push(nrm.getX(v),nrm.getY(v),nrm.getZ(v));
+    SI.push(si.getX(v),si.getY(v),si.getZ(v),si.getW(v)); SW.push(sw.getX(v),sw.getY(v),sw.getZ(v),sw.getW(v)); };
+  for(let t=0;t<idx.count;t+=3){ const a=idx.getX(t),b=idx.getX(t+1),c=idx.getX(t+2);
+    let hit=0; if(want[domBone(a)])hit++; if(want[domBone(b)])hit++; if(want[domBone(c)])hit++;
+    if(hit>=2){ push(a); push(b); push(c); } }
+  if(!P.length) return null;
+  const sg=new THREE.BufferGeometry();
+  sg.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  sg.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  sg.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(SI,4));
+  sg.setAttribute('skinWeight',new THREE.Float32BufferAttribute(SW,4));
+  const sm=new THREE.SkinnedMesh(sg,mat);
+  sm.bind(body.skeleton, body.bindMatrix);
+  sm.frustumCulled=false; sm.castShadow=true; sm.receiveShadow=true; sm.userData.armorShell=true;
+  (body.parent||inst.root).add(sm);
+  return sm;
+}
+// material for a piece: Tenfold set look, else tint by material + finish by class (mirrors refreshAvatarArmor's CLS)
+function quatArmorMaterial(it, cloth){
+  // metalness is kept moderate and the env reflection damped: at 0.85 metal the pale sky/fog envmap
+  // MIRRORED into the plate and the whole set rendered cream — the tint was unreadable. The material
+  // is flagged fixedEnv so updateEnvIntensity's daylight sweep (→ ~1.0 at noon) can't undo the damping.
+  let m;
+  if(/tenfold|kilmer/i.test(it.name||""))
+    m=new THREE.MeshStandardMaterial({color:0x14161c,metalness:0.5,roughness:0.38,envMapIntensity:0.3,
+      emissive:0xcaa03a,emissiveIntensity:0.045});                     // obsidian plate with the faintest gold warmth — 0.25 flooded the whole shell cream (emissive covers the full surface, not just trim)
+  else{
+    const tint=it.dye!=null?it.dye:(it.tint!=null?it.tint:((typeof MAT_TINT!=="undefined"&&MAT_TINT[it.mat])||(typeof ARMOR_MAT_TINT!=="undefined"&&ARMOR_MAT_TINT[it.mat])||0x9aa0a8));
+    if(cloth||/leather|hide|shark|snake|linen|wool|silk|satin|velvet/i.test(it.mat||""))
+      m=new THREE.MeshStandardMaterial({color:tint,metalness:0.05,roughness:0.85});
+    else{ const cls=it.at==="heavy"?{me:0.5,ro:0.38}:(it.at==="light"?{me:0.06,ro:0.8}:{me:0.35,ro:0.55});
+      m=new THREE.MeshStandardMaterial({color:tint,metalness:cls.me,roughness:cls.ro,envMapIntensity:0.3}); }
+  }
+  m.userData.fixedEnv=true;
+  return m;
+}
+// Rebuild the quat avatar's armor visuals from a slots table (defaults to the local player's).
+function quatRefreshArmor(av, slotsArg){
+  const u=av&&av.userData, q=u&&u.quat; if(!q||!q.inst||!q.inst.root) return;
+  const del=[]; q.inst.root.traverse(o=>{ if(o.userData&&(o.userData.armorShell||o.userData.armorProp)) del.push(o); });
+  for(const d of del){ if(d.parent) d.parent.remove(d); if(d.geometry&&!d.userData.armorProp) d.geometry.dispose(); }
+  const slots=slotsArg||((typeof player!=="undefined"&&player.armorSlots)||{});
+  for(const slot in QUAT_ARMOR_REGIONS){ const R=QUAT_ARMOR_REGIONS[slot]; const it=slots[slot]; if(!it) continue;
+    if(slot==="shirt"&&slots.chest) continue;                            // covered by the cuirass
+    if(slot==="pants"&&slots.legs) continue;                             // covered by the greaves
+    quatBuildRegionShell(q.inst, R.match, R.off, quatArmorMaterial(it, !!R.cloth)); }
+  // hide the OUTFIT pieces a worn armor slot covers (a cuirass replaces the tunic, greaves the
+  // leggings, …) so the civilian garment can't poke around the plate's region boundary; pieces for
+  // uncovered slots stay visible, and everything restores when the armor comes off (re-run per refresh).
+  q.inst.root.traverse(o=>{ if(!(o.isSkinnedMesh&&o.userData&&o.userData.outfit)) return;
+    const n=(o.userData.outfitName||"").toLowerCase(); let hide=false;
+    if((slots.chest||slots.shirt)&&/body|belt/.test(n)) hide=true;
+    if((slots.upperarm||slots.lowerarm||slots.hands)&&/arm|bracer|pauldron/.test(n)) hide=true;
+    if((slots.legs||slots.pants)&&/leg|pant|trouser|skirt/.test(n)) hide=true;
+    if(slots.feet&&/feet|boot|shoe/.test(n)) hide=true;
+    if(slots.head&&/hood|head/.test(n)) hide=true;
+    o.visible=!hide; });
+  // head: a diadem/crown/circlet renders as a gold circlet on the Head bone (a face shell would mask the face)
+  const head=slots.head, bones=q.inst.root; let headBone=null,spine3=null;
+  bones.traverse(o=>{ if(o.isBone){ if(o.name==="Head")headBone=o; else if(o.name==="spine_03")spine3=o; } });
+  if(head&&headBone&&/diadem|crown|circlet/i.test(head.name||"")){
+    const grp=new THREE.Group(); grp.userData.armorProp=true;
+    const gold=new THREE.MeshStandardMaterial({color:0xffd23b,metalness:0.95,roughness:0.22,emissive:0x6a4c10,emissiveIntensity:0.35});
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(0.10,0.013,8,24),gold); ring.rotation.x=Math.PI/2; grp.add(ring);
+    const gem=new THREE.Mesh(new THREE.OctahedronGeometry(0.024),new THREE.MeshStandardMaterial({color:0xffffff,metalness:0.1,roughness:0.05,emissive:0x8ad4ff,emissiveIntensity:0.6}));
+    gem.position.set(0,0.01,0.10); grp.add(gem);
+    grp.position.set(0,0.155,0.0); headBone.add(grp);   // crown of the head — 0.10 sat at brow height and clipped the nose
+  }
+  // back: Kilmer's Cape hangs from spine_03 wearing the real tenfold cape art; other back pieces get a tinted cloth
+  const back=slots.back;
+  if(back&&spine3){
+    const isTF=/tenfold|kilmer/i.test(back.name||"");
+    let mat;
+    if(isTF&&typeof tenfoldCapeTex==="function"){ const tx=tenfoldCapeTex();
+      mat=new THREE.MeshStandardMaterial({map:tx.map,emissiveMap:tx.em,emissive:0xffffff,emissiveIntensity:0.4,roughness:0.7,side:THREE.DoubleSide}); }
+    else mat=new THREE.MeshStandardMaterial({color:back.tint!=null?back.tint:0x1c2c6c,roughness:0.85,side:THREE.DoubleSide});
+    const cape=new THREE.Mesh(new THREE.PlaneGeometry(0.55,0.92),mat);
+    cape.userData.armorProp=true; cape.castShadow=true;
+    cape.position.set(0,-0.32,-0.20); cape.rotation.x=0.08;              // hang down the back from the upper spine
+    spine3.add(cape);
+  }
+}
 // Clone an outfit's skinned meshes and REBIND them onto a body instance's skeleton (identical joint
 // order → skin indices align), so the clothing deforms with the body's own mixer. Additive: leaves the
 // base body in place (clothing sits over the skin). No-op until loadQuatOutfits() resolves.
@@ -25663,7 +25785,7 @@ function quatDressOutfit(inst, outfitKey){
     // identical, so bones[i] and the outfit's boneInverses[i] line up 1:1.
     const outfitSkel=new THREE.Skeleton(bodyBones, o.skeleton.boneInverses.map(m=>m.clone()));
     sm.bind(outfitSkel, o.bindMatrix);
-    sm.frustumCulled=false; sm.castShadow=true; sm.userData.outfit=true;
+    sm.frustumCulled=false; sm.castShadow=true; sm.userData.outfit=true; sm.userData.outfitName=o.name||"";   // name kept so quatRefreshArmor can hide the pieces a worn armor slot covers
     added++; });
   return added;
 }
@@ -25828,6 +25950,7 @@ function buildQuatAvatar(app,opts){
   g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null,dressed:false,dressOpts:opts,dressApp:app},isQuat:true,acBody:true,_headApp:app};
   quatBuildUnderlayer(inst);   // #1072 follow-up: cloth second-skin so the outfits' open cuts read as hose/undershirt, not bare flesh
   quatApplyOutfit(g);   // dress now if outfits are loaded; else quatDressExisting() dresses it when they land
+  if(opts.player) quatRefreshArmor(g);   // the player's worn armor (e.g. the Tenfold regalia) fits the hero body via region shells
   quatApplyHair(g);     // #1060: add hair now if the pack is loaded; else quatHairExisting() adds it when it lands
   inst.play("idle",0); inst.mixer.update(0);   // pose in idle immediately so a not-yet-ticked distant NPC never flashes the bind (T) pose
   return g; }
