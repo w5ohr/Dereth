@@ -32035,7 +32035,7 @@ function buildDungeon(def){
       const slope=new THREE.Mesh(new THREE.PlaneGeometry(c.vert?5:len, c.vert?len:5),floorMat);   // the sloped run between the two wall planes
       slope.rotation.x=-Math.PI/2;
       const ang=Math.atan2(dfy,len);
-      if(c.vert){ slope.rotation.x=-Math.PI/2+(seg.hiFirst?-ang:ang)*1; slope.position.set(c.x,(hiF+loF)/2+0.06,mid); }
+      if(c.vert){ slope.rotation.x=-Math.PI/2+(seg.hiFirst?ang:-ang); slope.position.set(c.x,(hiF+loF)/2+0.06,mid); }   // #1093: sign was inverted — the rendered slope tilted the opposite way to the collision ramp (dungeonFloorAt), so N–S ramp corridors rose the wrong way and the walk surface floated above/through the visible slope → the spawn opened onto void
       else { slope.rotation.y=0; slope.rotation.x=-Math.PI/2; slope.rotation.z=(seg.hiFirst?ang:-ang); slope.position.set(mid,(hiF+loF)/2+0.06,c.z); }
       slope.receiveShadow=true;scene.add(slope);dungeonObjs.push(slope);
       ceilTile(cx,cz,sx,sz,hiF+WH);
