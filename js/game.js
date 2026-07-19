@@ -20177,7 +20177,13 @@ function syncCamera(dt){
     playerAvatar.visible=player.alive;
     playerAvatar.position.set(player.x,gy,player.z); playerAvatar.rotation.y=player.yaw;
     animateAvatar(dt);
-    avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
+    // #1063: the Quaternius body is a single skinned mesh with the face (nose/mouth/lips) ON the body
+    // mesh, and avatarFP()'s joint-hiding targets the procedural rig (u.neck/u.acHead/…) that a
+    // Quaternius avatar doesn't have — so it can't hide just the head. With the eye camera 0.12u from the
+    // Head bone you'd stare at the inside of your own skull. Hide the whole Quaternius body in first
+    // person (no FP-hands view for it yet); the procedural body keeps its arms+weapon via avatarFP.
+    if(playerAvatar.userData.isQuat) playerAvatar.visible=false;
+    else avatarFP(playerAvatar,true);   // show only the arms + held weapon from the eyes (hide head/torso/legs)
   }
   if(shakeT>0){
     shakeT-=dt; const m=shakeMag*clamp(shakeT/0.32,0,1);
