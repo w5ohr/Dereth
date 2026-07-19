@@ -20727,6 +20727,25 @@ function loop(ts){
     if(!Number.isFinite(player.hp)) player.hp=Number.isFinite(player.mhp)?player.mhp:100;
     if(!Number.isFinite(player.mn)) player.mn=Number.isFinite(player.mmn)?player.mmn:100;
     if(!Number.isFinite(player.st)) player.st=Number.isFinite(player.mst)?player.mst:100;
+    // #1025: DUNGEON/INSTANCE VOID-CONTAINMENT BACKSTOP. collide() clamps every move to the walkable
+    // rect/seam union, so clean play never leaves the floor — but a knockback, a dash, or a real-geometry
+    // seal that missed a wall (the DGW.segs===0 edge case) could still strand the player off the walkable
+    // floor, in the void or inside wall geometry (the reported #1025 symptom: "ended in featureless void").
+    // Record the last on-floor spot; if the player is left OFF it for a sustained beat (not a one-frame
+    // ramp/edge transition), restore it. Pure safety net — it never fires while the player is on walkable
+    // ground, so it cannot change the collision model or normal movement. inDungeon covers house/hall
+    // interiors too (they instance through the same dungeonRects path).
+    if(inDungeon&&Number.isFinite(player.x)&&Number.isFinite(player.z)&&typeof dungeonWalkable==="function"){
+      if(dungeonWalkable(player.x,player.z)){ loop._instGood={x:player.x,y:player.y,z:player.z}; loop._instVoidT=0; }
+      else if(loop._instGood&&!portalTransit){
+        loop._instVoidT=(loop._instVoidT||0)+dt;
+        if(loop._instVoidT>0.3){   // sustained off-floor → recover (transient ramp/edge frames never reach here)
+          player.x=loop._instGood.x; player.y=loop._instGood.y; player.z=loop._instGood.z;
+          player.vx=player.vz=player.vy=0; player.grounded=true; loop._instVoidT=0;
+          if(console&&console.warn)console.warn("[#1025] player left the walkable floor in "+((curDungeon&&curDungeon.name)||"an instance")+" — restored to last on-floor spot");
+        }
+      }
+    } else { loop._instGood=null; loop._instVoidT=0; }   // overworld / network disc: not rect-gated, leave it to collide()
   }
   try{ updateLightPool(); }catch(e){ console.error("updateLightPool() failed:",e); }   // #501: same guarantee — a render-side throw here previously skipped requestAnimationFrame() below and froze the camera (and the portal tube, since its maxHold advance lives inside update()) with no recovery
   try{ renderComposite(); }catch(e){ console.error("renderComposite() failed:",e); }   // #501: ditto — a WebGL/composite exception must not kill the loop either
