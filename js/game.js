@@ -1705,10 +1705,15 @@ function acHeight(x,z){
   const W=ACMAP.W, fc=x/AC_CELL+1019.5, fr=z/AC_CELL+1020.5;
   if(fc<0||fc>=W-1||fr<0||fr>=W-1) return -30;                    // beyond the charted world: open ocean
   const c0=Math.floor(fc), r0=Math.floor(fr), tc=fc-c0, tr=fr-r0, i=r0*W+c0;
-  let h=ACMAP.H[i]*(1-tc)*(1-tr)+ACMAP.H[i+1]*tc*(1-tr)+ACMAP.H[i+W]*(1-tc)*tr+ACMAP.H[i+W+1]*tc*tr;
-  const ty=ACMAP.T[Math.round(fr)*W+Math.round(fc)];
-  const wd=AC_WATER_DEPTH[ty]; if(wd!==undefined) h=Math.min(h,wd);   // rivers & seas cut below the water plane
-  return h;
+  // #1043: cap EACH corner to ITS OWN cell's water depth BEFORE the bilinear blend. The old code
+  // interpolated the four raw heights smoothly but then capped the whole sample by a single
+  // nearest-cell (Math.round) water type — so along a shore the height slammed between land (e.g. 28)
+  // and the water plane (-2.5) within one ground-mesh cell, a sub-cell cliff that rendered the coast as
+  // a spike field and floated the walk surface up to 30m. Per-corner capping grades the shore smoothly
+  // from land down to the water plane; open water (all corners water) and inland land are unchanged.
+  const cap=(idx,hh)=>{ const wd=AC_WATER_DEPTH[ACMAP.T[idx]]; return wd!==undefined?Math.min(hh,wd):hh; };
+  const h00=cap(i,ACMAP.H[i]), h10=cap(i+1,ACMAP.H[i+1]), h01=cap(i+W,ACMAP.H[i+W]), h11=cap(i+W+1,ACMAP.H[i+W+1]);
+  return h00*(1-tc)*(1-tr)+h10*tc*(1-tr)+h01*(1-tc)*tr+h11*tc*tr;   // rivers & seas cut below the water plane
 }
 // ═══ RETAIL VENDORS — every town's authentic merchants and their REAL shop stock, from the
 //     ACE-World community database (assets/acvendors.json · tools/ace_world_export.py +
