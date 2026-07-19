@@ -25534,10 +25534,24 @@ function quatOutfitInflate(name){
   if(/belt|bracer|pauldron/.test(n)) return 0.009;           // straps & shoulder plates: snug, but clear the thin cloth underlayer (0.004)
   if(/hood|head/.test(n))            return 0.010;           // hood rides the head — small
   if(/feet|boot|shoe/.test(n))       return 0.012;           // boots: a touch, over the calf
-  if(/leg|pant|trouser|skirt/.test(n)) return 0.024;         // legs: clear the thighs
-  if(/arm|sleeve/.test(n))           return 0.018;           // sleeves: clear the upper arms
-  if(/body|torso|chest|tunic|vest|jacket|shirt/.test(n)) return 0.032;  // the main garment — worst poke-through
+  if(/leg|pant|trouser|skirt/.test(n)) return 0.034;         // legs: clear the thighs AND the buttock bulge — #1079: 0.024 left the legging dipping inside the underlayer there (jagged mix)
+  if(/arm|sleeve/.test(n))           return 0.014;           // sleeves: snugger — #1079: keep them INSIDE the tunic at the shoulder blades
+  if(/body|torso|chest|tunic|vest|jacket|shirt/.test(n)) return 0.038;  // the main garment — worst poke-through; #1079: widened over the sleeves so authored crossings stay separated
   return 0.024;                                              // unnamed garment piece: moderate default
+}
+// #1079: DEPTH-BIAS LADDER — the Regular-cut garments hug the bulkier Superhero body, so at bulges
+// (shoulder blades, sleeve cuffs) two garment shells end up near-coincident after inflation and the
+// depth test picked a different winner per pixel/frame: jagged sliver z-fighting. polygonOffset is a
+// deterministic tie-breaker: MORE positive = pushed back = loses ties. Rank the shells inner→outer —
+// skin (4, set in quatTint) < underlayer (3) < base cloth arms/legs (2) < accent trim _2 (1.5) <
+// main garment (1) < accessories (0) — so wherever two shells touch, the OUTER one wins, every frame.
+// Ties between genuinely-separated shells are unaffected (mm of real depth ≫ a few offset units).
+function quatOutfitDepthBias(name){
+  const n=(name||"").toLowerCase();
+  if(/belt|bracer|pauldron|hood|head|feet|boot|shoe/.test(n)) return 0;   // outermost accessories: win every tie
+  if(/body|torso|chest|tunic|vest|jacket|shirt/.test(n)) return 1;        // main garment: beats sleeves/legs/trim at crossings
+  if(/_2/.test(n)) return 1.5;                                            // accent/trim piece — sits over its base cloth
+  return 2;                                                               // base cloth (arms/legs/unnamed)
 }
 // #1072 follow-up (coverage): the Fantasy outfits are cut short/open — the female set is a crop top +
 // briefs (bare upper legs / buttocks) and the male set leaves the upper back, shoulders and inner arm
@@ -25582,8 +25596,8 @@ function quatBuildUnderlayer(inst){
   ug.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(SI,4));
   ug.setAttribute('skinWeight',new THREE.Float32BufferAttribute(SW,4));
   const um=new THREE.SkinnedMesh(ug,new THREE.MeshStandardMaterial({color:QUAT_UNDER_COLOR,roughness:0.92,metalness:0.02,
-    polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:2}));   // push a hair BACK in depth: the garment wins every tie (no cloth poking through a tight tunic/legging), while in a real
-                                                                        // opening there's no garment and the shell still sits 4mm ahead of the skin geometrically, so the gap stays covered
+    polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:6}));   // #1079 ladder rank 3: loses ties vs EVERY garment (which now carry their own smaller biases), wins vs
+                                                                        // the skin (rank 4) — and in a real opening it still sits 4mm ahead of the skin geometrically
   um.bind(body.skeleton, body.bindMatrix);
   um.frustumCulled=false; um.castShadow=false; um.receiveShadow=true; um.userData.underlayer=true;
   (body.parent||inst.root).add(um);
@@ -25611,6 +25625,10 @@ function quatDressOutfit(inst, outfitKey){
       geo.userData._qInflated=true;
     }
     const sm=new THREE.SkinnedMesh(geo, o.material.clone?o.material.clone():o.material);
+    // #1079: rank-based depth bias — inner shells lose ties, so crossings render the OUTER garment
+    // stably instead of per-pixel sliver flicker.
+    const bias=quatOutfitDepthBias(o.name);
+    if(bias>0 && sm.material){ sm.material.polygonOffset=true; sm.material.polygonOffsetFactor=bias; sm.material.polygonOffsetUnits=bias*2; }
     parent.add(sm);
     // Give the outfit a skeleton that reuses the body's BONES (so it follows the same animation) but keeps
     // the OUTFIT's OWN inverse-bind matrices — so it deforms per its authored shape. Joint ORDER is
@@ -25758,7 +25776,11 @@ function quatTint(root,app){
     for(let i=0;i<mats.length;i++){ const m=mats[i]; const nm=((m.name||"")+"|"+(o.name||"")).toLowerCase(); const mm=m.clone();
       if(/hair|eyebrow|beard/.test(nm)){ if(mm.color) mm.color.setHex(hair); }
       else if(/eye/.test(nm)){ /* leave the eyes as authored */ }
-      else if(mm.color){ mm.color.setHex(skin); }   // body skin
+      else if(mm.color){ mm.color.setHex(skin);   // body skin
+        // #1079 ladder rank 4 (innermost): the skin loses every depth tie — a garment hugging a bulge
+        // renders stably over it instead of sliver-fighting. Eyes/brows/hair keep 0, so they still
+        // draw over the face they sit on.
+        mm.polygonOffset=true; mm.polygonOffsetFactor=4; mm.polygonOffsetUnits=8; }
       if(Array.isArray(o.material)) o.material[i]=mm; else o.material=mm; }
   }); }
 // Build a player/NPC avatar Group backed by a Quaternius body. Returns null if the rig isn't loaded yet.
