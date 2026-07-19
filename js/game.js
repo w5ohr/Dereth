@@ -8228,6 +8228,11 @@ function resettleGroundNear(cx,cz,r){
 // Re-runnable after any terrain edit; surfaced via /audit. Returns {eps,total,byCat,worst,offenders}.
 function auditGroundObjects(eps){
   eps=(eps!=null)?eps:0.4;
+  // #1027: object coords are OVERWORLD, but inside a dungeon/network groundY()/supportAt() return the
+  // instance-local floor for every (x,z) — so every overworld object gets flagged with an offset equal
+  // to its true elevation (the uniform ±560/±649 "offenders" that swung with where the auditor stood).
+  // The audit is only meaningful in the overworld it walks; refuse from an instance instead of lying.
+  if(inDungeon||inNetwork) return {eps,guarded:"instance",total:0,byCat:{},worst:[],offenders:[]};
   const off=[];
   const chk=(cat,x,z,y,fl)=>{ if(!isFinite(x)||!isFinite(z)||!isFinite(y)) return;
     const base=y-(fl||0), sup=supportAt(x,z,y), d=base-sup;
@@ -34345,7 +34350,8 @@ function handleSlash(text){
   }
   else if(cmd==="audit"){   // #1018: dev tool — report ground-sitting objects that float/sink off their support height
     const eps=parseFloat(parts[2])||0.4, a=auditGroundObjects(eps);
-    if(!a.total){ log(`Ground audit: <b>0</b> offenders (eps ${a.eps}). Everything rests on its support.`,"sys"); }
+    if(a.guarded){ log("Ground audit runs in the <b>overworld</b> only — inside a dungeon/network the ground is instance-local (every overworld object would read as a false offender). Step outside and retry.","warn"); }
+    else if(!a.total){ log(`Ground audit: <b>0</b> offenders (eps ${a.eps}). Everything rests on its support.`,"sys"); }
     else{ log(`Ground audit: <b>${a.total}</b> offenders (eps ${a.eps}) — ${Object.entries(a.byCat).map(([c,n])=>c+":"+n).join(", ")}`,"warn");
       for(const o of a.worst) log(`  ${o.cat} @ ${o.x},${o.z} off ${o.off>0?"+":""}${o.off}${o.off>0?" (floating)":" (sunken)"}`,"warn"); }
     if(typeof console!=="undefined") console.log("[/audit]",a); }
