@@ -34904,6 +34904,10 @@ function ccShowQuatBody(sex){
     if(tok!==ccModelToken||!cache||!ccScene) return;   // superseded or load failed → leave the preview as-is
     const inst=quatBodyClone(sex); if(!inst) return;
     inst.play("idle");
+    // #1034: ccAnim spins ccModel to Math.PI (which faces the procedural AC body, front -z, at the
+    // camera). The Quaternius glTF fronts +z, so it read as facing AWAY — pre-rotate the body 180° so
+    // the net orientation puts its front to the +z preview camera (the requested yaw flip).
+    inst.root.rotation.y=Math.PI;
     ccModel=new THREE.Group(); ccModel.add(inst.root); ccScene.add(ccModel); ccModelMixer=inst.mixer;
   });
 }
