@@ -85,6 +85,34 @@ def main():
                 fails += 1
                 sys.stderr.write((r.stderr or r.stdout or "").strip() + "\n")
 
+        # #1085: the external client scripts index.html injects at runtime via its module loader — the
+        # bulk of the ~35k-line client. The inline-<script> regex above never sees them, so a syntax error
+        # in game.js/craft.js/ac-tables.js used to ship CI green (blank page at runtime). Check them here.
+        # js/game.js + js/craft.js are classic (global-scope) scripts -> IIFE-wrapped for parse-only, exactly
+        # like the inline classics and sw.js; js/data/ac-tables.js is an ES module (index.html `import`s it).
+        EXTERNAL = [("js/game.js", False), ("js/craft.js", False), ("js/data/ac-tables.js", True)]
+        for j, (rel, is_module) in enumerate(EXTERNAL):
+            fp = os.path.join(ROOT, rel)
+            if not os.path.exists(fp):
+                print(f"  SKIP {rel} [not present]")
+                continue
+            if is_module and not supports_modules:
+                print(f"  SKIP {rel} [module — parse-checked only under node]")
+                continue
+            src = open(fp, encoding="utf-8").read()
+            if is_module:
+                p = os.path.join(td, f"ext_{j}.mjs")            # real ES module: parse as-is
+                open(p, "w", encoding="utf-8").write(src)
+            else:
+                p = os.path.join(td, f"ext_{j}.js")             # classic: uncalled IIFE -> parse-only, global-free
+                open(p, "w", encoding="utf-8").write("(function(){\n" + src + "\n})")
+            r = check(p)
+            ok = r.returncode == 0
+            print(f"  {'OK  ' if ok else 'FAIL'} {rel} ({len(src)} chars)")
+            if not ok:
+                fails += 1
+                sys.stderr.write((r.stderr or r.stdout or "").strip() + "\n")
+
     if fails:
         print(f"\n{fails} syntax error(s)")
         sys.exit(1)
