@@ -5378,7 +5378,7 @@ function buildAvatarJointed(appOv){   // appOv: an NPC's appearance — omitted,
 function buildAvatar(){
   // #1008: opt-in Quaternius body for the player. If the rig hasn't finished loading yet, fall through
   // to the procedural body as a placeholder — quatSwapPlayerAvatar() rebuilds it the moment the rig lands.
-  if(typeof NEWBODIES!=="undefined"&&NEWBODIES){ const qa=buildQuatAvatar(player.appearance); if(qa) return qa; }
+  if(typeof NEWBODIES!=="undefined"&&NEWBODIES){ const qa=buildQuatAvatar(player.appearance,{player:true}); if(qa) return qa; }
   const g=buildAvatarJointed(); applyACBody(g); return g; }
 // ---- The REAL AC body: mesh parts extracted from client_portal.dat by tools/ac_model_export.py.
 //      When assets/acmodels/ is present the forged-plate placeholder body is swapped for the
@@ -25639,15 +25639,18 @@ function quatDressOutfit(inst, outfitKey){
     added++; });
   return added;
 }
-// Pick + apply a seeded outfit to a Quaternius avatar Group (Ranger for martial/hooded roles, Peasant
-// for civilians; a Ranger hood = helmet for the hooded). Idempotent — sets q.dressed once it succeeds.
+// Pick + apply an outfit to a Quaternius avatar Group. NPCs ALWAYS wear the Peasant set (user
+// directive: every townsperson in civilian dress — no Ranger kit or hoods on NPCs); only the PLAYER
+// (opts.player, set by buildAvatar/quatSwapPlayerAvatar) keeps the seeded Ranger/Peasant selection
+// with the martial/hood options. Idempotent — sets q.dressed once it succeeds.
 function quatApplyOutfit(g){
   const q=g&&g.userData&&g.userData.quat; if(!q||q.dressed||!quatOutfits) return false;
   const app=q.dressApp||g.userData._headApp||{}, opts=q.dressOpts||{};
   const G=(app.gender==="female")?"Female":"Male", seed=Math.abs((app.faceSeed|0)||0);
-  const style=opts.outfit||(opts.martial?"Ranger":((seed%3===0)?"Ranger":"Peasant"));
+  const style=opts.player ? (opts.outfit||(opts.martial?"Ranger":((seed%3===0)?"Ranger":"Peasant")))
+                          : "Peasant";
   const n=quatDressOutfit(q.inst, G+"_"+style);
-  if(opts.hood||(style==="Ranger"&&seed%2===0)) quatDressOutfit(q.inst, G+"_Ranger_Head_Hood");
+  if(opts.player && (opts.hood||(style==="Ranger"&&seed%2===0))) quatDressOutfit(q.inst, G+"_Ranger_Head_Hood");
   if(n){ q.dressed=true; return true; }
   return false;
 }
@@ -25838,7 +25841,7 @@ function driveQuatAvatar(av,dt,sig){
 function quatSwapPlayerAvatar(){
   if(!NEWBODIES||!quatBody||!quatBody.ready) return;
   if(typeof playerAvatar==="undefined"||!playerAvatar||playerAvatar.userData.isQuat) return;
-  const qa=buildQuatAvatar(player.appearance); if(!qa) return;
+  const qa=buildQuatAvatar(player.appearance,{player:true}); if(!qa) return;
   qa.position.copy(playerAvatar.position); qa.rotation.y=playerAvatar.rotation.y; qa.visible=playerAvatar.visible;
   scene.remove(playerAvatar); if(typeof disposeObject3D==="function") disposeObject3D(playerAvatar);
   playerAvatar=qa; scene.add(playerAvatar);
