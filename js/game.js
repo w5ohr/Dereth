@@ -8203,7 +8203,7 @@ function buildWorld(){
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   loadGltfHorse();                       // preload the rigged horse model for mounts
-  if(/[?&]newbodies=1/.test(location.search)){ loadQuatBodies(); loadQuatOutfits(); }   // #1008/#1019: opt-in preload of the Quaternius human bodies + fantasy outfits (default OFF — normal play is untouched)
+  if(/[?&]newbodies=1/.test(location.search)){ loadQuatBodies(); loadQuatOutfits(); loadQuatHair(); }   // #1008/#1019: opt-in preload of the Quaternius human bodies + fantasy outfits + #1060 hair (default OFF — normal play is untouched)
   buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
   spawnOwnedHorses();             // #725: parked horses stand back up where they were left
@@ -25399,6 +25399,72 @@ function quatDressExisting(){
   if(typeof shops!=="undefined") for(const s of shops){ if(s.mesh&&s.mesh.userData.isQuat&&quatApplyOutfit(s.mesh)) n++; }
   if(n) console.log("[#1019] dressed "+n+" already-built Quaternius body(ies) once outfits loaded.");
 }
+// ═══ #1060: HAIRSTYLES — the base Superhero body ships eyebrows only (no scalp hair), so every
+//   Quaternius human rendered bald. The CC0 hair pack (assets/models/quaternius/hair) is rigged to the
+//   SAME 65-joint Armature as the body + outfits (the strands weight to the Head bone), so a hairstyle's
+//   skinned mesh rebinds straight onto a cloned body's skeleton and rides the head — the identical path
+//   the outfits/hood already use. Seeded per character; tinted with the hair colour like quatTint does. ══
+const QUAT_HAIR_URL={
+  Hair_Buzzed:"assets/models/quaternius/hair/Hair_Buzzed.gltf",
+  Hair_SimpleParted:"assets/models/quaternius/hair/Hair_SimpleParted.gltf",
+  Hair_Long:"assets/models/quaternius/hair/Hair_Long.gltf",
+  Hair_Buns:"assets/models/quaternius/hair/Hair_Buns.gltf",
+  Hair_BuzzedFemale:"assets/models/quaternius/hair/Hair_BuzzedFemale.gltf",
+  Hair_Beard:"assets/models/quaternius/hair/Hair_Beard.gltf",
+};
+let quatHair=null, _quatHairPromise=null;
+function loadQuatHair(){
+  if(_quatHairPromise) return _quatHairPromise;
+  if(typeof THREE.GLTFLoader==="undefined") return Promise.resolve(null);
+  const L=new THREE.GLTFLoader(), load=u=>new Promise(res=>L.load(u,g=>res(g),undefined,()=>res(null)));
+  const keys=Object.keys(QUAT_HAIR_URL);
+  _quatHairPromise=Promise.all(keys.map(k=>load(QUAT_HAIR_URL[k]))).then(rs=>{
+    quatHair={}; let n=0; keys.forEach((k,i)=>{ if(rs[i]&&rs[i].scene){ quatHair[k]=rs[i].scene; n++; } });
+    console.log("Quaternius hair loaded ("+n+"/"+keys.length+").");
+    if(typeof quatHairExisting==="function") quatHairExisting();   // hair bodies built before the pack arrived
+    return quatHair;
+  });
+  return _quatHairPromise;
+}
+// clone + rebind a hairstyle's skinned mesh onto the body instance's skeleton (rig matches 1:1), tinted
+function quatAttachHair(inst, hairKey, hairCol){
+  if(!inst||!inst.root||!quatHair||!quatHair[hairKey]) return 0;
+  let bodyMesh=null; inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&!bodyMesh) bodyMesh=o; });
+  if(!bodyMesh) return 0;
+  const skel=bodyMesh.skeleton, parent=bodyMesh.parent||inst.root; let added=0;
+  quatHair[hairKey].traverse(o=>{ if(!o.isSkinnedMesh) return;
+    const mat=o.material.clone?o.material.clone():o.material;
+    if(hairCol!=null&&mat.color) mat.color.setHex(hairCol);              // tint like quatTint's hair path
+    const sm=new THREE.SkinnedMesh(o.geometry, mat);
+    parent.add(sm);                          // same coordinate space as the body mesh
+    sm.bind(skel, bodyMesh.bindMatrix);      // share the body's skeleton + bind pose (rigs match 1:1)
+    sm.frustumCulled=false; sm.castShadow=true; sm.userData.hair=true;
+    added++; });
+  return added;
+}
+function quatSeedHairKey(app){
+  const fem=(app&&app.gender==="female"), seed=Math.abs((app&&(app.faceSeed|0))||0);
+  const pool=fem?["Hair_Long","Hair_Buns","Hair_BuzzedFemale"]:["Hair_SimpleParted","Hair_Buzzed","Hair_Long"];
+  return pool[seed%pool.length];
+}
+// pick + apply a seeded hairstyle (+ beard for bearded males). Idempotent — sets q.haired once it lands.
+function quatApplyHair(g){
+  const q=g&&g.userData&&g.userData.quat; if(!q||q.haired||!quatHair) return false;
+  const app=q.dressApp||g.userData._headApp||{};
+  const hairCol=(app.hairColor!=null?app.hairColor:app.hair)|0||0x3a2a1a;
+  let n=quatAttachHair(q.inst, quatSeedHairKey(app), hairCol);
+  if(app.gender!=="female" && app.beard) n+=quatAttachHair(q.inst,"Hair_Beard",hairCol);
+  if(n){ q.haired=true; return true; }
+  return false;
+}
+// when the hair pack finishes loading, add hair to every Quaternius body built before it arrived
+function quatHairExisting(){
+  if(!quatHair) return; let n=0;
+  if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.isQuat){ if(quatApplyHair(playerAvatar)) n++; }
+  if(typeof npcs!=="undefined") for(const r of npcs){ if(r.mesh&&r.mesh.userData.isQuat&&quatApplyHair(r.mesh)) n++; }
+  if(typeof shops!=="undefined") for(const s of shops){ if(s.mesh&&s.mesh.userData.isQuat&&quatApplyHair(s.mesh)) n++; }
+  if(n) console.log("[#1060] added hair to "+n+" already-built Quaternius body(ies).");
+}
 // which of our QUAT_ANIM state clips are actually present in the loaded library (all should be — a guard
 // against a future asset re-export silently renaming a clip). Returns {ok, missing:[state,...]}.
 function quatBodyClipsResolve(){
@@ -25466,6 +25532,7 @@ function buildQuatAvatar(app,opts){
   const g=new THREE.Group(); g.add(inst.root);
   g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null,dressed:false,dressOpts:opts,dressApp:app},isQuat:true,acBody:true,_headApp:app};
   quatApplyOutfit(g);   // dress now if outfits are loaded; else quatDressExisting() dresses it when they land
+  quatApplyHair(g);     // #1060: add hair now if the pack is loaded; else quatHairExisting() adds it when it lands
   inst.play("idle",0); inst.mixer.update(0);   // pose in idle immediately so a not-yet-ticked distant NPC never flashes the bind (T) pose
   return g; }
 // Mount/refresh a simple held-weapon proxy on the hand_r bone (step 1). Kept deliberately light — a
