@@ -20169,7 +20169,11 @@ function syncCamera(dt){
     { const ex2=camCur.x-tx,ey2=camCur.y-ty,ez2=camCur.z-tz, el=Math.hypot(ex2,ey2,ez2);
       if(el>0.01){ const ed=camClampDist(tx,ty,tz,ex2/el,ey2/el,ez2/el,el);
         if(ed<el-0.01){ camCur.set(tx+ex2/el*ed, ty+ey2/el*ed, tz+ez2/el*ed); } } }
-    const camTooClose=Math.hypot(camCur.x-tx,camCur.y-ty,camCur.z-tz)<1.7;   // camera inside the body/back-gear — hide the avatar (measured on the final eased+clamped position)
+    // #1067: mounted, the rider is raised ~1.9u onto the saddle, so the camera's down-and-back ray hits
+    // the ground sooner → camClampDist pulls it in to ~1.72u, right at this hide threshold, and the rider
+    // vanishes (you ride an empty horse). The hide is meant for near-first-person, not riding — exempt the
+    // mounted state so the rider stays visible (the camera still clears the elevated body's ~0.5u girth).
+    const camTooClose=!player.mountRec&&Math.hypot(camCur.x-tx,camCur.y-ty,camCur.z-tz)<1.7;   // camera inside the body/back-gear — hide the avatar (measured on the final eased+clamped position)
     cam.position.copy(camCur);
     cam.rotation.set(pitch,yaw,0);
     weapon.visible=false;
