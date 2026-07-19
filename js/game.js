@@ -31528,6 +31528,59 @@ function dgSealDungeon(dj,grp){
   }
   return {segs:DGW.segs,roofed};
 }
+// #1089: #1084 now loads 103 more real EnvCell packs, and many are perimeter-truncated at/near the
+// entry (measured: Aerbax Laboratory has 404/515 open perimeter edges) — but the cell-level gap-fill
+// only fires below 50% coverage, so a mostly-intact pack with a bare spawn wall still opens onto pale
+// void. Mirror the #1070 house-interior fix: per-SPAN perimeter coverage — synthesize a wall box on
+// every uncovered span of each open perimeter edge (a cell edge with no neighbour cell), skipping the
+// spans the real geometry already covers so real walls aren't z-fought. Skinned with the dungeon's own
+// wall texture. Identical logic to hsSynthInteriorWalls, just the dungeon texture + cell metrics.
+function dgSynthPerimeterWalls(dj){
+  if(!dj||!dj.cellPos||!dj.cellPos.length) return null;
+  const STEP=10, HALF=5.2, H=6, T=0.7, TILE=4;
+  const occ=new Set(), key=(gx,y,gz)=>gx+"|"+y+"|"+gz;
+  for(const c of dj.cellPos) occ.add(key(Math.round(c[0]/STEP),Math.round(c[1]),Math.round(c[2]/STEP)));
+  const tris=[];
+  for(const g of dj.groups||[]){ const v=g.verts,n=g.normals,idx=g.idx; if(!v||!idx||!n) continue;
+    for(let i=0;i<idx.length;i+=3){ const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3;
+      const ny=(n[a+1]+n[b+1]+n[c+1])/3; if(Math.abs(ny)>0.55) continue;
+      tris.push({mnx:Math.min(v[a],v[b],v[c]),mxx:Math.max(v[a],v[b],v[c]),
+                 mny:Math.min(v[a+1],v[b+1],v[c+1]),mxy:Math.max(v[a+1],v[b+1],v[c+1]),
+                 mnz:Math.min(v[a+2],v[b+2],v[c+2]),mxz:Math.max(v[a+2],v[b+2],v[c+2])}); } }
+  const NB=12, BW=(2*HALF)/NB;
+  const binCoverage=(plane,a0,vert,fy)=>{ const bins=new Array(NB).fill(false); const yLo=fy+0.35,yHi=fy+2.0;
+    for(const t of tris){ if(t.mxy<yLo||t.mny>yHi) continue;
+      const pMin=vert?t.mnx:t.mnz, pMax=vert?t.mxx:t.mxz;
+      if(pMin>plane+0.7||pMax<plane-0.7||pMax-pMin>1.6) continue;
+      const b0=vert?t.mnz:t.mnx, b1=vert?t.mxz:t.mxx;
+      const lo=Math.max(0,Math.floor((b0-a0)/BW)), hi=Math.min(NB-1,Math.ceil((b1-a0)/BW)-1);
+      for(let bi=lo;bi<=hi;bi++) bins[bi]=true; }
+    return bins; };
+  const P=[],N=[],U=[];
+  for(const c of dj.cellPos){ const gx=Math.round(c[0]/STEP),iy=Math.round(c[1]),gz=Math.round(c[2]/STEP);
+    for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){ const dx=d[0],dz=d[1];
+      if(occ.has(key(gx+dx,iy,gz+dz))) continue;
+      const vert=dx!==0, plane=vert?c[0]+dx*HALF:c[2]+dz*HALF;
+      const a0=vert?c[2]-HALF:c[0]-HALF;
+      const bins=binCoverage(plane,a0,vert,c[1]);
+      let run=-1;
+      for(let bi=0;bi<=NB;bi++){ const open=bi<NB&&!bins[bi];
+        if(open&&run<0) run=bi;
+        else if(!open&&run>=0){ const cen=a0+(run+bi)/2*BW, hl=(bi-run)/2*BW+0.3;
+          if(vert) _pushBox(P,N,U, plane, c[1]+H/2, cen, T/2, H/2, hl, TILE);
+          else     _pushBox(P,N,U, cen, c[1]+H/2, plane, hl, H/2, T/2, TILE);
+          run=-1; } }
+    } }
+  if(!P.length) return null;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  geo.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  geo.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+  let wallTex=null,best=-1; for(const g of dj.groups){ if(g.tex){ const nn=(g.verts||[]).length; if(nn>best){best=nn;wallTex=g.tex;} } }
+  const mat=wallTex?new THREE.MeshStandardMaterial({map:dgTexture(wallTex),roughness:0.85,metalness:0.02,side:THREE.DoubleSide})
+                   :new THREE.MeshStandardMaterial({color:0x6b6b76,roughness:0.9,side:THREE.DoubleSide});
+  const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; return m;
+}
 function buildDungeonReal(def,dj){
   const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
   for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
@@ -31559,6 +31612,7 @@ function buildDungeonReal(def,dj){
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
   if(_gapFill) grp.add(synthDungeonWalls(dj,_cellCovered));   // #762: synthesize walls for the cells the export lost
+  if(!_fullSynth&&!_gapFill){ const _pw=dgSynthPerimeterWalls(dj); if(_pw) grp.add(_pw); }   // #1089: ≥50%-coverage real mesh — fill the per-span perimeter truncation the cell-level gap-fill above skips
   try{ const _seal=dgSealDungeon(dj,grp);   // seal seams + roof the void-open cells from the real geometry
     if(_seal&&(_seal.segs||_seal.roofed)) console.log(`dungeon seal: ${_seal.segs} wall segments, ${_seal.roofed} synthesized ceilings (${def.name})`);
   }catch(e){ DGW.grid=null; console.error("dgSealDungeon failed — delve stays rect-walkable:",e); }   // a seal failure must never break entry
