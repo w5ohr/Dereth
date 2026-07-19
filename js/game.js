@@ -30784,13 +30784,41 @@ function dungeonBarred(x,z,r){
     if(x>=b.x0-r&&x<=b.x1+r&&z>=b.z0-r&&z<=b.z1+r) return true;
   } return false;
 }
-function dungeonWalkable(x,z){ const r=player.r*0.6;
+// #1021: movement enforces the FULL player radius — the old 0.6× factor let the capsule sink ~0.6u
+// into walls, putting the first-person eye INSIDE the wall geometry (full-screen texture smear, and a
+// wall-peek risk on any wall thinner than the penetration + near plane).
+// WHY the old code couldn't just raise r: it tested "point inside ONE rect inset by r" — but real
+// EnvCell dungeons are 11.2u cells at 10u spacing, so at r>0.6 every cell seam became a 0.4u
+// unwalkable band (insets stop overlapping) and the player wedged at every doorway. That geometry is
+// exactly why 0.6× shipped. The movement test is now UNION-COVERAGE: the capsule fits if its whole
+// disc lies inside the union of cells (center + 8 rim samples, each inside ANY cell) — a disc may
+// straddle a seam, while a rim sample poking past a true perimeter (no neighbour) still fails, so the
+// full radius is enforced against real walls.
+// Callers that need the old permissive single-point test (mob line-of-sight through doorways) pass rr
+// explicitly — sightlines are unchanged.
+const _DW8X=[1,0.7071,0,-0.7071,-1,-0.7071,0,0.7071], _DW8Z=[0,0.7071,1,0.7071,0,-0.7071,-1,-0.7071];
+function dungeonWalkable(x,z,rr){
+  if(rr!=null){ const r=rr;                            // fast path: explicit radius (LoS etc.) — old inset semantics
+    if(dungeonBarred(x,z,r)) return false;
+    if(dgWallBlocked(x,z,r,player.y)) return false;
+    for(const c of dungeonRects){
+      if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad-r) return true; }
+      else if(x>=c.x0+r&&x<=c.x1-r&&z>=c.z0+r&&z<=c.z1-r) return true;
+    } return false;
+  }
+  const r=player.r;
   if(dungeonBarred(x,z,r)) return false;
   if(dgWallBlocked(x,z,r,player.y)) return false;   // real-geometry seam walls (sealed delves) — collision now matches what you see
-  for(const c of dungeonRects){
-    if(c.round){ if(Math.hypot(x-c.cx,z-c.cz)<=c.rad-r) return true; }
-    else if(x>=c.x0+r&&x<=c.x1-r&&z>=c.z0+r&&z<=c.z1-r) return true;
-  } return false;
+  for(let k=0;k<9;k++){
+    const px=(k===8)?x:x+_DW8X[k]*r, pz=(k===8)?z:z+_DW8Z[k]*r;
+    let inside=false;
+    for(const c of dungeonRects){
+      if(c.round){ const dx=px-c.cx,dz=pz-c.cz; if(dx*dx+dz*dz<=c.rad*c.rad){inside=true;break;} }
+      else if(px>=c.x0&&px<=c.x1&&pz>=c.z0&&pz<=c.z1){inside=true;break;}
+    }
+    if(!inside) return false;
+  }
+  return true;
 }
 function dungeonSlide(ox,oz,nx,nz){
   if(dungeonWalkable(nx,nz))return[nx,nz];
@@ -30805,8 +30833,9 @@ function dungeonSlide(ox,oz,nx,nz){
   }
   return[ox,oz];
 }
-function dungeonLoS(ax,az,bx,bz){ const n=10; for(let i=1;i<n;i++){const t=i/n;
-  if(!dungeonWalkable(ax+(bx-ax)*t,az+(bz-az)*t)) return false;} return true; }
+function dungeonLoS(ax,az,bx,bz){ const n=10, r=player.r*0.6;   // #1021: LoS keeps the old permissive radius — sightlines through doorways are unchanged by the movement-radius fix
+  for(let i=1;i<n;i++){const t=i/n;
+  if(!dungeonWalkable(ax+(bx-ax)*t,az+(bz-az)*t,r)) return false;} return true; }
 // ── REAL dungeon geometry (assets/acdungeons, tools/ac_env_export.py): the dungeon's true
 //    EnvCell room-piece meshes assembled at their real positions, with movement rects fed
 //    straight from the actual 10-unit cells (multi-level floors included). Used for pack
