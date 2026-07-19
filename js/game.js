@@ -18885,6 +18885,22 @@ function buildSpellbar(){
 buildSpellbar();
 
 // ---------- update ----------
+// #1021/#1025: is the player genuinely boxed in (no room to move), or just leaning on one wall? AC
+// players hug walls constantly, so the /unstuck NAG must fire only in the former case. Sample the ring
+// around the player and count directions that are actually walkable in the current context.
+function freeDirCount(){
+  const d=(player.r||0.8)*1.5; let free=0;
+  for(let a=0;a<8;a++){ const th=a*0.7853981634, x=player.x+Math.cos(th)*d, z=player.z+Math.sin(th)*d;
+    let ok;
+    if(inDungeon) ok=(typeof dungeonWalkable==="function")?dungeonWalkable(x,z):true;
+    else if(inNetwork){ const dx=x-DCEN.x,dz=z-DCEN.z; ok=(dx*dx+dz*dz)<47.2*47.2; }
+    else { ok=true; for(const o of obstacles){ if(o.yMax!=null&&player.y>o.yMax) continue;
+        const ex=x-o.x,ez=z-o.z,min=o.r+player.r; if(ex*ex+ez*ez<min*min){ ok=false; break; } }
+      if(ok&&terrainH(x,z)<-6) ok=false; }
+    if(ok) free++;
+  }
+  return free;
+}
 function collide(nx,nz){
   if(inDungeon){ // wall-slide against the room/corridor layout
     const s=dungeonSlide(player.x,player.z,nx,nz);
@@ -19133,10 +19149,13 @@ function updateMovementPhysics(dt){
     if(moving&&!player._edgePinned){   // #966: a ledge lip isn't "wedged" — you can always jump off, so no bump/unstuck nag there
       const want=Math.hypot(player.vx,player.vz)*dt, got=Math.hypot(nx-px0,nz-pz0);
       if(want>0.02 && got<want*0.25){
-        if(now()-(player._blockT||0)>420){ player._blockT=now(); if(SFX.bump)SFX.bump(); }
-        player._blockRun=(player._blockRun||0)+dt;
-        if(player._blockRun>1.0 && !player._unstuckHintSeen){ player._unstuckHintSeen=1;
-          log("You are wedged against something you can't push past. Type <b>/unstuck</b> to free yourself"+(inDungeon?" — it works even while delving.":"."),"warn"); }
+        if(now()-(player._blockT||0)>420){ player._blockT=now(); if(SFX.bump)SFX.bump(); }   // hit-something bump on ANY wall contact
+        // #1021/#1025: only build toward the /unstuck nag when genuinely boxed in — ordinary wall-hugging
+        // (still bumped, above) leaves plenty of free directions and must not threaten a teleport remedy.
+        if(freeDirCount()<=1){ player._blockRun=(player._blockRun||0)+dt;
+          if(player._blockRun>1.0 && !player._unstuckHintSeen){ player._unstuckHintSeen=1;
+            log("You are wedged against something you can't push past. Type <b>/unstuck</b> to free yourself"+(inDungeon?" — it works even while delving.":"."),"warn"); }
+        } else player._blockRun=0;
       } else player._blockRun=0;
     }
     const step=Math.hypot(player.vx,player.vz)*dt;
