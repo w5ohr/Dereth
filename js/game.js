@@ -25531,13 +25531,63 @@ function loadQuatOutfits(){
 // pauldrons, boots and the hood must stay snug so they don't balloon. Keyed off the source mesh name.
 function quatOutfitInflate(name){
   const n=(name||"").toLowerCase();
-  if(/belt|bracer|pauldron/.test(n)) return 0.006;           // straps & shoulder plates: barely any
-  if(/hood|head/.test(n))            return 0.008;           // hood rides the head — small
-  if(/feet|boot|shoe/.test(n))       return 0.010;           // boots: a touch, over the calf
+  if(/belt|bracer|pauldron/.test(n)) return 0.009;           // straps & shoulder plates: snug, but clear the thin cloth underlayer (0.004)
+  if(/hood|head/.test(n))            return 0.010;           // hood rides the head — small
+  if(/feet|boot|shoe/.test(n))       return 0.012;           // boots: a touch, over the calf
   if(/leg|pant|trouser|skirt/.test(n)) return 0.024;         // legs: clear the thighs
   if(/arm|sleeve/.test(n))           return 0.018;           // sleeves: clear the upper arms
   if(/body|torso|chest|tunic|vest|jacket|shirt/.test(n)) return 0.032;  // the main garment — worst poke-through
   return 0.024;                                              // unnamed garment piece: moderate default
+}
+// #1072 follow-up (coverage): the Fantasy outfits are cut short/open — the female set is a crop top +
+// briefs (bare upper legs / buttocks) and the male set leaves the upper back, shoulders and inner arm
+// open — so the nude base skin shows through where a garment should be. Add a form-fitting cloth
+// UNDERLAYER: a "second skin" cloned from the body's OWN torso / shoulder / upper-arm / upper-leg
+// triangles (selected by each triangle's dominant bone), pushed a few mm outward and tinted as
+// underclothing. It sits UNDER every outfit piece (all of which inflate to ≥0.011), so where the
+// garment covers, the garment still wins; where the outfit is open, the skin now reads as hose /
+// undershirt instead of bare flesh. Built once per body in buildQuatAvatar.
+const QUAT_UNDER_BONES=["pelvis","spine_01","spine_02","spine_03","clavicle_l","clavicle_r","upperarm_l","upperarm_r","thigh_l","thigh_r"];
+// The underlayer HUGS the skin (tiny outward offset) so it sits below EVERY outfit piece everywhere —
+// even where a Regular-cut garment hugs the bulkier Superhero body at a bulge (shoulder blades, spine,
+// buttocks), the garment still clears this thin shell and wins the depth test (no z-fight). Where the
+// outfit is genuinely open, there's no garment to fight, so the shell reads as hose/undershirt over the
+// skin. A gentle camera-ward polygonOffset keeps crease-normal noise from dipping a triangle under the
+// skin without lifting the geometry enough to poke through a tight garment.
+const QUAT_UNDER_OFFSET=0.004, QUAT_UNDER_COLOR=0x6f6252;   // muted wool/linen — reads as hose + undershirt on both sexes
+function quatBuildUnderlayer(inst){
+  if(!inst||!inst.root) return null;
+  let body=null; inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&/hero/i.test(o.name||"")&&!body) body=o; });
+  if(!body) inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&!body) body=o; });
+  if(!body) return null;
+  const g=body.geometry, pos=g.attributes.position, nrm=g.attributes.normal,
+        si=g.attributes.skinIndex, sw=g.attributes.skinWeight, idx=g.index;
+  if(!pos||!nrm||!si||!sw||!idx) return null;
+  const nameOf=body.skeleton.bones.map(b=>b.name);
+  const want=new Uint8Array(nameOf.length); for(let i=0;i<nameOf.length;i++) if(QUAT_UNDER_BONES.indexOf(nameOf[i])>=0) want[i]=1;
+  const domBone=v=>{ let bi=si.getX(v),bw=sw.getX(v);
+    if(sw.getY(v)>bw){bw=sw.getY(v);bi=si.getY(v);} if(sw.getZ(v)>bw){bw=sw.getZ(v);bi=si.getZ(v);}
+    if(sw.getW(v)>bw){bw=sw.getW(v);bi=si.getW(v);} return bi; };
+  const O=QUAT_UNDER_OFFSET, P=[],N=[],SI=[],SW=[];
+  const push=v=>{ P.push(pos.getX(v)+nrm.getX(v)*O, pos.getY(v)+nrm.getY(v)*O, pos.getZ(v)+nrm.getZ(v)*O);
+    N.push(nrm.getX(v),nrm.getY(v),nrm.getZ(v));
+    SI.push(si.getX(v),si.getY(v),si.getZ(v),si.getW(v)); SW.push(sw.getX(v),sw.getY(v),sw.getZ(v),sw.getW(v)); };
+  for(let t=0;t<idx.count;t+=3){ const a=idx.getX(t),b=idx.getX(t+1),c=idx.getX(t+2);
+    let hit=0; if(want[domBone(a)])hit++; if(want[domBone(b)])hit++; if(want[domBone(c)])hit++;
+    if(hit>=2){ push(a); push(b); push(c); } }
+  if(!P.length) return null;
+  const ug=new THREE.BufferGeometry();
+  ug.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  ug.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  ug.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(SI,4));
+  ug.setAttribute('skinWeight',new THREE.Float32BufferAttribute(SW,4));
+  const um=new THREE.SkinnedMesh(ug,new THREE.MeshStandardMaterial({color:QUAT_UNDER_COLOR,roughness:0.92,metalness:0.02,
+    polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:2}));   // push a hair BACK in depth: the garment wins every tie (no cloth poking through a tight tunic/legging), while in a real
+                                                                        // opening there's no garment and the shell still sits 4mm ahead of the skin geometrically, so the gap stays covered
+  um.bind(body.skeleton, body.bindMatrix);
+  um.frustumCulled=false; um.castShadow=false; um.receiveShadow=true; um.userData.underlayer=true;
+  (body.parent||inst.root).add(um);
+  return um;
 }
 // Clone an outfit's skinned meshes and REBIND them onto a body instance's skeleton (identical joint
 // order → skin indices align), so the clothing deforms with the body's own mixer. Additive: leaves the
@@ -25723,6 +25773,7 @@ function buildQuatAvatar(app,opts){
   inst.root.rotation.y+=Math.PI;
   const g=new THREE.Group(); g.add(inst.root);
   g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null,dressed:false,dressOpts:opts,dressApp:app},isQuat:true,acBody:true,_headApp:app};
+  quatBuildUnderlayer(inst);   // #1072 follow-up: cloth second-skin so the outfits' open cuts read as hose/undershirt, not bare flesh
   quatApplyOutfit(g);   // dress now if outfits are loaded; else quatDressExisting() dresses it when they land
   quatApplyHair(g);     // #1060: add hair now if the pack is loaded; else quatHairExisting() adds it when it lands
   inst.play("idle",0); inst.mixer.update(0);   // pose in idle immediately so a not-yet-ticked distant NPC never flashes the bind (T) pose
