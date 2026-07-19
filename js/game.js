@@ -25384,6 +25384,10 @@ function buildQuatAvatar(app){
   const sex=(app&&app.gender==="female")?"female":"male";
   const inst=quatBodyClone(sex); if(!inst) return null;
   quatTint(inst.root,app);
+  // The Superhero body fronts +z; every in-world human fronts -z (the avatar wrapper takes rotation.y =
+  // facing/yaw, and movement is -z at yaw 0). Without this half-turn the body faces AWAY from its heading —
+  // it moonwalks (walks the way it moves while facing backward). Matches the chargen's own ccBody Math.PI.
+  inst.root.rotation.y+=Math.PI;
   const g=new THREE.Group(); g.add(inst.root);
   g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null},isQuat:true,acBody:true,_headApp:app};
   inst.play("idle",0); inst.mixer.update(0);   // pose in idle immediately so a not-yet-ticked distant NPC never flashes the bind (T) pose
