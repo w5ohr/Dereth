@@ -22163,7 +22163,15 @@ function societyRankInfo(rep){ let idx=0; for(let i=0;i<SOCIETY_RANKS.length;i++
   return {tier:idx+1,title:r.title,cur:rep-r.min,span:next?next.min-r.min:0,next}; }
 function societyTitle(){ if(!player.society) return null; const so=societyById(player.society); if(!so) return null;
   return `${societyRankInfo(player.societyRep).title} of the ${so.name}`; }
-function questRepValue(id){ const q=questById(id); return q?Math.max(5,Math.round(q.xp/15)):0; }  // standing earned per turn-in
+// #1048: quest rewards are retail-absolute XP baked onto a compressed early curve — a level-1
+// bounty paying 25,000 vaulted a fresh (0-XP) character to ~level 6, and comparable level-1
+// quests ranged 1,500→25,000 (a ~16× spread). Cap any quest's payout to ~1.5 levels' worth of
+// XP-to-next at the player's current level, so no single turn-in skips multiple levels while the
+// well-tuned quests (which already grant ~1 level) and endgame quests (whose 1-level need is
+// millions) still pay in full. Single choke point: every display/award/rep read goes through here.
+function questXP(q){ if(!q) return 0; const raw=Math.max(0,q.xp|0);
+  const cap=Math.round(1.5*xpForLevel(Math.max(1,player.level|0))); return Math.min(raw,cap); }
+function questRepValue(id){ const q=questById(id); return q?Math.max(5,Math.round(questXP(q)/15)):0; }  // standing earned per turn-in
 function grantSocietyRep(n){ if(!player.society||n<=0) return;
   const beforeTitle=societyRankInfo(player.societyRep).title;
   player.societyRep+=n;
@@ -24096,8 +24104,8 @@ function talkQuestGiver(n){
   if(isActive(id)){
     const a=activeEntry(id);
     if(questCompleteId(id)){                              // ── turn in: pay out + flavour ──
-      gainXP(q.xp); player.gold+=q.gold;
-      let rw=`+${q.xp} XP, +${q.gold} pyreals`;
+      const qxp=questXP(q); gainXP(qxp); player.gold+=q.gold;
+      let rw=`+${qxp} XP, +${q.gold} pyreals`;
       if(bonusAllDone(id)){                               // optional bonus objectives all met → extra reward
         if(q.bonusGold){ player.gold+=q.bonusGold; rw+=`, +${q.bonusGold} bonus pyreals`; }
         if(q.bonusReward){ addToInv(Object.assign({},q.bonusReward),true); rw+=`, a bonus <b>${q.bonusReward.name}</b>`; }
@@ -24477,7 +24485,7 @@ function renderQuestLog(){
         <div style="color:#bcae8a;font-style:italic;margin:4px 0">“${q.intro}”</div>
         ${a.deadline?`<div style="color:${timeLeft(a.id)<30000?'#e06a6a':'#e0c070'};margin:2px 0">⏳ Time remaining: <b>${fmtCd(timeLeft(a.id))}</b></div>`:""}
         ${q.obj.map((o,i)=>{const d=a.prog[i]>=o.count;return `<div style="color:${d?'#7fe6a0':(o.bonus?'#9fb0c0':'#cdbf9a')}">${d?'✓':'☐'} ${o.bonus?'<span style="color:#7e8ab0">(bonus)</span> ':''}${o.label} — ${Math.min(a.prog[i],o.count)}/${o.count}</div>`;}).join("")}
-        <div style="margin-top:4px;color:var(--gold)">Reward: +${q.xp} XP · +${q.gold} pyreals${q.rewards?` · choose one of ${q.rewards.length}`:q.item?` · ${q.item.name}`:""}${q.bonusReward?` <span style="color:#9fb0c0">(bonus: ${q.bonusReward.name})</span>`:""}${done?` &nbsp;<span style="color:#7fe6a0">✓ return to ${(QUEST_GIVERS[a.id]||{}).name||"the Emissary"}</span>`:""}</div>
+        <div style="margin-top:4px;color:var(--gold)">Reward: +${questXP(q)} XP · +${q.gold} pyreals${q.rewards?` · choose one of ${q.rewards.length}`:q.item?` · ${q.item.name}`:""}${q.bonusReward?` <span style="color:#9fb0c0">(bonus: ${q.bonusReward.name})</span>`:""}${done?` &nbsp;<span style="color:#7fe6a0">✓ return to ${(QUEST_GIVERS[a.id]||{}).name||"the Emissary"}</span>`:""}</div>
       </div>`;
     }).join("");
   } else {
