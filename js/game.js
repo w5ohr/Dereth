@@ -31673,7 +31673,12 @@ function buildDungeonReal(def,dj){
 function buildDungeon(def){
   dungeonObjs=[];dungeonMobs=0;dungeonRects=[];dungeonBars=[];dungeonLevers=[];dungeonPortals=[];dungeonBoxes=[];
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
-    if(dgn&&(!sc0||sc0.pack)&&!_acDgnCache.disable){
+    // #1084: load the real EnvCell pack whenever one exists UNLESS a script explicitly opts out with
+    // pack:false. The old `sc0.pack` (truthy) gate skipped 103 dungeons whose script entry (boss/loot)
+    // just lacked the pack:true flag — they fell back to unsealed grid stand-ins (white-void sightlines
+    // out the doorway) while their exported 220KB+ geometry sat unused. Pure-scripted arenas (Colosseum)
+    // have no AC_DGN pack, so `dgn &&` still short-circuits them; no entry uses pack:false today.
+    if(dgn&&(!sc0||sc0.pack!==false)&&!_acDgnCache.disable){
       const cached=_acDgnCache[def.name];
       if(cached&&cached.groups){ buildDungeonReal(def,cached); return; }   // "loading" sentinel is truthy — never hand it to the builder
       // not fetched yet: fall through to the grid build this visit; prefetch for next time
@@ -31990,7 +31995,7 @@ function _dungeonEnter(def,ex,ez){
   // First visit to a real-geometry dungeon: fetch its EnvCell pack BEFORE building (capped wait),
   // so the first descent is the true dungeon — not the grid stand-in with a prefetch for next time.
   { const sc0=DUNGEON_SCRIPTS[def.name], dgn=AC_DGN&&AC_DGN[def.name];
-    if(dgn&&(!sc0||sc0.pack)&&!_acDgnCache.disable&&_acDgnCache[def.name]===undefined){
+    if(dgn&&(!sc0||sc0.pack!==false)&&!_acDgnCache.disable&&_acDgnCache[def.name]===undefined){   // #1084: pack loads unless script opts out with pack:false (was: only when pack:true)
       _acDgnCache[def.name]="loading";
       log(`You step into the dark of the <b>${def.name}</b>…`,"sys");
       // The 2026-07-13 "old mazes are back" regression: the full-fidelity re-export grew the
