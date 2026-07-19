@@ -25363,11 +25363,18 @@ function quatDressOutfit(inst, outfitKey){
   if(!inst||!inst.root||!quatOutfits||!quatOutfits[outfitKey]) return 0;
   let bodyMesh=null; inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&!bodyMesh) bodyMesh=o; });
   if(!bodyMesh) return 0;
-  const skel=bodyMesh.skeleton, parent=bodyMesh.parent||inst.root; let added=0;
+  const bodyBones=bodyMesh.skeleton.bones, parent=bodyMesh.parent||inst.root; let added=0;
   quatOutfits[outfitKey].traverse(o=>{ if(!o.isSkinnedMesh) return;
     const sm=new THREE.SkinnedMesh(o.geometry, o.material.clone?o.material.clone():o.material);
-    parent.add(sm);                          // same coordinate space as the body mesh
-    sm.bind(skel, bodyMesh.bindMatrix);      // share the body's skeleton + bind pose (rigs match 1:1)
+    parent.add(sm);
+    // The outfit was authored for the slimmer "Regular" rest pose, but the free base body is the
+    // "Superhero" proportion — 56/65 bones differ by ~2cm. Reusing the BODY's skeleton (Superhero
+    // inverse-bind matrices) to skin the outfit DISTORTS it (clothing mis-fits, body pokes through).
+    // Fix: give the outfit a skeleton that reuses the body's BONES (so it follows the same animation)
+    // but keeps the OUTFIT's OWN inverse-bind matrices — so it deforms per its authored shape. Joint
+    // ORDER is identical, so bones[i] and the outfit's boneInverses[i] line up 1:1.
+    const outfitSkel=new THREE.Skeleton(bodyBones, o.skeleton.boneInverses.map(m=>m.clone()));
+    sm.bind(outfitSkel, o.bindMatrix);
     sm.frustumCulled=false; sm.castShadow=true; sm.userData.outfit=true;
     added++; });
   return added;
