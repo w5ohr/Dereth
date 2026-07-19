@@ -1939,6 +1939,16 @@ function removeCarve(id){
   for(const k of e._cells){ const a=_carveGrid.get(k); if(!a) continue; const j=a.indexOf(e); if(j>=0) a.splice(j,1); if(!a.length) _carveGrid.delete(k); }
   _carveMarkChunks(e);
 }
+// #1040: town-plaza NO-CARVE zones — per-building carves used to pockmark the town centre with
+// 2–3u pits (each plaza-adjacent building dug its own pad), and tbSettleTownNpcs then seated NPCs on
+// the pit bottoms: a dozen Holtburg townsfolk stood buried to the waist/neck relative to the plaza
+// the player walks on. Inside a plaza disc the ground keeps its natural grade (carves blend back to
+// natural over a 3u rim band, so no cliff at the plaza edge). Registered by addCity per town.
+const _plazaZones=[];
+function addPlazaZone(x,z,r){
+  for(const p of _plazaZones){ if(Math.abs(p.x-x)<1&&Math.abs(p.z-z)<1) return; }   // idempotent across world rebuilds
+  _plazaZones.push({x,z,r});
+}
 // grade natural height h at (x,z) down toward any overlapping carve's floor (never raises it)
 function terrainCarve(x,z,h){
   if(_carveGrid.size===0) return h;
@@ -1954,6 +1964,15 @@ function terrainCarve(x,z,h){
     let w=1-d/e.skirt; w=w*w*(3-2*w);                   // smoothstep falloff — no cliff at the skirt edge
     const carved=out*(1-w)+e.floorY*w;
     if(carved<out) out=carved;                          // LOWER only: dig the uphill side in, leave downhill terrain to meet the base
+  }
+  if(out<h){                                            // #1040: a carve lowered this point — protect plaza discs
+    for(const p of _plazaZones){
+      const pd=Math.hypot(x-p.x,z-p.z);
+      if(pd>=p.r) continue;
+      let k=Math.min(1,(p.r-pd)/3); k=k*k*(3-2*k);      // 3u rim blend: rim keeps the carve, core keeps natural grade
+      out=out*(1-k)+h*k;
+      break;
+    }
   }
   return out;
 }
@@ -8264,6 +8283,14 @@ function resettleGroundNear(cx,cz,r){
   for(const ls of lifestones){ if(ls.mesh&&near(ls.x,ls.z)) ls.mesh.position.y=groundY(ls.x,ls.z); }
   for(const pt of portals){ if(pt.mesh&&near(pt.x,pt.z)) pt.mesh.position.y=groundY(pt.x,pt.z); }
   for(const n of nodes){ if(n.mesh&&near(n.x,n.z)) seatNodeY(n); }   // #1056: force the frozen ore-deposit matrix on re-seat too
+  // #1040: NPCs/vendors too — tbSettleTownNpcs runs at TOWN build, but a real-mesh structure that
+  // streams in LATER registers its floor plate after that seat, leaving townsfolk waist-deep in the
+  // plate (or floating over a dropped one). Re-seat onto the player's own walk surface (supportAt from
+  // just above the current seat, so an upper-storey NPC keeps their storey and never grabs the roof).
+  if(typeof supportAt==="function"){
+    if(typeof npcs!=="undefined") for(const np of npcs){ if(np.mesh&&near(np.x,np.z)) np.mesh.position.y=supportAt(np.x,np.z,np.mesh.position.y+1.2); }
+    if(typeof shops!=="undefined") for(const sh of shops){ if(sh.mesh&&!sh.caravan&&near(sh.x,sh.z)) sh.mesh.position.y=supportAt(sh.x,sh.z,sh.mesh.position.y+1.2); }
+  }
   reseatForestNear(cx,cz,r);   // #1031: forests are placed before carves land and are noSettle — re-seat instances over the freshly-(un)carved ground
 }
 // #1031: forest instances (buildForests) are baked into InstancedMesh matrices before settleY's
@@ -9073,6 +9100,10 @@ function tbSettleTownNpcs(c,recs){
   for(const np of npcs){ if(Math.hypot(np.x-c.x,np.z-c.z)>190) continue;
     let fy=tbFloorAt(recs,np.x,np.z,groundY(np.x,np.z));
     fy=tbFloorAllTowns(np.x,np.z,fy);                               // a neighbouring town's floor may be higher
+    // #1040: seat on the SAME walk surface the player gets — a real-mesh building's floor plate
+    // (registerStructure) can sit above the tb foundation recs (measured 0.81u in a Gharu'ndim town:
+    // 7 NPCs waist-deep in their shop floor). supportAt sees every registered plate; lift onto it.
+    if(typeof supportAt==="function"){ const sup=supportAt(np.x,np.z,fy+2.2); if(sup>fy&&sup-fy<3) fy=sup; }
     np.mesh.position.y=fy; }
 }
 function seatRealTownVendors(c,recs,seps){
@@ -9610,6 +9641,7 @@ function addCity(c){
   // stretch, so a cobble is the same physical size in a capital as in a hamlet and one shared,
   // RepeatWrapping texture serves every town.
   { const pr=ring*0.74, PSEG=40, PLAZA_TILE=4, pos=[],uv=[],idx=[];
+    addPlazaZone(c.x,c.z,pr+2);   // #1040: the plaza disc (+rim) is a no-carve zone — building pads can't pockmark the town centre
     const uvAt=(lx,lz)=>uv.push(lx/PLAZA_TILE+0.5, lz/PLAZA_TILE+0.5);
     pos.push(0, groundY(c.x,c.z)+0.05, 0); uvAt(0,0);
     for(let i=0;i<=PSEG;i++){ const a=i/PSEG*6.283, lx=Math.cos(a)*pr, lz=Math.sin(a)*pr;
