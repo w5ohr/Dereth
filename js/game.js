@@ -11184,22 +11184,33 @@ function hsSynthInteriorWalls(dj){
       tris.push({mnx:Math.min(v[a],v[b],v[c]),mxx:Math.max(v[a],v[b],v[c]),
                  mny:Math.min(v[a+1],v[b+1],v[c+1]),mxy:Math.max(v[a+1],v[b+1],v[c+1]),
                  mnz:Math.min(v[a+2],v[b+2],v[c+2]),mxz:Math.max(v[a+2],v[b+2],v[c+2])}); } }
-  const covered=(plane,a0,a1,vert,fy)=>{ const yLo=fy+0.35,yHi=fy+2.0;
+  // #1070: coverage is per-SPAN, not per-edge. A partially-truncated edge (real wall over one half,
+  // void over the other) must get a synth wall on the OPEN half only — the old "any triangle covers the
+  // edge → skip it whole" left the missing half see-through. Bin each edge into ~0.9u spans, mark the
+  // ones a real wall triangle covers, then emit a wall box for every contiguous run of uncovered bins.
+  const NB=12, BW=(2*HALF)/NB;
+  const binCoverage=(plane,a0,vert,fy)=>{ const bins=new Array(NB).fill(false); const yLo=fy+0.35,yHi=fy+2.0;
     for(const t of tris){ if(t.mxy<yLo||t.mny>yHi) continue;
       const pMin=vert?t.mnx:t.mnz, pMax=vert?t.mxx:t.mxz;
       if(pMin>plane+0.7||pMax<plane-0.7||pMax-pMin>1.6) continue;
-      const b0=vert?t.mnz:t.mnx, b1=vert?t.mxz:t.mxx;
-      if(b1>=a0-0.5&&b0<=a1+0.5) return true; }
-    return false; };
+      const b0=vert?t.mnz:t.mnx, b1=vert?t.mxz:t.mxx;                              // triangle's extent along the edge axis
+      const lo=Math.max(0,Math.floor((b0-a0)/BW)), hi=Math.min(NB-1,Math.ceil((b1-a0)/BW)-1);
+      for(let bi=lo;bi<=hi;bi++) bins[bi]=true; }
+    return bins; };
   const P=[],N=[],U=[];
   for(const c of dj.cellPos){ const gx=Math.round(c[0]/STEP),iy=Math.round(c[1]),gz=Math.round(c[2]/STEP);
     for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){ const dx=d[0],dz=d[1];
       if(occ.has(key(gx+dx,iy,gz+dz))) continue;                                   // interior seam, not perimeter
       const vert=dx!==0, plane=vert?c[0]+dx*HALF:c[2]+dz*HALF;
-      const a0=vert?c[2]-HALF:c[0]-HALF, a1=vert?c[2]+HALF:c[0]+HALF;
-      if(covered(plane,a0,a1,vert,c[1])) continue;                                 // a real wall already closes this edge
-      if(dx!==0) _pushBox(P,N,U, c[0]+dx*HALF, c[1]+H/2, c[2], T/2, H/2, HALF+0.3, TILE);
-      else _pushBox(P,N,U, c[0], c[1]+H/2, c[2]+dz*HALF, HALF+0.3, H/2, T/2, TILE);
+      const a0=vert?c[2]-HALF:c[0]-HALF;
+      const bins=binCoverage(plane,a0,vert,c[1]);
+      let run=-1;                                                                  // fill each contiguous run of uncovered bins
+      for(let bi=0;bi<=NB;bi++){ const open=bi<NB&&!bins[bi];
+        if(open&&run<0) run=bi;
+        else if(!open&&run>=0){ const cen=a0+(run+bi)/2*BW, hl=(bi-run)/2*BW+0.3;
+          if(vert) _pushBox(P,N,U, plane, c[1]+H/2, cen, T/2, H/2, hl, TILE);      // X-plane wall, runs along Z
+          else     _pushBox(P,N,U, cen, c[1]+H/2, plane, hl, H/2, T/2, TILE);      // Z-plane wall, runs along X
+          run=-1; } }
     } }
   if(!P.length) return null;
   const geo=new THREE.BufferGeometry();
