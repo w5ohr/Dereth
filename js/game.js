@@ -8203,7 +8203,7 @@ function buildWorld(){
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   loadGltfHorse();                       // preload the rigged horse model for mounts
-  if(/[?&]newbodies=1/.test(location.search)) loadQuatBodies();   // #1008: opt-in preload of the Quaternius human bodies (default OFF — normal play is untouched)
+  if(/[?&]newbodies=1/.test(location.search)){ loadQuatBodies(); loadQuatOutfits(); }   // #1008/#1019: opt-in preload of the Quaternius human bodies + fantasy outfits (default OFF — normal play is untouched)
   buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
   spawnOwnedHorses();             // #725: parked horses stand back up where they were left
@@ -24083,8 +24083,12 @@ function buildDressedAvatar(o,seed){
     eyeShape:["almond","round","narrow","hooded"][Math.abs(seed*11)%4],
     nose:["straight","button","aquiline","broad"][Math.abs(seed*7)%4],
     mouth:["medium","full","thin","wide"][Math.abs(seed*13)%4],feature:"none",faceSeed:seed};
-  // #1008: opt-in Quaternius body for role NPCs & vendors (same rig/dye/anim path as the player).
-  if(typeof NEWBODIES!=="undefined"&&NEWBODIES){ const qa=buildQuatAvatar(app); if(qa){ qa.userData._app=app; return qa; } }
+  // #1008/#1019: opt-in Quaternius body for role NPCs & vendors (same rig/dye/anim path as the player),
+  // dressed by role — guards/gatekeepers/rangers/hooded mystics get the Ranger outfit (+ hood for the hooded).
+  if(typeof NEWBODIES!=="undefined"&&NEWBODIES){
+    const martial=!!(o.helm||o.cape||o.hood||o.robed);
+    const qa=buildQuatAvatar(app,{martial, hood:!!o.hood, outfit:o.helm?"Ranger":undefined});
+    if(qa){ qa.userData._app=app; return qa; } }
   const g=buildAvatarJointed(app); g.userData._headApp=app;   // set BEFORE applyACBody so its acBuildHead uses this NPC's own head, not the player's
   applyACBody(g,app.gender); g.visible=true;
   const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
@@ -25325,6 +25329,69 @@ function loadQuatBodies(){                          // idempotent; resolves to t
     }).catch(e=>{ console.warn("Quaternius body load failed:",(e&&e.message)||e); quatBody=null; return null; });
   return _quatBodyPromise;
 }
+// ═══ #1019: MODULAR FANTASY OUTFITS — CC0 Quaternius clothing on the SAME 65-bone rig ══════════════
+//   The Modular Character Outfits: Fantasy pack (assets/models/quaternius/outfits) shares the base
+//   body's exact skeleton and joint order, so an outfit's skinned meshes rebind straight onto a cloned
+//   body's skeleton and deform with the same AnimationMixer — no retargeting. Free tier: Peasant +
+//   Ranger (M/F) full outfits + Ranger hood (a helmet). Dresses the otherwise-nude Quaternius bodies.
+const QUAT_OUTFIT_URL={
+  Male_Peasant:"assets/models/quaternius/outfits/Male_Peasant.gltf",
+  Female_Peasant:"assets/models/quaternius/outfits/Female_Peasant.gltf",
+  Male_Ranger:"assets/models/quaternius/outfits/Male_Ranger.gltf",
+  Female_Ranger:"assets/models/quaternius/outfits/Female_Ranger.gltf",
+  Male_Ranger_Head_Hood:"assets/models/quaternius/outfits/Male_Ranger_Head_Hood.gltf",
+  Female_Ranger_Head_Hood:"assets/models/quaternius/outfits/Female_Ranger_Head_Hood.gltf",
+};
+let quatOutfits=null, _quatOutfitPromise=null;
+function loadQuatOutfits(){
+  if(_quatOutfitPromise) return _quatOutfitPromise;
+  if(typeof THREE.GLTFLoader==="undefined") return Promise.resolve(null);
+  const L=new THREE.GLTFLoader(), load=u=>new Promise(res=>L.load(u,g=>res(g),undefined,()=>res(null)));
+  const keys=Object.keys(QUAT_OUTFIT_URL);
+  _quatOutfitPromise=Promise.all(keys.map(k=>load(QUAT_OUTFIT_URL[k]))).then(rs=>{
+    quatOutfits={}; let n=0; keys.forEach((k,i)=>{ if(rs[i]&&rs[i].scene){ quatOutfits[k]=rs[i].scene; n++; } });
+    console.log("Quaternius outfits loaded ("+n+"/"+keys.length+").");
+    if(typeof quatDressExisting==="function") quatDressExisting();   // dress bodies built before the outfits arrived
+    return quatOutfits;
+  });
+  return _quatOutfitPromise;
+}
+// Clone an outfit's skinned meshes and REBIND them onto a body instance's skeleton (identical joint
+// order → skin indices align), so the clothing deforms with the body's own mixer. Additive: leaves the
+// base body in place (clothing sits over the skin). No-op until loadQuatOutfits() resolves.
+function quatDressOutfit(inst, outfitKey){
+  if(!inst||!inst.root||!quatOutfits||!quatOutfits[outfitKey]) return 0;
+  let bodyMesh=null; inst.root.traverse(o=>{ if(o.isSkinnedMesh&&o.skeleton&&!bodyMesh) bodyMesh=o; });
+  if(!bodyMesh) return 0;
+  const skel=bodyMesh.skeleton, parent=bodyMesh.parent||inst.root; let added=0;
+  quatOutfits[outfitKey].traverse(o=>{ if(!o.isSkinnedMesh) return;
+    const sm=new THREE.SkinnedMesh(o.geometry, o.material.clone?o.material.clone():o.material);
+    parent.add(sm);                          // same coordinate space as the body mesh
+    sm.bind(skel, bodyMesh.bindMatrix);      // share the body's skeleton + bind pose (rigs match 1:1)
+    sm.frustumCulled=false; sm.castShadow=true; sm.userData.outfit=true;
+    added++; });
+  return added;
+}
+// Pick + apply a seeded outfit to a Quaternius avatar Group (Ranger for martial/hooded roles, Peasant
+// for civilians; a Ranger hood = helmet for the hooded). Idempotent — sets q.dressed once it succeeds.
+function quatApplyOutfit(g){
+  const q=g&&g.userData&&g.userData.quat; if(!q||q.dressed||!quatOutfits) return false;
+  const app=q.dressApp||g.userData._headApp||{}, opts=q.dressOpts||{};
+  const G=(app.gender==="female")?"Female":"Male", seed=Math.abs((app.faceSeed|0)||0);
+  const style=opts.outfit||(opts.martial?"Ranger":((seed%3===0)?"Ranger":"Peasant"));
+  const n=quatDressOutfit(q.inst, G+"_"+style);
+  if(opts.hood||(style==="Ranger"&&seed%2===0)) quatDressOutfit(q.inst, G+"_Ranger_Head_Hood");
+  if(n){ q.dressed=true; return true; }
+  return false;
+}
+// When the outfits finish loading, dress every Quaternius body that was built before they arrived.
+function quatDressExisting(){
+  if(!quatOutfits) return; let n=0;
+  if(typeof playerAvatar!=="undefined"&&playerAvatar&&playerAvatar.userData.isQuat){ if(quatApplyOutfit(playerAvatar)) n++; }
+  if(typeof npcs!=="undefined") for(const r of npcs){ if(r.mesh&&r.mesh.userData.isQuat&&quatApplyOutfit(r.mesh)) n++; }
+  if(typeof shops!=="undefined") for(const s of shops){ if(s.mesh&&s.mesh.userData.isQuat&&quatApplyOutfit(s.mesh)) n++; }
+  if(n) console.log("[#1019] dressed "+n+" already-built Quaternius body(ies) once outfits loaded.");
+}
 // which of our QUAT_ANIM state clips are actually present in the loaded library (all should be — a guard
 // against a future asset re-export silently renaming a clip). Returns {ok, missing:[state,...]}.
 function quatBodyClipsResolve(){
@@ -25380,7 +25447,8 @@ function quatTint(root,app){
       if(Array.isArray(o.material)) o.material[i]=mm; else o.material=mm; }
   }); }
 // Build a player/NPC avatar Group backed by a Quaternius body. Returns null if the rig isn't loaded yet.
-function buildQuatAvatar(app){
+function buildQuatAvatar(app,opts){
+  opts=opts||{};
   const sex=(app&&app.gender==="female")?"female":"male";
   const inst=quatBodyClone(sex); if(!inst) return null;
   quatTint(inst.root,app);
@@ -25389,7 +25457,8 @@ function buildQuatAvatar(app){
   // it moonwalks (walks the way it moves while facing backward). Matches the chargen's own ccBody Math.PI.
   inst.root.rotation.y+=Math.PI;
   const g=new THREE.Group(); g.add(inst.root);
-  g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null},isQuat:true,acBody:true,_headApp:app};
+  g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null,dressed:false,dressOpts:opts,dressApp:app},isQuat:true,acBody:true,_headApp:app};
+  quatApplyOutfit(g);   // dress now if outfits are loaded; else quatDressExisting() dresses it when they land
   inst.play("idle",0); inst.mixer.update(0);   // pose in idle immediately so a not-yet-ticked distant NPC never flashes the bind (T) pose
   return g; }
 // Mount/refresh a simple held-weapon proxy on the hand_r bone (step 1). Kept deliberately light — a
