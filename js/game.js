@@ -11167,6 +11167,50 @@ function hsUseHook(hk){
       hsRefreshHomestead(); saveGame(); updateHUD(); });
 }
 // ── house-interior & residential-hall instances (the dungeon-instance shell) ──
+// #1038: house interior meshes carry the same truncated-export gap as the #762 dungeons — measured 69%
+// of one villa's perimeter edges (Hebian-to, lb 0242) had NO wall, so the room rendered as fragments +
+// void and you could see/walk straight out. Synthesize a wall on each open perimeter edge (a cell edge
+// with no neighbour cell) that the REAL geometry doesn't already cover — a per-edge coverage scan, so the
+// ~30% of edges with a real wall don't get a z-fighting duplicate. Mirrors synthDungeonWalls' wall boxes.
+function hsSynthInteriorWalls(dj){
+  if(!dj||!dj.cellPos||!dj.cellPos.length) return null;
+  const STEP=10, HALF=5.2, H=6, T=0.7, TILE=4;
+  const occ=new Set(), key=(gx,y,gz)=>gx+"|"+y+"|"+gz;
+  for(const c of dj.cellPos) occ.add(key(Math.round(c[0]/STEP),Math.round(c[1]),Math.round(c[2]/STEP)));
+  const tris=[];   // wall triangles (|ny|<0.55) as xz-bboxes + y-range, for the coverage test
+  for(const g of dj.groups||[]){ const v=g.verts,n=g.normals,idx=g.idx; if(!v||!idx||!n) continue;
+    for(let i=0;i<idx.length;i+=3){ const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3;
+      const ny=(n[a+1]+n[b+1]+n[c+1])/3; if(Math.abs(ny)>0.55) continue;
+      tris.push({mnx:Math.min(v[a],v[b],v[c]),mxx:Math.max(v[a],v[b],v[c]),
+                 mny:Math.min(v[a+1],v[b+1],v[c+1]),mxy:Math.max(v[a+1],v[b+1],v[c+1]),
+                 mnz:Math.min(v[a+2],v[b+2],v[c+2]),mxz:Math.max(v[a+2],v[b+2],v[c+2])}); } }
+  const covered=(plane,a0,a1,vert,fy)=>{ const yLo=fy+0.35,yHi=fy+2.0;
+    for(const t of tris){ if(t.mxy<yLo||t.mny>yHi) continue;
+      const pMin=vert?t.mnx:t.mnz, pMax=vert?t.mxx:t.mxz;
+      if(pMin>plane+0.7||pMax<plane-0.7||pMax-pMin>1.6) continue;
+      const b0=vert?t.mnz:t.mnx, b1=vert?t.mxz:t.mxx;
+      if(b1>=a0-0.5&&b0<=a1+0.5) return true; }
+    return false; };
+  const P=[],N=[],U=[];
+  for(const c of dj.cellPos){ const gx=Math.round(c[0]/STEP),iy=Math.round(c[1]),gz=Math.round(c[2]/STEP);
+    for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){ const dx=d[0],dz=d[1];
+      if(occ.has(key(gx+dx,iy,gz+dz))) continue;                                   // interior seam, not perimeter
+      const vert=dx!==0, plane=vert?c[0]+dx*HALF:c[2]+dz*HALF;
+      const a0=vert?c[2]-HALF:c[0]-HALF, a1=vert?c[2]+HALF:c[0]+HALF;
+      if(covered(plane,a0,a1,vert,c[1])) continue;                                 // a real wall already closes this edge
+      if(dx!==0) _pushBox(P,N,U, c[0]+dx*HALF, c[1]+H/2, c[2], T/2, H/2, HALF+0.3, TILE);
+      else _pushBox(P,N,U, c[0], c[1]+H/2, c[2]+dz*HALF, HALF+0.3, H/2, T/2, TILE);
+    } }
+  if(!P.length) return null;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  geo.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  geo.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+  let tex=null,best=-1; for(const g of dj.groups||[]){ if(g.tex){ const nn=(g.verts||[]).length; if(nn>best){best=nn;tex=g.tex;} } }
+  const mat=tex?new THREE.MeshStandardMaterial({map:hsTex(tex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide})
+              :new THREE.MeshStandardMaterial({color:0x8a8478,roughness:0.9,side:THREE.DoubleSide});
+  const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; m.userData.acShared=false; return m;
+}
 function hsEnterInstance(meshFile,setup){
   fetch('assets/achouses/'+meshFile).then(r=>r.ok?r.json():null).then(dj=>{
     if(!dj){ log("The doorway wavers — the interior is missing.","warn"); return; }
@@ -11179,6 +11223,7 @@ function hsEnterInstance(meshFile,setup){
     dungeonChest=null;dungeonLock=null;dungeonVault=null;
     for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
     const grp=hsGroupsToProto(dj.groups); scene.add(grp); dungeonObjs.push(grp);
+    const synthW=hsSynthInteriorWalls(dj); if(synthW){ scene.add(synthW); dungeonObjs.push(synthW); }   // #1038: close the truncated-export perimeter so the room isn't open to the void
     const amb=new THREE.AmbientLight(0xa89878,1.0*(settings.dglight||1)); amb.userData.dgBase=1.0; scene.add(amb); dungeonObjs.push(amb);
     const hemi=new THREE.HemisphereLight(0x8a8a9a,0x3a3228,0.5*(settings.dglight||1)); hemi.userData.dgBase=0.5; scene.add(hemi); dungeonObjs.push(hemi);
     hsInst=Object.assign({rects:dj.cellPos},setup);
