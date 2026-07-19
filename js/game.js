@@ -8831,6 +8831,14 @@ function tbSeparateBuildings(c,objs){
 // scenery/fixtures collide by shape. (Real AC buildings were facades whose door was a portal to an
 // interior cell — here the facade IS the room, lit and walk-in, so no doorway reads black and no
 // shopkeeper is sealed out on the step.)
+// #1028: a capital's own placements spread far past the recorded centre — Linvak Tukal reaches ~463u,
+// well beyond the old fixed 220 sweep, so ground objects (props/lifestone/portal/nodes) in the town's
+// outer ring never re-seated onto its graded terrain and kept a stale/placement-time height (buried
+// under the plateau). Size the re-seat radius to the town's REAL object extent so every town-associated
+// object is caught, at both build (carve down) and drop (restore) time.
+function tbResettleR(c){ let r=220; const objs=(typeof AC_TOWNS!=="undefined"&&c&&AC_TOWNS[c.name])||null;
+  if(objs) for(const o of objs){ const d=Math.hypot(o.x||0,o.z||0); if(d>r) r=d; }
+  return r+24; }
 function tbBuildTown(c,objs){
   const g=new THREE.Group(); g.userData.noCull=true; scene.add(g);
   const obst=[], recs=[], lights=[];
@@ -8848,7 +8856,7 @@ function tbBuildTown(c,objs){
   // ── pass 2: for each room, cut a doorway on the CLEAREST side (now every wall exists) ──
   for(const rec of recs){ if(rec.enter) tbCutDoorway(g,obst,recs,rec,lights,c.x,c.z); }
   carveFlush();   // #1005: regenerate the terrain-mesh chunks this town's buildings graded (so the drawn ground matches groundY)
-  resettleGroundNear(c.x,c.z,220);   // #1018: re-seat static ground objects (props/lifestone/portal/nodes) onto the town's graded ground
+  resettleGroundNear(c.x,c.z,tbResettleR(c));   // #1018: re-seat static ground objects (props/lifestone/portal/nodes) onto the town's graded ground; #1028: cover the town's full extent, not a fixed 220
   seatRealTownVendors(c,recs,seps);   // vendors seat AFTER the carve so tbFloorAt/groundY see the graded ground
   tbSettleTownNpcs(c,recs);
   return {c,g,obst,lights,recs};
@@ -9097,7 +9105,7 @@ function tbReleaseStructs(recs){ for(const r of (recs||[])){
   for(const st of (r.structs||[])){ const i=structures.indexOf(st); if(i>=0) structures.splice(i,1); } } }
 function tbDropTown(name){ const e=_tbBuilt[name]; if(!e) return;
   if(e.g) disposeObject3D(e.g);
-  tbReleaseStructs(e.recs); carveFlush(); resettleGroundNear(e.c.x,e.c.z,220);   // #1005: restore terrain + #1018: re-seat ground objects before NPCs resettle
+  tbReleaseStructs(e.recs); carveFlush(); resettleGroundNear(e.c.x,e.c.z,tbResettleR(e.c));   // #1005: restore terrain + #1018: re-seat ground objects before NPCs resettle; #1028: full town extent
   for(const l of e.lights||[]){ if(l.parent) l.parent.remove(l); }   // detach interior lights → pool prunes them
   for(const o of e.obst||[]){ const i=obstacles.indexOf(o); if(i>=0) obstacles.splice(i,1); }
   // vendors reseat next time this town streams back in
