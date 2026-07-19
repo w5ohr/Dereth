@@ -2691,7 +2691,13 @@ function buildGroundTSL(){
   const texelFallback=t.mix(nearT, nearT.mul(farT).mul(2.0), dk.mul(0.7));
   const splatOn=uOn.greaterThan(0.5);
   const texel=t.select(splatOn,texelSplat,texelFallback);
-  groundMat.colorNode=t.materialColor.mul(texel);                         // vertexColors auto-multiplied by the builder
+  // #1032: mirror the GLSL exactly — the splat texel REPLACES the map sample (`<map_fragment>` is
+  // overwritten there), so the color slot must be material.color ALONE. t.materialColor is color×map:
+  // it multiplied the base detail tile in a SECOND time on top of texel, crushing the terrain to
+  // near-black at noon on WebGPU (ground rgb(4–25) vs the same spot rgb(47–103) on WebGL).
+  // reference() keeps it live for the seasonal ground tint (updateDayNight writes groundMat.color).
+  const baseCol=t.reference('color','color',groundMat);
+  groundMat.colorNode=t.vec4(baseCol,1.0).mul(texel);                     // vertexColors auto-multiplied by the builder
   // per-material roughness: bright materials (sand/snow/ice) take a faint sheen, dark ones go matte
   const lum=t.dot(sTer.rgb,t.vec3(0.299,0.587,0.114));
   groundMat.roughnessNode=t.materialRoughness.mul(
@@ -2718,14 +2724,30 @@ function terRealUpgrade(W){
     function done(){
       if(files.some(f=>!imgs[f])) return;                     // partial pack → keep the synthesized atlas
       const c=document.createElement('canvas'); c.width=c.height=1536; const g=c.getContext('2d');
+      // #1032: the shader multiplies these tiles by the AC_TYPE_COL vertex tints, and those tints carry
+      // AC's FULL colour (luma ≈0.42 for grass) — not just hue. The real AC tiles average ≈0.39 luma, so
+      // tile×tint ≈ 4–6% linear albedo: the whole overworld rendered near-BLACK at noon whenever the
+      // splat was on (tier 1+, both WebGL and WebGPU — "forcing Ultra didn't brighten" because higher
+      // tier IS the splat). The fallback detail tile (texGround, mean ≈0.64) never had this problem —
+      // the tint maths was designed against that gain. Fix: measure the pack's mean luma and gamma-lift
+      // the atlas to the same 0.64 neutral gain — a pure gamma keeps inter-tile ratios (snow stays the
+      // brightest, forest floor the darkest) and never clips highlights flat.
+      let _lumSum=0,_lumN=0;
       for(const f of files){ const sl=slotOf[f], x0=(sl%6)*256, y0=Math.floor(sl/6)*256;
         g.drawImage(imgs[f],0,0,imgs[f].width,imgs[f].height,x0,y0,256,256);
         const id=g.getImageData(x0,y0,256,256), d=id.data;
-        // desaturate CHROMA but keep LUMA — the vertex biome tints paint the hue (no double-tint),
-        // while each tile keeps its authored brightness (snow stays bright → altitude snow works,
-        // sand reads lighter than forest floor, exactly as AC drew them). 15% of the true hue stays.
-        for(let i2=0;i2<d.length;i2+=4){ const lu=d[i2]*0.299+d[i2+1]*0.587+d[i2+2]*0.114;
-          d[i2]=lu+(d[i2]-lu)*0.15; d[i2+1]=lu+(d[i2+1]-lu)*0.15; d[i2+2]=lu+(d[i2+2]-lu)*0.15; }
+        for(let i2=0;i2<d.length;i2+=4){ _lumSum+=d[i2]*0.299+d[i2+1]*0.587+d[i2+2]*0.114; _lumN++; } }
+      const _mean=Math.min(0.98,Math.max(0.02,(_lumSum/Math.max(1,_lumN))/255));
+      const _gamma=Math.min(1,Math.log(0.64)/Math.log(_mean));               // lift only — an already-bright pack passes through
+      const _LUT=new Uint8Array(256); for(let v=0;v<256;v++) _LUT[v]=Math.round(255*Math.pow(v/255,_gamma));
+      for(const f of files){ const sl=slotOf[f], x0=(sl%6)*256, y0=Math.floor(sl/6)*256;
+        const id=g.getImageData(x0,y0,256,256), d=id.data;
+        // gamma-lift to the neutral detail gain, THEN desaturate CHROMA — the vertex biome tints paint
+        // the hue (no double-tint) while relative tile brightness survives. 15% of the true hue stays.
+        for(let i2=0;i2<d.length;i2+=4){
+          const r=_LUT[d[i2]], gg=_LUT[d[i2+1]], b=_LUT[d[i2+2]];
+          const lu=r*0.299+gg*0.587+b*0.114;
+          d[i2]=lu+(r-lu)*0.15; d[i2+1]=lu+(gg-lu)*0.15; d[i2+2]=lu+(b-lu)*0.15; }
         g.putImageData(id,x0,y0); }
       const t=new THREE.CanvasTexture(c); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
       if(typeof renderer!=="undefined"&&renderer) t.anisotropy=maxAnisotropy();
@@ -2932,7 +2954,11 @@ function stoneFloorTex(){ return _stoneFloor||(_stoneFloor=cobbleTex()); }
 // flag it _acShared so a town/scenery eviction never disposes it out from under the others (#326).
 let _plazaCobble;
 function plazaCobbleTex(){
-  if(!_plazaCobble){ _plazaCobble=cobbleTex({r:1.62,g:0.58,b:0.46});   // stone rgb(114,108,101) -> ~rgb(185,63,46)
+  // #1046: the old tint {1.62,0.58,0.46} baked rgb(185,63,46) — a SATURATED CRIMSON that read as
+  // blood-red ground across every town at noon (Nanto, Holtburg plaza screenshots). Real red
+  // sandstone is a muted warm terracotta: scale to ~rgb(171,110,86) — still reads warm/rosy against
+  // the grass, no longer crimson.
+  if(!_plazaCobble){ _plazaCobble=cobbleTex({r:1.50,g:1.02,b:0.85});   // stone rgb(114,108,101) -> ~rgb(171,110,86)
     _plazaCobble._acShared=true; }
   return _plazaCobble;
 }
