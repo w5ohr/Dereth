@@ -8238,6 +8238,20 @@ function resettleGroundNear(cx,cz,r){
   for(const ls of lifestones){ if(ls.mesh&&near(ls.x,ls.z)) ls.mesh.position.y=groundY(ls.x,ls.z); }
   for(const pt of portals){ if(pt.mesh&&near(pt.x,pt.z)) pt.mesh.position.y=groundY(pt.x,pt.z); }
   for(const n of nodes){ if(n.mesh&&near(n.x,n.z)) seatNodeY(n); }   // #1056: force the frozen ore-deposit matrix on re-seat too
+  reseatForestNear(cx,cz,r);   // #1031: forests are placed before carves land and are noSettle — re-seat instances over the freshly-(un)carved ground
+}
+// #1031: forest instances (buildForests) are baked into InstancedMesh matrices before settleY's
+// dungeon-entrance carves and before streamed structures carve the ground, and they're noSettle so the
+// object sweeps above skip them — a tree over freshly-carved ground floats (measured up to 22m off the
+// rendered mesh; the bulk of the audit's "off" trees are the coarse-mesh-vs-fine-terrainH gap, not this).
+// gfxForestStream draws straight from p.all, so re-seating p.all's matrix-Y (element 13) fixes the draw.
+function reseatForestNear(cx,cz,r){
+  if(typeof GFX==="undefined"||!GFX.forest) return;
+  const R=r+34, r2=R*R;   // +34: a carve grades out to its skirt (addCarve clamps the skirt to ≥1.25·STEP≈30u), which reaches past the object-resettle radius — a tree just outside it would otherwise stay floating on the un-re-seated skirt
+  for(const k in GFX.forest){ const p=GFX.forest[k]; if(!p.all||!p.px||!p.pz) continue;
+    for(let i=0;i<p.n;i++){ const dx=p.px[i]-cx, dz=p.pz[i]-cz; if(dx*dx+dz*dz>r2) continue;
+      p.all[i*16+13]=groundY(p.px[i],p.pz[i])-0.05; }   // match buildForests' seat (groundY - 0.05)
+  }
 }
 // #1018: dev audit — walk every static ground-sitting object and report any whose base is further than
 // `eps` from its support height (supportAt: a structure floor when it stands on one, else the terrain).
