@@ -8772,7 +8772,35 @@ const _tbTexCache={}, _tbTL=new THREE.TextureLoader();
 // without _acShared that disposed the shared texture out from under still-visible neighbours and left the
 // reused copy GPU-incomplete — which ANGLE/Metal samples as flat WHITE (the featureless white town). The
 // _acShared flag makes _dispTex skip it, exactly as it already does for shared canvas/normal/archetype (#326).
-function tbTex(fn){ if(!_tbTexCache[fn]){ const t=_tbTL.load(acTexURL('actownmodels/tex/'+fn)); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true; _tbTexCache[fn]=t; } return _tbTexCache[fn]; }
+// #1081: many AC building textures are authentically near-black (Sho roof tiles ~8% luma, dark wood
+// ~20%) — retail's flat lighting still showed detail, but under our PBR sun a 5-20% albedo surface
+// renders as a black silhouette (same class as #1032, for the actownmodels set instead of the terrain
+// atlas). Measure each texture's mean luma on load and, for the dark ones, apply a PURE per-channel
+// gamma lift toward a working floor: gamma = ln(TARGET)/ln(mean) < 1 brightens, keeps hue and relative
+// detail (a dark blue-green tile stays dark blue-green, just not a black hole), smoothly → no-op as the
+// mean approaches TARGET, and textures already at/above TARGET are left exactly as authored (never darkened).
+function tbLiftDarkTex(img){
+  const TARGET=0.40, w=img.naturalWidth||img.width, h=img.naturalHeight||img.height; if(!w||!h) return img;
+  let c,g,d; try{ c=document.createElement('canvas'); c.width=w; c.height=h; g=c.getContext('2d',{willReadFrequently:true});
+    g.drawImage(img,0,0); d=g.getImageData(0,0,w,h); }catch(e){ return img; }
+  const px=d.data; let sum=0; const n=w*h;
+  for(let i=0;i<px.length;i+=4) sum+=0.2126*px[i]+0.7152*px[i+1]+0.0722*px[i+2];
+  const mean=(sum/n)/255;
+  if(mean>=TARGET) return img;                                     // bright enough — leave it exactly as authored
+  const gamma=Math.log(TARGET)/Math.log(Math.max(0.02,mean));      // <1 → brightens; ->1 as mean->TARGET
+  const LUT=new Uint8Array(256); for(let v=0;v<256;v++) LUT[v]=Math.round(255*Math.pow(v/255,gamma));
+  for(let i=0;i<px.length;i+=4){ px[i]=LUT[px[i]]; px[i+1]=LUT[px[i+1]]; px[i+2]=LUT[px[i+2]]; }   // alpha (px[i+3]) untouched
+  g.putImageData(d,0,0); return c;
+}
+function tbTex(fn){ if(_tbTexCache[fn]) return _tbTexCache[fn];
+  const t=new THREE.Texture(); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t._acShared=true;
+  _tbTexCache[fn]=t;
+  const img=new Image();
+  img.onload=()=>{ try{ t.image=tbLiftDarkTex(img); }catch(e){ t.image=img; } t.needsUpdate=true; };
+  img.onerror=()=>{ t.image=img; t.needsUpdate=true; };
+  img.src=acTexURL('actownmodels/tex/'+fn);
+  return t;
+}
 const _tbModels={};   // DID -> {ready,groups,bb,door} | false | {ready:false}
 const tbWindowMats=[];   // #21: every marker-window glass material — updateDayNight drives their night glow
 let _tbWindowGlow=-1;    // #799: last-applied window glow, so we skip the per-material rewrite when daylight hasn't perceptibly moved
