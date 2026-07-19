@@ -1149,7 +1149,7 @@ const PLAYER_MODELS=[
 // default creation flow is byte-for-byte unchanged. `quat` marks the animated-preview path + sex; they
 // carry no `url` (the shared loadQuatBodies() cache serves the mesh). In-world these still spawn the
 // procedural body until the #1008 follow-up wires the swap — the choice just persists on the character.
-try{ if(typeof location!=="undefined" && /[?&]newbodies=1/.test(location.search)){
+try{ if(typeof location==="undefined" || !/[?&]newbodies=0/.test(location.search)){   // #1019: Quaternius chargen models offered by DEFAULT now (opt out with ?newbodies=0)
   PLAYER_MODELS.push({k:"quat_m",n:"Athletic — Male",quat:"male",rigged:true},
                      {k:"quat_f",n:"Athletic — Female",quat:"female",rigged:true}); } }catch(e){}
 function playerModelDef(k){ return PLAYER_MODELS.find(m=>m.k===k)||PLAYER_MODELS[0]; }
@@ -8248,7 +8248,7 @@ function buildWorld(){
   worldEvent=null;eventCd=rnd(90,150); // first Incursion arrives a couple minutes in
   loadGltfMonsters();                    // preload rigged CDN creature models for streamMonsters to use
   loadGltfHorse();                       // preload the rigged horse model for mounts
-  if(/[?&]newbodies=1/.test(location.search)){ loadQuatBodies(); loadQuatOutfits(); loadQuatHair(); }   // #1008/#1019: opt-in preload of the Quaternius human bodies + fantasy outfits + #1060 hair (default OFF — normal play is untouched)
+  if(!/[?&]newbodies=0/.test(location.search)){ loadQuatBodies(); loadQuatOutfits(); loadQuatHair(); }   // #1008/#1019: preload the Quaternius human bodies + fantasy outfits + #1060 hair by DEFAULT (opt out with ?newbodies=0; the procedural rig stays the fallback if the pack fails)
   buildHarbors();                     // wooden docks (boats + cargo + Dockmaster) at the central-lake coastal towns
   if(typeof spawnOwnedShip==="function" && player.ship) spawnOwnedShip();  // re-float an already-owned ship after the world rebuilds
   spawnOwnedHorses();             // #725: parked horses stand back up where they were left
@@ -25794,7 +25794,7 @@ function quatBodyClone(sex){
 //   acMotionTick for these humans. This is step 1 (attachments: dye + held weapon) + step 2 (wiring)
 //   of #1019; the enforcement pass (flip the default, delete the procedural body path) is the final
 //   step, gated on visual sign-off across every role — NOT done here.
-const NEWBODIES=(typeof location!=="undefined")&&/[?&]newbodies=1/.test(location.search);
+const NEWBODIES=(typeof location==="undefined")||!/[?&]newbodies=0/.test(location.search);   // #1019: Quaternius bodies are now the DEFAULT — opt OUT with ?newbodies=0 (falls back to the procedural rig if the pack fails to load)
 function quatFindBones(root){ const b={};
   root.traverse(o=>{ if(o.isBone){ if(o.name==="Head")b.head=o; else if(o.name==="hand_r")b.handR=o; else if(o.name==="hand_l")b.handL=o; } });
   return b; }
