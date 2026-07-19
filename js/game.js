@@ -20067,7 +20067,16 @@ function camClampDist(tx,ty,tz,bx,by,bz,maxD){
       if(blocked){ d=Math.min(d,s-STEP); break; }
     }
   } else {
-    if(!inNetwork)   // terrain only exists overworld
+    if(inNetwork){   // #1036: the enclosed Town-Network hall is a single cylinder wall that was never
+      // registered in obstacles[], so the 3rd-person camera clipped straight through it to the void
+      // outside — the player reads as "standing in nothing, the hub's pale exterior behind" even though
+      // collide()'s radial clamp keeps the AVATAR contained. Clamp the back ray to the hall radius so the
+      // camera stays inside the wall (51), never past it. RH sits ~1u inside the wall — comfortably
+      // clear of the player's own 47.2u movement clamp (so the back-ray always has >MIN room to travel).
+      const RH=50, ex=tx-DCEN.x, ez=tz-DCEN.z, A=bx*bx+bz*bz;
+      if(A>1e-6){ const B=2*(ex*bx+ez*bz), C=ex*ex+ez*ez-RH*RH, disc=B*B-4*A*C;
+        if(disc>0){ const s=(-B+Math.sqrt(disc))/(2*A); if(s>MIN&&s<d) d=s; } }
+    } else   // terrain only exists overworld
       for(let s=0.25;s<=maxD;s+=0.25){const py=ty+by*s; if(py<terrainH(tx+bx*s,tz+bz*s)+0.3){ d=Math.min(d,s-0.3); break; }}   // #952: 0.25u step catches sharp crests the old 0.5u march slipped past
     for(const o of obstacles){if(o.yMax!=null&&ty>o.yMax+0.6) continue; const ex=tx-o.x,ez=tz-o.z,rr=o.r+0.4;   // #199: obstacle clamp now runs in the Town Network too (its walls live in obstacles)
       const A=bx*bx+bz*bz; if(A<1e-6) continue;
