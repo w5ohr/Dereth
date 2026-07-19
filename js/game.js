@@ -19869,7 +19869,24 @@ function animateAvatar(dt){
 }
 // ---- townsfolk life: idle breathing/glancing for everyone, plus a gentle stroll for wanderers ----
 function animateOnePerson(p,dt){
-  const u=p.mesh&&p.mesh.userData; if(!u||!u.torso) return;
+  const u=p.mesh&&p.mesh.userData; if(!u) return;
+  // #1008: a Quaternius-bodied NPC/vendor is driven by its mixer. It still strolls (position update)
+  // via the shared block below when p.stroll is set; here we just pick idle/walk and advance the clip.
+  if(u.isQuat&&u.quat&&u.quat.inst){
+    let moving=false;
+    if(p.stroll){   // reuse the wander step so Quaternius townsfolk still walk their patch
+      if(!p._tgt){ p._wait=(p._wait||0)-dt; if(p._wait<=0){ const a=Math.random()*6.283,r=1.2+Math.random()*(p.range||3); p._tgt={x:p.home.x+Math.cos(a)*r,z:p.home.z+Math.sin(a)*r}; } }
+      if(p._tgt){ const dx=p._tgt.x-p.x,dz=p._tgt.z-p.z,d=Math.hypot(dx,dz);
+        if(d<0.5){ p._tgt=null; p._wait=2.5+Math.random()*5; }
+        else { const sp=Math.min(d,1.15*dt); p.x+=dx/d*sp; p.z+=dz/d*sp; moving=true; p._qface=Math.atan2(dx,dz)+Math.PI; p.mesh.position.set(p.x,groundY(p.x,p.z),p.z); } }
+      if(p._qface!=null){ const fy=p.mesh.rotation.y, df=((p._qface-fy+Math.PI*3)%(Math.PI*2))-Math.PI; p.mesh.rotation.y=fy+df*Math.min(1,dt*6); }
+    }
+    const st=p.seated?"sit":(moving?"walk":"idle");
+    if(st!==p._qstate){ u.quat.inst.play(st,0.2); p._qstate=st; }
+    u.quat.inst.mixer.update(dt);
+    return;
+  }
+  if(!u.torso) return;
   if(u.head) tickFace(u.head,dt);   // nearby townsfolk blink
   if(p._ph==null){ p._ph=(p.x*0.7+p.z*0.31)%6.283; p._pt=Math.abs(p._ph); p._face=p.mesh.rotation.y||0; }
   p._pt+=dt; const t=p._pt;
@@ -24059,6 +24076,8 @@ function buildDressedAvatar(o,seed){
     eyeShape:["almond","round","narrow","hooded"][Math.abs(seed*11)%4],
     nose:["straight","button","aquiline","broad"][Math.abs(seed*7)%4],
     mouth:["medium","full","thin","wide"][Math.abs(seed*13)%4],feature:"none",faceSeed:seed};
+  // #1008: opt-in Quaternius body for role NPCs & vendors (same rig/dye/anim path as the player).
+  if(typeof NEWBODIES!=="undefined"&&NEWBODIES){ const qa=buildQuatAvatar(app); if(qa){ qa.userData._app=app; return qa; } }
   const g=buildAvatarJointed(app); g.userData._headApp=app;   // set BEFORE applyACBody so its acBuildHead uses this NPC's own head, not the player's
   applyACBody(g,app.gender); g.visible=true;
   const u=g.userData; u.torsoY=u.torso.position.y; if(u.head)u.headBaseY=u.head.position.y;
@@ -25360,7 +25379,7 @@ function buildQuatAvatar(app){
   quatTint(inst.root,app);
   const g=new THREE.Group(); g.add(inst.root);
   g.userData={quat:{inst,bones:quatFindBones(inst.root),curState:null,wpn:null},isQuat:true,acBody:true,_headApp:app};
-  inst.play("idle",0);
+  inst.play("idle",0); inst.mixer.update(0);   // pose in idle immediately so a not-yet-ticked distant NPC never flashes the bind (T) pose
   return g; }
 // Mount/refresh a simple held-weapon proxy on the hand_r bone (step 1). Kept deliberately light — a
 // tapered blade sized to the equipped weapon class; the full KayKit weapon meshes are a follow-up.
@@ -25405,6 +25424,23 @@ function quatSwapPlayerAvatar(){
   scene.remove(playerAvatar); if(typeof disposeObject3D==="function") disposeObject3D(playerAvatar);
   playerAvatar=qa; scene.add(playerAvatar);
   console.log("[#1008] player avatar swapped to the Quaternius body.");
+}
+// Swap any NPC/vendor built BEFORE the rig loaded (e.g. the Academy greeter on a fresh load) to a
+// Quaternius body, rebuilt from its stored appearance so no build params are needed. One-time, cheap
+// (only the handful built in the ~0.5s pre-load window); NPCs that stream in later are Quaternius already.
+function quatRefreshNpcs(){
+  if(!NEWBODIES||!quatBody||!quatBody.ready) return;
+  const swap=rec=>{ const old=rec&&rec.mesh; if(!old||old.userData.isQuat) return;
+    const app=old.userData._app; if(!app) return;
+    const qa=buildQuatAvatar(app); if(!qa) return;
+    qa.position.copy(old.position); qa.rotation.y=old.rotation.y; qa.visible=old.visible; qa.userData._app=app;
+    for(const c of old.children.slice()) if(c.isSprite){ qa.add(c); if(c===old.userData.marker) qa.userData.marker=c; }   // carry the name label + quest marker over
+    const parent=old.parent; scene.remove(old); if(parent&&parent!==scene) parent.remove(old);
+    scene.add(qa); rec.mesh=qa; };
+  let n=0;
+  if(typeof npcs!=="undefined") for(const r of npcs){ if(r.mesh&&!r.mesh.userData.isQuat){ swap(r); n++; } }
+  if(typeof shops!=="undefined") for(const s of shops){ if(s.mesh&&!s.mesh.userData.isQuat){ swap(s); n++; } }
+  if(n) console.log("[#1008] swapped "+n+" pre-load NPC(s)/vendor(s) to Quaternius bodies.");
 }
 const HORSE_MODEL="assets/models/animals/Horse.glb";   // CC0 Quaternius Animated Animals — rigged, Gallop/Walk/Idle/Eating clips
 let gltfHorse=null, _horseLoadStarted=false;
