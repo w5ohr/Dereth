@@ -25436,6 +25436,21 @@ function loadQuatOutfits(){
   });
   return _quatOutfitPromise;
 }
+// #1072: the Fantasy outfits are authored for the slimmer "Regular" body, but our free base body is the
+// bulkier "Superhero" proportion — so each garment sits skin-tight (~1cm clearance) and the heavier body
+// pokes through it (bare midriff / back / thighs on a "dressed" character). Per-garment shell-inflation
+// amount (metres, along the bind-pose normals): the torso tunic needs the most clearance; belts, bracers,
+// pauldrons, boots and the hood must stay snug so they don't balloon. Keyed off the source mesh name.
+function quatOutfitInflate(name){
+  const n=(name||"").toLowerCase();
+  if(/belt|bracer|pauldron/.test(n)) return 0.006;           // straps & shoulder plates: barely any
+  if(/hood|head/.test(n))            return 0.008;           // hood rides the head — small
+  if(/feet|boot|shoe/.test(n))       return 0.010;           // boots: a touch, over the calf
+  if(/leg|pant|trouser|skirt/.test(n)) return 0.024;         // legs: clear the thighs
+  if(/arm|sleeve/.test(n))           return 0.018;           // sleeves: clear the upper arms
+  if(/body|torso|chest|tunic|vest|jacket|shirt/.test(n)) return 0.032;  // the main garment — worst poke-through
+  return 0.024;                                              // unnamed garment piece: moderate default
+}
 // Clone an outfit's skinned meshes and REBIND them onto a body instance's skeleton (identical joint
 // order → skin indices align), so the clothing deforms with the body's own mixer. Additive: leaves the
 // base body in place (clothing sits over the skin). No-op until loadQuatOutfits() resolves.
@@ -25445,14 +25460,23 @@ function quatDressOutfit(inst, outfitKey){
   if(!bodyMesh) return 0;
   const bodyBones=bodyMesh.skeleton.bones, parent=bodyMesh.parent||inst.root; let added=0;
   quatOutfits[outfitKey].traverse(o=>{ if(!o.isSkinnedMesh) return;
-    const sm=new THREE.SkinnedMesh(o.geometry, o.material.clone?o.material.clone():o.material);
+    // #1072: push the garment shell outward once (shared source geometry → cache the offset, so N bodies
+    // reuse one inflated mesh and re-dressing never compounds it) so the clothing clears the bulkier body.
+    const geo=o.geometry;
+    if(!geo.userData._qInflated){
+      const infl=quatOutfitInflate(o.name);
+      if(infl>0){ const pos=geo.attributes.position; let nrm=geo.attributes.normal;
+        if(!nrm){ geo.computeVertexNormals(); nrm=geo.attributes.normal; }
+        for(let i=0;i<pos.count;i++){ pos.setXYZ(i, pos.getX(i)+nrm.getX(i)*infl, pos.getY(i)+nrm.getY(i)*infl, pos.getZ(i)+nrm.getZ(i)*infl); }
+        pos.needsUpdate=true; if(geo.computeBoundingSphere) geo.computeBoundingSphere();
+      }
+      geo.userData._qInflated=true;
+    }
+    const sm=new THREE.SkinnedMesh(geo, o.material.clone?o.material.clone():o.material);
     parent.add(sm);
-    // The outfit was authored for the slimmer "Regular" rest pose, but the free base body is the
-    // "Superhero" proportion — 56/65 bones differ by ~2cm. Reusing the BODY's skeleton (Superhero
-    // inverse-bind matrices) to skin the outfit DISTORTS it (clothing mis-fits, body pokes through).
-    // Fix: give the outfit a skeleton that reuses the body's BONES (so it follows the same animation)
-    // but keeps the OUTFIT's OWN inverse-bind matrices — so it deforms per its authored shape. Joint
-    // ORDER is identical, so bones[i] and the outfit's boneInverses[i] line up 1:1.
+    // Give the outfit a skeleton that reuses the body's BONES (so it follows the same animation) but keeps
+    // the OUTFIT's OWN inverse-bind matrices — so it deforms per its authored shape. Joint ORDER is
+    // identical, so bones[i] and the outfit's boneInverses[i] line up 1:1.
     const outfitSkel=new THREE.Skeleton(bodyBones, o.skeleton.boneInverses.map(m=>m.clone()));
     sm.bind(outfitSkel, o.bindMatrix);
     sm.frustumCulled=false; sm.castShadow=true; sm.userData.outfit=true;
