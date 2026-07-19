@@ -10647,6 +10647,7 @@ try{ fetch('assets/achousing.json').then(r=>r.ok?r.json():null).then(j=>{
   HS_HALLS=j.halls; _hsPackOn=true;
   hsAddCastleDwellings();   // register Valstead's cottages now the housing map exists
   console.log(`AC housing: ${HS_HOUSES.length} dwellings + ${Object.keys(HS_HALLS).length} residential halls loaded.`);
+  if(typeof hsLayReq==="function") hsLayReq(0);   // #1037: preload a settlement that ships real interiors, so the null-interior fallback is available even before the player's own settlement layout loads
   if(_hsReady){ hsMigrateDeed(); hsAssignHalls(); hsRefreshHomestead(); }
 }).catch(()=>{}); }catch(e){}
 // ── Valstead: a real housing settlement INSIDE Castle Val Halla's walls. Rather than a bespoke
@@ -11232,13 +11233,35 @@ function hsInstDecorate(){
     }
   }
 }
+// #1037: 2,635 of 3,272 dwellings were exported with interior:null (the same export truncation that
+// left #762's EnvCell histories short). Rather than leave 80% of the housing stock unenterable, borrow
+// a real, already-shipping interior of the SAME dwelling type as a fallback: it runs the exact same
+// hsEnterInstance path as the 637 units that carry one (so no new render risk), and storage/hooks stay
+// keyed to THIS dwelling's own hid. Best-effort type match over whatever layouts are loaded, else any
+// interior (settlement 0 is preloaded on pack load so at least one is always available).
+let _hsDefInt={};
+function hsFallbackInterior(type){
+  if(_hsDefInt[type]) return _hsDefInt[type];
+  if(!AC_HOUSING||!AC_HOUSING.interiorMeshes) return null;
+  const usable=it=>it&&AC_HOUSING.interiorMeshes[it.lb];
+  let any=_hsDefInt._any||null;
+  for(const h2 of (HS_HOUSES||[])){ const l=_hsLay[h2.set]; if(!l||l===true) continue;
+    const lay=l[String(h2.unit)], it=lay&&lay.interior; if(!usable(it)) continue;
+    any=any||it; if(h2.type===type){ _hsDefInt[type]=it; _hsDefInt._any=any; return it; } }
+  if(!any){ for(const s in _hsLay){ const l=_hsLay[s]; if(!l||l===true) continue;
+    for(const u in l){ const it=l[u]&&l[u].interior; if(usable(it)){ any=it; break; } } if(any) break; } }
+  if(any) _hsDefInt._any=any;
+  return any;
+}
 function hsEnterInterior(h){
   if(!hsAccessible(h)){ log("The house portal rebuffs you — this dwelling belongs to another.","warn"); if(SFX.err)SFX.err(); return; }
-  const lay=hsLayoutOf(h); if(!lay||!lay.interior) return;
-  const meshFile=AC_HOUSING.interiorMeshes[lay.interior.lb];
+  const lay=hsLayoutOf(h);
+  let interior=(lay&&lay.interior)||hsFallbackInterior(h.type);   // #1037: null-interior units borrow a generic enterable interior of their type
+  if(!interior){ log("The door won't budge — this dwelling has no interior yet.","warn"); if(SFX.err)SFX.err(); return; }   // #1037: feedback instead of the old silent no-op
+  const meshFile=AC_HOUSING.interiorMeshes[interior.lb];
   if(!meshFile){ log("The house portal flickers — no interior beyond.","warn"); return; }
-  hsEnterInstance(meshFile,{kind:"interior",hid:h.hid,lay,name:h.name+" — Interior",
-    entry:lay.interior.entry});
+  hsEnterInstance(meshFile,{kind:"interior",hid:h.hid,lay:Object.assign({},lay,{interior}),name:h.name+" — Interior",
+    entry:interior.entry});
 }
 function hsEnterHall(gate){
   const hall=HS_HALLS[gate.lb]; if(!hall) return;
