@@ -9194,7 +9194,8 @@ function seatRealTownVendors(c,recs,seps){
         if(Math.abs(lx)<=r.hx-0.3&&Math.abs(lz)<=r.hz-0.3){ room=r; break; } }
       if(room&&room.dux!=null){                                     // nudge INTO the room only if standing in the doorway
         for(let g=0; g<4 && (nearDoor(nx,nz)||nearDoor(nx-room.dux*0.9,nz-room.duz*0.9)); g++){ nx-=room.dux*0.7; nz-=room.duz*0.7; } }
-      const fy=tbFloorAt(recs,nx,nz,groundY(nx,nz));
+      let fy=tbFloorAt(recs,nx,nz,groundY(nx,nz));
+      if(typeof supportAt==="function"){ const sup=supportAt(nx,nz,fy+2.2); if(sup>fy&&sup-fy<3) fy=sup; }   // #1100: lift onto the building's raised real-mesh floor plate — supportAt sees the registered floor, tbFloorAt only the foundation recs (same fix tbSettleTownNpcs got in #1040; two Al-Arqas vendors sat ~1u sunk into their raised shopfront)
       if(sh._counter&&sh._counter.parent) sh._counter.parent.remove(sh._counter);
       if(room&&room.dux!=null){
         sh.mesh.rotation.y=Math.atan2(room.dux,room.duz);           // face the room's door (buildPerson fronts -z)
@@ -9232,7 +9233,8 @@ function seatRealTownVendors(c,recs,seps){
       let lx=bx*cw2-bz*sw2, lz=bx*sw2+bz*cw2;
       lx=Math.max(-(rec.hx-0.7),Math.min(rec.hx-0.7,lx)); lz=Math.max(-(rec.hz-0.7),Math.min(rec.hz-0.7,lz));
       nx=rec.fcx+lx*cw2+lz*sw2; nz=rec.fcz-lx*sw2+lz*cw2; }
-    const fy=tbFloorAt(recs,nx,nz,rec.gy);   // the room's floor — or a HIGHER overlapping neighbour's, so no floor plane cuts through the vendor
+    let fy=tbFloorAt(recs,nx,nz,rec.gy);   // the room's floor — or a HIGHER overlapping neighbour's, so no floor plane cuts through the vendor
+    if(typeof supportAt==="function"){ const sup=supportAt(nx,nz,fy+2.2); if(sup>fy&&sup-fy<3) fy=sup; }   // #1100: same real-mesh floor-plate lift for the fallback-seated vendors (mirror tbSettleTownNpcs #1040)
     // a small counter in front of the shopkeeper, facing the door
     if(sh._counter) disposeObject3D(sh._counter);   // #232: reseating builds a fresh counter — free the old one's geometry
     const counter=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.0,0.7),texMat(woodTex,0x6a4a2a));
