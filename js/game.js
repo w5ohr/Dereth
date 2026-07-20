@@ -31794,6 +31794,54 @@ function dgSynthPerimeterWalls(dj){
                    :new THREE.MeshStandardMaterial({color:0x6b6b76,roughness:0.9,side:THREE.DoubleSide});
   const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; return m;
 }
+// #1096: real EnvCell exports sometimes drop a cell's FLOOR triangles while the cell stays walkable
+// (its collision rect is fed straight from cellPos, line below) — so players walk on invisible collision
+// over a void, with monsters/loot floating in blackness. The ≥50%-coverage real-mesh path synthesizes
+// missing WALLS (dgSynthPerimeterWalls) and CEILINGS (dgSealDungeon) but never FLOORS. Fill them: a thin
+// floor slab just under the walk surface of every cellPos cell that has NO real floor — flat OR sloped
+// (ny>=0.3, so genuine ramp cells are NOT flagged and never get a poke-through backstop) — within its
+// storey band. Only void cells get a slab (real floors are skipped → no z-fighting); the slab top sits
+// 0.12u below the collision floor, imperceptible where the player already stands. Detection matches the
+// built-dungeon down-raycast ground truth exactly (Arwic Mines: 171/854 void cells).
+function dgSynthFloorBackstop(dj){
+  if(!dj||!dj.cellPos||!dj.cellPos.length) return null;
+  const HALF=5.2, T=0.5, TILE=4, NYMIN=0.3, BELOW=6, ABOVE=2;
+  // floor-ish (upward-facing) triangles, binned on the 10u cell grid for a fast per-cell lookup
+  const bins=new Map(), bk=(gx,gz)=>gx+"|"+gz;
+  const addBin=(gx,gz,t)=>{ let a=bins.get(bk(gx,gz)); if(!a){a=[];bins.set(bk(gx,gz),a);} a.push(t); };
+  for(const g of dj.groups||[]){ const v=g.verts,n=g.normals,idx=g.idx; if(!v||!idx||!n) continue;
+    for(let i=0;i<idx.length;i+=3){ const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3;
+      const ny=(n[a+1]+n[b+1]+n[c+1])/3; if(ny<NYMIN) continue;
+      const t={ax:v[a],az:v[a+2],bx:v[b],bz:v[b+2],cx:v[c],cz:v[c+2],
+        mnx:Math.min(v[a],v[b],v[c]),mxx:Math.max(v[a],v[b],v[c]),
+        mny:Math.min(v[a+1],v[b+1],v[c+1]),mxy:Math.max(v[a+1],v[b+1],v[c+1]),
+        mnz:Math.min(v[a+2],v[b+2],v[c+2]),mxz:Math.max(v[a+2],v[b+2],v[c+2])};
+      for(let gx=Math.round(t.mnx/10)-1;gx<=Math.round(t.mxx/10)+1;gx++)
+        for(let gz=Math.round(t.mnz/10)-1;gz<=Math.round(t.mxz/10)+1;gz++) addBin(gx,gz,t); } }
+  const sgn=(px,pz,ax,az,bx,bz)=>(px-bx)*(az-bz)-(ax-bx)*(pz-bz);
+  const hasFloor=(x,y,z)=>{ const arr=bins.get(bk(Math.round(x/10),Math.round(z/10))); if(!arr) return false;
+    for(const t of arr){ if(t.mxy<y-BELOW||t.mny>y+ABOVE) continue;
+      if(t.mnx>x||t.mxx<x||t.mnz>z||t.mxz<z) continue;
+      const d1=sgn(x,z,t.ax,t.az,t.bx,t.bz),d2=sgn(x,z,t.bx,t.bz,t.cx,t.cz),d3=sgn(x,z,t.cx,t.cz,t.ax,t.az);
+      if(!(((d1<0)||(d2<0)||(d3<0))&&((d1>0)||(d2>0)||(d3>0)))) return true; }
+    return false; };
+  const P=[],N=[],U=[]; let nMiss=0;
+  for(const c of dj.cellPos){ if(hasFloor(c[0],c[1],c[2])) continue; nMiss++;
+    _pushBox(P,N,U, c[0], c[1]-0.12-T/2, c[2], HALF+0.3, T/2, HALF+0.3, TILE); }   // slab top at c[1]-0.12
+  if(!P.length) return null;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  geo.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  geo.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+  // skin with the texture of the dungeon's most-used FLOOR group (upward tris), else most-used, else stone
+  let floorTex=null,best=-1;
+  for(const g of dj.groups){ if(!g.tex||!g.normals) continue; let up=0; const n=g.normals;
+    for(let i=1;i<n.length;i+=3) if(n[i]>=NYMIN) up++; if(up>best){best=up;floorTex=g.tex;} }
+  if(!floorTex){ best=-1; for(const g of dj.groups){ if(g.tex){ const nn=(g.verts||[]).length; if(nn>best){best=nn;floorTex=g.tex;} } } }
+  const mat=floorTex?new THREE.MeshStandardMaterial({map:dgTexture(floorTex),roughness:0.9,metalness:0.02,side:THREE.DoubleSide})
+                    :new THREE.MeshStandardMaterial({color:0x5b5b66,roughness:0.95,side:THREE.DoubleSide});
+  const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; m.userData.dgFloorBackstop=nMiss; return m;
+}
 function buildDungeonReal(def,dj){
   const th=def.theme, sc=DUNGEON_SCRIPTS[def.name];
   for(const c of dj.cellPos) dungeonRects.push({x0:c[0]-5.6,z0:c[2]-5.6,x1:c[0]+5.6,z1:c[2]+5.6,fy:c[1],room:true});
@@ -31825,7 +31873,8 @@ function buildDungeonReal(def,dj){
     const mm=new THREE.Mesh(geo,mat); mm.receiveShadow=true; grp.add(mm);
   }
   if(_gapFill) grp.add(synthDungeonWalls(dj,_cellCovered));   // #762: synthesize walls for the cells the export lost
-  if(!_fullSynth&&!_gapFill){ const _pw=dgSynthPerimeterWalls(dj); if(_pw) grp.add(_pw); }   // #1089: ≥50%-coverage real mesh — fill the per-span perimeter truncation the cell-level gap-fill above skips
+  if(!_fullSynth&&!_gapFill){ const _pw=dgSynthPerimeterWalls(dj); if(_pw) grp.add(_pw);   // #1089: ≥50%-coverage real mesh — fill the per-span perimeter truncation the cell-level gap-fill above skips
+    const _fb=dgSynthFloorBackstop(dj); if(_fb){ grp.add(_fb); console.log(`dungeon floor backstop: ${_fb.userData.dgFloorBackstop} void cells floored (${def.name})`); } }   // #1096: floor the walkable-but-void cells the export dropped
   try{ const _seal=dgSealDungeon(dj,grp);   // seal seams + roof the void-open cells from the real geometry
     if(_seal&&(_seal.segs||_seal.roofed)) console.log(`dungeon seal: ${_seal.segs} wall segments, ${_seal.roofed} synthesized ceilings (${def.name})`);
   }catch(e){ DGW.grid=null; console.error("dgSealDungeon failed — delve stays rect-walkable:",e); }   // a seal failure must never break entry
