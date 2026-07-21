@@ -32090,6 +32090,13 @@ function buildDungeon(def){
       else { slope.rotation.y=0; slope.rotation.x=-Math.PI/2; slope.rotation.z=(seg.hiFirst?ang:-ang); slope.position.set(mid,(hiF+loF)/2+0.06,c.z); }
       slope.receiveShadow=true;scene.add(slope);dungeonObjs.push(slope);
       ceilTile(cx,cz,sx,sz,hiF+WH);
+      // #1103: fill the wedge UNDER the slope at the HIGH mouth. The slope rises to hi.fy there, but the
+      // high room's floor+walls are based at hi.fy — so a chest-height ray on the mid-ramp passes below the
+      // rising slope, out through the high room's sub-floor door gap, under its floor and away to void (a
+      // see-through slit at eye level with ankle+head sealed). A base→hi.fy riser at the high mouth (as the
+      // drop branch already does) seals it, entirely below the walk surface. No ledge bar: the ramp walks both ways.
+      const hedge=seg.hiFirst?seg.p0:seg.p1;
+      if(c.vert) wallBox(c.x,hedge,5,Tw*0.6,loF,dfy); else wallBox(hedge,c.z,Tw*0.6,5,loF,dfy);
     } else if(dfy>0.1&&c.feat==="drop"){
       floorTile(cx,cz,sx,sz,loF+0.04); ceilTile(cx,cz,sx,sz,hiF+WH);
       // riser face under the high room's doorway + a one-way ledge bar (blocks walkers from below only)
