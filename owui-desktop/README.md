@@ -161,6 +161,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Artifacts:** an HTML, SVG or Mermaid block in a reply renders live in a
+  WebKit column beside the chat - automatically for HTML and SVG, or from the
+  "Preview" button under any such block. The column pages through every
+  artifact in the chat, shows the page's console output and errors, has an
+  editor with Apply/Revert, and can copy, save or open the artifact in your
+  browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
 - **MCP:** connect Model Context Protocol servers (stdio or Streamable HTTP;
   import your Claude Desktop or Cursor config) under Tools ▸ MCP, switch the
   plug icon on in the composer, and the model can call their tools. Each call

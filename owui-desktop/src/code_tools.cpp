@@ -1115,6 +1115,10 @@ void App::drawCodeBlockActions(const std::string& code, const std::string& langu
   // One compact row: this sits under every code block in the chat.
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 2));
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
+  if (isArtifactLanguage(language, code)) {
+    if (widgets::ghostButton("Preview")) openArtifact(code, language);
+    ImGui::SameLine();
+  }
   const bool runBusy = !runnable || (run && run->running);
   widgets::beginDisabled(runBusy);
   if (widgets::ghostButton("Run")) runCodeBlock(code, language);

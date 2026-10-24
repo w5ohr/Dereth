@@ -1098,6 +1098,12 @@ void App::afterCompletion(const std::string& assistantId) {
   }
   if (settings().speakReplies && !message.content.empty()) speak(message.content);
 
+  // A reply with an HTML or SVG block opens the artifact pane on it.
+  if (message.error.empty() && settings().extra.value("artifactAutoOpen", true)) {
+    std::string code, language;
+    if (firstArtifactIn(message.content, &code, &language)) openArtifact(code, language);
+  }
+
   const std::string chatId = chat.id;
   const std::string model = message.model;
   const Json payload{{"model", model},
@@ -1266,6 +1272,8 @@ void App::frame() {
                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     native::composerSetVisible(composerShownThisFrame && !overlay);
     composerShownThisFrame = false;
+    native::artifactSetVisible(artifactShownThisFrame && !overlay);
+    artifactShownThisFrame = false;
   }
 
   // Native hooks need the window to exist, so they go in on the first frame

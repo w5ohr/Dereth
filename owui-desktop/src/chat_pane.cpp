@@ -313,7 +313,9 @@ void App::drawChatPane() {
   const float composerHeight = 128.0f + (composerTextHeight - 46.0f) +
                               (attachments.empty() ? 0.0f : 74.0f) +
                               (projectFolder.empty() ? 0.0f : 24.0f);
-  const float sideWidth = !referenceChatId.empty() ? 420.0f : (showPins ? 260.0f : 0.0f);
+  const float sideWidth = showArtifacts ? 540.0f
+                          : !referenceChatId.empty() ? 420.0f
+                          : (showPins ? 260.0f : 0.0f);
   ImGui::BeginChild("##messagearea", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
   ImGui::BeginChild("##messages", ImVec2(sideWidth > 0.0f ? -sideWidth - 8.0f : 0.0f, 0),
                     ImGuiChildFlags_None);
@@ -694,7 +696,10 @@ void App::drawChatPane() {
     handleKeyboardNavigation(path);
   }
   ImGui::EndChild();
-  if (!referenceChatId.empty()) {
+  if (showArtifacts) {
+    ImGui::SameLine();
+    drawArtifactColumn(sideWidth);
+  } else if (!referenceChatId.empty()) {
     ImGui::SameLine();
     drawReferenceColumn(sideWidth);
   } else if (showPins) {

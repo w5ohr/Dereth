@@ -7,6 +7,7 @@
 #import <Quartz/Quartz.h>
 #import <UserNotifications/UserNotifications.h>
 #import <Vision/Vision.h>
+#import <WebKit/WebKit.h>
 
 #include <map>
 #include <mutex>
@@ -729,6 +730,126 @@ void composerSetStyle(unsigned textColor, unsigned placeholderColor, unsigned ac
     NSForegroundColorAttributeName : colorFromImU32(textColor),
   };
   gComposerView.needsDisplay = YES;
+}
+
+}  // namespace native
+
+// ---------------------------------------------------------------- artifacts
+
+namespace {
+std::mutex gArtifactMutex;
+std::vector<std::string> gArtifactConsole;
+std::string gArtifactHtml;
+
+void artifactLog(const std::string& line) {
+  std::lock_guard<std::mutex> lock(gArtifactMutex);
+  gArtifactConsole.push_back(line.size() > 1000 ? line.substr(0, 1000) + "..." : line);
+  if (gArtifactConsole.size() > 200) gArtifactConsole.erase(gArtifactConsole.begin());
+}
+}  // namespace
+
+@interface OWUIArtifactBridge : NSObject <WKScriptMessageHandler, WKNavigationDelegate>
+@end
+
+@implementation OWUIArtifactBridge
+- (void)userContentController:(WKUserContentController*)controller
+      didReceiveScriptMessage:(WKScriptMessage*)message {
+  (void)controller;
+  if ([message.body isKindOfClass:[NSString class]]) artifactLog(native::toStd((NSString*)message.body));
+}
+- (void)webView:(WKWebView*)webView didFailProvisionalNavigation:(WKNavigation*)navigation
+      withError:(NSError*)error {
+  (void)webView;
+  (void)navigation;
+  artifactLog("load failed: " + native::toStd(error.localizedDescription));
+}
+- (void)webView:(WKWebView*)webView didFailNavigation:(WKNavigation*)navigation withError:(NSError*)error {
+  (void)webView;
+  (void)navigation;
+  artifactLog("load failed: " + native::toStd(error.localizedDescription));
+}
+@end
+
+namespace native {
+namespace {
+WKWebView* gArtifactView = nil;
+OWUIArtifactBridge* gArtifactBridge = nil;
+NSRect gArtifactFrame = NSZeroRect;
+
+// Forwards console output and errors to the app; installed before any page
+// script runs so even early failures are caught.
+NSString* const kArtifactBridgeScript =
+    @"(function(){const post=(t)=>{try{window.webkit.messageHandlers.owui.postMessage(String(t));}catch(e){}};"
+     "window.addEventListener('error',e=>post('error: '+e.message+(e.lineno?' (line '+e.lineno+')':'')));"
+     "window.addEventListener('unhandledrejection',e=>post('unhandled rejection: '+(e.reason&&e.reason.message||e.reason)));"
+     "['log','info','warn','error'].forEach(k=>{const o=console[k];console[k]=function(){"
+     "post(k+': '+Array.from(arguments).map(a=>{try{return typeof a==='object'?JSON.stringify(a):String(a)}catch(_){return String(a)}}).join(' '));"
+     "o.apply(console,arguments);};});})();";
+}  // namespace
+
+void artifactInstall() {
+  if (gArtifactView) return;
+  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  if (!window) return;
+  NSView* host = window.contentView;
+
+  WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
+  WKUserContentController* content = [[WKUserContentController alloc] init];
+  gArtifactBridge = [[OWUIArtifactBridge alloc] init];
+  [content addScriptMessageHandler:gArtifactBridge name:@"owui"];
+  [content addUserScript:[[WKUserScript alloc] initWithSource:kArtifactBridgeScript
+                                                injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                             forMainFrameOnly:NO]];
+  config.userContentController = content;
+
+  WKWebView* view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 10, 10) configuration:config];
+  view.navigationDelegate = gArtifactBridge;
+  view.hidden = YES;
+  [host addSubview:view positioned:NSWindowAbove relativeTo:nil];
+  gArtifactView = view;
+}
+
+void artifactSetFrame(float x, float y, float width, float height) {
+  if (!gArtifactView) return;
+  NSView* host = gArtifactView.superview;
+  const NSRect frame = NSMakeRect(x, host.bounds.size.height - y - height, width, height);
+  if (NSEqualRects(frame, gArtifactFrame)) return;
+  gArtifactFrame = frame;
+  gArtifactView.frame = frame;
+}
+
+void artifactSetVisible(bool visible) {
+  if (!gArtifactView || gArtifactView.hidden == !visible) return;
+  if (!visible && gArtifactView.window.firstResponder &&
+      [gArtifactView.window.firstResponder isKindOfClass:[NSView class]] &&
+      [(NSView*)gArtifactView.window.firstResponder isDescendantOf:gArtifactView]) {
+    [gArtifactView.window makeFirstResponder:gArtifactView.window.contentView];
+  }
+  gArtifactView.hidden = !visible;
+}
+
+void artifactLoad(const std::string& html) {
+  if (!gArtifactView) return;
+  {
+    std::lock_guard<std::mutex> lock(gArtifactMutex);
+    gArtifactConsole.clear();
+    gArtifactHtml = html;
+  }
+  [gArtifactView loadHTMLString:toNs(html) baseURL:nil];
+}
+
+void artifactReload() {
+  std::string html;
+  {
+    std::lock_guard<std::mutex> lock(gArtifactMutex);
+    html = gArtifactHtml;
+  }
+  artifactLoad(html);
+}
+
+std::vector<std::string> artifactConsole() {
+  std::lock_guard<std::mutex> lock(gArtifactMutex);
+  return gArtifactConsole;
 }
 
 }  // namespace native

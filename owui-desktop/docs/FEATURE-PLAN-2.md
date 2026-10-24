@@ -250,3 +250,21 @@ down, Enter sent and the reply came back, ⌥↑ highlighted the message and Esc
 returned to the composer, image paste attached with a thumbnail, the view hides on
 other panes and under the command palette. Not exercised: IME composition,
 dictation, the emoji picker (all stock NSTextView behaviour).
+
+2026-10-24 H (61 artifact pane): `src/artifacts.cpp` + `native::artifact*` in
+`src/native.mm` - a WKWebView floated over a 540 pt column beside the transcript
+(takes precedence over the reference column and pins). `scanArtifacts` walks the
+open branch's fenced blocks (html/htm, svg, mermaid, xml containing <svg>), keyed on
+a branch fingerprint so it is cheap per frame; `openArtifact` from the "Preview"
+code-block action or automatically after a completion with an HTML/SVG block
+(extra["artifactAutoOpen"], default on; Mermaid only on request since its renderer
+comes from a CDN). `artifactDocument` wraps SVG and fragments in a themed page and
+builds the Mermaid page. An injected user script forwards console.log/warn/error,
+window errors and unhandled rejections to the app through a WKScriptMessageHandler;
+the column shows the last line (all on hover). Header pages through the chat's
+artifacts; actions: Edit (ImGui editor with Apply/Revert), Reload, Copy, Save...
+(.html/.svg/.mmd), Open in browser (temp file in the cache dir). Verified in the
+GUI against a scratch server with qwen3:8b: an HTML reply auto-opened and rendered
+(title from <title>), clicking its button produced "console (1): log: clicked", the
+editor showed the source, an SVG reply tagged ```xml was recognised and paged to.
+Not exercised: Mermaid (network), Save dialog, Open in browser.

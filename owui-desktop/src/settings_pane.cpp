@@ -72,6 +72,11 @@ void App::drawSettingsPane() {
   card("chat", [&] {
     ImGui::Checkbox("Stream responses", &cfg.streamResponses);
     ImGui::Checkbox("Enter sends the message", &cfg.sendOnEnter);
+    bool artifactAutoOpen = cfg.extra.value("artifactAutoOpen", true);
+    if (ImGui::Checkbox("Open the artifact pane when a reply contains HTML or SVG", &artifactAutoOpen)) {
+      cfg.extra["artifactAutoOpen"] = artifactAutoOpen;
+      cfg.save();
+    }
     bool nativeComposer = cfg.extra.value("nativeComposer", true);
     if (ImGui::Checkbox("Native text field in the composer (IME, dictation, spellcheck, emoji)",
                         &nativeComposer)) {

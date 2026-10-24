@@ -105,4 +105,14 @@ float composerContentHeight();             // laid-out text height in points
 void composerSetStyle(unsigned textColor, unsigned placeholderColor, unsigned accent,
                       float fontSize, bool sendOnEnter);
 
+// Artifact pane: a WKWebView floated over the ImGui artifact column, the same
+// way the composer is. Console output and page errors are collected through
+// an injected script so the column can show them.
+void artifactInstall();
+void artifactSetFrame(float x, float y, float width, float height);
+void artifactSetVisible(bool visible);
+void artifactLoad(const std::string& html);     // replaces the document, clears the console
+void artifactReload();
+std::vector<std::string> artifactConsole();     // messages since the last load, oldest first
+
 }  // namespace native

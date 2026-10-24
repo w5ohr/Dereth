@@ -201,6 +201,15 @@ struct Stream {
   std::condition_variable approvalCv;
 };
 
+// A renderable code block from a reply (HTML, SVG or Mermaid), shown live in
+// the artifact column beside the chat.
+struct Artifact {
+  std::string messageId;      // empty for an ad-hoc preview
+  std::string language;       // html | svg | mermaid
+  std::string code;
+  std::string title;
+};
+
 struct ModelInfo {
   std::string id;
   std::string name;
@@ -339,6 +348,15 @@ class App {
   void drawToolCallCards(Message& message, float width);
   void drawMcpSection(float width);
 
+  // --- artifact pane (artifacts.cpp) ---------------------------------------
+  static bool isArtifactLanguage(const std::string& language, const std::string& code);
+  // First HTML/SVG block of a reply, for auto-opening after a completion.
+  static bool firstArtifactIn(const std::string& content, std::string* code, std::string* language);
+  void scanArtifacts();                  // refresh `artifacts` from the open branch
+  void openArtifact(const std::string& code, const std::string& language);
+  void drawArtifactColumn(float width);
+  std::string artifactDocument(const Artifact& artifact) const;   // full HTML for the web view
+
   // --- state (panes read and write this directly) -----------------------
   Pane pane = Pane::Chat;
   ChatDoc chat;
@@ -434,6 +452,14 @@ class App {
   bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
   float composerTextHeight = 46.0f;           // text area height the composer used last frame
+  std::vector<Artifact> artifacts;
+  bool showArtifacts = false;
+  int artifactIndex = 0;
+  std::string artifactEdit;                   // editor buffer for the open artifact
+  bool artifactEditing = false;
+  bool artifactShownThisFrame = false;
+  std::string artifactsKey_;                  // branch fingerprint behind `artifacts`
+  std::string artifactLoadedKey_;             // what the web view currently shows
   bool navigateFromComposer(int direction);   // Option+Up/Down out of the native composer; false if no messages
 
  private:
