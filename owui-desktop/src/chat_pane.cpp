@@ -95,7 +95,7 @@ void App::drawChatPane() {
     ImGui::PopStyleColor();
 
     // Right-hand actions.
-    const float actionsWidth = 190.0f;
+    const float actionsWidth = 226.0f;
     ImGui::SameLine(ImGui::GetWindowWidth() - actionsWidth);
     if (!streams_.empty()) {
       widgets::spinner("##busy", 8.0f, 2.0f);
@@ -123,6 +123,57 @@ void App::drawChatPane() {
           }
         });
       });
+    }
+    ImGui::SameLine();
+    if (icons::button("chatparams", icons::Icon::Gear, "Chat settings")) {
+      ImGui::OpenPopup("##chatparams");
+    }
+    if (ImGui::BeginPopup("##chatparams")) {
+      ImGui::TextUnformatted("System prompt");
+      std::string system = chat.params.value("system", "");
+      ImGui::SetNextItemWidth(360);
+      if (ImGui::InputTextMultiline("##system", &system, ImVec2(360, 70))) {
+        if (system.empty()) {
+          chat.params.erase("system");
+        } else {
+          chat.params["system"] = system;
+        }
+      }
+      // Each control writes its key only while it is switched on, so the
+      // server keeps its own defaults for everything left alone.
+      auto numberOption = [this](const char* key, const char* label, float minimum,
+                                 float maximum, float fallback) {
+        bool enabled = chat.params.contains(key);
+        float value = enabled ? chat.params.value(key, fallback) : fallback;
+        ImGui::PushID(key);
+        if (ImGui::Checkbox("##on", &enabled)) {
+          if (enabled) {
+            chat.params[key] = value;
+          } else {
+            chat.params.erase(key);
+          }
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!enabled);
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::SliderFloat(label, &value, minimum, maximum) && enabled) {
+          chat.params[key] = value;
+        }
+        ImGui::EndDisabled();
+        ImGui::PopID();
+      };
+      numberOption("temperature", "Temperature", 0.0f, 2.0f, 0.8f);
+      numberOption("top_p", "Top p", 0.0f, 1.0f, 0.9f);
+      numberOption("top_k", "Top k", 1.0f, 100.0f, 40.0f);
+      numberOption("max_tokens", "Max tokens", 64.0f, 8192.0f, 2048.0f);
+      ImGui::Separator();
+      if (ImGui::Button("Reset", ImVec2(100, 0))) chat.params = Json::object();
+      ImGui::SameLine();
+      if (widgets::primaryButton("Done", ImVec2(100, 0))) {
+        saveActiveChat();
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
     }
     ImGui::SameLine();
     if (icons::button("chatmenu", icons::Icon::Menu, "More")) ImGui::OpenPopup("##chatmore");
@@ -370,6 +421,29 @@ void App::drawChatPane() {
               if (!url.empty()) platform::openUrl(url);
             }
           }
+        }
+      }
+
+      // --- follow-up suggestions
+      if (!message.streaming && message.followUps.is_array() && !message.followUps.empty()) {
+        ImGui::Dummy(ImVec2(0, 4));
+        for (const auto& suggestion : message.followUps) {
+          if (!suggestion.is_string()) continue;
+          const std::string text = suggestion.get<std::string>();
+          ImGui::PushID(text.c_str());
+          ImVec2 pos = ImGui::GetCursorScreenPos();
+          const ImVec2 size(std::min(contentWidth, ImGui::CalcTextSize(text.c_str()).x + 24.0f),
+                            ImGui::GetTextLineHeight() + 12.0f);
+          if (ImGui::InvisibleButton("##followup", size)) {
+            composer = text;
+            focusComposer = true;
+          }
+          const bool hovered = ImGui::IsItemHovered();
+          ImDrawList* dl = ImGui::GetWindowDrawList();
+          dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
+                            hovered ? palette.panelAlt : palette.panel, size.y * 0.5f);
+          dl->AddText(ImVec2(pos.x + 12.0f, pos.y + 6.0f), palette.textDim, text.c_str());
+          ImGui::PopID();
         }
       }
 

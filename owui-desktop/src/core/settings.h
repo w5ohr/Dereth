@@ -10,13 +10,14 @@
 namespace core {
 
 struct Settings {
-  std::string serverUrl = "http://localhost:3000";
+  // Reachable at home and over Tailscale from anywhere.
+  std::string serverUrl = "http://davids-macbook-pro.tailba9313.ts.net:3000";
   std::string email;
   bool rememberSession = true;
 
   // Direct-backend fallbacks, usable without an Open WebUI account.
-  std::string ollamaUrl = "http://localhost:11434";
-  std::string comfyUrl = "http://localhost:8188";
+  std::string ollamaUrl = "http://davids-macbook-pro.tailba9313.ts.net:11434";
+  std::string comfyUrl = "http://davids-macbook-pro.tailba9313.ts.net:8188";
 
   std::string theme = "dark";          // dark | light | midnight
   float fontSize = 15.0f;

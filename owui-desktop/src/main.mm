@@ -94,6 +94,17 @@ static std::string gIniPath;
   async::drain();
   images::uploadPending();
 
+  // Keep the window title in step with the open conversation.
+  {
+    app::App& app = app::App::instance();
+    NSString* title = app.signedIn()
+                          ? [NSString stringWithUTF8String:(app.chat.title.empty()
+                                                                ? "Open WebUI"
+                                                                : app.chat.title.c_str())]
+                          : @"Open WebUI";
+    if (![view.window.title isEqualToString:title]) view.window.title = title;
+  }
+
   ImGui_ImplMetal_NewFrame(descriptor);
   ImGui_ImplOSX_NewFrame(view);
   ImGui::NewFrame();

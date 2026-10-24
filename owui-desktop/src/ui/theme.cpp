@@ -53,9 +53,24 @@ void loadFonts(float baseSize) {
       {"/System/Library/Fonts/Supplemental/Courier New.ttf", 0},
   };
 
+  // A wide-coverage fallback is merged into each face so arrows, maths and box
+  // characters in model output render instead of showing a missing-glyph box.
+  // Colour emoji (sbix) is not supported by the stb rasteriser.
+  const char* kFallback = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf";
+  auto mergeFallback = [&] {
+    ImFontConfig config;
+    config.MergeMode = true;
+    config.OversampleH = 2;
+    config.OversampleV = 2;
+    io.Fonts->AddFontFromFileTTF(kFallback, baseSize, &config);
+  };
+
   fonts.regular = loadFirst(uiRegular, baseSize);
+  mergeFallback();
   fonts.bold = loadFirst(uiBold, baseSize);
+  mergeFallback();
   fonts.mono = loadFirst(monoFace, baseSize);
+  mergeFallback();
   io.FontDefault = fonts.regular;
   ImGui::GetStyle().FontSizeBase = baseSize;
 }

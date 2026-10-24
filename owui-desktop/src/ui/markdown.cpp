@@ -382,9 +382,13 @@ void renderTable(const std::vector<std::string>& rows, const Options& options, i
 
   char id[32];
   snprintf(id, sizeof(id), "##mdtable%d", index);
+  // Keep the table inside the message column instead of the whole window.
+  const float tableWidth = options.wrapWidth > 0.0f ? options.wrapWidth
+                                                    : ImGui::GetContentRegionAvail().x;
   if (ImGui::BeginTable(id, static_cast<int>(header.size()),
                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                            ImGuiTableFlags_SizingStretchProp)) {
+                            ImGuiTableFlags_SizingStretchProp,
+                        ImVec2(tableWidth, 0.0f))) {
     for (const std::string& column : header) ImGui::TableSetupColumn(column.c_str());
     ImGui::TableHeadersRow();
     for (size_t r = 1; r < rows.size(); ++r) {

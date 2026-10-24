@@ -74,6 +74,17 @@ Chats are written back in the web UI's own format (`history.messages` map plus
 the flat `messages` array), so conversations started here open normally in the
 browser and vice versa.
 
+## Testing against a scratch server
+
+Rather than poke at a live instance, run a throwaway one:
+
+    docker run -d --name owui-test -p 3001:8080 \
+      -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+      ghcr.io/open-webui/open-webui:main
+
+The first account created on it becomes the admin. Point the app or the
+self-test at `http://localhost:3001`, then `docker rm -f owui-test` when done.
+
 ## Self-test
 
     OWUI_SERVER=http://localhost:3000 OWUI_EMAIL=you@example.com \

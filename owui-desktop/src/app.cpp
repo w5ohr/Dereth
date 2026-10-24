@@ -906,6 +906,37 @@ void App::afterCompletion(const std::string& assistantId) {
 
   saveActiveChat();
   maybeGenerateTitle();
+
+  if (settings().autoFollowUps && message.error.empty() && !message.content.empty()) {
+    Json messages = Json::array();
+    for (const std::string& id : chat.branch()) {
+      const Message& entry = chat.messages.at(id);
+      messages.push_back(Json{{"role", entry.role}, {"content", entry.content}});
+    }
+    const Json payload{{"model", model}, {"messages", messages}, {"chat_id", chatId}};
+    const std::string targetId = assistantId;
+    async::run([this, payload, targetId] {
+      api::Result res = api_.generateFollowUps(payload);
+      if (!res.ok) return;
+      std::string text;
+      if (res.data.contains("choices") && res.data["choices"].is_array() &&
+          !res.data["choices"].empty()) {
+        text = res.data["choices"][0].value("message", Json::object()).value("content", "");
+      }
+      Json parsed = Json::parse(text, nullptr, false);
+      Json suggestionList = Json::array();
+      if (!parsed.is_discarded() && parsed.is_object() && parsed.contains("follow_ups")) {
+        suggestionList = parsed["follow_ups"];
+      } else if (!parsed.is_discarded() && parsed.is_array()) {
+        suggestionList = parsed;
+      }
+      if (suggestionList.empty()) return;
+      async::post([this, targetId, suggestionList] {
+        auto entry = chat.messages.find(targetId);
+        if (entry != chat.messages.end()) entry->second.followUps = suggestionList;
+      });
+    });
+  }
 }
 
 void App::saveActiveChat() {
