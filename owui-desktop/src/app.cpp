@@ -229,9 +229,11 @@ void App::init() {
   core::Settings& cfg = settings();
   // OWUI_SERVER / OWUI_TOKEN let you point the app at another instance without
   // touching the saved settings — handy for testing against a scratch server.
-  if (const char* envServer = std::getenv("OWUI_SERVER")) cfg.serverUrl = envServer;
-  api_.setServer(cfg.serverUrl);
-  serverInput_ = cfg.serverUrl;
+  // The override is applied to the client only and never written into
+  // cfg.serverUrl, so quitting a test run can't save the scratch server.
+  const char* envServer = std::getenv("OWUI_SERVER");
+  api_.setServer(envServer ? std::string(envServer) : cfg.serverUrl);
+  serverInput_ = api_.server();
   loginEmail_ = cfg.email;
   sessionId_ = core::uuid();
   selectedModels = cfg.selectedModels;

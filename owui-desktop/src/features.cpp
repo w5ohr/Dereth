@@ -325,6 +325,23 @@ void App::drawPalette() {
     if (!projectFolder.empty()) attachGitContext(projectFolder, "diff");
     else widgets::toastInfo("Set a project folder first");
   });
+  if (!attachments.empty() && attachments.back().isImage) {
+    add("Extract text from attached image (Live Text)", "command", [this] {
+      const std::string bytes = attachments.back().bytes;
+      async::run([this, bytes] {
+        const std::string text = native::recognizeText(bytes);
+        async::post([this, text] {
+          if (text.empty()) {
+            widgets::toastInfo("No text found in the image");
+            return;
+          }
+          composer += (composer.empty() ? "" : "\n") + text;
+          ++composerGeneration;
+          focusComposer = true;
+        });
+      });
+    });
+  }
   add("Toggle sidebar", "command", [this] { sidebarVisible = !sidebarVisible; });
   add("Stop generating", "command", [this] { stopAllStreams(); });
 
@@ -886,30 +903,53 @@ void App::tickOfflineQueue() {
 void App::handleKeyboardNavigation(const std::vector<std::string>& path) {
   ImGuiIO& io = ImGui::GetIO();
   if (path.empty()) return;
-  if (!io.KeyAlt) return;
-  auto position = std::find(path.begin(), path.end(), focusedMessageId);
-  int index = position == path.end() ? static_cast<int>(path.size()) : static_cast<int>(std::distance(path.begin(), position));
-  if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true)) index = std::max(0, index - 1);
-  else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true)) index = std::min(static_cast<int>(path.size()) - 1, index + 1);
-  else {
-    if (position == path.end()) return;
-    const Message& m = chat.messages.at(focusedMessageId);
-    if (ImGui::IsKeyPressed(ImGuiKey_C, false)) {
-      platform::setClipboardText(m.content);
-      widgets::toast(widgets::ToastLevel::Success, "Copied");
-    } else if (ImGui::IsKeyPressed(ImGuiKey_R, false) && m.role == "assistant") {
-      regenerate(focusedMessageId);
-    } else if (ImGui::IsKeyPressed(ImGuiKey_P, false)) {
-      togglePin(focusedMessageId);
-    } else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && m.role == "user") {
-      chat.messages[focusedMessageId].editing = true;
-      chat.messages[focusedMessageId].editBuffer = m.content;
-    }
+
+  // Escape hands the keyboard back to the composer.
+  if (!focusedMessageId.empty() && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+    focusedMessageId.clear();
+    focusComposer = true;
     return;
   }
-  if (index >= 0 && index < static_cast<int>(path.size())) {
+
+  auto position = std::find(path.begin(), path.end(), focusedMessageId);
+  int index = position == path.end() ? static_cast<int>(path.size()) : static_cast<int>(std::distance(path.begin(), position));
+
+  // Option+Up/Down walks the transcript. It also takes focus out of the
+  // composer: on macOS Option+letter types a character (R gives a registered
+  // sign), so the letter shortcuts below only fire with no text field active.
+  if (io.KeyAlt && (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true) ||
+                    ImGui::IsKeyPressed(ImGuiKey_DownArrow, true))) {
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true)) index = std::max(0, index - 1);
+    else index = std::min(static_cast<int>(path.size()) - 1, index + 1);
+    ImGui::ClearActiveID();
     focusedMessageId = path[index];
     pendingScrollTo = focusedMessageId;
+    return;
+  }
+
+  if (position == path.end() || io.WantTextInput || io.KeySuper || io.KeyCtrl) return;
+  const Message& m = chat.messages.at(focusedMessageId);
+  // Plain letters act on the focused message: c copy, r regenerate, p pin,
+  // e edit, s speak. Arrow keys without Option move too, once out of the
+  // composer.
+  if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true)) {
+    focusedMessageId = path[std::max(0, index - 1)];
+    pendingScrollTo = focusedMessageId;
+  } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true)) {
+    focusedMessageId = path[std::min(static_cast<int>(path.size()) - 1, index + 1)];
+    pendingScrollTo = focusedMessageId;
+  } else if (ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+    platform::setClipboardText(m.content);
+    widgets::toast(widgets::ToastLevel::Success, "Copied");
+  } else if (ImGui::IsKeyPressed(ImGuiKey_R, false) && m.role == "assistant") {
+    regenerate(focusedMessageId);
+  } else if (ImGui::IsKeyPressed(ImGuiKey_P, false)) {
+    togglePin(focusedMessageId);
+  } else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && m.role == "assistant") {
+    speak(m.content);
+  } else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && m.role == "user") {
+    chat.messages[focusedMessageId].editing = true;
+    chat.messages[focusedMessageId].editBuffer = m.content;
   }
 }
 
