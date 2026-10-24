@@ -8,7 +8,15 @@ Dear ImGui, talking to the server over its own REST API and socket.io stream.
 
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
     cmake --build build -j8
-    open "build/Open WebUI.app"
+    cmake --install build          # -> /Applications/Open WebUI.app
+    open -a "Open WebUI"
+
+Leave out the install step to run it from `build/` instead. The install
+destination is `/Applications` unless `-DCMAKE_INSTALL_PREFIX=...` says
+otherwise, and the bundle is re-signed where it lands.
+
+The icon is generated rather than checked in by hand — `tools/make_icon.sh`
+rebuilds `resources/AppIcon.icns` from `tools/make_icon.mm`.
 
 Requirements: macOS 13+, Xcode command line tools and CMake. Everything else is
 vendored under `third_party/` (Dear ImGui, nlohmann/json, stb_image) or comes

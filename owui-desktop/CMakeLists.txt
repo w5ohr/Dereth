@@ -10,6 +10,12 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# `cmake --install build` drops the bundle straight into /Applications unless
+# a prefix is given.
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "/Applications" CACHE PATH "Install location" FORCE)
+endif()
+
 add_compile_options(-Wall -Wno-unused-function -Wno-deprecated-declarations)
 # ARC for every Objective-C++ translation unit.
 set(CMAKE_OBJCXX_FLAGS "${CMAKE_OBJCXX_FLAGS} -fobjc-arc")
@@ -30,7 +36,10 @@ set(IMGUI_SOURCES
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
   src/*.cpp src/*.mm)
 
-add_executable(OpenWebUI MACOSX_BUNDLE ${APP_SOURCES} ${IMGUI_SOURCES})
+set(APP_ICON ${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns)
+set_source_files_properties(${APP_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+
+add_executable(OpenWebUI MACOSX_BUNDLE ${APP_SOURCES} ${IMGUI_SOURCES} ${APP_ICON})
 
 target_include_directories(OpenWebUI PRIVATE
   src
@@ -71,8 +80,17 @@ set_target_properties(OpenWebUI PROPERTIES
   MACOSX_BUNDLE_GUI_IDENTIFIER "com.davidcochran.owui-desktop"
   MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
   MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+  MACOSX_BUNDLE_ICON_FILE "AppIcon"
   MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in
 )
+
+install(TARGETS OpenWebUI BUNDLE DESTINATION .)
+# The copy loses nothing but its signature, so re-sign where it landed.
+install(CODE "
+  execute_process(COMMAND xattr -cr \"\${CMAKE_INSTALL_PREFIX}/Open WebUI.app\")
+  execute_process(COMMAND codesign --force --sign - --timestamp=none
+                          \"\${CMAKE_INSTALL_PREFIX}/Open WebUI.app\")
+")
 
 # Ad-hoc sign the bundle so macOS gives it a stable-per-build identity; without
 # this the keychain prompts on every launch instead of once.
