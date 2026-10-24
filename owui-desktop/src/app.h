@@ -348,6 +348,14 @@ class App {
   void drawToolCallCards(Message& message, float width);
   void drawMcpSection(float width);
 
+  // --- local-first mirror (mirror.cpp) -------------------------------------
+  // Pushes chats edited offline, then pulls everything newer than the mirror.
+  // Throttled to every ten minutes unless `force`.
+  void syncMirror(bool force);
+  void drawMirrorSection(float width);   // settings: stats, sync, rebuild
+  // Fills `chats` from the mirror when the server can't be reached.
+  void loadChatsFromMirror(bool archived);
+
   // --- artifact pane (artifacts.cpp) ---------------------------------------
   static bool isArtifactLanguage(const std::string& language, const std::string& code);
   // First HTML/SVG block of a reply, for auto-opening after a completion.
@@ -452,6 +460,10 @@ class App {
   bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
   float composerTextHeight = 46.0f;           // text area height the composer used last frame
+  bool offlineList = false;                   // the sidebar shows the mirror, not the server
+  std::string mirrorStatus;
+  bool mirrorSyncing = false;
+  double lastMirrorSync = 0.0;
   std::vector<Artifact> artifacts;
   bool showArtifacts = false;
   int artifactIndex = 0;

@@ -7,6 +7,7 @@
 #include "core/async.h"
 #include "core/common.h"
 #include "core/keychain.h"
+#include "core/store.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
 #include "native.h"
@@ -267,6 +268,7 @@ void App::init() {
   const char* envServer = std::getenv("OWUI_SERVER");
   api_.setServer(envServer ? std::string(envServer) : cfg.serverUrl);
   serverInput_ = api_.server();
+  store::open(api_.server());
   loginEmail_ = cfg.email;
   sessionId_ = core::uuid();
   selectedModels = cfg.selectedModels;
@@ -438,11 +440,20 @@ void App::openChat(const std::string& id) {
   async::run([this, id] {
     api::Result res = api_.chat(id);
     async::post([this, res, id] {
+      Json fallback;
       if (!res.ok) {
-        widgets::toastError("Could not open chat: " + api::errorMessage(res));
-        return;
+        // Server away: open the local copy instead.
+        if (auto cached = store::getChat(id)) {
+          fallback = *cached;
+          widgets::toastInfo("Opened the local copy - the server could not be reached");
+        } else {
+          widgets::toastError("Could not open chat: " + api::errorMessage(res));
+          return;
+        }
+      } else {
+        store::putChat(res.data);
       }
-      const Json& body = res.data;
+      const Json& body = res.ok ? res.data : fallback;
       ChatDoc doc = ChatDoc::fromJson(body.value("chat", Json::object()), id);
       doc.pinned = body.value("pinned", false);
       doc.archived = body.value("archived", false);
@@ -468,7 +479,16 @@ void App::refreshChats(bool silent) {
     api::Result folderRes = api_.folders();
     async::post([this, list, folderRes] {
       chatsLoading = false;
+      if (!list.ok && list.status == 0) {
+        // Unreachable: show what the mirror has and remember we're offline.
+        loadChatsFromMirror(false);
+        serverReachable = false;
+        lastReachCheck = 0.0;
+        return;
+      }
       if (list.ok && list.data.is_array()) {
+        offlineList = false;
+        for (const auto& item : list.data) store::putListItem(item);
         chats.clear();
         for (const auto& item : list.data) {
           ChatSummary summary;
@@ -903,6 +923,7 @@ void App::sendMessage(const std::string& text) {
       async::post([this, res, pending] {
         if (res.ok && res.data.contains("id")) {
           chat.id = res.data["id"];
+          store::putChat(res.data);
           refreshChats();
         } else {
           widgets::toastError("Could not create chat: " + api::errorMessage(res));
@@ -1157,13 +1178,20 @@ void App::saveActiveChat() {
                    message.role.c_str(), mid.substr(0, 8).c_str(), message.content.size(),
                    message.streaming ? 1 : 0, message.toolCalls.size());
   }
-  async::run([this, id, body] {
+  const int64_t base = chat.updatedAt;
+  async::run([this, id, body, base] {
     api::Result res = api_.updateChat(id, body);
-    if (!res.ok) {
-      async::post([res] {
-        widgets::toastError("Chat not saved: " + api::errorMessage(res));
-      });
+    if (res.ok) {
+      store::putChat(res.data);
+      return;
     }
+    if (res.status == 0) {
+      // Keep the edit locally; syncMirror pushes it once the server is back.
+      store::putDirty(id, body, base);
+      async::post([] { widgets::toastInfo("Server unreachable - change kept locally and will sync"); });
+      return;
+    }
+    async::post([res] { widgets::toastError("Chat not saved: " + api::errorMessage(res)); });
   });
 }
 
@@ -1210,6 +1238,7 @@ void App::maybeGenerateTitle() {
 
 void App::deleteChat(const std::string& id) {
   native::removeChatFromSpotlight(id);
+  store::removeChat(id);
   async::run([this, id] {
     api_.deleteChat(id);
     async::post([this, id] {
@@ -1293,6 +1322,7 @@ void App::frame() {
     tickScheduler();
     tickVoiceMode();
     tickOfflineQueue();
+    if (serverReachable) syncMirror(false);
 
     // The socket drops when the server restarts or the network blips; bring
     // it back with a widening backoff rather than staying on the HTTP path.

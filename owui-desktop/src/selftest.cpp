@@ -13,10 +13,14 @@
 #include "core/common.h"
 #include "core/http.h"
 #include "core/socketio.h"
+#include "core/store.h"
+#include <unistd.h>
 #include <chrono>
 #include <thread>
 
 namespace {
+
+using Json = nlohmann::json;
 
 int gPassed = 0;
 int gFailed = 0;
@@ -300,6 +304,42 @@ int runSelfTest() {
     api::Result notifications = api.notificationEvents();
     report("GET notifications/events", notifications.ok || notifications.status == 404,
            notifications.status == 404 ? "(not enabled on this server)" : "");
+  }
+
+  // ---- local-first mirror (SQLite, no server involved)
+  {
+    const std::string tmpUrl = "http://selftest-mirror.local:" + std::to_string(getpid());
+    store::open(tmpUrl);
+    store::clear();
+    report("mirror open", store::ready(), store::stats().path);
+    const Json one = Json::parse(R"({"id":"m1","title":"Poodle grooming","updated_at":100,"pinned":true,
+      "chat":{"history":{"messages":{"a":{"role":"user","content":"How do I groom a parti poodle?"}}}}})");
+    const Json two = Json::parse(R"({"id":"m2","title":"Roman history","updated_at":200,"archived":true,
+      "chat":{"history":{"messages":{"b":{"role":"assistant","content":"The empire fell in 476."}}}}})");
+    store::putChat(one);
+    store::putChat(two);
+    report("mirror list", store::listChats(false).size() == 1 && store::listChats(true).size() == 1);
+    const auto hits = store::search("poodle");
+    report("mirror search (body)", hits.size() == 1 && hits.front().id == "m1");
+    report("mirror search (prefix)", store::search("rom").size() == 1);
+    report("mirror search (no hit)", store::search("zebra").empty());
+    report("mirror getChat", store::getChat("m1").has_value() && (*store::getChat("m1")).value("title", "") == "Poodle grooming");
+    store::putListItem(Json{{"id", "m1"}, {"title", "Poodle care"}, {"updated_at", 150}, {"pinned", false}});
+    report("mirror list item update", store::listChats(false).front().title == "Poodle care" &&
+                                          store::listChats(false).front().updatedAt == 150);
+    store::putDirty("m1", Json{{"title", "Poodle care (offline)"}, {"history", Json::object()}}, 150);
+    const auto dirty = store::dirtyChats();
+    report("mirror dirty round-trip", dirty.size() == 1 && dirty.front().first == "m1" &&
+                                          store::dirtyBase("m1") == 150 && store::stats().dirty == 1);
+    store::putListItem(Json{{"id", "m1"}, {"title", "server title"}, {"updated_at", 999}});
+    report("mirror dirty row ignores list updates", store::listChats(false).front().title == "Poodle care (offline)");
+    store::putChat(Json{{"id", "m1"}, {"title", "synced"}, {"updated_at", 300}, {"chat", Json::object()}});
+    report("mirror putChat clears dirty", store::dirtyChats().empty());
+    store::removeChat("m2");
+    report("mirror remove", store::chatIds().size() == 1 && store::search("empire").empty());
+    store::clear();
+    store::close();
+    unlink(store::stats().path.c_str());
   }
 
   // ---- cleanup

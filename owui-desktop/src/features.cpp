@@ -8,6 +8,7 @@
 #include "app.h"
 #include "core/async.h"
 #include "core/common.h"
+#include "core/store.h"
 #include "core/keychain.h"
 #include "export.h"
 #include "imgui_internal.h"
@@ -892,7 +893,11 @@ void App::tickOfflineQueue() {
     async::post([this, res] {
       const bool wasDown = !serverReachable;
       serverReachable = res.ok;
-      if (serverReachable && wasDown) widgets::toast(widgets::ToastLevel::Success, "Server is back");
+      if (serverReachable && wasDown) {
+        widgets::toast(widgets::ToastLevel::Success, "Server is back");
+        syncMirror(true);
+        refreshChats();
+      }
       if (serverReachable && !offlineQueue.empty()) {
         std::vector<std::string> queued;
         queued.swap(offlineQueue);
@@ -994,6 +999,7 @@ void App::switchProfile(const ServerProfile& profile) {
   settings().save();
   api_.setServer(profile.url);
   serverInput_ = profile.url;
+  store::open(profile.url);
   loginEmail_ = profile.email;
   api_.setToken("");
   // Tokens are stored per server so switching never mixes sessions.

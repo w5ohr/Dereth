@@ -4,6 +4,7 @@
 #include "app.h"
 #include "core/async.h"
 #include "core/common.h"
+#include "core/store.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
 #include "platform.h"
@@ -51,10 +52,28 @@ void App::drawSidebar(float width) {
   if (widgets::searchField("chatsearch", &chatSearch, "Search chats", inner)) {
     if (chatSearch.size() >= 2) {
       const std::string query = chatSearch;
-      async::run([this, query] {
+      // The local copy answers instantly and is all there is offline; the
+      // server's results replace it when they arrive.
+      auto fromMirror = [this](const std::string& q) {
+        chats.clear();
+        for (const store::ChatRow& row : store::search(q)) {
+          ChatSummary summary;
+          summary.id = row.id;
+          summary.title = row.title.empty() ? "Untitled" : row.title;
+          summary.updatedAt = row.updatedAt;
+          summary.pinned = row.pinned;
+          chats.push_back(summary);
+        }
+      };
+      fromMirror(query);
+      async::run([this, query, fromMirror] {
         api::Result res = api_.chatSearch(query, 1);
-        async::post([this, res, query] {
-          if (!res.ok || !res.data.is_array() || chatSearch != query) return;
+        async::post([this, res, query, fromMirror] {
+          if (chatSearch != query) return;
+          if (!res.ok || !res.data.is_array()) {
+            fromMirror(query);
+            return;
+          }
           chats.clear();
           for (const auto& item : res.data) {
             ChatSummary summary;
@@ -72,6 +91,10 @@ void App::drawSidebar(float width) {
   }
 
   ImGui::Dummy(ImVec2(0, 10));
+  if (offlineList) {
+    widgets::pill("Offline - showing the local copy", theme::palette().panelAlt, theme::palette().warning);
+    ImGui::Dummy(ImVec2(0, 6));
+  }
 
   ImGui::BeginChild("##chatlist", ImVec2(inner, -10));
 
@@ -286,7 +309,10 @@ void App::drawSidebar(float width) {
       async::run([this] {
         api::Result res = api_.archivedChats();
         async::post([this, res] {
-          if (!res.ok || !res.data.is_array()) return;
+          if (!res.ok || !res.data.is_array()) {
+            loadChatsFromMirror(true);
+            return;
+          }
           chats.clear();
           for (const auto& item : res.data) {
             ChatSummary summary;

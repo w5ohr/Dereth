@@ -161,6 +161,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Local copy:** every chat is mirrored into a SQLite database per server
+  (`~/Library/Application Support/Open WebUI Desktop/mirror-<host>.db`) with
+  full-text search. With the server away the sidebar lists the local copy,
+  chats open from it, and search runs against it; a change made offline (a
+  rating, a rename) is kept and pushed when the server returns, keeping the
+  server's newer title if it changed meanwhile. Settings ▸ Local copy shows
+  the stats and offers Sync now / Rebuild.
 - **Artifacts:** an HTML, SVG or Mermaid block in a reply renders live in a
   WebKit column beside the chat - automatically for HTML and SVG, or from the
   "Preview" button under any such block. The column pages through every

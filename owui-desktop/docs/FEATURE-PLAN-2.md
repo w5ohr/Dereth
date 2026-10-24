@@ -268,3 +268,25 @@ GUI against a scratch server with qwen3:8b: an HTML reply auto-opened and render
 (title from <title>), clicking its button produced "console (1): log: clicked", the
 editor showed the source, an SVG reply tagged ```xml was recognised and paged to.
 Not exercised: Mermaid (network), Save dialog, Open in browser.
+
+2026-10-24 N (131 local-first store): `src/core/store.*` (SQLite per server,
+`chats` + FTS5 `chats_fts` + `meta`, WAL, one mutex; putChat/putListItem/putDirty/
+dirtyChats/getChat/listChats/search/removeChat/stats/clear) and `src/mirror.cpp`
+(`syncMirror`: pushes dirty rows first - fetching the server copy and keeping its
+title when it changed after the edit's base updated_at, the server merges histories
+itself - then pulls `/api/v1/chats/all`, which 0.12 streams as NDJSON, with a paged
+fallback, and drops rows the server no longer has; throttled to 10 min, forced on
+"Server is back" and from Settings). Hooks: openChat mirrors on success and opens
+the local copy on failure; refreshChats mirrors list rows and falls back to the
+mirror with an "Offline - showing the local copy" pill; saveActiveChat mirrors on
+success and keeps the body as dirty when the transport fails; sidebar search answers
+from the mirror instantly and keeps that when the server search fails; archived list
+falls back too; createChat/deleteChat keep the mirror in step; profiles switch the
+database. Settings ▸ Local copy: chats cached, unsent edits, size, last sync, Sync
+now, Rebuild. `--selftest` gained 11 mirror checks (63 total). Verified in the GUI:
+mirror filled at launch (3 chats), server stopped → chat opened from the local copy
+with a toast, "empire" found Roman history locally, archived toggle showed the pill
+and the cached list; a thumbs-up offline produced a dirty row; after `docker start`
+the row was pushed and the server's message carried `annotation.rating = 1`.
+Gotcha found: ⌘R (refresh) is not a menu item, so it is swallowed by the native
+composer when that has focus; use the sidebar toggles or wait for the reach check.

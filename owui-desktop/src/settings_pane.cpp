@@ -89,6 +89,10 @@ void App::drawSettingsPane() {
     widgets::dimText("Live socket: %s", socketConnected() ? "connected" : "offline");
   }, width);
 
+  widgets::sectionHeader("LOCAL COPY");
+  drawMirrorSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("VOICE");
   card("voice", [&] {
     if (!gVoicesLoaded) {
