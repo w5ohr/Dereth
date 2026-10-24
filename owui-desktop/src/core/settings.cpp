@@ -34,6 +34,7 @@ void Settings::load() {
   pick(j, "serverUrl", serverUrl);
   pick(j, "email", email);
   pick(j, "rememberSession", rememberSession);
+  pick(j, "hasSavedSession", hasSavedSession);
   pick(j, "ollamaUrl", ollamaUrl);
   pick(j, "comfyUrl", comfyUrl);
   pick(j, "theme", theme);
@@ -59,6 +60,7 @@ void Settings::save() const {
       {"serverUrl", serverUrl},
       {"email", email},
       {"rememberSession", rememberSession},
+      {"hasSavedSession", hasSavedSession},
       {"ollamaUrl", ollamaUrl},
       {"comfyUrl", comfyUrl},
       {"theme", theme},

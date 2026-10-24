@@ -14,6 +14,9 @@ struct Settings {
   std::string serverUrl = "http://davids-macbook-pro.tailba9313.ts.net:3000";
   std::string email;
   bool rememberSession = true;
+  // Set once a token has actually been written to the keychain, so a fresh
+  // install never triggers a keychain prompt.
+  bool hasSavedSession = false;
 
   // Direct-backend fallbacks, usable without an Open WebUI account.
   std::string ollamaUrl = "http://davids-macbook-pro.tailba9313.ts.net:11434";

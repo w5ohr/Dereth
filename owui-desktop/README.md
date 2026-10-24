@@ -14,9 +14,11 @@ Requirements: macOS 13+, Xcode command line tools and CMake. Everything else is
 vendored under `third_party/` (Dear ImGui, nlohmann/json, stb_image) or comes
 from the system (libcurl, SQLite, Metal, AVFoundation, Security).
 
-The first launch asks once for permission to read the session token back out of
-the keychain — the bundle is ad-hoc signed, so macOS treats each rebuild as a
-new program. Choose "Always Allow" to stop the prompt coming back.
+Once you have signed in, macOS asks for permission to read the session token
+back out of the keychain. The bundle is ad-hoc signed, so every rebuild counts
+as a new program and the prompt returns; choose "Always Allow" after a build to
+settle it. The sign-in screen stays usable while the prompt is up, and a fresh
+install that has never saved a session does not touch the keychain at all.
 
 ## What it does
 

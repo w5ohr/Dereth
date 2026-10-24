@@ -234,13 +234,28 @@ void App::init() {
   sessionId_ = core::uuid();
   selectedModels = cfg.selectedModels;
 
-  // The keychain read is skipped entirely when a token is supplied in the
-  // environment, so test runs never trigger a keychain prompt.
-  const char* envToken = std::getenv("OWUI_TOKEN");
-  std::string token = envToken ? std::string(envToken) : keychain::load(kTokenAccount);
-  if (!token.empty()) {
-    api_.setToken(token);
+  // The keychain read is skipped when a token comes from the environment, and
+  // when no session was ever saved, so neither case shows a keychain prompt.
+  if (const char* envToken = std::getenv("OWUI_TOKEN")) {
+    api_.setToken(envToken);
     loadSession();
+  } else if (cfg.hasSavedSession) {
+    // Reading can block on the system keychain dialog, so keep it off the UI
+    // thread: the sign-in screen stays live while macOS asks.
+    connecting_ = true;
+    async::run([this] {
+      const std::string token = keychain::load(kTokenAccount);
+      async::post([this, token] {
+        connecting_ = false;
+        if (token.empty()) {
+          settings().hasSavedSession = false;
+          settings().save();
+          return;
+        }
+        api_.setToken(token);
+        loadSession();
+      });
+    });
   }
 
   connecting_ = true;
@@ -282,6 +297,8 @@ void App::loadSession() {
         signedIn_ = false;
         api_.setToken("");
         keychain::erase(kTokenAccount);
+        settings().hasSavedSession = false;
+        settings().save();
       }
     });
   });
@@ -302,7 +319,10 @@ void App::signIn(const std::string& email, const std::string& password) {
       if (res.ok && res.data.contains("token")) {
         const std::string token = res.data["token"];
         api_.setToken(token);
-        if (settings().rememberSession) keychain::save(kTokenAccount, token);
+        if (settings().rememberSession) {
+          settings().hasSavedSession = keychain::save(kTokenAccount, token);
+          settings().save();
+        }
         user_ = res.data;
         signedIn_ = true;
         loginPassword_.clear();
@@ -324,6 +344,8 @@ void App::signOut() {
   async::run([this] { api_.signout(); });
   api_.setToken("");
   keychain::erase(kTokenAccount);
+  settings().hasSavedSession = false;
+  settings().save();
   signedIn_ = false;
   user_ = Json::object();
   chats.clear();
