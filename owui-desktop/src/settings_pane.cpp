@@ -1,7 +1,9 @@
+#include <algorithm>
 // Settings: appearance, chat behaviour, voice, account and connection.
 #include "core/async.h"
 #include "core/common.h"
 #include "core/keychain.h"
+#include "native.h"
 #include "pane_common.h"
 #include "platform.h"
 #include "ui/icons.h"
@@ -40,12 +42,15 @@ void App::drawSettingsPane() {
 
   widgets::sectionHeader("APPEARANCE");
   card("appearance", [&] {
-    const char* themes[] = {"dark", "light"};
-    int themeIndex = cfg.theme == "light" ? 1 : 0;
+    const char* themes[] = {"dark", "light", "system", "midnight"};
+    int themeIndex = 0;
+    for (int i = 0; i < IM_ARRAYSIZE(themes); ++i) {
+      if (cfg.theme == themes[i]) themeIndex = i;
+    }
     ImGui::SetNextItemWidth(220);
     if (ImGui::Combo("Theme", &themeIndex, themes, IM_ARRAYSIZE(themes))) {
       cfg.theme = themes[themeIndex];
-      theme::apply(cfg.theme);
+      applyTheme();
       cfg.save();
     }
     ImGui::SetNextItemWidth(220);
@@ -197,6 +202,182 @@ void App::drawSettingsPane() {
         });
       });
     }
+  }, width);
+
+  widgets::sectionHeader("MAC INTEGRATION");
+  card("mac", [&] {
+    bool hotkey = cfg.extra.value("globalHotkey", true);
+    if (ImGui::Checkbox("Option-Space opens Quick Ask from any app", &hotkey)) {
+      cfg.extra["globalHotkey"] = hotkey;
+      cfg.save();
+      if (hotkey) {
+        if (!native::registerHotkey(49, false, true, false, false)) {
+          widgets::toastError("Option-Space is already taken by another app");
+        }
+      } else {
+        native::unregisterHotkey();
+      }
+    }
+    bool menuBar = cfg.extra.value("menuBarExtra", true);
+    if (ImGui::Checkbox("Show in the menu bar", &menuBar)) {
+      cfg.extra["menuBarExtra"] = menuBar;
+      cfg.save();
+      native::setStatusItemVisible(menuBar);
+    }
+    widgets::dimText("Links: owui://ask?prompt=...  owui://chat/<id>  owui://quick");
+    widgets::dimText("Services: select text anywhere > Services > Ask Open WebUI");
+    if (ImGui::Button("Clear Spotlight index", ImVec2(200, 0))) {
+      native::clearSpotlightIndex();
+      widgets::toastInfo("Spotlight entries removed");
+    }
+  }, width);
+
+  widgets::sectionHeader("AUTO-ROUTING");
+  card("routing", [&] {
+    bool route = cfg.extra.value("autoRoute", false);
+    if (ImGui::Checkbox("Send short, code-free questions to a smaller model", &route)) {
+      cfg.extra["autoRoute"] = route;
+      cfg.save();
+    }
+    std::string small = cfg.extra.value("autoRouteSmallModel", "");
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::BeginCombo("Small model", small.empty() ? "(choose)" : small.c_str())) {
+      for (const ModelInfo& info : models) {
+        if (ImGui::Selectable(info.name.c_str(), info.id == small)) {
+          cfg.extra["autoRouteSmallModel"] = info.id;
+          cfg.save();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    int threshold = cfg.extra.value("autoRouteTokenThreshold", 80);
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::SliderInt("Token threshold", &threshold, 20, 400)) {
+      cfg.extra["autoRouteTokenThreshold"] = threshold;
+      cfg.save();
+    }
+    widgets::dimText("Anything with code, attachments, a long prompt or a long chat stays on your chosen model.");
+  }, width);
+
+  widgets::sectionHeader("SCHEDULED PROMPTS");
+  card("schedules", [&] {
+    static std::string newName, newPrompt;
+    static int newHour = 8, newMinute = 0;
+    static bool newWeekdays = true;
+    Json& list = cfg.extra["schedules"];
+    if (!list.is_array()) list = Json::array();
+    int removeIndex = -1;
+    for (size_t i = 0; i < list.size(); ++i) {
+      ScheduledPrompt schedule = ScheduledPrompt::fromJson(list[i]);
+      ImGui::PushID(static_cast<int>(i));
+      bool enabled = schedule.enabled;
+      if (ImGui::Checkbox("##on", &enabled)) {
+        schedule.enabled = enabled;
+        list[i] = schedule.toJson();
+        cfg.save();
+      }
+      ImGui::SameLine();
+      ImGui::Text("%02d:%02d %s  %s", schedule.hour, schedule.minute,
+                  schedule.weekdaysOnly ? "weekdays" : "daily",
+                  schedule.name.empty() ? schedule.prompt.substr(0, 60).c_str() : schedule.name.c_str());
+      ImGui::SameLine();
+      if (ImGui::SmallButton("Remove")) removeIndex = static_cast<int>(i);
+      ImGui::PopID();
+    }
+    if (removeIndex >= 0) {
+      list.erase(list.begin() + removeIndex);
+      cfg.save();
+    }
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(220);
+    ImGui::InputTextWithHint("##schedname", "Name", &newName);
+    ImGui::SetNextItemWidth(width - 60.0f);
+    ImGui::InputTextMultiline("##schedprompt", &newPrompt, ImVec2(width - 60.0f, 60));
+    ImGui::SetNextItemWidth(100);
+    ImGui::InputInt("Hour", &newHour);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100);
+    ImGui::InputInt("Minute", &newMinute);
+    ImGui::SameLine();
+    ImGui::Checkbox("Weekdays only", &newWeekdays);
+    newHour = std::clamp(newHour, 0, 23);
+    newMinute = std::clamp(newMinute, 0, 59);
+    if (ImGui::Button("Add schedule", ImVec2(160, 0)) && !core::trim(newPrompt).empty()) {
+      ScheduledPrompt schedule;
+      schedule.id = core::uuid();
+      schedule.name = newName;
+      schedule.prompt = newPrompt;
+      schedule.model = selectedModels.empty() ? "" : selectedModels.front();
+      schedule.hour = newHour;
+      schedule.minute = newMinute;
+      schedule.weekdaysOnly = newWeekdays;
+      list.push_back(schedule.toJson());
+      cfg.save();
+      newName.clear();
+      newPrompt.clear();
+    }
+    widgets::dimText("Runs while the app is open, once per day, in a new chat with the model selected when added.");
+  }, width);
+
+  widgets::sectionHeader("PRESETS");
+  card("presets", [&] {
+    Json& list = cfg.extra["presets"];
+    if (!list.is_array()) list = Json::array();
+    if (list.empty()) widgets::dimText("Save one from the Presets button in a chat's header.");
+    int removeIndex = -1;
+    for (size_t i = 0; i < list.size(); ++i) {
+      Preset preset = Preset::fromJson(list[i]);
+      ImGui::PushID(static_cast<int>(i));
+      ImGui::Text("%s  -  %s", preset.name.c_str(), core::join(preset.models, ", ").c_str());
+      ImGui::SameLine();
+      if (ImGui::SmallButton("Apply")) applyPreset(preset);
+      ImGui::SameLine();
+      if (ImGui::SmallButton("Delete")) removeIndex = static_cast<int>(i);
+      ImGui::PopID();
+    }
+    if (removeIndex >= 0) {
+      list.erase(list.begin() + removeIndex);
+      cfg.save();
+    }
+  }, width);
+
+  widgets::sectionHeader("SERVER PROFILES");
+  card("profiles", [&] {
+    static std::string newName, newUrl, newEmail;
+    std::vector<ServerProfile> list = profiles();
+    int removeIndex = -1;
+    for (size_t i = 0; i < list.size(); ++i) {
+      ImGui::PushID(static_cast<int>(i));
+      const bool current = list[i].url == api_.server();
+      ImGui::Text("%s%s  %s", current ? "* " : "  ", list[i].name.c_str(), list[i].url.c_str());
+      ImGui::SameLine();
+      if (!current && ImGui::SmallButton("Switch")) switchProfile(list[i]);
+      ImGui::SameLine();
+      if (list.size() > 1 && ImGui::SmallButton("Remove")) removeIndex = static_cast<int>(i);
+      ImGui::PopID();
+    }
+    if (removeIndex >= 0) {
+      list.erase(list.begin() + removeIndex);
+      saveProfiles(list);
+    }
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(160);
+    ImGui::InputTextWithHint("##pname", "Name", &newName);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(320);
+    ImGui::InputTextWithHint("##purl", "http://host:3000", &newUrl);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(220);
+    ImGui::InputTextWithHint("##pemail", "Email", &newEmail);
+    ImGui::SameLine();
+    if (ImGui::Button("Add") && !core::trim(newUrl).empty()) {
+      list.push_back({newName.empty() ? newUrl : newName, core::trim(newUrl), newEmail});
+      saveProfiles(list);
+      newName.clear();
+      newUrl.clear();
+      newEmail.clear();
+    }
+    widgets::dimText("Each server keeps its own sign-in in the keychain.");
   }, width);
 
   widgets::sectionHeader("CONNECTION");

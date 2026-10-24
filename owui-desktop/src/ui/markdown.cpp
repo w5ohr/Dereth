@@ -1,12 +1,15 @@
 #include "ui/markdown.h"
 
 #include <cmath>
+#include <unordered_map>
 #include <vector>
 
 #include "core/common.h"
 #include "imgui_internal.h"
 #include "platform.h"
 #include "ui/icons.h"
+#include "ui/diffview.h"
+#include "ui/highlight.h"
 #include "ui/images.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -320,31 +323,68 @@ void renderCodeBlock(const std::string& code, const std::string& language, const
   const auto& palette = theme::palette();
   const float width = options.wrapWidth > 0.0f ? options.wrapWidth
                                                : ImGui::GetContentRegionAvail().x;
+  const std::string lang = highlight::normalizeLanguage(language);
+  const bool isDiff = lang == "diff" || (lang.empty() && diffview::looksLikeDiff(code));
 
   ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::toVec4(palette.codeBg));
   ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
 
-  // Header: language + actions.
+  // Parsed diffs keep their accept/reject state between frames, keyed by the
+  // block's text so a re-render of the same message does not reset choices.
+  static std::unordered_map<std::string, std::vector<diffview::FileDiff>> parsedDiffs;
+  std::vector<diffview::FileDiff>* diffs = nullptr;
+  if (isDiff) {
+    auto it = parsedDiffs.find(code);
+    if (it == parsedDiffs.end()) it = parsedDiffs.emplace(code, diffview::parse(code)).first;
+    if (!it->second.empty()) diffs = &it->second;
+  }
+
   const float headerHeight = ImGui::GetFrameHeight() + 6.0f;
   std::vector<std::string> lines = core::split(code, '\n');
   if (!lines.empty() && lines.back().empty()) lines.pop_back();
+  float bodyLines = static_cast<float>(lines.size());
+  if (diffs) {
+    bodyLines = 0.0f;
+    for (const auto& file : *diffs) {
+      bodyLines += 1.0f;
+      for (const auto& hunk : file.hunks) bodyLines += 1.4f + hunk.lines.size();
+    }
+  }
+  // Highlighted lines are laid out as items, so they take the item spacing too.
   const float bodyHeight =
-      std::min(520.0f, lines.size() * ImGui::GetTextLineHeight() + 18.0f);
+      std::min(520.0f, bodyLines * ImGui::GetTextLineHeightWithSpacing() + 18.0f);
 
   ImGui::BeginChild("codeblock", ImVec2(width, headerHeight + bodyHeight), ImGuiChildFlags_Borders);
   ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textFaint));
   ImGui::AlignTextToFramePadding();
-  ImGui::TextUnformatted(language.empty() ? "code" : language.c_str());
+  ImGui::TextUnformatted(language.empty() ? (isDiff ? "diff" : "code") : language.c_str());
   ImGui::PopStyleColor();
 
-  ImGui::SameLine(ImGui::GetContentRegionAvail().x - 54.0f);
+  const bool canRunOnServer = options.onRunCode && (lang == "python" || lang == "javascript");
+  const float buttons = 54.0f + (canRunOnServer ? 36.0f : 0.0f) + (diffs && options.onApplyDiff ? 70.0f : 0.0f);
+  ImGui::SameLine(ImGui::GetContentRegionAvail().x - buttons);
+  if (diffs && options.onApplyDiff) {
+    if (ImGui::SmallButton("Apply")) {
+      // Re-emit only the accepted hunks.
+      std::string filtered;
+      for (const auto& file : *diffs) {
+        filtered += "--- a/" + file.oldPath + "\n+++ b/" + (file.newPath.empty() ? file.oldPath : file.newPath) + "\n";
+        for (const auto& hunk : file.hunks) {
+          if (!hunk.accepted) continue;
+          filtered += hunk.header + "\n";
+          for (const auto& line : hunk.lines) filtered += std::string(1, line.tag) + line.text + "\n";
+        }
+      }
+      options.onApplyDiff(filtered);
+    }
+    ImGui::SameLine();
+  }
   if (icons::button("copy", icons::Icon::Copy, "Copy")) {
     platform::setClipboardText(code);
     widgets::toast(widgets::ToastLevel::Success, "Code copied");
   }
-  if (options.onRunCode && (language == "python" || language == "py" ||
-                            language == "javascript" || language == "js")) {
+  if (canRunOnServer) {
     ImGui::SameLine();
     if (icons::button("run", icons::Icon::Play, "Run on the server")) {
       options.onRunCode(code, language);
@@ -354,15 +394,22 @@ void renderCodeBlock(const std::string& code, const std::string& language, const
   ImGui::BeginChild("codebody", ImVec2(0, 0), ImGuiChildFlags_None,
                     ImGuiWindowFlags_HorizontalScrollbar);
   theme::pushMono();
-  ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.text));
-  for (const std::string& line : lines) ImGui::TextUnformatted(line.c_str());
-  ImGui::PopStyleColor();
+  if (diffs) {
+    diffview::render("diff", *diffs, options.onApplyDiff != nullptr, width - 30.0f);
+  } else {
+    bool inBlockComment = false;
+    for (const std::string& line : lines) {
+      highlight::drawLine(line, lang, &inBlockComment, theme::isDark());
+    }
+  }
   theme::pop();
   ImGui::EndChild();
 
   ImGui::EndChild();
   ImGui::PopStyleVar(2);
   ImGui::PopStyleColor();
+
+  if (options.onCodeBlockActions) options.onCodeBlockActions(code, language);
   ImGui::PopID();
 }
 

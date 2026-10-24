@@ -139,6 +139,17 @@ void apply(const std::string& name) {
     };
   }
 
+  if (name == "midnight") {
+    // True black for OLED panels and dark rooms; everything else as dark.
+    gPalette.bg = rgb(0, 0, 0);
+    gPalette.panel = rgb(10, 10, 12);
+    gPalette.panelAlt = rgb(20, 20, 24);
+    gPalette.border = rgb(34, 34, 40);
+    gPalette.codeBg = rgb(8, 8, 10);
+    gPalette.userBubble = rgb(18, 22, 32);
+    gPalette.assistantBubble = rgb(0, 0, 0);
+  }
+
   ImVec4* colors = style.Colors;
   colors[ImGuiCol_Text] = toVec4(gPalette.text);
   colors[ImGuiCol_TextDisabled] = toVec4(gPalette.textFaint);

@@ -1,6 +1,7 @@
 // macOS entry point: Cocoa window + MetalKit view + Dear ImGui, driving
 // app::App once per frame.
 #import <Cocoa/Cocoa.h>
+#import <CoreSpotlight/CoreSpotlight.h>
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 
@@ -186,6 +187,78 @@ static std::string gIniPath;
   app::App::instance().stopAllStreams();
 }
 
+- (void)openPalette:(id)sender {
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.showPalette = true;
+  app.paletteQuery.clear();
+}
+
+- (void)quickAsk:(id)sender {
+  (void)sender;
+  app::App::instance().openQuickAsk();
+}
+
+- (void)findInChat:(id)sender {
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.pane = app::Pane::Chat;
+  app.showChatSearch = true;
+}
+
+- (void)exportMarkdown:(id)sender { (void)sender; app::App::instance().exportChat("md"); }
+- (void)exportHtml:(id)sender { (void)sender; app::App::instance().exportChat("html"); }
+- (void)exportPdf:(id)sender { (void)sender; app::App::instance().exportChat("pdf"); }
+
+- (void)toggleCompare:(id)sender {
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.compareMode = !app.compareMode;
+}
+
+- (void)togglePins:(id)sender {
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.showPins = !app.showPins;
+}
+
+- (void)toggleVoice:(id)sender {
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.voiceMode = !app.voiceMode;
+}
+
+- (void)showInspector:(id)sender {
+  (void)sender;
+  app::App::instance().showContextInspector = true;
+}
+
+// Spotlight results and Handoff both arrive as user activities.
+- (BOOL)application:(NSApplication*)application
+    continueUserActivity:(NSUserActivity*)activity
+      restorationHandler:(void (^)(NSArray<id<NSUserActivityRestoring>>*))restorationHandler {
+  (void)application;
+  (void)restorationHandler;
+  std::string chatId;
+  if ([activity.activityType isEqualToString:CSSearchableItemActionType]) {
+    NSString* identifier = activity.userInfo[CSSearchableItemActivityIdentifier];
+    if (identifier) chatId = identifier.UTF8String;
+  } else if (activity.webpageURL) {
+    NSString* path = activity.webpageURL.path;
+    if ([path hasPrefix:@"/c/"]) chatId = [path substringFromIndex:3].UTF8String;
+  }
+  if (chatId.empty()) return NO;
+  [self.window makeKeyAndOrderFront:nil];
+  app::App::instance().openChat(chatId);
+  return YES;
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)sender hasVisibleWindows:(BOOL)visible {
+  (void)sender;
+  if (!visible) [self.window makeKeyAndOrderFront:nil];
+  return YES;
+}
+
 @end
 
 static void buildMenuBar() {
@@ -204,6 +277,13 @@ static void buildMenuBar() {
   [menuBar addItem:fileItem];
   NSMenu* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
   [fileMenu addItemWithTitle:@"New Chat" action:@selector(newChat:) keyEquivalent:@"n"];
+  [fileMenu addItemWithTitle:@"Quick Ask" action:@selector(quickAsk:) keyEquivalent:@"j"];
+  NSMenuItem* exportItem = [fileMenu addItemWithTitle:@"Export Chat" action:nil keyEquivalent:@""];
+  NSMenu* exportMenu = [[NSMenu alloc] initWithTitle:@"Export Chat"];
+  [exportMenu addItemWithTitle:@"Markdown..." action:@selector(exportMarkdown:) keyEquivalent:@""];
+  [exportMenu addItemWithTitle:@"HTML..." action:@selector(exportHtml:) keyEquivalent:@""];
+  [exportMenu addItemWithTitle:@"PDF..." action:@selector(exportPdf:) keyEquivalent:@"p"];
+  exportItem.submenu = exportMenu;
   [fileMenu addItemWithTitle:@"Close Window" action:@selector(performClose:) keyEquivalent:@"w"];
   fileItem.submenu = fileMenu;
 
@@ -217,11 +297,15 @@ static void buildMenuBar() {
   [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
   [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
   [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+  [editMenu addItem:[NSMenuItem separatorItem]];
+  [editMenu addItemWithTitle:@"Find in Chat" action:@selector(findInChat:) keyEquivalent:@"f"];
   editItem.submenu = editMenu;
 
   NSMenuItem* viewItem = [[NSMenuItem alloc] init];
   [menuBar addItem:viewItem];
   NSMenu* viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
+  [viewMenu addItemWithTitle:@"Command Palette" action:@selector(openPalette:) keyEquivalent:@"k"];
+  [viewMenu addItem:[NSMenuItem separatorItem]];
   struct PaneEntry {
     const char* title;
     const char* key;
@@ -233,6 +317,7 @@ static void buildMenuBar() {
       {"Images", "5", app::Pane::Images},    {"Files", "6", app::Pane::Files},
       {"Memories", "7", app::Pane::Memories}, {"Admin", "8", app::Pane::Admin},
       {"API Console", "9", app::Pane::Console}, {"Settings", "0", app::Pane::Settings},
+      {"Tools", "-", app::Pane::Tools},
   };
   for (const PaneEntry& entry : entries) {
     NSMenuItem* item =
@@ -244,6 +329,10 @@ static void buildMenuBar() {
   }
   [viewMenu addItem:[NSMenuItem separatorItem]];
   [viewMenu addItemWithTitle:@"Toggle Sidebar" action:@selector(toggleSidebar:) keyEquivalent:@"b"];
+  [viewMenu addItemWithTitle:@"Compare Answers" action:@selector(toggleCompare:) keyEquivalent:@"d"];
+  [viewMenu addItemWithTitle:@"Pinned Messages" action:@selector(togglePins:) keyEquivalent:@"i"];
+  [viewMenu addItemWithTitle:@"What Was Sent" action:@selector(showInspector:) keyEquivalent:@"e"];
+  [viewMenu addItemWithTitle:@"Voice Conversation" action:@selector(toggleVoice:) keyEquivalent:@"u"];
   [viewMenu addItemWithTitle:@"Stop Generating" action:@selector(stopGenerating:) keyEquivalent:@"."];
   viewItem.submenu = viewMenu;
 

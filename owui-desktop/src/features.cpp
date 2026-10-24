@@ -101,6 +101,31 @@ std::string urlDecode(const std::string& s) {
   return out;
 }
 
+// Floating overlays (palette, quick ask) sit over a dimmed backdrop with a
+// lighter panel and a hairline border so they read as above the window.
+void beginOverlayStyle() {
+  const auto& palette = theme::palette();
+  ImGui::PushStyleColor(ImGuiCol_WindowBg, theme::toVec4(palette.panel));
+  ImGui::PushStyleColor(ImGuiCol_Border, theme::toVec4(palette.border));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
+}
+
+void endOverlayStyle() {
+  ImGui::PopStyleVar(2);
+  ImGui::PopStyleColor(2);
+}
+
+// Darkens everything behind an overlay. Drawn into the root window's list so
+// the overlay itself (a separate window) stays on top.
+void dimBackdrop() {
+  const ImGuiViewport* vp = ImGui::GetMainViewport();
+  ImGuiWindow* root = ImGui::FindWindowByName("##root");
+  if (!root) return;
+  root->DrawList->AddRectFilled(vp->WorkPos, ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y),
+                                IM_COL32(0, 0, 0, theme::isDark() ? 110 : 60));
+}
+
 }  // namespace
 
 // ------------------------------------------------------------- presets etc.
@@ -344,6 +369,8 @@ void App::drawPalette() {
   ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + 90.0f),
                           ImGuiCond_Always, ImVec2(0.5f, 0.0f));
   ImGui::SetNextWindowSize(ImVec2(620, 0));
+  dimBackdrop();
+  beginOverlayStyle();
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
   ImGui::Begin("##palette", nullptr,
                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
@@ -388,6 +415,7 @@ void App::drawPalette() {
   }
   ImGui::End();
   ImGui::PopStyleVar();
+  endOverlayStyle();
 }
 
 // -------------------------------------------------------------- quick ask
@@ -404,6 +432,8 @@ void App::drawQuickAsk() {
   ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + 120.0f),
                           ImGuiCond_Always, ImVec2(0.5f, 0.0f));
   ImGui::SetNextWindowSize(ImVec2(700, 0));
+  dimBackdrop();
+  beginOverlayStyle();
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 14));
   ImGui::Begin("##quickask", nullptr,
                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
@@ -459,6 +489,7 @@ void App::drawQuickAsk() {
   if (ImGui::IsKeyPressed(ImGuiKey_Escape)) showQuickAsk = false;
   ImGui::End();
   ImGui::PopStyleVar();
+  endOverlayStyle();
 }
 
 // ------------------------------------------------------- context inspector
@@ -851,11 +882,6 @@ void App::tickOfflineQueue() {
 void App::handleKeyboardNavigation(const std::vector<std::string>& path) {
   ImGuiIO& io = ImGui::GetIO();
   if (path.empty()) return;
-  if (io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_F, false)) showChatSearch = true;
-  if (io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_K, false)) {
-    showPalette = !showPalette;
-    paletteQuery.clear();
-  }
   if (!io.KeyAlt) return;
   auto position = std::find(path.begin(), path.end(), focusedMessageId);
   int index = position == path.end() ? static_cast<int>(path.size()) : static_cast<int>(std::distance(path.begin(), position));

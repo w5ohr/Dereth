@@ -18,6 +18,11 @@ struct Options {
   std::function<std::string(const std::string& url)> imageLoader;
   // Invoked by the "Run" button on a code block.
   std::function<void(const std::string& code, const std::string& language)> onRunCode;
+  // Draws extra controls and results under a code block (run locally, lint,
+  // apply to file). Called inside the block's ImGui ID scope.
+  std::function<void(const std::string& code, const std::string& language)> onCodeBlockActions;
+  // Applies a diff-shaped block; receives the (possibly hunk-filtered) diff.
+  std::function<void(const std::string& diff)> onApplyDiff;
   // Invoked when a link is clicked; defaults to opening in the browser.
   std::function<void(const std::string& url)> onLink;
 };

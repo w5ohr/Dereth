@@ -8,6 +8,7 @@
 #include "core/keychain.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
+#include "native.h"
 #include "platform.h"
 #include "ui/icons.h"
 #include "ui/images.h"
@@ -37,6 +38,7 @@ const NavItem kNav[] = {
     {Pane::Memories, icons::Icon::Brain, "Memories", false},
     {Pane::Admin, icons::Icon::Wrench, "Admin", true},
     {Pane::Console, icons::Icon::Code, "API Console", false},
+    {Pane::Tools, icons::Icon::Wrench, "Tools", false},
     {Pane::Settings, icons::Icon::Gear, "Settings", false},
 };
 
@@ -321,6 +323,8 @@ void App::signIn(const std::string& email, const std::string& password) {
         api_.setToken(token);
         if (settings().rememberSession) {
           settings().hasSavedSession = keychain::save(kTokenAccount, token);
+          // Profiles look tokens up per server; keep that copy too.
+          keychain::save(std::string(kTokenAccount) + ":" + api_.server(), token);
           settings().save();
         }
         user_ = res.data;
@@ -412,6 +416,8 @@ void App::openChat(const std::string& id) {
       if (!chat.models.empty()) selectedModels = chat.models;
       scrollToBottom = true;
       focusComposer = true;
+      focusedMessageId.clear();
+      updateHandoffAndSpotlight();
     });
   });
 }
@@ -443,6 +449,7 @@ void App::refreshChats(bool silent) {
         folders.clear();
         for (const auto& folder : folderRes.data) folders.push_back(folder);
       }
+      native::refreshStatusMenu();
     });
   });
 }
@@ -573,6 +580,13 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
     messages.push_back(entry);
   }
 
+  // Project mode: the pinned folder's tree and ticked files ride along as a
+  // system message so every turn sees the code being worked on.
+  const std::string projectBlock = projectContextBlock();
+  if (!projectBlock.empty()) {
+    messages.insert(messages.begin(), Json{{"role", "system"}, {"content", projectBlock}});
+  }
+
   Json payload{
       {"stream", settings().streamResponses},
       {"model", model},
@@ -659,6 +673,8 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
 
   Json payload = buildCompletionPayload(assistantId, model);
   const bool useStreaming = settings().streamResponses;
+  lastPayload = payload;
+  timings[assistantId] = MessageTiming{core::nowMillis(), 0.0, 0.0};
 
   // When the socket is up, let the server run the completion as a background
   // task and push tokens over it: that is the path the web UI takes, so tool
@@ -726,6 +742,30 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
 
 void App::sendMessage(const std::string& text) {
   if (core::trim(text).empty() && attachments.empty()) return;
+  if (!serverReachable && attachments.empty()) {
+    offlineQueue.push_back(text);
+    composer.clear();
+    widgets::toastInfo("Offline - queued (" + std::to_string(offlineQueue.size()) + " waiting)");
+    return;
+  }
+  // Auto-routing: short, code-free questions go to the small model for this
+  // one turn; the user's selection is left alone.
+  std::vector<std::string> savedSelection;
+  const std::string routed = routeModel(text);
+  if (!routed.empty() && selectedModels.size() == 1 && selectedModels.front() != routed) {
+    savedSelection = selectedModels;
+    selectedModels = {routed};
+    routedModelNote = "Routed to " + routed + " (short question)";
+  } else {
+    routedModelNote.clear();
+  }
+  struct RestoreSelection {
+    App* app;
+    std::vector<std::string> saved;
+    ~RestoreSelection() {
+      if (!saved.empty()) app->selectedModels = saved;
+    }
+  } restore{this, savedSelection};
   if (selectedModels.empty()) {
     widgets::toastError("Pick a model first");
     return;
@@ -800,9 +840,11 @@ void App::regenerate(const std::string& assistantMessageId) {
   auto it = chat.messages.find(assistantMessageId);
   if (it == chat.messages.end()) return;
   const std::string parentId = it->second.parentId;
-  const std::string model = it->second.model.empty()
-                                ? (selectedModels.empty() ? "" : selectedModels.front())
-                                : it->second.model;
+  std::string model = it->second.model.empty()
+                          ? (selectedModels.empty() ? "" : selectedModels.front())
+                          : it->second.model;
+  const bool overridden = !activeStreamModelOverride_.empty();
+  if (overridden) model = activeStreamModelOverride_;
   if (parentId.empty() || model.empty()) return;
 
   Message assistant;
@@ -811,6 +853,12 @@ void App::regenerate(const std::string& assistantMessageId) {
   assistant.role = "assistant";
   assistant.model = model;
   assistant.modelName = it->second.modelName;
+  if (overridden) {
+    assistant.modelName = model;
+    for (const ModelInfo& info : models) {
+      if (info.id == model) assistant.modelName = info.name;
+    }
+  }
   assistant.timestamp = core::nowSeconds();
   assistant.streaming = true;
   chat.messages[parentId].childrenIds.push_back(assistant.id);
@@ -881,6 +929,10 @@ void App::pollStreams() {
       if (it != chat.messages.end()) {
         Message& message = it->second;
         if (message.content != stream->content) {
+          if (message.content.empty() && timings.count(stream->messageId) &&
+              timings[stream->messageId].firstTokenMs == 0.0) {
+            timings[stream->messageId].firstTokenMs = core::nowMillis();
+          }
           message.content = stream->content;
           if (scrollToBottom == false) scrollToBottom = true;
         }
@@ -892,11 +944,42 @@ void App::pollStreams() {
           message.streaming = false;
           message.status.clear();
           if (!stream->error.empty()) message.error = stream->error;
+          if (timings.count(stream->messageId)) timings[stream->messageId].doneMs = core::nowMillis();
         }
       }
       finished = stream->done;
     }
     if (finished) {
+      const std::string err = core::lower(stream->error);
+      const bool transport = !err.empty() && stream->content.empty() &&
+                             (err.find("connect") != std::string::npos ||
+                              err.find("resolve") != std::string::npos ||
+                              err.find("timeout") != std::string::npos ||
+                              err.find("timed out") != std::string::npos ||
+                              err.find("network") != std::string::npos);
+      auto assistant = chat.messages.find(stream->messageId);
+      if (transport && assistant != chat.messages.end()) {
+        // The server is unreachable: take the turn back out of the chat and
+        // queue its text, so it goes out once the server returns instead of
+        // leaving a dead exchange behind.
+        const std::string userId = assistant->second.parentId;
+        auto user = chat.messages.find(userId);
+        if (user != chat.messages.end()) {
+          offlineQueue.push_back(user->second.content);
+          const std::string grandparent = user->second.parentId;
+          if (!grandparent.empty() && chat.messages.count(grandparent)) {
+            auto& siblings = chat.messages[grandparent].childrenIds;
+            siblings.erase(std::remove(siblings.begin(), siblings.end(), userId), siblings.end());
+          }
+          chat.messages.erase(userId);
+          chat.currentId = grandparent;
+        }
+        chat.messages.erase(stream->messageId);
+        serverReachable = false;
+        lastReachCheck = 0.0;
+        widgets::toastInfo("Server unreachable - message queued and will send when it is back");
+        continue;
+      }
       afterCompletion(stream->messageId);
     } else {
       keep.push_back(stream);
@@ -912,8 +995,12 @@ void App::afterCompletion(const std::string& assistantId) {
 
   if (!message.error.empty()) {
     widgets::toastError(message.error);
-  } else if (settings().notifyOnCompletion && !ImGui::GetIO().AppFocusLost) {
-    // Only notify when the window is in the background.
+  } else if (settings().notifyOnCompletion && ImGui::GetIO().AppFocusLost) {
+    // Only notify when the window is in the background; the notification's
+    // reply field sends straight back into this chat.
+    std::string preview = md::toPlainText(message.content);
+    if (preview.size() > 180) preview = preview.substr(0, 180) + "...";
+    native::notifyWithReply(chat.title.empty() ? "Reply ready" : chat.title, preview, chat.id);
   }
   if (settings().speakReplies && !message.content.empty()) speak(message.content);
 
@@ -1017,6 +1104,7 @@ void App::maybeGenerateTitle() {
 }
 
 void App::deleteChat(const std::string& id) {
+  native::removeChatFromSpotlight(id);
   async::run([this, id] {
     api_.deleteChat(id);
     async::post([this, id] {
@@ -1059,6 +1147,31 @@ void App::rateMessage(const std::string& messageId, int rating) {
 void App::frame() {
   pollStreams();
   handleShortcuts();
+
+  // Native hooks need the window to exist, so they go in on the first frame
+  // rather than in init().
+  static bool nativeInstalled = false;
+  if (!nativeInstalled) {
+    nativeInstalled = true;
+    installNativeHooks();
+    projectFolder = settings().extra.value("projectFolder", "");
+    if (settings().extra.contains("projectFiles") && settings().extra["projectFiles"].is_array()) {
+      projectFiles = settings().extra["projectFiles"].get<std::vector<std::string>>();
+    }
+    if (settings().theme == "system") applyTheme();
+  }
+  if (signedIn_) {
+    tickScheduler();
+    tickVoiceMode();
+    tickOfflineQueue();
+  }
+  {
+    static size_t lastBadge = static_cast<size_t>(-1);
+    if (streams_.size() != lastBadge) {
+      lastBadge = streams_.size();
+      native::setDockBadge(lastBadge ? std::to_string(lastBadge) : "");
+    }
+  }
 
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -1124,6 +1237,7 @@ void App::frame() {
       case Pane::Admin: drawAdminPane(); break;
       case Pane::Console: drawConsolePane(); break;
       case Pane::Settings: drawSettingsPane(); break;
+      case Pane::Tools: drawToolsPane(); break;
     }
     ImGui::EndChild();
   }
@@ -1131,6 +1245,13 @@ void App::frame() {
   ImGui::End();
 
   if (showModelPicker) drawModelPicker();
+  if (signedIn_) {
+    drawPalette();
+    drawQuickAsk();
+    drawContextInspector();
+    drawCitationPopup();
+    drawProjectFilesPopup();
+  }
   widgets::renderToasts();
 
   // Periodic refresh of the chat list while idle.

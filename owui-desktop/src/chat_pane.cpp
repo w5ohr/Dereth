@@ -6,6 +6,7 @@
 #include "core/common.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
+#include "native.h"
 #include "platform.h"
 #include "ui/icons.h"
 #include "ui/images.h"
@@ -95,13 +96,33 @@ void App::drawChatPane() {
     ImGui::PopStyleColor();
 
     // Right-hand actions.
-    const float actionsWidth = 226.0f;
+    const float actionsWidth = 370.0f;
     ImGui::SameLine(ImGui::GetWindowWidth() - actionsWidth);
     if (!streams_.empty()) {
       widgets::spinner("##busy", 8.0f, 2.0f);
       ImGui::SameLine();
     }
     if (icons::button("newchat", icons::Icon::Plus, "New chat")) newChat();
+    ImGui::SameLine();
+    if (icons::button("findinchat", icons::Icon::Search, "Find in chat (Cmd+F)", 0.0f,
+                      showChatSearch ? palette.accent : 0)) {
+      showChatSearch = !showChatSearch;
+    }
+    ImGui::SameLine();
+    if (icons::button("presets", icons::Icon::Layers, "Presets")) ImGui::OpenPopup("##presets");
+    drawPresetMenu();
+    ImGui::SameLine();
+    if (icons::button("compare", icons::Icon::Branch, "Compare sibling answers side by side",
+                      0.0f, compareMode ? palette.accent : 0)) {
+      compareMode = !compareMode;
+    }
+    ImGui::SameLine();
+    if (icons::button("pinsrail", icons::Icon::Star, "Pinned messages", 0.0f,
+                      showPins ? palette.accent : 0)) {
+      showPins = !showPins;
+    }
+    ImGui::SameLine();
+    if (icons::button("inspector", icons::Icon::Info, "What was sent")) showContextInspector = true;
     ImGui::SameLine();
     if (icons::button("pinchat", icons::Icon::Pin, "Pin") && !chat.id.empty()) {
       const std::string id = chat.id;
@@ -185,6 +206,33 @@ void App::drawChatPane() {
           widgets::toast(widgets::ToastLevel::Success, "Saved to " + path);
         }
       }
+      if (ImGui::BeginMenu("Export")) {
+        if (ImGui::MenuItem("Markdown...")) exportChat("md");
+        if (ImGui::MenuItem("HTML...")) exportChat("html");
+        if (ImGui::MenuItem("PDF...")) exportChat("pdf");
+        ImGui::EndMenu();
+      }
+      if (ImGui::BeginMenu("Open reference chat")) {
+        for (const ChatSummary& summary : chats) {
+          if (summary.id == chat.id) continue;
+          if (ImGui::MenuItem(summary.title.c_str())) {
+            const std::string refId = summary.id;
+            referenceChatId = refId;
+            async::run([this, refId] {
+              api::Result res = api_.chat(refId);
+              async::post([this, res, refId] {
+                if (!res.ok || referenceChatId != refId) return;
+                referenceChat = ChatDoc::fromJson(res.data.value("chat", Json::object()), refId);
+              });
+            });
+          }
+        }
+        ImGui::EndMenu();
+      }
+      if (ImGui::MenuItem("Compact chat") && !chat.id.empty()) compactChat();
+      if (ImGui::MenuItem(voiceMode ? "Stop voice conversation" : "Voice conversation")) {
+        voiceMode = !voiceMode;
+      }
       if (ImGui::MenuItem("Copy transcript")) {
         std::string transcript;
         for (const std::string& id : chat.branch()) {
@@ -210,12 +258,62 @@ void App::drawChatPane() {
       ImGui::EndPopup();
     }
     ImGui::Unindent(10.0f);
+
+    // Context pressure: estimated tokens in play against the model's window.
+    {
+      const std::string model = selectedModels.empty() ? "" : selectedModels.front();
+      const int used = currentContextTokens();
+      const int window = std::max(1, contextWindowFor(model));
+      const float fraction = std::min(1.0f, static_cast<float>(used) / window);
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const ImVec2 origin = ImGui::GetWindowPos();
+      const float y = origin.y + 51.0f;
+      const ImU32 color = fraction > 0.85f ? palette.danger
+                          : fraction > 0.6f ? palette.warning
+                                            : palette.accent;
+      dl->AddRectFilled(ImVec2(origin.x, y), ImVec2(origin.x + width * fraction, y + 2.0f), color);
+      ImGui::SetCursorScreenPos(ImVec2(origin.x + width - 150.0f, y - 16.0f));
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textFaint));
+      if (used < 1000) {
+        ImGui::Text("~%d / %dk ctx", used, window / 1000);
+      } else {
+        ImGui::Text("~%.1fk / %dk ctx", used / 1000.0, window / 1000);
+      }
+      ImGui::PopStyleColor();
+    }
   }
   ImGui::EndChild();
 
+  if (showChatSearch) {
+    ImGui::BeginChild("##searchbar", ImVec2(0, ImGui::GetFrameHeight() + 10.0f));
+    ImGui::Dummy(ImVec2(0, 3));
+    ImGui::Indent(16.0f);
+    drawChatSearchBar(width);
+    ImGui::Unindent(16.0f);
+    ImGui::EndChild();
+  }
+
+  if (!serverReachable || !offlineQueue.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::toVec4(palette.panelAlt));
+    ImGui::BeginChild("##offline", ImVec2(0, ImGui::GetTextLineHeight() + 12.0f));
+    ImGui::Dummy(ImVec2(0, 3));
+    ImGui::Indent(16.0f);
+    icons::inlineIcon(icons::Icon::Warning, palette.warning);
+    ImGui::SameLine(0, 6);
+    ImGui::Text("%s - %d message(s) queued", serverReachable ? "Sending queue" : "Server unreachable",
+                static_cast<int>(offlineQueue.size()));
+    ImGui::Unindent(16.0f);
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+  }
+
   // ------------------------------------------------------------- messages
-  const float composerHeight = 128.0f + (attachments.empty() ? 0.0f : 74.0f);
-  ImGui::BeginChild("##messages", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
+  const float composerHeight = 128.0f + (attachments.empty() ? 0.0f : 74.0f) +
+                              (projectFolder.empty() ? 0.0f : 24.0f);
+  const float sideWidth = !referenceChatId.empty() ? 420.0f : (showPins ? 260.0f : 0.0f);
+  ImGui::BeginChild("##messagearea", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
+  ImGui::BeginChild("##messages", ImVec2(sideWidth > 0.0f ? -sideWidth - 8.0f : 0.0f, 0),
+                    ImGuiChildFlags_None);
   {
     const float available = ImGui::GetContentRegionAvail().x;
     const float contentWidth = std::min(kMaxContentWidth, available - 40.0f);
@@ -261,6 +359,13 @@ void App::drawChatPane() {
       ImGui::Unindent(marginX);
     }
 
+    const std::string lastAssistantId = [&] {
+      for (auto it = path.rbegin(); it != path.rend(); ++it) {
+        if (chat.messages.at(*it).role == "assistant") return *it;
+      }
+      return std::string();
+    }();
+
     for (const std::string& messageId : path) {
       Message& message = chat.messages[messageId];
       ImGui::PushID(messageId.c_str());
@@ -268,6 +373,39 @@ void App::drawChatPane() {
 
       const bool isUser = message.role == "user";
       ImGui::Dummy(ImVec2(0, 10));
+      if (pendingScrollTo == messageId) {
+        ImGui::SetScrollHereY(0.15f);
+        pendingScrollTo.clear();
+      }
+      if (focusedMessageId == messageId) {
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x - 12, pos.y - 4),
+                                                  ImVec2(pos.x - 9, pos.y + 40), palette.accent, 2.0f);
+      }
+      if (showChatSearch && !chatSearchQuery.empty() &&
+          core::containsNoCase(message.content, chatSearchQuery)) {
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x - 12, pos.y - 4),
+                                                  ImVec2(pos.x - 9, pos.y + 40), palette.warning, 2.0f);
+      }
+
+      // Compare mode: two assistant answers to the same prompt, word-diffed.
+      if (compareMode && !isUser) {
+        const std::vector<std::string> siblings = chat.siblings(messageId);
+        std::vector<std::string> answers;
+        for (const std::string& sibling : siblings) {
+          auto it = chat.messages.find(sibling);
+          if (it != chat.messages.end() && it->second.role == "assistant" && !it->second.streaming) {
+            answers.push_back(sibling);
+          }
+        }
+        if (answers.size() >= 2) {
+          drawCompareView(answers, contentWidth);
+          ImGui::Unindent(marginX);
+          ImGui::PopID();
+          continue;
+        }
+      }
 
       // --- header line: who + when + branch switcher
       {
@@ -285,6 +423,21 @@ void App::drawChatPane() {
         if (settings().showTimestamps && message.timestamp > 0) {
           ImGui::SameLine();
           widgets::dimText("%s", core::relativeTime(message.timestamp).c_str());
+        }
+        auto timing = timings.find(messageId);
+        if (!isUser && timing != timings.end() && timing->second.firstTokenMs > 0.0) {
+          ImGui::SameLine();
+          const double ttft = (timing->second.firstTokenMs - timing->second.sentMs) / 1000.0;
+          if (timing->second.doneMs > 0.0) {
+            widgets::dimText("first token %.1fs, total %.1fs", ttft,
+                             (timing->second.doneMs - timing->second.sentMs) / 1000.0);
+          } else {
+            widgets::dimText("first token %.1fs", ttft);
+          }
+        }
+        if (isPinned(messageId)) {
+          ImGui::SameLine();
+          icons::inlineIcon(icons::Icon::Star, palette.warning, 0.8f);
         }
 
         const std::vector<std::string> siblings = chat.siblings(messageId);
@@ -380,6 +533,10 @@ void App::drawChatPane() {
             });
           });
         };
+        options.onCodeBlockActions = [this](const std::string& code, const std::string& language) {
+          drawCodeBlockActions(code, language);
+        };
+        options.onApplyDiff = [this](const std::string& diff) { applyCodeBlockToFile(diff); };
         md::render("body", message.content, options);
       } else {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + contentWidth);
@@ -413,13 +570,7 @@ void App::drawChatPane() {
             } else if (source.is_string()) {
               label += source.get<std::string>();
             }
-            if (widgets::linkText(label.c_str())) {
-              std::string url;
-              if (source.contains("source") && source["source"].is_object()) {
-                url = source["source"].value("url", "");
-              }
-              if (!url.empty()) platform::openUrl(url);
-            }
+            if (widgets::linkText(label.c_str())) openCitation(source, 0);
           }
         }
       }
@@ -455,6 +606,11 @@ void App::drawChatPane() {
           widgets::toast(widgets::ToastLevel::Success, "Copied");
         }
         ImGui::SameLine();
+        if (icons::button("pin", icons::Icon::Star, isPinned(messageId) ? "Unpin" : "Pin", 0.0f,
+                          isPinned(messageId) ? palette.warning : 0)) {
+          togglePin(messageId);
+        }
+        ImGui::SameLine();
         if (isUser) {
           if (icons::button("edit", icons::Icon::Pencil, "Edit & resend")) {
             message.editing = true;
@@ -465,6 +621,22 @@ void App::drawChatPane() {
             regenerate(messageId);
           }
           ImGui::SameLine();
+          if (icons::button("retrywith", icons::Icon::Chevron, "Retry with another model")) {
+            ImGui::OpenPopup("##retrywith");
+          }
+          if (ImGui::BeginPopup("##retrywith")) {
+            for (const ModelInfo& info : models) {
+              if (ImGui::MenuItem(info.name.c_str())) retryWithModel(messageId, info.id);
+            }
+            ImGui::EndPopup();
+          }
+          ImGui::SameLine();
+          if (messageId == lastAssistantId) {
+            if (icons::button("continue", icons::Icon::Play, "Continue this reply")) {
+              continueReply(messageId);
+            }
+            ImGui::SameLine();
+          }
           if (icons::button("speak", icons::Icon::Speaker, "Read aloud")) speak(message.content);
           ImGui::SameLine();
           if (icons::button("up", icons::Icon::ThumbUp, "Good response", 0.0f,
@@ -513,6 +685,15 @@ void App::drawChatPane() {
       ImGui::SetScrollHereY(1.0f);
       if (streams_.empty()) scrollToBottom = false;
     }
+    handleKeyboardNavigation(path);
+  }
+  ImGui::EndChild();
+  if (!referenceChatId.empty()) {
+    ImGui::SameLine();
+    drawReferenceColumn(sideWidth);
+  } else if (showPins) {
+    ImGui::SameLine();
+    drawPinnedRail(sideWidth);
   }
   ImGui::EndChild();
 
@@ -585,10 +766,59 @@ void App::drawChatPane() {
                                           palette.textFaint, "Send a message...");
     }
 
+    // "/" at the start of the composer offers the server's saved prompts.
+    if (!composer.empty() && composer[0] == '/' && composer.find(' ') == std::string::npos &&
+        composer.find('\n') == std::string::npos) {
+      const Json matches = slashPromptMatches(composer);
+      if (!matches.empty()) {
+        ImGui::SetNextWindowPos(ImVec2(boxStart.x + 12, boxStart.y - 6), ImGuiCond_Always, ImVec2(0, 1));
+        ImGui::BeginTooltip();
+        widgets::dimText("Saved prompts - Tab inserts the first");
+        for (const auto& prompt : matches) {
+          ImGui::Text("%s  %s", prompt.value("command", "").c_str(),
+                      prompt.value("title", prompt.value("name", "")).c_str());
+        }
+        ImGui::EndTooltip();
+        if (composerFocused && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+          composer = matches[0].value("content", "");
+          ++composerGeneration;
+          focusComposer = true;
+        }
+      }
+    }
+
     // Toolbar inside the box.
     ImGui::SetCursorScreenPos(ImVec2(boxStart.x + 10, boxStart.y + 56));
     if (icons::button("attach", icons::Icon::Paperclip, "Attach files")) {
       attachFiles(platform::openFiles(true));
+    }
+    ImGui::SameLine();
+    if (icons::button("folderctx", icons::Icon::Folder,
+                      projectFolder.empty() ? "Set project folder" : "Project files")) {
+      if (projectFolder.empty()) {
+        auto picked = native::chooseFolder();
+        if (!picked.empty()) setProjectFolder(picked.front());
+      } else {
+        showProjectFiles = true;
+      }
+    }
+    if (!attachments.empty() && attachments.back().isImage) {
+      ImGui::SameLine();
+      if (icons::button("livetext", icons::Icon::Note, "Extract text from the image")) {
+        const std::string bytes = attachments.back().bytes;
+        async::run([this, bytes] {
+          const std::string text = native::recognizeText(bytes);
+          async::post([this, text] {
+            if (text.empty()) {
+              widgets::toastInfo("No text found in the image");
+              return;
+            }
+            composer += (composer.empty() ? "" : "\n") + text;
+            ++composerGeneration;
+            focusComposer = true;
+          });
+        });
+      }
     }
     ImGui::SameLine();
     if (icons::button("mic", icons::Icon::Mic,
@@ -626,6 +856,12 @@ void App::drawChatPane() {
     if (icons::button("codeint", icons::Icon::Code, "Code interpreter", 0.0f,
                       codeInterpreterEnabled ? palette.accent : 0)) {
       codeInterpreterEnabled = !codeInterpreterEnabled;
+    }
+    ImGui::SameLine();
+    if (icons::button("voice", icons::Icon::Speaker,
+                      voiceMode ? "Stop voice conversation" : "Voice conversation", 0.0f,
+                      voiceMode ? palette.danger : 0)) {
+      voiceMode = !voiceMode;
     }
     ImGui::SameLine();
     if (icons::button("tools", icons::Icon::Wrench, "Tools", 0.0f,
@@ -679,10 +915,20 @@ void App::drawChatPane() {
 
     ImGui::SetCursorScreenPos(ImVec2(boxStart.x, boxStart.y + boxHeight + 4));
     ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textFaint));
-    if (platform::recording()) {
+    static const char* kVoiceStates[] = {"", "Listening...", "Transcribing...", "Thinking...", "Speaking..."};
+    if (voiceMode && voiceState > 0) {
+      ImGui::Text("Voice: %s %s", kVoiceStates[voiceState],
+                  voiceState == 1 ? std::string(static_cast<size_t>(platform::recordingLevel() * 20), '|').c_str() : "");
+    } else if (platform::recording()) {
       ImGui::Text("Recording... %.0f%%", platform::recordingLevel() * 100.0f);
+    } else if (!routedModelNote.empty()) {
+      ImGui::TextUnformatted(routedModelNote.c_str());
     } else if (!statusText_.empty()) {
       ImGui::TextUnformatted(statusText_.c_str());
+    }
+    if (!projectFolder.empty()) {
+      ImGui::Text("Project: %s  (%d file%s pinned)", core::baseName(projectFolder).c_str(),
+                  static_cast<int>(projectFiles.size()), projectFiles.size() == 1 ? "" : "s");
     }
     ImGui::PopStyleColor();
     ImGui::Unindent(marginX);
