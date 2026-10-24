@@ -27,4 +27,8 @@ void field(const char* label, const std::string& value);
 
 void emptyState(const char* message);
 
+// Read-only monospace text in a bordered, scrollable box. With `scrollToEnd`
+// the box jumps to the last line this frame (callers pass "output grew").
+void monoOutput(const char* id, const std::string& text, ImVec2 size, bool scrollToEnd);
+
 }  // namespace app

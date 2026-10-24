@@ -1,4 +1,6 @@
 // Admin: users, server configuration, model management, analytics, feedback.
+#include <sys/sysctl.h>
+
 #include <algorithm>
 
 #include "core/async.h"
@@ -24,6 +26,41 @@ std::string gPullModel;
 std::string gPullStatus;
 bool gPulling = false;
 std::atomic<bool> gPullCancel{false};
+int gKeepAliveChoice = 1;
+
+// keep_alive values Ollama accepts: a duration string, or -1 for "until
+// unloaded". Index 1 (30m) is the default the plan asks for.
+const char* kKeepAliveLabels[] = {"5 minutes", "30 minutes", "2 hours", "24 hours", "forever"};
+const char* kKeepAliveValues[] = {"5m", "30m", "2h", "24h", nullptr};
+
+Json keepAliveValue(int choice) {
+  if (choice < 0 || choice >= 5 || !kKeepAliveValues[choice]) return -1;
+  return kKeepAliveValues[choice];
+}
+
+int64_t physicalMemory() {
+  static int64_t bytes = [] {
+    int64_t value = 0;
+    size_t size = sizeof(value);
+    if (sysctlbyname("hw.memsize", &value, &size, nullptr, 0) != 0) value = 0;
+    return value;
+  }();
+  return bytes;
+}
+
+enum class Fit { Fits, Tight, TooBig };
+
+// Ollama on Apple Silicon can wire roughly three quarters of unified memory
+// for the GPU, so that is the budget. A model "fits" when it loads beside
+// what is already resident with ~15% left for KV cache; "tight" when it only
+// fits if something else is unloaded or the cache is squeezed; otherwise it
+// would spill to CPU or fail to load.
+Fit fitFor(int64_t modelBytes, int64_t residentOthers, int64_t budget) {
+  const double needed = static_cast<double>(modelBytes) * 1.15;
+  if (needed <= static_cast<double>(budget - residentOthers)) return Fit::Fits;
+  if (modelBytes <= budget) return Fit::Tight;
+  return Fit::TooBig;
+}
 
 const char* tabName(Tab tab) {
   switch (tab) {
@@ -235,12 +272,63 @@ void App::drawAdminPane() {
 
       widgets::sectionHeader("LOADED IN MEMORY");
       const Json& loaded = gOllamaPs.value("models", Json::array());
+      int64_t residentTotal = 0;
+      for (const auto& model : loaded) residentTotal += model.value("size", static_cast<int64_t>(0));
+      const int64_t budget = static_cast<int64_t>(static_cast<double>(physicalMemory()) * 0.75);
+      widgets::dimText("Budget %s (75%% of %s) - resident %s - free %s",
+                       core::humanBytes(budget).c_str(), core::humanBytes(physicalMemory()).c_str(),
+                       core::humanBytes(residentTotal).c_str(),
+                       core::humanBytes(std::max<int64_t>(0, budget - residentTotal)).c_str());
+      ImGui::TextUnformatted("Keep alive");
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(140.0f);
+      ImGui::Combo("##keepalive", &gKeepAliveChoice, kKeepAliveLabels, 5);
+      ImGui::SameLine();
+      widgets::beginDisabled(loaded.empty());
+      if (ImGui::Button("Unload all", ImVec2(110, 0))) {
+        std::vector<std::string> names;
+        for (const auto& model : loaded) names.push_back(model.value("name", ""));
+        async::run([this, names, invalidate] {
+          int failed = 0;
+          for (const auto& name : names) {
+            if (!api_.ollamaUnload(name).ok) ++failed;
+          }
+          async::post([invalidate, failed, count = names.size()] {
+            invalidate(Tab::Models);
+            if (failed) widgets::toastError("Could not unload " + std::to_string(failed) + " model(s)");
+            else widgets::toastInfo("Unloaded " + std::to_string(count) + " model(s)");
+          });
+        });
+      }
+      widgets::endDisabled(loaded.empty());
       if (loaded.empty()) widgets::dimText("Nothing resident right now");
+      // Loading with an empty prompt is Ollama's documented way to (re)set a
+      // model's keep_alive without generating anything.
+      auto keepAlive = [this, invalidate](const std::string& name) {
+        const Json value = keepAliveValue(gKeepAliveChoice);
+        async::run([this, name, value, invalidate] {
+          api::Result res = api_.post(
+              "/ollama/api/generate",
+              {{"model", name}, {"prompt", ""}, {"keep_alive", value}, {"stream", false}}, 600);
+          async::post([invalidate, name, res] {
+            invalidate(Tab::Models);
+            if (res.ok) widgets::toastInfo(name + " will stay loaded");
+            else widgets::toastError("Keep alive failed: " + api::errorMessage(res));
+          });
+        });
+      };
       for (const auto& model : loaded) {
         const std::string name = model.value("name", "");
         ImGui::PushID(name.c_str());
-        ImGui::BulletText("%s  %s", name.c_str(),
-                          core::humanBytes(model.value("size", static_cast<int64_t>(0))).c_str());
+        std::string expires = model.value("expires_at", "");
+        // Ollama reports year 2318 for keep_alive -1.
+        if (core::startsWith(expires, "23")) expires = "never";
+        else if (expires.size() >= 16) expires = expires.substr(11, 5);
+        ImGui::BulletText("%s  %s  - until %s", name.c_str(),
+                          core::humanBytes(model.value("size", static_cast<int64_t>(0))).c_str(),
+                          expires.empty() ? "?" : expires.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Keep alive")) keepAlive(name);
         ImGui::SameLine();
         if (ImGui::SmallButton("Unload")) {
           async::run([this, name, invalidate] {
@@ -253,17 +341,28 @@ void App::drawAdminPane() {
 
       widgets::sectionHeader("INSTALLED");
       const Json& tags = gOllamaTags.value("models", Json::array());
-      if (ImGui::BeginTable("##ollamamodels", 4,
+      if (ImGui::BeginTable("##ollamamodels", 5,
                             ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                 ImGuiTableFlags_SizingStretchProp,
                             ImVec2(width, 0))) {
         ImGui::TableSetupColumn("Model");
         ImGui::TableSetupColumn("Parameters");
         ImGui::TableSetupColumn("Size");
+        ImGui::TableSetupColumn("Fits in memory");
         ImGui::TableSetupColumn("");
         ImGui::TableHeadersRow();
         for (const auto& model : tags) {
           const std::string name = model.value("name", "");
+          const int64_t size = model.value("size", static_cast<int64_t>(0));
+          // A model that is already resident does not compete with itself.
+          int64_t residentOthers = residentTotal;
+          bool resident = false;
+          for (const auto& r : loaded) {
+            if (r.value("name", "") == name) {
+              residentOthers -= r.value("size", static_cast<int64_t>(0));
+              resident = true;
+            }
+          }
           ImGui::PushID(name.c_str());
           ImGui::TableNextRow();
           ImGui::TableSetColumnIndex(0);
@@ -273,9 +372,27 @@ void App::drawAdminPane() {
                                      .value("parameter_size", "")
                                      .c_str());
           ImGui::TableSetColumnIndex(2);
-          widgets::dimText("%s",
-                           core::humanBytes(model.value("size", static_cast<int64_t>(0))).c_str());
+          widgets::dimText("%s", core::humanBytes(size).c_str());
           ImGui::TableSetColumnIndex(3);
+          if (resident) {
+            widgets::pill("loaded", theme::palette().accent);
+          } else {
+            const Fit fit = fitFor(size, residentOthers, budget);
+            const auto& p = theme::palette();
+            widgets::pill(fit == Fit::Fits ? "fits" : fit == Fit::Tight ? "tight" : "too big",
+                          fit == Fit::Fits ? p.success : fit == Fit::Tight ? p.warning : p.danger);
+            if (ImGui::IsItemHovered()) {
+              ImGui::SetTooltip("%s needed (+15%% cache)\n%s free of a %s budget",
+                                core::humanBytes(size).c_str(),
+                                core::humanBytes(std::max<int64_t>(0, budget - residentOthers)).c_str(),
+                                core::humanBytes(budget).c_str());
+            }
+          }
+          ImGui::TableSetColumnIndex(4);
+          if (!resident) {
+            if (ImGui::SmallButton("Load")) keepAlive(name);
+            ImGui::SameLine();
+          }
           if (ImGui::SmallButton("Delete")) {
             async::run([this, name, invalidate] {
               api_.ollamaDelete(name);

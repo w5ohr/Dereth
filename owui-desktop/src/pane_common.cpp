@@ -90,4 +90,23 @@ void emptyState(const char* message) {
   ImGui::PopStyleColor();
 }
 
+void monoOutput(const char* id, const std::string& text, ImVec2 size, bool scrollToEnd) {
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::toVec4(theme::palette().codeBg));
+  ImGui::BeginChild(id, size, ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
+  theme::pushMono();
+  if (text.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(theme::palette().textFaint));
+    ImGui::TextUnformatted("(no output)");
+    ImGui::PopStyleColor();
+  } else {
+    // TextUnformatted skips lines outside the visible area for long text, so
+    // even a large log stays cheap to draw.
+    ImGui::TextUnformatted(text.data(), text.data() + text.size());
+  }
+  theme::pop();
+  if (scrollToEnd) ImGui::SetScrollHereY(1.0f);
+  ImGui::EndChild();
+  ImGui::PopStyleColor();
+}
+
 }  // namespace app
