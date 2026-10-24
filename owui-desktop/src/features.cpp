@@ -777,8 +777,13 @@ void App::tickScheduler() {
   lastCheck = now;
   if (!signedIn_) return;
 
-  Json& list = settings().extra["schedules"];
-  if (!list.is_array() || list.empty()) return;
+  // Look before indexing: operator[] would write a null "schedules" key into
+  // the saved settings just by checking.
+  Json& extra = settings().extra;
+  if (!extra.contains("schedules") || !extra["schedules"].is_array() || extra["schedules"].empty()) {
+    return;
+  }
+  Json& list = extra["schedules"];
   std::time_t t = static_cast<std::time_t>(core::nowSeconds());
   std::tm local{};
   localtime_r(&t, &local);

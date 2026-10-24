@@ -108,10 +108,47 @@ Ollama passthrough — and prints a pass/fail line for each.
 `OWUI_TOKEN` also override the saved settings when running the GUI, which is
 handy for pointing a build at a scratch server.
 
-## Work in progress
+## Beyond the web UI
 
-Fifty further features are planned and partly built; `docs/FEATURE-PLAN.md`
-holds the state, the package split and the conventions for picking one up.
+Things a browser tab can't do, plus the workflow features built on top:
+
+| | |
+|---|---|
+| **⌥Space** (anywhere) | Quick Ask - a floating prompt, answered in place |
+| **⌘K** | Command palette: commands, panes, models, prompts, chats, presets |
+| **⌘J** | Quick Ask inside the app |
+| **⌘F** | Find in the open chat, with hit markers |
+| **⌘D / ⌘I / ⌘E** | Compare sibling answers word-by-word / pinned messages / what was sent |
+| **⌘U** | Voice conversation: listen, transcribe, answer, speak, repeat |
+| **⌘P** | Export the chat (also Markdown and HTML from File ▸ Export) |
+| **⌘-** | Tools pane |
+| **⌥↑ / ⌥↓** | Walk the transcript; then **c** copy, **r** regenerate, **p** pin, **s** speak, **e** edit, **Esc** back to the composer |
+| **/** in the composer | Saved prompts; Tab inserts |
+
+- **macOS:** menu bar extra with recent chats; Services ▸ "Ask Open WebUI" on
+  any selected text; `owui://ask?prompt=…`, `owui://chat/<id>`, `owui://quick`
+  links; drag files onto the window; chats indexed in Spotlight; notifications
+  you can reply to; Dock badge for running replies; Handoff to the web UI;
+  Live Text on pasted images; system, light, dark and midnight themes.
+- **Chat:** presets, per-message time-to-first-token, retry with another model,
+  continue, a context-pressure meter, compaction, scheduled prompts, a reference
+  chat beside the open one, an offline queue that sends when the server
+  returns, and auto-routing of short questions to a smaller model.
+- **Code:** syntax highlighting; Run (sandboxed - no network, writes confined
+  to a scratch dir) and Lint under every code block; Apply to file with a diff
+  preview; diffs rendered with per-hunk accept/reject and applied even when
+  their hunk headers are wrong; attach a folder (respecting `.gitignore`) or the
+  git diff; project mode, which sends a pinned folder's tree and chosen files
+  with every turn; explain a pasted build error against the source.
+- **Knowledge:** sync a folder into a knowledge base and keep it in sync on
+  change; clickable citations; save a web page into a knowledge base; a local
+  embedding index (SQLite + `nomic-embed-text`) whose hits can ride along with
+  every message.
+- **Server:** server profiles with per-server sign-in, a Tools pane with a
+  command runner and a benchmark tab that charts models against each other,
+  and "fits in memory" guidance plus keep-alive and unload controls in Admin.
+
+How the fifty were split and built is in `docs/FEATURE-PLAN.md`.
 
 ## Layout
 

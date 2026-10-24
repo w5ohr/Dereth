@@ -392,3 +392,15 @@ tab -> `captureUrlToKnowledge(url, kbId)` (the outcome arrives as a toast).
 Not exercised: "Open source" on a web citation (`platform::openUrl`).
 
 2026-10-24 E: Tools pane (Command, Build error, Benchmark, Local index, Folder sync, URL capture) and Admin Models additions (fits-in-memory column against 75% of hw.memsize minus resident, keep-alive picker + per-model Keep alive/Load, Unload all). Verified against scratch server :3004: Command ran `ls` in the project folder (output + `[exit 0]`), Benchmark ran `coder:latest,qwen3:8b` in 54 s and drew score and tok/s bars matching `last_results.json` (4/6 54.2, 3/6 46.2), Admin showed fits/tight/loaded and the 48 GB budget; keep-alive and unload endpoints checked with curl through the proxy. Because Tools is not in the rail yet (B), the GUI checks used an uncommitted patch: `case Pane::Tools` in app.cpp, an env hook that preselected the tab and pressed Run, and package C's in-progress `runCommand` copied in. Not exercised in the GUI: Send output to chat, Build error/Explain, folder/URL pickers (they call C/D functions that were still stubs here). Test instances must not be named "Open WebUI": B's `pkill -x "Open WebUI"` kills them.
+2026-10-24 F (release): C, D and E merged into the branch - code merged cleanly, the
+only conflicts were status-log lines, kept in full. Merged tree: build green, self-test
+52/52. Checked in the merged app against a scratch server: Run under a code block
+(sandboxed, exit 0, 5050), the Tools command runner, local index (57 files / 987
+chunks in 13.6 s; "where is the socket.io transport" returns socketio.h then
+socketio.cpp), and the index hits now feed requests when enabled. Installed to
+/Applications; Services "Ask Open WebUI" answered from selected text; menu bar extra
+present. Fixed on the way: copy/paste never reached ImGui (Edit menu owned the
+chords), code-action output overflowed the column, diff parse phantom line, scheduler
+writing a null key into settings. Still untested by automation: drag-and-drop,
+notification reply, Quick Look, Handoff, voice (microphone), folder sync and URL
+capture through the UI (D verified the functions directly).
