@@ -278,6 +278,7 @@ void App::init() {
 
 void App::shutdown() {
   stopAllStreams();
+  stopFolderSync();
   socket_.stop();
   settings().selectedModels = selectedModels;
   settings().save();

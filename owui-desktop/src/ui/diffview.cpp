@@ -54,7 +54,13 @@ std::vector<FileDiff> parse(const std::string& unified) {
   Hunk* hunk = nullptr;
   bool haveFile = false;
 
-  for (const std::string& raw : core::split(unified, '\n')) {
+  // Splitting text that ends in a newline yields a final empty piece; read as
+  // a hunk line it becomes a phantom blank context line that can't be placed
+  // in an empty file and can misplace a hunk in the whole-file fallback.
+  std::vector<std::string> rawLines = core::split(unified, '\n');
+  while (!rawLines.empty() && rawLines.back().empty()) rawLines.pop_back();
+
+  for (const std::string& raw : rawLines) {
     std::string line = raw;
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (core::startsWith(line, "diff --git") || core::startsWith(line, "index ")) {
