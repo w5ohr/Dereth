@@ -361,3 +361,32 @@ Services (needs the /Applications copy), Quick Look, Live Text, Handoff, voice m
 2026-10-24 C: `code_tools.cpp` implemented; build green. Verified with a scratch harness that links the real objects (45/45 checks): a Python `print` block runs and returns output; the sandbox blocks network and writes outside its scratch dir; an infinite loop stops at the 30 s timeout; js (jsc + console shim), c++ and shell blocks run. Lint reports the Python `SyntaxError`, clang errors, jsc `checkSyntax` and `bash -n`. `diffview::generate` + `apply` round-trips a 3-hunk edit to a copy of `src/core/common.h` (rejecting a hunk works; `.bak` written). Attaching `src` gives 491 KB / 57 files; attaching `owui-desktop` skips `build/` via `.gitignore` and files over 200 KB. Also checked: git log attach, non-repo toast, `runCommand`, `projectContextBlock`, the `explainBuildError` prompt, and 120 headless ImGui frames of the draw functions with asserts on. Not verified: the NSOpenPanel step of apply-to-file and the upload itself (no server used). Call sites B must add: `drawProjectFilesPopup()` every frame (it also hosts the apply-to-file modal and loads `projectFolder`/`projectFiles` from settings on first call); `drawCodeBlockActions` from the markdown callback; prepend `projectContextBlock()` in `sendMessage`; something that sets `showProjectFiles = true` (palette or composer). Result keys are `std::hash<std::string>(code)` and `"lint:"` + that.
 
 2026-10-24 C follow-up (for B's diff Apply button): when `applyCodeBlockToFile` gets a unified diff, it resolves each `newPath`/`oldPath` against `projectFolder` (absolute paths too) and asks with `platform::openFiles` only when a path can't be found. It supports several files and new files (`/dev/null` source) and leaves deletions out with a toast. It dry-runs every file and shows any error in the confirm dialog, and on confirm writes all files or none, with `.bak` files. The harness now passes 50/50, including a two-file diff (an edit to common.h plus a new file) written through the real confirm path, and a diff that won't apply showing its error. The action row under code blocks is now a compact single row. Bug in `diffview::parse` (not C's file, not fixed): text ending in `\n` gains a phantom blank context line at the end of the last hunk. That line can't be placed in an empty file, and `apply`'s whole-file fallback can use it to put a hunk in the wrong place. C strips trailing newlines before parsing; `diffview.cpp`'s owner should drop the final empty piece in `parse`.
+
+2026-10-24 D: `knowledge_tools.cpp` implemented, build green. Verified with a
+throwaway harness that links every app object except `main.mm` (scratch server
+on :3003, Ollama on :11434, HOME redirected so no real settings were touched):
+local index over `src/` = 57 files / ~815 chunks in 11.7 s, re-run skips
+unchanged files in 0.0 s; "where is the socket.io transport" -> 1.
+`core/socketio.h`, 2.-3. `core/socketio.cpp`. Folder sync honours
+`.gitignore`/dotfiles/binaries; an appended edit re-uploaded 1.4-1.5 s after
+the write, a delete left the KB in 1.1 s, and a re-sync (with or without the
+saved map) reports "4 unchanged" because it adopts KB files whose SHA-256
+matches `meta.file_hash`. URL capture of a Wikipedia article landed a readable
+40 KB `Asheron's Call - Wikipedia.md` (starts at `<main>`, links kept);
+short or unfetchable pages fall back to `processWeb`, whose text is uploaded
+as the same visible .md file. Citation popup and local-index section rendered
+offscreen through the Metal backend with ImGui asserts on (clicks driven by
+the test-engine item hooks): prev/next, "Open source" loading
+`/files/{id}/data/content` scrolled to and highlighted the excerpt, Close
+clears `showCitation`, "Attach top hits" adds `local-index-hits.md`.
+`extra["kbSync"][kbId] = {folder, files: {absPath: {id, hash}}}`.
+Call sites still to add: B - `drawCitationPopup()` once per frame;
+chat-pane source chips -> `openCitation(message.sources[i], 0)`; optional:
+`stopFolderSync()` in `shutdown()`; optional: when `localIndexEnabled`, call
+`localSearch(text, 4)` on the worker that builds the payload (it blocks: it
+embeds the query) and prepend the hits like `projectContextBlock()`.
+E - Local index tab -> `drawLocalIndexSection(width)`; Folder sync tab ->
+`syncFolderToKnowledge(folder, kbId)` / `stopFolderSync()`, show
+`folderSyncStatus` (sync is live while `folderSyncToken >= 0`); URL capture
+tab -> `captureUrlToKnowledge(url, kbId)` (the outcome arrives as a toast).
+Not exercised: "Open source" on a web citation (`platform::openUrl`).
