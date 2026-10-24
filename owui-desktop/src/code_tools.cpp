@@ -420,16 +420,118 @@ std::string fencedFile(const std::string& title, const std::string& path, const 
 
 // ------------------------------------------------------ apply-to-file modal
 
+// One target of the apply dialog. `diffs[i]` in ApplyState pairs with
+// `files[i]`; they are kept apart because diffview::render takes the vector.
+struct ApplyFile {
+  std::string path;     // absolute
+  std::string before;
+  bool created = false; // the diff adds a file that does not exist yet
+  std::string error;    // why the dry run failed, shown in the dialog
+};
+
 // UI-thread-only state for the single apply dialog. Workers fill it via post.
 struct ApplyState {
   bool show = false;
   bool loading = false;
   bool writing = false;
-  std::string path;
-  std::string before;
+  int generation = 0;   // ignores a stale load after the dialog was reopened
+  std::vector<ApplyFile> files;
   std::vector<diffview::FileDiff> diffs;
 };
 ApplyState gApply;
+
+// diffview::parse reads the empty piece after a final newline as a blank
+// context line, which cannot be placed in an empty (new) file and can pull a
+// hunk towards the wrong blank line elsewhere. Trailing newlines carry no
+// diff content, so drop them first.
+std::vector<diffview::FileDiff> parseDiff(std::string text) {
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+  return diffview::parse(text);
+}
+
+int acceptedHunks(const diffview::FileDiff& diff) {
+  return static_cast<int>(std::count_if(diff.hunks.begin(), diff.hunks.end(),
+                                        [](const diffview::Hunk& h) { return h.accepted; }));
+}
+
+// Reads every target and dry-runs its patch on a worker, then opens the dialog.
+void loadApply(std::vector<std::string> paths, std::vector<bool> created,
+               std::vector<diffview::FileDiff> diffs) {
+  gApply = ApplyState{gApply.show, true, false, gApply.generation + 1, {}, {}};
+  gApply.show = true;
+  const int generation = gApply.generation;
+  async::run([paths, created, diffs, generation] {
+    std::vector<ApplyFile> files;
+    for (size_t i = 0; i < paths.size(); ++i) {
+      ApplyFile file;
+      file.path = paths[i];
+      file.created = created[i];
+      bool ok = false;
+      file.before = core::readFile(paths[i], &ok);
+      if (!ok && !file.created) {
+        file.error = "Could not read the file";
+      } else {
+        std::string result;
+        if (!diffview::apply(diffs[i], file.before, &result, &file.error) && file.error.empty()) {
+          file.error = "The patch does not apply";
+        }
+      }
+      files.push_back(file);
+    }
+    async::post([files, diffs, generation] {
+      if (!gApply.show || gApply.generation != generation) return;
+      gApply.loading = false;
+      gApply.files = files;
+      gApply.diffs = diffs;
+    });
+  });
+}
+
+void confirmApply() {
+  // All targets are computed before anything is written, so a hunk that
+  // no longer applies leaves every file untouched.
+  std::vector<std::pair<ApplyFile, std::string>> writes;
+  std::string failure;
+  for (size_t i = 0; i < gApply.files.size() && failure.empty(); ++i) {
+    if (acceptedHunks(gApply.diffs[i]) == 0) continue;
+    std::string result, error;
+    if (diffview::apply(gApply.diffs[i], gApply.files[i].before, &result, &error)) {
+      writes.push_back({gApply.files[i], result});
+    } else {
+      failure = core::baseName(gApply.files[i].path) + ": " + (error.empty() ? "does not apply" : error);
+    }
+  }
+  if (!failure.empty()) {
+    widgets::toastError("Could not apply " + failure);
+  } else {
+    gApply.writing = true;
+    async::run([writes] {
+      std::string failed;
+      for (const auto& [file, result] : writes) {
+        std::error_code ec;
+        if (file.created) fs::create_directories(fs::path(file.path).parent_path(), ec);
+        // The .bak keeps the pre-apply text one undo away.
+        const bool ok = (file.created || core::writeFile(file.path + ".bak", file.before)) &&
+                        core::writeFile(file.path, result);
+        if (!ok) failed = file.path;
+      }
+      const size_t count = writes.size();
+      const std::string first = writes.empty() ? "" : core::baseName(writes.front().first.path);
+      async::post([failed, count, first] {
+        gApply.writing = false;
+        if (!failed.empty()) {
+          widgets::toastError("Could not write " + failed);
+          return;
+        }
+        gApply.show = false;
+        gApply.diffs.clear();
+        widgets::toast(widgets::ToastLevel::Success,
+                       count == 1 ? "Wrote " + first + " (backup beside it as .bak)"
+                                  : "Wrote " + std::to_string(count) + " files (backups beside them as .bak)");
+      });
+    });
+  }
+}
 
 void drawApplyModal() {
   if (!gApply.show) return;
@@ -437,15 +539,21 @@ void drawApplyModal() {
   ImGui::SetNextWindowSize(ImVec2(820, 600), ImGuiCond_Appearing);
   bool open = true;
   if (ImGui::BeginPopupModal("Apply to file", &open)) {
-    ImGui::TextUnformatted(gApply.path.c_str());
-    ImGui::Separator();
+    const auto& palette = theme::palette();
     int total = 0, accepted = 0;
-    for (const auto& file : gApply.diffs) {
-      for (const auto& hunk : file.hunks) {
-        ++total;
-        if (hunk.accepted) ++accepted;
+    for (const auto& diff : gApply.diffs) {
+      total += static_cast<int>(diff.hunks.size());
+      accepted += acceptedHunks(diff);
+    }
+    for (const ApplyFile& file : gApply.files) {
+      ImGui::TextUnformatted((file.path + (file.created ? "  (new file)" : "")).c_str());
+      if (!file.error.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.danger));
+        ImGui::TextWrapped("  %s", file.error.c_str());
+        ImGui::PopStyleColor();
       }
     }
+    ImGui::Separator();
     ImGui::BeginChild("##applydiff", ImVec2(0, -40), ImGuiChildFlags_None,
                       ImGuiWindowFlags_HorizontalScrollbar);
     if (gApply.loading) {
@@ -454,33 +562,12 @@ void drawApplyModal() {
       diffview::render("##apply", gApply.diffs, true, ImGui::GetContentRegionAvail().x);
     }
     ImGui::EndChild();
-    widgets::beginDisabled(gApply.loading || gApply.writing || accepted == 0);
+    const bool disabled = gApply.loading || gApply.writing || accepted == 0;
+    widgets::beginDisabled(disabled);
     const std::string label = "Apply " + std::to_string(accepted) + " of " + std::to_string(total) +
                               (total == 1 ? " change" : " changes");
-    if (widgets::primaryButton(label.c_str())) {
-      std::string result, error;
-      if (!diffview::apply(gApply.diffs.front(), gApply.before, &result, &error)) {
-        widgets::toastError("Could not apply: " + error);
-      } else {
-        gApply.writing = true;
-        const std::string path = gApply.path, before = gApply.before;
-        async::run([path, before, result] {
-          // The .bak keeps the pre-apply text one undo away.
-          const bool ok = core::writeFile(path + ".bak", before) && core::writeFile(path, result);
-          async::post([path, ok] {
-            gApply.writing = false;
-            if (ok) {
-              gApply.show = false;
-              widgets::toast(widgets::ToastLevel::Success,
-                             "Wrote " + core::baseName(path) + " (backup in " + core::baseName(path) + ".bak)");
-            } else {
-              widgets::toastError("Could not write " + path);
-            }
-          });
-        });
-      }
-    }
-    widgets::endDisabled(gApply.loading || gApply.writing || accepted == 0);
+    if (widgets::primaryButton(label.c_str())) confirmApply();
+    widgets::endDisabled(disabled);
     ImGui::SameLine();
     if (widgets::ghostButton("Cancel")) open = false;
     ImGui::EndPopup();
@@ -488,6 +575,7 @@ void drawApplyModal() {
   if (!open) {
     gApply.show = false;
     gApply.diffs.clear();
+    gApply.files.clear();
   }
 }
 
@@ -553,47 +641,67 @@ void App::lintCodeBlock(const std::string& code, const std::string& language) {
 // ======================================================== apply to file
 
 void App::applyCodeBlockToFile(const std::string& code) {
+  if (diffview::looksLikeDiff(code)) {
+    // A diff names its own targets: resolve them against the project folder
+    // and only ask for a file when a path cannot be found.
+    std::vector<diffview::FileDiff> diffs;
+    int deletions = 0;
+    for (diffview::FileDiff& diff : parseDiff(code)) {
+      if (diff.hunks.empty()) continue;
+      if (diff.newPath == "/dev/null") {
+        ++deletions;
+        continue;
+      }
+      diffs.push_back(diff);
+    }
+    if (deletions > 0) widgets::toastInfo("File deletions in the diff were left out");
+    if (diffs.empty()) {
+      widgets::toastInfo("The diff has no changes to apply");
+      return;
+    }
+    const std::string folder = currentProjectFolder(*this);
+    std::vector<std::string> paths;
+    std::vector<bool> created;
+    for (const diffview::FileDiff& diff : diffs) {
+      const bool isNew = diff.oldPath == "/dev/null";
+      const std::string rel = !diff.newPath.empty() ? diff.newPath : diff.oldPath;
+      std::string path;
+      std::error_code ec;
+      if (!rel.empty() && rel[0] == '/' && fs::is_regular_file(rel, ec)) {
+        path = rel;
+      } else if (!folder.empty() && !rel.empty() && (isNew || fs::is_regular_file(folder + "/" + rel, ec))) {
+        path = folder + "/" + rel;
+      } else {
+        widgets::toastInfo("Choose the file for " + (rel.empty() ? std::string("this diff") : rel));
+        const std::vector<std::string> picked = platform::openFiles(false);
+        if (picked.empty()) return;
+        path = picked.front();
+      }
+      paths.push_back(path);
+      created.push_back(isNew && !fs::exists(path, ec));
+    }
+    loadApply(paths, created, diffs);
+    return;
+  }
+
   const std::vector<std::string> picked = platform::openFiles(false);
   if (picked.empty()) return;
   const std::string path = picked.front();
-  gApply = ApplyState{};
-  gApply.show = true;
-  gApply.loading = true;
-  gApply.path = path;
+  // Anything that is not a diff replaces the whole file; the dialog shows
+  // what that would change, hunk by hunk.
   async::run([path, code] {
     bool ok = false;
     const std::string before = core::readFile(path, &ok);
     std::vector<diffview::FileDiff> diffs;
-    // A block that is itself a diff is applied as a patch; anything else
-    // replaces the file and the dialog shows what that would change.
-    if (diffview::looksLikeDiff(code)) {
-      diffs = diffview::parse(code);
-      if (diffs.size() > 1) {
-        const std::string name = core::baseName(path);
-        auto match = std::find_if(diffs.begin(), diffs.end(), [&](const diffview::FileDiff& d) {
-          return core::baseName(d.newPath) == name || core::baseName(d.oldPath) == name;
-        });
-        if (match != diffs.end()) diffs = {*match};
-        else diffs.resize(1);
-      }
-    } else {
-      diffs = diffview::parse(diffview::generate(core::baseName(path), before, code));
-    }
-    async::post([path, ok, before, diffs] {
-      if (!gApply.show || gApply.path != path) return;
-      gApply.loading = false;
+    if (ok) diffs = parseDiff(diffview::generate(core::baseName(path), before, code));
+    async::post([path, ok, diffs] {
       if (!ok) {
-        gApply.show = false;
         widgets::toastError("Could not read " + path);
-        return;
-      }
-      if (diffs.empty() || diffs.front().hunks.empty()) {
-        gApply.show = false;
+      } else if (diffs.empty() || diffs.front().hunks.empty()) {
         widgets::toastInfo("No changes - the block matches " + core::baseName(path));
-        return;
+      } else {
+        loadApply({path}, {false}, {diffs.front()});
       }
-      gApply.before = before;
-      gApply.diffs = diffs;
     });
   });
 }
@@ -1004,6 +1112,9 @@ void App::drawCodeBlockActions(const std::string& code, const std::string& langu
   const bool runnable = canRun(language, false);
   const bool lintable = canRun(language, true);
 
+  // One compact row: this sits under every code block in the chat.
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 2));
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
   const bool runBusy = !runnable || (run && run->running);
   widgets::beginDisabled(runBusy);
   if (widgets::ghostButton("Run")) runCodeBlock(code, language);
@@ -1023,6 +1134,7 @@ void App::drawCodeBlockActions(const std::string& code, const std::string& langu
     platform::setClipboardText(code);
     widgets::toastInfo("Copied");
   }
+  ImGui::PopStyleVar(2);
 
   const auto& palette = theme::palette();
   for (const auto& [resultKey, isLint] : {std::pair<std::string, bool>{key, false}, {lintKey, true}}) {
