@@ -168,6 +168,20 @@ Response stream(const Request& req,
   ChunkSink sink{&onChunk, cancel, false};
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeToSink);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+  // The write callback only sees cancel when bytes arrive; the progress
+  // callback fires about once a second regardless, so a silent server can
+  // still be abandoned.
+  curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+  curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &sink);
+  curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION,
+                   +[](void* userdata, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> int {
+                     auto* s = static_cast<ChunkSink*>(userdata);
+                     if (s->cancel && s->cancel->load()) {
+                       s->aborted = true;
+                       return 1;
+                     }
+                     return 0;
+                   });
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, collectHeader);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &res.headers);
   // Streamed responses can idle for a long time between tokens; disable the

@@ -49,7 +49,8 @@ already did before this work. Wiring is package B and is the critical path.
   `presets`, `schedules`, `profiles`, `projectFolder`, `projectFiles`,
   `globalHotkey`, `menuBarExtra`, `autoRoute`, `autoRouteSmallModel`,
   `autoRouteTokenThreshold`, `kbSync`, `localIndexFolder`, `localIndexEnabled`,
-  `referenceChatId`, `theme` (lives in `settings().theme`: dark|light|system|midnight).
+  `referenceChatId`, `theme` (lives in `settings().theme`: dark|light|system|midnight),
+  `mcpServers`, `mcpApprovals`, `mcpEnabled`, `mcpAutoApprove`, `mcpMaxRounds` (plan 2, package G).
 - **Style.** Match the surrounding code: `core::`, `widgets::`, `theme::`,
   `pane_common.h` helpers, comments explain why. No apologies in toasts.
 - **Build:** `cmake --build build -j8` from `owui-desktop/`. It must stay green

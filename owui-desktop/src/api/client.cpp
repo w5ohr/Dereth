@@ -626,6 +626,43 @@ Result Client::ollamaPull(const std::string& model,
   return out;
 }
 
+Result Client::ollamaChat(const Json& payload,
+                          const std::function<bool(const Json&)>& onLine,
+                          const std::atomic<bool>* cancel) {
+  Json body = payload;
+  body["stream"] = true;
+  net::Request req = makeRequest("POST", "/ollama/api/chat", body.dump(), 0);
+  std::string buffer;
+  Result out;
+  net::Response res = net::stream(
+      req,
+      [&](const char* data, size_t len) {
+        buffer.append(data, len);
+        size_t pos;
+        while ((pos = buffer.find('\n')) != std::string::npos) {
+          std::string line = core::trim(buffer.substr(0, pos));
+          buffer.erase(0, pos + 1);
+          if (line.empty()) continue;
+          Json j = Json::parse(line, nullptr, false);
+          if (!j.is_discarded() && !onLine(j)) return false;
+        }
+        return true;
+      },
+      cancel);
+  // An error body may arrive without a trailing newline.
+  if (!core::trim(buffer).empty()) {
+    Json j = Json::parse(buffer, nullptr, false);
+    if (!j.is_discarded()) onLine(j);
+  }
+  out.status = res.status;
+  out.raw = res.body;
+  out.ok = res.error.empty() && res.status >= 200 && res.status < 300;
+  if (!out.ok) {
+    out.error = res.error.empty() ? "HTTP " + std::to_string(res.status) : res.error;
+  }
+  return out;
+}
+
 // ---- utilities ------------------------------------------------------------
 Result Client::executeCode(const std::string& code, const std::string& language) {
   return post("/api/v1/utils/code/execute", {{"code", code}, {"language", language}}, 300);

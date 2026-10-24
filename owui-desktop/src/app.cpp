@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <set>
 
 #include "core/async.h"
 #include "core/common.h"
@@ -83,6 +84,11 @@ Json Message::toJson() const {
   if (!error.empty()) j["error"] = Json{{"content", error}};
   if (rating != 0) j["annotation"] = Json{{"rating", rating}};
   if (!followUps.empty()) j["followUps"] = followUps;
+  if (!toolCalls.empty()) {
+    Json calls = Json::array();
+    for (const ToolCall& call : toolCalls) calls.push_back(call.toJson());
+    j["mcpToolCalls"] = calls;
+  }
   return j;
 }
 
@@ -119,6 +125,9 @@ Message Message::fromJson(const Json& j) {
     m.rating = j["annotation"].value("rating", 0);
   }
   if (j.contains("followUps") && j["followUps"].is_array()) m.followUps = j["followUps"];
+  if (j.contains("mcpToolCalls") && j["mcpToolCalls"].is_array()) {
+    for (const auto& call : j["mcpToolCalls"]) m.toolCalls.push_back(ToolCall::fromJson(call));
+  }
   return m;
 }
 
@@ -155,11 +164,35 @@ std::vector<std::string> ChatDoc::siblings(const std::string& messageId) const {
 }
 
 Json ChatDoc::toJson() const {
-  Json history{{"currentId", currentId}, {"messages", Json::object()}};
-  for (const auto& [id, message] : messages) history["messages"][id] = message.toJson();
+  // Open WebUI 0.12 keeps whatever it already stores for an assistant message
+  // marked done:false - it assumes its own pipeline is still streaming it - so
+  // a placeholder saved mid-stream could never be updated afterwards. Messages
+  // that are still streaming are therefore left out until they finish.
+  std::set<std::string> omitted;
+  for (const auto& [id, message] : messages) {
+    if (message.streaming) omitted.insert(id);
+  }
+  std::string current = currentId;
+  while (!current.empty() && omitted.count(current)) current = messages.at(current).parentId;
+
+  Json history{{"currentId", current}, {"messages", Json::object()}};
+  for (const auto& [id, message] : messages) {
+    if (omitted.count(id)) continue;
+    Json entry = message.toJson();
+    if (!omitted.empty()) {
+      Json children = Json::array();
+      for (const std::string& child : message.childrenIds) {
+        if (!omitted.count(child)) children.push_back(child);
+      }
+      entry["childrenIds"] = children;
+    }
+    history["messages"][id] = entry;
+  }
 
   Json linear = Json::array();
-  for (const std::string& id : branch()) linear.push_back(messages.at(id).toJson());
+  for (const std::string& id : branch()) {
+    if (!omitted.count(id)) linear.push_back(history["messages"][id]);
+  }
 
   Json out = raw.is_object() ? raw : Json::object();
   out["id"] = id;
@@ -274,11 +307,13 @@ void App::init() {
       }
     });
   });
+  mcpInit();
 }
 
 void App::shutdown() {
   stopAllStreams();
   stopFolderSync();
+  mcpShutdown();
   socket_.stop();
   settings().selectedModels = selectedModels;
   settings().save();
@@ -682,6 +717,15 @@ static void addLocalIndexHits(App* app, Json* payload, const std::string& query)
 }
 
 void App::startStream(const std::string& assistantId, const std::string& model) {
+  // With MCP tools switched on the reply runs through the tool loop instead,
+  // which talks to Ollama directly so the model can call our tools.
+  if (mcpEnabled) {
+    if (!mcpToolSpecs().empty()) {
+      startToolStream(assistantId, model);
+      return;
+    }
+    widgets::toastInfo("MCP tools are on but no server is connected - replying without tools");
+  }
   auto stream = std::make_shared<Stream>();
   stream->chatId = chat.id;
   stream->messageId = assistantId;
@@ -976,6 +1020,16 @@ void App::pollStreams() {
         message.status = stream->status;
         if (!stream->sources.empty()) message.sources = stream->sources;
         if (!stream->usage.empty()) message.usage = stream->usage;
+        // Tool calls: mirror the worker's list, keeping the cards' expanded state.
+        for (size_t i = 0; i < stream->toolCalls.size(); ++i) {
+          if (i < message.toolCalls.size()) {
+            const bool expanded = message.toolCalls[i].expanded;
+            message.toolCalls[i] = stream->toolCalls[i];
+            message.toolCalls[i].expanded = expanded;
+          } else {
+            message.toolCalls.push_back(stream->toolCalls[i]);
+          }
+        }
         if (stream->done) {
           message.streaming = false;
           message.status.clear();
@@ -1092,6 +1146,11 @@ void App::saveActiveChat() {
   if (chat.id.empty()) return;
   const std::string id = chat.id;
   const Json body = chat.toJson();
+  for (const auto& [mid, message] : chat.messages) {
+    core::debugLog("save %s: %s %s len=%zu streaming=%d tools=%zu", id.substr(0, 8).c_str(),
+                   message.role.c_str(), mid.substr(0, 8).c_str(), message.content.size(),
+                   message.streaming ? 1 : 0, message.toolCalls.size());
+  }
   async::run([this, id, body] {
     api::Result res = api_.updateChat(id, body);
     if (!res.ok) {

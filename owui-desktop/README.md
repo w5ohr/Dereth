@@ -108,6 +108,13 @@ Ollama passthrough — and prints a pass/fail line for each.
 `OWUI_TOKEN` also override the saved settings when running the GUI, which is
 handy for pointing a build at a scratch server.
 
+    "build/Open WebUI.app/Contents/MacOS/Open WebUI" --mcptest tools/mcp_test_server.py
+
+Drives the MCP client against the bundled Python test server over stdio and
+both Streamable HTTP reply styles (JSON and SSE), checks the tool-loop
+helpers, and - with `OLLAMA_URL` or `OWUI_SERVER`/`OWUI_TOKEN` set - runs one
+real tool-calling turn (`OWUI_MCP_MODEL`, default `qwen3:8b`).
+
 ## Beyond the web UI
 
 Things a browser tab can't do, plus the workflow features built on top:
@@ -147,8 +154,20 @@ Things a browser tab can't do, plus the workflow features built on top:
 - **Server:** server profiles with per-server sign-in, a Tools pane with a
   command runner and a benchmark tab that charts models against each other,
   and "fits in memory" guidance plus keep-alive and unload controls in Admin.
+- **MCP:** connect Model Context Protocol servers (stdio or Streamable HTTP;
+  import your Claude Desktop or Cursor config) under Tools ▸ MCP, switch the
+  plug icon on in the composer, and the model can call their tools. Each call
+  shows as a card above the reply with its arguments, result and timing; the
+  first call to a tool asks for approval (allow once / always / deny), and
+  the answers are remembered per tool. Tool-enabled turns run through Ollama's
+  native tool calling via the server's `/ollama/api/chat` passthrough (or
+  Ollama directly), so for those turns the server's own web search, knowledge
+  files and Open WebUI tools are skipped. Resources and prompts are listed;
+  `roots/list` answers with the project folder. `--mcptest` exercises it all
+  against `tools/mcp_test_server.py`.
 
-How the fifty were split and built is in `docs/FEATURE-PLAN.md`.
+How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
+hundred are planned in `docs/FEATURE-PLAN-2.md`.
 
 ## Layout
 

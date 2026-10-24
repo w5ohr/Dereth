@@ -495,6 +495,9 @@ void App::drawChatPane() {
         ImGui::PopStyleColor();
       }
 
+      // --- tool calls made on the way to this answer
+      if (!message.toolCalls.empty()) drawToolCallCards(message, contentWidth);
+
       // --- body
       if (message.showRaw) {
         theme::pushMono();
@@ -862,6 +865,18 @@ void App::drawChatPane() {
                       voiceMode ? "Stop voice conversation" : "Voice conversation", 0.0f,
                       voiceMode ? palette.danger : 0)) {
       voiceMode = !voiceMode;
+    }
+    ImGui::SameLine();
+    if (icons::button("mcp", icons::Icon::Plug,
+                      mcpEnabled ? "MCP tools on - replies can call your MCP servers"
+                                 : "MCP tools (add servers under Tools > MCP)",
+                      0.0f, mcpEnabled ? palette.accent : 0)) {
+      mcpEnabled = !mcpEnabled;
+      settings().extra["mcpEnabled"] = mcpEnabled;
+      settings().save();
+      if (mcpEnabled && mcpConnectedCount() == 0) {
+        widgets::toastInfo("No MCP server is connected - add one under Tools > MCP");
+      }
     }
     ImGui::SameLine();
     if (icons::button("tools", icons::Icon::Wrench, "Tools", 0.0f,

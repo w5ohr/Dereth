@@ -256,6 +256,14 @@ void draw(ImDrawList* dl, Icon icon, ImVec2 c, float s, ImU32 col, float t) {
       line(dl, ImVec2(c.x - h, c.y + q * 0.3f), ImVec2(c.x, c.y + h * 0.9f), col, t);
       line(dl, ImVec2(c.x + h, c.y + q * 0.3f), ImVec2(c.x, c.y + h * 0.9f), col, t);
       break;
+    case Icon::Plug:
+      // Two prongs, a body, a cord: the MCP tool-server toggle.
+      line(dl, ImVec2(c.x - q * 0.5f, c.y - h), ImVec2(c.x - q * 0.5f, c.y - q * 0.3f), col, t);
+      line(dl, ImVec2(c.x + q * 0.5f, c.y - h), ImVec2(c.x + q * 0.5f, c.y - q * 0.3f), col, t);
+      dl->AddRect(ImVec2(c.x - h * 0.9f, c.y - q * 0.3f), ImVec2(c.x + h * 0.9f, c.y + q * 0.5f), col,
+                  q * 0.3f, t);
+      line(dl, ImVec2(c.x, c.y + q * 0.5f), ImVec2(c.x, c.y + h), col, t);
+      break;
   }
 }
 

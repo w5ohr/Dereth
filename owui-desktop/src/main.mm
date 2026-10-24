@@ -372,10 +372,12 @@ static void buildMenuBar() {
 }
 
 int runSelfTest();
+int runMcpSelfTest(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--selftest") return runSelfTest();
+    if (std::string(argv[i]) == "--mcptest") return runMcpSelfTest(argc, argv);
   }
   @autoreleasepool {
     net::globalInit();

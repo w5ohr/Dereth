@@ -265,6 +265,11 @@ class Client {
   Result ollamaPull(const std::string& model,
                     const std::function<bool(const Json&)>& onLine,
                     const std::atomic<bool>* cancel);
+  // POST /ollama/api/chat with stream:true; onLine gets each NDJSON chunk.
+  // Used for native tool calling, which the chat pipeline doesn't pass through.
+  Result ollamaChat(const Json& payload,
+                    const std::function<bool(const Json&)>& onLine,
+                    const std::atomic<bool>* cancel);
 
   // ---- utilities ---------------------------------------------------------
   Result executeCode(const std::string& code, const std::string& language = "python");

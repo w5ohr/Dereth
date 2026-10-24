@@ -7,16 +7,19 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
+#include "agents/tool_loop.h"
 #include "api/client.h"
 #include "core/settings.h"
 #include "core/socketio.h"
 #include "imgui.h"
+#include "mcp/mcp_client.h"
 
 namespace app {
 
@@ -96,6 +99,26 @@ struct Attachment {
   Json toJson() const;
 };
 
+// One MCP tool call made while answering, shown as a card above the reply and
+// saved with the message (as `mcpToolCalls`) so it survives a reload.
+struct ToolCall {
+  std::string id;
+  std::string server;           // server display name
+  std::string tool;             // the server's tool name
+  std::string qualifiedName;    // what the model called ("<server>__<tool>")
+  Json args = Json::object();
+  std::string result;
+  std::string error;
+  bool isError = false;
+  int state = 0;                // agents::CallState
+  int decision = 0;             // agents::Decision once the user has answered
+  double durationMs = 0.0;
+  double startedMs = 0.0;
+  bool expanded = false;
+  Json toJson() const;
+  static ToolCall fromJson(const Json& j);
+};
+
 struct Message {
   std::string id;
   std::string parentId;
@@ -112,6 +135,7 @@ struct Message {
   Json sources = Json::array();
   Json usage = Json::object();
   Json followUps = Json::array();
+  std::vector<ToolCall> toolCalls;
   bool streaming = false;
   int rating = 0;               // 1 thumbs up, -1 thumbs down
   bool showReasoning = false;
@@ -171,6 +195,10 @@ struct Stream {
   bool done = false;
   bool started = false;
   std::string error;
+  // Tool loop: the worker appends calls here; the UI answers approvals by
+  // setting `decision` and signalling approvalCv.
+  std::vector<ToolCall> toolCalls;
+  std::condition_variable approvalCv;
 };
 
 struct ModelInfo {
@@ -295,6 +323,22 @@ class App {
   std::vector<std::pair<std::string, std::string>> localSearch(const std::string& query, int k);
   void drawLocalIndexSection(float width);
 
+  // --- MCP servers and the tool loop (agents/mcp_integration.cpp) ----------
+  void mcpInit();                 // load servers, connect the enabled ones
+  void mcpShutdown();
+  std::vector<mcp::ServerConfig> mcpServers() const;
+  void saveMcpServers(const std::vector<mcp::ServerConfig>& list);
+  void mcpConnect(const std::string& serverId);
+  void mcpDisconnect(const std::string& serverId);
+  std::shared_ptr<mcp::Client> mcpClient(const std::string& serverId) const;
+  int mcpConnectedCount() const;
+  std::vector<agents::ToolSpec> mcpToolSpecs() const;
+  std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
+  void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
+  void mcpImportConfig(const std::string& path);
+  void drawToolCallCards(Message& message, float width);
+  void drawMcpSection(float width);
+
   // --- state (panes read and write this directly) -----------------------
   Pane pane = Pane::Chat;
   ChatDoc chat;
@@ -387,6 +431,7 @@ class App {
   Json benchResults = Json::object();
   std::string routedModelNote;
   std::string lastRoutedModel;
+  bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
 
  private:
   void drawLogin();
@@ -396,6 +441,7 @@ class App {
   void drawModelPicker();
   void pollStreams();
   void startStream(const std::string& assistantId, const std::string& model);
+  void startToolStream(const std::string& assistantId, const std::string& model);
   void startSocket();
   void handleSocketEvent(const std::string& name, const Json& payload);
   std::shared_ptr<Stream> streamFor(const std::string& messageId);
@@ -421,6 +467,10 @@ class App {
   std::string activeStreamModelOverride_;
   std::string sessionId_;
   double lastChatRefresh_ = 0.0;
+  // Connected (or connecting) MCP servers by config id. Workers hold their own
+  // shared_ptr copies, so a server can be dropped here while a call finishes.
+  mutable std::mutex mcpMutex_;
+  std::map<std::string, std::shared_ptr<mcp::Client>> mcpClients_;
 };
 
 }  // namespace app

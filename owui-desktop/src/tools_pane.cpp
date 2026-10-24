@@ -20,7 +20,7 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp };
 
 Tab gTab = Tab::Command;
 
@@ -51,6 +51,7 @@ const char* tabName(Tab tab) {
     case Tab::LocalIndex: return "Local index";
     case Tab::FolderSync: return "Folder sync";
     case Tab::UrlCapture: return "URL capture";
+    case Tab::Mcp: return "MCP";
   }
   return "";
 }
@@ -194,14 +195,14 @@ void knowledgeCombo(const char* id, const Json& list, std::string* selected, flo
 }  // namespace
 
 void App::drawToolsPane() {
-  paneHeader("Tools", "Command runner, build errors, benchmark, local index", nullptr);
+  paneHeader("Tools", "Command runner, build errors, benchmark, local index, MCP servers", nullptr);
   paneBody("##tools");
   const float width = ImGui::GetContentRegionAvail().x - 18.0f;
   const auto& palette = theme::palette();
 
   if (ImGui::BeginTabBar("##toolstabs")) {
     for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex,
-                    Tab::FolderSync, Tab::UrlCapture}) {
+                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp}) {
       if (ImGui::BeginTabItem(tabName(tab))) {
         gTab = tab;
         ImGui::EndTabItem();
@@ -548,6 +549,9 @@ void App::drawToolsPane() {
       }, width);
       break;
     }
+    case Tab::Mcp:
+      drawMcpSection(width);
+      break;
   }
 
   paneEnd();
