@@ -348,3 +348,32 @@ Use `qwen3:8b` for anything that needs a model reply; never load
 Append a dated line when you land a package, with what was verified and what
 was left: e.g. `2026-10-24 B: palette, quick ask, pins wired and screenshot;
 voice mode untested (no mic in the test harness).`
+
+2026-10-24 D: `knowledge_tools.cpp` implemented, build green. Verified with a
+throwaway harness that links every app object except `main.mm` (scratch server
+on :3003, Ollama on :11434, HOME redirected so no real settings were touched):
+local index over `src/` = 57 files / ~815 chunks in 11.7 s, re-run skips
+unchanged files in 0.0 s; "where is the socket.io transport" -> 1.
+`core/socketio.h`, 2.-3. `core/socketio.cpp`. Folder sync honours
+`.gitignore`/dotfiles/binaries; an appended edit re-uploaded 1.4-1.5 s after
+the write, a delete left the KB in 1.1 s, and a re-sync (with or without the
+saved map) reports "4 unchanged" because it adopts KB files whose SHA-256
+matches `meta.file_hash`. URL capture of a Wikipedia article landed a readable
+40 KB `Asheron's Call - Wikipedia.md` (starts at `<main>`, links kept);
+short or unfetchable pages fall back to `processWeb`, whose text is uploaded
+as the same visible .md file. Citation popup and local-index section rendered
+offscreen through the Metal backend with ImGui asserts on (clicks driven by
+the test-engine item hooks): prev/next, "Open source" loading
+`/files/{id}/data/content` scrolled to and highlighted the excerpt, Close
+clears `showCitation`, "Attach top hits" adds `local-index-hits.md`.
+`extra["kbSync"][kbId] = {folder, files: {absPath: {id, hash}}}`.
+Call sites still to add: B - `drawCitationPopup()` once per frame;
+chat-pane source chips -> `openCitation(message.sources[i], 0)`; optional:
+`stopFolderSync()` in `shutdown()`; optional: when `localIndexEnabled`, call
+`localSearch(text, 4)` on the worker that builds the payload (it blocks: it
+embeds the query) and prepend the hits like `projectContextBlock()`.
+E - Local index tab -> `drawLocalIndexSection(width)`; Folder sync tab ->
+`syncFolderToKnowledge(folder, kbId)` / `stopFolderSync()`, show
+`folderSyncStatus` (sync is live while `folderSyncToken >= 0`); URL capture
+tab -> `captureUrlToKnowledge(url, kbId)` (the outcome arrives as a toast).
+Not exercised: "Open source" on a web citation (`platform::openUrl`).
