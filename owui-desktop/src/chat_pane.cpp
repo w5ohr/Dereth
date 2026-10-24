@@ -308,7 +308,10 @@ void App::drawChatPane() {
   }
 
   // ------------------------------------------------------------- messages
-  const float composerHeight = 128.0f + (attachments.empty() ? 0.0f : 74.0f) +
+  // The native composer grows with its text; the box height it needs was
+  // measured when the composer was drawn last frame.
+  const float composerHeight = 128.0f + (composerTextHeight - 46.0f) +
+                              (attachments.empty() ? 0.0f : 74.0f) +
                               (projectFolder.empty() ? 0.0f : 24.0f);
   const float sideWidth = !referenceChatId.empty() ? 420.0f : (showPins ? 260.0f : 0.0f);
   ImGui::BeginChild("##messagearea", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
@@ -738,8 +741,49 @@ void App::drawChatPane() {
       ImGui::NewLine();
     }
 
+    // The native NSTextView composer floats over this box (IME, dictation,
+    // spellcheck, emoji picker); the ImGui field stays as the fallback when
+    // settings "nativeComposer" is off.
+    const bool nativeComposer = settings().extra.value("nativeComposer", true);
+    static std::string syncedComposer;
+    static int syncedGeneration = -1;
+    static bool composerInstalled = false;
+    float textHeight = 46.0f;
+    if (nativeComposer) {
+      if (!composerInstalled) {
+        composerInstalled = true;
+        native::ComposerCallbacks callbacks;
+        callbacks.send = [this] {
+          std::string text = native::composerText();
+          while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+          if (core::trim(text).empty() && attachments.empty()) return;
+          composer = text;
+          sendMessage(core::trim(text));
+          ++composerGeneration;
+          focusComposer = true;
+        };
+        callbacks.tab = [this] {
+          const std::string text = native::composerText();
+          if (text.empty() || text[0] != '/' || text.find(' ') != std::string::npos ||
+              text.find('\n') != std::string::npos) {
+            return;
+          }
+          const Json matches = slashPromptMatches(text);
+          if (matches.empty()) return;
+          composer = matches[0].value("content", "");
+          ++composerGeneration;
+          focusComposer = true;
+        };
+        callbacks.navigate = [this](int direction) { return navigateFromComposer(direction); };
+        callbacks.pasteImage = [this] { return pasteImageFromClipboard(); };
+        native::composerInstall(callbacks);
+      }
+      textHeight = std::clamp(native::composerContentHeight(), 46.0f, 240.0f);
+    }
+    composerTextHeight = textHeight;
+
     ImVec2 boxStart = ImGui::GetCursorScreenPos();
-    const float boxHeight = 92.0f;
+    const float boxHeight = textHeight + 46.0f;
     // Reserve the whole composer area up front: everything below positions
     // itself with SetCursorScreenPos, which does not grow the parent.
     ImGui::Dummy(ImVec2(contentWidth, boxHeight + 22.0f));
@@ -749,24 +793,44 @@ void App::drawChatPane() {
     ImGui::GetWindowDrawList()->AddRect(
         boxStart, ImVec2(boxStart.x + contentWidth, boxStart.y + boxHeight), palette.border, 14.0f, 1.0f);
 
-    ImGui::SetCursorScreenPos(ImVec2(boxStart.x + 12, boxStart.y + 8));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-    ImGui::SetNextItemWidth(contentWidth - 24);
-    if (focusComposer) {
-      ImGui::SetKeyboardFocusHere();
-      focusComposer = false;
-    }
-    // The id carries a generation counter: bumping it after a send gives the
-    // widget a fresh state instead of keeping the text it had while active.
-    char composerId[32];
-    snprintf(composerId, sizeof(composerId), "##composer%d", composerGeneration);
-    ImGui::InputTextMultiline(composerId, &composer, ImVec2(contentWidth - 24, 46),
-                              ImGuiInputTextFlags_NoHorizontalScroll);
-    const bool composerFocused = ImGui::IsItemFocused();
-    ImGui::PopStyleColor();
-    if (composer.empty() && !composerFocused) {
-      ImGui::GetWindowDrawList()->AddText(ImVec2(boxStart.x + 17, boxStart.y + 14),
-                                          palette.textFaint, "Send a message...");
+    bool composerFocused = false;
+    if (nativeComposer) {
+      // Three-way sync: a generation bump or a change made by app code pushes
+      // `composer` into the view; otherwise the user's typing is pulled back.
+      const std::string viewText = native::composerText();
+      if (syncedGeneration != composerGeneration || composer != syncedComposer) {
+        native::composerSetText(composer);
+        syncedGeneration = composerGeneration;
+      } else if (viewText != syncedComposer) {
+        composer = viewText;
+      }
+      syncedComposer = composer;
+      native::composerSetStyle(palette.text, palette.textFaint, palette.accent,
+                               settings().fontSize * settings().uiScale, settings().sendOnEnter);
+      native::composerSetFrame(boxStart.x + 12, boxStart.y + 8, contentWidth - 24, textHeight);
+      composerShownThisFrame = true;
+      if (focusComposer && native::composerFocus()) focusComposer = false;
+      composerFocused = native::composerIsFocused();
+    } else {
+      ImGui::SetCursorScreenPos(ImVec2(boxStart.x + 12, boxStart.y + 8));
+      ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+      ImGui::SetNextItemWidth(contentWidth - 24);
+      if (focusComposer) {
+        ImGui::SetKeyboardFocusHere();
+        focusComposer = false;
+      }
+      // The id carries a generation counter: bumping it after a send gives the
+      // widget a fresh state instead of keeping the text it had while active.
+      char composerId[32];
+      snprintf(composerId, sizeof(composerId), "##composer%d", composerGeneration);
+      ImGui::InputTextMultiline(composerId, &composer, ImVec2(contentWidth - 24, 46),
+                                ImGuiInputTextFlags_NoHorizontalScroll);
+      composerFocused = ImGui::IsItemFocused();
+      ImGui::PopStyleColor();
+      if (composer.empty() && !composerFocused) {
+        ImGui::GetWindowDrawList()->AddText(ImVec2(boxStart.x + 17, boxStart.y + 14),
+                                            palette.textFaint, "Send a message...");
+      }
     }
 
     // "/" at the start of the composer offers the server's saved prompts.
@@ -782,7 +846,7 @@ void App::drawChatPane() {
                       prompt.value("title", prompt.value("name", "")).c_str());
         }
         ImGui::EndTooltip();
-        if (composerFocused && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+        if (!nativeComposer && composerFocused && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
           composer = matches[0].value("content", "");
           ++composerGeneration;
           focusComposer = true;
@@ -791,7 +855,7 @@ void App::drawChatPane() {
     }
 
     // Toolbar inside the box.
-    ImGui::SetCursorScreenPos(ImVec2(boxStart.x + 10, boxStart.y + 56));
+    ImGui::SetCursorScreenPos(ImVec2(boxStart.x + 10, boxStart.y + textHeight + 10));
     if (icons::button("attach", icons::Icon::Paperclip, "Attach files")) {
       attachFiles(platform::openFiles(true));
     }
@@ -893,7 +957,7 @@ void App::drawChatPane() {
     }
 
     // Send / stop.
-    ImGui::SetCursorScreenPos(ImVec2(boxStart.x + contentWidth - 44, boxStart.y + 54));
+    ImGui::SetCursorScreenPos(ImVec2(boxStart.x + contentWidth - 44, boxStart.y + textHeight + 8));
     if (!streams_.empty()) {
       if (icons::button("stop", icons::Icon::Stop, "Stop generating", 20.0f, palette.danger)) {
         stopAllStreams();
@@ -911,7 +975,7 @@ void App::drawChatPane() {
 
     // Enter sends; Shift+Enter makes a newline.
     ImGuiIO& io = ImGui::GetIO();
-    if (composerFocused && settings().sendOnEnter && !io.KeyShift &&
+    if (!nativeComposer && composerFocused && settings().sendOnEnter && !io.KeyShift &&
         ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
       std::string text = composer;
       while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
@@ -977,6 +1041,20 @@ void App::drawChatPane() {
       ImGui::EndPopup();
     }
   }
+}
+
+// Option+Up/Down pressed inside the native composer: step through the
+// transcript the way handleKeyboardNavigation does from the ImGui field.
+bool App::navigateFromComposer(int direction) {
+  const std::vector<std::string> path = chat.branch();
+  if (path.empty()) return false;
+  auto position = std::find(path.begin(), path.end(), focusedMessageId);
+  int index = position == path.end() ? static_cast<int>(path.size())
+                                     : static_cast<int>(std::distance(path.begin(), position));
+  index = std::clamp(index + direction, 0, static_cast<int>(path.size()) - 1);
+  focusedMessageId = path[static_cast<size_t>(index)];
+  pendingScrollTo = focusedMessageId;
+  return true;
 }
 
 }  // namespace app

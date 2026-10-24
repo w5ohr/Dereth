@@ -72,6 +72,12 @@ void App::drawSettingsPane() {
   card("chat", [&] {
     ImGui::Checkbox("Stream responses", &cfg.streamResponses);
     ImGui::Checkbox("Enter sends the message", &cfg.sendOnEnter);
+    bool nativeComposer = cfg.extra.value("nativeComposer", true);
+    if (ImGui::Checkbox("Native text field in the composer (IME, dictation, spellcheck, emoji)",
+                        &nativeComposer)) {
+      cfg.extra["nativeComposer"] = nativeComposer;
+      cfg.save();
+    }
     ImGui::Checkbox("Ask the server to name new chats", &cfg.autoTitle);
     ImGui::Checkbox("Notify when a reply finishes", &cfg.notifyOnCompletion);
     ImGui::Checkbox("Read replies aloud", &cfg.speakReplies);

@@ -1229,6 +1229,7 @@ void App::speak(const std::string& text) {
 bool App::pasteImageFromClipboard() {
   if (!signedIn_ || pane != Pane::Chat || platform::clipboardHasText()) return false;
   const std::string png = platform::clipboardImage();
+  core::debugLog("paste image: %zu bytes", png.size());
   if (png.empty()) return false;
   attachBytes("pasted.png", "image/png", png);
   widgets::toast(widgets::ToastLevel::Success, "Image attached");
@@ -1255,6 +1256,17 @@ void App::rateMessage(const std::string& messageId, int rating) {
 void App::frame() {
   pollStreams();
   handleShortcuts();
+
+  // The native composer is a Cocoa view above everything ImGui draws, so it
+  // only shows while the chat pane placed it last frame and nothing modal is
+  // open over the window.
+  {
+    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation ||
+                         showProjectFiles ||
+                         ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    native::composerSetVisible(composerShownThisFrame && !overlay);
+    composerShownThisFrame = false;
+  }
 
   // Native hooks need the window to exist, so they go in on the first frame
   // rather than in init().

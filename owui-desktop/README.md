@@ -154,6 +154,13 @@ Things a browser tab can't do, plus the workflow features built on top:
 - **Server:** server profiles with per-server sign-in, a Tools pane with a
   command runner and a benchmark tab that charts models against each other,
   and "fits in memory" guidance plus keep-alive and unload controls in Admin.
+- **Composer:** the input is a native macOS text view floated over the chat
+  box, so it has IME/CJK input, dictation (press 🎤/Fn), spellcheck, the
+  emoji picker (⌃⌘Space), trackpad selection and native undo. It grows with
+  the text; Enter sends, Shift+Enter breaks a line (Cmd+Enter sends when
+  "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
+  it, pasting an image attaches it. Settings ▸ "Native text field" switches
+  back to the built-in field.
 - **MCP:** connect Model Context Protocol servers (stdio or Streamable HTTP;
   import your Claude Desktop or Cursor config) under Tools ▸ MCP, switch the
   plug icon on in the composer, and the model can call their tools. Each call

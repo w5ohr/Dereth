@@ -481,3 +481,254 @@ std::vector<std::string> chooseFolder() {
 }
 
 }  // namespace native
+
+// ---------------------------------------------------------------- composer
+
+namespace {
+native::ComposerCallbacks gComposer;
+
+NSColor* colorFromImU32(unsigned c) {
+  // ImGui packs ABGR.
+  return [NSColor colorWithSRGBRed:((c >> 0) & 0xFF) / 255.0
+                             green:((c >> 8) & 0xFF) / 255.0
+                              blue:((c >> 16) & 0xFF) / 255.0
+                             alpha:((c >> 24) & 0xFF) / 255.0];
+}
+}  // namespace
+
+@interface OWUIComposerView : NSTextView
+@property(nonatomic, copy) NSString* placeholder;
+@property(nonatomic, strong) NSColor* placeholderColor;
+@property(nonatomic) BOOL sendOnEnter;
+@end
+
+@implementation OWUIComposerView
+
+- (BOOL)becomeFirstResponder {
+  const BOOL ok = [super becomeFirstResponder];
+  if (ok) self.needsDisplay = YES;
+  return ok;
+}
+
+- (BOOL)resignFirstResponder {
+  const BOOL ok = [super resignFirstResponder];
+  if (ok) self.needsDisplay = YES;
+  return ok;
+}
+
+// Files dropped on the window go to the drop overlay, not into the text.
+- (NSArray<NSPasteboardType>*)acceptableDragTypes { return @[]; }
+
+- (void)drawRect:(NSRect)rect {
+  [super drawRect:rect];
+  if (self.string.length == 0 && self.placeholder.length > 0 && !self.hasMarkedText) {
+    NSDictionary* attributes = @{
+      NSFontAttributeName : self.font ?: [NSFont systemFontOfSize:13],
+      NSForegroundColorAttributeName : self.placeholderColor ?: NSColor.placeholderTextColor,
+    };
+    const NSPoint origin = NSMakePoint(self.textContainerOrigin.x + self.textContainer.lineFragmentPadding,
+                                       self.textContainerOrigin.y);
+    [self.placeholder drawAtPoint:origin withAttributes:attributes];
+  }
+}
+
+// Hands the keyboard back to ImGui's own responder so its shortcuts and the
+// transcript navigation work again.
+- (void)handOffToImGui {
+  NSView* host = self.window.contentView;
+  Class responder = NSClassFromString(@"KeyEventResponder");
+  for (NSView* sub in host.subviews) {
+    if (responder && [sub isKindOfClass:responder]) {
+      [self.window makeFirstResponder:sub];
+      return;
+    }
+  }
+  [self.window makeFirstResponder:host];
+}
+
+- (void)keyDown:(NSEvent*)event {
+  const NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+  const BOOL isReturn = event.keyCode == 36 || event.keyCode == 76;
+  if (isReturn && (mods & NSEventModifierFlagCommand)) {
+    if (gComposer.send) gComposer.send();
+    return;
+  }
+  if (event.keyCode == 53) {   // Escape
+    if (gComposer.escape) gComposer.escape();
+    [self handOffToImGui];
+    return;
+  }
+  [super keyDown:event];
+}
+
+- (void)doCommandBySelector:(SEL)selector {
+  if (selector == @selector(insertNewline:)) {
+    const NSEventModifierFlags mods = NSApp.currentEvent.modifierFlags;
+    const BOOL shift = (mods & NSEventModifierFlagShift) != 0;
+    if (self.sendOnEnter && !shift && !self.hasMarkedText) {
+      if (gComposer.send) gComposer.send();
+      return;
+    }
+    [self insertText:@"\n" replacementRange:self.selectedRange];
+    return;
+  }
+  if (selector == @selector(cancelOperation:)) {
+    if (gComposer.escape) gComposer.escape();
+    [self handOffToImGui];
+    return;
+  }
+  if (selector == @selector(insertTab:)) {
+    if (gComposer.tab) gComposer.tab();
+    return;
+  }
+  // Option+Up / Option+Down walk the transcript, as they do from the ImGui field.
+  if (selector == @selector(moveToBeginningOfParagraph:) || selector == @selector(moveToEndOfParagraph:)) {
+    const bool walked =
+        gComposer.navigate && gComposer.navigate(selector == @selector(moveToBeginningOfParagraph:) ? -1 : 1);
+    if (walked) [self handOffToImGui];
+    return;
+  }
+  [super doCommandBySelector:selector];
+}
+
+- (void)paste:(id)sender {
+  core::debugLog("composer paste: image hook %s", gComposer.pasteImage ? "set" : "unset");
+  if (gComposer.pasteImage && gComposer.pasteImage()) return;
+  [super paste:sender];
+}
+
+@end
+
+namespace native {
+namespace {
+NSScrollView* gComposerScroll = nil;
+OWUIComposerView* gComposerView = nil;
+NSRect gComposerFrame = NSZeroRect;
+unsigned gComposerStyleKey[3] = {0, 0, 0};
+float gComposerFontSize = 0.0f;
+}  // namespace
+
+void composerInstall(const ComposerCallbacks& callbacks) {
+  gComposer = callbacks;
+  if (gComposerView) return;
+  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  if (!window) return;
+  NSView* host = window.contentView;
+
+  NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+  scroll.drawsBackground = NO;
+  scroll.borderType = NSNoBorder;
+  scroll.hasVerticalScroller = YES;
+  scroll.hasHorizontalScroller = NO;
+  scroll.autohidesScrollers = YES;
+  scroll.scrollerStyle = NSScrollerStyleOverlay;
+  scroll.hidden = YES;
+
+  OWUIComposerView* text = [[OWUIComposerView alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+  text.minSize = NSMakeSize(0, 0);
+  text.maxSize = NSMakeSize(FLT_MAX, FLT_MAX);
+  text.verticallyResizable = YES;
+  text.horizontallyResizable = NO;
+  text.autoresizingMask = NSViewWidthSizable;
+  text.textContainer.widthTracksTextView = YES;
+  text.textContainer.containerSize = NSMakeSize(10, FLT_MAX);
+  text.drawsBackground = NO;
+  text.richText = NO;
+  text.importsGraphics = NO;
+  text.usesFontPanel = NO;
+  text.allowsUndo = YES;
+  text.continuousSpellCheckingEnabled = YES;
+  text.grammarCheckingEnabled = NO;
+  // Prompts carry code; smart quotes and dashes would corrupt it.
+  text.automaticQuoteSubstitutionEnabled = NO;
+  text.automaticDashSubstitutionEnabled = NO;
+  text.automaticTextReplacementEnabled = NO;
+  text.automaticSpellingCorrectionEnabled = NO;
+  text.automaticLinkDetectionEnabled = NO;
+  text.smartInsertDeleteEnabled = NO;
+  text.textContainerInset = NSMakeSize(2, 4);
+  text.placeholder = @"Send a message...";
+  [text unregisterDraggedTypes];
+
+  scroll.documentView = text;
+  [host addSubview:scroll positioned:NSWindowAbove relativeTo:nil];
+  gComposerScroll = scroll;
+  gComposerView = text;
+}
+
+void composerSetFrame(float x, float y, float width, float height) {
+  if (!gComposerScroll) return;
+  NSView* host = gComposerScroll.superview;
+  const NSRect frame = NSMakeRect(x, host.bounds.size.height - y - height, width, height);
+  if (NSEqualRects(frame, gComposerFrame)) return;
+  gComposerFrame = frame;
+  gComposerScroll.frame = frame;
+}
+
+void composerSetVisible(bool visible) {
+  if (!gComposerScroll) return;
+  if (gComposerScroll.hidden == !visible) return;
+  if (!visible && composerIsFocused()) [gComposerView handOffToImGui];
+  gComposerScroll.hidden = !visible;
+}
+
+void composerSetText(const std::string& text) {
+  if (!gComposerView) return;
+  NSString* value = toNs(text);
+  if ([gComposerView.string isEqualToString:value]) return;
+  [gComposerView setString:value];
+  [gComposerView setSelectedRange:NSMakeRange(value.length, 0)];
+  gComposerView.needsDisplay = YES;
+}
+
+std::string composerText() { return gComposerView ? toStd(gComposerView.string) : std::string(); }
+
+bool composerFocus() {
+  if (!gComposerView || gComposerScroll.hidden || !gComposerView.window) return false;
+  if (composerIsFocused()) return true;
+  [gComposerView.window makeFirstResponder:gComposerView];
+  // Programmatic focus (after a send, Esc out of the transcript, a follow-up
+  // chip) always lands the caret at the end.
+  if (composerIsFocused()) {
+    [gComposerView setSelectedRange:NSMakeRange(gComposerView.string.length, 0)];
+  }
+  return composerIsFocused();
+}
+
+bool composerIsFocused() {
+  return gComposerView && gComposerView.window && gComposerView.window.firstResponder == gComposerView;
+}
+
+float composerContentHeight() {
+  if (!gComposerView) return 46.0f;
+  NSLayoutManager* layout = gComposerView.layoutManager;
+  [layout ensureLayoutForTextContainer:gComposerView.textContainer];
+  const NSRect used = [layout usedRectForTextContainer:gComposerView.textContainer];
+  return static_cast<float>(used.size.height + gComposerView.textContainerInset.height * 2 + 2);
+}
+
+void composerSetStyle(unsigned textColor, unsigned placeholderColor, unsigned accent, float fontSize,
+                      bool sendOnEnter) {
+  if (!gComposerView) return;
+  gComposerView.sendOnEnter = sendOnEnter;
+  if (gComposerStyleKey[0] == textColor && gComposerStyleKey[1] == placeholderColor &&
+      gComposerStyleKey[2] == accent && gComposerFontSize == fontSize) {
+    return;
+  }
+  gComposerStyleKey[0] = textColor;
+  gComposerStyleKey[1] = placeholderColor;
+  gComposerStyleKey[2] = accent;
+  gComposerFontSize = fontSize;
+  NSFont* font = [NSFont systemFontOfSize:fontSize];
+  gComposerView.font = font;
+  gComposerView.textColor = colorFromImU32(textColor);
+  gComposerView.insertionPointColor = colorFromImU32(accent);
+  gComposerView.placeholderColor = colorFromImU32(placeholderColor);
+  gComposerView.typingAttributes = @{
+    NSFontAttributeName : font,
+    NSForegroundColorAttributeName : colorFromImU32(textColor),
+  };
+  gComposerView.needsDisplay = YES;
+}
+
+}  // namespace native

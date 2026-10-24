@@ -432,6 +432,9 @@ class App {
   std::string routedModelNote;
   std::string lastRoutedModel;
   bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
+  bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
+  float composerTextHeight = 46.0f;           // text area height the composer used last frame
+  bool navigateFromComposer(int direction);   // Option+Up/Down out of the native composer; false if no messages
 
  private:
   void drawLogin();

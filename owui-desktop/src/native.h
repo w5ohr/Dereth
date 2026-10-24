@@ -83,4 +83,26 @@ ProcessResult runProcess(const std::vector<std::string>& argv, const std::string
 std::string homeDirectory();
 std::vector<std::string> chooseFolder();
 
+// Native composer: an NSTextView floated over the ImGui composer box so the
+// input gets IME/CJK, dictation, spellcheck, the emoji picker and trackpad
+// selection. The chat pane positions it every frame in ImGui screen
+// coordinates (points, y down); App::frame hides it when the pane isn't drawn.
+struct ComposerCallbacks {
+  std::function<void()> send;              // Enter (Shift+Enter is a newline), or Cmd+Enter
+  std::function<void()> escape;            // Esc: keyboard goes back to ImGui
+  std::function<void()> tab;               // Tab: slash-prompt completion
+  std::function<bool(int direction)> navigate;   // Option+Up (-1) / Option+Down (+1); false = nothing to walk
+  std::function<bool()> pasteImage;        // return true when the paste was an image
+};
+void composerInstall(const ComposerCallbacks& callbacks);
+void composerSetFrame(float x, float y, float width, float height);
+void composerSetVisible(bool visible);
+void composerSetText(const std::string& text);
+std::string composerText();
+bool composerFocus();                      // false when the view can't take focus yet
+bool composerIsFocused();
+float composerContentHeight();             // laid-out text height in points
+void composerSetStyle(unsigned textColor, unsigned placeholderColor, unsigned accent,
+                      float fontSize, bool sendOnEnter);
+
 }  // namespace native

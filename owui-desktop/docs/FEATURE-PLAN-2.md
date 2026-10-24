@@ -230,3 +230,23 @@ out until they finish (this also affected non-MCP replies on the SSE fallback pa
 Not done from package G: 83 agent loop, 84 recipes, 87 script tools, 88 browser tool,
 80 grammar controls. Known limits: no legacy HTTP+SSE transport, no sampling/
 elicitation, tool-enabled turns skip the server pipeline (RAG, web search, OWUI tools).
+
+2026-10-24 H (66 native composer): `native::composer*` in `src/native.mm` - an
+`OWUIComposerView` (NSTextView in a borderless NSScrollView) added to the window's
+content view above the Metal view; the chat pane positions it each frame from its
+ImGui box, grows the box with the laid-out text (46-240 pt) and reserves the room in
+the transcript; `App::frame` hides it when the pane isn't drawn or a popup/overlay
+is open. Three-way text sync (generation bump / app-side change push, typing pulls).
+Enter sends, Shift+Enter inserts a newline, Cmd+Enter sends when "Enter sends" is
+off, Esc hands the keyboard to ImGui's KeyEventResponder, Option+Up/Down walk the
+transcript (only when there is one), Tab completes a slash prompt, paste: routes an
+image on the pasteboard to pasteImageFromClipboard. Spellcheck on; smart quotes,
+dashes and text replacement off (prompts carry code); file drags are declined so the
+window's drop overlay keeps them. Caret goes to the end on programmatic focus.
+Settings ▸ "Native text field" (extra["nativeComposer"], default on) falls back to
+the ImGui field. Verified in the GUI on a scratch server: placeholder, typing with
+spellcheck underlines, Shift+Enter, auto-grow to four lines with the toolbar moving
+down, Enter sent and the reply came back, ⌥↑ highlighted the message and Esc+typing
+returned to the composer, image paste attached with a thumbnail, the view hides on
+other panes and under the command palette. Not exercised: IME composition,
+dictation, the emoji picker (all stock NSTextView behaviour).

@@ -932,7 +932,10 @@ void App::handleKeyboardNavigation(const std::vector<std::string>& path) {
     return;
   }
 
-  if (position == path.end() || io.WantTextInput || io.KeySuper || io.KeyCtrl) return;
+  if (position == path.end() || io.WantTextInput || native::composerIsFocused() || io.KeySuper ||
+      io.KeyCtrl) {
+    return;
+  }
   const Message& m = chat.messages.at(focusedMessageId);
   // Plain letters act on the focused message: c copy, r regenerate, p pin,
   // e edit, s speak. Arrow keys without Option move too, once out of the
