@@ -314,6 +314,7 @@ void App::init() {
 
 void App::shutdown() {
   stopAllStreams();
+  if (terminal) terminal->stop();
   stopFolderSync();
   mcpShutdown();
   socket_.stop();

@@ -290,3 +290,20 @@ and the cached list; a thumbs-up offline produced a dirty row; after `docker sta
 the row was pushed and the server's message carried `annotation.rating = 1`.
 Gotcha found: ⌘R (refresh) is not a menu item, so it is swallowed by the native
 composer when that has focus; use the sidebar toggles or wait for the reach check.
+
+2026-10-24 J (91 terminal pane): `src/core/pty.*` (forkpty + reader thread; login
+shell `$SHELL -l -i` with TERM=xterm-256color in the project folder or home),
+`src/ui/terminal.*` (VT/xterm emulator: UTF-8, C0, CSI cursor/erase/insert/delete/
+scroll-region, SGR 16/256/truecolor + bold/dim/underline/inverse, DECSC/DECRC,
+DECCKM, DECAWM with pending wrap, alt screen 47/1047/1049, OSC title, 5000-line
+scrollback) and `src/terminal_pane.cpp` (Tools ▸ Terminal: grid drawn with ImDrawList
+runs, cursor block, wheel scrollback with a "N lines back" badge, drag selection,
+keys via InputQueueCharacters plus escape sequences for arrows/home/end/delete/page/
+enter/backspace/tab/esc and Ctrl+letter, Cmd+C copy / Cmd+V paste, ImGui nav keys
+disabled while the grid has focus; Restart, Clear, Copy, "Ask about selection"/"last
+40 lines" → composer, "Explain as build error" → explainBuildError). Verified in the
+GUI: zsh prompt, `ls --color` directory colours, printf SGR sample (red bold, green,
+underlined, inverse), `seq 1 60` scrollback with the badge, drag selection of five
+lines. Fixed on the way: the wheel scrolled the Tools pane as well (SetItemKeyOwner on
+the grid). Not exercised: full-screen TUIs (vim/htop use the alt screen, which the
+emulator implements but was not driven), mouse reporting (unsupported by design).

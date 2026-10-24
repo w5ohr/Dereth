@@ -16,10 +16,12 @@
 
 #include "agents/tool_loop.h"
 #include "api/client.h"
+#include "core/pty.h"
 #include "core/settings.h"
 #include "core/socketio.h"
 #include "imgui.h"
 #include "mcp/mcp_client.h"
+#include "ui/terminal.h"
 
 namespace app {
 
@@ -356,6 +358,12 @@ class App {
   // Fills `chats` from the mirror when the server can't be reached.
   void loadChatsFromMirror(bool archived);
 
+  // --- terminal pane (terminal_pane.cpp) ------------------------------------
+  void drawTerminalSection(float width);
+  void startTerminal();                  // (re)spawns the login shell
+  std::string terminalSelectionText() const;
+  std::string terminalRecentText(int lines) const;
+
   // --- artifact pane (artifacts.cpp) ---------------------------------------
   static bool isArtifactLanguage(const std::string& language, const std::string& code);
   // First HTML/SVG block of a reply, for auto-opening after a completion.
@@ -460,6 +468,18 @@ class App {
   bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
   float composerTextHeight = 46.0f;           // text area height the composer used last frame
+  // Terminal pane state. Selection endpoints are absolute line numbers
+  // (scrollback lines first, then the live screen) and columns.
+  std::unique_ptr<core::Pty> terminal;
+  term::Screen terminalScreen{80, 24};
+  bool terminalFocused = false;
+  int terminalScroll = 0;                     // lines scrolled back from the bottom
+  bool terminalSelecting = false;
+  bool terminalHasSelection = false;
+  int terminalSelAnchorLine = 0, terminalSelAnchorCol = 0;
+  int terminalSelEndLine = 0, terminalSelEndCol = 0;
+  std::string terminalCwd;
+  std::string terminalError;
   bool offlineList = false;                   // the sidebar shows the mirror, not the server
   std::string mirrorStatus;
   bool mirrorSyncing = false;

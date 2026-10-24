@@ -161,6 +161,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Terminal:** Tools ▸ Terminal runs your login shell on a real pty with a
+  built-in VT/xterm emulator - colours, bold/underline/inverse, cursor
+  movement, scroll regions and the alternate screen, 5,000 lines of
+  scrollback (wheel), mouse selection with Cmd+C, Cmd+V paste, Ctrl keys and
+  arrows. "Ask about selection" (or the last 40 lines) drops the text into
+  the composer; "Explain as build error" sends it through the build-error
+  explainer with the referenced source.
 - **Local copy:** every chat is mirrored into a SQLite database per server
   (`~/Library/Application Support/Open WebUI Desktop/mirror-<host>.db`) with
   full-text search. With the server away the sidebar lists the local copy,

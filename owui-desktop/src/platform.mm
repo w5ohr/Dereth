@@ -146,6 +146,11 @@ std::string clipboardImage() {
   return std::string(static_cast<const char*>(png.bytes), png.length);
 }
 
+std::string clipboardText() {
+  NSString* s = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
+  return s ? std::string(s.UTF8String) : std::string();
+}
+
 bool clipboardHasText() {
   NSPasteboard* pb = [NSPasteboard generalPasteboard];
   return [pb availableTypeFromArray:@[ NSPasteboardTypeString ]] != nil;
