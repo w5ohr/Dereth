@@ -140,6 +140,19 @@ static std::string gIniPath;
 
 @end
 
+// The Edit menu owns Cmd+C/V/X/A/Z as key equivalents, so ImGui never sees
+// those keystrokes. Its actions arrive here instead and are replayed into
+// ImGui's input queue as the same chords.
+static void injectChord(ImGuiKey key, bool shift = false) {
+  ImGuiIO& io = ImGui::GetIO();
+  io.AddKeyEvent(ImGuiMod_Super, true);
+  if (shift) io.AddKeyEvent(ImGuiMod_Shift, true);
+  io.AddKeyEvent(key, true);
+  io.AddKeyEvent(key, false);
+  if (shift) io.AddKeyEvent(ImGuiMod_Shift, false);
+  io.AddKeyEvent(ImGuiMod_Super, false);
+}
+
 @interface AppDelegate : NSObject <NSApplicationDelegate>
 @property(nonatomic, strong) NSWindow* window;
 @end
@@ -186,6 +199,17 @@ static std::string gIniPath;
   (void)sender;
   app::App::instance().stopAllStreams();
 }
+
+- (void)paste:(id)sender {
+  (void)sender;
+  if (app::App::instance().pasteImageFromClipboard()) return;
+  injectChord(ImGuiKey_V);
+}
+- (void)copy:(id)sender { (void)sender; injectChord(ImGuiKey_C); }
+- (void)cut:(id)sender { (void)sender; injectChord(ImGuiKey_X); }
+- (void)selectAll:(id)sender { (void)sender; injectChord(ImGuiKey_A); }
+- (void)undo:(id)sender { (void)sender; injectChord(ImGuiKey_Z); }
+- (void)redo:(id)sender { (void)sender; injectChord(ImGuiKey_Z, true); }
 
 - (void)openPalette:(id)sender {
   (void)sender;

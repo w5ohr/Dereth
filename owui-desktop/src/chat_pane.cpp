@@ -907,11 +907,6 @@ void App::drawChatPane() {
         focusComposer = true;
       }
     }
-    // Cmd+V with an image on the pasteboard attaches it.
-    if (composerFocused && io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_V, false)) {
-      const std::string png = platform::clipboardImage();
-      if (!png.empty()) attachBytes("pasted.png", "image/png", png);
-    }
 
     ImGui::SetCursorScreenPos(ImVec2(boxStart.x, boxStart.y + boxHeight + 4));
     ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textFaint));

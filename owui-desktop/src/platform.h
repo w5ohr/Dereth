@@ -28,6 +28,7 @@ float recordingLevel();
 
 // Returns PNG bytes of an image on the pasteboard, or "" if there is none.
 std::string clipboardImage();
+bool clipboardHasText();
 void setClipboardText(const std::string& text);
 
 std::string appVersion();

@@ -1138,6 +1138,15 @@ void App::speak(const std::string& text) {
   });
 }
 
+bool App::pasteImageFromClipboard() {
+  if (!signedIn_ || pane != Pane::Chat || platform::clipboardHasText()) return false;
+  const std::string png = platform::clipboardImage();
+  if (png.empty()) return false;
+  attachBytes("pasted.png", "image/png", png);
+  widgets::toast(widgets::ToastLevel::Success, "Image attached");
+  return true;
+}
+
 void App::rateMessage(const std::string& messageId, int rating) {
   auto it = chat.messages.find(messageId);
   if (it == chat.messages.end()) return;

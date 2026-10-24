@@ -232,6 +232,9 @@ class App {
   void attachBytes(const std::string& name, const std::string& mime, const std::string& bytes);
   void speak(const std::string& text);
   void rateMessage(const std::string& messageId, int rating);
+  // Edit > Paste lands here first: an image on the pasteboard (and no text)
+  // becomes a chat attachment. Returns false to let the text paste through.
+  bool pasteImageFromClipboard();
 
   // --- chat workflow features (features.cpp) ----------------------------
   void drawPalette();
