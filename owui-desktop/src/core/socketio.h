@@ -1,6 +1,7 @@
-// Minimal Socket.IO v4 client over the Engine.IO HTTP long-polling transport
-// (no WebSocket dependency). Open WebUI pushes chat completion tokens, status
-// updates, channel messages and notifications over this connection.
+// Minimal Socket.IO v4 client over the Engine.IO WebSocket transport (the
+// server is configured websocket-only; polling is refused). Open WebUI pushes
+// chat completion tokens, status updates, channel messages and notifications
+// over this connection.
 #pragma once
 
 #include <atomic>

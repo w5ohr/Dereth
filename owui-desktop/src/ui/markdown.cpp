@@ -409,7 +409,14 @@ void renderCodeBlock(const std::string& code, const std::string& language, const
   ImGui::PopStyleVar(2);
   ImGui::PopStyleColor();
 
-  if (options.onCodeBlockActions) options.onCodeBlockActions(code, language);
+  if (options.onCodeBlockActions) {
+    // A child of the block's width keeps "fill the row" widgets (the output
+    // box) inside the message column instead of running to the window edge.
+    ImGui::BeginChild("codeactions", ImVec2(width, 0),
+                      ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize);
+    options.onCodeBlockActions(code, language);
+    ImGui::EndChild();
+  }
   ImGui::PopID();
 }
 

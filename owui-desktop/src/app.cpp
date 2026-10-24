@@ -666,6 +666,21 @@ void App::handleSocketEvent(const std::string& name, const Json& payload) {
   if (delta.done) stream->done = true;
 }
 
+// Local index retrieval: searches the on-disk index for the latest user turn
+// and puts the hits in front as a system message. Blocks (it embeds the
+// query), so it only ever runs on the worker that sends the request.
+static void addLocalIndexHits(App* app, Json* payload, const std::string& query) {
+  if (query.empty()) return;
+  const auto hits = app->localSearch(query, 4);
+  if (hits.empty()) return;
+  std::string block = "Relevant excerpts from the user's local files:\n\n";
+  for (const auto& [path, text] : hits) block += "### " + path + "\n" + text + "\n\n";
+  Json& messages = (*payload)["messages"];
+  if (messages.is_array()) {
+    messages.insert(messages.begin(), Json{{"role", "system"}, {"content", block}});
+  }
+}
+
 void App::startStream(const std::string& assistantId, const std::string& model) {
   auto stream = std::make_shared<Stream>();
   stream->chatId = chat.id;
@@ -677,6 +692,15 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   Json payload = buildCompletionPayload(assistantId, model);
   const bool useStreaming = settings().streamResponses;
   lastPayload = payload;
+  const bool useLocalIndex = localIndexEnabled;
+  std::string indexQuery;
+  if (useLocalIndex) {
+    auto assistant = chat.messages.find(assistantId);
+    if (assistant != chat.messages.end()) {
+      auto parent = chat.messages.find(assistant->second.parentId);
+      if (parent != chat.messages.end()) indexQuery = parent->second.content;
+    }
+  }
   timings[assistantId] = MessageTiming{core::nowMillis(), 0.0, 0.0};
 
   // When the socket is up, let the server run the completion as a background
@@ -688,8 +712,10 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
     stream->viaSocket = true;
     payload["session_id"] = socket_.sessionId();
     const std::shared_ptr<Stream> handle = stream;
-    async::run([this, handle, payload] {
-      api::Result res = api_.completion(payload);
+    async::run([this, handle, payload, useLocalIndex, indexQuery] {
+      Json body = payload;
+      if (useLocalIndex) addLocalIndexHits(this, &body, indexQuery);
+      api::Result res = api_.completion(body);
       async::post([this, handle, res] {
         if (!res.ok) {
           std::lock_guard<std::mutex> lock(handle->mutex);
@@ -713,10 +739,12 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   // go to a socket that isn't there - so drop it and save the result ourselves.
   payload.erase("chat_id");
 
-  async::runDetached([this, stream, payload, useStreaming] {
+  async::runDetached([this, stream, payload, useStreaming, useLocalIndex, indexQuery] {
+    Json body = payload;
+    if (useLocalIndex) addLocalIndexHits(this, &body, indexQuery);
     if (useStreaming) {
       api::Result res = api_.streamCompletion(
-          payload,
+          body,
           [stream](const api::StreamDelta& delta) {
             std::lock_guard<std::mutex> lock(stream->mutex);
             stream->started = true;
@@ -732,7 +760,7 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
       if (!res.ok && !stream->cancel.load()) stream->error = api::errorMessage(res);
       stream->done = true;
     } else {
-      api::Result res = api_.completion(payload);
+      api::Result res = api_.completion(body);
       std::lock_guard<std::mutex> lock(stream->mutex);
       if (res.ok) {
         const Json& choices = res.data.value("choices", Json::array());
@@ -1180,6 +1208,7 @@ void App::frame() {
       projectFiles = settings().extra["projectFiles"].get<std::vector<std::string>>();
     }
     if (settings().theme == "system") applyTheme();
+    localIndexEnabled = settings().extra.value("localIndexEnabled", false);
   }
   if (signedIn_) {
     tickScheduler();
