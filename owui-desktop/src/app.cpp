@@ -705,6 +705,11 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
     return;
   }
 
+  // Without a live socket the reply has to come back over HTTP, and a chat_id
+  // in the payload makes the server run it as a background task whose tokens
+  // go to a socket that isn't there - so drop it and save the result ourselves.
+  payload.erase("chat_id");
+
   async::runDetached([this, stream, payload, useStreaming] {
     if (useStreaming) {
       api::Result res = api_.streamCompletion(
@@ -944,6 +949,10 @@ void App::pollStreams() {
           message.streaming = false;
           message.status.clear();
           if (!stream->error.empty()) message.error = stream->error;
+          if (stream->error.empty() && stream->content.empty() && stream->reasoning.empty() &&
+              !stream->cancel.load()) {
+            message.error = "No response came back from the server. Try regenerating.";
+          }
           if (timings.count(stream->messageId)) timings[stream->messageId].doneMs = core::nowMillis();
         }
       }
@@ -1164,6 +1173,25 @@ void App::frame() {
     tickScheduler();
     tickVoiceMode();
     tickOfflineQueue();
+
+    // The socket drops when the server restarts or the network blips; bring
+    // it back with a widening backoff rather than staying on the HTTP path.
+    static double nextReconnect = 0.0;
+    static double backoff = 2000.0;
+    const double now = core::nowMillis();
+    if (socket_.connected()) {
+      backoff = 2000.0;
+      nextReconnect = 0.0;
+    } else if (serverReachable) {
+      if (nextReconnect == 0.0) {
+        nextReconnect = now + backoff;
+      } else if (now >= nextReconnect) {
+        core::debugLog("socket down, reconnecting (backoff %.0f ms)", backoff);
+        socket_.reconnect();
+        backoff = std::min(backoff * 2.0, 30000.0);
+        nextReconnect = now + backoff;
+      }
+    }
   }
   {
     static size_t lastBadge = static_cast<size_t>(-1);
@@ -1353,6 +1381,7 @@ void App::drawModelPicker() {
   ImGui::OpenPopup("Select models");
   ImGui::SetNextWindowSize(ImVec2(520, 520), ImGuiCond_Appearing);
   if (ImGui::BeginPopupModal("Select models", &showModelPicker)) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) showModelPicker = false;
     static std::string filter;
     widgets::searchField("modelfilter", &filter, "Filter models");
     ImGui::Dummy(ImVec2(0, 6));

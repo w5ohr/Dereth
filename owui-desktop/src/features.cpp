@@ -540,6 +540,10 @@ void App::drawContextInspector() {
   ImGui::OpenPopup("What was sent");
   ImGui::SetNextWindowSize(ImVec2(760, 560), ImGuiCond_Appearing);
   if (ImGui::BeginPopupModal("What was sent", &showContextInspector)) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+      showContextInspector = false;
+      ImGui::CloseCurrentPopup();
+    }
     if (lastPayload.empty()) {
       widgets::dimText("Nothing sent yet in this session.");
     } else {

@@ -940,6 +940,10 @@ void App::drawChatPane() {
     ImGui::OpenPopup("Tools");
     ImGui::SetNextWindowSize(ImVec2(420, 400), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("Tools", &gShowToolPicker)) {
+      if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        gShowToolPicker = false;
+        ImGui::CloseCurrentPopup();
+      }
       if (toolList.empty()) {
         widgets::dimText("No tools installed on this server.");
       }

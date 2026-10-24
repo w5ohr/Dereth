@@ -348,3 +348,12 @@ Use `qwen3:8b` for anything that needs a model reply; never load
 Append a dated line when you land a package, with what was verified and what
 was left: e.g. `2026-10-24 B: palette, quick ask, pins wired and screenshot;
 voice mode untested (no mic in the test harness).`
+2026-10-24 B: wired and verified against a scratch server - palette (Cmd-K), quick ask
+(Cmd-J, answered 17x23=391), owui:// link sends a prompt, in-chat search with hit
+markers, context inspector, time-to-first-token, syntax highlighting, PDF export
+(rendered and checked), offline queue across a server stop/start with socket
+reconnect and backoff. Self-test 52/52. Fixed along the way: HTTP fallback must not
+send chat_id, empty replies now show an error, Escape closes modals, overlays get a
+panel and border. Not exercised by automation: drag-and-drop, notification reply,
+Services (needs the /Applications copy), Quick Look, Live Text, Handoff, voice mode
+(microphone), compare view and pins (need clicks).
