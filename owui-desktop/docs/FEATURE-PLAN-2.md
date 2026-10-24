@@ -307,3 +307,27 @@ underlined, inverse), `seq 1 60` scrollback with the badge, drag selection of fi
 lines. Fixed on the way: the wheel scrolled the Tools pane as well (SetItemKeyOwner on
 the grid). Not exercised: full-screen TUIs (vim/htop use the alt screen, which the
 emulator implements but was not driven), mouse reporting (unsupported by design).
+
+2026-10-24 (51 fan-out): `src/fanout.cpp` - a composer button (branch icon) opens a
+picker of models (persisted as extra["fanoutModels"]); "Send to N models" swaps the
+selection in for one sendMessage, which already creates one sibling answer per model.
+Sibling answers under a user turn render as columns (`drawFanoutColumns`, min 300 pt,
+horizontal scroll beyond that) with model, first-token/total time, tok/s, reasoning,
+tool cards and the markdown body; "Keep" sets the branch, "Keep, drop others" also
+removes the other answers (disabled while any streams). Settled turns are recorded in
+chat.raw["fanout_kept"] so the columns collapse to the normal view; ⌘D compare mode
+still word-diffs two answers. Verified in the GUI against a scratch server: the picker
+ticked qwen3-coder:30b and qwen3:8b (persisted), "Send to 2 models" produced two columns
+("Red Green Blue" in 0.7 s at 36 tok/s, "red blue green" in 6.3 s at 50 tok/s with its
+reasoning), and "Keep, drop others" collapsed to the kept answer - which exposed that the
+server keeps messages that merely vanish from a chat update (its merge is a union), so
+dropping now also calls `DELETE /api/v1/chats/{id}/messages/{mid}`; `--selftest` covers
+that route (65 checks). Found and fixed on the way, a bug that had been biting every ImGui click made right after typing in the native
+composer: NSTextView handles a mouse-down with its own tracking loop, which pulls the
+mouse-up straight from the event queue, so the ImGui backend's event monitor saw the
+down but never the up and treated the button as still held - the next click anywhere
+was lost (the picker opened only on a second click; Send needed two). `OWUIComposerView
+mouseDown:` now feeds ImGui a release after the loop returns. Also: mouse-moved events
+are kept on while a native view is first responder, ImGui keyboard navigation is off
+while the composer has focus (the monitor feeds it the typed keys too), and
+`drawInMTKView` refreshes the pointer position from the window each frame.

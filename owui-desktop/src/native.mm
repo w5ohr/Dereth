@@ -13,6 +13,7 @@
 #include <mutex>
 
 #include "core/common.h"
+#include "imgui.h"
 
 namespace native {
 namespace {
@@ -590,6 +591,15 @@ NSColor* colorFromImU32(unsigned c) {
     return;
   }
   [super doCommandBySelector:selector];
+}
+
+// NSTextView handles a click with its own event loop (for drag selection),
+// which swallows the mouse-up. ImGui saw the mouse-down through its event
+// monitor, so without this it believes the button is still held and the next
+// click anywhere in the UI is lost.
+- (void)mouseDown:(NSEvent*)event {
+  [super mouseDown:event];
+  if (ImGui::GetCurrentContext()) ImGui::GetIO().AddMouseButtonEvent(0, false);
 }
 
 - (void)paste:(id)sender {

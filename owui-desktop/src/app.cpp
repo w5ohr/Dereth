@@ -1318,6 +1318,11 @@ void App::frame() {
     }
     if (settings().theme == "system") applyTheme();
     localIndexEnabled = settings().extra.value("localIndexEnabled", false);
+    if (settings().extra.contains("fanoutModels") && settings().extra["fanoutModels"].is_array()) {
+      for (const auto& id : settings().extra["fanoutModels"]) {
+        if (id.is_string()) fanoutModels.push_back(id);
+      }
+    }
   }
   if (signedIn_) {
     tickScheduler();

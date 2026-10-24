@@ -178,6 +178,9 @@ Result Client::updateChat(const std::string& id, const Json& chat) {
   return post("/api/v1/chats/" + id, {{"chat", chat}});
 }
 Result Client::deleteChat(const std::string& id) { return del("/api/v1/chats/" + id); }
+Result Client::deleteChatMessage(const std::string& id, const std::string& messageId) {
+  return del("/api/v1/chats/" + id + "/messages/" + messageId);
+}
 Result Client::archiveChat(const std::string& id) { return post("/api/v1/chats/" + id + "/archive"); }
 Result Client::pinChat(const std::string& id) { return post("/api/v1/chats/" + id + "/pin"); }
 Result Client::cloneChat(const std::string& id) { return post("/api/v1/chats/" + id + "/clone"); }

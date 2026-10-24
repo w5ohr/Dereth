@@ -412,6 +412,22 @@ void App::drawChatPane() {
         }
       }
 
+      // Fan-out: several answers to the same prompt sit side by side until
+      // one of them is kept.
+      if (!isUser && !compareMode && fanoutUnresolved(message.parentId)) {
+        std::vector<std::string> answers;
+        for (const std::string& sibling : chat.siblings(messageId)) {
+          auto it = chat.messages.find(sibling);
+          if (it != chat.messages.end() && it->second.role == "assistant") answers.push_back(sibling);
+        }
+        if (answers.size() >= 2) {
+          drawFanoutColumns(answers, contentWidth);
+          ImGui::Unindent(marginX);
+          ImGui::PopID();
+          continue;
+        }
+      }
+
       // --- header line: who + when + branch switcher
       {
         ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -816,6 +832,13 @@ void App::drawChatPane() {
       composerShownThisFrame = true;
       if (focusComposer && native::composerFocus()) focusComposer = false;
       composerFocused = native::composerIsFocused();
+      // The backend's event monitor also feeds ImGui the keys typed into the
+      // native field; with keyboard navigation on, those keystrokes switch
+      // ImGui into "keyboard mode", which ignores the mouse until it moves -
+      // so the first click after typing would be lost.
+      ImGuiIO& composerIo = ImGui::GetIO();
+      if (composerFocused) composerIo.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+      else composerIo.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     } else {
       ImGui::SetCursorScreenPos(ImVec2(boxStart.x + 12, boxStart.y + 8));
       ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
@@ -935,6 +958,14 @@ void App::drawChatPane() {
                       voiceMode ? palette.danger : 0)) {
       voiceMode = !voiceMode;
     }
+    ImGui::SameLine();
+    if (icons::button("fanout", icons::Icon::Branch,
+                      fanoutModels.size() >= 2
+                          ? ("Fan out to " + std::to_string(fanoutModels.size()) + " models").c_str()
+                          : "Fan out: send this prompt to several models at once")) {
+      showFanoutPicker = true;
+    }
+    drawFanoutPicker();
     ImGui::SameLine();
     if (icons::button("mcp", icons::Icon::Plug,
                       mcpEnabled ? "MCP tools on - replies can call your MCP servers"

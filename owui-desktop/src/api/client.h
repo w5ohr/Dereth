@@ -102,6 +102,8 @@ class Client {
   Result createChat(const Json& chat);
   Result updateChat(const std::string& id, const Json& chat);
   Result deleteChat(const std::string& id);
+  // Removes one message server-side; a chat update alone leaves it in place.
+  Result deleteChatMessage(const std::string& id, const std::string& messageId);
   Result archiveChat(const std::string& id);
   Result pinChat(const std::string& id);
   Result cloneChat(const std::string& id);

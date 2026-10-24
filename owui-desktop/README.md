@@ -161,6 +161,11 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Fan-out:** the branch icon in the composer sends one prompt to several
+  models at once (the set is remembered). Their answers stream side by side
+  with timing and tok/s; "Keep" continues the conversation from that answer,
+  "Keep, drop others" also deletes the rest. Until one is kept, the columns
+  stay; ⌘D still word-diffs two answers.
 - **Terminal:** Tools ▸ Terminal runs your login shell on a real pty with a
   built-in VT/xterm emulator - colours, bold/underline/inverse, cursor
   movement, scroll regions and the alternate screen, 5,000 lines of

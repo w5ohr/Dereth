@@ -342,6 +342,35 @@ int runSelfTest() {
     unlink(store::stats().path.c_str());
   }
 
+  // ---- fan-out: dropping a sibling answer is a real delete, not a chat update
+  {
+    const Json userMsg{{"id", "fu"}, {"parentId", nullptr}, {"childrenIds", Json::array({"fa", "fb"})},
+                       {"role", "user"}, {"content", "pick one"}, {"timestamp", 1}, {"done", true}};
+    const Json a{{"id", "fa"}, {"parentId", "fu"}, {"childrenIds", Json::array()}, {"role", "assistant"},
+                 {"content", "A"}, {"model", "m1"}, {"timestamp", 1}, {"done", true}};
+    const Json b{{"id", "fb"}, {"parentId", "fu"}, {"childrenIds", Json::array()}, {"role", "assistant"},
+                 {"content", "B"}, {"model", "m2"}, {"timestamp", 1}, {"done", true}};
+    Json body{{"title", "Fan-out self test"}, {"models", Json::array({"m1", "m2"})},
+              {"history", Json{{"currentId", "fa"}, {"messages", Json{{"fu", userMsg}, {"fa", a}, {"fb", b}}}}},
+              {"messages", Json::array({userMsg, a, b})}, {"tags", Json::array()}, {"params", Json::object()}};
+    api::Result created = api.createChat(body);
+    std::string fanId = created.ok ? created.data.value("id", "") : "";
+    report("fan-out chat created", !fanId.empty(), created.ok ? "" : created.error);
+    if (!fanId.empty()) {
+      api::Result dropped = api.deleteChatMessage(fanId, "fb");
+      api::Result after = api.chat(fanId);
+      int assistants = 0;
+      if (after.ok) {
+        for (auto& [mid, m] : after.data["chat"]["history"]["messages"].items()) {
+          if (m.value("role", "") == "assistant") ++assistants;
+        }
+      }
+      report("DELETE chats/{id}/messages/{mid}", dropped.ok && assistants == 1,
+             dropped.ok ? std::to_string(assistants) + " assistant message(s) left" : dropped.error);
+      api.deleteChat(fanId);
+    }
+  }
+
   // ---- cleanup
   report("DELETE chats/{id}", api.deleteChat(chatId).ok);
 

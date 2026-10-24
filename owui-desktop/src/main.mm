@@ -76,6 +76,9 @@ static std::string gIniPath;
   self.view.window.titlebarAppearsTransparent = YES;
   self.view.window.minSize = NSMakeSize(900, 600);
   [self.view.window setFrameAutosaveName:@"OpenWebUIMainWindow"];
+  // ImGui re-enables mouse hover only when it sees the mouse move; keep
+  // mouse-moved events flowing even while a native subview is first responder.
+  self.view.window.acceptsMouseMovedEvents = YES;
 }
 
 - (void)drawInMTKView:(MTKView*)view {
@@ -104,6 +107,19 @@ static std::string gIniPath;
                                                                 : app.chat.title.c_str())]
                           : @"Open WebUI";
     if (![view.window.title isEqualToString:title]) view.window.title = title;
+  }
+
+  // The ImGui backend learns the pointer position from mouse-moved events,
+  // which stop arriving while a native subview (the composer, the artifact
+  // view) is first responder; the first click after typing then lands on a
+  // stale position. Refreshing from the window every frame keeps it right.
+  if (view.window.keyWindow) {
+    const NSPoint local = [view convertPoint:view.window.mouseLocationOutsideOfEventStream fromView:nil];
+    const float x = static_cast<float>(local.x);
+    const float y = static_cast<float>(view.bounds.size.height - local.y);
+    if (x >= 0.0f && y >= 0.0f && x <= view.bounds.size.width && y <= view.bounds.size.height) {
+      io.AddMousePosEvent(x, y);
+    }
   }
 
   ImGui_ImplMetal_NewFrame(descriptor);

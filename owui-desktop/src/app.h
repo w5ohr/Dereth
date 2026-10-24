@@ -358,6 +358,15 @@ class App {
   // Fills `chats` from the mirror when the server can't be reached.
   void loadChatsFromMirror(bool archived);
 
+  // --- fan-out (fanout.cpp) -------------------------------------------------
+  // One prompt to several models at once; the answers sit side by side until
+  // one is kept as the branch the conversation continues from.
+  void fanoutSend(const std::string& text);         // uses fanoutModels for this turn only
+  void drawFanoutPicker();                           // popup opened from the composer
+  bool fanoutUnresolved(const std::string& parentId) const;
+  void drawFanoutColumns(const std::vector<std::string>& siblings, float width);
+  void keepFanoutAnswer(const std::string& messageId, bool dropOthers);
+
   // --- terminal pane (terminal_pane.cpp) ------------------------------------
   void drawTerminalSection(float width);
   void startTerminal();                  // (re)spawns the login shell
@@ -468,6 +477,8 @@ class App {
   bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
   float composerTextHeight = 46.0f;           // text area height the composer used last frame
+  std::vector<std::string> fanoutModels;      // persisted as extra["fanoutModels"]
+  bool showFanoutPicker = false;
   // Terminal pane state. Selection endpoints are absolute line numbers
   // (scrollback lines first, then the live screen) and columns.
   std::unique_ptr<core::Pty> terminal;
