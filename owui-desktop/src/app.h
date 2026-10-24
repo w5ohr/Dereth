@@ -33,6 +33,54 @@ enum class Pane {
   Admin,
   Console,
   Settings,
+  Tools,
+};
+
+// A saved chat setup: models, parameters, system prompt and toggles.
+struct Preset {
+  std::string name;
+  std::vector<std::string> models;
+  Json params = Json::object();
+  std::vector<std::string> tools;
+  bool webSearch = false;
+  bool imageGeneration = false;
+  bool codeInterpreter = false;
+  Json toJson() const;
+  static Preset fromJson(const Json& j);
+};
+
+struct ScheduledPrompt {
+  std::string id;
+  std::string name;
+  std::string prompt;
+  std::string model;
+  int hour = 8;
+  int minute = 0;
+  bool weekdaysOnly = true;
+  bool enabled = true;
+  int64_t lastRunDay = 0;     // days since epoch of the last firing
+  Json toJson() const;
+  static ScheduledPrompt fromJson(const Json& j);
+};
+
+struct ServerProfile {
+  std::string name;
+  std::string url;
+  std::string email;
+};
+
+struct MessageTiming {
+  double sentMs = 0.0;
+  double firstTokenMs = 0.0;
+  double doneMs = 0.0;
+};
+
+// Output of a locally run or linted code block, keyed by block hash.
+struct CodeResult {
+  std::string output;
+  int exitCode = 0;
+  bool running = false;
+  bool timedOut = false;
 };
 
 struct Attachment {
@@ -157,6 +205,7 @@ class App {
 
   // --- pane entry points (defined in their own files) -------------------
   void drawSidebar(float width);
+  void drawToolsPane();
   void drawChatPane();
   void drawNotesPane();
   void drawChannelsPane();
@@ -183,6 +232,65 @@ class App {
   void attachBytes(const std::string& name, const std::string& mime, const std::string& bytes);
   void speak(const std::string& text);
   void rateMessage(const std::string& messageId, int rating);
+
+  // --- chat workflow features (features.cpp) ----------------------------
+  void drawPalette();
+  void drawQuickAsk();
+  void openQuickAsk(const std::string& prefill = "");
+  void drawContextInspector();
+  void drawChatSearchBar(float width);
+  void drawPresetMenu();
+  void applyPreset(const Preset& preset);
+  void saveCurrentAsPreset(const std::string& name);
+  void continueReply(const std::string& assistantId);
+  void retryWithModel(const std::string& assistantId, const std::string& model);
+  void compactChat();
+  void togglePin(const std::string& messageId);
+  bool isPinned(const std::string& messageId) const;
+  void drawPinnedRail(float width);
+  int estimateTokens(const std::string& text) const;
+  int contextWindowFor(const std::string& modelId) const;
+  int currentContextTokens() const;
+  void tickScheduler();
+  void tickVoiceMode();
+  void tickOfflineQueue();
+  void handleKeyboardNavigation(const std::vector<std::string>& path);
+  void handleOpenUrl(const std::string& url);
+  void updateHandoffAndSpotlight();
+  void applyTheme();
+  void switchProfile(const ServerProfile& profile);
+  std::vector<ServerProfile> profiles() const;
+  void saveProfiles(const std::vector<ServerProfile>& list);
+  std::string routeModel(const std::string& text) const;
+  Json slashPromptMatches(const std::string& prefix) const;
+  void drawCompareView(const std::vector<std::string>& siblings, float width);
+  void exportChat(const std::string& format);   // md | html | pdf
+  void installNativeHooks();
+  void drawReferenceColumn(float width);
+
+  // --- code tools (code_tools.cpp) --------------------------------------
+  void runCodeBlock(const std::string& code, const std::string& language);
+  void lintCodeBlock(const std::string& code, const std::string& language);
+  void applyCodeBlockToFile(const std::string& code);
+  void attachFolderAsContext(const std::string& folder);
+  void attachGitContext(const std::string& folder, const std::string& mode);  // diff|staged|log
+  void explainBuildError(const std::string& log);
+  void setProjectFolder(const std::string& folder);
+  std::string projectContextBlock() const;
+  void drawProjectFilesPopup();
+  void runCommand(const std::string& command);
+  CodeResult* codeResultFor(const std::string& key);
+  void drawCodeBlockActions(const std::string& code, const std::string& language);
+
+  // --- knowledge tools (knowledge_tools.cpp) ----------------------------
+  void syncFolderToKnowledge(const std::string& folder, const std::string& knowledgeId);
+  void stopFolderSync();
+  void captureUrlToKnowledge(const std::string& url, const std::string& knowledgeId);
+  void drawCitationPopup();
+  void openCitation(const Json& source, int chunkIndex);
+  void indexFolderLocally(const std::string& folder);
+  std::vector<std::pair<std::string, std::string>> localSearch(const std::string& query, int k);
+  void drawLocalIndexSection(float width);
 
   // --- state (panes read and write this directly) -----------------------
   Pane pane = Pane::Chat;
@@ -228,6 +336,55 @@ class App {
   Json ollamaStatus = Json::object();
   Json customModelCache = Json::array();
 
+  // Feature state.
+  bool showPalette = false;
+  std::string paletteQuery;
+  bool showQuickAsk = false;
+  std::string quickAskInput;
+  std::string quickAskChatId;
+  bool showContextInspector = false;
+  Json lastPayload = Json::object();
+  bool showChatSearch = false;
+  std::string chatSearchQuery;
+  int chatSearchIndex = 0;
+  bool compareMode = false;
+  bool showPins = false;
+  std::string focusedMessageId;
+  std::map<std::string, MessageTiming> timings;
+  bool voiceMode = false;
+  double voiceSilenceSince = 0.0;
+  bool voiceHeardSpeech = false;
+  int voiceState = 0;                     // 0 idle, 1 listening, 2 transcribing, 3 waiting, 4 speaking
+  std::vector<std::string> offlineQueue;
+  bool serverReachable = true;
+  double lastReachCheck = 0.0;
+  std::string projectFolder;
+  std::vector<std::string> projectFiles;      // ticked files sent with each message
+  std::vector<std::string> projectTree;       // cached listing
+  bool showProjectFiles = false;
+  std::map<std::string, CodeResult> codeResults;
+  std::string commandInput;
+  std::string commandOutput;
+  bool commandRunning = false;
+  std::string buildErrorInput;
+  std::string referenceChatId;               // read-only chat shown beside the active one
+  ChatDoc referenceChat;
+  Json citationPopup = Json();
+  int citationChunk = 0;
+  bool showCitation = false;
+  int folderSyncToken = -1;
+  std::string folderSyncPath;
+  std::string folderSyncKnowledgeId;
+  std::string folderSyncStatus;
+  std::string localIndexStatus;
+  std::string localIndexFolder;
+  bool localIndexEnabled = false;
+  std::string benchOutput;
+  bool benchRunning = false;
+  Json benchResults = Json::object();
+  std::string routedModelNote;
+  std::string lastRoutedModel;
+
  private:
   void drawLogin();
   void handleShortcuts();
@@ -258,6 +415,7 @@ class App {
   std::string serverInput_;
   std::vector<std::shared_ptr<Stream>> streams_;
   sio::Client socket_;
+  std::string activeStreamModelOverride_;
   std::string sessionId_;
   double lastChatRefresh_ = 0.0;
 };

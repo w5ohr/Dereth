@@ -66,11 +66,17 @@ find_library(AVFOUNDATION AVFoundation REQUIRED)
 find_library(COREAUDIO CoreAudio REQUIRED)
 find_library(AUDIOTOOLBOX AudioToolbox REQUIRED)
 find_library(USERNOTIFICATIONS UserNotifications REQUIRED)
+find_library(CARBON Carbon REQUIRED)
+find_library(CORESPOTLIGHT CoreSpotlight REQUIRED)
+find_library(QUARTZ Quartz REQUIRED)
+find_library(VISION Vision REQUIRED)
+find_library(CORESERVICES CoreServices REQUIRED)
+find_library(WEBKIT WebKit REQUIRED)
 
 target_link_libraries(OpenWebUI PRIVATE
   ${COCOA} ${METAL} ${METALKIT} ${QUARTZCORE} ${GAMECONTROLLER}
   ${SECURITY} ${UTTYPE} ${AVFOUNDATION} ${COREAUDIO} ${AUDIOTOOLBOX}
-  ${USERNOTIFICATIONS}
+  ${USERNOTIFICATIONS} ${CARBON} ${CORESPOTLIGHT} ${QUARTZ} ${VISION} ${CORESERVICES} ${WEBKIT}
   curl sqlite3
 )
 

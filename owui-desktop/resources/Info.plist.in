@@ -17,5 +17,24 @@
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>Open WebUI link</string>
+      <key>CFBundleURLSchemes</key><array><string>owui</string></array>
+    </dict>
+  </array>
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>Ask Open WebUI</string></dict>
+      <key>NSMessage</key><string>askService</string>
+      <key>NSPortName</key><string>Open WebUI</string>
+      <key>NSSendTypes</key><array><string>NSStringPboardType</string></array>
+    </dict>
+  </array>
+  <key>NSUserActivityTypes</key>
+  <array><string>com.davidcochran.owui-desktop.chat</string></array>
+  <key>LSUIElement</key><false/>
 </dict>
 </plist>

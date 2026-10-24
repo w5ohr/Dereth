@@ -108,6 +108,11 @@ Ollama passthrough — and prints a pass/fail line for each.
 `OWUI_TOKEN` also override the saved settings when running the GUI, which is
 handy for pointing a build at a scratch server.
 
+## Work in progress
+
+Fifty further features are planned and partly built; `docs/FEATURE-PLAN.md`
+holds the state, the package split and the conventions for picking one up.
+
 ## Layout
 
     src/
