@@ -56,8 +56,8 @@ already did before this work. Wiring is package B and is the critical path.
   after every commit. If you cannot finish a function, leave the stub.
 - **Verify before you say done.** See "Verification" - the scratch server
   recipe, the self-test, and the screenshot method are all there.
-- **Commit** per package with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
-  Do not push; do not open PRs; the branch owner merges.
+- **Commit** per package, ending the message with whatever attribution line
+  your harness specifies. Do not push; do not open PRs; the branch owner merges.
 
 ## Packages
 
