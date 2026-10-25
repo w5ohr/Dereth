@@ -345,6 +345,7 @@ void App::drawPalette() {
     memoryProposals.erase(last);
     maybeProposeMemories(last);
   });
+  add("Health (CPU, GPU, memory, models in VRAM)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {
     if (core::trim(settings().extra.value("vaultFolder", std::string())).empty()) {
       widgets::toastInfo("Choose a vault folder under Settings > Vault sync first");

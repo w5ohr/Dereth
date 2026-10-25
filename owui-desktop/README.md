@@ -450,6 +450,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   becomes a note, and when both sides changed the server's text wins while
   your edit is kept as a "(conflict ...)" copy. Private chats are never
   written. `Open WebUI --vaulttest` covers the file formats.
+- **Health:** Tools ▸ Health shows CPU, GPU utilisation and GPU memory
+  (IOKit's accelerator statistics), memory with the compressed and swapped
+  amounts, Metal's working set, thermal state, power source and the free
+  space where Ollama keeps its models, each sampled every second with a
+  five-minute sparkline. Below, the models Ollama has in memory with size,
+  how much sits in GPU memory, context length and when each unloads, an
+  Unload button per model, and a residency timeline. A heavy-swap warning
+  says when a model is being paged. `Open WebUI --healthtest` checks the
+  sampler.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -1178,3 +1178,28 @@ file was rewritten with id/title/updated front matter; the Settings card rendere
 covered: the conflict path, a note deleted on the server, a chat renamed after export,
 Choose... (a system dialog), and a real Obsidian vault (any folder behaves the same).
 
+2026-10-25 IX (136 health dashboard): `src/core/sysmetrics.{h,mm}` (app-free: one Sample
+per call - CPU from host_processor_info tick deltas, memory from host_statistics64
+(active + wired + compressed) and hw.memsize, swap from vm.swapusage, GPU utilisation and
+"In use system memory" from the IOAccelerator PerformanceStatistics registry property,
+Metal currentAllocatedSize / recommendedMaxWorkingSetSize, NSProcessInfo thermal state,
+IOPowerSources battery and source, statvfs free space on the Ollama models folder
+(OLLAMA_MODELS or ~/.ollama/models); a Ring of 300 samples with series() for plotting).
+`src/health_pane.cpp`: Tools > Health - four tiles (CPU, GPU, Memory, Metal) each with a
+value, a detail line and a 5-minute PlotLines sparkline; pills for thermal (coloured),
+power/battery, free disk; Pause; a heavy-swap warning above 4 GB; "Models in memory
+(Ollama)" table from /ollama/api/ps (direct /api/ps at the Ollama URL when the passthrough
+fails) with size, GPU share, context, unload countdown parsed from expires_at, and an
+Unload button (ollamaUnload); a residency timeline with one lane per model filled while it
+was resident, built from the polls (15 min at 5 s). Sampling runs every second whenever
+signed in; Ollama is polled only while the tab is drawn (healthTabHidden clears the flag).
+IOKit linked. `--healthtest` runs 9 checks against the live machine. Verified on this
+M3 Max: tiles read CPU 12%, GPU 18% with 9.5 GB in use, memory 39.3 / 68.7 GB with
+compressed 1.0 GB and swap 31.5 GB (the warning showed), Metal 55.7 GB working set,
+thermal nominal, on power 100%, 524.5 GB free; the table listed qwen3:8b (7.2 GB, 100% in
+GPU memory, context 16384, 9 min) and nomic-embed-text; Unload on nomic-embed-text
+removed it from the table and Ollama's /api/ps confirmed only qwen3:8b remained; the
+residency lanes drew. Not covered: Intel Macs / machines where IOKit has no utilisation
+key (the tile says n/a), a battery-powered run, thermal states other than nominal, and
+the passthrough-down fallback to the direct Ollama URL.
+

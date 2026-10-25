@@ -432,6 +432,11 @@ class App {
   void syncVault(bool force);
   void drawVaultSection(float width);
   std::string vaultStatus;
+
+  // --- health dashboard (health_pane.cpp) -----------------------------------
+  void tickHealth();
+  void drawHealthSection(float width);
+  void healthTabHidden();
   std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
   void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
   void mcpImportConfig(const std::string& path);

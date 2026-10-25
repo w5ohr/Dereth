@@ -1573,6 +1573,7 @@ void App::frame() {
     tickOfflineQueue();
     tickChatIndex();
     tickVaultSync();
+    tickHealth();
     if (serverReachable) syncMirror(false);
 
     // The socket drops when the server restarts or the network blips; bring
