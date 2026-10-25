@@ -1,4 +1,5 @@
 #include "core/common.h"
+#include "core/crashreport.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -205,13 +206,13 @@ std::string mimeForExtension(const std::string& ext) {
 
 void debugLog(const char* fmt, ...) {
   static const bool enabled = std::getenv("OWUI_DEBUG") != nullptr;
-  if (!enabled) return;
+  char line[512];
   va_list args;
   va_start(args, fmt);
-  fprintf(stderr, "[owui] ");
-  vfprintf(stderr, fmt, args);
-  fprintf(stderr, "\n");
+  vsnprintf(line, sizeof(line), fmt, args);
   va_end(args);
+  crashreport::note(line);   // the last lines go into a crash report (kept on the Mac)
+  if (enabled) fprintf(stderr, "[owui] %s\n", line);
 }
 
 std::string uuid() {

@@ -480,6 +480,9 @@ void App::drawSettingsPane() {
     }
   }, width);
 
+  widgets::sectionHeader("CRASH REPORTS");
+  card("crashes", [&] { drawCrashSection(width); }, width);
+
   widgets::sectionHeader("ABOUT");
   card("about", [&] {
     field("Open WebUI Desktop", platform::appVersion());

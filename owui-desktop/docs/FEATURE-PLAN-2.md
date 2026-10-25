@@ -2151,3 +2151,70 @@ when it is known. Not covered: driving the GUI and diffing screenshots on the ru
 (hosted macOS runners have no Docker for a scratch server, and Metal / WindowServer
 availability there is unverified), and Homebrew-only tools (pyright etc.) the live
 tests skip when absent.
+
+2026-10-25 130 (distribution: crash reporter, DMG, Homebrew cask) - DMG background art not
+done. `src/core/crashreport.*`: `install(folder, version, quiet)` creates the folder,
+sets an alternate signal stack (so a stack overflow still reports) and SA_SIGINFO
+handlers for SIGSEGV / SIGBUS / SIGILL / SIGFPE / SIGABRT / SIGTRAP, plus
+std::set_terminate; the handlers use only preallocated buffers and write(2): header
+(version, unix time, signal, main / background thread, the faulting address for SEGV /
+BUS, the reason), `backtrace_symbols_fd`, and a 40-line ring of recent activity fed by
+`note()` - every core::debugLog line now goes there whether or not OWUI_DEBUG is set;
+the terminate handler names the uncaught exception's what() or says std::terminate
+was called (a joinable thread destroyed, ...). Then the signal is re-raised with the
+default action so macOS still writes its .ips; `quiet` (OWUI_CRASH_QUIET) exits
+128+signal instead - no .ips, no "quit unexpectedly" dialog - for tests.
+`parseAppReport` (image names with spaces, names demangled with __cxa_demangle, handler
+and libc++ terminate frames dropped), `parseIps` (header line + JSON body: app_version,
+exception.signal, asi reason or termination.indicator, captureTime, the faulting
+thread's symbols), `list` (ours *.crash + "<process>-*.ips", newest first),
+`newerThan`, `summary` (first meaningful frame), `issueTitle` / `issueBody` (version,
+signal, reason, top 12 frames; never the activity lines; home paths as ~) /
+`issueUrl` (github.com/<repo>/issues/new, URL-encoded, labelled crash, < 8 KB).
+`src/crash_reporter.cpp`: installed in main.mm before anything else on the GUI path;
+`tickCrashReporter` (first launch with the reporter records "seen" = now instead of
+surfacing old history; later launches open the sheet for reports newer than seen,
+ours and macOS's for "Open WebUI"; OWUI_CRASH_TEST=segv|abort|throw crashes on purpose
+30 frames in); the sheet - drawn on every screen, sign-in included, since a crash at
+start-up leaves you there - with a picker when there are several, the summary in
+red (wrapping), the reason, version, source and path, the top 16 frames, the last
+activity line, View full report (read-only text), Copy report, Save as..., Show in
+Finder, Report on GitHub... (tooltip: nothing is sent until you submit it there) and
+Dismiss (marks them seen); opened from Settings it is titled "Crash report" and only
+closes. Settings "CRASH REPORTS" card before About with View per report and Open the
+crash folder; palette entry; the issue repo is extra["crashIssueRepo"] (default
+w5ohr/Dereth). `--crashtest` runs 11 checks: four real crashes in child processes
+(the app binary re-run with `--crashchild segv|abort|throw|thread`, quiet) each exit
+128+signal with a report naming the crashing function, the signal, the reason (bad
+access at 0x0, model list was empty, std::terminate called) and the two notes; the
+summary; an .ips shaped like today's real exit crash (the vector<thread> destructor);
+the issue text's privacy; the URL; redactHome; list / newerThan. Packaging:
+`scripts/make-dmg.sh` stages a copy without extended attributes (a build inside
+~/Documents carries Finder info and File Provider tags that strict codesign
+verification rejects), verifies it --strict (re-signing ad hoc only if that fails),
+builds a UDZO HFS+ image with an Applications link, `hdiutil verify`, mounts it
+read-only without Finder, checks the app, the link, the version, a deep signature
+check (not --strict: macOS adds com.apple.provenance to hdiutil's copies, which a
+read-only image can't shed and Gatekeeper ignores) and runs `--pooltest` from inside
+it, then writes the sha256 and `build/dist/open-webui-desktop.rb` from
+`packaging/homebrew/open-webui-desktop.rb` (url on a GitHub release tag, Ventura+,
+zap paths, a caveat that the build is ad hoc signed until #128). Verified on a scratch
+home: first launch set seen; OWUI_CRASH_TEST=throw OWUI_CRASH_QUIET=1 wrote
+crash-<time>-<pid>.crash (SIGABRT, "uncaught exception: OWUI_CRASH_TEST asked for an
+uncaught exception", the last log lines) and exited with no dialog; the next launch -
+on the sign-in screen, no server - showed "Open WebUI quit unexpectedly" with the
+summary "SIGABRT ... in app::App::tickCrashReporter()" and a demangled stack
+(tickCrashReporter, App::frame, drawInMTKView, MTKView draw, dispatch); View full
+report expanded the text; Copy report put the exact 3476-byte file on the clipboard;
+Dismiss stored seen and a relaunch raised nothing; signed in, Settings listed both the
+test report and today's real .ips (copied in from ~/Library/Logs/DiagnosticReports),
+and View on the .ips showed "abort() called" and the macOS stack down to the
+vector<thread> destructor. make-dmg.sh produced Open-WebUI-1.1.dmg (4.4 MB) whose
+sha256 matches the cask; `ruby -c` passes on the cask. Three fixes on the way: the
+first build drew the sheet only once signed in; the backtrace regex choked on the
+space in "Open WebUI"; and install() created only the last folder level. Not covered:
+the DMG's background picture and icon layout (that needs Finder scripting, which asks
+for Automation permission, or a .DS_Store writer), `brew style` / `brew audit` (they
+need the cask inside a tap - only Ruby syntax was checked), Report on GitHub and Show
+in Finder (not clicked: they open a browser and Finder), and a real crash's .ips
+appearing in the sheet on the following launch (the test crashes were quiet by design).

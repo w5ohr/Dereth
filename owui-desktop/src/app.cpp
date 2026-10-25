@@ -1557,13 +1557,14 @@ void App::frame() {
   tickSmartFolders();
   tickBackendPool();
   tickOnboarding();
+  tickCrashReporter();
   handleShortcuts();
 
   // The native composer is a Cocoa view above everything ImGui draws, so it
   // only shows while the chat pane placed it last frame and nothing modal is
   // open over the window.
   {
-    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet || showTour || showWhatsNew ||
+    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet || showTour || showWhatsNew || showCrashSheet ||
                          showProjectFiles ||
                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     native::composerSetVisible(composerShownThisFrame && !overlay);
@@ -1739,6 +1740,7 @@ void App::frame() {
     drawCitationPopup();
     drawProjectFilesPopup();
   }
+  drawCrashSheet();   // on every screen: a crash at start-up leaves you at sign-in
   widgets::renderToasts();
 
   // Periodic refresh of the chat list while idle.

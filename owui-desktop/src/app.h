@@ -12,6 +12,7 @@
 #include <set>
 
 #include "core/accessibility.h"
+#include "core/crashreport.h"
 #include "core/imagemeta.h"
 #include "core/layouts.h"
 #include "core/logprobs.h"
@@ -847,6 +848,17 @@ class App {
   accessibility::Prefs accessibilityPrefs() const;
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
+
+  // --- crash reporter (crash_reporter.cpp) ----------------------------------
+  bool showCrashSheet = false;
+  std::string crashFolder() const;
+  std::string diagnosticsFolder() const;
+  std::vector<crashreport::Report> crashReports() const;
+  void showCrashReports(const std::vector<crashreport::Report>& reports);
+  void tickCrashReporter();
+  void markCrashesSeen();
+  void drawCrashSheet();
+  void drawCrashSection(float width);
 
   // --- notebook mode (notebook_pane.cpp) ------------------------------------
   void ensureKernel();

@@ -5,10 +5,12 @@
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 
+#include "core/crashreport.h"
 #include "app.h"
 #include "native.h"
 #include "core/async.h"
 #include "core/common.h"
+#include "platform.h"
 #include "core/http.h"
 #include "imgui.h"
 #include "imgui_impl_metal.h"
@@ -528,6 +530,8 @@ int runSketchSelfTest();
 int runLspSelfTest();
 int runNotebookSelfTest();
 int runEmojiSelfTest();
+int runCrashSelfTest();
+int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -589,6 +593,8 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--lsptest") return runLspSelfTest();
     if (std::string(argv[i]) == "--notebooktest") return runNotebookSelfTest();
     if (std::string(argv[i]) == "--emojitest") return runEmojiSelfTest();
+    if (std::string(argv[i]) == "--crashtest") return runCrashSelfTest();
+    if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {
@@ -602,6 +608,9 @@ int main(int argc, const char* argv[]) {
     }
   }
   @autoreleasepool {
+    // Crash reports go to the support folder; OWUI_CRASH_QUIET makes a crash
+    // exit quietly after writing (tests: no macOS report, no dialog).
+    crashreport::install(core::supportDir() + "/crashes", platform::appVersion(), getenv("OWUI_CRASH_QUIET") != nullptr);
     net::globalInit();
     async::start(6);
     NSApp = [NSApplication sharedApplication];

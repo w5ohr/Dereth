@@ -835,6 +835,19 @@ Things a browser tab can't do, plus the workflow features built on top:
   when `OWUI_SERVER` (and `OWUI_TOKEN`, or `OWUI_EMAIL` + `OWUI_PASSWORD`)
   is set; otherwise a check that it exits cleanly without a server runs in
   its place.
+- **Crash reports and packaging:** if the app crashes it writes a report
+  (signal, the faulting address or uncaught exception, a demangled stack and
+  the last few log lines) to the support folder's `crashes/`, then dies as
+  before so macOS keeps its own report too. On the next launch new reports -
+  the app's and macOS's `.ips` for it - open in a sheet with the reason and
+  the top of the stack: View full report, Copy, Save as, Show in Finder and
+  Report on GitHub, which only opens a prefilled new-issue page (version,
+  signal, function names; no activity lines, home paths shown as ~). Settings
+  ▸ Crash reports lists past ones. `scripts/make-dmg.sh` builds
+  `build/dist/Open-WebUI-<version>.dmg` (the app plus an Applications link,
+  compressed, verified, mounted and run to check it) and a filled-in Homebrew
+  cask from `packaging/homebrew/`. `Open WebUI --crashtest` crashes child
+  processes four ways and reads the reports back.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.
