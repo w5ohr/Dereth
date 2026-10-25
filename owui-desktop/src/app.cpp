@@ -1513,6 +1513,7 @@ void App::frame() {
   tickLowPower();
   pollStreams();
   tickTts();
+  tickSmartFolders();
   handleShortcuts();
 
   // The native composer is a Cocoa view above everything ImGui draws, so it

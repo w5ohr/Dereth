@@ -586,6 +586,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   Markdown (file or clipboard). The palette has "Save the last reply to the
   library" and "Go to Library". `Open WebUI --librarytest` covers the store,
   search, tags and the export.
+- **Smart folders and tags:** Settings ▸ Smart folders and tags holds rules
+  that file chats into a folder (created when missing) and/or add a tag when
+  the title, a model name or the first message contains something, when the
+  chat carries a tag, or when it is older or newer than N days. Apply them by
+  hand, or every ten minutes while signed in. "Auto-tag untagged chats" asks
+  the small model (the auto-routing one) for one to three topic tags per chat
+  that has none, fifteen at a time. Folders and tags are the server's, so the
+  web UI sees them too. The palette has "Apply smart folder rules now" and
+  "Auto-tag untagged chats now". `Open WebUI --foldertest` covers rules,
+  matching, the plan, and the tagging prompt and parser.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

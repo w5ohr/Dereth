@@ -382,6 +382,9 @@ void App::drawPalette() {
   add("Playground (try a regex, SQL or jq locally)", "command", [this] { openPlayground("", ""); });
   add("Model evaluation (prompt sets across models, judge, trends)", "command", [this] { pane = Pane::Tools; });
   add("Save the last reply to the library", "command", [this] { saveLastReplyToLibrary(); });
+  add("Apply smart folder rules now", "command", [this] { applySmartFolders(true); });
+  add("Auto-tag untagged chats now (small model)", "command", [this] { autoTagChats(true); });
+  add("Smart folders and tags (rules)", "settings", [this] { pane = Pane::Settings; });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;
     for (const std::string& id : chat.branch()) {

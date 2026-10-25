@@ -122,6 +122,10 @@ void App::drawSettingsPane() {
   drawTtsSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("SMART FOLDERS AND TAGS");
+  drawSmartFoldersSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("ACCOUNT");
   card("account", [&] {
     field("Name", user_.value("name", ""));

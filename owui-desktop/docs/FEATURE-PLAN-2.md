@@ -1514,3 +1514,26 @@ listed it with its snippet and buttons, the note/tags editor opened, and Copy Ma
 put the export on the clipboard, and Open chat returned to the chat with the saved reply's
 archive button lit. Not covered: typing a note or tags, tag chips and the #tag search
 (self-test only), Export Markdown... (save panel).
+
+2026-10-25 147 (smart folders and tags): `src/core/smartfolders.*` (Rule <-> JSON with
+normalized tags and default names, rules without a folder or tag dropped; `needsChatBody`;
+`describe`; `matches` on title / first message / model / tag / older- or newer-than days
+(unknown age never matches an age rule); `plan` skips chats already filed or tagged, the
+first moving rule wins the move and every matching rule may add its tag; `summary`;
+`tagSystemPrompt` / `tagUserPrompt` asking the small model for a JSON array of 1-3 tags;
+`normalizeTag`; `parseTags` from a JSON array or a "Tags: a, b" line, think blocks and
+generic words dropped). `src/smart_folders.cpp`: Settings "SMART FOLDERS AND TAGS" card
+(rule list with enable/Delete, add-rule form, auto-apply and auto-tag switches, Apply
+rules now, Auto-tag untagged chats now, status line); `applySmartFolders` fetches chat
+bodies only when a rule needs models or text (150 max), creates missing folders, moves
+and tags on the server, then refreshes the list; `autoTagChats` tags up to 15 untagged
+chats with the auto-routing small model; `tickSmartFolders` runs either every 10
+minutes when switched on. Palette: apply, auto-tag, settings. `--foldertest` runs 10
+offline checks. Verified on a scratch server with three seeded chats and two seeded
+rules (title contains "lighthouse" -> Maintenance + #lighthouse; model contains "base"
+-> Base models + #base-model): Apply rules now created both folders, moved Lighthouse
+notes and Winch greasing into them and tagged each (confirmed through the chat and
+folder endpoints); Auto-tag untagged chats now with qwen3:8b tagged the remaining chat
+"Order summaries" with order-summarization, sql and jq, the status line read "tagged 1
+chat(s)". Not covered: the add-rule form (typing), the 10-minute automatic pass, the
+age and first-message conditions beyond the self-test, and the palette commands.

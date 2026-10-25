@@ -779,6 +779,12 @@ class App {
   void drawLibraryButton(const std::string& messageId);
   void drawLibraryPane();
 
+  // --- smart folders and tags (smart_folders.cpp) --------------------------
+  void applySmartFolders(bool manual);   // rules -> folder moves and tags on the server
+  void autoTagChats(bool manual);        // the small model tags chats that have none
+  void tickSmartFolders();
+  void drawSmartFoldersSection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.
