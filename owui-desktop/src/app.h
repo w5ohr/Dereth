@@ -721,6 +721,12 @@ class App {
   void openInEditor(const std::string& link);   // "editor://path:line[:col]"
   void drawEditorSection(float width);
 
+  // --- cited export (cited_export.cpp) --------------------------------------
+  bool replyHasSources(const Message& message) const;
+  std::string citedExport(const Message& message, int format);   // 0 Markdown + footnotes, 1 BibTeX, 2 plain list
+  void drawCitedCopyButton(const Message& message);
+  void copyLastReplyCited(int format);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

@@ -508,6 +508,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   new chat with `owui://explain?file=...&line=...&text=...`;
   `docs/EDITOR-BRIDGE.md` has VS Code, Zed and Xcode recipes. `Open WebUI
   --editortest` covers the parsing and the commands.
+- **Cited export:** a reply that cites sources - the server's web-search or
+  knowledge citations, or locally read documents cited as `[name p.N]` -
+  gains a book button beside Copy: copy the answer as Markdown with
+  footnotes (`[1]` becomes `[^1]`, definitions with title, URL, page and the
+  retrieved passage appended), copy the sources as BibTeX `@misc` entries
+  with an accessed date, or copy a plain source list. The palette has the
+  same for the last reply. `Open WebUI --citetest` covers the conversions.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

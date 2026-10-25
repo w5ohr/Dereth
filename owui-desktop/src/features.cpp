@@ -373,6 +373,8 @@ void App::drawPalette() {
   add("Warm the model now (load it into memory)", "command", [this] { warmModelNow(false); });
   add("Low-power mode (frame rate, battery)", "settings", [this] { pane = Pane::Settings; });
   add("Editor bridge (which editor opens file:line links)", "settings", [this] { pane = Pane::Settings; });
+  add("Copy last reply with sources (Markdown footnotes)", "command", [this] { copyLastReplyCited(0); });
+  add("Copy last reply's sources as BibTeX", "command", [this] { copyLastReplyCited(1); });
   add("Release the model from memory", "command", [this] { warmModelNow(true); });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {

@@ -1351,3 +1351,22 @@ the real VS Code / Zed / Xcode commands (self-test only - no editor was launched
 Test button, a reference whose file is missing (toast path), and the Sublime `subl`
 command, which relies on it being on the GUI PATH.
 
+2026-10-25 VI (110 cited export): `src/core/citeexport.{h,cpp}` (app-free: fromServerSources
+reads Open WebUI's sources array - name / url / type, the first retrieved passage as a
+one-line snippet, metadata page made 1-based, strings accepted, duplicates by url or title
+collapsed; fromLocalCitations finds "[name p.N]" / slide / part / sheet citations of the
+chat's locally read documents by name or stem; markdownWithFootnotes turns "[n]" into
+"[^n]" only when such a server source exists, numbers local citations after them and
+appends the definitions with title, URL, page and passage; bibtex writes @misc entries
+with a title-derived key, \url, page / attached-document notes, accessed date and year,
+braces and ampersands escaped; plainList). `src/cited_export.cpp`: a book button beside
+Copy under any reply that has sources, with a popup - Markdown with footnotes, sources as
+BibTeX, plain list - and palette commands for the last reply. `--citetest` runs 7
+offline checks. Verified on a scratch server with a seeded reply citing [1] (a web source
+with a passage) and [2] (a file source with page index 1): the button and its three-item
+menu appeared; "Copy as Markdown with footnotes" put the reply with [^1] / [^2] and the two
+definitions (URL, page 2, passages) on the clipboard; "Copy sources as BibTeX" put two
+@misc entries with the accessed date on it. Not covered: a reply mixing server and local
+document citations (the numbering continues after the server ones - self-test only), the
+plain list item, and the palette commands.
+

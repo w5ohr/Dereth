@@ -686,6 +686,7 @@ void App::drawChatPane() {
           platform::setClipboardText(unredact(message.content));
           widgets::toast(widgets::ToastLevel::Success, "Copied");
         }
+        if (!isUser) drawCitedCopyButton(message);   // footnotes / BibTeX when the reply has sources
         ImGui::SameLine();
         if (icons::button("quote", icons::Icon::Chat, "Quote in a reply")) quoteReply(message);
         ImGui::SameLine();
