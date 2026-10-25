@@ -715,3 +715,26 @@ the 8B model preferred the explicit turn text. The summary's framing was reworde
 it is part of the history and to answer from it (not re-verified live); the trim toast
 appeared on each send. Fixed on the way: the sliding window counted the newest user message as a
 turn boundary one step early (kept one turn too few).
+
+2026-10-24 V (94 multi-file apply): `src/core/fileblocks.{h,cpp}` finds the file blocks
+in a reply - the path from the fence info string (`path=` / `title=` / `file=` or a
+bare path token), from a first-line comment (`// file: x`, `# path: x`, `<!-- x -->`,
+stripped from the body), or from the nearest non-empty line above the fence when it is a
+heading / bold / inline-code path or an "Update `x`:" label; version numbers, URLs and
+prose are not paths, Makefile-style bare names are, diff blocks are left to the diff
+path, a later block for the same path wins. In `code_tools.cpp`: `applyFileBlocks`
+resolves each block against the project folder (asks for one when none is pinned),
+refuses paths that escape it, skips files that already match, generates a diff per file
+(new files as a pure add) and hands the set to the existing apply dialog; `confirmApply`
+now stops at the first failed write and rolls the earlier files back from their `.bak`,
+journals every apply to support/apply-history.json and keeps the last one for
+`undoLastApply` (palette "Undo the last apply to files"). A folder icon appears in the
+action row of any reply with named blocks; the dialog says "N files, applied together".
+`--applytest` runs 12 offline checks. Verified against a scratch server and a scratch
+project: a seeded reply with `### src/app.py` + a block, a `path=tests/test_app.py`
+block and an unchanged `**README.md**` block showed the icon; clicking it toasted "1
+file(s) already match and were skipped" and opened the dialog with both diffs ("@@ -1,2
++1,6 @@" and the new file's "+1,9"); Apply wrote app.py (with app.py.bak), created
+tests/test_app.py, and journalled both; the palette's Undo restored app.py's original
+text, removed the .bak and deleted the created test file. Not exercised: a write failure
+mid-transaction (the rollback path is the same `rollback` the Undo used).

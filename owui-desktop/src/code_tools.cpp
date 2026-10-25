@@ -24,6 +24,7 @@
 #include "imgui_stdlib.h"
 #include "native.h"
 #include "platform.h"
+#include "core/fileblocks.h"
 #include "ui/diffview.h"
 #include "ui/highlight.h"
 #include "ui/theme.h"
@@ -442,6 +443,46 @@ struct ApplyState {
 };
 ApplyState gApply;
 
+// The last apply, for "Undo last apply": every file written, with its .bak
+// (or none when the file was created). Also journalled to support/apply-history.json.
+struct AppliedFile {
+  std::string path;
+  bool created = false;
+};
+std::vector<AppliedFile> gLastApply;
+
+std::string applyHistoryPath() { return core::supportDir() + "/apply-history.json"; }
+
+void journalApply(const std::vector<AppliedFile>& files) {
+  bool ok = false;
+  const std::string raw = core::readFile(applyHistoryPath(), &ok);
+  Json history = ok ? Json::parse(raw, nullptr, false) : Json::array();
+  if (history.is_discarded() || !history.is_array()) history = Json::array();
+  Json entry{{"at", static_cast<int64_t>(core::nowSeconds())}, {"files", Json::array()}};
+  for (const AppliedFile& f : files) entry["files"].push_back(Json{{"path", f.path}, {"created", f.created}});
+  history.push_back(entry);
+  while (history.size() > 50) history.erase(history.begin());
+  core::writeFile(applyHistoryPath(), history.dump(2));
+}
+
+// Puts the .bak copies back (or removes created files). Used for "Undo last
+// apply" and when a write in the middle of an apply fails.
+std::string rollback(const std::vector<AppliedFile>& files) {
+  std::string failed;
+  for (auto it = files.rbegin(); it != files.rend(); ++it) {
+    std::error_code ec;
+    if (it->created) {
+      fs::remove(it->path, ec);
+      continue;
+    }
+    bool ok = false;
+    const std::string before = core::readFile(it->path + ".bak", &ok);
+    if (!ok || !core::writeFile(it->path, before)) failed = it->path;
+    else fs::remove(it->path + ".bak", ec);
+  }
+  return failed;
+}
+
 // diffview::parse reads the empty piece after a final newline as a blank
 // context line, which cannot be placed in an empty (new) file and can pull a
 // hunk towards the wrong blank line elsewhere. Trailing newlines carry no
@@ -509,22 +550,35 @@ void confirmApply() {
     gApply.writing = true;
     async::run([writes] {
       std::string failed;
+      std::vector<AppliedFile> done;
       for (const auto& [file, result] : writes) {
         std::error_code ec;
         if (file.created) fs::create_directories(fs::path(file.path).parent_path(), ec);
         // The .bak keeps the pre-apply text one undo away.
         const bool ok = (file.created || core::writeFile(file.path + ".bak", file.before)) &&
                         core::writeFile(file.path, result);
-        if (!ok) failed = file.path;
+        if (!ok) {
+          failed = file.path;
+          break;
+        }
+        done.push_back({file.path, file.created});
+      }
+      if (!failed.empty()) {
+        // One transaction: a write that fails puts the earlier files back.
+        rollback(done);
+        done.clear();
+      } else if (!done.empty()) {
+        journalApply(done);
       }
       const size_t count = writes.size();
       const std::string first = writes.empty() ? "" : core::baseName(writes.front().first.path);
-      async::post([failed, count, first] {
+      async::post([failed, count, first, done] {
         gApply.writing = false;
         if (!failed.empty()) {
-          widgets::toastError("Could not write " + failed);
+          widgets::toastError("Could not write " + failed + " - the other files were put back");
           return;
         }
+        gLastApply = done;
         gApply.show = false;
         gApply.diffs.clear();
         widgets::toast(widgets::ToastLevel::Success,
@@ -546,6 +600,9 @@ void drawApplyModal() {
     for (const auto& diff : gApply.diffs) {
       total += static_cast<int>(diff.hunks.size());
       accepted += acceptedHunks(diff);
+    }
+    if (gApply.files.size() > 1) {
+      widgets::dimText("%zu files, applied together - if one cannot be written, none are changed.", gApply.files.size());
     }
     for (const ApplyFile& file : gApply.files) {
       ImGui::TextUnformatted((file.path + (file.created ? "  (new file)" : "")).c_str());
@@ -704,6 +761,90 @@ void App::applyCodeBlockToFile(const std::string& code) {
       } else {
         loadApply({path}, {false}, {diffs.front()});
       }
+    });
+  });
+}
+
+// ================================================= multi-file apply, undo
+
+// The file blocks a reply names, resolved against the project folder.
+int App::countFileBlocks(const std::string& content) const {
+  return static_cast<int>(fileblocks::extract(content).size());
+}
+
+void App::applyFileBlocks(const std::string& content) {
+  const std::vector<fileblocks::Block> blocks = fileblocks::extract(content);
+  if (blocks.empty()) {
+    widgets::toastInfo("No code block in this reply names a file");
+    return;
+  }
+  std::string folder = currentProjectFolder(*this);
+  if (folder.empty()) {
+    widgets::toastInfo("Choose the folder the files belong to");
+    const std::vector<std::string> picked = native::chooseFolder();
+    if (picked.empty()) return;
+    folder = picked.front();
+  }
+  std::vector<std::string> paths;
+  std::vector<bool> created;
+  std::vector<diffview::FileDiff> diffs;
+  async::run([this, blocks, folder] {
+    std::vector<std::string> paths;
+    std::vector<bool> created;
+    std::vector<diffview::FileDiff> diffs;
+    int unchanged = 0;
+    for (const fileblocks::Block& block : blocks) {
+      std::error_code ec;
+      std::string path = block.path;
+      if (path[0] == '~') path = native::homeDirectory() + path.substr(1);
+      if (path[0] != '/') path = folder + "/" + path;
+      // Never write outside the chosen folder (a "../.." path in a reply).
+      const std::string canonicalFolder = fs::weakly_canonical(folder, ec).string();
+      const std::string canonicalPath = fs::weakly_canonical(path, ec).string();
+      if (block.path[0] != '/' && !core::startsWith(canonicalPath, canonicalFolder + "/")) continue;
+      bool ok = false;
+      const std::string before = fs::is_regular_file(path, ec) ? core::readFile(path, &ok) : std::string();
+      const bool isNew = !ok;
+      if (!isNew && before == block.code) {
+        ++unchanged;
+        continue;
+      }
+      std::vector<diffview::FileDiff> parsed = parseDiff(diffview::generate(block.path, before, block.code));
+      if (parsed.empty() || parsed.front().hunks.empty()) {
+        ++unchanged;
+        continue;
+      }
+      paths.push_back(path);
+      created.push_back(isNew);
+      diffs.push_back(parsed.front());
+    }
+    async::post([paths, created, diffs, unchanged, blocks] {
+      if (paths.empty()) {
+        widgets::toastInfo(unchanged > 0 ? "Every named file already matches the reply" : "Nothing to apply");
+        return;
+      }
+      if (unchanged > 0) widgets::toastInfo(std::to_string(unchanged) + " file(s) already match and were skipped");
+      loadApply(paths, created, diffs);
+    });
+  });
+}
+
+void App::undoLastApply() {
+  if (gLastApply.empty()) {
+    widgets::toastInfo("Nothing to undo - no apply in this session");
+    return;
+  }
+  const std::vector<AppliedFile> files = gLastApply;
+  async::run([files] {
+    const std::string failed = rollback(files);
+    async::post([failed, files] {
+      if (!failed.empty()) {
+        widgets::toastError("Could not put back " + failed);
+        return;
+      }
+      gLastApply.clear();
+      widgets::toast(widgets::ToastLevel::Success, "Undid the last apply (" + std::to_string(files.size()) +
+                                                       (files.size() == 1 ? " file)" : " files)"));
     });
   });
 }

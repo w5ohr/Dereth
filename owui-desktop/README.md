@@ -248,6 +248,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Multi-file apply:** when a reply names the files its code blocks belong
+  to (`path=` in the fence, a `// file:` first line, or a heading / bold /
+  inline-code path above the block), a folder icon in the reply's action row
+  applies them all at once: one dialog with the combined diff, hunks you can
+  untick, new files created, unchanged files skipped, `.bak` backups beside
+  every edited file, and a write that fails puts the others back. "Undo the
+  last apply to files" (palette) restores everything from the backups.
 - **Context strategy:** click the `ctx` figure in the chat header to choose
   what happens when a chat outgrows the model's window - drop the oldest
   turns, keep a sliding window of recent turns, or fold the oldest turns into

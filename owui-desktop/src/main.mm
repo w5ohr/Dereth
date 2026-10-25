@@ -437,6 +437,7 @@ int runPluginSelfTest();
 int runRedactSelfTest();
 int runPrivateSelfTest();
 int runContextSelfTest();
+int runFileBlocksSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -449,6 +450,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--redacttest") return runRedactSelfTest();
     if (std::string(argv[i]) == "--privatetest") return runPrivateSelfTest();
     if (std::string(argv[i]) == "--contexttest") return runContextSelfTest();
+    if (std::string(argv[i]) == "--applytest") return runFileBlocksSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

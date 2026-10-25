@@ -328,6 +328,7 @@ void App::drawPalette() {
   add("Float this window on top", "command", [this] { toggleFloating(); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
+  add("Undo the last apply to files", "command", [this] { undoLastApply(); });
   add("Toggle agent mode", "command", [this] {
     agentMode = !agentMode;
     settings().extra["agentMode"] = agentMode;

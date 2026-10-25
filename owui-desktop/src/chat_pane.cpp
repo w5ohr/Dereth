@@ -717,6 +717,14 @@ void App::drawChatPane() {
           if (icons::button("raw", icons::Icon::Code, "Toggle raw markdown")) {
             message.showRaw = !message.showRaw;
           }
+          if (const int fileBlocks = countFileBlocks(message.content); fileBlocks > 0) {
+            ImGui::SameLine();
+            const std::string tip = "Apply " + std::to_string(fileBlocks) + (fileBlocks == 1 ? " file" : " files") +
+                                    " from this reply to the project (one transaction, backups kept)";
+            if (icons::button("applyfiles", icons::Icon::Folder, tip.c_str(), 0.0f, palette.accent)) {
+              applyFileBlocks(message.content);
+            }
+          }
           ImGui::SameLine();
           if (icons::button("fork", icons::Icon::Branch, "Branch into a new chat") &&
               !chat.id.empty()) {

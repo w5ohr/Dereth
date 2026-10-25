@@ -339,6 +339,11 @@ class App {
   void runCodeBlock(const std::string& code, const std::string& language);
   void lintCodeBlock(const std::string& code, const std::string& language);
   void applyCodeBlockToFile(const std::string& code);
+  // Multi-file apply: every code block in a reply that names a file, as one
+  // transaction with per-file backups; the last apply can be undone.
+  int countFileBlocks(const std::string& content) const;
+  void applyFileBlocks(const std::string& content);
+  void undoLastApply();
   void attachFolderAsContext(const std::string& folder);
   void attachGitContext(const std::string& folder, const std::string& mode);  // diff|staged|log
   void explainBuildError(const std::string& log);
