@@ -9,6 +9,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -696,6 +697,19 @@ class App {
   void drawWarmupSection(float width);
   std::string warmupModel() const;
   std::string warmupStatus;
+
+  // --- message selection (message_selection.cpp) ----------------------------
+  // Shift-click headers (or selection mode's boxes) -> copy / export / move / delete.
+  std::set<std::string> selectedMessages;
+  std::string selectionAnchor;
+  bool selectionMode = false;
+  void selectMessage(const std::string& id, bool range);
+  void clearSelection();
+  std::vector<std::string> selectedInOrder() const;
+  void drawSelectionHandle(const std::string& messageId, const ImVec2& pos, float contentWidth);
+  void drawSelectionBar(const ImVec2& transcriptMin, const ImVec2& transcriptMax);
+  void deleteSelection();
+  void moveSelectionToNewChat();
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

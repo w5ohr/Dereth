@@ -1272,3 +1272,28 @@ real sleep / wake (the observers are registered; the handler is the same code th
 Release / Warm buttons use), release on quit, and the frontmost gate (the app was in
 front throughout).
 
+2026-10-25 II (70 message selection): `src/core/msgselect.{h,cpp}` (app-free over plain
+nodes: rangeBetween on the visible path; spliceOut removes a node and re-attaches its
+children to its parent in place - or makes them roots - and moves currentId to the last
+child or the parent when it was the removed one; markdown of a selection with "## You"
+/ "## <model>" headings; linearChain copies a selection as a fresh chain with new ids).
+`src/message_selection.cpp`: Shift-click on a message header toggles / extends a range
+from the anchor; the palette's "Select messages" turns on selection mode with a checkbox
+in the margin of every message; selected headers get a tinted band and an accent bar; a
+floating bar at the bottom of the transcript shows "N selected" with Copy (clipboard as
+Markdown), Export... (save panel), Move to new chat (createChat with the copied chain -
+or a new private chat - then the originals are removed here), Delete (splice out, pins
+and memory proposals dropped) and Clear / Done; Escape clears. A server chat's update
+merges history.messages, so deleting goes through DELETE /chats/{id}/messages/{mid} for
+each removed id before the re-linked tree is saved - without that the server kept the
+removed nodes as a dead sibling branch (found in the first run). `--selectiontest` runs 8
+offline checks. Verified on a scratch server with API-seeded four-turn chats (the harness
+grew a `shiftclick` helper that presses a real Shift key around a CGEvent click - a Shift
+flag on the mouse event alone never reaches ImGui's modifier state): Shift-clicking two
+headers selected the three messages between them with the band and the bar; Delete
+removed them, the transcript read Madrid -> You are welcome, and after the fix the
+server held 6 of 8 messages in one joined branch; selecting two and Move to new chat
+produced "Moved: A yellow one?" with exactly those two on the server and left Fruits with
+four in one thread. Not covered: Copy and Export (clipboard / save panel), selection mode's
+checkboxes, a private chat move, and deleting a message that still streams (refused).
+

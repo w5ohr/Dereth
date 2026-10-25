@@ -348,6 +348,11 @@ void App::drawPalette() {
   });
   add("Health (CPU, GPU, memory, models in VRAM)", "command", [this] { pane = Pane::Tools; });
   add("Budgets (token and cost caps)", "command", [this] { pane = Pane::Tools; });
+  add("Select messages (copy, export, move, delete in bulk)", "command", [this] {
+    selectionMode = !selectionMode;
+    if (!selectionMode) clearSelection();
+    pane = Pane::Chat;
+  });
   add("Warm the model now (load it into memory)", "command", [this] { warmModelNow(false); });
   add("Release the model from memory", "command", [this] { warmModelNow(true); });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });

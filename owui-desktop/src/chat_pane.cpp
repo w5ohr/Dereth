@@ -424,6 +424,7 @@ void App::drawChatPane() {
       // --- header line: who + when + branch switcher
       {
         ImVec2 pos = ImGui::GetCursorScreenPos();
+        drawSelectionHandle(messageId, pos, contentWidth);   // Shift-click / selection-mode box
         icons::draw(ImGui::GetWindowDrawList(), isUser ? icons::Icon::User : icons::Icon::Sparkle,
                     ImVec2(pos.x + 9, pos.y + 9), 15.0f,
                     isUser ? palette.textDim : palette.accent);
@@ -806,6 +807,7 @@ void App::drawChatPane() {
   const ImVec2 transcriptMin = ImGui::GetWindowPos();
   const ImVec2 transcriptMax(transcriptMin.x + ImGui::GetWindowWidth(), transcriptMin.y + ImGui::GetWindowHeight());
   ImGui::EndChild();
+  drawSelectionBar(transcriptMin, transcriptMax);
 
   // "New text" pill: text arrived below the fold while the reader was parked.
   // Its own little window, so it floats above the transcript's text.

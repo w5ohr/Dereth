@@ -483,6 +483,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   shared Ollama holds its memory for everyone. Warm now / Release now
   buttons and palette commands; Tools ▸ Health shows what is resident.
   `Open WebUI --warmuptest` covers the schedule.
+- **Message selection:** Shift-click a message header to select it, Shift-
+  click another to take the whole range between them, or run "Select
+  messages" from the palette for a checkbox beside every message. A bar at
+  the bottom of the transcript copies the selection as Markdown, exports it
+  to a file, moves it into a new chat (a fresh chat with just those
+  messages, removed from here) or deletes it - the messages on either side
+  of a deleted one are joined up so the conversation keeps its thread.
+  Escape clears. `Open WebUI --selectiontest` covers the range, splice and
+  export logic.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.
