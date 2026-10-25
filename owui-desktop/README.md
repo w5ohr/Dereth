@@ -254,6 +254,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   chat and sends the steps one after another as each reply finishes, so the
   whole chain is kept. Run from the tab, the palette ("Run recipe: ...") or
   a daily schedule; three example recipes are one click away.
+- **Triggers:** under Tools ▸ Recipes, a watched folder runs a recipe for
+  every file that lands in it (the file is attached and its path is the
+  recipe's `{{input:File}}`; filter by extension), and the clipboard watcher
+  runs a recipe whenever new text is copied (steps read it with
+  `{{clipboard}}`; your own copied replies are ignored). Runs queue behind a
+  recipe already going.
 - **Backup and import:** Tools ▸ Backup exports everything to one zip -
   every chat as JSON, the settings (tokens stay in the keychain), usage log,
   plugins, the offline mirror and, if you tick it, the encrypted private

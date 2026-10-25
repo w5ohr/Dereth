@@ -451,6 +451,8 @@ class App {
   void saveRecipe(const recipes::Recipe& recipe);
   void deleteRecipe(const std::string& id);
   void runRecipe(const std::string& id);
+  void runRecipeWith(const std::string& id, const std::map<std::string, std::string>& inputs,
+                     const std::vector<std::string>& attachPaths);   // no inputs form; used by triggers
   void startRecipeRun();
   void recipeSendNext();
   void tickRecipe();
@@ -458,6 +460,13 @@ class App {
   bool recipeRunning() const;
   void drawRecipeInputs();
   void drawRecipesSection(float width);
+
+  // --- triggers (triggers.cpp) ----------------------------------------------
+  // Watched folders and the clipboard watcher run recipes on their own.
+  void triggersInit();
+  void triggersShutdown();
+  void tickTriggers();
+  void drawTriggersSection(float width);
 
   // --- backup and import (backup.cpp) ---------------------------------------
   void exportEverything();

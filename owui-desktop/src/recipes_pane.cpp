@@ -36,6 +36,8 @@ struct Run {
   std::vector<std::string> values;
   std::string chatId;
   double startedAt = 0.0;
+  std::vector<std::string> attachPaths;   // attached to the first step
+  bool waitingForUploads = false;
 };
 Run gRun;
 
@@ -121,7 +123,35 @@ void App::startRecipeRun() {
   }
   pane = Pane::Chat;
   widgets::toastInfo("Running recipe \"" + gRun.recipe.name + "\" (" + std::to_string(gRun.recipe.steps.size()) + " steps)");
+  if (!gRun.attachPaths.empty()) {
+    attachFiles(gRun.attachPaths);
+    gRun.attachPaths.clear();
+    gRun.waitingForUploads = true;   // step 1 goes once the upload is done (tickRecipe)
+    return;
+  }
   recipeSendNext();
+}
+
+void App::runRecipeWith(const std::string& id, const std::map<std::string, std::string>& inputs,
+                        const std::vector<std::string>& attachPaths) {
+  if (gRun.active) return;
+  recipes::Recipe found;
+  for (const recipes::Recipe& r : recipeList()) {
+    if (r.id == id) found = r;
+  }
+  if (found.id.empty() || found.steps.empty()) {
+    widgets::toastError("Trigger: recipe not found or has no steps");
+    return;
+  }
+  gRun = Run{};
+  gRun.recipe = found;
+  gRun.inputs = inputs;
+  // Inputs the trigger did not supply take their defaults.
+  for (const promptvars::Var& f : recipes::inputs(found)) {
+    if (!gRun.inputs.count(f.arg)) gRun.inputs[f.arg] = f.def;
+  }
+  gRun.attachPaths = attachPaths;
+  startRecipeRun();
 }
 
 void App::recipeSendNext() {
@@ -146,6 +176,14 @@ void App::recipeSendNext() {
 }
 
 void App::tickRecipe() {
+  if (gRun.active && gRun.waitingForUploads) {
+    for (const Attachment& a : attachments) {
+      if (a.uploading) return;
+    }
+    gRun.waitingForUploads = false;
+    recipeSendNext();
+    return;
+  }
   if (!gRun.active || gRun.askingInputs || gRun.awaiting.empty()) return;
   auto it = chat.messages.find(gRun.awaiting);
   if (it == chat.messages.end()) {
@@ -314,6 +352,9 @@ void App::drawRecipesSection(float width) {
     ImGui::Dummy(ImVec2(0, 4));
   }
   if (!removeId.empty()) deleteRecipe(removeId);
+
+  ImGui::Dummy(ImVec2(0, 10));
+  drawTriggersSection(width);
 
   // Editor modal.
   if (gEditor.open) {

@@ -317,12 +317,14 @@ void App::init() {
   mcpInit();
   pluginsInit();
   refreshPrivateChats();
+  triggersInit();
 }
 
 void App::shutdown() {
   stopAllStreams();
   if (terminal) terminal->stop();
   stopFolderSync();
+  triggersShutdown();
   pluginsShutdown();
   mcpShutdown();
   socket_.stop();
@@ -1634,6 +1636,7 @@ void App::frame() {
     drawRedactionSheet();
     drawRecipeInputs();
     tickRecipe();
+    tickTriggers();
     pluginsTick();
     drawCitationPopup();
     drawProjectFilesPopup();

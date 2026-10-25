@@ -848,3 +848,28 @@ quiz me", step 1 explained tides, step 2 went out with the explanation spliced i
 chat on the server held both turns. Not exercised: a global hotkey per recipe (the item
 mentions one; the palette is the keyboard route), the scheduler path (same code as
 scheduled prompts, which the earlier sweep covered), per-step model switches.
+
+2026-10-24 IV (85 watch folder actions + 86 clipboard watcher): `src/triggers.cpp`.
+Configuration in settings extra["triggers"] ({folders: [{path, recipe, enabled,
+extensions}], clipboard: {enabled, recipe, minChars}}), edited in a TRIGGERS section at
+the foot of Tools > Recipes (recipe combos, extension filter, "Watch a folder..." via
+the folder panel, the clipboard switch with a warning line, last trigger, files
+waiting). Folder watches use `native::watchFolder` (FSEvents); a path that is a regular
+non-hidden file with an allowed extension and not yet seen this session is queued; the
+tick runs it once its mtime is over a second old (settling) and no recipe is running -
+`runRecipeWith` attaches the file, sets {{input:File}} to the path, fills other inputs
+from their defaults, and `tickRecipe` sends step 1 once the upload finished. The
+clipboard watcher polls the pasteboard once a second, primes itself on the first read,
+and runs its recipe for new text of at least minChars that does not match a message in
+the open chat (so copying a reply does not loop). Verified against a scratch server with
+qwen3:8b: a watched inbox with "txt,md" and a one-step "Summarise the attached file"
+recipe: dropping agenda.txt started "Recipe: Summarise a dropped file" with the file
+attached, the path in the prompt and a three-bullet summary citing the file; the first
+drop sat at "1 file(s) waiting" forever because the settle test compared a wall-clock
+mtime with the steady-clock nowMillis - fixed with core::nowSeconds. Clipboard watcher: with it on and the
+pasteboard primed before launch, copying a paragraph about the Antikythera mechanism
+started "Recipe: Explain copied text" whose step carried the copied text through
+{{clipboard}} and came back with a two-sentence explanation (the primer text did not
+fire; a copied reply would not either). Not done from the items' wording: a mode from
+the menu bar extra (the switch lives in the pane; the extra's menu is unchanged), and
+rename / tag / file actions beyond what a recipe's steps do in the chat.
