@@ -10,6 +10,8 @@
 #import <WebKit/WebKit.h>
 
 #include <algorithm>
+#include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
 
@@ -855,6 +857,160 @@ void artifactLog(const std::string& line) {
 
 namespace native {
 namespace {
+}  // namespace
+}  // namespace native
+
+// ------------------------------------------------------- offscreen render
+
+@interface OWUIOffscreenRenderer : NSObject <WKNavigationDelegate, WKScriptMessageHandler>
+@property(nonatomic, strong) WKWebView* view;
+@property(nonatomic, strong) NSWindow* window;
+@property(nonatomic, copy) void (^done)(NSData* png);
+@property(nonatomic) BOOL busy;
+@property(nonatomic) int generation;
+- (void)finish:(NSData*)png generation:(int)generation;
+@end
+
+@implementation OWUIOffscreenRenderer
+- (void)userContentController:(WKUserContentController*)controller didReceiveScriptMessage:(WKScriptMessage*)message {
+  if (![message.name isEqualToString:@"owuiDone"] || !self.busy) return;
+  const int generation = self.generation;
+  if ([message.body isKindOfClass:[NSString class]]) {
+    core::debugLog("offscreen: page reported %s", [[message.body description] UTF8String]);
+    [self finish:nil generation:generation];
+    return;
+  }
+  core::debugLog("offscreen: page height %.0f", [message.body doubleValue]);
+  CGFloat height = [message.body isKindOfClass:[NSNumber class]] ? [message.body doubleValue] : 0;
+  height = MAX(24.0, MIN(4000.0, height));
+  NSRect frame = self.view.frame;
+  frame.size.height = height;
+  self.view.frame = frame;
+  // Let the layout settle at the new height before the snapshot.
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (self.generation != generation || !self.busy) return;
+    WKSnapshotConfiguration* config = [[WKSnapshotConfiguration alloc] init];
+    config.rect = self.view.bounds;
+    [self.view takeSnapshotWithConfiguration:config completionHandler:^(NSImage* image, NSError* error) {
+      NSData* png = nil;
+      if (error) core::debugLog("offscreen: snapshot failed: %s", [[error localizedDescription] UTF8String]);
+      if (image && !error) {
+        CGImageRef cg = [image CGImageForProposedRect:nil context:nil hints:nil];
+        if (cg) {
+          NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithCGImage:cg];
+          png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+        }
+      }
+      [self finish:png generation:generation];
+    }];
+  });
+}
+- (void)webView:(WKWebView*)webView didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error {
+  core::debugLog("offscreen: navigation failed: %s", [[error localizedDescription] UTF8String]);
+  [self finish:nil generation:self.generation];
+}
+- (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation {
+  core::debugLog("offscreen: page loaded, waiting for done()");
+}
+- (void)finish:(NSData*)png generation:(int)generation {
+  core::debugLog("offscreen: finish %s (%zu bytes)", png ? "ok" : "empty", png ? (size_t)png.length : (size_t)0);
+  if (!self.busy || generation != self.generation) return;
+  self.busy = NO;
+  void (^cb)(NSData*) = self.done;
+  self.done = nil;
+  if (cb) cb(png);
+}
+@end
+
+namespace native {
+namespace {
+
+static OWUIOffscreenRenderer* gOffscreen = nil;
+
+static OWUIOffscreenRenderer* offscreenRenderer() {
+  if (gOffscreen) return gOffscreen;
+  OWUIOffscreenRenderer* r = [[OWUIOffscreenRenderer alloc] init];
+  WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
+  WKUserContentController* content = [[WKUserContentController alloc] init];
+  [content addScriptMessageHandler:r name:@"owuiDone"];
+  config.userContentController = content;
+  r.view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 600, 200) configuration:config];
+  r.view.navigationDelegate = r;
+  // A window far off any screen: WebKit only paints views that belong to one.
+  r.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(-30000, -30000, 600, 200)
+                                         styleMask:NSWindowStyleMaskBorderless
+                                           backing:NSBackingStoreBuffered
+                                             defer:NO];
+  r.window.releasedWhenClosed = NO;
+  // Opaque but far off every screen: a transparent window reads as occluded
+  // and WebKit stops painting it.
+  r.window.ignoresMouseEvents = YES;
+  r.window.excludedFromWindowsMenu = YES;
+  r.window.collectionBehavior = NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle;
+  r.window.contentView = r.view;
+  [r.window orderBack:nil];
+  gOffscreen = r;
+  return r;
+}
+
+// Serial queue of render jobs, all driven from the main thread.
+struct OffscreenJob {
+  std::string html;
+  float width;
+  int timeoutMs;
+  std::function<void(std::string)> done;
+};
+static std::deque<OffscreenJob> gOffscreenJobs;
+
+static void pumpOffscreen() {
+  OWUIOffscreenRenderer* r = offscreenRenderer();
+  if (r.busy || gOffscreenJobs.empty()) return;
+  OffscreenJob job = gOffscreenJobs.front();
+  gOffscreenJobs.pop_front();
+  r.busy = YES;
+  const int generation = ++r.generation;
+  const auto done = job.done;
+  r.done = ^(NSData* png) {
+    std::string bytes;
+    if (png) bytes.assign(static_cast<const char*>(png.bytes), png.length);
+    done(bytes);
+    dispatch_async(dispatch_get_main_queue(), ^{ pumpOffscreen(); });
+  };
+  NSRect frame = NSMakeRect(0, 0, job.width, 200);
+  [r.window setContentSize:frame.size];
+  r.view.frame = frame;
+  [r.view loadHTMLString:toNs(job.html) baseURL:nil];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)job.timeoutMs * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    if (r.busy && r.generation == generation) {
+      core::debugLog("offscreen: timed out after %d ms", job.timeoutMs);
+      [r.view stopLoading];
+      [r finish:nil generation:generation];
+    }
+  });
+}
+
+}  // namespace
+
+std::string renderHtmlToPng(const std::string& html, float width, int timeoutMs) {
+  if ([NSThread isMainThread]) return "";   // would deadlock; callers run on workers
+  dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+  auto result = std::make_shared<std::string>();
+  OffscreenJob job{html, width, timeoutMs, [result, sem](std::string bytes) {
+                     *result = std::move(bytes);
+                     dispatch_semaphore_signal(sem);
+                   }};
+  dispatch_async(dispatch_get_main_queue(), ^{
+    gOffscreenJobs.push_back(job);
+    pumpOffscreen();
+  });
+  // A job that never settles (the timeout fires on the main thread) still
+  // signals; this wait is only a last resort.
+  if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeoutMs + 5000) * NSEC_PER_MSEC)) != 0) return "";
+  return *result;
+}
+
+namespace {
+
 WKWebView* gArtifactView = nil;
 OWUIArtifactBridge* gArtifactBridge = nil;
 NSRect gArtifactFrame = NSZeroRect;

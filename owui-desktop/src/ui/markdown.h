@@ -25,6 +25,9 @@ struct Options {
   std::function<void(const std::string& diff)> onApplyDiff;
   // Invoked when a link is clicked; defaults to opening in the browser.
   std::function<void(const std::string& url)> onLink;
+  // Renders a diagram or math block to PNG bytes (mermaid | dot | math) at
+  // the given width; runs on a worker. When unset, such blocks stay as code.
+  std::function<std::string(const std::string& kind, const std::string& code, float width)> blockImage;
 };
 
 void render(const char* id, const std::string& text, const Options& options);

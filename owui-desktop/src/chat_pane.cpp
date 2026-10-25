@@ -559,6 +559,11 @@ void App::drawChatPane() {
         md::Options options;
         options.wrapWidth = contentWidth;
         options.imageLoader = [this](const std::string& url) { return fetchImageBytes(url); };
+        if (settings().extra.value("renderDiagrams", true)) {
+          options.blockImage = [this](const std::string& kind, const std::string& code, float w) {
+            return renderBlockImage(kind, code, w);
+          };
+        }
         options.onRunCode = [this](const std::string& code, const std::string& language) {
           async::run([this, code, language] {
             api::Result res = api_.executeCode(code, language);

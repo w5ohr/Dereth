@@ -1,5 +1,7 @@
 #include "ui/markdown.h"
 
+#include <set>
+
 #include <cmath>
 #include <unordered_map>
 #include <vector>
@@ -317,6 +319,61 @@ void renderRuns(const std::vector<Run>& runs, const Options& options, ImU32 colo
 
 // ---- block rendering ------------------------------------------------------
 
+// mermaid / dot / math blocks as images, with the source one click away.
+std::string diagramKind(const std::string& language) {
+  const std::string lang = core::lower(core::trim(language));
+  if (lang == "mermaid" || lang == "mmd") return "mermaid";
+  if (lang == "dot" || lang == "graphviz") return "dot";
+  if (lang == "math" || lang == "latex" || lang == "tex" || lang == "katex") return "math";
+  return "";
+}
+
+std::set<std::string> gDiagramSourceShown;
+
+void renderCodeBlock(const std::string& code, const std::string& language, const Options& options, int blockIndex);
+
+void renderDiagramBlock(const std::string& kind, const std::string& code, const std::string& language,
+                        const Options& options, int blockIndex) {
+  const auto& palette = theme::palette();
+  const float width = options.wrapWidth > 0.0f ? options.wrapWidth : ImGui::GetContentRegionAvail().x;
+  const float renderWidth = std::min(width, 820.0f);
+  const bool dark = theme::isDark();
+  const std::string key = "block:" + kind + ":" + std::to_string(std::hash<std::string>{}(code)) + ":" +
+                          std::to_string(static_cast<int>(renderWidth)) + (dark ? ":d" : ":l");
+  ImGui::PushID(blockIndex);
+  auto loader = options.blockImage;
+  images::Entry entry = images::get(key, [loader, kind, code, renderWidth] { return loader(kind, code, renderWidth); });
+  const bool showSource = gDiagramSourceShown.count(key) > 0 || entry.failed;
+
+  // A slim header: kind, then Source / Copy on the right.
+  ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textFaint));
+  ImGui::TextUnformatted(kind == "math" ? "math" : kind.c_str());
+  ImGui::PopStyleColor();
+  ImGui::SameLine(width - 100.0f);
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 1));
+  if (!entry.failed && ImGui::SmallButton(showSource ? "Hide source" : "Source")) {
+    if (showSource) gDiagramSourceShown.erase(key);
+    else gDiagramSourceShown.insert(key);
+  }
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Copy")) ImGui::SetClipboardText(code.c_str());
+  ImGui::PopStyleVar();
+
+  if (entry.ready()) {
+    const float scale = std::max(1.0f, ImGui::GetIO().DisplayFramebufferScale.x);
+    const float naturalW = static_cast<float>(entry.width) / scale;
+    const float displayW = std::min(width, naturalW);
+    const float displayH = static_cast<float>(entry.height) / scale * (displayW / naturalW);
+    ImGui::Image(entry.texture, ImVec2(displayW, displayH));
+  } else if (entry.failed) {
+    widgets::dimText("Could not render this %s block (needs the CDN for KaTeX / Mermaid / Viz.js) - source below.", kind.c_str());
+  } else {
+    widgets::loadingRow(kind == "math" ? "Typesetting..." : "Drawing diagram...");
+  }
+  if (showSource) renderCodeBlock(code, language.empty() ? kind : language, options, blockIndex + 10000);
+  ImGui::PopID();
+}
+
 void renderCodeBlock(const std::string& code, const std::string& language, const Options& options,
                      int index) {
   ImGui::PushID(index);
@@ -498,9 +555,39 @@ void render(const char* id, const std::string& text, const Options& options) {
         code += lines[i];
         code += "\n";
       }
-      renderCodeBlock(code, language, options, blockIndex++);
+      const std::string kind = options.blockImage ? diagramKind(language) : "";
+      if (!kind.empty()) renderDiagramBlock(kind, code, language, options, blockIndex++);
+      else renderCodeBlock(code, language, options, blockIndex++);
       ImGui::Dummy(ImVec2(0, 4));
       continue;
+    }
+
+    // Display math: a $$ ... $$ paragraph (one line or several).
+    if (options.blockImage && core::startsWith(trimmed, "$$")) {
+      flushParagraph();
+      std::string body;
+      std::string rest = core::trim(trimmed.substr(2));
+      bool closed = false;
+      if (rest.size() >= 2 && core::endsWith(rest, "$$")) {
+        body = core::trim(rest.substr(0, rest.size() - 2));
+        closed = true;
+      } else {
+        body = rest.empty() ? "" : rest + "\n";
+        for (++i; i < lines.size(); ++i) {
+          const std::string t = core::trim(lines[i]);
+          if (core::endsWith(t, "$$")) {
+            body += t.substr(0, t.size() - 2);
+            closed = true;
+            break;
+          }
+          body += lines[i] + "\n";
+        }
+      }
+      if (closed && !core::trim(body).empty()) {
+        renderDiagramBlock("math", body, "math", options, blockIndex++);
+        ImGui::Dummy(ImVec2(0, 4));
+        continue;
+      }
     }
 
     if (trimmed.empty()) {

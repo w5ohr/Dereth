@@ -248,6 +248,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Math and diagrams inline:** a `$$ ... $$` paragraph or a `math`/`latex`
+  block renders with KaTeX, a `mermaid` block with Mermaid and a `dot`/
+  `graphviz` block with Graphviz, right in the transcript as an image in the
+  current theme, with Source / Copy buttons above it. Rendering happens in a
+  hidden WebKit view that loads the three libraries from jsDelivr, so it
+  needs the network; offline (or on a bad block) the source shows as code
+  instead. Switch it off from the palette ("Diagrams and math").
 - **Recipes:** Tools ▸ Recipes saves chains of prompts. Each step can use
   `{{prev}}` (the previous reply), `{{step:N}}` and the prompt variables;
   `{{input:Label}}` fields are asked once before the run. A run opens a new

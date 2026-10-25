@@ -943,3 +943,25 @@ row "tool add - allowed (always)"; the file matched (22 http + 1 tool). Not cove
 design: the socket.io WebSocket (not curl - the server's push channel, inbound) and MCP
 stdio servers (local processes; their tool decisions are logged). Not exercised: the
 filter box and the export save panels.
+
+2026-10-25 H (62 math and diagrams): `src/diagrams.cpp` builds a self-contained page
+per block - KaTeX 0.16.11 (`$$...$$` paragraphs and math/latex/tex fences), Mermaid 11
+(mermaid/mmd) or Viz.js 3.11 (dot/graphviz), all from jsDelivr, in the current palette's
+colours - and `native::renderHtmlToPng` (new, `src/native.mm`) renders it in an offscreen
+WKWebView: one job at a time on the main thread, the page posts its body height to a
+script message handler when fonts and scripts settle, the view is resized to it and
+snapshotted to PNG; 15 s timeout. `markdown.cpp` routes those fences and `$$` paragraphs
+to `renderDiagramBlock` (image through the async `images::` cache keyed by kind + code +
+width + theme; header with Source / Hide source and Copy; failure note plus the code
+block when the render fails or the CDN is unreachable). Setting `extra["renderDiagrams"]`
+(default on) with a palette toggle. Verified on a scratch server with a seeded reply
+holding all three kinds: quadratic formula, a 5-node flowchart and a 4-node digraph
+each render as crisp images sized to their content; Source toggles the code block
+underneath; a one-line `$$e^{i\pi}+1=0$$` inside prose stays as text by design (only
+whole `$$` lines are display math - inline math is not rendered). Lessons: a transparent
+(alpha 0) offscreen window stops WebKit painting and requestAnimationFrame never fires
+off-screen (use a timer); a JSON string literal cannot live in an `onload` attribute
+(quotes end the attribute - that was the "Script error."). Not covered: light theme,
+very tall diagrams (image is capped to the column width only), offline fallback path
+beyond the earlier failing runs, and the artifact-view KaTeX half of the item (the
+inline image is what shipped).

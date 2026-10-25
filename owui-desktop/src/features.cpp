@@ -334,6 +334,13 @@ void App::drawPalette() {
   add("Export everything to a backup zip", "command", [this] { exportEverything(); });
   add("Run the project's tests until green", "command", [this] { pane = Pane::Tools; testLoopRun(true); });
   add("Audit log (what left this Mac)", "command", [this] { pane = Pane::Tools; });
+  add(settings().extra.value("renderDiagrams", true) ? "Diagrams and math: stop rendering inline" : "Diagrams and math: render inline",
+      "toggle", [this] {
+        const bool on = !settings().extra.value("renderDiagrams", true);
+        settings().extra["renderDiagrams"] = on;
+        settings().save();
+        widgets::toast(widgets::ToastLevel::Info, on ? "Math, Mermaid and dot blocks render inline" : "Math, Mermaid and dot blocks show as code");
+      });
   for (const recipes::Recipe& r : recipeList()) {
     const std::string id = r.id;
     add("Run recipe: " + r.name, "recipe - " + std::to_string(r.steps.size()) + " steps", [this, id] { runRecipe(id); });

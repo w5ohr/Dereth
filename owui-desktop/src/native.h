@@ -135,6 +135,12 @@ void artifactLoad(const std::string& html);     // replaces the document, clears
 void artifactReload();
 std::vector<std::string> artifactConsole();     // messages since the last load, oldest first
 
+// Offscreen renderer: loads `html` in a hidden WKWebView `width` points
+// wide, waits for the page to call owuiDone (height, or "error:...") and
+// returns a PNG at the screen's scale. Blocks the calling worker up to
+// `timeoutMs`; "" on error or timeout. Jobs run one at a time.
+std::string renderHtmlToPng(const std::string& html, float width, int timeoutMs);
+
 // Document pane: a PDFKit view floated over the ImGui document column, used
 // to show the PDF behind a citation with the cited passage highlighted.
 void pdfInstall();

@@ -468,6 +468,9 @@ class App {
   void tickTriggers();
   void drawTriggersSection(float width);
 
+  // --- diagrams and math (diagrams.cpp) -------------------------------------
+  std::string renderBlockImage(const std::string& kind, const std::string& code, float width);   // worker; PNG or ""
+
   // --- audit log (audit_pane.cpp) -------------------------------------------
   void auditInit();                           // net observer + log trim
   void auditTool(const std::string& server, const std::string& tool, const std::string& qualified,
