@@ -888,10 +888,11 @@ the reply names no file or changes nothing, or on Stop; with auto-apply off a ro
 ends in the apply dialog). Rounds show the output digest, the files changed and the
 model's reply. `--testlooptest` runs 11 offline checks. Verified against a scratch
 server with qwen3:8b on the scratch repo (unittest, `shout()` missing `.upper()`): round
-1 failed on test_shout, the model returned src/app.py whole, the loop wrote it (backup
-beside it), round 2 ran green and the status read "Green after 2 rounds"; the tests pass
-from the shell too. Found on the way: `gitAsk` strips an outer code fence from replies
+1 failed on test_shout and the model's first file was written (backup beside it), round
+2 still failed and a second fix was written, round 3 ran green and the status read
+"Green after 3 rounds"; the tests pass from the shell too, and the final shout() is
+`f"HELLO, {name.upper()}!"`. Found on the way: `gitAsk` strips an outer code fence from replies
 (right for commit messages), which turned the fixer's single `path=` block into a bare
 snippet with no file - a `keepFences` flag now leaves the loop's replies alone. Not
-exercised: the review (auto-apply off) path, multi-round repairs, and runners other
-than unittest (pytest is not installed on this machine).
+exercised: the review (auto-apply off) path and runners other than unittest (pytest is
+not installed on this machine).
