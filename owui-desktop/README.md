@@ -596,6 +596,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   web UI sees them too. The palette has "Apply smart folder rules now" and
   "Auto-tag untagged chats now". `Open WebUI --foldertest` covers rules,
   matching, the plan, and the tagging prompt and parser.
+- **Hybrid local search:** the local index now keeps an SQLite FTS5 table
+  beside the vectors (filled by triggers, so existing indexes backfill on
+  first open) and every search fuses the BM25 text ranking with the vector
+  ranking by reciprocal rank, with a bonus when a chunk contains every query
+  token - so an exact identifier like `recalibrate_foghorn_compressor` is
+  found even when the embedding misses it, and search keeps working when
+  Ollama is down (text matches only). Each hit says whether it came from
+  both lists, the vectors or the text; the Hybrid checkbox in Tools ▸ Local
+  index turns it off. `Open WebUI --hybridtest` covers tokenising, the FTS
+  table and triggers, BM25 search and the fusion.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

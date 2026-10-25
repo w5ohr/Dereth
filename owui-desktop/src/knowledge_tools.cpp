@@ -20,6 +20,7 @@
 #include <thread>
 
 #include "app.h"
+#include "core/hybrid.h"
 #include "html_markdown.h"
 #include "local_embed.h"
 #include "core/async.h"
@@ -764,6 +765,8 @@ struct Hit {
   std::string path;
   std::string text;
   float score = 0.0f;
+  std::string source;   // "both" / "vector" / "text" (hybrid), "" for a plain vector hit
+  bool exact = false;   // every query token appears in the chunk
 };
 std::string gQuery;
 std::vector<Hit> gHits;
@@ -785,6 +788,8 @@ struct IndexDb {
          "CREATE TABLE IF NOT EXISTS chunks(path TEXT NOT NULL, chunk INTEGER NOT NULL,"
          " text TEXT NOT NULL, mtime INTEGER NOT NULL, vector BLOB,"
          " PRIMARY KEY(path, chunk));");
+    std::string ftsError;
+    if (!hybrid::ensureFts(db, &ftsError)) core::debugLog("local index: no FTS5 (%s) - vector search only", ftsError.c_str());
   }
   ~IndexDb() {
     if (db) sqlite3_close(db);
@@ -897,37 +902,73 @@ bool embed(const std::string& base, const std::vector<std::string>& inputs,
   return true;
 }
 
-// Blocking: embeds the query, then a cosine scan over every stored chunk.
-// Vectors are stored unit-length, so cosine is a dot product.
+bool hybridEnabled() { return core::Settings::instance().extra.value("hybridSearch", true); }
+
+// Blocking: embeds the query, then a cosine scan over every stored chunk
+// (vectors are unit-length, so cosine is a dot product). With hybrid search
+// on, an FTS5/BM25 search runs beside it and the two lists are fused by
+// reciprocal rank; when the embedder is unreachable the text search alone
+// still answers.
 std::vector<Hit> searchIndex(const std::string& query, int k, std::string* error) {
   std::vector<Hit> hits;
   if (core::trim(query).empty() || k <= 0) return hits;
-  std::vector<std::vector<float>> qv;
-  if (!embed(ollamaBase(), {"search_query: " + query}, &qv, error)) return hits;
-  const std::vector<float>& q = qv.front();
   IndexDb db;
   if (!db) {
     *error = "cannot open " + indexPath();
     return hits;
   }
-  Statement st(db.db, "SELECT path, text, vector FROM chunks");
-  if (!st) {
-    *error = sqlite3_errmsg(db.db);
+  const bool hybridOn = hybridEnabled();
+  const int wide = hybridOn ? std::max(k * 4, 20) : k;
+
+  std::vector<hybrid::Ranked> byVector;
+  std::vector<std::vector<float>> qv;
+  std::string embedError;
+  if (embed(ollamaBase(), {"search_query: " + query}, &qv, &embedError)) {
+    const std::vector<float>& q = qv.front();
+    struct Scored {
+      hybrid::Ranked r;
+      float dot;
+    };
+    std::vector<Scored> scored;
+    Statement st(db.db, "SELECT path, chunk, text, vector FROM chunks");
+    if (!st) {
+      *error = sqlite3_errmsg(db.db);
+      return hits;
+    }
+    while (sqlite3_step(st.stmt) == SQLITE_ROW) {
+      const void* blob = sqlite3_column_blob(st.stmt, 3);
+      const int bytes = sqlite3_column_bytes(st.stmt, 3);
+      if (!blob || bytes != static_cast<int>(q.size() * sizeof(float))) continue;
+      const float* v = static_cast<const float*>(blob);
+      float dot = 0.0f;
+      for (size_t d = 0; d < q.size(); ++d) dot += q[d] * v[d];
+      scored.push_back({{columnText(st.stmt, 0), sqlite3_column_int(st.stmt, 1), columnText(st.stmt, 2)}, dot});
+    }
+    const size_t keep = std::min(scored.size(), static_cast<size_t>(wide));
+    std::partial_sort(scored.begin(), scored.begin() + static_cast<long>(keep), scored.end(), [](const Scored& a, const Scored& b) { return a.dot > b.dot; });
+    scored.resize(keep);
+    if (!hybridOn) {
+      for (const Scored& s : scored) hits.push_back({s.r.path, s.r.text, s.dot, "", false});
+      return hits;
+    }
+    for (const Scored& s : scored) byVector.push_back(s.r);
+  } else if (!hybridOn) {
+    *error = embedError;
     return hits;
   }
-  while (sqlite3_step(st.stmt) == SQLITE_ROW) {
-    const void* blob = sqlite3_column_blob(st.stmt, 2);
-    const int bytes = sqlite3_column_bytes(st.stmt, 2);
-    if (!blob || bytes != static_cast<int>(q.size() * sizeof(float))) continue;
-    const float* v = static_cast<const float*>(blob);
-    float dot = 0.0f;
-    for (size_t d = 0; d < q.size(); ++d) dot += q[d] * v[d];
-    hits.push_back({columnText(st.stmt, 0), columnText(st.stmt, 1), dot});
+
+  std::vector<hybrid::Ranked> byText;
+  std::string lexError;
+  for (const hybrid::Lexical& l : hybrid::lexicalSearch(db.db, query, wide, &lexError)) byText.push_back({l.path, l.chunk, l.text});
+  if (byVector.empty() && byText.empty()) {
+    if (!embedError.empty()) *error = embedError + (lexError.empty() ? " (and no text match)" : "");
+    else if (!lexError.empty()) *error = lexError;
+    return hits;
   }
-  const size_t keep = std::min(hits.size(), static_cast<size_t>(k));
-  std::partial_sort(hits.begin(), hits.begin() + static_cast<long>(keep), hits.end(),
-                    [](const Hit& a, const Hit& b) { return a.score > b.score; });
-  hits.resize(keep);
+  for (const hybrid::Fused& f : hybrid::fuse(byVector, byText, query, k)) {
+    hits.push_back({f.path, f.text, static_cast<float>(f.score), hybrid::sourceName(f), f.exact});
+  }
+  if (!embedError.empty() && error) *error = "text matches only - embedding failed: " + embedError;
   return hits;
 }
 
@@ -1617,6 +1658,11 @@ void App::drawLocalIndexSection(float width) {
   widgets::beginDisabled(searchOff);
   if (widgets::primaryButton("Search", ImVec2(90.0f, 0))) runSearch();
   widgets::endDisabled(searchOff);
+  bool hybridOn = settings().extra.value("hybridSearch", true);
+  if (ImGui::Checkbox("Hybrid search (BM25 text match fused with the vectors - exact identifiers never get lost; works without the embedder too)", &hybridOn)) {
+    settings().extra["hybridSearch"] = hybridOn;
+    settings().save();
+  }
 
   if (gSearching) widgets::loadingRow("Searching…");
   if (!gSearchError.empty()) wrappedDim("Search failed: " + gSearchError);
@@ -1642,7 +1688,8 @@ void App::drawLocalIndexSection(float width) {
     ImGui::TextUnformatted(relativeTo(localIndexFolder, hit.path).c_str());
     theme::pop();
     ImGui::SameLine();
-    widgets::dimText("%.3f", hit.score);
+    if (hit.source.empty()) widgets::dimText("%.3f", hit.score);
+    else widgets::dimText("%.3f - %s%s", hit.score, hit.source.c_str(), hit.exact ? " - exact match" : "");
     std::string preview = core::trim(hit.text);
     if (preview.size() > 420) {
       size_t cut = 420;

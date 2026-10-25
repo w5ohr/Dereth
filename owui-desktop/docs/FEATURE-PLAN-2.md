@@ -1537,3 +1537,21 @@ folder endpoints); Auto-tag untagged chats now with qwen3:8b tagged the remainin
 "Order summaries" with order-summarization, sql and jq, the status line read "tagged 1
 chat(s)". Not covered: the add-rule form (typing), the 10-minute automatic pass, the
 age and first-message conditions beyond the self-test, and the palette commands.
+
+2026-10-25 102 (hybrid local search): `src/core/hybrid.*` (`ensureFts` creates an FTS5
+table chunks_fts (unicode61, '_' and '.' kept in tokens) with insert/delete/update
+triggers on the app's chunks table and backfills rows indexed before it existed;
+`tokens` keeps identifiers whole; `ftsQuery` = quoted prefix terms OR-ed; `lexicalSearch`
+by bm25(); `fuse` = reciprocal rank fusion (1/(60+rank)) of the vector and text lists
+plus a first-place-sized bonus when the chunk holds every query token; `sourceName`).
+`src/knowledge_tools.cpp`: IndexDb calls ensureFts on open; `searchIndex` takes a wide
+vector top list and a BM25 list and fuses them (extra["hybridSearch"], default on),
+falls back to text matches alone when the embedder is unreachable and says so in the
+error line; hits carry source and exact flags shown beside the score; a Hybrid checkbox
+under the search box. `--hybridtest` runs 9 offline checks (an in-memory chunks table
+with the triggers). Verified on a scratch home with a three-file corpus (a .py defining
+recalibrate_foghorn_compressor and two .md notes): Index reported 3 files / 3 chunks and
+local-index.db held 3 chunks and 3 FTS rows; searching "recalibrate_foghorn_compressor"
+listed foghorn.py first as "both - exact match" (0.049) with the two notes after it as
+"vector" (0.016). Not covered: the embedder-down fallback in the GUI, turning Hybrid off,
+and a backfill over a pre-existing index (self-test only).
