@@ -100,6 +100,8 @@ ProcessResult runProcess(const std::vector<std::string>& argv, const std::string
                          int timeoutSeconds, bool sandboxed);
 
 std::string homeDirectory();
+// Ceiling for the Metal view's redraw rate (low-power mode); 60 restores the default.
+void setPreferredFrameRate(int fps);
 std::vector<std::string> chooseFolder();
 
 // Native composer: an NSTextView floated over the ImGui composer box so the

@@ -1297,3 +1297,25 @@ produced "Moved: A yellow one?" with exactly those two on the server and left Fr
 four in one thread. Not covered: Copy and Export (clipboard / save panel), selection mode's
 checkboxes, a private chat move, and deleting a message that still streams (refused).
 
+2026-10-25 IX (140 low-power mode): `src/core/lowpower.{h,cpp}` (app-free Policy {enabled
+on, idleAfterSec 8, idleFps 8, batteryFps 30, deferOnBattery} <-> extra["lowPower"];
+targetFps = 60, capped to batteryFps on battery, to idleFps once idle and not busy;
+deferHeavyWork = on battery with the switch on; stateName). `src/low_power.cpp`:
+tickLowPower at the top of every frame - any mouse movement, wheel, button, typed
+character, active item or held key counts as input; a reply streaming or a toast on
+screen (new widgets::toastsVisible) counts as busy; the power source is read every 30 s
+through a cheap sysmetrics::onBatteryNow; the resulting rate goes to the Metal view via
+native::setPreferredFrameRate (MTKView.preferredFramesPerSecond, implemented beside the
+view in main.mm). deferHeavyWork() now gates the chat index pass, the vault sync passes
+(the folder watcher stays), the 10-minute mirror sync and the warmup renewals. Settings >
+Low power card with the sliders, the battery switch and a live line ("idle, on battery -
+drawing at 8 fps - last input 12 s ago"). Palette entry. `--lowpowertest` runs 9 offline
+checks. Measured on this M3 Max with the app idle in front of a scratch server, CPU time
+over 20 s: 10% with the mode off, 2% with it on (the same build, only the setting
+differed). The card then read "idle, on battery - drawing at 8 fps" - the MacBook was
+unplugged at that point, so the battery branch ran for real. Not covered: the on-battery
+30 fps ceiling while active (not measured separately), the deferral of the ticks (the
+gate is a one-line check per tick, exercised by the self-test's policy only), and whether
+8 fps feels right while scrolling after an idle spell (the first input restores 60 fps on
+that same frame).
+

@@ -60,8 +60,17 @@ static std::string gIniPath;
   self.view = [[MTKView alloc] initWithFrame:CGRectMake(0, 0, 1380, 900)];
 }
 
+static MTKView* gMainView = nil;
+namespace native {
+void setPreferredFrameRate(int fps) {
+  if (!gMainView) return;
+  gMainView.preferredFramesPerSecond = fps < 1 ? 1 : fps;
+}
+}  // namespace native
+
 - (void)viewDidLoad {
   [super viewDidLoad];
+  gMainView = self.mtkView;
   self.mtkView.device = self.device;
   self.mtkView.delegate = self;
   ImGui_ImplOSX_Init(self.view);
@@ -456,6 +465,7 @@ int runModelLibSelfTest();
 int runBudgetSelfTest();
 int runWarmupSelfTest();
 int runSelectionSelfTest();
+int runLowPowerSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -487,6 +497,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--budgettest") return runBudgetSelfTest();
     if (std::string(argv[i]) == "--warmuptest") return runWarmupSelfTest();
     if (std::string(argv[i]) == "--selectiontest") return runSelectionSelfTest();
+    if (std::string(argv[i]) == "--lowpowertest") return runLowPowerSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

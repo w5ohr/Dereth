@@ -64,7 +64,7 @@ bool ensureOpen() {
 }  // namespace
 
 void App::tickChatIndex() {
-  if (!settings().extra.value("chatIndex", true) || !store::ready() || gIndexing) return;
+  if (!settings().extra.value("chatIndex", true) || !store::ready() || gIndexing || deferHeavyWork()) return;
   const double now = core::nowMillis();
   if (gLastRun < 0.0) {   // first pass a few seconds after launch, then every minute
     gLastRun = now - 52000.0;

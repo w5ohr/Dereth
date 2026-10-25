@@ -92,6 +92,7 @@ void App::tickVaultSync() {
     syncVault(false);
     return;
   }
+  if (deferHeavyWork()) return;   // on battery: the watcher stays, the passes wait
   if (gLastSync < 0.0) {   // first pass shortly after launch, then every ten minutes
     gLastSync = now - 9.0 * 60.0 * 1000.0 - 45000.0;
     return;

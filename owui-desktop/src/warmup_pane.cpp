@@ -87,7 +87,7 @@ void App::warmModelNow(bool release) {
 
 void App::tickWarmup() {
   const warmup::Plan p = plan();
-  if (!p.enabled || !signedIn_ || gBusy || gSleeping || gHeld) return;
+  if (!p.enabled || !signedIn_ || gBusy || gSleeping || gHeld || deferHeavyWork()) return;
   const bool frontmost = !ImGui::GetIO().AppFocusLost;
   const std::string model = warmupModel();
   if (model.empty()) return;

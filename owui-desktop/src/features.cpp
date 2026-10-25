@@ -354,6 +354,7 @@ void App::drawPalette() {
     pane = Pane::Chat;
   });
   add("Warm the model now (load it into memory)", "command", [this] { warmModelNow(false); });
+  add("Low-power mode (frame rate, battery)", "settings", [this] { pane = Pane::Settings; });
   add("Release the model from memory", "command", [this] { warmModelNow(true); });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {

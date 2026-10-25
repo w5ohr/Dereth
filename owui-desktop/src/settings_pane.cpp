@@ -112,6 +112,10 @@ void App::drawSettingsPane() {
   drawWarmupSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("LOW POWER");
+  drawLowPowerSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("VOICE");
   card("voice", [&] {
     if (!gVoicesLoaded) {

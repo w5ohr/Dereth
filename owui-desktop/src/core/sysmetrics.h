@@ -30,6 +30,7 @@ struct Sample {
 };
 
 Sample sample();                         // blocking for a few ms at most
+bool onBatteryNow();                     // just the power source, cheap
 std::string thermalName(int thermal);
 std::string modelsFolder();              // OLLAMA_MODELS or ~/.ollama/models
 

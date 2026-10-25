@@ -1517,6 +1517,7 @@ void App::rateMessage(const std::string& messageId, int rating) {
 // --------------------------------------------------------------------- frame
 
 void App::frame() {
+  tickLowPower();
   pollStreams();
   handleShortcuts();
 
@@ -1577,7 +1578,7 @@ void App::frame() {
     tickVaultSync();
     tickHealth();
     tickWarmup();
-    if (serverReachable) syncMirror(false);
+    if (serverReachable && !deferHeavyWork()) syncMirror(false);
 
     // The socket drops when the server restarts or the network blips; bring
     // it back with a widening backoff rather than staying on the HTTP path.

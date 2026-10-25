@@ -492,6 +492,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   of a deleted one are joined up so the conversation keeps its thread.
   Escape clears. `Open WebUI --selectiontest` covers the range, splice and
   export logic.
+- **Low-power mode:** on by default, Settings ▸ Low power drops the window's
+  frame rate to a trickle once there has been no input for a few seconds
+  (a streaming reply, a toast or a download keeps it high), caps it on
+  battery even while active, and on battery holds chat indexing, vault and
+  chat syncs and model warmup until the Mac is plugged in. The card shows
+  the live state and frame rate. `Open WebUI --lowpowertest` covers the
+  policy.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -711,6 +711,12 @@ class App {
   void deleteSelection();
   void moveSelectionToNewChat();
 
+  // --- low-power mode (low_power.cpp) ---------------------------------------
+  void tickLowPower();
+  bool deferHeavyWork() const;   // on battery with the policy on: indexing, syncs and warmup wait
+  bool onBatteryPower() const;
+  void drawLowPowerSection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

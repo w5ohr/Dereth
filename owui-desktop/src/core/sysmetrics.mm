@@ -131,6 +131,14 @@ void power(Sample* s) {
 
 }  // namespace
 
+bool onBatteryNow() {
+  Sample s;
+  @autoreleasepool {
+    power(&s);
+  }
+  return s.onBattery;
+}
+
 std::string modelsFolder() {
   if (const char* env = std::getenv("OLLAMA_MODELS")) {
     if (*env) return env;

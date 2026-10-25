@@ -24,6 +24,12 @@ struct ToastItem {
 
 std::deque<ToastItem> gToasts;
 std::mutex gToastMutex;
+}  // namespace
+bool toastsVisible() {
+  std::lock_guard<std::mutex> lock(gToastMutex);
+  return !gToasts.empty();
+}
+namespace {
 
 ImU32 levelColor(ToastLevel level) {
   const auto& p = theme::palette();

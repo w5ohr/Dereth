@@ -13,6 +13,7 @@ enum class ToastLevel { Info, Success, Warning, Error };
 
 void toast(ToastLevel level, const std::string& text);
 void toastInfo(const std::string& text);
+bool toastsVisible();   // a toast is on screen (an animation that keeps the frame rate up)
 void toastError(const std::string& text);
 void renderToasts();
 
