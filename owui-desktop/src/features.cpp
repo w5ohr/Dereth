@@ -388,6 +388,7 @@ void App::drawPalette() {
   add("Shortcut editor (rebind keys, Vim mode)", "settings", [this] { pane = Pane::Settings; });
   add("Theme editor (colours, VS Code / Base16 import, server accent)", "settings", [this] { pane = Pane::Settings; });
   add("Take the tour", "command", [this] { startTour(); });
+  add("Reading mode (toggle: measure, text size, controls on hover)", "command", [this] { toggleReadingMode(); });
   add("What's new in this version", "command", [this] { showWhatsNewSheet(true); });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;

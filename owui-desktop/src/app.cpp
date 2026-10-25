@@ -1728,6 +1728,7 @@ void App::handleShortcuts() {
   }
   if (shortcutPressed("chat.new")) newChat();
   if (shortcutPressed("view.sidebar")) sidebarVisible = !sidebarVisible;
+  if (shortcutPressed("view.reading")) toggleReadingMode();
   if (shortcutPressed("chat.refresh") && pane == Pane::Chat) refreshChats(false);
   if (shortcutPressed("chat.stop")) stopAllStreams();
 }

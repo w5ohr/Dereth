@@ -123,6 +123,7 @@ std::vector<Shortcut> defaults() {
   add("chat.capture", "Capture screen to chat", "Chat", "cmd+shift+2", true);
   add("view.sidebar", "Toggle the sidebar", "View", "cmd+b", true);
   add("view.float", "Float on top", "View", "cmd+shift+t", true);
+  add("view.reading", "Reading mode", "View", "cmd+shift+r", false);
   add("pane.chat", "Chats pane", "Panes", "cmd+1", true);
   add("pane.notes", "Notes pane", "Panes", "cmd+2", true);
   add("pane.channels", "Channels pane", "Panes", "cmd+3", true);

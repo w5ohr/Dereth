@@ -636,6 +636,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   palette has "Take the tour" and "What's new". The app version is now 1.1.
   `Open WebUI --onboardtest` covers the steps, the saved state, version
   comparison and which release notes are pending.
+- **Reading mode:** the book button in the chat header (or ⌘⇧R, or the
+  palette) narrows the transcript to a reading measure, enlarges the text,
+  adds line spacing, tucks the sidebar away and hides the buttons, chips
+  and follow-ups under each message until the pointer rests on it (or the
+  message is focused). Settings ▸ Reading mode sets the measure, text size,
+  line spacing and the two behaviours. `Open WebUI --readingtest` covers the
+  preferences and the layout decisions.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

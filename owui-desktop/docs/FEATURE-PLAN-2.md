@@ -1622,3 +1622,22 @@ tour saved tourDone and opened the what's-new sheet for 1.1 (lastSeenVersion was
 and Got it recorded 1.1. A first cut drew the shade on the foreground list, which dimmed
 the card too - replaced by the modal. Not covered: Back, the remaining six steps'
 placement, resuming a half-done tour after a relaunch, and the Settings card buttons.
+
+2026-10-25 63 (reading mode): `src/core/readingmode.*` (Prefs <-> extra["readingMode"]:
+enabled, measure 480-1000 px, text scale 1.0-1.6, line spacing 1.0-2.0, hide sidebar,
+controls on hover; `contentWidth`, `itemSpacingY`, `showControls`, `summary`).
+`src/reading_mode.cpp`: `setReadingMode` tucks the sidebar away and restores it, keeps
+the preference and toasts; `noteMessageRect` / `messageControlsVisible` remember each
+message block's rectangle from the last frame so the action row, steering chips,
+follow-ups and code-block buttons draw only when the pointer rests on that message (or it
+is focused); the Settings "READING MODE" card with sliders and switches. Chat pane: the
+transcript and composer measure come from readingmode::contentWidth, each message block
+is wrapped in a scaled font and wider item spacing while reading, a book button in the
+header toggles the mode, Cmd+Shift+R is a new keymap default ("view.reading"), and the
+palette has the toggle. `--readingtest` runs 6 offline checks. Verified on a scratch
+server with the seeded code-block chat: Cmd+Shift+R hid the sidebar, narrowed the
+transcript to 680 px with larger text, lit the header button, hid the chips and action
+row (and, after a second build, the code-block button rows) and saved the preference;
+hovering the reply brought the chips and buttons back; Cmd+Shift+R again restored the
+sidebar and the normal layout with an "off" toast. Not covered: the Settings sliders
+beyond rendering, the "controls on hover" switch off, and focused-message gating.

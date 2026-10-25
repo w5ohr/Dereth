@@ -129,6 +129,11 @@ void App::drawChatPane() {
       compareMode = !compareMode;
     }
     ImGui::SameLine();
+    if (icons::button("reading", icons::Icon::Book, "Reading mode: narrower measure, larger text, controls on hover (Cmd+Shift+R)", 0.0f,
+                      readingMode() ? palette.accent : 0)) {
+      toggleReadingMode();
+    }
+    ImGui::SameLine();
     if (icons::button("treeview", icons::Icon::Tree, "Conversation tree", 0.0f,
                       showTree ? palette.accent : 0)) {
       showTree = !showTree;
@@ -315,7 +320,7 @@ void App::drawChatPane() {
                     ImGuiChildFlags_None);
   {
     const float available = ImGui::GetContentRegionAvail().x;
-    const float contentWidth = std::min(kMaxContentWidth, available - 40.0f);
+    const float contentWidth = readingmode::contentWidth(readingPrefs(), available, kMaxContentWidth);
     const float marginX = std::max(16.0f, (available - contentWidth) * 0.5f);
 
     const std::vector<std::string> path = chat.branch();
@@ -365,10 +370,18 @@ void App::drawChatPane() {
       return std::string();
     }();
 
+    const readingmode::Prefs reading = readingPrefs();
     for (const std::string& messageId : path) {
       Message& message = chat.messages[messageId];
       ImGui::PushID(messageId.c_str());
       ImGui::Indent(marginX);
+      const ImVec2 blockMin = ImGui::GetCursorScreenPos();
+      const bool controls = messageControlsVisible(messageId);
+      if (reading.enabled) {
+        theme::pushScaled(reading.textScale);
+        const ImVec2 spacing = ImGui::GetStyle().ItemSpacing;
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing.x, readingmode::itemSpacingY(reading, spacing.y)));
+      }
 
       const bool isUser = message.role == "user";
       ImGui::Dummy(ImVec2(0, 10));
@@ -591,9 +604,11 @@ void App::drawChatPane() {
             });
           });
         };
-        options.onCodeBlockActions = [this](const std::string& code, const std::string& language) {
-          drawCodeBlockActions(code, language);
-        };
+        if (controls) {   // reading mode: code-block buttons hide with the rest until hovered
+          options.onCodeBlockActions = [this](const std::string& code, const std::string& language) {
+            drawCodeBlockActions(code, language);
+          };
+        }
         options.onApplyDiff = [this](const std::string& diff) { applyCodeBlockToFile(diff); };
         md::render("body", unredact(message.content), options);
       } else {
@@ -634,7 +649,7 @@ void App::drawChatPane() {
       }
 
       // --- follow-up suggestions
-      if (!message.streaming && message.followUps.is_array() && !message.followUps.empty()) {
+      if (!message.streaming && controls && message.followUps.is_array() && !message.followUps.empty()) {
         ImGui::Dummy(ImVec2(0, 4));
         for (const auto& suggestion : message.followUps) {
           if (!suggestion.is_string()) continue;
@@ -660,7 +675,7 @@ void App::drawChatPane() {
       if (!isUser && !message.streaming) drawLocalDocumentRefs(message);   // [name p.N] citations
       if (!isUser && !message.streaming) drawMemoryProposals(messageId);    // "Remember this?" card
       if (!isUser && !message.streaming && messageId == lastAssistantId && streams_.empty() &&
-          message.error.empty()) {
+          message.error.empty() && controls) {
         ImGui::Dummy(ImVec2(0, 4));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 3));
         struct Chip { const char* label; const char* prompt; };
@@ -681,7 +696,7 @@ void App::drawChatPane() {
       }
 
       // --- action row
-      if (!message.streaming) {
+      if (!message.streaming && controls) {
         ImGui::Dummy(ImVec2(0, 2));
         if (icons::button("copy", icons::Icon::Copy, "Copy")) {
           platform::setClipboardText(unredact(message.content));
@@ -775,6 +790,11 @@ void App::drawChatPane() {
         }
       }
 
+      if (reading.enabled) {
+        ImGui::PopStyleVar();
+        theme::pop();
+      }
+      noteMessageRect(messageId, blockMin, ImVec2(blockMin.x + contentWidth, ImGui::GetCursorScreenPos().y));
       ImGui::Unindent(marginX);
       ImGui::PopID();
       ImGui::Dummy(ImVec2(0, 6));
@@ -866,7 +886,7 @@ void App::drawChatPane() {
   ImGui::BeginChild("##composer", ImVec2(0, 0), ImGuiChildFlags_None);
   {
     const float available = ImGui::GetContentRegionAvail().x;
-    const float contentWidth = std::min(kMaxContentWidth, available - 40.0f);
+    const float contentWidth = readingmode::contentWidth(readingPrefs(), available, kMaxContentWidth);
     const float marginX = std::max(16.0f, (available - contentWidth) * 0.5f);
     ImGui::Indent(marginX);
 

@@ -11,6 +11,7 @@
 #include <map>
 #include <set>
 
+#include "core/readingmode.h"
 #include "core/retrieval.h"
 #include <memory>
 #include <mutex>
@@ -810,6 +811,15 @@ class App {
   void drawTour();
   void drawWhatsNew();
   void drawOnboardingSection(float width);
+
+  // --- reading mode (reading_mode.cpp) -------------------------------------
+  readingmode::Prefs readingPrefs() const;
+  bool readingMode() const;
+  void setReadingMode(bool on);
+  void toggleReadingMode();
+  void noteMessageRect(const std::string& messageId, const ImVec2& min, const ImVec2& max);
+  bool messageControlsVisible(const std::string& messageId) const;   // hover / focus gate in reading mode
+  void drawReadingModeSection(float width);
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

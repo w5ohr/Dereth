@@ -507,6 +507,7 @@ int runHybridSelfTest();
 int runKeymapSelfTest();
 int runThemeSelfTest();
 int runOnboardingSelfTest();
+int runReadingModeSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -552,6 +553,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--keymaptest") return runKeymapSelfTest();
     if (std::string(argv[i]) == "--themetest") return runThemeSelfTest();
     if (std::string(argv[i]) == "--onboardtest") return runOnboardingSelfTest();
+    if (std::string(argv[i]) == "--readingtest") return runReadingModeSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

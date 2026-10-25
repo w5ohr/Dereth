@@ -70,6 +70,10 @@ void App::drawSettingsPane() {
   drawThemeEditorSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("READING MODE");
+  drawReadingModeSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("CHAT");
   card("chat", [&] {
     ImGui::Checkbox("Stream responses", &cfg.streamResponses);
