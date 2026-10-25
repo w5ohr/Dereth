@@ -2218,3 +2218,12 @@ for Automation permission, or a .DS_Store writer), `brew style` / `brew audit` (
 need the cask inside a tap - only Ruby syntax was checked), Report on GitHub and Show
 in Finder (not clicked: they open a browser and Finder), and a real crash's .ips
 appearing in the sheet on the following launch (the test crashes were quiet by design).
+
+2026-10-25 150 (CI) follow-up: the first complete hosted run (run 40238180544, commit
+bffb7548, macos-15) built the app and passed 56 of 57 self-tests plus the offline
+check; the one failure was healthtest's GPU check, which assumed IOKit always reports
+GPU utilisation on Apple Silicon - a CI runner is a virtual machine whose paravirtual
+GPU reports none (Metal itself worked there: the working-set check passed). Fixed in
+a5bea3a9: the check stays strict on real hardware and accepts "unknown" (-1) only when
+kern.hv_vmm_present says it is a VM. mcptest took 76 s on the runner (6 s here), well
+inside the 180 s limit.
