@@ -18,6 +18,10 @@ namespace sio {
 
 using Json = nlohmann::json;
 
+// Every packet sent or received, from the socket's thread (traffic inspector).
+using PacketObserver = std::function<void(bool outgoing, const std::string& packet)>;
+void setObserver(PacketObserver observer);
+
 class Client {
  public:
   using EventHandler = std::function<void(const std::string& name, const Json& payload)>;
@@ -37,6 +41,7 @@ class Client {
   // Re-opens the socket after a drop; safe to call from the UI thread.
   void reconnect();
   std::string lastError() const { return lastError_; }
+  std::string url() const;   // the websocket endpoint, for exports
 
  private:
   void onPacket(const std::string& packet);

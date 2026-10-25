@@ -1,5 +1,8 @@
 #include "core/http.h"
 
+#include <algorithm>
+#include <chrono>
+
 #include <curl/curl.h>
 
 #include <cstdio>
@@ -11,13 +14,26 @@
 namespace net {
 namespace {
 
-std::function<void(const Transfer&)> gObserver;
+std::vector<std::function<void(const Transfer&)>> gObservers;
 std::mutex gObserverMutex;
+std::atomic<bool> gCaptureBodies{true};
+
+double epochMs() {
+  return static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+std::string capped(const std::string& body) {
+  if (body.size() <= kCaptureBytes) return body;
+  size_t cut = kCaptureBytes;
+  while (cut > 0 && (static_cast<unsigned char>(body[cut]) & 0xC0) == 0x80) --cut;
+  return body.substr(0, cut);
+}
 
 struct ChunkSink {
   const std::function<bool(const char*, size_t)>* fn = nullptr;
   const std::atomic<bool>* cancel = nullptr;
   bool aborted = false;
+  std::string capture;   // the first kCaptureBytes, for observers
 };
 
 size_t writeToString(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -33,6 +49,7 @@ size_t writeToSink(char* ptr, size_t size, size_t nmemb, void* userdata) {
     sink->aborted = true;
     return 0;  // signals an error to curl, which stops the transfer
   }
+  if (gCaptureBodies.load() && sink->capture.size() < kCaptureBytes) sink->capture.append(ptr, std::min(len, kCaptureBytes - sink->capture.size()));
   if (!(*sink->fn)(ptr, len)) {
     sink->aborted = true;
     return 0;
@@ -108,8 +125,11 @@ CURL* makeHandle(const Request& req, curl_slist** list, curl_mime** mime) {
 }
 
 void finish(CURL* curl, curl_slist* list, curl_mime* mime, Response* res, CURLcode code,
-            bool abortedByCaller, const Request* req = nullptr) {
+            bool abortedByCaller, const Request* req = nullptr, double startedAtMs = 0.0,
+            const std::string* responseBody = nullptr, bool streamed = false) {
   Transfer transfer;
+  transfer.startedAtMs = startedAtMs;
+  transfer.streamed = streamed;
   if (curl) {
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
@@ -130,12 +150,21 @@ void finish(CURL* curl, curl_slist* list, curl_mime* mime, Response* res, CURLco
     transfer.method = req->method;
     transfer.url = req->url;
     transfer.error = res->error;
-    std::function<void(const Transfer&)> observer;
+    transfer.contentType = res->header("content-type");
+    if (gCaptureBodies.load()) {
+      if (!req->files.empty() || !req->fields.empty()) {
+        transfer.requestBody = "<multipart: " + std::to_string(req->files.size()) + " file(s), " + std::to_string(req->fields.size()) + " field(s)>";
+      } else {
+        transfer.requestBody = capped(req->body);
+      }
+      if (responseBody) transfer.responseBody = capped(*responseBody);
+    }
+    std::vector<std::function<void(const Transfer&)>> observers;
     {
       std::lock_guard<std::mutex> lock(gObserverMutex);
-      observer = gObserver;
+      observers = gObservers;
     }
-    if (observer) observer(transfer);
+    for (const auto& observer : observers) observer(transfer);
   }
   if (mime) curl_mime_free(mime);
   if (list) curl_slist_free_all(list);
@@ -157,9 +186,17 @@ void globalInit() {
   std::call_once(once, [] { curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
+void addObserver(std::function<void(const Transfer&)> observer) {
+  std::lock_guard<std::mutex> lock(gObserverMutex);
+  gObservers.push_back(std::move(observer));
+}
+
+void setCaptureBodies(bool capture) { gCaptureBodies.store(capture); }
+
 void setObserver(std::function<void(const Transfer&)> observer) {
   std::lock_guard<std::mutex> lock(gObserverMutex);
-  gObserver = std::move(observer);
+  gObservers.clear();
+  gObservers.push_back(std::move(observer));
 }
 
 Response perform(const Request& req) {
@@ -176,8 +213,9 @@ Response perform(const Request& req) {
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &res.body);
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, collectHeader);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &res.headers);
+  const double started = epochMs();
   CURLcode code = curl_easy_perform(curl);
-  finish(curl, list, mime, &res, code, false, &req);
+  finish(curl, list, mime, &res, code, false, &req, started, &res.body);
   return res;
 }
 
@@ -215,8 +253,9 @@ Response stream(const Request& req,
   // Streamed responses can idle for a long time between tokens; disable the
   // overall timeout and rely on the low-speed guard instead.
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+  const double started = epochMs();
   CURLcode code = curl_easy_perform(curl);
-  finish(curl, list, mime, &res, code, sink.aborted, &req);
+  finish(curl, list, mime, &res, code, sink.aborted, &req, started, &sink.capture, true);
   return res;
 }
 
@@ -281,8 +320,10 @@ Response download(const Request& req, const std::string& destPath) {
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, collectHeader);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &res.headers);
+  const double started = epochMs();
+  const std::string saved = "<saved to " + destPath + ">";
   CURLcode code = curl_easy_perform(curl);
-  finish(curl, list, mime, &res, code, false, &req);
+  finish(curl, list, mime, &res, code, false, &req, started, &saved);
   fclose(f);
   if (!res.ok()) remove(destPath.c_str());
   return res;

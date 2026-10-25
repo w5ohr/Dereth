@@ -529,6 +529,19 @@ Things a browser tab can't do, plus the workflow features built on top:
   is left), and the palette has "Read the last reply aloud", "Read this chat
   aloud" and "Stop reading aloud". `Open WebUI --ttstest` covers the
   conversion, chunking, voice choice and the queue.
+- **Traffic inspector:** Tools ▸ Traffic is a live, HAR-style log of every
+  request the app makes and every socket.io packet - time, method, host,
+  path or event, status, size, latency and a waterfall bar - with pause,
+  filter, a heartbeat toggle and a summary line (failures, p50/p95, bytes,
+  slowest call). Selecting an entry shows its request and response bodies
+  (the first 16 KB each, tokens, keys and passwords masked; headers are
+  never kept) with Replay (same server), Open in API console (prefilled),
+  Copy as curl (token as `$OWUI_TOKEN`), Copy request/response. Export HAR...
+  and Copy HAR write a HAR 1.2 file that Chrome, Firefox and Charles open,
+  socket packets included as a websocket entry. The newest 1000 entries
+  stay in memory; Capture bodies can be turned off. `Open WebUI
+  --traffictest` covers masking, packet naming, filtering, the summary, the
+  waterfall geometry, HAR and curl.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

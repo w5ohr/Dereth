@@ -43,7 +43,9 @@ struct Response {
 void globalInit();
 
 // Every finished transfer (any of the calls below) is reported here, from
-// the calling thread. Bodies and headers are not part of it.
+// the calling thread. Headers are not part of it; the first kCaptureBytes
+// of each body are, while setCaptureBodies(true) (the default).
+constexpr size_t kCaptureBytes = 16384;
 struct Transfer {
   std::string method;
   std::string url;
@@ -51,8 +53,15 @@ struct Transfer {
   int64_t bytesOut = 0, bytesIn = 0;
   double ms = 0.0;
   std::string error;
+  double startedAtMs = 0.0;     // wall clock, epoch milliseconds
+  std::string contentType;      // response content-type
+  std::string requestBody;      // capped; "<multipart: N file(s), M field(s)>" for uploads
+  std::string responseBody;     // capped; streams included
+  bool streamed = false;
 };
-void setObserver(std::function<void(const Transfer&)> observer);
+void addObserver(std::function<void(const Transfer&)> observer);
+void setObserver(std::function<void(const Transfer&)> observer);   // replaces every observer
+void setCaptureBodies(bool capture);
 
 Response perform(const Request& req);
 

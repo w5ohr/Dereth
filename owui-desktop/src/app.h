@@ -547,6 +547,11 @@ class App {
                  const std::string& decision);
   void drawAuditSection(float width);
 
+  // --- traffic inspector (traffic_pane.cpp) --------------------------------
+  void trafficInit();                         // HTTP + socket observers into the in-memory log
+  void drawTrafficSection(float width);
+  void consoleLoad(const std::string& method, const std::string& path, const std::string& body);   // console_pane.cpp
+
   // --- repo map (code_tools.cpp) --------------------------------------------
   // A symbol index of the project folder, sent with the project context in
   // place of whole files (extra["projectRepoMap"], default on).

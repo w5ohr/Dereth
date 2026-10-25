@@ -13,7 +13,26 @@ namespace {
 // 4 message. Socket.IO rides inside "4": 0 connect, 1 disconnect, 2 event.
 constexpr const char* kPath = "/ws/socket.io/?EIO=4&transport=websocket";
 
+PacketObserver gObserver;
+std::mutex gObserverMutex;
+
+void observe(bool outgoing, const std::string& packet) {
+  PacketObserver observer;
+  {
+    std::lock_guard<std::mutex> lock(gObserverMutex);
+    observer = gObserver;
+  }
+  if (observer) observer(outgoing, packet);
+}
+
 }  // namespace
+
+void setObserver(PacketObserver observer) {
+  std::lock_guard<std::mutex> lock(gObserverMutex);
+  gObserver = std::move(observer);
+}
+
+std::string Client::url() const { return ws::toWebSocketUrl(base_) + kPath; }
 
 Client::~Client() { stop(); }
 
@@ -68,6 +87,7 @@ void Client::reconnect() {
 }
 
 void Client::send(const std::string& packet) {
+  observe(true, packet);
   if (socket_) socket_->send(packet);
 }
 
@@ -78,6 +98,7 @@ void Client::emit(const std::string& name, const Json& payload) {
 
 void Client::onPacket(const std::string& packet) {
   core::debugLog("sio packet: %.120s", packet.c_str());
+  observe(false, packet);
   if (packet.empty()) return;
   switch (packet[0]) {
     case '0': {  // engine.io open

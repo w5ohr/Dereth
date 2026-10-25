@@ -1394,3 +1394,33 @@ every plain en-US voice ranks the same), and status and button reverted when spe
 ended. Not covered: the server-TTS path itself (no engine on the scratch server), a
 multi-part reply, the Mac-voice picker and rate/pitch sliders beyond rendering, and
 the palette commands.
+
+2026-10-25 134 (traffic inspector): `src/core/traffic.*` (Entry; thread-safe ring `Log`
+of the newest 1000 with pause and a dropped count; `redact` masks JSON secrets of any
+case, bearer values, sk- keys and form fields; `sioEvent` names Engine.IO/Socket.IO
+packets; `cap` keeps 16 KB on a UTF-8 boundary; `filter`, `summarize` (failures,
+p50/p95, bytes, slowest), `waterfall` fractions over the entries' window, `har` 1.2
+with query strings split, redacted bodies, timings and one websocket entry carrying
+Chrome's _webSocketMessages, `curlCommand`, `isoTime`/`clockTime`, `pretty`).
+`src/core/http.*`: Transfer gained startedAtMs (wall clock), contentType, requestBody
+and responseBody (capped; streams captured through the chunk sink; "<multipart: ...>"
+for uploads), streamed; observers are now a list (`addObserver`; `setObserver` replaces
+all; the audit log moved to addObserver) and `setCaptureBodies` switches capture.
+`src/core/socketio.*`: `sio::setObserver` sees every packet sent or received,
+`Client::url()`. `src/traffic_pane.cpp`: observers into the log at init, the Tools
+"Traffic" tab (Pause/Clear, kind, heartbeats, follow, capture bodies, filter, Export
+HAR..., Copy HAR, summary, table with waterfall column, detail with Replay / Open in API
+console / Copy as curl / Copy request / Copy response and read-only bodies);
+`App::consoleLoad` prefills the API console. `--traffictest` runs 12 offline checks.
+Verified on a scratch server: the tab listed the sign-in, config, chats, folders and
+models requests and the socket open/connect/user-join packets with waterfall bars;
+Copy HAR put a HAR 1.2 with 12 requests and a websocket entry of 4 messages on the
+clipboard, the connect frame's token masked; selecting /api/models showed its detail,
+Replay produced a new row and "Replayed: HTTP 200", Copy as curl produced the command
+with the $OWUI_TOKEN placeholder, Open in API console switched to the console with GET
+/api/models filled in. Not covered: Export HAR... (save panel), Pause/filter/heartbeat
+controls beyond rendering, a streamed completion's body capture, and the Capture
+bodies switch. Note: during this run two macOS dialogs (a keychain access prompt for
+com.davidcochran.owui-desktop and an Automation prompt) stayed on screen after the app
+exited; no code path from the Tools pane reads the keychain and OWUI_NO_KEYCHAIN=1 was
+set, so their origin is unconfirmed - they were left for the user.

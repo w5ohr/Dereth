@@ -39,7 +39,7 @@ bool matches(const auditlog::Record& r, const std::string& needle) {
 
 void App::auditInit() {
   auditlog::trim(logPath(), 40000, 20000);
-  net::setObserver([](const net::Transfer& t) {
+  net::addObserver([](const net::Transfer& t) {
     if (!core::Settings::instance().extra.value("auditLog", true)) return;
     auditlog::Record r;
     r.at = core::nowSeconds();

@@ -272,4 +272,15 @@ void App::drawConsolePane() {
   ImGui::EndChild();
 }
 
+void App::consoleLoad(const std::string& method, const std::string& path, const std::string& body) {
+  for (int i = 0; i < IM_ARRAYSIZE(kMethods); ++i) {
+    if (method == kMethods[i]) gMethodIndex = i;
+  }
+  gPath = path;
+  gBody = body;
+  gResponse.clear();
+  gStatus = 0;
+  pane = Pane::Console;
+}
+
 }  // namespace app

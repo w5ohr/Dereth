@@ -321,6 +321,7 @@ void App::init() {
     });
   });
   auditInit();
+  trafficInit();
   mcpInit();
   pluginsInit();
   refreshPrivateChats();

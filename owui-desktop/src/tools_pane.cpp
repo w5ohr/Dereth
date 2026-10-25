@@ -20,7 +20,7 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Health, Models };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Traffic, Health, Models };
 
 Tab gTab = Tab::Command;
 
@@ -60,6 +60,7 @@ const char* tabName(Tab tab) {
     case Tab::Recipes: return "Recipes";
     case Tab::TestLoop: return "Test loop";
     case Tab::Audit: return "Audit";
+    case Tab::Traffic: return "Traffic";
     case Tab::Health: return "Health";
     case Tab::Models: return "Models";
   }
@@ -205,14 +206,14 @@ void knowledgeCombo(const char* id, const Json& list, std::string* selected, flo
 }  // namespace
 
 void App::drawToolsPane() {
-  paneHeader("Tools", "Command runner, build errors, benchmark, local index, MCP servers, terminal, plugins, git, usage, backup, recipes, test loop, audit", nullptr);
+  paneHeader("Tools", "Command runner, build errors, benchmark, local index, MCP servers, terminal, plugins, git, usage, backup, recipes, test loop, audit, traffic", nullptr);
   paneBody("##tools");
   const float width = ImGui::GetContentRegionAvail().x - 18.0f;
   const auto& palette = theme::palette();
 
   if (ImGui::BeginTabBar("##toolstabs")) {
     for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex,
-                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop, Tab::Audit, Tab::Health, Tab::Models}) {
+                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop, Tab::Audit, Tab::Traffic, Tab::Health, Tab::Models}) {
       if (ImGui::BeginTabItem(tabName(tab))) {
         gTab = tab;
         ImGui::EndTabItem();
@@ -586,6 +587,9 @@ void App::drawToolsPane() {
       break;
     case Tab::Audit:
       drawAuditSection(width);
+      break;
+    case Tab::Traffic:
+      drawTrafficSection(width);
       break;
     case Tab::Health:
       drawHealthSection(width);
