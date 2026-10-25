@@ -358,6 +358,11 @@ class App {
   // Fills `chats` from the mirror when the server can't be reached.
   void loadChatsFromMirror(bool archived);
 
+  // --- screen capture (capture.cpp) -----------------------------------------
+  // Runs the system capture UI (interactive: drag a region or pick a window;
+  // otherwise the whole screen), attaches the shot and its recognised text.
+  void captureScreenToChat(bool interactive);
+
   // --- document column (document.cpp) ---------------------------------------
   // Shows the PDF behind a citation beside the chat with the cited passage
   // highlighted. `page` is 1-based (0 = unknown).

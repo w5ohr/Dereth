@@ -174,6 +174,7 @@ ScheduledPrompt ScheduledPrompt::fromJson(const Json& j) {
 void App::installNativeHooks() {
   native::Callbacks callbacks;
   callbacks.quickAsk = [this] { openQuickAsk(); };
+  callbacks.captureScreen = [this] { captureScreenToChat(true); };
   callbacks.newChat = [this] { newChat(); };
   callbacks.showWindow = [] {};
   callbacks.openChat = [this](const std::string& id) {
@@ -213,6 +214,12 @@ void App::installNativeHooks() {
   native::install(callbacks);
 
   const Json& extra = settings().extra;
+  if (extra.value("captureHotkey", true)) {
+    // Control-Option-S from any app: capture a region or window into the chat.
+    if (!native::registerCaptureHotkey(1, false, true, true, false)) {
+      widgets::toastInfo("Control-Option-S is taken by another app; the capture hotkey is off");
+    }
+  }
   if (extra.value("globalHotkey", true)) {
     if (!native::registerHotkey(kOptionSpaceKeyCode, false, true, false, false)) {
       widgets::toastInfo("Option-Space is taken by another app; quick ask hotkey not registered");
@@ -303,6 +310,8 @@ void App::drawPalette() {
 
   add("New chat", "command", [this] { newChat(); });
   add("Quick ask", "command", [this] { openQuickAsk(); });
+  add("Capture screen region to chat", "command", [this] { captureScreenToChat(true); });
+  add("Capture whole screen to chat", "command", [this] { captureScreenToChat(false); });
   add("Export chat as Markdown", "command", [this] { exportChat("md"); });
   add("Export chat as HTML", "command", [this] { exportChat("html"); });
   add("Export chat as PDF", "command", [this] { exportChat("pdf"); });

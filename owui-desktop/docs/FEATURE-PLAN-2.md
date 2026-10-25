@@ -367,3 +367,15 @@ across a line break, so after the first hit the following words are searched fro
 that selection and unioned while they stay nearby on the page. Not exercised: a PDF
 whose extraction disagrees with PDFKit's beyond the first words (falls back to the
 cited page), "Open in Preview".
+
+2026-10-24 L (111 screen capture to chat): `src/capture.cpp` + `native::captureScreen`
+(runs `/usr/sbin/screencapture -x -t png [-i]` from a worker and reads the PNG back;
+Escape = cancelled) and a second Carbon hotkey (`registerCaptureHotkey`, id 2,
+Control-Option-S, `Callbacks::captureScreen`; the handler now reads the hot-key id).
+Entry points: camera button in the composer, File ▸ Capture Screen to Chat (Shift-Cmd-2),
+palette "Capture screen region / whole screen to chat", the hotkey. The shot is attached
+through `attachBytes` and Live Text (`recognizeText`) output goes into the composer as
+a fenced block (extra["captureOcr"], default on; extra["captureHotkey"], default on;
+both in Settings). Verified in the GUI via the palette's whole-screen command (status
+below). Not driven: the interactive region picker and the global hotkey (both are the
+OS's own UI; the hotkey registration returns success).

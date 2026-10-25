@@ -918,6 +918,11 @@ void App::drawChatPane() {
       voiceMode = !voiceMode;
     }
     ImGui::SameLine();
+    if (icons::button("capture", icons::Icon::Camera,
+                      "Capture part of the screen into this chat (Space for a whole window)")) {
+      captureScreenToChat(true);
+    }
+    ImGui::SameLine();
     if (icons::button("fanout", icons::Icon::Branch,
                       fanoutModels.size() >= 2
                           ? ("Fan out to " + std::to_string(fanoutModels.size()) + " models").c_str()

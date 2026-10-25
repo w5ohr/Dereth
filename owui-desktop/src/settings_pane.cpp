@@ -233,6 +233,23 @@ void App::drawSettingsPane() {
         native::unregisterHotkey();
       }
     }
+    bool captureHotkey = cfg.extra.value("captureHotkey", true);
+    if (ImGui::Checkbox("Control-Option-S captures part of the screen into the chat from any app", &captureHotkey)) {
+      cfg.extra["captureHotkey"] = captureHotkey;
+      cfg.save();
+      if (captureHotkey) {
+        if (!native::registerCaptureHotkey(1, false, true, true, false)) {
+          widgets::toastError("Control-Option-S is already taken by another app");
+        }
+      } else {
+        native::unregisterCaptureHotkey();
+      }
+    }
+    bool captureOcr = cfg.extra.value("captureOcr", true);
+    if (ImGui::Checkbox("Put the text found in a screenshot into the composer as well", &captureOcr)) {
+      cfg.extra["captureOcr"] = captureOcr;
+      cfg.save();
+    }
     bool menuBar = cfg.extra.value("menuBarExtra", true);
     if (ImGui::Checkbox("Show in the menu bar", &menuBar)) {
       cfg.extra["menuBarExtra"] = menuBar;

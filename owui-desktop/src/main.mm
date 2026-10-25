@@ -239,6 +239,11 @@ static void injectChord(ImGuiKey key, bool shift = false) {
   app::App::instance().openQuickAsk();
 }
 
+- (void)captureScreen:(id)sender {
+  (void)sender;
+  app::App::instance().captureScreenToChat(true);
+}
+
 - (void)findInChat:(id)sender {
   (void)sender;
   app::App& app = app::App::instance();
@@ -318,6 +323,12 @@ static void buildMenuBar() {
   NSMenu* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
   [fileMenu addItemWithTitle:@"New Chat" action:@selector(newChat:) keyEquivalent:@"n"];
   [fileMenu addItemWithTitle:@"Quick Ask" action:@selector(quickAsk:) keyEquivalent:@"j"];
+  {
+    NSMenuItem* capture = [fileMenu addItemWithTitle:@"Capture Screen to Chat"
+                                              action:@selector(captureScreen:)
+                                       keyEquivalent:@"2"];
+    capture.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+  }
   NSMenuItem* exportItem = [fileMenu addItemWithTitle:@"Export Chat" action:nil keyEquivalent:@""];
   NSMenu* exportMenu = [[NSMenu alloc] initWithTitle:@"Export Chat"];
   [exportMenu addItemWithTitle:@"Markdown..." action:@selector(exportMarkdown:) keyEquivalent:@""];

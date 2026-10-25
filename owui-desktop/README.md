@@ -161,6 +161,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Screen capture to chat:** the camera icon in the composer, File ▸ Capture
+  Screen to Chat (⇧⌘2), the palette, or ⌃⌥S from any app runs the system
+  capture (drag a region, or Space for a window); the shot is attached and
+  any text in it is read with Live Text and dropped into the composer as a
+  quoted block, so models without vision can use it too. macOS asks for
+  Screen Recording permission the first time.
 - **Document column:** click a citation that points at a PDF and the file
   opens in a PDFKit view beside the chat, scrolled to the cited page with the
   passage highlighted (the server's and PDFKit's text extractions differ, so

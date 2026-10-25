@@ -28,7 +28,14 @@ int gNextWatchToken = 1;
 std::map<int, FSEventStreamRef> gWatchers;
 std::map<int, std::function<void(const std::vector<std::string>&)>> gWatchCallbacks;
 
-OSStatus hotkeyHandler(EventHandlerCallRef, EventRef, void*) {
+OSStatus hotkeyHandler(EventHandlerCallRef, EventRef event, void*) {
+  EventHotKeyID id{};
+  GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, nullptr, sizeof(id), nullptr, &id);
+  if (id.id == 2) {
+    // Capture: leave whatever app is in front alone; the capture UI is the OS's.
+    if (gCallbacks.captureScreen) gCallbacks.captureScreen();
+    return noErr;
+  }
   if (gCallbacks.quickAsk) {
     [NSApp activateIgnoringOtherApps:YES];
     gCallbacks.quickAsk();
@@ -206,6 +213,58 @@ void unregisterHotkey() {
     UnregisterEventHotKey(gHotkeyRef);
     gHotkeyRef = nullptr;
   }
+}
+
+static EventHotKeyRef gCaptureHotkeyRef = nullptr;
+
+bool registerCaptureHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift) {
+  unregisterCaptureHotkey();
+  static bool handlerInstalled = false;
+  if (!handlerInstalled && !gHotkeyRef) {
+    EventTypeSpec spec = {kEventClassKeyboard, kEventHotKeyPressed};
+    InstallApplicationEventHandler(&hotkeyHandler, 1, &spec, nullptr, nullptr);
+    handlerInstalled = true;
+  }
+  UInt32 modifiers = 0;
+  if (cmd) modifiers |= cmdKey;
+  if (alt) modifiers |= optionKey;
+  if (ctrl) modifiers |= controlKey;
+  if (shift) modifiers |= shiftKey;
+  EventHotKeyID id = {'OWUI', 2};
+  return RegisterEventHotKey(static_cast<UInt32>(keyCode), modifiers, id, GetApplicationEventTarget(), 0,
+                             &gCaptureHotkeyRef) == noErr;
+}
+
+void unregisterCaptureHotkey() {
+  if (gCaptureHotkeyRef) {
+    UnregisterEventHotKey(gCaptureHotkeyRef);
+    gCaptureHotkeyRef = nullptr;
+  }
+}
+
+bool captureScreen(bool interactive, std::string* png) {
+  NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                    [NSString stringWithFormat:@"owui-capture-%d.png", static_cast<int>(arc4random())]];
+  NSTask* task = [[NSTask alloc] init];
+  task.executableURL = [NSURL fileURLWithPath:@"/usr/sbin/screencapture"];
+  NSMutableArray* args = [NSMutableArray arrayWithObjects:@"-x", @"-t", @"png", nil];
+  if (interactive) [args addObject:@"-i"];
+  [args addObject:path];
+  task.arguments = args;
+  NSError* error = nil;
+  if (![task launchAndReturnError:&error]) return false;
+  [task waitUntilExit];
+  NSData* data = [NSData dataWithContentsOfFile:path];
+  [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+  if (!data || data.length == 0) return false;   // cancelled with Escape
+  png->assign(static_cast<const char*>(data.bytes), data.length);
+  return true;
+}
+
+void showMainWindow() {
+  [NSApp activateIgnoringOtherApps:YES];
+  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  [window makeKeyAndOrderFront:nil];
 }
 
 void refreshStatusMenu() {
