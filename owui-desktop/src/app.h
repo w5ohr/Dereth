@@ -717,6 +717,10 @@ class App {
   bool onBatteryPower() const;
   void drawLowPowerSection(float width);
 
+  // --- editor bridge (editor_bridge.cpp) ------------------------------------
+  void openInEditor(const std::string& link);   // "editor://path:line[:col]"
+  void drawEditorSection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

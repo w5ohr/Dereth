@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/common.h"
+#include "core/editorbridge.h"
 #include "imgui_internal.h"
 #include "platform.h"
 #include "ui/icons.h"
@@ -82,6 +83,8 @@ std::vector<Run> parseInline(const std::string& text) {
         flush();
         Style codeStyle = style;
         codeStyle.code = true;
+        editorbridge::FileRef ref;
+        if (editorbridge::parseFileRef(text.substr(i + ticks, close - i - ticks), &ref)) codeStyle.link = editorbridge::linkFor(ref);
         runs.push_back({text.substr(i + ticks, close - i - ticks), codeStyle, false, ""});
         i = close + ticks;
         continue;
@@ -128,6 +131,25 @@ std::vector<Run> parseInline(const std::string& text) {
       runs.push_back({linkStyle.link, linkStyle, false, ""});
       i = end;
       continue;
+    }
+
+    // File references ("src/app.cpp:120", "~/x.py:3:4") open in the editor.
+    if (i == 0 || std::isspace(static_cast<unsigned char>(text[i - 1])) || text[i - 1] == '(' || text[i - 1] == '[' || text[i - 1] == ',') {
+      size_t end = i;
+      while (end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_' || text[end] == '.' || text[end] == '/' ||
+                                   text[end] == '~' || text[end] == '-' || text[end] == ':')) {
+        ++end;
+      }
+      while (end > i && (text[end - 1] == '.' || text[end - 1] == ',' || text[end - 1] == ':')) --end;
+      editorbridge::FileRef ref;
+      if (end > i && text.substr(i, end - i).find(':') != std::string::npos && editorbridge::parseFileRef(text.substr(i, end - i), &ref)) {
+        flush();
+        Style linkStyle = style;
+        linkStyle.link = editorbridge::linkFor(ref);
+        runs.push_back({text.substr(i, end - i), linkStyle, false, ""});
+        i = end;
+        continue;
+      }
     }
 
     // A marker closes an open run unconditionally; it only opens one when a

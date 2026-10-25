@@ -568,6 +568,10 @@ void App::drawChatPane() {
         md::Options options;
         options.wrapWidth = contentWidth;
         options.imageLoader = [this](const std::string& url) { return fetchImageBytes(url); };
+        options.onLink = [this](const std::string& url) {
+          if (core::startsWith(url, "editor://")) openInEditor(url);
+          else platform::openUrl(url);
+        };
         if (settings().extra.value("renderDiagrams", true)) {
           options.blockImage = [this](const std::string& kind, const std::string& code, float w) {
             return renderBlockImage(kind, code, w);

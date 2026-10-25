@@ -10,6 +10,7 @@
 #include "plugins/plugin_host.h"
 #include "core/async.h"
 #include "core/common.h"
+#include "core/editorbridge.h"
 #include "core/store.h"
 #include "core/keychain.h"
 #include "export.h"
@@ -275,6 +276,22 @@ void App::handleOpenUrl(const std::string& url) {
     openChat(path.substr(5));
   } else if (path == "quick") {
     openQuickAsk(params["prompt"]);
+  } else if (path == "explain") {   // owui://explain?file=&line=&language=&text= - from an editor
+    // The selection may hold '&' or '#': read text= to the end of the query.
+    std::string selection = params.count("text") ? params["text"] : "";
+    const size_t textAt = query.find("text=");
+    if (textAt != std::string::npos) selection = urlDecode(query.substr(textAt + 5));
+    const int line = params.count("line") ? atoi(params["line"].c_str()) : 0;
+    std::string language = params.count("language") ? params["language"] : "";
+    if (!language.empty() && language[0] == '.') language.erase(0, 1);
+    const std::string prompt = editorbridge::explainPrompt(params.count("file") ? params["file"] : "", line, language, selection);
+    newChat();
+    if (params.count("send") && params["send"] == "0") {
+      composer = prompt;
+      ++composerGeneration;
+    } else {
+      sendMessage(prompt);
+    }
   } else if (path == "attach") {   // owui://attach?path=/abs/file - into the open chat's composer
     if (params.count("path") && !params["path"].empty()) {
       attachFiles({params["path"]});
@@ -355,6 +372,7 @@ void App::drawPalette() {
   });
   add("Warm the model now (load it into memory)", "command", [this] { warmModelNow(false); });
   add("Low-power mode (frame rate, battery)", "settings", [this] { pane = Pane::Settings; });
+  add("Editor bridge (which editor opens file:line links)", "settings", [this] { pane = Pane::Settings; });
   add("Release the model from memory", "command", [this] { warmModelNow(true); });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {

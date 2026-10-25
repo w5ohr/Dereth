@@ -1319,3 +1319,35 @@ gate is a one-line check per tick, exercised by the self-test's policy only), an
 8 fps feels right while scrolling after an idle spell (the first input restores 60 fps on
 that same frame).
 
+2026-10-25 V (96 editor bridge): `src/core/editorbridge.{h,cpp}` (app-free: parseFileRef
+accepts "path:line[:col]" when the path has a slash or an extension and rejects clock
+times, URLs, bare words and line 0; linkFor / parseLink in an "editor://" scheme;
+resolvePath expands ~ and joins relative paths to the project root; openCommand for VS
+Code / Cursor / Zed (file URL schemes with line and column), Xcode (xed -l), Sublime
+(subl file:line:col) and a custom template with {file} {line} {col} where {file} is quoted
+and splitArgs is quote-aware; explainPrompt). `src/ui/markdown.cpp`: file references in
+prose (at a word start) and whole code spans that parse as a reference become underlined
+links carrying the editor:// URL; `src/chat_pane.cpp` sets options.onLink so editor://
+goes to App::openInEditor and everything else to the browser. `src/editor_bridge.cpp`:
+openInEditor resolves against the pinned project folder, then home, checks the file
+exists, builds the command for extra["editor"] (default vscode) / extra["editorCommand"],
+runs it unsandboxed on a worker and toasts the result; Settings > Editor card (combo,
+custom command field, "Test: open settings.json at line 1"); `owui://explain?file=&line=
+&language=&text=` in handleOpenUrl reads text= to the end of the query so a selection with
+'&' survives, builds the explain prompt and sends it (send=0 fills the composer instead).
+`docs/EDITOR-BRIDGE.md` has VS Code / Cursor tasks + keybinding, a Zed task, and the
+Services / Automator route for Xcode. `--editortest` runs 12 offline checks. Verified on a
+scratch server with a seeded reply naming `src/app.cpp:1519`, src/chat_pane.cpp:42,
+README.md:1 and "12:30", the project folder pinned to this repo and a custom editor
+command pointing at a shell script that logs its arguments: the three references
+rendered as links and the time stayed text; clicking two of them logged the absolute path
+with line 42 / line 1 and column 1; `open -a <app> "owui://explain?...&send=0"` opened a
+new chat with "Explain this code from src/app.cpp:1519 ..." and the fenced snippet in the
+composer. Also fixed on the way, from a crash report: pinning the project folder made
+repomap::extract throw std::regex_error (error_complexity) on a long line of this repo
+and the uncaught exception killed the app one second after launch - lines over 2000
+characters are now skipped and regex_search is wrapped, with a self-test. Not covered:
+the real VS Code / Zed / Xcode commands (self-test only - no editor was launched), the
+Test button, a reference whose file is missing (toast path), and the Sublime `subl`
+command, which relies on it being on the GUI PATH.
+

@@ -499,6 +499,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   chat syncs and model warmup until the Mac is plugged in. The card shows
   the live state and frame rate. `Open WebUI --lowpowertest` covers the
   policy.
+- **Editor bridge:** a file reference in a reply - `src/app.cpp:120`,
+  `/abs/path.h:3:4`, `~/notes.md:9`, in prose or backticks - is a link that
+  opens that line in your editor: VS Code, Cursor, Zed, Xcode, Sublime Text
+  or a custom command with `{file}` `{line}` `{col}` placeholders (Settings
+  ▸ Editor). Relative paths resolve against the pinned project folder, then
+  home. The other way, an editor task or keybinding sends a selection to a
+  new chat with `owui://explain?file=...&line=...&text=...`;
+  `docs/EDITOR-BRIDGE.md` has VS Code, Zed and Xcode recipes. `Open WebUI
+  --editortest` covers the parsing and the commands.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

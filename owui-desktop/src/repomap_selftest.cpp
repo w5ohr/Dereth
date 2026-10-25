@@ -60,6 +60,18 @@ int runRepoMapSelfTest() {
   const std::string tiny = render({big, a}, 140);
   report("render: files dropped only as a last resort, with a note", tiny.find("more file") != std::string::npos, tiny);
 
+  {
+    // A minified line and a backtracking-hostile one must not throw (they did: error_complexity).
+    std::string minified = "export const a = (" + std::string(120000, 'x') + ") => 1;";
+    std::string hostile = "const z: " + std::string(1500, '=') + " = y;";
+    bool threw = false;
+    try {
+      repomap::extract("typescript", minified + "\nconst ok = () => 2;\n" + hostile + "\n");
+    } catch (...) {
+      threw = true;
+    }
+    report("pathological lines are skipped, never thrown", !threw);
+  }
   printf("\n%d passed, %d failed\n", gPassed, gFailed);
   return gFailed == 0 ? 0 : 1;
 }

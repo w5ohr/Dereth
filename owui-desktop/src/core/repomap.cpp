@@ -134,9 +134,18 @@ std::vector<Symbol> extract(const std::string& language, const std::string& text
       if (inFence) continue;
     }
     if (skipLine(language, line)) continue;
+    // Minified or generated lines make std::regex give up (error_complexity)
+    // or crawl; no symbol worth having sits on a 2000-character line.
+    if (line.size() > 2000) continue;
     for (const Rule& rule : rules) {
       std::smatch m;
-      if (!std::regex_search(line, m, rule.re)) continue;
+      bool hit = false;
+      try {
+        hit = std::regex_search(line, m, rule.re);
+      } catch (const std::regex_error&) {
+        hit = false;   // the pattern blew its budget on this line: not a symbol
+      }
+      if (!hit) continue;
       Symbol s;
       s.kind = rule.kind;
       s.name = m[static_cast<size_t>(rule.nameGroup)];

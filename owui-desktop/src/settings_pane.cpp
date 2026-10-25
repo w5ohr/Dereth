@@ -116,6 +116,10 @@ void App::drawSettingsPane() {
   drawLowPowerSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("EDITOR");
+  drawEditorSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("VOICE");
   card("voice", [&] {
     if (!gVoicesLoaded) {
