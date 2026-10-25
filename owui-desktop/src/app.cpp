@@ -1761,6 +1761,9 @@ void App::handleShortcuts() {
   if (shortcutPressed("chat.new")) newChat();
   if (shortcutPressed("view.sidebar")) sidebarVisible = !sidebarVisible;
   if (shortcutPressed("view.reading")) toggleReadingMode();
+  for (int i = 0; i < 4; ++i) {
+    if (shortcutPressed("view.layout" + std::to_string(i + 1))) applyLayoutByIndex(i);
+  }
   if (shortcutPressed("chat.refresh") && pane == Pane::Chat) refreshChats(false);
   if (shortcutPressed("chat.stop")) stopAllStreams();
 }

@@ -352,6 +352,10 @@ void App::drawPalette() {
   add("Open this chat in a new window", "command", [this] { openChatInNewWindow(chat.id, false); });
   add("Open this chat as a floating mini window", "command", [this] { openChatInNewWindow(chat.id, true); });
   add("Float this window on top", "command", [this] { toggleFloating(); });
+  for (const layouts::Layout& l : layouts::all(settings().extra)) {
+    add("Layout: " + l.name + "  (" + layouts::summary(l) + ")", "view", [this, l] { applyLayout(l); });
+  }
+  add("Save the current layout as...", "settings", [this] { pane = Pane::Settings; });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
   add("Propose memories from this reply", "command", [this] {

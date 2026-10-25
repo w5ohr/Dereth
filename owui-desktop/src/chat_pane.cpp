@@ -328,7 +328,11 @@ void App::drawChatPane() {
                           : showTree ? 380.0f
                           : (showPins ? 260.0f : 0.0f);
   ImGui::BeginChild("##messagearea", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
-  ImGui::BeginChild("##messages", ImVec2(sideWidth > 0.0f ? -sideWidth - 8.0f : 0.0f, 0),
+  // Layout presets can put the side column under the transcript (a
+  // horizontal split) instead of beside it.
+  const bool sideBelow = sideColumnBelow && sideWidth > 0.0f;
+  const float sideHeight = sideBelow ? std::max(160.0f, ImGui::GetContentRegionAvail().y * 0.38f) : 0.0f;
+  ImGui::BeginChild("##messages", ImVec2(sideWidth > 0.0f && !sideBelow ? -sideWidth - 8.0f : 0.0f, sideBelow ? -sideHeight - 8.0f : 0.0f),
                     ImGuiChildFlags_None);
   {
     const float available = ImGui::GetContentRegionAvail().x;
@@ -902,24 +906,15 @@ void App::drawChatPane() {
     ImGui::End();
     ImGui::PopStyleVar(2);
   }
-  if (showArtifacts) {
-    ImGui::SameLine();
-    drawArtifactColumn(sideWidth);
-  } else if (showDocument) {
-    ImGui::SameLine();
-    drawDocumentColumn(sideWidth);
-  } else if (!referenceChatId.empty()) {
-    ImGui::SameLine();
-    drawReferenceColumn(sideWidth);
-  } else if (showRetrieval) {
-    ImGui::SameLine();
-    drawRetrievalColumn(sideWidth);
-  } else if (showTree) {
-    ImGui::SameLine();
-    drawTreeColumn(sideWidth);
-  } else if (showPins) {
-    ImGui::SameLine();
-    drawPinnedRail(sideWidth);
+  if (sideWidth > 0.0f) {
+    if (!sideBelow) ImGui::SameLine();
+    const float columnWidth = sideBelow ? ImGui::GetContentRegionAvail().x : sideWidth;
+    if (showArtifacts) drawArtifactColumn(columnWidth);
+    else if (showDocument) drawDocumentColumn(columnWidth);
+    else if (!referenceChatId.empty()) drawReferenceColumn(columnWidth);
+    else if (showRetrieval) drawRetrievalColumn(columnWidth);
+    else if (showTree) drawTreeColumn(columnWidth);
+    else if (showPins) drawPinnedRail(columnWidth);
   }
   ImGui::EndChild();
 

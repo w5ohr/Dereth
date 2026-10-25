@@ -12,6 +12,7 @@
 #include <set>
 
 #include "core/accessibility.h"
+#include "core/layouts.h"
 #include "core/logprobs.h"
 #include "core/outputctl.h"
 #include "core/pool.h"
@@ -845,6 +846,16 @@ class App {
   accessibility::Prefs accessibilityPrefs() const;
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
+
+  // --- layout presets (layout_presets.cpp) ----------------------------------
+  bool sideColumnBelow = false;   // the side column under the transcript instead of beside it
+  layouts::Layout captureLayout(const std::string& name) const;
+  void applyLayout(const layouts::Layout& l);
+  bool applyLayoutByIndex(int index);   // Cmd+Option+1..4
+  void saveLayoutAs(const std::string& name);
+  void deleteLayout(const std::string& name);
+  void openReferenceChat(const std::string& id);
+  void drawLayoutsSection(float width);
 
   // --- file editor (file_editor.cpp) ----------------------------------------
   bool showFileEditor = false;

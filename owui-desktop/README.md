@@ -738,6 +738,18 @@ Things a browser tab can't do, plus the workflow features built on top:
   across applies, not just the last one. `Open WebUI --fileeditortest`
   covers the history store, language detection and the line / search
   helpers.
+- **Layout presets:** Settings ▸ Layouts, the palette ("Layout: ...") and
+  Cmd+Option+1 to 4 apply a named arrangement of the chat screen: the
+  sidebar and its width, which side column shows (reference chat, pins,
+  conversation tree, artifacts) and whether it sits beside the transcript or
+  below it as a horizontal split, reading mode, float-on-top and the window
+  size. Five built-ins - Zen (no sidebar, reading), Wide chat, Three columns
+  (sidebar, chat, reference), Split (reference below), Review (pins) - plus
+  your own: "Save current layout" captures the arrangement under a name,
+  saved ones can replace a built-in by reusing its name, and Delete removes
+  them. A reference layout with no chat remembered opens the most recent
+  other chat. `Open WebUI --layouttest` covers the built-ins, the record,
+  saving and the summaries.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

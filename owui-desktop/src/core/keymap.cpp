@@ -124,6 +124,10 @@ std::vector<Shortcut> defaults() {
   add("view.sidebar", "Toggle the sidebar", "View", "cmd+b", true);
   add("view.float", "Float on top", "View", "cmd+shift+t", true);
   add("view.reading", "Reading mode", "View", "cmd+shift+r", false);
+  add("view.layout1", "Layout 1 (Zen unless saved over)", "View", "cmd+alt+1", false);
+  add("view.layout2", "Layout 2", "View", "cmd+alt+2", false);
+  add("view.layout3", "Layout 3", "View", "cmd+alt+3", false);
+  add("view.layout4", "Layout 4", "View", "cmd+alt+4", false);
   add("pane.chat", "Chats pane", "Panes", "cmd+1", true);
   add("pane.notes", "Notes pane", "Panes", "cmd+2", true);
   add("pane.channels", "Channels pane", "Panes", "cmd+3", true);

@@ -521,6 +521,7 @@ int runPoolSelfTest();
 int runOutputSelfTest();
 int runLogprobSelfTest();
 int runFileEditorSelfTest();
+int runLayoutSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -575,6 +576,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--outputtest") return runOutputSelfTest();
     if (std::string(argv[i]) == "--logprobtest") return runLogprobSelfTest();
     if (std::string(argv[i]) == "--fileeditortest") return runFileEditorSelfTest();
+    if (std::string(argv[i]) == "--layouttest") return runLayoutSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

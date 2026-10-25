@@ -1862,3 +1862,32 @@ long path - moved). Not covered: files with tabs or very long lines (the overlay
 measures with the same font, so widths should match), multi-file tabs beyond one file,
 Cmd+Z inside the editor (ImGui's own, not exercised), and a history of more than 30
 snapshots beyond the self-test.
+
+2026-10-25 69 (layout presets): `src/core/layouts.*` (Layout {name, sidebar, sidebarWidth
+200-480, column none | reference | pins | tree | artifacts, columnBelow, reading, floating,
+windowW/H (0 = leave), referenceChatId, builtin}; five `builtins()`; toJson/fromJson with
+clamping and column validation; `saved` from extra["layouts"] (nameless dropped, first of
+a duplicate name kept), `toSaved`, `all` = built-ins with saved ones replacing a same-named
+built-in then appended, `indexOf`, `summary`). `src/layout_presets.cpp`:
+`captureLayout` reads sidebarVisible, sidebarWidth, the side-column flags, sideColumnBelow,
+reading mode, floating and the main viewport size; `applyLayout` sets them (reference:
+the remembered chat or the most recent other chat via `openReferenceChat`; reading via
+setReadingMode, float via toggleFloating, size via native::setWindowSize) and toasts the
+summary; `applyLayoutByIndex` for the shortcuts; `saveLayoutAs` / `deleteLayout`;
+Settings "LAYOUTS" card after Reading mode (table with shortcut badges, summaries, Apply
+/ Delete, name field + Save current layout with a "now:" line, and the split switch).
+`chat_pane.cpp`: `sideColumnBelow` places the side column under the transcript at 38 % of
+the height (min 160 px) with the column drawn at full width. Keymap: view.layout1-4 =
+cmd+alt+1..4 handled in handleShortcuts; palette lists every layout with its summary.
+`--layouttest` runs 8 offline checks (keymap self-test still 10/10). Verified on a scratch
+home with two seeded server chats: the card listed the five built-ins; Apply on Three
+columns opened the chat pane with "Winch greasing" as the reference column beside the
+transcript and the toast "Layout: Three columns (sidebar 280 - reference beside)";
+Cmd+Option+4 moved the reference under the transcript (Split); Cmd+Option+1 hid the
+sidebar and switched reading mode on (Zen); typing "Desk review" into the name field and
+Enter saved {reference, sidebar, 1380x900} to extra["layouts"] (file checked) and the
+palette then listed "Layout: Desk review (sidebar 280 - reference beside - 1380x900)".
+Not covered: the window-size part of apply beyond the self-test (the test window was
+already that size), float-on-top within a layout, artifacts / tree columns via a layout,
+and detachable panes - those remain the existing "open this chat in a new window"
+command, not part of a layout.
