@@ -394,6 +394,11 @@ class App {
   int mcpConnectedCount() const;
   std::vector<agents::ToolSpec> mcpToolSpecs() const;
   void drawBrowserToolCard(float width);   // browser_tool.cpp: the built-in browser tool's card in the MCP tab
+  // script_tools.cpp: the user's scripts in support/scripts as a built-in tool server.
+  std::vector<agents::ToolSpec> scriptToolSpecs() const;
+  static bool isScriptToolServer(const std::string& serverId);
+  agents::ToolOutcome callScriptTool(const std::string& name, const Json& args, const std::string& projectFolder);
+  void drawScriptToolsCard(float width);
   std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
   void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
   void mcpImportConfig(const std::string& path);

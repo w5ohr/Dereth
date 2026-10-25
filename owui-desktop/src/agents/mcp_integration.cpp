@@ -224,10 +224,11 @@ std::vector<agents::ToolSpec> App::mcpToolSpecs() const {
       out.push_back(spec);
     }
   }
-  // The built-in browser tool is a "server" of its own.
+  // The built-in browser tool is a "server" of its own, as are the user's scripts.
   if (browsertool::optionsFromSettings().enabled) {
     for (const agents::ToolSpec& spec : browsertool::specs()) out.push_back(spec);
   }
+  for (const agents::ToolSpec& spec : scriptToolSpecs()) out.push_back(spec);
   // Plugin tools sit beside the MCP ones; their "server" is the plugin.
   for (const plugins::Tool& tool : plugins::Host::instance().tools()) {
     agents::ToolSpec spec;
@@ -474,13 +475,15 @@ agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
     return decision;
   };
   const Json pluginContext = pluginSnapshot();
-  hooks.invoke = [clients, byName, pluginContext](const agents::Call& call) {
+  const std::string scriptFolder = projectFolder;
+  hooks.invoke = [this, clients, byName, pluginContext, scriptFolder](const agents::Call& call) {
     agents::ToolOutcome out;
     auto spec = byName.find(call.name);
     if (spec == byName.end()) {
       out.error = "unknown tool '" + call.name + "'";
       return out;
     }
+    if (isScriptToolServer(spec->second.serverId)) return callScriptTool(spec->second.tool, call.args, scriptFolder);
     if (spec->second.serverId == browsertool::kServerId) {
       const double started = core::nowMillis();
       std::string error;
@@ -746,6 +749,7 @@ void App::drawMcpSection(float width) {
   }, width);
 
   drawBrowserToolCard(width);
+  drawScriptToolsCard(width);
 
   if (servers.empty()) {
     emptyState("No MCP servers yet. Add one, or import your Claude Desktop or Cursor configuration.");

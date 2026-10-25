@@ -1062,3 +1062,32 @@ and render as a model call (links exercised the same WKWebView path), a PDF or J
 a JavaScript-only page, and DuckDuckGo's layout is a scrape that can break without
 notice (the tool then says so and suggests fetching a likely URL).
 
+2026-10-25 IV (87 script tools): `src/core/scripttools.{h,cpp}` (app-free: parse reads a
+comment header - owui-tool / description / param "name type [required] [enum(a|b)] -
+desc" / timeout / sandbox / runner - with #, //, --, ; or * leaders; the runner comes from
+the extension (zsh, bash, python3, osascript, osascript -l JavaScript, ruby, perl, swift,
+php; a shebang file runs itself and must be executable); schema() turns params into a
+JSON schema; scan lists a folder's header-bearing files sorted, flagging duplicate names;
+validateArgs checks required and enum; argv builds "/usr/bin/env OWUI_ARGS=<json>
+OWUI_TOOL=<name> OWUI_ARG_<NAME>=<value>... <runner> <path> <json>" so it works both
+through sandbox-exec and plain env; three examples). `src/script_tools.cpp`: the folder
+support/scripts, a 2 s scan cache, the built-in "scripts" server (serverId
+builtin:scripts, extra["scriptTools"] default on) added to mcpToolSpecs(), callScriptTool
+(native::runProcess with the tool's timeout and sandbox flag; working folder = the pinned
+project, else cache/script-run for sandboxed scripts or home otherwise; stdout capped at
+24k; non-zero exit and timeouts come back as tool errors), an invoke branch in
+makeToolHooks (which now captures `this` and the project folder), and a card in Tools >
+MCP: on/off, folder path, Reveal in Finder / Rescan / Write the examples, every tool with
+file, runner, sandboxed/UNSANDBOXED, params and header errors in red, and Try with an
+editable JSON argument box. `--scripttest` runs 16 offline checks including a real
+sandboxed zsh run (args by env, argv and OWUI_ARGS), the Python example, a 1 s timeout
+killing sleep 4, a non-zero exit with stderr, and sandbox-exec refusing a touch in $HOME.
+Verified on a scratch server: Write the examples created disk_usage.sh, word_count.py and
+frontmost_app.js (0700) and the card listed them; in a private chat qwen3:8b called
+scripts__word_count with the exact text, the approval card showed the arguments, Allow
+once ran it in 45 ms, the card showed {"words": 9, "lines": 1, "chars": 44} and the reply
+reported those numbers; the audit log has the tool row. Not covered in chat: disk_usage
+and the JXA example (frontmost_app is marked sandbox: off because System Events needs
+it, and the first run may raise macOS's automation prompt), the Try box in the card, and
+scripts on a pinned project folder.
+

@@ -412,6 +412,17 @@ Things a browser tab can't do, plus the workflow features built on top:
   Only http(s) to public hosts unless "allow local hosts" is on; results are
   clipped to a size you set. The card under Tools ▸ MCP has Try fetch / Try
   render. `Open WebUI --browsertest` checks the URL policy and parsers.
+- **Script tools:** drop a shell, Python, AppleScript, JXA, Ruby or Perl
+  script (or any executable) into the support folder's `scripts/` with a
+  short comment header - `owui-tool: name`, `description:`, one `param:`
+  line per argument (`name type [required] - what it is`), optional
+  `timeout:` and `sandbox: on|off` - and it becomes a tool under the built-in
+  `scripts` server. Arguments arrive as JSON (last argument and `$OWUI_ARGS`)
+  and as `$OWUI_ARG_NAME`; stdout is the result, a non-zero exit is an error.
+  Sandboxed by default like Run: no network, writes only inside the working
+  folder (the pinned project, else a scratch folder). The card under Tools ▸
+  MCP lists what was found, flags broken headers, writes three examples and
+  tries any tool with arguments. `Open WebUI --scripttest` covers it.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.
