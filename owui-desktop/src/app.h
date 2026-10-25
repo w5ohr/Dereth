@@ -849,6 +849,13 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- image editor (image_editor.mm) ---------------------------------------
+  bool showImageEditor = false;
+  void openImageEditor(const std::string& bytes, const std::string& name);
+  void openImageFileInEditor();
+  void runImageEdit();
+  void drawImageEditor();
+
   // --- localisation (language_pane.cpp) -------------------------------------
   void drawLanguageSection(float width);
 

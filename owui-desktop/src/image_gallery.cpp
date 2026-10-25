@@ -172,6 +172,9 @@ void App::drawImageGallery(float width) {
       widgets::endDisabled(imagemeta::empty(it.meta));
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("Put this prompt, negative prompt, model and size back into the generator");
       ImGui::SameLine();
+      if (ImGui::SmallButton("Edit")) openImageEditor(core::readFile(path), it.file);
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("Inpaint, img2img, variations or upscale with ComfyUI");
+      ImGui::SameLine();
       if (ImGui::SmallButton("Open")) platform::openUrl("file://" + path);
       ImGui::SameLine();
       if (ImGui::SmallButton("x")) toDelete = it.file;

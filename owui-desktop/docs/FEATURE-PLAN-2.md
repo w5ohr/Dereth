@@ -2377,3 +2377,50 @@ string needs a tr() at its call site; the pseudo-locale shows where), mirroring 
 layout for RTL UI languages (no RTL UI language is offered), Arabic letter joining (ImGui
 draws Arabic letters in their isolated forms; Hebrew needs no shaping), inline styling
 inside RTL paragraphs, and the palette's command names.
+
+2026-10-25 116 (image editing): against ComfyUI directly (Settings > Connection's ComfyUI URL;
+this Mac runs ComfyUI 0.42 on MPS with sd_xl_base_1.0 and flux1-schnell-fp8). `src/core/imgedit.*`:
+`workflow(Job)` builds API-format graphs - LoadImage of the uploaded source; inpaint adds
+LoadImageMask (red channel) -> GrowMask (8 px, tapered) -> SetLatentNoiseMask on the
+VAEEncode latent, KSampler at denoise 1.0, VAEDecode, then ImageCompositeMasked(destination =
+the source, source = the decode, mask = the grown mask) so pixels outside the mask are the
+source's exactly; img2img samples the encoded source at the strength; variations put
+RepeatLatentBatch (1-8) before the sampler; upscale is ImageScaleBy lanczos straight to the
+preview, or with "detail" re-encoded and sampled at 0.3; every graph ends in PreviewImage so
+results go to ComfyUI's temp folder. `presetFor` (SDXL: 25 steps, cfg 6.5, dpmpp_2m karras;
+Flux: schnell 4 / dev 20 steps, cfg 1, euler simple, negative prompt left empty),
+`linksValid`, `maskPng` (the strokes scaled to the image, white on black, via the sketch
+rasteriser), `fit` (multiples of 8, longest side <= 1536), `workingSize` (SDXL / Flux / SD3 ~1
+MP with up-scaling capped at 2x, SD 1.x ~0.4 MP), `uploadedName` ("name [temp]"),
+`historyImages` (running / finished / execution_error with ComfyUI's message), `viewQuery`,
+`checkpoints` (from /object_info/CheckpointLoaderSimple), `summary`. `src/image_editor.mm`:
+sources decoded and redrawn with ImageIO + Core Graphics (to the fitted size on open and to
+the model's working size at run time, the mask following); uploads to /upload/image with
+type=temp; POST /prompt; /history/<id> polled every 0.5 s (10 min cap); results fetched from
+/view; the "Edit image" modal - canvas with the image fitted and the mask shown as
+translucent red (brush 8-240 px, Option erases, Cmd+Z, Clear mask), Inpaint / Img2img /
+Variations / Upscale, model combo (SDXL chosen by default when present), prompt, negative
+(not for Flux), strength, count, 2x / 4x + detail, steps, seed + New seed, Run with elapsed
+seconds, a status line ("1 result in 39.0 s - inpaint - sd_xl_base_1.0 - 25 steps - seed 1 -
+1248x832" or ComfyUI's error), a results strip with Source, and Save to gallery (galleryAdd
+with prompt, negative, model, seed, size and engine "comfyui (<mode> of <name>)"), Edit
+this one, Save as. Edit buttons on gallery tiles; palette "Edit an image..."; ImageIO
+linked. `--imgedittest` runs 17 offline checks (presets, the four graphs and their links,
+Flux without a negative, a dangling link caught, the mask PNG decoded back, fit,
+workingSize, upload names, history states and an execution error, view query,
+checkpoints, summary); one real bug was found by it on the way - iterating items() of a
+temporary JSON copy. Verified on a scratch home against the local ComfyUI: a synthetic
+768x512 sky-and-hill PNG in the gallery opened from its Edit button; seven brush strokes
+masked part of the sky; the first run at 768x512 took 128.6 s and SDXL filled the mask with a
+soft cloud rather than the asked-for balloon, but a pixel comparison of the saved result
+against the source showed every changed pixel inside the grown mask (x 412-655, y 33-237)
+and none outside; that led to `workingSize`, and the rerun at 1248x832 (39.0 s, model warm)
+painted a red hot-air balloon in the masked sky; Save to gallery stored it with prompt,
+model sd_xl_base_1.0, seed 1, 1248x832 and "comfyui (inpaint of meadow.png)"; Edit this one +
+Upscale 2x returned 2496x1664 in 0.5 s. ComfyUI's input and output folders were untouched
+(0 files); its temp folder held the test's 5 uploads and 3 previews, which were then
+deleted. Not covered: variations and img2img live (their graphs are self-tested and share
+the sampler path), the detail pass live, Flux live, a remote ComfyUI over the Tailscale
+name, inpaint at a working size different from the source being pixel-exact against the
+original rather than the resized source, and Open WebUI's own image-edit API (the server
+here has no image engine configured).

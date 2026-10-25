@@ -369,6 +369,7 @@ void App::drawPalette() {
   add("Stop the language servers", "command", [this] { async::run([this] { stopLspServers(); }); });
   add("Notebook (Python cells, prompts, .ipynb)", "tools", [this] { openNotebookTab(); });
   add("Transcribe an audio file (timestamped, click to play)", "tools", [this] { openTranscribeTab(); });
+  add("Edit an image (inpaint, img2img, variations, upscale)...", "images", [this] { openImageFileInEditor(); });
   add("Crash reports", "settings", [this] { pane = Pane::Settings; });
   add("Check for updates", "command", [this] {
     pane = Pane::Settings;

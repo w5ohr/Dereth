@@ -1568,7 +1568,7 @@ void App::frame() {
   // only shows while the chat pane placed it last frame and nothing modal is
   // open over the window.
   {
-    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet || showTour || showWhatsNew || showCrashSheet ||
+    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet || showTour || showWhatsNew || showCrashSheet || showImageEditor ||
                          showProjectFiles ||
                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     native::composerSetVisible(composerShownThisFrame && !overlay);
@@ -1730,6 +1730,7 @@ void App::frame() {
     drawContextInspector();
     drawPlayground();
     drawSketchWindow();
+    drawImageEditor();
     drawFileEditor();
     drawCheatSheet();
     drawWhatsNew();

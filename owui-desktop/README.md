@@ -886,6 +886,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   in reading order, with English words and numbers inside them kept
   left-to-right. `Open WebUI --i18ntest` covers the table, lookup, the
   formats and the reordering.
+- **Image editing:** Edit on any gallery tile (or "Edit an image..." in the
+  palette) opens an editor working against the ComfyUI at Settings ▸
+  Connection ▸ ComfyUI URL. Inpaint: paint over what should change (Option
+  erases the mask, Cmd+Z undoes), describe what goes there, and only the
+  painted area changes - the result is pasted back through the mask, so the
+  rest stays pixel-exact. Img2img with a strength slider, Variations (up to
+  eight from one seed), and Upscale 2x / 4x (lanczos, optionally with a light
+  detail pass by the model). The model list comes from ComfyUI (SDXL is
+  preferred for inpainting; Flux gets its own steps and cfg); images run at
+  the model's working size, about one megapixel for SDXL and Flux. Results
+  can be saved to the gallery with prompt, model, seed and mode in the PNG,
+  edited further, or saved anywhere. Uploads and results use ComfyUI's temp
+  folder only. `Open WebUI --imgedittest` covers the workflows, presets,
+  mask, sizes and ComfyUI's replies.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

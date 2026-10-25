@@ -534,6 +534,7 @@ int runCrashSelfTest();
 int runUpdateSelfTest();
 int runTranscribeSelfTest();
 int runI18nSelfTest();
+int runImgEditSelfTest();
 int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
@@ -600,6 +601,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--updatetest") return runUpdateSelfTest();
     if (std::string(argv[i]) == "--transcribetest") return runTranscribeSelfTest();
     if (std::string(argv[i]) == "--i18ntest") return runI18nSelfTest();
+    if (std::string(argv[i]) == "--imgedittest") return runImgEditSelfTest();
     if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.
