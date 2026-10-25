@@ -515,6 +515,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   retrieved passage appended), copy the sources as BibTeX `@misc` entries
   with an accessed date, or copy a plain source list. The palette has the
   same for the last reply. `Open WebUI --citetest` covers the conversions.
+- **Local text-to-speech fallback:** Read aloud works without a server TTS
+  engine: in Auto the app asks the server once and, when it has none, reads
+  with the Mac's own voices (AVSpeechSynthesizer) for the rest of the session.
+  Settings ▸ Voice and read-aloud picks the engine (server then Mac, server
+  only, Mac only), the Mac voice (enhanced or premium voices are preferred
+  over the plain ones; the system voice otherwise), rate and pitch, and
+  whether code blocks are announced instead of read. Markdown is turned into
+  something worth hearing first: headings, emphasis, list and table markup,
+  citation markers and link URLs go, bare URLs become "link to host".
+  Read-aloud requests queue per message (the button turns into Stop while a
+  reply is queued or playing, the status line under the composer shows what
+  is left), and the palette has "Read the last reply aloud", "Read this chat
+  aloud" and "Stop reading aloud". `Open WebUI --ttstest` covers the
+  conversion, chunking, voice choice and the queue.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

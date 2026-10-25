@@ -375,6 +375,10 @@ void App::drawPalette() {
   add("Editor bridge (which editor opens file:line links)", "settings", [this] { pane = Pane::Settings; });
   add("Copy last reply with sources (Markdown footnotes)", "command", [this] { copyLastReplyCited(0); });
   add("Copy last reply's sources as BibTeX", "command", [this] { copyLastReplyCited(1); });
+  add("Read the last reply aloud", "command", [this] { readLastReplyAloud(); });
+  add("Read this chat aloud (every reply, in order)", "command", [this] { readChatAloud(); });
+  add("Stop reading aloud", "command", [this] { stopReading(); });
+  add("Text-to-speech (engine, Mac voice, rate)", "settings", [this] { pane = Pane::Settings; });
   add("Release the model from memory", "command", [this] { warmModelNow(true); });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {
@@ -1030,7 +1034,7 @@ void App::tickVoiceMode() {
       break;
     }
     case 4:   // speaking: resume listening once playback ends
-      if (!platform::audioPlaying() && now - voiceSilenceSince > 800.0) voiceState = 0;
+      if (!ttsActive() && !platform::audioPlaying() && now - voiceSilenceSince > 800.0) voiceState = 0;
       break;
   }
 }
@@ -1113,7 +1117,7 @@ void App::handleKeyboardNavigation(const std::vector<std::string>& path) {
   } else if (ImGui::IsKeyPressed(ImGuiKey_P, false)) {
     togglePin(focusedMessageId);
   } else if (ImGui::IsKeyPressed(ImGuiKey_S, false) && m.role == "assistant") {
-    speak(m.content);
+    readAloud(focusedMessageId, m.content);
   } else if (ImGui::IsKeyPressed(ImGuiKey_E, false) && m.role == "user") {
     chat.messages[focusedMessageId].editing = true;
     chat.messages[focusedMessageId].editBuffer = m.content;

@@ -727,6 +727,21 @@ class App {
   void drawCitedCopyButton(const Message& message);
   void copyLastReplyCited(int format);
 
+  // --- local text-to-speech fallback (local_tts.cpp) -----------------------
+  // Replies are read by the server's TTS or, when it has none, this Mac's voices;
+  // read-aloud requests queue per message.
+  bool readAloud(const std::string& messageId, const std::string& markdown);   // "" id = ad hoc text
+  void readLastReplyAloud();
+  void readChatAloud();
+  void stopReading();
+  void stopReadingMessage(const std::string& messageId);
+  bool readingMessage(const std::string& messageId) const;   // queued or playing
+  bool ttsActive() const;
+  std::string readingStatus() const;
+  void tickTts();
+  void drawReadAloudButton(const std::string& messageId, const std::string& content);
+  void drawTtsSection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

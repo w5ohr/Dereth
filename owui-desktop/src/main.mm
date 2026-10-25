@@ -468,6 +468,7 @@ int runSelectionSelfTest();
 int runLowPowerSelfTest();
 int runEditorSelfTest();
 int runCiteSelfTest();
+int runTtsSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -502,6 +503,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--lowpowertest") return runLowPowerSelfTest();
     if (std::string(argv[i]) == "--editortest") return runEditorSelfTest();
     if (std::string(argv[i]) == "--citetest") return runCiteSelfTest();
+    if (std::string(argv[i]) == "--ttstest") return runTtsSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

@@ -726,7 +726,7 @@ void App::drawChatPane() {
             }
             ImGui::SameLine();
           }
-          if (icons::button("speak", icons::Icon::Speaker, "Read aloud")) speak(message.content);
+          drawReadAloudButton(messageId, message.content);
           ImGui::SameLine();
           if (icons::button("up", icons::Icon::ThumbUp, "Good response", 0.0f,
                             message.rating > 0 ? palette.success : 0)) {
@@ -1195,6 +1195,8 @@ void App::drawChatPane() {
                   voiceState == 1 ? std::string(static_cast<size_t>(platform::recordingLevel() * 20), '|').c_str() : "");
     } else if (platform::recording()) {
       ImGui::Text("Recording... %.0f%%", platform::recordingLevel() * 100.0f);
+    } else if (!readingStatus().empty()) {
+      ImGui::TextUnformatted(readingStatus().c_str());
     } else if (!routedModelNote.empty()) {
       ImGui::TextUnformatted(routedModelNote.c_str());
     } else if (!statusText_.empty()) {

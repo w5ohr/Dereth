@@ -1323,7 +1323,7 @@ void App::afterCompletion(const std::string& assistantId) {
     if (preview.size() > 180) preview = preview.substr(0, 180) + "...";
     native::notifyWithReply(chat.title.empty() ? "Reply ready" : chat.title, preview, chat.id);
   }
-  if (settings().speakReplies && !message.content.empty()) speak(message.content);
+  if (settings().speakReplies && !message.content.empty()) readAloud(assistantId, message.content);
 
   // A reply with an HTML or SVG block opens the artifact pane on it.
   if (message.error.empty() && settings().extra.value("artifactAutoOpen", true)) {
@@ -1476,19 +1476,6 @@ void App::deleteChat(const std::string& id) {
   });
 }
 
-void App::speak(const std::string& text) {
-  const std::string plain = md::toPlainText(text);
-  const std::string voice = settings().ttsVoice;
-  async::run([this, plain, voice] {
-    std::string audio;
-    if (api_.speech(plain, voice, "", &audio) && !audio.empty()) {
-      async::post([audio] { platform::playAudio(audio, "mp3"); });
-    } else {
-      async::post([] { widgets::toastError("Text-to-speech is not configured on the server"); });
-    }
-  });
-}
-
 bool App::pasteImageFromClipboard() {
   if (!signedIn_ || pane != Pane::Chat || platform::clipboardHasText()) return false;
   const std::string png = platform::clipboardImage();
@@ -1519,6 +1506,7 @@ void App::rateMessage(const std::string& messageId, int rating) {
 void App::frame() {
   tickLowPower();
   pollStreams();
+  tickTts();
   handleShortcuts();
 
   // The native composer is a Cocoa view above everything ImGui draws, so it

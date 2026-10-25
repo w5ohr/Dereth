@@ -5,6 +5,8 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <UserNotifications/UserNotifications.h>
 
+#include <algorithm>
+
 #include "core/common.h"
 
 namespace platform {
@@ -13,8 +15,29 @@ namespace {
 AVAudioPlayer* gPlayer = nil;
 AVAudioRecorder* gRecorder = nil;
 NSURL* gRecordingUrl = nil;
+AVSpeechSynthesizer* gSynth = nil;
+id gSpeechDelegate = nil;
+bool gSpeechPending = false;   // set on speak, cleared when the utterance finishes or is cancelled
 
 }  // namespace
+}  // namespace platform
+
+@interface OwuiSpeechDelegate : NSObject <AVSpeechSynthesizerDelegate>
+@end
+@implementation OwuiSpeechDelegate
+- (void)speechSynthesizer:(AVSpeechSynthesizer*)synthesizer didFinishSpeechUtterance:(AVSpeechUtterance*)utterance {
+  (void)synthesizer;
+  (void)utterance;
+  platform::gSpeechPending = false;
+}
+- (void)speechSynthesizer:(AVSpeechSynthesizer*)synthesizer didCancelSpeechUtterance:(AVSpeechUtterance*)utterance {
+  (void)synthesizer;
+  (void)utterance;
+  platform::gSpeechPending = false;
+}
+@end
+
+namespace platform {
 
 std::vector<std::string> openFiles(bool allowMultiple) {
   std::vector<std::string> out;
@@ -81,9 +104,58 @@ void stopAudio() {
     [gPlayer stop];
     gPlayer = nil;
   }
+  stopSpeaking();
 }
 
-bool audioPlaying() { return gPlayer != nil && gPlayer.isPlaying; }
+bool audioPlaying() { return (gPlayer != nil && gPlayer.isPlaying) || speaking(); }
+
+std::vector<SpeechVoice> speechVoices() {
+  std::vector<SpeechVoice> out;
+  for (AVSpeechSynthesisVoice* v in [AVSpeechSynthesisVoice speechVoices]) {
+    SpeechVoice sv;
+    sv.id = v.identifier ? v.identifier.UTF8String : "";
+    sv.name = v.name ? v.name.UTF8String : "";
+    sv.language = v.language ? v.language.UTF8String : "";
+    sv.quality = v.quality == AVSpeechSynthesisVoiceQualityPremium ? 3 : v.quality == AVSpeechSynthesisVoiceQualityEnhanced ? 2 : 1;
+    if (!sv.id.empty()) out.push_back(sv);
+  }
+  std::sort(out.begin(), out.end(), [](const SpeechVoice& a, const SpeechVoice& b) {
+    if (a.language != b.language) return a.language < b.language;
+    if (a.name != b.name) return a.name < b.name;
+    return a.quality > b.quality;
+  });
+  return out;
+}
+
+std::string speechLanguage() {
+  NSString* code = [AVSpeechSynthesisVoice currentLanguageCode];
+  return code ? code.UTF8String : "en-US";
+}
+
+void speakLocal(const std::string& text, const std::string& voiceId, float rate, float pitch) {
+  if (!gSynth) {
+    gSynth = [[AVSpeechSynthesizer alloc] init];
+    gSpeechDelegate = [[OwuiSpeechDelegate alloc] init];
+    gSynth.delegate = gSpeechDelegate;
+  }
+  if (gSynth.isSpeaking) [gSynth stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
+  AVSpeechUtterance* u = [AVSpeechUtterance speechUtteranceWithString:[NSString stringWithUTF8String:text.c_str()]];
+  AVSpeechSynthesisVoice* voice = nil;
+  if (!voiceId.empty()) voice = [AVSpeechSynthesisVoice voiceWithIdentifier:[NSString stringWithUTF8String:voiceId.c_str()]];
+  if (!voice) voice = [AVSpeechSynthesisVoice voiceWithLanguage:[AVSpeechSynthesisVoice currentLanguageCode]];
+  if (voice) u.voice = voice;
+  u.rate = std::max(0.05f, std::min(0.95f, rate));
+  u.pitchMultiplier = std::max(0.5f, std::min(2.0f, pitch));
+  gSpeechPending = true;
+  [gSynth speakUtterance:u];
+}
+
+void stopSpeaking() {
+  gSpeechPending = false;
+  if (gSynth && gSynth.isSpeaking) [gSynth stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
+}
+
+bool speaking() { return gSpeechPending || (gSynth != nil && gSynth.isSpeaking); }
 
 bool startRecording() {
   if (gRecorder) return false;

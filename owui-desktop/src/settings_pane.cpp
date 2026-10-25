@@ -19,8 +19,6 @@ std::string gOldPassword;
 std::string gNewPassword;
 std::string gApiKey;
 bool gApiKeyLoaded = false;
-Json gVoices = Json::array();
-bool gVoicesLoaded = false;
 bool gFontsDirty = false;
 
 }  // namespace
@@ -120,40 +118,9 @@ void App::drawSettingsPane() {
   drawEditorSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
-  widgets::sectionHeader("VOICE");
-  card("voice", [&] {
-    if (!gVoicesLoaded) {
-      gVoicesLoaded = true;
-      async::run([this] {
-        api::Result res = api_.voices();
-        async::post([res] {
-          if (res.ok) {
-            gVoices = res.data.is_array() ? res.data : res.data.value("voices", Json::array());
-          }
-        });
-      });
-    }
-    ImGui::SetNextItemWidth(260);
-    if (ImGui::BeginCombo("Voice", cfg.ttsVoice.empty() ? "(server default)"
-                                                        : cfg.ttsVoice.c_str())) {
-      if (ImGui::Selectable("(server default)", cfg.ttsVoice.empty())) cfg.ttsVoice.clear();
-      for (const auto& voice : gVoices) {
-        const std::string id = voice.is_string() ? voice.get<std::string>()
-                                                 : voice.value("id", voice.value("name", ""));
-        if (id.empty()) continue;
-        if (ImGui::Selectable(id.c_str(), id == cfg.ttsVoice)) cfg.ttsVoice = id;
-      }
-      ImGui::EndCombo();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Test", ImVec2(90, 0))) {
-      speak("This is the Open WebUI desktop client.");
-    }
-    if (platform::audioPlaying()) {
-      ImGui::SameLine();
-      if (ImGui::Button("Stop", ImVec2(80, 0))) platform::stopAudio();
-    }
-  }, width);
+  widgets::sectionHeader("VOICE AND READ-ALOUD");
+  drawTtsSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
 
   widgets::sectionHeader("ACCOUNT");
   card("account", [&] {

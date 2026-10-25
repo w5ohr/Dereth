@@ -1370,3 +1370,27 @@ definitions (URL, page 2, passages) on the clipboard; "Copy sources as BibTeX" p
 document citations (the numbering continues after the server ones - self-test only), the
 plain list item, and the palette commands.
 
+2026-10-25 118 (local TTS fallback): `src/core/tts.*` (Prefs <-> extra["tts"]: mode
+auto/server/local, Mac voice, rate, pitch, skipCode, serverChunkChars; `choose` - auto
+takes the server until it fails once, then this Mac; `speakable` turns markdown into
+hearable text - fenced code announced or unwrapped, links to their text, bare URLs to
+"link to <host>", headings/bullets/quotes/table markup, emphasis and [n]/[^n] markers
+dropped; `chunk` packs sentences into pieces; `appleRate` maps 0.5x-2x onto
+AVSpeechUtterance's scale; `pickVoice` prefers an installed preference, then an
+enhanced/premium voice for the language, else the system voice; `Queue` holds pieces
+per message with status text). `src/platform.mm` gained AVSpeechSynthesizer
+(speechVoices, speechLanguage, speakLocal, stopSpeaking, speaking; stopAudio /
+audioPlaying now cover speech too, so voice mode waits for it). `src/local_tts.cpp`:
+the queue tick in frame(), server request with fallback and a one-time toast, the
+per-message Read aloud / Stop button, the "Reading aloud, N more queued" status line,
+the Settings "VOICE AND READ-ALOUD" card (engine, server voice, Mac voice, rate, pitch,
+skip code, Test/Stop) and palette commands; "Read replies aloud" and voice mode use the
+same path. `--ttstest` runs 13 offline checks. Verified on a scratch server (no TTS
+configured, speech endpoint 404) with a seeded markdown reply: the Read aloud button
+toasted "The server has no text-to-speech - reading with this Mac's voice", the status
+line showed "Reading aloud", the button became Stop, the log recorded the local voice
+(the system voice after a fix - the first cut picked "Albert", a novelty voice, because
+every plain en-US voice ranks the same), and status and button reverted when speech
+ended. Not covered: the server-TTS path itself (no engine on the scratch server), a
+multi-part reply, the Mac-voice picker and rate/pitch sliders beyond rendering, and
+the palette commands.
